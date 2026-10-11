@@ -297,39 +297,39 @@ static mut pfnGetPrinterLevels: [PLocalGetPrinterLevelFunc; 10] = unsafe {
 };
 
 static mut dwPrinterInfo0Offsets: [DWORD; 2] = [
-    0 as ::core::ffi::c_ulonglong as LONG as DWORD,
+    core::mem::offset_of!(PRINTER_INFO_STRESS, pPrinterName) as DWORD,
     MAXDWORD as DWORD,
 ];
 
 static mut dwPrinterInfo1Offsets: [DWORD; 4] = [
-    16 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    24 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    8 as ::core::ffi::c_ulonglong as LONG as DWORD,
+    core::mem::offset_of!(PRINTER_INFO_1W, pName) as DWORD,
+    core::mem::offset_of!(PRINTER_INFO_1W, pComment) as DWORD,
+    core::mem::offset_of!(PRINTER_INFO_1W, pDescription) as DWORD,
     MAXDWORD as DWORD,
 ];
 
 static mut dwPrinterInfo2Offsets: [DWORD; 11] = [
-    8 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    16 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    24 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    32 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    40 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    48 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    64 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    72 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    80 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    88 as ::core::ffi::c_ulonglong as LONG as DWORD,
+    core::mem::offset_of!(PRINTER_INFO_2W, pPrinterName) as DWORD,
+    core::mem::offset_of!(PRINTER_INFO_2W, pShareName) as DWORD,
+    core::mem::offset_of!(PRINTER_INFO_2W, pPortName) as DWORD,
+    core::mem::offset_of!(PRINTER_INFO_2W, pDriverName) as DWORD,
+    core::mem::offset_of!(PRINTER_INFO_2W, pComment) as DWORD,
+    core::mem::offset_of!(PRINTER_INFO_2W, pLocation) as DWORD,
+    core::mem::offset_of!(PRINTER_INFO_2W, pSepFile) as DWORD,
+    core::mem::offset_of!(PRINTER_INFO_2W, pPrintProcessor) as DWORD,
+    core::mem::offset_of!(PRINTER_INFO_2W, pDatatype) as DWORD,
+    core::mem::offset_of!(PRINTER_INFO_2W, pParameters) as DWORD,
     MAXDWORD as DWORD,
 ];
 
 static mut dwPrinterInfo4Offsets: [DWORD; 2] = [
-    0 as ::core::ffi::c_ulonglong as LONG as DWORD,
+    core::mem::offset_of!(PRINTER_INFO_4W, pPrinterName) as DWORD,
     MAXDWORD as DWORD,
 ];
 
 static mut dwPrinterInfo5Offsets: [DWORD; 3] = [
-    0 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    8 as ::core::ffi::c_ulonglong as LONG as DWORD,
+    core::mem::offset_of!(PRINTER_INFO_5W, pPrinterName) as DWORD,
+    core::mem::offset_of!(PRINTER_INFO_5W, pPortName) as DWORD,
     MAXDWORD as DWORD,
 ];
 

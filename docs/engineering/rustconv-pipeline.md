@@ -731,6 +731,32 @@ rust-port-status.md); `verify_translation_literals` now pairs every port module 
 hand-encoded `_T("..")` columns. Owed: seal `_T()`/`TEXT()` literals in UNICODE modules the way
 `L"..."` is, so the model never hand-encodes them.
 
+**Batch B: calc, taskmgr, regedit, clb (2026-10-10).** ~$1.46 of Haiku. Again the residue was
+classes, each now a pass with a test:
+- **scanner:** a definition tree-sitter loses (calc's `_tWinMain`, its header split across
+  `#if defined(__GNUC__) && !defined(__REACTOS__)` / `#else`; `Theme_Stop` after bare
+  `GET_CB(x)` statement macros) is recovered from the LIVE text, with the module's pinned `-D`
+  ints deciding the dead lines (msvcrt's `_MSVCR_VER>=80` bodies stay out).
+- **integrate:** `c_longdouble`/`f128` -> `f64` (gcc.cmake's `-mlong-double-64`; exact);
+  c2rust's `.Option_0` -> `.Option`; `__FILE__`/`__LINE__` -> `file!()`/`line!()`; a module
+  const named after an SDK object macro the C never defines is dropped for the header's own
+  expansion (regedit's ZERO-extended `HKEY_*`); invented `__REACTOS__` gates settled to the live
+  arm (field manual, "Compiled is not executed"); a sibling import whose definition moved to
+  the prelude is dropped (E0603).
+- **variadic:** the forwarding shapes -- a `va_start`ed local, or a cloned list only handed on
+  -- become `let ap: va_list = *(ap_list as *mut va_list)` (a `char *` on every Windows target).
+- **resolve/macros:** clang facts never take compiler builtins (`__LINE__ = 7`) and wrap a
+  negative unsigned (`_UI64_MAX: u64 = -1`); a copied extern naming its source crate's private
+  types (`Compare`, `super::super::CntCmpFn`) is refused; a copy of a name the crate now defines
+  goes; a UNICODE module reads only its W arm of a local A/W `#define`; the SDK lowerer sees the
+  `-sys` glob's types (`(LPWSTR)-1L` was a subtraction) and casts callbacks by coercion/bits.
+- **island:** a typedef and a struct tag sharing a name keep the tag (C's two namespaces).
+- strsafe-rust: `StringCchPrintfExW!`, `StringCbCopyNW`, `StringCbVPrintfW`.
+
+Owed: an `#ifdef X` where X is defined by nothing the TU sees (calc's `USE_KEYBOARD_HOOK`,
+`DISABLE_HTMLHELP_SUPPORT`) is still sent to the model; the preprocessor's own `-dM` table
+can decide it.
+
 ### `port data`: a C data TU as Rust statics, $0 (2026-10-07)
 
     rustconv port data <stem> <tu.c>        # or: python -m rustconv.c_data_port <tu.c> --crate X --out DIR

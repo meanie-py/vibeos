@@ -4862,6 +4862,119 @@ case "$DRIVER" in
     LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
+  calc)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-10 from base/applications/calc/CMakeLists.txt
+    # (7 compiled TU(s), 158 headers in the include closure, 123 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 74 external prototype(s) declared by the include closure, 14 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/base/applications/calc"
+    WRAPPER_INC=$'#include "calc.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]htmlhelp\.h'
+                  --allowlist-file '.*[/\\]shellapi\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  --allowlist-file '.*[/\\]tmschema\.h'
+                  --allowlist-file '.*[/\\]uxtheme\.h'
+                  --allowlist-file '.*[/\\]vsstyle\.h'
+                  --allowlist-file '.*[/\\]vssym32\.h'
+                  --allowlist-file '.*calc[/\\].*\.h'
+                  --allowlist-file '.*[/\\]winnls\.h' )
+    # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
+    UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
+    EXTRA_INC=( -I"${SRC}/base/applications/calc" -I"${SRC}/build-i386/base/applications/calc" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  taskmgr)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-10 from base/applications/taskmgr/CMakeLists.txt
+    # (18 compiled TU(s), 199 headers in the include closure, 153 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 180 external prototype(s) declared by the include closure, 7 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/base/applications/taskmgr"
+    WRAPPER_INC=$'#include "precomp.h"\n#define NTOS_MODE_USER\n#include <ndk/psfuncs.h>\n#include <math.h>\n#define WIN32_LEAN_AND_MEAN\n#include <aclapi.h>\n#include <ndk/exfuncs.h>\n#include <shlwapi.h>\n#include "proclist.h"\n#include <ndk/pofuncs.h>\n#include <ndk/rtlfuncs.h>\n#include "perfpage.h"\n#include "about.h"\n#include "affinity.h"\n#include "debug.h"\n#include "priority.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]aclapi\.h' --allowlist-file '.*[/\\]commctrl\.h'
+                  --allowlist-file '.*[/\\]shellapi\.h'
+                  --allowlist-file '.*[/\\]shlwapi\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  --allowlist-file '.*[/\\]tlhelp32\.h'
+                  --allowlist-file '.*[/\\]wingdi\.h'
+                  --allowlist-file '.*[/\\]winnls\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*taskmgr[/\\].*\.h' )
+    # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
+    UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
+    EXTRA_INC=( -I"${SRC}/base/applications/taskmgr" -I"${SRC}/build-i386/base/applications/taskmgr" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES -DNTOS_MODE_USER )
+    ;;
+  regedit)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-10 from base/applications/regedit/CMakeLists.txt
+    # (15 compiled TU(s), 170 headers in the include closure, 185 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 222 external prototype(s) declared by the include closure, 5 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/base/applications/regedit"
+    WRAPPER_INC=$'#include <fcntl.h>\n#include <io.h>\n#include "regedit.h"\n#define INITGUID\n#include <guiddef.h>\n#include <commdlg.h>\n#include <cderr.h>\n#include <objsel.h>\n#define NTOS_MODE_USER\n#include <ndk/cmtypes.h>\n#include <shldisp.h>\n#include <shlguid.h>\n#include <shellapi.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]aclapi\.h' --allowlist-file '.*[/\\]cderr\.h'
+                  --allowlist-file '.*[/\\]commctrl\.h'
+                  --allowlist-file '.*[/\\]commdlg\.h'
+                  --allowlist-file '.*[/\\]objsel\.h'
+                  --allowlist-file '.*[/\\]shellapi\.h'
+                  --allowlist-file '.*[/\\]shldisp\.h'
+                  --allowlist-file '.*[/\\]shlguid\.h'
+                  --allowlist-file '.*[/\\]shlwapi\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  --allowlist-file '.*regedit[/\\].*\.h'
+                  --allowlist-file '.*[/\\]accctrl\.h'
+                  --allowlist-file '.*[/\\]objidl\.h'
+                  --allowlist-file '.*[/\\]unknwn\.h'
+                  --allowlist-file '.*[/\\]wingdi\.h' )
+    # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
+    UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
+    EXTRA_INC=( -I"${SRC}/base/applications/regedit" -I"${SRC}/build-i386/base/applications/regedit" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_DEBUG=1 -D_CRT_NON_CONFORMING_SWPRINTFS -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES -DNTOS_MODE_USER )
+    ;;
+  clb)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-10 from base/applications/regedit/clb/CMakeLists.txt
+    # (1 compiled TU(s), 142 headers in the include closure, 11 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 5 external prototype(s) declared by the include closure, 0 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/base/applications/regedit/clb"
+    WRAPPER_INC=$'#include <precomp.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*clb[/\\].*\.h' )
+    # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
+    UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
+    EXTRA_INC=( -I"${SRC}/base/applications/regedit/clb" -I"${SRC}/build-i386/base/applications/regedit/clb" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DEBUG=1 -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
   servman)
     # AUTO-DERIVED by rustconv.profile_derive on 2026-10-10 from base/applications/mscutils/servman/CMakeLists.txt
     # (20 compiled TU(s), 162 headers in the include closure, 85 switch constant(s)).
@@ -5162,6 +5275,19 @@ for ln in s.splitlines(keepends=True):
     out.append(ln)
 open(final, "w").write("".join(out))
 ' "$RAW" "$FINAL"
+  # C keeps typedef names and struct tags in separate namespaces; Rust has one. regedit's
+  # security.h typos its typedef -- `typedef struct ifaceISecuritInformationVbtl
+  # ifaceISecurityInformationVbtl;` -- next to the real `struct ifaceISecurityInformationVbtl`,
+  # and bindgen emits both (E0428). Every use the C makes is `struct <tag>`, and the alias
+  # names a different, incomplete type, so the tag's definition is the one to keep.
+  python3 - "$FINAL" <<'PYEOF'
+import re, sys
+p = sys.argv[1]; s = open(p).read()
+defs = set(re.findall(r"^pub (?:struct|union|enum) (\w+)\b", s, re.M))
+s2 = re.sub(r"^pub type (\w+) = [^;]+;\n", lambda m: "" if m.group(1) in defs else m.group(0), s, flags=re.M)
+if s2 != s:
+    open(p, "w").write(s2)
+PYEOF
   # C++ drivers (LANG_ARGS has `-x c++`): the driver's OWN functions are declared without
   # `extern "C"`, so bindgen emits them as `_Z`-mangled extern decls. In an all-Rust cohab
   # those are dead AND collide name-for-name with the translated modules under a flat

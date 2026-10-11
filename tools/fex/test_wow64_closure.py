@@ -278,15 +278,16 @@ def test_emit_roots_stages_the_programs_with_their_closure(tmp_path, monkeypatch
     assert {"guest.exe", "ws2_32.dll", "msafd.dll"} <= staged
 
 
-def test_a_temporary_livecd_rw_tree_is_never_indexed(tmp_path):
-    """mk_writable_livecd unpacks `livecd-rw-XXXX/tree/` under the build dir while a
-    conformance lane boots; indexed first, its copy of a DLL vanished before it was read and
-    the amd64 WoW64 restage failed CMAKE_CONFIGURE (three merge-queue batches, 2026-10-10)."""
-    tmp_tree = tmp_path / "livecd-rw-6lje7efj" / "tree" / "reactos" / "system32"
-    tmp_tree.mkdir(parents=True)
-    (tmp_tree / "kernel32_vista.dll").write_bytes(b"MZ")
-    real = tmp_path / "dll" / "win32" / "kernel32" / "kernel32_vista"
+def test_index_never_reads_a_livecd_rw_staging_copy(tmp_path):
+    # mk_writable_livecd.py stages the livecd tree in build-i386/livecd-rw-*/ and deletes it;
+    # the gate's amd64 restage indexed the copy's url.dll and died when it vanished.
+    real = tmp_path / "dll" / "win32" / "url"
     real.mkdir(parents=True)
-    (real / "kernel32_vista.dll").write_bytes(b"MZ")
+    (real / "url.dll").write_bytes(b"MZ")
+    copy = tmp_path / "livecd-rw-abc123" / "tree" / "reactos" / "system32"
+    copy.mkdir(parents=True)
+    (copy / "url.dll").write_bytes(b"MZ")
+    (copy / "only_in_copy.dll").write_bytes(b"MZ")
     index = w.index_build(tmp_path, no_strip=True)
-    assert index["kernel32_vista.dll"] == real / "kernel32_vista.dll"
+    assert index["url.dll"] == real / "url.dll"
+    assert "only_in_copy.dll" not in index

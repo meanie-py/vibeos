@@ -4042,6 +4042,21 @@ of them were **ours**, not the model's:
   never-compiled lines, and WARNS by name for any other such identifier the Rust still uses
   (statements are not safe to drop by pattern; hand-port them with `port hand`).
 
+  **Both arms kept, gated on something Rust never sets, so the DEAD arm compiles.** A
+  translation that carries `#ifdef __REACTOS__` / `#else` invents a gate: `cfg!(feature =
+  "reactos")`, `#[cfg(reactos)]`, a local `const REACTOS: bool = false`, even `#[cfg(any())]`
+  on the ReactOS arm. Every one is false, so Wine's arm is what ships: regedit's regproc.rs
+  called Wine's `swprintf(buf, count, fmt)` -- under regedit's `_CRT_NON_CONFORMING_SWPRINTFS`
+  that puts the count in the FORMAT slot -- plus `RegDeleteTreeW` and a process-ending
+  `error_exit` where ReactOS calls StringCchPrintfW, SHDeleteKey and `output_message; return`.
+  Batch A's mstsc lost its branch the same way. `port integrate` now settles every such gate to
+  the live arm (the `if <gate> {A} else {B}` form loses B outright, since an `if false` arm is
+  still type-checked); `#[cfg(any())]` is not a gate name, so that pairing stays a hand port --
+  the dead-region WARNING above names it. A landed sweep found cdfs (has a real `reactos`
+  feature, default on), comctl32 (`const REACTOS: bool = true`) and oleaut32 (gated arms
+  byte-identical) all behave as the C; fastfat's `#[cfg(not(reactos))]` only computes an unused
+  `IsAWrite`.
+
   **And the sharper form of the same blind spot: a body that ignores the envelope ENTIRELY.**
   msvcrt's `_tzset` came back with all 35 sealed constants in the wrong slots — `_lock(0)` for
   `_lock(_TIME_LOCK)`, `memset(&tzi, 0, 3)` for `sizeof(tzi)`, `*tz == 3600` for `*tz == '-'`,
@@ -11905,6 +11920,31 @@ a whole private SSE encoding as well (swap bit inverted, share count at bit 2), 
 **Fix:** use mm.h's encoding. `tools/scan_sse_helpers.py` evaluates every Rust `*_SSE` helper
 against the macro on sample entries. Read the printed `sse` value against the bit layout
 before trusting a predicate's verdict about it.
+
+### RAM above 4 GiB: a loader cap was hiding four bugs, none in the loader
+**Symptom.** amd64 with more than 4 GiB described (freeldr `MM_MAX_PAGE`): BAD_POOL_HEADER
+(0x19, P1=5) from `IopCreateArcNamesCd`'s 2 KB CD buffer, then INACCESSIBLE_BOOT_DEVICE with
+the CD reading as zeros, a hang in the q35 AHCI bus scan, and on BIOS boots MEMORY_MANAGEMENT
+from `[MMGUARD] rmap.MmInsertRmap PFN MISMATCH` at the first user mapping in System. The
+"physical memory" line (`[MM] physical memory: N MiB`) also over-counted: 4095 MiB on a box
+with 2 GiB below 4 GiB, 17407 MiB on a 4 GiB BIOS guest.
+**Cause.** Each was its own bug; the 4 GiB cap only kept every buffer and table low.
+1. `MiIsMemoryTypeInvisible` (ntkrnl-sys `inline/mm.rs`) was ported as `>= LoaderMaximum`, so
+   firmware-reserved ranges (PCI hole, VGA hole, a 1 TB reserved run on BIOS) counted as RAM.
+2. uniata's 32-bit bounce (`DB_IO`) copied back to `AtaReq->DataBuffer` after completion had
+   advanced it (overrun of the next pool block), and copied even when the transfer had fallen
+   back to PIO (zeros over good data). Upstream marks the path `ASSERT(FALSE)`.
+3. uniata stored a 64-bit HBA's first DATA page address as the AHCI command-table address
+   (`ahci_base64`), and dropped the table's own high half. Upstream has both.
+4. The HAL's AP-trampoline identity map (PML4[0], scratch pages typed `LoaderHALCachedMemory`)
+   was never removed, so System's first low user mapping was built inside HAL tables that the
+   PFN database (correctly, after 1) no longer tracks.
+**Fix.** In place in each; see the commit for the list. The general lesson: when raising a
+cap that "keeps things working", expect the bugs it was masking to be in everything that
+touches addresses, and boot several sizes (QEMU BIOS at 4/12/32 GiB, `VIBEOS_QEMU_HOSTILE=mem`
+and `q35,mem` for UEFI) before blaming the cap. A HAL bounce through map registers for 32-bit
+scsiport masters looked right and broke uniata, which does its own bouncing: scsiport's
+`IoFlushAdapterBuffers` then copies an untouched map buffer over the data.
 
 ### Other Mm one-offs
 - **A registry/hive addition that "shouldn't matter" trips an early 0x50** `[§9.10]` — the

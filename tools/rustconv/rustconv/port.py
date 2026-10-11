@@ -46,6 +46,7 @@ from . import (
     local_macros,
     logical_not,
     loop_step,
+    offset_restore,
     pointer_depth,
     prelude_resolve,
     sizeof_restore,
@@ -371,6 +372,16 @@ def stage_derive(
             arm,
             count=1,
             flags=re.M,
+        )
+    # A crate directory that exists and is not THIS module's is someone else's crate:
+    # cmdutils' dbgprint.exe derived `dbgprint-rust`, the kernel's debug-print crate, and
+    # scaffold refusing to overwrite it was the only thing between a paid translation and
+    # the kernel's sources. Checked before anything is written.
+    crate_dir = REPO / "sdk" / "lib" / "rust" / dp.crate_name
+    if crate_dir.is_dir() and load_state(stem).get("crate") != dp.crate_name:
+        raise SystemExit(
+            f"derive: {stem}: crate {dp.crate_name} already exists and is not this module's "
+            f"({crate_dir.relative_to(REPO)}); port it under another stem/target name"
         )
     updated = upsert_profile_arm(script, arm, stem)
     if updated != script:
@@ -2247,6 +2258,16 @@ def _variadic_twins(state: dict, crate: Path, stem: str) -> tuple[list[str], dic
     new = text[: m.start()] + block + text[m.end() :] if m else text.rstrip("\n") + "\n\n" + block
     if new != text:
         prelude.write_text(new)
+    # A sibling's `use crate::<stem>::error::F;` written when error.rs still DEFINED F now
+    # names error.rs's private glob import of the prelude's trampoline (E0603).
+    from .crate_integrate import drop_stale_sibling_imports
+
+    for path in _unit_files(crate, stem):
+        before = path.read_text()
+        after, notes = drop_stale_sibling_imports(before, crate)
+        if after != before:
+            path.write_text(after)
+            print(f"integrate: {path.stem}: stale sibling import(s) dropped: " + "; ".join(notes))
     print(
         f"integrate: {len(entries)} C-variadic entry point(s) -> `_v` twin + "
         f"{shim.relative_to(REPO)}: {', '.join(sorted(entries))}"
@@ -2301,6 +2322,39 @@ def _drop_island_shadows(path: Path, island: dict[str, str]) -> list[str]:
     if new != text:
         path.write_text(new)
     return out
+
+
+def _drop_sdk_macro_shadows(path: Path, c_file: Path) -> list[str]:
+    """A TOP-LEVEL `const` named after an SDK object-like macro the C never defines itself.
+
+    The C reads the header; a module const of the same name is the model writing the header
+    from memory, and memory gets the details wrong: regedit's regproc.rs carried
+    `HKEY_CLASSES_ROOT = 0x80000000usize as HKEY`, ZERO-extended, where winreg.h's
+    `((HKEY)(LONG_PTR)(LONG)0x80000000)` sign-extends on 64-bit -- and the copy also
+    collided with the prelude (E0255). Dropped here; `port macros` lowers the real
+    expansion (only a name the preprocessor confirms is a macro on every arch)."""
+    from .sdk_macros import object_expansions
+
+    text = path.read_text()
+    own = set(
+        re.findall(r"(?m)^\s*#\s*define\s+([A-Za-z_]\w*)", c_file.read_text(errors="replace"))
+    )
+    names = {m.group(1) for m in _TOP_CONST.finditer(text)} - own
+    if not names:
+        return []
+    sdk = set(object_expansions(REPO, c_file, names))
+    if not sdk:
+        return []
+    dropped: list[str] = []
+
+    def repl(m: re.Match[str]) -> str:
+        if m.group(1) in sdk:
+            dropped.append(m.group(1))
+            return ""
+        return m.group(0)
+
+    path.write_text(_TOP_CONST.sub(repl, text))
+    return dropped
 
 
 _COUNT_OF_PTR = re.compile(
@@ -2630,6 +2684,19 @@ def _crt_data_globals(path: Path) -> list[str]:
         if n:
             text = new
             done.append(f"{name} x{n}")
+    # The stream ARRAY itself, by address: regedit's regproc.c reads `&_iob[1]` (stdout) for
+    # `-` as a file name. msvcrt exports `_iob` as DATA, a dllimport only `__imp__iob`
+    # reaches; `__iob_func()` is the same array's address (undefined `_iob` at link before).
+    if not re.search(r"\b(?:let(?:\s+mut)?|static(?:\s+mut)?|fn)\s+_iob\b|\b_iob\s*:", text):
+        new, n = re.subn(
+            r"(?:&raw\s+(?:mut|const)\s+_iob\b|(?:core::ptr::)?addr_of(?:_mut)?!\(\s*_iob\s*\)"
+            r"|\b_iob\.as_mut_ptr\(\))",
+            "__iob_func()",
+            text,
+        )
+        if n:
+            text = new
+            done.append(f"_iob x{n}")
     if done:
         path.write_text(text)
     return done
@@ -2710,6 +2777,183 @@ def _c2rust_unnamed(path: Path, island: str) -> list[str]:
         return []
     path.write_text(new)
     return done
+
+
+_LONG_DOUBLE = re.compile(
+    r"(?:(?:::)?(?:core|std)::ffi::|(?:::)?libc::)?\bc_longdouble(?:_placeholder)?\b"
+)
+_F128_TO_F64 = re.compile(
+    r"(?:::)?f128::f128::new\(([^()]*(?:\([^()]*\))?[^()]*)\)\.to_f64\(\)\.unwrap\(\)"
+)
+
+
+def _long_double_f64(path: Path) -> int:
+    """`c_longdouble` / `f128` -> `f64`: ReactOS's `long double` IS a double.
+
+    gcc.cmake passes `-mlong-double-64` on i386 and amd64, and Windows arm64's is 64-bit
+    already, so every island lays calc's `calc_number_t.f` out as `f64`. c2rust and the model
+    reach for an 80/128-bit type that does not exist on stable Rust (calc: `c_longdouble`,
+    an invented `c_longdouble_placeholder`, an `f128` crate) -- none of which is the value
+    the C holds. The rewrite is exact, not a precision trade."""
+    text = path.read_text()
+    new = _F128_TO_F64.sub(lambda m: f"(({m.group(1)}) as f64)", text)
+    new = _LONG_DOUBLE.sub("f64", new)
+    if new == text:
+        return 0
+    path.write_text(new)
+    return len(_LONG_DOUBLE.findall(text)) + len(_F128_TO_F64.findall(text))
+
+
+# Names the PREPROCESSOR answers per use site, so no value is a fact: clang evaluated
+# regedit's `__LINE__` in the probe file and the prelude got `pub const __LINE__: i32 = 7`.
+_COMPILER_BUILTIN_MACROS = frozenset(
+    {"__LINE__", "__FILE__", "__COUNTER__", "__DATE__", "__TIME__", "__FUNCTION__", "__func__"}
+)
+_BUILTIN_FILE = re.compile(r'(?<![\w"])__FILE__(?![\w"])')
+_BUILTIN_LINE = re.compile(r'(?<![\w"])__LINE__(?![\w"])')
+
+
+def _builtin_location_macros(path: Path) -> int:
+    """`__FILE__` / `__LINE__` -> `file!()` / `line!()` (NUL-terminated for C's `char *`).
+    regedit's settings.rs passed both to DbgPrint's `%s:%d`."""
+    text = path.read_text()
+    code = _strip_rust_comments(text)
+    if "__FILE__" not in code and "__LINE__" not in code:
+        return 0
+    new, a = _BUILTIN_FILE.subn(lambda _m: 'concat!(file!(), "\\0").as_ptr()', text)
+    new, b = _BUILTIN_LINE.subn("(line!() as ::core::ffi::c_int)", new)
+    if new != text:
+        path.write_text(new)
+    return a + b
+
+
+_RX_GATE = r'(?:feature\s*=\s*"(?:reactos|__REACTOS__)"|reactos|__REACTOS__)'
+_RX_CFG_MACRO_NOT = re.compile(rf"cfg!\(\s*not\(\s*{_RX_GATE}\s*\)\s*\)")
+_RX_CFG_MACRO = re.compile(rf"cfg!\(\s*{_RX_GATE}\s*\)")
+_RX_CFG_ATTR_NOT = re.compile(rf"#\[cfg\(\s*not\(\s*{_RX_GATE}\s*\)\s*\)\]")
+_RX_CFG_ATTR = re.compile(rf"[ \t]*#\[cfg\(\s*{_RX_GATE}\s*\)\][ \t]*\n?")
+_RX_CONST = re.compile(r"\bconst\s+(REACTOS|__REACTOS__)\s*:\s*bool\s*=\s*false\s*;")
+
+
+def _brace_end(text: str, open_idx: int) -> int | None:
+    depth = 0
+    for i in range(open_idx, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return i
+    return None
+
+
+def _settle_if(text: str, truth: dict[str, bool]) -> tuple[str, int]:
+    """`if <gate> { A } else { B }` -> `{ A }` (or `{ B }`): the dead branch must GO, because
+    an `if false` arm is still type-checked, and the Wine arm calls Wine's API."""
+    n = 0
+    pat = re.compile(r"\bif\s+(" + "|".join(map(re.escape, truth)) + r")\s*\{")
+    pos = 0
+    while (m := pat.search(text, pos)) is not None:
+        a_open = m.end() - 1
+        a_close = _brace_end(text, a_open)
+        if a_close is None:
+            break
+        rest = text[a_close + 1 :]
+        e = re.match(r"\s*else\s*\{", rest)
+        b = None
+        if e:
+            b_open = a_close + 1 + e.end() - 1
+            b_close = _brace_end(text, b_open)
+            if b_close is None:
+                break
+            b = (b_open, b_close)
+        if truth[m.group(1)]:
+            keep = text[a_open : a_close + 1]
+        else:
+            keep = text[b[0] : b[1] + 1] if b else "{}"
+        end = b[1] + 1 if b else a_close + 1
+        text = text[: m.start()] + keep + text[end:]
+        pos = m.start() + len(keep)
+        n += 1
+    return text, n
+
+
+def _reactos_gates(path: Path) -> int:
+    """The model's spellings of `#ifdef __REACTOS__` settled to the LIVE arm.
+
+    The root CMakeLists defines __REACTOS__ for every TU. A translation that carries both
+    arms gates them on something Rust never sets -- `cfg!(feature = "reactos")`,
+    `#[cfg(reactos)]`, a local `const REACTOS: bool = false` -- so the WINE arm is what
+    compiles: regedit's regproc.rs shipped Wine's `swprintf(buf, count, fmt)` (a count in
+    the format slot under regedit's _CRT_NON_CONFORMING_SWPRINTFS), `RegDeleteTreeW` and
+    `error_exit` where ReactOS calls StringCchPrintfW, SHDeleteKey and output_message."""
+    text = path.read_text()
+    new, n0 = _RX_CONST.subn(lambda m: f"const {m.group(1)}: bool = true;", text)
+    new, n1 = _RX_CFG_MACRO_NOT.subn("false", new)
+    new, n2 = _RX_CFG_MACRO.subn("true", new)
+    new, n3 = _RX_CFG_ATTR_NOT.subn("#[cfg(any())]", new)
+    new, n4 = _RX_CFG_ATTR.subn("", new)
+    truth = {"true": True, "false": False}
+    if n0 or re.search(r"\bconst\s+REACTOS\s*:\s*bool\s*=\s*true", new):
+        truth["REACTOS"] = True
+    if re.search(r"\bconst\s+__REACTOS__\s*:\s*bool\s*=\s*true", new):
+        truth["__REACTOS__"] = True
+    n5 = 0
+    if n0 + n1 + n2 or "REACTOS" in truth or "__REACTOS__" in truth:
+        new, n5 = _settle_if(new, truth)
+    if new == text:
+        return 0
+    path.write_text(new)
+    return n0 + n1 + n2 + n3 + n4 + n5
+
+
+_TOP_STATIC = re.compile(
+    r"(?m)^(?:pub(?:\([^)]*\))?\s+)?static\s+mut\s+(?P<name>[A-Za-z_]\w*)\s*:[^=\n]+=\s*"
+    r"(?:\[\s*0[^\]\n]*\]|0[^;\n]*|core::ptr::null(?:_mut)?\(\)[^;\n]*|unsafe\s*\{\s*(?:core::|::core::)?mem::zeroed\(\)\s*\})\s*;[^\n]*\n"
+)
+
+
+def _extern_only_statics(path: Path, c_file: Path) -> list[str]:
+    """A zero-initialised module `static mut X` where the C only DECLARES `extern X`.
+
+    The model turned framewnd.c's `extern WCHAR Suggestions[256];` into a second definition:
+    childwnd.c's SuggestKeys filled the real one and the tree menu read this always-empty
+    copy. Dropped, so resolve imports the defining module's static instead. Only when the C
+    file has an `extern` declaration of X and no file-scope definition of it."""
+    c = c_file.read_text(errors="replace")
+    text = path.read_text()
+    dropped: list[str] = []
+
+    def repl(m: re.Match[str]) -> str:
+        name = m.group("name")
+        ext = re.search(rf"(?m)^\s*extern\b[^;(]*\b{name}\s*(?:\[[^\]]*\])*\s*;", c)
+        defined = re.search(
+            rf"(?m)^(?!\s*extern\b)(?!\s*#)[A-Za-z_][^;(=]*\b{name}\s*(?:\[[^\]]*\])*\s*(?:=|;)", c
+        )
+        if ext and not defined:
+            dropped.append(name)
+            return ""
+        return m.group(0)
+
+    new = _TOP_STATIC.sub(repl, text)
+    if new != text:
+        path.write_text(new)
+    return dropped
+
+
+_C2RUST_PRELUDE_FIELD = re.compile(r"\.(Option|Some|None|Ok|Err|Result|Box|Vec|String)_0\b")
+
+
+def _c2rust_prelude_fields(path: Path) -> int:
+    """`.Option_0` -> `.Option`: c2rust renames a C member that collides with a Rust prelude
+    name, bindgen keeps it. regedit's IO_RESOURCE_DESCRIPTOR reads came back as
+    `(*d).Option_0` against ntdll-sys's `pub Option: UCHAR` (E0609 x8). A field access only:
+    after a `.` the name cannot be the prelude item."""
+    text = path.read_text()
+    new, n = _C2RUST_PRELUDE_FIELD.subn(r".\1", text)
+    if n:
+        path.write_text(new)
+    return n
 
 
 _STR_AS_PTR = re.compile(r'(?<![\w"])(?:TEXT!\(\s*)?"((?:[^"\\\n]|\\.)*)"(\s*\))?\.as_ptr\(\)')
@@ -2877,6 +3121,24 @@ def stage_integrate(stem: str) -> None:
             print(
                 f"integrate: {path.stem}: {len(cstr)} Rust str literal(s) passed to C got their NUL"
             )
+        loc = _builtin_location_macros(path)
+        if loc:
+            changed += 1
+            print(f"integrate: {path.stem}: {loc} __FILE__/__LINE__ as file!()/line!()")
+        rx = _reactos_gates(path)
+        if rx:
+            changed += 1
+            print(f"integrate: {path.stem}: {rx} __REACTOS__ gate(s) settled to the live arm")
+        pf = _c2rust_prelude_fields(path)
+        if pf:
+            changed += 1
+            print(
+                f"integrate: {path.stem}: {pf} c2rust `_0` field rename(s) undone (bindgen's name)"
+            )
+        ld = _long_double_f64(path)
+        if ld:
+            changed += 1
+            print(f"integrate: {path.stem}: {ld} long double(s) as f64 (-mlong-double-64)")
         zeroed = _zero_array_literals(path)
         if zeroed:
             changed += 1
@@ -2937,6 +3199,20 @@ def stage_integrate(stem: str) -> None:
                     f"integrate: {path.stem}: WARNING: the C names these only in a dead #if "
                     f"region, yet the translation uses them -- review: {', '.join(still)}"
                 )
+            ext_only = _extern_only_statics(path, c_file)
+            if ext_only:
+                changed += 1
+                print(
+                    f"integrate: {path.stem}: static(s) the C only declares `extern`, now the "
+                    f"defining module's: {', '.join(ext_only)}"
+                )
+            sdk_shadows = _drop_sdk_macro_shadows(path, c_file)
+            if sdk_shadows:
+                changed += 1
+                print(
+                    f"integrate: {path.stem}: header macro(s) the translation re-defined from "
+                    f"memory, dropped for the SDK's own expansion: {', '.join(sdk_shadows)}"
+                )
             corrected = _verify_local_defines(path, c_file)
             if corrected:
                 changed += 1
@@ -2951,6 +3227,14 @@ def stage_integrate(stem: str) -> None:
                 path.write_text(new)
                 changed += 1
                 print(f"integrate: {path.stem}: dropped sizeof put back: {'; '.join(restored)}")
+            offsets, refused = offset_restore.restore_file(path, c_file)
+            if offsets:
+                changed += 1
+                print(f"integrate: {path.stem}: FIELD_OFFSET tables per-arch: {', '.join(offsets)}")
+            for why in refused:
+                print(
+                    f"integrate: {path.stem}: WARNING: offset table left as c2rust folded it: {why}"
+                )
         text = path.read_text()
         new, fixes = pointer_depth.repair(text, decls, ptr_types, ptr_targets)
         new, not_fixed, not_refused = logical_not.repair(new, decls)
@@ -3193,18 +3477,81 @@ def _tchar_structs(state: dict, prelude: Path) -> dict[str, str]:
     return out
 
 
+def _private_types(item: prelude_resolve.Item, visible: set[str]) -> set[str]:
+    """Types a copied extern names that only its SOURCE crate defines -- that crate's private
+    vocabulary, never reachable from here (ucrt-rust's `qsort(.., comp: Compare)`)."""
+    # A relative path is the source crate's module tree by construction: cnt-rust's
+    # `qsort(.., cmp: super::super::CntCmpFn)` names nothing from any other crate.
+    relative = set(re.findall(r"\b(?:super|crate|self)::[\w:]+", item.text.split("{", 1)[0]))
+    if relative:
+        return relative
+    unknown = prelude_resolve.foreign_types(item.text, visible)
+    if not unknown:
+        return set()
+    src = Path(item.path)
+    parts = src.parts
+    if "src" not in parts:
+        return set()
+    root = REPO / "sdk" / "lib" / "rust" / Path(*parts[: parts.index("src") + 1])
+    if not root.is_dir():
+        return set()
+    from tools.source_walk import source_files
+
+    own: set[str] = set()
+    for rs in source_files(root, "*.rs"):
+        text = rs.read_text(errors="replace")
+        own |= {n for n in unknown if re.search(rf"\b(?:type|struct|union|enum)\s+{n}\b", text)}
+    return own
+
+
+def _cast_topped_sdk_macros(state: dict, names: set[str]) -> set[str]:
+    """The constant-looking `names` that are SDK object macros whose expansion is a cast
+    (`((HKEY)(LONG_PTR)(LONG)0x80000000)`), agreed on every arch -- see stage_resolve."""
+    from .macro_authority import MacroAuthorityError
+    from .sdk_macros import object_expansions
+
+    wanted = {n for n in names if prelude_resolve.looks_constant(n)}
+    if not wanted or not state.get("tus"):
+        return set()
+    try:
+        exp = object_expansions(REPO, (REPO / state["tus"][0]).resolve(), wanted)
+    except MacroAuthorityError:
+        return set()
+    return {n for n, e in exp.items() if re.match(r"\(\s*\(\s*[A-Za-z_]\w*\s*\*?\s*\)", e.strip())}
+
+
+def _visible_type_names(crate: Path) -> set[str]:
+    """Every type name a module of `crate` can name: island (with the -sys glob it imports),
+    the prelude's own type items, and its re-exports."""
+    from .sdk_macros import island_types
+
+    names = island_types(crate / "src")
+    prelude = crate / "src" / "prelude.rs"
+    if prelude.is_file():
+        text = prelude.read_text(errors="replace")
+        names |= set(re.findall(r"^\s*pub (?:type|struct|union|enum) (\w+)", text, re.M))
+        names |= set(re.findall(r"^\s*pub use [\w:]+::(\w+)\s*;", text, re.M))
+    return names
+
+
+def _module_is_unicode(state: dict) -> bool:
+    """Every TU's real compile command carries -DUNICODE."""
+    from .macro_authority import compile_argv
+
+    return bool(state["tus"]) and all(
+        "-DUNICODE" in (compile_argv(REPO, "amd64", (REPO / t).resolve()) or [])
+        for t in state["tus"]
+    )
+
+
 def _unicode_tchar(state: dict, prelude: Path) -> bool:
     """A UNICODE module's TCHAR is WCHAR; ntdll-sys (built without UNICODE) exports
     `TCHAR = c_char`, and a prelude that only globs it gave 27 control-panel buffers HALF
     the bytes the C has -- `RegEnumValueW` told 128 WCHARs into a 128-byte array. Written
     when every TU's real compile command carries -DUNICODE; a name the prelude already
     defines by hand is left to it."""
-    from .macro_authority import compile_argv
 
-    unicode = bool(state["tus"]) and all(
-        "-DUNICODE" in (compile_argv(REPO, "amd64", (REPO / t).resolve()) or [])
-        for t in state["tus"]
-    )
+    unicode = _module_is_unicode(state)
     text = prelude.read_text()
     pat = re.compile(re.escape(_TCHAR_BEGIN) + r".*?" + re.escape(_TCHAR_END) + r"\n", re.S)
     outside = pat.sub("", text)
@@ -3381,11 +3728,17 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
     # was written unquoted (unreadable, so read back as C) -- every one undefined at link,
     # because setuplib's exports are stdcall. A copy nothing defines any more is dropped and
     # resolved afresh.
+    for name in _cast_topped_sdk_macros(state, set(copied)):
+        del copied[name]
     fresh = prelude_resolve.workspace_items(set(copied), workspace, crate)
+    visible_types = _visible_type_names(crate)
     for name in list(copied):
         if copied[name].path == "island enum":
             continue
-        pick, _why = prelude_resolve.consensus(name, fresh.get(name, []))
+        speakable = [
+            i for i in fresh.get(name, []) if i.kind != "fn" or not _private_types(i, visible_types)
+        ]
+        pick, _why = prelude_resolve.consensus(name, speakable)
         if pick is None:
             del copied[name]
         else:
@@ -3455,6 +3808,10 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
         if wired:
             prelude_resolve.write_siblings(prelude, prelude_resolve.render_siblings(siblings, stem))
         names -= set(found_here)
+        # ...and a copy of a name the crate now defines itself goes: both in the prelude is
+        # E0255. regedit kept access-rust's HKEY_* copies after regproc.rs came to define them.
+        for name in set(copied) & set(siblings):
+            del copied[name]
         # A header helper the kernel -sys crate implements in Rust is imported from it, before
         # tree consensus is asked -- C macros included, since the substrate's port IS the
         # macro's Rust form. atapi's InsertTailList (16 copies, two ABIs), KeQuerySystemTime
@@ -3487,6 +3844,12 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
         # name in a `match` arm, so the first arm caught every WM_NOTIFY and OK never saved.
         fn_aliases = {n for n in id_aliases if not prelude_resolve.looks_constant(n)}
         todo = names - pending - set(copied) - c_macros - shared - fn_aliases
+        # A cast-topped SDK object macro is the macros stage's to LOWER from its own
+        # expansion, never another crate's copy: tree consensus compares VALUES, and
+        # `0x8000_0000u32 as HKEY` and `..as i32 as isize as HKEY` are one value to it --
+        # regedit got the ZERO-extended HKEY_CLASSES_ROOT where winreg.h sign-extends.
+        cast_macros = _cast_topped_sdk_macros(state, todo)
+        todo -= cast_macros
         # Plus every enum member a C `case` label names (derive's SWITCH_CONST_ENUM_PREFIXED):
         # in a Rust pattern the bare name is a BINDING, never unresolved, so it would never
         # reach this alias step on its own. diskpart's FormatCallback matched `PROGRESS` and
@@ -3511,6 +3874,7 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
         # `SharedSystemTime` (KUSER_SHARED_DATA.SystemTime, kernel address, amd64/arm64 only)
         # got storport's `0x7ffe0008` -- InterruptTime, user mode -- on every arch.
         in_island = _island_defined(crate / "src")
+        visible_types = _visible_type_names(crate)
         for name in sorted(todo & set(in_island)):
             res.conflicting[name] = (
                 f"the island defines it on {', '.join(sorted(in_island[name]))} only: "
@@ -3519,6 +3883,8 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
         todo -= set(in_island)
         for name in sorted(todo):
             found = items.get(name, [])
+            # A copied declaration must speak this crate's types (ucrt's private `Compare`).
+            found = [i for i in found if i.kind != "fn" or not _private_types(i, visible_types)]
             if not found:
                 res.undefined.append(name)
                 continue
@@ -3795,7 +4161,9 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
     sigs: dict[str, tuple[str, str, str]] = {}
     module_dir = REPO / state["module_dir"]
     files = _module_sources(module_dir)
-    defs, _ambiguous = local_macros.module_macros(files, REPO)
+    defs, _ambiguous = local_macros.module_macros(
+        files, REPO, {"UNICODE": 1, "_UNICODE": 1} if _module_is_unicode(state) else None
+    )
     stem = state["stem"]
     modules_dir = _crate_dir(state) / "src" / stem
     aliases: dict[str, str] = {}
@@ -4348,7 +4716,7 @@ def _resolve_facts(state: dict, prelude: Path, undefined: list[str]) -> list[str
     # `WM_MOUSEHWHEEL: i32 = 0x20E` (fact) beside `WM_MOUSEHWHEEL: u32 = 526` (consensus).
     in_island |= set(prelude_resolve.existing_block(prelude))
     in_island |= set(prelude_resolve.existing_siblings(prelude))
-    stale = sorted(set(facts) & in_island)
+    stale = sorted(set(facts) & (in_island | _COMPILER_BUILTIN_MACROS))
     for name in stale:
         del facts[name]
     if stale:
@@ -4369,7 +4737,13 @@ def _resolve_facts(state: dict, prelude: Path, undefined: list[str]) -> list[str
         for name, lit in sdk_facts.float_macro_literals(REPO, REPO / tu, names).items():
             print(f"resolve: {name} was truncated to {facts[name][1]}; it is {lit}")
             facts[name] = ("f64", lit, src)
-    wanted = sorted(n for n in undefined if prelude_resolve.looks_constant(n) and n not in facts)
+    wanted = sorted(
+        n
+        for n in undefined
+        if prelude_resolve.looks_constant(n)
+        and n not in facts
+        and n not in _COMPILER_BUILTIN_MACROS
+    )
     if not wanted:
         prelude_resolve.write_facts(prelude, prelude_resolve.render_facts(facts))
         return undefined
@@ -4575,7 +4949,10 @@ def stage_macros(
     prelude = crate / "src" / "prelude.rs"
     module_dir = REPO / state["module_dir"]
     files = _module_sources(module_dir)
-    defs, ambiguous = local_macros.module_macros(files, REPO)
+    # A UNICODE module never compiles a `#ifndef UNICODE` arm: calc.h's
+    # `#define calc_HtmlHelp calc_HtmlHelpA` / `...W` pair is one macro here, not two.
+    live_if = {"UNICODE": 1, "_UNICODE": 1} if _module_is_unicode(state) else None
+    defs, ambiguous = local_macros.module_macros(files, REPO, live_if)
     # Functions the module's HEADERS define inline: a macro of the same name wins.
     # A cppapp module's header functions are class members, rendered and translated by
     # cpp_app: read as C they become a free `audio_membuffer(this)` shadowing the class.

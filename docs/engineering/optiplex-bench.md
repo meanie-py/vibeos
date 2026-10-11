@@ -95,7 +95,7 @@ is no way round that: without the prompt it boots the hard disk at once.
 | Hardware | Status |
 |---|---|
 | CPU, i7-4770 (4C/8T) | 8 processors started (MADT) |
-| RAM, 32 GB | **4 GiB used.** The amd64 loader cuts the map at 4 GiB (roadmap: "amd64 RAM above 4 GiB"); `[MM] physical memory: 4095 MiB` |
+| RAM, 32 GB | All of it: `[MM] physical memory: 32686 MiB` |
 | HD 4600 iGPU | VBE linear framebuffer at the panel's native 1920x1080; no native driver |
 | Lynx Point xHCI, 2x EHCI | Started. On the xHCI: the Pico, a Razer 1532:0099 and a 413d:2114 HID device, all bound to HID class drivers. It reports 85 ports (should be 21) |
 | Renesas uPD720201 USB 3 card (1912:0014) | usbxhci starts it (8 ports); its root hub enumerated no devices |
@@ -107,5 +107,5 @@ is no way round that: without the prompt it boots the hard disk at once.
 
 ## Known gaps
 
-- RAM above 4 GiB, the NIC and audio (table above).
+- The NIC and audio (table above).
 - The netboot pull is still ~2 MB/s; the next step is bigger INT 13h reads in freeldr.

@@ -435,6 +435,70 @@ def _placeholder_decl(item: Item) -> bool:
     return bool(parts) and all(re.fullmatch(r"\s*_\s*:\s*usize\s*", p) for p in parts)
 
 
+_SIG_SKIP = frozenset(
+    {
+        "pub",
+        "fn",
+        "unsafe",
+        "extern",
+        "mut",
+        "const",
+        "Option",
+        "dyn",
+        "impl",
+        "self",
+        "c_void",
+        "c_char",
+        "c_schar",
+        "c_uchar",
+        "c_short",
+        "c_ushort",
+        "c_int",
+        "c_uint",
+        "c_long",
+        "c_ulong",
+        "c_longlong",
+        "c_ulonglong",
+        "c_float",
+        "c_double",
+        "i8",
+        "i16",
+        "i32",
+        "i64",
+        "i128",
+        "isize",
+        "u8",
+        "u16",
+        "u32",
+        "u64",
+        "u128",
+        "usize",
+        "f32",
+        "f64",
+        "bool",
+        "char",
+        "str",
+    }
+)
+
+
+def foreign_types(text: str, visible: set[str]) -> set[str]:
+    """Type names an extern fn's signature uses that `visible` does not have.
+
+    A copy is the OTHER crate's text: ucrt-rust declares `qsort(.., comp: Compare)` with its
+    own private `Compare`, and regedit got that line verbatim (E0412). Parameter names,
+    path segments (`core::ffi::c_void`) and primitives are not candidates."""
+    head = text.split("{", 1)[0]
+    head = re.sub(r'"[^"]*"', "", head)
+    head = re.sub(r"\bfn\s+[A-Za-z_]\w*", "fn", head, count=1)
+    out = set()
+    for m in re.finditer(r"(?<![\w:])([A-Za-z_]\w*)\b(?!\s*::)(?!\s*:(?!:))", head):
+        word = m.group(1)
+        if word not in _SIG_SKIP and word not in visible:
+            out.add(word)
+    return out
+
+
 def consensus(name: str, items: list[Item]) -> tuple[Item | None, str]:
     """The definition the tree agrees on, or (None, why not).
 
@@ -1462,6 +1526,9 @@ def fact_rust_type(
     return "u32" if value < 2**32 else "u64"
 
 
+_UNSIGNED_BITS = {"u8": 8, "u16": 16, "u32": 32, "u64": 64}
+
+
 def render_facts(facts: dict[str, tuple[str, int | str, str]]) -> str:
     """name -> (rust type, value, source TU)."""
     out = [FACTS_BEGIN]
@@ -1476,6 +1543,10 @@ def render_facts(facts: dict[str, tuple[str, int | str, str]]) -> str:
             literal = f"0x{value & 0xFFFFFFFFFFFFFFFF:X}usize as {ty}"
         elif value < 0 and ty in ("i32", "NTSTATUS", "LONG", "HRESULT"):
             literal = f"0x{value & 0xFFFFFFFF:08X}_u32 as {ty}"
+        elif value < 0 and ty in _UNSIGNED_BITS:
+            # clang's evaluator answers in a signed 64-bit: calc's `_UI64_MAX`
+            # (0xffffffffffffffffui64) came back -1, and `u64 = -1` does not compile.
+            literal = f"0x{value & ((1 << _UNSIGNED_BITS[ty]) - 1):X}"
         elif value >= 10:
             literal = f"0x{value:X}"
         out.append(f"pub const {name}: {ty} = {literal}; // clang, {src}")
