@@ -1238,6 +1238,22 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
 - **`git core.ignorecase`**: a `Lib.c` → `Lib.rs` module that case-folds onto `lib.rs` blocks
   `git add` ("will not add file alias"). Rename the module.
 
+### `raw-dylib` on a stdcall FUNCTION imports the decorated name on i386
+
+**Symptom:** a boot driver silently missing on i386 only — FreeLDR logs `Did not find export
+'RtlAssert@16'!` then `boot driver not loaded, dropped from the boot driver list`, and boot
+continues without it. Every gate is green unless the boot needed that driver.
+
+**Cause:** `#[link(name = "ntoskrnl.exe", kind = "raw-dylib", ...)] extern "system" { fn F(..); }`
+makes rustc mint the import itself, and for a stdcall function on i386 it imports `F@N`; the
+`.spec`-built export is the undecorated `F`. raw-dylib invents its own import descriptor, so
+the link has nothing unresolved to fail on (pcix-rust's `RtlAssert`, 2026-10-10).
+
+**Fix:** raw-dylib is for DATA exports only (`HalDispatchTable`, `InitSafeBootMode`) — a
+function goes in a plain `extern "system"` block and resolves through the import library.
+`scan_unresolved_imports` (binary lint, every arch) checks every livecd PE's imports against
+its exporter's export table, so any name the loader cannot bind fails the build.
+
 ### Assorted ABI-adjacent traps
 - **A trap handler that never sets the return register returns the caller's own argument.**
   User-mode `DbgPrint` returns what the kernel leaves in eax/rax/x0 after `int 0x2d`, and

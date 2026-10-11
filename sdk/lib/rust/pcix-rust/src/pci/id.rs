@@ -112,6 +112,16 @@ pub unsafe extern "system" fn PciGetDescriptionMessage(
         /* Grab the text */
         Description = core::ptr::addr_of_mut!((*Entry).Text) as PWCHAR;
 
+        // Divergence from the C: entries are padded to a 4-byte boundary, so an entry can
+        // end in two NULs, and the C's "one terminator" arithmetic then lands on padding
+        // (the ASSERT below fired for "IDE Controller" and the description kept its line
+        // break). Drop the padding before looking for the newline.
+        while TextLength as usize > core::mem::size_of::<WCHAR>()
+            && *Description.add(TextLength as usize / core::mem::size_of::<WCHAR>() - 1) == 0
+        {
+            TextLength -= core::mem::size_of::<WCHAR>() as ULONG;
+        }
+
         /* Validate the message length, ending with a newline character */
         if !(TextLength as usize > core::mem::size_of::<WCHAR>()) {
             RtlAssert(
@@ -152,6 +162,14 @@ pub unsafe extern "system" fn PciGetDescriptionMessage(
         *Buffer.add(
             (TextLength as usize / core::mem::size_of::<WCHAR>()).wrapping_sub(1),
         ) = 0u16; // UNICODE_NULL
+        // The .mc source has CRLF line ends, so the line break is "\r\n"; the C strips
+        // only the '\n' and the description kept a trailing carriage return.
+        if TextLength as usize >= 2 * core::mem::size_of::<WCHAR>()
+            && *Buffer.add(TextLength as usize / core::mem::size_of::<WCHAR>() - 2) == b'\r' as u16
+        {
+            *Buffer.add(TextLength as usize / core::mem::size_of::<WCHAR>() - 2) = 0u16;
+            TextLength -= core::mem::size_of::<WCHAR>() as ULONG;
+        }
 
         /* Return the length to the caller, minus the terminating NULL */
         if !Length.is_null() {
