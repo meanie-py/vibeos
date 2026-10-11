@@ -4305,8 +4305,14 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
         in_island = _island_defined(crate / "src")
         visible_types = _visible_type_names(crate)
         for name in sorted(todo & set(in_island)):
+            arches = sorted(in_island[name])
+            # On EVERY arch it is no gap at all: the island has it and the module cannot see
+            # it (wscript's IActiveScript* read as "amd64, arm64, i386 only").
             res.conflicting[name] = (
-                f"the island defines it on {', '.join(sorted(in_island[name]))} only: "
+                "the island defines it on every arch, but the module does not see it -- "
+                "check the module's `use` of the island"
+                if len(arches) == len(RUST_TARGETS)
+                else f"the island defines it on {', '.join(arches)} only: "
                 "an arch-specific gap, not tree consensus -- port its per-arch C"
             )
         todo -= set(in_island)

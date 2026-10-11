@@ -4,10 +4,6 @@ use crate::netsh::netsh::MergeStrings;
 use crate::netsh::help::PrintCommandHelp;
 use crate::netsh::help::PrintContextHelp;
 use crate::netsh::help::PrintGroupHelp;
-use crate::netsh::context::g_bOnline;
-use crate::netsh::context::g_pszMachine;
-use crate::netsh::context::pCurrentContext;
-use crate::netsh::context::pRootContext;
 // Deterministic UTF-16 literals, generated from the C by rustconv (--seal-wide); the model never saw the bytes.
 use crate::prelude::*;
 pub static RUSTCONV_WSTR_075DE2B906DB: [u16; 2] = [0x000Au16, 0x0000];

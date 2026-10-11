@@ -85,7 +85,6 @@ pub const RPC_C_AUTHN_WINNT: u32 = 10; // eventlog-rust/src/types_amd64.rs
 pub const RPC_C_AUTHZ_NONE: u32 = 0; // eventlog-rust/src/types_amd64.rs
 pub const RPC_C_IMP_LEVEL_IMPERSONATE: u32 = 3; // eventlog-rust/src/types_amd64.rs
 extern "C" {
-    pub fn ConMsgPrintfV(Stream: *mut CON_STREAM, dwFlags: u32, lpSource: *const c_void, dwMessageId: u32, dwLanguageId: u32, Arguments: *mut va_list,) -> i32; // attrib-rust/src/prelude.rs
     pub fn __iob_func() -> *mut FILE; // crt-startup-rust/src/misc.rs
     pub fn _swprintf(buf: *mut WCHAR, fmt: *const WCHAR, ...) -> c_int; // at-rust/src/prelude.rs
     pub fn _wcsicmp(s1: *const u16, s2: *const u16) -> i32; // apphelp-rust/src/prelude.rs
@@ -212,3 +211,12 @@ extern "C" {
     pub fn PrintMessageFromModule(hModule: HANDLE, dwMsgId: DWORD, ...) -> DWORD;
 }
 // ==== end port variadic ====
+
+// ==== port resolve: cross-TU definitions (generated) ====
+pub use crate::netsh::context::g_bOnline;
+pub use crate::netsh::netsh::g_hModule;
+pub use crate::netsh::context::g_pszMachine;
+pub use crate::netsh::context::pCurrentContext;
+pub use crate::netsh::helper::pHelperListHead;
+pub use crate::netsh::context::pRootContext;
+// ==== end cross-TU definitions ====

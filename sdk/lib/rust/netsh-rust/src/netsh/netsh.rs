@@ -8,7 +8,6 @@ use crate::netsh::interpreter::InterpretInteractive;
 use crate::netsh::interpreter::InterpretLine;
 use crate::netsh::helper::LoadHelpers;
 use crate::netsh::helper::UnloadHelpers;
-use crate::netsh::context::g_pszMachine;
 // Deterministic UTF-16 literals, generated from the C by rustconv (--seal-wide); the model never saw the bytes.
 use crate::prelude::*;
 pub static RUSTCONV_WSTR_1B9E0FE7B740: [u16; 2] = [0x003Fu16, 0x0000];

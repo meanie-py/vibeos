@@ -1667,7 +1667,7 @@ unsafe extern "C" fn DisplayDnsRecord(mut pszName: PWSTR, mut wType: WORD) {
         pThisRecord = pNextRecord;
     }
 
-    DnsRecordListFree(pQueryResults as PDNS_RECORD, ((DnsFreeRecordList) as i32) as u32);
+    DnsRecordListFree(pQueryResults as PDNS_RECORD, DnsFreeRecordList);
 }
 #[no_mangle]
 pub unsafe extern "C" fn DisplayDns() {

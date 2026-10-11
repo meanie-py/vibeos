@@ -6,8 +6,6 @@ use crate::netsh::netsh::RunScript;
 use crate::netsh::alias::ShowAliasCommand;
 use crate::netsh::helper::ShowHelperCommand;
 use crate::netsh::alias::UnaliasCommand;
-use crate::netsh::netsh::g_hModule;
-use crate::netsh::helper::pHelperListHead;
 // Deterministic UTF-16 literals, generated from the C by rustconv (--seal-wide); the model never saw the bytes.
 use crate::prelude::*;
 pub static RUSTCONV_WSTR_08F79C40983C: [u16; 7] = [0x0064u16, 0x0065, 0x006C, 0x0065, 0x0074, 0x0065, 0x0000];

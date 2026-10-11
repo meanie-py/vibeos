@@ -1,5 +1,4 @@
 use crate::netsh::context::FindContextByGuid;
-use crate::netsh::context::pRootContext;
 // Deterministic UTF-16 literals, generated from the C by rustconv (--seal-wide); the model never saw the bytes.
 use crate::prelude::*;
 pub static RUSTCONV_WSTR_4B83808CDCBA: [u16; 67] = [

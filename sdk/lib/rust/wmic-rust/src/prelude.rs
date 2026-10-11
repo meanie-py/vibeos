@@ -67,7 +67,7 @@ pub use win32macros_rust::{ALIGN_UP, ARRAYSIZE, ARRAY_SIZE, ASSERT, C_ASSERT, Co
 
 // ==== port resolve: tree consensus (generated -- re-run `rustconv port resolve`) ====
 pub const CLSCTX_INPROC_SERVER: DWORD = 0x1; // cleanmgr-rust/src/prelude.rs
-pub const EOAC_NONE: DWORD = 0; // ole32-rust/src/marshal/types.rs
+pub const EOAC_NONE: DWORD = 0; // netsh-rust/src/prelude.rs
 pub const RPC_C_AUTHN_LEVEL_DEFAULT: u32 = 0; // eventlog-rust/src/types_amd64.rs
 pub const RPC_C_IMP_LEVEL_IMPERSONATE: u32 = 3; // eventlog-rust/src/types_amd64.rs
 pub const STD_ERROR_HANDLE: u32 = 4294967284; // cmd-rust/src/prelude.rs

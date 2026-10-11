@@ -579,3 +579,19 @@ pub unsafe extern "C" fn wmain(argc: ::core::ffi::c_int, argv: *mut *mut WCHAR) 
 
     return iRet;
 }
+
+// COM vtable tables — generated from dwnl.c by vtbl_gen.py
+/// dwnl.c:302 `static const IBindStatusCallbackVtbl vtblIBindStatusCallback`  (slot order: com-sys/bindgen_i386.rs)
+pub static vtblIBindStatusCallback: IBindStatusCallbackVtbl = IBindStatusCallbackVtbl {
+    QueryInterface: Some(CBindStatusCallback_QueryInterface),
+    AddRef: Some(CBindStatusCallback_AddRef),
+    Release: Some(CBindStatusCallback_Release),
+    OnStartBinding: Some(CBindStatusCallback_OnStartBinding),
+    GetPriority: Some(CBindStatusCallback_GetPriority),
+    OnLowResource: Some(CBindStatusCallback_OnLowResource),
+    OnProgress: Some(CBindStatusCallback_OnProgress),
+    OnStopBinding: Some(CBindStatusCallback_OnStopBinding),
+    GetBindInfo: Some(CBindStatusCallback_GetBindInfo),
+    OnDataAvailable: Some(CBindStatusCallback_OnDataAvailable),
+    OnObjectAvailable: Some(CBindStatusCallback_OnObjectAvailable),
+};

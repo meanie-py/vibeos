@@ -84,8 +84,6 @@ extern "C" {
     pub fn malloc(size: usize) -> *mut c_void; // atlclasses-rust/src/lib.rs
     pub fn ros_dbg_log( cls: ::core::ffi::c_uint, ch: *mut __wine_debug_channel, file: *const ::core::ffi::c_char, func: *const ::core::ffi::c_char, line: ::core::ffi::c_int, format: *const ::core::ffi::c_char, ... ) -> ::core::ffi::c_int; // winegdi-rust/src/types_i386.rs
     pub fn swprintf(s: *mut u16, n: usize, fmt: *const u16, ...) -> c_int; // msiexec-rust/src/prelude.rs
-    pub fn wcsicmp(a: *const u16, b: *const u16) -> c_int; // browser-rust/src/prelude.rs
-    pub fn wcsnicmp(a: *const wchar_t, b: *const wchar_t, n: usize) -> c_int; // crt-shared-rust/src/prelude.rs
     pub fn wcsrchr(s: *const u16, c: u16) -> *mut u16; // advapi32-rust/src/prelude.rs
     pub fn wcstol(s: *const u16, endptr: *mut *mut u16, base: i32) -> i32; // cleanmgr-rust/src/prelude.rs
     pub static IID_IUnknown: GUID; // cicero-rust/src/types_amd64.rs
@@ -143,7 +141,6 @@ extern "system" {
     pub fn SysFreeString(arg1: BSTR); // msctf-rust/src/types_i386.rs
     pub fn SysStringLen(pbstr: BSTR) -> UINT; // msctf-rust/src/types_i386.rs
     pub fn UnmapViewOfFile(arg1: LPCVOID) -> BOOL; // aclui-rust/src/types_i386.rs
-    pub fn UrlCreateFromPathW( arg1: LPCWSTR, arg2: LPWSTR, pcchUrl: LPDWORD, arg3: DWORD, ) -> HRESULT; // cicero-rust/src/types_i386.rs
     pub fn VariantChangeType( arg1: *mut VARIANTARG, arg2: *const VARIANTARG, arg3: USHORT, arg4: ::core::ffi::c_ushort, ) -> HRESULT; // msctf-rust/src/types_i386.rs
     pub fn VariantClear(arg1: *mut VARIANT) -> HRESULT; // msctf-rust/src/types_i386.rs
     pub fn WaitForSingleObject(hHandle: HANDLE, dwMilliseconds: DWORD) -> DWORD; // aclui-rust/src/types_i386.rs
