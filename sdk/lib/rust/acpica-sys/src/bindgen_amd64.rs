@@ -176,7 +176,7 @@ impl<T> ::core::fmt::Debug for __IncompleteArrayField<T> {
 pub const ACPI_BINARY_SEMAPHORE: u32 = 0;
 pub const ACPI_OSL_MUTEX: u32 = 1;
 pub const ACPI_SRC_OS_LF_ONLY: u32 = 0;
-pub const ACPI_MACHINE_WIDTH: u32 = 32;
+pub const ACPI_MACHINE_WIDTH: u32 = 64;
 pub const ACPI_MUTEX_TYPE: u32 = 1;
 pub const ACPI_ASCII_MAX: u32 = 127;
 pub const ACPI_MAX_GPE_BLOCKS: u32 = 2;
@@ -1261,6 +1261,7 @@ pub type UINT32 = ::core::ffi::c_uint;
 pub type ULONG_PTR = ::core::ffi::c_ulonglong;
 pub type LONG64 = ::core::ffi::c_longlong;
 pub type UINT64 = ::core::ffi::c_ulonglong;
+pub type INT64 = ::core::ffi::c_longlong;
 pub type UINT8 = ::core::ffi::c_uchar;
 pub type UINT16 = ::core::ffi::c_ushort;
 pub type KAFFINITY = ULONG_PTR;
@@ -4845,8 +4846,8 @@ pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_39 {
     pub Argument3: PVOID,
     pub Argument4: PVOID,
 }
-pub type ACPI_NATIVE_INT = INT32;
-pub type ACPI_SIZE = UINT32;
+pub type ACPI_NATIVE_INT = INT64;
+pub type ACPI_SIZE = UINT64;
 pub type ACPI_IO_ADDRESS = UINT64;
 pub type ACPI_PHYSICAL_ADDRESS = UINT64;
 pub type ACPI_STATUS = UINT32;

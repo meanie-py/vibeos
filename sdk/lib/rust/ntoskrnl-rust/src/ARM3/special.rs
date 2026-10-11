@@ -267,11 +267,11 @@ pub unsafe extern "system" fn MmAllocateSpecialPool(
     MiSpecialPoolFirstPte = MmSystemPteBase.add((*pointer_pte).list_next_entry() as usize);
 
     if pool_type == PagedPool {
-        MI_SET_USAGE(MI_USAGE_PAGED_POOL);
+        ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_PAGED_POOL);
     } else {
-        MI_SET_USAGE(MI_USAGE_NONPAGED_POOL);
+        ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_NONPAGED_POOL);
     }
-    MI_SET_PROCESS2("Kernel-Special");
+    ntkrnl_sys::MI_SET_PROCESS2!("Kernel-Special");
     page_frame_number = MiRemoveAnyPage(MI_GET_NEXT_COLOR());
 
     temp_pte.set_page_frame_number(page_frame_number);

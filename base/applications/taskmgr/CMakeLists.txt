@@ -1,28 +1,39 @@
 
 list(APPEND SOURCE
-    about.c
-    affinity.c
-    applpage.c
-    column.c
-    debug.c
-    endproc.c
-    graph.c
-    graphctl.c
-    optnmenu.c
-    perfdata.c
-    perfpage.c
-    priority.c
-    proclist.c
-    procpage.c
-    run.c
-    shutdown.c
-    taskmgr.c
-    trayicon.c
+    # about.c  # replaced by Rust (sdk/lib/rust/taskmgr-rust/src/taskmgr/about.rs)
+    # affinity.c  # replaced by Rust (sdk/lib/rust/taskmgr-rust/src/taskmgr/affinity.rs)
+    # applpage.c  # replaced by Rust (sdk/lib/rust/taskmgr-rust/src/taskmgr/applpage.rs)
+    # column.c  # replaced by Rust (sdk/lib/rust/taskmgr-rust/src/taskmgr/column.rs)
+    # debug.c  # replaced by Rust (sdk/lib/rust/taskmgr-rust/src/taskmgr/debug.rs)
+    # endproc.c  # replaced by Rust (sdk/lib/rust/taskmgr-rust/src/taskmgr/endproc.rs)
+    # graph.c  # replaced by Rust (sdk/lib/rust/taskmgr-rust/src/taskmgr/graph.rs)
+    # graphctl.c  # replaced by Rust (sdk/lib/rust/taskmgr-rust/src/taskmgr/graphctl.rs)
+    # optnmenu.c  # replaced by Rust (sdk/lib/rust/taskmgr-rust/src/taskmgr/optnmenu.rs)
+    # perfdata.c  # replaced by Rust (sdk/lib/rust/taskmgr-rust/src/taskmgr/perfdata.rs)
+    # perfpage.c  # replaced by Rust (sdk/lib/rust/taskmgr-rust/src/taskmgr/perfpage.rs)
+    # priority.c  # replaced by Rust (sdk/lib/rust/taskmgr-rust/src/taskmgr/priority.rs)
+    # proclist.c  # replaced by Rust (sdk/lib/rust/taskmgr-rust/src/taskmgr/proclist.rs)
+    # procpage.c  # replaced by Rust (sdk/lib/rust/taskmgr-rust/src/taskmgr/procpage.rs)
+    # run.c  # replaced by Rust (sdk/lib/rust/taskmgr-rust/src/taskmgr/run.rs)
+    # shutdown.c  # replaced by Rust (sdk/lib/rust/taskmgr-rust/src/taskmgr/shutdown.rs)
+    # taskmgr.c  # replaced by Rust (sdk/lib/rust/taskmgr-rust/src/taskmgr/taskmgr.rs)
+    # trayicon.c  # replaced by Rust (sdk/lib/rust/taskmgr-rust/src/taskmgr/trayicon.rs)
+    rust_cohab_stub.c
     precomp.h)
 
 file(GLOB taskmgr_rc_deps res/*.*)
 add_rc_deps(taskmgr.rc ${taskmgr_rc_deps})
+# taskmgr-rust passes floats by value: i386 user code needs SSE (see oleaut32).
+set(TASKMGR_RUST_ENV)
+if(ARCH STREQUAL "i386")
+    set(TASKMGR_RUST_ENV ENV "RUSTFLAGS=-C target-feature=+sse,+sse2")
+endif()
+# Every translation unit is Rust now (taskmgr-rust, `rustconv port`); the C stays on
+# disk. The target keeps a stub TU and links the Rust archive.
+rust_staticlib_variant(taskmgr_rust taskmgr-rust "" TRUE ${TASKMGR_RUST_ENV})
 add_executable(taskmgr ${SOURCE} taskmgr.rc)
+add_dependencies(taskmgr rust_taskmgr_rust)
+target_link_libraries(taskmgr ${taskmgr_rust_LIB})
 set_module_type(taskmgr win32gui UNICODE)
 add_importlibs(taskmgr advapi32 user32 gdi32 shell32 shlwapi comctl32 msvcrt kernel32 ntdll)
 add_pch(taskmgr precomp.h SOURCE)

@@ -80,15 +80,25 @@ def _strip_comments(s: str) -> str:
     return re.sub(r"//.*$", "", s)
 
 
-def module_macros(files: list[Path], root: Path) -> tuple[dict[str, CMacro], set[str]]:
-    """Function-like macros these files define: (unambiguous defs, names defined twice apart)."""
+def module_macros(
+    files: list[Path], root: Path, defined: dict[str, int] | None = None
+) -> tuple[dict[str, CMacro], set[str]]:
+    """Function-like macros these files define: (unambiguous defs, names defined twice apart).
+
+    `defined` names macros every TU of the module has on its command line; a `#define` in an
+    arm they make dead (or that __REACTOS__ does) is not a definition of this build."""
+    from .dead_regions import never_compiled_lines
+
     found: dict[str, list[CMacro]] = {}
     for f in files:
         try:
             text = f.read_text(errors="replace")
         except OSError:
             continue
+        dead = never_compiled_lines(text, defined)
         for no, line in _logical_lines(text):
+            if no in dead:
+                continue
             rel = f.relative_to(root) if f.is_relative_to(root) else f
             m = _DEFINE.match(line)
             if m:
@@ -125,7 +135,14 @@ def header_functions(headers: list[Path], root: Path) -> dict[str, CMacro]:
         except Exception:  # a header the scanner cannot read has nothing for us
             continue
         rel = h.relative_to(root) if h.is_relative_to(root) else h
+        text = h.read_text(errors="replace")
         for fn in scan.functions:
+            # ndis's efilter.h: three semicolon-less `DECLARE_UNKNOWN_*(X)` invocations and
+            # then `typedef struct ETHI_FILTER {` read to the scanner as one "function"
+            # ETHI_FILTER with no return type, and the macros stage then tried to BUY a port
+            # of a struct. C has no function without a return type; a struct is not one.
+            if not fn.return_type or re.search(rf"\bstruct\s+{re.escape(fn.name)}\s*\{{", text):
+                continue
             out[fn.name] = CMacro(fn.name, None, fn.body_text, f"{rel}:{fn.line_start}", "fn")
     return out
 
@@ -308,6 +325,14 @@ def c_source_location(text: str) -> str:
         text,
     )
     text = re.sub(r"(?<![\w!])line!\(\)(?!\s*as\b)", "(line!() as core::ffi::c_int)", text)
+    # C's `__FUNCTION__`/`__func__` (cmd's ERR/WARN/TRACE pass it to CmdTrace) has no stable
+    # Rust spelling; the caller's module path is the nearest, as the same NUL-terminated
+    # `char *`. A divergence in the logged text only, never in what the macro does.
+    text = re.sub(
+        r"(?<![\w!])__(?:FUNCTION|func)__(?!\w)",
+        lambda _m: 'concat!(module_path!(), "\\0").as_ptr() as *const core::ffi::c_char',
+        text,
+    )
     # C's `NULL` converts to any pointer; the prelude's `NULL` is a typed `*mut c_void`
     # (console's UpdateFontPreview(.., NULL, ..) wanted an HFONT). `null_mut()` infers.
     return re.sub(r"(?<![\w:])NULL(?![\w(])", "core::ptr::null_mut()", text)

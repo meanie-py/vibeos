@@ -29,7 +29,7 @@ pub unsafe extern "system" fn AfdGetConnectOptions(
     let FCB = (*FileObject).FsContext as PAFD_FCB;
     let mut BufferSize = (*IrpSp).Parameters.DeviceIoControl.OutputBufferLength;
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER!(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -40,7 +40,7 @@ pub unsafe extern "system" fn AfdGetConnectOptions(
         return UnlockAndMaybeComplete(FCB, STATUS_INVALID_PARAMETER, Irp, 0);
     }
 
-    ASSERT((*FCB).ConnectOptions);
+    ASSERT!((*FCB).ConnectOptions);
 
     if (*FCB).FilledConnectOptions < BufferSize {
         BufferSize = (*FCB).FilledConnectOptions;
@@ -66,7 +66,7 @@ pub unsafe extern "system" fn AfdSetConnectOptions(
     let ConnectOptions = LockRequest(Irp, IrpSp, 0u8, core::ptr::null_mut());
     let ConnectOptionsSize = (*IrpSp).Parameters.DeviceIoControl.InputBufferLength;
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER!(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -192,7 +192,7 @@ pub unsafe extern "system" fn AfdSetConnectData(
     let ConnectData = LockRequest(Irp, IrpSp, 0u8, core::ptr::null_mut());
     let ConnectDataSize = (*IrpSp).Parameters.DeviceIoControl.InputBufferLength;
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER!(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -241,7 +241,7 @@ pub unsafe extern "system" fn AfdSetConnectDataSize(
     let ConnectDataSize = LockRequest(Irp, IrpSp, 0u8, core::ptr::null_mut()) as *mut UINT;
     let BufferSize = (*IrpSp).Parameters.DeviceIoControl.InputBufferLength;
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER!(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -301,8 +301,8 @@ pub unsafe extern "C" fn WarmSocketForConnection(FCB: PAFD_FCB) -> NTSTATUS {
     Status
 }
 #[no_mangle]
-pub unsafe extern "C" fn MakeSocketIntoConnection(FCB: PAFD_FCB) -> NTSTATUS {
-    let mut Status: NTSTATUS;
+pub unsafe extern "C" fn MakeSocketIntoConnection(FCB: PAFD_FCB, Receive: BOOL) -> NTSTATUS {
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
 
     if (*FCB).Recv.Size == 0 {
         Status = TdiQueryMaxDatagramLength(
@@ -351,18 +351,20 @@ pub unsafe extern "C" fn MakeSocketIntoConnection(FCB: PAFD_FCB) -> NTSTATUS {
     (*FCB).SharedData.State = SOCKET_STATE_CONNECTED;
     (*FCB).SharedData.ConnectTime = 0;
 
-    Status = TdiReceive(
-        core::ptr::addr_of_mut!((*FCB).ReceiveIrp.InFlightRequest),
-        (*FCB).Connection.Object,
-        TDI_RECEIVE_NORMAL as u16,
-        (*FCB).Recv.Window,
-        (*FCB).Recv.Size,
-        Some(ReceiveComplete),
-        FCB as *mut core::ffi::c_void,
-    );
+    if Receive != 0 {
+        Status = TdiReceive(
+            core::ptr::addr_of_mut!((*FCB).ReceiveIrp.InFlightRequest),
+            (*FCB).Connection.Object,
+            TDI_RECEIVE_NORMAL as u16,
+            (*FCB).Recv.Window,
+            (*FCB).Recv.Size,
+            Some(ReceiveComplete),
+            FCB as *mut core::ffi::c_void,
+        );
 
-    if Status == STATUS_PENDING {
-        Status = STATUS_SUCCESS;
+        if Status == STATUS_PENDING {
+            Status = STATUS_SUCCESS;
+        }
     }
 
     (*FCB).PollState |= AFD_EVENT_CONNECT | AFD_EVENT_SEND;
@@ -510,7 +512,7 @@ unsafe fn stream_socket_connect_complete_impl(
     }
 
     if NT_SUCCESS(Status) {
-        Status = MakeSocketIntoConnection(FCB);
+        Status = MakeSocketIntoConnection(FCB, 1);
 
         if !NT_SUCCESS(Status) {
             'end: loop {
@@ -622,7 +624,7 @@ pub unsafe extern "system" fn AfdStreamSocketConnect(
 
     AFD_DbgPrint!(MID_TRACE, b"Called on %p\n\0".as_ptr() as PCHAR, FCB);
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER!(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -653,7 +655,7 @@ pub unsafe extern "system" fn AfdStreamSocketConnect(
 
     match (*FCB).SharedData.State {
         SOCKET_STATE_CONNECTED => {
-            Status = STATUS_SUCCESS;
+            Status = STATUS_INVALID_PARAMETER;
         }
 
         SOCKET_STATE_CONNECTING => {
@@ -838,7 +840,7 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
 
     AFD_DbgPrint!(MID_TRACE, b"Called on %p\n\0".as_ptr() as PCHAR, FCB);
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER!(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);

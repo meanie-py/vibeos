@@ -44,12 +44,9 @@
 #undef BlockAlignTruncate
 #undef NodeType
 #undef PAGED_CODE
-#undef ASSERT
-#undef NT_ASSERT
 #undef UNREFERENCED_PARAMETER
 #undef ARGUMENT_PRESENT
 #undef _Analysis_assume_
-#undef KdPrintEx
 #undef RtlRaiseStatus
 #undef RtlCheckBit
 #undef RtlConvertLongToLuid
@@ -188,7 +185,11 @@ extern const unsigned int FatIrpContextFlagsOffset;
 
 VOID FatBugCheck(ULONG_PTR A, ULONG_PTR B, ULONG_PTR C)
 {
-    /* FAT_FILE_SYSTEM = 0x23, FAT_BUG_CHECK_FATDATA = 0x00010000 */
+    /* FAT_FILE_SYSTEM = 0x23, FAT_BUG_CHECK_FATDATA = 0x00010000. Every Rust caller comes
+     * through here, so P1 names THIS line, not the caller's file and line (the C macro
+     * encodes the caller's): print the return address, the one thing that does. */
+    DbgPrint("FatBugCheck called from %p (%p, %p, %p)\n", __builtin_return_address(0),
+             (PVOID)A, (PVOID)B, (PVOID)C);
     KeBugCheckEx(0x23, 0x00010000 | (ULONG)(__LINE__), A, B, C);
     for(;;);
 }
@@ -355,13 +356,10 @@ ULONG NodeType(PVOID Node)              { return (ULONG)*((PUSHORT)Node); }
 VOID PAGED_CODE(VOID)                  { }
 VOID paged_code(VOID)                  { }
 VOID PagedCode(VOID)                   { }
-VOID ASSERT(BOOLEAN e)                 { (void)e; }
-VOID NT_ASSERT(BOOLEAN e)              { (void)e; }
 VOID UNREFERENCED_PARAMETER(PVOID p)   { (void)p; }
 VOID _Analysis_assume_(BOOLEAN b)      { (void)b; }
 BOOLEAN ARGUMENT_PRESENT(PVOID p)      { return p != NULL; }
 
-VOID KdPrintEx(ULONG a, ULONG b, PCHAR c, ...) { (void)a;(void)b;(void)c; }
 
 VOID RtlRaiseStatus(NTSTATUS s)    { ExRaiseStatus(s); }
 
@@ -499,9 +497,12 @@ BOOLEAN IsFileWriteThrough(PFILE_OBJECT f, PDEVICE_OBJECT d)
 /* IsBpbFat32: now implemented in Rust (verfysup.rs). The old stub here read
  * a GUESSED offset (+28 = HiddenSectors) instead of RootEntries (+6). */
 
-VOID CanFsdWait(PIRP_CONTEXT IrpContext)
+/* fatprocs.h: #define CanFsdWait(IRP) IoIsOperationSynchronous(Irp). This was a VOID no-op
+ * taking an IrpContext, so all 14 Rust callers built their IrpContext's Wait flag from
+ * whatever was left in the return register. */
+BOOLEAN CanFsdWait(PIRP Irp)
 {
-    (void)IrpContext; /* no-op; real semantics in strucsup.rs */
+    return IoIsOperationSynchronous(Irp);
 }
 
 /* ======================================================================

@@ -182,7 +182,7 @@ pub unsafe extern "system" fn ClassIoCompleteAssociated(
 
     TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassIoCompleteAssociated: Partial IRPs left %d\n\0".as_ptr() as *const i8, irp_count as i32);
 
-    NT_ASSERT(((irp_count >= 0) as i32) as _);
+    NT_ASSERT!(irp_count >= 0);
 
     if irp_count == 0 {
         TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassIoCompleteAssociated: All partial IRPs complete %p\n\0".as_ptr() as *const i8, original_irp as usize);
@@ -223,7 +223,6 @@ extern "C" {
 }
 extern "system" {
     fn ClassReleaseQueue(fdo: *mut DEVICE_OBJECT);
-    fn NT_ASSERT(condition: u8);
     fn ClassReleaseRemoveLock(fdo: *mut DEVICE_OBJECT, irp: *mut IRP);
     fn ClassCompleteRequest(fdo: *mut DEVICE_OBJECT, irp: *mut IRP, priority_boost: u8);
 }

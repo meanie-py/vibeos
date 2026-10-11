@@ -11,8 +11,6 @@ extern "C" {
     fn MachVideoClearScreen(Attr: UCHAR);
     fn _vsnprintf(buffer: *mut CHAR, count: usize, format: *const CHAR, args: va_list) -> i32;
     fn _snprintf(buffer: *mut CHAR, count: usize, format: *const CHAR, ...) -> i32;
-    fn va_start(ap: *mut va_list, ...);
-    fn va_end(ap: va_list);
 }
 
 // i386bug.c's PrintText() is `static VOID PrintText(const CHAR* Format, ...)`.

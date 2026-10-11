@@ -1,8 +1,8 @@
-# arbiter-rust — Rust translation of sdk/lib/drivers/arbiter/arbiter.c (the PnP
-# resource arbiter library). crate-type=staticlib → libarbiter_rust.a, linked
+# arbiter-rust — Rust translation of sdk/lib/drivers/arbiter (the PnP resource
+# arbiter library, upstream's #9484 engine). crate-type=staticlib → libarbiter_rust.a, linked
 # into ntoskrnl AND pcix.sys in place of the C `arbiter` lib (usbdex-style cohab).
 # On the ntkrnl-sys substrate (ARBITER_INSTANCE etc are in the ddk bindgen). All
-# 3 arches. DeepSeek+c2rust translation (Batch 4 kernel-lib residue). C kept on disk.
+# 3 arches. Haiku+c2rust translation, sealed. C kept on disk.
 
 [package]
 name = "arbiter-rust"
@@ -15,3 +15,4 @@ crate-type = ["staticlib"]
 [dependencies]
 panic-common = { path = "../panic-common", features = ["kernel"] }
 ntkrnl-sys = { path = "../ntkrnl-sys" }
+win32macros-rust = { path = "../win32macros-rust" }

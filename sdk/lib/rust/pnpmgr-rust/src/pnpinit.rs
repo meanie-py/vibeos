@@ -86,6 +86,9 @@ pub static mut PnPBootDriversLoaded: BOOLEAN = 0;
 #[used]
 pub static mut PnPBootDriversInitialized: BOOLEAN = 0;
 
+/// Upstream ffa4164e70d's `#if 0` around IopInitializeArbiters (see IopInitializePlugPlayServices).
+const ROOT_ARBITERS_ENABLED: bool = false;
+
 #[no_mangle]
 #[used]
 pub static mut IopRootBusNumberArbiter: _ARBITER_INSTANCE = unsafe { core::mem::zeroed() };
@@ -391,11 +394,17 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
 
     PnpDefaultInterfaceType = IopDetermineDefaultInterfaceType();
 
-    pnp_trace(b"[PNP] IopInitializeArbiters\r\n\0");
-    Status = IopInitializeArbiters();
-    if Status < 0 {
-        pnp_trace_s(b"[PNP] IopInitializeArbiters FAIL %x\r\n\0", Status);
-        return Status;
+    // Upstream ffa4164e70d: `#if 0 /* FIXME: Dont even try yet! */` around this call. The root
+    // arbiters and the library under them are real now, and nothing in the PnP manager hands
+    // them a request yet, so upstream does not initialize them. Kept compiled (not commented
+    // out) so the arbiter code still builds and links on every arch.
+    if ROOT_ARBITERS_ENABLED {
+        pnp_trace(b"[PNP] IopInitializeArbiters\r\n\0");
+        Status = IopInitializeArbiters();
+        if Status < 0 {
+            pnp_trace_s(b"[PNP] IopInitializeArbiters FAIL %x\r\n\0", Status);
+            return Status;
+        }
     }
 
     pnp_trace(b"[PNP] PiInitCacheGroupInformation\r\n\0");

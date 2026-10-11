@@ -9,11 +9,37 @@
 #![allow(dead_code, unused_imports, unused_variables, unused_parens, unused_mut)]
 #![allow(clippy::all)]
 
+// UNREFERENCED_PARAMETER is a macro in the DDK headers; an out-of-line no-op fn is an
+// optimization barrier that can uncloak an ABI mismatch.
+#[allow(unused_macros)]
+macro_rules! UNREFERENCED_PARAMETER {
+    ($($p:expr),* $(,)?) => {{ $( let _ = $p; )* }};
+}
+
 // PAGED_CODE() is the DDK's "pageable code" IRQL assertion (xdk/kefuncs.h): NOP_FUNCTION in
 // a free build, and a no-op here. It is a macro, never a fn -- an out-of-line no-op call is an
 // optimization barrier, and an `extern` one resolved by whichever crate happened to export it.
 macro_rules! PAGED_CODE {
     () => {};
+}
+
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
 }
 
 // pcix.sys — Rust translation of the full MS-architecture PCI bus driver

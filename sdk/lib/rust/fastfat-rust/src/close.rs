@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -41,7 +42,7 @@ extern "C" {
 extern "system" {
     fn KeAreApcsDisabled() -> BOOLEAN;
     } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
-    fn FatBugCheck(type_of_open: TYPE_OF_OPEN, arg1: u32, arg2: u32) -> !;
+    fn FatBugCheck(type_of_open: usize, arg1: usize, arg2: usize) -> !;
     fn FatAcquireExclusiveGlobal(IrpContext: *mut IRP_CONTEXT);
     fn FatAcquireExclusiveVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> BOOLEAN;
     fn FatReleaseGlobal(IrpContext: *mut IRP_CONTEXT);
@@ -62,7 +63,6 @@ extern "system" {
     fn FatProcessException(context: *mut core::ffi::c_void, Irp: *mut IRP, ExceptionCode: i32) -> i32;
     fn FsRtlCheckOplockEx( Oplock: *mut core::ffi::c_void, Irp: *mut IRP, Flags: u32, CompletionRoutine: *mut core::ffi::c_void, PostIrpRoutine: *mut core::ffi::c_void, Context: *mut core::ffi::c_void, );
     fn IsFileObjectReadOnly(FileObject: *mut FILE_OBJECT) -> u8;
-    fn NT_ASSERT(condition: u8);
     fn SetFlag(Flags: *mut u32, Flag: u32);
     fn FlagOn(Flags: u32, Flag: u32) -> u32;
 }
@@ -166,7 +166,7 @@ pub unsafe extern "system" fn FatFsdClose(
             || TypeOfOpen == (EaFile) as u32
         {
             CloseContext = FatAllocateCloseContext(Vcb);
-            NT_ASSERT(((CloseContext.is_null() as i32 == 0) as i32) as u8);
+            NT_ASSERT!(((CloseContext.is_null() as i32 == 0) as i32) as u8);
             (*CloseContext).Free = 1;
         }
 
@@ -707,7 +707,7 @@ pub unsafe extern "system" fn FatCommonClose(
                 FatDeleteCcb(p_ic, core::ptr::addr_of_mut!(Ccb));
             }
             _ => {
-                FatBugCheck(TypeOfOpen, 0, 0);
+                FatBugCheck(TypeOfOpen as usize, 0, 0);
             }
         }
 

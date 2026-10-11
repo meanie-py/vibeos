@@ -290,6 +290,7 @@ unsafe extern "C" fn AtaPdoQueryId(
                 DeviceType,
                 LocalBuffer.as_mut_ptr(),
             );
+            ASSERT!(NT_SUCCESS!(Status));
 
             INFO!("DeviceID: '%S'\n", Buffer);
         }
@@ -345,6 +346,7 @@ unsafe extern "C" fn AtaPdoQueryId(
                 DeviceType,
                 LocalBuffer.as_mut_ptr(),
             );
+            ASSERT!(NT_SUCCESS!(Status));
 
             INFO!("  '%S'\n", Buffer);
 
@@ -361,6 +363,7 @@ unsafe extern "C" fn AtaPdoQueryId(
                 RUSTCONV_WSTR_245E26C7A284.as_ptr(),
                 LocalBuffer.as_mut_ptr(),
             );
+            ASSERT!(NT_SUCCESS!(Status));
 
             INFO!("  '%S'\n", IdStart);
 
@@ -378,6 +381,7 @@ unsafe extern "C" fn AtaPdoQueryId(
                 DeviceType,
                 LocalBuffer.as_mut_ptr(),
             );
+            ASSERT!(NT_SUCCESS!(Status));
 
             INFO!("  '%S'\n", IdStart);
 
@@ -394,6 +398,7 @@ unsafe extern "C" fn AtaPdoQueryId(
                 RUSTCONV_WSTR_34675BEEA782.as_ptr(),
                 LocalBuffer.as_mut_ptr(),
             );
+            ASSERT!(NT_SUCCESS!(Status));
 
             INFO!("  '%S'\n", IdStart);
 
@@ -410,6 +415,7 @@ unsafe extern "C" fn AtaPdoQueryId(
                 RUSTCONV_WSTR_8D44D4323B7D.as_ptr(),
                 GenericType,
             );
+            ASSERT!(NT_SUCCESS!(Status));
 
             End = End.add(1);
             *End = UNICODE_NULL;
@@ -441,6 +447,7 @@ unsafe extern "C" fn AtaPdoQueryId(
                 RUSTCONV_WSTR_8D44D4323B7D.as_ptr(),
                 GenericType,
             );
+            ASSERT!(NT_SUCCESS!(Status));
 
             End = End.add(1);
             *End = UNICODE_NULL;
@@ -474,6 +481,7 @@ unsafe extern "C" fn AtaPdoQueryId(
                 AtaScsiAddress.TargetId as core::ffi::c_uint,
                 AtaScsiAddress.Lun as core::ffi::c_uint,
             );
+            ASSERT!(NT_SUCCESS!(Status));
 
             INFO!("InstanceID: '%S'\n", Buffer);
         }
@@ -519,6 +527,7 @@ unsafe extern "C" fn AtaPdoQueryDeviceText(
                 RUSTCONV_WSTR_8D44D4323B7D.as_ptr(),
                 ((*DevExt).FriendlyName).as_ptr() as *const i8,
             );
+            ASSERT!(NT_SUCCESS!(Status));
 
             INFO!(b"TextDescription: '%S'\n\0".as_ptr() as PCSTR, Buffer);
         }
@@ -548,6 +557,7 @@ unsafe extern "C" fn AtaPdoQueryDeviceText(
                 AtaScsiAddress.TargetId as i32,
                 AtaScsiAddress.Lun as i32,
             );
+            ASSERT!(NT_SUCCESS!(Status));
 
             INFO!(b"TextLocationInformation: '%S'\n\0".as_ptr() as PCSTR, Buffer);
         }
@@ -701,6 +711,7 @@ pub unsafe extern "C" fn AtaPdoCreateDevice(
         AtaScsiAddress.Lun as i32,
         AtapPdoNumber,
     );
+    ASSERT!(NT_SUCCESS!(Status));
     AtapPdoNumber = AtapPdoNumber.wrapping_add(1);
 
     RtlInitUnicodeString(&mut DeviceName, DeviceNameBuffer.as_mut_ptr());
@@ -715,6 +726,7 @@ pub unsafe extern "C" fn AtaPdoCreateDevice(
         &mut Pdo,
     );
     if !NT_SUCCESS!(Status) {
+        ERR!(b"Failed to create PDO '%wZ' with status 0x%lx\n\0".as_ptr() as *const i8, &raw mut DeviceName, Status);
         return core::ptr::null_mut();
     }
 

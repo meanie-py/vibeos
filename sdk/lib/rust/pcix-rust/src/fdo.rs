@@ -555,7 +555,7 @@ pub unsafe extern "system" fn PciFdoIrpQueryCapabilities(
         );
     }
 
-    UNREFERENCED_PARAMETER(Irp);
+    UNREFERENCED_PARAMETER!(Irp);
 
     let Capabilities: PDEVICE_CAPABILITIES = (*IoStackLocation).Parameters.DeviceCapabilities.Capabilities;
 

@@ -268,9 +268,7 @@ def test_an_object_like_ALIAS_of_a_function_like_macro_is_function_like():
 
 
 def test_an_alias_CHAIN_resolves_and_a_cycle_terminates():
-    chained = _function_like(
-        "#define REAL(a) a\n#define MID REAL\n#define TOP MID\n"
-    )
+    chained = _function_like("#define REAL(a) a\n#define MID REAL\n#define TOP MID\n")
     assert {"REAL", "MID", "TOP"} <= chained
     # A cyclic pair defines nothing callable; it must not hang the derivation.
     assert _function_like("#define A B\n#define B A\n") == set()

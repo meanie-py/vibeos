@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ddk::{_IO_STATUS_BLOCK, IoAcquireVpbSpinLock, IoReleaseVpbSpinLock, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, VPB};
@@ -46,7 +47,6 @@ extern "C" {
     fn CdReleaseVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
 }
 extern "C" {
-    fn _Analysis_assume_lock_not_held_(lock: *mut core::ffi::c_void);
 }
 extern "C" {
     fn CdMarkRealDevForVerify(Device: *mut DEVICE_OBJECT);
@@ -55,7 +55,6 @@ extern "C" {
     fn ASSERT_EXCLUSIVE_VCB(Vcb: *mut VCB);
 }
 extern "C" {
-    fn NT_ASSERT(condition: i32);
 }
 extern "C" {
     fn CdFreePool(Ptr: *mut *mut core::ffi::c_void);
@@ -68,8 +67,6 @@ extern "C" {
 }
 extern "C" {
     fn FlagOn(Flags: u32, Flag: u32) -> u32;
-}
-extern "C" {
 }
 extern "C" {
     fn CdRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: i32);
@@ -532,7 +529,7 @@ pub unsafe extern "C" fn CdVerifyFcbOperation(
 
     CdLockVcb(IrpContext, Vcb);
 
-    NT_ASSERT( ((*Vcb).VcbCondition != VcbDismountInProgress) as i32 );
+    NT_ASSERT!(((*Vcb).VcbCondition != VcbDismountInProgress) as i32);
 
     (*Vcb).VcbCondition = VcbDismountInProgress;
 
@@ -574,7 +571,7 @@ pub unsafe extern "C" fn CdVerifyFcbOperation(
 
     if (*(*OldVpb).RealDevice).Vpb == OldVpb {
         if FinalReference == 0 {
-            NT_ASSERT( (!(*Vcb).SwapVpb.is_null()) as i32 );
+            NT_ASSERT!((!(*Vcb).SwapVpb.is_null()) as i32);
 
             (*(*Vcb).SwapVpb).Type = IO_TYPE_VPB as i16;
             (*(*Vcb).SwapVpb).Size = core::mem::size_of::<VPB>() as i16;

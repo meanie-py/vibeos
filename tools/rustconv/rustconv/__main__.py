@@ -5,6 +5,8 @@ import collections
 import difflib
 import json
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
 import threading
@@ -15,10 +17,13 @@ from dataclasses import replace
 from pathlib import Path
 
 from . import (
+    atl_contract,
     callout_annotate,
     candidate_oracle,
+    cpp_app,
     cpp_com,
     cpp_core,
+    cpp_model,
     cpp_tu,
     crate_repair,
     difftest_contract,
@@ -52,6 +57,7 @@ from .batch_runner import TranslationResult, submit_batch, submit_single
 from .body_audit import main as body_audit_main
 from .c2rust_anchor import C2RustError, CompiledOut, build_anchor_map, build_preamble
 from .c_body_checks import body_findings, control_flow_findings, parse_findings
+from .c_defs import c_functions
 from .call_seal import (
     CallSealError,
     call_contract,
@@ -82,6 +88,7 @@ from .config import (
 )
 from .cpp_bridge import validate_reference, write_bridge
 from .cpp_com import (
+    KEPT_DIAGNOSTICS_STRIPPED,
     CppComError,
     analyze_class,
     apply_interface_method_signatures,
@@ -120,6 +127,7 @@ from .fact_seal import (
     FactSealError,
     canonicalize_hresult_predicates,
     fact_contract,
+    island_value_names,
     prepare_sealed_source,
     unseal_facts,
 )
@@ -176,6 +184,7 @@ from .response_cache import (
     claim_bank,
     require_no_namespace_rebuy,
 )
+from .response_cache import _hash as _response_body_hash
 from .scanner import print_scan_result, scan_file
 from .seh_classifier import classify_directory, classify_file, print_classification, to_json
 from .shim_generator import check_shims, generate_shims
@@ -223,6 +232,29 @@ def _strip_vtbl_statics(rust: str) -> str:
             continue
         out.append(ln)
     return "\n".join(out)
+
+
+# A line that can open (or continue) a Rust item at file scope.
+_RUST_ITEM_LINE_RE = re.compile(
+    r"^\s*(//|/\*|\*|#!?\[|(pub(\([^)]*\))?\s+)?(unsafe\s+)?(extern|use|const|static|type|"
+    r"struct|union|enum|fn|impl|mod|macro_rules!|trait)\b|[}\])]|$)"
+)
+
+
+def _comment_out_prose_preamble(rust: str) -> str:
+    """A preamble reply that holds no Rust at all becomes comments, not code.
+
+    Asked to translate a file scope with nothing to emit, the model sometimes EXPLAINS
+    that in prose instead of replying empty. imm32's candidate.c (WINE_DEFAULT_DEBUG_CHANNEL
+    plus a function-like ROUNDUP4) came back as one English paragraph, which was stitched in
+    front of the first function; the stitch then could not see that function and rejected the
+    whole TU as missing it. Only an ALL-prose reply is rewritten, and its text is kept, so a
+    reply that mixes prose into real items still fails loudly downstream.
+    """
+    lines = rust.splitlines()
+    if not rust.strip() or any(_RUST_ITEM_LINE_RE.match(ln) and ln.strip() for ln in lines):
+        return rust
+    return "\n".join(f"// {ln}".rstrip() for ln in lines)
 
 
 def _preamble_is_function_macros_only(src: str) -> bool:
@@ -754,7 +786,11 @@ def _extend_cpp_class_scan(scan, source: Path, class_name: str, local_bases: tup
 
 
 def _cache_suffix(
-    args, fact_seal_enabled: bool, call_seal_enabled: bool, wide_seal_enabled: bool = False
+    args,
+    fact_seal_enabled: bool,
+    call_seal_enabled: bool,
+    wide_seal_enabled: bool = False,
+    diagnostics_kept: bool = False,
 ) -> str:
     """Namespace the resume cache by the seals that were active when it was filled.
 
@@ -771,11 +807,19 @@ def _cache_suffix(
         suffix += "__callseal_v1"
     if wide_seal_enabled:
         suffix += "__wideseal_v1"
+    if diagnostics_kept:
+        suffix += "__diag_v1"
     return suffix
 
 
 def _open_response_cache(
-    args, subsystem, c_file, fact_seal_enabled, call_seal_enabled, wide_seal_enabled=False
+    args,
+    subsystem,
+    c_file,
+    fact_seal_enabled,
+    call_seal_enabled,
+    wide_seal_enabled=False,
+    diagnostics_kept=False,
 ):
     """Durable per-function resume cache → re-run to resume a killed/capped run for $0.
 
@@ -783,11 +827,19 @@ def _open_response_cache(
     (per-run, kill-safe streaming); this one is the stable cross-run skip layer.
     `--no-resume` forces fresh.
     """
-    suffix = _cache_suffix(args, fact_seal_enabled, call_seal_enabled, wide_seal_enabled)
+    suffix = _cache_suffix(
+        args, fact_seal_enabled, call_seal_enabled, wide_seal_enabled, diagnostics_kept
+    )
     base = bank_base(subsystem, c_file, suffix, REACTOS_ROOT)
     if not getattr(args, "dry_run", False):
         require_no_namespace_rebuy(base, base + suffix)
         claim_bank(base + suffix, c_file, REACTOS_ROOT)
+    else:
+        # The plan's "N to buy" would otherwise be the only signal, and the real run refuses.
+        try:
+            require_no_namespace_rebuy(base, base + suffix)
+        except ValueError as refusal:
+            print(f"  WARNING: the real run will refuse. {refusal}", file=sys.stderr)
     return ResponseCache(base + suffix)
 
 
@@ -2382,6 +2434,24 @@ def _class_declaration_scope(cls) -> str:
     return text[m.start() : i]
 
 
+def _rust_parse_error(code: str) -> str | None:
+    """rustfmt's first parse error for `code`, or None if it parses. A parse check, not a
+    style check: rustfmt reformats what it can parse and fails only on what it cannot."""
+    exe = shutil.which("rustfmt")
+    if exe is None:
+        raise RuntimeError("rustfmt not found: the preamble parse gate cannot run")
+    res = subprocess.run(
+        [exe, "--edition", "2021", "--emit", "stdout"],
+        input=code,
+        capture_output=True,
+        text=True,
+    )
+    if res.returncode == 0:
+        return None
+    first = next((ln for ln in res.stderr.splitlines() if ln.startswith("error")), "")
+    return first or f"rustfmt exit {res.returncode}"
+
+
 def cmd_translate(args):
     """Function-by-function translation pipeline."""
     # `--fn` names that matched in SOME file. A name missing from one file of a multi-file run is
@@ -2775,6 +2845,15 @@ def cmd_translate(args):
             file=sys.stderr,
         )
         wide_seal_enabled = False
+    # ERR and WARN are what a field failure prints: atapi and pciidex shipped with 9% and 10%
+    # of the C's left, and the arm64 port failure had nothing to say until they came back.
+    # TRACE/FIXME/MESSAGE stay stripped -- compiled out of a release build, so they are
+    # tokens, not behaviour. Its own cache token, so a bank bought stripped refuses loudly
+    # (require_no_namespace_rebuy) instead of being bought again; `--no-keep-diagnostics`
+    # replays one. Not on the COM path, whose audits are built around its own stripping.
+    diagnostics_kept = bool(getattr(args, "keep_diagnostics", False)) and not (
+        cpp_com_mode or free_functions
+    )
     for file_idx, c_file in enumerate(c_files, 1):
         print(f"\n{'=' * 60}", file=sys.stderr)
         print(f"[{file_idx}/{total_files}] {c_file.name}", file=sys.stderr)
@@ -2926,7 +3005,20 @@ def cmd_translate(args):
                 "" if line_no in original_dead else line
                 for line_no, line in enumerate(original_source.splitlines(), 1)
             )
-            require_c_plan(live_source, (dep.name for dep in sorted_deps))
+            # A --skip-fn name the SCANNER never saw still satisfies this inventory: it is the
+            # same hand-writing request. The arbiter library defines ArbiterLibTestAllocation
+            # and five more with `#if NTDDI_VERSION` between the convention and the name, so
+            # tree-sitter finds no function there and the run refused to start; --skip-fn was
+            # the documented way out, and it could not reach a body that never entered the plan.
+            planned = {dep.name for dep in sorted_deps}
+            unscanned_skips = (skip_fn_requested & c_functions(live_source)) - planned
+            if unscanned_skips:
+                skip_fn_matched |= unscanned_skips
+                audit_findings.setdefault("--skip-fn BODIES LEFT TO HAND-WRITING", []).extend(
+                    f"{c_file.name}: '{name}' (the scanner could not parse it; write it by hand)"
+                    for name in sorted(unscanned_skips)
+                )
+            require_c_plan(live_source, planned | unscanned_skips)
         cpp_com_wide_statics = ""
 
         if cpp_class_target and free_functions:
@@ -3012,7 +3104,12 @@ def cmd_translate(args):
                     f"  [macros] expanded in the C: {', '.join(sorted(expanded_names))}",
                     file=sys.stderr,
                 )
-        model_bodies = {dep.name: strip_debug_statements(dep.body_text) for dep in sorted_deps}
+        model_bodies = {
+            dep.name: strip_debug_statements(
+                dep.body_text, KEPT_DIAGNOSTICS_STRIPPED if diagnostics_kept else None
+            )
+            for dep in sorted_deps
+        }
         # FIRST of the three, so the fact seal sees an identifier where a literal was and
         # never has to reason about string contents, and so a wide literal's own array
         # BOUND (`WCHAR k[200] = L"..."`) is still a plain integer when this reads it.
@@ -3033,9 +3130,18 @@ def cmd_translate(args):
                 name: wide_seals[name].text if name in wide_seals else body
                 for name, body in model_bodies.items()
             }
+        # A cppapp synthetic unit (--via) names nested enum constants by their island
+        # spelling, which only the crate's own islands can say are constants.
+        island_values = (
+            island_value_names(rustconv_target.output_crate / "src")
+            if getattr(args, "via", None) and rustconv_target is not None
+            else frozenset()
+        )
         fact_seals = (
             {
-                dep.name: prepare_sealed_source(model_bodies[dep.name], dialect=seal_dialect)
+                dep.name: prepare_sealed_source(
+                    model_bodies[dep.name], dialect=seal_dialect, extra_values=island_values
+                )
                 for dep in sorted_deps
             }
             if fact_seal_enabled
@@ -3180,6 +3286,19 @@ def cmd_translate(args):
             for dep in sorted_deps:
                 if re.search(rf"\b{raii_name}\b", dep.body_text):
                     deterministic_contracts[dep.name] += raii_block
+        if getattr(args, "cpp_app_model", None):
+            # A synthetic TU from cpp_app: each worker gets the generated class context.
+            app_model = cpp_model.ModuleModel.from_json(Path(args.cpp_app_model).read_text())
+            for dep in sorted_deps:
+                deterministic_contracts[dep.name] += cpp_app.worker_contract(
+                    app_model, dep.name, dep.body_text
+                )
+        if cpp_class_target:
+            # Shared ATL types (CStringW, CComPtr, ...) from atl-rust: the API only, per
+            # worker that names one. A --local-raii lowering of the same name wins.
+            for dep in sorted_deps:
+                if not any(re.search(rf"\b{n}\b", dep.body_text) for n in local_raii_impls):
+                    deterministic_contracts[dep.name] += atl_contract.contract(dep.body_text)
         if cpp_com_cls is not None:
             container_fields = [
                 state
@@ -3363,7 +3482,7 @@ def cmd_translate(args):
                 preview = {
                     name: low.shape
                     for name, low in trivial_c.lower_trivial_c_functions(
-                        sorted_deps, typedefs.pointer_typedefs_for_source(c_file)
+                        sorted_deps, typedefs.pointer_typedefs_for_source(c_file), diagnostics_kept
                     ).items()
                 }
             for i, dep in enumerate(sorted_deps, 1):
@@ -3395,7 +3514,13 @@ def cmd_translate(args):
             # invalidation visible BEFORE it re-bills: a seal or contract change
             # that voids banked work shows up here as a collapsed hit count.
             dry_cache = _open_response_cache(
-                args, subsystem, c_file, fact_seal_enabled, call_seal_enabled, wide_seal_enabled
+                args,
+                subsystem,
+                c_file,
+                fact_seal_enabled,
+                call_seal_enabled,
+                wide_seal_enabled,
+                diagnostics_kept,
             )
             banked = [
                 dep.name
@@ -3415,6 +3540,22 @@ def cmd_translate(args):
                 f"   [{dry_cache.dir.name}]",
                 file=sys.stderr,
             )
+            # By name, and why: a body banked for a different CONTRACT (the class context
+            # moved under it) needs `--rebuy-fn <names>`, and the live run refuses at the
+            # first such name -- so a count alone sent you hunting one name per run.
+            held = set(banked) | set(preview)
+            for dep in sorted_deps:
+                if dep.name in held:
+                    continue
+                entry = dry_cache._manifest.get(dep.name)
+                why = (
+                    "new"
+                    if entry is None
+                    else "C body changed"
+                    if entry.get("hash") != _response_body_hash(dep.body_text)
+                    else "banked for another contract/seal: needs --rebuy-fn"
+                )
+                print(f"    to buy: {dep.name} ({why})", file=sys.stderr)
 
             # Show estimated tokens for first function
             if sorted_deps:
@@ -3495,7 +3636,9 @@ def cmd_translate(args):
             # the model instead, which is exactly the kind of degradation nobody notices.
             ptr_typedefs = typedefs.pointer_typedefs_for_source(c_file)
             print(typedefs.describe(ptr_typedefs, c_file))
-            lowerings = trivial_c.lower_trivial_c_functions(sorted_deps, ptr_typedefs)
+            lowerings = trivial_c.lower_trivial_c_functions(
+                sorted_deps, ptr_typedefs, diagnostics_kept
+            )
             for name, lowering in lowerings.items():
                 translated[name] = lowering.rust
                 deterministic_workers.add(name)
@@ -3513,9 +3656,17 @@ def cmd_translate(args):
             file_res, scan, subsystem, target=rustconv_target, cpp_com=cpp_com_mode
         )
 
-        cache_suffix = _cache_suffix(args, fact_seal_enabled, call_seal_enabled, wide_seal_enabled)
+        cache_suffix = _cache_suffix(
+            args, fact_seal_enabled, call_seal_enabled, wide_seal_enabled, diagnostics_kept
+        )
         cache = _open_response_cache(
-            args, subsystem, c_file, fact_seal_enabled, call_seal_enabled, wide_seal_enabled
+            args,
+            subsystem,
+            c_file,
+            fact_seal_enabled,
+            call_seal_enabled,
+            wide_seal_enabled,
+            diagnostics_kept,
         )
 
         # A completed model stream can fail a deterministic audit and remain as
@@ -4436,7 +4587,7 @@ def cmd_translate(args):
             )
             pre_sink = None
             if not no_resume:
-                cache.refuse_repurchase(PREAMBLE_KEY)
+                cache.refuse_repurchase(PREAMBLE_KEY, explicit=_rebuy_requested(PREAMBLE_KEY))
             if getattr(args, "replay_only", False):
                 raise ValueError("--replay-only: no accepted cached preamble")
             if archive is not None:
@@ -4466,6 +4617,15 @@ def cmd_translate(args):
                     # hold `__RUSTCONV_WIDE_nnnn__`.
                     pre_res.rust_code = unseal_wide_literals(
                         scrub_comment_token_echoes(pre_res.rust_code), preamble_wide_seal
+                    )
+                bad = _rust_parse_error(pre_res.rust_code)
+                if bad is not None:
+                    # Never banked: mspaint's main.cpp preamble came back with the model's
+                    # commentary ("Wait -- the rules require ...") between two conflicting
+                    # definitions, was banked, and every replay re-served it as a parse error.
+                    raise ValueError(
+                        f"{c_file.name}: the preamble reply does not parse as Rust ({bad}); "
+                        "not banked -- re-run to buy it again"
                     )
                 preamble_rust = pre_res.rust_code
                 cache.put(PREAMBLE_KEY, preamble_src, pre_res.rust_code)
@@ -4523,6 +4683,8 @@ def cmd_translate(args):
                     "  file-scope struct/typedef/table. Re-run (the per-function work is\n"
                     "  cached in .responses/, so the retry only re-pays for the preamble)."
                 )
+
+        preamble_rust = _comment_out_prose_preamble(preamble_rust)
 
         # c2rust's vtbl tables are NOT usable: it hardcodes each slot as
         # `f as unsafe extern "C" fn(..)`, which is the amd64 spelling. On i386 the
@@ -5817,6 +5979,12 @@ def main():
     )
     p.add_argument("--class", dest="class_name", help="Class selected by --cpp-com")
     p.add_argument(
+        "--cpp-app-model",
+        dest="cpp_app_model",
+        default=None,
+        help="cpp_model.json for a cpp_app synthetic TU: hand each worker its class context",
+    )
+    p.add_argument(
         "--free-functions",
         dest="free_functions",
         action="store_true",
@@ -5877,6 +6045,16 @@ def main():
         "terminator; five modules shipped one of those. Plain C only: shell32 --cpp-com has "
         "its own frozen lowering. 98%% of the tree's literals seal; the rest are reported as "
         "UNSEALED WIDE LITERAL audit findings rather than passed off as protected.",
+    )
+    p.add_argument(
+        "--keep-diagnostics",
+        dest="keep_diagnostics",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Plain C: send ERR/WARN/ASSERT statements to the model so the Rust keeps them (TRACE, "
+        "FIXME and MESSAGE are still stripped). Stripping them is how atapi and pciidex lost "
+        "90%% of their error output. Banks bought before this are namespaced without it, so "
+        "they refuse rather than re-buy; pass --no-keep-diagnostics to replay one.",
     )
     p.add_argument(
         "--expand-local-macros",

@@ -1130,7 +1130,7 @@ pub unsafe extern "system" fn DllUnregisterServer() -> HRESULT {
 
 #[no_mangle]
 pub unsafe extern "system" fn OleIconToCursor(
-    _hinstExe: HINSTANCE,
+    hinstExe: HINSTANCE,
     hIcon: HICON,
 ) -> HCURSOR {
     

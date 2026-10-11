@@ -137,7 +137,6 @@ pub unsafe extern "system" fn _InterlockedExchange(Target: *mut i32, Value: i32)
     *dst.add(2) = *src.add(1); *dst.add(3) = *src;
 }
 #[no_mangle] pub unsafe extern "C" fn CHECK_IRQL() {}
-#[no_mangle] pub unsafe extern "C" fn NT_ASSERT(_expression: i32) {}
 #[no_mangle] pub unsafe extern "C" fn FREE_POOL(Ptr: *mut c_void) {
     if !Ptr.is_null() { ntkrnl_sys::ddk::ExFreePool(Ptr); }
 }
@@ -181,7 +180,6 @@ pub unsafe extern "C" fn DiskDriverReinitialization(_drv: *mut c_void, _nothing:
 // Error/warning levels forward the raw format string to debug serial so disk.sys
 // failure paths aren't silent; %-specifiers print literally (identifies the site).
 // TracePrint MOVED to drvtrace-shim (fold-proof separate LLVM module — see that crate).
-#[no_mangle] pub unsafe extern "C" fn WPP_INIT_TRACING(_drv: PDRIVER_OBJECT, _reg: PUNICODE_STRING) {}
 
 // ---------- SRB_EX accessors (srbhelper.h inlines; logic mirrors classpnp srblib) ----------
 use crate::types::{PSTORAGE_REQUEST_BLOCK, STORAGE_REQUEST_BLOCK, PSRBEX_DATA,

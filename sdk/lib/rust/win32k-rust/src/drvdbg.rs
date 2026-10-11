@@ -8,9 +8,6 @@ use win32k_sys::win32k::*;
 use core::ffi::c_void;
 use ntkrnl_sys::ddk::RtlAssert;
 
-extern "C" {
-    fn ERR(fmt: *const i8, ...);
-}
 
 // ---- file-scope preamble (translated) ----
 pub static apfnDbgDrvFunctions: [PVOID; 91] = [
@@ -249,7 +246,7 @@ pub unsafe extern "system" fn DbgDrvRealizeBrush(
     iHatch: ULONG,
 ) -> BOOL {
     let ppdev: PPDEVOBJ = (*psoTarget).hdev as PPDEVOBJ;
-    NT_ASSERT(0u8);
+    NT_ASSERT!(0u8);
     0
 }
 
@@ -709,7 +706,7 @@ pub unsafe extern "system" fn DbgDrvMovePanning(
     y: i32,
     fl: FLONG,
 ) {
-    ERR(b"Obsolete driver function %s called!\n\0".as_ptr() as *const i8, b"DbgDrvMovePanning\0".as_ptr() as *const i8);
+    ERR!("Obsolete driver function %s called!\n", b"DbgDrvMovePanning\0".as_ptr() as *const i8);
 }
 
 #[no_mangle]
@@ -819,7 +816,7 @@ pub unsafe extern "system" fn DbgDrvDisableDirectDraw(
 
 #[no_mangle]
 pub unsafe extern "system" fn DbgDrvQuerySpoolType(PDev: DHPDEV, SpoolType: LPWSTR) -> i32 {
-    ERR(b"Obsolete driver function %s called!\n\0".as_ptr(), b"DbgDrvQuerySpoolType\0".as_ptr());
+    ERR!("Obsolete driver function %s called!\n", b"DbgDrvQuerySpoolType\0".as_ptr() as *const i8);
     ntkrnl_sys::ASSERT!(false);
     0
 }
@@ -965,7 +962,7 @@ pub unsafe extern "system" fn DbgDrvAlphaBlend(
 }
 
 pub unsafe extern "system" fn DbgSynthesizeFont() {
-    NT_ASSERT(0u8);
+    NT_ASSERT!(0u8);
 }
 
 unsafe extern "C" fn DbgGetSynthesizedFontFiles() {

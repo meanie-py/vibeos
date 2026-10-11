@@ -3,9 +3,6 @@ use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::{PsGetCurrentThreadWin32Thread};
 use core::ffi::c_void;
 
-// ASSERT_REFS_CO(obj) — debug-only ref assert; no-op in retail.
-#[inline(always)]
-unsafe fn ASSERT_REFS_CO(_Window: PWND) {}
 
 // NT_SUCCESS(Status) — Status >= 0.
 #[inline(always)]
@@ -456,7 +453,7 @@ unsafe fn co_IntGetScrollInfo_impl(
     let Mask: UINT;
     let psi: LPSCROLLINFO;
 
-    ASSERT_REFS_CO(Window);
+    ASSERT_REFS_CO!(Window);
 
     (*lpsi).fMask &= !SIF_THEMED;
     if SBID_IS_VALID(nBar) == 0 {
@@ -892,7 +889,7 @@ unsafe fn co_IntSetScrollBarInfo_impl(
     let Bar: INT;
     let sbi: PSCROLLBARINFO;
     let psi: LPSCROLLINFO;
-    ASSERT_REFS_CO(Window);
+    ASSERT_REFS_CO!(Window);
 
     Bar = SBOBJ_TO_SBID(idObject);
 
@@ -940,7 +937,7 @@ unsafe fn co_IntCreateScrollBars_impl(Window: PWND) -> BOOL {
     let mut s: ULONG;
     let mut i: INT;
 
-    ASSERT_REFS_CO(Window);
+    ASSERT_REFS_CO!(Window);
 
     if !(*Window).pSBInfo.is_null() && !(*Window).pSBInfoex.is_null() {
         return 1;

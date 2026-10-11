@@ -714,6 +714,17 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # Same scanner, the crate's OWN island: a hand constant there shadows the island's glob
+    # import with no warning, and the any-island oracle above accepts a value copied from
+    # another crate. atapi's MAX_SLOTS came from usbxhci (16 for 32) and pciidex's reset loops
+    # from legide (1000x). One right answer per crate, so the baseline only shrinks.
+    specs.append(
+        (
+            "scan_const_vs_own_island",
+            [py, str(scc), "--vs-own-island"] if scc.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # Same scanner, narrowest scope: one NAME with two VALUES inside ONE crate. One copy is
     # wrong by construction. userenv's IDS_PROFILEPATH (0 vs 1) sat in the cross-crate
     # baseline above while it stopped GUI setup on every install, so this half is gated
@@ -813,6 +824,16 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_winerror_consts",
             [py, str(swc), "--lint"] if swc.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # C `case A|B:` is one label, the bitwise OR; the same text in a Rust arm is an
+    # or-pattern matching EITHER. comctl32's TREEVIEW_SelectItem shipped it.
+    scb = repo / "tools" / "scan_case_bitor_pattern.py"
+    specs.append(
+        (
+            "scan_case_bitor_pattern",
+            [py, str(scb), "--lint"] if scb.is_file() else ["MISSING"],
             "stdout",
         )
     )
@@ -996,8 +1017,7 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # UNREFERENCED_PARAMETER was one: shell32-rust had the correct #[macro_export] macro in
     # win32.rs and two modules carried an empty `fn` shadow anyway, because both are declared
     # BEFORE win32 in lib.rs and macro_rules! textual scoping only runs forward. The baseline
-    # holds 20 inherited rows, most of them kernel-side (win32k NT_ASSERT/ASSERT_REFS_CO),
-    # where the out-of-line barrier is the ud2 uncloaker AGENTS.md forbids outright.
+    # is EMPTY (driven to zero 2026-10-09, tools/fn_call_to_macro.py), so this gates at zero.
     smfs = repo / "tools" / "scan_macro_fn_shadow.py"
     specs.append(
         (
@@ -1397,6 +1417,17 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_import_cc",
             [py, str(sic)] if sic.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # A translated ASSERT whose guard IS the asserted condition: it fires on every
+    # legitimate path and never on the one it guards. pcix's PciBuildHackTable printed
+    # `ASSERT FAILED: !NT_SUCCESS(Status)` on every boot. Baseline is EMPTY.
+    sap = repo / "tools" / "scan_assert_polarity.py"
+    specs.append(
+        (
+            "scan_assert_polarity",
+            [py, str(sap)] if sap.is_file() else ["MISSING"],
             "stdout",
         )
     )
@@ -1845,7 +1876,8 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
     """Need a built binary (run after `build`).
 
     scan_ud2 + sacred primitives + scan_self_recursive + scan_flex_array_panic +
-    scan_export_thunks + scan_xchg_ebx_deref. All six are POST-LINK detectors:
+    scan_export_thunks + scan_xchg_ebx_deref + scan_unresolved_imports. All are
+    POST-LINK detectors:
     they read the emitted code, because the defects they catch are invisible in
     the source (an ABI mismatch that LLVM turned into a `ud2`; a Rust `memcpy`
     that LLVM lowered into a call to itself; a bindgen `[T; 1]` whose bounds
@@ -1873,7 +1905,22 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         run.add(Stage("scan_flex_array_panic", status="skip", detail="no binary"))
         run.add(Stage("scan_export_thunks", status="skip", detail="no binary"))
         run.add(Stage("scan_xchg_ebx_deref", status="skip", detail="no binary"))
+        run.add(Stage("scan_unresolved_imports", status="skip", detail="no binary"))
+        run.add(Stage("freeldr_size", status="skip", detail="no binary"))
         return
+    # The BIOS loader runs in real-mode memory and bug-checks itself at boot when its PE
+    # outgrows MAX_FREELDR_PE_SIZE. Restoring freeldr's debug prints did exactly that and
+    # the first symptom was every amd64-bios boot hanging in the gate; read it post-link.
+    # Only the arches that build freeldr_pe say anything; the others print SKIP and pass.
+    fls = repo / "tools" / "check_freeldr_size.py"
+    _lint_stage(
+        run,
+        repo,
+        "freeldr_size",
+        [py, str(fls), "--check", str(build_dir)] if fls.is_file() else ["MISSING"],
+        strict=strict,
+        by_exit_code=True,
+    )
     # Binary lints are judged by exit code (by_exit_code=True), not baseline-diff:
     # their output is arch-specific so a single baseline can't match across arches
     # (scan_ud2 emits ud2 on x86 vs branch-to-self spins on arm64). The tools'
@@ -1959,3 +2006,17 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         )
     else:
         run.add(Stage("scan_xchg_ebx_deref", status="skip", detail="i386-only scan"))
+    # A shipped image importing a name its exporter does not export. The loader drops a
+    # boot driver that does this and keeps booting, so smoke stays green unless the boot
+    # needed that driver: pcix.sys's raw-dylib RtlAssert imported `RtlAssert@16` on i386
+    # and was never loaded. Graded on every arch -- decoration is i386's, but a missing
+    # export is not. See tools/scan_unresolved_imports.py.
+    sui = repo / "tools" / "scan_unresolved_imports.py"
+    _lint_stage(
+        run,
+        repo,
+        "scan_unresolved_imports",
+        [py, str(sui), "--check", str(build_dir)] if sui.is_file() else ["MISSING"],
+        strict=strict,
+        by_exit_code=True,
+    )

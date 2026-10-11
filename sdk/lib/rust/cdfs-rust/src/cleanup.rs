@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{CcUninitializeCacheMap, IoAcquireVpbSpinLock, IoGetCurrentIrpStackLocation, IoGetRequestorProcess, IoReleaseVpbSpinLock, IoRemoveShareAccess, PFILE_OBJECT, PIRP};
 use core::ffi::c_void;
@@ -37,7 +38,7 @@ extern "C" {
     fn CdAcquireFileExclusive(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
 }
 extern "C" {
-    fn CdBugCheck(Arg1: u32, Arg2: u32, Arg3: u32);
+    fn CdBugCheck(Arg1: usize, Arg2: usize, Arg3: usize);
 }
 extern "C" {
     fn CdCheckForDismount(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Arg: u32) -> u32;
@@ -85,7 +86,6 @@ extern "C" {
     fn FlagOn(Flags: u32, Flag: u32) -> u32;
 }
 extern "C" {
-    fn NT_ASSERT(condition: u32);
 }
 extern "C" {
     fn SetFlag(Flags: *mut u32, Flag: u32);
@@ -279,7 +279,7 @@ pub unsafe extern "C" fn CdCommonCleanup(
                     }
                     UserVolumeOpen => { }
                     _ => {
-                        CdBugCheck(TypeOfOpen, 0, 0);
+                        CdBugCheck(TypeOfOpen as usize, 0, 0);
                     }
                 }
 
@@ -309,7 +309,7 @@ pub unsafe extern "C" fn CdCommonCleanup(
                 //
 
                 if FileObject == (*Vcb).VolumeLockFileObject {
-                    NT_ASSERT((FlagOn((*Vcb).VcbState, VCB_STATE_LOCKED)) as _);
+                    NT_ASSERT!((FlagOn((*Vcb).VcbState, VCB_STATE_LOCKED)));
 
                     IoAcquireVpbSpinLock(core::ptr::addr_of_mut!(SavedIrql));
 

@@ -16,10 +16,9 @@
 
 // Translated msafd modules + the winsock/WSP + AFD-shared substrate get declared
 // here during integration (after the rustconv translation lands in src/).
-// Wine's ERR/FIXME/WARN/TRACE for the whole crate; `#[macro_use]` must precede the
-// modules that call them (macro_rules! is textually scoped).
+// Wine's ERR/FIXME/WARN/TRACE, shared by every Wine-derived crate.
 #[macro_use]
-mod winedebug;
+extern crate winedebug_rust;
 
 pub mod types; // winsock2/WSP + wsahelp + AFD shared.h + msafd-private struct layouts
 #[macro_use]

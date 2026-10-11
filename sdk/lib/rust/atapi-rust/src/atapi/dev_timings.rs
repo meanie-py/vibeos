@@ -47,7 +47,9 @@ unsafe extern "C" fn AtaTimQueryPioModeSupport(
         }
 
         if CycleTime == 0 {
+            WARN!(b"Device '%s' returned zero cycle time\n\0".as_ptr() as *const i8, (*DevExt).FriendlyName.as_ptr());
             NT_VERIFY!(_BitScanReverse(&raw mut BestMode, SupportedMode));
+            ASSERT!(BestMode < RTL_NUMBER_OF!(*(&raw const AtapModeToCycleTime)));
             CycleTime = AtapModeToCycleTime[BestMode as usize];
         }
     } else {
@@ -61,6 +63,7 @@ unsafe extern "C" fn AtaTimQueryPioModeSupport(
         SupportedMode &= AllowedModesMask;
 
         NT_VERIFY!(_BitScanReverse(&raw mut BestMode, SupportedMode));
+        ASSERT!(BestMode < RTL_NUMBER_OF!(*(&raw const AtapModeToCycleTime)));
         CycleTime = AtapModeToCycleTime[BestMode as usize];
     }
 
@@ -103,6 +106,7 @@ unsafe extern "C" fn AtaTimQuerySwDmaModeSupport(
 
         NT_VERIFY!(_BitScanReverse(&raw mut BestMode, SupportedMode));
 
+        ASSERT!(BestMode < RTL_NUMBER_OF!(*(&raw const AtapModeToCycleTime)));
         CycleTime = AtapModeToCycleTime[BestMode as usize];
     }
 
@@ -142,6 +146,7 @@ unsafe extern "C" fn AtaTimQueryMwDmaModeSupport(
         {
             CycleTime = (*IdentifyData).MinimumMWXferCycleTime as ULONG;
         } else {
+            ASSERT!(BestMode < RTL_NUMBER_OF!(*(&raw const AtapModeToCycleTime)));
             CycleTime = AtapModeToCycleTime[BestMode as usize];
         }
     }
@@ -183,6 +188,7 @@ unsafe extern "C" fn AtaTimQueryUDmaModeSupport(
                 SupportedMode as ::core::ffi::c_ulong,
             ));
 
+            ASSERT!(BestMode < RTL_NUMBER_OF!(*(&raw const AtapModeToCycleTime)));
             CycleTime = AtapModeToCycleTime[BestMode as usize];
         }
     }
@@ -317,6 +323,7 @@ pub unsafe extern "C" fn AtaPortSelectTimings(
             AtaMarshallScsiAddress((*PortData).PortNumber, i, 0),
             core::ptr::null_mut(),
         )).cast();
+        ASSERT!(DevExt);
 
         (*DevExt).TransferModeSelectedBitmap = 1 << (*DeviceConfig).PioMode;
         if (*DeviceConfig).DmaMode != PIO_MODE!(0) {

@@ -8,6 +8,8 @@ QemuVM (which already owns slots/reaper/cap/live-log). Supports --repeat N
 
 from __future__ import annotations
 
+import dataclasses
+import json
 import os
 import re
 import subprocess
@@ -288,6 +290,7 @@ def _boot_vm(
     want_ladder: bool = False,
     timings: dict[str, float] | None = None,
     boot_arch: str | None = None,
+    attach: bool = False,
 ) -> dict:
     """A single independent boot. Returns {ok, outcome, classification, ...}.
     `arch` is the base arch (i386/amd64/arm64); the boot config is the vm_arch
@@ -330,6 +333,9 @@ def _boot_vm(
             backend=backend,
             windows=cli_cfg.get("qemu.windows", {}),
             serial_log=work / "serial.log",
+            # --attach-on-fail: a kept VM is only useful with a stub to attach to, and
+            # the stub has to be asked for at launch.
+            gdb=attach,
         ),
         timings,
         lambda msg: run.log(msg, header=label),
@@ -349,6 +355,7 @@ def _boot_vm(
             ],
         }
     assert vm is not None  # launch_with_retry returns a VM whenever last_exc is None
+    ok_boot = False
     try:
         watching = time.monotonic()
         outcome, text, diag = _watch(vm, marker, fail_on, config.boot_timeout)
@@ -414,6 +421,9 @@ def _boot_vm(
                 run.log(ladder_txt[-8000:], header=f"{label} ladder serial")
         # Always capture a PNG screenshot (pass or fail), while the VM is alive.
         shot = _screenshot(vm, work, repo, arch, boot_arch)
+        irq_stats = _irq_stats(vm, arch)
+        if irq_stats:
+            run.log(irq_stats, header=f"{label} info irq")
         dbg_raw = ""
         try:
             dbg_raw = vm.read_debugcon().decode("ascii", errors="replace")
@@ -430,6 +440,9 @@ def _boot_vm(
                 or _boot_nvme_check(text)
                 or _headless_check(text)
                 or _virtio_mmio_check(text, arch)
+                or _ahci_irq_check(_qemu_stderr(vm))
+                or _ata_health_check(text)
+                or _legide_check(text)
             )
             if smp_fail is not None:
                 return {
@@ -482,6 +495,7 @@ def _boot_vm(
                 res["census_lines"] = ev["lines"]
             if shot:
                 res["screenshot"] = shot
+            ok_boot = True
             return res
         # failure — gather evidence
         dbg = None
@@ -492,7 +506,10 @@ def _boot_vm(
         tri = triage.classify(
             text,
             reached=False,
-            fail_marker=(marker if outcome == "failmarker" and fail_on else None),
+            # The pattern that FIRED, not the boot marker: this read "hit fail
+            # marker: [EXPLORER] _tWinMain entered" for a run that died on
+            # `--fail-on 'nvme\.sys'` long before explorer.
+            fail_marker=(fail_on if outcome == "failmarker" else None),
             debugcon=dbg,
             debugcon_raw=dbg_raw,
         )
@@ -539,9 +556,72 @@ def _boot_vm(
             tri["screenshot"] = shot
         return {"ok": False, "outcome": outcome, **tri}
     finally:
-        stopping = time.monotonic()
+        # Keep the VM only for a failed VERDICT: an exception here is a harness
+        # defect, not a guest state worth a debugger, so it still tears down.
+        if attach and not ok_boot and sys.exc_info()[0] is None:
+            _keep_for_debug(run, vm, arch, work, idx, total, label)
+        else:
+            stopping = time.monotonic()
+            vm.stop()
+            timings["stop_seconds"] = round(time.monotonic() - stopping, 3)
+
+
+def _keep_for_debug(
+    run: Run, vm: QemuVM, arch: str, work: Path, idx: int, total: int, label: str
+) -> None:
+    """Hand a failed boot's live VM to the debug toolkit (`smoke --attach-on-fail`).
+
+    Writes `qemu/runs/<run-id>/manifest.json` in the gdbengine schema plus the owner and
+    deadline the reaper keys on, so `vibeos-cli gdb <verb> <run-id>`, `gdb stop`,
+    `debug stop`, `ps`, `kill` and the reaper all see the kept VM. A VM that cannot be
+    kept (QEMU already exited) is stopped and said so -- never silently dropped."""
+    from . import debugcmd, gdbengine
+
+    run_id = run.dir.name if total == 1 else f"{run.dir.name}-boot{idx}"
+    env_owner = os.environ.get("VIBEOS_QEMU_OWNER_PID", "")
+    owner = int(env_owner) if env_owner.isdigit() else debugcmd._session_owner(os.getppid())
+    try:
+        handles = vm.detach_for_debug(owner, run_id)
+    except RuntimeError as exc:
+        run.log(f"attach-on-fail: VM not kept: {exc}", header=label)
+        run.extra["attach"] = {"kept": False, "reason": str(exc)}
         vm.stop()
-        timings["stop_seconds"] = round(time.monotonic() - stopping, 3)
+        return
+    debug_run = gdbengine.DebugRun(
+        run_id=run_id,
+        arch=arch,
+        backend=vm._backend,
+        gdb_host=handles["gdb_host"],
+        gdb_port=handles["gdb_port"],
+        serial_log=str(work / "serial.log"),
+        kernel_image=str(gdbengine._kernel_image(arch)),
+        win_uid=handles["win_uid"],
+        qemu_pid=handles["qemu_pid"],
+        staging=handles["staging"],
+        start_time=time.strftime("%Y-%m-%dT%H:%M:%S"),
+    )
+    manifest = {
+        **dataclasses.asdict(debug_run),
+        "owner_pid": owner,
+        "deadline": handles["deadline"],
+        "source": "smoke --attach-on-fail",
+        "lock": handles["lock"],
+    }
+    debug_run.dir.mkdir(parents=True, exist_ok=True)
+    debug_run.manifest_path().write_text(json.dumps(manifest, indent=2))
+    gdb = f"{handles['gdb_host']}:{handles['gdb_port']}" if handles["gdb_port"] else "none"
+    hint = (
+        f"VM KEPT for debugging: run-id {run_id} (gdbstub {gdb}, owner pid {owner}, "
+        f"reaped at {time.strftime('%H:%M:%S', time.localtime(handles['deadline']))}). "
+        f"serial.log is a snapshot -- the live serial ended with this process. "
+        f"Stop it: ./vibeos-cli gdb stop {run_id}"
+    )
+    run.log(hint, header=label)
+    print(hint, file=sys.stderr)
+    # Into the bounded summary too: stdout is what the caller reads, and a kept VM
+    # nobody notices runs until the reaper's deadline.
+    run.add(Stage("attach", status="warn", detail=f"VM kept: {run_id}", salient=[hint]))
+    run.extra["attach"] = {"kept": True, "run_id": run_id, **handles, "owner_pid": owner}
 
 
 def _net_stage(run: Run, repo: Path, arch: str) -> None:
@@ -861,6 +941,156 @@ def _ahci_check(text: str) -> dict | None:
     }
 
 
+# Measured on amd64 --ata-stack (2026-10-09): OVMF reads the CD polled (2248 commands, no
+# raise), then pciidex's 6549 commands came with 6566 raises, never two completions in a row
+# without one, and the line ended low. A polled command gets no raise (its port interrupt is
+# masked); the driver polls only its internal reset/port-multiplier requests, a handful.
+_AHCI_POLLED_RUN_MAX = 8
+
+
+def _irq_stats(vm: QemuVM, arch: str) -> str:
+    """QEMU's per-line interrupt counts (`info irq`: the i8259 and the ioapic), kept in
+    the log so a storage or NIC driver that quietly polls shows up as a line that never
+    fired. x86 only: arm64's GIC keeps no such statistics. Diagnostic: never fails."""
+    if arch == "arm64":
+        return ""
+    try:
+        return str(vm.qmp.hmp("info irq")).strip()
+    except Exception:
+        return ""
+
+
+# The new ATA stack's own reports of a lost interrupt: atapi's AtaPortTimeout (a request
+# outlived its timeout, so the port is reset) and pciidex's polled AHCI internal request.
+# Both are ERR lines (DPRINT1 format) and neither fires on a healthy boot. uniata media
+# never prints them.
+_ATA_TIMEOUT_RE = re.compile(
+    r"\((?:atapi|pciidex)-rust/[^)]*\) CH \d+: "
+    r"(?:Slot \d+ \(\w+\) timed out|Internal request timed out)"
+)
+_ATA_NO_IRQ_RE = re.compile(r"\(pciidex-rust/[^)]*\) CH \d+: Could not connect to interrupt")
+# rtl-diag's RtlAssert: `*** ASSERT FAILED: <expr> at <file!()>:<line>`, print and continue.
+_ATA_ASSERT_RE = re.compile(r"\*\*\* ASSERT FAILED: .* at (?:atapi|pciidex|legide)-rust/")
+
+
+def _ata_health_check(text: str) -> dict | None:
+    """Fail a boot whose ATA stack ran without its interrupt. A request that times out is
+    reset and retried, and a channel that could not connect its interrupt is simply left
+    out, so the desktop comes up either way: only these lines say a disk was served by
+    the timeout path, or not at all."""
+    asserts = [ln.strip() for ln in text.splitlines() if _ATA_ASSERT_RE.search(ln)]
+    if asserts:
+        # DBG=1: the C's ASSERTs are live and print and continue, so the boot goes on.
+        return {
+            "classification": "ATA_ASSERT",
+            "salient": [f"{len(asserts)} ATA stack assertion(s) failed", *asserts[:4]],
+        }
+    lost = [ln.strip() for ln in text.splitlines() if _ATA_TIMEOUT_RE.search(ln)]
+    if lost:
+        return {
+            "classification": "ATA_TIMEOUT",
+            "salient": [f"{len(lost)} ATA request(s) timed out (a lost interrupt)", *lost[:4]],
+        }
+    no_irq = [ln.strip() for ln in text.splitlines() if _ATA_NO_IRQ_RE.search(ln)]
+    if no_irq:
+        return {
+            "classification": "ATA_NO_INTERRUPT",
+            "salient": [
+                "an ATA channel could not connect its interrupt and was not started",
+                *no_irq[:4],
+            ],
+        }
+    return None
+
+
+_LEGIDE_FORCED = "LEGIDE_DETECT: probing"
+_LEGIDE_CHANNEL_RE = re.compile(r"\[DA\] PiEnumerateDevice Root\\legide\\\d+: [1-9]\d* children")
+
+
+def _legide_check(text: str) -> dict | None:
+    """Prove an `--isa-ide` boot ran legide's detection to the end: the tripwire let it
+    probe, it found the ISA channel and reported it (Root\\legide), pciidex's legacy
+    interface started it, and atapi enumerated the disk on it. Without the rig nothing
+    in a boot reaches that code."""
+    if os.environ.get("VIBEOS_QEMU_ISA_IDE", "").strip() != "1":
+        return None
+    if _LEGIDE_FORCED not in text:
+        problem = (
+            "legide never forced its probe: LEGIDE_DETECT did not reach the tripwire, "
+            "or legide did not load"
+        )
+    elif not _LEGIDE_CHANNEL_RE.search(text):
+        problem = "legide probed but reported no channel with a device (Root\\legide\\NNNN)"
+    else:
+        return None
+    return {
+        "classification": "LEGIDE_NOT_ENGAGED",
+        "salient": [
+            problem,
+            *[ln.strip() for ln in text.splitlines() if "legide" in ln.lower()][-4:],
+        ],
+    }
+
+
+def _qemu_stderr(vm: QemuVM) -> str:
+    """The whole QEMU stderr log (trace events land there), or "" when there is none."""
+    path = getattr(vm, "_stderr_path", None)
+    try:
+        return path.read_text(errors="replace") if path is not None else ""
+    except OSError:
+        return ""
+
+
+def _ahci_irq_check(stderr_text: str) -> dict | None:
+    """Prove the guest's AHCI driver ran on interrupts, from QEMU's own trace (vm.py
+    AHCI_TRACE_EVENTS) rather than the driver's account of itself. A driver that polled,
+    or whose ISR never acknowledged the HBA, still boots: its requests just complete on
+    the poll or the timeout, and only the boot time moves. Counted from the first raise:
+    the firmware before it is meant to poll."""
+    if not ahci_requested():
+        return None
+    events = [ln.split(None, 1)[0] for ln in stderr_text.splitlines() if ln.startswith("ahci_")]
+    if "ahci_cmd_done" not in events:
+        # No trace at all means the events never reached the log, which is the harness's
+        # bug, not the guest's; _ahci_check already failed a boot with no driver.
+        return None
+    if "ahci_irq_raise" not in events:
+        return {
+            "classification": "AHCI_POLLING",
+            "salient": [
+                f"{events.count('ahci_cmd_done')} AHCI commands completed and the controller "
+                "never raised its interrupt: the guest driver never enabled it (GHC.IE/PxIE)",
+            ],
+        }
+    after = events[events.index("ahci_irq_raise") :]
+    done, raised = after.count("ahci_cmd_done"), after.count("ahci_irq_raise")
+    run = longest = 0
+    for ev in after:
+        if ev == "ahci_cmd_done":
+            run += 1
+            longest = max(longest, run)
+        elif ev == "ahci_irq_raise":
+            run = 0
+    if longest > _AHCI_POLLED_RUN_MAX:
+        return {
+            "classification": "AHCI_POLLING",
+            "salient": [
+                f"after the driver's first interrupt, {longest} AHCI commands completed in a "
+                f"row with no interrupt ({done} commands, {raised} raises): it is polling",
+            ],
+        }
+    # Not "ends raised": a command can be in flight when the log is read.
+    if "ahci_irq_lower" not in after:
+        return {
+            "classification": "AHCI_IRQ_STUCK",
+            "salient": [
+                "the AHCI interrupt was raised and never lowered: the guest's ISR never "
+                f"cleared PxIS/IS ({done} commands, {raised} raises)",
+            ],
+        }
+    return None
+
+
 def _net_suite_env(artifact_dir: Path) -> dict[str, str]:
     """The net suite's environment: ours, minus the NVMe rig. The suite snapshots
     its VM (savevm), and QEMU's nvme device refuses migration ("State blocked by
@@ -900,10 +1130,15 @@ _NVME_RESET = re.compile(r"\[NVME\] controller 0: self-test: [1-9]\d* reset\(s\)
 # The PnP manager prints this as it starts each device: with --nvme-bridge, QEMU's
 # PCIe root port (1b36:000c), which pci.sys then drives as the controller's bus.
 _ROOT_PORT_STARTED = "[DA] START PCI\\VEN_1B36&DEV_000C"
+# ...and with --nvme-segment, the root port and controller sit on the expander's
+# buses, which the HAL publishes as segment 1 (arm64/pnpdd.rs).
+_SEGMENT_ROOT = re.compile(r"\[HAL\] PCI segment 1: root bus 128-255 published")
 # ...this once its MSI-X messages are connected (nvme-rust pnp.rs `connect`)...
 _NVME_MSIX = "[NVME] controller 0: MSI-X: "
 # ...this once a completion arrived by interrupt (nvme-rust nvme.rs `tally`)...
 _NVME_INTERRUPTS = "[NVME] controller 0: interrupts working"
+# ...and, under NVME_PASSIVE_ISR, its messages connected passive (pnp.rs `connect`).
+_NVME_PASSIVE = "message(s) connected at passive level"
 # ...and this after its start-time self-test: one 1 MiB read, which the I/O path
 # cuts into commands and runs at once, by DMA to the reader's pages (pnp.rs `self_test`).
 _NVME_SELF_TEST = re.compile(
@@ -1068,6 +1303,8 @@ _GIC_ITS = re.compile(r"\[HAL\] GICv3 ITS: [1-9]\d* of \d+ up")
 # arm64/smmu.rs, once it has looked at an SMMUv3 the IORT lists, and let DMA through.
 # arm64/clock.rs, on each CPU's first LPI: the ITS spreads a device's messages over
 # the CPUs, so an NVMe on an SMP boot takes its I/O completions on CPU1.
+# arm64/its.rs steer(): an LPI enabled on a CPU it was not bound to is moved there.
+_LPI_MOVED = re.compile(r"\[HAL\] GICv3 ITS \d+: LPI \d+ moved from CPU\d+ to CPU\d+")
 _LPI_ON_AN_AP = re.compile(r"\[GIC\] CPU[1-9]\d*: first LPI delivered")
 _SMMU_BYPASSED = re.compile(r"\[HAL\] IORT: SMMUv3 at \S+ was .*; now bypassing")
 
@@ -1075,6 +1312,13 @@ _SMMU_BYPASSED = re.compile(r"\[HAL\] IORT: SMMUv3 at \S+ was .*; now bypassing"
 # arm64/smmuv3.rs, driving the SMMU for real (the SMMU=TRANSLATE tripwire).
 _SMMU_TRANSLATING = re.compile(r"\[HAL\] SMMUv3 at \S+: TRANSLATING")
 _SMMU_ATTACHED = re.compile(r"\[HAL\] SMMUv3 at \S+: requester \S+ is StreamID \S+ - translating")
+# ...and nvme.sys, whose service is DMA-remapping compatible, in a domain of its own.
+_SMMU_OWN_DOMAIN = "translating in a domain of its own"
+# ...and one a driver that found its device outside PnP claimed (smmuv3.rs `attach`).
+_SMMU_CLAIMED = "claimed by its driver)"
+_VIOBLK_PCI = re.compile(r"\[VIOBLK\] [0-9a-f]{2}:[0-9a-f]{2}\.\d dev ")
+# nvme-rust nvme.rs stray_identify (the NVME_STRAY_DMA tripwire).
+_STRAY = re.compile(r"tripwire: a stray Identify to RAM at 0x([0-9a-fA-F]+) \w+; (.*)$", re.M)
 
 
 def _smmu_translate_check(text: str) -> dict | None:
@@ -1096,11 +1340,62 @@ def _smmu_translate_check(text: str) -> dict | None:
             "classification": "SMMU_NOT_ATTACHED",
             "salient": ["a device's stream was never attached to the SMMU's identity map", *lines],
         }
+    if nvme_requested() and _SMMU_OWN_DOMAIN not in text:
+        return {
+            "classification": "SMMU_NO_DOMAIN",
+            "salient": [
+                "nvme.sys is DMA-remapping compatible, but no device got a domain of its own",
+                *lines,
+            ],
+        }
+    # vioblk and netstack find their PCI functions themselves and claim their
+    # domains (HalVibeosDmaAttach); every arm64 rig boots from a virtio-blk disk.
+    if _VIOBLK_PCI.search(text) and _SMMU_CLAIMED not in text:
+        return {
+            "classification": "SMMU_UNCLAIMED",
+            "salient": [
+                "vioblk drove a PCI function, but no driver claimed a domain of its own "
+                "for one (vioblk-rust / netstack-rust dma.rs)",
+                *[ln.strip() for ln in text.splitlines() if "VIOBLK] 00:" in ln][-2:],
+                *lines,
+            ],
+        }
     faults = [
         ln.strip()
         for ln in text.splitlines()
         if "SMMUv3" in ln and ("FAULT" in ln or "global error" in ln)
     ]
+
+    def in_page(line: str, target: int) -> bool:
+        at = re.search(r"address ([0-9a-fA-F]+)$", line)
+        return bool(at) and target <= int(at[1], 16) < target + 0x1000
+
+    # NVME_STRAY_DMA: nvme.sys aims an Identify at a RAM page its adapter never
+    # handed out. Its domain must fault it, and the page must come back untouched;
+    # the identity map would have let the write land.
+    if "NVME_STRAY_DMA" in os.environ.get("VIBEOS_TRIPWIRE", ""):
+        stray = _STRAY.search(text)
+        if not stray or "untouched" not in stray[2]:
+            return {
+                "classification": "SMMU_STRAY_DMA_LANDED",
+                "salient": [
+                    "a stray Identify to a page nvme.sys never mapped was not stopped"
+                    if stray
+                    else "nvme.sys never reported its stray Identify",
+                    *([stray[0]] if stray else []),
+                ],
+            }
+        page = int(stray[1], 16)
+        if not any(in_page(ln, page) for ln in faults):
+            return {
+                "classification": "SMMU_MISSED_STRAY_DMA",
+                "salient": [
+                    f"the stray Identify to {page:#x} left its page untouched, but the SMMU "
+                    "reported no fault there",
+                    stray[0],
+                ],
+            }
+        faults = [ln for ln in faults if not in_page(ln, page)]
     # NVME_BAD_DMA=<hex>: nvme.sys aims one Identify (4 KiB of data) at that address
     # on purpose, and the SMMU must fault it there; QEMU's device writes it a few
     # bytes at a time, so a fault per write. Every other fault still fails.
@@ -1109,11 +1404,7 @@ def _smmu_translate_check(text: str) -> dict | None:
         target = int(bad[1], 16)
         address = f"{target:016x}"
 
-        def in_buffer(line: str) -> bool:
-            at = re.search(r"address ([0-9a-fA-F]+)$", line)
-            return bool(at) and target <= int(at[1], 16) < target + 0x1000
-
-        caught = [ln for ln in faults if in_buffer(ln)]
+        caught = [ln for ln in faults if in_page(ln, target)]
         if not caught:
             return {
                 "classification": "SMMU_MISSED_BAD_DMA",
@@ -1166,6 +1457,16 @@ def _gic_check(text: str) -> dict | None:
         return {
             "classification": "GIC_NO_ITS",
             "salient": ["--gic 3 --nvme boot, but the HAL never reported an ITS up", *lines],
+        }
+    if "ITS_MISSTEER" in os.environ.get("VIBEOS_TRIPWIRE", "") and not _LPI_MOVED.search(text):
+        # Every LPI was bound one CPU away from its interrupt object, so a boot whose
+        # devices still interrupt either moved them or never connected one at all.
+        return {
+            "classification": "GIC_LPI_NOT_MOVED",
+            "salient": [
+                "ITS_MISSTEER bound every LPI one CPU over, and no MOVI ever moved one back",
+                *[ln.strip() for ln in text.splitlines() if "LPI" in ln or "MISSTEER" in ln][-6:],
+            ],
         }
     if nvme_requested() and (smp_count() or 1) > 1 and not _LPI_ON_AN_AP.search(text):
         return {
@@ -1227,6 +1528,18 @@ def _nvme_check(text: str) -> dict | None:
                 *lines,
             ],
         }
+    # NVME_PASSIVE_ISR: nvme.sys connects with CONNECT_MESSAGE_BASED_PASSIVE, so its
+    # routines run on iomgr's worker thread; "interrupts working" above then proves
+    # a completion got from the ISR through the DPC and the worker to the driver.
+    if "NVME_PASSIVE_ISR" in os.environ.get("VIBEOS_TRIPWIRE", "") and (_NVME_PASSIVE not in text):
+        return {
+            "classification": "NVME_NOT_PASSIVE",
+            "salient": [
+                f"NVME_PASSIVE_ISR boot, but nvme.sys never printed `{_NVME_PASSIVE}`: "
+                "its messages were not connected passive (iomgr irq.rs)",
+                *lines,
+            ],
+        }
     # One command at a time, or every transfer copied through the bounce buffer,
     # still works, only slower: a regression to either would never fail a boot.
     test = _NVME_SELF_TEST.search(text)
@@ -1260,8 +1573,16 @@ def _nvme_check(text: str) -> dict | None:
                 *lines,
             ],
         }
-    bridged = os.environ.get("VIBEOS_QEMU_NVME_BRIDGE", "").strip() == "1"
-    if bridged and _ROOT_PORT_STARTED not in text:
+    bridge = os.environ.get("VIBEOS_QEMU_NVME_BRIDGE", "").strip()
+    if bridge == "segment" and not _SEGMENT_ROOT.search(text):
+        return {
+            "classification": "NVME_SEGMENT_NOT_PUBLISHED",
+            "salient": [
+                "--nvme-segment boot, but the HAL never published PCI segment 1's root bus",
+                *[ln.strip() for ln in text.splitlines() if "[HAL] PCI" in ln][-4:],
+            ],
+        }
+    if bridge and _ROOT_PORT_STARTED not in text:
         return {
             "classification": "NVME_NOT_BEHIND_BRIDGE",
             "salient": [
@@ -1417,18 +1738,36 @@ def smoke(args, repo: Path) -> int:
         os.environ["VIBEOS_QEMU_SMP"] = str(smp)
         run.add(Stage("smp", status="warn", detail=f"-smp {smp}"))
 
-    # AHCI channel: the boot CD on ich9-ahci (backend.py), and every boot must
-    # then show uniata driving it (_ahci_check). x86 only: arm64 boots a
-    # ramdisk and has no IDE CD to move.
+    # AHCI channel: an ich9-ahci controller, and every boot must then show a driver
+    # running it (_ahci_check). x86 moves its boot CD onto it (backend.py); arm64 boots
+    # a ramdisk, so it gets the controller with a disk and an empty CD drive of its own
+    # (vm.py _ahci_args).
     if getattr(args, "ahci", False):
-        if arch == "arm64":
-            run.classification = "BAD_ARGS"
-            run.add(
-                Stage("ahci", status="fail", detail="--ahci is x86-only (arm64 boots a ramdisk)")
-            )
-            return run.finalize(repo)
         os.environ["VIBEOS_AHCI_CD"] = "1"
-        run.add(Stage("ahci", status="warn", detail="boot CD on ich9-ahci"))
+        run.add(
+            Stage(
+                "ahci",
+                status="warn",
+                detail="disk + CD drive on ich9-ahci"
+                if arch == "arm64"
+                else "boot CD on ich9-ahci",
+            )
+        )
+
+    # legide channel: an ISA IDE controller on the tertiary legacy channel (vm.py
+    # _isa_ide_args), and every boot must then show legide finding it (_legide_check).
+    if getattr(args, "isa_ide", False):
+        if arch != "i386":
+            run.classification = "BAD_ARGS"
+            run.add(Stage("isa-ide", status="fail", detail="--isa-ide is i386-only (legide)"))
+            return run.finalize(repo)
+        os.environ["VIBEOS_QEMU_ISA_IDE"] = "1"
+        # The ACPI HAL tells legide to leave detection to PnP (DisableFirmwareMapper);
+        # the tripwire makes it probe anyway, or the rig would prove nothing.
+        tokens = os.environ.get("VIBEOS_TRIPWIRE", "").split()
+        if "LEGIDE_DETECT" not in tokens:
+            os.environ["VIBEOS_TRIPWIRE"] = " ".join([*tokens, "LEGIDE_DETECT"])
+        run.add(Stage("isa-ide", status="warn", detail="disk on ISA IDE 0x1E8 IRQ 11"))
 
     # GIC channel: arm64's virt machine at gic-version=3 (vm.py gic_version), and
     # every boot must then show the HAL driving it as one (_gic_check).
@@ -1476,19 +1815,28 @@ def smoke(args, repo: Path) -> int:
 
     # NVMe behind a root port (arm64): the config space, the bridge's own pci.sys
     # and the requester ID of a device off the root bus.
-    if getattr(args, "nvme_bridge", False):
+    if getattr(args, "nvme_bridge", False) or getattr(args, "nvme_segment", False):
+        flag = "--nvme-segment" if getattr(args, "nvme_segment", False) else "--nvme-bridge"
         if arch != "arm64":
             run.classification = "BAD_ARGS"
-            run.add(Stage("nvme", status="fail", detail="--nvme-bridge is arm64-only"))
+            run.add(Stage("nvme", status="fail", detail=f"{flag} is arm64-only"))
             return run.finalize(repo)
-        os.environ["VIBEOS_QEMU_NVME_BRIDGE"] = "1"
+        os.environ["VIBEOS_QEMU_NVME_BRIDGE"] = "port"
         args.nvme = True
+    # ...or on a second PCI segment: QEMU has one, so the HAL makes the expander's
+    # buses one (the PCI_SEGMENT_SPLIT tripwire, arm64/ecam.rs).
+    if getattr(args, "nvme_segment", False):
+        os.environ["VIBEOS_QEMU_NVME_BRIDGE"] = "segment"
+        tokens = os.environ.get("VIBEOS_TRIPWIRE", "").split()
+        if "PCI_SEGMENT_SPLIT" not in tokens:
+            os.environ["VIBEOS_TRIPWIRE"] = " ".join([*tokens, "PCI_SEGMENT_SPLIT"])
     # NVMe channel: a controller attached on every arch (vm.py _nvme_args), and
     # every boot must then show nvme.sys publishing its namespace (_nvme_check).
     if nvme_default_on(args):
         os.environ["VIBEOS_QEMU_NVME"] = "1"
         run.add(Stage("nvme", status="warn", detail="NVMe controller attached"))
 
+    attach = bool(getattr(args, "attach_on_fail", False))
     results = []
     for i in range(total):
         r = _one_boot(
@@ -1501,6 +1849,7 @@ def smoke(args, repo: Path) -> int:
             total=total,
             want_ladder=bool(getattr(args, "ladder", False)),
             boot_arch=boot_arch,
+            attach=attach,
         )
         results.append(r)
         status = "ok" if r["ok"] else "fail"
@@ -1527,7 +1876,12 @@ def smoke(args, repo: Path) -> int:
             if r.get("screenshot"):
                 run.extra["screenshot"] = r["screenshot"]
         # fail-fast within a single run already handled by _watch; across runs
-        # we keep going to characterize a flake.
+        # we keep going to characterize a flake -- unless that failure's VM was
+        # kept for a debugger: you asked to look at THIS one, and the loop would
+        # otherwise boot on next to it while it still holds this process's slots.
+        if run.extra.get("attach", {}).get("kept"):
+            total = i + 1
+            break
 
     # Surface a screenshot even on a clean pass: the failure branch above already
     # carried the first failure's; otherwise take the first boot's (every boot

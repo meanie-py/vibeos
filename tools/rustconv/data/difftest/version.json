@@ -14,8 +14,10 @@
     "version_env.c"
   ],
   "rust_source": "../../../../sdk/lib/rust/version-rust/src/lib.rs",
+  "rust_support": {
+    "winedebug_rust": "../../../../sdk/lib/rust/winedebug-rust/src/lib.rs"
+  },
   "rust_items": [
-    "TRACE",
     "BOOL",
     "CHAR",
     "WCHAR",

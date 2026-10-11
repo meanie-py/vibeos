@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{TRACE};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_UI; // ui.c: DBG_DEFAULT_CHANNEL(UI)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use crate::ui_keystone::*;
@@ -8,8 +10,6 @@ use crate::tui::TuiVtbl;
 
 extern "C" {
     fn _vsnprintf(buffer: *mut i8, count: usize, format: PCSTR, ap: va_list) -> i32;
-    fn va_start(ap: *mut va_list, param: *const core::ffi::c_void);
-    fn va_end(ap: *mut va_list);
     fn strcpy(dest: PCHAR, src: PCSTR) -> PCHAR;
     fn strlen(s: PCSTR) -> usize;
     fn IniGetNumSectionItems(SectionId: ULONG_PTR) -> ULONG;
@@ -21,7 +21,6 @@ extern "C" {
     fn IniReadSettingByName(SectionId: usize, SettingName: PCSTR, Buffer: *mut u8, BufferSize: usize) -> u8;
     fn MachVideoGetDisplaySize(Width: *mut u32, Height: *mut u32, Depth: *mut u32);
     fn MachVideoSetDisplayMode(DisplayMode: PCSTR, Query: u8) -> u32;
-    fn TRACE(fmt: *const i8, ...);
 }
 
 // ===========================================================================
@@ -140,8 +139,8 @@ pub unsafe extern "C" fn UiInitialize(ShowUi: u8) -> u8 {
         return 1u8;
     }
 
-    TRACE(b"Initializing User Interface.\n\0".as_ptr() as PCSTR);
-    TRACE(b"Reading UI settings from [Display] section.\n\0".as_ptr() as PCSTR);
+    TRACE!("Initializing User Interface.\n");
+    TRACE!("Reading UI settings from [Display] section.\n");
 
     if IniOpenSection(b"Display\0".as_ptr() as PCSTR, &mut SectionId) == 0 {
         SectionId = 0;
@@ -241,7 +240,7 @@ pub unsafe extern "C" fn UiInitialize(ShowUi: u8) -> u8 {
 
     UiFadeInBackdrop();
 
-    TRACE(b"UiInitialize() returning TRUE.\n\0".as_ptr() as PCSTR);
+    TRACE!("UiInitialize() returning TRUE.\n");
     1u8
 }
 

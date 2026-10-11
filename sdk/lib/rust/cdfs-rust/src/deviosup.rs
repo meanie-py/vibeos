@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
@@ -18,9 +19,6 @@ use crate::types::{RAW_DIRENT, RAW_PATH_ISO, SYSTEM_USE_XA};
 use crate::types::{RAW_READ_INFO, TRACK_MODE_TYPE, _TRACK_MODE_TYPE_CDDA as CDDA, _TRACK_MODE_TYPE_XAForm2 as XAForm2, _TRACK_MODE_TYPE_YellowMode2 as YellowMode2};
 
 extern "C" {
-}
-extern "C" {
-    fn NT_ASSERT(condition: i32);
 }
 extern "C" {
     fn SectorOffset(byte_count: u32) -> i32;
@@ -59,7 +57,6 @@ extern "C" {
     fn ASSERT_IRP_CONTEXT(IrpContext: PIRP_CONTEXT);
 }
 extern "C" {
-    fn UNREFERENCED_PARAMETER(param: usize); // dummy signature; we'll pass pointer-sized value
     // these mimic the MSVC __try/__except/__end
     fn _SEH2_TRY();
 }
@@ -127,16 +124,13 @@ extern "system" {
     fn PsGetCurrentThread() -> *mut core::ffi::c_void;
 }
 extern "C" {
-    fn AssertVerifyDeviceIrp(Irp: PIRP);
 }
 extern "C" {
     fn CdFreeIoContext(IoContext: *mut CD_IO_CONTEXT);
 }
 extern "C" {
-    fn _Analysis_assume_(condition: bool);
 }
 extern "C" {
-    fn _Analysis_assume_lock_held_(lock: *mut core::ffi::c_void);
 }
 extern "C" {
     fn CdMapUserBuffer(irp_context: *mut IRP_CONTEXT, user_buffer: *mut *mut core::ffi::c_void);
@@ -235,7 +229,7 @@ pub unsafe extern "C" fn CdLbnToMmSsFf(mut Blocks: u32, Msf: *mut u8) {
 }
 #[no_mangle]
 pub unsafe extern "C" fn CdFileTrackMode(fcb: *mut FCB) -> TRACK_MODE_TYPE {
-    NT_ASSERT(FlagOn((*fcb).FcbState, FCB_STATE_MODE2FORM2_FILE | FCB_STATE_MODE2_FILE | FCB_STATE_DA_FILE));
+    NT_ASSERT!(FlagOn((*fcb).FcbState, FCB_STATE_MODE2FORM2_FILE | FCB_STATE_MODE2_FILE | FCB_STATE_DA_FILE));
     if FlagOn((*fcb).FcbState, FCB_STATE_MODE2FORM2_FILE) != 0 {
         return XAForm2;
     } else if FlagOn((*fcb).FcbState, FCB_STATE_DA_FILE) != 0 {
@@ -399,7 +393,7 @@ pub unsafe extern "C" fn CdNonCachedRead(
         },
         |_, _| {
             if (*p_CleanupRunCount) != 0 {
-                CdFinishBuffers(IrpContext, (*p_IoRuns).as_mut_ptr(), (*p_CleanupRunCount), 1, 0);
+                CdFinishBuffers(IrpContext, (*p_IoRuns).as_mut_ptr(), *p_CleanupRunCount , 1, 0);
             }
         },
     );
@@ -529,7 +523,7 @@ pub unsafe extern "C" fn CdNonCachedXARead(
                             );
                         }
                     } else {
-                        NT_ASSERT(FlagOn((*fcb).FcbState, FCB_STATE_MODE2_FILE | FCB_STATE_MODE2FORM2_FILE));
+                        NT_ASSERT!(FlagOn((*fcb).FcbState, FCB_STATE_MODE2_FILE | FCB_STATE_MODE2FORM2_FILE));
 
                         riff_header = core::ptr::addr_of_mut!(local_riff_header);
 
@@ -633,7 +627,7 @@ pub unsafe extern "C" fn CdNonCachedXARead(
         },
         |_, _| {
             if (*p_cleanup_run_count) != 0 {
-                CdFinishBuffers(irp_context, (*p_io_runs).as_mut_ptr(), (*p_cleanup_run_count), 1, 0);
+                CdFinishBuffers(irp_context, (*p_io_runs).as_mut_ptr(), *p_cleanup_run_count , 1, 0);
             }
         },
     );
@@ -752,12 +746,12 @@ pub unsafe extern "C" fn CdCreateUserMdl(
 
     // PAGED_CODE(); // omitted – Rust cannot convey pageability
 
-    UNREFERENCED_PARAMETER(Operation as usize);
-    UNREFERENCED_PARAMETER(IrpContext as usize);
+    UNREFERENCED_PARAMETER!(Operation as usize);
+    UNREFERENCED_PARAMETER!(IrpContext as usize);
 
     ASSERT_IRP_CONTEXT(IrpContext);
     ASSERT_IRP((*IrpContext).Irp);
-    NT_ASSERT((*(*IrpContext).Irp).MdlAddress.is_null() as i32);
+    NT_ASSERT!((*(*IrpContext).Irp).MdlAddress.is_null() as i32);
 
     //
     // Allocate the Mdl, and Raise if we fail.
@@ -885,7 +879,7 @@ pub unsafe extern "C" fn CdPerformDevIoCtrlEx(
     }
 
     // NT_ASSERT(!(OverrideVerify && (STATUS_VERIFY_REQUIRED == Status)));
-    NT_ASSERT((!(OverrideVerify != 0 && Status == STATUS_VERIFY_REQUIRED)) as i32);
+    NT_ASSERT!((!(OverrideVerify != 0 && Status == STATUS_VERIFY_REQUIRED)) as i32);
 
     Status
 }
@@ -1707,9 +1701,7 @@ pub unsafe extern "C" fn CdMultipleAsync(
     if (FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT) == 0) &&
         (FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_TOP_LEVEL) != 0)
     {
-        NT_ASSERT(
-            (((*(*IrpContext).__bindgen_anon_1.IoContext).__bindgen_anon_1.__bindgen_anon_1.as_ref().ResourceThreadId as ERESOURCE_THREAD) == PsGetCurrentThread() as ERESOURCE_THREAD) as i32,
-        );
+        NT_ASSERT!((((*(*IrpContext).__bindgen_anon_1.IoContext).__bindgen_anon_1.__bindgen_anon_1.as_ref().ResourceThreadId as ERESOURCE_THREAD) == PsGetCurrentThread() as ERESOURCE_THREAD) as i32);
 
         let io_context_ptr = (*IrpContext).__bindgen_anon_1.IoContext as usize;
         (*(*IrpContext).__bindgen_anon_1.IoContext).__bindgen_anon_1.__bindgen_anon_1.as_mut().ResourceThreadId = (io_context_ptr | 3) as ERESOURCE_THREAD;
@@ -1776,7 +1768,7 @@ pub unsafe extern "C" fn CdMultipleXAAsync(
         // Validate byte count
         // C: `NT_ASSERT(!SectorOffset(...))` — logical not, so `== 0`. Spelled with Rust's
         // bitwise `!` this could never be zero and the assertion was vacuous.
-        NT_ASSERT((SectorOffset((*ThisIoRun).DiskByteCount) == 0) as i32);
+        NT_ASSERT!((SectorOffset((*ThisIoRun).DiskByteCount) == 0) as i32);
 
         RawByteCount = SectorsFromBytes((*ThisIoRun).DiskByteCount) * RAW_SECTOR_SIZE;
 
@@ -1890,12 +1882,10 @@ pub unsafe extern "C" fn CdSingleAsync(
 
         if ((*IrpContext).Flags & IRP_CONTEXT_FLAG_TOP_LEVEL) != 0 {
             let io_ctx = (*IrpContext).__bindgen_anon_1.IoContext;
-            NT_ASSERT(
-                if ((*io_ctx).__bindgen_anon_1.__bindgen_anon_1.as_ref().ResourceThreadId as ERESOURCE_THREAD) == PsGetCurrentThread() as ERESOURCE_THREAD
+            NT_ASSERT!(if ((*io_ctx).__bindgen_anon_1.__bindgen_anon_1.as_ref().ResourceThreadId as ERESOURCE_THREAD) == PsGetCurrentThread() as ERESOURCE_THREAD
                     { 1 }
                 else
-                    { 0 },
-            );
+                    { 0 });
 
             (*io_ctx).__bindgen_anon_1.__bindgen_anon_1.as_mut().ResourceThreadId =
                 ((io_ctx as ULONG_PTR) | 3) as ERESOURCE_THREAD;
@@ -1949,7 +1939,7 @@ pub unsafe extern "system" fn CdMultiSyncCompletionRoutine(
         let IoContext = Context as *mut CD_IO_CONTEXT;
         // _Analysis_assume_(Context != NULL) -- intentional no-op
 
-        AssertVerifyDeviceIrp(Irp);
+        AssertVerifyDeviceIrp!(Irp);
 
         if !NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) {
             // InterlockedExchange( &IoContext->Status, Irp->IoStatus.Status )
@@ -1982,7 +1972,7 @@ pub unsafe extern "system" fn CdMultiAsyncCompletionRoutine(
     let IoContext = Context as *mut CD_IO_CONTEXT;
     // _Analysis_assume_(Context != NULL); (annotation, omitted)
 
-    AssertVerifyDeviceIrp(Irp);
+    AssertVerifyDeviceIrp!(Irp);
 
     // UNREFERENCED_PARAMETER( DeviceObject ); handled by prefix _DeviceObject
 
@@ -2026,7 +2016,7 @@ pub unsafe extern "system" fn CdSingleSyncCompletionRoutine(
     ntkrnl_sys::ASSERT!(!Context.is_null());
     let _ = DeviceObject;
 
-    AssertVerifyDeviceIrp(Irp);
+    AssertVerifyDeviceIrp!(Irp);
 
     if (*Irp).IoStatus.__bindgen_anon_1.Status < 0 {
         (*Irp).IoStatus.Information = 0;
@@ -2055,7 +2045,7 @@ pub unsafe extern "system" fn CdSingleAsyncCompletionRoutine(
 
     // _Analysis_assume_ removed: SAL no-op annotation; argument must never be evaluated (0xB8 class)
 
-    AssertVerifyDeviceIrp(Irp);
+    AssertVerifyDeviceIrp!(Irp);
 
     (*Irp).IoStatus.Information = 0;
 
@@ -2098,7 +2088,7 @@ pub unsafe extern "C" fn CdReadAudioSystemFile(
     PAGED_CODE!();
 
     if SafeNodeType(Fcb) == CDFS_NTC_FCB_PATH_TABLE {
-        NT_ASSERT((StartingOffset == 0) as i32);
+        NT_ASSERT!((StartingOffset == 0) as i32);
 
         RawPath = LocalBuffer.as_mut_ptr() as *mut RAW_PATH_ISO;
         RtlZeroMemory(RawPath as *mut c_void, LOCAL_BUF_SIZE);

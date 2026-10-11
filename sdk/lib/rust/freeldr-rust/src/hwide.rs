@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{ERR, TRACE};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_DISK; // hwide.c: DBG_DEFAULT_CHANNEL(DISK)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use ntkrnl_sys::ddk::{PULONG64};
@@ -10,8 +12,6 @@ use core::ffi::c_void;
 // catalog misclassifies them as "not in ddk" though they exist in bindgen).
 extern "C" {
     fn StallExecutionProcessor(Microseconds: ULONG);
-    fn ERR(fmt: *const i8, ...);
-    fn TRACE(fmt: *const i8, ...);
 }
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
@@ -753,7 +753,7 @@ unsafe fn AtapPerformSoftwareReset(
     let Registers: PIDE_REGISTERS = core::ptr::addr_of_mut!((*DeviceUnit).Registers);
     let IdeStatus: UCHAR;
 
-    ERR(b"Reset device at %X:%u\n\0".as_ptr() as PCHAR, ((*Registers).Data) as usize, ((*DeviceUnit).DeviceNumber) as usize);
+    ERR!("Reset device at %X:%u\n", ((*Registers).Data) as usize, ((*DeviceUnit).DeviceNumber) as usize);
 
     AtapDrainDeviceBuffer(Registers);
 
@@ -1043,7 +1043,7 @@ unsafe fn AtapAtapiHandleError(
         return 0u8;
     }
 
-    ERR(b"SK %02X, ASC %02X, ASCQ %02X\n\0".as_ptr() as PCHAR, (SenseData.SenseKey()) as usize, (SenseData.AdditionalSenseCode) as usize, (SenseData.AdditionalSenseCodeQualifier) as usize);
+    ERR!("SK %02X, ASC %02X, ASCQ %02X\n", (SenseData.SenseKey()) as usize, (SenseData.AdditionalSenseCode) as usize, (SenseData.AdditionalSenseCodeQualifier) as usize);
 
     return 1u8;
 }
@@ -1063,7 +1063,7 @@ unsafe fn AtapIssueCommand(
 
         if (AtaStatus != ATA_STATUS_SUCCESS) &&
             ((*Request).Flags & REQUEST_FLAG_IDENTIFY_COMMAND) == 0 {
-            ERR(b"ATA%s command %02X failed %u %02X:%02X at %X:%u\n\0".as_ptr() as PCHAR, (if ((*Request).Flags & REQUEST_FLAG_PACKET_COMMAND) != 0 { b"PI\0".as_ptr() as PCHAR } else { b"\0".as_ptr() as PCHAR }) as usize, (if ((*Request).Flags & REQUEST_FLAG_PACKET_COMMAND) != 0 {
+            ERR!("ATA%s command %02X failed %u %02X:%02X at %X:%u\n", (if ((*Request).Flags & REQUEST_FLAG_PACKET_COMMAND) != 0 { b"PI\0".as_ptr() as PCHAR } else { b"\0".as_ptr() as PCHAR }) as usize, (if ((*Request).Flags & REQUEST_FLAG_PACKET_COMMAND) != 0 {
                     (*Request).u.Cdb[0]
                 } else {
                     (*Request).u.TaskFile.Command
@@ -1249,7 +1249,7 @@ unsafe fn AtapIsDevicePresent(
     IdeStatus = AtapWait(core::ptr::addr_of_mut!((*DeviceUnit).Registers), ATA_TIME_BUSY_ENUM, IDE_STATUS_BUSY, 0);
     if (IdeStatus & (IDE_STATUS_BUSY | IDE_STATUS_DRQ)) != 0
     {
-        ERR(b"Device %X:%u is busy %02x\n\0".as_ptr() as PCHAR, ((*Registers).Data) as usize, ((*DeviceUnit).DeviceNumber) as usize, (IdeStatus) as usize);
+        ERR!("Device %X:%u is busy %02x\n", ((*Registers).Data) as usize, ((*DeviceUnit).DeviceNumber) as usize, (IdeStatus) as usize);
 
         if AtapPerformSoftwareReset(DeviceUnit) == 0 {
             return 0u8;
@@ -1478,7 +1478,7 @@ unsafe fn AtapAtapiInitDevice(
         i -= 1;
     }
     if i == 0 {
-        ERR(b"Device not ready\n\0".as_ptr() as PCHAR);
+        ERR!("Device not ready\n");
         return 0u8;
     }
 
@@ -1486,7 +1486,7 @@ unsafe fn AtapAtapiInitDevice(
                             &mut (*DeviceUnit).P.TotalSectors,
                             &mut (*DeviceUnit).P.SectorSize);
     if (*DeviceUnit).P.SectorSize == 0 || (*DeviceUnit).P.TotalSectors == 0 {
-        TRACE(b"No media found\n\0".as_ptr() as PCHAR);
+        TRACE!("No media found\n");
         return 0u8;
     }
 
@@ -1563,7 +1563,7 @@ unsafe fn AtapAtaInitDevice(
     }
 
     if TotalSectors == 0 {
-        ERR(b"Unknown geometry\n\0".as_ptr() as *const i8);
+        ERR!("Unknown geometry\n");
         return 0u8;
     }
 
@@ -1576,7 +1576,7 @@ unsafe fn AtapAtaInitDevice(
 
     AtapAtaSetMultipleMode(DeviceUnit);
 
-    TRACE(b"Multiple sector setting %u\n\0".as_ptr() as *const i8, ((*DeviceUnit).MultiSectorTransfer) as usize);
+    TRACE!("Multiple sector setting %u\n", ((*DeviceUnit).MultiSectorTransfer) as usize);
 
     1u8
 }
@@ -1589,7 +1589,7 @@ unsafe fn AtapAnalyzeIdentifyData(
     let mut i: ULONG;
 
     if AtaDevIsIdentifyDataValid(Id) == 0 {
-        ERR(b"Identify data CRC error\n\0".as_ptr() as PCHAR);
+        ERR!("Identify data CRC error\n");
         return 0u8;
     }
 
@@ -1628,15 +1628,9 @@ unsafe fn AtapAnalyzeIdentifyData(
         i += 1;
     }
 
-    TRACE(
-        b"MN  '%.*s'\n\0".as_ptr() as PCHAR, (core::mem::size_of_val(&(*Id).ModelNumber) as i32) as usize, ((*Id).ModelNumber.as_ptr()) as usize,
-    );
-    TRACE(
-        b"FR  '%.*s'\n\0".as_ptr() as PCHAR, (core::mem::size_of_val(&(*Id).FirmwareRevision) as i32) as usize, ((*Id).FirmwareRevision.as_ptr()) as usize,
-    );
-    TRACE(
-        b"S/N '%.*s'\n\0".as_ptr() as PCHAR, (core::mem::size_of_val(&(*Id).SerialNumber) as i32) as usize, ((*Id).SerialNumber.as_ptr()) as usize,
-    );
+    TRACE!("MN  '%.*s'\n", (core::mem::size_of_val(&(*Id).ModelNumber) as i32) as usize, ((*Id).ModelNumber.as_ptr()) as usize);
+    TRACE!("FR  '%.*s'\n", (core::mem::size_of_val(&(*Id).FirmwareRevision) as i32) as usize, ((*Id).FirmwareRevision.as_ptr()) as usize);
+    TRACE!("S/N '%.*s'\n", (core::mem::size_of_val(&(*Id).SerialNumber) as i32) as usize, ((*Id).SerialNumber.as_ptr()) as usize);
 
     1u8
 }
@@ -1753,7 +1747,7 @@ pub unsafe extern "C" fn AtaInit(
 
             DeviceUnit = FrLdrTempAlloc(core::mem::size_of::<HW_DEVICE_UNIT>(), TAG_ATA_DEVICE) as PHW_DEVICE_UNIT;
             if DeviceUnit.is_null() {
-                ERR(b"Failed to allocate device unit!\n\0".as_ptr() as PCHAR);
+                ERR!("Failed to allocate device unit!\n");
                 DeviceNumber += 1;
                 continue;
             }
@@ -1775,7 +1769,7 @@ pub unsafe extern "C" fn AtaInit(
                 continue;
             }
 
-            TRACE(b"Found %lu device at %X:%u\n\0".as_ptr() as PCHAR, (DeviceClass) as usize, (Registers.Data) as usize, (DeviceNumber) as usize);
+            TRACE!("Found %lu device at %X:%u\n", (DeviceClass) as usize, (Registers.Data) as usize, (DeviceNumber) as usize);
 
             if AtapInitDevice(DeviceUnit, DeviceClass) == 0 {
                 FrLdrTempFree(DeviceUnit as PVOID, TAG_ATA_DEVICE);
@@ -1783,7 +1777,7 @@ pub unsafe extern "C" fn AtaInit(
                 continue;
             }
 
-            TRACE(b"Total sectors %I64u of size %lu, CHS %lu:%lu:%lu, %lx\n\0".as_ptr() as PCHAR, ((*DeviceUnit).P.TotalSectors) as usize, ((*DeviceUnit).P.SectorSize) as usize, ((*DeviceUnit).P.Cylinders) as usize, ((*DeviceUnit).P.Heads) as usize, ((*DeviceUnit).P.SectorsPerTrack) as usize, ((*DeviceUnit).P.Flags) as usize);
+            TRACE!("Total sectors %I64u of size %lu, CHS %lu:%lu:%lu, %lx\n", ((*DeviceUnit).P.TotalSectors) as usize, ((*DeviceUnit).P.SectorSize) as usize, ((*DeviceUnit).P.Cylinders) as usize, ((*DeviceUnit).P.Heads) as usize, ((*DeviceUnit).P.SectorsPerTrack) as usize, ((*DeviceUnit).P.Flags) as usize);
 
             AtapUnits[*DetectedCount as usize] = DeviceUnit;
             *DetectedCount += 1;

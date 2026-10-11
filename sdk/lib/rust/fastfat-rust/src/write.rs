@@ -34,7 +34,7 @@ extern "system" {
     fn FatMultipleAsync( IrpContext: PIRP_CONTEXT, Vcb: PVCB, Irp: PIRP, NumberOfIoRuns: u32, IoRuns: PIO_RUN, );
     fn FsRtlNumberOfRunsInLargeMcb(Mcb: *const LARGE_MCB) -> u32;
     fn FatLookupMcbEntry(Vcb: PVCB, Mcb: *const LARGE_MCB, Vbo: u32, Lbo: *mut LBO, ByteCount: *mut u32, Extra: *mut c_void) -> u8;
-    fn FatBugCheck(arg1: u32, arg2: usize, arg3: u32);
+    fn FatBugCheck(arg1: usize, arg2: usize, arg3: usize);
     fn ExGetCurrentResourceThread() -> ERESOURCE_THREAD;
     fn FatFlushFat(IrpContext: PIRP_CONTEXT, Vcb: PVCB) -> u32;
     fn CcPurgeCacheSection( SectionObjectPointers: *mut SECTION_OBJECT_POINTERS, FileOffset: PLARGE_INTEGER, Length: u32, FlushType: u8, ) -> u8;
@@ -58,7 +58,7 @@ extern "system" {
     fn FatPagingFileIo(irp: *mut IRP, fcb: *mut FCB);
     fn FatIsIrpTopLevel(irp: *mut IRP) -> u8;
     fn FatCreateIrpContext(irp: *mut IRP, wait: i32) -> *mut IRP_CONTEXT;
-    fn CanFsdWait(irp: *mut IRP) -> i32;
+    fn CanFsdWait(irp: *mut IRP) -> u8;
     fn NodeType(p: *mut FCB) -> u16;
     fn FatCompleteMdl(irp_ctx: *mut IRP_CONTEXT, irp: *mut IRP) -> i32;
 }
@@ -261,7 +261,7 @@ pub unsafe extern "system" fn FatFsdWrite(
     let p_status = core::ptr::addr_of_mut!(status);
     if let Err(code) = crate::seh::fat_try_except(core::ptr::addr_of!(irp_context), || {
         *p_top_level = FatIsIrpTopLevel(irp) as i32;
-        *p_irp_context = FatCreateIrpContext(irp, CanFsdWait(irp));
+        *p_irp_context = FatCreateIrpContext(irp, CanFsdWait(irp) as i32);
         let irp_context = *p_irp_context;
         if IoGetTopLevelIrp() as usize == FSRTL_MOD_WRITE_TOP_LEVEL_IRP as usize {
             *p_mod_writer = 1;
@@ -1381,7 +1381,7 @@ pub unsafe extern "system" fn FatCommonWrite(
                     break 'try_exit;
                 }
 
-                FatBugCheck(TypeOfOpen as u32, FcbOrDcb as usize, 0);
+                FatBugCheck(TypeOfOpen as usize, FcbOrDcb as usize, 0);
             } // 'try_exit
 
             //  try_exit: NOTHING;  — post-dispatch epilogue (inside the C try).

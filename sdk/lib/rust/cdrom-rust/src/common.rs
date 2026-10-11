@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use crate::types::*;
 use kmdf_sys::*;
 use ntkrnl_sys::ddk::{IRP, PIRP, IO_STACK_LOCATION, PIO_STACK_LOCATION, GUID, LPGUID, LPCGUID, DEVICE_OBJECT, PDEVICE_OBJECT, MDL, PMDL};
@@ -104,12 +105,8 @@ extern "C" {
     fn PORT_ALLOCATED_SENSE(deviceExtension: *mut CDROM_DEVICE_EXTENSION, Srb: *mut SCSI_REQUEST_BLOCK) -> BOOLEAN;
 }
 extern "system" {
-    fn NT_ASSERT(expr: i32);
     fn PoQueryWatchdogTime(DeviceObject: *mut core::ffi::c_void, SecondsRemaining: *mut ULONG) -> u8;
     fn ScratchBuffer_ExecuteCdb(DeviceExtension: PCDROM_DEVICE_EXTENSION, OriginalRequest: *mut core::ffi::c_void, TransferSize: u32, GetDataFromDevice: u8, Cdb: PCDB, OprationLength: u8) -> NTSTATUS;
-}
-unsafe extern "C" {
-    fn UNREFERENCED_PARAMETER(x: usize);
 }
 unsafe extern "C" {
     fn PowerContextReuseRequest(DeviceExtension: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
@@ -1015,7 +1012,7 @@ pub unsafe extern "C" fn DeviceSendStartUnit(Device: WDFDEVICE) {
 
     if NT_SUCCESS(status) {
         (*srb).OriginalRequest = WdfRequestWdmGetIrp(startUnitRequest) as *mut core::ffi::c_void;
-        NT_ASSERT((!(*srb).OriginalRequest.is_null()) as i32);
+        NT_ASSERT!((!(*srb).OriginalRequest.is_null()) as i32);
 
         // WDF_OBJECT_ATTRIBUTES_INIT(&attributes) – expand: zero + set size
         core::ptr::write_bytes(
@@ -1136,8 +1133,8 @@ pub unsafe extern "system" fn DeviceAsynchronousCompletion(
     let deviceExtension = DeviceGetExtension((*context).Device);
 
     // Suppress unused parameter warnings (mechanical preservation of C code).
-    UNREFERENCED_PARAMETER(&Target as *const _ as usize);
-    UNREFERENCED_PARAMETER(&Params as *const _ as usize);
+    UNREFERENCED_PARAMETER!(&Target as *const _ as usize);
+    UNREFERENCED_PARAMETER!(&Params as *const _ as usize);
 
     // If this is an execute SRB, check for a frozen queue.
     if (*context).Srb.Function == SRB_FUNCTION_EXECUTE_SCSI {
@@ -2136,7 +2133,7 @@ pub unsafe extern "C" fn MediaReadCapacityDataInterpret(
 
     // PAGED_CODE();
 
-    NT_ASSERT(if !ReadCapacityBuffer.is_null() { 1 } else { 0 });
+    NT_ASSERT!(if !ReadCapacityBuffer.is_null() { 1 } else { 0 });
 
     TracePrint!(
         TRACE_LEVEL_INFORMATION,
@@ -2707,7 +2704,7 @@ pub unsafe extern "C" fn DeviceRestoreDefaultSpeed(WorkItem: WDFWORKITEM) {
 pub unsafe extern "C" fn StringsAreMatched(StringToMatch: *mut i8, TargetString: *mut i8) -> i32 {
     let length: usize;
     PAGED_CODE!();
-    NT_ASSERT((!TargetString.is_null()) as i32);
+    NT_ASSERT!((!TargetString.is_null()) as i32);
     if StringToMatch.is_null() {
         return 1;
     }
@@ -3020,7 +3017,7 @@ pub unsafe extern "C" fn PerformEjectionControl(
 
         status = WdfWaitLockAcquire((*DeviceExtension).EjectSynchronizationLock, core::ptr::null_mut());
         if !NT_SUCCESS(status) {
-            NT_ASSERT(0);
+            NT_ASSERT!(0);
         }
 
         TracePrint!(
@@ -3043,12 +3040,12 @@ pub unsafe extern "C" fn PerformEjectionControl(
                     break;
                 }
                 fileObjectContext = FileObjectGetContext(fileObject);
-                NT_ASSERT(((!fileObjectContext.is_null())) as i32);
+                NT_ASSERT!(((!fileObjectContext.is_null())) as i32);
             }
 
-            NT_ASSERT((((*DeviceExtension).LockCount >= 0)) as i32);
-            NT_ASSERT((((*DeviceExtension).ProtectedLockCount >= 0)) as i32);
-            NT_ASSERT((((*DeviceExtension).InternalLockCount >= 0)) as i32);
+            NT_ASSERT!((((*DeviceExtension).LockCount >= 0)) as i32);
+            NT_ASSERT!((((*DeviceExtension).ProtectedLockCount >= 0)) as i32);
+            NT_ASSERT!((((*DeviceExtension).InternalLockCount >= 0)) as i32);
 
             newLockCount = (*DeviceExtension).LockCount;
             newProtectedLockCount = (*DeviceExtension).ProtectedLockCount;
@@ -3081,7 +3078,7 @@ pub unsafe extern "C" fn PerformEjectionControl(
                 newProtectedLockCount -= 1;
                 countChanged = 1;
             } else if Lock == 0 && LockType == InternalMediaLock {
-                NT_ASSERT(((newInternalLockCount != 0)) as i32);
+                NT_ASSERT!(((newInternalLockCount != 0)) as i32);
                 newInternalLockCount -= 1;
                 countChanged = 1;
             }
@@ -3340,7 +3337,7 @@ pub unsafe extern "C" fn DeviceSendPowerDownProcessRequest(
             }
         }
         _ => {
-            NT_ASSERT(0); // FALSE
+            NT_ASSERT!(0); // FALSE
             status = STATUS_NOT_IMPLEMENTED;
             return status;
         }
@@ -3413,10 +3410,8 @@ pub unsafe extern "C" fn DeviceSendPowerDownProcessRequest(
                     (*DeviceExtension).PowerContext.Srb.SrbStatus as u32,
                 );
 
-                NT_ASSERT(
-                    ((((*DeviceExtension).PowerContext.Srb.SrbStatus as u32) & SRB_STATUS_QUEUE_FROZEN)
-                        == 0) as i32,
-                );
+                NT_ASSERT!(((((*DeviceExtension).PowerContext.Srb.SrbStatus as u32) & SRB_STATUS_QUEUE_FROZEN)
+                        == 0) as i32);
 
                 let retry_remaining = retryCount - (*DeviceExtension).PowerContext.RetryCount;
                 shouldRetry = RequestSenseInfoInterpret(

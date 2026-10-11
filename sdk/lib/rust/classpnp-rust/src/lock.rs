@@ -94,7 +94,7 @@ pub unsafe extern "system" fn ClassCompleteRequest(
                     (*foundTrackingBlock).File,
                     (*foundTrackingBlock).Line,
                 );
-                NT_ASSERT(0);
+                NT_ASSERT!(0);
             }
         }
 

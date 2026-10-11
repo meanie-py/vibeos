@@ -84,6 +84,8 @@ unsafe extern "C" fn AtaAhciAllocateMemory(mut ChannelContext: PVOID) -> NTSTATU
     BufferVa = BufferVa.wrapping_add(CommandListSize as ULONG_PTR);
     BufferPa = BufferPa.wrapping_add(CommandListSize as ULONG64);
 
+    ASSERT!(((*ChanData).Mem.CommandListPhys as ULONG_PTR) % (AHCI_COMMAND_LIST_ALIGNMENT as ULONG_PTR) == 0);
+
     if (*ChanData).__bindgen_anon_1.ChanInfo & CHANNEL_FLAG_HAS_FBS == 0 {
         BufferVa = (ALIGN_UP_BY((BufferVa) as _, (AHCI_RECEIVED_FIS_ALIGNMENT) as _)) as _;
         BufferPa = (ALIGN_UP_BY((BufferPa) as _, (AHCI_RECEIVED_FIS_ALIGNMENT) as _)) as _;
@@ -91,6 +93,8 @@ unsafe extern "C" fn AtaAhciAllocateMemory(mut ChannelContext: PVOID) -> NTSTATU
         (*ChanData).Mem.ReceivedFisPhys = BufferPa;
         BufferVa = BufferVa.wrapping_add(core::mem::size_of::<AHCI_RECEIVED_FIS>() as ULONG_PTR);
         BufferPa = BufferPa.wrapping_add(core::mem::size_of::<AHCI_RECEIVED_FIS>() as ULONG64);
+
+        ASSERT!(((*ChanData).Mem.ReceivedFisPhys as ULONG_PTR) % (AHCI_RECEIVED_FIS_ALIGNMENT as ULONG_PTR) == 0);
     }
 
     if (*ChanData).__bindgen_anon_1.ChanInfo & CHANNEL_FLAG_HAS_FBS != 0 {
@@ -119,12 +123,21 @@ unsafe extern "C" fn AtaAhciAllocateMemory(mut ChannelContext: PVOID) -> NTSTATU
 
         (*ChanData).ReceivedFis = BufferVa as PVOID as PAHCI_RECEIVED_FIS;
         (*ChanData).Mem.ReceivedFisPhys = BufferPa;
+
+        ASSERT!(BufferPa % (AHCI_RECEIVED_FIS_FBS_ALIGNMENT as ULONG64) == 0);
     }
 
     if (*ChanData).__bindgen_anon_1.ChanInfo & CHANNEL_FLAG_64_BIT_DMA == 0 {
+        ASSERT!(((*ChanData).Mem.CommandListPhys >> 32) as ULONG == 0);
+        ASSERT!(((*ChanData).Mem.ReceivedFisPhys >> 32) as ULONG == 0);
     }
 
     CommandTableLength = (FIELD_OFFSET!(AHCI_COMMAND_TABLE, PrdTable[(*ChanData).__bindgen_anon_1.MaximumPhysicalPages as usize]) as usize) as ULONG;
+
+    ASSERT!((*ChanData).__bindgen_anon_1.MaximumPhysicalPages != 0
+        && (*ChanData).__bindgen_anon_1.MaximumPhysicalPages <= AHCI_MAX_PRDT_ENTRIES as ULONG);
+
+    ASSERT!(PAGE_SIZE > (CommandTableLength + (AHCI_COMMAND_TABLE_ALIGNMENT - 1)));
 
     CommandTablesPerPage = PAGE_SIZE / (CommandTableLength + (AHCI_COMMAND_TABLE_ALIGNMENT - 1));
 
@@ -163,7 +176,10 @@ unsafe extern "C" fn AtaAhciAllocateMemory(mut ChannelContext: PVOID) -> NTSTATU
             BufferVa = (ALIGN_UP_BY((BufferVa) as _, (AHCI_COMMAND_TABLE_ALIGNMENT as usize))) as _;
             BufferPa = (ALIGN_UP_BY((BufferPa) as _, (AHCI_COMMAND_TABLE_ALIGNMENT as usize))) as _;
 
+            ASSERT!(BufferPa % (AHCI_COMMAND_TABLE_ALIGNMENT as ULONG64) == 0);
+
             if (*ChanData).__bindgen_anon_1.ChanInfo & CHANNEL_FLAG_64_BIT_DMA == 0 {
+                ASSERT!((BufferPa >> 32) as ULONG == 0);
             }
 
             (*ChanData).CommandTable[SlotNumber as usize] = BufferVa as PAHCI_COMMAND_TABLE;
@@ -297,6 +313,8 @@ unsafe extern "C" fn AtaAhciHbaRequestOsOwnership(mut IoBase: PVOID) {
         KeStallExecutionProcessor(10);
         i = i.wrapping_add(1);
     }
+
+    WARN!(b"Unable to acquire the OS semaphore %08lx\n\0".as_ptr() as *const i8, Control);
 }
 
 unsafe extern "C" fn AtaAhciIsPortRemovable(
@@ -320,6 +338,7 @@ unsafe extern "C" fn AtaAhciCreateChannelData(Controller: PATA_CONTROLLER) -> NT
     let mut i: ULONG;
 
     PAGED_CODE!();
+    ASSERT!((*Controller).MaxChannels != 0);
 
     ChanData = (ExAllocatePoolZero(
         NonPagedPool,
@@ -575,6 +594,7 @@ pub unsafe extern "C" fn AhciGetControllerProperties(
     }
 
     if (*Controller).InterruptDesc.Type != CmResourceTypeInterrupt {
+        ERR!(b"No interrupt resource\n\0".as_ptr() as *const i8);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -599,6 +619,7 @@ pub unsafe extern "C" fn AhciGetControllerProperties(
     (*Controller).ChannelBitmap = AHCI_HBA_READ(((*Controller).IoBase).cast(), HbaPortBitmap);
     (*Controller).MaxChannels = CountSetBits((*Controller).ChannelBitmap);
     if (*Controller).MaxChannels == 0 {
+        ASSERT!((*Controller).MaxChannels == 0);
         return STATUS_DEVICE_HARDWARE_ERROR;
     }
 
@@ -627,6 +648,7 @@ pub unsafe extern "C" fn AhciGetControllerProperties(
         i = i.wrapping_sub(1);
     }
     if i == 0 {
+        ERR!(b"HBA reset failed %08lx\n\0".as_ptr() as *const i8, GlobalControl);
         return STATUS_IO_TIMEOUT;
     }
 
@@ -683,6 +705,11 @@ pub unsafe extern "C" fn AhciGetControllerProperties(
         FALSE,
     );
     if !NT_SUCCESS!(Status) {
+        ERR!(
+            b"Could not connect to interrupt %lu, status 0x%lx\n\0".as_ptr() as *const i8,
+            (*InterruptDesc).u.Interrupt.Vector,
+            Status,
+        );
         return Status;
     }
 

@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 // The real definitions, so the compiler checks every call against them.
 use crate::timesup::{FatFatDateToNtTime, FatFatTimeToNtTime};
@@ -43,7 +44,7 @@ extern "system" {
     fn ClearFlag(Flags: *mut u32, Flag: u32);
     fn Fat8dot3ToString( IrpContext: *mut core::ffi::c_void, Dirent: *mut core::ffi::c_void, Upcase: u8, String: *mut OEM_STRING, );
     fn FatAcquireSharedFcb( IrpContext: *mut core::ffi::c_void, Dcb: *mut core::ffi::c_void, ) -> u8;
-    fn FatBugCheck(arg1: u32, arg2: u32, arg3: u32);
+    fn FatBugCheck(arg1: usize, arg2: usize, arg3: usize);
     fn FatConvertToSharedFcb( IrpContext: *mut core::ffi::c_void, Dcb: *mut core::ffi::c_void, );
     fn FatGetEaLength( IrpContext: *mut core::ffi::c_void, Vcb: *mut core::ffi::c_void, Dirent: *mut core::ffi::c_void, EaSize: *mut u32, );
     fn FatIsNameShortOemValid( IrpContext: *mut core::ffi::c_void, OemString: OEM_STRING, ContainsWildCards: u8, AllowWildCards: u8, IsConstant: u8, ) -> u8;
@@ -51,18 +52,16 @@ extern "system" {
     fn FatMapUserBuffer( IrpContext: *mut core::ffi::c_void, Irp: *mut core::ffi::c_void, ) -> *mut u8;
     fn FatStringTo8dot3( IrpContext: *mut core::ffi::c_void, LocalBestFit: OEM_STRING, Constant: *mut OEM_STRING, );
     fn FatResetExceptionState(IrpContext: *mut core::ffi::c_void);
-    fn NT_ASSERT(condition: u8);
     fn RtlEqualMemory(s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, length: u32) -> u8;
     fn RtlOemStringToCountedUnicodeSize(OemString: *const OEM_STRING) -> u32;
     fn QuadAlign(x: u32) -> u32;
     // try_return was a no-op cohab stub — it is C's `try_return(X)` macro
     // (Status = X; goto try_exit), now inlined as `return;`/do_return at each
     // call site (see FatQueryDirectory). Do NOT re-introduce it as an extern fn.
-    fn CanFsdWait(Irp: PIRP) -> i32;
+    fn CanFsdWait(Irp: PIRP) -> u8;
     fn FatIsIrpTopLevel(Irp: PIRP) -> u8;
     fn FatCreateIrpContext(Irp: PIRP, CanWait: i32) -> PIRP_CONTEXT;
     fn FatProcessException(IrpContext: PIRP_CONTEXT, Irp: PIRP, ExceptionCode: u32) -> NTSTATUS;
-    fn UNREFERENCED_PARAMETER(param: *mut core::ffi::c_void);
 }
 extern "C" {
     // wdm FORCEINLINE helper: cdecl body, bindgen class — was "system" (§9.99).
@@ -139,7 +138,7 @@ pub unsafe extern "system" fn FatFsdDirectoryControl(
     let p_ic = core::ptr::addr_of_mut!(IrpContext);
     let p_status = core::ptr::addr_of_mut!(Status);
     if let Err(code) = crate::seh::fat_try_except(p_ic as *const PIRP_CONTEXT, || {
-        *p_ic = FatCreateIrpContext(Irp, CanFsdWait(Irp));
+        *p_ic = FatCreateIrpContext(Irp, CanFsdWait(Irp) as i32);
         *p_status = FatCommonDirectoryControl(*p_ic as *mut IRP_CONTEXT, Irp);
     }) {
         Status = FatProcessException(IrpContext, Irp, code as u32);
@@ -153,7 +152,7 @@ pub unsafe extern "system" fn FatFsdDirectoryControl(
 
     DebugTrace(-1, Dbg, b"FatFsdDirectoryControl -> %08lx\n\0".as_ptr() as *const i8, Status);
 
-    UNREFERENCED_PARAMETER(VolumeDeviceObject);
+    UNREFERENCED_PARAMETER!(VolumeDeviceObject);
 
     Status
 }
@@ -589,7 +588,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                         return;
                     }
 
-                    NT_ASSERT((BytesRemainingInBuffer >= BaseLength) as u8);
+                    NT_ASSERT!((BytesRemainingInBuffer >= BaseLength) as u8);
                     core::ptr::write_bytes(Buffer.add(NextEntry as usize), 0, BaseLength as usize);
 
                     // C switch FALLS THROUGH 5|2|6|3 -> 1: every dir-info class
@@ -642,7 +641,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                             DebugTrace(0, Dbg, b"FatQueryDirectory -> Name = \"%Z\"\n\0".as_ptr() as *const i8, &Fat8Dot3String);
                         }
                         _ => {
-                            FatBugCheck(FileInformationClass, 0, 0);
+                            FatBugCheck(FileInformationClass as usize, 0, 0);
                         }
                     }
 
@@ -656,7 +655,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                     );
 
                     if BytesConverted < FileNameLength {
-                        NT_ASSERT((NextEntry == 0) as u8);
+                        NT_ASSERT!((NextEntry == 0) as u8);
                         *p_Status = STATUS_BUFFER_OVERFLOW;
                     }
 
@@ -687,7 +686,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                         return;
                     }
 
-                    NT_ASSERT((BytesRemainingInBuffer >= BaseLength) as u8);
+                    NT_ASSERT!((BytesRemainingInBuffer >= BaseLength) as u8);
                     core::ptr::write_bytes(Buffer.add(NextEntry as usize), 0, BaseLength as usize);
 
                     // C switch FALLS THROUGH 5|6 -> 2|3 -> 1 (see the short-name
@@ -701,7 +700,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                             if FileInformationClass == FIC_BOTH_DIRECTORY || FileInformationClass == FIC_ID_BOTH_DIRECTORY {
                                 BothDirInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_BOTH_DIR_INFORMATION);
                                 Fat8dot3ToString(IrpContext, Dirent as *mut c_void, 0, &mut Fat8Dot3String);
-                                NT_ASSERT((Fat8Dot3String.Length <= 12) as u8);
+                                NT_ASSERT!((Fat8Dot3String.Length <= 12) as u8);
                                 *p_Status = RtlOemToUnicodeN(
                                     &mut (*BothDirInfo).ShortName[0],
                                     12 * core::mem::size_of::<u16>() as u32,
@@ -709,8 +708,8 @@ pub unsafe extern "system" fn FatQueryDirectory(
                                     Fat8Dot3String.Buffer,
                                     (Fat8Dot3String.Length) as u32,
                                 );
-                                NT_ASSERT(((*p_Status) != STATUS_BUFFER_OVERFLOW) as u8);
-                                NT_ASSERT((ShortNameLength <= 12 * core::mem::size_of::<u16>() as u32) as u8);
+                                NT_ASSERT!(((*p_Status) != STATUS_BUFFER_OVERFLOW) as u8);
+                                NT_ASSERT!((ShortNameLength <= 12 * core::mem::size_of::<u16>() as u32) as u8);
                                 (*BothDirInfo).ShortNameLength = (ShortNameLength as u8) as i8;
 
                                 if (*p_Status) < 0 {
@@ -758,7 +757,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                             DebugTrace(0, Dbg, b"FatQueryDirectory -> Name = \"%Z\"\n\0".as_ptr() as *const i8, &Fat8Dot3String);
                         }
                         _ => {
-                            FatBugCheck(FileInformationClass, 0, 0);
+                            FatBugCheck(FileInformationClass as usize, 0, 0);
                         }
                     }
 
@@ -782,7 +781,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                         .wrapping_add(BaseLength as usize).wrapping_add(BytesConverted as usize) as _;
 
                     if BytesConverted < FileNameLength {
-                        NT_ASSERT((NextEntry == 0) as u8);
+                        NT_ASSERT!((NextEntry == 0) as u8);
                         // try_return(Status = STATUS_BUFFER_OVERFLOW) — inner closure: flag + break loop
                         *p_Status = STATUS_BUFFER_OVERFLOW;
                         do_return = true;

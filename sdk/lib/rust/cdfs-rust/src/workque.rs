@@ -18,8 +18,6 @@ const IoWriteAccess: u32 = 1;
 const CriticalWorkQueue: WORK_QUEUE_TYPE = 0;
 
 extern "C" {
-}
-extern "C" {
     fn ASSERT_IRP_CONTEXT(IrpContext: *mut IRP_CONTEXT);
 }
 extern "C" {
@@ -32,7 +30,6 @@ extern "C" {
     fn CdReleaseFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut core::ffi::c_void);
 }
 extern "C" {
-    fn _Analysis_assume_lock_held_(lock: *mut core::ffi::c_void);
 }
 extern "C" {
     fn FlagOn(Flags: u32, Flag: u32) -> u32;

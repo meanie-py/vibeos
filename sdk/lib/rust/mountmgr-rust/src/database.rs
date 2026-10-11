@@ -59,9 +59,6 @@ extern "C" {
     fn IsUniqueIdPresent( DeviceExtension: *mut DEVICE_EXTENSION, DatabaseEntry: *mut DATABASE_ENTRY, ) -> BOOLEAN;
     fn UpdateReplicatedUniqueIds( ListDeviceInfo: *mut DEVICE_INFORMATION, DatabaseEntry: *mut DATABASE_ENTRY, );
 }
-extern "C" {
-    fn DPRINT1(format: *const i8, ...);
-}
 
 // ---- file-scope preamble (translated) ----
 pub const NDEBUG: i32 = 1;
@@ -114,8 +111,6 @@ const STATUS_IO_TIMEOUT: NTSTATUS = 0xC00000B5u32 as i32;
 
 const REG_BINARY: u32 = 3;
 
-unsafe extern "C" {
-}
 
 const MAXIMUM_REPARSE_DATA_BUFFER_SIZE: u32 = 16384;
 const FILE_SYNCHRONOUS_IO_NONALERT: u32 = 0x00000020;
@@ -161,8 +156,6 @@ const DO_UNLOAD_PENDING: u32 = 0x0001;
 #[allow(non_upper_case_globals)]
 const IO_NO_INCREMENT: i32 = 0;
 
-unsafe extern "C" {
-}
 #[no_mangle]
 pub unsafe extern "C" fn GetRemoteDatabaseSize(Database: HANDLE) -> i32 {
     let mut IoStatusBlock = core::mem::MaybeUninit::<_IO_STATUS_BLOCK>::uninit();
@@ -1374,7 +1367,7 @@ pub unsafe extern "system" fn WorkerThread(
         let DeviceExtension: *mut DEVICE_EXTENSION;
         let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
 
-        UNREFERENCED_PARAMETER(DeviceObject as *mut core::ffi::c_void);
+        UNREFERENCED_PARAMETER!(DeviceObject as *mut core::ffi::c_void);
 
         ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32;
         ObjectAttributes.RootDirectory = core::ptr::null_mut();
@@ -1954,7 +1947,7 @@ pub unsafe extern "system" fn CreateRemoteDatabaseWorker(
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let DeviceInformation: *mut DEVICE_INFORMATION;
 
-    UNREFERENCED_PARAMETER(DeviceObject as *mut core::ffi::c_void);
+    UNREFERENCED_PARAMETER!(DeviceObject as *mut core::ffi::c_void);
 
     /* Extract context */
     WorkItem = Context as *mut MIGRATE_WORK_ITEM;
@@ -4391,7 +4384,6 @@ pub unsafe extern "C" fn DeleteNoDriveLetterEntry(
 
 // ddk_shims-provided fns — extern "system" (match the shim def).
 unsafe extern "system" {
-    fn UNREFERENCED_PARAMETER(param: *mut core::ffi::c_void);
     fn MOUNTMGR_IS_VOLUME_NAME(name: *const _UNICODE_STRING) -> u8; // BOOLEAN
     fn AllocatePool(NumberOfBytes: u32) -> *mut core::ffi::c_void;
     fn FreePool(P: *mut core::ffi::c_void);
@@ -4400,8 +4392,6 @@ unsafe extern "C" {
     fn FindDeviceInfo( DeviceExtension: *mut DEVICE_EXTENSION, SymbolicName: *const _UNICODE_STRING, Boolean: u8, ListDeviceInfo: *mut *mut DEVICE_INFORMATION, ) -> NTSTATUS;
     fn PostOnlineNotification( DeviceExtension: *mut DEVICE_EXTENSION, SymbolicName: *const _UNICODE_STRING, );
     fn IsDriveLetter(SymbolicName: *const _UNICODE_STRING) -> BOOLEAN;
-}
-unsafe extern "system" {
 }
 // DeleteNoDriveLetterEntryRoutine(IN PWSTR ValueName,
 //                                 IN ULONG ValueType,

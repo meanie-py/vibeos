@@ -141,6 +141,16 @@ unsafe fn Dispatch(Service: u32, Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
                 Args[1] as u32,
                 Ctx.Rip as *const c_void,
             );
+            if Args[0] == 0 {
+                // Every OTHER thread dies here, wherever it is -- possibly between a
+                // Notify* Before (CPU-layer lock taken) and its After. The exiting
+                // thread then deadlocks on that lock in its next memory call: osk's
+                // ExitProcess hung in msacm32's DLL_PROCESS_DETACH heap free.
+                (Cpu.ProcessTerm)(null_mut(), 0, 0);
+                let Status = NativeSyscall(Service, Args.as_ptr());
+                (Cpu.ProcessTerm)(null_mut(), 1, Status as NTSTATUS);
+                return Status;
+            }
         }
         svc::SVC_NtCallbackReturn => {
             return crate::callback::CallbackReturn(Args);

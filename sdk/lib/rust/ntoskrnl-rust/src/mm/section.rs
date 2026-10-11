@@ -519,7 +519,7 @@ const IMAGE_NT_OPTIONAL_HDR64_MAGIC: u16 = 0x20b;
 const PAGE_FLAGS_VALID_FOR_SECTION: ULONG =
     PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY |
     PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY |
-    PAGE_NOACCESS;
+    PAGE_NOACCESS | PAGE_NOCACHE | PAGE_WRITECOMBINE; // mm.h; the port had dropped the last two
 const PAGE_IS_WRITABLE: ULONG = PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY;
 const PAGE_IS_EXECUTABLE: ULONG = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY;
 const PAGE_IS_WRITECOPY: ULONG = PAGE_WRITECOPY | PAGE_EXECUTE_WRITECOPY;
@@ -2306,8 +2306,8 @@ pub unsafe extern "system" fn MmNotPresentFaultSectionView(
             return STATUS_MM_RESTART_OPERATION;
         }
 
-        MI_SET_USAGE(MI_USAGE_SECTION);
-        MI_SET_PROCESS2("");
+        ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_SECTION);
+        ntkrnl_sys::MI_SET_PROCESS2!("");
         Status = MmRequestPageMemoryConsumer(MC_USER, 1u8, &mut Page);
         if Status < 0 {
             return STATUS_NO_MEMORY;
@@ -2357,8 +2357,8 @@ pub unsafe extern "system" fn MmNotPresentFaultSectionView(
     if Entry == 0 {
         if (Offset.QuadPart >= PAGE_ROUND_UP((*Segment).RawLength.QuadPart as usize) as i64)
             && ((*MemoryArea).VadNode.u.VadFlags.VadType() as u32 == VadImageMap) {
-            MI_SET_USAGE(MI_USAGE_SECTION);
-            MI_SET_PROCESS2("");
+            ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_SECTION);
+            ntkrnl_sys::MI_SET_PROCESS2!("");
             Status = MmRequestPageMemoryConsumer(MC_USER, 0u8, &mut Page);
             if Status < 0 {
                 MmUnlockSectionSegment(Segment as PVOID);
@@ -3239,6 +3239,58 @@ unsafe fn MmMapViewOfSegment(
         return Status;
     }
 
+    // Diagnostic (i386 writable-root boot, 0x1A in MmDeleteRmap): a fresh kernel-space
+    // view must start with no present PTEs. One that does inherited a stale mapping,
+    // and unmapping it later frees a page the segment never held.
+    {
+        extern "system" {
+            fn MmIsPagePresent(Process: PEPROCESS, Address: PVOID) -> BOOLEAN;
+        }
+        extern "C" {
+            fn MmGetKernelAddressSpace() -> PVOID;
+        }
+        if AddressSpace == MmGetKernelAddressSpace() {
+            let base = MA_GetStartingAddress(MArea);
+            let mut off: ULONG_PTR = 0;
+            while off < ViewSize as ULONG_PTR {
+                let va = (base + off) as PVOID;
+                if MmIsPagePresent(core::ptr::null_mut(), va) != 0 {
+                    // Once: dump the ROS kernel VAD tree from the system view range up, to
+                    // see whether the session reservation is still in it.
+                    static DUMPED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+                    if !DUMPED.swap(true, core::sync::atomic::Ordering::Relaxed) {
+                        extern "system" {
+                            fn MiGetNextNode(Node: ntkrnl_sys::ddk::PMMADDRESS_NODE) -> ntkrnl_sys::ddk::PMMADDRESS_NODE;
+                        }
+                        let root = core::ptr::addr_of_mut!(crate::mm::marea::MiRosKernelVadRoot);
+                        let mut n = (*root).BalancedRoot.RightChild as ntkrnl_sys::ddk::PMMADDRESS_NODE;
+                        while !n.is_null() && !(*n).LeftChild.is_null() {
+                            n = (*n).LeftChild as ntkrnl_sys::ddk::PMMADDRESS_NODE;
+                        }
+                        while !n.is_null() {
+                            if (*n).EndingVpn as ULONG_PTR >= 0xb9000 {
+                                mm_guard_trip!(
+                                    "section.kernel-vad-tree node", 64,
+                                    "StartVpn" => (*n).StartingVpn as ULONG_PTR,
+                                    "EndVpn" => (*n).EndingVpn as ULONG_PTR,
+                                    "Type" => (*(n as PMEMORY_AREA)).Type as ULONG_PTR,
+                                );
+                            }
+                            n = MiGetNextNode(n);
+                        }
+                    }
+                    mm_guard_trip!(
+                        "section.MmMapViewOfSegment stale-pte-in-new-kernel-view", 8,
+                        "Address" => va as ULONG_PTR,
+                        "ViewBase" => base,
+                        "ViewSize" => ViewSize as ULONG_PTR,
+                    );
+                }
+                off += PAGE_SIZE as ULONG_PTR;
+            }
+        }
+    }
+
     InterlockedIncrement64((*Segment).ReferenceCount as *mut i64);
 
     (*MArea).SectionData.Segment = Segment;
@@ -3293,6 +3345,19 @@ unsafe extern "C" fn MmFreeSectionPage(
         MmFreeSwapPage(SwapEntry);
     } else if Page != 0 {
         if IS_SWAP_FROM_SSE(Entry) || Page != PFN_FROM_SSE(Entry) {
+            // C: ASSERT(Process != NULL) -- a system-space view never holds a private
+            // page. Say what the segment held when it does (i386 writable-root boot).
+            if Process.is_null() {
+                mm_guard_trip!(
+                    "section.MmFreeSectionPage private-page-in-system-view", 4,
+                    "Page" => Page,
+                    "Entry" => Entry,
+                    "OffsetLo" => Offset.QuadPart as ULONG_PTR,
+                    "Address" => Address as ULONG_PTR,
+                    "SegFlags" => *(*Segment).Flags as ULONG_PTR,
+                    "ViewOffsetLo" => (*MemoryArea).SectionData.ViewOffset as ULONG_PTR,
+                );
+            }
             SavedSwapEntry = MmGetSavedSwapEntryPage(Page);
             if SavedSwapEntry != 0 {
                 MmFreeSwapPage(SavedSwapEntry);
@@ -3719,6 +3784,24 @@ pub unsafe extern "system" fn MmMapViewOfSection(
         InterlockedIncrementUL(core::ptr::addr_of_mut!((*ImageSectionObject).MapCount) as *mut ULONG);
     } else {
         let Segment = (*Section).Segment as PMM_SECTION_SEGMENT;
+
+        // The C checks the view's protection against the section's before anything else
+        // ("check for write/read/execute access"); the port had dropped all three, so a
+        // PAGE_READONLY section mapped PAGE_READWRITE (or PAGE_EXECUTE) succeeded.
+        let Initial = (*Section).InitialPageProtection;
+        const WRITE: ULONG = PAGE_READWRITE | PAGE_EXECUTE_READWRITE;
+        const READ: ULONG = PAGE_READONLY | PAGE_WRITECOPY | PAGE_EXECUTE_READ | PAGE_EXECUTE_WRITECOPY;
+        if ((Protect & WRITE) != 0 && (Initial & WRITE) == 0)
+            || ((Protect & READ) != 0 && (Initial & PAGE_IS_READABLE_FIXUP) == 0)
+            || ((Protect & PAGE_IS_EXECUTABLE) != 0 && (Initial & PAGE_IS_EXECUTABLE) == 0)
+        {
+            MmUnlockAddressSpace(AddressSpace);
+            if IsAttached != 0 {
+                KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
+            }
+            return STATUS_SECTION_PROTECTION;
+        }
+
         let mut ViewOffset: i64 = if SectionOffset.is_null() {
             0
         } else {

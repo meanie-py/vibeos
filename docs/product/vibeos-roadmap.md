@@ -595,8 +595,17 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
-- **NDIS through a real miniport (`--payload ndisprobe`)** (PASSING x3 2026-10-09 on the C
-  ndis.sys). The baseline for translating ndis: nothing else on our media reaches NDIS
+- **`apc32.exe` rung 4 "APC to a waiting thread lost" (FLAKE, open).** The WoW64 ladder's
+  32-bit APC guest sometimes sees an APC queued to a thread in an alertable wait never run:
+  the sleeper returns 0 and the guest exits 0xBA41. Seen 2026-10-10 in one amd64 queue gate
+  (`queue-batch-01791615634859147470`, rejecting a89a87f06a30), and twice on arm64 in
+  `flake-report`; the same tree then passed 6/6 `smoke --arch amd64 --ladder`, and the rung
+  passed in 128 other gate boots. A lost wakeup between `KeAlertThread`/APC insertion and the
+  wait's alertable check is the first place to look.
+
+- **NDIS through a real miniport (`--payload ndisprobe`)** (PASSING x3 2026-10-09, first on
+  the C ndis.sys, then on the **Rust ndis.sys** after the flip the same day). The baseline for
+  translating ndis: nothing else on our media reaches NDIS
   (netstack drives virtio and e1000 100E/100F itself). The payload boots QEMU's e1000
   82544GC and, through ndisuio, binds, queries the MAC and link, sets the packet filter, sends
   an ARP who-has to slirp's gateway and reads the reply. Getting it green fixed ndisuio's read
@@ -605,7 +614,25 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   BARs, and arm64's `virt` machine maps its I/O BAR as memory, so `MiniportInitialize` fails;
   (2) ndis then still publishes the adapter to protocols: ndisuio bound to one named `\`,
   the MAC query returned garbage and setting the packet filter bugchecked 0xA in the HAL.
-  (2) is an ndis bug to fix in the translation; (1) is why the payload uses the e1000.
+  (2) is in the Rust too, as the C has it: NdisIPnPStartDevice puts the adapter on the global
+  list BEFORE MiniportInitialize and takes it off only on failure, so a protocol binding in
+  that window finds an adapter that never initialized. Fix with the arm64 rtl8139 repro in
+  hand; (1) is why the payload uses the e1000.
+
+- **x86 conformance never runs the kmtests that write a file** (FIXED 2026-10-10, amd64 and
+  i386; conformance lane). The plain livecd puts `\SystemRoot` on read-only CDFS, so every
+  kmtest that creates a file there failed setup with `0xc0000022` and bailed (ZwCreateSection
+  ran 9 of 330 assertions). `tools/conformance/mk_writable_livecd.py` derives `livecd-rw.iso`
+  (the livecd's tree in a FAT32 `ramdisk.img`, entries pointed at `ramdisk(0)`) and
+  conformance boots it on both x86 arches (`WRITABLE_ROOT_ARCHES`). Both now match arm64 on
+  the section tests; IoFilesystem went 162/142 -> 358/3. Getting there fixed iomgr's i386
+  `RAMDISK_CREATE_INPUT` layout (0xF8 on every x86 ramdisk boot), two i386 loader bugs (any
+  i386 UEFI boot with >= 1G RAM reserved session space as boot image; the ramdisk pushed the
+  boot drivers above it), fastfat's flush (a stdcall view of a cdecl helper returned
+  `FatCommonFlushBuffers`' finally into its own stack at the first `NtFlushBuffersFile`, the
+  "corruption" that died in a different place each run), and `ExReturnPoolQuota` on special
+  pool. Field manual: "x86 UEFI boot bring-up" item 4, "The i386 driver-fleet ud2-bomb class",
+  "A dropped validation check fails OPEN".
 
 - **Unattended install from the bootcd (`vibeos-cli install-smoke --arch amd64-bios`)**
   (PASSING 2026-10-09, ~10 min: CD -> text setup -> reboot -> GUI setup -> reboot -> Explorer). New gate: `bootcdregtest.iso` installs onto a blank disk, then
@@ -647,8 +674,22 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   setup reboots the machine itself (run 49). The second installed boot then hit boot-start
   INF services for drivers setup never copied (machine.inf `isapnp`, hdc.inf `atapi`).
   Both fixed; the full run passes twice in a row (runs 50 and the `install-smoke` verb).
-  **Still owed:** i386 and UEFI installs; deciding whether it joins a scheduled run (it is
-  its own verb, ~10 min, not a gate stage).
+  **UEFI installs (2026-10-09): amd64-uefi PASSES** (`install-smoke --arch amd64-uefi`, 11m45s):
+  setup now installs uefildr.efi as `\EFI\BOOT\BOOT<arch>.EFI` when the loader block says
+  UEFI. That needed the firmware type to exist at all (rosload never set `BootViaEFI`; the
+  kernel now answers `SystemBootEnvironmentInformation`), a system disk with no BIOS
+  numbering, and a `multi()` ARC path uefildr can open. **i386-uefi is OWED**: it reaches the
+  end of the file copy (after fixing classpnp's empty `MmPrepareMdlForReuse`, which leaked
+  every split transfer's PTEs into a 0x3F, and txtsetup naming HALs this tree never builds),
+  then setup's registry flush faults: inside fastfat's `__finally` for
+  `FatCommonFlushBuffers` (sehtry.c's `RtlSehTryFinally` → `call_finally`), `ebp` comes back
+  holding a code address and execution lands on the stack (Eip = a stack address, then
+  0x23 from `FatExceptionFilter`). i386-only (amd64 runs the same flush). Ruled out with
+  tripwires: the SEH trampolines' bodies (callee-saved regs incl. ebp intact), every
+  `IofCallDriver` dispatch and completion routine (no esp drift), and Rust↔C stub link
+  conventions. The diagnostics are `~/vibeos-rust-staging/i386-flush-ebp-diag.patch`.
+  Still owed besides: deciding whether install-smoke joins a scheduled run (its own verb,
+  ~10 min, not a gate stage). arm64 needs a non-IDE disk layout first.
 
 - **27 constants defined with two values inside ONE crate, parked in a lint baseline**
   (TRIAGED 2026-10-09). `scan_const_contradictions` had reported userenv's
@@ -702,8 +743,11 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `rundll32 newdev` once per phantom, each with full `[PS]` tracing, which held the UART at
   ~10.6 KB/s. `ecam.rs` now probes only when the XSDT is QEMU's (OEM "BOCHS "). Settled desktop
   after the fix: serial 370 B/s, 0 install requests, ping 118/120. Found by restoring
-  umpnpmgr's `Installing: %S` print. Each real device without a `Class` value is still installed twice at
-  boot and newdev fails it with error 259 (QEMU too); bounded, but owed.
+  umpnpmgr's `Installing: %S` print. The double install was fixed (see below). The one device
+  whose install still failed on amd64 was the CPU, `ACPI\AuthenticAMD_-_AMD64_Family_0_Model_0`
+  (newdev error 31): the kernel misread CPUID's bitfields, so every amd64 boot reported family
+  and model 0 and `KeProcessorLevel` 0 -- fixed 2026-10-09. Error 259 is newdev's unattended
+  "no driver found" (`SW_HIDE` skips the wizard), upstream behaviour, not a bug.
 - **Pi 5: ping still lost ~8% for minutes after boot, and the serial console never went
   quiet** (FIXED 2026-10-08, after the phantom-PCI fix). Three causes, each measured:
   - **EEE.** The BCM54213PE advertised Energy Efficient Ethernet (MMD 7.60 = 0x6) and the
@@ -853,13 +897,13 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   it because every smoke boot has QEMU's default NIC. **Still owed:** loopback with no NIC fails
   rather than WORKS (Windows always has a loopback interface). That wants a smoltcp loopback
   device in the engine, worth doing alongside the Pi's GENET driver.
-- **amd64 RAM above 4 GiB: the kernel cannot use it yet** (OPEN, 2026-10-04). The loader's
-  `MM_MAX_PAGE` (freeldr-rust `frldr.rs`) cuts amd64's memory map at 4 GiB, as the Rust has
-  always done; mm.h's 8 GiB would expose the rest. With it raised, `VIBEOS_QEMU_HOSTILE=mem`
-  (6 GiB) bugchecks 0x19 (pool header, P1=5) and hostile `all` hangs in uniata's AHCI
-  start. Repro: runs `20261004-194815-lrtpx0w2` and `20261004-194452-8j2swl96` (smoke-amd64,
-  graviton lane). Raise the cap once both are green. arm64 already describes all RAM: its
-  pool-sizing underflow was the 4 GiB Pi 5's silent hang (fixed in `arm/init.rs`).
+- **amd64 RAM above 4 GiB** (FIXED 2026-10-10; was "the kernel cannot use it yet"). The loader
+  now describes all RAM on amd64, as on arm64. Raising the cap exposed four bugs, each fixed in
+  place: MM counted firmware-reserved ranges as RAM (`MiIsMemoryTypeInvisible`), uniata's
+  32-bit bounce overran and zeroed buffers, uniata gave a 64-bit AHCI HBA a data page as its
+  command table (the q35 hang), and the HAL's AP identity map stayed in System's user half
+  (BIOS MEMORY_MANAGEMENT). Verified: QEMU BIOS 4/12/32 GiB, UEFI `mem` and `q35,mem`, and the
+  OptiPlex at 32 GB (`[MM] physical memory: 32686 MiB`). Field manual: "RAM above 4 GiB".
 - **amd64: a user-mode debug print with a bad buffer bugchecked the kernel** (FIXED 2026-10-06;
   was "a user-mode Rust panic report can bugcheck the kernel"). Not `KdIoPrintf`, as first
   logged: against the run's own kernel the PC is `KdpStub` (kd64-rust `kdtrap.rs`). With no
@@ -1221,16 +1265,53 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     vCPU. **Still owed:** the kernel-VA broadcasts (system-PTE reserve ~25%, zero-space wrap
     ~18%) need batching rather than scoping, and i386's packet transport has no scoping yet.
     Runs 20261009-212808-1of2ir0n (before), 20261009-214354-tejagsx_ (after).
-  - **amd64-bios `-smp 2`: services.exe hangs inside `CreateProcessW(EventLog)`** (OPEN,
+  - **amd64 `-smp 2`: BUGCHECK 0x1E in win32k `ProcessTimers`** (FIXED 2026-10-10). The fault is
+    `win32k.sys+0x60BCD`, reading `pTmr->pti->TIF_flags` with `pti == NULL`, on the raw
+    input thread. It hit a 10-09 queue gate (20261009-224122) and 1 of 4 boots of
+    20261010-174440-21ri_15w. Seen on the live VM: the timer list held a timer with
+    pti/rate/flags/pfn/nID all zero and countdown -16. Cause: `CreateTimer` linked the
+    zeroed timer into `TimersListHead` before `IntSetTimer` set any field, and without
+    `TimerLock`. Upstream ReactOS has the same code, so the race is invisible on one CPU.
+    When the creating vCPU stalls for two 10 ms ticks, `ProcessTimers` on the other CPU
+    decrements the zeroed countdown, then dereferences the NULL pti. Fix
+    (`win32k-rust/src/timer.rs`): link the timer only once it is initialized, under
+    `TimerLock`.
+  - **amd64-bios `-smp 2`: services.exe hangs inside `CreateProcessW(EventLog)`** (OPEN, now a FAMILY -- see the last paragraph;
     seen once 2026-10-08, 1 of 20 boots, run 20261008-213019-klr7vs60 boot5). The last
     services line is `SUMS(EventLog): before CreateProcessW` and no `returned` follows; LSASS's
     dispatcher thread then exits `0x427` (ERROR_FAILED_SERVICE_CONTROLLER_CONNECT) and winlogon
     sits after `calling GinaInit` until HANG_TIMEOUT, both CPUs idle in `hlt`. No in-page error,
     no fault, no bugcheck. That signature appears in no other log under /tmp/vibeos-cli (every
     10-08 gate failure is the in-page bug above), so whether it is new or merely rare is not
-    established. Next occurrence: attach gdb before the harness tears the VM down
-    (`smoke --attach-on-fail` is parsed but does nothing, owed in the CLI) and read the
-    services thread's stack.
+    established. Next occurrence: rerun with `smoke --arch amd64-bios --smp 2
+    --attach-on-fail` (works since 2026-10-09: the failed VM stays up with a gdbstub) and
+    read the services thread's stack with `vibeos-cli gdb inspect <run-id>`.
+    2026-10-10: not reproduced, 0 of 20 (run 20261010-025624-q7k3yfgl, master a00de43d681,
+    every boot `[SMP] processor 1 online` and EventLog `CreateProcessW returned`). That
+    master carries 1dde7e8f09a's self-swap fix, but its `[SMP] self-swap` breadcrumb fired
+    0/20, so the run says nothing about whether that fix touches this hang -- and the
+    signatures differ anyway (a self-swap in progress spins at .SwapBusySet with IF on; this
+    hang had both CPUs in `hlt`). 20 clean at a 1-in-20 rate is ~36% by luck: still OPEN.
+    2026-10-10, later: a contributor in THIS run was the cdrom-rust MCN sync IRP (fixed in
+    f3e634bb8cf, 10-09 00:19). The hung run predates that fix, and its tree had the bug
+    live. Observed: `unknown ioctl code: 0x7C0C8` -- the driver's own sync IRP sent to
+    scsiport every timer tick -- appears 942 times across klr7vs60's 10 boots (709 in the
+    hung one) and 242 times across ep79fjwh's 10 (same day, pre-fix). It appears 0 times
+    across q7k3yfgl's 20 post-fix boots. While the bug was live, that one IRP was completed
+    at DISPATCH_LEVEL on either CPU, racing its reuse on the next tick, inside the cdrom
+    stack that serves the boot volume (cdfs on the isohybrid USB stick). Inferred, not
+    shown: a request lost there stalls the image read `CreateProcessW` waits on, and that
+    matches this hang (no fault, both CPUs idle). The census's `WrFreePage=1` is NOT a
+    lead: it is the zero-page thread's normal idle wait (`ARM3/zeropage.rs`).
+    **The same silent wedge recurs WITHOUT the chatter, so the MCN bug does not explain the
+    family.** Two gates after the fix: queue gate 20261010-030035 (services.exe stops after
+    `ScmStartUserModeService(SamSs)`), and 20261010-170505 (smp-bringup afd1d37f2524: csrss
+    stops after `LoadServerDll 'winsrv'`, kernel32 attached). Both show 0 `0x7C0C8` lines,
+    both CPUs in `KiIdleLoop`, no fault, and the census shows the same `Suspended=1`. The
+    common shape is a user-mode image load or a service start that never completes, at a
+    different point each time. Next step: the stuck thread's stack, from
+    `smoke --smp 2 --attach-on-fail` and `vibeos-cli gdb inspect <run> list-threads` /
+    `dump-thread` (the `raw` verb with `--timeout 300` works when the default 60 s does not).
   - **arm64 kmtest `ExFastMutex` bounced the merge queue** (FIXED 2026-10-08, deterministic
     part). `conformance:arm64` reported `ExFastMutex: pass 204 -> 202/203` on 72 of 255 gate
     runs (i386: 3 of 250; amd64 skips the test), rejecting innocent lanes as CONFORMANCE_RED
@@ -1354,9 +1435,34 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     user-mode crates with DUMMY_PSEH-dropped handlers (non-RPC) are not yet audited.
   - **Safe boot is missing from the Rust kernel on every arch**: ex-rust neither parses
     `SAFEBOOT:` nor creates `CONTROL\SAFEBOOT\Option` (init.c Phase1InitializationDiscard).
-  - **pcix-rust predates upstream's arbiters** (#9502, 023d8af5566): five arbiter bodies are
-    still `UNIMPLEMENTED; loop {}`, baselined in scan_ud2's KNOWN_DRIVER_UD2. arm64 binds
-    pci.sys, so they are unreached there.
+  - **The arbiter stack is ported but nothing drives it yet** (2026-10-10). arbiter-rust is
+    upstream's #9484 engine, pnpmgr-rust/arb the five root arbiters, pcix-rust #9502's bus
+    arbiters. As upstream does (ffa4164e70d), the root arbiters are not initialized
+    (`ROOT_ARBITERS_ENABLED`), and IopAssignDeviceResources never asks an arbiter. Every arch
+    still binds pci.sys. A boot with pcix.sys bound instead (2026-10-10, Pci `ImagePath`)
+    works on **i386 only**: there the legacy HAL has a PCI bus handler, and pcix
+    enumerated the bus (host bridge, PIIX ISA/IDE, VGA, NIC), started the IDE controller and
+    initialized its bus arbiters, smoke green. On amd64 and arm64 the root AddDevice fails
+    in PciGetConfigHandlers: nothing below the root PDO (ACPI's PNP0A03/08 on amd64, the
+    root-enumerated PDO on arm64) answers GUID_PCI_BUS_INTERFACE_STANDARD, and neither HAL
+    has a PCI bus handler to fall back on, so pcix unloads and PnP enumerates no PCI devices.
+    Upstream is the same: only the legacy HAL's root PDO provides that interface. **Owed for
+    pcix on ACPI arches:** a PCI_BUS_INTERFACE_STANDARD provider for root buses (ReadConfig/
+    WriteConfig over HalGet/SetBusDataByOffset; RootBusCapability from _OSC). Still owed: the HAL legacy PIR arbiter (cf89458d9e2,
+    hal/halx86/legacy/pir, not built at all); `CmResourceType*`/`CM_RESOURCE_*` in the
+    kernel island on arm64 (pnpmgr's arb prelude names them by hand until then); rustconv
+    still shows the model both arms of an undecidable `#if NTDDI_VERSION` — the 0x502 arms
+    were picked by hand in 22 places.
+  - **Boot configs are not reserved at enumeration** (upstream ReactOS behaviour, found
+    2026-10-09). The resource map gets a device's resources only when IopAssignDeviceResources
+    assigns them, so a legacy detector that runs first sees free ports: legide's
+    IoReportResourceForDetection (a real Silent=TRUE check) ran before PIIX was added and
+    took 0x1F0 (i386 `smoke --isa-ide` run 20261009-204110, before the 0x1F0/0x170 skip;
+    PIIX ch1 then failed IoConnectInterrupt with 0xc000000d). Windows reserves
+    boot configs through its arbiters at enumeration. Not a one-line fix: the map check
+    cannot tell the requesting device from the owner, so writing a PDO's boot config there
+    makes its own later assignment conflict. Needs the PnP manager to reserve boot configs
+    through the (now real) root arbiters, which upstream has not done either.
   - Remaining arm64 divergences: winlogon still creates `\Windows\WindowStations` and csrsrv
     skips CsrConnectToUser on arm64; the csrss stack-commit patch in mkramdisk's overlay;
     shell32 CDefView skips SHChangeNotifyRegister on arm64; winlogon's arm64-only notepad and

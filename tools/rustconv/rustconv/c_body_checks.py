@@ -55,6 +55,7 @@ def control_flow_findings(c_body: str, rust: str) -> list[str]:
                 "`continue` runs the condition; use `loop { 'body: { .. break 'body; .. } "
                 "if !(c) { break; } }`"
             )
+    out += _bitor_case_patterns(c_body, rust)
     out += invented_flag_assignments(c_body, code)
     labels = {m.group(1) for m in _C_LABEL.finditer(c_body)} - _NOT_LABELS
     for label in sorted(labels):
@@ -113,6 +114,22 @@ def _c_dowhile_with_continue(c_body: str) -> bool:
         if re.search(r"\bcontinue\s*;", "".join(body)):
             return True
     return False
+
+
+def _bitor_case_patterns(c_body: str, rust: str) -> list[str]:
+    """C `case A|B:` arms the Rust wrote as an or-pattern (tools/scan_case_bitor_pattern.py)."""
+    if not re.search(r"\bcase\s+\(?\s*\w+\s*\|", c_body):
+        return []
+    repo = str(Path(__file__).resolve().parents[3])
+    if repo not in sys.path:
+        sys.path.insert(0, repo)
+    from tools.scan_case_bitor_pattern import c_bitor_labels, scan_text
+
+    return [
+        f"`{alts}` is an or-pattern matching EITHER constant, but the C `case` is their "
+        "bitwise OR (one value); write `x if x == A | B =>`"
+        for _line, alts in scan_text(rust, c_bitor_labels(c_body))
+    ]
 
 
 def _rust_skipped_conditions(rust: str) -> int:

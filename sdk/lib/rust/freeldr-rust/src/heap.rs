@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{ERR, TRACE, WARN};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_HEAP; // heap.c: DBG_DEFAULT_CHANNEL(HEAP)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use crate::meminit::*;
@@ -17,9 +19,6 @@ unsafe fn __rdtsc() -> u64 {
     core::arch::x86::_rdtsc()
 }
 extern "C" {
-    fn TRACE(fmt: *const i8, ...);
-    fn ERR(fmt: *const i8, ...);
-    fn WARN(fmt: *const i8, ...);
 }
 
 // heap.c file-local types (rustconv dropped these typedefs — restored
@@ -85,13 +84,12 @@ pub unsafe extern "C" fn FrLdrHeapCreate(
     let mut PreviousSize: u16;
     let mut MaximumSize = MaximumSize;
 
-    TRACE(b"HeapCreate(MemoryType=%ld)\n\0".as_ptr() as PCHAR, MemoryType);
+    TRACE!("HeapCreate(MemoryType=%ld)\n", MemoryType);
 
     MaximumSize = ALIGN_UP_BY(MaximumSize, MM_PAGE_SIZE);
     Heap = MmAllocateMemoryWithType(MaximumSize, MemoryType) as PHEAP;
     if Heap.is_null() {
-        ERR(b"HEAP: Failed to allocate heap of size 0x%lx, Type %lu\n\0".as_ptr() as PCHAR,
-            MaximumSize, MemoryType);
+        ERR!("HEAP: Failed to allocate heap of size 0x%lx, Type %lu\n", MaximumSize, MemoryType);
         return core::ptr::null_mut();
     }
 
@@ -103,7 +101,7 @@ pub unsafe extern "C" fn FrLdrHeapCreate(
     (*Heap).LargestAllocation = 0;
 
     Remaining = (MaximumSize - core::mem::size_of::<HEAP>()) / core::mem::size_of::<HEAP_BLOCK>();
-    TRACE(b"Remaining = %ld\n\0".as_ptr() as PCHAR, Remaining);
+    TRACE!("Remaining = %ld\n", Remaining);
 
     Remaining -= 2;
 
@@ -122,7 +120,7 @@ pub unsafe extern "C" fn FrLdrHeapCreate(
         PreviousSize = (*Block).Size;
         Block = Block.offset((*Block).Size as isize + 1);
 
-        TRACE(b"Remaining = %ld\n\0".as_ptr() as PCHAR, Remaining);
+        TRACE!("Remaining = %ld\n", Remaining);
     }
 
     (*Heap).TerminatingBlock = Block.offset_from(core::ptr::addr_of_mut!((*Heap).Blocks)) as usize;
@@ -189,7 +187,7 @@ pub unsafe extern "C" fn FrLdrHeapRelease(HeapHandle: PVOID) {
     let mut FreePages: PFN_COUNT;
     let mut AllFreePages: PFN_COUNT = 0;
 
-    TRACE(b"HeapRelease(%p)\n\0".as_ptr() as PCHAR, HeapHandle);
+    TRACE!("HeapRelease(%p)\n", HeapHandle);
 
     Block = core::ptr::addr_of_mut!((*Heap).Blocks);
     
@@ -234,11 +232,7 @@ pub unsafe extern "C" fn FrLdrHeapRelease(HeapHandle: PVOID) {
         Block = (Block as usize + (1 + (*Block).Size as usize) * core::mem::size_of::<HEAP_BLOCK>()) as PHEAP_BLOCK;
     }
 
-    TRACE(
-        b"HeapRelease() done, freed %lu of %lu pages\n\0".as_ptr() as PCHAR,
-        AllFreePages,
-        (*Heap).MaximumSize / MM_PAGE_SIZE,
-    );
+    TRACE!("HeapRelease() done, freed %lu of %lu pages\n", AllFreePages, (*Heap).MaximumSize / MM_PAGE_SIZE);
 }
 
 #[no_mangle]
@@ -254,20 +248,8 @@ pub unsafe extern "C" fn FrLdrHeapCleanupAll() {
     #[cfg(debug_assertions)]
     {
         let Heap = FrLdrDefaultHeap as PHEAP;
-        TRACE(
-            b"Heap statistics for default heap:\nCurrentAlloc=0x%lx, MaxAlloc=0x%lx, LargestAllocation=0x%lx\nNumAllocs=%ld, NumFrees=%ld\n\0".as_ptr() as PCHAR,
-            (*Heap).CurrentAllocBytes,
-            (*Heap).MaxAllocBytes,
-            (*Heap).LargestAllocation,
-            (*Heap).NumAllocs,
-            (*Heap).NumFrees,
-        );
-        TRACE(
-            b"AllocTime = %I64d, FreeTime = %I64d, sum = %I64d\n\0".as_ptr() as PCHAR,
-            (*Heap).AllocationTime,
-            (*Heap).FreeTime,
-            (*Heap).AllocationTime + (*Heap).FreeTime,
-        );
+        TRACE!("Heap statistics for default heap:\nCurrentAlloc=0x%lx, MaxAlloc=0x%lx, LargestAllocation=0x%lx\nNumAllocs=%ld, NumFrees=%ld\n", (*Heap).CurrentAllocBytes, (*Heap).MaxAllocBytes, (*Heap).LargestAllocation, (*Heap).NumAllocs, (*Heap).NumFrees);
+        TRACE!("AllocTime = %I64d, FreeTime = %I64d, sum = %I64d\n", (*Heap).AllocationTime, (*Heap).FreeTime, (*Heap).AllocationTime + (*Heap).FreeTime);
     }
 
     FrLdrHeapRelease(FrLdrDefaultHeap);
@@ -275,14 +257,7 @@ pub unsafe extern "C" fn FrLdrHeapCleanupAll() {
     #[cfg(debug_assertions)]
     {
         let Heap = FrLdrTempHeap as PHEAP;
-        TRACE(
-            b"Heap statistics for temp heap:\nCurrentAlloc=0x%lx, MaxAlloc=0x%lx, LargestAllocation=0x%lx\nNumAllocs=%ld, NumFrees=%ld\n\0".as_ptr() as PCHAR,
-            (*Heap).CurrentAllocBytes,
-            (*Heap).MaxAllocBytes,
-            (*Heap).LargestAllocation,
-            (*Heap).NumAllocs,
-            (*Heap).NumFrees,
-        );
+        TRACE!("Heap statistics for temp heap:\nCurrentAlloc=0x%lx, MaxAlloc=0x%lx, LargestAllocation=0x%lx\nNumAllocs=%ld, NumFrees=%ld\n", (*Heap).CurrentAllocBytes, (*Heap).MaxAllocBytes, (*Heap).LargestAllocation, (*Heap).NumAllocs, (*Heap).NumFrees);
     }
 
     FrLdrHeapDestroy(FrLdrTempHeap);
@@ -348,7 +323,7 @@ pub unsafe extern "C" fn FrLdrHeapAllocateEx(
 
     if (ByteSize + core::mem::size_of::<HEAP_BLOCK>()) > MAXUSHORT as usize * core::mem::size_of::<HEAP_BLOCK>() {
         crate::frldr::dbgcon_str(b"HUGE!");
-        ERR(b"HEAP: Allocation of 0x%lx bytes too large\n\0".as_ptr() as PCHAR, ByteSize);
+        ERR!("HEAP: Allocation of 0x%lx bytes too large\n", ByteSize);
         return core::ptr::null_mut();
     }
     if Heap.is_null() {
@@ -408,8 +383,7 @@ pub unsafe extern "C" fn FrLdrHeapAllocateEx(
             (*Heap).AllocationTime += __rdtsc() - Time;
         }
 
-        TRACE(b"HeapAllocate(%p, %ld, %.4s) -> return %p\n\0".as_ptr() as PCHAR,
-              HeapHandle, ByteSize, core::ptr::addr_of!(Tag) as PVOID, (*Block).Data.as_mut_ptr() as PVOID);
+        TRACE!("HeapAllocate(%p, %ld, %.4s) -> return %p\n", HeapHandle, ByteSize, core::ptr::addr_of!(Tag) as PVOID, (*Block).Data.as_mut_ptr() as PVOID);
 
         RtlZeroMemory((*Block).Data.as_mut_ptr() as PVOID, (*Block).Size as SIZE_T * core::mem::size_of::<HEAP_BLOCK>());
 
@@ -449,7 +423,7 @@ pub unsafe extern "C" fn FrLdrHeapAllocateEx(
         depth += 1;
     }
     crate::frldr::dbgcon_str(b"]");
-    WARN(b"HEAP: nothing suitable found for 0x%lx bytes\n\0".as_ptr() as PCHAR, ByteSize);
+    WARN!("HEAP: nothing suitable found for 0x%lx bytes\n", ByteSize);
     core::ptr::null_mut()
 }
 
@@ -466,7 +440,7 @@ pub unsafe extern "C" fn FrLdrHeapFreeEx(
     #[cfg(all(debug_assertions, not(any(target_arch = "arm", target_arch = "aarch64"))))]
     let Time = __rdtsc();
 
-    TRACE(b"HeapFree(%p, %p)\n\0".as_ptr() as PCHAR, HeapHandle, Pointer);
+    TRACE!("HeapFree(%p, %p)\n", HeapHandle, Pointer);
     ntkrnl_sys::ASSERT!(Tag != 0x646E4523);
 
     #[cfg(feature = "FREELDR_HEAP_VERIFIER")]
@@ -477,7 +451,7 @@ pub unsafe extern "C" fn FrLdrHeapFreeEx(
     if (Pointer < Heap.offset(1) as PVOID) ||
         (Pointer > (Heap as PUCHAR).offset((*Heap).MaximumSize as isize) as PVOID)
     {
-        ERR(b"HEAP: trying to free %p outside of heap %p\n\0".as_ptr() as PCHAR, Pointer, Heap);
+        ERR!("HEAP: trying to free %p outside of heap %p\n", Pointer, Heap);
         ntkrnl_sys::ASSERT!(0u8 == 1u8);
     }
 
@@ -493,8 +467,7 @@ pub unsafe extern "C" fn FrLdrHeapFreeEx(
 
     if (Tag != 0 && (*Block).Tag != Tag) || ((*Block).Tag == 0)
     {
-        ERR(b"HEAP: Bad tag! Pointer=%p: block tag '%.4s', requested '%.4s', size=0x%lx\n\0".as_ptr() as PCHAR,
-            Pointer, core::ptr::addr_of!((*Block).Tag), core::ptr::addr_of!(Tag), (*Block).Size as u32);
+        ERR!("HEAP: Bad tag! Pointer=%p: block tag '%.4s', requested '%.4s', size=0x%lx\n", Pointer, core::ptr::addr_of!((*Block).Tag), core::ptr::addr_of!(Tag), (*Block).Size as u32);
         ntkrnl_sys::ASSERT!(0u8 == 1u8);
     }
 
@@ -638,13 +611,13 @@ pub unsafe extern "C" fn FrLdrHeapDump(label: u8) {
 
 #[no_mangle]
 pub unsafe extern "C" fn MmInitializeHeap(_PageLookupTable: PVOID) {
-    TRACE(b"MmInitializeHeap()\n\0".as_ptr() as PCHAR);
+    TRACE!("MmInitializeHeap()\n");
 
     FrLdrDefaultHeap = FrLdrHeapCreate(DEFAULT_HEAP_SIZE, LoaderOsloaderHeap);
-    ASSERT(FrLdrDefaultHeap as usize != 0);
+    ASSERT!(FrLdrDefaultHeap as usize != 0);
 
     FrLdrTempHeap = FrLdrHeapCreate(TEMP_HEAP_SIZE, LoaderFirmwareTemporary);
-    ASSERT(FrLdrTempHeap as usize != 0);
+    ASSERT!(FrLdrTempHeap as usize != 0);
 
     // Dump default heap free list right after init.
     crate::frldr::dbgcon_str(b"\nHeapInit[def=");
@@ -670,11 +643,7 @@ pub unsafe extern "C" fn MmInitializeHeap(_PageLookupTable: PVOID) {
     }
     crate::frldr::dbgcon_str(b"]\n");
 
-    TRACE(
-        b"MmInitializeHeap() done, default heap %p, temp heap %p\n\0".as_ptr() as PCHAR,
-        FrLdrDefaultHeap,
-        FrLdrTempHeap,
-    );
+    TRACE!("MmInitializeHeap() done, default heap %p, temp heap %p\n", FrLdrDefaultHeap, FrLdrTempHeap);
 }
 
 #[no_mangle]

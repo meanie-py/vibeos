@@ -90,12 +90,13 @@ pub const MM_PAGE_SHIFT: ULONG = 12;
 // kernel's descriptor list stopped at 4 GiB, and MM init faulted (6 GiB QEMU).
 #[cfg(target_arch = "x86")]
 pub const MM_MAX_PAGE: PFN_NUMBER = 0xFFFFF; /* 20 bits for the PFN */
-// mm.h says 0x1FFFFF (8 GiB, its own "can't handle the full memory range yet" cap,
-// CORE-20265). Ours stays at 4 GiB for now: with 6 GiB described the amd64 kernel
-// bugchecks 0x19 and q35's AHCI path hangs - see the roadmap's known-bugs entry
-// "amd64 RAM above 4 GiB". Raise this when that is fixed; hostile `mem` tests it.
+// mm.h caps amd64 at 0x1FFFFF (8 GiB, "can't handle the full memory range yet",
+// CORE-20265). We describe all of it, like arm64. What 4 GiB had been hiding was
+// in the kernel and uniata, not here: MM counted firmware-reserved ranges as RAM
+// (MiIsMemoryTypeInvisible), and uniata's above-4 GiB bounce buffer copied over
+// PIO data and past the end of the caller's buffer. Hostile `mem` (6 GiB) boots it.
 #[cfg(target_arch = "x86_64")]
-pub const MM_MAX_PAGE: PFN_NUMBER = 0xFFFFF;
+pub const MM_MAX_PAGE: PFN_NUMBER = 0xFFFFFFFFF; /* 36 bits for the PFN */
 #[cfg(target_arch = "aarch64")]
 pub const MM_MAX_PAGE: PFN_NUMBER = 0xFFFFFFFFF; /* 36 bits for the PFN */
 pub const TEMP_HEAP_SIZE: SIZE_T = 32 * 1024 * 1024;
@@ -158,24 +159,23 @@ extern "C" {
     pub static __ImageBase: u8;
 }
 
-// ---------------------------------------------------------------------------
-// Debug no-op symbols. C `TRACE`/`BugCheck` are DBG_DEFAULT_CHANNEL macros
-// (no real symbol). The translated code declares them as variadic
-// `extern "C" fn` so its call sites typecheck; we satisfy the link with a
-// non-variadic cdecl definition — caller-cleans-stack makes ignoring the
-// extra varargs ABI-safe on i386/amd64/arm64. THE systemic sweep fix.
-// ---------------------------------------------------------------------------
+// C `TRACE`/`ERR`/`WARN`/`FIXME` are debug.h macros over `DbgPrint2`, live in this DBG
+// build. They used to be four `#[no_mangle]` no-ops serving ~960 call sites through
+// variadic externs, so every loader diagnostic was dropped; the call sites now use the
+// `ffi.rs` macros (tools/fn_call_to_macro.py did the rewrite).
 
+// freeldr debug.h, DBG branch (this build): `DebugDumpBuffer(mask, buf, len)`, which
+// dumps only when that channel is enabled. Was an empty fn: every dump was dropped.
 #[no_mangle]
-extern "C" fn TRACE(_fmt: *const i8) { /* no-op (DBG channel disabled) */ }
-#[no_mangle]
-extern "C" fn ERR(_fmt: *const i8) { /* no-op */ }
-#[no_mangle]
-extern "C" fn WARN(_fmt: *const i8) { /* no-op */ }
-#[no_mangle]
-extern "C" fn FIXME(_fmt: *const i8) { /* no-op */ }
-#[no_mangle]
-extern "C" fn DbgDumpBuffer(_level: ULONG, _buffer: *const u8, _size: ULONG) {}
+extern "C" fn DbgDumpBuffer(level: ULONG, buffer: *const u8, size: ULONG) {
+    #[cfg(not(feature = "rosload"))]
+    unsafe {
+        crate::debug::DebugDumpBuffer(level, buffer as PVOID, size)
+    }
+    // rosload builds without the debug module: there is no channel to dump to.
+    #[cfg(feature = "rosload")]
+    let _ = (level, buffer, size);
+}
 
 #[no_mangle]
 extern "C" fn BugCheck(_message: *const i8) -> ! {
@@ -287,8 +287,6 @@ pub fn ROUND_UP<T: IntAlign>(n: T, align: T) -> T {
 pub use ntkrnl_sys::rtl::RtlZeroMemory;
 
 /// `ASSERT(cond)` — no-op in the freeldr release build (NDEBUG).
-#[inline(always)]
-pub fn ASSERT<T>(_cond: T) {}
 
 /// Debug-only: write a single character to QEMU's debugcon (port 0xe9). Lets
 /// us trace boot progress past the screen-clear in PcVideoInit without

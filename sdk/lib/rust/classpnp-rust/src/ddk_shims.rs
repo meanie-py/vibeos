@@ -219,7 +219,6 @@ use core::ffi::c_void;
 // ============================ macros-as-functions ============================
 #[no_mangle] pub unsafe extern "C" fn FREE_POOL(Ptr: PVOID) { if !Ptr.is_null() { ExFreePool(Ptr); } }
 #[no_mangle] pub unsafe extern "C" fn TEST_FLAG(Flags: u32, Bit: u32) -> u8 { ((Flags & Bit) != 0) as u8 }
-#[no_mangle] pub unsafe extern "system" fn NT_ASSERT(_cond: u8) {}
 #[no_mangle] pub unsafe extern "system" fn ASSERT_PDO(_pdo: PVOID) {}
 #[no_mangle] pub unsafe extern "C" fn SRB_STATUS(st: u8) -> u8 { st & 0x3f }
 #[no_mangle] pub unsafe extern "C" fn Int64ShrlMod32(v: u64, sh: u32) -> u64 { v >> sh }
@@ -244,8 +243,7 @@ use core::ffi::c_void;
 // call sites + non-variadic defs are UB to LLVM inside one module (instcombine
 // folds the calls to ud2 — the 2026-07-18 classpnp bomb set); a separate crate
 // under lto=false is a separate LLVM module, which makes the pattern fold-proof.
-#[no_mangle] pub unsafe extern "C" fn WPP_INIT_TRACING(_drv: PVOID, _reg: PVOID) {}
-#[no_mangle] pub unsafe extern "C" fn WPP_CLEANUP(_drv: PVOID) {}
+// WPP_INIT_TRACING / WPP_CLEANUP are ntkrnl_sys macros (empty without WPP).
 const EMPTY: *const i8 = b"\0".as_ptr() as *const i8;
 #[no_mangle] pub unsafe extern "C" fn DbgGetScsiOpStr(_s: PVOID) -> *const i8 { EMPTY }
 // C debug.h: #define DBGGETIOCTLSTR(_ioctl) DbgGetIoctlStr(_ioctl) — string-table
@@ -351,16 +349,6 @@ extern "fastcall" {
     }
 }
 
-/// NT_ASSERTMSG — assertion with message; fre-build semantics (report, don't halt).
-#[no_mangle] pub unsafe extern "C" fn NT_ASSERTMSG(Msg: *const i8, Expr: u8) {
-    if Expr == 0 {
-        ntkrnl_sys::driver_ddk::DbgPrint(
-            b"[CLASSPNP] NT_ASSERTMSG failed: %s\n\0".as_ptr() as *const i8,
-            Msg,
-        );
-    }
-}
-
 /// ClassQueryPnpCapabilities — faithful translation of classpnp class.c: route the
 /// QUERY_CAPABILITIES request to the class driver's Fdo/Pdo query routine, if any.
 #[no_mangle] pub unsafe extern "C" fn ClassQueryPnpCapabilities(
@@ -389,7 +377,9 @@ extern "fastcall" {
 #[no_mangle] pub unsafe extern "C" fn MmGetMdlVirtualAddress(Mdl: PMDL) -> PVOID {
     ((*Mdl).StartVa as *mut u8).add((*Mdl).ByteOffset as usize) as PVOID
 }
-#[no_mangle] pub unsafe extern "C" fn MmPrepareMdlForReuse(Mdl: PMDL) {}
+#[no_mangle] pub unsafe extern "C" fn MmPrepareMdlForReuse(Mdl: PMDL) {
+    ntkrnl_sys::inline::mm::MmPrepareMdlForReuse(Mdl as _)
+}
 // KeGetCurrentNodeNumber / KeQueryHighestNodeNumber / KeSetCoalescableTimer and
 // IoQueueWorkItemEx come from ntoskrnl-vista-rust, which classpnp-cargo links on every
 // arch (as C classpnp links libntoskrnl_vista.a). Copies here were duplicate definitions

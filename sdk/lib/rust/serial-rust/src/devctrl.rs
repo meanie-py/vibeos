@@ -573,7 +573,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
         }
         IOCTL_SERIAL_GET_CHARS => {
             let pSerialChars: PSERIAL_CHARS;
-            ERR_(SERIAL, b"IOCTL_SERIAL_GET_CHARS not implemented.\n\0".as_ptr() as *const i8);
+            ERR_!(SERIAL, b"IOCTL_SERIAL_GET_CHARS not implemented.\n\0".as_ptr() as *const i8);
             if (LengthOut as usize) < core::mem::size_of::<SERIAL_CHARS>() {
                 Status = STATUS_BUFFER_TOO_SMALL;
             } else if BufferOut.is_null() {
@@ -621,7 +621,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
         }
         IOCTL_SERIAL_GET_HANDFLOW => {
             let pSerialHandflow: PSERIAL_HANDFLOW;
-            ERR_(SERIAL, b"IOCTL_SERIAL_GET_HANDFLOW not implemented.\n\0".as_ptr() as *const i8);
+            ERR_!(SERIAL, b"IOCTL_SERIAL_GET_HANDFLOW not implemented.\n\0".as_ptr() as *const i8);
             if (LengthOut as usize) < core::mem::size_of::<SERIAL_HANDFLOW>() {
                 Status = STATUS_BUFFER_TOO_SMALL;
             } else if BufferOut.is_null() {
@@ -722,11 +722,11 @@ pub unsafe extern "system" fn SerialDeviceControl(
             }
         }
         IOCTL_SERIAL_IMMEDIATE_CHAR => {
-            ERR_(SERIAL, b"IOCTL_SERIAL_IMMEDIATE_CHAR not implemented.\n\0".as_ptr() as *const i8);
+            ERR_!(SERIAL, b"IOCTL_SERIAL_IMMEDIATE_CHAR not implemented.\n\0".as_ptr() as *const i8);
             Status = STATUS_NOT_IMPLEMENTED;
         }
         IOCTL_SERIAL_LSRMST_INSERT => {
-            ERR_(SERIAL, b"IOCTL_SERIAL_LSRMST_INSERT not implemented.\n\0".as_ptr() as *const i8);
+            ERR_!(SERIAL, b"IOCTL_SERIAL_LSRMST_INSERT not implemented.\n\0".as_ptr() as *const i8);
             Status = STATUS_NOT_IMPLEMENTED;
         }
         IOCTL_SERIAL_PURGE => {
@@ -793,7 +793,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
             }
         }
         IOCTL_SERIAL_RESET_DEVICE => {
-            ERR_(SERIAL, b"IOCTL_SERIAL_RESET_DEVICE not implemented.\n\0".as_ptr() as *const i8);
+            ERR_!(SERIAL, b"IOCTL_SERIAL_RESET_DEVICE not implemented.\n\0".as_ptr() as *const i8);
             Status = STATUS_NOT_IMPLEMENTED;
         }
         IOCTL_SERIAL_SET_BAUD_RATE => {
@@ -807,15 +807,15 @@ pub unsafe extern "system" fn SerialDeviceControl(
             }
         }
         IOCTL_SERIAL_SET_BREAK_OFF => {
-            ERR_(SERIAL, b"IOCTL_SERIAL_SET_BREAK_OFF not implemented.\n\0".as_ptr() as *const i8);
+            ERR_!(SERIAL, b"IOCTL_SERIAL_SET_BREAK_OFF not implemented.\n\0".as_ptr() as *const i8);
             Status = STATUS_NOT_IMPLEMENTED;
         }
         IOCTL_SERIAL_SET_BREAK_ON => {
-            ERR_(SERIAL, b"IOCTL_SERIAL_SET_BREAK_ON not implemented.\n\0".as_ptr() as *const i8);
+            ERR_!(SERIAL, b"IOCTL_SERIAL_SET_BREAK_ON not implemented.\n\0".as_ptr() as *const i8);
             Status = STATUS_NOT_IMPLEMENTED;
         }
         IOCTL_SERIAL_SET_CHARS => {
-            ERR_(SERIAL, b"IOCTL_SERIAL_SET_CHARS not implemented.\n\0".as_ptr() as *const i8);
+            ERR_!(SERIAL, b"IOCTL_SERIAL_SET_CHARS not implemented.\n\0".as_ptr() as *const i8);
             Status = STATUS_SUCCESS;
         }
         IOCTL_SERIAL_SET_DTR => {
@@ -860,7 +860,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
             }
         }
         IOCTL_SERIAL_SET_HANDFLOW => {
-            ERR_(SERIAL, b"IOCTL_SERIAL_SET_HANDFLOW not implemented.\n\0".as_ptr() as *const i8);
+            ERR_!(SERIAL, b"IOCTL_SERIAL_SET_HANDFLOW not implemented.\n\0".as_ptr() as *const i8);
             Status = STATUS_SUCCESS;
         }
         IOCTL_SERIAL_SET_LINE_CONTROL => {
@@ -970,7 +970,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
             if LengthIn as usize != core::mem::size_of::<ULONG>() || BufferIn.is_null() {
                 Status = STATUS_INVALID_PARAMETER;
             } else if !(*DeviceExtension).WaitOnMaskIrp.is_null() {
-                WARN_(SERIAL, b"An IRP is already currently processed\n\0".as_ptr() as *const i8);
+                WARN_!(SERIAL, b"An IRP is already currently processed\n\0".as_ptr() as *const i8);
                 Status = STATUS_INVALID_PARAMETER;
             } else {
                 (*DeviceExtension).WaitMask = *pWaitMask as ULONG;
@@ -978,11 +978,11 @@ pub unsafe extern "system" fn SerialDeviceControl(
             }
         }
         IOCTL_SERIAL_SET_XOFF => {
-            ERR_(SERIAL, b"IOCTL_SERIAL_SET_XOFF not implemented.\n\0".as_ptr() as *const i8);
+            ERR_!(SERIAL, b"IOCTL_SERIAL_SET_XOFF not implemented.\n\0".as_ptr() as *const i8);
             Status = STATUS_NOT_IMPLEMENTED;
         }
         IOCTL_SERIAL_SET_XON => {
-            ERR_(SERIAL, b"IOCTL_SERIAL_SET_XON not implemented.\n\0".as_ptr() as *const i8);
+            ERR_!(SERIAL, b"IOCTL_SERIAL_SET_XON not implemented.\n\0".as_ptr() as *const i8);
             Status = STATUS_NOT_IMPLEMENTED;
         }
         IOCTL_SERIAL_WAIT_ON_MASK => {
@@ -1000,7 +1000,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
                 ) as PIRP;
 
                 if !WaitingIrp.is_null() {
-                    WARN_(
+                    WARN_!(
                         SERIAL,
                         b"Unable to pend a second IRP for IOCTL_SERIAL_WAIT_ON_MASK\n\0".as_ptr()
                             as *const i8,
@@ -1013,7 +1013,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
             }
         }
         IOCTL_SERIAL_XOFF_COUNTER => {
-            ERR_(SERIAL, b"IOCTL_SERIAL_XOFF_COUNTER not implemented.\n\0".as_ptr() as *const i8);
+            ERR_!(SERIAL, b"IOCTL_SERIAL_XOFF_COUNTER not implemented.\n\0".as_ptr() as *const i8);
             Status = STATUS_NOT_IMPLEMENTED;
         }
         _ => {

@@ -6,3 +6,6 @@ HKLM,"SYSTEM\CurrentControlSet\Services\vioblk","Group",0x00000000,"SCSI Minipor
 HKLM,"SYSTEM\CurrentControlSet\Services\vioblk","ImagePath",0x00020000,"system32\drivers\vioblk.sys"
 HKLM,"SYSTEM\CurrentControlSet\Services\vioblk","Start",0x00010001,0x00000000
 HKLM,"SYSTEM\CurrentControlSet\Services\vioblk","Type",0x00010001,0x00000001
+; DMA-remapping compatible: everything its PCI functions reach is a common buffer of
+; their DMA adapter (vioblk-rust dma.rs), so each can have an SMMU domain of its own.
+HKLM,"SYSTEM\CurrentControlSet\Services\vioblk\Parameters","DmaRemappingCompatible",0x00010001,0x00000001

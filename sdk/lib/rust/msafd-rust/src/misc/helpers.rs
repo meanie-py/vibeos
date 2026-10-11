@@ -13,11 +13,9 @@ extern "system" {
     fn GetProcAddress(hModule: HMODULE, lpProcName: *const i8) -> *mut core::ffi::c_void;
     fn LoadLibraryW(lpLibFileName: PWSTR) -> HMODULE;
 }
-// cdecl C-runtime (msvcrt). ERR/TRACE are shadowed by the glue macros (dead decls).
+// cdecl C-runtime (msvcrt).
 // HKEY_LOCAL_MACHINE is a glue const (winreg.h macro, not an import).
 extern "C" {
-    fn ERR(fmt: *const u8, ...);
-    fn TRACE(fmt: *const u8, ...);
     fn wcslen(s: *const u16) -> usize;
     fn wcscpy(dest: *mut u16, src: *const u16) -> *mut u16;
     fn wcscat(dest: *mut u16, src: *const u16) -> *mut u16;

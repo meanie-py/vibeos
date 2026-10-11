@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{ERR, TRACE};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_DISK; // uefidisk.c: DBG_DEFAULT_CHANNEL(DISK)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use ntkrnl_sys::ddk::{ARC_STATUS, FILEINFORMATION, LARGE_INTEGER, PCSTR};
@@ -12,11 +14,9 @@ pub use ntkrnl_sys::ddk::_SEEKMODE_SeekAbsolute as SeekAbsolute;
 pub use ntkrnl_sys::ddk::_SEEKMODE_SeekRelative as SeekRelative;
 
 extern "C" {
-    fn TRACE(fmt: *const i8, ...);
     fn FsGetDeviceSpecific(FileId: u32) -> *mut core::ffi::c_void;
     fn memcmp(s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, n: usize) -> i32;
     fn DiskGetPartitionEntry(DriveNumber: UCHAR, PartitionNum: ULONG, PartitionTableEntry: PPARTITION_TABLE_ENTRY) -> BOOLEAN;
-    fn ERR(fmt: *const i8, ...);
     // cross-module freeldr fns (FLDRAPI empty → cdecl).
     fn sprintf(buf: *mut i8, fmt: *const i8, ...) -> i32;
     fn FsRegisterDevice(DeviceName: *const i8, FuncTable: *const DEVVTBL);
@@ -206,13 +206,13 @@ unsafe fn UefiEnsureDiskReadBufferAligned(
     {
         // EFI 1.x firmware (Intel Macs among them) can refuse this; fall back to loader
         // memory instead of failing disk access outright (upstream 492aeb639c9).
-        TRACE(b"AllocatePool failed for the disk read buffer, trying MmAllocateMemoryWithType (align %lu)\n\0".as_ptr() as PCHAR, (RequiredAlignment) as usize);
+        TRACE!("AllocatePool failed for the disk read buffer, trying MmAllocateMemoryWithType (align %lu)\n", (RequiredAlignment) as usize);
         DiskReadBufferRaw = MmAllocateMemoryWithType(
             (DiskReadBufferSize + (RequiredAlignment as usize)) as SIZE_T,
             LoaderFirmwareTemporary,
         );
         if DiskReadBufferRaw == core::ptr::null_mut() {
-            ERR(b"Failed to allocate aligned disk read buffer (align %lu)\n\0".as_ptr() as PCHAR, (RequiredAlignment) as usize);
+            ERR!("Failed to allocate aligned disk read buffer (align %lu)\n", (RequiredAlignment) as usize);
             DiskReadBuffer = core::ptr::null_mut();
             return 0u8;
         }
@@ -223,7 +223,7 @@ unsafe fn UefiEnsureDiskReadBufferAligned(
     DiskReadBuffer = ALIGN_UP_POINTER_BY(DiskReadBufferRaw, (RequiredAlignment) as usize ) as PVOID;
     if UefiIsAlignedPointer(DiskReadBuffer, RequiredAlignment) == 0
     {
-        ERR(b"Aligned disk read buffer is not properly aligned (align %lu)\n\0".as_ptr() as PCHAR, (RequiredAlignment) as usize);
+        ERR!("Aligned disk read buffer is not properly aligned (align %lu)\n", (RequiredAlignment) as usize);
         return 0u8;
     }
 
@@ -231,7 +231,7 @@ unsafe fn UefiEnsureDiskReadBufferAligned(
 }
 
 unsafe fn GetHarddiskIdentifier(DriveNumber: UCHAR) -> PCHAR {
-    TRACE(b"GetHarddiskIdentifier: DriveNumber: %d\n\0".as_ptr() as *const i8, (DriveNumber) as usize);
+    TRACE!("GetHarddiskIdentifier: DriveNumber: %d\n", (DriveNumber) as usize);
     if DriveNumber < FIRST_BIOS_DISK {
         return core::ptr::null_mut();
     }
@@ -432,7 +432,7 @@ unsafe fn UefiGetBootPartitionEntry(
     let BootPartitionSize: ULONGLONG;
     let mut TempPartitionEntry: PARTITION_TABLE_ENTRY = core::mem::zeroed();
 
-    TRACE(b"UefiGetBootPartitionEntry: DriveNumber: %d\n\0".as_ptr() as PCHAR, (DriveNumber - FIRST_BIOS_DISK) as usize);
+    TRACE!("UefiGetBootPartitionEntry: DriveNumber: %d\n", (DriveNumber - FIRST_BIOS_DISK) as usize);
 
     if DriveNumber < FIRST_BIOS_DISK {
         return 0u8;
@@ -450,18 +450,16 @@ unsafe fn UefiGetBootPartitionEntry(
     );
 
     if EFI_ERROR(Status) != 0 || BootBlockIo == core::ptr::null_mut() {
-        ERR(b"Failed to get Block I/O protocol for boot handle\n\0".as_ptr() as PCHAR);
+        ERR!("Failed to get Block I/O protocol for boot handle\n");
         return 0u8;
     }
 
     BootPartitionSize = (*(*BootBlockIo).Media).LastBlock + 1;
 
-    TRACE(
-        b"Boot partition: Size=%llu blocks, BlockSize=%lu\n\0".as_ptr() as PCHAR, (BootPartitionSize) as usize, ((*(*BootBlockIo).Media).BlockSize) as usize,
-    );
+    TRACE!("Boot partition: Size=%llu blocks, BlockSize=%lu\n", (BootPartitionSize) as usize, ((*(*BootBlockIo).Media).BlockSize) as usize);
 
     if (*(*BootBlockIo).Media).LogicalPartition == 0 {
-        TRACE(b"Boot handle is root device, using partition 0\n\0".as_ptr() as PCHAR);
+        TRACE!("Boot handle is root device, using partition 0\n");
         *BootPartition = 0;
         if PartitionTableEntry != core::ptr::null_mut() {
             core::ptr::write_bytes(PartitionTableEntry, 0, 1);
@@ -485,7 +483,7 @@ unsafe fn UefiGetBootPartitionEntry(
         let UnusedGuid: EFI_GUID = EFI_PART_TYPE_UNUSED_GUID;
 
         if UefiReadGptHeader(DriveNumber, core::ptr::addr_of_mut!(GptHeader)) == 0 {
-            ERR(b"Failed to read GPT header\n\0".as_ptr() as PCHAR);
+            ERR!("Failed to read GPT header\n");
             return 0u8;
         }
 
@@ -535,18 +533,14 @@ unsafe fn UefiGetBootPartitionEntry(
 
             let PartitionSizeBlocks: ULONGLONG = GptEntry.EndingLba - GptEntry.StartingLba + 1;
 
-            TRACE(
-                b"GPT Partition %lu: StartLba=%llu, EndLba=%llu, SizeBlocks=%llu\n\0".as_ptr() as PCHAR, (i + 1) as usize, (GptEntry.StartingLba) as usize, (GptEntry.EndingLba) as usize, (PartitionSizeBlocks) as usize,
-            );
+            TRACE!("GPT Partition %lu: StartLba=%llu, EndLba=%llu, SizeBlocks=%llu\n", (i + 1) as usize, (GptEntry.StartingLba) as usize, (GptEntry.EndingLba) as usize, (PartitionSizeBlocks) as usize);
 
             if PartitionSizeBlocks == BootPartitionSize
                 || (PartitionSizeBlocks > 0
                     && (PartitionSizeBlocks - 1 <= BootPartitionSize
                         && BootPartitionSize <= PartitionSizeBlocks + 1))
             {
-                TRACE(
-                    b"Found matching GPT partition %lu: Size matches (%llu blocks)\n\0".as_ptr() as PCHAR, (i + 1) as usize, (BootPartitionSize) as usize,
-                );
+                TRACE!("Found matching GPT partition %lu: Size matches (%llu blocks)\n", (i + 1) as usize, (BootPartitionSize) as usize);
 
                 *BootPartition = i + 1;
 
@@ -570,18 +564,14 @@ unsafe fn UefiGetBootPartitionEntry(
             let PartitionSizeBytes: ULONGLONG = PartitionSizeSectors * 512u64;
             PartitionSizeBlocks = PartitionSizeBytes / (*(*BootBlockIo).Media).BlockSize as ULONGLONG;
 
-            TRACE(
-                b"Partition %lu: SizeSectors=%llu, SizeBlocks=%llu\n\0".as_ptr() as PCHAR, (PartitionNum) as usize, (PartitionSizeSectors) as usize, (PartitionSizeBlocks) as usize,
-            );
+            TRACE!("Partition %lu: SizeSectors=%llu, SizeBlocks=%llu\n", (PartitionNum) as usize, (PartitionSizeSectors) as usize, (PartitionSizeBlocks) as usize);
 
             if PartitionSizeBlocks == BootPartitionSize
                 || (PartitionSizeBlocks > 0
                     && (PartitionSizeBlocks - 1 <= BootPartitionSize
                         && BootPartitionSize <= PartitionSizeBlocks + 1))
             {
-                TRACE(
-                    b"Found matching partition %lu: Size matches (%llu blocks)\n\0".as_ptr() as PCHAR, (PartitionNum) as usize, (BootPartitionSize) as usize,
-                );
+                TRACE!("Found matching partition %lu: Size matches (%llu blocks)\n", (PartitionNum) as usize, (BootPartitionSize) as usize);
 
                 *BootPartition = PartitionNum;
                 if PartitionTableEntry != core::ptr::null_mut() {
@@ -599,7 +589,7 @@ unsafe fn UefiGetBootPartitionEntry(
     }
 
     if (*(*BootBlockIo).Media).RemovableMedia != 0 && (*(*BootBlockIo).Media).BlockSize == 2048 {
-        TRACE(b"Boot device is CD-ROM, using partition 0xFF\n\0".as_ptr() as PCHAR);
+        TRACE!("Boot device is CD-ROM, using partition 0xFF\n");
         *BootPartition = 0xFF;
         if PartitionTableEntry != core::ptr::null_mut() {
             core::ptr::write_bytes(PartitionTableEntry, 0, 1);
@@ -607,7 +597,7 @@ unsafe fn UefiGetBootPartitionEntry(
         return 1u8;
     }
 
-    ERR(b"Could not determine boot partition, using partition 1 as fallback\n\0".as_ptr() as PCHAR);
+    ERR!("Could not determine boot partition, using partition 1 as fallback\n");
     PartitionNum = FIRST_PARTITION;
     if DiskGetPartitionEntry(DriveNumber, PartitionNum, core::ptr::addr_of_mut!(TempPartitionEntry)) != 0 {
         *BootPartition = PartitionNum;
@@ -662,11 +652,11 @@ unsafe extern "C" fn UefiDiskOpen(Path: PCHAR, _OpenMode: OPENMODE, FileId: *mut
     let mut BlockIo: *mut EFI_BLOCK_IO = core::ptr::null_mut();
     let Status: EFI_STATUS;
 
-    TRACE(b"UefiDiskOpen: File ID: %p, Path: %s\n\0".as_ptr() as PCHAR, (FileId) as usize, (Path) as usize);
+    TRACE!("UefiDiskOpen: File ID: %p, Path: %s\n", (FileId) as usize, (Path) as usize);
 
     if DiskReadBufferSize == 0 {
-        ERR(b"DiskOpen(): DiskReadBufferSize is 0, something is wrong.\n\0".as_ptr() as PCHAR);
-        ASSERT(0u8);
+        ERR!("DiskOpen(): DiskReadBufferSize is 0, something is wrong.\n");
+        ASSERT!(0u8);
         return ENOMEM;
     }
 
@@ -674,7 +664,7 @@ unsafe extern "C" fn UefiDiskOpen(Path: PCHAR, _OpenMode: OPENMODE, FileId: *mut
         return EINVAL;
     }
 
-    TRACE(b"Opening disk: DriveNumber: %d, DrivePartition: %d\n\0".as_ptr() as PCHAR, (DriveNumber) as usize, (DrivePartition) as usize);
+    TRACE!("Opening disk: DriveNumber: %d, DrivePartition: %d\n", (DriveNumber) as usize, (DrivePartition) as usize);
 
     if DriveNumber < FIRST_BIOS_DISK {
         return EINVAL;
@@ -692,12 +682,12 @@ unsafe extern "C" fn UefiDiskOpen(Path: PCHAR, _OpenMode: OPENMODE, FileId: *mut
     );
 
     if EFI_ERROR(Status) != 0 || BlockIo == core::ptr::null_mut() {
-        ERR(b"Failed to get Block I/O protocol for drive %d\n\0".as_ptr() as PCHAR, (DriveNumber) as usize);
+        ERR!("Failed to get Block I/O protocol for drive %d\n", (DriveNumber) as usize);
         return EINVAL;
     }
 
     if (*(*BlockIo).Media).MediaPresent == 0 {
-        ERR(b"Media not present for drive %d\n\0".as_ptr() as PCHAR, (DriveNumber) as usize);
+        ERR!("Media not present for drive %d\n", (DriveNumber) as usize);
         return EINVAL;
     }
 
@@ -717,7 +707,7 @@ unsafe extern "C" fn UefiDiskOpen(Path: PCHAR, _OpenMode: OPENMODE, FileId: *mut
         }
 
         if SectorSize != Geometry.BytesPerSector {
-            ERR(b"SectorSize (%lu) != Geometry.BytesPerSector (%lu), expect problems!\n\0".as_ptr() as PCHAR, (SectorSize) as usize, (Geometry.BytesPerSector) as usize);
+            ERR!("SectorSize (%lu) != Geometry.BytesPerSector (%lu), expect problems!\n", (SectorSize) as usize, (Geometry.BytesPerSector) as usize);
         }
 
         SectorOffset = 0;
@@ -757,14 +747,14 @@ unsafe extern "C" fn UefiDiskRead(FileId: ULONG, Buffer: PVOID, N: ULONG, Count:
     SectorOffset = (*Context).SectorOffset + (*Context).SectorNumber;
 
     if MaxSectors == 0 {
-        ERR(b"MaxSectors is 0, cannot read\n\0".as_ptr() as PCHAR);
+        ERR!("MaxSectors is 0, cannot read\n");
         *Count = 0;
         return EIO;
     }
 
     ArcDriveIndex = ((*Context).DriveNumber - FIRST_BIOS_DISK) as u32 ;
     if ArcDriveIndex >= ((PcBiosDiskCount) as u32) || InternalUefiDisk == core::ptr::null_mut() {
-        ERR(b"Invalid drive number %d\n\0".as_ptr() as PCHAR, ((*Context).DriveNumber) as usize);
+        ERR!("Invalid drive number %d\n", ((*Context).DriveNumber) as usize);
         *Count = 0;
         return EINVAL;
     }
@@ -776,13 +766,13 @@ unsafe extern "C" fn UefiDiskRead(FileId: ULONG, Buffer: PVOID, N: ULONG, Count:
     );
 
     if EFI_ERROR(Status) != 0 || BlockIo == core::ptr::null_mut() {
-        ERR(b"Failed to get Block I/O protocol\n\0".as_ptr() as PCHAR);
+        ERR!("Failed to get Block I/O protocol\n");
         *Count = 0;
         return EIO;
     }
 
     if UefiEnsureDiskReadBufferAligned((*(*BlockIo).Media).IoAlign) == 0 {
-        ERR(b"Failed to align disk read buffer\n\0".as_ptr() as PCHAR);
+        ERR!("Failed to align disk read buffer\n");
         *Count = 0;
         return EIO;
     }
@@ -801,7 +791,7 @@ unsafe extern "C" fn UefiDiskRead(FileId: ULONG, Buffer: PVOID, N: ULONG, Count:
         );
 
         if EFI_ERROR(Status) != 0 {
-            ERR(b"ReadBlocks failed: Status = 0x%lx\n\0".as_ptr() as PCHAR, (Status as ULONG) as usize);
+            ERR!("ReadBlocks failed: Status = 0x%lx\n", (Status as ULONG) as usize);
             ret = 0u8;
             break;
         }
@@ -878,7 +868,7 @@ unsafe fn GetHarddiskInformation(DriveNumber: UCHAR) {
     DiskDetectPartitionType(DriveNumber);
 
     if MachDiskReadLogicalSectors(DriveNumber, 0u64, 1, DiskReadBuffer) == 0 {
-        ERR(b"Reading MBR failed\n\0".as_ptr() as PCHAR);
+        ERR!("Reading MBR failed\n");
         sprintf(Identifier, b"BIOSDISK%d\0".as_ptr() as PCHAR, ArcDriveIndex);
         return;
     }
@@ -887,7 +877,7 @@ unsafe fn GetHarddiskInformation(DriveNumber: UCHAR) {
     Mbr = DiskReadBuffer as PMASTER_BOOT_RECORD;
 
     Signature = (*Mbr).Signature;
-    TRACE(b"Signature: %x\n\0".as_ptr() as PCHAR, (Signature) as usize);
+    TRACE!("Signature: %x\n", (Signature) as usize);
 
     Checksum = 0;
     i = 0;
@@ -896,7 +886,7 @@ unsafe fn GetHarddiskInformation(DriveNumber: UCHAR) {
         i += 1;
     }
     Checksum = (!Checksum).wrapping_add(1);
-    TRACE(b"Checksum: %x\n\0".as_ptr() as PCHAR, (Checksum) as usize);
+    TRACE!("Checksum: %x\n", (Checksum) as usize);
 
     ValidPartitionTable = if (*Mbr).MasterBootRecordMagic == 0xAA55 { 1 } else { 0 };
 
@@ -949,7 +939,7 @@ unsafe fn GetHarddiskInformation(DriveNumber: UCHAR) {
     *Identifier.add(17) = b'-' as CHAR;
     *Identifier.add(18) = if ValidPartitionTable != 0 { b'A' as CHAR } else { b'X' as CHAR };
     *Identifier.add(19) = 0;
-    TRACE(b"Identifier: %s\n\0".as_ptr() as PCHAR, (Identifier) as usize);
+    TRACE!("Identifier: %s\n", (Identifier) as usize);
 }
 
 unsafe fn UefiSetupBlockDevices() {
@@ -972,19 +962,19 @@ unsafe fn UefiSetupBlockDevices() {
     );
 
     if HandleSize == 0 {
-        ERR(b"Failed to get handle buffer size: Status = 0x%lx\n\0".as_ptr() as PCHAR, (Status as ULONG) as usize);
+        ERR!("Failed to get handle buffer size: Status = 0x%lx\n", (Status as ULONG) as usize);
         return;
     }
 
     SystemHandleCount = (HandleSize / ((core::mem::size_of::<EFI_HANDLE>()) as UINTN)) as ULONG;
     if SystemHandleCount == 0 {
-        ERR(b"No block devices found\n\0".as_ptr() as PCHAR);
+        ERR!("No block devices found\n");
         return;
     }
 
     handles = MmAllocateMemoryWithType((HandleSize) as usize , LoaderFirmwareTemporary) as *mut EFI_HANDLE;
     if handles == core::ptr::null_mut() {
-        ERR(b"Failed to allocate memory for handles\n\0".as_ptr() as PCHAR);
+        ERR!("Failed to allocate memory for handles\n");
         return;
     }
 
@@ -997,7 +987,7 @@ unsafe fn UefiSetupBlockDevices() {
     );
 
     if EFI_ERROR(Status) != 0 {
-        ERR(b"Failed to locate block device handles: Status = 0x%lx\n\0".as_ptr() as PCHAR, (Status as ULONG) as usize);
+        ERR!("Failed to locate block device handles: Status = 0x%lx\n", (Status as ULONG) as usize);
         return;
     }
 
@@ -1009,7 +999,7 @@ unsafe fn UefiSetupBlockDevices() {
     ) as *mut INTERNAL_UEFI_DISK;
 
     if InternalUefiDisk == core::ptr::null_mut() {
-        ERR(b"Failed to allocate memory for internal disk structure\n\0".as_ptr() as PCHAR);
+        ERR!("Failed to allocate memory for internal disk structure\n");
         return;
     }
 
@@ -1020,7 +1010,7 @@ unsafe fn UefiSetupBlockDevices() {
     while i < SystemHandleCount {
         if *handles.offset(i as isize) == PublicBootHandle {
             UefiBootRootIndex = i;
-            TRACE(b"Found boot handle at index %lu\n\0".as_ptr() as PCHAR, (i) as usize);
+            TRACE!("Found boot handle at index %lu\n", (i) as usize);
 
             Status = (*(*GlobalSystemTable).BootServices).HandleProtocol.unwrap()(
                 *handles.offset(i as isize),
@@ -1029,9 +1019,7 @@ unsafe fn UefiSetupBlockDevices() {
             );
 
             if EFI_ERROR(Status) == 0 && BlockIo != core::ptr::null_mut() {
-                TRACE(
-                    b"Boot handle: LogicalPartition=%s, RemovableMedia=%s, BlockSize=%lu\n\0".as_ptr() as PCHAR, (if (*(*BlockIo).Media).LogicalPartition != 0 { b"TRUE\0".as_ptr() as PCHAR } else { b"FALSE\0".as_ptr() as PCHAR }) as usize, (if (*(*BlockIo).Media).RemovableMedia != 0 { b"TRUE\0".as_ptr() as PCHAR } else { b"FALSE\0".as_ptr() as PCHAR }) as usize, ((*(*BlockIo).Media).BlockSize) as usize,
-                );
+                TRACE!("Boot handle: LogicalPartition=%s, RemovableMedia=%s, BlockSize=%lu\n", (if (*(*BlockIo).Media).LogicalPartition != 0 { b"TRUE\0".as_ptr() as PCHAR } else { b"FALSE\0".as_ptr() as PCHAR }) as usize, (if (*(*BlockIo).Media).RemovableMedia != 0 { b"TRUE\0".as_ptr() as PCHAR } else { b"FALSE\0".as_ptr() as PCHAR }) as usize, ((*(*BlockIo).Media).BlockSize) as usize);
             }
             break;
         }
@@ -1048,46 +1036,42 @@ unsafe fn UefiSetupBlockDevices() {
         );
 
         if EFI_ERROR(Status) != 0 {
-            TRACE(b"HandleProtocol failed for handle %lu: Status = 0x%lx\n\0".as_ptr() as PCHAR, (i) as usize, (Status as ULONG) as usize);
+            TRACE!("HandleProtocol failed for handle %lu: Status = 0x%lx\n", (i) as usize, (Status as ULONG) as usize);
             i = i.wrapping_add(1);
             continue;
         }
 
         if BlockIo == core::ptr::null_mut() {
-            TRACE(b"BlockIo is NULL for handle %lu\n\0".as_ptr() as PCHAR, (i) as usize);
+            TRACE!("BlockIo is NULL for handle %lu\n", (i) as usize);
             i = i.wrapping_add(1);
             continue;
         }
 
         if (*(*BlockIo).Media).MediaPresent == 0 {
-            TRACE(b"Media not present for handle %lu\n\0".as_ptr() as PCHAR, (i) as usize);
+            TRACE!("Media not present for handle %lu\n", (i) as usize);
             i = i.wrapping_add(1);
             continue;
         }
 
         if (*(*BlockIo).Media).BlockSize == 0 {
-            TRACE(b"Invalid block size (0) for handle %lu\n\0".as_ptr() as PCHAR, (i) as usize);
+            TRACE!("Invalid block size (0) for handle %lu\n", (i) as usize);
             i = i.wrapping_add(1);
             continue;
         }
 
         if (*(*BlockIo).Media).BlockSize > MAX_SUPPORTED_BLOCK_SIZE {
-            TRACE(
-                b"Block size too large (%lu) for handle %lu, skipping\n\0".as_ptr() as PCHAR, ((*(*BlockIo).Media).BlockSize) as usize, (i) as usize,
-            );
+            TRACE!("Block size too large (%lu) for handle %lu, skipping\n", ((*(*BlockIo).Media).BlockSize) as usize, (i) as usize);
             i = i.wrapping_add(1);
             continue;
         }
 
         if (*(*BlockIo).Media).LogicalPartition != 0 {
-            TRACE(b"Skipping logical partition handle %lu\n\0".as_ptr() as PCHAR, (i) as usize);
+            TRACE!("Skipping logical partition handle %lu\n", (i) as usize);
             i = i.wrapping_add(1);
             continue;
         }
 
-        TRACE(
-            b"Found root block device at index %lu: BlockSize=%lu, LastBlock=%llu\n\0".as_ptr() as PCHAR, (i) as usize, ((*(*BlockIo).Media).BlockSize) as usize, ((*(*BlockIo).Media).LastBlock) as usize,
-        );
+        TRACE!("Found root block device at index %lu: BlockSize=%lu, LastBlock=%llu\n", (i) as usize, ((*(*BlockIo).Media).BlockSize) as usize, ((*(*BlockIo).Media).LastBlock) as usize);
 
         (*InternalUefiDisk.offset(BlockDeviceIndex as isize)).ArcDriveNumber = (BlockDeviceIndex) as u8 ;
         (*InternalUefiDisk.offset(BlockDeviceIndex as isize)).UefiHandleIndex = i;
@@ -1097,16 +1081,14 @@ unsafe fn UefiSetupBlockDevices() {
         if i == UefiBootRootIndex {
             (*InternalUefiDisk.offset(BlockDeviceIndex as isize)).IsThisTheBootDrive = 1u8;
             PublicBootArcDisk = BlockDeviceIndex;
-            TRACE(b"Boot device is at ARC drive index %lu (root device)\n\0".as_ptr() as PCHAR, (BlockDeviceIndex) as usize);
+            TRACE!("Boot device is at ARC drive index %lu (root device)\n", (BlockDeviceIndex) as usize);
         }
 
         PcBiosDiskCount = (BlockDeviceIndex.wrapping_add(1)) as u8 ;
 
-        TRACE(
-            b"Calling GetHarddiskInformation for drive %d (BlockDeviceIndex=%lu)\n\0".as_ptr() as PCHAR, (BlockDeviceIndex.wrapping_add(FIRST_BIOS_DISK as ULONG)) as usize, (BlockDeviceIndex) as usize,
-        );
+        TRACE!("Calling GetHarddiskInformation for drive %d (BlockDeviceIndex=%lu)\n", (BlockDeviceIndex.wrapping_add(FIRST_BIOS_DISK as ULONG)) as usize, (BlockDeviceIndex) as usize);
         if UefiEnsureDiskReadBufferAligned((*(*BlockIo).Media).IoAlign) == 0 {
-            ERR(b"Failed to align disk read buffer for drive %d\n\0".as_ptr() as PCHAR, (BlockDeviceIndex.wrapping_add(FIRST_BIOS_DISK as ULONG)) as usize);
+            ERR!("Failed to align disk read buffer for drive %d\n", (BlockDeviceIndex.wrapping_add(FIRST_BIOS_DISK as ULONG)) as usize);
             return;
         }
 
@@ -1123,10 +1105,8 @@ unsafe fn UefiSetupBlockDevices() {
         );
 
         if EFI_ERROR(Status) == 0 && BlockIo != core::ptr::null_mut() && (*(*BlockIo).Media).LogicalPartition != 0 {
-            TRACE(b"Boot handle is a logical partition, searching for parent root device\n\0".as_ptr() as PCHAR);
-            TRACE(
-                b"Boot partition: BlockSize=%lu, RemovableMedia=%s\n\0".as_ptr() as PCHAR, ((*(*BlockIo).Media).BlockSize) as usize, (if (*(*BlockIo).Media).RemovableMedia != 0 { b"TRUE\0".as_ptr() as PCHAR } else { b"FALSE\0".as_ptr() as PCHAR }) as usize,
-            );
+            TRACE!("Boot handle is a logical partition, searching for parent root device\n");
+            TRACE!("Boot partition: BlockSize=%lu, RemovableMedia=%s\n", ((*(*BlockIo).Media).BlockSize) as usize, (if (*(*BlockIo).Media).RemovableMedia != 0 { b"TRUE\0".as_ptr() as PCHAR } else { b"FALSE\0".as_ptr() as PCHAR }) as usize);
 
             let mut FoundBootDevice: BOOLEAN = 0u8;
             i = 0;
@@ -1151,7 +1131,7 @@ unsafe fn UefiSetupBlockDevices() {
                         PublicBootArcDisk = i;
                         (*InternalUefiDisk.offset(i as isize)).IsThisTheBootDrive = 1u8;
                         FoundBootDevice = 1u8;
-                        TRACE(b"Found CD-ROM boot device at ARC drive index %lu\n\0".as_ptr() as PCHAR, (i) as usize);
+                        TRACE!("Found CD-ROM boot device at ARC drive index %lu\n", (i) as usize);
                         break;
                     }
                 } else if (*InternalUefiDisk.offset(i as isize)).UefiHandleIndex < UefiBootRootIndex {
@@ -1161,7 +1141,7 @@ unsafe fn UefiSetupBlockDevices() {
                         PublicBootArcDisk = i;
                         (*InternalUefiDisk.offset(i as isize)).IsThisTheBootDrive = 1u8;
                         FoundBootDevice = 1u8;
-                        TRACE(b"Found potential hard disk boot device at ARC drive index %lu\n\0".as_ptr() as PCHAR, (i) as usize);
+                        TRACE!("Found potential hard disk boot device at ARC drive index %lu\n", (i) as usize);
                     }
                 }
                 i = i.wrapping_add(1);
@@ -1170,12 +1150,12 @@ unsafe fn UefiSetupBlockDevices() {
             if FoundBootDevice == 0 && PcBiosDiskCount > 0 {
                 PublicBootArcDisk = 0;
                 (*InternalUefiDisk.offset(0)).IsThisTheBootDrive = 1u8;
-                TRACE(b"Could not determine boot device, assuming first drive\n\0".as_ptr() as PCHAR);
+                TRACE!("Could not determine boot device, assuming first drive\n");
             }
         }
     }
 
-    TRACE(b"Found %lu root block devices\n\0".as_ptr() as PCHAR, (PcBiosDiskCount) as usize);
+    TRACE!("Found %lu root block devices\n", (PcBiosDiskCount) as usize);
 }
 
 /// Whether the device behind `BlockIo` carries an ISO9660 volume: the primary volume
@@ -1227,16 +1207,16 @@ unsafe fn UefiSetBootpath() -> BOOLEAN {
     let mut Status: EFI_STATUS;
     let ArcDriveIndex: ULONG;
 
-    TRACE(b"UefiSetBootpath: Setting up boot path\n\0".as_ptr() as PCHAR);
+    TRACE!("UefiSetBootpath: Setting up boot path\n");
 
     if UefiBootRootIndex >= HandleCount || handles == core::ptr::null_mut() {
-        ERR(b"Invalid boot root index\n\0".as_ptr() as PCHAR);
+        ERR!("Invalid boot root index\n");
         return 0u8;
     }
 
     ArcDriveIndex = PublicBootArcDisk;
     if ArcDriveIndex >= ((PcBiosDiskCount) as u32) || InternalUefiDisk == core::ptr::null_mut() {
-        ERR(b"Invalid boot arc disk index\n\0".as_ptr() as PCHAR);
+        ERR!("Invalid boot arc disk index\n");
         return 0u8;
     }
 
@@ -1247,7 +1227,7 @@ unsafe fn UefiSetBootpath() -> BOOLEAN {
     );
 
     if EFI_ERROR(Status) != 0 || BootBlockIo == core::ptr::null_mut() {
-        ERR(b"Failed to get Block I/O protocol for boot handle\n\0".as_ptr() as PCHAR);
+        ERR!("Failed to get Block I/O protocol for boot handle\n");
         return 0u8;
     }
 
@@ -1258,7 +1238,7 @@ unsafe fn UefiSetBootpath() -> BOOLEAN {
     );
 
     if EFI_ERROR(Status) != 0 || RootBlockIo == core::ptr::null_mut() {
-        ERR(b"Failed to get Block I/O protocol for boot root device\n\0".as_ptr() as PCHAR);
+        ERR!("Failed to get Block I/O protocol for boot root device\n");
         return 0u8;
     }
 
@@ -1276,7 +1256,7 @@ unsafe fn UefiSetBootpath() -> BOOLEAN {
             b"multi(0)disk(0)cdrom(%u)\0".as_ptr() as PCHAR,
             ArcDriveIndex,
         );
-        TRACE(b"Boot path set to CD-ROM: %s\n\0".as_ptr() as PCHAR, (FrLdrBootPath.as_ptr()) as usize);
+        TRACE!("Boot path set to CD-ROM: %s\n", (FrLdrBootPath.as_ptr()) as usize);
         // Which ARC branch the boot handle took -- one line, and it is the first
         // thing worth knowing when a boot device behaves unexpectedly.
         crate::uefildr::fldr_conout(crate::wide!("[FLDR] arc branch = CDROM\r\n\0"));
@@ -1321,9 +1301,7 @@ unsafe fn UefiSetBootpath() -> BOOLEAN {
                     Node = Node.add(Length);
                 }
             }
-            TRACE(
-                b"Boot handle is logical partition, using partition %lu\n\0".as_ptr() as PCHAR, (BootPartition) as usize,
-            );
+            TRACE!("Boot handle is logical partition, using partition %lu\n", (BootPartition) as usize);
         } else {
             if UefiGetBootPartitionEntry(
                 FrldrBootDrive,
@@ -1331,7 +1309,7 @@ unsafe fn UefiSetBootpath() -> BOOLEAN {
                 core::ptr::addr_of_mut!(BootPartition),
             ) == 0
             {
-                ERR(b"Failed to get boot partition entry\n\0".as_ptr() as PCHAR);
+                ERR!("Failed to get boot partition entry\n");
                 crate::uefildr::fldr_conout(
                     crate::wide!("[FLDR] UefiGetBootPartitionEntry FAILED\r\n\0"),
                 );
@@ -1346,9 +1324,7 @@ unsafe fn UefiSetBootpath() -> BOOLEAN {
             ArcDriveIndex,
             BootPartition,
         );
-        TRACE(
-            b"Boot path set to hard disk: %s\n\0".as_ptr() as PCHAR, (FrLdrBootPath.as_ptr()) as usize,
-        );
+        TRACE!("Boot path set to hard disk: %s\n", (FrLdrBootPath.as_ptr()) as usize);
         crate::uefildr::fldr_conout(
             crate::wide!("[FLDR] arc branch = HARDDISK+partition\r\n\0"),
         );
@@ -1379,25 +1355,25 @@ pub unsafe extern "C" fn UefiInitializeBootDevices() -> BOOLEAN {
     DiskReadBufferAlignment = 1;
     DiskReadBufferFromPool = 0u8;
     if UefiEnsureDiskReadBufferAligned(1) == 0 {
-        ERR(b"Failed to allocate disk read buffer\n\0".as_ptr() as PCHAR);
+        ERR!("Failed to allocate disk read buffer\n");
         return 0u8;
     }
 
     UefiSetupBlockDevices();
 
     if PcBiosDiskCount == 0 {
-        ERR(b"No block devices found\n\0".as_ptr() as PCHAR);
+        ERR!("No block devices found\n");
         return 0u8;
     }
 
     if UefiSetBootpath() == 0 {
-        ERR(b"Failed to set boot path\n\0".as_ptr() as PCHAR);
+        ERR!("Failed to set boot path\n");
         return 0u8;
     }
 
     ArcDriveIndex = PublicBootArcDisk;
     if ArcDriveIndex >= ((PcBiosDiskCount) as u32) || InternalUefiDisk == core::ptr::null_mut() {
-        ERR(b"Invalid boot arc disk index\n\0".as_ptr() as PCHAR);
+        ERR!("Invalid boot arc disk index\n");
         return 0u8;
     }
 
@@ -1408,7 +1384,7 @@ pub unsafe extern "C" fn UefiInitializeBootDevices() -> BOOLEAN {
     );
 
     if EFI_ERROR(Status) != 0 || BlockIo == core::ptr::null_mut() {
-        ERR(b"Failed to get Block I/O protocol\n\0".as_ptr() as PCHAR);
+        ERR!("Failed to get Block I/O protocol\n");
         return 0u8;
     }
 
@@ -1420,7 +1396,7 @@ pub unsafe extern "C" fn UefiInitializeBootDevices() -> BOOLEAN {
     if FrldrBootPartition == 0xFF {
         let BlockSize = (*(*BlockIo).Media).BlockSize;
         if BlockSize == 0 || BlockSize > 2048 || 2048 % BlockSize != 0 {
-            ERR(b"CD boot device has unusable block size %lu\n\0".as_ptr() as PCHAR, BlockSize as usize);
+            ERR!("CD boot device has unusable block size %lu\n", BlockSize as usize);
             return 0u8;
         }
         if MachDiskReadLogicalSectors(
@@ -1430,7 +1406,7 @@ pub unsafe extern "C" fn UefiInitializeBootDevices() -> BOOLEAN {
             DiskReadBuffer,
         ) == 0
         {
-            ERR(b"Reading MBR from CD-ROM failed\n\0".as_ptr() as PCHAR);
+            ERR!("Reading MBR from CD-ROM failed\n");
             return 0u8;
         }
 
@@ -1438,7 +1414,7 @@ pub unsafe extern "C" fn UefiInitializeBootDevices() -> BOOLEAN {
         Mbr = DiskReadBuffer as PMASTER_BOOT_RECORD;
 
         Signature = (*Mbr).Signature;
-        TRACE(b"CD-ROM Signature: %x\n\0".as_ptr() as PCHAR, (Signature) as usize);
+        TRACE!("CD-ROM Signature: %x\n", (Signature) as usize);
 
         i = 0;
         while i < 2048 / core::mem::size_of::<ULONG>() as u32 {
@@ -1446,14 +1422,12 @@ pub unsafe extern "C" fn UefiInitializeBootDevices() -> BOOLEAN {
             i += 1;
         }
         Checksum = (!Checksum).wrapping_add(1);
-        TRACE(b"CD-ROM Checksum: %x\n\0".as_ptr() as PCHAR, (Checksum) as usize);
+        TRACE!("CD-ROM Checksum: %x\n", (Checksum) as usize);
 
         AddReactOSArcDiskInfo(FrLdrBootPath.as_mut_ptr(), core::ptr::null(), Signature, Checksum, 1u8);
 
         FsRegisterDevice(FrLdrBootPath.as_ptr(), core::ptr::addr_of!(UefiDiskVtbl));
-        TRACE(
-            b"Registered CD-ROM boot device: 0x%02X\n\0".as_ptr() as PCHAR, (FrldrBootDrive as i32) as usize,
-        );
+        TRACE!("Registered CD-ROM boot device: 0x%02X\n", (FrldrBootDrive as i32) as usize);
     }
 
     return 1u8;
@@ -1484,17 +1458,17 @@ pub unsafe extern "C" fn UefiDiskReadLogicalSectors(
     ArcDriveIndex = (DriveNumber - FIRST_BIOS_DISK) as ULONG;
 
     if InternalUefiDisk == core::ptr::null_mut() {
-        ERR(b"InternalUefiDisk not initialized\n\0".as_ptr() as PCHAR);
+        ERR!("InternalUefiDisk not initialized\n");
         return 0u8;
     }
 
     if ArcDriveIndex >= 32 {
-        ERR(b"Drive index out of bounds: %d (ArcDriveIndex=%lu)\n\0".as_ptr() as PCHAR, (DriveNumber) as usize, (ArcDriveIndex) as usize);
+        ERR!("Drive index out of bounds: %d (ArcDriveIndex=%lu)\n", (DriveNumber) as usize, (ArcDriveIndex) as usize);
         return 0u8;
     }
 
     if (*InternalUefiDisk.offset(ArcDriveIndex as isize)).Handle == core::ptr::null_mut() {
-        ERR(b"Invalid drive number: %d (ArcDriveIndex=%lu, PcBiosDiskCount=%lu, Handle=NULL)\n\0".as_ptr() as PCHAR, (DriveNumber) as usize, (ArcDriveIndex) as usize, (PcBiosDiskCount) as usize);
+        ERR!("Invalid drive number: %d (ArcDriveIndex=%lu, PcBiosDiskCount=%lu, Handle=NULL)\n", (DriveNumber) as usize, (ArcDriveIndex) as usize, (PcBiosDiskCount) as usize);
         return 0u8;
     }
 
@@ -1505,12 +1479,12 @@ pub unsafe extern "C" fn UefiDiskReadLogicalSectors(
     );
 
     if EFI_ERROR(Status) != 0 || BlockIo == core::ptr::null_mut() {
-        ERR(b"Failed to get Block I/O protocol for drive %d\n\0".as_ptr() as PCHAR, (DriveNumber) as usize);
+        ERR!("Failed to get Block I/O protocol for drive %d\n", (DriveNumber) as usize);
         return 0u8;
     }
 
     if (*(*BlockIo).Media).MediaPresent == 0 {
-        ERR(b"Media not present for drive %d\n\0".as_ptr() as PCHAR, (DriveNumber) as usize);
+        ERR!("Media not present for drive %d\n", (DriveNumber) as usize);
         return 0u8;
     }
 
@@ -1518,7 +1492,7 @@ pub unsafe extern "C" fn UefiDiskReadLogicalSectors(
     IoAlign = (*(*BlockIo).Media).IoAlign;
 
     if UefiEnsureDiskReadBufferAligned(IoAlign) == 0 {
-        ERR(b"Failed to align disk read buffer for drive %d\n\0".as_ptr() as PCHAR, (DriveNumber) as usize);
+        ERR!("Failed to align disk read buffer for drive %d\n", (DriveNumber) as usize);
         return 0u8;
     }
 
@@ -1529,7 +1503,7 @@ pub unsafe extern "C" fn UefiDiskReadLogicalSectors(
         let mut OutPtr: PUCHAR = Buffer as PUCHAR;
 
         if MaxSectors == 0 {
-            ERR(b"DiskReadBufferSize too small for block size %lu\n\0".as_ptr() as PCHAR, (BlockSize) as usize);
+            ERR!("DiskReadBufferSize too small for block size %lu\n", (BlockSize) as usize);
             return 0u8;
         }
 
@@ -1546,9 +1520,9 @@ pub unsafe extern "C" fn UefiDiskReadLogicalSectors(
             );
 
             if EFI_ERROR(Status) != 0 {
-                ERR(b"ReadBlocks failed: DriveNumber=%d, SectorNumber=%llu, SectorCount=%lu, Status=0x%lx\n\0".as_ptr() as PCHAR, (DriveNumber) as usize, (CurrentSector) as usize, (ReadSectors) as usize, (Status as ULONG) as usize);
-                ERR(b"ReadBlocks details: BlockSize=%lu, IoAlign=%lu, Buffer=%p, DiskReadBuffer=%p, MediaId=0x%lx\n\0".as_ptr() as PCHAR, (BlockSize) as usize, (IoAlign) as usize, (Buffer) as usize, (DiskReadBuffer) as usize, ((*(*BlockIo).Media).MediaId as ULONG) as usize);
-                ERR(b"ReadBlocks media: LastBlock=%llu, LogicalPartition=%s, RemovableMedia=%s\n\0".as_ptr() as PCHAR, ((*(*BlockIo).Media).LastBlock) as usize, (if (*(*BlockIo).Media).LogicalPartition != 0 { b"TRUE\0".as_ptr() as PCHAR } else { b"FALSE\0".as_ptr() as PCHAR }) as usize, (if (*(*BlockIo).Media).RemovableMedia != 0 { b"TRUE\0".as_ptr() as PCHAR } else { b"FALSE\0".as_ptr() as PCHAR }) as usize);
+                ERR!("ReadBlocks failed: DriveNumber=%d, SectorNumber=%llu, SectorCount=%lu, Status=0x%lx\n", (DriveNumber) as usize, (CurrentSector) as usize, (ReadSectors) as usize, (Status as ULONG) as usize);
+                ERR!("ReadBlocks details: BlockSize=%lu, IoAlign=%lu, Buffer=%p, DiskReadBuffer=%p, MediaId=0x%lx\n", (BlockSize) as usize, (IoAlign) as usize, (Buffer) as usize, (DiskReadBuffer) as usize, ((*(*BlockIo).Media).MediaId as ULONG) as usize);
+                ERR!("ReadBlocks media: LastBlock=%llu, LogicalPartition=%s, RemovableMedia=%s\n", ((*(*BlockIo).Media).LastBlock) as usize, (if (*(*BlockIo).Media).LogicalPartition != 0 { b"TRUE\0".as_ptr() as PCHAR } else { b"FALSE\0".as_ptr() as PCHAR }) as usize, (if (*(*BlockIo).Media).RemovableMedia != 0 { b"TRUE\0".as_ptr() as PCHAR } else { b"FALSE\0".as_ptr() as PCHAR }) as usize);
                 return 0u8;
             }
 
@@ -1570,9 +1544,9 @@ pub unsafe extern "C" fn UefiDiskReadLogicalSectors(
     );
 
     if EFI_ERROR(Status) != 0 {
-        ERR(b"ReadBlocks failed: DriveNumber=%d, SectorNumber=%llu, SectorCount=%lu, Status=0x%lx\n\0".as_ptr() as PCHAR, (DriveNumber) as usize, (SectorNumber) as usize, (SectorCount) as usize, (Status as ULONG) as usize);
-        ERR(b"ReadBlocks details: BlockSize=%lu, IoAlign=%lu, Buffer=%p, DiskReadBuffer=%p, MediaId=0x%lx\n\0".as_ptr() as PCHAR, (BlockSize) as usize, (IoAlign) as usize, (Buffer) as usize, (DiskReadBuffer) as usize, ((*(*BlockIo).Media).MediaId as ULONG) as usize);
-        ERR(b"ReadBlocks media: LastBlock=%llu, LogicalPartition=%s, RemovableMedia=%s\n\0".as_ptr() as PCHAR, ((*(*BlockIo).Media).LastBlock) as usize, (if (*(*BlockIo).Media).LogicalPartition != 0 { b"TRUE\0".as_ptr() as PCHAR } else { b"FALSE\0".as_ptr() as PCHAR }) as usize, (if (*(*BlockIo).Media).RemovableMedia != 0 { b"TRUE\0".as_ptr() as PCHAR } else { b"FALSE\0".as_ptr() as PCHAR }) as usize);
+        ERR!("ReadBlocks failed: DriveNumber=%d, SectorNumber=%llu, SectorCount=%lu, Status=0x%lx\n", (DriveNumber) as usize, (SectorNumber) as usize, (SectorCount) as usize, (Status as ULONG) as usize);
+        ERR!("ReadBlocks details: BlockSize=%lu, IoAlign=%lu, Buffer=%p, DiskReadBuffer=%p, MediaId=0x%lx\n", (BlockSize) as usize, (IoAlign) as usize, (Buffer) as usize, (DiskReadBuffer) as usize, ((*(*BlockIo).Media).MediaId as ULONG) as usize);
+        ERR!("ReadBlocks media: LastBlock=%llu, LogicalPartition=%s, RemovableMedia=%s\n", ((*(*BlockIo).Media).LastBlock) as usize, (if (*(*BlockIo).Media).LogicalPartition != 0 { b"TRUE\0".as_ptr() as PCHAR } else { b"FALSE\0".as_ptr() as PCHAR }) as usize, (if (*(*BlockIo).Media).RemovableMedia != 0 { b"TRUE\0".as_ptr() as PCHAR } else { b"FALSE\0".as_ptr() as PCHAR }) as usize);
         return 0u8;
     }
 
@@ -1592,12 +1566,12 @@ pub unsafe extern "C" fn UefiDiskGetDriveGeometry(DriveNumber: UCHAR, Geometry: 
     ArcDriveIndex = (DriveNumber - FIRST_BIOS_DISK) as u32 ;
 
     if InternalUefiDisk == core::ptr::null_mut() {
-        ERR(b"InternalUefiDisk not initialized\n\0".as_ptr() as PCHAR);
+        ERR!("InternalUefiDisk not initialized\n");
         return 0u8;
     }
 
     if ArcDriveIndex >= 32 || (*InternalUefiDisk.offset(ArcDriveIndex as isize)).Handle == core::ptr::null_mut() {
-        ERR(b"Invalid drive number: %d\n\0".as_ptr() as PCHAR, (DriveNumber) as usize);
+        ERR!("Invalid drive number: %d\n", (DriveNumber) as usize);
         return 0u8;
     }
 
@@ -1608,12 +1582,12 @@ pub unsafe extern "C" fn UefiDiskGetDriveGeometry(DriveNumber: UCHAR, Geometry: 
     );
 
     if EFI_ERROR(Status) != 0 || BlockIo == core::ptr::null_mut() {
-        ERR(b"Failed to get Block I/O protocol for drive %d\n\0".as_ptr() as PCHAR, (DriveNumber) as usize);
+        ERR!("Failed to get Block I/O protocol for drive %d\n", (DriveNumber) as usize);
         return 0u8;
     }
 
     if (*(*BlockIo).Media).MediaPresent == 0 {
-        ERR(b"Media not present for drive %d\n\0".as_ptr() as PCHAR, (DriveNumber) as usize);
+        ERR!("Media not present for drive %d\n", (DriveNumber) as usize);
         return 0u8;
     }
 
@@ -1639,12 +1613,12 @@ pub unsafe extern "C" fn UefiDiskGetCacheableBlockCount(DriveNumber: UCHAR) -> U
     ArcDriveIndex = DriveNumber as ULONG - FIRST_BIOS_DISK as ULONG;
 
     if InternalUefiDisk == core::ptr::null_mut() {
-        ERR(b"InternalUefiDisk not initialized\n\0".as_ptr() as PCHAR);
+        ERR!("InternalUefiDisk not initialized\n");
         return 0;
     }
 
     if ArcDriveIndex >= 32 || (*InternalUefiDisk.offset(ArcDriveIndex as isize)).Handle == core::ptr::null_mut() {
-        ERR(b"Invalid drive number: %d\n\0".as_ptr() as PCHAR, (DriveNumber) as usize);
+        ERR!("Invalid drive number: %d\n", (DriveNumber) as usize);
         return 0;
     }
 
@@ -1655,12 +1629,12 @@ pub unsafe extern "C" fn UefiDiskGetCacheableBlockCount(DriveNumber: UCHAR) -> U
     );
 
     if EFI_ERROR(Status) != 0 || BlockIo == core::ptr::null_mut() {
-        ERR(b"Failed to get Block I/O protocol for drive %d\n\0".as_ptr() as PCHAR, (DriveNumber) as usize);
+        ERR!("Failed to get Block I/O protocol for drive %d\n", (DriveNumber) as usize);
         return 0;
     }
 
     if (*(*BlockIo).Media).MediaPresent == 0 {
-        ERR(b"Media not present for drive %d\n\0".as_ptr() as PCHAR, (DriveNumber) as usize);
+        ERR!("Media not present for drive %d\n", (DriveNumber) as usize);
         return 0;
     }
 

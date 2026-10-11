@@ -717,8 +717,10 @@ def fix_bindgen_anon_field_access(code: str) -> str:
         # LARGE_INTEGER / ULARGE_INTEGER: .LowPart and .HighPart
         # Match: (word-char or ')') + .LowPart/.HighPart, NOT already preceded
         # by __bindgen_anon_1.  Use negative lookbehind on __bindgen_anon_1.
+        # Not after `.u`: LARGE_INTEGER's NAMED member `u` holds LowPart/HighPart directly
+        # (ndis's `EndOfFile.u.HighPart` became `.u.__bindgen_anon_1.HighPart`, E0609).
         line = re.sub(
-            r"(?<!__bindgen_anon_1)(?<=[)\w])\.(LowPart|HighPart)(?![A-Za-z0-9_])",
+            r"(?<!__bindgen_anon_1)(?<!\.u)(?<=[)\w])\.(LowPart|HighPart)(?![A-Za-z0-9_])",
             r".__bindgen_anon_1.\1",
             line,
         )

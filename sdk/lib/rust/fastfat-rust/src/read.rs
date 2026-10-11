@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -25,7 +26,7 @@ use crate::workque::FatOplockComplete;
 extern "system" {
     fn FsRtlPostStackOverflow(Context: *mut core::ffi::c_void, Event: PKEVENT, StackOverflowRoutine: *const core::ffi::c_void);
     fn FsRtlCheckLockForReadAccess(FileLock: *const core::ffi::c_void, Irp: PIRP) -> BOOLEAN;
-    fn FatBugCheck(arg1: ULONG_PTR, arg2: ULONG_PTR, arg3: ULONG_PTR) -> !;
+    fn FatBugCheck(arg1: usize, arg2: usize, arg3: usize) -> !;
     fn FsRtlCheckOplock(Oplock: *mut core::ffi::c_void, Irp: PIRP, Context: *mut core::ffi::c_void, CompletionRoutine: *const core::ffi::c_void, PostIrpRoutine: *const core::ffi::c_void) -> NTSTATUS;
 }
 
@@ -86,7 +87,6 @@ extern "system" {
     fn FatIsIrpTopLevel(irp: PIRP) -> u8; // BOOLEAN fn FatCreateIrpContext(irp: PIRP, can_wait: i32) -> *mut core::ffi::c_void; // PIRP_CONTEXT fn CanFsdWait(irp: PIRP) -> u8; // BOOLEAN fn FatCompleteMdl(irp_context: *mut core::ffi::c_void, irp: PIRP) -> u8; // NTSTATUS #[no_mangle] fn FatIsIrpTopLevel(irp: PIRP) -> u8; // BOOLEAN fn FatCreateIrpContext(irp: PIRP, can_wait: i32) -> *mut core::ffi::c_void; // PIRP_CONTEXT fn CanFsdWait(irp: PIRP) -> u8; // BOOLEAN fn FatCompleteMdl(irp_context: *mut core::ffi::c_void, irp: PIRP) -> u8; // NTSTATUS #[no_mangle] fn FatIsIrpTopLevel(irp: PIRP) -> u8; // BOOLEAN fn FatCreateIrpContext(irp: PIRP, can_wait: i32) -> *mut core::ffi::c_void; // PIRP_CONTEXT fn CanFsdWait(irp: PIRP) -> u8; // BOOLEAN fn FatCompleteMdl(irp_context: *mut core::ffi::c_void, irp: PIRP) -> u8; // NTSTATUS #[no_mangle] fn FatIsIrpTopLevel(irp: PIRP) -> u8; // BOOLEAN fn FatCreateIrpContext(irp: PIRP, can_wait: i32) -> *mut core::ffi::c_void; // PIRP_CONTEXT fn CanFsdWait(irp: PIRP) -> u8; // BOOLEAN fn FatCompleteMdl(irp_context: *mut core::ffi::c_void, irp: PIRP) -> u8; // NTSTATUS pub unsafe extern "system" fn FatPostStackOverflowRead(irp_context: *mut core::ffi::c_void, irp: PIRP, fcb: *mut core::ffi::c_void) -> u8; // NTSTATUS #[no_mangle] fn FatIsIrpTopLevel(irp: PIRP) -> u8; // BOOLEAN fn FatCreateIrpContext(irp: PIRP, can_wait: i32) -> *mut core::ffi::c_void; // PIRP_CONTEXT fn CanFsdWait(irp: PIRP) -> u8; // BOOLEAN fn FatCompleteMdl(irp_context: *mut core::ffi::c_void, irp: PIRP) -> u8; // NTSTATUS pub unsafe extern "system" fn FatPostStackOverflowRead(irp_context: *mut core::ffi::c_void, irp: PIRP, fcb: *mut core::ffi::c_void) -> u8; // NTSTATUS #[no_mangle] fn FatIsIrpTopLevel(irp: PIRP) -> u8; // BOOLEAN fn FatCreateIrpContext(irp: PIRP, can_wait: i32) -> *mut core::ffi::c_void; // PIRP_CONTEXT fn CanFsdWait(irp: PIRP) -> u8; // BOOLEAN fn FatCompleteMdl(irp_context: *mut core::ffi::c_void, irp: PIRP) -> u8; // NTSTATUS #[no_mangle] fn FatIsIrpTopLevel(irp: PIRP) -> u8; // BOOLEAN fn FatCreateIrpContext(irp: PIRP, can_wait: i32) -> *mut core::ffi::c_void; // PIRP_CONTEXT fn CanFsdWait(irp: PIRP) -> u8; // BOOLEAN fn FatCompleteMdl(irp_context: *mut core::ffi::c_void, irp: PIRP) -> u8; // NTSTATUS pub unsafe extern "system" fn FatPostStackOverflowRead(irp_context: *mut core::ffi::c_void, irp: PIRP, fcb: *mut core::ffi::c_void) -> u8; // NTSTATUS #[no_mangle] fn FatIsIrpTopLevel(irp: PIRP) -> u8; // BOOLEAN fn FatCreateIrpContext(irp: PIRP, can_wait: i32) -> *mut core::ffi::c_void; // PIRP_CONTEXT fn CanFsdWait(irp: PIRP) -> u8; // BOOLEAN fn FatCompleteMdl(irp_context: *mut core::ffi::c_void, irp: PIRP) -> u8; // NTSTATUS pub unsafe extern "system" fn FatPostStackOverflowRead(irp_context: *mut core::ffi::c_void, irp: PIRP, fcb: *mut core::ffi::c_void) -> u8; // NTSTATUS pub unsafe extern "system" fn FatCommonRead(irp_context: *mut core::ffi::c_void, irp: PIRP) -> u8; // NTSTATUS fn FatRaiseStatus(irp_context: *mut core::ffi::c_void, status: i32);
     fn IoSetTopLevelIrp(irp: PIRP);
     fn NodeType(Fcb: PFCB) -> u32;
-    fn NT_ASSERT(condition: i32);
 }
 
 extern "system" {
@@ -270,7 +270,7 @@ pub unsafe extern "system" fn FatStackOverflowRead(
             Vcb = (*Fcb).Vcb;
         }
 
-        NT_ASSERT((!(*Vcb).VerifyThread.is_null()) as i32);
+        NT_ASSERT!((!(*Vcb).VerifyThread.is_null()) as i32);
         SavedVerifyThread = (*Vcb).VerifyThread;
         (*Vcb).VerifyThread = (KeGetCurrentThread()).cast();
     }
@@ -290,7 +290,7 @@ pub unsafe extern "system" fn FatStackOverflowRead(
     }
 
     if !SavedVerifyThread.is_null() {
-        NT_ASSERT(((*Vcb).VerifyThread == (KeGetCurrentThread()).cast()) as i32);
+        NT_ASSERT!(((*Vcb).VerifyThread == (KeGetCurrentThread()).cast()) as i32);
         (*Vcb).VerifyThread = SavedVerifyThread;
     }
 
@@ -466,13 +466,13 @@ pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *
     }
 
     TypeOfOpen = FatDecodeFileObject(FileObject, &raw mut Vcb, &raw mut FcbOrDcb, &raw mut Ccb);
-    NT_ASSERT((!Vcb.is_null()) as i32);
+    NT_ASSERT!((!Vcb.is_null()) as i32);
 
     if TypeOfOpen == UserVolumeOpen {
         NonCachedIo = 1;
     }
 
-    NT_ASSERT((!(NonCachedIo == 0 && TypeOfOpen == VirtualVolumeFile)) as i32);
+    NT_ASSERT!((!(NonCachedIo == 0 && TypeOfOpen == VirtualVolumeFile)) as i32);
 
     if PagingIo != 0 {
         CollectReadStats(Vcb, TypeOfOpen, ByteCount);
@@ -483,7 +483,7 @@ pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *
         }
     }
 
-    NT_ASSERT((FlagOn((*IrpContext).Flags, IRP_CONTEXT_STACK_IO_CONTEXT) == 0) as i32);
+    NT_ASSERT!((FlagOn((*IrpContext).Flags, IRP_CONTEXT_STACK_IO_CONTEXT) == 0) as i32);
 
     if NonCachedIo != 0 {
         if (*IrpContext).FatIoContext.is_null() {
@@ -589,7 +589,7 @@ pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *
 
         Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
         if !NT_SUCCESS(Status) {
-            NT_ASSERT((!(KeGetCurrentThread() as *mut core::ffi::c_void != (*Vcb).VerifyThread as *mut core::ffi::c_void || Status != STATUS_VERIFY_REQUIRED)) as i32);
+            NT_ASSERT!((!(KeGetCurrentThread() as *mut core::ffi::c_void != (*Vcb).VerifyThread as *mut core::ffi::c_void || Status != STATUS_VERIFY_REQUIRED)) as i32);
             FatNormalizeAndRaiseStatus(IrpContext, Status);
         }
 
@@ -602,7 +602,7 @@ pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *
         return Status;
     }
 
-    NT_ASSERT((!FcbOrDcb.is_null()) as i32);
+    NT_ASSERT!((!FcbOrDcb.is_null()) as i32);
 
     if StartingByte.u.HighPart != 0 {
         (*Irp).IoStatus.Information = 0;
@@ -783,10 +783,10 @@ pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *
 
                             (*p_status) = (*(*p_irp)).IoStatus.__bindgen_anon_1.Status;
                             if !NT_SUCCESS(*p_status) {
-                                NT_ASSERT((!(KeGetCurrentThread() as *mut core::ffi::c_void != (*Vcb).VerifyThread as *mut core::ffi::c_void || (*p_status) != STATUS_VERIFY_REQUIRED)) as i32);
+                                NT_ASSERT!((!(KeGetCurrentThread() as *mut core::ffi::c_void != (*Vcb).VerifyThread as *mut core::ffi::c_void || (*p_status) != STATUS_VERIFY_REQUIRED)) as i32);
                                 FatNormalizeAndRaiseStatus(IrpContext, *p_status);
                             } else {
-                                NT_ASSERT(((*(*p_irp)).IoStatus.Information == BytesToRead as _) as i32);
+                                NT_ASSERT!(((*(*p_irp)).IoStatus.Information == BytesToRead as _) as i32);
                                 (*(*p_irp)).IoStatus.Information = RequestedByteCount as _;
                             }
 
@@ -841,18 +841,18 @@ pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *
                                 }
 
                                 (*p_status) = (*(*p_irp)).IoStatus.__bindgen_anon_1.Status;
-                                NT_ASSERT(NT_SUCCESS(*p_status) as i32);
+                                NT_ASSERT!(NT_SUCCESS(*p_status) as i32);
                                 break 'try_blk; // try_return(*p_status)
                             } else {
                                 DebugTrace(0, Dbg, b"MDL read.\n\0".as_ptr() as *const i8, 0);
-                                NT_ASSERT((Wait != 0) as i32);
+                                NT_ASSERT!((Wait != 0) as i32);
                                 CcMdlRead(FileObject,
                                           &raw mut StartingByte,
                                           ByteCount,
                                           &raw mut (*(*p_irp)).MdlAddress,
                                           &raw mut (*(*p_irp)).IoStatus);
                                 (*p_status) = (*(*p_irp)).IoStatus.__bindgen_anon_1.Status;
-                                NT_ASSERT(NT_SUCCESS(*p_status) as i32);
+                                NT_ASSERT!(NT_SUCCESS(*p_status) as i32);
                                 break 'try_blk;
                             }
                         }
@@ -862,8 +862,8 @@ pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *
                         let mut SectorSize: ULONG;
                         SectorSize = (*Vcb).Bpb.BytesPerSector as ULONG;
 
-                        NT_ASSERT((NonCachedIo != 0 && PagingIo != 0) as i32);
-                        NT_ASSERT((((StartingVbo | ByteCount) & (SectorSize - 1)) == 0) as i32);
+                        NT_ASSERT!((NonCachedIo != 0 && PagingIo != 0) as i32);
+                        NT_ASSERT!((((StartingVbo | ByteCount) & (SectorSize - 1)) == 0) as i32);
 
                         if StartingVbo >= (*FcbOrDcb).Header.AllocationSize.u.LowPart {
                             DebugTrace(0, Dbg, b"PagingIo dirent started beyond EOF.\n\0".as_ptr() as *const i8, 0);
@@ -892,10 +892,10 @@ pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *
 
                         (*p_status) = (*(*p_irp)).IoStatus.__bindgen_anon_1.Status;
                         if !NT_SUCCESS(*p_status) {
-                            NT_ASSERT((!(KeGetCurrentThread() as *mut core::ffi::c_void != (*Vcb).VerifyThread as *mut core::ffi::c_void || (*p_status) != STATUS_VERIFY_REQUIRED)) as i32);
+                            NT_ASSERT!((!(KeGetCurrentThread() as *mut core::ffi::c_void != (*Vcb).VerifyThread as *mut core::ffi::c_void || (*p_status) != STATUS_VERIFY_REQUIRED)) as i32);
                             FatNormalizeAndRaiseStatus(IrpContext, *p_status);
                         } else {
-                            NT_ASSERT(((*(*p_irp)).IoStatus.Information == ByteCount as _) as i32);
+                            NT_ASSERT!(((*(*p_irp)).IoStatus.Information == ByteCount as _) as i32);
                         }
 
                         break 'try_blk;

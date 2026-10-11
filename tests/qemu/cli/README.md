@@ -103,10 +103,19 @@ provenance stamp.
 - arm64 automatically re-stages into `ramdisk.img`/`boot.img` (the trap that
   silently boots a stale kernel otherwise).
 
-### `smoke --arch X [--allow-stale] [--repeat N] [--until M] [--fail-on RE] [--tripwire CFG] [--timing] [--no-net] [--nvme] [--ladder]`
+### `smoke --arch X [--allow-stale] [--repeat N] [--until M] [--fail-on RE] [--tripwire CFG] [--timing] [--no-net] [--nvme] [--ladder] [--attach-on-fail]`
 **The verdict front door.** Staleness preflight, then boot the real media via
 the same `QemuVM` the pytest harness uses (slots, reaper, lifetime cap, live-log
 all included), then auto-triage on failure.
+
+- **`--attach-on-fail`** keeps a FAILED boot's VM running, with a gdbstub, instead of
+  tearing it down, and prints its run-id (also the `attach` stage and `summary.json`
+  `attach`). It is handed to the debug toolkit: `./vibeos-cli gdb inspect <run-id> bt 30`
+  (windows-host), `gdb status`, and `gdb stop <run-id>` when done; `ps`/`kill` list it as
+  `smoke --attach-on-fail`, owned by your session, reaped at the usual lifetime cap.
+  `serial.log` is a snapshot from the moment of failure (the live serial was the smoke
+  process's socket). With `--repeat N` the loop stops at the first kept failure. A pass,
+  a launch failure or a harness exception still tears down as normal.
 
 - **`--arch amd64-bios`** boots the same amd64 media through SeaBIOS (legacy BIOS,
   `freeldr.sys`) instead of OVMF, with the ISO on a USB stick (xHCI) as a Libreboot
@@ -151,7 +160,18 @@ all included), then auto-triage on failure.
   bypassing it, and FAILS unless it translated (`SMMU_NOT_TRANSLATING`), every started
   device's stream was attached (`SMMU_NOT_ATTACHED`), and nothing faulted
   (`SMMU_FAULT`). Add `NVME_BAD_DMA=<hex>` and nvme.sys aims one Identify there: the
-  boot then FAILS (`SMMU_MISSED_BAD_DMA`) unless the SMMU faulted it.
+  boot then FAILS (`SMMU_MISSED_BAD_DMA`) unless the SMMU faulted it. nvme.sys is
+  DMA-remapping compatible, so with `--nvme` its controller must get a domain of its
+  own (`SMMU_NO_DOMAIN`) that reaches only what its DMA adapter maps. Add
+  `NVME_STRAY_DMA=1` and it aims an Identify at a RAM page it never mapped: FAILS
+  unless the page came back untouched (`SMMU_STRAY_DMA_LANDED`) and the SMMU faulted
+  it (`SMMU_MISSED_STRAY_DMA`). The identity map would have let that write land.
+
+- **`--gic 3 --nvme --smp <n> --tripwire ITS_MISSTEER`** (arm64) binds every LPI one
+  CPU over from the one it is handed out for, so only the ITS's MOVI, when the driver
+  connects the interrupt, gets it delivered where its interrupt object is. FAILS
+  (`GIC_LPI_NOT_MOVED`) unless an LPI was moved; the `--nvme` checks still prove its
+  interrupts arrive.
 
 - **`--xhci [msix|msi|line]`** (any arch) attaches the USB rig's `qemu-xhci`, keyboard and
   mouse (`VIBEOS_QEMU_XHCI=1`), interrupting by MSI-X (the default), plain MSI or its line
@@ -166,6 +186,13 @@ all included), then auto-triage on failure.
   boot (`NVME_NOT_BEHIND_BRIDGE`) unless the PnP manager started the root port as well as
   the `--nvme` checks passing: config space past bus 0 (the HAL's ECAM from the MCFG),
   pci.sys driving the bridge's bus, and the requester ID of a device off the root bus.
+
+- **`--nvme-segment`** (arm64, implies `--nvme`) puts that root port and controller on a
+  `pxb-pcie` expander whose buses start at 0x80, and sets the `PCI_SEGMENT_SPLIT`
+  tripwire: the HAL then presents those buses as PCI segment 1 (QEMU has only one),
+  publishes its root bus, and routes its MSIs and DMA by segment 0's IORT entry, which
+  is where they really go. FAILS (`NVME_SEGMENT_NOT_PUBLISHED`) unless segment 1's root
+  was published, then as `--nvme-bridge`: what a Graviton's second root complex takes.
 
 - **`--nvme`** (any arch; the default for `amd64-bios`, which is the OptiPlex 9020's
   stick + NVMe drive, opt out with `VIBEOS_QEMU_NVME=0`) attaches a QEMU `nvme`

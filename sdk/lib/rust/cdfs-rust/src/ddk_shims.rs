@@ -18,8 +18,7 @@ use ntkrnl_sys::ddk::{
     PUNICODE_STRING, PUNLOCK_ROUTINE, PVOID, PWCHAR, ULONG, ULONGLONG,
     _DRIVER_OBJECT,
 };
-use ntkrnl_sys::ddk::{IofCallDriver, KeEnterCriticalRegion, KeLeaveCriticalRegion,
-    MmUnmapLockedPages};
+use ntkrnl_sys::ddk::{IofCallDriver, KeEnterCriticalRegion, KeLeaveCriticalRegion};
 
 // ---------------------------------------------------------------------------
 // Layer 1: real ntoskrnl exports absent from bindgen (ntifs.h surface).
@@ -256,13 +255,9 @@ pub unsafe fn IoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS 
 
 //  mmfuncs.h MmPrepareMdlForReuse macro. #[no_mangle] so the per-file
 //  `extern "C" { fn MmPrepareMdlForReuse(...) }` decls resolve at link.
-const MDL_PARTIAL_HAS_BEEN_MAPPED: u16 = 0x0020; // mmtypes.h:23 (was 0x0004 = MDL_SOURCE_IS_NONPAGED_POOL)
-
 #[no_mangle]
 pub unsafe extern "C" fn MmPrepareMdlForReuse(Mdl: PMDL) {
-    if (*Mdl).MdlFlags as u16 & MDL_PARTIAL_HAS_BEEN_MAPPED != 0 {
-        MmUnmapLockedPages((*Mdl).MappedSystemVa, Mdl);
-    }
+    ntkrnl_sys::inline::mm::MmPrepareMdlForReuse(Mdl as _)
 }
 
 //  ARGUMENT_PRESENT macro: (ptr) != NULL
@@ -421,13 +416,7 @@ use ntkrnl_sys::ddk::{KeBugCheckEx, ExFreePool, KeInitializeEvent, PFAST_MUTEX,
     PSINGLE_LIST_ENTRY, _EVENT_TYPE_SynchronizationEvent, ULONG_PTR};
 
 
-// wdm.h NT_ASSERT(exp) — retail no-op (the grind passes the predicate as i32).
-#[no_mangle] pub extern "C" fn NT_ASSERT(_Condition: BOOLEAN) {}
 
-// cdfs debug ASSERT macros — retail no-ops.
-#[no_mangle] pub extern "C" fn ASSERT_OPTIONAL_IRP(_Irp: PIRP) {}
-#[no_mangle] pub extern "C" fn AssertVerifyDevice(_IrpContext: *mut IRP_CONTEXT, _Status: i32) {}
-#[no_mangle] pub extern "C" fn AssertVerifyDeviceIrp(_Irp: PIRP) {}
 
 // nodetype.h: CdBugCheck(A,B,C) = KeBugCheckEx(CDFS_FILE_SYSTEM, BugCheckFileId|__LINE__, A,B,C).
 //   CDFS_FILE_SYSTEM = 0x26 (sdk/include/reactos/mc/bugcodes.mc).
@@ -435,7 +424,7 @@ use ntkrnl_sys::ddk::{KeBugCheckEx, ExFreePool, KeInitializeEvent, PFAST_MUTEX,
 //   grind lowered the macro to a 3-arg fn; param1 is passed 0 here (file/line lost,
 //   acceptable on this never-returns crash path). Faithful to the KeBugCheckEx call.
 const CDFS_FILE_SYSTEM: u32 = 0x26;
-#[no_mangle] pub unsafe extern "C" fn CdBugCheck(A: u32, B: u32, C: u32) {
+#[no_mangle] pub unsafe extern "C" fn CdBugCheck(A: usize, B: usize, C: usize) {
     KeBugCheckEx(CDFS_FILE_SYSTEM, 0 as ULONG_PTR, A as ULONG_PTR, B as ULONG_PTR, C as ULONG_PTR);
 }
 
@@ -479,7 +468,6 @@ use ntkrnl_sys::ddk::{PIO_STACK_LOCATION, IoIsOperationSynchronous, BOOLEAN as D
 use crate::types::{FCB, TYPE_OF_ACQUIRE, _TYPE_OF_ACQUIRE_AcquireShared, PIRP_CONTEXT};
 
 // ntddk.h: UNREFERENCED_PARAMETER(P) — retail no-op (grind lowered to stdcall fn).
-#[no_mangle] pub extern "C" fn UNREFERENCED_PARAMETER(_Param: PVOID) {}
 
 // cdfs debug ASSERT macros — retail no-ops.
 #[no_mangle] pub extern "C" fn ASSERT_IRP_CONTEXT(_Irp: *mut IRP_CONTEXT) {}

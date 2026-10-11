@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use crate::types::*;
 use kmdf_sys::*;
 use ntkrnl_sys::ddk::{IRP, PIRP, IO_STACK_LOCATION, PIO_STACK_LOCATION, GUID, LPGUID, LPCGUID, DEVICE_OBJECT, PDEVICE_OBJECT, MDL, PMDL};
@@ -6,19 +7,14 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
 use core::ffi::c_void;
 
-extern "C" {
-}
 extern "system" {
     fn ScratchBuffer_BeginUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_EndUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_ExecuteCdb( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, TransferSize: u32, Retry: u8, Cdb: *const core::ffi::c_void, CdbLength: u32, ) -> i32;
     fn ScratchBuffer_ResetItems(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, ClearStatus: u8);
-    fn NT_ASSERT(cond: i32);
 }
 unsafe extern "C" {
     fn REVERSE_SHORT(p: *mut u16);
-}
-unsafe extern "C" {
 }
 
 const IOCTL_AACS_READ_MEDIA_KEY_BLOCK: u32 = 0x003350C4; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)
@@ -207,9 +203,7 @@ pub unsafe extern "C" fn DeviceHandleAacsReadMediaKeyBlock(
                                 - (core::mem::offset_of!(DVD_DESCRIPTOR_HEADER, Length) as u32
                                     + core::mem::size_of::<u16>() as u32);
 
-                            NT_ASSERT(
-                                (totalSize == AACS_MKB_PACK_SIZE || thisPackNumber == otherPacks) as i32,
-                            );
+                            NT_ASSERT!((totalSize == AACS_MKB_PACK_SIZE || thisPackNumber == otherPacks) as i32);
 
                             let originalBufferSize: u32 =
                                 RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength as u32;

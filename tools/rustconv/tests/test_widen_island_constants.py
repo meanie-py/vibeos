@@ -40,3 +40,20 @@ def test_the_oracle_reads_one_text_per_name(tmp_path):
     (tmp_path / "b.h").write_text('#define A L"x"\n#define B L"z"\n#define P L"C:\\\\dir"\n')
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
     assert wic.wide_defines(tmp_path) == {"A": "x", "B": None, "P": "C:\\dir"}
+
+
+def test_a_unicode_islands_aw_switch_is_widened_through_its_w_target():
+    """`#define FINDMSGSTRING FINDMSGSTRINGW` (UNICODE) / `...A` (not): bindgen evaluates the
+    chain to `L"commdlg_FindReplace"` and drops the L; only the W text is the oracle."""
+    island = 'pub type TCHAR = WCHAR;\npub const FINDMSGSTRING: &[u8; 4] = b"abc\\0";\n'
+    wide = {"FINDMSGSTRINGW": "abc"}
+    aliases = {"FINDMSGSTRING": {"FINDMSGSTRINGW", "FINDMSGSTRINGA"}}
+    out, widened, _ = wic.widen(island, wide, aliases)
+    assert widened == ["FINDMSGSTRINGW"]
+    assert "pub const FINDMSGSTRING: &[u16; 4] = &[0x0061, 0x0062, 0x0063, 0x0000];" in out
+    # An ANSI island, or one that does not say, keeps the narrow bytes.
+    for header in ("pub type TCHAR = CHAR;\n", ""):
+        out, widened, _ = wic.widen(
+            island.replace("pub type TCHAR = WCHAR;\n", header), wide, aliases
+        )
+        assert widened == [] and 'b"abc\\0"' in out

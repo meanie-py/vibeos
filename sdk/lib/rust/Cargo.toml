@@ -113,6 +113,9 @@ members = [
     # defines them, so every flipped module used to port the header again — four divergent
     # copies, one of which had dropped its bound (roadmap: msgina's stack overrun).
     "strsafe-rust",
+    "wcwidth-rust",
+    "conutils-h",
+    "atlclasses-rust",
     "strsafe-difftest",
     # Receiving C varargs on stable Rust (the slot-capture technique + its measured
     # bounds), ported ONCE. Three crates need it -- freeldr-rust, kd-rust and
@@ -124,6 +127,9 @@ members = [
     # neither, so every translated module re-ported them by hand: LOWORD alone existed 32 times
     # in 8 spellings, and the RGB copies all dropped the header's per-component BYTE mask.
     "win32macros-rust",
+    # Wine's ERR/FIXME/WARN/TRACE (wine/debug.h). Thirty-one Wine-derived crates carried a
+    # byte-identical copy of the same 64-line module.
+    "winedebug-rust",
     # The System control panel: the General/Hardware/Advanced property sheets, the
     # environment/user-profile/hardware-profile/virtual-memory/startup-recovery dialogs, and the
     # SMBIOS/DMI reader that names the machine.
@@ -433,6 +439,68 @@ members = [
     "usrmgr-rust",
     "comctl32-rust",
     "inetcpl-rust",
+    "ndis-rust",
+    "notepad-rust",
+    "winver-rust",
+    "logoff-rust",
+    "shutdown-rust",
+    "runas-rust",
+    "control-rust",
+    "findstr-rust",
+    "cacls-rust",
+    "charmap-rust",
+    "sc-rust",
+    "magnify-rust",
+    "osk-rust",
+    "fontview-rust",
+    "msconfig-rust",
+    "mmc-rust",
+    "sdbinst-rust",
+    "mplay32-rust",
+    "mstsc-rust",
+    "dxdiag-rust",
+    "sndvol32-rust",
+    "extrac32-rust",
+    "clipbrd-rust",
+    "imm32-rust",
+    "gdi32_vista-rust",
+    "user32_vista-rust",
+    "user32_optional_vista-rust",
+    "bmfd-rust",
+    "ftfd-rust",
+    "winegdi-rust",
+    "opengl32-rust",
+    "fltmc-rust",
+    "sol-rust",
+    "spider-rust",
+    "tracert-rust",
+    "sndrec32-rust",
+    "winprint-rust",
+    "logonui-rust",
+    "aclayers-rust",
+    "acgenral-rust",
+    "audiosrv-rust",
+    "w32time-rust",
+    "schedsvc-rust",
+    "spoolss-rust",
+    "localmon-rust",
+    "localspl-rust",
+    "winspool-rust",
+    "spoolsv-rust",
+    "apphelp-rust",
+    "eventlog-rust",
+    "progman-rust",
+    "svchost-rust",
+    "cmd-rust",
+    "kbdlayouts-rust",
+    "mspaint-rust",
+    "calc-rust",
+    "taskmgr-rust",
+    "regedit-rust",
+    "clb-rust",
+    "servman-rust",
+    "net-rust",
+    "reg-rust",
 ]
 resolver = "2"
 
@@ -500,6 +568,15 @@ debug = 1
 # [profile.release.package.ntoskrnl-rust]
 # debug-assertions = true
 # overflow-checks = false   # NB: defaults to FOLLOWING debug-assertions; must be explicit
+
+# The appcompat shim DLLs register their shims as `.shm$BBB` records that only shimlib's section
+# walk ever reads, so the DLL reaches each crate through ONE anchor symbol (lib.rs). One codegen
+# unit keeps every record in the anchor's object; split, the records' objects stay unlinked.
+[profile.release.package.aclayers-rust]
+codegen-units = 1
+
+[profile.release.package.acgenral-rust]
+codegen-units = 1
 
 # msvcrt.dll's CRT body is the ONE place in this workspace where throughput is a
 # correctness-adjacent contract: `memset`/`memcpy`/`memcmp`/`strlen` are served to

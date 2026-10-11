@@ -509,11 +509,6 @@ pub fn DbgDeviceRelationString(_type_: ULONG) -> *const u8 {
     b"Unknown\0".as_ptr()
 }
 
-pub fn ASSERTMSG(_msg: *const u8, _expr: bool) {
-}
-
-pub fn ASSERT(_expr: bool) {
-}
 
 
 pub type PWCHAR = *mut u16;
@@ -2075,7 +2070,7 @@ pub unsafe extern "C" fn Bus_PDO_QueryDeviceRelations(
         4 => {
             let deviceRelations = (*Irp).IoStatus.Information as PDEVICE_RELATIONS;
             if !deviceRelations.is_null() {
-                ASSERTMSG(
+                ASSERTMSG!(
                     b"Someone above is handling TargetDeviceRelation\n\0".as_ptr() as PCHAR,
                     deviceRelations.is_null(),
                 );

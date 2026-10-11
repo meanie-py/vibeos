@@ -15,6 +15,7 @@ from pathlib import Path
 
 from rustconv.scanner import _expand_case_macros, scan_file
 
+
 def _tu(arms: str) -> str:
     return (
         "void before(int x) { (void)x; }\n\n"

@@ -261,6 +261,7 @@ ctype-tables = []
 dllmain = ["heap", "stdio", "locale", "data", "cpp", "conio-exit", "threading"]
 
 [dependencies]
+winedebug-rust = { path = "../winedebug-rust" }
 win32macros-rust = { path = "../win32macros-rust" }
 # va_entry!: the C `...` entry points (src/va_entries.rs) without a C shim file.
 varargs-rust = { path = "../varargs-rust" }

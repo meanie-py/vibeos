@@ -149,6 +149,20 @@ pub unsafe extern "C" fn Bus_PDO_QueryInterface(
         return STATUS_INVALID_PARAMETER;
     }
 
+    // VibeOS: PCI interrupt routing for a root bridge (pciroute.rs).
+    if RtlCompareMemory(
+        (*IrpSp).Parameters.QueryInterface.InterfaceType as *const c_void,
+        core::ptr::addr_of!(crate::pciroute::GUID_VIBEOS_PCI_IRQ_ROUTING) as *const c_void,
+        core::mem::size_of::<GUID>() as SIZE_T,
+    ) == core::mem::size_of::<GUID>() as SIZE_T
+    {
+        return crate::pciroute::query_routing_interface(
+            (*DeviceData).AcpiHandle,
+            (*IrpSp).Parameters.QueryInterface.Interface as *mut c_void,
+            (*IrpSp).Parameters.QueryInterface.Size,
+        );
+    }
+
     if RtlCompareMemory(
         (*IrpSp).Parameters.QueryInterface.InterfaceType as *const c_void,
         core::ptr::addr_of!(GUID_ACPI_INTERFACE_STANDARD) as *const c_void,

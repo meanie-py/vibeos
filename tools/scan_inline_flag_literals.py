@@ -219,8 +219,22 @@ def scan_file(path, catalog):
         if len(names) >= 2:
             # |-list: pair positionally with the literals on the comment's line,
             # in source order, that sit before the comment (e.g. `A | B // N1 | N2`).
+            # ...and only within the comment's own FIELD: a struct-initializer line carries
+            # several (`VSC_VK { Vsc: 0x10 as BYTE, Vk: 433 as USHORT /* VK_X | KBDEXT */ }`,
+            # c_data_port's keyboard tables), and pairing the scan code 0x10 with VK_X
+            # raised 4108 false findings. The field starts after the last `,`/`{`/`(`/`;`.
+            # A comment alone under a block opener annotates that whole line instead.
+            field_start = (
+                -1
+                if cline != c.start_point[0]
+                else max(src.rfind(sep, 0, c.start_byte) for sep in (b",", b"{", b"(", b";"))
+            )
             row = sorted(
-                (L for L in lits if L.start_point[0] == cline and L.start_byte < c.start_byte),
+                (
+                    L
+                    for L in lits
+                    if L.start_point[0] == cline and field_start < L.start_byte < c.start_byte
+                ),
                 key=lambda n: n.start_byte,
             )
             if len(row) == 1 and len(names) >= 2 and all(n in catalog for n in names):
@@ -232,6 +246,11 @@ def scan_file(path, catalog):
                     or_val |= catalog[n]
                 composite_ok = or_val in lit_values(row[0], src)
                 pairs = [] if composite_ok else list(zip(row, names, strict=False))
+            elif len(row) == 1:
+                # ONE literal, an |-list naming something the catalog does not know (kbd.h's
+                # `VK_HOME | KNUMS`): the OR cannot be evaluated, and pairing the literal with
+                # the first name alone is not what the comment says. Undecidable: no finding.
+                pairs = []
             else:
                 pairs = list(zip(row, names, strict=False))
         else:

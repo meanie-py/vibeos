@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{ERR, TRACE};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_WINDOWS; // wlmemory.c: DBG_DEFAULT_CHANNEL(WINDOWS)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use ntkrnl_sys::ddk::{MEMORY_ALLOCATION_DESCRIPTOR, PCSTR, PLOADER_PARAMETER_BLOCK, PMEMORY_ALLOCATION_DESCRIPTOR};
@@ -34,8 +36,6 @@ pub use ntkrnl_sys::ddk::_TYPE_OF_MEMORY_LoaderSystemCode as LoaderSystemCode;
 pub use ntkrnl_sys::ddk::_TYPE_OF_MEMORY_LoaderXIPRom as LoaderXIPRom;
 
 extern "C" {
-    fn TRACE(fmt: *const i8, ...);
-    fn ERR(fmt: *const i8, ...);
     fn FrLdrHeapCleanupAll();
     fn MmSetMemoryType(BaseAddress: *mut core::ffi::c_void, SizeInPages: SIZE_T, MemoryType: u32);
     fn MmAllocateMemoryWithType(MemorySize: usize, MemoryType: u32) -> *mut core::ffi::c_void;
@@ -95,9 +95,7 @@ unsafe fn MempAddMemoryBlock(
 
     let mut PageCount = PageCount;
 
-    TRACE(
-        b"MempAddMemoryBlock(BasePage=0x%lx, PageCount=0x%lx, Type=%ld)\n\0".as_ptr() as *const i8, (BasePage) as usize, (PageCount) as usize, (Type) as usize,
-    );
+    TRACE!("MempAddMemoryBlock(BasePage=0x%lx, PageCount=0x%lx, Type=%ld)\n", (BasePage) as usize, (PageCount) as usize, (Type) as usize);
 
     if BasePage >= MM_MAX_PAGE {
         return;
@@ -108,7 +106,7 @@ unsafe fn MempAddMemoryBlock(
     }
 
     if MadCount as usize >= MAX_MAD_COUNT {
-        ERR(b"Error: no MAD slots left!\n\0".as_ptr() as *const i8);
+        ERR!("Error: no MAD slots left!\n");
         return;
     }
 
@@ -129,9 +127,15 @@ unsafe fn MempSetupPagingForRegion(
 {
     let mut Status: u8 = 1u8;
 
-    TRACE(b"MempSetupPagingForRegion(BasePage=0x%lx, PageCount=0x%lx, Type=%ld)\n\0".as_ptr() as *const i8, (BasePage) as usize, (PageCount) as usize, (Type) as usize);
+    TRACE!("MempSetupPagingForRegion(BasePage=0x%lx, PageCount=0x%lx, Type=%ld)\n", (BasePage) as usize, (PageCount) as usize, (Type) as usize);
 
-    if BasePage + PageCount > MmGetLoaderPagesSpanned() { return; }
+    // The span sizes the KSEG0 boot image, so it gates the KSEG0-mapped types. On i386 the
+    // identity-only types are not counted in it (uefimem.rs: the firmware's loader regions
+    // sit at the top of RAM), so they must not be gated by it either.
+    let identity_only = matches!(Type, LoaderLoadedProgram | LoaderOsloaderStack | LoaderFirmwareTemporary);
+    if BasePage + PageCount > MmGetLoaderPagesSpanned() && !(cfg!(target_arch = "x86") && identity_only) {
+        return;
+    }
 
     match Type {
         LoaderLoadedProgram | LoaderOsloaderStack | LoaderFirmwareTemporary => {
@@ -157,7 +161,7 @@ unsafe fn MempSetupPagingForRegion(
     }
 
     if Status == 0u8 {
-        ERR(b"Error during MempSetupPaging\n\0".as_ptr() as *const i8);
+        ERR!("Error during MempSetupPaging\n");
     }
 }
 
@@ -204,11 +208,11 @@ pub unsafe extern "C" fn WinLdrSetupMemoryLayout(LoaderBlock: PLOADER_PARAMETER_
     MemoryMapStartPage = (MemoryMap as usize >> MM_PAGE_SHIFT) as PFN_NUMBER;
     MemoryMapSizeInPages = ((NoEntries as usize * core::mem::size_of::<PAGE_LOOKUP_TABLE_ITEM>() + MM_PAGE_SIZE as usize - 1) / MM_PAGE_SIZE as usize) as PFN_NUMBER;
 
-    TRACE(b"Got memory map with %d entries\n\0".as_ptr() as *const i8, (NoEntries) as usize);
+    TRACE!("Got memory map with %d entries\n", (NoEntries) as usize);
 
     let Status = MempSetupPaging(0, 1, 0u8);
     if Status == 0u8 {
-        ERR(b"Error during MempSetupPaging of first page\n\0".as_ptr() as *const i8);
+        ERR!("Error during MempSetupPaging of first page\n");
         return 0u8;
     }
 
@@ -264,7 +268,7 @@ pub unsafe extern "C" fn WinLdrSetupMemoryLayout(LoaderBlock: PLOADER_PARAMETER_
         i += 1;
     }
 
-    TRACE(b"MadCount: %d\n\0".as_ptr() as *const i8, (MadCount) as usize);
+    TRACE!("MadCount: %d\n", (MadCount) as usize);
 
     WinLdrpDumpMemoryDescriptors(LoaderBlock);
 
@@ -282,7 +286,7 @@ pub unsafe extern "C" fn WinLdrSetupMemoryLayout(LoaderBlock: PLOADER_PARAMETER_
         );
     }
 
-    TRACE(b"Memory Descriptor List prepared, printing PDE\n\0".as_ptr() as *const i8);
+    TRACE!("Memory Descriptor List prepared, printing PDE\n");
     List_PaToVa(core::ptr::addr_of_mut!((*LoaderBlock).MemoryDescriptorListHead));
 
     1u8
@@ -308,9 +312,7 @@ unsafe fn WinLdrInsertDescriptor(
     } else {
         b"Unknown           \0".as_ptr()
     };
-    TRACE(
-        b"BP=0x%X PC=0x%X %s\n\0".as_ptr() as *const i8, ((*NewDescriptor).BasePage) as usize, ((*NewDescriptor).PageCount) as usize, (mt_desc) as usize,
-    );
+    TRACE!("BP=0x%X PC=0x%X %s\n", ((*NewDescriptor).BasePage) as usize, ((*NewDescriptor).PageCount) as usize, (mt_desc) as usize);
 
     PreviousEntry = ListHead;
     NextEntry = (*ListHead).Flink;

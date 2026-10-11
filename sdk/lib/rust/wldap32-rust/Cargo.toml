@@ -33,6 +33,7 @@ have_ldap_parse_vlvresponse_control = []
 have_ldap_parse_vlv_control = []
 
 [dependencies]
+winedebug-rust = { path = "../winedebug-rust" }
 panic-common = { path = "../panic-common", features = ["user"] }
 ntdll-sys = { path = "../ntdll-sys" }
 # ber_printf/ber_scanf are C-variadic; see src/wldap32/ber.rs.

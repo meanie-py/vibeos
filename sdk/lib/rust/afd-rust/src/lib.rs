@@ -10,6 +10,18 @@
 #![cfg_attr(not(test), no_std)]
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals, dead_code)]
 
+// UNREFERENCED_PARAMETER is a macro in the DDK headers; an out-of-line no-op fn is an
+// optimization barrier that can uncloak an ABI mismatch.
+#[allow(unused_macros)]
+macro_rules! UNREFERENCED_PARAMETER {
+    ($($p:expr),* $(,)?) => {{ $( let _ = $p; )* }};
+}
+
+// ASSERT is debug_assert! (ntkrnl_sys::dbgassert): checked in a debug build, never
+// evaluated in release -- the kernel's convention. It was an empty fn here, which
+// never checked yet still evaluated its argument on every call.
+macro_rules! ASSERT { ($($t:tt)*) => { ntkrnl_sys::nt_assert!($($t)*) }; }
+
 pub mod types; // afd-private + TDI/shared struct layouts (gen_driver_types.sh, per-arch)
 #[macro_use] // AFD_DbgPrint! no-op macro must be in scope for the modules below
 pub mod glue; // #define consts/type-aliases/macros bindgen doesn't expand

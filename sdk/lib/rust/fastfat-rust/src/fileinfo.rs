@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{KdPrintEx};
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 // The real definitions, so the compiler checks every call against them.
 use crate::timesup::{FatNtTimeToFatTime};
@@ -134,15 +136,13 @@ extern "system" {
     static IRP_CONTEXT_FLAG_WAIT: u32;
     static FAT_NTC_ROOT_DCB: NODE_TYPE_CODE;
     static UserVolumeOpen: TYPE_OF_OPEN;
-    fn CanFsdWait(Irp: *mut core::ffi::c_void) -> i32;
+    fn CanFsdWait(Irp: *mut core::ffi::c_void) -> u8;
     fn FatIsIrpTopLevel(Irp: *mut core::ffi::c_void) -> u8;
     fn FatCreateIrpContext(Irp: *mut core::ffi::c_void, CanWait: i32) -> *mut core::ffi::c_void;
     fn FatProcessException(IrpContext: *mut core::ffi::c_void, Irp: *mut core::ffi::c_void, ExceptionCode: u32) -> i32;
 }
 extern "system" {
     fn KeGetCurrentIrql() -> u8;
-    fn UNREFERENCED_PARAMETER(param: *mut ());
-    fn NT_ASSERT(condition: i32);
     fn ClearFlag(flags: *mut u32, flag: u32);
     fn FatSetDirtyBcb( irp_ctx: *mut IRP_CONTEXT, bcb: *mut BCB, vcb: *mut VCB, flag: u8, );
     fn FatReservedBytes(bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
@@ -171,7 +171,7 @@ extern "system" {
     fn FatSetFileSizeInDirent( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, null: *const c_void, );
     fn FatSetFileSizeInDirentNoRaise( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, null: *const c_void, );
     fn IsFileDeleted(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> BOOLEAN;
-    fn FatBugCheck(a: u32, b: u32, c: u32);
+    fn FatBugCheck(a: usize, b: usize, c: usize);
     fn FatCreateFcb( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, TargetDcb: *mut DCB, LfnOffset: u32, DirentOffset: u32, Dirent: *mut DIRENT, Lfn: *mut _UNICODE_STRING, other: *mut _UNICODE_STRING, flag1: u8, flag2: u8, ) -> *mut FCB;
     fn FatDeleteFcb( IrpContext: *mut IRP_CONTEXT, Fcb: *mut *mut FCB, );
     fn FatAcquireExclusiveVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB) -> BOOLEAN;
@@ -180,7 +180,7 @@ extern "system" {
     fn FatVerifyFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
     fn FatReleaseVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
     fn FatCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
-    } extern "C" { fn KdPrintEx(ComponentId: u32, Level: u32, Format: *const i8, ...); }
+}
 extern "C" {
     // wdm FORCEINLINE helpers: cdecl bodies (`_Io...`, rust_cohab_forceinline.c), and the
     // rest of the crate declares them "C". One "system" view of the same symbol is a §9.99
@@ -532,7 +532,7 @@ unsafe extern "system" fn FatQueryShortNameInfo(
         0,
     );
 
-    NT_ASSERT((status == STATUS_SUCCESS) as i32);
+    NT_ASSERT!((status == STATUS_SUCCESS) as i32);
 
     if (*Length as u32) < (short_name.Length as u32) {
         bytes_to_copy = *Length as u32;
@@ -1273,7 +1273,7 @@ pub unsafe extern "system" fn FatSetAllocationInfo(
         && (*(*FileObject).SectionObjectPointer).SharedCacheMap == core::ptr::null_mut()
         && FlagOn((*Irp).Flags, IRP_PAGING_IO) == 0
     {
-        NT_ASSERT((FlagOn((*FileObject).Flags, FO_CLEANUP_COMPLETE) == 0) as i32);
+        NT_ASSERT!((FlagOn((*FileObject).Flags, FO_CLEANUP_COMPLETE) == 0) as i32);
 
         // Now initialize the cache map.
         FatInitializeCacheMap(
@@ -1377,7 +1377,7 @@ pub unsafe extern "system" fn FatSetAllocationInfo(
                     crate::fatdata::FatBugCheckExceptionFilter(pointers as *mut EXCEPTION_POINTERS) as i32
                 });
 
-                NT_ASSERT(((*FileObject).DeleteAccess != 0 || (*FileObject).WriteAccess != 0) as i32);
+                NT_ASSERT!(((*FileObject).DeleteAccess != 0 || (*FileObject).WriteAccess != 0) as i32);
 
                 // There is no going back from this. If we run into problems updating
                 // the dirent we will have to live with the consequences.
@@ -1406,9 +1406,7 @@ pub unsafe extern "system" fn FatSetAllocationInfo(
                 *CcGetFileSizePointer(FileObject) = (*Fcb).Header.FileSize;
             }
 
-            NT_ASSERT(
-                ((*Fcb).Header.FileSize.__bindgen_anon_1.LowPart <= (*Fcb).Header.AllocationSize.__bindgen_anon_1.LowPart) as i32,
-            );
+            NT_ASSERT!(((*Fcb).Header.FileSize.__bindgen_anon_1.LowPart <= (*Fcb).Header.AllocationSize.__bindgen_anon_1.LowPart) as i32);
         }
 
         if CacheMapInitialized != 0 {
@@ -2590,7 +2588,7 @@ pub unsafe extern "system" fn FatSetEndOfFileInfo(
                         *p_new_file_size = (*Fcb).Header.FileSize.__bindgen_anon_1.LowPart;
                     }
 
-                    NT_ASSERT((*p_new_file_size <= (*Fcb).Header.AllocationSize.__bindgen_anon_1.LowPart) as i32);
+                    NT_ASSERT!((*p_new_file_size <= (*Fcb).Header.AllocationSize.__bindgen_anon_1.LowPart) as i32);
 
                     FatGetDirentFromFcbOrDcb(
                         IrpContext,
@@ -2760,7 +2758,7 @@ pub unsafe extern "system" fn FatFsdSetInformation(
     let p_status = core::ptr::addr_of_mut!(Status);
     let p_irp_context = core::ptr::addr_of_mut!(IrpContext);
     if let Err(code) = crate::seh::fat_try_except(p_irp_context as *const *mut core::ffi::c_void, || {
-        *p_irp_context = FatCreateIrpContext(Irp, CanFsdWait(Irp));
+        *p_irp_context = FatCreateIrpContext(Irp, CanFsdWait(Irp) as i32);
         *p_status = FatCommonSetInformation(*p_irp_context as *mut _, Irp as *mut _);
     }) {
         Status = FatProcessException(IrpContext, Irp, code as u32);
@@ -3013,12 +3011,7 @@ pub unsafe extern "system" fn FatCommonQueryInformation(
                 }
             }
         } else {
-            KdPrintEx(
-                DPFLTR_FASTFAT_ID,
-                DPFLTR_INFO_LEVEL,
-                b"FATQueryFile, Illegal TypeOfOpen = %08lx\n\0".as_ptr() as *const i8,
-                TypeOfOpen as u32,
-            );
+            KdPrintEx!(DPFLTR_FASTFAT_ID, DPFLTR_INFO_LEVEL, b"FATQueryFile, Illegal TypeOfOpen = %08lx\n\0".as_ptr() as *const i8, TypeOfOpen as u32);
             *p_status = STATUS_INVALID_PARAMETER;
         }
 
@@ -3277,7 +3270,7 @@ unsafe extern "system" fn FatDeleteFile(
 ) {
     // Forward declarations for unknown gap functions/macros
     extern "system" {
-        fn FatBugCheck(a: u32, b: u32, c: u32);
+        fn FatBugCheck(a: usize, b: usize, c: usize);
         fn FatCreateFcb(
             IrpContext: *mut IRP_CONTEXT,
             Vcb: *mut VCB,
@@ -3309,7 +3302,6 @@ unsafe extern "system" fn FatDeleteFile(
             Fcb: *mut FCB,
             offset: u32,
         );
-        fn NT_ASSERT(condition: u32);
         fn NodeType(Fcb: *mut FCB) -> u32;
     }
 
@@ -3330,8 +3322,8 @@ unsafe extern "system" fn FatDeleteFile(
         if ((*Fcb).FcbState & FCB_STATE_NAMES_IN_SPLAY_TREE) != 0
             && (*Fcb).DirentOffsetWithinDirectory == DirentOffset
         {
-            NT_ASSERT((NodeType(Fcb) == FAT_NTC_FCB) as u32);
-            NT_ASSERT(((*Fcb).LfnOffsetWithinDirectory == LfnOffset) as u32);
+            NT_ASSERT!((NodeType(Fcb) == FAT_NTC_FCB) as u32);
+            NT_ASSERT!(((*Fcb).LfnOffsetWithinDirectory == LfnOffset) as u32);
 
             if (*Fcb).UncleanCount != 0 {
                 FatBugCheck(0, 0, 0);
@@ -8558,7 +8550,7 @@ pub unsafe extern "system" fn FatFsdQueryInformation(
     let p_status = core::ptr::addr_of_mut!(Status);
     let p_irp_context = core::ptr::addr_of_mut!(IrpContext);
     if let Err(code) = crate::seh::fat_try_except(p_irp_context as *const *mut core::ffi::c_void, || {
-        *p_irp_context = FatCreateIrpContext(Irp, CanFsdWait(Irp));
+        *p_irp_context = FatCreateIrpContext(Irp, CanFsdWait(Irp) as i32);
         *p_status = FatCommonQueryInformation(*p_irp_context as PIRP_CONTEXT, Irp as PIRP);
     }) {
         Status = FatProcessException(IrpContext, Irp, code as u32);

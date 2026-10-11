@@ -179,19 +179,34 @@ pub unsafe extern "system" fn HalVibeosMessageCapacity() -> ULONG {
     unsafe { imp::message_capacity() }
 }
 
+/// HalVibeosDmaAttach's `Strict` from a driver that claimed its device outside PnP.
+pub const DMA_ATTACH_CLAIMED: BOOLEAN = 2;
+
 /// pci.sys, starting a device and before it turns on bus mastering: make the
 /// device's DMA reach memory. Behind a translating SMMU (arm64, `SMMU=TRANSLATE`)
-/// that is its stream table entry; everywhere else there is nothing to do. FALSE
+/// that is its stream table entry; everywhere else there is nothing to do.
+/// `Strict`: its driver is DMA-remapping compatible (maps every buffer through its
+/// DMA adapter), so it can have a domain of its own that reaches only those. FALSE
 /// when the device's DMA will not work.
+///
+/// `Strict` = [`DMA_ATTACH_CLAIMED`]: the same, from a driver that found the device
+/// itself rather than through PnP (vioblk's SCSIPORT scan, netstack). Its domain is
+/// then kept when pci.sys later starts the device's PDO, which with no function
+/// driver attached to it would otherwise put it back on the shared identity map.
 #[unsafe(no_mangle)]
-pub unsafe extern "system" fn HalVibeosDmaAttach(RequesterId: ULONG) -> BOOLEAN {
+pub unsafe extern "system" fn HalVibeosDmaAttach(RequesterId: ULONG, Strict: BOOLEAN) -> BOOLEAN {
     #[cfg(target_arch = "aarch64")]
     {
-        unsafe { crate::arm64::smmuv3::attach(RequesterId) as BOOLEAN }
+        let mode = match Strict {
+            0 => crate::arm64::smmuv3::Attach::Shared,
+            DMA_ATTACH_CLAIMED => crate::arm64::smmuv3::Attach::Claimed,
+            _ => crate::arm64::smmuv3::Attach::Strict,
+        };
+        unsafe { crate::arm64::smmuv3::attach(RequesterId, mode) as BOOLEAN }
     }
     #[cfg(not(target_arch = "aarch64"))]
     {
-        let _ = RequesterId;
+        let _ = (RequesterId, Strict);
         1
     }
 }

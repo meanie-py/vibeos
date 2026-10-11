@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use crate::types::*;
 use kmdf_sys::*;
 use ntkrnl_sys::ddk::{IRP, PIRP, IO_STACK_LOCATION, PIO_STACK_LOCATION, GUID, LPGUID, LPCGUID, DEVICE_OBJECT, PDEVICE_OBJECT, MDL, PMDL};
@@ -110,7 +111,6 @@ extern "system" {
     fn ScratchBuffer_PerformNextReadWrite(device_extension: *mut CDROM_DEVICE_EXTENSION, first: u32) -> NTSTATUS;
     fn ScratchBuffer_EndUse(DeviceExtension: PCDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_ExecuteCdb(DeviceExtension: PCDROM_DEVICE_EXTENSION, OriginalRequest: *mut core::ffi::c_void, transferByteCount: u32, flag: u8, cdb: *mut CDB, cdbLen: u8) -> NTSTATUS;
-    fn NT_ASSERT(condition: i32);
     fn DeviceGetExtension(Device: WDFDEVICE) -> *mut CDROM_DEVICE_EXTENSION;
     fn MmGetMdlVirtualAddress(Mdl: PMDL) -> *mut core::ffi::c_void;
     fn MmGetMdlByteCount(Mdl: PMDL) -> u32;
@@ -125,15 +125,10 @@ unsafe extern "C" {
     fn MSF_TO_LBA(m: u8, s: u8, f: u8) -> u32;
 }
 unsafe extern "C" {
-}
-unsafe extern "C" {
     fn MediaReadCapacity(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS;
 }
 unsafe extern "C" {
     fn RequestCompletion( device_extension: *mut CDROM_DEVICE_EXTENSION, request: WDFREQUEST, status: NTSTATUS, info: ULONG_PTR, );
-}
-unsafe extern "C" {
-    fn UNREFERENCED_PARAMETER(param: usize);
 }
 extern "system" {
     fn RequestDummyCompletionRoutine( Request: WDFREQUEST, ioTarget: WDFIOTARGET, CompletionParams: *mut WDF_REQUEST_COMPLETION_PARAMS, CompletionContext: WDFCONTEXT, );
@@ -444,7 +439,7 @@ pub unsafe extern "C" fn ReadQChannel(
 
     PAGED_CODE!();
 
-    UNREFERENCED_PARAMETER(InputBufferLength);
+    UNREFERENCED_PARAMETER!(InputBufferLength);
 
     *DataLength = 0;
 
@@ -1019,7 +1014,7 @@ pub unsafe extern "C" fn RequestHandleGetMediaTypeEx(
     *DataLength = 0;
 
     if KeGetCurrentIrql() >= DISPATCH_LEVEL {
-        NT_ASSERT(0);
+        NT_ASSERT!(0);
         return STATUS_INVALID_LEVEL;
     }
 
@@ -2455,7 +2450,7 @@ pub unsafe extern "system" fn RequestHandleExclusiveAccessLockDevice(
             status = STATUS_INVALID_PARAMETER;
         } else {
             nameLength = idx + 1;
-            NT_ASSERT((nameLength <= CDROM_EXCLUSIVE_CALLER_LENGTH) as i32);
+            NT_ASSERT!((nameLength <= CDROM_EXCLUSIVE_CALLER_LENGTH) as i32);
         }
     }
 
@@ -2763,7 +2758,7 @@ pub unsafe extern "system" fn RequestHandleQueryPropertyDeviceUniqueId(
         let mut infoFound: u8 = 0;
 
         if KeGetCurrentIrql() >= DISPATCH_LEVEL {
-            NT_ASSERT(0i32);
+            NT_ASSERT!(0i32);
             outLength = 0;
             status = STATUS_INVALID_LEVEL;
         } else if (*inputBuffer).QueryType == PropertyExistsQuery {
@@ -2844,13 +2839,11 @@ pub unsafe extern "system" fn RequestHandleQueryPropertyDeviceUniqueId(
             } else if infoFound != 0 {
                 status = STATUS_SUCCESS;
 
-                NT_ASSERT(
-                    (DuidExactMatch
+                NT_ASSERT!((DuidExactMatch
                         == CompareStorageDuids(
                             descHeader as *const STORAGE_DEVICE_UNIQUE_IDENTIFIER,
                             descHeader as *const STORAGE_DEVICE_UNIQUE_IDENTIFIER,
-                        )) as i32,
-                );
+                        )) as i32);
             } else {
                 status = STATUS_NOT_FOUND;
             }
@@ -2893,7 +2886,7 @@ pub unsafe extern "system" fn RequestHandleQueryPropertyWriteCache(
 
     if status >= 0 {
         if KeGetCurrentIrql() >= 2u8 /* DISPATCH_LEVEL */ {
-            NT_ASSERT(0i32);
+            NT_ASSERT!(0i32);
             status = STATUS_INVALID_LEVEL;
         } else if (*query).QueryType == 0 /* PropertyExistsQuery */ {
             information = 0;
@@ -3691,7 +3684,7 @@ pub unsafe extern "C" fn RequestHandleMountQueryDeviceName(
 
     *DataLength = 0;
 
-    NT_ASSERT((!(*DeviceExtension).DeviceName.Buffer.is_null()) as i32);
+    NT_ASSERT!((!(*DeviceExtension).DeviceName.Buffer.is_null()) as i32);
 
     if RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength < core::mem::size_of::<MOUNTDEV_NAME>() {
         status = STATUS_BUFFER_TOO_SMALL;
@@ -4667,7 +4660,7 @@ pub unsafe extern "C" fn RequestHandleFakePartitionInfo(
                 RtlZeroMemory(outputBuffer, *DataLength);
             }
             _ => {
-                NT_ASSERT(0);
+                NT_ASSERT!(0);
             }
         }
 
@@ -5003,7 +4996,7 @@ pub unsafe extern "C" fn RequestHandleEnableStreaming(
             if !fileObject.is_null() {
                 fileObjectContext = FileObjectGetContext(fileObject);
             }
-            NT_ASSERT((!fileObjectContext.is_null()) as i32);
+            NT_ASSERT!((!fileObjectContext.is_null()) as i32);
             if fileObjectContext.is_null() {
                 TracePrint!(
                     TRACE_LEVEL_ERROR,
@@ -5296,7 +5289,7 @@ pub unsafe extern "C" fn RequestIsRealtimeStreaming(Request: WDFREQUEST, IsReadR
 
         if fileObject != core::ptr::null_mut() {
             fileObjectContext = FileObjectGetContext(fileObject);
-            NT_ASSERT((fileObjectContext != core::ptr::null_mut()) as i32);
+            NT_ASSERT!((fileObjectContext != core::ptr::null_mut()) as i32);
 
             if IsReadRequest != 0 && (*fileObjectContext).EnforceStreamingRead != 0 {
                 useStreaming = 1;
@@ -7193,7 +7186,7 @@ pub unsafe extern "C" fn DvdSendKey(
             || ((*key).KeyLength - core::mem::size_of::<DVD_COPY_PROTECT_KEY>() as u32)
                 > (*DeviceExtension).ScratchContext.ScratchBufferSize
         {
-            NT_ASSERT(0);
+            NT_ASSERT!(0);
             status = STATUS_INTERNAL_ERROR;
         }
     }

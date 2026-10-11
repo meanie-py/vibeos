@@ -14,6 +14,7 @@ unsafe fn SatisfyAccept(
     Irp: PIRP,
     NewFileObject: PFILE_OBJECT,
     Qelt: PAFD_TDI_OBJECT_QELT,
+    SuperAccept: BOOL,
 ) -> NTSTATUS {
     let FCB = (*NewFileObject).FsContext as PAFD_FCB;
     let mut Status: NTSTATUS;
@@ -41,7 +42,7 @@ unsafe fn SatisfyAccept(
     if (*FCB).RemoteAddress.is_null() {
         Status = STATUS_NO_MEMORY;
     } else {
-        Status = MakeSocketIntoConnection(FCB);
+        Status = MakeSocketIntoConnection(FCB, (SuperAccept == 0) as BOOL);
     }
 
     if NT_SUCCESS(Status) {
@@ -56,6 +57,11 @@ unsafe fn SatisfyAccept(
             core::ptr::addr_of_mut!((*FCB).ConnectReturnInfo),
             (*FCB).RemoteAddress,
         );
+    }
+
+    if SuperAccept != 0 {
+        SocketStateUnlock(FCB);
+        return Status;
     }
 
     UnlockAndMaybeComplete(FCB, Status, Irp, 0)
@@ -98,6 +104,160 @@ unsafe fn SatisfyPreAccept(Irp: PIRP, Qelt: PAFD_TDI_OBJECT_QELT) -> NTSTATUS {
     IoCompleteRequest(Irp, IO_NETWORK_INCREMENT);
     STATUS_SUCCESS
 }
+// AcceptEx completion. Runs with the listener FCB locked (from ListenComplete). Writes the
+// local and remote addresses (and any early data) into the caller's buffer, then either
+// completes the AcceptEx IRP now, or leaves it pending until AcceptExReceiveComplete.
+const TAG_BUFT: u32 = u32::from_be_bytes(*b"bufT");
+unsafe fn SatisfySuperAccept(FCB: PAFD_FCB, Irp: PIRP, Qelt: PAFD_TDI_OBJECT_QELT) -> NTSTATUS {
+    let NewFileObject = (*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[2] as PFILE_OBJECT;
+    // LockRequest stores the request in index 0
+    let AcceptInfo = (*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[0] as PAFD_SUPER_ACCEPT_INFO;
+    let AcceptMdl = (*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[3] as ntkrnl_sys::ddk::PMDL;
+    let FCB2 = (*NewFileObject).FsContext as PAFD_FCB;
+    let mut Status: NTSTATUS = SatisfyAccept(core::ptr::null_mut(), Irp, NewFileObject, Qelt, 1);
+    let mut BufferPtr: *mut u8;
+
+    ObDereferenceObject(NewFileObject as PVOID);
+    (*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[2] = core::ptr::null_mut();
+
+    BufferPtr = MmGetSystemAddressForMdl(AcceptMdl) as *mut u8;
+
+    'end: {
+        if BufferPtr.is_null() {
+            break 'end;
+        }
+
+        // Query TCPIP for the local address of the socket
+        let RequestSize: LONG = (core::mem::offset_of!(TDI_ADDRESS_INFO, Address.Address)
+            + core::mem::offset_of!(TA_ADDRESS, Address)
+            + (*(*FCB).LocalAddress).Address[0].AddressLength as usize) as LONG;
+        let RemoteAddress = (*(*Qelt).ConnInfo).RemoteAddress as PTRANSPORT_ADDRESS;
+        let Buffer = ExAllocatePoolWithTag(NonPagedPool, RequestSize as usize, TAG_BUFT) as PTDI_ADDRESS_INFO;
+        if Buffer.is_null() {
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            break 'end;
+        }
+
+        let Mdl = ntkrnl_sys::ddk::IoAllocateMdl(
+            Buffer as PVOID,
+            RequestSize as ULONG,
+            0u8,
+            0u8,
+            core::ptr::null_mut(),
+        );
+        if Mdl.is_null() {
+            ExFreePoolWithTag(Buffer as PVOID, TAG_BUFT);
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            break 'end;
+        }
+
+        // C: _SEH2_TRY { MmProbeAndLockPages } _SEH2_EXCEPT { Status = code; ExFreePool; goto end }
+        // TCP eventually calls MmUnlockPages and IoFreeMdl on this MDL.
+        let ProbeStatus = ntkrnl_sys::probe::MmTryProbeAndLockPages(
+            Mdl,
+            KernelMode as _,
+            ntkrnl_sys::ddk::_LOCK_OPERATION_IoModifyAccess,
+        );
+        if !NT_SUCCESS(ProbeStatus) {
+            Status = ProbeStatus;
+            ExFreePoolWithTag(Buffer as PVOID, TAG_BUFT);
+            break 'end;
+        }
+
+        Status = TdiQueryInformation((*Qelt).Object.Object as PFILE_OBJECT, TDI_QUERY_ADDRESS_INFO as LONG, Mdl);
+        if !NT_SUCCESS(Status) {
+            break 'end;
+        }
+
+        // Write the local address
+        let LocalAddressLength: LONG = core::cmp::min(
+            (*AcceptInfo).LocalAddressLength as LONG,
+            (*Buffer).Address.Address[0].AddressLength as LONG,
+        );
+        BufferPtr = BufferPtr.add((*AcceptInfo).ReceiveDataLength as usize);
+        ntkrnl_sys::rtl::RtlCopyMemory(
+            BufferPtr as PVOID,
+            core::ptr::addr_of!((*Buffer).Address.Address[0].AddressType) as *const core::ffi::c_void,
+            LocalAddressLength as usize,
+        );
+        core::ptr::write_unaligned(
+            BufferPtr.add((*AcceptInfo).LocalAddressLength as usize - 2) as *mut USHORT,
+            LocalAddressLength as USHORT,
+        );
+        ExFreePoolWithTag(Buffer as PVOID, TAG_BUFT);
+
+        // Write the remote address
+        let RemoteAddressLength: LONG = core::cmp::min(
+            (*AcceptInfo).RemoteAddressLength as LONG,
+            (*RemoteAddress).Address[0].AddressLength as LONG,
+        );
+        BufferPtr = BufferPtr.add((*AcceptInfo).LocalAddressLength as usize);
+        ntkrnl_sys::rtl::RtlCopyMemory(
+            BufferPtr as PVOID,
+            core::ptr::addr_of!((*RemoteAddress).Address[0].AddressType) as *const core::ffi::c_void,
+            RemoteAddressLength as usize,
+        );
+        core::ptr::write_unaligned(
+            BufferPtr.add((*AcceptInfo).RemoteAddressLength as usize - 2) as *mut USHORT,
+            RemoteAddressLength as USHORT,
+        );
+
+        if (*AcceptInfo).ReceiveDataLength != 0 {
+            // Save this IRP so that it can be completed once the data is received
+            (*FCB2).AcceptIrp = Irp;
+
+            Status = TdiReceive(
+                core::ptr::addr_of_mut!((*FCB2).ReceiveIrp.InFlightRequest),
+                (*FCB2).Connection.Object,
+                TDI_RECEIVE_NORMAL as u16,
+                BufferPtr as PCHAR,
+                (*AcceptInfo).ReceiveDataLength,
+                Some(AcceptExReceiveComplete),
+                FCB2 as PVOID,
+            );
+
+            if Status == STATUS_PENDING {
+                Status = STATUS_SUCCESS;
+            }
+            return Status;
+        } else {
+            // Begin receive buffer
+            Status = TdiReceive(
+                core::ptr::addr_of_mut!((*FCB2).ReceiveIrp.InFlightRequest),
+                (*FCB2).Connection.Object,
+                TDI_RECEIVE_NORMAL as u16,
+                (*FCB2).Recv.Window,
+                (*FCB2).Recv.Size,
+                Some(ReceiveComplete),
+                FCB2 as PVOID,
+            );
+
+            if Status == STATUS_PENDING {
+                Status = STATUS_SUCCESS;
+            }
+        }
+    }
+
+    // end: complete the IRP, there is no data to receive
+    if NT_SUCCESS(Status) {
+        (*FCB2).SharedData.State = SOCKET_STATE_CONNECTED;
+    } else {
+        (*FCB2).SharedData.State = SOCKET_STATE_CREATED;
+    }
+
+    ntkrnl_sys::ddk::MmUnlockPages(AcceptMdl);
+    ntkrnl_sys::ddk::IoFreeMdl(AcceptMdl);
+    (*Irp).IoStatus.Information = 0;
+    (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
+    if !(*Irp).MdlAddress.is_null() {
+        UnlockRequest(Irp, IoGetCurrentIrpStackLocation(Irp));
+    }
+    IoSetCancelRoutine(Irp, None);
+    IoCompleteRequest(Irp, IO_NETWORK_INCREMENT);
+
+    STATUS_SUCCESS
+}
+
 unsafe extern "system" fn ListenComplete(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
@@ -126,7 +286,7 @@ unsafe fn listen_complete_impl(
         return STATUS_FILE_CLOSED;
     }
 
-    ASSERT((*FCB).ListenIrp.InFlightRequest == Irp);
+    ASSERT!((*FCB).ListenIrp.InFlightRequest == Irp);
     (*FCB).ListenIrp.InFlightRequest = core::ptr::null_mut();
 
     if (*FCB).SharedData.State == SOCKET_STATE_CLOSED {
@@ -210,10 +370,16 @@ unsafe fn listen_complete_impl(
     {
         let PendingIrp = RemoveHeadList(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_PREACCEPT as usize]));
         let PendingConn = (*FCB).PendingConnections.Flink;
-        SatisfyPreAccept(
-            (PendingIrp as usize - core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry)) as PIRP,
-            (PendingConn as usize - core::mem::offset_of!(AFD_TDI_OBJECT_QELT, ListEntry)) as PAFD_TDI_OBJECT_QELT,
-        );
+        let PendingIrpPtr = (PendingIrp as usize - core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry)) as PIRP;
+        let ConnectionData = (PendingConn as usize - core::mem::offset_of!(AFD_TDI_OBJECT_QELT, ListEntry)) as PAFD_TDI_OBJECT_QELT;
+        if !(*PendingIrpPtr).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[2].is_null()
+            && !(*PendingIrpPtr).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[3].is_null()
+        {
+            RemoveEntryList(PendingConn);
+            SatisfySuperAccept(FCB, PendingIrpPtr, ConnectionData);
+        } else {
+            SatisfyPreAccept(PendingIrpPtr, ConnectionData);
+        }
     }
 
     Status = WarmSocketForConnection(FCB);
@@ -223,13 +389,13 @@ unsafe fn listen_complete_impl(
             (*FCB).ListenIrp.ConnectionCallInfo,
             (*(*FCB).LocalAddress).Address[0].AddressType as u32,
         );
-        ASSERT(Status == STATUS_SUCCESS);
+        ASSERT!(Status == STATUS_SUCCESS);
 
         Status = TdiBuildNullConnectionInfoInPlace(
             (*FCB).ListenIrp.ConnectionReturnInfo,
             (*(*FCB).LocalAddress).Address[0].AddressType as u32,
         );
-        ASSERT(Status == STATUS_SUCCESS);
+        ASSERT!(Status == STATUS_SUCCESS);
 
         Status = TdiListen(
             core::ptr::addr_of_mut!((*FCB).ListenIrp.InFlightRequest),
@@ -446,7 +612,7 @@ pub unsafe extern "C" fn AfdAccept(
                 return UnlockAndMaybeComplete(FCB, Status, Irp, 0);
             }
 
-            Status = SatisfyAccept(DeviceExt, Irp, NewFileObject, PendingConnObj);
+            Status = SatisfyAccept(DeviceExt, Irp, NewFileObject, PendingConnObj, 0);
 
             ObDereferenceObject(NewFileObject as *mut core::ffi::c_void);
 
@@ -472,6 +638,97 @@ pub unsafe extern "C" fn AfdAccept(
     AFD_DbgPrint!(MIN_TRACE, b"No connection waiting\n\0".as_ptr() as PCHAR);
 
     UnlockAndMaybeComplete(FCB, STATUS_UNSUCCESSFUL, Irp, 0)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn AfdSuperAccept(
+    DeviceObject: PDEVICE_OBJECT,
+    Irp: PIRP,
+    IrpSp: PIO_STACK_LOCATION,
+) -> NTSTATUS {
+    let mut Status: NTSTATUS;
+    let FileObject: PFILE_OBJECT = (*IrpSp).FileObject;
+    let Fcb: PAFD_FCB = (*FileObject).FsContext as PAFD_FCB;
+    let AcceptRequest: PAFD_SUPER_ACCEPT_INFO;
+    let mut NewFileObject: PFILE_OBJECT = core::ptr::null_mut();
+
+    let _ = DeviceObject;
+
+    AFD_DbgPrint!(MID_TRACE, b"Called\n\0".as_ptr() as PCHAR);
+
+    if SocketAcquireStateLock(Fcb) == 0 {
+        return LostSocket(Irp);
+    }
+
+    AcceptRequest = LockRequest(Irp, IrpSp, 0u8, core::ptr::null_mut()) as PAFD_SUPER_ACCEPT_INFO;
+    if AcceptRequest.is_null() {
+        return UnlockAndMaybeComplete(Fcb, STATUS_NO_MEMORY, Irp, 0);
+    }
+
+    (*Fcb).EventSelectDisabled &= !AFD_EVENT_ACCEPT;
+
+    // Allow the IRP to access UserBuffer later
+    let AcceptMdl = ntkrnl_sys::ddk::IoAllocateMdl(
+        (*Irp).UserBuffer,
+        (*IrpSp).Parameters.DeviceIoControl.OutputBufferLength,
+        0u8,
+        0u8,
+        core::ptr::null_mut(),
+    );
+    (*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[3] = AcceptMdl as PVOID;
+    // C faults on a NULL MDL and the SEH catches it; return the same failure explicitly.
+    if AcceptMdl.is_null() {
+        return UnlockAndMaybeComplete(Fcb, STATUS_INSUFFICIENT_RESOURCES, Irp, 0);
+    }
+
+    // C: _SEH2_TRY { MmProbeAndLockPages(..., IoWriteAccess) } _SEH2_EXCEPT { return UnlockAndMaybeComplete(code) }
+    Status = ntkrnl_sys::probe::MmTryProbeAndLockPages(
+        AcceptMdl,
+        (*Irp).RequestorMode,
+        ntkrnl_sys::ddk::_LOCK_OPERATION_IoWriteAccess,
+    );
+    if !NT_SUCCESS(Status) {
+        return UnlockAndMaybeComplete(Fcb, Status, Irp, 0);
+    }
+
+    // Validate that accepting socket is valid, and has not been bound or connected
+    Status = ObReferenceObjectByHandle(
+        (*AcceptRequest).AcceptHandle,
+        FILE_ALL_ACCESS,
+        core::ptr::null_mut(),
+        0i32 as i8,
+        core::ptr::addr_of_mut!(NewFileObject) as *mut *mut core::ffi::c_void,
+        core::ptr::null_mut(),
+    );
+    if !NT_SUCCESS(Status) {
+        ntkrnl_sys::ddk::IoFreeMdl(AcceptMdl);
+        (*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[3] = core::ptr::null_mut();
+        return UnlockAndMaybeComplete(Fcb, Status, Irp, 0);
+    }
+
+    let Fcb2: PAFD_FCB = (*NewFileObject).FsContext as PAFD_FCB;
+
+    if SocketAcquireStateLock(Fcb2) == 0 {
+        ObDereferenceObject(NewFileObject as PVOID);
+        return LostSocket(Irp);
+    }
+
+    // Verify that the acceptor socket has not been already bound/connected or used by AcceptEx
+    if (*Fcb2).SharedData.State != SOCKET_STATE_CREATED {
+        ntkrnl_sys::ddk::IoFreeMdl(AcceptMdl);
+        (*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[3] = core::ptr::null_mut();
+        SocketStateUnlock(Fcb2);
+        ObDereferenceObject(NewFileObject as PVOID);
+        return UnlockAndMaybeComplete(Fcb, STATUS_INVALID_PARAMETER, Irp, 0);
+    }
+    (*Fcb2).SharedData.State = SOCKET_STATE_CONNECTING;
+
+    (*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[2] = NewFileObject as PVOID;
+
+    // Proceed later in SatisfySuperAccept
+    SocketStateUnlock(Fcb2);
+
+    LeaveIrpUntilLater(Fcb, Irp, FUNCTION_PREACCEPT)
 }
 
 

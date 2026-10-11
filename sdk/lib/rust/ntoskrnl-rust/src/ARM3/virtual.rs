@@ -108,6 +108,7 @@ const HighPagePriority: u32 = 32; // header value; the hand copy said 2
 const IoReadAccess: u32 = 0;
 
 extern "system" {
+    fn MmRebalanceMemoryConsumersAndWait();
     fn ObDereferenceObject(Object: PVOID);
     fn MmMdlPagesAreZero(Mdl: PMDL) -> BOOLEAN;
     fn MiFlushTbAndCapture(
@@ -332,7 +333,12 @@ pub unsafe extern "system" fn MiMakeSystemAddressValid(
         );
 
         Status = MmAccessFault(0u32, PageTableVirtualAddress, 0i8, core::ptr::null_mut());
-        if Status < 0 {
+        // Out of pages is a wait, not an in-page error: the C bugchecks on any
+        // failure ("should not fail"), which turned an exhausted VM into 0x7A.
+        // The while re-tests validity after the wait.
+        if Status == STATUS_NO_MEMORY {
+            MmRebalanceMemoryConsumersAndWait();
+        } else if Status < 0 {
             KeBugCheckEx(
                 ntkrnl_sys::bugcodes::KERNEL_DATA_INPAGE_ERROR,
                 1,
@@ -368,7 +374,10 @@ pub unsafe extern "system" fn MiMakeSystemAddressValidPfn(
         MiReleasePfnLock(OldIrql);
 
         Status = MmAccessFault(0u32, VirtualAddress, 0i8, core::ptr::null_mut());
-        if Status < 0 {
+        // As MiMakeSystemAddressValid: out of pages is a wait, not 0x7A.
+        if Status == STATUS_NO_MEMORY {
+            MmRebalanceMemoryConsumersAndWait();
+        } else if Status < 0 {
             KeBugCheckEx(
                 ntkrnl_sys::bugcodes::KERNEL_DATA_INPAGE_ERROR,
                 3,
@@ -1661,7 +1670,28 @@ pub unsafe extern "system" fn MiDecommitPages(
                     }
                     ValidPteList[PteCount as usize] = PointerPte;
                     PteCount += 1;
+                } else if PteContents.transition() && !PteContents.prototype() {
+                    // A trimmed page, still on the standby/modified list. The C asserts
+                    // this away; overwriting the PTE leaves the PFN pointing at it and
+                    // the frame leaked on its list for good. Detach it as delete does
+                    // (MiDeletePte's transition path: PFN deleted, freed if
+                    // unreferenced), then mark the PTE decommitted.
+                    let OldIrql = MiAcquirePfnLock();
+                    MiDeletePte(PointerPte, StartingAddress, Process, core::ptr::null_mut());
+                    MiReleasePfnLock(OldIrql);
+                    MI_WRITE_INVALID_PTE(PointerPte, MmDecommittedPte);
                 } else {
+                    // Demand-zero is the expected case. A paged-out or prototype PTE in
+                    // a private range is not, and decommitting it would drop its
+                    // backing silently: say so (the C ASSERTs).
+                    if PteContents.prototype() || PteContents.page_frame_number() != 0 {
+                        mm_guard_trip!(
+                            "virtual.MiDecommitPages unexpected-invalid-pte", 8,
+                            "PointerPte" => PointerPte as ULONG_PTR,
+                            "Pte" => PteContents.Long as ULONG_PTR,
+                            "VirtualAddress" => StartingAddress as ULONG_PTR,
+                        );
+                    }
                     MI_WRITE_INVALID_PTE(PointerPte, MmDecommittedPte);
                 }
             }
@@ -1834,7 +1864,7 @@ pub unsafe extern "system" fn MiGetPageProtection(
             // Check if the PDE is still valid
             if !(*MiAddressToPte(PointerPte as PVOID)).valid() {
                 // It's not, make it valid
-                MiMakeSystemAddressValidPfn(PointerPte as PVOID, OldIrql);
+                MiMakeSystemAddressValidPfn(PointerPte as PVOID, OldIrql);  // nolint: irql-balance (drops the PFN lock via OldIrql before it faults or waits, retakes it after)
             }
 
             // Now it's safe to read the PTE value again

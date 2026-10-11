@@ -36,12 +36,28 @@
 //!   NVME_FAIL_START=1   not read by the kernel: nvme.sys connects its messages, then
 //!                       fails START, so the PnP manager removes the device and its
 //!                       message vectors go back to the HAL.
+//!   LEGIDE_DETECT       not read by the kernel: legide.sys (i386) probes the PC/AT
+//!                       IDE channels although the ACPI HAL set DisableFirmwareMapper,
+//!                       which otherwise makes it skip detection on every boot we
+//!                       ship. `smoke --isa-ide` sets it, with a disk on 0x1E8.
 //!   NVME_BAD_DMA=<hex>  not read by the kernel: nvme.sys's bring-up sends one
 //!                       Identify whose data goes to <hex> (not memory), so a
 //!                       translating SMMU can be seen to fault it.
+//!   NVME_PASSIVE_ISR=1  not read by the kernel: nvme.sys connects its interrupts
+//!                       with CONNECT_MESSAGE_BASED_PASSIVE, so its routines run
+//!                       at PASSIVE_LEVEL on iomgr's worker thread.
+//!   NVME_STRAY_DMA=1    not read by the kernel: nvme.sys's bring-up aims one
+//!                       Identify at a RAM page its DMA adapter never handed out
+//!                       and says whether the controller wrote it.
 //!   SMMU=TRANSLATE      not read here: the arm64 HAL drives each SMMUv3 for real
 //!                       (an identity map of RAM and MSI doorbells, faults reported)
 //!                       instead of bypassing it. Only means something with --smmu.
+//!   PCI_SEGMENT_SPLIT   not read here: the arm64 HAL presents segment 0's buses
+//!                       from 0x80 up as PCI segment 1 (ecam.rs), for a QEMU
+//!                       boot with a device on a segment past 0.
+//!   ITS_MISSTEER        not read here: the arm64 HAL binds every LPI one CPU over
+//!                       from the one it hands out, so connecting the interrupt
+//!                       has to move it (MOVI). Only means something with --gic 3.
 //!   XHCI_MSI_MESSAGES=<hex>  not read by the kernel: usbport asks pci.sys for this
 //!                       many messages for an xHCI controller instead of one, so
 //!                       a rig with MSI-X off proves a multiple-message MSI block.
@@ -327,9 +343,18 @@ unsafe fn apply_token(tok: &[u8]) {
         || token_val(tok, b"NVME_LOSE_COMPLETION").is_some()
         || token_val(tok, b"NVME_FAIL_START").is_some()
         || token_val(tok, b"NVME_BAD_DMA").is_some()
+        || token_val(tok, b"NVME_STRAY_DMA").is_some()
+        || token_val(tok, b"NVME_PASSIVE_ISR").is_some()
         || token_val(tok, b"XHCI_MSI_MESSAGES").is_some()
     {
         // For nvme.sys and usbport, through the registry copy, like QUIET.
+    } else if tok == b"LEGIDE_DETECT" {
+        // For legide.sys, which asks VibeTripwireHasToken from DriverEntry.
+    } else if tok == b"PCI_SEGMENT_SPLIT" {
+        // For the arm64 HAL's ECAM (ecam.rs), asked when it first reads the MCFG.
+    } else if tok == b"ITS_MISSTEER" {
+        // For the arm64 HAL's ITS (its.rs), which asks VibeTripwireHasToken when it
+        // is first probed.
     } else if tok == b"SMMU=TRANSLATE" {
         // For the arm64 HAL, which asks VibeTripwireHasToken before the first
         // driver starts (smmu.rs): drive each SMMUv3 for real, not in bypass.

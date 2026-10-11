@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{TRACE};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_WARNING; // uefimem.c: DBG_DEFAULT_CHANNEL(WARNING)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 // UINT32 comes from crate::frldr::* (keystone EFI surface).
@@ -12,7 +14,6 @@ pub use ntkrnl_sys::ddk::_TYPE_OF_MEMORY_LoaderSpecialMemory as LoaderSpecialMem
 
 extern "C" {
     fn _exituefi();
-    fn TRACE(fmt: *const i8, ...);
     fn FrLdrBugCheckWithMessage(code: u32, file: *const i8, line: u32, fmt: *const i8, ...);
     // cross-module freeldr fn (FLDRAPI empty → cdecl).
     fn AddMemoryDescriptor(
@@ -178,7 +179,7 @@ pub unsafe extern "C" fn UefiMemGetMemoryMap(MemoryMapSize: *mut ULONG) -> PFREE
         core::ptr::addr_of_mut!(LoadedImage) as *mut *mut core::ffi::c_void,
     );
     if status_handle != EFI_SUCCESS {
-        TRACE(b"Failed to find LoadedImageHandle with status: %d\n\0".as_ptr() as PCHAR, (status_handle) as usize);
+        TRACE!("Failed to find LoadedImageHandle with status: %d\n", (status_handle) as usize);
         UiMessageBoxCritical(b"Unable to initialize memory manager.\0".as_ptr() as PCHAR);
         return core::ptr::null_mut();
     }
@@ -187,7 +188,7 @@ pub unsafe extern "C" fn UefiMemGetMemoryMap(MemoryMapSize: *mut ULONG) -> PFREE
     PublicBootHandle = (*LoadedImage).DeviceHandle;
     EfiMemoryMap = core::ptr::null_mut();
 
-    TRACE(b"UefiMemGetMemoryMap: Gather memory map\n\0".as_ptr() as PCHAR);
+    TRACE!("UefiMemGetMemoryMap: Gather memory map\n");
     PUEFI_LoadMemoryMap(
         core::ptr::addr_of_mut!(MapKey),
         core::ptr::addr_of_mut!(MapSize),
@@ -195,10 +196,10 @@ pub unsafe extern "C" fn UefiMemGetMemoryMap(MemoryMapSize: *mut ULONG) -> PFREE
         core::ptr::addr_of_mut!(DescriptorVersion),
     );
 
-    TRACE(b"Value of MapKey: %d\n\0".as_ptr() as PCHAR, (MapKey) as usize);
-    TRACE(b"Value of MapSize: %d\n\0".as_ptr() as PCHAR, (MapSize) as usize);
-    TRACE(b"Value of DescriptorSize: %d\n\0".as_ptr() as PCHAR, (DescriptorSize) as usize);
-    TRACE(b"Value of DescriptorVersion: %d\n\0".as_ptr() as PCHAR, (DescriptorVersion) as usize);
+    TRACE!("Value of MapKey: %d\n", (MapKey) as usize);
+    TRACE!("Value of MapSize: %d\n", (MapSize) as usize);
+    TRACE!("Value of DescriptorSize: %d\n", (DescriptorSize) as usize);
+    TRACE!("Value of DescriptorVersion: %d\n", (DescriptorVersion) as usize);
 
     EntryCount = (MapSize / DescriptorSize) as UINT32;
 
@@ -209,7 +210,7 @@ pub unsafe extern "C" fn UefiMemGetMemoryMap(MemoryMapSize: *mut ULONG) -> PFREE
         core::ptr::addr_of_mut!(FreeldrMem) as *mut *mut core::ffi::c_void,
     );
     if status_alloc != EFI_SUCCESS {
-        TRACE(b"Failed to allocate pool with status %d\n\0".as_ptr() as PCHAR, (status_alloc) as usize);
+        TRACE!("Failed to allocate pool with status %d\n", (status_alloc) as usize);
         UiMessageBoxCritical(b"Unable to initialize memory manager.\0".as_ptr() as PCHAR);
         return core::ptr::null_mut();
     }
@@ -232,7 +233,15 @@ pub unsafe extern "C" fn UefiMemGetMemoryMap(MemoryMapSize: *mut ULONG) -> PFREE
             }
         }
 
-        if MemoryType == LoaderLoadedProgram {
+        // DIVERGES from the C on i386: the firmware's own loader regions (OVMF keeps them at
+        // the top of RAM) are identity-mapped only, never placed in KSEG0, so they must not
+        // size the kernel's KSEG0 boot-image reservation. Counted, a 1G i386 guest got
+        // MmBootImageSize 0x3F400000, a reservation from 0x80000000 to 0xBF400000 covering
+        // the system-view and session ranges; the ROS gap finder then handed out session VAs
+        // ARM3 had mapped (BUGCHECK 0x1A in MmDeleteRmap; any i386 UEFI boot with >= 1G).
+        // MempSetupPagingForRegion maps identity-only types without the span gate, so they
+        // stay mapped. 64-bit KSEG0 has room, and keeps the C behaviour.
+        if MemoryType == LoaderLoadedProgram && !cfg!(target_arch = "x86") {
             if (((*MapEntry).PhysicalStart + ((*MapEntry).NumberOfPages * PAGE_SIZE as u64)) >> EFI_PAGE_SHIFT) > ((LoaderPagesSpanned) as u64) {
                 LoaderPagesSpanned = ((((*MapEntry).PhysicalStart + ((*MapEntry).NumberOfPages * PAGE_SIZE as u64)) >> EFI_PAGE_SHIFT)) as usize ;
             }
@@ -265,7 +274,7 @@ pub unsafe extern "C" fn UefiExitBootServices()
     let mut DescriptorSize: UINTN = 0;
     let mut DescriptorVersion: UINT32 = 0;
 
-    TRACE(b"Attempting to exit bootsevices\n\0".as_ptr() as *const i8);
+    TRACE!("Attempting to exit bootsevices\n");
     PUEFI_LoadMemoryMap(&mut MapKey,
                         &mut MapSize,
                         &mut DescriptorSize,
@@ -277,14 +286,14 @@ pub unsafe extern "C" fn UefiExitBootServices()
     }
 
     if Status != EFI_SUCCESS {
-        TRACE(b"Failed to exit boot services with status: %d\n\0".as_ptr() as *const i8, (Status) as usize);
+        TRACE!("Failed to exit boot services with status: %d\n", (Status) as usize);
         FrLdrBugCheckWithMessage(EXIT_BOOTSERVICES_FAILURE,
                                  b"uefimem.c\0".as_ptr() as *const i8,
                                  line!(),
                                  b"Failed to exit boot services with status: %d\0".as_ptr() as *const i8,
                                  Status);
     } else {
-        TRACE(b"Exited bootservices\n\0".as_ptr() as *const i8);
+        TRACE!("Exited bootservices\n");
     }
 }
 

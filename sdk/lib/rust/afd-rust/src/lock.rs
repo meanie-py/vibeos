@@ -40,7 +40,7 @@ pub unsafe extern "C" fn LockRequest(
     Output: BOOLEAN,
     LockMode: *mut KPROCESSOR_MODE,
 ) -> PVOID {
-    let mut LockFailed: BOOLEAN;
+    let LockFailed: BOOLEAN;
 
     (*Irp).MdlAddress = core::ptr::null_mut();
 

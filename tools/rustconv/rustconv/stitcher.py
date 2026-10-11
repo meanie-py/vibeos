@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import sys
 from typing import TYPE_CHECKING
 
 from .callgraph import FunctionDep
@@ -104,6 +105,32 @@ _HAL_FORBIDDEN_IMPORT_NAMES = {
 def _strip_forbidden_hal_uses(uses: list[str]) -> list[str]:
     """Drop ntkrnl_sys::{globals,constants,base,macros,ke,ex,...}::... imports."""
     return [u for u in uses if not any(u.startswith(p) for p in _HAL_FORBIDDEN_USE_PATHS)]
+
+
+_RUST_ITEM_START = re.compile(
+    r"^\s*(?:pub\b|use\b|const\b|static\b|type\b|struct\b|union\b|enum\b|fn\b|unsafe\b"
+    r"|extern\b|impl\b|mod\b|macro_rules!|#|//|/\*|\}|$)"
+)
+
+
+def _prose_preamble_as_comment(body: str) -> str:
+    """A preamble reply that is an English sentence, not Rust, kept as a comment, loudly.
+
+    ndis's 30/40/50stubs.c have file scopes holding only `#undef`s, and the model said so in
+    prose ("The preamble contains only `#undef` directives ...") instead of emitting nothing;
+    pasted as code, the backticks stopped the whole crate at the parser. Only a reply whose
+    lines ALL fail to start like a Rust item is treated this way; anything mixed stays code,
+    so a real preamble with a stray sentence still fails to compile where someone sees it.
+    """
+    lines = [ln for ln in body.splitlines() if ln.strip()]
+    if not lines or any(_RUST_ITEM_START.match(ln) for ln in lines):
+        return body
+    print(
+        "stitch: WARNING the file-scope preamble reply is prose, not Rust; kept as a comment: "
+        + lines[0][:100],
+        file=sys.stderr,
+    )
+    return "\n".join("// " + ln for ln in body.splitlines())
 
 
 def _strip_forbidden_hal_imports(use_stmt: str) -> str | None:
@@ -487,7 +514,7 @@ def stitch_file(
         all_uses.extend(p_uses)
         p_externs, p_no_externs = _extract_extern_blocks(p_no_uses)
         all_externs.extend(p_externs)
-        preamble_body = p_no_externs.strip()
+        preamble_body = _prose_preamble_as_comment(p_no_externs.strip())
 
     def _emit(name: str, line_start: int) -> None:
         code = functions[name]

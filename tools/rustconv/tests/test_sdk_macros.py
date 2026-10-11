@@ -1,5 +1,7 @@
 """sdk_macros: SDK header macros lowered from the preprocessor's own expansion."""
 
+import re
+
 import pytest
 
 from rustconv import sdk_macros
@@ -152,15 +154,113 @@ def test_a_widl_wrapper_the_arches_disagree_on_is_generated_per_arch(tmp_path):
     assert "cfg" not in out["IZone_Release"]
     destroy = out["IZone_Destroy"]
     assert destroy.count("pub unsafe fn IZone_Destroy") == 3
-    assert '#[cfg(target_arch = "x86")]\n#[inline]\npub unsafe fn IZone_Destroy(This: *mut IZone, dwEnum: u64)' in destroy
+    assert (
+        '#[cfg(target_arch = "x86")]\n#[inline]\npub unsafe fn IZone_Destroy(This: *mut IZone, dwEnum: u64)'
+        in destroy
+    )
 
 
 def test_a_callback_parameter_arrow_does_not_end_the_slot(tmp_path):
     vtbl = ISLAND_VTBL.replace(
         "dwEnum: DWORD)>",
-        "cb: ::core::option::Option<unsafe extern \"C\" fn(x: DWORD) -> BOOL>, n: DWORD) -> HRESULT>",
+        'cb: ::core::option::Option<unsafe extern "C" fn(x: DWORD) -> BOOL>, n: DWORD) -> HRESULT>',
     )
     for arch in ("amd64", "arm64", "i386"):
         (tmp_path / f"types_{arch}.rs").write_text(vtbl)
     out = sdk_macros.com_wrappers(tmp_path, {"IZone_Destroy"})["IZone_Destroy"]
     assert "(This, cb, n)" in out and out.split("{")[0].rstrip().endswith("-> HRESULT")
+
+
+def test_pointer_typedef_arithmetic_steps_elements(monkeypatch):
+    """ndis's NDIS_GET_PACKET_STATUS: `(PUCHAR)p + NdisPacketOobOffset` is pointer
+    arithmetic; a bare `+` on `*mut u8` does not compile, and PUCHAR names no `*`."""
+    monkeypatch.setattr(sdk_macros, "_POINTER_TYPES", {"PUCHAR", "PNDIS_PACKET_OOB_DATA"})
+    out = lower_expansion(
+        "((PNDIS_PACKET_OOB_DATA)((PUCHAR)(__rcv_p0__) + "
+        "(__rcv_p0__)->Private.NdisPacketOobOffset))->Status",
+        {"PUCHAR", "PNDIS_PACKET_OOB_DATA"},
+    )
+    assert ".wrapping_add(((*$p0).Private.NdisPacketOobOffset) as usize)" in out
+    assert " + (*$p0)" not in out
+
+
+def test_a_callback_cast_coerces_and_reaches_an_integer_through_its_bits(monkeypatch):
+    """taskmgr's ListView_SortItems: `(LPARAM)(PFNLVCOMPARE)(pfn)`. `Some(F) as PFNLVCOMPARE`
+    and `Option<fn> as LPARAM` are both E0605; a coercion and a transmute are not."""
+    monkeypatch.setattr(sdk_macros, "_OPTION_TYPES", {"PFNLVCOMPARE"})
+    out = lower_expansion("(LPARAM)(PFNLVCOMPARE)(__rcv_p0__)", {"PFNLVCOMPARE", "LPARAM"})
+    assert "let __cb: PFNLVCOMPARE = $p0; __cb" in out
+    assert "core::mem::transmute::<PFNLVCOMPARE, usize>(" in out and " as PFNLVCOMPARE" not in out
+
+
+def test_pointer_minus_pointer_is_refused(monkeypatch):
+    monkeypatch.setattr(sdk_macros, "_POINTER_TYPES", {"PUCHAR"})
+    with pytest.raises(LowerError):
+        lower_expansion("(PUCHAR)(__rcv_p0__) - (PUCHAR)(__rcv_p1__)", {"PUCHAR"})
+
+
+def test_object_expansion_needs_the_macro_on_every_arch(monkeypatch, tmp_path):
+    """winuser.h makes `SetWindowLongPtrW` a macro on i386 only. One arch's expansion is not
+    unanimity: notepad's 64-bit subclassing was routed through the 32-bit SetWindowLongW."""
+    dumps = {
+        "i386": "#define SetWindowLongPtrW SetWindowLongW\n#define StringCchCopy StringCchCopyW\n",
+        "amd64": "#define StringCchCopy StringCchCopyW\n",
+        "arm64": "#define StringCchCopy StringCchCopyW\n",
+    }
+    monkeypatch.setattr(sdk_macros, "compile_argv", lambda _r, arch, _s: [arch])
+    monkeypatch.setattr(sdk_macros, "_dump", lambda argv: dumps[argv[0]])
+
+    def preprocess(argv, _source, probe):
+        defined = dict(sdk_macros._OBJ_DEFINE.findall(dumps[argv[0]]))
+        return re.sub(
+            r"(__RCV_BEGIN_\w+__) (\w+) (__RCV_END__)",
+            lambda m: f"{m.group(1)} {defined.get(m.group(2), m.group(2))} {m.group(3)}",
+            probe,
+        )
+
+    monkeypatch.setattr(sdk_macros, "_preprocess", preprocess)
+    got = sdk_macros.object_expansions(
+        tmp_path, tmp_path / "x.c", {"SetWindowLongPtrW", "StringCchCopy"}
+    )
+    assert got == {"StringCchCopy": "StringCchCopyW"}
+
+
+def test_a_cpp_global_scope_qualifier_is_dropped():
+    """windowsx.h's Edit_SetModify, expanded in a C++ TU: `::SendMessageW(..)`."""
+    from rustconv.sdk_macros import lower_expansion
+
+    out = lower_expansion("((void)::SendMessageW((h),185,(WPARAM)(UINT)(m),0))", {"WPARAM", "UINT"})
+    assert "SendMessageW(" in out and "::SendMessageW" not in out
+
+
+def test_a_parenthesized_callee_is_a_call_not_a_cast():
+    """windowsx.h's SetWindowFont in a C++ TU: `(void)(::SendMessageW)((h),48,(WPARAM)(f),0)`."""
+    from rustconv.sdk_macros import lower_expansion
+
+    out = lower_expansion(
+        "(void)(::SendMessageW)(((h)),48,(WPARAM)(HFONT)((f)),(LPARAM)(BOOL)((r)))",
+        {"WPARAM", "LPARAM", "HFONT", "BOOL"},
+    )
+    assert "SendMessageW(" in out and "as SendMessageW" not in out, out
+
+
+def test_a_vtable_call_goes_through_the_option_slot():
+    out = low("(__rcv_p0__)->lpVtbl->Release(__rcv_p0__)")
+    assert ".lpVtbl).Release.unwrap_unchecked()(" in out
+
+
+def test_island_types_include_the_sys_crate_the_island_globs(tmp_path):
+    """taskmgr: `LPWSTR` comes from `pub use ntdll_sys::nt::*;`, and without it
+    `((LPWSTR)-1L)` parsed as a subtraction and LPSTR_TEXTCALLBACK was never lowered."""
+    crate = tmp_path / "rust" / "x-rust" / "src"
+    crate.mkdir(parents=True)
+    (crate / "types_amd64.rs").write_text("pub use ntdll_sys::nt::*;\npub struct LOCAL { }\n")
+    sys_src = tmp_path / "rust" / "ntdll-sys" / "src"
+    sys_src.mkdir(parents=True)
+    (sys_src / "bindgen_amd64.rs").write_text("pub type LPWSTR = *mut WCHAR;\n")
+    types = sdk_macros.island_types(crate)
+    assert {"LOCAL", "LPWSTR"} <= types
+    node = sdk_macros._Parser(sdk_macros.tokenize("((LPWSTR)-1L)"), types).parse()
+    while node.kind == "comma" and len(node.kids) == 1:
+        node = node.kids[0]
+    assert node.kind == "cast"

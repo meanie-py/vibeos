@@ -172,9 +172,6 @@ fn MAKELONG(low: u32, high: u32) -> LONG { ((low & 0xffff) | ((high & 0xffff) <<
 // LANGIDFROMLCID(lcid) = LOWORD(lcid)
 #[inline(always)]
 fn LANGIDFROMLCID(lcid: LCID) -> u32 { (lcid as u32) & 0xffff }
-// ASSERT_REFS_CO — debug-only assertion, no-op in release.
-#[inline(always)]
-unsafe fn ASSERT_REFS_CO(_Window: PWND) {}
 
 // RtlZeroMemory — compiler-intrinsic memset (no symbol).
 #[inline(always)]
@@ -1108,7 +1105,7 @@ unsafe fn IntImmProcessKey_impl(
     let hKL: HKL;
     let hWnd: HWND;
 
-    ASSERT_REFS_CO(pWnd);
+    ASSERT_REFS_CO!(pWnd);
 
     match uMsg {
         WM_KEYDOWN | WM_KEYUP | WM_SYSKEYDOWN | WM_SYSKEYUP => {}

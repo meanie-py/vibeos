@@ -33,7 +33,8 @@ surface.
 2. **Preserve pointer semantics.** Raw pointers stay raw pointers. `(*p).field` for member access, `*p` for deref, `p.offset(n)` / `p.add(n)` for pointer arithmetic, `x as *mut T` for casts. The whole function body is `unsafe`.
 3. **Preserve every operation.** Every C statement maps to a Rust statement. Don't drop, merge, reorder, or "clean up" anything. Keep dead-looking code.
 4. **Keep C names verbatim** (PascalCase locals, `lpSubBlock`, etc.). Keep the C signature's parameter order and types.
-5. **NO STUBS.** Never emit `unimplemented!()`, `todo!()`, `panic!("not implemented")`, or an empty body. Translate the whole function. If a line is hard, transliterate it literally — do not skip it.
+5. **Keep diagnostics.** `ERR(...)`, `WARN(...)`, `DPRINT1(...)` and `ASSERT(...)` become `ERR!(...)`, `WARN!(...)`, `DPRINT1!(...)` and `ASSERT!(...)` with the C format string and arguments unchanged (the crate defines the macros). They are what a field failure prints; never drop one.
+6. **NO STUBS.** Never emit `unimplemented!()`, `todo!()`, `panic!("not implemented")`, or an empty body. Translate the whole function. If a line is hard, transliterate it literally — do not skip it.
 
 ## Hard Rules — what you MUST NOT do (no idiom)
 

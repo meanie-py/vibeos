@@ -15,9 +15,23 @@ use ntkrnl_sys::ddk::{
 };
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
+// Row 0 is RAM, row 1 is I/O space, indexed by MEMORY_CACHING_TYPE.
+#[cfg(not(target_arch = "aarch64"))]
 #[no_mangle]
 pub static mut MiPlatformCacheAttributes: [[MI_PFN_CACHE_ATTRIBUTE; MmMaximumCacheType as usize]; 2] = [
     [MiNonCached, MiCached_u32, MiWriteCombined, MiCached_u32, MiNonCached, MiWriteCombined],
+    [MiNonCached, MiCached_u32, MiWriteCombined, MiCached_u32, MiNonCached, MiWriteCombined],
+];
+// arm64: uncached RAM is Normal Non-cacheable (MiWriteCombined, MAIR AttrIndx 2), not
+// MiNonCached (AttrIndx 1, Device-nGnRnE). Device memory is for MMIO: RAM mapped as Device
+// also aliases the cached linear mapping with a mismatched memory TYPE, and every unaligned
+// access to it alignment-faults, which compilers emit freely for byte stores they merge.
+// atapi's SATL wrote a VPD page into its MmNonCached local buffer with one unaligned `stur`
+// and took a 0x1E. I/O space keeps Device.
+#[cfg(target_arch = "aarch64")]
+#[no_mangle]
+pub static mut MiPlatformCacheAttributes: [[MI_PFN_CACHE_ATTRIBUTE; MmMaximumCacheType as usize]; 2] = [
+    [MiWriteCombined, MiCached_u32, MiWriteCombined, MiCached_u32, MiWriteCombined, MiWriteCombined],
     [MiNonCached, MiCached_u32, MiWriteCombined, MiCached_u32, MiNonCached, MiWriteCombined],
 ];
 

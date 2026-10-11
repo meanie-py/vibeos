@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -26,7 +27,6 @@ extern "system" {
     fn FatPreallocateCloseContext(Vcb: *mut VCB);
     fn FatReleaseDirectoryFileMutex(Vcb: *mut VCB);
     fn FatSetFileObject(FileObject: *mut FILE_OBJECT, Type: u32, VcbOrFcbOrDcb: *mut c_void, Ccb: *mut CCB);
-    fn NT_ASSERT(condition: i32);
     fn NodeType(Dcb: *mut DCB) -> u32;
     fn CcSetDirtyPinnedData(Bcb: *mut core::ffi::c_void, Lba: *mut core::ffi::c_void);
     fn FatIsFat12(Vcb: *mut VCB) -> u8;
@@ -49,7 +49,7 @@ extern "system" {
     fn ExIsResourceAcquiredSharedLite(resource: *const ERESOURCE) -> u8;
     fn ExIsResourceAcquiredExclusiveLite(resource: *const ERESOURCE) -> u8;
     fn FatDecodeFileObject( file_object: *mut FILE_OBJECT, vcb: *mut *mut VCB, fcb: *mut *mut FCB, ccb: *mut *mut CCB, ) -> u32;
-    fn FatBugCheck(code: u32, line: u32, file: u32);
+    fn FatBugCheck(code: usize, line: usize, file: usize);
     fn FatCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: NTSTATUS);
     fn IoInitializePriorityInfo(PriorityInfo: *mut _IO_PRIORITY_INFO);
     fn IoRetrievePriorityInfo( Irp: *mut IRP, FileObject: *mut FILE_OBJECT, Thread: *mut core::ffi::c_void, PriorityInfo: *mut _IO_PRIORITY_INFO, ) -> NTSTATUS;
@@ -160,7 +160,7 @@ pub unsafe extern "system" fn FatReadVolumeFile(
         let condition = (StartingVbo == 0) ||
             (StartingVbo.wrapping_add(ByteCount) as i64 <=
                 (FatRootDirectoryLbo(&raw const (*Vcb).Bpb as *const _) + PAGE_SIZE as i64));
-        NT_ASSERT(condition as i32);
+        NT_ASSERT!(condition as i32);
 
         DebugTrace(1, Dbg as u32, b"FatReadVolumeFile\n\0".as_ptr() as *const i8, (0u32) as usize);
         DebugTrace(0, Dbg as u32, b"Vcb         = %p\n\0".as_ptr() as *const i8, Vcb as usize);
@@ -180,7 +180,7 @@ pub unsafe extern "system" fn FatReadVolumeFile(
         ) == 0
         {
             let flag_on_result = FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT as u32);
-            NT_ASSERT((flag_on_result == 0) as i32);
+            NT_ASSERT!((flag_on_result == 0) as i32);
 
             FatRaiseStatus(IrpContext, STATUS_CANT_WAIT as i32);
         }
@@ -210,9 +210,7 @@ pub unsafe extern "system" fn FatPrepareWriteVolumeFile(
     let mut Vbo: LARGE_INTEGER = core::mem::zeroed();
     Vbo.QuadPart = StartingVbo as i64;
 
-    NT_ASSERT(
-        (((StartingVbo as u64) + (ByteCount as u64)) <= FatRootDirectoryLbo(&raw const (*Vcb).Bpb) as u64) as i32,
-    );
+    NT_ASSERT!((((StartingVbo as u64) + (ByteCount as u64)) <= FatRootDirectoryLbo(&raw const (*Vcb).Bpb) as u64) as i32);
 
     DebugTrace(1, 0, b"FatPrepareWriteVolumeFile\n\0".as_ptr() as *const i8, 0);
     DebugTrace(0, 0, b"Vcb         = %p\n\0".as_ptr() as *const i8, Vcb as usize);
@@ -234,7 +232,7 @@ pub unsafe extern "system" fn FatPrepareWriteVolumeFile(
         Buffer,
     ) == 0
     {
-        NT_ASSERT((FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT) == 0) as i32);
+        NT_ASSERT!((FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT) == 0) as i32);
         FatRaiseStatus(IrpContext, STATUS_CANT_WAIT);
     }
 
@@ -312,7 +310,7 @@ pub unsafe extern "system" fn FatReadDirectoryFile(
         ByteCount = ByteCount;
     }
 
-    NT_ASSERT((ByteCount != 0) as i32);
+    NT_ASSERT!((ByteCount != 0) as i32);
 
     Vbo.QuadPart = StartingVbo as i64;
 
@@ -642,8 +640,9 @@ pub unsafe extern "system" fn FatOpenDirectoryFile(
 
     // C: NT_ASSERT( FatIsCurrentOperationSynchedForDcbTeardown( IrpContext, Dcb )).
     // NT_ASSERT does NOT evaluate its argument in release/DUMMY_PSEH builds (it is a
-    // checked-build-only invariant), but the Rust extern-fn NT_ASSERT evaluates its
-    // argument eagerly. FatIsCurrentOperationSynchedForDcbTeardown reads the create
+    // checked-build-only invariant). The Rust NT_ASSERT used to be an extern fn that
+    // evaluated it eagerly, and NT_ASSERT! still would under debug-assertions.
+    // FatIsCurrentOperationSynchedForDcbTeardown reads the create
     // IRP's current stack location, which faults when that location has been consumed
     // during a nested directory-file open (e.g. FatCreateNewFile). The result is
     // discarded by the assert, so match C release semantics and do not evaluate it.
@@ -822,7 +821,7 @@ pub unsafe extern "system" fn FatCloseEaFile(
 
     // NT_ASSERT( FatVcbAcquiredExclusive(IrpContext, Vcb) );
     let cond: i32 = FatVcbAcquiredExclusive(IrpContext, Vcb) as i32;
-    NT_ASSERT(cond);
+    NT_ASSERT!(cond);
 
     // PFILE_OBJECT EaFileObject = Vcb->VirtualEaFile;
     let mut EaFileObject: *mut FILE_OBJECT = (*Vcb).VirtualEaFile;
@@ -1149,7 +1148,7 @@ pub unsafe extern "system" fn FatCompleteMdl(
         },
         IRP_MJ_WRITE => {
             let IrpSp = IoGetCurrentIrpStackLocation(Irp);
-            NT_ASSERT(FlagOn(((*IrpContext).Flags as u8) as u32, 0x2 /* IRP_CONTEXT_FLAG_WAIT */) as i32);
+            NT_ASSERT!(FlagOn(((*IrpContext).Flags as u8) as u32, 0x2 /* IRP_CONTEXT_FLAG_WAIT */) as i32);
             CcMdlWriteComplete(
                 FileObject,
                 core::ptr::addr_of_mut!((*IrpSp).Parameters.Write.ByteOffset),
@@ -1160,7 +1159,7 @@ pub unsafe extern "system" fn FatCompleteMdl(
         _ => {
             DebugTrace(0 /* DEBUG_TRACE_ERROR */, 0, b"Illegal Mdl Complete.\n\0".as_ptr() as *const i8, 0);
             // #pragma prefast suppress omitted
-            FatBugCheck((*IrpContext).MajorFunction as u32, 0, 0);
+            FatBugCheck((*IrpContext).MajorFunction as usize, 0, 0);
         }
     }
 
@@ -1209,7 +1208,7 @@ pub unsafe extern "system" fn FatSyncUninitializeCacheMap(
         core::ptr::null_mut(), // NULL
     );
 
-    NT_ASSERT((wait_status == (STATUS_SUCCESS) as i32) as i32);
+    NT_ASSERT!((wait_status == (STATUS_SUCCESS) as i32) as i32);
 }
 
 #[no_mangle]

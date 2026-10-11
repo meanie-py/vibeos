@@ -14,10 +14,18 @@ const MDL_SOURCE_IS_NONPAGED_POOL: i16 = 0x0004;
 // MiIsMemoryTypeInvisible (FORCEINLINE from mm/ARM3/miarm.h)
 // ============================================================================
 
-/// MiIsMemoryTypeInvisible — check if memory type is >= LoaderMaximum.
+/// MiIsMemoryTypeInvisible — memory the loader describes but MM must not count
+/// or map as RAM: firmware-reserved ranges and the like. This was once ported as
+/// `>= LoaderMaximum`, which no descriptor is, so every reserved range (the PCI
+/// hole below 4 GiB, the VGA hole) was counted as physical memory: the OptiPlex's
+/// 2 GiB below 4 GiB read as 4095 MiB, and with RAM above 4 GiB the hole's pages
+/// sat in the physical memory runs.
 #[inline]
 pub unsafe fn MiIsMemoryTypeInvisible(mem_type: ddk::TYPE_OF_MEMORY) -> BOOLEAN {
-    if mem_type >= ddk::_TYPE_OF_MEMORY_LoaderMaximum { 1 } else { 0 }
+    (mem_type == ddk::_TYPE_OF_MEMORY_LoaderFirmwarePermanent
+        || mem_type == ddk::_TYPE_OF_MEMORY_LoaderSpecialMemory
+        || mem_type == ddk::_TYPE_OF_MEMORY_LoaderHALCachedMemory
+        || mem_type == ddk::_TYPE_OF_MEMORY_LoaderBBTMemory) as BOOLEAN
 }
 
 // ============================================================================
@@ -60,6 +68,19 @@ pub unsafe fn MmGetSystemAddressForMdl(mdl: ddk::PMDL) -> PVOID {
         (*mdl).MappedSystemVa
     } else {
         ddk::MmMapLockedPages(mdl, 0) // 0 = KernelMode
+    }
+}
+
+/// `MmPrepareMdlForReuse(Mdl)` (wdm.h macro): a partial MDL that has been mapped gets its
+/// system mapping torn down before the MDL is rebuilt; `MmUnmapLockedPages` also clears
+/// MDL_PARTIAL_HAS_BEEN_MAPPED. The ONE copy every driver should call: four crates had
+/// hand-written it, and classpnp's was an empty body, so every split disk transfer leaked
+/// the PTEs scsiport mapped it with (NO_MORE_SYSTEM_PTES on i386 during setup's file copy).
+#[inline]
+pub unsafe fn MmPrepareMdlForReuse(mdl: ddk::PMDL) {
+    const MDL_PARTIAL_HAS_BEEN_MAPPED: i16 = 0x0020;
+    if (*mdl).MdlFlags & MDL_PARTIAL_HAS_BEEN_MAPPED != 0 {
+        ddk::MmUnmapLockedPages((*mdl).MappedSystemVa, mdl);
     }
 }
 

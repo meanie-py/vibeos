@@ -9,6 +9,29 @@
 #[macro_use]
 extern crate drvtrace_shim;
 
+// ERR_ / WARN_ / TRACE_ (sdk/include/reactos/debug.h). This build is DBG=1, where
+// each is `DbgPrintEx(DPFLTR_<ch>_ID, <level>, "(%s:%d) " fmt, __RELFILE__,
+// __LINE__, ...)` -- a LIVE print, filtered by the kernel's debug masks (by default
+// only ERROR level reaches the port, so ERR_ prints and WARN_/TRACE_ stay quiet
+// unless a mask is raised). They were empty functions here: ERR_'s twelve
+// "not implemented" reports were dropped, and every argument was still evaluated.
+// The "(%s:%d) " prefix is a second call because the format is a runtime pointer.
+macro_rules! serial_dbgprintex {
+    ($lvl:expr, $ch:expr, $fmt:expr $(, $a:expr)* $(,)?) => {{
+        $crate::glue::DbgPrintEx(
+            $ch,
+            $lvl,
+            concat!("(%s:%d) \0").as_ptr() as *const i8,
+            concat!(file!(), "\0").as_ptr() as *const i8,
+            line!(),
+        );
+        $crate::glue::DbgPrintEx($ch, $lvl, $fmt $(, $a)*);
+    }};
+}
+macro_rules! ERR_ { ($($t:tt)*) => { serial_dbgprintex!(0, $($t)*) }; }
+macro_rules! WARN_ { ($($t:tt)*) => { serial_dbgprintex!(1, $($t)*) }; }
+macro_rules! TRACE_ { ($($t:tt)*) => { serial_dbgprintex!(2, $($t)*) }; }
+
 pub mod types;
 pub mod glue;
 pub mod circularbuffer;
@@ -30,17 +53,6 @@ pub unsafe extern "C" fn KeGetCurrentPrcb() -> ntkrnl_sys::ddk::PKPRCB {
     ntkrnl_sys::inline::ke::KeGetCurrentPrcb()
 }
 
-// ---------------------------------------------------------------------------
-// TRACE_ / WARN_ / ERR_ — ReactOS debug.h macros → __noop in retail builds
-// (no real symbol).  Provide #[no_mangle] cdecl stubs so the rlib is
-// self-contained.  cdecl caller-cleans-up: a 2-arg body is safe even when
-// callers supply extra variadic args — the caller pops them off the stack.
-// ---------------------------------------------------------------------------
-// TRACE_ def relocated to drvtrace-shim (§9.99 fold-proofing)
-#[no_mangle]
-pub unsafe extern "C" fn WARN_(_component: u32, _fmt: *const core::ffi::c_char) {}
-#[no_mangle]
-pub unsafe extern "C" fn ERR_(_component: u32, _fmt: *const core::ffi::c_char) {}
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {

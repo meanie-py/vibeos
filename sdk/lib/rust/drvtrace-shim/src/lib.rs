@@ -102,7 +102,7 @@ pub unsafe extern "C" fn TracePrint(
 pub unsafe extern "C" fn StorDebugPrint(_level: u32, _flags: u32, _fmt: *const i8) {}
 
 // ---------------------------------------------------------------------------
-// USB-fleet + serial debug prints: MACROS, never functions.
+// USB-fleet debug prints (NDEBUG_* in every C file that uses them): MACROS, never functions.
 //
 // In C these are `do { if(0) { DbgPrint(...); } } while(0)` or `__noop` in the
 // builds we ship, so their ARGUMENTS ARE NEVER EVALUATED. They used to be no-op
@@ -141,7 +141,6 @@ dead_dprint!($
     DPRINT_IMPL, DPRINT_UHCI,                  // usbuhci
     DPRINT_CORE, DPRINT_URB, DPRINT_QUEUE,     // usbport
     DPRINT_TIMER, DPRINT_INT, DPRINT_MINIPORT, // usbport
-    TRACE_,                                    // serial (ReactOS debug.h)
 );
 
 #[cfg(test)]

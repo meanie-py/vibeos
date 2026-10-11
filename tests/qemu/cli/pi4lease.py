@@ -34,7 +34,7 @@ DEFAULT_MINUTES = 30
 REFUSED = 75  # EX_TEMPFAIL; pico.sh already uses 3 for "unreachable"
 
 
-BOARDS = ("pi4", "pi5")
+BOARDS = ("pi4", "pi5", "optiplex")
 
 
 def board() -> str:
@@ -50,8 +50,19 @@ def lock_dir() -> Path:
     return Path(os.environ.get("VIBEOS_HOSTLOCK_DIR", "/tmp/vibeos-qemu-locks/host"))
 
 
+# Benches that share hardware share a lease. The OptiPlex took over the Pi 4's
+# plug and Pico (picousb5) on 2026-10-09, and tools/pi4's defaults still point
+# at both, so a lane running tools/pi4 power-cycles the OptiPlex: it must
+# contend for the OptiPlex's lease, not a separate pi4 one nothing else checks.
+LEASE_OF = {"pi4": "optiplex"}
+
+
+def lease_name() -> str:
+    return LEASE_OF.get(board(), board())
+
+
 def lease_file() -> Path:
-    return lock_dir() / f"{board()}-lease.json"
+    return lock_dir() / f"{lease_name()}-lease.json"
 
 
 def owner_of(cwd: Path | None = None) -> str:
@@ -75,7 +86,7 @@ def owner_of(cwd: Path | None = None) -> str:
 @contextlib.contextmanager
 def _locked() -> Iterator[None]:
     lock_dir().mkdir(parents=True, exist_ok=True)
-    fd = os.open(str(lock_dir() / f"{board()}-lease.lock"), os.O_RDWR | os.O_CREAT, 0o666)
+    fd = os.open(str(lock_dir() / f"{lease_name()}-lease.lock"), os.O_RDWR | os.O_CREAT, 0o666)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX)
         yield

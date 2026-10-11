@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -14,12 +15,10 @@ extern "system" {
     fn FlagOn(Flags: u32, Flag: u32) -> u32;
     fn ExAcquireResourceSharedLite(Resource: *mut ERESOURCE, Wait: u8) -> u8;
     fn FatReleaseFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
-    fn NT_ASSERT(condition: i32);
     fn NodeType(fcb: *mut FCB) -> u32;
     fn FatDecodeFileObject( FileObject: PFILE_OBJECT, Vcb: *mut PVCB, Fcb: *mut PFCB, Ccb: *mut PCCB, ) -> TYPE_OF_OPEN;
     fn KeGetCurrentIrql() -> u8;
     fn DbgBreakPoint();
-    fn UNREFERENCED_PARAMETER(p: *mut core::ffi::c_void);
 }
 
 // Forward declarations for symbols not imported
@@ -214,12 +213,12 @@ pub unsafe extern "system" fn FatAcquireSharedFcbWaitForEx(
 ) -> i32 {
     PAGED_CODE!();
 
-    NT_ASSERT((FlagOn(
+    NT_ASSERT!((FlagOn(
         (*(*IrpContext).OriginatingIrp).Flags,
         IRP_NOCACHE,
     ) != 0) as i32);
 
-    NT_ASSERT((FlagOn(
+    NT_ASSERT!((FlagOn(
         (*IrpContext).Flags,
         IRP_CONTEXT_FLAG_WAIT,
     ) == 0) as i32);
@@ -325,13 +324,13 @@ pub unsafe extern "system" fn FatReleaseFcbFromLazyWrite(Fcb: *mut core::ffi::c_
     // Assert that this really is an fcb and that this thread really owns
     // the lazy writer mark in the fcb.
     let node_type = NodeType(fcb_ptr);
-    NT_ASSERT((node_type == FAT_NTC_FCB) as i32);
+    NT_ASSERT!((node_type == FAT_NTC_FCB) as i32);
 
     let cur_thread = PsGetCurrentThread();
-    NT_ASSERT((!cur_thread.is_null()) as i32);
+    NT_ASSERT!((!cur_thread.is_null()) as i32);
 
     let lazy_write_thread = (*fcb_ptr).Specific.Fcb.as_ref().LazyWriteThread;
-    NT_ASSERT((lazy_write_thread == (cur_thread).cast()) as i32);
+    NT_ASSERT!((lazy_write_thread == (cur_thread).cast()) as i32);
 
     // Release the lazy writer mark.
     (*fcb_ptr).Specific.Fcb.as_mut().LazyWriteThread = core::ptr::null_mut();
@@ -349,7 +348,7 @@ pub unsafe extern "system" fn FatReleaseFcbFromLazyWrite(Fcb: *mut core::ffi::c_
 
     // Clear the kludge at this point.
     let top_irp = IoGetTopLevelIrp();
-    NT_ASSERT((top_irp == FSRTL_CACHE_TOP_LEVEL_IRP) as i32);
+    NT_ASSERT!((top_irp == FSRTL_CACHE_TOP_LEVEL_IRP) as i32);
 
     IoSetTopLevelIrp(core::ptr::null_mut());
 }
@@ -398,7 +397,7 @@ pub unsafe extern "system" fn FatReleaseFcbFromReadAhead(Fcb: *mut core::ffi::c_
 
     // PAGED_CODE() – normally a no-op in non‑checked builds; left as-is.
     let top_irp = IoGetTopLevelIrp();
-    NT_ASSERT((top_irp == FSRTL_CACHE_TOP_LEVEL_IRP) as i32);
+    NT_ASSERT!((top_irp == FSRTL_CACHE_TOP_LEVEL_IRP) as i32);
 
     IoSetTopLevelIrp(core::ptr::null_mut());
 
@@ -523,9 +522,9 @@ pub unsafe extern "system" fn FatNoOpAcquire(
 #[no_mangle]
 pub unsafe extern "system" fn FatNoOpRelease(Fcb: *mut core::ffi::c_void) {
     PAGED_CODE!();
-    NT_ASSERT((IoGetTopLevelIrp() as *mut core::ffi::c_void == (FSRTL_CACHE_TOP_LEVEL_IRP).cast()) as i32);
+    NT_ASSERT!((IoGetTopLevelIrp() as *mut core::ffi::c_void == (FSRTL_CACHE_TOP_LEVEL_IRP).cast()) as i32);
     IoSetTopLevelIrp(core::ptr::null_mut());
-    UNREFERENCED_PARAMETER(Fcb);
+    UNREFERENCED_PARAMETER!(Fcb);
 }
 
 #[no_mangle]
@@ -537,8 +536,8 @@ pub unsafe extern "system" fn FatFilterCallbackAcquireForCreateSection(
 
     PAGED_CODE!();
 
-    NT_ASSERT(((*CallbackData).Operation == (FS_FILTER_ACQUIRE_FOR_SECTION_SYNCHRONIZATION) as u8) as i32);
-    NT_ASSERT(((*CallbackData).SizeOfFsFilterCallbackData == (core::mem::size_of::<FS_FILTER_CALLBACK_DATA>()) as u32) as i32);
+    NT_ASSERT!(((*CallbackData).Operation == (FS_FILTER_ACQUIRE_FOR_SECTION_SYNCHRONIZATION) as u8) as i32);
+    NT_ASSERT!(((*CallbackData).SizeOfFsFilterCallbackData == (core::mem::size_of::<FS_FILTER_CALLBACK_DATA>()) as u32) as i32);
 
     let fcb: *mut FCB = (*(*CallbackData).FileObject).FsContext as *mut FCB;
 

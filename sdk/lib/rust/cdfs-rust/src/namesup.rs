@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ddk::{GENERATE_NAME_CONTEXT, OEM_STRING, PUNICODE_STRING, RtlCompareMemory, RtlFreeOemString, RtlGenerate8dot3Name, RtlUnicodeStringToCountedOemString, RtlUnicodeStringToOemString, RtlUpcaseUnicodeString, STRING};
@@ -21,13 +22,7 @@ extern "C" {
 extern "C" {
 }
 extern "C" {
-    fn NT_ASSERT(condition: i32);
-}
-extern "C" {
     fn FsRtlIsAnsiCharacterLegalHpfs(c: u16, strict: i32) -> i32;
-}
-extern "C" {
-    fn UNREFERENCED_PARAMETER(param: *mut core::ffi::c_void);
 }
 extern "C" {
     fn FsRtlIsLeadDbcsCharacter(Char: u8) -> u8;
@@ -153,7 +148,7 @@ pub unsafe extern "C" fn CdUpcaseName(
         0, // FALSE → 0
     );
 
-    NT_ASSERT((Status == STATUS_SUCCESS) as i32);
+    NT_ASSERT!((Status == STATUS_SUCCESS) as i32);
 
     // __analysis_assert( Status == STATUS_SUCCESS );
 
@@ -164,7 +159,7 @@ pub unsafe extern "C" fn CdUpcaseName(
             0,
         );
 
-        NT_ASSERT((Status == STATUS_SUCCESS) as i32);
+        NT_ASSERT!((Status == STATUS_SUCCESS) as i32);
         // __analysis_assert( Status == STATUS_SUCCESS );
     }
 }
@@ -239,9 +234,9 @@ pub unsafe extern "C" fn CdIs8dot3Name(
     let mut dot_count: u32 = 0;
     let mut last_char_dot: bool;
 
-    UNREFERENCED_PARAMETER(irp_context);
+    UNREFERENCED_PARAMETER!(irp_context);
 
-    NT_ASSERT((file_name.Length != 0) as i32);
+    NT_ASSERT!((file_name.Length != 0) as i32);
     if file_name.Length as usize > BYTE_COUNT_8_DOT_3 {
         return 0;
     }
@@ -349,7 +344,7 @@ pub unsafe extern "C" fn CdGenerate8dot3Name(
     Status = RtlUnicodeStringToOemString(&mut OemName, &mut ShortName, 1);
 
     if !NT_SUCCESS(Status) {
-        NT_ASSERT((STATUS_INSUFFICIENT_RESOURCES == Status) as i32);
+        NT_ASSERT!((STATUS_INSUFFICIENT_RESOURCES == Status) as i32);
         CdRaiseStatus(IrpContext as PIRP_CONTEXT, Status as u32);
     }
 
@@ -453,7 +448,7 @@ pub unsafe extern "C" fn CdIsNameInExpression(
 ) -> BOOLEAN {
     let mut Match: BOOLEAN = 1;
     PAGED_CODE!();
-    UNREFERENCED_PARAMETER(IrpContext as *mut c_void);
+    UNREFERENCED_PARAMETER!(IrpContext as *mut c_void);
 
     if FlagOn(WildcardFlags, CCB_FLAG_ENUM_NAME_EXP_HAS_WILD) != 0 {
         Match = FsRtlIsNameInExpression(
@@ -511,7 +506,7 @@ pub unsafe extern "C" fn CdShortNameDirentOffset(
     let mut NextWchar: *mut u16;
 
     PAGED_CODE!();
-    UNREFERENCED_PARAMETER(IrpContext as *mut c_void);
+    UNREFERENCED_PARAMETER!(IrpContext as *mut c_void);
 
     RemainingByteCount = (*Name).Length as u32;
     NextWchar = (*Name).Buffer;

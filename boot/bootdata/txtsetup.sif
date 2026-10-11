@@ -237,7 +237,8 @@ acpi_up = "ACPI PC Uniprocessor"
 acpi_mp = "ACPI PC Multiprocessor"
 apic_up = "Standard APIC PC Uniprocessor"
 aacpi_up = "ACPI APIC PC Uniprocessor"
-pc98_up = "NEC PC-98 Uniprocessor"
+; No PC-98 HAL is built here (halpc98.dll was pruned), so the type cannot be offered.
+;pc98_up = "NEC PC-98 Uniprocessor"
 
 [Computer.NTamd64]
 x64_up = "Standard x64 Uniprocessor"
@@ -251,7 +252,7 @@ acpi_up = "ACPI UP"
 acpi_mp = "ACPI MP"
 apic_up = "APIC UP"
 aacpi_up = "AAPIC UP"
-pc98_up = "NEC PC-98 UP"
+;pc98_up = "NEC PC-98 UP"
 
 [Map.Computer.NTamd64]
 x64_up = "X64 UP"
@@ -265,21 +266,24 @@ hal.dll      = 1,,,,,,,2,,,,1,2
 ;ntkrnlmp.exe = 1,,,,,,,2,,,ntoskrnl.exe,1,2
 ;halmps.dll   = 1,,,,,,,2,,,hal.dll,1,2
 
+; This tree builds ONE x86 HAL (hal.dll: APIC + ACPI) and its SMP twin halmp.dll
+; (hal/halx86/CMakeLists.txt); upstream's halacpi/halmacpi/halapic/halaacpi flavors do not
+; exist, and a row naming one installs a system with no hal.dll at all.
 [Files.acpi_up]
 ntoskrnl.exe = 1,,,,,,,2,,,,1,2
-halacpi.dll  = 1,,,,,,,2,,,hal.dll,1,2
+hal.dll      = 1,,,,,,,2,,,,1,2
 
 [Files.acpi_mp]
 ntkrnlmp.exe = 1,,,,,,,2,,,ntoskrnl.exe,1,2
-halmacpi.dll  = 1,,,,,,,2,,,hal.dll,1,2
+halmp.dll    = 1,,,,,,,2,,,hal.dll,1,2
 
 [Files.apic_up]
 ntoskrnl.exe = 1,,,,,,,2,,,,1,2
-halapic.dll  = 1,,,,,,,2,,,hal.dll,1,2
+hal.dll      = 1,,,,,,,2,,,,1,2
 
 [Files.aacpi_up]
 ntoskrnl.exe = 1,,,,,,,2,,,,1,2
-halaacpi.dll  = 1,,,,,,,2,,,hal.dll,1,2
+hal.dll      = 1,,,,,,,2,,,,1,2
 
 [Files.pc98_up]
 ntoskrnl.exe = 1,,,,,,,2,,,,1,2

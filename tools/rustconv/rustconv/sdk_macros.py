@@ -243,6 +243,11 @@ class _Parser:
             # name KNOWN to be a type makes it a cast -- or a `*` inside the parens, which
             # no expression can end with (`(LVITEMW *)&_ms_lvi`).
             return tok in _INT or j > 2
+        if after == "(" and j == 2 and not re.fullmatch(r"[A-Z][A-Z0-9_]*", tok):
+            # `(SendMessageW)(h, ..)` -- windowsx.h's SetWindowFont, a PARENTHESIZED CALLEE.
+            # Win32 type names are ALL CAPS (WPARAM, HWND, DWORD_PTR); a mixed-case one with
+            # no `*` before `)` followed by `(` is a function.
+            return False
         return after is not None and (
             after in ("(", "~", "!") or re.fullmatch(r"\w+", after) is not None
         )
@@ -274,7 +279,7 @@ class _Parser:
         ty = base
         for n in range(stars):
             ty = ("*const " if const and n == 0 else "*mut ") + ty
-        return ty, stars > 0
+        return ty, stars > 0 or base in _POINTER_TYPES
 
     def unary(self) -> Node:
         tok = self.peek()
@@ -405,6 +410,10 @@ _INT = {
     "LONG_PTR": ("P", True),
     "INT_PTR": ("P", True),
 }
+
+
+#: `_emit`'s type for an expression cast to a pointer type: arithmetic on it is element-wise.
+_PTR = "<pointer>"
 
 
 def _promoted(ty: str | None) -> str | None:
@@ -538,12 +547,23 @@ def _emit(node: Node) -> tuple[str, str | None]:
             inner = inner.kids[0]
         if ty == "()":
             return f"{{ let _ = {_emit(inner)[0]}; }}", None
+        # A cast TO a callback typedef (`Option<fn>`) is a coercion in Rust -- `as` cannot
+        # convert `Some(CompareFunc)` -- and a callback cast on to an integer goes through its
+        # bits: taskmgr's ListView_SortItems is `(LPARAM)(PFNLVCOMPARE)(pfn)`. `Option<fn>`
+        # is pointer-sized with None at 0, the C pointer's own representation.
+        if ty in _OPTION_TYPES and not _ptr:
+            return f"({{ let __cb: {ty} = {_emit(inner)[0]}; __cb }})", ty
+        itext, ity = _emit(inner)
+        if ity in _OPTION_TYPES and ty not in _OPTION_TYPES:
+            return f"((core::mem::transmute::<{ity}, usize>({itext})) as {ty})", (
+                _PTR if _ptr else ty
+            )
         if inner.kind == "num":
             # Give the literal its C type: Rust infers it from the cast TARGET, so
             # `0x80000001 as LONG` is an out-of-range i32 literal (HKEY_CURRENT_USER), where C
             # reads an `unsigned int` and then converts.
-            return f"(({_c_literal(inner.text)}) as {ty})", (None if _ptr else ty)
-        return f"(({_emit(inner)[0]}) as {ty})", (None if _ptr else ty)
+            return f"(({_c_literal(inner.text)}) as {ty})", (_PTR if _ptr else ty)
+        return f"(({_emit(inner)[0]}) as {ty})", (_PTR if _ptr else ty)
     if k == "call":
         fn, *args = node.kids
         params = _SIGS.get(fn.text, []) if fn.kind == "ident" else []
@@ -591,6 +611,16 @@ def _emit(node: Node) -> tuple[str, str | None]:
         if op in ("&&", "||"):
             # C: each operand is tested against zero, and the result is an int 0/1.
             return f"((((({ta}) as isize) != 0) {op} ((({tb}) as isize) != 0)) as c_int)", "c_int"
+        if _PTR in (ya, yb) and op in ("+", "-"):
+            # C pointer arithmetic: `(PUCHAR)p + n` steps n elements of the pointee, as
+            # `wrapping_add` does (ndis's NDIS_GET_PACKET_STATUS: `p + NdisPacketOobOffset`).
+            # pointer - pointer is a distance, not this; refused rather than guessed.
+            if ya == _PTR and yb != _PTR:
+                step = "wrapping_add" if op == "+" else "wrapping_sub"
+                return f"({ta}).{step}(({tb}) as usize)", _PTR
+            if yb == _PTR and ya != _PTR and op == "+":
+                return f"({tb}).wrapping_add(({ta}) as usize)", _PTR
+            raise LowerError("pointer - pointer")
         pa, pb = _promoted(ya), _promoted(yb)
         if op in ("==", "!=", "<", ">", "<=", ">="):
             if pa in _INT and pb in _INT:
@@ -631,6 +661,7 @@ def _emit(node: Node) -> tuple[str, str | None]:
 # otherwise; lower_for_crate loads it before lowering.
 _SIGS: dict[str, list[str]] = {}
 _OPTION_TYPES: set[str] = set()
+_POINTER_TYPES: set[str] = set()
 _FN_DECL = re.compile(r"\bpub fn ([A-Za-z_]\w*)\s*\(([^)]*)\)")
 _TYPE_DECL = re.compile(r"^pub type (\w+) = ([^;]+);", re.M)
 
@@ -659,10 +690,31 @@ def load_signatures(crate_src: Path) -> None:
     _SIGS.update(sigs)
     _OPTION_TYPES.clear()
     _OPTION_TYPES.update(options)
+    # Pointer typedefs (`PUCHAR = *mut UCHAR`), aliases followed: a cast to one is a pointer
+    # cast, so `(PUCHAR)p + n` is pointer arithmetic, which a bare `+` is not in Rust.
+    pointers = {n for n, v in types.items() if v.startswith(("*mut ", "*const "))}
+    changed = True
+    while changed:
+        new = {n for n, v in types.items() if v in pointers and n not in pointers}
+        pointers |= new
+        changed = bool(new)
+    _POINTER_TYPES.clear()
+    _POINTER_TYPES.update(pointers)
 
 
 def lower_expansion(expansion: str, types: set[str]) -> str:
-    return emit(_Parser(tokenize(expansion), types).parse())
+    # A C++ TU expands windowsx.h's macros to `::SendMessageW(..)`: the global-scope
+    # qualifier names the same function, and Rust has no use for it.
+    expansion = re.sub(r"(?<![\w:>])::(?=[A-Za-z_])", "", expansion)
+    # A WIDL C macro calls through the vtable: `(This)->lpVtbl->Release(This)`. The slot is
+    # bindgen's `Option<unsafe extern fn>`, so the call is `.Release.unwrap_unchecked()(..)`
+    # (calling NULL is undefined in both languages); a bare `.Release(` is a method lookup
+    # that does not exist (dxdiag's IDirectSound8_Release, E0599).
+    return re.sub(
+        r"\.lpVtbl\)\.([A-Za-z_]\w*)\(",
+        r".lpVtbl).\1.unwrap_unchecked()(",
+        emit(_Parser(tokenize(expansion), types).parse()),
+    )
 
 
 _DEFINE = re.compile(r"^#define ([A-Za-z_]\w*)\(([^)]*)\)", re.M)
@@ -744,14 +796,27 @@ def expansions(repo: Path, source: Path, names: set[str]) -> dict[str, tuple[int
     return {n: (arity[n], ex) for n, ex in per_arch.items() if len(ex) == len(_ARCHES)}
 
 
+_TYPE_ITEM = re.compile(r"^pub (?:type|struct|union|enum) (\w+)", re.M)
+_SYS_GLOB = re.compile(r"^pub use (\w+)_sys(?:::\w+)*::\*;", re.M)
+
+
 def island_types(crate_src: Path) -> set[str]:
+    """Type names the crate's island sees: its own, plus every `-sys` crate it glob-imports.
+
+    A user-mode island takes `LPWSTR` from `pub use ntdll_sys::nt::*;`. Without those, a cast
+    to it is not a cast to the parser: commctrl's `LPSTR_TEXTCALLBACKW ((LPWSTR)-1L)` read
+    as `(LPWSTR) - 1L`, a subtraction, and taskmgr/regedit got no constant at all."""
     out: set[str] = set()
+    sys_crates: set[str] = set()
     for p in crate_src.glob("types_*.rs"):
-        out |= set(
-            re.findall(
-                r"^pub (?:type|struct|union|enum) (\w+)", p.read_text(errors="replace"), re.M
-            )
-        )
+        text = p.read_text(errors="replace")
+        out |= set(_TYPE_ITEM.findall(text))
+        sys_crates |= set(_SYS_GLOB.findall(text))
+    for name in sorted(sys_crates):
+        src = crate_src.parents[1] / f"{name.replace('_', '-')}-sys" / "src"
+        for p in (src / "bindgen_amd64.rs", src / "bindgen_common.rs"):
+            if p.is_file():
+                out |= set(_TYPE_ITEM.findall(p.read_text(errors="replace")))
     return out
 
 
@@ -801,6 +866,28 @@ def outside_block_names(prelude: Path) -> set[str]:
     """Items the prelude defines OUTSIDE every `// ==== ... ====` generated block."""
     text = prelude.read_text() if prelude.is_file() else ""
     text = re.sub(r"(?ms)^// ==== (?!end).*?^// ==== end[^\n]*\n", "", text)
+    return set(
+        re.findall(
+            r"^\s*(?:#\[macro_export\]\s*)?(?:pub(?:\([^)]*\))?\s+)?"
+            r"(?:const|static(?:\s+mut)?|type|fn|struct|union)\s+([A-Za-z_]\w*)",
+            text,
+            re.M,
+        )
+    ) | set(re.findall(r"macro_rules!\s*([A-Za-z_]\w*)", text))
+
+
+def outside_sdk_block_names(prelude: Path) -> set[str]:
+    """Items the prelude defines anywhere but THIS block -- other generated blocks included.
+
+    ndis: after a replay `port macros` ran before `port resolve`, so the island's
+    `NDIS_STATUS_*` were briefly unresolved and got lowered here; resolve then put them in
+    its facts block, and because block items are re-wanted on every run, the duplicates
+    (E0428) never went away. A name another block owns is not this block's to keep.
+    """
+    text = prelude.read_text() if prelude.is_file() else ""
+    start, end = text.find(BEGIN), text.find(END)
+    if start >= 0 and end > start:
+        text = text[:start] + text[end + len(END) :]
     return set(
         re.findall(
             r"^\s*(?:#\[macro_export\]\s*)?(?:pub(?:\([^)]*\))?\s+)?"
@@ -951,7 +1038,13 @@ def object_items(
             # `__MINGW_NAME_AW(LVITEM)` -> `LVITEMW`): the expansion is the final name. A
             # value use of a type (`PROPSHEETHEADER` where the model dropped its sizeof)
             # gets the alias too, so the sizeof pass can see it is a type.
-            if re.fullmatch(r"[A-Za-z_]\w*", expansion) and (as_type or expansion in island):
+            # ...but a C type KEYWORD is not a Rust name: `#define VOID void` became
+            # `pub type VOID = void;` (audiosrv). Those take the type parser below.
+            if (
+                re.fullmatch(r"[A-Za-z_]\w*", expansion)
+                and expansion not in _C_TYPE_WORDS
+                and (as_type or expansion in island)
+            ):
                 out[n] = f"pub type {n} = {expansion};"
                 continue
             if as_type:
@@ -1009,7 +1102,12 @@ def object_expansions(repo: Path, source: Path, names: set[str]) -> dict[str, st
         if argv is None:
             return {}
         defined = dict(_OBJ_DEFINE.findall(_dump(argv)))
-        want = sorted(n for n in names if n in defined)
+        # A name that is a macro on only SOME arches is not an alias: winuser.h makes
+        # `SetWindowLongPtrW` `SetWindowLongW` on i386 alone, and probing only the arches
+        # where it is defined collected one expansion and called it unanimous -- notepad's
+        # 64-bit window-proc subclassing went through the 32-bit SetWindowLongW.
+        names = {n for n in names if n in defined}
+        want = sorted(names)
         if not want:
             return {}
         probe = "\n".join(f"__RCV_BEGIN_{n}__ {n} __RCV_END__" for n in want)
@@ -1017,7 +1115,7 @@ def object_expansions(repo: Path, source: Path, names: set[str]) -> dict[str, st
         for n in want:
             m = re.search(rf"__RCV_BEGIN_{n}__(.*?)__RCV_END__", text, re.S)
             per.setdefault(n, set()).add(" ".join(m.group(1).split()) if m else "")
-    return {n: ex.pop() for n, ex in per.items() if len(ex) == 1 and len(per) and "" not in ex}
+    return {n: ex.pop() for n, ex in per.items() if n in names and len(ex) == 1 and "" not in ex}
 
 
 _C_ESCAPES = {"n": 10, "t": 9, "r": 13, "0": 0, "\\": 92, '"': 34, "'": 39, "a": 7, "b": 8}
@@ -1061,31 +1159,31 @@ def widening_macros(repo: Path, tus: list[Path], names: set[str]) -> set[str]:
         return set()
     # Per NAME, across TUs: `_T` exists only in the TU that includes <tchar.h> (main's
     # mouse.c), and stopping at the first TU that preprocesses at all missed it.
+    # One probe PER NAME: a candidate of another arity (cmd's two-argument
+    # `__WINE_IS_DEBUG_ON`) makes `NAME("rcv")` a preprocessor error, and in a shared probe
+    # that error failed every TU for every name -- `_T` was never widened (725 call sites).
     widening: set[str] = set()
-    left = set(names)
-    for tu in tus:
-        if not left:
-            break
-        found: dict[str, set[str]] = {}
-        ok = True
-        for arch in _ARCHES:
-            argv = compile_argv(repo, arch, tu)
-            if argv is None:
-                ok = False
+    for n in sorted(names):
+        for tu in tus:
+            seen: set[str] = set()
+            ok = True
+            for arch in _ARCHES:
+                argv = compile_argv(repo, arch, tu)
+                if argv is None:
+                    ok = False
+                    break
+                try:
+                    text = _preprocess(argv, tu, f'__RCV_BEGIN__ {n}("rcv") __RCV_END__')
+                except LowerError:
+                    ok = False
+                    break
+                m = re.search(r"__RCV_BEGIN__(.*?)__RCV_END__", text, re.S)
+                seen.add(m.group(1).strip() if m else "")
+            # Keep looking past a TU where NAME is simply undefined (`_T` exists only where
+            # <tchar.h> is included -- main's mouse.c).
+            if ok and seen == {'L"rcv"'}:
+                widening.add(n)
                 break
-            probe = "\n".join(f'__RCV_BEGIN_{n}__ {n}("rcv") __RCV_END__' for n in sorted(left))
-            try:
-                text = _preprocess(argv, tu, probe)
-            except LowerError:
-                ok = False
-                break
-            for n in left:
-                m = re.search(rf"__RCV_BEGIN_{n}__(.*?)__RCV_END__", text, re.S)
-                found.setdefault(n, set()).add(m.group(1).strip() if m else "")
-        if ok:
-            hit = {n for n, ex in found.items() if ex == {'L"rcv"'}}
-            widening |= hit
-            left -= hit
     return widening
 
 
@@ -1107,7 +1205,10 @@ def widen_call_sites(rust: str, names: set[str]) -> tuple[str, int]:
                 return m.group(0)
             count += 1
             body = ", ".join(f"0x{u:04x}" for u in units)
-            return f'(&[{body}u16]).as_ptr() /* {n} "{m.group(1)[:60]}" */'
+            # The note is a block comment: a literal holding `*/` (cmd's set.c
+            # `_T("*/%+-&^|")`) closed it early and left the rest as an unterminated string.
+            note = m.group(1)[:60].replace("*/", "*\\/").replace("/*", "/\\*")
+            return f'(&[{body}u16]).as_ptr() /* {n} "{note}" */'
 
         rust = re.sub(rf"\b{re.escape(n)}!?\(\s*{_STR_CALL}\s*\)", repl_s, rust)
 

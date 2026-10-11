@@ -204,7 +204,7 @@ unsafe fn HvpAllocBaseBlockAligned(
     let free = (*Hive).Free.unwrap();
 
     // ASSERT(sizeof(HBASE_BLOCK) >= (HSECTOR_SIZE * Hive->Cluster));
-    ASSERT(core::mem::size_of::<HBASE_BLOCK>() as u32 >= HSECTOR_SIZE * (*Hive).Cluster);
+    ASSERT!(core::mem::size_of::<HBASE_BLOCK>() as u32 >= HSECTOR_SIZE * (*Hive).Cluster);
 
     /* Allocate the buffer */
     let mut BaseBlock: PHBASE_BLOCK =
@@ -420,7 +420,7 @@ pub unsafe extern "system" fn HvpGetHiveHeader(
     let free = (*Hive).Free.unwrap();
     let file_read = (*Hive).FileRead.unwrap();
 
-    ASSERT(core::mem::size_of::<HBASE_BLOCK>() as u32 >= HSECTOR_SIZE * (*Hive).Cluster);
+    ASSERT!(core::mem::size_of::<HBASE_BLOCK>() as u32 >= HSECTOR_SIZE * (*Hive).Cluster);
 
     /* Assume failure and allocate the base block */
     // write_volatile: these are #[no_mangle]-reachable output params; a plain
@@ -635,7 +635,7 @@ pub unsafe extern "system" fn HvpRecoverHeaderFromLog(
     /*
      * The cluster must not be greater than what the base block can permit.
      */
-    ASSERT(core::mem::size_of::<HBASE_BLOCK>() as u32 >= HSECTOR_SIZE * (*Hive).Cluster);
+    ASSERT!(core::mem::size_of::<HBASE_BLOCK>() as u32 >= HSECTOR_SIZE * (*Hive).Cluster);
 
     /* Assume we haven't resuscitated the header */
     let mut HeaderResuscitated: BOOLEAN = 0;
@@ -809,16 +809,16 @@ pub unsafe extern "system" fn HvLoadHive(
     Hive: PHHIVE,
     FileName: PCUNICODE_STRING,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS;
-    let mut Success: BOOLEAN;
+    let Status: NTSTATUS;
+    let Success: BOOLEAN;
     let mut BaseBlock: PHBASE_BLOCK = core::ptr::null_mut();
     let Result: RESULT;
     #[cfg(not(target_arch = "x86_64"))]
     let mut Result2: RESULT;
     let mut TimeStamp: LARGE_INTEGER = core::mem::zeroed();
     let mut Offset: u32 = 0;
-    let mut HiveData: *mut core::ffi::c_void;
-    let mut FileSize: u32;
+    let HiveData: *mut core::ffi::c_void;
+    let FileSize: u32;
     let mut HiveSelfHeal: BOOLEAN = 0;
     // Get the hive header. (This block was collapsed onto a few lines with each DPRINT1
     // replaced by `// DPRINT removed`, which commented out the `return` after it: NoMemory

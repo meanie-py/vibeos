@@ -150,7 +150,7 @@ pub unsafe extern "C" fn ClasspCreateClose(DeviceObject: PDEVICE_OBJECT, Irp: PI
             fileObject,
         );
 
-        NT_ASSERT((BreakOnClose == 0) as u8);
+        NT_ASSERT!((BreakOnClose == 0) as u8);
 
         if !fileObject.is_null() {
             let mut fsContext: PFILE_OBJECT_EXTENSION = core::ptr::null_mut();
@@ -205,7 +205,7 @@ pub unsafe extern "C" fn ClasspCreateClose(DeviceObject: PDEVICE_OBJECT, Irp: PI
                     TRACE_FLAG_INIT,
                     b"ClasspCreateCLOSE: extension is ours - freeing\n\0".as_ptr() as *const i8,
                 );
-                NT_ASSERT((BreakOnClose == 0) as u8);
+                NT_ASSERT!((BreakOnClose == 0) as u8);
 
                 ClasspCleanupProtectedLocks(fsContext);
                 ClasspCleanupDisableMcn(fsContext);
@@ -282,7 +282,7 @@ pub unsafe extern "C" fn ClasspCleanupProtectedLocks(FsContext: PFILE_OBJECT_EXT
                FsContext as PVOID,
                (*foe(FsContext)).LockCount as i32);
 
-    NT_ASSERT((BreakOnClose == 0) as u8);
+    NT_ASSERT!((BreakOnClose == 0) as u8);
 
     KeEnterCriticalRegion();
     KeWaitForSingleObject(
@@ -337,7 +337,7 @@ pub unsafe extern "C" fn ClasspCleanupProtectedLocks(FsContext: PFILE_OBJECT_EXT
                     cdb = SrbGetCdb((srbEx).cast());
                     srbPtr = srbEx as PSCSI_REQUEST_BLOCK;
                 } else {
-                    NT_ASSERT(0);
+                    NT_ASSERT!(0);
                     srb.TimeOutValue = (*fdoExtension).TimeOutValue;
                     srb.CdbLength = 6;
                     srbPtr = &mut srb as PSCSI_REQUEST_BLOCK;

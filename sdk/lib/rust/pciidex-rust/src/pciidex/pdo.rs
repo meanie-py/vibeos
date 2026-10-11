@@ -102,11 +102,13 @@ unsafe extern "C" fn PciIdeXPdoInitDma(
 
     (*ChanData).DmaAdapter = PciIdeXPdoGetDmaAdapter(FdoExt, ChanData);
     if (*ChanData).DmaAdapter.is_null() {
+        WARN!(b"CH %lu: Unable to get DMA adapter\n\0".as_ptr() as *const i8, (*ChanData).Channel);
         return FALSE;
     }
 
     Status = (((*ChanData).AllocateMemory).unwrap_unchecked())((ChanData).cast());
     if !NT_SUCCESS!(Status) {
+        WARN!(b"CH %lu: Unable to allocate DMA memory %lx\n\0".as_ptr() as *const i8, (*ChanData).Channel, Status);
         PciIdeXPdoFreeDmaResources(ChanData);
         return FALSE;
     }
@@ -148,6 +150,7 @@ unsafe extern "C" fn PciIdeXPdoStartDevice(
         if (*Controller).Flags & CTRL_FLAG_MANUAL_RES == 0 {
             Status = PciIdeParseResources(PataData, ResourcesTranslated);
             if !NT_SUCCESS!(Status) {
+                ERR!(b"CH %lu: Failed to parse resources 0x%lx\n\0".as_ptr() as *const i8, (*ChanData).Channel, Status);
                 return Status;
             }
         }
@@ -171,6 +174,7 @@ unsafe extern "C" fn PciIdeXPdoStartDevice(
 
     if (*ChanData).DmaAdapter.is_null() {
         if (*ChanData).ChanInfo & CHANNEL_FLAG_PIO_VIA_DMA != 0 {
+            ERR!(b"CH %lu: Unable to fall back to PIO mode\n\0".as_ptr() as *const i8, (*ChanData).Channel);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
@@ -180,6 +184,8 @@ unsafe extern "C" fn PciIdeXPdoStartDevice(
     if (*Controller).Flags & CTRL_FLAG_IS_AHCI == 0 {
         Status = PciIdeConnectInterrupt((ChanData).cast());
         if !NT_SUCCESS!(Status) {
+            // The C passes Status with no conversion for it in the format; mirrored as-is.
+            ERR!(b"CH %lu: Could not connect to interrupt\n\0".as_ptr() as *const i8, (*ChanData).Channel, Status);
             return Status;
         }
 
@@ -716,6 +722,7 @@ unsafe extern "C" fn PciIdeXPdoQueryId(
                         (*FdoExtension).Controller.Pci.DeviceID as core::ffi::c_uint,
                     );
                 }
+                ASSERT!(NT_SUCCESS!(Status));
 
                 INFO!("  '%S'\n", Buffer);
 
@@ -733,6 +740,7 @@ unsafe extern "C" fn PciIdeXPdoQueryId(
                 RUSTCONV_WSTR_8D44D4323B7D.as_ptr(),
                 b"Internal_IDE_Channel\0".as_ptr() as *const i8,
             );
+            ASSERT!(NT_SUCCESS!(Status));
 
             INFO!("  '%S'\n", IdStart);
 
@@ -749,6 +757,7 @@ unsafe extern "C" fn PciIdeXPdoQueryId(
                 RUSTCONV_WSTR_D217C45C6798.as_ptr(),
                 IdeCompatibleId.as_ptr(),
             );
+            ASSERT!(NT_SUCCESS!(Status));
 
             INFO!("  '%S'\n", IdStart);
 
@@ -799,6 +808,7 @@ unsafe extern "C" fn PciIdeXPdoQueryId(
                 RUSTCONV_WSTR_F3C6A8F2AC47.as_ptr(),
                 (*PdoExtension).Channel,
             );
+            ASSERT!(NT_SUCCESS!(Status));
 
             INFO!("Instance ID: '%S'\n", Buffer);
         }
@@ -844,6 +854,7 @@ unsafe extern "C" fn PciIdeXPdoQueryDeviceText(
                 RUSTCONV_WSTR_00E24D9CDAB6.as_ptr(),
                 (*PdoExtension).Channel,
             );
+            ASSERT!(NT_SUCCESS!(Status));
 
             INFO!("Device Description: '%S'\n\0".as_ptr() as *const i8, Buffer);
         }
@@ -868,6 +879,7 @@ unsafe extern "C" fn PciIdeXPdoQueryDeviceText(
                 RUSTCONV_WSTR_7D85A404D734.as_ptr(),
                 (*PdoExtension).Channel,
             );
+            ASSERT!(NT_SUCCESS!(Status));
 
             INFO!("Device Location: '%S'\n\0".as_ptr() as *const i8, Buffer);
         }

@@ -52,6 +52,7 @@ macro_rules! utf16 {
         W
     }};
 }
+pub(crate) use utf16;
 
 unsafe extern "system" {
     fn HalVibeosMessageCapacity() -> ULONG;
@@ -88,7 +89,7 @@ pub const CM_RESOURCE_INTERRUPT_MESSAGE: u16 = 0x0002;
 /// `CM_RESOURCE_INTERRUPT_MESSAGE_TOKEN`: message k is requested as this minus k.
 const MESSAGE_TOKEN: u32 = 0xFFFF_FFFE;
 const PLUGPLAY_REGKEY_DEVICE: ULONG = 1;
-const KEY_READ: ACCESS_MASK = 0x20019;
+pub(crate) const KEY_READ: ACCESS_MASK = 0x20019;
 const PagedPool: POOL_TYPE = 1;
 const TAG_PCI: ULONG = u32::from_ne_bytes(*b"PCI0");
 
@@ -215,7 +216,7 @@ unsafe fn affinity_policy(pdo: PDEVICE_OBJECT) -> (i32, KAFFINITY) {
     (policy, set)
 }
 
-unsafe fn query_dword(key: HANDLE, value: &[u16]) -> Option<u32> {
+pub(crate) unsafe fn query_dword(key: HANDLE, value: &[u16]) -> Option<u32> {
     query_value(key, value).and_then(|(ty, len, v)| (ty == 4 /* REG_DWORD */ && len == 4).then_some(v as u32))
 }
 

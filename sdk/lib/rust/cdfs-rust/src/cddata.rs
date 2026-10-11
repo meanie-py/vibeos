@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ke::*;
@@ -14,21 +15,16 @@ extern "C" {
 }
 
 extern "C" {
-    fn AssertVerifyDevice(IrpContext: *mut IRP_CONTEXT, Status: i32);
 }
 extern "C" {
-    fn NT_ASSERT(cond: i32);
 }
 extern "C" {
     fn CdBugCheck(param1: usize, param2: usize, param3: usize);
 }
 extern "C" {
-    fn AssertVerifyDeviceIrp(Irp: ntkrnl_sys::ddk::PIRP);
 }
 extern "C" {
     fn CdCleanupIrpContext(IrpContext: *mut core::ffi::c_void, Flag: i32);
-}
-extern "C" {
 }
 extern "C" {
     fn ASSERT_IRP_CONTEXT(irp: *mut IRP_CONTEXT);
@@ -43,7 +39,6 @@ extern "system" {
     fn IoWithinStackLimits(address: usize, size: u32) -> i32;
 }
 extern "C" {
-    fn ASSERT_OPTIONAL_IRP(Irp: ntkrnl_sys::ddk::PIRP);
 }
 extern "C" {
     fn CanFsdWait(Irp: ntkrnl_sys::ddk::PIRP) -> u8;
@@ -242,7 +237,7 @@ pub unsafe extern "system" fn CdFsdDispatch(
     let mut irp_context: crate::types::PIRP_CONTEXT = core::ptr::null_mut();
     let mut wait: u8 = 0;
 
-    ASSERT_OPTIONAL_IRP(Irp);
+    ASSERT_OPTIONAL_IRP!(Irp);
     let _ = DeviceObject;
 
     FsRtlEnterFileSystem();
@@ -328,7 +323,7 @@ pub unsafe extern "C" fn CdRaiseStatusEx(
     Line: u32,
 ) {
     let mut BreakIn: u8 = 0;
-    AssertVerifyDevice(IrpContext, Status);
+    AssertVerifyDevice!(IrpContext, Status);
     if CdTraceRaises != 0 {
         ntkrnl_sys::driver_ddk::DbgPrint(
             b"%p CdRaiseStatusEx 0x%x @ fid %d, line %d\n\0".as_ptr() as *const i8,
@@ -368,7 +363,7 @@ pub unsafe extern "C" fn CdRaiseStatusEx(
             core::ptr::addr_of!(CdTestRaisedStatus) as *const core::ffi::c_void,
             core::ptr::addr_of!(CdBreakOnAnyRaise) as *const core::ffi::c_void,
         );
-        NT_ASSERT(0);
+        NT_ASSERT!(0);
     }
     if NormalizeStatus != 0 {
         (*IrpContext).ExceptionStatus =
@@ -408,7 +403,7 @@ pub unsafe extern "C" fn CdExceptionFilter(
     }
 
     if !IrpContext.is_null() {
-        AssertVerifyDevice(IrpContext, (*IrpContext).ExceptionStatus);
+        AssertVerifyDevice!(IrpContext, (*IrpContext).ExceptionStatus);
     }
 
     if TestStatus != 0 && FsRtlIsNtstatusExpected(ExceptionCode) == 0 {
@@ -484,7 +479,7 @@ pub unsafe extern "C" fn CdProcessException(
             if Device.is_null() {
                 Device = IoGetDeviceToVerify(PsGetCurrentThread());
                 IoSetDeviceToVerify(PsGetCurrentThread(), core::ptr::null_mut());
-                NT_ASSERT((!Device.is_null()) as i32);
+                NT_ASSERT!((!Device.is_null()) as i32);
             }
 
             if !(*IrpContext).Vcb.is_null() {
@@ -517,7 +512,7 @@ pub unsafe extern "C" fn CdProcessException(
             if Device.is_null() {
                 Thread = PsGetCurrentThread();
                 Device = IoGetDeviceToVerify(Thread);
-                NT_ASSERT((!Device.is_null()) as i32);
+                NT_ASSERT!((!Device.is_null()) as i32);
             }
 
             if !(*IrpContext).Vcb.is_null() {
@@ -563,7 +558,7 @@ pub unsafe extern "C" fn CdCompleteRequest(
 
         (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
 
-        AssertVerifyDeviceIrp(Irp);
+        AssertVerifyDeviceIrp!(Irp);
 
         IoCompleteRequest(Irp, IO_CD_ROM_INCREMENT);
     }

@@ -59,6 +59,8 @@ unsafe extern "C" fn AtaDeviceHandleRequestSense(
     }
 
     if Success == 0 {
+        ERR!(b"Request sense failed\n\0".as_ptr() as *const i8);
+
         if IS_ATAPI!(&(*DevExt).Device) != false {
             (*Srb).ScsiStatus = (SCSISTAT_GOOD) as u8;
             (*FailedRequest).SrbStatus = (SRB_STATUS_REQUEST_SENSE_FAILED) as u8;
@@ -108,6 +110,7 @@ unsafe extern "C" fn AtaDeviceSendRequestSense(
     let Cdb: PCDB;
 
     ASSERT_REQUEST!(FailedRequest);
+    ASSERT!((*(*FailedRequest).Srb).SenseInfoBufferLength > 0);
 
     (*Request).Flags = REQUEST_FLAG_DATA_IN |
                        REQUEST_FLAG_PACKET_COMMAND |
@@ -267,8 +270,12 @@ unsafe extern "C" fn AtaDeviceDowngradeTransferSpeed(
     if ((*DevExt).TransferModeSupportedBitmap & !PIO_ALL) != 0
         && (AllowedModesMask & !PIO_ALL) == 0
     {
+        WARN!(b"Too many DMA failures, disabling DMA for '%s'\n\0".as_ptr() as *const i8, (*DevExt).FriendlyName.as_ptr());
+
         AtaDeviceLogEvent(DevExt, EVENT_CODE_DMA_DISABLE);
     }
+
+    WARN!(b"Downgrading DMA speed from %lu for '%s'\n\0".as_ptr() as *const i8, Mode, (*DevExt).FriendlyName.as_ptr());
 
     (*DevExt).TransferModeAllowedMask &= AllowedModesMask;
 
@@ -293,6 +300,8 @@ unsafe extern "C" fn AtaDeviceAnalyzeDmaError(
     let mut CurrentTime: LARGE_INTEGER = core::mem::zeroed();
     let mut TimeDifferenceMs: LARGE_INTEGER = core::mem::zeroed();
 
+    WARN!(b"DMA error %lu on '%s'\n\0".as_ptr() as *const i8, ErrorValue, (*DevExt).FriendlyName.as_ptr());
+
     if (*Request).Flags & REQUEST_FLAG_PASSTHROUGH != 0 {
         return;
     }
@@ -309,11 +318,14 @@ unsafe extern "C" fn AtaDeviceAnalyzeDmaError(
 
     if (*DevExt).Device.DeviceFlags & DEVICE_NCQ != 0 {
         (*DevExt).Device.DeviceFlags &= !DEVICE_NCQ;
+
+        ERR!(b"NCQ disabled for '%s'\n\0".as_ptr() as *const i8, (*DevExt).FriendlyName.as_ptr());
         AtaDeviceLogEvent(DevExt, EVENT_CODE_NCQ_DISABLE);
         return;
     }
 
     if ((*PortData).DowngradeInterfaceSpeed.unwrap_unchecked())((*PortData).ChannelContext) != 0 {
+        WARN!(b"Downgrading interface for '%s'\n\0".as_ptr() as *const i8, (*DevExt).FriendlyName.as_ptr());
         AtaDeviceLogEvent(DevExt, EVENT_CODE_DOWNSHIFT);
         return;
     }
@@ -328,6 +340,7 @@ unsafe extern "C" fn AtaDeviceCompleteFailedRequest(PortData: PATAPORT_PORT_DATA
     let mut OldIrql: KIRQL;
 
     ASSERT_REQUEST!(Request);
+    ASSERT!(Request != &raw mut (*PortData).Worker.InternalRequest);
 
     SrbStatus = (SRB_STATUS!((*Request).SrbStatus)) as u8;
 
@@ -337,6 +350,7 @@ unsafe extern "C" fn AtaDeviceCompleteFailedRequest(PortData: PATAPORT_PORT_DATA
     SRB_SET_FLAGS!((*Request).Srb, RetryCount);
 
     if RetryCount > 3 {
+        ASSERT!((SrbStatus as u32) != SRB_STATUS_BUSY);
     } else {
         match (SrbStatus) as u32 {
             SRB_STATUS_BUS_RESET | SRB_STATUS_TIMEOUT => {
@@ -363,10 +377,13 @@ unsafe extern "C" fn AtaDeviceCompleteFailedRequest(PortData: PATAPORT_PORT_DATA
         return;
     }
 
+    ASSERT!(SRB_STATUS!(SrbStatus) != (SRB_STATUS_SUCCESS as i32));
+
     (*Request).__bindgen_anon_3.__bindgen_anon_1.InternalState = (REQUEST_STATE_FREEZE_QUEUE) as u8;
 
     OldIrql = KeAcquireInterruptSpinLock((*PortData).InterruptObject);
 
+    ASSERT!((*PortData).Worker.PausedSlotsBitmap & (1 << (*Request).Slot));
     (*PortData).Worker.PausedSlotsBitmap &= !(1 << (*Request).Slot);
 
     KeReleaseInterruptSpinLock((*PortData).InterruptObject, OldIrql);
@@ -388,12 +405,14 @@ unsafe extern "C" fn AtaDeviceNcqRecovery(
             return Status;
         }
         if !NT_SUCCESS!(Status) {
+            ERR!(b"READ LOG EXT failure\n\0".as_ptr() as *const i8);
             break 'failure;
         }
 
         LogPage = (*DevExt).Device.LocalBuffer as *mut GP_LOG_NCQ_COMMAND_ERROR;
 
         if (*LogPage).NonQueuedCmd() != 0 {
+            ERR!(b"Unexpected NQ bit in the log page 0x10 structure\n\0".as_ptr() as *const i8);
             break 'failure;
         }
 
@@ -404,6 +423,7 @@ unsafe extern "C" fn AtaDeviceNcqRecovery(
             i = i.wrapping_add(1);
         }
         if Crc != 0 {
+            ERR!(b"CRC error in the log page 0x10 structure\n\0".as_ptr() as *const i8);
             break 'failure;
         }
 
@@ -411,6 +431,8 @@ unsafe extern "C" fn AtaDeviceNcqRecovery(
             & ((1 as u32) << ((*LogPage).NcqTag() as u32)))
             == 0
         {
+            ERR!(b"Failed command %08lx not found in %08lx\n\0".as_ptr() as *const i8,
+                 (1 as i32) << ((*LogPage).NcqTag() as u32), (*PortData).Worker.PausedSlotsBitmap);
             break 'failure;
         }
 

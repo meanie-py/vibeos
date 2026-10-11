@@ -61,9 +61,6 @@ extern "system" {
 // Internal stream-pointer record alias (struct `_KSISTREAM_POINTER` is defined below).
 pub type KSISTREAM_POINTER = _KSISTREAM_POINTER;
 
-// NT_ASSERT -> no-op in retail (NDEBUG); matches usbuhci/usbaudio ks-rust pattern.
-#[inline(always)]
-unsafe fn ASSERT<T>(_cond: T) {}
 
 // IsEqualGUIDAligned: guiddef inline GUID equality.
 #[inline(always)]
@@ -1742,7 +1739,7 @@ pub unsafe extern "system" fn IKsPin_DispatchKsStream(
     let mut IoStack: PIO_STACK_LOCATION = core::ptr::null_mut();
     let mut Status: NTSTATUS = STATUS_SUCCESS;
 
-    ASSERT((*This).Pin.ResetState == KSRESET_END);
+    ASSERT!((*This).Pin.ResetState == KSRESET_END);
 
     IoStack = IoGetCurrentIrpStackLocation(Irp);
 
@@ -1780,11 +1777,11 @@ pub unsafe extern "system" fn IKsPin_DispatchKsStream(
 
     NumHeaders = (*IoStack).Parameters.DeviceIoControl.OutputBufferLength / (*Header).Size;
 
-    ASSERT((*IoStack).Parameters.DeviceIoControl.OutputBufferLength % (*Header).Size == 0);
-    ASSERT(NumHeaders == 1);
+    ASSERT!((*IoStack).Parameters.DeviceIoControl.OutputBufferLength % (*Header).Size == 0);
+    ASSERT!(NumHeaders == 1);
 
     if (*Irp).RequestorMode == 1i8 {
-        ASSERT(!(*Irp).MdlAddress.is_null());
+        ASSERT!(!(*Irp).MdlAddress.is_null());
         (*Header).Data = MmGetSystemAddressForMdlSafe((*Irp).MdlAddress, NormalPagePriority);
 
         if (*Header).Data.is_null() {
@@ -1806,22 +1803,22 @@ pub unsafe extern "system" fn IKsPin_DispatchKsStream(
 
         // C: `ASSERT(!(Flags & KSPIN_FLAG_DISPATCH_LEVEL_PROCESSING))`. Rust's `!` is
         // bitwise on a ULONG, so this could never be zero — vacuous until spelled `== 0`.
-        ASSERT(((*(*This).Pin.Descriptor).Flags & KSPIN_FLAG_DISPATCH_LEVEL_PROCESSING as ULONG) == 0);
-        ASSERT(!(*This).PinWorker.is_null());
+        ASSERT!(((*(*This).Pin.Descriptor).Flags & KSPIN_FLAG_DISPATCH_LEVEL_PROCESSING as ULONG) == 0);
+        ASSERT!(!(*This).PinWorker.is_null());
 
         InterlockedIncrement(&mut (*This).IrpCount);
         KsIncrementCountedWorker((*This).PinWorker);
         Status = STATUS_PENDING;
     } else {
-        ASSERT(!(*This).Filter.is_null());
+        ASSERT!(!(*This).Filter.is_null());
 
         ProcessPinIndex = (*(*(*This).Filter).lpVtbl).GetProcessDispatch.expect("non-null function pointer")((*This).Filter);
         Filter = (*(*(*This).Filter).lpVtbl).GetStruct.expect("non-null function pointer")((*This).Filter);
 
-        ASSERT(!ProcessPinIndex.is_null());
-        ASSERT(!Filter.is_null());
-        ASSERT(!(*Filter).Descriptor.is_null());
-        ASSERT(!(*(*Filter).Descriptor).Dispatch.is_null());
+        ASSERT!(!ProcessPinIndex.is_null());
+        ASSERT!(!Filter.is_null());
+        ASSERT!(!(*Filter).Descriptor.is_null());
+        ASSERT!(!(*(*Filter).Descriptor).Dispatch.is_null());
 
         if (*(*(*Filter).Descriptor).Dispatch).Process.is_none() {
             (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_UNSUCCESSFUL;

@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::base::{NTSTATUS, BOOLEAN, ULONG, PULONG, LONGLONG, STATUS_SUCCESS};
 use ntkrnl_sys::constants::{STATUS_INVALID_PARAMETER, STATUS_BUFFER_OVERFLOW, STATUS_OBJECT_NAME_NOT_FOUND};
 use ntkrnl_sys::rtl::RtlCopyMemory;
@@ -67,15 +68,10 @@ extern "C" {
     fn CdReleaseFile(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
 }
 extern "C" {
-}
-extern "C" {
     fn ASSERT_FILE_OBJECT(obj: PFILE_OBJECT);
 }
 extern "C" {
     fn FlagOn(Flags: u32, Bit: u32) -> u32;
-}
-extern "C" {
-    fn UNREFERENCED_PARAMETER(_: *mut core::ffi::c_void);
 }
 extern "C" {
     fn CdVerifyOrCreateDirStreamFile(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
@@ -141,7 +137,6 @@ extern "C" {
     fn CdQueryFidDirentOffset(FileId: FILE_ID) -> ULONG;
 }
 extern "C" {
-    fn NT_ASSERT(cond: i32);
 }
 
 // ---- file-scope preamble (translated) ----
@@ -197,7 +192,7 @@ pub unsafe extern "C" fn CdCommonQueryInfo(
                             // Make sure directory sizes are correct
                             if FlagOn((*Fcb).FcbState, FCB_STATE_INITIALIZED) == 0 {
                                 // NT_ASSERT macro
-                                NT_ASSERT((TypeOfOpen == UserDirectoryOpen) as i32);
+                                NT_ASSERT!((TypeOfOpen == UserDirectoryOpen) as i32);
                                 CdVerifyOrCreateDirStreamFile(IrpContext, Fcb);
                             }
 
@@ -450,7 +445,7 @@ pub unsafe extern "system" fn CdFastQueryBasicInfo(
     let TypeOfOpen: u32;
     let mut Fcb: PFCB = core::ptr::null_mut();
 
-    UNREFERENCED_PARAMETER(DeviceObject as *mut core::ffi::c_void);
+    UNREFERENCED_PARAMETER!(DeviceObject as *mut core::ffi::c_void);
     ASSERT_FILE_OBJECT(FileObject);
     FsRtlEnterFileSystem();
 
@@ -704,8 +699,8 @@ pub unsafe extern "C" fn CdQueryEaInfo(
     Length: *mut u32,
 ) {
     PAGED_CODE!();
-    UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
-    UNREFERENCED_PARAMETER(Fcb as *mut core::ffi::c_void);
+    UNREFERENCED_PARAMETER!(IrpContext as *mut core::ffi::c_void);
+    UNREFERENCED_PARAMETER!(Fcb as *mut core::ffi::c_void);
     (*Buffer).EaSize = 0;
     *Length -= core::mem::size_of::<FILE_EA_INFORMATION>() as u32;
 }
@@ -910,7 +905,7 @@ pub unsafe extern "C" fn CdQueryAlternateNameInfo(
                 CdCleanupFileContext(IrpContext, &mut (*p_FileContext));
             }
             if (*p_ReleaseParentFcb) != 0 {
-                CdReleaseFile(IrpContext, (*p_ParentFcb));
+                CdReleaseFile(IrpContext, *p_ParentFcb );
             }
         },
     );

@@ -268,8 +268,13 @@ def build_parser() -> argparse.ArgumentParser:
         "(VIBEOS_SERIAL_TIMESTAMPS=1) and print a boot-phase report "
         "(tools/boot_phase_report.py) after each boot",
     )
-    s.add_argument("--no-gdb", action="store_true")
-    s.add_argument("--attach-on-fail", action="store_true")
+    s.add_argument(
+        "--attach-on-fail",
+        action="store_true",
+        help="on a FAILED boot, keep the VM running with a gdbstub and print its run-id "
+        "for `vibeos-cli gdb inspect/stop <run-id>` (smoke has no stub otherwise; "
+        "the old --no-gdb was read by nothing and is gone)",
+    )
     s.add_argument(
         "--repeat",
         type=int,
@@ -308,10 +313,20 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument(
         "--ahci",
         action="store_true",
-        help="x86 only: put the boot CD on an ich9-ahci controller instead of IDE, "
-        "so an AHCI driver carries the whole boot: uniata's, or pciidex's on "
-        "--ata-stack media. The boot FAILS (AHCI_NOT_ENGAGED) unless uniata reports "
-        "finding the controller or pciide starts it with the CD enumerated under it",
+        help="an ich9-ahci controller: x86 moves the boot CD onto it, so an AHCI driver "
+        "carries the whole boot; arm64 gets it with a disk and an empty CD drive. The "
+        "driver is uniata's, or pciidex's on --ata-stack media. The boot FAILS "
+        "(AHCI_NOT_ENGAGED) unless uniata reports finding the controller or pciide starts "
+        "it with a CdRom enumerated under it, and (AHCI_POLLING / AHCI_IRQ_STUCK) unless "
+        "QEMU's own trace shows the driver's commands completing by interrupt",
+    )
+    s.add_argument(
+        "--isa-ide",
+        action="store_true",
+        help="i386 only: an ISA IDE controller on the tertiary legacy channel "
+        "(0x1E8/0x3EE, IRQ 11) with a disk, for legide on --ata-stack media. The boot "
+        "FAILS (LEGIDE_NOT_ENGAGED) unless legide reports the channel and atapi "
+        "enumerates the disk on it",
     )
     s.add_argument(
         "--gic",
@@ -372,6 +387,15 @@ def build_parser() -> argparse.ArgumentParser:
         "on bus 1 (VIBEOS_QEMU_NVME_BRIDGE=1), as a server's devices are. The boot FAILS "
         "(NVME_NOT_BEHIND_BRIDGE) unless pci.sys started on the root port and the controller "
         "behind it came up",
+    )
+    s.add_argument(
+        "--nvme-segment",
+        action="store_true",
+        help="arm64 only, implies --nvme: put the NVMe controller behind a root port on a "
+        "pxb-pcie expander at bus 0x80, and have the HAL present those buses as PCI segment 1 "
+        "(VIBEOS_QEMU_NVME_BRIDGE=segment, tripwire PCI_SEGMENT_SPLIT). The boot FAILS "
+        "(NVME_SEGMENT_NOT_PUBLISHED) unless the HAL published segment 1's root bus, and "
+        "otherwise as --nvme-bridge does",
     )
     s.add_argument(
         "--no-net",
@@ -577,9 +601,9 @@ def build_parser() -> argparse.ArgumentParser:
     f.add_argument(
         "--ahci",
         action="store_true",
-        help="soak with the boot CD on ich9-ahci (x86 only), same knob as "
-        "`smoke --ahci`; every boot must show uniata (or pciidex, on --ata-stack "
-        "media) driving AHCI",
+        help="soak with an ich9-ahci controller, same knob as `smoke --ahci`; every "
+        "boot must show uniata (or pciidex, on --ata-stack media) driving AHCI, on "
+        "interrupts",
     )
     f.add_argument(
         "--polite",

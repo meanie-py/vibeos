@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -28,15 +29,13 @@ extern "C" {
     fn SetFlag(Flags: *mut u32, Flag: u32);
 }
 extern "C" {
-}
-extern "C" {
     fn CdAllocateFcbIndex(IrpContext: *mut IRP_CONTEXT) -> *mut FCB;
 }
 extern "C" {
     fn CdAllocateFcbData(IrpContext: *mut IRP_CONTEXT) -> *mut FCB;
 }
 extern "C" {
-    fn CdBugCheck(a: u32, b: u32, c: u32);
+    fn CdBugCheck(a: usize, b: usize, c: usize);
 }
 extern "C" {
     fn CdFreePool(P: *mut *mut core::ffi::c_void);
@@ -52,9 +51,6 @@ extern "C" {
 }
 extern "C" {
     fn FsRtlSetupAdvancedHeader( Header: *mut FSRTL_ADVANCED_FCB_HEADER, Mutex: *mut FAST_MUTEX, );
-}
-extern "C" {
-    fn UNREFERENCED_PARAMETER(p: *mut IRP_CONTEXT);
 }
 extern "C" {
     fn _SEH2_AbnormalTermination() -> i32;
@@ -150,7 +146,6 @@ extern "C" {
     fn CdLbnToMmSsFf(lbn: u32, dest: *mut u8);
 }
 extern "C" {
-    fn NT_ASSERT(condition: i32);
 }
 extern "C" {
     fn CdUninitializeMcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
@@ -450,7 +445,7 @@ pub unsafe extern "C" fn CdInitializeVcb(
 ) {
     // PAGED_CODE();
     // UNREFERENCED_PARAMETER( IrpContext );
-    UNREFERENCED_PARAMETER(IrpContext);
+    UNREFERENCED_PARAMETER!(IrpContext);
 
     // RtlZeroMemory( Vcb, sizeof( VCB ));
     core::ptr::write_bytes(Vcb as *mut u8, 0, core::mem::size_of::<VCB>());
@@ -581,7 +576,7 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
     let mut UnlockVcb: bool = false;
     let mut StartingBlock: u32 = 0;
     let mut ByteCount: u32 = 0;
-    let mut FileId: LONGLONG = 0;
+    let FileId: LONGLONG = 0;
     let mut RawDirent: *mut RAW_DIRENT = core::ptr::null_mut();
     let mut PathEntry: PATH_ENTRY = core::mem::zeroed();
     let mut McbEntry: *mut CD_MCB_ENTRY = core::ptr::null_mut();
@@ -862,7 +857,7 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
             }
         },
         |_, _| {
-            if (*p_UnlockVcb) {
+            if *p_UnlockVcb  {
                 CdUnlockVcb(IrpContext, Vcb);
             }
         },
@@ -879,7 +874,7 @@ pub unsafe extern "C" fn CdDeleteVcb(
         PAGED_CODE!();
         ASSERT_EXCLUSIVE_CDDATA();
         ASSERT_EXCLUSIVE_VCB(Vcb);
-        UNREFERENCED_PARAMETER(IrpContext);
+        UNREFERENCED_PARAMETER!(IrpContext);
 
         CdFreePool(core::ptr::addr_of_mut!((*Vcb).SwapVpb) as *mut *mut core::ffi::c_void);
         CdFreePool(core::ptr::addr_of_mut!((*Vcb).Vpb) as *mut *mut core::ffi::c_void);
@@ -1158,10 +1153,10 @@ pub unsafe extern "C" fn CdCreateCcb(
     Fcb: *mut FCB,
     Flags: u32,
 ) -> *mut CCB {
-    let mut NewCcb: *mut CCB;
+    let NewCcb: *mut CCB;
 
     PAGED_CODE!();
-    UNREFERENCED_PARAMETER(IrpContext);
+    UNREFERENCED_PARAMETER!(IrpContext);
 
     NewCcb = CdAllocateCcb(IrpContext);
     RtlZeroMemory(NewCcb as *mut core::ffi::c_void, core::mem::size_of::<CCB>());
@@ -1324,7 +1319,7 @@ pub unsafe extern "C" fn CdTeardownStructures(
         },
         |_, _| {
             if (*p_AcquiredCurrentFcb) != 0 && !(*p_CurrentFcb).is_null() {
-                CdReleaseFcb(IrpContext, (*p_CurrentFcb));
+                CdReleaseFcb(IrpContext, *p_CurrentFcb );
             }
 
             ClearFlag(&mut (*(*IrpContext).TopLevel).Flags, IRP_CONTEXT_FLAG_IN_TEARDOWN);
@@ -1555,8 +1550,8 @@ pub unsafe extern "C" fn CdDeleteFcb(
 
     match (*fcb_hdr(Fcb)).NodeTypeCode as u32 {
         CDFS_NTC_FCB_PATH_TABLE | CDFS_NTC_FCB_INDEX => {
-            NT_ASSERT(((*fcb_idx(Fcb)).FileObject.is_null()) as i32);
-            NT_ASSERT(IsListEmpty(
+            NT_ASSERT!(((*fcb_idx(Fcb)).FileObject.is_null()) as i32);
+            NT_ASSERT!(IsListEmpty(
                 core::ptr::addr_of!((*fcb_idx(Fcb)).FcbQueue) as *mut LIST_ENTRY,
             ) as i32);
             if Fcb == (*(*Fcb).Vcb).RootIndexFcb {
@@ -1591,7 +1586,7 @@ pub unsafe extern "C" fn CdDeleteFcb(
 pub unsafe extern "C" fn CdCreateFcbNonpaged(IrpContext: *mut IRP_CONTEXT) -> *mut FCB_NONPAGED {
     // Unknown externs used by this function
 
-    let mut FcbNonpaged: *mut FCB_NONPAGED;
+    let FcbNonpaged: *mut FCB_NONPAGED;
 
     PAGED_CODE!();
 
@@ -1743,7 +1738,7 @@ pub unsafe extern "C" fn CdCreateFileLock(
     // Return or raise as appropriate.
     if FileLock.is_null() {
         if RaiseOnError != 0 {
-            NT_ASSERT((!IrpContext.is_null()) as i32); // ARGUMENT_PRESENT( IrpContext )
+            NT_ASSERT!((!IrpContext.is_null()) as i32); // ARGUMENT_PRESENT( IrpContext )
 
             CdRaiseStatus(IrpContext, STATUS_INSUFFICIENT_RESOURCES);
         }

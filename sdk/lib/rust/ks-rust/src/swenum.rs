@@ -66,9 +66,7 @@ unsafe fn IsEqualGUIDAligned(a: *const GUID, b: *const GUID) -> BOOLEAN {
     1u8
 }
 
-/// ASSERT / NT_VERIFY — retail (NDEBUG) builds evaluate the expression only.
-#[inline]
-unsafe fn ASSERT(_cond: bool) {}
+/// NT_VERIFY — retail (NDEBUG) builds evaluate the expression only.
 #[inline]
 unsafe fn NT_VERIFY(_cond: bool) {}
 
@@ -788,7 +786,7 @@ pub unsafe extern "C" fn KspStartBusDevice(
 
     DeviceEntry = (*(*ChildDeviceExtension).__bindgen_anon_2.DeviceEntry.as_ref()) as PBUS_DEVICE_ENTRY;
 
-    ASSERT(!DeviceEntry.is_null());
+    ASSERT!(!DeviceEntry.is_null());
 
     (*DeviceEntry).PDODeviceName = Name;
     (*DeviceEntry).DeviceState = Started;

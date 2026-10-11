@@ -10,9 +10,6 @@ extern "C" {
     fn sprintf(s: *mut i8, format: *const i8, ...) -> i32;
     fn UiMessageBoxCritical(MessageText: *const i8);
 }
-extern "system" {
-    fn UNREFERENCED_PARAMETER(x: PCSTR);
-}
 extern "C" {
     fn Rs232PortPutByte(b: u8);
     fn MachConsPutChar(c: i32);

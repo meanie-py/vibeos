@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{ERR, TRACE};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_LINUX; // linuxboot.c: DBG_DEFAULT_CHANNEL(LINUX)
 // linuxboot.rs — Rust translation of boot/freeldr/freeldr/linuxboot.c
 // BIOS-only (pcat.cmake); gated `#[cfg(not(feature = "uefi"))]` in lib.rs.
 use ntkrnl_sys::base::*;
@@ -6,8 +8,6 @@ use ntkrnl_sys::ddk::{ARC_STATUS, FILEINFORMATION, LARGE_INTEGER, PCSTR, PSTR};
 use core::ffi::c_void;
 
 extern "C" {
-    fn TRACE(fmt: *const i8, ...);
-    fn ERR(fmt: *const i8, ...);
 
     // UI surface (lib/ui/{ui,tui,...}.c).
     fn UiDrawBackdrop(BackdropTop: u32);
@@ -170,8 +170,7 @@ pub unsafe extern "C" fn LoadAndBootLinux(
         {
             ArgValue = GetArgumentValue(Argc, Argv, b"BootType\0".as_ptr() as PCSTR);
             if ArgValue.is_null() || *ArgValue == 0 || _stricmp(ArgValue, b"Linux\0".as_ptr() as PCSTR) != 0 {
-                ERR(b"Unexpected boot type '%s', aborting\n\0".as_ptr() as *const i8,
-                    if !ArgValue.is_null() { ArgValue } else { b"n/a\0".as_ptr() as PCSTR });
+                ERR!("Unexpected boot type '%s', aborting\n", if !ArgValue.is_null() { ArgValue } else { b"n/a\0".as_ptr() as PCSTR });
                 return EINVAL;
             }
         }
@@ -390,14 +389,14 @@ unsafe fn LinuxReadBootSector(LinuxKernelFile: ULONG) -> BOOLEAN {
         return 0u8;
     }
 
-    TRACE(b"SetupSectors: %d\n\0".as_ptr() as *const i8, (*LinuxBootSector).SetupSectors as u32);
-    TRACE(b"RootFlags:    0x%x\n\0".as_ptr() as *const i8, (*LinuxBootSector).RootFlags as u32);
-    TRACE(b"SystemSize:   0x%x\n\0".as_ptr() as *const i8, (*LinuxBootSector).SystemSize as u32);
-    TRACE(b"SwapDevice:   0x%x\n\0".as_ptr() as *const i8, (*LinuxBootSector).SwapDevice as u32);
-    TRACE(b"RamSize:      0x%x\n\0".as_ptr() as *const i8, (*LinuxBootSector).RamSize as u32);
-    TRACE(b"VideoMode:    0x%x\n\0".as_ptr() as *const i8, (*LinuxBootSector).VideoMode as u32);
-    TRACE(b"RootDevice:   0x%x\n\0".as_ptr() as *const i8, (*LinuxBootSector).RootDevice as u32);
-    TRACE(b"BootFlag:     0x%x\n\0".as_ptr() as *const i8, (*LinuxBootSector).BootFlag as u32);
+    TRACE!("SetupSectors: %d\n", (*LinuxBootSector).SetupSectors as u32);
+    TRACE!("RootFlags:    0x%x\n", (*LinuxBootSector).RootFlags as u32);
+    TRACE!("SystemSize:   0x%x\n", (*LinuxBootSector).SystemSize as u32);
+    TRACE!("SwapDevice:   0x%x\n", (*LinuxBootSector).SwapDevice as u32);
+    TRACE!("RamSize:      0x%x\n", (*LinuxBootSector).RamSize as u32);
+    TRACE!("VideoMode:    0x%x\n", (*LinuxBootSector).VideoMode as u32);
+    TRACE!("RootDevice:   0x%x\n", (*LinuxBootSector).RootDevice as u32);
+    TRACE!("BootFlag:     0x%x\n", (*LinuxBootSector).BootFlag as u32);
 
     1u8
 }
@@ -440,21 +439,21 @@ unsafe fn LinuxReadSetupSector(LinuxKernelFile: ULONG) -> BOOLEAN {
         return 0u8;
     }
 
-    TRACE(b"SetupHeaderSignature: 0x%x (HdrS)\n\0".as_ptr() as PCHAR, (*LinuxSetupSector).SetupHeaderSignature as u32);
-    TRACE(b"Version:              0x%x\n\0".as_ptr() as PCHAR, (*LinuxSetupSector).Version as u32);
-    TRACE(b"RealModeSwitch: 0x%x\n\0".as_ptr() as PCHAR, (*LinuxSetupSector).RealModeSwitch as u32);
-    TRACE(b"SetupSeg:       0x%x\n\0".as_ptr() as PCHAR, (*LinuxSetupSector).SetupSeg as u32);
-    TRACE(b"StartSystemSeg: 0x%x\n\0".as_ptr() as PCHAR, (*LinuxSetupSector).StartSystemSeg as u32);
-    TRACE(b"KernelVersion:  0x%x\n\0".as_ptr() as PCHAR, (*LinuxSetupSector).KernelVersion as u32);
-    TRACE(b"TypeOfLoader:   0x%x\n\0".as_ptr() as PCHAR, (*LinuxSetupSector).TypeOfLoader as u32);
-    TRACE(b"LoadFlags:      0x%x\n\0".as_ptr() as PCHAR, (*LinuxSetupSector).LoadFlags as u32);
-    TRACE(b"SetupMoveSize:  0x%x\n\0".as_ptr() as PCHAR, (*LinuxSetupSector).SetupMoveSize as u32);
-    TRACE(b"Code32Start:    0x%x\n\0".as_ptr() as PCHAR, (*LinuxSetupSector).Code32Start as u32);
-    TRACE(b"RamdiskAddress: 0x%x\n\0".as_ptr() as PCHAR, (*LinuxSetupSector).RamdiskAddress as u32);
-    TRACE(b"RamdiskSize:    0x%x\n\0".as_ptr() as PCHAR, (*LinuxSetupSector).RamdiskSize as u32);
-    TRACE(b"BootSectKludgeOffset:  0x%x\n\0".as_ptr() as PCHAR, (*LinuxSetupSector).BootSectKludgeOffset as u32);
-    TRACE(b"BootSectKludgeSegment: 0x%x\n\0".as_ptr() as PCHAR, (*LinuxSetupSector).BootSectKludgeSegment as u32);
-    TRACE(b"HeapEnd: 0x%x\n\0".as_ptr() as PCHAR, (*LinuxSetupSector).HeapEnd as u32);
+    TRACE!("SetupHeaderSignature: 0x%x (HdrS)\n", (*LinuxSetupSector).SetupHeaderSignature as u32);
+    TRACE!("Version:              0x%x\n", (*LinuxSetupSector).Version as u32);
+    TRACE!("RealModeSwitch: 0x%x\n", (*LinuxSetupSector).RealModeSwitch as u32);
+    TRACE!("SetupSeg:       0x%x\n", (*LinuxSetupSector).SetupSeg as u32);
+    TRACE!("StartSystemSeg: 0x%x\n", (*LinuxSetupSector).StartSystemSeg as u32);
+    TRACE!("KernelVersion:  0x%x\n", (*LinuxSetupSector).KernelVersion as u32);
+    TRACE!("TypeOfLoader:   0x%x\n", (*LinuxSetupSector).TypeOfLoader as u32);
+    TRACE!("LoadFlags:      0x%x\n", (*LinuxSetupSector).LoadFlags as u32);
+    TRACE!("SetupMoveSize:  0x%x\n", (*LinuxSetupSector).SetupMoveSize as u32);
+    TRACE!("Code32Start:    0x%x\n", (*LinuxSetupSector).Code32Start as u32);
+    TRACE!("RamdiskAddress: 0x%x\n", (*LinuxSetupSector).RamdiskAddress as u32);
+    TRACE!("RamdiskSize:    0x%x\n", (*LinuxSetupSector).RamdiskSize as u32);
+    TRACE!("BootSectKludgeOffset:  0x%x\n", (*LinuxSetupSector).BootSectKludgeOffset as u32);
+    TRACE!("BootSectKludgeSegment: 0x%x\n", (*LinuxSetupSector).BootSectKludgeSegment as u32);
+    TRACE!("HeapEnd: 0x%x\n", (*LinuxSetupSector).HeapEnd as u32);
 
     1u8
 }
@@ -481,10 +480,7 @@ unsafe fn LinuxReadKernel(LinuxKernelFile: ULONG) -> BOOLEAN {
     if LinuxKernelLoadAddress != LINUX_KERNEL_LOAD_ADDRESS as PVOID {
         LinuxKernelLoadAddress = MmAllocateMemoryWithType(LinuxKernelSize as usize, LoaderSystemCode);
         if LinuxKernelLoadAddress == core::ptr::null_mut() {
-            TRACE(
-                b"Failed to allocate 0x%lx bytes for the kernel image.\n\0".as_ptr() as PCHAR,
-                LinuxKernelSize,
-            );
+            TRACE!("Failed to allocate 0x%lx bytes for the kernel image.\n", LinuxKernelSize);
             return 0u8;
         }
     }
@@ -576,26 +572,17 @@ unsafe fn LinuxReadInitrd(LinuxInitrdFile: u32) -> u8 {
     }
     #[cfg(target_arch = "x86_64")]
     {
-        ASSERT((LinuxInitrdLoadAddress as usize) < 0x100000000);
+        ASSERT!((LinuxInitrdLoadAddress as usize) < 0x100000000);
     }
 
     (*LinuxSetupSector).RamdiskAddress = PtrToUlong(LinuxInitrdLoadAddress);
     (*LinuxSetupSector).RamdiskSize = LinuxInitrdSize;
 
-    TRACE(
-        b"RamdiskAddress: 0x%x\n\0".as_ptr() as *const i8,
-        (*LinuxSetupSector).RamdiskAddress
-    );
-    TRACE(
-        b"RamdiskSize:    0x%x\n\0".as_ptr() as *const i8,
-        (*LinuxSetupSector).RamdiskSize
-    );
+    TRACE!("RamdiskAddress: 0x%x\n", (*LinuxSetupSector).RamdiskAddress);
+    TRACE!("RamdiskSize:    0x%x\n", (*LinuxSetupSector).RamdiskSize);
 
     if (*LinuxSetupSector).Version >= 0x0203 {
-        TRACE(
-            b"InitrdAddressMax: 0x%x\n\0".as_ptr() as *const i8,
-            (*LinuxSetupSector).InitrdAddressMax
-        );
+        TRACE!("InitrdAddressMax: 0x%x\n", (*LinuxSetupSector).InitrdAddressMax);
     }
 
     BytesLoaded = 0;

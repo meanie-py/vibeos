@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use crate::types::*;
 use kmdf_sys::*;
 use ntkrnl_sys::ddk::{IRP, PIRP, IO_STACK_LOCATION, PIO_STACK_LOCATION, GUID, LPGUID, LPCGUID, DEVICE_OBJECT, PDEVICE_OBJECT, MDL, PMDL};
@@ -13,8 +14,6 @@ use ntkrnl_sys::ddk::_DEVICE_RELATION_TYPE_BusRelations as BusRelations;
 use core::ffi::c_void;
 use core::ptr;
 
-extern "C" {
-}
 extern "system" {
     fn SET_FLAG(flags: *mut u32, flag: u32);
     fn TEST_FLAG(flags: u32, flag: u32) -> i32;
@@ -39,8 +38,6 @@ unsafe extern "C" {
     fn RTL_SIZEOF_THROUGH_FIELD_SENSE_DATA_AdditionalSenseCodeQualifier() -> usize;
 }
 unsafe extern "C" {
-}
-unsafe extern "C" {
     fn MediaReadCapacity(Device: *mut core::ffi::c_void) -> i32;
 }
 unsafe extern "C" {
@@ -55,7 +52,6 @@ extern "C" {
     fn DeviceReleaseQueue(device: *mut core::ffi::c_void);
 }
 extern "system" {
-    fn NT_ASSERT(Expression: i32);
 }
 
 // ---- file-scope preamble (translated) ----
@@ -2273,7 +2269,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
     Status: *mut i32,
     RetryIntervalIn100ns: *mut i64,
 ) -> i32 {
-    NT_ASSERT((!(*DeviceExtension).ScratchContext.ScratchInUse.is_null()) as i32);
+    NT_ASSERT!((!(*DeviceExtension).ScratchContext.ScratchInUse.is_null()) as i32);
     RequestSenseInfoInterpret(
         DeviceExtension,
         (*DeviceExtension).ScratchContext.ScratchRequest as *mut core::ffi::c_void,

@@ -549,14 +549,10 @@ pub unsafe extern "system" fn TransferPacketRetryTimerDpc(
             ((core::mem::size_of::<SENSE_DATA_EX>() as UCHAR) as u32) as _,
         );
     } else {
-        NT_ASSERT(
-            (SrbGetSenseInfoBuffer((*pkt).Srb as PVOID) as *mut core::ffi::c_void
-                == core::ptr::addr_of_mut!((*pkt).SrbErrorSenseData) as *mut core::ffi::c_void) as u8,
-        );
-        NT_ASSERT(
-            (SrbGetSenseInfoBufferLength((*pkt).Srb as PVOID) as usize
-                <= core::mem::size_of::<SENSE_DATA_EX>()) as u8,
-        );
+        NT_ASSERT!((SrbGetSenseInfoBuffer((*pkt).Srb as PVOID) as *mut core::ffi::c_void
+                == core::ptr::addr_of_mut!((*pkt).SrbErrorSenseData) as *mut core::ffi::c_void) as u8);
+        NT_ASSERT!((SrbGetSenseInfoBufferLength((*pkt).Srb as PVOID) as usize
+                <= core::mem::size_of::<SENSE_DATA_EX>()) as u8);
     }
 
     core::ptr::write_bytes(
@@ -574,8 +570,8 @@ pub unsafe extern "C" fn InitLowMemRetry(
     Len: u32,
     TargetLocation: LARGE_INTEGER,
 ) {
-    NT_ASSERT(if Len > 0 { 1u8 } else { 0u8 });
-    NT_ASSERT(if (*Pkt).InLowMemRetry == 0 { 1u8 } else { 0u8 });
+    NT_ASSERT!(if Len > 0 { 1u8 } else { 0u8 });
+    NT_ASSERT!(if (*Pkt).InLowMemRetry == 0 { 1u8 } else { 0u8 });
     if (*Pkt).DriverUsesStartIO != 0 {
         (*Pkt).InLowMemRetry = 0u8;
     } else {
@@ -682,7 +678,6 @@ extern "C" {
     
 }
 extern "system" {
-    fn NT_ASSERT(cond: u8);
     fn SrbGetCdb(srb: PVOID) -> PCDB;
     fn SrbSetDataBuffer(srb: PVOID, buf: PVOID);
     fn SrbSetDataTransferLength(srb: PVOID, len: ULONG);

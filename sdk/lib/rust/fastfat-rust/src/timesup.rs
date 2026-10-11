@@ -4,14 +4,13 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{ExLocalTimeToSystemTime, ExSystemTimeToLocalTime, LARGE_INTEGER, PLARGE_INTEGER, RtlTimeFieldsToTime, RtlTimeToTimeFields, TIME_FIELDS};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{FAT_DATE, FAT_TIME_STAMP, PFAT_TIME_STAMP, PIRP_CONTEXT};
+use crate::types::{AlmostTwoSeconds, FAT_DATE, FAT_TIME_STAMP, PFAT_TIME_STAMP, PIRP_CONTEXT};
 use ntkrnl_sys::ddk::{CSHORT, PCSTR};
 
 extern "system" {
     fn KeGetCurrentIrql() -> KIRQL;
     } extern "C" { fn DbgPrint(format: PCSTR, ...); } extern "system" {
     fn RtlAssert( assert_expression: PVOID, source_file: PVOID, line_number: ULONG, message: PVOID, );
-    fn UNREFERENCED_PARAMETER(param: *mut core::ffi::c_void);
     static mut SharedSystemTime: u64;
 }
 
@@ -19,7 +18,6 @@ extern "system" {
 // No file-scope declarations to translate; the original C preamble contains only #pragma directives,
 // which are not types, constants, or tables and have no Rust equivalent in this context.
 
-const AlmostTwoSeconds: i64 = 19980000;
 const APC_LEVEL: KIRQL = 1;
 
 
@@ -61,7 +59,7 @@ pub unsafe extern "system" fn FatNtTimeToFatTime(
     }
 
     if Rounding != 0 {
-        (*NtTime).QuadPart = ((*NtTime).QuadPart as i64 + AlmostTwoSeconds) as LONGLONG;
+        (*NtTime).QuadPart = ((*NtTime).QuadPart as i64 + AlmostTwoSeconds as i64) as LONGLONG;
     }
 
     ExSystemTimeToLocalTime(NtTime, NtTime);
@@ -223,7 +221,7 @@ pub unsafe extern "system" fn FatFatTimeToNtTime(
         );
     }
 
-    UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
+    UNREFERENCED_PARAMETER!(IrpContext as *mut core::ffi::c_void);
 
     return Time;
 }
@@ -263,7 +261,7 @@ pub unsafe extern "system" fn FatGetCurrentFatTime(IrpContext: PIRP_CONTEXT) -> 
     );
 
     // AlmostTwoSeconds addition
-    Time.QuadPart = Time.QuadPart + AlmostTwoSeconds;
+    Time.QuadPart = Time.QuadPart + AlmostTwoSeconds as LONGLONG;
 
     RtlTimeToTimeFields(
         core::ptr::addr_of_mut!(Time),

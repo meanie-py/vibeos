@@ -12,6 +12,19 @@
 //! wdfdriverentry stub (FxDriverEntry) stays the linker entry point and binds the
 //! framework before invoking this crate's DriverEntry.
 
+// NT_ASSERT is a checked-build assertion (wdm.h): its operand is never evaluated in a free
+// build. It was an extern `fn`, so every call evaluated its argument out of line (cachesup.rs
+// documents a fault that caused). `debug_assert!` type-checks it and evaluates nothing here.
+#[macro_export]
+macro_rules! NT_ASSERT { ($($t:tt)*) => { ntkrnl_sys::nt_assert!($($t)*) }; }
+
+// UNREFERENCED_PARAMETER is a macro in the DDK headers; an out-of-line no-op fn is an
+// optimization barrier that can uncloak an ABI mismatch.
+#[allow(unused_macros)]
+macro_rules! UNREFERENCED_PARAMETER {
+    ($($p:expr),* $(,)?) => {{ $( let _ = $p; )* }};
+}
+
 // PAGED_CODE() is the DDK's "pageable code" IRQL assertion (xdk/kefuncs.h): NOP_FUNCTION in
 // a free build, and a no-op here. It is a macro, never a fn -- an out-of-line no-op call is an
 // optimization barrier, and an `extern` one resolved by whichever crate happened to export it.

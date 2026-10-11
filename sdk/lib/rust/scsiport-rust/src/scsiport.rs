@@ -12,6 +12,7 @@ use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{ANSI_STRING, CM_PARTIAL_RESOURCE_DESCRIPTOR, CM_RESOURCE_LIST, CM_SCSI_DEVICE_DATA, DEVICE_DESCRIPTION, HalAllocateCommonBuffer, HalAssignSlotResources, HalGetBusData, HalGetInterruptVector, HalTranslateBusAddress, INT64, IoMapTransfer, IoQueryDeviceDescription, IoStartPacket, KeSynchronizeExecution, MAPPED_ADDRESS, MmMapIoSpace, MmUnmapIoSpace, _OBJECT_ATTRIBUTES, PCCHAR, PCI_COMMON_CONFIG, PCI_SLOT_NUMBER, PCM_FULL_RESOURCE_DESCRIPTOR, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_RESOURCE_LIST, PCM_SCSI_DEVICE_DATA, PCONFIGURATION_INFORMATION, PDEVICE_OBJECT, PDRIVER_OBJECT, PHYSICAL_ADDRESS, PIO_STACK_LOCATION, PIRP, PKAFFINITY, PKEY_VALUE_FULL_INFORMATION, PKINTERRUPT, PKIRQL, PMAPPED_ADDRESS, PPCI_SLOT_NUMBER, PUNICODE_STRING, RtlUnicodeStringToAnsiString, UINT8, ZwEnumerateValueKey, _KDPC, va_list, CM_FULL_RESOURCE_DESCRIPTOR, CONFIGURATION_INFORMATION, DEVICE_OBJECT, DRIVER_OBJECT, INTERFACE_TYPE, IO_ALLOCATION_ACTION, IO_STACK_LOCATION, IRP, KEY_VALUE_FULL_INFORMATION, KTIMER, _UNICODE_STRING};
 use core::ffi::c_void;
+use crate::types::MAX_SG_LIST;
 use core::mem::{align_of, size_of, offset_of};
 // The C-variadic entry points (ScsiDebugPrint / ScsiPortNotification) live in
 // drivers/storage/port/scsiport/rust_varargs_shim.c — stable Rust cannot DEFINE one
@@ -1918,7 +1919,6 @@ pub unsafe extern "system" fn SpiAdapterControl(
     Context: PVOID,
 ) -> i32 {
     // Max SG list constant from headers
-    const MAX_SG_LIST: u32 = 26;
     // SCSI request flags
     const SRB_FLAGS_DATA_OUT: u32 = 0x00000080;
     const SRB_FLAGS_SGLIST_FROM_POOL: u32 = 0x00040000;

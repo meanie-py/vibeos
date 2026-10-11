@@ -83,7 +83,14 @@ run_bindgen() {
 }
 
 run_bindgen arm64 aarch64-pc-windows-gnu -D_WIN64 -DWIN64 -D_M_ARM64 -D__aarch64__ -D__arm64__ -D_ARM64_
-run_bindgen amd64 x86_64-pc-windows-gnu  -D_WIN64 -DWIN64 -D_M_AMD64 -D__x86_64__ -D_AMD64_
+# amd64: -UWIN32. The *-windows-gnu target predefines WIN32, which sends acenv.h to
+# acwin.h (ACPI_MACHINE_WIDTH 32) before it reaches the WIN64 branch; the real amd64
+# compile defines no WIN32 and gets acwin64.h, i.e. a 64-bit ACPI_SIZE. Generated
+# without this, every ACPI_BUFFER the Rust built had a 4-byte Length over a field
+# ACPICA reads as 8, so ACPI_ALLOCATE_BUFFER arrived with garbage in its high half
+# (AE_BAD_PARAMETER). arm64 and i386 really are 32-wide (their compiles define WIN32).
+# Check against the real flags with `-E -dM` on an acpica TU from compile_commands.json.
+run_bindgen amd64 x86_64-pc-windows-gnu  -UWIN32 -D_WIN64 -DWIN64 -D_M_AMD64 -D__x86_64__ -D_AMD64_
 run_bindgen i386  i686-pc-windows-gnu    -D_M_IX86 -D__i386__ -D_X86_
 echo "=== done ==="
 

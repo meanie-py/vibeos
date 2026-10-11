@@ -65,3 +65,19 @@ def test_large_plain_chunks_and_escaped_string_tail():
     text = "pub const LONG_BINDING: usize = 42;\n" * 20000
     for suffix in ("/* nested /* block */ comment */", "// tail\r\nmod live;", '"unterminated\\'):
         assert strip_comments(text + suffix) == reference(text + suffix)
+
+
+def test_path_mod_inside_inline_module_resolves_under_it(tmp_path):
+    """ndis: `pub mod ndis { #[path = "30stubs.rs"] pub mod _30stubs; }` is src/ndis/30stubs.rs."""
+    import rust_module_tree as rmt
+
+    crate = tmp_path / "x-rust"
+    (crate / "src" / "ndis").mkdir(parents=True)
+    (crate / "Cargo.toml").write_text('[package]\nname = "x"\n')
+    (crate / "src" / "lib.rs").write_text(
+        'pub mod ndis {\n    #[path = "30stubs.rs"] pub mod _30stubs;\n    pub mod io;\n}\n'
+    )
+    (crate / "src" / "ndis" / "30stubs.rs").write_text("pub fn a() {}\n")
+    (crate / "src" / "ndis" / "io.rs").write_text("pub fn b() {}\n")
+    live = {Path(f).name for f in rmt.crate_live_files(str(crate))}
+    assert {"30stubs.rs", "io.rs"} <= live

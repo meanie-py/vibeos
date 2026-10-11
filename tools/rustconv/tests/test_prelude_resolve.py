@@ -132,6 +132,18 @@ def test_a_sibling_definition_is_imported_and_promoted(tmp_path):
     assert pr.existing_siblings(p) == {"INF_GetData": "infsupp"}
 
 
+def test_a_sibling_struct_is_found_for_a_hoisted_alias(tmp_path):
+    # cmd: the prelude's LPDIRSWITCHFLAGS = *mut _DirSwitchesFlags, the struct in dir.rs.
+    mods = tmp_path / "cmd"
+    mods.mkdir()
+    (mods / "dir.rs").write_text("#[repr(C)]\npub struct _DirSwitchesFlags {\n    pub b: i32,\n}\n")
+    (mods / "vol.rs").write_text("#[repr(C)]\nstruct Private {\n    x: i32,\n}\n")
+    found = pr.sibling_definitions({"_DirSwitchesFlags", "Private"}, mods)
+    assert found == {"_DirSwitchesFlags": [("dir", True)], "Private": [("vol", False)]}
+    assert pr.promote_pub(mods / "vol.rs", "Private")
+    assert "pub struct Private" in (mods / "vol.rs").read_text()
+
+
 def test_shared_constants_are_reexported_unless_the_prelude_defines_them(tmp_path):
     src = tmp_path / "src"
     src.mkdir()
@@ -321,3 +333,83 @@ def test_clang_param_count_reads_past_the_calling_convention():
     )
     assert param_count("void (*)(SHORT, SHORT, LPCSTR, ...)") == 4
     assert param_count("int (*)(int (*)(int, int), char)") == 2
+
+
+def test_a_crate_local_path_is_not_copied_into_another_crate():
+    """shell32's `IDC_WAIT: crate::island::LPCWSTR` named shell32's own module; copied into
+    notepad it resolved to nothing."""
+    assert pr._norm(
+        "pub const IDC_WAIT: crate::island::LPCWSTR = 32514isize as crate::island::LPCWSTR;"
+    ) == ("const IDC_WAIT: LPCWSTR = 32514isize as LPCWSTR;")
+
+
+def test_bindgen_declarations_outvote_a_hand_written_extern():
+    """One crate's `extern "C" { fn CloseHandle }` (a stdcall import) vetoed every module."""
+    pick, why = consensus(
+        "CloseHandle",
+        [
+            F("fn CloseHandle(hObject: HANDLE) -> BOOL;", '"C"', "x-rust/src/prelude.rs"),
+            F("fn CloseHandle(arg1: HANDLE) -> BOOL;", '"system"', "w-sys/src/bindgen_i386.rs"),
+            F("fn CloseHandle(arg1: HANDLE) -> BOOL;", '"C"', "y-rust/src/types_amd64.rs"),
+        ],
+    )
+    assert pick is not None and pick.abi == '"system"', why
+    # a 64-bit island's "C" is not evidence: it has no stdcall to write
+    pick, why = consensus(
+        "HeapFree",
+        [
+            F("fn HeapFree(a: HANDLE) -> BOOL;", '"system"', "x-rust/src/prelude.rs"),
+            F("fn HeapFree(a: HANDLE) -> BOOL;", '"C"', "y-rust/src/types_amd64.rs"),
+        ],
+    )
+    assert pick is not None and pick.abi == '"system"', why
+    # without bindgen evidence the disagreement still refuses
+    pick, why = consensus("F", [F("fn F();", '"C"', "a.rs"), F("fn F();", '"system"', "b.rs")])
+    assert pick is None and "ABI disagreement" in why
+
+
+def test_long_ptr_aliases_are_winapi_even_when_clang_saw_a_macro():
+    block = pr.render_externs(
+        {
+            "GetWindowLongPtrW": (
+                "C",
+                "fn GetWindowLongPtrW(arg1: HWND, arg2: c_int) -> LONG_PTR;",
+                "x",
+            )
+        }
+    )
+    assert 'extern "system" {' in block and 'extern "C"' not in block
+    assert 'link_name = "GetWindowLongW"' in block
+
+
+def test_an_extern_static_is_copied_from_the_island():
+    """uuid's GUID_NULL: an island `static GUID_NULL: GUID;` beats a crate's const copy."""
+    from rustconv.prelude_resolve import Item, consensus, render
+
+    items = [
+        Item("static", "static GUID_NULL: GUID;", '"C"', "audiosrv-rust/src/types_i386.rs"),
+        Item("const", "const GUID_NULL: GUID = GUID { Data1: 0 };", None, "x-rust/src/lib.rs"),
+    ]
+    pick, why = consensus("GUID_NULL", items)
+    assert pick is items[0], why
+    assert 'extern "C" {\n    pub static GUID_NULL: GUID;' in render({"GUID_NULL": pick})
+
+
+def test_a_bare_long_ptr_with_only_64bit_link_names_gets_the_i386_alias():
+    """mspaint's prelude copied `GetWindowLongPtr` with x86_64/aarch64 link_names only, and
+    i386 linked the literal macro name: `undefined symbol: _GetWindowLongPtr@8`."""
+    from rustconv.prelude_resolve import _x86_alias
+
+    sig = (
+        '#[cfg_attr(target_arch = "x86_64", link_name = "GetWindowLongPtrW")]\n'
+        "fn GetWindowLongPtr(hwnd: HWND, index: INT) -> LONG_PTR;"
+    )
+    assert _x86_alias(sig) == '    #[cfg_attr(target_arch = "x86", link_name = "GetWindowLongW")]\n'
+    assert (
+        _x86_alias("fn SetClassLongPtrA(h: HWND, i: INT, v: LONG_PTR) -> ULONG_PTR;").count(
+            '"SetClassLongA"'
+        )
+        == 1
+    )
+    done = '#[cfg_attr(target_arch = "x86", link_name = "GetWindowLongW")]\n' + sig
+    assert _x86_alias(done) == ""

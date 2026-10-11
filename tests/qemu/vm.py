@@ -395,10 +395,20 @@ def xhci_interrupts() -> str:
     return mode
 
 
-def nvme_bridged() -> bool:
-    """VIBEOS_QEMU_NVME_BRIDGE=1 (arm64): the NVMe controller sits behind a PCIe root
-    port, on bus 1, the way a server's devices do, instead of on the root bus."""
-    return os.environ.get("VIBEOS_QEMU_NVME_BRIDGE", "").strip() in ("1", "true", "yes")
+def nvme_bridge() -> str:
+    """VIBEOS_QEMU_NVME_BRIDGE (arm64): what the NVMe controller sits behind. `port`
+    (or 1): a PCIe root port, on bus 1, the way a server's devices do. `segment`: a
+    root port on a pxb-pcie expander whose buses start at 0x80, which the
+    PCI_SEGMENT_SPLIT tripwire has the HAL present as PCI segment 1. Empty: the root
+    bus."""
+    mode = os.environ.get("VIBEOS_QEMU_NVME_BRIDGE", "").strip()
+    if mode in ("", "0"):
+        return ""
+    if mode in ("1", "true", "yes", "port"):
+        return "port"
+    if mode == "segment":
+        return mode
+    raise ValueError(f"VIBEOS_QEMU_NVME_BRIDGE={mode!r}: expected port or segment")
 
 
 def testkernel_boot_img(src: Path, work_dir: Path) -> Path:
@@ -472,6 +482,43 @@ def testkernel_boot_img(src: Path, work_dir: Path) -> Path:
 def _maybe_smp_iso(iso: Path, work_dir: Path) -> Path:
     """`smp_selected_iso` when this run asked for SMP, else the media untouched."""
     return smp_selected_iso(iso, work_dir) if smp_count() else iso
+
+
+def writable_root() -> bool:
+    """`VIBEOS_WRITABLE_ROOT=1`: boot x86 off a writable FAT ramdisk instead of the CD.
+
+    The plain livecd puts SystemRoot on read-only CDFS, so a guest that writes a file
+    there (most of the file/section kmtests) fails with ACCESS_DENIED and skips the
+    rest of its test. arm64 always boots a writable ramdisk. Conformance sets this.
+    """
+    return os.environ.get("VIBEOS_WRITABLE_ROOT", "").strip() == "1"
+
+
+def livecd_media(build_dir: Path) -> Path:
+    """The x86 boot ISO: livecd.iso, or its writable-root twin (tools/conformance/
+    mk_writable_livecd.py, rebuilt only when livecd.iso changes) under writable_root()."""
+    iso = build_dir / "livecd.iso"
+    if not writable_root():
+        return iso
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "mk_writable_livecd", PROJECT_DIR / "tools" / "conformance" / "mk_writable_livecd.py"
+    )
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.ensure(build_dir)
+
+
+def livecd_memory(memory: str) -> str:
+    """The whole ramdisk is loaded into guest RAM (~300-430MB) and the file cache sits on
+    top of it, so the writable-root boot gets 2G; the plain livecd keeps its configured
+    size. At 1G amd64 ran short: MmAllocatePagesForMdl got 166 of 512 pages (MmMdl
+    594/0 -> 211/7) and RtlException's stack-overflow probe took IN_PAGE_ERROR instead."""
+    if writable_root() and memory.upper().endswith("M") and int(memory[:-1]) < 2048:
+        return "2G"
+    return memory
 
 
 # --- `vibeos-cli stress` knobs ------------------------------------------------
@@ -788,6 +835,9 @@ class ArchConfig:
     # Validated by test_milestones after wait_for_boot completes.
     # Order is informational — we report which milestones were reached / missed.
     required_milestones: list[str] = field(default_factory=list)
+    # Attach the \\TEMP disk (`temp_disk_args`). A boot that lays out its own disks turns it
+    # off: the install smoke's target must be disk 0, and the extra disk would take its slot.
+    temp_disk: bool = True
 
     def qemu_args(self, work_dir: Path) -> list[str]:
         """Build full QEMU command line. Subclasses override via callbacks."""
@@ -936,6 +986,16 @@ class Arm64Config(ArchConfig):
                 if boot_nvme()
                 else [
                     "-drive",
+                    f"file={boot_img},format=raw,if=none,id=bootvirtio,readonly=on,file.locking=off",
+                    "-device",
+                    # Where if=virtio puts it, and where efivars' boot path says.
+                    "virtio-blk-pci,drive=bootvirtio,bus=pcie.0,addr=0x2",
+                ]
+                if nvme_bridge() == "segment"
+                # A bare if=virtio drive goes on the newest PCI bus, which would be
+                # the expander's, and that takes only bridges.
+                else [
+                    "-drive",
                     f"file={boot_img},format=raw,if=virtio,readonly=on,file.locking=off",
                 ]
             ),
@@ -1008,7 +1068,7 @@ class I386UefiConfig(I386Config):
     arch: str = "i386-uefi"
 
     def qemu_args(self, work_dir: Path) -> list[str]:
-        iso = _maybe_smp_iso(PROJECT_DIR / "build-i386" / "livecd.iso", work_dir)
+        iso = _maybe_smp_iso(livecd_media(PROJECT_DIR / "build-i386"), work_dir)
         ovmf_code = QEMU_DIR / "OVMF32_CODE.fd"
         ovmf_vars_src = QEMU_DIR / "OVMF32_VARS.fd"
         # The writable VARS pflash must be qcow2: QMP savevm refuses to
@@ -1026,7 +1086,7 @@ class I386UefiConfig(I386Config):
         return [
             *self.machine_args,
             "-m",
-            self.memory,
+            livecd_memory(self.memory),
             "-drive",
             f"if=pflash,format=raw,file={ovmf_code},readonly=on",
             "-drive",
@@ -1241,7 +1301,7 @@ class Amd64UefiConfig(Amd64Config):
     arch: str = "amd64-uefi"
 
     def qemu_args(self, work_dir: Path) -> list[str]:
-        iso = _maybe_smp_iso(PROJECT_DIR / "build-amd64" / "livecd.iso", work_dir)
+        iso = _maybe_smp_iso(livecd_media(PROJECT_DIR / "build-amd64"), work_dir)
         ovmf_code = Path("/usr/share/OVMF/OVMF_CODE_4M.fd")
         ovmf_vars_src = Path("/usr/share/OVMF/OVMF_VARS_4M.fd")
         # Writable VARS pflash must be qcow2 for QMP savevm (raw is rejected).
@@ -1267,7 +1327,7 @@ class Amd64UefiConfig(Amd64Config):
         return [
             *machine,
             "-m",
-            "6G" if "mem" in hazards else self.memory,
+            "6G" if "mem" in hazards else livecd_memory(self.memory),
             "-drive",
             f"if=pflash,format=raw,file={ovmf_code},readonly=on",
             "-drive",
@@ -1385,6 +1445,12 @@ def _unique_launch_port(picker: Callable[[], int]) -> int:
             _selected_launch_ports.add(port)
             return port
     raise RuntimeError("port allocator repeatedly returned a port already assigned to this QEMU")
+
+
+# QEMU trace events behind `--ahci`'s interrupt check (smoke._ahci_irq_check): a command
+# the device finished, and the controller's INTx going up and (the guest's ISR having
+# cleared PxIS/IS) back down.
+AHCI_TRACE_EVENTS = ("ahci_cmd_done", "ahci_irq_raise", "ahci_irq_lower")
 
 
 TEMP_DISK_MB = 64
@@ -2163,6 +2229,8 @@ class QemuVM:
         _scratch_device_args), and partmgr expects a table.
         No bootindex, so OVMF never tries it ahead of the CD. qcow2 so savevm works.
         """
+        if not self.config.temp_disk:
+            return []
         return temp_disk_args(self.config.arch, self.scratch_path.parent)
 
     def _usb_disk_args(self) -> list[str]:
@@ -2210,7 +2278,19 @@ class QemuVM:
         if not disk.exists():
             make_usb_stick_image(disk)
         drive = ["-drive", f"file={disk},format=qcow2,if=none,id=nvme0"]
-        if nvme_bridged():
+        if nvme_bridge() == "segment":
+            # The expander takes slot 9; its root port is bus 0x80's device 0 and the
+            # controller is device 0 on the bus behind that.
+            return [
+                *drive,
+                "-device",
+                "pxb-pcie,id=pxb0,bus_nr=0x80,bus=pcie.0,addr=0x9",
+                "-device",
+                "pcie-root-port,id=nvmeport,chassis=1,slot=1,bus=pxb0,addr=0x0",
+                "-device",
+                "nvme,serial=VIBEOSNVME0,drive=nvme0,bus=nvmeport",
+            ]
+        if nvme_bridge():
             # The root port takes slot 9 instead; the controller is its bus's device 0.
             return [
                 *drive,
@@ -2238,6 +2318,58 @@ class QemuVM:
             f"file={disk},format=qcow2,if=none,id=viommio0",
             "-device",
             "virtio-blk-device,drive=viommio0",
+        ]
+
+    def _ahci_args(self) -> list[str]:
+        """VIBEOS_AHCI_CD=1 on arm64 (`smoke --ahci`): an ich9-ahci controller with the
+        USB stick's 64M MBR + FAT16 image on port 0 and an empty CD drive on port 1. x86
+        moves its boot CD onto the controller instead (backend.rewrite_accel); arm64
+        boots a ramdisk, so there is no CD to move and the controller gets its own
+        disks. Pinned to PCI slot 10 for the reason xHCI and NVMe are pinned to 8 and 9:
+        auto-assigned, it would take slot 2 from the boot disk saved in efivars.
+
+        On every arch it also turns on QEMU's own AHCI trace events (to the QEMU stderr
+        log), from which smoke's `_ahci_irq_check` proves the guest driver ran on
+        interrupts: a driver that silently polled works just as well, only slower."""
+        if os.environ.get("VIBEOS_AHCI_CD", "").strip() != "1":
+            return []
+        trace = [a for ev in AHCI_TRACE_EVENTS for a in ("-trace", ev)]
+        if not self.config.arch.startswith("arm64"):
+            return trace
+        disk = self.scratch_path.parent / "ahcidisk.qcow2"
+        if not disk.exists():
+            make_usb_stick_image(disk)
+        return [
+            "-device",
+            "ich9-ahci,id=ahci0,addr=0xa",
+            "-drive",
+            f"file={disk},format=qcow2,if=none,id=ahcihd",
+            "-device",
+            "ide-hd,bus=ahci0.0,drive=ahcihd",
+            "-device",
+            "ide-cd,bus=ahci0.1",
+            *trace,
+        ]
+
+    def _isa_ide_args(self) -> list[str]:
+        """VIBEOS_QEMU_ISA_IDE=1 on i386 (`smoke --isa-ide`): an ISA IDE controller on
+        the tertiary legacy channel (0x1E8/0x3EE, IRQ 11) holding the USB stick's 64M MBR +
+        FAT16 image. legide (i386, --ata-stack media) probes the four PC/AT channels, and
+        PIIX already owns the first two, so this is the only one it can find: without it,
+        its detection path never sees a device."""
+        flag = os.environ.get("VIBEOS_QEMU_ISA_IDE", "").strip()
+        if flag not in ("1", "true", "yes") or not self.config.arch.startswith("i386"):
+            return []
+        disk = self.scratch_path.parent / "isaidedisk.qcow2"
+        if not disk.exists():
+            make_usb_stick_image(disk)
+        return [
+            "-device",
+            "isa-ide,iobase=0x1e8,iobase2=0x3ee,irq=11,id=isaide",
+            "-drive",
+            f"file={disk},format=qcow2,if=none,id=isaidehd",
+            "-device",
+            "ide-hd,bus=isaide.0,drive=isaidehd",
         ]
 
     def _set_live_tee(self) -> None:
@@ -2484,6 +2616,8 @@ class QemuVM:
             *self._usb_disk_args(),
             *self._nvme_args(),
             *self._virtio_mmio_disk_args(),
+            *self._ahci_args(),
+            *self._isa_ide_args(),
             *self._temp_disk_args(),
         ]
         self._prepared_arch_args = (
@@ -2864,7 +2998,8 @@ class QemuVM:
                 )
             )
             os.replace(tmp_lock, self._lock_path)
-            atexit.register(lambda p=self._lock_path: p.unlink(missing_ok=True))
+            self._lock_atexit = lambda p=self._lock_path: p.unlink(missing_ok=True)
+            atexit.register(self._lock_atexit)
         except OSError:
             self._lock_path = None
 
@@ -3551,6 +3686,78 @@ class QemuVM:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
         except (ProcessLookupError, OSError):
             pass
+
+    def detach_for_debug(self, owner_pid: int, run_id: str) -> dict:
+        """Leave the VM RUNNING for a debugger instead of stopping it; return its handles.
+
+        `smoke --attach-on-fail`. What this process owned has to be handed over, or the
+        kept VM is either killed or lost the moment the launcher exits:
+          * the 30-min watchdog is a daemon thread of THIS process -- it goes, and the
+            cap lives on as the lock's fresh `deadline`, which the reaper enforces;
+          * the lock is re-registered under `owner_pid` (the session that will debug,
+            alive after we exit) as `{owner}-{qemu}.json`, the name `qemu/stop.sh`
+            removes, and its atexit unlink is dropped -- otherwise the lock vanished at
+            exit and the VM ran untracked, invisible to `ps`/`kill` and past any cap;
+          * the serial/QMP clients close: both are this process's sockets and cannot
+            outlive it, so the boot's serial.log is a SNAPSHOT from here on.
+        Slots and the CPU lease are released when this process exits (they are its
+        fds), so the kept VM runs outside slot accounting. That is deliberate: holding
+        a per-arch slot for up to the lifetime cap would queue every later same-arch
+        boot behind a VM nobody is booting."""
+        proc = self._proc
+        if proc is None or proc.poll() is not None:
+            raise RuntimeError("cannot keep a VM whose QEMU has already exited")
+        if self._watchdog is not None:
+            self._watchdog.cancel()
+            self._watchdog = None
+        self.serial.close()
+        self.qmp.close()
+        for server in self._echo_servers:
+            server.shutdown()
+            server.server_close()
+        self._echo_servers = []
+        deadline = int(time.time() + MAX_VM_LIFETIME_SECONDS)
+        old = getattr(self, "_lock_path", None)
+        info: dict = {}
+        if old is not None:
+            try:
+                info = json.loads(old.read_text())
+            except (OSError, ValueError):
+                info = {}
+        info.update(
+            launcher_pid=owner_pid,
+            qemu_pid=proc.pid,
+            arch=self.config.arch,
+            deadline=deadline,
+            run_id=run_id,
+            source="smoke --attach-on-fail",
+        )
+        LOCK_DIR.mkdir(parents=True, exist_ok=True)
+        lock = LOCK_DIR / f"{owner_pid}-{proc.pid}.json"
+        tmp = lock.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(info))
+        os.replace(tmp, lock)
+        if old is not None and old != lock:
+            old.unlink(missing_ok=True)
+        hook = getattr(self, "_lock_atexit", None)
+        if hook is not None:
+            atexit.unregister(hook)
+        self._lock_path = None
+        self._proc = None  # stop() is now a no-op on the process; it is no longer ours
+        handles = {
+            "qemu_pid": proc.pid,
+            "deadline": deadline,
+            "lock": str(lock),
+            "gdb_host": self.gdb_host,
+            "gdb_port": self.gdb_port or 0,
+            "win_uid": self._win_uid,
+            "staging": str(self._win_staging or ""),
+        }
+        # Neither is ours any more: a later stop() must not rmtree the staging the
+        # debugger is booting from, nor kill the kept VM by its uid.
+        self._win_staging = None
+        self._win_uid = ""
+        return handles
 
     def stop(self) -> None:
         """Kill QEMU process, clean up sockets."""

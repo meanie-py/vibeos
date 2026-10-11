@@ -686,6 +686,77 @@ the name, and dead `#if` arms dropped at integrate. Fix rounds: $0.0012. A read-
 found the dead `ImageList_Destroy` (now a loud integrate warning) and a heap overrun in the C's
 `create_connection_settings` (PAC URL bytes never counted in the size), fixed in the Rust.
 
+**notepad, the first application (2026-10-09).** 5 `.c`, 89 functions, $0.15 of Haiku plus
+$0.05 of `port fix`; `port replay` rebuilds it at 0/0/0 from the banks. Every gap it hit
+was an ARCH COMPARISON that counted an absent arch as agreement:
+`sdk_macros.object_expansions` probed only the arches where a name is a macro, so
+`SetWindowLongPtrW` (a macro on i386 alone) became `SetWindowLongW` on all three; and
+c2rust's agreement checks read a FALLBACK transpile (main.c fails on i386 and anchored from
+build-amd64), so `wcslen` was declared `-> c_ulonglong` with a second `size_t` beside the
+scaffold's. Both now need every arch, and c2rust's checks read `_native_text`. Also: the
+A/W switch's string constants (`FINDMSGSTRING` -> `FINDMSGSTRINGW`) are widened in UNICODE
+islands -- the narrow one broke Find/Replace; resolve no longer copies another crate's
+`crate::island::` paths; an SDK alias target c2rust cannot declare (`FormatMessageW`, a
+`va_list *` parameter) falls back to tree consensus and is never dropped silently; a
+bodyless free `fn` is dropped at integrate; a `#[no_mangle]` definition spelled with an SDK
+alias exports the real name (`_tWinMain` -> `wWinMain`, which the CRT calls); and
+strsafe-rust gained `StringCchCatNW`. Review fixes beyond the C: a UTF-16BE save that wrote
+stack bytes past its buffer (`&buffer[dwPos]`, a WCHAR index into a BYTE array), a
+command-line check that read before the string, and `unwrap_unchecked` on a NULL edit proc.
+
+**Batch A: twenty applications, one gate (2026-10-10).** ~$1.45 of Haiku for 20 modules
+(~420 functions). The residue was almost entirely $0 tooling, each a class:
+- **Shared crates over per-module copies:** `conutils-h` (conutils' header surface: streams,
+  `StdOut`, `ConInitStdStreams`, Puts/Printf -- turned cacls/logoff/runas/shutdown green at
+  $0); win32macros-rust gained wine's `WINE_*!`/`TRACE_ON!`, `HRESULT_FROM_WIN32!`, and the
+  CRT's dllimport data (`__argc`, `__wargv`, `_environ`) through their `__imp_` slots.
+- **integrate passes:** a bare `__argc`/`stdin` becomes the header's own accessor
+  expansion; `TRACE_ON(ch)` names the channel static; an all-zero array field becomes
+  `zeroed()` (c2rust froze amd64's 6-byte TBBUTTON padding into i386's 2); c2rust's
+  `c2rust_unnamed` members take bindgen's `__bindgen_anon_N`; a Rust `"x".as_ptr()` handed to
+  C gets its NUL; `NAME!(` is dropped back to a call when the prelude's NAME is a function.
+- **The variadic stage declares the trampolines** it generates, so a replay no longer loses
+  the `extern "C" { fn ErrorMsgBox(.., ...) }` a translation carried by hand.
+- **derive:** vendored TUs (vendor.yaml) stay C -- mstsc's 18 `vendor/rdesktop` files were
+  scaffolded as modules and `port check` reported "0 errors (+18 not translated)", which a
+  script reading only the error count calls green; one-line enum members are owned; a module
+  header that redefines `_WIN32_WINNT` gets sdkddkver's NTDDI; two headers defining a type
+  under ONE `#ifndef X_DEFINED` guard are not a conflict (dxdiag's D3DVECTOR).
+- **c2rust_anchor:** an anonymous type no arch matched was "agreed" as the string
+  `0 candidates` and written into mmc's source.
+- **sdk_macros:** a WIDL vtable call lowers to `.Method.unwrap_unchecked()(..)`.
+
+Two read-only reviews then found eleven translation bugs the compiler could not (see
+rust-port-status.md); `verify_translation_literals` now pairs every port module and caught sc's
+hand-encoded `_T("..")` columns. Owed: seal `_T()`/`TEXT()` literals in UNICODE modules the way
+`L"..."` is, so the model never hand-encodes them.
+
+**Batch B: calc, taskmgr, regedit, clb (2026-10-10).** ~$1.46 of Haiku. Again the residue was
+classes, each now a pass with a test:
+- **scanner:** a definition tree-sitter loses (calc's `_tWinMain`, its header split across
+  `#if defined(__GNUC__) && !defined(__REACTOS__)` / `#else`; `Theme_Stop` after bare
+  `GET_CB(x)` statement macros) is recovered from the LIVE text, with the module's pinned `-D`
+  ints deciding the dead lines (msvcrt's `_MSVCR_VER>=80` bodies stay out).
+- **integrate:** `c_longdouble`/`f128` -> `f64` (gcc.cmake's `-mlong-double-64`; exact);
+  c2rust's `.Option_0` -> `.Option`; `__FILE__`/`__LINE__` -> `file!()`/`line!()`; a module
+  const named after an SDK object macro the C never defines is dropped for the header's own
+  expansion (regedit's ZERO-extended `HKEY_*`); invented `__REACTOS__` gates settled to the live
+  arm (field manual, "Compiled is not executed"); a sibling import whose definition moved to
+  the prelude is dropped (E0603).
+- **variadic:** the forwarding shapes -- a `va_start`ed local, or a cloned list only handed on
+  -- become `let ap: va_list = *(ap_list as *mut va_list)` (a `char *` on every Windows target).
+- **resolve/macros:** clang facts never take compiler builtins (`__LINE__ = 7`) and wrap a
+  negative unsigned (`_UI64_MAX: u64 = -1`); a copied extern naming its source crate's private
+  types (`Compare`, `super::super::CntCmpFn`) is refused; a copy of a name the crate now defines
+  goes; a UNICODE module reads only its W arm of a local A/W `#define`; the SDK lowerer sees the
+  `-sys` glob's types (`(LPWSTR)-1L` was a subtraction) and casts callbacks by coercion/bits.
+- **island:** a typedef and a struct tag sharing a name keep the tag (C's two namespaces).
+- strsafe-rust: `StringCchPrintfExW!`, `StringCbCopyNW`, `StringCbVPrintfW`.
+
+Owed: an `#ifdef X` where X is defined by nothing the TU sees (calc's `USE_KEYBOARD_HOOK`,
+`DISABLE_HTMLHELP_SUPPORT`) is still sent to the model; the preprocessor's own `-dM` table
+can decide it.
+
 ### `port data`: a C data TU as Rust statics, $0 (2026-10-07)
 
     rustconv port data <stem> <tu.c>        # or: python -m rustconv.c_data_port <tu.c> --crate X --out DIR
@@ -965,7 +1036,7 @@ suspecting the HAL.
 
 **i386 (2026-10-09)** boots the same way with no further fixes: it is UEFI too (OVMF32), so the
 same single channel shows up. legide loads as a boot driver and finds nothing, because nothing
-sits on the legacy primary ports. Its detection path still has no test that finds a device.
+sits on the legacy primary ports (see below for the `--isa-ide` rig that exercises it).
 Both arches print three classpnp "SRB and IRP result transfer lengths don't match" lines on
 MODE SENSE. That is the C: on an underrun atapi sets `SRB_STATUS_DATA_OVERRUN` and
 `Irp->IoStatus.Information` but never writes the real length back to
@@ -976,9 +1047,141 @@ noise, not a failure.
 ich9-ahci, also with no fixes. pciide starts 8086:2922 through pciidex's `ahci_*` chipset code,
 the controller reports 6 ports, and atapi enumerates the DVD-ROM on port 0. smoke's
 `_ahci_check` now accepts that chain (pciide START of 2922 plus an `IDE\CdRom` under it), as
-well as uniata's `AhciDetect: exit found=1`. arm64's smoke VM (`virt`, virtio-blk) has no ATA
-controller, so the stack is reached there only through AHCI, and `--ahci` attaches ich9-ahci
-on x86 only today.
+well as uniata's `AhciDetect: exit found=1`.
+
+**arm64, interrupts, legide (2026-10-09).** `smoke --ahci` now works on arm64 too: the `virt`
+machine gets ich9-ahci at PCI slot 10, with a 64M FAT disk on port 0 and an empty CD drive on
+port 1 (`vm.py _ahci_args`). Two fixes outside the ATA drivers made it boot:
+- **The arm64 HAL** reported a flat 256 map registers. pciidex sizes each AHCI command table
+  from that number, so a table outgrew its page and every port failed to start. The HAL now
+  reports `BYTES_TO_PAGES(MaximumLength) + 1`, as x86 does.
+- **The arm64 MM** mapped `MmNonCached` RAM as Device memory, so atapi's SATL faulted (0x1E) on
+  an unaligned store into its local buffer. Uncached RAM is now Normal Non-cacheable.
+
+The restored `ERR`/`WARN` diagnostics are what named the first failure.
+
+Every `--ahci` boot now proves interrupt-driven I/O from QEMU's own trace
+(`ahci_cmd_done`/`ahci_irq_raise`/`ahci_irq_lower` → `_ahci_irq_check`):
+
+| boot | commands after the driver's first interrupt | raises | lowers |
+|---|---|---|---|
+| amd64 (CD on AHCI) | 6549 | 6566 | 13133 |
+| arm64 (disk + DVD) | 80 | 165 | 303 |
+
+There were never two completions in a row without a raise. The 2248 commands before the first
+raise on amd64 are OVMF's polled reads. The driver polls only IDENTIFY and its internal
+reset/port-multiplier requests. On PIIX, x86 boots now log `info irq`: amd64's CD channel took
+6685 interrupts on IRQ 15. Every boot also fails `ATA_TIMEOUT` / `ATA_NO_INTERRUPT` if atapi or
+pciidex reports a timed-out request or an interrupt it could not connect. A lost interrupt
+shows up only there, because the request is reset and retried and the boot carries on.
+
+legide's detection can't run on any boot we ship. The x86 HAL is ACPI-only, it sets
+`DisableFirmwareMapper`, and legide then leaves detection to PnP, as upstream intends.
+`smoke --isa-ide` (i386) attaches an ISA IDE disk on the tertiary channel (0x1E8, IRQ 11) and
+sets the `LEGIDE_DETECT` tripwire, which forces the probe and skips the two compatibility
+channels, since those belong to the PCI IDE function. legide finds the disk and pciidex's legacy
+interface starts the channel. That interface was dead until this pass: the translation had
+resolved `ATA_DETECT_LEGACY_DEVICES` away. atapi then enumerates the disk.
+
+### ndis.sys on Haiku 5.5: the first kernel driver on the new default (2026-10-09)
+
+246 functions for $0.35, then 722 → 0 errors per arch, and a $0 `port replay` reproduces
+0/0/0. Flipped and runtime-tested on all three arches by `--payload ndisprobe`. Every gap the
+port hit became a tool fix, so the replay needs only eight hand-banked functions:
+
+- **Digit-leading TU names** (`30stubs.c`) scaffold as `#[path = "30stubs.rs"] pub mod
+  _30stubs;` (no raw identifier makes `30stubs` legal).
+- **A prose preamble reply** ("The preamble contains only `#undef` directives ...") is stitched
+  as a comment with a loud warning; it was pasted as code and stopped the crate at the parser.
+- **MS anonymous base members under `#ifdef __cplusplus`** (ndis.h's
+  `NDIS50_PROTOCOL_CHARACTERISTICS` embeds the NDIS 4.0 struct only in its `#else` arm):
+  `bindgen_ms_anon_members.py` reads that arm and is given `ddk/ndis.h`. Every protocol handler
+  had been bindgen padding.
+- **SDK macros doing pointer arithmetic** on a pointer TYPEDEF (`(PUCHAR)p + off`) lower to
+  `wrapping_add`/`wrapping_sub`; pointer minus pointer is refused.
+- **The SDK-macro block is not sticky** for a name another generated block now owns (a
+  `macros` run before `resolve` had lowered the island's `NDIS_STATUS_*`; E0428 forever).
+- **`port check`'s catch-all detector** counts names the crate imports BY NAME
+  (`pub use ntkrnl_sys::driver_ddk::{IRP_MN_..}`); every PnP switch read as a catch-all.
+- **crate-repair:** `Some(f) as Option<fn(..)>` drops the cast (`as` never converts between
+  Option types); `.c2rust_unnamed(_N)` segments are deleted so the anon-field router sees C's
+  flattened spelling.
+- **`postprocess`'s blind `.HighPart` → `.__bindgen_anon_1.HighPart`** no longer fires after
+  `.u`, LARGE_INTEGER's NAMED member. (It still rewrites every bare `.Status`; crate-repair's
+  derived anon map is the right authority for that and should replace it.)
+- **`resolve` keeps the glob's declaration** of a function the bindgen glob declares when the
+  only substrate helper is another extern DECLARATION (ntkrnl-sys `ex`/`ke` are written in
+  `base`'s `ULONG_PTR = usize`, the glob in bindgen's `c_ulonglong`: every `as SIZE_T` argument
+  mismatched). An implementation (ke's amd64 `KeGetCurrentIrql`, `mov cr8`) still wins, per arch.
+- **`header_functions`** no longer reads a struct as a function (efilter.h's semicolon-less
+  `DECLARE_UNKNOWN_*(X)` lines before `typedef struct ETHI_FILTER {`), so the macros stage
+  stopped trying to buy a port of a struct.
+- **A hand-banked replacement of a `_v` twin** gets no C trampoline (the hand version defines
+  the C name; `NdisWriteErrorLogEntry` reads only its fixed arguments).
+- **`.expect("non-null function pointer")`** bound to a local and then called, or rewrapped in
+  `Some(..).unwrap_unchecked()`, becomes `unwrap_unchecked()`: 11 kernel panic paths C does
+  not have.
+- **`port data`** takes a header `DEFINE_GUID` that `initguid.h` instantiates in the TU, when
+  the crate uses it (`guid.c` is nothing else; `GUID_BUS_INTERFACE_STANDARD` was unresolved).
+- **ntkrnl-sys** gains `KeNumberProcessorsValue()` (a DATA export: a plain `extern static`
+  links on amd64 only) and the i386 `ExInterlocked{InsertHead,RemoveHead,AddUlong}` bridges.
+- **`resolve` never consensus-copies a name SOME arch's island defines** (and drops such a
+  copy from an existing block): the copy shadows the island on the arches that have it.
+  ndis's `SharedSystemTime` (KUSER_SHARED_DATA.SystemTime, kernel address) got storport's
+  `0x7ffe0008` -- InterruptTime at its user-mode address -- so NdisGetCurrentSystemTime
+  returned the uptime. storport's own `StorPortQuerySystemTime` had the same bug (fixed).
+- The strict lints earned their keep on the flip: `scan_irql_balance` found NdisMCreateLog
+  returning with the adapter spinlock held on both failure paths (an upstream C bug; the
+  Rust releases it), and `scan_const_vs_island` found the SharedSystemTime copy.
+  `scan_orphan_modules` now resolves a `#[path]` inside an inline module under it, and
+  `scan_macro_fn_shadow` exempts a `#[no_mangle]` .spec export whose C body is empty.
+
+### `port cppapp`: C++ classes from clang's AST (2026-10-10)
+
+The plain-C pipeline translates functions; a C++ application is mostly CLASSES, and the COM
+path (`--cpp-com --class`) accepts only the narrow, proven COM subset. `port cppapp <stem>`
+is the general class path, run after `derive`/`scaffold`/`island`. It costs nothing, and from
+then on `translate`, `integrate`, `resolve` and `replay` work on its output as usual.
+
+- **The model is clang's, not a regex's** (`cpp_model.py`). Each TU's real compile command
+  with `-Xclang -ast-dump=json`; kept are the classes, enums, globals and free functions
+  whose source is in the module directory, plus `EXTERNAL_CLASSES` (ATL's `CWindow`).
+  Header classes are seen once per TU, so decl ids are re-registered per AST.
+- **Bodies are LOWERED to explicit C before the model sees them** (`cpp_lower.py`). Every
+  C++ fact clang already resolved becomes text: implicit `this` → `this_->` plus the base
+  path (`this_->__base1.bytes_played_`), overloads → distinct names (`alloc_seconds__1`),
+  default arguments materialized, `new`/`delete`/locals/temporaries → explicit construction
+  calls, upcasts to a non-primary base spelled out, TCHAR-macro member spellings renamed to
+  the declared W function. An edit inside a macro expansion has no place in the text; it is
+  reported (`UNLOWERED`), never guessed.
+- **Layout and dispatch are generated** (`cpp_app.py` → `src/<stem>/cpp_classes.rs`):
+  `#[repr(C)]` structs with bases embedded (`__baseK`, primary first), vtables chained per
+  primary base the way C++ compilers lay them out (a derived class adding virtuals gets
+  `X__vtbl { __base: <base's table>, new slots }`), this-adjusting thunks via nested
+  `offset_of!`, virtual dispatchers (`m`) over translated bodies (`m__body`), constructors in
+  C++ order (bases, vtables, members in DECLARATION order, body), `Drop` from a non-empty
+  destructor (Rust then destroys bases and members, as C++ does), `Copy` for a class nothing
+  destroys, and the module's global objects constructed in a `__cxx_global_init` the entry
+  point calls first. A COM interface base embeds the island's interface struct and fills the
+  island's WIDL `IFooVtbl` with adjustor thunks. ATL windows/dialogs get `MessageMap` glue
+  from `BEGIN_MSG_MAP` (first match wins, as in atlwin.h) over `atl_rust::win`.
+- **Translation is the ordinary sealed per-function path** over synthetic headers (one per
+  body file), each through the TU that compiles it (`--via`, the `port headers` mechanism,
+  `--no-c2rust`, `--cpp-app-model` for the per-worker class context). `assemble` then moves
+  each translated `Class__m(this_: *mut Class, ..)` into `impl Class` as `m(&mut self, ..)`.
+  A worker that answers in method form anyway is put back by `restore_requested_name` at $0.
+- **ATL's types are one crate**, `atlclasses-rust` (lib `atl_rust`): CStringW, CComPtr,
+  CHeapPtr, CSimpleArray/Map, CAtlList (its `POSITION` re-exported over the island's), and
+  the window runtime. Workers get its API as a contract (`atl_contract.py`), not its source.
+  Only the ATL methods a module reaches are translated (`external_reached`: mspaint calls 54
+  of `CWindow`'s 134).
+
+First run, batch 1 (fltmc, sol, spider, tracert, sndrec32): $0.24 on Haiku 5.5. The
+C-in-.cpp four needed only the free-function path; sndrec32 (pure-virtual bases in other
+headers, multiple inheritance, init lists, global objects) went 569 → 0 errors per arch
+through tool fixes and one Haiku integrator pass. Not yet handled, each refused loudly:
+module class templates (cleanmgr's `CLocalPtr<T>`, rapps' `CPointerArray<T>`),
+`CAtlExeModuleT` (ATL's COM-module machinery), `CPropertyPageImpl`.
 
 ## `body-audit`: did a pre-seal body keep its C's calls? (2026-09-26)
 

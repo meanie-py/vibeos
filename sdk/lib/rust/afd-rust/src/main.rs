@@ -59,7 +59,7 @@ pub unsafe extern "system" fn AfdGetDisconnectOptions(
     let FCB = (*FileObject).FsContext as PAFD_FCB;
     let mut BufferSize = (*IrpSp).Parameters.DeviceIoControl.OutputBufferLength;
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER!(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -94,7 +94,7 @@ pub unsafe extern "system" fn AfdSetDisconnectOptions(
     let DisconnectOptions = LockRequest(Irp, IrpSp, 0u8, core::ptr::null_mut());
     let DisconnectOptionsSize = (*IrpSp).Parameters.DeviceIoControl.InputBufferLength;
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER!(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -143,7 +143,7 @@ pub unsafe extern "system" fn AfdSetDisconnectOptionsSize(
     let DisconnectOptionsSize = LockRequest(Irp, IrpSp, 0u8, core::ptr::null_mut()) as *mut UINT;
     let BufferSize = (*IrpSp).Parameters.DeviceIoControl.InputBufferLength;
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER!(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -190,7 +190,7 @@ pub unsafe extern "system" fn AfdGetDisconnectData(
     let FCB = (*FileObject).FsContext as PAFD_FCB;
     let mut BufferSize = (*IrpSp).Parameters.DeviceIoControl.OutputBufferLength;
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER!(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -225,7 +225,7 @@ pub unsafe extern "system" fn AfdSetDisconnectData(
     let DisconnectData = LockRequest(Irp, IrpSp, 0u8, core::ptr::null_mut());
     let DisconnectDataSize = (*IrpSp).Parameters.DeviceIoControl.InputBufferLength;
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER!(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -274,7 +274,7 @@ pub unsafe extern "system" fn AfdSetDisconnectDataSize(
     let DisconnectDataSize = LockRequest(Irp, IrpSp, 0u8, core::ptr::null_mut()) as *mut UINT;
     let BufferSize = (*IrpSp).Parameters.DeviceIoControl.InputBufferLength;
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER!(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -320,7 +320,7 @@ unsafe fn AfdGetTdiHandles(
     let HandleFlags = LockRequest(Irp, IrpSp, 1u8, core::ptr::null_mut()) as PULONG;
     let HandleData = (*Irp).UserBuffer as PAFD_TDI_HANDLE_DATA;
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER!(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -849,7 +849,7 @@ unsafe fn AfdDisconnect(
     let mut CurrentEntry: PLIST_ENTRY;
     let mut CurrentIrp: PIRP;
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER!(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -1051,6 +1051,7 @@ const IOCTL_AFD_SET_CONNECT_OPTIONS_SIZE: u32 = afd_ctl(27, 3);
 const IOCTL_AFD_SET_DISCONNECT_DATA_SIZE: u32 = afd_ctl(28, 3);
 const IOCTL_AFD_SET_DISCONNECT_OPTIONS_SIZE: u32 = afd_ctl(29, 3);
 const IOCTL_AFD_GET_INFO: u32 = afd_ctl(30, 3);
+const IOCTL_AFD_SUPER_ACCEPT: u32 = afd_ctl(32, 3);
 const IOCTL_AFD_EVENT_SELECT: u32 = afd_ctl(33, 3);
 const IOCTL_AFD_ENUM_NETWORK_EVENTS: u32 = afd_ctl(34, 3);
 const IOCTL_AFD_DEFER_ACCEPT: u32 = afd_ctl(35, 3);
@@ -1166,6 +1167,10 @@ unsafe extern "system" fn AfdDispatch(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -
 
                 IOCTL_AFD_ACCEPT => {
                     return AfdAccept(DeviceObject, Irp, IrpSp);
+                }
+
+                IOCTL_AFD_SUPER_ACCEPT => {
+                    return AfdSuperAccept(DeviceObject, Irp, IrpSp);
                 }
 
                 IOCTL_AFD_DISCONNECT => {
@@ -1381,6 +1386,10 @@ pub unsafe extern "system" fn AfdCancelHandler(
             Function = FUNCTION_PREACCEPT;
         }
 
+        IOCTL_AFD_SUPER_ACCEPT => {
+            Function = FUNCTION_PREACCEPT;
+        }
+
         IOCTL_AFD_SELECT => {
             KeAcquireSpinLock(core::ptr::addr_of_mut!((*DeviceExt).Lock) as *mut usize, core::ptr::addr_of_mut!(OldIrql));
 
@@ -1423,6 +1432,23 @@ pub unsafe extern "system" fn AfdCancelHandler(
         if CurrentIrp == Irp {
             RemoveEntryList(CurrentEntry);
             CleanupPendingIrp(FCB, Irp, IrpSp, core::ptr::null_mut());
+            if Function == FUNCTION_PREACCEPT {
+                // Unlock the acceptor socket so that it can be reused
+                let NewFileObject = (*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[2] as PFILE_OBJECT;
+                if !NewFileObject.is_null() {
+                    let FCB2: PAFD_FCB = (*NewFileObject).FsContext as PAFD_FCB;
+                    (*FCB2).SharedData.State = SOCKET_STATE_CREATED;
+
+                    ObDereferenceObject(NewFileObject as PVOID);
+                    (*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[2] = core::ptr::null_mut();
+                }
+
+                if !(*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[3].is_null() {
+                    ntkrnl_sys::ddk::MmUnlockPages((*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[3] as ntkrnl_sys::ddk::PMDL);
+                    ntkrnl_sys::ddk::IoFreeMdl((*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[3] as ntkrnl_sys::ddk::PMDL);
+                    (*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[3] = core::ptr::null_mut();
+                }
+            }
             UnlockAndMaybeComplete(FCB, STATUS_CANCELLED, Irp, 0);
             return;
         } else {

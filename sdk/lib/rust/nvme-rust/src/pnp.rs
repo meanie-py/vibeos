@@ -24,7 +24,7 @@ use ntkrnl_sys::ddk::{
     _KEY_VALUE_INFORMATION_CLASS_KeyValuePartialInformation, _MEMORY_CACHING_TYPE_MmNonCached,
     HANDLE, IO_CONNECT_INTERRUPT_PARAMETERS, KEVENT, LARGE_INTEGER, NTSTATUS, OBJECT_ATTRIBUTES, PDEVICE_OBJECT,
     PDEVICE_RELATIONS, PDRIVER_OBJECT, PHYSICAL_ADDRESS, PIO_INTERRUPT_MESSAGE_INFO, PIO_STACK_LOCATION, PIRP, PMDL,
-    PVOID, ULONG, UNICODE_STRING,
+    PVOID, ULONG, UNICODE_STRING, DEVICE_DESCRIPTION, IoGetDmaAdapter, PDMA_ADAPTER,
 };
 use ntkrnl_sys::driver_ddk::{IoCallDriver, IoCompleteRequest, PoCallDriver, PoStartNextPowerIrp};
 use ntkrnl_sys::inline::mm::MmGetSystemAddressForMdlSafe;
@@ -102,6 +102,8 @@ const CM_RESOURCE_INTERRUPT_MESSAGE: u16 = 2;
 // IO_CONNECT_INTERRUPT_PARAMETERS.Version (wdm.h).
 const CONNECT_LINE_BASED: ULONG = 2;
 const CONNECT_MESSAGE_BASED: ULONG = 3;
+/// Windows 8's; the routines then run at PASSIVE_LEVEL (the NVME_PASSIVE_ISR tripwire).
+const CONNECT_MESSAGE_BASED_PASSIVE: ULONG = 5;
 /// The SRB status for a request a controller reset failed back: the class driver
 /// retries it.
 const SRB_STATUS_BUS_RESET: u8 = 0x0E;
@@ -142,6 +144,8 @@ struct Fdo {
     /// The MSI-X messages connected (the table to disconnect them by); null on
     /// the pin or when polling.
     messages: PIO_INTERRUPT_MESSAGE_INFO,
+    /// The messages were connected passive (CONNECT_MESSAGE_BASED_PASSIVE).
+    passive: bool,
     /// Set in START before any disk is published; from then on it is shared
     /// by the namespaces' dispatch routines and the DPCs (nvme.rs locks).
     controller: Option<Controller>,
@@ -205,6 +209,7 @@ pub unsafe extern "system" fn add_device(driver: PDRIVER_OBJECT, pdo: PDEVICE_OB
         pdo,
         lower,
         messages: null_mut(),
+        passive: false,
         controller: None,
         irq: Irq::new(),
         disks: [null_mut(); NAMESPACES_PER_CONTROLLER],
@@ -304,6 +309,22 @@ unsafe fn tripwire_value(key: &[u16]) -> Option<u64> {
     let digits = &token[key.len() + 1..];
     let digits = digits.strip_prefix(utf16!("0x")).unwrap_or(digits);
     digits.iter().try_fold(0u64, |acc, &c| Some(acc << 4 | char::from_u32(c as u32)?.to_digit(16)? as u64)).filter(|&m| m != 0)
+}
+
+/// The bus's DMA adapter for the controller: a 64-bit scatter/gather bus master,
+/// one command (the bounce buffer's size) at a time at most. What it maps is what
+/// the controller can reach behind a DMA-remapping domain.
+unsafe fn dma_adapter(pdo: PDEVICE_OBJECT) -> PDMA_ADAPTER {
+    let mut description: DEVICE_DESCRIPTION = core::mem::zeroed();
+    description.Version = 2; // DEVICE_DESCRIPTION_VERSION2
+    description.Master = 1;
+    description.ScatterGather = 1;
+    description.Dma32BitAddresses = 1;
+    description.Dma64BitAddresses = 1;
+    description.InterfaceType = ntkrnl_sys::ddk::_INTERFACE_TYPE_PCIBus;
+    description.MaximumLength = nvme::MAX_TRANSFER as ULONG;
+    let mut map_registers: ULONG = 0;
+    IoGetDmaAdapter(pdo, &mut description, &mut map_registers)
 }
 
 /// Ask pci.sys for MSI-X the Windows way: `MSISupported` under the device key's
@@ -468,7 +489,10 @@ unsafe fn connect(fdo: &mut Fdo) -> Option<u32> {
     // back to the pin, that interrupt's KINTERRUPT (wdm.h's ConnectionContext).
     let mut connection: PVOID = null_mut();
     let mut p: IO_CONNECT_INTERRUPT_PARAMETERS = core::mem::zeroed();
-    p.Version = CONNECT_MESSAGE_BASED;
+    // Both routines only count and queue a DPC, which is as right at PASSIVE_LEVEL
+    // as at DIRQL, so the tripwire can prove the kernel's passive path with them.
+    let passive = tripwire_value(utf16!("NVME_PASSIVE_ISR")).is_some();
+    p.Version = if passive { CONNECT_MESSAGE_BASED_PASSIVE } else { CONNECT_MESSAGE_BASED };
     {
         let m = &mut p.__bindgen_anon_1.MessageBased;
         m.PhysicalDeviceObject = fdo.pdo;
@@ -484,19 +508,21 @@ unsafe fn connect(fdo: &mut Fdo) -> Option<u32> {
     }
     if p.Version == CONNECT_LINE_BASED {
         (*irq).interrupt = connection.cast();
-        nvprint!("controller {}: interrupt connected: the pin (no MSI-X assigned)\n", n);
+        let level = if passive { " at passive level" } else { "" };
+        nvprint!("controller {}: interrupt connected{}: the pin (no MSI-X assigned)\n", n, level);
         return Some(0);
     }
     let table = connection as PIO_INTERRUPT_MESSAGE_INFO;
     fdo.messages = table;
+    fdo.passive = passive;
     let count = (*table).MessageCount;
     let entries = core::slice::from_raw_parts((*table).MessageInfo.as_ptr(), count as usize);
     let io = if count > 2 { "vectors from" } else { "vector" };
     nvprint!(
-        "controller {}: MSI-X: {} message(s) connected at level {}: admin on vector {}, I/O on {} {}\n",
+        "controller {}: MSI-X: {} message(s) connected at {}: admin on vector {}, I/O on {} {}\n",
         n,
         count,
-        (*table).UnifiedIrql,
+        Level(passive, (*table).UnifiedIrql),
         entries[0].Vector,
         io,
         entries[(count as usize - 1).min(1)].Vector
@@ -504,12 +530,21 @@ unsafe fn connect(fdo: &mut Fdo) -> Option<u32> {
     Some(count)
 }
 
+/// Where a connection's routines run: "passive level", or "level <IRQL>".
+struct Level(bool, u8);
+
+impl core::fmt::Display for Level {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        if self.0 { f.write_str("passive level") } else { write!(f, "level {}", self.1) }
+    }
+}
+
 /// Undo `connect`: the messages, or the pin. A START that fails must, before the
 /// PnP manager hands the vectors back to the HAL for another device.
 unsafe fn disconnect(fdo: &mut Fdo) {
     let mut p: ntkrnl_sys::ddk::IO_DISCONNECT_INTERRUPT_PARAMETERS = core::mem::zeroed();
     if !fdo.messages.is_null() {
-        p.Version = CONNECT_MESSAGE_BASED;
+        p.Version = if fdo.passive { CONNECT_MESSAGE_BASED_PASSIVE } else { CONNECT_MESSAGE_BASED };
         p.ConnectionContext.InterruptMessageTable = fdo.messages;
         fdo.messages = null_mut();
     } else if !fdo.irq.interrupt.is_null() {
@@ -567,17 +602,27 @@ unsafe fn start(fdo: &mut Fdo, io: PIO_STACK_LOCATION) -> NTSTATUS {
     if let Some(bad) = tripwire_value(utf16!("NVME_BAD_DMA")) {
         nvme::BAD_DMA.store(bad, Ordering::Relaxed);
     }
+    if tripwire_value(utf16!("NVME_STRAY_DMA")).is_some() {
+        nvme::STRAY_DMA.store(true, Ordering::Relaxed);
+    }
     if let Some(lose) = tripwire_value(utf16!("NVME_LOSE_COMPLETION")) {
         nvme::LOSE_COMPLETION.store(lose as u32, Ordering::Relaxed);
         nvprint!("controller {}: tripwire: I/O completion {} will be thrown away\n", n, lose);
     }
 
+    let dma = dma_adapter(fdo.pdo);
+    if dma.is_null() {
+        nvprint!("controller {}: no DMA adapter from the bus - handing the controller physical addresses\n", n);
+    }
     let t0 = now_us();
-    let mut c = match Controller::start(regs, len as usize, &targets[..count]) {
+    let mut c = match Controller::start(regs, len as usize, &targets[..count], dma) {
         Ok(c) => c,
         Err(e) => {
             nvprint!("controller {}: bring-up failed: {:?}\n", n, e);
             disconnect(fdo);
+            if let Some(put) = dma.as_ref().and_then(|d| (*d.DmaOperations).PutDmaAdapter) {
+                put(dma);
+            }
             return STATUS_ADAPTER_HARDWARE_ERROR;
         }
     };

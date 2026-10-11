@@ -1,0 +1,27 @@
+# atlclasses-rust — ATL's smart pointers, containers and CStringW (sdk/lib/atl, CMake's
+# `atl_classes`), ported once for every C++ module. See src/lib.rs. NOT a port of atl.dll
+# (dll/win32/atl): the crate is named so the `<module>-rust` convention cannot pair the two.
+[package]
+name = "atlclasses-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+
+[lib]
+# Consumers write `atl_rust::` (ATL is what it is); the package name only avoids atl.dll's.
+name = "atl_rust"
+crate-type = ["rlib"]
+
+# No dependencies ON PURPOSE: the type basis is core primitives, the strsafe-rust shape.
+[dependencies]
+
+[features]
+# CComAllocator / CComHeapPtr: ole32's task allocator. Off by default so a module with no COM
+# never imports ole32.
+com = []
+# CPath (atlpath.h's CPathT<CStringW>): shlwapi's PathCompactPathExW. Off by default so a
+# module that never builds a CPath never imports shlwapi.
+path = []

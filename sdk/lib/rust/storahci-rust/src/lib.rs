@@ -7,6 +7,19 @@
 //! storahci.sys — AHCI storport miniport, faithful C→Rust cohab translation
 //! (rustconv opus + c2rust anchor) of drivers/storage/port/storahci/storahci.c.
 
+// NT_ASSERT is a checked-build assertion (wdm.h): its operand is never evaluated in a free
+// build. It was an extern `fn`, so every call evaluated its argument out of line (cachesup.rs
+// documents a fault that caused). `debug_assert!` type-checks it and evaluates nothing here.
+#[macro_export]
+macro_rules! NT_ASSERT { ($($t:tt)*) => { ntkrnl_sys::nt_assert!($($t)*) }; }
+
+// UNREFERENCED_PARAMETER is a macro in the DDK headers; an out-of-line no-op fn is an
+// optimization barrier that can uncloak an ABI mismatch.
+#[allow(unused_macros)]
+macro_rules! UNREFERENCED_PARAMETER {
+    ($($p:expr),* $(,)?) => {{ $( let _ = $p; )* }};
+}
+
 /// `AhciDebugPrint(format, ...)` — in C this was never a function at all, just a
 /// DbgPrint macro (`storahci.h:85`). The translation turned it into a no-op
 /// C-variadic *fn*, which stable Rust cannot define (`c_variadic`,

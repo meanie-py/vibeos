@@ -4143,15 +4143,18 @@ pub const ENUM_CHILDREN_NAME_IS_FILTER: u32 = 4;
 unsafe extern "C" {
     pub fn _RTL_CONSTANT_STRING_type_check(s: *const ::core::ffi::c_void) -> ::core::ffi::c_char;
 }
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut NlsMbCodePageTag: BOOLEAN;
 }
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut NlsMbOemCodePageTag: BOOLEAN;
 }
 unsafe extern "C" {
     pub fn c_assert() -> *mut [::core::ffi::c_char; 1usize];
 }
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut KeNumberProcessors: CCHAR;
 }
@@ -4563,9 +4566,11 @@ unsafe extern "system" {
 unsafe extern "system" {
     pub fn DbgSetDebugFilterState(ComponentId: ULONG, Level: ULONG, State: BOOLEAN) -> NTSTATUS;
 }
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut KdDebuggerEnabled: BOOLEAN;
 }
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut KdDebuggerNotPresent: BOOLEAN;
 }
@@ -6806,18 +6811,23 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub static GUID_PCI_PME_INTERFACE: GUID;
 }
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut HalDispatchTable: HAL_DISPATCH;
 }
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut PsInitialSystemProcess: PEPROCESS;
 }
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut MmHighestUserAddress: PVOID;
 }
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut MmSystemRangeStart: PVOID;
 }
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut MmUserProbeAddress: ULONG64;
 }
@@ -65004,6 +65014,7 @@ pub struct _ATA_TIMING {
 }
 pub type ATA_TIMING = _ATA_TIMING;
 pub type PATA_TIMING = *mut _ATA_TIMING;
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut InitSafeBootMode: ULONG;
 }

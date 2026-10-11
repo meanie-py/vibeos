@@ -69,10 +69,9 @@ extern "system" {
     fn ExitProcess(uExitCode: u32) -> !;
 }
 
-// C `assert(e)` macro (DBG) → `_font_assert`; no-op here (debug aid, not load-bearing).
-// Generic so it accepts the mixed bool/i32 scrutinees the C used.
-#[inline(always)]
-unsafe fn assert<T>(_e: T) {}
+// C `assert` (live under DBG) is debug_assert! -- the kernel's ASSERT convention:
+// checked in a debug build, never evaluated in release. It was an empty fn, which
+// never checked yet evaluated its argument on every call.
 
 // ---- file-scope preamble (translated) ----
 pub const TAB: i32 = 9;
@@ -295,7 +294,7 @@ unsafe fn TEXT_PathEllipsify(
         lastSlash = lastSlash.offset(-1);
         len_under += 1;
 
-        assert(*len_str != 0);
+        debug_assert!(*len_str != 0);
         *len_str -= 1;
     }
     (*pellip).before = lastSlash.offset_from(str) as i32;
@@ -348,8 +347,8 @@ unsafe fn TEXT_WordBreak(
     let mut p: LPWSTR;
     let mut word_fits: i32;
 
-    assert((format & DT_WORDBREAK) != 0);
-    assert(chars_fit < *len_str);
+    debug_assert!((format & DT_WORDBREAK) != 0);
+    debug_assert!(chars_fit < *len_str);
 
     p = str.add(chars_fit as usize);
     word_fits = 1;
@@ -424,7 +423,7 @@ unsafe fn TEXT_SkipChars(
 
     if prefix != 0 {
         let str_on_entry = start_str;
-        assert(max >= n);
+        debug_assert!(max >= n);
         max -= n;
         while n > 0 {
             n -= 1;
@@ -450,7 +449,7 @@ unsafe fn TEXT_Reprefix(
 ) -> i32 {
     let mut result: i32 = -1;
     let n: u32 = ((*pe).before + (*pe).under + (*pe).after) as u32;
-    assert(n <= ns);
+    debug_assert!(n <= ns);
 
     let mut i: u32 = 0;
     while i < n {
@@ -716,7 +715,7 @@ unsafe fn TEXT_NextLineW(
             if before > (*pellip).before {
                 (*pellip).after = before - (*pellip).before - (*pellip).len;
             } else {
-                assert(((*pellip).under == 0 && (*pellip).after == 0) as i32);
+                debug_assert!((*pellip).under == 0 && (*pellip).after == 0);
                 (*pellip).before = before;
                 (*pellip).len = len_ellipsis;
             }
@@ -1044,7 +1043,7 @@ pub unsafe extern "system" fn DrawTextExWorker(
                 len_inner -= len_seg;
                 str_inner = str_inner.add(len_seg as usize);
                 if len_inner != 0 {
-                    assert((flags & DT_EXPANDTABS) != 0 && *str_inner == TAB as u16);
+                    debug_assert!((flags & DT_EXPANDTABS) != 0 && *str_inner == TAB as u16);
                     len_inner -= 1;
                     str_inner = str_inner.add(1);
                     xseg += ((size_inner.cx / tabwidth) + 1) * tabwidth;

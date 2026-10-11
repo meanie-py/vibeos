@@ -63,9 +63,6 @@ extern "C" {
     fn wcslen(s: *const u16) -> usize;
     fn memset(s: *mut core::ffi::c_void, c: core::ffi::c_int, n: usize) -> *mut core::ffi::c_void;
     fn wcstol(nptr: *const u16, endptr: *mut *mut u16, base: core::ffi::c_int) -> core::ffi::c_long;
-    fn TRACE(fmt: *const i8, ...);
-    fn ERR(fmt: *const i8, ...);
-    fn WARN(fmt: *const i8, ...);
     fn SockGetTdiName( AddressFamily: *mut i32, SocketType: *mut i32, Protocol: *mut i32, g: GROUP, dwFlags: DWORD, TransportName: *mut _UNICODE_STRING, HelperDLLContext: *mut PVOID, HelperData: *mut PHELPER_DATA, HelperEvents: *mut DWORD, ) -> INT;
 }
 
@@ -2137,6 +2134,120 @@ pub unsafe extern "system" fn WSPAccept(
     return AcceptSocket;
 }
 
+#[no_mangle]
+pub unsafe extern "system" fn WSPAcceptEx(
+    sListenSocket: SOCKET,
+    sAcceptSocket: SOCKET,
+    lpOutputBuffer: PVOID,
+    dwReceiveDataLength: DWORD,
+    dwLocalAddressLength: DWORD,
+    dwRemoteAddressLength: DWORD,
+    lpdwBytesReceived: LPDWORD,
+    lpOverlapped: LPOVERLAPPED,
+) -> BOOL {
+    let ListenSocket = GetSocketStructure(sListenSocket);
+    let AcceptSocket = GetSocketStructure(sAcceptSocket);
+    let IoStatusBlock = lpOverlapped as PIO_STATUS_BLOCK;
+
+    /* Validate sockets */
+    if ListenSocket.is_null() || AcceptSocket.is_null() {
+        SetLastError(WSAENOTSOCK);
+        return 0;
+    }
+    if lpOverlapped.is_null() {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return 0;
+    }
+    /* Check if this socket is listening and that AcceptEx hasn't already been invoked */
+    if (*(*ListenSocket).SharedData).__bindgen_anon_1.Listening() == 0 {
+        SetLastError(WSAEINVAL);
+        return 0;
+    }
+    /* Make sure that the accept socket is not already opened or connected */
+    if (*(*AcceptSocket).SharedData).State != SocketOpen {
+        SetLastError(WSAEINVAL);
+        return 0;
+    }
+    if lpOutputBuffer.is_null() || dwRemoteAddressLength == 0 {
+        SetLastError(WSAEFAULT);
+        return 0;
+    }
+
+    /* Populate IOCTL super accept structure */
+    let mut AcceptInfo = AFD_SUPER_ACCEPT_INFO {
+        SanActive: 0,
+        FixAddressAlignment: 1,
+        AcceptHandle: (*AcceptSocket).Handle as HANDLE,
+        ReceiveDataLength: dwReceiveDataLength,
+        LocalAddressLength: dwLocalAddressLength,
+        RemoteAddressLength: dwRemoteAddressLength,
+    };
+
+    (*IoStatusBlock).Information = 0;
+    (*IoStatusBlock).__bindgen_anon_1.Status = STATUS_PENDING;
+
+    let Status = NtDeviceIoControlFile(
+        (*ListenSocket).Handle as HANDLE,
+        (*lpOverlapped).hEvent,
+        None,
+        if !(*lpOverlapped).hEvent.is_null() {
+            core::ptr::null_mut()
+        } else {
+            lpOverlapped as PVOID
+        },
+        IoStatusBlock,
+        IOCTL_AFD_SUPER_ACCEPT,
+        &raw mut AcceptInfo as PVOID,
+        core::mem::size_of::<AFD_SUPER_ACCEPT_INFO>() as ULONG,
+        lpOutputBuffer,
+        dwReceiveDataLength
+            .wrapping_add(dwLocalAddressLength)
+            .wrapping_add(dwRemoteAddressLength),
+    );
+
+    if Status == STATUS_PENDING {
+        SetLastError(ERROR_IO_PENDING);
+        return 0;
+    }
+    if NT_SUCCESS(Status) && !lpdwBytesReceived.is_null() {
+        *lpdwBytesReceived = (*IoStatusBlock).Information as DWORD;
+    }
+    SetLastError(TranslateNtStatusError(Status) as u32);
+    NT_SUCCESS(Status) as BOOL
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn WSPGetAcceptExSockaddrs(
+    lpOutputBuffer: PVOID,
+    dwReceiveDataLength: DWORD,
+    dwLocalAddressLength: DWORD,
+    dwRemoteAddressLength: DWORD,
+    LocalSockaddr: *mut *mut sockaddr,
+    LocalSockaddrLength: LPINT,
+    RemoteSockaddr: *mut *mut sockaddr,
+    RemoteSockaddrLength: LPINT,
+) {
+    /* AFD_SUPER_ACCEPT outputs receive data + local address + local address length + remote
+     * address + remote address length; the length is located 2 bytes before the address length.
+     * The C reads it as an unaligned UINT. */
+    let LocalAddress = (lpOutputBuffer as *mut u8).add(dwReceiveDataLength as usize);
+    if dwLocalAddressLength != 0 {
+        *LocalSockaddr = LocalAddress as *mut sockaddr;
+        *LocalSockaddrLength = (LocalAddress
+            .add(dwLocalAddressLength as usize - core::mem::size_of::<WORD>())
+            as *const u32)
+            .read_unaligned() as INT;
+    }
+    if dwRemoteAddressLength != 0 {
+        let RemoteAddress = LocalAddress.add(dwLocalAddressLength as usize);
+        *RemoteSockaddr = RemoteAddress as *mut sockaddr;
+        *RemoteSockaddrLength = (RemoteAddress
+            .add(dwRemoteAddressLength as usize - core::mem::size_of::<WORD>())
+            as *const u32)
+            .read_unaligned() as INT;
+    }
+}
+
 unsafe extern "system" fn MsafdConnectAPC(
     ApcContext: PVOID,
     IoStatusBlock: PIO_STATUS_BLOCK,
@@ -3200,8 +3311,7 @@ pub unsafe extern "system" fn WSPIoctl(
                     *(lpvOutBuffer as *mut PVOID) = WSPGetAcceptExSockaddrs as PVOID;
                     cbRet = core::mem::size_of::<PVOID>() as DWORD;
                     Errno = NO_ERROR as INT;
-                    ERR!("SIO_GET_EXTENSION_FUNCTION_POINTER UNIMPLEMENTED\n");
-                    Ret = SOCKET_ERROR;
+                    Ret = NO_ERROR as INT;
                 } else {
                     ERR!(
                         "Querying unknown extension function: %x\n",
@@ -3988,7 +4098,7 @@ pub unsafe extern "system" fn WSPSetSockOpt(
                     core::ptr::null_mut(), core::ptr::null_mut(), None);
                 return NO_ERROR as INT;
             }
-            SO_UPDATE_CONNECT_CONTEXT => {
+            SO_UPDATE_CONNECT_CONTEXT | SO_UPDATE_ACCEPT_CONTEXT => {
                 return MsafdUpdateConnectionContext(s, lpErrno);
             }
             SO_ERROR => {
@@ -7493,12 +7603,7 @@ pub unsafe extern "system" fn DllMain(
 //                     *((PVOID *)lpvOutBuffer) = WSPGetAcceptExSockaddrs;
 //                     cbRet = sizeof(PVOID);
 //                     Errno = NO_ERROR;
-//                     /* See CORE-14966 and associated commits.
-//                      * Original line below was 'Ret = NO_ERROR:'.
-//                      * This caused winetest ws2_32:sock to hang.
-//                      * This new Ret value allows the test to complete. */
-//                     ERR("SIO_GET_EXTENSION_FUNCTION_POINTER UNIMPLEMENTED\n");
-//                     Ret = SOCKET_ERROR;
+//                     Ret = NO_ERROR;
 //                 }
 //                 else
 //                 {

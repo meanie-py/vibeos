@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use crate::types::*;
 use crate::glue::*;
 use core::ffi::{c_char, c_int, c_long, c_uchar, c_uint, c_ushort};
@@ -62,7 +63,6 @@ extern "C" {
 extern "C" {
     fn REVERSE_BYTES(Dst: *mut u8, Src: *const u8);
     fn FREE_POOL(ptr: *mut core::ffi::c_void);
-    fn NT_ASSERT(expression: i32);
     fn TEST_FLAG(value: u8, flag: u8) -> bool;
     fn SET_FLAG(var: &mut u32, flag: u32);
     fn CLEAR_FLAG(var: &mut u32, flag: u32);
@@ -257,8 +257,6 @@ pub const EnableOfflineDiags: usize = 5;
 pub const SmartEventGuid: usize = 4;
 pub const SmartThresholdsGuid: usize = 5;
 pub const ScsiInfoExceptionsGuid: usize = 6;
-pub const WMIREG_FLAG_EXPENSIVE: u32 = 0x00000002;
-pub const WMIREG_FLAG_EVENT_ONLY_GUID: u32 = 0x00000004;
 
 const APC_LEVEL: u8 = 1;
 const SMART_CMD: u8 = 0xB0;
@@ -1182,7 +1180,7 @@ pub unsafe extern "system" fn DiskEnableInfoExceptions(
     );
 
     if !NT_SUCCESS(status) || pageData.is_null() {
-        NT_ASSERT(((NT_SUCCESS(status) as i32) != 0 && !pageData.is_null()) as i32);
+        NT_ASSERT!(((NT_SUCCESS(status) as i32) != 0 && !pageData.is_null()) as i32);
         FREE_POOL(modeData as *mut core::ffi::c_void);
         return STATUS_NOT_SUPPORTED;
     }
@@ -1789,7 +1787,6 @@ pub unsafe extern "system" fn DiskInfoExceptionComplete(
     const SRB_SIMPLE_TAG_REQUEST: u16 = 0x20;
     // ddk/srb.h:55 -- (UCHAR)~0 is 0xFF, not a 32-bit ~0.
     const SP_UNTAGGED: u32 = 0xFF;
-    const MAXIMUM_RETRIES: u32 = 3;
     const STATUS_VERIFY_REQUIRED: NTSTATUS = 0x80000016u32 as i32;
     const STATUS_IO_DEVICE_ERROR: NTSTATUS = 0xC0000185u32 as i32 ;
     const IRP_MJ_SCSI: u8 = 0x0F;
@@ -1886,7 +1883,7 @@ pub unsafe extern "system" fn DiskInfoExceptionComplete(
                 Irp,
             );
 
-            NT_ASSERT((dataBuffer == ((*(*Irp).MdlAddress).StartVa as *mut u8).add((*(*Irp).MdlAddress).ByteOffset as usize) as PVOID) as i32);
+            NT_ASSERT!((dataBuffer == ((*(*Irp).MdlAddress).StartVa as *mut u8).add((*(*Irp).MdlAddress).ByteOffset as usize) as PVOID) as i32);
 
             if (*srb).Function as i32 == SRB_FUNCTION_STORAGE_REQUEST_BLOCK {
                 (*srbEx).DataTransferLength = (*(*Irp).MdlAddress).ByteCount;

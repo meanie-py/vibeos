@@ -18,6 +18,7 @@ edition = "2021"
 crate-type = ["staticlib"]
 
 [dependencies]
+winedebug-rust = { path = "../winedebug-rust" }
 panic-common = { path = "../panic-common", features = ["user"] }
 ntdll-sys = { path = "../ntdll-sys" }
 secur32-sys = { path = "../secur32-sys" }

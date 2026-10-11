@@ -829,6 +829,11 @@ def arm64_cohab_repo(tmp_path: Path) -> Path:
     (r / "qemu" / "boot.img").write_bytes(b"BOOT")
     (r / "docs").mkdir()
     (r / "docs" / "readme.md").write_text("hi\n")
+    (r / "drivers" / "x" / "foo").mkdir(parents=True)
+    (r / "drivers" / "x" / "foo" / "CMakeLists.txt").write_text(
+        'rust_staticlib_variant(foo_rust foo-rust "" TRUE)\n'
+        'rust_staticlib_variant(k32_rust k32-vista-rust "" TRUE)\n'
+    )
     _git(r, "init", "-q")
     _git(r, "config", "user.email", "t@t")
     _git(r, "config", "user.name", "t")
@@ -875,6 +880,24 @@ def test_crate_for_stem_ignores_a_parked_non_member_crate(arm64_cohab_repo: Path
     assert not any(
         "parked" in rel for rel in provenance.boot_set_cohab_rels(arm64_cohab_repo, "arm64")
     )
+
+
+def test_crate_for_stem_ignores_a_member_crate_no_cmake_links_yet(arm64_cohab_repo: Path):
+    """`rustconv port` makes a crate a workspace member when work STARTS, long before its
+    flip; spoolsv.exe, still built from C, was paired with spoolsv-rust mid-integration and
+    the arm64 build reported `cohab flip not rebuilt`. A crate no CMake file names is not
+    linked into anything yet."""
+    rust = arm64_cohab_repo / "sdk" / "lib" / "rust"
+    (rust / "inwork-rust").mkdir()
+    (rust / "inwork-rust" / "Cargo.toml").write_text("[package]\nname = 'inwork-rust'\n")
+    manifest = rust / "Cargo.toml"
+    manifest.write_text(
+        manifest.read_text().replace('"foo-rust",', '"foo-rust",\n    "inwork-rust",')
+    )
+    provenance._workspace_members.cache_clear()
+    provenance._cmake_named_crates.cache_clear()
+    assert provenance._crate_for_stem(arm64_cohab_repo, "inwork") is None
+    assert provenance._crate_for_stem(arm64_cohab_repo, "foo") is not None
 
 
 def test_cohab_rels_maps_only_rust_binaries(arm64_cohab_repo: Path):
@@ -9810,6 +9833,80 @@ def test_ahci_check_is_silent_on_a_plain_boot(monkeypatch):
     assert smoke_mod._ahci_check("[EXPLORER] _tWinMain entered\n") is None
 
 
+def test_ahci_irq_check_reads_qemus_trace_not_the_driver(monkeypatch):
+    """An AHCI driver that polls still boots, so `--ahci` judges interrupt use from QEMU's
+    own trace: the firmware's polled commands before the first raise are fine, after it
+    every command must come with a raise, and the guest must lower the line."""
+    from . import smoke as smoke_mod
+
+    monkeypatch.setenv("VIBEOS_AHCI_CD", "1")
+    done, up, down = (
+        "ahci_cmd_done ahci(0x1)[0]: cmd done\n",
+        "ahci_irq_raise ahci(0x1): raise irq\n",
+        "ahci_irq_lower ahci(0x1): lower irq\n",
+    )
+    firmware = done * 50
+    assert smoke_mod._ahci_irq_check(firmware + (done + up + down) * 40) is None
+    # A driver that never enabled the interrupt.
+    never = smoke_mod._ahci_irq_check(firmware + done * 40)
+    assert never and never["classification"] == "AHCI_POLLING"
+    # One that did, then polled the rest.
+    later = smoke_mod._ahci_irq_check(firmware + done + up + down + done * 40)
+    assert later and later["classification"] == "AHCI_POLLING"
+    # An ISR that never acknowledged the HBA.
+    stuck = smoke_mod._ahci_irq_check(firmware + (done + up) * 40)
+    assert stuck and stuck["classification"] == "AHCI_IRQ_STUCK"
+    # A command in flight when the log is read is not a stuck line.
+    assert smoke_mod._ahci_irq_check(firmware + (done + up + down) * 40 + done + up) is None
+    # No trace at all is the harness's problem, not the guest's.
+    assert smoke_mod._ahci_irq_check("") is None
+    monkeypatch.delenv("VIBEOS_AHCI_CD")
+    assert smoke_mod._ahci_irq_check(firmware + done * 40) is None
+
+
+def test_ata_health_check_fails_a_lost_interrupt():
+    """A timed-out ATA request is reset and retried and the boot carries on, so the
+    desktop alone would hide an ISR that never ran."""
+    from . import smoke as smoke_mod
+
+    ok = "(pciidex-rust/src/pciidex/acpi.rs:368) Failed to set device data, status 0xc0000010\n"
+    assert smoke_mod._ata_health_check(ok) is None
+    lost = (
+        "(atapi-rust/src/atapi/portstate.rs:861) CH 1: Slot 0 (00000001) timed out 0 (10s) 0 'x'\n"
+    )
+    bad = smoke_mod._ata_health_check(ok + lost)
+    assert bad and bad["classification"] == "ATA_TIMEOUT"
+    ahci = "(pciidex-rust/src/pciidex/ahci_hw.rs:560) CH 3: Internal request timed out\n"
+    bad = smoke_mod._ata_health_check(ahci)
+    assert bad and bad["classification"] == "ATA_TIMEOUT"
+    no_irq = "(pciidex-rust/src/pciidex/pdo.rs:188) CH 1: Could not connect to interrupt\n"
+    bad = smoke_mod._ata_health_check(no_irq)
+    assert bad and bad["classification"] == "ATA_NO_INTERRUPT"
+    # The network stack's own timeouts are not the ATA stack's.
+    assert smoke_mod._ata_health_check(" [NETSTACK] TDI op timed out - IRP still pending\n") is None
+    fired = "*** ASSERT FAILED: !Srb.is_null() at atapi-rust/src/atapi/scsi.rs:1257\n"
+    bad = smoke_mod._ata_health_check(fired)
+    assert bad and bad["classification"] == "ATA_ASSERT"
+    # Someone else's assert is not the ATA stack's.
+    assert smoke_mod._ata_health_check("*** ASSERT FAILED: x at fastfat-rust/src/a.rs:1\n") is None
+
+
+def test_legide_check_needs_a_detected_channel(monkeypatch):
+    from . import smoke as smoke_mod
+
+    monkeypatch.setenv("VIBEOS_QEMU_ISA_IDE", "1")
+    forced = "(legide-rust/src/legide/legide.rs:770) LEGIDE_DETECT: probing the channels\n"
+    found = "[DA] PiEnumerateDevice Root\\legide\\0000: 1 children (cs=0x0)\n"
+    assert smoke_mod._legide_check(forced + found) is None
+    bad = smoke_mod._legide_check(found)
+    assert bad and bad["classification"] == "LEGIDE_NOT_ENGAGED"
+    empty = "[DA] PiEnumerateDevice Root\\legide\\0000: 0 children (cs=0x0)\n"
+    bad = smoke_mod._legide_check(forced + empty)
+    assert bad and bad["classification"] == "LEGIDE_NOT_ENGAGED"
+    monkeypatch.delenv("VIBEOS_QEMU_ISA_IDE")
+    assert smoke_mod._legide_check("") is None
+
+
 def test_nvme_boot_must_show_the_namespace_published(monkeypatch):
     """The boot never needs the NVMe disk, so an --nvme boot where nvme.sys never
     loaded, or brought the controller up and found nothing, reaches the desktop
@@ -9852,12 +9949,22 @@ def test_nvme_boot_must_show_the_namespace_published(monkeypatch):
     assert bad and bad["classification"] == "NVME_NOT_RESET"
     reset = "[NVME] controller 0: self-test: 1 reset(s), 1 command(s) failed back by them\n"
     assert smoke_mod._nvme_check(working + test.format(8, 9) + reset) is None
+    monkeypatch.setenv("VIBEOS_TRIPWIRE", "QUIET NVME_PASSIVE_ISR=1")
+    bad = smoke_mod._nvme_check(working + test.format(8, 9))
+    assert bad and bad["classification"] == "NVME_NOT_PASSIVE"
+    passive = working.replace("at level 7", "at passive level")
+    assert smoke_mod._nvme_check(passive + test.format(8, 9)) is None
     monkeypatch.delenv("VIBEOS_TRIPWIRE")
     monkeypatch.setenv("VIBEOS_QEMU_NVME_BRIDGE", "1")
     bad = smoke_mod._nvme_check(working + test.format(8, 9))
     assert bad and bad["classification"] == "NVME_NOT_BEHIND_BRIDGE"
     port = "[DA] START PCI\\VEN_1B36&DEV_000C&SUBSYS_00000000&REV_00\\1&f103bba4&48 -> 0x0\n"
     assert smoke_mod._nvme_check(port + working + test.format(8, 9)) is None
+    monkeypatch.setenv("VIBEOS_QEMU_NVME_BRIDGE", "segment")
+    bad = smoke_mod._nvme_check(port + working + test.format(8, 9))
+    assert bad and bad["classification"] == "NVME_SEGMENT_NOT_PUBLISHED"
+    seg = "[HAL] PCI segment 1: root bus 128-255 published for pci.sys\n"
+    assert smoke_mod._nvme_check(seg + port + working + test.format(8, 9)) is None
     monkeypatch.delenv("VIBEOS_QEMU_NVME_BRIDGE")
     monkeypatch.delenv("VIBEOS_QEMU_NVME")
     assert smoke_mod._nvme_check(never_loaded) is None
@@ -9929,6 +10036,15 @@ def test_smmu_translate_boot_must_attach_and_fault_only_on_purpose(monkeypatch):
     bad = smoke_mod._gic_check(on)
     assert bad and bad["classification"] == "SMMU_NOT_ATTACHED"
     assert smoke_mod._gic_check(on + attached) is None
+    # vioblk scans PCI itself, so it must claim its function's domain.
+    vioblk = "[VIOBLK] 00:02.0 dev 1001: 704512 sectors (344 MiB), read-only\n"
+    bad = smoke_mod._gic_check(on + attached + vioblk)
+    assert bad and bad["classification"] == "SMMU_UNCLAIMED"
+    claimed = (
+        "[HAL] SMMUv3 at 0000000009050000: requester 0010 is StreamID 10 - translating in a "
+        "domain of its own (DMA-remapping compatible, claimed by its driver)\n"
+    )
+    assert smoke_mod._gic_check(on + attached + vioblk + claimed) is None
     fault = "[HAL] SMMUv3 at 0000000009050000: FAULT type 10 StreamID 48 address {:016x}\n"
     bad = smoke_mod._gic_check(on + attached + fault.format(0x1000))
     assert bad and bad["classification"] == "SMMU_FAULT"
@@ -9939,6 +10055,30 @@ def test_smmu_translate_boot_must_attach_and_fault_only_on_purpose(monkeypatch):
     assert smoke_mod._gic_check(on + attached + caught) is None
     bad = smoke_mod._gic_check(on + attached + caught + fault.format(0x1_0000_1000))
     assert bad and bad["classification"] == "SMMU_FAULT"
+    # nvme.sys is DMA-remapping compatible: with NVMe on, it gets a domain of its own.
+    monkeypatch.setenv("VIBEOS_QEMU_NVME", "1")
+    monkeypatch.setenv("VIBEOS_TRIPWIRE", "SMMU=TRANSLATE NVME_STRAY_DMA=1")
+    bad = smoke_mod._gic_check(on + attached)
+    assert bad and bad["classification"] == "SMMU_NO_DOMAIN"
+    own = (
+        "[HAL] SMMUv3 at 0000000009050000: requester 0048 is StreamID 48 - "
+        "translating in a domain of its own (DMA-remapping compatible)\n"
+    )
+    bad = smoke_mod._gic_check(on + own)
+    assert bad and bad["classification"] == "SMMU_STRAY_DMA_LANDED"
+    stray = "[NVME] tripwire: a stray Identify to RAM at 0x4a3f2000 {}\n"
+    landed = stray.format(
+        "completed; the controller WROTE 4096 byte(s) of a page it was never given"
+    )
+    bad = smoke_mod._gic_check(on + own + landed)
+    assert bad and bad["classification"] == "SMMU_STRAY_DMA_LANDED"
+    held = stray.format("failed; the page is untouched")
+    bad = smoke_mod._gic_check(on + own + held)
+    assert bad and bad["classification"] == "SMMU_MISSED_STRAY_DMA"
+    assert smoke_mod._gic_check(on + own + held + fault.format(0x4A3F_2010)) is None
+    bad = smoke_mod._gic_check(on + own + held + fault.format(0x4A3F_2010) + fault.format(0x5000))
+    assert bad and bad["classification"] == "SMMU_FAULT"
+    monkeypatch.delenv("VIBEOS_QEMU_NVME")
     monkeypatch.delenv("VIBEOS_TRIPWIRE")
     monkeypatch.delenv("VIBEOS_QEMU_SMMU")
 
@@ -10038,6 +10178,23 @@ def test_gic3_boot_must_show_the_hal_driving_a_gicv3(monkeypatch):
     assert (smoke_mod._gic_check(cpu0) or {}).get("classification") == "GIC_LPIS_ONE_CPU"
     assert smoke_mod._gic_check(cpu0 + "[GIC] CPU1: first LPI delivered (INTID 8193)\n") is None
     monkeypatch.delenv("VIBEOS_QEMU_SMP")
+
+
+def test_its_missteer_boot_must_move_an_lpi(monkeypatch):
+    """ITS_MISSTEER binds every LPI one CPU away from its interrupt object, so the
+    boot must show steer()'s MOVI putting one back; a desktop alone could be NVMe
+    polling."""
+    from . import smoke as smoke_mod
+
+    monkeypatch.delenv("VIBEOS_QEMU_SMMU", raising=False)
+    monkeypatch.delenv("VIBEOS_QEMU_NVME", raising=False)
+    monkeypatch.setenv("VIBEOS_QEMU_GIC", "3")
+    monkeypatch.setenv("VIBEOS_TRIPWIRE", "ITS_MISSTEER")
+    v3 = "[GIC] GICv3: distributor 0000000008000000, 131072 bytes of redistributors\n"
+    bad = smoke_mod._gic_check(v3)
+    assert bad and bad["classification"] == "GIC_LPI_NOT_MOVED"
+    moved = v3 + "[HAL] GICv3 ITS 0: LPI 8193 moved from CPU2 to CPU1\n"
+    assert smoke_mod._gic_check(moved) is None
 
 
 def test_smmu_boot_must_show_the_smmu_bypassing(monkeypatch):
@@ -11108,6 +11265,73 @@ def test_payload_borrowed_binary_is_judged_at_its_build_arch(tmp_path, monkeypat
     assert pc.manifest(["guest"], "arm64") == {"reactos/run.exe": exe.resolve()}
 
 
+def test_wowx64_cpu_layer_older_than_its_sources_is_stale(tmp_path):
+    """mkramdisk stages whatever libwowx64fex.dll is on disk, so an edited Module.cpp
+    shipped the old plugin from a green build and every x86-64 guest died at launch
+    on the contract-version mismatch, a whole boot later."""
+    import os
+
+    assert build_mod.wowx64_cpu_stale(tmp_path) == []  # no DLL: mkramdisk says MISSING
+    dll = tmp_path / build_mod.WOWX64_CPU_DLL
+    dll.parent.mkdir(parents=True)
+    dll.write_text("plugin")
+    os.utime(dll, (2_000_000, 2_000_000))
+    src = tmp_path / "tools" / "fex" / "wowx64fex"
+    src.mkdir(parents=True)
+    (src / "Module.cpp").write_text("old")
+    os.utime(src / "Module.cpp", (1_000_000, 1_000_000))
+    header = tmp_path / "sdk" / "include" / "reactos" / "wowx64" / "btcpu64.h"
+    header.parent.mkdir(parents=True)
+    header.write_text("v3")
+    os.utime(header, (1_000_000, 1_000_000))
+    assert build_mod.wowx64_cpu_stale(tmp_path) == []
+
+    os.utime(header, (3_000_000, 3_000_000))
+    assert build_mod.wowx64_cpu_stale(tmp_path) == ["sdk/include/reactos/wowx64/btcpu64.h"]
+
+
+def test_a_failed_payload_build_leaves_the_old_stamp(tmp_path, monkeypatch):
+    """The stamp is smoke's only evidence of what the media carries. Written ahead of a
+    PAYLOAD_BUILD_FAIL, it claimed appstorm64 on media that never got it: the next smoke
+    passed payload-check and booted ×4 for a marker nothing could print."""
+    (tmp_path / "tools" / "payloads").mkdir(parents=True)
+    (tmp_path / "tools" / "payloads" / "compile.py").write_text(
+        "import json, os, sys\n"
+        "def resolve_env_payloads(environ=os.environ):\n"
+        "    return [n for n in environ.get('VIBEOS_PAYLOAD', '').split(',') if n]\n"
+        "def ensure_built(names, arch):\n"
+        "    if 'broken' in names:\n"
+        "        print('payloads/compile.py: ERROR: refused', file=sys.stderr)\n"
+        "        sys.exit(1)\n"
+        "    return []\n"
+        "def write_stamp(build_dir, environ=os.environ):\n"
+        "    names = resolve_env_payloads(environ)\n"
+        "    (build_dir / 'payloads.json').write_text(json.dumps(names))\n"
+        "    return names\n"
+    )
+    build_dir = tmp_path / "build-arm64"
+    build_dir.mkdir()
+    stamp = build_dir / "payloads.json"
+    stamp.write_text('["old"]')
+
+    monkeypatch.setenv("VIBEOS_PAYLOAD", "broken")
+    run = Run("build", "arm64", ts=1700000000)
+    assert build_mod._stage_payloads(run, tmp_path, build_dir, "arm64") is None
+    assert run.classification == "PAYLOAD_BUILD_FAIL"
+    assert stamp.read_text() == '["old"]'
+
+    monkeypatch.setenv("VIBEOS_PAYLOAD", "good")
+    run = Run("build", "arm64", ts=1700000000)
+    assert build_mod._stage_payloads(run, tmp_path, build_dir, "arm64") is not None
+    assert stamp.read_text() == '["good"]'
+
+    # No selection still CLEARS the stamp (the doom-clobber rule).
+    monkeypatch.delenv("VIBEOS_PAYLOAD")
+    run = Run("build", "arm64", ts=1700000000)
+    assert build_mod._stage_payloads(run, tmp_path, build_dir, "arm64") is not None
+    assert stamp.read_text() == "[]"
+
+
 def test_payload_committed_data_entry_is_not_a_build_output(tmp_path, monkeypatch):
     """kmtest lists its committed kmtest-tests-<arch>.txt under `binaries`. build.sh never
     writes it, so treating it as stale failed every gate with PAYLOAD_BUILD_FAIL."""
@@ -11660,3 +11884,31 @@ def test_payload_crash_is_triaged_with_the_booted_kernel(tmp_path, monkeypatch):
     assert crash["salient"][-1] == "MmCreatePeb+0x1"
     (tmp_path / "amd64-uefi_serial.log").write_text("[MODRUN] exit x rust rc=0x0 ms=1 records=0\n")
     assert smoke_mod._payload_crash(Path("."), "amd64", tmp_path) is None
+
+
+def test_scan_const_contradictions_keys_associated_consts_by_their_type(tmp_path, monkeypatch):
+    """cppapp gives each ATL dialog class `impl CXDialog { pub const IDD: i32 = .. }`: three
+    dialogs' IDDs are three constants, not a contradiction. Two values in ONE impl still are."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "scc", Path(__file__).resolve().parents[3] / "tools" / "scan_const_contradictions.py"
+    )
+    assert spec is not None and spec.loader is not None
+    scc = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(scc)
+    crate = tmp_path / "sdk" / "lib" / "rust" / "x-rust" / "src"
+    crate.mkdir(parents=True)
+    (crate / "a.rs").write_text(
+        "impl CAttributesDialog {\n    pub const IDD: i32 = 700;\n}\n"
+        "impl CFontsDialog {\n    pub const IDD: i32 = 710;\n}\n"
+        "pub const IDD: i32 = 5;\n"
+    )
+    monkeypatch.setattr(scc, "RUST_ROOT", tmp_path / "sdk" / "lib" / "rust")
+    monkeypatch.setattr(scc, "REPO", tmp_path)
+    decls = scc.collect()
+    assert {k: [v for _, v, _ in vs] for k, vs in decls.items()} == {
+        "CAttributesDialog::IDD": [700],
+        "CFontsDialog::IDD": [710],
+        "IDD": [5],
+    }

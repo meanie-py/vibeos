@@ -77,9 +77,9 @@ pub unsafe extern "system" fn tranirq_Constructor(
         );
     }
 
-    UNREFERENCED_PARAMETER(Instance);
-    UNREFERENCED_PARAMETER(Version);
-    UNREFERENCED_PARAMETER(Size);
+    UNREFERENCED_PARAMETER!(Instance);
+    UNREFERENCED_PARAMETER!(Version);
+    UNREFERENCED_PARAMETER!(Size);
 
     if InterfaceData as ULONG_PTR != CmResourceTypeInterrupt as ULONG_PTR {
         if DbgPrint(
@@ -154,7 +154,7 @@ pub unsafe extern "system" fn tranirq_Constructor(
     // HALDISPATCH->HalGetInterruptTranslator(...)
     ((*core::ptr::addr_of!(HalDispatchTable))
         .HalGetInterruptTranslator
-        .unwrap())(
+        .unwrap_unchecked())(
         ParentInterface,
         ParentBus,
         PCIBus,

@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use crate::types::*;
 use kmdf_sys::*;
 use ntkrnl_sys::ddk::{IRP, PIRP, IO_STACK_LOCATION, PIO_STACK_LOCATION, GUID, LPGUID, LPCGUID, DEVICE_OBJECT, PDEVICE_OBJECT, MDL, PMDL, PIO_COMPLETION_ROUTINE};
@@ -17,14 +18,12 @@ extern "system" {
     fn ScratchBuffer_EndUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_ExecuteCdbEx(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, OriginalRequest: *mut core::ffi::c_void, TransferSize: u32, GetDataFromDevice: u8, Cdb: *mut CDB, OprationLength: u8, TimeoutValue: u32,) -> i32;
     fn ScratchBuffer_ExecuteCdb(DeviceExtension: PCDROM_DEVICE_EXTENSION, OriginalRequest: *mut core::ffi::c_void, TransferSize: u32, GetDataFromDevice: u8, Cdb: PCDB, OprationLength: u8) -> NTSTATUS;
-    fn NT_ASSERT(condition: i32);
     fn DeviceGetExtension(Device: WDFDEVICE) -> *mut CDROM_DEVICE_EXTENSION;
     // DeviceSendPowerDownProcessRequest resolves from crate::types (canonical
     // signature: (PCDROM_DEVICE_EXTENSION, PFN_WDF_REQUEST_COMPLETION_ROUTINE, WDFCONTEXT) -> NTSTATUS).
 }
 unsafe extern "C" {
     fn TimeOutValueGetCapValue(timeOutValue: u32, value: u32) -> u32;
-    fn _Analysis_assume_(cond: i32);
 }
 unsafe extern "system" {
     fn KeQueryTickCount(TickCount: *mut ntkrnl_sys::ddk::LARGE_INTEGER);
@@ -293,12 +292,8 @@ pub unsafe extern "system" fn RequestProcessPowerIrpCompletion(
 
     let currentStack: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
 
-    NT_ASSERT(
-        if (*currentStack).Parameters.Power.Type == DevicePowerState { 1 } else { 0 },
-    );
-    NT_ASSERT(
-        if (*currentStack).Parameters.Power.State.DeviceState != PowerDeviceD0 { 1 } else { 0 },
-    );
+    NT_ASSERT!(if (*currentStack).Parameters.Power.Type == DevicePowerState { 1 } else { 0 });
+    NT_ASSERT!(if (*currentStack).Parameters.Power.State.DeviceState != PowerDeviceD0 { 1 } else { 0 });
 
     // _Analysis_assume_ removed: SAL no-op annotation; argument must never be evaluated (0xB8 class)
 
@@ -392,7 +387,7 @@ pub unsafe extern "C" fn PowerContextReuseRequest(DeviceExtension: *mut CDROM_DE
 pub unsafe extern "C" fn PowerContextBeginUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS {
     let mut status: NTSTATUS;
 
-    NT_ASSERT((!((*DeviceExtension).PowerContext.InUse)) as i32);
+    NT_ASSERT!((!((*DeviceExtension).PowerContext.InUse)) as i32);
 
     (*DeviceExtension).PowerContext.InUse = 1; // TRUE
     (*DeviceExtension).PowerContext.RetryCount = 3; /* MAXIMUM_RETRIES */
@@ -419,7 +414,7 @@ pub unsafe extern "C" fn PowerContextBeginUse(DeviceExtension: *mut CDROM_DEVICE
 pub unsafe extern "C" fn PowerContextEndUse(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
 ) -> NTSTATUS {
-    NT_ASSERT((*DeviceExtension).PowerContext.InUse as i32);
+    NT_ASSERT!((*DeviceExtension).PowerContext.InUse as i32);
     (*DeviceExtension).PowerContext.InUse = 0;
     KeQueryTickCount(core::ptr::addr_of_mut!(
         (*DeviceExtension).PowerContext.CompleteTime

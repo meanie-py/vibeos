@@ -106,3 +106,20 @@ def test_island_collection_sees_camel_case_enum_members():
 
 def test_the_cross_crate_check_keeps_all_caps_only():
     assert scc.CONST_RE.match("const DelayedWorkQueue: u32 = 0;") is None
+
+
+def test_own_island_catches_a_constant_borrowed_from_another_crate():
+    """atapi's prelude carried usbxhci's MAX_SLOTS (16); its own island says 32. --vs-island
+    accepts it because usbxhci's island has 16 -- only the crate's own island can say no."""
+    atapi = "sdk/lib/rust/atapi-rust/src/prelude.rs"
+    own = {"atapi-rust": {"MAX_SLOTS": {32}}, "usbxhci-rust": {"MAX_SLOTS": {16}}}
+    hits = scc.own_island_shadows({"MAX_SLOTS": [(atapi, 16, "common")]}, own)
+    assert hits == [("MAX_SLOTS", atapi, 16)]
+    usb = "sdk/lib/rust/usbxhci-rust/src/controller.rs"
+    assert scc.own_island_shadows({"MAX_SLOTS": [(usb, 16, "common")]}, own) == []
+
+
+def test_own_island_forgives_the_same_bits_at_another_width():
+    psn = "sdk/lib/rust/openglcfg-rust/src/prelude.rs"
+    own = {"openglcfg-rust": {"PSN_APPLY": {-202}}}
+    assert scc.own_island_shadows({"PSN_APPLY": [(psn, 0xFFFFFF36, "common")]}, own) == []

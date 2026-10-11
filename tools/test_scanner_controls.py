@@ -56,6 +56,21 @@ REPO = Path(__file__).resolve().parent.parent
 # shipped for months (`ntoskrnl.dll`, a file that does not exist); the second is
 # what the FIRST repair shipped, because rustc appends `.dll` even to a name that
 # already has an extension (`ntoskrnl.exe.dll`).
+# pcix PciBuildHackTable: ASSERT(!NT_SUCCESS(Status)) lowered with the condition as guard.
+_ASSERT_POLARITY_BAD = """
+unsafe fn f(Status: NTSTATUS) {
+    if !NT_SUCCESS(Status) {
+        RtlAssert(
+            b"!NT_SUCCESS(Status)\\0".as_ptr() as PVOID,
+            b"init.c\\0".as_ptr() as PVOID,
+            670,
+            null_mut(),
+        );
+    }
+}
+"""
+_ASSERT_POLARITY_GOOD = _ASSERT_POLARITY_BAD.replace("if !NT_SUCCESS", "if NT_SUCCESS")
+
 _RAWDYLIB_BAD = """\
 #[link(name = "ntoskrnl", kind = "raw-dylib")]
 extern "C" {
@@ -1246,6 +1261,29 @@ pub unsafe fn CRecycleBin_Parse(pbc: *mut u8) {
 }
 """
 
+# The DDK case: UNREFERENCED_PARAMETER is a macro in every DDK header, so an extern
+# declaration of it is a finding with no in-crate macro_rules! (cdfs, fastfat and cdrom
+# declared it in 30 files, resolved by whichever crate exported a no-op, 2026-10-09).
+_MACROSHADOW_DDK_BAD = """\
+extern "C" {
+    fn UNREFERENCED_PARAMETER(param: *mut core::ffi::c_void);
+}
+
+pub unsafe fn CdCommonClose(IrpContext: *mut u8) {
+    UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
+}
+"""
+
+_MACROSHADOW_DDK_GOOD = """\
+macro_rules! UNREFERENCED_PARAMETER {
+    ($($p:expr),* $(,)?) => {{ $( let _ = $p; )* }};
+}
+
+pub unsafe fn CdCommonClose(IrpContext: *mut u8) {
+    UNREFERENCED_PARAMETER!(IrpContext);
+}
+"""
+
 _MASKDRIFT_BAD = """\
 const KEY_WOW64_RES: ACCESS_MASK = 0x00000300;
 const CR4_PGE: ULONG = 0x00000080;
@@ -2011,6 +2049,29 @@ unsafe fn send_discover(ipp: *mut c_void, u: *mut universe) {
 }
 """
 
+# The bare-variable half (2026-10-10): sndrec32 passed `static mut str_mono: [u16; 10]` to
+# `gprintf`, its alias of the variadic `_snwprintf`; i386 read "st" as the %s pointer.
+_VARIADIC_ARRAY_BARE_BAD = """\
+extern "C" { pub fn _snwprintf(b: *mut u16, n: usize, f: *const u16, ...) -> i32; }
+pub use crate::prelude::_snwprintf as gprintf;
+pub static mut str_mono: [u16; 10] = [0; 10];
+pub static mut str_stereo: [u16; 10] = [0; 10];
+unsafe fn paint(t: *mut u16, f: *const u16, two: bool) {
+    gprintf(t, 100, f, if two { str_stereo } else { str_mono });
+}
+"""
+_VARIADIC_ARRAY_BARE_GOOD = """\
+extern "C" { pub fn _snwprintf(b: *mut u16, n: usize, f: *const u16, ...) -> i32; }
+pub use crate::prelude::_snwprintf as gprintf;
+pub static mut str_mono: [u16; 10] = [0; 10];
+pub static mut scroll: [u8; 4] = [0; 4];
+unsafe fn paint(t: *mut u16, f: *const u16, scroll: i32) {
+    gprintf(t, 100, f, str_mono.as_ptr());
+    gprintf(t, 100, f, scroll);
+    /* gprintf(t, 100, f, str_mono) */
+}
+"""
+
 # scan_byteptr_stride. Seeded from oleaut32 IRecordInfoImpl_RecordCopy (2026-10-04): the C's
 # `((BYTE*)src_rec) + offset` translated through `*mut PBYTE`, an 8x stride.
 _BYTEPTR_BAD = """\
@@ -2083,6 +2144,35 @@ pub const TYPE_E_CANTLOADLIBRARY: HRESULT = 0x8002_9C4Au32 as HRESULT;
 
 # scan_dowhile_continue. Seeded from syssetup RegisterTypeLibraries (2026-10-04): a C
 # do-while's `continue` re-ran the same INF line forever once translated to `loop`.
+# scan_case_bitor_pattern. Seeded from comctl32 TREEVIEW_SelectItem (2026-10-09): C's
+# `case TVGN_CARET|TVSI_NOSINGLEEXPAND:` is ONE value, the OR; the same text as a Rust
+# arm is an or-pattern matching EITHER constant. The GOOD case is the faithful guard.
+_CASE_BITOR_C = """\
+switch (action) {
+case TVGN_CARET|TVSI_NOSINGLEEXPAND:
+    bSingleExpand = FALSE;
+    break;
+}
+"""
+
+_CASE_BITOR_BAD = """\
+unsafe fn select(action: u32) {
+    match action {
+        TVGN_CARET | TVSI_NOSINGLEEXPAND => { single = 0; }
+        _ => {}
+    }
+}
+"""
+
+_CASE_BITOR_GOOD = """\
+unsafe fn select(action: u32) {
+    match action {
+        x if x == TVGN_CARET | TVSI_NOSINGLEEXPAND => { single = 0; }
+        _ => {}
+    }
+}
+"""
+
 _DOWHILE_BAD = """\
 unsafe fn register(ctx: *mut Ctx) {
     loop {
@@ -2459,6 +2549,13 @@ CONTROLS: list[Control] = [
         good={"olesys.rs": _WINERR_GOOD},
     ),
     Control(
+        name="scan_case_bitor_pattern",
+        script="tools/scan_case_bitor_pattern.py",
+        argv=["--lint"],
+        bad={"treeview.c": _CASE_BITOR_C, "treeview.rs": _CASE_BITOR_BAD},
+        good={"treeview.c": _CASE_BITOR_C, "treeview.rs": _CASE_BITOR_GOOD},
+    ),
+    Control(
         name="scan_dowhile_continue",
         script="tools/scan_dowhile_continue.py",
         argv=["--lint"],
@@ -2471,6 +2568,13 @@ CONTROLS: list[Control] = [
         argv=["--root"],
         bad={"miarm.h": _DROPPED_ASSERT_H, "bridge.rs": _DROPPED_ASSERT_BAD},
         good={"miarm.h": _DROPPED_ASSERT_H, "bridge.rs": _DROPPED_ASSERT_GOOD},
+    ),
+    Control(
+        name="scan_assert_polarity",
+        script="tools/scan_assert_polarity.py",
+        argv=["--root"],
+        bad={"src/init.rs": _ASSERT_POLARITY_BAD},
+        good={"src/init.rs": _ASSERT_POLARITY_GOOD},
     ),
     Control(
         name="scan_rawdylib_linkname",
@@ -2585,6 +2689,14 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"recycle_bin.rs": _MACROSHADOW_BAD},
         good={"recycle_bin.rs": _MACROSHADOW_GOOD},
+        pass_files=True,
+    ),
+    Control(
+        name="scan_macro_fn_shadow",
+        script="tools/scan_macro_fn_shadow.py",
+        argv=["--lint"],
+        bad={"close.rs": _MACROSHADOW_DDK_BAD},
+        good={"close.rs": _MACROSHADOW_DDK_GOOD},
         pass_files=True,
     ),
     Control(
@@ -2840,6 +2952,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"bad.rs": _VARIADIC_ARRAY_BAD},
         good={"good.rs": _VARIADIC_ARRAY_GOOD},
+    ),
+    Control(
+        name="scan_variadic_array_arg",
+        script="tools/scan_variadic_array_arg.py",
+        argv=["--lint"],
+        bad={"bad.rs": _VARIADIC_ARRAY_BARE_BAD},
+        good={"good.rs": _VARIADIC_ARRAY_BARE_GOOD},
     ),
     Control(
         name="scan_magic_offsets",
@@ -3111,6 +3230,12 @@ UNCOVERED: dict[str, str] = {
         "island_disagreements(), is a pure function over two dicts, driven in "
         "tools/test_scan_const_vs_island.py with the fsrtl swap as the positive control."
     ),
+    "scan_const_vs_own_island": (
+        "needs the whole tree's per-crate islands as its oracle. The decision, "
+        "own_island_shadows(), is a pure function over two dicts, driven in "
+        "tools/test_scan_const_vs_island.py with atapi's MAX_SLOTS (16 copied from usbxhci, "
+        "its island says 32) as the positive control."
+    ),
     "scan_bindgen_padding_index": (
         "a regex over single source lines with no tree model, so a fixture dir would only "
         "restate its unit tests. tools/test_scan_bindgen_padding_index.py drives scan_text "
@@ -3216,6 +3341,28 @@ def test_irql_cli_default_still_builds_whole_workspace_summaries(tmp_path, monke
     target = tmp_path / "selected.rs"
     assert module.main(["--lint", str(target)]) == 0
     assert seen == [[module.RUST_WS], [target]]
+
+
+def test_irql_a_passive_only_wait_does_not_make_its_callers_sleep(tmp_path):
+    """KeSynchronizeExecution waits only for a passive-level interrupt, which may be
+    synchronized only at PASSIVE_LEVEL; every caller holding a spin lock around it
+    (scsiport's) would otherwise be an IRQL_SLEEP_WHILE_HELD."""
+    spec = importlib.util.spec_from_file_location(
+        "irql_conditional_control", REPO / "tools/scan_irql_balance.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    src = tmp_path / "ke.rs"
+    src.write_text(
+        "fn KeSynchronizeExecution() { IopSync(); }\n"
+        "fn IopSync() { KeWaitForSingleObject(); }\n"
+        "fn Caller() { KeSynchronizeExecution(); }\n"
+    )
+    may_sleep, _, _ = module.build_summaries([src], {})
+    assert "IopSync" in may_sleep
+    assert "KeSynchronizeExecution" not in may_sleep
+    assert "Caller" not in may_sleep
 
 
 @pytest.mark.parametrize(
@@ -3437,6 +3584,35 @@ def test_cc_mismatch_flags_one_undefined_symbol_declared_two_ways(tmp_path: Path
     assert any("cachesup.rs" in h for h in split) and any("fileinfo.rs" in h for h in split), hits
 
 
+def test_cc_mismatch_counts_a_sys_crate_import_as_a_declaration(tmp_path: Path, monkeypatch):
+    """[DECL_CC_SPLIT] where one side is not an extern block at all: pnp.rs imported the cdecl
+    IoCopyCurrentIrpStackLocationToNext from ntkrnl_sys::ddk, flush.rs declared it "system".
+    rustc merged them; FatCommonFlushBuffers' finally returned into its own stack on i386.
+    The import must count, and a crate that only imports must stay quiet."""
+    cc = _cc_mod()
+    lib = _materialize(
+        tmp_path,
+        {
+            "demo-sys/src/bindgen_i386.rs": (
+                'extern "C" {\n    pub fn IoCopyCurrentIrpStackLocationToNext(Irp: *mut u8);\n}\n'
+            ),
+            "fat-rust/src/pnp.rs": (
+                "use demo_sys::ddk::{KeX, IoCopyCurrentIrpStackLocationToNext};\n"
+            ),
+            "fat-rust/src/flush.rs": (
+                'extern "system" {\n    fn IoCopyCurrentIrpStackLocationToNext(Irp: *mut u8);\n}\n'
+            ),
+            "clean-rust/src/pnp.rs": "use demo_sys::ddk::IoCopyCurrentIrpStackLocationToNext;\n",
+        },
+    )
+    monkeypatch.setattr(cc, "BASE", str(lib))
+    monkeypatch.setattr(cc, "_SYS_CACHE", {})
+    hits = cc.scan_crate(str(lib / "fat-rust/src"))
+    split = [h for h in hits if "DECL_CC_SPLIT" in h]
+    assert any("pnp.rs" in h for h in split) and any("flush.rs" in h for h in split), hits
+    assert not cc.scan_crate(str(lib / "clean-rust/src"))
+
+
 def test_cc_mismatch_ignores_a_commented_out_declaration(tmp_path: Path):
     """section.rs keeps `// DUPLICATE: fn KeRaiseIrql(..)` inside an extern "system" block
     next to a live extern "C" one. A comment is not a declaration: no split, no mismatch."""
@@ -3645,3 +3821,72 @@ def test_bitwise_not_after_a_keyword_is_flagged():
             assert scan_line(line)
     assert not scan_line("    if success == 0 {")
     assert not scan_line("    assert!(x != 0);")
+
+
+def test_type_alias_tchar_family_is_compared_within_a_crate_only(tmp_path):
+    """BCHAR is WCHAR in a -DUNICODE module's island and BYTE in an ANSI one's (the
+    appcompat shims): two right answers to two compiles, not a contradiction. Inside ONE
+    crate the two widths are still a bug (aclui's TCHAR once came from the ANSI glob)."""
+    spec = importlib.util.spec_from_file_location(
+        "alias_tchar_control", REPO / "tools/scan_type_alias_contradictions.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    rust = tmp_path / "sdk" / "lib" / "rust"
+    for crate, rhs in (("wide-rust", "WCHAR"), ("ansi-rust", "BYTE")):
+        (rust / crate / "src").mkdir(parents=True)
+        (rust / crate / "src" / "types.rs").write_text(
+            f"pub type WCHAR = u16;\npub type BYTE = u8;\npub type BCHAR = {rhs};\n"
+        )
+    decls, aliases = module.collect(tmp_path)
+    assert not [h for h in module.contradictions(decls, aliases) if h[0] == "BCHAR"]
+    (rust / "wide-rust" / "src" / "prelude.rs").write_text("pub type BCHAR = u8;\n")
+    decls, aliases = module.collect(tmp_path)
+    hits = [h for h in module.contradictions(decls, aliases) if h[0] == "BCHAR"]
+    assert hits and all("wide-rust" in h[1] for h in hits)
+
+
+def test_inline_flag_literal_is_paired_within_its_own_field(tmp_path):
+    """c_data_port's keyboard tables: `VSC_VK { Vsc: 0x10 as BYTE, Vk: 433 as USHORT
+    /* VK_MEDIA_PREV_TRACK | KBDEXT */ }`. The comment annotates 433 alone (0xB1 | 0x100);
+    pairing the scan code 0x10 with the VK, and an |-list whose KBDEXT the catalog does not
+    know, were 4108 false findings."""
+    spec = importlib.util.spec_from_file_location(
+        "inline_flag_field_control", REPO / "tools/scan_inline_flag_literals.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    rs = tmp_path / "t.rs"
+    rs.write_text(
+        "static T: [VSC_VK; 2] = [\n"
+        "    VSC_VK { Vsc: 0x10 as BYTE, Vk: 433 as USHORT /* VK_MEDIA_PREV_TRACK | KBDEXT */ },\n"
+        "    VSC_VK { Vsc: 0x47 as BYTE, Vk: 3108 as USHORT /* VK_HOME | KNUMS */ },\n"
+        "];\n"
+        "const BAD: u32 = 0x25; // VK_HOME\n"
+    )
+    catalog = {"VK_MEDIA_PREV_TRACK": 0xB1, "VK_HOME": 0x24}
+    hits = module.scan_file(rs, catalog)
+    assert [(h[1], h[2]) for h in hits] == [(0x25, "VK_HOME")]
+
+
+def test_formatless_printf_name_needs_a_real_printf(tmp_path):
+    """apphelp's `SeiPrintFunctionName(lpProcName, szOrdProcFmt)` ends in a `...Fmt`
+    parameter and its name contains Print+F(unctionName); it is not a printf, and the old
+    case-insensitive `printf` match flagged it. A real one must still flag."""
+    spec = importlib.util.spec_from_file_location(
+        "formatless_name_control", REPO / "tools/scan_formatless_printf.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    rs = tmp_path / "x.rs"
+    rs.write_text(
+        "#[no_mangle]\n"
+        'pub unsafe extern "C" fn SeiPrintFunctionName(p: LPCSTR, szOrdProcFmt: *mut i8)'
+        " -> LPCSTR { p }\n"
+        "#[no_mangle]\n"
+        'pub unsafe extern "C" fn DbgPrintfEx(Format: PCSTR) -> u32 { 0 }\n'
+    )
+    assert [f[2] for f in module.scan([rs])] == ["DbgPrintfEx"]

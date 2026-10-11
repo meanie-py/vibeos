@@ -51,7 +51,7 @@ unsafe fn send_complete_impl(
     let mut BytesCopied: UINT;
     let mut HaltSendQueue: BOOLEAN;
 
-    UNREFERENCED_PARAMETER(DeviceObject as PVOID);
+    UNREFERENCED_PARAMETER!(DeviceObject as PVOID);
 
     AFD_DbgPrint!(
         MID_TRACE,
@@ -64,7 +64,7 @@ unsafe fn send_complete_impl(
         return STATUS_FILE_CLOSED;
     }
 
-    ASSERT((*FCB).SendIrp.InFlightRequest == Irp);
+    ASSERT!((*FCB).SendIrp.InFlightRequest == Irp);
     (*FCB).SendIrp.InFlightRequest = core::ptr::null_mut();
 
     if (*FCB).SharedData.State == SOCKET_STATE_CLOSED {
@@ -130,7 +130,7 @@ unsafe fn send_complete_impl(
         SendReq = (GetLockedData(NextIrp, NextIrpSp)) as _;
 
         TotalBytesCopied = (*NextIrp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[3] as SIZE_T;
-        ASSERT(TotalBytesCopied != 0);
+        ASSERT!(TotalBytesCopied != 0);
 
         if TotalBytesCopied > SendLength as SIZE_T {
             TotalBytesCopied -= SendLength as SIZE_T;
@@ -147,7 +147,7 @@ unsafe fn send_complete_impl(
             break;
         }
 
-        ASSERT((*NextIrp).IoStatus.Information != 0);
+        ASSERT!((*NextIrp).IoStatus.Information != 0);
 
         (*NextIrp).IoStatus.__bindgen_anon_1.Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
 
@@ -165,7 +165,7 @@ unsafe fn send_complete_impl(
         IoCompleteRequest(NextIrp, IO_NETWORK_INCREMENT);
     }
 
-    ASSERT(SendLength == 0);
+    ASSERT!(SendLength == 0);
 
     if HaltSendQueue == 0 && !IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_SEND as usize])) {
         NextIrpEntry = (*FCB).PendingIrpList[FUNCTION_SEND as usize].Flink;
@@ -199,7 +199,7 @@ unsafe fn send_complete_impl(
             if SpaceAvail == 0 {
                 (*FCB).PollState &= !AFD_EVENT_SEND;
 
-                ASSERT(((*SendReq).AfdFlags & AFD_OVERLAPPED) != 0);
+                ASSERT!(((*SendReq).AfdFlags & AFD_OVERLAPPED) != 0);
 
                 NextIrp = core::ptr::null_mut();
             }
@@ -283,7 +283,7 @@ unsafe fn packet_socket_send_complete_impl(
     let mut NextIrp: PIRP;
     let mut SendReq: PAFD_SEND_INFO;
 
-    UNREFERENCED_PARAMETER(DeviceObject as PVOID);
+    UNREFERENCED_PARAMETER!(DeviceObject as PVOID);
 
     AFD_DbgPrint!(
         MID_TRACE,
@@ -357,8 +357,8 @@ pub unsafe extern "system" fn AfdConnectedSocketWriteData(
     let mut SendLength: u32;
     let mut LockMode: KPROCESSOR_MODE = 0;
 
-    UNREFERENCED_PARAMETER(DeviceObject as PVOID);
-    UNREFERENCED_PARAMETER(&Short as *const u8 as PVOID);
+    UNREFERENCED_PARAMETER!(DeviceObject as PVOID);
+    UNREFERENCED_PARAMETER!(&Short as *const u8 as PVOID);
 
     AFD_DbgPrint!(MID_TRACE, b"Called on %p\n\0".as_ptr() as PCHAR, FCB);
 
@@ -609,7 +609,7 @@ pub unsafe extern "system" fn AfdPacketSocketWriteData(
     let SendReq: PAFD_SEND_INFO_UDP;
     let mut LockMode: KPROCESSOR_MODE = 0;
 
-    UNREFERENCED_PARAMETER(DeviceObject as PVOID);
+    UNREFERENCED_PARAMETER!(DeviceObject as PVOID);
 
     AFD_DbgPrint!(MID_TRACE, b"Called on %p\n\0".as_ptr() as PCHAR, FCB);
 

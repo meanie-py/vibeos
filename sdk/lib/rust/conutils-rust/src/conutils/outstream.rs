@@ -70,7 +70,6 @@ extern "C" {
     // Win32 block above, else i386 mangles it to `_wcslen@4` and link fails.
     fn wcslen(s: *const u16) -> usize;
     fn va_start(ap: *mut va_list, ...);
-    fn va_end(ap: *mut va_list);
     // msvcrt cdecl (`@ cdecl _vsnwprintf` in msvcrt.spec). The original
     // ConPrintfV called the strsafe FORCEINLINE StringCchVPrintfExW, which only
     // resolved on x86 because clang emitted an out-of-line weak copy from a C TU

@@ -30,15 +30,7 @@ extern "C" {
 }
 
 extern "C" {
-    fn UNREFERENCED_PARAMETER(param: *const core::ffi::c_void);
-}
-extern "C" {
-}
-extern "C" {
     fn LlSectorsFromBytes(bytes: i64) -> i64;
-}
-extern "system" {
-    fn ASSERT(condition: bool);
 }
 extern "system" {
     #[cfg(feature = "ntddi_win8")]
@@ -162,7 +154,7 @@ pub unsafe extern "C" fn CdQueryFsVolumeInfo(
 
     PAGED_CODE!();
 
-    UNREFERENCED_PARAMETER(IrpContext as *const core::ffi::c_void);
+    UNREFERENCED_PARAMETER!(IrpContext as *const core::ffi::c_void);
 
     (*Buffer).VolumeCreationTime =
         *(&raw mut (*((*Vcb).VolumeDasdFcb)).CreationTime as PLARGE_INTEGER);
@@ -254,7 +246,7 @@ pub unsafe extern "C" fn CdQueryFsAttributeInfo(
     let mut Status: i32 = 0; // STATUS_SUCCESS
 
     PAGED_CODE!();
-    UNREFERENCED_PARAMETER(Vcb as *mut core::ffi::c_void);
+    UNREFERENCED_PARAMETER!(Vcb as *mut core::ffi::c_void);
 
     // Fill out the fixed portion of the buffer
     (*Buffer).FileSystemAttributes = FILE_CASE_SENSITIVE_SEARCH
@@ -311,7 +303,7 @@ pub unsafe extern "C" fn CdQueryFsSectorSizeInfo(
     let _ = IrpContext;
 
     let cond_assert = (*Length as usize) >= core::mem::size_of::<FILE_FS_SECTOR_SIZE_INFORMATION>();
-    ASSERT(cond_assert);
+    ASSERT!(cond_assert);
     let _ = (*Length as usize) >= core::mem::size_of::<FILE_FS_SECTOR_SIZE_INFORMATION>();
 
     Status = FsRtlGetSectorSizeInformation((*(*Vcb).Vpb).RealDevice, Buffer);

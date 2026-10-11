@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
@@ -74,11 +75,9 @@ extern "C" {
 
 // DBG-only no-op verification macros (PAGED_CODE / ASSERT_* / NT_ASSERT /
 // UNREFERENCED_PARAMETER expand to nothing in a retail build).
-#[inline(always)] fn NT_ASSERT(_cond: bool) {}
 #[inline(always)] unsafe fn ASSERT_IRP_CONTEXT(_p: *const IRP_CONTEXT) {}
 #[inline(always)] unsafe fn ASSERT_FCB(_p: *const FCB) {}
 #[inline(always)] unsafe fn ASSERT_LOCKED_FCB(_p: *const FCB) {}
-#[inline(always)] fn UNREFERENCED_PARAMETER<T>(_p: T) {}
 
 // ---- cdfs private fn-macro inlines (cdprocs.h) ----
 //   __bindgen_anon_1 = { FSRTL_ADVANCED_FCB_HEADER Header; ... } — holds NodeTypeCode.
@@ -119,7 +118,7 @@ pub unsafe extern "C" fn CdAddAllocationFromDirent(
     let NewMcbArray: *mut core::ffi::c_void;
     let McbEntry: *mut CD_MCB_ENTRY;
 
-    UNREFERENCED_PARAMETER(IrpContext);
+    UNREFERENCED_PARAMETER!(IrpContext);
     ASSERT_IRP_CONTEXT(IrpContext);
     ASSERT_FCB(Fcb);
     ASSERT_LOCKED_FCB(Fcb);
@@ -184,8 +183,8 @@ pub unsafe extern "C" fn CdAddInitialAllocation(
         ASSERT_IRP_CONTEXT(IrpContext as *const IRP_CONTEXT);
         ASSERT_FCB(Fcb);
         ASSERT_LOCKED_FCB(Fcb);
-        NT_ASSERT(0 == (*Fcb).Mcb.CurrentEntryCount);
-        NT_ASSERT(CDFS_NTC_FCB_DATA != (*fcb_hdr(Fcb)).NodeTypeCode as u32);
+        NT_ASSERT!(0 == (*Fcb).Mcb.CurrentEntryCount);
+        NT_ASSERT!(CDFS_NTC_FCB_DATA != (*fcb_hdr(Fcb)).NodeTypeCode as u32);
 
         let mcb_entry: *mut CD_MCB_ENTRY = (*Fcb).Mcb.McbArray;
         let disk_offset: i64 = LlBytesFromBlocks((*Fcb).Vcb, StartingBlock);
@@ -225,7 +224,7 @@ pub unsafe extern "C" fn CdInitializeMcb(
     Fcb: *mut FCB,
 ) {
     PAGED_CODE!();
-    UNREFERENCED_PARAMETER(IrpContext);
+    UNREFERENCED_PARAMETER!(IrpContext);
     ASSERT_IRP_CONTEXT(IrpContext);
     ASSERT_FCB(Fcb);
 
@@ -241,7 +240,7 @@ pub unsafe extern "C" fn CdUninitializeMcb(
     Fcb: *mut FCB,
 ) {
     PAGED_CODE!();
-    UNREFERENCED_PARAMETER(IrpContext);
+    UNREFERENCED_PARAMETER!(IrpContext);
     ASSERT_IRP_CONTEXT(IrpContext);
     ASSERT_FCB(Fcb);
 
@@ -527,18 +526,18 @@ pub unsafe extern "C" fn CdLookupAllocation(
             };
         },
         |_, _| {
-            if (*p_CleanupParent) {
+            if *p_CleanupParent  {
                 //
                 //  Release the parent and cleanup the dirent structures.
                 //
 
-                CdReleaseFile(IrpContext, (*p_ParentFcb));
+                CdReleaseFile(IrpContext, *p_ParentFcb );
 
                 CdCleanupDirContext(IrpContext, &mut (*p_DirContext));
                 CdCleanupDirent(IrpContext, &mut (*p_Dirent));
             }
 
-            if (*p_UnlockFcb) {
+            if *p_UnlockFcb  {
                 CdUnlockFcb(IrpContext, Fcb);
             }
         },

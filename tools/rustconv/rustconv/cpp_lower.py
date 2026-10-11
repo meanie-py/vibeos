@@ -1,0 +1,711 @@
+"""Lower a C++ method or function body to the C-like text a worker translates.
+
+The model is good at C and unreliable at the parts of C++ that are invisible in the text:
+which member an unqualified `bits_psample` names, which base class it lives in, which of two
+`alloc_seconds` overloads a call picks, which default argument it silently passes, what
+`new audio_membuffer(fmt)` constructs and what `delete p` destroys. clang has already
+resolved every one of those, so they are rewritten here, from the AST, into explicit text:
+
+    bytes_played_ = 0;                 ->  this_->__base1.bytes_played_ = 0;
+    alloc_seconds(secs);   // (float)  ->  this_->alloc_seconds__1(secs);
+    buffer_secs();         // default  ->  this_->buffer_secs__0();
+    new audio_waveout(fmt, *buf)       ->  audio_waveout__new_0(fmt, *buf)
+    delete AUD_OUT                     ->  audio_waveout__delete(AUD_OUT)
+    this                               ->  this_
+
+Every rewrite is an EDIT (offset, length, replacement) against the body's own source text,
+located from the AST node's own token, so the body keeps its comments, macros and layout.
+A node whose token sits inside a macro expansion has no single place in the text; such an
+edit is skipped and reported, never guessed (`Lowered.unplaced`).
+
+The names this produces (`__baseK`, `<method>__N`, `<Class>__new_N`, `<Class>__delete`,
+`<Class>__make_N`) are the ones `cpp_app` renders, and nothing else knows them.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+
+from . import c_data_port as cdp
+
+# ATL template methods a CWindowImpl/CDialogImpl subclass calls through an implicit `this`.
+# cpp_model re-exports this one set (it imports this module, so it cannot own it).
+ATL_IMPL_METHODS = frozenset(
+    {
+        "Create",
+        "DefWindowProc",
+        "SubclassWindow",
+        "UnsubclassWindow",
+        "DoModal",
+        "EndDialog",
+        "GetWndClassInfo",
+        "GetWindowProc",
+    }
+)
+
+
+# atlwin.h's defaults for the methods _render_atl_glue implements, by (name, full arity).
+# CWindowImpl::Create's 7th parameter (lpCreateParam) has no glue slot: its default is None,
+# so a call that relies on it is left for the audit rather than silently mis-arity'd.
+_ATL_GLUE_DEFAULTS: dict[tuple[str, int], list[str | None]] = {
+    ("Create", 7): [None, "NULL", "NULL", "0", "0", "0U", None],
+    # CDialogImpl::Create/DoModal's dwInitParam is an LPARAM: `0`, not a pointer NULL.
+    ("Create", 2): [None, "0"],
+    ("DoModal", 2): ["GetActiveWindow()", "0"],
+}
+
+
+_TEXT_MACRO = re.compile(
+    r"\b(?:TEXT|_TEXT|__TEXT|_T)\(\s*(\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*')\s*\)"
+)
+
+
+def unicode_text_macros(text: str) -> str:
+    """`TEXT("x")` / `_T('x')` -> `L"x"` / `L'x'`, what winnt.h/tchar.h expand them to in a
+    -DUNICODE compile. Lowered bodies keep the source's macro spelling, and an ATL header's
+    `TEXT(';')` reached the model as a call it cannot resolve."""
+    return _TEXT_MACRO.sub(lambda m: "L" + m.group(1), text)
+
+
+@dataclass
+class Lowered:
+    text: str
+    unplaced: list[str] = field(default_factory=list)
+    # (class short name, rust method name) of every member call the AST resolved: what the
+    # body really calls, for external reach. ("*", name) where the callee was not resolved
+    # (an inherited ATL template member through an implicit `this`).
+    calls: list[tuple[str, str]] = field(default_factory=list)
+
+
+@dataclass
+class DeclInfo:
+    """What a member/constructor declaration id resolves to, in the CURRENT TU's AST."""
+
+    owner: str  # qualified class name
+    kind: str  # field | method | ctor | dtor
+    name: str
+    rust_name: str
+    defaults: list[str | None] = field(default_factory=list)  # per param
+    static: bool = False
+
+
+def _tok(loc: dict, body_file: str, lo: int, hi: int) -> tuple[int, int] | None:
+    """(offset, tokLen) of a location's token if it is literally inside the body text."""
+    for cand in (loc.get("spellingLoc"), loc.get("expansionLoc"), loc):
+        if not cand or "offset" not in cand:
+            continue
+        if cand.get("_file") == body_file and lo <= cand["offset"] < hi:
+            # A spelling location inside a macro DEFINITION is not in the body; the check
+            # above already excludes it (different file or outside the span).
+            return cand["offset"], cand.get("tokLen", 0)
+    return None
+
+
+def _strip_type(qt: str) -> str:
+    t = re.sub(r"\b(const|volatile|struct|class)\b", "", qt)
+    t = t.replace("*", "").replace("&", "").strip()
+    return t.split("::")[-1].strip()
+
+
+class Lowerer:
+    """Per-TU: decl ids are only meaningful inside the AST that produced them."""
+
+    def __init__(self, decls: dict[str, DeclInfo], classes: dict, base_path) -> None:
+        self.decls = decls
+        self.classes = classes  # qualified name -> ClassModel
+        self.base_path = base_path  # (from_class_short, to_class_short) -> "__base1." | ""
+        self.ctor_index = {}  # (class short, ctorType qualType) -> N
+        self._span: tuple[str, int, int] = ("", 0, 0)
+
+    def _token_text(self, loc: dict) -> str | None:
+        f, lo, hi = self._span
+        t = _tok(loc, f, lo, hi)
+        return None if t is None else cdp_text(f, t[0], t[0] + t[1])
+
+    def lower(self, node: dict, span: tuple[str, int, int], this_class: str | None) -> Lowered:
+        self._span = span
+        f, lo, hi = span
+        text = cdp_text(f, lo, hi)
+        edits: list[tuple[int, int, str]] = []
+        unplaced: list[str] = []
+        self._calls: set[tuple[str, str]] = set()
+
+        placed: set[tuple[int, int, str]] = set()
+
+        # Object-like macros over a caller's local are inlined FIRST (_local_in_macro): every
+        # node of their expansion is located at the macro-name token, and a member rename
+        # there (`rc.bottom` -> rewrite at `Y_MARGIN`) would overwrite the macro name.
+        def find_inlined(n: object) -> None:
+            if isinstance(n, list):
+                for x in n:
+                    find_inlined(x)
+            elif isinstance(n, dict):
+                if n.get("kind") == "DeclRefExpr":
+                    self._local_in_macro(n, f, lo, hi, edits)
+                find_inlined(n.get("inner", []))
+
+        find_inlined(node)
+        inlined = {(e[0], e[0] + e[1]) for e in edits}
+
+        def put(loc: dict, length: int | None, repl: str, what: str) -> None:
+            t = _tok(loc, f, lo, hi)
+            if t is None:
+                unplaced.append(what)
+                return
+            if any(a <= t[0] - lo < b for a, b in inlined):
+                return  # inside an inlined macro: its text is the definition's, as written
+            edit = (t[0] - lo, t[1] if length is None else length, repl)
+            # A macro that repeats its argument (`min(a, b)` expands `b` twice) yields one
+            # AST node per copy, all spelled at the same token: one edit, not one per copy.
+            # history.cpp's `min(pt.x, GetWidth())` became `this_->this_->this_->this_->`.
+            if edit in placed:
+                return
+            placed.add(edit)
+            edits.append(edit)
+
+        def walk(n: object, parent: dict | None = None) -> None:
+            if isinstance(n, list):
+                for x in n:
+                    walk(x, parent)
+                return
+            if not isinstance(n, dict):
+                return
+            k = n.get("kind")
+            if k == "CXXThisExpr" and not _implicit(n):
+                put(n["range"]["begin"], 4, "this_", "this")
+            elif k == "MemberExpr" and self._static_via_object(n, f, lo, hi, edits):
+                return  # `obj.f` is now `Class::f`: the object is gone, so is its walk
+            elif k == "MemberExpr":
+                self._member(n, put, this_class)
+            elif k == "DeclRefExpr":
+                self._static_ref(n, f, lo, hi, edits)
+            elif k == "CallExpr" and self._fn_pointer_member_call(n, f, lo, hi, edits):
+                self._defaults(n, put, f, lo, hi, late)
+            elif k in ("CXXMemberCallExpr", "CallExpr"):
+                # Into `late`: a default argument goes after the LAST written argument, and
+                # that argument's own edits at the same offset (a conversion's
+                # `).op_to_HWND()`) must land in front of it, i.e. be discovered first.
+                self._defaults(n, put, f, lo, hi, late)
+            elif k == "CXXNewExpr":
+                self._new(n, put, f, lo, hi, edits)
+            elif k == "CXXDeleteExpr":
+                self._delete(n, put, f, lo, hi, edits)
+            elif k == "ImplicitCastExpr" and n.get("castKind") in (
+                "DerivedToBase",
+                "UncheckedDerivedToBase",
+            ):
+                # The object of a member access is _member's: it writes the base path at the
+                # member name, and wrapping the object too would walk the path twice.
+                if not (parent and parent.get("kind") == "MemberExpr"):
+                    self._upcast(n, f, lo, hi, edits, unplaced)
+            elif k == "ImplicitCastExpr" and n.get("castKind") == "UserDefinedConversion":
+                obj = self._conversion(n, f, lo, hi, edits)
+                if obj is not None:
+                    walk(obj, None)  # the object only: the implicit member is ours
+                    return
+            elif k == "VarDecl":
+                self._local(n, f, lo, hi, edits)
+            elif k in ("CXXTemporaryObjectExpr", "CXXFunctionalCastExpr"):
+                self._temporary(n, f, lo, hi, edits)
+            for key in ("inner",):
+                walk(n.get(key, []), n)
+
+        late: list = []
+        walk(node)
+        edits.extend(late)
+        return Lowered(_apply(text, edits), unplaced, sorted(self._calls))
+
+    # -- rules -------------------------------------------------------------------------
+
+    def _member(self, n: dict, put, this_class: str | None) -> None:
+        if not n.get("name"):
+            return  # the implicit hop through an anonymous union: the field's rename spells it
+        info = self.decls.get(n.get("referencedMemberDecl", ""))
+        if info is not None and info.kind != "field":
+            self._calls.add((info.owner.split("::")[-1], info.rust_name))
+        elif info is None and n.get("name"):
+            self._calls.add(("*", n["name"]))
+        base = (n.get("inner") or [{}])[0]
+        while base.get("kind") == "MemberExpr" and not base.get("name"):
+            base = (base.get("inner") or [{}])[0]
+        this_node = _unwrap_casts(base)
+        implicit_this = this_node.get("kind") == "CXXThisExpr" and _implicit(this_node)
+        if info is None and not implicit_this and self._plain_base_field(n, base, put):
+            return
+        if info is None:
+            # A member of a class the module does not define. Through an implicit `this`
+            # it is inherited from an EXTERNAL base (`Invalidate(FALSE)` in a CWindowImpl
+            # subclass): qualify it, or the model reads a member call as a free function.
+            if implicit_this and this_class:
+                name = n.get("name", "?")
+                # ATL's template machinery (Create, DefWindowProc, DoModal...) is answered by
+                # the class's own generated glue: keep the call on the object.
+                path = (
+                    ""
+                    if name in ATL_IMPL_METHODS
+                    else self.base_path(this_class.split("::")[-1], "\0external")
+                )
+                put(n["range"]["end"], 0, "this_->" + path, name)
+            return
+        # The static type BEFORE any derived-to-base cast: the base path is ours to write.
+        static_type = _strip_type(this_node.get("type", {}).get("qualType", ""))
+        if implicit_this:
+            static_type = (this_class or "").split("::")[-1]
+        path = self.base_path(static_type, info.owner.split("::")[-1]) if static_type else ""
+        # clang's JSON gives a MemberExpr no `loc`; its range ENDS on the member-name token
+        # (`p->name`, and for an implicit `this` the range is that one token).
+        name_loc = n["range"]["end"]
+        prefix = ("this_->" if implicit_this else "") + path
+        # Rename when the WRITTEN token differs from the Rust name: an overload
+        # (`alloc_seconds` -> `alloc_seconds__1`), or a TCHAR macro spelling whose declaration
+        # is the W function (`SendMessage` written, CWindow::SendMessageW declared).
+        written = self._token_text(name_loc)
+        renamed = info.rust_name if written is not None and written != info.rust_name else None
+        if prefix or renamed:
+            put(name_loc, None if renamed else 0, prefix + (renamed or ""), info.name)
+
+    def _local_in_macro(self, n: dict, f: str, lo: int, hi: int, edits) -> None:
+        """palette.cpp's `#define Y_MARGIN ((rcClient.bottom / 2) - CXY_COLORBOX)` names the
+        CALLER's local `rcClient`. No Rust item can (a `macro_rules!` is hygienic, a const has
+        no locals), so such an object-like macro is inlined where it is expanded, exactly as
+        the preprocessor did. The tell is in the AST: a variable reference SPELLED inside a
+        `#define` line and EXPANDED at a token in this body."""
+        ref = n.get("referencedDecl", {})
+        if ref.get("kind") not in ("VarDecl", "ParmVarDecl"):
+            return
+        begin = n.get("range", {}).get("begin", {})
+        spell, exp = begin.get("spellingLoc"), begin.get("expansionLoc")
+        if not spell or not exp or exp.get("isMacroArgExpansion") or "offset" not in spell:
+            return
+        if exp.get("_file") != f or not lo <= exp.get("offset", -1) < hi:
+            return
+        src_file = spell.get("_file")
+        if not src_file:
+            return
+        cdp_text(src_file, 0, 0)  # load into _SRC: offsets are BYTES
+        data = _SRC[src_file]
+        line_start = data.rfind(b"\n", 0, spell["offset"]) + 1
+        line_end = data.find(b"\n", spell["offset"])
+        line = data[line_start : line_end if line_end >= 0 else len(data)].decode(
+            "utf-8", errors="replace"
+        )
+        m = re.match(r"\s*#\s*define\s+([A-Za-z_]\w*)(?![\w(])\s+(.*?)\s*(?:/\*.*)?$", line)
+        name = cdp_text(f, exp["offset"], exp["offset"] + exp.get("tokLen", 0))
+        if m is None or m.group(1) != name:
+            return  # a function-like macro, or a nested expansion: not this shape
+        edits.append((exp["offset"] - lo, len(name), f"({m.group(2).strip()})"))
+
+    def _plain_base_field(self, n: dict, base: dict, put) -> bool:
+        """`m_rcOld.left` where CRect DERIVES from RECT: clang wraps the object in a
+        DerivedToBase cast to the plain struct, whose fields are not in the decl table. The
+        member lives in the base at `__base0`; without the path, Rust reached it through the
+        generated Deref, a reference made through a raw pointer (dangerous_implicit_autorefs)
+        where C++ just named the base subobject."""
+        if base.get("kind") != "ImplicitCastExpr" or base.get("castKind") not in (
+            "DerivedToBase",
+            "UncheckedDerivedToBase",
+        ):
+            return False
+        obj = (base.get("inner") or [{}])[0]
+        static_type = _strip_type(obj.get("type", {}).get("qualType", ""))
+        if not static_type or self._class(static_type) is None:
+            return False
+        target = _strip_type(base.get("type", {}).get("qualType", ""))
+        path = self.base_path(static_type, target) or self.base_path(static_type, "\0external")
+        if not path:
+            return False
+        put(n["range"]["end"], 0, path, n.get("name", "?"))
+        return True
+
+    def _static_via_object(self, n: dict, f: str, lo: int, hi: int, edits) -> bool:
+        """`toolsModel.CreateBrush(..)` where CreateBrush is STATIC: C++ allows the object
+        form, Rust's associated fn does not -> `ToolsModel::CreateBrush(..)`. Only for an
+        object with no side effects (a name or member chain); C++ evaluates the object
+        anyway, so dropping a call there would drop behaviour."""
+        info = self.decls.get(n.get("referencedMemberDecl", ""))
+        if info is None or not info.static or info.kind != "method":
+            return False
+        obj = (n.get("inner") or [{}])[0]
+        node = obj
+        while node.get("kind") in ("MemberExpr", "ImplicitCastExpr", "ParenExpr"):
+            node = (node.get("inner") or [{}])[0]
+        if node.get("kind") not in ("DeclRefExpr", "CXXThisExpr"):
+            return False
+        span = _node_span(n, f, lo, hi)
+        name = _tok(n["range"]["end"], f, lo, hi)
+        if span is None or name is None:
+            return False
+        cls = info.owner.split("::")[-1]
+        self._calls.add((cls, info.rust_name))
+        edits.append((span[0], name[0] - lo - span[0] + name[1], f"{cls}::{info.rust_name}"))
+        return True
+
+    def _fn_pointer_member_call(self, n: dict, f: str, lo: int, hi: int, edits) -> bool:
+        """`p->m_fn(args)` where `m_fn` is a DATA member of function-pointer type
+        (atlimagedx.h's `_shared()->m_GetImageHorizontalResolution(..)`, CInitGDIPlus's
+        Startup/...): a call THROUGH the field, written `(p->m_fn)(args)` so it does not
+        read as a method call -- a worker turned it into `(*p).m_fn(..)`, a method that
+        does not exist."""
+        callee = (n.get("inner") or [{}])[0]
+        while callee.get("kind") in ("ImplicitCastExpr", "ParenExpr") and callee.get("inner"):
+            if callee.get("kind") == "ParenExpr":
+                return False  # already `(p->m_fn)(..)`
+            callee = callee["inner"][0]
+        if callee.get("kind") != "MemberExpr":
+            return False
+        qt = callee.get("type", {}).get("qualType", "")
+        if "(*)" not in qt and not re.search(r"\bFN_|\bFUN_|PROC\b", qt):
+            return False
+        span = _node_span(callee, f, lo, hi)
+        if span is None:
+            return False
+        edits.append((span[0], 0, "("))
+        edits.append((span[1], 0, ")"))
+        return True
+
+    def _conversion(self, n: dict, f: str, lo: int, hi: int, edits) -> dict | None:
+        """C++'s implicit user-defined conversion, `IsWindowVisible(textEditWindow)` through
+        `CWindow::operator HWND()`, made an explicit call: `(textEditWindow).op_to_HWND()`.
+        Returns the object node (whose own edits still apply), or None if not this shape."""
+        call = _unwrap_casts((n.get("inner") or [{}])[0])
+        if call.get("kind") != "CXXMemberCallExpr":
+            return None
+        me = (call.get("inner") or [{}])[0]
+        if me.get("kind") != "MemberExpr":
+            return None
+        info = self.decls.get(me.get("referencedMemberDecl", ""))
+        obj = (me.get("inner") or [None])[0]
+        span = _node_span(obj, f, lo, hi) if obj else None
+        if info is None or span is None:
+            return None
+        self._calls.add((info.owner.split("::")[-1], info.rust_name))
+        edits.append((span[0], 0, "("))
+        edits.append((span[1], 0, f").{info.rust_name}()"))
+        # A method call needs no upcast: autoderef reaches CWindow's op_to_HWND through the
+        # generated Deref, and _upcast's `.__base0` would land outside the call.
+        while (
+            obj is not None
+            and obj.get("kind") == "ImplicitCastExpr"
+            and obj.get("castKind")
+            in (
+                "DerivedToBase",
+                "UncheckedDerivedToBase",
+                "NoOp",
+            )
+        ):
+            obj = (obj.get("inner") or [obj])[0]
+        return obj
+
+    def _static_ref(self, n: dict, f: str, lo: int, hi: int, edits) -> None:
+        """A STATIC member named without its class (`_shared()` inside CImageDx): after
+        assembly it is an associated fn, reachable only as `CImageDx::_shared()`."""
+        info = self.decls.get(n.get("referencedDecl", {}).get("id", ""))
+        if info is not None and info.kind == "field" and info.static:
+            # A static data member, `s_nLock` or `CWaitCursor::s_nLock`: cpp_classes.rs
+            # renders it as the static `CWaitCursor__s_nLock`.
+            span = _node_span(n, f, lo, hi)
+            if span is not None:
+                cls = info.owner.split("::")[-1]
+                edits.append((span[0], span[1] - span[0], f"{cls}__{info.name}"))
+            return
+        if info is not None and info.kind == "function":
+            # An overloaded module function (`Fill` -> `Fill__1`): the decl clang resolved
+            # the call to names the overload.
+            t = _tok(n["range"]["end"], f, lo, hi)
+            if t is not None and info.rust_name != info.name:
+                edits.append((t[0] - lo, t[1], info.rust_name))
+            return
+        if info is not None and info.kind == "enumconst":
+            # The whole reference, qualifier included, is the island's flat name.
+            span = _node_span(n, f, lo, hi)
+            if span is not None:
+                edits.append((span[0], span[1] - span[0], info.rust_name))
+            return
+        if info is None or not info.static or info.kind != "method":
+            return
+        self._calls.add((info.owner.split("::")[-1], info.rust_name))
+        # The range END is the name token: `RegistrySettings::SetWallpaper(..)` BEGINS
+        # at its qualifier, and qualifying that token wrote `X::SetWallpaper::SetWallpaper`.
+        t = _tok(n["range"]["end"], f, lo, hi)
+        if t is None:
+            return
+        before = cdp_text(f, max(lo, t[0] - 2), t[0])
+        if before.endswith("::"):
+            return  # already `Class::name`
+        cls = info.owner.split("::")[-1]
+        written = cdp_text(f, t[0], t[0] + t[1])
+        repl = info.rust_name if written != info.rust_name else written
+        edits.append((t[0] - lo, t[1], f"{cls}::{repl}"))
+
+    def _defaults(self, n: dict, put, f: str, lo: int, hi: int, edits) -> None:
+        inner = n.get("inner", [])
+        if not inner:
+            return
+        callee = inner[0]
+        while callee.get("kind") in ("ImplicitCastExpr", "ParenExpr") and callee.get("inner"):
+            callee = callee["inner"][0]
+        info = self.decls.get(callee.get("referencedMemberDecl", "")) or self.decls.get(
+            callee.get("referencedDecl", {}).get("id", "")
+        )
+        args = inner[1:]
+        missing = [a for a in args if a.get("kind") == "CXXDefaultArgExpr"]
+        if info is None and missing and callee.get("kind") == "MemberExpr":
+            # An ATL template method the generated glue implements (CWindowImpl::Create):
+            # no decl id of ours, so its defaults come from atlwin.h's own declarations,
+            # told apart by full arity (written + defaulted).
+            table = _ATL_GLUE_DEFAULTS.get((callee.get("name"), len(args)))
+            if table is not None:
+                info = DeclInfo("", "method", callee["name"], callee["name"], table)
+        if info is None or not missing:
+            return
+        written = len(args) - len(missing)
+        texts = info.defaults[written : written + len(missing)]
+        while texts and texts[-1] is None and info.owner == "" and info.kind == "method":
+            texts = texts[:-1]  # an ATL glue table's slot the glue does not have
+        if any(t is None for t in texts):
+            return
+        written_texts = [t for t in texts if t is not None]
+        end = n["range"]["end"]
+        t = _tok(end, f, lo, hi)
+        if t is None:
+            return
+        sep = ", " if written else ""
+        edits.append((t[0] - lo, 0, sep + ", ".join(written_texts)))  # before the closing paren
+
+    def _new(self, n: dict, put, f: str, lo: int, hi: int, edits) -> None:
+        span = _node_span(n, f, lo, hi)
+        if span is None:
+            return
+        t = cdp_text(f, lo + span[0], lo + span[1])
+        if n.get("isPlacement"):
+            # `new(cicNoThrow) T(args)`: a TAG-dispatched allocator (`operator new(size_t,
+            # const CicNoThrow&) noexcept`, CTF's idiom) is allocate-or-NULL, i.e. a plain
+            # `new` whose result the caller null-checks -- and the generated __new_N returns
+            # NULL rather than constructing into it. A placement into a BUFFER (`new(buf) T`,
+            # `operator new(size_t, void*)`) constructs in place: a different operation, left
+            # unlowered so the audit rejects it loudly instead of allocating fresh memory.
+            sig = n.get("operatorNewDecl", {}).get("type", {}).get("qualType", "")
+            tm = re.fullmatch(r"void \*\(size_t, const (\w+) &\) noexcept", sig)
+            pm = re.match(r"new\s*\((?:[^()]|\([^()]*\))*\)\s*", t)
+            if tm is None or pm is None:
+                return
+            tag = tm.group(1)  # its allocator: cpp_alloc_<Tag> (cpp_app._allocator_helpers)
+            t = "new " + t[pm.end() :]
+        else:
+            tag = None
+        alloc = _strip_type(n.get("type", {}).get("qualType", ""))
+        if n.get("isArray"):
+            m = re.match(r"new\s+(.+?)\s*\[(.*)\]\s*$", t, re.S)
+            if m:
+                # The untagged spelling is what every banked body was bought against: a
+                # change of it alone would re-buy them all.
+                fn = f"cpp_new_array_{tag}::" if tag else "cpp_new_array"
+                edits.append((span[0], span[1] - span[0], f"{fn}<{m.group(1)}>({m.group(2)})"))
+            return
+        cls = self._class(alloc)
+        if cls is None:
+            m = re.match(r"new\s+([\w:\s\*]+?)\s*(\((.*)\))?\s*$", t, re.S)
+            if m:
+                ty, v = m.group(1), m.group(3) or ""
+                repl = (
+                    f"cpp_new_in(cpp_alloc_{tag}::<{ty}>(), {v})" if tag else f"cpp_new<{ty}>({v})"
+                )
+                edits.append((span[0], span[1] - span[0], repl))
+            return
+        construct = next((x for x in n.get("inner", []) if "Construct" in x.get("kind", "")), None)
+        idx = self._ctor_n(cls, construct)
+        m = re.match(r"new\s+[\w:]+\s*", t)
+        if m is None:
+            return
+        rest = t[m.end() :] or "()"
+        if tag:
+            inner = rest.strip()[1:-1].strip()
+            args = f"cpp_alloc_{tag}::<{cls.name}>()" + (f", {inner}" if inner else "")
+            edits.append((span[0], span[1] - span[0], f"{cls.name}__new_in_{idx}({args})"))
+            return
+        edits.append((span[0], span[1] - span[0], f"{cls.name}__new_{idx}{rest}"))
+
+    def _delete(self, n: dict, put, f: str, lo: int, hi: int, edits) -> None:
+        span = _node_span(n, f, lo, hi)
+        if span is None:
+            return
+        t = cdp_text(f, lo + span[0], lo + span[1])
+        m = re.match(r"delete\s*(\[\s*\])?\s*(.*)$", t, re.S)
+        if m is None:
+            return
+        operand = m.group(2).strip()
+        if m.group(1):
+            edits.append((span[0], span[1] - span[0], f"cpp_delete_array({operand})"))
+            return
+        target = n.get("inner", [{}])[0].get("type", {}).get("qualType", "")
+        cls = self._class(_strip_type(target))
+        repl = f"{cls.name}__delete({operand})" if cls else f"cpp_delete({operand})"
+        edits.append((span[0], span[1] - span[0], repl))
+
+    def _upcast(self, n: dict, f: str, lo: int, hi: int, edits, unplaced) -> None:
+        inner = (n.get("inner") or [{}])[0]
+        if _unwrap_casts(inner).get("kind") == "CXXThisExpr":
+            return  # `this` as a member's object: _member writes the base path itself
+        src = _strip_type(inner.get("type", {}).get("qualType", ""))
+        dst = _strip_type(n.get("type", {}).get("qualType", ""))
+        path = self.base_path(src, dst)
+        if not path:
+            return  # the primary base: the same address, a cast is enough
+        span = _node_span(inner, f, lo, hi)
+        if span is None:
+            unplaced.append(f"upcast {src}->{dst}")
+            return
+        pointer = "*" in n.get("type", {}).get("qualType", "")
+        if pointer:
+            edits.append((span[0], 0, "(&("))
+            edits.append((span[1], 0, ")->" + path.rstrip(".") + ")"))
+        else:
+            edits.append((span[0], 0, "("))
+            edits.append((span[1], 0, ")." + path.rstrip(".")))
+
+    def _local(self, n: dict, f: str, lo: int, hi: int, edits) -> None:
+        """`audio_membuffer buf(fmt);` -> `audio_membuffer buf = audio_membuffer__make_1(fmt);`
+
+        Surgical: one insertion after the declarator name, so the argument text keeps its
+        own edits (an upcast of an argument, a member path inside it)."""
+        cls = self._class(_strip_type(n.get("type", {}).get("qualType", "")))
+        if cls is None or "*" in n["type"]["qualType"] or "&" in n["type"]["qualType"]:
+            return
+        if "[" in n["type"]["qualType"]:
+            return  # an array of objects: rendered element-wise, not here
+        init = (n.get("inner") or [None])[0]
+        if init is not None and init.get("kind") not in ("CXXConstructExpr",):
+            return  # `T x = expr;` -- a copy, already an expression the model can read
+        name = _tok(n["loc"], f, lo, hi)
+        if name is None:
+            return
+        idx = self._ctor_n(cls, init)
+        after = name[0] - lo + name[1]
+        tail = cdp_text(f, name[0] + name[1], hi)
+        rest = tail.lstrip()
+        if rest.startswith("("):
+            edits.append((after, 0, f" = {cls.name}__make_{idx}"))
+        elif re.match(r"(=\s*)?\{", rest):
+            # List-initialization, `CRect rc = { 0, 0, w, h };`: the braces are the
+            # constructor's argument list. Swap them for parens; the arguments keep their
+            # own edits (a member path inside one), so only the two delimiters change.
+            m = re.match(r"\s*(=\s*)?\{", tail)
+            if m is None:
+                return
+            depth, i = 0, m.end() - 1
+            while i < len(tail):
+                depth += (tail[i] == "{") - (tail[i] == "}")
+                if depth == 0:
+                    break
+                i += 1
+            edits.append((after, m.end(), f" = {cls.name}__make_{idx}("))
+            edits.append((after + i, 1, ")"))
+        else:
+            edits.append((after, 0, f" = {cls.name}__make_{idx}()"))
+
+    def _temporary(self, n: dict, f: str, lo: int, hi: int, edits) -> None:
+        """`audio_format(44100, 16, 2)` as an expression -> `audio_format__make_N(...)`."""
+        cls = self._class(_strip_type(n.get("type", {}).get("qualType", "")))
+        span = _node_span(n, f, lo, hi)
+        if span is None:
+            return
+        t = cdp_text(f, lo + span[0], lo + span[1])
+        if cls is None:
+            # A functional cast to a SCALAR type, dib.cpp's `INT(cx * eTan)`: written as C's
+            # `((INT)(cx * eTan))`, or the model calls `INT(..)` like a function.
+            m = re.match(r"([A-Za-z_]\w*)\s*\(", t)
+            if (
+                n.get("kind") == "CXXFunctionalCastExpr"
+                and m is not None
+                and t.rstrip().endswith(")")
+                and n.get("castKind") != "ConstructorConversion"
+            ):
+                edits.append((span[0], m.end(), f"(({m.group(1)})("))
+                edits.append((span[1], 0, ")"))
+            return
+        m = re.match(r"[\w:]+(?=\s*[({])", t)
+        if m is None:
+            return
+        construct = (
+            n
+            if n.get("kind") == "CXXTemporaryObjectExpr"
+            else next((x for x in n.get("inner", []) if x.get("kind") == "CXXConstructExpr"), None)
+        )
+        edits.append((span[0], m.end(), f"{cls.name}__make_{self._ctor_n(cls, construct)}"))
+
+    # -- helpers -----------------------------------------------------------------------
+
+    def _class(self, short: str):
+        for q, c in self.classes.items():
+            if q.split("::")[-1] == short:
+                return c
+        return None
+
+    def _ctor_n(self, cls, construct: dict | None) -> int:
+        if construct is None:
+            return 0
+        sig = construct.get("ctorType", {}).get("qualType", "")
+        ctors = [m for m in cls.methods if m.kind == "ctor"]
+        for i, m in enumerate(ctors):
+            want = "(" + ", ".join(p.c_type for p in m.params) + ")"
+            if sig.replace(" ", "").startswith("void" + want.replace(" ", "")):
+                return i
+        return 0
+
+
+def _implicit(n: dict) -> bool:
+    # clang's JSON spells it `implicit` on a CXXThisExpr and `isImplicit` on declarations.
+    return bool(n.get("implicit") or n.get("isImplicit"))
+
+
+def _unwrap_casts(n: dict) -> dict:
+    while n.get("kind") in ("ImplicitCastExpr", "ParenExpr") and n.get("inner"):
+        n = n["inner"][0]
+    return n
+
+
+_SRC: dict[str, bytes] = {}
+
+
+def cdp_text(f: str, lo: int, hi: int) -> str:
+    if f not in _SRC:
+        with open(f, "rb") as fh:
+            _SRC[f] = fh.read()
+    return _SRC[f][lo:hi].decode("utf-8", errors="replace")
+
+
+def _node_span(n: dict, f: str, lo: int, hi: int) -> tuple[int, int] | None:
+    rng = n.get("range")
+    if not rng:
+        return None
+    b = _tok(rng["begin"], f, lo, hi)
+    e = _tok(rng["end"], f, lo, hi)
+    if b is None or e is None:
+        return None
+    return b[0] - lo, e[0] - lo + e[1]
+
+
+def _apply(text: str, edits: list[tuple[int, int, str]]) -> str:
+    """Apply right to left. Two insertions at one offset keep their discovery order: the
+    later one is applied first, so the earlier one ends up in front of it."""
+    out = text
+    # An identical REPLACEMENT twice is one macro argument seen once per expansion copy
+    # (`min(a, b)` repeats `b`): applying it twice would replace text it already replaced.
+    # Identical insertions can be legitimate (nested conversions each insert `(`), so only
+    # `put` dedupes those, for the member-path edits that are known to come from copies.
+    seen: set[tuple[int, int, str]] = set()
+    kept = []
+    for e in edits:
+        if e[1] > 0 and e in seen:
+            continue
+        seen.add(e)
+        kept.append(e)
+    edits = kept
+    for i in sorted(range(len(edits)), key=lambda i: (edits[i][0], i), reverse=True):
+        off, length, repl = edits[i]
+        out = out[:off] + repl + out[off + length :]
+    return out
+
+
+__all__ = ["DeclInfo", "Lowered", "Lowerer", "cdp"]

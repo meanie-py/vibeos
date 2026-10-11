@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ob::*;
@@ -95,8 +96,6 @@ extern "C" {
     fn _SEH2_AbnormalTermination() -> BOOLEAN;
 }
 extern "C" {
-}
-extern "C" {
     fn FsRtlDismountComplete(TargetDeviceObject: *mut DEVICE_OBJECT, Status: NTSTATUS);
 }
 extern "C" {
@@ -157,7 +156,6 @@ extern "C" {
     fn CdSerial32(RawIsoVd: *mut i8, SectorSize: u32) -> u32;
 }
 extern "C" {
-    fn NT_ASSERT(expression: i32);
 }
 extern "C" {
     fn CdRvdEsc(RawIsoVd: *mut i8, State: u32) -> *mut i8;
@@ -1499,9 +1497,7 @@ unsafe extern "C" fn CdFindActiveVolDescriptor(
 
     (*(*vcb).Vpb).SerialNumber = CdSerial32(raw_iso_vd, SECTOR_SIZE as u32);
 
-    NT_ASSERT(
-        ((VOLUME_ID_LENGTH * core::mem::size_of::<u16>() as u32) <= MAXIMUM_VOLUME_LABEL_LENGTH) as i32,
-    );
+    NT_ASSERT!(((VOLUME_ID_LENGTH * core::mem::size_of::<u16>() as u32) <= MAXIMUM_VOLUME_LABEL_LENGTH) as i32);
 
     if ((*vcb).VcbState & VCB_STATE_JOLIET) == 0 {
         (*(*vcb).Vpb).VolumeLabelLength = 0;
@@ -2020,8 +2016,8 @@ pub unsafe extern "C" fn CdMountVolume(
 
                 (*(*p_Vcb)).VcbReference -= CDFS_RESIDUAL_REFERENCE as i32;
 
-                if CdDismountVcb(IrpContext, (*p_Vcb)) != 0 {
-                    CdReleaseVcb(IrpContext, (*p_Vcb));
+                if CdDismountVcb(IrpContext, *p_Vcb ) != 0 {
+                    CdReleaseVcb(IrpContext, *p_Vcb );
                 }
             } else if !(*p_VolDo).is_null() {
                 IoDeleteDevice((*p_VolDo) as *mut DEVICE_OBJECT);

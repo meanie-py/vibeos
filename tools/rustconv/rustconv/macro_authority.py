@@ -43,9 +43,13 @@ CANONICAL_BUILD_ROOT = "/tmp/vibeos"
 _DEFINE_FN_LIKE = re.compile(r"^[ \t]*#[ \t]*define\s+([A-Za-z_]\w*)\(", re.M)
 # `#define NAME OTHER` where the whole body is one bare identifier -- an ALIAS. It is
 # object-like, so `_DEFINE_FN_LIKE` cannot see it, but invoking it invokes whatever it
-# names, so an alias to a function-like macro IS function-like at every call site.
+# names, so an alias to a function-like macro IS function-like at every call site. A
+# leading cast is still an alias: wdm.h's `#define ASSERT (void)RTL_VERIFY` made ASSERT
+# a sealed "runtime call" the moment plain C stopped stripping it.
 _DEFINE_ALIAS = re.compile(
-    r"^[ \t]*#[ \t]*define\s+([A-Za-z_]\w*)[ \t]+([A-Za-z_]\w*)[ \t]*$", re.M
+    r"^[ \t]*#[ \t]*define\s+([A-Za-z_]\w*)[ \t]+(?:\([ \t]*[A-Za-z_]\w*[ \t]*\)[ \t]*)?"
+    r"([A-Za-z_]\w*)[ \t]*$",
+    re.M,
 )
 _ARCHES = ("i386", "amd64", "arm64")
 
@@ -193,9 +197,15 @@ def _derived_kernel_entry(repo_root: Path, arch: str, source: Path) -> list[str]
         return None
     from . import profile_derive  # local: profile_derive is heavy and only needed here
 
-    derived = profile_derive.derive_source(
-        source, repo_root, arch=arch, preferred_target="ntoskrnl", usermode=False
-    )
+    # Every caller asks per arch. ntos.cmake keeps some flipped kernel TUs under an ARCH genex
+    # (the pnpmgr arbiters are i386-only there), so "no owner on this arch" means no command
+    # HERE -- the same answer as a missing compile-db entry -- not a failed translation.
+    try:
+        derived = profile_derive.derive_source(
+            source, repo_root, arch=arch, preferred_target="ntoskrnl", usermode=False
+        )
+    except profile_derive.NoSourceOwner:
+        return None
     kept: list[str] = []
     skip_next = False
     for arg in base[1:]:
@@ -360,7 +370,17 @@ def _borrow_dirs(repo_root: Path, source: Path) -> list[Path]:
         if ancestor == repo_root or repo_root not in ancestor.parents:
             break
         cml = ancestor / "CMakeLists.txt"
-        if cml.is_file() and str(source.relative_to(ancestor)) in cml.read_text(errors="replace"):
+        if not cml.is_file():
+            continue
+        # dll/keyboard names all 89 layouts through `foreach(_keyboard_layout ...)`, so
+        # `kbdus/kbdus.c` appears only once the loop is unrolled (the flipped line is still
+        # there, commented); once every layout is flipped, the stub TU beside that
+        # CMakeLists is the one left carrying their flags.
+        from .profile_derive import _unroll_target_foreach
+
+        if str(source.relative_to(ancestor)) in _unroll_target_foreach(
+            cml.read_text(errors="replace")
+        ):
             dirs.append(ancestor.relative_to(repo_root))
             break
     return dirs

@@ -68,10 +68,9 @@ macro_rules! bwstr { ($s:literal) => { $crate::wide!($s).as_ptr() as *mut u16 };
 #[macro_export]
 macro_rules! FIELD_OFFSET { ($t:ty, $f:ident) => { core::mem::offset_of!($t, $f) }; }
 
-// Wine's ERR/FIXME/WARN/TRACE for the whole crate; `#[macro_use]` must precede the
-// modules that call them (macro_rules! is textually scoped).
+// Wine's ERR/FIXME/WARN/TRACE, shared by every Wine-derived crate.
 #[macro_use]
-mod winedebug;
+extern crate winedebug_rust;
 
 mod consts;
 mod prelude;

@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{TRACE};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_DISK; // drivemap.c: DBG_DEFAULT_CHANNEL(DISK)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use ntkrnl_sys::ddk::{PCSTR};
@@ -6,7 +8,6 @@ use core::ffi::c_void;
 extern "C" {
     fn atoi(s: *const i8) -> i32;
     fn strlen(s: *const i8) -> usize;
-    fn TRACE(fmt: *const i8, ...);
     fn strtoul(s: PCSTR, endptr: *mut PCSTR, base: i32) -> u32;
     fn CacheInvalidateCacheData();
     fn ULongToPtr(ul: ULONG) -> PVOID;
@@ -78,7 +79,7 @@ unsafe fn DriveMapIsValidDriveString(DriveString: PCSTR) -> u8 {
 pub unsafe extern "C" fn DriveMapGetBiosDriveNumber(DeviceName: PCSTR) -> u8 {
     let mut BiosDriveNumber: u8 = 0;
 
-    TRACE(b"DriveMapGetBiosDriveNumber(%s)\n\0".as_ptr() as PCSTR, (DeviceName) as usize);
+    TRACE!("DriveMapGetBiosDriveNumber(%s)\n", (DeviceName) as usize);
 
     if *DeviceName >= ((b'0') as i8) && *DeviceName <= ((b'9') as i8) {
         return strtoul(DeviceName, core::ptr::null_mut(), 0) as u8;
@@ -179,21 +180,17 @@ pub unsafe extern "C" fn DriveMapMapDrivesInSection(SectionId: ULONG_PTR) {
                     ((DriveMapGetBiosDriveNumber(Drive2.as_ptr())) as i8);
                 DriveMapList.DriveMapCount += 1;
 
-                TRACE(
-                    b"Mapping BIOS drive 0x%x to drive 0x%x\n\0".as_ptr() as PCSTR, (DriveMapGetBiosDriveNumber(Drive1.as_ptr())) as usize, (DriveMapGetBiosDriveNumber(Drive2.as_ptr())) as usize,
-                );
+                TRACE!("Mapping BIOS drive 0x%x to drive 0x%x\n", (DriveMapGetBiosDriveNumber(Drive1.as_ptr())) as usize, (DriveMapGetBiosDriveNumber(Drive2.as_ptr())) as usize);
             }
         }
         Index += 1;
     }
 
     if DriveMapList.DriveMapCount != 0 {
-        TRACE(
-            b"Installing Int13 drive map for %d drives.\n\0".as_ptr() as PCSTR, (DriveMapList.DriveMapCount) as usize,
-        );
+        TRACE!("Installing Int13 drive map for %d drives.\n", (DriveMapList.DriveMapCount) as usize);
         DriveMapInstallInt13Handler(&mut DriveMapList);
     } else {
-        TRACE(b"Removing any previously installed Int13 drive map.\n\0".as_ptr() as PCSTR);
+        TRACE!("Removing any previously installed Int13 drive map.\n");
         DriveMapRemoveInt13Handler();
     }
 }

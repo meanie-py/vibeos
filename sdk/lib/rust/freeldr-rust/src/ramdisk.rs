@@ -1,9 +1,10 @@
+#[allow(unused_imports)] use crate::{ERR, TRACE};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_DISK; // ramdisk.c: DBG_DEFAULT_CHANNEL(DISK)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use ntkrnl_sys::ddk::{ARC_STATUS, FILEINFORMATION, LARGE_INTEGER, PCSTR};
 use core::ffi::c_void;
 extern "C" {
-    fn ERR(fmt: *const i8, ...);
 }
 
 // Cross-module freeldr API ramdisk.c calls (real #[no_mangle] owners:
@@ -48,7 +49,6 @@ static RamDiskVtbl: DEVVTBL = DEVVTBL {
 };
 
 extern "C" {
-    fn TRACE(fmt: *const i8, ...);
     fn MmFreeMemory(ptr: *mut core::ffi::c_void);
     fn NtLdrGetOption(LoadOptions: PCSTR, Option: PCSTR) -> PCSTR;
     fn NtLdrGetOptionEx(LoadOptions: PCSTR, Option: PCSTR, Length: *mut u32) -> PCSTR;
@@ -130,7 +130,7 @@ unsafe fn RamDiskLoadVirtualFile(
 
     UiDrawProgressBarCenter(b"Loading RamDisk...\0".as_ptr() as PCSTR);
 
-    TRACE(b"RamDiskLoadVirtualFile: Opening '%s', '%s'\n\0".as_ptr() as PCSTR, (FileName) as usize, (if !DefaultPath.is_null() { DefaultPath } else { b"n/a\0".as_ptr() as PCSTR }) as usize);
+    TRACE!("RamDiskLoadVirtualFile: Opening '%s', '%s'\n", (FileName) as usize, (if !DefaultPath.is_null() { DefaultPath } else { b"n/a\0".as_ptr() as PCSTR }) as usize);
     Status = FsOpenFile(FileName, DefaultPath, OpenReadOnly, core::ptr::addr_of_mut!(RamFileId));
     if Status != ESUCCESS {
         return Status;
@@ -151,13 +151,13 @@ unsafe fn RamDiskLoadVirtualFile(
         let mut VolumeSize: u64 = 0;
         Status = FsGetVolumeSize(RamFileId, core::ptr::addr_of_mut!(VolumeSize));
         if Status != ESUCCESS {
-            ERR(b"Couldn't retrieve volume size on device '%s', falling back to RAW size\n\0".as_ptr() as PCSTR, (FileName) as usize);
+            ERR!("Couldn't retrieve volume size on device '%s', falling back to RAW size\n", (FileName) as usize);
         } else {
             Information.EndingAddress.QuadPart = (VolumeSize) as i64 ;
         }
     }
 
-    TRACE(b"RAMDISK size: %I64u (High: %lu ; Low: %lu)\n\0".as_ptr() as PCSTR, (Information.EndingAddress.QuadPart) as usize, (Information.EndingAddress.u.HighPart) as usize, (Information.EndingAddress.u.LowPart) as usize);
+    TRACE!("RAMDISK size: %I64u (High: %lu ; Low: %lu)\n", (Information.EndingAddress.QuadPart) as usize, (Information.EndingAddress.u.HighPart) as usize, (Information.EndingAddress.u.LowPart) as usize);
 
     if Information.EndingAddress.u.HighPart != 0 {
         ArcClose(RamFileId);
@@ -172,7 +172,23 @@ unsafe fn RamDiskLoadVirtualFile(
     } else {
         PercentPerChunk = 100 * ChunkSize / RamDiskFileSize as u32;
     }
-    RamDiskBase = MmAllocateMemoryWithType((RamDiskFileSize) as usize , LoaderXIPRom);
+    // i386: take the image from the TOP of memory. Allocated bottom-up (the C), a ~300MB
+    // writable-root ramdisk pushed every boot driver loaded after it above it, so the
+    // loader span -- the kernel's KSEG0 boot-image reservation -- grew to 456MB and the
+    // boot died (0x7F/0x50). The image is reached through MmMapIoSpace of its physical base,
+    // so where it sits does not matter; where the KSEG0-mapped images sit does.
+    #[cfg(target_arch = "x86")]
+    {
+        RamDiskBase = crate::mm::MmAllocateHighestMemoryBelowAddress(
+            RamDiskFileSize as usize,
+            usize::MAX as PVOID,
+            LoaderXIPRom,
+        );
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        RamDiskBase = MmAllocateMemoryWithType((RamDiskFileSize) as usize , LoaderXIPRom);
+    }
     if RamDiskBase.is_null() {
         RamDiskFileSize = 0;
         ArcClose(RamFileId);
@@ -230,8 +246,7 @@ pub unsafe extern "C" fn RamDiskInitialize(
 ) -> ARC_STATUS
 {
 
-    TRACE(
-        b"RamDiskInitialize(%s, '%s', '%s')\n\0".as_ptr() as PCSTR, (if InitRamDisk != 0 { b"INIT\0".as_ptr() as PCSTR } else { b"REGULAR\0".as_ptr() as PCSTR }) as usize, (if !LoadOptions.is_null() { LoadOptions } else { b"n/a\0".as_ptr() as PCSTR }) as usize, (if !DefaultPath.is_null() { DefaultPath } else { b"n/a\0".as_ptr() as PCSTR }) as usize);
+    TRACE!("RamDiskInitialize(%s, '%s', '%s')\n", (if InitRamDisk != 0 { b"INIT\0".as_ptr() as PCSTR } else { b"REGULAR\0".as_ptr() as PCSTR }) as usize, (if !LoadOptions.is_null() { LoadOptions } else { b"n/a\0".as_ptr() as PCSTR }) as usize, (if !DefaultPath.is_null() { DefaultPath } else { b"n/a\0".as_ptr() as PCSTR }) as usize);
 
     if (RamDiskBase != gInitRamDiskBase) &&
         (RamDiskFileSize != ((gInitRamDiskSize) as u64)) &&

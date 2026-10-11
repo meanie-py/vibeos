@@ -43,22 +43,20 @@ static CmpIntelID: &[u8] = b"GenuineIntel\0";
 static CmpAmdID: &[u8] = b"AuthenticAMD\0";
 static CmpCentaurID: &[u8] = b"CentaurHauls\0";
 
-#[repr(C)]
-union CPU_SIGNATURE {
-    Fields: CPU_SIGNATURE_FIELDS,
-    AsULONG: ULONG,
-}
-
+/// CPUID leaf 1 EAX. The C union's `Fields` is a BITFIELD struct (Step:4, Model:4, Family:4,
+/// Unused:2, ExtendedModel:4, ExtendedFamily:8, Unused2:4); it was translated as seven u32
+/// fields, so writing `AsULONG` filled only `Step` and Model/Family read 0. Every amd64 boot
+/// reported "AMD64 Family 0 Model 0" (the CPU's PnP id, so its install failed) and
+/// KeProcessorLevel 0.
 #[derive(Copy, Clone)]
-#[repr(C)]
-struct CPU_SIGNATURE_FIELDS {
-    Step: u32,
-    Model: u32,
-    Family: u32,
-    Unused: u32,
-    ExtendedModel: u32,
-    ExtendedFamily: u32,
-    Unused2: u32,
+struct CpuSig(u32);
+
+impl CpuSig {
+    fn step(self) -> u32 { self.0 & 0xF }
+    fn model(self) -> u32 { (self.0 >> 4) & 0xF }
+    fn family(self) -> u32 { (self.0 >> 8) & 0xF }
+    fn extended_model(self) -> u32 { (self.0 >> 16) & 0xF }
+    fn extended_family(self) -> u32 { (self.0 >> 20) & 0xFF }
 }
 
 #[repr(C)]
@@ -218,7 +216,6 @@ unsafe fn KiGetCpuVendor() -> ULONG {
 #[no_mangle]
 pub unsafe extern "C" fn KiSetProcessorType() {
     let mut CpuInfo: CPU_INFO = core::mem::zeroed();
-    let mut CpuSignature: CPU_SIGNATURE = core::mem::zeroed();
     let mut ExtendModel: BOOLEAN;
     let mut Stepping: ULONG;
     let Type: ULONG;
@@ -228,23 +225,23 @@ pub unsafe extern "C" fn KiSetProcessorType() {
 
     KiCpuId(&mut CpuInfo, 1);
 
-    CpuSignature.AsULONG = CpuInfo.Eax;
-    Stepping = (CpuSignature.Fields.Model & 0x0F) as ULONG;
-    ExtendModel = if (CpuSignature.Fields.Family & 0x0F) == 15 { 1u8 } else { 0u8 };
+    let CpuSignature = CpuSig(CpuInfo.Eax);
+    Stepping = (CpuSignature.model() & 0x0F) as ULONG;
+    ExtendModel = if (CpuSignature.family() & 0x0F) == 15 { 1u8 } else { 0u8 };
     
-    if (CpuSignature.Fields.Family & 0x0F) == 6 {
+    if (CpuSignature.family() & 0x0F) == 6 {
         ExtendModel |= if Vendor == CPU_INTEL { 1u8 } else { 0u8 };
     }
     
     if ExtendModel != 0 {
-        Stepping |= ((CpuSignature.Fields.ExtendedModel & 0x0F) << 4) as ULONG;
+        Stepping |= ((CpuSignature.extended_model() & 0x0F) << 4) as ULONG;
     }
     
-    Stepping = (Stepping << 8) | (CpuSignature.Fields.Step & 0x0F) as ULONG;
-    let mut Type = (CpuSignature.Fields.Family & 0x0F) as ULONG;
+    Stepping = (Stepping << 8) | (CpuSignature.step() & 0x0F) as ULONG;
+    let mut Type = (CpuSignature.family() & 0x0F) as ULONG;
     
-    if (CpuSignature.Fields.Family & 0x0F) == 15 {
-        let ExtFamily = (CpuSignature.Fields.ExtendedFamily & 0xFF) as ULONG;
+    if (CpuSignature.family() & 0x0F) == 15 {
+        let ExtFamily = (CpuSignature.extended_family() & 0xFF) as ULONG;
         Type += core::cmp::min(ExtFamily, 0xF0);
     }
 
@@ -742,7 +739,7 @@ pub unsafe extern "system" fn KeSetDmaIoCoherency(Coherency: ULONG) {
 //      *
 //      * For the stepping, we convert this: zzzzzzxy into this: x0y
 //      */
-//     CpuSignature.AsULONG = CpuInfo.Eax;
+//     let CpuSignature = CpuSig(CpuInfo.Eax);
 //     Stepping = CpuSignature.Model;
 //     ExtendModel = (CpuSignature.Family == 15);
 // #if ( (NTDDI_VERSION >= NTDDI_WINXPSP2) && (NTDDI_VERSION < NTDDI_WS03) ) || (NTDDI_VERSION >= NTDDI_WS03SP1)

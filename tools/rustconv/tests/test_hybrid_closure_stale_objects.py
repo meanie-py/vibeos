@@ -46,7 +46,9 @@ list(APPEND SOURCE
 
 def test_a_flipped_tus_object_is_stale(tmp_path):
     repo = _repo(
-        tmp_path, CMAKE, ["folders/CFSFolder.cpp", "folders/CDesktopFolder.cpp", "dialogs/filedefext.cpp"]
+        tmp_path,
+        CMAKE,
+        ["folders/CFSFolder.cpp", "folders/CDesktopFolder.cpp", "dialogs/filedefext.cpp"],
     )
     is_stale = _stale_object_predicate(repo, "dll/win32/shell32")
     assert is_stale(Path("CDesktopFolder.cpp.obj"))
@@ -54,7 +56,9 @@ def test_a_flipped_tus_object_is_stale(tmp_path):
 
 def test_a_live_tus_object_is_kept(tmp_path):
     repo = _repo(
-        tmp_path, CMAKE, ["folders/CFSFolder.cpp", "folders/CDesktopFolder.cpp", "dialogs/filedefext.cpp"]
+        tmp_path,
+        CMAKE,
+        ["folders/CFSFolder.cpp", "folders/CDesktopFolder.cpp", "dialogs/filedefext.cpp"],
     )
     is_stale = _stale_object_predicate(repo, "dll/win32/shell32")
     assert not is_stale(Path("CFSFolder.cpp.obj"))

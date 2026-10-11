@@ -10,6 +10,7 @@ pub unsafe extern "C" fn PataGetControllerProperties(
     let mut Status: NTSTATUS;
 
     PAGED_CODE!();
+    ASSERT!((*Controller).Flags & CTRL_FLAG_NON_PNP);
 
     (*Controller).MaxChannels = 1;
     (*Controller).ChannelBitmap = 0x1;
