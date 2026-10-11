@@ -9,7 +9,7 @@
     "-fsigned-char"
   ],
   "rust_source": "../../../../sdk/lib/rust/cnt-rust/src/cabi/generated.rs",
-  "validity": "Exact shipping cnt-rust memmove shim and raw_move helper against genuine CRT C. All pointers and their count-byte ranges lie within the SAME allocation: this is required for C pointer-order comparisons. Includes exact alias, both overlap directions, adjacent and disjoint ranges, zero counts. Every byte initialized; return must equal destination (comparison with C), with the zero-length endpoint allowed. Host-only function-body grade; extraction excludes unrelated crate context.",
+  "validity": "Exact shipping cnt-rust memmove shim, raw_move helper and its memops.rs loops (the host's x86-64 asm; the arm64 asm is graded in the guest by the sysbench payload) against genuine CRT C. All pointers and their count-byte ranges lie within the SAME allocation: this is required for C pointer-order comparisons. Includes exact alias, both overlap directions, adjacent and disjoint ranges, zero counts. Every byte initialized; return must equal destination (comparison with C), with the zero-length endpoint allowed. Host-only function-body grade; extraction excludes unrelated crate context.",
   "c_source": "../../../../sdk/lib/crt/mem/memmove.c",
   "rust_items": [
     "mmemmove::memmove"
@@ -19,6 +19,15 @@
       "source": "../../../../sdk/lib/rust/cnt-rust/src/cabi/mod.rs",
       "items": [
         "raw_move"
+      ]
+    },
+    {
+      "source": "../../../../sdk/lib/rust/cnt-rust/src/cabi/memops.rs",
+      "items": [
+        "mem_copy_forward",
+        "mem_copy_backward",
+        "mem_bytes_forward",
+        "mem_bytes_backward"
       ]
     }
   ],

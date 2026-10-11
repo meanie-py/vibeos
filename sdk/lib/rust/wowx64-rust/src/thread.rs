@@ -91,11 +91,24 @@ pub struct ThreadRecord {
     pub SyscallRsp: u64,
     /// The service number of that syscall.
     pub SyscallService: u64,
+    /// Syscalls this thread is inside: more than one while a win32k callback
+    /// runs guest code. Only the outermost is profiled (syscall.rs `Profile`).
+    pub SyscallDepth: u64,
+    /// The counter tick the thread's last outermost syscall returned at.
+    pub SyscallLastExit: u64,
 }
 
 impl ThreadRecord {
     pub const fn new(NativeStack: u64) -> Self {
-        ThreadRecord { Callouts: null_mut(), Apcs: null_mut(), NativeStack, SyscallRsp: 0, SyscallService: 0 }
+        ThreadRecord {
+            Callouts: null_mut(),
+            Apcs: null_mut(),
+            NativeStack,
+            SyscallRsp: 0,
+            SyscallService: 0,
+            SyscallDepth: 0,
+            SyscallLastExit: 0,
+        }
     }
 }
 

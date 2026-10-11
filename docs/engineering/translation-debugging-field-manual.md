@@ -1598,7 +1598,8 @@ stripping, and assignable lvalues, to fix zero live bugs. Audit per site; don't 
 
 ### NEVER hand-write `memcpy`/`memset`/`memmove`/`memcmp` in Rust `[§9.65]`
 **It cannot be done correctly.** LLVM folds any byte-copy loop back into a call to the function
-itself → **infinite self-recursion**. The PC parks on a literal `jmp .` and the serial log is
+itself → **infinite self-recursion**. (The one place the tree does implement them, cnt-rust's
+exports, does it in inline asm for exactly this reason: `cabi/memops.rs`.) The PC parks on a literal `jmp .` and the serial log is
 empty. `ntoskrnl.exe` exports all of them on every arch — **import them, don't define them.**
 
 This is the other **cloak** bug: `-Z build-std-features=compiler-builtins-mem` had been linking
@@ -14929,6 +14930,30 @@ design, so it is correct only as long as no two threads race a failure through i
 - **The pre-existing ~33% i386 flake** where `winlogon` unconditionally spawns `nettest.exe`,
   racing explorer's csrss/win32k handoff, HANGs **even host-quiet**; the tail shows
   `[WINLOGON] nettest.exe created` with no `_tWinMain`. Distinct from contention.
+
+### Everything is several times slower than it should be: the cnt CRT core is UNOPTIMISED
+**Symptom.** Costs that make no sense against the work done: an x86-64 guest's cheapest syscall
+at 10x native, all of it spent in wowx64 "outside the kernel"; native `GetPixel` at ~90 us under
+TCG. Profiling (wowx64's exit-time `syscall profile`, the `sysbench` payload) points at code that
+is a handful of instructions in the source.
+
+**Cause.** cnt-rust (the `memset`/`memcpy`/`memmove`/`str*` that ntoskrnl and ntdll export on
+every arch) is built with `-C no-prepopulate-passes` (`libcntpr.cmake`, a guard against an
+old per-cgu miscompile), so LLVM runs NO optimisation passes over it: no mem2reg, no
+vectorising, no inlining. Its `memset` was additionally a volatile byte loop (the guard against
+dead-store elimination). Result: ~10 instructions per BYTE for every RtlZeroMemory and
+RtlCopyMemory in the system. wowx64 zeroing a 1 KB stack buffer on each guest syscall was 45 us
+of a 50 us call.
+
+**Fix.** The bulk loops are inline asm in `cnt-rust/src/cabi/memops.rs` (`rep movsb`/`rep stosb`
+on x86; aligned `ldp`/`stp` on arm64 when source and destination agree mod 8, bytes otherwise,
+so device memory never sees an unaligned access). asm is fast at any optimisation level and
+opaque to LLVM, so it can neither be deleted nor folded into a self-call (the
+`memcpy`-in-Rust trap above). Graded in the guest by `sysbench`'s memops check (every offset
+pair x length to 300, both overlap directions, native arm64 and amd64-under-FEX), and on the host
+by cnt-difftest. Measured: guest NtGetCurrentProcessorNumber 48-79 us -> 4.3-7.8 us, native
+GetPixel 94 -> 8.3 us. **Owed:** the rest of cnt-rust (`strlen`, `wcslen`, `strcmp`, ...) is
+still unoptimised byte-at-a-time code; every `RtlInitUnicodeString` pays `wcslen`.
 
 ### CRT / cnt runtime one-offs
 - **cnt `swprintf` writes nothing → 0x1E** — a signed/unsigned `_cnt` compare.
