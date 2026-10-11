@@ -45,6 +45,7 @@ from . import (
     local_macros,
     logical_not,
     loop_step,
+    offset_restore,
     pointer_depth,
     prelude_resolve,
     sizeof_restore,
@@ -3031,6 +3032,14 @@ def stage_integrate(stem: str) -> None:
                 path.write_text(new)
                 changed += 1
                 print(f"integrate: {path.stem}: dropped sizeof put back: {'; '.join(restored)}")
+            offsets, refused = offset_restore.restore_file(path, c_file)
+            if offsets:
+                changed += 1
+                print(f"integrate: {path.stem}: FIELD_OFFSET tables per-arch: {', '.join(offsets)}")
+            for why in refused:
+                print(
+                    f"integrate: {path.stem}: WARNING: offset table left as c2rust folded it: {why}"
+                )
         text = path.read_text()
         new, fixes = pointer_depth.repair(text, decls, ptr_types, ptr_targets)
         new, not_fixed, not_refused = logical_not.repair(new, decls)

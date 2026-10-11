@@ -27,26 +27,26 @@ pub static mut GlobalJobList: SKIPLIST = _SKIPLIST {
 static mut _dwLastJobID: DWORD = 0;
 
 static mut dwJobInfo1Offsets: [DWORD; 7] = [
-    8 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    16 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    24 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    32 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    40 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    48 as ::core::ffi::c_ulonglong as LONG as DWORD,
+    core::mem::offset_of!(JOB_INFO_1W, pPrinterName) as DWORD,
+    core::mem::offset_of!(JOB_INFO_1W, pMachineName) as DWORD,
+    core::mem::offset_of!(JOB_INFO_1W, pUserName) as DWORD,
+    core::mem::offset_of!(JOB_INFO_1W, pDocument) as DWORD,
+    core::mem::offset_of!(JOB_INFO_1W, pDatatype) as DWORD,
+    core::mem::offset_of!(JOB_INFO_1W, pStatus) as DWORD,
     MAXDWORD as DWORD,
 ];
 
 static mut dwJobInfo2Offsets: [DWORD; 11] = [
-    8 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    16 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    24 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    32 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    40 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    48 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    56 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    64 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    72 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    88 as ::core::ffi::c_ulonglong as LONG as DWORD,
+    core::mem::offset_of!(JOB_INFO_2W, pPrinterName) as DWORD,
+    core::mem::offset_of!(JOB_INFO_2W, pMachineName) as DWORD,
+    core::mem::offset_of!(JOB_INFO_2W, pUserName) as DWORD,
+    core::mem::offset_of!(JOB_INFO_2W, pDocument) as DWORD,
+    core::mem::offset_of!(JOB_INFO_2W, pNotifyName) as DWORD,
+    core::mem::offset_of!(JOB_INFO_2W, pDatatype) as DWORD,
+    core::mem::offset_of!(JOB_INFO_2W, pPrintProcessor) as DWORD,
+    core::mem::offset_of!(JOB_INFO_2W, pParameters) as DWORD,
+    core::mem::offset_of!(JOB_INFO_2W, pDriverName) as DWORD,
+    core::mem::offset_of!(JOB_INFO_2W, pStatus) as DWORD,
     MAXDWORD as DWORD,
 ];
 
