@@ -590,6 +590,7 @@ dependencies = [
  "strsafe-rust",
  "win32macros-rust",
  "winedebug-rust",
+ "winelist-rust",
 ]
 
 [[package]]
@@ -1724,6 +1725,7 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
  "winedebug-rust",
+ "winelist-rust",
  "winetrace-shim",
  "winsrv-sys",
 ]
@@ -2663,6 +2665,7 @@ dependencies = [
  "com-sys",
  "panic-common",
  "winedebug-rust",
+ "winelist-rust",
 ]
 
 [[package]]
@@ -2672,6 +2675,7 @@ dependencies = [
  "com-sys",
  "panic-common",
  "winedebug-rust",
+ "winelist-rust",
 ]
 
 [[package]]
@@ -3280,6 +3284,7 @@ dependencies = [
  "ntkrnl-sys",
  "win32macros-rust",
  "winedebug-rust",
+ "winelist-rust",
 ]
 
 [[package]]
@@ -4738,6 +4743,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "winelist-rust",
 ]
 
 [[package]]

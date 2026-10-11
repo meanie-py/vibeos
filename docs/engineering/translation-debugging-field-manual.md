@@ -1409,6 +1409,14 @@ first iteration.
 
 **Fix:** start at `head.next`. `scan_list_walk_from_head` (`vibeos-cli check`) flags the shape.
 
+The opposite end matters too. In C, a walk that runs to the end leaves the cursor on the
+HEAD's container, and code relies on it: `list_add_before(&ent->entry, new)` after a search
+loop means "before the head", i.e. append. A macro whose cursor stops on the last node
+inserts one place too early. One that rebinds the cursor per iteration (`let $elem` in the
+loop, as ole32's does) leaves the caller's variable stale. winelist-rust's
+`LIST_FOR_EACH_ENTRY{,_SAFE}` assign the caller's variable and finish on the head's
+container, as C does. Its tests pin the append shape.
+
 ### A list walk that reads `Flink` after freeing the entry
 
 **Symptom:** an intermittent access violation inside a list walk, at a load like

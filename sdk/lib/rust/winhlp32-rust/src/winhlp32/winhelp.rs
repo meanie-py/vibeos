@@ -2302,7 +2302,7 @@ unsafe extern "system" fn WINHELP_MainWndProc(
     match msg {
         WM_NCCREATE => {
             win = (*(lParam as LPCREATESTRUCTA)).lpCreateParams as *mut WINHELP_WINDOW;
-            SetWindowLongPtrW(hWnd, 0, (win as ULONG_PTR) as isize);
+            SetWindowLongPtrW(hWnd, 0, (win as ULONG_PTR) as LONG_PTR);
             if (*win).page.is_null() && Globals.isBook != 0 {
                 PostMessageW(
                     hWnd,

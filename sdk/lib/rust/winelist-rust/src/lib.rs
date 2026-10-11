@@ -2,10 +2,10 @@
 //! inline helpers and `LIST_ENTRY` (container-of).
 //!
 //! bindgen cannot emit `static inline` functions, and the port's `headers` stage leaves a
-//! platform header to a shared crate, so this header had been re-ported per crate (ole32,
-//! oleaut32, comctl32, wshtcpip, rtl-threadpool). This crate is that port, taken from
-//! rtl-threadpool's verbatim; msctf is its first consumer, and the others still carry their
-//! copies.
+//! platform header to a shared crate, so this header had been re-ported per crate. This
+//! crate is that port, taken from rtl-threadpool's; every wine/list.h user takes the struct
+//! and functions from here (ole32 keeps its own iteration macros, which bind the cursor
+//! per iteration instead of assigning the caller's variable).
 //!
 //! A consumer island blocklists its own `struct list` and re-exports this one, so a
 //! `struct list` field in the consumer's structs and these functions agree on one type.
@@ -151,10 +151,26 @@ macro_rules! LIST_ENTRY {
 }
 
 
+/// `&elem->field` for a cursor that may be the HEAD's container: C's loops compare that
+/// address against the head, and the head's "container" is not an object, so the address is
+/// formed with wrapping arithmetic rather than a field projection.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __list_field {
+    ($elem:expr, $ty:ty, $field:ident) => {
+        (($elem as *mut u8).wrapping_add(::core::mem::offset_of!($ty, $field)) as *mut $crate::list)
+    };
+}
+
 /// wine/list.h `LIST_FOR_EACH_ENTRY(elem, list, type, field)`: `elem` walks every `type`
-/// whose embedded `field` is on `list`. As in C, `elem` is the CALLER's variable (declared
-/// before the loop, still holding the last node after it) and `next` is not cached, so the
-/// body must not unlink the current node -- that is what the _SAFE form is for.
+/// whose embedded `field` is on `list`. As in C, `elem` is the CALLER's variable, the loop
+/// steps from `elem` itself (`elem->field.next`), and the body must not unlink the current
+/// node -- that is what the _SAFE form is for.
+///
+/// After a loop that runs to the end, `elem` is the HEAD's container, exactly as in C, and
+/// callers rely on it: kernel32's add_resource_dir_entry walks to the first entry that sorts
+/// after the new one, then `list_add_before(&ent->entry, ..)` -- off the end, that is "before
+/// the head", i.e. the tail. A cursor left on the last node inserted one place too early.
 ///
 /// The C `for` increment runs on `continue` too, so it leads the loop instead of trailing
 /// the body (ole32-rust's port found that the hard way).
@@ -162,36 +178,54 @@ macro_rules! LIST_ENTRY {
 macro_rules! LIST_FOR_EACH_ENTRY {
     ($elem:ident, $list:expr, $ty:ty, $field:ident, $body:block) => {{
         let __head: *mut $crate::list = $list;
-        let mut __cur: *mut $crate::list = (*__head).next;
+        $elem = $crate::LIST_ENTRY!((*__head).next, $ty, $field);
         let mut __advance = false;
         loop {
             if __advance {
-                __cur = (*__cur).next;
+                $elem = $crate::LIST_ENTRY!(
+                    (*$crate::__list_field!($elem, $ty, $field)).next,
+                    $ty,
+                    $field
+                );
             }
             __advance = true;
-            if __cur == __head {
+            if $crate::__list_field!($elem, $ty, $field) == __head {
                 break;
             }
-            $elem = $crate::LIST_ENTRY!(__cur, $ty, $field);
             $body
         }
     }};
 }
 
 /// wine/list.h `LIST_FOR_EACH_ENTRY_SAFE(cursor, cursor2, list, type, field)`: the next link
-/// is read BEFORE the body, so the body may unlink or free `cursor`. `cursor2` is the C's
-/// scratch for that link; both are the caller's variables, as in C.
+/// is read BEFORE the body, so the body may unlink or free `cursor`. Both are the caller's
+/// variables and the step is C's `cursor = cursor2` -- so after a full walk `cursor` is the
+/// head's container, as in LIST_FOR_EACH_ENTRY.
 #[macro_export]
 macro_rules! LIST_FOR_EACH_ENTRY_SAFE {
     ($elem:ident, $cursor2:ident, $list:expr, $ty:ty, $field:ident, $body:block) => {{
         let __head: *mut $crate::list = $list;
-        let mut __cur: *mut $crate::list = (*__head).next;
-        while __cur != __head {
-            let __next: *mut $crate::list = (*__cur).next;
-            $elem = $crate::LIST_ENTRY!(__cur, $ty, $field);
-            $cursor2 = $crate::LIST_ENTRY!(__next, $ty, $field);
-            // Advanced before the body, so a `continue` cannot re-run the same node.
-            __cur = __next;
+        $elem = $crate::LIST_ENTRY!((*__head).next, $ty, $field);
+        $cursor2 = $crate::LIST_ENTRY!(
+            (*$crate::__list_field!($elem, $ty, $field)).next,
+            $ty,
+            $field
+        );
+        let mut __advance = false;
+        loop {
+            // Leads the loop, so a `continue` cannot re-run the same node.
+            if __advance {
+                $elem = $cursor2;
+                $cursor2 = $crate::LIST_ENTRY!(
+                    (*$crate::__list_field!($elem, $ty, $field)).next,
+                    $ty,
+                    $field
+                );
+            }
+            __advance = true;
+            if $crate::__list_field!($elem, $ty, $field) == __head {
+                break;
+            }
             $body
         }
     }};
@@ -252,8 +286,8 @@ mod tests {
                 n += 1;
             });
             assert_eq!(&seen[..n], &[1, 3, 4]);
-            // As in C, the cursor is the caller's and holds the last node visited.
-            assert_eq!((*cur).value, 4);
+            // As in C, a walk that runs off the end leaves the cursor on the HEAD's container.
+            assert_eq!(__list_field!(cur, Item, entry), h);
             let mut next: *mut Item = core::ptr::null_mut();
             LIST_FOR_EACH_ENTRY_SAFE!(cur, next, h, Item, entry, {
                 if (*cur).value % 2 == 0 {
@@ -262,6 +296,42 @@ mod tests {
             });
             let _ = next;
             assert_eq!(list_count(h), 2);
+            assert_eq!(__list_field!(cur, Item, entry), h);
+        }
+    }
+
+    #[test]
+    fn insert_before_the_cursor_after_a_full_walk_appends() {
+        // kernel32's add_resource_dir_entry: walk to the first entry that sorts after the
+        // new one; when there is none, `list_add_before(&ent->entry, ..)` is the tail.
+        unsafe {
+            let mut head = list { next: core::ptr::null_mut(), prev: core::ptr::null_mut() };
+            let h: *mut list = &mut head;
+            list_init(h);
+            let mut items = [1u32, 2, 3].map(|value| Item { value, entry: list { next: h, prev: h } });
+            let mut new = Item { value: 9, entry: list { next: h, prev: h } };
+            for it in items.iter_mut() {
+                list_add_tail(h, &mut it.entry);
+            }
+            let mut ent: *mut Item = core::ptr::null_mut();
+            LIST_FOR_EACH_ENTRY!(ent, h, Item, entry, {
+                if (*ent).value < new.value {
+                    continue;
+                }
+                break;
+            });
+            list_add_before(__list_field!(ent, Item, entry), &mut new.entry);
+            assert_eq!((*LIST_ENTRY!(list_tail(h), Item, entry)).value, 9);
+            // And an empty list: the cursor is the head's container straight away.
+            let mut empty = list { next: core::ptr::null_mut(), prev: core::ptr::null_mut() };
+            let e: *mut list = &mut empty;
+            list_init(e);
+            let mut ran = false;
+            LIST_FOR_EACH_ENTRY!(ent, e, Item, entry, {
+                ran = true;
+            });
+            assert!(!ran);
+            assert_eq!(__list_field!(ent, Item, entry), e);
         }
     }
 }
