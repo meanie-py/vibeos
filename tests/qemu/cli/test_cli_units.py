@@ -10017,8 +10017,7 @@ def test_server_shaped_boots_must_prove_their_shape(monkeypatch):
     bad = smoke_mod._headless_check("[sysfb] Framebuffer: 800x600 32 BPP\n")
     assert bad and bad["classification"] == "NOT_HEADLESS"
     assert (
-        smoke_mod._headless_check("[sysfb] no firmware framebuffer: headless, 1024x768\n")
-        is None
+        smoke_mod._headless_check("[sysfb] no firmware framebuffer: headless, 1024x768\n") is None
     )
     monkeypatch.delenv("VIBEOS_QEMU_HEADLESS")
     assert smoke_mod._headless_check("") is None
