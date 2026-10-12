@@ -137,6 +137,7 @@ from .function_coverage import (
     require_c_plan,
     require_rust_definitions,
     restore_requested_name,
+    rust_definitions,
 )
 from .function_prompt import (
     build_file_context,
@@ -5055,6 +5056,8 @@ def cmd_translate(args):
             for dep in sorted_deps
             if not deterministic_only or dep.name in deterministic_workers
         }
+        if not cpp_com_mode:
+            code = _c2rust_renamed_definitions(code, expected_names)
         try:
             require_rust_definitions(
                 {f"{name}_body" for name in expected_names} if cpp_com_mode else expected_names,
@@ -5449,6 +5452,22 @@ def cmd_postprocess(args):
 
     verb = "would change" if args.dry_run else "changed"
     print(f"\n{total_changed}/{len(rs_files)} files {verb}", file=sys.stderr)
+
+
+def _c2rust_renamed_definitions(code: str, expected: set[str]) -> str:
+    """Undo c2rust's collision rename in a body the model copied it into.
+
+    c2rust renames a C `main` to `main_0` (its own generated `fn main` would collide), and the
+    model writes what its anchor shows: expand.c's body defined `main_0`, the stitch had no
+    `main`, and the whole TU was refused after the money was spent. A planned `N` that is
+    absent while `N_0` is defined is that rename; the definition and its mentions become `N`.
+    """
+    defined = rust_definitions(code)
+    for name in sorted(expected):
+        alias = f"{name}_0"
+        if name not in defined and alias in defined:
+            code = re.sub(rf"\b{re.escape(alias)}\b", name, code)
+    return code
 
 
 def main():

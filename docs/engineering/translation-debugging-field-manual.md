@@ -1869,6 +1869,11 @@ sign as `signscale & 0x80` (bit 7 of the scale byte).
 when a macro has endian or arch branches, check which one the comment claims against the
 header itself. Grep the crate for every other composition of the same word.
 
+A function BODY can take the wrong arm too. fmifs's `Chkdsk` came back with the `#else`
+`GetVolumeNameForVolumeMountPointW` lookup where the live `#ifdef __REACTOS__` arm is a plain
+`wcscpy`. The translate audit flags these (`PREPROCESSOR ARMS ... the #if arm is LIVE`), so
+read every such finding against the Rust before flipping.
+
 ### A C macro that reads the CALLER's locals cannot be a plain `macro_rules!` port
 **Symptom:** `no rules expected <ident>` at call sites that pass one argument more than the
 macro takes, or E0425 for a local (`infoPtr`, `hwnd`) inside a prelude macro's expansion.
@@ -2356,8 +2361,10 @@ baseline empty) refuses the cast; `--fix` rewrites it.
   just the same, but the name itself is never `#define`d as `L"..."`, so the direct widening
   missed it. notepad registered its Find/Replace message from those bytes read as UTF-16 and
   Find Next never fired. `widen_island_constants.py` now widens an A/W name through its `W`
-  target when the island's own `pub type TCHAR = WCHAR` says it was generated UNICODE; an
-  island that does not say keeps the bytes.
+  target when the island's own `pub type TCHAR = WCHAR` says it was generated UNICODE. An
+  island with no TCHAR (kbswitch's headers use none) takes the answer from its gen arm's
+  `-DUNICODE`; before that, kbswitch's `INDICATOR_CLASS` stayed the narrow `INDICATOR_CLASSA`
+  bytes and five calls failed to type-check.
 - **A `b"..."` behind a wide pointer is TWO different bugs, and only one of them is a bug.**
   `b"A\0S\0U\0S\0\0\0" as PCWSTR` is the content-correct one: hand-encoded UTF-16 whose only
   defect is ALIGNMENT 1. **That is a style problem, not a latent fault, and the older framing
@@ -5623,6 +5630,17 @@ is the one §9.117 already prescribes for shared helpers: enumerate every call t
 both sides and diff the argument lists as a table. Here that is three rows and the odd one out is
 immediate — `grep -c GetKeyState` gives 3 in the C and 3 live in the Rust, but the ARGUMENTS
 differ.
+
+### A C function-pointer typedef came back as a bare `fn` type
+**Symptom:** `no method named is_none found for fn pointer`, `expected fn pointer, found
+Option<_>` at `let f: FOO = None`, `unwrap_unchecked` not found. regsvr32's `DLLREGISTER`,
+rundll32's `DllWinMainW`, kbswitch's `FN_KbSwitchSetHooks` (21 errors over three crates).
+**Cause:** the model wrote the module's own `typedef R (CC *FOO)(..)` as `pub type FOO = unsafe
+extern ".." fn(..)`. A C function pointer can be NULL and every caller tests it, so bindgen
+spells it `Option<fn>`, which is pointer-sized with None at 0.
+**Fix:** `port integrate` wraps a module-level `pub type` in `Option<..>` when the module's C
+typedefs that name as a POINTER to function. A typedef of a function type (`typedef R X(..)`,
+used as `X *`) is left alone.
 
 ### A lowered SDK macro lost its `volatile`, its `Option<fn>`, or a field it never had
 

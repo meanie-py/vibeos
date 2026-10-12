@@ -2866,6 +2866,47 @@ def _com_ptr_receiver_rule(
     )
 
 
+def _c2rust_anon_turbofish(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """`null_mut::<C2RustUnnamed_11>()`: c2rust's name for a typedef'd anonymous struct, copied
+    from the anchor into a null pointer's turbofish (format's and autochk's `PTEXTOUTPUT
+    output = NULL`). The binding's own type says what the pointer points at, so the turbofish
+    goes and inference reads it from there."""
+    span = _primary(diagnostic)
+    if span is None:
+        return [], [], False
+    file_name = str(span.get("file_name") or "")
+    data = load(file_name)
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    if data is None or not re.fullmatch(rb"C2RustUnnamed(?:_\d+)?", data[start:end]):
+        return [], [], False
+    lo = data.rfind(b"::<", 0, start)
+    if lo < 0 or data[lo + 3 : start].strip() or data[end:].lstrip()[:3] != b">()":
+        return [], [], False
+    if not re.search(rb"\b(?:null|null_mut)\s*$", data[max(0, lo - 12) : lo]):
+        return [], [], False
+    close = data.index(b">", end) + 1
+    return (
+        [
+            Edit(
+                file_name=file_name,
+                byte_start=lo,
+                byte_end=close,
+                replacement="",
+                rule=RULE_C2RUST_ANON,
+                authority="c2rust's name for an anonymous typedef'd struct; the binding's type "
+                "is the pointee",
+                original=data[lo:close].decode("utf-8", "replace"),
+                line=int(span.get("line_start") or 0),
+                targets=(ctx.target,),
+            )
+        ],
+        [],
+        True,
+    )
+
+
 def _c2rust_anon_rule(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -2877,6 +2918,8 @@ def _c2rust_anon_rule(
     own numbering, so the segment is DELETED, leaving C's flattened spelling -- which
     RULE_ANON_UNION then routes from the island's own declarations, or which compiles as is.
     """
+    if (diagnostic.get("code") or {}).get("code") == "E0412":
+        return _c2rust_anon_turbofish(diagnostic, load, ctx)
     if (diagnostic.get("code") or {}).get("code") != "E0609":
         return [], [], False
     m = _RE_NO_FIELD_NAME.search(str(diagnostic.get("message") or ""))
@@ -2981,6 +3024,8 @@ def _c2rust_hop_rule(
     anon_union_field then routes on the next pass -- or which stays an error if C would not
     reach it either.
     """
+    if (diagnostic.get("code") or {}).get("code") == "E0412":
+        return _c2rust_anon_turbofish(diagnostic, load, ctx)
     if (diagnostic.get("code") or {}).get("code") != "E0609":
         return [], [], False
     m = _RE_NO_FIELD_NAME.search(str(diagnostic.get("message") or ""))
@@ -4416,13 +4461,19 @@ def _shadowed_const_rule(
     if not re.fullmatch(r"[A-Za-z_]\w*", name) or _in_macro_definition(masked, start):
         return [], [], False
     head = masked[max(0, start - 24) : start]
-    if not re.search(rb"\blet\s+(?:mut\s+)?$", head):
+    if re.search(rb"\blet\s+(?:mut\s+)?$", head):
+        opening = _enclosing_brace(masked, start)
+    elif re.search(rb"[(,]\s*(?:mut\s+)?$", head) and masked[end:].lstrip().startswith(b":"):
+        # A PARAMETER named like a static (autochk's `OpenKeyboard(KeyboardHandle: PHANDLE)`
+        # beside `static mut KeyboardHandle`; welcome's `RunAction(nTopic)`): in C the
+        # parameter shadows the global for the whole body, so the body is the scope.
+        opening = _fn_body_brace(masked, start)
+    else:
         return (
             [],
             [Skipped(RULE_SHADOWED_CONST, "not_a_let", file_name, int(span["line_start"]), name)],
             False,
         )
-    opening = _enclosing_brace(masked, start)
     closer = _brace_closer(masked, opening) if opening is not None else None
     fresh = f"{name}_local"
     if closer is None or re.search(rb"\b" + fresh.encode() + rb"\b", masked):
@@ -4453,6 +4504,22 @@ def _shadowed_const_rule(
             )
         )
     return edits, [], True
+
+
+def _fn_body_brace(masked: bytes, at: int) -> int | None:
+    """The `{` opening the body of the fn whose parameter list contains offset `at`."""
+    depth = 0
+    for i in range(at, len(masked)):
+        c = masked[i : i + 1]
+        if c in b"([":
+            depth += 1
+        elif c in b")]":
+            depth -= 1
+            if depth < 0:
+                brace = masked.find(b"{", i)
+                semi = masked.find(b";", i)
+                return brace if brace >= 0 and (semi < 0 or brace < semi) else None
+    return None
 
 
 def _sizeof_const_rule(

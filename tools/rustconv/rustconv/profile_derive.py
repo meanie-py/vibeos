@@ -4260,6 +4260,7 @@ def scaffold_crate(
     out_dir: Path,
     force: bool = False,
     kept: list[Path] | None = None,
+    tus: list[Path] | None = None,
 ) -> list[Path]:
     """Write the crate skeleton: Cargo.toml, lib.rs, prelude.rs, types.rs (+ island stubs).
 
@@ -4388,7 +4389,11 @@ crate-type = ["staticlib"]
     )
 
     mods = []
-    for tu in m.compiled_tus:
+    # `tus`: the TUs this crate translates -- `port derive` drops vendored ones, which stay C
+    # (vfatlib's dosfstools check/*.c were declared as modules, and its own common.c and the
+    # vendored check/common.c collided as two `pub mod common;`).
+    units = m.compiled_tus if tus is None else tus
+    for tu in units:
         # `enum.c` (atapi) is a Rust keyword: a raw identifier still names enum.rs.
         mods.append(f"    {_rust_mod_decl(tu.stem)}")
     write(
@@ -4397,7 +4402,7 @@ crate-type = ["staticlib"]
 //! staticlib → lib{lib}.a, cohab-linked into the cmake-built {m.name}
 //! ({"usermode" if m.is_usermode else "kernel-mode"} module type `{m.module_type}`).
 //!
-//! Module map mirrors the CMakeLists source list exactly — the {len(m.compiled_tus)} TU(s)
+//! Module map mirrors the CMakeLists source list exactly — the {len(units)} TU(s)
 //! the build actually compiles. Generated sources ({", ".join(m.generated_sources) or "none"})
 //! stay C and link alongside.
 #![cfg_attr(not(test), no_std)]

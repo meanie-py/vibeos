@@ -348,6 +348,11 @@ def main(argv: list[str]) -> int:
     ap.add_argument("crates", nargs="*", help="crate dirs (default: every sdk/lib/rust/*)")
     ap.add_argument("--apply", action="store_true", help="write (default: report only)")
     ap.add_argument(
+        "--arm",
+        default=None,
+        help="the gen_driver_types.sh arm these islands came from (its flags say UNICODE)",
+    )
+    ap.add_argument(
         "--stem",
         help="only normalize <stem>_<arch>.rs (gen_driver_types.sh writes one stem per run)",
     )
@@ -373,11 +378,13 @@ def main(argv: list[str]) -> int:
     verb = "normalized" if args.apply else "would normalize"
     print(f"\n{verb} {grand} callback slot(s)")
     if args.apply:
-        widen_crates(repo, crates, args.stem)
+        widen_crates(repo, crates, args.stem, args.arm)
     return 0
 
 
-def widen_crates(repo: pathlib.Path, crates: list[pathlib.Path], stem: str | None) -> None:
+def widen_crates(
+    repo: pathlib.Path, crates: list[pathlib.Path], stem: str | None, arm_name: str | None = None
+) -> None:
     """bindgen drops the `L` of `#define X L"..."`: put the UTF-16 back (widen_island_constants).
 
     It rides on this pass because this is the one post-step EVERY island generator already
@@ -389,12 +396,19 @@ def widen_crates(repo: pathlib.Path, crates: list[pathlib.Path], stem: str | Non
 
     wide = widen.wide_defines(repo)
     aliases = widen.alias_defines(repo)
+    gen = repo / "tools" / "rustconv" / "gen_driver_types.sh"
+    script = gen.read_text(errors="replace") if gen.is_file() else ""
     for c in crates:
+        # The arm is named for the crate; gen_driver_types.sh passes it (its OUT_CRATE is the
+        # crate's `src/`, or a staging dir, neither named for the crate).
+        label = arm_name or (c.parent if c.name == "src" else c).name.removesuffix("-rust")
+        arm = re.search(rf"^  {re.escape(label)}\)\n(.*?)^    ;;", script, re.M | re.S)
+        charset = "W" if arm and re.search(r"-DUNICODE\b", arm.group(1)) else None
         src = c / "src" if (c / "src").is_dir() else c
         files = sorted(src.glob(f"{stem}_*.rs" if stem else "*bindgen_*.rs"))
         for path in files:
             text = path.read_text()
-            new, widened, refused = widen.widen(text, wide, aliases)
+            new, widened, refused = widen.widen(text, wide, aliases, charset)
             if new != text:
                 path.write_text(new)
             if widened or refused:

@@ -235,6 +235,18 @@ def is_test_source(rel: str) -> bool:
     return "/tests/" in f"/{rel}" or bool(re.search(r"(?:^|/)[\w-]*-difftest/", rel))
 
 
+_CRT_IMPLEMENTATIONS = ("msvcrt-crt-rust/", "ucrt-rust/")
+
+
+def is_crt_internal_fn(item: Item) -> bool:
+    """A function declaration inside a CRT IMPLEMENTATION crate: its own internal spelling,
+    not a consumer's view of the C header. msvcrt's printf shells and ucrt's formatter type
+    `char` as `u8`, and as the tree's only extern declaration they won by default: autochk's
+    vsprintf and vfatlib's _vsnprintf took `*const u8` where the header says `char *`
+    (i8 on x86). Without them the name goes to the prototype route, which spells c_char."""
+    return item.kind == "fn" and item.path.replace("\\", "/").startswith(_CRT_IMPLEMENTATIONS)
+
+
 def crate_mode(crate_dir: Path) -> str | None:
     """ "kernel" / "user" from what the crate builds against; None for a mode-neutral crate."""
     if crate_dir.name == "ntkrnl-sys":
@@ -1250,6 +1262,10 @@ def module_exports(module_dir: Path, repo: Path, every_arch: bool = True) -> set
     if not cmake.is_file():
         return None
     libs = {w for m in _IMPORTLIBS.finditer(cmake.read_text()) for w in m.group(1).split()}
+    if not libs and "set_module_type(" not in cmake.read_text():
+        # A static library imports nothing itself: what it may call is its CONSUMERS' link
+        # (vfatlib's _vsnprintf comes from ntdll in usetup, msvcrt in fmifs). No authority.
+        return None
     specs: list[Path] = []
     for lib in sorted(libs):
         found = subprocess.run(

@@ -930,7 +930,9 @@ def test_gen_arm_write_is_locked_and_atomic(tmp_path, monkeypatch):
     # Three integration agents re-derived concurrently; a running bash read a half-rewritten
     # gen_driver_types.sh. The writer re-reads under a lock and swaps the inode.
     gen = tmp_path / "gen_driver_types.sh"
-    gen.write_text('case "$1" in\n  a)\n    X=1\n    ;;\n  *) echo "unknown driver $1"; exit 1 ;;\nesac\n')
+    gen.write_text(
+        'case "$1" in\n  a)\n    X=1\n    ;;\n  *) echo "unknown driver $1"; exit 1 ;;\nesac\n'
+    )
     monkeypatch.setattr(port, "GEN", gen)
     ino = gen.stat().st_ino
     port._write_gen_arm("  b)\n    Y=2\n    ;;\n", "b")
@@ -1037,7 +1039,9 @@ def test_a_hand_fixed_twin_keeps_its_trampoline(tmp_path):
     twin = 'pub unsafe extern "C" fn PrintMessage_v(f: LPCWSTR, ap_list: *mut c_void) -> DWORD {}'
     plain = 'pub unsafe extern "C" fn NdisWriteErrorLogEntry(h: PVOID, c: ULONG) {}'
     (tmp_path / "a.json").write_text(json.dumps({"name": "PrintMessage_v", "text": twin}))
-    (tmp_path / "b.json").write_text(json.dumps({"name": "NdisWriteErrorLogEntry_v", "text": plain}))
+    (tmp_path / "b.json").write_text(
+        json.dumps({"name": "NdisWriteErrorLogEntry_v", "text": plain})
+    )
     assert port._hand_replaced_twins(tmp_path) == {"NdisWriteErrorLogEntry_v"}
 
 
@@ -1053,3 +1057,37 @@ def test_extern_declared_crt_streams_take_the_accessor(tmp_path):
     out = rs.read_text()
     assert "static mut" not in out
     assert "_ftprintf(__iob_func().add(1), s)" in out and "(__iob_func() as *mut FILE)" in out
+
+
+def test_a_c_function_pointer_typedef_becomes_option_fn(tmp_path):
+    # rundll32's `typedef int (WINAPI *DllWinMainW)(..)` came back as a bare `fn` type.
+    rs = tmp_path / "rundll32.rs"
+    rs.write_text(
+        'pub type DllWinMainW = unsafe extern "system" fn(\n    hWnd: HWND,\n) -> i32;\n'
+        'pub type CALLBACK_TYPE = unsafe extern "C" fn(x: i32);\n'
+    )
+    got = port._option_fn_pointer_typedefs(rs, {"DllWinMainW"})
+    assert got == ["DllWinMainW"]
+    out = rs.read_text()
+    assert (
+        'pub type DllWinMainW = Option<unsafe extern "system" fn(\n    hWnd: HWND,\n) -> i32>;'
+        in out
+    )
+    # A function TYPE typedef (not in the pointer set) is left alone.
+    assert 'pub type CALLBACK_TYPE = unsafe extern "C" fn(x: i32);' in out
+
+
+def test_flip_refuses_a_tu_with_no_rust(tmp_path, monkeypatch):
+    # expand: the stitch was refused, no expand.rs was written, and the flip went ahead.
+    import pytest as _pytest
+
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    monkeypatch.setattr(port, "STATE_ROOT", tmp_path / "state")
+    state = {"stem": "m", "crate": "m-rust", "module_dir": "m", "tus": ["m/a.c", "m/b.c"]}
+    monkeypatch.setattr(port, "load_state", lambda _s: state)
+    monkeypatch.setattr(port, "_crate_dir", lambda _s: tmp_path / "m-rust")
+    src = tmp_path / "m-rust" / "src" / "m"
+    src.mkdir(parents=True)
+    (src / "a.rs").write_text("")
+    with _pytest.raises(port.PortError, match="no Rust for b.c"):
+        port.stage_flip("m")

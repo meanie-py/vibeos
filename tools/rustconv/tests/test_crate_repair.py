@@ -2199,6 +2199,33 @@ def test_a_local_shadowing_a_glob_static_is_renamed_too():
     assert "return SessionId_local;" in out
 
 
+def test_a_parameter_shadowing_a_static_is_renamed_for_the_body():
+    # autochk's OpenKeyboard(KeyboardHandle: PHANDLE) beside `static mut KeyboardHandle`.
+    src = (
+        "static mut KeyboardHandle: HANDLE = NULL;\n"
+        "fn g() { use_it(KeyboardHandle); }\n"
+        "unsafe fn OpenKeyboard(KeyboardHandle: PHANDLE) -> NTSTATUS {\n"
+        "    NtOpenFile(KeyboardHandle, 0);\n    (*s).KeyboardHandle = 1;\n    0\n}\n"
+        "fn h() { use_it(KeyboardHandle); }\n"
+    )
+    _, out = _one_site(
+        src, "KeyboardHandle", "function parameters cannot shadow statics", "E0530", nth=2
+    )
+    assert "fn OpenKeyboard(KeyboardHandle_local: PHANDLE)" in out
+    assert "NtOpenFile(KeyboardHandle_local, 0);" in out
+    assert "(*s).KeyboardHandle = 1;" in out
+    assert out.count("use_it(KeyboardHandle);") == 2
+
+
+def test_a_c2rust_anonymous_type_in_a_null_turbofish_is_dropped():
+    # format's FormatExCallback: `PTEXTOUTPUT output = NULL` via c2rust's anchor.
+    src = "fn f() {\n    let mut output: PTEXTOUTPUT = core::ptr::null_mut::<C2RustUnnamed_11>();\n}\n"
+    _, out = _one_site(
+        src, "C2RustUnnamed_11", "cannot find type `C2RustUnnamed_11` in this scope", "E0412"
+    )
+    assert "let mut output: PTEXTOUTPUT = core::ptr::null_mut();" in out
+
+
 def test_sizeof_of_a_constant_is_the_size_of_its_value():
     src = "fn f() -> bool { n < core::mem::size_of::<UNICODE_NULL>() as u16 }\n"
     _, out = _one_site(src, "UNICODE_NULL", "constant provided when a type was expected", "E0747")
