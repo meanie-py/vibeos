@@ -1077,10 +1077,11 @@ pub unsafe extern "system" fn PciIdeChannelIsr(Interrupt: *mut _KINTERRUPT, Cont
     {
         if WasCleared != 0 {
             WARN!(
-                b"Spurious bus-master interrupt %02x, %02x, flags %08lx\n\0".as_ptr() as *const i8,
+                b"Spurious bus-master interrupt %02x, %02x, flags %08lx %08lx\n\0".as_ptr() as *const i8,
                 IdeStatus as u32,
                 DmaStatus as u32,
                 (*ChanData).CommandFlags,
+                (*ChanData).__bindgen_anon_1.ActiveSlotsBitmap,
             );
         }
         return (WasCleared) as BOOLEAN;
@@ -1110,9 +1111,10 @@ pub unsafe extern "system" fn PataChannelIsr(Interrupt: *mut _KINTERRUPT, Contex
         || (IdeStatus as i32 & (IDE_STATUS_BUSY as i32)) != 0
     {
         WARN!(
-            b"Spurious IDE interrupt %02x, flags %08lx\n\0".as_ptr() as *const i8,
+            b"Spurious IDE interrupt %02x, flags %08lx %08lx\n\0".as_ptr() as *const i8,
             IdeStatus as u32,
             (*ChanData).CommandFlags,
+            (*ChanData).__bindgen_anon_1.ActiveSlotsBitmap,
         );
         return ((FALSE as i32)) as BOOLEAN;
     }

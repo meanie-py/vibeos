@@ -1828,9 +1828,10 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   attributes, regedit's address toolbar; six keyboard layouts generated. Declined: the NT5-isms
   commit (no-op at our NTDDI apart from two inverted fiber tests it introduces in
   LdrShutdownThread and DeleteFiber). freeldr's UEFI PCI scan needs nothing: ours predates it.
-  Still owed from it: pciidex's HighPoint chipset (`chipset/hpt.c`, new, 375 lines, plus the
-  controller's BusLocation; commented out until translated), shell32's 13 files (taken by the
-  shell32-com lane), and mmc_new's ten commits (master's translation is of the C before them;
+  pciidex's HighPoint chipset (7ca81431042) was ported 2026-10-12: `hpt.c` translated sealed on
+  Haiku ($0.01), plus the controller's BusLocation, the VT6421 DMA fix and its CriticalDeviceDatabase
+  entries (routed to uniata, our boot storage driver). Still owed from it: shell32's 13 files
+  (taken by the shell32-com lane), and mmc_new's ten commits (master's translation is of the C before them;
   `CActionWnd.cpp` is commented out). Owed, by cluster (upstream-sync): pciidex rewrite
   (~15K lines), PCIX arbiters/ECAM, netcfgx and dhcpcsvc alternate configuration, freeldr
   disk registration and boot menu, the Wine 10 ole32/oleaut32/mlang/crypt syncs, msgina and

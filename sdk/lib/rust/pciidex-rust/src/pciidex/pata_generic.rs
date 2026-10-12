@@ -640,14 +640,29 @@ unsafe extern "C" fn PciIdeControllerInitDma(mut Controller: PATA_CONTROLLER) ->
     PAGED_CODE!();
 
     if (*Controller).Pci.Command as ::core::ffi::c_int & (PCI_ENABLE_BUS_MASTER as i32) == 0 {
-        INFO!(b"PCI bus mastering disabled\n\0" as *const u8 as *const ::core::ffi::c_char);
+        WARN!(
+            b"%04X:%04X.%02X: PCI bus mastering disabled\n\0".as_ptr() as *const i8,
+            (*Controller).Pci.VendorID as u32,
+            (*Controller).Pci.DeviceID as u32,
+            (*Controller).Pci.RevisionID as u32,
+        );
         return FALSE;
     }
 
+    /*
+     * Assume that all RAID controllers are DMA capable.
+     * (ProgIF can be initialized to 0 on VIA VT6421)
+     */
     if (*Controller).Pci.BaseClass as ::core::ffi::c_int == (PCI_CLASS_MASS_STORAGE_CTLR as i32)
+        && (*Controller).Pci.SubClass as ::core::ffi::c_int == (PCI_SUBCLASS_MSC_IDE_CTLR as i32)
         && (*Controller).Pci.ProgIf as ::core::ffi::c_int & (PCIIDE_PROGIF_DMA_CAPABLE as i32) == 0
     {
-        INFO!(b"Non DMA capable controller detected\n\0" as *const u8 as *const ::core::ffi::c_char);
+        WARN!(
+            b"%04X:%04X.%02X: Non DMA capable controller detected\n\0".as_ptr() as *const i8,
+            (*Controller).Pci.VendorID as u32,
+            (*Controller).Pci.DeviceID as u32,
+            (*Controller).Pci.RevisionID as u32,
+        );
         return FALSE;
     }
 
@@ -1221,6 +1236,9 @@ pub unsafe extern "C" fn PciIdeGetControllerProperties(
                 Status = Sil680GetControllerProperties(Controller);
             }
         }
+        PCI_VEN_HIGHPOINT => {
+            Status = HptGetControllerProperties(Controller);
+        }
         PCI_VEN_INTEL => {
             Status = IntelGetControllerProperties(Controller);
         }
@@ -1249,7 +1267,12 @@ pub unsafe extern "C" fn PciIdeGetControllerProperties(
             || ((*Controller).Pci.SubClass != (PCI_SUBCLASS_MSC_IDE_CTLR as u8)
                 && (*Controller).Pci.SubClass != (PCI_SUBCLASS_MSC_RAID_CTLR as u8))
         {
-            ERR!(b"Unsupported controller\n\0".as_ptr() as *const i8);
+            ERR!(
+                b"%04X:%04X.%02X: Unsupported controller\n\0".as_ptr() as *const i8,
+                (*Controller).Pci.VendorID as u32,
+                (*Controller).Pci.DeviceID as u32,
+                (*Controller).Pci.RevisionID as u32,
+            );
             return Status;
         }
 

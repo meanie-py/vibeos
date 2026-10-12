@@ -3987,6 +3987,7 @@ pub const PCI_VEN_AMD: u32 = 4130;
 pub const PCI_VEN_NVIDIA: u32 = 4318;
 pub const PCI_VEN_PC_TECH: u32 = 4162;
 pub const PCI_VEN_CMD: u32 = 4245;
+pub const PCI_VEN_HIGHPOINT: u32 = 4355;
 pub const PCI_VEN_VIA: u32 = 4358;
 pub const PCI_VEN_SERVERWORKS: u32 = 4454;
 pub const PCI_VEN_TOSHIBA: u32 = 4473;
@@ -64952,6 +64953,7 @@ pub struct _ATA_CONTROLLER {
     pub AttachChannel: PCONTROLLER_ATTACH_CHANNEL_EX,
     pub __bindgen_anon_1: _ATA_CONTROLLER__bindgen_ty_3,
     pub HwExt: PVOID,
+    pub BusLocation: ULONG,
     pub AlignmentRequirement: ULONG,
     pub MaxChannels: ULONG,
     pub ChannelBitmap: ULONG,
@@ -65231,6 +65233,9 @@ unsafe extern "C" {
     ) -> IDE_CHANNEL_STATE;
 }
 unsafe extern "system" {
+    pub fn PciIdexGetBusLocation(DeviceExtension: PVOID, BusLocation: PULONG) -> NTSTATUS;
+}
+unsafe extern "system" {
     pub fn DriverEntry(arg1: *mut _DRIVER_OBJECT, arg2: PUNICODE_STRING) -> NTSTATUS;
 }
 unsafe extern "system" {
@@ -65496,6 +65501,9 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn CmdGetControllerProperties(Controller: PATA_CONTROLLER) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn HptGetControllerProperties(Controller: PATA_CONTROLLER) -> NTSTATUS;
 }
 unsafe extern "C" {
     pub fn Sil680GetControllerProperties(Controller: PATA_CONTROLLER) -> NTSTATUS;

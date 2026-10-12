@@ -503,6 +503,16 @@ unsafe extern "C" fn PciIdeXAddDeviceEx(
             (*FdoExtension).Controller.BusInterfaceContext = BusInterface.Context;
             (*FdoExtension).Controller.SetBusData = BusInterface.SetBusData;
             (*FdoExtension).Controller.GetBusData = BusInterface.GetBusData;
+
+            /* We need this for PCI devices only ((DeviceNumber << 16) | Function) */
+            Status = PciIdexGetBusLocation(
+                (*FdoExtension).MiniControllerExtension.as_mut_ptr() as PVOID,
+                core::ptr::addr_of_mut!((*FdoExtension).Controller.BusLocation),
+            );
+            if !NT_SUCCESS!(Status) {
+                ERR!(b"Failed to retrieve bus location 0x%lx\n\0".as_ptr() as *const i8, Status);
+                break 'failure_cleanup;
+            }
         }
 
         (*Fdo).Flags &= !DO_DEVICE_INITIALIZING;

@@ -63,6 +63,8 @@ def test_stages_outside_the_build_dir(tmp_path, monkeypatch) -> None:
         raise Stop
 
     monkeypatch.setattr(mk.shutil, "which", lambda _tool: "/bin/true")
+    monkeypatch.setattr(mk, "_host_tools", lambda _build_dir: (Path("mkisofs"),) * 3)
+    monkeypatch.setattr(mk, "_volume_id", lambda _iso: "ReactOS")
     monkeypatch.setattr(mk.tempfile, "TemporaryDirectory", recorder)
     build_dir = tmp_path / "build-i386"
     build_dir.mkdir()
