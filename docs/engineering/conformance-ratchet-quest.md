@@ -24,6 +24,12 @@ Rust-translated subsystem is a **pre-packaged mistranslation repro** with a name
 an assertion message — no crash forensics needed. And it executes translated code the
 boot path never touches (see `tools/coverage/` — the never-executed-rust registry).
 
+## Resume here (2026-10-12)
+
+The survey below is history. The current state, and the ordered queue of owed work, is the
+**last progress-log entry**: "2026-10-12 — hibernation handoff". Re-derive every number in it
+from `tools/conformance-baseline/<arch>/kmtest.txt` and a fresh sweep before trusting it.
+
 ## Survey findings (2026-07-10 — verified, start from here)
 
 - **`ENABLE_ROSTESTS` is `OFF` by default** (`modules/CMakeLists.txt`). No rostests
@@ -1883,3 +1889,78 @@ and is a FLOOR question, not a kernel one:** `:178` and `:181` carry `assert?` m
 consequences of `:176` as independent debt, and `:178` in particular passes *spuriously* in the
 bad mode, so the quota bit is untested on every run that takes it. Un-marking them makes arm64
 gates redder, so it is a deliberate call rather than a cleanup.
+
+### 2026-10-12 — hibernation handoff: x86 on a writable root, four landings, the owed queue
+
+The lane pauses until the next weekend. Everything below was observed on master at
+`20b8abeb1468`, with two identical sweeps per arch behind every banked number.
+
+**Run it.** `VIBEOS_PAYLOAD=kmtest ./vibeos-cli build --arch <a>`, then
+`VIBEOS_WRITABLE_ROOT=1 ./vibeos-cli conformance --arch <a> --no-build`. Bank a row only after
+two sweeps agree, by replacing that row's block in the baseline and never with a blanket
+`--write-baseline`, which would clobber the hand-seeded `KeEvent` row and every `assert?` mark.
+Put a new dated note BELOW the newest existing one, not directly under the header line: other
+lanes add notes there too, and two insertions at the same point bounced this lane CONFLICT
+twice in the merge queue.
+
+**Landed this weekend**
+- `85a6621a5690`: i386 boots the writable root (`livecd-rw.iso`). fastfat's flush called a
+  cdecl helper through a stdcall declaration (DECL_CC_SPLIT, now seen by `scan_cc_mismatch`
+  through sys-crate imports), and ExReturnPoolQuota had dropped its special-pool check.
+- `a76a2d7eef8a`: `mk_writable_livecd` stages outside `build-<arch>` (it raced amd64's WoW64
+  restage and rejected two batches).
+- `5c8ff1d7a529`: 119 kernel call sites had translated `ProbeForWrite*` to the range-only
+  `probe_user_buffer`; now `probe_user_buffer_write`, and `scan_dropped_probes` reports the
+  shape as `WEAK`. IoReadWrite 151 -> 0 on every arch. Also MmSection 30 -> 14 (offset rounding,
+  FileObject sections are data sections, SEC_LARGE_PAGES status).
+- `20b8abeb1468`: the DBG list poison was behind `cfg(debug_assertions)` (ExSingleList 12 -> 0,
+  ExDoubleList 16 -> 0/8), npfs FileAllInformation, and three object-type access masks.
+
+**Failing rows now** (failing assertions per row; amd64 / i386 / arm64 where they differ):
+CmSecurity 1, ExPools 1, ExResource 2, ExResourceBounded 2, Example 15, FsRtlExpression 8,
+HalSystemInfo 1/1/2, HidPDescription 9, IoCreateFile 7, IoDeviceObject 4, IoFilesystem 3,
+KeDeviceQueue 1, MmSection 14, NpfsFileInfo 19, NtSystemDebugControl 20/15/20, ObSecurity 14,
+ObTypes 9, RtlStack and RtlStackKM 11/1/11, SeInheritance 14, TcpIpConnect 7, TcpIpTdi 4,
+ZwAllocateVirtualMemory 9/2/11, ZwCreateSection 3, ZwMapViewOfSection 6, ExDoubleList 8/0/8.
+amd64 only: RtlCaptureContextUM 10. i386 only: KeSpinLock 30, MmReservedMapping 44,
+ExInterlocked 4. arm64 only: IoInterrupt 2, RtlMemory and RtlMemoryKM 3.
+
+**Owed, in order**
+1. **RtlStack / RtlStackKM** (11 on amd64 and arm64, 1 on i386): the stack walker is a real
+   shared defect, and the obvious next target.
+2. **The rest of the shared queue, untriaged:** Example 15 (kmtest's sample test; check whether
+   its failures are deliberate before treating them as bugs), NtSystemDebugControl (statuses
+   0xc0000004 or 0xc0000001 where 0xc0000002 is expected), HidPDescription, FsRtlExpression,
+   TcpIpConnect/TcpIpTdi, IoCreateFile, IoFilesystem, IoDeviceObject, ZwMapViewOfSection,
+   ZwCreateSection, SeInheritance, the single-assertion rows.
+3. **i386 only:** MmReservedMapping 44, KeSpinLock 30, ExInterlocked 4.
+4. **arm64 only:** IoInterrupt 2, RtlMemory 3.
+5. **SMP baselines** (`kmtest-smp2.txt`) were not re-swept this weekend. Expect IoReadWrite's pass
+   count to read as dropped (16192 -> 15563): the bad-buffer calls now fail before the test
+   driver, so its per-IRP assertions do not run. That drop is correct; rebank it.
+6. **Tooling:** `scan_dropped_probes` WEAK only sees files that carry their C as comments. 61 of
+   the 119 sites were found by pairing each Rust probe with its same-named C function in the
+   tree (`tools/c_twin.py` is that oracle) and matching the probed pointer by its last
+   identifier. Pairing by name alone produced one false positive, IopDeviceFsIoControl's
+   METHOD_IN_DIRECT branch, which is a ProbeForRead. Give the scanner that oracle so the
+   class stays closed. Its baseline also lists 5 PARTIAL lines it no longer reports.
+
+**Expected, not owed** (the reasons are also in each baseline's header):
+- MmSection 14: on Server 2003, closing a file's last handle tears its data segment down; ours
+  outlives the close, so the pointer count stays 3 where the test wants 4. A cache-lifetime
+  design difference inherited from ReactOS.
+- ObSecurity 14: on Windows, SYSTEM's `\??` is a per-LUID directory with a 4-ACE DACL; ReactOS
+  has only `\GLOBAL??` with its 6-ACE DACL. Building per-LUID directories is design work.
+- NpfsFileInfo 19: the sizeof-4 query fails INFO_LENGTH_MISMATCH in the I/O manager on a checked
+  build, as Windows does; the test lacks its KmtIsCheckedBuild guard.
+- ExDoubleList 8 on 64-bit: with no Exf variant, both blocks call one function and expect two
+  different poison values.
+- ObTypes 9: WindowStation cannot keep handle counts without Open/Close procedures (win32k
+  supplies them on Windows); Port's 0x7b2 is valid for 2003 SP2 RTM by the test's own comment;
+  the Filter* types need fltmgr loaded.
+- arm64 HalSystemInfo 0/2: the class lists x86 I/O ports, and arm64 has no port space.
+
+**Mistakes worth not repeating.** Setting MaintainHandleCount on WindowStation crashed boot on
+every arch (BUGCHECK 0x32): ObCreateObjectType refuses the flag on a type with no Open or Close
+procedure, and I had called the change safe without reading that check. Editing source while
+my own build ran cost two rebuild cycles; the build's artifact check caught it both times.
