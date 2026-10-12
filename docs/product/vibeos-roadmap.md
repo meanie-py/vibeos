@@ -875,9 +875,21 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   stock amd64 build of ~40 apps and applets as x86-64 guests. 25 pass, each verified to be an
   x86-64 process. Later the same day rapps and iexplore pass too (an unstaged rsaenh), and
   control.exe and the applets turned out slow, not hung, once appstorm could sample x86-64
-  threads. Owed: a full sweep on a quiet host, an x86-64-only taskmgr close deadlock (a sent
-  message never dispatched, 1 in 6 runs), per-syscall cost under FEX, and memory (an exhausted
-  machine bugchecks 0x7A). See `../engineering/wow64-x64-guest-design.md`. Two arm64 kernel
+  threads. Since then the taskmgr close deadlock is fixed, and so is the 0x7A on an exhausted
+  machine (it now retries). Per-syscall cost is cut to about native (2026-10-11: the cnt CRT's
+  memset/memcpy were unoptimised byte loops). Windows-style commit accounting landed (2026-10-12,
+  `ARM3/commit.rs`), with vendored FEX committing memory on first touch. cleanmgr opens once
+  msvfw32 is staged. **Owed:**
+  - a full sweep on a quiet host;
+  - free RAM still drifts ~70 MB across a sweep, in memory commit accounting does not track
+    (image pages, cache, pool);
+  - copy-on-write image pages, PEB/TEB and pool are not yet charged;
+  - the rest of the cnt CRT (`wcslen`, `strlen`) is still byte loops;
+  - win32k callbacks cost ~2x native under FEX;
+  - the land gate never boots FEX guests: the ladder runs only on `VIBEOS_FEX=1` arm64 media,
+    so run it by hand after touching wow64, wowx64, FEX or Mm.
+
+  See `../engineering/wow64-x64-guest-design.md`. Two arm64 kernel
   paging bugs it found are fixed: Access-Flag livelock, and written pages paged out as clean.
 - **gui32 read back nothing on arm64 — FIXED 2026-10-08.** The arm64 syscall path (`trap.rs`,
   `usercall.rs`) checked TEB64's GDI batch count, so a 32-bit guest's batched PatBlt was still
@@ -1557,7 +1569,10 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   never-torn-down identity map. `MmFreeLoaderBlock` now unmaps VA 0-64K
   (`MiUnmapLowGuardArm64`; serial `[MM] arm64: low guard ... MmIsAddressValid(0x10)=0`,
   QEMU and Pi 4). The Pi4 spin table was not a reason to keep it: APs start by PSCI CPU_ON
-  with their own identity map, and hal-rust never touches PA 0xd8-0xf0.
+  with their own identity map, and hal-rust never touches PA 0xd8-0xf0. **The rest of that
+  identity map went too (2026-10-12):** FreeLDR's VA == PA mappings of every RAM run in the user
+  half let a System-process probe read physical memory (`MiUnmapLoaderIdentityRamArm64`; field
+  manual, "A kernel probe of a user address succeeds on arm64").
 - **amd64: an exception caught in fastfat looped until the stack overflowed (0x7F/8) —
   FIXED** (2026-09-27). The trigger was `FatPreallocateCloseContext`'s pool tag 0 (the
   translation's invented constant; C has `TAG_FAT_CLOSE_CONTEXT`), which equals
