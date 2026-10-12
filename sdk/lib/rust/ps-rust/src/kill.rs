@@ -285,7 +285,9 @@ pub unsafe extern "system" fn PsTerminateProcess(
     PspTerminateProcess(process, exit_status)
 }
 
-unsafe fn PspShutdownProcessManager() {
+// Upstream b74ed4ac15e renamed PspShutdownProcessManager; nothing calls it yet (the Power
+// Manager will, at shutdown).
+unsafe fn PsShutdownSystem() {
     let mut process = PsGetNextProcess(core::ptr::null_mut());
     while !process.is_null() {
         if process != PsInitialSystemProcess as PEPROCESS && process != PsIdleProcess {

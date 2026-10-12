@@ -1,6 +1,6 @@
 """CamelCase DDK/PSDK enum-constant names — GENERATED, do not edit by hand.
 
-Regenerate with `python3 tools/rustconv/gen_enum_constants.py` (784 headers
+Regenerate with `python3 tools/rustconv/gen_enum_constants.py` (786 headers
 scanned).  See that script's docstring for why this exists: CamelCase enum
 constants are values the model must never be trusted to copy, and unlike
 ALL_CAPS #defines they do not match fact_seal's symbol pattern.
@@ -5531,6 +5531,8 @@ DDK_ENUM_CONSTANTS: frozenset[str] = frozenset(
         "TapeDriveWriteError",
         "TapeDriveWriteWarning",
         "TapePeripheral",
+        "TargetApic",
+        "TargetApicRequest",
         "TargetDeviceChangeEvent",
         "TargetDeviceRelation",
         "TcAdapter",
@@ -5809,6 +5811,8 @@ DDK_ENUM_CONSTANTS: frozenset[str] = frozenset(
         "UpdateBlackBoxRecorder",
         "Usb11Device",
         "Usb20Device",
+        "Usb20Hub",
+        "Usb30Hub",
         "UsbController",
         "UsbDevice",
         "UsbFullSpeed",
@@ -5816,6 +5820,8 @@ DDK_ENUM_CONSTANTS: frozenset[str] = frozenset(
         "UsbHub",
         "UsbLowSpeed",
         "UsbMIParent",
+        "UsbRootHub",
+        "UsbSuperSpeed",
         "UsbUserBufferTooSmall",
         "UsbUserDeviceNotStarted",
         "UsbUserErrorNotMapped",

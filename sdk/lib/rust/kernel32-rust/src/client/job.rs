@@ -4,7 +4,7 @@ use crate::k32_externs::{BaseFormatObjectAttributes, RtlCopyMemory};
 use core::ffi::c_void;
 
 extern "system" {
-    fn BaseGetNamedObjectDirectory() -> HANDLE;
+    fn BasepGetNamedObjectDirectory() -> HANDLE;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -118,7 +118,7 @@ pub unsafe extern "system" fn OpenJobObjectW(
     RtlInitUnicodeString(core::ptr::addr_of_mut!(ObjectName), lpName as PCWSTR);
 
     (*ObjectAttributes).Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
-    (*ObjectAttributes).RootDirectory = BaseGetNamedObjectDirectory();
+    (*ObjectAttributes).RootDirectory = BasepGetNamedObjectDirectory();
     (*ObjectAttributes).Attributes = (if bInheritHandle != 0 {
         0x2 as ::core::ffi::c_long
     } else {

@@ -84,8 +84,13 @@ pub unsafe extern "system" fn BasepAnsiStringToUnicodeSize(String: PANSI_STRING)
     RtlAnsiStringToUnicodeSize(String)
 }
 
+/// The documented NT6 signature (kernelbase, and Wine): status out, handle through
+/// `DirectoryHandle` (upstream 7b47e058fec). Divergence from the C: a failed open is
+/// returned as that failure, where the C reports STATUS_SUCCESS with a NULL handle after
+/// discarding the `Status` it holds; Wine returns it too. `BasepGetNamedObjectDirectory`
+/// maps both to NULL, so this file's callers see no difference.
 #[no_mangle]
-pub unsafe extern "system" fn BaseGetNamedObjectDirectory() -> HANDLE {
+pub unsafe extern "system" fn BaseGetNamedObjectDirectory(DirectoryHandle: *mut HANDLE) -> NTSTATUS {
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut Status: NTSTATUS = 0;
     let mut DirHandle: HANDLE = core::ptr::null_mut();
@@ -93,8 +98,9 @@ pub unsafe extern "system" fn BaseGetNamedObjectDirectory() -> HANDLE {
     let mut Token: HANDLE = core::ptr::null_mut();
     let mut NewToken: HANDLE = core::ptr::null_mut();
 
+    *DirectoryHandle = BaseNamedObjectDirectory;
     if !BaseNamedObjectDirectory.is_null() {
-        return BaseNamedObjectDirectory;
+        return STATUS_SUCCESS;
     }
 
     if (*NtCurrentTeb()).IsImpersonating != 0 {
@@ -105,7 +111,7 @@ pub unsafe extern "system" fn BaseGetNamedObjectDirectory() -> HANDLE {
             &mut Token,
         );
         if !NT_SUCCESS(Status) {
-            return BaseNamedObjectDirectory;
+            return Status;
         }
 
         NewToken = core::ptr::null_mut();
@@ -117,7 +123,7 @@ pub unsafe extern "system" fn BaseGetNamedObjectDirectory() -> HANDLE {
         );
         if !NT_SUCCESS(Status) {
             NtClose(Token);
-            return BaseNamedObjectDirectory;
+            return Status;
         }
     } else {
         Token = core::ptr::null_mut();
@@ -179,7 +185,21 @@ pub unsafe extern "system" fn BaseGetNamedObjectDirectory() -> HANDLE {
         NtClose(Token);
     }
 
-    BaseNamedObjectDirectory
+    *DirectoryHandle = BaseNamedObjectDirectory;
+    if BaseNamedObjectDirectory.is_null() && !NT_SUCCESS(Status) {
+        return Status;
+    }
+    STATUS_SUCCESS
+}
+
+/// The old `HANDLE`-returning shape, for kernel32's own callers (upstream 7b47e058fec).
+#[no_mangle]
+pub unsafe extern "system" fn BasepGetNamedObjectDirectory() -> HANDLE {
+    let mut DirectoryHandle: HANDLE = core::ptr::null_mut();
+    if !NT_SUCCESS(BaseGetNamedObjectDirectory(&mut DirectoryHandle)) {
+        return core::ptr::null_mut();
+    }
+    DirectoryHandle
 }
 
 #[no_mangle]
@@ -346,7 +366,7 @@ pub unsafe extern "system" fn BaseFormatObjectAttributes(
 
     if !ObjectName.is_null() {
         Attributes |= OBJ_OPENIF;
-        RootDirectory = BaseGetNamedObjectDirectory();
+        RootDirectory = BasepGetNamedObjectDirectory();
     } else {
         RootDirectory = core::ptr::null_mut();
     }
@@ -1291,7 +1311,7 @@ pub unsafe extern "system" fn BasepCheckWinSaferRestrictions(
 //     if (ObjectName)
 //     {
 //         Attributes |= OBJ_OPENIF;
-//         RootDirectory = BaseGetNamedObjectDirectory();
+//         RootDirectory = BasepGetNamedObjectDirectory();
 //     }
 //     else
 //     {

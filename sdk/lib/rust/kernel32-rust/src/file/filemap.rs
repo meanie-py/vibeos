@@ -7,7 +7,7 @@ pub const STATUS_INVALID_PAGE_PROTECTION: NTSTATUS = 0xC000_0045u32 as NTSTATUS;
 pub const STATUS_NOT_MAPPED_DATA: NTSTATUS = 0xC000_0088u32 as NTSTATUS;
 
 extern "system" {
-    fn BaseGetNamedObjectDirectory() -> HANDLE;
+    fn BasepGetNamedObjectDirectory() -> HANDLE;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -331,7 +331,7 @@ pub unsafe extern "system" fn OpenFileMappingW(
 
     RtlInitUnicodeString(&mut UnicodeName, lpName);
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
-    ObjectAttributes.RootDirectory = BaseGetNamedObjectDirectory();
+    ObjectAttributes.RootDirectory = BasepGetNamedObjectDirectory();
     ObjectAttributes.Attributes = if bInheritHandle != 0 { OBJ_INHERIT as ULONG } else { 0 };
     ObjectAttributes.ObjectName = &mut UnicodeName as *mut _UNICODE_STRING;
     ObjectAttributes.SecurityDescriptor = core::ptr::null_mut();

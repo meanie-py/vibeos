@@ -16,7 +16,7 @@ extern "system" {
     fn VerifyConsoleIoHandle(Handle: HANDLE) -> BOOL;
     fn GetConsoleInputWaitHandle() -> HANDLE;
     fn BaseFormatTimeOut(Timeout: PLARGE_INTEGER, dwMilliseconds: DWORD) -> PLARGE_INTEGER;
-    fn BaseGetNamedObjectDirectory() -> HANDLE;
+    fn BasepGetNamedObjectDirectory() -> HANDLE;
 }
 #[inline]
 unsafe fn IsConsoleHandle(h: HANDLE) -> BOOL { ((h as usize & 0x1000_0003) == 0x3) as BOOL }
@@ -468,7 +468,7 @@ pub unsafe extern "system" fn OpenWaitableTimerW(
     RtlInitUnicodeString(&raw mut ObjectName, lpTimerName as PCWSTR);
 
     (*ObjectAttributes).Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
-    (*ObjectAttributes).RootDirectory = BaseGetNamedObjectDirectory();
+    (*ObjectAttributes).RootDirectory = BasepGetNamedObjectDirectory();
     (*ObjectAttributes).Attributes = (if bInheritHandle != 0 {
         0x2 as ::core::ffi::c_long
     } else {
@@ -779,7 +779,7 @@ pub unsafe extern "system" fn OpenSemaphoreW(
     RtlInitUnicodeString(&raw mut ObjectName, lpName as PCWSTR);
 
     (*ObjectAttributes).Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
-    (*ObjectAttributes).RootDirectory = BaseGetNamedObjectDirectory();
+    (*ObjectAttributes).RootDirectory = BasepGetNamedObjectDirectory();
     (*ObjectAttributes).Attributes = (if bInheritHandle != 0 {
         0x2 as ::core::ffi::c_long
     } else {
@@ -951,7 +951,7 @@ pub unsafe extern "system" fn OpenMutexW(
     RtlInitUnicodeString(core::ptr::addr_of_mut!(ObjectName), lpName as PCWSTR);
 
     (*ObjectAttributes).Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
-    (*ObjectAttributes).RootDirectory = BaseGetNamedObjectDirectory();
+    (*ObjectAttributes).RootDirectory = BasepGetNamedObjectDirectory();
     (*ObjectAttributes).Attributes = (if bInheritHandle != 0 {
         0x2 as ::core::ffi::c_long
     } else {
@@ -1112,7 +1112,7 @@ pub unsafe extern "system" fn OpenEventW(
     }
     RtlInitUnicodeString(&raw mut ObjectName, lpName as PCWSTR);
     (*ObjectAttributes).Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
-    (*ObjectAttributes).RootDirectory = BaseGetNamedObjectDirectory();
+    (*ObjectAttributes).RootDirectory = BasepGetNamedObjectDirectory();
     (*ObjectAttributes).Attributes = if bInheritHandle != 0 { OBJ_INHERIT } else { 0 };
     (*ObjectAttributes).ObjectName = &raw mut ObjectName as PUNICODE_STRING;
     (*ObjectAttributes).SecurityDescriptor = core::ptr::null_mut();

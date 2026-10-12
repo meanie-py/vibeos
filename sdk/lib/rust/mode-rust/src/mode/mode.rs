@@ -911,9 +911,12 @@ unsafe extern "C" fn ParseModes(mut argStr: PCWSTR, mut Mode: PBYTE) -> PCWSTR {
     } else if _wcsnicmp(argStr, RUSTCONV_WSTR_FFDB8C096B3F.as_ptr(), 2) == 0 {
         argStr = argStr.add(2 as usize);
         *Mode = 3;
+    } else {
+        return core::ptr::null();
     }
-
-    return core::ptr::null();
+    // Upstream 30c0b21154d: the C returned NULL even on a match, so every serial option
+    // taking on/off/hs/tg failed.
+    return argStr;
 }
 
 unsafe extern "C" fn ParseBaudRate(mut argStr: PCWSTR, mut BaudRate: PDWORD) -> PCWSTR {

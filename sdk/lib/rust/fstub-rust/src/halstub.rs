@@ -495,6 +495,24 @@ pub static mut HalPrivateDispatchTable: HAL_PRIVATE_DISPATCH = HAL_PRIVATE_DISPA
             ntkrnl_sys::ddk::pKdUnmapVirtualAddress,
             >(xKdUnmapVirtualAddressStub)
     },
+    // The NT6 tail ReactOS's haltypes.h now declares for every build. The C's positional
+    // initializer stops before it, so C leaves these NULL; the HAL fills what it implements.
+    KdGetPciDataByOffset: None,
+    KdSetPciDataByOffset: None,
+    HalGetInterruptVectorOverride: None,
+    HalGetVectorInputOverride: None,
+    HalLoadMicrocode: None,
+    HalUnloadMicrocode: None,
+    HalPostMicrocodeUpdate: None,
+    HalAllocateMessageTargetOverride: None,
+    HalFreeMessageTargetOverride: None,
+    HalDpReplaceBegin: None,
+    HalDpReplaceTarget: None,
+    HalDpReplaceControl: None,
+    HalDpReplaceEnd: None,
+    HalPrepareForBugcheck: None,
+    HalReadWheaPhysicalMemory: None,
+    HalWriteWheaPhysicalMemory: None,
 };
 
 // ============================================================================

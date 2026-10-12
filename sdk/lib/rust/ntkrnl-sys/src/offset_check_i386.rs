@@ -2910,11 +2910,17 @@ const _: () = assert!(offset_of!(super::ddk::_HAL_INTEL_ENLIGHTENMENT_INFORMATIO
 const _: () = assert!(offset_of!(super::ddk::_HAL_INTEL_ENLIGHTENMENT_INFORMATION, SvmDeletePrQueue) == 172); // HAL_INTEL_ENLIGHTENMENT_INFORMATION.SvmDeletePrQueue
 const _: () = assert!(offset_of!(super::ddk::_HAL_INTEL_ENLIGHTENMENT_INFORMATION, SvmClearPrqStalled) == 176); // HAL_INTEL_ENLIGHTENMENT_INFORMATION.SvmClearPrqStalled
 const _: () = assert!(offset_of!(super::ddk::_HAL_INTEL_ENLIGHTENMENT_INFORMATION, SvmSetDeviceEnabled) == 180); // HAL_INTEL_ENLIGHTENMENT_INFORMATION.SvmSetDeviceEnabled
+const _: () = assert!(offset_of!(super::ddk::_HAL_INTERRUPT_TARGET_DESCRIPTOR, TargetType) == 0); // HAL_INTERRUPT_TARGET_DESCRIPTOR.TargetType
+const _: () = assert!(offset_of!(super::ddk::_HAL_INTERRUPT_TARGET_DESCRIPTOR, ProcessorIndex) == 4); // HAL_INTERRUPT_TARGET_DESCRIPTOR.ProcessorIndex
+const _: () = assert!(offset_of!(super::ddk::_HAL_INTERRUPT_TARGET_DESCRIPTOR, Capabilities) == 8); // HAL_INTERRUPT_TARGET_DESCRIPTOR.Capabilities
+const _: () = assert!(offset_of!(super::ddk::_HAL_INTERRUPT_TARGET_DESCRIPTOR, ApicRouting) == 12); // HAL_INTERRUPT_TARGET_DESCRIPTOR.ApicRouting
 const _: () = assert!(offset_of!(super::ddk::_HAL_LOG_REGISTER_CONTEXT, LogRoutine) == 0); // HAL_LOG_REGISTER_CONTEXT.LogRoutine
 const _: () = assert!(offset_of!(super::ddk::_HAL_LOG_REGISTER_CONTEXT, Flag) == 4); // HAL_LOG_REGISTER_CONTEXT.Flag
 const _: () = assert!(offset_of!(super::ddk::_HAL_MCA_INTERFACE, Lock) == 0); // HAL_MCA_INTERFACE.Lock
 const _: () = assert!(offset_of!(super::ddk::_HAL_MCA_INTERFACE, Unlock) == 4); // HAL_MCA_INTERFACE.Unlock
 const _: () = assert!(offset_of!(super::ddk::_HAL_MCA_INTERFACE, ReadRegister) == 8); // HAL_MCA_INTERFACE.ReadRegister
+const _: () = assert!(offset_of!(super::ddk::_HAL_MESSAGE_SIGNAL_TARGET_REQUEST, InterruptTargetType) == 0); // HAL_MESSAGE_SIGNAL_TARGET_REQUEST.InterruptTargetType
+const _: () = assert!(offset_of!(super::ddk::_HAL_MESSAGE_SIGNAL_TARGET_REQUEST, ApicTarget) == 4); // HAL_MESSAGE_SIGNAL_TARGET_REQUEST.ApicTarget
 const _: () = assert!(offset_of!(super::ddk::_HAL_PLATFORM_INFORMATION, PlatformFlags) == 0); // HAL_PLATFORM_INFORMATION.PlatformFlags
 const _: () = assert!(offset_of!(super::ddk::_HAL_POWER_INFORMATION, TBD) == 0); // HAL_POWER_INFORMATION.TBD
 const _: () = assert!(offset_of!(super::ddk::_HAL_PRIVATE_DISPATCH, Version) == 0); // HAL_PRIVATE_DISPATCH.Version

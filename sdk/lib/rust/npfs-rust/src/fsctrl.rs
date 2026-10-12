@@ -22,6 +22,7 @@ use crate::globals::*;
 use crate::types::*;
 use crate::helpers::*;
 use crate::CONTAINING_RECORD;
+use ntkrnl_sys::constants::STATUS_NOT_FOUND;
 
 // cross-module fns (function→module map):
 use crate::fileobsup::NpDecodeFileObject;
@@ -61,6 +62,8 @@ const FSCTL_PIPE_IMPERSONATE: ULONG = 0x0011_001C;
 const FSCTL_PIPE_SET_CLIENT_PROCESS: ULONG = 0x0011_0020;
 // sdk/include/xdk/iotypes.h:7267  FSCTL_PIPE_QUERY_CLIENT_PROCESS
 const FSCTL_PIPE_QUERY_CLIENT_PROCESS: ULONG = 0x0011_0024;
+/// CTL_CODE(FILE_DEVICE_NAMED_PIPE, 12, METHOD_BUFFERED, FILE_ANY_ACCESS).
+const FSCTL_PIPE_GET_CONNECTION_ATTRIBUTE: ULONG = 0x0011_0030;
 // sdk/include/xdk/iotypes.h:7276  FSCTL_PIPE_INTERNAL_READ
 const FSCTL_PIPE_INTERNAL_READ: ULONG = 0x0011_5FF4;
 // sdk/include/xdk/iotypes.h:7277  FSCTL_PIPE_INTERNAL_WRITE
@@ -122,6 +125,64 @@ pub unsafe extern "system" fn NpInternalWrite(
 ) -> NTSTATUS {
     // UNIMPLEMENTED;
     STATUS_NOT_IMPLEMENTED
+}
+
+/// Whether the attribute name in the first `len` bytes of `buf` is exactly `name`.
+/// Divergence from the C, whose `strncmp(buf, name, len)` lets any prefix match ("C" names
+/// ClientProcessId), while Windows matches the whole name: the caller passes the name with
+/// or without its NUL, nothing shorter.
+unsafe fn attribute_is(buf: *const u8, len: usize, name: &[u8]) -> bool {
+    let got = core::slice::from_raw_parts(buf, len);
+    got.len() >= name.len() && &got[..name.len()] == name && got[name.len()..].iter().all(|&b| b == 0)
+}
+
+/// FSCTL_PIPE_GET_CONNECTION_ATTRIBUTE (upstream aa9e876b724, CORE-17834; NVDA asks for it).
+/// Upstream's partial implementation: "ClientProcessId" and "ClientSessionId" from the CCB's
+/// client process, without the extended-attribute store Windows keeps them in.
+pub unsafe extern "system" fn NpGetConnectionAttribute(
+    DeviceObject: PDEVICE_OBJECT,
+    Irp: PIRP,
+) -> NTSTATUS {
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Ccb: PNP_CCB = null_mut();
+    // PAGED_CODE();
+
+    let IoStackLocation = IoGetCurrentIrpStackLocation(Irp);
+    let NodeTypeCode = NpDecodeFileObject((*IoStackLocation).FileObject, null_mut(), &mut Ccb, null_mut());
+    if NodeTypeCode != NPFS_NTC_CCB {
+        return STATUS_PIPE_DISCONNECTED;
+    }
+
+    let SystemBuffer = (*Irp).AssociatedIrp.SystemBuffer as *mut u8;
+    let InputBufferLength = (*IoStackLocation).Parameters.FileSystemControl.InputBufferLength;
+    let OutputBufferLength = (*IoStackLocation).Parameters.FileSystemControl.OutputBufferLength;
+    if InputBufferLength == 0 || OutputBufferLength == 0 || SystemBuffer.is_null() {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    ExAcquireResourceExclusiveLite(addr_of_mut!((*(*Ccb).NonPagedCcb).Lock), TRUE);
+
+    if (*Ccb).Process.is_null()
+        || (*Ccb).NamedPipeState as ULONG == FILE_PIPE_DISCONNECTED_STATE
+        || (*Ccb).NamedPipeState as ULONG == FILE_PIPE_LISTENING_STATE
+    {
+        /* ClientProcessId and ClientSessionId are not defined before a client connects */
+        Status = STATUS_NOT_FOUND;
+    } else if (OutputBufferLength as usize) < core::mem::size_of::<ULONG>() {
+        /* Both attributes are a ULONG */
+        Status = STATUS_BUFFER_TOO_SMALL;
+    } else if attribute_is(SystemBuffer, InputBufferLength as usize, b"ClientProcessId") {
+        *(SystemBuffer as *mut ULONG) = PsGetProcessId((*Ccb).Process) as ULONG_PTR as ULONG;
+        (*Irp).IoStatus.Information = core::mem::size_of::<ULONG>() as _;
+    } else if attribute_is(SystemBuffer, InputBufferLength as usize, b"ClientSessionId") {
+        *(SystemBuffer as *mut ULONG) = PsGetProcessSessionId((*Ccb).Process);
+        (*Irp).IoStatus.Information = core::mem::size_of::<ULONG>() as _;
+    } else {
+        Status = STATUS_NOT_FOUND;
+    }
+
+    ExReleaseResourceLite(addr_of_mut!((*(*Ccb).NonPagedCcb).Lock));
+    Status
 }
 
 pub unsafe extern "system" fn NpQueryClientProcess(
@@ -919,6 +980,10 @@ pub unsafe extern "system" fn NpCommonFileSystemControl(
         FSCTL_PIPE_SET_CLIENT_PROCESS => {
             NpAcquireExclusiveVcb();
             Status = NpSetClientProcess(DeviceObject, Irp);
+        }
+        FSCTL_PIPE_GET_CONNECTION_ATTRIBUTE => {
+            NpAcquireSharedVcb();
+            Status = NpGetConnectionAttribute(DeviceObject, Irp);
         }
         _ => {
             return STATUS_NOT_SUPPORTED;

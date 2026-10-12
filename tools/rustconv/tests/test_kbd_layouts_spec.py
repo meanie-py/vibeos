@@ -26,7 +26,9 @@ def _spec(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, text: str) -> Path:
 
 
 def test_upstream_plain_names_are_pointed_at_the_accessors(tmp_path, monkeypatch):
-    spec = _spec(tmp_path, monkeypatch, "@ stdcall KbdLayerDescriptor()\n@ stdcall KbdNlsLayerDescriptor()\n")
+    spec = _spec(
+        tmp_path, monkeypatch, "@ stdcall KbdLayerDescriptor()\n@ stdcall KbdNlsLayerDescriptor()\n"
+    )
     assert kl.wire_spec("kbdxx", {"mod.rs": MOD + NLS})
     assert spec.read_text() == (
         "@ stdcall KbdLayerDescriptor() kbdxx_KbdLayerDescriptor\n"
@@ -40,6 +42,8 @@ def test_an_already_mapped_spec_is_left_alone(tmp_path, monkeypatch):
 
 
 def test_an_export_the_c_does_not_define_is_an_error(tmp_path, monkeypatch):
-    _spec(tmp_path, monkeypatch, "@ stdcall KbdLayerDescriptor()\n@ stdcall KbdNlsLayerDescriptor()\n")
+    _spec(
+        tmp_path, monkeypatch, "@ stdcall KbdLayerDescriptor()\n@ stdcall KbdNlsLayerDescriptor()\n"
+    )
     with pytest.raises(kl.LayoutError, match="KbdNlsLayerDescriptor"):
         kl.wire_spec("kbdxx", {"mod.rs": MOD})

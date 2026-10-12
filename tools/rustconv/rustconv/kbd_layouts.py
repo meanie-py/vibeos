@@ -127,7 +127,9 @@ def write_layout(layout: str, files: dict[str, str]) -> int:
     return touched
 
 
-_SPEC_LINE = re.compile(r"^@ stdcall (KbdLayerDescriptor|KbdNlsLayerDescriptor)\(\)(?:[ \t]+\S+)?[ \t]*$", re.M)
+_SPEC_LINE = re.compile(
+    r"^@ stdcall (KbdLayerDescriptor|KbdNlsLayerDescriptor)\(\)(?:[ \t]+\S+)?[ \t]*$", re.M
+)
 
 
 def wire_spec(layout: str, files: dict[str, str]) -> bool:

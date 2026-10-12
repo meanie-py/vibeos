@@ -405,7 +405,8 @@ def build(args, repo: Path) -> int:
     # launched, two permits, and the third refused for space the broker would never let
     # it use -- and the per-job broker above has retired that particular shape. What is
     # left is the narrower guarantee that the claim tracks the build, not the process.
-    # Safe here only because reserve() never BLOCKS: it admits or raises at once.
+    # reserve() may wait for other jobs' reservations to clear; it holds only this tree's
+    # build-dir lock meanwhile, never a CPU permit or the admission lock.
     try:
         with hostlock.build_lock(build_dir, arch) as admission, contextlib.ExitStack() as reads:
             hostjobs.ensure(repo)

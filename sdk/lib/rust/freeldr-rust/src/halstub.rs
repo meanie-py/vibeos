@@ -109,4 +109,6 @@ pub static mut HalPrivateDispatchTable: _HAL_PRIVATE_DISPATCH = _HAL_PRIVATE_DIS
     HalVectorToIDTEntry: Some(x_hal_vector_to_idt_entry),
     KdMapPhysicalMemory64: None,
     KdUnmapVirtualAddress: None,
+    // The NT6 tail ReactOS's haltypes.h declares for every build: NULL, as in the C.
+    ..unsafe { core::mem::zeroed() }
 };

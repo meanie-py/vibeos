@@ -793,7 +793,7 @@ pub unsafe extern "system" fn HalpIsBridgeDevice(PciData: PPCI_COMMON_CONFIG) ->
 #[no_mangle]
 pub unsafe extern "system" fn HalpGetPciBridgeConfig(
     PciType: ULONG,
-    BusCount: *mut UCHAR,
+    BusCount: *mut USHORT,
 ) -> BOOLEAN {
     
 
