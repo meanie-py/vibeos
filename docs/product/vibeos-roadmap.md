@@ -595,6 +595,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **arm64 netprobe: wininet's HTTP fetches stall on a TDI timeout (REGRESSION, open,
+  found 2026-10-11).** netprobe passed on all three arches on 2026-10-04 (c3344edcee7). On
+  master 02f758b050b, arm64 gets through DNS, TCP connect, the root store and the ISRG chain
+  (`error=0x0`), then `[NETSTACK] TDI op timed out - IRP still pending` and `TDI server: LISTEN
+  did not complete 0xc00000b5`, and `[NETPROBE] done` never prints
+  (`/tmp/vibeos-cli/20261011-201305-fesp_tnx-smoke-arm64`). With the 64-commit upstream merge
+  on top it reaches `https ... status 200` and stalls in the 2.4 MB body read, twice in two
+  runs; amd64 and i386 PASS on the same tree. Suspects in the window: arm64 virtio-net going
+  interrupt-driven (4ee0d6a84b3, 10-09) and the SMMU domains for netstack (19c127935ee).
+  Repro: `VIBEOS_PAYLOAD=netprobe ./vibeos-cli build --arch arm64 && ./vibeos-cli smoke
+  --arch arm64 --payload netprobe`.
+
 - **Windows-host QEMU launch fails all three attempts: conformance `L:no-guest-serial`, smoke
   `LAUNCH_FAIL` (FLAKE, host side, partly fixed 2026-10-11).** About 4% of conformance rounds
   over 10-10/11 (10 artifacts under `~/vibeos-flake-farm/fails/auto/*L_no-guest-serial`, every
