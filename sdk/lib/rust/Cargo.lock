@@ -310,6 +310,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "bootok-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "bootok-rust"
 version = "0.1.0"
 dependencies = [
@@ -728,6 +736,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "conime-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "conime-rust"
 version = "0.1.0"
 dependencies = [
@@ -1034,6 +1050,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "dllhost-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "dllhost-rust"
 version = "0.1.0"
 dependencies = [
@@ -1209,6 +1233,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "expand-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "expand-rust"
 version = "0.1.0"
 dependencies = [
@@ -1326,6 +1358,14 @@ version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
  "panic-common",
+]
+
+[[package]]
+name = "fmifs-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
 ]
 
 [[package]]
@@ -1706,6 +1746,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "indicdll-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "indicdll-rust"
 version = "0.1.0"
 dependencies = [
@@ -1834,6 +1882,14 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+]
+
+[[package]]
+name = "kbswitch-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
 ]
 
 [[package]]
@@ -3420,6 +3476,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
+name = "regsvr32-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "regsvr32-rust"
 version = "0.1.0"
 dependencies = [
@@ -3688,6 +3752,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rundll32-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "rundll32-rust"
 version = "0.1.0"
 dependencies = [
@@ -3696,6 +3768,14 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "runonce-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
 ]
 
 [[package]]
@@ -4217,6 +4297,14 @@ name = "strsafe-rust"
 version = "0.1.0"
 
 [[package]]
+name = "subst-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "subst-rust"
 version = "0.1.0"
 dependencies = [
@@ -4552,6 +4640,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "umandlg-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "umandlg-rust"
 version = "0.1.0"
 dependencies = [
@@ -4790,6 +4886,14 @@ name = "utf8"
 version = "0.1.0"
 dependencies = [
  "panic-common",
+]
+
+[[package]]
+name = "utilman-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
 ]
 
 [[package]]
@@ -5111,6 +5215,14 @@ name = "winlogon-sys"
 version = "0.1.0"
 
 [[package]]
+name = "winmine-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "winmine-rust"
 version = "0.1.0"
 dependencies = [
@@ -5382,6 +5494,14 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+]
+
+[[package]]
+name = "wuauserv-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
 ]
 
 [[package]]

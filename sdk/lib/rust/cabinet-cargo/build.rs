@@ -49,7 +49,7 @@ fn main() {
         .import_lib("dll/ntdll/def/ntdll.spec", "ntdll.dll", "ntdll")
         .link(ModuleKind::Win32Dll {
             entry: entry.into(),
-            image_base,
+            image_base: Some(image_base),
             subsystem: None,
         });
 }

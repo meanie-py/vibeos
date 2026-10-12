@@ -317,17 +317,18 @@ def cargo_build_many(
     trace_dir: Path | None = None,
     force_off: bool = False,
 ) -> None:
-    """ONE cargo invocation per target (per-arch fan-out). Cells that share a target
-    build together: a single `--target` + many `-p` lets cargo build the shared
-    rlibs once and the per-cell links in parallel — far better than N sequential
-    invocations (each re-resolves the 190-member workspace and links serially).
-    amd64/arm64 are one group (the builtin triple); i386 is one group per
-    i686-kernel.json variant (see cargo_target_dir)."""
-    groups: dict[Path, list[Cell]] = {}
+    """ONE cargo invocation PER CELL, never one for many.
+
+    A single `cargo build -p a -p b ...` UNIFIES FEATURES across every package it
+    builds: the kernel cells' `panic_common` feature that calls `KeBugCheckEx` leaked
+    into csrss/smss/csrsrv and they failed to link (undefined `KeBugCheckEx`) — each
+    links fine alone. The cmake build never saw it because `add_cargo_module` runs
+    one cargo per cell. Cells still share a target dir, so the common rlibs are built
+    once per feature set and reused."""
     for c in cells:
-        groups.setdefault(cargo_target_dir(root, c, arch), []).append(c)
-    for target_dir, group in groups.items():
-        _cargo_build_group(root, group, arch, target_dir, dry, trace_dir, force_off)
+        _cargo_build_group(
+            root, [c], arch, cargo_target_dir(root, c, arch), dry, trace_dir, force_off
+        )
 
 
 def _cargo_build_group(
@@ -394,7 +395,7 @@ def _cargo_build_group(
         # Engine takes the cmake-OFF paths even though build-<arch>/ is present.
         env["VIBEOS_FORCE_CMAKE_OFF"] = "1"
     _trace(env_cmd, ws)
-    log(f"exec (fan-out) cargo build — {len(cells)} cells in one invocation")
+    log(f"exec cargo build — {', '.join(c.crate for c in cells)}")
     subprocess.run(env_cmd, cwd=ws, env=env, check=True)
 
 
@@ -560,6 +561,19 @@ def main(argv: list[str] | None = None) -> int:
         "(default <out-dir>/build-trace.txt) — the ninja-`-v`-style flat command list",
     )
     args = ap.parse_args(argv)
+
+    # Every build in this tree runs at the canonical /tmp/vibeos mount, and the build
+    # graph the replay paths read (build.ninja's widl commands, compile_commands.json)
+    # names that path. Run outside it, and the replay of services' RPC stub failed
+    # `cd /tmp/vibeos/base/system/services`. Re-enter through canon-run, as every
+    # vibeos-cli build does, unless already inside it or only listing.
+    canon = os.environ.get("VIBEOS_CANON", "/tmp/vibeos")
+    if not args.list and not args.dry_run and str(repo_root()) != canon:
+        # The canonical copy of this script, so the re-run's repo_root() IS the mount.
+        script = f"{canon}/tools/{Path(__file__).name}"
+        cmd = ["bash", str(repo_root() / "tools/canon-run.sh"), sys.executable, script]
+        os.chdir(repo_root())
+        os.execvp("bash", cmd + list(sys.argv[1:] if argv is None else argv))
 
     if args.list:
         for c in CELLS.values():

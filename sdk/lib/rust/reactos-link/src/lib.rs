@@ -174,7 +174,10 @@ pub enum ModuleKind {
     /// `--subsystem`.
     Win32Dll {
         entry: String,
-        image_base: u64,
+        /// `None` relies on the common `--enable-auto-image-base`: cmake's i386
+        /// win32dll link passes no `--image-base` for a DLL `baseaddress.cmake`
+        /// does not list (indicdll, umandlg), and lld hashes the output name.
+        image_base: Option<u64>,
         subsystem: Option<String>,
     },
     /// `efi_application` — a UEFI app (uefildr.efi). Mirrors the cmake
@@ -1662,7 +1665,7 @@ impl Linker {
                 // arm64 did not. --no-gc-sections must come AFTER rustc's own
                 // --gc-sections so it wins (last flag wins in lld).
                 println!("cargo:rustc-link-arg=-Wl,--no-gc-sections");
-                (entry, Some(*image_base))
+                (entry, *image_base)
             }
             ModuleKind::EfiApplication {
                 entry,
