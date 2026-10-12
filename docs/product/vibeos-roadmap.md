@@ -596,6 +596,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **MM: finding free user address space is linear in the VAD count (open, found 2026-10-12).**
+  `MiFindEmptyAddressRangeInTree` (`ARM3/vadnode.rs`, as ReactOS's C) walks every VAD in
+  order, so N reservations cost O(N²). Upstream's x64 stress in kmtest ZwAllocateVirtualMemory
+  (262144 x 1 MB) reached ~28000 in 133 s under TCG and the sweep killed it at 180 s, taking
+  the 25 tests after it down with it. The test is capped at 4096 chunks until the search keeps
+  per-subtree largest-gap data (or a free-range hint), as Windows does.
+- **MM: reserving charges no commit for page tables (open, found 2026-10-12).** Windows x64
+  ends an unbounded MEM_RESERVE loop with STATUS_COMMITMENT_LIMIT; ours never exhausts, which
+  is the banked ZwAllocateVirtualMemory failure at line 613 on amd64 and arm64.
+
 - **arm64 netprobe: wininet's HTTP fetches stall on a TDI timeout (REGRESSION, open,
   found 2026-10-11).** netprobe passed on all three arches on 2026-10-04 (c3344edcee7). On
   master 02f758b050b, arm64 gets through DNS, TCP connect, the root store and the ISRG chain
