@@ -1,0 +1,15 @@
+# at (base/applications/cmdutils/at -> at-rust, batch D1). The shipped Rust diffed
+# against the pre-flip C (`python -m rustconv.c_oracle`); inputs from modrun/data.
+module: at
+variants:
+  c: '%SystemRoot%\bin\modrun\at_c.exe'
+  rust: '%SystemRoot%\system32\at.exe'
+ninja:
+- at_c
+stage:
+- src: build-{arch}/base/applications/cmdutils/at/at_c.exe
+  dest: bin/modrun/at_c.exe
+cases:
+- id: usage
+  args: /?
+- id: list

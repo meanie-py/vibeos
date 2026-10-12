@@ -38,6 +38,18 @@ macro_rules! ClearFlag {
     };
 }
 
+// fatdata.h's trace macros are `{NOTHING;}` in a free build: the arguments are not even
+// evaluated. They were FFI calls into no-op stubs in rust_cohab_stub.c, ~880 optimization
+// barriers on every path through the driver.
+macro_rules! DebugTrace { ($($t:tt)*) => {}; }
+macro_rules! DebugUnwind { ($($t:tt)*) => {}; }
+macro_rules! DebugDump { ($($t:tt)*) => {}; }
+macro_rules! DbgDoit { ($($t:tt)*) => {}; }
+
+// nodetype.h `NodeType(Ptr)`: `*((PNODE_TYPE_CODE)(Ptr))`, the USHORT every FAT structure
+// starts with. A macro, not a call into rust_cohab_stub.c.
+macro_rules! NodeType { ($p:expr $(,)?) => { *(($p) as *const u16) }; }
+
 // PAGED_CODE() is the DDK's "pageable code" IRQL assertion (xdk/kefuncs.h): NOP_FUNCTION in
 // a free build, and a no-op here. It is a macro, never a fn -- an out-of-line no-op call is an
 // optimization barrier, and an `extern` one resolved by whichever crate happened to export it.
@@ -83,6 +95,7 @@ pub unsafe extern "C" fn KeGetCurrentPrcb() -> ntkrnl_sys::ddk::PKPRCB {
 
 pub mod types;
 pub(crate) mod flags; // SetFlag!/ClearFlag! width-generic helpers
+pub mod externs;    // one declaration per external symbol
 pub mod glue;       // harvested #define consts
 pub mod ddk_shims;  // macro/FORCEINLINE shims
 pub mod seh;        // real __try/__except/__finally (ntkrnl_sys::seh)

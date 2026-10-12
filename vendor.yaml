@@ -435,7 +435,7 @@ trees:
         vendored tree that itself vendors: its External/ is a second registry we do not
         maintain, so those licences surface here rather than upstream.
     license_file: vendor/fex/LICENSE
-    modified: "no"  # asserted by vendor-patches/fex.md
+    modified: "lightly"  # two VIBEOS PATCH sets; listed in vendor-patches/fex.md
     version:
       literal: FEX-2607 (1cc4b93e7a71c883ec021b71359f136394dc1f3c, snapshot 2026-07-08)
     reason: >

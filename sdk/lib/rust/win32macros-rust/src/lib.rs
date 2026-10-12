@@ -733,6 +733,16 @@ macro_rules! FAILED_UNEXPECTEDLY {
     };
 }
 
+/// MSVC's `__debugbreak()` intrinsic: the breakpoint instruction inline, never a call (the
+/// compiler emits `int3` / `brk #0xf000` in place, so there is no import to resolve).
+#[inline(always)]
+pub unsafe fn __debugbreak() {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    core::arch::asm!("int3");
+    #[cfg(target_arch = "aarch64")]
+    core::arch::asm!("brk #0xf000");
+}
+
 /// debug.h `UNIMPLEMENTED_DBGBREAK(...)`: an ERROR notice, then `DbgBreakPoint()`. Unconditional
 /// in the header (not under DBG), so it is ported as written -- without a debugger attached the
 /// break is an unhandled STATUS_BREAKPOINT, exactly as the C. The optional printf message is

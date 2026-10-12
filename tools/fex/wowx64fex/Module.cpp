@@ -54,6 +54,7 @@
 #include "Common/ImageTracker.h"
 #include "Common/InvalidationTracker.h"
 #include "Common/OvercommitTracker.h"
+#include <FEXCore/Utils/AllocatorHooks.h>
 #include "Common/CPUFeatures.h"
 #include "Common/Logging.h"
 #include "Common/Module.h"
@@ -468,6 +469,17 @@ NTSTATUS BTCpu64ProcessInit(const WOWX64_HOST_SERVICES* Services) {
   const auto NtDll = GetModuleHandle("ntdll.dll");
   const bool IsWine = !!GetProcAddress(NtDll, "wine_get_version");
   OvercommitTracker.emplace(IsWine);
+  // VIBEOS PATCH (commit on touch): FEX's own committed allocations become reservations
+  // this tracker commits page by page as they are touched (AllocatorHooks.h).
+  if (!IsWine) {
+    FEXCore::Allocator::LazyCommitTrack = [](void* Base, size_t Size, bool Mark) {
+      if (Mark) {
+        OvercommitTracker->MarkRange(reinterpret_cast<uint64_t>(Base), Size);
+      } else {
+        OvercommitTracker->UnmarkRange(reinterpret_cast<uint64_t>(Base), Size);
+      }
+    };
+  }
 
   FEX::Windows::Allocator::SetupHooks(NtDll);
   FEX::Windows::UnixLib::Init(NtDll);

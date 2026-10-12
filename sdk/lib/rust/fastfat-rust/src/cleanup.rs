@@ -1,5 +1,43 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
+// One declaration per external symbol: externs.rs.
+use crate::externs::FatAcquireExclusiveVcb;
+use crate::externs::FatBugCheck;
+use crate::externs::FatCompleteRequest;
+use crate::externs::FatDeviceIsFatFsdo;
+use crate::externs::FatGetFcbOplock;
+use crate::externs::FatReleaseFcb;
+use crate::externs::FatReleaseVcb;
+use crate::externs::FsRtlCheckOplockEx;
+use crate::externs::CcFlushCache;
+use crate::externs::CcPurgeCacheSection;
+use crate::externs::CcSetFileSizes;
+use crate::externs::CcUninitializeCacheMap;
+use crate::externs::ExAcquireResourceExclusiveLite;
+use crate::externs::IoRemoveShareAccess;
+// fastfat's own functions: the definition is the declaration.
+use crate::resrcsup::FatAcquireExclusiveFcb;
+use crate::strucsup::FatCreateIrpContext;
+use crate::filobsup::FatDecodeFileObject;
+use crate::dirsup::FatDeleteDirent;
+use crate::fatdata::FatExceptionFilter;
+use crate::flush::FatFlushFat;
+use crate::flush::FatHijackIrpAndFlushDevice;
+use crate::fatdata::FatIsIrpTopLevel;
+use crate::seh::FatNormalizeAndRaiseStatus;
+use crate::workque::FatOplockComplete;
+use crate::workque::FatPrePostIrp;
+use crate::fatdata::FatProcessException;
+use crate::seh::FatResetExceptionState;
+use crate::dirsup::FatSetFileSizeInDirent;
+use crate::allocsup::FatTruncateFileAllocation;
+use crate::dirsup::FatTunnelFcbOrDcb;
+use crate::cachesup::FatUnpinRepinnedBcbs;
+use crate::verfysup::FatVerifyFcb;
+use crate::ddk_shims::FsRtlCheckOplock;
+use crate::ddk_shims::FsRtlFastUnlockAll;
+use crate::ddk_shims::FsRtlNotifyFullChangeDirectory;
+use crate::ddk_shims::FsRtlNotifyVolumeEvent;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
@@ -19,60 +57,23 @@ use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem, FsRtlIsNtstatu
 use ntkrnl_sys::ddk::ExReleaseResourceLite;
 
 extern "system" {
-    fn FatDeviceIsFatFsdo(VolumeDeviceObject: *mut core::ffi::c_void) -> u8;
-    } extern "C" { fn DebugTrace(level: i32, flag: u32, format: *const i8, ...); } extern "system" {
-    fn FatCreateIrpContext(Irp: *mut IRP, arg2: i32) -> *mut core::ffi::c_void;
-    fn FatIsIrpTopLevel(Irp: *mut IRP) -> u8;
-    fn FatExceptionFilter(IrpContext: *mut core::ffi::c_void, ExceptionInformation: *mut core::ffi::c_void) -> i32;
-    fn FatProcessException(IrpContext: *mut core::ffi::c_void, Irp: *mut IRP, ExceptionCode: i32) -> NTSTATUS;
+    } extern "system" {
 }
 extern "system" {
-    fn FatDecodeFileObject( FileObject: PFILE_OBJECT, Vcb: *mut PVCB, Fcb: *mut PFCB, Ccb: *mut PCCB, ) -> TYPE_OF_OPEN;
-    fn FatCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
-    fn NodeType(node: *const c_void) -> u32;
-    fn FatAcquireExclusiveFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB) -> u8;
-    fn FatAcquireExclusiveVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB) -> BOOLEAN;
-    fn FatReleaseFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
-    fn FatReleaseVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
-    fn FatVerifyFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
-    fn FatResetExceptionState(IrpContext: PIRP_CONTEXT);
     fn FsRtlNotifyCleanup(Sync: *mut c_void, List: *mut c_void, Context: *mut c_void);
-    fn FsRtlNotifyFullChangeDirectory( Sync: *mut c_void, List: *mut c_void, Context: *mut c_void, FullDirectoryName: *const c_void, WatchTree: BOOLEAN, IgnoreBuffer: BOOLEAN, CompletionFilter: u32, NotifyIrp: PIRP, TraverseCallback: *const c_void, SubjectContext: *const c_void, );
-    fn FatBugCheck(arg1: usize, arg2: usize, arg3: usize);
-    fn FatFlushFat(IrpContext: PIRP_CONTEXT, Vcb: PVCB) -> NTSTATUS;
     fn FatIsFat12(Vcb: PVCB) -> BOOLEAN;
-    fn FatHijackIrpAndFlushDevice(IrpContext: PIRP_CONTEXT, Irp: PIRP, TargetDeviceObject: *mut c_void) -> NTSTATUS;
     fn FatCheckForDismount(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Force: BOOLEAN) -> u8;
     fn FatIsDirectoryEmpty(IrpContext: PIRP_CONTEXT, Fcb: PFCB) -> BOOLEAN;
-    fn FatTruncateFileAllocation(IrpContext: PIRP_CONTEXT, Fcb: PFCB, Size: i32);
-    fn FatDeleteDirent(IrpContext: PIRP_CONTEXT, Fcb: PFCB, DeleteContext: *const DELETE_CONTEXT, IgnoreCase: u32);
-    fn FatTunnelFcbOrDcb(FcbOrDcb: *mut c_void, Ccb: PCCB);
     fn FatNotifyReportChange(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Fcb: PFCB, Filter: u32, Action: u32);
     fn FatRemoveNames(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
-    fn FatSetFileSizeInDirent(IrpContext: PIRP_CONTEXT, Fcb: PFCB, AlternativeFileSize: *const ULONG);
     fn FatZeroData(IrpContext: PIRP_CONTEXT, Vcb: PVCB, FileObject: PFILE_OBJECT, Offset: i32, Length: i32) -> u8;
-    fn FatUnpinRepinnedBcbs(IrpContext: PIRP_CONTEXT);
-    fn CcFlushCache(SectionObjectPointers: *mut c_void, FileOffset: *const LARGE_INTEGER, Length: u32, IoStatus: *mut c_void);
-    fn CcPurgeCacheSection(SectionObjectPointers: *mut c_void, FileOffset: *const LARGE_INTEGER, Length: u32, UninitializeCacheMaps: BOOLEAN) -> u8;
-    fn CcSetFileSizes(FileObject: PFILE_OBJECT, FileSizes: *const c_void);
-    fn FsRtlFastUnlockAll(Locks: *mut c_void, FileObject: PFILE_OBJECT, ProcessId: *mut c_void, Context: *mut c_void) -> BOOLEAN;
     fn IoGetRequestorProcess(Irp: PIRP) -> *mut c_void;
     fn CcIsFileCached(FileObject: PFILE_OBJECT) -> BOOLEAN;
     fn FatIsFastIoPossible(Fcb: PFCB) -> BOOLEAN;
-    fn FsRtlCheckOplock( Oplock: *mut c_void, Irp: PIRP, Context: *mut c_void, CompletionRoutine: *const c_void, PostIrpRoutine: *const c_void, );
-    fn FatNormalizeAndRaiseStatus(IrpContext: PIRP_CONTEXT, Status: NTSTATUS);
     fn FatFlushFile(IrpContext: PIRP_CONTEXT, Fcb: PFCB, FlushType: u32) -> NTSTATUS;
-    fn FsRtlCheckOplockEx( Oplock: *mut c_void, Irp: PIRP, Flags: u32, Context: *mut c_void, CompletionRoutine: *const c_void, PostIrpRoutine: *const c_void, ) -> NTSTATUS;
-    fn FatOplockComplete(IrpContext: PIRP_CONTEXT, Irp: PIRP);
-    fn FatPrePostIrp(IrpContext: PIRP_CONTEXT, Irp: PIRP);
-    fn FatGetFcbOplock(Fcb: PFCB) -> *mut c_void;
     fn FatIsFileOplockable(Fcb: PFCB) -> BOOLEAN;
-    fn FsRtlNotifyVolumeEvent(FileObject: PFILE_OBJECT, Event: u32);
-    fn ExAcquireResourceExclusiveLite(Resource: *mut c_void, Wait: BOOLEAN) -> BOOLEAN;
     // ExReleaseResourceLite: kernel FASTCALL export — local "system" decl was a
     // §9.99 fold class; use the ntkrnl-sys bindgen (fastcall) decl instead.
-    fn CcUninitializeCacheMap(FileObject: PFILE_OBJECT, TruncateSize: *const LARGE_INTEGER, Vacant: *mut c_void) -> BOOLEAN;
-    fn IoRemoveShareAccess(FileObject: PFILE_OBJECT, ShareAccess: *mut c_void);
 }
 
 // ---- file-scope preamble (translated) ----
@@ -115,30 +116,30 @@ pub unsafe extern "system" fn FatFsdCleanup(
 
     PAGED_CODE!();
 
-    if FatDeviceIsFatFsdo(VolumeDeviceObject) != 0 {
+    if FatDeviceIsFatFsdo((VolumeDeviceObject).cast()) != 0 {
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
         (*Irp).IoStatus.Information = (FILE_OPENED) as _;
         IoCompleteRequest(Irp, IO_DISK_INCREMENT);
         return STATUS_SUCCESS;
     }
 
-    DebugTrace(1, Dbg, b"FatFsdCleanup\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(1, Dbg, b"FatFsdCleanup\n\0".as_ptr() as *const i8, 0);
 
     FsRtlEnterFileSystem();
-    TopLevel = FatIsIrpTopLevel(Irp);
+    TopLevel = (FatIsIrpTopLevel(Irp)) as u8;
 
     // _SEH2_TRY { ... } _SEH2_EXCEPT(FatExceptionFilter( IrpContext, ... ))
     let p_ic = core::ptr::addr_of_mut!(IrpContext);
     let p_status = core::ptr::addr_of_mut!(Status);
     if let Err(code) = crate::seh::fat_try_except(p_ic as *const *mut c_void, || {
-        *p_ic = FatCreateIrpContext(Irp, 1);
+        *p_ic = (FatCreateIrpContext(Irp, 1)).cast();
         *p_status = FatCommonCleanup((*p_ic).cast(), Irp);
     }) {
         //  We had some trouble trying to perform the requested
         //  operation, so we'll abort the I/O request with
         //  the error status that we get back from the
         //  execption code
-        Status = FatProcessException(IrpContext, Irp, code);
+        Status = FatProcessException((IrpContext).cast(), Irp, code);
     }
 
     if TopLevel != 0 {
@@ -146,7 +147,7 @@ pub unsafe extern "system" fn FatFsdCleanup(
     }
     FsRtlExitFileSystem();
 
-    DebugTrace(-1, Dbg, b"FatFsdCleanup -> %08lx\n\0".as_ptr() as *const i8, Status as i32);
+    DebugTrace!(-1, Dbg, b"FatFsdCleanup -> %08lx\n\0".as_ptr() as *const i8, Status as i32);
 
     let _ = VolumeDeviceObject;
 
@@ -161,9 +162,9 @@ pub unsafe extern "system" fn FatCommonCleanup(
     // PAGED_CODE(); -> nothing in this translation
     let IrpSp: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
 
-    DebugTrace(1, Dbg, b"FatCommonCleanup\n\0".as_ptr() as *const i8, 0);
-    DebugTrace(0, Dbg, b"Irp           = %p\n\0".as_ptr() as *const i8, Irp as usize);
-    DebugTrace(0, Dbg, b"->FileObject  = %p\n\0".as_ptr() as *const i8, (*IrpSp).FileObject as usize);
+    DebugTrace!(1, Dbg, b"FatCommonCleanup\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(0, Dbg, b"Irp           = %p\n\0".as_ptr() as *const i8, Irp as usize);
+    DebugTrace!(0, Dbg, b"->FileObject  = %p\n\0".as_ptr() as *const i8, (*IrpSp).FileObject as usize);
 
     let FileObject: PFILE_OBJECT = (*IrpSp).FileObject;
 
@@ -173,9 +174,9 @@ pub unsafe extern "system" fn FatCommonCleanup(
     let TypeOfOpen: TYPE_OF_OPEN = FatDecodeFileObject(FileObject, &mut Vcb, &mut Fcb, &mut Ccb);
 
     if TypeOfOpen == UnopenedFileObject {
-        DebugTrace(0, Dbg, b"Unopened File Object\n\0".as_ptr() as *const i8, 0);
+        DebugTrace!(0, Dbg, b"Unopened File Object\n\0".as_ptr() as *const i8, 0);
         FatCompleteRequest(IrpContext, Irp, STATUS_SUCCESS);
-        DebugTrace(-1, Dbg, b"FatCommonCleanup -> STATUS_SUCCESS\n\0".as_ptr() as *const i8, 0);
+        DebugTrace!(-1, Dbg, b"FatCommonCleanup -> STATUS_SUCCESS\n\0".as_ptr() as *const i8, 0);
         return STATUS_SUCCESS;
     }
 
@@ -191,7 +192,7 @@ pub unsafe extern "system" fn FatCommonCleanup(
             }
         }
         FatCompleteRequest(IrpContext, Irp, STATUS_SUCCESS);
-        DebugTrace(-1, Dbg, b"FatCommonCleanup -> STATUS_SUCCESS\n\0".as_ptr() as *const i8, 0);
+        DebugTrace!(-1, Dbg, b"FatCommonCleanup -> STATUS_SUCCESS\n\0".as_ptr() as *const i8, 0);
         return STATUS_SUCCESS;
     }
 
@@ -211,7 +212,7 @@ pub unsafe extern "system" fn FatCommonCleanup(
         AcquiredFcb = TRUE;
 
         if FlagOn((*Ccb).Flags, CCB_FLAG_DELETE_ON_CLOSE) != 0 {
-            NT_ASSERT!((NodeType(Fcb as *const c_void) != FAT_NTC_ROOT_DCB) as u8);
+            NT_ASSERT!((NodeType!(Fcb as *const c_void) != (FAT_NTC_ROOT_DCB as u16)) as u8);
             SetFlag!((*Fcb).FcbState, FCB_STATE_DELETE_ON_CLOSE);
             ClearFlag!((*Ccb).Flags, CCB_FLAG_DELETE_ON_CLOSE);
             #[cfg(ntddi_ge_ntddi_win8)]
@@ -221,15 +222,15 @@ pub unsafe extern "system" fn FatCommonCleanup(
             if TypeOfOpen == UserDirectoryOpen {
                 FsRtlNotifyFullChangeDirectory(
                     (*Vcb).NotifySync as *mut c_void,
-                    core::ptr::addr_of_mut!((*Vcb).DirNotifyList) as *mut c_void,
+                    (core::ptr::addr_of_mut!((*Vcb).DirNotifyList) as *mut c_void).cast(),
                     (*FileObject).FsContext as *mut c_void,
-                    ptr::null(),
+                    ptr::null_mut(),
                     FALSE,
                     FALSE,
                     0,
                     ptr::null_mut(),
-                    ptr::null(),
-                    ptr::null(),
+                    None,
+                    ptr::null_mut(),
                 );
             }
         }
@@ -265,7 +266,7 @@ pub unsafe extern "system" fn FatCommonCleanup(
         //  Stop any raises from FatVerifyFcb, unless it is REAL bad.
         crate::seh::try_finally(&mut (), |_| {
             if crate::seh::try_except(&mut (), |_| {
-                FatVerifyFcb(IrpContext, Fcb);
+                FatVerifyFcb((IrpContext).cast(), Fcb);
             }, |_, p| expected_status_filter(p)).is_err() {
                 FatResetExceptionState(IrpContext);
             }
@@ -287,7 +288,7 @@ pub unsafe extern "system" fn FatCommonCleanup(
         #[cfg(ntddi_ge_ntddi_win8)]
         if ProcessingDeleteOnClose != 0
             && FatIsFileOplockable(Fcb) != 0
-            && (NodeType(Fcb as *const c_void) != FAT_NTC_DCB || FatIsDirectoryEmpty(IrpContext, Fcb) != 0)
+            && (NodeType!(Fcb as *const c_void) != FAT_NTC_DCB || FatIsDirectoryEmpty(IrpContext, Fcb) != 0)
         {
             *p_status = FsRtlCheckOplockEx(
                 FatGetFcbOplock(Fcb),
@@ -311,15 +312,15 @@ pub unsafe extern "system" fn FatCommonCleanup(
         // We'll translate switch to match
         match TypeOfOpen {
             DirectoryFile | VirtualVolumeFile => {
-                DebugTrace(0, Dbg, b"Cleanup VirtualVolumeFile/DirectoryFile\n\0".as_ptr() as *const i8, 0);
+                DebugTrace!(0, Dbg, b"Cleanup VirtualVolumeFile/DirectoryFile\n\0".as_ptr() as *const i8, 0);
                 ShareAccess = ptr::null_mut();
             }
             UserVolumeOpen => {
-                DebugTrace(0, Dbg, b"Cleanup UserVolumeOpen\n\0".as_ptr() as *const i8, 0);
+                DebugTrace!(0, Dbg, b"Cleanup UserVolumeOpen\n\0".as_ptr() as *const i8, 0);
                 if FlagOn((*Ccb).Flags, CCB_FLAG_COMPLETE_DISMOUNT) != 0 {
                     FatCheckForDismount(IrpContext, Vcb, TRUE);
                 } else if (*FileObject).WriteAccess != 0 && FlagOn((*FileObject).Flags, FO_FILE_MODIFIED) != 0 {
-                    FatHijackIrpAndFlushDevice(IrpContext, Irp, ((*Vcb).TargetDeviceObject).cast());
+                    FatHijackIrpAndFlushDevice((IrpContext).cast(), Irp, ((*Vcb).TargetDeviceObject).cast());
                     SetFlag!((*(*(*Vcb).Vpb).RealDevice).Flags, DO_VERIFY_VOLUME);
                 }
                 if FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_LOCKED) != 0 && (*Vcb).FileObjectWithVcbLocked == FileObject {
@@ -329,11 +330,11 @@ pub unsafe extern "system" fn FatCommonCleanup(
                 ShareAccess = core::ptr::addr_of!((*Vcb).ShareAccess) as *mut c_void;
             }
             EaFile => {
-                DebugTrace(0, Dbg, b"Cleanup EaFileObject\n\0".as_ptr() as *const i8, 0);
+                DebugTrace!(0, Dbg, b"Cleanup EaFileObject\n\0".as_ptr() as *const i8, 0);
                 ShareAccess = ptr::null_mut();
             }
             UserDirectoryOpen => {
-                DebugTrace(0, Dbg, b"Cleanup UserDirectoryOpen\n\0".as_ptr() as *const i8, 0);
+                DebugTrace!(0, Dbg, b"Cleanup UserDirectoryOpen\n\0".as_ptr() as *const i8, 0);
                 ShareAccess = core::ptr::addr_of!((*Fcb).ShareAccess) as *mut c_void;
 
                 if (*Fcb).UncleanCount == 1
@@ -354,7 +355,7 @@ pub unsafe extern "system" fn FatCommonCleanup(
                     FatUpdateDirentFromFcb(IrpContext, FileObject, Fcb, Ccb);
 
                     if (*Fcb).UncleanCount == 1
-                        && NodeType(Fcb as *const c_void) == FAT_NTC_DCB
+                        && NodeType!(Fcb as *const c_void) == (FAT_NTC_DCB as u16)
                         && FlagOn((*Fcb).FcbState, FCB_STATE_DELETE_ON_CLOSE) != 0
                         && (*Fcb).FcbCondition == FcbGood
                         && FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_WRITE_PROTECTED) == 0
@@ -375,13 +376,13 @@ pub unsafe extern "system" fn FatCommonCleanup(
                                 (*Fcb).Header.FileSize.__bindgen_anon_1.LowPart = 0;
                                 ExReleaseResourceLite(((*Fcb).Header.PagingIoResource).cast());
 
-                                DebugTrace(0, Dbg, b"Delete File allocation\n\0".as_ptr() as *const i8, 0);
+                                DebugTrace!(0, Dbg, b"Delete File allocation\n\0".as_ptr() as *const i8, 0);
                                 FatTruncateFileAllocation(IrpContext, Fcb, 0);
 
                                 if (*Fcb).Header.AllocationSize.__bindgen_anon_1.LowPart == 0 {
-                                    DebugTrace(0, Dbg, b"Delete the directory dirent\n\0".as_ptr() as *const i8, 0);
-                                    FatTunnelFcbOrDcb(Fcb as *mut c_void, ptr::null_mut());
-                                    FatDeleteDirent(IrpContext, Fcb, &DeleteContext, (TRUE) as _);
+                                    DebugTrace!(0, Dbg, b"Delete the directory dirent\n\0".as_ptr() as *const i8, 0);
+                                    FatTunnelFcbOrDcb((Fcb as *mut c_void).cast(), ptr::null_mut());
+                                    FatDeleteDirent(IrpContext, Fcb, &raw mut DeleteContext, (TRUE) as _);
                                     FatNotifyReportChange(
                                         IrpContext, Vcb, Fcb,
                                         FILE_NOTIFY_CHANGE_DIR_NAME,
@@ -413,7 +414,7 @@ pub unsafe extern "system" fn FatCommonCleanup(
                 (*Fcb).UncleanCount -= 1;
             }
             UserFileOpen => {
-                DebugTrace(0, Dbg, b"Cleanup UserFileOpen\n\0".as_ptr() as *const i8, 0);
+                DebugTrace!(0, Dbg, b"Cleanup UserFileOpen\n\0".as_ptr() as *const i8, 0);
                 ShareAccess = core::ptr::addr_of!((*Fcb).ShareAccess) as *mut c_void;
 
                 if (*(*FileObject).SectionObjectPointer).DataSectionObject.is_null()
@@ -433,9 +434,9 @@ pub unsafe extern "system" fn FatCommonCleanup(
                 }
 
                 FsRtlFastUnlockAll(
-                    core::ptr::addr_of_mut!((*Fcb).Specific.Fcb.as_mut().FileLock) as *mut c_void,
+                    (core::ptr::addr_of_mut!((*Fcb).Specific.Fcb.as_mut().FileLock) as *mut c_void).cast(),
                     FileObject,
-                    IoGetRequestorProcess(Irp),
+                    (IoGetRequestorProcess(Irp)).cast(),
                     ptr::null_mut(),
                 );
 
@@ -456,7 +457,7 @@ pub unsafe extern "system" fn FatCommonCleanup(
                             DeleteContext.FileSize = (*Fcb).Header.FileSize.__bindgen_anon_1.LowPart;
                             DeleteContext.FirstClusterOfFile = (*Fcb).FirstClusterOfFile;
 
-                            DebugTrace(0, Dbg, b"Delete File allocation\n\0".as_ptr() as *const i8, 0);
+                            DebugTrace!(0, Dbg, b"Delete File allocation\n\0".as_ptr() as *const i8, 0);
 
                             ExAcquireResourceExclusiveLite(((*Fcb).Header.PagingIoResource).cast(), TRUE);
                             (*Fcb).Header.FileSize.__bindgen_anon_1.LowPart = 0;
@@ -465,7 +466,7 @@ pub unsafe extern "system" fn FatCommonCleanup(
                             ExReleaseResourceLite(((*Fcb).Header.PagingIoResource).cast());
 
                             if crate::seh::try_except(&mut (), |_| {
-                                FatSetFileSizeInDirent(IrpContext, Fcb, ptr::null());
+                                FatSetFileSizeInDirent(IrpContext, Fcb, ptr::null_mut());
                             }, |_, p| expected_status_filter(p)).is_err() {
                                 FatResetExceptionState(IrpContext);
                             }
@@ -494,7 +495,7 @@ pub unsafe extern "system" fn FatCommonCleanup(
                                         if CcIsFileCached(FileObject) != 0 {
                                             CcSetFileSizes(
                                                 FileObject,
-                                                core::ptr::addr_of!((*Fcb).Header.AllocationSize) as *const c_void,
+                                                core::ptr::addr_of_mut!((*Fcb).Header.AllocationSize).cast(),
                                             );
                                         }
                                     }, |_, p| expected_status_filter(p)).is_err() {
@@ -507,11 +508,11 @@ pub unsafe extern "system" fn FatCommonCleanup(
                         // _SEH2_TRY around truncate and delete logic
                         if crate::seh::try_except(&mut (), |_| {
                             if FlagOn((*Fcb).FcbState, FCB_STATE_TRUNCATE_ON_CLOSE) != 0 {
-                                DebugTrace(0, Dbg, b"truncate file allocation\n\0".as_ptr() as *const i8, 0);
+                                DebugTrace!(0, Dbg, b"truncate file allocation\n\0".as_ptr() as *const i8, 0);
                                 if (*Vcb).VcbCondition == VcbGood {
                                     FatTruncateFileAllocation(
                                         IrpContext, Fcb,
-                                        ((*Fcb).Header.FileSize.__bindgen_anon_1.LowPart) as i32,
+                                        ((*Fcb).Header.FileSize.__bindgen_anon_1.LowPart) as ULONG,
                                     );
                                 }
                                 // LocalTruncateSize = FileSize
@@ -523,9 +524,9 @@ pub unsafe extern "system" fn FatCommonCleanup(
                             if FlagOn((*Fcb).FcbState, FCB_STATE_DELETE_ON_CLOSE) != 0
                                 && (*Fcb).Header.AllocationSize.__bindgen_anon_1.LowPart == 0
                             {
-                                DebugTrace(0, Dbg, b"Delete File\n\0".as_ptr() as *const i8, 0);
-                                FatTunnelFcbOrDcb(Fcb as *mut c_void, Ccb);
-                                FatDeleteDirent(IrpContext, Fcb, &DeleteContext, (TRUE) as _);
+                                DebugTrace!(0, Dbg, b"Delete File\n\0".as_ptr() as *const i8, 0);
+                                FatTunnelFcbOrDcb((Fcb as *mut c_void).cast(), Ccb);
+                                FatDeleteDirent(IrpContext, Fcb, &raw mut DeleteContext, (TRUE) as _);
                                 FatNotifyReportChange(
                                     IrpContext, Vcb, Fcb,
                                     FILE_NOTIFY_CHANGE_FILE_NAME,
@@ -567,16 +568,16 @@ pub unsafe extern "system" fn FatCommonCleanup(
                     && !(*(*Fcb).NonPaged).SectionObjectPointers.DataSectionObject.is_null()
                 {
                     CcFlushCache(
-                        core::ptr::addr_of!((*(*Fcb).NonPaged).SectionObjectPointers) as *mut c_void,
-                        ptr::null(),
+                        (core::ptr::addr_of!((*(*Fcb).NonPaged).SectionObjectPointers) as *mut c_void).cast(),
+                        ptr::null_mut(),
                         0,
                         ptr::null_mut(),
                     );
                     ExAcquireResourceExclusiveLite(((*Fcb).Header.PagingIoResource).cast(), TRUE);
                     ExReleaseResourceLite(((*Fcb).Header.PagingIoResource).cast());
                     CcPurgeCacheSection(
-                        core::ptr::addr_of!((*(*Fcb).NonPaged).SectionObjectPointers) as *mut c_void,
-                        ptr::null(),
+                        (core::ptr::addr_of!((*(*Fcb).NonPaged).SectionObjectPointers) as *mut c_void).cast(),
+                        ptr::null_mut(),
                         0,
                         FALSE,
                     );
@@ -586,22 +587,22 @@ pub unsafe extern "system" fn FatCommonCleanup(
                     TruncateSize = &raw const FatLargeZero as *const LARGE_INTEGER; // assume FatLargeZero global
                 }
 
-                CcUninitializeCacheMap(FileObject, TruncateSize, ptr::null_mut());
+                CcUninitializeCacheMap(FileObject, TruncateSize.cast_mut(), ptr::null_mut());
             }
             _ => {
-                FatBugCheck(TypeOfOpen as usize, 0, 0);
+                FatBugCheck((TypeOfOpen) as ULONG_PTR, 0, 0);
             }
         }
 
         if ShareAccess != ptr::null_mut() {
-            DebugTrace(0, Dbg, b"Cleanup the Share access\n\0".as_ptr() as *const i8, 0);
-            IoRemoveShareAccess(FileObject, ShareAccess);
+            DebugTrace!(0, Dbg, b"Cleanup the Share access\n\0".as_ptr() as *const i8, 0);
+            IoRemoveShareAccess(FileObject, (ShareAccess).cast());
         }
 
         // NTDDI_WIN8+ also tested UserDirectoryOpen; we build at 0x502 so it's excluded.
         if TypeOfOpen == UserFileOpen
         {
-            FsRtlCheckOplock(FatGetFcbOplock(Fcb), Irp, IrpContext as *mut c_void, ptr::null(), ptr::null());
+            FsRtlCheckOplock((FatGetFcbOplock(Fcb)).cast(), Irp, IrpContext as *mut c_void, None, None);
             (*Fcb).Header.IsFastIoPossible = FatIsFastIoPossible(Fcb);
         }
 
@@ -617,7 +618,7 @@ pub unsafe extern "system" fn FatCommonCleanup(
             }
 
             if NT_SUCCESS(*p_status) && Fcb != ptr::null_mut() && FatIsFat12(Vcb) == 0 && FlagOn((*Fcb).FcbState, FCB_STATE_FLUSH_FAT) != 0 {
-                *p_status = FatFlushFat(IrpContext, Vcb);
+                *p_status = FatFlushFat((IrpContext).cast(), Vcb);
 
                 if NT_SUCCESS(*p_status) && (*Fcb).ParentDcb != ptr::null_mut() {
                     *p_status = FatFlushFile(IrpContext, (*Fcb).ParentDcb, Flush);
@@ -641,7 +642,7 @@ pub unsafe extern "system" fn FatCommonCleanup(
             FatCompleteRequest(IrpContext, Irp, *p_status);
         }
 
-        DebugTrace(-1, Dbg, b"FatCommonCleanup -> %08lx\n\0".as_ptr() as *const i8, *p_status as usize);
+        DebugTrace!(-1, Dbg, b"FatCommonCleanup -> %08lx\n\0".as_ptr() as *const i8, *p_status as usize);
     });
 
     return Status;

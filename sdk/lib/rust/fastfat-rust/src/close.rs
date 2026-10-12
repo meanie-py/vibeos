@@ -1,5 +1,23 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
+// One declaration per external symbol: externs.rs.
+use crate::externs::ExAcquireFastMutexUnsafe;
+use crate::externs::ExReleaseFastMutexUnsafe;
+use crate::externs::FatAcquireExclusiveGlobal;
+use crate::externs::FatAcquireExclusiveVcb;
+use crate::externs::FatBugCheck;
+use crate::externs::FatCompleteRequest;
+use crate::externs::FatDeviceIsFatFsdo;
+use crate::externs::FatGetFcbOplock;
+use crate::externs::FatReleaseGlobal;
+use crate::externs::FatReleaseVcb;
+use crate::externs::FsRtlCheckOplockEx;
+// fastfat's own functions: the definition is the declaration.
+use crate::fatdata::FatData;
+use crate::filobsup::FatDecodeFileObject;
+use crate::fatdata::FatExceptionFilter;
+use crate::fatdata::FatIsIrpTopLevel;
+use crate::fatdata::FatProcessException;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
@@ -22,7 +40,6 @@ use crate::types::{_TYPE_OF_OPEN_UserVolumeOpen as UserVolumeOpen};
 extern "system" {
     fn FatAcquireCloseMutex();
     fn FatReleaseCloseMutex();
-    static mut FatData: FAT_DATA;
 }
 // Ex{Acquire,Release}FastMutexUnsafe are FASTCALL exports on i386 (`@Name@4`, per
 // ntoskrnl.spec and the bindgen island); everywhere else FASTCALL is the ordinary
@@ -31,37 +48,20 @@ extern "system" {
 // aliased in asm. The declaration was the thing that was wrong.
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
-    fn ExAcquireFastMutexUnsafe(FastMutex: *mut FAST_MUTEX);
-    fn ExReleaseFastMutexUnsafe(FastMutex: *mut FAST_MUTEX);
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
-    fn ExAcquireFastMutexUnsafe(FastMutex: *mut FAST_MUTEX);
-    fn ExReleaseFastMutexUnsafe(FastMutex: *mut FAST_MUTEX);
 }
 extern "system" {
     fn KeAreApcsDisabled() -> BOOLEAN;
-    } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
-    fn FatBugCheck(type_of_open: usize, arg1: usize, arg2: usize) -> !;
-    fn FatAcquireExclusiveGlobal(IrpContext: *mut IRP_CONTEXT);
-    fn FatAcquireExclusiveVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> BOOLEAN;
-    fn FatReleaseGlobal(IrpContext: *mut IRP_CONTEXT);
-    fn FatReleaseVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
+    } extern "system" {
     fn FatCheckForDismount(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Force: BOOLEAN,) -> BOOLEAN;
     fn FatDeleteFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut *mut FCB);
     fn FatDeleteCcb(IrpContext: *mut IRP_CONTEXT, Ccb: *mut *mut CCB);
-    fn DebugUnwind(name: *const i8);
     fn FatAllocateCloseContext(Vcb: *mut VCB) -> *mut CLOSE_CONTEXT;
-    fn FatCompleteRequest(context: *mut core::ffi::c_void, Irp: *mut IRP, Status: i32);
-    fn FatDecodeFileObject( FileObject: *mut FILE_OBJECT, Vcb: *mut *mut VCB, Fcb: *mut *mut FCB, Ccb: *mut *mut CCB, ) -> TYPE_OF_OPEN;
     fn FatDeallocateCcbStrings(Ccb: *mut CCB);
-    fn FatDeviceIsFatFsdo(DeviceObject: *mut DEVICE_OBJECT) -> u8;
-    fn FatExceptionFilter(context: *mut core::ffi::c_void, ExceptionInfo: *mut core::ffi::c_void) -> i32;
-    fn FatGetFcbOplock(Fcb: *mut FCB) -> *mut core::ffi::c_void; // *mut OPLOCK
+// *mut OPLOCK
     fn FatIsFileOplockable(Fcb: *mut FCB) -> u8;
-    fn FatIsIrpTopLevel(Irp: *mut IRP) -> u8;
-    fn FatProcessException(context: *mut core::ffi::c_void, Irp: *mut IRP, ExceptionCode: i32) -> i32;
-    fn FsRtlCheckOplockEx( Oplock: *mut core::ffi::c_void, Irp: *mut IRP, Flags: u32, CompletionRoutine: *mut core::ffi::c_void, PostIrpRoutine: *mut core::ffi::c_void, Context: *mut core::ffi::c_void, );
     fn IsFileObjectReadOnly(FileObject: *mut FILE_OBJECT) -> u8;
 }
 
@@ -116,7 +116,7 @@ pub unsafe extern "system" fn FatFsdClose(
         return STATUS_SUCCESS;
     }
 
-    DebugTrace(1, 0, b"FatFsdClose\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(1, 0, b"FatFsdClose\n\0".as_ptr() as *const i8, 0);
 
     FsRtlEnterFileSystem();
 
@@ -144,8 +144,9 @@ pub unsafe extern "system" fn FatFsdClose(
             0
         };
 
-        // Win8+ block (unconditional)
-        if !Fcb.is_null()
+        // NTDDI >= WIN8 only (close.c:179)
+        if cfg!(ntddi_ge_ntddi_win8)
+            && !Fcb.is_null()
             && FlagOn((*FileObject).Flags, FO_CLEANUP_COMPLETE) == 0
             && FatIsFileOplockable(Fcb) != 0
         {
@@ -154,8 +155,8 @@ pub unsafe extern "system" fn FatFsdClose(
                 Irp,
                 0,
                 core::ptr::null_mut(),
-                core::ptr::null_mut(),
-                core::ptr::null_mut(),
+                None,
+                None,
             );
         }
 
@@ -227,7 +228,7 @@ pub unsafe extern "system" fn FatFsdClose(
             }
         }
 
-        FatCompleteRequest(core::ptr::null_mut::<core::ffi::c_void>(), Irp, Status);
+        FatCompleteRequest((core::ptr::null_mut::<core::ffi::c_void>()).cast(), Irp, Status);
     }) {
         //  We had some trouble trying to perform the requested
         //  operation, so we'll abort the I/O request with the
@@ -241,7 +242,7 @@ pub unsafe extern "system" fn FatFsdClose(
 
     FsRtlExitFileSystem();
 
-    DebugTrace(-1, 0, b"FatFsdClose -> %08lx\n\0".as_ptr() as *const i8, Status);
+    DebugTrace!(-1, 0, b"FatFsdClose -> %08lx\n\0".as_ptr() as *const i8, Status);
 
     let _ = VolumeDeviceObject; // UNREFERENCED_PARAMETER
 
@@ -271,7 +272,7 @@ pub unsafe extern "system" fn FatFspClose(
     let mut LoopsWithVcbHeld: u32 = 0;
 
     // PAGED_CODE() ignored
-    DebugTrace(1, DEBUG_TRACE_CLOSE, b"FatFspClose\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(1, DEBUG_TRACE_CLOSE, b"FatFspClose\n\0".as_ptr() as *const i8, 0);
 
     // If Vcb not present (NULL), set top-level IRP flag
     if Vcb.is_null() {
@@ -386,7 +387,7 @@ pub unsafe extern "system" fn FatFspClose(
         IoSetTopLevelIrp(core::ptr::null_mut());
     }
 
-    DebugTrace(-1, DEBUG_TRACE_CLOSE, b"FatFspClose -> NULL\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(-1, DEBUG_TRACE_CLOSE, b"FatFspClose -> NULL\n\0".as_ptr() as *const i8, 0);
 }
 #[no_mangle]
 pub unsafe extern "system" fn FatQueueClose(
@@ -576,7 +577,7 @@ pub unsafe extern "system" fn FatCommonClose(
 
     // PAGED_CODE(); (macro omitted)
 
-    DebugTrace(1, Dbg, b"FatCommonClose...\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(1, Dbg, b"FatCommonClose...\n\0".as_ptr() as *const i8, 0);
 
     LocalVcbDeleted = 0;
     if !VcbDeleted.is_null() {
@@ -584,9 +585,9 @@ pub unsafe extern "system" fn FatCommonClose(
     }
 
     if TypeOfOpen == UnopenedFileObject {
-        DebugTrace(0, Dbg, b"Close unopened file object\n\0".as_ptr() as *const i8, 0);
+        DebugTrace!(0, Dbg, b"Close unopened file object\n\0".as_ptr() as *const i8, 0);
         Status = STATUS_SUCCESS;
-        DebugTrace(-1, Dbg, b"FatCommonClose -> %08lx\n\0".as_ptr() as *const i8, Status as i32);
+        DebugTrace!(-1, Dbg, b"FatCommonClose -> %08lx\n\0".as_ptr() as *const i8, Status as i32);
         return Status;
     }
 
@@ -629,7 +630,7 @@ pub unsafe extern "system" fn FatCommonClose(
     crate::seh::try_finally(&mut (), |_| 'try_loop: loop {
         match TypeOfOpen {
             __n if __n == VirtualVolumeFile as u32 => {
-                DebugTrace(0, Dbg, b"Close VirtualVolumeFile\n\0".as_ptr() as *const i8, 0);
+                DebugTrace!(0, Dbg, b"Close VirtualVolumeFile\n\0".as_ptr() as *const i8, 0);
                 {
                     let ptr = core::ptr::addr_of_mut!((*Vcb).InternalOpenCount) as *mut i32;
                     InterlockedDecrement(ptr);
@@ -642,7 +643,7 @@ pub unsafe extern "system" fn FatCommonClose(
                 break 'try_loop;
             }
             __n if __n == UserVolumeOpen as u32 => {
-                DebugTrace(0, Dbg, b"Close UserVolumeOpen\n\0".as_ptr() as *const i8, 0);
+                DebugTrace!(0, Dbg, b"Close UserVolumeOpen\n\0".as_ptr() as *const i8, 0);
                 (*Vcb).DirectAccessOpenCount -= 1;
                 (*Vcb).OpenFileCount -= 1;
                 if ((*Ccb).Flags & CCB_FLAG_READ_ONLY) != 0 { (*Vcb).ReadOnlyCount -= 1; }
@@ -651,7 +652,7 @@ pub unsafe extern "system" fn FatCommonClose(
                 break 'try_loop;
             }
             __n if __n == EaFile as u32 => {
-                DebugTrace(0, Dbg, b"Close EaFile\n\0".as_ptr() as *const i8, 0);
+                DebugTrace!(0, Dbg, b"Close EaFile\n\0".as_ptr() as *const i8, 0);
                 {
                     let ptr = core::ptr::addr_of_mut!((*Vcb).InternalOpenCount) as *mut i32;
                     InterlockedDecrement(ptr);
@@ -664,7 +665,7 @@ pub unsafe extern "system" fn FatCommonClose(
                 break 'try_loop;
             }
             __n if __n == DirectoryFile as u32 => {
-                DebugTrace(0, Dbg, b"Close DirectoryFile\n\0".as_ptr() as *const i8, 0);
+                DebugTrace!(0, Dbg, b"Close DirectoryFile\n\0".as_ptr() as *const i8, 0);
                 {
                     let dcb = (*Fcb).Specific.Dcb.as_mut();
                     let ptr = core::ptr::addr_of_mut!(dcb.DirectoryFileOpenCount) as *mut i32;
@@ -684,7 +685,7 @@ pub unsafe extern "system" fn FatCommonClose(
                 }
             }
             __n if __n == UserDirectoryOpen as u32 || __n == UserFileOpen as u32 => {
-                DebugTrace(0, Dbg, b"Close UserFileOpen/UserDirectoryOpen\n\0".as_ptr() as *const i8, 0);
+                DebugTrace!(0, Dbg, b"Close UserFileOpen/UserDirectoryOpen\n\0".as_ptr() as *const i8, 0);
                 {
                     let fcb_dcb = (*Fcb).Specific.Dcb.as_ref();
                     if ((*Fcb).Header.NodeTypeCode == (FAT_NTC_DCB) as i16) &&
@@ -693,7 +694,7 @@ pub unsafe extern "system" fn FatCommonClose(
                         !fcb_dcb.DirectoryFile.is_null()
                     {
                         let DirectoryFileObject: PFILE_OBJECT = fcb_dcb.DirectoryFile;
-                        DebugTrace(0, Dbg, b"Uninitialize the stream file object\n\0".as_ptr() as *const i8, 0);
+                        DebugTrace!(0, Dbg, b"Uninitialize the stream file object\n\0".as_ptr() as *const i8, 0);
                         CcUninitializeCacheMap(DirectoryFileObject, core::ptr::null_mut(), core::ptr::null_mut());
                         (*Fcb).Specific.Dcb.as_mut().DirectoryFile = core::ptr::null_mut();
                         ObDereferenceObject(DirectoryFileObject as *mut core::ffi::c_void);
@@ -705,7 +706,7 @@ pub unsafe extern "system" fn FatCommonClose(
                 FatDeleteCcb(p_ic, core::ptr::addr_of_mut!(Ccb));
             }
             _ => {
-                FatBugCheck(TypeOfOpen as usize, 0, 0);
+                FatBugCheck((TypeOfOpen) as ULONG_PTR, 0, 0);
             }
         }
 
@@ -725,7 +726,7 @@ pub unsafe extern "system" fn FatCommonClose(
                     !(*ParentDcb).Specific.Dcb.as_ref().DirectoryFile.is_null()
             {
                 let DirectoryFileObject: PFILE_OBJECT = (*ParentDcb).Specific.Dcb.as_ref().DirectoryFile;
-                DebugTrace(0, Dbg, b"Uninitialize our parent Stream Cache Map\n\0".as_ptr() as *const i8, 0);
+                DebugTrace!(0, Dbg, b"Uninitialize our parent Stream Cache Map\n\0".as_ptr() as *const i8, 0);
                 CcUninitializeCacheMap(DirectoryFileObject, core::ptr::null_mut(), core::ptr::null_mut());
                 (*ParentDcb).Specific.Dcb.as_mut().DirectoryFile = core::ptr::null_mut();
                 ObDereferenceObject(DirectoryFileObject as *mut core::ffi::c_void);
@@ -744,7 +745,7 @@ pub unsafe extern "system" fn FatCommonClose(
         *p_status = STATUS_SUCCESS;
         break 'try_loop;
     }, |_, _abnormal| {
-        DebugUnwind(b"FatCommonClose\0".as_ptr() as *const i8);
+        DebugUnwind!(b"FatCommonClose\0".as_ptr() as *const i8);
 
         if RecursiveClose == 0 {
             if (*Vcb).OpenFileCount == 1 &&
@@ -776,7 +777,7 @@ pub unsafe extern "system" fn FatCommonClose(
             FatReleaseVcb(p_ic, Vcb);
         }
 
-        DebugTrace(-1, Dbg, b"FatCommonClose -> %08lx\n\0".as_ptr() as *const i8, *p_status as i32);
+        DebugTrace!(-1, Dbg, b"FatCommonClose -> %08lx\n\0".as_ptr() as *const i8, *p_status as i32);
     });
 
     Status

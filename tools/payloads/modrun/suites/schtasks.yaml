@@ -1,0 +1,14 @@
+# schtasks (base/applications/cmdutils/schtasks -> schtasks-rust, batch D1). The shipped Rust diffed
+# against the pre-flip C (`python -m rustconv.c_oracle`); inputs from modrun/data.
+module: schtasks
+variants:
+  c: '%SystemRoot%\bin\modrun\schtasks_c.exe'
+  rust: '%SystemRoot%\system32\schtasks.exe'
+ninja:
+- schtasks_c
+stage:
+- src: build-{arch}/base/applications/cmdutils/schtasks/schtasks_c.exe
+  dest: bin/modrun/schtasks_c.exe
+cases:
+- id: usage
+  args: /?

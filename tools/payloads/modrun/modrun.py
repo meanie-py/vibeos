@@ -124,13 +124,19 @@ def case_file(arch: str) -> str:
 
 
 def stage_entries(arch: str) -> list[dict]:
-    """compile.py `binaries_from`: what the suites graft onto `arch`'s media."""
-    return [
-        b
-        for spec in load_suites().values()
-        if _on(spec.get("arches"), arch)
-        for b in spec.get("stage") or []
-    ]
+    """compile.py `binaries_from`: what the suites graft onto `arch`'s media.
+
+    Once per destination: the CLI-tool suites share tools/payloads/modrun/data/ and each
+    stages what it reads. Two different sources for one destination is a suite bug."""
+    out: dict[str, dict] = {}
+    for spec in load_suites().values():
+        if not _on(spec.get("arches"), arch):
+            continue
+        for b in spec.get("stage") or []:
+            seen = out.setdefault(b["dest"], b)
+            if seen["src"] != b["src"]:
+                raise SystemExit(f"modrun: {b['dest']} staged from {seen['src']} and {b['src']}")
+    return list(out.values())
 
 
 def ninja_targets(arch: str) -> list[str]:
@@ -160,18 +166,24 @@ def parse(serial: str) -> tuple[dict, dict]:
     records: dict[tuple[str, str], dict[int, tuple[str, bool]]] = {}
     exits: dict[tuple[str, str], tuple[str, int, str]] = {}
     totals: dict[tuple[str, str], int] = {}
-    for raw in serial.splitlines():
-        raw = raw.rstrip("\r")
+    # Split on LF only: a record can END in CR -- more.com writes CR CR LF, the guest strips
+    # one CR and checksums `one\r` -- and splitlines() ate it, so every one of its records
+    # read as lost. Whether the serial added a CR of its own is settled by the checksum.
+    for line in serial.split("\n"):
+        raw = line.rstrip("\r")
         m = _EXIT.search(raw)
         if m:
             key = (m.group(1), m.group(2))
             exits[key] = (m.group(3), int(m.group(4)), m.group(6).strip())
             totals[key] = int(m.group(5))
             continue
-        m = _LINE.search(raw)
+        m = _LINE.search(line)
         if m:
-            seq, text = int(m.group(3)), m.group(6)
-            if checksum(text, seq) != int(m.group(5), 16):
+            seq, want = int(m.group(3)), int(m.group(5), 16)
+            text = next(
+                (t for t in (m.group(6), m.group(6)[:-1]) if checksum(t, seq) == want), None
+            )
+            if text is None:
                 continue  # a torn copy; its twin may be whole
             records.setdefault((m.group(1), m.group(2)), {}).setdefault(
                 seq, (text, bool(m.group(4)))
@@ -299,7 +311,10 @@ def main(argv: list[str] | None = None) -> int:
     elif args.cmd == "ninja":
         print(" ".join(ninja_targets(args.arch)))
     else:
-        report, failures = grade(args.log.read_text(errors="surrogateescape"), args.arch)
+        # Bytes, not read_text(): universal newlines turn a record's own CR into a line
+        # break, and more.com's every record (`one\r`) then reads as lost.
+        log = args.log.read_bytes().decode("utf-8", errors="surrogateescape")
+        report, failures = grade(log, args.arch)
         print("\n".join(report))
         cases_n = sum(r.startswith(("PASS", "FAIL", "XFAIL", "XPASS")) for r in report)
         print(f"modrun: {cases_n} case(s), {len(failures)} failed")

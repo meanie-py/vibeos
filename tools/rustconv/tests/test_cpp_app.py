@@ -307,6 +307,40 @@ def test_a_class_implementing_a_com_interface_fills_the_islands_vtable():
     assert "HRESULT CCallBack__ScanProgress(CCallBack *this_" in text
 
 
+def test_a_com_slot_takes_the_overload_with_its_arity():
+    """mmc_new's CConsoleWnd implements IConsole2::Expand(item, bExpand) AND
+    IConsoleNameSpace2::Expand(item): each vtable gets the overload whose arity matches."""
+    island = (
+        "#[repr(C)]\npub struct IAVtbl {\n    pub Expand: ::core::option::Option<\n"
+        '        unsafe extern "system" fn(This: *mut IA, h: HSCOPEITEM, b: BOOL) -> HRESULT,\n'
+        "    >,\n}\n"
+        "#[repr(C)]\npub struct IBVtbl {\n    pub Expand: ::core::option::Option<\n"
+        '        unsafe extern "system" fn(This: *mut IB, h: HSCOPEITEM) -> HRESULT,\n'
+        "    >,\n}\n"
+    )
+    c = ClassModel("W", "W", "class", "w.h", polymorphic=True)
+    c.bases = [Base("IA", "public"), Base("IB", "public")]
+    for params in ([("h", "HSCOPEITEM"), ("b", "BOOL")], [("h", "HSCOPEITEM")]):
+        c.methods.append(
+            _m(
+                "Expand",
+                params=params,
+                ret="HRESULT",
+                virtual=True,
+                body=("w.h", 0, 1),
+                lowered="{ return 0; }",
+            )
+        )
+    _assign_names(c)
+    m = ModuleModel()
+    m.classes[c.qualified] = c
+    rs = cpp_app.render_classes(m, frozenset(), island)
+    one, two = c.methods[0].rust_name, c.methods[1].rust_name
+    assert one != two
+    assert f".{one}(h, b) }}" in rs
+    assert f".{two}(h) }}" in rs
+
+
 def test_a_struct_table_is_zipped_with_its_declared_fields():
     """mspaint's CommandToToolMapping: the model guessed `nCommand`/`nTool` for `id`/`tool`."""
     from rustconv.cpp_model import GlobalVar
@@ -879,6 +913,23 @@ def test_a_property_page_gets_rosdlgs_glue_and_its_overrides():
     assert "atl_rust::win::property_page_map(self as *mut Self, hwnd, msg, l, result)" in rs
 
 
+def test_a_message_map_entry_can_name_a_member_objects_handler():
+    """certmgr's MESSAGE_HANDLER(WM_SIZE, m_Splitter.OnSize): the handler is a method of a
+    module class held by value, so the dispatch calls through the field."""
+    hp = [("u", "UINT"), ("w", "WPARAM"), ("l", "LPARAM"), ("b", "BOOL &")]
+    spl = ClassModel("CSplitter", "CSplitter", "struct", "s.hpp")
+    spl.methods = [_m("OnSize", params=hp, ret="LRESULT", body=("s.hpp", 0, 1), lowered="{}")]
+    dlg = ClassModel("D", "D", "class", "d.cpp")
+    dlg.bases = [Base("CDialogImpl<D>", "public")]
+    dlg.constants = [("IDD", 101)]
+    dlg.fields = [Field("m_Splitter", "CSplitter")]
+    dlg.msg_map = parse_msg_map(
+        "BEGIN_MSG_MAP(D)\n MESSAGE_HANDLER(WM_SIZE, m_Splitter.OnSize)\nEND_MSG_MAP()"
+    )
+    rs = cpp_app.render_classes(_atl_model(spl, dlg))
+    assert "*result = self.m_Splitter.OnSize(msg as _, w as _, l as _, &mut handled)" in rs
+
+
 def test_an_exe_module_gets_win_main_and_its_overrides(tmp_path, monkeypatch):
     """cleanmgr's CCleanMgrModule : CAtlExeModuleT<T> overrides ParseCommandLine and Run;
     the rest (InitializeCom, the message loop) stay ATL's."""
@@ -1047,3 +1098,76 @@ def test_a_reference_member_of_an_aggregate_static_takes_the_address():
     assert rs is not None
     assert "m_guid: core::ptr::addr_of!(GUID_MODEBIAS_NONE) as _" in rs
     assert "m_dwBias: (0) as _" in rs
+
+
+def test_a_constructor_parameter_named_like_a_rust_keyword_is_escaped():
+    """certmgr's CStoreList(StoreType type): the __make/__new wrappers took `type` bare."""
+    c = ClassModel("CStoreList", "CStoreList", "class", "s.hpp")
+    c.methods = [
+        _m("CStoreList", "ctor", params=[("type", "StoreType")], body=("s.hpp", 0, 1), lowered="{}")
+    ]
+    m = ModuleModel()
+    m.classes[c.qualified] = c
+    rs = cpp_app.render_classes(m)
+    assert "CStoreList__make_0(r#type: StoreType)" in rs
+    assert "(type:" not in rs
+
+
+def test_a_global_with_a_no_argument_constructor_is_initialized_by_cpp_classes():
+    """certmgr's `CCertMgrModule _AtlModule;`: the model turned the C stub's
+    `_AtlModule.__ctor_0();` into an invented extern twice, so it is rendered, not bought."""
+    from rustconv.cpp_model import GlobalVar
+
+    mod = ClassModel("M", "M", "class", "m.cpp")
+    mod.methods = [_m("M", "ctor", body=("m.cpp", 0, 1), lowered="{}")]
+    m = ModuleModel()
+    m.classes[mod.qualified] = mod
+    m.globals = [GlobalVar("_AtlModule", "M", "m.cpp", None)]
+    rs = cpp_app.render_classes(m)
+    assert 'pub unsafe extern "C" fn __cxx_global_init() {' in rs
+    assert "(*core::ptr::addr_of_mut!(_AtlModule)).__ctor_0();" in rs
+    h = cpp_app.Hierarchy(m)
+    # no synthetic C at all: a new preamble line is a unit the response cache never bought
+    assert cpp_app._global_init(m, h) == ""
+
+
+def test_a_class_holding_an_stl_container_is_not_copy():
+    """drwtsn32's ModuleData holds a std::string: its destructor frees, so no Copy."""
+    c = ClassModel("ModuleData", "ModuleData", "struct", "d.h")
+    c.fields = [Field("ModuleName", "std::string"), Field("Size", "DWORD")]
+    m = ModuleModel()
+    m.classes[c.qualified] = c
+    rs = cpp_app.render_classes(m)
+    assert "pub ModuleName: StdString," in rs
+    assert "#[derive(Clone, Copy)]\n#[repr(C)]\npub struct ModuleData" not in rs
+
+
+def test_a_string_macro_beside_a_literal_is_concatenated_before_the_model_sees_it():
+    """drwtsn32's `xfprintf(output, "%5d: %ls" NEWLINE, ...)` came back as
+    `xfprintf(output, NEWLINE, ...)`: the literal was dropped. Fold it like phase 6 does."""
+    from rustconv import cpp_lower
+
+    macros = cpp_lower.string_macros(['#define NEWLINE "\\r\\n"\n#define K L"k"\n'])
+    fold = cpp_lower.concat_string_macros
+    assert fold('f(o, "%5d: %ls" NEWLINE, p);', macros) == 'f(o, "%5d: %ls\\r\\n", p);'
+    assert fold('f(o, NEWLINE "a" NEWLINE NEWLINE);', macros) == 'f(o, "\\r\\na\\r\\n\\r\\n");'
+    assert fold('g("x" K);', macros) == 'g(L"xk");'
+    # standalone uses stay names: their bodies keep the response-cache key they were bought under
+    assert fold("f(o, NEWLINE);", macros) == "f(o, NEWLINE);"
+    # a hex escape would swallow the next literal's first chars: left as written
+    assert fold('f("\\x4" NEWLINE);', macros) == 'f("\\x4" NEWLINE);'
+
+
+def test_a_method_with_a_lifetime_parameter_is_still_moved_into_its_impl():
+    """mmc_new's `CRecentFileEntry__FileName<'a>(this_: *mut ..) -> &'a CAtlString`."""
+    c = ClassModel("CRecentFileEntry", "CRecentFileEntry", "class", "r.h")
+    m = ModuleModel()
+    m.classes[c.qualified] = c
+    rust = (
+        "pub unsafe fn CRecentFileEntry__FileName<'a>(this_: *mut CRecentFileEntry)"
+        " -> &'a CAtlString {\n    &(*this_).m_FileName\n}\n"
+    )
+    out = cpp_app.assemble(rust, m)
+    assert "impl CRecentFileEntry {" in out
+    assert "pub unsafe fn FileName<'a>(&mut self) -> &'a CAtlString {" in out
+    assert "CRecentFileEntry__FileName" not in out

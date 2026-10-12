@@ -1,4 +1,9 @@
 use ntkrnl_sys::globals::*;
+use crate::externs::DbgPrint;
+// One declaration per external symbol: externs.rs.
+use crate::externs::RtlAssert;
+// fastfat's own functions: the definition is the declaration.
+use crate::verfysup::FatMarkFcbCondition;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{PRTL_SPLAY_LINKS, PSTRING, RtlCompareMemory, RtlDelete, RtlFreeOemString, RtlFreeUnicodeString, RtlSplay};
@@ -11,11 +16,9 @@ use crate::glue::{DEBUG_TRACE_SPLAYSUP};
 
 extern "system" {
     fn KeGetCurrentIrql() -> u8;
-    } extern "C" { fn DbgPrint(format: *const u8, ...); } extern "system" {
-    fn RtlAssert(cond: *const core::ffi::c_void, file: *const core::ffi::c_void, line: u32, msg: *const core::ffi::c_void);
+    } extern "system" {
     fn CompareNames(name1: PSTRING, name2: PSTRING) -> COMPARISON;
     fn KeBugCheckEx( bugcheck_code: u32, param1: usize, param2: usize, param3: usize, param4: usize, ) -> !;
-    fn FatMarkFcbCondition(IrpContext: PIRP_CONTEXT, Fcb: PFCB, Condition: u32, b: u32);
 }
 
 // ---- file-scope preamble (translated) ----
@@ -111,7 +114,7 @@ pub unsafe extern "system" fn FatInsertName(
                 FatMarkFcbCondition(
                     IrpContext,
                     (*Node).Fcb as PFCB,
-                    FcbBad,
+                    (FcbBad) as i32,
                     (0u8) as _, // FALSE as BOOLEAN
                 );
                 FatRemoveNames(IrpContext, (*Node).Fcb as PFCB);
@@ -159,7 +162,7 @@ pub unsafe extern "system" fn FatRemoveNames(IrpContext: PIRP_CONTEXT, Fcb: PFCB
 
     if (KeGetCurrentIrql() as u32) > APC_LEVEL {
         DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const u8,
+            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const u8 as *const i8,
             KeGetCurrentIrql() as u32,
         );
         if 0i32 == 0 {
@@ -167,7 +170,7 @@ pub unsafe extern "system" fn FatRemoveNames(IrpContext: PIRP_CONTEXT, Fcb: PFCB
                 0 as *const core::ffi::c_void,
                 b"drivers/filesystems/fastfat/splaysup.c\0".as_ptr() as *const core::ffi::c_void,
                 248u32,
-                core::ptr::null_mut::<core::ffi::c_void>(),
+                core::ptr::null(),
             );
         }
     }
@@ -208,7 +211,7 @@ pub unsafe extern "system" fn FatFindFcb(
     // PAGED_CODE() expansion
     if KeGetCurrentIrql() as i32 > (APC_LEVEL) as i32 {
         DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8,
+            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8 as *const i8,
             KeGetCurrentIrql() as i32,
         );
         if 0 == 0 {
@@ -217,7 +220,7 @@ pub unsafe extern "system" fn FatFindFcb(
                 b"drivers/filesystems/fastfat/splaysup.c\0"
                     as *const u8 as *const core::ffi::c_void,
                 340,
-                core::ptr::null_mut::<core::ffi::c_void>(),
+                core::ptr::null(),
             );
         }
     }
@@ -270,7 +273,7 @@ pub unsafe extern "system" fn FatCompareNames(
 
     if KeGetCurrentIrql() as i32 > (APC_LEVEL) as i32 {
         DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8 as *const u8,
+            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8 as *const i8,
             KeGetCurrentIrql() as i32,
         );
         if 0 as i32 == 0 {
@@ -279,7 +282,7 @@ pub unsafe extern "system" fn FatCompareNames(
                 b"drivers/filesystems/fastfat/splaysup.c\0"
                     as *const u8 as *const core::ffi::c_void,
                 453 as u32,
-                core::ptr::null_mut::<core::ffi::c_void>(),
+                core::ptr::null(),
             );
         }
     }

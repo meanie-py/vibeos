@@ -6,14 +6,18 @@
  *              Copyright 2024 Katayama Hirofumi MZ <katayama.hirofumi.mz@gmail.com>
  */
 
+// The C++ standard headers come FIRST: wine/test.h defines `ok` as a macro, and libc++'s
+// <__locale> (pulled in by <set>/<map>) declares `enum result { ok, partial, error, noconv }`.
+// After the macro, that enum does not parse. MSVC's STL has no such name, which is why
+// upstream never sees it.
+#include <set>
+#include <map>
+
 #include "interop.h"
 
 #include <winnls.h>
 #include <strsafe.h>
 #include <shlwapi.h>
-
-#include <set>
-#include <map>
 
 enum E_MODULE
 {

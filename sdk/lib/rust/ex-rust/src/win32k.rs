@@ -346,6 +346,11 @@ pub unsafe extern "system" fn ExpWin32kInit() -> BOOLEAN {
     ObjectTypeInitializer.OkayToCloseProcedure = core::mem::transmute(ExpDesktopOkToClose as usize);
     ObjectTypeInitializer.OpenProcedure = core::mem::transmute(ExpDesktopOpen as usize);
     ObjectTypeInitializer.CloseProcedure = core::mem::transmute(ExpDesktopClose as usize);
+    // Windows keeps per-process handle counts for Desktop (ObTypes.cpp:281); the C left it
+    // off. ObCreateObjectType refuses the flag on a type with neither an Open nor a Close
+    // procedure, so WindowStation, which has neither here (on Windows win32k supplies
+    // them), cannot have it: setting it there failed ExpWin32kInit -> BUGCHECK 0x32.
+    ObjectTypeInitializer.MaintainHandleCount = 1u8;
     let Status = ObCreateObjectType(
         &mut Name as *mut _UNICODE_STRING,
         &mut ObjectTypeInitializer as *mut OBJECT_TYPE_INITIALIZER,

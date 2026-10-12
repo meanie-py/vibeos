@@ -55,7 +55,8 @@ extern "system" {
 const TAG_PROFILE: ULONG = 0x666f7250;
 
 const PROFILE_CONTROL: ACCESS_MASK = 0x0001;
-const PROFILE_ALL_ACCESS: ACCESS_MASK = STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | PROFILE_CONTROL;
+// ndk/extypes.h: no SYNCHRONIZE (a profile object is not waitable; ObTypes.cpp:276).
+const PROFILE_ALL_ACCESS: ACCESS_MASK = STANDARD_RIGHTS_REQUIRED | PROFILE_CONTROL;
 const PROCESS_QUERY_INFORMATION: ACCESS_MASK = 0x0400;
 const STATUS_INVALID_PARAMETER_7: NTSTATUS = 0xC00000F5u32 as NTSTATUS;
 const STATUS_PROFILING_NOT_STOPPED: NTSTATUS = 0xC00000B8_u32 as i32;
@@ -191,7 +192,7 @@ pub unsafe extern "system" fn NtCreateProfile(
     }
 
     if PreviousMode != 0i8 {
-        if let Err(status) = probe_user_buffer(
+        if let Err(status) = probe_user_buffer_write(
             ProfileHandle as *const core::ffi::c_void,
             core::mem::size_of::<HANDLE>(),
             core::mem::align_of::<HANDLE>(),
@@ -200,7 +201,7 @@ pub unsafe extern "system" fn NtCreateProfile(
             return status;
         }
 
-        if let Err(status) = probe_user_buffer(
+        if let Err(status) = probe_user_buffer_write(
             Buffer,
             BufferSize as usize,
             core::mem::align_of::<ULONG>(),
@@ -305,7 +306,7 @@ pub unsafe extern "system" fn NtQueryPerformanceCounter(
     let mut PerfFrequency: LARGE_INTEGER = core::mem::zeroed();
 
     if PreviousMode != 0i8 {
-        if let Err(status) = probe_user_buffer(
+        if let Err(status) = probe_user_buffer_write(
             PerformanceCounter as *const core::ffi::c_void,
             core::mem::size_of::<LARGE_INTEGER>(),
             core::mem::align_of::<LARGE_INTEGER>(),
@@ -314,7 +315,7 @@ pub unsafe extern "system" fn NtQueryPerformanceCounter(
             return status;
         }
         if !PerformanceFrequency.is_null() {
-            if let Err(status) = probe_user_buffer(
+            if let Err(status) = probe_user_buffer_write(
                 PerformanceFrequency as *const core::ffi::c_void,
                 core::mem::size_of::<LARGE_INTEGER>(),
                 core::mem::align_of::<LARGE_INTEGER>(),
@@ -477,7 +478,7 @@ pub unsafe extern "system" fn NtQueryIntervalProfile(
     let PreviousMode = ExGetPreviousMode();
 
     if PreviousMode != 0i8 {
-        if let Err(status) = probe_user_buffer(
+        if let Err(status) = probe_user_buffer_write(
             Interval as *const core::ffi::c_void,
             core::mem::size_of::<ULONG>(),
             core::mem::align_of::<ULONG>(),

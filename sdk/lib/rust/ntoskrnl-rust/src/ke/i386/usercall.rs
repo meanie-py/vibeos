@@ -88,7 +88,7 @@ pub unsafe extern "system" fn KiInitializeUserApc(
         ContextLength = CONTEXT_ALIGNED_SIZE as ULONG + (4 * core::mem::size_of::<ULONG_PTR>() as ULONG);
         Stack = ((AlignedEsp - 8) & !3) - ContextLength as ULONG_PTR;
 
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             Stack as *const core::ffi::c_void,
             (AlignedEsp - Stack) as usize,
             1,
@@ -208,7 +208,7 @@ pub unsafe extern "system" fn KeUserModeCallback(
     let seh_status: Result<NTSTATUS, NTSTATUS> = 'seh: {
         NewStack = (OldStack - ArgumentLength as ULONG_PTR) & !3;
 
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             (NewStack - 6 * core::mem::size_of::<ULONG_PTR>()) as *const core::ffi::c_void,
             (ArgumentLength as usize) + (6 * core::mem::size_of::<ULONG_PTR>()),
             core::mem::size_of::<i8>(),

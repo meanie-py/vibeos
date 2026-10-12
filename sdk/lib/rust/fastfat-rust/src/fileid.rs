@@ -15,10 +15,11 @@
 //! unimplemented function, not as a resolved reference.
 
 use crate::types::*;
+// One declaration per external symbol: externs.rs.
+use crate::externs::FatIsFat32;
 use core::ffi::c_void;
 
 extern "system" {
-    fn FatIsFat32(Vcb: PVCB) -> u8;
 }
 
 /// First 4 bytes of the 8.3 name for `.` and `..`, as they sit on disk

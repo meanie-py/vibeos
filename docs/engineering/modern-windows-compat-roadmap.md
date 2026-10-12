@@ -105,6 +105,11 @@ First runs (measured against Windows 10.0.26100):
 Imports resolved at runtime through `GetProcAddress` are invisible to `gap`; that half
 still needs loader logging.
 
+**The oracle for this surface is real Windows 11** (2026-10-11): `vibeos-cli winref` runs
+tests built by our toolchain on a Windows 11 VM, so the expected result is measured, not
+believed. Its first payload found 104 failures that were all ours (test build and harness),
+none Windows'. See [`winref.md`](winref.md).
+
 **10.0.26100 is Windows 11** (the 24H2 base; the measuring host reports 25H2, build 26200,
 which shares it). Windows 11 kept NT 10.0 and `_WIN32_WINNT` 0x0A00, which is why the tier
 and the tool say "Win10": every number above is the gap to Windows 11, and the Windows 10

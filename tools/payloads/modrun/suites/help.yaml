@@ -1,0 +1,17 @@
+# help (base/applications/cmdutils/help -> help-rust, batch C). The shipped Rust diffed
+# against the pre-flip C (`python -m rustconv.c_oracle`); inputs from modrun/data.
+module: help
+variants:
+  c: '%SystemRoot%\bin\modrun\help_c.exe'
+  rust: '%SystemRoot%\system32\help.exe'
+ninja:
+- cmd_help_c
+stage:
+- src: build-{arch}/base/applications/cmdutils/help/help_c.exe
+  dest: bin/modrun/help_c.exe
+cases:
+- id: list
+  expect:
+  - DIR
+- id: one
+  args: dir

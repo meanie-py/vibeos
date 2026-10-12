@@ -151,7 +151,7 @@ all included), then auto-triage on failure.
 - **`--cpu <model>`, `--headless`, `--boot-nvme`** (arm64) shape the machine like a
   Graviton instance: a Neoverse core (`neoverse-n1`/`-v1`/`-n2`, `VIBEOS_QEMU_CPU`),
   no display device so UEFI hands over no GOP (`VIBEOS_QEMU_HEADLESS=1`; FAILS
-  `NOT_HEADLESS` unless arm64vid ran on its in-memory frame), and the boot image on an
+  `NOT_HEADLESS` unless sysfb ran on its in-memory frame), and the boot image on an
   NVMe namespace as EC2's root volume is (`VIBEOS_QEMU_BOOT_NVME=1`; FAILS
   `NVME_BOOT_DISK_NOT_SEEN` unless nvme.sys published it). More vCPUs than host CPUs
   stretch the silence watchdog to 15 minutes: UEFI goes quiet that long under TCG.
@@ -972,6 +972,26 @@ shim — same reason it skips arm64). The **net suite also runs on windows-host*
 `guestfwd ...-cmd:cat` outbound echo (no `cat` on Windows) is redirected to a harness-run echo
 server via a chardev. So a WSL2-no-KVM user on windows-host gets the full smoke — boot North Star
 *and* the folded netstack suite.
+
+### `winref {install|run|maint|snapshot|restore|logs|status}` — real Windows 11 as the oracle
+
+A Windows 11 VM on the **Windows host's** QEMU: a test built by our toolchain runs here
+first, and what real Windows does is the expected result (the conformance oracle for the
+Win10/11 surface; design and gotchas in `docs/engineering/winref.md`). Images live in
+`D:\vibeos-winref` (`VIBEOS_WINREF_DIR`).
+
+```bash
+./vibeos-cli winref install --iso /mnt/d/.../Win11.iso   # ~2 h under TCG; once; auto-snapshots post-install
+./vibeos-cli winref run <dir-with-run.cmd> --accel whpx # ~1.5 min: boot an overlay, run, power off
+./vibeos-cli winref maint qemu/winref/maint-runner.ps1 --accel whpx   # change the BASE, ~1 min
+./vibeos-cli winref snapshot <name> | restore <name>    # full copies; post-install is pristine
+./vibeos-cli winref logs                                # Setup logs + C:\winref off a STOPPED disk
+```
+
+`run` writes `output.txt` (the payload's stdout) and `guest-console.log`; `summary.json`
+carries `windows` (build), `payload_exit` and `output_lines`. Install under TCG (WHPX dies
+mid-Setup on this AMD host); runs and maintenance boot an installed system and are fine
+on WHPX.
 
 ### `check-tooling [--no-types] [--no-tests]`
 The lint/type/test gate for **our own Python** — distinct from `check`, which

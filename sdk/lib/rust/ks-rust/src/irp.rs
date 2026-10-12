@@ -156,7 +156,7 @@ pub unsafe extern "system" fn KsReadFile(
 
     if RequestorMode == 1i8 {
         // C: _SEH2_TRY { ProbeForWrite } whose handler returns the exception code.
-        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(Buffer, Length as usize, 1, 1) {
+        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer_write(Buffer, Length as usize, 1, 1) {
             return status;
         }
     }

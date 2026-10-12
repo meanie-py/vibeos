@@ -57,7 +57,8 @@ const GUID_STRING_LENGTH: usize = 36;
 const WMIGUID_QUERY: ULONG = 0x0001;
 const WMIGUID_SET: ULONG = 0x0002;
 const WMIGUID_EXECUTE: ULONG = 0x10;
-const WMIGUID_ALL_ACCESS: ULONG = 0x000F;
+// psdk/wmistr.h; the translation had 0x000F, the low nibble of the 0xFFF (ObTypes.cpp:301).
+const WMIGUID_ALL_ACCESS: ULONG = STANDARD_RIGHTS_READ | SYNCHRONIZE | 0xFFF;
 
 #[repr(C)]
 pub struct WMIP_GUID_OBJECT {

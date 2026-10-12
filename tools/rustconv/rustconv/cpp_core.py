@@ -391,6 +391,9 @@ def c_type_to_rust(c_type: str) -> str:
     explicit `struct`/`enum`/`union` tag keywords, and qualified nested type names.
     """
     text = " ".join(re.sub(r"\bCONST\b", "const", c_type).split())
+    # The C++ standard library containers are atl_rust::stl's (drwtsn32's DumpData fields).
+    text = re.sub(r"\bstd::(w?)string\b", lambda m: f"Std{m.group(1).upper()}String", text)
+    text = re.sub(r"\bstd::(vector|map|pair)\s*<", lambda m: f"Std{m.group(1).title()}<", text)
     lt = text.find("<")
     if lt >= 0:
         # A template's arguments are types of their OWN: `CAtlList<CCleanupHandler *>` is a

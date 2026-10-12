@@ -589,6 +589,31 @@ def test_pointer_mutability_flip_stays_red():
     assert [item.reason for item in plan.skipped] == ["pointer_mutability_flip"]
 
 
+def test_pointer_indirection_change_stays_red():
+    # fastfat passed a `PVOID *` one level too deep; `.cast()` would have compiled it.
+    source = b"unsafe { Foo(&raw mut bcb); }\n"
+    plan = propose_edits(
+        [_pointer_diag("*mut *mut c_void", "*mut *mut *mut c_void", source, b"&raw mut bcb")],
+        _reader({"src/c.rs": source}),
+        target="amd64",
+        rules=[RULE_POINTER_CAST],
+    )
+    assert plan.edits == ()
+    assert [item.reason for item in plan.skipped] == ["indirection_depth"]
+
+
+def test_bare_void_pointer_converts_at_any_depth():
+    source = b"unsafe { Foo(ctx); }\n"
+    for expected, found in (("*mut c_void", "*mut *mut BCB"), ("*mut *mut BCB", "*mut c_void")):
+        plan = propose_edits(
+            [_pointer_diag(expected, found, source, b"ctx")],
+            _reader({"src/c.rs": source}),
+            target="amd64",
+            rules=[RULE_POINTER_CAST],
+        )
+        assert [edit.replacement for edit in plan.edits] == ["(ctx).cast()"]
+
+
 # --- rule 2: bindgen flexible-array members ---------------------------------------------------
 
 _TYPES = """

@@ -417,7 +417,7 @@ pub unsafe extern "system" fn NtQueryDefaultLocale(
 ) -> NTSTATUS {
     let Status = 'seh: {
         if KeGetPreviousMode() != 0i8 {
-            if let Err(e) = probe_user_buffer(
+            if let Err(e) = probe_user_buffer_write(
                 DefaultLocaleId as *const core::ffi::c_void,
                 core::mem::size_of::<LCID>(),
                 core::mem::align_of::<LCID>(),
@@ -600,7 +600,7 @@ pub unsafe extern "system" fn NtQueryInstallUILanguage(LanguageId: *mut LANGID) 
     let LanguageId = opaque_ptr(LanguageId);
     let Status = 'seh: {
         if KeGetPreviousMode() != 0i8 {
-            if let Err(e) = probe_user_buffer(
+            if let Err(e) = probe_user_buffer_write(
                 LanguageId as *const core::ffi::c_void,
                 core::mem::size_of::<LANGID>(),
                 core::mem::align_of::<LANGID>(),
@@ -632,7 +632,7 @@ pub unsafe extern "system" fn NtQueryDefaultUILanguage(LanguageId: *mut LANGID) 
 
     let FinalStatus = 'seh: {
         if KeGetPreviousMode() != 0i8 {
-            if let Err(e) = probe_user_buffer(
+            if let Err(e) = probe_user_buffer_write(
                 LanguageId as *const core::ffi::c_void,
                 core::mem::size_of::<LANGID>(),
                 core::mem::align_of::<LANGID>(),

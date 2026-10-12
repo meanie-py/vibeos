@@ -48,6 +48,10 @@ static const app_t apps[] = {
     /* /D skips the drive picker: the handler scan, then the property sheet (a C++
      * CPropertyPageImpl app, Rust since batch 3). */
     { "cleanmgr", "cleanmgr.exe", "/D %SystemDrive%", NULL, "Disk Cleanup$" },
+    { "certmgr", "certmgr.exe", "" },
+    { "mmc_new", "mmc_new.exe", "" },   /* C++ MDI + COM (IConsole2, IImageList), Rust since batch 4 */   /* C++ CDialogImpl + CAtlExeModuleT, Rust since batch 4 */
+    /* Run with no -p, Dr. Watson's right answer is its usage box (C++ and Rust alike). */
+    { "drwtsn32", "drwtsn32.exe", "", "Usage: DrWtsn32" },
     { "explorer-folder", "explorer.exe", "%WINDIR%" },
     { "mycomputer", "explorer.exe", "::{20D04FE0-3AEA-1069-A2D8-08002B30309D}" },
     { "iexplore", "iexplore.exe", "" },
@@ -998,12 +1002,15 @@ int main(void)
          * deadline could not say which app ate the time. */
         /* availMB: free physical memory once the app has gone, so a sweep that runs the
          * machine out (an x86-64 sweep under FEX on a 1 GB arm64 VM did) shows the trend --
-         * steady means pressure, falling app after app means each one leaks. */
+         * steady means pressure, falling app after app means each one leaks.
+         * commitMB: the commit charge against its limit (the "page file" pair), which is
+         * what an allocation is now refused on. */
         MEMORYSTATUSEX ms = { sizeof ms };
         GlobalMemoryStatusEx(&ms);
-        SAY("app %s %s windows=%d first=\"%s\" hung=%d errbox=%d close=%s exit=0x%lx shell=%s machine=0x%x ms=%lu availMB=%lu\n",
+        SAY("app %s %s windows=%d first=\"%s\" hung=%d errbox=%d close=%s exit=0x%lx shell=%s machine=0x%x ms=%lu availMB=%lu commitMB=%lu/%lu\n",
             a->name, good ? "PASS" : "FAIL", got.n, first, hung, errbox, close, rc, shell ? "OK" : "DIED",
-            machine, GetTickCount() - app_t0, (unsigned long)(ms.ullAvailPhys >> 20));
+            machine, GetTickCount() - app_t0, (unsigned long)(ms.ullAvailPhys >> 20),
+            (unsigned long)((ms.ullTotalPageFile - ms.ullAvailPageFile) >> 20), (unsigned long)(ms.ullTotalPageFile >> 20));
         good ? pass++ : fail++;
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);

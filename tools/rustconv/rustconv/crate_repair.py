@@ -739,6 +739,27 @@ _CONVERT_HINT = re.compile(
     r"^you can convert (?:an?) `(?P<found>\w+)` to (?:an?) `(?P<expected>\w+)`"
 )
 _RAW_POINTER = re.compile(r"^\*(?P<mutability>mut|const)\s+(?P<pointee>.+)$")
+_VOID_POINTEE = re.compile(r"^(?:(?:core|std)::ffi::)?c_void$")
+
+
+def _indirection(ty: str) -> tuple[int, str]:
+    """(pointer depth, innermost pointee) of a rustc type label."""
+    depth = 0
+    while (m := _RAW_POINTER.match(ty.strip())) is not None:
+        depth += 1
+        ty = m.group("pointee")
+    return depth, ty.strip()
+
+
+def _indirection_differs(expected: str, found: str) -> bool:
+    """True when a raw-pointer mismatch changes the number of derefs. `void *` converts to and
+    from any object pointer in C, so a bare `*mut c_void` on either side never counts."""
+    (de, be), (df, bf) = _indirection(expected), _indirection(found)
+    if de == df:
+        return False
+    return not ((de == 1 and _VOID_POINTEE.match(be)) or (df == 1 and _VOID_POINTEE.match(bf)))
+
+
 #: An array type as rustc spells it in a mismatch label: `[u16; 80]`, `[WCHAR; MAX_PATH]`.
 #: The length is captured but deliberately unused — decay is length-independent, and matching
 #: on it would only invent a reason to decline.
@@ -1707,6 +1728,12 @@ def _pointer_cast_rule(
         if want.group("mutability") != have.group("mutability"):
             # A const<->mut flip is a real semantic escalation, not a shape repair. Stays RED.
             decline("pointer_mutability_flip", f"expected {expected}, found {found}")
+            continue
+        if _indirection_differs(expected, found):
+            # `*mut *mut *mut c_void` where `*mut *mut c_void` is wanted is a missing or extra
+            # deref, not a pointee rename, and `.cast()` would compile it. Only a bare void
+            # pointer on either side is C's implicit conversion. Stays RED.
+            decline("indirection_depth", f"expected {expected}, found {found}")
             continue
         if end <= start:
             decline("zero_length_span", expected)

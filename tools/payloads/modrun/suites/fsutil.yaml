@@ -1,0 +1,22 @@
+# fsutil (base/applications/cmdutils/fsutil -> fsutil-rust, batch D1). The shipped Rust diffed
+# against the pre-flip C (`python -m rustconv.c_oracle`); inputs from modrun/data.
+module: fsutil
+variants:
+  c: '%SystemRoot%\bin\modrun\fsutil_c.exe'
+  rust: '%SystemRoot%\system32\fsutil.exe'
+ninja:
+- fsutil_c
+stage:
+- src: build-{arch}/base/applications/cmdutils/fsutil/fsutil_c.exe
+  dest: bin/modrun/fsutil_c.exe
+cases:
+- id: drives
+  args: fsinfo drives
+- id: drivetype
+  args: 'fsinfo drivetype C:'
+- id: volumeinfo
+  args: fsinfo volumeinfo C:\
+- id: dirty
+  args: 'dirty query C:'
+- id: usage
+  args: fsinfo

@@ -1,0 +1,21 @@
+# sysfb-rust — Rust translation of the standalone framebuffer video
+# device driver (drivers/video/sysfb/sysfb.c). crate-type=staticlib
+# → libsysfb_rust.a, linked into the cmake-built sysfb.sys with
+# sysfb.c commented out — hal-rust / arm64input-rust style cohabitation.
+#
+# Despite the "arm64" name (historical — it began as an ARM64-only driver),
+# this driver is built for ALL THREE arches (i386/amd64/arm64): it is the
+# GOP/linear-framebuffer video device for every UEFI boot. So this crate is
+# NOT arch-gated like arm64input-rust; it compiles on all three targets.
+
+[package]
+name = "sysfb-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["kernel"] }
+ntkrnl-sys = { path = "../ntkrnl-sys" }

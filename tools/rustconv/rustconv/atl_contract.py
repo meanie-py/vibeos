@@ -27,12 +27,19 @@ ATL_RUST = Path(__file__).resolve().parents[3] / "sdk" / "lib" / "rust" / "atlcl
 _STRING_SPELLINGS = ("CAtlStringW", "CStringW", "CAtlString", "CString")
 _TCHAR_SPELLINGS = frozenset({"CAtlString", "CString"})
 _DIRECT = ("CComPtr", "CHeapPtr", "CComHeapPtr", "CSimpleArray", "CSimpleMap", "CAtlList")
+# C++ standard library spelling -> atl_rust::stl type (drwtsn32, ksproxy).
+_STL = {
+    "std::string": "StdBasicString",
+    "std::wstring": "StdBasicString",
+    "std::vector": "StdVector",
+    "std::map": "StdMap",
+}
 
 
 @cache
 def _api() -> dict[str, list[str]]:
     """atl_rust type -> its public method signatures, bodies and docs stripped."""
-    text = (ATL_RUST / "src" / "lib.rs").read_text()
+    text = "\n".join((ATL_RUST / "src" / f).read_text() for f in ("lib.rs", "stl.rs"))
     out: dict[str, list[str]] = {}
     for m in re.finditer(r"^impl(?:<[^>]*>)?\s+(\w+)(?:<[^>]*>)?\s*\{", text, re.M):
         depth, i = 1, m.end()
@@ -57,6 +64,9 @@ def types_used(body: str) -> list[str]:
     used += [t for t in _DIRECT if re.search(rf"\b{t}\s*<", body)]
     if "CComHeapPtr" in used and "CHeapPtr" not in used:
         used.append("CHeapPtr")  # the alias's methods live on CHeapPtr
+    for spelling, t in _STL.items():
+        if re.search(rf"\b{spelling}\b", body) and t not in used:
+            used.append(t)
     return used
 
 
@@ -95,6 +105,21 @@ def contract(body: str, *, unicode: bool = True, com_methods: bool = False) -> s
             "`atl_format!(s, CStringW::from_resource(IDS_X).GetString(), ..)`.\n",
             "- `s += psz` → `s += psz` (`AddAssign` for `*const WCHAR` and `*mut WCHAR`); "
             "`s += t` with a CStringW `t` → `s += t.GetString()`.\n",
+        ]
+    if any(t in used for t in set(_STL.values())):
+        lines += [
+            "- `std::string` → `StdString`, `std::wstring` → `StdWString` (both "
+            "`StdBasicString`); `std::vector<T>` → `StdVector<T>`; `std::map<K, V>` → "
+            "`StdMap<K, V>`; `std::string::npos` → `npos`; `size_type` → `usize`.\n",
+            "- `std::wstring s(psz)` / `= psz` → `StdWString::from_ptr(psz)`; "
+            "`std::wstring()` → `StdWString::new()`; `s.c_str()` → `s.c_str()`.\n",
+            "- `v[i]` → `(*v.at(i))`, `&v[i]` → `v.at(i)`; `for (auto& x : v)` → "
+            "`for x in v.as_mut_slice()`; `std::sort(v.begin(), v.end(), less)` → "
+            "`v.sort_by_less(|a, b| less(a, b))`.\n",
+            "- `m[k] = v` → `m.insert_or_assign(k, v)`; reading `m[k]` → `(*m.index(k))`; "
+            "`m.find(k) != m.end()` → `!m.find(&k).is_null()`; `m.erase(k)` → `m.erase(&k)`; "
+            "`for (auto& it : m)` / an iterator loop → `for it in m.as_mut_slice()` with "
+            "`it.first` / `it.second`.\n",
         ]
     if "CComPtr" in used:
         # A C++ island run through rustconv.com_vtables gives each interface a method per

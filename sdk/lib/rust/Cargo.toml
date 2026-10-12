@@ -184,7 +184,7 @@ members = [
     "null-cargo",
     "nmidebug-rust",
     "nmidebug-cargo",
-    "arm64vid-cargo",
+    "sysfb-cargo",
     "arm64input-cargo",
     "i8042prt-cargo",
     "kbdclass-cargo",
@@ -237,7 +237,7 @@ members = [
     "inflib-rust",
     "freeldr-rust",
     "arm64input-rust",
-    "arm64vid-rust",
+    "sysfb-rust",
     "framebuf-rust",
     "kbdclass-rust",
     "mouclass-rust",
@@ -553,6 +553,10 @@ members = [
     "deskadp-rust",
     "deskmon-rust",
     "netplwiz-rust",
+    "certutil-rust",
+    "mmc_new-rust",
+    "certmgr-rust",
+    "drwtsn32-rust",
     "at-rust",
     "eventcreate-rust",
     "fsutil-rust",
@@ -592,6 +596,7 @@ members = [
     "vfatlib-rust",
     "vfatxlib-rust",
     "text3d-rust",
+    "watchdog-rust",
 ]
 resolver = "2"
 

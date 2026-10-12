@@ -312,6 +312,7 @@ void VirtualTHPNOP(const void* Ptr, size_t Size, THPControl Control) {}
 
 VirtualNamePtr VirtualName {VirtualNameNOP};
 VirtualTHPPtr VirtualTHPControl {VirtualTHPNOP};
+LazyCommitPtr LazyCommitTrack {nullptr}; // VIBEOS PATCH (commit on touch), AllocatorHooks.h
 
 void SetupHooks(size_t PageSize, HookPtrs Ptrs) {
   VirtualName = Ptrs.VirtualName;
