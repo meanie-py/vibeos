@@ -1272,7 +1272,9 @@ def substrate_constants(
         for name in _TOP_CONST.findall(f.read_text(errors="replace")):
             if name in names:
                 hits.setdefault(name, set()).add(mod)
-    found = {n: {arch: next(iter(ms)) for arch in ARCHES} for n, ms in hits.items() if len(ms) == 1}
+    found: dict[str, dict[str, str | None]] = {
+        n: {arch: next(iter(ms)) for arch in ARCHES} for n, ms in hits.items() if len(ms) == 1
+    }
     why = {n: f"defined in {', '.join(sorted(ms))}" for n, ms in hits.items() if len(ms) > 1}
     return found, why
 

@@ -1310,6 +1310,8 @@ dll/win32/oleaut32/CMakeLists.txt	1	# usrmarshal.c — replaced by Rust (oleaut3
 dll/win32/oleaut32/CMakeLists.txt	1	# varformat.c — replaced by Rust (oleaut32-rust varformat.rs — VarFormat* family/VarTokenizeFormatString/VarMonthName/VarWeekdayName; full)
 dll/win32/oleaut32/CMakeLists.txt	1	# variant.c — replaced by Rust (oleaut32-rust variant.rs — VariantInit/Clear/Copy/Change + arithmetic; full)
 dll/win32/oleaut32/CMakeLists.txt	1	# vartype.c — replaced by Rust (oleaut32-rust vartype.rs — VarXxxFromYyy coercion matrix, 253 exports; full)
+dll/win32/psapi/CMakeLists.txt	1	# psapi.c # replaced by Rust (sdk/lib/rust/psapi-rust/src/psapi/psapi.rs)
+dll/win32/psapi/CMakeLists.txt	1	# psapi.c is Rust now (psapi-rust, `rustconv port`); the C stays on disk. psapi_static keeps
 dll/win32/rasadhlp/CMakeLists.txt	1	# add_pch dropped with precomp.h: the only remaining C is generated (rasadhlp_stubs.c)
 dll/win32/rasadhlp/CMakeLists.txt	1	# autodial.c
 dll/win32/rasadhlp/CMakeLists.txt	1	# autodial.c init.c winsock.c → rasadhlp-rust
@@ -2445,6 +2447,14 @@ sdk/lib/drivers/csq/CMakeLists.txt	1	# add_library(csq csq.c) # body replaced by
 sdk/lib/drivers/csq/CMakeLists.txt	1	# csq (Cancel-Safe IRP Queue) — Rust cohabitation flip (csq.c -> csq-rust)
 sdk/lib/drivers/csq/CMakeLists.txt	1	# csq.c (the 6 IoCsq* exports) is translated to Rust (csq-rust, kept on disk per
 sdk/lib/drivers/hidparser/CMakeLists.txt	1	# context.c hidparser.c parser.c api.c hidp.c (+ parser.h, hidp.h)
+sdk/lib/drivers/ntoskrnl_vista/CMakeLists.txt	1	# ${REACTOS_SOURCE_DIR}/sdk/lib/rtl/utf8.c # replaced by Rust (sdk/lib/rust/utf8)
+sdk/lib/drivers/ntoskrnl_vista/CMakeLists.txt	1	# disk. The target keeps a stub TU and links the Rust archives. utf8.c is rtl's: it is the
+sdk/lib/drivers/ntoskrnl_vista/CMakeLists.txt	1	# etw.c # replaced by Rust (sdk/lib/rust/ntoskrnl_vista-rust/src/ntoskrnl_vista/etw.rs)
+sdk/lib/drivers/ntoskrnl_vista/CMakeLists.txt	1	# fsrtl.c # replaced by Rust (sdk/lib/rust/ntoskrnl_vista-rust/src/ntoskrnl_vista/fsrtl.rs)
+sdk/lib/drivers/ntoskrnl_vista/CMakeLists.txt	1	# io.c # replaced by Rust (sdk/lib/rust/ntoskrnl_vista-rust/src/ntoskrnl_vista/io.rs)
+sdk/lib/drivers/ntoskrnl_vista/CMakeLists.txt	1	# ke.c # replaced by Rust (sdk/lib/rust/ntoskrnl_vista-rust/src/ntoskrnl_vista/ke.rs)
+sdk/lib/drivers/ntoskrnl_vista/CMakeLists.txt	1	# po.c # replaced by Rust (sdk/lib/rust/ntoskrnl_vista-rust/src/ntoskrnl_vista/po.rs)
+sdk/lib/drivers/ntoskrnl_vista/CMakeLists.txt	1	# pofx.c # replaced by Rust (sdk/lib/rust/ntoskrnl_vista-rust/src/ntoskrnl_vista/pofx.rs)
 sdk/lib/drivers/sptilib/CMakeLists.txt	1	# sptilib.c # replaced by Rust (sdk/lib/rust/sptilib-rust/src/sptilib/sptilib.rs)
 sdk/lib/drivers/usbdex/CMakeLists.txt	1	# add_library(usbdex usbdex.c) # replaced by Rust (usbdex-rust); kept on disk
 sdk/lib/drivers/usbdex/CMakeLists.txt	1	# usbdex — Rust cohabitation flip (usbdex.c -> sdk/lib/rust/usbdex-rust)
