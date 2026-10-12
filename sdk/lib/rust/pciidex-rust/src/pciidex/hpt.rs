@@ -190,10 +190,10 @@ pub const TYPE_370: u8 = 1;
 pub const TYPE_372: u8 = 2;
 pub const TYPE_374: u8 = 3;
 
-pub const HW_FLAGS_TYPE_MASK: u8 = 0x03;
-pub const HW_FLAGS_SINGLE_CHAN: u8 = 0x04;
-pub const HW_FLAGS_UDMA4: u8 = 0x08;
-pub const HW_FLAGS_UDMA5: u8 = 0x10;
+const HW_FLAGS_TYPE_MASK: u8 = 0x03; // nolint: const-contradiction (hpt.c-local #define; each chipset .c has its own HW_FLAGS scale)
+const HW_FLAGS_SINGLE_CHAN: u8 = 0x04; // nolint: const-contradiction (hpt.c-local #define; each chipset .c has its own HW_FLAGS scale)
+const HW_FLAGS_UDMA4: u8 = 0x08; // nolint: const-contradiction (hpt.c-local #define; each chipset .c has its own HW_FLAGS scale)
+const HW_FLAGS_UDMA5: u8 = 0x10; // nolint: const-contradiction (hpt.c-local #define; each chipset .c has its own HW_FLAGS scale)
 
 pub const HPT366_TIM_DATA_HIGH_CYT_MASK: u32 = 0x0000000F;
 pub const HPT366_TIM_DATA_LOW_CYT_MASK: u32 = 0x000000F0;
