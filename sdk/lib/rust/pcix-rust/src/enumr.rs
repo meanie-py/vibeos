@@ -181,10 +181,16 @@ pub unsafe extern "system" fn PciComputeNewCurrentSettings(
                          * in that same order says which BAR this one satisfies.
                          */
                         if !PciResources.is_null() {
-                            while (BarIndex as usize) < ResourceArray.len()
-                                && (*PciResources).Limit[BarIndex as usize].Type
-                                    == CmResourceTypeNull as u8
-                            {
+                            /* A limit with no requirement behind it (a bridge window
+                             * nothing asked for) gets no descriptor, so skip limits of
+                             * the other space too: a memory range never lands in an
+                             * I/O slot and shifts every slot after it. */
+                            let IsPort = (*Partial).Type as u32 == CmResourceTypePort;
+                            while (BarIndex as usize) < ResourceArray.len() && {
+                                let LimitType = (*PciResources).Limit[BarIndex as usize].Type as u32;
+                                LimitType == CmResourceTypeNull
+                                    || (LimitType == CmResourceTypePort) != IsPort
+                            } {
                                 BarIndex += 1;
                             }
 
@@ -1379,7 +1385,20 @@ pub unsafe extern "system" fn PcipGetFunctionLimits(Context: *mut _PCI_CONFIGURA
 
     ((*configurator).Initialize.unwrap())(Context);
 
-    if ((*pdo_extension).HackFlags & (PCI_HACK_CRITICAL_DEVICE as u64)) != 0 || (*pdo_extension).OnDebugPath != 0 {
+    /* Sizing writes all-ones into the BARs, so for that moment the function's
+     * registers are gone. Windows only shields critical devices, because nothing
+     * else has a driver yet when pci.sys sizes it; here a boot driver can already
+     * be running a function it found by its own scan (uniata claims the AHCI
+     * controller that way), and its ISR then reads all-ones mid-sizing. On the
+     * 9020, that ISR claimed the GSI it shares with EHCI forever and starved the
+     * sizing thread before it could restore the BAR. A function whose decodes are
+     * already on is therefore sized the critical way: every CPU held, interrupts
+     * included. */
+    let decoding = ((*Context).Command & (PCI_ENABLE_IO_SPACE | PCI_ENABLE_MEMORY_SPACE) as u16) != 0;
+    if ((*pdo_extension).HackFlags & (PCI_HACK_CRITICAL_DEVICE as u64)) != 0
+        || (*pdo_extension).OnDebugPath != 0
+        || decoding
+    {
         if (*pdo_extension).OnDebugPath != 0 {
             if ((*Context).Command & PCI_ENABLE_BUS_MASTER as u16) != 0 {
                 (*pci_data).Command |= PCI_ENABLE_BUS_MASTER as u16;

@@ -1175,6 +1175,12 @@ pub unsafe extern "system" fn UniataAhciStatus(
     let _ = DeviceNumber;
 
     hIS = UniataAhciReadHostPort4(deviceExtension, IDX_AHCI_IS as ULONG);
+    // All-ones is not a status: the HBA is not decoding (its BAR being sized, or
+    // the function gone). Read as one, every port had a connect change, and on a
+    // shared GSI claiming the interrupt starved the other device's ISR.
+    if hIS == 0xFFFF_FFFF {
+        return INTERRUPT_REASON_IGNORE as UCHAR;
+    }
     hIS &= 1 << Channel;
     if hIS == 0 {
         return INTERRUPT_REASON_IGNORE as UCHAR;
@@ -1190,8 +1196,12 @@ pub unsafe extern "system" fn UniataAhciStatus(
     // re-asserts while the port's PxIS is still set, so the C's host-first
     // order left a pending port bit behind and drew a second, spurious
     // interrupt on real HBAs. (QEMU recomputes IS from PxIS, so it never showed.)
-    UniataAhciWriteChannelPort4(chan, IDX_AHCI_P_IS as ULONG, *IS.Reg.as_ref());
+    // SError before PxIS for the same reason one level down: PxIS.PCS mirrors
+    // PxSERR.DIAG.X and clears only once X is clear (AHCI 1.3.1 sec. 3.3.5), so
+    // clearing PxIS first left PCS set and a connect change on an empty port
+    // re-raised the interrupt forever (an endless "SATA hotplug" on the 9020).
     AtapiWritePort4(chan, IDX_SATA_SError, *SError.Reg.as_ref());
+    UniataAhciWriteChannelPort4(chan, IDX_AHCI_P_IS as ULONG, *IS.Reg.as_ref());
     UniataAhciWriteHostPort4(deviceExtension, IDX_AHCI_IS as ULONG, hIS);
 
     /* do we have cold connect surprise */

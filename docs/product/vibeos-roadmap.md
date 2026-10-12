@@ -1525,11 +1525,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     first root port. Remove and stop stubs no longer breakpoint either. With those, pcix
     boots the OptiPlex to the desktop: every function routed from `_PRT` (the I217 to GSI 23,
     where the BIOS's Interrupt Line says 128), the NVMe behind root port 00:01.0 working on
-    its pin interrupt. Still open on that box: the Renesas USB card behind 00:1c.0 reads
-    all-ones (its BAR is inside the bridge's window, so something else in that bridge or
-    the card's programming), one boot in five floods `[UNIATA] SATA hotplug` (SATA shares
-    GSI 18 with EHCI 00:1d.0; never under pci.sys), and netstack still reads the raw
-    Interrupt Line rather than the routed GSI. Still owed before pcix can be the default:
+    its pin interrupt. Fixed 2026-10-12: the Renesas USB card behind 00:1c.0 read all-ones
+    because `PciBridgeIoBase` read the IOLimit register (upstream's C does too), so the
+    bridge's closed I/O window decoded as a live one at e000, and START then shifted the
+    memory window into the I/O slot and closed it. And the `[UNIATA] SATA hotplug` flood
+    (about one boot in five) was pcix sizing the AHCI BARs while uniata, which found the
+    controller by its own scan, already had its ISR on GSI 18. A function whose decodes are
+    on is now sized with every CPU held, and uniata ignores an all-ones status and clears
+    SError before PxIS. The card, its hub and every device behind it now enumerate under
+    pcix. Still open: netstack reads the raw Interrupt Line rather than the routed GSI. Still owed before pcix can be the default:
     RootBusCapability (_OSC) is not provided. Owed later: that arbiter
     itself (8259-mode link `_SRS`, line accounting, MSI) behind pcix's stubbed
     `INT_ROUTE_INTERFACE_STANDARD` (`routeintrf_Constructor` breaks in). The HAL legacy PIR arbiter (cf89458d9e2) is
