@@ -15,3 +15,5 @@ target_link_libraries(more conutils)
 add_importlibs(more advapi32 msvcrt kernel32)
 set_target_properties(more PROPERTIES SUFFIX ".com")
 add_cd_file(TARGET more DESTINATION reactos/system32 FOR all)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

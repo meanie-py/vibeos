@@ -206,3 +206,13 @@ def test_a_template_argument_keeps_its_own_pointer():
     assert c_type_to_rust("CSimpleMap<UINT, const WCHAR *>") == "CSimpleMap<UINT, *const WCHAR>"
     assert c_type_to_rust("ATL::CAtlList<ns::X*>") == "CAtlList<*mut X>"
     assert c_type_to_rust("CFoo<3>") == "CFoo<3>"
+
+
+def test_std_containers_are_the_stl_shim():
+    """drwtsn32's DumpData: `std::wstring`, `std::vector<ModuleData>`, `std::map<DWORD, T>`."""
+    from rustconv.cpp_core import c_type_to_rust
+
+    assert c_type_to_rust("std::wstring") == "StdWString"
+    assert c_type_to_rust("const std::string &") == "&StdString"
+    assert c_type_to_rust("std::map<DWORD, ThreadData>") == "StdMap<DWORD, ThreadData>"
+    assert c_type_to_rust("std::vector<std::wstring> *") == "*mut StdVector<StdWString>"

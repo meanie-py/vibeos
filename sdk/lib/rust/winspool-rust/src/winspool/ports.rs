@@ -30,7 +30,9 @@ pub type PMONITORUIDATA = *mut MONITORUIDATA;
 
 // C: `typedef DWORD (*PPfpFunction)(LPWSTR, ULONG_PTR, LPWSTR);` -- default (cdecl) convention,
 // the MIDL-generated _Rpc* stubs it points at are __cdecl. Plain fn pointer (never NULL here).
-pub type PPfpFunction = unsafe extern "C" fn(LPWSTR, ULONG_PTR, LPWSTR) -> DWORD;
+// A C function-POINTER typedef is nullable: as a bare `fn`, `zeroed()` of the PORTTHREADINFO
+// holding it panicked in every StartPortThread (rustc's invalid_value).
+pub type PPfpFunction = Option<unsafe extern "C" fn(LPWSTR, ULONG_PTR, LPWSTR) -> DWORD>;
 
 #[repr(C)]
 pub struct PORTTHREADINFO {
@@ -50,7 +52,7 @@ pub type PPORTTHREADINFO = *mut PORTTHREADINFO;
 pub unsafe extern "system" fn IntPortThread(pPortThreadInfo: PPORTTHREADINFO) {
     // RpcTryExcept
     {
-        (*pPortThreadInfo).dwErrorCode = ((*pPortThreadInfo).fpFunction)((*pPortThreadInfo).pName, (*pPortThreadInfo).hWnd, (*pPortThreadInfo).pPortName);
+        (*pPortThreadInfo).dwErrorCode = ((*pPortThreadInfo).fpFunction.unwrap_unchecked())((*pPortThreadInfo).pName, (*pPortThreadInfo).hWnd, (*pPortThreadInfo).pPortName);
     }
     // RpcExcept(EXCEPTION_EXECUTE_HANDLER): handler runs only when the try body raises
     // a structured exception; no Rust equivalent in this lowering, so it is not reached here.
@@ -559,7 +561,7 @@ pub unsafe extern "system" fn AddPortW(pName: PWSTR, hWnd: HWND, pMonitorName: P
                     pName,
                     hWnd,
                     pMonitorName,
-                    _RpcAddPort,
+                    Some(_RpcAddPort),
                 );
                 dwErrorCode = GetLastError();
             }
@@ -632,7 +634,7 @@ pub unsafe extern "system" fn ConfigurePortW(pName: PWSTR, hWnd: HWND, pPortName
                 // Looking if this is remote.
                 dwErrorCode = ERROR_NOT_SUPPORTED;
             } else {
-                Ret = StartPortThread(pName, hWnd, pPortName, _RpcConfigurePort);
+                Ret = StartPortThread(pName, hWnd, pPortName, Some(_RpcConfigurePort));
                 dwErrorCode = GetLastError();
             }
         }
@@ -698,7 +700,7 @@ pub unsafe extern "system" fn DeletePortW(pName: PWSTR, hWnd: HWND, pPortName: P
             || dwErrorCode == ERROR_UNKNOWN_PORT
             || dwErrorCode == ERROR_INVALID_PRINTER_NAME
         {
-            Ret = StartPortThread(pName, hWnd, pPortName, _RpcDeletePort);
+            Ret = StartPortThread(pName, hWnd, pPortName, Some(_RpcDeletePort));
             dwErrorCode = GetLastError();
         }
     } else {

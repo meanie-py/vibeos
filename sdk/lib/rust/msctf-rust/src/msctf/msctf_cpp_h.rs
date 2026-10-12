@@ -38,7 +38,7 @@ pub struct AtsEntry {
 pub type PAtsEntry = *mut AtsEntry;
 
 pub type LPFNCONSTRUCTOR =
-    unsafe extern "C" fn(pUnkOuter: *mut IUnknown, ppvOut: *mut *mut IUnknown) -> HRESULT;
+    Option<unsafe extern "C" fn(pUnkOuter: *mut IUnknown, ppvOut: *mut *mut IUnknown) -> HRESULT>;
 
 pub static mut MSCTF_hinstance: HINSTANCE = unsafe { core::mem::zeroed() };
 pub static mut cookies: *mut CookieInternal = core::ptr::null_mut();
@@ -60,7 +60,7 @@ pub static mut g_globalCompartmentMgr: *mut ITfCompartmentMgr = core::ptr::null_
 #[repr(C)]
 pub struct ClassesTableEntry {
     pub clsid: *const CLSID,
-    pub constructor: Option<LPFNCONSTRUCTOR>,
+    pub constructor: LPFNCONSTRUCTOR,
 }
 unsafe impl Sync for ClassesTableEntry {}
 
@@ -531,10 +531,8 @@ pub unsafe extern "system" fn DllGetClassObject(clsid: *const GUID, iid: *const 
     i = 0;
     while !ClassesTable[i as usize].clsid.is_null() {
         if IsEqualGUID!(&(*ClassesTable[i as usize].clsid), &(*clsid)) {
-            // Every row before the null-clsid terminator has a constructor.
-            if let Some(ctor) = ClassesTable[i as usize].constructor {
-                return ClassFactory_Constructor(ctor, ppvOut);
-            }
+            // LPFNCONSTRUCTOR is nullable (Option), as the C function pointer is.
+            return ClassFactory_Constructor(ClassesTable[i as usize].constructor, ppvOut);
         }
         i += 1;
     }
@@ -657,7 +655,7 @@ impl CClassFactory {
     pub unsafe fn CreateInstance(&mut self, pUnkOuter: *mut IUnknown, riid: &IID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT {
         let this_: *mut Self = self;
         let mut obj: *mut IUnknown = core::ptr::null_mut();
-        let mut ret: HRESULT = ((*this_).m_ctor)(pUnkOuter, core::ptr::addr_of_mut!(obj));
+        let mut ret: HRESULT = (((*this_).m_ctor).unwrap_unchecked())(pUnkOuter, core::ptr::addr_of_mut!(obj));
         if ret < 0 {
             return ret;
         }

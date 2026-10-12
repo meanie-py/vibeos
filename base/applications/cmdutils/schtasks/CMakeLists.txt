@@ -12,3 +12,5 @@ target_link_libraries(schtasks wine)
 set_module_type(schtasks win32cui UNICODE)
 add_importlibs(schtasks oleaut32 ole32 msvcrt kernel32 ntdll)
 add_cd_file(TARGET schtasks DESTINATION reactos/system32 FOR all)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

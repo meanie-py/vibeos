@@ -106,7 +106,9 @@ def source_lists(text: str) -> dict[str, list[str]]:
                 entries.append(f.group(1))
                 flipped.add(var)
                 continue
-            entries += [w for w in _words(line) if Path(w).name != "rust_cohab_stub.c"]
+            # All of the flip's rust_*.c scaffolding: netsh's oracle compiled
+            # rust_varargs_shim.c, whose trampolines redefine netsh.c's own variadics.
+            entries += [w for w in _words(line) if not Path(w).name.startswith("rust_")]
         lists.setdefault(var, []).extend(entries)
     return {v: lists[v] for v in lists if v in flipped}
 
@@ -116,15 +118,33 @@ def _target_of(cmd: Command) -> str | None:
     return w[0] if w else None
 
 
+def inline_sources(text: str) -> dict[str, list[str]]:
+    """Targets whose flipped TUs sit in the `add_executable(..)` itself -> those TUs.
+
+    `port flip` writes a single-list module that way (find, sort, and every other batch C
+    and D1 tool): `add_executable(find\n    # find.c  # replaced by Rust (..)\n ..)`. With
+    only `list(APPEND ..)` understood, none of them could be oracled."""
+    out: dict[str, list[str]] = {}
+    for cmd in commands(text):
+        if cmd.name not in ("add_executable", "add_library"):
+            continue
+        entries = [f.group(1) for line in cmd.args.splitlines() if (f := _FLIPPED.match(line))]
+        target = _target_of(cmd)
+        if entries and target:
+            out[target] = entries
+    return out
+
+
 def generate(cml: str) -> str:
     """The `c_oracle.cmake` text for a module's CMakeLists (refuses an unflipped one)."""
     lists = source_lists(cml)
-    if not lists:
+    inline = inline_sources(cml)
+    if not lists and not inline:
         raise OracleError(
             "no `# x.c  # replaced by Rust` lines: nothing flipped, nothing to oracle"
         )
     cmds = commands(cml)
-    oracle: dict[str, str] = {}
+    oracle: dict[str, str] = {t: f"{t}_c" for t in inline}
     for cmd in cmds:  # targets built from a flipped list
         if cmd.name in ("add_executable", "add_library"):
             words = _words(cmd.args)
@@ -164,6 +184,8 @@ def generate(cml: str) -> str:
             at = 2 if len(words) > 1 and words[1] in ("STATIC", "SHARED", "MODULE", "OBJECT") else 1
             if "EXCLUDE_FROM_ALL" not in words:
                 words.insert(at, "EXCLUDE_FROM_ALL")
+            if target in inline:
+                words[at + 1 : at + 1] = inline[target]
         elif len(words) < len(raw) and not [
             w for w in words[1:] if w not in ("PUBLIC", "PRIVATE", "INTERFACE")
         ]:
@@ -171,6 +193,13 @@ def generate(cml: str) -> str:
             # takes the target ALONE is real configuration: comctl32's oracle dropped
             # set_wine_module_FIXME(comctl32) this way and lost Wine's ARRAY_SIZE.
             continue
+        if cmd.name == "set_target_properties" and "OUTPUT_NAME" in words:
+            # cmd_help's `OUTPUT_NAME "help"` copied as-is: two rules generated help.exe and
+            # ninja refused the whole tree. The oracle's file is suffixed like its target.
+            at = words.index("OUTPUT_NAME") + 1
+            if at < len(words):
+                q = words[at].endswith('"')
+                words[at] = words[at][:-1] + '_c"' if q else words[at] + "_c"
         body.append(f"{cmd.name}({' '.join(words)})")
     body = _prune_empty_ifs(body)
     head = [

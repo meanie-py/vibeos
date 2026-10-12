@@ -31,10 +31,11 @@
 //! [`set_resource_instance`] (its own `hInstance`, as shell32 needs), else
 //! `GetModuleHandleW(NULL)`.
 
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 #![allow(non_snake_case, non_camel_case_types, clippy::missing_safety_doc)]
 
 pub mod exe;
+pub mod stl;
 pub mod win;
 
 use core::ffi::c_void;

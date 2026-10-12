@@ -17,3 +17,5 @@ add_dependencies(eventcreate evtmsgstr)
 target_link_libraries(eventcreate conutils)
 add_importlibs(eventcreate advapi32 msvcrt kernel32)
 add_cd_file(TARGET eventcreate DESTINATION reactos/system32 FOR all)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

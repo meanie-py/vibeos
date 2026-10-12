@@ -2359,11 +2359,30 @@ _CXX_CONST_RE = (
 )
 
 
+# A C++ scoped enum: `case StoreType::User:` reaches the case scan as `StoreType`, the
+# enum's own name (certmgr). The header owns it like any type, and a qualified label cannot
+# be the §9.112 hazard: rustc resolves `StoreType::User` as a path or rejects it, it never
+# binds as a catch-all the way a bare unresolved name does.
+_CXX_SCOPED_ENUM_RE = r"^[ \t]*enum[ \t]+(?:class|struct)[ \t]+({name})\b"
+
+
+_STD_HEADER_RE = re.compile(r"^\s*#\s*include\s*<(?:string|vector|map|algorithm|utility)>", re.M)
+
+
+def uses_std_headers(m) -> bool:
+    """Whether the module's own sources include a C++ standard library container header."""
+    files = {f for tu in m.compiled_tus for f in [tu, *tu.parent.glob("*.h*")] if f.is_file()}
+    return any(_STD_HEADER_RE.search(f.read_text(errors="replace")) for f in sorted(files))
+
+
 def _cxx_consts(text: str, alt: str) -> dict[str, tuple[str, str]]:
-    return {
+    out = {
         m.group(1): ("cxx-const", m.group(2).strip())
         for m in re.finditer(_CXX_CONST_RE.format(name=alt), text, re.M)
     }
+    for m in re.finditer(_CXX_SCOPED_ENUM_RE.format(name=alt), text, re.M):
+        out.setdefault(m.group(1), ("cxx-scoped-enum", m.group(0).strip()))
+    return out
 
 
 def xmacro_enumerators(tu: Path, wanted: frozenset[str]) -> dict[str, tuple[str, str]]:
@@ -2644,7 +2663,7 @@ def own_constants(
         if hit is not None:
             # bindgen reads headers as C, so a C++ const never reaches the island: the header
             # owns it, but the translation has to carry it (see SWITCH_CONST_CXX).
-            kind = "cxx-const" if hit[1][0] == "cxx-const" else "header"
+            kind = "cxx-const" if hit[1][0] in ("cxx-const", "cxx-scoped-enum") else "header"
             owners.append(
                 ConstOwner(ident, hit[0], kind, hit[1][1], hit[1][0], in_sys=in_sys, sys_source=src)
             )
@@ -3378,6 +3397,15 @@ def derive(
                     "everything (§9.112). Find its owner and add it to the wrapper.",
                 )
             )
+        elif o.macro_kind == "cxx-scoped-enum":
+            findings.append(
+                Finding(
+                    "info",
+                    "SWITCH_CONST_SCOPED_ENUM",
+                    f"`{o.ident}` is a C++ enum class in {o.owner.name if o.owner else '?'}: "
+                    "its labels are qualified (`X::Member`), which cannot bind as a catch-all",
+                )
+            )
         elif o.owner_kind == "cxx-const" and not o.in_sys:
             findings.append(
                 Finding(
@@ -3762,6 +3790,9 @@ def emit_profile(dp: DerivedProfile) -> str:
         # CWindowImpl<...>`), which a C parse rejects as an unknown type name: the island
         # must be parsed the way the TU is compiled.
         out.append("    LANG_ARGS=( -x c++ -std=gnu++17 )")
+        if uses_std_headers(m):
+            # drwtsn32: <string>/<vector>/<map> parse against data/island_stl, not libc++.
+            out.append("    ISLAND_STL=1")
     if not multi:
         out.append(f"    WRAPPER_INC=$'{wrapper}'")
         out.extend(_allow_files_lines(dp.allow_files))
@@ -4335,6 +4366,13 @@ def scaffold_crate(
         texts = [tu.read_text(errors="replace") for tu in m.compiled_tus if tu.is_file()]
         com = any(re.search(r"\bCComHeapPtr\b", t) for t in texts)
         path = any(re.search(r"\bCPath\b", t) for t in texts)
+        # The C++ standard library containers (atl_rust::stl). drwtsn32 declares its
+        # std::vector/std::map members in a header, so the module's own headers count too.
+        own_headers = {h for tu in m.compiled_tus for h in tu.parent.glob("*.h*") if h.is_file()}
+        stl = any(
+            re.search(r"\bstd::(?:w?string|vector|map)\b", t)
+            for t in texts + [h.read_text(errors="replace") for h in sorted(own_headers)]
+        )
         # CComHeapPtr is the COM task allocator (ole32), CPath is shlwapi's
         # PathCompactPathExW: only a module that uses one imports its DLL.
         feats = [f for f, on in (("com", com), ("path", path)) if on]
@@ -4357,6 +4395,12 @@ def scaffold_crate(
             "pub use atl_rust::CStringW as CSimpleString;\n"
             + ("pub use atl_rust::CComHeapPtr;\n" if com else "")
             + ("pub use atl_rust::CPath;\n" if path else "")
+            + (
+                "pub use atl_rust::stl::{npos, StdMap, StdPair, StdString, StdVector, "
+                "StdWString};\n"
+                if stl
+                else ""
+            )
         )
     win32_reexport = ""
     # The MACROS only, by name: a glob would also pull win32macros' type aliases
