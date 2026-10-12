@@ -24,6 +24,9 @@ base/applications/clipbrd/CMakeLists.txt	1	# scrollutils.c # replaced by Rust (s
 base/applications/clipbrd/CMakeLists.txt	1	# winutils.c # replaced by Rust (sdk/lib/rust/clipbrd-rust/src/clipbrd/winutils.rs)
 base/applications/cmdutils/at/CMakeLists.txt	1	# at.c # replaced by Rust (sdk/lib/rust/at-rust/src/at/at.rs)
 base/applications/cmdutils/attrib/CMakeLists.txt	1	# attrib.c # replaced by Rust (sdk/lib/rust/attrib-rust/src/attrib/attrib.rs)
+base/applications/cmdutils/certutil/CMakeLists.txt	1	# asn.cpp # replaced by Rust (sdk/lib/rust/certutil-rust/src/certutil/asn_cpp_h.rs)
+base/applications/cmdutils/certutil/CMakeLists.txt	1	# certutil.cpp # replaced by Rust (sdk/lib/rust/certutil-rust/src/certutil/certutil_cpp_h.rs)
+base/applications/cmdutils/certutil/CMakeLists.txt	1	# hashfile.cpp # replaced by Rust (sdk/lib/rust/certutil-rust/src/certutil/hashfile_cpp_h.rs)
 base/applications/cmdutils/chcp/CMakeLists.txt	1	# chcp.c # replaced by Rust (sdk/lib/rust/chcp-rust/src/chcp/chcp.rs)
 base/applications/cmdutils/clip/CMakeLists.txt	1	# clip.c # replaced by Rust (sdk/lib/rust/clip-rust/src/clip/clip.rs)
 base/applications/cmdutils/comp/CMakeLists.txt	1	# comp.c # replaced by Rust (sdk/lib/rust/comp-rust/src/comp/comp.rs)
@@ -67,6 +70,10 @@ base/applications/cmdutils/wscript/CMakeLists.txt	1	# host.c # replaced by Rust 
 base/applications/cmdutils/wscript/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/wscript-rust/src/wscript/main.rs)
 base/applications/cmdutils/xcopy/CMakeLists.txt	1	# xcopy.c # replaced by Rust (sdk/lib/rust/xcopy-rust/src/xcopy/xcopy.rs)
 base/applications/control/CMakeLists.txt	1	# control.c # replaced by Rust (sdk/lib/rust/control-rust/src/control/control.rs)
+base/applications/drwtsn32/CMakeLists.txt	1	# drwtsn32.cpp # replaced by Rust (sdk/lib/rust/drwtsn32-rust/src/drwtsn32/drwtsn32_cpp_h.rs)
+base/applications/drwtsn32/CMakeLists.txt	1	# main.cpp # replaced by Rust (sdk/lib/rust/drwtsn32-rust/src/drwtsn32/main_cpp_h.rs)
+base/applications/drwtsn32/CMakeLists.txt	1	# stacktrace.cpp # replaced by Rust (sdk/lib/rust/drwtsn32-rust/src/drwtsn32/stacktrace_cpp_h.rs)
+base/applications/drwtsn32/CMakeLists.txt	1	# sysinfo.cpp # replaced by Rust (sdk/lib/rust/drwtsn32-rust/src/drwtsn32/sysinfo_cpp_h.rs)
 base/applications/dxdiag/CMakeLists.txt	1	# d3dtest.c # replaced by Rust (sdk/lib/rust/dxdiag-rust/src/dxdiag/d3dtest.rs)
 base/applications/dxdiag/CMakeLists.txt	1	# d3dtest7.c # replaced by Rust (sdk/lib/rust/dxdiag-rust/src/dxdiag/d3dtest7.rs)
 base/applications/dxdiag/CMakeLists.txt	1	# d3dtest8.c # replaced by Rust (sdk/lib/rust/dxdiag-rust/src/dxdiag/d3dtest8.rs)
@@ -100,6 +107,20 @@ base/applications/mmc/CMakeLists.txt	1	# console.c # replaced by Rust (sdk/lib/r
 base/applications/mmc/CMakeLists.txt	1	# misc.c # replaced by Rust (sdk/lib/rust/mmc-rust/src/mmc/misc.rs)
 base/applications/mmc/CMakeLists.txt	1	# mmc.c # replaced by Rust (sdk/lib/rust/mmc-rust/src/mmc/mmc.rs)
 base/applications/mmc/CMakeLists.txt	1	# mscfile.c # replaced by Rust (sdk/lib/rust/mmc-rust/src/mmc/mscfile.rs)
+base/applications/mmc_new/CMakeLists.txt	1	# CAboutSnapinDialog.cpp # replaced by Rust (sdk/lib/rust/mmc_new-rust/src/mmc_new/CAboutSnapinDialog_cpp_h.rs)
+base/applications/mmc_new/CMakeLists.txt	1	# CActionWnd.cpp # upstream 88da81d9b8b's action pane: not translated yet (the Rust is from before it); owed to mmc_new-rust
+base/applications/mmc_new/CMakeLists.txt	1	# CAddAdvancedDialog.cpp # replaced by Rust (sdk/lib/rust/mmc_new-rust/src/mmc_new/CAddAdvancedDialog_cpp_h.rs)
+base/applications/mmc_new/CMakeLists.txt	1	# CAddDialog.cpp # replaced by Rust (sdk/lib/rust/mmc_new-rust/src/mmc_new/CAddDialog_cpp_h.rs)
+base/applications/mmc_new/CMakeLists.txt	1	# CConsoleWnd.cpp # replaced by Rust (sdk/lib/rust/mmc_new-rust/src/mmc_new/CConsoleWnd_cpp_h.rs)
+base/applications/mmc_new/CMakeLists.txt	1	# CMainWnd.cpp # replaced by Rust (sdk/lib/rust/mmc_new-rust/src/mmc_new/CMainWnd_cpp_h.rs)
+base/applications/mmc_new/CMakeLists.txt	1	# COptionsDialog.cpp # replaced by Rust (sdk/lib/rust/mmc_new-rust/src/mmc_new/COptionsDialog_cpp_h.rs)
+base/applications/mmc_new/CMakeLists.txt	1	# CRecentFileEntry.cpp # replaced by Rust (sdk/lib/rust/mmc_new-rust/src/mmc_new/CRecentFileEntry_cpp_h.rs)
+base/applications/mmc_new/CMakeLists.txt	1	# CSnapin.cpp # replaced by Rust (sdk/lib/rust/mmc_new-rust/src/mmc_new/CSnapin_cpp_h.rs)
+base/applications/mmc_new/CMakeLists.txt	1	# CSnapinAlias.cpp # replaced by Rust (sdk/lib/rust/mmc_new-rust/src/mmc_new/CSnapinAlias_cpp_h.rs)
+base/applications/mmc_new/CMakeLists.txt	1	# CSnapinCacheEntry.cpp # replaced by Rust (sdk/lib/rust/mmc_new-rust/src/mmc_new/CSnapinCacheEntry_cpp_h.rs)
+base/applications/mmc_new/CMakeLists.txt	1	# misc.cpp # replaced by Rust (sdk/lib/rust/mmc_new-rust/src/mmc_new/misc_cpp_h.rs)
+base/applications/mmc_new/CMakeLists.txt	1	# mmc.cpp # replaced by Rust (sdk/lib/rust/mmc_new-rust/src/mmc_new/mmc_cpp_h.rs)
+base/applications/mmc_new/CMakeLists.txt	1	# mscfile.cpp # replaced by Rust (sdk/lib/rust/mmc_new-rust/src/mmc_new/mscfile_cpp_h.rs)
 base/applications/mplay32/CMakeLists.txt	1	# mplay32.c # replaced by Rust (sdk/lib/rust/mplay32-rust/src/mplay32/mplay32.rs)
 base/applications/msconfig/CMakeLists.txt	1	# freeldrpage.c # replaced by Rust (sdk/lib/rust/msconfig-rust/src/msconfig/freeldrpage.rs)
 base/applications/msconfig/CMakeLists.txt	1	# generalpage.c # replaced by Rust (sdk/lib/rust/msconfig-rust/src/msconfig/generalpage.rs)
@@ -109,6 +130,8 @@ base/applications/msconfig/CMakeLists.txt	1	# startuppage.c # replaced by Rust (
 base/applications/msconfig/CMakeLists.txt	1	# systempage.c # replaced by Rust (sdk/lib/rust/msconfig-rust/src/msconfig/systempage.rs)
 base/applications/msconfig/CMakeLists.txt	1	# toolspage.c # replaced by Rust (sdk/lib/rust/msconfig-rust/src/msconfig/toolspage.rs)
 base/applications/msconfig_new/CMakeLists.txt	1	# startuppage.c
+base/applications/mscutils/certmgr/CMakeLists.txt	1	# CStoreList.cpp # replaced by Rust (sdk/lib/rust/certmgr-rust/src/certmgr/CStoreList_cpp_h.rs)
+base/applications/mscutils/certmgr/CMakeLists.txt	1	# certmgr.cpp # replaced by Rust (sdk/lib/rust/certmgr-rust/src/certmgr/certmgr_cpp_h.rs)
 base/applications/mscutils/eventvwr/CMakeLists.txt	1	# eventvwr.c # replaced by Rust (sdk/lib/rust/eventvwr-rust/src/eventvwr/eventvwr.rs)
 base/applications/mscutils/eventvwr/CMakeLists.txt	1	# evtdetctl.c # replaced by Rust (sdk/lib/rust/eventvwr-rust/src/eventvwr/evtdetctl.rs)
 base/applications/mscutils/servman/CMakeLists.txt	1	# control.c # replaced by Rust (sdk/lib/rust/servman-rust/src/servman/control.rs)
@@ -1838,8 +1861,8 @@ drivers/usb/usbport/CMakeLists.txt	1	# .c files are kept on disk per the never-d
 drivers/usb/usbport/CMakeLists.txt	1	# All usbport .c bodies are now Rust (usbport-rust). guid.c stays as the data-only TU
 drivers/usb/usbuhci/CMakeLists.txt	1	# libusbuhci_rust.a). The .c files are kept on disk per the never-delete rule. guid.c stays
 drivers/usb/usbxhci/CMakeLists.txt	1	# implementation. rust_stub.c only gives add_library a translation unit.
-drivers/video/arm64vid/CMakeLists.txt	1	# all three UEFI arches (it renders the desktop). arm64vid.c is fully translated
-drivers/video/arm64vid/CMakeLists.txt	1	# cmake's add_library(MODULE) + the rust_cohab_stub.c + per-arch custom_command
+drivers/video/sysfb/CMakeLists.txt	1	# arches (it renders the desktop; it was arm64vid until it outgrew arm64). sysfb.c is fully translated
+drivers/video/sysfb/CMakeLists.txt	1	# cmake's add_library(MODULE) + the rust_cohab_stub.c + per-arch custom_command
 drivers/wdm/audio/backpln/portcls/CMakeLists.txt	1	# resource.cpp # replaced by sdk/lib/rust/portcls-rust/src/resource_*.rs
 drivers/wdm/audio/sysaudio/CMakeLists.txt	1	# pin.c # replaced by sdk/lib/rust/sysaudio-rust/src/pin.rs
 drivers/wdm/audio/sysaudio/CMakeLists.txt	1	# pin.c is retained on disk; its eight definitions are linked from Rust.
@@ -2750,6 +2773,7 @@ win32ss/drivers/font/ftfd/CMakeLists.txt	1	# font.c # replaced by Rust (sdk/lib/
 win32ss/drivers/font/ftfd/CMakeLists.txt	1	# glyph.c # replaced by Rust (sdk/lib/rust/ftfd-rust/src/ftfd/glyph.rs)
 win32ss/drivers/font/ftfd/CMakeLists.txt	1	# rosglue.c # replaced by Rust (sdk/lib/rust/ftfd-rust/src/ftfd/rosglue.rs)
 win32ss/drivers/font/ftfd/CMakeLists.txt	1	# sprintf.c # replaced by Rust (sdk/lib/rust/ftfd-rust/src/ftfd/sprintf.rs)
+win32ss/drivers/watchdog/CMakeLists.txt	1	# watchdog.c # replaced by Rust (sdk/lib/rust/watchdog-rust/src/watchdog/watchdog.rs)
 win32ss/gdi/gdi32/CMakeLists.txt	1	# main/dllmain.c — replaced by Rust (gdi32-rust/src/main/dllmain.rs); cohab via libgdi32_rust.a
 win32ss/gdi/gdi32/CMakeLists.txt	1	# misc/gdientry.c — replaced by Rust (gdi32-rust/src/misc/gdientry.rs); cohab via libgdi32_rust.a
 win32ss/gdi/gdi32/CMakeLists.txt	1	# misc/heap.c — replaced by Rust (gdi32-rust/src/misc/heap.rs); cohab via libgdi32_rust.a

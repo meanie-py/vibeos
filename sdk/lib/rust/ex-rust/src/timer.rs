@@ -319,7 +319,7 @@ pub unsafe extern "system" fn NtCancelTimer(
     let mut Status: NTSTATUS;
 
     if !CurrentState.is_null() && PreviousMode != 0i8 {
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             CurrentState as *const core::ffi::c_void,
             core::mem::size_of::<BOOLEAN>(),
             core::mem::align_of::<BOOLEAN>(),
@@ -407,7 +407,7 @@ pub unsafe extern "system" fn NtCreateTimer(
     }
 
     if PreviousMode != 0i8 {
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             TimerHandle as *const core::ffi::c_void,
             core::mem::size_of::<HANDLE>(),
             core::mem::align_of::<HANDLE>(),
@@ -475,7 +475,7 @@ pub unsafe extern "system" fn NtOpenTimer(
     let mut Status: NTSTATUS;
 
     if PreviousMode != 0i8 {
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             TimerHandle as *const core::ffi::c_void,
             core::mem::size_of::<HANDLE>(),
             core::mem::align_of::<HANDLE>(),
@@ -612,7 +612,7 @@ pub unsafe extern "system" fn NtSetTimer(
             TimerDueTime = probe_read_user::<LARGE_INTEGER>(DueTime, PreviousMode)?;
 
             if !PreviousState.is_null() {
-                probe_user_buffer(
+                probe_user_buffer_write(
                     PreviousState as *const core::ffi::c_void,
                     core::mem::size_of::<BOOLEAN>(),
                     core::mem::align_of::<BOOLEAN>(),

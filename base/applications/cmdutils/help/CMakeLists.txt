@@ -13,3 +13,5 @@ target_link_libraries(cmd_help conutils)
 add_importlibs(cmd_help msvcrt kernel32)
 set_target_properties(cmd_help PROPERTIES OUTPUT_NAME "help")
 add_cd_file(TARGET cmd_help DESTINATION reactos/system32 FOR all)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

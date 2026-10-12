@@ -21,7 +21,7 @@ use ntkrnl_sys::ddk::{
     ZwAllocateVirtualMemory, ZwFreeVirtualMemory,
     LpcRequestWaitReplyPort,
 };
-use ntkrnl_sys::probe::probe_user_buffer;
+use ntkrnl_sys::probe::{probe_user_buffer, probe_user_buffer_write};
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
@@ -413,7 +413,7 @@ pub unsafe extern "system" fn NtRaiseHardError(
         // inside the header that was just read, which is why SafeString looks unused
         // afterwards. It is not dead code; validating it IS its purpose, and dropping the
         // probes turned a capture-and-validate sequence into a raw pointer chase.
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             Response as *const core::ffi::c_void,
             core::mem::size_of::<ULONG>(),
             core::mem::size_of::<ULONG>(),

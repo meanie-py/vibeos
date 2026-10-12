@@ -2144,7 +2144,7 @@ unsafe fn IopQueryAttributesFile(
     if AccessMode != 0i8 {
         // C: _SEH2_TRY { ProbeForWrite } whose handler returns the exception code.
         if let Err(status) =
-            ntkrnl_sys::probe::probe_user_buffer(FileInformation, FileInformationSize as usize, 4, AccessMode)
+            ntkrnl_sys::probe::probe_user_buffer_write(FileInformation, FileInformationSize as usize, 4, AccessMode)
         {
             return status;
         }
@@ -3430,7 +3430,7 @@ pub unsafe extern "system" fn NtCancelIoFile(
     let mut NextEntry: PLIST_ENTRY;
 
     if PreviousMode != KernelMode {
-        probe_user_buffer(
+        probe_user_buffer_write(
             IoStatusBlock as *const core::ffi::c_void,
             core::mem::size_of::<_IO_STATUS_BLOCK>(),
             core::mem::align_of::<_IO_STATUS_BLOCK>(),

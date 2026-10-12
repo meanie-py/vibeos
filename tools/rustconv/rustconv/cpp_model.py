@@ -1028,12 +1028,20 @@ class _Extractor:
 
     def lower_pending(self) -> None:
         low = cpp_lower.Lowerer(self.decls, self.model.classes, self.base_path)
+        own = sorted(
+            f
+            for pat in ("*.h", "*.hpp", "*.cpp")
+            for f in Path(self.module_dir).rglob(pat)
+            if f.is_file()
+        )
+        strings = cpp_lower.string_macros([f.read_text(errors="replace") for f in own])
         for target, node, owner in self.pending:
             span = self.src.node_span(node)
             if span is None:
                 continue
             out = low.lower(node, span, owner)
-            text = cpp_lower.ppv_arg_macros(out.text)
+            text = cpp_lower.concat_string_macros(out.text, strings)
+            text = cpp_lower.ppv_arg_macros(text)
             target.lowered = cpp_lower.unicode_text_macros(text) if self.unicode else text
             target.unplaced = out.unplaced
             target.calls = [(a, b) for a, b in out.calls]

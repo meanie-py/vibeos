@@ -4035,14 +4035,14 @@ verdict = "false"
 note = "the C call sits under #ifndef NDEBUG_USBPORT_CORE, which is defined by endpoint.c in this build; the Rust mirrors the compiled branch; the DbgBreakPoint is compiled out"
 
 [[reviewed]]
-module = "drivers/video/arm64vid"
-function = "Arm64VidDiscoverFramebuffer"
+module = "drivers/video/sysfb"
+function = "SysFbDiscoverFramebuffer"
 callees = ["RtlStringCchPrintfW"]
 verdict = "false"
 note = "RtlStringCchPrintfW of the two single-digit indices is open-coded as digit substitution into the path template"
 
 [[reviewed]]
-module = "drivers/video/arm64vid"
+module = "drivers/video/sysfb"
 function = "RegSetSz"
 callees = ["wcslen"]
 verdict = "false"

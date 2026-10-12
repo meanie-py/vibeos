@@ -1,0 +1,18 @@
+# netsh (base/applications/network/netsh -> netsh-rust, batch D1). The shipped Rust diffed
+# against the pre-flip C (`python -m rustconv.c_oracle`); inputs from modrun/data.
+module: netsh
+variants:
+  c: '%SystemRoot%\bin\modrun\netsh_c.exe'
+  rust: '%SystemRoot%\system32\netsh.exe'
+ninja:
+- netsh_c
+stage:
+- src: build-{arch}/base/applications/network/netsh/netsh_c.exe
+  dest: bin/modrun/netsh_c.exe
+cases:
+- id: help
+  args: help
+- id: stdin
+  stdin:
+  - help
+  - exit

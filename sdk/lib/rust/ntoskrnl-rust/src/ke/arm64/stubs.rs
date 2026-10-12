@@ -1158,7 +1158,7 @@ pub unsafe extern "system" fn KiInitializeUserApc(
     // return). No SEH here: Result probe + fault-tolerant copy. (The probe was a
     // raising ProbeForWrite under cfg(not(aarch64)) in this aarch64-only module,
     // i.e. never compiled, and the copy was a raw memcpy.)
-    if ntkrnl_sys::probe::probe_user_buffer(
+    if ntkrnl_sys::probe::probe_user_buffer_write(
         Stack as *const core::ffi::c_void,
         core::mem::size_of::<_CONTEXT>(),
         16,

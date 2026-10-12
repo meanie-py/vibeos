@@ -111,7 +111,7 @@ pub unsafe extern "system" fn NtAddAtom(
                 *(CapturedName.add((AtomNameLength / core::mem::size_of::<u16>() as ULONG) as usize)) = UNICODE_NULL;
 
                 if !Atom.is_null() {
-                    probe_user_buffer(
+                    probe_user_buffer_write(
                         Atom as *const core::ffi::c_void,
                         core::mem::size_of::<RTL_ATOM>(),
                         core::mem::align_of::<RTL_ATOM>(),
@@ -209,7 +209,7 @@ pub unsafe extern "system" fn NtFindAtom(
                 *(CapturedName.add((AtomNameLength / core::mem::size_of::<u16>() as ULONG) as usize)) = UNICODE_NULL;
 
                 if !Atom.is_null() {
-                    probe_user_buffer(
+                    probe_user_buffer_write(
                         Atom as *const core::ffi::c_void,
                         core::mem::size_of::<RTL_ATOM>(),
                         core::mem::align_of::<RTL_ATOM>(),
@@ -266,7 +266,7 @@ pub unsafe extern "system" fn NtQueryInformationAtom(
         PreviousMode = ExGetPreviousMode();
 
         if PreviousMode != 0i8 {
-            probe_user_buffer(
+            probe_user_buffer_write(
                 AtomInformation as *const core::ffi::c_void,
                 AtomInformationLength as usize,
                 core::mem::size_of::<ULONG>(),
@@ -274,7 +274,7 @@ pub unsafe extern "system" fn NtQueryInformationAtom(
             )?;
 
             if !ReturnLength.is_null() {
-                probe_user_buffer(
+                probe_user_buffer_write(
                     ReturnLength as *const core::ffi::c_void,
                     core::mem::size_of::<ULONG>(),
                     core::mem::align_of::<ULONG>(),

@@ -1,0 +1,20 @@
+# Cargo-driven `sysfb.sys` link (i386 + amd64 + arm64). Despite the name,
+# this is the LIVE GOP/linear-framebuffer video driver on all three UEFI
+# arches. Sibling of `null-cargo`: build.rs is a manifest for the shared
+# `reactos-link` engine. The Rust body is the `sysfb-rust` staticlib; its
+# `DriverEntry` is the PE entry point (kernelmodedriver = kerneldll link with
+# entry=DriverEntry, no exports).
+
+[package]
+name = "sysfb-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "sysfb"
+path = "src/main.rs"
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["kernel"] }
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }

@@ -136,22 +136,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "arm64vid-cargo"
-version = "0.1.0"
-dependencies = [
- "panic-common",
- "reactos-link",
-]
-
-[[package]]
-name = "arm64vid-rust"
-version = "0.1.0"
-dependencies = [
- "ntkrnl-sys",
- "panic-common",
-]
-
-[[package]]
 name = "arp-rust"
 version = "0.1.0"
 dependencies = [
@@ -415,6 +399,30 @@ dependencies = [
  "kmdf-sys",
  "ntkrnl-sys",
  "panic-common",
+]
+
+[[package]]
+name = "certmgr-rust"
+version = "0.1.0"
+dependencies = [
+ "atlclasses-rust",
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "certutil-rust"
+version = "0.1.0"
+dependencies = [
+ "atlclasses-rust",
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -988,6 +996,19 @@ name = "drvtrace-shim"
 version = "0.1.0"
 dependencies = [
  "va-slots-rust",
+]
+
+[[package]]
+name = "drwtsn32-rust"
+version = "0.1.0"
+dependencies = [
+ "atlclasses-rust",
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -2113,6 +2134,18 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "varargs-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "mmc_new-rust"
+version = "0.1.0"
+dependencies = [
+ "atlclasses-rust",
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
  "win32macros-rust",
 ]
 
@@ -3958,6 +3991,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "sysfb-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "sysfb-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "syssetup-rust"
 version = "0.1.0"
 dependencies = [
@@ -4483,6 +4532,17 @@ name = "w32time-rust"
 version = "0.1.0"
 dependencies = [
  "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "watchdog-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntkrnl-sys",
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",

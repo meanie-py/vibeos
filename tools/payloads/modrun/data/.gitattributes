@@ -1,0 +1,2 @@
+# Guest test inputs: Windows text, kept byte-exact (CRLF, and one file with no final newline).
+* -text -whitespace

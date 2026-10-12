@@ -1,0 +1,23 @@
+# more (base/applications/cmdutils/more -> more-rust, batch C). The shipped Rust diffed
+# against the pre-flip C (`python -m rustconv.c_oracle`); inputs from modrun/data.
+module: more
+variants:
+  c: '%SystemRoot%\bin\modrun\more_c.com'
+  rust: '%SystemRoot%\system32\more.com'
+ninja:
+- more_c
+stage:
+- src: build-{arch}/base/applications/cmdutils/more/more_c.com
+  dest: bin/modrun/more_c.com
+- src: tools/payloads/modrun/data/lines.txt
+  dest: bin/modrun/data/lines.txt
+cases:
+- id: file
+  args: '%SystemRoot%\bin\modrun\data\lines.txt'
+  expect:
+  - zebra crossing
+- id: stdin
+  stdin:
+  - one
+  - two
+  - three

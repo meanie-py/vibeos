@@ -84,7 +84,10 @@ unsafe extern "C" fn WhereSearchGeneric(
 ) -> BOOL {
     let mut pch: LPWSTR = core::ptr::null_mut();
     let mut cch: size_t = 0;
-    let mut ret: BOOL = 0;
+    // Diverges from the C, which leaves `BOOL ret;` uninitialized: when every entry is
+    // skipped (a leaf directory under `/R`) it returns stack garbage, usually nonzero. 0
+    // here made each leaf report "Out of memory" (modrun). Nothing failed, so TRUE.
+    let mut ret: BOOL = TRUE as BOOL;
     let mut data: WIN32_FIND_DATAW = core::mem::zeroed();
     let hFind: HANDLE = FindFirstFileExW(
         path as LPCWSTR,

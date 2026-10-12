@@ -22,6 +22,8 @@
 #
 # OPTIPLEX_TRIPWIRE=<cfg> arms the kernel's tripwire for that image, as smoke
 # --tripwire does in QEMU, with commas between tokens: SPECIALPOOL=*,QUIET.
+# OPTIPLEX_BOOT_OPTIONS adds kernel options, e.g. "/ONECPU": late-boot debug prints
+# from several CPUs interleave byte by byte on COM1, and one CPU keeps the log readable.
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 . "$HERE/env.sh"
@@ -37,6 +39,7 @@ build() {
     # Same kernel/HAL pair and debug port as the livecd's default entry (LiveCD_SMP).
     local tripwire=""
     [ -n "${OPTIPLEX_TRIPWIRE:-}" ] && tripwire=" /TRIPWIRE=$OPTIPLEX_TRIPWIRE"
+    [ -n "${OPTIPLEX_BOOT_OPTIONS:-}" ] && tripwire="$tripwire $OPTIPLEX_BOOT_OPTIONS"
     cat > "$work/freeldr.ini" <<EOF
 [FREELOADER]
 DefaultOS=LiveCD_RamDisk_SMP

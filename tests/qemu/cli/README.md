@@ -151,7 +151,7 @@ all included), then auto-triage on failure.
 - **`--cpu <model>`, `--headless`, `--boot-nvme`** (arm64) shape the machine like a
   Graviton instance: a Neoverse core (`neoverse-n1`/`-v1`/`-n2`, `VIBEOS_QEMU_CPU`),
   no display device so UEFI hands over no GOP (`VIBEOS_QEMU_HEADLESS=1`; FAILS
-  `NOT_HEADLESS` unless arm64vid ran on its in-memory frame), and the boot image on an
+  `NOT_HEADLESS` unless sysfb ran on its in-memory frame), and the boot image on an
   NVMe namespace as EC2's root volume is (`VIBEOS_QEMU_BOOT_NVME=1`; FAILS
   `NVME_BOOT_DISK_NOT_SEEN` unless nvme.sys published it). More vCPUs than host CPUs
   stretch the silence watchdog to 15 minutes: UEFI goes quiet that long under TCG.

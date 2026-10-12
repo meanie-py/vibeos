@@ -272,7 +272,7 @@ pub unsafe extern "system" fn NtOpenDirectoryObject(
     let mut Status: NTSTATUS;
 
     if PreviousMode != 0 {
-        if let Err(s) = probe_user_buffer(DirectoryHandle as _, core::mem::size_of::<HANDLE>(), core::mem::align_of::<HANDLE>(), PreviousMode) {
+        if let Err(s) = probe_user_buffer_write(DirectoryHandle as _, core::mem::size_of::<HANDLE>(), core::mem::align_of::<HANDLE>(), PreviousMode) {
             return s;
         }
     }
@@ -331,17 +331,17 @@ pub unsafe extern "system" fn NtQueryDirectoryObject(
     ObpInitializeLookupContext(core::ptr::addr_of_mut!(LookupContext));
 
     if PreviousMode != 0 {
-        if let Err(s) = probe_user_buffer(Buffer, BufferLength as usize, core::mem::size_of::<WCHAR>(), PreviousMode) {
+        if let Err(s) = probe_user_buffer_write(Buffer, BufferLength as usize, core::mem::size_of::<WCHAR>(), PreviousMode) {
             return s;
         }
-        if let Err(s) = probe_user_buffer(Context as _, core::mem::size_of::<ULONG>(), core::mem::align_of::<ULONG>(), PreviousMode) {
+        if let Err(s) = probe_user_buffer_write(Context as _, core::mem::size_of::<ULONG>(), core::mem::align_of::<ULONG>(), PreviousMode) {
             return s;
         }
         if RestartScan == 0 {
             SkipEntries = match ntkrnl_sys::probe::read_back(Context) { Ok(v) => v, Err(s) => return s };
         }
         if !ReturnLength.is_null() {
-            if let Err(s) = probe_user_buffer(ReturnLength as _, core::mem::size_of::<ULONG>(), core::mem::align_of::<ULONG>(), PreviousMode) {
+            if let Err(s) = probe_user_buffer_write(ReturnLength as _, core::mem::size_of::<ULONG>(), core::mem::align_of::<ULONG>(), PreviousMode) {
                 return s;
             }
         }
@@ -526,7 +526,7 @@ pub unsafe extern "system" fn NtCreateDirectoryObject(
     let mut Status: NTSTATUS;
 
     if PreviousMode != 0 {
-        if let Err(s) = probe_user_buffer(DirectoryHandle as _, core::mem::size_of::<HANDLE>(), core::mem::align_of::<HANDLE>(), PreviousMode) {
+        if let Err(s) = probe_user_buffer_write(DirectoryHandle as _, core::mem::size_of::<HANDLE>(), core::mem::align_of::<HANDLE>(), PreviousMode) {
             return s;
         }
     }
