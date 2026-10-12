@@ -220,3 +220,13 @@ def test_write_doc_refuses_a_page_without_exactly_one_block(tmp_path):
         port_audit.write_doc(
             "x", {"translation": 0, "generated": 0, "harness": 0}, commit="a", day="d", doc=doc
         )
+
+
+def test_a_family_crate_twins_each_member_it_really_holds(tmp_path):
+    """All 89 keyboard layouts flipped into one crate and still read 0% covered."""
+    (tmp_path / "sdk/lib/rust/kbdlayouts-rust/src/kbdus").mkdir(parents=True)
+    crates = {"kbdlayouts-rust"}
+    twin = port_audit._twin_of("dll/keyboard/kbdus/kbdus.c", crates, tmp_path)
+    assert twin == "kbdlayouts-rust"
+    # A layout the crate does not hold is not twinned by the family.
+    assert port_audit._twin_of("dll/keyboard/kbdxx/kbdxx.c", crates, tmp_path) is None

@@ -359,7 +359,14 @@ def rust_crates(repo: Path = REPO) -> set[str]:
     return {p.name for p in root.iterdir() if p.is_dir()} if root.is_dir() else set()
 
 
-def _twin_of(rel: str, crates: set[str]) -> str | None:
+# A family of modules ported into ONE crate, one `src/<module>/` per member. The naming
+# convention cannot see these (`dll/keyboard/kbdus/kbdus.c` has no `kbdus-rust`), so the
+# 89 keyboard layouts read 0% covered after all of them flipped. Keyed by the family's
+# parent directory; a member counts only if the crate really holds its `src/<module>/`.
+_FAMILY_CRATES = {"dll/keyboard": "kbdlayouts-rust"}
+
+
+def _twin_of(rel: str, crates: set[str], repo: Path = REPO) -> str | None:
     """The Rust crate that owns this file's module, by the cohab naming convention.
 
     Walks up three levels because a module's `.c` are often one or two directories below
@@ -373,6 +380,9 @@ def _twin_of(rel: str, crates: set[str]) -> str | None:
         for cand in (f"{name}-rust", f"{name}-cargo", f"{name}_rust", name):
             if cand in crates:
                 return cand
+        family = _FAMILY_CRATES.get(str(probe.parent))
+        if family in crates and (repo / "sdk/lib/rust" / family / "src" / name).is_dir():
+            return family
         probe = probe.parent
     return None
 
@@ -428,7 +438,7 @@ def survey(repo: Path = REPO, arches=ARCHES) -> tuple[dict[str, Row], dict[str, 
         lines = _line_count(path)
         row.dead_tus += 1
         row.dead_lines += lines
-        if _twin_of(rel, crates):
+        if _twin_of(rel, crates, repo):
             row.twin_lines += lines
             if provenance(rel, registry, winesync) == "wine":
                 row.wine_twin_lines += lines
