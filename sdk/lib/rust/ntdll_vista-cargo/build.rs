@@ -51,7 +51,7 @@ fn main() {
         // engine links (both were redundant reuse-.a entries).
         .link(ModuleKind::Win32Dll {
             entry: entry.into(),
-            image_base,
+            image_base: Some(image_base),
             subsystem: None, // lld default → GUI 6.0, matches cmake
         });
 }

@@ -293,7 +293,7 @@ fn main() {
     }
     linker.static_libs(&static_libs).link(ModuleKind::Win32Dll {
         entry: entry.into(),
-        image_base,
+        image_base: Some(image_base),
         subsystem: Some("console:5.01".into()),
     });
 }

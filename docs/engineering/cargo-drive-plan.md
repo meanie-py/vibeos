@@ -1,0 +1,105 @@
+# Cargo drives the build: moving fully-Rust modules off cmake
+
+**Opened 2026-10-12.** A module whose C is all translated should be built and linked by
+Rust tooling, with cargo calling the C compiler where C is genuinely left, not by cmake
+wrapping a placeholder `.c`. This revives the June cmake-off program
+([archive/cargo-drive-cmake-off-roadmap.md](archive/cargo-drive-cmake-off-roadmap.md),
+whose kernel/spine results are summarised in [build-system.md](build-system.md)) and
+extends it from the boot spine to every fully-Rust module.
+
+## Where we are (measured 2026-10-12, amd64 build graph)
+
+- **230 of 310 cmake targets in Rust-touched directories compile no real C**: only a
+  placeholder `rust_cohab_stub.c`, a varargs shim, generated spec stubs or resources.
+- **Only 38 link through cargo** (`add_cargo_module` + `reactos-link`): the kernel, HAL
+  pieces, the boot spine, some drivers, cabinet, mlang. **224 fully-Rust modules are
+  still linked by cmake**, around the placeholder TU.
+- What cmake still does for those 224: import libs (201), CD placement (200), resources
+  (189), the placeholder stub (198), spec2def exports (79), PCH (75), C static libs
+  (~110 modules link one: `uuid` 87 TUs of GUIDs, `wine` 9, `conutils` 2, a few more),
+  delay imports (13), registry INFs (10), IDL (5).
+
+## The tools
+
+- **`tools/cargo_orchestrate.py`** builds cells with no cmake configure and no ninja.
+  Its `--verify` builds every cell twice, replaying cmake's commands and then forced
+  cmake-off, and requires the results to be byte-identical bar the PE timestamp.
+  It had silently rotted since June (nothing ran it). Two fixes, 2026-10-12:
+  it re-enters the canonical `/tmp/vibeos` mount itself (the replayed `widl` command
+  `cd`s there), and it runs ONE cargo per cell (a single `cargo build -p a -p b ...`
+  unifies features, and the kernel's `KeBugCheckEx` panic path leaked into csrss, smss
+  and csrsrv). After: the 35 cells of `--all` are byte-identical on amd64.
+- **`tools/cargo_cell_gen.py`** generates a module's `<m>-cargo` cell from the link cmake
+  actually runs (`build-<arch>/build.ninja`: entry, subsystem, image base, libraries,
+  `.def`, resources, on all three arches), and rewrites its `CMakeLists.txt` to
+  `add_cargo_module`. It refuses any shape it does not model. `--survey` lists every
+  placeholder-stub module with its verdict; `--save-baseline` / `--check` compare.
+- **`tools/pe_equiv.py`** is the acceptance check. A cargo link cannot be byte-identical
+  to the cmake one (lld sees the objects in another order), so it compares what the
+  loader and callers see: headers, every export, every import (normal and delay), every
+  resource by content hash, section names and flags.
+
+## The ladder
+
+1. **Repair and gate the orchestrator. Repaired 2026-10-12:** `--all --verify` is
+   byte-identical on every cell, all three arches (amd64 35, i386 35, arm64 36). Owed:
+   run it somewhere automatic so it cannot rot again. It takes about 45 minutes for all
+   arches, too slow for `check`; `--spine` on amd64 is about 2.
+2. **Generate cells, in waves, each proven by `pe_equiv` ×3 then smoke ×3.**
+   - **Pilot, 2026-10-12: 15 Wave I modules** (bootok, conime, dllhost, expand, fmifs,
+     indicdll, kbswitch, regsvr32, rundll32, runonce, subst, umandlg, utilman, winmine,
+     wuauserv). All 45 module×arch pairs equivalent; smoke ×3 green. `cargo_cell_gen
+     --check` accepts exactly three named differences, and reports each:
+     - **panic_common imports added** (`DbgPrint`, `NtTerminateProcess`,
+       `RtlWalkFrameChain`, mem functions): the cell's empty bin carries the same
+       `panic_common` handler the body defines, and cmake's link had garbage-collected
+       the body's copy.
+     - **i386: mem/str intrinsics no longer imported** from msvcrt: i386 cells build
+       `core` with `compiler-builtins-mem`, so they resolve statically. userinit and lsass
+       have linked that way since June.
+     - **`__chkstk` imported on amd64/arm64**: the engine forces frame pointers on the
+       body build (stack walks need them) where cmake did not, which can push a frame
+       over the probe threshold. ntdll exports it; kernel32 forwards.
+     Anything else, and every removed import or resource, fails the check.
+   - Then the rest of the 120 it accepts today.
+   - Then teach it the refusals, biggest first: 121 modules whose body crate is not named
+     by `rust_staticlib_variant` (older glue), 46 with a statement it does not model
+     (`target_compile_definitions`, `set_target_properties`, `set_wine_module_fixme`,
+     `target_link_options`), 8 with delay imports, 1 native exe (autochk).
+3. **Give the C static libraries a cargo home.** `uuid` becomes a GUID crate generated
+   from the same IDL/headers; `wine` (vendored libwine) and `conutils` are small. Until
+   then cells link the cmake-built `.a` (`static_libs`), which keeps them cmake-bound.
+4. **Resources without cmake.** Cells replay cmake's `windres` command today
+   (`resource_from_rc`), so they still need cmake configured. The June fallback was a
+   committed `.res` per arch; for 189 modules that is a lot of binary in git. Better: the
+   engine runs llvm-windres itself from a committed flag template (the
+   `compile_c_db_committed` approach the loaders already use for C).
+5. **Assemble the ISO from a manifest** instead of 200 `add_cd_file` calls. After this the
+   fully-Rust part of the tree needs no cmake at all.
+6. **Modules that still have C** compile it from cargo (`c_shims` / `c_from_compile_db`
+   with committed flags), so cmake's last job is the C-only tail, then nothing.
+
+## How a wave goes
+
+1. `python3 tools/cargo_cell_gen.py --survey` and pick modules marked OK.
+2. `--save-baseline DIR <modules>` while cmake still links them.
+3. `--apply <modules>`; then build ×3 (`vibeos-cli build`).
+4. `--check DIR <modules>`, then smoke ×3, then land.
+
+The generator reads the link from `build-<arch>/build.ninja`, so it must run on a graph
+cmake configured from the ORIGINAL CMakeLists. To redo a module after `--apply`, put its
+files aside (`git stash push -u -m ...`) and regenerate the graph (`ninja build.ninja`
+under `tools/canon-run.sh`, per arch) before applying again.
+
+## Rules this program has already earned
+
+- **One cargo per cell.** Never `-p a -p b` across cells with different features.
+- **Run inside the canonical mount** (`tools/canon-run.sh`), like every other build.
+- **Nothing lands without `pe_equiv` ×3 against the cmake-built baseline, then smoke ×3.**
+- **A dropped resource is a regression.** Earlier cutovers dropped "version-only" `.rc`s;
+  the generator keeps every resource, and `pe_equiv` hashes them.
+- **C that is left keeps its exact compile.** It goes in an OBJECT library cmake still
+  configures, and the cell replays that command (`c_from_compile_db`), never a re-derived
+  flag set.
+- **The `# x.c  # replaced by Rust (...)` lines survive the rewrite.** `cohab_census` and
+  the coverage tools read them; the generator carries every one into the new block.

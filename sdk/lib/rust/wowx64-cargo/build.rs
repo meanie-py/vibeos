@@ -28,7 +28,7 @@ fn main() {
         .import_lib("dll/ntdll/def/ntdll.spec", "ntdll.dll", "ntdll")
         .link(ModuleKind::Win32Dll {
             entry: "DllMain".into(),
-            image_base: 0x7ff_7c00_0000,
+            image_base: Some(0x7ff_7c00_0000),
             subsystem: None, // lld default -> GUI 6.0
         });
 }
