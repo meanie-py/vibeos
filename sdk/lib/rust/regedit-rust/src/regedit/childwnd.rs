@@ -16,7 +16,6 @@ pub static RUSTCONV_WSTR_111FD57AB4CB: [u16; 20] = [
     0x0048u16, 0x004B, 0x0045, 0x0059, 0x005F, 0x0043, 0x0055, 0x0052, 0x0052, 0x0045,
     0x004E, 0x0054, 0x005F, 0x0043, 0x004F, 0x004E, 0x0046, 0x0049, 0x0047, 0x0000,
 ];
-pub static RUSTCONV_WSTR_2742CD8F7DE1: [u16; 5] = [0x0045u16, 0x0064, 0x0069, 0x0074, 0x0000];
 pub static RUSTCONV_WSTR_4E0719E0EA39: [u16; 28] = [
     0x0055u16, 0x004E, 0x004B, 0x004E, 0x004F, 0x0057, 0x004E, 0x0020, 0x0048, 0x004B,
     0x0045, 0x0059, 0x002C, 0x0020, 0x0050, 0x004C, 0x0045, 0x0041, 0x0053, 0x0045,
@@ -41,7 +40,6 @@ pub static RUSTCONV_WSTR_87D16031626E: [u16; 18] = [
     0x0045, 0x0053, 0x005F, 0x0052, 0x004F, 0x004F, 0x0054, 0x0000,
 ];
 pub static RUSTCONV_WSTR_89F38F0B7FC9: [u16; 5] = [0x0048u16, 0x004B, 0x004C, 0x004D, 0x0000];
-pub static RUSTCONV_WSTR_8D7C97326263: [u16; 7] = [0x0042u16, 0x0075, 0x0074, 0x0074, 0x006F, 0x006E, 0x0000];
 pub static RUSTCONV_WSTR_96A296D224F2: [u16; 1] = [0x0000u16];
 pub static RUSTCONV_WSTR_9C98935C198E: [u16; 11] = [
     0x0048u16, 0x004B, 0x0045, 0x0059, 0x005F, 0x0055, 0x0053, 0x0045, 0x0052, 0x0053,
@@ -50,7 +48,6 @@ pub static RUSTCONV_WSTR_9C98935C198E: [u16; 11] = [
 pub static RUSTCONV_WSTR_AFF3436D7481: [u16; 6] = [0x0043u16, 0x004C, 0x0053, 0x0049, 0x0044, 0x0000];
 pub static RUSTCONV_WSTR_B7FC02907B1F: [u16; 2] = [0x005Cu16, 0x0000];
 pub static RUSTCONV_WSTR_BA2342D760A2: [u16; 6] = [0x0025u16, 0x0073, 0x005C, 0x0025, 0x0073, 0x0000];
-pub static RUSTCONV_WSTR_CC2767AFEE4B: [u16; 2] = [0x00BBu16, 0x0000];
 pub static RUSTCONV_WSTR_D02D0BCFE5D4: [u16; 5] = [0x0048u16, 0x004B, 0x0043, 0x0055, 0x0000];
 pub static RUSTCONV_WSTR_D0EE0F231465: [u16; 18] = [
     0x0048u16, 0x004B, 0x0045, 0x0059, 0x005F, 0x0043, 0x0055, 0x0052, 0x0052, 0x0045,
@@ -163,57 +160,62 @@ unsafe extern "C" fn ClampSplitBarX(hWnd: HWND, x: INT) -> INT {
     GetClientRect(hWnd, core::ptr::addr_of_mut!(rc));
     return min!(max!(x, (SPLIT_MIN as i32)), rc.right - (SPLIT_MIN as i32));
 }
+/// The address toolbar's "Go" button (childwnd.c).
+const IDM_GO_COMMAND: u32 = 3001;
+
 #[no_mangle]
 pub unsafe extern "C" fn ResizeWnd(mut cx: ::core::ffi::c_int, mut cy: ::core::ffi::c_int) {
-    let mut hdwp: HDWP = BeginDeferWindowPos(4);
+    // Upstream ed12f2328c1/d4ed37212ac: the address bar is an Edit inside a toolbar whose
+    // second button is "Go", and the toolbar's height (the Go button's) sets the layout.
+    let mut hdwp: HDWP;
     let mut rt: RECT = core::mem::zeroed();
-    let mut rs: RECT = core::mem::zeroed();
     let mut rb: RECT = core::mem::zeroed();
-    let nButtonWidth: i32 = 44;
-    let nButtonHeight: i32 = 22;
-    let mut cyEdge: i32 = GetSystemMetrics((SM_CYEDGE) as i32);
+    let mut re: RECT = core::mem::zeroed();
+    let mut tbInfo: TBBUTTONINFOW = core::mem::zeroed();
+    let nToolHeight: i32;
+    let cyBorder: i32 = GetSystemMetrics(SM_CYBORDER as i32); // Part of FIXME below.
+    let cyEdge: i32 = GetSystemMetrics((SM_CYEDGE) as i32);
     let uFlags: UINT = (SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS) as UINT;
 
-    cy = 0;
-    if IsWindowVisible(hStatusBar) != 0 {
-        GetWindowRect(hStatusBar, core::ptr::addr_of_mut!(rs));
-        cy = rs.bottom - rs.top;
-    }
+    SetRect(core::ptr::addr_of_mut!(rt), 0, 0, cx, cy);
 
-    GetWindowRect((*g_pChildWnd).hAddressBtnWnd, core::ptr::addr_of_mut!(rb));
+    /* Use the Go-button height for the address toolbar height */
+    SendMessageW((*g_pChildWnd).hAddressToolBarWnd, TB_GETITEMRECT, 1, core::ptr::addr_of_mut!(rb) as LPARAM);
+    nToolHeight = rb.bottom - rb.top;
 
-    GetClientRect((*g_pChildWnd).hWnd, core::ptr::addr_of_mut!(rt));
-    RedrawWindow(
-        (*g_pChildWnd).hWnd,
-        core::ptr::addr_of_mut!(rt) as LPCRECT,
+    /* Resize the separator containing the address bar */
+    tbInfo.cbSize = core::mem::size_of::<TBBUTTONINFOW>() as UINT;
+    tbInfo.dwMask = (TBIF_BYINDEX | TBIF_SIZE) as DWORD;
+    tbInfo.cx = (rt.right - rt.left - (rb.right - rb.left)) as _;
+    SendMessageW((*g_pChildWnd).hAddressToolBarWnd, TB_SETBUTTONINFOW, 0, core::ptr::addr_of_mut!(tbInfo) as LPARAM);
+    /* Resize the address bar */
+    SendMessageW((*g_pChildWnd).hAddressToolBarWnd, TB_GETITEMRECT, 0, core::ptr::addr_of_mut!(re) as LPARAM);
+    SetWindowPos(
+        (*g_pChildWnd).hAddressBarWnd,
         core::ptr::null_mut(),
-        (RDW_INVALIDATE | RDW_NOCHILDREN) as UINT,
+        re.left,
+        re.top + cyEdge,
+        re.right - re.left,
+        nToolHeight - 2 * cyEdge,
+        uFlags,
     );
+
+    // The C skips the status bar height too, until "childwnd" and "framewnd" are unified.
+    cy = 0;
 
     (*g_pChildWnd).nSplitPos = ClampSplitBarX((*g_pChildWnd).hWnd, (*g_pChildWnd).nSplitPos);
 
     cx = (*g_pChildWnd).nSplitPos + (SPLIT_WIDTH / 2) as i32;
+    hdwp = BeginDeferWindowPos(3);
     if !hdwp.is_null() {
         hdwp = DeferWindowPos(
             hdwp,
-            (*g_pChildWnd).hAddressBarWnd,
+            (*g_pChildWnd).hAddressToolBarWnd,
             core::ptr::null_mut(),
             rt.left,
             rt.top,
-            rt.right - rt.left - nButtonWidth,
-            nButtonHeight,
-            uFlags,
-        );
-    }
-    if !hdwp.is_null() {
-        hdwp = DeferWindowPos(
-            hdwp,
-            (*g_pChildWnd).hAddressBtnWnd,
-            core::ptr::null_mut(),
-            rt.right - nButtonWidth,
-            rt.top,
-            nButtonWidth,
-            nButtonHeight,
+            rt.right - rt.left,
+            nToolHeight,
             uFlags,
         );
     }
@@ -223,9 +225,9 @@ pub unsafe extern "C" fn ResizeWnd(mut cx: ::core::ffi::c_int, mut cy: ::core::f
             (*g_pChildWnd).hTreeWnd,
             core::ptr::null_mut(),
             rt.left,
-            rt.top + nButtonHeight + cyEdge,
+            rt.top + nToolHeight,
             (*g_pChildWnd).nSplitPos - (SPLIT_WIDTH / 2) as i32 - rt.left,
-            rt.bottom - rt.top - cy - 2 * cyEdge,
+            rt.bottom - rt.top - cy - nToolHeight + cyBorder,
             uFlags,
         );
     }
@@ -235,9 +237,9 @@ pub unsafe extern "C" fn ResizeWnd(mut cx: ::core::ffi::c_int, mut cy: ::core::f
             (*g_pChildWnd).hListWnd,
             core::ptr::null_mut(),
             rt.left + cx,
-            rt.top + nButtonHeight + cyEdge,
+            rt.top + nToolHeight,
             rt.right - cx,
-            rt.bottom - rt.top - cy - 2 * cyEdge,
+            rt.bottom - rt.top - cy - nToolHeight + cyBorder,
             uFlags,
         );
     }
@@ -590,20 +592,40 @@ pub unsafe extern "system" fn ChildWndProc(hWnd: HWND, message: UINT, wParam: WP
                     (*g_pChildWnd).nSplitPos = 190;
                     (*g_pChildWnd).hWnd = hWnd;
 
+                    /* The horizontal line above the toolbar is hidden with the CCS_NODIVIDER style */
+                    style = WS_CHILD | WS_VISIBLE | WS_TABSTOP | (TBSTYLE_FLAT | TBSTYLE_LIST |
+                            CCS_NODIVIDER | CCS_NOPARENTALIGN | CCS_NORESIZE | CCS_TOP) as DWORD;
+                    (*g_pChildWnd).hAddressToolBarWnd = CreateWindowExW(0, TOOLBARCLASSNAMEW.as_ptr(), core::ptr::null(), style,
+                                                                      0, 0, 0, 0,
+                                                                      hWnd, core::ptr::null_mut(), hInst, core::ptr::null_mut());
+
+                    (*g_pChildWnd).hGoButtonNormal = ImageList_LoadImageW(hInst, MAKEINTRESOURCEW!(IDB_GO_NORMAL),
+                                                                        20, 0, RGB!(255, 0, 255) as COLORREF, IMAGE_BITMAP as UINT, LR_CREATEDIBSECTION as UINT);
+                    (*g_pChildWnd).hGoButtonHot = ImageList_LoadImageW(hInst, MAKEINTRESOURCEW!(IDB_GO_HOT),
+                                                                     20, 0, RGB!(255, 0, 255) as COLORREF, IMAGE_BITMAP as UINT, LR_CREATEDIBSECTION as UINT);
+                    let iBitmap: i32 = 0;
+                    let mut tbButtons: [TBBUTTON; 2] = core::mem::zeroed();
+                    tbButtons[0].iBitmap = 0;
+                    tbButtons[0].idCommand = -1;
+                    tbButtons[0].fsState = TBSTATE_ENABLED as BYTE;
+                    tbButtons[0].fsStyle = BTNS_SEP as BYTE;
+                    tbButtons[1].iBitmap = iBitmap;
+                    tbButtons[1].idCommand = IDM_GO_COMMAND as i32;
+                    tbButtons[1].fsState = TBSTATE_ENABLED as BYTE;
+                    tbButtons[1].fsStyle = (BTNS_AUTOSIZE | BTNS_SHOWTEXT) as BYTE;
+                    SendMessageW((*g_pChildWnd).hAddressToolBarWnd, TB_SETIMAGELIST, iBitmap as WPARAM, (*g_pChildWnd).hGoButtonNormal as LPARAM);
+                    SendMessageW((*g_pChildWnd).hAddressToolBarWnd, TB_SETHOTIMAGELIST, iBitmap as WPARAM, (*g_pChildWnd).hGoButtonHot as LPARAM);
+                    tbButtons[1].iString = SendMessageW((*g_pChildWnd).hAddressToolBarWnd, TB_ADDSTRINGW, hInst as WPARAM, IDS_GO as LPARAM) as _;
+
+                    SendMessageW((*g_pChildWnd).hAddressToolBarWnd, TB_SETMAXTEXTROWS, 1, 0);
+                    SendMessageW((*g_pChildWnd).hAddressToolBarWnd, TB_BUTTONSTRUCTSIZE, core::mem::size_of::<TBBUTTON>() as WPARAM, 0);
+                    SendMessageW((*g_pChildWnd).hAddressToolBarWnd, TB_ADDBUTTONSW, tbButtons.len() as WPARAM, tbButtons.as_mut_ptr() as LPARAM);
+
                     /* ES_AUTOHSCROLL style enables horizontal scrolling and shrinking */
                     style = WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL;
-                    (*g_pChildWnd).hAddressBarWnd = CreateWindowExW(WS_EX_CLIENTEDGE, RUSTCONV_WSTR_2742CD8F7DE1.as_ptr(), core::ptr::null(), style,
-                                                                  CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
-                                                                  hWnd, 0 as HMENU, hInst, core::ptr::null_mut());
-
-                    style = WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_ICON | BS_CENTER |
-                            BS_VCENTER | BS_FLAT | BS_DEFPUSHBUTTON;
-                    (*g_pChildWnd).hAddressBtnWnd = CreateWindowExW(0, RUSTCONV_WSTR_8D7C97326263.as_ptr(), RUSTCONV_WSTR_CC2767AFEE4B.as_ptr(), style,
-                                                                  CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
-                                                                  hWnd, 0 as HMENU, hInst, core::ptr::null_mut());
-                    (*g_pChildWnd).hArrowIcon = LoadImageW(hInst, MAKEINTRESOURCEW!(IDI_ARROW),
-                                                                IMAGE_ICON, 12, 12, 0) as HICON;
-                    SendMessageW((*g_pChildWnd).hAddressBtnWnd, BM_SETIMAGE, (IMAGE_ICON) as WPARAM, (*g_pChildWnd).hArrowIcon as LPARAM);
+                    (*g_pChildWnd).hAddressBarWnd = CreateWindowExW(WS_EX_CLIENTEDGE, WC_EDITW.as_ptr(), core::ptr::null(), style,
+                                                                  0, 0, 0, 0,
+                                                                  (*g_pChildWnd).hAddressToolBarWnd, core::ptr::null_mut(), hInst, core::ptr::null_mut());
 
                     if CoCreateInstance(core::ptr::addr_of!(CLSID_AutoComplete), core::ptr::null_mut(), CLSCTX_INPROC_SERVER, core::ptr::addr_of!(IID_IAutoComplete), core::ptr::addr_of_mut!(pAutoComplete) as *mut LPVOID) >= 0
                     {
@@ -616,15 +638,11 @@ pub unsafe extern "system" fn ChildWndProc(hWnd: HWND, message: UINT, wParam: WP
                     (*g_pChildWnd).hListWnd = CreateListView(hWnd, LIST_WINDOW as HMENU, rc.right - (*g_pChildWnd).nSplitPos);
                     SetFocus((*g_pChildWnd).hTreeWnd);
 
-                    /* set the address bar and button font */
-                    if ((*g_pChildWnd).hAddressBarWnd.is_null() == false) && ((*g_pChildWnd).hAddressBtnWnd.is_null() == false)
+                    /* Set the address bar and button font */
+                    if (*g_pChildWnd).hAddressBarWnd.is_null() == false
                     {
                         hFont_local = GetStockObject((DEFAULT_GUI_FONT as i32)) as HFONT;
                         SendMessageW((*g_pChildWnd).hAddressBarWnd,
-                                     WM_SETFONT,
-                                     hFont_local as WPARAM,
-                                     0);
-                        SendMessageW((*g_pChildWnd).hAddressBtnWnd,
                                      WM_SETFONT,
                                      hFont_local as WPARAM,
                                      0);
@@ -636,7 +654,7 @@ pub unsafe extern "system" fn ChildWndProc(hWnd: HWND, message: UINT, wParam: WP
                     break 'sw;
                 }
                 WM_COMMAND => {
-                    if (HIWORD!(wParam)) as u32 == BN_CLICKED
+                    if (HIWORD!(wParam)) as u32 == BN_CLICKED && (LOWORD!(wParam)) as u32 == IDM_GO_COMMAND
                     {
                         PostMessageW((*g_pChildWnd).hAddressBarWnd, WM_KEYUP, (VK_RETURN) as WPARAM, 0);
                     }
@@ -661,7 +679,8 @@ pub unsafe extern "system" fn ChildWndProc(hWnd: HWND, message: UINT, wParam: WP
                     DestroyListView((*g_pChildWnd).hListWnd);
                     DestroyTreeView((*g_pChildWnd).hTreeWnd);
                     DestroyMainMenu();
-                    DestroyIcon((*g_pChildWnd).hArrowIcon);
+                    ImageList_Destroy((*g_pChildWnd).hGoButtonNormal);
+                    ImageList_Destroy((*g_pChildWnd).hGoButtonHot);
                     HeapFree(GetProcessHeap(), 0, g_pChildWnd as PVOID);
                     g_pChildWnd = core::ptr::null_mut();
                     PostQuitMessage(0);
