@@ -910,3 +910,51 @@ regenerated `CMenuSite::SetDeskBarSite` (about $0.01) and launched three rejecte
 `CMenuDeskBar` calls while invoked with `--cost-cap 0`. The rejected-call metadata does not
 contain exact token/cost totals. All streamed artifacts were preserved; nothing was killed
 or discarded. After the fix, the same replay stitched all 39 cached workers at 0 tokens/$0.
+
+## Weekend handoff (2026-10-12) — Tier-3 batches C/D1, then the upstream shell32 ports
+
+The lane has since been reused for the Tier-3 native-userland queue. Landed this weekend:
+batch C `69b672ef9f97`, batch D1 `4873e2e21525`, modrun suites and fixes `b00e3231c176`.
+Coverage and per-module owed work are in `rust-port-status.md` (batch C/D1 rows), not here.
+Spend: about $4.63 of the $5 approved for the phase (`-m haiku`). Nothing is uncommitted.
+
+**Next session, in order:**
+
+1. **The upstream shell32 ports. Blocked on upstream-sync landing.** Their 64-commit merge
+   brings 15 upstream files (`git diff --stat 171e1de21a4 upstream/master --
+   dll/win32/shell32 sdk/include/reactos/shellutils.h`: 193+/106-). That covers
+   CDefaultContextMenu, brfolder, seven folders, CMenuToolbars, recyclebin.c, utils.cpp,
+   shellord.c and the new `SHELL_GetAttributesOf`/`SHELL_GetDisplayNameOf`/
+   `SHELL_GetAbsolutePidl` inlines in `shellutils.h`. They are hand ports ($0) into
+   shell32-rust, menuband-rust and recyclebin-rust. Annotate each with its upstream commit
+   (8ac7f394963, 26b45cebea8, 35c272d4ca3, …).
+   **State as of 2026-10-12 00:30:**
+   - `3c95d2f9642` is NOT on `origin/master`.
+   - upstream-sync's lane tip is `3a1467b7745` (branch `pci-bus-interface`, worktree
+     `vibeos-upstream-sync`). Their message said it was queued, but `land-status` showed an
+     empty queue, so it never registered.
+   - The lane's two earlier submissions were rejected for CONFLICT.
+   - upstream-sync is paused until next weekend.
+   - Check with `git merge-base --is-ancestor 3c95d2f9642 origin/master`. If it still isn't
+     there, it needs a resubmit from their worktree; ask the user before doing that for them.
+2. **ftp.** The scaffold is parked at `~/vibeos-rust-staging/port/ftp/parked/` (crate plus
+   `gen_arm.sh`).
+   - About 87 functions are still to translate, roughly $0.10–0.15 on Haiku. That fits the
+     ~$0.37 left, but ask before spending it.
+   - Hand-write the five `setjmp` functions. The one live `longjmp` (`cmdabort` on SIGINT
+     during a proxy transfer) becomes a flag that `proxtrans` polls.
+3. **fc.** It needs per-TU UNICODE islands (`texta.c`/`textw.c`). State is in
+   `~/vibeos-rust-staging/port/fc/`, including the `chk-*.txt` per-arch checks.
+4. **cscript** (built from wscript's sources with `-DCSCRIPT_BUILD`) is still C.
+5. **Tool gaps (shared, $0):**
+   - msxml2 vtables belong in the island.
+   - COBJMACROS shims should be generated.
+   - `ARRAY_SIZE!`/`_countof!` return u32 (win32macros-rust).
+   - wscript's `debugstr_variant` is a placeholder.
+6. **D2** needs a new budget: setup16, stortest, testgui, testchild, rapps_com, devmgmt.
+   kbswitch, winmine, utilman and the screensavers went to control-plane's wave; the disk
+   tools went to CRT.
+
+**Stashes from this lane, kept for diagnosis** (find by message, never by index):
+- `shell32-com: netsh shim after replay dropped 3 trampolines`.
+- Two msvcrt-difftest/unclock entries, superseded by CRT `708ac41690b`. They can be dropped.
