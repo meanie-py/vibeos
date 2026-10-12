@@ -17,6 +17,22 @@
 #   tears down its data segment, so a later section re-references the new file object (count
 #   4); our segment outlives the close and keeps the old one (count 3). ZwCreateSection 4 -> 3:
 #   SEC_LARGE_PAGES returns STATUS_INVALID_PARAMETER_6, as the C does.
+# 2026-10-11b (x2 identical sweeps): ExSingleList 240/12 -> 252/0 and ExDoubleList 130/16 ->
+#   {i386 146/0, 64-bit 138/8}: the interlocked list removes poison the freed entry under the C's
+#   `#if DBG`, which the Rust had behind cfg(debug_assertions) (never set in our release-built
+#   kernel crates, while this tree runs DBG=1). NpfsFileInfo 50/25 -> 56/19: IndexNumber is now
+#   nonzero and the name accounting charges FIELD_OFFSET(FileName), not sizeof, with the full
+#   FileNameLength on overflow. ObTypes 767/15 -> 773/9: DebugObject, Profile and WmiGuid access
+#   masks restored to their header values; Desktop now keeps handle counts.
+#   EXPECTED leftovers: NpfsFileInfo's 19 are its sizeof-4 query, which a checked build fails
+#   INFO_LENGTH_MISMATCH before npfs, as Windows does; the test lacks the KmtIsCheckedBuild guard
+#   its IoFilesystem sibling has (see NtQueryInformationFile). ObTypes' 9: WindowStation cannot
+#   keep handle counts with no Open/Close procedure (win32k supplies them on Windows); Port's
+#   InvalidAttributes 0x7b2 is valid 2003 SP2 RTM per the test's own comment; the two Filter*
+#   types need fltmgr, which this sweep does not load.
+#   64-bit ExDoubleList's 8 are a test contradiction: with no Exf variant both blocks call the
+#   same ExInterlockedRemoveHeadList yet expect 0x0BADD0FF in one and 0xBADDD0FFBADDD0FF in the
+#   other; we poison as the C does, so the second block passes.
 # 2026-10-10 (x2 sweeps): conformance now boots amd64 off a WRITABLE root (livecd-rw.iso,
 #   SystemRoot on a FAT ramdisk; summary.json writable_root=true). The file-creating kmtests
 #   stop bailing at setup, so these rows gained coverage, and new failures with it: IoFilesystem
@@ -59,16 +75,8 @@
 CmSecurity OK pass=1048 fail=1 skip=1 exit=0
     assert CmSecurity.c:44
 ExCallback OK pass=13 fail=0 skip=1 exit=0
-ExDoubleList OK pass=130 fail=16 skip=0 exit=0
+ExDoubleList OK pass=138 fail=8 skip=0 exit=0
     assert ExDoubleList.c:100
-    assert ExDoubleList.c:162
-    assert ExDoubleList.c:163
-    assert ExDoubleList.c:171
-    assert ExDoubleList.c:172
-    assert ExDoubleList.c:189
-    assert ExDoubleList.c:190
-    assert ExDoubleList.c:198
-    assert ExDoubleList.c:199
     assert ExDoubleList.c:63
     assert ExDoubleList.c:64
     assert ExDoubleList.c:72
@@ -88,7 +96,7 @@ ExResourceBounded OK pass=879 fail=2 skip=0 exit=0
     assert ExResource.c:456
     assert ExResource.c:503
 ExSequencedList OK pass=0 fail=0 skip=0 exit=0
-ExSingleList OK pass=240 fail=12 skip=0 exit=0
+ExSingleList OK pass=252 fail=0 skip=0 exit=0
 ExUuid OK pass=3000 fail=0 skip=0 exit=0
 Example OK pass=31 fail=15 skip=0 exit=0
     assert Example.c:15
@@ -166,7 +174,7 @@ MmSection OK pass=353 fail=14 skip=0 exit=0
     assert MmSection.c:530
 NpfsConnect OK pass=679 fail=0 skip=0 exit=0
 NpfsCreate OK pass=351 fail=0 skip=0 exit=0
-NpfsFileInfo OK pass=50 fail=25 skip=0 exit=0
+NpfsFileInfo OK pass=56 fail=19 skip=0 exit=0
     assert NpfsFileInfo.c:100
     assert NpfsFileInfo.c:101
     assert NpfsFileInfo.c:102
@@ -182,12 +190,6 @@ NpfsFileInfo OK pass=50 fail=25 skip=0 exit=0
     assert NpfsFileInfo.c:113
     assert NpfsFileInfo.c:114
     assert NpfsFileInfo.c:116
-    assert NpfsFileInfo.c:48
-    assert NpfsFileInfo.c:56
-    assert NpfsFileInfo.c:57
-    assert NpfsFileInfo.c:78
-    assert NpfsFileInfo.c:84
-    assert NpfsFileInfo.c:85
     assert NpfsFileInfo.c:95
     assert NpfsFileInfo.c:97
     assert NpfsFileInfo.c:98
@@ -201,14 +203,10 @@ ObSecurity OK pass=695 fail=14 skip=0 exit=0
     assert ObSecurity.c:153
 ObSymbolicLink OK pass=154 fail=0 skip=0 exit=0
 ObType OK pass=96 fail=0 skip=0 exit=0
-ObTypes OK pass=767 fail=15 skip=4 exit=0
-    assert ObTypes.cpp:269
-    assert ObTypes.cpp:276
+ObTypes OK pass=773 fail=9 skip=4 exit=0
     assert ObTypes.cpp:279
-    assert ObTypes.cpp:281
     assert ObTypes.cpp:288
     assert ObTypes.cpp:290
-    assert ObTypes.cpp:301
     assert ObTypes.cpp:302
     assert ObTypes.cpp:303
     assert ObTypes.cpp:80
