@@ -581,7 +581,7 @@ def _emit(node: Node) -> tuple[str, str | None]:
             # (ntoskrnl_vista's REPARSE_DATA_BUFFER_HEADER_SIZE). The path may also run
             # through an anonymous union bindgen names `__bindgen_anon_N`. Refused, by name.
             raise LowerError("offsetof (a type and a member path, not a call)")
-        params = _SIGS.get(fn.text, []) if fn.kind == "ident" else []
+        params = (_SIGS.get(fn.text) or _tree_signature(fn.text)) if fn.kind == "ident" else []
         rendered = []
         for i, a in enumerate(args):
             # C's implicit argument conversion: an uncast operand gets the parameter's type.
@@ -699,6 +699,34 @@ _FN_DECL = re.compile(r"\bpub fn ([A-Za-z_]\w*)\s*\(([^)]*)\)")
 _TYPE_DECL = re.compile(r"^pub type (\w+) = ([^;]+);", re.M)
 
 
+_TREE_SIGS: dict[str, list[str]] = {}
+_CRATE_SRC: list[Path] = []
+
+
+def _tree_signature(name: str) -> list[str]:
+    """Parameter types of a function the crate does not declare YET, from any other crate's
+    bindgen island. `port macros` runs before the last `port resolve`, so runonce's prelude had
+    no DialogBoxParamW when its DialogBox was lowered: the DLGPROC slot got `as _`, which
+    cannot convert a function item (E0605). The island is the header's transcript, so the
+    first declaration found is the header's."""
+    if name in _TREE_SIGS:
+        return _TREE_SIGS[name]
+    params: list[str] = []
+    if _CRATE_SRC:
+        needle = f"pub fn {name}("
+        for island in sorted(_CRATE_SRC[0].parents[1].glob("*/src/types_i386.rs")):
+            text = island.read_text(errors="replace")
+            i = text.find(needle)
+            if i < 0:
+                continue
+            m = _FN_DECL.match(text, i)
+            if m:
+                params = [x.split(":", 1)[1].strip() for x in m.group(2).split(",") if ":" in x]
+            break
+    _TREE_SIGS[name] = params
+    return params
+
+
 def load_signatures(crate_src: Path) -> None:
     """Read the crate's extern declarations and the bindgen islands it sees."""
     sigs: dict[str, list[str]] = {}
@@ -721,6 +749,8 @@ def load_signatures(crate_src: Path) -> None:
         changed = bool(new)
     _SIGS.clear()
     _SIGS.update(sigs)
+    _TREE_SIGS.clear()
+    _CRATE_SRC[:] = [crate_src]
     _OPTION_TYPES.clear()
     _OPTION_TYPES.update(options)
     # Pointer typedefs (`PUCHAR = *mut UCHAR`), aliases followed: a cast to one is a pointer

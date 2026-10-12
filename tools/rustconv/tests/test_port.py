@@ -1169,6 +1169,40 @@ def test_extern_declared_crt_streams_take_the_accessor(tmp_path):
     assert "_ftprintf(__iob_func().add(1), s)" in out and "(__iob_func() as *mut FILE)" in out
 
 
+def test_a_c_function_pointer_typedef_becomes_option_fn(tmp_path):
+    # rundll32's `typedef int (WINAPI *DllWinMainW)(..)` came back as a bare `fn` type.
+    rs = tmp_path / "rundll32.rs"
+    rs.write_text(
+        'pub type DllWinMainW = unsafe extern "system" fn(\n    hWnd: HWND,\n) -> i32;\n'
+        'pub type CALLBACK_TYPE = unsafe extern "C" fn(x: i32);\n'
+    )
+    got = port._option_fn_pointer_typedefs(rs, {"DllWinMainW"})
+    assert got == ["DllWinMainW"]
+    out = rs.read_text()
+    assert (
+        'pub type DllWinMainW = Option<unsafe extern "system" fn(\n    hWnd: HWND,\n) -> i32>;'
+        in out
+    )
+    # A function TYPE typedef (not in the pointer set) is left alone.
+    assert 'pub type CALLBACK_TYPE = unsafe extern "C" fn(x: i32);' in out
+
+
+def test_flip_refuses_a_tu_with_no_rust(tmp_path, monkeypatch):
+    # expand: the stitch was refused, no expand.rs was written, and the flip went ahead.
+    import pytest as _pytest
+
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    monkeypatch.setattr(port, "STATE_ROOT", tmp_path / "state")
+    state = {"stem": "m", "crate": "m-rust", "module_dir": "m", "tus": ["m/a.c", "m/b.c"]}
+    monkeypatch.setattr(port, "load_state", lambda _s: state)
+    monkeypatch.setattr(port, "_crate_dir", lambda _s: tmp_path / "m-rust")
+    src = tmp_path / "m-rust" / "src" / "m"
+    src.mkdir(parents=True)
+    (src / "a.rs").write_text("")
+    with _pytest.raises(port.PortError, match="no Rust for b.c"):
+        port.stage_flip("m")
+
+
 def test_a_dotted_tu_name_becomes_an_identifier_module():
     assert port._module_name("apisets.table.c") == "apisets_table"
     assert port._module_name("enum.c") == "enum"

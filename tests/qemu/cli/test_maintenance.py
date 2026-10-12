@@ -131,3 +131,58 @@ def test_orphan_canonical_compiler_protects_fleet(tmp_path, monkeypatch):
     monkeypatch.setattr(prune.canon, "canon_path", lambda: "/tmp/vibeos")
     lanes = [tmp_path / "one", tmp_path / "two"]
     assert prune.active_build_worktrees(lanes) == set(lanes)
+
+
+def test_canonical_compiler_is_attributed_by_its_bind_source(tmp_path, monkeypatch):
+    lanes = [tmp_path / "one", tmp_path / "two"]
+    for lane in lanes:
+        lane.mkdir()
+    proc = tmp_path / "1001"
+    proc.mkdir()
+    (proc / "comm").write_text("ninja\n")
+    (proc / "cwd").symlink_to("/tmp/vibeos/build-i386")
+    (proc / "mountinfo").write_text(
+        "22 1 8:48 / / rw - ext4 /dev/sdd rw\n"
+        f"1063 1015 8:48 {lanes[1]} /tmp/vibeos rw,relatime - ext4 /dev/sdd rw\n"
+    )
+    host = tmp_path / "host-mountinfo"
+    host.write_text("22 1 8:48 / / rw - ext4 /dev/sdd rw\n")
+    original = Path.iterdir
+    monkeypatch.setattr(
+        Path, "iterdir", lambda path: iter([proc]) if path == Path("/proc") else original(path)
+    )
+    monkeypatch.setattr(prune.canon, "canon_path", lambda: "/tmp/vibeos")
+    real = prune.canonical_bind_source
+    monkeypatch.setattr(
+        prune, "canonical_bind_source", lambda mi, canon: real(mi, canon, host_mountinfo=host)
+    )
+    assert prune.active_build_worktrees(lanes) == {lanes[1].resolve()}
+
+
+def test_prune_only_limits_the_fleet_and_refuses_unknown_names(tmp_path, monkeypatch, capsys):
+    lanes = [tmp_path / "vibeos-a", tmp_path / "vibeos-b"]
+    for lane in lanes:
+        (lane / "build-i386").mkdir(parents=True)
+        (lane / "build-i386" / "x.o").write_bytes(b"x" * 4096)
+    monkeypatch.setattr(prune, "git_worktrees", lambda _: lanes)
+    monkeypatch.setattr(prune, "live_qemu_worktrees", lambda _: set())
+    monkeypatch.setattr(prune, "active_build_worktrees", lambda _: set())
+    args = SimpleNamespace(apply=False, only=["vibeos-b"], idle_hours=0)
+    assert prune.prune(args, tmp_path) == 0
+    out = capsys.readouterr().out
+    assert "vibeos-b" in out and "vibeos-a" not in out
+    args.only = ["vibeos-nope"]
+    assert prune.prune(args, tmp_path) == 2
+    assert "--only names no worktree: vibeos-nope" in capsys.readouterr().out
+
+
+def test_zombie_compiler_protects_nothing(tmp_path, monkeypatch):
+    proc = tmp_path / "1001"
+    proc.mkdir()
+    (proc / "comm").write_text("cc1\n")
+    (proc / "status").write_text("Name:\tcc1\nState:\tZ (zombie)\n")
+    original = Path.iterdir
+    monkeypatch.setattr(
+        Path, "iterdir", lambda path: iter([proc]) if path == Path("/proc") else original(path)
+    )
+    assert prune.active_build_worktrees([tmp_path / "one"]) == set()

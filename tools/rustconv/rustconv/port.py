@@ -366,6 +366,15 @@ def stage_derive(
     dp = derive(module_dir, target, usermode=usermode, stem=stem)
     renamed = stem is not None or bool(load_state(dp.module.crate_stem).get("renamed"))
     stem = dp.module.crate_stem
+    # The stem names the crate (`<stem>-rust`), and cargo refuses a package name that starts
+    # with a digit: the 3dtext screensaver's target scaffolded `3dtext-rust` and broke
+    # `cargo metadata` for the whole workspace. Refuse before anything is written.
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]*", stem):
+        hint = re.sub(r"^([0-9]+)(.*)$", r"\2\1", stem)
+        raise PortError(
+            f"stem {stem!r} is not a valid crate name (`{stem}-rust`; cargo needs a leading "
+            f"letter): re-run with --stem <name>, e.g. --stem {hint}"
+        )
     _add_island_headers(dp, load_state(stem).get("island_headers", {}))
     arm = pd.emit_profile(dp)
     if not arm.lstrip().startswith(f"{stem})") and "|" not in arm.split(")", 1)[0]:
@@ -714,7 +723,8 @@ def stage_scaffold(module_dir: Path, target: str | None) -> None:
     dp = derive(module_dir, target)
     state = load_state(dp.module.crate_stem)
     kept: list[Path] = []
-    written = pd.scaffold_crate(dp, _crate_dir(state), force=False, kept=kept)
+    tus = [REPO / t for t in state.get("tus", [])] or None
+    written = pd.scaffold_crate(dp, _crate_dir(state), force=False, kept=kept, tus=tus)
     member = add_workspace_member(state["crate"])
     _seed_switch_facts(state, _crate_dir(state) / "src" / "prelude.rs")
     _record(state, "scaffold", started, written=len(written), kept=len(kept), member_added=member)
@@ -1951,6 +1961,21 @@ def _stub_name(state: dict) -> str:
 def stage_flip(stem: str) -> None:
     started = time.time()
     state = load_state(stem)
+    # Never flip a TU that has no Rust: its C would leave the build with nothing in its place.
+    # expand's translate stitch was refused (no body written), `port check` said "+1 module
+    # not translated yet", and the flip went ahead -- the build then failed E0583 on all three
+    # arches. A file test, not a cargo run: this is the check that must not be skippable.
+    src = _crate_dir(state) / "src" / stem
+    missing = [
+        Path(tu).name
+        for tu in state.get("tus", [])
+        if not (src / f"{Path(tu).stem}.rs").is_file()
+        and not (src / Path(tu).stem / "mod.rs").is_file()
+    ]
+    if missing:
+        raise PortError(
+            f"flip: {stem}: no Rust for {', '.join(missing)} -- translate it (or `port data`) first"
+        )
     module = REPO / state["module_dir"]
     cml = module / "CMakeLists.txt"
     new = flip_cmake(cml.read_text(), state)
@@ -3581,6 +3606,48 @@ def _drop_macro_externs(path: Path, fn_macros: set[str]) -> list[str]:
     return dropped
 
 
+def _c_fn_pointer_typedefs(state: dict) -> set[str]:
+    """Names the module's C sources typedef as a POINTER to function: `typedef R (CC *X)(..)`."""
+    out: set[str] = set()
+    for f in _module_sources(REPO / state["module_dir"]):
+        try:
+            text = f.read_text(errors="replace")
+        except OSError:
+            continue
+        out |= set(re.findall(r"\btypedef\b[^;{}]*?\(\s*(?:\w+\s+)*\*\s*(\w+)\s*\)\s*\(", text))
+    return out
+
+
+_RS_FN_TYPEDEF = re.compile(
+    r"^(?P<head>[ \t]*pub type (?P<name>\w+)\s*=\s*)"
+    r"(?P<ty>(?:unsafe\s+)?(?:extern\s+\"[A-Za-z]+\"\s+)?fn\s*\([^;]*?)\s*;",
+    re.M,
+)
+
+
+def _option_fn_pointer_typedefs(path: Path, pointer_typedefs: set[str]) -> list[str]:
+    """A C function-POINTER typedef the model wrote as a bare `fn` type -> `Option<fn>`.
+
+    C's pointer can be NULL, and every caller tests it; bindgen spells it Option<fn>, which is
+    pointer-sized with None at 0. regsvr32's DLLREGISTER, rundll32's DllWinMainW and kbswitch's
+    FN_KbSwitchSetHooks came back bare: `= None`, `.is_none()` and `.unwrap_unchecked()` all
+    failed to compile (21 errors over three crates). A typedef of a function TYPE
+    (`typedef R X(..)`, used as `X *`) is not in `pointer_typedefs` and stays."""
+    text = path.read_text(errors="replace")
+    names: list[str] = []
+
+    def one(m: re.Match) -> str:
+        if m.group("name") not in pointer_typedefs:
+            return m.group(0)
+        names.append(m.group("name"))
+        return f"{m.group('head')}Option<{m.group('ty')}>;"
+
+    new = _RS_FN_TYPEDEF.sub(one, text)
+    if names:
+        path.write_text(new)
+    return names
+
+
 def stage_integrate(stem: str) -> None:
     """Move each translated file onto the crate's prelude (crate_integrate): the per-file
     substrate globs and hand-declared externs a standalone translation carries are WRONG
@@ -3604,7 +3671,15 @@ def stage_integrate(stem: str) -> None:
     island_consts = _island_consts(crate / "src")
     unicode = _TCHAR_BEGIN in (crate / "src" / "prelude.rs").read_text(errors="replace")
     island_statics = _island_extern_statics(crate / "src")
+    c_pointer_typedefs = _c_fn_pointer_typedefs(state)
     for path in _unit_files(crate, stem):
+        wrapped = _option_fn_pointer_typedefs(path, c_pointer_typedefs)
+        if wrapped:
+            changed += 1
+            print(
+                f"integrate: {path.stem}: C function-pointer typedef(s) as Option<fn>: "
+                + ", ".join(wrapped)
+            )
         renamed = _tchar_entry_point(path, unicode)
         if renamed:
             print(f"integrate: {path.stem}: entry point {renamed}")
@@ -4339,6 +4414,7 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
         and k not in _island_defined(crate / "src")
         # A copy made before test harnesses stopped counting as consensus.
         and not prelude_resolve.is_test_source(v.path)
+        and not prelude_resolve.is_crt_internal_fn(v)
     }
     # Re-derive every kept copy from the tree as it is NOW: a copy is only as right as the run
     # that made it. usetup kept 40 setuplib externs under `extern "C"` from a run whose ABI
@@ -4542,6 +4618,7 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
             found = items.get(name, [])
             # A copied declaration must speak this crate's types (ucrt's private `Compare`).
             found = [i for i in found if i.kind != "fn" or not _private_types(i, visible_types)]
+            found = [i for i in found if not prelude_resolve.is_crt_internal_fn(i)]
             if name in macro_only:
                 found = [i for i in found if i.kind != "fn"]
             if not found:
@@ -5401,6 +5478,20 @@ def _island_constants(state: dict) -> set[str]:
     return set.intersection(*per_arch) if per_arch else set()
 
 
+def _own_object_macros(state: dict) -> set[str]:
+    """Names the module's own sources (.c and local headers) `#define` without parameters.
+    Only names: clang's probe, in the TU's own compile, decides the value -- or that there is
+    none (a dead arm, a non-constant body)."""
+    out: set[str] = set()
+    for f in _module_sources(REPO / state["module_dir"]):
+        try:
+            text = f.read_text(errors="replace")
+        except OSError:
+            continue
+        out |= set(re.findall(r"(?m)^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)[ \t]+\S", text))
+    return out
+
+
 def _resolve_facts(state: dict, prelude: Path, undefined: list[str]) -> list[str]:
     """Constants the module's C sees and no Rust in the tree defines: clang evaluates them.
 
@@ -5467,10 +5558,14 @@ def _resolve_facts(state: dict, prelude: Path, undefined: list[str]) -> list[str
             elif values[name] != facts[name][1]:
                 print(f"resolve: fact {name} was {facts[name][1]}, clang says {values[name]}")
                 facts[name] = (facts[name][0], values[name], src)
+    # The module's own object-like macros are constants whatever their case: regsvr32's
+    # resource.h `#define IDS_UsageMessage 100` failed the UPPER_CASE test and stayed
+    # "defined nowhere", eight E0425s.
+    own = _own_object_macros(state)
     wanted = sorted(
         n
         for n in undefined
-        if prelude_resolve.looks_constant(n)
+        if (prelude_resolve.looks_constant(n) or n in own)
         and n not in facts
         and n not in _COMPILER_BUILTIN_MACROS
     )
@@ -5908,15 +6003,16 @@ def stage_replay(
 
 
 def _one_trailing_newline(src: Path) -> int:
-    """End every crate file in exactly one newline. A pass that drops the last item of a
-    file (an extern copy, a stale import) leaves the blank line before it, and
-    `git diff --check` then refuses the commit: fsutil's prelude and netsh.rs, every replay."""
+    """End every crate file in exactly one newline, with no trailing whitespace on a line. A
+    pass that drops the last item of a file (an extern copy, a stale import) leaves the blank
+    line before it, and `git diff --check` then refuses the commit: fsutil's prelude and
+    netsh.rs, every replay; welcome.rs's model output carried whitespace-only lines."""
     from tools.source_walk import source_files
 
     n = 0
     for p in source_files(src):
         text = p.read_text()
-        fixed = text.rstrip("\n") + "\n"
+        fixed = re.sub(r"[ \t]+$", "", text, flags=re.M).rstrip("\n") + "\n"
         if text and fixed != text:
             p.write_text(fixed)
             n += 1
@@ -6526,7 +6622,7 @@ def _report_attempts(attempts) -> None:
 # --------------------------------------------------------------------------------------
 
 
-def stage_check(stem: str) -> dict:
+def stage_check(stem: str, rendered: bool = False) -> dict:
     """Error counts per arch and per file, from the same JSON diagnostics `fix` and
     crate-repair count (the old short-format scrape disagreed with them by ~17)."""
     from . import crate_repair as cr
@@ -6534,6 +6630,7 @@ def stage_check(stem: str) -> dict:
     state = load_state(stem)
     started = time.time()
     result: dict[str, dict] = {}
+    shown: set[str] = set()
     for arch, diags in _check_json(stem, state["crate"]).items():
         per_file: dict[str, int] = {}
         untranslated = 0
@@ -6591,6 +6688,23 @@ def stage_check(stem: str) -> dict:
             "masked_by": globs,
         }
         print(f"check {arch}: errors={errors} (+{untranslated} module(s) not translated yet)")
+        # The errors themselves, so triage needs no second cargo run: one line per site,
+        # each printed once across the arches (most errors are the same on all three).
+        for d in diags:
+            if not cr.is_error_diagnostic(d) or "file not found for module" in str(
+                d.get("message")
+            ):
+                continue
+            sp = next((s for s in d.get("spans") or [] if s.get("is_primary")), None)
+            code = (d.get("code") or {}).get("code") or "error"
+            line = (
+                f"{Path(sp['file_name']).name}:{sp['line_start']}" if sp else "<no span>"
+            ) + f" {code} {d.get('message')}"
+            if line not in shown:
+                shown.add(line)
+                print(f"  [{arch}] {line}")
+                if rendered and d.get("rendered"):
+                    print("    " + d["rendered"].rstrip().replace("\n", "\n    "))
         if catch_all:
             print(
                 f"check {arch}: {catch_all} of them are unreachable match arms -- an earlier "
@@ -6761,7 +6875,15 @@ def main(args) -> int:
         print(f"port: {e}", file=sys.stderr)
         return 1
     try:
-        return _main(args)
+        rc = _main(args)
+        # Every stage writes crate files; leave them as `git diff --check` wants them, so a
+        # commit after any stage passes (fifteen of Wave I's generated files did not).
+        stem = getattr(args, "stem", None)
+        if stem and _state_path(stem).is_file() and args.port_stage != "status":
+            src = _crate_dir(load_state(stem)) / "src"
+            if src.is_dir():
+                _one_trailing_newline(src)
+        return rc
     finally:
         held.close()
 
@@ -6866,7 +6988,7 @@ def _main(args) -> int:
         elif args.port_stage == "resolve":
             stage_resolve(args.stem)
         elif args.port_stage == "check":
-            stage_check(args.stem)
+            stage_check(args.stem, rendered=args.rendered)
         elif args.port_stage == "flip":
             stage_flip(args.stem)
         elif args.port_stage == "data":
@@ -6919,8 +7041,13 @@ def add_parser(sub) -> None:
         help="name the port (state, crate <stem>-rust, gen arm) other than the CMake target, "
         "when that crate already belongs to another module; remembered",
     )
-    for name in ("island", "integrate", "resolve", "check", "status", "flip"):
+    for name in ("island", "integrate", "resolve", "status", "flip"):
         stages.add_parser(name).add_argument("stem")
+    q = stages.add_parser("check")
+    q.add_argument("stem")
+    q.add_argument(
+        "--rendered", action="store_true", help="print rustc's full message for each error"
+    )
     stages.add_parser(
         "cppapp", help="a C++ module: render its classes, lower its bodies to synthetic units ($0)"
     ).add_argument("stem")

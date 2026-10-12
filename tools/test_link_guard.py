@@ -111,3 +111,20 @@ ld.lld: warning: duplicate symbol: _memcpy
 >>>            libcompiler_builtins-a041ab404c42ddb5.rlib(compiler_builtins-a041ab404c42ddb5.compiler_builtins.644fedaf30b7597b-cgu.136.rcgu.o)
 """
     assert verdicts(stderr) == ["ok:the CRT's own mem* over compiler_builtins' copy"]
+
+
+def test_two_varargs_shims_share_their_pullers():
+    # autochk.exe links its own rust_varargs_shim.c and vfatlib's (a static library).
+    stderr = """\
+ld.lld: warning: duplicate symbol: _vibeos_va_arg_i32
+>>> defined at /base/system/autochk/rust_varargs_shim.c:12
+>>>            base/system/autochk/CMakeFiles/autochk.dir/rust_varargs_shim.c.obj
+>>> defined at /sdk/lib/fslib/vfatlib/rust_varargs_shim.c:12
+>>>            sdk/lib/fslib/vfatlib/CMakeFiles/vfatlib.dir/rust_varargs_shim.c.obj
+"""
+    assert verdicts(stderr) == ["ok:rustconv varargs puller (one generated body)"]
+    # Not a shim on one side: still a real collision.
+    other = stderr.replace("/sdk/lib/fslib/vfatlib/rust_varargs_shim.c:12", "/x/handwritten.c:3")
+    assert verdicts(
+        other.replace("vfatlib.dir/rust_varargs_shim.c.obj", "x.dir/handwritten.c.obj")
+    ) == ["error:two local definitions, kept by link order"]

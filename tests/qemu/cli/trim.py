@@ -29,6 +29,13 @@ current build configuration, so it can run on live lanes. Two guards keep that t
 Removing a still-wanted unit is not a correctness hazard either way: cargo checks that a
 unit's outputs exist before calling it fresh, so the worst case is one recompile (an sccache
 hit).
+
+It also trims the rustconv PORT STAGING caches: every `port check` / `crate-repair` gives each
+ported module its own `~/vibeos-rust-staging/port/<stem>/target-<arch>` so lanes never share a
+cargo lock, and nothing ever deletes them — 316 idle dirs held 45 G on 2026-10-12, a third of
+that tree. They are pure cargo output: the paid artifacts beside them (`state.json`, banked
+hand fixes, responses) are files, never a `target-*` dir, and are never touched. An idle one
+goes whole; the next `port check` of that module rebuilds it.
 """
 
 from __future__ import annotations
@@ -44,6 +51,12 @@ from pathlib import Path
 
 # Cargo target roots inside a worktree (the non-build-* half of prune.PRUNE_RELDIRS).
 TARGET_RELDIRS = ("sdk/lib/rust/target", "ntoskrnl/rust-kernel-target")
+
+# rustconv `port`'s state root (rustconv/port.py STATE_ROOT, same env override). Shared by every
+# lane, so it is planned once, not per worktree.
+PORT_STATE_ROOT = Path(
+    os.environ.get("RUSTCONV_PORT_STATE", Path.home() / "vibeos-rust-staging" / "port")
+)
 
 # A target-root entry named for a rustc triple, or cargo's default dev profile, is an ad-hoc
 # `cargo check/test --target ...` tree: the CMake build gives every cargo invocation its own
@@ -197,6 +210,31 @@ def plan_worktree(worktree: Path, *, now: float | None = None, idle_hours: float
         plan.paths += sub.paths
         plan.superseded_units += sub.superseded_units
         plan.adhoc_dirs += sub.adhoc_dirs
+    return plan
+
+
+def plan_port_staging(
+    root: Path | None = None, *, now: float | None = None, idle_hours: float = 24
+) -> TrimPlan:
+    """Idle `<stem>/target-*` cargo dirs under the port state root, each going whole."""
+    root = PORT_STATE_ROOT if root is None else root
+    now = time.time() if now is None else now
+    plan = TrimPlan()
+    if not root.is_dir():
+        return plan
+    for stem in sorted(root.iterdir()):
+        if not stem.is_dir() or stem.is_symlink():
+            continue
+        for t in sorted(stem.glob("target-*")):
+            if not t.is_dir() or t.is_symlink():
+                continue
+            try:
+                if now - _newest_mtime(t) < idle_hours * 3600:
+                    continue
+            except FileNotFoundError:
+                continue
+            plan.paths.append((t, _size(t)))
+            plan.adhoc_dirs += 1
     return plan
 
 

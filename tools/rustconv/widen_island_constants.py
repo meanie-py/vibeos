@@ -121,7 +121,10 @@ def _narrow_text(body: str) -> str | None:
 
 
 def widen(
-    text: str, wide: dict[str, str | None], aliases: dict[str, set[str]] | None = None
+    text: str,
+    wide: dict[str, str | None],
+    aliases: dict[str, set[str]] | None = None,
+    charset: str | None = None,
 ) -> tuple[str, list[str], list[str]]:
     """Rewrite each narrowed constant the C defines wide. Returns (text, widened, refused).
 
@@ -131,7 +134,11 @@ def widen(
     narrow bytes read as UTF-16 -- Find Next never fired."""
     widened: list[str] = []
     refused: list[str] = []
-    charset = island_charset(text) if aliases else None
+    # The island's own TCHAR is the best evidence; `charset` (from the module's compile
+    # flags) answers when the island does not say -- kbswitch's allowlisted headers use no
+    # TCHAR, so its island had none and INDICATOR_CLASS stayed the narrow INDICATOR_CLASSA
+    # bytes in a -DUNICODE module (five type errors, and a class name nobody registered).
+    charset = (island_charset(text) or charset) if aliases else None
 
     def one(m: re.Match[str]) -> str:
         name = m.group("name")

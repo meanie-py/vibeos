@@ -57,3 +57,15 @@ def test_a_unicode_islands_aw_switch_is_widened_through_its_w_target():
             island.replace("pub type TCHAR = WCHAR;\n", header), wide, aliases
         )
         assert widened == [] and 'b"abc\\0"' in out
+
+
+def test_an_island_without_tchar_takes_the_charset_from_the_compile():
+    # kbswitch: no TCHAR in the island, -DUNICODE on the compile; INDICATOR_CLASS stayed narrow.
+    text = 'pub const INDICATOR_CLASS: &[u8; 10] = b"Indicator\\0";\n'
+    wide = {"INDICATOR_CLASSW": "Indicator"}
+    aliases = {"INDICATOR_CLASS": {"INDICATOR_CLASSW", "INDICATOR_CLASSA"}}
+    same, widened, _ = wic.widen(text, wide, aliases)
+    assert widened == [] and same == text
+    new, widened, _ = wic.widen(text, wide, aliases, "W")
+    assert widened == ["INDICATOR_CLASSW"]
+    assert "pub const INDICATOR_CLASS: &[u16; 10] = &[0x0049," in new
