@@ -606,6 +606,13 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   with the new `kill --stale`). OPEN: why one round's three attempts all fail while other
   launches in the same minute succeed. Field manual: "`L:no-guest-serial`: the guest never ran".
 
+- **`flake-report` lists `ATA_ASSERT` as DETERMINISTIC on all three arches** (FIXED 2026-10-09,
+  `e78e91ff2de`; nothing to chase). All six failures are ONE upstream-sync gate at
+  `3382968ddd0` (10-09 23:43, `fails/auto/20261009-234330-*-ATA_ASSERT`):
+  `ASSERT(LastUsedSlot < MAX_SLOTS)` in `atapi-rust/src/atapi/scsi.rs`, live since the ASSERTs
+  were restored at 22:34, fired because atapi's prelude borrowed usbxhci's `MAX_SLOTS = 16`
+  over the island's 32. Not seen since; it ages out of the 14-day window on 10-23.
+
 - **`apc32.exe` rung 4 "APC to a waiting thread lost" (FLAKE, open).** The WoW64 ladder's
   32-bit APC guest sometimes sees an APC queued to a thread in an alertable wait never run:
   the sleeper returns 0 and the guest exits 0xBA41. Seen 2026-10-10 in one amd64 queue gate
