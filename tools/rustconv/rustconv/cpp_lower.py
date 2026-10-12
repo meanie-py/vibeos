@@ -39,6 +39,11 @@ ATL_IMPL_METHODS = frozenset(
         "UnsubclassWindow",
         "DoModal",
         "EndDialog",
+        "SetModified",
+        "WinMain",
+        "RegisterClassObjects",
+        "RevokeClassObjects",
+        "SetWizardButtons",
         "GetWndClassInfo",
         "GetWindowProc",
     }
@@ -66,6 +71,90 @@ def unicode_text_macros(text: str) -> str:
     -DUNICODE compile. Lowered bodies keep the source's macro spelling, and an ATL header's
     `TEXT(';')` reached the model as a call it cannot resolve."""
     return _TEXT_MACRO.sub(lambda m: "L" + m.group(1), text)
+
+
+_STR_LIT = re.compile(r'(?:\bL)?"(?:[^"\\\n]|\\.)*"')
+_STRING_DEFINE = re.compile(
+    r'^[ \t]*#[ \t]*define[ \t]+(\w+)[ \t]+((?:L)?"(?:[^"\\\n]|\\.)*")[ \t]*$', re.M
+)
+
+
+def string_macros(sources: list[str]) -> dict[str, str]:
+    """A module's own object-like macros whose whole expansion is one string literal
+    (drwtsn32.h `#define NEWLINE "\\r\\n"`)."""
+    out: dict[str, str] = {}
+    for text in sources:
+        for m in _STRING_DEFINE.finditer(text):
+            out.setdefault(m.group(1), m.group(2))
+    return out
+
+
+def concat_string_macros(text: str, macros: dict[str, str]) -> str:
+    """`"%5d: %ls" NEWLINE` -> `"%5d: %ls\\r\\n"`: what translation phases 4 and 6 do. Left as
+    written, the model dropped the literal and kept the macro -- every drwtsn32 report line
+    came back as `xfprintf(output, NEWLINE, ...)`, which compiles and prints nothing useful.
+    Only a macro NEXT TO a string literal is folded; a standalone use stays a name (it
+    translates fine, and leaving it keeps every such body's response-cache key unchanged)."""
+    if not macros:
+        return text
+    names = "|".join(map(re.escape, sorted(macros, key=len, reverse=True)))
+    lit = _STR_LIT.pattern
+    unit = re.compile(rf"(?:{lit}|\b(?:{names})\b)(?:\s*(?:{lit}|\b(?:{names})\b))+")
+
+    def fold(m: re.Match) -> str:
+        parts: list[str] = [p.group(0) for p in re.finditer(rf"{lit}|\b(?:{names})\b", m.group(0))]
+        if not any(p.endswith('"') for p in parts):
+            return m.group(0)  # macro beside macro with no literal: not this hazard
+        lits: list[str] = [macros.get(p, p) for p in parts]
+        wide = any(x.startswith("L") for x in lits)
+        bodies = [x[x.index('"') + 1 : -1] for x in lits]
+        for left in bodies[:-1]:
+            if re.search(r"\\(?:x[0-9A-Fa-f]*|[0-7]{1,2})$", left):
+                return m.group(0)  # a hex/octal escape would absorb the next chars
+        return ("L" if wide else "") + '"' + "".join(bodies) + '"'
+
+    return unit.sub(fold, text)
+
+
+_PPV_ARG = re.compile(r"\b(IID_PPV_ARG|IID_NULL_PPV_ARG)\s*\(")
+
+
+def ppv_arg_macros(text: str) -> str:
+    """shellutils.h `IID_PPV_ARG(Itype, ppType)` -> `&IID_Itype, (void**)(ppType)`, its C
+    spelling (`IID_NULL_PPV_ARG` adds the NULL outer unknown). It expands to TWO arguments, so
+    no Rust item can stand in for it at the call site: the model wrote `IID_PPV_ARG(T, p)` as
+    a call and every CoCreateInstance came out one argument short."""
+    out, pos = [], 0
+    for m in _PPV_ARG.finditer(text):
+        if m.start() < pos:
+            continue
+        depth, i = 1, m.end()
+        while i < len(text) and depth:
+            depth += {"(": 1, ")": -1}.get(text[i], 0)
+            i += 1
+        if depth:
+            break  # unbalanced: leave the rest as written
+        inner = text[m.end() : i - 1]
+        comma = _top_comma(inner)
+        if comma < 0:
+            continue
+        itype, pp = inner[:comma].strip(), inner[comma + 1 :].strip()
+        null = ", NULL" if m.group(1) == "IID_NULL_PPV_ARG" else ""
+        out.append(text[pos : m.start()] + f"&IID_{itype}{null}, (void**)({pp})")
+        pos = i
+    return "".join(out) + text[pos:]
+
+
+def _top_comma(s: str) -> int:
+    depth = 0
+    for i, ch in enumerate(s):
+        if ch in "(<[":
+            depth += 1
+        elif ch in ")>]":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            return i
+    return -1
 
 
 @dataclass
@@ -253,6 +342,12 @@ class Lowerer:
         if implicit_this:
             static_type = (this_class or "").split("::")[-1]
         path = self.base_path(static_type, info.owner.split("::")[-1]) if static_type else ""
+        own = {q.split("::")[-1] for q, c in self.classes.items() if not c.external}
+        if info.name in ATL_IMPL_METHODS and _short_owner(info.owner) not in own:
+            # An explicit `_AtlModule.WinMain(..)` / `dlg.DoModal(..)`: the ATL template's member
+            # is the class's generated glue, on the object itself -- the same rule as through an
+            # implicit `this` above. The base path would land on CWindow / the base's data.
+            path = ""
         # clang's JSON gives a MemberExpr no `loc`; its range ENDS on the member-name token
         # (`p->name`, and for an implicit `this` the range is that one token).
         name_loc = n["range"]["end"]
@@ -281,8 +376,8 @@ class Lowerer:
         if exp.get("_file") != f or not lo <= exp.get("offset", -1) < hi:
             return
         src_file = spell.get("_file")
-        if not src_file:
-            return
+        if not src_file or src_file.startswith("<"):
+            return  # `<scratch space>`: a `##`-pasted token, spelled on no `#define` line
         cdp_text(src_file, 0, 0)  # load into _SRC: offsets are BYTES
         data = _SRC[src_file]
         line_start = data.rfind(b"\n", 0, spell["offset"]) + 1
@@ -306,6 +401,10 @@ class Lowerer:
             "DerivedToBase",
             "UncheckedDerivedToBase",
         ):
+            return False
+        if n.get("name") in ATL_IMPL_METHODS:
+            # `_AtlModule.WinMain(..)` reaches CAtlExeModuleT through the same cast, but an ATL
+            # template's member is the class's own generated glue, never the base's.
             return False
         obj = (base.get("inner") or [{}])[0]
         static_type = _strip_type(obj.get("type", {}).get("qualType", ""))
@@ -657,6 +756,10 @@ class Lowerer:
 def _implicit(n: dict) -> bool:
     # clang's JSON spells it `implicit` on a CXXThisExpr and `isImplicit` on declarations.
     return bool(n.get("implicit") or n.get("isImplicit"))
+
+
+def _short_owner(owner: str) -> str:
+    return owner.split("<")[0].split("::")[-1].strip()
 
 
 def _unwrap_casts(n: dict) -> dict:

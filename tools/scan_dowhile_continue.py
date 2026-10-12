@@ -66,6 +66,7 @@ RUST_ROOT = REPO / "sdk" / "lib" / "rust"
 COMMENT_RE = re.compile(r"//[^\n]*|/\*.*?\*/", re.S)
 STRING_RE = re.compile(r'b?"(?:\\.|[^"\\])*"')
 CHAR_RE = re.compile(r"b?'(?:\\.|[^'\\])'")
+_LEXEME_RE = re.compile("|".join(p.pattern for p in (COMMENT_RE, CHAR_RE, STRING_RE)), re.S)
 LOOP_RE = re.compile(r"(?:'(\w+)\s*:\s*)?\bloop\s*\{")
 NESTED_LOOP_RE = re.compile(r"\b(?:loop|while|for)\b")
 TRAILING_BREAK_IF_RE = re.compile(r"\bif\b[^{};]*\{\s*break\s*;\s*\}\s*$")
@@ -81,9 +82,9 @@ def _blank(m: re.Match) -> str:
 def _code_only(raw: str) -> str:
     """`raw` with comments, strings and char literals blanked (offsets preserved). Each
     scan below wants it, so a file is blanked once."""
-    text = COMMENT_RE.sub(_blank, raw)
-    text = STRING_RE.sub(_blank, text)
-    return CHAR_RE.sub(_blank, text)
+    # ONE left-to-right pass: blanking strings before chars read the `"` in `'"'` as a string
+    # opening, which swallowed msiexec's `}` and handed a truncated loop body to the scans.
+    return _LEXEME_RE.sub(_blank, raw)
 
 
 def _match_brace(text: str, open_idx: int) -> int:

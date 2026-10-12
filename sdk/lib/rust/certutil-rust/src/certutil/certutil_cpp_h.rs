@@ -1,0 +1,139 @@
+use crate::prelude::*;
+use crate::certutil::asn_cpp_h::asn_dump;
+use crate::certutil::hashfile_cpp_h::hash_file;
+// Deterministic UTF-16 literals from the selected C++ helper closure.
+pub static CPP_COM_WSTR_075DE2B906DB: [WCHAR; 2] = [0x000A, 0x0000];
+pub static CPP_COM_WSTR_2A46F5B0D5D8: [WCHAR; 28] = [0x0043, 0x0065, 0x0072, 0x0074, 0x0055, 0x0074, 0x0069, 0x006C, 0x003A, 0x0020, 0x0055, 0x006E, 0x006B, 0x006E, 0x006F, 0x0077, 0x006E, 0x0020, 0x0076, 0x0065, 0x0072, 0x0062, 0x003A, 0x0020, 0x0025, 0x0073, 0x000A, 0x0000];
+pub static CPP_COM_WSTR_47DA49BFCEA5: [WCHAR; 43] = [0x0043, 0x0065, 0x0072, 0x0074, 0x0055, 0x0074, 0x0069, 0x006C, 0x003A, 0x0020, 0x002D, 0x0025, 0x0073, 0x0020, 0x0065, 0x0078, 0x0070, 0x0065, 0x0063, 0x0074, 0x0065, 0x0064, 0x0020, 0x0031, 0x0020, 0x0061, 0x0072, 0x0067, 0x0075, 0x006D, 0x0065, 0x006E, 0x0074, 0x002C, 0x0020, 0x0067, 0x006F, 0x0074, 0x0020, 0x0025, 0x0064, 0x000A, 0x0000];
+pub static CPP_COM_WSTR_61FC70BDE7D3: [WCHAR; 59] = [0x0020, 0x0020, 0x002D, 0x0061, 0x0073, 0x006E, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x002D, 0x002D, 0x0020, 0x0044, 0x0069, 0x0073, 0x0070, 0x006C, 0x0061, 0x0079, 0x0020, 0x0041, 0x0053, 0x004E, 0x002E, 0x0031, 0x0020, 0x0065, 0x006E, 0x0063, 0x006F, 0x0064, 0x0069, 0x006E, 0x0067, 0x0020, 0x006F, 0x0066, 0x0020, 0x0061, 0x0020, 0x0066, 0x0069, 0x006C, 0x0065, 0x000A, 0x0000];
+pub static CPP_COM_WSTR_795916488012: [WCHAR; 3] = [0x002D, 0x003F, 0x0000];
+pub static CPP_COM_WSTR_97D1EA4AADC1: [WCHAR; 46] = [0x0043, 0x0065, 0x0072, 0x0074, 0x0055, 0x0074, 0x0069, 0x006C, 0x003A, 0x0020, 0x002D, 0x0025, 0x0073, 0x0020, 0x0063, 0x006F, 0x006D, 0x006D, 0x0061, 0x006E, 0x0064, 0x0020, 0x0063, 0x006F, 0x006D, 0x0070, 0x006C, 0x0065, 0x0074, 0x0065, 0x0064, 0x0020, 0x0073, 0x0075, 0x0063, 0x0063, 0x0065, 0x0073, 0x0073, 0x0066, 0x0075, 0x006C, 0x006C, 0x0079, 0x000A, 0x0000];
+pub static CPP_COM_WSTR_9F7BE1C75A5E: [WCHAR; 68] = [0x0043, 0x0065, 0x0072, 0x0074, 0x0055, 0x0074, 0x0069, 0x006C, 0x0020, 0x002D, 0x0068, 0x0061, 0x0073, 0x0068, 0x0066, 0x0069, 0x006C, 0x0065, 0x0020, 0x002D, 0x003F, 0x0020, 0x002D, 0x002D, 0x0020, 0x0044, 0x0069, 0x0073, 0x0070, 0x006C, 0x0061, 0x0079, 0x0020, 0x0068, 0x0065, 0x006C, 0x0070, 0x0020, 0x0074, 0x0065, 0x0078, 0x0074, 0x0020, 0x0066, 0x006F, 0x0072, 0x0020, 0x0074, 0x0068, 0x0065, 0x0020, 0x0027, 0x0068, 0x0061, 0x0073, 0x0068, 0x0066, 0x0069, 0x006C, 0x0065, 0x0027, 0x0020, 0x0076, 0x0065, 0x0072, 0x0062, 0x000A, 0x0000];
+pub static CPP_COM_WSTR_B4F54AE2DF4C: [WCHAR; 54] = [0x0043, 0x0065, 0x0072, 0x0074, 0x0055, 0x0074, 0x0069, 0x006C, 0x0020, 0x002D, 0x003F, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x002D, 0x002D, 0x0020, 0x0044, 0x0069, 0x0073, 0x0070, 0x006C, 0x0061, 0x0079, 0x0020, 0x0061, 0x0020, 0x006C, 0x0069, 0x0073, 0x0074, 0x0020, 0x006F, 0x0066, 0x0020, 0x0061, 0x006C, 0x006C, 0x0020, 0x0076, 0x0065, 0x0072, 0x0062, 0x0073, 0x000A, 0x0000];
+pub static CPP_COM_WSTR_E8DDB79D0A0F: [WCHAR; 65] = [0x0020, 0x0020, 0x002D, 0x0068, 0x0061, 0x0073, 0x0068, 0x0066, 0x0069, 0x006C, 0x0065, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x002D, 0x002D, 0x0020, 0x0044, 0x0069, 0x0073, 0x0070, 0x006C, 0x0061, 0x0079, 0x0020, 0x0063, 0x0072, 0x0079, 0x0070, 0x0074, 0x006F, 0x0067, 0x0072, 0x0061, 0x0070, 0x0068, 0x0069, 0x0063, 0x0020, 0x0068, 0x0061, 0x0073, 0x0068, 0x0020, 0x006F, 0x0076, 0x0065, 0x0072, 0x0020, 0x0061, 0x0020, 0x0066, 0x0069, 0x006C, 0x0065, 0x000A, 0x0000];
+pub static CPP_COM_WSTR_FD7E08349C62: [WCHAR; 8] = [0x0056, 0x0065, 0x0072, 0x0062, 0x0073, 0x003A, 0x000A, 0x0000];
+
+use core::ffi::c_void;
+
+// ---- file-scope preamble (translated) ----
+#[repr(C)]
+pub struct Verb {
+    pub Name: LPCWSTR,
+    pub pfn: unsafe extern "C" fn(LPCWSTR) -> BOOL,
+}
+
+pub type PVerb = *mut Verb;
+
+#[allow(non_upper_case_globals)]
+pub static verbs_hashfile_w: [u16; 9] = [
+    'h' as u16, 'a' as u16, 's' as u16, 'h' as u16, 'f' as u16,
+    'i' as u16, 'l' as u16, 'e' as u16, 0u16,
+];
+
+#[allow(non_upper_case_globals)]
+pub static verbs_asn_w: [u16; 4] = [
+    'a' as u16, 's' as u16, 'n' as u16, 0u16,
+];
+
+#[allow(non_upper_case_globals)]
+pub static mut verbs: [Verb; 2] = [
+    Verb {
+        Name: core::ptr::addr_of!(verbs_hashfile_w) as *const u16,
+        pfn: hash_file,
+    },
+    Verb {
+        Name: core::ptr::addr_of!(verbs_asn_w) as *const u16,
+        pfn: asn_dump,
+    },
+];
+
+unsafe extern "C" fn print_usage() {
+    ConPuts(core::ptr::addr_of_mut!(csStdOut), CPP_COM_WSTR_FD7E08349C62.as_ptr());
+    ConPuts(core::ptr::addr_of_mut!(csStdOut), CPP_COM_WSTR_E8DDB79D0A0F.as_ptr());
+    ConPuts(core::ptr::addr_of_mut!(csStdOut), CPP_COM_WSTR_61FC70BDE7D3.as_ptr());
+    ConPuts(core::ptr::addr_of_mut!(csStdOut), CPP_COM_WSTR_075DE2B906DB.as_ptr());
+    ConPuts(core::ptr::addr_of_mut!(csStdOut), CPP_COM_WSTR_B4F54AE2DF4C.as_ptr());
+    ConPuts(core::ptr::addr_of_mut!(csStdOut), CPP_COM_WSTR_9F7BE1C75A5E.as_ptr());
+}
+#[no_mangle]
+pub unsafe extern "C" fn MatchVerb(arg: LPCWSTR) -> *mut Verb {
+    if *arg.offset(0) != '-' as u16 && *arg.offset(0) != '/' as u16 {
+        return core::ptr::null_mut();
+    }
+
+    let verbs_ptr: *mut Verb = core::ptr::addr_of_mut!(verbs) as *mut Verb;
+    let mut n: usize = 0;
+    while n < RTL_NUMBER_OF!(verbs) as usize {
+        if _wcsicmp((*verbs_ptr.add(n)).Name, arg.offset(1)) == 0 {
+            return verbs_ptr.add(n);
+        }
+        n += 1;
+    }
+
+    core::ptr::null_mut()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn wmain(argc: i32, argv: *mut *mut WCHAR) -> i32 {
+    let mut n: i32;
+
+    /* Initialize the Console Standard Streams */
+    ConInitStdStreams();
+
+    if argc == 1 {
+        /* i.e. no commandline arguments given */
+        print_usage();
+        return (EXIT_SUCCESS as i32);
+    }
+
+    n = 1;
+    while n < argc {
+        if _wcsicmp(*argv.offset(n as isize), CPP_COM_WSTR_795916488012.as_ptr()) == 0 {
+            print_usage();
+            return (EXIT_SUCCESS as i32);
+        }
+
+        let verb: *mut Verb = MatchVerb(*argv.offset(n as isize));
+
+        if !verb.is_null() {
+            if argc != 3 {
+                ConPrintf(
+                    core::ptr::addr_of_mut!(csStdOut),
+                    CPP_COM_WSTR_47DA49BFCEA5.as_ptr(),
+                    (*verb).Name,
+                    argc - 2,
+                );
+                return (EXIT_FAILURE as i32);
+            }
+
+            if _wcsicmp(
+                *argv.offset((n + 1) as isize),
+                CPP_COM_WSTR_795916488012.as_ptr(),
+            ) == 0 {
+                print_usage();
+                return (EXIT_SUCCESS as i32);
+            }
+
+            if ((((*verb).pfn)(*argv.offset((n + 1) as isize))) == 0) {
+                /* The verb prints the failure */
+                return (EXIT_FAILURE as i32);
+            }
+
+            ConPrintf(
+                core::ptr::addr_of_mut!(csStdOut),
+                CPP_COM_WSTR_97D1EA4AADC1.as_ptr(),
+                (*verb).Name,
+            );
+            return (EXIT_SUCCESS as i32);
+        } else {
+            ConPrintf(
+                core::ptr::addr_of_mut!(csStdOut),
+                CPP_COM_WSTR_2A46F5B0D5D8.as_ptr(),
+                *argv.offset(n as isize),
+            );
+            return (EXIT_FAILURE as i32);
+        }
+    }
+
+    return (EXIT_SUCCESS as i32);
+}

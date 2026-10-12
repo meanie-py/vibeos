@@ -174,6 +174,40 @@ pub unsafe fn probe_user_buffer(
     Ok(())
 }
 
+/// Validate a user buffer the kernel will WRITE: `ProbeForWrite(buf, len, align)`.
+///
+/// Range and alignment as `probe_user_buffer`, then — unlike it — touch every page with a
+/// fault-protected read and write-back, as the exported ProbeForWrite does. A buffer that is
+/// in range but unmapped or read-only (a NULL buffer with a non-zero length) fails here with
+/// STATUS_ACCESS_VIOLATION, before the request reaches a driver. Translating ProbeForWrite to
+/// the range-only `probe_user_buffer` let NtReadFile build an IRP for a NULL buffer.
+///
+/// A zero `length` checks nothing, exactly like ProbeForWrite (alignment included).
+#[inline]
+pub unsafe fn probe_user_buffer_write(
+    buffer: *const core::ffi::c_void,
+    length: usize,
+    alignment: usize,
+    previous_mode: KPROCESSOR_MODE,
+) -> Result<(), NTSTATUS> {
+    if previous_mode == 0 || length == 0 {
+        return Ok(());
+    }
+    probe_user_buffer(buffer, length, alignment, previous_mode)?;
+    let page = 0x1000usize;
+    let last = (buffer as usize + length - 1) & !(page - 1);
+    let mut current = buffer as usize;
+    loop {
+        let mut byte = 0u8;
+        fault_tolerant_copy(core::ptr::addr_of_mut!(byte).cast(), current as *const core::ffi::c_void, 1)?;
+        fault_tolerant_copy(current as *mut core::ffi::c_void, core::ptr::addr_of!(byte).cast(), 1)?;
+        if current & !(page - 1) == last {
+            return Ok(());
+        }
+        current = (current & !(page - 1)) + page;
+    }
+}
+
 /// Validate + read a UNICODE_STRING header from user-mode.
 ///
 /// Captures Length, MaximumLength, Buffer pointer via a protected copy.

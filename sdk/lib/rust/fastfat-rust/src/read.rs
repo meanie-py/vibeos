@@ -49,9 +49,6 @@ unsafe fn NT_ERROR(status: NTSTATUS) -> i32 {
 extern "system" {
     } extern "C" { fn DebugTrace(level: i32, flags: u32, message: *const i8, ...); } extern "system" {
     fn FatPrePostIrp(IrpContext: PIRP_CONTEXT, Irp: PIRP);
-    fn BooleanFlagOn(flags: u32, flag: u32) -> BOOLEAN;
-    fn ClearFlag(flags: *mut u32, flag: u32);
-    fn SetFlag(flags: *mut u32, flag: u32);
     fn DebugDump(msg: *const u8, arg1: u32, arg2: *mut core::ffi::c_void);
     fn FatAcquireExclusiveFcb(IrpContext: *mut IRP_CONTEXT, FcbOrDcb: *mut FCB) -> BOOLEAN;
     fn FatAcquireSharedFcb(IrpContext: *mut IRP_CONTEXT, FcbOrDcb: *mut FCB) -> BOOLEAN;
@@ -77,7 +74,6 @@ extern "system" {
     fn FatSingleAsync(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, StartingLbo: LBO, ByteCount: ULONG, Irp: *mut IRP);
     fn FatVerifyFcb(IrpContext: *mut IRP_CONTEXT, FcbOrDcb: *mut FCB);
     fn FatWaitSync(IrpContext: *mut IRP_CONTEXT);
-    fn FlagOn(flags: u32, flag: u32) -> u32;
     fn CollectReadStats(Vcb: *mut VCB, OpenType: TYPE_OF_OPEN, ByteCount: ULONG);
     fn ExGetCurrentResourceThread() -> *mut ERESOURCE_THREAD;
     fn PsUpdateDiskCounters(Process: *mut _EPROCESS, ReadBytes: u64, WriteBytes: u64, ReadCount: u32, WriteCount: u32, Flags: u32);
@@ -214,7 +210,7 @@ pub unsafe extern "system" fn FatFsdRead(
         let IrpContext = *p_ic;
 
         //  An Mdl complete request must not go through common read.
-        if FlagOn(((*IrpContext).MinorFunction as u8) as u32, IRP_MN_COMPLETE) != 0 {
+        if FlagOn((*IrpContext).MinorFunction as u32, IRP_MN_COMPLETE) != 0 {
             *p_status = FatCompleteMdl(IrpContext, Irp);
             return; // try_return
         }
@@ -257,7 +253,7 @@ pub unsafe extern "system" fn FatStackOverflowRead(
 
     PAGED_CODE!();
 
-    SetFlag(core::ptr::addr_of_mut!((*IrpContext).Flags), IRP_CONTEXT_FLAG_WAIT);
+    SetFlag!((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT);
 
     if FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_VERIFY_READ) != 0 {
         let IrpStack = IoGetCurrentIrpStackLocation((*IrpContext).OriginatingIrp);
@@ -477,9 +473,9 @@ pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *
     if PagingIo != 0 {
         CollectReadStats(Vcb, TypeOfOpen, ByteCount);
         if TypeOfOpen == UserFileOpen {
-            SetFlag(&raw mut (*IrpContext).Flags, IRP_CONTEXT_FLAG_USER_IO);
+            SetFlag!((*IrpContext).Flags, IRP_CONTEXT_FLAG_USER_IO);
         } else {
-            ClearFlag(&raw mut (*IrpContext).Flags, IRP_CONTEXT_FLAG_USER_IO);
+            ClearFlag!((*IrpContext).Flags, IRP_CONTEXT_FLAG_USER_IO);
         }
     }
 
@@ -491,7 +487,7 @@ pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *
                 (*IrpContext).FatIoContext = FsRtlAllocatePoolWithTag(NonPagedPoolNx, core::mem::size_of::<FAT_IO_CONTEXT>() as ULONG, TAG_FAT_IO_CONTEXT) as *mut FAT_IO_CONTEXT;
             } else {
                 (*IrpContext).FatIoContext = &raw mut StackFatIoContext as *mut FAT_IO_CONTEXT;
-                SetFlag(&raw mut (*IrpContext).Flags, IRP_CONTEXT_STACK_IO_CONTEXT);
+                SetFlag!((*IrpContext).Flags, IRP_CONTEXT_STACK_IO_CONTEXT);
             }
         }
 
@@ -522,7 +518,7 @@ pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *
             }
 
             if FlagOn((*Ccb).Flags, CCB_FLAG_SENT_FORMAT_UNIT) != 0 {
-                SetFlag(&raw mut (*IrpContext).Flags, IRP_CONTEXT_FLAG_OVERRIDE_VERIFY);
+                SetFlag!((*IrpContext).Flags, IRP_CONTEXT_FLAG_OVERRIDE_VERIFY);
             }
 
             if FlagOn((*Ccb).Flags, CCB_FLAG_DASD_FLUSH_DONE) == 0 {
@@ -540,7 +536,7 @@ pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *
                         ExReleaseResourceLite(&raw mut (*Vcb).Resource);
                     },
                 );
-                SetFlag(&raw mut (*Ccb).Flags, CCB_FLAG_DASD_FLUSH_DONE);
+                SetFlag!((*Ccb).Flags, CCB_FLAG_DASD_FLUSH_DONE);
             }
 
             if FlagOn((*Ccb).Flags, CCB_FLAG_ALLOW_EXTENDED_DASD_IO) == 0 {
@@ -927,7 +923,7 @@ pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *
                     }
 
                     if NT_SUCCESS(*p_status) && PagingIo == 0 {
-                        SetFlag(&raw mut (*FileObject).Flags, FO_FILE_FAST_IO_READ);
+                        SetFlag!((*FileObject).Flags, FO_FILE_FAST_IO_READ);
                     }
                 } else {
                     DebugTrace(0, Dbg, b"Passing request to Fsp\n\0".as_ptr() as *const i8, 0);
@@ -951,7 +947,7 @@ pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *
                     if !(*(*IrpContext).FatIoContext).ZeroMdl.is_null() {
                         IoFreeMdl((*(*IrpContext).FatIoContext).ZeroMdl);
                     }
-                    ClearFlag(&raw mut (*IrpContext).Flags, IRP_CONTEXT_STACK_IO_CONTEXT);
+                    ClearFlag!((*IrpContext).Flags, IRP_CONTEXT_STACK_IO_CONTEXT);
                     (*IrpContext).FatIoContext = core::ptr::null_mut();
                 }
 
@@ -2722,3 +2718,15 @@ pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// fatprocs.h flag macros, inline at the declared widths (were C stubs taking
+// ULONG_PTR, which read garbage upper bits from a narrower argument).
+#[inline(always)]
+unsafe fn BooleanFlagOn(flags: u32, flag: u32) -> BOOLEAN {
+    ((flags as u64 & flag as u64) != 0) as BOOLEAN
+}
+
+#[inline(always)]
+unsafe fn FlagOn(flags: u32, flag: u32) -> u32 {
+    (flags as u64 & flag as u64) as u32
+}

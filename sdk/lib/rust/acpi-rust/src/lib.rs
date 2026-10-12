@@ -42,6 +42,7 @@ pub mod buspdo;
 // glue. #[no_mangle] symbols replace the cohab-flipped C files in acpi.sys.
 pub mod interface;
 pub mod pciroute;
+pub mod pcibus;
 pub mod power;
 pub mod acpienum;
 pub mod button;

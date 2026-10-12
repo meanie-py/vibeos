@@ -23,6 +23,21 @@ macro_rules! UNREFERENCED_PARAMETER {
     ($($p:expr),* $(,)?) => {{ $( let _ = $p; )* }};
 }
 
+// SetFlag / ClearFlag are fatprocs.h macros on an lvalue: `(F) |= (SF)`. They were C stubs
+// taking a PULONG_PTR, so every call did an 8-byte read-modify-write on 64-bit, through
+// fields as narrow as the IO_STACK_LOCATION's UCHAR Flags and the VPB's USHORT Flags, racing
+// whatever shares those bytes. The macros operate on the field itself, at its own width.
+macro_rules! SetFlag {
+    ($x:expr, $f:expr $(,)?) => {
+        $crate::flags::set(&raw mut $x, $f)
+    };
+}
+macro_rules! ClearFlag {
+    ($x:expr, $f:expr $(,)?) => {
+        $crate::flags::clear(&raw mut $x, $f)
+    };
+}
+
 // PAGED_CODE() is the DDK's "pageable code" IRQL assertion (xdk/kefuncs.h): NOP_FUNCTION in
 // a free build, and a no-op here. It is a macro, never a fn -- an out-of-line no-op call is an
 // optimization barrier, and an `extern` one resolved by whichever crate happened to export it.
@@ -67,6 +82,7 @@ pub unsafe extern "C" fn KeGetCurrentPrcb() -> ntkrnl_sys::ddk::PKPRCB {
 }
 
 pub mod types;
+pub(crate) mod flags; // SetFlag!/ClearFlag! width-generic helpers
 pub mod glue;       // harvested #define consts
 pub mod ddk_shims;  // macro/FORCEINLINE shims
 pub mod seh;        // real __try/__except/__finally (ntkrnl_sys::seh)

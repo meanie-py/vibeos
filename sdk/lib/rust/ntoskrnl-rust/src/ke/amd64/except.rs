@@ -328,7 +328,7 @@ unsafe fn KiDispatchExceptionToUser(
     let result = 'seh: {
         if let Err(e) = (|| -> Result<(), NTSTATUS> {
             use ntkrnl_sys::probe::*;
-            probe_user_buffer(
+            probe_user_buffer_write(
                 UserStack as *const core::ffi::c_void,
                 core::mem::size_of::<KUSER_EXCEPTION_STACK>(),
                 core::mem::align_of::<KUSER_EXCEPTION_STACK>(),

@@ -22,9 +22,7 @@ extern "system" {
     fn FatCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: i32);
     fn FatAcquireExclusiveGlobal(IrpContext: *mut IRP_CONTEXT);
     fn FatLockVolumeInternal(IrpContext: *mut IRP_CONTEXT, Vcb: PVCB, arg3: *mut core::ffi::c_void) -> NTSTATUS;
-    fn FlagOn(Flags: u32, Mask: u32) -> i32;
     fn NodeType(Ptr: *const core::ffi::c_void) -> u32;
-    fn SetFlag(Flags: *mut u32, Flag: u32);
     } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
     fn FsRtlEnterFileSystem();
     fn FsRtlExitFileSystem();
@@ -103,10 +101,7 @@ pub unsafe extern "system" fn FatCommonPnp(
     unsafe {
         PAGED_CODE!();
 
-        SetFlag(
-            &raw mut (*IrpContext).Flags as *mut u32,
-            IRP_CONTEXT_FLAG_WAIT,
-        );
+        SetFlag!((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT);
 
         let IrpSp: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
 
@@ -1343,3 +1338,10 @@ pub unsafe extern "system" fn FatPnpCompletionRoutine(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// fatprocs.h flag macros, inline at the declared widths (were C stubs taking
+// ULONG_PTR, which read garbage upper bits from a narrower argument).
+#[inline(always)]
+unsafe fn FlagOn(Flags: u32, Mask: u32) -> i32 {
+    (Flags as u64 & Mask as u64) as i32
+}

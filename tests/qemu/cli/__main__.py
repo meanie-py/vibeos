@@ -7,6 +7,7 @@ command modules. No default --arch (plan principle #4).
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -52,8 +53,39 @@ def _ps(args, repo: Path) -> int:
     if not ps.is_file():
         print("qemu/ps not found")
         return 127
-    cmd = ["python3", str(ps)] + (["--json"] if getattr(args, "json", False) else [])
-    return subprocess.run(cmd, cwd=repo).returncode
+    as_json = getattr(args, "json", False)
+    cmd = ["python3", str(ps)] + (["--json"] if as_json else [])
+    if not as_json:
+        rc = subprocess.run(cmd, cwd=repo).returncode
+        _print_untracked_windows()
+        return rc
+    out = subprocess.run(cmd, cwd=repo, capture_output=True, text=True)
+    if out.returncode != 0:
+        print(out.stdout, end="")
+        return out.returncode
+    data = json.loads(out.stdout)
+    orphans, err = kill_mod.untracked_windows_orphans()
+    data["untracked_windows"] = orphans
+    if err:
+        data["untracked_windows_error"] = err
+    print(json.dumps(data, indent=2))
+    return 0
+
+
+def _print_untracked_windows() -> None:
+    """qemu/ps reads lockfiles, so it cannot show a qemu.exe whose lock is gone. List those
+    from the Windows side: they burn a core each until someone kills them."""
+    orphans, err = kill_mod.untracked_windows_orphans()
+    if err:
+        print(f"untracked Windows QEMUs: UNKNOWN ({err})")
+        return
+    if not orphans:
+        return
+    print(f"untracked Windows QEMUs (no lockfile, launcher gone): {len(orphans)}")
+    for o in orphans:
+        uid = kill_mod.win_uid_of(o)
+        print(f"  win_pid={o['win_pid']:<7} {o['arch']:<8} since {o['created']}  {uid}")
+    print("  stop them: vibeos-cli kill --stale")
 
 
 def build_parser() -> argparse.ArgumentParser:

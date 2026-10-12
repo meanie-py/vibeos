@@ -17,6 +17,7 @@ from tree_sitter import Language, Parser
 
 from .conventions import KW_EXPANSION, KW_EXPANSION_FN, KW_TO_CONV
 from .lex_mask import mask_code
+from .version_macros import repo_root_of, version_defines
 
 C_LANG = Language(tsc.language())
 CPP_LANG = Language(tscpp.language())
@@ -1093,6 +1094,22 @@ def cmake_target_defines(source: Path) -> dict[str, str]:
     return {name: next(iter(vals)) for name, vals in seen.items() if len(vals) == 1}
 
 
+def build_int_defines(source: Path) -> dict[str, str]:
+    """`cmake_target_defines` plus the Windows version macros the module is compiled at.
+
+    The version macros come from version_macros (sdkddkver.h + the module's override), so
+    `#if (NTDDI_VERSION >= NTDDI_VISTA)` is as decidable as `#if _MSVCR_VER >= 80`: the
+    dead arm is dropped before the model ever sees it. A module's own `-D` wins, then the
+    version table fills the names it does not set.
+    """
+    defines = cmake_target_defines(source)
+    repo = repo_root_of(source)
+    if repo is not None:
+        for name, value in version_defines(source.parent, repo).items():
+            defines.setdefault(name, hex(value))
+    return defines
+
+
 _TU_DEFINE = re.compile(r"^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)(?![\w(])[ \t]*(.*?)[ \t]*$")
 _TU_OFF_SWITCH = re.compile(r"^[ \t]*//[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)\b", re.M)
 _DEFINED_TERM = re.compile(r"defined\s*\(\s*([A-Za-z_]\w*)\s*\)|defined\s+([A-Za-z_]\w*)")
@@ -1848,6 +1865,10 @@ def scan_file(path: Path, *, force_cpp: bool = False, _resolve_reactos: bool = F
     live = "\n".join("" if n in dead else ln for n, ln in enumerate(live_raw.splitlines(), 1))
     have = {f.name for f in result.functions}
     lost = c_functions(live) - have
+    # "Losing nothing" means nothing LIVE: the plain scan also finds definitions in dead
+    # arms (taskkill's `#ifndef __REACTOS__` find_parent), which the resolved scan rightly
+    # drops -- requiring them made the better scan unacceptable and the TU untranslatable.
+    have &= c_functions(live)
     if result.preamble_swallowed_functions:
         retry = _scan_file(path, force_cpp=False, _resolve_reactos=True, _local_renames=renames)
         again = {f.name for f in retry.functions}
@@ -1873,7 +1894,7 @@ def _pinned_ints(path: Path) -> dict[str, int]:
     the one the scan itself already makes: mbcs.c's `#if _MSVCR_VER>=80` bodies are dead
     at the pinned 0 and must not come back as "lost" definitions."""
     out: dict[str, int] = {}
-    for k, v in cmake_target_defines(path).items():
+    for k, v in build_int_defines(path).items():
         try:
             out[k] = int(v, 0)
         except (TypeError, ValueError):
@@ -1951,10 +1972,9 @@ def _scan_file(
         # break tree-sitter function extraction (uniata etc.). Macros preserved.
         raw = _resolve_pp_conditionals(path, raw)
         raw = _expand_inline_stdmethod(raw)
-    # The module's own -D flags. Empty for a target whose CMakeLists sets none, in which
-    # case every identifier-bearing `#if` stays undecidable and the scan is byte-identical
-    # to before -- so this cannot quietly change any module it does not apply to.
-    build_defines = cmake_target_defines(path)
+    # The module's own -D flags plus the version macros it is compiled at. Anything else
+    # identifier-bearing in an `#if` stays undecidable and keeps both arms.
+    build_defines = build_int_defines(path)
     tu_defined, tu_off = tu_switches(path, raw)
     for _k, _v in tu_defined.items():
         build_defines.setdefault(_k, _v)

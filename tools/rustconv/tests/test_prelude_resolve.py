@@ -82,6 +82,18 @@ def test_rendered_block_round_trips(tmp_path):
     assert set(back) == {"X", "_wcsicmp"} and back["_wcsicmp"].abi == '"C"'
 
 
+def test_a_struct_nested_anonymous_enumerator_is_aliased(tmp_path):
+    # winhlp32: `struct tagHlpFileLink { enum {hlp_link_link, ..} cookie; .. }`.
+    for arch in ("i386", "amd64", "arm64"):
+        (tmp_path / f"types_{arch}.rs").write_text(
+            "pub const tagHlpFileLink_hlp_link_popup: tagHlpFileLink__bindgen_ty_1 = 1;\n"
+        )
+    got = pr.island_enum_aliases({"hlp_link_popup"}, tmp_path)
+    assert got["hlp_link_popup"].text == (
+        "const hlp_link_popup: tagHlpFileLink__bindgen_ty_1 = tagHlpFileLink_hlp_link_popup;"
+    )
+
+
 def test_bare_enumerator_aliases_the_island_constant(tmp_path):
     for arch in ("i386", "amd64", "arm64"):
         (tmp_path / f"types_{arch}.rs").write_text(
@@ -179,6 +191,32 @@ def test_shared_crates_are_reexported_by_path_and_depended_on(tmp_path):
     assert set(changed) == {"strsafe_rust", "strsafe_rust::ntstrsafe"}
     assert 'strsafe-rust = { path = "../strsafe-rust" }' in (crate / "Cargo.toml").read_text()
     assert pr.refresh_shared_crates(crate, ws) == []
+
+
+def test_winelist_is_taken_only_by_a_crate_that_calls_it(tmp_path):
+    # wine/list.h's helpers are opt-in: every crate getting `list_*` and a winelist-rust
+    # dependency would be noise, but a crate that calls one must import it, never copy it
+    # (rpcss got cabinet-rust's #[no_mangle] copies as externs, which do not link).
+    ws = tmp_path
+    (ws / "winelist-rust" / "src").mkdir(parents=True)
+    (ws / "winelist-rust" / "src" / "lib.rs").write_text(
+        "pub struct list {}\npub unsafe fn list_init() {}\npub unsafe fn list_add_tail() {}\n"
+    )
+    for name, body in (
+        ("quiet-rust", "fn f() {}\n"),
+        ("walker-rust", "fn f() { list_init(h); }\n"),
+    ):
+        crate = ws / name
+        (crate / "src").mkdir(parents=True)
+        (crate / "Cargo.toml").write_text('[package]\nname = "x"\n\n[dependencies]\n')
+        (crate / "src" / "prelude.rs").write_text("// prelude\n")
+        (crate / "src" / "m.rs").write_text(body)
+        pr.refresh_shared_crates(crate, ws)
+    assert "winelist" not in (ws / "quiet-rust" / "src" / "prelude.rs").read_text()
+    assert "winelist" not in (ws / "quiet-rust" / "Cargo.toml").read_text()
+    walker = (ws / "walker-rust" / "src" / "prelude.rs").read_text()
+    assert "pub use winelist_rust::{list_add_tail, list_init};" in walker
+    assert "winelist-rust = " in (ws / "walker-rust" / "Cargo.toml").read_text()
 
 
 def test_a_shared_name_the_prelude_already_imports_is_not_imported_again(tmp_path):
@@ -308,6 +346,24 @@ def test_a_zero_argument_function_is_not_a_placeholder():
     assert consensus("NtClose", [stub])[0] is None
 
 
+def test_char_pointee_split_is_not_consensus():
+    # winhlp32 got ucrt-rust's `*const u8` strrchr by count; `i8` vs `u8` vs `c_char` differ
+    # on some target, so the prototype route decides.
+    u8s = [
+        F("pub fn strrchr(s: *const u8, c: c_int) -> *mut u8;", '"C"', f"u{n}.rs") for n in range(3)
+    ]
+    i8s = [F("pub fn strrchr(s: *const i8, c: i32) -> *mut i8;", '"C"', "i.rs")]
+    pick, why = consensus("strrchr", u8s + i8s)
+    assert pick is None and why.startswith("signature disagreement")
+    # The PSTR family is c_char, and agrees with an explicit c_char.
+    a = F("pub fn strchr(s: PCSTR, c: i32) -> PSTR;", '"C"', "a.rs")
+    b = F("pub fn strchr(s: *const c_char, c: c_int) -> *mut c_char;", '"C"', "b.rs")
+    assert consensus("strchr", [a, b])[0] is not None
+    # A BYTE* beside a char* in one agreed declaration is not a split.
+    m = F("pub fn mix(b: *const u8, s: *const c_char);", '"C"', "m.rs")
+    assert consensus("mix", [m, m])[0] is not None
+
+
 def test_same_name_different_arity_is_not_consensus():
     # diskpart's command handler and setuplib's partlist function share a name and an ABI;
     # the shorter text used to win and usetup called setuplib's with diskpart's signature.
@@ -380,6 +436,21 @@ def test_long_ptr_aliases_are_winapi_even_when_clang_saw_a_macro():
     )
     assert 'extern "system" {' in block and 'extern "C"' not in block
     assert 'link_name = "GetWindowLongW"' in block
+
+
+def test_sibling_definitions_finds_a_type_a_module_defines(tmp_path):
+    """msctf: `LPFNCONSTRUCTOR` is a typedef in msctf.cpp's unit that cpp_classes.rs names."""
+    from rustconv.prelude_resolve import sibling_definitions
+
+    (tmp_path / "msctf_cpp_h.rs").write_text(
+        'pub type LPFNCONSTRUCTOR = unsafe extern "C" fn() -> i32;\n'
+        "pub struct ClassesTableEntry {\n    pub clsid: u32,\n}\n"
+    )
+    found = sibling_definitions({"LPFNCONSTRUCTOR", "ClassesTableEntry", "Nope"}, tmp_path)
+    assert found == {
+        "LPFNCONSTRUCTOR": [("msctf_cpp_h", True)],
+        "ClassesTableEntry": [("msctf_cpp_h", True)],
+    }
 
 
 def test_an_extern_static_is_copied_from_the_island():

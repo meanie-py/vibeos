@@ -1,0 +1,28 @@
+# comp (base/applications/cmdutils/comp -> comp-rust, batch C). The shipped Rust diffed
+# against the pre-flip C (`python -m rustconv.c_oracle`); inputs from modrun/data.
+module: comp
+variants:
+  c: '%SystemRoot%\bin\modrun\comp_c.exe'
+  rust: '%SystemRoot%\system32\comp.exe'
+ninja:
+- comp_c
+stage:
+- src: build-{arch}/base/applications/cmdutils/comp/comp_c.exe
+  dest: bin/modrun/comp_c.exe
+- src: tools/payloads/modrun/data/a.txt
+  dest: bin/modrun/data/a.txt
+- src: tools/payloads/modrun/data/b.txt
+  dest: bin/modrun/data/b.txt
+cases:
+- id: differ
+  args: '%SystemRoot%\bin\modrun\data\a.txt %SystemRoot%\bin\modrun\data\b.txt'
+  stdin:
+  - n
+- id: same
+  args: '%SystemRoot%\bin\modrun\data\a.txt %SystemRoot%\bin\modrun\data\a.txt'
+  stdin:
+  - n
+- id: ascii-lines
+  args: /A /L %SystemRoot%\bin\modrun\data\a.txt %SystemRoot%\bin\modrun\data\b.txt
+  stdin:
+  - n

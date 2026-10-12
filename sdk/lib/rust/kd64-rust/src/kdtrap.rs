@@ -359,14 +359,30 @@ pub unsafe extern "system" fn KdpStub(
                 PreviousMode,
             ) {
                 Ok(()) => {
+                    extern "C" {
+                        fn RtlpAcquireDebugPort(Flags: *mut usize) -> u8;
+                        fn RtlpReleaseDebugPort(Flags: usize, Held: u8);
+                    }
                     let port = RtlpDebugConsolePort;
+                    // One writer at a time with kernel-mode DebugPrint (rtl-diag), and
+                    // wait for THRE before every byte: this wrote the whole string back
+                    // to back, which QEMU's UART swallows but a real 16550 keeps only the
+                    // first 16 bytes of (its FIFO), so on the OptiPlex every user-mode
+                    // print came out cut to 16 characters.
+                    let mut flags = 0usize;
+                    let held = RtlpAcquireDebugPort(&mut flags);
                     let lcr = KdpReadPortUchar(port + 3);
                     if (lcr & 0x80) != 0 {
                         KdpWritePortUchar(port + 3, lcr & 0x7F);
                     }
                     for &byte in &captured[..length] {
+                        let mut spins = 0u32;
+                        while KdpReadPortUchar(port + 5) & 0x20 == 0 && spins < 1_000_000 {
+                            spins += 1;
+                        }
                         KdpWritePortUchar(port, byte);
                     }
+                    RtlpReleaseDebugPort(flags, held);
                 }
                 Err(status) => print_status = status,
             }

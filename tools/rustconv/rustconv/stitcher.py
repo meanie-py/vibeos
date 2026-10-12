@@ -326,6 +326,40 @@ def _extract_decl_name(decl: str) -> str | None:
     return None
 
 
+_RUST_ITEM_START = re.compile(
+    r"^\s*(?:pub\b|use\b|static\b|const\b|type\b|struct\b|enum\b|union\b|impl\b|fn\b|"
+    r"unsafe\b|extern\b|mod\b|macro_rules!|#|//|/\*|\*|\}|\]|\)|[A-Za-z_][\w:]*!\s*[({\[])"
+)
+_PROSE_LINE = re.compile(r"^[A-Z][a-z']*\s+[a-z][a-z']*(?:\s+\S+){2,}$")
+_CODE_TAIL = re.compile(r"[;{}(\[,=]\s*$")
+
+
+def comment_preamble_prose(body: str) -> str:
+    """A preamble reply that narrates before (or between) its items: hh's came back with
+    "The only file-scope declaration is a function-pointer typedef. Since ..." as a bare
+    line in main.rs -- eight `unknown start of token` errors on the backticks. A line at
+    brace depth 0 that reads as an English sentence and cannot start an item becomes a
+    `//` comment: kept visible, no longer code."""
+    out: list[str] = []
+    depth = 0
+    for line in body.splitlines():
+        if (
+            depth == 0
+            and line.strip()
+            and not _RUST_ITEM_START.match(line)
+            and _PROSE_LINE.match(line.strip())
+            and not _CODE_TAIL.search(line)
+        ):
+            out.append("// " + line.strip())
+            continue
+        out.append(line)
+        code = re.sub(r'"(?:[^"\\]|\\.)*"', '""', line.split("//")[0])
+        depth += code.count("{") + code.count("(") + code.count("[")
+        depth -= code.count("}") + code.count(")") + code.count("]")
+        depth = max(depth, 0)
+    return "\n".join(out)
+
+
 def _merge_extern_blocks(blocks: list[str], defined_fns: set[str] | None = None) -> list[str]:
     """Merge extern blocks with the same linkage into one block each.
 
@@ -611,7 +645,7 @@ def stitch_file(
     #    from scan.preamble_text; see scanner.scan_file / build_preamble_prompt.)
     if preamble_body:
         parts.append("// ---- file-scope preamble (translated) ----")
-        parts.append(preamble_body)
+        parts.append(comment_preamble_prose(preamble_body))
         parts.append("")
 
     # 4. Standalone items (static mut, const, etc.) — deduped

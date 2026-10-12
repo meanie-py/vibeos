@@ -298,3 +298,18 @@ def test_an_empty_or_attribute_macro_may_vanish():
     assert not any(
         "names dropped" in f for f in cf.reply_findings(aligned, kept, errors, lambda _: [])
     )
+
+
+def test_methods_of_an_inherent_impl_are_functions_to_fix():
+    text = (
+        "pub unsafe fn free() {}\n"
+        "impl CUIFWindow {\n"
+        "    /// doc\n"
+        "    pub unsafe fn OnTimer(&mut self) {\n        let x = 1;\n    }\n"
+        "}\n"
+        "impl core::ops::Deref for CUIFWindow { type Target = u8; fn deref(&self) -> &u8 { &0 } }\n"
+    )
+    names = [s.name for s in cf.function_spans(text)]
+    assert names == ["free", "CUIFWindow__OnTimer"]
+    sp = cf.function_spans(text)[1]
+    assert text[sp.start :].startswith("    /// doc")

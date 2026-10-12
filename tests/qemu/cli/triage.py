@@ -375,6 +375,12 @@ _PE_IMAGE_BASE = 0x400000
 _KERNEL_BASE = re.compile(r"\[KRNLBASE\] ntoskrnl runtime base=(?:0x)?([0-9a-fA-F]+)")
 
 
+def kernel_runtime_base(serial: str) -> str:
+    """This boot's loader-reported ntoskrnl base as `0x...`, or "" when it never printed."""
+    matches = _KERNEL_BASE.findall(serial)
+    return hex(int(matches[-1], 16)) if matches else ""
+
+
 def kernel_relocation(arch: str, serial: str) -> str | None:
     """Use this boot's loader-reported base when available."""
     matches = _KERNEL_BASE.findall(serial)

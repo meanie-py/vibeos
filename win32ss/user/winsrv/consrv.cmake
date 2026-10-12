@@ -52,7 +52,7 @@ list(APPEND CONSRV_SOURCE
     # --- frontends/ flip → Rust (winsrv-rust/src/consrv/frontends/*.rs) ----
     # Top layer: terminal dispatch (terminal.rs owns FrontEndLoadingMethods +
     # ConSrvTermVtbl), input event conversion (input.rs), wide-char width
-    # table (wcwidth.rs, exports mk_wcwidth_cjk cdecl for the shim), plus the
+    # table (wcwidth.rs re-exports wcwidth-rust's cdecl mk_wcwidth_cjk), plus the
     # gui/tui/serial frontends. GuiLoadFrontEnd is the only registered frontend
     # on i386/amd64 (the live boot path); arm64 also compiles serialterm.
     # consrv/frontends/input.c          — replaced by Rust (frontends/input.rs)

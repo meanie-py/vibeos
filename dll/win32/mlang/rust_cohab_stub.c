@@ -36,20 +36,7 @@ int __stdcall IsEqualIID(const void *a, const void *b) { return IsEqualGUID(a, b
 
 int __stdcall min(int a, int b) { return a < b ? a : b; }
 
-/* wine/list.h intrusive doubly-linked-list helpers. */
-struct cohab_list { struct cohab_list *next; struct cohab_list *prev; };
-void __stdcall list_remove(struct cohab_list *e)
-{
-    e->next->prev = e->prev;
-    e->prev->next = e->next;
-}
-void __stdcall list_add_tail(struct cohab_list *l, struct cohab_list *e)
-{
-    e->prev = l->prev;
-    e->next = l;
-    l->prev->next = e;
-    l->prev = e;
-}
+/* wine/list.h's helpers are winelist-rust's (a mlang-rust dependency). */
 
 /* debugstr_a/an/w/wn and __wine_(un)register_resources are mlang-rust's
  * (debug_shims.rs). Copies here were duplicate symbols kept by link order;

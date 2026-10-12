@@ -724,6 +724,47 @@ macro_rules! InitializeObjectAttributes {
 
 // ================= ntdef.h / debug.h — assertions, strings, pointer and page helpers ==========
 
+/// shellutils.h:88 `FAILED_UNEXPECTEDLY(hr)` -- `_ROS_FAILED_HELPER`, i.e. `FAILED(hr)` plus a
+/// debug trace of the failing expression. The VALUE is `FAILED`; the trace is not carried.
+#[macro_export]
+macro_rules! FAILED_UNEXPECTEDLY {
+    ($hr:expr $(,)?) => {
+        (($hr) as i32) < 0
+    };
+}
+
+/// MSVC's `__debugbreak()` intrinsic: the breakpoint instruction inline, never a call (the
+/// compiler emits `int3` / `brk #0xf000` in place, so there is no import to resolve).
+#[inline(always)]
+pub unsafe fn __debugbreak() {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    core::arch::asm!("int3");
+    #[cfg(target_arch = "aarch64")]
+    core::arch::asm!("brk #0xf000");
+}
+
+/// debug.h `UNIMPLEMENTED_DBGBREAK(...)`: an ERROR notice, then `DbgBreakPoint()`. Unconditional
+/// in the header (not under DBG), so it is ported as written -- without a debugger attached the
+/// break is an unhandled STATUS_BREAKPOINT, exactly as the C. The optional printf message is
+/// not carried.
+#[macro_export]
+macro_rules! UNIMPLEMENTED_DBGBREAK {
+    ($($t:tt)*) => {{
+        extern "C" {
+            fn DbgPrint(format: *const u8, ...) -> u32;
+        }
+        extern "system" {
+            fn DbgBreakPoint();
+        }
+        DbgPrint(
+            "(%s:%d) ERROR is UNIMPLEMENTED!\n\0".as_ptr(),
+            concat!(file!(), "\0").as_ptr(),
+            line!() as i32,
+        );
+        DbgBreakPoint();
+    }};
+}
+
 /// `UNREACHABLE` — ntbasedef.h:815 `#define UNREACHABLE __builtin_unreachable()`. The C makes
 /// reaching it undefined behaviour; this stops loudly instead (`unreachable!()`), because
 /// `unreachable_unchecked` licenses LLVM to delete the very check that would have caught a
@@ -1175,6 +1216,50 @@ pub unsafe fn debugstr_a(s: *const core::ffi::c_char) -> *const core::ffi::c_cha
 #[inline(always)]
 pub unsafe fn wine_dbgstr_w(s: *const u16) -> *const core::ffi::c_char {
     unsafe { wine_dbgstr_wn(s, -1) }
+}
+
+extern "C" {
+    fn wine_dbg_sprintf(format: *const core::ffi::c_char, ...) -> *const core::ffi::c_char;
+}
+
+/// GUID's layout: fixed-width fields, the same on every target (shareable, unlike `HWND`).
+#[repr(C)]
+struct GuidLayout {
+    data1: u32,
+    data2: u16,
+    data3: u16,
+    data4: [u8; 8],
+}
+
+/// wine/debug.h:181 `wine_dbgstr_guid`, an inline no library exports (rpcss found it defined
+/// nowhere; comctl32 carries its own copy). Generic over the pointee so each island's own
+/// `GUID` passes straight in.
+pub unsafe fn wine_dbgstr_guid<T>(id: *const T) -> *const core::ffi::c_char {
+    if id.is_null() {
+        return b"(null)\0".as_ptr() as *const core::ffi::c_char;
+    }
+    if (id as usize) >> 16 == 0 {
+        return unsafe {
+            wine_dbg_sprintf(b"<guid-0x%04lx>\0".as_ptr() as *const core::ffi::c_char, (id as usize) & 0xffff)
+        };
+    }
+    let g = unsafe { &*(id as *const GuidLayout) };
+    let d = g.data4;
+    unsafe {
+        wine_dbg_sprintf(
+            b"{%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x}\0".as_ptr() as *const core::ffi::c_char,
+            g.data1 as core::ffi::c_uint, g.data2 as core::ffi::c_uint, g.data3 as core::ffi::c_uint,
+            d[0] as core::ffi::c_uint, d[1] as core::ffi::c_uint, d[2] as core::ffi::c_uint,
+            d[3] as core::ffi::c_uint, d[4] as core::ffi::c_uint, d[5] as core::ffi::c_uint,
+            d[6] as core::ffi::c_uint, d[7] as core::ffi::c_uint,
+        )
+    }
+}
+
+/// wine/debug.h:392 `debugstr_guid(id)` is `wine_dbgstr_guid(id)`.
+#[inline(always)]
+pub unsafe fn debugstr_guid<T>(id: *const T) -> *const core::ffi::c_char {
+    unsafe { wine_dbgstr_guid(id) }
 }
 
 /// wine/debug.h: `wine_dbgstr_a(s)` is `wine_dbgstr_an(s, -1)`, an inline like the above.
@@ -1698,6 +1783,12 @@ pub unsafe fn InterlockedDecrement(addend: *mut i32) -> i32 {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __wine_dprintf {
+    // A translation keeps C's format as a Rust string literal (`WARN!("x %lu\n", e)`); the
+    // callee is C printf, so it gets the NUL-terminated bytes.
+    ($cls:expr, $dbch:expr, $fmt:literal $(, $a:expr)* $(,)?) => {
+        $crate::__wine_dprintf!($cls, $dbch,
+            concat!($fmt, "\0").as_ptr() as *const core::ffi::c_char $(, $a)*)
+    };
     ($cls:expr, $dbch:expr, $fmt:expr $(, $a:expr)* $(,)?) => {{
         let __dbch: *mut __wine_debug_channel = $dbch;
         if (*__dbch).flags as core::ffi::c_int & (1 << $cls) != 0 {

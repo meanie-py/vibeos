@@ -28,8 +28,6 @@ extern "system" {
     fn FatAcquireExclusiveVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn FatReleaseVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn FatFlushAndCleanVolume(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Vcb: *mut VCB, FlushOption: u32);
-    fn FlagOn(Flags: u32, Flag: u32) -> u32;
-    fn SetFlag(Flags: *mut u32, Flag: u32);
     fn KeInitializeEvent(Event: *mut KEVENT, Type: u32, State: u8);
     fn KeWaitForSingleObject(Object: *mut KEVENT, WaitReason: u32, WaitMode: u32, Alertable: u8, Timeout: *mut i64) -> NTSTATUS;
     fn FatIsIrpTopLevel(Irp: PIRP) -> BOOLEAN;
@@ -157,7 +155,8 @@ pub unsafe extern "system" fn FatDeviceControlCompletionRoutine(
     STATUS_SUCCESS
 }
 
-const IOCTL_VOLSNAP_FLUSH_AND_HOLD_WRITES: u32 = 1;
+// ntifs.h CTL_CODE(VOLSNAPCONTROLTYPE 0x53, 0, METHOD_BUFFERED, FILE_READ_ACCESS | FILE_WRITE_ACCESS)
+const IOCTL_VOLSNAP_FLUSH_AND_HOLD_WRITES: u32 = 0x0053C000;
 const IOCTL_DISK_COPY_DATA: u32 = 0x0007C064;
 const IOCTL_SCSI_PASS_THROUGH: u32 = 0x0004D004;
 const IOCTL_SCSI_PASS_THROUGH_DIRECT: u32 = 0x0004D014;
@@ -254,7 +253,7 @@ pub unsafe extern "system" fn FatCommonDeviceControl(
 
         match ((*irp_sp).Parameters).DeviceIoControl.IoControlCode {
             IOCTL_VOLSNAP_FLUSH_AND_HOLD_WRITES => {
-                SetFlag(core::ptr::addr_of_mut!((*IrpContext).Flags), IRP_CONTEXT_FLAG_WAIT);
+                SetFlag!((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT);
                 FatAcquireExclusiveVolume(IrpContext, vcb);
                 FatFlushAndCleanVolume(IrpContext, Irp, vcb, FlushWithoutPurge);
                 KeInitializeEvent(core::ptr::addr_of_mut!(wait_event), _EVENT_TYPE_NotificationEvent, 0u8);
@@ -264,7 +263,7 @@ pub unsafe extern "system" fn FatCommonDeviceControl(
             }
             IOCTL_DISK_COPY_DATA => {
                 if FlagOn((*vcb).VcbState, VCB_STATE_FLAG_LOCKED) == 0 &&
-                   FlagOn(((*irp_sp).Flags as u8) as u32, SL_FORCE_DIRECT_WRITE) == 0 &&
+                   FlagOn((*irp_sp).Flags as u32, SL_FORCE_DIRECT_WRITE) == 0 &&
                    FlagOn((*ccb).Flags, CCB_FLAG_COMPLETE_DISMOUNT) == 0 {
                     FatCompleteRequest(IrpContext, Irp, STATUS_ACCESS_DENIED);
                     DebugTrace(-1, DEBUG_TRACE_DEVCTRL, b"FatCommonDeviceControl -> %08lx\n\0".as_ptr() as *const i8, STATUS_ACCESS_DENIED as u32);
@@ -303,8 +302,8 @@ pub unsafe extern "system" fn FatCommonDeviceControl(
                     }
 
                     if !cdb.is_null() && (*cdb).AsByte[0] == SCSIOP_FORMAT_UNIT {
-                        SetFlag(core::ptr::addr_of_mut!((*ccb).Flags), CCB_FLAG_SENT_FORMAT_UNIT);
-                        SetFlag(core::ptr::addr_of_mut!((*(*irp_sp).FileObject).Flags), FO_FILE_MODIFIED);
+                        SetFlag!((*ccb).Flags, CCB_FLAG_SENT_FORMAT_UNIT);
+                        SetFlag!((*(*irp_sp).FileObject).Flags, FO_FILE_MODIFIED);
                     }
                 }
                 // Fall through to default behavior
@@ -762,3 +761,10 @@ pub unsafe extern "system" fn FatCommonDeviceControl(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// fatprocs.h flag macros, inline at the declared widths (were C stubs taking
+// ULONG_PTR, which read garbage upper bits from a narrower argument).
+#[inline(always)]
+unsafe fn FlagOn(Flags: u32, Flag: u32) -> u32 {
+    (Flags as u64 & Flag as u64) as u32
+}

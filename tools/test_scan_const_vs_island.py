@@ -123,3 +123,11 @@ def test_own_island_forgives_the_same_bits_at_another_width():
     psn = "sdk/lib/rust/openglcfg-rust/src/prelude.rs"
     own = {"openglcfg-rust": {"PSN_APPLY": {-202}}}
     assert scc.own_island_shadows({"PSN_APPLY": [(psn, 0xFFFFFF36, "common")]}, own) == []
+
+
+def test_reactos_downgrades_match_verify_constants():
+    # Both oracles must accept the value the tree compiles (0) for the NX names.
+    sys.path.insert(0, str(Path(__file__).resolve().parent / "rustconv"))
+    from rustconv.verify_constants import REACTOS_DOWNGRADED
+
+    assert scc.REACTOS_DOWNGRADED == REACTOS_DOWNGRADED

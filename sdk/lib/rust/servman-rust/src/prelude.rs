@@ -286,7 +286,7 @@ pub type WNDCLASSEX = WNDCLASSEXW;
 // ==== end UNICODE TCHAR family ====
 
 // ==== port macros: SDK header macros, lowered from the preprocessor's own expansion (generated -- re-run `rustconv port macros`) ====
-#[macro_export] macro_rules! CreateDialog { ($p0:expr, $p1:expr, $p2:expr, $p3:expr $(,)?) => { CreateDialogParamW((($p0) as _), (($p1) as _), (($p2) as _), $p3 /* DLGPROC: an Option has no `as` cast */, ((0) as _)) }; }
+#[macro_export] macro_rules! CreateDialog { ($p0:expr, $p1:expr, $p2:expr, $p3:expr $(,)?) => { CreateDialogParamW((($p0) as _), (($p1) as _), (($p2) as _), $p3, ((0) as _)) }; }
 #[macro_export] macro_rules! Header_GetItem { ($p0:expr, $p1:expr, $p2:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1200 + 11)) as _), (((($p1) as c_int)) as WPARAM), (($p2) as LPARAM))) as BOOL) }; }
 #[macro_export] macro_rules! Header_SetItem { ($p0:expr, $p1:expr, $p2:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1200 + 12)) as _), (((($p1) as c_int)) as WPARAM), (($p2) as LPARAM))) as BOOL) }; }
 #[macro_export] macro_rules! ImageList_AddIcon { ($p0:expr, $p1:expr $(,)?) => { ImageList_ReplaceIcon((($p0) as _), (((-(1 as c_int))) as _), (($p1) as _)) }; }
@@ -301,7 +301,7 @@ pub type WNDCLASSEX = WNDCLASSEXW;
 #[macro_export] macro_rules! ListView_InsertItem { ($p0:expr, $p1:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1000 + 77)) as _), ((0) as _), (($p1) as LPARAM))) as c_int) }; }
 #[macro_export] macro_rules! ListView_SetExtendedListViewStyle { ($p0:expr, $p1:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1000 + 54)) as _), ((0) as _), (($p1) as _))) as DWORD) }; }
 #[macro_export] macro_rules! ListView_SetImageList { ($p0:expr, $p1:expr, $p2:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1000 + 3)) as _), (($p2) as WPARAM), (($p1) as LPARAM))) as HIMAGELIST) }; }
-#[macro_export] macro_rules! ListView_SortItemsEx { ($p0:expr, $p1:expr, $p2:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1000 + 81)) as _), (((($p2) as LPARAM)) as WPARAM), (($p1) as usize as LPARAM) /* PFNLVCOMPARE is Option<fn>: an Option has no integer cast */)) as BOOL) }; }
+#[macro_export] macro_rules! ListView_SortItemsEx { ($p0:expr, $p1:expr, $p2:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1000 + 81)) as _), (((($p2) as LPARAM)) as WPARAM), ((core::mem::transmute::<PFNLVCOMPARE, usize>(({ let __cb: PFNLVCOMPARE = $p1; __cb }))) as LPARAM))) as BOOL) }; }
 #[macro_export] macro_rules! MAKEINTRESOURCE { ($p0:expr $(,)?) => { ((((((((($p0) as DWORD_PTR) & 0xffff)) as WORD)) as ULONG_PTR)) as LPWSTR) }; }
 #[macro_export] macro_rules! MAKELPARAM { ($p0:expr, $p1:expr $(,)?) => { (((((((((((((($p0) as DWORD_PTR) & 0xffff)) as WORD)) as DWORD) | (((((((($p1) as DWORD_PTR) & 0xffff)) as WORD)) as DWORD) << 16))) as LONG)) as DWORD)) as LPARAM) }; }
 #[macro_export] macro_rules! MAKEWPARAM { ($p0:expr, $p1:expr $(,)?) => { (((((((((((((($p0) as DWORD_PTR) & 0xffff)) as WORD)) as DWORD) | (((((((($p1) as DWORD_PTR) & 0xffff)) as WORD)) as DWORD) << 16))) as LONG)) as DWORD)) as WPARAM) }; }

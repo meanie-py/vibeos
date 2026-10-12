@@ -1,0 +1,41 @@
+# certutil (base/applications/cmdutils/certutil -> certutil-rust, a C++ module). Every verb and
+# its error paths, the C oracle against the Rust on the same input. fixture.cer is a small
+# self-signed DER certificate, so -asn walks a real nested structure (sequences, OIDs, bit
+# strings, context-specific tags) rather than only its error path.
+module: certutil
+variants:
+  c: '%SystemRoot%\bin\modrun\certutil_c.exe'
+  rust: '%SystemRoot%\system32\certutil.exe'
+ninja: [certutil_c]
+stage:
+  - {src: 'build-{arch}/base/applications/cmdutils/certutil/certutil_c.exe', dest: bin/modrun/certutil_c.exe}
+  - {src: 'tools/payloads/modrun/fixtures/certutil/fixture.cer', dest: bin/modrun/fixture.cer}
+cases:
+  - id: usage
+    args: '-?'
+    expect: ['hashfile']
+  - id: no-args
+    args: ''
+  - id: hashfile-help
+    args: '-hashfile -?'
+  - id: asn-help
+    args: '-asn -?'
+  # The live CD registers no CSP, so CryptAcquireContext fails NTE_KEYSET_NOT_DEF
+  # (-2146893801) in both variants and the SHA1 path itself is NOT reached here: these two
+  # cases grade the context-failure path only. Owed: a case that runs where rsaenh is set up.
+  - id: hashfile
+    args: '-hashfile %SystemRoot%\bin\modrun\fixture.cer'
+    expect: ['no context']
+  - id: hashfile-pe
+    args: '-hashfile %SystemRoot%\system32\ntdll.dll'
+  - id: asn
+    args: '-asn %SystemRoot%\bin\modrun\fixture.cer'
+    expect: ['SEQUENCE']
+  - id: asn-not-der
+    args: '-asn %SystemRoot%\system32\ntdll.dll'
+  - id: missing-arg
+    args: '-hashfile'
+  - id: missing-file
+    args: '-hashfile %SystemRoot%\no\such\file.bin'
+  - id: unknown-verb
+    args: '-frobnicate x'

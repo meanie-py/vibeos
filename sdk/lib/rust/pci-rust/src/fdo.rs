@@ -520,12 +520,12 @@ unsafe fn FdoStartDevice(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
         .StartDevice
         .AllocatedResources;
     if allocated_resources.is_null() || (*allocated_resources).Count < 1 {
-        // A statically root-enumerated host bridge (arm64: hivesys_arm64.inf
-        // seeds Enum\Root\*PNP0A03 — no ACPI, so no _CRS bus-number resource)
-        // arrives with no resource list at all. Default to bus 0 instead of
-        // failing: config access goes through HalGetBusData (ECAM on arm64),
-        // which needs only the bus number. x86 always gets resources from
-        // acpi.sys, so this branch never runs there.
+        // A host bridge with no resource list at all. arm64 used to seed one in
+        // the hive (Enum\Root\*PNP0A03, no bus-number resource); the HAL now
+        // publishes every root with its bus range, and x86 roots get theirs from
+        // acpi.sys, so this is a fallback for a root someone seeds by hand.
+        // Default to bus 0 instead of failing: config access goes through
+        // HalGetBusData, which needs only the bus number.
         ntkrnl_sys::driver_ddk::DbgPrint(
             b"[PCI] FdoStartDevice: no bus-number resource (root-seeded bridge?) - defaulting to bus 0\n\0"
                 .as_ptr() as *const i8,

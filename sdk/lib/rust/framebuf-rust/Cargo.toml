@@ -1,9 +1,9 @@
 # framebuf-rust — Rust translation of the generic framebuffer GDI display
 # driver (win32ss/drivers/displays/framebuf/*.c). crate-type=staticlib →
 # libframebuf_rust.a, linked into the cmake-built framebuf.dll with the C
-# sources commented out — arm64vid-rust / hal-rust style cohabitation.
+# sources commented out — sysfb-rust / hal-rust style cohabitation.
 #
-# Unlike arm64vid (a video *miniport*-adjacent driver linking ntoskrnl),
+# Unlike sysfb (a video *miniport*-adjacent driver linking ntoskrnl),
 # framebuf is a GDI *display* driver: it links win32k (the GDI engine that
 # exports Eng*/PALOBJ_*/DDI types) plus libcntpr. So this crate depends on
 # win32k-sys (the win32k FFI substrate) rather than ntkrnl-sys alone.

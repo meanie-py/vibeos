@@ -323,12 +323,15 @@ pub unsafe extern "system" fn XHCI_StartController(
     x.va = r.StartVA as *mut u8;
     x.pa = r.StartPA as u64;
 
-    // Halt (5.4.1: R/S=0, wait for HCHalted), then reset.
+    // Halt (5.4.1: R/S=0, wait for HCHalted), then reset. The spec allows 16 ms,
+    // but the OptiPlex's Renesas card, left running by the firmware, has missed
+    // a 20 ms deadline; giving up there left usbport with a dead controller and
+    // the boot waiting on its root hub forever. Wait longer, and if it still
+    // has not halted, reset it anyway: HCRST is the only recovery left.
     let op = x.op;
     wr32(op, USBCMD, rd32(op, USBCMD) & !USBCMD_RS);
-    if !poll_until(|| rd32(op, USBSTS) & USBSTS_HCH != 0, 20_000) {
-        xlog!("start: controller did not halt (USBSTS %x)", rd32(op, USBSTS));
-        return MP_STATUS_HW_ERROR;
+    if !poll_until(|| rd32(op, USBSTS) & USBSTS_HCH != 0, 200_000) {
+        xlog!("start: controller did not halt (USBCMD %x USBSTS %x), resetting it anyway", rd32(op, USBCMD), rd32(op, USBSTS));
     }
     wr32(op, USBCMD, USBCMD_HCRST);
     if !poll_until(|| rd32(op, USBCMD) & USBCMD_HCRST == 0 && rd32(op, USBSTS) & USBSTS_CNR == 0, 1_000_000) {
@@ -581,6 +584,14 @@ pub unsafe fn process_events(x: &mut XhciExtension) -> EventSummary {
             }
             TRB_EV_PORT_STATUS_CHANGE => {
                 s.port_change = true;
+                // The first events of a boot, with the port's state: a port whose
+                // change bits keep re-arming shows up here, not in usbhub.
+                static LOGGED: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+                if LOGGED.fetch_add(1, Ordering::Relaxed) < 64 {
+                    let hw = (param as u32) >> 24;
+                    let v = if hw >= 1 { rd32(x.op, PORTSC_BASE + 0x10 * (hw as usize - 1)) } else { 0 };
+                    xlog!("port change event: hw port %u, PORTSC %x (op %p)", hw, v, x.op);
+                }
             }
             TRB_EV_TRANSFER => {
                 crate::endpoint::on_transfer_event(x, param, status, control);

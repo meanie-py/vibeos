@@ -517,8 +517,10 @@ def _transpile_one(
     # 64-bit target the compiler ignores the keyword outright — there is only one
     # convention — so erasing it there is a no-op, not a semantic edit. On i386 it is
     # real, so we never touch it: that file anchors from a 64-bit db instead (the caller
-    # is told), or not at all.
-    extra = [] if _targets_i386(flags) else ["-D__thiscall="]
+    # is told), or not at all. `__cdecl` is the same class on a 64-bit target and
+    # panics the same way: eventcreate.c takes the address of a `__cdecl` variadic
+    # handler (PRINT_ERROR_FUNC) and failed on every db until it was erased here.
+    extra = [] if _targets_i386(flags) else ["-D__thiscall=", "-D__cdecl="]
     for variant in _PSEH_VARIANTS:
         result = _transpile_attempt(
             c_file, build_dir, flags, [*extra, *variant], timeout, attempts, strict
@@ -897,7 +899,10 @@ def fold_static_initializers(text: str, blocks: list[str]) -> list[str]:
         a = re.match(r"([A-Za-z_]\w*)\s*=(?!=)\s*(.*)\Z", stmt, re.S)
         sig = None
         if a is not None:
-            sig = re.compile(rf"^(\s*(?:pub\s+)?static(?:\s+mut)?\s+{a.group(1)}\s*:[^=]*=)")
+            # An exported global carries `#[no_mangle]` on the line before (ftp's NCMDS).
+            sig = re.compile(
+                rf"^((?:\s*#\[[^\]]*\])*\s*(?:pub\s+)?static(?:\s+mut)?\s+{a.group(1)}\s*:[^=]*=)"
+            )
         hit = [k for k, b in enumerate(blocks) if sig is not None and sig.match(b)]
         if a is None or len(hit) != 1:
             raise C2RustError(

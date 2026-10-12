@@ -19,9 +19,6 @@ use ntkrnl_sys::ddk::ExReleaseResourceLite;
 
 extern "system" {
     fn FatBugCheck(arg1: usize, arg2: usize, arg3: usize);
-    fn SetFlag(flags: *mut u32, mask: u32);
-    fn ClearFlag(flags: *mut u32, mask: u32);
-    fn FlagOn(flags: u32, mask: u32) -> i32;
     fn FatDecodeFileObject( FileObject: *mut FILE_OBJECT, Vcb: *mut PVCB, Fcb: *mut PFCB, Ccb: *mut PCCB, ) -> TYPE_OF_OPEN;
     fn NodeType(Node: *mut core::ffi::c_void) -> u32;
     fn FatSetFullFileNameInFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
@@ -38,7 +35,6 @@ extern "system" {
     fn FatDeleteIrpContext(IrpContext: PIRP_CONTEXT);
     fn ExAcquireResourceSharedLite(resource: *mut ERESOURCE, wait: i32) -> u8;
     // ExReleaseResourceLite via ntkrnl_sys::ddk (kernel FASTCALL export — §9.99)
-    fn BooleanFlagOn(Flags: u32, Mask: u32) -> u8;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -256,7 +252,7 @@ pub unsafe extern "system" fn FatExceptionFilter(
     const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02; // TODO: verify value  // nolint: const-contradiction (fastfat's own flag set, fatstruc.h:1563)
     const IRP_CONTEXT_FLAG_DISABLE_WRITE_THROUGH: u32 = 0x08; // TODO: verify value
     const DEBUG_TRACE_UNWIND: u32 = 0x08; // TODO: verify value
-    const Dbg: u32 = 0x00000002; // DEBUG_TRACE_CATCH_EXCEPTIONS; TODO: verify value
+    const Dbg: u32 = 0x00000004; // fatdata.h DEBUG_TRACE_CATCH_EXCEPTIONS
 
     let mut ExceptionCode: u32;
     // ExceptionCode = ExceptionPointer->ExceptionRecord->ExceptionCode
@@ -308,18 +304,12 @@ pub unsafe extern "system" fn FatExceptionFilter(
     }
 
     // SetFlag(IrpContext->Flags, IRP_CONTEXT_FLAG_WAIT)
-    SetFlag(
-        &mut (*IrpContext).Flags,
-        IRP_CONTEXT_FLAG_WAIT,
-    );
+    SetFlag!((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT);
 
     if ExceptionCode != STATUS_CANT_WAIT
         && ExceptionCode != STATUS_VERIFY_REQUIRED
     {
-        SetFlag(
-            &mut (*IrpContext).Flags,
-            IRP_CONTEXT_FLAG_DISABLE_WRITE_THROUGH,
-        );
+        SetFlag!((*IrpContext).Flags, IRP_CONTEXT_FLAG_DISABLE_WRITE_THROUGH);
     }
 
     if (*IrpContext).ExceptionStatus == 0 {
@@ -723,9 +713,9 @@ pub unsafe extern "system" fn FatFastQueryBasicInfo(
     irp_context.NodeByteSize = (core::mem::size_of::<IRP_CONTEXT>() as u32) as i16;
 
     if wait != 0 {
-        SetFlag(&mut irp_context.Flags, IRP_CONTEXT_FLAG_WAIT);
+        SetFlag!(irp_context.Flags, IRP_CONTEXT_FLAG_WAIT);
     } else {
-        ClearFlag(&mut irp_context.Flags, IRP_CONTEXT_FLAG_WAIT);
+        ClearFlag!(irp_context.Flags, IRP_CONTEXT_FLAG_WAIT);
     }
 
     type_of_open = FatDecodeFileObject(file_object, &mut vcb, &mut fcb, &mut ccb);
@@ -769,7 +759,7 @@ pub unsafe extern "system" fn FatFastQueryBasicInfo(
         }
 
         if FlagOn((*fcb).FcbState, FCB_STATE_TEMPORARY) != 0 {
-            SetFlag(&mut (*buffer).FileAttributes, FILE_ATTRIBUTE_TEMPORARY);
+            SetFlag!((*buffer).FileAttributes, FILE_ATTRIBUTE_TEMPORARY);
         }
 
         if (*buffer).FileAttributes == 0 {
@@ -808,9 +798,9 @@ pub unsafe extern "system" fn FatFastQueryStdInfo(
     IrpContext.NodeByteSize = (core::mem::size_of::<IRP_CONTEXT>() as u16) as i16;
 
     if Wait != 0 {
-        SetFlag(&mut IrpContext.Flags, IRP_CONTEXT_FLAG_WAIT);
+        SetFlag!(IrpContext.Flags, IRP_CONTEXT_FLAG_WAIT);
     } else {
-        ClearFlag(&mut IrpContext.Flags, IRP_CONTEXT_FLAG_WAIT);
+        ClearFlag!(IrpContext.Flags, IRP_CONTEXT_FLAG_WAIT);
     }
 
     let mut Vcb: *mut VCB = core::ptr::null_mut();
@@ -920,9 +910,9 @@ pub unsafe extern "system" fn FatFastQueryNetworkOpenInfo(
     IrpContext.NodeByteSize = (core::mem::size_of::<IRP_CONTEXT>()) as i16;
 
     if Wait != 0 {
-        SetFlag(&mut IrpContext.Flags, IRP_CONTEXT_FLAG_WAIT);
+        SetFlag!(IrpContext.Flags, IRP_CONTEXT_FLAG_WAIT);
     } else {
-        ClearFlag(&mut IrpContext.Flags, IRP_CONTEXT_FLAG_WAIT);
+        ClearFlag!(IrpContext.Flags, IRP_CONTEXT_FLAG_WAIT);
     }
 
     TypeOfOpen = FatDecodeFileObject(FileObject, &mut Vcb, &mut Fcb, &mut Ccb);
@@ -968,7 +958,7 @@ pub unsafe extern "system" fn FatFastQueryNetworkOpenInfo(
 
         // Temporary attribute
         if FlagOn((*Fcb).FcbState, FCB_STATE_TEMPORARY) != 0 {
-            SetFlag(&mut (*Buffer).FileAttributes, FILE_ATTRIBUTE_TEMPORARY);
+            SetFlag!((*Buffer).FileAttributes, FILE_ATTRIBUTE_TEMPORARY);
         }
 
         if (*Buffer).FileAttributes == 0 {
@@ -2624,3 +2614,15 @@ pub unsafe extern "system" fn FatPopUpFileCorrupt(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// fatprocs.h flag macros, inline at the declared widths (were C stubs taking
+// ULONG_PTR, which read garbage upper bits from a narrower argument).
+#[inline(always)]
+unsafe fn FlagOn(flags: u32, mask: u32) -> i32 {
+    (flags as u64 & mask as u64) as i32
+}
+
+#[inline(always)]
+unsafe fn BooleanFlagOn(Flags: u32, Mask: u32) -> u8 {
+    ((Flags as u64 & Mask as u64) != 0) as u8
+}

@@ -127,8 +127,10 @@ const E1000_IDS: &[(u16, u16)] = &[
     (0x8086, 0x10D3), // 82574L   — NOT programmed here; excluded below
 ];
 
-/// Scan bus 0 for a supported e1000. Returns (df, bar0_physical).
-pub fn find_e1000() -> Option<(DeviceFunction, u64)> {
+/// Scan bus 0 for a supported e1000: the QEMU parts above, or a chipset-
+/// integrated I217/I218 (`pch`), which sits on bus 0 too. Returns (df,
+/// bar0_physical, device id).
+pub fn find_e1000() -> Option<(DeviceFunction, u64, u16)> {
     let access = HalPciAccess;
     for device in 0..32u8 {
         for function in 0..8u8 {
@@ -137,14 +139,14 @@ pub fn find_e1000() -> Option<(DeviceFunction, u64)> {
             let vendor = (id & 0xFFFF) as u16;
             let dev = (id >> 16) as u16;
             // 82574L (e1000e) has a different RX programming model — skip it.
-            if vendor == 0x8086 && (dev == E1000_IDS[0].1 || dev == E1000_IDS[1].1) {
+            if vendor == 0x8086 && (dev == E1000_IDS[0].1 || dev == E1000_IDS[1].1 || crate::pch::is_pch(dev)) {
                 let bar0 = access.read_word(df, 0x10);
                 if bar0 & 1 != 0 {
                     continue; // I/O BAR — not the MMIO we want
                 }
                 let base = (bar0 & 0xFFFF_FFF0) as u64;
                 if base != 0 {
-                    return Some((df, base));
+                    return Some((df, base, dev));
                 }
             }
         }
@@ -244,6 +246,10 @@ impl E1000 {
             // 1500) — a non-EOP descriptor would be a fragment; drop it.
             let ok = desc.status & RXD_STAT_EOP != 0 && desc.errors == 0;
             let len = desc.length as usize;
+            static FIRST_RX: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(true);
+            if FIRST_RX.swap(false, core::sync::atomic::Ordering::Relaxed) {
+                nsprint!("[NETSTACK] e1000: first frame received ({} bytes, errors {:#x})\n", len, desc.errors);
+            }
             let out = if ok && len > 0 && len <= FRAME_MAX {
                 let src = self.rx_buf.add(idx * BUF_SIZE);
                 let mut v = Vec::with_capacity(len);
@@ -286,6 +292,10 @@ impl E1000 {
             desc.special = 0;
             self.tx_next = (idx + 1) % N_TX;
             self.wr(TDT, self.tx_next as u32);
+            static FIRST_TX: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(true);
+            if FIRST_TX.swap(false, core::sync::atomic::Ordering::Relaxed) {
+                nsprint!("[NETSTACK] e1000: first frame sent ({} bytes, STATUS {:#x})\n", frame.len(), self.rd(STATUS));
+            }
         }
     }
 }
@@ -293,7 +303,8 @@ impl E1000 {
 /// Find, reset, and bring up the e1000. Returns None (with a serial line) on
 /// any failure — the engine falls back / reports.
 pub fn bringup() -> Option<E1000> {
-    let (df, bar0) = find_e1000()?;
+    let (df, bar0, dev) = find_e1000()?;
+    let pch = crate::pch::is_pch(dev);
     enable_bus_master(df);
 
     unsafe {
@@ -307,18 +318,26 @@ pub fn bringup() -> Option<E1000> {
         let rd = |off: usize| core::ptr::read_volatile(regs.add(off / 4));
         let wr = |off: usize, val: u32| core::ptr::write_volatile(regs.add(off / 4), val);
 
-        // Mask all interrupts, reset, re-mask (RST clears IMC).
-        wr(IMC, 0xFFFF_FFFF);
-        wr(CTRL, rd(CTRL) | CTRL_RST);
-        let mut spins = 0u32;
-        while rd(CTRL) & CTRL_RST != 0 && spins < 100_000 {
-            spins += 1;
-        }
-        wr(IMC, 0xFFFF_FFFF);
-        let _ = rd(ICR);
+        if pch {
+            // Reset, wake the PHY and start autonegotiation (pch.rs); it leaves
+            // interrupts masked and the link set up.
+            if !crate::pch::reset(regs) {
+                return None;
+            }
+        } else {
+            // Mask all interrupts, reset, re-mask (RST clears IMC).
+            wr(IMC, 0xFFFF_FFFF);
+            wr(CTRL, rd(CTRL) | CTRL_RST);
+            let mut spins = 0u32;
+            while rd(CTRL) & CTRL_RST != 0 && spins < 100_000 {
+                spins += 1;
+            }
+            wr(IMC, 0xFFFF_FFFF);
+            let _ = rd(ICR);
 
-        // Link up + auto speed detect.
-        wr(CTRL, (rd(CTRL) | CTRL_SLU | CTRL_ASDE) & !CTRL_RST);
+            // Link up + auto speed detect.
+            wr(CTRL, (rd(CTRL) | CTRL_SLU | CTRL_ASDE) & !CTRL_RST);
+        }
 
         // MAC: QEMU programs RAL0/RAH0 from -device mac=; fall back to EEPROM.
         let ral = rd(RAL0);
@@ -331,6 +350,12 @@ pub fn bringup() -> Option<E1000> {
             rah as u8,
             (rah >> 8) as u8,
         ];
+        if ral == 0 && rah & 0xFFFF == 0 && pch {
+            // No EEPROM read register on a PCH part: the hardware loads the
+            // address from the NVM in the SPI flash into RAR0 at reset.
+            nsprint!("[NETSTACK] e1000 PCH: no MAC address in RAR0 (RAH {:#x})\n", rah);
+            return None;
+        }
         if ral == 0 && rah & 0xFFFF == 0 {
             for w in 0..3usize {
                 wr(EERD, 1 | ((w as u32) << 8));
@@ -403,8 +428,8 @@ pub fn bringup() -> Option<E1000> {
 
         let status = rd(STATUS);
         nsprint!(
-            "[NETSTACK] e1000 up: mac={:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} status={:#x} bar0={:#x}\n",
-            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], status, bar0
+            "[NETSTACK] e1000 up: dev={:04x} mac={:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} status={:#x} bar0={:#x}\n",
+            dev, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], status, bar0
         );
 
         // Interrupt as soon as a frame lands, without the receive-delay timer.

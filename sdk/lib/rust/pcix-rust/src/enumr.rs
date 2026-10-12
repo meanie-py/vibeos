@@ -393,7 +393,6 @@ pub unsafe extern "system" fn PciQueryResources(
     PdoExtension: PPCI_PDO_EXTENSION,
     Buffer: *mut PCM_RESOURCE_LIST,
 ) -> NTSTATUS {
-    const CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE: u32 = 0x0000;
 
     let PciResources: PPCI_FUNCTION_RESOURCES;
     let mut HaveVga: BOOLEAN;
@@ -407,7 +406,6 @@ pub unsafe extern "system" fn PciQueryResources(
     let mut Resource: PCM_PARTIAL_RESOURCE_DESCRIPTOR;
     let LastResource: PCM_PARTIAL_RESOURCE_DESCRIPTOR;
     let ResourceList: PCM_RESOURCE_LIST;
-    let mut InterruptLine: UCHAR;
 
     /* Assume failure */
     Count = 0;
@@ -449,12 +447,14 @@ pub unsafe extern "system" fn PciQueryResources(
     }
 
     /* If there's an interrupt pin associated, check at least one decode is on */
-    if (*PdoExtension).InterruptPin != 0 && (HaveMemSpace != 0 || HaveIoSpace != 0) {
-        /* Read the interrupt line for the pin, add a descriptor if it's valid */
-        InterruptLine = (*PdoExtension).AdjustedInterruptLine;
-        if InterruptLine != 0 && InterruptLine != 0xFF {
-            Count += 1;
-        }
+    // VibeOS: the line is where the firmware routes the pin, else the Interrupt Line.
+    let BootInterrupt = if HaveMemSpace != 0 || HaveIoSpace != 0 {
+        crate::irqroute::interrupt_line(PdoExtension)
+    } else {
+        None
+    };
+    if BootInterrupt.is_some() {
+        Count += 1;
     }
 
     /* Check for PCI bridge */
@@ -551,21 +551,21 @@ pub unsafe extern "system" fn PciQueryResources(
         }
     }
 
-    /* If there's an interrupt pin associated, check at least one decode is on */
-    if (*PdoExtension).InterruptPin != 0 && (HaveMemSpace != 0 || HaveIoSpace != 0) {
-        /* Read the interrupt line for the pin, check if it's valid */
-        InterruptLine = (*PdoExtension).AdjustedInterruptLine;
-        if InterruptLine != 0 && InterruptLine != 0xFF {
-            let _ = LastResource;
+    /* If there's an interrupt pin associated and at least one decode is on */
+    if let Some((Line, Level)) = BootInterrupt {
+        let _ = LastResource;
 
-            /* Add the interrupt descriptor */
-            (*Resource).Flags = CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE as USHORT;
-            (*Resource).Type = CmResourceTypeInterrupt as UCHAR;
-            (*Resource).ShareDisposition = CmResourceShareShared;
-            (*Resource).u.Interrupt.Affinity = !0;
-            (*Resource).u.Interrupt.Level = InterruptLine as ULONG;
-            (*Resource).u.Interrupt.Vector = InterruptLine as ULONG;
-        }
+        /* Add the interrupt descriptor */
+        (*Resource).Flags = if Level {
+            ntkrnl_sys::cmres::CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE as USHORT
+        } else {
+            ntkrnl_sys::cmres::CM_RESOURCE_INTERRUPT_LATCHED as USHORT
+        };
+        (*Resource).Type = CmResourceTypeInterrupt as UCHAR;
+        (*Resource).ShareDisposition = CmResourceShareShared;
+        (*Resource).u.Interrupt.Affinity = !0;
+        (*Resource).u.Interrupt.Level = Line;
+        (*Resource).u.Interrupt.Vector = Line;
     }
 
     /* Return the resource list */
@@ -617,7 +617,6 @@ pub unsafe extern "system" fn PciBuildRequirementsList(
     PciData: PPCI_COMMON_HEADER,
     Buffer: *mut PIO_RESOURCE_REQUIREMENTS_LIST,
 ) -> NTSTATUS {
-    const CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE: u16 = 0x0000; // xdk/cmtypes.h
     let mut RequirementsList: PIO_RESOURCE_REQUIREMENTS_LIST;
     let mut Descriptor: PIO_RESOURCE_DESCRIPTOR;
     let Resources = (*PdoExtension).Resources;
@@ -716,9 +715,24 @@ pub unsafe extern "system" fn PciBuildRequirementsList(
     if HaveInterrupt {
         (*Descriptor).Type = CmResourceTypeInterrupt as u8;
         (*Descriptor).ShareDisposition = CmResourceShareShared;
-        (*Descriptor).Flags = CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE;
-        (*Descriptor).u.Interrupt.MinimumVector = 0;
-        (*Descriptor).u.Interrupt.MaximumVector = u32::MAX; // MAXULONG
+        (*Descriptor).Flags = ntkrnl_sys::cmres::CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE;
+        // Divergence from the C, which asks for any vector and relies on acpi.sys's
+        // interrupt arbiter to narrow it by _PRT. We have no such arbiter, so the one
+        // line the pin can arrive on is asked for directly (irqroute.rs); only a pin
+        // nobody routed and the firmware left unassigned stays open-ended.
+        match crate::irqroute::interrupt_line(PdoExtension) {
+            Some((Line, Level)) => {
+                if !Level {
+                    (*Descriptor).Flags = ntkrnl_sys::cmres::CM_RESOURCE_INTERRUPT_LATCHED;
+                }
+                (*Descriptor).u.Interrupt.MinimumVector = Line;
+                (*Descriptor).u.Interrupt.MaximumVector = Line;
+            }
+            None => {
+                (*Descriptor).u.Interrupt.MinimumVector = 0;
+                (*Descriptor).u.Interrupt.MaximumVector = u32::MAX; // MAXULONG
+            }
+        }
         Descriptor = Descriptor.add(1);
     }
 

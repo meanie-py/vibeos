@@ -20,6 +20,7 @@ from . import (
     atl_contract,
     callout_annotate,
     candidate_oracle,
+    com_vtables,
     cpp_app,
     cpp_com,
     cpp_core,
@@ -3296,9 +3297,13 @@ def cmd_translate(args):
         if cpp_class_target:
             # Shared ATL types (CStringW, CComPtr, ...) from atl-rust: the API only, per
             # worker that names one. A --local-raii lowering of the same name wins.
+            crate = getattr(rustconv_target, "output_crate", None)
+            com_methods = crate is not None and com_vtables.island_has_methods(crate / "src")
             for dep in sorted_deps:
                 if not any(re.search(rf"\b{n}\b", dep.body_text) for n in local_raii_impls):
-                    deterministic_contracts[dep.name] += atl_contract.contract(dep.body_text)
+                    deterministic_contracts[dep.name] += atl_contract.contract(
+                        dep.body_text, com_methods=com_methods
+                    )
         if cpp_com_cls is not None:
             container_fields = [
                 state
@@ -4883,7 +4888,18 @@ def cmd_translate(args):
             rust_sources=_islands,
             c_headers=sorted(c_file.parent.glob("*.h")),
         )
-        new_vtbls = [t for t in vtbls if not re.search(rf"\b{re.escape(t.name)}\s*:", stitched)]
+        # A real `static` item only: the preamble's own `// static IShellPropSheetExtVtbl
+        # efvtIShellPropSheetExt: skipped` note matched a bare `NAME:` and deskadp shipped all
+        # three of its COM vtables missing.
+        new_vtbls = [
+            t
+            for t in vtbls
+            if not re.search(
+                rf"^\s*(?:pub(?:\([^)]*\))?\s+)?static\s+(?:mut\s+)?{re.escape(t.name)}\s*:",
+                stitched,
+                re.M,
+            )
+        ]
         if new_vtbls:
             body = "\n\n".join(t.render(c_name=c_file.name) for t in new_vtbls)
             stitched += f"\n\n// COM vtable tables — generated from {c_file.name} by vtbl_gen.py\n"

@@ -1,0 +1,19 @@
+# winelist-rust — `sdk/include/wine/list.h`, ported once. See src/lib.rs.
+[package]
+name = "winelist-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+
+[lib]
+# rlib, like win32macros-rust: consumers are staticlib crates that take it as a path
+# dependency. Every function is #[inline] and nothing is #[no_mangle].
+crate-type = ["rlib"]
+
+[dependencies]
+
+[package.metadata.difftest]
+host-tests = true

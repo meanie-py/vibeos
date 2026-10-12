@@ -1,0 +1,26 @@
+# xcopy (base/applications/cmdutils/xcopy -> xcopy-rust, batch D1). The shipped Rust diffed
+# against the pre-flip C (`python -m rustconv.c_oracle`); inputs from modrun/data.
+module: xcopy
+variants:
+  c: '%SystemRoot%\bin\modrun\xcopy_c.exe'
+  rust: '%SystemRoot%\system32\xcopy.exe'
+ninja:
+- xcopy_c
+stage:
+- src: build-{arch}/base/applications/cmdutils/xcopy/xcopy_c.exe
+  dest: bin/modrun/xcopy_c.exe
+- src: tools/payloads/modrun/data/a.txt
+  dest: bin/modrun/data/a.txt
+- src: tools/payloads/modrun/data/b.txt
+  dest: bin/modrun/data/b.txt
+- src: tools/payloads/modrun/data/lines.txt
+  dest: bin/modrun/data/lines.txt
+cases:
+- id: list-only
+  args: /L %SystemRoot%\bin\modrun\data\*.txt %TEMP%\xc\
+  expect:
+  - would be copied
+- id: copy
+  args: /Y /I %SystemRoot%\bin\modrun\data %TEMP%\xcopy_out
+- id: usage
+  args: /?

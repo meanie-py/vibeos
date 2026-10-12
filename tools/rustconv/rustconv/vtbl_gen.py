@@ -57,10 +57,11 @@ from pathlib import Path
 import tree_sitter_c as tsc
 from tree_sitter import Language, Parser
 
+from .config import REACTOS_ROOT
+
 C_LANG = Language(tsc.language())
 
-# Repo root: .../tools/rustconv/rustconv/vtbl_gen.py -> up 3
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = REACTOS_ROOT  # the invoked tree, not this file's checkout
 COM_SYS_SRC = REPO_ROOT / "sdk" / "lib" / "rust" / "com-sys" / "src"
 
 #: Field order is identical across arches (only the ABI on each slot differs:
@@ -426,6 +427,9 @@ def find_vtbl_tables(
         if t is None:
             return None
         name = src[t.start_byte : t.end_byte].decode("utf-8", "replace").strip()
+        # `struct IRichEditOleCallbackVtbl olecallbackVtbl = {..}` (wordpad) spells the tag:
+        # the type node is the whole `struct X` specifier.
+        name = re.sub(r"^struct\s+", "", name)
         return name if _VTBL_TYPE_RE.match(name) else None
 
     for node in tree.root_node.named_children:

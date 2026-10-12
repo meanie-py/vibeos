@@ -31,9 +31,11 @@
 //! [`set_resource_instance`] (its own `hInstance`, as shell32 needs), else
 //! `GetModuleHandleW(NULL)`.
 
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 #![allow(non_snake_case, non_camel_case_types, clippy::missing_safety_doc)]
 
+pub mod exe;
+pub mod stl;
 pub mod win;
 
 use core::ffi::c_void;
@@ -64,8 +66,12 @@ extern "system" {
         lpWideCharStr: *mut WCHAR,
         cchWideChar: INT,
     ) -> INT;
-    fn LoadStringW(hInstance: *mut c_void, uID: UINT, lpBuffer: *mut WCHAR, cchBufferMax: INT)
-        -> INT;
+    fn LoadStringW(
+        hInstance: *mut c_void,
+        uID: UINT,
+        lpBuffer: *mut WCHAR,
+        cchBufferMax: INT,
+    ) -> INT;
     fn GetModuleHandleW(lpModuleName: LPCWSTR) -> *mut c_void;
     fn WideCharToMultiByte(
         CodePage: u32,
@@ -112,7 +118,24 @@ extern "C" {
 /// `_AtlBaseModule.GetModuleInstance()`: CAtlBaseModule's constructor sets
 /// `m_hInst = reinterpret_cast<HINSTANCE>(&__ImageBase)`, the image this code is linked into.
 pub fn module_instance() -> *mut c_void {
-    unsafe { core::ptr::addr_of!(__ImageBase) as *mut c_void }
+    core::ptr::addr_of!(__ImageBase) as *mut c_void
+}
+
+/// ATL's `_AtlBaseModule` global, for the C++ spelling `_AtlBaseModule.GetResourceInstance()`.
+/// The handles are generic over the pointee, so each call site gets the island's own
+/// `HINSTANCE` (`*mut HINSTANCE__`) without a cast.
+pub struct CAtlBaseModule;
+
+#[allow(non_upper_case_globals)]
+pub static _AtlBaseModule: CAtlBaseModule = CAtlBaseModule;
+
+impl CAtlBaseModule {
+    pub fn GetModuleInstance<T>(&self) -> *mut T {
+        module_instance().cast()
+    }
+    pub fn GetResourceInstance<T>(&self) -> *mut T {
+        resource_instance().cast()
+    }
 }
 
 /// `_AtlBaseModule.GetResourceInstance()`: the instance set above, else the process image.
@@ -335,12 +358,18 @@ impl<T, A: CAllocator> CHeapPtr<T, A> {
     /// The default constructor: an empty pointer. ATL's one-argument `CHeapPtr(T*)` attaches
     /// instead — that is `from_raw`, because Rust has no overloading.
     pub const fn new() -> Self {
-        Self { m_pData: core::ptr::null_mut(), _alloc: PhantomData }
+        Self {
+            m_pData: core::ptr::null_mut(),
+            _alloc: PhantomData,
+        }
     }
 
     /// ATL's `CHeapPtr(T* pData)` — takes ownership of an already-allocated block.
     pub const fn from_raw(p: *mut T) -> Self {
-        Self { m_pData: p, _alloc: PhantomData }
+        Self {
+            m_pData: p,
+            _alloc: PhantomData,
+        }
     }
 
     /// ATL's `Allocate(nElements = 1)`: allocates `nElements * sizeof(T)` bytes.
@@ -427,6 +456,17 @@ impl<T, A: CAllocator> CHeapPtr<T, A> {
     }
 }
 
+/// `operator T*()` as the translator spells it for a `CHeapPtr<WCHAR>`: by the typedef the
+/// C++ converts to.
+impl<A: CAllocator> CHeapPtr<u16, A> {
+    pub fn op_to_LPWSTR(&self) -> *mut u16 {
+        self.m_pData
+    }
+    pub fn op_to_LPCWSTR(&self) -> *const u16 {
+        self.m_pData
+    }
+}
+
 impl<T, A: CAllocator> core::ops::Deref for CHeapPtr<T, A> {
     type Target = *mut T;
     fn deref(&self) -> &*mut T {
@@ -467,7 +507,9 @@ pub struct CComPtr<T> {
 impl<T> CComPtr<T> {
     /// ATL's default constructor — a null interface pointer.
     pub const fn new() -> Self {
-        Self { p: core::ptr::null_mut() }
+        Self {
+            p: core::ptr::null_mut(),
+        }
     }
 
     /// Spelled `null()` at some call sites; same thing, kept so both idioms compile.
@@ -581,7 +623,11 @@ pub struct CSimpleArray<T> {
 
 impl<T> CSimpleArray<T> {
     pub const fn new() -> Self {
-        Self { m_aT: core::ptr::null_mut(), m_nSize: 0, m_nAllocSize: 0 }
+        Self {
+            m_aT: core::ptr::null_mut(),
+            m_nSize: 0,
+            m_nAllocSize: 0,
+        }
     }
 
     /// ATL's `Add`: append, growing geometrically. Returns FALSE if the allocation failed —
@@ -589,7 +635,11 @@ impl<T> CSimpleArray<T> {
     pub unsafe fn Add(&mut self, t: T) -> BOOL {
         if self.m_nSize == self.m_nAllocSize {
             // ATL grows by max(alloc/2, 1); the first growth lands on 1.
-            let grow = if self.m_nAllocSize / 2 > 1 { self.m_nAllocSize / 2 } else { 1 };
+            let grow = if self.m_nAllocSize / 2 > 1 {
+                self.m_nAllocSize / 2
+            } else {
+                1
+            };
             let n = self.m_nAllocSize + grow;
             let bytes = (n as usize).wrapping_mul(core::mem::size_of::<T>());
             let p = CCRTAllocator::Reallocate(self.m_aT as *mut c_void, bytes) as *mut T;
@@ -704,7 +754,9 @@ pub struct CSimpleMapPair<K, V> {
 
 impl<K, V> CSimpleMap<K, V> {
     pub const fn new() -> Self {
-        Self { m_Pairs: CSimpleArray::new() }
+        Self {
+            m_Pairs: CSimpleArray::new(),
+        }
     }
 
     pub fn GetSize(&self) -> i32 {
@@ -790,7 +842,11 @@ impl<K: PartialEq, V: Clone + Default> CSimpleMap<K, V> {
     /// `GetValueAt(index)` — ATL returns a value-initialized V when out of range.
     pub unsafe fn GetValueAt(&self, index: i32) -> V {
         let pair = self.m_Pairs.GetAt(index);
-        if pair.is_null() { V::default() } else { (*pair).val.clone() }
+        if pair.is_null() {
+            V::default()
+        } else {
+            (*pair).val.clone()
+        }
     }
 }
 
@@ -798,13 +854,19 @@ impl<K: Clone + Default + PartialEq, V> CSimpleMap<K, V> {
     /// `GetKeyAt(index)` — ATL returns a value-initialized K when out of range.
     pub unsafe fn GetKeyAt(&self, index: i32) -> K {
         let pair = self.m_Pairs.GetAt(index);
-        if pair.is_null() { K::default() } else { (*pair).key.clone() }
+        if pair.is_null() {
+            K::default()
+        } else {
+            (*pair).key.clone()
+        }
     }
 
     /// `Remove(key)` — ATL removes the first pair with this key, returning FALSE when absent.
     pub unsafe fn Remove(&mut self, key: &K) -> BOOL {
         let index = self.FindKey(key);
-        if index < 0 { return 0; }
+        if index < 0 {
+            return 0;
+        }
         self.m_Pairs.RemoveAt(index)
     }
 }
@@ -814,7 +876,6 @@ impl<K, V> Default for CSimpleMap<K, V> {
         Self::new()
     }
 }
-
 
 // -------------------------------------------------------------------------------------------
 
@@ -876,18 +937,26 @@ pub struct CAtlList<T> {
 
 impl<T> CAtlList<T> {
     pub const fn new() -> Self {
-        Self { head: core::ptr::null_mut(), tail: core::ptr::null_mut(), count: 0 }
+        Self {
+            head: core::ptr::null_mut(),
+            tail: core::ptr::null_mut(),
+            count: 0,
+        }
     }
 
     unsafe fn alloc_node(element: T) -> *mut CAtlListNode<T> {
-        let node =
-            CCRTAllocator::Allocate(core::mem::size_of::<CAtlListNode<T>>()) as *mut CAtlListNode<T>;
+        let node = CCRTAllocator::Allocate(core::mem::size_of::<CAtlListNode<T>>())
+            as *mut CAtlListNode<T>;
         if node.is_null() {
             return node;
         }
         core::ptr::write(
             node,
-            CAtlListNode { next: core::ptr::null_mut(), prev: core::ptr::null_mut(), element },
+            CAtlListNode {
+                next: core::ptr::null_mut(),
+                prev: core::ptr::null_mut(),
+                element,
+            },
         );
         node
     }
@@ -946,6 +1015,56 @@ impl<T> CAtlList<T> {
         }
         *pos = (*node).next.cast();
         core::ptr::addr_of_mut!((*node).element)
+    }
+
+    /// `SwapElements(pos1, pos2)`: exchange the two NODES' places in the list. Each position
+    /// keeps naming its element, now at the other's place. ReactOS's atlcoll.h relinks
+    /// prev/next pairwise, which is right for a node and its successor only by accident and
+    /// links a node to itself when `pos2` immediately precedes `pos1`; adjacency is handled
+    /// here in both orders.
+    pub unsafe fn SwapElements(&mut self, pos1: POSITION, pos2: POSITION) {
+        let (mut a, mut b) = (pos1 as *mut CAtlListNode<T>, pos2 as *mut CAtlListNode<T>);
+        if a == b || a.is_null() || b.is_null() {
+            return;
+        }
+        if (*b).next == a {
+            core::mem::swap(&mut a, &mut b);
+        }
+        let (ap, an, bp, bn) = ((*a).prev, (*a).next, (*b).prev, (*b).next);
+        if an == b {
+            // ap <-> a <-> b <-> bn  becomes  ap <-> b <-> a <-> bn
+            (*b).prev = ap;
+            (*b).next = a;
+            (*a).prev = b;
+            (*a).next = bn;
+            self.relink(ap, b, true);
+            self.relink(bn, a, false);
+        } else {
+            (*a).prev = bp;
+            (*a).next = bn;
+            (*b).prev = ap;
+            (*b).next = an;
+            self.relink(ap, b, true);
+            self.relink(an, b, false);
+            self.relink(bp, a, true);
+            self.relink(bn, a, false);
+        }
+    }
+
+    /// Point `neighbor` (the node before `node` when `before`, else after) at `node`, or the
+    /// list's head/tail when there is no neighbor.
+    unsafe fn relink(
+        &mut self,
+        neighbor: *mut CAtlListNode<T>,
+        node: *mut CAtlListNode<T>,
+        before: bool,
+    ) {
+        match (neighbor.is_null(), before) {
+            (true, true) => self.head = node,
+            (true, false) => self.tail = node,
+            (false, true) => (*neighbor).next = node,
+            (false, false) => (*neighbor).prev = node,
+        }
     }
 
     pub unsafe fn GetAt(&self, pos: POSITION) -> *mut T {
@@ -1053,7 +1172,11 @@ static EMPTY_WSTR: [WCHAR; 1] = [0];
 impl CStringW {
     /// `CStringT()` — the default constructor.
     pub const fn new() -> Self {
-        Self { m_pszData: core::ptr::null_mut(), m_nLength: 0, m_nAlloc: 0 }
+        Self {
+            m_pszData: core::ptr::null_mut(),
+            m_nLength: 0,
+            m_nAlloc: 0,
+        }
     }
 
     /// `CStringT(PCXSTR pszSrc)` — cstringt.h:463. A null source yields the empty string,
@@ -1098,6 +1221,12 @@ impl CStringW {
     /// `IsEmpty()`.
     pub fn IsEmpty(&self) -> bool {
         self.m_nLength == 0
+    }
+
+    /// `Compare(psz)` — `StringTraits::StringCompare(GetString(), psz)`, `wcscmp` for the W
+    /// traits; the sign convention of the C call.
+    pub unsafe fn Compare(&self, psz: *const WCHAR) -> INT {
+        wcscmp(self.as_ptr(), psz)
     }
 
     /// `CompareNoCase(psz)` — cstringt.h:743, `StringTraits::CompareNoCase(GetString(), psz)`,
@@ -1426,12 +1555,7 @@ impl CStringW {
     }
 
     /// `Format(PCXSTR pszFormat, <two %s>)`.
-    pub unsafe fn FormatStr2(
-        &mut self,
-        pszFormat: *const WCHAR,
-        a: *const WCHAR,
-        b: *const WCHAR,
-    ) {
+    pub unsafe fn FormatStr2(&mut self, pszFormat: *const WCHAR, a: *const WCHAR, b: *const WCHAR) {
         let need = _scwprintf(pszFormat, a, b);
         let buf = self.format_begin(need);
         if buf.is_null() {
@@ -1529,6 +1653,7 @@ extern "C" {
     /// msvcrt — case-insensitive wide compare, what ATL's W string traits use for
     /// `CompareNoCase`.
     fn _wcsicmp(left: *const WCHAR, right: *const WCHAR) -> INT;
+    fn wcscmp(left: *const WCHAR, right: *const WCHAR) -> INT;
 }
 
 impl PartialEq for CStringW {
@@ -1540,8 +1665,12 @@ impl PartialEq for CStringW {
             let mut i = 0usize;
             loop {
                 let (x, y) = (*a.add(i), *b.add(i));
-                if x != y { return false; }
-                if x == 0 { return true; }
+                if x != y {
+                    return false;
+                }
+                if x == 0 {
+                    return true;
+                }
                 i += 1;
             }
         }
@@ -1575,7 +1704,9 @@ impl CStringW {
         let p = self.as_ptr();
         let mut i = nStart as usize;
         while *p.add(i) != 0 {
-            if *p.add(i) == ch { return i as i32; }
+            if *p.add(i) == ch {
+                return i as i32;
+            }
             i += 1;
         }
         -1
@@ -1622,7 +1753,10 @@ pub struct CStringA {
 
 impl CStringA {
     pub fn new() -> Self {
-        CStringA { m_pszData: core::ptr::null_mut(), m_nLength: 0 }
+        CStringA {
+            m_pszData: core::ptr::null_mut(),
+            m_nLength: 0,
+        }
     }
 
     /// `CStringA(LPCWSTR)`. NULL is the empty string, as in ATL.
@@ -1704,15 +1838,21 @@ pub struct CPath {
 
 #[cfg(feature = "path")]
 extern "system" {
-    fn PathCompactPathExW(pszOut: *mut WCHAR, pszSrc: *const WCHAR, cchMax: UINT, dwFlags: u32)
-        -> BOOL;
+    fn PathCompactPathExW(
+        pszOut: *mut WCHAR,
+        pszSrc: *const WCHAR,
+        cchMax: UINT,
+        dwFlags: u32,
+    ) -> BOOL;
 }
 
 #[cfg(feature = "path")]
 impl CPath {
     /// `CPathT(PCXSTR pszPath)`.
     pub unsafe fn from_ptr(pszPath: *const WCHAR) -> Self {
-        CPath { m_strPath: CStringW::from_ptr(pszPath) }
+        CPath {
+            m_strPath: CStringW::from_ptr(pszPath),
+        }
     }
 
     /// atlpath.h:180 `CompactPathEx(UINT nMaxChars, DWORD dwFlags = 0)`, line for line.

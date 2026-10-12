@@ -599,6 +599,13 @@ def _keep_for_debug(
         qemu_pid=handles["qemu_pid"],
         staging=handles["staging"],
         start_time=time.strftime("%Y-%m-%dT%H:%M:%S"),
+        # Without it every `gdb inspect` runs find-kbase's page-by-page MZ scan, and
+        # over the windows-host stub that alone outlasts a 300s hard timeout.
+        kernel_runtime_base=triage.kernel_runtime_base(
+            (work / "serial.log").read_text(errors="replace")
+            if (work / "serial.log").is_file()
+            else ""
+        ),
     )
     manifest = {
         **dataclasses.asdict(debug_run),
@@ -1160,24 +1167,24 @@ _XHCI_MSIX_ENABLED = "MSI-X enabled for 1b36:000d"
 _XHCI_MSI_ENABLED = re.compile(r"MSI enabled for 1b36:000d: (\d+) message\(s\)")
 
 
-# arm64vid-rust, when firmware handed over no framebuffer and the desktop runs on
-# a frame in memory (`Arm64VidHeadless`).
-_ARM64VID_HEADLESS = "[arm64vid] no firmware framebuffer: headless"
+# sysfb-rust, when firmware handed over no framebuffer and the desktop runs on
+# a frame in memory (`SysFbHeadless`).
+_SYSFB_HEADLESS = "[sysfb] no firmware framebuffer: headless"
 
 
 def _headless_check(text: str) -> dict | None:
     """Prove a `--headless` boot reached the desktop with no display: the loader
-    with no UI, arm64vid on its in-memory frame. Otherwise a rig that still gave
+    with no UI, sysfb on its in-memory frame. Otherwise a rig that still gave
     UEFI a GOP would pass while proving nothing about a server."""
     if os.environ.get("VIBEOS_QEMU_HEADLESS", "").strip() != "1":
         return None
-    if _ARM64VID_HEADLESS in text:
+    if _SYSFB_HEADLESS in text:
         return None
     return {
         "classification": "NOT_HEADLESS",
         "salient": [
-            f"--headless boot, but arm64vid never printed `{_ARM64VID_HEADLESS}`",
-            *[ln.strip() for ln in text.splitlines() if "[arm64vid]" in ln][-3:],
+            f"--headless boot, but sysfb never printed `{_SYSFB_HEADLESS}`",
+            *[ln.strip() for ln in text.splitlines() if "[sysfb]" in ln][-3:],
         ],
     }
 

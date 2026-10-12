@@ -8,5 +8,5 @@ add_library(dxapi MODULE
     ${CMAKE_CURRENT_BINARY_DIR}/dxapi.def)
 
 set_module_type(dxapi kernelmodedriver)
-add_importlibs(dxapi ntoskrnl hal videoprt)
+add_importlibs(dxapi ntoskrnl hal)
 add_cd_file(TARGET dxapi DESTINATION reactos/system32/drivers FOR all)

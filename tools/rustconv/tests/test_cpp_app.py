@@ -299,10 +299,46 @@ def test_a_class_implementing_a_com_interface_fills_the_islands_vtable():
         "pcwszStatus: LPCWSTR) -> HRESULT" in rs
     )
     assert "AddRef: Some(CCallBack__IEmptyVolumeCacheCallBack_AddRef)" in rs
+    # REFIID is a reference in the C++ method and a pointer in the slot: reborrowed.
+    assert ".QueryInterface(&*riid, ppvObject) }" in rs
     assert "(*this).__base0.lpVtbl = &CCallBack__IEmptyVolumeCacheCallBack_VTBL" in rs
     # the bodies are plain methods (the COM vtable is their dispatch)
     text = cpp_app.synthetic_tus(m, _ISLAND_VTBL)["c.hpp"]
     assert "HRESULT CCallBack__ScanProgress(CCallBack *this_" in text
+
+
+def test_a_com_slot_takes_the_overload_with_its_arity():
+    """mmc_new's CConsoleWnd implements IConsole2::Expand(item, bExpand) AND
+    IConsoleNameSpace2::Expand(item): each vtable gets the overload whose arity matches."""
+    island = (
+        "#[repr(C)]\npub struct IAVtbl {\n    pub Expand: ::core::option::Option<\n"
+        '        unsafe extern "system" fn(This: *mut IA, h: HSCOPEITEM, b: BOOL) -> HRESULT,\n'
+        "    >,\n}\n"
+        "#[repr(C)]\npub struct IBVtbl {\n    pub Expand: ::core::option::Option<\n"
+        '        unsafe extern "system" fn(This: *mut IB, h: HSCOPEITEM) -> HRESULT,\n'
+        "    >,\n}\n"
+    )
+    c = ClassModel("W", "W", "class", "w.h", polymorphic=True)
+    c.bases = [Base("IA", "public"), Base("IB", "public")]
+    for params in ([("h", "HSCOPEITEM"), ("b", "BOOL")], [("h", "HSCOPEITEM")]):
+        c.methods.append(
+            _m(
+                "Expand",
+                params=params,
+                ret="HRESULT",
+                virtual=True,
+                body=("w.h", 0, 1),
+                lowered="{ return 0; }",
+            )
+        )
+    _assign_names(c)
+    m = ModuleModel()
+    m.classes[c.qualified] = c
+    rs = cpp_app.render_classes(m, frozenset(), island)
+    one, two = c.methods[0].rust_name, c.methods[1].rust_name
+    assert one != two
+    assert f".{one}(h, b) }}" in rs
+    assert f".{two}(h) }}" in rs
 
 
 def test_a_struct_table_is_zipped_with_its_declared_fields():
@@ -703,6 +739,37 @@ def test_an_object_macro_over_a_callers_local_is_inlined(tmp_path):
 
 
 @pytest.mark.skipif(shutil.which("clang") is None, reason="needs clang for a JSON AST")
+def test_a_token_pasted_local_is_left_to_the_macro(tmp_path):
+    """cleanmgr: a `##`-pasted name is spelled in clang's `<scratch space>`, which is no
+    file and no `#define` line; the inliner must leave it alone, not open it."""
+    import json
+    import subprocess
+
+    from rustconv import c_data_port as cdp
+    from rustconv import cpp_model
+
+    src = tmp_path / "t.cpp"
+    src.write_text(
+        "#define V(n) v##n\nclass P { public: int Go(int v1); };\n"
+        "int P::Go(int v1) { return V(1); }\n"
+    )
+    ast = json.loads(
+        subprocess.run(
+            ["clang", "-x", "c++", "-fsyntax-only", "-Xclang", "-ast-dump=json", str(src)],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )
+    cdp._attach_files(ast)
+    ex = cpp_model._Extractor(tmp_path, tmp_path)
+    ex.walk(ast["inner"])
+    ex.lower_pending()
+    (go,) = [m.lowered for m in ex.model.classes["P"].methods if m.name == "Go"]
+    assert go == "{ return V(1); }"
+
+
+@pytest.mark.skipif(shutil.which("clang") is None, reason="needs clang for a JSON AST")
 def test_a_ctor_init_through_a_macro_call_keeps_its_arguments(tmp_path):
     """selectionmodel.cpp's `m_rgbBack(RGB(255, 255, 255))` was lowered as `RGB`."""
     import json
@@ -814,3 +881,293 @@ def test_a_field_of_a_plain_struct_base_goes_through_the_base(tmp_path):
     ex.lower_pending()
     (go,) = [m.lowered for m in ex.model.classes["S"].methods if m.name == "Go"]
     assert go == "{ return this_->m_rc.__base0.left + this_->m_rc.Width(); }"
+
+
+def _atl_model(*classes):
+    cwnd = ClassModel("CWindow", "ATL::CWindow", "class", "atlwin.h", external=True)
+    cwnd.fields = [Field("m_hWnd", "HWND")]
+    for c in (cwnd, *classes):
+        _assign_names(c)
+    m = ModuleModel()
+    m.classes = {c.qualified: c for c in (cwnd, *classes)}
+    return m
+
+
+def test_a_property_page_gets_rosdlgs_glue_and_its_overrides():
+    """cleanmgr's CCleanMgrProperties : CPropertyPageImpl<T>: Create builds the page, the
+    class's OnApply overrides the trait default, and CHAIN_MSG_MAP reaches the base's map."""
+    page = ClassModel("P", "P", "struct", "p.cpp")
+    page.bases = [Base("CPropertyPageImpl<P>", "public")]
+    page.constants = [("IDD", 101)]
+    page.methods = [_m("OnApply", ret="int", body=("p.cpp", 0, 1), lowered="{ return 0; }")]
+    page.msg_map = parse_msg_map(
+        "BEGIN_MSG_MAP(P)\n CHAIN_MSG_MAP(CPropertyPageImpl<P>)\nEND_MSG_MAP()"
+    )
+    rs = cpp_app.render_classes(_atl_model(page))
+    assert "pub __base0: CWindow," in rs
+    assert "atl_rust::win::create_property_page(self as *mut Self, 101 as u16" in rs
+    assert "impl atl_rust::win::PropertyPage for P {" in rs
+    assert "unsafe fn on_apply(&mut self) -> i32 { self.OnApply() as i32 }" in rs
+    # A hook the class does not declare keeps the C++ base's default (the trait's).
+    assert "on_set_active" not in rs
+    assert "atl_rust::win::property_page_map(self as *mut Self, hwnd, msg, l, result)" in rs
+
+
+def test_a_message_map_entry_can_name_a_member_objects_handler():
+    """certmgr's MESSAGE_HANDLER(WM_SIZE, m_Splitter.OnSize): the handler is a method of a
+    module class held by value, so the dispatch calls through the field."""
+    hp = [("u", "UINT"), ("w", "WPARAM"), ("l", "LPARAM"), ("b", "BOOL &")]
+    spl = ClassModel("CSplitter", "CSplitter", "struct", "s.hpp")
+    spl.methods = [_m("OnSize", params=hp, ret="LRESULT", body=("s.hpp", 0, 1), lowered="{}")]
+    dlg = ClassModel("D", "D", "class", "d.cpp")
+    dlg.bases = [Base("CDialogImpl<D>", "public")]
+    dlg.constants = [("IDD", 101)]
+    dlg.fields = [Field("m_Splitter", "CSplitter")]
+    dlg.msg_map = parse_msg_map(
+        "BEGIN_MSG_MAP(D)\n MESSAGE_HANDLER(WM_SIZE, m_Splitter.OnSize)\nEND_MSG_MAP()"
+    )
+    rs = cpp_app.render_classes(_atl_model(spl, dlg))
+    assert "*result = self.m_Splitter.OnSize(msg as _, w as _, l as _, &mut handled)" in rs
+
+
+def test_an_exe_module_gets_win_main_and_its_overrides(tmp_path, monkeypatch):
+    """cleanmgr's CCleanMgrModule : CAtlExeModuleT<T> overrides ParseCommandLine and Run;
+    the rest (InitializeCom, the message loop) stay ATL's."""
+    monkeypatch.setattr(cpp_app, "_REPO", tmp_path)
+    (tmp_path / "m.cpp").write_text("class M : public CAtlExeModuleT<M> {};\n")
+    mod = ClassModel("M", "M", "class", "m.cpp")
+    mod.bases = [Base("ATL::CAtlExeModuleT<M>", "public")]
+    mod.methods = [
+        _m("ParseCommandLine", params=[("l", "LPCTSTR"), ("hr", "HRESULT *")], ret="bool"),
+        _m("Run", params=[("n", "int")], ret="HRESULT"),
+    ]
+    rs = cpp_app.render_classes(_atl_model(mod))
+    assert "pub __base0: atl_rust::exe::CAtlExeModule," in rs
+    assert "atl_rust::exe::win_main(self as *mut Self, show as i32)" in rs
+    assert "impl atl_rust::exe::ExeModule for M {" in rs
+    assert (
+        "unsafe fn parse_command_line(&mut self, cmd_line: *const u16, ret_code: *mut i32) "
+        "-> bool { (self.ParseCommandLine(cmd_line as _, ret_code as _)) as i32 != 0 }"
+    ) in rs
+    assert "unsafe fn run(&mut self, show: i32) -> i32 { self.Run(show as _) as i32 }" in rs
+    assert "initialize_com" not in rs
+
+
+def test_an_exe_module_with_a_com_object_map_is_refused(tmp_path, monkeypatch):
+    """atl_rust registers no class objects: a module that declares some must not get glue
+    that silently skips them."""
+    monkeypatch.setattr(cpp_app, "_REPO", tmp_path)
+    (tmp_path / "m.cpp").write_text("OBJECT_ENTRY_AUTO(CLSID_X, CX)\n")
+    mod = ClassModel("M", "M", "class", "m.cpp")
+    mod.bases = [Base("ATL::CAtlExeModuleT<M>", "public")]
+    with pytest.raises(cpp_app.CppAppError, match="COM object map"):
+        cpp_app.render_classes(_atl_model(mod))
+
+
+def test_a_callback_static_member_keeps_the_system_abi():
+    """cleanmgr: `static BOOL CALLBACK EnumSingleInstanceCallback(HWND, LPARAM)` is handed to
+    EnumWindows; assembling it as a plain Rust fn made the call site a type error."""
+    c = ClassModel("M", "M", "class", "m.cpp")
+    c.methods = [
+        _m("Cb", params=[("h", "HWND"), ("l", "LPARAM")], ret="BOOL", static=True, abi="system"),
+        _m("Plain", static=True),
+    ]
+    _assign_names(c)
+    m = ModuleModel()
+    m.classes[c.qualified] = c
+    out = cpp_app.assemble(
+        "unsafe fn M__Cb(h: HWND, l: LPARAM) -> BOOL { 1 }\nunsafe fn M__Plain() {}\n", m
+    )
+    assert 'pub unsafe extern "system" fn Cb(h: HWND, l: LPARAM) -> BOOL' in out
+    assert "pub unsafe fn Plain()" in out
+
+
+def test_assemble_files_a_nested_class_method_under_the_nested_class():
+    """msctfime's `CTextEventSink__anon0____ctor_0` belongs to the union, not CTextEventSink."""
+    m = ModuleModel()
+    for n in ("CTextEventSink", "CTextEventSink__anon0"):
+        m.classes[n] = ClassModel(n, n, "struct", "s.h")
+    rs = cpp_app.assemble(
+        "pub unsafe fn CTextEventSink__anon0____ctor_0(this_: *mut CTextEventSink__anon0) {}\n", m
+    )
+    assert "impl CTextEventSink__anon0 {" in rs
+    assert "pub unsafe fn __ctor_0(&mut self" in rs
+
+
+def test_a_type_nested_in_a_class_is_reachable_by_its_bare_name():
+    """msctfime's sinks.h: `typedef INT (CALLBACK *FN_COMPARE)(..)` inside a class."""
+    m = ModuleModel()
+    for n in ("CActiveLanguageProfileNotifySink", "CicProfile"):
+        m.classes[n] = ClassModel(n, n, "class", "s.h")
+    island = (
+        "pub type CActiveLanguageProfileNotifySink_FN_COMPARE = Option<fn()>;\n"
+        "pub struct CicProfile_tagLANG_PROF_ENUM_ARG {\n    pub a: u32,\n}\n"
+        "pub type CicProfile_LANG_PROF_ENUM_ARG = CicProfile_tagLANG_PROF_ENUM_ARG;\n"
+        "pub type LANG_PROF_ENUM_ARG = u32;\n"
+    )
+    glue = cpp_app._render_island_glue(m, island)
+    assert "pub type FN_COMPARE = CActiveLanguageProfileNotifySink_FN_COMPARE;" in glue
+    assert "pub type tagLANG_PROF_ENUM_ARG = CicProfile_tagLANG_PROF_ENUM_ARG;" in glue
+    assert "pub type LANG_PROF_ENUM_ARG =" not in glue  # the island already has one
+    m.classes["tagLANG_PROF_ENUM_ARG"] = ClassModel(
+        "tagLANG_PROF_ENUM_ARG", "tagLANG_PROF_ENUM_ARG", "struct", "p.h"
+    )
+    glue = cpp_app._render_island_glue(m, island)
+    assert "pub type tagLANG_PROF_ENUM_ARG =" not in glue  # cppapp renders that class
+
+
+def test_island_glue_gives_a_packed_interface_no_deref():
+    """shlobj.h's `#pragma pack`: `&self._base` of a packed field is E0793."""
+    island = (
+        "#[repr(C, packed)]\n#[derive(Debug, Copy, Clone)]\n"
+        "pub struct IShellFolder {\n    pub _base: IUnknown,\n}\n"
+        "#[repr(C)]\npub struct ITfLangBarMgr_P {\n    pub _base: ITfLangBarMgr,\n}\n"
+    )
+    glue = cpp_app._render_island_glue(ModuleModel(), island)
+    assert "Deref for IShellFolder" not in glue
+    assert "Deref for ITfLangBarMgr_P" in glue
+
+
+def test_a_module_operator_is_named_translatably_and_exported_under_its_symbol():
+    from types import SimpleNamespace
+
+    from rustconv.cpp_model import _Extractor
+
+    ex = SimpleNamespace(_overloads={})
+    assert _Extractor.fn_rust_name(ex, {"name": "operator new"}) == "cxx_operator_new"  # type: ignore[arg-type]
+    assert _Extractor.fn_rust_name(ex, {"name": "operator delete[]"}) == (  # type: ignore[arg-type]
+        "cxx_operator_delete_array"
+    )
+    m = ModuleModel()
+    m.allocators = {"new:CicNoThrow": "_ZnwjRK10CicNoThrow", "delete": "_ZdlPv"}
+    m.allocator_fns = {"new:CicNoThrow": "cxx_operator_new__0", "delete": "cxx_operator_delete"}
+    rs = cpp_app._allocator_exports(m)
+    assert 'export_name = "_ZnwjRK10CicNoThrow"' in rs
+    assert 'export_name = "_ZnwyRK10CicNoThrow"' in rs  # size_t is `y` on 64-bit
+    assert "cxx_operator_new__0(n as _, core::mem::transmute(tag))" in rs
+    assert 'export_name = "_ZdlPv")]' in rs and "cxx_operator_delete(p as _)" in rs
+    assert ModuleModel.from_json(m.to_json()).allocator_fns == m.allocator_fns
+    assert cpp_app._allocator_exports(ModuleModel()) == ""
+
+
+def _pair():
+    """msctfime's shape: CCompFrameWindow : CUIFWindow, both the module's."""
+    m = ModuleModel()
+    base = ClassModel("CUIFWindow", "CUIFWindow", "class", "w.h")
+    base.fields = [Field("m_hWnd", "HWND")]
+    derived = ClassModel("CCompFrameWindow", "CCompFrameWindow", "class", "c.h")
+    derived.bases = [Base("CUIFWindow", "public")]
+    for c in (base, derived):
+        m.classes[c.qualified] = c
+    return m
+
+
+def test_a_class_derefs_to_its_own_modules_primary_base():
+    rs = cpp_app.render_classes(_pair())
+    assert "impl core::ops::Deref for CCompFrameWindow { type Target = CUIFWindow;" in rs
+    assert "impl core::ops::DerefMut for CCompFrameWindow {" in rs
+
+
+def test_a_class_over_a_dependencys_class_does_not_derive_copy():
+    m = ModuleModel()
+    grip = ClassModel("CDefCompFrameGripper", "CDefCompFrameGripper", "class", "g.h")
+    grip.bases = [Base("CUIFGripper", "public")]
+    held = ClassModel("CHolder", "CHolder", "class", "h.h")
+    held.fields = [Field("m_grip", "const CUIFGripper")]
+    plain = ClassModel("CPlain", "CPlain", "class", "p.h")
+    plain.fields = [Field("x", "int")]
+    for c in (grip, held, plain):
+        m.classes[c.qualified] = c
+    island = "pub use cicero_rust::cicero::cpp_classes::CUIFGripper; // cicero-rust owns it\n"
+    rs = cpp_app.render_classes(m, frozenset(), island)
+    for name in ("CDefCompFrameGripper", "CHolder"):
+        assert f"#[repr(C)]\npub struct {name} {{" in rs
+        assert f"Copy)]\n#[repr(C)]\npub struct {name} {{" not in rs
+    assert "#[derive(Clone, Copy)]\n#[repr(C)]\npub struct CPlain {" in rs
+
+
+def test_a_reference_member_of_an_aggregate_static_takes_the_address():
+    assert cpp_app._is_reference("REFGUID") and cpp_app._is_reference("const GUID &")
+    assert not cpp_app._is_reference("GUID") and not cpp_app._is_reference("REFERENCE_TIME_x")
+    m = ModuleModel()
+    mb = ClassModel("MODEBIAS", "MODEBIAS", "struct", "m.cpp")
+    mb.fields = [Field("m_guid", "REFGUID"), Field("m_dwBias", "DWORD")]
+    m.classes[mb.qualified] = mb
+    g = GlobalVar("g_ModeBias", "const MODEBIAS [1]", "m.cpp", "{ { GUID_MODEBIAS_NONE, 0 } }")
+    rs = cpp_app.aggregate_static(g, cpp_app.Hierarchy(m), m)
+    assert rs is not None
+    assert "m_guid: core::ptr::addr_of!(GUID_MODEBIAS_NONE) as _" in rs
+    assert "m_dwBias: (0) as _" in rs
+
+
+def test_a_constructor_parameter_named_like_a_rust_keyword_is_escaped():
+    """certmgr's CStoreList(StoreType type): the __make/__new wrappers took `type` bare."""
+    c = ClassModel("CStoreList", "CStoreList", "class", "s.hpp")
+    c.methods = [
+        _m("CStoreList", "ctor", params=[("type", "StoreType")], body=("s.hpp", 0, 1), lowered="{}")
+    ]
+    m = ModuleModel()
+    m.classes[c.qualified] = c
+    rs = cpp_app.render_classes(m)
+    assert "CStoreList__make_0(r#type: StoreType)" in rs
+    assert "(type:" not in rs
+
+
+def test_a_global_with_a_no_argument_constructor_is_initialized_by_cpp_classes():
+    """certmgr's `CCertMgrModule _AtlModule;`: the model turned the C stub's
+    `_AtlModule.__ctor_0();` into an invented extern twice, so it is rendered, not bought."""
+    from rustconv.cpp_model import GlobalVar
+
+    mod = ClassModel("M", "M", "class", "m.cpp")
+    mod.methods = [_m("M", "ctor", body=("m.cpp", 0, 1), lowered="{}")]
+    m = ModuleModel()
+    m.classes[mod.qualified] = mod
+    m.globals = [GlobalVar("_AtlModule", "M", "m.cpp", None)]
+    rs = cpp_app.render_classes(m)
+    assert 'pub unsafe extern "C" fn __cxx_global_init() {' in rs
+    assert "(*core::ptr::addr_of_mut!(_AtlModule)).__ctor_0();" in rs
+    h = cpp_app.Hierarchy(m)
+    # no synthetic C at all: a new preamble line is a unit the response cache never bought
+    assert cpp_app._global_init(m, h) == ""
+
+
+def test_a_class_holding_an_stl_container_is_not_copy():
+    """drwtsn32's ModuleData holds a std::string: its destructor frees, so no Copy."""
+    c = ClassModel("ModuleData", "ModuleData", "struct", "d.h")
+    c.fields = [Field("ModuleName", "std::string"), Field("Size", "DWORD")]
+    m = ModuleModel()
+    m.classes[c.qualified] = c
+    rs = cpp_app.render_classes(m)
+    assert "pub ModuleName: StdString," in rs
+    assert "#[derive(Clone, Copy)]\n#[repr(C)]\npub struct ModuleData" not in rs
+
+
+def test_a_string_macro_beside_a_literal_is_concatenated_before_the_model_sees_it():
+    """drwtsn32's `xfprintf(output, "%5d: %ls" NEWLINE, ...)` came back as
+    `xfprintf(output, NEWLINE, ...)`: the literal was dropped. Fold it like phase 6 does."""
+    from rustconv import cpp_lower
+
+    macros = cpp_lower.string_macros(['#define NEWLINE "\\r\\n"\n#define K L"k"\n'])
+    fold = cpp_lower.concat_string_macros
+    assert fold('f(o, "%5d: %ls" NEWLINE, p);', macros) == 'f(o, "%5d: %ls\\r\\n", p);'
+    assert fold('f(o, NEWLINE "a" NEWLINE NEWLINE);', macros) == 'f(o, "\\r\\na\\r\\n\\r\\n");'
+    assert fold('g("x" K);', macros) == 'g(L"xk");'
+    # standalone uses stay names: their bodies keep the response-cache key they were bought under
+    assert fold("f(o, NEWLINE);", macros) == "f(o, NEWLINE);"
+    # a hex escape would swallow the next literal's first chars: left as written
+    assert fold('f("\\x4" NEWLINE);', macros) == 'f("\\x4" NEWLINE);'
+
+
+def test_a_method_with_a_lifetime_parameter_is_still_moved_into_its_impl():
+    """mmc_new's `CRecentFileEntry__FileName<'a>(this_: *mut ..) -> &'a CAtlString`."""
+    c = ClassModel("CRecentFileEntry", "CRecentFileEntry", "class", "r.h")
+    m = ModuleModel()
+    m.classes[c.qualified] = c
+    rust = (
+        "pub unsafe fn CRecentFileEntry__FileName<'a>(this_: *mut CRecentFileEntry)"
+        " -> &'a CAtlString {\n    &(*this_).m_FileName\n}\n"
+    )
+    out = cpp_app.assemble(rust, m)
+    assert "impl CRecentFileEntry {" in out
+    assert "pub unsafe fn FileName<'a>(&mut self) -> &'a CAtlString {" in out
+    assert "CRecentFileEntry__FileName" not in out

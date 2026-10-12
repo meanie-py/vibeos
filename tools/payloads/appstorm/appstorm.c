@@ -45,6 +45,13 @@ static const app_t apps[] = {
     { "servman", "servman.exe", "" },       { "msconfig", "msconfig.exe", "" },
     { "dxdiag", "dxdiag.exe", "" },         { "rapps", "rapps.exe", "", NULL, "Updating Database" },
     { "mplay32", "mplay32.exe", "" },       { "sndrec32", "sndrec32.exe", "" },
+    /* /D skips the drive picker: the handler scan, then the property sheet (a C++
+     * CPropertyPageImpl app, Rust since batch 3). */
+    { "cleanmgr", "cleanmgr.exe", "/D %SystemDrive%", NULL, "Disk Cleanup$" },
+    { "certmgr", "certmgr.exe", "" },
+    { "mmc_new", "mmc_new.exe", "" },   /* C++ MDI + COM (IConsole2, IImageList), Rust since batch 4 */   /* C++ CDialogImpl + CAtlExeModuleT, Rust since batch 4 */
+    /* Run with no -p, Dr. Watson's right answer is its usage box (C++ and Rust alike). */
+    { "drwtsn32", "drwtsn32.exe", "", "Usage: DrWtsn32" },
     { "explorer-folder", "explorer.exe", "%WINDIR%" },
     { "mycomputer", "explorer.exe", "::{20D04FE0-3AEA-1069-A2D8-08002B30309D}" },
     { "iexplore", "iexplore.exe", "" },
@@ -245,7 +252,11 @@ static int progress_showing(const wset_t *before, const char *title)
         char ta[128];
         InternalGetWindowText(got.h[i], t, 128);
         ascii(t, ta, sizeof ta);
-        if (!strncmp(ta, title, strlen(title)))
+        /* A trailing '$' asks for the WHOLE title: cleanmgr's progress window is "Disk
+         * Cleanup" and its real one "Disk Cleanup for (C:)", which a prefix also matches. */
+        size_t n = strlen(title);
+        if (n && title[n - 1] == '$' ? (strlen(ta) == n - 1 && !strncmp(ta, title, n - 1))
+                                     : !strncmp(ta, title, n))
             return 1;
     }
     return 0;

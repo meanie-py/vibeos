@@ -1904,6 +1904,12 @@ def find_switch_constants(tus: list[Path], repo_root: Path) -> list[SwitchConst]
             inner = [value]
             while inner:
                 v = inner.pop()
+                if v.type in ("sizeof_expression", "alignof_expression"):
+                    # `case sizeof(VIDEO_HW_INITIALIZATION_DATA):` (videoprt) -- the operand
+                    # is a TYPE, which tree-sitter cannot tell from a variable inside the
+                    # parens. A size is a folded number, never a name an arm could bind,
+                    # so it carries no catch-all hazard.
+                    continue
                 inner.extend(v.children)
                 if v.type == "identifier":
                     # `case MAKEWPARAM(IDOK, BN_CLICKED):` -- the callee is a function-like
@@ -2353,11 +2359,30 @@ _CXX_CONST_RE = (
 )
 
 
+# A C++ scoped enum: `case StoreType::User:` reaches the case scan as `StoreType`, the
+# enum's own name (certmgr). The header owns it like any type, and a qualified label cannot
+# be the §9.112 hazard: rustc resolves `StoreType::User` as a path or rejects it, it never
+# binds as a catch-all the way a bare unresolved name does.
+_CXX_SCOPED_ENUM_RE = r"^[ \t]*enum[ \t]+(?:class|struct)[ \t]+({name})\b"
+
+
+_STD_HEADER_RE = re.compile(r"^\s*#\s*include\s*<(?:string|vector|map|algorithm|utility)>", re.M)
+
+
+def uses_std_headers(m) -> bool:
+    """Whether the module's own sources include a C++ standard library container header."""
+    files = {f for tu in m.compiled_tus for f in [tu, *tu.parent.glob("*.h*")] if f.is_file()}
+    return any(_STD_HEADER_RE.search(f.read_text(errors="replace")) for f in sorted(files))
+
+
 def _cxx_consts(text: str, alt: str) -> dict[str, tuple[str, str]]:
-    return {
+    out = {
         m.group(1): ("cxx-const", m.group(2).strip())
         for m in re.finditer(_CXX_CONST_RE.format(name=alt), text, re.M)
     }
+    for m in re.finditer(_CXX_SCOPED_ENUM_RE.format(name=alt), text, re.M):
+        out.setdefault(m.group(1), ("cxx-scoped-enum", m.group(0).strip()))
+    return out
 
 
 def xmacro_enumerators(tu: Path, wanted: frozenset[str]) -> dict[str, tuple[str, str]]:
@@ -2638,7 +2663,7 @@ def own_constants(
         if hit is not None:
             # bindgen reads headers as C, so a C++ const never reaches the island: the header
             # owns it, but the translation has to carry it (see SWITCH_CONST_CXX).
-            kind = "cxx-const" if hit[1][0] == "cxx-const" else "header"
+            kind = "cxx-const" if hit[1][0] in ("cxx-const", "cxx-scoped-enum") else "header"
             owners.append(
                 ConstOwner(ident, hit[0], kind, hit[1][1], hit[1][0], in_sys=in_sys, sys_source=src)
             )
@@ -3017,6 +3042,7 @@ def derive(
     usermode: bool | None = None,
     flipped_sources: bool = False,
     sources: tuple[Path, ...] = (),
+    stem: str | None = None,
 ) -> DerivedProfile:
     """Derive a full profile for the module at *module_dir*.
 
@@ -3035,6 +3061,10 @@ def derive(
         flipped_sources=flipped_sources,
     )
     module.usermode_override = usermode
+    if stem:
+        # Set before anything reads crate_stem: the prelude probe below would otherwise read
+        # the colliding crate's prelude (cmdutils' dbgprint vs the kernel's dbgprint-rust).
+        module.stem = stem
     full_tus = set(module.compiled_tus)
     if sources:
         selected = {(p if p.is_absolute() else repo_root / p).resolve() for p in sources}
@@ -3365,6 +3395,15 @@ def derive(
                     f"`{o.ident}` is used in a case label but NO header in the include closure "
                     "and no -sys crate defines it — the match arm WILL silently match "
                     "everything (§9.112). Find its owner and add it to the wrapper.",
+                )
+            )
+        elif o.macro_kind == "cxx-scoped-enum":
+            findings.append(
+                Finding(
+                    "info",
+                    "SWITCH_CONST_SCOPED_ENUM",
+                    f"`{o.ident}` is a C++ enum class in {o.owner.name if o.owner else '?'}: "
+                    "its labels are qualified (`X::Member`), which cannot bind as a catch-all",
                 )
             )
         elif o.owner_kind == "cxx-const" and not o.in_sys:
@@ -3751,6 +3790,9 @@ def emit_profile(dp: DerivedProfile) -> str:
         # CWindowImpl<...>`), which a C parse rejects as an unknown type name: the island
         # must be parsed the way the TU is compiled.
         out.append("    LANG_ARGS=( -x c++ -std=gnu++17 )")
+        if uses_std_headers(m):
+            # drwtsn32: <string>/<vector>/<map> parse against data/island_stl, not libc++.
+            out.append("    ISLAND_STL=1")
     if not multi:
         out.append(f"    WRAPPER_INC=$'{wrapper}'")
         out.extend(_allow_files_lines(dp.allow_files))
@@ -3789,6 +3831,14 @@ def emit_profile(dp: DerivedProfile) -> str:
         )
         out.append("    # this module's C, so the island emits the real layout (fields reachable).")
         out.append('    UNBLOCK="' + " ".join(unblock) + '"')
+    if m.is_usermode and any(
+        str(h).replace("\\", "/").endswith("/wine/list.h") for h in dp.closure.headers
+    ):
+        # wine/list.h's `struct list` is winelist-rust's, so the list_* helpers resolve
+        # imports from it operate on the same type as this module's struct fields.
+        out.append("    # wine/list.h: `struct list` and its helpers are winelist-rust's.")
+        out.append("    EXTRA_BL_ITEMS=( list )")
+        out.append("    EXTRA_RAW_LINES=( 'pub use winelist_rust::*;' )")
     out.append("    EXTRA_INC=( " + " ".join(dp.extra_inc) + " )")
     if dp.late_inc:
         out.append(
@@ -4198,8 +4248,18 @@ pub unsafe fn IoReleaseRemoveLockAndWait(RemoveLock: PIO_REMOVE_LOCK, Tag: PVOID
 }
 pub use crate::{NT_VERIFY, PAGED_CODE, UNREACHABLE};
 
-// HAL port/register I/O (hal.dll exports on i386/arm64, inline on amd64).
-pub use ntkrnl_sys::portio::*;
+// HAL port/register I/O (hal.dll exports on i386/arm64, inline on amd64). By name, not by
+// glob: an i386 island declares some of these as externs too, and two globs naming one item
+// are ambiguous (E0659, e1000's WRITE_PORT_ULONG); an explicit import beats any glob.
+pub use ntkrnl_sys::portio::{
+    READ_PORT_UCHAR, READ_PORT_USHORT, READ_PORT_ULONG, READ_PORT_BUFFER_UCHAR,
+    READ_PORT_BUFFER_USHORT, READ_PORT_BUFFER_ULONG, WRITE_PORT_UCHAR, WRITE_PORT_USHORT,
+    WRITE_PORT_ULONG, WRITE_PORT_BUFFER_UCHAR, WRITE_PORT_BUFFER_USHORT,
+    WRITE_PORT_BUFFER_ULONG, READ_REGISTER_UCHAR, READ_REGISTER_USHORT, READ_REGISTER_ULONG,
+    READ_REGISTER_BUFFER_UCHAR, READ_REGISTER_BUFFER_USHORT, READ_REGISTER_BUFFER_ULONG,
+    WRITE_REGISTER_UCHAR, WRITE_REGISTER_USHORT, WRITE_REGISTER_ULONG,
+    WRITE_REGISTER_BUFFER_UCHAR, WRITE_REGISTER_BUFFER_USHORT, WRITE_REGISTER_BUFFER_ULONG,
+};
 // C's TRUE/FALSE are ints; in kernel code they land in BOOLEAN (UCHAR) far more than BOOL.
 pub const TRUE: BOOLEAN = 1;
 pub const FALSE: BOOLEAN = 0;
@@ -4306,6 +4366,13 @@ def scaffold_crate(
         texts = [tu.read_text(errors="replace") for tu in m.compiled_tus if tu.is_file()]
         com = any(re.search(r"\bCComHeapPtr\b", t) for t in texts)
         path = any(re.search(r"\bCPath\b", t) for t in texts)
+        # The C++ standard library containers (atl_rust::stl). drwtsn32 declares its
+        # std::vector/std::map members in a header, so the module's own headers count too.
+        own_headers = {h for tu in m.compiled_tus for h in tu.parent.glob("*.h*") if h.is_file()}
+        stl = any(
+            re.search(r"\bstd::(?:w?string|vector|map)\b", t)
+            for t in texts + [h.read_text(errors="replace") for h in sorted(own_headers)]
+        )
         # CComHeapPtr is the COM task allocator (ole32), CPath is shlwapi's
         # PathCompactPathExW: only a module that uses one imports its DLL.
         feats = [f for f, on in (("com", com), ("path", path)) if on]
@@ -4321,12 +4388,19 @@ def scaffold_crate(
             "==============\n"
             "// ATL's CStringW/CComPtr/containers, ported once in atlclasses-rust.\n"
             "pub use atl_rust::{atl_format, atl_format_id, CAtlList, CComPtr, CHeapPtr, "
-            "CSimpleArray, CLocalAllocator, CSimpleMap, CStringA, CStringW, POSITION};\n"
+            "CSimpleArray, CLocalAllocator, CSimpleMap, CStringA, CStringW, POSITION, "
+            "_AtlBaseModule};\n"
             # atlsimpstr.h's CSimpleStringT<WCHAR> is CStringW's base: every `CSimpleString&`
             # parameter (CWindow::GetWindowText) is handed a CStringW in a UNICODE module.
             "pub use atl_rust::CStringW as CSimpleString;\n"
             + ("pub use atl_rust::CComHeapPtr;\n" if com else "")
             + ("pub use atl_rust::CPath;\n" if path else "")
+            + (
+                "pub use atl_rust::stl::{npos, StdMap, StdPair, StdString, StdVector, "
+                "StdWString};\n"
+                if stl
+                else ""
+            )
         )
     win32_reexport = ""
     # The MACROS only, by name: a glob would also pull win32macros' type aliases
@@ -4387,7 +4461,7 @@ pub mod types; // bindgen island, per arch (gen_driver_types.sh {m.crate_stem})
 pub mod prelude; // the ONE import surface: types glob + debug macros + CRT externs
 
 #[allow(clippy::module_inception)]
-pub mod {m.crate_stem} {{
+pub mod {_rust_mod_ident(m.crate_stem)} {{
 {chr(10).join(mods)}
 }}
 
