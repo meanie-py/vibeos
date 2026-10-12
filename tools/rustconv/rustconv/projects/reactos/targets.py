@@ -1048,6 +1048,48 @@ TARGETS = {
         cmake_source_files=[],
         arches=("i386", "amd64", "arm64"),
     ),
+    # wdfldr.sys — the KMDF loader (sdk/lib/drivers/wdfldr), a kernelmodedriver.
+    "wdfldr": Target(
+        name="wdfldr",
+        source_dir=CSQ_DIR.parent / "wdfldr",
+        output_crate=RUST_DIR / "wdfldr-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # ntoskrnl_vista — Vista+ kernel APIs as a static lib for disk/cdrom/WDF.
+    "ntoskrnl_vista": Target(
+        name="ntoskrnl_vista",
+        source_dir=CSQ_DIR.parent / "ntoskrnl_vista",
+        output_crate=RUST_DIR / "ntoskrnl_vista-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # sptilib — SCSI pass-through helper static lib (atapi, scsiport, usbstor).
+    "sptilib": Target(
+        name="sptilib",
+        source_dir=CSQ_DIR.parent / "sptilib",
+        output_crate=RUST_DIR / "sptilib-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
     # arbiter — PnP resource arbiter static lib (kernel + pcix.sys).
     "arbiter": Target(
         name="arbiter",
@@ -1508,6 +1550,12 @@ def detect_target(
         return TARGETS["processr"]
     if "/sdk/lib/drivers/csq" in posix:
         return TARGETS["csq"]
+    if "/sdk/lib/drivers/wdfldr" in posix:
+        return TARGETS["wdfldr"]
+    if "/sdk/lib/drivers/ntoskrnl_vista" in posix:
+        return TARGETS["ntoskrnl_vista"]
+    if "/sdk/lib/drivers/sptilib" in posix:
+        return TARGETS["sptilib"]
     if "/sdk/lib/drivers/arbiter" in posix:
         return TARGETS["arbiter"]
     # winsrv (Phase 5) lives under /win32ss/user/winsrv — keep this

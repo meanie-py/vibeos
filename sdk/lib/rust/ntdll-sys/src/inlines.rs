@@ -126,3 +126,23 @@ pub unsafe fn RemoveTailList(list_head: *mut LIST_ENTRY) -> *mut LIST_ENTRY {
     (*blink).Flink = list_head;
     entry
 }
+
+// ============================================================================
+// ndk/rtlfuncs.h FORCEINLINE string initializers. bindgen declares them as externs, and
+// no DLL exports them: autochk's two calls linked against nothing (undefined
+// `_RtlInitEmptyUnicodeString` on i386).
+// ============================================================================
+use crate::nt::{PUNICODE_STRING, PWCHAR, USHORT};
+
+/// `RtlInitEmptyUnicodeString(UnicodeString, Buffer, BufferSize)`: an empty string over
+/// `Buffer`, `BufferSize` bytes long.
+#[inline]
+pub unsafe fn RtlInitEmptyUnicodeString(
+    UnicodeString: PUNICODE_STRING,
+    Buffer: PWCHAR,
+    BufferSize: USHORT,
+) {
+    (*UnicodeString).Length = 0;
+    (*UnicodeString).MaximumLength = BufferSize;
+    (*UnicodeString).Buffer = Buffer;
+}

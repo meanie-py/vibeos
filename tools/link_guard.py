@@ -58,6 +58,11 @@ RUST_RUNTIME_SYMBOL = re.compile(
     r"^_?(__rustc::)?(rust_begin_unwind|rust_eh_personality|rust_oom|__rust_[a-z_]+|_fltused"
     r"|vibeos_unwind_resume_fallback)$"
 )
+# rustconv's varargs pullers (variadic_shim.py): one fixed, generated body per name in
+# every rust_varargs_shim.c, so any copy is the same code. An image links two when an exe
+# with its own shim links a static library that has one (autochk + vfatlib).
+VARARGS_PULLER = re.compile(r"^_?vibeos_va_arg_(i32|u32|i64|u64|f64|ptr)$")
+VARARGS_SHIM_ORIGIN = re.compile(r"rust_varargs_shim\.c")
 # compiler_builtins' `mem` feature defines these too; on COFF they are strong,
 # so they collide with the module's own CRT copies (i386 kernel: libcntpr's
 # memcpy.c). Both are correct implementations of the same contract.
@@ -130,6 +135,12 @@ def judge(symbol: str, kept: str, dropped: str) -> Dup:
         return dup("ok:toolchain runtime twice")
     if RUST_RUNTIME_SYMBOL.match(bare) and "local" in (k, d):
         return dup("ok:Rust panic runtime")
+    if (
+        VARARGS_PULLER.match(bare)
+        and VARARGS_SHIM_ORIGIN.search(kept)
+        and VARARGS_SHIM_ORIGIN.search(dropped)
+    ):
+        return dup("ok:rustconv varargs puller (one generated body)")
     if "import" in (k, d):
         if k == "import" and d != "import":
             return dup(f"error:an import was kept over a {d} definition")

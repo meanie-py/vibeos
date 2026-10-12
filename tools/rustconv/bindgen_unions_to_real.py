@@ -28,7 +28,11 @@ import sys
 DERIVE_RE = re.compile(r'^\s*#\[derive\(')
 REPR_RE = re.compile(r'^\s*#\[repr\(')
 ATTR_RE = re.compile(r'^\s*#\[')
-STRUCT_RE = re.compile(r'^(?P<indent>\s*)pub struct (?P<name>\w+)\s*\{')
+# The brace may wrap to the next line: a name past rustfmt's width (ntoskrnl_vista's
+# `_DISPATCHER_HEADER__bindgen_ty_1__bindgen_ty_1__bindgen_ty_3__bindgen_ty_2__bindgen_ty_1`)
+# is emitted as `pub struct NAME` / `{`, and missing it left that bitfield struct without
+# Copy inside a real union (E0740).
+STRUCT_RE = re.compile(r'^(?P<indent>\s*)pub struct (?P<name>\w+)\s*(?:\{|$)')
 UNIONFIELD_RE = re.compile(
     r'^(?P<indent>\s*)pub (?P<field>\w+):\s*__BindgenUnionField<(?P<ty>.+)>,\s*$')
 ANON_RE = re.compile(r'__bindgen_anon_(\d+)')
@@ -111,6 +115,8 @@ def _transform(text: str) -> str:
     while i < n:
         line = lines[i]
         m = STRUCT_RE.match(line)
+        if m and not line.rstrip().endswith('{') and (i + 1 >= n or lines[i + 1].strip() != '{'):
+            m = None  # `pub struct X;` or a tuple struct, not a braced body
         if not m:
             out.append(line)
             i += 1

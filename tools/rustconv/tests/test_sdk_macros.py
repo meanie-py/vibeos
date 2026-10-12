@@ -288,3 +288,33 @@ def test_island_types_include_the_sys_crate_the_island_globs(tmp_path):
     while node.kind == "comma" and len(node.kids) == 1:
         node = node.kids[0]
     assert node.kind == "cast"
+
+
+def test_a_callee_the_crate_does_not_declare_yet_is_read_from_a_sibling_island(tmp_path):
+    """runonce's DialogBox was lowered before `port resolve` declared DialogBoxParamW, so
+    the DLGPROC slot got `as _` (E0605 on a function item). Any island has the header's
+    signature; the callback slot must be passed through."""
+    mine = tmp_path / "runonce-rust" / "src"
+    other = tmp_path / "aclui-rust" / "src"
+    mine.mkdir(parents=True)
+    other.mkdir(parents=True)
+    (mine / "types_i386.rs").write_text(
+        'pub type DLGPROC = ::core::option::Option<unsafe extern "system" fn(a: HWND) -> INT_PTR>;\n'
+    )
+    (other / "types_i386.rs").write_text(
+        'extern "system" {\n    pub fn DialogBoxParamW(\n        arg1: HINSTANCE,\n'
+        "        arg2: LPCWSTR,\n        arg3: HWND,\n        arg4: DLGPROC,\n"
+        "        arg5: LPARAM,\n    ) -> INT_PTR;\n}\n"
+    )
+    sdk_macros.load_signatures(mine)
+    out = lower_expansion(
+        "DialogBoxParamW(__rcv_p0__, __rcv_p1__, __rcv_p2__, __rcv_p3__, 0L)",
+        {"DLGPROC"},
+    )
+    assert ", $p3," in out and "($p3) as _" not in out
+
+
+def test_offsetof_is_refused_not_read_as_a_call():
+    """FIELD_OFFSET(REPARSE_DATA_BUFFER, GenericReparseBuffer): a type and a member path."""
+    with pytest.raises(LowerError, match="offsetof"):
+        low("((LONG)__builtin_offsetof(REPARSE_DATA_BUFFER, GenericReparseBuffer))")

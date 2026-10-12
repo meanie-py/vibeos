@@ -885,7 +885,7 @@ Design, gdb recipe and the divergence log: `docs/engineering/qemu-record-replay.
 Every QEMU running **across all worktrees** + slot-pool usage. Run it first when
 you're unsure what's live or why KVM is contended.
 
-### `prune [--apply] [--self] [--idle-hours N] [--retain-gib N] [--trim]`
+### `prune [--apply] [--self] [--only WT...] [--wait-minutes N] [--idle-hours N] [--retain-gib N] [--trim]`
 Reclaim disk by GC'ing **idle worktrees' build-`<arch>`/ + Rust target dirs**.
 Build trees are ephemeral scratch — the shared cache rehydrates a pruned tree
 fast — so an idle lane's 26–42 G can be freed and regenerated on demand (measured
@@ -897,6 +897,15 @@ reads), never one with a **running ninja/cargo/rustc/clang/lld**, never the
 tree touched in the last N hours (recommended — the live gates are instantaneous,
 so an actively-worked lane that just isn't building *this second* otherwise looks
 prunable). Only ever removes the build/target dirs, never source or the worktree.
+
+Every build runs at the one canonical `/tmp/vibeos` bind mount, so "running build" is
+attributed through the compiler's own `/proc/<pid>/mountinfo` (the bind source names the
+real worktree); only a build whose mount cannot be read protects the whole fleet. Before
+2026-10-12 every canonical build did, and one gate anywhere made all 816 G "in flight".
+`--only vibeos-a vibeos-b` restricts the run to named worktrees (closed lanes, while live
+ones keep their warm builds) and refuses an unknown name. `--wait-minutes N` makes
+`--apply` wait for the exclusive maintenance lock, which any running `vibeos-cli` command
+blocks, instead of refusing at once.
 
 `--retain-gib N` bounds reclamation: select eligible trees largest-first only
 until retained private outputs fit N GiB. Its default idle window is 24 hours.
@@ -917,7 +926,9 @@ size (weeks-old lanes measured 35–45 G). It removes **superseded units** (same
 package, target, path, profile and features as a newer fingerprint: a rustc, dep
 or flag change minted a new hash and cargo never deletes the old one) and **idle
 ad-hoc trees** (`target/<triple>/`, `target/debug/` from hand-run `cargo
-check/test`; the CMake build never writes there). Nothing younger than
+check/test`; the CMake build never writes there), plus the rustconv `port` staging
+caches (`~/vibeos-rust-staging/port/<stem>/target-*`, one per module and arch, shared by
+every lane; 50 G of them idle on 2026-10-12). Nothing younger than
 `--idle-hours` (default 24) is touched. It needs no quiet fleet or pinned owner
 and costs no lane a warm build, so it is safe on live lanes; the kill switch
 still stops it. `vibeos-cli build` also trims its OWN tree after every green

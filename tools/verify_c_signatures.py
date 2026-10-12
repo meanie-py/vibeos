@@ -520,6 +520,9 @@ def c_functions(path: Path) -> dict[str, tuple[str, list[str]]]:
         # `PDEVMODEW DESK_EXT_CALLBACK`, which no Rust return type can ever match — a permanent
         # false positive on a correctly-translated function. Same class as netcfgx's STDAPI.
         "DESK_EXT_CALLBACK",
+        # vfw.h: `#define VFWAPI WINAPI` -- avicap32's `HWND VFWAPI capCreateCaptureWindowW(..)`.
+        "VFWAPI",
+        "VFWAPIV",
     )
 
     def _clean_ret(s: str) -> str:

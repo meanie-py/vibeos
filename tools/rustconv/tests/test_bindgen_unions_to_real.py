@@ -29,3 +29,18 @@ def test_union_bitfield_accessors_address_the_bare_unit():
     assert "self._bitfield_1.get(0usize, 1u8)" in out
     assert "::core::ptr::addr_of!((*this)._bitfield_1)," in out
     assert ".as_ref()" not in out
+
+
+def test_a_struct_whose_brace_wraps_still_gets_copy():
+    """A name past rustfmt's width is emitted as `pub struct NAME` then `{`."""
+    island = (
+        "#[repr(C)]\n"
+        "pub struct _DISPATCHER_HEADER__bindgen_ty_1__bindgen_ty_1__bindgen_ty_3__bindgen_ty_2__bindgen_ty_1\n"
+        "{\n"
+        "    pub _bitfield_1: __BindgenBitfieldUnit<[u8; 1usize]>,\n"
+        "}\n"
+        "pub struct Unit;\n"
+    )
+    out = conv.transform(island)
+    assert "#[derive(Copy, Clone)]\n#[repr(C)]\npub struct _DISPATCHER_HEADER" in out
+    assert out.count("derive") == 1  # the unit struct is left alone

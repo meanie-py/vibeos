@@ -137,6 +137,7 @@ from .function_coverage import (
     require_c_plan,
     require_rust_definitions,
     restore_requested_name,
+    rust_definitions,
 )
 from .function_prompt import (
     build_file_context,
@@ -2435,6 +2436,26 @@ def _class_declaration_scope(cls) -> str:
     return text[m.start() : i]
 
 
+_RUST_ITEM_START = re.compile(
+    r"^\s*(?:pub\b|static\b|const\b|use\b|extern\b|fn\b|unsafe\b|struct\b|union\b|enum\b"
+    r"|type\b|impl\b|mod\b|macro_rules!|#!?\[|//)"
+)
+
+
+def _strip_leading_prose(code: str) -> str:
+    """`code` without a paragraph of commentary BEFORE the first Rust item, but only when
+    what follows parses on its own. newdev's wizard.c preamble came back twice as one
+    sentence about `HANDLE` and then a correct `pub static mut hThread` -- recall is stable,
+    so a re-buy returned the same reply. Commentary between or after items still fails the
+    parse gate: that is the mspaint case, where it sat between two conflicting definitions."""
+    lines = code.splitlines()
+    first = next((i for i, ln in enumerate(lines) if _RUST_ITEM_START.match(ln)), None)
+    if not first:
+        return code
+    rest = "\n".join(lines[first:]).strip() + "\n"
+    return rest if _rust_parse_error(rest) is None else code
+
+
 def _rust_parse_error(code: str) -> str | None:
     """rustfmt's first parse error for `code`, or None if it parses. A parse check, not a
     style check: rustfmt reformats what it can parse and fails only on what it cannot."""
@@ -4623,6 +4644,7 @@ def cmd_translate(args):
                     pre_res.rust_code = unseal_wide_literals(
                         scrub_comment_token_echoes(pre_res.rust_code), preamble_wide_seal
                     )
+                pre_res.rust_code = _strip_leading_prose(pre_res.rust_code)
                 bad = _rust_parse_error(pre_res.rust_code)
                 if bad is not None:
                     # Never banked: mspaint's main.cpp preamble came back with the model's
@@ -5055,6 +5077,8 @@ def cmd_translate(args):
             for dep in sorted_deps
             if not deterministic_only or dep.name in deterministic_workers
         }
+        if not cpp_com_mode:
+            code = _c2rust_renamed_definitions(code, expected_names)
         try:
             require_rust_definitions(
                 {f"{name}_body" for name in expected_names} if cpp_com_mode else expected_names,
@@ -5449,6 +5473,22 @@ def cmd_postprocess(args):
 
     verb = "would change" if args.dry_run else "changed"
     print(f"\n{total_changed}/{len(rs_files)} files {verb}", file=sys.stderr)
+
+
+def _c2rust_renamed_definitions(code: str, expected: set[str]) -> str:
+    """Undo c2rust's collision rename in a body the model copied it into.
+
+    c2rust renames a C `main` to `main_0` (its own generated `fn main` would collide), and the
+    model writes what its anchor shows: expand.c's body defined `main_0`, the stitch had no
+    `main`, and the whole TU was refused after the money was spent. A planned `N` that is
+    absent while `N_0` is defined is that rename; the definition and its mentions become `N`.
+    """
+    defined = rust_definitions(code)
+    for name in sorted(expected):
+        alias = f"{name}_0"
+        if name not in defined and alias in defined:
+            code = re.sub(rf"\b{re.escape(alias)}\b", name, code)
+    return code
 
 
 def main():

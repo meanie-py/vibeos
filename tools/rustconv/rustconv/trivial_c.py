@@ -231,7 +231,14 @@ PURE_DEBUG_ARGUMENT_HELPERS = frozenset(
 )
 
 _VOID_SPELLINGS = frozenset({"void", "VOID"})
-_TYPE_NOISE_WORDS = frozenset({"static", "extern", "inline", "__inline", "FORCEINLINE"})
+# Storage/inline words, and the SDK's linkage-specifier macros: they expand to nothing or to
+# `__declspec(dllimport)`, never to a type. etw.c writes `NTSTATUS NTKRNLVISTAAPI NTAPI
+# EtwWrite(..)`, the specifier AFTER the type, and the lowering returned `-> NTKRNLVISTAAPI`.
+_TYPE_NOISE_WORDS = frozenset(
+    {"static", "extern", "inline", "__inline", "FORCEINLINE"}
+    | {"NTKRNLVISTAAPI", "NTKERNELAPI", "NTSYSAPI", "NTSYSCALLAPI", "NTHALAPI"}
+    | {"DECLSPEC_IMPORT", "DECLSPEC_EXPORT", "WINBASEAPI", "WINUSERAPI", "WINADVAPI"}
+)
 _PROBE = "__rustconv_trivial_probe"
 
 _IDENT = r"[A-Za-z_]\w*"

@@ -21,9 +21,7 @@ pub mod winhlp32 {
     pub mod hlpfile;
     pub mod r#macro;
     pub mod winhelp;
-    // string.rs (model output) and string/mod.rs (the generated `port data` TU, referenced from
-    // CMakeLists) both exist; pin the generated one explicitly.
-    #[path = "string/mod.rs"]
+    // string.c is data only: the generated `port data` TU.
     pub mod string;
 }
 
