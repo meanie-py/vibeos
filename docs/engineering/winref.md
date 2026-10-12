@@ -53,3 +53,49 @@ Windows 11 only after fixing three things on OUR side, none of them Windows beha
   read-only, so it measured an unmanifested process. The runner now copies payloads.
 
 Each would have failed the same way on vibeos and been filed as an OS bug.
+
+## State on disk (2026-10-12)
+
+`D:\vibeos-winref\` (Windows path; `/mnt/d/vibeos-winref` from WSL):
+
+| Item | What |
+|---|---|
+| `base.qcow2` + `base-vars.fd` | the live base = `runner-v3`: runner task known to Task Scheduler, payloads run from `C:\winref\payload` |
+| `snapshots/post-install` | pristine result of the install (runner task NOT registered: needs `maint`) |
+| `snapshots/runner-v2` | task re-registered, old runner (runs off the CD) |
+| `snapshots/runner-v3` | = current base |
+| `logs/<ts>/` | `winref logs` extractions |
+
+Unactivated retail Pro (public multi-edition ISO, generic install key): no expiry to plan
+around, unlike an evaluation image. A reinstall is `winref install --iso <iso>` (~2 h, TCG).
+Last green payload: `winref run` of kernel32 `sync`/`version` + ntdll `rtl`, run
+`20261011-211134-zx72269t-winref-run-x64` (0 failures, 1m26s, WHPX).
+
+## Owed
+
+- **The conformance column.** Run the conformance lane's winetest/apitest sweep through
+  `winref run` and store the Windows 11 result beside each guest result, so a guest failure
+  reads "differs from Windows 11" instead of "differs from what 2003 was believed to do".
+  Today's quarantine lists are guesses this replaces.
+- **The `win_skip` meter.** Our winetests are a Wine 10.0 sync and already probe the
+  Vista-11 APIs at runtime: 1,937 `win_skip` sites skip on vibeos today. Counting skips per
+  guest run turns the export gap into a coverage number for free; skips become passes or
+  real failures as stubs from `win10_surface.py` get bodies.
+- **Generated tests, graded by Windows first.** For gap functions Wine does not cover: a
+  model writes a Wine-style test, it must PASS on `winref` (a test Windows fails is a wrong
+  test, discarded) and FAIL against a planted mutant, and only then joins the ratchet.
+- **Drivers.** The VM runs test-signed drivers (`testsigning` on, Secure Boot off):
+  kmtests for the Win10/11 kernel surface (`ExAllocatePool2`, ETW, feature configuration)
+  are graded here. virtio-win drivers (`netkvm` NDIS 6, `viostor`/`vioscsi` StorPort,
+  `vioinput` KMDF HID, `viogpudo` WDDM) run on the same QEMU devices vibeos uses, so
+  Windows-vs-vibeos is a same-driver comparison. Physical hardware (GPU, Wi-Fi) needs real
+  Windows on the OptiPlex instead; there is no Windows 11-capable GPU for it yet.
+- **Defender exclusions** failed at setup (`0x80010005`). Harmless so far; fix in
+  `maint` if Defender ever quarantines a test binary.
+- **QMP sometimes does not connect** on a run (20261011-210309); the run still completes
+  and is graded from the console. Unexplained.
+- **rostests build breaks** outside this work (`./vibeos-cli build --arch amd64 --rostests`
+  stops at the first; `ninja -k 0` builds the rest: 127 winetests, 63 apitests):
+  `user32_winetest` (`monitor.c` needs `ddk/d3dkmthk.h`), `wine.combase.test.dll`
+  (`-llibcombase` missing), `dllimport_test.dll` (C++ `CHString` "special section 0" link
+  error), `menuaccels.rc` (llvm-rc rejects ALT on a non-VIRTKEY accelerator).

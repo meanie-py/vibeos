@@ -4348,6 +4348,17 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (one copy per build, not per flake), because a preserved serial without its index is
   unreadable after the next build. So evidence loss on a RED run is closed. Everything a
   GREEN run writes is still uncapped and still grows forever.
+  **Measured again 2026-10-10** when WSL fell to 97G free: the fleet's worktrees had grown
+  1.4T -> 1.6T (mostly `sdk/lib/rust/target` at 30-52G and `build-<arch>` at ~6G each, per
+  tree), with no retention anywhere. One manual sweep got back to 272G free, all regenerable:
+  `~/vibeos-rust-staging/port/*/target-*` (35G; the `.rs` and `.responses` beside them are
+  paid and were kept), idle `/tmp/claude-1000/*/scratchpad` (8.9G), run dirs older than a
+  day (7.3G), `prune --trim` (1.2G), three leftover subagent worktrees and two finished
+  lane worktrees, and build output of worktrees no lane claimed. Owed: those age rules
+  inside `vibeos-cli prune`, so this is one command, not a census. Trap met on the way: `find` here is bfs, which rejects
+  `-newermt '-24 hours'` (every age check silently came back empty, so every directory
+  looked idle); use `-mmin`/`-mtime`. Pending: remove the `vibeos-rustconv-speedrun`
+  worktree (build output already deleted) once that session ends.
 
 - **MP kernel promoted to the DEFAULT boot on all three arches — 2026-09-12, user's call.**
   `DefaultOS=` now selects `ntkrnlmp.exe` + `halmp.dll`; both UP entries still ship as the
