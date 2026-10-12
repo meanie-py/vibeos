@@ -26,6 +26,7 @@ from . import (
     pi5,
     symbolize,
     tooling,
+    winref,
 )
 from . import conformance as conformance_mod
 from . import difftest as difftest_mod
@@ -96,6 +97,7 @@ def build_parser() -> argparse.ArgumentParser:
     host_clock.add_parser(sub)
     pi4.add_parser(sub)
     pi5.add_parser(sub)
+    winref.add_parser(sub)
 
     def arch_arg(sp, required=True):
         sp.add_argument(
