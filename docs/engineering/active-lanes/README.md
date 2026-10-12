@@ -14,7 +14,7 @@ registry), never left to rot in an archived doc.
 | `fex-arm` | [fex-bringup-plan.md](fex-bringup-plan.md), [wow64-plan.md](wow64-plan.md) |
 | `conformance-ratchet` | [../conformance-ratchet-quest.md](../conformance-ratchet-quest.md) *(paused 2026-10-12; resume from its last progress-log entry)* |
 | `smp-bringup` | [smp-bringup-quest.md](smp-bringup-quest.md) |
-| `msvcrt-homebrew` | [msvcrt-from-pieces-plan.md](msvcrt-from-pieces-plan.md) |
+| `msvcrt-homebrew` | [native-base-translation.md](native-base-translation.md) — native ReactOS base not covered by other lanes *(paused 2026-10-12 until the weekend; next is the A′ audio stack)* · CRT: [msvcrt-from-pieces-plan.md](msvcrt-from-pieces-plan.md) |
 | `shell32-com` | [shell32-com-plan.md](shell32-com-plan.md) *(translation driven by Codex, not rustconv)* |
 | `warnings-burndown` | [warnings-burndown-plan.md](warnings-burndown-plan.md) *(follow-on from the closed `rust-warnings` lane)* |
 | `qemu-perf` | [qemu-perf-plan.md](qemu-perf-plan.md) *(QEMU execution layer: windows-host backend, TCG-vs-WHPX, boot concurrency)* |
