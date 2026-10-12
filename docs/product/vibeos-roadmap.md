@@ -316,6 +316,12 @@ ReactOS currently ships ported Wine code (user32, kernel32, gdi32, shell32, adva
 
 This turns Wine from a "port once, maintain forever" burden into a "regenerate on demand" dependency.
 
+**Decided 2026-10-12: translate current upstream Wine, not ReactOS's copy, and bring the
+DLLs ReactOS never pulled in as vendored C intake.** Plan, measured gap (377 absent DLLs,
+260 of the useful ones import-closed at DLL level) and phases:
+[wine-upstream-intake-plan.md](../engineering/wine-upstream-intake-plan.md). Gap tool:
+`python3 tools/wine_gap.py --wine ~/src/wine`.
+
 ### 7c. Linux-Origin Subsystem Refresh — Size: XL
 
 Same pattern for other code ReactOS imported from Linux and is now stuck maintaining:
