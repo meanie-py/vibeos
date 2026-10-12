@@ -21,6 +21,7 @@ import math
 import os
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -144,6 +145,45 @@ def live_qemu_worktrees(worktrees: list[Path]) -> set[Path]:
     return live
 
 
+def _exited(entry: Path) -> bool:
+    """A zombie (or dead) process: its build is over, whatever its cwd said."""
+    try:
+        for line in (entry / "status").read_text().splitlines():
+            if line.startswith("State:"):
+                return line.split()[1] in ("Z", "X")
+    except OSError:
+        return not entry.exists()  # gone between reads; unreadable but present stays live
+    return False
+
+
+def _mountinfo(path: Path) -> list[list[str]]:
+    try:
+        return [line.split() for line in path.read_text().splitlines()]
+    except OSError:
+        return []
+
+
+def canonical_bind_source(
+    mountinfo: Path, canonical: Path, host_mountinfo: Path = Path("/proc/self/mountinfo")
+) -> Path | None:
+    """The host path bind-mounted at `canonical` in one process's mount namespace, or None.
+
+    mountinfo field 4 is the mount's root WITHIN its filesystem and field 3 the device, so the
+    host path is wherever the host mounts that device's root, joined with it. Every lane's
+    build runs at the one canonical path, so without this any single build made the whole
+    fleet look "in flight" and prune could reclaim nothing while the merge queue gated
+    (2026-10-12: 0 of 816 G eligible with only the integration trees building)."""
+    for f in _mountinfo(mountinfo):
+        if len(f) < 5 or f[4] != str(canonical):
+            continue
+        dev, root = f[2], f[3]
+        for h in _mountinfo(host_mountinfo):
+            if len(h) >= 5 and h[2] == dev and h[3] == "/":
+                return Path(h[4]) / root.lstrip("/")
+        return None
+    return None
+
+
 def active_build_worktrees(worktrees: list[Path]) -> set[Path]:
     """Worktrees with a running build process (cwd under the worktree)."""
     active: set[Path] = set()
@@ -160,16 +200,26 @@ def active_build_worktrees(worktrees: list[Path]) -> set[Path]:
         try:
             cwd = os.readlink(entry / "cwd")
         except OSError:
-            # An unattributable live compiler is not evidence of an idle tree.
-            if entry.exists():
+            # An unattributable live compiler is not evidence of an idle tree. A zombie is not
+            # live: mid-build, compilers exit constantly and each one's cwd stops resolving
+            # before it is reaped, which made one finished cc1 hold the whole fleet.
+            if entry.exists() and not _exited(entry):
                 active.update(wt.resolve() for wt in worktrees)
             continue
-        # Bind-mount builds report /tmp/vibeos, not their physical worktree.
-        # Protect the fleet conservatively rather than misclassifying an orphan
-        # compiler as idle after its CLI parent (and shared lease) has died.
+        # Bind-mount builds report /tmp/vibeos, not their physical worktree; the bind
+        # source in the process's own mount table names it. When that cannot be read,
+        # protect the fleet conservatively rather than misclassifying an orphan compiler
+        # as idle after its CLI parent (and shared lease) has died.
         canonical = Path(canon.canon_path())
         if Path(cwd) == canonical or canonical in Path(cwd).parents:
-            active.update(wt.resolve() for wt in worktrees)
+            source = canonical_bind_source(entry / "mountinfo", canonical)
+            if source is not None:
+                # Attributed. A tree outside `worktrees` (one `--only` left out) is no
+                # evidence about the trees we were asked about.
+                if wt := _attribute(str(source), worktrees):
+                    active.add(wt.resolve())
+            elif entry.exists() and not _exited(entry):
+                active.update(wt.resolve() for wt in worktrees)
             continue
         if wt := _attribute(cwd, worktrees):
             active.add(wt.resolve())
@@ -255,8 +305,18 @@ def prune(args, repo: Path) -> int:
     try:
         if not getattr(args, "apply", False):
             return _prune(args, repo)
-        with maintenance.activity(repo, exclusive=True):
-            return _prune(args, repo)
+        # Every running vibeos-cli command holds the maintenance lock SHARED, so an exclusive
+        # prune fails whenever anything at all is building or gating. --wait-minutes polls
+        # for the quiet moment rather than leaving the caller to hand-roll a retry loop.
+        deadline = time.monotonic() + 60 * float(getattr(args, "wait_minutes", 0) or 0)
+        while True:
+            try:
+                with maintenance.activity(repo, exclusive=True):
+                    return _prune(args, repo)
+            except maintenance.MaintenanceError as exc:
+                if "in progress" not in str(exc) or time.monotonic() >= deadline:
+                    raise
+            time.sleep(30)
     except maintenance.MaintenanceError as exc:
         print(f"PRUNE_REFUSED: {exc}")
         return 2
@@ -328,12 +388,19 @@ def select_budget(candidates: list[Candidate], budget: float | None) -> list[Can
 
 
 def _prune(args, repo: Path) -> int:
-    import time
-
     worktrees = git_worktrees(repo)
     if not worktrees:
         print("prune: no git worktrees found")
         return 1
+    only = getattr(args, "only", None)
+    if only:
+        names = {wt.name: wt for wt in worktrees}
+        unknown = sorted(set(only) - set(names))
+        if unknown:
+            raise maintenance.MaintenanceError(
+                f"--only names no worktree: {', '.join(unknown)} (have: {', '.join(sorted(names))})"
+            )
+        worktrees = [names[n] for n in only]
     if getattr(args, "apply", False):
         control = maintenance.hostlock.HOSTLOCK_DIR.resolve()
         if any(control.is_relative_to(wt.resolve()) for wt in worktrees):

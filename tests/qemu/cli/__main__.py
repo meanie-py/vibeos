@@ -1180,6 +1180,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="also reclaim eligible outputs toward this filesystem headroom",
     )
     pr.add_argument(
+        "--only",
+        nargs="+",
+        metavar="WORKTREE",
+        help="consider only these worktrees (directory names, e.g. vibeos-smp): prune lanes "
+        "that are closed while live ones keep their warm builds",
+    )
+    pr.add_argument(
+        "--wait-minutes",
+        type=float,
+        default=0,
+        help="with --apply, wait up to N minutes for the fleet to go quiet (every running "
+        "vibeos-cli command blocks an apply) instead of refusing at once",
+    )
+    pr.add_argument(
         "--trim",
         action="store_true",
         help="only cut cargo targets back to what builds still read (superseded units, idle "
