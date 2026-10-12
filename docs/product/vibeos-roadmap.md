@@ -1754,7 +1754,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `GetModuleHandle` misses returning stale errors; userenv shortcuts never written; csrss
   creating `\Session` instead of `\Sessions`; gdi32 never loading lpk.dll; ks stream IRPs
   with a NULL header; user32 button state overwriting the font handle on 64-bit; ole32
-  property dictionaries unreadable. Owed, by cluster (upstream-sync): pciidex rewrite
+  property dictionaries unreadable. **2026-10-11 sync (64 commits, 9084ff1c3d8):** ported into
+  the Rust: the NT6 HAL dispatch tail, 256 PCI buses, multiple I/O APICs with every input
+  (4e98ffc52b0), kernel32's BaseGetNamedObjectDirectory, mode's ParseModes, npfs's connection
+  attributes, regedit's address toolbar; six keyboard layouts generated. Declined: the NT5-isms
+  commit (no-op at our NTDDI apart from two inverted fiber tests it introduces in
+  LdrShutdownThread and DeleteFiber). freeldr's UEFI PCI scan needs nothing: ours predates it.
+  Still owed from it: pciidex's HighPoint chipset (`chipset/hpt.c`, new, 375 lines, plus the
+  controller's BusLocation; commented out until translated), shell32's 13 files (taken by the
+  shell32-com lane), and mmc_new's ten commits (master's translation is of the C before them;
+  `CActionWnd.cpp` is commented out). Owed, by cluster (upstream-sync): pciidex rewrite
   (~15K lines), PCIX arbiters/ECAM, netcfgx and dhcpcsvc alternate configuration, freeldr
   disk registration and boot menu, the Wine 10 ole32/oleaut32/mlang/crypt syncs, msgina and
   syssetup branding. **The msgina branding commit (6ae2d5ab43f) deleted IDI_ROSLOGO/IDI_BAR,
