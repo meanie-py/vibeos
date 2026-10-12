@@ -920,7 +920,7 @@ Spend: about $4.63 of the $5 approved for the phase (`-m haiku`). Nothing is unc
 
 **Next session, in order:**
 
-1. **The upstream shell32 ports. Blocked on upstream-sync landing.** Their 64-commit merge
+1. **The upstream shell32 ports. Start here.** Their 64-commit merge
    brings 15 upstream files (`git diff --stat 171e1de21a4 upstream/master --
    dll/win32/shell32 sdk/include/reactos/shellutils.h`: 193+/106-). That covers
    CDefaultContextMenu, brfolder, seven folders, CMenuToolbars, recyclebin.c, utils.cpp,
@@ -928,15 +928,9 @@ Spend: about $4.63 of the $5 approved for the phase (`-m haiku`). Nothing is unc
    `SHELL_GetAbsolutePidl` inlines in `shellutils.h`. They are hand ports ($0) into
    shell32-rust, menuband-rust and recyclebin-rust. Annotate each with its upstream commit
    (8ac7f394963, 26b45cebea8, 35c272d4ca3, …).
-   **State as of 2026-10-12 00:30:**
-   - `3c95d2f9642` is NOT on `origin/master`.
-   - upstream-sync's lane tip is `3a1467b7745` (branch `pci-bus-interface`, worktree
-     `vibeos-upstream-sync`). Their message said it was queued, but `land-status` showed an
-     empty queue, so it never registered.
-   - The lane's two earlier submissions were rejected for CONFLICT.
-   - upstream-sync is paused until next weekend.
-   - Check with `git merge-base --is-ancestor 3c95d2f9642 origin/master`. If it still isn't
-     there, it needs a resubmit from their worktree; ask the user before doing that for them.
+   **UNBLOCKED (verified 2026-10-12 16:08):** upstream-sync landed on master as
+   `078583fd82f6` (lane tip `e5077507ae79`, which contains `3c95d2f9642`). Start with
+   `git fetch && git merge origin/master` in this worktree, then port.
 2. **ftp.** The scaffold is parked at `~/vibeos-rust-staging/port/ftp/parked/` (crate plus
    `gen_arm.sh`).
    - About 87 functions are still to translate, roughly $0.10–0.15 on Haiku. That fits the
