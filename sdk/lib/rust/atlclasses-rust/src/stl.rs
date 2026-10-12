@@ -35,7 +35,10 @@ impl<T> StdVector<T> {
             return;
         }
         let cap = core::cmp::max(n, self.cap.saturating_mul(2)).max(1);
-        let bytes = cap.checked_mul(core::mem::size_of::<T>().max(1)).expect("vector too long");
+        // C++ throws std::length_error past max_size(); uncaught in every caller.
+        let Some(bytes) = cap.checked_mul(core::mem::size_of::<T>().max(1)) else {
+            panic!("std::length_error: vector too long");
+        };
         let p = CCRTAllocator::Reallocate(self.data as *mut c_void, bytes) as *mut T;
         if p.is_null() {
             panic!("std::bad_alloc");
