@@ -2416,7 +2416,7 @@ pub unsafe extern "C" fn IntFormatCandLineCHT(
     let mut i: DWORD = iStart;
     while i < iEnd {
         let pszSrc: *const WCHAR = (pCandList as PBYTE)
-            .offset((*pCandList).dwOffset[i as usize] as isize) as *const WCHAR;
+            .offset((*(*pCandList).dwOffset.as_ptr().add(i as usize)) as isize) as *const WCHAR;
         let mut cchSrc: usize = wcslen(pszSrc) as usize;
         let mut strWidth: UINT = IntGetStringWidth(pszSrc) as UINT;
         let mut bTruncated: BOOL = (FALSE as i32);
@@ -2952,14 +2952,14 @@ pub unsafe extern "C" fn IntSendCandListCHS(hwnd: HWND, hIMC: HIMC, pEntry: PCON
 
             *(*pEntry).pdwCandPageStart.offset(0 as isize) = (*pEntry).dwCandOffset;
 
-            let mut szFirstStr: PWCHAR = ((pCandList as PBYTE).offset((*pCandList).dwOffset[0 as usize] as isize)) as PWCHAR;
+            let mut szFirstStr: PWCHAR = ((pCandList as PBYTE).offset((*(*pCandList).dwOffset.as_ptr().add(0 as usize)) as isize)) as PWCHAR;
             let mut currentX: UINT = IntGetStringWidth(szFirstStr as PCWSTR) as UINT + 3 as UINT;
 
             let mut iItem: UINT = 0 as UINT;
             let mut iCand: UINT = 1 as UINT;
             iItem = 1 as UINT;
             while (iItem as DWORD) < (*pCandList).dwCount && (iCand as DWORD) < nPageCountNeeded.wrapping_sub(1 as DWORD) {
-                let mut szText: *mut WCHAR = ((pCandList as *mut BYTE).offset((*pCandList).dwOffset[iItem as usize] as isize)) as *mut WCHAR;
+                let mut szText: *mut WCHAR = ((pCandList as *mut BYTE).offset((*(*pCandList).dwOffset.as_ptr().add(iItem as usize)) as isize)) as *mut WCHAR;
                 let mut strWidth: UINT = IntGetStringWidth(szText as PCWSTR) as UINT;
 
                 if currentX.wrapping_add(strWidth).wrapping_add(3 as UINT) > usableWidth as UINT
@@ -3183,7 +3183,7 @@ pub unsafe extern "C" fn IntSendCandListJPNorKOR(
 
                 let currentX: UINT = (IntGetStringWidth(
                     (pCandList as PBYTE)
-                        .offset((*pCandList).dwOffset[0 as usize] as isize)
+                        .offset((*(*pCandList).dwOffset.as_ptr().add(0 as usize)) as isize)
                         as PWCHAR as PCWSTR,
                 ) as ::core::ffi::c_int
                     + 3 as ::core::ffi::c_int) as UINT;
@@ -3194,7 +3194,7 @@ pub unsafe extern "C" fn IntSendCandListJPNorKOR(
                 while i < (*pCandList).dwCount {
                     let strWidth: UINT = IntGetStringWidth(
                         (pCandList as PBYTE)
-                            .offset((*pCandList).dwOffset[i as usize] as isize)
+                            .offset((*(*pCandList).dwOffset.as_ptr().add(i as usize)) as isize)
                             as PWCHAR as PCWSTR,
                     ) as UINT;
                     if currentX
