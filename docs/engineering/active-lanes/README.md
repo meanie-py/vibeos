@@ -12,7 +12,7 @@ registry), never left to rot in an archived doc.
 | Lane (worktree/branch) | Doc |
 |---|---|
 | `fex-arm` | [fex-bringup-plan.md](fex-bringup-plan.md), [wow64-plan.md](wow64-plan.md) |
-| `conformance-ratchet` | conformance-ratchet-quest.md *(lives on the branch until it lands)* |
+| `conformance-ratchet` | [../conformance-ratchet-quest.md](../conformance-ratchet-quest.md) *(paused 2026-10-12; resume from its last progress-log entry)* |
 | `smp-bringup` | [smp-bringup-quest.md](smp-bringup-quest.md) |
 | `msvcrt-homebrew` | [msvcrt-from-pieces-plan.md](msvcrt-from-pieces-plan.md) |
 | `shell32-com` | [shell32-com-plan.md](shell32-com-plan.md) *(translation driven by Codex, not rustconv)* |
