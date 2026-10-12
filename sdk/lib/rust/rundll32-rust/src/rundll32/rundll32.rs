@@ -101,7 +101,9 @@ pub unsafe extern "system" fn CommandLineToArgv(lpCmdLine: LPCTSTR, lpArgc: *mut
     nNames = 0;
 
     // Count the number of arguments
-    while nNames < 4 {
+    // The C is this same `while`: its `continue` skips `lpSrc++` on purpose, because the
+    // whitespace skip just before it has already advanced lpSrc.
+    while nNames < 4 { // nolint: dowhile-continue (faithful: see above)
         if *lpSrc == 0
             || (*lpSrc == (',' as u16) && nNames == 2)
             || ((*lpSrc == (' ' as u16) || *lpSrc == ('\t' as u16)) && bInQuotes == 0)

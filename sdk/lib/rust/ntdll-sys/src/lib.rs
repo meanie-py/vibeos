@@ -83,6 +83,8 @@ pub mod nt {
         // safe to name explicitly; same reason as NtCurrent*).
         InitializeListHead, IsListEmpty, InsertHeadList, InsertTailList,
         RemoveEntryList, RemoveHeadList, RemoveTailList,
+        // ndk/rtlfuncs.h FORCEINLINE: bindgen's extern for it links against nothing.
+        RtlInitEmptyUnicodeString,
     };
 
     // Hand-written NTSTATUS codes (ntstatus.h cast-macros are not
