@@ -278,16 +278,14 @@ pub unsafe extern "system" fn PciFdoIrpStartDevice(
     }
 
     Resources = (*IoStackLocation).Parameters.StartDevice.AllocatedResources;
+    // A bridge's FDO starts with one full descriptor: the windows its PDO was given.
+    // Upstream left this (and the same check after the arbiters) as
+    // UNIMPLEMENTED_DBGBREAK, which with no debugger attached is a breakpoint trap and a
+    // double fault on the first PCI-to-PCI bridge (the OptiPlex's root ports; QEMU's
+    // smoke machines have none). The windows are consumed by PciInitializeArbiterRanges
+    // below, which bounds each arbiter to them, so nothing else is owed here.
     if !Resources.is_null() && !((*DeviceExtension).BusRootFdoExtension == DeviceExtension) {
         ntkrnl_sys::ASSERT!((*Resources).Count == 1);
-        DbgPrint(
-            (b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8).cast(),
-            b"PciFdoIrpStartDevice\0".as_ptr() as *const i8,
-            b"drivers/bus/pcix/fdo.c\0".as_ptr() as *const i8,
-            97 as i32,
-        );
-        DbgPrint((b"\0".as_ptr() as *const i8).cast());
-        DbgBreakPoint();
     }
 
     Status = PciInitializeArbiterRanges(DeviceExtension, Resources);
@@ -296,17 +294,6 @@ pub unsafe extern "system" fn PciFdoIrpStartDevice(
         return Status;
     }
 
-    if !Resources.is_null() && !((*DeviceExtension).BusRootFdoExtension == DeviceExtension) {
-        ntkrnl_sys::ASSERT!((*Resources).Count == 1);
-        DbgPrint(
-            (b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8).cast(),
-            b"PciFdoIrpStartDevice\0".as_ptr() as *const i8,
-            b"drivers/bus/pcix/fdo.c\0".as_ptr() as *const i8,
-            114 as i32,
-        );
-        DbgPrint((b"\0".as_ptr() as *const i8).cast());
-        DbgBreakPoint();
-    }
 
     PciCommitStateTransition(DeviceExtension, PciStarted);
     STATUS_SUCCESS

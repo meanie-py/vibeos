@@ -556,10 +556,69 @@ pub unsafe extern "system" fn PPBridge_ChangeResourceSettings(
             (*((*fdo_extension).PreservedConfig as PPCI_COMMON_HEADER)).u.type1.IOLimitUpper16;
     }
 
+    // Write the assigned BARs and windows back. Upstream left this loop UNIMPLEMENTED,
+    // so a positive-decode bridge kept the closed windows written above and forwarded
+    // nothing: the OptiPlex's NVMe, behind root port 00:01.0, read all-ones. Current[]
+    // holds what PciComputeNewCurrentSettings took from the START resources, indexed
+    // as PPBridge_SaveCurrentSettings filled it: 0-1 the BARs, 2 the I/O window, 3 the
+    // memory window, 4 the prefetchable window, 5 the ROM BAR.
     pci_resources = (*PdoExtension).Resources;
     if !pci_resources.is_null() {
-        for i in 0..6 {
-            // UNIMPLEMENTED
+        let bars = (*PciData).u.type1.BaseAddresses.as_mut_ptr();
+        let mut i = 0usize;
+        while i < 6 {
+            let cm = core::ptr::addr_of!((*pci_resources).Current[i]);
+            if (*cm).Type as u32 == CmResourceTypeNull {
+                i += 1;
+                continue;
+            }
+            let start = (*cm).u.Generic.Start.QuadPart as u64;
+            let end = start + ((*cm).u.Generic.Length as u64).max(1) - 1;
+            match i {
+                0 | 1 => {
+                    let bar = *bars.add(i);
+                    if bar & !PCI_ADDRESS_IO_SPACE != 0 {
+                        let mask = if bar & PCI_ADDRESS_IO_SPACE != 0 {
+                            PCI_ADDRESS_IO_ADDRESS_MASK
+                        } else {
+                            PCI_ADDRESS_MEMORY_ADDRESS_MASK
+                        };
+                        *bars.add(i) = (bar & !mask) | (start as u32 & mask);
+                        if bar & PCI_ADDRESS_IO_SPACE == 0
+                            && bar & PCI_ADDRESS_MEMORY_TYPE_MASK == PCI_TYPE_64BIT
+                            && i == 0
+                        {
+                            *bars.add(1) = (start >> 32) as u32;
+                            i += 1;
+                        }
+                    }
+                }
+                2 => {
+                    // Bits 7:4 of each byte are address 15:12; the low nibble is the
+                    // read-only capability (16- or 32-bit decode) and ignores writes.
+                    (*PciData).u.type1.IOBase = ((start >> 8) & 0xF0) as u8 | 0x01;
+                    (*PciData).u.type1.IOLimit = ((end >> 8) & 0xF0) as u8 | 0x01;
+                    (*PciData).u.type1.IOBaseUpper16 = (start >> 16) as u16;
+                    (*PciData).u.type1.IOLimitUpper16 = (end >> 16) as u16;
+                }
+                3 => {
+                    (*PciData).u.type1.MemoryBase = ((start >> 16) & 0xFFF0) as u16;
+                    (*PciData).u.type1.MemoryLimit = ((end >> 16) & 0xFFF0) as u16;
+                }
+                4 => {
+                    (*PciData).u.type1.PrefetchBase = ((start >> 16) & 0xFFF0) as u16 | 0x1;
+                    (*PciData).u.type1.PrefetchLimit = ((end >> 16) & 0xFFF0) as u16 | 0x1;
+                    (*PciData).u.type1.PrefetchBaseUpper32 = (start >> 32) as u32;
+                    (*PciData).u.type1.PrefetchLimitUpper32 = (end >> 32) as u32;
+                }
+                _ => {
+                    let rom = (*PciData).u.type1.ROMBaseAddress;
+                    (*PciData).u.type1.ROMBaseAddress = (rom & !PCI_ADDRESS_ROM_ADDRESS_MASK)
+                        | (start as u32 & PCI_ADDRESS_ROM_ADDRESS_MASK)
+                        | PCI_ROMADDRESS_ENABLED;
+                }
+            }
+            i += 1;
         }
     }
 

@@ -379,16 +379,18 @@ pub unsafe extern "system" fn PciPdoIrpRemoveDevice(
     IoStackLocation: PIO_STACK_LOCATION,
     DeviceExtension: PPCI_PDO_EXTENSION,
 ) -> NTSTATUS {
+    // Upstream breakpoints here (fatal with no debugger). A PDO is removed while
+    // still present after its START fails; succeed and keep it, as a device that is
+    // still on the bus must keep its PDO. Deleting one that is gone is still owed.
     DbgPrint(
-        b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as PCSTR,
+        b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as PCSTR,
         b"PciPdoIrpRemoveDevice\0" as *const u8 as *const core::ffi::c_char,
         b"drivers/bus/pcix/pdo.c\0" as *const u8
             as *const core::ffi::c_char,
         242 as core::ffi::c_int,
     );
     DbgPrint(b"\0" as *const u8 as PCSTR);
-    DbgBreakPoint();
-    STATUS_NOT_SUPPORTED
+    STATUS_SUCCESS
 }
 
 #[no_mangle]
@@ -401,15 +403,15 @@ pub unsafe extern "system" fn PciPdoIrpCancelRemoveDevice(
     let _ = IoStackLocation;
     let _ = DeviceExtension;
 
+    // Query-remove did nothing, so there is nothing to undo; upstream breakpoints.
     DbgPrint(
-        b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
+        b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
         b"PciPdoIrpCancelRemoveDevice\0".as_ptr() as *const ::core::ffi::c_char,
         b"drivers/bus/pcix/pdo.c\0".as_ptr()
             as *const ::core::ffi::c_char,
         256 as ::core::ffi::c_int,
     );
-    DbgBreakPoint();
-    STATUS_NOT_SUPPORTED
+    STATUS_SUCCESS
 }
 #[no_mangle]
 pub unsafe extern "system" fn PciPdoIrpStopDevice(
@@ -422,13 +424,12 @@ pub unsafe extern "system" fn PciPdoIrpStopDevice(
     let _ = DeviceExtension;
 
     DbgPrint(
-        b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
+        b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
         b"PciPdoIrpStopDevice\0".as_ptr() as *const ::core::ffi::c_char,
         b"drivers/bus/pcix/pdo.c\0".as_ptr()
             as *const ::core::ffi::c_char,
         270 as ::core::ffi::c_int,
     );
-    DbgBreakPoint();
     STATUS_NOT_SUPPORTED
 }
 #[no_mangle]
@@ -438,13 +439,12 @@ pub unsafe extern "system" fn PciPdoIrpQueryStopDevice(
     DeviceExtension: PPCI_PDO_EXTENSION,
 ) -> NTSTATUS {
     DbgPrint(
-        b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
+        b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
         b"PciPdoIrpQueryStopDevice\0".as_ptr() as *const ::core::ffi::c_char,
         b"drivers/bus/pcix/pdo.c\0".as_ptr() as *const ::core::ffi::c_char,
         284 as ::core::ffi::c_int,
     );
     DbgPrint(b"\0".as_ptr() as PCSTR);
-    DbgBreakPoint();
     STATUS_NOT_SUPPORTED
 }
 #[no_mangle]
@@ -454,14 +454,13 @@ pub unsafe extern "system" fn PciPdoIrpCancelStopDevice(
     DeviceExtension: PPCI_PDO_EXTENSION,
 ) -> NTSTATUS {
     DbgPrint(
-        b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
+        b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
         b"PciPdoIrpCancelStopDevice\0".as_ptr() as *const ::core::ffi::c_char,
         b"drivers/bus/pcix/pdo.c\0".as_ptr() as *const ::core::ffi::c_char,
         298 as ::core::ffi::c_int,
     );
     DbgPrint(b"\0".as_ptr() as PCSTR);
-    DbgBreakPoint();
-    STATUS_NOT_SUPPORTED
+    STATUS_SUCCESS
 }
 
 #[no_mangle]

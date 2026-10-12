@@ -705,6 +705,24 @@ pub unsafe extern "system" fn PciBuildRequirementsList(
             /* A BAR decodes for one function only, so it cannot be shared */
             *Descriptor = (*Resources).Limit[i];
             (*Descriptor).ShareDisposition = CmResourceShareDeviceExclusive;
+            // A bridge window's limit has Length 0 (PPBridge_SaveLimits): upstream never
+            // sized it, so PnP assigned an empty window and the bridge stopped forwarding
+            // to everything behind it (the OptiPlex's NVMe read all-ones). Ask for the
+            // window the firmware programmed, exactly where it is, as pci.sys keeps it.
+            if (*PdoExtension).HeaderType as u32 == PCI_BRIDGE_TYPE as u32
+                && (2..=4).contains(&i)
+                && (*Descriptor).u.Generic.Length == 0
+            {
+                let Current = core::ptr::addr_of!((*Resources).Current[i]);
+                if (*Current).Type == (*Descriptor).Type && (*Current).u.Generic.Length != 0 {
+                    let Start = (*Current).u.Generic.Start.QuadPart;
+                    let Length = (*Current).u.Generic.Length;
+                    (*Descriptor).u.Generic.Length = Length;
+                    (*Descriptor).u.Generic.Alignment = 1;
+                    (*Descriptor).u.Generic.MinimumAddress.QuadPart = Start;
+                    (*Descriptor).u.Generic.MaximumAddress.QuadPart = Start + Length as i64 - 1;
+                }
+            }
             if Resized != 0 {
                 (*Descriptor).Option = IO_RESOURCE_ALTERNATIVE as UCHAR;
             }
@@ -1791,11 +1809,20 @@ pub unsafe extern "system" fn PciScanBus(DeviceExtension: PPCI_FDO_EXTENSION) ->
                     }
                 }
 
+                // The whole capability goes into a buffer that holds it. The C reads it
+                // into CapHeader, a 2-byte PCI_CAPABILITIES_HEADER, so a power-management
+                // capability (8 bytes) or AGP (12) overran into the neighbouring locals.
+                // On the OptiPlex that was this loop's own state: bus 0's scan stopped
+                // after the first device with a PM capability (root port 00:01.0), and
+                // the GPU, USB, NIC and audio never got PDOs. Whether it shows depends on
+                // the stack layout, so adding a print made it go away.
+                let mut cap_data = [0u16; 8];
                 if size != 0 {
+                    ntkrnl_sys::ASSERT!(size as usize <= core::mem::size_of_val(&cap_data));
                     temp_offset = PciReadDeviceCapability(new_extension,
                                                           cap_offset as u8,
                                                           cap_header.CapabilityID as u32,
-                                                          core::ptr::addr_of_mut!(cap_header),
+                                                          cap_data.as_mut_ptr().cast(),
                                                           size) as u16;
                     if temp_offset != cap_offset {
                         DbgPrint((b"- Failed to read capability data. ***\n\0".as_ptr() as *const i8).cast());
@@ -1805,12 +1832,8 @@ pub unsafe extern "system" fn PciScanBus(DeviceExtension: PPCI_FDO_EXTENSION) ->
 
                 DbgPrint((b"CAP @%02x ID %02x (%s)\n\0".as_ptr() as *const i8).cast(),
                          cap_offset as u32, cap_header.CapabilityID as u32, name);
-                let cap_header_ptr = core::ptr::addr_of!(cap_header) as *const u8;
-                i = 0;
-                while i < size {
-                    let word_ptr = cap_header_ptr.add(i as usize) as *const u16;
-                    DbgPrint((b"  %04x\n\0".as_ptr() as *const i8).cast(), *word_ptr as u32);
-                    i += 2;
+                for word in &cap_data[..(size as usize / 2)] {
+                    DbgPrint((b"  %04x\n\0".as_ptr() as *const i8).cast(), *word as u32);
                 }
                 DbgPrint((b"\n\0".as_ptr() as *const i8).cast());
 

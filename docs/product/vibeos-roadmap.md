@@ -1514,8 +1514,23 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     (acpi.sys's `_PRT` walk, `acpi-rust/pciroute.rs`; on arm64 the HAL answers with QEMU
     virt's GPEX map) and each function's interrupt requirement names exactly its routed GSI,
     or its Interrupt Line where nothing routes it. Upstream's C asked for any vector and left
-    `_PRT` to acpi.sys's interrupt arbiter, which ReactOS never had. Still owed before pcix
-    can be the default: RootBusCapability (_OSC) is not provided. Owed later: that arbiter
+    `_PRT` to acpi.sys's interrupt arbiter, which ReactOS never had. **First real hardware
+    (OptiPlex 9020, 2026-10-12):** QEMU's smoke machines have no PCI-to-PCI bridges, and the
+    OptiPlex's root ports hit five upstream bugs, all fixed: a breakpoint stub when a bridge's
+    bus starts (`PciFdoIrpStartDevice`); the instance-ID walk up the bridges never advanced and
+    overran its 256-byte stack buffer; bridge window requirements had Length 0, so PnP
+    assigned empty windows; `PPBridge_ChangeResourceSettings` closed every window and never
+    wrote the assigned ones back (the loop was UNIMPLEMENTED); and the scan read a whole PM
+    capability into a 2-byte header, which on this stack layout ended bus 0's scan after the
+    first root port. Remove and stop stubs no longer breakpoint either. With those, pcix
+    boots the OptiPlex to the desktop: every function routed from `_PRT` (the I217 to GSI 23,
+    where the BIOS's Interrupt Line says 128), the NVMe behind root port 00:01.0 working on
+    its pin interrupt. Still open on that box: the Renesas USB card behind 00:1c.0 reads
+    all-ones (its BAR is inside the bridge's window, so something else in that bridge or
+    the card's programming), one boot in five floods `[UNIATA] SATA hotplug` (SATA shares
+    GSI 18 with EHCI 00:1d.0; never under pci.sys), and netstack still reads the raw
+    Interrupt Line rather than the routed GSI. Still owed before pcix can be the default:
+    RootBusCapability (_OSC) is not provided. Owed later: that arbiter
     itself (8259-mode link `_SRS`, line accounting, MSI) behind pcix's stubbed
     `INT_ROUTE_INTERFACE_STANDARD` (`routeintrf_Constructor` breaks in). The HAL legacy PIR arbiter (cf89458d9e2) is
     **blocked, not owed work**: it serves only the legacy (non-ACPI) x86 HAL's root PDO, and
