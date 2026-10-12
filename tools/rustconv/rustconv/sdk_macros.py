@@ -575,6 +575,12 @@ def _emit(node: Node) -> tuple[str, str | None]:
         return f"(({_emit(inner)[0]}) as {ty})", (_PTR if _ptr else ty)
     if k == "call":
         fn, *args = node.kids
+        if fn.kind == "ident" and fn.text in ("__builtin_offsetof", "offsetof"):
+            # Its first operand is a TYPE and its second a member PATH, neither an expression:
+            # read as a call it came out as `__builtin_offsetof(size_of::<T>(), Member)`
+            # (ntoskrnl_vista's REPARSE_DATA_BUFFER_HEADER_SIZE). The path may also run
+            # through an anonymous union bindgen names `__bindgen_anon_N`. Refused, by name.
+            raise LowerError("offsetof (a type and a member path, not a call)")
         params = _SIGS.get(fn.text, []) if fn.kind == "ident" else []
         rendered = []
         for i, a in enumerate(args):

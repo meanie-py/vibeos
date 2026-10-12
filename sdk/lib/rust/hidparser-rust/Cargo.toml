@@ -14,6 +14,13 @@ edition = "2021"
 crate-type = ["staticlib"]
 
 [dependencies]
-panic-common = { path = "../panic-common", features = ["kernel"] }
+panic-common = { path = "../panic-common" }
 ntkrnl-sys = { path = "../ntkrnl-sys" }
 hid-sys = { path = "../hid-sys" }
+
+[features]
+# The panic personality: hidparse.sys links the default; hid.dll builds
+# `--no-default-features --features user` (rust_staticlib_variant in dll/win32/hid).
+default = ["kernel"]
+kernel = ["panic-common/kernel"]
+user = ["panic-common/user"]

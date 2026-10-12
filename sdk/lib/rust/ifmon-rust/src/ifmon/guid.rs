@@ -1,0 +1,9 @@
+// guid.c: INITGUID storage for guiddef.h, guid.h, lowered from the headers' DEFINE_GUID lines by `rustconv port translate` ($0).
+use crate::prelude::*;
+
+#[no_mangle]
+pub static GUID_IFMON_INTERFACE: GUID = GUID { Data1: 0x0705eca1, Data2: 0x7aac, Data3: 0x11d2, Data4: [0x89, 0xdc, 0x00, 0x60, 0x08, 0xb0, 0xe5, 0xb9] };
+#[no_mangle]
+pub static GUID_IFMON_IP: GUID = GUID { Data1: 0x725588AC, Data2: 0x7A11, Data3: 0x4220, Data4: [0xA1, 0x21, 0xC9, 0x2C, 0x91, 0x5E, 0x8B, 0x73] };
+#[no_mangle]
+pub static GUID_IFMON_WINSOCK: GUID = GUID { Data1: 0xB2C0EEF4, Data2: 0xCCE5, Data3: 0x4F55, Data4: [0x93, 0x4E, 0xAB, 0xF6, 0x0F, 0x3D, 0xCF, 0x56] };

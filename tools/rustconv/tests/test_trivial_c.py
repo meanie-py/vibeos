@@ -51,6 +51,19 @@ def test_symbolic_constant_return_is_lowered_verbatim():
     assert "ERROR_CALL_NOT_IMPLEMENTED" in result.rust
 
 
+def test_a_linkage_specifier_after_the_return_type_is_not_the_type():
+    """etw.c: `NTSTATUS NTKRNLVISTAAPI NTAPI EtwUnregister(..)`."""
+    result = lower(
+        "NTSTATUS NTKRNLVISTAAPI NTAPI EtwUnregister(REGHANDLE h)\n{\n"
+        "    return STATUS_NOT_IMPLEMENTED;\n}",
+        name="EtwUnregister",
+        ret="NTSTATUS NTKRNLVISTAAPI",
+        params=[("REGHANDLE", "h")],
+    )
+    assert result is not None
+    assert "-> NTSTATUS {" in result.rust and "NTKRNLVISTAAPI" not in result.rust
+
+
 def test_hex_constant_is_not_rebased_to_decimal():
     result = lower("DWORD WINAPI S(void)\n{\n    return 0x200;\n}", name="S", params=[("void", "")])
     assert result is not None

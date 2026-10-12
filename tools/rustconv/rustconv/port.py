@@ -907,6 +907,10 @@ def _dep_definitions(names: set[str], crate: Path) -> dict[str, str]:
     for dep, rel in re.findall(
         r'^([\w-]+)\s*=\s*\{\s*path\s*=\s*"([^"]+)"', cargo.read_text(), re.M
     ):
+        if dep.endswith("-sys"):
+            # A substrate (ntkrnl-sys, ntdll-sys) is resolve's substrate step's: wiring its
+            # helpers here too imported sptilib's PsGetCurrentThread twice (E0252).
+            continue
         root = (crate / rel).resolve() / "src"
         ident = dep.replace("-", "_")
         for rs in sorted(root.glob("*/*.rs")):
@@ -919,6 +923,13 @@ def _dep_definitions(names: set[str], crate: Path) -> dict[str, str]:
 
 
 def _write_dep_block(prelude: Path, wired: dict[str, str]) -> None:
+    if not wired:
+        # Nothing to wire: drop a block an earlier run left.
+        text = prelude.read_text()
+        m = re.search(rf"{re.escape(_DEP_BEGIN)}.*?{re.escape(_DEP_END)}\n?", text, re.S)
+        if m:
+            prelude.write_text(text[: m.start()] + text[m.end() :])
+        return
     by_path: dict[str, list[str]] = {}
     for name, path in wired.items():
         by_path.setdefault(path, []).append(name)
@@ -1140,8 +1151,10 @@ def _is_header(unit: str) -> bool:
 
 def _module_name(unit: str) -> str:
     """`enum.c` -> `enum`; `identify_funcs.h` -> `identify_funcs_h` (a module may ship both
-    `foo.c` and `foo.h`, and they are different units)."""
-    return f"{Path(unit).stem}_h" if _is_header(unit) else Path(unit).stem
+    `foo.c` and `foo.h`, and they are different units). A stem that is no Rust identifier is
+    made one: apisets' generated `apisets.table.c` declared `pub mod apisets.table;`."""
+    stem = re.sub(r"\W", "_", Path(unit).stem)
+    return f"{stem}_h" if _is_header(unit) else stem
 
 
 def _tu_output(state: dict, tu: str) -> Path:
@@ -1302,19 +1315,25 @@ def initguid_module(c_path: Path) -> str | None:
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     if "#define INITGUID" not in lines:
         return None
-    includes = []
+    includes: list[tuple[str, bool]] = []  # (name, quoted)
     for ln in lines:
-        m = re.match(r"#\s*include\s*[<\"]([^>\"]+)[>\"]", ln)
+        m = re.match(r"#\s*include\s*([<\"])([^>\"]+)[>\"]", ln)
         if m:
-            includes.append(m.group(1))
+            includes.append((m.group(2), m.group(1) == '"'))
         elif ln != "#define INITGUID":
             return None  # anything else is real code: translate it
     guids: dict[str, str] = {}
-    for inc in includes:
+    for inc, quoted in includes:
         if Path(inc).name == "guiddef.h":
             continue
-        hits = sorted((REPO / "sdk" / "include").rglob(Path(inc).name))
-        hits = [h for h in hits if "/host/" not in str(h)]
+        # A quoted include resolves beside the TU first, as the compiler does: ifmon's
+        # guid.c is `#include "guid.h"`, a module-private header no SDK search can find.
+        local = c_path.parent / inc
+        if quoted and local.is_file():
+            hits = [local]
+        else:
+            hits = sorted((REPO / "sdk" / "include").rglob(Path(inc).name))
+            hits = [h for h in hits if "/host/" not in str(h)]
         if len(hits) != 1:
             raise PortError(f"{c_path.name}: cannot place <{inc}> ({len(hits)} candidates)")
         for m in _DEFINE_GUID_RE.finditer(hits[0].read_text(errors="replace")):
@@ -1329,8 +1348,9 @@ def initguid_module(c_path: Path) -> str | None:
             )
     if not guids:
         raise PortError(f"{c_path.name}: INITGUID TU whose headers define no GUID")
+    names = ", ".join(i for i, _ in includes)
     head = (
-        f"// {c_path.name}: INITGUID storage for {', '.join(includes)}, lowered from the "
+        f"// {c_path.name}: INITGUID storage for {names}, lowered from the "
         "headers' DEFINE_GUID lines by `rustconv port translate` ($0).\n"
         "use crate::prelude::*;\n\n"
     )
@@ -4258,8 +4278,7 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
         if found_dep:
             dep_wired.update(found_dep)
             wired += len(found_dep)
-        if dep_wired:
-            _write_dep_block(prelude, dep_wired)
+        _write_dep_block(prelude, dep_wired)
         names -= set(dep_wired)
         # A header helper the kernel -sys crate implements in Rust is imported from it, before
         # tree consensus is asked -- C macros included, since the substrate's port IS the
@@ -4273,6 +4292,12 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
                 kernel_sys,
                 "ntkrnl_sys",
             )
+            # ...and a constant it defines in a hand-written module (the NTSTATUS values).
+            found_const, const_why = prelude_resolve.substrate_constants(
+                (names | set(substrate)) - shared - set(siblings) - set(found_sub), kernel_sys
+            )
+            found_sub.update(found_const)
+            sub_why.update(const_why)
             wired += len(set(found_sub) - set(substrate))
             substrate = found_sub
             substrate_why = {k: v for k, v in sub_why.items() if k in names}
@@ -4627,9 +4652,14 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
     # this block before the hand declaration existed (E0428).
     # Nor one the consensus block declares (E0428: diskpart's consensus K32LoadStringW, and
     # the declaration made for its `LoadStringW` alias once flipped TUs got aliases back).
-    declared = prelude_resolve.hand_written_names(prelude) | {
-        k for k, v in prelude_resolve.existing_block(prelude).items() if v.kind == "fn"
-    }
+    # Nor one the kernel substrate block imports: wdfldr's `#define ObDereferenceObject
+    # ObfDereferenceObject` was aliased on top of `ntkrnl_sys::ob::ObDereferenceObject` (E0252),
+    # and kept by the existing-externs merge below on every later run.
+    declared = (
+        prelude_resolve.hand_written_names(prelude)
+        | {k for k, v in prelude_resolve.existing_block(prelude).items() if v.kind == "fn"}
+        | set(prelude_resolve.existing_substrate(prelude))
+    )
     names = (set(names) | prelude_resolve.existing_externs(prelude)) - declared
     sigs: dict[str, tuple[str, str, str]] = {}
     module_dir = REPO / state["module_dir"]

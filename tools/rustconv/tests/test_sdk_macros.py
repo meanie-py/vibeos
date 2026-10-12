@@ -288,3 +288,9 @@ def test_island_types_include_the_sys_crate_the_island_globs(tmp_path):
     while node.kind == "comma" and len(node.kids) == 1:
         node = node.kids[0]
     assert node.kind == "cast"
+
+
+def test_offsetof_is_refused_not_read_as_a_call():
+    """FIELD_OFFSET(REPARSE_DATA_BUFFER, GenericReparseBuffer): a type and a member path."""
+    with pytest.raises(LowerError, match="offsetof"):
+        low("((LONG)__builtin_offsetof(REPARSE_DATA_BUFFER, GenericReparseBuffer))")
