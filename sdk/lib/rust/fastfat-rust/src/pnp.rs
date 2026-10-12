@@ -1,5 +1,16 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
+// One declaration per external symbol: externs.rs.
+use crate::externs::CanFsdWait;
+use crate::externs::FatAcquireExclusiveGlobal;
+use crate::externs::FatAcquireExclusiveVcb;
+use crate::externs::FatCompleteRequest;
+use crate::externs::FatReleaseGlobal;
+use crate::externs::FatReleaseVcb;
+// fastfat's own functions: the definition is the declaration.
+use crate::strucsup::FatCreateIrpContext;
+use crate::fsctrl::FatFlushAndCleanVolume;
+use crate::fatdata::FatIsIrpTopLevel;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
@@ -13,22 +24,12 @@ use ntkrnl_sys::ddk::{IRP};
 use crate::glue::{DEBUG_TRACE_PNP};
 
 extern "system" {
-    fn FatAcquireExclusiveVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> BOOLEAN;
     fn FatUnlockVolumeInternal(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Something: *mut core::ffi::c_void) -> i32;
-    fn FatFlushAndCleanVolume(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Vcb: *mut VCB, Flags: i32);
     fn FatCheckForDismount(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Force: BOOLEAN,) -> BOOLEAN;
-    fn FatReleaseVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
-    fn FatReleaseGlobal(IrpContext: *mut IRP_CONTEXT);
-    fn FatCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: i32);
-    fn FatAcquireExclusiveGlobal(IrpContext: *mut IRP_CONTEXT);
     fn FatLockVolumeInternal(IrpContext: *mut IRP_CONTEXT, Vcb: PVCB, arg3: *mut core::ffi::c_void) -> NTSTATUS;
-    fn NodeType(Ptr: *const core::ffi::c_void) -> u32;
-    } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
+    } extern "system" {
     fn FsRtlEnterFileSystem();
     fn FsRtlExitFileSystem();
-    fn FatIsIrpTopLevel(Irp: PIRP) -> u8;
-    fn CanFsdWait(Irp: PIRP) -> BOOLEAN;
-    fn FatCreateIrpContext(irp: *mut IRP, wait: i32,) -> *mut IRP_CONTEXT;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -51,7 +52,7 @@ pub unsafe extern "system" fn FatFsdPnp(
 
     // PAGED_CODE(); -- expand not possible, assume no-op
 
-    DebugTrace(1, Dbg, b"FatFsdPnp\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(1, Dbg, b"FatFsdPnp\n\0".as_ptr() as *const i8, 0);
 
     FsRtlEnterFileSystem();
 
@@ -87,7 +88,7 @@ pub unsafe extern "system" fn FatFsdPnp(
 
     FsRtlExitFileSystem();
 
-    DebugTrace(-1, Dbg, b"FatFsdPnp -> %08lx\n\0".as_ptr() as *const i8, Status);
+    DebugTrace!(-1, Dbg, b"FatFsdPnp -> %08lx\n\0".as_ptr() as *const i8, Status);
 
     let _ = VolumeDeviceObject;
 
@@ -110,7 +111,7 @@ pub unsafe extern "system" fn FatCommonPnp(
         FatAcquireExclusiveGlobal(IrpContext);
 
         if (*OurDeviceObject).DeviceObject.Size as usize != core::mem::size_of::<VOLUME_DEVICE_OBJECT>()
-            || NodeType(&raw const (*OurDeviceObject).Vcb as *const core::ffi::c_void) != FAT_NTC_VCB
+            || (NodeType!(&raw const (*OurDeviceObject).Vcb as *const core::ffi::c_void)) as u32 != FAT_NTC_VCB
         {
             FatReleaseGlobal(IrpContext);
             let Status: NTSTATUS = STATUS_INVALID_PARAMETER;

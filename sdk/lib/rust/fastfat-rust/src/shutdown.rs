@@ -1,5 +1,13 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
+// One declaration per external symbol: externs.rs.
+use crate::externs::FatAcquireExclusiveGlobal;
+use crate::externs::FatCompleteRequest;
+use crate::externs::FatReleaseGlobal;
+// fastfat's own functions: the definition is the declaration.
+use crate::flush::FatFlushVolume;
+use crate::verfysup::FatMarkVolume;
+use crate::seh::FatResetExceptionState;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
@@ -25,18 +33,12 @@ const Flush: FAT_FLUSH_TYPE = 1;       // FAT_FLUSH_TYPE::Flush (NoFlush=0, Flus
 const VolumeClean: VOLUME_CONDITION = 0; // FAT_VOLUME_STATE::VolumeClean
 
 extern "system" {
-    } extern "C" { fn DebugTrace(level: i32, mask: u32, format: *const i8, ...); }
+    }
 
 extern "system" {
-    fn FatAcquireExclusiveGlobal(IrpContext: *mut IRP_CONTEXT);
     fn FatAcquireExclusiveVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn FatCheckForDismount(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, arg: BOOLEAN) -> BOOLEAN;
-    fn FatMarkVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, operation: u32);
     fn FatReleaseVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
-    fn FatResetExceptionState(IrpContext: *mut IRP_CONTEXT);
-    fn FatReleaseGlobal(IrpContext: *mut IRP_CONTEXT);
-    fn FatCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: NTSTATUS);
-    fn FatFlushVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, flush: u32) -> u32;
     fn FsRtlExitFileSystem();
     fn IoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
@@ -61,7 +63,7 @@ pub unsafe extern "system" fn FatFsdShutdown(
 
     PAGED_CODE!();
 
-    DebugTrace(1, Dbg, b"FatFsdShutdown\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(1, Dbg, b"FatFsdShutdown\n\0".as_ptr() as *const i8, 0);
 
     FsRtlEnterFileSystem();
 
@@ -87,7 +89,7 @@ pub unsafe extern "system" fn FatFsdShutdown(
 
     FsRtlExitFileSystem();
 
-    DebugTrace(-1, Dbg, b"FatFsdShutdown -> %08lx\n\0".as_ptr() as *const i8, Status);
+    DebugTrace!(-1, Dbg, b"FatFsdShutdown -> %08lx\n\0".as_ptr() as *const i8, Status);
 
     // UNREFERENCED_PARAMETER(VolumeDeviceObject)
     let _ = VolumeDeviceObject;
@@ -141,7 +143,7 @@ pub unsafe extern "system" fn FatCommonShutdown(
 
             // _SEH2_TRY / _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER): flush the volume
             if crate::seh::try_except(&mut (), |_| {
-                FatFlushVolume(IrpContext, vcb, (Flush) as _);
+                FatFlushVolume((IrpContext).cast(), vcb, (Flush) as _);
 
                 if ((*vcb).VcbState & VCB_STATE_FLAG_MOUNTED_DIRTY) == 0 {
                     CcPurgeCacheSection(
@@ -209,7 +211,7 @@ pub unsafe extern "system" fn FatCommonShutdown(
         FatCompleteRequest(IrpContext, Irp, STATUS_SUCCESS);
     });
 
-    DebugTrace(-1, Dbg, b"FatFsdShutdown -> STATUS_SUCCESS\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(-1, Dbg, b"FatFsdShutdown -> STATUS_SUCCESS\n\0".as_ptr() as *const i8, 0);
 
     STATUS_SUCCESS
 }

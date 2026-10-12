@@ -1,5 +1,17 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
+use crate::externs::DbgPrint;
+// One declaration per external symbol: externs.rs.
+use crate::externs::FatBugCheck;
+use crate::externs::PsUpdateDiskCounters;
+// fastfat's own functions: the definition is the declaration.
+use crate::fatdata::FatData;
+use crate::strucsup::FatCreateIrpContext;
+use crate::workque::FatFsdPostRequest;
+use crate::fsctrl::FatGetNextMcbEntry;
+use crate::allocsup::FatLookupFileAllocation;
+use crate::fsctrl::FatLookupMcbEntry;
+use crate::seh::FatRaiseStatus;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::base::{STATUS_INSUFFICIENT_RESOURCES};
 use ntkrnl_sys::constants::*;
@@ -39,29 +51,19 @@ extern "system" {
     static mut FatIoCallDriverCount: u32;
     static mut FatDiskAccountingEnabled: u8;
     static Dbg: u32;
-    static mut FatData: FAT_DATA;
     static IRP_PAGING_IO: u32;
-    fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
-    } extern "C" { fn DebugTrace(level: i32, dbg: i32, format: *const i8, ...); } extern "system" {
-    fn FatLookupFileAllocation( IrpContext: *mut IRP_CONTEXT, FcbOrDcb: *mut FCB, StartingVbo: u32, NextLbo: *mut i64, NextByteCount: *mut u32, NextIsAllocated: *mut u8, EndOnMax: *mut u8, p: *mut c_void, );
+    } extern "system" {
     fn FatPopUpFileCorrupt(IrpContext: *mut IRP_CONTEXT, FcbOrDcb: *mut FCB);
     fn KeFlushIoBuffers(Mdl: *mut MDL, ReadOperation: i32, DmaOperation: i32);
 }
 extern "system" {
-    fn FatBugCheck(a: usize, b: usize, c: usize) -> !;
-    fn FatLookupMcbEntry(vcb: *mut core::ffi::c_void, mcb: *mut core::ffi::c_void, vbo: u32, next_lbo: *mut u64, next_byte_count: *mut u32, first_index: *mut u32) -> u8;
-    fn FatGetNextMcbEntry(vcb: *mut core::ffi::c_void, mcb: *mut core::ffi::c_void, current_index: u32, next_vbo: *mut u32, next_lbo: *mut u64, next_byte_count: *mut u32) -> u8;
     fn FatUpdateIOCountersPCW(is_write: u32, count: u64);
-    fn PsUpdateDiskCounters(process: *mut core::ffi::c_void, bytes_read: u64, bytes_written: u64, read_ops: u32, write_ops: u32, flags: u32);
-    fn DebugUnwind(function: *const core::ffi::c_void);
     fn FatLowLevelReadWrite( IrpContext: *mut IRP_CONTEXT, DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP, Vcb: *mut VCB, ) -> i32; // returns NTSTATUS but (VOID) cast fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: i32);
     fn MmUnlockPages(mdl: PMDL);
     fn FsRtlUpdateDiskCounters(read: u64, write: u64);
     fn FsRtlIsTotalDeviceFailure(NtStatus: NTSTATUS) -> BOOLEAN;
-    fn FatCreateIrpContext(Irp: PIRP, RecursiveCall: i32) -> *mut IRP_CONTEXT;
-    fn FatFsdPostRequest(IrpContext: *mut IRP_CONTEXT, Irp: PIRP) -> u32;
     fn DbgBreakPoint();
-    } extern "C" { fn DbgPrint(fmt: *const i8, ...); } extern "system" {
+    } extern "system" {
     static mut FatBreakOnInterestingIoCompletion: i32;
 
     fn CollectDiskIoStats(Vcb: *mut VCB, Function: u32, IsUserIo: u8, Count: u32);
@@ -353,38 +355,38 @@ pub unsafe extern "system" fn FatSingleNonAlignedSync(
     let irp_sp: PIO_STACK_LOCATION;
     let mdl: PMDL;
     let saved_mdl: PMDL;
-    #[cfg(not(reactos))]
+    #[cfg(not_reactos)] // C `#ifndef __REACTOS__`: compiled out here
     let mut is_a_write: bool = false;
 
     PAGED_CODE!();
 
-    DebugTrace(
+    DebugTrace!(
         1,
         (Dbg) as i32,
         b"FatSingleNonAlignedAsync\n\0".as_ptr() as *const i8,
         0,
     );
-    DebugTrace(
+    DebugTrace!(
         0,
         (Dbg) as i32,
         b"MajorFunction = %08lx\n\0".as_ptr() as *const i8,
         (*irp_context).MajorFunction as u32,
     );
-    DebugTrace(0, (Dbg) as i32, b"Vcb           = %p\n\0".as_ptr() as *const i8, vcb);
-    DebugTrace(
+    DebugTrace!(0, (Dbg) as i32, b"Vcb           = %p\n\0".as_ptr() as *const i8, vcb);
+    DebugTrace!(
         0,
         (Dbg) as i32,
         b"Buffer        = %p\n\0".as_ptr() as *const i8,
         buffer,
     );
-    DebugTrace(0, (Dbg) as i32, b"Lbo           = %08lx\n\0".as_ptr() as *const i8, lbo);
-    DebugTrace(
+    DebugTrace!(0, (Dbg) as i32, b"Lbo           = %08lx\n\0".as_ptr() as *const i8, lbo);
+    DebugTrace!(
         0,
         (Dbg) as i32,
         b"ByteCount     = %08lx\n\0".as_ptr() as *const i8,
         byte_count,
     );
-    DebugTrace(0, (Dbg) as i32, b"Irp           = %p\n\0".as_ptr() as *const i8, irp);
+    DebugTrace!(0, (Dbg) as i32, b"Irp           = %p\n\0".as_ptr() as *const i8, irp);
 
     saved_mdl = (*irp).MdlAddress;
     (*irp).MdlAddress = core::ptr::null_mut();
@@ -425,7 +427,7 @@ pub unsafe extern "system" fn FatSingleNonAlignedSync(
     (*irp_sp).Parameters.Read.Length = byte_count;
     (*irp_sp).Parameters.Read.ByteOffset.QuadPart = lbo;
 
-    #[cfg(not(reactos))]
+    #[cfg(not_reactos)] // C `#ifndef __REACTOS__`: compiled out here
     {
         is_a_write = (*irp_sp).MajorFunction == (IRP_MJ_WRITE) as u8;
     }
@@ -463,7 +465,7 @@ pub unsafe extern "system" fn FatSingleNonAlignedSync(
         }
     }
 
-    DebugTrace(
+    DebugTrace!(
         -1,
         (Dbg) as i32,
         b"FatSingleNonAlignedSync -> VOID\n\0".as_ptr() as *const i8,
@@ -575,9 +577,9 @@ pub unsafe extern "system" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
     let DeviceObject: PDEVICE_OBJECT;
     let mut IsAWrite: u32 = 0;
 
-    DebugTrace(1, (Dbg as u32) as i32, c"FatPagingFileIo\n".as_ptr() as *const i8, 0);
-    DebugTrace(0, (Dbg as u32) as i32, c"Irp = %p\n".as_ptr() as *const i8, Irp as usize);
-    DebugTrace(0, (Dbg as u32) as i32, c"Fcb = %p\n".as_ptr() as *const i8, Fcb as usize);
+    DebugTrace!(1, (Dbg as u32) as i32, c"FatPagingFileIo\n".as_ptr() as *const i8, 0);
+    DebugTrace!(0, (Dbg as u32) as i32, c"Irp = %p\n".as_ptr() as *const i8, Irp as usize);
+    DebugTrace!(0, (Dbg as u32) as i32, c"Fcb = %p\n".as_ptr() as *const i8, Fcb as usize);
 
     if FlagOn((*Fcb).FcbState, FCB_STATE_PAGING_FILE) == 0 {
         ntkrnl_sys::ke::DbgBreakPoint();
@@ -592,8 +594,8 @@ pub unsafe extern "system" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
     IsAWrite = ((*IrpSp).MajorFunction == ntkrnl_sys::constants::IRP_MJ_WRITE) as u32;
 
     MustSucceed = FatLookupMcbEntry(
-        (*Fcb).Vcb as *mut c_void,
-        addr_of_mut!((*Fcb).Mcb) as *mut c_void,
+        ((*Fcb).Vcb as *mut c_void).cast(),
+        (addr_of_mut!((*Fcb).Mcb) as *mut c_void).cast(),
         Vbo,
         addr_of_mut!(NextLbo) as *mut u64,
         addr_of_mut!(NextByteCount),
@@ -601,14 +603,14 @@ pub unsafe extern "system" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
     ) as u32;
 
     if MustSucceed == 0 {
-        FatBugCheck(Vbo as usize, ByteCount as usize, 0);
+        FatBugCheck((Vbo) as ULONG_PTR, (ByteCount) as ULONG_PTR, 0);
     }
 
     if FatDiskAccountingEnabled != 0 {
         let ThreadIssuingIo: ntkrnl_sys::ddk::PETHREAD = PsGetCurrentThread();
         let IsWriteOperation = ((*IrpSp).MajorFunction == ntkrnl_sys::constants::IRP_MJ_WRITE) as u32;
         PsUpdateDiskCounters(
-            ntkrnl_sys::ddk::PsGetThreadProcess(ThreadIssuingIo) as *mut core::ffi::c_void,
+            (ntkrnl_sys::ddk::PsGetThreadProcess(ThreadIssuingIo) as *mut core::ffi::c_void).cast(),
             if IsWriteOperation != 0 { (0u32) as u64 } else { (ByteCount) as u64 },
             if IsWriteOperation != 0 { (ByteCount) as u64 } else { (0u32) as u64 },
             if IsWriteOperation != 0 { 0u32 } else { 1u32 },
@@ -618,7 +620,7 @@ pub unsafe extern "system" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
     }
 
     if NextByteCount >= ByteCount {
-        DebugTrace(0, (Dbg as u32) as i32, c"Passing Irp on to Disk Driver\n".as_ptr() as *const i8, 0);
+        DebugTrace!(0, (Dbg as u32) as i32, c"Passing Irp on to Disk Driver\n".as_ptr() as *const i8, 0);
 
         NextIrpSp = ntkrnl_sys::ddk::IoGetNextIrpStackLocation(Irp);
 
@@ -643,13 +645,13 @@ pub unsafe extern "system" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
             FatUpdateIOCountersPCW(IsAWrite, ByteCount as u64);
         }
 
-        DebugTrace(-1, (Dbg as u32) as i32, c"FatPagingFileIo -> VOID\n".as_ptr() as *const i8, 0);
+        DebugTrace!(-1, (Dbg as u32) as i32, c"FatPagingFileIo -> VOID\n".as_ptr() as *const i8, 0);
         return;
     }
 
     MustSucceed = FatLookupMcbEntry(
-        (*Fcb).Vcb as *mut c_void,
-        addr_of_mut!((*Fcb).Mcb) as *mut c_void,
+        ((*Fcb).Vcb as *mut c_void).cast(),
+        (addr_of_mut!((*Fcb).Mcb) as *mut c_void).cast(),
         Vbo.wrapping_add(ByteCount).wrapping_sub(1),
         addr_of_mut!(LastLbo) as *mut u64,
         addr_of_mut!(LastByteCount),
@@ -657,7 +659,7 @@ pub unsafe extern "system" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
     ) as u32;
 
     if MustSucceed == 0 {
-        FatBugCheck(Vbo.wrapping_add(ByteCount).wrapping_sub(1) as usize, 1, 0);
+        FatBugCheck((Vbo.wrapping_add(ByteCount).wrapping_sub(1)) as ULONG_PTR, 1, 0);
     }
 
     CurrentIndex = FirstIndex;
@@ -831,8 +833,8 @@ pub unsafe extern "system" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
                 }
 
                 FatGetNextMcbEntry(
-                    (*Fcb).Vcb as *mut c_void,
-                    addr_of_mut!((*Fcb).Mcb) as *mut c_void,
+                    ((*Fcb).Vcb as *mut c_void).cast(),
+                    (addr_of_mut!((*Fcb).Mcb) as *mut c_void).cast(),
                     CurrentIndex,
                     addr_of_mut!(NextVbo),
                     addr_of_mut!(NextLbo),
@@ -859,7 +861,7 @@ pub unsafe extern "system" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
         ntkrnl_sys::driver_ddk::IoCompleteRequest(Irp, ntkrnl_sys::constants::IO_DISK_INCREMENT);
     }
 
-    DebugTrace(-1, (Dbg as u32) as i32, c"FatPagingFileIo -> VOID\n".as_ptr() as *const i8, 0);
+    DebugTrace!(-1, (Dbg as u32) as i32, c"FatPagingFileIo -> VOID\n".as_ptr() as *const i8, 0);
 }
 
 
@@ -911,7 +913,7 @@ pub unsafe extern "system" fn FatUpdateDiskStats(
 
     if !originating_thread.is_null() {
         PsUpdateDiskCounters(
-            PsGetThreadProcess(originating_thread as PETHREAD) as *mut core::ffi::c_void,
+            (PsGetThreadProcess(originating_thread as PETHREAD) as *mut core::ffi::c_void).cast(),
             bytes_to_read,
             bytes_to_write,
             num_reads,
@@ -938,12 +940,12 @@ pub unsafe extern "system" fn FatNonCachedIo(
     // UNREFERENCED_PARAMETER(StreamFlags)
     let _ = StreamFlags;
 
-    DebugTrace(1, (Dbg) as i32, b"FatNonCachedIo\n\0".as_ptr() as *const i8, 0);
-    DebugTrace(0, (Dbg) as i32, b"Irp           = %p\n\0".as_ptr() as *const i8, Irp as *const core::ffi::c_void);
-    DebugTrace(0, (Dbg) as i32, b"MajorFunction = %08lx\n\0".as_ptr() as *const i8, (*IrpContext).MajorFunction as u64);
-    DebugTrace(0, (Dbg) as i32, b"FcbOrDcb      = %p\n\0".as_ptr() as *const i8, FcbOrDcb as *const core::ffi::c_void);
-    DebugTrace(0, (Dbg) as i32, b"StartingVbo   = %08lx\n\0".as_ptr() as *const i8, StartingVbo as u64);
-    DebugTrace(0, (Dbg) as i32, b"ByteCount     = %08lx\n\0".as_ptr() as *const i8, ByteCount as u64);
+    DebugTrace!(1, (Dbg) as i32, b"FatNonCachedIo\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(0, (Dbg) as i32, b"Irp           = %p\n\0".as_ptr() as *const i8, Irp as *const core::ffi::c_void);
+    DebugTrace!(0, (Dbg) as i32, b"MajorFunction = %08lx\n\0".as_ptr() as *const i8, (*IrpContext).MajorFunction as u64);
+    DebugTrace!(0, (Dbg) as i32, b"FcbOrDcb      = %p\n\0".as_ptr() as *const i8, FcbOrDcb as *const core::ffi::c_void);
+    DebugTrace!(0, (Dbg) as i32, b"StartingVbo   = %08lx\n\0".as_ptr() as *const i8, StartingVbo as u64);
+    DebugTrace!(0, (Dbg) as i32, b"ByteCount     = %08lx\n\0".as_ptr() as *const i8, ByteCount as u64);
 
     if FlagOn((*Irp).Flags, IRP_PAGING_IO) == 0 {
         let vcb = (*FcbOrDcb).Vcb;
@@ -1022,7 +1024,7 @@ pub unsafe extern "system" fn FatNonCachedIo(
         &mut NextByteCount as *mut u32,
         &mut NextIsAllocated as *mut u8,
         &mut EndOnMax as *mut u8,
-        &mut FirstIndex as *mut u32 as *mut c_void,
+        (&mut FirstIndex as *mut u32 as *mut c_void).cast(),
     );
 
     if NextIsAllocated == 0 {
@@ -1051,7 +1053,7 @@ pub unsafe extern "system" fn FatNonCachedIo(
             }
         }
 
-        DebugTrace(0, (Dbg) as i32, b"Passing 1 Irp on to Disk Driver\n\0".as_ptr() as *const i8, 0);
+        DebugTrace!(0, (Dbg) as i32, b"Passing 1 Irp on to Disk Driver\n\0".as_ptr() as *const i8, 0);
 
 
         FatSingleAsync(IrpContext, (*FcbOrDcb).Vcb, NextLbo as i64, ByteCount, Irp);
@@ -1068,7 +1070,7 @@ pub unsafe extern "system" fn FatNonCachedIo(
             &mut LastByteCount as *mut u32,
             &mut LastIsAllocated as *mut u8,
             &mut EndOnMax as *mut u8,
-            &mut LastIndex as *mut u32 as *mut c_void,
+            (&mut LastIndex as *mut u32 as *mut c_void).cast(),
         );
 
         if LastIsAllocated == 0 {
@@ -1117,8 +1119,8 @@ pub unsafe extern "system" fn FatNonCachedIo(
 
                 let mut NextVbo: u32 = 0; // placeholder, value unused
                 FatGetNextMcbEntry(
-                    (*FcbOrDcb).Vcb as *mut c_void,
-                    &mut (*FcbOrDcb).Mcb as *mut _ as *mut c_void,
+                    ((*FcbOrDcb).Vcb as *mut c_void).cast(),
+                    (&mut (*FcbOrDcb).Mcb as *mut _ as *mut c_void).cast(),
                     CurrentIndex,
                     &mut NextVbo as *mut u32,
                     &mut NextLbo as *mut u64,
@@ -1147,7 +1149,7 @@ pub unsafe extern "system" fn FatNonCachedIo(
         crate::seh::try_finally(
             &mut (),
             |_| {
-                DebugTrace(0, (Dbg) as i32, b"Passing Multiple Irps on to Disk Driver\n\0".as_ptr() as *const i8, 0);
+                DebugTrace!(0, (Dbg) as i32, b"Passing Multiple Irps on to Disk Driver\n\0".as_ptr() as *const i8, 0);
                 FatMultipleAsync(IrpContext, ((*FcbOrDcb).Vcb).cast(), Irp, NextRun, io_runs_ptr);
             },
             |_, _abnormal| {
@@ -1159,13 +1161,13 @@ pub unsafe extern "system" fn FatNonCachedIo(
     }
 
     if Wait == 0 {
-        DebugTrace(-1, (Dbg) as i32, b"FatNonCachedIo -> STATUS_PENDING\n\0".as_ptr() as *const i8, 0);
+        DebugTrace!(-1, (Dbg) as i32, b"FatNonCachedIo -> STATUS_PENDING\n\0".as_ptr() as *const i8, 0);
         return STATUS_PENDING;
     }
 
     FatWaitSync(IrpContext);
 
-    DebugTrace(
+    DebugTrace!(
         -1,
         (Dbg) as i32,
         b"FatNonCachedIo -> 0x%08lx\n\0".as_ptr() as *const i8,
@@ -1203,12 +1205,12 @@ pub unsafe extern "system" fn FatNonCachedNonAlignedRead(
     // PAGED_CODE();
     PAGED_CODE!();
 
-    DebugTrace(1, (Dbg) as i32, b"FatNonCachedNonAlignedRead\n\0".as_ptr() as *const i8, 0usize);
-    DebugTrace(0, (Dbg) as i32, b"Irp           = %p\n\0".as_ptr() as *const i8, Irp as usize);
-    DebugTrace(0, (Dbg) as i32, b"MajorFunction = %08lx\n\0".as_ptr() as *const i8, (*(IrpContext as *mut _IRP_CONTEXT)).MajorFunction as usize);
-    DebugTrace(0, (Dbg) as i32, b"FcbOrDcb      = %p\n\0".as_ptr() as *const i8, FcbOrDcb as usize);
-    DebugTrace(0, (Dbg) as i32, b"StartingVbo   = %08lx\n\0".as_ptr() as *const i8, StartingVbo as usize);
-    DebugTrace(0, (Dbg) as i32, b"ByteCount     = %08lx\n\0".as_ptr() as *const i8, ByteCount as usize);
+    DebugTrace!(1, (Dbg) as i32, b"FatNonCachedNonAlignedRead\n\0".as_ptr() as *const i8, 0usize);
+    DebugTrace!(0, (Dbg) as i32, b"Irp           = %p\n\0".as_ptr() as *const i8, Irp as usize);
+    DebugTrace!(0, (Dbg) as i32, b"MajorFunction = %08lx\n\0".as_ptr() as *const i8, (*(IrpContext as *mut _IRP_CONTEXT)).MajorFunction as usize);
+    DebugTrace!(0, (Dbg) as i32, b"FcbOrDcb      = %p\n\0".as_ptr() as *const i8, FcbOrDcb as usize);
+    DebugTrace!(0, (Dbg) as i32, b"StartingVbo   = %08lx\n\0".as_ptr() as *const i8, StartingVbo as usize);
+    DebugTrace!(0, (Dbg) as i32, b"ByteCount     = %08lx\n\0".as_ptr() as *const i8, ByteCount as usize);
 
     OriginalByteCount = ByteCount;
     OriginalStartingVbo = StartingVbo;
@@ -1374,7 +1376,7 @@ pub unsafe extern "system" fn FatNonCachedNonAlignedRead(
         },
     );
 
-    DebugTrace(-1, (Dbg) as i32, b"FatNonCachedNonAlignedRead -> VOID\n\0".as_ptr() as *const i8, 0usize);
+    DebugTrace!(-1, (Dbg) as i32, b"FatNonCachedNonAlignedRead -> VOID\n\0".as_ptr() as *const i8, 0usize);
 }
 
 #[no_mangle]
@@ -1398,12 +1400,12 @@ pub unsafe extern "system" fn FatMultipleAsync(
 
     // PAGED_CODE(); // not needed in translation
 
-    DebugTrace(1, 0, b"FatMultipleAsync\n\0".as_ptr() as *const i8, 0);
-    DebugTrace(0, 0, b"MajorFunction    = %08lx\n\0".as_ptr() as *const i8, (*(IrpContext as *mut _IRP_CONTEXT)).MajorFunction as u32);
-    DebugTrace(0, 0, b"Vcb              = %p\n\0".as_ptr() as *const i8, Vcb);
-    DebugTrace(0, 0, b"MasterIrp        = %p\n\0".as_ptr() as *const i8, MasterIrp);
-    DebugTrace(0, 0, b"MultipleIrpCount = %08lx\n\0".as_ptr() as *const i8, MultipleIrpCount);
-    DebugTrace(0, 0, b"IoRuns           = %08lx\n\0".as_ptr() as *const i8, IoRuns);
+    DebugTrace!(1, 0, b"FatMultipleAsync\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(0, 0, b"MajorFunction    = %08lx\n\0".as_ptr() as *const i8, (*(IrpContext as *mut _IRP_CONTEXT)).MajorFunction as u32);
+    DebugTrace!(0, 0, b"Vcb              = %p\n\0".as_ptr() as *const i8, Vcb);
+    DebugTrace!(0, 0, b"MasterIrp        = %p\n\0".as_ptr() as *const i8, MasterIrp);
+    DebugTrace!(0, 0, b"MultipleIrpCount = %08lx\n\0".as_ptr() as *const i8, MultipleIrpCount);
+    DebugTrace!(0, 0, b"IoRuns           = %08lx\n\0".as_ptr() as *const i8, IoRuns);
 
     // If this I/O originating during FatVerifyVolume, bypass the verify logic.
     if (*(Vcb as *mut _VCB)).VerifyThread == KeGetCurrentThread() as *mut _ {
@@ -1563,7 +1565,7 @@ pub unsafe extern "system" fn FatMultipleAsync(
         }
         },
         |_, abnormal| {
-            DebugUnwind(FatMultipleAsync as *const core::ffi::c_void);
+            DebugUnwind!(FatMultipleAsync as *const core::ffi::c_void);
 
             if abnormal {
                 // If the driver raised, we are hosed. He is not supposed to raise, and it is impossible
@@ -1588,7 +1590,7 @@ pub unsafe extern "system" fn FatMultipleAsync(
             }
 
             // And return to our caller
-            DebugTrace(-1, 0, b"FatMultipleAsync -> VOID\n\0".as_ptr() as *const i8, 0);
+            DebugTrace!(-1, 0, b"FatMultipleAsync -> VOID\n\0".as_ptr() as *const i8, 0);
         },
     );
     // _SEH2_END
@@ -1608,12 +1610,12 @@ pub unsafe extern "system" fn FatSingleAsync(
     let Context: *mut _FAT_IO_CONTEXT;
     let mut IsAWrite: i32 = 0;
 
-    DebugTrace(1, (Dbg) as i32, b"FatSingleAsync\n\0".as_ptr() as *const i8, 0);
-    DebugTrace(0, (Dbg) as i32, b"MajorFunction = %08lx\n\0".as_ptr() as *const i8, (*(IrpContext as *mut _IRP_CONTEXT)).MajorFunction as u32);
-    DebugTrace(0, (Dbg) as i32, b"Vcb           = %p\n\0".as_ptr() as *const i8, Vcb as *const core::ffi::c_void);
-    DebugTrace(0, (Dbg) as i32, b"Lbo           = %08lx\n\0".as_ptr() as *const i8, Lbo);
-    DebugTrace(0, (Dbg) as i32, b"ByteCount     = %08lx\n\0".as_ptr() as *const i8, ByteCount);
-    DebugTrace(0, (Dbg) as i32, b"Irp           = %p\n\0".as_ptr() as *const i8, Irp as *const core::ffi::c_void);
+    DebugTrace!(1, (Dbg) as i32, b"FatSingleAsync\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(0, (Dbg) as i32, b"MajorFunction = %08lx\n\0".as_ptr() as *const i8, (*(IrpContext as *mut _IRP_CONTEXT)).MajorFunction as u32);
+    DebugTrace!(0, (Dbg) as i32, b"Vcb           = %p\n\0".as_ptr() as *const i8, Vcb as *const core::ffi::c_void);
+    DebugTrace!(0, (Dbg) as i32, b"Lbo           = %08lx\n\0".as_ptr() as *const i8, Lbo);
+    DebugTrace!(0, (Dbg) as i32, b"ByteCount     = %08lx\n\0".as_ptr() as *const i8, ByteCount);
+    DebugTrace!(0, (Dbg) as i32, b"Irp           = %p\n\0".as_ptr() as *const i8, Irp as *const core::ffi::c_void);
 
     if (*(Vcb as *mut _VCB)).VerifyThread == KeGetCurrentThread() as *mut _ {
         SetFlag!((*(IrpContext as *mut _IRP_CONTEXT)).Flags, IRP_CONTEXT_FLAG_OVERRIDE_VERIFY);
@@ -1680,7 +1682,7 @@ pub unsafe extern "system" fn FatSingleAsync(
         FatUpdateIOCountersPCW(IsAWrite as u32, ByteCount as u64);
     }
 
-    DebugTrace(-1, (Dbg) as i32, b"FatSingleAsync -> VOID\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(-1, (Dbg) as i32, b"FatSingleAsync -> VOID\n\0".as_ptr() as *const i8, 0);
 }
 
 #[no_mangle]
@@ -1733,7 +1735,7 @@ pub unsafe extern "system" fn FatPagingFileCompletionRoutine(
 ) -> NTSTATUS {
 
     unsafe {
-        DebugTrace(
+        DebugTrace!(
             1,
             (Dbg) as i32,
             b"FatPagingFileCompletionRoutine, MasterIrp = %p\n\0".as_ptr() as *const i8,
@@ -1747,7 +1749,7 @@ pub unsafe extern "system" fn FatPagingFileCompletionRoutine(
             (*master).IoStatus = (*Irp).IoStatus;
         }
 
-        DebugTrace(
+        DebugTrace!(
             -1,
             (Dbg) as i32,
             b"FatPagingFileCompletionRoutine => (done)\n\0".as_ptr() as *const i8,
@@ -1773,7 +1775,7 @@ pub unsafe extern "system" fn FatSingleAsyncCompletionRoutine(
     let Context: *mut _FAT_IO_CONTEXT = Contxt as *mut _FAT_IO_CONTEXT;
     let mut PostRequest: i32 = 0;
 
-    DebugTrace(1, Dbg as i32, b"FatSingleAsyncCompletionRoutine, Context = %p\n\0".as_ptr() as *const i8, Context);
+    DebugTrace!(1, Dbg as i32, b"FatSingleAsyncCompletionRoutine, Context = %p\n\0".as_ptr() as *const i8, Context);
 
     // FatDoCompletionZero expansion
     if !(*Context).ZeroMdl.is_null() {
@@ -1863,7 +1865,7 @@ pub unsafe extern "system" fn FatSingleAsyncCompletionRoutine(
         });
     }
 
-    DebugTrace(
+    DebugTrace!(
         -1,
         Dbg as i32,
         b"FatSingleAsyncCompletionRoutine -> STATUS_MORE_PROCESSING_REQUIRED\n\0".as_ptr() as *const i8,
@@ -2228,7 +2230,7 @@ pub unsafe extern "system" fn FatWaitSync(IrpContext: *mut IRP_CONTEXT) {
     const Executive: u32 = 0; // KWAIT_REASON::Executive
     // PAGED_CODE() omitted (no-op in free build)
 
-    DebugTrace(
+    DebugTrace!(
         1,
         Dbg,
         b"FatWaitSync, Context = %p\n\0".as_ptr() as *const i8,
@@ -2247,7 +2249,7 @@ pub unsafe extern "system" fn FatWaitSync(IrpContext: *mut IRP_CONTEXT) {
         core::ptr::addr_of_mut!((*((*IrpContext).FatIoContext)).Wait.SyncEvent) as *mut _,
     );
 
-    DebugTrace(
+    DebugTrace!(
         -1,
         Dbg,
         b"FatWaitSync -> VOID\n\0".as_ptr() as *const i8,

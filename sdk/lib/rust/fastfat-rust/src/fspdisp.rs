@@ -1,5 +1,9 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
+// One declaration per external symbol: externs.rs.
+use crate::externs::FatCompleteRequest;
+// fastfat's own functions: the definition is the declaration.
+use crate::filobsup::FatDecodeFileObject;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
@@ -16,9 +20,7 @@ use crate::glue::{DEBUG_TRACE_FSP_DISPATCHER};
 use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem};
 
 extern "system" {
-    fn FatDecodeFileObject(FileObject: *mut FILE_OBJECT, Vcb: *mut *mut VCB, Fcb: *mut *mut FCB, Ccb: *mut *mut CCB) -> u32;
-    fn FatCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: NTSTATUS);
-    } extern "C" { fn DebugTrace(level: u32, component: u32, format: *const i8, ...); } extern "system" {
+    } extern "system" {
     fn FatCommonCreate(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP) -> NTSTATUS;
     fn FatCommonClose(Vcb: *mut VCB, Fcb: *mut FCB, Ccb: *mut CCB, TypeOfOpen: u32, arg1: u8, arg2: u8, VcbDeleted: *mut u8) -> NTSTATUS;
     fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP) -> NTSTATUS;
@@ -76,7 +78,7 @@ pub unsafe extern "system" fn FatFspDispatch(Context: *mut core::ffi::c_void) {
     loop {
         exception_completed_irp = 0;
 
-        DebugTrace(
+        DebugTrace!(
             0,
             Dbg,
             b"FatFspDispatch: Irp = %p\n\0".as_ptr() as *const i8,

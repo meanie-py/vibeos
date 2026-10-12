@@ -1,4 +1,5 @@
 use ntkrnl_sys::base::*;
+use crate::strucsup::CdCreateFcb; // the definition is the declaration
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ddk::{_FAST_IO_POSSIBLE_FastIoIsNotPossible, IoCheckShareAccess, IoGetCurrentIrpStackLocation, IoSetShareAccess, IoUpdateShareAccess, POPLOCK, POPLOCK_WAIT_COMPLETE_ROUTINE, POPLOCK_FS_PREPOST_IRP, PIRP, _UNICODE_STRING};
 use core::ffi::c_void;
@@ -90,7 +91,6 @@ extern "C" {
     fn CdCleanupFileContext(IrpContext: *mut IRP_CONTEXT, Ctx: *mut FILE_ENUM_CONTEXT);
 }
 extern "C" {
-    fn CdCreateFcb(IrpContext: *mut IRP_CONTEXT, FileId: FILE_ID, NodeTypeCode: u32, Found: *mut u8) -> *mut FCB;
 }
 extern "C" {
     fn CdIllegalFcbAccess(IrpContext: *mut IRP_CONTEXT, TypeOfOpen: u32, DesiredAccess: u32) -> u8;
@@ -429,7 +429,7 @@ pub unsafe extern "C" fn CdOpenByFileId(
                         CdLockVcb(IrpContext, Vcb);
                         *p_UnlockVcb = 1;
 
-                        NextFcb = CdCreateFcb(IrpContext, ParentFileId, NodeTypeCode, core::ptr::addr_of_mut!(Found));
+                        NextFcb = CdCreateFcb(IrpContext, ParentFileId, NodeTypeCode as u16, core::ptr::addr_of_mut!(Found));
 
                         //
                         //  It's possible that someone got in here ahead of us.
@@ -564,7 +564,7 @@ pub unsafe extern "C" fn CdOpenByFileId(
                         CdLockVcb(IrpContext, Vcb);
                         *p_UnlockVcb = 1;
 
-                        NextFcb = CdCreateFcb(IrpContext, FileId, NodeTypeCode, core::ptr::addr_of_mut!(Found));
+                        NextFcb = CdCreateFcb(IrpContext, FileId, NodeTypeCode as u16, core::ptr::addr_of_mut!(Found));
 
                         //
                         //  If someone has since created this Fcb then use it.  Otherwise
@@ -780,7 +780,7 @@ pub unsafe extern "C" fn CdOpenDirectoryFromPathEntry(
                     CdLockVcb(IrpContext, Vcb);
                     *p_UnlockVcb = 1;
 
-                    NextFcb = CdCreateFcb(IrpContext, FileId, CDFS_NTC_FCB_INDEX, &mut FcbExisted);
+                    NextFcb = CdCreateFcb(IrpContext, FileId, CDFS_NTC_FCB_INDEX as u16, &mut FcbExisted);
 
                     if FcbExisted == 0 {
                         CdInitializeFcbFromPathEntry(IrpContext, NextFcb, *CurrentFcb, PathEntry);
@@ -942,7 +942,7 @@ pub unsafe extern "C" fn CdOpenFileFromFileContext(
                 *p_unlock_vcb = 1;
 
                 // Get/Create Fcb
-                next_fcb = CdCreateFcb(irp_context, file_id, CDFS_NTC_FCB_DATA, &mut fcb_existed);
+                next_fcb = CdCreateFcb(irp_context, file_id, CDFS_NTC_FCB_DATA as u16, &mut fcb_existed);
 
                 if fcb_existed == 0 {
                     CdInitializeFcbFromFileContext(irp_context, next_fcb, *current_fcb, file_context);

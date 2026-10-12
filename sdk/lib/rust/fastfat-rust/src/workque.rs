@@ -1,4 +1,7 @@
 use ntkrnl_sys::globals::*;
+use crate::externs::DbgPrint;
+// One declaration per external symbol: externs.rs.
+use crate::externs::RtlAssert;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ke::*;
@@ -10,8 +13,7 @@ use ntkrnl_sys::ddk::{IO_STACK_LOCATION, IRP, PWORKER_THREAD_ROUTINE};
 
 extern "system" {
     fn KeGetCurrentIrql() -> u8;
-    } extern "C" { fn DbgPrint(format: *const i8, ...); } extern "system" {
-    fn RtlAssert( failed_assertion: *const core::ffi::c_void, file_name: *const core::ffi::c_void, line_number: u32, message: *const i8, );
+    } extern "system" {
     fn FatLockUserBuffer( IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, lock_operation: u32, length: u32, );
     fn KeAcquireSpinLockRaiseToDpc(SpinLock: *mut KSPIN_LOCK) -> KIRQL;
     fn FatFspDispatch(IrpContext: PVOID);
