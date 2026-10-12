@@ -129,6 +129,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_scan_let_shadow.py"),
     (".", ".", "tools/test_scan_raw_bitfield.py"),
     (".", ".", "tools/test_scan_winerror_consts.py"),
+    (".", ".", "tools/test_scan_export_shadows.py"),
     (".", ".", "tools/test_scan_res_named_types.py"),
     (".", ".", "tools/test_scan_bindgen_padding_index.py"),
     (".", ".", "tools/test_scan_extern_static_width.py"),

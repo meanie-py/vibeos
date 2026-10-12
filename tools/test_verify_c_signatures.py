@@ -29,6 +29,7 @@ from verify_c_signatures import (
     Unknown,
     _braced_typedefs,
     _norm_base,
+    c_functions,
     is_ptr_sized,
     ptr_depth,
 )
@@ -200,3 +201,10 @@ typedef union _RPC_ASYNC_NOTIFICATION_INFO {
 
 def test_function_pointer_typedef_is_skipped() -> None:
     assert _braced_typedefs("typedef BOOL (CALLBACK *LPFN)(HWND, LPARAM);") == []
+
+
+def test_a_header_alias_for_winapi_is_not_the_return_type(tmp_path: Path) -> None:
+    """vfw.h's `#define VFWAPI WINAPI`: avicap32's return type read as `VFWAPI`, not HWND."""
+    src = tmp_path / "avicap32.c"
+    src.write_text("HWND VFWAPI capCreateCaptureWindowW(LPCWSTR lpszWindowName)\n{\n}\n")
+    assert c_functions(src)["capCreateCaptureWindowW"][0] == "HWND"

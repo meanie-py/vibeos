@@ -2309,8 +2309,16 @@ pub unsafe fn KeGetCurrentThread() -> PVOID {
     }
     #[cfg(target_arch = "aarch64")]
     {
-        use crate::ke::KeGetCurrentPrcb;
-        (*KeGetCurrentPrcb()).CurrentThread as PVOID
+        // KPCR from TPIDR_EL1, then its PRCB, as inline::ke::KeGetCurrentPrcb does. Not
+        // ke::KeGetCurrentPrcb: that is an ntoskrnl IMPORT, and arm64 ntoskrnl exports no such
+        // symbol -- atapi.sys failed to link once sptilib-rust reached PsGetCurrentThread.
+        let pcr: *mut crate::ddk::_KPCR;
+        core::arch::asm!(
+            "mrs {}, tpidr_el1",
+            out(reg) pcr,
+            options(nostack, nomem, preserves_flags),
+        );
+        (*(*pcr).__bindgen_anon_1.__bindgen_anon_1.CurrentPrcb).CurrentThread as PVOID
     }
 }
 

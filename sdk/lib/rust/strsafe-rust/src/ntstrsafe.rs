@@ -25,7 +25,7 @@ pub const NTSTRSAFE_MAX_CCH: usize = 2147483647;
 /// ntstatus.h: `((NTSTATUS)0x80000005)` and `((NTSTATUS)0xC000000D)`.
 pub const STATUS_BUFFER_OVERFLOW: NTSTATUS = 0x8000_0005u32 as i32;
 pub const STATUS_INVALID_PARAMETER: NTSTATUS = 0xC000_000Du32 as i32;
-const STATUS_SUCCESS: NTSTATUS = 0;
+pub const STATUS_SUCCESS: NTSTATUS = 0;
 
 /// :3170 `RtlStringLengthWorkerW`.
 pub unsafe fn RtlStringLengthWorkerW(
@@ -311,6 +311,44 @@ pub unsafe fn ntstrsafe_printf_finish_a(
         *pszDest.add(cch_max) = 0;
     }
     STATUS_SUCCESS
+}
+
+/// ntstrsafe.h:27 -- the most characters a UNICODE_STRING may hold.
+pub const NTSTRSAFE_UNICODE_STRING_MAX_CCH: usize = 32767;
+
+/// :3241 `RtlUnicodeStringPrintf(DestinationString, pszFormat, ...)`. A macro, not a fn: each
+/// island has its own nominal UNICODE_STRING, so the fields are read by name in the caller's
+/// type. Validates as `RtlpUnicodeStringValidate` (:3199) with no flags, formats into all
+/// `MaximumLength / sizeof(WCHAR)` characters WITHOUT forcing a terminator
+/// (`RtlpArrayVPrintfWorkerW`, :2830 -- a UNICODE_STRING is counted), and sets `Length` on
+/// success or on overflow.
+#[macro_export]
+macro_rules! RtlUnicodeStringPrintf {
+    ($dest:expr, $pszFormat:expr $(, $arg:expr)* $(,)?) => {{
+        let d = $dest;
+        let fmt = $pszFormat;
+        let w = core::mem::size_of::<$crate::WCHAR>();
+        if d.is_null() || fmt.is_null() {
+            $crate::ntstrsafe::STATUS_INVALID_PARAMETER
+        } else if ((*d).Length as usize) % w != 0
+            || ((*d).MaximumLength as usize) % w != 0
+            || (*d).Length > (*d).MaximumLength
+            || (*d).MaximumLength as usize > $crate::ntstrsafe::NTSTRSAFE_UNICODE_STRING_MAX_CCH * w
+            || ((*d).Buffer.is_null() && ((*d).Length != 0 || (*d).MaximumLength != 0))
+        {
+            $crate::ntstrsafe::STATUS_INVALID_PARAMETER
+        } else {
+            let cch = (*d).MaximumLength as usize / w;
+            let iRet = $crate::_snwprintf((*d).Buffer as *mut $crate::WCHAR, cch, fmt as _ $(, $arg)*);
+            let (status, fin) = if iRet < 0 || iRet as usize > cch {
+                ($crate::ntstrsafe::STATUS_BUFFER_OVERFLOW, cch)
+            } else {
+                ($crate::ntstrsafe::STATUS_SUCCESS, iRet as usize)
+            };
+            (*d).Length = (fin * w) as _;
+            status
+        }
+    }};
 }
 
 /// :1085 `RtlStringCchPrintfA(pszDest, cchDest, pszFormat, ...)`.

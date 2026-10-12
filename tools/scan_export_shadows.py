@@ -95,6 +95,33 @@ def _spec_arches(flags: list[str]) -> set[str]:
     return set(ARCHES)
 
 
+# spec2def's `--version` for the kernel and HAL: DLL_EXPORT_VERSION, which config.cmake defaults
+# to 0x502 and neither spec2def() call overrides.
+EXPORT_VERSION = 0x502
+
+
+def _version_included(flags: list[str], version: int = EXPORT_VERSION) -> bool:
+    """spec2def's `-version=` test: comma-separated `a`, `a+` or `a-b` ranges, hex.
+
+    A `-version=0x602+` line is not in a 5.2 kernel's export table, so a driver defining that
+    name shadows nothing -- it is the only copy. ntoskrnl_vista exists to be that copy (its
+    ten PoFx* functions are 0x602+ in ntoskrnl.spec).
+    """
+    for f in flags:
+        if not f.startswith("-version="):
+            continue
+        for rng in f[len("-version=") :].split(","):
+            m = re.fullmatch(r"(?:0x)?([0-9A-Fa-f]+)(?:(\+)|-(?:0x)?([0-9A-Fa-f]+))?", rng)
+            if not m:
+                raise SystemExit(f"error: unparsed spec version range {f!r}")
+            lo = int(m.group(1), 16)
+            hi = 0xFFF if m.group(2) else int(m.group(3) or m.group(1), 16)
+            if lo <= version <= hi:
+                return True
+        return False
+    return True
+
+
 def kernel_names(root: Path = REPO) -> dict[str, dict[str, str]]:
     """arch -> {symbol: "<spec>: <export>"} for every export and forward target."""
     out: dict[str, dict[str, str]] = {a: {} for a in ARCHES}
@@ -116,6 +143,8 @@ def kernel_names(root: Path = REPO) -> dict[str, dict[str, str]]:
             # nothing. Both spellings: the `stub` directive (what spec2def generates,
             # and every win10_surface line) and the `-stub` flag on a typed line.
             if "-stub" in flags or m.group(1) == "stub":
+                continue
+            if not _version_included(flags):
                 continue
             export = re.split(r"[(\s]", rest[0], maxsplit=1)[0]
             names = {export}
