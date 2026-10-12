@@ -14719,6 +14719,25 @@ fails the adapter. A rarely taken failure path is worth one forced-failure boot.
   driver's IRP_MJ_READ/WRITE uses SystemBuffer, MdlAddress or UserBuffer, check that its
   device flags pick the matching I/O method.
 
+### pcix on real hardware: bus 0's scan stops early, and adding a print fixes it
+
+**Symptom.** On the OptiPlex, pcix enumerates 00:00.0 and root port 00:01.0 and nothing
+else on bus 0 (no GPU, USB, NIC or audio). Add a `DbgPrint` per slot and every device is
+found; a 100 ms stall in the same place changes nothing.
+
+**Cause.** Not timing: stack layout. The scan read a whole capability (8 bytes for power
+management, 12 for AGP) into `CapHeader`, a 2-byte `PCI_CAPABILITIES_HEADER`, and the
+overrun landed on the loop's own state. Root port 00:01.0 is the first function with a PM
+capability. The print moved the locals, so the overrun hit something harmless. Upstream's C
+has the same overrun.
+
+**Fix.** Read into a buffer the capability fits (`enumr.rs`). The lesson is the shape: when
+a print "fixes" a bug and a delay of the same length does not, suspect a write past a
+local, and look for a read sized by one type into a variable of another.
+
+QEMU's smoke machines have no PCI-to-PCI bridges, so pcix's whole bridge path first ran on
+this box; the roadmap's arbiter entry lists the four bridge bugs fixed with this one.
+
 ### Adding a PCI device to the arm64 QEMU rig makes UEFI PXE-boot
 - **Symptom:** the boot goes to `>>Start PXE over IPv4`, then HTTP boot, then a hang,
   immediately after adding a `-device` (e.g. `qemu-xhci`) to an arm64 boot. The OS never
