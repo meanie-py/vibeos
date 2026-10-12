@@ -62,6 +62,29 @@ static void SerialDumpLines(PCSTR Buffer, SIZE_T Length)
         Offset += LineLength;
     }
 }
+
+/* A marker goes to stdout too when there is one. On real Windows (`vibeos-cli winref
+ * kmtest`, the reference column) DbgPrint reaches nothing without a kernel debugger, so
+ * the markers travel with the result log on stdout instead. Under the guest sweep
+ * (DETACHED_PROCESS) there is no stdout and this is DbgPrint alone, as before. */
+static void SerialMarker(PCSTR Format, ...)
+{
+    CHAR Line[512];
+    va_list Args;
+    int Length;
+    HANDLE Out = GetStdHandle(STD_OUTPUT_HANDLE);
+    DWORD Written;
+
+    va_start(Args, Format);
+    Length = _vsnprintf(Line, sizeof(Line) - 1, Format, Args);
+    va_end(Args);
+    if (Length < 0)
+        Length = sizeof(Line) - 1;
+    Line[Length] = '\0';
+    DbgPrint("%s", Line);
+    if (Out != NULL && Out != INVALID_HANDLE_VALUE)
+        WriteFile(Out, Line, (DWORD)Length, &Written, NULL);
+}
 #endif /* VIBEOS_KMTEST_SERIAL */
 
 /**
@@ -82,7 +105,7 @@ OutputError(
 #ifdef VIBEOS_KMTEST_SERIAL
     /* stderr is unusable under the harness (DETACHED_PROCESS) — mirror the
      * error + its file:line origin to serial so failures stay attributable */
-    DbgPrint("[KMTEST:ERROR] %s: error 0x%08lx\n", ErrorFileAndLine, Error);
+    SerialMarker("[KMTEST:ERROR] %s: error 0x%08lx\n", ErrorFileAndLine, Error);
 #endif
 
     if (!FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_ALLOCATE_BUFFER,
@@ -292,7 +315,7 @@ OutputResult(
 
 #ifdef VIBEOS_KMTEST_SERIAL
     SerialDumpLines(ResultBuffer->LogBuffer, LogBufferLength);
-    DbgPrint("[KMTEST:END %s pass=%ld fail=%ld skip=%ld]\n",
+    SerialMarker("[KMTEST:END %s pass=%ld fail=%ld skip=%ld]\n",
              TestName, ResultBuffer->Successes, ResultBuffer->Failures,
              ResultBuffer->Skipped);
 #endif
@@ -322,7 +345,7 @@ RunTest(
     assert(TestName != NULL);
 
 #ifdef VIBEOS_KMTEST_SERIAL
-    DbgPrint("[KMTEST:BEGIN %s]\n", TestName);
+    SerialMarker("[KMTEST:BEGIN %s]\n", TestName);
 #endif
 
     if (!ResultBuffer)

@@ -114,8 +114,12 @@ KeRaiseIrqlToDpcLevel(
 
 /* Import, not inline: SYNCH_LEVEL depends on the KERNEL flavor (2 on the UP
  * kernel, IPI_LEVEL-2 == 12 on the SMP kernel), which a driver can't know at
- * compile time. Real NT amd64 ntoskrnl exports this; ours does too
- * (ke_rust_shims.c provides the CR8 implementation). */
+ * compile time. Ours exports it (ke_rust_shims.c provides the CR8 implementation).
+ * Real Windows x64 does NOT: it has no UP kernel, and the WDK inlines this as
+ * KfRaiseIrql(SYNCH_LEVEL) -- Windows 11's ntoskrnl has no such export (measured
+ * 2026-10-12). So an amd64 driver that calls it, built from these headers, will not
+ * load on Windows (StartService: ERROR_PROC_NOT_FOUND). A driver meant to run on both
+ * resolves it with MmGetSystemRoutineAddress, as the KeIrql kmtest does. */
 _IRQL_saves_
 NTKERNELAPI
 KIRQL

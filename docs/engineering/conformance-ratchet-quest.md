@@ -1964,3 +1964,39 @@ ExInterlocked 4. arm64 only: IoInterrupt 2, RtlMemory and RtlMemoryKM 3.
 every arch (BUGCHECK 0x32): ObCreateObjectType refuses the flag on a type with no Open or Close
 procedure, and I had called the change safe without reading that check. Editing source while
 my own build ran cost two rebuild cycles; the build's artifact check caught it both times.
+
+### 2026-10-12 — a Windows 11 reference column (from the research lane)
+
+Windows 11 26300 now runs this lane's own suites: `./vibeos-cli winref kmtest` and
+`winref apitest` (needs `./vibeos-cli build --arch amd64 --kmtests --apitests
+--no-wow64-stage`; design and caveats in `winref.md`, "The reference columns"). Same
+binaries, markers and parser as the guest. The kmtest column is banked at
+`tools/conformance-baseline/win11-amd64/kmtest.txt` from two byte-identical runs, and every
+run writes `column.txt` against `amd64/kmtest.txt`. It is a reference, not a floor: nothing
+gates on it, and banking a guest row is still this lane's two-sweep rule. The apitest column
+is NOT banked: two runs agree on 630 of 633 rows, and the three that move (comctl32
+`buttonv6`, ntdll `NtQueryInformationProcess`, win32u `NtUserGetThreadState`) want `assert?`
+marks first. Run artifacts: `20261012-150918-ci4i6nxq` and `20261012-164618-1ukvsju5`
+(apitest), `20261012-160422-w1aacqy3` and `20261012-160425-l5vbpj_0` (kmtest), all
+`winref-*-x64` under `/tmp/vibeos-cli/` (gone at the next reboot; the banked file is the
+durable copy).
+
+What it says about the owed queue above (observed; the "why" is still yours):
+- **RtlStack / RtlStackKM 11** fail the SAME 11 assertions on Windows 11. Item 1 is not a
+  defect in our stack walker; it is the test, or how our toolchain builds it.
+- **Example 15** fails identically on Windows: deliberate.
+- **Clean on Windows, failing in the guest:** MmSection 14, SeInheritance 14, NpfsFileInfo
+  19, RtlCaptureContextUM 10, HidPDescription 9, FsRtlExpression 8, ExDoubleList 8,
+  ZwMapViewOfSection 6, HalSystemInfo 1, KeDeviceQueue 1. ExDoubleList and NpfsFileInfo were
+  filed above as expected; Windows x64 (a free build) passes both, so those two explanations
+  want a second look.
+- **Shared with Windows:** TcpIpConnect 5, ObTypes 2 (of 9), one IoCreateFile assertion.
+- **ObType and RtlRangeList bugcheck Windows 11** (0x3B) every run.
+
+Changes here that touch this lane: `kmtest_.exe` writes its BEGIN/END/ERROR markers to
+stdout as well when it has one (none in the guest sweep); `apitest-sweep.exe` does the
+same through `emit()`; `parse_kmtest_serial` marks EVERY bugcheck's in-flight test CRASH
+(not only the first) and closes a record re-launched without an exit as INCOMPLETE; the
+KeIrql kmtest resolves `KeRaiseIrqlToSynchLevel` at run time (Windows x64 does not export
+it). A guest sweep after all of it: amd64 99/99, ratchet holds
+(`20261012-161729-7jt82k7j-conformance-amd64`).

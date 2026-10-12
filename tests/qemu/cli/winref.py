@@ -552,18 +552,33 @@ def cmd_restore(args, repo: Path) -> int:
 
 def cmd_run(args, repo: Path) -> int:
     run = artifacts.Run("winref-run", "x64")
+    _run_payload(run, Path(args.payload), args)
+    return run.finalize(repo)
+
+
+def _run_payload(run: artifacts.Run, payload: Path, args, *, relaunch: int = 0) -> list[str] | None:
+    """Boot a throwaway overlay with `payload` as a CD, run its run.cmd, and grade the run.
+
+    Writes output.txt (the payload's stdout, `OUT: ` stripped) into the run dir, records
+    the stages, and returns the output lines; None when the payload never finished.
+
+    `relaunch`: how many times to boot the SAME overlay again when QEMU dies under the
+    guest. Under WHPX on this host QEMU dies (`Unexpected VP exit code 4`) while Windows
+    reboots after a bugcheck: the kmtest column died that way at test 54 of 99. The
+    overlay keeps whatever the payload wrote to C:\\winref, so a payload that records its
+    progress there (kmtest-sweep.ps1) carries on where it stopped.
+    """
     p = _paths()
-    payload = Path(args.payload)
     if not p["base"].is_file():
         run.add(
             artifacts.Stage(
                 "base", status="fail", detail="no base image: vibeos-cli winref install --iso ..."
             )
         )
-        return run.finalize(repo)
+        return None
     if not (payload / "run.cmd").is_file():
         run.add(artifacts.Stage("payload", status="fail", detail=f"no run.cmd in {payload}"))
-        return run.finalize(repo)
+        return None
     rd = p["runs"] / run.dir.name
     rd.mkdir(parents=True, exist_ok=True)
     try:
@@ -580,20 +595,35 @@ def cmd_run(args, repo: Path) -> int:
         )
         if cp.returncode != 0:
             run.add(artifacts.Stage("overlay", status="fail", detail=cp.stderr.strip()[:300]))
-            return run.finalize(repo)
+            return None
         vars_fd = rd / "vars.fd"
         shutil.copyfile(p["vars"], vars_fd)
         _make_iso(payload, rd / "payload.iso", "PAYLOAD")
-        outcome, lines = _boot(
-            run,
-            overlay,
-            vars_fd,
-            [be.win_path(rd / "payload.iso")],
-            timeout=args.timeout,
-            press_keys=0,
-            args=args,
-            finish="WINREF: poweroff",
-        )
+        lines: list[str] = []
+        deadline = time.monotonic() + args.timeout
+        lost = 0
+        while True:
+            outcome, got = _boot(
+                run,
+                overlay,
+                vars_fd,
+                [be.win_path(rd / "payload.iso")],
+                timeout=max(60.0, deadline - time.monotonic()),
+                press_keys=0,
+                args=args,
+                finish="WINREF: poweroff",
+            )
+            lines += got
+            powered_off = any(ln.startswith("WINREF: poweroff") for ln in got)
+            if outcome != "exited" or powered_off or lost >= relaunch:
+                break
+            lost += 1
+            run.log(
+                f"QEMU exited with the payload unfinished; booting the same overlay again "
+                f"({lost}/{relaunch})",
+                header="winref relaunch",
+            )
+        run.extra["vm_lost"] = lost
     finally:
         if not args.keep:
             shutil.rmtree(rd, ignore_errors=True)
@@ -630,6 +660,300 @@ def cmd_run(args, repo: Path) -> int:
                 salient=out[-8:],
             )
         )
+        return out
+    return None
+
+
+# The reference column: the conformance lane's suites, graded by Windows 11 itself. Each
+# suite runs the guest's own binaries from this tree's build-amd64, with the same markers,
+# and is parsed by the same parser the guest's serial log is.
+WIN_BASELINE = "win11-amd64"
+CANON = "/tmp/vibeos/"  # build paths in the CD manifests are canonical (tools/canon-run.sh)
+
+
+def staged_bin(manifest: str, repo: Path) -> dict[str, Path]:
+    """Every file a livecd manifest puts in reactos/bin: what add_rostests_file staged.
+
+    The guest's sweeps find their binaries there, and kmtest_.exe loads its drivers from
+    its own directory, so the Windows run gets exactly that set, laid out the same way.
+    """
+    out: dict[str, Path] = {}
+    for line in manifest.splitlines():
+        dst, sep, src = line.partition("=")
+        if sep and dst.startswith("reactos/bin/"):
+            src = src.strip()
+            if src.startswith(CANON):
+                src = str(repo / src[len(CANON) :])
+            out[dst[len("reactos/bin/") :]] = Path(src)
+    return out
+
+
+def kmtest_order(listed: list[str], built: set[str]) -> list[str]:
+    """The tests the Windows column runs, in order: the guest sweep's own list first (so
+    tests meet the same predecessors as in the guest), then every other visible test.
+
+    The rest are mostly the guest's QUARANTINES, and they are the point: a test the guest
+    cannot survive says nothing on the guest, but what Windows does with it is exactly
+    the expected result. Hidden (`-Name`) tests stay out, as they do in the guest.
+    """
+    seen = set(listed)
+    return [*listed, *sorted(t for t in built if t not in seen and not t.startswith("-"))]
+
+
+def _load(path: Path, name: str):
+    import importlib.util
+    import sys
+
+    sys.path.insert(0, str(path.parent))  # the parsers import their sibling ratchet.py
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+# Exit codes of a process the loader killed before main(): the suite never ran.
+LOAD_FAILURES = {
+    0xC0000135: "STATUS_DLL_NOT_FOUND",
+    0xC0000139: "STATUS_ENTRYPOINT_NOT_FOUND",
+    0xC0000142: "STATUS_DLL_INIT_FAILED",
+}
+
+
+def not_run(r: dict) -> bool:
+    """The harness could not run this row (a driver that will not load, a binary that
+    will not start): its result is about the rig, not about Windows."""
+    return r["status"] == "FAILSTART" or (r["status"] == "NO-END" and r.get("errors", 0) > 0)
+
+
+def column_report(win: list[dict], guest: dict[str, dict]) -> list[str]:
+    """One line per row where Windows and the guest floor disagree, sorted by kind.
+
+    It says what was OBSERVED, not why: "Windows clean, guest fails" is where to look
+    for a guest bug first, and "fails on Windows 11 too" is a test whose expectation
+    Windows does not meet, or one that is timing-sensitive in a VM (KeMutex fails 517
+    there), or one our toolchain builds differently from the test's author.
+    """
+    rows: list[tuple[int, str]] = []
+    for r in win:
+        g = guest.get(r["name"])
+        w_ok = r["status"] == "OK" and r["fail"] == 0
+        if not_run(r):
+            # Says nothing about the test: Windows never got to run it.
+            rows.append(
+                (
+                    -1,
+                    f"{r['name']}: NOT RUN on Windows ({r['status']}, "
+                    f"{r.get('errors', 0)} harness error(s))",
+                )
+            )
+            continue
+        if g is None:
+            if guest:
+                rows.append(
+                    (
+                        0 if w_ok else 2,
+                        f"{r['name']}: not in the guest floor; "
+                        f"Windows {r['status']} pass={r['pass']} fail={r['fail']}",
+                    )
+                )
+            continue
+        g_ok = g["status"] == "OK" and g.get("fail", 0) == 0
+        if w_ok and not g_ok:
+            rows.append(
+                (1, f"{r['name']}: Windows clean, guest {g['status']} fail={g.get('fail', 0)}")
+            )
+        elif not w_ok:
+            shared = len(set(r.get("asserts") or ()) & set(g.get("asserts") or ()))
+            rows.append(
+                (
+                    3,
+                    f"{r['name']}: fails on Windows 11 too: Windows {r['status']} "
+                    f"fail={r['fail']}, guest fail={g.get('fail', 0)}, "
+                    f"{shared} failing assertion(s) shared",
+                )
+            )
+    return [line for _, line in sorted(rows)]
+
+
+SUITES = {
+    # suite: (parser, sweep marker prefix)
+    "kmtest": ("parse_kmtest_serial.py", "[KMTEST-SWEEP]"),
+    "apitest": ("parse_apitest_serial.py", "[APITEST-SWEEP]"),
+}
+
+
+def _stage_kmtest(stage: Path, repo: Path) -> int:
+    lists = _load(repo / "tools/payloads/kmtest/test_kmtest_lists.py", "kmtest_lists")
+    tests = kmtest_order(lists.listed("amd64"), lists.built_tests("amd64"))
+    shutil.copy2(ASSETS / "kmtest-sweep.ps1", stage / "kmtest-sweep.ps1")
+    (stage / "bin" / "kmtest-tests.txt").write_text("\n".join(tests) + "\n")
+    (stage / "run.cmd").write_text(
+        '@powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0kmtest-sweep.ps1"'
+        ' -Bin "%~dp0bin"\r\n'
+    )
+    return len(tests)
+
+
+def _stage_apitest(stage: Path, repo: Path) -> int:
+    # The guest's own sweep, unmodified in behaviour: it reads %SystemRoot%\bin, so the
+    # payload's bin goes there. Every suite the build produced, with NO quarantine: those
+    # protect the GUEST from tests that take it down, and Windows needs no protecting.
+    sweep = repo / "tools/payloads/apitest/apitest-sweep-amd64.exe"
+    if not sweep.is_file():
+        raise FileNotFoundError(f"{sweep}; fix: bash tools/payloads/apitest/build.sh amd64")
+    gen = _load(repo / "tools/payloads/apitest/gen_suites.py", "gen_suites")
+    suites = gen.discover(repo / "build-amd64")
+    shutil.copy2(sweep, stage / "bin" / "apitest-sweep.exe")
+    (stage / "bin" / "apitest-suites.txt").write_text("\n".join(suites) + "\n")
+    (stage / "run.cmd").write_text(
+        "@echo off\r\n"
+        'xcopy /e /i /y /q "%~dp0bin" "%SystemRoot%\\bin" >nul\r\n'
+        '"%SystemRoot%\\bin\\apitest-sweep.exe"\r\n'
+    )
+    return len(suites)
+
+
+def cmd_suite(args, repo: Path) -> int:
+    suite = args.winref_cmd
+    run = artifacts.Run(f"winref-{suite}", "x64")
+    if args.regrade:
+        # Grade a finished run's output again (a parser or grading change) without
+        # booting Windows: the output is what Windows did, and it does not go stale.
+        prev = Path(args.regrade)
+        summary = json.loads((prev / "summary.json").read_text())
+        extra = summary.get("extra", summary)
+        for k in ("windows", "corpus_built", "corpus_files", "listed"):
+            run.extra[k] = extra.get(k)
+        run.extra["regraded"] = str(prev)
+        out = (prev / "output.txt").read_text().splitlines()
+        run.add(artifacts.Stage("run", detail=f"regrade of {prev.name}: {len(out)} lines"))
+        return _grade(run, suite, out, args, repo)
+    manifest = repo / "build-amd64" / "boot" / "livecd.Debug.lst"
+    files = staged_bin(manifest.read_text(), repo) if manifest.is_file() else {}
+    missing = sorted(n for n, src in files.items() if not src.is_file())
+    if not files or missing:
+        run.add(
+            artifacts.Stage(
+                "corpus",
+                status="fail",
+                detail=(
+                    f"{len(missing)} staged file(s) missing, e.g. {missing[:3]}; "
+                    if missing
+                    else f"no reactos/bin in {manifest}; "
+                )
+                + "fix: ./vibeos-cli build --arch amd64 --kmtests --apitests --no-wow64-stage",
+            )
+        )
+        return run.finalize(repo)
+    stage = run.dir / "payload"
+    (stage / "bin").mkdir(parents=True)
+    for name, src in files.items():
+        (stage / "bin" / name).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, stage / "bin" / name)
+    try:
+        count = (_stage_kmtest if suite == "kmtest" else _stage_apitest)(stage, repo)
+    except FileNotFoundError as e:
+        run.add(artifacts.Stage("corpus", status="fail", detail=str(e)))
+        return run.finalize(repo)
+    newest = max(src.stat().st_mtime for src in files.values())
+    run.extra.update(
+        {
+            "corpus_files": len(files),
+            "corpus_built": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(newest)),
+            "listed": count,
+        }
+    )
+    # Only the kmtest sweep resumes (its progress lives on C:); the apitest sweep would
+    # start over and run every suite twice. Each kmtest that bugchecks Windows costs one
+    # relaunch (QEMU dies in the reboot), and two of them do (ObType, RtlRangeList).
+    out = _run_payload(run, stage, args, relaunch=10 if suite == "kmtest" else 0)
+    if not args.keep:
+        shutil.rmtree(stage, ignore_errors=True)
+    if out is None:
+        return run.finalize(repo)
+    return _grade(run, suite, out, args, repo)
+
+
+def _grade(run: artifacts.Run, suite: str, out: list[str], args, repo: Path) -> int:
+    parser_file, marker = SUITES[suite]
+    parser = _load(repo / "tools/conformance" / parser_file, parser_file[:-3])
+    parsed = parser.parse("\n".join(out))
+    results, done = (parsed[0], parsed[1]) if suite == "kmtest" else (parsed[0], parsed[1]["done"])
+    table = "\n".join(parser.fmt(r) for r in results) + "\n"
+    (run.dir / f"{suite}.txt").write_text(table)
+    guest_path = repo / "tools/conformance-baseline/amd64" / f"{suite}.txt"
+    guest = parser.load_baseline(guest_path) if guest_path.is_file() else {}
+    report = column_report(results, guest)
+    clean = sum(1 for r in results if r["status"] == "OK" and r["fail"] == 0)
+    # A test the VM died under twice (kmtest-sweep.ps1) says nothing about Windows.
+    lost = {ln.split()[2] for ln in out if ln.startswith("[KMTEST-SWEEP] VM-LOST ")}
+    unrun = [
+        f"{r['name']} (VM lost under it twice)"
+        if r["name"] in lost
+        else f"{r['name']} ({r['status']}, {r.get('errors', 0)} harness error(s))"
+        for r in results
+        if not_run(r) or r["name"] in lost
+    ]
+    if suite == "apitest":
+        # A suite whose binary Windows will not even load enumerates no subtests, so it
+        # has no rows at all; without this it would vanish from the column silently.
+        for name, (code, _first) in sorted(parsed[1]["nosubtests"].items()):
+            why = LOAD_FAILURES.get(int(code) & 0xFFFFFFFF)
+            if why:
+                unrun.append(f"{name} (whole suite: {why})")
+    report = [*(f"NOT RUN on Windows: {u}" for u in unrun if "whole suite" in u), *report]
+    (run.dir / "column.txt").write_text("\n".join(report) + "\n")
+    ran = [r for r in results if r["status"] in ("OK", "FAIL-EXIT")]
+    nothing_ran = not ran
+    notes = [ln.split("] ", 1)[1] for ln in out if ln.startswith(marker) and " signed " in ln]
+    run.extra.update(
+        {
+            "signed": notes[0] if notes else None,
+            "sweep": done,
+            "rows": len(results),
+            "not_run": unrun,
+            "clean": clean,
+            "guest_floor": str(guest_path) if guest else None,
+            "disagreements": len(report),
+            "table": str(run.dir / f"{suite}.txt"),
+            "column": str(run.dir / "column.txt"),
+        }
+    )
+    run.add(
+        artifacts.Stage(
+            "column",
+            status="fail" if not done or nothing_ran else "warn" if unrun else "ok",
+            detail=f"{len(results)} rows, {clean} clean on Windows"
+            + (f", {len(unrun)} NOT RUN (harness)" if unrun else "")
+            + (f", {len(report)} disagree with the guest floor" if guest else ", no guest floor")
+            + ("" if done else "; SWEEP DID NOT FINISH"),
+            salient=report[:12],
+        )
+    )
+    if not done:
+        run.classification = f"WINREF_{suite.upper()}_INCOMPLETE"
+    elif nothing_ran:
+        # Every row is a harness failure (the first kmtest column: a driver that would not
+        # load). That is a broken rig, not a reference: refuse to bank it.
+        run.classification = f"WINREF_{suite.upper()}_NOT_RUN"
+    elif args.write_baseline:
+        dst = repo / "tools/conformance-baseline" / WIN_BASELINE / f"{suite}.txt"
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_text(
+            f"# {suite} REFERENCE column: what Windows 11 itself does with each test.\n"
+            f"# `vibeos-cli winref {suite} --write-baseline`, {run.extra.get('windows')}, "
+            f"corpus built {run.extra['corpus_built']}"
+            + (f", from {Path(run.extra['regraded']).name}" if run.extra.get("regraded") else "")
+            + ".\n"
+            "# Not a floor the guest must match row for row. A row failing here fails on\n"
+            "# Windows 11 itself: an expectation Windows does not meet (often 2003-era\n"
+            "# behaviour), a test that is timing-sensitive in a VM, or one our toolchain\n"
+            "# builds differently from its author's.\n"
+            + "".join(f"# NOT RUN on Windows: {u}\n" for u in unrun)
+            + table
+        )
+        run.extra["baseline"] = str(dst)
     return run.finalize(repo)
 
 
@@ -914,6 +1238,21 @@ def add_parser(sub) -> None:
     r.add_argument("--timeout", type=float, default=RUN_TIMEOUT)
     r.add_argument("--keep", action="store_true", help="keep the overlay for inspection")
     vm_opts(r)
+    for suite, what in (("kmtest", "kernel-mode"), ("apitest", "user-mode")):
+        k = verbs.add_parser(
+            suite, help=f"run the {what} {suite} corpus on Windows 11: the reference column"
+        )
+        k.add_argument("--timeout", type=float, default=RUN_TIMEOUT * 4)
+        k.add_argument("--keep", action="store_true", help="keep the overlay and payload")
+        k.add_argument(
+            "--regrade", metavar="RUN_DIR", help="grade a finished run's output.txt again, no VM"
+        )
+        k.add_argument(
+            "--write-baseline",
+            action="store_true",
+            help=f"store the result as tools/conformance-baseline/{WIN_BASELINE}/{suite}.txt",
+        )
+        vm_opts(k)
     verbs.add_parser("status", help="installed base image and its Windows build")
     mt = verbs.add_parser("maint", help="run a script elevated inside the BASE image (writes it)")
     mt.add_argument("script", help="PowerShell script, typed into Win+R as D:\\maint.ps1")
@@ -937,6 +1276,8 @@ def command(args, repo: Path) -> int:
     return {
         "install": cmd_install,
         "run": cmd_run,
+        "kmtest": cmd_suite,
+        "apitest": cmd_suite,
         "status": cmd_status,
         "logs": cmd_logs,
         "snapshot": cmd_snapshot,

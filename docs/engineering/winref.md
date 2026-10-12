@@ -54,6 +54,69 @@ Windows 11 only after fixing three things on OUR side, none of them Windows beha
 
 Each would have failed the same way on vibeos and been filed as an OS bug.
 
+## The reference columns (2026-10-12)
+
+`winref kmtest` and `winref apitest` run the conformance ratchet's own suites on Windows 11:
+the guest's binaries from this tree's `build-amd64`, the guest's markers, the guest's parser
+(`tools/conformance/parse_*_serial.py`), so a Windows row and a guest row mean the same
+thing. Banked with `--write-baseline` under `tools/conformance-baseline/win11-amd64/`, after
+two runs agreed. It is a reference, not a floor. `column.txt` sorts every disagreement with
+the guest's amd64 floor by what was observed: "Windows clean, guest fails" (look for a guest
+bug there first) and "fails on Windows 11 too" (an expectation Windows does not meet, a test
+that is timing-sensitive in a VM, or one our toolchain builds differently from its author's).
+
+How each suite gets there:
+
+- **apitest** runs the guest's `apitest-sweep.exe` unchanged. Its lines go to stdout as well
+  as DbgPrint (`emit()` in `sweep.c`), because DbgPrint reaches nothing on Windows without
+  a kernel debugger. All 64 suites, no quarantine (that list protects the guest). ~5.5 min.
+- **kmtest** runs `qemu/winref/kmtest-sweep.ps1`, which prints the guest sweep's markers;
+  `kmtest_.exe` now also writes its BEGIN/END/ERROR markers to stdout when it has one.
+  The drivers are signed in the VM per run with a throwaway self-signed certificate:
+  `testsigning` admits TEST-SIGNED drivers on x64, not unsigned ones. A bugcheck reboots
+  Windows and the sweep resumes from `C:\winref\kmtest-progress.txt` (written through to
+  disk: the cache dies with the bugcheck), reporting `*** BUGCHECK` from event 1001 against
+  the test in flight. If QEMU itself dies, the launcher boots the same overlay again (up to
+  10 times); a test the VM is lost under twice without a logged bugcheck is NOT RUN. ~41 min.
+
+A row the harness could not run is NOT RUN, never a result; a run where nothing ran fails.
+
+What the first columns found (Windows 11 26300.9457):
+
+- **Our amd64 headers made every kmtest driver unloadable on Windows.** `xdk/amd64/ke.h`
+  declares `KeRaiseIrqlToSynchLevel` as an import, because our UP kernel's SYNCH_LEVEL
+  differs from MP's; but Windows x64 has no such export (the WDK inlines it), so
+  `kmtest_drv.sys` failed StartService with ERROR_PROC_NOT_FOUND and all 99 rows were
+  harness errors. The KeIrql kmtest now resolves it at run time. Any amd64 driver of ours
+  that calls it has the same problem on Windows.
+- **The apitest column** (two runs, NOT banked): 633 subtests in 64 suites, 443 clean.
+  630 rows identical across the runs; three move by count (comctl32 `buttonv6`, ntdll
+  `NtQueryInformationProcess`, win32u `NtUserGetThreadState`) and want `assert?` marks
+  before a bank, which is the conformance lane's call.
+- **Our C++ runtime ties every C++ test to ReactOS.** libc++ through `stdc++compat` imports
+  SRW locks from `kernel32_vista.dll` and `snprintf` from msvcrt (Windows' msvcrt.dll only
+  has `_snprintf`), so `atl`, `browseui`, `shell32` and `zipfldr` apitests do not load on
+  Windows (NOT RUN). Owed to the C++ substrate lane.
+- **SEH-protected faults kill the test on Windows.** 59 apitest subtests exit
+  0xC0000005, 27 of them ntdll's, including `strlen`, `_wcsicmp`, `setjmp`, `StackOverflow`
+  and `UserModeException`: subtests that fault on purpose inside a `__try`, and the process dies with
+  the fault unhandled. Unconfirmed: whether it is how our toolchain emits SEH, or the
+  tests. That is the first thing to look at in this column.
+- **The kmtest column** (two 41-minute runs in parallel, byte-identical tables; banked):
+  97 of 99 complete, 59 clean. `ObType` and `RtlRangeList` bugcheck Windows 11 (0x3B, every
+  time); the guest runs both. Ten rows are clean on Windows and fail in the guest: MmSection
+  14, SeInheritance 14, NpfsFileInfo 19, RtlCaptureContextUM 10, HidPDescription 9,
+  FsRtlExpression 8, ExDoubleList 8, ZwMapViewOfSection 6, HalSystemInfo 1, KeDeviceQueue 1.
+  Two of those the conformance lane had filed as expected (ExDoubleList "on 64-bit",
+  NpfsFileInfo "a checked build"), and Windows x64's free build passes both. Shared with the
+  guest, assertion for assertion: RtlStack and RtlStackKM 11 (the lane's owed item 1, filed
+  as a stack-walker defect, fails identically on Windows, so it is the test or how our
+  toolchain builds it, not our kernel), Example 15 (deliberate), TcpIpConnect 5, ObTypes 2.
+  The rest fail only on Windows; KeMutex 517, KeEvent 108, KeApc 92 and ExFastMutex 82
+  are probably timing in a VM rather than semantics (not checked).
+- WHPX: QEMU dies (`Unexpected VP exit code 4`) while Windows reboots after a bugcheck,
+  which is why the relaunch exists.
+
 ## State on disk (2026-10-12)
 
 `D:\vibeos-winref\` (Windows path; `/mnt/d/vibeos-winref` from WSL):
@@ -73,10 +136,10 @@ Last green payload: `winref run` of kernel32 `sync`/`version` + ntdll `rtl`, run
 
 ## Owed
 
-- **The conformance column.** Run the conformance lane's winetest/apitest sweep through
-  `winref run` and store the Windows 11 result beside each guest result, so a guest failure
-  reads "differs from Windows 11" instead of "differs from what 2003 was believed to do".
-  Today's quarantine lists are guesses this replaces.
+- **Banking the columns and wiring them into `conformance`.** The verbs exist and run; the
+  conformance lane decides when a column is stable enough to bank (two agreeing runs, as for
+  the guest), and whether `vibeos-cli conformance` should print the Windows row beside each
+  regression. The winetest sweep (`build --winetest-sweep`) has no Windows column yet.
 - **The `win_skip` meter.** Our winetests are a Wine 10.0 sync and already probe the
   Vista-11 APIs at runtime: 1,937 `win_skip` sites skip on vibeos today. Counting skips per
   guest run turns the export gap into a coverage number for free; skips become passes or
@@ -94,8 +157,9 @@ Last green payload: `winref run` of kernel32 `sync`/`version` + ntdll `rtl`, run
   `maint` if Defender ever quarantines a test binary.
 - **QMP sometimes does not connect** on a run (20261011-210309); the run still completes
   and is graded from the console. Unexplained.
-- **rostests build breaks** outside this work (`./vibeos-cli build --arch amd64 --rostests`
-  stops at the first; `ninja -k 0` builds the rest: 127 winetests, 63 apitests):
-  `user32_winetest` (`monitor.c` needs `ddk/d3dkmthk.h`), `wine.combase.test.dll`
-  (`-llibcombase` missing), `dllimport_test.dll` (C++ `CHString` "special section 0" link
-  error), `menuaccels.rc` (llvm-rc rejects ALT on a non-VIRTKEY accelerator).
+- **rostests build**: `./vibeos-cli build --arch amd64 --rostests` is green as of
+  2026-10-12 (user32_winetest's `monitor.c` compiles alone with Wine's headers first, the
+  combase winetest is off with combase itself, menuaccels' table is raw RT_ACCELERATOR data).
+  i386 and arm64 were not rebuilt with `--rostests`.
+- **apitest's SCM gate** waits 2 min on Windows for `SC_AutoStartComplete`, which Windows 11
+  does not create; harmless, but a minute or two per run.
