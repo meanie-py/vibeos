@@ -36,6 +36,21 @@ raise, debug print, Get/SetThreadContext), threads (TLS, per-thread SEH, 4 concu
 code generation incl. kernel-side writes into code, and process creation incl.
 CreateRemoteThread into a running x86-64 child.
 
+**Resume here (2026-10-12).** Everything below is landed on master (through `20b8abeb1468`), and
+the full FEX ladder was green at 1 GB: 26 guests at `0x600D`, i386 included once wow64 completed
+the loader's `int 0x2d` debug services (field manual, "Every i386 guest under FEX dies at
+`_DebugService+0x17`"). The land gate does NOT boot these guests. Before landing anything that
+touches wow64, wowx64, FEX or Mm, run the ladder by hand on `VIBEOS_FEX=1` arm64 media. Owed,
+most valuable first:
+1. Free-RAM drift: ~70 MB lost across an appstorm64 sweep, in uncharged memory (image pages,
+   cache, pool), not in commit charge. See "Memory exhaustion" below.
+2. Commit not yet charged: copy-on-write pages of image and file views, PEB/TEB pages, kernel
+   pool (`ARM3/commit.rs` header).
+3. The rest of the cnt CRT (`wcslen`, `strlen`, ...) is still unoptimised byte loops
+   ("Per-syscall cost" below).
+4. win32k callbacks cost ~2x native under FEX.
+5. An appstorm64 sweep on a quiet host, re-timed against the per-syscall numbers.
+
 They are graded where the media carries them (`tests/qemu/cli/ladder.py` `STAGED_LADDER`): they
 need build-amd64 to exist at all, so an arm64-only tree does not owe them. `hello64` (no
 imports) stays in the always-owed `LADDER`.
@@ -243,7 +258,11 @@ free; the sweep ran on past them. Owed:
   call-ret stack are reserved and committed on first touch through the frontends' OvercommitTracker,
   and rpmalloc commits the OS pages under each block as it hands it out. Peak charge on that boot
   ~160 MB -> under 32 MB. The arm64 build now runs ninja in the out-of-tree FEX builds, so a vendored
-  FEX edit reaches the image.
+  FEX edit reaches the image. Not charged yet: copy-on-write pages of image and file views,
+  PEB/TEB pages and kernel pool. The limit (available pages at init minus 1024, plus any
+  pagefile) leaves headroom for them. kmtest `ZwAllocateVirtualMemory` now accepts
+  `STATUS_COMMITMENT_LIMIT` and checks only its first 50 commit chunks, so its conformance rows
+  were re-seeded lower on purpose (the baseline files carry the note).
 - Census `STUCK` lines now carry a kernel backtrace (`[CENSUS]   bt`). On arm64 the frame-pointer
   walk past the first two frames is unreliable through Rust code. `ETHREAD.StartAddress` reads back
   garbage there (a wait-path return address, `0x7ff00000000`); that layout is owed a check.

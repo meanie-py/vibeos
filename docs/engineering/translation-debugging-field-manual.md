@@ -13111,6 +13111,21 @@ Every one of these passed smoke ×N and failed on the first physical board (Rasp
 
 ---
 
+### A kernel probe of a user address succeeds on arm64: FreeLDR's identity map of RAM is still live
+Symptom: arm64 only. A probe of a bogus user address from the System process reads real memory
+instead of faulting. ZwWaitForMultipleObjects' kmtest got STATUS_INVALID_HANDLE for its
+handle array at `0x42424242` (`ObWait.c:21`, wanted STATUS_ACCESS_VIOLATION), and it passed
+only while an earlier test in the same process committed 4 GB over that range.
+
+Cause: FreeLDR identity-maps RAM (VA == PA) in TTBR0, the user half, and the kernel tore down
+only the low 64 KB of it (`MiUnmapLowGuardArm64`). Every System-process thread could read
+physical memory through a user address.
+
+Fix: `MiUnmapLoaderIdentityRamArm64` (`ARM3/mminit.rs`), once the loader's memory is released.
+It clears every descriptor that IS the identity mapping of a RAM run (1 GB or 2 MB block, or a
+page) and leaves device ranges alone. That cleared 104,776 entries on a QEMU boot. The tell: a
+user VA below the RAM top that is valid in System but in no VAD.
+
 ### A loop-local the C leaves uninitialised can be carrying state between iterations
 **Symptom.** On arm64's FAT ramdisk, listing a directory of long-named files returned bare 8.3
 names (`FSEX30~1.TTF`), the same file two or three times, batches of one entry from a 16 KB
@@ -13945,6 +13960,20 @@ Two lessons beyond the fix:
   NtContinues back to the faulting instruction, so a handler that merely returns
   `EXCEPTION_CONTINUE_SEARCH` turns the crash into a livelock (31,511 iterations). Guard, log,
   and fix the cause.
+
+### Every i386 guest under FEX dies at `ntdll!_DebugService+0x17` with 0x80000003
+Symptom: arm64, every 32-bit guest (`LADDER_FAIL`, wanted `0x600d`) died of an unhandled
+breakpoint right after kernel32 mapped.
+
+Cause: FEX reports `int 0x2d` as a breakpoint whose `ExceptionInformation[0]` is the service
+code, with Eip already past the trailing int3. wow64's `Wow64pVeh` printed BREAKPOINT_PRINT and
+declined every service. So only calls wrapped in SEH survived: DbgPrint is wrapped, but the
+loader's `DbgLoadImageSymbols` is not. With no debugger attached, the native kernel completes
+every debug service and resumes the caller (`KdpTrap`).
+
+Fix: the VEH does the same for services 1..5 when ExceptionAddress == Eip. It sets Eax = 0,
+calls `BTCpuSetContext` and returns CONTINUE_EXECUTION. A genuine int3 (code 0, address
+Eip-1) still goes on to dispatch.
 
 ### A WoW64 thread NtContinues a native context into 32-bit compat mode
 Symptom: amd64 only. A 32-bit guest faults executing at a 32-bit address that is the LOW half

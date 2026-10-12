@@ -12,13 +12,14 @@ registry), never left to rot in an archived doc.
 | Lane (worktree/branch) | Doc |
 |---|---|
 | `fex-arm` | [fex-bringup-plan.md](fex-bringup-plan.md), [wow64-plan.md](wow64-plan.md) |
-| `conformance-ratchet` | conformance-ratchet-quest.md *(lives on the branch until it lands)* |
+| `conformance-ratchet` | [../conformance-ratchet-quest.md](../conformance-ratchet-quest.md) *(paused 2026-10-12; resume from its last progress-log entry)* |
 | `smp-bringup` | [smp-bringup-quest.md](smp-bringup-quest.md) |
 | `msvcrt-homebrew` | [msvcrt-from-pieces-plan.md](msvcrt-from-pieces-plan.md) |
 | `shell32-com` | [shell32-com-plan.md](shell32-com-plan.md) *(translation driven by Codex, not rustconv)* |
 | `warnings-burndown` | [warnings-burndown-plan.md](warnings-burndown-plan.md) *(follow-on from the closed `rust-warnings` lane)* |
 | `qemu-perf` | [qemu-perf-plan.md](qemu-perf-plan.md) *(QEMU execution layer: windows-host backend, TCG-vs-WHPX, boot concurrency)* |
-| `research` | [x64-primary-plan.md](x64-primary-plan.md) *(survey: promoting amd64 to the primary x86 arch)* |
+| `cpp-cluster` | [cpp-cluster-plan.md](cpp-cluster-plan.md) *(C++ apps via `port cppapp`; paused 2026-10-12, next is rapps)* |
+| `research` | [../winref.md](../winref.md) — the Windows 11 reference VM · [../modern-windows-compat-roadmap.md](../modern-windows-compat-roadmap.md) Rung 0 — the export-surface stubs and gap census *(paused 2026-10-12 until the weekend; both "Owed" lists are the queue)* · older: [x64-primary-plan.md](x64-primary-plan.md) |
 | `upstream-sync` | [upstream-sync-plan.md](upstream-sync-plan.md) — strategy · [upstream-sync-merge-decisions.md](upstream-sync-merge-decisions.md) — **what the merge decided, and what it owes** · [upstream-sync-phase4-review-queue.md](upstream-sync-phase4-review-queue.md) — the 194-file review queue *(ONGOING: upstream is a bug oracle, not a patch queue; the big merge landed 2026-09-20, phase 4 is the lane now)* |
 
 *Recently landed & closed:*
