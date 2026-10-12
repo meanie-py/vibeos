@@ -105,3 +105,61 @@ def test_types_the_maint_command_exactly():
 def test_refuses_to_type_what_it_cannot():
     with pytest.raises(ValueError):
         winref.keys_for("é")
+
+
+# --- the reference column -------------------------------------------------------------
+
+
+def test_staged_bin_maps_canonical_paths_and_keeps_only_bin(tmp_path):
+    manifest = (
+        "reactos/system32/ntoskrnl.exe=/tmp/vibeos/build-amd64/ntoskrnl/ntoskrnl.exe\n"
+        "reactos/bin/kmtest_.exe=/tmp/vibeos/build-amd64/modules/rostests/kmtests/kmtest_.exe\n"
+        "reactos/bin/testdata/test.ttf=/tmp/vibeos/modules/rostests/testdata/test.ttf\n"
+    )
+    got = winref.staged_bin(manifest, tmp_path)
+    assert got == {
+        "kmtest_.exe": tmp_path / "build-amd64/modules/rostests/kmtests/kmtest_.exe",
+        "testdata/test.ttf": tmp_path / "modules/rostests/testdata/test.ttf",
+    }
+
+
+def test_kmtest_order_keeps_the_guest_order_then_adds_quarantines_not_hidden():
+    listed = ["ExPools", "CmSecurity"]
+    built = {"CmSecurity", "ExPools", "IoReadWrite", "-CcCopyRead", "Abc"}
+    assert winref.kmtest_order(listed, built) == ["ExPools", "CmSecurity", "Abc", "IoReadWrite"]
+
+
+def _row(name, status="OK", fail=0, asserts=()):
+    return {"name": name, "status": status, "pass": 5, "fail": fail, "asserts": set(asserts)}
+
+
+def test_column_report_ranks_windows_clean_rows_before_shared_failures():
+    win = [
+        _row("Agree"),
+        _row("GuestBug"),
+        _row("OldExpectation", "OK", 2, {"a.c:1", "a.c:2"}),
+        _row("Quarantined"),
+    ]
+    guest = {
+        "Agree": {"status": "OK", "fail": 0},
+        "GuestBug": {"status": "OK", "fail": 3},
+        "OldExpectation": {"status": "OK", "fail": 1, "asserts": {"a.c:1"}},
+    }
+    report = winref.column_report(win, guest)
+    assert [line.split(":")[0] for line in report] == ["Quarantined", "GuestBug", "OldExpectation"]
+    assert "1 failing assertion(s) shared" in report[2]
+
+
+def test_column_report_without_a_guest_floor_is_empty_the_table_carries_it():
+    report = winref.column_report([_row("A"), _row("B", "NO-END")], {})
+    assert report == []
+
+
+def test_a_row_the_harness_could_not_run_is_not_a_windows_disagreement():
+    # The first real column: kmtest_drv.sys would not load (ERROR_PROC_NOT_FOUND), and
+    # every one of 99 rows read "the test expects something Windows 11 does not do".
+    row = {**_row("Example", "NO-END"), "errors": 1}
+    report = winref.column_report([row], {"Example": {"status": "OK", "fail": 0}})
+    assert report == ["Example: NOT RUN on Windows (NO-END, 1 harness error(s))"]
+    assert winref.not_run({**_row("X", "FAILSTART"), "errors": 0})
+    assert not winref.not_run({**_row("X", "NO-END"), "errors": 0})

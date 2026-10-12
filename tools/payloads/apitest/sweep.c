@@ -28,7 +28,32 @@
 
 ULONG __cdecl DbgPrint(const char *Format, ...);
 
-#define SAY(...) DbgPrint("[APITEST-SWEEP] " __VA_ARGS__)
+/* Every sweep line goes to the kernel debug serial and, when this process HAS a stdout,
+ * there too. In the guest (explorer's startup walk) it has none and this is DbgPrint
+ * alone. On real Windows (`vibeos-cli winref apitest`, the reference column) DbgPrint
+ * reaches nothing without a kernel debugger, so the same lines travel on stdout. */
+static void emit(const char *Format, ...)
+{
+    static HANDLE out = INVALID_HANDLE_VALUE;
+    char line[1024];
+    va_list args;
+    int n;
+    DWORD written;
+
+    va_start(args, Format);
+    n = _vsnprintf(line, sizeof(line) - 1, Format, args);
+    va_end(args);
+    if (n < 0)
+        n = sizeof(line) - 1;
+    line[n] = 0;
+    DbgPrint("%s", line);
+    if (out == INVALID_HANDLE_VALUE)
+        out = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (out && out != INVALID_HANDLE_VALUE)
+        WriteFile(out, line, (DWORD)n, &written, NULL);
+}
+
+#define SAY(...) emit("[APITEST-SWEEP] " __VA_ARGS__)
 #include "../stackdump.h"
 
 /* A TIMEOUT used to arrive with nothing but its name: errorinfo and tmarshal hung for
@@ -83,9 +108,9 @@ static void take_line(struct pump_ctx *ctx, const char *line)
     if (!ctx->Capture)
     {
         if (ctx->Label[0])
-            DbgPrint("[APITEST:%s %s] %s\n", ctx->Suite, ctx->Label, line);
+            emit("[APITEST:%s %s] %s\n", ctx->Suite, ctx->Label, line);
         else
-            DbgPrint("[APITEST:%s] %s\n", ctx->Suite, line);
+            emit("[APITEST:%s] %s\n", ctx->Suite, line);
         return;
     }
 
@@ -207,7 +232,7 @@ static void load_child_cwd(const char *bindir)
      * TEMP/TMP too. */
     SetEnvironmentVariableA("TEMP", g_child_cwd);
     SetEnvironmentVariableA("TMP", g_child_cwd);
-    DbgPrint("[APITEST-SWEEP] child cwd=TEMP=%s\n", g_child_cwd);
+    emit("[APITEST-SWEEP] child cwd=TEMP=%s\n", g_child_cwd);
 }
 
 static int run_child(const char *bindir, const char *suite, const char *arg,
@@ -234,7 +259,7 @@ static int run_child(const char *bindir, const char *suite, const char *arg,
     sa.bInheritHandle = TRUE;
     if (!CreatePipe(&rd, &wr, &sa, 0))
     {
-        DbgPrint("[APITEST-SWEEP] launch FAILED %s (CreatePipe err=%lu)\n", suite, GetLastError());
+        emit("[APITEST-SWEEP] launch FAILED %s (CreatePipe err=%lu)\n", suite, GetLastError());
         return -1;
     }
     /* The read end must NOT be inheritable, or the child holds it open and the
@@ -264,7 +289,7 @@ static int run_child(const char *bindir, const char *suite, const char *arg,
     if (!CreateProcessA(exepath, cmdline, NULL, NULL, TRUE, DETACHED_PROCESS,
                         NULL, g_child_cwd, &si, &pi))
     {
-        DbgPrint("[APITEST-SWEEP] launch FAILED %s err=%lu\n", suite, GetLastError());
+        emit("[APITEST-SWEEP] launch FAILED %s err=%lu\n", suite, GetLastError());
         CloseHandle(rd);
         CloseHandle(wr);
         if (nul != INVALID_HANDLE_VALUE)
@@ -305,19 +330,19 @@ static int run_child(const char *bindir, const char *suite, const char *arg,
      * call that is simply allowed to block. The other three are calls that are
      * ALLOWED to block, so hitting one of those is a lead, not a verdict.
      */
-    DbgPrint("[APITEST-SWEEP] spawned %s pid=%lu\n", suite, (unsigned long)pi.dwProcessId);
+    emit("[APITEST-SWEEP] spawned %s pid=%lu\n", suite, (unsigned long)pi.dwProcessId);
 
     /* Drop OUR copy of the write end or the pump blocks forever after the child
      * exits: a pipe stays open as long as any writer handle lives. */
     CloseHandle(wr);
     if (nul != INVALID_HANDLE_VALUE)
         CloseHandle(nul);
-    DbgPrint("[APITEST-SWEEP] closed  %s\n", suite);
+    emit("[APITEST-SWEEP] closed  %s\n", suite);
 
     ctx->Read = rd;
     thread = CreateThread(NULL, 0, pump, ctx, 0, NULL);
 
-    DbgPrint("[APITEST-SWEEP] waiting %s (%lums)\n", suite, (unsigned long)timeout_ms);
+    emit("[APITEST-SWEEP] waiting %s (%lums)\n", suite, (unsigned long)timeout_ms);
     wait = WaitForSingleObject(pi.hProcess, timeout_ms);
     if (wait == WAIT_TIMEOUT)
     {
@@ -376,7 +401,7 @@ static void load_skips(const char *bindir)
         ++SkipCount;
     }
     fclose(f);
-    DbgPrint("[APITEST-SWEEP] skip list: %d entr%s\n", SkipCount, SkipCount == 1 ? "y" : "ies");
+    emit("[APITEST-SWEEP] skip list: %d entr%s\n", SkipCount, SkipCount == 1 ? "y" : "ies");
 }
 
 static int is_skipped(const char *suite, const char *subtest)
@@ -403,7 +428,7 @@ static void run_one_subtest(const char *bindir, const char *suite, const char *s
     ctx.Suite = suite;
     ctx.Label = subtest;
 
-    DbgPrint("[APITEST-SWEEP] launch %s %s\n", suite, subtest);
+    emit("[APITEST-SWEEP] launch %s %s\n", suite, subtest);
     rc = run_child(bindir, suite, subtest, &ctx, PER_SUBTEST_TIMEOUT_MS);
     ++*subtests;
 
@@ -412,11 +437,11 @@ static void run_one_subtest(const char *bindir, const char *suite, const char *s
     else if (rc == -2)
     {
         ++*timeouts;
-        DbgPrint("[APITEST-SWEEP] TIMEOUT %s %s (%us) - terminated\n",
+        emit("[APITEST-SWEEP] TIMEOUT %s %s (%us) - terminated\n",
                  suite, subtest, PER_SUBTEST_TIMEOUT_MS / 1000u);
     }
     else
-        DbgPrint("[APITEST-SWEEP] exit %s %s code=%d\n", suite, subtest, rc);
+        emit("[APITEST-SWEEP] exit %s %s code=%d\n", suite, subtest, rc);
 }
 
 static void run_suite(const char *bindir, const char *suite,
@@ -435,7 +460,7 @@ static void run_suite(const char *bindir, const char *suite,
     /* Announce BEFORE running the enumeration child: a crash in here used to
      * have nothing in flight to attribute it to, so the whole sweep was a blind
      * spot between suites. */
-    DbgPrint("[APITEST-SWEEP] enumerate %s\n", suite);
+    emit("[APITEST-SWEEP] enumerate %s\n", suite);
     rc = run_child(bindir, suite, NULL, &ctx, ENUMERATE_TIMEOUT_MS);
     count = ctx.NameCount;
 
@@ -450,7 +475,7 @@ static void run_suite(const char *bindir, const char *suite,
          * "<suite> <subtest>" to any reasonable parser, and ours duly invented a
          * subtest named "during" and banked it as a conformance identity. A
          * distinct verb costs nothing and cannot be misread. */
-        DbgPrint("[APITEST-SWEEP] ENUM-TIMEOUT %s (%us)\n",
+        emit("[APITEST-SWEEP] ENUM-TIMEOUT %s (%us)\n",
                  suite, ENUMERATE_TIMEOUT_MS / 1000u);
         ++*timeouts;
         return;
@@ -461,7 +486,7 @@ static void run_suite(const char *bindir, const char *suite,
          * failed to start at all -- say so, with whatever it did print, rather
          * than silently counting it clean. An exit 255 with no output at all is
          * almost always a loader failure (missing import). */
-        DbgPrint("[APITEST-SWEEP] NOSUBTESTS %s (exit %d) first-line=%s\n",
+        emit("[APITEST-SWEEP] NOSUBTESTS %s (exit %d) first-line=%s\n",
                  suite, rc, ctx.FirstLine[0] ? ctx.FirstLine : "(no output)");
         /* A binary with ONE test (the sdk delayimp apitests: no testlist, so no
          * "Valid test names:" banner) does not list anything: it just RUNS, and
@@ -481,16 +506,16 @@ static void run_suite(const char *bindir, const char *suite,
             else if (rc == -2)
             {
                 ++*timeouts;
-                DbgPrint("[APITEST-SWEEP] TIMEOUT %s (single test, %us) - terminated\n",
+                emit("[APITEST-SWEEP] TIMEOUT %s (single test, %us) - terminated\n",
                          suite, PER_SUBTEST_TIMEOUT_MS / 1000u);
             }
             else
-                DbgPrint("[APITEST-SWEEP] exit %s (single test) code=%d\n", suite, rc);
+                emit("[APITEST-SWEEP] exit %s (single test) code=%d\n", suite, rc);
         }
         return;
     }
 
-    DbgPrint("[APITEST-SWEEP] suite %s subtests=%d\n", suite, count);
+    emit("[APITEST-SWEEP] suite %s subtests=%d\n", suite, count);
 
     /* Phase 2: one process per subtest, so a crash or a wedge costs exactly one
      * subtest rather than the rest of the suite. Same bargain the kmtest sweep
@@ -501,7 +526,7 @@ static void run_suite(const char *bindir, const char *suite,
         {
             /* Announced, never silent: a skip nobody can see is how a dead test
              * stays dead. */
-            DbgPrint("[APITEST-SWEEP] SKIP %s %s\n", suite, names[i]);
+            emit("[APITEST-SWEEP] SKIP %s %s\n", suite, names[i]);
             continue;
         }
 
@@ -509,7 +534,7 @@ static void run_suite(const char *bindir, const char *suite,
         ctx.Suite = suite;
         ctx.Label = names[i];
 
-        DbgPrint("[APITEST-SWEEP] launch %s %s\n", suite, names[i]);
+        emit("[APITEST-SWEEP] launch %s %s\n", suite, names[i]);
         rc = run_child(bindir, suite, names[i], &ctx, PER_SUBTEST_TIMEOUT_MS);
         ++*subtests;
 
@@ -518,11 +543,11 @@ static void run_suite(const char *bindir, const char *suite,
         else if (rc == -2)
         {
             ++*timeouts;
-            DbgPrint("[APITEST-SWEEP] TIMEOUT %s %s (%us) - terminated\n",
+            emit("[APITEST-SWEEP] TIMEOUT %s %s (%us) - terminated\n",
                      suite, names[i], PER_SUBTEST_TIMEOUT_MS / 1000u);
         }
         else
-            DbgPrint("[APITEST-SWEEP] exit %s %s code=%d\n", suite, names[i], rc);
+            emit("[APITEST-SWEEP] exit %s %s code=%d\n", suite, names[i], rc);
     }
     ++*launched;
 }
@@ -565,7 +590,7 @@ static void wait_for_livecd_setup(void)
     {
         if (waited >= 900)
         {
-            DbgPrint("[APITEST-SWEEP] WARN: setup.exe still running after %ds -- proceeding; "
+            emit("[APITEST-SWEEP] WARN: setup.exe still running after %ds -- proceeding; "
                      "COM registration may be incomplete\n", waited);
             return;
         }
@@ -573,7 +598,7 @@ static void wait_for_livecd_setup(void)
         waited += 5;
     }
     if (waited)
-        DbgPrint("[APITEST-SWEEP] LiveCD setup finished (waited ~%ds)\n", waited);
+        emit("[APITEST-SWEEP] LiveCD setup finished (waited ~%ds)\n", waited);
 }
 
 int main(void)
@@ -590,7 +615,7 @@ int main(void)
 
     if (!GetWindowsDirectoryA(windir, sizeof(windir)))
     {
-        DbgPrint("[APITEST-SWEEP] FATAL: GetWindowsDirectory err=%lu\n", GetLastError());
+        emit("[APITEST-SWEEP] FATAL: GetWindowsDirectory err=%lu\n", GetLastError());
         return 1;
     }
     _snprintf(bindir, sizeof(bindir), "%s\\bin", windir);
@@ -599,7 +624,7 @@ int main(void)
     f = fopen(listpath, "r");
     if (!f)
     {
-        DbgPrint("[APITEST-SWEEP] FATAL: cannot open %s\n", listpath);
+        emit("[APITEST-SWEEP] FATAL: cannot open %s\n", listpath);
         return 1;
     }
 
@@ -621,7 +646,7 @@ int main(void)
         }
         if (!ev)
         {
-            DbgPrint("[APITEST-SWEEP] WARN: SC_AutoStartComplete never appeared (arm64 services gap?) — proceeding without the gate\n");
+            emit("[APITEST-SWEEP] WARN: SC_AutoStartComplete never appeared (arm64 services gap?) — proceeding without the gate\n");
         }
         else
         {
@@ -633,9 +658,9 @@ int main(void)
             }
             CloseHandle(ev);
             if (w != WAIT_OBJECT_0)
-                DbgPrint("[APITEST-SWEEP] WARN: SCM auto-start did not complete in %ds — proceeding anyway\n", waited);
+                emit("[APITEST-SWEEP] WARN: SCM auto-start did not complete in %ds — proceeding anyway\n", waited);
             else
-                DbgPrint("[APITEST-SWEEP] SCM auto-start complete (waited ~%ds)\n", waited);
+                emit("[APITEST-SWEEP] SCM auto-start complete (waited ~%ds)\n", waited);
         }
     }
 
@@ -643,7 +668,7 @@ int main(void)
 
     load_skips(bindir);
     load_child_cwd(bindir);
-    DbgPrint("[APITEST-SWEEP] start list=%s\n", listpath);
+    emit("[APITEST-SWEEP] start list=%s\n", listpath);
 
     while (fgets(line, sizeof(line), f))
     {
@@ -658,7 +683,7 @@ int main(void)
             while ((ch = fgetc(f)) != EOF && ch != '\n') { }
             /* Loud: a silently dropped line reads as a step nobody asked for
              * (olewinetest's 150-char reg.exe step vanished at the old 128). */
-            DbgPrint("[APITEST-SWEEP] SKIP over-long list line (> %d chars): %.60s...\n",
+            emit("[APITEST-SWEEP] SKIP over-long list line (> %d chars): %.60s...\n",
                      SWEEP_LINE_MAX - 2, line);
             continue;
         }
@@ -684,7 +709,7 @@ int main(void)
     }
     fclose(f);
 
-    DbgPrint("[APITEST-SWEEP] done total=%d launched=%d subtests=%d failstart=%d timeouts=%d\n",
+    emit("[APITEST-SWEEP] done total=%d launched=%d subtests=%d failstart=%d timeouts=%d\n",
              total, launched, subtests, failstart, timeouts);
     return 0;
 }

@@ -97,14 +97,25 @@ BEGIN
     END
 END
 
-IDC_TESTAPP ACCELERATORS
+/* The accelerator table, as raw RT_ACCELERATOR (type 9) entries. The test needs ASCII keys
+ * with ALT ("1" and "D" below), which rc.exe accepts and llvm-rc refuses ("Can only apply
+ * ALT, SHIFT or CONTROL to VIRTKEY accelerators"), so the table is spelled out rather than
+ * changed. Each entry is WORD fFlags, WORD key, WORD id, WORD padding; FVIRTKEY 0x01,
+ * FNOINVERT 0x02, FALT 0x10, 0x80 marks the last entry. The source form was:
+ *     "1",        IDM_ONE,        ASCII,  ALT, NOINVERT
+ *     "2",        IDM_TWO,        VIRTKEY, ALT, NOINVERT
+ *     VK_NUMPAD3, IDM_THREE,      VIRTKEY, ALT, NOINVERT
+ *     "D",        IDM_THIRTEEN,   ASCII,  ALT, NOINVERT
+ *     "E",        IDM_FOURTEEN,   VIRTKEY, ALT, NOINVERT
+ *     "F",        IDM_FIFTEEN,    VIRTKEY, ALT, NOINVERT */
+IDC_TESTAPP 9
 BEGIN
-    "1",        IDM_ONE,        ASCII,  ALT, NOINVERT
-    "2",        IDM_TWO,        VIRTKEY, ALT, NOINVERT
-    VK_NUMPAD3, IDM_THREE,      VIRTKEY, ALT, NOINVERT
-    "D",        IDM_THIRTEEN,   ASCII,  ALT, NOINVERT
-    "E",        IDM_FOURTEEN,   VIRTKEY, ALT, NOINVERT
-    "F",        IDM_FIFTEEN,    VIRTKEY, ALT, NOINVERT
+    0x0012, 0x0031, IDM_ONE, 0,
+    0x0013, 0x0032, IDM_TWO, 0,
+    0x0013, 0x0063, IDM_THREE, 0,
+    0x0012, 0x0044, IDM_THIRTEEN, 0,
+    0x0013, 0x0045, IDM_FOURTEEN, 0,
+    0x0093, 0x0046, IDM_FIFTEEN, 0
 END
 
 STRINGTABLE

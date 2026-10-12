@@ -1,0 +1,452 @@
+# kmtest REFERENCE column: what Windows 11 itself does with each test.
+# `vibeos-cli winref kmtest --write-baseline`, build=26300.9457 edition=Professional, corpus built 2026-10-12 14:58:21, from 20261012-160422-w1aacqy3-winref-kmtest-x64.
+# Not a floor the guest must match row for row. A row failing here fails on
+# Windows 11 itself: an expectation Windows does not meet (often 2003-era
+# behaviour), a test that is timing-sensitive in a VM, or one our toolchain
+# builds differently from its author's.
+CmSecurity OK pass=912 fail=20 skip=0 exit=0
+    assert CmSecurity.c:378
+    assert CmSecurity.c:385
+    assert CmSecurity.c:392
+    assert CmSecurity.c:399
+    assert CmSecurity.c:410
+    assert CmSecurity.c:417
+    assert CmSecurity.c:424
+    assert CmSecurity.c:431
+    assert CmSecurity.c:438
+    assert CmSecurity.c:449
+    assert CmSecurity.c:84
+ExCallback OK pass=13 fail=0 skip=1 exit=0
+ExDoubleList OK pass=146 fail=0 skip=0 exit=0
+ExFastMutex OK pass=332 fail=82 skip=5 exit=0
+    assert ExFastMutex.c:100
+    assert ExFastMutex.c:102
+    assert ExFastMutex.c:104
+    assert ExFastMutex.c:108
+    assert ExFastMutex.c:111
+    assert ExFastMutex.c:113
+    assert ExFastMutex.c:120
+    assert ExFastMutex.c:124
+    assert ExFastMutex.c:126
+    assert ExFastMutex.c:131
+    assert ExFastMutex.c:485
+    assert ExFastMutex.c:55
+    assert ExFastMutex.c:57
+    assert ExFastMutex.c:59
+    assert ExFastMutex.c:76
+    assert ExFastMutex.c:78
+    assert ExFastMutex.c:94
+    assert ExFastMutex.c:96
+ExHardError OK pass=32 fail=0 skip=0 exit=0
+ExInterlocked OK pass=180 fail=0 skip=0 exit=0
+ExPools OK pass=17 fail=1 skip=0 exit=0
+    assert ExPools.c:199
+ExPushLock OK pass=1134 fail=0 skip=0 exit=0
+ExResource OK pass=870 fail=4 skip=0 exit=0
+    assert ExResource.c:670
+    assert ExResource.c:696
+ExResourceBounded OK pass=870 fail=4 skip=0 exit=0
+    assert ExResource.c:670
+    assert ExResource.c:696
+ExSequencedList OK pass=0 fail=0 skip=0 exit=0
+ExSingleList OK pass=252 fail=0 skip=0 exit=0
+ExUuid OK pass=3000 fail=0 skip=0 exit=0
+Example OK pass=31 fail=15 skip=0 exit=0
+    assert Example.c:15
+    assert Example.c:20
+    assert Example.c:21
+    assert Example.c:22
+    assert Example.c:23
+    assert Example.c:24
+    assert Example.c:25
+    assert Example.c:26
+    assert Example.c:28
+    assert Example.c:29
+    assert Example.c:30
+    assert Example.c:31
+    assert Example.c:32
+    assert Example.c:33
+    assert Example.c:34
+FsRtlDissect OK pass=288 fail=0 skip=0 exit=0
+FsRtlExpression OK pass=283 fail=0 skip=0 exit=0
+FsRtlLegal OK pass=2528 fail=0 skip=0 exit=0
+FsRtlMcb OK pass=36213 fail=0 skip=0 exit=0
+FsRtlRemoveDotsFromPath OK pass=7 fail=0 skip=0 exit=0
+FsRtlTunnel OK pass=108 fail=0 skip=0 exit=0
+HalPortIo OK pass=6 fail=0 skip=0 exit=0
+HalSystemInfo OK pass=89 fail=0 skip=0 exit=0
+IoCreateFile OK pass=121 fail=8 skip=0 exit=0
+    assert IoCreateFile.c:128
+    assert IoCreateFile.c:204
+    assert IoCreateFile.c:258
+    assert IoCreateFile.c:333
+    assert IoCreateFile_drv.c:230
+    assert IoCreateFile_user.c:29
+    assert IoCreateFile_user.c:39
+    assert IoCreateFile_user.c:41
+IoDeviceInterface OK pass=8 fail=0 skip=27 exit=0
+IoEvent OK pass=82 fail=10 skip=0 exit=0
+    assert IoEvent.c:52
+    assert IoEvent.c:68
+    assert IoEvent.c:73
+    assert IoEvent.c:78
+    assert IoEvent.c:82
+IoFilesystem OK pass=345 fail=3 skip=0 exit=0
+    assert IoFilesystem.c:563
+    assert IoFilesystem.c:603
+    assert IoFilesystem.c:658
+IoInterrupt OK pass=1 fail=1 skip=1 exit=0
+    assert IoInterrupt.c:130
+IoIrp OK pass=21 fail=1 skip=0 exit=0
+    assert IoIrp.c:89
+IoMdl OK pass=8 fail=3 skip=0 exit=0
+    assert IoMdl.c:26
+    assert IoMdl.c:47
+    assert IoMdl.c:51
+IoVolume OK pass=21 fail=1 skip=1 exit=0
+    assert IoVolume.c:54
+KdSystemDebugControl OK pass=1 fail=41 skip=0 exit=0
+    assert KdSystemDebugControl.c:110
+    assert KdSystemDebugControl.c:137
+    assert KdSystemDebugControl.c:147
+KeApc OK pass=243 fail=92 skip=0 exit=0
+    assert KeApc.c:101
+    assert KeApc.c:103
+    assert KeApc.c:105
+    assert KeApc.c:107
+    assert KeApc.c:114
+    assert KeApc.c:116
+    assert KeApc.c:122
+    assert KeApc.c:124
+    assert KeApc.c:127
+    assert KeApc.c:129
+    assert KeApc.c:131
+    assert KeApc.c:133
+    assert KeApc.c:141
+    assert KeApc.c:143
+    assert KeApc.c:145
+    assert KeApc.c:149
+    assert KeApc.c:151
+    assert KeApc.c:155
+    assert KeApc.c:157
+    assert KeApc.c:161
+    assert KeApc.c:163
+    assert KeApc.c:167
+    assert KeApc.c:169
+    assert KeApc.c:171
+    assert KeApc.c:179
+    assert KeApc.c:182
+    assert KeApc.c:184
+    assert KeApc.c:191
+    assert KeApc.c:193
+    assert KeApc.c:195
+    assert KeApc.c:197
+    assert KeApc.c:199
+    assert KeApc.c:201
+    assert KeApc.c:204
+    assert KeApc.c:206
+    assert KeApc.c:208
+    assert KeApc.c:210
+    assert KeApc.c:212
+    assert KeApc.c:214
+    assert KeApc.c:217
+    assert KeApc.c:219
+    assert KeApc.c:221
+    assert KeApc.c:223
+    assert KeApc.c:225
+    assert KeApc.c:227
+    assert KeApc.c:231
+    assert KeApc.c:233
+    assert KeApc.c:235
+    assert KeApc.c:237
+    assert KeApc.c:57
+    assert KeApc.c:61
+    assert KeApc.c:63
+    assert KeApc.c:65
+    assert KeApc.c:67
+    assert KeApc.c:69
+    assert KeApc.c:71
+    assert KeApc.c:78
+    assert KeApc.c:80
+    assert KeApc.c:82
+    assert KeApc.c:84
+    assert KeApc.c:86
+    assert KeApc.c:88
+    assert KeApc.c:92
+    assert KeApc.c:94
+    assert KeApc.c:96
+    assert KeApc.c:98
+KeDeviceQueue OK pass=45 fail=0 skip=0 exit=0
+KeDpc OK pass=13 fail=0 skip=0 exit=0
+KeEvent OK pass=27481 fail=108 skip=80 exit=0
+    assert KeEvent.c:48
+    assert KeEvent.c:52
+    assert KeEvent.c:55
+    assert KeEvent.c:58
+    assert KeEvent.c:63
+    assert KeEvent.c:66
+    assert KeEvent.c:70
+    assert KeEvent.c:75
+    assert KeEvent.c:80
+KeFloatPointState OK pass=6 fail=0 skip=0 exit=0
+KeGuardedMutex OK pass=0 fail=0 skip=1 exit=0
+KeIrql OK pass=133 fail=0 skip=0 exit=0
+KeMutex OK pass=605 fail=517 skip=0 exit=0
+    assert KeMutex.c:103
+    assert KeMutex.c:104
+    assert KeMutex.c:108
+    assert KeMutex.c:109
+    assert KeMutex.c:122
+    assert KeMutex.c:123
+    assert KeMutex.c:132
+    assert KeMutex.c:133
+    assert KeMutex.c:138
+    assert KeMutex.c:139
+    assert KeMutex.c:150
+    assert KeMutex.c:151
+    assert KeMutex.c:162
+    assert KeMutex.c:163
+    assert KeMutex.c:172
+    assert KeMutex.c:173
+    assert KeMutex.c:177
+    assert KeMutex.c:178
+    assert KeMutex.c:183
+    assert KeMutex.c:184
+    assert KeMutex.c:188
+    assert KeMutex.c:189
+    assert KeMutex.c:195
+    assert KeMutex.c:196
+    assert KeMutex.c:209
+    assert KeMutex.c:212
+    assert KeMutex.c:213
+    assert KeMutex.c:217
+    assert KeMutex.c:218
+    assert KeMutex.c:227
+    assert KeMutex.c:228
+    assert KeMutex.c:232
+    assert KeMutex.c:233
+    assert KeMutex.c:246
+    assert KeMutex.c:247
+    assert KeMutex.c:256
+    assert KeMutex.c:257
+    assert KeMutex.c:262
+    assert KeMutex.c:263
+    assert KeMutex.c:274
+    assert KeMutex.c:275
+    assert KeMutex.c:286
+    assert KeMutex.c:287
+    assert KeMutex.c:296
+    assert KeMutex.c:297
+    assert KeMutex.c:301
+    assert KeMutex.c:302
+    assert KeMutex.c:307
+    assert KeMutex.c:308
+    assert KeMutex.c:312
+    assert KeMutex.c:313
+    assert KeMutex.c:319
+    assert KeMutex.c:320
+    assert KeMutex.c:81
+    assert KeMutex.c:84
+    assert KeMutex.c:85
+    assert KeMutex.c:89
+    assert KeMutex.c:90
+    assert KeMutex.c:93
+    assert KeMutex.c:94
+KeSpinLock OK pass=451 fail=0 skip=0 exit=0
+KeTimer OK pass=49 fail=24 skip=0 exit=0
+    assert KeTimer.c:47
+MmMdl OK pass=748 fail=0 skip=0 exit=0
+MmSection OK pass=256 fail=0 skip=12 exit=0
+MmReservedMapping OK pass=84 fail=0 skip=22 exit=0
+NpfsConnect OK pass=674 fail=5 skip=0 exit=0
+    assert NpfsConnect.c:228
+    assert NpfsHelpers.c:243
+    assert NpfsHelpers.c:244
+NpfsCreate OK pass=349 fail=2 skip=0 exit=0
+    assert NpfsCreate.c:58
+    assert NpfsCreate.c:59
+NpfsFileInfo OK pass=75 fail=0 skip=0 exit=0
+NpfsReadWrite OK pass=7144 fail=16 skip=0 exit=0
+    assert NpfsHelpers.c:365
+    assert NpfsHelpers.c:366
+    assert NpfsReadWrite.c:491
+NpfsVolumeInfo OK pass=62 fail=1 skip=0 exit=0
+    assert NpfsVolumeInfo.c:92
+ObHandle OK pass=316 fail=0 skip=2 exit=0
+ObQuery OK pass=19 fail=0 skip=0 exit=0
+ObReference OK pass=1224 fail=722 skip=65 exit=0
+    assert ObReference.c:118
+    assert ObReference.c:119
+    assert ObReference.c:124
+    assert ObReference.c:125
+    assert ObReference.c:128
+    assert ObReference.c:134
+    assert ObReference.c:138
+    assert ObReference.c:180
+    assert ObReference.c:181
+    assert ObReference.c:41
+    assert ObReference.c:46
+    assert ObReference.c:52
+    assert ObReference.c:57
+    assert ObReference.c:58
+    assert ObReference.c:61
+    assert ObReference.c:62
+    assert ObReference.c:66
+    assert ObReference.c:70
+    assert ObReference.c:73
+    assert ObReference.c:74
+    assert ObReference.c:77
+    assert ObReference.c:78
+    assert ObReference.c:81
+    assert ObReference.c:82
+    assert ObReference.c:85
+    assert ObReference.c:86
+ObSecurity OK pass=694 fail=9 skip=0 exit=0
+    assert ObSecurity.c:117
+    assert ObSecurity.c:119
+    assert ObSecurity.c:189
+ObSymbolicLink OK pass=154 fail=0 skip=0 exit=0
+ObType CRASH pass=0 fail=0 skip=0
+ObTypes OK pass=0 fail=2 skip=2 exit=0
+    assert ObTypes.cpp:80
+    assert ObTypes.cpp:81
+PsNotify OK pass=22 fail=2 skip=0 exit=0
+    assert PsNotify.c:40
+    assert PsNotify.c:43
+PsQuota OK pass=12 fail=0 skip=0 exit=0
+RtlAvlTreeKM OK pass=139 fail=0 skip=0 exit=0
+RtlExceptionKM OK pass=33 fail=0 skip=0 exit=0
+RtlIntSafeKM OK pass=188 fail=0 skip=0 exit=0
+RtlIsValidOemCharacter OK pass=354 fail=0 skip=0 exit=0
+RtlMemoryKM OK pass=1084 fail=0 skip=1 exit=0
+RtlRangeList CRASH pass=0 fail=0 skip=0
+RtlRegistryKM OK pass=210 fail=0 skip=0 exit=0
+RtlSplayTreeKM OK pass=139 fail=0 skip=0 exit=0
+RtlStackKM OK pass=35 fail=11 skip=0 exit=0
+    assert RtlStack.c:100
+    assert RtlStack.c:101
+    assert RtlStack.c:111
+    assert RtlStack.c:112
+    assert RtlStack.c:113
+    assert RtlStack.c:46
+    assert RtlStack.c:47
+    assert RtlStack.c:48
+    assert RtlStack.c:56
+    assert RtlStack.c:57
+    assert RtlStack.c:99
+RtlStrSafeKM OK pass=33 fail=0 skip=0 exit=0
+RtlUnicodeStringKM OK pass=28 fail=0 skip=0 exit=0
+SeInheritance OK pass=0 fail=0 skip=1 exit=0
+SeLogonSession OK pass=4 fail=0 skip=0 exit=0
+SeQueryInfoToken OK pass=72 fail=4 skip=0 exit=0
+    assert SeQueryInfoToken.c:142
+    assert SeQueryInfoToken.c:143
+SeTokenFiltering OK pass=11 fail=0 skip=0 exit=0
+ZwAllocateVirtualMemory OK pass=363 fail=26 skip=0 exit=0
+    assert ZwAllocateVirtualMemory.c:112
+    assert ZwAllocateVirtualMemory.c:118
+    assert ZwAllocateVirtualMemory.c:123
+    assert ZwAllocateVirtualMemory.c:126
+    assert ZwAllocateVirtualMemory.c:127
+    assert ZwAllocateVirtualMemory.c:128
+    assert ZwAllocateVirtualMemory.c:134
+    assert ZwAllocateVirtualMemory.c:136
+    assert ZwAllocateVirtualMemory.c:138
+    assert ZwAllocateVirtualMemory.c:141
+    assert ZwAllocateVirtualMemory.c:142
+    assert ZwAllocateVirtualMemory.c:143
+    assert ZwAllocateVirtualMemory.c:144
+    assert ZwAllocateVirtualMemory.c:145
+    assert ZwAllocateVirtualMemory.c:148
+    assert ZwAllocateVirtualMemory.c:149
+    assert ZwAllocateVirtualMemory.c:150
+    assert ZwAllocateVirtualMemory.c:158
+    assert ZwAllocateVirtualMemory.c:512
+    assert ZwAllocateVirtualMemory.c:520
+ZwCreateSection OK pass=287 fail=1 skip=0 exit=0
+    assert ZwCreateSection.c:440
+ZwMapViewOfSection OK pass=134 fail=0 skip=0 exit=0
+ZwWaitForMultipleObjects OK pass=4 fail=0 skip=0 exit=0
+RtlCaptureContextKM OK pass=273 fail=0 skip=0 exit=0
+FileAttributes OK pass=83 fail=1 skip=0 exit=0
+    assert kernel32_drv.c:219
+FindFile OK pass=253 fail=0 skip=0 exit=0
+HidPDescription OK pass=52 fail=0 skip=0 exit=0
+IoDeviceObject OK pass=186 fail=2 skip=0 exit=0
+    assert IoDeviceObject_drv.c:196
+    assert IoDeviceObject_drv.c:205
+IoReadWrite OK pass=14477 fail=1086 skip=0 exit=0
+    assert IoReadWrite_user.c:104
+    assert IoReadWrite_user.c:115
+    assert IoReadWrite_user.c:116
+    assert IoReadWrite_user.c:117
+    assert IoReadWrite_user.c:147
+    assert IoReadWrite_user.c:148
+    assert IoReadWrite_user.c:149
+    assert IoReadWrite_user.c:213
+    assert IoReadWrite_user.c:214
+    assert IoReadWrite_user.c:215
+    assert IoReadWrite_user.c:263
+    assert IoReadWrite_user.c:264
+    assert IoReadWrite_user.c:265
+    assert IoReadWrite_user.c:292
+    assert IoReadWrite_user.c:293
+    assert IoReadWrite_user.c:294
+    assert IoReadWrite_user.c:51
+    assert IoReadWrite_user.c:62
+    assert IoReadWrite_user.c:63
+    assert IoReadWrite_user.c:64
+MmMapLockedPagesSpecifyCache OK pass=16731 fail=14 skip=0 exit=0
+    assert MmMapLockedPagesSpecifyCache_drv.c:190
+    assert MmMapLockedPagesSpecifyCache_drv.c:197
+    assert MmMapLockedPagesSpecifyCache_user.c:103
+    assert MmMapLockedPagesSpecifyCache_user.c:114
+    assert MmMapLockedPagesSpecifyCache_user.c:127
+    assert MmMapLockedPagesSpecifyCache_user.c:138
+    assert MmMapLockedPagesSpecifyCache_user.c:151
+    assert MmMapLockedPagesSpecifyCache_user.c:162
+    assert MmMapLockedPagesSpecifyCache_user.c:175
+    assert MmMapLockedPagesSpecifyCache_user.c:186
+    assert MmMapLockedPagesSpecifyCache_user.c:199
+    assert MmMapLockedPagesSpecifyCache_user.c:210
+    assert MmMapLockedPagesSpecifyCache_user.c:224
+    assert MmMapLockedPagesSpecifyCache_user.c:261
+NtCreateSection OK pass=286 fail=0 skip=0 exit=0
+NtSystemDebugControl OK pass=39 fail=3 skip=0 exit=0
+    assert NtSystemDebugControl.c:131
+    assert NtSystemDebugControl.c:238
+    assert NtSystemDebugControl.c:269
+PoIrp OK pass=0 fail=0 skip=1 exit=0
+RtlAvlTree OK pass=139 fail=0 skip=0 exit=0
+RtlException OK pass=34 fail=0 skip=0 exit=0
+RtlIntSafe OK pass=188 fail=0 skip=0 exit=0
+RtlMemory OK pass=1081 fail=0 skip=1 exit=0
+RtlRegistry OK pass=210 fail=0 skip=0 exit=0
+RtlSplayTree OK pass=139 fail=0 skip=0 exit=0
+RtlStack OK pass=35 fail=11 skip=0 exit=0
+    assert RtlStack.c:100
+    assert RtlStack.c:101
+    assert RtlStack.c:111
+    assert RtlStack.c:112
+    assert RtlStack.c:113
+    assert RtlStack.c:46
+    assert RtlStack.c:47
+    assert RtlStack.c:48
+    assert RtlStack.c:56
+    assert RtlStack.c:57
+    assert RtlStack.c:99
+RtlStrSafe OK pass=33 fail=0 skip=0 exit=0
+RtlUnicodeString OK pass=77 fail=0 skip=0 exit=0
+TcpIpTdi OK pass=47 fail=12 skip=0 exit=0
+    assert tdi.c:170
+    assert tdi.c:258
+    assert tdi.c:259
+    assert tdi.c:261
+    assert tdi.c:262
+TcpIpConnect OK pass=33 fail=5 skip=0 exit=0
+    assert connect.c:233
+    assert connect.c:234
+    assert connect.c:235
+    assert connect.c:236
+    assert connect.c:237
+RtlCaptureContextUM OK pass=275 fail=0 skip=0 exit=0

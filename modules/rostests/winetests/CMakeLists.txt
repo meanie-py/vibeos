@@ -12,7 +12,9 @@ add_subdirectory(bcrypt)
 add_subdirectory(browseui)
 add_subdirectory(cabinet)
 add_subdirectory(cmd)
-add_subdirectory(combase)
+# combase is not built (dll/win32/CMakeLists.txt: upstream's combase/coml2 split is
+# declined), so there is no libcombase for its winetest to import.
+#add_subdirectory(combase)
 add_subdirectory(comcat)
 add_subdirectory(comctl32)
 add_subdirectory(comdlg32)

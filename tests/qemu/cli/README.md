@@ -984,7 +984,7 @@ shim — same reason it skips arm64). The **net suite also runs on windows-host*
 server via a chardev. So a WSL2-no-KVM user on windows-host gets the full smoke — boot North Star
 *and* the folded netstack suite.
 
-### `winref {install|run|maint|snapshot|restore|logs|status}` — real Windows 11 as the oracle
+### `winref {install|run|kmtest|apitest|maint|snapshot|restore|logs|status}` — real Windows 11 as the oracle
 
 A Windows 11 VM on the **Windows host's** QEMU: a test built by our toolchain runs here
 first, and what real Windows does is the expected result (the conformance oracle for the
@@ -997,7 +997,21 @@ Win10/11 surface; design and gotchas in `docs/engineering/winref.md`). Images li
 ./vibeos-cli winref maint qemu/winref/maint-runner.ps1 --accel whpx   # change the BASE, ~1 min
 ./vibeos-cli winref snapshot <name> | restore <name>    # full copies; post-install is pristine
 ./vibeos-cli winref logs                                # Setup logs + C:\winref off a STOPPED disk
+./vibeos-cli winref kmtest  --accel whpx [--write-baseline]   # the kmtest corpus on Windows 11
+./vibeos-cli winref apitest --accel whpx [--write-baseline]   # the apitest corpus, ~5.5 min
+./vibeos-cli winref apitest --regrade <run-dir>               # re-grade a finished run, no VM
 ```
+
+`kmtest`/`apitest` are the conformance ratchet's **reference column**: the guest's own
+binaries from this tree's `build-amd64` (`build --arch amd64 --kmtests --apitests
+--no-wow64-stage`), the guest's markers, the guest's parser. They write `<suite>.txt` (the
+ratchet's row format), `column.txt` (where Windows and the amd64 guest floor disagree:
+guest bugs first, then tests whose expectation Windows 11 does not meet), and with
+`--write-baseline` `tools/conformance-baseline/win11-amd64/<suite>.txt`. A row the harness
+could not run (a driver or suite Windows will not load, a test the VM died under twice) is
+NOT RUN, never a result; a run where NOTHING ran fails. kmtest drivers are test-signed in
+the VM per run, and a kmtest sweep survives a Windows bugcheck and a lost VM (it resumes
+from `C:\winref\kmtest-progress.txt` on the same overlay). Runs can go in parallel.
 
 `run` writes `output.txt` (the payload's stdout) and `guest-console.log`; `summary.json`
 carries `windows` (build), `payload_exit` and `output_lines`. Install under TCG (WHPX dies

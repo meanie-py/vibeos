@@ -21,7 +21,8 @@ $src = Split-Path -Parent $MyInvocation.MyCommand.Path
 Copy-Item (Join-Path $src '*') C:\winref -Recurse -Force
 Say 'copied runner to C:\winref'
 
-# Unsigned test drivers (ported kmtests, new kernel-API tests) must load. Requires Secure
+# Test drivers (kmtests, new kernel-API tests) must load. On x64 this admits TEST-SIGNED
+# drivers, not unsigned ones: a payload signs its own (kmtest-sweep.ps1). Requires Secure
 # Boot off, which the launcher's non-secure firmware guarantees.
 bcdedit /set testsigning on | Out-Null
 Say "testsigning: exit=$LASTEXITCODE"

@@ -19,12 +19,36 @@ __declspec(dllimport) void __stdcall KeLowerIrql(unsigned char);
 #define NDEBUG
 #include <debug.h>
 
+#ifdef _M_AMD64
+/* Windows x64's ntoskrnl does not export KeRaiseIrqlToSynchLevel: the WDK makes it an
+ * inline KfRaiseIrql(SYNCH_LEVEL). Ours exports it (xdk/amd64/ke.h says why), and a static
+ * import of it kept the whole of kmtest_drv.sys off real Windows -- StartService failed
+ * with ERROR_PROC_NOT_FOUND and not one kmtest ran (`vibeos-cli winref kmtest`,
+ * 2026-10-12). So resolve it at run time, at PASSIVE_LEVEL, and when it is absent do what
+ * the WDK inline does. */
+static KIRQL (NTAPI *ExportedRaiseToSynch)(VOID);
+static KIRQL TestRaiseIrqlToSynchLevel(KIRQL SynchIrql)
+{
+    if (ExportedRaiseToSynch)
+        return ExportedRaiseToSynch();
+    return KfRaiseIrql(SynchIrql);
+}
+#define KeRaiseIrqlToSynchLevel() TestRaiseIrqlToSynchLevel(SynchIrql)
+#endif
+
 START_TEST(KeIrql)
 {
     KIRQL Irql, Irql2, PrevIrql, SynchIrql;
 
     /* we should be called at PASSIVE_LEVEL */
     ok_irql(PASSIVE_LEVEL);
+
+#ifdef _M_AMD64
+    {
+        UNICODE_STRING Name = RTL_CONSTANT_STRING(L"KeRaiseIrqlToSynchLevel");
+        ExportedRaiseToSynch = (KIRQL (NTAPI *)(VOID))MmGetSystemRoutineAddress(&Name);
+    }
+#endif
 
     PrevIrql = KeGetCurrentIrql();
 

@@ -9163,6 +9163,41 @@ def test_a_cpp_kmtest_keeps_its_assertion_identities():
     }
 
 
+def test_every_bugcheck_crashes_its_own_test_when_the_sweep_carries_on():
+    """The Windows reference sweep (`winref kmtest`) reboots after a bugcheck and goes
+    on; only the first bugcheck used to mark its test, so a second crashing test was a
+    status-less row."""
+    P = _parser()
+    log = "\n".join(
+        [
+            "[KMTEST-SWEEP] launch A",
+            "*** BUGCHECK: 0x3B (Windows rebooted under A)",
+            "[KMTEST-SWEEP] launch B",
+            "*** BUGCHECK: 0x50 (Windows rebooted under B)",
+            "[KMTEST-SWEEP] done total=2",
+        ]
+    )
+    results, _, bugcheck = P.parse(log)
+    assert [(r["name"], r["status"]) for r in results] == [("A", "CRASH"), ("B", "CRASH")]
+    assert bugcheck == "0x3B"
+
+
+def test_a_relaunched_test_without_an_exit_is_incomplete_not_statusless():
+    P = _parser()
+    log = "\n".join(
+        [
+            "[KMTEST-SWEEP] launch A",
+            "[KMTEST-SWEEP] VM-LOST A (the VM died under it twice)",
+            "[KMTEST-SWEEP] launch B",
+            "[KMTEST:BEGIN B]",
+            "[KMTEST:END B pass=1 fail=0 skip=0]",
+            "[KMTEST-SWEEP] exit B code=0",
+        ]
+    )
+    results, _, _ = P.parse(log)
+    assert [(r["name"], r["status"]) for r in results] == [("A", "INCOMPLETE"), ("B", "OK")]
+
+
 def _round_trip(P, text):
     import tempfile
 

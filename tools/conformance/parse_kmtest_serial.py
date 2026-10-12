@@ -191,6 +191,11 @@ def parse(log_text):
                     current["status"] = "INCOMPLETE"
                 m = b
         if m:
+            if current and current["status"] is None:
+                # Launched again, or the next test launched, with no exit marker for this
+                # one: the record is open and stays unknown, not a status-less row. (The
+                # Windows reference sweep re-runs a test the VM died under.)
+                current["status"] = "INCOMPLETE"
             current = {
                 "name": m.group(1),
                 "status": None,
@@ -267,8 +272,12 @@ def parse(log_text):
             # after DONE, so this is a no-op there.
             break
         m = BUGCHECK.search(line)
-        if m and bugcheck is None:
-            bugcheck = m.group(1)
+        if m:
+            # A guest bugcheck ends the sweep, so there is one; the Windows reference
+            # sweep reboots and carries on, so every bugcheck crashes ITS in-flight test.
+            # The summary keeps the first.
+            if bugcheck is None:
+                bugcheck = m.group(1)
             if current and current["status"] is None:
                 current["status"] = "CRASH"
                 current = None
