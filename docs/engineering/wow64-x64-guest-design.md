@@ -228,9 +228,22 @@ free; the sweep ran on past them. Owed:
 - **explorer wedged afterwards** on a win32k-space gate whose holder never signalled (also in
   `20261010-054207-p5m0hi2a`). Something died or failed holding it. The 2 s user-lock hold trace
   cannot see it, because it reports at RELEASE.
-- **The real fix is commit accounting.** `MmTotalCommittedPages` is never updated (as upstream) and
-  `MmTotalCommitLimit` is never checked, so user commits can exhaust physical memory outright instead
-  of failing at allocation. Not started: it touches every commit site on every arch.
+- **Commit accounting: done 2026-10-11, and it was not the fix for this drift.** The bullet that
+  stood here said `MmTotalCommittedPages` was never updated; it was, but as pages IN USE (balance.c's
+  consumers), and nothing checked the limit. It is now the commit charge (`ARM3/commit.rs`), checked
+  at every private, reserve-and-commit and pagefile-section commit, returned on decommit, release,
+  segment delete and process teardown, and reported to `GlobalMemoryStatus` and taskmgr. On a 2 GB
+  sweep the charge sat at 154 MB after every one of 50 apps while free memory fell 1035 -> 966 MB:
+  the drift is in UNCHARGED memory (image pages, cache, pool), still owed.
+  Strict accounting then broke the FEX guests. A 1 GB FEX boot has ~161 MB of commit limit (the
+  ~714 MB ramdisk is resident), and each FEX process committed ~160 MB it never touched: 16 MB code
+  buffers, 4 MB call-ret stacks recommitted at every zeroing, and rpmalloc committing whole 4 MB and
+  64 MB pages per malloc. Refused, FEX dereferenced the null and died (`file32`, `appstorm`). Fixed
+  in vendored FEX (`vendor-patches/fex.md`, "commit-on-touch"): FEXCore's own allocations and the
+  call-ret stack are reserved and committed on first touch through the frontends' OvercommitTracker,
+  and rpmalloc commits the OS pages under each block as it hands it out. Peak charge on that boot
+  ~160 MB -> under 32 MB. The arm64 build now runs ninja in the out-of-tree FEX builds, so a vendored
+  FEX edit reaches the image.
 - Census `STUCK` lines now carry a kernel backtrace (`[CENSUS]   bt`). On arm64 the frame-pointer
   walk past the first two frames is unreliable through Rust code. `ETHREAD.StartAddress` reads back
   garbage there (a wait-path return address, `0x7ff00000000`); that layout is owed a check.

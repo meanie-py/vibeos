@@ -13559,6 +13559,21 @@ address, so "no page faults twice in a process" is a free end-to-end check of th
 And when a guest "never reports", read the serial *after* the harness stopped draining — a
 guest still making syscalls was cut off, not killed.
 
+### FEX guests die at start with `[MM] commit limit: refused`: FEX commits what it never touches
+**Symptom.** On a small arm64 VM, emulated processes die seconds after start with an access
+violation in CPU-layer code (`host exception c0000005 ... not the guest's`), right after a
+`[MM] commit limit: refused N pages` line; native processes are fine.
+**Cause.** The kernel charges every commit against `MmTotalCommitLimit` with no pagefile behind
+it (`ARM3/commit.rs`), and a ramdisk boot leaves little: ~161 MB at 1 GB. Upstream FEX commits
+eagerly, as is free on Windows with a pagefile: 16 MB code buffers, a 4 MB call-ret stack per
+thread recommitted at every zeroing, and its malloc (rpmalloc) whole 4 MB / 64 MB pages for one
+allocation. ~160 MB a process, almost none touched. FEX does not check the refused allocation.
+**Fix.** In vendored FEX (`vendor-patches/fex.md`, commit-on-touch): FEXCore's allocations and
+the call-ret stack are reserved and committed on first touch by the frontends'
+`OvercommitTracker`; rpmalloc commits the OS pages under each block as it hands it out (malloc'd
+memory reaches the kernel, which cannot take a commit-on-touch fault). Read live charge, not
+per-process sums of charges: zeroing and heap churn recommit the same pages over and over.
+
 ### An emulated app hangs in `ExitProcess`: a CPU-layer lock orphaned by `NtTerminateProcess(NULL)`
 
 **Symptom.** An x86-64 guest opens its window and then never exits once closed (appstorm

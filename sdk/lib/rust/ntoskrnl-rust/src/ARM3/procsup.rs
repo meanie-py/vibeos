@@ -1239,6 +1239,10 @@ pub unsafe extern "system" fn MmCleanProcessAddressSpace(Process: PEPROCESS) {
 
     MiUnlockProcessWorkingSetUnsafe(Process, Thread);
 
+    // Every VAD is gone, so is every page its commit charge stood for: the rest of
+    // the process's ledger goes back in one go, whichever path removed each VAD.
+    super::commit::MiReturnProcessCommitment(Process as _);
+
     MmUnlockAddressSpace(core::ptr::addr_of_mut!((*(Process as *mut _EPROCESS)).Vm));
 }
 

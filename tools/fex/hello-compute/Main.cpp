@@ -33,6 +33,10 @@
 #include <DummyHandlers.h>
 #include <Common/HostFeatures.h>
 #include <Common/CPUFeatures.h>
+#include <FEXCore/Utils/AllocatorHooks.h>
+#include <FEXCore/Utils/TypeDefines.h>
+
+#include <optional>
 
 #include <cstdint>
 #include <cstring>
@@ -40,6 +44,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <winternl.h> // NTSTATUS WINAPIV DbgPrint(LPCSTR, ...) — vibeos routes to PL011 serial
+#include <Common/OvercommitTracker.h> // after the Windows headers it leans on
 
 namespace {
 // Global-ctor tripwire: runs during CRT init, BEFORE main. If [FEX-HELLO-CTOR]
@@ -74,6 +79,11 @@ constexpr size_t GuestSyscallInstSize = 2;
 FEXCore::Context::Context* g_CTX;
 FEXCore::Core::InternalThreadState* g_Thread;
 FEXCore::SignalDelegator* g_SignalDelegator;
+// Commit on touch, as the real frontends do (WOW64/Module.cpp, wowx64fex): FEX's committed
+// allocations and its lookup cache are reserved, and a fault commits the page. The vibeos
+// kernel charges commit against a limit with no pagefile behind it, so committing the
+// 272 MB lookup cache eagerly (what this harness used to do) is refused at 1 GB.
+std::optional<FEX::Windows::OvercommitTracker> g_Overcommit;
 uint64_t g_GuestRIPBase;
 int g_GuestFaultsHandled;
 int g_GuestSyscalls;
@@ -117,10 +127,12 @@ public:
   }
 
   void MarkOvercommitRange(uint64_t Start, uint64_t Length) override {
-    void* Ret = VirtualAlloc(reinterpret_cast<void*>(Start), Length, MEM_COMMIT, PAGE_READWRITE);
-    DbgPrint("[FEX-HELLO] overcommit range %p +0x%llx -> commit %s\n", (void*)Start, (unsigned long long)Length, Ret ? "OK" : "FAILED");
+    g_Overcommit->MarkRange(Start, Length);
+    DbgPrint("[FEX-HELLO] overcommit range %p +0x%llx -> committed on touch\n", (void*)Start, (unsigned long long)Length);
   }
-  void UnmarkOvercommitRange(uint64_t Start, uint64_t Length) override {}
+  void UnmarkOvercommitRange(uint64_t Start, uint64_t Length) override {
+    g_Overcommit->UnmarkRange(Start, Length);
+  }
 };
 
 // First-chance VEH crash dumper. The rung-2 faults land inside FEXCore's
@@ -131,6 +143,12 @@ public:
 LONG WINAPI ProbeVeh(EXCEPTION_POINTERS* Info) {
   const auto* Rec = Info->ExceptionRecord;
   auto* Ctx = Info->ContextRecord;
+
+  // A first touch of reserved FEX memory: commit the page and retry.
+  if (Rec->ExceptionCode == EXCEPTION_ACCESS_VIOLATION && Rec->NumberParameters > 1 && g_Overcommit &&
+      g_Overcommit->HandleAccessViolation(Rec->ExceptionInformation[1])) {
+    return EXCEPTION_CONTINUE_EXECUTION;
+  }
 
   // Rung 3: a guest-code AV surfaces as a host AV with PC inside FEX's JIT code
   // buffer. Reconstruct the guest state exactly as wow64fex's
@@ -209,6 +227,14 @@ extern "C" int main(int /*argc*/, char** /*argv*/) {
              (unsigned long long)Ctr);
   }
 
+  g_Overcommit.emplace(false);
+  FEXCore::Allocator::LazyCommitTrack = [](void* Base, size_t Size, bool Mark) {
+    if (Mark) {
+      g_Overcommit->MarkRange(reinterpret_cast<uint64_t>(Base), Size);
+    } else {
+      g_Overcommit->UnmarkRange(reinterpret_cast<uint64_t>(Base), Size);
+    }
+  };
   AddVectoredExceptionHandler(1, ProbeVeh);
 
   // 64-bit guest.

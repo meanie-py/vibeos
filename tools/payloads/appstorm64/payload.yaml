@@ -54,6 +54,8 @@ binaries:
 #   rosbrand    shell32's About-box branding, named by a string literal in shell32
 #   dpwsockx    dxdiag's DirectPlay provider
 #   batt bthci  device-class property pages devmgmt loads from the class keys
+#   msvfw32     comctl32's animation control (SysAnimate32) decodes its AVI through it;
+#               refused, cleanmgr's progress dialog never created and cleanmgr waited forever
 # wowx64 logs every module it refuses an x86-64 guest ("a foreign-machine DLL in system32:
 # NOT FOUND"); that is how each of these was found. winmm's Drivers32 set is derived by
 # tools/fex/wow64-closure.py instead.
@@ -83,6 +85,7 @@ guest_sets:
       - base/applications/msconfig/msconfig.exe
       - base/applications/dxdiag/dxdiag.exe
       - base/applications/rapps/rapps.exe
+      - base/applications/cleanmgr/cleanmgr/cleanmgr.exe
       - base/applications/mplay32/mplay32.exe
       - base/applications/sndrec32/sndrec32.exe
       - base/shell/explorer/explorer.exe
@@ -115,6 +118,7 @@ guest_sets:
       - dll/directx/wine/dpwsockx/dpwsockx.dll
       - dll/win32/batt/batt.dll
       - dll/win32/bthci/bthci.dll
+      - dll/win32/msvfw32/msvfw32.dll
 
 test:
   launch_marker: "[APPSTORM] done"
