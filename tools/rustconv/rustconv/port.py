@@ -3686,7 +3686,10 @@ def stage_integrate(stem: str) -> None:
         aliases = _option_fn_aliases(path)
         if aliases:
             changed += 1
-            print(f"integrate: {path.stem}: nullable fn-pointer typedef(s) as Option: {', '.join(aliases)}")
+            print(
+                f"integrate: {path.stem}: nullable fn-pointer typedef(s) as Option: "
+                f"{', '.join(aliases)}"
+            )
         iob = _iob_streams(path)
         if iob:
             changed += 1
@@ -3700,13 +3703,17 @@ def stage_integrate(stem: str) -> None:
                     f"{', '.join(unexported)}"
                 )
         c_file = REPO / state["module_dir"] / f"{path.stem}.c"
-        source = c_file if c_file.is_file() else next(
-            (
-                REPO / t
-                for t in state.get("cpp_tus") or []
-                if Path(t).name.replace(".", "_") + "_h" == path.stem
-            ),
-            None,
+        source = (
+            c_file
+            if c_file.is_file()
+            else next(
+                (
+                    REPO / t
+                    for t in state.get("cpp_tus") or []
+                    if Path(t).name.replace(".", "_") + "_h" == path.stem
+                ),
+                None,
+            )
         )
         if source is not None:
             linked = _aw_extern_link_names(path, source)

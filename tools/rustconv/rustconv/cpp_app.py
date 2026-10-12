@@ -775,6 +775,7 @@ def _com_vtable(cls: ClassModel, k: int, iface: str, h: Hierarchy) -> list[str]:
     that turns `This` (the interface subobject) back into the object -- C++'s adjustor."""
     n = cls.name
     entries, thunks = [], []
+
     def pick(methods: list) -> Method | None:
         # Overloads across interfaces (mmc_new's CConsoleWnd: IConsole2::Expand(item, bExpand)
         # beside IConsoleNameSpace2::Expand(item)): the slot's arity chooses.

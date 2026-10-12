@@ -322,8 +322,14 @@ def test_a_com_slot_takes_the_overload_with_its_arity():
     c.bases = [Base("IA", "public"), Base("IB", "public")]
     for params in ([("h", "HSCOPEITEM"), ("b", "BOOL")], [("h", "HSCOPEITEM")]):
         c.methods.append(
-            _m("Expand", params=params, ret="HRESULT", virtual=True, body=("w.h", 0, 1),
-               lowered="{ return 0; }")
+            _m(
+                "Expand",
+                params=params,
+                ret="HRESULT",
+                virtual=True,
+                body=("w.h", 0, 1),
+                lowered="{ return 0; }",
+            )
         )
     _assign_names(c)
     m = ModuleModel()
@@ -1092,7 +1098,6 @@ def test_a_reference_member_of_an_aggregate_static_takes_the_address():
     assert rs is not None
     assert "m_guid: core::ptr::addr_of!(GUID_MODEBIAS_NONE) as _" in rs
     assert "m_dwBias: (0) as _" in rs
-
 
 
 def test_a_constructor_parameter_named_like_a_rust_keyword_is_escaped():

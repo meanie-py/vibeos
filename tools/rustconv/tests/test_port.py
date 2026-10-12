@@ -956,8 +956,8 @@ def test_a_cxx_overload_of_a_crt_name_is_not_exported(tmp_path):
     )
     assert port._cxx_unexport_crt_overloads(f) == ["abort"]
     text = f.read_text()
-    assert "#[no_mangle]\npub unsafe extern \"C\" fn abort" not in text
-    assert "#[no_mangle]\npub unsafe extern \"C\" fn PrintBugreport" in text
+    assert '#[no_mangle]\npub unsafe extern "C" fn abort' not in text
+    assert '#[no_mangle]\npub unsafe extern "C" fn PrintBugreport' in text
 
 
 def test_iob_stream_indexing_becomes_the_crt_accessor(tmp_path):
@@ -1000,7 +1000,9 @@ def test_an_sdk_aliased_import_links_the_real_symbol(tmp_path, monkeypatch):
     from rustconv import macro_authority, port
 
     monkeypatch.setattr(
-        macro_authority, "identifier_aliases", lambda repo, src: {"DefMDIChildProc": "DefMDIChildProcW"}
+        macro_authority,
+        "identifier_aliases",
+        lambda repo, src: {"DefMDIChildProc": "DefMDIChildProcW"},
     )
     f = tmp_path / "CConsoleWnd_cpp_h.rs"
     f.write_text(
@@ -1017,11 +1019,14 @@ def test_an_sdk_aliased_import_links_the_real_symbol(tmp_path, monkeypatch):
     assert "    fn GetTickCount() -> DWORD;" in text
     assert port._aw_extern_link_names(f, tmp_path / "CConsoleWnd.cpp") == []  # idempotent
 
+
 def test_gen_arm_write_is_locked_and_atomic(tmp_path, monkeypatch):
     # Three integration agents re-derived concurrently; a running bash read a half-rewritten
     # gen_driver_types.sh. The writer re-reads under a lock and swaps the inode.
     gen = tmp_path / "gen_driver_types.sh"
-    gen.write_text('case "$1" in\n  a)\n    X=1\n    ;;\n  *) echo "unknown driver $1"; exit 1 ;;\nesac\n')
+    gen.write_text(
+        'case "$1" in\n  a)\n    X=1\n    ;;\n  *) echo "unknown driver $1"; exit 1 ;;\nesac\n'
+    )
     monkeypatch.setattr(port, "GEN", gen)
     ino = gen.stat().st_ino
     port._write_gen_arm("  b)\n    Y=2\n    ;;\n", "b")
@@ -1128,7 +1133,9 @@ def test_a_hand_fixed_twin_keeps_its_trampoline(tmp_path):
     twin = 'pub unsafe extern "C" fn PrintMessage_v(f: LPCWSTR, ap_list: *mut c_void) -> DWORD {}'
     plain = 'pub unsafe extern "C" fn NdisWriteErrorLogEntry(h: PVOID, c: ULONG) {}'
     (tmp_path / "a.json").write_text(json.dumps({"name": "PrintMessage_v", "text": twin}))
-    (tmp_path / "b.json").write_text(json.dumps({"name": "NdisWriteErrorLogEntry_v", "text": plain}))
+    (tmp_path / "b.json").write_text(
+        json.dumps({"name": "NdisWriteErrorLogEntry_v", "text": plain})
+    )
     assert port._hand_replaced_twins(tmp_path) == {"NdisWriteErrorLogEntry_v"}
 
 

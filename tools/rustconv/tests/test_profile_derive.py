@@ -809,7 +809,10 @@ def test_cpp_module_scaffold_wires_atl_rust(tmp_path):
     scaffold_crate(derive(_mod(tmp_path), root), out)
     assert 'atlclasses-rust = { path = "../atlclasses-rust" }' in (out / "Cargo.toml").read_text()
     prelude = (out / "src/prelude.rs").read_text()
-    assert "pub use atl_rust::{atl_format," in prelude and "CStringW, POSITION, _AtlBaseModule}" in prelude
+    assert (
+        "pub use atl_rust::{atl_format," in prelude
+        and "CStringW, POSITION, _AtlBaseModule}" in prelude
+    )
 
 
 def test_scaffold_refuses_to_clobber(tmp_path):

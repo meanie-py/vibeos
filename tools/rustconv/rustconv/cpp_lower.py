@@ -74,7 +74,9 @@ def unicode_text_macros(text: str) -> str:
 
 
 _STR_LIT = re.compile(r'(?:\bL)?"(?:[^"\\\n]|\\.)*"')
-_STRING_DEFINE = re.compile(r'^[ \t]*#[ \t]*define[ \t]+(\w+)[ \t]+((?:L)?"(?:[^"\\\n]|\\.)*")[ \t]*$', re.M)
+_STRING_DEFINE = re.compile(
+    r'^[ \t]*#[ \t]*define[ \t]+(\w+)[ \t]+((?:L)?"(?:[^"\\\n]|\\.)*")[ \t]*$', re.M
+)
 
 
 def string_macros(sources: list[str]) -> dict[str, str]:
@@ -100,12 +102,10 @@ def concat_string_macros(text: str, macros: dict[str, str]) -> str:
     unit = re.compile(rf"(?:{lit}|\b(?:{names})\b)(?:\s*(?:{lit}|\b(?:{names})\b))+")
 
     def fold(m: re.Match) -> str:
-        parts: list[str] = [
-            p.group(0) for p in re.finditer(rf"{lit}|\b(?:{names})\b", m.group(0))
-        ]
+        parts: list[str] = [p.group(0) for p in re.finditer(rf"{lit}|\b(?:{names})\b", m.group(0))]
         if not any(p.endswith('"') for p in parts):
             return m.group(0)  # macro beside macro with no literal: not this hazard
-        lits: list[str] = [macros[p] if p in macros else p for p in parts]
+        lits: list[str] = [macros.get(p, p) for p in parts]
         wide = any(x.startswith("L") for x in lits)
         bodies = [x[x.index('"') + 1 : -1] for x in lits]
         for left in bodies[:-1]:

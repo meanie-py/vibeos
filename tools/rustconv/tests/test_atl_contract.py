@@ -33,7 +33,7 @@ def test_stl_spellings_bring_the_stl_shim_api_and_mapping():
     """drwtsn32's `std::wstring` / `std::vector` bodies get atl_rust::stl's API."""
     used = atl_contract.types_used("std::wstring p; std::vector<ModuleData> v;")
     assert used == ["StdBasicString", "StdVector"]
-    block = atl_contract.contract("std::string::size_type pos = s.find_last_of(L\"\\\\/\");")
+    block = atl_contract.contract('std::string::size_type pos = s.find_last_of(L"\\\\/");')
     assert "pub unsafe fn find_last_of(&self, set: *const C) -> usize" in block
     assert "`std::string::npos` → `npos`" in block
     # an ATL-only body is unchanged by the STL rules (the text is in the cache key)

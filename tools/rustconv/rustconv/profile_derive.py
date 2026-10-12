@@ -4368,9 +4368,7 @@ def scaffold_crate(
         path = any(re.search(r"\bCPath\b", t) for t in texts)
         # The C++ standard library containers (atl_rust::stl). drwtsn32 declares its
         # std::vector/std::map members in a header, so the module's own headers count too.
-        own_headers = {
-            h for tu in m.compiled_tus for h in tu.parent.glob("*.h*") if h.is_file()
-        }
+        own_headers = {h for tu in m.compiled_tus for h in tu.parent.glob("*.h*") if h.is_file()}
         stl = any(
             re.search(r"\bstd::(?:w?string|vector|map)\b", t)
             for t in texts + [h.read_text(errors="replace") for h in sorted(own_headers)]

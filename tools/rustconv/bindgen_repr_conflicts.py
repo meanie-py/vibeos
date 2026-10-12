@@ -18,9 +18,7 @@ from __future__ import annotations
 import re
 import sys
 
-_ITEM = re.compile(
-    r"((?:^#\[[^\n]*\]\n)+)pub (?:struct|union) (\w+)\s*\{(.*?)^\}", re.M | re.S
-)
+_ITEM = re.compile(r"((?:^#\[[^\n]*\]\n)+)pub (?:struct|union) (\w+)\s*\{(.*?)^\}", re.M | re.S)
 _FIELD_TYPE = re.compile(r"^\s*pub \w+:\s*(.+?),\s*$", re.M)
 
 
@@ -29,7 +27,7 @@ def _value_types(field_type: str) -> list[str]:
     t = field_type.strip()
     # The RAW island still wraps union members (`__BindgenUnionField<MINIDUMP_THREAD_CALLBACK>`);
     # REAL_UNIONS rewrites them later. The member is held by value either way.
-    while (m := re.fullmatch(r"(?:\w+::)*(?:__BindgenUnionField|ManuallyDrop)<(.+)>", t)):
+    while m := re.fullmatch(r"(?:\w+::)*(?:__BindgenUnionField|ManuallyDrop)<(.+)>", t):
         t = m.group(1).strip()
     while True:
         m = re.fullmatch(r"\[(.+);\s*[^;\]]+\]", t)
