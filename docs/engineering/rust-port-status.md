@@ -41,6 +41,10 @@ win32k/display work. Rust inventory is now 12.34M lines of `.rs`: **3.88M transl
 8.41M generated bindings, 48K host harnesses (`port_audit.py --rust`). Quote the 3.88M,
 never the total.
 
+**Wine strategy (2026-10-12):** the Wine-derived remainder is translated from current
+upstream Wine, not ReactOS's synced copy, and Wine DLLs ReactOS never pulled in come in
+as vendored C intake. See [wine-upstream-intake-plan.md](wine-upstream-intake-plan.md).
+
 **Earlier, 09-25 → 10-05**, none of it translation:
 
 - **DirectX grew 268K → 300K live lines** from upstream ReactOS's Wine 10.0 DirectX rebase
