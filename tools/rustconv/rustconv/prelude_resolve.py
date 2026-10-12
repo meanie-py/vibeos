@@ -268,6 +268,9 @@ def crate_mode(crate_dir: Path) -> str | None:
     return None
 
 
+_PSEH_NAME = re.compile(r"_?_SEH2_")
+
+
 def workspace_items(names: set[str], workspace: Path, exclude: Path) -> dict[str, list[Item]]:
     """Every tracked definition of each name: consts, type aliases, extern fn decls.
 
@@ -275,7 +278,13 @@ def workspace_items(names: set[str], workspace: Path, exclude: Path) -> dict[str
     `_InterlockedExchange` from disk-rust's DDK shims, an extern no user-mode image can link
     (i386 LINK_FAIL). A donor built against the other -sys crate is skipped; mode-neutral
     shared crates (win32macros-rust, strsafe-rust) donate to both.
+
+    Never a PSEH name either: cdfs-rust exports DUMMY_PSEH no-op `_SEH2_TRY`/`_SEH2_END`
+    functions, and donating them made sptilib's untranslated `_SEH2_TRY; { .. } _SEH2_END;`
+    compile as a bare block, its MmProbeAndLockPages with no handler. Left unresolved, the
+    name is a compile error that sends the site to a try_except / non-raising rewrite.
     """
+    names = {n for n in names if not _PSEH_NAME.match(n)}
     if not names:
         return {}
     mine = crate_mode(exclude)

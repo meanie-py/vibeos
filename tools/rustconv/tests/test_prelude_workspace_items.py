@@ -108,3 +108,19 @@ def test_an_executables_definition_is_not_an_export(tmp_path):
     found = workspace_items({"PrintMessage", "SetupThing"}, ws, ws / "mine-rust")
     assert found["PrintMessage"] == []
     assert [i.path for i in found["SetupThing"]] == ["setuplib-rust/src/setuplib/lib.rs"]
+
+
+def test_a_pseh_macro_is_never_donated_as_a_function(tmp_path):
+    """cdfs's DUMMY_PSEH `_SEH2_TRY` export made sptilib's probe compile with no handler."""
+    ws = _repo(
+        tmp_path,
+        {
+            "cdfs-rust/src/cdmacros.rs": (
+                '#[no_mangle]\npub unsafe extern "C" fn _SEH2_TRY() {}\n'
+                'extern "C" {\n    pub fn _SEH2_END();\n}\n'
+            ),
+            "mine-rust/src/lib.rs": "",
+        },
+    )
+    found = workspace_items({"_SEH2_TRY", "_SEH2_END"}, ws, ws / "mine-rust")
+    assert "_SEH2_TRY" not in found and "_SEH2_END" not in found

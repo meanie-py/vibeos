@@ -238,8 +238,6 @@ pub const IoWriteAccess: _LOCK_OPERATION = _LOCK_OPERATION_IoWriteAccess; // isl
 pub const NonPagedPool: _POOL_TYPE = _POOL_TYPE_NonPagedPool; // island enum
 pub const NonPagedPoolCacheAligned: _POOL_TYPE = _POOL_TYPE_NonPagedPoolCacheAligned; // island enum
 extern "C" {
-    pub fn _SEH2_END(); // cdfs-rust/src/cdmacros.rs
-    pub fn _SEH2_TRY(); // cdfs-rust/src/cdmacros.rs
 }
 // ==== end port resolve ====
 

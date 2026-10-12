@@ -52,7 +52,6 @@ unsafe extern "C" fn SptiCreateIrpContext(
     let mut IrpContext: PPASSTHROUGH_IRP_CONTEXT = core::ptr::null_mut();
     let mut Irp: PIRP = core::ptr::null_mut();
     let mut IoStack: PIO_STACK_LOCATION = core::ptr::null_mut();
-    let mut _SEH2_Volatile0_local: i32 = 0;
 
     PAGED_CODE!();
 
@@ -88,26 +87,25 @@ unsafe extern "C" fn SptiCreateIrpContext(
             }
             ASSERT!(!(*Irp).MdlAddress.is_null());
 
-            _SEH2_TRY;
+            // The C wraps this in _SEH2_TRY and bails to Cleanup on an exception; the
+            // non-raising export returns that failure instead, so a bad user buffer
+            // fails the request rather than raising with no handler on the stack.
+            if ntkrnl_sys::probe::MmTryProbeAndLockPages(
+                (*Irp).MdlAddress as _,
+                (if IsDirectMemoryAccess != 0 {
+                    (*OriginalIrp).RequestorMode as i32
+                } else {
+                    0i32
+                }) as _,
+                (if IsBufferReadAccess != 0 {
+                    IoReadAccess as i32
+                } else {
+                    IoWriteAccess as i32
+                }) as _,
+            ) < 0
             {
-                MmProbeAndLockPages(
-                    (*Irp).MdlAddress as PMDL,
-                    (if IsDirectMemoryAccess != 0 {
-                        (*OriginalIrp).RequestorMode as i32
-                    } else {
-                        0i32 as i32
-                    }) as KPROCESSOR_MODE,
-                    (if IsBufferReadAccess != 0 {
-                        IoReadAccess as i32
-                    } else {
-                        IoWriteAccess as i32
-                    }) as LOCK_OPERATION,
-                );
-                if _SEH2_Volatile0_local != 0 || 0 != 0 && 1 != 0 {
-                    break 'cleanup;
-                }
+                break 'cleanup;
             }
-            _SEH2_END;
         }
 
         (*IrpContext).Srb.Function = SRB_FUNCTION_EXECUTE_SCSI as UCHAR;
@@ -1061,7 +1059,7 @@ pub unsafe extern "C" fn SptiHandleScsiPassthru(
         DataBuffer,
         (*Spt).DataTransferLength,
         IsDirectMemoryAccess,
-        (!!((*Spt).DataIn == (SCSI_IOCTL_DATA_OUT as u8))) as BOOLEAN,
+        ((*Spt).DataIn == (SCSI_IOCTL_DATA_OUT as u8)) as BOOLEAN,
     );
     if IrpContext.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
