@@ -220,7 +220,7 @@ pub unsafe extern "system" fn NtSystemDebugControl(
                 }
             }
             if OutputBufferLength != 0 {
-                if let Err(e) = probe_user_buffer(
+                if let Err(e) = probe_user_buffer_write(
                     OutputBuffer,
                     OutputBufferLength as usize,
                     core::mem::align_of::<ULONG>(),
@@ -230,7 +230,7 @@ pub unsafe extern "system" fn NtSystemDebugControl(
                 }
             }
             if !ReturnLength.is_null() {
-                if let Err(e) = probe_user_buffer(
+                if let Err(e) = probe_user_buffer_write(
                     ReturnLength as *const core::ffi::c_void,
                     core::mem::size_of::<ULONG>(),
                     core::mem::align_of::<ULONG>(),

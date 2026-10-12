@@ -1856,6 +1856,20 @@ heap buffer. No disk ever had `0xAA55` there, so every disk listed as unpartitio
 no partitions on this disk", all space free). The `modrun` C oracle showed it as a one-line
 diff; the debug trace differed by one missing `Use megabyte alignment!` line.
 
+### A `pack(N)` struct holding an aligned member has no Rust spelling (E0587 / E0588)
+**Symptom.** A bindgen island fails to compile: `type has conflicting packed and align
+representation hints` or `packed type cannot transitively contain a #[repr(align)] type`.
+drwtsn32's amd64 island, from dbghelp.h's `MINIDUMP_THREAD_CALLBACK` (pack(4), holds a
+`CONTEXT`, which is `align(16)` on amd64) and everything that holds one.
+**Cause.** Legal C: MSVC lets the member's declared alignment win over the pack pragma. Rust
+cannot express a packed struct whose field demands more alignment, so bindgen's faithful
+output is rejected.
+**Fix.** Automatic: `gen_driver_types.sh` runs `tools/rustconv/bindgen_repr_conflicts.py` on
+the raw island and re-runs bindgen with those types `--opaque-type` (to a fixpoint: an opaque
+replacement keeps its `align(N)`, so its packed holders are the next round). Size and
+alignment stay exactly clang's; only the field layout goes. A module that needs the FIELDS of
+such a type must hand-lay it out; none so far does (drwtsn32 only passes them by pointer).
+
 ### A macro translated from the wrong side of an `#ifdef`
 **Symptom.** Values built through one helper are corrupt in a way that looks like two fields
 swapped. In oleaut32 every negative `DECIMAL` made with `SIGNSCALE` had scale 128, and
@@ -1891,6 +1905,12 @@ luck: the same alias inside `size_of::<TCHAR>()` compiles clean and sizes every 
 The A/W *function* aliases are usually derived into the crate prelude and the *type* family
 forgotten; spell both, as explicit `pub use` re-exports that shadow the glob:
 `LPWSTR as LPTSTR, LPCWSTR as LPCTSTR, PWSTR as PTSTR, PCWSTR as PCTSTR, WCHAR as TCHAR`.
+
+The function side has a link-time twin: a worker that DECLARES the alias itself
+(`extern "system" { fn DefMDIChildProc(..); }`, mmc_new) imports a name no DLL exports, an
+undefined symbol on every arch. `port integrate` now gives such a declaration
+`#[link_name = "DefMDIChildProcW"]` from the TU's own compile (`_aw_extern_link_names`, the
+declaration side of `_aw_export_names`).
 
 **And the prelude is not enough — the ISLAND has the same problem, one level lower.** The
 re-exports above fix the module's own code; they do nothing for a struct the ISLAND declares.
@@ -2136,6 +2156,10 @@ bindgen models C `T arr[ANYSIZE_ARRAY]`/`arr[1]` as `[T; 1]`, so Rust `arr[i]` f
 bounds-checks and panic-aborts, while the C intentionally over-allocates. **Always
 `arr.as_mut_ptr().add(i)`** (for a `static mut`, `FOO.as_mut_ptr().add(i)` — `addr_of_mut!(FOO)
 .add(i)` strides by the whole array). For a `[T; 0]` extern the panic is unconditional.
+The CRT streams are the common `[T; 0]` case: `stdout` is `(&_iob[1])`, and
+`addr_of_mut!(_iob[1])` fails the optimized build with `unconditional_panic` (plain
+`cargo check` does not report it). `port integrate` rewrites it to the tree's spelling,
+`__iob_func().add(1)` (drwtsn32).
 **Rewrite a crate mechanically: `python -m rustconv.flex_index <crate> [--ambiguous]`.** A field
 is flexible when a bindgen struct ends with it as `[T; 1]`; each `p.F[i]` becomes
 `(*addr_of!(p.F[0]).add(i))` (`addr_of_mut!` when written). A name that is also a real array
@@ -4765,6 +4789,29 @@ a decision to take deliberately, not to reach for because a module will not tran
 ## Dropped, degraded & silently-rewritten translation output
 
 The model does not only get things wrong — it omits them. Every entry here compiles.
+
+### A string macro beside a literal: the model kept the macro and dropped the literal
+**Symptom.** Report output loses its text but compiles and runs: every drwtsn32 line built as
+`xfprintf(output, "%5d: %ls" NEWLINE, ...)` came back `xfprintf(output, NEWLINE, ...)`, so
+the task list printed newlines with the PID and name as unused variadic arguments.
+**Cause.** C++ concatenates adjacent string literals after expanding object-like macros
+(`#define NEWLINE "\r\n"`). The synthetic unit kept the source spelling; the model treated
+`"fmt" NEWLINE` as one argument and kept the part it could name.
+**Fix.** Automatic for a module's OWN string macros: cppapp folds a macro that sits next to a
+literal into that literal (`cpp_lower.concat_string_macros`), which is translation phases 4
+and 6. A standalone use stays a name, which keeps those bodies' response-cache keys. An SDK
+string macro (`KERNEL_VERSION_STR`) is not folded: route it through `%s` of the island's
+NUL-terminated constant, as drwtsn32's `PrintSystemInfo` does.
+
+### A per-arch `#if` chain in a C++ body came back as the x86 branch alone
+**Symptom.** A C++ crate compiles on i386 and fails amd64/arm64 with `no field Eax on
+_CONTEXT`; or, worse, compiles everywhere with the other arches' registers silently missing.
+**Cause.** The cppapp synthetic unit keeps every `#if defined(_M_IX86) / _M_AMD64 / _M_ARM64`
+branch, and the prompt names the arch conditionals, but the model wrote only the first branch
+without a `cfg` (drwtsn32's `PrintThread` and `PrintStackBacktrace`).
+**Fix.** Hand-write each branch under `#[cfg(target_arch = ...)]`, mirroring the chain, and
+bank it. On arm64 `X0..X28`, `Fp` and `Lr` are `ctx.__bindgen_anon_1.X[0..31]` (29 = Fp,
+30 = Lr). Owed: lower the chain deterministically before the model sees it.
 
 ### A C assignment became a nested `let _x`, so the outer variable never changes
 
@@ -7425,7 +7472,15 @@ appear *after* a validate-first conversion that was supposed to be a pure safety
   * **A read probe standing in for a write probe.** Only a write touch proves the page is
     writable — that is why the C macro stores `*(volatile T*)p = *(volatile T*)p` rather
     than just comparing. Substituting a read probe passes a read-only user page and moves
-    the fault to the later store.
+    the fault to the later store. The commoner stand-in was the range-only
+    `probe_user_buffer`, which touches nothing: 119 kernel call sites translated
+    `ProbeForWrite*` to it. `NtReadFile` then built an IRP for a NULL buffer with a non-zero
+    length, and the driver answered with its own status where Windows fails the probe with
+    `STATUS_ACCESS_VIOLATION` (151 IoReadWrite kmtest assertions, all three arches). A bad
+    OUT pointer to `NtCreateEvent` and friends was likewise found only after the object
+    existed. Use `probe_user_buffer_write`, which does ProbeForWrite's one-byte-per-page
+    read-and-write-back through the fault-protected copy. `scan_dropped_probes` reports the
+    range-only form as `WEAK` wherever the file's commented C write-probes the same pointer.
 
   And one semantic trap next door: **`probe_write_handle` writes NULL.** That is
   `ProbeAndZeroHandle`'s contract. `ProbeForWriteHandle` PRESERVES the value, and zeroing
@@ -11556,6 +11611,23 @@ vs `tools/lint-baseline/`**, and several hold an EMPTY baseline (strict).
 
 ## Cohab flip & cold-link mechanics
 
+### A C++ overload of a CRT name, exported unmangled, takes over the CRT's
+**Symptom.** None at link; at run time every `abort()` (Rust panics included) would run the
+module's own function. drwtsn32 defines `int abort(FILE*, int)`.
+**Cause.** In C++ that is an overload with a mangled symbol. The assembler gives every
+non-static free function `#[no_mangle]`, and an unmangled Rust `abort` is the image's.
+**Fix.** Automatic: `port integrate` drops `#[no_mangle]` from a C++ module's free function
+whose name is a msvcrt export (`_cxx_unexport_crt_overloads`). Calls inside the crate resolve
+by Rust path, so nothing needs the bare symbol.
+
+### A flipped C++ module still links the C++ standard library
+**Symptom.** `link-guard: ... _MINGW_INSTALL_DEBUG_MATHERR: two local definitions` on the
+flipped exe (drwtsn32).
+**Cause.** `cppstl` pulls libmingwex in beside the Rust CRT startup, which defines the same
+symbol. Nothing C++ is compiled any more, so nothing needs it.
+**Fix.** Automatic: `port flip` drops `cppstl` from a C++ module's `target_link_libraries`;
+its `std::` containers are `atl_rust::stl` now.
+
 ### A Rust staticlib is one archive member, so a default it carries can shadow the real one
 **Symptom:** a module behaves as if never initialised (shell32: comctl32 "Imagelist no longer
 valid", then a CDefView assert panic in explorer, amd64 only) after a change to which archives
@@ -14684,6 +14756,24 @@ and SPCR names a 16550 in I/O space. Repro the whole chain with
 not find this: the gdb toolkit relocates symbols from the kernel's own
 `[KRNLBASE]` serial line, which is exactly what goes missing.
 
+### x86 serial on real hardware: user-mode lines cut at 16 characters, the rest garbage
+
+**Symptom.** On the OptiPlex (a real 16550 at 115200), every user-mode print stops after
+about 16 characters (`[kernel32] DllMai`, `[WINLOGON] WinMai`) and the rest of the line is
+fragments of other prints. Kernel lines are fine. QEMU logs of the same build are clean.
+`/ONECPU` does not help.
+
+**Cause.** Two of the three writers in the entry above. kd64's `KdpStub` echo (user-mode
+prints) wrote the whole string to the transmit register back to back, never waiting for
+THRE: QEMU's UART drains instantly, but a 16550 keeps only what fits its 16-byte FIFO. And
+rtl-diag's ring-0 fast path took no lock, so a kernel print could land in the middle of
+anyone else's.
+
+**Fix.** `KdpStub` waits for THRE before each byte. All three writers take rtl-diag's
+`RtlpAcquireDebugPort` (interrupts off, bounded spin, so a holder frozen by a bugcheck
+costs garbled output, never a hang). Any new raw UART writer must do both: a QEMU-only
+test cannot tell you it is wrong.
+
 ### Localization techniques that repeatedly worked
 - **DbgPrint-bisect with REAL `DbgPrint`.** Translated `TRACE!`/`WARN!`/`DPRINT` are no-op
   macros, so **their absence in the serial is NOT evidence of where execution stopped** — that
@@ -14847,6 +14937,34 @@ worktree or kill a running build to propagate this fix.
    reads `4.0K` and exits 0.** Builds bind-mount the worktree at that canonical path inside a
    private namespace (`canon-run.sh`, `unshare --map-root-user --mount`), so any host-side
    sizing of the canonical path silently measures an empty directory rather than failing.
+
+### `L:no-guest-serial`: the guest never ran, and a "killed" VM may still be running
+**Symptom:** a conformance round's serial log holds only the harness's `#` header, the
+summary says `launched=0`, and `<arch>_launch.json` shows `handshake_seconds` 15.00x.
+`<arch>_qemu.stderr.log` is one line: `WSL ... UtilAcceptVsock:281: accept4 failed 110`.
+Smoke files the same failure as `LAUNCH_FAIL`. It is a host-side launch failure, not a guest
+bug: WSL interop did not get `qemu-system-*.exe` running, so nothing ever connected.
+**What is known.** Handshakes are bimodal: of 3,326 windows-host launches, successes took
+under 2.5s (p99.9, two outliers near 10s) and all 31 failures ran to the 15s limit, so a
+longer timeout would save none of them. Failures are not host-wide: launches from other runs,
+and even from the same gate's process tree, succeed in the same minute. Yet the three
+`launch_with_retry` attempts of a failing round all fail. That stickiness is UNEXPLAINED.
+(Conformance's pytest capture hides a launch that recovered on attempt 2, so "conformance
+never recovers" cannot be read from its logs; smoke recovered 86 of 95.)
+**Two causes found and fixed while looking:**
+- Retries shared one Windows staging dir, and attempt 1's qemu.exe releases its files
+  asynchronously after the kill, so attempt 2 died writing `tempdisk.qcow2` over a file
+  still open (2 of 6 rounds). Each launch now stages into its own dir.
+- `kill_by_uid` was best-effort and returned nothing, so `stop()`, `kill_one` and the reaper
+  all treated an unconfirmed kill as done and dropped the VM's lock. When `powershell.exe`
+  itself failed to launch (the same interop failure), qemu.exe ran on with no lock: invisible
+  to `ps`, `kill` and the lifetime cap. Nine were found on 2026-10-11, two of them having
+  used a full core each for eight days. Now `kill_by_uid` returns how many matches survive
+  (None if PowerShell gave no answer), every caller keeps the lock unless that is 0, and
+  `vibeos-cli ps` / `kill --stale` also list Windows-side `vibeos-<pid>-<port>` QEMUs whose
+  launcher is dead and that no live lock claims.
+**Check:** `vibeos-cli ps` prints an "untracked Windows QEMUs" block when any exist;
+`vibeos-cli kill --stale` stops them and fails if it could not confirm one.
 
 ### A kmtest count drift on a UP guest is the boot-time ladder, not the scheduler
 **Symptom.** amd64/i386 conformance drops one or a few passes in a timing test that waits

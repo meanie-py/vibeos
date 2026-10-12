@@ -1,0 +1,38 @@
+# find (base/applications/cmdutils/find -> find-rust, batch C). The shipped Rust diffed
+# against the pre-flip C (`python -m rustconv.c_oracle`); inputs from modrun/data.
+module: find
+variants:
+  c: '%SystemRoot%\bin\modrun\find_c.exe'
+  rust: '%SystemRoot%\system32\find.exe'
+ninja:
+- find_c
+stage:
+- src: build-{arch}/base/applications/cmdutils/find/find_c.exe
+  dest: bin/modrun/find_c.exe
+- src: tools/payloads/modrun/data/lines.txt
+  dest: bin/modrun/data/lines.txt
+- src: tools/payloads/modrun/data/nonl.txt
+  dest: bin/modrun/data/nonl.txt
+cases:
+- id: basic
+  args: '"apple" %SystemRoot%\bin\modrun\data\lines.txt'
+  expect:
+  - apple pie
+- id: ignorecase
+  args: /I "apple" %SystemRoot%\bin\modrun\data\lines.txt
+- id: count
+  args: /C "an" %SystemRoot%\bin\modrun\data\lines.txt
+- id: invert-number
+  args: /V /N "a" %SystemRoot%\bin\modrun\data\lines.txt
+- id: nonl
+  args: '"trailing" %SystemRoot%\bin\modrun\data\nonl.txt'
+- id: stdin
+  args: '"ba"'
+  stdin:
+  - banana
+  - apple
+  - cobalt
+- id: missing
+  args: '"x" %SystemRoot%\bin\modrun\data\nosuch.txt'
+- id: usage
+  args: /?

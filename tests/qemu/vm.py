@@ -5,6 +5,7 @@ from __future__ import annotations
 import atexit
 import contextlib
 import fcntl
+import itertools
 import json
 import os
 import re
@@ -42,6 +43,8 @@ QEMU_DIR = PROJECT_DIR / "qemu"
 # running session (possibly another agent) and is NEVER touched.
 # --------------------------------------------------------------------------- #
 LOCK_DIR = Path("/tmp/vibeos-qemu-locks")
+# Per-process launch counter: each QemuVM launch stages into its own Windows dir.
+_STAGING_SEQ = itertools.count()
 _CLK = os.sysconf("SC_CLK_TCK")
 
 # Hard wall-clock ceiling on any single QEMU we launch. The longest legitimate
@@ -1889,6 +1892,12 @@ def launch_with_retry(
         except Exception as e:
             last_exc = e
             first = str(e).splitlines()[0][:140]
+            # A failed helper's argv fills the 140 chars; its stderr is the reason.
+            err = getattr(e, "stderr", None)
+            if isinstance(err, bytes):
+                err = err.decode("utf-8", errors="replace")
+            if isinstance(err, str) and err.strip():
+                first += " | stderr: " + " ".join(err.split())[-200:]
             log(f"{label}: start failed (attempt {attempts}/{LAUNCH_ATTEMPTS}): {first}")
             with contextlib.suppress(Exception):
                 vm.stop()
@@ -2589,7 +2598,15 @@ class QemuVM:
             self.launch_timings["cleanup_lock_seconds"] = time.monotonic() - waiting
             started = time.monotonic()
             auto_cleanup_locked(root)
-            staging = root / f"{os.getpid()}-{self.work_dir.parent.name}-{self.work_dir.name}"
+            # One dir per launch, not per work dir: launch_with_retry starts a fresh VM on
+            # the SAME work dir 2s after a failed attempt, and the failed attempt's
+            # qemu.exe releases its file handles asynchronously after the kill. Sharing
+            # the dir, attempt 2 died writing tempdisk.qcow2 over a file still open on the
+            # Windows side (2 of 6 conformance L:no-guest-serial rounds, 10-10/11).
+            staging = root / (
+                f"{os.getpid()}-{self.work_dir.parent.name}-{self.work_dir.name}"
+                f"-{next(_STAGING_SEQ)}"
+            )
             self._win_staging = staging
             shutil.rmtree(staging, ignore_errors=True)
             staging.mkdir(parents=True, exist_ok=True)
@@ -3775,10 +3792,22 @@ class QemuVM:
 
         # windows-host: the Windows QEMU.exe runs behind WSL interop, so the Linux
         # pgroup kill below won't reach it — kill it precisely by our unique -name tag.
+        # Unless the kill is CONFIRMED, keep the lock: it is the only record of this
+        # qemu.exe, and once this process exits it reads as stale and the reaper kills
+        # by the same uid. Dropping it unconfirmed is how VMs ran unseen for days.
+        keep_lock = False
         if self._backend == "windows-host" and self._win_uid:
             from . import backend as be
 
-            be.kill_by_uid(self._win_uid)
+            left = be.kill_by_uid(self._win_uid)
+            if left != 0:
+                keep_lock = True
+                why = "PowerShell gave no answer" if left is None else f"{left} still running"
+                print(
+                    f"[QemuVM] could not confirm {self._win_uid} stopped ({why}); "
+                    "keeping its lock for the reaper",
+                    file=sys.stderr,
+                )
 
         # Remove this run's per-run Windows staging subdir (only ours — never the shared root,
         # which other concurrent runs are using). Bounded retry: on DrvFs the Windows QEMU
@@ -3805,7 +3834,12 @@ class QemuVM:
             self._proc = None
 
         lock = getattr(self, "_lock_path", None)
-        if lock is not None:
+        if lock is not None and keep_lock:
+            hook = getattr(self, "_lock_atexit", None)
+            if hook is not None:
+                atexit.unregister(hook)
+            self._lock_path = None
+        elif lock is not None:
             lock.unlink(missing_ok=True)
 
         # Release the concurrency slot only after QEMU is actually dead, so the

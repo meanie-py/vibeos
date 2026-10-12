@@ -13,3 +13,5 @@ target_link_libraries(chcp conutils)
 add_importlibs(chcp msvcrt kernel32)
 set_target_properties(chcp PROPERTIES SUFFIX ".com")
 add_cd_file(TARGET chcp DESTINATION reactos/system32 FOR all)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

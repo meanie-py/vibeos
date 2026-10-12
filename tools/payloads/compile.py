@@ -79,8 +79,10 @@ def load_spec(name: str) -> dict:
     if spec.get("name") != name:
         die(f"{spec_path}: name: {spec.get('name')!r} != directory name {name!r}")
     binaries = spec.get("binaries")
-    if not isinstance(binaries, list) or not binaries:
-        die(f"{spec_path}: `binaries` must be a non-empty list")
+    # Empty only when a `binaries_from` module stages everything (vendordrv: files from a
+    # host directory, which no spec can name ahead of time).
+    if not isinstance(binaries, list) or not (binaries or spec.get("binaries_from")):
+        die(f"{spec_path}: `binaries` must be a non-empty list (or empty beside `binaries_from`)")
     for b in binaries:
         if not isinstance(b, dict) or "src" not in b or "dest" not in b:
             die(f"{spec_path}: each binaries entry needs `src` and `dest`: {b!r}")

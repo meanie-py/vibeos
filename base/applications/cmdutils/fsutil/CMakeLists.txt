@@ -17,3 +17,5 @@ set_module_type(fsutil win32cui UNICODE)
 add_importlibs(fsutil msvcrt kernel32 ntdll)
 add_pch(fsutil fsutil.h SOURCE)
 add_cd_file(TARGET fsutil DESTINATION reactos/system32 FOR all)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

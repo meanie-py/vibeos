@@ -1,0 +1,40 @@
+# sort (base/applications/cmdutils/sort -> sort-rust, batch C). The shipped Rust diffed
+# against the pre-flip C (`python -m rustconv.c_oracle`). ReactOS sort reads stdin only:
+# a file argument is ignored by the C, so every case feeds stdin.
+module: sort
+variants:
+  c: '%SystemRoot%\bin\modrun\sort_c.exe'
+  rust: '%SystemRoot%\system32\sort.exe'
+ninja:
+- sort_c
+stage:
+- src: build-{arch}/base/applications/cmdutils/sort/sort_c.exe
+  dest: bin/modrun/sort_c.exe
+cases:
+- id: stdin
+  stdin: &id001
+  - pear
+  - Apple
+  - banana
+  - apple pie
+  - Cherry
+  - ''
+  - zebra crossing
+  - Banana split
+  - 10 apples
+  - 9 pears
+  expect:
+  - zebra crossing
+- id: reverse
+  args: /R
+  stdin: *id001
+- id: column
+  args: /+3
+  stdin: *id001
+- id: short
+  stdin:
+  - c
+  - B
+  - a
+- id: usage
+  args: /?

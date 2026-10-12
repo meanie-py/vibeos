@@ -394,21 +394,72 @@ pub unsafe extern "system" fn NdisAllocatePacketPool(
         ProtocolReservedLength,
     );
 }
+/// A packet pool that grows on demand, as Windows' has since Windows 2000.
+/// `NumberOfDescriptors` (plus the overflow count) is the pool's MAXIMUM, not a count to
+/// preallocate. The C preallocated every descriptor and refused more than 0xffff, so
+/// Realtek's RTL8153 XP driver, which asks for 0x2ffa0 (196,512), failed MiniportInitialize;
+/// preallocating that would also be ~40 MB of nonpaged pool. The handle points at `Base`
+/// (the first field), so everything that only reads NDISI_PACKET_POOL is unchanged.
+#[repr(C)]
+struct GrowablePacketPool {
+    Base: NDISI_PACKET_POOL,
+    /// Most descriptors the pool may ever hand out.
+    Max: UINT,
+    /// Descriptors created so far (inline plus every chunk).
+    Count: UINT,
+    /// Extra chunks, each a `PoolChunk` header followed by its packets.
+    Chunks: *mut PoolChunk,
+}
+
+#[repr(C)]
+struct PoolChunk {
+    Next: *mut PoolChunk,
+}
+
+/// Descriptors created inline with the pool, and per chunk when it grows.
+const PACKET_POOL_INITIAL: UINT = 256;
+const PACKET_POOL_GROW: UINT = 64;
+
+/// Thread `n` descriptors of `len` bytes starting at `first` onto the pool's free list.
+unsafe fn packet_pool_thread(Pool: PNDISI_PACKET_POOL, first: *mut u8, n: UINT, len: UINT) {
+    let mut k = n;
+    while k > 0 {
+        k -= 1;
+        let packet = first.add((k as usize) * (len as usize)) as PNDIS_PACKET;
+        (*packet).Reserved[0] = (*Pool).FreeList as ULONG_PTR;
+        (*Pool).FreeList = packet as *mut _NDIS_PACKET;
+    }
+}
+
+/// Add up to PACKET_POOL_GROW descriptors; caller holds the pool lock. FALSE at the
+/// maximum or when nonpaged pool is exhausted.
+unsafe fn packet_pool_grow(Pool: PNDISI_PACKET_POOL) -> bool {
+    let grow = Pool as *mut GrowablePacketPool;
+    if (*grow).Count >= (*grow).Max {
+        return false;
+    }
+    let n = core::cmp::min(PACKET_POOL_GROW, (*grow).Max - (*grow).Count);
+    let header = (core::mem::size_of::<PoolChunk>() + 15) & !15;
+    let size = header + (n as usize) * ((*Pool).PacketLength as usize);
+    let chunk = ExAllocatePool(NonPagedPool, size as SIZE_T) as *mut PoolChunk;
+    if chunk.is_null() {
+        return false;
+    }
+    (*chunk).Next = (*grow).Chunks;
+    (*grow).Chunks = chunk;
+    (*grow).Count += n;
+    packet_pool_thread(Pool, (chunk as *mut u8).add(header), n, (*Pool).PacketLength);
+    true
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn NdisAllocatePacketPoolEx(
     Status: PNDIS_STATUS,
     PoolHandle: PNDIS_HANDLE,
-    mut NumberOfDescriptors: UINT,
+    NumberOfDescriptors: UINT,
     NumberOfOverflowDescriptors: UINT,
     ProtocolReservedLength: UINT,
 ) {
-    let mut Pool: PNDISI_PACKET_POOL = core::ptr::null_mut();
-    let mut Size: UINT = 0;
-    let mut Length: UINT = 0;
-    let mut i: UINT = 0;
-    let mut Packet: PNDIS_PACKET = core::ptr::null_mut();
-    let mut NextPacket: PNDIS_PACKET = core::ptr::null_mut();
-
     NDIS_DbgPrint!(
         MAX_TRACE,
         b"Status (0x%X)  PoolHandle (0x%X)  NumberOfDescriptors (%d)  ProtocolReservedLength (%d).\n\0".as_ptr() as PCSTR,
@@ -420,63 +471,38 @@ pub unsafe extern "system" fn NdisAllocatePacketPoolEx(
 
     *PoolHandle = core::ptr::null_mut();
 
-    if NumberOfDescriptors > 0xffff {
+    let Max = NumberOfDescriptors.saturating_add(NumberOfOverflowDescriptors);
+    if Max == 0 {
         NDIS_DbgPrint!(
             MIN_TRACE,
-            b"Invalid number of descriptors (%lx)\n\0".as_ptr() as PCSTR,
-            NumberOfDescriptors,
+            b"Attempted to allocate a packet pool with 0 descriptors\n\0".as_ptr() as PCSTR,
         );
-        *Status = NDIS_STATUS_RESOURCES;
-    } else {
-        NumberOfDescriptors = NumberOfDescriptors.wrapping_add(NumberOfOverflowDescriptors);
-        if NumberOfDescriptors > 0xffff {
-            NDIS_DbgPrint!(
-                MIN_TRACE,
-                b"Total number of descriptors > 0xffff (%lx)\n\0".as_ptr() as PCSTR,
-                NumberOfDescriptors,
-            );
-            NumberOfDescriptors = 0xffff;
-        }
-
-        Length = (core::mem::size_of::<NDIS_PACKET>() as usize)
-            .wrapping_add(core::mem::size_of::<NDIS_PACKET_OOB_DATA>() as usize)
-            .wrapping_add(core::mem::size_of::<NDIS_PACKET_EXTENSION>() as usize)
-            .wrapping_add(ProtocolReservedLength as usize) as UINT;
-        Size = (core::mem::size_of::<NDISI_PACKET_POOL>() as usize)
-            .wrapping_add(Length.wrapping_mul(NumberOfDescriptors) as usize) as UINT;
-
-        Pool = ExAllocatePool(NonPagedPool, Size as SIZE_T) as PNDISI_PACKET_POOL;
-        if !Pool.is_null() {
-            KeInitializeSpinLock(core::ptr::addr_of_mut!((*Pool).SpinLock.SpinLock));
-            (*Pool).PacketLength = Length;
-
-            if NumberOfDescriptors > 0 {
-                Packet = core::ptr::addr_of_mut!((*Pool).Buffer) as PNDIS_PACKET;
-                (*Pool).FreeList = Packet as *mut _NDIS_PACKET;
-
-                NextPacket = (Packet as ULONG_PTR).wrapping_add(Length as ULONG_PTR) as PNDIS_PACKET;
-                i = 1;
-                while i < NumberOfDescriptors {
-                    (*Packet).Reserved[0 as usize] = NextPacket as ULONG_PTR;
-                    Packet = NextPacket;
-                    NextPacket = (Packet as ULONG_PTR).wrapping_add(Length as ULONG_PTR) as PNDIS_PACKET;
-                    i = i.wrapping_add(1);
-                }
-                (*Packet).Reserved[0 as usize] = 0;
-            } else {
-                NDIS_DbgPrint!(
-                    MIN_TRACE,
-                    b"Attempted to allocate a packet pool with 0 descriptors\n\0".as_ptr() as PCSTR,
-                );
-                (*Pool).FreeList = core::ptr::null_mut();
-            }
-
-            *Status = NDIS_STATUS_SUCCESS;
-            *PoolHandle = Pool as PNDIS_HANDLE as PVOID;
-        } else {
-            *Status = NDIS_STATUS_RESOURCES;
-        }
     }
+    let Length = (core::mem::size_of::<NDIS_PACKET>()
+        + core::mem::size_of::<NDIS_PACKET_OOB_DATA>()
+        + core::mem::size_of::<NDIS_PACKET_EXTENSION>()
+        + ProtocolReservedLength as usize) as UINT;
+    let Initial = core::cmp::min(Max, PACKET_POOL_INITIAL);
+    // Packets start where NDISI_PACKET_POOL's inline Buffer would, past our extension.
+    let header = (core::mem::size_of::<GrowablePacketPool>() + 15) & !15;
+    let Size = header + (Initial as usize) * (Length as usize);
+
+    let grow = ExAllocatePool(NonPagedPool, Size as SIZE_T) as *mut GrowablePacketPool;
+    if grow.is_null() {
+        *Status = NDIS_STATUS_RESOURCES;
+        return;
+    }
+    let Pool = core::ptr::addr_of_mut!((*grow).Base);
+    KeInitializeSpinLock(core::ptr::addr_of_mut!((*Pool).SpinLock.SpinLock));
+    (*Pool).PacketLength = Length;
+    (*Pool).FreeList = core::ptr::null_mut();
+    (*grow).Max = Max;
+    (*grow).Count = Initial;
+    (*grow).Chunks = core::ptr::null_mut();
+    packet_pool_thread(Pool, (grow as *mut u8).add(header), Initial, Length);
+
+    *Status = NDIS_STATUS_SUCCESS;
+    *PoolHandle = Pool as PNDIS_HANDLE as PVOID;
 }
 
 #[no_mangle]
@@ -641,6 +667,9 @@ pub unsafe extern "system" fn NdisDprAllocatePacketNonInterlocked(
         return;
     }
 
+    if (*Pool).FreeList.is_null() {
+        packet_pool_grow(Pool);
+    }
     if !(*Pool).FreeList.is_null() {
         Temp = (*Pool).FreeList as PNDIS_PACKET;
         (*Pool).FreeList =
@@ -686,6 +715,13 @@ pub unsafe extern "system" fn NdisDprFreePacketNonInterlocked(Packet: PNDIS_PACK
 pub unsafe extern "system" fn NdisFreeBufferPool(PoolHandle: NDIS_HANDLE) {}
 #[no_mangle]
 pub unsafe extern "system" fn NdisFreePacketPool(PoolHandle: NDIS_HANDLE) {
+    let grow = PoolHandle as *mut GrowablePacketPool;
+    let mut chunk = (*grow).Chunks;
+    while !chunk.is_null() {
+        let next = (*chunk).Next;
+        ExFreePool(chunk as PVOID);
+        chunk = next;
+    }
     ExFreePool(PoolHandle as PVOID);
 }
 

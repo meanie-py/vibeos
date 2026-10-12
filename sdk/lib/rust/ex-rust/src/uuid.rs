@@ -348,7 +348,7 @@ pub unsafe extern "system" fn NtAllocateLocallyUniqueId(LocallyUniqueId: *mut LU
     let PreviousMode = ExGetPreviousMode();
     if PreviousMode != 0 {
         // C: _SEH2_TRY { ProbeForWrite } whose handler returns the exception code.
-        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
+        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer_write(
             LocallyUniqueId as PVOID,
             core::mem::size_of::<LUID>(),
             core::mem::align_of::<ULONG>(),

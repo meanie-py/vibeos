@@ -750,7 +750,7 @@ pub unsafe extern "system" fn NtQuerySymbolicLinkObject(
             Ok(target) => target,
             Err(status) => return status,
         };
-        if let Err(s) = probe_user_buffer(
+        if let Err(s) = probe_user_buffer_write(
             SafeLinkTarget.Buffer as _,
             SafeLinkTarget.MaximumLength as usize,
             core::mem::size_of::<WCHAR>(),

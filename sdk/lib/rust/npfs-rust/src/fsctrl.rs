@@ -542,7 +542,7 @@ pub unsafe extern "system" fn NpTransceive(
         if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(InBuffer, InLength as usize, 1, 1) {
             return status;
         }
-        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(OutBuffer, OutLength as usize, 1, 1) {
+        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer_write(OutBuffer, OutLength as usize, 1, 1) {
             return status;
         }
     }
