@@ -286,6 +286,13 @@ def _trim(args, repo: Path) -> int:
                 f"  {_fmt(plan.total)}  {wt.name}  "
                 f"({plan.superseded_units} superseded units, {plan.adhoc_dirs} ad-hoc dirs)"
             )
+    staging = trim.plan_port_staging(idle_hours=idle)
+    if staging.paths:
+        print(
+            f"  {_fmt(staging.total)}  {trim.PORT_STATE_ROOT}  "
+            f"({staging.adhoc_dirs} idle port cargo targets)"
+        )
+        plans.append((trim.PORT_STATE_ROOT, staging))
     total = sum(p.total for _, p in plans)
     print(f"\n  trimmable: {_fmt(total)}")
     if not apply:

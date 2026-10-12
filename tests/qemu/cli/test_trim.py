@@ -131,8 +131,27 @@ def test_prune_trim_dry_run_deletes_nothing(tmp_path, monkeypatch, capsys):
     old = unit(prof, "syn", "a" * 16, age_days=5, rustc=1)
     unit(prof, "syn", "b" * 16, age_days=2, rustc=2)
     monkeypatch.setattr(prune, "git_worktrees", lambda _: [wt])
+    monkeypatch.setattr(trim, "PORT_STATE_ROOT", tmp_path / "port")
     monkeypatch.setattr(trim.time, "time", lambda: NOW)
     rc = prune.prune(SimpleNamespace(trim=True, apply=False, idle_hours=0), wt)
     assert rc == 0
     assert "1 superseded units" in capsys.readouterr().out
     assert all(p.exists() for p in old)
+
+
+def test_port_staging_trims_idle_targets_and_never_state(tmp_path):
+    root = tmp_path / "port"
+    for stem, days in (("idle", 3), ("busy", 0.2)):
+        d = root / stem
+        (d / "hand").mkdir(parents=True)
+        (d / "state.json").write_text("{}")
+        age_tree(d, 30)
+        unit(d / "target-amd64" / "release", "foo", "a" * 16, age_days=days)
+        age_tree(d / "target-amd64", days)
+    plan = trim.plan_port_staging(root, now=NOW, idle_hours=24)
+    assert [p for p, _ in plan.paths] == [root / "idle" / "target-amd64"]
+    freed, failures = trim.apply(root, plan)
+    assert failures == 0 and freed > 0
+    assert not (root / "idle" / "target-amd64").exists()
+    assert (root / "idle" / "state.json").exists() and (root / "idle" / "hand").is_dir()
+    assert (root / "busy" / "target-amd64").exists()
