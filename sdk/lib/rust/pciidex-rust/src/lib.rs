@@ -23,6 +23,7 @@ pub mod pciidex {
     pub mod amd;
     pub mod ati;
     pub mod cmd;
+    pub mod hpt;
     pub mod intel;
     pub mod pata_generic;
     pub mod pata_hw;

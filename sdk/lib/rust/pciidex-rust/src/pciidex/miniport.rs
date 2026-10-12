@@ -192,7 +192,7 @@ pub unsafe extern "system" fn PciIdexGetBusLocation(
     Status = IoGetDeviceProperty(
         (*FdoExt).Pdo,
         DevicePropertyAddress,
-        core::mem::size_of::<*mut u32>() as u32,
+        core::mem::size_of::<u32>() as u32, /* sizeof(*BusLocation), not the pointer's */
         BusLocation as *mut core::ffi::c_void,
         &mut Length,
     );
