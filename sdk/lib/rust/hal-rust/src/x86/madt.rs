@@ -51,7 +51,21 @@ pub struct HALP_APIC_INFO_TABLE {
     pub IoApicVA: [ULONG; HALP_APIC_INFO_TABLE_IOAPIC_NUMBER],
     pub IoApicPA: [ULONG; HALP_APIC_INFO_TABLE_IOAPIC_NUMBER],
     pub IoApicIrqBase: [ULONG; HALP_APIC_INFO_TABLE_IOAPIC_NUMBER],
+    /// Interrupt source override target of each ISA IRQ (upstream 4e98ffc52b0).
+    pub IsaIrqGsi: [ULONG; HALP_ISA_IRQ_COUNT],
+    /// Its polarity: a KINTERRUPT_POLARITY, Unknown when it conforms to the bus.
+    pub IsaIrqPolarity: [ULONG; HALP_ISA_IRQ_COUNT],
 }
+
+pub const HALP_ISA_IRQ_COUNT: usize = 16;
+/// KINTERRUPT_POLARITY.
+pub const INTERRUPT_POLARITY_UNKNOWN: ULONG = 0;
+pub const INTERRUPT_ACTIVE_HIGH: ULONG = 1;
+pub const INTERRUPT_ACTIVE_LOW: ULONG = 2;
+// ACPI_MADT_INTERRUPT_OVERRIDE.IntiFlags polarity field (MPS INTI flags).
+const ACPI_MADT_POLARITY_MASK: u16 = 3;
+const ACPI_MADT_POLARITY_ACTIVE_HIGH: u16 = 1;
+const ACPI_MADT_POLARITY_ACTIVE_LOW: u16 = 3;
 
 // HALP_APIC_INFO_TABLE.ApicMode values (from smp.h)
 const HALP_APIC_MODE_LEGACY: ULONG = 0x0000_0010;
@@ -81,7 +95,9 @@ const _LAYOUT_CHECKS: () = {
     assert!(core::mem::offset_of!(PROCESSOR_IDENTITY, ProcessorStarted) == 0x02);
     assert!(core::mem::offset_of!(PROCESSOR_IDENTITY, BSPCheck) == 0x03);
 
-    assert!(core::mem::size_of::<HALP_APIC_INFO_TABLE>() == 0xc10);
+    assert!(core::mem::size_of::<HALP_APIC_INFO_TABLE>() == 0xc90);
+    assert!(core::mem::offset_of!(HALP_APIC_INFO_TABLE, IsaIrqGsi) == 0xc10);
+    assert!(core::mem::offset_of!(HALP_APIC_INFO_TABLE, IsaIrqPolarity) == 0xc50);
     assert!(core::mem::offset_of!(HALP_APIC_INFO_TABLE, ApicMode) == 0x000);
     assert!(core::mem::offset_of!(HALP_APIC_INFO_TABLE, ProcessorCount) == 0x004);
     assert!(core::mem::offset_of!(HALP_APIC_INFO_TABLE, IOAPICCount) == 0x008);
@@ -133,6 +149,8 @@ pub static mut HalpApicInfoTable: HALP_APIC_INFO_TABLE = HALP_APIC_INFO_TABLE {
     IoApicVA: [0; HALP_APIC_INFO_TABLE_IOAPIC_NUMBER],
     IoApicPA: [0; HALP_APIC_INFO_TABLE_IOAPIC_NUMBER],
     IoApicIrqBase: [0; HALP_APIC_INFO_TABLE_IOAPIC_NUMBER],
+    IsaIrqGsi: [0; HALP_ISA_IRQ_COUNT],
+    IsaIrqPolarity: [INTERRUPT_POLARITY_UNKNOWN; HALP_ISA_IRQ_COUNT],
 };
 
 // Backing storage for the processor identity array.  Sized as MAXIMUM_PROCESSORS.
@@ -228,7 +246,17 @@ unsafe fn HalpMadtAddInterruptOverride(Override: *const ACPI_MADT_INTERRUPT_OVER
         HalpMadtIgnoredEntries += 1;
         return;
     }
-    HalpPicVectorRedirect[source] = core::ptr::addr_of!((*Override).GlobalIrq).read_unaligned();
+    let gsi = core::ptr::addr_of!((*Override).GlobalIrq).read_unaligned();
+    HalpPicVectorRedirect[source] = gsi;
+    // Its polarity too (upstream 4e98ffc52b0): the SCI is commonly an override to a
+    // level, active-low input, and the I/O APIC entry has to say so.
+    HalpApicInfoTable.IsaIrqGsi[source] = gsi;
+    let flags = core::ptr::addr_of!((*Override).IntiFlags).read_unaligned();
+    HalpApicInfoTable.IsaIrqPolarity[source] = match flags & ACPI_MADT_POLARITY_MASK {
+        ACPI_MADT_POLARITY_ACTIVE_HIGH => INTERRUPT_ACTIVE_HIGH,
+        ACPI_MADT_POLARITY_ACTIVE_LOW => INTERRUPT_ACTIVE_LOW,
+        _ => INTERRUPT_POLARITY_UNKNOWN,
+    };
 }
 
 unsafe fn HalpMadtParseEntries(MadtTable: *const ACPI_TABLE_MADT) {
