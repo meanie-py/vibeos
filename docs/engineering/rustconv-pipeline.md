@@ -1195,9 +1195,13 @@ then on `translate`, `integrate`, `resolve` and `replay` work on its output as u
 First run, batch 1 (fltmc, sol, spider, tracert, sndrec32): $0.24 on Haiku 5.5. The
 C-in-.cpp four needed only the free-function path; sndrec32 (pure-virtual bases in other
 headers, multiple inheritance, init lists, global objects) went 569 → 0 errors per arch
-through tool fixes and one Haiku integrator pass. Not yet handled, each refused loudly:
-module class templates (cleanmgr's `CLocalPtr<T>`, rapps' `CPointerArray<T>`),
-`CAtlExeModuleT` (ATL's COM-module machinery), `CPropertyPageImpl`.
+through tool fixes and one Haiku integrator pass. Since handled (batches 2-4): ATL
+`CAtlExeModuleT`, member-object message-map handlers, several COM interfaces on one class
+(overload picked by vtable-slot arity), a module's STL use (`std::string`/`vector`/`map` →
+`atl_rust::stl` over a stub-STL island, `ISLAND_STL=1`). Still refused loudly: class
+templates whose layout depends on the argument (rapps' `CPointerArray<T>`, `CUiWindow<T>`;
+plan in `active-lanes/cpp-cluster-plan.md`). Stage order matters: run `resolve` and `macros`
+AFTER `translate`, or the prelude facts and externs come out empty.
 
 ## `body-audit`: did a pre-seal body keep its C's calls? (2026-09-26)
 
