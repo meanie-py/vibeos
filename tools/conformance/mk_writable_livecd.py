@@ -8,7 +8,7 @@ whose ramdisk is a writable FAT volume. x86 conformance was comparing a few perc
 those tests and calling the rest "passing".
 
 How: the livecd's file tree goes into a FAT32 image, `ramdisk.img`, which is added to a
-copy of the ISO; the boot entries' SystemPath becomes `ramdisk(0)\\reactos` with
+copy of the ISO (remastered with the build's own mkisofs and isohybrid); the boot entries' SystemPath becomes `ramdisk(0)\\reactos` with
 `/RDPATH=\\ramdisk.img`. freeldr loads the image off the CD through the ordinary (proven)
 CD boot path, exactly as upstream's hybridcd.ini LiveCD_RamDisk entry does, and the kernel
 then runs from ramdisk.sys's FAT volume, as arm64 always does. Entry NAMES are untouched, so
@@ -81,10 +81,35 @@ def _run(cmd: list[str]) -> None:
         raise SystemExit(f"mk_writable_livecd: {cmd[0]} failed ({r.returncode}):\n{tail}")
 
 
+def _volume_id(iso: Path) -> str:
+    """The primary volume descriptor's volume identifier (sector 16, bytes 40..72)."""
+    with open(iso, "rb") as f:
+        f.seek(16 * 2048)
+        pvd = f.read(2048)
+    if pvd[1:6] != b"CD001":
+        raise SystemExit(f"mk_writable_livecd: {iso} has no ISO 9660 primary volume descriptor")
+    return pvd[40:72].decode("ascii").rstrip()
+
+
+def _host_tools(build_dir: Path) -> tuple[Path, Path, Path]:
+    """The build's own mkisofs/isohybrid and the isohybrid MBR, as boot_images.cmake uses them."""
+    mkisofs = build_dir / "host-tools" / "bin" / "mkisofs"
+    isohybrid = build_dir / "host-tools" / "bin" / "isohybrid"
+    isombr = build_dir / "boot" / "freeldr" / "bootsect" / "isombr.bin"
+    for path in (mkisofs, isohybrid, isombr):
+        if not path.is_file():
+            raise SystemExit(
+                f"mk_writable_livecd: no {path} (fix: ./vibeos-cli build --arch <arch>)"
+            )
+    return mkisofs, isohybrid, isombr
+
+
 def build(iso: Path, out: Path) -> None:
     for tool in ("xorriso", "mformat", "mcopy"):
         if shutil.which(tool) is None:
             raise SystemExit(f"mk_writable_livecd: {tool} not found")
+    mkisofs, isohybrid, isombr = _host_tools(iso.parent)
+    volid = _volume_id(iso)
     # Stage OUTSIDE the build dir. A copy of the livecd tree inside build-<arch> is visible to
     # every tool that walks it, and it vanishes mid-walk: the amd64 WoW64 restage rglob()s
     # build-i386, indexed this copy's url.dll and died with FileNotFoundError when the
@@ -105,14 +130,28 @@ def build(iso: Path, out: Path) -> None:
             f.truncate(size_mb << 20)
         _run(["mformat", "-i", str(img), "-F", "-v", "ROSRAMDISK", "::"])
         _run(["mcopy", "-s", "-Q", "-i", str(img), *map(str, payload), "::/"])
+        # The new ISO is the extracted tree plus ramdisk.img and the rewritten freeldr.ini,
+        # mastered the way boot_images.cmake masters livecd.iso. It used to be xorriso
+        # `-boot_image any replay` over the original, which aborts inside libisofs 1.5.6
+        # ("buffer overflow detected") on some trees and not others: whether it fires moved
+        # with a couple of blocks of content, so one lane's i386 conformance went red three
+        # attempts running while master's tree, two blocks smaller, passed.
+        shutil.move(str(img), tree / "ramdisk.img")
+        shutil.copyfile(ini, tree / "freeldr.ini")
+        for boot_file in ("loader/isoboot.bin", "loader/efisys.bin"):
+            if not (tree / boot_file).is_file():
+                raise SystemExit(f"mk_writable_livecd: {iso} has no {boot_file} to boot from")
         tmp_out = out.with_name(f"{out.name}.{os.getpid()}.partial")
         _run([
-            "xorriso", "-indev", str(iso), "-outdev", str(tmp_out),
-            "-boot_image", "any", "replay",
-            "-map", str(img), "/ramdisk.img",
-            "-map", str(ini), "/freeldr.ini",
-            "-commit",
+            str(mkisofs), "-quiet", "-o", str(tmp_out), "-iso-level", "4",
+            "-volid", volid, "-volset", volid,
+            "-eltorito-boot", "loader/isoboot.bin", "-no-emul-boot", "-boot-load-size", "4",
+            "-eltorito-alt-boot",
+            "-eltorito-platform", "efi", "-eltorito-boot", "loader/efisys.bin", "-no-emul-boot",
+            "-hide", "boot.catalog", "-no-cache-inodes",
+            str(tree),
         ])
+        _run([str(isohybrid), "-b", str(isombr), "-t", "0x96", str(tmp_out)])
         tmp_out.replace(out)
 
 
