@@ -11,6 +11,7 @@ registry), never left to rot in an archived doc.
 
 | Lane (worktree/branch) | Doc |
 |---|---|
+| `native-batch` (control-plane) | [control-plane-native.md](control-plane-native.md) — plain-C base tools/apps on Haiku *(paused 2026-10-12 for the work week; next is Wave J, `base/setup/reactos`)* |
 | `fex-arm` | [fex-bringup-plan.md](fex-bringup-plan.md), [wow64-plan.md](wow64-plan.md) |
 | `conformance-ratchet` | [../conformance-ratchet-quest.md](../conformance-ratchet-quest.md) *(paused 2026-10-12; resume from its last progress-log entry)* |
 | `smp-bringup` | [smp-bringup-quest.md](smp-bringup-quest.md) |
