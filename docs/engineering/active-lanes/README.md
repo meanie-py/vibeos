@@ -18,6 +18,7 @@ registry), never left to rot in an archived doc.
 | `shell32-com` | [shell32-com-plan.md](shell32-com-plan.md) *(translation driven by Codex, not rustconv)* |
 | `warnings-burndown` | [warnings-burndown-plan.md](warnings-burndown-plan.md) *(follow-on from the closed `rust-warnings` lane)* |
 | `qemu-perf` | [qemu-perf-plan.md](qemu-perf-plan.md) *(QEMU execution layer: windows-host backend, TCG-vs-WHPX, boot concurrency)* |
+| `cpp-cluster` | [cpp-cluster-plan.md](cpp-cluster-plan.md) *(C++ apps via `port cppapp`; paused 2026-10-12, next is rapps)* |
 | `research` | [x64-primary-plan.md](x64-primary-plan.md) *(survey: promoting amd64 to the primary x86 arch)* |
 | `upstream-sync` | [upstream-sync-plan.md](upstream-sync-plan.md) — strategy · [upstream-sync-merge-decisions.md](upstream-sync-merge-decisions.md) — **what the merge decided, and what it owes** · [upstream-sync-phase4-review-queue.md](upstream-sync-phase4-review-queue.md) — the 194-file review queue *(ONGOING: upstream is a bug oracle, not a patch queue; the big merge landed 2026-09-20, phase 4 is the lane now)* |
 
