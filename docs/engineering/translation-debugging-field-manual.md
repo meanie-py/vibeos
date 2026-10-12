@@ -1856,6 +1856,20 @@ heap buffer. No disk ever had `0xAA55` there, so every disk listed as unpartitio
 no partitions on this disk", all space free). The `modrun` C oracle showed it as a one-line
 diff; the debug trace differed by one missing `Use megabyte alignment!` line.
 
+### A `pack(N)` struct holding an aligned member has no Rust spelling (E0587 / E0588)
+**Symptom.** A bindgen island fails to compile: `type has conflicting packed and align
+representation hints` or `packed type cannot transitively contain a #[repr(align)] type`.
+drwtsn32's amd64 island, from dbghelp.h's `MINIDUMP_THREAD_CALLBACK` (pack(4), holds a
+`CONTEXT`, which is `align(16)` on amd64) and everything that holds one.
+**Cause.** Legal C: MSVC lets the member's declared alignment win over the pack pragma. Rust
+cannot express a packed struct whose field demands more alignment, so bindgen's faithful
+output is rejected.
+**Fix.** Automatic: `gen_driver_types.sh` runs `tools/rustconv/bindgen_repr_conflicts.py` on
+the raw island and re-runs bindgen with those types `--opaque-type` (to a fixpoint: an opaque
+replacement keeps its `align(N)`, so its packed holders are the next round). Size and
+alignment stay exactly clang's; only the field layout goes. A module that needs the FIELDS of
+such a type must hand-lay it out; none so far does (drwtsn32 only passes them by pointer).
+
 ### A macro translated from the wrong side of an `#ifdef`
 **Symptom.** Values built through one helper are corrupt in a way that looks like two fields
 swapped. In oleaut32 every negative `DECIMAL` made with `SIGNSCALE` had scale 128, and
@@ -1891,6 +1905,12 @@ luck: the same alias inside `size_of::<TCHAR>()` compiles clean and sizes every 
 The A/W *function* aliases are usually derived into the crate prelude and the *type* family
 forgotten; spell both, as explicit `pub use` re-exports that shadow the glob:
 `LPWSTR as LPTSTR, LPCWSTR as LPCTSTR, PWSTR as PTSTR, PCWSTR as PCTSTR, WCHAR as TCHAR`.
+
+The function side has a link-time twin: a worker that DECLARES the alias itself
+(`extern "system" { fn DefMDIChildProc(..); }`, mmc_new) imports a name no DLL exports, an
+undefined symbol on every arch. `port integrate` now gives such a declaration
+`#[link_name = "DefMDIChildProcW"]` from the TU's own compile (`_aw_extern_link_names`, the
+declaration side of `_aw_export_names`).
 
 **And the prelude is not enough — the ISLAND has the same problem, one level lower.** The
 re-exports above fix the module's own code; they do nothing for a struct the ISLAND declares.
@@ -2136,6 +2156,10 @@ bindgen models C `T arr[ANYSIZE_ARRAY]`/`arr[1]` as `[T; 1]`, so Rust `arr[i]` f
 bounds-checks and panic-aborts, while the C intentionally over-allocates. **Always
 `arr.as_mut_ptr().add(i)`** (for a `static mut`, `FOO.as_mut_ptr().add(i)` — `addr_of_mut!(FOO)
 .add(i)` strides by the whole array). For a `[T; 0]` extern the panic is unconditional.
+The CRT streams are the common `[T; 0]` case: `stdout` is `(&_iob[1])`, and
+`addr_of_mut!(_iob[1])` fails the optimized build with `unconditional_panic` (plain
+`cargo check` does not report it). `port integrate` rewrites it to the tree's spelling,
+`__iob_func().add(1)` (drwtsn32).
 **Rewrite a crate mechanically: `python -m rustconv.flex_index <crate> [--ambiguous]`.** A field
 is flexible when a bindgen struct ends with it as `[T; 1]`; each `p.F[i]` becomes
 `(*addr_of!(p.F[0]).add(i))` (`addr_of_mut!` when written). A name that is also a real array
@@ -4765,6 +4789,29 @@ a decision to take deliberately, not to reach for because a module will not tran
 ## Dropped, degraded & silently-rewritten translation output
 
 The model does not only get things wrong — it omits them. Every entry here compiles.
+
+### A string macro beside a literal: the model kept the macro and dropped the literal
+**Symptom.** Report output loses its text but compiles and runs: every drwtsn32 line built as
+`xfprintf(output, "%5d: %ls" NEWLINE, ...)` came back `xfprintf(output, NEWLINE, ...)`, so
+the task list printed newlines with the PID and name as unused variadic arguments.
+**Cause.** C++ concatenates adjacent string literals after expanding object-like macros
+(`#define NEWLINE "\r\n"`). The synthetic unit kept the source spelling; the model treated
+`"fmt" NEWLINE` as one argument and kept the part it could name.
+**Fix.** Automatic for a module's OWN string macros: cppapp folds a macro that sits next to a
+literal into that literal (`cpp_lower.concat_string_macros`), which is translation phases 4
+and 6. A standalone use stays a name, which keeps those bodies' response-cache keys. An SDK
+string macro (`KERNEL_VERSION_STR`) is not folded: route it through `%s` of the island's
+NUL-terminated constant, as drwtsn32's `PrintSystemInfo` does.
+
+### A per-arch `#if` chain in a C++ body came back as the x86 branch alone
+**Symptom.** A C++ crate compiles on i386 and fails amd64/arm64 with `no field Eax on
+_CONTEXT`; or, worse, compiles everywhere with the other arches' registers silently missing.
+**Cause.** The cppapp synthetic unit keeps every `#if defined(_M_IX86) / _M_AMD64 / _M_ARM64`
+branch, and the prompt names the arch conditionals, but the model wrote only the first branch
+without a `cfg` (drwtsn32's `PrintThread` and `PrintStackBacktrace`).
+**Fix.** Hand-write each branch under `#[cfg(target_arch = ...)]`, mirroring the chain, and
+bank it. On arm64 `X0..X28`, `Fp` and `Lr` are `ctx.__bindgen_anon_1.X[0..31]` (29 = Fp,
+30 = Lr). Owed: lower the chain deterministically before the model sees it.
 
 ### A C assignment became a nested `let _x`, so the outer variable never changes
 
@@ -11563,6 +11610,23 @@ vs `tools/lint-baseline/`**, and several hold an EMPTY baseline (strict).
 ---
 
 ## Cohab flip & cold-link mechanics
+
+### A C++ overload of a CRT name, exported unmangled, takes over the CRT's
+**Symptom.** None at link; at run time every `abort()` (Rust panics included) would run the
+module's own function. drwtsn32 defines `int abort(FILE*, int)`.
+**Cause.** In C++ that is an overload with a mangled symbol. The assembler gives every
+non-static free function `#[no_mangle]`, and an unmangled Rust `abort` is the image's.
+**Fix.** Automatic: `port integrate` drops `#[no_mangle]` from a C++ module's free function
+whose name is a msvcrt export (`_cxx_unexport_crt_overloads`). Calls inside the crate resolve
+by Rust path, so nothing needs the bare symbol.
+
+### A flipped C++ module still links the C++ standard library
+**Symptom.** `link-guard: ... _MINGW_INSTALL_DEBUG_MATHERR: two local definitions` on the
+flipped exe (drwtsn32).
+**Cause.** `cppstl` pulls libmingwex in beside the Rust CRT startup, which defines the same
+symbol. Nothing C++ is compiled any more, so nothing needs it.
+**Fix.** Automatic: `port flip` drops `cppstl` from a C++ module's `target_link_libraries`;
+its `std::` containers are `atl_rust::stl` now.
 
 ### A Rust staticlib is one archive member, so a default it carries can shadow the real one
 **Symptom:** a module behaves as if never initialised (shell32: comctl32 "Imagelist no longer

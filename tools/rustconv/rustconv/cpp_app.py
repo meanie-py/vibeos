@@ -355,7 +355,11 @@ class Hierarchy:
 
 
 def _params(m: Method, model: ModuleModel) -> list[tuple[str, str]]:
-    return [(p.name or f"a{i}", rust_type(p.c_type, model)) for i, p in enumerate(m.params)]
+    # `_ident`: certmgr's `CStoreList(StoreType type)` reached its __make/__new wrappers bare.
+    return [
+        (_ident(p.name) if p.name else f"a{i}", rust_type(p.c_type, model))
+        for i, p in enumerate(m.params)
+    ]
 
 
 def _ret(m: Method, model: ModuleModel) -> str:
@@ -422,6 +426,7 @@ def render_classes(
     for cls in model.classes.values():
         out.append(_render_class(cls, h, model, cls.name in island_structs and _plain(cls)))
     out.append(_render_globals(model, h))
+    out.append(_render_global_init(model, h))
     out.append(_render_island_glue(model, island))
     return "\n".join(out) + "\n"
 
@@ -733,6 +738,8 @@ def _empty_body(m: Method) -> bool:
 _ATL_OWNING = re.compile(
     r"\b(?:CStringW|CAtlStringW|CString|CAtlString|CComPtr|CComHeapPtr|CHeapPtr|"
     r"CSimpleArray|CSimpleMap|CAtlList|CRegKey)\b"
+    # atl_rust::stl's containers (drwtsn32's `std::string ModuleName;`)
+    r"|\bstd::(?:w?string|vector|map)\b"
 )
 
 
@@ -768,17 +775,31 @@ def _com_vtable(cls: ClassModel, k: int, iface: str, h: Hierarchy) -> list[str]:
     that turns `This` (the interface subobject) back into the object -- C++'s adjustor."""
     n = cls.name
     entries, thunks = [], []
+
+    def pick(methods: list) -> Method | None:
+        # Overloads across interfaces (mmc_new's CConsoleWnd: IConsole2::Expand(item, bExpand)
+        # beside IConsoleNameSpace2::Expand(item)): the slot's arity chooses.
+        cands = [m for m in methods if m.name == slot.name]
+        return next((m for m in cands if len(m.params) == len(slot.params)), None) or next(
+            iter(cands), None
+        )
+
     for slot in h.com[iface]:
-        impl = next((m for m in cls.methods if m.name == slot.name), None)
+        impl = pick(cls.methods)
         owner = cls
         if impl is None:
             for _, b in h.module_bases(cls):
-                impl = next((m for m in b.methods if m.name == slot.name), None)
+                impl = pick(b.methods)
                 if impl is not None:
                     owner = b
                     break
         if impl is None:
             raise CppAppError(f"{cls.qualified} implements {iface} but defines no {slot.name}")
+        if len(impl.params) > len(slot.params):
+            raise CppAppError(
+                f"{cls.qualified}: {owner.name}::{slot.name} takes {len(impl.params)} "
+                f"parameter(s), but {iface}'s slot has {len(slot.params)}"
+            )
         via = h_path(h, cls, owner).rstrip(".")
         target = f"(*{_down(n, f'__base{k}.', 'This')})" + (f".{via}" if via else "")
         sig = ", ".join([f"This: *mut {iface}", *(f"{a}: {t}" for a, t in slot.params)])
@@ -917,7 +938,19 @@ _MSG_ENTRY = {
 }
 
 
-def _handler(cls: ClassModel, name: str, arity: int) -> str:
+def _handler(cls: ClassModel, name: str, arity: int, h: Hierarchy | None = None) -> str:
+    """The receiver path and method a message-map entry calls, relative to `self`."""
+    if "." in name:
+        # `MESSAGE_HANDLER(WM_SIZE, m_Splitter.OnSize)` (certmgr): a member object's handler.
+        member, _, meth = name.partition(".")
+        fld = next((f for f in cls.fields if f.name == member and not f.static), None)
+        owner = h.by_short.get(short(fld.c_type.strip())) if (fld and h) else None
+        if owner is None:
+            raise CppAppError(
+                f"{cls.qualified}: message map names `{name}`, and `{member}` is not a member "
+                "of a module class"
+            )
+        return f"{member}.{_handler(owner, meth, arity)}"
     cands = [m for m in cls.methods if m.name == name]
     pick = next((m for m in cands if len(m.params) == arity), cands[0] if cands else None)
     if pick is None:
@@ -937,7 +970,7 @@ def _render_msg_map(cls: ClassModel, h: Hierarchy) -> list[str]:
             out.append(f"        if {cond} {{")
             out.append("            handled = 1;")
             out.append(
-                f"            *result = self.{_handler(cls, func, arity)}({call}, &mut handled) "
+                f"            *result = self.{_handler(cls, func, arity, h)}({call}, &mut handled) "
                 "as isize;"
             )
             out.append("            if handled != 0 { return true; }")
@@ -1632,19 +1665,21 @@ def synthetic_tus(model: ModuleModel, island: str = "") -> dict[str, str]:
     for file, decls in heads.items():
         by_file[file] = ["\n".join(decls) + "\n", *by_file.get(file, [])]
     init = _global_init(model, h)
+    constructs = bool(_global_init_calls(model, h))
     for f in model.functions:
         body = f.lowered
-        if init and f.name in _ENTRY_POINTS:
+        if constructs and f.name in _ENTRY_POINTS:
             # C++ runs static constructors before the entry point; the Rust entry runs them
             # first thing instead (there is no CRT initializer table for a Rust staticlib).
             brace = body.index("{")
             body = body[: brace + 1] + "\n    __cxx_global_init();" + body[brace + 1 :]
         by_file.setdefault(f.file, []).append(_strip_ns(f"{f.signature}\n{body}\n", model))
-    if init:
+    if constructs:
         entry = next((f.file for f in model.functions if f.name in _ENTRY_POINTS), None)
         if entry is None:
             raise CppAppError("module globals need construction but no entry point was found")
-        by_file.setdefault(entry, []).append(init)
+        if init:
+            by_file.setdefault(entry, []).append(init)
     names = frozenset(
         re.findall(r"^\s*pub (?:type|struct|union|enum|const|static(?: mut)?) (\w+)", island, re.M)
     )
@@ -1753,8 +1788,8 @@ def _c_declarator(c_type: str, name: str) -> str:
 _ENTRY_POINTS = ("wWinMain", "WinMain", "_tWinMain", "wmain", "main", "_tmain", "DllMain")
 
 
-def _global_init(model: ModuleModel, h: Hierarchy) -> str:
-    """`audio_format UNKNOWN_FORMAT(0, 0, 0);` -> a constructor call in __cxx_global_init,
+def _global_init_calls(model: ModuleModel, h: Hierarchy) -> list[tuple[str, int, str]]:
+    """`audio_format UNKNOWN_FORMAT(0, 0, 0);` -> (global, constructor index, argument text),
     in definition order (the order C++ guarantees within one TU)."""
     calls = []
     for g in model.globals:
@@ -1771,13 +1806,47 @@ def _global_init(model: ModuleModel, h: Hierarchy) -> str:
             continue  # zeroed storage IS its value-initialized state
         arg = g.init if g.init and g.init.startswith("(") else "()"
         idx = _match_ctor(cls, arg) if ctors else 0
-        calls.append(f"    {g.name}.__ctor_{idx}{arg};")
+        calls.append((g.name, idx, arg))
+    return calls
+
+
+def _global_init_is_rendered(calls: list[tuple[str, int, str]]) -> bool:
+    """No constructor ARGUMENTS anywhere (`CCertMgrModule _AtlModule;`): cpp_classes.rs renders
+    the whole __cxx_global_init, so nothing is bought. Twice (cleanmgr, certmgr) the model
+    turned the C stub's `_AtlModule.__ctor_0();` into an invented `_AtlModule___ctor_0`
+    extern that failed the link. With arguments, those are C expressions to translate."""
+    return bool(calls) and all(arg == "()" for _, _, arg in calls)
+
+
+def _global_init(model: ModuleModel, h: Hierarchy) -> str:
+    """The synthetic C `__cxx_global_init` for the model -- or nothing, when cpp_classes.rs
+    renders it (the entry point still calls it: see `_global_init_calls` at the call site)."""
+    calls = _global_init_calls(model, h)
     if not calls:
+        return ""
+    if _global_init_is_rendered(calls):
+        # Nothing at all, not even a prototype: a new preamble line would be a unit the
+        # response cache never bought (certmgr's replay refused on exactly that).
         return ""
     return _strip_ns(
         "// C++ static initialization of the module's global objects\n"
-        "void __cxx_global_init(void)\n{\n" + "\n".join(calls) + "\n}\n",
+        "void __cxx_global_init(void)\n{\n"
+        + "\n".join(f"    {n}.__ctor_{i}{a};" for n, i, a in calls)
+        + "\n}\n",
         model,
+    )
+
+
+def _render_global_init(model: ModuleModel, h: Hierarchy) -> str:
+    calls = _global_init_calls(model, h)
+    if not _global_init_is_rendered(calls):
+        return ""
+    body = "\n".join(f"    (*core::ptr::addr_of_mut!({n})).__ctor_{i}();" for n, i, _ in calls)
+    return (
+        "/// C++ static initialization of the module's global objects, in definition order. The\n"
+        "/// entry point calls it first thing (no CRT initializer table runs for a staticlib).\n"
+        "#[no_mangle]\n"
+        f'pub unsafe extern "C" fn __cxx_global_init() {{\n{body}\n}}'
     )
 
 
@@ -1879,7 +1948,11 @@ def _implicit_ctor(cls: ClassModel, h: Hierarchy, model: ModuleModel) -> str:
 
 _FN_HEAD_RE = re.compile(
     r"(?P<attrs>(?:#\[[^\]]*\]\s*)*)(?:pub\s+)?(?:unsafe\s+)?(?:extern\s+\"[^\"]+\"\s+)?fn\s+"
-    r"(?P<name>[A-Za-z_]\w*)\s*\(\s*(?P<this>this_\s*:\s*\*(?:mut|const)\s+[\w:]+)?\s*,?\s*"
+    # `<'a>`: a worker's accessor returning a reference names its lifetime
+    # (mmc_new's `CRecentFileEntry__FileName<'a>(this_..) -> &'a CAtlString`); without it here
+    # the item stayed a free fn, and every caller's `entry.FileName()` failed.
+    r"(?P<name>[A-Za-z_]\w*)\s*(?P<gen><[^>(]*>)?\s*\(\s*"
+    r"(?P<this>this_\s*:\s*\*(?:mut|const)\s+[\w:]+)?\s*,?\s*"
 )
 
 
@@ -1912,8 +1985,9 @@ def assemble(rust: str, model: ModuleModel) -> str:
         text = rust[m.start() : end]
         head_end = m.end() - m.start()
         rest = text[head_end:]
+        gen = m.group("gen") or ""
         if m.group("this"):
-            sig = f"    pub unsafe fn {method}(&mut self" + (
+            sig = f"    pub unsafe fn {method}{gen}(&mut self" + (
                 "" if rest.lstrip().startswith(")") else ", "
             )
             brace = rest.index("{")
@@ -1929,7 +2003,7 @@ def assemble(rust: str, model: ModuleModel) -> str:
                 'extern "system"' in rust[m.start() : m.end()]
             )
             abi = 'extern "system" ' if system else ""
-            sig = f"    pub unsafe {abi}fn {method}("
+            sig = f"    pub unsafe {abi}fn {method}{gen}("
         impls.setdefault(cls, []).append(sig + rest.replace("\n", "\n    "))
         pos = end
     out.append(rust[pos:])
