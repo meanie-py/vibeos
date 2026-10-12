@@ -1,0 +1,13 @@
+# chcp (base/applications/cmdutils/chcp -> chcp-rust, batch C). The shipped Rust diffed
+# against the pre-flip C (`python -m rustconv.c_oracle`); inputs from modrun/data.
+module: chcp
+variants:
+  c: '%SystemRoot%\bin\modrun\chcp_c.com'
+  rust: '%SystemRoot%\system32\chcp.com'
+ninja:
+- chcp_c
+stage:
+- src: build-{arch}/base/applications/cmdutils/chcp/chcp_c.com
+  dest: bin/modrun/chcp_c.com
+cases:
+- id: show

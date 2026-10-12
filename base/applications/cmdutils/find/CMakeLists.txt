@@ -12,3 +12,5 @@ set_module_type(find win32cui UNICODE)
 target_link_libraries(find conutils)
 add_importlibs(find msvcrt kernel32)
 add_cd_file(TARGET find DESTINATION reactos/system32 FOR all)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

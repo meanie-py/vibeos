@@ -1,0 +1,17 @@
+# ipconfig (base/applications/network/ipconfig -> ipconfig-rust, batch D1). The shipped Rust diffed
+# against the pre-flip C (`python -m rustconv.c_oracle`); inputs from modrun/data.
+module: ipconfig
+variants:
+  c: '%SystemRoot%\bin\modrun\ipconfig_c.exe'
+  rust: '%SystemRoot%\system32\ipconfig.exe'
+ninja:
+- ipconfig_c
+stage:
+- src: build-{arch}/base/applications/network/ipconfig/ipconfig_c.exe
+  dest: bin/modrun/ipconfig_c.exe
+cases:
+- id: plain
+- id: all
+  args: /all
+- id: bad
+  args: /frobnicate

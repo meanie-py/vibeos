@@ -1194,11 +1194,9 @@ pub unsafe extern "C" fn GetNtDevicePathOfDriveNumber(
         UNICODE_NULL as WCHAR,
     ];
     let mut Type: UCHAR = 0;
-    let mut pfnQueryDosDeviceW: unsafe extern "system" fn(
-        PCWSTR,
-        PWSTR,
-        ULONG,
-    ) -> ULONG = core::mem::zeroed();
+    // `= NULL` in the C: a bare `fn` cannot be null, and zeroing one panicked on entry.
+    let mut pfnQueryDosDeviceW: Option<unsafe extern "system" fn(PCWSTR, PWSTR, ULONG) -> ULONG> =
+        None;
     let mut hKernel32: *mut core::ffi::c_void = core::ptr::null_mut();
     let mut DeviceHandle: *mut core::ffi::c_void = core::ptr::null_mut();
     let mut String: _UNICODE_STRING = core::mem::zeroed();
@@ -1237,7 +1235,7 @@ pub unsafe extern "C" fn GetNtDevicePathOfDriveNumber(
     }
 
     if NT_SUCCESS!(Status) != 0 {
-        let cch: ULONG = pfnQueryDosDeviceW(
+        let cch: ULONG = pfnQueryDosDeviceW.unwrap_unchecked()(
             (core::ptr::addr_of_mut!(szDosDevPath) as *mut WCHAR)
                 .add(4 as usize) as PCWSTR,
             (*DevicePath).Buffer,

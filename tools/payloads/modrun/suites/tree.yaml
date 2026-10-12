@@ -1,0 +1,18 @@
+# tree (base/applications/cmdutils/tree -> tree-rust, batch C). The shipped Rust diffed
+# against the pre-flip C (`python -m rustconv.c_oracle`); inputs from modrun/data.
+module: tree
+variants:
+  c: '%SystemRoot%\bin\modrun\tree_c.com'
+  rust: '%SystemRoot%\system32\tree.com'
+ninja:
+- tree_c
+stage:
+- src: build-{arch}/base/applications/cmdutils/tree/tree_c.com
+  dest: bin/modrun/tree_c.com
+- src: tools/payloads/modrun/data/a.txt
+  dest: bin/modrun/data/a.txt
+cases:
+- id: files
+  args: /F /A %SystemRoot%\bin\modrun\data
+  expect:
+  - a.txt

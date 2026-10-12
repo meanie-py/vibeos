@@ -1,0 +1,16 @@
+# timeout (base/applications/cmdutils/timeout -> timeout-rust, batch C). The shipped Rust diffed
+# against the pre-flip C (`python -m rustconv.c_oracle`); inputs from modrun/data.
+module: timeout
+variants:
+  c: '%SystemRoot%\bin\modrun\timeout_c.exe'
+  rust: '%SystemRoot%\system32\timeout.exe'
+ninja:
+- timeout_c
+stage:
+- src: build-{arch}/base/applications/cmdutils/timeout/timeout_c.exe
+  dest: bin/modrun/timeout_c.exe
+cases:
+- id: zero
+  args: /t 0 /nobreak
+- id: bad
+  args: /t abc

@@ -1,0 +1,21 @@
+# whoami (base/applications/cmdutils/whoami -> whoami-rust, batch C). The shipped Rust diffed
+# against the pre-flip C (`python -m rustconv.c_oracle`); inputs from modrun/data.
+module: whoami
+variants:
+  c: '%SystemRoot%\bin\modrun\whoami_c.exe'
+  rust: '%SystemRoot%\system32\whoami.exe'
+ninja:
+- whoami_c
+stage:
+- src: build-{arch}/base/applications/cmdutils/whoami/whoami_c.exe
+  dest: bin/modrun/whoami_c.exe
+cases:
+- id: user
+- id: user-sid
+  args: /user
+- id: groups
+  args: /groups
+- id: priv
+  args: /priv
+- id: all-csv
+  args: /all /fo csv
