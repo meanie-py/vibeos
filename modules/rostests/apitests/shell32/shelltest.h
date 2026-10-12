@@ -17,7 +17,14 @@
 // Vista's shell32 is buggy so we need to skip some tests there.
 static const BOOL g_bVista = (GetNTVersion() == _WIN32_WINNT_VISTA);
 
-VOID PathToIDList(LPCWSTR pszPath, ITEMIDLIST** ppidl);
+HRESULT PathToIDList(LPCWSTR pszPath, ITEMIDLIST** ppidl);
+
+static inline LPITEMIDLIST SHELL_SimpleIDListFromPath(LPCWSTR pszPath)
+{
+    ITEMIDLIST *pidl = NULL;
+    HRESULT hr = PathToIDList(pszPath, &pidl);
+    return SUCCEEDED(hr) ? pidl : NULL;
+}
 
 static inline LPCWSTR RegNameDisp(LPCWSTR s)
 {
@@ -33,5 +40,24 @@ static inline UINT RegSetString(HKEY hKey, LPCWSTR Path, LPCWSTR Name, LPCWSTR S
 {
     return RegSetStringEx(hKey, Path, Name, Str, REG_SZ);
 }
+
+#ifdef __cplusplus
+template<class R>
+HRESULT SHELL_BindToObject(IShellFolder *pSF, LPCITEMIDLIST pidl, IBindCtx *pBC, R riid, void **ppv)
+{
+    CComPtr<IShellFolder> psfDesktop;
+    HRESULT hr;
+    if (!pSF)
+    {
+        if (FAILED(hr = SHGetDesktopFolder(&psfDesktop)))
+            return hr;
+        pSF = psfDesktop;
+    }
+    hr = ILIsEmpty(pidl) ? pSF->QueryInterface(riid, ppv) : pSF->BindToObject(pidl, pBC, riid, ppv);
+    if (SUCCEEDED(hr) && !*ppv)
+        hr = E_FAIL;
+    return hr;
+}
+#endif
 
 #endif /* !_SHELLTEST_H_ */

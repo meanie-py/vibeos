@@ -596,6 +596,28 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **MM: finding free user address space is linear in the VAD count (open, found 2026-10-12).**
+  `MiFindEmptyAddressRangeInTree` (`ARM3/vadnode.rs`, as ReactOS's C) walks every VAD in
+  order, so N reservations cost O(N²). Upstream's x64 stress in kmtest ZwAllocateVirtualMemory
+  (262144 x 1 MB) reached ~28000 in 133 s under TCG and the sweep killed it at 180 s, taking
+  the 25 tests after it down with it. The test is capped at 4096 chunks until the search keeps
+  per-subtree largest-gap data (or a free-range hint), as Windows does.
+- **MM: reserving charges no commit for page tables (open, found 2026-10-12).** Windows x64
+  ends an unbounded MEM_RESERVE loop with STATUS_COMMITMENT_LIMIT; ours never exhausts, which
+  is the banked ZwAllocateVirtualMemory failure at line 613 on amd64 and arm64.
+
+- **arm64 netprobe: wininet's HTTP fetches stall on a TDI timeout (REGRESSION, open,
+  found 2026-10-11).** netprobe passed on all three arches on 2026-10-04 (c3344edcee7). On
+  master 02f758b050b, arm64 gets through DNS, TCP connect, the root store and the ISRG chain
+  (`error=0x0`), then `[NETSTACK] TDI op timed out - IRP still pending` and `TDI server: LISTEN
+  did not complete 0xc00000b5`, and `[NETPROBE] done` never prints
+  (`/tmp/vibeos-cli/20261011-201305-fesp_tnx-smoke-arm64`). With the 64-commit upstream merge
+  on top it reaches `https ... status 200` and stalls in the 2.4 MB body read, twice in two
+  runs; amd64 and i386 PASS on the same tree. Suspects in the window: arm64 virtio-net going
+  interrupt-driven (4ee0d6a84b3, 10-09) and the SMMU domains for netstack (19c127935ee).
+  Repro: `VIBEOS_PAYLOAD=netprobe ./vibeos-cli build --arch arm64 && ./vibeos-cli smoke
+  --arch arm64 --payload netprobe`.
+
 - **Windows-host QEMU launch fails all three attempts: conformance `L:no-guest-serial`, smoke
   `LAUNCH_FAIL` (FLAKE, host side, partly fixed 2026-10-11).** About 4% of conformance rounds
   over 10-10/11 (10 artifacts under `~/vibeos-flake-farm/fails/auto/*L_no-guest-serial`, every
@@ -1794,7 +1816,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `GetModuleHandle` misses returning stale errors; userenv shortcuts never written; csrss
   creating `\Session` instead of `\Sessions`; gdi32 never loading lpk.dll; ks stream IRPs
   with a NULL header; user32 button state overwriting the font handle on 64-bit; ole32
-  property dictionaries unreadable. Owed, by cluster (upstream-sync): pciidex rewrite
+  property dictionaries unreadable. **2026-10-11 sync (64 commits, 9084ff1c3d8):** ported into
+  the Rust: the NT6 HAL dispatch tail, 256 PCI buses, multiple I/O APICs with every input
+  (4e98ffc52b0), kernel32's BaseGetNamedObjectDirectory, mode's ParseModes, npfs's connection
+  attributes, regedit's address toolbar; six keyboard layouts generated. Declined: the NT5-isms
+  commit (no-op at our NTDDI apart from two inverted fiber tests it introduces in
+  LdrShutdownThread and DeleteFiber). freeldr's UEFI PCI scan needs nothing: ours predates it.
+  Still owed from it: pciidex's HighPoint chipset (`chipset/hpt.c`, new, 375 lines, plus the
+  controller's BusLocation; commented out until translated), shell32's 13 files (taken by the
+  shell32-com lane), and mmc_new's ten commits (master's translation is of the C before them;
+  `CActionWnd.cpp` is commented out). Owed, by cluster (upstream-sync): pciidex rewrite
   (~15K lines), PCIX arbiters/ECAM, netcfgx and dhcpcsvc alternate configuration, freeldr
   disk registration and boot menu, the Wine 10 ole32/oleaut32/mlang/crypt syncs, msgina and
   syssetup branding. **The msgina branding commit (6ae2d5ab43f) deleted IDI_ROSLOGO/IDI_BAR,

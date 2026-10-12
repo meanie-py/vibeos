@@ -1780,7 +1780,12 @@ pub unsafe extern "system" fn HalpQueryPciRegistryInfo() -> PPCI_REGISTRY_INFO_I
     // Save the info we got
     (*pci_registry_info).MajorRevision = (*pci_reg_info).MajorRevision;
     (*pci_registry_info).MinorRevision = (*pci_reg_info).MinorRevision;
-    (*pci_registry_info).NoBuses = (*pci_reg_info).NoBuses;
+    // PCI_GET_NUM_OF_BUSES (upstream 0d6369af12d): the registry's UCHAR wraps to 0 with all
+    // 256 buses present; a filled-in revision tells that apart from no PCI at all.
+    (*pci_registry_info).NoBuses = match (*pci_reg_info).NoBuses {
+        0 if ((*pci_reg_info).MajorRevision | (*pci_reg_info).MinorRevision) != 0 => 256,
+        n => n as USHORT,
+    };
     (*pci_registry_info).HardwareMechanism = (*pci_reg_info).HardwareMechanism;
     (*pci_registry_info).ElementCount = element_count;
 

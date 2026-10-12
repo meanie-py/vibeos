@@ -53,6 +53,7 @@ add_custom_target(rust_pciidex DEPENDS ${PCIIDEX_RUST_LIB})
 #     chipset/amd.c
 #     chipset/ati.c
 #     chipset/cmd.c
+#     chipset/hpt.c
 #     chipset/intel.c
 #     chipset/pata_generic.c
 #     chipset/pata_hw.c

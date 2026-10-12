@@ -268,8 +268,11 @@ extern "system" {
     pub fn ImageList_Create( cx: ::core::ffi::c_int, cy: ::core::ffi::c_int, flags: UINT, cInitial: ::core::ffi::c_int, cGrow: ::core::ffi::c_int, ) -> HIMAGELIST; // aclui-rust/src/types_i386.rs
     pub fn ImageList_Destroy(himl: HIMAGELIST) -> BOOL; // aclui-rust/src/types_i386.rs
     pub fn ImageList_GetImageCount(himl: HIMAGELIST) -> ::core::ffi::c_int; // aclui-rust/src/types_i386.rs
+    pub fn ImageList_LoadImageW(hi: HINSTANCE, lpbmp: LPCWSTR, cx: ::core::ffi::c_int, cGrow: ::core::ffi::c_int, crMask: COLORREF, uType: UINT, uFlags: UINT) -> HIMAGELIST; // commctrl.h (childwnd.c's Go button, upstream ed12f2328c1)
     pub fn ImageList_ReplaceIcon( himl: HIMAGELIST, i: ::core::ffi::c_int, hicon: HICON, ) -> ::core::ffi::c_int; // aclui-rust/src/types_i386.rs
     pub fn InflateRect(arg1: LPRECT, arg2: ::core::ffi::c_int, arg3: ::core::ffi::c_int) -> BOOL; // aclui-rust/src/types_i386.rs
+    pub fn SetRect(lprc: LPRECT, xLeft: ::core::ffi::c_int, yTop: ::core::ffi::c_int, xRight: ::core::ffi::c_int, yBottom: ::core::ffi::c_int) -> BOOL; // winuser.h (childwnd.c, upstream d4ed37212ac)
+    pub fn SetWindowPos(hWnd: HWND, hWndInsertAfter: HWND, X: ::core::ffi::c_int, Y: ::core::ffi::c_int, cx: ::core::ffi::c_int, cy: ::core::ffi::c_int, uFlags: UINT) -> BOOL; // winuser.h (childwnd.c, upstream d4ed37212ac)
     pub fn InitCommonControlsEx(arg1: *const INITCOMMONCONTROLSEX) -> BOOL; // aclui-rust/src/types_i386.rs
     pub fn InvalidateRect(arg1: HWND, arg2: LPCRECT, arg3: BOOL) -> BOOL; // aclui-rust/src/types_i386.rs
     pub fn IsCharAlphaNumericW(arg1: WCHAR) -> BOOL; // aclui-rust/src/types_i386.rs

@@ -240,13 +240,19 @@ pub unsafe extern "C" fn DetectPciBios(SystemKey: PCONFIGURATION_COMPONENT_DATA,
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         DetectPciIrqRoutingTable(BiosKey);
 
+        // PCI_GET_NUM_OF_BUSES (upstream 0d6369af12d): NoBuses wraps to 0 when the highest
+        // bus is 255; a filled-in revision says that is 256 buses, not none.
+        let NoBuses: ULONG = match BusData.NoBuses {
+            0 if (BusData.MajorRevision | BusData.MinorRevision) != 0 => 256,
+            n => n as ULONG,
+        };
         i = 0;
-        while i < BusData.NoBuses as ULONG {
+        while i < NoBuses {
             if i == 0 {
                 Size = crate::FIELD_OFFSET!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors[1]) + core::mem::size_of::<PCI_REGISTRY_INFO>() as ULONG;
                 PartialResourceList = FrLdrHeapAlloc(Size as usize, TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
                 if PartialResourceList == core::ptr::null_mut() {
-                    ERR!("Failed to allocate resource descriptor! Ignoring remaining PCI buses. (i = %lu, NoBuses = %lu)\n", (i) as usize, (BusData.NoBuses as ULONG) as usize);
+                    ERR!("Failed to allocate resource descriptor! Ignoring remaining PCI buses. (i = %lu, NoBuses = %lu)\n", (i) as usize, NoBuses as usize);
                     return;
                 }
 
@@ -269,7 +275,7 @@ pub unsafe extern "C" fn DetectPciBios(SystemKey: PCONFIGURATION_COMPONENT_DATA,
                 Size = crate::FIELD_OFFSET!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors);
                 PartialResourceList = FrLdrHeapAlloc(Size as usize, TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
                 if PartialResourceList == core::ptr::null_mut() {
-                    ERR!("Failed to allocate resource descriptor! Ignoring remaining PCI buses. (i = %lu, NoBuses = %lu)\n", (i) as usize, (BusData.NoBuses as ULONG) as usize);
+                    ERR!("Failed to allocate resource descriptor! Ignoring remaining PCI buses. (i = %lu, NoBuses = %lu)\n", (i) as usize, NoBuses as usize);
                     return;
                 }
 

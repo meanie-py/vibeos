@@ -57,6 +57,9 @@ const DISPATCH_VECTOR: ULONG = 0x41;
 const CLOCK_IPI_VECTOR: ULONG = 0xD2;
 
 use crate::x86::pcr::KeGetPcr;
+use crate::x86::madt::{
+    HalpApicInfoTable, HALP_ISA_IRQ_COUNT, INTERRUPT_ACTIVE_HIGH, INTERRUPT_ACTIVE_LOW, INTERRUPT_POLARITY_UNKNOWN,
+};
 
 // ---------------------------------------------------------------------------
 // APIC / IOAPIC register addresses (apicp.h, _M_AMD64 branch).
@@ -95,18 +98,27 @@ const APIC_EXT0LVTR: ULONG = 0x0500;
 const APIC_EXT1LVTR: ULONG = 0x0510;
 const APIC_EXT2LVTR: ULONG = 0x0520;
 const APIC_EXT3LVTR: ULONG = 0x0530;
+const APIC_ESR: ULONG = 0x0280;
+/// AMD extended APIC feature register (present when APIC_VER bit 31 is set).
+const APIC_EAFR: ULONG = 0x0400;
 
 // IOAPIC offsets.
 const IOAPIC_IOREGSEL: usize = 0x00;
 const IOAPIC_IOWIN: usize = 0x10;
 const IOAPIC_REDTBL: UCHAR = 0x10;
+const IOAPIC_VER: UCHAR = 0x01;
 
 // MSR + physical addresses.
 const MSR_APIC_BASE: u32 = 0x0000001B;
 const IOAPIC_PHYS_BASE: u64 = 0xFEC00000;
 
 // Vector + IRQL constants (apicp.h, _M_AMD64 branch).
-const APIC_MAX_IRQ: UCHAR = 24;
+// Upstream 4e98ffc52b0: every I/O APIC the MADT lists, not one with 24 inputs. A PCH
+// I/O APIC has up to 120, and GSIs past 23 were refused outright before this.
+/// Inputs are stored in HalpVectorToIndex, so they stay below its special values.
+const HALP_MAX_INPUTS: usize = 0xFD;
+const HALP_MAX_IOAPICS: usize = 8;
+const HALP_IOAPIC_MAX_ENTRIES: u32 = 120;
 const APIC_FREE_VECTOR: UCHAR = 0xFF;
 const APIC_RESERVED_VECTOR: UCHAR = 0xFE;
 // Spurious/error vectors differ per arch (apicp.h).
@@ -138,6 +150,7 @@ const APIC_MT_FIXED: u32 = 0;
 const APIC_MT_LOWEST_PRIORITY: u32 = 1;
 const APIC_MT_NMI: u32 = 4;
 const APIC_MT_EXT_INT: u32 = 7;
+const APIC_MT_SMI: u32 = 2;
 
 const APIC_TGM_EDGE: u32 = 0;
 const APIC_TGM_LEVEL: u32 = 1;
@@ -447,6 +460,7 @@ unsafe extern "C" {
     fn HalpClockIpi();
     // Spurious LAPIC ISR (apicp.h: __cdecl).
     fn ApicSpuriousService();
+    fn ApicErrorService();
     // i386 APC/DISPATCH software-interrupt trap stubs (apictrap.S _M_IX86 half).
     #[cfg(target_arch = "x86")]
     fn HalpApcInterrupt();
@@ -564,29 +578,68 @@ impl IoApicRedir {
 // IOAPIC register access.
 // ---------------------------------------------------------------------------
 
+/// An I/O APIC in use: its mapped registers and the GSIs it serves.
+#[derive(Copy, Clone)]
+struct IoApicUnit {
+    base: usize,
+    input_base: u32,
+    input_count: u32,
+}
+
+static mut IoApics: [IoApicUnit; HALP_MAX_IOAPICS] =
+    [IoApicUnit { base: 0, input_base: 0, input_count: 0 }; HALP_MAX_IOAPICS];
+static mut IoApicCount: usize = 0;
+/// One past the highest input any I/O APIC serves.
+static mut HalpMaxGsi: u32 = 0;
+/// The last value written to each redirection entry. Reads come from here rather than
+/// the I/O APIC (one register pair round trip fewer), and it is what an ACPI sleep has
+/// to restore, since the I/O APICs lose their state there.
+static mut IoApicShadow: [u64; HALP_MAX_INPUTS] = [0; HALP_MAX_INPUTS];
+/// The vector allocated to each input, the inverse of HalpVectorToIndex; always
+/// updated together. Firmware can leave a vector in an entry, so the entry is no
+/// witness of an allocation (upstream reads this table for the same reason).
+#[unsafe(no_mangle)]
+pub static mut HalpGsivToVector: [UCHAR; 256] = [APIC_FREE_VECTOR; 256];
+
 #[inline(always)]
-unsafe fn io_apic_read(register: UCHAR) -> ULONG {
-    write_register_ulong(IOAPIC_BASE + IOAPIC_IOREGSEL, register as ULONG);
-    read_register_ulong(IOAPIC_BASE + IOAPIC_IOWIN)
+unsafe fn io_apic_read(base: usize, register: UCHAR) -> ULONG {
+    write_register_ulong(base + IOAPIC_IOREGSEL, register as ULONG);
+    read_register_ulong(base + IOAPIC_IOWIN)
 }
 
 #[inline(always)]
-unsafe fn io_apic_write(register: UCHAR, value: ULONG) {
-    write_register_ulong(IOAPIC_BASE + IOAPIC_IOREGSEL, register as ULONG);
-    write_register_ulong(IOAPIC_BASE + IOAPIC_IOWIN, value);
+unsafe fn io_apic_write(base: usize, register: UCHAR, value: ULONG) {
+    write_register_ulong(base + IOAPIC_IOREGSEL, register as ULONG);
+    write_register_ulong(base + IOAPIC_IOWIN, value);
+}
+
+/// The I/O APIC serving `input`, if any.
+unsafe fn find_io_apic(input: u32) -> Option<IoApicUnit> {
+    let units = &*(&raw const IoApics);
+    units[..IoApicCount]
+        .iter()
+        .find(|u| input >= u.input_base && input - u.input_base < u.input_count)
+        .copied()
+}
+
+/// Program an input's redirection entry and record it in the shadow. Callers hold
+/// interrupts off (or run before other processors start): IOREGSEL/IOWIN are shared.
+#[inline(always)]
+unsafe fn apic_write_io_redirection_entry(input: u32, redir: IoApicRedir) {
+    let Some(unit) = find_io_apic(input) else {
+        return;
+    };
+    IoApicShadow[input as usize] = redir.long;
+    // The destination goes in before the low half unmasks the entry, so an asserted
+    // input cannot reach a stale processor.
+    let register = IOAPIC_REDTBL + 2 * (input - unit.input_base) as UCHAR;
+    io_apic_write(unit.base, register + 1, redir.long1());
+    io_apic_write(unit.base, register, redir.long0());
 }
 
 #[inline(always)]
-unsafe fn apic_write_io_redirection_entry(index: UCHAR, redir: IoApicRedir) {
-    io_apic_write(IOAPIC_REDTBL + 2 * index, redir.long0());
-    io_apic_write(IOAPIC_REDTBL + 2 * index + 1, redir.long1());
-}
-
-#[inline(always)]
-unsafe fn apic_read_io_redirection_entry(index: UCHAR) -> IoApicRedir {
-    let lo = io_apic_read(IOAPIC_REDTBL + 2 * index);
-    let hi = io_apic_read(IOAPIC_REDTBL + 2 * index + 1);
-    IoApicRedir::from_halves(lo, hi)
+unsafe fn apic_read_io_redirection_entry(input: u32) -> IoApicRedir {
+    IoApicRedir { long: IoApicShadow[input as usize] }
 }
 
 // ---------------------------------------------------------------------------
@@ -709,8 +762,7 @@ unsafe fn apic_raise_irql(irql: KIRQL) {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "fastcall" fn HalpIrqToVector(Irq: UCHAR) -> UCHAR {
-    let lo = io_apic_read(IOAPIC_REDTBL + 2 * Irq);
-    (lo & 0xFF) as UCHAR
+    HalpGsivToVector[Irq as usize]
 }
 
 #[unsafe(no_mangle)]
@@ -770,13 +822,26 @@ pub unsafe extern "system" fn ApicInitializeLocalApic(Cpu: ULONG) {
         | ((APIC_MT_FIXED as ULONG) << 8)
         | (1 << 16); // Mask
 
+    // Only the LVTs this APIC has: writing one it lacks is an illegal-register error
+    // (upstream 4e98ffc52b0). The performance-counter LVT came with 5 entries, the
+    // thermal one with 6; AMD's extended LVTs reset unmasked and say how many there are.
+    let version = apic_read(APIC_VER);
+    let max_lvt = (version >> 16) & 0xFF;
     apic_write(APIC_TMRLVTR, lvt_masked);
-    apic_write(APIC_THRMLVTR, lvt_masked);
-    apic_write(APIC_PCLVTR, lvt_masked);
-    apic_write(APIC_EXT0LVTR, lvt_masked);
-    apic_write(APIC_EXT1LVTR, lvt_masked);
-    apic_write(APIC_EXT2LVTR, lvt_masked);
-    apic_write(APIC_EXT3LVTR, lvt_masked);
+    if max_lvt >= 4 {
+        apic_write(APIC_PCLVTR, lvt_masked);
+    }
+    if max_lvt >= 5 {
+        apic_write(APIC_THRMLVTR, lvt_masked);
+    }
+    if version & (1 << 31) != 0 {
+        let ext_lvts = ((apic_read(APIC_EAFR) >> 16) & 0xFF).min(4);
+        for (i, reg) in [APIC_EXT0LVTR, APIC_EXT1LVTR, APIC_EXT2LVTR, APIC_EXT3LVTR].into_iter().enumerate() {
+            if (i as ULONG) < ext_lvts {
+                apic_write(reg, lvt_masked);
+            }
+        }
+    }
 
     // LINT0 — ExtInt, masked.
     let lint0: ULONG = (APIC_SPURIOUS_VECTOR as ULONG)
@@ -796,6 +861,11 @@ pub unsafe extern "system" fn ApicInitializeLocalApic(Cpu: ULONG) {
     // is written enabled. This value is rebuilt from scratch, so it must omit the mask bit to
     // match; an earlier translation OR'd in (1 << 16) and left the error LVT masked.
     let err_lvt: ULONG = (APIC_ERROR_VECTOR as ULONG) | ((APIC_MT_FIXED as ULONG) << 8);
+    // Clear what the writes above may have logged, and give the error vector a handler
+    // that rearms the ESR (apictrap.S's ApicErrorService): unmasked with no handler, the
+    // first APIC error was an unexpected-interrupt trap.
+    apic_write(APIC_ESR, 0);
+    register_interrupt_handler(APIC_ERROR_VECTOR as ULONG, ApicErrorService as _);
     apic_write(APIC_ERRLVTR, err_lvt);
 
     // Set IRQL from PCR.
@@ -818,14 +888,15 @@ pub unsafe extern "system" fn HalpAllocateSystemInterrupt(Irq: UCHAR, Vector: UC
     redir.set_vector(Vector);
     redir.set_message_type(APIC_MT_LOWEST_PRIORITY);
     redir.set_destination_mode(APIC_DM_LOGICAL);
-    redir.set_polarity(LineActiveLow[Irq as usize] as u32);
+    redir.set_polarity((input_polarity(Irq as u32, false) == INTERRUPT_ACTIVE_LOW) as u32);
     redir.set_remote_irr(0);
     redir.set_trigger_mode(APIC_TGM_EDGE);
     redir.set_mask(1);
     redir.set_destination((apic_read(APIC_ID) >> 24) as u32);
-    apic_write_io_redirection_entry(Irq, redir);
+    apic_write_io_redirection_entry(Irq as u32, redir);
 
     HalpVectorToIndex[Vector as usize] = Irq;
+    HalpGsivToVector[Irq as usize] = Vector;
     Vector
 }
 
@@ -841,14 +912,13 @@ pub unsafe extern "system" fn HalpGetRootInterruptVector(
     OutIrql: PKIRQL,
     OutAffinity: PKAFFINITY,
 ) -> ULONG {
-    // The level is an I/O APIC input (a GSI; one I/O APIC, based at 0). Past the
-    // last input there is no redirection entry to read or program: an index cast
-    // to UCHAR would alias another register, so refuse it and say why.
-    if BusInterruptLevel >= APIC_MAX_IRQ as ULONG {
+    // The level is an I/O APIC input (a GSI). One no I/O APIC serves has no
+    // redirection entry to read or program, so refuse it and say why.
+    if find_io_apic(BusInterruptLevel).is_none() {
         DbgPrint(
-            b"[HAL] interrupt line %lu is past the I/O APIC's %u inputs: no vector\n\0".as_ptr(),
+            b"[HAL] no I/O APIC serves interrupt line %lu (inputs end at %lu): no vector\n\0".as_ptr(),
             BusInterruptLevel,
-            APIC_MAX_IRQ as u32,
+            HalpMaxGsi,
         );
         core::ptr::write_volatile(OutAffinity, 0);
         core::ptr::write_volatile(OutIrql, 0);
@@ -899,14 +969,33 @@ pub unsafe extern "system" fn HalpGetRootInterruptVector(
 // used. The trigger mode is the connecting driver's (HalEnableSystemInterrupt).
 // ---------------------------------------------------------------------------
 
-static mut LineActiveLow: [bool; APIC_MAX_IRQ as usize] = [false; APIC_MAX_IRQ as usize];
+/// Each input's polarity as the firmware described it (a KINTERRUPT_POLARITY):
+/// acpi.sys's _PRT resolution here, and the MADT's interrupt source overrides.
+static mut LinePolarity: [ULONG; HALP_MAX_INPUTS] = [INTERRUPT_POLARITY_UNKNOWN; HALP_MAX_INPUTS];
+
+/// The polarity to program for `input`: what the firmware described, else that of an
+/// MADT override targeting it, else the convention of its trigger mode: PCI lines are
+/// level and active-low, ISA lines edge and active-high (upstream 4e98ffc52b0).
+unsafe fn input_polarity(input: u32, level: bool) -> ULONG {
+    let described = LinePolarity[input as usize];
+    if described != INTERRUPT_POLARITY_UNKNOWN {
+        return described;
+    }
+    let info = &*(&raw const HalpApicInfoTable);
+    for irq in 0..HALP_ISA_IRQ_COUNT {
+        if info.IsaIrqPolarity[irq] != INTERRUPT_POLARITY_UNKNOWN && info.IsaIrqGsi[irq] == input {
+            return info.IsaIrqPolarity[irq];
+        }
+    }
+    if level { INTERRUPT_ACTIVE_LOW } else { INTERRUPT_ACTIVE_HIGH }
+}
 
 /// How many interrupt inputs this HAL routes through an I/O APIC. Nonzero tells
 /// acpi.sys to select the APIC interrupt model (`\_PIC(1)`) and route PCI INTx
 /// by GSI; the 8259 flavor returns 0.
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalVibeosIoApicInputs() -> ULONG {
-    APIC_MAX_IRQ as ULONG
+    HalpMaxGsi
 }
 
 /// Record the polarity of I/O APIC input `Gsi`. FALSE when the input does not
@@ -914,23 +1003,23 @@ pub unsafe extern "system" fn HalVibeosIoApicInputs() -> ULONG {
 /// since a second sharer of a line describes the same wire.
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalVibeosSetInterruptLine(Gsi: ULONG, LevelSensitive: BOOLEAN, ActiveLow: BOOLEAN) -> BOOLEAN {
-    if Gsi >= APIC_MAX_IRQ as ULONG {
+    if find_io_apic(Gsi).is_none() {
         DbgPrint(
-            b"[HAL] firmware routes an interrupt to GSI %lu, past the I/O APIC's %u inputs\n\0".as_ptr(),
+            b"[HAL] firmware routes an interrupt to GSI %lu, which no I/O APIC serves\n\0".as_ptr(),
             Gsi,
-            APIC_MAX_IRQ as u32,
         );
         return 0;
     }
     let low = ActiveLow != 0;
+    let polarity = if low { INTERRUPT_ACTIVE_LOW } else { INTERRUPT_ACTIVE_HIGH };
     let eflags = read_eflags();
     cli();
-    let changed = LineActiveLow[Gsi as usize] != low;
-    LineActiveLow[Gsi as usize] = low;
-    let mut redir = apic_read_io_redirection_entry(Gsi as UCHAR);
-    if redir.vector() != APIC_FREE_VECTOR {
+    let changed = LinePolarity[Gsi as usize] != polarity;
+    LinePolarity[Gsi as usize] = polarity;
+    if HalpGsivToVector[Gsi as usize] != APIC_FREE_VECTOR {
+        let mut redir = apic_read_io_redirection_entry(Gsi);
         redir.set_polarity(low as u32);
-        apic_write_io_redirection_entry(Gsi as UCHAR, redir);
+        apic_write_io_redirection_entry(Gsi, redir);
     }
     write_eflags(eflags);
     if changed {
@@ -1111,8 +1200,57 @@ pub(crate) unsafe fn message_target(vector: u32, _requester: u32) -> Option<(u64
 // init HalpVectorToIndex, then unmask the timer slot.
 // ---------------------------------------------------------------------------
 
-#[unsafe(no_mangle)]
-pub unsafe extern "system" fn ApicInitializeIOApic() {
+/// Map the I/O APIC at `phys` and add it to the units in use, serving GSIs from
+/// `input_base`. The first one takes the fixed IOAPIC_BASE page, as it always has;
+/// the others come from the HAL heap. Divergence from upstream, which maps unit N at
+/// IOAPIC_BASE + N pages: nothing reserves those pages, and the heap only ever hands
+/// out unmapped ones.
+unsafe fn map_io_apic(phys: u64, input_base: u32) {
+    if IoApicCount == HALP_MAX_IOAPICS || input_base as usize >= HALP_MAX_INPUTS {
+        DbgPrint(
+            b"[HAL] I/O APIC at %p with input base %lu ignored\n\0".as_ptr(),
+            phys as usize as *const u8,
+            input_base,
+        );
+        return;
+    }
+    let base = if IoApicCount == 0 {
+        map_fixed_io_apic_page(phys);
+        IOAPIC_BASE + (phys as usize & 0xFFF)
+    } else {
+        let mut pa: ntkrnl_sys::hal_ddk::PHYSICAL_ADDRESS = core::mem::zeroed();
+        pa.QuadPart = phys as i64;
+        let va = super::memory::HalpMapPhysicalMemory64(pa, 1);
+        if va.is_null() {
+            DbgPrint(b"[HAL] I/O APIC at %p: no address space to map it\n\0".as_ptr(), phys as usize as *const u8);
+            return;
+        }
+        va as usize
+    };
+    // Nothing decodes the address when all bits read back set.
+    let version = io_apic_read(base, IOAPIC_VER);
+    if version == 0xFFFF_FFFF {
+        DbgPrint(b"[HAL] no I/O APIC responds at %p\n\0".as_ptr(), phys as usize as *const u8);
+        return;
+    }
+    // Bits 23:16 hold the index of the last redirection entry.
+    let count = (((version >> 16) & 0xFF) + 1)
+        .min(HALP_IOAPIC_MAX_ENTRIES)
+        .min(HALP_MAX_INPUTS as u32 - input_base);
+    IoApics[IoApicCount] = IoApicUnit { base, input_base, input_count: count };
+    IoApicCount += 1;
+    HalpMaxGsi = HalpMaxGsi.max(input_base + count);
+    DbgPrint(
+        b"[HAL] I/O APIC %lu at %p: GSIs %lu-%lu\n\0".as_ptr(),
+        (IoApicCount - 1) as ULONG,
+        phys as usize as *const u8,
+        input_base,
+        input_base + count - 1,
+    );
+}
+
+/// Point the PTE of IOAPIC_BASE at `phys` (HalAddressToPte, as the C does).
+unsafe fn map_fixed_io_apic_page(phys: u64) {
     // amd64 has one HARDWARE_PTE; i386 bindgen names the non-PAE layout
     // _HARDWARE_PTE_X86 (there is also a PAE variant), so alias per arch.
     #[cfg(target_arch = "x86_64")]
@@ -1138,15 +1276,29 @@ pub unsafe extern "system" fn ApicInitializeIOApic() {
 
     // PFN is 64-bit on amd64, 32-bit (ULONG) on i386 — cast to fit the setter.
     #[cfg(target_arch = "x86_64")]
-    (*pte).set_PageFrameNumber(IOAPIC_PHYS_BASE / 4096);
+    (*pte).set_PageFrameNumber(phys / 4096);
     #[cfg(target_arch = "x86")]
-    (*pte).set_PageFrameNumber((IOAPIC_PHYS_BASE / 4096) as u32);
+    (*pte).set_PageFrameNumber((phys / 4096) as u32);
     (*pte).set_Valid(1);
     (*pte).set_Write(1);
     (*pte).set_Owner(1);
     (*pte).set_CacheDisable(1);
     (*pte).set_Global(1);
     core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn ApicInitializeIOApic() {
+    // Every I/O APIC the MADT lists, else the default one (upstream 4e98ffc52b0).
+    let info = &*(&raw const HalpApicInfoTable);
+    for id in 0..info.IoApicPA.len() {
+        if info.IoApicPA[id] != 0 {
+            map_io_apic(info.IoApicPA[id] as u64, info.IoApicIrqBase[id]);
+        }
+    }
+    if IoApicCount == 0 {
+        map_io_apic(IOAPIC_PHYS_BASE, 0);
+    }
 
     let mut template = IoApicRedir::new();
     template.set_vector(APIC_FREE_VECTOR);
@@ -1157,11 +1309,32 @@ pub unsafe extern "system" fn ApicInitializeIOApic() {
     let dest = (apic_read(APIC_ID) >> 24) as u32;
     template.set_destination(dest);
 
-    for index in 0..APIC_MAX_IRQ {
-        apic_write_io_redirection_entry(index, template);
+    let units = &*(&raw const IoApics);
+    for unit in &units[..IoApicCount] {
+        for input in unit.input_base..unit.input_base + unit.input_count {
+            // An entry the firmware routes to SMI stays as it is.
+            let register = IOAPIC_REDTBL + 2 * (input - unit.input_base) as UCHAR;
+            let current = IoApicRedir::from_halves(
+                io_apic_read(unit.base, register),
+                io_apic_read(unit.base, register + 1),
+            );
+            if (current.long >> 8) & 7 == APIC_MT_SMI as u64 {
+                IoApicShadow[input as usize] = current.long;
+                continue;
+            }
+            apic_write_io_redirection_entry(input, template);
+        }
     }
     for v in 0..=255usize {
         HalpVectorToIndex[v] = APIC_FREE_VECTOR;
+        HalpGsivToVector[v] = APIC_FREE_VECTOR;
+    }
+    // ISA overrides the MADT gave a polarity describe their inputs.
+    for irq in 0..HALP_ISA_IRQ_COUNT {
+        let gsi = info.IsaIrqGsi[irq] as usize;
+        if info.IsaIrqPolarity[irq] != INTERRUPT_POLARITY_UNKNOWN && gsi < HALP_MAX_INPUTS {
+            LinePolarity[gsi] = info.IsaIrqPolarity[irq];
+        }
     }
 
     // Timer slot, level-triggered, masked.
@@ -1172,7 +1345,7 @@ pub unsafe extern "system" fn ApicInitializeIOApic() {
     clock.set_trigger_mode(APIC_TGM_LEVEL);
     clock.set_mask(1);
     clock.set_destination(dest);
-    apic_write_io_redirection_entry(APIC_CLOCK_INDEX, clock);
+    apic_write_io_redirection_entry(APIC_CLOCK_INDEX as u32, clock);
 }
 
 // ---------------------------------------------------------------------------
@@ -1197,9 +1370,11 @@ pub unsafe extern "system" fn HalpInitializePICs(EnableInterrupts: BOOLEAN) {
     // Reserve fixed system vectors.
     HalpVectorToIndex[APC_VECTOR as usize] = APIC_RESERVED_VECTOR;
     HalpVectorToIndex[DISPATCH_VECTOR as usize] = APIC_RESERVED_VECTOR;
-    HalpVectorToIndex[APIC_CLOCK_VECTOR as usize] = 8;
+    HalpVectorToIndex[APIC_CLOCK_VECTOR as usize] = APIC_CLOCK_INDEX;
+    HalpGsivToVector[APIC_CLOCK_INDEX as usize] = APIC_CLOCK_VECTOR as UCHAR;
     HalpVectorToIndex[CLOCK_IPI_VECTOR as usize] = APIC_RESERVED_VECTOR;
     HalpVectorToIndex[APIC_SPURIOUS_VECTOR as usize] = APIC_RESERVED_VECTOR;
+    HalpVectorToIndex[APIC_ERROR_VECTOR as usize] = APIC_RESERVED_VECTOR;
 
     register_interrupt_handler(APIC_CLOCK_VECTOR, HalpClockInterrupt as _);
     register_interrupt_handler(CLOCK_IPI_VECTOR, HalpClockIpi as _);
@@ -1257,11 +1432,11 @@ pub unsafe extern "system" fn HalEnableSystemInterrupt(
         return 1; // TRUE: nothing to unmask, the device's table entry is the gate
     }
     let index = HalpVectorToIndex[Vector as usize];
-    if index == APIC_FREE_VECTOR {
-        return 0; // FALSE
+    if index as u32 >= HalpMaxGsi {
+        return 0; // FALSE: free, reserved, or no input behind it
     }
 
-    let mut redir = apic_read_io_redirection_entry(index);
+    let mut redir = apic_read_io_redirection_entry(index as u32);
     if !redir.mask() {
         // Already enabled — confirm vector matches.
         return if redir.vector() == Vector as UCHAR { 1 } else { 0 };
@@ -1277,9 +1452,11 @@ pub unsafe extern "system" fn HalEnableSystemInterrupt(
         APIC_TGM_EDGE
     };
     redir.set_trigger_mode(trigger);
+    let level = InterruptMode == LEVEL_SENSITIVE;
+    redir.set_polarity((input_polarity(index as u32, level) == INTERRUPT_ACTIVE_LOW) as u32);
     redir.set_mask(0);
 
-    apic_write_io_redirection_entry(index, redir);
+    apic_write_io_redirection_entry(index as u32, redir);
     1 // TRUE
 }
 
@@ -1289,11 +1466,13 @@ pub unsafe extern "system" fn HalDisableSystemInterrupt(Vector: ULONG, _Irql: KI
         return;
     }
     let index = HalpVectorToIndex[Vector as usize];
-
-    // Mask just the lower dword (Mask bit at position 16).
-    let mut lo = io_apic_read(IOAPIC_REDTBL + 2 * index);
-    lo |= 1 << 16;
-    io_apic_write(IOAPIC_REDTBL + 2 * index, lo);
+    // Reserved and free vectors have no entry to mask.
+    if index as u32 >= HalpMaxGsi {
+        return;
+    }
+    let mut redir = apic_read_io_redirection_entry(index as u32);
+    redir.set_mask(1);
+    apic_write_io_redirection_entry(index as u32, redir);
 }
 
 // ---------------------------------------------------------------------------
@@ -1321,8 +1500,8 @@ pub unsafe extern "system" fn HalBeginSystemInterrupt(
         (*pcr).IRR = current as ULONG;
         apic_send_eoi();
         let index = HalpVectorToIndex[Vector as usize];
-        if (index as ULONG) < APIC_MAX_IRQ as ULONG {
-            let redir = apic_read_io_redirection_entry(index);
+        if (index as ULONG) < HalpMaxGsi {
+            let redir = apic_read_io_redirection_entry(index as u32);
             apic_request_self_interrupt(Vector as UCHAR, redir.trigger_mode() as UCHAR);
         } else {
             // Reserved (software) vector — edge-triggered self-IPI.

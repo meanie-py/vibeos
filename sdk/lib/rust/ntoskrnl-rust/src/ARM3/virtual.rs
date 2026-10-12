@@ -2425,16 +2425,15 @@ pub unsafe extern "system" fn NtAllocateVirtualMemory(
                     HighestAddress = ZeroBits;
                 }
             } else if ZeroBits != 0 {
-                HighestAddress = (ULONG_PTR::MAX) >> ZeroBits;
+                /* NT counts the zero bits of a 32-bit address on every architecture
+                 * (MM_USER_ADDRESS_RANGE_LIMIT is 0xFFFFFFFF on x64 too) and clamps the
+                 * result to the VAD ceiling. The C shifted MAXULONG_PTR and failed
+                 * STATUS_INVALID_PARAMETER_3 above the ceiling, so ZeroBits 1 failed on
+                 * i386 and 1..21 meant nothing on 64-bit (kmtest ZwAllocateVirtualMemory's
+                 * ZERO BITS TESTS and ZeroBitsTest, written against Windows). */
+                HighestAddress = (0xFFFF_FFFFu32 as ULONG_PTR) >> ZeroBits;
                 if HighestAddress > MM_HIGHEST_VAD_ADDRESS {
-                    Status = STATUS_INVALID_PARAMETER_3;
-                    if Attached != 0 {
-                        KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
-                    }
-                    if ProcessHandle != NtCurrentProcess() as HANDLE {
-                        ObDereferenceObject(Process as PVOID);
-                    }
-                    return Status;
+                    HighestAddress = MM_HIGHEST_VAD_ADDRESS;
                 }
             }
         } else {

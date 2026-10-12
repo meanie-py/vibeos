@@ -3425,6 +3425,8 @@ pub const SHGNLI_PIDL: u32 = 1;
 pub const SHGNLI_PREFIXNAME: u32 = 2;
 pub const SHGNLI_NOUNIQUE: u32 = 4;
 pub const SHGNLI_NOLNK: u32 = 8;
+pub const SHGNLI_NOLOCNAME: u32 = 16;
+pub const SHGNLI_USEURLEXT: u32 = 32;
 pub const STRSAFE_MAX_CCH: u32 = 2147483647;
 pub const STRSAFE_IGNORE_NULLS: u32 = 256;
 pub const STRSAFE_FILL_BEHIND_NULL: u32 = 512;
@@ -3449,7 +3451,6 @@ pub const IDS_LIST_COLUMN_LAST: u32 = 93;
 pub const IDS_APP_TITLE: u32 = 103;
 pub const IDI_REGEDIT: u32 = 100;
 pub const IDI_REGFILE: u32 = 101;
-pub const IDI_ARROW: u32 = 102;
 pub const IDI_SMALL: u32 = 108;
 pub const IDC_REGEDIT: u32 = 109;
 pub const IDC_REGEDIT_FRAME: u32 = 110;
@@ -3478,6 +3479,8 @@ pub const ID_EDIT_NEW_KEY: u32 = 32785;
 pub const ID_EDIT_NEW_STRINGVALUE: u32 = 32786;
 pub const ID_EDIT_NEW_BINARYVALUE: u32 = 32787;
 pub const ID_EDIT_NEW_DWORDVALUE: u32 = 32788;
+pub const IDB_GO_NORMAL: u32 = 201;
+pub const IDB_GO_HOT: u32 = 202;
 pub const ID_REGISTRY_IMPORTREGISTRYFILE: u32 = 32789;
 pub const ID_REGISTRY_EXPORTREGISTRYFILE: u32 = 32790;
 pub const ID_REGISTRY_CONNECTNETWORKREGISTRY: u32 = 32791;
@@ -3566,6 +3569,7 @@ pub const IDS_COLLAPSE: u32 = 31204;
 pub const IDS_NEW_KEY: u32 = 31205;
 pub const IDS_NEW_VALUE: u32 = 31206;
 pub const IDS_GOTO_SUGGESTED_KEY: u32 = 31207;
+pub const IDS_GO: u32 = 31208;
 pub const IDS_IMPORT_PROMPT: u32 = 31300;
 pub const IDS_IMPORT_OK: u32 = 31301;
 pub const IDS_IMPORT_ERROR: u32 = 31302;
@@ -11950,9 +11954,10 @@ pub struct ChildWnd {
     pub hWnd: HWND,
     pub hTreeWnd: HWND,
     pub hListWnd: HWND,
+    pub hAddressToolBarWnd: HWND,
     pub hAddressBarWnd: HWND,
-    pub hAddressBtnWnd: HWND,
-    pub hArrowIcon: HICON,
+    pub hGoButtonNormal: HIMAGELIST,
+    pub hGoButtonHot: HIMAGELIST,
     pub nFocusPanel: ::core::ffi::c_int,
     pub nSplitPos: ::core::ffi::c_int,
     pub pos: WINDOWPLACEMENT,

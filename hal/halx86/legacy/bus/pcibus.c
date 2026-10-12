@@ -88,7 +88,7 @@ static PCIPBUSDATA HalpFakePciBusData =
         {0, 0, 0, 0}
     },
     {{0, 0}},
-    32,
+    PCI_MAX_DEVICES,
 };
 
 const BUS_HANDLER HalpFakePciBusHandler =
@@ -1142,7 +1142,7 @@ HalpQueryPciRegistryInfo(VOID)
     /* Save the info we got */
     PciRegistryInfo->MajorRevision = PciRegInfo->MajorRevision;
     PciRegistryInfo->MinorRevision = PciRegInfo->MinorRevision;
-    PciRegistryInfo->NoBuses = PciRegInfo->NoBuses;
+    PciRegistryInfo->NoBuses = PCI_GET_NUM_OF_BUSES(PciRegInfo); // Don't use PciRegInfo->NoBuses directly
     PciRegistryInfo->HardwareMechanism = PciRegInfo->HardwareMechanism;
     PciRegistryInfo->ElementCount = ElementCount;
 
@@ -1159,11 +1159,8 @@ NTAPI
 HalpInitializePciStubs(VOID)
 {
     PPCI_REGISTRY_INFO_INTERNAL PciRegistryInfo;
-    UCHAR PciType;
     PPCIPBUSDATA BusData = (PPCIPBUSDATA)HalpFakePciBusHandler.BusData;
-    ULONG i;
-    PCI_SLOT_NUMBER j;
-    ULONG VendorId = 0;
+    UCHAR PciType;
     ULONG MaxPciBusNumber;
 
     /* Query registry information */
@@ -1233,19 +1230,18 @@ HalpInitializePciStubs(VOID)
     /* Run a forced bus scan if needed */
     if (MaxPciBusNumber == MAXULONG)
     {
-        /* Initialize the max bus number to 0xFF */
-        HalpMaxPciBus = 0xFF;
+        ULONG i;
+        PCI_SLOT_NUMBER j;
 
-        /* Initialize the counter */
+        /* Initialize the counter and loop all possible buses */
         MaxPciBusNumber = 0;
-
-        /* Loop all possible buses */
-        for (i = 0; i < HalpMaxPciBus; i++)
+        for (i = 0; i <= PCI_MAX_BRIDGE_NUMBER; i++)
         {
             /* Loop all devices */
             for (j.u.AsULONG = 0; j.u.AsULONG < BusData->MaxDevice; j.u.AsULONG++)
             {
                 /* Query the interface */
+                ULONG VendorId = 0;
                 if (HaliPciInterfaceReadConfig(NULL,
                                                i,
                                                j,
@@ -1273,4 +1269,3 @@ HalpInitializePciStubs(VOID)
 }
 
 /* EOF */
-

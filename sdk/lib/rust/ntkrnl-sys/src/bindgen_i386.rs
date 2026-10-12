@@ -49084,6 +49084,41 @@ pub struct _INTERRUPT_CONNECTION_DATA {
 }
 pub type INTERRUPT_CONNECTION_DATA = _INTERRUPT_CONNECTION_DATA;
 pub type PINTERRUPT_CONNECTION_DATA = *mut _INTERRUPT_CONNECTION_DATA;
+pub const _INTERRUPT_TARGET_TYPE_TargetApic: _INTERRUPT_TARGET_TYPE = 0;
+pub const _INTERRUPT_TARGET_TYPE_TargetApicRequest: _INTERRUPT_TARGET_TYPE = 1;
+pub type _INTERRUPT_TARGET_TYPE = ::core::ffi::c_uint;
+pub use self::_INTERRUPT_TARGET_TYPE as INTERRUPT_TARGET_TYPE;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _HAL_MESSAGE_SIGNAL_TARGET_REQUEST {
+    pub InterruptTargetType: INTERRUPT_TARGET_TYPE,
+    pub ApicTarget: _HAL_MESSAGE_SIGNAL_TARGET_REQUEST__bindgen_ty_1,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _HAL_MESSAGE_SIGNAL_TARGET_REQUEST__bindgen_ty_1 {
+    pub InterruptVector: ULONG,
+    pub TargetProcessors: KAFFINITY,
+    pub ApicDestinationMode: HAL_APIC_DESTINATION_MODE,
+}
+pub type HAL_MESSAGE_SIGNAL_TARGET_REQUEST = _HAL_MESSAGE_SIGNAL_TARGET_REQUEST;
+pub type PHAL_MESSAGE_SIGNAL_TARGET_REQUEST = *mut _HAL_MESSAGE_SIGNAL_TARGET_REQUEST;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _HAL_INTERRUPT_TARGET_DESCRIPTOR {
+    pub TargetType: INTERRUPT_TARGET_TYPE,
+    pub ProcessorIndex: ULONG,
+    pub Capabilities: ULONG,
+    pub ApicRouting: _HAL_INTERRUPT_TARGET_DESCRIPTOR__bindgen_ty_1,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _HAL_INTERRUPT_TARGET_DESCRIPTOR__bindgen_ty_1 {
+    pub LogicalDestination: ULONG,
+    pub DestinationFormat: HAL_APIC_DESTINATION_MODE,
+}
+pub type HAL_INTERRUPT_TARGET_DESCRIPTOR = _HAL_INTERRUPT_TARGET_DESCRIPTOR;
+pub type PHAL_INTERRUPT_TARGET_DESCRIPTOR = *mut _HAL_INTERRUPT_TARGET_DESCRIPTOR;
 pub const _FIRMWARE_REENTRY_HalHaltRoutine: _FIRMWARE_REENTRY = 0;
 pub const _FIRMWARE_REENTRY_HalPowerDownRoutine: _FIRMWARE_REENTRY = 1;
 pub const _FIRMWARE_REENTRY_HalRestartRoutine: _FIRMWARE_REENTRY = 2;
@@ -50453,6 +50488,22 @@ pub struct _HAL_PRIVATE_DISPATCH {
     pub HalVectorToIDTEntry: pHalVectorToIDTEntry,
     pub KdMapPhysicalMemory64: pKdMapPhysicalMemory64,
     pub KdUnmapVirtualAddress: pKdUnmapVirtualAddress,
+    pub KdGetPciDataByOffset: pKdGetPciDataByOffset,
+    pub KdSetPciDataByOffset: pKdSetPciDataByOffset,
+    pub HalGetInterruptVectorOverride: pHalGetInterruptVector,
+    pub HalGetVectorInputOverride: pHalGetVectorInput,
+    pub HalLoadMicrocode: pHalLoadMicrocode,
+    pub HalUnloadMicrocode: pHalUnloadMicrocode,
+    pub HalPostMicrocodeUpdate: pHalPostMicrocodeUpdate,
+    pub HalAllocateMessageTargetOverride: pHalAllocateMessageTarget,
+    pub HalFreeMessageTargetOverride: pHalFreeMessageTarget,
+    pub HalDpReplaceBegin: pHalDpReplaceBegin,
+    pub HalDpReplaceTarget: pHalDpReplaceTarget,
+    pub HalDpReplaceControl: pHalDpReplaceControl,
+    pub HalDpReplaceEnd: pHalDpReplaceEnd,
+    pub HalPrepareForBugcheck: pHalPrepareForBugcheck,
+    pub HalReadWheaPhysicalMemory: pHalReadWheaPhysicalMemory,
+    pub HalWriteWheaPhysicalMemory: pHalWriteWheaPhysicalMemory,
 }
 pub type HAL_PRIVATE_DISPATCH = _HAL_PRIVATE_DISPATCH;
 pub type PHAL_PRIVATE_DISPATCH = *mut _HAL_PRIVATE_DISPATCH;
@@ -67292,6 +67343,39 @@ unsafe extern "fastcall" {
     ) -> UCHAR;
 }
 unsafe extern "system" {
+    pub fn HalConvertDeviceIdtToIrql(IdtEntry: ULONG) -> KIRQL;
+}
+unsafe extern "system" {
+    pub fn HalEnableInterrupt(ConnectionData: PINTERRUPT_CONNECTION_DATA) -> NTSTATUS;
+}
+unsafe extern "system" {
+    pub fn HalDisableInterrupt(ConnectionData: PINTERRUPT_CONNECTION_DATA) -> NTSTATUS;
+}
+unsafe extern "system" {
+    pub fn HalGetVectorInput(
+        Vector: ULONG,
+        Affinity: KAFFINITY,
+        Input: PULONG,
+        Polarity: PKINTERRUPT_POLARITY,
+    ) -> NTSTATUS;
+}
+unsafe extern "system" {
+    pub fn HalGetInterruptTargetInformation(
+        Type: INTERRUPT_TARGET_TYPE,
+        Id: ULONG,
+        Information: PHAL_INTERRUPT_TARGET_DESCRIPTOR,
+    ) -> NTSTATUS;
+}
+unsafe extern "system" {
+    pub fn HalGetMessageRoutingInfo(
+        Request: PHAL_MESSAGE_SIGNAL_TARGET_REQUEST,
+        ConnectionData: PINTERRUPT_CONNECTION_DATA,
+    ) -> NTSTATUS;
+}
+unsafe extern "system" {
+    pub fn HalGetProcessorIdByNtNumber(ProcessorNumber: ULONG, ProcessorId: PULONG) -> NTSTATUS;
+}
+unsafe extern "system" {
     pub fn HalAdjustResourceList(pResourceList: *mut PIO_RESOURCE_REQUIREMENTS_LIST) -> NTSTATUS;
 }
 unsafe extern "system" {
@@ -69102,6 +69186,9 @@ unsafe extern "system" {
         SecurityInformation: SECURITY_INFORMATION,
         SecurityDescriptor: PSECURITY_DESCRIPTOR,
     ) -> NTSTATUS;
+}
+unsafe extern "fastcall" {
+    pub fn ObGetObjectType(Object: PVOID) -> POBJECT_TYPE;
 }
 unsafe extern "system" {
     pub fn NtCreateDirectoryObject(
@@ -78657,9 +78744,6 @@ unsafe extern "system" {
     ) -> VALUE_SEARCH_RETURN_TYPE;
 }
 unsafe extern "system" {
-    pub fn CmpGetHiveName(Hive: PCMHIVE, HiveName: PUNICODE_STRING) -> BOOLEAN;
-}
-unsafe extern "system" {
     pub fn CmpAddToHiveFileList(Hive: PCMHIVE) -> NTSTATUS;
 }
 unsafe extern "system" {
@@ -79198,10 +79282,10 @@ pub struct _GET_SET_CTX_CONTEXT {
 pub type GET_SET_CTX_CONTEXT = _GET_SET_CTX_CONTEXT;
 pub type PGET_SET_CTX_CONTEXT = *mut _GET_SET_CTX_CONTEXT;
 unsafe extern "system" {
-    pub fn PspShutdownProcessManager();
+    pub fn PsInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN;
 }
 unsafe extern "system" {
-    pub fn PsInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN;
+    pub fn PsShutdownSystem();
 }
 unsafe extern "system" {
     pub fn PsGetNextProcessThread(Process: PEPROCESS, Thread: PETHREAD) -> PETHREAD;

@@ -15,9 +15,11 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
+from typing import TextIO
 
 from . import cachecfg, fsutil, hostlock
 
@@ -53,8 +55,9 @@ FAILURE = "DISK_ADMISSION_FAIL"
 # Two later fixes ate most of that: the estimate is a measured 12 now, not 32, and CPU
 # admission moved to the per-compiler-job broker, so whole builds are no longer gated on
 # a pool of two. What survives is the invariant, which is worth keeping on its own terms:
-# reserve for what actually runs, not for what was launched. Safe to claim under a lock
-# only because reserve() never BLOCKS -- it admits or raises immediately.
+# reserve for what actually runs, not for what was launched. reserve() may wait for other
+# jobs' reservations to clear, but never inside the admission lock and never holding a CPU
+# permit, so a waiting claim blocks nobody else's.
 DEFERRED = frozenset({"build"})
 
 
@@ -206,44 +209,89 @@ def refuse_if_hopeless(repo: Path, kind: str) -> None:
             )
 
 
+class ContentionError(AdmissionError):
+    """Short of space only because other jobs hold live reservations: space that frees
+    itself when they finish, unlike a full disk."""
+
+
+# How long a contended claim waits for other jobs' reservations to clear. A reservation is
+# held for the life of a build (minutes), so a refusal was almost always premature: on
+# 2026-10-11 every build in one lane was refused for an hour with 99 GiB free and 72 GiB
+# claimed by six other lanes' builds, and the only recourse was to re-run by hand.
+WAIT_SECONDS = 1800
+POLL_SECONDS = 15
+
+
+def _wait_seconds() -> float:
+    raw = os.environ.get("VIBEOS_DISK_WAIT_SECONDS")
+    try:
+        return max(0.0, float(raw)) if raw is not None else WAIT_SECONDS
+    except ValueError as exc:
+        raise AdmissionError(f"VIBEOS_DISK_WAIT_SECONDS={raw!r} is not a number") from exc
+
+
+def _claim(repo: Path, kind: str) -> tuple[dict, Path, TextIO]:
+    """One admission attempt under the host lock: the lease, or ContentionError/AdmissionError."""
+    with _locked():
+        config = policy(initialize=True)
+        budget = int(config["requests_gib"][kind] * GIB)
+        floor = int(config["min_free_gib"] * GIB)
+        live = _live(reap=True)
+        volumes = filesystems(repo)
+        for volume in volumes:
+            reserved = sum(item["reservations"].get(volume["device"], 0) for item in live)
+            if volume["free_bytes"] < floor + reserved + budget:
+                cls = ContentionError if volume["free_bytes"] >= floor + budget else AdmissionError
+                raise cls(
+                    f"{kind}: {volume['path']} has {volume['free_bytes'] / GIB:.1f} GiB free; "
+                    f"need {floor / GIB:.1f} headroom + {reserved / GIB:.1f} live reservations "
+                    f"+ {budget / GIB:.1f} requested. Use vibeos-cli disk-status; "
+                    "reclaim completed disposable outputs or wait for reservations to finish."
+                )
+        meta = {
+            "version": 1,
+            "pid": os.getpid(),
+            "kind": kind,
+            "worktree": str(repo.resolve()),
+            "reservations": {v["device"]: budget for v in volumes},
+        }
+        path = root() / f"lease-{uuid.uuid4().hex}.json"
+        lease = path.open("x+")
+        fcntl.flock(lease, fcntl.LOCK_EX)
+        json.dump(meta, lease)
+        lease.flush()
+        return meta, path, lease
+
+
 @contextlib.contextmanager
 def reserve(repo: Path, kind: str) -> Iterator[dict]:
     """Check + claim under one host lock. No CPU permits held while doing this.
 
-    The full estimate remains reserved until exit (conservative as writes accrue).
-    Failure returns immediately, never runs the requested command unprotected.
+    The full estimate remains reserved until exit (conservative as writes accrue). A disk
+    too full for this job even with nobody else's claim fails at once. One that is short
+    only because of other jobs' live reservations waits, with the lock released, for up to
+    VIBEOS_DISK_WAIT_SECONDS (default 1800), then fails the same way. Never runs the
+    command unprotected.
     """
     lease = None
     path = None
     admitted = False
     try:
-        with _locked():
-            config = policy(initialize=True)
-            budget = int(config["requests_gib"][kind] * GIB)
-            floor = int(config["min_free_gib"] * GIB)
-            live = _live(reap=True)
-            volumes = filesystems(repo)
-            for volume in volumes:
-                reserved = sum(item["reservations"].get(volume["device"], 0) for item in live)
-                if volume["free_bytes"] < floor + reserved + budget:
-                    raise AdmissionError(
-                        f"{kind}: {volume['path']} has {volume['free_bytes'] / GIB:.1f} GiB free; "
-                        f"need {floor / GIB:.1f} headroom + {reserved / GIB:.1f} live reservations "
-                        f"+ {budget / GIB:.1f} requested. Use vibeos-cli disk-status; "
-                        "reclaim completed disposable outputs or wait for reservations to finish."
+        deadline = time.monotonic() + _wait_seconds()
+        said = False
+        while True:
+            try:
+                meta, path, lease = _claim(repo, kind)
+                break
+            except ContentionError as exc:
+                if time.monotonic() >= deadline:
+                    raise
+                if not said:
+                    print(
+                        f"disk admission: waiting for other jobs' reservations ({exc})", flush=True
                     )
-            meta = {
-                "version": 1,
-                "pid": os.getpid(),
-                "kind": kind,
-                "worktree": str(repo.resolve()),
-                "reservations": {v["device"]: budget for v in volumes},
-            }
-            path = root() / f"lease-{uuid.uuid4().hex}.json"
-            lease = path.open("x+")
-            fcntl.flock(lease, fcntl.LOCK_EX)
-            json.dump(meta, lease)
-            lease.flush()
+                    said = True
+                time.sleep(POLL_SECONDS)
         admitted = True
         yield meta
     except OSError as exc:

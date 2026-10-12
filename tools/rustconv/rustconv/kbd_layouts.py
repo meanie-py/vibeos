@@ -127,6 +127,35 @@ def write_layout(layout: str, files: dict[str, str]) -> int:
     return touched
 
 
+_SPEC_LINE = re.compile(
+    r"^@ stdcall (KbdLayerDescriptor|KbdNlsLayerDescriptor)\(\)(?:[ \t]+\S+)?[ \t]*$", re.M
+)
+
+
+def wire_spec(layout: str, files: dict[str, str]) -> bool:
+    """Point the layout's .spec exports at the accessors this generator wrote.
+
+    Every layout shares one staticlib, so each accessor is `<layout>_<Name>` and the .spec
+    maps the real export name onto it. Upstream's .spec says plain `KbdLayerDescriptor()`;
+    left that way, the DLL's link fails (`KbdLayerDescriptor: undefined`), as five new
+    layouts did on the 2026-10-11 sync. An export the C does not define is an error, never
+    a dropped line."""
+    spec = KEYBOARD / layout / f"{layout}.spec"
+    text = spec.read_text()
+    mod = files["mod.rs"]
+
+    def point(m: re.Match[str]) -> str:
+        name = m.group(1)
+        if f'#[export_name = "{layout}_{name}"]' not in mod:
+            raise LayoutError(f"{spec.name} exports {name}, which {layout}.c does not define")
+        return f"@ stdcall {name}() {layout}_{name}"
+
+    new = _SPEC_LINE.sub(point, text)
+    if new != text:
+        spec.write_text(new)
+    return new != text
+
+
 def wire_lib(names: list[str]) -> bool:
     """The `pub mod <layout>;` list between the markers in lib.rs (which carries them)."""
     lib = CRATE / "lib.rs"
@@ -167,8 +196,13 @@ def main(argv: list[str] | None = None) -> int:
     failed = [(n, why) for n, f, why in results if f is None]
     for n, f, _ in results:
         if f is not None:
+            try:
+                wire_spec(n, f)
+            except LayoutError as e:
+                failed.append((n, str(e)))
+                continue
             write_layout(n, f)
-    done = [n for n, f, _ in results if f is not None]
+    done = [n for n, f, _ in results if f is not None and n not in dict(failed)]
     # lib.rs lists every layout that has a generated module on disk (an --only run must not
     # drop the others).
     present = [n for n in every if (CRATE / n / "mod.rs").is_file()]

@@ -16,7 +16,9 @@ pub mod prelude; // what the generated layout modules glob
 // One module per layout, written by `python -m rustconv.kbd_layouts`; do not hand-edit.
 // BEGIN GENERATED: layouts (python -m rustconv.kbd_layouts)
 pub mod kbd101;
+pub mod kbd101a;
 pub mod kbd106;
+pub mod kbd106n;
 pub mod kbda1;
 pub mod kbda2;
 pub mod kbda3;
@@ -43,6 +45,7 @@ pub mod kbdeo;
 pub mod kbdest;
 pub mod kbdfc;
 pub mod kbdfi;
+pub mod kbdfo;
 pub mod kbdfr;
 pub mod kbdgeo;
 pub mod kbdgerg;
@@ -71,6 +74,9 @@ pub mod kbdlv;
 pub mod kbdmac;
 pub mod kbdne;
 pub mod kbdnec;
+pub mod kbdnec95;
+pub mod kbdnecat;
+pub mod kbdnecnt;
 pub mod kbdno;
 pub mod kbdpl;
 pub mod kbdpl1;

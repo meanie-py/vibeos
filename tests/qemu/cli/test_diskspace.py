@@ -28,6 +28,8 @@ assert (20 + 2 * disk.REQUESTS["build"]) * disk.GIB > ONE_BUILD_FREE, (
 @pytest.fixture
 def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(hostlock, "HOSTLOCK_DIR", tmp_path / "locks")
+    # Contention refuses at once here; the waiting tests below opt back in.
+    monkeypatch.setenv("VIBEOS_DISK_WAIT_SECONDS", "0")
     monkeypatch.setattr(
         disk,
         "filesystems",
@@ -265,3 +267,42 @@ def test_backing_store_is_admitted_as_its_own_volume(tmp_path, monkeypatch):
     # Deduped by st_dev like every other path, and a floor/reservation applies to each.
     assert {v["device"] for v in after} >= before
     assert all(v["free_bytes"] >= 0 for v in after)
+
+
+def test_a_contended_claim_waits_for_the_other_lease_to_release(isolated, monkeypatch):
+    """Short only because another job holds a claim: wait for it, don't refuse."""
+    import threading
+
+    monkeypatch.setenv("VIBEOS_DISK_WAIT_SECONDS", "10")
+    monkeypatch.setattr(disk, "POLL_SECONDS", 0.05)
+    holder_in, release = threading.Event(), threading.Event()
+
+    def hold():
+        with disk.reserve(isolated, "build"):
+            holder_in.set()
+            release.wait(10)
+
+    holder = threading.Thread(target=hold)
+    holder.start()
+    assert holder_in.wait(10)
+    threading.Timer(0.3, release.set).start()
+    with disk.reserve(isolated, "build"):
+        assert release.is_set(), "admitted while the other claim was still live"
+    holder.join(10)
+
+
+def test_a_full_disk_refuses_at_once_even_when_waiting_is_allowed(isolated, monkeypatch):
+    """Nobody's claim to wait for: the space is simply not there."""
+    import time
+
+    monkeypatch.setenv("VIBEOS_DISK_WAIT_SECONDS", "600")
+    monkeypatch.setattr(
+        disk,
+        "filesystems",
+        lambda repo: [{"device": "1", "path": str(repo), "free_bytes": 5 * disk.GIB}],
+    )
+    started = time.monotonic()
+    with pytest.raises(disk.AdmissionError) as info, disk.reserve(isolated, "build"):
+        pytest.fail("a full disk admitted a build")
+    assert not isinstance(info.value, disk.ContentionError)
+    assert time.monotonic() - started < 5

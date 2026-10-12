@@ -113,6 +113,7 @@ base/applications/mmc/CMakeLists.txt	1	# misc.c # replaced by Rust (sdk/lib/rust
 base/applications/mmc/CMakeLists.txt	1	# mmc.c # replaced by Rust (sdk/lib/rust/mmc-rust/src/mmc/mmc.rs)
 base/applications/mmc/CMakeLists.txt	1	# mscfile.c # replaced by Rust (sdk/lib/rust/mmc-rust/src/mmc/mscfile.rs)
 base/applications/mmc_new/CMakeLists.txt	1	# CAboutSnapinDialog.cpp # replaced by Rust (sdk/lib/rust/mmc_new-rust/src/mmc_new/CAboutSnapinDialog_cpp_h.rs)
+base/applications/mmc_new/CMakeLists.txt	1	# CActionWnd.cpp # upstream 88da81d9b8b's action pane: not translated yet (the Rust is from before it); owed to mmc_new-rust
 base/applications/mmc_new/CMakeLists.txt	1	# CAddAdvancedDialog.cpp # replaced by Rust (sdk/lib/rust/mmc_new-rust/src/mmc_new/CAddAdvancedDialog_cpp_h.rs)
 base/applications/mmc_new/CMakeLists.txt	1	# CAddDialog.cpp # replaced by Rust (sdk/lib/rust/mmc_new-rust/src/mmc_new/CAddDialog_cpp_h.rs)
 base/applications/mmc_new/CMakeLists.txt	1	# CConsoleWnd.cpp # replaced by Rust (sdk/lib/rust/mmc_new-rust/src/mmc_new/CConsoleWnd_cpp_h.rs)
@@ -1884,6 +1885,7 @@ drivers/storage/ide/pciidex/CMakeLists.txt	1	# chipset/ahci_io.c
 drivers/storage/ide/pciidex/CMakeLists.txt	1	# chipset/amd.c
 drivers/storage/ide/pciidex/CMakeLists.txt	1	# chipset/ati.c
 drivers/storage/ide/pciidex/CMakeLists.txt	1	# chipset/cmd.c
+drivers/storage/ide/pciidex/CMakeLists.txt	1	# chipset/hpt.c
 drivers/storage/ide/pciidex/CMakeLists.txt	1	# chipset/intel.c
 drivers/storage/ide/pciidex/CMakeLists.txt	1	# chipset/pata_generic.c
 drivers/storage/ide/pciidex/CMakeLists.txt	1	# chipset/pata_hw.c
