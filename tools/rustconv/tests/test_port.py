@@ -377,6 +377,22 @@ def test_an_initguid_tu_is_lowered_from_its_header(tmp_path, monkeypatch):
     assert port.initguid_module(tu) is None, "real code goes to translate"
 
 
+def test_an_initguid_tu_finds_a_quoted_header_beside_it(tmp_path, monkeypatch):
+    """ifmon's guid.c: `#include "guid.h"`, a module-private header no SDK search finds."""
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    (tmp_path / "sdk" / "include").mkdir(parents=True)
+    mod = tmp_path / "dll" / "ifmon"
+    mod.mkdir(parents=True)
+    (mod / "guid.h").write_text(
+        "DEFINE_GUID(GUID_IFMON_IP, 0x725588AC, 0x7A11, 0x4220, 0xA1, 0x21, 0xC9, 0x2C, "
+        "0x91, 0x5E, 0x8B, 0x73);\n"
+    )
+    tu = mod / "guid.c"
+    tu.write_text('#define INITGUID\n#include <guiddef.h>\n\n#include "guid.h"\n')
+    out = port.initguid_module(tu)
+    assert out is not None and "Data1: 0x725588AC" in out and "0x8B, 0x73]" in out
+
+
 def test_split_top_keeps_fn_pointer_types_whole():
     got = port._split_top(
         'a: u32, cb: Option<unsafe extern "C" fn(x: i32, y: u8) -> u32>, z: *mut u16'
@@ -1185,3 +1201,29 @@ def test_flip_refuses_a_tu_with_no_rust(tmp_path, monkeypatch):
     (src / "a.rs").write_text("")
     with _pytest.raises(port.PortError, match="no Rust for b.c"):
         port.stage_flip("m")
+
+
+def test_a_dotted_tu_name_becomes_an_identifier_module():
+    assert port._module_name("apisets.table.c") == "apisets_table"
+    assert port._module_name("enum.c") == "enum"
+    assert port._module_name("identify_funcs.h") == "identify_funcs_h"
+
+
+def test_a_sys_substrate_dependency_is_left_to_the_substrate_step(tmp_path):
+    """ntkrnl-sys's inline helpers were wired here AND by the substrate step: E0252."""
+    sys_crate = tmp_path / "ntkrnl-sys" / "src" / "inline"
+    sys_crate.mkdir(parents=True)
+    (sys_crate / "common.rs").write_text("pub unsafe fn PsGetCurrentThread() -> u32 { 0 }\n")
+    crate = tmp_path / "sptilib-rust"
+    crate.mkdir()
+    (crate / "Cargo.toml").write_text('[dependencies]\nntkrnl-sys = { path = "../ntkrnl-sys" }\n')
+    assert port._dep_definitions({"PsGetCurrentThread"}, crate) == {}
+
+
+def test_an_empty_dep_wiring_drops_the_stale_block(tmp_path):
+    prelude = tmp_path / "prelude.rs"
+    prelude.write_text("use x;\n")
+    port._write_dep_block(prelude, {"cicMemFree": "cicero_rust::cicero::cicbase"})
+    assert port._DEP_BEGIN in prelude.read_text()
+    port._write_dep_block(prelude, {})
+    assert prelude.read_text() == "use x;\n"

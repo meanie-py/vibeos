@@ -247,6 +247,22 @@ def is_crt_internal_fn(item: Item) -> bool:
     return item.kind == "fn" and item.path.replace("\\", "/").startswith(_CRT_IMPLEMENTATIONS)
 
 
+_EXE_MODULE_TYPE = re.compile(r"module type `(?:win32cui|win32gui|nativecui|nativegui)`")
+
+
+def crate_is_executable(crate_dir: Path) -> bool:
+    """The crate is cohab-linked into an EXECUTABLE (its lib.rs header says so).
+
+    Its `#[no_mangle]` definitions are there for the cohab link, not exports: arp's private
+    `PrintMessage(dwMessage)` was copied into ifmon as netsh's variadic
+    `PrintMessage(LPCWSTR, ...)` -- a name collision with nothing to agree with."""
+    try:
+        head = (crate_dir / "src" / "lib.rs").read_text(errors="replace")[:2000]
+    except OSError:
+        return False
+    return _EXE_MODULE_TYPE.search(head) is not None
+
+
 def crate_mode(crate_dir: Path) -> str | None:
     """ "kernel" / "user" from what the crate builds against; None for a mode-neutral crate."""
     if crate_dir.name == "ntkrnl-sys":
@@ -264,6 +280,9 @@ def crate_mode(crate_dir: Path) -> str | None:
     return None
 
 
+_PSEH_NAME = re.compile(r"_?_SEH2_")
+
+
 def workspace_items(names: set[str], workspace: Path, exclude: Path) -> dict[str, list[Item]]:
     """Every tracked definition of each name: consts, type aliases, extern fn decls.
 
@@ -271,7 +290,13 @@ def workspace_items(names: set[str], workspace: Path, exclude: Path) -> dict[str
     `_InterlockedExchange` from disk-rust's DDK shims, an extern no user-mode image can link
     (i386 LINK_FAIL). A donor built against the other -sys crate is skipped; mode-neutral
     shared crates (win32macros-rust, strsafe-rust) donate to both.
+
+    Never a PSEH name either: cdfs-rust exports DUMMY_PSEH no-op `_SEH2_TRY`/`_SEH2_END`
+    functions, and donating them made sptilib's untranslated `_SEH2_TRY; { .. } _SEH2_END;`
+    compile as a bare block, its MmProbeAndLockPages with no handler. Left unresolved, the
+    name is a compile error that sends the site to a try_except / non-raising rewrite.
     """
+    names = {n for n in names if not _PSEH_NAME.match(n)}
     if not names:
         return {}
     mine = crate_mode(exclude)
@@ -285,6 +310,7 @@ def workspace_items(names: set[str], workspace: Path, exclude: Path) -> dict[str
     )
     found: dict[str, list[Item]] = {n: [] for n in names}
     aliases: dict[Path, dict[str, str]] = {}
+    exes: dict[str, bool] = {}
     for rel in proc.stdout.split():
         path = workspace / rel
         if exclude in path.parents or "/target/" in rel:
@@ -296,6 +322,7 @@ def workspace_items(names: set[str], workspace: Path, exclude: Path) -> dict[str
         top = rel.split("/", 1)[0]
         if top not in modes:
             modes[top] = crate_mode(workspace / top)
+            exes[top] = crate_is_executable(workspace / top)
         if mine is not None and modes[top] is not None and modes[top] != mine:
             continue
         try:
@@ -327,7 +354,7 @@ def workspace_items(names: set[str], workspace: Path, exclude: Path) -> dict[str
                 if m and m.group(1) in present:
                     text = re.sub(r"^.*?\bstatic\b", "static", _norm(decl))
                     found[m.group(1)].append(Item("static", text, abi, rel))
-        for name, decl, abi in exported_definitions(src, present):
+        for name, decl, abi in [] if exes[top] else exported_definitions(src, present):
             decl = _inline_core_aliases(decl, workspace / top, aliases)
             found[name].append(Item("fn", _norm(decl), abi, rel))
     return found
@@ -1236,6 +1263,40 @@ def substrate_helpers(
                 break
         else:
             found[name] = per
+    return found, why
+
+
+_TOP_CONST = re.compile(r"^pub const ([A-Za-z_]\w*)\s*:", re.M)
+
+
+def substrate_constants(
+    names: set[str], sys_src: Path
+) -> tuple[dict[str, dict[str, str | None]], dict[str, str]]:
+    """Where a kernel -sys crate defines each wanted CONSTANT, as substrate_helpers' shape.
+
+    ntkrnl-sys keeps the NTSTATUS values in its hand-written `base` and `constants` modules,
+    which the `ddk` glob a kernel island re-exports does not reach, and which substrate_helpers
+    skips (it indexes helpers, and `base` is excluded for its hand-written extern decls).
+    Every kernel lane met it: watchdog's `STATUS_SUCCESS`, arbiter's hand `pub use
+    ntkrnl_sys::base::{..}`, atapi's transcribed values, and 36 + 39 missing STATUS_SUCCESS /
+    STATUS_INVALID_PARAMETER across wdfldr, sptilib and ntoskrnl_vista. Globbing `base`
+    instead made 215 names ambiguous with the island's glob. So: a top-level `pub const`
+    (column 0, no cfg) in exactly one non-bindgen module is imported by name; one defined in
+    two modules is reported, never chosen.
+    """
+    hits: dict[str, set[str]] = {}
+    for f, (mod, mod_arches) in _module_paths(sys_src).items():
+        if mod_arches != _ALL_ARCHES or re.match(
+            r"(?:hal_)?bindgen_|size_check|offset_check", f.stem
+        ):
+            continue
+        for name in _TOP_CONST.findall(f.read_text(errors="replace")):
+            if name in names:
+                hits.setdefault(name, set()).add(mod)
+    found: dict[str, dict[str, str | None]] = {
+        n: {arch: next(iter(ms)) for arch in ARCHES} for n, ms in hits.items() if len(ms) == 1
+    }
+    why = {n: f"defined in {', '.join(sorted(ms))}" for n, ms in hits.items() if len(ms) > 1}
     return found, why
 
 

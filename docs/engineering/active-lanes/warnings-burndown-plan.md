@@ -9,6 +9,62 @@ the genuine-signal warnings are audited and fixed, and — critically — the fi
 **stay** fixed (no blanket re-suppression). Incremental, per-crate, each cluster gated ×3
 and landed on its own so conflicts stay localized and every step is revertible.
 
+## RESUME HERE (parked 2026-10-12, next session the following weekend)
+
+**State at park.** Last landing: master `20b8abeb1468` (lane tip `410f354cf48c`). The lane is
+clean at master. The census on that tree (`python3 tools/rust_warning_census.py build-i386
+build-amd64 build-arm64`) read **7,517 sites: 55 UB, 1,440 LOGIC, 6,002 NOISE**. That count
+left 12 stale crates out, so rebuild all three arches before trusting a new total.
+fastfat-rust has **0** warnings on all three arches.
+
+**First moves next session:**
+1. `git fetch && git merge origin/master`, then build all three arches and re-run the census.
+2. Check `land-status --mine` and the roadmap registry entry "apc32.exe rung 7". The kernel
+   APC flake that bounced b8eac0dccad2 is not ours, but note whether anyone has fixed it.
+
+**Owed, roughly in priority order** (each is detailed in the dated sections below):
+- **UB tier.**
+  - `invalid_value`: deny it tree-wide once the census reads 0. shell32-com fixed attrib,
+    setuplib and winspool (c06ca3ba658). cpp-cluster owns msctf. The shell32 session agreed
+    the deny comes after a fresh zero.
+  - `deref_nullptr` (7): eventlog, localspl, ndis, rpcss and one more. These are newer crates
+    from other lanes; grade them.
+  - `improper_ctypes` (48): mspaint and msctfime. **The user said leave mspaint for now
+    (2026-10-11).**
+- **NTDDI version-branch scanner.** `scan_cfg_vs_c` only judges arch conditionals. Every
+  MS-architecture driver with `#if NTDDI_VERSION` blocks (cdfs, classpnp, disk, cdrom) can run
+  code its WS03 build compiles out, as fastfat did (~100 sites). Method: evaluate each C `#if`
+  at the module's real `_WIN32_WINNT`, then diff against the same-stem Rust fn. Field manual,
+  "The version block translated UNGATED".
+- **The rest of `clashing_extern` (1,392).** fastfat's recipe generalises:
+  `tools/extern_to_use.py`, then a build, `rustconv crate-repair`, and graded residue applied
+  with `tools/apply_agent_edits.py`. Next candidates are the biggest per-crate counts in the
+  census.
+- **`scan_macro_fn_shadow` missed fastfat's fatdata.h trace macros.** Find out why the harvest
+  skips a driver-private header.
+- **crate-repair's `width_alias_cast`** cast to a type alias local to the callee's module
+  (`as FAT_FLUSH_TYPE`), a name the call site cannot see. Three sites, fixed by hand. Make it
+  qualify the name or use the definition's real type.
+- **Noise.**
+  - Regenerate the bindgen islands (about 4,590 of the 4,610 `unnecessary_transmutes`).
+  - `unused_imports`, held back by imports used only under cfg(test).
+  - `stdmethod!` unused-variable noise.
+- **Upstream drift:** explorer #9332, oleaut32 VarMod and serializeBMP.
+- **pcix arbiters**, and the preserved upstream-C bugs under "Owed follow-ups".
+
+**How this lane works** (so a fresh session doesn't rediscover it):
+- Haiku 5.5 subagents (`model: haiku`), at most 2-3 at a time.
+- Agents are read-only. They write audits or JSONL edits to the scratchpad; I review the edits
+  and apply them centrally with `tools/apply_agent_edits.py`.
+- Verify an agent's "UB" or "bug" claim against the code before acting on it. On 2026-10-11 the
+  external-symbol grader's 14 "UB" calls were all benign or latent once checked: it missed a
+  `cfg` split, a trampoline, and a C-side truncation. By contrast the FlagOn-truncation and
+  constant audits were right, and found live bugs.
+- Before `land`: build all three arches on the exact tree you commit, then run `check-tooling`
+  and `check --strict --scope source-early` and `--scope source-deferred`. `land` refuses a tree
+  no build has seen, and its strict preflight lints run partitions plain `check` skips.
+  Don't touch the tree while a smoke is running; its staleness check runs late.
+
 ## The census finding that reframes everything (2026-07-16)
 
 **201 of 219 workspace crates (92%) carry a crate-root `#![allow(...)]`** — most of them

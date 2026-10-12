@@ -597,6 +597,23 @@ members = [
     "vfatxlib-rust",
     "text3d-rust",
     "watchdog-rust",
+    "msports-rust",
+    "newdev-rust",
+    "psapi-rust",
+    "winsta-rust",
+    "ifmon-rust",
+    "fltlib-rust",
+    "wlnotify-rust",
+    "hid-rust",
+    "serialui-rust",
+    "storprop-rust",
+    "winfax-rust",
+    "avicap32-rust",
+    "cards-rust",
+    "wdfldr-rust",
+    "ntoskrnl_vista-rust",
+    "sptilib-rust",
+    "apisets-rust",
 ]
 resolver = "2"
 

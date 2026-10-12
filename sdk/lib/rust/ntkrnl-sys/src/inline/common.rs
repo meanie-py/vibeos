@@ -707,6 +707,43 @@ pub unsafe fn RtlULongAdd(augend: ULONG, addend: ULONG, output: *mut ULONG) -> N
     }
 }
 
+/// ntintsafe.h `RtlUShortAdd`: RtlULongAdd at USHORT width -- USHORT_ERROR (0xFFFF) and
+/// STATUS_INTEGER_OVERFLOW on overflow, never a wrapped sum.
+#[inline]
+pub unsafe fn RtlUShortAdd(augend: USHORT, addend: USHORT, output: *mut USHORT) -> NTSTATUS {
+    match augend.checked_add(addend) {
+        Some(sum) => {
+            *output = sum;
+            0 // STATUS_SUCCESS
+        }
+        None => {
+            *output = USHORT::MAX; // USHORT_ERROR
+            0xC000_0095_u32 as NTSTATUS // STATUS_INTEGER_OVERFLOW
+        }
+    }
+}
+
+/// ntintsafe.h `RtlULongPtrAdd`: RtlULongAdd at pointer width (RtlULongLongAdd on 64-bit), in
+/// bindgen's ULONG_PTR (c_ulong on i386), the type every island spells it in.
+/// On overflow the output is ULONG_PTR_ERROR (all ones) and the status STATUS_INTEGER_OVERFLOW.
+#[inline]
+pub unsafe fn RtlULongPtrAdd(
+    augend: ddk::ULONG_PTR,
+    addend: ddk::ULONG_PTR,
+    output: *mut ddk::ULONG_PTR,
+) -> NTSTATUS {
+    match augend.checked_add(addend) {
+        Some(sum) => {
+            *output = sum;
+            0 // STATUS_SUCCESS
+        }
+        None => {
+            *output = ddk::ULONG_PTR::MAX; // ULONG_PTR_ERROR
+            0xC000_0095_u32 as NTSTATUS // STATUS_INTEGER_OVERFLOW
+        }
+    }
+}
+
 // rtlfuncs.h: `#define RtlUlongByteSwap(_x) _byteswap_ulong((_x))` (and the USHORT/ULONGLONG
 // twins) -- an intrinsic everywhere but i386, where ntoskrnl exports fastcall functions the
 // bindgen glob declares.

@@ -312,3 +312,9 @@ def test_a_callee_the_crate_does_not_declare_yet_is_read_from_a_sibling_island(t
         {"DLGPROC"},
     )
     assert ", $p3," in out and "($p3) as _" not in out
+
+
+def test_offsetof_is_refused_not_read_as_a_call():
+    """FIELD_OFFSET(REPARSE_DATA_BUFFER, GenericReparseBuffer): a type and a member path."""
+    with pytest.raises(LowerError, match="offsetof"):
+        low("((LONG)__builtin_offsetof(REPARSE_DATA_BUFFER, GenericReparseBuffer))")

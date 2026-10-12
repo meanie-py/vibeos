@@ -2436,6 +2436,26 @@ def _class_declaration_scope(cls) -> str:
     return text[m.start() : i]
 
 
+_RUST_ITEM_START = re.compile(
+    r"^\s*(?:pub\b|static\b|const\b|use\b|extern\b|fn\b|unsafe\b|struct\b|union\b|enum\b"
+    r"|type\b|impl\b|mod\b|macro_rules!|#!?\[|//)"
+)
+
+
+def _strip_leading_prose(code: str) -> str:
+    """`code` without a paragraph of commentary BEFORE the first Rust item, but only when
+    what follows parses on its own. newdev's wizard.c preamble came back twice as one
+    sentence about `HANDLE` and then a correct `pub static mut hThread` -- recall is stable,
+    so a re-buy returned the same reply. Commentary between or after items still fails the
+    parse gate: that is the mspaint case, where it sat between two conflicting definitions."""
+    lines = code.splitlines()
+    first = next((i for i, ln in enumerate(lines) if _RUST_ITEM_START.match(ln)), None)
+    if not first:
+        return code
+    rest = "\n".join(lines[first:]).strip() + "\n"
+    return rest if _rust_parse_error(rest) is None else code
+
+
 def _rust_parse_error(code: str) -> str | None:
     """rustfmt's first parse error for `code`, or None if it parses. A parse check, not a
     style check: rustfmt reformats what it can parse and fails only on what it cannot."""
@@ -4624,6 +4644,7 @@ def cmd_translate(args):
                     pre_res.rust_code = unseal_wide_literals(
                         scrub_comment_token_echoes(pre_res.rust_code), preamble_wide_seal
                     )
+                pre_res.rust_code = _strip_leading_prose(pre_res.rust_code)
                 bad = _rust_parse_error(pre_res.rust_code)
                 if bad is not None:
                     # Never banked: mspaint's main.cpp preamble came back with the model's

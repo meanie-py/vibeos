@@ -484,3 +484,30 @@ def test_a_bare_long_ptr_with_only_64bit_link_names_gets_the_i386_alias():
     )
     done = '#[cfg_attr(target_arch = "x86", link_name = "GetWindowLongW")]\n' + sig
     assert _x86_alias(done) == ""
+
+
+def test_a_kernel_sys_constant_is_wired_from_the_one_module_that_defines_it(tmp_path):
+    """NTSTATUS values live in ntkrnl-sys's hand `base`/`constants`, which the island's `ddk`
+    glob does not reach; globbing `base` instead made 215 names ambiguous."""
+    from rustconv.prelude_resolve import substrate_constants
+
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "lib.rs").write_text("pub mod base;\npub mod constants;\npub mod bindgen_amd64;\n")
+    (src / "base.rs").write_text(
+        "pub const STATUS_SUCCESS: NTSTATUS = 0;\npub const TWICE: u32 = 1;\n"
+        "    pub const NESTED: u32 = 2;\n"
+    )
+    (src / "constants.rs").write_text(
+        "pub const STATUS_INVALID_PARAMETER: NTSTATUS = 0xC000000D_u32 as i32;\n"
+        "pub const TWICE: u32 = 1;\n"
+    )
+    (src / "bindgen_amd64.rs").write_text("pub const FROM_GLOB: u32 = 3;\n")
+    found, why = substrate_constants(
+        {"STATUS_SUCCESS", "STATUS_INVALID_PARAMETER", "TWICE", "NESTED", "FROM_GLOB"}, src
+    )
+    assert set(found["STATUS_SUCCESS"].values()) == {"base"}
+    assert set(found["STATUS_INVALID_PARAMETER"].values()) == {"constants"}
+    assert "TWICE" not in found and "base" in why["TWICE"] and "constants" in why["TWICE"]
+    assert "NESTED" not in found  # not top level
+    assert "FROM_GLOB" not in found  # the glob is the island's own

@@ -72,6 +72,7 @@ sdk/lib/rust/generictable/src/lib.rs: KEY_SIZE = 0x4
 sdk/lib/rust/i8042prt-rust/src/hwhacks.rs: ID_STRINGS_MAX = 0x13
 sdk/lib/rust/i8042prt-rust/src/i8042prt_h.rs: IOCTL_GET_SYS_BUTTON_CAPS = 0x294140
 sdk/lib/rust/i8042prt-rust/src/i8042prt_h.rs: IOCTL_GET_SYS_BUTTON_EVENT = 0x294144
+sdk/lib/rust/ifmon-rust/src/ifmon/ip.rs: BUFFER_SIZE = 0x80
 sdk/lib/rust/inflib-rust/src/infcore.rs: EOL_BACKSLASH = 0x4
 sdk/lib/rust/inflib-rust/src/infcore.rs: KEY_NAME = 0x2
 sdk/lib/rust/inflib-rust/src/infcore.rs: LINE_START = 0x0

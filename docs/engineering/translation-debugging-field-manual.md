@@ -596,6 +596,16 @@ blind here — **the arity matches**; only the width is wrong, and that bucket w
 "mostly benign return-register width" (below), which is true for *returns* and false for
 arguments.
 
+**Whole-crate fix (fastfat, 2026-10-11).** `tools/extern_to_use.py <src> NAMES` turns every
+redeclaration of a crate-defined fn into `use crate::<module>::<fn>`. With `--to externs` it
+points them at one canonical declaration of an external symbol instead. Then build: each type
+error is a call site that disagreed with the truth. `rustconv crate-repair` takes the
+mechanical ones. Read the rest against the C, with reviewed agent edits applied by
+`tools/apply_agent_edits.py`. fastfat went 284 clashing sites to 0. The real finds were
+mistyped pointer-sized locals and a module-private opaque `struct IRP_CONTEXT` in a pub API.
+crate-repair refuses an indirection-depth change (`*mut *mut *mut c_void` for `*mut *mut
+c_void`) rather than `.cast()` it, because that is a missing or extra deref.
+
 Two tells that this had already been noticed and worked around rather than fixed, both worth
 recognising as a signature: `fpnum.rs` carried a private `_iswspace_l_shim(wc: u32, …)` whose
 only job was to call `crate::_iswspace_l` directly, and one `mbcs.rs` call site had an explicit
@@ -1605,6 +1615,11 @@ fastfat's NT_ASSERT evaluated an operand that faults (cachesup.rs). `scan_macro_
 macro: a crate-root `macro_rules! assert` shadows `core::assert!` in every module declared
 after it. cabinet's compile-time `FDINOTIFICATION` layout asserts silently became no-ops that
 way, and they still compiled.
+A third form is a C stub DEFINITION in the module's own cohab file. fastfat's fatdata.h
+`DebugTrace`/`DebugUnwind`/`DebugDump`/`DbgDoit` are `{NOTHING;}` in a free build. The Rust
+called them as FFI into `VOID DebugTrace(...) {}` bodies in rust_cohab_stub.c, about 880 calls
+(fixed 2026-10-11: crate macros that discard their tokens). `scan_macro_fn_shadow` did not
+flag them, so check why its harvest misses a driver-private header like fatdata.h.
 
 ### A C macro that NULLS its argument, translated as a by-value `fn`, silently double-frees
 Symptom: 0x19 BAD_POOL_HEADER "at the next free" (special pool escalates it to 0x1E in a pool
@@ -6424,6 +6439,14 @@ wrote into that bitmap. Fix: the C's `#if` becomes a cfg nothing sets, declared 
 `[lints.rust] check-cfg` so a misspelling warns (fastfat: `ntddi_ge_ntddi_win8`); an `#else`
 arm becomes `#[cfg(not(...))]`. Audit a module by listing every version `#if` in the C and
 finding its live Rust: the tell is a comment like "Win8+" over code with no gate.
+The WIN8 pass did not cover the rest of the versions. On 2026-10-11 fastfat still ran about 40
+WIN7/VISTA blocks the WS03 build compiles out: `FSCTL_REQUEST_OPLOCK`,
+`FILE_OPEN_REQUIRING_OPLOCK`, `FsRtlOplockBreakH` on a sharing violation, the purge-failure
+and zero-on-dealloc FSCTLs, and the VISTA user-writable-section share check. They are gated
+the same way now (`ntddi_ge_ntddi_{vista,win7,win8,winthreshold}`). The inverse appeared in
+the same crate: `#[cfg(not(reactos))]` for `#ifndef __REACTOS__`. Nothing sets `reactos`, so
+the code the C excludes compiled IN. `scan_cfg_vs_c` only judges ARCH conditionals; a version
+scanner is owed (the lane plan).
 
 **Stacked `#[cfg]`s AND together.** Deleting an item's per-arch twin can leave its
 `#[cfg(target_arch = "x86")]` behind, which then fuses with the next item's
@@ -14787,6 +14810,25 @@ fails the adapter. A rarely taken failure path is worth one forced-failure boot.
 - **Fix:** `GlobalDeviceObject->Flags |= DO_BUFFERED_IO` and the arguments in order. When a
   driver's IRP_MJ_READ/WRITE uses SystemBuffer, MdlAddress or UserBuffer, check that its
   device flags pick the matching I/O method.
+
+### pcix on real hardware: bus 0's scan stops early, and adding a print fixes it
+
+**Symptom.** On the OptiPlex, pcix enumerates 00:00.0 and root port 00:01.0 and nothing
+else on bus 0 (no GPU, USB, NIC or audio). Add a `DbgPrint` per slot and every device is
+found; a 100 ms stall in the same place changes nothing.
+
+**Cause.** Not timing: stack layout. The scan read a whole capability (8 bytes for power
+management, 12 for AGP) into `CapHeader`, a 2-byte `PCI_CAPABILITIES_HEADER`, and the
+overrun landed on the loop's own state. Root port 00:01.0 is the first function with a PM
+capability. The print moved the locals, so the overrun hit something harmless. Upstream's C
+has the same overrun.
+
+**Fix.** Read into a buffer the capability fits (`enumr.rs`). The lesson is the shape: when
+a print "fixes" a bug and a delay of the same length does not, suspect a write past a
+local, and look for a read sized by one type into a variable of another.
+
+QEMU's smoke machines have no PCI-to-PCI bridges, so pcix's whole bridge path first ran on
+this box; the roadmap's arbiter entry lists the four bridge bugs fixed with this one.
 
 ### Adding a PCI device to the arm64 QEMU rig makes UEFI PXE-boot
 - **Symptom:** the boot goes to `>>Start PXE over IPv4`, then HTTP boot, then a hang,

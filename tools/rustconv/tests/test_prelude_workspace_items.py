@@ -89,3 +89,38 @@ def test_a_user_mode_crate_never_borrows_a_kernel_declaration(tmp_path):
     )
     found = workspace_items({"_InterlockedExchange"}, ws, ws / "mine-rust")
     assert [i.path for i in found["_InterlockedExchange"]] == ["shared-rust/src/lib.rs"]
+
+
+def test_an_executables_definition_is_not_an_export(tmp_path):
+    """arp's private PrintMessage(dwMessage) was copied into ifmon as netsh's PrintMessage."""
+    exe_fn = '#[no_mangle]\npub unsafe extern "C" fn PrintMessage(dwMessage: u32) {}\n'
+    dll_fn = '#[no_mangle]\npub unsafe extern "system" fn SetupThing(x: u32) -> u32 { x }\n'
+    ws = _repo(
+        tmp_path,
+        {
+            "arp-rust/src/lib.rs": "//! (usermode module type `win32cui`).\n",
+            "arp-rust/src/arp/arp.rs": exe_fn,
+            "setuplib-rust/src/lib.rs": "//! (usermode module type `win32dll`).\n",
+            "setuplib-rust/src/setuplib/lib.rs": dll_fn,
+            "mine-rust/src/lib.rs": "",
+        },
+    )
+    found = workspace_items({"PrintMessage", "SetupThing"}, ws, ws / "mine-rust")
+    assert found["PrintMessage"] == []
+    assert [i.path for i in found["SetupThing"]] == ["setuplib-rust/src/setuplib/lib.rs"]
+
+
+def test_a_pseh_macro_is_never_donated_as_a_function(tmp_path):
+    """cdfs's DUMMY_PSEH `_SEH2_TRY` export made sptilib's probe compile with no handler."""
+    ws = _repo(
+        tmp_path,
+        {
+            "cdfs-rust/src/cdmacros.rs": (
+                '#[no_mangle]\npub unsafe extern "C" fn _SEH2_TRY() {}\n'
+                'extern "C" {\n    pub fn _SEH2_END();\n}\n'
+            ),
+            "mine-rust/src/lib.rs": "",
+        },
+    )
+    found = workspace_items({"_SEH2_TRY", "_SEH2_END"}, ws, ws / "mine-rust")
+    assert "_SEH2_TRY" not in found and "_SEH2_END" not in found

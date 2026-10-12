@@ -568,6 +568,11 @@ pub unsafe extern "system" fn PciQueryId(
                     b"%02X\0".as_ptr() as PCCH,
                     ((*PdoExtension).Slot.u.bits.DeviceNumber() as i32) << 3i32 | (*PdoExtension).Slot.u.bits.FunctionNumber() as i32,
                 );
+                // Up one bus: the bus the bridge itself sits on. The C never advances,
+                // so a device behind a bridge appended the bridge's slot forever and ran
+                // the 256-byte ID buffer off the stack (the OptiPlex's first device behind
+                // a root port; QEMU's smoke machines have no bridges).
+                ParentExtension = (*PdoExtension).ParentFdoExtension;
             }
         }
         _ => {
