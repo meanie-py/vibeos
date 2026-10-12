@@ -213,6 +213,27 @@ def _screenshot(qmp: QmpClient, uid: str, dst: Path) -> None:
         time.sleep(1)
         shutil.move(str(tmp), dst)
     except Exception:
+        return
+    _timeline(dst)
+
+
+def _timeline(shot: Path) -> None:
+    """Keep a small timestamped PNG of every screenshot next to it, in shots/.
+
+    One final frame cannot say where typed keystrokes went or when the desktop came up;
+    a timeline can. Downscaled so an hour of them is a few MB. Best-effort: Pillow is in
+    the venv the CLI runs from, but its absence must not fail a run.
+    """
+    try:
+        from PIL import Image
+
+        out = shot.parent / "shots"
+        out.mkdir(exist_ok=True)
+        stamp = time.strftime("%H%M%S")
+        with Image.open(shot) as im:
+            im.thumbnail((640, 400))
+            im.save(out / f"{stamp}-{shot.stem}.png")
+    except Exception:
         pass
 
 
@@ -255,9 +276,13 @@ def _boot(
         try:
             qmp.accept(timeout=120)
         except OSError:
-            out = proc.stdout.read() if proc.poll() is not None and proc.stdout else ""
-            run.log(out, header="qemu output (QMP never connected)")
-            return "launch-failed", console.lines
+            # Not fatal: QMP only drives the extras (key presses, screenshots, actions, the
+            # power-button fallback), and each of those already tolerates a dead monitor.
+            # A run that missed the connection still booted, ran its payload and powered off
+            # (20261011-210309); calling that "launch-failed" threw away a good result. The
+            # verdict comes from the console. A QEMU that never started at all still exits
+            # immediately and has no console, which the callers grade as a failure.
+            run.log("QMP never connected; continuing without it", header="winref qmp")
         t0 = time.monotonic()
         while time.monotonic() - t0 < press_keys and proc.poll() is None:
             try:
@@ -281,6 +306,8 @@ def _boot(
                     act(qmp)
                 except Exception as e:
                     run.log(f"action failed: {e}", header="winref action")
+                time.sleep(5)
+                _screenshot(qmp, uid, run.dir / f"after-{act.__name__}.ppm")
             if (
                 finish
                 and finished_at is None
@@ -446,20 +473,28 @@ def _copy(src: Path, dst: Path) -> None:
     try:
         ws, wd = be.win_path(src), be.win_path(dst)
     except ValueError:
-        shutil.copyfile(src, dst)
+        ws = wd = ""
+    if not ws or src.stat().st_size < 64 << 20:
+        shutil.copyfile(src, dst)  # small, or not a Windows path: DrvFS copes fine
         return
-    cp = subprocess.run(
-        [
-            "powershell.exe",
-            "-NoProfile",
-            "-Command",
-            f"Copy-Item -LiteralPath '{ws}' -Destination '{wd}' -Force -ErrorAction Stop",
-        ],
-        capture_output=True,
-        text=True,
-    )
-    if cp.returncode != 0 or not dst.is_file() or dst.stat().st_size != src.stat().st_size:
-        raise OSError(f"copy {src} -> {dst} failed: {cp.stderr.strip()[-300:]}")
+    err = ""
+    # Twice: launching powershell.exe through WSL interop itself fails now and then
+    # (`UtilAcceptVsock: accept4 failed 110`), which is not the copy failing.
+    for _ in range(2):
+        cp = subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-Command",
+                f"Copy-Item -LiteralPath '{ws}' -Destination '{wd}' -Force -ErrorAction Stop",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if cp.returncode == 0 and dst.is_file() and dst.stat().st_size == src.stat().st_size:
+            return
+        err = cp.stderr.strip()[-300:]
+    raise OSError(f"copy {src} -> {dst} failed: {err}")
 
 
 def _snapshot(name: str, *, overwrite: bool = False) -> Path:
@@ -750,10 +785,18 @@ def cmd_maint(args, repo: Path) -> int:
     """Run a PowerShell script ELEVATED inside the BASE image, then power off.
 
     The base cannot be edited offline (7-Zip reads NTFS, nothing here writes it) and a
-    reinstall costs ~2 h, so this is the way to change it: boot the base itself with the
-    script on a CD, wait for the autologon desktop, and type it into Win+R as an elevated
-    command (Ctrl+Shift+Enter, then Alt+Y at the consent prompt) over QMP. It writes the
-    base: snapshot first, which is why `post-install` exists.
+    reinstall costs ~2 h, so this is the way to change it. It boots the base ITSELF (no
+    overlay), so snapshot first; that is why `post-install` exists.
+
+    Normally the script rides the runner: the CD carries a run.cmd that launches it, and
+    the runner (elevated, relaying stdout as OUT: lines) does the rest. `--keys` is the
+    bootstrap for a base whose runner does not work: wait for the autologon desktop and
+    type the script into Win+R as an elevated command (Ctrl+Shift+Enter, Alt+Y at the
+    consent prompt) over QMP. The first base was repaired that way.
+
+    Success needs the script's own `WINREF-MAINT: done`. Any WINREF: line is not enough:
+    the runner prints its own, and a maintenance run whose script never ran graded itself
+    OK that way.
     """
     run = artifacts.Run("winref-maint", "x64")
     p = _paths()
@@ -766,6 +809,11 @@ def cmd_maint(args, repo: Path) -> int:
         cd.mkdir()
         shutil.copy(script, cd / "maint.ps1")
         shutil.copy(ASSETS / "boot.ps1", cd / "boot.ps1")
+        if not args.keys:
+            (cd / "run.cmd").write_text(
+                '@set WINREF_RUNNER=1\r\n'
+                '@powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0maint.ps1"\r\n'
+            )
         _make_iso(cd, WINREF_DIR / "maint.iso", "MAINT")
     settle = args.settle if args.settle is not None else (1800 if args.accel == "tcg" else 300)
 
@@ -787,14 +835,18 @@ def cmd_maint(args, repo: Path) -> int:
         press_keys=0,
         args=args,
         finish="WINREF: poweroff",
-        actions=[(settle, type_command), (settle + 30, consent)],
+        actions=[(settle, type_command), (settle + 30, consent)] if args.keys else None,
     )
-    maint = [ln for ln in lines if ln.startswith(("WINREF-MAINT:", "WINREF:"))]
+    maint = [
+        ln.removeprefix("OUT: ")
+        for ln in lines
+        if ln.startswith(("WINREF-MAINT:", "WINREF:", "OUT: WINREF-MAINT:"))
+    ]
     run.extra["maint_lines"] = maint
     ok = (
         outcome == "exited"
         and not any("FAILED" in ln for ln in maint)
-        and any(ln.startswith("WINREF: ") for ln in maint)
+        and "WINREF-MAINT: done" in maint
     )
     run.add(
         artifacts.Stage(
@@ -865,7 +917,10 @@ def add_parser(sub) -> None:
     verbs.add_parser("status", help="installed base image and its Windows build")
     mt = verbs.add_parser("maint", help="run a script elevated inside the BASE image (writes it)")
     mt.add_argument("script", help="PowerShell script, typed into Win+R as D:\\maint.ps1")
-    mt.add_argument("--settle", type=float, help="seconds to the autologon desktop")
+    mt.add_argument(
+        "--keys", action="store_true", help="type the script into Win+R (runner broken)"
+    )
+    mt.add_argument("--settle", type=float, help="--keys: seconds to the autologon desktop")
     mt.add_argument("--timeout", type=float, default=RUN_TIMEOUT * 2)
     vm_opts(mt)
     sn = verbs.add_parser("snapshot", help="full copy of the base image into snapshots/<name>")

@@ -56,13 +56,15 @@ try {
         -Argument '-NoProfile -ExecutionPolicy Bypass -File C:\winref\boot.ps1'
     $trigger = New-ScheduledTaskTrigger -AtLogOn -User 'winref'
     $principal = New-ScheduledTaskPrincipal -UserId 'winref' -LogonType Interactive -RunLevel Highest
-    # The cmdlet's default settings refuse to start "on batteries", and a QEMU VM has no AC
-    # adapter for Windows to see; and its 72 h limit would kill a long soak.
+    # No 72 h limit (it would kill a long soak), and never skip a start over battery state.
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
         -ExecutionTimeLimit ([TimeSpan]::Zero)
     Register-ScheduledTask -TaskName 'winref-boot' -Action $action -Trigger $trigger `
         -Principal $principal -Settings $settings -Force -ErrorAction Stop | Out-Null
-    Say 'runner task: registered'
+    # Verify Task Scheduler actually KNOWS it: on the first base the XML file existed in
+    # System32\Tasks and Get-ScheduledTask said "cannot find the file specified".
+    $known = [bool](Get-ScheduledTask -TaskName 'winref-boot' -ErrorAction SilentlyContinue)
+    Say "runner task: registered (known=$known)"
 } catch { Say "runner task: FAILED: $_" }
 
 $v = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
