@@ -163,12 +163,27 @@ int main(void)
     if (!(mac[0] | mac[1] | mac[2] | mac[3] | mac[4] | mac[5]))
         FAIL("step mac: all zero\n");
 
-    memset(buf, 0, sizeof(buf));
-    *(ULONG *)buf = OID_GEN_MEDIA_CONNECT_STATUS;
-    if (ioctl(h, IOCTL_NDISUIO_QUERY_OID_VALUE, buf, 2 * sizeof(ULONG), 2 * sizeof(ULONG), &got))
-        SAY("step link: media connect status %lu (0 = connected)\n", *(ULONG *)(buf + sizeof(ULONG)));
-    else
-        FAIL("step link: query error %lu\n", GetLastError());
+    /* A real PHY autonegotiates for seconds after the miniport starts, and this runs the
+     * moment the binding appears: on a LAN, poll the link for up to 30 s before sending
+     * (QEMU's NIC is up at once, so its first read already says connected). */
+    for (i = 0;; i++)
+    {
+        ULONG media;
+        memset(buf, 0, sizeof(buf));
+        *(ULONG *)buf = OID_GEN_MEDIA_CONNECT_STATUS;
+        if (!ioctl(h, IOCTL_NDISUIO_QUERY_OID_VALUE, buf, 2 * sizeof(ULONG), 2 * sizeof(ULONG), &got))
+        {
+            FAIL("step link: query error %lu\n", GetLastError());
+            break;
+        }
+        media = *(ULONG *)(buf + sizeof(ULONG));
+        if (media == 0 || !lan || i >= 30)
+        {
+            SAY("step link: media connect status %lu (0 = connected) after %lus\n", media, i);
+            break;
+        }
+        Sleep(1000);
+    }
 
     filter = NDIS_PACKET_TYPE_DIRECTED | NDIS_PACKET_TYPE_BROADCAST;
     *(ULONG *)buf = OID_GEN_CURRENT_PACKET_FILTER;
@@ -197,8 +212,15 @@ int main(void)
         if (!WriteFile(h, frame, sizeof(frame), &got, &ov) &&
             !(GetLastError() == ERROR_IO_PENDING && GetOverlappedResult(h, &ov, &got, TRUE)))
         {
-            FAIL("step send: error %lu\n", GetLastError());
-            break;
+            DWORD err = GetLastError();
+            if (!lan || i + 1 >= tries)
+            {
+                FAIL("step send: error %lu\n", err);
+                break;
+            }
+            SAY("step send: error %lu (try %lu), retrying\n", err, i + 1);
+            Sleep(3000);
+            continue;
         }
         SAY("step send: %lu bytes (try %lu)\n", got, i + 1);
         start = GetTickCount();

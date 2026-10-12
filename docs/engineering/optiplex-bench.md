@@ -129,8 +129,11 @@ ndisprobe at the LAN's router.
 INF, starts, binds to ndisuio, and answers OID queries with the chip's MAC
 (`00:e0:4c:68:03:51`). Getting there took a growable NDIS packet pool (the driver asks for a
 pool of 196,512 descriptors), pre-placing the `.sys` (the live image is read-only), and the
-serial fixes that made the log readable. It reported media disconnected and refused the
-ARP send (error 31) with no cable known to be in the hub's port.
+serial fixes that made the log readable. With a cable in the hub's port the link is up
+4 s after the driver starts, and the ARP round trip to the router passes
+(`[NDISPROBE] done VERDICT=PASS`): a vendor's binary miniport sending and receiving real
+frames through our ndis.sys, usbport and xHCI. Nothing above NDIS uses it yet: netstack
+drives its NICs directly and has no NDIS protocol binding.
 
 ## Known gaps
 
