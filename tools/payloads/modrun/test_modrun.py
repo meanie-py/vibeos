@@ -159,3 +159,29 @@ def test_a_declared_divergence_leaves_the_diff_and_a_stale_one_fails(suites):
     )
     _, failures = mr.grade(stale, "amd64-uefi")
     assert any("m.better: diverge 'rust finds it' matched no line" in f for f in failures)
+
+
+def test_shared_data_is_staged_once_and_a_clash_fails(tmp_path, monkeypatch):
+    # The CLI suites each stage the tools/payloads/modrun/data/ files they read.
+    data = "{src: tools/payloads/modrun/data/a.txt, dest: bin/modrun/data/a.txt}"
+    for m in ("find", "sort"):
+        (tmp_path / f"{m}.yaml").write_text(
+            f"module: {m}\nvariants: {{rust: x}}\nstage: [{data}]\ncases: [{{id: a}}]\n"
+        )
+    monkeypatch.setattr(mr, "SUITES", tmp_path)
+    assert len(mr.stage_entries("amd64")) == 1
+    (tmp_path / "comp.yaml").write_text(
+        "module: comp\nvariants: {rust: x}\n"
+        "stage: [{src: other/a.txt, dest: bin/modrun/data/a.txt}]\ncases: [{id: a}]\n"
+    )
+    with pytest.raises(SystemExit, match="staged from"):
+        mr.stage_entries("amd64")
+
+
+def test_a_record_ending_in_cr_is_not_lost():
+    # more.com writes CR CR LF: the guest strips one CR and checksums "one\r".
+    text = "one\r"
+    rec = f"[MODRUN:m.x:c:0:{mr.checksum(text, 0):04x}] {text}"
+    serial = f"{rec}\n{rec}\r\n[MODRUN] exit m.x c rc=0x0 ms=1 records=1\n"
+    out, exits = mr.parse(serial)
+    assert out[("m.x", "c")] == ["one\r"] and "LOST" not in exits[("m.x", "c")][2]

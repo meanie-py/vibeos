@@ -15,7 +15,7 @@
 #![no_std]
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 
-use core::ffi::c_void;
+use core::ffi::{c_char, c_void};
 
 /// stream.h: `typedef struct _CON_STREAM CON_STREAM, *PCON_STREAM;` -- implementation-
 /// specific, only ever handled through a pointer.
@@ -72,6 +72,10 @@ extern "C" {
     pub fn ConResPuts(Stream: PCON_STREAM, uID: u32) -> i32;
     pub fn ConResPrintfEx(Stream: PCON_STREAM, hInstance: *mut c_void, uID: u32, LanguageId: u16, ...) -> i32;
     pub fn ConResPrintf(Stream: PCON_STREAM, uID: u32, ...) -> i32;
+    // The `va_list` forms (outstream.h). A `va_list` is a `char *` on every Windows target;
+    // mode's UnderlinedResPrintf hands its caller's list straight on.
+    pub fn ConPrintfV(Stream: PCON_STREAM, szStr: *const u16, args: *mut c_char) -> i32;
+    pub fn ConResPrintfV(Stream: PCON_STREAM, uID: u32, args: *mut c_char) -> i32;
     pub fn ConMsgPuts(
         Stream: PCON_STREAM,
         dwFlags: u32,

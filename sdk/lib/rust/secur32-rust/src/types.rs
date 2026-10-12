@@ -10,30 +10,8 @@ use crate::prelude::*;
 use secur32_sys::{SecPkgInfoA, SecPkgInfoW, SecurityFunctionTableA, SecurityFunctionTableW};
 use core::ffi::c_void;
 
-// ---- wine/list.h intrusive list node (struct list) -----------------------
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct list {
-    pub next: *mut list,
-    pub prev: *mut list,
-}
-
-// wine/list.h intrusive-list ops (static inline in C → no symbol; the sspi.rs
-// translation calls them as extern "system" `list_init@4`/`list_add_tail@8`, so
-// provide the symbols here). Semantics verbatim from wine/list.h.
-#[no_mangle]
-pub unsafe extern "system" fn list_init(list: *mut list) {
-    (*list).next = list;
-    (*list).prev = list;
-}
-#[no_mangle]
-pub unsafe extern "system" fn list_add_tail(list: *mut list, elem: *mut list) {
-    // list_add_before(list, elem): insert elem just before the head sentinel.
-    (*elem).next = list;
-    (*elem).prev = (*list).prev;
-    (*(*list).prev).next = elem;
-    (*list).prev = elem;
-}
+// ---- wine/list.h: `struct list` and its inline helpers, from the shared port ----
+pub use winelist_rust::{list, list_add_tail, list_init};
 
 // ---- secur32_priv.h: provider/package registry ---------------------------
 #[repr(C)]

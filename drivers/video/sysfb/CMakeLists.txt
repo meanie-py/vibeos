@@ -1,0 +1,14 @@
+# ============================================================================
+# sysfb.sys — cargo-driven final link (sdk/lib/rust/sysfb-cargo via reactos-link)
+# ============================================================================
+# sysfb is the LIVE firmware-framebuffer (UEFI GOP) video driver on all three
+# arches (it renders the desktop; it was arm64vid until it outgrew arm64). sysfb.c is fully translated
+# to Rust (sdk/lib/rust/sysfb-rust, kept on disk per the never-delete rule);
+# its DriverEntry is the PE entry point. The final sysfb.sys link is no longer
+# cmake's add_library(MODULE) + the rust_cohab_stub.c + per-arch custom_command
+# scaffolding — it is driven by cargo (sysfb-cargo's build.rs → reactos-link,
+# ModuleKind::KernelDll, entry=DriverEntry, no exports). add_cargo_module builds
+# sysfb-rust, links it with the ntoskrnl/hal import libs into the shipping PE,
+# applies the kernel-dll post-link and registers it on the boot media.
+add_cargo_module(sysfb sysfb-cargo sysfb.sys KIND kerneldll
+    BODY_CRATE sysfb-rust DESTINATION reactos/system32/drivers)

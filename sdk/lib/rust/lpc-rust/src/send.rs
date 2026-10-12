@@ -789,7 +789,7 @@ pub unsafe extern "system" fn NtRequestWaitReplyPort(
             return st;
         }
         CapturedLpcRequest = Staging.assume_init();
-        if let Err(st) = ntkrnl_sys::probe::probe_user_buffer(
+        if let Err(st) = ntkrnl_sys::probe::probe_user_buffer_write(
             LpcReply as *const core::ffi::c_void,
             core::mem::size_of::<PORT_MESSAGE>(),
             core::mem::size_of::<ULONG>(),

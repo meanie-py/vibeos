@@ -108,23 +108,27 @@ pub(crate) unsafe fn raw_mut_slice<'a>(p: *mut u8, n: usize) -> &'a mut [u8] {
 }
 
 /// Overlap-safe raw byte move — the ReactOS `memcpy`/`memmove`
-/// algorithm verbatim (memcpy.c): forward if disjoint or dst<=src,
-/// else backward. This is the one shim that IS the implementation
-/// (aliasing raw pointers can't be a safe-slice core).
+/// algorithm (memcpy.c): forward if disjoint or dst<=src, else
+/// backward. This is the one shim that IS the implementation
+/// (aliasing raw pointers can't be a safe-slice core); the loops are
+/// asm in memops.rs, for the reasons it gives.
 #[inline]
 pub(crate) unsafe fn raw_move(dst: *mut u8, src: *const u8, n: usize) {
     if dst as usize <= src as usize || dst as usize >= src as usize + n {
-        let mut i = 0;
-        while i < n {
-            *dst.add(i) = *src.add(i);
-            i += 1;
-        }
+        mem_copy_forward(dst, src, n);
     } else {
-        let mut i = n;
-        while i > 0 {
-            i -= 1;
-            *dst.add(i) = *src.add(i);
-        }
+        mem_copy_backward(dst, src, n);
+    }
+}
+
+/// `memset`'s fill: `n` bytes of `val` at `dst` (memops.rs). Not a
+/// `core_rs::mem::set` call: memset's only effect is the stores, the
+/// shape LLVM's dead-store elimination deletes (see gen_cnt.py's
+/// set_raw); asm stores cannot be.
+#[inline]
+pub(crate) unsafe fn raw_fill(dst: *mut u8, val: u8, n: usize) {
+    if n != 0 {
+        mem_fill(dst, val, n);
     }
 }
 
@@ -287,6 +291,8 @@ pub(crate) unsafe fn qsort_rs(
         return;
     }
 }
+mod memops;
+use memops::*;
 #[cfg(feature = "cabi")]
 mod generated;
 #[cfg(feature = "cabi")]

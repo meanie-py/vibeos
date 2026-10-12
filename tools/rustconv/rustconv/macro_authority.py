@@ -403,6 +403,17 @@ def _sibling_in(
             continue
         argv = shlex.split(entry.get("command") or " ".join(entry.get("arguments", [])))
         argv = [a.replace(CANONICAL_BUILD_ROOT, str(repo_root)) for a in argv]
+        if want_cxx and not _is_cxx(tu) and tu.name == "rust_cohab_stub.c":
+            # A flipped C++ module's C stub: CMake adds the C++-only include directories (ATL's,
+            # `$<COMPILE_LANGUAGE:CXX>`) to C++ sources alone, so these flags cannot preprocess
+            # the module's .cpp -- cppapp died on `atlbase.h` not found for cleanmgr/mspaint.
+            # Borrowing them anyway would be a silent degrade (resolve emptied msutb's extern
+            # block this way); port flip now writes a .cpp stub (port._stub_name).
+            raise MacroAuthorityError(
+                f"{source}: the only compile command left in {tu.parent} is the C stub "
+                f"{tu.name}, which lacks the module's C++-only flags\n"
+                f"fix: rename it to rust_cohab_stub.cpp (CMakeLists too) and rebuild"
+            )
         if _is_cxx(tu) != want_cxx:
             argv = _drop_language_flags(argv)
         # Point the borrowed command at OUR file. Match on the sibling's full recorded path

@@ -113,3 +113,24 @@ def test_identifier_aliases_fails_loud_without_any_command(tmp_path):
     src.write_text("int x;\n")
     with pytest.raises(MacroAuthorityError):
         identifier_aliases(tmp_path, src)
+
+
+def test_a_cpp_tu_refuses_a_flipped_modules_c_stub(tmp_path):
+    """cleanmgr/mspaint: once every .cpp is flipped, the C cohab stub is the only command
+    left, and it lacks the C++-only include directories (ATL's). Borrowing it failed later on
+    `atlbase.h`; it now says what to do."""
+    import pytest
+
+    from rustconv.macro_authority import MacroAuthorityError
+
+    repo = tmp_path / "repo"
+    mod = repo / "base" / "applications" / "cleanmgr"
+    mod.mkdir(parents=True)
+    (mod / "cleanmgr.cpp").write_text("")
+    _db(repo, "amd64", [(mod / "rust_cohab_stub.c", "-std=gnu99 -I/c-only")])
+    with pytest.raises(MacroAuthorityError, match="rust_cohab_stub.cpp"):
+        _sibling_target_entry(repo, "amd64", mod / "cleanmgr.cpp")
+    # A .cpp stub carries them, and is borrowed as before.
+    _db(repo, "amd64", [(mod / "rust_cohab_stub.cpp", "-std=gnu++17 -I/atl")])
+    argv = _sibling_target_entry(repo, "amd64", mod / "cleanmgr.cpp")
+    assert argv is not None and "-I/atl" in argv

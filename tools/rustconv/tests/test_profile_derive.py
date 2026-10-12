@@ -801,7 +801,7 @@ def test_cpp_module_scaffold_wires_atl_rust(tmp_path):
     scaffold_crate(derive(_mod(tmp_path), root), out)
     assert 'atlclasses-rust = { path = "../atlclasses-rust" }' in (out / "Cargo.toml").read_text()
     prelude = (out / "src/prelude.rs").read_text()
-    assert "pub use atl_rust::{atl_format," in prelude and "CStringW, POSITION}" in prelude
+    assert "pub use atl_rust::{atl_format," in prelude and "CStringW, POSITION, _AtlBaseModule}" in prelude
 
 
 def test_scaffold_refuses_to_clobber(tmp_path):
@@ -1730,3 +1730,21 @@ def test_a_prologue_arm_only_another_target_compiles_is_dropped(tmp_path):
     assert '#include "wide.h"' in keep
     # A module that defines it itself keeps the host arm decidable the other way round.
     assert _foreign_build_flags([tu], tmp_path, {"-DHOSTTOOL=1"}) == frozenset()
+
+
+def test_a_sizeof_case_label_is_a_number_not_an_arm(tmp_path):
+    """videoprt's `case sizeof(VIDEO_HW_INITIALIZATION_DATA):` -- the operand is a type, and
+    a size can never become a name pattern that binds everything. The SIZE_OF_* macro arms
+    beside it are still audited."""
+    root = _basic_module(tmp_path)
+    _write(
+        _mod(tmp_path) / "helper.c",
+        '#include "precomp.h"\n'
+        "int s(unsigned n){ switch (n) {\n"
+        "    case SIZE_OF_NT4_DATA: return 1;\n"
+        "    case sizeof(VIDEO_HW_INITIALIZATION_DATA): return 2;\n"
+        "    case sizeof(struct S) + EXTRA: return 3;\n"
+        "    default: return 0;\n} }\n",
+    )
+    idents = {c.ident for c in find_switch_constants([_mod(tmp_path) / "helper.c"], root)}
+    assert idents == {"SIZE_OF_NT4_DATA", "EXTRA"}

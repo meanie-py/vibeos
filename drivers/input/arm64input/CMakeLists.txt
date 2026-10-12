@@ -9,7 +9,7 @@
 # it is driven by cargo (arm64input-cargo's build.rs → reactos-link,
 # ModuleKind::KernelDll, entry=DriverEntry, no exports). add_cargo_module builds
 # arm64input-rust + links it with the ntoskrnl/hal import libs into the shipping
-# PE and applies the kernel-dll post-link. It is a livecd file like arm64vid and
+# PE and applies the kernel-dll post-link. It is a livecd file like sysfb and
 # pl011: the arm64 ramdisk is built from the livecd list, so a driver without a
 # destination never reaches the media. Only added for ARCH==arm64
 # (drivers/input/CMakeLists.txt).

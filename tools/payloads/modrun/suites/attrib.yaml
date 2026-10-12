@@ -1,0 +1,26 @@
+# attrib (base/applications/cmdutils/attrib -> attrib-rust, batch C). The shipped Rust diffed
+# against the pre-flip C (`python -m rustconv.c_oracle`); inputs from modrun/data.
+module: attrib
+variants:
+  c: '%SystemRoot%\bin\modrun\attrib_c.exe'
+  rust: '%SystemRoot%\system32\attrib.exe'
+ninja:
+- attrib_c
+stage:
+- src: build-{arch}/base/applications/cmdutils/attrib/attrib_c.exe
+  dest: bin/modrun/attrib_c.exe
+- src: tools/payloads/modrun/data/a.txt
+  dest: bin/modrun/data/a.txt
+- src: tools/payloads/modrun/data/b.txt
+  dest: bin/modrun/data/b.txt
+cases:
+- id: list
+  args: '%SystemRoot%\bin\modrun\data\*.txt'
+  expect:
+  - a.txt
+- id: toggle
+  args: +R %SystemRoot%\bin\modrun\data\b.txt
+- id: after
+  args: '%SystemRoot%\bin\modrun\data\b.txt'
+- id: clear
+  args: -R %SystemRoot%\bin\modrun\data\b.txt

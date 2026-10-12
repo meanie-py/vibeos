@@ -122,7 +122,7 @@ def _ensure_clean_rust_build(arch: str) -> None:
     # structural mirror of `ninja livecd`.
     if arch in ("arm64", "arm64-test"):
         subprocess.run(  # best-effort: targets absent on some branches
-            _wrap(["ninja", "arm64input", "arm64vid"]),
+            _wrap(["ninja", "arm64input", "sysfb"]),
             cwd=build_dir,
             capture_output=True,
             text=True,

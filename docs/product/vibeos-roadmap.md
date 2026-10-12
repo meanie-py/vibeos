@@ -427,9 +427,10 @@ together, plus a foundational arm64-interrupts effort that ends the polling clas
 | 10e | **Verified network boot in freeldr** — freeldr fetches the kernel/ramdisk itself over HTTP through UEFI's HTTP/TCP protocols, and **refuses to boot any payload whose SHA-256 does not match** a signed/pinned manifest (treat it as prod: a netboot that trusts whatever answers on the LAN is a remote-code-execution path). Motivation: on the Pi 4 the 140 MB ramdisk costs ~17 min per kernel iteration, and the network is not the limit (iPXE pulls it in 19 s): it is writing it to and reading it from the SD card through the firmware (`docs/engineering/pi4-bench.md`). Fetching into RAM skips the card entirely. Interim: iPXE `sanboot` of the boot image | — | M | proposed 2026-09-26 |
 | 10f | **Maybe: bring legacy BIOS boot back (loader only)** for i386 and amd64. The BIOS prune (`85102c111a3`..`5ca4d482d32`, 2026-05-29) assumed BIOS no longer mattered. That holds for amd64 PCs from about 2012 on, but almost every real 32-bit PC is BIOS-only, so without it i386 boots on no physical hardware; SeaBIOS is also the default in plain QEMU and Proxmox, and on coreboot/Libreboot machines such as the owner's OptiPlex 9020 (a candidate x64 bench: COM1, NVMe boot through SeaBIOS). **Scope: the loader, not the emulator.** The PC-AT machine layer survives in `freeldr-rust` (`machpc`, `pcmem`, `pcdisk`, `pcvesa`, `pchw`, `pxe`); restore the real-mode entry (`arch/realmode/*`) and `pcat.cmake` from git, wire `freeldr.sys` into the cargo-driven loader link (`ab763550984`), and repair four months of drift in the BIOS-only paths. The loader hands the kernel a VESA framebuffer like UEFI's GOP one, so fast486, HAL x86bios and videoprt INT10 stay retired. **Add a SeaBIOS smoke cell for i386 and amd64**, or it rots again. Quick experiment first: OpenCore's OpenDuet (UEFI loaded from disk by a legacy BIOS) runs today's `uefildr.efi` with no OS change. | — | M | considered 2026-10-05 |
 | 10g | **RDP server for headless boards** (Pi 4, Pi 5, Graviton): serve the desktop to `mstsc` with **IronRDP** as the protocol engine. Tier 0 is a memory-backed display for boards with no GOP; tier 1 a service that shadows the console (capture, bitmap encode, `SendInput`, a SAS path for Ctrl+Alt+Del). First step: Rust `std` (tokio) in guest user mode, which `ironrdp-server` needs; the sans-IO crates plus schannel are the fallback. Multi-session Terminal Services is a separate, later tier | [`../engineering/rdp-server-design.md`](../engineering/rdp-server-design.md) | L | proposed 2026-10-08 |
+| 10h | **sysfb as a PnP display driver**: bind the PCI display controller (BasicDisplay's lowest-rank class match), claim it only if the firmware framebuffer lies in its BARs, allocate `\Device\VideoN`, STOP/REMOVE hand-off so a vendor GPU driver can take over, refuse S3/S4 while active; a root-enumerated instance keeps ramfb/DT/headless working. Small fixes first: colour bits from the pixel masks, honour `FrameBufferOffset`. | [`../engineering/sysfb-pnp-design.md`](../engineering/sysfb-pnp-design.md) | M | proposed |
 
-Not trash, leave alone: the GOP linear-framebuffer display driver (`arm64vid`, shared all
-arches) and the PL011 UART (a real ARM peripheral).
+Not trash, leave alone: the firmware-framebuffer display driver (`sysfb`, formerly
+`arm64vid`, shared by all arches) and the PL011 UART (a real ARM peripheral).
 
 ---
 
@@ -595,6 +596,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **Windows-host QEMU launch fails all three attempts: conformance `L:no-guest-serial`, smoke
+  `LAUNCH_FAIL` (FLAKE, host side, partly fixed 2026-10-11).** About 4% of conformance rounds
+  over 10-10/11 (10 artifacts under `~/vibeos-flake-farm/fails/auto/*L_no-guest-serial`, every
+  one `handshake_seconds` 15.00x with `UtilAcceptVsock: accept4 failed 110`). The guest never
+  ran: WSL interop did not start `qemu-system-*.exe`. Fixed: retries shared a staging dir
+  (attempt 2 died on attempt 1's still-open files), and an unconfirmed kill dropped the VM's
+  lock, which leaked nine qemu.exe processes (about four cores, some for eight days; killed
+  with the new `kill --stale`). OPEN: why one round's three attempts all fail while other
+  launches in the same minute succeed. Field manual: "`L:no-guest-serial`: the guest never ran".
+
 - **`apc32.exe` rung 4 "APC to a waiting thread lost" (FLAKE, open).** The WoW64 ladder's
   32-bit APC guest sometimes sees an APC queued to a thread in an alertable wait never run:
   the sleeper returns 0 and the guest exits 0xBA41. Seen 2026-10-10 in one amd64 queue gate
@@ -614,15 +625,20 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   warnings-burndown b8eac0dccad2, a fastfat-only change. 58 other boots today passed the same
   rung. Start with who can queue an APC to a thread that is exiting (special-pool the KTHREAD).
 
-- **OptiPlex USB 3 card: root hub sometimes never enumerates, and the boot stalls (OPEN,
-  2026-10-11).** With the USB-C hub on the Renesas uPD720201 card, some cold boots never see
-  the hub: usbport's root-hub-ready callback does not run for that controller, so usbhub's
-  bus-relations handler retries once a second on the PnP worker thread forever (387 times in
-  one boot) and nothing later in PnP starts, netstack included. Other boots enumerate the hub
-  and reach the desktop. `[USBPORT] root hub ready` and `[USBHUB] ... before enumeration is
-  allowed` now say which side is missing. Also open: usbhub has no SuperSpeed hub support
-  (the hub's USB 3 half fails START asking for a 0x29 descriptor), and netstack's I217 has
-  no interrupt (Interrupt Line 128; it polls). See `docs/engineering/optiplex-bench.md`.
+- **OptiPlex USB 3 card: root hub sometimes never enumerates, and the boot stalls (FIXED
+  2026-10-11, rare trigger not yet seen again on the board).** The stalled boot's log shows
+  `[XHCI] start: controller did not halt (USBSTS 10)`: usbxhci gave the Renesas card 20 ms
+  to halt, and usbport reported the failed START as success (upstream's C does the same), so usbhub
+  waited forever on a root hub with no controller behind it. usbxhci now waits 200 ms and
+  resets anyway, and usbport fails the START. Forcing the failure in QEMU found two more
+  upstream bugs on that path (usbport never disconnects its interrupt; scsiport ignores a
+  failed interrupt connect and bugchecks 0xA), both fixed (field manual, "A USB controller
+  starts, and usbhub waits for its root hub forever"). Four cold boots since then had every
+  root hub ready and no halt miss. Still open on that card: usbhub has no SuperSpeed hub
+  support (the hub's USB 3 half fails START asking for a 0x29 descriptor), and netstack's
+  I217 has no interrupt (Interrupt Line 128; it polls). Also seen in those boots: serial goes
+  silent for about 3 minutes after `[SYSDRV] loading` Ndisuio/Afd/Netio while the box answers
+  ping, then the boot finishes; not yet run down. See `docs/engineering/optiplex-bench.md`.
 
 - **ntkrnl-sys `PCI_COMMON_CONFIG` has no header fields (OPEN, owed).** bindgen dropped the
   `PCI_COMMON_HEADER DUMMYSTRUCTNAME;` member, leaving a 192-byte `{ DeviceSpecific }` and a
@@ -1474,13 +1490,22 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     `Root\*PNP0A03`); pcix takes the root's base bus from its boot configuration; and the PnP
     manager returns an assigned list in requirements order with each requirement's share
     disposition (pcix maps assignments onto BARs by that order, and had zeroed arm64's
-    virtio-disk BARs under the running driver). Before pcix can be the default: it does not
-    use VibeOS's `_PRT` routing interface (`acpi-rust/pciroute.rs`, which pci.sys uses on
-    real Intel boards), and RootBusCapability (_OSC) is not provided. Still owed: the HAL legacy PIR arbiter (cf89458d9e2,
-    hal/halx86/legacy/pir, not built at all); `CmResourceType*`/`CM_RESOURCE_*` in the
-    kernel island on arm64 (pnpmgr's arb prelude names them by hand until then); rustconv
-    still shows the model both arms of an undecidable `#if NTDDI_VERSION` — the 0x502 arms
-    were picked by hand in 22 places.
+    virtio-disk BARs under the running driver). pcix routes INTx (2026-10-11,
+    `pcix-rust/irqroute.rs`): a root FDO asks the PDO below for VibeOS's routing interface
+    (acpi.sys's `_PRT` walk, `acpi-rust/pciroute.rs`; on arm64 the HAL answers with QEMU
+    virt's GPEX map) and each function's interrupt requirement names exactly its routed GSI,
+    or its Interrupt Line where nothing routes it. Upstream's C asked for any vector and left
+    `_PRT` to acpi.sys's interrupt arbiter, which ReactOS never had. Still owed before pcix
+    can be the default: RootBusCapability (_OSC) is not provided. Owed later: that arbiter
+    itself (8259-mode link `_SRS`, line accounting, MSI) behind pcix's stubbed
+    `INT_ROUTE_INTERFACE_STANDARD` (`routeintrf_Constructor` breaks in). The HAL legacy PIR arbiter (cf89458d9e2) is
+    **blocked, not owed work**: it serves only the legacy (non-ACPI) x86 HAL's root PDO, and
+    vibeos builds no legacy HAL flavor (`legacy_halpnpdd` is `#[cfg(any())]`; every arch boots
+    the ACPI HAL with acpi.sys as root bus), so a port would be dead code. Port it with the
+    legacy HAL if that flavor ever returns. Resolved 2026-10-11: cmtypes.h's resource
+    constants are `ntkrnl_sys::cmres` on every arch (the arbiter prelude imports them), and
+    rustconv decides `#if NTDDI_VERSION >= NTDDI_VISTA` at the module's profile, so the dead
+    arm never reaches the model (the arbiter port had 22 hand fixes for it).
   - **Boot configs are not reserved at enumeration** (upstream ReactOS behaviour, found
     2026-10-09). The resource map gets a device's resources only when IopAssignDeviceResources
     assigns them, so a legacy detector that runs first sees free ports: legide's

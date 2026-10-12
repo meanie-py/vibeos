@@ -184,6 +184,13 @@ def rewrite(text: str) -> Rewrite:
         body = re.sub(
             rf"\b{arg}\s*\.\s*clone\s*\(\s*\)", "varargs_rust::VaArgs::from_ptr(ap_list)", body
         )
+        # The PARAMETER itself `va_start`ed (mode's UnderlinedResPrintf:
+        # `va_start!(args, uID); ConResPrintfV(.., args.as_va_list()); va_end!(args);`): bind
+        # it to the caller's list at the top, and the local rule below does the rest.
+        if re.search(rf"\bva_start!?\s*\(\s*{arg}\s*,", body) and not re.search(
+            rf"\blet\s+(?:mut\s+)?{arg}\b", body
+        ):
+            body = "{\n    let mut " + arg + ": va_list = core::mem::zeroed();" + body[1:]
         body, forwarded = _forwarding_locals(body)
         if re.search(rf"\b{arg}\b", body) and arg not in forwarded:
             out.refused[name] = (

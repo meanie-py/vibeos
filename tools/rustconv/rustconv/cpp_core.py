@@ -368,13 +368,50 @@ _RUST_SCALARS = {
 }
 
 
+def _split_template_args(text: str) -> list[str]:
+    out, depth, cur = [], 0, []
+    for ch in text:
+        if ch in "<([":
+            depth += 1
+        elif ch in ">)]":
+            depth -= 1
+        if ch == "," and depth == 0:
+            out.append("".join(cur))
+            cur = []
+            continue
+        cur.append(ch)
+    out.append("".join(cur))
+    return out
+
+
 def c_type_to_rust(c_type: str) -> str:
     """Mechanical C/C++ declarator -> Rust type mapping.
 
     Handles both `const T *` and `T const *` spellings, references, pointer depth,
     explicit `struct`/`enum`/`union` tag keywords, and qualified nested type names.
     """
-    text = " ".join(c_type.replace("CONST", "const").split())
+    text = " ".join(re.sub(r"\bCONST\b", "const", c_type).split())
+    lt = text.find("<")
+    if lt >= 0:
+        # A template's arguments are types of their OWN: `CAtlList<CCleanupHandler *>` is a
+        # list of pointers, not a pointer to a list. Convert them separately and let only the
+        # stars outside the brackets make the outer declarator.
+        depth, gt = 0, -1
+        for i in range(lt, len(text)):
+            depth += {"<": 1, ">": -1}.get(text[i], 0)
+            if depth == 0:
+                gt = i
+                break
+        if gt > lt:
+            args = [
+                a if re.fullmatch(r"[-+]?[0-9]\w*", a) else c_type_to_rust(a)
+                for a in (x.strip() for x in _split_template_args(text[lt + 1 : gt]))
+            ]
+            *quals, name = text[:lt].split()
+            name = re.sub(r"\b[A-Za-z_]\w*::", "", name)
+            placeholder = "__TEMPLATE__"
+            outer = c_type_to_rust(" ".join([*quals, placeholder]) + text[gt + 1 :])
+            return outer.replace(placeholder, f"{name}<{', '.join(args)}>")
     # Headers use both ``const T *`` and ``T const *``.  A qualifier left in
     # the base spelling becomes invalid Rust (``*mut T const``), so normalize
     # either C spelling before building the pointer declarator.
@@ -744,7 +781,7 @@ def _abi_c_type_key(c_type: str) -> str:
     # A C++ `T&` parameter binds an LVALUE of type T, so for BINDING the reference is
     # not part of the type. (It very much is for codegen, which is why this collapse is
     # scoped to overload keys — the caller still emits the reference.)
-    text = " ".join(c_type.replace("CONST", "const").split()).rstrip("&").strip()
+    text = " ".join(re.sub(r"\bCONST\b", "const", c_type).split()).rstrip("&").strip()
     aliases = {
         "int": "INT",
         "unsigned int": "UINT",

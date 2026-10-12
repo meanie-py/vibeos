@@ -1,0 +1,20 @@
+# label-rust — see src/lib.rs for the module map.
+[package]
+name = "label-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+
+[lib]
+name = "label_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+# C-variadic entry points -> rust_varargs_shim.c (stable Rust cannot define one).
+varargs-rust = { path = "../varargs-rust" }
+conutils-h = { path = "../conutils-h" }
+strsafe-rust = { path = "../strsafe-rust" }
+panic-common = { path = "../panic-common", features = ["user"] }
+ntdll-sys = { path = "../ntdll-sys" }
+win32macros-rust = { path = "../win32macros-rust" }

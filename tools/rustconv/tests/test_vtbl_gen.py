@@ -422,3 +422,15 @@ class TestModuleIslandAsFieldOrderSource:
         c = self.NETCFGX_C / "netcfgbindinginterface_iface.c"
         with pytest.raises(VtblResolveError, match="cannot resolve field order"):
             find_vtbl_tables(c, rust_sources=[], c_headers=[])
+
+
+def test_a_struct_tagged_table_is_found(tmp_path: Path):
+    # wordpad's olecallback.c: `struct IRichEditOleCallbackVtbl olecallbackVtbl = {..}`. The
+    # type node is the whole `struct X` specifier, and the table shipped missing.
+    c = tmp_path / "olecallback.c"
+    c.write_text(
+        "struct IUnknownVtbl olecallbackVtbl = {\n"
+        "    Foo_QueryInterface,\n    Foo_AddRef,\n    Foo_Release\n};\n"
+    )
+    tables = find_vtbl_tables(c)
+    assert [(t.name, len(t.slots)) for t in tables] == [("olecallbackVtbl", 3)]

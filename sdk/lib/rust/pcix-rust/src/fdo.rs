@@ -11,8 +11,6 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-/// `CmResourceTypeBusNumber` (wdm.h).
-const CM_RESOURCE_TYPE_BUS_NUMBER: u8 = 6;
 use ntkrnl_sys::ddk::{IoAttachDeviceToDeviceStack, IoCreateDevice, IoDeleteDevice, IoDetachDevice, IoOpenDeviceRegistryKey, KEY_VALUE_PARTIAL_INFORMATION, KeInitializeEvent, PCM_RESOURCE_LIST, PDEVICE_CAPABILITIES, PDEVICE_OBJECT, PDEVICE_RELATIONS, PDRIVER_OBJECT, PIO_STACK_LOCATION, PIRP, PKEY_VALUE_PARTIAL_INFORMATION, RtlInitUnicodeString, _EVENT_TYPE_SynchronizationEvent, ZwClose, ZwQueryValueKey};
 use ntkrnl_sys::ddk::{
     _DEVICE_RELATION_TYPE_BusRelations as BusRelations,
@@ -994,7 +992,7 @@ pub unsafe extern "system" fn PciAddDevice(
                         let parts = (*list).PartialDescriptors.as_mut_ptr();
                         for i in 0..(*list).Count as usize {
                             let d = parts.add(i);
-                            if (*d).Type == CM_RESOURCE_TYPE_BUS_NUMBER {
+                            if (*d).Type == ntkrnl_sys::cmres::CmResourceTypeBusNumber {
                                 (*FdoExtension).BaseBus = (*d).u.BusNumber.Start as u8;
                                 found = true;
                                 break;
@@ -1055,6 +1053,9 @@ pub unsafe extern "system" fn PciAddDevice(
                 if Status >= 0i32 {
                     /* Map this bus for extended configuration space access */
                     PciInitializeEcam(FdoExtension);
+
+                    /* VibeOS: where the firmware routes this root's INTx pins */
+                    crate::irqroute::fdo_query_routing(FdoExtension);
 
                     Status = PciInitializeArbiters(FdoExtension);
                     if Status >= 0i32 {

@@ -2872,7 +2872,7 @@ def _vtbl_declared_slots(body: str) -> int:
 
 
 def _parse_param(text: str, index: int) -> tuple[str, str]:
-    text = " ".join(text.replace("CONST", "const").split())
+    text = " ".join(re.sub(r"\bCONST\b", "const", text).split())
     # BOTH SAL families, not just the classic one. `_SAL_ANNOTATION` already exists and is
     # applied elsewhere in this file; omitting it here let modern SAL survive into the parsed
     # TYPE, and `render_class_scaffold` then emitted it verbatim into the generated factory

@@ -69,9 +69,12 @@ class SealedSource:
 
 
 _PLACEHOLDER_RE = re.compile(r"\b__RUSTCONV_FACT_[0-9]{4}__\b")
+# A digit run beside a `.` is part of a FLOAT literal, never an integer of its own: wordpad's
+# `0.0138` was sealed as the integers `0` and `0138` (an invalid octal that crashed the
+# placement audit), and `1.5e10f` as `1` and `.5e10f`.
 _INTEGER_RE = re.compile(
-    r"(?<![A-Za-z0-9_])(?:0[xX][0-9A-Fa-f]+|0[oO][0-7]+|[0-9]+)"
-    r"(?:[uUlL]{0,3})(?![A-Za-z0-9_])"
+    r"(?<![A-Za-z0-9_.])(?:0[xX][0-9A-Fa-f]+|0[oO][0-7]+|[0-9]+)"
+    r"(?:[uUlL]{0,3})(?![A-Za-z0-9_.])"
 )
 _SYMBOL_RE = re.compile(r"\b[A-Z][A-Z0-9_]+\b")
 _C_SYMBOL_RE = re.compile(r"\b_*[A-Z][A-Z0-9_]+\b")

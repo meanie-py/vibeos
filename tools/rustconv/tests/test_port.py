@@ -741,6 +741,15 @@ def test_flip_links_with_the_targets_own_link_signature():
     assert "target_link_libraries(winegdi PRIVATE ${winegdi_rust_LIB})" in out
 
 
+def test_a_cpp_module_gets_a_cpp_stub_tu():
+    """The stub is the module's last compile command once every TU flips; a C stub of a C++
+    module lacks the C++-only include directories the tools borrow (msutb's ATL)."""
+    from rustconv.port import _stub_name
+
+    assert _stub_name({"cpp_tus": ["base/ctf/msutb/msutb.cpp"]}) == "rust_cohab_stub.cpp"
+    assert _stub_name({"tus": ["dll/win32/x/x.c"]}) == "rust_cohab_stub.c"
+
+
 def test_a_copy_naming_its_source_crates_private_type_is_refused(tmp_path, monkeypatch):
     # regedit got ucrt-rust's `qsort(.., comp: Compare)`; `Compare` is ucrt's own alias.
     rust = tmp_path / "sdk" / "lib" / "rust"
@@ -749,17 +758,26 @@ def test_a_copy_naming_its_source_crates_private_type_is_refused(tmp_path, monke
     monkeypatch.setattr(port, "REPO", tmp_path)
     from rustconv.prelude_resolve import Item
 
-    priv = Item("fn", "pub fn qsort(b: *mut c_void, n: usize, comp: Compare);", None, "ucrt-rust/src/q.rs")
-    ok = Item("fn", "pub fn qsort(b: *mut c_void, n: usize, comp: PFN);", None, "ucrt-rust/src/q.rs")
+    priv = Item(
+        "fn", "pub fn qsort(b: *mut c_void, n: usize, comp: Compare);", None, "ucrt-rust/src/q.rs"
+    )
+    ok = Item(
+        "fn", "pub fn qsort(b: *mut c_void, n: usize, comp: PFN);", None, "ucrt-rust/src/q.rs"
+    )
     assert port._private_types(priv, {"PFN"}) == {"Compare"}
     assert port._private_types(ok, {"PFN"}) == set()
-    rel = Item("fn", "pub fn qsort(b: *mut c_void, cmp: super::super::CntCmpFn);", None, "cnt-rust/src/g.rs")
+    rel = Item(
+        "fn",
+        "pub fn qsort(b: *mut c_void, cmp: super::super::CntCmpFn);",
+        None,
+        "cnt-rust/src/g.rs",
+    )
     assert port._private_types(rel, set()) == {"super::super::CntCmpFn"}
 
 
 def test_a_negative_fact_of_an_unsigned_type_is_its_bit_pattern():
     # calc: clang evaluated _UI64_MAX to -1; `pub const _UI64_MAX: u64 = -1;` is E0600.
-    from rustconv.prelude_resolve import existing_facts, render_facts
+    from rustconv.prelude_resolve import render_facts
 
     out = render_facts({"_UI64_MAX": ("u64", -1, "fun_ieee.c")})
     assert "pub const _UI64_MAX: u64 = 0xFFFFFFFFFFFFFFFF; // clang, fun_ieee.c" in out
@@ -790,8 +808,8 @@ def test_reactos_gates_are_settled_to_the_live_arm(tmp_path):
     # regedit's regproc.rs: both arms, gated on things Rust never sets -> Wine's arm compiled.
     rs = tmp_path / "regproc.rs"
     rs.write_text(
-        "fn a() {\n    if cfg!(feature = \"reactos\") {\n        live1();\n    } else {\n        wine1(x, 1);\n    }\n}\n"
-        "fn b() {\n    #[cfg(feature = \"reactos\")]\n    live2();\n    #[cfg(not(feature = \"reactos\"))]\n    wine2();\n}\n"
+        'fn a() {\n    if cfg!(feature = "reactos") {\n        live1();\n    } else {\n        wine1(x, 1);\n    }\n}\n'
+        'fn b() {\n    #[cfg(feature = "reactos")]\n    live2();\n    #[cfg(not(feature = "reactos"))]\n    wine2();\n}\n'
         "fn c() {\n    const REACTOS: bool = false;\n    if REACTOS {\n        live3();\n    } else {\n        wine3();\n    }\n}\n"
         "fn d() {\n    #[cfg(not(reactos))]\n    {\n        wine4();\n    }\n    if true { keep(); }\n}\n"
     )
@@ -801,7 +819,7 @@ def test_reactos_gates_are_settled_to_the_live_arm(tmp_path):
         assert live in out
     assert "wine1" not in out and "wine3" not in out
     assert "#[cfg(any())]\n    wine2();" in out and "#[cfg(any())]\n    {\n        wine4();" in out
-    assert "feature = \"reactos\"" not in out
+    assert 'feature = "reactos"' not in out
 
 
 def test_file_and_line_are_rusts_own(tmp_path):
@@ -810,7 +828,10 @@ def test_file_and_line_are_rusts_own(tmp_path):
     rs.write_text('fn f() { DbgPrint(b"%s:%d\\0".as_ptr(), __FILE__, __LINE__); } // __FILE__\n')
     assert port._builtin_location_macros(rs) == 3
     out = rs.read_text()
-    assert 'DbgPrint(b"%s:%d\\0".as_ptr(), concat!(file!(), "\\0").as_ptr(), (line!() as ::core::ffi::c_int))' in out
+    assert (
+        'DbgPrint(b"%s:%d\\0".as_ptr(), concat!(file!(), "\\0").as_ptr(), (line!() as ::core::ffi::c_int))'
+        in out
+    )
     assert "__LINE__" in port._COMPILER_BUILTIN_MACROS
 
 
@@ -860,3 +881,175 @@ def test_a_derived_arm_keeps_the_old_arms_hand_section():
     assert "BLOCKLIST_FUNCS=1\n    # >>> hand\n    EXTRA_BL_ITEMS=( _CON_STREAM )\n" in out
     assert "BLOCKLIST_FUNCS=0" not in out and out.count("# >>> hand") == 1
     assert port.upsert_profile_arm(out, new_arm, "cmd") == out  # stable on re-derive
+
+
+def _dep_tree(tmp_path):
+    """msutb-rust depending on cicero-rust, whose cppapp rendered CUIFWindow."""
+    dep = tmp_path / "cicero-rust"
+    (dep / "src" / "cicero").mkdir(parents=True)
+    (dep / "src" / "cicero" / "cpp_classes.rs").write_text(
+        "#[repr(C)]\npub struct CUIFWindow {\n    pub m_hWnd: HWND,\n}\n"
+    )
+    (dep / "src" / "cicero" / "cicbase.rs").write_text(
+        "pub unsafe fn cicMemFree(p: *mut c_void) {}\nfn private_one() {}\n"
+    )
+    crate = tmp_path / "msutb-rust"
+    (crate / "src" / "msutb").mkdir(parents=True)
+    (crate / "Cargo.toml").write_text('[dependencies]\ncicero-rust = { path = "../cicero-rust" }\n')
+    return crate
+
+
+def test_an_island_copy_of_a_dependencys_class_becomes_its_re_export(tmp_path):
+    crate = _dep_tree(tmp_path)
+    island = crate / "src" / "types_msutb.rs"
+    island.write_text(
+        "#[repr(C)]\n#[derive(Copy, Clone)]\npub struct CUIFWindow {\n"
+        "    pub vtable_: *const CUIFWindow__bindgen_vtable,\n}\npub struct KEEP { pub x: i32 }\n"
+    )
+    done = port._defer_island_classes(crate / "src", "msutb", "")
+    assert done == ["CUIFWindow"]
+    text = island.read_text()
+    assert "pub use cicero_rust::cicero::cpp_classes::CUIFWindow;" in text
+    assert "vtable_" not in text and "#[derive" not in text and "KEEP" in text
+
+
+def test_resolve_wires_a_dependencys_pub_definitions_once(tmp_path):
+    crate = _dep_tree(tmp_path)
+    found = port._dep_definitions({"cicMemFree", "private_one", "Nowhere"}, crate)
+    assert found == {"cicMemFree": "cicero_rust::cicero::cicbase"}
+    prelude = crate / "src" / "prelude.rs"
+    prelude.write_text("use core::ffi::c_void;\n")
+    port._write_dep_block(prelude, found)
+    port._write_dep_block(prelude, found)  # a later pass rewrites the block in place
+    text = prelude.read_text()
+    assert text.count(port._DEP_BEGIN) == 1
+    assert "pub use cicero_rust::cicero::cicbase::{cicMemFree};" in text
+
+
+def test_gen_arm_write_is_locked_and_atomic(tmp_path, monkeypatch):
+    # Three integration agents re-derived concurrently; a running bash read a half-rewritten
+    # gen_driver_types.sh. The writer re-reads under a lock and swaps the inode.
+    gen = tmp_path / "gen_driver_types.sh"
+    gen.write_text('case "$1" in\n  a)\n    X=1\n    ;;\n  *) echo "unknown driver $1"; exit 1 ;;\nesac\n')
+    monkeypatch.setattr(port, "GEN", gen)
+    ino = gen.stat().st_ino
+    port._write_gen_arm("  b)\n    Y=2\n    ;;\n", "b")
+    text = gen.read_text()
+    assert "  a)\n    X=1" in text and "  b)\n    Y=2" in text
+    assert gen.stat().st_ino != ino  # replaced, not rewritten in place
+    port._write_gen_arm("  b)\n    Y=2\n    ;;\n", "b")  # idempotent
+    assert gen.read_text() == text
+
+
+def test_conutils_streams_are_values_not_places(tmp_path):
+    rs = tmp_path / "n.rs"
+    rs.write_text(
+        "fn f() { ConPuts((addr_of_mut!(StdOut)).cast(), s); ConPrintf(&raw mut StdErr, f); "
+        "ConPuts(StdOut, s); let csStdOut_p = addr_of_mut!(csStdOut); }\n"
+    )
+    assert port._con_stream_values(rs) == 2
+    out = rs.read_text()
+    assert "ConPuts(StdOut, s); ConPrintf(StdErr, f); ConPuts(StdOut, s);" in out
+    assert "addr_of_mut!(csStdOut)" in out
+
+
+def test_an_ansi_t_literal_gets_its_nul_too(tmp_path):
+    # arp (ANSI): `_T!("%s").as_ptr()` -- printf read on through rodata.
+    rs = tmp_path / "arp.rs"
+    rs.write_text(
+        'fn f() { printf(_T!("%s").as_ptr(), s); sprintf(b, _T!(" %02X").as_ptr(), c); }\n'
+    )
+    assert port._c_str_literals(rs) == ["%s", " %02X"]
+    assert 'printf(b"%s\\0".as_ptr(), s); sprintf(b, b" %02X\\0".as_ptr(), c);' in rs.read_text()
+
+
+def test_a_const_array_whose_pointer_escapes_becomes_static(tmp_path):
+    # attrib: `pszFileName = (ALL_FILES_PATTERN).as_mut_ptr();` -- a dangling temporary.
+    rs = tmp_path / "attrib.rs"
+    rs.write_text(
+        "pub const ALL_FILES_PATTERN: [u16; 4] = [42, 46, 42, 0];\n"
+        "const RO: [u16; 2] = [1, 0];\nconst SIZES: [u32; 2] = [1, 2];\n"
+        "fn f() { p = (ALL_FILES_PATTERN).as_mut_ptr(); q = RO.as_ptr(); n = SIZES[1]; }\n"
+    )
+    assert port._pointed_const_arrays(rs) == ["ALL_FILES_PATTERN", "RO"]
+    out = rs.read_text()
+    assert "pub static mut ALL_FILES_PATTERN: [u16; 4]" in out and "static RO: [u16; 2]" in out
+    assert "const SIZES: [u32; 2]" in out
+
+
+def test_an_extern_iob_declaration_goes_with_its_uses(tmp_path):
+    # finger's net.rs: `extern { static mut _iob: FILE; }` + addr_of_mut!(_iob).offset(2).
+    rs = tmp_path / "net.rs"
+    rs.write_text(
+        'extern "C" {\n    static mut _iob: FILE;\n}\n'
+        "fn f() { fprintf((core::ptr::addr_of_mut!(_iob)).offset(2) as *mut FILE, s); }\n"
+    )
+    assert port._crt_data_globals(rs) == ["_iob x1"]
+    out = rs.read_text()
+    assert (
+        "static mut _iob" not in out and "fprintf((__iob_func()).offset(2) as *mut FILE, s)" in out
+    )
+
+
+def test_translate_sees_a_placeholder_island(tmp_path, monkeypatch):
+    # wscript's IArguments2Vtbl lives only in its own island; translating before `port
+    # island` bought every body and then refused at stitching.
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    src = tmp_path / "sdk/lib/rust/x-rust/src"
+    src.mkdir(parents=True)
+    (src / "types_amd64.rs").write_text('compile_error!("types_amd64.rs is a placeholder: run x");')
+    assert port._island_is_placeholder({"crate": "x-rust"})
+    (src / "types_amd64.rs").write_text("pub struct IArguments2Vtbl {}")
+    assert not port._island_is_placeholder({"crate": "x-rust"})
+
+
+def test_a_bare_ansi_t_literal_gets_a_nul_terminated_pointer(tmp_path):
+    # nslookup (ANSI): `_tprintf(_T!("..."))` with no `.as_ptr()` -- 50 E0308s whose
+    # obvious hand fix ships the string NUL-less.
+    crate = tmp_path / "x-rust"
+    (crate / "src").mkdir(parents=True)
+    (crate / "src/prelude.rs").write_text(
+        "#[macro_export] macro_rules! _T { ($p0:expr $(,)?) => { $p0 }; }\n"
+    )
+    assert port._ansi_t_identity(crate)
+    rs = tmp_path / "n.rs"
+    src = 'fn f() { _tprintf(_T!("len %d\\n"), n); _tprintf(_T!("ok\\0").as_ptr()); }\n'
+    rs.write_text(src)
+    assert port._c_str_literals(rs, ansi_t=True) == ["len %d\\n"]
+    assert '_tprintf(b"len %d\\n\\0".as_ptr() as *const ::core::ffi::c_char, n)' in rs.read_text()
+    rs.write_text(src)
+    assert port._c_str_literals(rs) == []  # a UNICODE module's `_T!` is left to fail loudly
+
+
+def test_replay_leaves_one_trailing_newline(tmp_path):
+    # fsutil's prelude and netsh.rs ended in a blank line after every replay, which
+    # `git diff --check` refuses.
+    (tmp_path / "a.rs").write_text("fn a() {}\n\n")
+    (tmp_path / "b.rs").write_text("fn b() {}\n")
+    assert port._one_trailing_newline(tmp_path) == 1
+    assert (tmp_path / "a.rs").read_text() == "fn a() {}\n"
+
+
+def test_a_hand_fixed_twin_keeps_its_trampoline(tmp_path):
+    # netsh's banked PrintMessage_v is still `F_v(.., ap_list)`: dropping its trampoline left
+    # every caller of PrintMessage unresolved after a replay. ndis banked a plain fixed-arity
+    # NdisWriteErrorLogEntry under the twin's name, which replaces it.
+    twin = 'pub unsafe extern "C" fn PrintMessage_v(f: LPCWSTR, ap_list: *mut c_void) -> DWORD {}'
+    plain = 'pub unsafe extern "C" fn NdisWriteErrorLogEntry(h: PVOID, c: ULONG) {}'
+    (tmp_path / "a.json").write_text(json.dumps({"name": "PrintMessage_v", "text": twin}))
+    (tmp_path / "b.json").write_text(json.dumps({"name": "NdisWriteErrorLogEntry_v", "text": plain}))
+    assert port._hand_replaced_twins(tmp_path) == {"NdisWriteErrorLogEntry_v"}
+
+
+def test_extern_declared_crt_streams_take_the_accessor(tmp_path):
+    # fsutil's fsinfo.rs: `extern { static mut stdout: *mut FILE; static mut _iob: [u8; 0]; }`
+    # -- msvcrt exports neither name, and the link failed on all three arches.
+    rs = tmp_path / "fsinfo.rs"
+    rs.write_text(
+        'extern "C" {\n    static mut stdout: *mut FILE;\n    static mut _iob: [u8; 0];\n}\n'
+        "fn f() { _ftprintf(stdout, s); g((&raw mut _iob as *mut FILE).offset(1)); }\n"
+    )
+    assert port._crt_data_globals(rs) == ["stdout x1", "_iob x1"]
+    out = rs.read_text()
+    assert "static mut" not in out
+    assert "_ftprintf(__iob_func().add(1), s)" in out and "(__iob_func() as *mut FILE)" in out

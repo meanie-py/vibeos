@@ -2,7 +2,7 @@
 list(APPEND SOURCE
     # spider.cpp  # replaced by Rust (sdk/lib/rust/spider-rust/src/spider/spider.rs)
     # spigame.cpp  # replaced by Rust (sdk/lib/rust/spider-rust/src/spider/spigame.rs)
-    rust_cohab_stub.c
+    rust_cohab_stub.cpp
     spider.h)
 
 add_rc_deps(rsrc.rc ${CMAKE_CURRENT_SOURCE_DIR}/spider.ico)

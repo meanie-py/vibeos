@@ -1,1 +1,1 @@
-add_subdirectory(arm64vid)
+add_subdirectory(sysfb)

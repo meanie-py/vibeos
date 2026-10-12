@@ -11,10 +11,15 @@
  *   5. send an ARP who-has for slirp's gateway 10.0.2.2 (NdisSend -> MiniportSend);
  *   6. read frames until the ARP reply (interrupt -> DPC -> NdisMIndicateReceive ->
  *      ProtocolReceive).
- * Verdict: "[NDISPROBE] done VERDICT=PASS|FAIL" -- PASS needs every step. */
+ * Verdict: "[NDISPROBE] done VERDICT=PASS|FAIL" -- PASS needs every step.
+ *
+ * On a real LAN there is no 10.0.2.2: an optional %SystemRoot%\bin\ndisprobe.txt holding
+ * "arp <target ip> <sender ip>" names who to ask instead (the vendordrv payload stages it),
+ * and the probe then waits longer for the miniport, as a USB NIC's install comes late. */
 #include <windows.h>
 #include <winioctl.h>
 #include <string.h>
+#include <stdio.h>
 
 ULONG __cdecl DbgPrint(const char *Format, ...);
 #define SAY(...) DbgPrint("[NDISPROBE] " __VA_ARGS__)
@@ -47,6 +52,37 @@ static BOOL ioctl(HANDLE h, DWORD code, void *buf, DWORD in, DWORD out, DWORD *g
     return ok;
 }
 
+/* "arp a.b.c.d e.f.g.h" from %SystemRoot%\bin\ndisprobe.txt; FALSE (the slirp defaults
+ * stand) when the file is absent or unreadable. */
+static BOOL read_config(BYTE target[4], BYTE sender[4])
+{
+    char path[MAX_PATH], line[128];
+    unsigned t[4], m[4];
+    FILE *f;
+    BOOL ok = FALSE;
+    if (!GetEnvironmentVariableA("SystemRoot", path, MAX_PATH - 32))
+        return FALSE;
+    strcat(path, "\\bin\\ndisprobe.txt");
+    f = fopen(path, "r");
+    if (!f)
+        return FALSE;
+    if (fgets(line, sizeof(line), f) &&
+        sscanf(line, "arp %u.%u.%u.%u %u.%u.%u.%u", &t[0], &t[1], &t[2], &t[3], &m[0], &m[1], &m[2], &m[3]) == 8)
+    {
+        int k;
+        for (k = 0; k < 4; k++)
+        {
+            target[k] = (BYTE)t[k];
+            sender[k] = (BYTE)m[k];
+        }
+        ok = TRUE;
+    }
+    else
+        SAY("config: %s does not read \"arp <target> <sender>\"; using the slirp defaults\n", path);
+    fclose(f);
+    return ok;
+}
+
 static void finish(void)
 {
     SAY("done VERDICT=%s (%ld failure(s))\n", failures ? "FAIL" : "PASS", failures);
@@ -64,11 +100,16 @@ int main(void)
     OVERLAPPED ov = {0};
     DWORD start;
     BOOL replied = FALSE;
-    static const BYTE gw_ip[4] = {10, 0, 2, 2}, my_ip[4] = {10, 0, 2, 15};
+    BYTE gw_ip[4] = {10, 0, 2, 2}, my_ip[4] = {10, 0, 2, 15};
+    BOOL lan = read_config(gw_ip, my_ip);
+    DWORD bind_wait = lan ? 300 : 60, tries = lan ? 5 : 3;
 
     SAY("start\n");
+    if (lan)
+        SAY("config: ARP for %u.%u.%u.%u from %u.%u.%u.%u\n", gw_ip[0], gw_ip[1], gw_ip[2], gw_ip[3],
+            my_ip[0], my_ip[1], my_ip[2], my_ip[3]);
     /* Give PnP time to install and start the miniport, and ndisuio to bind to it. */
-    for (i = 0; i < 60; i++)
+    for (i = 0; i < bind_wait; i++)
     {
         h = CreateFileW(L"\\\\.\\Ndisuio", GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING,
                         FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, NULL);
@@ -87,7 +128,7 @@ int main(void)
     }
     if (h == INVALID_HANDLE_VALUE)
     {
-        FAIL("step bind: no \\\\.\\Ndisuio binding after 60s (error %lu)\n", GetLastError());
+        FAIL("step bind: no \\\\.\\Ndisuio binding after %lus (error %lu)\n", bind_wait, GetLastError());
         finish();
         return 1;
     }
@@ -137,7 +178,7 @@ int main(void)
     else
         SAY("step filter: ok\n");
 
-    /* ARP who-has 10.0.2.2 tell 10.0.2.15, broadcast, padded to the 60-byte minimum. */
+    /* ARP who-has gw_ip tell my_ip, broadcast, padded to the 60-byte minimum. */
     memset(frame, 0, sizeof(frame));
     memset(frame, 0xff, 6);
     memcpy(frame + 6, mac, 6);
@@ -151,7 +192,7 @@ int main(void)
     memcpy(frame + 38, gw_ip, 4);
 
     ov.hEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
-    for (i = 0; i < 3 && !replied; i++)
+    for (i = 0; i < tries && !replied; i++)
     {
         if (!WriteFile(h, frame, sizeof(frame), &got, &ov) &&
             !(GetLastError() == ERROR_IO_PENDING && GetOverlappedResult(h, &ov, &got, TRUE)))
@@ -184,15 +225,15 @@ int main(void)
             if (got >= 42 && rx[12] == 0x08 && rx[13] == 0x06 && rx[21] == 2 &&
                 !memcmp(rx + 28, gw_ip, 4) && !memcmp(rx, mac, 6))
             {
-                SAY("step recv: ARP reply, 10.0.2.2 is at %02x:%02x:%02x:%02x:%02x:%02x\n",
-                    rx[22], rx[23], rx[24], rx[25], rx[26], rx[27]);
+                SAY("step recv: ARP reply, %u.%u.%u.%u is at %02x:%02x:%02x:%02x:%02x:%02x\n",
+                    gw_ip[0], gw_ip[1], gw_ip[2], gw_ip[3], rx[22], rx[23], rx[24], rx[25], rx[26], rx[27]);
                 replied = TRUE;
                 break;
             }
         }
     }
     if (!replied)
-        FAIL("step recv: no ARP reply from 10.0.2.2\n");
+        FAIL("step recv: no ARP reply from %u.%u.%u.%u\n", gw_ip[0], gw_ip[1], gw_ip[2], gw_ip[3]);
     CloseHandle(ov.hEvent);
     CloseHandle(h);
     finish();

@@ -864,6 +864,14 @@ reverting one buslogic definition to `extern "C"` now fails with `expected "syst
 i386 callback slots are genuinely cdecl and that promotion is the same bug pointing the other
 way.
 
+**A half-normalized island: i386 still `stdcall`, amd64 `system`.** `shsvcs` failed only on
+i386 with `expected "stdcall" fn, found "system" fn` and `deskmon` left 440 slots literal. Their
+`island.log` ended `gen_driver_types.sh: line 5684: i686-pc-windows-gnu: command not found`:
+bash reads a script AS IT RUNS, and parallel `port derive`/`resolve` of other modules were
+appending arms to it, so the run resumed mid-line after i386 and never reached amd64/arm64 or
+the normalization. `port island` now runs a snapshot copy. Never cast the callback to paper over
+it -- re-island, and `normalize_island_abi.py --stem types <crate>` dry-runs the count.
+
 Census of the remaining exposure, so it is not re-derived: ~500 transmute-shaped callback
 installs survive, led by dxg-rust (92), win32k-rust `ntddraw_dxeng` (42), cdfs `cdinit` (33),
 winsrv's console frontends (~90 across tui/gui/serial), hal `bussupp`/`dma` (42), cdrom (20),
@@ -1171,6 +1179,17 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
 - **`_tWinMain` / `_tmain` are tchar.h MACROS.** The CRT startup calls the real name
   (`wWinMain`/`wmain` in a UNICODE build), so a translated `#[no_mangle] fn _tWinMain` (sol,
   spider) is an `undefined symbol: wWinMain` at link. `port integrate` renames them.
+- **A tree-consensus extern that no import library exports links to nothing, or to the
+  wrong thing.** rpcss got `list_add_tail`/`list_remove` as externs copied from cabinet-rust's
+  crate-internal `#[no_mangle]` copies of wine/list.h's inlines; i386 failed to link.
+  `port resolve` now refuses a user-mode consensus `fn` that the module's import libraries
+  (and the static libraries it links) export on NO arch, and drops such copies from an earlier
+  run. On SOME arch is enough: i386's `GetWindowLongPtrW` is a user32.h macro for
+  `GetWindowLongW`, and the prelude's per-arch `link_name` settles it. An SDK alias is followed
+  to the end of its chain: commctrl.h's `#define SNDMSG SendMessage` names another alias, and
+  eventvwr was declared an extern `SendMessage` that no DLL exports. wine/list.h itself is `winelist-rust`: `profile_derive` blocklists `struct list` in the
+  island and re-exports the shared crate, and resolve imports the `list_*` helpers a crate
+  calls.
 - **A unit's global that the module's own header declares `extern`** (`extern CARDWINDOW
   *SolWnd;`) reaches every other unit through the ISLAND's extern declaration, so the defining
   unit must export it `#[no_mangle]` under its C name, or the other units' references are
@@ -1378,6 +1397,25 @@ subtraction.
 cursors. To triage, grep `\.(next|prev|Flink|Blink)\)? as \*mut <Struct>` and check the field's
 offset. The 2026-09-30 sweep found 22 hits; all but this one were offset-0 (secur32's
 `entry`) or were casting to a byte or void pointer.
+
+### A list walk that starts at the head it stops at
+
+**Symptom:** a lookup in a wine/list.h list never finds anything, or a count is always 0.
+Nothing crashes. rpcss's IrotIsRunning and IrotGetObject never found a registered object.
+
+**Cause:** `LIST_FOR_EACH_ENTRY` lowered with the cursor set to the container of `&head`
+itself instead of `head->next`. The `while cursor->field != &head` test then fails before the
+first iteration.
+
+**Fix:** start at `head.next`. `scan_list_walk_from_head` (`vibeos-cli check`) flags the shape.
+
+The opposite end matters too. In C, a walk that runs to the end leaves the cursor on the
+HEAD's container, and code relies on it: `list_add_before(&ent->entry, new)` after a search
+loop means "before the head", i.e. append. A macro whose cursor stops on the last node
+inserts one place too early. One that rebinds the cursor per iteration (`let $elem` in the
+loop, as ole32's does) leaves the caller's variable stale. winelist-rust's
+`LIST_FOR_EACH_ENTRY{,_SAFE}` assign the caller's variable and finish on the head's
+container, as C does. Its tests pin the append shape.
 
 ### A list walk that reads `Flink` after freeing the entry
 
@@ -1598,7 +1636,8 @@ stripping, and assignable lvalues, to fix zero live bugs. Audit per site; don't 
 
 ### NEVER hand-write `memcpy`/`memset`/`memmove`/`memcmp` in Rust `[§9.65]`
 **It cannot be done correctly.** LLVM folds any byte-copy loop back into a call to the function
-itself → **infinite self-recursion**. The PC parks on a literal `jmp .` and the serial log is
+itself → **infinite self-recursion**. (The one place the tree does implement them, cnt-rust's
+exports, does it in inline asm for exactly this reason: `cabi/memops.rs`.) The PC parks on a literal `jmp .` and the serial log is
 empty. `ntoskrnl.exe` exports all of them on every arch — **import them, don't define them.**
 
 This is the other **cloak** bug: `-Z build-std-features=compiler-builtins-mem` had been linking
@@ -3786,6 +3825,28 @@ rustc labels the culprit "matches SOME of the same values", so a pattern name de
 the crate can see is taken from that label too. **`port check` now counts a catch-all arm as an
 error** (`CATCH-ALL -- match arm(s) binding an undefined constant`), so "0 errors" means it.
 
+**The same swallow with every name defined: C's `default:` sitting ABOVE other cases.**
+`case 0: default:` translates to `0 | _ => ..` in the position it had, and a Rust match tries
+arms in order where C tries every `case` before `default`. net's ParseDate, cmd's `date` and
+`dir` read every locale's LOCALE_IDATE as month-first; mspaint's `RestrictDrawDirection`
+returned before any Shift-constrained direction. rustc only warns. `port integrate` now runs
+`default_arm.py`, which moves a guard-free arm with a bare `_` alternative to the end of its
+match -- exact, because a match arm never falls through.
+
+**A "clang-evaluated" constant can be clang's ERROR RECOVERY.** rpcss's facts said
+`IROT_PROTSEQ: i32 = 0`: irot.idl's `#define IROT_PROTSEQ {'n','c','a','l','r','p','c',0}` is an
+array initializer, the probe's `case 0 + (long long)(IROT_PROTSEQ):` failed to parse, and clang
+recovered with the comma value 0 -- reported as a duplicate case value like any real one. The
+probe now rejects a name whose case line carries any other error, and `port resolve` re-probes
+every carried fact (four rpcss facts dropped). Consensus had the same hole for
+`SECURITY_NT_AUTHORITY` (`{0,0,0,0,0,5}`), copied from imm32 as `i32 = 5`.
+
+**The fact seal split float literals into integers.** wordpad's `0.0138` was sealed as `0` and
+`0138` (`1.5e10f` as `1` and `.5e10f`): the values round-tripped, but the placement audit read
+`0138` as an octal and crashed the whole TU's translation. A digit run beside a `.` is now part
+of the float, never an integer token. Changing the seal changes the cache key of every body
+holding a float, so the first re-run re-buys those (wordpad: four functions, $0.04).
+
 **Mixed-type `case` labels: C converts each label to the scrutinee's type.** clang-evaluated
 facts type `TVN_SELCHANGED` `unsigned` (C: `TVN_FIRST` is `0U-400U`) while bindgen types
 `PSN_APPLY` `i32` by its VALUE; one `match` over both has no single scrutinee type. crate-repair
@@ -4681,6 +4742,13 @@ invisible unless you read stderr. Doing it on the un-underscored `InterlockedCom
 instead cannot work either: `sdk/include/xdk/winnt_old.h:8` redefines it function-like, last
 and unguarded, and `#ifndef`-guarding THAT would leave the earlier object-like definition
 from winnt.h:2257 standing in the real build. Not worth it for two bodies.
+
+**A function too big for the model's OUTPUT is c2rust's to keep.** winhlp32's
+`HLPFILE_BrowseParagraph` (475 C lines) has a 1,569-line c2rust anchor; Haiku spent all 32,768
+output tokens on every sample (twice with no text at all), so raising the cap buys more of the
+same. `--skip-fn` it, take `c2rust_anchor.build_anchor_map(tu)[name]`, fold its expanded wine
+`TRACE`/`WARN` blocks back to `WINE_*!` with `rustconv.c2rust_debug_fold` (26 blocks, 1,569 ->
+1,044 lines), append it to the module and `port hand` it.
 
 Rebuilding c2rust against a matching LLVM (`ldd $(command -v c2rust-transpile)` shows
 `libLLVM-14.so.1` against our pinned clang 19.1.7) is **not needed for any of these
@@ -5869,6 +5937,15 @@ model's hands — worth checking, because the guards are exactly what a C++ tran
 - **`table_audit.py`** compares every file-scope C data table against the Rust; **`vtbl_gen.py`**
   generates COM vtbls from the C initializer plus bindgen; **`export_audit.py`** requires every
   `.spec` export to exist as a correctly-decorated `#[no_mangle]`. Use them; don't ask an LLM.
+- **A tool's "already present" check can be satisfied by a COMMENT.** deskadp shipped with
+  none of its three COM vtables: the preamble wrote `// static IShellPropSheetExtVtbl
+  efvtIShellPropSheetExt: skipped (COM vtable, generated by vtbl_gen.py)`, and the stitcher's
+  presence test was a bare `NAME:` regex. It now requires a `static` item. deskmon, same code,
+  worded its note differently and got its vtables.
+  The finder had the matching hole on the C side: wordpad's
+  `struct IRichEditOleCallbackVtbl olecallbackVtbl = {..}` spells the struct tag, its type node
+  read `struct X`, and `^\w+Vtbl$` never matched. The `MISSING COM VTABLE` audit line fired;
+  the table did not appear until `vtbl_gen` stripped the tag.
 
 ### The failure path survived; the sentence explaining it did not
 
@@ -7348,7 +7425,15 @@ appear *after* a validate-first conversion that was supposed to be a pure safety
   * **A read probe standing in for a write probe.** Only a write touch proves the page is
     writable — that is why the C macro stores `*(volatile T*)p = *(volatile T*)p` rather
     than just comparing. Substituting a read probe passes a read-only user page and moves
-    the fault to the later store.
+    the fault to the later store. The commoner stand-in was the range-only
+    `probe_user_buffer`, which touches nothing: 119 kernel call sites translated
+    `ProbeForWrite*` to it. `NtReadFile` then built an IRP for a NULL buffer with a non-zero
+    length, and the driver answered with its own status where Windows fails the probe with
+    `STATUS_ACCESS_VIOLATION` (151 IoReadWrite kmtest assertions, all three arches). A bad
+    OUT pointer to `NtCreateEvent` and friends was likewise found only after the object
+    existed. Use `probe_user_buffer_write`, which does ProbeForWrite's one-byte-per-page
+    read-and-write-back through the fault-protected copy. `scan_dropped_probes` reports the
+    range-only form as `WEAK` wherever the file's commented C write-probes the same pointer.
 
   And one semantic trap next door: **`probe_write_handle` writes NULL.** That is
   `ProbeAndZeroHandle`'s contract. `ProbeForWriteHandle` PRESERVES the value, and zeroing
@@ -12136,7 +12221,13 @@ the count is still exactly its own. `QueueNextRequest` releases the slot
 cancel routines retired requests that never held the slot and keep the C behaviour, because
 releasing it there would start a second command beside the running one. Sweep for the shape:
 `if (InterlockedCompareExchange(&X, 1, 0)) return;` or "if busy, return" with no re-check
-after the holder releases.
+after the holder releases. Also the counter form, `if (InterlockedIncrement(&X) != 0) {
+InterlockedDecrement(&X); return; }` with `X` starting at -1, which a CAS grep misses. A skip is
+only a bug when nothing retries it: usbport's `EndpointWorker` returns TRUE when busy and its
+callers put the endpoint back on `WorkerList`, and `DpcHandler`'s skip of a busy endpoint is
+re-polled by the 500 ms `USBPORT_TimerDpc`. The repo-wide sweep (2026-10-11: CAS and counter
+try-locks, busy-flag early returns, every `IoStartPacket` driver, usbxhci's ISR-to-DPC latches)
+found no third instance.
 **Finding it** took the IRPs, not the census. The census's `Suspended=1` was usbport's worker
 thread, which waits with `Suspended` as a generic wait reason (so do kbdclass, mouclass, atapi
 and iomgr), and it was in 42 of 44 hang histograms only because passing boots end before the
@@ -14050,6 +14141,19 @@ win32k is the largest single flip surface and its failures are stereotyped:
 - **arm64 0xF4 winlogon death right after `[WIN32K] shell ready`** — a distinct, historical
   shape worth recognising.
 
+### A dialog procedure's WM_NOTIFY answer is lost unless it goes to DWLP_MSGRESULT
+**Symptom:** a property page's `PSN_APPLY` handler returns `PSNRET_INVALID` (the user said
+"No") and the sheet applies anyway. More generally, any `WM_NOTIFY` result a dialog returns,
+such as `LVN_*` vetoes or `PSN_*` answers, has no effect.
+**Cause:** user32's `DefDlgProc` uses a dialog procedure's own return value only for
+`WM_COMPAREITEM`, `WM_VKEYTOITEM`, `WM_CHARTOITEM`, `WM_QUERYDRAGICON` and `WM_INITDIALOG`
+(`DEFDLG_Proc`). For every other message the answer is `GetWindowLongPtr(DWLP_MSGRESULT)`.
+atlclasses-rust's dialog procedure had a misremembered "return directly" list that included
+WM_NOTIFY (0x4E), so it never stored the result.
+**Fix:** do what ReactOS ATL's `CDialogImplBaseT::DialogProc` does for a handled message:
+`SetWindowLongPtr(DWLP_MSGRESULT, result)` and also return it (`atlclasses-rust/src/win.rs`
+`dialog_message`). A hand-written dialog procedure anywhere in the tree has the same trap.
+
 ### Driver settle delays are pure loss in a VM `[§9.22]`
 Hardware drivers inherited from real-metal code are full of fixed settle delays. A boot phase
 that is "slow" with zero serial and no CPU is the shape. Gate them on the driver's **own** VM
@@ -14388,6 +14492,34 @@ VibeOS-private top bit) in `pnpmgr-rust/src/devaction.rs`. QEMU never reproduced
 its usb-hub path does not re-create the PDO after a failed start: inject the failure there and
 the box survives. Verify on the board.
 
+### A USB controller "starts", and usbhub waits for its root hub forever
+
+**Symptom.** `[DA] START` of a USB host controller returns `0x0`, its root hub starts, and then
+`[USBHUB] ... bus relations before enumeration is allowed (wait N)` climbs once a second on the
+PnP worker thread while nothing later in PnP starts. `[USBPORT] root hub ready` never prints
+for that controller. Seen on the OptiPlex's Renesas card on about half of cold boots.
+
+**Cause.** Two bugs, one after the other. usbxhci gave the controller 20 ms to halt
+(`[XHCI] start: controller did not halt (USBSTS 10)`; the firmware had left it running) and
+returned `MP_STATUS_HW_ERROR`. usbport's `USBPORT_StartDevice` then returned `Status`, which
+upstream's C also returns, and which still held `STATUS_SUCCESS` from an earlier call. So PnP saw a
+started controller with no miniport behind it: interrupts never enabled, so the worker never
+ran the root-hub callback usbhub waits for.
+
+**Fix.** usbport fails the START with `STATUS_UNSUCCESSFUL` and logs `miniport StartController
+failed`. usbxhci waits 200 ms for the halt and then resets the controller anyway (HCRST is the
+only recovery left). Look for the miniport's own start line (`[XHCI] controller running`)
+before trusting a `START -> 0x0`.
+
+**Failing the START exposed two more upstream bugs** (found by forcing `XHCI_StartController`
+to fail under `smoke --arch amd64 --xhci`). usbport *cleared* `USBPORT_FLAG_INT_CONNECTED` right
+after `IoConnectInterrupt`, so its failure path never disconnected: the HAL got the message
+vector back with the dead FDO's KINTERRUPT still in the IDT, and the next device handed that
+vector (the IDE channel) failed `IoConnectInterrupt` with `0xC000000D`. scsiport then ignored
+`FdoCallHWInitialize`'s failure and bugchecked `0xA` on the missing interrupt object. Both are
+fixed: usbport sets the flag (and cancels its timer on the later failure path), and scsiport
+fails the adapter. A rarely taken failure path is worth one forced-failure boot.
+
 ### A device driver's start hangs the box right after `[GIC] unhandled INTID N`
 - **Symptom:** one `[GIC] unhandled INTID N fired, no ISR claimed it` with a GIC dump showing
   N *active*, then serial silence. `hang-cpustate` shows EL1 with `PSTATE.I` set and the
@@ -14560,6 +14692,24 @@ and SPCR names a 16550 in I/O space. Repro the whole chain with
 not find this: the gdb toolkit relocates symbols from the kernel's own
 `[KRNLBASE]` serial line, which is exactly what goes missing.
 
+### x86 serial on real hardware: user-mode lines cut at 16 characters, the rest garbage
+
+**Symptom.** On the OptiPlex (a real 16550 at 115200), every user-mode print stops after
+about 16 characters (`[kernel32] DllMai`, `[WINLOGON] WinMai`) and the rest of the line is
+fragments of other prints. Kernel lines are fine. QEMU logs of the same build are clean.
+`/ONECPU` does not help.
+
+**Cause.** Two of the three writers in the entry above. kd64's `KdpStub` echo (user-mode
+prints) wrote the whole string to the transmit register back to back, never waiting for
+THRE: QEMU's UART drains instantly, but a 16550 keeps only what fits its 16-byte FIFO. And
+rtl-diag's ring-0 fast path took no lock, so a kernel print could land in the middle of
+anyone else's.
+
+**Fix.** `KdpStub` waits for THRE before each byte. All three writers take rtl-diag's
+`RtlpAcquireDebugPort` (interrupts off, bounded spin, so a holder frozen by a bugcheck
+costs garbled output, never a hang). Any new raw UART writer must do both: a QEMU-only
+test cannot tell you it is wrong.
+
 ### Localization techniques that repeatedly worked
 - **DbgPrint-bisect with REAL `DbgPrint`.** Translated `TRACE!`/`WARN!`/`DPRINT` are no-op
   macros, so **their absence in the serial is NOT evidence of where execution stopped** — that
@@ -14723,6 +14873,34 @@ worktree or kill a running build to propagate this fix.
    reads `4.0K` and exits 0.** Builds bind-mount the worktree at that canonical path inside a
    private namespace (`canon-run.sh`, `unshare --map-root-user --mount`), so any host-side
    sizing of the canonical path silently measures an empty directory rather than failing.
+
+### `L:no-guest-serial`: the guest never ran, and a "killed" VM may still be running
+**Symptom:** a conformance round's serial log holds only the harness's `#` header, the
+summary says `launched=0`, and `<arch>_launch.json` shows `handshake_seconds` 15.00x.
+`<arch>_qemu.stderr.log` is one line: `WSL ... UtilAcceptVsock:281: accept4 failed 110`.
+Smoke files the same failure as `LAUNCH_FAIL`. It is a host-side launch failure, not a guest
+bug: WSL interop did not get `qemu-system-*.exe` running, so nothing ever connected.
+**What is known.** Handshakes are bimodal: of 3,326 windows-host launches, successes took
+under 2.5s (p99.9, two outliers near 10s) and all 31 failures ran to the 15s limit, so a
+longer timeout would save none of them. Failures are not host-wide: launches from other runs,
+and even from the same gate's process tree, succeed in the same minute. Yet the three
+`launch_with_retry` attempts of a failing round all fail. That stickiness is UNEXPLAINED.
+(Conformance's pytest capture hides a launch that recovered on attempt 2, so "conformance
+never recovers" cannot be read from its logs; smoke recovered 86 of 95.)
+**Two causes found and fixed while looking:**
+- Retries shared one Windows staging dir, and attempt 1's qemu.exe releases its files
+  asynchronously after the kill, so attempt 2 died writing `tempdisk.qcow2` over a file
+  still open (2 of 6 rounds). Each launch now stages into its own dir.
+- `kill_by_uid` was best-effort and returned nothing, so `stop()`, `kill_one` and the reaper
+  all treated an unconfirmed kill as done and dropped the VM's lock. When `powershell.exe`
+  itself failed to launch (the same interop failure), qemu.exe ran on with no lock: invisible
+  to `ps`, `kill` and the lifetime cap. Nine were found on 2026-10-11, two of them having
+  used a full core each for eight days. Now `kill_by_uid` returns how many matches survive
+  (None if PowerShell gave no answer), every caller keeps the lock unless that is 0, and
+  `vibeos-cli ps` / `kill --stale` also list Windows-side `vibeos-<pid>-<port>` QEMUs whose
+  launcher is dead and that no live lock claims.
+**Check:** `vibeos-cli ps` prints an "untracked Windows QEMUs" block when any exist;
+`vibeos-cli kill --stale` stops them and fails if it could not confirm one.
 
 ### A kmtest count drift on a UP guest is the boot-time ladder, not the scheduler
 **Symptom.** amd64/i386 conformance drops one or a few passes in a timing test that waits
@@ -15046,6 +15224,30 @@ design, so it is correct only as long as no two threads race a failure through i
 - **The pre-existing ~33% i386 flake** where `winlogon` unconditionally spawns `nettest.exe`,
   racing explorer's csrss/win32k handoff, HANGs **even host-quiet**; the tail shows
   `[WINLOGON] nettest.exe created` with no `_tWinMain`. Distinct from contention.
+
+### Everything is several times slower than it should be: the cnt CRT core is UNOPTIMISED
+**Symptom.** Costs that make no sense against the work done: an x86-64 guest's cheapest syscall
+at 10x native, all of it spent in wowx64 "outside the kernel"; native `GetPixel` at ~90 us under
+TCG. Profiling (wowx64's exit-time `syscall profile`, the `sysbench` payload) points at code that
+is a handful of instructions in the source.
+
+**Cause.** cnt-rust (the `memset`/`memcpy`/`memmove`/`str*` that ntoskrnl and ntdll export on
+every arch) is built with `-C no-prepopulate-passes` (`libcntpr.cmake`, a guard against an
+old per-cgu miscompile), so LLVM runs NO optimisation passes over it: no mem2reg, no
+vectorising, no inlining. Its `memset` was additionally a volatile byte loop (the guard against
+dead-store elimination). Result: ~10 instructions per BYTE for every RtlZeroMemory and
+RtlCopyMemory in the system. wowx64 zeroing a 1 KB stack buffer on each guest syscall was 45 us
+of a 50 us call.
+
+**Fix.** The bulk loops are inline asm in `cnt-rust/src/cabi/memops.rs` (`rep movsb`/`rep stosb`
+on x86; aligned `ldp`/`stp` on arm64 when source and destination agree mod 8, bytes otherwise,
+so device memory never sees an unaligned access). asm is fast at any optimisation level and
+opaque to LLVM, so it can neither be deleted nor folded into a self-call (the
+`memcpy`-in-Rust trap above). Graded in the guest by `sysbench`'s memops check (every offset
+pair x length to 300, both overlap directions, native arm64 and amd64-under-FEX), and on the host
+by cnt-difftest. Measured: guest NtGetCurrentProcessorNumber 48-79 us -> 4.3-7.8 us, native
+GetPixel 94 -> 8.3 us. **Owed:** the rest of cnt-rust (`strlen`, `wcslen`, `strcmp`, ...) is
+still unoptimised byte-at-a-time code; every `RtlInitUnicodeString` pays `wcslen`.
 
 ### CRT / cnt runtime one-offs
 - **cnt `swprintf` writes nothing → 0x1E** — a signed/unsigned `_cnt` compare.

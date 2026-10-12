@@ -38,21 +38,14 @@ extern "system" {
     ) -> BOOLEAN;
 }
 
-// Header constants the root arbiters use. ntkrnl-sys carries them only in the x86 HAL island
-// (hal_ddk), so on arm64 they have no binding at all; named here with their headers until the
-// kernel island exports them on every arch. scan_const_vs_island checks each against the
+// xdk/cmtypes.h's resource constants, shared from ntkrnl-sys on every arch.
+pub use ntkrnl_sys::cmres::{
+    CmResourceTypeBusNumber, CmResourceTypeDma, CmResourceTypeInterrupt, CmResourceTypeMemory,
+    CmResourceTypeMemoryLarge, CmResourceTypeNull, CmResourceTypePort, CM_RESOURCE_MEMORY_24,
+    CM_RESOURCE_PORT_10_BIT_DECODE, CM_RESOURCE_PORT_12_BIT_DECODE,
+};
+// Header constants with no shared binding yet; scan_const_vs_island checks each against the
 // islands that do carry it.
-/// xdk/cmtypes.h
-pub const CmResourceTypeNull: UCHAR = 0;
-pub const CmResourceTypePort: UCHAR = 1;
-pub const CmResourceTypeInterrupt: UCHAR = 2;
-pub const CmResourceTypeMemory: UCHAR = 3;
-pub const CmResourceTypeDma: UCHAR = 4;
-pub const CmResourceTypeBusNumber: UCHAR = 6;
-pub const CmResourceTypeMemoryLarge: UCHAR = 7;
-pub const CM_RESOURCE_PORT_10_BIT_DECODE: USHORT = 0x0004;
-pub const CM_RESOURCE_PORT_12_BIT_DECODE: USHORT = 0x0008;
-pub const CM_RESOURCE_MEMORY_24: USHORT = 0x0010;
 /// ntddk.h
 pub const ARBITER_FLAG_BOOT_CONFIG: ULONG = 0x00000001;
 pub const RTL_RANGE_LIST_ADD_IF_CONFLICT: ULONG = 0x00000001;

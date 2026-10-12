@@ -146,3 +146,11 @@ def test_island_constants_are_sealed_for_a_cppapp_unit(tmp_path):
     # Without the set the mixed-case constant is unprotected -- the shipped hole.
     plain = seal_facts(src, dialect="c")
     assert "ATL_CImage_ExcludeFlags_excludeDefaultLoad" not in {f.original for f in plain.facts}
+
+
+def test_float_literals_are_not_split_into_integer_facts():
+    # wordpad's units_to_twips: `0.0138` was sealed as `0` and `0138`, an invalid octal
+    # that crashed the placement audit mid-translation.
+    sealed = seal_facts("x = n * (0.0138 * 1.5e10f) + 2.f + a[0].b + 7UL;", dialect="c")
+    assert [f.original for f in sealed.facts] == ["0", "7UL"]
+    assert "0.0138" in sealed.text and "1.5e10f" in sealed.text and "2.f" in sealed.text

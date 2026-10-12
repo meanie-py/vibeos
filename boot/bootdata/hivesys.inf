@@ -1868,13 +1868,13 @@ HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","Type",0x00010001,0x00000001
 ; BIOS loader hands over in the same form. Boot start so that \Device\Video0 exists
 ; before win32k's InitVideo runs (an installed system gets Start=1 from setup, still
 ; ahead of win32k). ErrorControl=0 (ignore) keeps a missing framebuffer non-fatal.
-HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","ErrorControl",0x00010001,0x00000000
-HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","Group",0x00000000,"Boot Bus Extender"
-HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","ImagePath",0x00020000,"system32\drivers\arm64vid.sys"
-HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","Start",0x00010001,0x00000000
-HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","Type",0x00010001,0x00000001
+HKLM,"SYSTEM\CurrentControlSet\Services\sysfb","ErrorControl",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\sysfb","Group",0x00000000,"Boot Bus Extender"
+HKLM,"SYSTEM\CurrentControlSet\Services\sysfb","ImagePath",0x00020000,"system32\drivers\sysfb.sys"
+HKLM,"SYSTEM\CurrentControlSet\Services\sysfb","Start",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\sysfb","Type",0x00010001,0x00000001
 ; Setup writes the installed display mode here (setuplib ProcessDisplayRegistry).
-HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid\Device0",,0x00000012
+HKLM,"SYSTEM\CurrentControlSet\Services\sysfb\Device0",,0x00000012
 
 ; EHCI controller driver
 HKLM,"SYSTEM\CurrentControlSet\Services\usbehci","ErrorControl",0x00010001,0x00000001

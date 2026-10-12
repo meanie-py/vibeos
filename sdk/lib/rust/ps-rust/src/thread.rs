@@ -942,7 +942,7 @@ pub unsafe extern "system" fn NtCreateThread(
         }
 
         // Probe user-mode pointers (was inside _SEH2_TRY in C)
-        if let Err(s) = probe_user_buffer(
+        if let Err(s) = probe_user_buffer_write(
             ThreadHandle as *const _,
             core::mem::size_of::<HANDLE>(),
             core::mem::align_of::<HANDLE>(),
@@ -952,7 +952,7 @@ pub unsafe extern "system" fn NtCreateThread(
         }
 
         if !ClientId.is_null() {
-            if let Err(s) = probe_user_buffer(
+            if let Err(s) = probe_user_buffer_write(
                 ClientId as *const _, core::mem::size_of::<_CLIENT_ID>(),
                 core::mem::align_of::<ULONG>(),
                 PreviousMode,
@@ -1029,7 +1029,7 @@ pub unsafe extern "system" fn NtOpenThread(
 
     if PreviousMode != 0i8 {
         // Probe user-mode pointers (was inside _SEH2_TRY in C)
-        if let Err(s) = probe_user_buffer(
+        if let Err(s) = probe_user_buffer_write(
             ThreadHandle as *const _,
             core::mem::size_of::<HANDLE>(),
             core::mem::align_of::<HANDLE>(),

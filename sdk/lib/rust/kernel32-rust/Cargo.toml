@@ -23,4 +23,5 @@ winedebug-rust = { path = "../winedebug-rust" }
 winetrace-shim = { path = "../winetrace-shim" }
 panic-common = { path = "../panic-common", features = ["user"] }
 ntdll-sys = { path = "../ntdll-sys" }
+winelist-rust = { path = "../winelist-rust" }
 winsrv-sys = { path = "../winsrv-sys" }

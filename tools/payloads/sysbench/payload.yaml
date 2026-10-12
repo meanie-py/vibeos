@@ -1,0 +1,33 @@
+# sysbench — the cost of one system call, native arm64 against an x86-64 guest under FEX.
+# arm64 only, and only on VIBEOS_FEX=1 media (the second row is an emulated process).
+#   tools/payloads/sysbench/build.sh arm64 && tools/payloads/sysbench/build.sh amd64
+#   VIBEOS_FEX=1 VIBEOS_PAYLOAD=sysbench ./vibeos-cli build --arch arm64   (needs build-amd64)
+#   ./vibeos-cli smoke --arch arm64 --payload sysbench
+# The native build autostarts, runs the ladder, then launches the amd64 build (staged beside
+# the Windows directory, reached by full path) and waits for its rows. See sysbench.c.
+name: sysbench
+description: per-operation syscall cost, native arm64 vs an x86-64 guest under FEX
+arches: [arm64]
+
+build_hint: "tools/payloads/sysbench/build.sh arm64 && tools/payloads/sysbench/build.sh amd64"
+
+binaries:
+  - src: tools/payloads/sysbench/sysbench-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/sysbench.exe
+  - src: tools/payloads/sysbench/sysbench-{arch}.exe
+    build_arch: amd64
+    dest: sysbench64.exe
+
+# The guest's DLLs: the x86-64 ntdll, kernel32, user32 and gdi32 and what they import.
+guest_sets:
+  - build_dir: build-amd64
+    dest: sysamd64
+    roots:
+      - win32ss/user/user32/user32.dll
+      - win32ss/gdi/gdi32/gdi32.dll
+
+test:
+  launch_marker: "[SYSBENCH] done"
+  pass_marker: "[SYSBENCH] done VERDICT=PASS"
+  launch_drain_secs: 900

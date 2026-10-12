@@ -1904,6 +1904,12 @@ def find_switch_constants(tus: list[Path], repo_root: Path) -> list[SwitchConst]
             inner = [value]
             while inner:
                 v = inner.pop()
+                if v.type in ("sizeof_expression", "alignof_expression"):
+                    # `case sizeof(VIDEO_HW_INITIALIZATION_DATA):` (videoprt) -- the operand
+                    # is a TYPE, which tree-sitter cannot tell from a variable inside the
+                    # parens. A size is a folded number, never a name an arm could bind,
+                    # so it carries no catch-all hazard.
+                    continue
                 inner.extend(v.children)
                 if v.type == "identifier":
                     # `case MAKEWPARAM(IDOK, BN_CLICKED):` -- the callee is a function-like
@@ -3017,6 +3023,7 @@ def derive(
     usermode: bool | None = None,
     flipped_sources: bool = False,
     sources: tuple[Path, ...] = (),
+    stem: str | None = None,
 ) -> DerivedProfile:
     """Derive a full profile for the module at *module_dir*.
 
@@ -3035,6 +3042,10 @@ def derive(
         flipped_sources=flipped_sources,
     )
     module.usermode_override = usermode
+    if stem:
+        # Set before anything reads crate_stem: the prelude probe below would otherwise read
+        # the colliding crate's prelude (cmdutils' dbgprint vs the kernel's dbgprint-rust).
+        module.stem = stem
     full_tus = set(module.compiled_tus)
     if sources:
         selected = {(p if p.is_absolute() else repo_root / p).resolve() for p in sources}
@@ -3789,6 +3800,14 @@ def emit_profile(dp: DerivedProfile) -> str:
         )
         out.append("    # this module's C, so the island emits the real layout (fields reachable).")
         out.append('    UNBLOCK="' + " ".join(unblock) + '"')
+    if m.is_usermode and any(
+        str(h).replace("\\", "/").endswith("/wine/list.h") for h in dp.closure.headers
+    ):
+        # wine/list.h's `struct list` is winelist-rust's, so the list_* helpers resolve
+        # imports from it operate on the same type as this module's struct fields.
+        out.append("    # wine/list.h: `struct list` and its helpers are winelist-rust's.")
+        out.append("    EXTRA_BL_ITEMS=( list )")
+        out.append("    EXTRA_RAW_LINES=( 'pub use winelist_rust::*;' )")
     out.append("    EXTRA_INC=( " + " ".join(dp.extra_inc) + " )")
     if dp.late_inc:
         out.append(
@@ -4331,7 +4350,8 @@ def scaffold_crate(
             "==============\n"
             "// ATL's CStringW/CComPtr/containers, ported once in atlclasses-rust.\n"
             "pub use atl_rust::{atl_format, atl_format_id, CAtlList, CComPtr, CHeapPtr, "
-            "CSimpleArray, CLocalAllocator, CSimpleMap, CStringA, CStringW, POSITION};\n"
+            "CSimpleArray, CLocalAllocator, CSimpleMap, CStringA, CStringW, POSITION, "
+            "_AtlBaseModule};\n"
             # atlsimpstr.h's CSimpleStringT<WCHAR> is CStringW's base: every `CSimpleString&`
             # parameter (CWindow::GetWindowText) is handed a CStringW in a UNICODE module.
             "pub use atl_rust::CStringW as CSimpleString;\n"
@@ -4397,7 +4417,7 @@ pub mod types; // bindgen island, per arch (gen_driver_types.sh {m.crate_stem})
 pub mod prelude; // the ONE import surface: types glob + debug macros + CRT externs
 
 #[allow(clippy::module_inception)]
-pub mod {m.crate_stem} {{
+pub mod {_rust_mod_ident(m.crate_stem)} {{
 {chr(10).join(mods)}
 }}
 

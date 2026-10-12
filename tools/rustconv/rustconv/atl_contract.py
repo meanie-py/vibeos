@@ -60,7 +60,7 @@ def types_used(body: str) -> list[str]:
     return used
 
 
-def contract(body: str, *, unicode: bool = True) -> str:
+def contract(body: str, *, unicode: bool = True, com_methods: bool = False) -> str:
     """The deterministic-contract block for one C++ worker, or "" if it names no ATL type."""
     used = types_used(body)
     if not used:
@@ -97,9 +97,15 @@ def contract(body: str, *, unicode: bool = True) -> str:
             "`s += t` with a CStringW `t` → `s += t.GetString()`.\n",
         ]
     if "CComPtr" in used:
+        # A C++ island run through rustconv.com_vtables gives each interface a method per
+        # vtable slot; a C island has only the slot fields.
+        call = (
+            "`(*p.Get()).Method(..)`"
+            if com_methods
+            else "`((*(*p.Get()).lpVtbl).Method)(p.Get(), ..)`"
+        )
         lines.append(
             "- `CComPtr<I> p;` → `let mut p: CComPtr<I> = CComPtr::new();`; `&p` as an out "
-            "parameter → `p.GetAddressOf()`; `p->Method(..)` → "
-            "`((*(*p.Get()).lpVtbl).Method)(p.Get(), ..)`.\n"
+            f"parameter → `p.GetAddressOf()`; `p->Method(..)` → {call}.\n"
         )
     return "".join(lines)

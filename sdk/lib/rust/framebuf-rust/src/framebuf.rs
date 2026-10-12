@@ -26,8 +26,8 @@ pub static DEVICE_NAME: [u16; 9] = [
 
 // ---- IOCTL_VIDEO_* — function numbers verbatim from ntddvdeo.h ----
 // (win32k-sys bindgen does not constify these IOCTL macros.) METHOD_BUFFERED
-// (0) + FILE_ANY_ACCESS (0) for all. Mirrors arm64vid-rust's ctl_code; the
-// miniport on the other end (arm64vid.sys) decodes the identical values.
+// (0) + FILE_ANY_ACCESS (0) for all. Mirrors sysfb-rust's ctl_code; the
+// miniport on the other end (sysfb.sys) decodes the identical values.
 const fn ctl_code(devtype: u32, func: u32, method: u32, access: u32) -> u32 {
     (devtype << 16) | (access << 14) | (func << 2) | method
 }
