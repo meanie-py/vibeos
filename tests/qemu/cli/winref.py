@@ -811,7 +811,7 @@ def cmd_maint(args, repo: Path) -> int:
         shutil.copy(ASSETS / "boot.ps1", cd / "boot.ps1")
         if not args.keys:
             (cd / "run.cmd").write_text(
-                '@set WINREF_RUNNER=1\r\n'
+                "@set WINREF_RUNNER=1\r\n"
                 '@powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0maint.ps1"\r\n'
             )
         _make_iso(cd, WINREF_DIR / "maint.iso", "MAINT")
