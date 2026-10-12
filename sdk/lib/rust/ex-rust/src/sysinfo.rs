@@ -833,7 +833,7 @@ pub unsafe extern "system" fn NtQuerySystemEnvironmentValue(
         ) {
             return s;
         }
-        if let Err(s) = ntkrnl_sys::probe::probe_user_buffer(
+        if let Err(s) = ntkrnl_sys::probe::probe_user_buffer_write(
             ValueBuffer as PVOID,
             ValueBufferLength as usize,
             core::mem::size_of::<WCHAR>(),
@@ -2667,7 +2667,7 @@ pub unsafe extern "system" fn NtQuerySystemInformation(
         }
         // C: the whole body is one _SEH2_TRY whose handler sets Status to the
         // exception code; nothing after a fault runs, so returning it is the same.
-        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
+        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer_write(
             SystemInformation,
             SystemInformationLength as usize,
             Alignment as usize,
@@ -2676,8 +2676,9 @@ pub unsafe extern "system" fn NtQuerySystemInformation(
             return status;
         }
         if !ReturnLength.is_null() {
-            // ProbeForWriteUlong: range-only, like the other typed probe.h macros.
-            if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
+            // ProbeForWriteUlong: probe.h's typed write probes range-check, then write the
+            // value back to itself (no alignment test, hence 1).
+            if let Err(status) = ntkrnl_sys::probe::probe_user_buffer_write(
                 ReturnLength as PVOID,
                 core::mem::size_of::<ULONG>(),
                 1,

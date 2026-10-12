@@ -693,7 +693,7 @@ pub unsafe extern "system" fn NtQuerySecurityObject(
     let PreviousMode = ExGetPreviousMode();
 
     if PreviousMode != 0i8 {
-        if let Err(s) = probe_user_buffer(SecurityDescriptor as _, Length as usize, core::mem::size_of::<ULONG>(), PreviousMode) {
+        if let Err(s) = probe_user_buffer_write(SecurityDescriptor as _, Length as usize, core::mem::size_of::<ULONG>(), PreviousMode) {
             return s;
         }
         if let Err(s) = probe_write_ulong(ResultLength, PreviousMode) {

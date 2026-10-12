@@ -887,7 +887,7 @@ pub unsafe extern "system" fn MiDoMappedCopy(
             // branch below reachable again -- it is the C's discriminator between
             // a failed probe and a faulting copy, and nothing could set it.
             _FailedInProbe = 1;
-            match ntkrnl_sys::probe::probe_user_buffer(
+            match ntkrnl_sys::probe::probe_user_buffer_write(
                 TargetAddress as *const core::ffi::c_void,
                 BufferSize as usize,
                 core::mem::size_of::<i8>(),
@@ -1054,7 +1054,7 @@ pub unsafe extern "system" fn MiDoPoolCopy(
             // branch below reachable again -- it is the C's discriminator between
             // a failed probe and a faulting copy, and nothing could set it.
             _FailedInProbe = 1;
-            match ntkrnl_sys::probe::probe_user_buffer(
+            match ntkrnl_sys::probe::probe_user_buffer_write(
                 TargetAddress as *const core::ffi::c_void,
                 BufferSize as usize,
                 core::mem::size_of::<i8>(),
@@ -4318,7 +4318,7 @@ pub unsafe extern "system" fn NtGetWriteWatch(
             return STATUS_INVALID_PARAMETER_5;
         }
 
-        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
+        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer_write(
             UserAddressArray as PVOID,
             CapturedEntryCount * core::mem::size_of::<PVOID>(),
             core::mem::size_of::<PVOID>(),
@@ -4443,7 +4443,7 @@ pub unsafe extern "system" fn NtQueryVirtualMemory(
     PreviousMode = ExGetPreviousMode();
     if PreviousMode != 0i32 as i8 {
         // C: inside _SEH2_TRY; the handler captures the code and returns it.
-        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
+        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer_write(
             MemoryInformation,
             MemoryInformationLength,
             core::mem::size_of::<ULONG_PTR>(),

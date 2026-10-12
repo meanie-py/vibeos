@@ -524,6 +524,21 @@ TARGETS = {
         cmake_source_files=[],
         arches=("i386", "amd64", "arm64"),
     ),
+    # watchdog.sys — the display watchdog (Wd*) export library
+    # (win32ss/drivers/watchdog). A kernelmodedriver over ntoskrnl alone.
+    "watchdog": Target(
+        name="watchdog",
+        source_dir=WIN32SS_DIR / "drivers" / "watchdog",
+        output_crate=RUST_DIR / "watchdog-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
     # atapi.sys — upstream's 2026 ATA port driver (drivers/storage/ide/atapi, ~11K LOC, 15
     # .c: atapi/fdo/pdo/enum/satl/scsi/ioctl/portstate/dev_*/smart/wmi). NOT the NT4-DDK
     # SCSIPORT miniport the name used to mean (that translation is parked as

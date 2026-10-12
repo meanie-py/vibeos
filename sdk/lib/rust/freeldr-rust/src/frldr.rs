@@ -1053,7 +1053,7 @@ pub const TAG_HW_RESOURCE_LIST: ULONG = u32::from_be_bytes(*b"lRwH");
 // CM_RESOURCE_TYPE (cmtypes.h): CmResourceTypeDeviceSpecific is 5, NOT 0x81.
 // 0x81 (129) is CmResourceTypeDevicePrivate — a wrong value here made
 // uefihw::DetectDisplayController tag the framebuffer's DeviceSpecific
-// descriptor as 0x81, so arm64vid.sys (checking ==5) skipped it, never read
+// descriptor as 0x81, so sysfb.sys (checking ==5) skipped it, never read
 // the CM_FRAMEBUF_DEVICE_DATA (ScreenWidth stayed 0), failed discovery, and
 // bugchecked 0xB4 VIDEO_DRIVER_INIT_FAILURE. machpc.rs already had it right.
 pub const CmResourceTypeDeviceSpecific: u8 = 5; // CM_RESOURCE_TYPE

@@ -221,6 +221,26 @@ typedef struct _PCI_LOCK
 } PCI_LOCK, *PPCI_LOCK;
 
 //
+// VibeOS: acpi.sys's (or the arm64 HAL's) private PCI interrupt routing
+// interface, GUID_VIBEOS_PCI_IRQ_ROUTING. The layout is owned by acpi-rust's
+// pciroute.rs; change both together.
+//
+typedef struct _VIBEOS_PCI_IRQ_ROUTE
+{
+    ULONG Gsi;
+    BOOLEAN LevelSensitive;
+    BOOLEAN ActiveLow;
+} VIBEOS_PCI_IRQ_ROUTE, *PVIBEOS_PCI_IRQ_ROUTE;
+
+typedef NTSTATUS
+(NTAPI *PVIBEOS_ROUTE_INTERRUPT)(
+    PVOID Context,
+    const UCHAR *Path,
+    ULONG Depth,
+    ULONG Pin,
+    PVIBEOS_PCI_IRQ_ROUTE Route);
+
+//
 // Device Extension for a Bus FDO
 //
 typedef struct _PCI_FDO_EXTENSION
@@ -265,6 +285,9 @@ typedef struct _PCI_FDO_EXTENSION
     LONG BusHackFlags;
     LONG PciPmeInterfaceCount;
     PCI_ROOT_BUS_HARDWARE_CAPABILITY RootBusHardwareCapability;
+    /* VibeOS: the firmware's INTx routing for a root bus (irqroute.rs) */
+    PVOID IrqRoutingContext;
+    PVIBEOS_ROUTE_INTERRUPT IrqRouteInterrupt;
 } PCI_FDO_EXTENSION, *PPCI_FDO_EXTENSION;
 
 typedef struct _PCI_FUNCTION_RESOURCES
@@ -357,6 +380,9 @@ typedef struct _PCI_PDO_EXTENSION
     UCHAR ExpressDeviceType;
     BOOLEAN IsExtendedConfigReachable;
     PCI_RESIZABLE_BAR_STATE ResizableBarState;
+    /* VibeOS: where this function's INTx pin lands (irqroute.rs) */
+    UCHAR IrqRouteState;
+    VIBEOS_PCI_IRQ_ROUTE IrqRoute;
 } PCI_PDO_EXTENSION, *PPCI_PDO_EXTENSION;
 
 //

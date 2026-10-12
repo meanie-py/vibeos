@@ -61,7 +61,7 @@ pub fn NT_SUCCESS(s: NTSTATUS) -> bool {
 }
 pub use crate::{CONTAINING_RECORD, NT_SUCCESS};
 // The Win32 header macros, ported once in win32macros-rust, not per module.
-pub use win32macros_rust::{ALIGN_UP, ARRAYSIZE, ASSERT, C_ASSERT, CopyMemory, DBG_UNREFERENCED_LOCAL_VARIABLE, DPRINT1, DWLP_DLGPROC, DWLP_MSGRESULT, DWLP_USER, ERR_ON, FIELD_OFFSET, FIXME_ON, GET_WHEEL_DELTA_WPARAM, GET_X_LPARAM, GET_Y_LPARAM, GetAValue, GetBValue, GetGValue, GetRValue, HIBYTE, HIWORD, HRESULT_FROM_WIN32, HandleToUlong, IDE_SET_ADVANCE_PIO_MODE, IDE_SET_DEFAULT_PIO_MODE, IDE_SET_MWDMA_MODE, IDE_SET_SWDMA_MODE, IDE_SET_UDMA_MODE, INVALID_HANDLE_VALUE, IS_INTRESOURCE, InitializeObjectAttributes, IntToPtr, InterlockedCompareExchange, InterlockedDecrement, InterlockedExchange, InterlockedIncrement, IsContainerPartition, IsEqualGUID, IsFTPartition, IsRecognizedPartition, LANGIDFROMLCID, LOBYTE, LOWORD, LongToHandle, LongToPtr, MAKEINTATOM, MAKEINTRESOURCEA, MAKEINTRESOURCEW, MAKELANGID, MAKELCID, MAKELONG, MAKEWORD, MoveMemory, PAGE_ROUND_UP, PRIMARYLANGID, PtrToInt, PtrToLong, PtrToUint, PtrToUlong, RGB, RGBA, RTL_CONSTANT_STRING, RTL_CONTAINS_FIELD, RTL_FIELD_SIZE, RTL_NUMBER_OF, RTL_NUMBER_OF_FIELD, RTL_SIZEOF_THROUGH_FIELD, RtlCopyMemory, RtlFillMemory, RtlGetProcessHeap, RtlMoveMemory, RtlZeroMemory, SORTIDFROMLCID, SRB_STATUS, SUBLANGID, TRACE_ON, UIntToPtr, ULongToHandle, ULongToPtr, UNICODE_NULL, UNREACHABLE, UNREFERENCED_PARAMETER, UintToPtr, UlongToHandle, UlongToPtr, WARN_ON, WINE_ERR, WINE_FIXME, WINE_TRACE, WINE_WARN, ZeroMemory, __HRESULT_FROM_WIN32, __p___argc, __p___argv, __p___wargv, __p__environ, __p__pgmptr, __p__wenviron, __p__wpgmptr, __wine_dprintf, __wine_is_debug_on, _countof, debugstr_a, debugstr_an, debugstr_guid, debugstr_w, debugstr_wn, heap_alloc, heap_alloc_zero, heap_calloc, heap_free, heap_realloc, iswalnum, iswalpha, iswcntrl, iswdigit, iswgraph, iswlower, iswprint, iswpunct, iswspace, iswupper, iswxdigit, wide_bytes, wine_dbgstr_a, wine_dbgstr_guid, wine_dbgstr_w};
+pub use win32macros_rust::{ALIGN_UP, ARRAYSIZE, ASSERT, C_ASSERT, CopyMemory, DBG_UNREFERENCED_LOCAL_VARIABLE, DPRINT1, DWLP_DLGPROC, DWLP_MSGRESULT, DWLP_USER, ERR_ON, FAILED_UNEXPECTEDLY, FIELD_OFFSET, FIXME_ON, GET_WHEEL_DELTA_WPARAM, GET_X_LPARAM, GET_Y_LPARAM, GetAValue, GetBValue, GetGValue, GetRValue, HIBYTE, HIWORD, HRESULT_FROM_WIN32, HandleToUlong, IDE_SET_ADVANCE_PIO_MODE, IDE_SET_DEFAULT_PIO_MODE, IDE_SET_MWDMA_MODE, IDE_SET_SWDMA_MODE, IDE_SET_UDMA_MODE, INVALID_HANDLE_VALUE, IS_INTRESOURCE, InitializeObjectAttributes, IntToPtr, InterlockedCompareExchange, InterlockedDecrement, InterlockedExchange, InterlockedIncrement, IsContainerPartition, IsEqualGUID, IsFTPartition, IsRecognizedPartition, LANGIDFROMLCID, LOBYTE, LOWORD, LongToHandle, LongToPtr, MAKEINTATOM, MAKEINTRESOURCEA, MAKEINTRESOURCEW, MAKELANGID, MAKELCID, MAKELONG, MAKEWORD, MoveMemory, PAGE_ROUND_UP, PRIMARYLANGID, PtrToInt, PtrToLong, PtrToUint, PtrToUlong, RGB, RGBA, RTL_CONSTANT_STRING, RTL_CONTAINS_FIELD, RTL_FIELD_SIZE, RTL_NUMBER_OF, RTL_NUMBER_OF_FIELD, RTL_SIZEOF_THROUGH_FIELD, RtlCopyMemory, RtlFillMemory, RtlGetProcessHeap, RtlMoveMemory, RtlZeroMemory, SORTIDFROMLCID, SRB_STATUS, SUBLANGID, TRACE_ON, UIntToPtr, ULongToHandle, ULongToPtr, UNICODE_NULL, UNIMPLEMENTED_DBGBREAK, UNREACHABLE, UNREFERENCED_PARAMETER, UintToPtr, UlongToHandle, UlongToPtr, WARN_ON, WINE_ERR, WINE_FIXME, WINE_TRACE, WINE_WARN, ZeroMemory, __HRESULT_FROM_WIN32, __p___argc, __p___argv, __p___wargv, __p__environ, __p__pgmptr, __p__wenviron, __p__wpgmptr, __wine_dprintf, __wine_is_debug_on, _countof, debugstr_a, debugstr_an, debugstr_guid, debugstr_w, debugstr_wn, heap_alloc, heap_alloc_zero, heap_calloc, heap_free, heap_realloc, iswalnum, iswalpha, iswcntrl, iswdigit, iswgraph, iswlower, iswprint, iswpunct, iswspace, iswupper, iswxdigit, wide_bytes, wine_dbgstr_a, wine_dbgstr_guid, wine_dbgstr_w};
 
 // The island re-exports the base NT identity: pub use ntdll_sys::nt::*;
 
@@ -69,29 +69,13 @@ pub use win32macros_rust::{ALIGN_UP, ARRAYSIZE, ASSERT, C_ASSERT, CopyMemory, DB
 // tree-consensus LsaAddAccountRights declaration names and no island here carries.
 pub type PLSA_UNICODE_STRING = *mut LSA_UNICODE_STRING;
 
-// Hand port, OUTSIDE the generated blocks: wine/list.h's `static inline` list_add_tail and
-// list_remove. No DLL exports them (consensus copied cabinet's crate-internal #[no_mangle]
-// definitions as externs, and rpcss.exe failed to link on every arch).
-#[inline]
-pub unsafe fn list_add_tail(list: *mut list, elem: *mut list) {
-    (*elem).next = list;
-    (*elem).prev = (*list).prev;
-    (*(*list).prev).next = elem;
-    (*list).prev = elem;
-}
-#[inline]
-pub unsafe fn list_remove(elem: *mut list) {
-    (*(*elem).next).prev = (*elem).prev;
-    (*(*elem).prev).next = (*elem).next;
-}
-
 // ==== port resolve: tree consensus (generated -- re-run `rustconv port resolve`) ====
 pub const POLICY_CREATE_ACCOUNT: u32 = 16; // advapi32-sys/src/bindgen_amd64.rs
 pub const POLICY_LOOKUP_NAMES: u32 = 2048; // advapi32-sys/src/bindgen_amd64.rs
 pub const REGCLS_MULTIPLEUSE: tagREGCLS = tagREGCLS_REGCLS_MULTIPLEUSE; // island enum
 pub const REGCLS_MULTI_SEPARATE: tagREGCLS = tagREGCLS_REGCLS_MULTI_SEPARATE; // island enum
-pub const ROTFLAGS_ALLOWANYCLIENT: u32 = 2; // comctl32-rust/src/types_amd64.rs
-pub const ROTFLAGS_REGISTRATIONKEEPSALIVE: u32 = 1; // comctl32-rust/src/types_amd64.rs
+pub const ROTFLAGS_ALLOWANYCLIENT: u32 = 2; // cicero-rust/src/types_amd64.rs
+pub const ROTFLAGS_REGISTRATIONKEEPSALIVE: u32 = 1; // cicero-rust/src/types_amd64.rs
 pub const RPC_C_LISTEN_MAX_CALLS_DEFAULT: u32 = 1234; // eventlog-rust/src/types_amd64.rs
 pub const RPC_C_PROTSEQ_MAX_REQS_DEFAULT: u32 = 10; // eventlog-rust/src/types_amd64.rs
 pub const RPC_S_OK: RPC_STATUS = 0; // advapi32-rust/src/prelude.rs
@@ -156,13 +140,6 @@ pub type LSA_OBJECT_ATTRIBUTES = OBJECT_ATTRIBUTES;
 pub type LSA_UNICODE_STRING = UNICODE_STRING;
 // UUID: c2rust, epmp.c
 pub type UUID = GUID;
-// list: c2rust, epmp.c
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct list {
-    pub next: *mut list,
-    pub prev: *mut list,
-}
 // ==== end port local types ====
 
 // ==== port externs: C functions declared outside the island -- c2rust signature, clang calling convention (generated -- `rustconv port resolve`) ====
@@ -238,3 +215,4 @@ macro_rules! ARRAY_SIZE {
 #[allow(unused_imports)]
 pub(crate) use ARRAY_SIZE;
 // ==== end port macros ====
+pub use winelist_rust::{list_add_after, list_add_before, list_add_head, list_add_tail, list_count, list_empty, list_head, list_init, list_move_head, list_move_tail, list_next, list_prev, list_remove, list_tail};

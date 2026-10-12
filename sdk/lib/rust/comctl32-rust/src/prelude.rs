@@ -168,18 +168,10 @@ pub unsafe fn heap_free(mem: *mut c_void) {
     HeapFree(GetProcessHeap(), 0, mem);
 }
 
-// wine/list.h static inlines.
-pub unsafe fn list_add_after(elem: *mut list, to_add: *mut list) {
-    (*to_add).next = (*elem).next;
-    (*to_add).prev = elem;
-    (*(*elem).next).prev = to_add;
-    (*elem).next = to_add;
-}
-pub unsafe fn list_tail(list: *const list) -> *mut list {
-    // list_prev(list, list): the element before the head, or NULL for an empty list.
-    let ret = (*list).prev;
-    if ret as *const list == list { core::ptr::null_mut() } else { ret }
-}
+
+// wine/list.h: the shared port. A glob, so `port`'s local-types stage sees `list` as
+// provided and never re-emits c2rust's copy of it.
+pub use winelist_rust::*;
 
 // commctrl.h / winuser.h / prsht.h / mmsystem.h macros.
 pub const LPSTR_TEXTCALLBACKW: LPWSTR = -1isize as LPWSTR;
@@ -1140,13 +1132,6 @@ pub struct _TREEITEM {
     pub visibleOrder: LONG,
     pub infoPtr: *const crate::comctl32::treeview::TREEVIEW_INFO,
 }
-// list: c2rust, syslink.c
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct list {
-    pub next: *mut list,
-    pub prev: *mut list,
-}
 // nav_direction: c2rust, monthcal.c
 pub type nav_direction = ::core::ffi::c_uint;
 // ==== end port local types ====
@@ -1305,23 +1290,6 @@ pub unsafe fn debugstr_guid(id: *const GUID) -> *const c_char {
         g.Data4[0] as c_uint, g.Data4[1] as c_uint, g.Data4[2] as c_uint, g.Data4[3] as c_uint,
         g.Data4[4] as c_uint, g.Data4[5] as c_uint, g.Data4[6] as c_uint, g.Data4[7] as c_uint,
     )
-}
-/// wine/list.h `list_init`: an empty list points at itself both ways.
-#[inline] pub unsafe fn list_init(list: *mut list) {
-    (*list).next = list;
-    (*list).prev = list;
-}
-/// wine/list.h `list_add_tail` = `list_add_before(list, elem)`.
-#[inline] pub unsafe fn list_add_tail(list: *mut list, elem: *mut list) {
-    (*elem).next = list;
-    (*elem).prev = (*list).prev;
-    (*(*list).prev).next = elem;
-    (*list).prev = elem;
-}
-/// wine/list.h `list_remove`.
-#[inline] pub unsafe fn list_remove(elem: *mut list) {
-    (*(*elem).next).prev = (*elem).prev;
-    (*(*elem).prev).next = (*elem).next;
 }
 /// commctrl.h:4972 `#define DPA_GetPtrCount(hdpa) (*(int *)(hdpa))`.
 #[inline] pub unsafe fn DPA_GetPtrCount(hdpa: HDPA) -> INT { *(hdpa as *const INT) }

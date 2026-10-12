@@ -744,7 +744,7 @@ unsafe fn IopGetInterfaceDeviceList(
     }
 
     if !StackList.Buffer.is_null() && StackList.BufferSize != 0 {
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             StackList.Buffer as *const core::ffi::c_void,
             StackList.BufferSize as usize,
             1,
@@ -849,7 +849,7 @@ unsafe fn IopGetDeviceProperty(
     Property = prop_data.Property;
     BufferSize = prop_data.BufferSize;
     
-    if let Err(e) = probe_user_buffer(
+    if let Err(e) = probe_user_buffer_write(
         prop_data.Buffer as *const core::ffi::c_void,
         BufferSize as usize,
         1,
@@ -1055,7 +1055,7 @@ unsafe fn IopGetRelatedDevice(
     Relation = rel_data.Relation;
     MaximumLength = rel_data.RelatedDeviceInstanceLength;
     
-    if let Err(e) = probe_user_buffer(
+    if let Err(e) = probe_user_buffer_write(
         rel_data.RelatedDeviceInstance as *const core::ffi::c_void,
         MaximumLength as usize,
         core::mem::size_of::<u16>(),
@@ -1316,7 +1316,7 @@ unsafe fn IopGetDeviceRelations(
     BufferSize = rel_data.BufferSize;
     Buffer = rel_data.Buffer;
 
-    if let Err(e) = probe_user_buffer(
+    if let Err(e) = probe_user_buffer_write(
         Buffer as *const core::ffi::c_void,
         BufferSize as usize,
         1,
@@ -1811,7 +1811,7 @@ pub unsafe extern "system" fn NtPlugPlayControl(
         return STATUS_PRIVILEGE_NOT_HELD;
     }
 
-    if let Err(e) = probe_user_buffer(
+    if let Err(e) = probe_user_buffer_write(
         Buffer,
         BufferLength as usize,
         core::mem::size_of::<ULONG>(),

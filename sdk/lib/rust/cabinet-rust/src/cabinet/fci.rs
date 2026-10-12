@@ -14,11 +14,8 @@ type cab_ULONG = u32;
 type cab_LONG = i32;
 type cab_off_t = u32;
 
-#[repr(C)]
-struct list {
-    next: *mut list,
-    prev: *mut list,
-}
+// wine/list.h: `struct list` and its inline helpers, from the shared port.
+use winelist_rust::{list, list_add_before, list_add_tail, list_empty, list_init, list_remove};
 
 pub const FCI_INT_MAGIC: u32 = 0xfcfcfc05;
 
@@ -192,9 +189,6 @@ const tcompTYPE_NONE: u32 = 0x00000000;
 
 extern "C" {
     fn strlen(s: *const core::ffi::c_char) -> usize;
-    fn list_remove(entry: *mut list);
-    fn list_init(list: *mut list);
-    fn list_add_tail(head: *mut core::ffi::c_void, entry: *mut core::ffi::c_void);
     // NB: the C source calls the `deflateInit2(...)` MACRO, which expands to
     // deflateInit2_(..., ZLIB_VERSION, sizeof(z_stream)). The original
     // transliteration declared a 6-arg `deflateInit2` symbol that does NOT
@@ -206,7 +200,6 @@ extern "C" {
     fn deflate(strm: *mut z_stream, flush: i32) -> i32;
     fn deflateEnd(strm: *mut z_stream) -> i32;
     fn zlibVersion() -> *const core::ffi::c_char;
-    fn list_add_before(pos: *mut list, entry: *mut list);
     fn memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void;
     fn memset(ptr: *mut core::ffi::c_void, val: i32, n: usize) -> *mut core::ffi::c_void;
     fn strcpy(dst: *mut i8, src: *const i8) -> *mut i8;
@@ -216,7 +209,6 @@ extern "C" {
 extern "system" {
     fn SetLastError(code: u32);
     fn lstrcpynA(dst: *mut i8, src: *const i8, max_len: i32) -> *mut i8;
-    fn list_empty(head: *const list) -> BOOL;
 }
 
 unsafe fn set_error(fci: *mut FCI_Int, oper: i32, err: i32) {
@@ -466,12 +458,8 @@ unsafe fn add_file(fci: *mut FCI_Int, filename: *const i8) -> *mut file {
         fn strcpy(dest: *mut i8, src: *const i8) -> *mut i8;
         fn strlen(s: *const i8) -> usize;
     }
-    // list_add_tail is the cdecl wine_list shim (_list_add_tail); set_error is
-    // the module-local `unsafe fn` below — declaring it extern "system" here
+    // set_error is the module-local `unsafe fn` below — declaring it extern "system" here
     // produced the undefined _set_error@12, so it is dropped.
-    extern "C" {
-        fn list_add_tail(list: *mut list, entry: *mut list);
-    }
 
     let size = core::mem::offset_of!(file, name) + (strlen(filename) as usize) + 1;
     let alloc_fn = (*fci).alloc;
@@ -528,8 +516,8 @@ unsafe fn add_folder(fci: *mut FCI_Int) -> *mut folder {
     list_init(core::ptr::addr_of_mut!((*folder).files_list));
     list_init(core::ptr::addr_of_mut!((*folder).blocks_list));
     list_add_tail(
-        core::ptr::addr_of_mut!((*fci).folders_list) as *mut core::ffi::c_void,
-        core::ptr::addr_of_mut!((*folder).entry) as *mut core::ffi::c_void,
+        core::ptr::addr_of_mut!((*fci).folders_list),
+        core::ptr::addr_of_mut!((*folder).entry),
     );
 
     (*fci).folders_size = (*fci).folders_size.wrapping_add(
@@ -784,7 +772,7 @@ unsafe fn add_data_block(fci: *mut FCI_Int, status_callback: PFNFCISTATUS) -> i3
     (*fci).pending_data_size += core::mem::size_of::<CFDATA>() as u32 + (*fci).ccab.cbReserveCFData as u32 + (*block).compressed as u32;
     (*fci).cCompressedBytesInFolder += (*block).compressed as u32;
     (*fci).cDataBlocks += 1;
-    list_add_tail(core::ptr::addr_of_mut!((*fci).blocks_list) as *mut core::ffi::c_void, core::ptr::addr_of_mut!((*block).entry) as *mut core::ffi::c_void);
+    list_add_tail(core::ptr::addr_of_mut!((*fci).blocks_list), core::ptr::addr_of_mut!((*block).entry));
 
     let callback_result = status_callback(statusFile as u32, (*block).compressed as u32, (*block).uncompressed as u32, (*fci).pv);
     if callback_result == -1 {
@@ -949,8 +937,8 @@ unsafe fn add_files_to_folder(
 
         list_remove(core::ptr::addr_of_mut!((*file).entry));
         list_add_tail(
-            core::ptr::addr_of_mut!((*folder).files_list) as *mut core::ffi::c_void,
-            core::ptr::addr_of_mut!((*file).entry) as *mut core::ffi::c_void,
+            core::ptr::addr_of_mut!((*folder).files_list),
+            core::ptr::addr_of_mut!((*file).entry),
         );
         (*fci).placed_files_size += size;
         (*fci).cFiles += 1;
@@ -1213,8 +1201,8 @@ unsafe fn add_data_to_folder(
         *payload += (*new).uncompressed as u32;
 
         list_add_tail(
-            core::ptr::addr_of_mut!((*folder).blocks_list) as *mut core::ffi::c_void,
-            core::ptr::addr_of_mut!((*new).entry) as *mut core::ffi::c_void,
+            core::ptr::addr_of_mut!((*folder).blocks_list),
+            core::ptr::addr_of_mut!((*new).entry),
         );
         (*folder).data_count += 1;
 

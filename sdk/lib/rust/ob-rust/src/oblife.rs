@@ -1171,7 +1171,7 @@ pub unsafe extern "system" fn NtQueryObject(
     let PreviousMode = ExGetPreviousMode();
 
     if PreviousMode != 0 {
-        if let Err(s) = probe_user_buffer(ObjectInformation as _, Length as usize, core::mem::size_of::<UCHAR>(), PreviousMode) {
+        if let Err(s) = probe_user_buffer_write(ObjectInformation as _, Length as usize, core::mem::size_of::<UCHAR>(), PreviousMode) {
             return s;
         }
         if !ResultLength.is_null() {

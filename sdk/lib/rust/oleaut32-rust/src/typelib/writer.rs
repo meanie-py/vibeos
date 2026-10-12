@@ -795,7 +795,7 @@ unsafe fn WMSFT_compile_custdata(custdata_list: *mut list, file: *mut WMSFT_TLBF
     let cdguids_seg = &raw mut (*file).cdguids_seg;
     let ret: DWORD = (*cdguids_seg).len;
 
-    if list_empty(custdata_list) {
+    if list_empty(custdata_list) != 0 {
         return -1i32 as DWORD;
     }
 
@@ -841,7 +841,7 @@ unsafe fn WMSFT_compile_typeinfo_aux(info: *mut ITypeInfoImpl, file: *mut WMSFT_
 
         /* optional fields */
         /* TODO: oArgCustData - FuncSetCustData not impl yet */
-        if !list_empty(&raw const (*desc).custdata_list) {
+        if list_empty(&raw const (*desc).custdata_list) == 0 {
             recorded_size += 7 * size_of::<INT>() as DWORD;
         } else if (*desc).HelpStringContext != 0 {
             recorded_size += 6 * size_of::<INT>() as DWORD;
@@ -886,7 +886,7 @@ unsafe fn WMSFT_compile_typeinfo_aux(info: *mut ITypeInfoImpl, file: *mut WMSFT_
         /* optional fields */
         if (*desc).HelpStringContext != 0 {
             recorded_size += 5 * size_of::<INT>() as DWORD;
-        } else if !list_empty(&raw const (*desc).custdata_list) {
+        } else if list_empty(&raw const (*desc).custdata_list) == 0 {
             recorded_size += 4 * size_of::<INT>() as DWORD;
         }
         /* res9? */
@@ -954,7 +954,7 @@ unsafe fn WMSFT_compile_typeinfo_aux(info: *mut ITypeInfoImpl, file: *mut WMSFT_
          */
         (*funcrecord).FKCCIC = (*desc).funcdesc.funckind
             | ((*desc).funcdesc.invkind << 3)
-            | (if list_empty(&raw const (*desc).custdata_list) { 0 } else { 0x80 })
+            | (if list_empty(&raw const (*desc).custdata_list) != 0 { 0 } else { 0x80 })
             | ((*desc).funcdesc.callconv << 8);
 
         if !(*desc).Entry.is_null()
@@ -988,7 +988,7 @@ unsafe fn WMSFT_compile_typeinfo_aux(info: *mut ITypeInfoImpl, file: *mut WMSFT_
 
         /* optional fields */
         /* res9? resA? */
-        if !list_empty(&raw const (*desc).custdata_list) {
+        if list_empty(&raw const (*desc).custdata_list) == 0 {
             size += 7 * size_of::<INT>() as DWORD;
             (*funcrecord).HelpContext = (*desc).helpcontext;
             if !(*desc).HelpString.is_null() {
@@ -1147,7 +1147,7 @@ unsafe fn WMSFT_compile_typeinfo_aux(info: *mut ITypeInfoImpl, file: *mut WMSFT_
             (*varrecord).oCustData =
                 WMSFT_compile_custdata(&raw mut (*desc).custdata_list, file) as i32;
             (*varrecord).HelpStringContext = (*desc).HelpStringContext;
-        } else if !list_empty(&raw const (*desc).custdata_list) {
+        } else if list_empty(&raw const (*desc).custdata_list) == 0 {
             size += 4 * size_of::<INT>() as DWORD;
             (*varrecord).HelpContext = (*desc).HelpContext;
             if !(*desc).HelpString.is_null() {

@@ -16,11 +16,11 @@ HKLM,"SYSTEM\CurrentControlSet\Services\arm64input","Start",0x00010001,0x0000000
 HKLM,"SYSTEM\CurrentControlSet\Services\arm64input","Type",0x00010001,0x00000001
 
 ; ARM64 framebuffer video device driver — boot start so \Device\Video0 exists before csrss
-HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","ErrorControl",0x00010001,0x00000000
-HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","Group",0x00000000,"Boot Bus Extender"
-HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","ImagePath",0x00020000,"system32\drivers\arm64vid.sys"
-HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","Start",0x00010001,0x00000000
-HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","Type",0x00010001,0x00000001
+HKLM,"SYSTEM\CurrentControlSet\Services\sysfb","ErrorControl",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\sysfb","Group",0x00000000,"Boot Bus Extender"
+HKLM,"SYSTEM\CurrentControlSet\Services\sysfb","ImagePath",0x00020000,"system32\drivers\sysfb.sys"
+HKLM,"SYSTEM\CurrentControlSet\Services\sysfb","Start",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\sysfb","Type",0x00010001,0x00000001
 
 ; The PCI host bridge (QEMU virt GPEX) is not seeded here any more: the arm64 HAL's
 ; PnP driver publishes a root bus (ACPI\PNP0A08, compatible *PNP0A03 -> pci) for every

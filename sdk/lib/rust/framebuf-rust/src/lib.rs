@@ -1,7 +1,7 @@
 // framebuf-rust — Rust translation of the generic framebuffer GDI display
 // driver (win32ss/drivers/displays/framebuf/*.c).
 //
-// Cohabitation staticlib (arm64vid-rust / hal-rust style): the C sources are
+// Cohabitation staticlib (sysfb-rust / hal-rust style): the C sources are
 // commented out of win32ss/drivers/displays/framebuf/CMakeLists.txt and the
 // #[no_mangle] symbols below take over. Links win32k (GDI engine exports:
 // Eng*/PALOBJ_*/DDI types) + libcntpr at the cmake link.

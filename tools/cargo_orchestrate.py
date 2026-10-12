@@ -129,7 +129,7 @@ CELLS: dict[str, Cell] = {
         Cell("framebuf", "framebuf-cargo", "framebuf.dll", "kerneldll"),
         Cell("netstack", "netstack-cargo", "netstack.sys", "kerneldll"),
         # arm64-only video/input drivers
-        Cell("arm64vid", "arm64vid-cargo", "arm64vid.sys", "kerneldll", arches=("arm64",)),
+        Cell("sysfb", "sysfb-cargo", "sysfb.sys", "kerneldll", arches=("arm64",)),
         Cell("arm64input", "arm64input-cargo", "arm64input.sys", "kerneldll", arches=("arm64",)),
         # win32k — cmake-off as of 2026-06-21 (libwin32k_residue.a compiled
         # in-cargo: c_from_compile_db + native-gendib + asm_archive). KIND
@@ -165,7 +165,7 @@ CMAKE_OFF_SPINE = (
 # Drivers proven cmake-off (2026-06-21 audit). 24 were already clean
 # (rust_staticlib + self-hosted import libs); win32k joined once its
 # libwin32k_residue.a was compiled in-cargo (c_from_compile_db + native-gendib +
-# asm_archive). arm64vid/arm64input self-filter to arm64 via Cell.arches. Used by
+# asm_archive). sysfb/arm64input self-filter to arm64 via Cell.arches. Used by
 # --drivers — the COMPLETE driver set is now cmake-off.
 CMAKE_OFF_DRIVERS = (
     "win32k",
@@ -188,7 +188,7 @@ CMAKE_OFF_DRIVERS = (
     "processr",
     "framebuf",
     "netstack",
-    "arm64vid",
+    "sysfb",
     "arm64input",
 )
 
