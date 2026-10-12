@@ -9688,6 +9688,13 @@ C half of a cohab kernel checks its invariants; the Rust half's debug code quiet
 - Before believing a `cfg`-gated block, check every symbol it calls actually **exists**. An
   `extern` declaration in the same file is not evidence, and a `// fn Foo(...)` comment header in
   the translated module means the function was skipped entirely.
+- A `#if DBG` arm whose effect a caller can OBSERVE is not debug bookkeeping, it is behaviour,
+  and this tree builds DBG=1 (`KmtIsCheckedBuild` is TRUE): make it unconditional rather than
+  `cfg(debug_assertions)`. The interlocked list removes poison the freed entry's links under
+  `#if DBG`; behind the cfg the poison never ran, and kmtest's ExDoubleList/ExSingleList read
+  live links (28 assertions). `pushlock.rs`'s `Signaled = 1` is the same fix. Copy the C's
+  value per function, too: i386's fastcall `ExfInterlockedRemoveHeadList` poisons
+  `0x0BADD0FF`, not the stdcall export's `0xBADDD0FF`.
 - Audit `#[cfg(not(debug_assertions))]` in the same pass — those are the arms that vanish.
 
 **What is NOT a hazard:** `debug_assert!(expr)` itself. It expands to

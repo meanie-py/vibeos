@@ -245,7 +245,11 @@ pub unsafe extern "system" fn NpQueryNameInfo(
     let Status: NTSTATUS;
     let Name: *mut u16;
 
-    *Length -= core::mem::size_of::<FILE_NAME_INFORMATION>() as ULONG;
+    // Charge the header up to FileName, not sizeof(FILE_NAME_INFORMATION): the sizeof
+    // counts FileName[1] and padding, which the C (and so ReactOS npfs) charged too. That
+    // overstated IoStatus.Information by 4, so the I/O manager copied 4 stale pool bytes
+    // past the name, and on overflow it cut the name 2 characters short (NpfsFileInfo.c).
+    *Length -= core::mem::offset_of!(FILE_NAME_INFORMATION, FileName) as ULONG;
 
     if (*Ccb).NodeType == NPFS_NTC_ROOT_DCB_CCB {
         NameLength = (*(*NpVcb).RootDcb).FullName.Length;
@@ -254,6 +258,11 @@ pub unsafe extern "system" fn NpQueryNameInfo(
         NameLength = (*(*Ccb).Fcb).FullName.Length;
         Name = (*(*Ccb).Fcb).FullName.Buffer;
     }
+
+    // FileNameLength is the FULL length even when the copy is cut short, so a caller
+    // that gets STATUS_BUFFER_OVERFLOW learns how much to allocate; the C stored the
+    // truncated length.
+    (*InfoBuffer).FileNameLength = NameLength as ULONG;
 
     if *Length < NameLength as ULONG {
         Status = STATUS_BUFFER_OVERFLOW;
@@ -267,7 +276,6 @@ pub unsafe extern "system" fn NpQueryNameInfo(
         Name as PCVOID,
         NameLength as _,
     );
-    (*InfoBuffer).FileNameLength = NameLength as ULONG;
 
     *Length -= NameLength as ULONG;
     Status
@@ -282,10 +290,9 @@ pub unsafe extern "system" fn NpQueryInternalInfo(
 
     *Length -= core::mem::size_of::<FILE_INTERNAL_INFORMATION>() as ULONG;
 
-    RtlZeroMemory(
-        InfoBuffer as PVOID,
-        core::mem::size_of::<FILE_INTERNAL_INFORMATION>() as _,
-    );
+    // A nonzero id per pipe instance: the C zeroed it, and NpfsFileInfo.c requires a
+    // nonzero IndexNumber. The CCB is unique to the instance and lives as long as it.
+    (*InfoBuffer).IndexNumber.QuadPart = Ccb as usize as i64;
 
     STATUS_SUCCESS
 }
