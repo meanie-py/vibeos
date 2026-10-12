@@ -1,0 +1,18 @@
+# eventcreate (base/applications/cmdutils/eventcreate -> eventcreate-rust, batch D1). The shipped Rust diffed
+# against the pre-flip C (`python -m rustconv.c_oracle`); inputs from modrun/data.
+module: eventcreate
+variants:
+  c: '%SystemRoot%\bin\modrun\eventcreate_c.exe'
+  rust: '%SystemRoot%\system32\eventcreate.exe'
+ninja:
+- eventcreate_c
+stage:
+- src: build-{arch}/base/applications/cmdutils/eventcreate/eventcreate_c.exe
+  dest: bin/modrun/eventcreate_c.exe
+cases:
+- id: usage
+  args: /?
+- id: missing-id
+  args: /T ERROR /D "x"
+- id: bad-id
+  args: /T ERROR /ID 9999 /D "x"

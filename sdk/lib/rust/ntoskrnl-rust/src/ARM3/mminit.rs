@@ -875,6 +875,81 @@ pub unsafe extern "system" fn MmFreeLoaderBlock(loader_block: PLOADER_PARAMETER_
 
     #[cfg(target_arch = "aarch64")]
     MiUnmapLowGuardArm64();
+    #[cfg(target_arch = "aarch64")]
+    MiUnmapLoaderIdentityRamArm64();
+}
+
+/// Unmap FreeLDR's identity mappings (VA == PA) of physical RAM from the user half, which
+/// TTBR0 is on arm64. Left in place, any user address that happens to equal a RAM address is
+/// readable in the System process: ObWait's kernel thread read its "invalid" handle array at
+/// 0x42424242 out of RAM and got STATUS_INVALID_HANDLE where Windows faults. It passed only
+/// while ZwAllocateVirtualMemory's stress test, run before it, committed 4 GB over that
+/// range and the lazy cleanup in NtAllocateVirtualMemory scrubbed it on the way; with
+/// commit accounted the stress stops at the limit and the stale mapping showed. Only entries
+/// that ARE the identity mapping go (a descriptor whose output address is its own VA, at any
+/// level), and only over RAM runs: device ranges such as the PL011 keep theirs.
+#[cfg(target_arch = "aarch64")]
+unsafe fn MiUnmapLoaderIdentityRamArm64() {
+    const NOT_LARGE_PAGE: ULONG_PTR = 1 << 1; // bits[1:0] 0b11 table/page, 0b01 block
+    const OUTPUT_ADDRESS: ULONG_PTR = 0x0000_FFFF_FFFF_F000;
+    const GB: ULONG_PTR = 1 << 30;
+    const MB2: ULONG_PTR = 1 << 21;
+    let mut cleared: u32 = 0;
+    let block = MmPhysicalMemoryBlock;
+    if block.is_null() {
+        return;
+    }
+    for i in 0..(*block).NumberOfRuns {
+        let run = (*block).Run.as_ptr().add(i as usize);
+        let mut va = ((*run).BasePage as ULONG_PTR) << PAGE_SHIFT;
+        let end = va + (((*run).PageCount as ULONG_PTR) << PAGE_SHIFT);
+        while va < end && va < MmSystemRangeStart as ULONG_PTR {
+            let pxe = MiAddressToPxe(va as PVOID);
+            if !(*pxe).valid() {
+                va = (va | (512 * GB - 1)) + 1;
+                continue;
+            }
+            let ppe = MiAddressToPpe(va as PVOID);
+            if !(*ppe).valid() {
+                va = (va | (GB - 1)) + 1;
+                continue;
+            }
+            if ((*ppe).Long & NOT_LARGE_PAGE) == 0 {
+                if ((*ppe).Long & OUTPUT_ADDRESS) == (va & !(GB - 1)) {
+                    (*ppe).Long = 0;
+                    cleared += 1;
+                }
+                va = (va | (GB - 1)) + 1;
+                continue;
+            }
+            let pde = MiAddressToPde(va as PVOID);
+            if !(*pde).valid() {
+                va = (va | (MB2 - 1)) + 1;
+                continue;
+            }
+            if ((*pde).Long & NOT_LARGE_PAGE) == 0 {
+                if ((*pde).Long & OUTPUT_ADDRESS) == (va & !(MB2 - 1)) {
+                    (*pde).Long = 0;
+                    cleared += 1;
+                }
+                va = (va | (MB2 - 1)) + 1;
+                continue;
+            }
+            let pte = MiAddressToPte(va as PVOID);
+            if (*pte).valid() && ((*pte).Long & OUTPUT_ADDRESS) == (va & !(PAGE_SIZE as ULONG_PTR - 1)) {
+                (*pte).Long = 0;
+                cleared += 1;
+            }
+            va += PAGE_SIZE as ULONG_PTR;
+        }
+    }
+    if cleared != 0 {
+        KeFlushEntireTb(1, 1);
+    }
+    ntkrnl_sys::driver_ddk::DbgPrint(
+        b"[MM] arm64: %u loader identity mappings of RAM removed from the user half\n\0".as_ptr() as *const i8,
+        cleared,
+    );
 }
 
 /// Unmap VA 0-64K, which FreeLDR identity-mapped (VA == PA) and nothing ever

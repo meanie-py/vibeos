@@ -158,8 +158,12 @@ pub static mut DbgkDebugObjectMapping: _GENERIC_MAPPING = _GENERIC_MAPPING {
     GenericRead: STANDARD_RIGHTS_READ | 0x0001,
     GenericWrite: STANDARD_RIGHTS_WRITE | 0x0002,
     GenericExecute: STANDARD_RIGHTS_EXECUTE | SYNCHRONIZE,
-    GenericAll: 0x001F0003,
+    GenericAll: DEBUG_OBJECT_ALL_ACCESS,
 };
+
+// ndk/dbgktypes.h. The translation wrote 0x001F0003 here and as the type's
+// ValidAccessMask, dropping access bits 0x4 and 0x8 (ObTypes.cpp:269).
+const DEBUG_OBJECT_ALL_ACCESS: ACCESS_MASK = STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0x0F;
 
 static DbgkpDebugObjectInfoClass: [_INFORMATION_CLASS_INFO; 2] = [
     _INFORMATION_CLASS_INFO {
@@ -1384,7 +1388,7 @@ pub unsafe extern "system" fn DbgkInitialize() {
         core::mem::size_of::<_DEBUG_OBJECT>() as ULONG;
     object_type_initializer.GenericMapping = DbgkDebugObjectMapping;
     object_type_initializer.PoolType = NonPagedPool;
-    object_type_initializer.ValidAccessMask = 0x001F0003;
+    object_type_initializer.ValidAccessMask = DEBUG_OBJECT_ALL_ACCESS;
     object_type_initializer.SecurityRequired = 1;
     object_type_initializer.CloseProcedure = core::mem::transmute(DbgkpCloseObject as usize);
     object_type_initializer.DeleteProcedure = core::mem::transmute(DbgkpDeleteObject as usize);

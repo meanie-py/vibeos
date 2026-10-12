@@ -1,4 +1,6 @@
 use ntkrnl_sys::base::*;
+use crate::externs::DbgPrint;
+// One declaration per external symbol: externs.rs.
 use ntkrnl_sys::driver_ddk::*;
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
@@ -8,8 +10,7 @@ use crate::types::{_RTL_BITMAP_DBG, _VCB__bindgen_ty_1};
 use ntkrnl_sys::ddk::{_LARGE_MCB};
 
 extern "system" {
-    fn NodeType(p: *const core::ffi::c_void) -> u32;
-    } extern "C" { fn DbgPrint(format: *const i8, ...); } extern "system" {
+    } extern "system" {
 }
 
 // ---- file-scope preamble (translated) ----
@@ -25,7 +26,7 @@ pub unsafe extern "system" fn FatDump(Ptr: *mut core::ffi::c_void) {
         return;
     }
 
-    match NodeType(Ptr) {
+    match NodeType!(Ptr) {
         // case FAT_NTC_DATA_HEADER:
         0x0500 => { // FAT_NTC_DATA_HEADER
             FatDumpDataHeader();
@@ -1250,11 +1251,11 @@ pub unsafe extern "system" fn FatDumpFcb(Ptr: *const FCB) {
 
     // if-else chain for node type
     let header_ptr = core::ptr::addr_of!((*Ptr).Header) as *const core::ffi::c_void;
-    if NodeType(header_ptr) == FAT_NTC_FCB {
+    if NodeType!(header_ptr) == (FAT_NTC_FCB as u16) {
         DbgPrint(b"Fcb@ %lx\0".as_ptr() as *const i8, Ptr as usize);
-    } else if NodeType(header_ptr) == FAT_NTC_DCB {
+    } else if NodeType!(header_ptr) == (FAT_NTC_DCB as u16) {
         DbgPrint(b"Dcb@ %lx\0".as_ptr() as *const i8, Ptr as usize);
-    } else if NodeType(header_ptr) == FAT_NTC_ROOT_DCB {
+    } else if NodeType!(header_ptr) == (FAT_NTC_ROOT_DCB as u16) {
         DbgPrint(b"RootDcb@ %lx\0".as_ptr() as *const i8, Ptr as usize);
     } else {
         DbgPrint(b"NonFcb NodeType @ %lx\0".as_ptr() as *const i8, Ptr as usize);

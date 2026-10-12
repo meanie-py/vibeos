@@ -1,5 +1,17 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
+// One declaration per external symbol: externs.rs.
+use crate::externs::CanFsdWait;
+use crate::externs::FatCompleteRequest;
+use crate::externs::IoSetCompletionRoutine;
+use crate::externs::IoSetTopLevelIrp;
+use crate::externs::KeWaitForSingleObject;
+// fastfat's own functions: the definition is the declaration.
+use crate::strucsup::FatCreateIrpContext;
+use crate::filobsup::FatDecodeFileObject;
+use crate::fsctrl::FatFlushAndCleanVolume;
+use crate::fatdata::FatIsIrpTopLevel;
+use crate::fatdata::FatProcessException;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
@@ -15,28 +27,19 @@ use crate::ddk_shims::{IO_COMPLETION_ROUTINE, IoIs32bitProcess};
 use crate::glue::{STATUS_MORE_PROCESSING_REQUIRED};
 
 extern "system" {
-    } extern "C" { fn DebugTrace(Level: i32, Flags: u32, Format: *const i8, ...); } extern "C" {
+    } extern "C" {
     // wdm FORCEINLINE helpers: cdecl bodies (`_Io...`, rust_cohab_forceinline.c), and the
     // rest of the crate declares them "C". One "system" view of the same symbol is a §9.99
     // fold: the call keeps stdcall's callee-pops bookkeeping against the cdecl thunk, esp
     // comes back 4 off, and the next esp-relative load is garbage (i386 0x50 saving a file).
-    fn IoSetCompletionRoutine(Irp: *mut IRP, Routine: FatCompletionRoutine, Context: *mut c_void, InvokeOnSuccess: u8, InvokeOnError: u8, InvokeOnCancel: u8); // body returns VOID (wdm) — NTSTATUS ret was decl drift
+// body returns VOID (wdm) — NTSTATUS ret was decl drift
 }
 extern "system" {
-    fn FatDecodeFileObject(FileObject: *mut FILE_OBJECT, Vcb: *mut *mut VCB, Fcb: *mut *mut FCB, Ccb: *mut *mut CCB) -> u32;
-    fn FatCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: NTSTATUS);
     fn FatAcquireExclusiveVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn FatReleaseVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
-    fn FatFlushAndCleanVolume(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Vcb: *mut VCB, FlushOption: u32);
     fn KeInitializeEvent(Event: *mut KEVENT, Type: u32, State: u8);
-    fn KeWaitForSingleObject(Object: *mut KEVENT, WaitReason: u32, WaitMode: u32, Alertable: u8, Timeout: *mut i64) -> NTSTATUS;
-    fn FatIsIrpTopLevel(Irp: PIRP) -> BOOLEAN;
-    fn FatCreateIrpContext(Irp: PIRP, CanWait: u32) -> PIRP_CONTEXT;
-    fn CanFsdWait(Irp: PIRP) -> BOOLEAN;
-    fn IoSetTopLevelIrp(Irp: PIRP);
     fn FsRtlEnterFileSystem();
     fn FsRtlExitFileSystem();
-    fn FatProcessException(IrpContext: PIRP_CONTEXT, Irp: PIRP, ExceptionCode: NTSTATUS) -> NTSTATUS;
 }
 
 // ---- local SCSI type stubs (not in ntkrnl_sys::ddk) ----
@@ -190,10 +193,10 @@ pub unsafe extern "system" fn FatFsdDeviceControl(
     const Dbg: u32 = 0; // placeholder for DEBUG_TRACE_DEVCTRL
 
     PAGED_CODE!();
-    DebugTrace(1, Dbg, b"FatFsdDeviceControl\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(1, Dbg, b"FatFsdDeviceControl\n\0".as_ptr() as *const i8, 0);
 
     FsRtlEnterFileSystem();
-    TopLevel = FatIsIrpTopLevel(Irp);
+    TopLevel = (FatIsIrpTopLevel(Irp)) as u8;
 
     // _SEH2_TRY { ... } _SEH2_EXCEPT(FatExceptionFilter(IrpContext, ...)) { FatProcessException }
     let p_status = core::ptr::addr_of_mut!(Status);
@@ -210,7 +213,7 @@ pub unsafe extern "system" fn FatFsdDeviceControl(
     }
 
     FsRtlExitFileSystem();
-    DebugTrace(
+    DebugTrace!(
         -1,
         Dbg,
         b"FatFsdDeviceControl -> %08lx\n\0".as_ptr() as *const i8,
@@ -241,13 +244,13 @@ pub unsafe extern "system" fn FatCommonDeviceControl(
 
         irp_sp = ntkrnl_sys::ddk::IoGetCurrentIrpStackLocation(Irp);
 
-        DebugTrace(1, DEBUG_TRACE_DEVCTRL, b"FatCommonDeviceControl\n\0".as_ptr() as *const i8, 0);
-        DebugTrace(0, DEBUG_TRACE_DEVCTRL, b"Irp           = %p\n\0".as_ptr() as *const i8, Irp as isize);
-        DebugTrace(0, DEBUG_TRACE_DEVCTRL, b"MinorFunction = %08lx\n\0".as_ptr() as *const i8, (*irp_sp).MinorFunction as u32);
+        DebugTrace!(1, DEBUG_TRACE_DEVCTRL, b"FatCommonDeviceControl\n\0".as_ptr() as *const i8, 0);
+        DebugTrace!(0, DEBUG_TRACE_DEVCTRL, b"Irp           = %p\n\0".as_ptr() as *const i8, Irp as isize);
+        DebugTrace!(0, DEBUG_TRACE_DEVCTRL, b"MinorFunction = %08lx\n\0".as_ptr() as *const i8, (*irp_sp).MinorFunction as u32);
 
         if FatDecodeFileObject((*irp_sp).FileObject, core::ptr::addr_of_mut!(vcb), core::ptr::addr_of_mut!(fcb), core::ptr::addr_of_mut!(ccb)) != UserVolumeOpen {
             FatCompleteRequest(IrpContext, Irp, STATUS_INVALID_PARAMETER);
-            DebugTrace(-1, DEBUG_TRACE_DEVCTRL, b"FatCommonDeviceControl -> %08lx\n\0".as_ptr() as *const i8, STATUS_INVALID_PARAMETER as u32);
+            DebugTrace!(-1, DEBUG_TRACE_DEVCTRL, b"FatCommonDeviceControl -> %08lx\n\0".as_ptr() as *const i8, STATUS_INVALID_PARAMETER as u32);
             return STATUS_INVALID_PARAMETER;
         }
 
@@ -255,7 +258,7 @@ pub unsafe extern "system" fn FatCommonDeviceControl(
             IOCTL_VOLSNAP_FLUSH_AND_HOLD_WRITES => {
                 SetFlag!((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT);
                 FatAcquireExclusiveVolume(IrpContext, vcb);
-                FatFlushAndCleanVolume(IrpContext, Irp, vcb, FlushWithoutPurge);
+                FatFlushAndCleanVolume(IrpContext, Irp, vcb, (FlushWithoutPurge) as _);
                 KeInitializeEvent(core::ptr::addr_of_mut!(wait_event), _EVENT_TYPE_NotificationEvent, 0u8);
                 completion_context = core::ptr::addr_of_mut!(wait_event) as *mut core::ffi::c_void;
                 IoCopyCurrentIrpStackLocationToNext(Irp);
@@ -266,7 +269,7 @@ pub unsafe extern "system" fn FatCommonDeviceControl(
                    FlagOn((*irp_sp).Flags as u32, SL_FORCE_DIRECT_WRITE) == 0 &&
                    FlagOn((*ccb).Flags, CCB_FLAG_COMPLETE_DISMOUNT) == 0 {
                     FatCompleteRequest(IrpContext, Irp, STATUS_ACCESS_DENIED);
-                    DebugTrace(-1, DEBUG_TRACE_DEVCTRL, b"FatCommonDeviceControl -> %08lx\n\0".as_ptr() as *const i8, STATUS_ACCESS_DENIED as u32);
+                    DebugTrace!(-1, DEBUG_TRACE_DEVCTRL, b"FatCommonDeviceControl -> %08lx\n\0".as_ptr() as *const i8, STATUS_ACCESS_DENIED as u32);
                     return STATUS_ACCESS_DENIED;
                 }
             }
@@ -317,7 +320,7 @@ pub unsafe extern "system" fn FatCommonDeviceControl(
         status = ntkrnl_sys::driver_ddk::IoCallDriver((*vcb).TargetDeviceObject, Irp);
 
         if status == STATUS_PENDING && !completion_context.is_null() {
-            KeWaitForSingleObject(core::ptr::addr_of_mut!(wait_event), _KWAIT_REASON_Executive, (0i32) as u32, 0u8, core::ptr::null_mut());
+            KeWaitForSingleObject((core::ptr::addr_of_mut!(wait_event)).cast(), _KWAIT_REASON_Executive, ((0i32) as u32) as i8, 0u8, core::ptr::null_mut());
             status = (*Irp).IoStatus.__bindgen_anon_1.Status;
         }
 
@@ -329,7 +332,7 @@ pub unsafe extern "system" fn FatCommonDeviceControl(
         }
 
         FatCompleteRequest(IrpContext, Irp, status);
-        DebugTrace(-1, DEBUG_TRACE_DEVCTRL, b"FatCommonDeviceControl -> %08lx\n\0".as_ptr() as *const i8, status as u32);
+        DebugTrace!(-1, DEBUG_TRACE_DEVCTRL, b"FatCommonDeviceControl -> %08lx\n\0".as_ptr() as *const i8, status as u32);
 
         status
     }

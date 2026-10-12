@@ -1,0 +1,15 @@
+# hostname (base/applications/cmdutils/hostname -> hostname-rust, batch C). The shipped Rust diffed
+# against the pre-flip C (`python -m rustconv.c_oracle`); inputs from modrun/data.
+module: hostname
+variants:
+  c: '%SystemRoot%\bin\modrun\hostname_c.exe'
+  rust: '%SystemRoot%\system32\hostname.exe'
+ninja:
+- hostname_c
+stage:
+- src: build-{arch}/base/applications/cmdutils/hostname/hostname_c.exe
+  dest: bin/modrun/hostname_c.exe
+cases:
+- id: name
+- id: bad-switch
+  args: /x

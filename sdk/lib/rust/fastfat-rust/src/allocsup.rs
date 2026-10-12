@@ -1,5 +1,30 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
+// One declaration per external symbol: externs.rs.
+use crate::externs::ExAcquireFastMutexUnsafe;
+use crate::externs::ExReleaseFastMutexUnsafe;
+use crate::externs::FatBugCheck;
+use crate::externs::FatBytesPerCluster;
+use crate::externs::FatBytesPerFat;
+use crate::externs::FatGetIndexFromLbo;
+use crate::externs::FatIsFat32;
+use crate::externs::FatReservedBytes;
+use crate::externs::FatRootDirectoryLbo;
+use crate::externs::FatRootDirectorySize;
+use crate::externs::FatUnpinBcb;
+use crate::externs::CcRepinBcb;
+use crate::externs::CcSetFileSizes;
+use crate::externs::CcUnpinData;
+use crate::externs::CcUnpinRepinnedBcb;
+// fastfat's own functions: the definition is the declaration.
+use crate::dirsup::FatGetDirentFromFcbOrDcb;
+use crate::fsctrl::FatGetNextMcbEntry;
+use crate::cachesup::FatInitializeCacheMap;
+use crate::fsctrl::FatLookupMcbEntry;
+use crate::seh::FatRaiseStatus;
+use crate::cachesup::FatReadVolumeFile;
+use crate::fsctrl::FatRemoveMcbEntry;
+use crate::cachesup::FatSetDirtyBcb;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::base::{PAGE_SIZE};
 use ntkrnl_sys::constants::*;
@@ -27,57 +52,35 @@ use crate::types::{VCB, RTL_BITMAP_DBG};
 use ntkrnl_sys::ddk::{MDL};
 
 extern "system" {
-    } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
-    fn FatRemoveMcbEntry( Vcb: *mut VCB, Mcb: *mut ntkrnl_sys::ddk::LARGE_MCB, Vbo: u32, Bytes: u32, );
+    } extern "system" {
     fn FatVerifyIndexIsValid(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, FatIndex: u32);
-    fn FatReservedBytes(Bpb: *const core::ffi::c_void) -> u32;
-    fn FatBytesPerFat(Bpb: *const core::ffi::c_void) -> u32;
     fn FatLookup12BitEntry(PinnedPage: *mut u8, FatIndex: u32, FatEntry: *mut u32);
-    fn FatReadVolumeFile( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, ByteOffset: u32, ByteLength: u32, Bcb: *mut *mut core::ffi::c_void, PinnedPage: *mut *mut u8, );
-    fn FatUnpinBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut *mut core::ffi::c_void);
-    fn FatBugCheck(value: usize, log: usize, zero: usize);
     fn FatPopUpFileCorrupt(IrpContext: *mut IRP_CONTEXT, FcbOrDcb: *mut FCB);
-    fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: u32);
 }
 extern "system" {
-    fn DbgDoit(value: *mut c_void);
-    fn DebugUnwind(FunctionName: *const i8);
     fn FatAddMcbEntry( Vcb: *mut VCB, Mcb: *mut LARGE_MCB, Vbo: u32, Lbo: i64, SectorCount: u32, ) -> i32;
     fn FatLockFreeClusterBitMap(Vcb: *mut VCB);
     fn FatPrepareWriteVolumeFile( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Offset: u32, Length: u32, Bcb: *mut *mut BCB, PinnedFat: *mut *mut c_void, RegularOperation: i32, WriteThrough: i32, );
     fn FatSet12BitEntry(PinnedFat: *mut c_void, FatIndex: u32, FatEntry: u32);
     fn FatUnlockFreeClusterBitMap(Vcb: *mut VCB);
-    fn CcRepinBcb(Bcb: *mut BCB);
-    fn CcUnpinData(Bcb: *mut BCB);
-    fn CcUnpinRepinnedBcb(Bcb: *mut BCB, WriteThrough: i32, IoStatus: *mut _IO_STATUS_BLOCK);
     fn FatGetLboFromIndex(Vcb: *mut VCB, Index: u32) -> i64; // LBO = LONGLONG (fat.h:34); was u32
     fn FatPrefetchPages(IrpContext: *mut IRP_CONTEXT, VirtualVolumeFile: *mut FILE_OBJECT, Page: u32, PrefetchPages: u32) -> u32;
-    fn FatLookupMcbEntry( Vcb: PVCB, Mcb: *mut LARGE_MCB, Vbo: u32, Lbo: PLBO, ByteCount: *mut u32, Index: *mut u32, ) -> BOOLEAN;
     fn FatLookupLastMcbEntry( Vcb: PVCB, Mcb: *mut LARGE_MCB, CurrentVbo: *mut u32, CurrentLbo: *mut i64, Runs: *mut u32, ) -> BOOLEAN;
-    fn FatGetIndexFromLbo(Vcb: PVCB, Lbo: i64) -> u32;
     fn UInt32x32To64(a: u32, b: u32) -> u64;
-    fn FatIsFat32(Vcb: *mut VCB) -> u8;
     // Vbo is `OUT PVBO` — ULONG32, four bytes. This decl said *mut u64 and its
     // locals were widened to match it, which is how a decl that contradicts the
     // header survives: rustc only ever compares a caller against the DECL.
-    fn FatGetNextMcbEntry(Vcb: *mut VCB, Mcb: *mut LARGE_MCB, McbIndex: u32, Vbo: *mut u32, Lbo: *mut u64, ByteCount: *mut u32) -> u8;
     fn FatBuildZeroMdl(IrpContext: *mut IRP_CONTEXT, ByteCount: u32) -> *mut MDL;
     fn KeClearEvent(Event: *mut KEVENT);
     fn RtlCheckBit(BitMap: *const RTL_BITMAP, Bit: u32) -> u8;
     fn FatFreeClusters(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, FatIndex: u32, ClusterCount: u32);
-    fn FatRootDirectoryLbo(Bpb: *const core::ffi::c_void) -> i64; // LBO
-    fn FatRootDirectorySize(Bpb: *const core::ffi::c_void) -> u32;
+// LBO
     fn FatFileAreaLbo(Bpb: *const core::ffi::c_void) -> i64; // LBO
     fn FatNumberOfClusters(Bpb: *const core::ffi::c_void) -> u32;
     // UCHAR in rust_cohab_fat.c: declared u32, the 64-bit arches read 24 undefined bits above
     // it, and a 64 MB FAT16 volume set itself up with 14 clusters (DISK_FULL at file 29).
     fn FatIndexBitSize(Bpb: *const core::ffi::c_void) -> u8;
-    fn FatBytesPerCluster(Bpb: *const core::ffi::c_void) -> u32;
-    fn FatInitializeCacheMap(FileObject: PFILE_OBJECT, FileSizes: *const CC_FILE_SIZES, Flag: u8, Callbacks: *const core::ffi::c_void, Vcb: *mut VCB);
-    fn FatSetDirtyBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut BCB, Vcb: *mut VCB, dirty: u8);
-fn FatGetDirentFromFcbOrDcb(irpctx: *mut IRP_CONTEXT, fcb: *mut FCB, arg2: u32, dirent: *mut *mut DIRENT, direntBcb: *mut *mut BCB);
     fn CcIsFileCached(FileObject: *mut FILE_OBJECT) -> u8;
-    fn CcSetFileSizes(FileObject: *mut FILE_OBJECT, Sizes: *mut CC_FILE_SIZES);
 }
 
 // Ex{Acquire,Release}FastMutexUnsafe are FASTCALL exports on i386 (`@Name@4`, per
@@ -87,13 +90,9 @@ fn FatGetDirentFromFcbOrDcb(irpctx: *mut IRP_CONTEXT, fcb: *mut FCB, arg2: u32, 
 // aliased in asm. The declaration was the thing that was wrong.
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
-    fn ExAcquireFastMutexUnsafe(FastMutex: *mut core::ffi::c_void);
-    fn ExReleaseFastMutexUnsafe(FastMutex: *mut core::ffi::c_void);
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
-    fn ExAcquireFastMutexUnsafe(FastMutex: *mut core::ffi::c_void);
-    fn ExReleaseFastMutexUnsafe(FastMutex: *mut core::ffi::c_void);
 }
 
 
@@ -125,7 +124,7 @@ unsafe fn FatWindowOfCluster(C: u32) -> u32 {
 
 // FAT_ENUMERATION_CONTEXT: local pinned-page state for FatLookupFatEntry
 #[repr(C)]
-struct FAT_ENUMERATION_CONTEXT {
+pub struct FAT_ENUMERATION_CONTEXT {
     VboOfPinnedPage: u32,
     Bcb: PBCB,
     PinnedPage: *mut core::ffi::c_void,
@@ -188,16 +187,16 @@ pub unsafe extern "system" fn FatSetupAllocationSupport(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
 ) {
-    DebugTrace(1, Dbg, b"FatSetupAllocationSupport\n\0".as_ptr() as *const i8, 0);
-    DebugTrace(0, Dbg, b"  Vcb = %p\n\0".as_ptr() as *const i8, Vcb as usize);
+    DebugTrace!(1, Dbg, b"FatSetupAllocationSupport\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(0, Dbg, b"  Vcb = %p\n\0".as_ptr() as *const i8, Vcb as usize);
 
-    (*Vcb).AllocationSupport.RootDirectoryLbo = FatRootDirectoryLbo(core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void) as i64;
-    (*Vcb).AllocationSupport.RootDirectorySize = FatRootDirectorySize(core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void);
+    (*Vcb).AllocationSupport.RootDirectoryLbo = FatRootDirectoryLbo((core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void).cast()) as i64;
+    (*Vcb).AllocationSupport.RootDirectorySize = FatRootDirectorySize((core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void).cast());
     (*Vcb).AllocationSupport.FileAreaLbo = FatFileAreaLbo(core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void) as i64;
     (*Vcb).AllocationSupport.NumberOfClusters = FatNumberOfClusters(core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void);
     (*Vcb).AllocationSupport.FatIndexBitSize = FatIndexBitSize(core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void) as u8;
     (*Vcb).AllocationSupport.LogOfBytesPerSector = FatLogOf((*Vcb).Bpb.BytesPerSector as u32);
-    (*Vcb).AllocationSupport.LogOfBytesPerCluster = FatLogOf(FatBytesPerCluster(core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void));
+    (*Vcb).AllocationSupport.LogOfBytesPerCluster = FatLogOf(FatBytesPerCluster((core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void).cast()));
     (*Vcb).AllocationSupport.NumberOfFreeClusters = 0;
 
     let mut ClustersDescribableByFat: u32;
@@ -218,8 +217,8 @@ pub unsafe extern "system" fn FatSetupAllocationSupport(
 
     {
         let mut FileSizes: CC_FILE_SIZES = core::mem::zeroed();
-        let size = (FatReservedBytes(core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void) as i64) +
-                   (FatBytesPerFat(core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void) as i64);
+        let size = (FatReservedBytes((core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void).cast()) as i64) +
+                   (FatBytesPerFat((core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void).cast()) as i64);
         FileSizes.AllocationSize.QuadPart = size;
         FileSizes.FileSize.QuadPart = size;
         FileSizes.ValidDataLength.QuadPart = FatMaxLarge;
@@ -227,12 +226,12 @@ pub unsafe extern "system" fn FatSetupAllocationSupport(
         if (*(*Vcb).VirtualVolumeFile).PrivateCacheMap.is_null() {
             FatInitializeCacheMap(
                 (*Vcb).VirtualVolumeFile,
-                &FileSizes,
+                &raw mut FileSizes,
                 1,
                 // The C passes the no-op callback table; NULL here would hand Cc's lazy
                 // writer / read-ahead a NULL AcquireForLazyWrite to call.
-                core::ptr::addr_of!(crate::fatdata::FatData.CacheManagerNoOpCallbacks) as *const core::ffi::c_void,
-                Vcb
+                core::ptr::addr_of_mut!(crate::fatdata::FatData.CacheManagerNoOpCallbacks),
+                (Vcb).cast()
             );
         } else {
             ntkrnl_sys::ddk::CcSetFileSizes((*Vcb).VirtualVolumeFile, &mut FileSizes);
@@ -299,7 +298,7 @@ pub unsafe extern "system" fn FatSetupAllocationSupport(
             }
         },
         |_, abnormal| {
-            DebugUnwind(b"FatSetupAllocationSupport\0".as_ptr() as *const i8);
+            DebugUnwind!(b"FatSetupAllocationSupport\0".as_ptr() as *const i8);
 
             // If we hit an exception, back out.
             if abnormal {
@@ -317,13 +316,13 @@ pub unsafe extern "system" fn FatTearDownAllocationSupport(
 ) {
     let Vcb = Vcb as PVCB;
 
-    DebugTrace(
+    DebugTrace!(
         1,
         0, /* Dbg */
         b"FatTearDownAllocationSupport\n\0".as_ptr() as *const i8,
         0usize,
     );
-    DebugTrace(
+    DebugTrace!(
         0,
         0, /* Dbg */
         b"  Vcb = %p\n\0".as_ptr() as *const i8,
@@ -349,7 +348,7 @@ pub unsafe extern "system" fn FatTearDownAllocationSupport(
         0xFFFFFFFFu32,
     );
 
-    DebugTrace(
+    DebugTrace!(
         -1,
         0, /* Dbg */
         b"FatTearDownAllocationSupport -> (VOID)\n\0".as_ptr() as *const i8,
@@ -391,37 +390,37 @@ pub unsafe extern "system" fn FatLookupFileAllocation(
 
     Vcb = (*(FcbOrDcb as *mut FCB)).Vcb;
 
-    DebugTrace(
+    DebugTrace!(
         1,
         Dbg,
         b"FatLookupFileAllocation\n\0".as_ptr() as *const i8,
         0,
     );
-    DebugTrace(
+    DebugTrace!(
         0,
         Dbg,
         b"  FcbOrDcb  = %p\n\0".as_ptr() as *const i8,
         FcbOrDcb as usize,
     );
-    DebugTrace(
+    DebugTrace!(
         0,
         Dbg,
         b"  Vbo       = %8lx\n\0".as_ptr() as *const i8,
         (Vbo) as usize,
     );
-    DebugTrace(
+    DebugTrace!(
         0,
         Dbg,
         b"  pLbo       = %8lx\n\0".as_ptr() as *const i8,
         Lbo as usize,
     );
-    DebugTrace(
+    DebugTrace!(
         0,
         Dbg,
         b"  pByteCount = %8lx\n\0".as_ptr() as *const i8,
         ByteCount as usize,
     );
-    DebugTrace(
+    DebugTrace!(
         0,
         Dbg,
         b"  pAllocated = %8lx\n\0".as_ptr() as *const i8,
@@ -440,7 +439,7 @@ pub unsafe extern "system" fn FatLookupFileAllocation(
         Vcb,
         core::ptr::addr_of_mut!((*(FcbOrDcb as *mut FCB)).Mcb),
         Vbo,
-        Lbo,
+        (Lbo).cast(),
         ByteCount,
         Index,
     ) != 0
@@ -457,13 +456,13 @@ pub unsafe extern "system" fn FatLookupFileAllocation(
             *EndOnMax = 1;
         }
 
-        DebugTrace(
+        DebugTrace!(
             0,
             Dbg,
             b"Found run in Mcb.\n\0".as_ptr() as *const i8,
             0,
         );
-        DebugTrace(
+        DebugTrace!(
             -1,
             Dbg,
             b"FatLookupFileAllocation -> (VOID)\n\0".as_ptr() as *const i8,
@@ -496,13 +495,13 @@ pub unsafe extern "system" fn FatLookupFileAllocation(
     if Vbo >= (*(FcbOrDcb as *mut FCB)).Header.AllocationSize.__bindgen_anon_1.LowPart {
         *Allocated = 0;
 
-        DebugTrace(
+        DebugTrace!(
             0,
             Dbg,
             b"Vbo beyond end of file.\n\0".as_ptr() as *const i8,
             0,
         );
-        DebugTrace(
+        DebugTrace!(
             -1,
             Dbg,
             b"FatLookupFileAllocation -> (VOID)\n\0".as_ptr() as *const i8,
@@ -523,7 +522,7 @@ pub unsafe extern "system" fn FatLookupFileAllocation(
         core::ptr::addr_of_mut!(Runs),
     ) != 0
     {
-        DebugTrace(
+        DebugTrace!(
             0,
             Dbg,
             b"Current Mcb size = %8lx.\n\0".as_ptr() as *const i8,
@@ -539,7 +538,7 @@ pub unsafe extern "system" fn FatLookupFileAllocation(
 
         Runs = Runs.wrapping_add(1);
     } else {
-        DebugTrace(0, Dbg, b"Mcb empty.\n\0".as_ptr() as *const i8, 0);
+        DebugTrace!(0, Dbg, b"Mcb empty.\n\0".as_ptr() as *const i8, 0);
 
         //
         //  Check for an FcbOrDcb that has no allocation
@@ -548,13 +547,13 @@ pub unsafe extern "system" fn FatLookupFileAllocation(
         if (*(FcbOrDcb as *mut FCB)).FirstClusterOfFile == 0 {
             *Allocated = 0;
 
-            DebugTrace(
+            DebugTrace!(
                 0,
                 Dbg,
                 b"File has no allocation.\n\0".as_ptr() as *const i8,
                 0,
             );
-            DebugTrace(
+            DebugTrace!(
                 -1,
                 Dbg,
                 b"FatLookupFileAllocation -> (VOID)\n\0".as_ptr() as *const i8,
@@ -572,7 +571,7 @@ pub unsafe extern "system" fn FatLookupFileAllocation(
 
             Runs = 0;
 
-            DebugTrace(
+            DebugTrace!(
                 0,
                 Dbg,
                 b"First Lbo of file = %8lx\n\0".as_ptr() as *const i8,
@@ -634,13 +633,13 @@ pub unsafe extern "system" fn FatLookupFileAllocation(
                         //
 
                         FatClusterAvailable | FatClusterReserved | FatClusterBad => {
-                            DebugTrace(
+                            DebugTrace!(
                                 0,
                                 Dbg,
                                 b"Break in allocation chain, entry = %d\n\0".as_ptr() as *const i8,
                                 (FatEntry) as usize,
                             );
-                            DebugTrace(
+                            DebugTrace!(
                                 -1,
                                 Dbg,
                                 b"FatLookupFileAllocation -> Fat Corrupt.  Raise Status.\n\0".as_ptr()
@@ -649,7 +648,7 @@ pub unsafe extern "system" fn FatLookupFileAllocation(
                             );
 
                             FatPopUpFileCorrupt(IrpContext, FcbOrDcb);
-                            FatRaiseStatus(IrpContext, (STATUS_FILE_CORRUPT_ERROR) as u32);
+                            FatRaiseStatus(IrpContext, (STATUS_FILE_CORRUPT_ERROR) as NTSTATUS);
                         }
 
                         //
@@ -658,7 +657,7 @@ pub unsafe extern "system" fn FatLookupFileAllocation(
                         //
 
                         FatClusterLast => {
-                            DebugTrace(
+                            DebugTrace!(
                                 0,
                                 Dbg,
                                 b"Read last cluster of file.\n\0".as_ptr() as *const i8,
@@ -677,25 +676,25 @@ pub unsafe extern "system" fn FatLookupFileAllocation(
                             LastCluster = 1;
 
                             if FirstLboOfCurrentRun != 0 {
-                                DebugTrace(
+                                DebugTrace!(
                                     0,
                                     Dbg,
                                     b"Adding a run to the Mcb.\n\0".as_ptr() as *const i8,
                                     0,
                                 );
-                                DebugTrace(
+                                DebugTrace!(
                                     0,
                                     Dbg,
                                     b"  Vbo    = %08lx.\n\0".as_ptr() as *const i8,
                                     (FirstVboOfCurrentRun) as usize,
                                 );
-                                DebugTrace(
+                                DebugTrace!(
                                     0,
                                     Dbg,
                                     b"  Lbo    = %08lx.\n\0".as_ptr() as *const i8,
                                     (FirstLboOfCurrentRun) as usize,
                                 );
-                                DebugTrace(
+                                DebugTrace!(
                                     0,
                                     Dbg,
                                     b"  Length = %08lx.\n\0".as_ptr() as *const i8,
@@ -728,7 +727,7 @@ pub unsafe extern "system" fn FatLookupFileAllocation(
                                     .AllocationSize
                                     .QuadPart = CurrentVbo as i64;
 
-                                DebugTrace(
+                                DebugTrace!(
                                     0,
                                     Dbg,
                                     b"New file allocation size = %08lx.\n\0".as_ptr() as *const i8,
@@ -765,7 +764,7 @@ pub unsafe extern "system" fn FatLookupFileAllocation(
                                     && CurrentVbo > BytesOnVolume_LowPart)
                             {
                                 FatPopUpFileCorrupt(IrpContext, FcbOrDcb);
-                                FatRaiseStatus(IrpContext, (STATUS_FILE_CORRUPT_ERROR) as u32);
+                                FatRaiseStatus(IrpContext, (STATUS_FILE_CORRUPT_ERROR) as NTSTATUS);
                             }
 
                             if PriorLbo.wrapping_add(BytesPerCluster as i64) != CurrentLbo {
@@ -777,25 +776,25 @@ pub unsafe extern "system" fn FatLookupFileAllocation(
                                 //
 
                                 if FirstLboOfCurrentRun != 0 {
-                                    DebugTrace(
+                                    DebugTrace!(
                                         0,
                                         Dbg,
                                         b"Adding a run to the Mcb.\n\0".as_ptr() as *const i8,
                                         0,
                                     );
-                                    DebugTrace(
+                                    DebugTrace!(
                                         0,
                                         Dbg,
                                         b"  Vbo    = %08lx.\n\0".as_ptr() as *const i8,
                                         (FirstVboOfCurrentRun) as usize,
                                     );
-                                    DebugTrace(
+                                    DebugTrace!(
                                         0,
                                         Dbg,
                                         b"  Lbo    = %08lx.\n\0".as_ptr() as *const i8,
                                         (FirstLboOfCurrentRun) as usize,
                                     );
-                                    DebugTrace(
+                                    DebugTrace!(
                                         0,
                                         Dbg,
                                         b"  Length = %08lx.\n\0".as_ptr() as *const i8,
@@ -831,7 +830,6 @@ pub unsafe extern "system" fn FatLookupFileAllocation(
 
                         _ => {
                             {
-                                extern "C" { fn DbgPrint(fmt: *const i8, ...) -> u32; }
                                 DbgPrint(b"[FASTFAT] LookupAlloc ILLEGAL entry=%08lx fcb=%p vbo=%08lx curvbo=%08lx bits=%u\n\0".as_ptr() as *const i8,
                                          FatEntry, FcbOrDcb, Vbo, CurrentVbo,
                                          (*(*FcbOrDcb).Vcb).AllocationSupport.FatIndexBitSize as u32);
@@ -864,13 +862,13 @@ pub unsafe extern "system" fn FatLookupFileAllocation(
             }
         },
         |_, _| {
-            DebugUnwind(b"FatLookupFileAllocation\0".as_ptr() as *const i8);
+            DebugUnwind!(b"FatLookupFileAllocation\0".as_ptr() as *const i8);
 
             // We are done reading the Fat, so unpin the last page of fat
             // that is hanging around.
             FatUnpinBcb((IrpContext).cast(), core::ptr::addr_of_mut!((*p_Context).Bcb) as *mut *mut core::ffi::c_void);
 
-            DebugTrace(
+            DebugTrace!(
                 -1,
                 Dbg,
                 b"FatLookupFileAllocation -> (VOID)\n\0".as_ptr() as *const i8,
@@ -907,9 +905,9 @@ pub unsafe extern "system" fn FatAddFileAllocation(
 
     PAGED_CODE!();
 
-    DebugTrace(1, Dbg, b"FatAddFileAllocation\n\0".as_ptr() as *const i8, (0i32) as usize);
-    DebugTrace(0, Dbg, b"  FcbOrDcb  =             %p\n\0".as_ptr() as *const i8, FcbOrDcb as usize);
-    DebugTrace(
+    DebugTrace!(1, Dbg, b"FatAddFileAllocation\n\0".as_ptr() as *const i8, (0i32) as usize);
+    DebugTrace!(0, Dbg, b"  FcbOrDcb  =             %p\n\0".as_ptr() as *const i8, FcbOrDcb as usize);
+    DebugTrace!(
         0,
         Dbg,
         b"  DesiredAllocationSize = %8lx\n\0".as_ptr() as *const i8,
@@ -923,12 +921,12 @@ pub unsafe extern "system" fn FatAddFileAllocation(
     }
 
     if DesiredAllocationSize <= (*FcbOrDcb).Header.AllocationSize.__bindgen_anon_1.LowPart {
-        DebugTrace(0, Dbg, b"Desired size within current allocation.\n\0".as_ptr() as *const i8, (0i32) as usize);
-        DebugTrace(-1, Dbg, b"FatAddFileAllocation -> (VOID)\n\0".as_ptr() as *const i8, (0i32) as usize);
+        DebugTrace!(0, Dbg, b"Desired size within current allocation.\n\0".as_ptr() as *const i8, (0i32) as usize);
+        DebugTrace!(-1, Dbg, b"FatAddFileAllocation -> (VOID)\n\0".as_ptr() as *const i8, (0i32) as usize);
         return;
     }
 
-    DebugTrace(
+    DebugTrace!(
         0,
         Dbg,
         b"InitialAllocation = %08lx.\n\0".as_ptr() as *const i8,
@@ -960,7 +958,7 @@ pub unsafe extern "system" fn FatAddFileAllocation(
                     &mut bcb,
                 );
 
-                FatSetDirtyBcb(IrpContext, bcb, vcb, ((1u8) as i32) as _);
+                FatSetDirtyBcb(IrpContext, (bcb).cast(), vcb, ((1u8) as i32) as _);
 
                 let mut desired = DesiredAllocationSize;
                 FatAllocateDiskSpace(
@@ -980,12 +978,12 @@ pub unsafe extern "system" fn FatAddFileAllocation(
                     (*FcbOrDcb).Vcb,
                     &mut (*FcbOrDcb).Mcb as *mut LARGE_MCB,
                     0,
-                    &mut first_lbo_of_file,
+                    &mut first_lbo_of_file as *mut i64 as *mut u64,
                     core::ptr::null_mut(),
                     core::ptr::null_mut(),
                 );
 
-                DebugTrace(
+                DebugTrace!(
                     0,
                     Dbg,
                     b"First Lbo of file will be %08lx.\n\0".as_ptr() as *const i8,
@@ -1067,7 +1065,7 @@ pub unsafe extern "system" fn FatAddFileAllocation(
 
         },
         |_, abnormal| {
-            DebugUnwind(b"FatAddFileAllocation\0".as_ptr() as *const i8);
+            DebugUnwind!(b"FatAddFileAllocation\0".as_ptr() as *const i8);
 
             // Give FlushFileBuffer/Cleanup a clue here, regardless of success/fail.
             SetFlag!((*FcbOrDcb).FcbState, FCB_STATE_FLUSH_FAT);
@@ -1119,7 +1117,7 @@ pub unsafe extern "system" fn FatAddFileAllocation(
                 );
             }
 
-            DebugTrace(-1, Dbg, b"FatAddFileAllocation -> (VOID)\n\0".as_ptr() as *const i8, (0i32) as usize);
+            DebugTrace!(-1, Dbg, b"FatAddFileAllocation -> (VOID)\n\0".as_ptr() as *const i8, (0i32) as usize);
         },
     );
 
@@ -1158,9 +1156,9 @@ pub unsafe extern "system" fn FatTruncateFileAllocation(
 
     // PAGED_CODE(); (skipped)
 
-    DebugTrace(1, (Dbg) as u32, b"FatTruncateFileAllocation\n\0".as_ptr() as *const i8, (0i32) as usize);
-    DebugTrace(0, (Dbg) as u32, b"  FcbOrDcb  =             %p\n\0".as_ptr() as *const i8, FcbOrDcb as usize);
-    DebugTrace(0, (Dbg) as u32, b"  DesiredAllocationSize = %8lx\n\0".as_ptr() as *const i8, DesiredAllocationSize as usize);
+    DebugTrace!(1, (Dbg) as u32, b"FatTruncateFileAllocation\n\0".as_ptr() as *const i8, (0i32) as usize);
+    DebugTrace!(0, (Dbg) as u32, b"  FcbOrDcb  =             %p\n\0".as_ptr() as *const i8, FcbOrDcb as usize);
+    DebugTrace!(0, (Dbg) as u32, b"  DesiredAllocationSize = %8lx\n\0".as_ptr() as *const i8, DesiredAllocationSize as usize);
 
     NT_ASSERT!(if (*FcbOrDcb).FcbCondition == (FcbGood) as u32 { 1 } else { 0 });
 
@@ -1176,15 +1174,15 @@ pub unsafe extern "system" fn FatTruncateFileAllocation(
         if DesiredAllocationSize == 0
             || DesiredAllocationSize >= (*FcbOrDcb).Header.AllocationSize.__bindgen_anon_1.LowPart
         {
-            DebugTrace(0, (Dbg) as u32, b"Desired size within current allocation.\n\0".as_ptr() as *const i8, (0i32) as usize);
-            DebugTrace(-1, (Dbg) as u32, b"FatTruncateFileAllocation -> (VOID)\n\0".as_ptr() as *const i8, (0i32) as usize);
+            DebugTrace!(0, (Dbg) as u32, b"Desired size within current allocation.\n\0".as_ptr() as *const i8, (0i32) as usize);
+            DebugTrace!(-1, (Dbg) as u32, b"FatTruncateFileAllocation -> (VOID)\n\0".as_ptr() as *const i8, (0i32) as usize);
             return;
         }
     }
 
     if DesiredAllocationSize == (*FcbOrDcb).Header.AllocationSize.__bindgen_anon_1.LowPart {
-        DebugTrace(0, (Dbg) as u32, b"Desired size equals current allocation.\n\0".as_ptr() as *const i8, (0i32) as usize);
-        DebugTrace(-1, (Dbg) as u32, b"FatTruncateFileAllocation -> (VOID)\n\0".as_ptr() as *const i8, (0i32) as usize);
+        DebugTrace!(0, (Dbg) as u32, b"Desired size equals current allocation.\n\0".as_ptr() as *const i8, (0i32) as usize);
+        DebugTrace!(-1, (Dbg) as u32, b"FatTruncateFileAllocation -> (VOID)\n\0".as_ptr() as *const i8, (0i32) as usize);
         return;
     }
 
@@ -1220,7 +1218,7 @@ pub unsafe extern "system" fn FatTruncateFileAllocation(
 
                 (*FcbOrDcb).FirstClusterOfFile = 0;
 
-                FatSetDirtyBcb((IrpContext).cast(), Bcb as *mut BCB, (Vcb).cast(), 1);
+                FatSetDirtyBcb((IrpContext).cast(), (Bcb as *mut BCB).cast(), (Vcb).cast(), 1);
                 UpdatedDirent = 1;
 
                 FatDeallocateDiskSpace(
@@ -1259,7 +1257,7 @@ pub unsafe extern "system" fn FatTruncateFileAllocation(
             }
         },
         |_, abnormal| {
-            DebugUnwind(b"FatTruncateFileAllocation\0".as_ptr() as *const i8);
+            DebugUnwind!(b"FatTruncateFileAllocation\0".as_ptr() as *const i8);
 
             if abnormal {
                 (*FcbOrDcb).Header.AllocationSize.__bindgen_anon_1.LowPart = UnwindInitialAllocationSize;
@@ -1284,7 +1282,7 @@ pub unsafe extern "system" fn FatTruncateFileAllocation(
 
             FatUnpinBcb((IrpContext).cast(), p_Bcb as *mut *mut core::ffi::c_void);
             SetFlag!((*FcbOrDcb).FcbState, FCB_STATE_FLUSH_FAT);
-            DebugTrace(-1, (Dbg) as u32, b"FatTruncateFileAllocation -> (VOID)\n\0".as_ptr() as *const i8, (0i32) as usize);
+            DebugTrace!(-1, (Dbg) as u32, b"FatTruncateFileAllocation -> (VOID)\n\0".as_ptr() as *const i8, (0i32) as usize);
         },
     );
 }
@@ -1298,8 +1296,8 @@ pub unsafe extern "system" fn FatLookupFileAllocationSize(
     let mut ByteCount: u32 = 0;
     let mut DontCare: u8 = 0;
 
-    DebugTrace(1, Dbg, b"FatLookupAllocationSize\n\0".as_ptr() as *const i8, 0);
-    DebugTrace(0, Dbg, b"  FcbOrDcb  =      %p\n\0".as_ptr() as *const i8, FcbOrDcb as usize);
+    DebugTrace!(1, Dbg, b"FatLookupAllocationSize\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(0, Dbg, b"  FcbOrDcb  =      %p\n\0".as_ptr() as *const i8, FcbOrDcb as usize);
 
     FatLookupFileAllocation(
         IrpContext,
@@ -1314,10 +1312,10 @@ pub unsafe extern "system" fn FatLookupFileAllocationSize(
 
     if (*FcbOrDcb).Header.FileSize.__bindgen_anon_1.LowPart > (*FcbOrDcb).Header.AllocationSize.__bindgen_anon_1.LowPart {
         FatPopUpFileCorrupt(IrpContext, FcbOrDcb);
-        FatRaiseStatus(IrpContext, (STATUS_FILE_CORRUPT_ERROR as i32) as u32);
+        FatRaiseStatus(IrpContext, (STATUS_FILE_CORRUPT_ERROR as i32) as NTSTATUS);
     }
 
-    DebugTrace(-1, Dbg, b"FatLookupFileAllocationSize -> (VOID)\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(-1, Dbg, b"FatLookupFileAllocationSize -> (VOID)\n\0".as_ptr() as *const i8, 0);
     return;
 }
 
@@ -1348,13 +1346,13 @@ pub unsafe extern "system" fn FatAllocateDiskSpace(
 
     // C: DebugTrace(+1, Dbg, ...) -- a trace, compiled out unless tracing is on. As an
     // unconditional DbgPrint it put two serial lines on every allocation (setup's file copy).
-    DebugTrace(1, Dbg, b"FatAllocateDiskSpace\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(1, Dbg, b"FatAllocateDiskSpace\n\0".as_ptr() as *const i8, 0);
 
     ntkrnl_sys::ASSERT!((AbsoluteClusterHint <= (*Vcb).AllocationSupport.NumberOfClusters + 2) && (1 != AbsoluteClusterHint));
 
     if *ByteCount == 0 {
-        DebugTrace(0, Dbg, b"Nothing to allocate.\n\0".as_ptr() as *const i8, 0);
-        DebugTrace(-1, Dbg, b"FatAllocateDiskSpace -> (VOID)\n\0".as_ptr() as *const i8, 0);
+        DebugTrace!(0, Dbg, b"Nothing to allocate.\n\0".as_ptr() as *const i8, 0);
+        DebugTrace!(-1, Dbg, b"FatAllocateDiskSpace -> (VOID)\n\0".as_ptr() as *const i8, 0);
         return;
     }
 
@@ -1384,7 +1382,7 @@ pub unsafe extern "system" fn FatAllocateDiskSpace(
             ClusterCount, *ByteCount, (*Vcb).AllocationSupport.NumberOfFreeClusters,
             (*Vcb).AllocationSupport.NumberOfClusters, AbsoluteClusterHint,
         );
-        FatRaiseStatus(IrpContext, (STATUS_DISK_FULL) as u32);
+        FatRaiseStatus(IrpContext, (STATUS_DISK_FULL) as NTSTATUS);
     }
 
     if (0 != AbsoluteClusterHint) && (AbsoluteClusterHint < ((*Vcb).AllocationSupport.NumberOfClusters + 2)) {
@@ -1510,7 +1508,7 @@ pub unsafe extern "system" fn FatAllocateDiskSpace(
                 FatAllocateClusters(IrpContext, Vcb, StartingCluster, ClusterCount);
             },
             |_, abnormal| {
-                DebugUnwind(b"FatAllocateDiskSpace\0".as_ptr() as *const i8);
+                DebugUnwind!(b"FatAllocateDiskSpace\0".as_ptr() as *const i8);
 
                 // If the allocate clusters failed, remove the run from the Mcb,
                 // unreserve the clusters, and reset the free cluster count.
@@ -1758,7 +1756,7 @@ pub unsafe extern "system" fn FatAllocateDiskSpace(
 
             },
             |_, abnormal| {
-                DebugUnwind(b"FatAllocateDiskSpace\0".as_ptr() as *const i8);
+                DebugUnwind!(b"FatAllocateDiskSpace\0".as_ptr() as *const i8);
 
                 ExReleaseResourceLite(core::ptr::addr_of_mut!((*Vcb).ChangeBitMapResource));
 
@@ -1809,7 +1807,7 @@ pub unsafe extern "system" fn FatAllocateDiskSpace(
         );
     }
 
-    DebugTrace(-1, Dbg, b"FatAllocateDiskSpace -> (VOID)\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(-1, Dbg, b"FatAllocateDiskSpace -> (VOID)\n\0".as_ptr() as *const i8, 0);
 }
 
 #[no_mangle]
@@ -1834,16 +1832,16 @@ pub unsafe extern "system" fn FatDeallocateDiskSpace(
 
     // DebugTrace calls (mapped to DbgPrint for illustration; real code would use DebugTrace)
     // We'll keep DebugTrace calls as per original but with a stub.
-    DebugTrace(1, Dbg, b"FatDeallocateDiskSpace\n\0".as_ptr() as *const i8, 0);
-    DebugTrace(0, Dbg, b"  Vcb = %p\n\0".as_ptr() as *const i8, Vcb as usize);
-    DebugTrace(0, Dbg, b"  Mcb = %p\n\0".as_ptr() as *const i8, Mcb as usize);
+    DebugTrace!(1, Dbg, b"FatDeallocateDiskSpace\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(0, Dbg, b"  Vcb = %p\n\0".as_ptr() as *const i8, Vcb as usize);
+    DebugTrace!(0, Dbg, b"  Mcb = %p\n\0".as_ptr() as *const i8, Mcb as usize);
 
     LogOfBytesPerCluster = (*Vcb).AllocationSupport.LogOfBytesPerCluster;
 
     RunsInMcb = FsRtlNumberOfRunsInLargeMcb(Mcb);
 
     if RunsInMcb == 0 {
-        DebugTrace(-1, Dbg, b"FatDeallocateDiskSpace -> (VOID)\n\0".as_ptr() as *const i8, 0);
+        DebugTrace!(-1, Dbg, b"FatDeallocateDiskSpace -> (VOID)\n\0".as_ptr() as *const i8, 0);
         return;
     }
 
@@ -2018,7 +2016,7 @@ pub unsafe extern "system" fn FatDeallocateDiskSpace(
             // Expand FatLockFreeClusterBitMap(Vcb)
             {
                 // NT_ASSERT(KeAreApcsDisabled()); // omit
-                ExAcquireFastMutexUnsafe(&mut (*(Vcb)).FreeClusterBitMapMutex as *mut _ as *mut core::ffi::c_void);
+                ExAcquireFastMutexUnsafe((&mut (*(Vcb)).FreeClusterBitMapMutex as *mut _ as *mut core::ffi::c_void).cast());
                 // ASSERT_CURRENT_WINDOW_GOOD(Vcb) - we'll inline:
                 if cfg!(debug_assertions) {
                     ntkrnl_sys::ASSERT!((*(Vcb)).FreeClusterBitMap.__bindgen_anon_1.__bindgen_anon_1.as_ref().Buffer.is_null() == false);
@@ -2141,12 +2139,12 @@ pub unsafe extern "system" fn FatDeallocateDiskSpace(
                     }
                     ntkrnl_sys::ASSERT!((*(*Vcb).CurrentWindow).ClustersFree == clear);
                 }
-                ExReleaseFastMutexUnsafe(&mut (*(Vcb)).FreeClusterBitMapMutex as *mut _ as *mut core::ffi::c_void);
+                ExReleaseFastMutexUnsafe((&mut (*(Vcb)).FreeClusterBitMapMutex as *mut _ as *mut core::ffi::c_void).cast());
             }
 
         },
         |_, abnormal| {
-            DebugUnwind(b"FatDeallocateDiskSpace\0".as_ptr() as *const i8);
+            DebugUnwind!(b"FatDeallocateDiskSpace\0".as_ptr() as *const i8);
             ExReleaseResourceLite(&mut (*Vcb).ChangeBitMapResource);
 
             // Is there any unwinding to do?
@@ -2183,7 +2181,7 @@ pub unsafe extern "system" fn FatDeallocateDiskSpace(
         },
     );
 
-    DebugTrace(-1, Dbg, b"FatDeallocateDiskSpace -> (VOID)\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(-1, Dbg, b"FatDeallocateDiskSpace -> (VOID)\n\0".as_ptr() as *const i8, 0);
 }
 
 #[no_mangle]
@@ -2200,16 +2198,16 @@ pub unsafe extern "system" fn FatSplitAllocation(
     let mut Lbo: i64 = 0;
     let mut ByteCount: u32 = 0;
 
-    DebugTrace(1, Dbg, b"FatSplitAllocation\n\0".as_ptr() as *const i8, 0);
-    DebugTrace(0, Dbg, b"  Vcb          = %p\n\0".as_ptr() as *const i8, Vcb as usize);
-    DebugTrace(0, Dbg, b"  Mcb          = %p\n\0".as_ptr() as *const i8, Mcb as usize);
-    DebugTrace(
+    DebugTrace!(1, Dbg, b"FatSplitAllocation\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(0, Dbg, b"  Vcb          = %p\n\0".as_ptr() as *const i8, Vcb as usize);
+    DebugTrace!(0, Dbg, b"  Mcb          = %p\n\0".as_ptr() as *const i8, Mcb as usize);
+    DebugTrace!(
         0,
         Dbg,
         b"  SplitAtVbo   = %8lx\n\0".as_ptr() as *const i8,
         SplitAtVbo as usize,
     );
-    DebugTrace(
+    DebugTrace!(
         0,
         Dbg,
         b"  RemainingMcb = %p\n\0".as_ptr() as *const i8,
@@ -2235,7 +2233,7 @@ pub unsafe extern "system" fn FatSplitAllocation(
                     (Vcb as *mut VCB).cast(),
                     Mcb,
                     SourceVbo,
-                    &raw mut Lbo,
+                    (&raw mut Lbo).cast(),
                     &raw mut ByteCount,
                     core::ptr::null_mut(),
                 );
@@ -2269,7 +2267,7 @@ pub unsafe extern "system" fn FatSplitAllocation(
 
         },
         |_, abnormal| {
-            DebugUnwind(b"FatSplitAllocation\0".as_ptr() as *const i8);
+            DebugUnwind!(b"FatSplitAllocation\0".as_ptr() as *const i8);
 
             // If we got an exception, we must glue back together the Mcbs.
             if abnormal {
@@ -2282,7 +2280,7 @@ pub unsafe extern "system" fn FatSplitAllocation(
                         (Vcb as *mut VCB).cast(),
                         RemainingMcb,
                         SourceVbo,
-                        &raw mut Lbo,
+                        (&raw mut Lbo).cast(),
                         &raw mut ByteCount,
                         core::ptr::null_mut(),
                     );
@@ -2296,7 +2294,7 @@ pub unsafe extern "system" fn FatSplitAllocation(
                 }
             }
 
-            DebugTrace(
+            DebugTrace!(
                 -1,
                 Dbg,
                 b"FatSplitAllocation -> (VOID)\n\0".as_ptr() as *const i8,
@@ -2322,10 +2320,10 @@ pub unsafe extern "system" fn FatMergeAllocation(
 
     // PAGED_CODE(); // could be empty or indicated
 
-    DebugTrace(1, 0, b"FatMergeAllocation\n\0".as_ptr() as *const i8, 0);
-    DebugTrace(0, 0, b"  Vcb       = %p\n\0".as_ptr() as *const i8, Vcb as usize);
-    DebugTrace(0, 0, b"  Mcb       = %p\n\0".as_ptr() as *const i8, Mcb as usize);
-    DebugTrace(0, 0, b"  SecondMcb = %p\n\0".as_ptr() as *const i8, SecondMcb as usize);
+    DebugTrace!(1, 0, b"FatMergeAllocation\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(0, 0, b"  Vcb       = %p\n\0".as_ptr() as *const i8, Vcb as usize);
+    DebugTrace!(0, 0, b"  Mcb       = %p\n\0".as_ptr() as *const i8, Mcb as usize);
+    DebugTrace!(0, 0, b"  SecondMcb = %p\n\0".as_ptr() as *const i8, SecondMcb as usize);
 
     let p_SpliceVbo = core::ptr::addr_of_mut!(SpliceVbo);
     let p_TargetVbo = core::ptr::addr_of_mut!(TargetVbo);
@@ -2341,7 +2339,7 @@ pub unsafe extern "system" fn FatMergeAllocation(
                 Vcb,
                 SecondMcb,
                 SourceVbo,
-                &mut Lbo,
+                &mut Lbo as *mut i64 as *mut u64,
                 &mut ByteCount,
                 core::ptr::null_mut(),
             ) != 0
@@ -2356,7 +2354,7 @@ pub unsafe extern "system" fn FatMergeAllocation(
                 Vcb,
                 SecondMcb,
                 0,
-                &mut Lbo,
+                &mut Lbo as *mut i64 as *mut u64,
                 core::ptr::null_mut(), // (PULONG)NULL
                 core::ptr::null_mut(),
             );
@@ -2369,7 +2367,7 @@ pub unsafe extern "system" fn FatMergeAllocation(
             );
         },
         |_, abnormal| {
-            DebugUnwind(b"FatMergeAllocation\0".as_ptr() as *const i8);
+            DebugUnwind!(b"FatMergeAllocation\0".as_ptr() as *const i8);
 
             // If we got an exception, we must remove the runs added to Mcb.
             if abnormal {
@@ -2381,7 +2379,7 @@ pub unsafe extern "system" fn FatMergeAllocation(
         },
     );
 
-    DebugTrace(-1, 0, b"FatMergeAllocation -> (VOID)\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(-1, 0, b"FatMergeAllocation -> (VOID)\n\0".as_ptr() as *const i8, 0);
 }
 #[no_mangle]
 pub unsafe extern "system" fn FatInterpretClusterType(
@@ -2396,9 +2394,9 @@ pub unsafe extern "system" fn FatInterpretClusterType(
     const FAT_CLUSTER_BAD: FAT_ENTRY = 0x0ffffff7;
 
     unsafe {
-        DebugTrace(1, Dbg as u32, b"InterpretClusterType\n\0".as_ptr() as *const i8, 0);
-        DebugTrace(0, Dbg as u32, b"  Vcb   = %p\n\0".as_ptr() as *const i8, Vcb as usize);
-        DebugTrace(0, Dbg as u32, b"  Entry = %8lx\n\0".as_ptr() as *const i8, (Entry) as usize);
+        DebugTrace!(1, Dbg as u32, b"InterpretClusterType\n\0".as_ptr() as *const i8, 0);
+        DebugTrace!(0, Dbg as u32, b"  Vcb   = %p\n\0".as_ptr() as *const i8, Vcb as usize);
+        DebugTrace!(0, Dbg as u32, b"  Entry = %8lx\n\0".as_ptr() as *const i8, (Entry) as usize);
         PAGED_CODE!();
 
         match (*Vcb).AllocationSupport.FatIndexBitSize {
@@ -2420,19 +2418,19 @@ pub unsafe extern "system" fn FatInterpretClusterType(
         }
 
         if Entry == FAT_CLUSTER_AVAILABLE {
-            DebugTrace(-1, Dbg as u32, b"FatInterpretClusterType -> FatClusterAvailable\n\0".as_ptr() as *const i8, 0);
+            DebugTrace!(-1, Dbg as u32, b"FatInterpretClusterType -> FatClusterAvailable\n\0".as_ptr() as *const i8, 0);
             return FatClusterAvailable;
         } else if Entry < FAT_CLUSTER_RESERVED {
-            DebugTrace(-1, Dbg as u32, b"FatInterpretClusterType -> FatClusterNext\n\0".as_ptr() as *const i8, 0);
+            DebugTrace!(-1, Dbg as u32, b"FatInterpretClusterType -> FatClusterNext\n\0".as_ptr() as *const i8, 0);
             return FatClusterNext;
         } else if Entry < FAT_CLUSTER_BAD {
-            DebugTrace(-1, Dbg as u32, b"FatInterpretClusterType -> FatClusterReserved\n\0".as_ptr() as *const i8, 0);
+            DebugTrace!(-1, Dbg as u32, b"FatInterpretClusterType -> FatClusterReserved\n\0".as_ptr() as *const i8, 0);
             return FatClusterReserved;
         } else if Entry == FAT_CLUSTER_BAD {
-            DebugTrace(-1, Dbg as u32, b"FatInterpretClusterType -> FatClusterBad\n\0".as_ptr() as *const i8, 0);
+            DebugTrace!(-1, Dbg as u32, b"FatInterpretClusterType -> FatClusterBad\n\0".as_ptr() as *const i8, 0);
             return FatClusterBad;
         } else {
-            DebugTrace(-1, Dbg as u32, b"FatInterpretClusterType -> FatClusterLast\n\0".as_ptr() as *const i8, 0);
+            DebugTrace!(-1, Dbg as u32, b"FatInterpretClusterType -> FatClusterLast\n\0".as_ptr() as *const i8, 0);
             return FatClusterLast;
         }
     }
@@ -2449,10 +2447,10 @@ pub unsafe extern "system" fn FatLookupFatEntry(
     unsafe {
         PAGED_CODE!();
 
-        DebugTrace(1, Dbg as u32, b"FatLookupFatEntry\n\0".as_ptr() as *const i8, (0i32) as usize);
-        DebugTrace(0, Dbg as u32, b"  Vcb      = %p\n\0".as_ptr() as *const i8, Vcb as usize);
-        DebugTrace(0, Dbg as u32, b"  FatIndex = %4x\n\0".as_ptr() as *const i8, (FatIndex) as usize);
-        DebugTrace(0, Dbg as u32, b"  FatEntry = %8lx\n\0".as_ptr() as *const i8, FatEntry as usize);
+        DebugTrace!(1, Dbg as u32, b"FatLookupFatEntry\n\0".as_ptr() as *const i8, (0i32) as usize);
+        DebugTrace!(0, Dbg as u32, b"  Vcb      = %p\n\0".as_ptr() as *const i8, Vcb as usize);
+        DebugTrace!(0, Dbg as u32, b"  FatIndex = %4x\n\0".as_ptr() as *const i8, (FatIndex) as usize);
+        DebugTrace!(0, Dbg as u32, b"  FatEntry = %8lx\n\0".as_ptr() as *const i8, FatEntry as usize);
 
         FatVerifyIndexIsValid(IrpContext, Vcb, FatIndex);
 
@@ -2461,10 +2459,10 @@ pub unsafe extern "system" fn FatLookupFatEntry(
                 FatReadVolumeFile(
                     IrpContext,
                     Vcb,
-                    FatReservedBytes(core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void),
-                    FatBytesPerFat(core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void),
-                    core::ptr::addr_of_mut!((*Context).Bcb).cast::<*mut core::ffi::c_void>(),
-                    core::ptr::addr_of_mut!((*Context).PinnedPage).cast::<*mut u8>(),
+                    FatReservedBytes((core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void).cast()),
+                    FatBytesPerFat((core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void).cast()),
+                    core::ptr::addr_of_mut!((*Context).Bcb).cast::<*mut BCB>(),
+                    core::ptr::addr_of_mut!((*Context).PinnedPage).cast::<*mut core::ffi::c_void>(),
                 );
             }
 
@@ -2473,7 +2471,7 @@ pub unsafe extern "system" fn FatLookupFatEntry(
             let OffsetIntoVolumeFile: u32;
             let PageEntryOffset: u32;
 
-            OffsetIntoVolumeFile = FatReservedBytes(core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void)
+            OffsetIntoVolumeFile = FatReservedBytes((core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void).cast())
                 + FatIndex * core::mem::size_of::<FAT_ENTRY>() as u32;
             PageEntryOffset = (OffsetIntoVolumeFile % (PAGE_SIZE) as u32) / core::mem::size_of::<FAT_ENTRY>() as u32;
 
@@ -2488,8 +2486,8 @@ pub unsafe extern "system" fn FatLookupFatEntry(
                     Vcb,
                     OffsetIntoVolumeFile & !(PAGE_SIZE as u32 - 1),
                     PAGE_SIZE as u32,
-                    core::ptr::addr_of_mut!((*Context).Bcb).cast::<*mut core::ffi::c_void>(),
-                    core::ptr::addr_of_mut!((*Context).PinnedPage).cast::<*mut u8>(),
+                    core::ptr::addr_of_mut!((*Context).Bcb).cast::<*mut BCB>(),
+                    core::ptr::addr_of_mut!((*Context).PinnedPage).cast::<*mut core::ffi::c_void>(),
                 );
 
                 (*Context).VboOfPinnedPage = OffsetIntoVolumeFile & !(PAGE_SIZE as u32 - 1);
@@ -2503,7 +2501,7 @@ pub unsafe extern "system" fn FatLookupFatEntry(
             let OffsetIntoVolumeFile: u32;
             let PageEntryOffset: u32;
 
-            OffsetIntoVolumeFile = FatReservedBytes(core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void)
+            OffsetIntoVolumeFile = FatReservedBytes((core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void).cast())
                 + FatIndex * core::mem::size_of::<u16>() as u32;
             PageEntryOffset = (OffsetIntoVolumeFile % (PAGE_SIZE) as u32) / core::mem::size_of::<u16>() as u32;
 
@@ -2518,8 +2516,8 @@ pub unsafe extern "system" fn FatLookupFatEntry(
                     Vcb,
                     OffsetIntoVolumeFile & !(PAGE_SIZE as u32 - 1),
                     PAGE_SIZE as u32,
-                    core::ptr::addr_of_mut!((*Context).Bcb).cast::<*mut core::ffi::c_void>(),
-                    core::ptr::addr_of_mut!((*Context).PinnedPage).cast::<*mut u8>(),
+                    core::ptr::addr_of_mut!((*Context).Bcb).cast::<*mut BCB>(),
+                    core::ptr::addr_of_mut!((*Context).PinnedPage).cast::<*mut core::ffi::c_void>(),
                 );
 
                 (*Context).VboOfPinnedPage = OffsetIntoVolumeFile & !(PAGE_SIZE as u32 - 1);
@@ -2530,7 +2528,7 @@ pub unsafe extern "system" fn FatLookupFatEntry(
                 .read() as u32;
         }
 
-        DebugTrace(-1, Dbg as u32, b"FatLookupFatEntry -> (VOID)\n\0".as_ptr() as *const i8, (0i32) as usize);
+        DebugTrace!(-1, Dbg as u32, b"FatLookupFatEntry -> (VOID)\n\0".as_ptr() as *const i8, (0i32) as usize);
     }
 }
 
@@ -2575,7 +2573,7 @@ pub unsafe extern "system" fn FatSetFatEntry(
                 _ => FatEntry = FAT16_DIRTY_ENTRY,
             }
         } else {
-            FatRaiseStatus(IrpContext, (STATUS_FILE_CORRUPT_ERROR) as u32);
+            FatRaiseStatus(IrpContext, (STATUS_FILE_CORRUPT_ERROR) as NTSTATUS);
             // unreachable
         }
 
@@ -2599,13 +2597,13 @@ pub unsafe extern "system" fn FatSetFatEntry(
                 // 12-bit entry mask
                 let FatEntry = FatEntry & 0xFFF;
 
-                OffsetIntoVolumeFile = FatReservedBytes(core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void) + FatIndex * 3 / 2;
+                OffsetIntoVolumeFile = FatReservedBytes((core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void).cast()) + FatIndex * 3 / 2;
 
                 FatPrepareWriteVolumeFile(
                     IrpContext,
                     Vcb,
-                    FatReservedBytes(core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void),
-                    FatBytesPerFat(core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void),
+                    FatReservedBytes((core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void).cast()),
+                    FatBytesPerFat((core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void).cast()),
                     &mut Bcb,
                     &mut PinnedFat as *mut *mut c_void,
                     RegularOperation,
@@ -2632,7 +2630,7 @@ pub unsafe extern "system" fn FatSetFatEntry(
                 let mut PinnedFatEntry32: *mut u32 = core::ptr::null_mut();
 
                 OffsetIntoVolumeFile =
-                    FatReservedBytes(core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void) + FatIndex * core::mem::size_of::<u32>() as u32;
+                    FatReservedBytes((core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void).cast()) + FatIndex * core::mem::size_of::<u32>() as u32;
 
                 FatPrepareWriteVolumeFile(
                     IrpContext,
@@ -2673,7 +2671,7 @@ pub unsafe extern "system" fn FatSetFatEntry(
                 let mut PinnedFatEntry: *mut u16 = core::ptr::null_mut();
 
                 OffsetIntoVolumeFile =
-                    FatReservedBytes(core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void) + FatIndex * core::mem::size_of::<u16>() as u32;
+                    FatReservedBytes((core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void).cast()) + FatIndex * core::mem::size_of::<u16>() as u32;
 
                 FatPrepareWriteVolumeFile(
                     IrpContext,
@@ -2705,7 +2703,7 @@ pub unsafe extern "system" fn FatSetFatEntry(
             }
         },
         |_, abnormal| {
-            DebugUnwind(b"FatSetFatEntry\0".as_ptr() as *const i8);
+            DebugUnwind!(b"FatSetFatEntry\0".as_ptr() as *const i8);
 
             // Clear the disable-dirty flag
             ClearFlag!((*IrpContext).Flags, IRP_CONTEXT_FLAG_DISABLE_DIRTY);
@@ -2727,10 +2725,10 @@ pub unsafe extern "system" fn FatSetFatEntry(
                 && !(*p_Bcb).is_null()
             {
                 let mut IgnoreStatus: _IO_STATUS_BLOCK = core::mem::zeroed();
-                CcRepinBcb(*p_Bcb);
-                CcUnpinData(*p_Bcb);
-                DbgDoit(&mut ((*IrpContext).PinCount) as *mut _ as *mut c_void); // approximate
-                CcUnpinRepinnedBcb(*p_Bcb, 1, &mut IgnoreStatus);
+                CcRepinBcb((*p_Bcb).cast());
+                CcUnpinData((*p_Bcb).cast());
+                DbgDoit!(&mut ((*IrpContext).PinCount) as *mut _ as *mut c_void); // approximate
+                CcUnpinRepinnedBcb((*p_Bcb).cast(), 1, &mut IgnoreStatus);
             } else {
                 FatUnpinBcb(IrpContext, p_Bcb as *mut *mut core::ffi::c_void);
             }
@@ -2760,17 +2758,17 @@ pub unsafe extern "system" fn FatSetFatRun(
     let mut ReleaseMutex: u8 = 0;
     let SavedStartingFatIndex: u32 = StartingFatIndex;
 
-    DebugTrace(1, Dbg, b"FatSetFatRun\n\0".as_ptr() as *const i8, 0);
-    DebugTrace(0, Dbg, b"  Vcb              = %p\n\0".as_ptr() as *const i8, Vcb as usize);
-    DebugTrace(0, Dbg, b"  StartingFatIndex = %8x\n\0".as_ptr() as *const i8, (StartingFatIndex) as usize);
-    DebugTrace(0, Dbg, b"  ClusterCount     = %8lx\n\0".as_ptr() as *const i8, (ClusterCount) as usize);
-    DebugTrace(0, Dbg, b"  ChainTogether    = %s\n\0".as_ptr() as *const i8, (if ChainTogether != 0 { b"TRUE\0".as_ptr() } else { b"FALSE\0".as_ptr() }) as usize);
+    DebugTrace!(1, Dbg, b"FatSetFatRun\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(0, Dbg, b"  Vcb              = %p\n\0".as_ptr() as *const i8, Vcb as usize);
+    DebugTrace!(0, Dbg, b"  StartingFatIndex = %8x\n\0".as_ptr() as *const i8, (StartingFatIndex) as usize);
+    DebugTrace!(0, Dbg, b"  ClusterCount     = %8lx\n\0".as_ptr() as *const i8, (ClusterCount) as usize);
+    DebugTrace!(0, Dbg, b"  ChainTogether    = %s\n\0".as_ptr() as *const i8, (if ChainTogether != 0 { b"TRUE\0".as_ptr() } else { b"FALSE\0".as_ptr() }) as usize);
 
     FatVerifyIndexIsValid(IrpContext as *mut IRP_CONTEXT, Vcb, StartingFatIndex);
     FatVerifyIndexIsValid(IrpContext as *mut IRP_CONTEXT, Vcb, StartingFatIndex + ClusterCount - 1);
 
     if ClusterCount == 0 {
-        DebugTrace(-1, Dbg, b"FatSetFatRun -> (VOID)\n\0".as_ptr() as *const i8, 0);
+        DebugTrace!(-1, Dbg, b"FatSetFatRun -> (VOID)\n\0".as_ptr() as *const i8, 0);
         return;
     }
 
@@ -2790,8 +2788,8 @@ pub unsafe extern "system" fn FatSetFatRun(
                     2 * core::mem::size_of::<*mut core::ffi::c_void>() * 2,
                 );
 
-                let fat_reserved = FatReservedBytes(core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void);
-                let fat_bytes = FatBytesPerFat(core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void);
+                let fat_reserved = FatReservedBytes((core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void).cast());
+                let fat_bytes = FatBytesPerFat((core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void).cast());
                 FatPrepareWriteVolumeFile(
                     IrpContext,
                     Vcb,
@@ -2847,7 +2845,7 @@ pub unsafe extern "system" fn FatSetFatRun(
                     let mut FatEntry: *mut u32 = core::ptr::null_mut();
                     let ClusterCountThisRun: u32;
 
-                    StartOffsetInVolume = FatReservedBytes(core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void) +
+                    StartOffsetInVolume = FatReservedBytes((core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void).cast()) +
                         StartingFatIndex * core::mem::size_of::<u32>() as u32;
 
                     if ClusterCount > MAXCOUNTCLUS {
@@ -2945,7 +2943,7 @@ pub unsafe extern "system" fn FatSetFatRun(
                 }
             } else {
                 // 16-bit FAT
-                let StartOffsetInVolume = FatReservedBytes(core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void) +
+                let StartOffsetInVolume = FatReservedBytes((core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void).cast()) +
                     StartingFatIndex * core::mem::size_of::<u16>() as u32;
                 let FinalOffsetInVolume = StartOffsetInVolume + (ClusterCount - 1) * core::mem::size_of::<u16>() as u32;
                 let NumberOfPages = (FinalOffsetInVolume / PAGE_SIZE as u32) - (StartOffsetInVolume / PAGE_SIZE as u32) + 1;
@@ -3019,7 +3017,7 @@ pub unsafe extern "system" fn FatSetFatRun(
         },
         |_, abnormal| {
             let mut i: usize = 0;
-            DebugUnwind(b"FatSetFatRun\0".as_ptr() as *const i8);
+            DebugUnwind!(b"FatSetFatRun\0".as_ptr() as *const i8);
 
             // If we still somehow have the Mutex, release it.
             if *p_ReleaseMutex != 0 {
@@ -3050,7 +3048,7 @@ pub unsafe extern "system" fn FatSetFatRun(
                 }
             }
 
-            DebugTrace(-1, Dbg, b"FatSetFatRun -> (VOID)\n\0".as_ptr() as *const i8, 0);
+            DebugTrace!(-1, Dbg, b"FatSetFatRun -> (VOID)\n\0".as_ptr() as *const i8, 0);
         },
     );
 }
@@ -3066,11 +3064,11 @@ pub unsafe extern "system" fn FatLogOf(mut value: u32) -> u8 {
     }
 
     if value != 0x1 {
-        DebugTrace(1, Dbg, c"LogOf\n".as_ptr() as *const i8, 0);
-        DebugTrace(0, Dbg, c"  Value = %8lx\n".as_ptr() as *const i8, (orig_value) as usize);
-        DebugTrace(0, Dbg, c"Received non power of 2.\n".as_ptr() as *const i8, 0);
-        DebugTrace(-1, Dbg, c"LogOf -> %8lx\n".as_ptr() as *const i8, (log as u32) as usize);
-        FatBugCheck(value as usize, log as usize, 0);
+        DebugTrace!(1, Dbg, c"LogOf\n".as_ptr() as *const i8, 0);
+        DebugTrace!(0, Dbg, c"  Value = %8lx\n".as_ptr() as *const i8, (orig_value) as usize);
+        DebugTrace!(0, Dbg, c"Received non power of 2.\n".as_ptr() as *const i8, 0);
+        DebugTrace!(-1, Dbg, c"LogOf -> %8lx\n".as_ptr() as *const i8, (log as u32) as usize);
+        FatBugCheck((value) as ULONG_PTR, (log) as ULONG_PTR, 0);
     }
 
     log
@@ -3120,8 +3118,8 @@ pub unsafe extern "system" fn FatExamineFatEntries(
     let mut fat_entry: u32 = FAT_CLUSTER_AVAILABLE;
     let mut first_fat_entry: u32 = FAT_CLUSTER_AVAILABLE;
     let mut fat_buffer: PUSHORT = core::ptr::null_mut();
-    let mut pv: *mut u8 = core::ptr::null_mut();
-    let mut bcb: *mut core::ffi::c_void = core::ptr::null_mut();
+    let mut pv: *mut core::ffi::c_void = core::ptr::null_mut();
+    let mut bcb: *mut BCB = core::ptr::null_mut();
     let mut entries_per_window: u32 = 0;
 
     let mut clusters_this_run: u32 = 0;
@@ -3225,17 +3223,17 @@ pub unsafe extern "system" fn FatExamineFatEntries(
                 FatReadVolumeFile(
                     irp_context,
                     vcb,
-                    FatReservedBytes(core::ptr::addr_of!((*vcb).Bpb) as *const core::ffi::c_void),
-                    FatBytesPerFat(core::ptr::addr_of!((*vcb).Bpb) as *const core::ffi::c_void),
-                    &mut bcb as *mut *mut core::ffi::c_void,
-                    &mut pv as *mut *mut u8,
+                    FatReservedBytes((core::ptr::addr_of!((*vcb).Bpb) as *const core::ffi::c_void).cast()),
+                    FatBytesPerFat((core::ptr::addr_of!((*vcb).Bpb) as *const core::ffi::c_void).cast()),
+                    &raw mut bcb,
+                    &raw mut pv,
                 );
                 fat_buffer = pv as PUSHORT;
                 FatLookup12BitEntry(fat_buffer as *mut u8, 0, &mut first_fat_entry);
             } else {
                 let bytes_per_entry: u32 = fat_index_bit_size >> 3;
-                fat_pages = (FatReservedBytes(core::ptr::addr_of!((*vcb).Bpb) as *const core::ffi::c_void) + FatBytesPerFat(core::ptr::addr_of!((*vcb).Bpb) as *const core::ffi::c_void) + ((PAGE_SIZE - 1)) as u32) / (PAGE_SIZE) as u32;
-                page = (FatReservedBytes(core::ptr::addr_of!((*vcb).Bpb) as *const core::ffi::c_void) + start_index * bytes_per_entry) / (PAGE_SIZE) as u32;
+                fat_pages = (FatReservedBytes((core::ptr::addr_of!((*vcb).Bpb) as *const core::ffi::c_void).cast()) + FatBytesPerFat((core::ptr::addr_of!((*vcb).Bpb) as *const core::ffi::c_void).cast()) + ((PAGE_SIZE - 1)) as u32) / (PAGE_SIZE) as u32;
+                page = (FatReservedBytes((core::ptr::addr_of!((*vcb).Bpb) as *const core::ffi::c_void).cast()) + start_index * bytes_per_entry) / (PAGE_SIZE) as u32;
                 offset = page * (PAGE_SIZE) as u32;
 
                 prefetch_pages = fat_pages - page;
@@ -3243,21 +3241,22 @@ pub unsafe extern "system" fn FatExamineFatEntries(
                     prefetch_pages = ((page + FAT_PREFETCH_PAGE_COUNT - 1) & !(FAT_PREFETCH_PAGE_COUNT - 1)) - page;
                 }
 
-                // NTDDI_VERSION >= NTDDI_WIN8 is assumed true
+                // Gated like the C #if (NTDDI_VERSION >= NTDDI_WIN8) block: compiled out at WS03.
+                #[cfg(ntddi_ge_ntddi_win8)]
                 FatPrefetchPages(irp_context, (*vcb).VirtualVolumeFile, page, prefetch_pages);
 
-                FatReadVolumeFile(irp_context, vcb, offset, PAGE_SIZE as u32, &mut bcb as *mut *mut core::ffi::c_void, &mut pv as *mut *mut u8);
+                FatReadVolumeFile(irp_context, vcb, offset, PAGE_SIZE as u32, &raw mut bcb, &raw mut pv);
 
                 if fat_index_bit_size == 32 {
                     let pu8 = pv as *mut u8;
-                    let offset_within_page = (FatReservedBytes(core::ptr::addr_of!((*vcb).Bpb) as *const core::ffi::c_void) + start_index * bytes_per_entry) % (PAGE_SIZE) as u32;
+                    let offset_within_page = (FatReservedBytes((core::ptr::addr_of!((*vcb).Bpb) as *const core::ffi::c_void).cast()) + start_index * bytes_per_entry) % (PAGE_SIZE) as u32;
                     let pu32 = (pu8.add(offset_within_page as usize)) as *mut u32;
                     let tmp = *pu32;
                     first_fat_entry = tmp & FAT32_ENTRY_MASK;
                     fat_buffer = pu32 as PUSHORT; // store as u16* for iteration
                 } else {
                     let pu8 = pv as *mut u8;
-                    let pu16 = (pu8.add((FatReservedBytes(core::ptr::addr_of!((*vcb).Bpb) as *const core::ffi::c_void) % (PAGE_SIZE) as u32) as usize)) as PUSHORT;
+                    let pu16 = (pu8.add((FatReservedBytes((core::ptr::addr_of!((*vcb).Bpb) as *const core::ffi::c_void).cast()) % (PAGE_SIZE) as u32) as usize)) as PUSHORT;
                     fat_buffer = pu16.add(2); // skip two u16 entries
                     // C reads the first entry AFTER skipping the two reserved ones.
                     first_fat_entry = *fat_buffer as u32;
@@ -3323,10 +3322,11 @@ pub unsafe extern "system" fn FatExamineFatEntries(
                             if prefetch_pages > FAT_PREFETCH_PAGE_COUNT {
                                 prefetch_pages = FAT_PREFETCH_PAGE_COUNT;
                             }
+                            #[cfg(ntddi_ge_ntddi_win8)]
                             FatPrefetchPages(irp_context, (*vcb).VirtualVolumeFile, page, prefetch_pages);
                         }
 
-                        FatReadVolumeFile(irp_context, vcb, offset, PAGE_SIZE as u32, &mut bcb as *mut *mut core::ffi::c_void, &mut pv as *mut *mut u8);
+                        FatReadVolumeFile(irp_context, vcb, offset, PAGE_SIZE as u32, &raw mut bcb, &raw mut pv);
                         fat_buffer = pv as PUSHORT;
                     }
 

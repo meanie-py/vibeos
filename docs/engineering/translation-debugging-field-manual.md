@@ -9735,6 +9735,13 @@ C half of a cohab kernel checks its invariants; the Rust half's debug code quiet
 - Before believing a `cfg`-gated block, check every symbol it calls actually **exists**. An
   `extern` declaration in the same file is not evidence, and a `// fn Foo(...)` comment header in
   the translated module means the function was skipped entirely.
+- A `#if DBG` arm whose effect a caller can OBSERVE is not debug bookkeeping, it is behaviour,
+  and this tree builds DBG=1 (`KmtIsCheckedBuild` is TRUE): make it unconditional rather than
+  `cfg(debug_assertions)`. The interlocked list removes poison the freed entry's links under
+  `#if DBG`; behind the cfg the poison never ran, and kmtest's ExDoubleList/ExSingleList read
+  live links (28 assertions). `pushlock.rs`'s `Signaled = 1` is the same fix. Copy the C's
+  value per function, too: i386's fastcall `ExfInterlockedRemoveHeadList` poisons
+  `0x0BADD0FF`, not the stdcall export's `0xBADDD0FF`.
 - Audit `#[cfg(not(debug_assertions))]` in the same pass — those are the arms that vanish.
 
 **What is NOT a hazard:** `debug_assert!(expr)` itself. It expands to
@@ -13086,6 +13093,21 @@ Every one of these passed smoke ×N and failed on the first physical board (Rasp
 
 ---
 
+### A kernel probe of a user address succeeds on arm64: FreeLDR's identity map of RAM is still live
+Symptom: arm64 only. A probe of a bogus user address from the System process reads real memory
+instead of faulting. ZwWaitForMultipleObjects' kmtest got STATUS_INVALID_HANDLE for its
+handle array at `0x42424242` (`ObWait.c:21`, wanted STATUS_ACCESS_VIOLATION), and it passed
+only while an earlier test in the same process committed 4 GB over that range.
+
+Cause: FreeLDR identity-maps RAM (VA == PA) in TTBR0, the user half, and the kernel tore down
+only the low 64 KB of it (`MiUnmapLowGuardArm64`). Every System-process thread could read
+physical memory through a user address.
+
+Fix: `MiUnmapLoaderIdentityRamArm64` (`ARM3/mminit.rs`), once the loader's memory is released.
+It clears every descriptor that IS the identity mapping of a RAM run (1 GB or 2 MB block, or a
+page) and leaves device ranges alone. That cleared 104,776 entries on a QEMU boot. The tell: a
+user VA below the RAM top that is valid in System but in no VAD.
+
 ### A loop-local the C leaves uninitialised can be carrying state between iterations
 **Symptom.** On arm64's FAT ramdisk, listing a directory of long-named files returned bare 8.3
 names (`FSEX30~1.TTF`), the same file two or three times, batches of one entry from a 16 KB
@@ -13559,6 +13581,21 @@ address, so "no page faults twice in a process" is a free end-to-end check of th
 And when a guest "never reports", read the serial *after* the harness stopped draining — a
 guest still making syscalls was cut off, not killed.
 
+### FEX guests die at start with `[MM] commit limit: refused`: FEX commits what it never touches
+**Symptom.** On a small arm64 VM, emulated processes die seconds after start with an access
+violation in CPU-layer code (`host exception c0000005 ... not the guest's`), right after a
+`[MM] commit limit: refused N pages` line; native processes are fine.
+**Cause.** The kernel charges every commit against `MmTotalCommitLimit` with no pagefile behind
+it (`ARM3/commit.rs`), and a ramdisk boot leaves little: ~161 MB at 1 GB. Upstream FEX commits
+eagerly, as is free on Windows with a pagefile: 16 MB code buffers, a 4 MB call-ret stack per
+thread recommitted at every zeroing, and its malloc (rpmalloc) whole 4 MB / 64 MB pages for one
+allocation. ~160 MB a process, almost none touched. FEX does not check the refused allocation.
+**Fix.** In vendored FEX (`vendor-patches/fex.md`, commit-on-touch): FEXCore's allocations and
+the call-ret stack are reserved and committed on first touch by the frontends'
+`OvercommitTracker`; rpmalloc commits the OS pages under each block as it hands it out (malloc'd
+memory reaches the kernel, which cannot take a commit-on-touch fault). Read live charge, not
+per-process sums of charges: zeroing and heap churn recommit the same pages over and over.
+
 ### An emulated app hangs in `ExitProcess`: a CPU-layer lock orphaned by `NtTerminateProcess(NULL)`
 
 **Symptom.** An x86-64 guest opens its window and then never exits once closed (appstorm
@@ -13905,6 +13942,20 @@ Two lessons beyond the fix:
   NtContinues back to the faulting instruction, so a handler that merely returns
   `EXCEPTION_CONTINUE_SEARCH` turns the crash into a livelock (31,511 iterations). Guard, log,
   and fix the cause.
+
+### Every i386 guest under FEX dies at `ntdll!_DebugService+0x17` with 0x80000003
+Symptom: arm64, every 32-bit guest (`LADDER_FAIL`, wanted `0x600d`) died of an unhandled
+breakpoint right after kernel32 mapped.
+
+Cause: FEX reports `int 0x2d` as a breakpoint whose `ExceptionInformation[0]` is the service
+code, with Eip already past the trailing int3. wow64's `Wow64pVeh` printed BREAKPOINT_PRINT and
+declined every service. So only calls wrapped in SEH survived: DbgPrint is wrapped, but the
+loader's `DbgLoadImageSymbols` is not. With no debugger attached, the native kernel completes
+every debug service and resumes the caller (`KdpTrap`).
+
+Fix: the VEH does the same for services 1..5 when ExceptionAddress == Eip. It sets Eax = 0,
+calls `BTCpuSetContext` and returns CONTINUE_EXECUTION. A genuine int3 (code 0, address
+Eip-1) still goes on to dispatch.
 
 ### A WoW64 thread NtContinues a native context into 32-bit compat mode
 Symptom: amd64 only. A 32-bit guest faults executing at a 32-bit address that is the LOW half
@@ -14755,6 +14806,24 @@ and SPCR names a 16550 in I/O space. Repro the whole chain with
 `VIBEOS_QEMU_HOSTILE=serial ./vibeos-cli smoke --arch amd64`. A breakpoint will
 not find this: the gdb toolkit relocates symbols from the kernel's own
 `[KRNLBASE]` serial line, which is exactly what goes missing.
+
+### x86 serial on real hardware: user-mode lines cut at 16 characters, the rest garbage
+
+**Symptom.** On the OptiPlex (a real 16550 at 115200), every user-mode print stops after
+about 16 characters (`[kernel32] DllMai`, `[WINLOGON] WinMai`) and the rest of the line is
+fragments of other prints. Kernel lines are fine. QEMU logs of the same build are clean.
+`/ONECPU` does not help.
+
+**Cause.** Two of the three writers in the entry above. kd64's `KdpStub` echo (user-mode
+prints) wrote the whole string to the transmit register back to back, never waiting for
+THRE: QEMU's UART drains instantly, but a 16550 keeps only what fits its 16-byte FIFO. And
+rtl-diag's ring-0 fast path took no lock, so a kernel print could land in the middle of
+anyone else's.
+
+**Fix.** `KdpStub` waits for THRE before each byte. All three writers take rtl-diag's
+`RtlpAcquireDebugPort` (interrupts off, bounded spin, so a holder frozen by a bugcheck
+costs garbled output, never a hang). Any new raw UART writer must do both: a QEMU-only
+test cannot tell you it is wrong.
 
 ### Localization techniques that repeatedly worked
 - **DbgPrint-bisect with REAL `DbgPrint`.** Translated `TRACE!`/`WARN!`/`DPRINT` are no-op

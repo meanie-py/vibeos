@@ -192,7 +192,9 @@ pub unsafe extern "system" fn ExInterlockedRemoveHeadList(
         core::ptr::null_mut()
     } else {
         let entry = RemoveHeadList(ListHead);
-        #[cfg(debug_assertions)]
+        // The C's `#if DBG`, and this tree builds with DBG=1 (KmtIsCheckedBuild is TRUE):
+        // gated on cfg(debug_assertions), which the release-built kernel crates never set,
+        // the poison was compiled out and ExDoubleList/ExSingleList saw live links.
         {
             (*entry).Flink = DEAD_ENTRY as PLIST_ENTRY;
             (*entry).Blink = DEAD_ENTRY as PLIST_ENTRY;
@@ -214,7 +216,9 @@ pub unsafe extern "system" fn ExInterlockedPopEntryList(
     let Enable = _ExiDisableInterruptsAndAcquireSpinlock(Lock);
 
     let ListEntry = PopEntryList(ListHead as *mut ntkrnl_sys::ddk::_SINGLE_LIST_ENTRY) as PSINGLE_LIST_ENTRY;
-    #[cfg(debug_assertions)]
+    // The C's `#if DBG`, and this tree builds with DBG=1 (KmtIsCheckedBuild is TRUE):
+    // gated on cfg(debug_assertions), which the release-built kernel crates never set,
+    // the poison was compiled out and ExDoubleList/ExSingleList saw live links.
     {
         if !ListEntry.is_null() {
             (*ListEntry).Next = DEAD_ENTRY as PSINGLE_LIST_ENTRY;
@@ -370,10 +374,12 @@ pub unsafe extern "fastcall" fn ExfInterlockedRemoveHeadList(
         core::ptr::null_mut()
     } else {
         let entry = RemoveHeadList(ListHead);
-        #[cfg(debug_assertions)]
+        // The C's `#if DBG`, and this tree builds with DBG=1 (KmtIsCheckedBuild is TRUE):
+        // gated on cfg(debug_assertions), which the release-built kernel crates never set,
+        // the poison was compiled out and ExDoubleList/ExSingleList saw live links.
         {
-            (*entry).Flink = DEAD_ENTRY as PLIST_ENTRY;
-            (*entry).Blink = DEAD_ENTRY as PLIST_ENTRY;
+            (*entry).Flink = 0x0BADD0FF as PLIST_ENTRY;
+            (*entry).Blink = 0x0BADD0FF as PLIST_ENTRY;
         }
         entry
     };
@@ -393,7 +399,9 @@ pub unsafe extern "fastcall" fn ExfInterlockedPopEntryList(
     let Enable = _ExiDisableInterruptsAndAcquireSpinlock(Lock);
 
     let ListEntry = PopEntryList(ListHead as *mut ntkrnl_sys::ddk::_SINGLE_LIST_ENTRY) as PSINGLE_LIST_ENTRY;
-    #[cfg(debug_assertions)]
+    // The C's `#if DBG`, and this tree builds with DBG=1 (KmtIsCheckedBuild is TRUE):
+    // gated on cfg(debug_assertions), which the release-built kernel crates never set,
+    // the poison was compiled out and ExDoubleList/ExSingleList saw live links.
     {
         if !ListEntry.is_null() {
             (*ListEntry).Next = DEAD_ENTRY as PSINGLE_LIST_ENTRY;

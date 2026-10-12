@@ -62,11 +62,11 @@ pub const ENUM_RECURSE: DWORD = 0x01;
 
 pub const ENUM_DIRECTORIES: DWORD = 0x02;
 
-pub type PENUMFILES_CALLBACK = unsafe extern "C" fn(
-    pFindData: PWIN32_FIND_DATAW,
-    pszFullName: PCWSTR,
-    Context: PVOID,
-) -> BOOL;
+// A C function-POINTER typedef is nullable: as a bare `fn` type, `zeroed()` of the
+// ENUMFILES_CTX holding it panicked on every attrib run (modrun found it).
+pub type PENUMFILES_CALLBACK = Option<
+    unsafe extern "C" fn(pFindData: PWIN32_FIND_DATAW, pszFullName: PCWSTR, Context: PVOID) -> BOOL,
+>;
 
 #[repr(C)]
 pub struct _ENUMFILES_CTX {
@@ -270,7 +270,7 @@ unsafe extern "C" fn EnumFilesWorker(mut EnumCtx: PENUMFILES_CTX, mut offFilePar
             }
 
             StringCchCopyW(pFilePart, cchRemaining, findFileName);
-            /* bFound = */ ((*EnumCtx).Callback)(
+            /* bFound = */ ((*EnumCtx).Callback.unwrap_unchecked())(
                 &raw mut (*EnumCtx).findData,
                 &raw mut (*EnumCtx).FullPathBuffer as *mut WCHAR as PCWSTR,
                 (*EnumCtx).Context,
@@ -298,11 +298,11 @@ unsafe extern "C" fn AttribEnumFiles(
 
     EnumContext.FileName = pszFile;
     EnumContext.Flags = fFlags;
-    EnumContext.Callback = (if (*AttribsMasks).dwMask == 0 {
+    EnumContext.Callback = Some(if (*AttribsMasks).dwMask == 0 {
         PrintAttributes as unsafe extern "C" fn(PWIN32_FIND_DATAW, PCWSTR, PVOID) -> BOOL
     } else {
         ChangeAttributes as unsafe extern "C" fn(PWIN32_FIND_DATAW, PCWSTR, PVOID) -> BOOL
-    }) as PENUMFILES_CALLBACK;
+    });
     EnumContext.Context = (if (*AttribsMasks).dwMask == 0 {
         core::ptr::null_mut::<_ATTRIBS_MASKS>()
     } else {

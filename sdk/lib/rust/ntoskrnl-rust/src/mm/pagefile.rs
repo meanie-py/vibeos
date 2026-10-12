@@ -380,7 +380,7 @@ pub unsafe extern "system" fn MmFreeSwapPage(Entry: SWAPENTRY) {
 
     MiFreeSwapPages += 1;
     MiUsedSwapPages -= 1;
-    UpdateTotalCommittedPages(-1);
+    // MmTotalCommittedPages is the commit charge (ARM3/commit.rs), not swap in use: upstream's UpdateTotalCommittedPages(-1) here is dropped.
 
     KeReleaseGuardedMutex(&mut MmPageFileCreationLock as *mut KGUARDED_MUTEX);
 }
@@ -404,7 +404,7 @@ pub unsafe extern "system" fn MmAllocSwapPage() -> SWAPENTRY {
             }
             MiUsedSwapPages += 1;
             MiFreeSwapPages -= 1;
-            UpdateTotalCommittedPages(1);
+            // (commit charge, not swap in use: upstream's UpdateTotalCommittedPages(1) dropped)
 
             KeReleaseGuardedMutex(&mut MmPageFileCreationLock as *mut KGUARDED_MUTEX);
 
@@ -798,6 +798,10 @@ pub unsafe extern "system" fn NtCreatePagingFile(
     MmPagingFile[MmNumberOfPagingFiles as usize] = paging_file as PVOID;
     MmNumberOfPagingFiles += 1;
     MiFreeSwapPages = MiFreeSwapPages + (*(paging_file as *mut ntkrnl_sys::ddk::_MMPAGING_FILE)).FreeSpace as PFN_COUNT;
+    // A pagefile is room to commit into: it raises the limit commits are charged
+    // against (ARM3/commit.rs) by its size.
+    crate::ARM3::mminit::MmTotalCommitLimit +=
+        (*(paging_file as *mut ntkrnl_sys::ddk::_MMPAGING_FILE)).FreeSpace as SIZE_T;
     KeReleaseGuardedMutex(&mut MmPageFileCreationLock as *mut KGUARDED_MUTEX);
 
     MmSwapSpaceMessage = 0;

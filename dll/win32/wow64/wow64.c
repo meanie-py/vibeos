@@ -803,6 +803,23 @@ static LONG WINAPI Wow64pVeh(EXCEPTION_POINTERS *Info)
         }
         if (C->Eax == 1 && C->Ecx && C->Ecx < 0x80000000u && C->Edx < 512)
             DbgPrint("[GUEST32] %.*s", (int)C->Edx, (const char *)(ULONG_PTR)C->Ecx);
+        /* A DebugService `int 2d` -- PRINT, PROMPT, LOAD/UNLOAD_SYMBOLS, COMMAND_STRING (1..5):
+         * FEX passes the service code (eax) as the first parameter, 0 for a genuine int3, and
+         * has already moved Eip past the int3 that follows. With no debugger attached the
+         * native kernel completes every one and resumes the caller (KdpTrap); so does this.
+         * Declined, only the services wrapped in SEH survived: DbgPrint does, but the loader's
+         * DbgLoadImageSymbols after mapping kernel32 does not, and every i386 guest died with
+         * an unhandled 0x80000003 at _DebugService+0x17. */
+        if (Info->ExceptionRecord->NumberParameters >= 1 &&
+            Info->ExceptionRecord->ExceptionInformation[0] >= 1 &&
+            Info->ExceptionRecord->ExceptionInformation[0] <= 5 &&
+            (ULONG_PTR)Info->ExceptionRecord->ExceptionAddress == (ULONG_PTR)C->Eip &&
+            Wow64pBTCpuSetContext)
+        {
+            C->Eax = 0; /* STATUS_SUCCESS */
+            Wow64pBTCpuSetContext(WOW64_CURRENT_THREAD, WOW64_CURRENT_PROCESS, NULL, C);
+            return EXCEPTION_CONTINUE_EXECUTION;
+        }
         /* Breakpoints keep the pre-E18 behaviour deliberately. FEX reports a
          * DebugService `int 2d` with ExceptionAddress == the (already
          * advanced) guest Eip but a genuine `int3` with Eip - 1, so the

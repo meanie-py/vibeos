@@ -1,0 +1,20 @@
+# where (base/applications/cmdutils/where -> where-rust, batch C). The shipped Rust diffed
+# against the pre-flip C (`python -m rustconv.c_oracle`); inputs from modrun/data.
+module: where
+variants:
+  c: '%SystemRoot%\bin\modrun\where_c.exe'
+  rust: '%SystemRoot%\system32\where.exe'
+ninja:
+- where_c
+stage:
+- src: build-{arch}/base/applications/cmdutils/where/where_c.exe
+  dest: bin/modrun/where_c.exe
+cases:
+- id: notepad
+  args: notepad.exe
+  expect:
+  - notepad.exe
+- id: pattern
+  args: /R %SystemRoot%\system32 find*.exe
+- id: missing
+  args: nosuchprogram.exe

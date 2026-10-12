@@ -105,6 +105,25 @@ First runs (measured against Windows 10.0.26100):
 Imports resolved at runtime through `GetProcAddress` are invisible to `gap`; that half
 still needs loader logging.
 
+**Owed on the export-surface tooling** (nothing implemented yet; the stubs are dormant):
+- **A non-raising stub kind** in spec2def (log once, set `ERROR_CALL_NOT_IMPLEMENTED` /
+  return `STATUS_NOT_IMPLEMENTED`), opt-in per function for APIs callers commonly probe and
+  handle failing. Needs the argument list (i386 stdcall pops its own args): take it from
+  Wine's typed `.spec` lines, mingw-w64 headers as the fallback. Raising stays the default.
+- **A stub-hit report**: rank the `WARNING: calling stub` lines across run logs; that
+  ranking is the implementation queue, so bodies are bought only for stubs real runs call.
+  Triage should classify `EXCEPTION_WINE_STUB` crashes too.
+- **api-set forwarders**: we ship no `api-ms-win-*` DLLs; upstream ReactOS's `dll/apisets`
+  generator is the thing to sync, not to rewrite.
+- **Re-measure** after any of these: `python3 tools/win10_surface.py reference` (cached in
+  `~/.cache/vibeos/win10-surface/`), then `gap` over the same 20 app folders under
+  `/mnt/c/Program Files*` and over `/mnt/c/Windows/System32/DriverStore/FileRepository`.
+
+**The oracle for this surface is real Windows 11** (2026-10-11): `vibeos-cli winref` runs
+tests built by our toolchain on a Windows 11 VM, so the expected result is measured, not
+believed. Its first payload found 104 failures that were all ours (test build and harness),
+none Windows'. See [`winref.md`](winref.md).
+
 **10.0.26100 is Windows 11** (the 24H2 base; the measuring host reports 25H2, build 26200,
 which shares it). Windows 11 kept NT 10.0 and `_WIN32_WINNT` 0x0A00, which is why the tier
 and the tool say "Win10": every number above is the gap to Windows 11, and the Windows 10

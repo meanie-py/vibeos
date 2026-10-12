@@ -1002,12 +1002,15 @@ int main(void)
          * deadline could not say which app ate the time. */
         /* availMB: free physical memory once the app has gone, so a sweep that runs the
          * machine out (an x86-64 sweep under FEX on a 1 GB arm64 VM did) shows the trend --
-         * steady means pressure, falling app after app means each one leaks. */
+         * steady means pressure, falling app after app means each one leaks.
+         * commitMB: the commit charge against its limit (the "page file" pair), which is
+         * what an allocation is now refused on. */
         MEMORYSTATUSEX ms = { sizeof ms };
         GlobalMemoryStatusEx(&ms);
-        SAY("app %s %s windows=%d first=\"%s\" hung=%d errbox=%d close=%s exit=0x%lx shell=%s machine=0x%x ms=%lu availMB=%lu\n",
+        SAY("app %s %s windows=%d first=\"%s\" hung=%d errbox=%d close=%s exit=0x%lx shell=%s machine=0x%x ms=%lu availMB=%lu commitMB=%lu/%lu\n",
             a->name, good ? "PASS" : "FAIL", got.n, first, hung, errbox, close, rc, shell ? "OK" : "DIED",
-            machine, GetTickCount() - app_t0, (unsigned long)(ms.ullAvailPhys >> 20));
+            machine, GetTickCount() - app_t0, (unsigned long)(ms.ullAvailPhys >> 20),
+            (unsigned long)((ms.ullTotalPageFile - ms.ullAvailPageFile) >> 20), (unsigned long)(ms.ullTotalPageFile >> 20));
         good ? pass++ : fail++;
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);

@@ -1,4 +1,7 @@
 use ntkrnl_sys::globals::*;
+use crate::externs::DbgPrint;
+// One declaration per external symbol: externs.rs.
+use crate::externs::RtlAssert;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{ExLocalTimeToSystemTime, ExSystemTimeToLocalTime, LARGE_INTEGER, PLARGE_INTEGER, RtlTimeFieldsToTime, RtlTimeToTimeFields, TIME_FIELDS};
@@ -9,8 +12,7 @@ use ntkrnl_sys::ddk::{CSHORT, PCSTR};
 
 extern "system" {
     fn KeGetCurrentIrql() -> KIRQL;
-    } extern "C" { fn DbgPrint(format: PCSTR, ...); } extern "system" {
-    fn RtlAssert( assert_expression: PVOID, source_file: PVOID, line_number: ULONG, message: PVOID, );
+    } extern "system" {
     static mut SharedSystemTime: u64;
 }
 
@@ -184,7 +186,7 @@ pub unsafe extern "system" fn FatFatTimeToNtTime(
                 b"drivers/filesystems/fastfat/timesup.c\0"
                     as *const u8 as *mut core::ffi::c_void,
                 262u32,
-                core::ptr::null_mut::<u8>() as *mut core::ffi::c_void,
+                (core::ptr::null_mut::<u8>() as *mut core::ffi::c_void).cast(),
             );
         }
     }
@@ -245,7 +247,7 @@ pub unsafe extern "system" fn FatGetCurrentFatTime(IrpContext: PIRP_CONTEXT) -> 
                 b"drivers/filesystems/fastfat/timesup.c\0"
                     .as_ptr() as *mut core::ffi::c_void,
                 340,
-                core::ptr::null_mut::<i8>() as *mut core::ffi::c_void,
+                (core::ptr::null_mut::<i8>() as *mut core::ffi::c_void).cast(),
             );
         }
     }
