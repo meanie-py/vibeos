@@ -21,7 +21,10 @@ const CmResourceTypeDevicePrivate: u32 = 129;
 pub unsafe extern "system" fn PciBridgeIoBase(PciData: PPCI_COMMON_HEADER) -> ULONG {
     let mut IoBase: ULONG;
 
-    let Base = (*PciData).u.type1.IOLimit as ULONG;
+    /* The C reads IOLimit here, so a closed window (base above limit, as firmware
+     * leaves an unused one) decoded as a live 4 KB window at the limit, and the
+     * bridge's real windows were then reprogrammed around that phantom. */
+    let Base = (*PciData).u.type1.IOBase as ULONG;
     let Is32Bit = ((Base & 0xF) == 1) as u8;
     IoBase = (Base & 0xF0) << 8;
 

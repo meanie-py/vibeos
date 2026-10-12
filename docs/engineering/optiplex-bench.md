@@ -109,6 +109,7 @@ is no way round that: without the prompt it boots the hard disk at once.
 | I217-LM Ethernet (8086:153A) | **Works** (2026-10-11): netstack-rust's e1000 backend drives it (`pch.rs`: PCH reset, PHY wake, MAC from RAR0), DHCP leases an address from the router and the stack's ICMP self-test pings the gateway. No interrupt yet: the Interrupt Line register reads 128, `HalGetInterruptVector` refuses it, and the worker polls. Link autonegotiation takes over 5 s after reset. The MAC (`a6:ee:e0:c0:50:12`) is locally administered, as Libreboot's GbE region ships |
 | HD Audio (8C20) | **Starts** (2026-10-11): the controller needed more than hdaudbus's 1 ms to leave reset (now 100 ms, as Linux). Codec 0 is a Realtek ALC280 with an audio function group; its `HDAUDIO\FUNC_01&VEN_10EC&DEV_0280` device has **no function driver** (none in the tree). The Haswell HDMI/DP audio controller (0C0C) starts, but its codec verbs time out |
 | PCI INTx | All routed by ACPI `_PRT` (GSI 16-23, level, active-low) |
+| PCI bus driver | `pci.sys` by default. `pcix.sys` (the `hivesys.inf` Pci `ImagePath`) also boots it to the desktop since 2026-10-12, with every device, the Renesas card behind root port 00:1c.0 and its hub included |
 
 ## Vendor drivers
 

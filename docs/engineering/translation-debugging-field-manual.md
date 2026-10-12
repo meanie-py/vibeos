@@ -14738,6 +14738,40 @@ local, and look for a read sized by one type into a variable of another.
 QEMU's smoke machines have no PCI-to-PCI bridges, so pcix's whole bridge path first ran on
 this box; the roadmap's arbiter entry lists the four bridge bugs fixed with this one.
 
+### pcix on real hardware: the device behind a bridge reads all-ones
+
+**Symptom.** A card behind a PCIe root port has sane config space and a BAR inside the
+bridge's memory window, but its registers read `ffffffff` (usbxhci: "controller wants 1023
+scratchpad pages"). At the bridge's START, pcix logs an `Old range` of I/O `e000` changed
+to the memory window, and the memory slot changed to an invalid type.
+
+**Cause.** `PciBridgeIoBase` read the IOLimit register as the base (upstream's C does the
+same). Firmware closes an unused I/O window with base above limit (`f0`/`e0`), which then
+decoded as a live 4 KB window at the limit. The START walk paired assigned ranges with slots
+by position alone, so the phantom I/O slot took the memory range and the memory window was
+written back closed.
+
+**Fix.** Read IOBase. The walk also skips a slot of the other space (I/O vs memory), so one
+missing requirement can no longer shift every slot after it.
+
+### An interrupt storm while PCI enumerates, from a driver already running the device
+
+**Symptom.** About one boot in five on the OptiPlex, an endless `[UNIATA] ch=N: SATA
+hotplug` on every port, starting exactly as pcix dumps 00:1f.2 (the AHCI controller), and
+the boot never goes further.
+
+**Cause.** pcix sizes a function's BARs by writing all-ones into them. Windows does that
+before any driver owns the function, but uniata is a boot driver that finds the controller
+by its own PCI scan and has its ISR connected first. Mid-sizing its ISR read `ffffffff`,
+took that as a connect change on every port and claimed the interrupt. The GSI is shared
+with EHCI, so EHCI's ISR never ran, the level line stayed up, and the storm starved the
+thread that would have restored the BAR. A second bug kept a real connect change firing:
+the ISR cleared PxIS before SError, and PxIS.PCS clears only once SError.DIAG.X is clear.
+
+**Fix.** pcix sizes any function whose decodes are already on the way it sizes critical
+devices, with every CPU held by `KeIpiGenericCall`. uniata ignores an all-ones status and
+clears SError first. An ISR that can share a line must treat all-ones as "not mine".
+
 ### Adding a PCI device to the arm64 QEMU rig makes UEFI PXE-boot
 - **Symptom:** the boot goes to `>>Start PXE over IPv4`, then HTTP boot, then a hang,
   immediately after adding a `-device` (e.g. `qemu-xhci`) to an arm64 boot. The OS never
