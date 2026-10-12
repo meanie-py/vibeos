@@ -56,6 +56,19 @@ PANIC_COMMON_IMPORTS = {
     "msvcrt.dll!memset",
     "msvcrt.dll!memcpy",
     "msvcrt.dll!memmove",
+    # A module that imports nothing from msvcrt (wlnotify) gets them from ntdll instead.
+    "ntdll.dll!memcmp",
+    "ntdll.dll!memset",
+    "ntdll.dll!memcpy",
+    "ntdll.dll!memmove",
+}
+# Per-module removals that were checked by hand and are dead code: the import's only user
+# is a function nothing can call. Each entry names its evidence; never add one unread.
+DEAD_IMPORTS = {
+    # Only LoadAndFormatString (the varargs trampoline) reaches FormatMessageW, and nothing
+    # calls it: its C callers are in the uncompiled misc.c and an exe exports nothing.
+    # The engine archives the shim objects, so whether lld keeps it varies by arch.
+    "sndvol32": {"kernel32.dll!FormatMessageW"},
 }
 # The engine builds a body with `-C force-frame-pointers=yes` (stack walks need them) where
 # cmake's rust_staticlib_variant did not; a frame pointer can push a big frame over the
@@ -243,13 +256,28 @@ def cmake_facts(cmake: Path, target: str) -> dict:
             if f"{target}_rust" == name or name.removesuffix("_rust") == target:
                 feats = a[2].strip('"').replace(";", " ").split()
                 facts["body"] = (a[1], feats, a[3].upper() == "TRUE")
+                if len(a) > 4:
+                    # calc/taskmgr/wordpad pass `${X_RUST_ENV}` (i386 +sse,+sse2 for the
+                    # body): the cell would build the body without it, and pe_equiv
+                    # cannot see a codegen change.
+                    facts["unknown"].append(f"rust_staticlib_variant extras {a[4:]}")
         if not a or (a[0] != target and not (cmd == "add_cd_file" and target in a)):
+            # The rewrite drops the SOURCE lists, so another target built from them
+            # (gdi32_vista_static, which gdi32 links) would be left with no sources.
+            if re.search(r"\$\{(SOURCE|PCH_SKIP_SOURCE)\}", raw):
+                facts["unknown"].append(f"{cmd} {a[0] if a else ''} shares ${{SOURCE}}")
             continue
         if cmd == "set_module_type" and "UNICODE" in a:
             facts["unicode"] = True
         if cmd == "add_cd_file":
             if "DESTINATION" in a:
-                facts["destination"] = a[a.index("DESTINATION") + 1]
+                dest = a[a.index("DESTINATION") + 1]
+                if facts["destination"] not in (None, dest):
+                    # winprint: one add_cd_file per arch, each to its own prtprocs dir.
+                    facts["unknown"].append(
+                        f"add_cd_file to both {facts['destination']} and {dest}"
+                    )
+                facts["destination"] = dest
             if "NAME_ON_CD" in a:
                 facts["name_on_cd"] = a[a.index("NAME_ON_CD") + 1]
         elif cmd not in REPLACED:
@@ -320,14 +348,11 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
         block.append(
             "# The C still compiled, in an OBJECT library whose compile the cargo link replays."
         )
-        block.append(
-            f"add_library({cell.target}_c OBJECT {' '.join(Path(c).name for c in cell.c_shims)})"
-        )
+        shims = f"{cell.target}_shims"
+        block.append(f"add_library({shims} OBJECT {' '.join(Path(c).name for c in cell.c_shims)})")
         if cell.rc_defines:
-            block.append(
-                f"target_compile_definitions({cell.target}_c PRIVATE {' '.join(cell.rc_defines)})"
-            )
-        extra.append(f"{cell.target}_c")
+            block.append(f"target_compile_definitions({shims} PRIVATE {' '.join(cell.rc_defines)})")
+        extra.append(f"{cell.target}_shims")
     if cell.rc:
         rc_name = Path(cell.rc).name
         block.append(
@@ -404,6 +429,10 @@ def model(target: str, repo: Path = REPO) -> Cell:
             raise GenError(f"{target}: {first.subsystem} exe is not modelled (native?)")
         module_kind = "Win32Exe"
     elif first.kind in ("C_MODULE_LIBRARY", "C_SHARED_LIBRARY"):
+        # A kernel-mode driver or a win32k font driver links native:, with a kernel
+        # target and no user CRT: that is KernelDll, which the generator does not model.
+        if (first.subsystem or "").startswith("native"):
+            raise GenError(f"{target}: kernel-mode {first.subsystem} module is not modelled")
         module_kind = "Win32Dll"
     else:
         raise GenError(f"{target}: link kind {first.kind}")
@@ -459,6 +488,13 @@ def model(target: str, repo: Path = REPO) -> Cell:
             shims.append(src.relative_to(repo).as_posix())
         else:
             raise GenError(f"{target}: unmodelled link input {nm}")
+    # The inputs are read from the amd64 link; an `if(ARCH ...)` that adds a file on one
+    # arch (acgenral's msys2.c, amd64 only) would compile it everywhere.
+    # The same goes for opengl32's i386-only asm trampolines: every link input must agree.
+    by_arch = {a: sorted(o.split("/")[-1] for o in links[a].inputs) for a in ARCHES}
+    if len({tuple(v) for v in by_arch.values()}) > 1:
+        odd = {a: sorted(set(v) ^ set(by_arch["amd64"])) for a, v in by_arch.items()}
+        raise GenError(f"{target}: link inputs differ by arch {odd}")
     # set_module_type(... UNICODE) is the one target-level define a user module's
     # compiles get; the OBJECT libraries that replace the target must carry it.
     rc_defines = ["UNICODE", "_UNICODE"] if facts["unicode"] else []
@@ -543,11 +579,12 @@ def build_rs(cell: Cell) -> str:
     else:
         L.append(f'        .rust_staticlib("{cell.body_crate}")')
     if cell.c_shims:
-        # Replays cmake's own compile of each file (the <m>_c OBJECT library), so the C
-        # keeps the exact flags it had: compiled with the engine's c_shims flags instead,
+        # Replays cmake's own compile of each file (the <m>_shims OBJECT library; `<m>_c`
+        # is taken: c_oracle.cmake builds the pre-flip C under that name), so the C keeps
+        # the exact flags it had. Compiled with the engine's c_shims flags instead,
         # expand's varargs shim grew an arm64 __chkstk import.
         L.append(
-            f'        .c_from_compile_db("{cell.target}_c", &['
+            f'        .c_from_compile_db("{cell.target}_shims", &['
             + ", ".join(f'"{s}"' for s in cell.c_shims)
             + "])"
         )
@@ -696,10 +733,12 @@ def check(targets: list[str], baseline: Path, repo: Path = REPO) -> int:
                 and d.startswith("imports: - ")
                 and d.split("!", 1)[-1] in I386_BUILTIN_MEM
             }
-            diffs = [d for d in diffs if d not in extra | builtins | probes]
+            dead = {d for d in diffs if d.removeprefix("imports: - ") in DEAD_IMPORTS.get(t, ())}
+            diffs = [d for d in diffs if d not in extra | builtins | probes | dead]
             note = " (+ panic_common imports)" if extra else ""
             note += " (mem intrinsics from compiler-builtins)" if builtins else ""
             note += " (+ __chkstk: frame pointers)" if probes else ""
+            note += " (- dead-code import, see DEAD_IMPORTS)" if dead else ""
             print(f"{t:14} {a:6} {'EQUIVALENT' + note if not diffs else 'DIFFERENT'}")
             for d in diffs[:12]:
                 print(f"    {d}")

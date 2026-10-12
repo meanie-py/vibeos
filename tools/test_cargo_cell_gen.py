@@ -69,6 +69,12 @@ def test_an_unknown_statement_on_the_target_is_reported(tmp_path):
     assert g.cmake_facts(f, "m")["unknown"] == ["set_target_properties"]
 
 
+def test_a_second_target_built_from_the_source_list_is_refused(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE + "add_library(m_static ${SOURCE})\n")
+    assert g.cmake_facts(f, "m")["unknown"] == ["add_library m_static shares ${SOURCE}"]
+
+
 def test_rewrite_replaces_the_link_and_keeps_the_resource_deps(tmp_path):
     f = tmp_path / "CMakeLists.txt"
     f.write_text(CMAKE)
@@ -131,8 +137,20 @@ def test_real_c_is_replayed_from_its_own_object_library(tmp_path):
     f.write_text(CMAKE)
     c = cell(c_shims=["base/m/rust_varargs_shim.c"])
     out = g.rewrite_cmake(f, c)
-    assert "add_library(m_c OBJECT rust_varargs_shim.c)" in out
-    assert "target_compile_definitions(m_c PRIVATE UNICODE _UNICODE)" in out
-    assert "EXTRA_DEPENDS m_c m_res" in out
-    assert '.c_from_compile_db("m_c", &["base/m/rust_varargs_shim.c"])' in g.build_rs(c)
+    assert "add_library(m_shims OBJECT rust_varargs_shim.c)" in out
+    assert "target_compile_definitions(m_shims PRIVATE UNICODE _UNICODE)" in out
+    assert "EXTRA_DEPENDS m_shims m_res" in out
+    assert '.c_from_compile_db("m_shims", &["base/m/rust_varargs_shim.c"])' in g.build_rs(c)
     assert ".c_shims(" not in g.build_rs(c)
+
+
+def test_arch_specific_cmake_is_refused(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    # calc: an i386-only RUSTFLAGS for the body the cell would silently drop.
+    f.write_text(CMAKE.replace('"" TRUE)', '"" TRUE ${M_RUST_ENV})'))
+    assert g.cmake_facts(f, "m")["unknown"] == ["rust_staticlib_variant extras ['${M_RUST_ENV}']"]
+    # winprint: a different CD destination per arch.
+    f.write_text(CMAKE + "add_cd_file(TARGET m DESTINATION reactos/other FOR all)\n")
+    assert g.cmake_facts(f, "m")["unknown"] == [
+        "add_cd_file to both reactos/system32 and reactos/other"
+    ]
