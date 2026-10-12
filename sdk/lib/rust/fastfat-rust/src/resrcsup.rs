@@ -1,5 +1,11 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
+// One declaration per external symbol: externs.rs.
+use crate::externs::FatReleaseFcb;
+use crate::externs::FatReleaseVcb;
+use crate::externs::ExAcquireResourceSharedLite;
+// fastfat's own functions: the definition is the declaration.
+use crate::filobsup::FatDecodeFileObject;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ddk::{ExAcquireResourceExclusiveLite, ExAcquireSharedWaitForExclusive, ExGetExclusiveWaiterCount, ExGetSharedWaiterCount, ExIsResourceAcquiredSharedLite, ExReleaseResourceLite, _KWAIT_REASON_Executive, FS_FILTER_CALLBACK_DATA, IoGetTopLevelIrp, IoSetTopLevelIrp, KeWaitForSingleObject, PDEVICE_OBJECT, PFILE_OBJECT, PFSRTL_COMMON_FCB_HEADER, PFS_FILTER_CALLBACK_DATA, PIRP, PLARGE_INTEGER, PsGetCurrentThread};
@@ -10,11 +16,6 @@ use ntkrnl_sys::ddk::{DEVICE_OBJECT, FILE_OBJECT, FSRTL_COMMON_FCB_HEADER, IRP};
 
 extern "system" {
     fn FatVerifyOperationIsLegal(IrpContext: *mut IRP_CONTEXT);
-    fn FatReleaseVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
-    fn ExAcquireResourceSharedLite(Resource: *mut ERESOURCE, Wait: u8) -> u8;
-    fn FatReleaseFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
-    fn NodeType(fcb: *mut FCB) -> u32;
-    fn FatDecodeFileObject( FileObject: PFILE_OBJECT, Vcb: *mut PVCB, Fcb: *mut PFCB, Ccb: *mut PCCB, ) -> TYPE_OF_OPEN;
     fn KeGetCurrentIrql() -> u8;
     fn DbgBreakPoint();
 }
@@ -321,8 +322,8 @@ pub unsafe extern "system" fn FatReleaseFcbFromLazyWrite(Fcb: *mut core::ffi::c_
 
     // Assert that this really is an fcb and that this thread really owns
     // the lazy writer mark in the fcb.
-    let node_type = NodeType(fcb_ptr);
-    NT_ASSERT!((node_type == FAT_NTC_FCB) as i32);
+    let node_type = NodeType!((fcb_ptr).cast());
+    NT_ASSERT!((node_type == (FAT_NTC_FCB as u16)) as i32);
 
     let cur_thread = PsGetCurrentThread();
     NT_ASSERT!((!cur_thread.is_null()) as i32);
@@ -434,8 +435,8 @@ pub unsafe extern "system" fn FatAcquireForCcFlush(
     Type = FatDecodeFileObject(
         FileObject,
         core::ptr::addr_of_mut!(Vcb),
-        core::ptr::addr_of_mut!(Fcb),
-        core::ptr::addr_of_mut!(Ccb),
+        (core::ptr::addr_of_mut!(Fcb)).cast(),
+        (core::ptr::addr_of_mut!(Ccb)).cast(),
     );
 
     Header = (*FileObject).FsContext as PFSRTL_COMMON_FCB_HEADER;
@@ -481,8 +482,8 @@ pub unsafe extern "system" fn FatReleaseForCcFlush(
     type_ = FatDecodeFileObject(
         file_object,
         core::ptr::addr_of_mut!(vcb) as *mut PVCB,
-        core::ptr::addr_of_mut!(fcb) as *mut PFCB,
-        core::ptr::addr_of_mut!(ccb) as *mut PCCB,
+        (core::ptr::addr_of_mut!(fcb) as *mut PFCB).cast(),
+        (core::ptr::addr_of_mut!(ccb) as *mut PCCB).cast(),
     ) as i32;
     header = (*file_object).FsContext as *mut FSRTL_COMMON_FCB_HEADER;
 

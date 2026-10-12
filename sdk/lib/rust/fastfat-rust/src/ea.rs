@@ -1,4 +1,11 @@
 use ntkrnl_sys::globals::*;
+// One declaration per external symbol: externs.rs.
+use crate::externs::CanFsdWait;
+use crate::externs::FatCompleteRequest;
+// fastfat's own functions: the definition is the declaration.
+use crate::strucsup::FatCreateIrpContext;
+use crate::fatdata::FatIsIrpTopLevel;
+use crate::fatdata::FatProcessException;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ddk::{_IO_STATUS_BLOCK, IoSetTopLevelIrp, PFILE_GET_EA_INFORMATION, PIRP};
@@ -11,12 +18,7 @@ use ntkrnl_sys::ddk::{FILE_FULL_EA_INFORMATION, OEM_STRING, ULONG_PTR};
 use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem};
 
 extern "system" {
-    fn FatCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: NTSTATUS);
-    } extern "C" { fn DebugTrace(arg1: i32, arg2: u32, fmt: *const i8, ...); } extern "system" {
-    fn FatIsIrpTopLevel(Irp: *mut IRP) -> BOOLEAN;
-    fn CanFsdWait(Irp: *mut IRP) -> BOOLEAN;
-    fn FatCreateIrpContext(Irp: *mut IRP, CanWait: u32) -> PIRP_CONTEXT;
-    fn FatProcessException(IrpContext: PIRP_CONTEXT, Irp: *mut IRP, ExceptionCode: u32) -> NTSTATUS;
+    } extern "system" {
 }
 
 // ---- file-scope preamble (translated) ----
@@ -415,10 +417,10 @@ pub unsafe extern "system" fn FatFsdSetEa(
     let mut IrpContext: PIRP_CONTEXT = core::ptr::null_mut();
     let TopLevel: BOOLEAN;
 
-    DebugTrace(1, 0u32, b"FatFsdSetEa\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(1, 0u32, b"FatFsdSetEa\n\0".as_ptr() as *const i8, 0);
 
     FsRtlEnterFileSystem();
-    TopLevel = FatIsIrpTopLevel(Irp);
+    TopLevel = (FatIsIrpTopLevel(Irp)) as u8;
 
     // _SEH2_TRY { ... } _SEH2_EXCEPT(FatExceptionFilter(IrpContext, ...)) { FatProcessException }
     let p_status = core::ptr::addr_of_mut!(Status);
@@ -427,14 +429,14 @@ pub unsafe extern "system" fn FatFsdSetEa(
         *p_irp_context = FatCreateIrpContext(Irp, (CanFsdWait(Irp)) as _);
         *p_status = FatCommonSetEa(*p_irp_context, (Irp).cast());
     }) {
-        Status = FatProcessException(IrpContext, Irp, code as u32);
+        Status = FatProcessException(IrpContext, Irp, (code) as NTSTATUS);
     }
 
     if TopLevel != 0 {
         IoSetTopLevelIrp(core::ptr::null_mut());
     }
     FsRtlExitFileSystem();
-    DebugTrace(-1, 0u32, b"FatFsdSetEa -> %08lx\n\0".as_ptr() as *const i8, Status);
+    DebugTrace!(-1, 0u32, b"FatFsdSetEa -> %08lx\n\0".as_ptr() as *const i8, Status);
     let _ = VolumeDeviceObject;
     Status
 }
@@ -789,9 +791,9 @@ pub unsafe extern "system" fn FatFsdQueryEa(
     let mut Status: NTSTATUS = 0;
     let mut IrpContext: PIRP_CONTEXT = core::ptr::null_mut();
     let TopLevel: BOOLEAN;
-    DebugTrace(1, 0u32, b"FatFsdQueryEa\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(1, 0u32, b"FatFsdQueryEa\n\0".as_ptr() as *const i8, 0);
     FsRtlEnterFileSystem();
-    TopLevel = FatIsIrpTopLevel(Irp);
+    TopLevel = (FatIsIrpTopLevel(Irp)) as u8;
     // _SEH2_TRY { ... } _SEH2_EXCEPT(FatExceptionFilter(IrpContext, ...)) { FatProcessException }
     let p_status = core::ptr::addr_of_mut!(Status);
     let p_irp_context = core::ptr::addr_of_mut!(IrpContext);
@@ -799,10 +801,10 @@ pub unsafe extern "system" fn FatFsdQueryEa(
         *p_irp_context = FatCreateIrpContext(Irp, (CanFsdWait(Irp)) as _);
         *p_status = FatCommonQueryEa(*p_irp_context, Irp);
     }) {
-        Status = FatProcessException(IrpContext, Irp, code as u32);
+        Status = FatProcessException(IrpContext, Irp, (code) as NTSTATUS);
     }
     if TopLevel != 0 { IoSetTopLevelIrp(core::ptr::null_mut()); }
     FsRtlExitFileSystem();
-    DebugTrace(-1, 0u32, b"FatFsdQueryEa -> %08lx\n\0".as_ptr() as *const i8, Status);
+    DebugTrace!(-1, 0u32, b"FatFsdQueryEa -> %08lx\n\0".as_ptr() as *const i8, Status);
     Status
 }

@@ -1057,10 +1057,10 @@ unsafe extern "C" fn QSI_SystemPerformanceInformation(Buffer: PVOID, Size: ULONG
     }
 
     (*Spi).AvailablePages = ntkrnl_sys::mm::MmAvailablePages as ULONG;
+    // The commit charge and the limit it is checked against (ARM3/commit.rs). Upstream
+    // reported pages in use against physical + swap, which no allocation ever consulted.
     (*Spi).CommittedPages = ntkrnl_sys::mm::MmTotalCommittedPages as ULONG;
-    (*Spi).CommitLimit = (ntkrnl_sys::mm::MmNumberOfPhysicalPages
-        + MiFreeSwapPages as PFN_NUMBER
-        + MiUsedSwapPages as PFN_NUMBER) as ULONG;
+    (*Spi).CommitLimit = ntkrnl_sys::mm::MmTotalCommitLimit as ULONG;
     (*Spi).PeakCommitment = ntkrnl_sys::mm::MmPeakCommitment as ULONG;
     (*Spi).PageFaultCount = 0;
     (*Spi).CopyOnWriteCount = 0;

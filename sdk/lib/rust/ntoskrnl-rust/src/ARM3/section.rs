@@ -700,6 +700,10 @@ unsafe fn MiSegmentDelete(segment: PSEGMENT) {
         pointer_pte = pointer_pte.add(1);
     }
     MiReleasePfnLock(old_irql);
+    // A pagefile-backed segment's commit charge (commit.rs) dies with it.
+    if ((*control_area).u.Flags.Image() == 0) && ((*control_area).FilePointer.is_null()) {
+        super::commit::MiReturnCommitment((*segment).NumberOfCommittedPages as usize, core::ptr::null_mut());
+    }
     ExFreePool(control_area as PVOID);
     ExFreePool(segment as PVOID);
 }
@@ -1073,6 +1077,13 @@ unsafe fn MiMapViewOfDataSection(
     (*vad).LastContiguousPte = (*subsection).SubsectionBase.add(pte_offset as usize);
     status = STATUS_SUCCESS;
     if quota_charge != 0 {
+        // Charged whole before any prototype PTE changes, the excess handed back
+        // after (commit.rs); the section, not the mapper, holds it.
+        if !super::commit::MiChargeCommitment(quota_charge as usize, core::ptr::null_mut()) {
+            ExFreePoolWithTag(vad as PVOID, 0x6C646156);
+            MiDereferenceControlArea(control_area);
+            return super::commit::STATUS_COMMITMENT_LIMIT;
+        }
         let mut pointer_pte = (*vad).FirstPrototypePte as PMMPTE;
         let last_pte = pointer_pte.add(BYTES_TO_PAGES(commit_size) as usize);
         let temp_pte = *(core::ptr::addr_of!((*segment).SegmentPteTemplate) as *const MMPTE);
@@ -1089,6 +1100,7 @@ unsafe fn MiMapViewOfDataSection(
         quota_charge -= quota_excess;
         (*segment).NumberOfCommittedPages += quota_charge;
         KeReleaseGuardedMutex(&mut MmSectionCommitMutex as *mut _ as PKGUARDED_MUTEX);
+        super::commit::MiReturnCommitment(quota_excess as usize, core::ptr::null_mut());
     }
     let mut start_address = if !(*base_address).is_null() {
         ALIGN_DOWN_BY((*base_address) as ULONG_PTR, granularity)
@@ -1104,6 +1116,7 @@ unsafe fn MiMapViewOfDataSection(
         KeAcquireGuardedMutex(&mut MmSectionCommitMutex as *mut _ as PKGUARDED_MUTEX);
         (*segment).NumberOfCommittedPages -= quota_charge;
         KeReleaseGuardedMutex(&mut MmSectionCommitMutex as *mut _ as PKGUARDED_MUTEX);
+        super::commit::MiReturnCommitment(quota_charge as usize, core::ptr::null_mut());
         return status;
     }
     // ZeroBits mask form (64-bit, value > 32): the value IS the address
@@ -1129,6 +1142,7 @@ unsafe fn MiMapViewOfDataSection(
         KeAcquireGuardedMutex(&mut MmSectionCommitMutex as *mut _ as PKGUARDED_MUTEX);
         (*segment).NumberOfCommittedPages -= quota_charge;
         KeReleaseGuardedMutex(&mut MmSectionCommitMutex as *mut _ as PKGUARDED_MUTEX);
+        super::commit::MiReturnCommitment(quota_charge as usize, core::ptr::null_mut());
         PsReturnProcessNonPagedPoolQuota(PsGetCurrentProcess() as PVOID, core::mem::size_of::<_MMVAD_LONG>());
         return status;
     }
@@ -1167,13 +1181,20 @@ unsafe fn MiCreatePagingFileMap(
         return STATUS_SECTION_TOO_BIG;
     }
     let pte_count = ((maximum_size + PAGE_SIZE as u64 - 1) >> PAGE_SHIFT) as PFN_COUNT;
-    if (allocation_attributes & SEC_COMMIT) != 0 {}
+    // A SEC_COMMIT section is committed whole at creation, so it is charged whole
+    // here (no process: it outlives its creator) and given back by MiSegmentDelete;
+    // SEC_RESERVE pages are charged as views commit them. Upstream left this empty.
+    let commit_charge = if (allocation_attributes & SEC_COMMIT) != 0 { pte_count as usize } else { 0 };
+    if !super::commit::MiChargeCommitment(commit_charge, core::ptr::null_mut()) {
+        return super::commit::STATUS_COMMITMENT_LIMIT;
+    }
     let new_segment = ExAllocatePoolWithTag(
         PagedPool,
         core::mem::size_of::<_SEGMENT>() + core::mem::size_of::<MMPTE>() * (pte_count as usize - 1),
         0x744D6D4D,
     ) as PSEGMENT;
     if new_segment.is_null() {
+        super::commit::MiReturnCommitment(commit_charge, core::ptr::null_mut());
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     *segment = new_segment;
@@ -1184,6 +1205,7 @@ unsafe fn MiCreatePagingFileMap(
     ) as *mut _CONTROL_AREA;
     if control_area.is_null() {
         ExFreePoolWithTag(new_segment as PVOID, 0x744D6D4D);
+        super::commit::MiReturnCommitment(commit_charge, core::ptr::null_mut());
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     RtlZeroMemory(control_area as PVOID, core::mem::size_of::<_CONTROL_AREA>() + core::mem::size_of::<_SUBSECTION>());

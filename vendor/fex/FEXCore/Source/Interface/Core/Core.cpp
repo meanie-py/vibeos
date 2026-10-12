@@ -500,7 +500,7 @@ void ContextImpl::ClearCodeCache(FEXCore::Core::InternalThreadState* Thread, boo
     auto lk = Thread->LookupCache->AcquireWriteLock();
     Thread->LookupCache->ClearCache(lk);
   }
-  Allocator::VirtualDontNeed(Thread->CallRetStackBase, FEXCore::Core::InternalThreadState::CALLRET_STACK_SIZE);
+  Allocator::VirtualDontNeed(Thread->CallRetStackBase, FEXCore::Core::InternalThreadState::CALLRET_STACK_SIZE, false); // VIBEOS PATCH: no recommit, the frontend commits on touch (CallRetStack.h)
 }
 
 static void IRDumper(FEXCore::Core::InternalThreadState* Thread, IR::IREmitter* IREmitter, uint64_t GuestRIP) {
@@ -992,7 +992,7 @@ void ContextImpl::InvalidateThreadCachedCodeRange(FEXCore::Core::InternalThreadS
     FEXCORE_PROFILE_SCOPED("InvalidateCallRet");
 
     // This may cause access violations in the thread on Windows as zeroing is not atomic, this is handled by the frontend
-    Allocator::VirtualDontNeed(Thread->CallRetStackBase, FEXCore::Core::InternalThreadState::CALLRET_STACK_SIZE);
+    Allocator::VirtualDontNeed(Thread->CallRetStackBase, FEXCore::Core::InternalThreadState::CALLRET_STACK_SIZE, false); // VIBEOS PATCH: no recommit, the frontend commits on touch (CallRetStack.h)
   }
 }
 

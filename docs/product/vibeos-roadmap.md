@@ -626,6 +626,17 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   passed in 128 other gate boots. A lost wakeup between `KeAlertThread`/APC insertion and the
   wait's alertable check is the first place to look.
 
+- **`apc32.exe` rung 7: kernel panic in `KiInsertQueueApc` (FLAKE, open, 2026-10-11).** Just
+  after "rung7 16 threads terminated", ntoskrnl panicked at `ke/apc.rs:138`, "index out of
+  bounds: the len is 2 but the index is 2". That is `ApcStatePointer[(*Apc).ApcStateIndex]`
+  with index 2, `CurrentApcEnvironment`. `KeInitializeApc` resolves that value (apc.rs:491), so
+  the likelier source is line 135: for an `InsertApcEnvironment` APC it copies the THREAD's own
+  `ApcStateIndex`. A KTHREAD whose index reads 2 is being torn down or already freed, and only
+  this thread-kill storm reaches that. Seen once: amd64 queue gate
+  `queue-batch-01791758650912626247/20261011-184411-z164r63f-gate-*`, which rejected
+  warnings-burndown b8eac0dccad2, a fastfat-only change. 58 other boots today passed the same
+  rung. Start with who can queue an APC to a thread that is exiting (special-pool the KTHREAD).
+
 - **OptiPlex USB 3 card: root hub sometimes never enumerates, and the boot stalls (FIXED
   2026-10-11, rare trigger not yet seen again on the board).** The stalled boot's log shows
   `[XHCI] start: controller did not halt (USBSTS 10)`: usbxhci gave the Renesas card 20 ms

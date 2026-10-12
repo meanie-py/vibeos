@@ -997,42 +997,73 @@ def wowx64_cpu_stale(repo: Path) -> list[str]:
     return newer
 
 
-def _refresh_wowx64_cpu(run, repo: Path) -> bool:
-    """Rebuild libwowx64fex.dll when its sources moved. False = hard failure.
+# The out-of-tree FEX builds mkramdisk stages from, in dependency order: the vendored FEX
+# (libFEXCore.a + the i386 guests' libwow64fex.dll, staged on EVERY arm64 image), then the
+# x86-64 CPU layer and the probe harness, which both link that libFEXCore.a.
+FEX_OUT_OF_TREE = (
+    # The default target, not just wow64fex: that links FEXCore's objects directly, and
+    # libFEXCore.a, which the CPU layer and the probes link, is a target of its own.
+    ("fex", "build-fex-arm64", [], "tools/fex/build-fex.sh"),
+    ("wowx64-cpu", "build-fex-hello/wowx64fex", [], "tools/fex/build-hello-compute.sh"),
+    (
+        "fex-probes",
+        "build-fex-hello",
+        ["fexprobe", "wow64probe"],
+        "tools/fex/build-hello-compute.sh",
+    ),
+)
 
-    It is built out of tree (tools/fex/build-hello-compute.sh) and mkramdisk stages
-    whatever DLL is there, so an edited Module.cpp shipped the OLD plugin with a
-    green build: the new contract version or export is then missing at run time and
-    every x86-64 guest dies at launch, a whole boot later (2026-10-09, contract v4).
+
+def _refresh_wowx64_cpu(run, repo: Path) -> bool:
+    """Bring the out-of-tree FEX builds up to date before mkramdisk stages them. False =
+    hard failure.
+
+    They are built outside the ReactOS graph and mkramdisk stages whatever is there, so
+    an edit shipped the OLD binary with a green build: the CPU layer's new contract
+    version or export went missing at run time and every x86-64 guest died at launch, a
+    whole boot later (2026-10-09, contract v4), and a patch to vendored FEX reached no
+    image at all until someone remembered build-fex.sh (2026-10-11, commit on touch).
+    ninja decides what is stale from its own dependency graph; a tree that was never
+    built is left to mkramdisk, which reports its binaries MISSING loudly.
     """
-    stale = wowx64_cpu_stale(repo)
-    if not stale:
-        run.add(Stage("wowx64-cpu", status="ok", detail="current"))
-        return True
-    # The script's toolchain, for a cmake re-run the edit triggers.
     env = dict(os.environ)
     env["PATH"] = f"{repo / '.build-tools/llvm-mingw/bin'}{os.pathsep}{env.get('PATH', '')}"
-    cp = run.run(
-        ["ninja", "-C", str(repo / WOWX64_CPU_DLL.parent)],
-        cwd=repo,
-        env=env,
-        stage="wowx64-cpu",
-        timeout=900,
-    )
+    for stage, tree, targets, script in FEX_OUT_OF_TREE:
+        if not (repo / tree / "build.ninja").is_file():
+            run.add(Stage(stage, status="skip", detail=f"{tree} not configured (run: {script})"))
+            continue
+        cp = run.run(
+            ["ninja", "-C", str(repo / tree), *targets],
+            cwd=repo,
+            env=env,
+            stage=stage,
+            timeout=1800,
+        )
+        if cp.returncode != 0:
+            run.classification = "CPU_LAYER_BUILD_FAIL"
+            run.add(
+                Stage(
+                    stage,
+                    exit=cp.returncode,
+                    status="fail",
+                    detail=f"ninja in {tree} failed",
+                    salient=[f"run: {script}"],
+                )
+            )
+            return False
+        run.add(Stage(stage, status="ok", detail="current"))
     left = wowx64_cpu_stale(repo)
-    if cp.returncode != 0 or left:
+    if left:
         run.classification = "CPU_LAYER_BUILD_FAIL"
         run.add(
             Stage(
                 "wowx64-cpu",
-                exit=cp.returncode,
                 status="fail",
-                detail=f"{WOWX64_CPU_DLL} older than its sources and the rebuild did not fix it",
-                salient=[*(left or stale)[:4], "run: tools/fex/build-hello-compute.sh"],
+                detail=f"{WOWX64_CPU_DLL} older than its sources after ninja",
+                salient=[*left[:4], "run: tools/fex/build-hello-compute.sh"],
             )
         )
         return False
-    run.add(Stage("wowx64-cpu", status="ok", detail=f"rebuilt ({len(stale)} source(s) newer)"))
     return True
 
 
