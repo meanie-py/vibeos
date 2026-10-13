@@ -102,11 +102,40 @@ extends it from the boot spine to every fully-Rust module.
        and a slice of the nightly surface, but that triple links `rsbegin.o`
        (wants libgcc's `___register_frame_info`), and the lint, orchestrator and
        `cargo-cell-args.sh` replays must learn the target too.
-   - Then teach it the refusals, biggest first: 121 modules whose body crate is not named
-     by `rust_staticlib_variant` (older glue), 46 with a statement it does not model
-     (`target_compile_definitions`, `set_target_properties`, `set_wine_module_fixme`,
-     `target_link_options`), 8 with delay imports, 1 native exe (autochk), plus the
-     wave-2 refusals above.
+   - **Wave 3, 2026-10-13: 22 modules** the generator learned to accept: chcp,
+     chkdsk, cmd_help, console, dbgprint, extrac32, fltlib, hid, imm32, logon, mmc,
+     mode, more, msiexec, progman, reg, regedit, route, taskkill, tree, wmic, xcopy.
+     What it learned:
+     - **The body is the variant the module links**, not the one named
+       `<target>_rust` (cmd_help_rust for help.exe): the `lib<name>.a` in the link
+       edge names it. A variant another target still links stays in the CMakeLists.
+     - **Compile settings move to the OBJECT libraries.**
+       `target_compile_definitions` / `_include_directories` / `_compile_options` /
+       `set_wine_module[_FIXME]` on the target are re-aimed at `<m>_res` and
+       `<m>_shims`, so the rc and C compile as cmake compiled them.
+       `set_target_properties` that only sets SUFFIX / OUTPUT_NAME / PREFIX is
+       dropped: the cell takes the output name from the link edge.
+     - **Library order follows cmake's.** A user module links its body before
+       `uuid`/`wine`; the engine put cmake-built libs before the Rust (ntdll and the
+       kernel need that), so regedit's duplicate CLSIDs resolved to uuid's and
+       link_guard refused. `static_libs_after_body` takes what cmake linked after.
+     - **A link edge is found by its config suffix**: `cmd_\S*` had matched
+       cmd_help's edge for cmd.exe. Waves 1 and 2 were not affected: a wrong edge
+       saves the wrong module as the baseline and pe_equiv would have failed.
+     - `--save-baseline` writes `targets.json` (target -> output), because a target
+       is not always its file name.
+   - **Not this generator's job**: 34 refusals are kernel drivers and kernel static
+     libraries (the USB stack, file systems, storport, ks, …) that build their Rust
+     with their own custom command; they are the driver rung (`KernelDll` and
+     driver kinds). The 95 keyboard layouts are one `foreach` over a shared
+     `kbdlayouts-rust` body: a family cell, not 95 generated ones, is the open
+     design question.
+   - **The user-mode refusals left** (`--survey`, after wave 3): delay imports (9);
+     RPC stub C that widl generates into the build dir, `srvsvc_s.c` and kin (8,
+     the services); a `SOURCE` list another target builds (6); the i386 body's
+     `+sse,+sse2` ENV (5: calc, taskmgr, wordpad, 3dtext, format); `add_driver_inf`
+     (4); per-arch link inputs or destinations (3); native exes (autochk and one
+     more).
 3. **Give the C static libraries a cargo home.** `uuid` becomes a GUID crate generated
    from the same IDL/headers; `wine` (vendored libwine) and `conutils` are small. Until
    then cells link the cmake-built `.a` (`static_libs`), which keeps them cmake-bound.

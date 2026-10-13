@@ -170,3 +170,46 @@ def test_the_panic_handler_follows_what_cmake_linked_per_arch():
     assert f"#[cfg(not({on}))]\n    return panic_lean::panic_lean(" in rs
     assert f"[target.'cfg({on})'.dependencies]\npanic-common" in toml
     assert "panic_lean" not in g.main_rs(cell())
+
+
+def test_the_body_is_the_variant_the_module_links(tmp_path):
+    # help.exe's target is cmd_help and its body variant cmd_help_rust; a module whose
+    # variant is named otherwise is matched by the lib<name>.a in its link.
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(
+        CMAKE.replace(
+            "rust_staticlib_variant(m_rust m-rust", "rust_staticlib_variant(odd_rust m-rust"
+        )
+    )
+    assert g.cmake_facts(f, "m")["body"] is None
+    facts = g.cmake_facts(f, "m", ["base/m/libodd_rust.a"])
+    assert facts["body"] == ("m-rust", [], True) and facts["body_var"] == "odd_rust"
+
+
+def test_a_target_made_in_a_loop_is_refused(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE.replace("add_executable(m ", "add_executable(${_layout} "))
+    assert "target made in a loop or function" in g.cmake_facts(f, "m")["unknown"]
+
+
+def test_compile_settings_move_to_the_object_libraries(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(
+        CMAKE
+        + "target_compile_definitions(m PRIVATE _CRT_NON_CONFORMING_SWPRINTFS)\n"
+        + 'set_target_properties(m PROPERTIES SUFFIX ".com")\n'
+    )
+    assert g.cmake_facts(f, "m")["unknown"] == []
+    out = g.rewrite_cmake(f, cell())
+    assert "target_compile_definitions(m_res PRIVATE _CRT_NON_CONFORMING_SWPRINTFS)" in out
+    assert "(m PRIVATE _CRT" not in out and "SUFFIX" not in out
+
+
+def test_libs_cmake_linked_after_the_body_stay_after_it():
+    libs = {a: ["sdk/lib/crt/oldnames.a", "sdk/lib/uuid/libuuid.a"] for a in g.ARCHES}
+    late = {a: ["sdk/lib/uuid/libuuid.a"] for a in g.ARCHES}
+    rs = g.build_rs(cell(static_libs=libs, late_libs=late))
+    assert '"x86" => &["sdk/lib/crt/oldnames.a"],' in rs
+    assert '"x86" => &["sdk/lib/uuid/libuuid.a"],' in rs
+    assert ".static_libs_after_body(late_libs)" in rs
+    assert ".static_libs_after_body" not in g.build_rs(cell())

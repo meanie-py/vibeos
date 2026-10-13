@@ -96,6 +96,25 @@ REPLACED = (
     "add_dependencies",
 )
 
+# Statements that set how the target's sources compile. The rewrite re-aims each at the
+# OBJECT libraries that now hold those compiles (`<m>_res`, `<m>_shims`), so the rc and C
+# the cell replays are compiled exactly as cmake compiled them for the target.
+TRANSFERRED = (
+    "target_compile_definitions",
+    "target_include_directories",
+    "target_compile_options",
+    "set_wine_module_fixme",
+    "set_wine_module",
+)
+# Properties that only name the output file, which the cell already takes from the link
+# edge (chcp.com, help.exe for cmd_help).
+NAME_PROPERTIES = {"SUFFIX", "OUTPUT_NAME", "PREFIX"}
+# Statements naming the target that neither link nor compile it.
+KEPT = ("project",)
+
+# cmake's build configurations, as they suffix a ninja link rule name.
+CONFIGS = "(?:Debug|Release|RelWithDebInfo|MinSizeRel)"
+
 
 class GenError(Exception):
     pass
@@ -140,6 +159,11 @@ class Cell:
     # Per arch: did cmake's link carry the body's panic handler? Only then does the cell
     # take panic_common (and with it all of core); otherwise panic-lean.
     panics: dict[str, bool] = field(default_factory=lambda: dict.fromkeys(ARCHES, True))
+    # The rust_staticlib_variant that builds the body; "" means `<target>_rust`.
+    body_var: str = ""
+    # Per arch, the static libs cmake linked AFTER the body (they lose a duplicate
+    # definition to it); the rest of `static_libs` precede it.
+    late_libs: dict[str, list[str]] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
 
 
@@ -159,7 +183,8 @@ def _ccdb(path: Path) -> list:
 def link_edge(arch: str, target: str, repo: Path = REPO) -> Link:
     ninja = _read(repo / f"build-{arch}/build.ninja")
     m = re.search(
-        rf"^build (\S+): (C_\w+?)_LINKER__{re.escape(target)}_\S*( .*)?\n((?:  .*\n)+)",
+        # The config suffix anchors the name: `cmd_\S*` also matched cmd_help's edge.
+        rf"^build (\S+): (C_\w+?)_LINKER__{re.escape(target)}_{CONFIGS}( .*)?\n((?:  .*\n)+)",
         ninja,
         re.M,
     )
@@ -251,27 +276,29 @@ def _args(s: str) -> list[str]:
     return re.findall(r'"[^"]*"|\S+', s)
 
 
-def cmake_facts(cmake: Path, target: str) -> dict:
+def cmake_facts(cmake: Path, target: str, libs: list[str] | None = None) -> dict:
+    """What the CMakeLists says about `target`. `libs` (the link edge's libraries) names
+    the body when its rust_staticlib_variant is not called `<target>_rust`: the variant
+    whose `lib<name>.a` the module actually links (cmd_help_rust for help.exe)."""
     text = cmake.read_text()
     facts: dict = {
         "destination": None,
         "name_on_cd": None,
         "body": None,
+        "body_var": "",
+        "transfer": [],
         "unknown": [],
         "unicode": False,
     }
+    variants = {}
+    linked = {lib.split("/")[-1] for lib in libs or []}
+    defined = False
     for _s, _e, cmd, raw in _statements(text):
         a = _args(raw)
         if cmd == "rust_staticlib_variant" and len(a) >= 4:
-            name = a[0]
-            if f"{target}_rust" == name or name.removesuffix("_rust") == target:
-                feats = a[2].strip('"').replace(";", " ").split()
-                facts["body"] = (a[1], feats, a[3].upper() == "TRUE")
-                if len(a) > 4:
-                    # calc/taskmgr/wordpad pass `${X_RUST_ENV}` (i386 +sse,+sse2 for the
-                    # body): the cell would build the body without it, and pe_equiv
-                    # cannot see a codegen change.
-                    facts["unknown"].append(f"rust_staticlib_variant extras {a[4:]}")
+            variants[a[0]] = a
+        if cmd in ("add_executable", "add_library") and a and a[0] == target:
+            defined = True
         if not a or (a[0] != target and not (cmd == "add_cd_file" and target in a)):
             # The rewrite drops the SOURCE lists, so another target built from them
             # (gdi32_vista_static, which gdi32 links) would be left with no sources.
@@ -291,9 +318,44 @@ def cmake_facts(cmake: Path, target: str) -> dict:
                 facts["destination"] = dest
             if "NAME_ON_CD" in a:
                 facts["name_on_cd"] = a[a.index("NAME_ON_CD") + 1]
-        elif cmd not in REPLACED:
+        elif cmd.lower() in TRANSFERRED:
+            facts["transfer"].append(raw)
+        elif cmd == "set_target_properties" and _names_only(a):
+            pass  # the output name comes from the link edge
+        elif cmd not in REPLACED and cmd not in KEPT:
             facts["unknown"].append(cmd)
+    if not defined:
+        # The keyboard layouts are made in a foreach over `${_keyboard_layout}`: there is
+        # no statement of the target's own to replace.
+        facts["unknown"].append("target made in a loop or function")
+    named = [n for n in variants if n in (f"{target}_rust",) or n.removesuffix("_rust") == target]
+    named = named or [n for n in variants if f"lib{n}.a" in linked]
+    if len(named) == 1:
+        a = variants[named[0]]
+        feats = a[2].strip('"').replace(";", " ").split()
+        facts["body"] = (a[1], feats, a[3].upper() == "TRUE")
+        facts["body_var"] = named[0]
+        if len(a) > 4:
+            # calc/taskmgr/wordpad pass `${X_RUST_ENV}` (i386 +sse,+sse2 for the body):
+            # the cell would build the body without it, and pe_equiv cannot see a
+            # codegen change.
+            facts["unknown"].append(f"rust_staticlib_variant extras {a[4:]}")
+    elif len(named) > 1:
+        facts["unknown"].append(f"several bodies {named}")
     return facts
+
+
+def _names_only(a: list[str]) -> bool:
+    """set_target_properties(<t> PROPERTIES K V ...) touching only the output name."""
+    if len(a) < 4 or a[1] != "PROPERTIES" or len(a) % 2:
+        return False
+    return all(k in NAME_PROPERTIES for k in a[2::2])
+
+
+def _retarget(cmd: str, raw: str, new: str) -> str:
+    """A transferred statement (`raw` is its argument text), re-aimed at `new`."""
+    first = _args(raw)[0]
+    return f"{cmd}({raw.strip().replace(first, new, 1)})"
 
 
 def rewrite_cmake(cmake: Path, cell: Cell) -> str:
@@ -301,6 +363,13 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
     text = cmake.read_text()
     keep, pos = [], 0
     body_lib = None
+    body_var = cell.body_var or f"{cell.target}_rust"
+    transferred: list[tuple[str, str]] = []
+    shared = any(
+        re.search(rf"\$\{{{body_var}_LIB\}}|rust_{body_var}\b", raw)
+        for _s, _e, _cmd, raw in _statements(text)
+        if _args(raw)[:1] != [cell.target] and _cmd != "rust_staticlib_variant"
+    )
     # `# main.c  # replaced by Rust (...)` lines are how cohab_census and the coverage
     # tools know a TU was translated: whatever statement held them, they are kept.
     carried: list[str] = []
@@ -317,8 +386,14 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
             and (a[0] == cell.target or (cmd == "add_cd_file" and cell.target in a))
         ):
             drop = True
-        if cmd == "rust_staticlib_variant" and a and a[0].removesuffix("_rust") == cell.target:
-            drop, body_lib = True, a[0]
+        if a and a[0] == cell.target and cmd.lower() in TRANSFERRED:
+            drop = True  # re-emitted below, on the OBJECT libraries
+            transferred.append((cmd, raw))
+        if a and a[0] == cell.target and cmd == "set_target_properties" and _names_only(a):
+            drop = True
+        if cmd == "rust_staticlib_variant" and a and a[0] == body_var:
+            # Kept when another target still links it (a body two modules share).
+            drop, body_lib = not shared, a[0]
         if (
             cmd == "list"
             and len(a) > 2
@@ -342,7 +417,7 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
         pos = e
     keep.append(text[pos:])
     out = "".join(keep).lstrip("\n")
-    if body_lib and re.search(rf"\$\{{{body_lib}_LIB\}}|rust_{body_lib}\b", out):
+    if body_lib and not shared and re.search(rf"\$\{{{body_lib}_LIB\}}|rust_{body_lib}\b", out):
         raise GenError(f"{cmake}: something else still uses {body_lib}")
     out = re.sub(r"\n{3,}", "\n\n", out).rstrip() + "\n"
     block = [
@@ -379,6 +454,10 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
             f"target_include_directories({cell.target}_res PRIVATE ${{CMAKE_CURRENT_SOURCE_DIR}})"
         )
         extra.append(f"{cell.target}_res")
+    objlibs = [x for x in extra if x in (f"{cell.target}_shims", f"{cell.target}_res")]
+    if transferred and objlibs:
+        block.append("# How cmake compiled the target's sources, now on the OBJECT libraries.")
+        block += [_retarget(c, r, lib) for lib in objlibs for c, r in transferred]
     every = sorted({lib for libs in cell.static_libs.values() for lib in libs})
     by_arch = {a: set(libs) for a, libs in cell.static_libs.items()}
     common = [lib for lib in every if all(lib in by_arch[a] for a in ARCHES)]
@@ -430,7 +509,7 @@ def model(target: str, repo: Path = REPO) -> Cell:
     cmake = cmake_dir / "CMakeLists.txt"
     if not cmake.exists():
         raise GenError(f"{target}: no {cmake.relative_to(repo)}")
-    facts = cmake_facts(cmake, target)
+    facts = cmake_facts(cmake, target, first.libs)
     if facts["unknown"]:
         raise GenError(f"{target}: unmodelled statements on the target: {facts['unknown']}")
     if not facts["body"]:
@@ -448,15 +527,20 @@ def model(target: str, repo: Path = REPO) -> Cell:
     else:
         raise GenError(f"{target}: link kind {first.kind}")
     specs = spec_index(repo)
-    body_ar = f"lib{target}_rust.a"
+    body_ar = f"lib{facts['body_var']}.a"
     per_arch: dict[str, tuple] = {}
+    late: dict[str, list[str]] = {a: [] for a in ARCHES}
     for a in ARCHES:
         imports, static, msvcrtex = [], [], None
+        after_body = False
         for lib in links[a].libs:
             name = lib.split("/")[-1]
             # Only the module's OWN body is the cell's rust_staticlib; another crate's
             # `_rust.a` (subst's libconutils_rust.a) is a library like any other.
-            if name == body_ar or "libclang_rt" in lib:
+            if name == body_ar:
+                after_body = True
+                continue
+            if "libclang_rt" in lib:
                 continue
             m = re.fullmatch(r"libmsvcrtex_(\w+)\.a", name)
             if m:
@@ -473,6 +557,8 @@ def model(target: str, repo: Path = REPO) -> Cell:
                 continue
             if lib not in static:
                 static.append(lib)
+                if after_body:
+                    late[a].append(lib)
         per_arch[a] = (tuple(imports), tuple(static), msvcrtex)
     if len({(v[0], v[2]) for v in per_arch.values()}) > 1:
         raise GenError(f"{target}: imports or CRT differ by arch (not modelled)")
@@ -539,6 +625,8 @@ def model(target: str, repo: Path = REPO) -> Cell:
         destination=facts["destination"],
         name_on_cd=facts["name_on_cd"],
         panics=panics,
+        body_var=facts["body_var"],
+        late_libs=late,
     )
 
 
@@ -575,10 +663,14 @@ def build_rs(cell: Cell) -> str:
     L.append(f'        o => panic!("{cell.target}-cargo: unsupported arch {{o}}"),')
     L.append("    };")
     L.append("")
-    if any(cell.static_libs.values()):
-        L.append("    let static_libs: &[&str] = match arch.as_str() {")
+    late = {a: cell.late_libs.get(a, []) for a in ARCHES}
+    early = {a: [x for x in cell.static_libs[a] if x not in late[a]] for a in ARCHES}
+    for var, table in (("static_libs", early), ("late_libs", late)):
+        if not any(table.values()):
+            continue
+        L.append(f"    let {var}: &[&str] = match arch.as_str() {{")
         for a in ARCHES:
-            libs = ", ".join(f'"{x}"' for x in cell.static_libs[a])
+            libs = ", ".join(f'"{x}"' for x in table[a])
             L.append(f'        "{TRIPLE[a]}" => &[{libs}],')
         L.append("        _ => unreachable!(),")
         L.append("    };")
@@ -609,9 +701,12 @@ def build_rs(cell: Cell) -> str:
         L.append("        .spec_stubs()")
     for spec, dllname, base in cell.import_libs:
         L.append(f'        .import_lib("{spec}", "{dllname}", "{base}")')
-    if any(cell.static_libs.values()):
+    if any(early.values()):
         L.append("        // cmake-built static libraries, reused until each has a cargo home.")
         L.append("        .static_libs(static_libs)")
+    if any(late.values()):
+        L.append("        // ...and those cmake linked after the body, in the same order.")
+        L.append("        .static_libs_after_body(late_libs)")
     if cell.msvcrtex:
         L.append(f"        .msvcrtex_crt(MsvcrtexKind::{cell.msvcrtex})")
     if cell.stack:
@@ -769,12 +864,23 @@ def _cell_uses_panic_common(target: str, arch: str, repo: Path) -> bool:
     return bool(m) and f'"{CFG_ARCH[arch]}"' in m.group(1)
 
 
+def _baseline_pe(baseline: Path, arch: str, target: str) -> list[Path]:
+    """The saved cmake-built PE(s) for target. The index --save-baseline writes knows
+    the output name (cmd_help links help.exe); older baselines fall back to a glob."""
+    index = baseline / "targets.json"
+    if index.exists():
+        out = json.loads(index.read_text()).get(target, {}).get(arch)
+        if out:
+            return [baseline / arch / out]
+    return list((baseline / arch).rglob(f"{target}.*"))
+
+
 def reshell(targets: list[str], baseline: Path, repo: Path = REPO) -> None:
     """Re-choose an existing cell's panic handler from the cmake-built PEs in `baseline`."""
     for t in targets:
         panics = {}
         for a in ARCHES:
-            olds = list((baseline / a).rglob(f"{t}.*"))
+            olds = _baseline_pe(baseline, a, t)
             if len(olds) != 1:
                 raise GenError(f"{t} {a}: {len(olds)} baseline candidates")
             panics[a] = carries_panic_handler(olds[0])
@@ -821,7 +927,7 @@ def check(targets: list[str], baseline: Path, repo: Path = REPO) -> int:
     bad = 0
     for t in targets:
         for a in ARCHES:
-            olds = list((baseline / a).rglob(f"{t}.*"))
+            olds = _baseline_pe(baseline, a, t)
             if len(olds) != 1:
                 print(f"{t:14} {a:6} NO BASELINE ({len(olds)} candidates)")
                 bad += 1
@@ -914,12 +1020,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = ap.parse_args(argv)
     if args.save_baseline:
+        index_path = args.save_baseline / "targets.json"
+        index = json.loads(index_path.read_text()) if index_path.exists() else {}
         for t in args.targets:
             for a in ARCHES:
                 out = link_edge(a, t).output
                 dst = args.save_baseline / a / out
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 dst.write_bytes((REPO / f"build-{a}" / out).read_bytes())
+                index.setdefault(t, {})[a] = out
+        index_path.parent.mkdir(parents=True, exist_ok=True)
+        index_path.write_text(json.dumps(index, indent=1, sort_keys=True))
         print(f"saved {len(args.targets)} modules x {len(ARCHES)} arches")
         return 0
     if args.check:
