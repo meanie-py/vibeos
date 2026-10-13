@@ -56,6 +56,19 @@ PANIC_COMMON_IMPORTS = {
     "msvcrt.dll!memset",
     "msvcrt.dll!memcpy",
     "msvcrt.dll!memmove",
+    # A module that imports nothing from msvcrt (wlnotify) gets them from ntdll instead.
+    "ntdll.dll!memcmp",
+    "ntdll.dll!memset",
+    "ntdll.dll!memcpy",
+    "ntdll.dll!memmove",
+}
+# Per-module removals that were checked by hand and are dead code: the import's only user
+# is a function nothing can call. Each entry names its evidence; never add one unread.
+DEAD_IMPORTS = {
+    # Only LoadAndFormatString (the varargs trampoline) reaches FormatMessageW, and nothing
+    # calls it: its C callers are in the uncompiled misc.c and an exe exports nothing.
+    # The engine archives the shim objects, so whether lld keeps it varies by arch.
+    "sndvol32": {"kernel32.dll!FormatMessageW"},
 }
 # The engine builds a body with `-C force-frame-pointers=yes` (stack walks need them) where
 # cmake's rust_staticlib_variant did not; a frame pointer can push a big frame over the
@@ -63,6 +76,14 @@ PANIC_COMMON_IMPORTS = {
 STACK_PROBE_IMPORTS = {"kernel32.dll!__chkstk", "ntdll.dll!__chkstk"}
 # What compiler-builtins' `mem` feature defines on i386 (see check()).
 I386_BUILTIN_MEM = {"memcmp", "memcpy", "memmove", "memset", "strlen", "bcmp"}
+# How much more the loader may map for a cargo-linked module than for cmake's: the cell's
+# own handler, startup and section padding. All of core is ~200 KB on amd64.
+SIZE_SLACK = 16 * 1024
+# i386 only, and only where the cell keeps panic_common: the cell builds its own core
+# (nightly build-std on the kernel json) beside the body's i686-pc-windows-gnu one, so
+# the handler links a second copy of core::fmt, measured at 70-78 KB. The fix is a
+# user-target i386 cell (owed: docs/engineering/cargo-drive-plan.md).
+I386_SECOND_CORE = 80 * 1024
 # Statements on the target that the cargo cell replaces outright.
 REPLACED = (
     "add_executable",
@@ -116,6 +137,9 @@ class Cell:
     rc_defines: list[str]
     destination: str | None
     name_on_cd: str | None
+    # Per arch: did cmake's link carry the body's panic handler? Only then does the cell
+    # take panic_common (and with it all of core); otherwise panic-lean.
+    panics: dict[str, bool] = field(default_factory=lambda: dict.fromkeys(ARCHES, True))
     notes: list[str] = field(default_factory=list)
 
 
@@ -243,13 +267,28 @@ def cmake_facts(cmake: Path, target: str) -> dict:
             if f"{target}_rust" == name or name.removesuffix("_rust") == target:
                 feats = a[2].strip('"').replace(";", " ").split()
                 facts["body"] = (a[1], feats, a[3].upper() == "TRUE")
+                if len(a) > 4:
+                    # calc/taskmgr/wordpad pass `${X_RUST_ENV}` (i386 +sse,+sse2 for the
+                    # body): the cell would build the body without it, and pe_equiv
+                    # cannot see a codegen change.
+                    facts["unknown"].append(f"rust_staticlib_variant extras {a[4:]}")
         if not a or (a[0] != target and not (cmd == "add_cd_file" and target in a)):
+            # The rewrite drops the SOURCE lists, so another target built from them
+            # (gdi32_vista_static, which gdi32 links) would be left with no sources.
+            if re.search(r"\$\{(SOURCE|PCH_SKIP_SOURCE)\}", raw):
+                facts["unknown"].append(f"{cmd} {a[0] if a else ''} shares ${{SOURCE}}")
             continue
         if cmd == "set_module_type" and "UNICODE" in a:
             facts["unicode"] = True
         if cmd == "add_cd_file":
             if "DESTINATION" in a:
-                facts["destination"] = a[a.index("DESTINATION") + 1]
+                dest = a[a.index("DESTINATION") + 1]
+                if facts["destination"] not in (None, dest):
+                    # winprint: one add_cd_file per arch, each to its own prtprocs dir.
+                    facts["unknown"].append(
+                        f"add_cd_file to both {facts['destination']} and {dest}"
+                    )
+                facts["destination"] = dest
             if "NAME_ON_CD" in a:
                 facts["name_on_cd"] = a[a.index("NAME_ON_CD") + 1]
         elif cmd not in REPLACED:
@@ -320,14 +359,11 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
         block.append(
             "# The C still compiled, in an OBJECT library whose compile the cargo link replays."
         )
-        block.append(
-            f"add_library({cell.target}_c OBJECT {' '.join(Path(c).name for c in cell.c_shims)})"
-        )
+        shims = f"{cell.target}_shims"
+        block.append(f"add_library({shims} OBJECT {' '.join(Path(c).name for c in cell.c_shims)})")
         if cell.rc_defines:
-            block.append(
-                f"target_compile_definitions({cell.target}_c PRIVATE {' '.join(cell.rc_defines)})"
-            )
-        extra.append(f"{cell.target}_c")
+            block.append(f"target_compile_definitions({shims} PRIVATE {' '.join(cell.rc_defines)})")
+        extra.append(f"{cell.target}_shims")
     if cell.rc:
         rc_name = Path(cell.rc).name
         block.append(
@@ -404,6 +440,10 @@ def model(target: str, repo: Path = REPO) -> Cell:
             raise GenError(f"{target}: {first.subsystem} exe is not modelled (native?)")
         module_kind = "Win32Exe"
     elif first.kind in ("C_MODULE_LIBRARY", "C_SHARED_LIBRARY"):
+        # A kernel-mode driver or a win32k font driver links native:, with a kernel
+        # target and no user CRT: that is KernelDll, which the generator does not model.
+        if (first.subsystem or "").startswith("native"):
+            raise GenError(f"{target}: kernel-mode {first.subsystem} module is not modelled")
         module_kind = "Win32Dll"
     else:
         raise GenError(f"{target}: link kind {first.kind}")
@@ -459,6 +499,13 @@ def model(target: str, repo: Path = REPO) -> Cell:
             shims.append(src.relative_to(repo).as_posix())
         else:
             raise GenError(f"{target}: unmodelled link input {nm}")
+    # The inputs are read from the amd64 link; an `if(ARCH ...)` that adds a file on one
+    # arch (acgenral's msys2.c, amd64 only) would compile it everywhere.
+    # The same goes for opengl32's i386-only asm trampolines: every link input must agree.
+    by_arch = {a: sorted(o.split("/")[-1] for o in links[a].inputs) for a in ARCHES}
+    if len({tuple(v) for v in by_arch.values()}) > 1:
+        odd = {a: sorted(set(v) ^ set(by_arch["amd64"])) for a, v in by_arch.items()}
+        raise GenError(f"{target}: link inputs differ by arch {odd}")
     # set_module_type(... UNICODE) is the one target-level define a user module's
     # compiles get; the OBJECT libraries that replace the target must carry it.
     rc_defines = ["UNICODE", "_UNICODE"] if facts["unicode"] else []
@@ -468,6 +515,7 @@ def model(target: str, repo: Path = REPO) -> Cell:
     if len(stacks) > 1:
         raise GenError(f"{target}: stack reserve differs by arch {stacks}")
     body, feats, defaults = facts["body"]
+    panics = {a: carries_panic_handler(repo / f"build-{a}" / links[a].output) for a in ARCHES}
     return Cell(
         target=target,
         cmake_dir=cmake_dir,
@@ -490,6 +538,7 @@ def model(target: str, repo: Path = REPO) -> Cell:
         rc_defines=rc_defines,
         destination=facts["destination"],
         name_on_cd=facts["name_on_cd"],
+        panics=panics,
     )
 
 
@@ -543,11 +592,12 @@ def build_rs(cell: Cell) -> str:
     else:
         L.append(f'        .rust_staticlib("{cell.body_crate}")')
     if cell.c_shims:
-        # Replays cmake's own compile of each file (the <m>_c OBJECT library), so the C
-        # keeps the exact flags it had: compiled with the engine's c_shims flags instead,
+        # Replays cmake's own compile of each file (the <m>_shims OBJECT library; `<m>_c`
+        # is taken: c_oracle.cmake builds the pre-flip C under that name), so the C keeps
+        # the exact flags it had. Compiled with the engine's c_shims flags instead,
         # expand's varargs shim grew an arm64 __chkstk import.
         L.append(
-            f'        .c_from_compile_db("{cell.target}_c", &['
+            f'        .c_from_compile_db("{cell.target}_shims", &['
             + ", ".join(f'"{s}"' for s in cell.c_shims)
             + "])"
         )
@@ -582,6 +632,24 @@ def build_rs(cell: Cell) -> str:
     return "\n".join(L) + "\n"
 
 
+CFG_ARCH = {"i386": "x86", "amd64": "x86_64", "arm64": "aarch64"}
+
+
+def carries_panic_handler(pe_path: Path) -> bool:
+    """Did this (cmake-built) module link a Rust panic handler? panic_common's user
+    handler is the only thing in these modules that imports RtlWalkFrameChain."""
+    import pe_equiv
+
+    if not pe_path.exists():
+        raise GenError(f"{pe_path}: build the module with cmake first (it decides the handler)")
+    return any(i.endswith("!RtlWalkFrameChain") for i in pe_equiv.load(pe_path).imports())
+
+
+def _cfg(arches: list[str]) -> str:
+    preds = [f'target_arch = "{CFG_ARCH[a]}"' for a in arches]
+    return preds[0] if len(preds) == 1 else f"any({', '.join(preds)})"
+
+
 def cargo_toml(cell: Cell) -> str:
     bin_name = cell.target
     return f"""# Cargo-driven `{cell.output_name}` link, generated by tools/cargo_cell_gen.py.
@@ -595,15 +663,50 @@ edition = "2021"
 name = "{bin_name}"
 path = "src/main.rs"
 
-[dependencies]
-panic-common = {{ path = "../panic-common", features = ["user"] }}
-[build-dependencies]
+{_panic_deps(cell)}[build-dependencies]
 reactos-link = {{ path = "../reactos-link" }}
 """
 
 
-MAIN_RS = """//! Empty bin shell: the PE's entry is the CRT startup or DllMain in the linked body,
+def _panic_deps(cell: Cell) -> str:
+    full = [a for a in ARCHES if cell.panics[a]]
+    common = 'panic-common = { path = "../panic-common", features = ["user"] }\n'
+    lean = 'panic-lean = { path = "../panic-lean" }\n'
+    if len(full) == len(ARCHES):
+        return "[dependencies]\n" + common
+    out = "[dependencies]\n" + lean
+    if full:
+        # Arch-scoped, never unused: a linked panic_common loads core on its own.
+        out += f"[target.'cfg({_cfg(full)})'.dependencies]\n" + common
+    return out
+
+
+def main_rs(cell: Cell) -> str:
+    full = [a for a in ARCHES if cell.panics[a]]
+    head = MAIN_RS_HEAD
+    common = '    panic_common::panic_common(env!("CARGO_PKG_NAME"), info)\n'
+    lean = f'    panic_lean::panic_lean(b"{cell.target}-cargo\\0", info)\n'
+    if len(full) == len(ARCHES):
+        return head + common + "}\n"
+    if not full:
+        return head + lean + "}\n"
+    return (
+        head
+        + f"    #[cfg({_cfg(full)})]\n"
+        + common.replace("    panic_common", "    return panic_common")[:-1]
+        + ";\n"
+        + f"    #[cfg(not({_cfg(full)}))]\n"
+        + lean.replace("    panic_lean", "    return panic_lean")[:-1]
+        + ";\n}\n"
+    )
+
+
+MAIN_RS_HEAD = """\
+//! Empty bin shell: the PE's entry is the CRT startup or DllMain in the linked body,
 //! and nothing here runs. Cargo needs a `main.rs` to drive the link.
+//!
+//! The handler is panic_common only where cmake's link carried the body's handler;
+//! elsewhere panic-lean, which keeps all of `core` out of a module that cannot panic.
 
 #![no_std]
 #![no_main]
@@ -611,8 +714,6 @@ MAIN_RS = """//! Empty bin shell: the PE's entry is the CRT startup or DllMain i
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    panic_common::panic_common(env!("CARGO_PKG_NAME"), info)
-}
 """
 
 
@@ -628,7 +729,7 @@ def apply(cell: Cell, repo: Path = REPO) -> list[Path]:
     (crate / "src").mkdir(parents=True)
     (crate / "Cargo.toml").write_text(toml)
     (crate / "build.rs").write_text(rs)
-    (crate / "src/main.rs").write_text(MAIN_RS)
+    (crate / "src/main.rs").write_text(main_rs(cell))
     (crate / "i686-kernel.json").write_bytes(USER_JSON_FROM.read_bytes())
     ws = repo / "sdk/lib/rust/Cargo.toml"
     text = ws.read_text()
@@ -657,6 +758,61 @@ def survey(repo: Path = REPO) -> list[tuple[str, str]]:
         except (GenError, OSError) as exc:
             out.append((target, f"REFUSED {exc}"))
     return sorted(out)
+
+
+def _cell_uses_panic_common(target: str, arch: str, repo: Path) -> bool:
+    main = repo / "sdk/lib/rust" / f"{target}-cargo/src/main.rs"
+    text = main.read_text() if main.exists() else ""
+    if "panic_lean" not in text:
+        return True
+    m = re.search(r"#\[cfg\((.*)\)\]\n\s*return panic_common", text)
+    return bool(m) and f'"{CFG_ARCH[arch]}"' in m.group(1)
+
+
+def reshell(targets: list[str], baseline: Path, repo: Path = REPO) -> None:
+    """Re-choose an existing cell's panic handler from the cmake-built PEs in `baseline`."""
+    for t in targets:
+        panics = {}
+        for a in ARCHES:
+            olds = list((baseline / a).rglob(f"{t}.*"))
+            if len(olds) != 1:
+                raise GenError(f"{t} {a}: {len(olds)} baseline candidates")
+            panics[a] = carries_panic_handler(olds[0])
+        crate = repo / "sdk/lib/rust" / f"{t}-cargo"
+        toml = (crate / "Cargo.toml").read_text()
+        head = toml[: toml.index("[dependencies]")]
+        cell_like = Cell(**{**_STUB_CELL, "target": t, "panics": panics})
+        (crate / "Cargo.toml").write_text(
+            head + _panic_deps(cell_like) + toml[toml.index("[build-dependencies]") :]
+        )
+        (crate / "src/main.rs").write_text(main_rs(cell_like))
+        kind = "full" if all(panics.values()) else "lean" if not any(panics.values()) else panics
+        print(f"{t:14} {kind}")
+
+
+# The fields reshell() does not read; main_rs/_panic_deps use only target and panics.
+_STUB_CELL: dict = dict(
+    cmake_dir=Path("."),
+    output_name="",
+    module_kind="",
+    entries={},
+    subsystem=None,
+    image_base={},
+    stack=None,
+    body_crate="",
+    body_features=[],
+    body_defaults=True,
+    import_libs=[],
+    msvcrtex=None,
+    static_libs={},
+    spec=None,
+    spec_stubs=False,
+    c_shims=[],
+    rc=None,
+    rc_defines=[],
+    destination=None,
+    name_on_cd=None,
+)
 
 
 def check(targets: list[str], baseline: Path, repo: Path = REPO) -> int:
@@ -696,10 +852,35 @@ def check(targets: list[str], baseline: Path, repo: Path = REPO) -> int:
                 and d.startswith("imports: - ")
                 and d.split("!", 1)[-1] in I386_BUILTIN_MEM
             }
-            diffs = [d for d in diffs if d not in extra | builtins | probes]
+            dead = {d for d in diffs if d.removeprefix("imports: - ") in DEAD_IMPORTS.get(t, ())}
+            # A panic-lean cell links only what its body, CRT and exports reach; cmake's
+            # link also kept whatever shared an archive member with the body's panic
+            # path. An import can only vanish when no linked code references it, so the
+            # removals are that unreachable code. Reported, never silent.
+            lean = (
+                (
+                    {d for d in diffs if d.startswith("imports: - ")}
+                    if not _cell_uses_panic_common(t, a, repo)
+                    else set()
+                )
+                - builtins
+                - dead
+            )
+            diffs = [d for d in diffs if d not in extra | builtins | probes | dead | lean]
+            # Size is not part of the contract, but a cell must not carry code cmake's
+            # link did not: that is how all of core rode into 94 modules unnoticed.
+            grew = pe_equiv.load(new).mapped_size() - pe_equiv.load(olds[0]).mapped_size()
+            second_core = a == "i386" and _cell_uses_panic_common(t, a, repo)
+            slack = SIZE_SLACK + (I386_SECOND_CORE if second_core else 0)
+            if grew > slack:
+                diffs.append(f"size: mapped image grew {grew // 1024} KB (slack {slack // 1024})")
             note = " (+ panic_common imports)" if extra else ""
             note += " (mem intrinsics from compiler-builtins)" if builtins else ""
             note += " (+ __chkstk: frame pointers)" if probes else ""
+            note += " (- dead-code import, see DEAD_IMPORTS)" if dead else ""
+            note += f" (- {len(lean)} imports only the panic path reached)" if lean else ""
+            if second_core and grew > SIZE_SLACK:
+                note += f" (+{grew // 1024} KB: i386 second core)"
             print(f"{t:14} {a:6} {'EQUIVALENT' + note if not diffs else 'DIFFERENT'}")
             for d in diffs[:12]:
                 print(f"    {d}")
@@ -725,6 +906,12 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         help="pe_equiv each target's current PE against DIR, on every arch",
     )
+    ap.add_argument(
+        "--reshell",
+        type=Path,
+        metavar="DIR",
+        help="re-choose existing cells' panic handler from the cmake-built PEs in DIR",
+    )
     args = ap.parse_args(argv)
     if args.save_baseline:
         for t in args.targets:
@@ -737,6 +924,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.check:
         return check(args.targets, args.check)
+    if args.reshell:
+        reshell(args.targets, args.reshell)
+        return 0
     if args.survey:
         rows = survey()
         for t, v in rows:
