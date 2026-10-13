@@ -347,6 +347,8 @@ fn main() {
         .rust_lib("cmlib-rust", &[], true)
         // The kernel's GUID data libs (wdmguid/poguid/ioevent C) → Rust.
         .rust_lib("guids-rust", &[], true)
+        // RtlUTF8ToUnicodeN / RtlUnicodeToUTF8N: the utf8 crate (see ntoskrnl-cargo).
+        .rust_lib("utf8", &[], true)
         // The 5 cohab driver/serial libs, now cargo-native (was the cmake-built
         // libX_rust.a in static_libs + the empty C-body stubs, both dropped
         // above). Same crates cmake compiled into libX_rust.a — building them

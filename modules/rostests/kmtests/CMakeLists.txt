@@ -198,6 +198,7 @@ list(APPEND KMTEST_DRV_SOURCE
     ntos_ex/ExResourceBounded.c
     ntos_ex/ExSequencedList.c
     ntos_ex/ExSingleList.c
+    rtl/RtlUtf8KM.c
     ntos_ex/ExTimer.c
     ntos_ex/ExUuid.c
     ntos_fsrtl/FsRtlDissect.c

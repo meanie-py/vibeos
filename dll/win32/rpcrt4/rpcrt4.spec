@@ -400,7 +400,7 @@
 @ stub RpcErrorResetEnumeration
 @ stdcall RpcErrorSaveErrorInfo(ptr ptr ptr)
 @ stdcall RpcErrorStartEnumeration(ptr)
-@ stdcall -version=0x600+ RpcExceptionFilter(long)
+@ stdcall RpcExceptionFilter(long)
 @ stub RpcFreeAuthorizationContext
 @ stdcall RpcGetAsyncCallStatus(ptr) RpcAsyncGetCallStatus
 @ stdcall RpcGetAuthorizationContextForClient(ptr long ptr ptr int64 long ptr ptr)

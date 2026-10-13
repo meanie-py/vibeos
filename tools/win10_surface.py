@@ -16,6 +16,12 @@ two things that cannot drift: the export tables of a real Windows install, and o
     verify      prove the block is dormant: spec2def's output at the tree's default version
                 is byte-identical with and without it, and at 0xA00 it still generates.
     gap         rank what a corpus of real programs imports that we don't export.
+    gated       for every row Windows exports that our spec gates behind a newer
+                `-version`: is its body already LINKED into the built image (`--apply`
+                exports it), imported from another DLL (a `forwards` provider), or absent?
+                "absent" means absent from the IMAGE: a body in a static library the
+                module links but nothing references yet is pulled in only by exporting it
+                (ntoskrnl's RtlUTF8ToUnicodeN, in the utf8 crate via ntoskrnl_vista).
 
 DORMANT ON PURPOSE
 ------------------
@@ -60,6 +66,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools" / "payloads"))
 from pecheck import export_version, spec_exports  # noqa: E402
+from source_walk import source_walk  # noqa: E402
 
 TIER = "0xA00"
 BEGIN = "# BEGIN win10-surface stubs"
@@ -84,7 +91,13 @@ VISTA = {
 PROVIDERS: dict[str, list[str]] = {
     **{m: [v] for m, v in VISTA.items()},
     "kernelbase.dll": ["kernel32", "advapi32"],
+    # Vista moved the Winsock helper API from ws2help into ws2_32; ws2help keeps it here.
+    "ws2_32.dll": ["ws2help"],
 }
+# Providers that themselves link the module's import library: a forward to one is
+# `-private`, kept out of that import library, or the provider's own definitions collide
+# with the import entries for them (lld: "WahCloseNotificationHandleHelper was replaced").
+LINKS_BACK = {"ws2help"}
 ARCHES = ("i386", "x86_64", "arm64")
 CACHE = Path.home() / ".cache" / "vibeos" / "win10-surface"
 # The trees that build shipping modules. modules/ builds test DLLs. sdk/lib is IN: wdfldr.sys,
@@ -646,6 +659,8 @@ def plan_forwards(
         if until is not None:
             opt += f" -version=0x400-{until:#x}"
         flags = "".join(f" {o}" for o in sig.opts if o in KEEP_FLAGS)
+        if vista_mod in LINKS_BACK and "-private" not in flags:
+            flags += " -private"
         lines.append(f"@ {sig.kind}{opt}{flags} {name}{sig.args} {vista_mod}.{name}")
     return lines
 
@@ -659,6 +674,234 @@ def render_forwards(module: str, providers: list[str], lines: list[str]) -> str:
         "# Each switches off where this spec's own row for the name takes over.",
     ]
     return "\n".join([*head, *lines, FWD_END]) + "\n"
+
+
+# --- gated rows ------------------------------------------------------------------------------
+
+LLVM_NM = ROOT / ".build-tools" / "llvm-mingw" / "bin" / "llvm-nm"
+BUILD_ARCH = {"build-i386": "i386", "build-amd64": "x86_64", "build-arm64": "arm64"}
+# Copies of an image staged onto boot media, never the image the link wrote.
+_STAGED = {"boot", "bootcd", "livecd", "reactos", "syswow64", "sysamd64"}
+
+# Gated rows whose LINKED body does not do the job: exporting one would turn a program's
+# working fallback (no export, so it takes its XP path) into a call that lies or fails.
+# They stay gated until the body is real; `gated` lists them so they are not forgotten.
+NOT_A_BODY = {
+    "D3DKMTOpenAdapterFromHdc": "returns success without opening an adapter",
+    "D3DKMTOpenAdapterFromDeviceName": "returns success without opening an adapter",
+    "D3DKMTGetProcessSchedulingPriorityClass": "returns 1 and writes nothing",
+    "D3DKMTSetProcessSchedulingPriorityClass": "returns 1, a success status, and does nothing",
+    "D3DKMTSharedPrimaryLockNotification": "returns 1, a success status, and does nothing",
+    "D3DKMTSharedPrimaryUnLockNotification": "returns 1, a success status, and does nothing",
+    "RtlConvertLCIDToString": "returns STATUS_NOT_IMPLEMENTED",
+    "RtlIsValidLocaleName": "answers TRUE for every name",
+    "SHCreateItemInKnownFolder": "returns E_NOTIMPL",
+    "GetCurrentProcessExplicitAppUserModelID": 'returns the placeholder ID "ROS FixMe"',
+    "AddClipboardFormatListener": "fails without setting a last error",
+    "RemoveClipboardFormatListener": "fails without setting a last error",
+    "ConvertTrusteeToSid": "the spec row's prototype is unknown",
+}
+
+
+def built_image(build: Path, module: str) -> Path | None:
+    """The image the link wrote for `module` in a build dir (not a staged copy). The walk
+    prunes cargo targets and the staged media trees before entering them: a build dir is
+    rewritten under a running walk (tools/scan_unpruned_walk.py)."""
+    staged = tuple(sorted(_STAGED))
+    hits = sorted(
+        parent / module
+        for parent, _, files in source_walk(build, exclude_prefixes=staged)
+        if module in files and not _STAGED & {p.lower() for p in parent.relative_to(build).parts}
+    )
+    return hits[0] if hits else None
+
+
+def defined_symbols(image: Path) -> dict[str, set[int | None]]:
+    """{undecorated name: the stdcall/fastcall argument sizes it is defined with} for every
+    symbol the image defines (`_F@8` -> {"F": {8}}; an undecorated `F` adds None)."""
+    if not LLVM_NM.is_file():
+        raise SystemExit(f"win10_surface: llvm-nm not found at {LLVM_NM}")
+    out = subprocess.run(
+        [str(LLVM_NM), "--defined-only", str(image)], capture_output=True, text=True, check=True
+    ).stdout
+    names: dict[str, set[int | None]] = defaultdict(set)
+    for ln in out.splitlines():
+        parts = ln.split()
+        if len(parts) >= 3:
+            n = parts[-1]
+            names[n].add(None)
+            m = re.fullmatch(r"[_@]?(.+?)(?:@(\d+))?", n)
+            if m:
+                names[m.group(1)].add(int(m.group(2)) if m.group(2) else None)
+    return names
+
+
+_ARG_BYTES_I386 = {"int64": 8, "double": 8, "int128": 16}
+
+
+def stdcall_bytes(args: str) -> int:
+    """The i386 `@N` a spec argument list decorates to."""
+    return sum(_ARG_BYTES_I386.get(a, 4) for a in args.strip("()").split())
+
+
+@dataclass
+class GatedRow:
+    module: str
+    spec: Path
+    name: str
+    row: SpecRow
+    # arch -> "linked" | "imported:<dll>" | "absent" | "noimage", or for a forwarding row
+    # "forward" (its target exports the name at this version) | "forward-dead"
+    arches: dict[str, str]
+    excluded: str | None = None
+
+
+def survey_gated(builds: list[Path], ref: dict, version: int) -> list[GatedRow]:
+    """Every row Windows exports (code, not data) that the spec gates out of `version`."""
+    images: dict[tuple[str, str], tuple[dict[str, set[int | None]], dict[str, str]] | None] = {}
+
+    def image_facts(
+        module: str, build: Path
+    ) -> tuple[dict[str, set[int | None]], dict[str, str]] | None:
+        key = (module, str(build))
+        if key not in images:
+            img = built_image(build, module)
+            if img is None:
+                images[key] = None
+            else:
+                pe = read_pe_file(img)
+                imported = {n: d.lower() for d, ns in pe.imports.items() for n in ns}
+                images[key] = (defined_symbols(img), imported)
+        return images[key]
+
+    modules = module_specs()
+    target_states: dict[tuple[str, str], dict[str, str]] = {}
+
+    def forward_live(target: str, arch: str) -> bool:
+        tmod, _, tname = target.partition(".")
+        specs = modules.get(tmod.lower() + ".dll", [])
+        if not specs:
+            return False
+        key = (str(specs[0]), arch)
+        if key not in target_states:
+            target_states[key] = spec_exports(specs[0], arch, version)
+        return target_states[key].get(tname) == "ok"
+
+    out: list[GatedRow] = []
+    for module, spec, mref in specs_for(modules, ref):
+        win = {**mref.get("x86", {}).get("exports", {}), **mref.get("x64", {}).get("exports", {})}
+        text = strip_block(strip_block(spec.read_bytes().decode("latin-1")), FWD_BEGIN, FWD_END)
+        rows = spec_rows(text)
+        states = {a: spec_exports(spec, a, version) for a in ARCHES}
+        for name, rs in sorted(rows.items()):
+            if name not in win or win[name]["data"]:
+                continue
+            real = [
+                r
+                for r in rs
+                if r.kind != "stub"
+                and not _stub_flag(r.opts)
+                and any(o.startswith("-version=") for o in r.opts)
+            ]
+            if not real:
+                continue
+            row = real[0]
+            arches: dict[str, str] = {}
+            for build in builds:
+                arch = BUILD_ARCH.get(build.name)
+                if arch is None or not states[arch].get(name, "").startswith("exported only"):
+                    continue
+                target = row.target or name
+                facts = image_facts(module, build)
+                if "." in target:
+                    arches[arch] = "forward" if forward_live(target, arch) else "forward-dead"
+                elif facts is None:
+                    arches[arch] = "noimage"
+                elif target in facts[1]:
+                    arches[arch] = f"imported:{facts[1][target]}"
+                elif target in facts[0]:
+                    # The body under this name may be ANOTHER function: ReactOS kept
+                    # shell32's 4-argument internal SHBindToObject where Windows exports
+                    # a 5-argument one. i386's stdcall decoration is the size on record.
+                    sizes = {n for n in facts[0][target] if n is not None}
+                    want = stdcall_bytes(row.args)
+                    if arch == "i386" and row.kind == "stdcall" and sizes and want not in sizes:
+                        arches[arch] = f"signature:@{'/'.join(map(str, sorted(sizes)))}!=@{want}"
+                    else:
+                        arches[arch] = "linked"
+                else:
+                    arches[arch] = "absent"
+            if arches:
+                out.append(GatedRow(module, spec, name, row, arches, NOT_A_BODY.get(name)))
+    return out
+
+
+_VERSION_PLUS = re.compile(r"\s-version=0x([0-9A-Fa-f]+)\+(?=\s)")
+
+
+def ungate_line(line: str) -> str | None:
+    """`line` with its `-version=0xNNN+` removed, or None when the row is not that shape."""
+    body, sep, comment = line.partition("#")
+    if len(_VERSION_PLUS.findall(body)) != 1:
+        return None
+    return _VERSION_PLUS.sub("", body, count=1) + sep + comment
+
+
+def apply_ungate(rows: list[GatedRow]) -> tuple[int, list[str]]:
+    """Ungate every row whose body is linked, or whose forward target is exported, on ALL
+    the arches it is gated on. A body another DLL provides is a forward instead
+    (`forwards`, PROVIDERS). Returns (rows changed, rows left for a human: an unusual
+    -version shape)."""
+    by_spec: dict[Path, list[GatedRow]] = defaultdict(list)
+    for g in rows:
+        if not g.excluded and set(g.arches.values()) in ({"linked"}, {"forward"}):
+            by_spec[g.spec].append(g)
+    changed, manual = 0, []
+    for spec, gs in by_spec.items():
+        lines = spec.read_bytes().decode("latin-1").splitlines(keepends=True)
+        for g in gs:
+            pat = re.compile(
+                rf"^\s*(@|\d+)\s+{re.escape(g.row.kind)}((\s+-\S+)*)\s+{re.escape(g.name)}(\(|\s|$)"
+            )
+            idx = [
+                i
+                for i, ln in enumerate(lines)
+                if (m := pat.match(ln)) and "-version=" in m.group(2)
+            ]
+            new = ungate_line(lines[idx[0]]) if len(idx) == 1 else None
+            if new is None:
+                manual.append(f"{g.module}!{g.name}: {' '.join(g.row.opts)}")
+                continue
+            lines[idx[0]] = new
+            changed += 1
+        spec.write_bytes("".join(lines).encode("latin-1"))
+    return changed, manual
+
+
+def cmd_gated(args: argparse.Namespace) -> int:
+    ref = load_reference(_ref_path(args))
+    builds = [Path(b).resolve() for b in args.builds]
+    rows = survey_gated(builds, ref, export_version())
+    tally: Counter[str] = Counter()
+    for g in rows:
+        kinds = set(g.arches.values())
+        verdict = (
+            f"excluded ({g.excluded})"
+            if g.excluded
+            else kinds.pop().split(":")[0]
+            if len(kinds) == 1
+            else "mixed " + ",".join(f"{a}={k}" for a, k in sorted(g.arches.items()))
+        )
+        tally[verdict.split(" (")[0].split()[0]] += 1
+        if args.verbose or not verdict.startswith("linked"):
+            print(f"  {verdict:40s} {g.module}!{g.name}")
+    print("gated rows Windows exports: " + ", ".join(f"{k} {v}" for k, v in tally.most_common()))
+    if args.apply:
+        changed, manual = apply_ungate(rows)
+        print(f"ungated {changed} rows; left for a human: {len(manual)}")
+        for m in manual:
+            print(f"    {m}")
+    return 0
 
 
 # --- verify ----------------------------------------------------------------------------------
@@ -1066,6 +1309,11 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--json", help="write the full result here")
     g.add_argument("--top", type=int, default=40)
     g.set_defaults(fn=cmd_gap)
+    gt = sub.add_parser("gated", help="gated rows whose body is already linked: export them")
+    gt.add_argument("builds", nargs="+", help="build dirs (build-i386 build-amd64 build-arm64)")
+    gt.add_argument("--apply", action="store_true", help="ungate linked rows (default: report)")
+    gt.add_argument("-v", "--verbose", action="store_true", help="list the linked rows too")
+    gt.set_defaults(fn=cmd_gated)
     args = ap.parse_args(argv)
     return args.fn(args)
 

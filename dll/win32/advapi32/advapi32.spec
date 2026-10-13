@@ -483,7 +483,7 @@
 @ stub RegConnectRegistryExA
 @ stub RegConnectRegistryExW
 @ stdcall RegConnectRegistryW(wstr long ptr)
-@ stdcall -version=0x600+ RegCopyTreeA(ptr str ptr)
+@ stdcall RegCopyTreeA(ptr str ptr)
 @ stdcall -version=0x600+ RegCopyTreeW(ptr wstr ptr)
 @ stdcall RegCreateKeyA(long str ptr)
 @ stdcall RegCreateKeyExA(long str long ptr long long ptr ptr ptr)
@@ -495,8 +495,8 @@
 @ stdcall RegDeleteKeyW(long wstr)
 @ stdcall -version=0x600+ RegDeleteTreeA(long str)
 @ stdcall -version=0x600+ RegDeleteTreeW(long wstr)
-@ stdcall -version=0x600+ RegDeleteKeyValueA(long wstr wstr)
-@ stdcall -version=0x600+ RegDeleteKeyValueW(long wstr wstr)
+@ stdcall RegDeleteKeyValueA(long wstr wstr)
+@ stdcall RegDeleteKeyValueW(long wstr wstr)
 @ stdcall RegDeleteValueA(long str)
 @ stdcall RegDeleteValueW(long wstr)
 @ stdcall RegDisablePredefinedCache()
@@ -543,7 +543,7 @@
 @ stdcall RegSaveKeyExW(long str ptr long)
 @ stdcall RegSaveKeyW(long ptr ptr)
 @ stdcall RegSetKeySecurity(long long ptr)
-@ stdcall -version=0x600+ RegSetKeyValueA(long str str long ptr long)
+@ stdcall RegSetKeyValueA(long str str long ptr long)
 @ stdcall -version=0x600+ RegSetKeyValueW(long wstr wstr long ptr long)
 @ stdcall RegSetValueA(long str long ptr long)
 @ stdcall RegSetValueExA(long str long long ptr long)

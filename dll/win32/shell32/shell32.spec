@@ -501,7 +501,7 @@
 @ stub -version=0x600+ SHAssocEnumHandlers # Vista:312
 @ stub -version=0x600+ SHBindToFolderIDListParent # Vista:313
 @ stub -version=0x600+ SHBindToFolderIDListParentEx # Vista:314
-@ stdcall -version=0x600+ SHBindToObject(ptr ptr ptr ptr ptr) # Vista:315
+@ stdcall SHBindToObject(ptr ptr ptr ptr ptr) SHBindToObject_Export # Vista:315
 @ stdcall SHBindToParent(ptr ptr ptr ptr) # 2k3:272, Vista:316
 @ stdcall SHBrowseForFolder(ptr) SHBrowseForFolderA # 2k3:273, Vista:317
 @ stdcall SHBrowseForFolderA(ptr) # 2k3:274, Vista:318
@@ -510,15 +510,15 @@
 @ stub -version=0x600+ SHChangeNotifyRegisterThread # Vista:321
 @ stdcall SHChangeNotifySuspendResume(long ptr long long) # 2k3:277, Vista:322
 @ stub -version=0x600+ SHCreateAssociationRegistration # Vista:323
-@ stdcall -version=0x600+ SHCreateDataObject(ptr long ptr ptr ptr ptr) # Vista:324
-@ stdcall -version=0x600+ SHCreateDefaultContextMenu(ptr ptr ptr) # Vista:325
-@ stdcall -version=0x600+ SHCreateDefaultExtractIcon(ptr ptr) # Vista:326
+@ stdcall SHCreateDataObject(ptr long ptr ptr ptr ptr) # Vista:324
+@ stdcall SHCreateDefaultContextMenu(ptr ptr ptr) # Vista:325
+@ stdcall SHCreateDefaultExtractIcon(ptr ptr) # Vista:326
 @ stub -version=0x600+ SHCreateDefaultPropertiesOp # Vista:327
 @ stdcall SHCreateDirectoryExA(long str ptr) # 2k3:278, Vista:328
 @ stdcall SHCreateDirectoryExW(long wstr ptr) # 2k3:279, Vista:329
-@ stdcall -version=0x600+ SHCreateItemFromIDList(ptr ptr ptr) # Vista:330
-@ stdcall -version=0x600+ SHCreateItemFromParsingName(wstr ptr ptr ptr) # Vista:331
-@ stdcall -version=0x600+ SHCreateItemFromRelativeName(ptr wstr ptr ptr ptr) # Vista:332
+@ stdcall SHCreateItemFromIDList(ptr ptr ptr) # Vista:330
+@ stdcall SHCreateItemFromParsingName(wstr ptr ptr ptr) # Vista:331
+@ stdcall SHCreateItemFromRelativeName(ptr wstr ptr ptr ptr) # Vista:332
 @ stdcall -version=0x600+ SHCreateItemInKnownFolder(ptr long wstr ptr ptr) # Vista:333
 @ stdcall -stub -version=0x600+ SHCreateItemWithParent(ptr ptr ptr ptr ptr) # Vista:334
 @ stub SHCreateLocalServerRunDll # 2k3:280, Vista:335
@@ -526,7 +526,7 @@
 @ stdcall SHCreateQueryCancelAutoPlayMoniker(ptr) # 2k3:282, Vista:337
 @ stdcall SHCreateShellItem(ptr ptr ptr ptr) # 2k3:283, Vista:338
 @ stdcall -version=0x600+ SHCreateShellItemArray(ptr ptr long ptr ptr) # Vista:339
-@ stdcall -version=0x600+ SHCreateShellItemArrayFromDataObject(ptr ptr ptr) # Vista:340
+@ stdcall SHCreateShellItemArrayFromDataObject(ptr ptr ptr) # Vista:340
 @ stdcall -version=0x600+ SHCreateShellItemArrayFromIDLists(long ptr ptr) # Vista:341
 @ stdcall -version=0x600+ SHCreateShellItemArrayFromShellItem(ptr ptr ptr) # Vista:342
 @ stdcall SHEmptyRecycleBinA(long str long) # 2k3:284, Vista:343
@@ -556,7 +556,7 @@
 @ stdcall SHGetFolderPathAndSubDirW(long long long long wstr ptr) # 2k3:306, Vista:367
 @ stub -version=0x600+ SHGetFolderPathEx # Vista:368
 @ stdcall SHGetFolderPathW(long long long long ptr) # 2k3:307, Vista:369
-@ stdcall -version=0x600+ SHGetIDListFromObject(ptr ptr) # Vista:370
+@ stdcall SHGetIDListFromObject(ptr ptr) # Vista:370
 @ stdcall SHGetIconOverlayIndexA(str long) # 2k3:308, Vista:371
 @ stdcall SHGetIconOverlayIndexW(wstr long) # 2k3:309, Vista:372
 # NOT forwarded to shcore: upstream re-pointed these two at shcore.Get/SetProcessReference
@@ -569,14 +569,14 @@
 @ stub -version=0x600+ SHGetKnownFolderPath # Vista:375
 @ stub -version=0x600+ SHGetLocalizedName # Vista:376
 @ stdcall SHGetMalloc(ptr) # 2k3:311, Vista:377
-@ stdcall -version=0x600+ SHGetNameFromIDList(ptr long ptr) # Vista:378
+@ stdcall SHGetNameFromIDList(ptr long ptr) # Vista:378
 @ stdcall SHGetNewLinkInfo(str str ptr long long) SHGetNewLinkInfoA # 2k3:312, Vista:379
 @ stdcall SHGetPathFromIDList(ptr ptr) SHGetPathFromIDListA # 2k3:313, Vista:380
 @ stdcall SHGetPathFromIDListA(ptr ptr) # 2k3:314, Vista:381
 @ stub -version=0x600+ SHGetPathFromIDListEx # Vista:382
 @ stdcall SHGetPathFromIDListW(ptr ptr) # 2k3:315, Vista:383
 @ stub -version=0x600+ SHGetPropertyStoreFromIDList # Vista:384
-@ stdcall -version=0x600+ SHGetPropertyStoreFromParsingName(wstr ptr ptr ptr ptr) # Vista:385
+@ stdcall SHGetPropertyStoreFromParsingName(wstr ptr ptr ptr ptr) # Vista:385
 @ stdcall SHGetSettings(ptr long) # 2k3:316, Vista:386
 @ stdcall SHGetSpecialFolderLocation(long long ptr) # 2k3:317, Vista:387
 @ stdcall SHGetSpecialFolderPathA(long ptr long long) # 2k3:318, Vista:388
@@ -593,13 +593,13 @@
 @ stdcall SHLoadInProc(long) # 2k3:327, Vista:396
 @ stdcall SHLoadNonloadedIconOverlayIdentifiers() # 2k3:328, Vista:397
 @ stdcall SHOpenFolderAndSelectItems(ptr long ptr long) # 2k3:329, Vista:398
-@ stdcall -version=0x600+ SHOpenWithDialog(ptr ptr) # Vista:399
+@ stdcall SHOpenWithDialog(ptr ptr) # Vista:399
 @ stdcall SHParseDisplayName(wstr ptr ptr long ptr) # 2k3:330, Vista:400
 @ stdcall SHPathPrepareForWriteA(long ptr str long) # 2k3:331, Vista:401
 @ stdcall SHPathPrepareForWriteW(long ptr wstr long) # 2k3:332, Vista:402
 @ stdcall SHQueryRecycleBinA(str ptr) # 2k3:333, Vista:403
 @ stdcall SHQueryRecycleBinW(wstr ptr) # 2k3:334, Vista:404
-@ stdcall -version=0x600+ SHQueryUserNotificationState(ptr) # Vista:405
+@ stdcall SHQueryUserNotificationState(ptr) # Vista:405
 @ stub -version=0x600+ SHRemoveLocalizedName # Vista:406
 @ stub -version=0x600+ SHSetDefaultProperties # Vista:407
 @ stub -version=0x600+ SHSetKnownFolderPath # Vista:408
@@ -635,8 +635,8 @@
 @ stdcall ShellExecuteExW (long) # 2k3:363, Vista:425
 @ stdcall ShellExecuteW(long wstr wstr wstr wstr long) # 2k3:364, Vista:426
 @ stdcall ShellHookProc(long ptr ptr) # 2k3:365, Vista:427
-@ stdcall -version=0x600+ Shell_GetCachedImageIndexA(str long long) # Vista:428
-@ stdcall -version=0x600+ Shell_GetCachedImageIndexW(wstr long long) # Vista:429
+@ stdcall Shell_GetCachedImageIndexA(str long long) # Vista:428
+@ stdcall Shell_GetCachedImageIndexW(wstr long long) # Vista:429
 @ stdcall Shell_NotifyIcon(long ptr) Shell_NotifyIconA # 2k3:366, Vista:430
 @ stdcall Shell_NotifyIconA(long ptr) # 2k3:367, Vista:431
 @ stdcall Shell_NotifyIconW(long ptr) # 2k3:368, Vista:432
@@ -675,11 +675,11 @@
 @ stdcall -stub -version=0x601+ SHAssocEnumHandlersForProtocolByApplication(wstr ptr ptr)
 @ stdcall -stub -version=0x601+ Shell_NotifyIconGetRect(ptr ptr)
 @ stdcall -stub -version=0x601+ SHGetKnownFolderItem(ptr ptr ptr ptr ptr)
-@ stdcall -version=0x601+ SHGetItemFromObject(ptr long ptr)
-@ stdcall -version=0x600+ SHGetItemFromDataObject(ptr long ptr ptr)
+@ stdcall SHGetItemFromObject(ptr long ptr)
+@ stdcall SHGetItemFromDataObject(ptr long ptr ptr)
 
 @ stdcall -version=0x601+ GetCurrentProcessExplicitAppUserModelID(wstr)
-@ stdcall -version=0x601+ SetCurrentProcessExplicitAppUserModelID(wstr)
+@ stdcall SetCurrentProcessExplicitAppUserModelID(wstr)
 
 # BEGIN win10-surface stubs
 # Generated by tools/win10_surface.py from Windows 10.0.26100.9457; do not edit by hand.

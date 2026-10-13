@@ -154,6 +154,7 @@ RtlSplayTreeKM
 RtlStackKM
 RtlStrSafeKM
 RtlUnicodeStringKM
+RtlUtf8
 SeInheritance
 SeLogonSession
 SeQueryInfoToken

@@ -141,7 +141,6 @@
 @ stub -version=0xA00+ CommandLineToArgvW
 @ stub -version=0xA00+ CommitStateAtom
 @ stub -version=0xA00+ CompareObjectHandles
-@ stub -version=0xA00+ CompareStringEx
 @ stub -version=0xA00+ ConvertAuxiliaryCounterToPerformanceCounter
 @ stub -version=0xA00+ ConvertPerformanceCounterToAuxiliaryCounter
 @ stub -version=0xA00+ CopyContext
@@ -172,7 +171,6 @@
 @ stub -version=0xA00+ CreatePseudoConsole
 @ stub -version=0xA00+ CreatePseudoConsoleAsUser
 @ stub -version=0xA00+ CreateRemoteThreadEx
-@ stub -version=0xA00+ CreateSemaphoreExW
 @ stub -version=0xA00+ CreateStateAtom
 @ stub -version=0xA00+ CreateStateChangeNotification
 @ stub -version=0xA00+ CreateStateContainer
@@ -217,8 +215,6 @@
 @ stub -version=0xA00+ EncodeRemotePointer # -> NTDLL.RtlEncodeRemotePointer
 @ stub -version=0xA00+ EnterCriticalPolicySectionInternal
 @ stub -version=0xA00+ EnterSynchronizationBarrier
-@ stub -version=0xA00+ EnumCalendarInfoExEx
-@ stub -version=0xA00+ EnumDateFormatsExEx
 @ stub -version=0xA00+ EnumDeviceDrivers
 @ stub -version=0xA00+ EnumDynamicTimeZoneInformation
 @ stub -version=0xA00+ EnumPageFilesA
@@ -233,7 +229,6 @@
 @ stub -version=0xA00+ EnumResourceTypesExA
 @ stub -version=0xA00+ EnumResourceTypesExW
 @ stub -version=0xA00+ EnumSystemGeoNames
-@ stub -version=0xA00+ EnumTimeFormatsEx
 @ stub -version=0xA00+ EnumerateExtensionNames
 @ stub -version=0xA00+ EnumerateStateAtomValues
 @ stub -version=0xA00+ EnumerateStateContainerItems
@@ -281,13 +276,11 @@
 @ stub -version=0xA00+ GetCPHashNode
 @ stub -version=0xA00+ GetCachedSigningLevel
 @ stub -version=0xA00+ GetCalendar
-@ stub -version=0xA00+ GetCalendarInfoEx
 @ stub -version=0xA00+ GetCommPorts
 @ stub -version=0xA00+ GetConsoleHistoryInfo
 @ stub -version=0xA00+ GetConsoleOriginalTitleA
 @ stub -version=0xA00+ GetConsoleOriginalTitleW
 @ stub -version=0xA00+ GetConsoleScreenBufferInfoEx
-@ stub -version=0xA00+ GetCurrencyFormatEx
 @ stub -version=0xA00+ GetCurrentApplicationUserModelId
 @ stub -version=0xA00+ GetCurrentConsoleFontEx
 @ stub -version=0xA00+ GetCurrentPackageApplicationContext
@@ -296,7 +289,6 @@
 @ stub -version=0xA00+ GetCurrentPackageFamilyName
 @ stub -version=0xA00+ GetCurrentPackageFullName
 @ stub -version=0xA00+ GetCurrentPackageGlobalizationContext
-@ stub -version=0xA00+ GetCurrentPackageId
 @ stub -version=0xA00+ GetCurrentPackageInfo
 @ stub -version=0xA00+ GetCurrentPackageInfo2
 @ stub -version=0xA00+ GetCurrentPackageInfo3
@@ -305,10 +297,8 @@
 @ stub -version=0xA00+ GetCurrentPackagePath2
 @ stub -version=0xA00+ GetCurrentPackageResourcesContext
 @ stub -version=0xA00+ GetCurrentPackageSecurityContext
-@ stub -version=0xA00+ GetCurrentProcessorNumberEx # -> NTDLL.RtlGetCurrentProcessorNumberEx
 @ stub -version=0xA00+ GetCurrentTargetPlatformContext
 @ stub -version=0xA00+ GetCurrentThreadStackLimits
-@ stub -version=0xA00+ GetDateFormatEx
 @ stub -version=0xA00+ GetDeveloperDriveEnablementState
 @ stub -version=0xA00+ GetDeviceDriverBaseNameA
 @ stub -version=0xA00+ GetDeviceDriverBaseNameW
@@ -326,7 +316,6 @@
 @ stub -version=0xA00+ GetEightBitStringToUnicodeStringRoutine
 @ stub -version=0xA00+ GetEnabledXStateFeatures
 @ stub -version=0xA00+ GetEraNameCountedString
-@ stub -version=0xA00+ GetErrorMode
 @ stub -version=0xA00+ GetExtensionApplicationUserModelId
 @ stub -version=0xA00+ GetExtensionProgIds
 @ stub -version=0xA00+ GetExtensionProperty
@@ -375,7 +364,6 @@
 @ stub -version=0xA00+ GetNumaNodeProcessorMask2
 @ stub -version=0xA00+ GetNumaNodeProcessorMaskEx
 @ stub -version=0xA00+ GetNumaProximityNodeEx
-@ stub -version=0xA00+ GetNumberFormatEx
 @ stub -version=0xA00+ GetOsManufacturingMode
 @ stub -version=0xA00+ GetOsSafeBootMode
 @ stub -version=0xA00+ GetOverlappedResultEx
@@ -481,12 +469,10 @@
 @ stub -version=0xA00+ GetTempPath2W
 @ stub -version=0xA00+ GetThreadEnabledXStateFeatures
 @ stub -version=0xA00+ GetThreadErrorMode
-@ stub -version=0xA00+ GetThreadGroupAffinity
 @ stub -version=0xA00+ GetThreadIdealProcessorEx
 @ stub -version=0xA00+ GetThreadInformation
 @ stub -version=0xA00+ GetThreadSelectedCpuSetMasks
 @ stub -version=0xA00+ GetThreadSelectedCpuSets
-@ stub -version=0xA00+ GetTimeFormatEx
 @ stub -version=0xA00+ GetTimeZoneInformationForYear
 @ stub -version=0xA00+ GetUnicodeStringToEightBitSizeRoutine
 @ stub -version=0xA00+ GetUnicodeStringToEightBitStringRoutine
@@ -558,42 +544,15 @@
 @ stub -version=0xA00+ IsSideloadingEnabled
 @ stub -version=0xA00+ IsSideloadingPolicyApplied
 @ stub -version=0xA00+ IsSyncForegroundPolicyRefresh
-@ stub -version=0xA00+ IsThreadAFiber
-@ stub -version=0xA00+ IsThreadpoolTimerSet # -> NTDLL.TpIsTimerSet
 @ stub -version=0xA00+ IsUserCetAvailableInEnvironment
 @ stub -version=0xA00+ IsValidNLSVersion
 @ stub -version=0xA00+ IsValidRelativeSecurityDescriptor
 @ stub -version=0xA00+ IsWow64GuestMachineSupported
 @ stub -version=0xA00+ IsWow64Process2
-@ stub -version=0xA00+ K32EmptyWorkingSet
-@ stub -version=0xA00+ K32EnumDeviceDrivers
-@ stub -version=0xA00+ K32EnumPageFilesA
-@ stub -version=0xA00+ K32EnumPageFilesW
 @ stub -version=0xA00+ K32EnumProcessModulesEx
-@ stub -version=0xA00+ K32EnumProcesses
-@ stub -version=0xA00+ K32GetDeviceDriverBaseNameA
-@ stub -version=0xA00+ K32GetDeviceDriverBaseNameW
-@ stub -version=0xA00+ K32GetDeviceDriverFileNameA
-@ stub -version=0xA00+ K32GetDeviceDriverFileNameW
-@ stub -version=0xA00+ K32GetMappedFileNameA
-@ stub -version=0xA00+ K32GetMappedFileNameW
-@ stub -version=0xA00+ K32GetModuleBaseNameA
-@ stub -version=0xA00+ K32GetModuleBaseNameW
-@ stub -version=0xA00+ K32GetModuleFileNameExA
-@ stub -version=0xA00+ K32GetModuleFileNameExW
-@ stub -version=0xA00+ K32GetModuleInformation
-@ stub -version=0xA00+ K32GetPerformanceInfo
-@ stub -version=0xA00+ K32GetProcessImageFileNameA
-@ stub -version=0xA00+ K32GetProcessImageFileNameW
-@ stub -version=0xA00+ K32GetProcessMemoryInfo
-@ stub -version=0xA00+ K32GetWsChanges
 @ stub -version=0xA00+ K32GetWsChangesEx
-@ stub -version=0xA00+ K32InitializeProcessForWsWatch
-@ stub -version=0xA00+ K32QueryWorkingSet
-@ stub -version=0xA00+ K32QueryWorkingSetEx
 @ stub -version=0xA00+ KernelBaseGetGlobalData
 @ stub -version=0xA00+ KernelbasePostInit
-@ stub -version=0xA00+ LCMapStringEx
 @ stub -version=0xA00+ LeaveCriticalPolicySectionInternal
 @ stub -version=0xA00+ LeaveCriticalSectionWhenCallbackReturns # -> NTDLL.TpCallbackLeaveCriticalSectionOnCompletion
 @ stub -version=0xA00+ LoadAppInitDlls
@@ -887,8 +846,6 @@
 @ stub -version=0xA00+ RegCreateKeyExInternalW
 @ stub -version=0xA00+ RegDeleteKeyExInternalA
 @ stub -version=0xA00+ RegDeleteKeyExInternalW
-@ stub -version=0xA00+ RegDeleteKeyValueA
-@ stub -version=0xA00+ RegDeleteKeyValueW
 @ stub -version=0xA00+ RegDisablePredefinedCacheEx
 @ stub -version=0xA00+ RegKrnGetAppKeyEventAddressInternal
 @ stub -version=0xA00+ RegKrnGetAppKeyLoaded
@@ -902,7 +859,6 @@
 @ stub -version=0xA00+ RegLoadAppKeyW
 @ stub -version=0xA00+ RegOpenKeyExInternalA
 @ stub -version=0xA00+ RegOpenKeyExInternalW
-@ stub -version=0xA00+ RegSetKeyValueA
 @ stub -version=0xA00+ RegisterBadMemoryNotification
 @ stub -version=0xA00+ RegisterGPNotificationInternal
 @ stub -version=0xA00+ RegisterStateChangeNotification
@@ -1003,7 +959,6 @@
 @ stub -version=0xA00+ SetStdHandleEx
 @ stub -version=0xA00+ SetSystemTimeAdjustmentPrecise
 @ stub -version=0xA00+ SetThreadErrorMode
-@ stub -version=0xA00+ SetThreadGroupAffinity
 @ stub -version=0xA00+ SetThreadIdealProcessorEx
 @ stub -version=0xA00+ SetThreadInformation
 @ stub -version=0xA00+ SetThreadPreferredUILanguages2
@@ -1298,6 +1253,7 @@
 @ stdcall CloseThreadpoolWork(ptr) kernel32.CloseThreadpoolWork
 @ stdcall CompareFileTime(ptr ptr) kernel32.CompareFileTime
 @ stdcall CompareStringA(long long str long str long) kernel32.CompareStringA
+@ stdcall CompareStringEx(wstr long wstr long wstr long ptr ptr ptr) kernel32.CompareStringEx
 @ stdcall CompareStringOrdinal(wstr long wstr long long) kernel32.CompareStringOrdinal
 @ stdcall CompareStringW(long long wstr long wstr long) kernel32.CompareStringW
 @ stdcall ConnectNamedPipe(long ptr) kernel32.ConnectNamedPipe
@@ -1341,6 +1297,7 @@
 @ stdcall CreateProcessW(wstr wstr ptr ptr long long ptr wstr ptr ptr) kernel32.CreateProcessW
 @ stdcall CreateRemoteThread(long ptr long ptr long long ptr) kernel32.CreateRemoteThread
 @ stdcall CreateRestrictedToken(long long long ptr long ptr long ptr ptr) advapi32.CreateRestrictedToken
+@ stdcall CreateSemaphoreExW(ptr long long wstr long long) kernel32.CreateSemaphoreExW
 @ stdcall CreateSemaphoreW(ptr long long wstr) kernel32.CreateSemaphoreW
 @ stdcall CreateSymbolicLinkW(wstr wstr long) kernel32.CreateSymbolicLinkW
 @ stdcall CreateThread(ptr long ptr long long ptr) kernel32.CreateThread
@@ -1381,8 +1338,10 @@
 @ stdcall EncodePointer(ptr) kernel32.EncodePointer
 @ stdcall EncodeSystemPointer(ptr) kernel32.EncodeSystemPointer
 @ stdcall EnterCriticalSection(ptr) kernel32.EnterCriticalSection
+@ stdcall EnumCalendarInfoExEx(ptr wstr long wstr long long) kernel32.EnumCalendarInfoExEx
 @ stdcall EnumCalendarInfoExW(ptr long long long) kernel32.EnumCalendarInfoExW
 @ stdcall EnumCalendarInfoW(ptr long long long) kernel32.EnumCalendarInfoW
+@ stdcall EnumDateFormatsExEx(ptr wstr long long) kernel32.EnumDateFormatsExEx
 @ stdcall EnumDateFormatsExW(ptr long long) kernel32.EnumDateFormatsExW
 @ stdcall EnumDateFormatsW(ptr long long) kernel32.EnumDateFormatsW
 @ stdcall EnumLanguageGroupLocalesW(ptr long long ptr) kernel32.EnumLanguageGroupLocalesW
@@ -1395,6 +1354,7 @@
 @ stdcall EnumSystemLocalesA(ptr long) kernel32.EnumSystemLocalesA
 @ stdcall EnumSystemLocalesEx(ptr long long ptr) kernel32.EnumSystemLocalesEx
 @ stdcall EnumSystemLocalesW(ptr long) kernel32.EnumSystemLocalesW
+@ stdcall EnumTimeFormatsEx(ptr wstr long long) kernel32.EnumTimeFormatsEx
 @ stdcall EnumTimeFormatsW(ptr long long) kernel32.EnumTimeFormatsW
 @ stdcall EnumUILanguagesW(ptr long long) kernel32.EnumUILanguagesW
 @ stdcall EqualDomainSid(ptr ptr ptr) advapi32.EqualDomainSid
@@ -1463,6 +1423,7 @@
 @ stdcall GetCPFileNameFromRegistry(long wstr long) kernel32.GetCPFileNameFromRegistry
 @ stdcall GetCPInfo(long ptr) kernel32.GetCPInfo
 @ stdcall GetCPInfoExW(long long ptr) kernel32.GetCPInfoExW
+@ stdcall GetCalendarInfoEx(wstr long wstr long wstr long ptr) kernel32.GetCalendarInfoEx
 @ stdcall GetCalendarInfoW(long long long ptr long ptr) kernel32.GetCalendarInfoW
 @ stdcall GetCommConfig(long ptr long) kernel32.GetCommConfig
 @ stdcall GetCommMask(long ptr) kernel32.GetCommMask
@@ -1504,17 +1465,21 @@
 @ stdcall GetConsoleTitleA(ptr long) kernel32.GetConsoleTitleA
 @ stdcall GetConsoleTitleW(ptr long) kernel32.GetConsoleTitleW
 @ stdcall GetConsoleWindow() kernel32.GetConsoleWindow
+@ stdcall GetCurrencyFormatEx(wstr long wstr ptr wstr long) kernel32.GetCurrencyFormatEx
 @ stdcall GetCurrencyFormatW(long long wstr ptr wstr long) kernel32.GetCurrencyFormatW
 @ stdcall GetCurrentActCtx(ptr) kernel32.GetCurrentActCtx
 @ stdcall GetCurrentConsoleFont(long long ptr) kernel32.GetCurrentConsoleFont
 @ stdcall GetCurrentDirectoryA(long ptr) kernel32.GetCurrentDirectoryA
 @ stdcall GetCurrentDirectoryW(long ptr) kernel32.GetCurrentDirectoryW
+@ stdcall GetCurrentPackageId(ptr ptr) kernel32.GetCurrentPackageId
 @ stdcall -norelay GetCurrentProcess() kernel32.GetCurrentProcess
 @ stdcall -norelay GetCurrentProcessId() kernel32.GetCurrentProcessId
 @ stdcall GetCurrentProcessorNumber() kernel32.GetCurrentProcessorNumber
+@ stdcall GetCurrentProcessorNumberEx(ptr) kernel32.GetCurrentProcessorNumberEx
 @ stdcall -norelay GetCurrentThread() kernel32.GetCurrentThread
 @ stdcall -norelay GetCurrentThreadId() kernel32.GetCurrentThreadId
 @ stdcall GetDateFormatA(long long ptr str ptr long) kernel32.GetDateFormatA
+@ stdcall GetDateFormatEx(wstr long ptr wstr wstr long wstr) kernel32.GetDateFormatEx
 @ stdcall GetDateFormatW(long long ptr wstr ptr long) kernel32.GetDateFormatW
 @ stdcall GetDiskFreeSpaceA(str ptr ptr ptr ptr) kernel32.GetDiskFreeSpaceA
 @ stdcall GetDiskFreeSpaceExA(str ptr ptr ptr) kernel32.GetDiskFreeSpaceExA
@@ -1527,6 +1492,7 @@
 @ stdcall GetEnvironmentStringsW() kernel32.GetEnvironmentStringsW
 @ stdcall GetEnvironmentVariableA(str ptr long) kernel32.GetEnvironmentVariableA
 @ stdcall GetEnvironmentVariableW(wstr ptr long) kernel32.GetEnvironmentVariableW
+@ stdcall GetErrorMode() kernel32.GetErrorMode
 @ stdcall GetExitCodeProcess(long ptr) kernel32.GetExitCodeProcess
 @ stdcall GetExitCodeThread(long ptr) kernel32.GetExitCodeThread
 @ stdcall GetFileAttributesA(str) kernel32.GetFileAttributesA
@@ -1574,6 +1540,7 @@
 @ stdcall GetNamedPipeInfo(long ptr ptr ptr ptr) kernel32.GetNamedPipeInfo
 @ stdcall GetNativeSystemInfo(ptr) kernel32.GetNativeSystemInfo
 @ stdcall GetNumaHighestNodeNumber(ptr) kernel32.GetNumaHighestNodeNumber
+@ stdcall GetNumberFormatEx(wstr long wstr ptr wstr long) kernel32.GetNumberFormatEx
 @ stdcall GetNumberFormatW(long long wstr ptr ptr long) kernel32.GetNumberFormatW
 @ stdcall GetNumberOfConsoleInputEvents(long ptr) kernel32.GetNumberOfConsoleInputEvents
 @ stdcall GetNumberOfConsoleMouseButtons(ptr) kernel32.GetNumberOfConsoleMouseButtons
@@ -1636,6 +1603,7 @@
 @ stdcall GetTempPathW(long ptr) kernel32.GetTempPathW
 @ stdcall GetThreadContext(long ptr) kernel32.GetThreadContext
 @ stdcall GetThreadDescription(ptr ptr) kernel32.GetThreadDescription
+@ stdcall GetThreadGroupAffinity(ptr ptr) kernel32.GetThreadGroupAffinity
 @ stdcall GetThreadIOPendingFlag(long ptr) kernel32.GetThreadIOPendingFlag
 @ stdcall GetThreadId(ptr) kernel32.GetThreadId
 @ stdcall GetThreadLocale() kernel32.GetThreadLocale
@@ -1647,6 +1615,7 @@
 @ stdcall GetTickCount() kernel32.GetTickCount
 @ stdcall -ret64 GetTickCount64() kernel32.GetTickCount64
 @ stdcall GetTimeFormatA(long long ptr str ptr long) kernel32.GetTimeFormatA
+@ stdcall GetTimeFormatEx(wstr long ptr wstr wstr long) kernel32.GetTimeFormatEx
 @ stdcall GetTimeFormatW(long long ptr wstr ptr long) kernel32.GetTimeFormatW
 @ stdcall GetTimeZoneInformation(ptr) kernel32.GetTimeZoneInformation
 @ stdcall GetTokenInformation(long long ptr long ptr) advapi32.GetTokenInformation
@@ -1726,6 +1695,8 @@
 @ stdcall IsNLSDefinedString(long long ptr long long) kernel32.IsNLSDefinedString
 @ stdcall IsProcessInJob(long long ptr) kernel32.IsProcessInJob
 @ stdcall IsProcessorFeaturePresent(long) kernel32.IsProcessorFeaturePresent
+@ stdcall IsThreadAFiber() kernel32.IsThreadAFiber
+@ stdcall IsThreadpoolTimerSet(ptr) kernel32.IsThreadpoolTimerSet
 @ stdcall IsTimeZoneRedirectionEnabled() kernel32.IsTimeZoneRedirectionEnabled
 @ stdcall IsTokenRestricted(long) advapi32.IsTokenRestricted
 @ stdcall IsValidAcl(ptr) advapi32.IsValidAcl
@@ -1737,9 +1708,34 @@
 @ stdcall IsValidSid(ptr) advapi32.IsValidSid
 @ stdcall IsWellKnownSid(ptr long) advapi32.IsWellKnownSid
 @ stdcall IsWow64Process(ptr ptr) kernel32.IsWow64Process
+@ stdcall K32EmptyWorkingSet(long) kernel32.K32EmptyWorkingSet
+@ stdcall K32EnumDeviceDrivers(ptr long ptr) kernel32.K32EnumDeviceDrivers
+@ stdcall K32EnumPageFilesA(ptr ptr) kernel32.K32EnumPageFilesA
+@ stdcall K32EnumPageFilesW(ptr ptr) kernel32.K32EnumPageFilesW
 @ stdcall K32EnumProcessModules(long ptr long ptr) kernel32.K32EnumProcessModules
+@ stdcall K32EnumProcesses(ptr long ptr) kernel32.K32EnumProcesses
+@ stdcall K32GetDeviceDriverBaseNameA(ptr ptr long) kernel32.K32GetDeviceDriverBaseNameA
+@ stdcall K32GetDeviceDriverBaseNameW(ptr ptr long) kernel32.K32GetDeviceDriverBaseNameW
+@ stdcall K32GetDeviceDriverFileNameA(ptr ptr long) kernel32.K32GetDeviceDriverFileNameA
+@ stdcall K32GetDeviceDriverFileNameW(ptr ptr long) kernel32.K32GetDeviceDriverFileNameW
+@ stdcall K32GetMappedFileNameA(long ptr ptr long) kernel32.K32GetMappedFileNameA
+@ stdcall K32GetMappedFileNameW(long ptr ptr long) kernel32.K32GetMappedFileNameW
+@ stdcall K32GetModuleBaseNameA(long long ptr long) kernel32.K32GetModuleBaseNameA
+@ stdcall K32GetModuleBaseNameW(long long ptr long) kernel32.K32GetModuleBaseNameW
+@ stdcall K32GetModuleFileNameExA(long long ptr long) kernel32.K32GetModuleFileNameExA
+@ stdcall K32GetModuleFileNameExW(long long ptr long) kernel32.K32GetModuleFileNameExW
+@ stdcall K32GetModuleInformation(long long ptr long) kernel32.K32GetModuleInformation
+@ stdcall K32GetPerformanceInfo(ptr long) kernel32.K32GetPerformanceInfo
+@ stdcall K32GetProcessImageFileNameA(long ptr long) kernel32.K32GetProcessImageFileNameA
+@ stdcall K32GetProcessImageFileNameW(long ptr long) kernel32.K32GetProcessImageFileNameW
+@ stdcall K32GetProcessMemoryInfo(long ptr long) kernel32.K32GetProcessMemoryInfo
+@ stdcall K32GetWsChanges(long ptr long) kernel32.K32GetWsChanges
+@ stdcall K32InitializeProcessForWsWatch(long) kernel32.K32InitializeProcessForWsWatch
+@ stdcall K32QueryWorkingSet(long ptr long) kernel32.K32QueryWorkingSet
+@ stdcall K32QueryWorkingSetEx(long ptr long) kernel32.K32QueryWorkingSetEx
 @ stdcall LCIDToLocaleName(long wstr long long) kernel32.LCIDToLocaleName
 @ stdcall LCMapStringA(long long str long ptr long) kernel32.LCMapStringA
+@ stdcall LCMapStringEx(long long wstr long ptr long ptr ptr long) kernel32.LCMapStringEx
 @ stdcall LCMapStringW(long long wstr long ptr long) kernel32.LCMapStringW
 @ stdcall LeaveCriticalSection(ptr) kernel32.LeaveCriticalSection
 @ stdcall LoadLibraryA(str) kernel32.LoadLibraryA
@@ -1834,6 +1830,8 @@
 @ stdcall RegCreateKeyExW(long wstr long ptr long long ptr ptr ptr) advapi32.RegCreateKeyExW
 @ stdcall RegDeleteKeyExA(long str long long) advapi32.RegDeleteKeyExA
 @ stdcall RegDeleteKeyExW(long wstr long long) advapi32.RegDeleteKeyExW
+@ stdcall RegDeleteKeyValueA(long wstr wstr) advapi32.RegDeleteKeyValueA
+@ stdcall RegDeleteKeyValueW(long wstr wstr) advapi32.RegDeleteKeyValueW
 @ stdcall RegDeleteTreeA(long str) advapi32.RegDeleteTreeA
 @ stdcall RegDeleteTreeW(long wstr) advapi32.RegDeleteTreeW
 @ stdcall RegDeleteValueA(long str) advapi32.RegDeleteValueA
@@ -1866,6 +1864,7 @@
 @ stdcall RegSaveKeyExA(long str ptr long) advapi32.RegSaveKeyExA
 @ stdcall RegSaveKeyExW(long str ptr long) advapi32.RegSaveKeyExW
 @ stdcall RegSetKeySecurity(long long ptr) advapi32.RegSetKeySecurity
+@ stdcall RegSetKeyValueA(long str str long ptr long) advapi32.RegSetKeyValueA
 @ stdcall RegSetKeyValueW(long wstr wstr long ptr long) advapi32.RegSetKeyValueW
 @ stdcall RegSetValueExA(long str long long ptr long) advapi32.RegSetValueExA
 @ stdcall RegSetValueExW(long wstr long long ptr long) advapi32.RegSetValueExW
@@ -1966,6 +1965,7 @@
 @ stdcall SetSystemTimeAdjustment(long long) kernel32.SetSystemTimeAdjustment
 @ stdcall SetThreadContext(long ptr) kernel32.SetThreadContext
 @ stdcall SetThreadDescription(ptr wstr) kernel32.SetThreadDescription
+@ stdcall SetThreadGroupAffinity(ptr ptr ptr) kernel32.SetThreadGroupAffinity
 @ stdcall SetThreadIdealProcessor(long long) kernel32.SetThreadIdealProcessor
 @ stdcall SetThreadLocale(long) kernel32.SetThreadLocale
 @ stdcall SetThreadPreferredUILanguages(long wstr ptr) kernel32.SetThreadPreferredUILanguages

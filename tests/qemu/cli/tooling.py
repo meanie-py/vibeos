@@ -108,6 +108,8 @@ _PYTEST_SUITES = [
     # The stub-hit report's parsing/ranking, and spec2def's `-stub=VALUE` built from source.
     (".", ".", "tools/test_stub_hits.py"),
     (".", ".", "tools/test_spec2def_stub_value.py"),
+    # The UP and MP kernel cells name their Rust libraries by hand; keep them equal.
+    (".", ".", "tools/test_kernel_cells_parity.py"),
     # Same reason, one layer out: verify_cohab_coverage gates the merge train but reads
     # OBJECT FILES, so it cannot join test_scanner_controls (which drives source-only
     # `check` lints from fixture dirs) and would otherwise have no oracle at all.

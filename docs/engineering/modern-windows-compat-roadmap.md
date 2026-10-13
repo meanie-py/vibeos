@@ -172,9 +172,10 @@ weighting each missing function by the binaries that import it:
   like every `MmMapIoSpace` view. kmtest `MmMapIoSpaceEx`: Windows 11 10/0 first, then the
   guest 10/0.
 - **ntoskrnl_vista's ETW copies are gone** (also classpnp's no-op shims): drivers that
-  link the library now import the kernel's real `EtwRegister`/`EtwUnregister`/`EtwWrite`,
-  and ntoskrnl itself (which links ntoskrnl_vista too) no longer carries a second
-  definition whose winner was link order.
+  link the library now import the kernel's real `EtwRegister`/`EtwUnregister`/`EtwWrite`.
+  (Corrected 2026-10-13: this entry also said ntoskrnl links ntoskrnl_vista. It has not
+  since its cargo link dropped `libntoskrnl_vista.a` in June; only the CMake
+  EXTRA_DEPENDS still names it.)
 - **`wpprecorderum.dll`** (amd64/arm64): `WppAutoLogStart`/`Stop`/`Trace` and
   `WppAutoLogGetDefaultHandle`, records to nowhere like the kernel half. It is checked as
   a PE (its exports, and ntdll the only import); no UMDF host runs its importers yet.
@@ -184,6 +185,44 @@ Measured with `gap` after these, the drivers' weighted gap is 7,108 -> 7,060:
 sites) that had been hidden behind unmapped api sets, now counted against their host
 (`RegSetKeyValueW`, `VirtualAlloc2FromApp`, shell32's feature-state set, ...).
 
+**Done 2026-10-13: the hidden exports.** `win10_surface.py gated build-i386 build-amd64
+build-arm64` lists every row Windows exports that a spec gates behind a newer `-version`,
+and for each arch says whether the body is LINKED into the built image, imported from
+another DLL, absent, or (for a forwarding row) whether the target is exported.
+`--apply` drops the `-version` floor from rows linked (or forwarding to a live target) on
+every arch they are gated on. First run: 141 rows exported where the body already was,
+none of them new code. `gap`, measured against a checkout of the commit before: apps
+309 -> 271 missing functions, 829 -> 671 import sites (-19%); drivers 1,127 -> 1,095,
+7,060 -> 6,872.
+- kernel32 (46, two of them forwards into ntdll): the `*Ex` locale API (`LCMapStringEx`, `CompareStringEx`,
+  `GetDateFormatEx`...), `CreateSemaphoreEx`, the processor-group calls, and the psapi
+  set as `K32*` (`K32EnumProcesses`, `K32GetModuleFileNameExW`, ...).
+- gdi32 (44): the `D3DKMT*` thunks, which call the WDDM driver's callback or return
+  `STATUS_PROCEDURE_NOT_FOUND` with none; d3d11's five forwards to them now resolve.
+- shell32 (18): `SHCreateItemFromParsingName`, `SHGetPropertyStoreFromParsingName`,
+  `SHGetNameFromIDList`, `SHCreateDefaultContextMenu`...; ntdll (13); ws2_32
+  (`inet_ntop`/`inet_pton` and the W forms); advapi32 (`RegSetKeyValue`, `RegCopyTree`...);
+  msvcrt's `*printf_s`; crypt32, rpcrt4, pciidex one or two each.
+- ws2_32's 23 `Wah*` helpers forward to ws2help (a new `forwards` provider), `-private`
+  because ws2help links ws2_32's import library and would collide with its own
+  definitions (`LINKS_BACK`). kernelbase's forwards follow kernel32 (45 more).
+
+ntoskrnl's `RtlUTF8ToUnicodeN`/`RtlUnicodeToUTF8N` were "absent" only from the image:
+the body is the utf8 crate, which reached the kernel through `libntoskrnl_vista.a` until
+that left the link. The kernel's cargo link now takes the crate directly; kmtest
+`RtlUtf8` (Windows 11 16/0 first).
+
+Two guards came out of it. A body under the Windows name can be a DIFFERENT function:
+shell32's linked `SHBindToObject` is the tree's 4-argument cdecl helper, Windows exports
+5 arguments WINAPI, and only i386's link said so (`_SHBindToObject` vs
+`_SHBindToObject@20`). `gated` now compares the i386 decoration with the row's argument
+size and reports `signature:` instead of `linked`; the export now goes to a WINAPI
+`SHBindToObject_Export` over `SHBindToObjectEx`. And 13 linked bodies stay gated in
+`NOT_A_BODY` because they do not do the job, so a program keeps its working fallback:
+`RtlIsValidLocaleName` (TRUE for anything), `SHCreateItemInKnownFolder` (E_NOTIMPL),
+`D3DKMTOpenAdapterFromHdc` (success without an adapter), the clipboard-listener pair
+(fails without a last error), and the rest the list names.
+
 **Owed on the export surface:**
 - **Seed the stub-hit report with real programs.** Its first reading (607 boots: smoke,
   kmtest on all arches, and one amd64 appstorm sweep, which opens every stock app and
@@ -191,23 +230,23 @@ sites) that had been hidden behind unmapped api sets, now counted against their 
   `msvcrt.dll!_CrtCheckMemory`, and 39 GetProcAddress misses, all probes with a
   fallback (`SvchostPushServiceGlobals` in every svchost service, the optional `BTCpu*`
   hooks in `wow64cpu.dll`, `_set_invalid_parameter_handler` once per CRT process) except
-  `kernel32.dll!LCMapStringEx`, which is `gated` in `gap` (7 apps): the next forward.
+  `kernel32.dll!LCMapStringEx`, which was `gated` (exported 2026-10-13; the appstorm
+  sweep after it: 54/54 apps, 38 misses, all probes).
   The ranking only means something over third-party programs (the apitest sweep, Chrome
   once it starts), so opt stubs into `-stub=` from those runs, not before.
 - **The next cheap kernel batch is NOT NDIS 6** (this section said it was):
   `PoRegisterPowerSettingCallback`/`PoUnregister…` (61/59 packages),
   `IoGetDevicePropertyData`/`IoSetDevicePropertyData` (38/35) and `strncpy_s` (35) sit
-  among the NDIS names. ntoskrnl already LINKS ntoskrnl_vista's bodies for the first four,
-  but they return `STATUS_NOT_IMPLEMENTED`, so exporting them as they stand would turn a
-  load failure into a start failure. The Po pair want a success that never calls back
+  among the NDIS names. ntoskrnl_vista has bodies for the first four, but they return
+  `STATUS_NOT_IMPLEMENTED` (and the kernel does not link that library; this entry said it
+  did), so exporting them as they stand would turn a load failure into a start failure. The Po pair want a success that never calls back
   (or calls back once with the current value, as Windows does: grade it there first).
   The NDIS 6 NetBufferList/miniport surface is the big one after that.
-- **Ungate the `gated` rows** (68 app functions, 53 driver ones in `gap`): a real row
-  behind `-version=0x600+`, whose body is often already LINKED. `LCMapStringEx` is in
-  kernel32.dll today (`kernel32-rust/src/string/locale.rs`), just not exported at 0x502,
-  and an app probes for it. Step 1's forwards covered only names a `_vista` DLL provides;
-  this is the same free win inside the module itself, and wants a smoke on all three
-  arches, because a program that finds the export takes its Vista path.
+- **The gated rows left** (`gated`, 82 absent once the UTF-8 pair is out): user32's touch/pointer/gesture,
+  DisplayConfig and DPI-awareness calls (45), ntdll's hash helpers (`MD5*`, `A_SHA*`)
+  and memory/IO resource codecs (19), ntoskrnl's PoFx runtime power (10; ntoskrnl_vista,
+  which the kernel does not link, has NOT_IMPLEMENTED bodies), kernel32's console `*Ex` calls (7), shell32's
+  `SHCreateShellItemArray*` (4). Those need bodies, plus the 13 `NOT_A_BODY` rows.
 - **wpprecorder.sys / wpprecorderum.dll have not served a real vendor driver yet.**
 - **Re-measure** after any of these: `python3 tools/win10_surface.py reference` (cached in
   `~/.cache/vibeos/win10-surface/`), then `gap` over the same 20 app folders under

@@ -6,14 +6,14 @@
 @ stdcall D3D11CreateDeviceAndSwapChain(ptr long ptr long ptr long long ptr ptr ptr ptr ptr)
 @ stdcall D3D11On12CreateDevice(ptr long ptr long ptr long long ptr ptr ptr)
 @ stdcall -version=0x600+ D3DKMTCheckVidPnExclusiveOwnership(ptr) gdi32.D3DKMTCheckVidPnExclusiveOwnership # __REACTOS__: gdi32 only exports D3DKMT* for NT6+
-@ stdcall -version=0x600+ D3DKMTCloseAdapter(ptr) gdi32.D3DKMTCloseAdapter
+@ stdcall D3DKMTCloseAdapter(ptr) gdi32.D3DKMTCloseAdapter
 @ stub D3DKMTCreateAllocation
 @ stub D3DKMTCreateContext
-@ stdcall -version=0x600+ D3DKMTCreateDevice(ptr) gdi32.D3DKMTCreateDevice
+@ stdcall D3DKMTCreateDevice(ptr) gdi32.D3DKMTCreateDevice
 @ stub D3DKMTCreateSynchronizationObject
 @ stub D3DKMTDestroyAllocation
 @ stub D3DKMTDestroyContext
-@ stdcall -version=0x600+ D3DKMTDestroyDevice(ptr) gdi32.D3DKMTDestroyDevice
+@ stdcall D3DKMTDestroyDevice(ptr) gdi32.D3DKMTDestroyDevice
 @ stub D3DKMTDestroySynchronizationObject
 @ stub D3DKMTEscape
 @ stub D3DKMTGetContextSchedulingPriority
@@ -27,7 +27,7 @@
 @ stub D3DKMTOpenAdapterFromHdc
 @ stub D3DKMTOpenResource
 @ stub D3DKMTPresent
-@ stdcall -version=0x600+ D3DKMTQueryAdapterInfo(ptr) gdi32.D3DKMTQueryAdapterInfo
+@ stdcall D3DKMTQueryAdapterInfo(ptr) gdi32.D3DKMTQueryAdapterInfo
 @ stub D3DKMTQueryAllocationResidency
 @ stub D3DKMTQueryResourceInfo
 @ stub D3DKMTRender
@@ -36,7 +36,7 @@
 @ stub D3DKMTSetDisplayMode
 @ stub D3DKMTSetDisplayPrivateDriverFormat
 @ stub D3DKMTSetGammaRamp
-@ stdcall -version=0x600+ D3DKMTSetVidPnSourceOwner(ptr) gdi32.D3DKMTSetVidPnSourceOwner
+@ stdcall D3DKMTSetVidPnSourceOwner(ptr) gdi32.D3DKMTSetVidPnSourceOwner
 @ stub D3DKMTSignalSynchronizationObject
 @ stub D3DKMTUnlock
 @ stub D3DKMTWaitForSynchronizationObject

@@ -709,6 +709,21 @@ pub unsafe extern "C" fn SHBindToObject(
     SHBindToObjectEx(psf, pidl, core::ptr::null_mut(), riid, ppvObj)
 }
 
+/// The EXPORTED SHBindToObject (Vista+): `(psf, pidl, pbc, riid, ppv)`, WINAPI. The one
+/// above is the tree's older 4-argument C++ helper (utils.h), cdecl, which the in-tree
+/// callers use; exporting it under the Windows name would hand callers the wrong arity
+/// and calling convention (i386 `_SHBindToObject` vs `_SHBindToObject@20`).
+#[no_mangle]
+pub unsafe extern "system" fn SHBindToObject_Export(
+    psf: *mut IShellFolder,
+    pidl: LPCITEMIDLIST,
+    pbc: *mut IBindCtx,
+    riid: REFIID,
+    ppv: *mut *mut core::ffi::c_void,
+) -> HRESULT {
+    SHBindToObjectEx(psf, pidl, pbc, riid, ppv)
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn SHELL_GetUIObjectOfAbsoluteItem(
     hWnd: HWND,
