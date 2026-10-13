@@ -105,6 +105,9 @@ _PYTEST_SUITES = [
     # quiet: a data export lined out as code, a name declared twice, its own block read
     # back as "already declared", or the hand-written part of a spec re-flowed.
     (".", ".", "tools/test_win10_surface.py"),
+    # The stub-hit report's parsing/ranking, and spec2def's `-stub=VALUE` built from source.
+    (".", ".", "tools/test_stub_hits.py"),
+    (".", ".", "tools/test_spec2def_stub_value.py"),
     # Same reason, one layer out: verify_cohab_coverage gates the merge train but reads
     # OBJECT FILES, so it cannot join test_scanner_controls (which drives source-only
     # `check` lints from fixture dirs) and would otherwise have no oracle at all.

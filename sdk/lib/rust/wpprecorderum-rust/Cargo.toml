@@ -1,0 +1,14 @@
+# wpprecorderum-rust — the body of wpprecorderum.dll, the user-mode WPP in-flight recorder
+# (dll/win32/wpprecorderum). The final link is driven by wpprecorderum-cargo (reactos-link
+# ModuleKind::Win32Dll, entry=DllMain, exports from wpprecorderum.spec).
+
+[package]
+name = "wpprecorderum-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }

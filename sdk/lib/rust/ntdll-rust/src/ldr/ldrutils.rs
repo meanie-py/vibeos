@@ -2450,6 +2450,26 @@ pub unsafe extern "system" fn LdrpGetProcedureAddress(
             core::ptr::null_mut(),
         );
 
+        /* A miss is logged for tools/stub_hits.py: a function a program probes for with
+         * GetProcAddress is one it has a fallback for, so NO export is the right answer
+         * there, and the miss list is what keeps a stub from being added in its place. */
+        if Status == 0xC000_0139u32 as NTSTATUS || Status == 0xC000_0138u32 as NTSTATUS {
+            if !Name.is_null() {
+                DbgPrint(
+                    b"LDR: GetProcAddress miss %wZ!%.*s\n\0".as_ptr() as PCHAR,
+                    core::ptr::addr_of!((*LdrEntry).BaseDllName),
+                    (*Name).Length as i32,
+                    (*Name).Buffer,
+                );
+            } else {
+                DbgPrint(
+                    b"LDR: GetProcAddress miss %wZ!#%lu\n\0".as_ptr() as PCHAR,
+                    core::ptr::addr_of!((*LdrEntry).BaseDllName),
+                    Ordinal,
+                );
+            }
+        }
+
         /* Finally, see if we're supposed to run the init routines */
         if NT_SUCCESS(Status) && ExecuteInit != 0 {
             /* It's possible a forwarded entry had us load the DLL. Use the

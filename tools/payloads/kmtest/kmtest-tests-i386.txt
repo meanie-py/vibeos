@@ -17,6 +17,9 @@ ExFastMutex
 # d3b1c045c5d). The note above is kept as the audit trail of what it used to do.
 ExHardError
 ExInterlocked
+EtwActivity
+EtwProvider
+ExPool2
 ExPools
 ExPushLock
 # QUARANTINED 2026-07-12 (i386 sweep 2): BUGCHECK 0x1E (0xc0000005) at
@@ -30,6 +33,7 @@ ExSequencedList
 ExSingleList
 ExUuid
 Example
+FeatureConfig
 FsRtlDissect
 FsRtlExpression
 FsRtlLegal
@@ -83,6 +87,7 @@ KeIrql
 KeMutex
 KeSpinLock
 KeTimer
+MmMapIoSpaceEx
 MmMdl
 # QUARANTINED 2026-07-12 (i386 sweep 5): BUGCHECK 0x1E (0xc0000005) at
 # ntoskrnl.exe+0xA0F3B (0x80563f3b). Passes on amd64 (71/13/4). i386-only Mm

@@ -86,6 +86,41 @@ pub unsafe extern "C" fn ApiSetResolveToHost(
             LBnd = Index + 1;
         }
     }
+
+    // No exact row: match as Windows does, ignoring the trailing minor version (its
+    // schema hashes a name only up to the last '-'). Kept in step with ntdll-rust's
+    // apisets.rs, the copy the loader runs; this one is what the apisets apitest links.
+    let Name = core::slice::from_raw_parts(Tmp.Buffer as *const u16, (Tmp.Length / 2) as usize);
+    let is_minor = |s: &[u16]| !s.is_empty() && s.iter().all(|&c| (b'0' as u16..=b'9' as u16).contains(&c));
+    if let Some(Hyphen) = Name.iter().rposition(|&c| c == b'-' as u16) {
+        if is_minor(&Name[Hyphen + 1..]) {
+            let mut Stem: _UNICODE_STRING = Tmp;
+            Stem.Length = ((Hyphen + 1) * 2) as USHORT;
+            let mut Found: *const ROS_APISET = core::ptr::null();
+            for n in 0..g_ApisetsCount as isize {
+                let Entry = (core::ptr::addr_of!(g_Apisets) as *const ROS_APISET).offset(n);
+                let EntryName = core::slice::from_raw_parts(
+                    (*Entry).Name.Buffer as *const u16,
+                    ((*Entry).Name.Length / 2) as usize,
+                );
+                if EntryName.len() <= Hyphen + 1 || !is_minor(&EntryName[Hyphen + 1..]) {
+                    continue;
+                }
+                let mut Head: _UNICODE_STRING = (*Entry).Name;
+                Head.Length = Stem.Length;
+                if RtlCompareUnicodeString(&Stem, &Head, TRUE as BOOLEAN) == 0
+                    && (*Entry).dwOsVersions & ApisetVersion != 0
+                {
+                    Found = Entry;
+                }
+            }
+            if !Found.is_null() {
+                *Resolved = (TRUE as u8);
+                *Output = (*Found).Target;
+                return STATUS_SUCCESS;
+            }
+        }
+    }
     *Resolved = (FALSE as u8);
     return STATUS_SUCCESS;
 }

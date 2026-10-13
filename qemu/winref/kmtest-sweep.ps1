@@ -46,10 +46,13 @@ if ($inflight) {
     # it is back up. Only one logged AFTER this test started is this test's.
     $ev = Get-WinEvent -FilterHashtable @{ LogName = 'System'; Id = 1001; StartTime = $since } -MaxEvents 5 -ErrorAction SilentlyContinue |
         Where-Object { $_.Message -match 'bugcheck was: (0x[0-9a-fA-F]+)' } | Select-Object -First 1
-    if ($ev -and $ev.Message -match 'bugcheck was: (0x[0-9a-fA-F]+)') {
+    if ($ev -and $ev.Message -match 'bugcheck was: (0x[0-9a-fA-F]+) ?(\([^)]*\))?') {
+        # The stop code AND its parameters: 0x139's first parameter is which security check
+        # failed, 0x1E's is the exception -- the code alone is a category, not a diagnosis.
         $code = '0x{0:X}' -f [Convert]::ToUInt64($Matches[1], 16)
+        $params = $Matches[2]
         Write-Output "[KMTEST-SWEEP] launch $inflight"
-        Write-Output "*** BUGCHECK: $code (Windows rebooted under $inflight)"
+        Write-Output "*** BUGCHECK: $code $params (Windows rebooted under $inflight)"
         Mark "done $inflight"
         $done[$inflight] = $true
     } elseif ($tries[$inflight] -ge 2) {

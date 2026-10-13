@@ -261,10 +261,9 @@ const EMPTY: *const i8 = b"\0".as_ptr() as *const i8;
 #[no_mangle] pub unsafe extern "C" fn DBGGETADSENSEQUALIFIERSTR(_s: PVOID) -> *const i8 { EMPTY }
 #[no_mangle] pub unsafe extern "C" fn DBGGETSRBSTATUSSTR(_s: PVOID) -> *const i8 { EMPTY }
 
-// ============================ ETW (no-op) ============================
-#[no_mangle] pub unsafe extern "system" fn EtwRegister(a: PVOID, b: PVOID, c: PVOID, h: *mut u64) -> NTSTATUS { if !h.is_null() {*h=0;} 0 }
-#[no_mangle] pub unsafe extern "system" fn EtwUnregister(h: u64) -> NTSTATUS { 0 }
-#[no_mangle] pub unsafe extern "system" fn EtwWrite(h: u64, d: PVOID, a: PVOID, n: u32, dd: PVOID) -> NTSTATUS { 0 }
+// ============================ ETW ============================
+// EtwRegister / EtwUnregister / EtwWrite are ntoskrnl exports (wmi-rust): imported, not
+// shimmed. EventDescCreate is an evntprov.h inline, so it stays here.
 // Declared and called with 8 arguments (autorun.rs:61, :3303). The 0-parameter form was
 // benign — cdecl, and the body is empty — but the shape still disagreed with every caller.
 // Behaviour is unchanged: the ETW write this feeds is stubbed too.

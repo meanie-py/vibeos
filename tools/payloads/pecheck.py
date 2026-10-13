@@ -251,7 +251,7 @@ def spec_exports(spec: Path, arch: str, version: int) -> dict[str, str]:
                     inc |= lo_v <= version <= hi_v
                 if not inc and state == "ok":
                     state = f"exported only for -version={opt[9:]}, tree builds {version:#x}"
-            elif opt == "-stub" and state == "ok":
+            elif (opt == "-stub" or opt.startswith("-stub=")) and state == "ok":
                 state = "stub"
         if not rest:
             continue

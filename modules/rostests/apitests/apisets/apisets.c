@@ -85,6 +85,16 @@ START_TEST(apisets)
         winetest_pop_context();
     }
 
+    // The trailing minor version does not take part, as on Windows (its schema hashes a
+    // name up to the last '-'): realtime-l1-1-1 has no row of its own, the -l1-1-2 row
+    // answers it. A different major ("l1-2") is a different api set.
+    UNICODE_STRING Minor1 = RTL_CONSTANT_STRING(L"api-ms-win-core-realtime-l1-1-1.dll");
+    UNICODE_STRING Minor2 = RTL_CONSTANT_STRING(L"API-MS-Win-Core-Console-L1-1-9");
+    UNICODE_STRING Major = RTL_CONSTANT_STRING(L"api-ms-win-core-realtime-l1-9-0");
+    test_single(&Minor1);
+    test_single(&Minor2);
+    fail_single(&Major);
+
     UNICODE_STRING Fail1 = RTL_CONSTANT_STRING(L"");
     UNICODE_STRING Fail2 = RTL_CONSTANT_STRING(L"api-");
     UNICODE_STRING Fail3 = RTL_CONSTANT_STRING(L"ext");

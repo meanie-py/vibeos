@@ -783,9 +783,14 @@ SUITES = {
 }
 
 
-def _stage_kmtest(stage: Path, repo: Path) -> int:
+def _stage_kmtest(stage: Path, repo: Path, only: list[str] | None = None) -> int:
     lists = _load(repo / "tools/payloads/kmtest/test_kmtest_lists.py", "kmtest_lists")
     tests = kmtest_order(lists.listed("amd64"), lists.built_tests("amd64"))
+    if only:
+        unknown = sorted(set(only) - set(tests))
+        if unknown:
+            raise FileNotFoundError(f"--only names tests kmtest does not build: {unknown}")
+        tests = [t for t in tests if t in only]
     shutil.copy2(ASSETS / "kmtest-sweep.ps1", stage / "kmtest-sweep.ps1")
     (stage / "bin" / "kmtest-tests.txt").write_text("\n".join(tests) + "\n")
     (stage / "run.cmd").write_text(
@@ -852,7 +857,10 @@ def cmd_suite(args, repo: Path) -> int:
         (stage / "bin" / name).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, stage / "bin" / name)
     try:
-        count = (_stage_kmtest if suite == "kmtest" else _stage_apitest)(stage, repo)
+        if suite == "kmtest":
+            count = _stage_kmtest(stage, repo, args.only)
+        else:
+            count = _stage_apitest(stage, repo)
     except FileNotFoundError as e:
         run.add(artifacts.Stage("corpus", status="fail", detail=str(e)))
         return run.finalize(repo)
@@ -937,6 +945,13 @@ def _grade(run: artifacts.Run, suite: str, out: list[str], args, repo: Path) -> 
         # Every row is a harness failure (the first kmtest column: a driver that would not
         # load). That is a broken rig, not a reference: refuse to bank it.
         run.classification = f"WINREF_{suite.upper()}_NOT_RUN"
+    elif args.write_baseline and getattr(args, "only", None):
+        # A subset is not the column: banking it would drop every row it did not run.
+        run.add(
+            artifacts.Stage(
+                "baseline", status="fail", detail="--write-baseline refused with --only"
+            )
+        )
     elif args.write_baseline:
         dst = repo / "tools/conformance-baseline" / WIN_BASELINE / f"{suite}.txt"
         dst.parent.mkdir(parents=True, exist_ok=True)
@@ -1247,6 +1262,13 @@ def add_parser(sub) -> None:
         k.add_argument(
             "--regrade", metavar="RUN_DIR", help="grade a finished run's output.txt again, no VM"
         )
+        if suite == "kmtest":
+            k.add_argument(
+                "--only",
+                nargs="+",
+                metavar="TEST",
+                help="run just these tests (a new test, graded by Windows first)",
+            )
         k.add_argument(
             "--write-baseline",
             action="store_true",

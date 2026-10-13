@@ -1000,6 +1000,7 @@ Win10/11 surface; design and gotchas in `docs/engineering/winref.md`). Images li
 ./vibeos-cli winref kmtest  --accel whpx [--write-baseline]   # the kmtest corpus on Windows 11
 ./vibeos-cli winref apitest --accel whpx [--write-baseline]   # the apitest corpus, ~5.5 min
 ./vibeos-cli winref apitest --regrade <run-dir>               # re-grade a finished run, no VM
+./vibeos-cli winref kmtest --only ExPool2 EtwProvider         # a new test: Windows grades it first
 ```
 
 `kmtest`/`apitest` are the conformance ratchet's **reference column**: the guest's own

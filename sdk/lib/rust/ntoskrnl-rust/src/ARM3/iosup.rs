@@ -128,6 +128,34 @@ pub unsafe extern "system" fn MmMapIoSpace(
     BaseAddress
 }
 
+/// MmMapIoSpaceEx (Windows 10): MmMapIoSpace with the caching taken from a page
+/// protection. The base protection must be a readable one, optionally with exactly one of
+/// PAGE_NOCACHE / PAGE_WRITECOMBINE; no modifier means cached. Anything else is NULL.
+/// The access part is checked but not enforced: the view is a kernel read-write mapping,
+/// as every MmMapIoSpace view is.
+#[no_mangle]
+pub unsafe extern "system" fn MmMapIoSpaceEx(
+    PhysicalAddress: PHYSICAL_ADDRESS,
+    NumberOfBytes: SIZE_T,
+    Protect: ULONG,
+) -> PVOID {
+    let cache = match Protect & (PAGE_NOCACHE | PAGE_WRITECOMBINE) {
+        0 => MmCached_val,
+        PAGE_NOCACHE => MmNonCached,
+        PAGE_WRITECOMBINE => MmWriteCombined,
+        _ => return core::ptr::null_mut(),
+    };
+    match Protect & !(PAGE_NOCACHE | PAGE_WRITECOMBINE) {
+        PAGE_READONLY | PAGE_READWRITE | PAGE_EXECUTE | PAGE_EXECUTE_READ
+        | PAGE_EXECUTE_READWRITE => {}
+        _ => return core::ptr::null_mut(),
+    }
+    if NumberOfBytes == 0 {
+        return core::ptr::null_mut();
+    }
+    MmMapIoSpace(PhysicalAddress, NumberOfBytes, cache)
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn MmUnmapIoSpace(
     BaseAddress: PVOID,

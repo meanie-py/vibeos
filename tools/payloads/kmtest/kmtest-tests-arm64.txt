@@ -27,6 +27,9 @@ ExFastMutex
 # was a masked face (§9.54). Separate triage owed (arm64 ExRaiseHardError/ExpRaiseHardError).
 ExHardError
 ExInterlocked
+EtwActivity
+EtwProvider
+ExPool2
 ExPools
 ExPushLock
 # UN-QUARANTINED 2026-07-16: fixed by task #10 (arm64 kernel-mode SEH resume, §9.69).
@@ -36,6 +39,7 @@ ExSequencedList
 ExSingleList
 ExUuid
 Example
+FeatureConfig
 FsRtlDissect
 FsRtlExpression
 FsRtlLegal
@@ -109,6 +113,7 @@ KeIrql
 KeMutex
 KeSpinLock
 KeTimer
+MmMapIoSpaceEx
 MmMdl
 # UN-QUARANTINED 2026-07-17 (§9.96 root fix): the wedge was the NOACCESS-view translation-fault
 # storm — MmNotPresentFaultSectionView dropped the C's `Region->Protect & PAGE_NOACCESS →
