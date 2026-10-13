@@ -105,16 +105,59 @@ First runs (measured against Windows 10.0.26100):
 Imports resolved at runtime through `GetProcAddress` are invisible to `gap`; that half
 still needs loader logging.
 
-**Owed on the export-surface tooling** (nothing implemented yet; the stubs are dormant):
+**Done 2026-10-12: the first three triage steps.** Measured with `gap` before and after,
+weighting each missing function by the binaries that import it:
+
+| Corpus | Missing functions | Imports needing a fix |
+|---|---|---|
+| 38 desktop apps | 474 -> 308 | 1,513 -> 827 (-45%) |
+| 479 driver packages | 1,457 -> 1,121 | 11,483 -> 7,108 (-38%) |
+
+1. **Code the tree already had.** `win10_surface.py forwards --apply` forwards every export
+   Windows' module has, our default build does not, and a provider DLL implements: kernel32,
+   ntdll, advapi32, gdi32 and user32 to their `*_vista` DLLs (159: SRW locks, condition
+   variables, InitOnce, thread pools, `GetTickCount64`, the locale-name API, `RegDeleteTree`)
+   and kernelbase to kernel32/advapi32 (838). Each forward switches off where the spec's own
+   row takes over, the block is generated (`# BEGIN vista forwards`), and
+   `forwards --check build-<arch>` follows every forward in the BUILT DLLs to a real body
+   (0 problems on all three arches). It found two dead arm64 rows on the way, now fixed.
+   A forward is a load-time edge the import walk never saw: SysWOW64 staged advapi32 and
+   user32 without their `_vista` siblings, and every 32-bit guest died at load
+   (0xC0000139; msvcrt binds `GetDpiForSystem` through user32 now).
+   `tools/fex/wow64-closure.py` follows export forwarders since.
+2. **Cheap kernel clusters**, in Rust, written from the WDK documentation:
+   `ExAllocatePool2/3` + `ExFreePool2` (ex-rust), the ETW provider API with no sessions
+   (wmi-rust: registration succeeds, nothing is ever enabled, writes go nowhere), feature
+   configuration with nothing configured (rtlk-rust), `KeInitializeSpinLock` and
+   `KeGetCurrentIrql` exported on amd64, and `wpprecorder.sys` (amd64/arm64), the WPP
+   recorder 128 packages import. Four kmtests cover the kernel calls; Windows 11 graded
+   them first (`winref.md`, "New tests: graded by Windows first"), and the guest matches
+   Windows' counts on all three arches. One measured divergence from the docs: Windows
+   accepts reserved POOL_FLAGS bits, so ours ignores them too.
+3. **api sets are not missing.** The loader already redirects `api-ms-win-*` through
+   `sdk/lib/apisets/apisets.table.c` (the guest passes the apisets apitest's 4,472 checks,
+   as Windows does). `gap` now resolves them through that table, as the loader does, and
+   lists names it has no row for: one, `api-ms-win-core-realtime-l1-1-1` (2 apps).
+
+**Owed on the export-surface tooling:**
 - **A non-raising stub kind** in spec2def (log once, set `ERROR_CALL_NOT_IMPLEMENTED` /
   return `STATUS_NOT_IMPLEMENTED`), opt-in per function for APIs callers commonly probe and
   handle failing. Needs the argument list (i386 stdcall pops its own args): take it from
   Wine's typed `.spec` lines, mingw-w64 headers as the fallback. Raising stays the default.
+  Not built yet: nothing should opt in before the stub-hit report says which stubs run.
 - **A stub-hit report**: rank the `WARNING: calling stub` lines across run logs; that
   ranking is the implementation queue, so bodies are bought only for stubs real runs call.
-  Triage should classify `EXCEPTION_WINE_STUB` crashes too.
-- **api-set forwarders**: we ship no `api-ms-win-*` DLLs; upstream ReactOS's `dll/apisets`
-  generator is the thing to sync, not to rewrite.
+  Triage should classify `EXCEPTION_WINE_STUB` crashes too. Log `GetProcAddress` misses at
+  the same time: for a function a program probes, NO export is the right answer (it takes
+  its fallback), and a stub there breaks it.
+- **Next cheap kernel export:** `MmMapIoSpaceEx` (72 packages; `MmMapIoSpace` with the
+  cache type taken from the page protection). After it the driver list is NDIS 6.
+- **wpprecorder.sys has not loaded a real vendor driver yet**; kmtest cannot reach a
+  non-kernel module's exports. `wpprecorderum.dll` (9 packages) is not built.
+- **ntoskrnl_vista's ETW is NOT_IMPLEMENTED**, and it is a static library linked INTO
+  in-tree drivers (wdf01000, kmtest_drv), so they never reach the kernel's exports for
+  these names. Point it at the kernel's ETW or retire those three; scan_export_shadows
+  lists them.
 - **Re-measure** after any of these: `python3 tools/win10_surface.py reference` (cached in
   `~/.cache/vibeos/win10-surface/`), then `gap` over the same 20 app folders under
   `/mnt/c/Program Files*` and over `/mnt/c/Windows/System32/DriverStore/FileRepository`.

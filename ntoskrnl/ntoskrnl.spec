@@ -53,6 +53,16 @@
 @ stdcall DbgPrompt(str ptr long)
 @ stdcall DbgQueryDebugFilterState(long long)
 @ stdcall DbgSetDebugFilterState(long long long)
+@ stdcall EtwActivityIdControl(long ptr)
+@ stdcall EtwEventEnabled(int64 ptr)
+@ stdcall EtwProviderEnabled(int64 long int64)
+@ stdcall EtwRegister(ptr ptr ptr ptr)
+@ stdcall EtwSetInformation(int64 long ptr long)
+@ stdcall EtwUnregister(int64)
+@ stdcall EtwWrite(int64 ptr ptr long ptr)
+@ stdcall EtwWriteEx(int64 ptr int64 long ptr ptr long ptr)
+@ stdcall EtwWriteString(int64 long int64 ptr ptr)
+@ stdcall EtwWriteTransfer(int64 ptr ptr ptr long ptr)
 @ stdcall -arch=x86_64 ExAcquireFastMutex(ptr)
 @ fastcall ExAcquireFastMutexUnsafe(ptr)
 @ stdcall ExAcquireResourceExclusiveLite(ptr long)
@@ -66,6 +76,8 @@
 @ stdcall ExAllocateCacheAwareRundownProtection(long long)
 @ stdcall ExAllocateFromPagedLookasideList(ptr) ExiAllocateFromPagedLookasideList
 @ stdcall ExAllocatePool(long long)
+@ stdcall ExAllocatePool2(int64 long long)
+@ stdcall ExAllocatePool3(int64 long long ptr long)
 @ stdcall ExAllocatePoolWithQuota(long long)
 @ stdcall ExAllocatePoolWithQuotaTag(long long long)
 @ stdcall ExAllocatePoolWithTag(long long long)
@@ -86,6 +98,7 @@
 @ stdcall ExExtendZone(ptr ptr long)
 @ stdcall ExFreeCacheAwareRundownProtection(ptr)
 @ stdcall ExFreePool(ptr)
+@ stdcall ExFreePool2(ptr long ptr long)
 @ stdcall ExFreePoolWithTag(ptr long)
 @ stdcall ExFreeToPagedLookasideList(ptr ptr) ExiFreeToPagedLookasideList
 @ stdcall ExGetCurrentProcessorCounts(ptr ptr ptr)
@@ -589,6 +602,7 @@
 @ stdcall -arch=arm KeFlushIoBuffers(ptr long long)
 @ stdcall KeFlushQueuedDpcs()
 @ stdcall KeGenericCallDpc(ptr ptr)
+@ stdcall -arch=x86_64 KeGetCurrentIrql()
 @ stdcall KeGetCurrentProcessorNumberEx(ptr)
 @ stdcall KeGetCurrentThread()
 @ stdcall KeGetPreviousMode()
@@ -615,6 +629,7 @@
 @ stdcall KeInitializeQueue(ptr long)
 @ stdcall KeInitializeSemaphore(ptr long long)
 @ stdcall -arch=i386,arm KeInitializeSpinLock(ptr) _KeInitializeSpinLock
+@ stdcall -arch=x86_64 KeInitializeSpinLock(ptr)
 @ stdcall KeInitializeThreadedDpc(ptr ptr ptr)
 @ stdcall KeInitializeTimer(ptr)
 @ stdcall KeInitializeTimerEx(ptr long)
@@ -758,6 +773,13 @@
 # uses this; it is exported for the drivers that are separate PEs (mup, ks, afd,
 # cdfs, cdrom, win32k). Not `-private`, for the same import-lib reason as above.
 @ stdcall MmTryProbeAndLockPages(ptr long long)
+@ stdcall -arch=win64 RtlArmFeatureUsageProviderFlushNotification()
+@ stdcall RtlNotifyFeatureUsage(ptr)
+@ stdcall RtlQueryFeatureConfiguration(long long ptr ptr)
+@ stdcall -ret64 RtlQueryFeatureConfigurationChangeStamp()
+@ stdcall -arch=win64 RtlRecordFeatureUsage()
+@ stdcall RtlRegisterFeatureConfigurationChangeNotification(ptr ptr ptr ptr)
+@ stdcall -arch=win64 RtlRegisterFeatureUsageProvider()
 @ cdecl RtlSehTryExcept(ptr ptr ptr ptr ptr)
 @ cdecl RtlSehTryFinally(ptr ptr ptr ptr)
 @ stdcall LdrAccessResource(ptr ptr ptr ptr)
@@ -1334,6 +1356,8 @@
 @ stdcall RtlTraceDatabaseLock(ptr)
 @ stdcall RtlTraceDatabaseUnlock(ptr)
 @ stdcall RtlTraceDatabaseValidate(ptr)
+@ stdcall RtlUnregisterFeatureConfigurationChangeNotification(ptr)
+@ stdcall -arch=win64 RtlUnregisterFeatureUsageProvider()
 @ stdcall -version=0x601+ RtlUTF8ToUnicodeN(ptr long ptr str long)
 @ fastcall -arch=i386,arm RtlUlongByteSwap(long)
 @ fastcall -arch=i386,arm RtlUlonglongByteSwap(long long)
@@ -1788,22 +1812,12 @@
 @ stub -version=0xA00+ EmProviderRegister
 @ stub -version=0xA00+ EmProviderRegisterEntry
 @ stub -version=0xA00+ EmpProviderRegister
-@ stub -version=0xA00+ EtwActivityIdControl
 @ stub -version=0xA00+ EtwEnableTrace
-@ stub -version=0xA00+ EtwEventEnabled
-@ stub -version=0xA00+ EtwProviderEnabled
-@ stub -version=0xA00+ EtwRegister
 @ stub -version=0xA00+ EtwRegisterClassicProvider
 @ stub -version=0xA00+ EtwSendTraceBuffer
-@ stub -version=0xA00+ EtwSetInformation
 @ stub -version=0xA00+ EtwTelemetryCoverageReport
-@ stub -version=0xA00+ EtwUnregister
-@ stub -version=0xA00+ EtwWrite
 @ stub -version=0xA00+ EtwWriteEndScenario
-@ stub -version=0xA00+ EtwWriteEx
 @ stub -version=0xA00+ EtwWriteStartScenario
-@ stub -version=0xA00+ EtwWriteString
-@ stub -version=0xA00+ EtwWriteTransfer
 @ stub -version=0xA00+ EtwpDisableStackWalkApc
 @ stub -version=0xA00+ EtwpReenableStackWalkApc
 @ stub -version=0xA00+ ExAccessByte
@@ -1826,8 +1840,6 @@
 @ stub -version=0xA00+ ExAllocateCacheAwarePushLock
 @ stub -version=0xA00+ ExAllocateFromLookasideListEx
 @ stub -version=0xA00+ ExAllocateFromNPagedLookasideList
-@ stub -version=0xA00+ ExAllocatePool2
-@ stub -version=0xA00+ ExAllocatePool3
 @ stub -version=0xA00+ ExAllocateTimer
 @ stub -version=0xA00+ ExBlockOnAddressPushLock
 @ stub -version=0xA00+ ExBlockPushLock
@@ -1852,7 +1864,6 @@
 @ stub -version=0xA00+ ExFlushLookasideListEx
 @ stub -version=0xA00+ ExFreeAutoExpandPushLock
 @ stub -version=0xA00+ ExFreeCacheAwarePushLock
-@ stub -version=0xA00+ ExFreePool2
 @ stub -version=0xA00+ ExFreeToLookasideListEx
 @ stub -version=0xA00+ ExFreeToNPagedLookasideList
 @ stub -version=0xA00+ ExGetFirmwareEnvironmentVariable
@@ -2382,7 +2393,6 @@
 @ stub -version=0xA00+ KeFreeCalloutStack
 @ stub -version=0xA00+ KeGetClockOwner
 @ stub -version=0xA00+ KeGetClockTimerResolution
-@ stub -version=0xA00+ KeGetCurrentIrql
 @ stub -version=0xA00+ KeGetCurrentNodeNumber
 @ stub -version=0xA00+ KeGetEffectiveIrql
 @ stub -version=0xA00+ KeGetNextClockTickDuration
@@ -2834,7 +2844,6 @@
 @ stub -version=0xA00+ RtlAddResourceAttributeAce
 @ stub -version=0xA00+ RtlAreBitsClearEx
 @ stub -version=0xA00+ RtlAreBitsSetEx
-@ stub -version=0xA00+ RtlArmFeatureUsageProviderFlushNotification
 @ stub -version=0xA00+ RtlAvlInsertNodeEx
 @ stub -version=0xA00+ RtlAvlRemoveNode
 @ stub -version=0xA00+ RtlCapabilityCheck
@@ -2993,7 +3002,6 @@
 @ stub -version=0xA00+ RtlMergeBitMapsEx
 @ stub -version=0xA00+ RtlNormalizeSecurityDescriptor
 @ stub -version=0xA00+ RtlNormalizeString
-@ stub -version=0xA00+ RtlNotifyFeatureUsage
 @ stub -version=0xA00+ RtlNumberOfClearBitsEx
 @ stub -version=0xA00+ RtlNumberOfClearBitsInRange
 @ stub -version=0xA00+ RtlNumberOfSetBitsEx
@@ -3011,8 +3019,6 @@
 @ stub -version=0xA00+ RtlQueryAllInternalRuntimeFeatureConfigurations
 @ stub -version=0xA00+ RtlQueryDynamicTimeZoneInformation
 @ stub -version=0xA00+ RtlQueryElevationFlags
-@ stub -version=0xA00+ RtlQueryFeatureConfiguration
-@ stub -version=0xA00+ RtlQueryFeatureConfigurationChangeStamp
 @ stub -version=0xA00+ RtlQueryImageFileKeyOption
 @ stub -version=0xA00+ RtlQueryInformationAcl
 @ stub -version=0xA00+ RtlQueryInternalFeatureConfiguration
@@ -3032,9 +3038,6 @@
 @ stub -version=0xA00+ RtlRbInsertNodeEx
 @ stub -version=0xA00+ RtlRbRemoveNode
 @ stub -version=0xA00+ RtlRbReplaceNode
-@ stub -version=0xA00+ RtlRecordFeatureUsage
-@ stub -version=0xA00+ RtlRegisterFeatureConfigurationChangeNotification
-@ stub -version=0xA00+ RtlRegisterFeatureUsageProvider
 @ stub -version=0xA00+ RtlRemoveEntryHashTable
 @ stub -version=0xA00+ RtlRemovePointerMapping
 @ stub -version=0xA00+ RtlRemovePropertyStore
@@ -3070,8 +3073,6 @@
 @ stub -version=0xA00+ RtlUdiv128
 @ stub -version=0xA00+ RtlUnicodeStringToInt64
 @ stub -version=0xA00+ RtlUnicodeStringToUTF8String
-@ stub -version=0xA00+ RtlUnregisterFeatureConfigurationChangeNotification
-@ stub -version=0xA00+ RtlUnregisterFeatureUsageProvider
 @ stub -version=0xA00+ RtlUnsignedMultiplyHigh
 @ stub -version=0xA00+ RtlValidAcl
 @ stub -version=0xA00+ RtlValidateCorrelationVector

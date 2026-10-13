@@ -117,16 +117,44 @@ What the first columns found (Windows 11 26300.9457):
 - WHPX: QEMU dies (`Unexpected VP exit code 4`) while Windows reboots after a bugcheck,
   which is why the relaunch exists.
 
-## State on disk (2026-10-12)
+## New tests: graded by Windows first
+
+`winref kmtest --only <Test>...` runs just those tests (and refuses `--write-baseline`: a
+subset is not the column). That is the loop for a test written against the new surface:
+it must pass on Windows 11 before its result in the guest means anything. The first four
+(`ExPool2`, `EtwProvider`, `EtwActivity`, `FeatureConfig`, in
+`modules/rostests/kmtests/ntos_ex/ExPool2.c`, for the Rung 0 kernel exports) were wrong
+twice before Windows passed them, both times in a way our kernel would have hidden:
+
+- **`ok_eq_hex(Call(...), x)` calls `Call` twice**: `ok_eq_print` passes its value both to
+  the comparison and to the format. `EtwUnregister` ran twice on one handle and Windows
+  bugchecked (0x139, parameter 3: list-entry corruption); our no-op unregister would have
+  passed. Put every call in a variable before an `ok_eq_*`.
+- **Documented is not measured.** "Invalid POOL_FLAGS fail the call", but Windows accepts
+  `POOL_FLAG_RESERVED2`, and probing the other reserved bits bugchecked it. The test no
+  longer touches reserved bits, and `ExAllocatePool2` ignores them as Windows does.
+- **Look exports up, never import them** (`MmGetSystemRoutineAddress`): one hard import a
+  kernel lacks makes all of `kmtest_drv.sys` unloadable, where a lookup fails one assertion.
+
+Then in the guest, all four pass with Windows' counts on all three arches.
+
+The rig, hardened by the same runs: the sweep reports a bugcheck's parameters, not just its
+code (0x139's first parameter is which check failed), and the base boots with
+`recoveryenabled No` / `bootstatuspolicy IgnoreAllFailures` (`setup.ps1`, `maint-runner.ps1`).
+Without them, three bugchecks in one run left Windows in Automatic Repair, waiting for a
+key press until the run's timeout.
+
+## State on disk (2026-10-12, evening)
 
 `D:\vibeos-winref\` (Windows path; `/mnt/d/vibeos-winref` from WSL):
 
 | Item | What |
 |---|---|
-| `base.qcow2` + `base-vars.fd` | the live base = `runner-v3`: runner task known to Task Scheduler, payloads run from `C:\winref\payload` |
+| `base.qcow2` + `base-vars.fd` | the live base = `runner-v4`: `runner-v3` plus recovery off (a crash reboots into the runner, never Automatic Repair) |
+| `snapshots/runner-v4` | = current base |
 | `snapshots/post-install` | pristine result of the install (runner task NOT registered: needs `maint`) |
 | `snapshots/runner-v2` | task re-registered, old runner (runs off the CD) |
-| `snapshots/runner-v3` | = current base |
+| `snapshots/runner-v3` | payloads from `C:\winref\payload`, recovery still on |
 | `logs/<ts>/` | `winref logs` extractions |
 
 Unactivated retail Pro (public multi-edition ISO, generic install key): no expiry to plan

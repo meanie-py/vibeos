@@ -24,6 +24,9 @@ ExDoubleList
 ExFastMutex
 ExHardError
 ExInterlocked
+EtwActivity
+EtwProvider
+ExPool2
 ExPools
 ExPushLock
 ExResource
@@ -32,6 +35,7 @@ ExSequencedList
 ExSingleList
 ExUuid
 Example
+FeatureConfig
 FsRtlDissect
 FsRtlExpression
 FsRtlLegal

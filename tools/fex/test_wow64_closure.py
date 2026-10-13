@@ -291,3 +291,45 @@ def test_index_never_reads_a_livecd_rw_staging_copy(tmp_path):
     index = w.index_build(tmp_path, no_strip=True)
     assert index["url.dll"] == real / "url.dll"
     assert "only_in_copy.dll" not in index
+
+
+def test_export_forwarders_are_walked_like_imports(tmp_path, monkeypatch, capsys):
+    """advapi32 forwards RegDeleteTreeW to advapi32_vista; a module that binds it
+    makes the loader load advapi32_vista. Unstaged, every 32-bit guest died at load
+    with STATUS_ENTRYPOINT_NOT_FOUND (the 2026-10-12 merge-queue rejection)."""
+    sys.path.insert(0, os.path.join(_REPO, "tools"))
+    import win10_surface as ws
+
+    build = tmp_path / "build-i386"
+    build.mkdir()
+    root = build / "app.exe"
+    root.write_bytes(b"MZ")
+    adv = build / "advapi32.dll"
+    adv.write_bytes(b"MZ")
+    vista = build / "advapi32_vista.dll"
+    vista.write_bytes(b"MZ")
+    index = {"advapi32.dll": adv, "advapi32_vista.dll": vista}
+
+    def fake_pe(p):
+        pe = ws.PE("i386")
+        if pathlib.Path(p) == adv:
+            pe.exports = {
+                "RegDeleteTreeW": ws.Export(
+                    "RegDeleteTreeW", forward="advapi32_vista.RegDeleteTreeW"
+                )
+            }
+        return pe
+
+    monkeypatch.setattr(ws, "read_pe_file", fake_pe)
+    monkeypatch.setattr(w, "find_objdump", lambda _p: "objdump")
+    monkeypatch.setattr(w, "index_build", lambda *_a, **_k: index)
+    monkeypatch.setattr(w, "string_referenced", lambda _pe, _i: set())
+    monkeypatch.setattr(w, "imports_of", lambda _o, pe: ["advapi32.dll"] if pe == root else [])
+    monkeypatch.setattr(sys, "argv", ["wow64-closure", str(root), "--build-dir", str(build)])
+    assert w.main() == 0
+    staged = {ln.split("\t")[0] for ln in capsys.readouterr().out.splitlines() if "\t" in ln}
+    assert "advapi32_vista.dll" in staged, "a forwarder's target was dropped from the closure"
+
+    del index["advapi32_vista.dll"]
+    assert w.main() == 1
+    assert "UNRESOLVED import advapi32_vista.dll" in capsys.readouterr().err

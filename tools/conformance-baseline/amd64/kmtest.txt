@@ -60,6 +60,11 @@
 #   (freezing one boot's face into the floor, the thing `--only` exists to
 #   prevent) and deleted this file's own provenance comments. Prefer a hand edit
 #   with a reason over a wholesale rewrite whenever the change is understood.
+# MmMdl lowered 2026-10-12, 720 -> 714, by HAND, by the rule below (the floor is the low
+#   face). Same 6-apart pair as 575/569, on the 2G guest. 714 in the ledger at 19:42, 19:46,
+#   19:50 (the three gate attempts that rejected native-batch@vibeos-gicv3 5f561eb924ec as
+#   CONFORMANCE_RED) and in four research-lane rounds, two of them with that lane's kernel
+#   changes set aside; 720 at 20:02 and in every round before 19:40. fail=0 throughout.
 # MmMdl lowered 2026-09-27, 575 -> 569, by HAND. Its count is not a set of
 #   assertions: MmMdl.c maps 32 MB MDLs "until we fail", four oks per mapping
 #   that succeeds, so the total is how much system VA this boot had free. Both
@@ -160,7 +165,7 @@ KeMutex OK pass=1122 fail=0 skip=0 exit=0
 KeSpinLock OK pass=323 fail=0 skip=0 exit=0
 KeTimer OK pass=54 fail=0 skip=0 exit=0
 MmMapLockedPagesSpecifyCache OK pass=16743 fail=0 skip=0 exit=0
-MmMdl OK pass=720 fail=0 skip=0 exit=0
+MmMdl OK pass=714 fail=0 skip=0 exit=0
 MmReservedMapping OK pass=231 fail=0 skip=0 exit=0
 MmSection OK pass=353 fail=14 skip=0 exit=0
     assert MmSection.c:371

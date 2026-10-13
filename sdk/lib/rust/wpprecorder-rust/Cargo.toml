@@ -1,0 +1,15 @@
+# wpprecorder-rust — the body of wpprecorder.sys, the WPP in-flight recorder Windows 10
+# drivers import (drivers/base/wpprecorder). The final link is driven by wpprecorder-cargo
+# (reactos-link ModuleKind::KernelDll, entry=DriverEntry, exports from wpprecorder.spec).
+
+[package]
+name = "wpprecorder-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["kernel"] }
+ntkrnl-sys = { path = "../ntkrnl-sys" }

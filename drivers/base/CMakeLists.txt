@@ -19,3 +19,7 @@ add_subdirectory(kdstub)
 
 add_subdirectory(nmidebug)
 add_subdirectory(null)
+# Windows 10 drivers' WPP recorder; its importers are all 64-bit (see its spec).
+if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "arm64")
+    add_subdirectory(wpprecorder)
+endif()

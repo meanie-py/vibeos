@@ -197,6 +197,8 @@ members = [
     "kdvm-cargo",
     "null-rust",
     "null-cargo",
+    "wpprecorder-rust",
+    "wpprecorder-cargo",
     "nmidebug-rust",
     "nmidebug-cargo",
     "sysfb-cargo",
