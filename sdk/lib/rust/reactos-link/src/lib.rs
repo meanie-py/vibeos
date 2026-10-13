@@ -521,6 +521,8 @@ pub struct Linker {
     spec: Option<(String, String)>,
     link_stubs: bool,
     static_libs: Vec<String>,
+    /// cmake-built libs linked AFTER the Rust archives (see `static_libs_after_body`).
+    late_static_libs: Vec<String>,
     /// Pre-expanded asm assembled into a `.a` and linked INSIDE the
     /// `--start-group` as an on-demand archive (NOT a force-included object
     /// like `asm`). (archive-basename, asm-rels). Use this when the cmake
@@ -607,6 +609,7 @@ impl Linker {
             spec: None,
             link_stubs: false,
             static_libs: Vec::new(),
+            late_static_libs: Vec::new(),
             asm_archives: Vec::new(),
             c_db_libs: Vec::new(),
             gendib_libs: Vec::new(),
@@ -879,6 +882,17 @@ impl Linker {
     /// staticlib first.
     pub fn static_libs(mut self, builddir_rels: &[&str]) -> Self {
         self.static_libs = builddir_rels.iter().map(|s| s.to_string()).collect();
+        self
+    }
+
+    /// cmake-built libs that cmake linked AFTER the module's Rust body, as a user-mode
+    /// module's `target_link_libraries(m ${m_rust_LIB}) … target_link_libraries(m uuid)`
+    /// does. Order decides a duplicate definition: regedit-rust and libuuid.a both
+    /// define CLSID_AutoComplete, cmake kept the body's, and `static_libs` (which
+    /// precede the body, as ntdll and the kernel need) kept uuid's — which
+    /// link_guard refuses. Emitted inside the group, after the Rust archives.
+    pub fn static_libs_after_body(mut self, builddir_rels: &[&str]) -> Self {
+        self.late_static_libs = builddir_rels.iter().map(|s| s.to_string()).collect();
         self
     }
 
@@ -1463,6 +1477,14 @@ impl Linker {
         for a in &sibling_rust_a {
             println!("cargo:rustc-link-arg={}", a.display());
             println!("cargo:rerun-if-changed={}", a.display());
+        }
+        for lib in &self.late_static_libs {
+            let full = self.build_dir.join(lib);
+            if !full.exists() {
+                panic!("missing static lib: {} — run ninja first", full.display());
+            }
+            println!("cargo:rustc-link-arg={}", full.display());
+            println!("cargo:rerun-if-changed={}", full.display());
         }
         for (spec_rel, dll_name, basename) in &self.import_libs {
             let a = self.generate_import_lib(spec_rel, dll_name, basename);
