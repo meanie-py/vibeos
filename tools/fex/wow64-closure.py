@@ -366,6 +366,31 @@ def delay_imports_of(pe: Path) -> list:
     return names
 
 
+def forward_targets_of(pe: Path) -> list:
+    """DLLs that `pe`'s export FORWARDERS point at.
+
+    A forwarder is a load-time edge in the other direction: a module that binds
+    advapi32!RegDeleteTreeW, which advapi32 forwards to advapi32_vista, makes the
+    loader load advapi32_vista. The import walk never sees that edge, so when
+    tools/win10_surface.py `forwards` gave the 0x502 core DLLs forwards to their
+    *_vista siblings, SysWOW64 staged advapi32 and user32 without
+    advapi32_vista/user32_vista, and every 32-bit guest died at load with
+    STATUS_ENTRYPOINT_NOT_FOUND (msvcrt binds GetDpiForSystem through user32).
+    Every forwarder counts, not just the ones some staged module binds today:
+    the next rebuild may bind another.
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from win10_surface import PEError, read_pe_file
+
+    try:
+        exports = read_pe_file(pe).exports
+    except (PEError, OSError):
+        return []
+    return sorted(
+        {e.forward.split(".", 1)[0].lower() + ".dll" for e in exports.values() if e.forward}
+    )
+
+
 def imports_of(objdump: str, pe: Path) -> list:
     out = subprocess.run([objdump, "-p", str(pe)], capture_output=True, text=True).stdout
     return [
@@ -479,7 +504,7 @@ def main() -> int:
 
     while stack:
         cur = stack.pop()
-        deps = imports_of(objdump, cur) + delay_imports_of(cur)
+        deps = imports_of(objdump, cur) + delay_imports_of(cur) + forward_targets_of(cur)
         if args.library_literals:
             deps += sorted(string_referenced(cur, index))
         for dep in deps:

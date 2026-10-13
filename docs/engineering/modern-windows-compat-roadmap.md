@@ -121,6 +121,10 @@ weighting each missing function by the binaries that import it:
    row takes over, the block is generated (`# BEGIN vista forwards`), and
    `forwards --check build-<arch>` follows every forward in the BUILT DLLs to a real body
    (0 problems on all three arches). It found two dead arm64 rows on the way, now fixed.
+   A forward is a load-time edge the import walk never saw: SysWOW64 staged advapi32 and
+   user32 without their `_vista` siblings, and every 32-bit guest died at load
+   (0xC0000139; msvcrt binds `GetDpiForSystem` through user32 now).
+   `tools/fex/wow64-closure.py` follows export forwarders since.
 2. **Cheap kernel clusters**, in Rust, written from the WDK documentation:
    `ExAllocatePool2/3` + `ExFreePool2` (ex-rust), the ETW provider API with no sessions
    (wmi-rust: registration succeeds, nothing is ever enabled, writes go nowhere), feature
