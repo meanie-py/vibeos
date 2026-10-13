@@ -37,8 +37,15 @@ pub fn panic_lean(module: &'static [u8], _info: &core::panic::PanicInfo) -> ! {
                 .as_ptr(),
             module.as_ptr(),
         );
-        NtTerminateProcess(-1, RUST_PANIC);
+        let status = NtTerminateProcess(-1, RUST_PANIC);
+        // Termination of the current process does not return; say so if it did.
+        DbgPrint(
+            b"*** RUST PANIC in %s: NtTerminateProcess returned 0x%x, halting\n\0".as_ptr(),
+            module.as_ptr(),
+            status,
+        );
     }
-    #[allow(clippy::empty_loop)]
-    loop {}
+    loop {
+        core::hint::spin_loop();
+    }
 }
