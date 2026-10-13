@@ -5433,6 +5433,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "wpprecorder-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "wpprecorder-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "write-rust"
 version = "0.1.0"
 dependencies = [

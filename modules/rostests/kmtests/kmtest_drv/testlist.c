@@ -14,7 +14,11 @@ KMT_TESTFUNC Test_ExFastMutex;
 KMT_TESTFUNC Test_ExHardError;
 KMT_TESTFUNC Test_ExHardErrorInteractive;
 KMT_TESTFUNC Test_ExInterlocked;
+KMT_TESTFUNC Test_EtwActivity;
+KMT_TESTFUNC Test_EtwProvider;
+KMT_TESTFUNC Test_ExPool2;
 KMT_TESTFUNC Test_ExPools;
+KMT_TESTFUNC Test_FeatureConfig;
 KMT_TESTFUNC Test_ExPushLock;
 KMT_TESTFUNC Test_ExResource;
 KMT_TESTFUNC Test_ExResourceBounded;
@@ -102,6 +106,9 @@ const KMT_TEST TestList[] =
     { "ExHardError",                        Test_ExHardError },
     { "-ExHardErrorInteractive",            Test_ExHardErrorInteractive },
     { "ExInterlocked",                      Test_ExInterlocked },
+    { "EtwActivity",                        Test_EtwActivity },
+    { "EtwProvider",                        Test_EtwProvider },
+    { "ExPool2",                            Test_ExPool2 },
     { "ExPools",                            Test_ExPools },
     { "ExPushLock",                         Test_ExPushLock },
     { "ExResource",                         Test_ExResource },
@@ -111,6 +118,7 @@ const KMT_TEST TestList[] =
     { "-ExTimer",                           Test_ExTimer },
     { "ExUuid",                             Test_ExUuid },
     { "Example",                            Test_Example },
+    { "FeatureConfig",                      Test_FeatureConfig },
     { "FsRtlDissect",                       Test_FsRtlDissect },
     { "FsRtlExpression",                    Test_FsRtlExpression },
     { "FsRtlLegal",                         Test_FsRtlLegal },

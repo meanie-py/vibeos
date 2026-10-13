@@ -191,6 +191,7 @@ list(APPEND KMTEST_DRV_SOURCE
     ntos_ex/ExFastMutex.c
     ntos_ex/ExHardError.c
     ntos_ex/ExInterlocked.c
+    ntos_ex/ExPool2.c
     ntos_ex/ExPools.c
     ntos_ex/ExPushLock.c
     ntos_ex/ExResource.c

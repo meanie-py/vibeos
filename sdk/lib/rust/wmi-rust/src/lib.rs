@@ -18,3 +18,4 @@ pub mod guidobj;
 pub mod smbios;
 pub mod wmi;
 pub mod wmidrv;
+pub mod etw;

@@ -324,3 +324,92 @@ def test_gap_says_why_a_name_is_missing(tmp_path: Path):
 )
 def test_redistributables_never_swallow_os_modules(dll: str, redist: bool):
     assert bool(w.REDIST.match(dll)) is redist
+
+
+# --- vista/kernelbase forwards and our loader's api-set table --------------------------------
+
+
+def test_ros_apiset_table_reads_rows_and_skips_commented_ones():
+    text = (
+        '    { RTL_CONSTANT_STRING(L"api-ms-win-crt-runtime-l1-1-0"), '
+        'RTL_CONSTANT_STRING(L"ucrtbase.dll"), APISET_WIN10 },\n'
+        '    // { RTL_CONSTANT_STRING(L"api-ms-win-audiocore-pal-l1-1-0"), '
+        'RTL_CONSTANT_STRING(L""), APISET_WIN81 },\n'
+    )
+    assert w.read_ros_apisets(text) == {"api-ms-win-crt-runtime-l1-1-0": "ucrtbase.dll"}
+
+
+def _ref(*names: str) -> dict:
+    return {"x64": {"exports": {n: {"data": False, "forward": None} for n in names}}}
+
+
+def test_forwards_cover_exactly_where_the_module_row_does_not(tmp_path: Path):
+    mod = tmp_path / "k.spec"
+    mod.write_text(
+        "@ stdcall -version=0x600+ Gated(ptr)\n"
+        "@ stdcall -arch=arm64 ArmOnly(ptr) other.ArmOnly\n"
+        "@ stdcall Live(long)\n"
+        "@ stdcall -version=0xA00+ Newer(ptr)\n"
+    )
+    vista = tmp_path / "kv.spec"
+    vista.write_text(
+        "@ stdcall Gated(ptr)\n@ stdcall ArmOnly(ptr)\n@ stdcall Live(long)\n"
+        "@ stdcall Absent(long long)\n@ stdcall Newer(ptr)\n@ stdcall NotOnWindows()\n"
+    )
+    lines = w.plan_forwards(
+        "k.dll",
+        mod,
+        [("kv", vista)],
+        _ref("Gated", "ArmOnly", "Live", "Absent", "Newer"),
+        0x502,
+    )
+    assert lines == [
+        "@ stdcall Absent(long long) kv.Absent",  # undeclared: unconditional, provider's sig
+        "@ stdcall -arch=i386,x86_64 ArmOnly(ptr) kv.ArmOnly",
+        "@ stdcall -version=0x400-0x5ff Gated(ptr) kv.Gated",  # off where the real row starts
+        "@ stdcall -version=0x400-0x9ff Newer(ptr) kv.Newer",
+    ], "Live is exported already, and Windows does not export NotOnWindows: neither forwards"
+
+
+def test_the_first_provider_that_has_a_name_wins(tmp_path: Path):
+    mod = tmp_path / "kb.spec"
+    mod.write_text("@ stdcall Mine()\n")
+    a, b = tmp_path / "a.spec", tmp_path / "b.spec"
+    a.write_text("@ stdcall Both(ptr)\n")
+    b.write_text("@ stdcall Both(ptr)\n@ stdcall OnlyB(long)\n")
+    lines = w.plan_forwards("kb.dll", mod, [("a", a), ("b", b)], _ref("Both", "OnlyB"), 0x502)
+    assert lines == ["@ stdcall Both(ptr) a.Both", "@ stdcall OnlyB(long) b.OnlyB"]
+
+
+def test_two_generated_blocks_stay_put_when_either_is_rewritten(tmp_path: Path):
+    spec = tmp_path / "t.spec"
+    spec.write_text("@ stdcall Live(long)\n")
+    stubs = w.render_block(w.Plan("t.dll", spec, ["@ stub -version=0xA00+ X"], [], []), "10")
+    fwds = w.render_forwards("t.dll", ["tv"], ["@ stdcall Y() tv.Y"])
+    w.apply_block(spec, stubs)
+    w.apply_block(spec, fwds, w.FWD_BEGIN, w.FWD_END)
+    first = spec.read_bytes()
+    # Re-running either tool with the same content must not move or rewrite anything:
+    # the first version re-appended, swapped the blocks, and staled every build's media.
+    assert not w.apply_block(spec, stubs)
+    assert not w.apply_block(spec, fwds, w.FWD_BEGIN, w.FWD_END)
+    assert spec.read_bytes() == first
+
+
+def _pe(**exports: str | None) -> w.PE:
+    pe = w.PE("x86_64")
+    pe.exports = {n: w.Export(n, forward=f) for n, f in exports.items()}
+    return pe
+
+
+def test_forward_chains_follow_renames_and_catch_cycles_and_dead_ends():
+    dlls = {
+        "k.dll": _pe(Precise="kv.Precise", Loop="kv.Loop", Dead="kv.Missing"),
+        "kv.dll": _pe(Precise="k.Coarse", Loop="k.Loop"),
+    }
+    dlls["k.dll"].exports["Coarse"] = w.Export("Coarse")
+    problems = w.check_forward_chains(dlls, "k.dll")
+    assert problems == [
+        "k.dll!Dead: forward chain ends at missing kv.Missing",
+        "k.dll!Loop: forward CYCLE through k.Loop",
+    ], "Precise leaves and re-enters k under another name, which is fine"

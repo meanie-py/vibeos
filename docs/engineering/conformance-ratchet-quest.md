@@ -2000,3 +2000,22 @@ same through `emit()`; `parse_kmtest_serial` marks EVERY bugcheck's in-flight te
 KeIrql kmtest resolves `KeRaiseIrqlToSynchLevel` at run time (Windows x64 does not export
 it). A guest sweep after all of it: amd64 99/99, ratchet holds
 (`20261012-161729-7jt82k7j-conformance-amd64`).
+
+### 2026-10-12 (evening) — four new kmtests, and MmMdl's floor (from the research lane)
+
+**New tests in all three lists:** `EtwActivity`, `EtwProvider`, `ExPool2`, `FeatureConfig`
+(`modules/rostests/kmtests/ntos_ex/ExPool2.c`), for the Windows 10 kernel exports Rung 0 added
+(`ExAllocatePool2/3`, `ExFreePool2`, the ETW provider API, feature configuration). Each was
+graded on Windows 11 first (`winref kmtest --only ...`, all clean there), then swept here: on
+i386, amd64 and arm64 every one is `OK fail=0` with Windows' exact pass counts (5/7/42/2).
+They are NOT banked into the guest floors (that is this lane's two-sweep rule to apply);
+`compare()` treats them as new tests, not regressions. With the kernel changes set aside they
+fail (0/1, 0/3), so they measure the exports rather than passing vacuously.
+
+**MmMdl's amd64 floor lowered 720 -> 714**, by the rule already in `amd64/kmtest.txt` (the
+floor is the low face; the same 6-apart pair as 575/569). The low face appeared at 19:42 and
+has been the only face since, except one 720 at 20:02. It rejected native-batch@vibeos-gicv3
+5f561eb924ec three times as CONFORMANCE_RED. My rounds read 714 with and without this lane's
+kernel changes, so it is not them. Ledger rows: `~/vibeos-flake-farm/conformance.jsonl`,
+19:42-20:34. If something since 19:40 should NOT have cost one 32 MB mapping, that is worth a
+look; the floor change only stops it bouncing innocent batches.

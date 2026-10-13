@@ -5,6 +5,7 @@
 
 use core::ptr::null_mut;
 use ntkrnl_sys::base::*;
+use ntkrnl_sys::constants::STATUS_INVALID_PARAMETER;
 use ntkrnl_sys::ex::ExRaiseStatus;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ke::*;
@@ -1734,6 +1735,125 @@ pub unsafe extern "system" fn ExAllocatePoolWithTagPriority(
     _priority: ntkrnl_sys::ex::EX_POOL_PRIORITY,
 ) -> PVOID {
     ExAllocatePoolWithTag(pool_type, number_of_bytes, tag)
+}
+
+// ============================================================================
+// ExAllocatePool2 / ExAllocatePool3 / ExFreePool2 — the Windows 10 2004 allocator
+//
+// Not in the 2003 C this file translates; written from the WDK documentation
+// (learn.microsoft.com/windows-hardware/drivers/ddi/wdm/nf-wdm-exallocatepool2 and
+// .../kernel/pool_flags), because 176 of 478 vendor driver packages import it. The
+// differences from ExAllocatePoolWithTag are the whole contract: the block is ZEROED
+// unless POOL_FLAG_UNINITIALIZED, failure returns NULL unless POOL_FLAG_RAISE_ON_FAILURE,
+// tag 0 and an unknown or missing pool-type flag are invalid.
+// ============================================================================
+
+// wdm.h's POOL_FLAG_* values. Spelled with a P2_ prefix because ExpPoolFlags already
+// uses a ReactOS-internal POOL_FLAG_SPECIAL_POOL with a different meaning.
+const P2_USE_QUOTA: u64 = 0x1;
+const P2_UNINITIALIZED: u64 = 0x2;
+const P2_CACHE_ALIGNED: u64 = 0x8;
+const P2_RAISE_ON_FAILURE: u64 = 0x20;
+const P2_NON_PAGED: u64 = 0x40;
+const P2_NON_PAGED_EXECUTE: u64 = 0x80;
+const P2_PAGED: u64 = 0x100;
+// No check on the other bits. The documentation says invalid flags fail the call, but
+// Windows 11 accepts POOL_FLAG_RESERVED2 (measured with the ExPool2 kmtest on
+// `vibeos-cli winref`), so a driver that passes one works there and must work here; the
+// pool type and the tag are the invalid inputs that are actually defined.
+
+// POOL_EXTENDED_PARAMETER_TYPE.
+const P3_PRIORITY: u8 = 1;
+const P3_NUMA_NODE: u8 = 3;
+
+/// The POOL_TYPE a POOL_FLAGS value asks for, or None when it is invalid.
+fn pool2_type(flags: u64) -> Option<POOL_TYPE> {
+    // Exactly one pool type. There is no NonPagedPoolNx here: the 2003-era pool has one
+    // non-paged pool and it is executable, so both non-paged flags land in it.
+    let base = match flags & (P2_NON_PAGED | P2_NON_PAGED_EXECUTE | P2_PAGED) {
+        P2_NON_PAGED | P2_NON_PAGED_EXECUTE => NonPagedPool,
+        P2_PAGED => PagedPool,
+        _ => return None,
+    };
+    let aligned = if flags & P2_CACHE_ALIGNED != 0 { CACHE_ALIGNED_POOL_MASK as POOL_TYPE } else { 0 };
+    Some(base + aligned)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn ExAllocatePool2(
+    flags: u64,
+    number_of_bytes: SIZE_T,
+    tag: ULONG,
+) -> PVOID {
+    let raise = flags & P2_RAISE_ON_FAILURE != 0;
+    let pool_type = match pool2_type(flags) {
+        Some(t) if tag != 0 => t,
+        _ => {
+            if raise {
+                ExRaiseStatus(STATUS_INVALID_PARAMETER);
+            }
+            return null_mut();
+        }
+    };
+    let buffer = if flags & P2_USE_QUOTA != 0 {
+        ExAllocatePoolWithQuotaTag(
+            pool_type | POOL_QUOTA_FAIL_INSTEAD_OF_RAISE as POOL_TYPE,
+            number_of_bytes,
+            tag,
+        )
+    } else {
+        ExAllocatePoolWithTag(pool_type, number_of_bytes, tag)
+    };
+    if buffer.is_null() {
+        if raise {
+            ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
+        }
+        return null_mut();
+    }
+    if flags & P2_UNINITIALIZED == 0 {
+        core::ptr::write_bytes(buffer as *mut u8, 0, number_of_bytes);
+    }
+    buffer
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn ExAllocatePool3(
+    flags: u64,
+    number_of_bytes: SIZE_T,
+    tag: ULONG,
+    extended_parameters: *const [u64; 2],
+    extended_parameters_count: ULONG,
+) -> PVOID {
+    // POOL_EXTENDED_PARAMETER is { ULONG64 Type:8, Optional:1, Reserved:55; union of
+    // 8 bytes }: 16 bytes on every arch. Priority is best effort (as
+    // ExAllocatePoolWithTagPriority already treats it) and there is one NUMA node, so
+    // both are recognized and need nothing. Anything else -- secure pool included, which
+    // this kernel has no notion of -- fails the call unless the caller marked it
+    // Optional, which is the documented rule for a parameter the allocator does not take.
+    for i in 0..extended_parameters_count as usize {
+        let head = (*extended_parameters.add(i))[0];
+        let kind = (head & 0xFF) as u8;
+        let optional = head & 0x100 != 0;
+        if kind != P3_PRIORITY && kind != P3_NUMA_NODE && !optional {
+            if flags & P2_RAISE_ON_FAILURE != 0 {
+                ExRaiseStatus(STATUS_INVALID_PARAMETER);
+            }
+            return null_mut();
+        }
+    }
+    ExAllocatePool2(flags, number_of_bytes, tag)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn ExFreePool2(
+    p: PVOID,
+    tag: ULONG,
+    _extended_parameters: *const [u64; 2],
+    _extended_parameters_count: ULONG,
+) {
+    // The only extended parameter a free takes is the secure-pool handle, and
+    // ExAllocatePool3 never hands out secure pool.
+    ExFreePoolWithTag(p, tag)
 }
 
 // ============================================================================

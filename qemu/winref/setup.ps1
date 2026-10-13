@@ -27,6 +27,14 @@ Say 'copied runner to C:\winref'
 bcdedit /set testsigning on | Out-Null
 Say "testsigning: exit=$LASTEXITCODE"
 
+# A crash must reboot into the runner again, never park the VM: after repeated bugchecks
+# (a kmtest that takes Windows down) Windows 11 booted into Automatic Repair, which waits
+# for someone to press Enter, and the run sat there until its timeout.
+bcdedit /set '{current}' recoveryenabled No | Out-Null
+$rc1 = $LASTEXITCODE
+bcdedit /set '{current}' bootstatuspolicy IgnoreAllFailures | Out-Null
+Say "recovery: off (exit=$rc1), bootstatuspolicy IgnoreAllFailures (exit=$LASTEXITCODE)"
+
 # A run is boot -> test -> shutdown; nothing may sleep or hibernate in between.
 powercfg /change standby-timeout-ac 0
 powercfg /change monitor-timeout-ac 0

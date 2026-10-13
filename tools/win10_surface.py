@@ -64,6 +64,28 @@ from pecheck import export_version, spec_exports  # noqa: E402
 TIER = "0xA00"
 BEGIN = "# BEGIN win10-surface stubs"
 END = "# END win10-surface stubs"
+FWD_BEGIN = "# BEGIN vista forwards"
+FWD_END = "# END vista forwards"
+# A Windows module whose newer exports our tree implements in a SEPARATE DLL, built and staged
+# on every arch: the 2003-era module gates them behind -version=0x600+, and the *_vista DLL
+# exports them unconditionally. A forward makes the real export reachable from the module
+# programs import it from. (uxtheme_vista exists but is not staged on the media.)
+VISTA = {
+    "kernel32.dll": "kernel32_vista",
+    "ntdll.dll": "ntdll_vista",
+    "advapi32.dll": "advapi32_vista",
+    "gdi32.dll": "gdi32_vista",
+    "user32.dll": "user32_vista",
+}
+# Who may implement a module's missing exports, in order of preference. Windows'
+# kernelbase.dll hosts most of kernel32's and much of advapi32's surface, and programs
+# (and api sets) import from it directly; ours is a minimal shim, while kernel32 and
+# advapi32 (with their vista forwards) have the bodies.
+PROVIDERS: dict[str, list[str]] = {
+    **{m: [v] for m, v in VISTA.items()},
+    "kernelbase.dll": ["kernel32", "advapi32"],
+}
+ARCHES = ("i386", "x86_64", "arm64")
 CACHE = Path.home() / ".cache" / "vibeos" / "win10-surface"
 # The trees that build shipping modules. modules/ builds test DLLs. sdk/lib is IN: wdfldr.sys,
 # the KMDF loader 227 driver packages import, builds from sdk/lib/drivers, and leaving it out
@@ -288,6 +310,23 @@ def resolve_apiset(dll: str, schema: dict[str, str]) -> str | None:
     return schema.get(prefix, "")
 
 
+ROS_APISETS = ROOT / "sdk" / "lib" / "apisets" / "apisets.table.c"
+_ROS_APISET_ROW = re.compile(
+    r'^\s*\{\s*RTL_CONSTANT_STRING\(L"([^"]+)"\),\s*RTL_CONSTANT_STRING\(L"([^"]*)"\)', re.M
+)
+
+
+def read_ros_apisets(text: str) -> dict[str, str]:
+    """{api set name (lower, no `.dll`): host dll (lower)} from OUR loader's table.
+
+    The loader (ntdll's LdrpApplyFileNameRedirection -> ApiSetResolveToHost) redirects an
+    imported `api-ms-win-…` name through this table by EXACT name, and that is what decides
+    whether an import loads here -- not Windows' schema, which maps most core sets to
+    kernelbase.dll where ours maps them to kernel32.dll. Commented-out rows are not entries.
+    """
+    return {m.group(1).lower(): m.group(2).lower() for m in _ROS_APISET_ROW.finditer(text)}
+
+
 # --- the tree --------------------------------------------------------------------------------
 
 
@@ -329,8 +368,8 @@ def declared_names(spec: Path) -> set[str]:
         tmp.unlink()
 
 
-def strip_block(text: str) -> str:
-    return re.sub(rf"\n?{re.escape(BEGIN)}.*?{re.escape(END)}\n?", "\n", text, flags=re.S)
+def strip_block(text: str, begin: str = BEGIN, end: str = END) -> str:
+    return re.sub(rf"\n?{re.escape(begin)}.*?{re.escape(end)}\n?", "\n", text, flags=re.S)
 
 
 # --- reference -------------------------------------------------------------------------------
@@ -443,7 +482,7 @@ def render_block(plan: Plan, build: str) -> str:
     return "\n".join([*head, *body, END]) + "\n"
 
 
-def apply_block(spec: Path, block: str | None) -> bool:
+def apply_block(spec: Path, block: str | None, begin: str = BEGIN, end: str = END) -> bool:
     """Write (or remove, when block is None) the generated block. True if the file changed.
 
     Byte-preserving outside the block: latin-1 round-trips any byte, and the hand-written
@@ -451,11 +490,16 @@ def apply_block(spec: Path, block: str | None) -> bool:
     final newline, which put a spurious hunk in 231 specs that the block never touched.
     """
     old = spec.read_bytes().decode("latin-1")
-    base = re.sub(rf"\n?{re.escape(BEGIN)}.*?{re.escape(END)}\n", "", old, flags=re.S)
+    pat = re.compile(rf"\n?{re.escape(begin)}.*?{re.escape(end)}\n", flags=re.S)
     if block is None:
-        new = base
+        new = pat.sub("", old)
+    elif pat.search(old):
+        # In place: a spec carries two generated blocks (stubs, vista forwards), and
+        # re-appending moved each to the end, so running one tool after the other swapped
+        # them and rewrote specs whose content had not changed -- new mtimes, stale media.
+        new = pat.sub(lambda _: "\n" + block, old, count=1)
     else:
-        new = base + ("\n" if base and not base.endswith("\n") else "") + "\n" + block
+        new = old + ("\n" if old and not old.endswith("\n") else "") + "\n" + block
     if new == old:
         return False
     spec.write_bytes(new.encode("latin-1"))
@@ -473,6 +517,129 @@ def specs_for(modules: dict[str, list[Path]], ref: dict) -> Iterator[tuple[str, 
                 continue
             seen.add(spec)
             yield module, spec, ref["modules"][module]
+
+
+# --- vista forwards --------------------------------------------------------------------------
+
+
+@dataclass
+class SpecRow:
+    kind: str  # stdcall / cdecl / stub / ...
+    opts: list[str]
+    name: str
+    args: str  # "(ptr long)" or ""
+    target: str  # forward target, or ""
+
+
+def spec_rows(text: str) -> dict[str, list[SpecRow]]:
+    """{name: every row declaring it}, from spec text (comments stripped)."""
+    out: dict[str, list[SpecRow]] = defaultdict(list)
+    for line in text.splitlines():
+        toks = line.split("#", 1)[0].split()
+        if len(toks) < 3 or not (toks[0] == "@" or toks[0].isdigit()):
+            continue
+        kind, rest = toks[1], toks[2:]
+        opts = []
+        while rest and rest[0].startswith("-"):
+            opts.append(rest.pop(0))
+        if not rest:
+            continue
+        m = re.match(r"([^(\s]+)(\([^)]*\))?", " ".join(rest))
+        if not m:
+            continue
+        after = " ".join(rest)[m.end() :].split()
+        out[m.group(1)].append(
+            SpecRow(kind, opts, m.group(1), m.group(2) or "", after[0] if after else "")
+        )
+    return out
+
+
+# Flags that describe the export itself and carry over to a forward of it; the rest
+# (-version, -arch, -stub, -i386) say WHEN a row applies, which the forward sets itself.
+KEEP_FLAGS = ("-ret64", "-noname", "-private", "-norelay", "-register")
+
+
+def plan_forwards(
+    module: str, spec: Path, providers: list[tuple[str, Path]], ref: dict, version: int
+) -> list[str]:
+    """Forward lines for every name Windows' `module` exports, our default build does not,
+    and a provider does (the first that has it): on exactly the arches where that holds,
+    and below the version where the module's own row (if any) takes over, so the two never
+    both apply."""
+    text = strip_block(strip_block(spec.read_bytes().decode("latin-1")), FWD_BEGIN, FWD_END)
+    rows = spec_rows(text)
+    with tempfile.NamedTemporaryFile("w", suffix=".spec", delete=False) as fh:
+        fh.write(text)
+        tmp = Path(fh.name)
+    try:
+        mine = {a: spec_exports(tmp, a, version) for a in ARCHES}
+    finally:
+        tmp.unlink()
+    prov = [
+        (
+            pmod,
+            {a: spec_exports(pspec, a, version) for a in ARCHES},
+            spec_rows(pspec.read_bytes().decode("latin-1")),
+        )
+        for pmod, pspec in providers
+    ]
+    win = {**ref.get("x86", {}).get("exports", {}), **ref.get("x64", {}).get("exports", {})}
+    lines = []
+    for name in sorted(win):
+        if win[name]["data"]:
+            continue
+        # The first provider that exports the name, on the arches where the module does not.
+        hit = next(
+            (
+                (pmod, arches, prows)
+                for pmod, theirs, prows in prov
+                if (
+                    arches := [
+                        a
+                        for a in ARCHES
+                        if mine[a].get(name) != "ok" and theirs[a].get(name) == "ok"
+                    ]
+                )
+            ),
+            None,
+        )
+        if hit is None:
+            continue
+        vista_mod, arches, theirs_rows = hit
+        # The signature comes from the module's own row when it has a real one, else from
+        # the provider's (a `stub` row carries no calling convention).
+        own = [r for r in rows.get(name, []) if r.kind != "stub" and "-stub" not in r.opts]
+        theirs_real = [
+            r for r in theirs_rows.get(name, []) if r.kind != "stub" and "-stub" not in r.opts
+        ]
+        sig = (own or theirs_real or theirs_rows[name])[0]
+        starts = [
+            int(r.split("-")[0].rstrip("+"), 16)
+            for row in rows.get(name, [])
+            for o in row.opts
+            if o.startswith("-version=")
+            for r in o[9:].split(",")
+        ]
+        until = min(starts) - 1 if starts else None
+        if until is not None and until < version:
+            continue  # the module's own row already covers the default version
+        opt = "" if len(arches) == len(ARCHES) else f" -arch={','.join(arches)}"
+        if until is not None:
+            opt += f" -version=0x400-{until:#x}"
+        flags = "".join(f" {o}" for o in sig.opts if o in KEEP_FLAGS)
+        lines.append(f"@ {sig.kind}{opt}{flags} {name}{sig.args} {vista_mod}.{name}")
+    return lines
+
+
+def render_forwards(module: str, providers: list[str], lines: list[str]) -> str:
+    head = [
+        FWD_BEGIN,
+        "# Generated by tools/win10_surface.py forwards; do not edit by hand. Exports Windows'",
+        f"# {module} has and this build would not, forwarded to the implementation in "
+        f"{' / '.join(providers)}.",
+        "# Each switches off where this spec's own row for the name takes over.",
+    ]
+    return "\n".join([*head, *lines, FWD_END]) + "\n"
 
 
 # --- verify ----------------------------------------------------------------------------------
@@ -572,7 +739,13 @@ def _classify(spec: Path, arch: str, version: int) -> dict[str, str]:
     return out
 
 
-def gap(corpus: list[Path], ref: dict, schema: dict[str, str], root: Path = ROOT) -> dict:
+def gap(
+    corpus: list[Path],
+    ref: dict,
+    schema: dict[str, str],
+    root: Path = ROOT,
+    ros: dict[str, str] | None = None,
+) -> dict:
     """Rank every system import the corpus makes that our default build does not export."""
     version = export_version(root)
     modules = module_specs(root)
@@ -594,6 +767,9 @@ def gap(corpus: list[Path], ref: dict, schema: dict[str, str], root: Path = ROOT
     missing_module: dict[str, set[str]] = defaultdict(set)
     redist: dict[str, set[str]] = defaultdict(set)
     apisets: dict[str, set[str]] = defaultdict(set)
+    unmapped: dict[str, set[str]] = defaultdict(set)  # api sets our loader cannot resolve
+    if ros is None:
+        ros = read_ros_apisets(ROS_APISETS.read_text()) if ROS_APISETS.is_file() else {}
     unparsed = 0
     exports_cache: dict[tuple[Path, str], dict[str, str]] = {}
     for app, p in images:
@@ -609,12 +785,15 @@ def gap(corpus: list[Path], ref: dict, schema: dict[str, str], root: Path = ROOT
             if REDIST.match(dll):
                 redist[dll].add(app)
                 continue
-            host = resolve_apiset(dll, schema)
-            if host is not None:
+            if resolve_apiset(dll, schema) is not None:
                 apisets[dll].add(app)
+                host = ros.get(dll.removesuffix(".dll"))
                 if not host:
+                    # Our loader has no row for this exact name: the import fails to load
+                    # here whatever Windows maps it to.
+                    unmapped[dll].add(app)
                     continue
-                dll = host
+                dll = host if host.endswith(".dll") else host + ".dll"
             if not system(dll):
                 continue  # a third-party DLL the app expects from elsewhere: not ours
             specs = modules.get(dll)
@@ -653,6 +832,9 @@ def gap(corpus: list[Path], ref: dict, schema: dict[str, str], root: Path = ROOT
         "missing_modules": ranked(missing_module),
         "redistributables": ranked(redist),
         "apiset_imports": ranked(apisets),
+        "apiset_unmapped": [
+            {**r, "windows_host": resolve_apiset(r["dll"], schema) or ""} for r in ranked(unmapped)
+        ],
     }
 
 
@@ -704,6 +886,84 @@ def cmd_stubs(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_forwards(args: argparse.Namespace) -> int:
+    if args.check:
+        return cmd_forwards_check(args.check)
+    ref = load_reference(_ref_path(args))
+    modules = module_specs()
+    version = export_version()
+    total = 0
+    for module, names in PROVIDERS.items():
+        spec = modules[module][0]
+        providers = [(p, modules[f"{p}.dll"][0]) for p in names]
+        lines = plan_forwards(module, spec, providers, ref["modules"][module], version)
+        block = render_forwards(module, names, lines) if lines else None
+        changed = apply_block(spec, block, FWD_BEGIN, FWD_END) if args.apply else False
+        total += len(lines)
+        print(
+            f"  {len(lines):4d} forwards  {module:14s} -> {'/'.join(names):18s} "
+            f"{spec.relative_to(ROOT)}" + ("  (changed)" if changed else "")
+        )
+        for ln in lines[: args.show]:
+            print(f"        {ln}")
+    verb = "wrote" if args.apply else "would write (dry run; --apply to write)"
+    print(f"{verb}: {total} forwards. Then re-run `stubs --apply` so the dormant block drops them.")
+    return 0
+
+
+def check_forward_chains(dlls: dict[str, PE], start: str) -> list[str]:
+    """Follow every forward `start` exports (one module's built PE) to a real body.
+
+    A forward can only be judged on the BUILT images: the specs say what each module
+    claims, not what the linker bound. Returns problems: a chain that comes back to an
+    export it already passed through (the loader would loop), or one ending in a module or
+    name the build does not have. A chain that leaves and re-enters a module under a
+    DIFFERENT name is fine (kernel32_vista's GetSystemTimePreciseAsFileTime is
+    kernel32.GetSystemTimeAsFileTime).
+    """
+    problems = []
+    for name, exp in sorted(dlls[start].exports.items()):
+        if not exp.forward:
+            continue
+        seen = {(start, name)}
+        cur = exp.forward
+        while True:
+            mod, _, fn = cur.partition(".")
+            key = (mod.lower() + ".dll", fn)
+            pe = dlls.get(key[0])
+            if pe is None or fn not in pe.exports:
+                problems.append(f"{start}!{name}: forward chain ends at missing {cur}")
+                break
+            if key in seen:
+                problems.append(f"{start}!{name}: forward CYCLE through {cur}")
+                break
+            seen.add(key)
+            nxt = pe.exports[fn].forward
+            if not nxt:
+                break
+            cur = nxt
+    return problems
+
+
+def cmd_forwards_check(builds: list[str]) -> int:
+    bad = 0
+    names = {m for mod, ps in PROVIDERS.items() for m in (mod, *(p + ".dll" for p in ps))}
+    for build in builds:
+        found: dict[str, PE] = {}
+        for n in names:
+            hits = [p for p in Path(build).rglob(n) if "CMakeFiles" not in p.parts]
+            if not hits:
+                sys.exit(f"win10_surface: no {n} under {build}; fix: ./vibeos-cli build")
+            found[n] = read_pe_file(hits[0])
+        problems = [p for m in PROVIDERS for p in check_forward_chains(found, m)]
+        fwd = sum(1 for m in PROVIDERS for e in found[m].exports.values() if e.forward)
+        for p in problems:
+            print(f"  {build}: {p}")
+        print(f"check {build}: {fwd} forwards followed to a body, {len(problems)} problems")
+        bad += len(problems)
+    return 1 if bad else 0
+
+
 def cmd_verify(args: argparse.Namespace) -> int:
     binary = Path(args.spec2def)
     if not binary.is_file():
@@ -749,7 +1009,8 @@ def cmd_gap(args: argparse.Namespace) -> int:
     for title, key in (
         ("Windows modules we do not build", "missing_modules"),
         ("redistributables (VC++/DirectX runtimes, not OS surface)", "redistributables"),
-        ("api-set names imported (we ship no api-set DLLs)", "apiset_imports"),
+        ("api-set names imported (our loader redirects them)", "apiset_imports"),
+        ("api-set names our loader cannot resolve (no row in apisets.table.c)", "apiset_unmapped"),
     ):
         print(f"{title}: {len(res[key])}")
         for r in res[key][: args.top]:
@@ -768,6 +1029,16 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--apply", action="store_true", help="write the specs (default: dry run)")
     s.add_argument("--top", type=int, default=40)
     s.set_defaults(fn=cmd_stubs)
+    f = sub.add_parser("forwards", help="forward gated exports to the *_vista DLLs")
+    f.add_argument("--apply", action="store_true", help="write the specs (default: dry run)")
+    f.add_argument("--show", type=int, default=0, help="print the first N lines per module")
+    f.add_argument(
+        "--check",
+        nargs="+",
+        metavar="BUILD_DIR",
+        help="instead: follow every forward in the BUILT DLLs to a real body",
+    )
+    f.set_defaults(fn=cmd_forwards)
     v = sub.add_parser("verify", help="prove every generated block is dormant and generates")
     v.add_argument("--spec2def", default=str(ROOT / "build-amd64/host-tools/bin/spec2def"))
     v.set_defaults(fn=cmd_verify)
