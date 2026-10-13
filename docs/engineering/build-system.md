@@ -163,6 +163,10 @@ generate time.
 - `WITH_RELAY` modules keep the C emitter: relay-tracing thunks have no Rust form, and
   `spec2def --with-tracing -s=x.rs` refuses. No module uses `WITH_RELAY` today.
 - msvc.cmake's `spec2def()` is untouched.
+- Every stub's line names its module, `WARNING: calling stub <dll>!<name>(...)`, which is
+  what `tools/stub_hits.py` ranks. `-stub=VALUE` on a typed row (`@ stdcall
+  -stub=E_NOTIMPL F(ptr)`) is the non-raising kind: it logs the first call per process and
+  returns VALUE (`E_NOTIMPL`, `STATUS_NOT_IMPLEMENTED`, `FALSE`, `NULL` or a number).
 
 ## The `--allow-multiple-definition` link flag
 

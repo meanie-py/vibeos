@@ -199,6 +199,8 @@ members = [
     "null-cargo",
     "wpprecorder-rust",
     "wpprecorder-cargo",
+    "wpprecorderum-rust",
+    "wpprecorderum-cargo",
     "nmidebug-rust",
     "nmidebug-cargo",
     "sysfb-cargo",

@@ -320,11 +320,25 @@ def read_ros_apisets(text: str) -> dict[str, str]:
     """{api set name (lower, no `.dll`): host dll (lower)} from OUR loader's table.
 
     The loader (ntdll's LdrpApplyFileNameRedirection -> ApiSetResolveToHost) redirects an
-    imported `api-ms-win-…` name through this table by EXACT name, and that is what decides
+    imported `api-ms-win-…` name through this table (see `ros_apiset_host`), and that decides
     whether an import loads here -- not Windows' schema, which maps most core sets to
     kernelbase.dll where ours maps them to kernel32.dll. Commented-out rows are not entries.
     """
     return {m.group(1).lower(): m.group(2).lower() for m in _ROS_APISET_ROW.finditer(text)}
+
+
+def ros_apiset_host(name: str, ros: dict[str, str]) -> str | None:
+    """The host our loader redirects api set `name` to: the exact row, else -- as Windows
+    does, hashing a name only up to its last '-' -- the last row differing only in the
+    trailing minor version (`realtime-l1-1-1` -> the `realtime-l1-1-2` row)."""
+    name = name.lower().removesuffix(".dll")
+    if name in ros:
+        return ros[name]
+    stem, _, minor = name.rpartition("-")
+    if not minor.isdigit():
+        return None
+    rows = sorted(k for k in ros if k.rpartition("-")[0] == stem and k.rpartition("-")[2].isdigit())
+    return ros[rows[-1]] if rows else None
 
 
 # --- the tree --------------------------------------------------------------------------------
@@ -554,6 +568,11 @@ def spec_rows(text: str) -> dict[str, list[SpecRow]]:
     return out
 
 
+def _stub_flag(opts: list[str]) -> bool:
+    """`-stub`, or `-stub=VALUE` (the stub that returns VALUE instead of raising)."""
+    return any(o == "-stub" or o.startswith("-stub=") for o in opts)
+
+
 # Flags that describe the export itself and carry over to a forward of it; the rest
 # (-version, -arch, -stub, -i386) say WHEN a row applies, which the forward sets itself.
 KEEP_FLAGS = ("-ret64", "-noname", "-private", "-norelay", "-register")
@@ -608,9 +627,9 @@ def plan_forwards(
         vista_mod, arches, theirs_rows = hit
         # The signature comes from the module's own row when it has a real one, else from
         # the provider's (a `stub` row carries no calling convention).
-        own = [r for r in rows.get(name, []) if r.kind != "stub" and "-stub" not in r.opts]
+        own = [r for r in rows.get(name, []) if r.kind != "stub" and not _stub_flag(r.opts)]
         theirs_real = [
-            r for r in theirs_rows.get(name, []) if r.kind != "stub" and "-stub" not in r.opts
+            r for r in theirs_rows.get(name, []) if r.kind != "stub" and not _stub_flag(r.opts)
         ]
         sig = (own or theirs_real or theirs_rows[name])[0]
         starts = [
@@ -787,10 +806,10 @@ def gap(
                 continue
             if resolve_apiset(dll, schema) is not None:
                 apisets[dll].add(app)
-                host = ros.get(dll.removesuffix(".dll"))
+                host = ros_apiset_host(dll, ros)
                 if not host:
-                    # Our loader has no row for this exact name: the import fails to load
-                    # here whatever Windows maps it to.
+                    # Our loader has no row for this name: the import fails to load here
+                    # whatever Windows maps it to.
                     unmapped[dll].add(app)
                     continue
                 dll = host if host.endswith(".dll") else host + ".dll"

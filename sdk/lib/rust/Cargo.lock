@@ -5449,6 +5449,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "wpprecorderum-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "wpprecorderum-rust"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+]
+
+[[package]]
 name = "write-rust"
 version = "0.1.0"
 dependencies = [

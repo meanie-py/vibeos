@@ -142,7 +142,7 @@ def kernel_names(root: Path = REPO) -> dict[str, dict[str, str]]:
             # A stub has no body in the kernel, so a crate defining the name shadows
             # nothing. Both spellings: the `stub` directive (what spec2def generates,
             # and every win10_surface line) and the `-stub` flag on a typed line.
-            if "-stub" in flags or m.group(1) == "stub":
+            if any(f == "-stub" or f.startswith("-stub=") for f in flags) or m.group(1) == "stub":
                 continue
             if not _version_included(flags):
                 continue

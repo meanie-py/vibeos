@@ -31,6 +31,7 @@ typedef struct
     unsigned nStartVersion;
     unsigned nEndVersion;
     int bVersionIncluded;
+    STRING strStubValue; /* -stub=VALUE: return this, log once, never raise */
 } EXPORT;
 
 #if 0 // Debug helper function
@@ -217,6 +218,40 @@ NextToken(const char *pc)
     return pc;
 }
 
+/* The C/Rust expression for a -stub= value, or NULL if it is not one we accept. */
+static const char *
+StubValueExpr(const char *v, int len)
+{
+    static char num[32];
+    int i = 0;
+    static const struct { const char *name, *expr; } named[] = {
+        { "E_NOTIMPL", "0x80004001" },
+        { "STATUS_NOT_IMPLEMENTED", "0xC0000002" },
+        { "FALSE", "0" },
+        { "NULL", "0" },
+    };
+    for (i = 0; i < (int)(sizeof(named) / sizeof(named[0])); i++)
+        if (len == (int)strlen(named[i].name) && !strncmp(v, named[i].name, len))
+            return named[i].expr;
+    i = 0;
+    if (len == 0 || len >= (int)sizeof(num)) return NULL;
+    if (v[0] == '-') i = 1;
+    if (i + 2 < len && v[i] == '0' && (v[i + 1] == 'x' || v[i + 1] == 'X'))
+    {
+        for (i += 2; i < len; i++)
+            if (!isxdigit((unsigned char)v[i])) return NULL;
+    }
+    else
+    {
+        if (i == len) return NULL;
+        for (; i < len; i++)
+            if (!isdigit((unsigned char)v[i])) return NULL;
+    }
+    memcpy(num, v, len);
+    num[len] = 0;
+    return num;
+}
+
 void
 OutputHeader_stub(FILE *file)
 {
@@ -333,8 +368,11 @@ OutputLine_stub(FILE *file, EXPORT *pexp)
 
     if (!bRelay)
     {
-        fprintf(file, ")\n{\n\tDbgPrint(\"WARNING: calling stub %.*s(",
-                pexp->strName.len, pexp->strName.buf);
+        fprintf(file, ")\n{\n");
+        if (pexp->strStubValue.len)
+            fprintf(file, "\tstatic int logged;\n\tif (!logged && (logged = 1))\n\t");
+        fprintf(file, "\tDbgPrint(\"WARNING: calling stub %s!%.*s(",
+                pszDllName, pexp->strName.len, pexp->strName.buf);
     }
     else
     {
@@ -412,7 +450,10 @@ OutputLine_stub(FILE *file, EXPORT *pexp)
         fprintf(file, ");\n");
     }
 
-    if (!bRelay)
+    if (!bRelay && pexp->strStubValue.len && !(pexp->uFlags & FL_REGISTER))
+        fprintf(file, "\treturn (%s)%s;\n}\n\n", (pexp->uFlags & FL_RET64) ? "__int64" : "int",
+                StubValueExpr(pexp->strStubValue.buf, pexp->strStubValue.len));
+    else if (!bRelay)
         fprintf(file, "\treturn 0;\n}\n\n");
     else if ((pexp->uFlags & FL_REGISTER) == 0)
     {
@@ -541,7 +582,11 @@ OutputLine_stub_rs(FILE *file, EXPORT *pexp)
             case ARG_FLOAT:  fprintf(file, "f32");        break;
         }
     }
-    fprintf(file, ")%s {\n    DbgPrint(b\"WARNING: calling stub ", ret);
+    fprintf(file, ")%s {\n", ret);
+    if (pexp->strStubValue.len)
+        fprintf(file, "    static LOGGED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);\n"
+                      "    if !LOGGED.swap(true, core::sync::atomic::Ordering::Relaxed) {\n    ");
+    fprintf(file, "    DbgPrint(b\"WARNING: calling stub %s!", pszDllName);
     OutputRustBytes(file, pexp->strName.buf, pexp->strName.len);
     fprintf(file, "(");
 
@@ -577,6 +622,8 @@ OutputLine_stub_rs(FILE *file, EXPORT *pexp)
         }
     }
     fprintf(file, ");\n");
+    if (pexp->strStubValue.len)
+        fprintf(file, "    }\n");
 
     if (pexp->nCallingConvention == CC_STUB)
     {
@@ -588,7 +635,17 @@ OutputLine_stub_rs(FILE *file, EXPORT *pexp)
         fprintf(file, "\\0\");\n");
     }
 
-    if (!(pexp->uFlags & FL_REGISTER))
+    if (pexp->strStubValue.len && !(pexp->uFlags & FL_REGISTER))
+    {
+        /* `as` wraps a literal past the signed range (0xC0000002) where a suffix-less one
+         * would not compile. */
+        const char *v = StubValueExpr(pexp->strStubValue.buf, pexp->strStubValue.len);
+        if (v[0] == '-')
+            fprintf(file, "    %s\n", v);
+        else
+            fprintf(file, "    %su64 as %s\n", v, (pexp->uFlags & FL_RET64) ? "i64" : "i32");
+    }
+    else if (!(pexp->uFlags & FL_REGISTER))
         fprintf(file, "    0\n");
     fprintf(file, "}\n\n");
 
@@ -1127,6 +1184,8 @@ ParseFile(char* pcStart, FILE *fileDest, unsigned *cExports)
         exp.strTarget.len = 0;
         exp.nArgCount = 0;
         exp.uFlags = 0;
+        exp.strStubValue.buf = NULL;
+        exp.strStubValue.len = 0;
         exp.nNumber++;
         exp.nStartVersion = 0;
         exp.nEndVersion = 0xFFFFFFFF;
@@ -1353,6 +1412,26 @@ ParseFile(char* pcStart, FILE *fileDest, unsigned *cExports)
                 if (gbImportLib && !gbMSComp)
                     exp.uFlags |= FL_NONAME;
             }
+            else if (CompareToken(pc, "-stub="))
+            {
+                /* A stub for an API callers probe and handle failing: it logs its first
+                 * call and returns VALUE, where a plain stub raises EXCEPTION_WINE_STUB
+                 * (or, given arguments, returns 0, which is SUCCESS for an HRESULT or an
+                 * NTSTATUS). It needs the argument list: i386 stdcall pops its own. */
+                const char *v = pc + 6;
+                int len = 0;
+                while (v[len] && v[len] != ' ' && v[len] != '\t' && v[len] != '\r' && v[len] != '\n')
+                    len++;
+                if (!StubValueExpr(v, len))
+                {
+                    Fatal(pszSourceFileName, nLine, pcLine, v, len,
+                          "-stub= wants a number, E_NOTIMPL, STATUS_NOT_IMPLEMENTED, FALSE or NULL");
+                }
+                exp.uFlags |= FL_STUB;
+                exp.strStubValue.buf = v;
+                exp.strStubValue.len = len;
+                pc = v; /* NextToken skips the value: '=' is a separator */
+            }
             else if (CompareToken(pc, "-stub"))
             {
                 exp.uFlags |= FL_STUB;
@@ -1488,6 +1567,12 @@ ParseFile(char* pcStart, FILE *fileDest, unsigned *cExports)
 
             /* Go to next token */
             pc = NextToken(pc);
+        }
+
+        if (exp.strStubValue.len && exp.nCallingConvention == CC_STUB)
+        {
+            Fatal(pszSourceFileName, nLine, pcLine, exp.strStubValue.buf, exp.strStubValue.len,
+                  "-stub= needs a calling convention and the argument list");
         }
 
         /* Handle special stub cases */

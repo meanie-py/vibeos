@@ -413,3 +413,10 @@ def test_forward_chains_follow_renames_and_catch_cycles_and_dead_ends():
         "k.dll!Dead: forward chain ends at missing kv.Missing",
         "k.dll!Loop: forward CYCLE through k.Loop",
     ], "Precise leaves and re-enters k under another name, which is fine"
+
+
+def test_ros_apiset_host_ignores_only_the_trailing_minor_version():
+    ros = {"api-ms-win-core-realtime-l1-1-0": "a.dll", "api-ms-win-core-realtime-l1-1-2": "b.dll"}
+    assert w.ros_apiset_host("API-MS-Win-Core-Realtime-L1-1-0.dll", ros) == "a.dll"
+    assert w.ros_apiset_host("api-ms-win-core-realtime-l1-1-1.dll", ros) == "b.dll"
+    assert w.ros_apiset_host("api-ms-win-core-realtime-l1-2-0.dll", ros) is None

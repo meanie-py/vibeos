@@ -46,14 +46,14 @@ int __stdcall $relaytrace$StdcallVersionRange(long a0, long a1, wchar_t* a2, wch
 
 int StubFunction()
 {
-	DbgPrint("WARNING: calling stub StubFunction()\n");
+	DbgPrint("WARNING: calling stub testdll.xyz!StubFunction()\n");
 	__wine_spec_unimplemented_stub("testdll.xyz", __FUNCTION__);
 	return 0;
 }
 
 int __stdcall StdcallSuccessStub(void* a0)
 {
-	DbgPrint("WARNING: calling stub StdcallSuccessStub(0x%p)\n", (void*)a0);
+	DbgPrint("WARNING: calling stub testdll.xyz!StdcallSuccessStub(0x%p)\n", (void*)a0);
 	return 0;
 }
 

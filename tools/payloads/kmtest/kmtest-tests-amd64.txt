@@ -90,6 +90,7 @@ KeIrql
 KeMutex
 KeSpinLock
 KeTimer
+MmMapIoSpaceEx
 MmMdl
 MmSection
 # QUARANTINED 2026-07-10 (amd64 sweep 4): BUGCHECK 0xDA SYSTEM_PTE_MISUSE subcode

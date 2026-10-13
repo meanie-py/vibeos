@@ -139,25 +139,76 @@ weighting each missing function by the binaries that import it:
    as Windows does). `gap` now resolves them through that table, as the loader does, and
    lists names it has no row for: one, `api-ms-win-core-realtime-l1-1-1` (2 apps).
 
-**Owed on the export-surface tooling:**
-- **A non-raising stub kind** in spec2def (log once, set `ERROR_CALL_NOT_IMPLEMENTED` /
-  return `STATUS_NOT_IMPLEMENTED`), opt-in per function for APIs callers commonly probe and
-  handle failing. Needs the argument list (i386 stdcall pops its own args): take it from
-  Wine's typed `.spec` lines, mingw-w64 headers as the fallback. Raising stays the default.
-  Not built yet: nothing should opt in before the stub-hit report says which stubs run.
-- **A stub-hit report**: rank the `WARNING: calling stub` lines across run logs; that
-  ranking is the implementation queue, so bodies are bought only for stubs real runs call.
-  Triage should classify `EXCEPTION_WINE_STUB` crashes too. Log `GetProcAddress` misses at
-  the same time: for a function a program probes, NO export is the right answer (it takes
-  its fallback), and a stub there breaks it.
-- **Next cheap kernel export:** `MmMapIoSpaceEx` (72 packages; `MmMapIoSpace` with the
-  cache type taken from the page protection). After it the driver list is NDIS 6.
-- **wpprecorder.sys has not loaded a real vendor driver yet**; kmtest cannot reach a
-  non-kernel module's exports. `wpprecorderum.dll` (9 packages) is not built.
-- **ntoskrnl_vista's ETW is NOT_IMPLEMENTED**, and it is a static library linked INTO
-  in-tree drivers (wdf01000, kmtest_drv), so they never reach the kernel's exports for
-  these names. Point it at the kernel's ETW or retire those three; scan_export_shadows
-  lists them.
+**Done 2026-10-12 (later): the owed tooling and the next kernel export.**
+- **`tools/stub_hits.py`, the stub-hit report.** It ranks every stub any run reached, by
+  the number of runs, then lines; default input is every run under `/tmp/vibeos-cli`, read
+  through each run's `serial.log` so a boot counts once. Each stub gets its KIND from the
+  spec (`raises`, `returns 0`, `returns V`) and a DIED count: kernel32's
+  unhandled-exception filter prints `Missing function: dll!name` when a raising stub kills
+  a process. Stub lines now name their module (`WARNING: calling stub msvcrt.dll!X(`);
+  older lines are matched to the one spec stubbing the name, or listed as ambiguous.
+  Beside it, the GetProcAddress misses: ntdll's `LdrpGetProcedureAddress` logs
+  `LDR: GetProcAddress miss <dll>!<name>` for every by-name or by-ordinal lookup that
+  finds nothing. A probed function has a fallback, so a miss is usually the right answer,
+  and the list is what stops a stub from being added in its place.
+- **`-stub=VALUE` in spec2def**, the non-raising kind: `@ stdcall -stub=E_NOTIMPL F(ptr)`
+  logs its first call per process and returns VALUE (`E_NOTIMPL`,
+  `STATUS_NOT_IMPLEMENTED`, `FALSE`, `NULL`, or a number). It needs a calling convention
+  and the argument list, because i386 stdcall pops its own (`@ stub -stub=…` is refused);
+  `tools/test_spec2def_stub_value.py` pins it. Raising stays the default, and NOTHING
+  opts in yet: write a row by hand outside the generated block (the generator drops a
+  name the spec declares) once the report shows a program reaching that stub and handling
+  failure. No last-error variant: stub objects import nothing, so `-stub=FALSE` leaves
+  `GetLastError` stale.
+- **api-set names resolve ignoring the trailing minor version**, as on Windows (its schema
+  hashes a name only up to the last `-`): `api-ms-win-core-realtime-l1-1-1` reaches the
+  `-l1-1-2` row. It is a fallback after the exact row, in BOTH resolvers: ntdll-rust's
+  `apisets.rs` is the one the loader runs, while `apisets-rust` is the one the apisets
+  apitest links, which now has minor- and major-version cases. `gap` applies the same rule
+  (`ros_apiset_host`), so no api set is unmapped any more.
+- **`MmMapIoSpaceEx`**: `MmMapIoSpace` with the cache type taken from the protection (no
+  modifier = cached, `PAGE_NOCACHE`, `PAGE_WRITECOMBINE`; both, or a protection that is not
+  readable, is NULL). The access part is checked but not enforced; the view is read-write,
+  like every `MmMapIoSpace` view. kmtest `MmMapIoSpaceEx`: Windows 11 10/0 first, then the
+  guest 10/0.
+- **ntoskrnl_vista's ETW copies are gone** (also classpnp's no-op shims): drivers that
+  link the library now import the kernel's real `EtwRegister`/`EtwUnregister`/`EtwWrite`,
+  and ntoskrnl itself (which links ntoskrnl_vista too) no longer carries a second
+  definition whose winner was link order.
+- **`wpprecorderum.dll`** (amd64/arm64): `WppAutoLogStart`/`Stop`/`Trace` and
+  `WppAutoLogGetDefaultHandle`, records to nowhere like the kernel half. It is checked as
+  a PE (its exports, and ntdll the only import); no UMDF host runs its importers yet.
+
+Measured with `gap` after these, the drivers' weighted gap is 7,108 -> 7,060:
+`MmMapIoSpaceEx` removed 72 import sites, and the api-set rule surfaced 7 functions (24
+sites) that had been hidden behind unmapped api sets, now counted against their host
+(`RegSetKeyValueW`, `VirtualAlloc2FromApp`, shell32's feature-state set, ...).
+
+**Owed on the export surface:**
+- **Seed the stub-hit report with real programs.** Its first reading (607 boots: smoke,
+  kmtest on all arches, and one amd64 appstorm sweep, which opens every stock app and
+  applet): exactly one stub is reached, the SEH smoke probe's deliberate
+  `msvcrt.dll!_CrtCheckMemory`, and 39 GetProcAddress misses, all probes with a
+  fallback (`SvchostPushServiceGlobals` in every svchost service, the optional `BTCpu*`
+  hooks in `wow64cpu.dll`, `_set_invalid_parameter_handler` once per CRT process) except
+  `kernel32.dll!LCMapStringEx`, which is `gated` in `gap` (7 apps): the next forward.
+  The ranking only means something over third-party programs (the apitest sweep, Chrome
+  once it starts), so opt stubs into `-stub=` from those runs, not before.
+- **The next cheap kernel batch is NOT NDIS 6** (this section said it was):
+  `PoRegisterPowerSettingCallback`/`PoUnregister…` (61/59 packages),
+  `IoGetDevicePropertyData`/`IoSetDevicePropertyData` (38/35) and `strncpy_s` (35) sit
+  among the NDIS names. ntoskrnl already LINKS ntoskrnl_vista's bodies for the first four,
+  but they return `STATUS_NOT_IMPLEMENTED`, so exporting them as they stand would turn a
+  load failure into a start failure. The Po pair want a success that never calls back
+  (or calls back once with the current value, as Windows does: grade it there first).
+  The NDIS 6 NetBufferList/miniport surface is the big one after that.
+- **Ungate the `gated` rows** (68 app functions, 53 driver ones in `gap`): a real row
+  behind `-version=0x600+`, whose body is often already LINKED. `LCMapStringEx` is in
+  kernel32.dll today (`kernel32-rust/src/string/locale.rs`), just not exported at 0x502,
+  and an app probes for it. Step 1's forwards covered only names a `_vista` DLL provides;
+  this is the same free win inside the module itself, and wants a smoke on all three
+  arches, because a program that finds the export takes its Vista path.
+- **wpprecorder.sys / wpprecorderum.dll have not served a real vendor driver yet.**
 - **Re-measure** after any of these: `python3 tools/win10_surface.py reference` (cached in
   `~/.cache/vibeos/win10-surface/`), then `gap` over the same 20 app folders under
   `/mnt/c/Program Files*` and over `/mnt/c/Windows/System32/DriverStore/FileRepository`.
