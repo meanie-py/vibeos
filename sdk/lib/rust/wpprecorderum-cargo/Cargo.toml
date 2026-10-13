@@ -1,0 +1,17 @@
+# Cargo-driven `wpprecorderum.dll` link (amd64 + arm64). build.rs is a manifest for the
+# shared `reactos-link` engine; the body is the `wpprecorderum-rust` staticlib, and the
+# exports come from dll/win32/wpprecorderum/wpprecorderum.spec.
+
+[package]
+name = "wpprecorderum-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "wpprecorderum"
+path = "src/main.rs"
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }

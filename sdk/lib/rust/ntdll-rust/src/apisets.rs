@@ -119,6 +119,43 @@ pub unsafe extern "C" fn ApiSetResolveToHost(
         }
     }
 
+    // No exact row: match as Windows does, ignoring the trailing minor version. Its
+    // schema hashes a name only up to the last '-', so `api-ms-win-core-realtime-l1-1-1`
+    // resolves through the schema's `-l1-1-2` row; a program built against a minor
+    // version our table never listed still loads. Rows sharing the stem are adjacent
+    // (the table is sorted), and the last one this version enables wins.
+    if let Some(entry) = resolve_any_minor(apiset_version, &tmp) {
+        core::ptr::write_volatile(resolved, 1);
+        core::ptr::write_volatile(output, entry.target);
+        return STATUS_SUCCESS;
+    }
+
     core::ptr::write_volatile(resolved, 0);
     STATUS_SUCCESS
+}
+
+/// The table row `name` resolves to with its final `-<digits>` ignored, if any.
+unsafe fn resolve_any_minor(apiset_version: u32, name: &UnicodeString) -> Option<&'static RosApiset> {
+    let chars = core::slice::from_raw_parts(name.buffer, (name.length / 2) as usize);
+    let hyphen = chars.iter().rposition(|&c| c == b'-' as u16)?;
+    if hyphen + 1 == chars.len() || !chars[hyphen + 1..].iter().all(|&c| (b'0' as u16..=b'9' as u16).contains(&c)) {
+        return None;
+    }
+    let stem = UnicodeString {
+        length: ((hyphen + 1) * 2) as u16,
+        maximum_length: ((hyphen + 1) * 2) as u16,
+        buffer: name.buffer,
+    };
+    let mut found = None;
+    for entry in G_APISETS.iter() {
+        let e = core::slice::from_raw_parts(entry.name.buffer, (entry.name.length / 2) as usize);
+        if e.len() <= hyphen + 1 || !e[hyphen + 1..].iter().all(|&c| (b'0' as u16..=b'9' as u16).contains(&c)) {
+            continue;
+        }
+        let head = UnicodeString { length: stem.length, maximum_length: stem.length, buffer: entry.name.buffer };
+        if RtlCompareUnicodeString(&stem, &head, 1) == 0 && entry.dw_os_versions & apiset_version != 0 {
+            found = Some(entry);
+        }
+    }
+    found
 }

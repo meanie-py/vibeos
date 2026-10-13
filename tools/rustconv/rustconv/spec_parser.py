@@ -216,7 +216,8 @@ def parse_spec(path: Path = SPEC_FILE, arch: str | None = None) -> dict[str, Spe
             is_variable=convention == "extern",
             ordinal=ordinal,
             flags=flags,
-            is_stub=convention == "stub" or "-stub" in flags,
+            is_stub=convention == "stub"
+            or any(f == "-stub" or f.startswith("-stub=") for f in flags),
             is_private="-private" in flags,
             impl_symbol=impl_symbol,
             in_version=in_version,

@@ -113,6 +113,7 @@ KeIrql
 KeMutex
 KeSpinLock
 KeTimer
+MmMapIoSpaceEx
 MmMdl
 # UN-QUARANTINED 2026-07-17 (§9.96 root fix): the wedge was the NOACCESS-view translation-fault
 # storm — MmNotPresentFaultSectionView dropped the C's `Region->Protect & PAGE_NOACCESS →

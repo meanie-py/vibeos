@@ -838,6 +838,7 @@
 @ stdcall MmLockPagableImageSection(ptr) MmLockPageableDataSection
 @ stdcall MmLockPagableSectionByHandle(ptr) MmLockPageableSectionByHandle
 @ stdcall MmMapIoSpace(long long long long)
+@ stdcall MmMapIoSpaceEx(int64 long long)
 @ stdcall MmMapLockedPages(ptr long)
 @ stdcall MmMapLockedPagesSpecifyCache(ptr long long ptr long long)
 @ stdcall MmMapLockedPagesWithReservedMapping(ptr long ptr long)
@@ -2545,7 +2546,6 @@
 @ stub -version=0xA00+ MmIsFileSectionActive
 @ stub -version=0xA00+ MmLoadSystemImage
 @ stub -version=0xA00+ MmLockPreChargedPagedPool
-@ stub -version=0xA00+ MmMapIoSpaceEx
 @ stub -version=0xA00+ MmMapMdl
 @ stub -version=0xA00+ MmMapMemoryDumpMdlEx
 @ stub -version=0xA00+ MmMapViewInSessionSpaceEx

@@ -1,32 +1,5 @@
-use crate::prelude::*;
-use ntkrnl_sys::ddk::{LPCGUID, PCEVENT_DESCRIPTOR, PETWENABLECALLBACK, PEVENT_DATA_DESCRIPTOR, PREGHANDLE, REGHANDLE};
-use core::ffi::c_void;
-
-// ---- file-scope preamble (translated) ----
-// No file-scope declarations: the preamble consists only of SAL `_IRQL_requires_max_` annotations on `NTSTATUS` return types, which have no Rust equivalent.
-
-#[no_mangle]
-pub unsafe extern "system" fn EtwWrite(
-    RegHandle: REGHANDLE,
-    EventDescriptor: PCEVENT_DESCRIPTOR,
-    ActivityId: LPCGUID,
-    UserDataCount: ULONG,
-    UserData: PEVENT_DATA_DESCRIPTOR,
-) -> NTSTATUS {
-    STATUS_NOT_IMPLEMENTED
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn EtwRegister(
-    ProviderId: LPCGUID,
-    EnableCallback: PETWENABLECALLBACK,
-    CallbackContext: PVOID,
-    RegHandle: PREGHANDLE,
-) -> NTSTATUS {
-    STATUS_NOT_IMPLEMENTED
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn EtwUnregister(RegHandle: REGHANDLE) -> NTSTATUS {
-    STATUS_NOT_IMPLEMENTED
-}
+// etw.c's EtwRegister / EtwUnregister / EtwWrite are not defined here any more: ntoskrnl
+// exports the real ones (wmi-rust's etw.rs) on every arch. This library is linked INTO
+// drivers (wdf01000, kmtest_drv, the storage class drivers) and into ntoskrnl itself, so a
+// copy here answered STATUS_NOT_IMPLEMENTED to every driver that linked it, and in the
+// kernel it was a second definition of an export whose winner was link order.

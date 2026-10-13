@@ -225,6 +225,7 @@ list(APPEND KMTEST_DRV_SOURCE
     ntos_ke/KeProcessor.c
     ntos_ke/KeSpinLock.c
     ntos_ke/KeTimer.c
+    ntos_mm/MmMapIoSpaceEx.c
     ntos_mm/MmMdl.c
     ntos_mm/MmReservedMapping.c
     ntos_mm/MmSection.c
