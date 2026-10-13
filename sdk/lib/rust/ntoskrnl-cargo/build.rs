@@ -384,7 +384,11 @@ fn main() {
         // full kernel variant; NOT `bldr`, which is the loader's read-only build).
         .rust_lib("cmlib-rust", &[], true)
         // The kernel's GUID data libs (wdmguid/poguid/ioevent C) → Rust.
-        .rust_lib("guids-rust", &[], true);
+        .rust_lib("guids-rust", &[], true)
+        // RtlUTF8ToUnicodeN / RtlUnicodeToUTF8N (ntoskrnl.spec): sdk/lib/rtl/utf8.c's
+        // Rust, which reached the kernel only through libntoskrnl_vista.a until that
+        // archive left the link (the DROP-TEST above), and nothing exported them then.
+        .rust_lib("utf8", &[], true);
     // The 5 cohab driver/serial libs, now cargo-native (was the cmake-built
     // libX_rust.a in static_libs + the empty C-body stubs, both dropped
     // above). Same crates cmake compiled into libX_rust.a — building them

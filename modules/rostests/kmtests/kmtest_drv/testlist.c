@@ -93,6 +93,7 @@ KMT_TESTFUNC Test_RtlSplayTree;
 KMT_TESTFUNC Test_RtlStack;
 KMT_TESTFUNC Test_RtlStrSafe;
 KMT_TESTFUNC Test_RtlUnicodeString;
+KMT_TESTFUNC Test_RtlUtf8;
 KMT_TESTFUNC Test_ZwAllocateVirtualMemory;
 KMT_TESTFUNC Test_ZwCreateSection;
 KMT_TESTFUNC Test_ZwMapViewOfSection;
@@ -182,6 +183,7 @@ const KMT_TEST TestList[] =
     { "RtlStackKM",                         Test_RtlStack },
     { "RtlStrSafeKM",                       Test_RtlStrSafe },
     { "RtlUnicodeStringKM",                 Test_RtlUnicodeString },
+    { "RtlUtf8",                            Test_RtlUtf8 },
     { "SeInheritance",                      Test_SeInheritance },
     { "SeLogonSession",                     Test_SeLogonSession },
     { "SeQueryInfoToken",                   Test_SeQueryInfoToken },

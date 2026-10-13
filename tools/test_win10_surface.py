@@ -420,3 +420,61 @@ def test_ros_apiset_host_ignores_only_the_trailing_minor_version():
     assert w.ros_apiset_host("API-MS-Win-Core-Realtime-L1-1-0.dll", ros) == "a.dll"
     assert w.ros_apiset_host("api-ms-win-core-realtime-l1-1-1.dll", ros) == "b.dll"
     assert w.ros_apiset_host("api-ms-win-core-realtime-l1-2-0.dll", ros) is None
+
+
+# --- gated ------------------------------------------------------------------------------------
+
+
+def test_ungate_line_drops_only_a_plain_version_floor():
+    assert (
+        w.ungate_line("@ stdcall -version=0x600+ -arch=x86_64 F(ptr) G # note\n")
+        == "@ stdcall -arch=x86_64 F(ptr) G # note\n"
+    )
+    # A range or a list is a deliberate window, not a floor: a human decides.
+    assert w.ungate_line("@ stdcall -version=0x600-0x601 F(ptr)\n") is None
+    assert w.ungate_line("@ stdcall -version=0x502,0x600+ F(ptr)\n") is None
+
+
+def test_stdcall_bytes_is_the_i386_decoration():
+    assert w.stdcall_bytes("(ptr long)") == 8
+    assert w.stdcall_bytes("(int64 ptr double)") == 20
+    assert w.stdcall_bytes("()") == 0
+
+
+def test_apply_ungate_touches_only_rows_linked_everywhere(tmp_path: Path):
+    spec = tmp_path / "t.spec"
+    spec.write_text(
+        "@ stdcall -version=0x600+ Linked(ptr)\n"
+        "@ stdcall -version=0x600+ Partly(ptr)\n"
+        "@ stdcall -version=0x600+ Excluded(ptr)\n"
+    )
+    rows = w.spec_rows(spec.read_text())
+
+    def g(name: str, arches: dict[str, str], excluded: str | None = None) -> w.GatedRow:
+        return w.GatedRow("t.dll", spec, name, rows[name][0], arches, excluded)
+
+    changed, manual = w.apply_ungate(
+        [
+            g("Linked", {"i386": "linked", "x86_64": "linked"}),
+            g("Partly", {"i386": "signature:@4!=@8", "x86_64": "linked"}),
+            g("Excluded", {"i386": "linked"}, "returns E_NOTIMPL"),
+        ]
+    )
+    assert (changed, manual) == (1, [])
+    assert spec.read_text().splitlines() == [
+        "@ stdcall Linked(ptr)",
+        "@ stdcall -version=0x600+ Partly(ptr)",
+        "@ stdcall -version=0x600+ Excluded(ptr)",
+    ]
+
+
+def test_a_forward_to_a_provider_that_links_back_is_private(tmp_path: Path):
+    """ws2help links ws2_32's import library: a ws2_32 forward to ws2help that landed in
+    that library would collide with ws2help's own definition at ws2help's link."""
+    mod = tmp_path / "ws2_32.spec"
+    mod.write_text("@ stdcall -version=0x600+ WahX(ptr)\n")
+    prov = tmp_path / "ws2help.spec"
+    prov.write_text("@ stdcall WahX(ptr)\n")
+    ref = {"x64": {"exports": {"WahX": {"data": False}}}}
+    lines = w.plan_forwards("ws2_32.dll", mod, [("ws2help", prov)], ref, 0x502)
+    assert lines == ["@ stdcall -version=0x400-0x5ff -private WahX(ptr) ws2help.WahX"]

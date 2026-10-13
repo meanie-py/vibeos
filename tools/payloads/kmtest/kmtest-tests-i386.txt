@@ -177,6 +177,7 @@ RtlSplayTreeKM
 RtlStackKM
 RtlStrSafeKM
 RtlUnicodeStringKM
+RtlUtf8
 # QUARANTINED 2026-07-12 (i386 auto-grind): BUGCHECK at ntoskrnl.exe+0x8E3BD. Passes on amd64. Triage owed (live GDB; offline i386 index is symbol-poor).
 # UN-QUARANTINED 2026-07-25 by the native-SEH/-fasync-exceptions fix (f4d0455be86,
 # d3b1c045c5d). The note above is kept as the audit trail of what it used to do.

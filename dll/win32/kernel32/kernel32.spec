@@ -92,7 +92,7 @@
 @ stdcall -stub -version=0x600+ CompareCalendarDates(ptr ptr ptr)
 @ stdcall CompareFileTime(ptr ptr)
 @ stdcall CompareStringA(long long str long str long)
-@ stdcall -version=0x600+ CompareStringEx(wstr long wstr long wstr long ptr ptr ptr)
+@ stdcall CompareStringEx(wstr long wstr long wstr long ptr ptr ptr)
 @ stdcall -version=0x600+ CompareStringOrdinal(wstr long wstr long long)
 @ stdcall CompareStringW(long long wstr long wstr long)
 @ stdcall ConnectNamedPipe(long ptr)
@@ -172,8 +172,8 @@
 @ stdcall CreateProcessW(wstr wstr ptr ptr long long ptr wstr ptr ptr)
 @ stdcall CreateRemoteThread(long ptr long ptr long long ptr)
 @ stdcall CreateSemaphoreA(ptr long long str)
-@ stdcall -version=0x600+ CreateSemaphoreExA(ptr long long str long long)
-@ stdcall -version=0x600+ CreateSemaphoreExW(ptr long long wstr long long)
+@ stdcall CreateSemaphoreExA(ptr long long str long long)
+@ stdcall CreateSemaphoreExW(ptr long long wstr long long)
 @ stdcall CreateSemaphoreW(ptr long long wstr)
 @ stdcall -i386 CreateSocketHandle()
 @ stdcall -version=0x600+ CreateSymbolicLinkA(str str long)
@@ -239,12 +239,12 @@
 @ stdcall EnterCriticalSection(ptr) ntdll.RtlEnterCriticalSection
 @ stdcall EnumCalendarInfoA(ptr long long long)
 @ stdcall EnumCalendarInfoExA(ptr long long long)
-@ stdcall -version=0x600+ EnumCalendarInfoExEx(ptr wstr long wstr long long)
+@ stdcall EnumCalendarInfoExEx(ptr wstr long wstr long long)
 @ stdcall EnumCalendarInfoExW(ptr long long long)
 @ stdcall EnumCalendarInfoW(ptr long long long)
 @ stdcall EnumDateFormatsA(ptr long long)
 @ stdcall EnumDateFormatsExA(ptr long long)
-@ stdcall -version=0x600+ EnumDateFormatsExEx(ptr wstr long long)
+@ stdcall EnumDateFormatsExEx(ptr wstr long long)
 @ stdcall EnumDateFormatsExW(ptr long long)
 @ stdcall EnumDateFormatsW(ptr long long)
 @ stdcall EnumLanguageGroupLocalesA(ptr long long ptr)
@@ -271,7 +271,7 @@
 @ stdcall -version=0x600+ EnumSystemLocalesEx(ptr long long ptr)
 @ stdcall EnumSystemLocalesW(ptr long)
 @ stdcall EnumTimeFormatsA(ptr long long)
-@ stdcall -version=0x600+ EnumTimeFormatsEx(ptr wstr long long)
+@ stdcall EnumTimeFormatsEx(ptr wstr long long)
 @ stdcall EnumTimeFormatsW(ptr long long)
 @ stdcall EnumUILanguagesA(ptr long long)
 @ stdcall EnumUILanguagesW(ptr long long)
@@ -358,8 +358,8 @@
 @ stdcall FreeUserPhysicalPages(long long long)
 @ stdcall GenerateConsoleCtrlEvent(long long)
 @ stdcall GetACP()
-@ stdcall -version=0x601+ GetActiveProcessorCount(long)
-@ stdcall -version=0x601+ GetActiveProcessorGroupCount()
+@ stdcall GetActiveProcessorCount(long)
+@ stdcall GetActiveProcessorGroupCount()
 @ stdcall -version=0x600+ GetApplicationRecoveryCallback(ptr ptr ptr ptr ptr)
 @ stub -version=0x600+ GetApplicationRestartSettings
 @ stdcall GetAtomNameA(long ptr long)
@@ -376,7 +376,7 @@
 @ stub -version=0x600+ GetCalendarDaysInMonth
 @ stub -version=0x600+ GetCalendarDifferenceInDays
 @ stdcall GetCalendarInfoA(long long long ptr long ptr)
-@ stdcall -version=0x600+ GetCalendarInfoEx(wstr long wstr long wstr long ptr)
+@ stdcall GetCalendarInfoEx(wstr long wstr long wstr long ptr)
 @ stdcall GetCalendarInfoW(long long long ptr long ptr)
 @ stub -version=0x600+ GetCalendarMonthsInYear
 @ stub -version=0x600+ GetCalendarSupportedDateRange
@@ -439,22 +439,22 @@
 @ stdcall GetConsoleTitleW(ptr long)
 @ stdcall GetConsoleWindow()
 @ stdcall GetCurrencyFormatA(long long str ptr str long)
-@ stdcall -version=0x600+ GetCurrencyFormatEx(wstr long wstr ptr wstr long)
+@ stdcall GetCurrencyFormatEx(wstr long wstr ptr wstr long)
 @ stdcall GetCurrencyFormatW(long long wstr ptr wstr long)
 @ stdcall GetCurrentActCtx(ptr)
 @ stdcall GetCurrentConsoleFont(long long ptr)
 @ stdcall -version=0x600+ GetCurrentConsoleFontEx(ptr long ptr)
 @ stdcall GetCurrentDirectoryA(long ptr)
 @ stdcall GetCurrentDirectoryW(long ptr)
-@ stdcall -version=0x602+ GetCurrentPackageId(ptr ptr)
+@ stdcall GetCurrentPackageId(ptr ptr)
 @ stdcall -norelay GetCurrentProcess()
 @ stdcall -norelay GetCurrentProcessId()
 @ stdcall GetCurrentProcessorNumber() ntdll.RtlGetCurrentProcessorNumber
-@ stdcall -version=0x601+ GetCurrentProcessorNumberEx(ptr) ntdll.RtlGetCurrentProcessorNumberEx
+@ stdcall GetCurrentProcessorNumberEx(ptr) ntdll.RtlGetCurrentProcessorNumberEx
 @ stdcall -norelay GetCurrentThread()
 @ stdcall -norelay GetCurrentThreadId()
 @ stdcall GetDateFormatA(long long ptr str ptr long)
-@ stdcall -version=0x600+ GetDateFormatEx(wstr long ptr wstr wstr long wstr)
+@ stdcall GetDateFormatEx(wstr long ptr wstr wstr long wstr)
 @ stdcall GetDateFormatW(long long ptr wstr ptr long)
 @ stdcall GetDefaultCommConfigA(str ptr long)
 @ stdcall GetDefaultCommConfigW(wstr ptr long)
@@ -476,7 +476,7 @@
 @ stdcall GetEnvironmentStringsW()
 @ stdcall GetEnvironmentVariableA(str ptr long)
 @ stdcall GetEnvironmentVariableW(wstr ptr long)
-@ stdcall -version=0x600+ GetErrorMode()
+@ stdcall GetErrorMode()
 @ stdcall GetExitCodeProcess(long ptr)
 @ stdcall GetExitCodeThread(long ptr)
 @ stdcall GetExpandedNameA(str ptr)
@@ -530,7 +530,7 @@
 @ stub -version=0x600+ GetLongPathNameTransactedW
 @ stdcall GetLongPathNameW(wstr long long)
 @ stdcall GetMailslotInfo(long ptr ptr ptr ptr)
-@ stdcall -version=0x601+ GetMaximumProcessorCount(long)
+@ stdcall GetMaximumProcessorCount(long)
 @ stdcall GetModuleFileNameA(long ptr long)
 @ stdcall GetModuleFileNameW(long ptr long)
 @ stdcall GetModuleHandleA(str)
@@ -559,7 +559,7 @@
 @ stdcall GetNumaProcessorNode(long ptr)
 @ stub -version=0x600+ GetNumaProximityNode
 @ stdcall GetNumberFormatA(long long str ptr ptr long)
-@ stdcall -version=0x600+ GetNumberFormatEx(wstr long wstr ptr wstr long)
+@ stdcall GetNumberFormatEx(wstr long wstr ptr wstr long)
 @ stdcall GetNumberFormatW(long long wstr ptr ptr long)
 @ stdcall GetNumberOfConsoleFonts()
 @ stdcall GetNumberOfConsoleInputEvents(long ptr)
@@ -644,7 +644,7 @@
 @ stdcall GetTempPathW(long ptr)
 @ stdcall GetThreadContext(long ptr)
 @ stdcall -stub -version=0x600+ GetThreadErrorMode()
-@ stdcall -version=0x601+ GetThreadGroupAffinity(ptr ptr)
+@ stdcall GetThreadGroupAffinity(ptr ptr)
 @ stdcall GetThreadIOPendingFlag(long ptr)
 @ stdcall GetThreadId(ptr)
 @ stdcall GetThreadLocale()
@@ -657,7 +657,7 @@
 @ stdcall GetTickCount()
 @ stdcall -version=0x600+ -ret64 GetTickCount64()
 @ stdcall GetTimeFormatA(long long ptr str ptr long)
-@ stdcall -version=0x600+ GetTimeFormatEx(wstr long ptr wstr wstr long)
+@ stdcall GetTimeFormatEx(wstr long ptr wstr wstr long)
 @ stdcall GetTimeFormatW(long long ptr wstr ptr long)
 @ stdcall GetTimeZoneInformation(ptr)
 @ stdcall -stub -version=0x600+ GetTimeZoneInformationForYear(long ptr ptr)
@@ -772,8 +772,8 @@
 @ stdcall IsProcessInJob(long long ptr)
 @ stdcall IsProcessorFeaturePresent(long)
 @ stdcall IsSystemResumeAutomatic()
-@ stdcall -version=0x600+ IsThreadAFiber()
-@ stdcall -version=0x600+ IsThreadpoolTimerSet(ptr) ntdll.TpIsTimerSet
+@ stdcall IsThreadAFiber()
+@ stdcall IsThreadpoolTimerSet(ptr) ntdll.TpIsTimerSet
 @ stdcall IsTimeZoneRedirectionEnabled()
 @ stub -version=0x600+ IsValidCalDateTime
 @ stdcall IsValidCodePage(long)
@@ -781,36 +781,36 @@
 @ stdcall IsValidLocale(long long)
 @ stdcall -version=0x501-0x502 IsValidUILanguage(long)
 @ stdcall IsWow64Process(ptr ptr)
-@ stdcall -version=0x601+ K32EmptyWorkingSet(long) EmptyWorkingSet
-@ stdcall -version=0x601+ K32EnumDeviceDrivers(ptr long ptr) EnumDeviceDrivers
-@ stdcall -version=0x601+ K32EnumPageFilesA(ptr ptr) EnumPageFilesA
-@ stdcall -version=0x601+ K32EnumPageFilesW(ptr ptr) EnumPageFilesW
+@ stdcall K32EmptyWorkingSet(long) EmptyWorkingSet
+@ stdcall K32EnumDeviceDrivers(ptr long ptr) EnumDeviceDrivers
+@ stdcall K32EnumPageFilesA(ptr ptr) EnumPageFilesA
+@ stdcall K32EnumPageFilesW(ptr ptr) EnumPageFilesW
 @ stdcall K32EnumProcessModules(long ptr long ptr) EnumProcessModules
 @ stdcall -stub -version=0x601+ K32EnumProcessModulesEx(long ptr long ptr long); EnumProcessModulesEx
-@ stdcall -version=0x601+ K32EnumProcesses(ptr long ptr) EnumProcesses
-@ stdcall -version=0x601+ K32GetDeviceDriverBaseNameA(ptr ptr long) GetDeviceDriverBaseNameA
-@ stdcall -version=0x601+ K32GetDeviceDriverBaseNameW(ptr ptr long) GetDeviceDriverBaseNameW
-@ stdcall -version=0x601+ K32GetDeviceDriverFileNameA(ptr ptr long) GetDeviceDriverFileNameA
-@ stdcall -version=0x601+ K32GetDeviceDriverFileNameW(ptr ptr long) GetDeviceDriverFileNameW
-@ stdcall -version=0x601+ K32GetMappedFileNameA(long ptr ptr long) GetMappedFileNameA
-@ stdcall -version=0x601+ K32GetMappedFileNameW(long ptr ptr long) GetMappedFileNameW
-@ stdcall -version=0x601+ K32GetModuleBaseNameA(long long ptr long) GetModuleBaseNameA
-@ stdcall -version=0x601+ K32GetModuleBaseNameW(long long ptr long) GetModuleBaseNameW
-@ stdcall -version=0x601+ K32GetModuleFileNameExA(long long ptr long) GetModuleFileNameExA
-@ stdcall -version=0x601+ K32GetModuleFileNameExW(long long ptr long) GetModuleFileNameExW
-@ stdcall -version=0x601+ K32GetModuleInformation(long long ptr long) GetModuleInformation
-@ stdcall -version=0x601+ K32GetPerformanceInfo(ptr long) GetPerformanceInfo
-@ stdcall -version=0x601+ K32GetProcessImageFileNameA(long ptr long) GetProcessImageFileNameA
-@ stdcall -version=0x601+ K32GetProcessImageFileNameW(long ptr long) GetProcessImageFileNameW
-@ stdcall -version=0x601+ K32GetProcessMemoryInfo(long ptr long) GetProcessMemoryInfo
-@ stdcall -version=0x601+ K32GetWsChanges(long ptr long) GetWsChanges
+@ stdcall K32EnumProcesses(ptr long ptr) EnumProcesses
+@ stdcall K32GetDeviceDriverBaseNameA(ptr ptr long) GetDeviceDriverBaseNameA
+@ stdcall K32GetDeviceDriverBaseNameW(ptr ptr long) GetDeviceDriverBaseNameW
+@ stdcall K32GetDeviceDriverFileNameA(ptr ptr long) GetDeviceDriverFileNameA
+@ stdcall K32GetDeviceDriverFileNameW(ptr ptr long) GetDeviceDriverFileNameW
+@ stdcall K32GetMappedFileNameA(long ptr ptr long) GetMappedFileNameA
+@ stdcall K32GetMappedFileNameW(long ptr ptr long) GetMappedFileNameW
+@ stdcall K32GetModuleBaseNameA(long long ptr long) GetModuleBaseNameA
+@ stdcall K32GetModuleBaseNameW(long long ptr long) GetModuleBaseNameW
+@ stdcall K32GetModuleFileNameExA(long long ptr long) GetModuleFileNameExA
+@ stdcall K32GetModuleFileNameExW(long long ptr long) GetModuleFileNameExW
+@ stdcall K32GetModuleInformation(long long ptr long) GetModuleInformation
+@ stdcall K32GetPerformanceInfo(ptr long) GetPerformanceInfo
+@ stdcall K32GetProcessImageFileNameA(long ptr long) GetProcessImageFileNameA
+@ stdcall K32GetProcessImageFileNameW(long ptr long) GetProcessImageFileNameW
+@ stdcall K32GetProcessMemoryInfo(long ptr long) GetProcessMemoryInfo
+@ stdcall K32GetWsChanges(long ptr long) GetWsChanges
 @ stdcall -stub -version=0x601+ K32GetWsChangesEx(long ptr ptr); GetWsChangesEx
-@ stdcall -version=0x601+ K32InitializeProcessForWsWatch(long) InitializeProcessForWsWatch
-@ stdcall -version=0x601+ K32QueryWorkingSet(long ptr long) QueryWorkingSet
-@ stdcall -version=0x601+ K32QueryWorkingSetEx(long ptr long) QueryWorkingSetEx
+@ stdcall K32InitializeProcessForWsWatch(long) InitializeProcessForWsWatch
+@ stdcall K32QueryWorkingSet(long ptr long) QueryWorkingSet
+@ stdcall K32QueryWorkingSetEx(long ptr long) QueryWorkingSetEx
 @ stdcall -version=0x600+ LCIDToLocaleName(long wstr long long)
 @ stdcall LCMapStringA(long long str long ptr long)
-@ stdcall -version=0x600+ LCMapStringEx(long long wstr long ptr long ptr ptr long)
+@ stdcall LCMapStringEx(long long wstr long ptr long ptr ptr long)
 @ stdcall LCMapStringW(long long wstr long ptr long)
 @ stdcall LZClose(long)
 @ stdcall LZCloseFile(long)
@@ -1130,7 +1130,7 @@
 @ stdcall -version=0xA00+ SetThreadDescription(ptr wstr)
 @ stdcall -stub -version=0x600+ SetThreadErrorMode(long ptr)
 @ stdcall SetThreadExecutionState(long)
-@ stdcall -version=0x601+ SetThreadGroupAffinity(ptr ptr ptr)
+@ stdcall SetThreadGroupAffinity(ptr ptr ptr)
 @ stdcall SetThreadIdealProcessor(long long)
 @ stdcall SetThreadLocale(long)
 @ stdcall -version=0x600+ SetThreadPreferredUILanguages(long wstr ptr)

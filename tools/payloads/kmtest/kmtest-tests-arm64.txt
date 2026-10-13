@@ -178,6 +178,7 @@ RtlSplayTreeKM
 RtlStackKM
 RtlStrSafeKM
 RtlUnicodeStringKM
+RtlUtf8
 # UN-QUARANTINED 2026-07-25: re-probed and it PASSES — pass=704431 fail=16, against the amd64
 # baseline's pass=704433 fail=14 (a 2-in-704k delta, i.e. the same result on the arch where this
 # test was never broken). The 2026-07-17 note below described a REAL 0xC2 BAD_POOL_CALLER, which
