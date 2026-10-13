@@ -154,3 +154,19 @@ def test_arch_specific_cmake_is_refused(tmp_path):
     assert g.cmake_facts(f, "m")["unknown"] == [
         "add_cd_file to both reactos/system32 and reactos/other"
     ]
+
+
+def test_the_panic_handler_follows_what_cmake_linked_per_arch():
+    # No arch carried the body's handler: panic-lean only, and no panic_common at all
+    # (a linked panic_common loads core through its #[no_mangle] fallback alone).
+    lean = cell(panics=dict.fromkeys(g.ARCHES, False))
+    assert "panic_lean::panic_lean" in g.main_rs(lean)
+    assert "panic-common" not in g.cargo_toml(lean)
+    # Per arch: panic_common is an arch-scoped dependency, used only there.
+    mixed = cell(panics={"i386": True, "amd64": True, "arm64": False})
+    rs, toml = g.main_rs(mixed), g.cargo_toml(mixed)
+    on = 'any(target_arch = "x86", target_arch = "x86_64")'
+    assert f"#[cfg({on})]\n    return panic_common::panic_common(" in rs
+    assert f"#[cfg(not({on}))]\n    return panic_lean::panic_lean(" in rs
+    assert f"[target.'cfg({on})'.dependencies]\npanic-common" in toml
+    assert "panic_lean" not in g.main_rs(cell())

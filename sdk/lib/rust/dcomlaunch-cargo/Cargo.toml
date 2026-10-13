@@ -10,6 +10,6 @@ name = "dcomlaunch"
 path = "src/main.rs"
 
 [dependencies]
-panic-common = { path = "../panic-common", features = ["user"] }
+panic-lean = { path = "../panic-lean" }
 [build-dependencies]
 reactos-link = { path = "../reactos-link" }

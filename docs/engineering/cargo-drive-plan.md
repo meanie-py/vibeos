@@ -76,6 +76,32 @@ extends it from the boot spine to every fully-Rust module.
        `+sse,+sse2`, which `pe_equiv` cannot see).
      - a different CD destination per arch (winprint's `prtprocs/<arch>`).
      - a `SOURCE` list another target also builds (gdi32_vista_static).
+
+     **The first submission was rejected** (kmtest `MmMdl` 720 -> 714 on amd64, 3 of
+     3: one fewer 32 MB block of free memory). pe_equiv had passed, because size is
+     not in the contract. Every cell's empty bin carried `panic_common`, and that
+     loaded all of `core`: rustc roots each dependency's `#[no_mangle]` symbol in an
+     executable link (panic_common's `_Unwind_Resume` fallback is one), and the
+     precompiled `core` for the builtin windows-gnu triples is one non-COMDAT
+     section, which lld's COFF gc never discards. w32time.dll went from 10 KB of
+     code to 147 KB; the wave added 18.5 MB on amd64, and five pilot modules
+     (bootok, expand, indicdll, subst, wuauserv) already carried it on master. cmake
+     never paid this: it pulled the body's handler lazily, only when something could
+     panic. The fix:
+     - **`panic-lean`**, a handler that references nothing in `core`, for every arch
+       on which the cmake-built module carried no handler (no `RtlWalkFrameChain`
+       import). The generator decides per arch; `--reshell DIR` redoes it for an
+       existing cell from its baseline.
+     - **`--check` guards size**: the mapped image may not grow more than 16 KB.
+       amd64 is now +21 KB across the whole wave, arm64 3 KB smaller than cmake.
+     - **Owed: i386 cells on the user target.** An i386 cell builds its own `core`
+       (nightly build-std on the kernel json) beside the body's
+       i686-pc-windows-gnu one, so a cell that keeps `panic_common` links a second
+       copy of `core::fmt`: 70-78 KB each, 3.9 MB for the wave. `--check` names it
+       and bounds it at 80 KB. Moving the cell to `i686-pc-windows-gnu` removes it
+       and a slice of the nightly surface, but that triple links `rsbegin.o`
+       (wants libgcc's `___register_frame_info`), and the lint, orchestrator and
+       `cargo-cell-args.sh` replays must learn the target too.
    - Then teach it the refusals, biggest first: 121 modules whose body crate is not named
      by `rust_staticlib_variant` (older glue), 46 with a statement it does not model
      (`target_compile_definitions`, `set_target_properties`, `set_wine_module_fixme`,
@@ -122,5 +148,7 @@ under `tools/canon-run.sh`, per arch) before applying again.
   destinations across all three and refuses on any difference it does not model.
 - **`<m>_c` belongs to `c_oracle.cmake`** (the pre-flip C, built on request). The
   generated OBJECT library for leftover C is `<m>_shims`.
+- **Equivalent is not enough: size is checked too.** A cell must not map code
+  cmake's link did not; a whole `core` rode into 94 modules past pe_equiv.
 - **The `# x.c  # replaced by Rust (...)` lines survive the rewrite.** `cohab_census` and
   the coverage tools read them; the generator carries every one into the new block.

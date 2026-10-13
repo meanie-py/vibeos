@@ -129,6 +129,7 @@ members = [
     "wmi-rust",
     "dbgprint-rust",
     "panic-common",
+    "panic-lean",
     "cc-rust",
     "iomgr-rust",
     "kdbg-rust",

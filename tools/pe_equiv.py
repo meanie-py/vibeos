@@ -202,6 +202,10 @@ class PE:
         walk(root, [])
         return sorted(out)
 
+    def mapped_size(self) -> int:
+        """Bytes the loader maps: every section but the discardable (debug) ones."""
+        return sum(max(vs, rs) for _n, _va, vs, _rp, rs, c in self.sections if not c & 0x02000000)
+
     def contract(self) -> dict[str, list[str]]:
         hdr = [
             f"machine {self.machine:#x}",
