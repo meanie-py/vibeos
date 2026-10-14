@@ -1,0 +1,393 @@
+# Cargo-driven link of the 95 keyboard layout DLLs (dll/keyboard): one FAMILY cell.
+# Every layout is one bin over the same empty main.rs; build.rs links each against the
+# one body, kbdlayouts-rust, which cargo builds once. The bin list must equal the
+# layout list in dll/keyboard/CMakeLists.txt (add_cargo_module BINS checks it).
+
+[package]
+name = "kbdlayouts-cargo"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }
+
+[[bin]]
+name = "kbd101"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbd101a"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbd106"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbd106n"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbda1"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbda2"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbda3"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdal"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdarme"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdarmw"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdaze"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdazel"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdbe"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdbga"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdbgt"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdblr"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdbr"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdbu"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdbur"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdcan"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdcmk"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdcr"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdcz"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdcz1"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdda"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbddv"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdeo"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdest"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdfc"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdfi"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdfo"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdfr"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdgeo"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdgerg"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdgneo"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdgr"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdgr1"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdgre1"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdgrist"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdhe"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdheb"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdhu"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdic"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdinasa"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdinben"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdindev"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdinguj"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdinmal"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdir"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdit"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdjpn"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdkaz"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdkor"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdla"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdlt1"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdlv"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdmac"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdne"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdnec"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdnec95"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdnecat"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdnecnt"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdno"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdpl"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdpl1"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdpo"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdro"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdrost"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdru"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdru1"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdsf"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdsg"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdsl"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdsl1"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdsp"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdsw"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdtat"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdth0"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdth1"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdth2"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdth3"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdtuf"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdtuq"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbduk"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdur"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdurs"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdus"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdusa"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdusl"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdusr"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdusx"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbduzb"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdvntc"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdycc"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdycl"
+path = "src/main.rs"
