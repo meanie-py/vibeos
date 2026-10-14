@@ -154,6 +154,7 @@
 @ stdcall GetHGlobalFromILockBytes(ptr ptr)
 @ stdcall GetHGlobalFromStream(ptr ptr)
 @ stub GetHookInterface
+@ stdcall GetRestrictedErrorInfo(ptr)
 @ stdcall GetRunningObjectTable(long ptr)
 @ stdcall HACCEL_UserFree(ptr ptr)
 @ stdcall HACCEL_UserMarshal(ptr ptr ptr)
@@ -283,6 +284,20 @@
 @ stdcall RegisterDragDrop(long ptr)
 @ stdcall ReleaseStgMedium(ptr)
 @ stdcall RevokeDragDrop(long)
+@ stdcall RoActivateInstance(ptr ptr)
+@ stdcall RoGetActivationFactory(ptr ptr ptr)
+@ stdcall RoGetAgileReference(long ptr ptr ptr)
+@ stdcall RoGetApartmentIdentifier(ptr)
+@ stdcall RoInitialize(long)
+@ stdcall RoOriginateError(long ptr)
+@ stdcall RoOriginateErrorW(long long wstr)
+@ stdcall RoOriginateLanguageException(long ptr ptr)
+@ stdcall RoRegisterActivationFactories(ptr ptr long ptr)
+@ stdcall RoRegisterForApartmentShutdown(ptr ptr ptr)
+@ stdcall RoRevokeActivationFactories(ptr)
+@ stdcall RoUninitialize()
+@ stdcall RoUnregisterForApartmentShutdown(ptr)
+@ stdcall SetRestrictedErrorInfo(ptr)
 @ stdcall SNB_UserFree(ptr ptr)
 @ stdcall SNB_UserMarshal(ptr ptr ptr)
 @ stdcall SNB_UserSize(ptr long ptr)
@@ -325,6 +340,23 @@
 @ stdcall WdtpInterfacePointer_UserMarshal(ptr long ptr ptr ptr)
 @ stdcall WdtpInterfacePointer_UserSize(ptr long ptr long ptr)
 @ stdcall WdtpInterfacePointer_UserUnmarshal(ptr ptr ptr ptr)
+@ stdcall WindowsCompareStringOrdinal(ptr ptr ptr)
+@ stdcall WindowsConcatString(ptr ptr ptr)
+@ stdcall WindowsCreateString(wstr long ptr)
+@ stdcall WindowsCreateStringReference(wstr long ptr ptr)
+@ stdcall WindowsDeleteString(ptr)
+@ stdcall WindowsDeleteStringBuffer(ptr)
+@ stdcall WindowsDuplicateString(ptr ptr)
+@ stdcall WindowsGetStringLen(ptr)
+@ stdcall WindowsGetStringRawBuffer(ptr ptr)
+@ stdcall WindowsIsStringEmpty(ptr)
+@ stdcall WindowsPreallocateStringBuffer(long ptr ptr)
+@ stdcall WindowsPromoteStringBuffer(ptr ptr)
+@ stdcall WindowsStringHasEmbeddedNull(ptr ptr)
+@ stdcall WindowsSubstring(ptr long ptr)
+@ stdcall WindowsSubstringWithSpecifiedLength(ptr long long ptr)
+@ stdcall WindowsTrimStringEnd(ptr ptr ptr)
+@ stdcall WindowsTrimStringStart(ptr ptr ptr)
 @ stdcall WriteClassStg(ptr ptr)
 @ stdcall WriteClassStm(ptr ptr)
 @ stdcall WriteFmtUserTypeStg(ptr long ptr)
@@ -559,7 +591,6 @@
 @ stub -version=0xA00+ ReadStorageProperties
 @ stub -version=0xA00+ RegisterActiveObjectExt
 @ stub -version=0xA00+ RevokeActiveObjectExt
-@ stub -version=0xA00+ RoGetAgileReference # -> api-ms-win-core-com-l1-1-1.RoGetAgileReference
 @ stub -arch=win64 -version=0xA00+ SNB_UserFree64
 @ stub -arch=win64 -version=0xA00+ SNB_UserMarshal64
 @ stub -arch=win64 -version=0xA00+ SNB_UserSize64

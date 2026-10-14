@@ -1122,6 +1122,51 @@ pub unsafe extern "system" fn NtMakeTemporaryObject(ObjectHandle: HANDLE) -> NTS
     STATUS_SUCCESS
 }
 
+/// `STATUS_NOT_SAME_OBJECT` (ntstatus.h).
+const STATUS_NOT_SAME_OBJECT: NTSTATUS = 0xC00001ACu32 as NTSTATUS;
+
+/// Windows 10's NtCompareObjects (kernel32 CompareObjectHandles): do two handles name the
+/// same object? Both are referenced with no access requested, as on Windows, so any
+/// valid handle answers. STATUS_SUCCESS when they do, STATUS_NOT_SAME_OBJECT when not.
+#[no_mangle]
+pub unsafe extern "system" fn NtCompareObjects(
+    FirstObjectHandle: HANDLE,
+    SecondObjectHandle: HANDLE,
+) -> NTSTATUS {
+    let mode = KeGetPreviousMode();
+    let mut first: PVOID = core::ptr::null_mut();
+    let mut second: PVOID = core::ptr::null_mut();
+
+    let status = ObReferenceObjectByHandle(
+        opaque_ptr(FirstObjectHandle),
+        0,
+        core::ptr::null_mut(),
+        mode,
+        core::ptr::addr_of_mut!(first),
+        core::ptr::null_mut(),
+    );
+    if status != STATUS_SUCCESS {
+        return status;
+    }
+    let status = ObReferenceObjectByHandle(
+        opaque_ptr(SecondObjectHandle),
+        0,
+        core::ptr::null_mut(),
+        mode,
+        core::ptr::addr_of_mut!(second),
+        core::ptr::null_mut(),
+    );
+    if status != STATUS_SUCCESS {
+        ObDereferenceObject(first);
+        return status;
+    }
+
+    let same = first == second;
+    ObDereferenceObject(second);
+    ObDereferenceObject(first);
+    if same { STATUS_SUCCESS } else { STATUS_NOT_SAME_OBJECT }
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn NtMakePermanentObject(ObjectHandle: HANDLE) -> NTSTATUS {
     let ObjectHandle = opaque_ptr(ObjectHandle);

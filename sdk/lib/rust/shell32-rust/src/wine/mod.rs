@@ -21,3 +21,5 @@ pub mod pidl;
 pub mod shellpath;
 pub mod shellord;
 pub mod knownfolders;
+// shcore DPI/scaling exports (api-ms-win-shcore-* routes to shell32; this tree builds no shcore).
+pub mod shcore_dpi;

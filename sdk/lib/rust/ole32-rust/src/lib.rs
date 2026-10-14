@@ -43,6 +43,8 @@ pub mod storage_defs;
 pub mod user32;
 pub mod win32;
 pub mod win_consts;
+pub mod winrt_string;
+pub mod roapi;
 pub mod wine_list;
 pub mod winemacros;
 

@@ -94,10 +94,13 @@ PROVIDERS: dict[str, list[str]] = {
     # Vista moved the Winsock helper API from ws2help into ws2_32; ws2help keeps it here.
     "ws2_32.dll": ["ws2help"],
 }
+# Windows' kernel32 forwards the registry, token, SID and ETW calls to advapi32 (by way
+# of kernelbase); programs import them from kernel32. Ours has them in advapi32 only.
+PROVIDERS["kernel32.dll"] = [*PROVIDERS["kernel32.dll"], "advapi32"]
 # Providers that themselves link the module's import library: a forward to one is
 # `-private`, kept out of that import library, or the provider's own definitions collide
 # with the import entries for them (lld: "WahCloseNotificationHandleHelper was replaced").
-LINKS_BACK = {"ws2help"}
+LINKS_BACK = {("ws2_32.dll", "ws2help"), ("kernel32.dll", "advapi32")}
 ARCHES = ("i386", "x86_64", "arm64")
 CACHE = Path.home() / ".cache" / "vibeos" / "win10-surface"
 # The trees that build shipping modules. modules/ builds test DLLs. sdk/lib is IN: wdfldr.sys,
@@ -711,7 +714,7 @@ def plan_forwards(
         if until is not None:
             opt += f" -version=0x400-{until:#x}"
         flags = "".join(f" {o}" for o in sig.opts if o in KEEP_FLAGS)
-        if vista_mod in LINKS_BACK and "-private" not in flags:
+        if (module, vista_mod) in LINKS_BACK and "-private" not in flags:
             flags += " -private"
         lines.append(f"@ {sig.kind}{opt}{flags} {name}{sig.args} {vista_mod}.{name}")
     return lines

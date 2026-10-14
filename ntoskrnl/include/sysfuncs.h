@@ -298,3 +298,4 @@
     SVC_(CancelSynchronousIoFile, 3)
     SVC_(RemoveIoCompletionEx, 6)
     SVC_(FlushProcessWriteBuffers, 0)
+    SVC_(CompareObjects, 2)

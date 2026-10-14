@@ -265,6 +265,7 @@
 @ stdcall -stub -version=0x600+ NtCommitEnlistment(ptr ptr)
 @ stdcall -stub -version=0x600+ NtCommitTransaction(ptr long)
 @ stdcall NtCompactKeys(long ptr)
+@ stdcall NtCompareObjects(ptr ptr)
 @ stdcall NtCompareTokens(ptr ptr ptr)
 @ stdcall NtCompleteConnectPort(ptr)
 @ stdcall NtCompressKey(ptr)
@@ -1485,6 +1486,7 @@
 @ stdcall -stub -version=0x600+ ZwCommitEnlistment(ptr ptr)
 @ stdcall -stub -version=0x600+ ZwCommitTransaction(ptr long)
 @ stdcall ZwCompactKeys(long ptr)
+@ stdcall ZwCompareObjects(ptr ptr)
 @ stdcall ZwCompareTokens(ptr ptr ptr)
 @ stdcall ZwCompleteConnectPort(ptr)
 @ stdcall ZwCompressKey(ptr)
@@ -2043,7 +2045,6 @@
 @ stub -version=0xA00+ NtChangeProcessState
 @ stub -version=0xA00+ NtChangeThreadState
 @ stub -version=0xA00+ NtCommitRegistryTransaction
-@ stub -version=0xA00+ NtCompareObjects
 @ stub -version=0xA00+ NtCompareSigningLevels
 @ stub -version=0xA00+ NtContinueEx
 @ stub -version=0xA00+ NtConvertBetweenAuxiliaryCounterAndPerformanceCounter
@@ -2569,7 +2570,6 @@
 @ stub -version=0xA00+ ZwChangeProcessState
 @ stub -version=0xA00+ ZwChangeThreadState
 @ stub -version=0xA00+ ZwCommitRegistryTransaction
-@ stub -version=0xA00+ ZwCompareObjects
 @ stub -version=0xA00+ ZwCompareSigningLevels
 @ stub -version=0xA00+ ZwContinueEx
 @ stub -version=0xA00+ ZwConvertBetweenAuxiliaryCounterAndPerformanceCounter
