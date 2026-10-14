@@ -252,6 +252,41 @@ def compile_argv(repo_root: Path, arch: str, source: Path) -> list[str] | None:
     )
 
 
+_LINEMARKER = re.compile(r'^# (\d+) "([^"]*)"')
+_DEFINE_LINE = re.compile(r"^#define ([A-Za-z_]\w*)")
+
+
+def live_defines(repo_root: Path, sources: list[Path]) -> dict[Path, set[str]] | None:
+    """{file: macro names its LIVE `#define`s create}, by the TUs' own preprocessor (`-E -dD`).
+
+    Unioned over built arches. A text scan cannot settle `#ifdef sun` or `#ifdef NOVFPRINTF`
+    (ftp.c): it took ftp's private `FD_SET`/`FD_ZERO`/`NFDBITS` and a `vfprintf` -> `_doprnt`
+    from arms this build never compiles, and the ported `FD_SET` wrote `fds_bits` into
+    winsock's `fd_set`. `-dD` keeps each surviving `#define` under the linemarker of the file
+    it came from, so the answer is the compiler's. None when no TU had a compile command.
+    """
+    live: dict[Path, set[str]] = {}
+    ran = False
+    for source in sources:
+        for arch in _ARCHES:
+            argv = compile_argv(repo_root, arch, source)
+            if argv is None:
+                continue
+            result = subprocess.run(
+                [*_without_outputs(argv), "-E", "-dD"], capture_output=True, text=True, check=False
+            )
+            if result.returncode != 0:
+                continue
+            ran = True
+            current: Path | None = None
+            for line in result.stdout.splitlines():
+                if (m := _LINEMARKER.match(line)) is not None:
+                    current = Path(m.group(2)).resolve() if not m.group(2).startswith("<") else None
+                elif current is not None and (d := _DEFINE_LINE.match(line)) is not None:
+                    live.setdefault(current, set()).add(d.group(1))
+    return live if ran else None
+
+
 def included_headers(repo_root: Path, source: Path, arch: str = "amd64") -> set[Path]:
     """Every header `source` really includes on `arch`, by its own preprocessor (`-M`).
 

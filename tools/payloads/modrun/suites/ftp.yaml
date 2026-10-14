@@ -1,0 +1,64 @@
+# ftp (base/applications/network/ftp -> ftp-rust). The shipped Rust diffed against the
+# pre-flip C (`python -m rustconv.c_oracle`). No server in the guest, so every case drives the
+# command scanner offline from stdin: main, cmdscanner, getcmd, help and the cmdtab, the
+# toggles and status, and the hand-ported doproxy (its setjmp/longjmp became dead code or a
+# flag; the C's mput/mget/mls bugs are fixed in the Rust but need a server to reach).
+module: ftp
+# Not amd64: getservbyname("ftp", "tcp") there fails intermittently, which stops either variant
+# at startup and makes the C-vs-Rust diff a coin toss (docs/product/vibeos-roadmap.md, Known bugs).
+arches: [i386, arm64]
+variants:
+  c: '%SystemRoot%\bin\modrun\ftp_c.exe'
+  rust: '%SystemRoot%\system32\ftp.exe'
+ninja:
+- ftp_c
+stage:
+- src: build-{arch}/base/applications/network/ftp/ftp_c.exe
+  dest: bin/modrun/ftp_c.exe
+cases:
+- id: help
+  stdin:
+  - help
+  - quit
+  expect:
+  - Commands may be abbreviated.
+- id: help_topics
+  stdin:
+  - help get put mls proxy nosuchcmd
+  - help s
+  - quit
+- id: unknown_and_ambiguous
+  stdin:
+  - frobnicate
+  - s
+  - quit
+- id: toggles_status
+  stdin:
+  - hash
+  - bell
+  - verbose
+  - case
+  - glob
+  - prompt
+  - status
+  - quit
+- id: not_connected
+  stdin:
+  - ls
+  - mput a b
+  - mget a
+  - quit
+- id: proxy
+  stdin:
+  - proxy
+  - proxy nosuchcmd
+  - proxy ls
+  - proxy help
+  - quit
+- id: flags
+  args: -n -i -g -v
+  stdin:
+  - status
+  - quit
+- id: bad_option
+  args: -z

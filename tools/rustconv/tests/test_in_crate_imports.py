@@ -78,6 +78,26 @@ class TestTheIndex:
 
 
 class TestResolution:
+    def test_a_keyword_named_global_is_imported_whole_and_under_its_c2rust_name(self, tmp_path):
+        # ftp's main.c `int type;`: the preamble defines `r#type`, the bodies say `type_0`.
+        crate = _crate(
+            tmp_path,
+            {
+                "prelude.rs": "pub use crate::types::*;\n",
+                "owner.rs": "pub static mut r#type: i32 = 0;\n",
+            },
+        )
+        code = "use crate::prelude::*;\npub unsafe fn f() { type_0 = 1; }\n"
+        new, _ = resolve_in_crate_imports(code, crate)
+        assert "use crate::owner::r#type as type_0;" in new
+        assert "use crate::owner::r;" not in new
+        raw = "use crate::prelude::*;\npub unsafe fn g() { r#type = 1; }\n"
+        new, _ = resolve_in_crate_imports(raw, crate)
+        assert "use crate::owner::r#type;" in new
+        own = "pub static mut r#type: i32 = 0;\npub unsafe fn h() { r#type = 1; }\n"
+        new, _ = resolve_in_crate_imports(own, crate)
+        assert "use crate::owner::r#type" not in new
+
     def test_a_cross_module_reference_gets_a_use(self, tmp_path):
         crate = _crate(
             tmp_path,

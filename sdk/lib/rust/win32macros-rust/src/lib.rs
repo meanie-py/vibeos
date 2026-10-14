@@ -370,6 +370,30 @@ macro_rules! RGBA {
 ///
 /// # Safety
 /// Caller must ensure `dst` is valid for `len` writes. Every call site is already inside `unsafe`.
+/// `winsock.h` — `#define FD_ZERO(set) (((fd_set FAR*)(set))->fd_count=0)`.
+///
+/// Field-shaped, so it fits each crate's own island `fd_set` (the type is nominal per island).
+#[macro_export]
+macro_rules! FD_ZERO {
+    ($set:expr $(,)?) => {{
+        (*$set).fd_count = 0;
+    }};
+}
+
+/// `winsock.h` — `FD_SET(fd, set)`: append `fd` while `fd_count < FD_SETSIZE` (64). Winsock's
+/// `fd_set` is a count plus an array of SOCKETs, NOT the BSD bitmask: a module's own
+/// `#ifdef sun` FD_SET writes a `fds_bits` field this struct does not have.
+#[macro_export]
+macro_rules! FD_SET {
+    ($fd:expr, $set:expr $(,)?) => {{
+        let set = $set;
+        if ((*set).fd_count as usize) < 64 {
+            (*set).fd_array[(*set).fd_count as usize] = $fd as _;
+            (*set).fd_count += 1;
+        }
+    }};
+}
+
 #[macro_export]
 macro_rules! ZeroMemory {
     ($dst:expr, $len:expr $(,)?) => {{

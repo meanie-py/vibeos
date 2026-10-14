@@ -751,6 +751,7 @@ members = [
     "ntoskrnl_vista-rust",
     "sptilib-rust",
     "apisets-rust",
+    "ftp-rust",
 ]
 resolver = "2"
 

@@ -1763,6 +1763,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ftp-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "gdi32-rust"
 version = "0.1.0"
 dependencies = [

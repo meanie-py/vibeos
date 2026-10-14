@@ -582,6 +582,9 @@ def _transpile_attempt(
                 f"{_c2rust_reason(proc.stderr, proc.stdout)}"
             )
             return None
+        refused = dict(_REFUSED_RE.findall(proc.stderr or ""))
+        if refused:
+            _C2RUST_REFUSED.setdefault(c_file, {}).update(refused)
         result = _unprefix_intrinsics(rs.read_text(errors="replace"))
     finally:
         shutil.rmtree(out_dir, ignore_errors=True)
@@ -649,6 +652,14 @@ def build_anchor_map(
                 f"the requested one does not compile them: {', '.join(sorted(found))}",
                 file=sys.stderr,
             )
+        refused = {n: r for n, r in _C2RUST_REFUSED.get(c_file, {}).items() if n in absent}
+        if refused:
+            raise C2RustError(
+                f"{c_file}: c2rust could not translate "
+                + "; ".join(f"{n} ({r.strip()})" for n, r in sorted(refused.items()))
+                + " -- not compiled out, so not droppable. Hand-write it (--skip-fn) or "
+                "fix what c2rust cannot see."
+            )
         if absent == missing - set(found) and absent and not _ANCHOR_FAILURES.get(c_file):
             raise CompiledOut(c_file, absent)
         missing = missing - set(found)
@@ -662,6 +673,14 @@ def build_anchor_map(
 
 
 _ANCHOR_FAILURES: dict[Path, list[str]] = {}
+
+#: Functions c2rust REFUSED, per file: `Failed to translate help: name not declared: 'cmdtab'`.
+#: c2rust logs the line and carries on, so the definition is simply absent from its output --
+#: exactly how a compiled-out function looks. ftp's main.c `help` (a block-scope
+#: `extern struct cmd cmdtab[];`) was dropped as a "dead branch" that way: a live command,
+#: never translated, never billed, reported as working as intended.
+_C2RUST_REFUSED: dict[Path, dict[str, str]] = {}
+_REFUSED_RE = re.compile(r"Failed to translate ([A-Za-z_]\w*): ([^\n\x1b]*)")
 
 
 def _anchor_elsewhere(
