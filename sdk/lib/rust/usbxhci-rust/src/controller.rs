@@ -316,6 +316,17 @@ pub unsafe extern "system" fn XHCI_StartController(
         x.usb2_first = 1;
         x.usb2_count = x.max_ports;
     }
+    // A port no protocol capability lists is not a port (Linux ignores those too).
+    // The 9020's Lynx Point xHCI reports MaxPorts 85 against 21 listed ports, and
+    // the port-power loop below wrote PORTSC for 64 register sets past the array.
+    let listed = core::cmp::max(
+        x.usb2_first + x.usb2_count,
+        if x.usb3_count != 0 { x.usb3_first + x.usb3_count } else { 0 },
+    ) - 1;
+    if listed < x.max_ports {
+        xlog!("HCSPARAMS1 %x: MaxPorts %u, but the protocol capabilities list ports 1-%u; using those", hcs1, x.max_ports, listed);
+        x.max_ports = listed;
+    }
 
     // Common buffer. usbport hands over the bus address as 32 bits; the regions
     // below inherit that, so every pointer we give the controller fits 32 bits

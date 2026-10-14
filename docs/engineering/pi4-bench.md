@@ -147,7 +147,10 @@ Do not write the port any other way:
   listener retries instead of dying.
 
 Read output from `serial.bin` (it is raw bytes with ANSI colour codes, so pipe
-it through `strings`).
+it through `strings`). Beside it, `serial.times` has a `<byte offset> <unix ms>` line per
+chunk read; `tools/pi4/serial_times.py <capture dir>` joins the two to list the latest
+boot's silences (`--gaps SECONDS`) or every line with its time (`--lines`). Without it a
+"silence" in the log can only be guessed at afterwards.
 
 ### Power
 

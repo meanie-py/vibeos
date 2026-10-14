@@ -5,6 +5,7 @@ serial-send.sh do not care which one runs:
 
   <bench>/serial-current.json   status LISTENING + the run directory
   <bench>/serial-<ts>/serial.bin every console byte, raw
+  <bench>/serial-<ts>/serial.times '<byte offset> <unix ms>' per chunk (serial_times.py)
   <bench>/serial-send.bin       bytes to send; deleted once written to the console
 
 Runs in WSL under the picousb client venv (it imports pico_devbox). The token is
@@ -41,6 +42,8 @@ class Capture:
         self.run_dir = bench / time.strftime("serial-%Y%m%d-%H%M%S")
         self.run_dir.mkdir()
         self.log = open(self.run_dir / "serial.bin", "xb")  # noqa: SIM115 - lives as long as the capture
+        self.times = open(self.run_dir / "serial.times", "x")  # noqa: SIM115 - lives as long as the capture
+        self.offset = 0
         self.console: SerialConsole | None = None
         self.connected = False
 
@@ -70,8 +73,11 @@ class Capture:
                 data = await asyncio.wait_for(console.read(), IDLE_RECYCLE_S)
             except TimeoutError:
                 raise IdleConsole from None
+            self.times.write(f"{self.offset} {time.time_ns() // 1_000_000}\n")
+            self.times.flush()
             self.log.write(data)
             self.log.flush()
+            self.offset += len(data)
 
     async def pump_input(self, console: SerialConsole) -> None:
         # serial-send.sh paces itself on this file disappearing, so consume it

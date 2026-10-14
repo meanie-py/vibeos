@@ -670,10 +670,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   failed interrupt connect and bugchecks 0xA), both fixed (field manual, "A USB controller
   starts, and usbhub waits for its root hub forever"). Four cold boots since then had every
   root hub ready and no halt miss. Still open on that card: usbhub has no SuperSpeed hub
-  support (the hub's USB 3 half fails START asking for a 0x29 descriptor), and netstack's
-  I217 has no interrupt (Interrupt Line 128; it polls). Also seen in those boots: serial goes
-  silent for about 3 minutes after `[SYSDRV] loading` Ndisuio/Afd/Netio while the box answers
-  ping, then the boot finishes; not yet run down. See `docs/engineering/optiplex-bench.md`.
+  support (the hub's USB 3 half fails START asking for a 0x29 descriptor). The I217's
+  interrupt works since 2026-10-13 (pci.sys writes the routed GSI into the Interrupt Line).
+  The ~3 minute serial silence after `[SYSDRV] loading` Ndisuio/Afd/Netio seen in those
+  boots did not recur on 2026-10-13 under `serial_times.py` (longest gap after the kernel
+  starts: 4 s); those boots predate the debug-port lock and KdpStub's FIFO wait, the likely
+  cure, though that was not shown. See `docs/engineering/optiplex-bench.md`.
 
 - **ntkrnl-sys `PCI_COMMON_CONFIG` has no header fields (OPEN, owed).** bindgen dropped the
   `PCI_COMMON_HEADER DUMMYSTRUCTNAME;` member, leaving a 192-byte `{ DeviceSpecific }` and a

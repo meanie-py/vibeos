@@ -136,6 +136,24 @@ pub unsafe fn routed_line(pdo: PPDO_DEVICE_EXTENSION, config: *const PCI_COMMON_
     let found = resolve(pdo, config);
     (*device).IrqRouteState = if found.is_some() { ROUTE_GSI } else { ROUTE_NONE };
     (*device).IrqRouteGsi = found.unwrap_or(0);
+    // Write the routed line back, as Windows' pci.sys does with the line it
+    // assigns: a driver that reads the register itself rather than taking its PnP
+    // interrupt resource (netstack drives its NIC that way) then connects the
+    // right input. The BIOS's value is an 8259 number, 128 for the 9020's I217,
+    // which no I/O APIC input matches, so netstack fell back to polling.
+    if let Some(gsi) = found {
+        let mut line = gsi as UCHAR;
+        if gsi < 0xFF && (*config).u.type0.InterruptLine != line {
+            HalSetBusDataByOffset(
+                4, // PCIConfiguration (BUS_DATA_TYPE), as fdo.rs
+                (*device).BusNumber,
+                (*device).SlotNumber.u.AsULONG,
+                &mut line as *mut UCHAR as PVOID,
+                0x3C, // FIELD_OFFSET(PCI_COMMON_HEADER, u.type0.InterruptLine)
+                1,
+            );
+        }
+    }
     found
 }
 

@@ -8,9 +8,14 @@ $serial.DtrEnable = $false
 $serial.RtsEnable = $false
 $serial.ReadTimeout = 250
 $stream = $null
+$times = $null
 try {
     $serial.Open()
     $stream = [System.IO.File]::Open((Join-Path $runDir 'serial.bin'),[System.IO.FileMode]::CreateNew,[System.IO.FileAccess]::Write,[System.IO.FileShare]::Read)
+    # serial.times: one '<byte offset> <unix ms>' line per chunk read, so a silence
+    # in the log can be measured afterwards (serial_times.py). serial.bin stays raw.
+    $times = [System.IO.StreamWriter]::new([System.IO.File]::Open((Join-Path $runDir 'serial.times'),[System.IO.FileMode]::CreateNew,[System.IO.FileAccess]::Write,[System.IO.FileShare]::Read))
+    $offset = [int64]0
     [ordered]@{ status='LISTENING'; port=$PortName; baud=115200; format='8N1'; handshake='None'; pid=$PID; started=(Get-Date).ToString('o'); directory=$runDir } |
         ConvertTo-Json | Set-Content (Join-Path $PSScriptRoot 'serial-current.json')
     Write-Output "LISTENING $PortName 115200 8N1 -> $runDir"
@@ -33,8 +38,11 @@ try {
         try { $count = $serial.Read($buffer,0,$buffer.Length) }
         catch [System.TimeoutException] { continue }
         if ($count -gt 0) {
+            $times.WriteLine(('{0} {1}' -f $offset, [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()))
+            $times.Flush()
             $stream.Write($buffer,0,$count)
             $stream.Flush()
+            $offset += $count
         }
     }
 } catch {
@@ -43,5 +51,6 @@ try {
     throw
 } finally {
     if ($stream) { $stream.Dispose() }
+    if ($times) { $times.Dispose() }
     $serial.Dispose()
 }
