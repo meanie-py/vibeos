@@ -95,6 +95,26 @@ const NM_CLICK: i32 = -2;
 const IDS_MENU_EMPTY: UINT = 34561;
 /// CMenuToolbars.cpp:39 `#define TIMERID_HOTTRACK 1` — user timer id for hot-track delay.
 const TIMERID_HOTTRACK: UINT_PTR = 1;
+
+// shellutils.h `SHELL_GetAttributesOf(psf, pidlChild, query)`: the queried bits that are set,
+// or 0 when the folder fails the call.
+unsafe fn SHELL_GetAttributesOf(psf: *mut IShellFolder, pidlChild: LPCITEMIDLIST, query: SFGAOF) -> SFGAOF {
+    if psf.is_null() {
+        return 0;
+    }
+    let mut attr: SFGAOF = query;
+    let hr = ((*(*psf).lpVtbl).GetAttributesOf)(psf, 1, &pidlChild, &mut attr);
+    if hr >= 0 { attr & query } else { 0 }
+}
+
+// A stream (.zip/.cab) can also report SFGAO_FOLDER; it is still a file, not a menu to expand.
+fn GetFolderItemBaseType(sfgao: SFGAOF) -> SFGAOF {
+    if sfgao & SFGAO_STREAM as SFGAOF != 0 { SFGAO_STREAM as SFGAOF } else { sfgao & SFGAO_FOLDER as SFGAOF }
+}
+
+unsafe fn GetFolderItemBaseTypeOf(psf: *mut IShellFolder, pidl: LPCITEMIDLIST) -> SFGAOF {
+    GetFolderItemBaseType(SHELL_GetAttributesOf(psf, pidl, (SFGAO_FOLDER | SFGAO_STREAM) as SFGAOF))
+}
 /// shellutils.h `MAX_PATH` (260) — declared locally rather than pulled from a hand-written
 /// module whose own `MAX_PATH` might be a different width; only the value matters here.
 const MAX_PATH_: usize = 260;
@@ -1871,20 +1891,14 @@ unsafe fn CMenuSFToolbar_FillToolbar(this: *mut CMenuSFToolbar, _clearFirst: BOO
             continue;
         }
 
-        let mut indexOpen: INT = 0;
-        let index = SHMapPIDLToSystemImageListIndex((*this).m_shellFolder, item, &mut indexOpen);
-
-        let itemc: LPCITEMIDLIST = item;
-        let mut attrs: SFGAOF = SFGAO_FOLDER;
-        hr = ((*(*sf).lpVtbl).GetAttributesOf)((*this).m_shellFolder, 1, &itemc, &mut attrs);
-
-        let dwData = item as DWORD_PTR;
+        let index = SHMapPIDLToSystemImageListIndex((*this).m_shellFolder, item, core::ptr::null_mut());
+        let isPureFolder = GetFolderItemBaseTypeOf((*this).m_shellFolder, item) == SFGAO_FOLDER as SFGAOF; // Don't expand .cab/.zip
 
         // Fetch next item already, so we know if the current one is the last (matches the C++'s
         // pre-increment-then-compare, including reusing the incremented `i` as the button id).
         i += 1;
 
-        CMenuToolbarBase_AddButton(base, i as DWORD, MenuString, ((attrs & SFGAO_FOLDER) != 0) as BOOL, index, dwData, (i >= DPA_GetPtrCount(dpaSort)) as BOOL);
+        CMenuToolbarBase_AddButton(base, i as DWORD, MenuString, isPureFolder as BOOL, index, item as DWORD_PTR, (i >= DPA_GetPtrCount(dpaSort)) as BOOL);
 
         CoTaskMemFree(MenuString as PVOID);
     }
@@ -2026,17 +2040,8 @@ unsafe fn CMenuSFToolbar_InternalPopupItem(this: *mut CMenuSFToolbar, iItem: INT
 
 unsafe fn CMenuSFToolbar_InternalHasSubMenu(this: *mut CMenuSFToolbar, _iItem: INT, _index: INT, dwData: DWORD_PTR) -> HRESULT {
     let pidl = dwData as LPCITEMIDLIST;
-    let mut attrs: SFGAOF = SFGAO_FOLDER;
-    let sf = (*this).m_shellFolder;
-    let hr = ((*(*sf).lpVtbl).GetAttributesOf)((*this).m_shellFolder, 1, &pidl, &mut attrs);
-    if FAILED_UNEXPECTEDLY!(hr) {
-        return hr;
-    }
-    if attrs & SFGAO_FOLDER != 0 {
-        S_OK
-    } else {
-        S_FALSE
-    }
+    let isPureFolder = GetFolderItemBaseTypeOf((*this).m_shellFolder, pidl) == SFGAO_FOLDER as SFGAOF;
+    if isPureFolder { S_OK } else { S_FALSE }
 }
 
 extern "C" {

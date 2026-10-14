@@ -22,6 +22,7 @@
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 #![allow(dead_code, unused_assignments, unused_variables, unused_mut, unused_parens)]
 
+use crate::island::{SFGAO_LINK, SHGFI_ATTRIBUTES, SHGFI_ATTR_SPECIFIED, SHGFI_DISPLAYNAME, SHGFI_PIDL, SHGNLI_NOLNK, SHGNLI_NOUNIQUE, tagSHGDN_SHGDN_INFOLDER};
 use crate::shellcom::*;
 use crate::types::*;
 use core::ffi::{c_int, c_void};
@@ -656,8 +657,15 @@ static W_STAR_LNK: [u16; 8] = wide("*.lnk");
 static W_DOT_LNK: [u16; 8] = wide(".lnk");
 static W_DOT_EXE: [u16; 8] = wide(".exe");
 static W_SHORTCUT_TO: [u16; 24] = wide("Shortcut to ");
-static W_FMT_LNK: [u16; 16] = wide("%s.lnk");
-static W_FMT_NUM_LNK: [u16; 16] = wide("%s (%d).lnk");
+static W_FMT_NEWLINK: [u16; 8] = wide("%s%s%s");
+static W_FMT_NUM_NEWLINK: [u16; 16] = wide("%s (%d)%s%s");
+static W_DOT: [u16; 2] = wide(".");
+static W_EMPTY: [u16; 1] = wide("");
+static W_EXT_URL: [u16; 4] = wide("url");
+static W_EXT_LNK: [u16; 4] = wide("lnk");
+// shellapi.h; the island predates these two (WinVista+ / Win7+).
+const SHGNLI_NOLOCNAME: UINT = 0x10;
+const SHGNLI_USEURLEXT: UINT = 0x20;
 static W_UXSUBCLASSINFO: [u16; 24] = wide("UxSubclassInfo");
 static W_OPEN: [u16; 8] = wide("open");
 static W_RUNDLL32: [u16; 16] = wide("rundll32.exe");
@@ -779,6 +787,7 @@ extern "system" {
     fn PathFileExistsW(path: LPCWSTR) -> BOOL;
     fn PathFindExtensionW(path: LPCWSTR) -> LPWSTR;
     fn PathFindFileNameW(path: LPCWSTR) -> LPWSTR;
+    fn PathRemoveExtensionW(path: LPWSTR);
     fn PathIsDirectoryW(path: LPCWSTR) -> BOOL;
     fn PathIsEqualOrSubFolder(a: LPCWSTR, b: LPCWSTR) -> BOOL;
     fn RegCloseKey(k: HKEY) -> LONG;
@@ -2887,58 +2896,121 @@ pub unsafe extern "system" fn SHGetNewLinkInfoA(
 /// SHGetNewLinkInfoW
 #[no_mangle]
 pub unsafe extern "system" fn SHGetNewLinkInfoW(
-    pszLinkTo: LPCWSTR,
+    mut pszLinkTo: LPCWSTR,
     pszDir: LPCWSTR,
     pszName: LPWSTR,
     pfMustCopy: *mut BOOL,
-    uFlags: UINT,
+    mut uFlags: UINT,
 ) -> BOOL {
+    let HANDLEDFLAGS: UINT = SHGNLI_PIDL | SHGNLI_NOUNIQUE | SHGNLI_NOLNK | SHGNLI_NOLOCNAME | SHGNLI_USEURLEXT;
+    let mut pszDotForExt: LPCWSTR = W_DOT.as_ptr();
+    let mut pszExt: LPCWSTR = if (uFlags & SHGNLI_USEURLEXT) != 0 { W_EXT_URL.as_ptr() } else { W_EXT_LNK.as_ptr() };
+    let mut szTarget: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
     let mut i: c_int = 2;
+    let pidl: LPCITEMIDLIST = if (uFlags & SHGNLI_PIDL) != 0 { pszLinkTo as LPCITEMIDLIST } else { core::ptr::null() };
+    let mut fi: SHFILEINFOW = core::mem::zeroed();
+    let mut UseDisplayName = false;
+    let SHGFIPidlFlag: UINT = if pidl.is_null() { 0 } else { SHGFI_PIDL };
+
+    // The C FIXME-traces flags outside HANDLEDFLAGS (SHGNLI_PREFIXNAME) and ignores them.
+    let _ = uFlags & !HANDLEDFLAGS;
 
     *pfMustCopy = FALSE;
+    fi.dwAttributes = (SFGAO_FILESYSTEM | SFGAO_LINK) as DWORD;
+    if crate::cfs_folder::SHGetFileInfoW(
+        pszLinkTo,
+        0,
+        &mut fi,
+        core::mem::size_of::<SHFILEINFOW>() as UINT,
+        SHGFI_DISPLAYNAME | SHGFI_ATTRIBUTES | SHGFI_ATTR_SPECIFIED | SHGFIPidlFlag,
+    ) != 0
+    {
+        UseDisplayName = true;
+    }
 
-    if (uFlags & SHGNLI_PIDL) != 0 {
+    if !pidl.is_null() {
+        if !UseDisplayName {
+            return FALSE;
+        }
+
+        pszLinkTo = fi.szDisplayName.as_ptr();
+        let shgdn: u32 = if (uFlags & SHGNLI_NOLOCNAME) != 0 { SHGDN_FORPARSING as u32 } else { SHGDN_NORMAL as u32 };
+        if (fi.dwAttributes & SFGAO_LINK as DWORD) != 0
+            && crate::shell32::utils::SHGetNameAndFlagsW(
+                pidl,
+                shgdn | tagSHGDN_SHGDN_INFOLDER as u32,
+                szTarget.as_mut_ptr(),
+                szTarget.len() as u32,
+                core::ptr::null_mut(),
+            ) >= 0
+        {
+            // Including possible .lnk extension
+            strsafe_rust::StringCchCopyW(fi.szDisplayName.as_mut_ptr(), fi.szDisplayName.len(), szTarget.as_ptr());
+        }
+
+        if crate::shell32::utils::SHGetNameAndFlagsW(
+            pidl,
+            SHGDN_FORPARSING as u32,
+            szTarget.as_mut_ptr(),
+            szTarget.len() as u32,
+            core::ptr::null_mut(),
+        ) >= 0
+        {
+            pszLinkTo = szTarget.as_ptr();
+        } else {
+            fi.dwAttributes &= !(SFGAO_FILESYSTEM as DWORD); // We can't validate this PIDL as a path
+        }
+    } else if (uFlags & SHGNLI_NOLOCNAME) != 0 {
+        UseDisplayName = false;
+    }
+
+    /* FIXME: should test if the file is a shortcut or DOS program */
+    if (fi.dwAttributes & SFGAO_FILESYSTEM as DWORD) != 0 && GetFileAttributesW(pszLinkTo) == INVALID_FILE_ATTRIBUTES {
         return FALSE;
     }
 
-    if GetFileAttributesW(pszLinkTo) == INVALID_FILE_ATTRIBUTES {
-        return FALSE;
+    if (fi.dwAttributes & SFGAO_LINK as DWORD) != 0 {
+        *pfMustCopy = TRUE; // The caller is not supposed to create a .lnk pointing to a .lnk
+
+        // Remove the "inputname.lnk" extension so that the "(%d)" handling can add it back correctly
+        uFlags &= !SHGNLI_NOLNK;
+        pszExt = PathFindExtensionW(pszLinkTo);
+        pszDotForExt = W_EMPTY.as_ptr();
+        UseDisplayName = true;
+        if pszLinkTo != fi.szDisplayName.as_ptr() {
+            strsafe_rust::StringCchCopyW(fi.szDisplayName.as_mut_ptr(), fi.szDisplayName.len(), pszLinkTo);
+        }
+        if *pszExt != 0 {
+            // pszExt points into pszLinkTo. When that is fi.szDisplayName itself (a PIDL whose
+            // parsing name could not be read), this NUL lands on the dot and pszExt reads as
+            // empty, so the name gets no extension -- the C aliases the same way.
+            PathRemoveExtensionW(fi.szDisplayName.as_mut_ptr());
+        }
     }
 
-    let mut basename = wcsrchr(pszLinkTo, b'\\' as WCHAR) as *const WCHAR;
-    if !basename.is_null() {
-        basename = basename.add(1);
-    } else {
-        basename = pszLinkTo;
+    if (uFlags & SHGNLI_NOLNK) != 0 {
+        // The caller does not want us to append an extension
+        pszExt = W_EMPTY.as_ptr();
+        pszDotForExt = W_EMPTY.as_ptr();
     }
 
-    lstrcpynW(pszName, pszDir, MAX_PATH as c_int);
-    if PathAddBackslashW(pszName).is_null() {
-        return FALSE;
+    let basename: LPCWSTR = PathFindFileNameW(if UseDisplayName { fi.szDisplayName.as_ptr() } else { pszLinkTo });
+    *pszName = 0;
+    if (uFlags & SHGNLI_NOUNIQUE) == 0 {
+        // SHGNLI_NOUNIQUE does not prefix the directory
+        strsafe_rust::StringCchCopyW(pszName, MAX_PATH as usize, pszDir);
+        if PathAddBackslashW(pszName).is_null() {
+            return FALSE;
+        }
     }
-
     let dst_basename = pszName.add(wcslen(pszName));
+    let cch = pszName.add(MAX_PATH as usize).offset_from(dst_basename) as usize;
 
-    _snwprintf(
-        dst_basename,
-        (pszName.add(MAX_PATH) as usize - dst_basename as usize)
-            / core::mem::size_of::<WCHAR>(),
-        W_FMT_LNK.as_ptr(),
-        basename,
-    );
-
-    while GetFileAttributesW(pszName) != INVALID_FILE_ATTRIBUTES {
-        _snwprintf(
-            dst_basename,
-            (pszName.add(MAX_PATH) as usize - dst_basename as usize)
-                / core::mem::size_of::<WCHAR>(),
-            W_FMT_NUM_LNK.as_ptr(),
-            basename,
-            i,
-        );
+    strsafe_rust::StringCchPrintfW!(dst_basename, cch, W_FMT_NEWLINK.as_ptr(), basename, pszDotForExt, pszExt);
+    while (uFlags & SHGNLI_NOUNIQUE) == 0 && GetFileAttributesW(pszName) != INVALID_FILE_ATTRIBUTES {
+        strsafe_rust::StringCchPrintfW!(dst_basename, cch, W_FMT_NUM_NEWLINK.as_ptr(), basename, i, pszDotForExt, pszExt);
         i += 1;
     }
-
     TRUE
 }
 

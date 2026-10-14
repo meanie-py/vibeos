@@ -742,7 +742,7 @@ pub unsafe extern "system" fn SHEmptyRecycleBinA(hwnd: HWND, pszRootPath: LPCSTR
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SHEmptyRecycleBinW(hwnd: HWND, pszRootPath: LPCWSTR, dwFlags: DWORD) -> HRESULT {
+pub unsafe extern "system" fn SHEmptyRecycleBinW(hwnd: HWND, mut pszRootPath: LPCWSTR, dwFlags: DWORD) -> HRESULT {
     let mut szBuffer: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
     let mut count: DWORD;
     let mut ret: LONG;
@@ -753,6 +753,11 @@ pub unsafe extern "system" fn SHEmptyRecycleBinW(hwnd: HWND, pszRootPath: LPCWST
     let mut hr: HRESULT = S_OK;
     let mut penumFiles: LPENUMIDLIST = core::ptr::null_mut();
     let mut StrRet: STRRET = core::mem::zeroed();
+
+    if !pszRootPath.is_null() && *pszRootPath == 0 {
+        // "If this value is an empty string or NULL, all Recycle Bins on all drives will be emptied."
+        pszRootPath = core::ptr::null();
+    }
 
     if (dwFlags & SHERB_NOCONFIRMATION) == 0 {
         hr = SHGetDesktopFolder(&mut pDesktop);

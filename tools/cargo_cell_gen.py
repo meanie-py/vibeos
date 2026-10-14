@@ -365,6 +365,11 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
     body_lib = None
     body_var = cell.body_var or f"{cell.target}_rust"
     transferred: list[tuple[str, str]] = []
+    # `add_dependencies(m evtmsgstr)` orders a GENERATED input (an mc header the rc #includes)
+    # before the compile that reads it. The cell drops the target's add_dependencies, and the
+    # compile now lives on `<m>_res`/`<m>_shims`, so the ordering moves there with it — or a
+    # fresh build races windres against the mc step. The `rust_*` body deps are the cell's own.
+    build_deps: list[str] = []
     shared = any(
         re.search(rf"\$\{{{body_var}_LIB\}}|rust_{body_var}\b", raw)
         for _s, _e, _cmd, raw in _statements(text)
@@ -386,6 +391,8 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
             and (a[0] == cell.target or (cmd == "add_cd_file" and cell.target in a))
         ):
             drop = True
+        if cmd == "add_dependencies" and a and a[0] == cell.target:
+            build_deps += [d for d in a[1:] if not d.startswith("rust_") and d not in build_deps]
         if a and a[0] == cell.target and cmd.lower() in TRANSFERRED:
             drop = True  # re-emitted below, on the OBJECT libraries
             transferred.append((cmd, raw))
@@ -458,6 +465,9 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
     if transferred and objlibs:
         block.append("# How cmake compiled the target's sources, now on the OBJECT libraries.")
         block += [_retarget(c, r, lib) for lib in objlibs for c, r in transferred]
+    if build_deps and objlibs:
+        block.append("# Generated inputs those compiles read, ordered before them.")
+        block += [f"add_dependencies({lib} {' '.join(build_deps)})" for lib in objlibs]
     every = sorted({lib for libs in cell.static_libs.values() for lib in libs})
     by_arch = {a: set(libs) for a, libs in cell.static_libs.items()}
     common = [lib for lib in every if all(lib in by_arch[a] for a in ARCHES)]
@@ -489,6 +499,8 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
         call.append(f"    EXTRA_DEPENDS {' '.join(extra)})")
     else:
         call[-1] += ")"
+    if build_deps and not objlibs:
+        call.append(f"add_dependencies({cell.target} {' '.join(build_deps)})")
     return out + "\n".join(block + call) + "\n"
 
 

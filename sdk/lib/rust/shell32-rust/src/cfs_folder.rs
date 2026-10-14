@@ -2364,16 +2364,13 @@ pub unsafe fn CFSFolder_SetNameOf_body(this: *mut CFSFolder, hwndOwner: HWND, pi
 
 pub unsafe fn CFSFolder_GetDefaultSearchGUID_body(this: *mut CFSFolder, pguid: *mut GUID) -> HRESULT { E_NOTIMPL }
 
-pub unsafe fn CFSFolder_EnumSearches_body(this: *mut CFSFolder, ppenum: *mut *mut IEnumExtraSearch) -> HRESULT { E_NOTIMPL }
+pub unsafe fn CFSFolder_EnumSearches_body(this: *mut CFSFolder, ppenum: *mut *mut IEnumExtraSearch) -> HRESULT {
+    *ppenum = core::ptr::null_mut();
+    E_NOTIMPL
+}
 
 pub unsafe fn CFSFolder_GetDefaultColumn_body(this: *mut CFSFolder, dwRes: DWORD, pSort: *mut ULONG, pDisplay: *mut ULONG) -> HRESULT {
-    if !pSort.is_null() {
-        *pSort = 0;
-    }
-    if !pDisplay.is_null() {
-        *pDisplay = 0;
-    }
-    S_OK
+    E_NOTIMPL // Not required when column 0 is our default.
 }
 
 pub unsafe fn CFSFolder_GetDefaultColumnState_body(this: *mut CFSFolder, iColumn: UINT, pcsFlags: *mut SHCOLSTATEF) -> HRESULT {

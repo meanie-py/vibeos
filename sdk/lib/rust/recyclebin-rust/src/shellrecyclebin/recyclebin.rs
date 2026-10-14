@@ -404,13 +404,14 @@ pub unsafe extern "C" fn GetDefaultRecycleBin(
     if pszVolume.is_null() {
         hr = RecycleBinGeneric_Constructor(core::ptr::addr_of_mut!(pUnk).cast());
     } else {
-        if wcslen(pszVolume) != 3
-            || *pszVolume.offset(1 as isize) != ':' as u16
-            || *pszVolume.offset(2 as isize) != '\\' as u16
-        {
+        let szRootPath: [WCHAR; 4] = [*pszVolume, ':' as u16, '\\' as u16, 0];
+        let drive = PathGetDriveNumberW(pszVolume);
+        if drive < 0 || *pszVolume.offset(2 as isize) != '\\' as u16 {
             return HRESULT_FROM_WIN32(ERROR_INVALID_NAME);
         }
-        hr = RecycleBin5_Constructor(pszVolume, core::ptr::addr_of_mut!(pUnk).cast());
+
+        /* For now, only support this type of recycle bins... */
+        hr = RecycleBin5_Constructor(szRootPath.as_ptr(), core::ptr::addr_of_mut!(pUnk).cast());
     }
 
     if !(hr >= 0) {

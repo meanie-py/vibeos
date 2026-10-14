@@ -16,6 +16,9 @@ target_compile_definitions(eventcreate_shims PRIVATE UNICODE _UNICODE)
 add_library(eventcreate_res OBJECT eventcreate.rc)
 target_compile_definitions(eventcreate_res PRIVATE UNICODE _UNICODE)
 target_include_directories(eventcreate_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+# Generated inputs those compiles read, ordered before them.
+add_dependencies(eventcreate_shims evtmsgstr)
+add_dependencies(eventcreate_res evtmsgstr)
 set(EVENTCREATE_REUSED
     ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils.a
     ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils_rust.a
