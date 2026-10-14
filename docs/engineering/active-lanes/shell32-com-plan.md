@@ -920,17 +920,9 @@ Spend: about $4.63 of the $5 approved for the phase (`-m haiku`). Nothing is unc
 
 **Next session, in order:**
 
-1. **The upstream shell32 ports. Start here.** Their 64-commit merge
-   brings 15 upstream files (`git diff --stat 171e1de21a4 upstream/master --
-   dll/win32/shell32 sdk/include/reactos/shellutils.h`: 193+/106-). That covers
-   CDefaultContextMenu, brfolder, seven folders, CMenuToolbars, recyclebin.c, utils.cpp,
-   shellord.c and the new `SHELL_GetAttributesOf`/`SHELL_GetDisplayNameOf`/
-   `SHELL_GetAbsolutePidl` inlines in `shellutils.h`. They are hand ports ($0) into
-   shell32-rust, menuband-rust and recyclebin-rust. Annotate each with its upstream commit
-   (8ac7f394963, 26b45cebea8, 35c272d4ca3, …).
-   **UNBLOCKED (verified 2026-10-12 16:08):** upstream-sync landed on master as
-   `078583fd82f6` (lane tip `e5077507ae79`, which contains `3c95d2f9642`). Start with
-   `git fetch && git merge origin/master` in this worktree, then port.
+1. **The upstream shell32 ports: DONE**, landed 2026-10-14 as `5857362c9eb3`. That commit also
+   restored six cargo cells' build-order dependencies on generated files, which a fresh build
+   raced on.
 2. **ftp.** The scaffold is parked at `~/vibeos-rust-staging/port/ftp/parked/` (crate plus
    `gen_arm.sh`).
    - About 87 functions are still to translate, roughly $0.10–0.15 on Haiku. That fits the
