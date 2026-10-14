@@ -10,7 +10,7 @@ machinery at this board (its own lease, `VIBEOS_BENCH_BOARD=optiplex`).
 | Power | The Pi 4's Shelly plug | `tools/optiplex/power.sh status / cycle` |
 | Keyboard, mouse, disk | Pico `picousb5` | `tools/optiplex/pico.sh ...` |
 | Screen | Capture card `vid_345f` behind a VGA-to-HDMI converter (the 9020 has VGA and DisplayPort, no HDMI; the converter needs its USB power lead) | `tools/optiplex/hdmi.sh out.png` |
-| Serial | The 9020's COM1, RS-232 to a Prolific PL2303GT on the host: Windows **COM7**, 115200 8N1. coreboot logs every boot here (`debug_level = Debug`), and VibeOS's loader and kernel debug output follow (`/DEBUGPORT=COM1 /BAUDRATE=115200`) | `tools/optiplex/serial.sh up / status`; the live capture is named in `<bench>/serial-current.json` |
+| Serial | The 9020's COM1, RS-232 to a Prolific PL2303GT on the host: Windows **COM7**, 115200 8N1. coreboot logs every boot here (`debug_level = Debug`), and VibeOS's loader and kernel debug output follow (`/DEBUGPORT=COM1 /BAUDRATE=115200`) | `tools/optiplex/serial.sh up / status`; the live capture is named in `<bench>/serial-current.json`. `python3 tools/pi4/serial_times.py <capture dir> --gaps 10` (or `--lines`) puts arrival times on the latest boot |
 
 The Pi 5 keeps the other card (`vid_534d`, `tools/pi5/env.sh`).
 
@@ -83,8 +83,10 @@ the staged image (a `/TRIPWIRE=` boot option; commas between tokens), as `smoke 
 does in QEMU. The copy into the payload dir is `dd` in 16 KB blocks: under host memory
 pressure drvfs fails larger writes, and reads, with ENOMEM.
 
-Timing (2026-10-10): ~3.5 min pulling the image, then ~1 min to `shell ready`. freeldr
-reads it 62 KB at a time (its INT 13h buffer sits below 1 MB), so a `sanboot` is ~6,500
+Timing (2026-10-13, from `serial.times`): coreboot to the kernel handoff in ~50 s, of which
+freeldr's read of the image is a ~23 s silence; `shell ready` at ~2 min. (2026-10-10 measured
+~3.5 min for the pull alone; nothing in the loader changed since, so suspect the host side
+before relying on either number.) freeldr reads it 62 KB at a time (its INT 13h buffer sits below 1 MB), so a `sanboot` is ~6,500
 HTTP range requests; `serve_http.py` speaks HTTP/1.1 keep-alive for that, which took the
 pull from ~1 MB/s (a new TCP connection per request) to ~2 MB/s.
 
@@ -102,11 +104,11 @@ is no way round that: without the prompt it boots the hard disk at once.
 | CPU, i7-4770 (4C/8T) | 8 processors started (MADT) |
 | RAM, 32 GB | All of it: `[MM] physical memory: 32686 MiB` |
 | HD 4600 iGPU | VBE linear framebuffer at the panel's native 1920x1080; no native driver |
-| Lynx Point xHCI, 2x EHCI | Started. On the xHCI: the Pico, a Razer 1532:0099 and a 413d:2114 HID device, all bound to HID class drivers. It reports 85 ports (should be 21) |
+| Lynx Point xHCI, 2x EHCI | Started. On the xHCI: the Pico, a Razer 1532:0099 and a 413d:2114 HID device, all bound to HID class drivers. Its HCSPARAMS1 says MaxPorts 85 against 21 ports in its protocol capabilities; usbxhci uses the 21 (2026-10-13) |
 | Renesas uPD720201 USB 3 card (1912:0014) | usbxhci starts it (8 ports). Since 2026-10-11 a USB-C hub sits on it with a Wi-Fi/Bluetooth stick: its USB 2 side enumerates (`214b:7250` hub, VIA `2109:2815` hub, the Realtek RTL8821CU `0bda:c820`, no driver, and the hub's RTL8153B gigabit Ethernet `0bda:8153`, which Realtek's stock XP x64 driver 5.23 now drives: see "Vendor drivers" below). Its SuperSpeed side (`2109:0815`) fails START: usbhub has no USB 3 hub support (it asks for a 0x29 hub descriptor, which a SuperSpeed hub stalls). A cold boot that once never saw the hub was the card missing usbxhci's 20 ms halt deadline, a failure usbport then reported as success; fixed 2026-10-11 (roadmap bug registry) |
 | Crucial P310 NVMe | nvme.sys, disk and three partitions |
 | SATA AHCI, TSSTcorp DVD | UniATA; the DVD is `cdrom.sys` |
-| I217-LM Ethernet (8086:153A) | **Works** (2026-10-11): netstack-rust's e1000 backend drives it (`pch.rs`: PCH reset, PHY wake, MAC from RAR0), DHCP leases an address from the router and the stack's ICMP self-test pings the gateway. No interrupt yet: the Interrupt Line register reads 128, `HalGetInterruptVector` refuses it, and the worker polls. Link autonegotiation takes over 5 s after reset. The MAC (`a6:ee:e0:c0:50:12`) is locally administered, as Libreboot's GbE region ships |
+| I217-LM Ethernet (8086:153A) | **Works** (2026-10-11): netstack-rust's e1000 backend drives it (`pch.rs`: PCH reset, PHY wake, MAC from RAR0), DHCP leases an address from the router and the stack's ICMP self-test pings the gateway. Interrupt-driven since 2026-10-13: the BIOS's Interrupt Line (128) is an 8259 number, so pci.sys now writes the `_PRT`-routed GSI (23) back into the register, as Windows' pci.sys does, and netstack connects that (ping RTT 48 ms polled, 2.7 ms on the interrupt). Link autonegotiation takes over 5 s after reset. The MAC (`a6:ee:e0:c0:50:12`) is locally administered, as Libreboot's GbE region ships |
 | HD Audio (8C20) | **Starts** (2026-10-11): the controller needed more than hdaudbus's 1 ms to leave reset (now 100 ms, as Linux). Codec 0 is a Realtek ALC280 with an audio function group; its `HDAUDIO\FUNC_01&VEN_10EC&DEV_0280` device has **no function driver** (none in the tree). The Haswell HDMI/DP audio controller (0C0C) starts, but its codec verbs time out |
 | PCI INTx | All routed by ACPI `_PRT` (GSI 16-23, level, active-low) |
 | PCI bus driver | `pci.sys` by default. `pcix.sys` (the `hivesys.inf` Pci `ImagePath`) also boots it to the desktop since 2026-10-12, with every device, the Renesas card behind root port 00:1c.0 and its hub included |
@@ -139,8 +141,5 @@ drives its NICs directly and has no NDIS protocol binding.
 ## Known gaps
 
 - Audio: an HD Audio codec function driver for the ALC280, and the HDMI audio verb timeouts.
-- The NIC's interrupt (it polls).
 - USB: no SuperSpeed hub support in usbhub.
-- A ~3 minute serial silence after `[SYSDRV] loading` the network drivers, with the box still
-  answering ping.
-- The netboot pull is still ~2 MB/s; the next step is bigger INT 13h reads in freeldr.
+- The netboot pull: freeldr reads 62 KB per INT 13h call; bigger reads would cut it.
