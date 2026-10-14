@@ -29,6 +29,9 @@ target_compile_definitions(net_shims PRIVATE UNICODE _UNICODE)
 add_library(net_res OBJECT net.rc)
 target_compile_definitions(net_res PRIVATE UNICODE _UNICODE)
 target_include_directories(net_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+# Generated inputs those compiles read, ordered before them.
+add_dependencies(net_shims net_msg)
+add_dependencies(net_res net_msg)
 set(NET_REUSED
     ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils.a
     ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils_rust.a

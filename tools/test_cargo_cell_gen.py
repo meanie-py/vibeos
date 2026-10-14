@@ -205,6 +205,17 @@ def test_compile_settings_move_to_the_object_libraries(tmp_path):
     assert "(m PRIVATE _CRT" not in out and "SUFFIX" not in out
 
 
+def test_a_generated_input_stays_ordered_before_the_compile_that_reads_it(tmp_path):
+    # eventcreate.rc #includes the evtmsgstr.mc output: dropping the dependency raced windres.
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE + "add_dependencies(m m_msg)\n")
+    out = g.rewrite_cmake(f, cell())
+    assert "add_dependencies(m_res m_msg)" in out
+    assert "rust_m_rust" not in out.split("add_dependencies(m_res", 1)[1].split(")")[0]
+    no_objlib = g.rewrite_cmake(f, cell(rc=None))
+    assert no_objlib.rstrip().endswith("add_dependencies(m m_msg)")
+
+
 def test_libs_cmake_linked_after_the_body_stay_after_it():
     libs = {a: ["sdk/lib/crt/oldnames.a", "sdk/lib/uuid/libuuid.a"] for a in g.ARCHES}
     late = {a: ["sdk/lib/uuid/libuuid.a"] for a in g.ARCHES}

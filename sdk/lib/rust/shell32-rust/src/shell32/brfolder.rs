@@ -885,6 +885,8 @@ unsafe extern "C" fn BrFolder_OnInitDialog(hWnd: HWND, info: *mut BrFolder) -> B
             }
             ILFree(pidl);
         }
+    } else {
+        (*info).pidlRet = ILClone((*lpBrowseInfo).pidlRoot);
     }
 
     BrFolder_Callback((*info).lpBrowseInfo, hWnd, BFFM_INITIALIZED, 0);

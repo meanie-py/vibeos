@@ -563,6 +563,7 @@ pub const PRINTER_ENUM_LOCAL: DWORD = 0x00000002;
 pub const SHCOLSTATE_ONBYDEFAULT: DWORD = 0x10;
 
 pub const SHCOLSTATE_TYPE_STR: DWORD = 1;
+pub const SHCOLSTATE_TYPE_INT: DWORD = 2;
 
 pub const SHCONTF_NONFOLDERS: DWORD = 64;
 
@@ -680,7 +681,7 @@ pub struct shvheader {
 }
 pub static PrinterSFHeader: [shvheader; 6] = [
     shvheader { colnameid: (IDS_SHV_COLUMN_NAME) as WORD, colstate: (SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT) as WORD, fmt: (LVCFMT_LEFT) as WORD, cxChar: (15) as WORD },
-    shvheader { colnameid: (IDS_SHV_COLUMN_DOCUMENTS) as WORD, colstate: (SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT) as WORD, fmt: (LVCFMT_LEFT) as WORD, cxChar: (15) as WORD },
+    shvheader { colnameid: (IDS_SHV_COLUMN_DOCUMENTS) as WORD, colstate: (SHCOLSTATE_TYPE_INT | SHCOLSTATE_ONBYDEFAULT) as WORD, fmt: (LVCFMT_LEFT) as WORD, cxChar: (15) as WORD },
     shvheader { colnameid: (IDS_SHV_COLUMN_STATUS) as WORD, colstate: (SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT) as WORD, fmt: (LVCFMT_LEFT) as WORD, cxChar: (15) as WORD },
     shvheader { colnameid: (IDS_SHV_COLUMN_COMMENTS) as WORD, colstate: (SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT) as WORD, fmt: (LVCFMT_LEFT) as WORD, cxChar: (15) as WORD },
     shvheader { colnameid: (IDS_SHV_COLUMN_LOCATION) as WORD, colstate: (SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT) as WORD, fmt: (LVCFMT_LEFT) as WORD, cxChar: (15) as WORD },
@@ -953,13 +954,7 @@ pub unsafe fn CPrinterFolder_GetDefaultSearchGUID_body(this: *mut CPrinterFolder
 pub unsafe fn CPrinterFolder_EnumSearches_body(this: *mut CPrinterFolder, ppenum: *mut *mut IEnumExtraSearch) -> HRESULT { E_NOTIMPL }
 
 pub unsafe fn CPrinterFolder_GetDefaultColumn_body(this: *mut CPrinterFolder, dwRes: DWORD, pSort: *mut ULONG, pDisplay: *mut ULONG) -> HRESULT {
-    if !pSort.is_null() {
-        *pSort = 0;
-    }
-    if !pDisplay.is_null() {
-        *pDisplay = 0;
-    }
-    S_OK
+    E_NOTIMPL // Not required when column 0 is our default.
 }
 
 pub unsafe fn CPrinterFolder_GetDefaultColumnState_body(this: *mut CPrinterFolder, iColumn: UINT, pcsFlags: *mut SHCOLSTATEF) -> HRESULT {
@@ -974,7 +969,7 @@ pub unsafe fn CPrinterFolder_GetDetailsEx_body(this: *mut CPrinterFolder, pidl: 
 
 pub unsafe fn CPrinterFolder_GetDetailsOf_body(this: *mut CPrinterFolder, pidl: PCUITEMID_CHILD, iColumn: UINT, psd: *mut SHELLDETAILS) -> HRESULT {
     if iColumn >= PrinterSHELLVIEWCOLUMNS {
-        return E_FAIL;
+        return E_NOTIMPL;
     }
     (*psd).fmt = PrinterSFHeader[iColumn as usize].fmt as INT;
     (*psd).cxChar = PrinterSFHeader[iColumn as usize].cxChar as INT;
@@ -1005,6 +1000,9 @@ pub unsafe fn CPrinterFolder_Initialize_body(this: *mut CPrinterFolder, pidl: PC
 }
 
 pub unsafe fn CPrinterFolder_GetCurFolder_body(this: *mut CPrinterFolder, pidl: *mut PIDLIST_ABSOLUTE) -> HRESULT {
-    *pidl = ILClone((*this).pidlRoot);
-    S_OK
+    if !(*this).pidlRoot.is_null() {
+        return crate::cfs_folder::SHILClone((*this).pidlRoot as LPCITEMIDLIST, pidl as *mut LPITEMIDLIST);
+    }
+    *pidl = core::ptr::null_mut();
+    S_FALSE
 }

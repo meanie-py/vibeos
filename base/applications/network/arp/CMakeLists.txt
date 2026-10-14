@@ -11,6 +11,9 @@ add_library(arp_shims OBJECT rust_varargs_shim.c)
 # whose windres command the cargo link replays.
 add_library(arp_res OBJECT arp.rc)
 target_include_directories(arp_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+# Generated inputs those compiles read, ordered before them.
+add_dependencies(arp_shims arp_msg)
+add_dependencies(arp_res arp_msg)
 set(ARP_REUSED
     ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(arp arp-cargo arp.exe

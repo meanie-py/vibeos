@@ -1321,6 +1321,8 @@ extern "C" {
 pub static CPP_COM_WSTR_9855CDA098DC: [WCHAR; 2] = [0x0058, 0x0000];
 pub static CPP_COM_WSTR_F51AA22D711D: [WCHAR; 5] = [0x0043, 0x003A, 0x005C, 0x0058, 0x0000];
 
+use crate::island::{GetVersion, CLSID_ShellSearchExt};
+use crate::prelude::LOBYTE;
 use core::ffi::c_void;
 use crate::shellcom::*;
 use crate::types::*;
@@ -2091,18 +2093,18 @@ pub unsafe fn CRecycleBin_GetDisplayNameOf_body(this: *mut CRecycleBin, pidl: PC
 
 pub unsafe fn CRecycleBin_SetNameOf_body(this: *mut CRecycleBin, hwnd: HWND, pidl: PCUITEMID_CHILD, pszName: LPCOLESTR, uFlags: SHGDNF, ppidlOut: *mut PITEMID_CHILD) -> HRESULT { E_FAIL }
 
-pub unsafe fn CRecycleBin_GetDefaultSearchGUID_body(this: *mut CRecycleBin, pguid: *mut GUID) -> HRESULT { E_NOTIMPL }
+pub unsafe fn CRecycleBin_GetDefaultSearchGUID_body(this: *mut CRecycleBin, pguid: *mut GUID) -> HRESULT {
+    if LOBYTE(GetVersion()) >= 6 {
+        return E_NOTIMPL;
+    }
+    *pguid = CLSID_ShellSearchExt;
+    S_OK
+}
 
 pub unsafe fn CRecycleBin_EnumSearches_body(this: *mut CRecycleBin, ppEnum: *mut *mut IEnumExtraSearch) -> HRESULT { *ppEnum = core::ptr::null_mut(); E_NOTIMPL }
 
 pub unsafe fn CRecycleBin_GetDefaultColumn_body(this: *mut CRecycleBin, dwReserved: DWORD, pSort: *mut ULONG, pDisplay: *mut ULONG) -> HRESULT {
-    if !pSort.is_null() {
-        *pSort = 0;
-    }
-    if !pDisplay.is_null() {
-        *pDisplay = 0;
-    }
-    S_OK
+    E_NOTIMPL // Not required when column 0 is our default.
 }
 
 pub unsafe fn CRecycleBin_GetDefaultColumnState_body(this: *mut CRecycleBin, iColumn: UINT, pcsFlags: *mut SHCOLSTATEF) -> HRESULT {

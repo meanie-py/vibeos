@@ -939,13 +939,7 @@ pub unsafe fn CNetFolder_GetDefaultSearchGUID_body(this: *mut CNetFolder, pguid:
 pub unsafe fn CNetFolder_EnumSearches_body(this: *mut CNetFolder, ppenum: *mut *mut IEnumExtraSearch) -> HRESULT { E_NOTIMPL }
 
 pub unsafe fn CNetFolder_GetDefaultColumn_body(this: *mut CNetFolder, dwRes: DWORD, pSort: *mut ULONG, pDisplay: *mut ULONG) -> HRESULT {
-    if !pSort.is_null() {
-        *pSort = 0;
-    }
-    if !pDisplay.is_null() {
-        *pDisplay = 0;
-    }
-    S_OK
+    E_NOTIMPL // Not required when column 0 is our default.
 }
 
 pub unsafe fn CNetFolder_GetDefaultColumnState_body(this: *mut CNetFolder, iColumn: UINT, pcsFlags: *mut SHCOLSTATEF) -> HRESULT {
