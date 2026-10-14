@@ -1080,7 +1080,7 @@
 @ stdcall SetFileAttributesW(wstr long)
 @ stdcall -version=0x600+ SetFileBandwidthReservation(ptr long long long ptr ptr)
 @ stdcall SetFileCompletionNotificationModes(ptr long)
-@ stub -arch=arm64 SetFileInformationByHandle
+@ stdcall SetFileInformationByHandle(ptr long ptr long)
 @ stub -version=0x600+ SetFileIoOverlappedRange
 @ stdcall SetFilePointer(long long ptr long)
 @ stdcall SetFilePointerEx(long double ptr long)
@@ -1296,6 +1296,17 @@
 @ stdcall _lopen(str long)
 @ stdcall _lread(long ptr long) _hread
 @ stdcall _lwrite(long ptr long) _hwrite
+@ stdcall CompareObjectHandles(ptr ptr)
+@ stdcall CreateFile2(wstr long long long ptr)
+@ stdcall CreateRemoteThreadEx(ptr ptr ptr ptr ptr long ptr ptr)
+@ stdcall DiscardVirtualMemory(ptr ptr)
+@ stdcall GetCurrentThreadStackLimits(ptr ptr)
+@ stdcall GetEnabledXStateFeatures()
+@ stdcall GetMaximumProcessorGroupCount()
+@ stdcall GetNumaProcessorNodeEx(ptr ptr)
+@ stdcall GetProcessInformation(ptr long ptr long)
+@ stdcall GetThreadIdealProcessorEx(ptr ptr)
+@ stdcall GetThreadInformation(ptr long ptr long)
 @ stdcall lstrcat(str str) lstrcatA
 @ stdcall lstrcatA(str str)
 @ stdcall lstrcatW(wstr wstr)
@@ -1314,6 +1325,20 @@
 @ stdcall lstrlen(str) lstrlenA
 @ stdcall lstrlenA(str)
 @ stdcall lstrlenW(wstr)
+@ stdcall PowerClearRequest(ptr long)
+@ stdcall PowerCreateRequest(ptr)
+@ stdcall PowerSetRequest(ptr long)
+@ stdcall PrefetchVirtualMemory(ptr ptr ptr long)
+@ stdcall QueryUnbiasedInterruptTime(ptr)
+@ stdcall QueryUnbiasedInterruptTimePrecise(ptr)
+@ stdcall SetProcessInformation(ptr long ptr long)
+@ stdcall SetThreadIdealProcessorEx(ptr ptr ptr)
+@ stdcall SetThreadInformation(ptr long ptr long)
+@ stdcall VirtualAllocExNuma(ptr ptr ptr long long long)
+@ stdcall WerRegisterRuntimeExceptionModule(wstr ptr)
+@ stdcall WerUnregisterRuntimeExceptionModule(wstr ptr)
+@ stdcall Wow64GetThreadContext(ptr ptr)
+@ stdcall Wow64SetThreadContext(ptr ptr)
 ;@ stdcall -arch=x86_64 uaw_lstrcmpW(wstr wstr)
 ;@ stdcall -arch=x86_64 uaw_lstrcmpiW(wstr wstr)
 ;@ stdcall -arch=x86_64 uaw_lstrlenW(wstr)
@@ -1433,15 +1458,11 @@
 @ stub -version=0xA00+ CreateDirectory2A
 @ stub -version=0xA00+ CreateDirectory2W
 @ stub -version=0xA00+ CreateEnclave # -> api-ms-win-core-enclave-l1-1-0.CreateEnclave
-@ stub -version=0xA00+ CreateFile2
 @ stub -version=0xA00+ CreateFile3
 @ stub -version=0xA00+ CreateFileMappingFromApp # -> api-ms-win-core-memory-l1-1-1.CreateFileMappingFromApp
 @ stub -version=0xA00+ CreateIoRing # -> api-ms-win-core-ioring-l1-1-0.CreateIoRing
 @ stub -version=0xA00+ CreatePackageVirtualizationContext
-@ stub -version=0xA00+ CreateProcessAsUserA
-@ stub -version=0xA00+ CreateProcessAsUserW
 @ stub -version=0xA00+ CreatePseudoConsole
-@ stub -version=0xA00+ CreateRemoteThreadEx # -> api-ms-win-core-processthreads-l1-1-0.CreateRemoteThreadEx
 @ stub -arch=win64 -version=0xA00+ CreateUmsCompletionList
 @ stub -arch=win64 -version=0xA00+ CreateUmsThreadContext
 @ stub -version=0xA00+ CtrlRoutine # -> kernelbase.CtrlRoutine
@@ -1454,7 +1475,6 @@
 @ stub -arch=win64 -version=0xA00+ DeleteUmsThreadContext
 @ stub -arch=win64 -version=0xA00+ DequeueUmsCompletionListItems
 @ stub -version=0xA00+ DisableThreadProfiling
-@ stub -version=0xA00+ DiscardVirtualMemory # -> api-ms-win-core-memory-l1-1-2.DiscardVirtualMemory
 @ stub -version=0xA00+ DnsHostnameToComputerNameExW
 @ stub -version=0xA00+ DuplicateEncryptionInfoFileExt
 @ stub -version=0xA00+ DuplicatePackageVirtualizationContext
@@ -1484,26 +1504,22 @@
 @ stub -version=0xA00+ GetCurrentPackageInfo # -> kernelbase.GetCurrentPackageInfo
 @ stub -version=0xA00+ GetCurrentPackagePath # -> kernelbase.GetCurrentPackagePath
 @ stub -version=0xA00+ GetCurrentPackageVirtualizationContext
-@ stub -version=0xA00+ GetCurrentThreadStackLimits # -> api-ms-win-core-processthreads-l1-1-0.GetCurrentThreadStackLimits
 @ stub -arch=win64 -version=0xA00+ GetCurrentUmsThread
 @ stub -version=0xA00+ GetDateFormatAWorker
 @ stub -version=0xA00+ GetDateFormatWWorker
 @ stub -version=0xA00+ GetDiskSpaceInformationA # -> api-ms-win-core-file-l1-2-3.GetDiskSpaceInformationA
 @ stub -version=0xA00+ GetDiskSpaceInformationW # -> api-ms-win-core-file-l1-2-3.GetDiskSpaceInformationW
-@ stub -version=0xA00+ GetEnabledXStateFeatures
 @ stub -version=0xA00+ GetEncryptedFileVersionExt
 @ stub -version=0xA00+ GetEraNameCountedString
 @ stub -version=0xA00+ GetFileInformationByName
 @ stub -version=0xA00+ GetGeoInfoEx
 @ stub -version=0xA00+ GetIoRingInfo # -> api-ms-win-core-ioring-l1-1-0.GetIoRingInfo
 @ stub -version=0xA00+ GetMachineTypeAttributes # -> api-ms-win-core-processthreads-l1-1-7.GetMachineTypeAttributes
-@ stub -version=0xA00+ GetMaximumProcessorGroupCount
 @ stub -version=0xA00+ GetMemoryErrorHandlingCapabilities
 @ stub -arch=win64 -version=0xA00+ GetNextUmsListItem
 @ stub -version=0xA00+ GetNumaAvailableMemoryNodeEx
 @ stub -version=0xA00+ GetNumaNodeNumberFromHandle
 @ stub -version=0xA00+ GetNumaNodeProcessorMask2 # -> api-ms-win-core-systemtopology-l1-1-2.GetNumaNodeProcessorMask2
-@ stub -version=0xA00+ GetNumaProcessorNodeEx
 @ stub -version=0xA00+ GetNumaProximityNodeEx
 @ stub -version=0xA00+ GetOverlappedResultEx # -> api-ms-win-core-io-l1-1-1.GetOverlappedResultEx
 @ stub -version=0xA00+ GetPackageApplicationIds # -> kernelbase.GetPackageApplicationIds
@@ -1516,7 +1532,6 @@
 @ stub -version=0xA00+ GetPackagesByPackageFamily # -> kernelbase.GetPackagesByPackageFamily
 @ stub -version=0xA00+ GetProcessDefaultCpuSetMasks # -> api-ms-win-core-processthreads-l1-1-6.GetProcessDefaultCpuSetMasks
 @ stub -version=0xA00+ GetProcessDefaultCpuSets # -> api-ms-win-core-processthreads-l1-1-3.GetProcessDefaultCpuSets
-@ stub -version=0xA00+ GetProcessInformation
 @ stub -version=0xA00+ GetProcessMitigationPolicy # -> api-ms-win-core-processthreads-l1-1-1.GetProcessMitigationPolicy
 @ stub -version=0xA00+ GetProcessPreferredUILanguages
 @ stub -version=0xA00+ GetProcessesInVirtualizationContext
@@ -1528,8 +1543,6 @@
 @ stub -version=0xA00+ GetTempPath2A
 @ stub -version=0xA00+ GetTempPath2W
 @ stub -version=0xA00+ GetThreadEnabledXStateFeatures
-@ stub -version=0xA00+ GetThreadIdealProcessorEx
-@ stub -version=0xA00+ GetThreadInformation
 @ stub -version=0xA00+ GetThreadSelectedCpuSetMasks # -> api-ms-win-core-processthreads-l1-1-6.GetThreadSelectedCpuSetMasks
 @ stub -version=0xA00+ GetThreadSelectedCpuSets # -> api-ms-win-core-processthreads-l1-1-3.GetThreadSelectedCpuSets
 @ stub -version=0xA00+ GetTimeFormatAWorker
@@ -1568,10 +1581,8 @@
 @ stub -version=0xA00+ OfferVirtualMemory # -> api-ms-win-core-memory-l1-1-2.OfferVirtualMemory
 @ stub -version=0xA00+ OpenConsoleWStub
 @ stub -version=0xA00+ OpenPackageInfoByFullName # -> kernelbase.OpenPackageInfoByFullName
-@ stub -version=0xA00+ OpenProcessToken # -> api-ms-win-core-processthreads-l1-1-0.OpenProcessToken
 @ stub -version=0xA00+ OpenState # -> kernelbase.OpenState
 @ stub -version=0xA00+ OpenStateExplicit # -> kernelbase.OpenStateExplicit
-@ stub -version=0xA00+ OpenThreadToken # -> api-ms-win-core-processthreads-l1-1-0.OpenThreadToken
 @ stub -version=0xA00+ PackageFamilyNameFromFullName # -> kernelbase.PackageFamilyNameFromFullName
 @ stub -version=0xA00+ PackageFamilyNameFromId # -> kernelbase.PackageFamilyNameFromId
 @ stub -version=0xA00+ PackageFullNameFromId # -> kernelbase.PackageFullNameFromId
@@ -1579,10 +1590,6 @@
 @ stub -version=0xA00+ PackageNameAndPublisherIdFromFamilyName # -> kernelbase.PackageNameAndPublisherIdFromFamilyName
 @ stub -version=0xA00+ ParseApplicationUserModelId # -> kernelbase.ParseApplicationUserModelId
 @ stub -version=0xA00+ PopIoRingCompletion # -> api-ms-win-core-ioring-l1-1-0.PopIoRingCompletion
-@ stub -version=0xA00+ PowerClearRequest
-@ stub -version=0xA00+ PowerCreateRequest
-@ stub -version=0xA00+ PowerSetRequest
-@ stub -version=0xA00+ PrefetchVirtualMemory # -> api-ms-win-core-memory-l1-1-1.PrefetchVirtualMemory
 @ stub -version=0xA00+ PssCaptureSnapshot
 @ stub -version=0xA00+ PssDuplicateSnapshot
 @ stub -version=0xA00+ PssFreeSnapshot
@@ -1605,7 +1612,6 @@
 @ stub -version=0xA00+ QueryThreadProfiling
 @ stub -version=0xA00+ QueryThreadpoolStackInformation
 @ stub -arch=win64 -version=0xA00+ QueryUmsThreadInformation
-@ stub -version=0xA00+ QueryUnbiasedInterruptTime
 @ stub -version=0xA00+ QueueUserAPC2 # -> api-ms-win-core-processthreads-l1-1-5.QueueUserAPC2
 @ stub -version=0xA00+ QuirkGetData2Worker
 @ stub -version=0xA00+ QuirkGetDataWorker
@@ -1621,47 +1627,7 @@
 @ stub -version=0xA00+ ReadDirectoryChangesExW
 @ stub -version=0xA00+ ReadThreadProfilingData
 @ stub -version=0xA00+ ReclaimVirtualMemory # -> api-ms-win-core-memory-l1-1-2.ReclaimVirtualMemory
-@ stub -version=0xA00+ RegCloseKey
-@ stub -version=0xA00+ RegCopyTreeW
-@ stub -version=0xA00+ RegCreateKeyExA
-@ stub -version=0xA00+ RegCreateKeyExW
-@ stub -version=0xA00+ RegDeleteKeyExA
-@ stub -version=0xA00+ RegDeleteKeyExW
-@ stub -version=0xA00+ RegDeleteTreeA
-@ stub -version=0xA00+ RegDeleteTreeW
-@ stub -version=0xA00+ RegDeleteValueA
-@ stub -version=0xA00+ RegDeleteValueW
 @ stub -version=0xA00+ RegDisablePredefinedCacheEx
-@ stub -version=0xA00+ RegEnumKeyExA
-@ stub -version=0xA00+ RegEnumKeyExW
-@ stub -version=0xA00+ RegEnumValueA
-@ stub -version=0xA00+ RegEnumValueW
-@ stub -version=0xA00+ RegFlushKey
-@ stub -version=0xA00+ RegGetKeySecurity
-@ stub -version=0xA00+ RegGetValueA
-@ stub -version=0xA00+ RegGetValueW
-@ stub -version=0xA00+ RegLoadKeyA
-@ stub -version=0xA00+ RegLoadKeyW
-@ stub -version=0xA00+ RegLoadMUIStringA
-@ stub -version=0xA00+ RegLoadMUIStringW
-@ stub -version=0xA00+ RegNotifyChangeKeyValue
-@ stub -version=0xA00+ RegOpenCurrentUser
-@ stub -version=0xA00+ RegOpenKeyExA
-@ stub -version=0xA00+ RegOpenKeyExW
-@ stub -version=0xA00+ RegOpenUserClassesRoot
-@ stub -version=0xA00+ RegQueryInfoKeyA
-@ stub -version=0xA00+ RegQueryInfoKeyW
-@ stub -version=0xA00+ RegQueryValueExA
-@ stub -version=0xA00+ RegQueryValueExW
-@ stub -version=0xA00+ RegRestoreKeyA
-@ stub -version=0xA00+ RegRestoreKeyW
-@ stub -version=0xA00+ RegSaveKeyExA
-@ stub -version=0xA00+ RegSaveKeyExW
-@ stub -version=0xA00+ RegSetKeySecurity
-@ stub -version=0xA00+ RegSetValueExA
-@ stub -version=0xA00+ RegSetValueExW
-@ stub -version=0xA00+ RegUnLoadKeyA
-@ stub -version=0xA00+ RegUnLoadKeyW
 @ stub -version=0xA00+ RegisterBadMemoryNotification
 @ stub -version=0xA00+ RegisterWaitUntilOOBECompleted
 @ stub -version=0xA00+ ReleaseActCtxWorker
@@ -1685,15 +1651,11 @@
 @ stub -version=0xA00+ SetProcessDefaultCpuSets # -> api-ms-win-core-processthreads-l1-1-3.SetProcessDefaultCpuSets
 @ stub -version=0xA00+ SetProcessDynamicEHContinuationTargets # -> api-ms-win-core-processthreads-l1-1-4.SetProcessDynamicEHContinuationTargets
 @ stub -version=0xA00+ SetProcessDynamicEnforcedCetCompatibleRanges # -> api-ms-win-core-processthreads-l1-1-6.SetProcessDynamicEnforcedCetCompatibleRanges
-@ stub -version=0xA00+ SetProcessInformation
 @ stub -version=0xA00+ SetProcessMitigationPolicy # -> api-ms-win-core-processthreads-l1-1-1.SetProcessMitigationPolicy
 @ stub -version=0xA00+ SetProcessPreferredUILanguages
 @ stub -version=0xA00+ SetProtectedPolicy # -> api-ms-win-core-processthreads-l1-1-2.SetProtectedPolicy
-@ stub -version=0xA00+ SetThreadIdealProcessorEx
-@ stub -version=0xA00+ SetThreadInformation
 @ stub -version=0xA00+ SetThreadSelectedCpuSetMasks # -> api-ms-win-core-processthreads-l1-1-6.SetThreadSelectedCpuSetMasks
 @ stub -version=0xA00+ SetThreadSelectedCpuSets # -> api-ms-win-core-processthreads-l1-1-3.SetThreadSelectedCpuSets
-@ stub -version=0xA00+ SetThreadToken # -> api-ms-win-core-processthreads-l1-1-0.SetThreadToken
 @ stub -version=0xA00+ SetThreadpoolStackInformation
 @ stub -version=0xA00+ SetThreadpoolTimerEx # -> NTDLL.TpSetTimerEx
 @ stub -version=0xA00+ SetThreadpoolWaitEx # -> NTDLL.TpSetWaitEx
@@ -1733,7 +1695,6 @@
 @ stub -version=0xA00+ WerRegisterExcludedMemoryBlock
 @ stub -version=0xA00+ WerRegisterFileWorker
 @ stub -version=0xA00+ WerRegisterMemoryBlockWorker
-@ stub -version=0xA00+ WerRegisterRuntimeExceptionModule
 @ stub -version=0xA00+ WerRegisterRuntimeExceptionModuleWorker
 @ stub -version=0xA00+ WerSetFlagsWorker
 @ stub -version=0xA00+ WerUnregisterAdditionalProcess
@@ -1742,7 +1703,6 @@
 @ stub -version=0xA00+ WerUnregisterExcludedMemoryBlock
 @ stub -version=0xA00+ WerUnregisterFileWorker
 @ stub -version=0xA00+ WerUnregisterMemoryBlockWorker
-@ stub -version=0xA00+ WerUnregisterRuntimeExceptionModule
 @ stub -version=0xA00+ WerUnregisterRuntimeExceptionModuleWorker
 @ stub -version=0xA00+ WerpGetDebugger
 @ stub -version=0xA00+ WerpLaunchAeDebug
@@ -1770,7 +1730,7 @@
 
 # BEGIN vista forwards
 # Generated by tools/win10_surface.py forwards; do not edit by hand. Exports Windows'
-# kernel32.dll has and this build would not, forwarded to the implementation in kernel32_vista.
+# kernel32.dll has and this build would not, forwarded to the implementation in kernel32_vista / advapi32.
 # Each switches off where this spec's own row for the name takes over.
 @ stdcall -arch=i386,x86_64 AcquireSRWLockExclusive(ptr) kernel32_vista.AcquireSRWLockExclusive
 @ stdcall -version=0x400-0x5ff AcquireSRWLockShared(ptr) kernel32_vista.AcquireSRWLockShared
@@ -1785,6 +1745,8 @@
 @ stdcall -version=0x400-0x5ff CloseThreadpoolWait(ptr) kernel32_vista.CloseThreadpoolWait
 @ stdcall -version=0x400-0x5ff CloseThreadpoolWork(ptr) kernel32_vista.CloseThreadpoolWork
 @ stdcall -version=0x400-0x5ff CompareStringOrdinal(wstr long wstr long long) kernel32_vista.CompareStringOrdinal
+@ stdcall -private CreateProcessAsUserA(long str str ptr ptr long long ptr str ptr ptr) advapi32.CreateProcessAsUserA
+@ stdcall -private CreateProcessAsUserW(long str str ptr ptr long long ptr str ptr ptr) advapi32.CreateProcessAsUserW
 @ stdcall -version=0x400-0x5ff CreateSymbolicLinkA(str str long) kernel32_vista.CreateSymbolicLinkA
 @ stdcall -arch=i386,x86_64 CreateSymbolicLinkW(wstr wstr long) kernel32_vista.CreateSymbolicLinkW
 @ stdcall -version=0x400-0x5ff CreateThreadpool(ptr) kernel32_vista.CreateThreadpool
@@ -1828,8 +1790,50 @@
 @ stdcall -version=0x400-0x5ff LCIDToLocaleName(long wstr long long) kernel32_vista.LCIDToLocaleName
 @ stdcall -version=0x400-0x5ff LocaleNameToLCID(wstr long) kernel32_vista.LocaleNameToLCID
 @ stdcall -version=0x400-0x5ff OpenFileById(ptr ptr long long ptr long) kernel32_vista.OpenFileById
+@ stdcall -private OpenProcessToken(long long ptr) advapi32.OpenProcessToken
+@ stdcall -private OpenThreadToken(long long long ptr) advapi32.OpenThreadToken
 @ stdcall -version=0x400-0x5ff QueryFullProcessImageNameA(ptr long ptr ptr) kernel32_vista.QueryFullProcessImageNameA
 @ stdcall -version=0x400-0x5ff QueryFullProcessImageNameW(ptr long ptr ptr) kernel32_vista.QueryFullProcessImageNameW
+@ stdcall -private RegCloseKey(long) advapi32.RegCloseKey
+@ stdcall -private RegCopyTreeW(ptr wstr ptr) advapi32.RegCopyTreeW
+@ stdcall -private RegCreateKeyExA(long str long ptr long long ptr ptr ptr) advapi32.RegCreateKeyExA
+@ stdcall -private RegCreateKeyExW(long wstr long ptr long long ptr ptr ptr) advapi32.RegCreateKeyExW
+@ stdcall -private RegDeleteKeyExA(long str long long) advapi32.RegDeleteKeyExA
+@ stdcall -private RegDeleteKeyExW(long wstr long long) advapi32.RegDeleteKeyExW
+@ stdcall -private RegDeleteTreeA(long str) advapi32.RegDeleteTreeA
+@ stdcall -private RegDeleteTreeW(long wstr) advapi32.RegDeleteTreeW
+@ stdcall -private RegDeleteValueA(long str) advapi32.RegDeleteValueA
+@ stdcall -private RegDeleteValueW(long wstr) advapi32.RegDeleteValueW
+@ stdcall -private RegEnumKeyExA(long long ptr ptr ptr ptr ptr ptr) advapi32.RegEnumKeyExA
+@ stdcall -private RegEnumKeyExW(long long ptr ptr ptr ptr ptr ptr) advapi32.RegEnumKeyExW
+@ stdcall -private RegEnumValueA(long long ptr ptr ptr ptr ptr ptr) advapi32.RegEnumValueA
+@ stdcall -private RegEnumValueW(long long ptr ptr ptr ptr ptr ptr) advapi32.RegEnumValueW
+@ stdcall -private RegFlushKey(long) advapi32.RegFlushKey
+@ stdcall -private RegGetKeySecurity(long long ptr ptr) advapi32.RegGetKeySecurity
+@ stdcall -private RegGetValueA(long str str long ptr ptr ptr) advapi32.RegGetValueA
+@ stdcall -private RegGetValueW(long wstr wstr long ptr ptr ptr) advapi32.RegGetValueW
+@ stdcall -private RegLoadKeyA(long str str) advapi32.RegLoadKeyA
+@ stdcall -private RegLoadKeyW(long wstr wstr) advapi32.RegLoadKeyW
+@ stdcall -private RegLoadMUIStringA(ptr str str long ptr long str) advapi32.RegLoadMUIStringA
+@ stdcall -private RegLoadMUIStringW(ptr wstr wstr long ptr long wstr) advapi32.RegLoadMUIStringW
+@ stdcall -private RegNotifyChangeKeyValue(long long long long long) advapi32.RegNotifyChangeKeyValue
+@ stdcall -private RegOpenCurrentUser(long ptr) advapi32.RegOpenCurrentUser
+@ stdcall -private RegOpenKeyExA(long str long long ptr) advapi32.RegOpenKeyExA
+@ stdcall -private RegOpenKeyExW(long wstr long long ptr) advapi32.RegOpenKeyExW
+@ stdcall -private RegOpenUserClassesRoot(ptr long long ptr) advapi32.RegOpenUserClassesRoot
+@ stdcall -private RegQueryInfoKeyA(long ptr ptr ptr ptr ptr ptr ptr ptr ptr ptr ptr) advapi32.RegQueryInfoKeyA
+@ stdcall -private RegQueryInfoKeyW(long ptr ptr ptr ptr ptr ptr ptr ptr ptr ptr ptr) advapi32.RegQueryInfoKeyW
+@ stdcall -private RegQueryValueExA(long str ptr ptr ptr ptr) advapi32.RegQueryValueExA
+@ stdcall -private RegQueryValueExW(long wstr ptr ptr ptr ptr) advapi32.RegQueryValueExW
+@ stdcall -private RegRestoreKeyA(long str long) advapi32.RegRestoreKeyA
+@ stdcall -private RegRestoreKeyW(long wstr long) advapi32.RegRestoreKeyW
+@ stdcall -private RegSaveKeyExA(long str ptr long) advapi32.RegSaveKeyExA
+@ stdcall -private RegSaveKeyExW(long str ptr long) advapi32.RegSaveKeyExW
+@ stdcall -private RegSetKeySecurity(long long ptr) advapi32.RegSetKeySecurity
+@ stdcall -private RegSetValueExA(long str long long ptr long) advapi32.RegSetValueExA
+@ stdcall -private RegSetValueExW(long wstr long long ptr long) advapi32.RegSetValueExW
+@ stdcall -private RegUnLoadKeyA(long str) advapi32.RegUnLoadKeyA
+@ stdcall -private RegUnLoadKeyW(long wstr) advapi32.RegUnLoadKeyW
 @ stdcall -version=0x400-0x5ff RegisterApplicationRecoveryCallback(ptr ptr long long) kernel32_vista.RegisterApplicationRecoveryCallback
 @ stdcall -version=0x400-0x5ff RegisterApplicationRestart(wstr long) kernel32_vista.RegisterApplicationRestart
 @ stdcall -arch=i386,x86_64 ReleaseSRWLockExclusive(ptr) kernel32_vista.ReleaseSRWLockExclusive
@@ -1839,6 +1843,7 @@
 @ stdcall -version=0x400-0x601 SetFirmwareEnvironmentVariableExW(str str ptr long long) kernel32_vista.SetFirmwareEnvironmentVariableExW
 @ stdcall -version=0x400-0x9ff SetThreadDescription(ptr wstr) kernel32_vista.SetThreadDescription
 @ stdcall -version=0x400-0x5ff SetThreadPreferredUILanguages(long wstr ptr) kernel32_vista.SetThreadPreferredUILanguages
+@ stdcall -private SetThreadToken(ptr ptr) advapi32.SetThreadToken
 @ stdcall -version=0x400-0x5ff SetThreadpoolThreadMaximum(ptr long) kernel32_vista.SetThreadpoolThreadMaximum
 @ stdcall -version=0x400-0x5ff SetThreadpoolThreadMinimum(ptr long) kernel32_vista.SetThreadpoolThreadMinimum
 @ stdcall -version=0x400-0x5ff SetThreadpoolTimer(ptr ptr long long) kernel32_vista.SetThreadpoolTimer

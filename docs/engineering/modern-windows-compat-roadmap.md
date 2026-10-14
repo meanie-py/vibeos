@@ -287,13 +287,49 @@ missing functions, 541 -> 356 import sites (-34%).
 - Every structure the agents laid out by hand (`MIB_IF_ROW2`, the `DISPLAYCONFIG_*` set,
   `POINTER_INFO`) carries compile-time size/offset asserts measured from the SDK headers.
 
+**Done 2026-10-14 (second batch): WinRT strings, shcore DPI, the Win8/10 kernel32 set.**
+Apps 191 -> 125 missing functions, 356 -> 209 import sites (-41%).
+- kernel32: 45 private forwards to advapi32 (registry, tokens, `CreateProcessAsUser`):
+  `forwards` gained advapi32 as a kernel32 provider, and `LINKS_BACK` is now keyed by
+  (module, provider) since advapi32 links kernel32's import library.
+- kernel32 (`client/win8_misc.rs`, 24): `SetFileInformationByHandle` (no body existed on
+  any arch), `CreateFile2`, `CreateRemoteThreadEx`, Get/SetProcessInformation,
+  Set/GetThreadInformation, `GetCurrentThreadStackLimits`, `QueryUnbiasedInterruptTime`,
+  `Wow64Get/SetThreadContext`, `GetEnabledXStateFeatures`, the processor-group helpers,
+  power requests (an event handle; no power policy is affected) and
+  `CompareObjectHandles` over a new system call, `NtCompareObjects` (ob-rust).
+  ntdll's status table had no row for STATUS_NOT_SAME_OBJECT, so a correct answer came
+  back as error 317; added.
+- ole32 (`winrt_string.rs`, `roapi.rs`): the HSTRING API and `Ro*` from Wine's combase,
+  in ole32 because combase is not built here and the api-set table routes
+  api-ms-win-core-winrt-* to ole32. `RoGetActivationFactory` reads the
+  `WindowsRuntime\ActivatableClassId` registry and finds nothing (REGDB_E_CLASSNOTREG, as
+  Windows answers for an unknown class); `RoGetApartmentIdentifier` names the apartment
+  (Wine's constant made every apartment equal).
+- shell32 (`shcore_dpi.rs`): `GetDpiForMonitor`, `GetScaleFactorForMonitor`,
+  Get/SetProcessDpiAwareness (over user32's awareness), `Shell_NotifyIconGetRect` (the
+  whole notification area). Its error codes are Windows 11's, measured: a bad type is
+  HRESULT_FROM_WIN32(ERROR_BAD_ARGUMENTS), a NULL output ERROR_INVALID_ADDRESS, not
+  Wine's E_INVALIDARG.
+- api-ms-win-eventing-provider now resolves to advapi32 (it was kernel32, which has no
+  `EventRegister`; Windows maps it to kernelbase). The generator named in
+  apisets_table/mod.rs's header (`rustconv data-port`) no longer exists, so the C table
+  and the Rust table were edited together.
+- Test: kernel32 apitest `Win8Surface`, 49 checks, Windows 11 49/0 first, guest 39/0 on
+  amd64 and i386. Its file block (CreateFile2, SetFileInformationByHandle) SKIPS in the
+  guest: the sweep has no writable directory on the live CD (owed: a writable volume
+  for the apitest payload, then grade it there).
+
 **Owed on the export surface:**
-- **The rest of the app ranking, in order:** kernel32's forwards to advapi32 that Windows
-  has and we do not (`RegOpenKeyExW`, `RegQueryValueExW`, `EventRegister`, ...: a provider
-  in `forwards`, `-private` because advapi32 links kernel32); `SetFileInformationByHandle`
-  (10 apps, exported on some arches only); setupapi's `SetupDiGetDevicePropertyW` (still
-  C); the WinRT string and activation calls (`RoInitialize`, `WindowsCreateString...`);
-  shcore's DPI calls; `CreateFile2`, `SetDefaultDllDirectories`.
+- **The rest of the app ranking:** setupapi's `SetupDiGetDevicePropertyW` (5 apps, still
+  C); `shcore.dll` imported directly (3 apps: the module is not built; a forwarder-only
+  shcore over shell32 would serve them, if the declined restructure allows it);
+  `SetDefaultDllDirectories`/`AddDllDirectory` (loader work in ntdll);
+  `GetProductInfo` (its forward target is dead); `GetBestRoute2`;
+  `SHGetPropertyStoreForWindow`; `GetPointerPenInfo`.
+- **Bodies that answer honestly but not fully:** `GetNamedPipeServerProcessId` (npfs has
+  no attribute FSCTL); `GetProcessInformation(ProcessMachineTypeInfo)` (no
+  NtQuerySystemInformationEx); Get/SetRestrictedErrorInfo stay E_NOTIMPL as in Wine.
 - **Then the version flip to 10.0** (Windows 11 is 10.0 too, build 22000+): report it,
   apply Windows' manifest rule in `GetVersionEx` (6.2 unless the manifest declares the
   Windows 10 `supportedOS`; `RtlGetVersion` is never lied to), and audit the ~88 sources
