@@ -765,8 +765,12 @@ endfunction()
 ##   native    : none
 include(${CMAKE_CURRENT_LIST_DIR}/cargo_link_context.cmake)
 
+## A FAMILY cell links several PEs from one package: BINS names its `[[bin]]`s and
+## _output is then the suffix each one gets (`.dll`). One cargo build links them all,
+## so the shared body crate compiles once instead of once per module (the 95 keyboard
+## layouts). Each output gets the kind's post-link and its own cd entry.
 function(add_cargo_module _target _crate _output)
-    cmake_parse_arguments(_acm "NO_CD" "KIND;DESTINATION;NAME_ON_CD;BODY_CRATE" "BODY_CRATES;EXTRA_DEPENDS" ${ARGN})
+    cmake_parse_arguments(_acm "NO_CD" "KIND;DESTINATION;NAME_ON_CD;BODY_CRATE" "BODY_CRATES;EXTRA_DEPENDS;BINS" ${ARGN})
     if(NOT _acm_KIND)
         set(_acm_KIND kerneldll)
     endif()
@@ -828,8 +832,36 @@ function(add_cargo_module _target _crate _output)
     # build caching. See docs/engineering/build-cache-and-determinism-plan.md.
     string(REGEX REPLACE "-cargo$" "" _bin "${_crate}")
     reactos_cargo_link_context("${_ws}" "${_crate}" "${ARCH}" _cargo_target_dir)
+    if(_acm_BINS)
+        # The crate's [[bin]] list is the link's truth; a layout missing from either
+        # list would silently not ship, so they must agree.
+        file(STRINGS "${_ws}/${_crate}/Cargo.toml" _acm_names REGEX "^name = \"")
+        list(TRANSFORM _acm_names REPLACE "^name = \"([^\"]*)\"$" "\\1")
+        list(REMOVE_ITEM _acm_names ${_crate})
+        set(_acm_want ${_acm_BINS})
+        list(SORT _acm_names)
+        list(SORT _acm_want)
+        if(NOT _acm_names STREQUAL _acm_want)
+            message(FATAL_ERROR "add_cargo_module(${_target}): BINS differs from the "
+                "[[bin]]s of ${_crate}/Cargo.toml")
+        endif()
+        if(_acm_NAME_ON_CD)
+            message(FATAL_ERROR "add_cargo_module(${_target}): NAME_ON_CD with BINS")
+        endif()
+        set(_bins ${_acm_BINS})
+        set(_bin_args --bins)
+        set(_outs)
+        foreach(_b ${_bins})
+            list(APPEND _outs "${CMAKE_CURRENT_BINARY_DIR}/${_b}${_output}")
+        endforeach()
+    else()
+        set(_bins ${_bin})
+        set(_bin_args --bin ${_bin})
+        set(_outs "${CMAKE_CURRENT_BINARY_DIR}/${_output}")
+    endif()
+    list(GET _bins 0 _bin)
+    list(GET _outs 0 _out)
     set(_cargo_exe "${_cargo_target_dir}/${_stem}/release/${_bin}.exe")
-    set(_out "${CMAKE_CURRENT_BINARY_DIR}/${_output}")
 
     # sync-instrumentation §4 lockdep (Tier-2 opt-in): -DVIBEOS_LOCKDEP=ON lights
     # up the self-deadlock detector. Plumbed as ENV to the kernel modules' cargo
@@ -930,32 +962,32 @@ function(add_cargo_module _target _crate _output)
     set(_postlink)
     set(_postdep)
     if(_acm_KIND STREQUAL "kerneldll")
-        set(_postlink COMMAND $<TARGET_FILE:native-pefixup> --kerneldll ${_out})
+        set(_postlink COMMAND $<TARGET_FILE:native-pefixup> --kerneldll __ACM_OUT__)
         set(_postdep native-pefixup)
         # i386-only forwarder fix mirrors set_module_type's i386-only POST_BUILD.
         if(USE_LLVM_MINGW AND ARCH STREQUAL "i386")
             list(APPEND _postlink COMMAND ${CMAKE_COMMAND} -E env python3
-                ${REACTOS_SOURCE_DIR}/sdk/tools/fix_lld_forwarding.py ${_out})
+                ${REACTOS_SOURCE_DIR}/sdk/tools/fix_lld_forwarding.py __ACM_OUT__)
         endif()
     elseif(_acm_KIND STREQUAL "kernelmodedriver")
         # Kernel-mode driver .sys (win32k.sys): set_module_type(kernelmodedriver)
         # applies native-pefixup --kernelmodedriver (same driver_fixup as
         # --kerneldll but the kernelmodedriver mode flag) + the i386 fwd fix.
-        set(_postlink COMMAND $<TARGET_FILE:native-pefixup> --kernelmodedriver ${_out})
+        set(_postlink COMMAND $<TARGET_FILE:native-pefixup> --kernelmodedriver __ACM_OUT__)
         set(_postdep native-pefixup)
         if(USE_LLVM_MINGW AND ARCH STREQUAL "i386")
             list(APPEND _postlink COMMAND ${CMAKE_COMMAND} -E env python3
-                ${REACTOS_SOURCE_DIR}/sdk/tools/fix_lld_forwarding.py ${_out})
+                ${REACTOS_SOURCE_DIR}/sdk/tools/fix_lld_forwarding.py __ACM_OUT__)
         endif()
     elseif(_acm_KIND STREQUAL "kernelexe")
         # Kernel EXE (ntoskrnl.exe / ntkrnlmp.exe): set_module_type(kernel) applies
         # native-pefixup --kernel (NOT --kerneldll) + the i386 lld forwarder fix.
         # Exactly the post-link ntoskrnl-cargo/boot-swap-smoke.sh applies (×3 boot).
-        set(_postlink COMMAND $<TARGET_FILE:native-pefixup> --kernel ${_out})
+        set(_postlink COMMAND $<TARGET_FILE:native-pefixup> --kernel __ACM_OUT__)
         set(_postdep native-pefixup)
         if(USE_LLVM_MINGW AND ARCH STREQUAL "i386")
             list(APPEND _postlink COMMAND ${CMAKE_COMMAND} -E env python3
-                ${REACTOS_SOURCE_DIR}/sdk/tools/fix_lld_forwarding.py ${_out})
+                ${REACTOS_SOURCE_DIR}/sdk/tools/fix_lld_forwarding.py __ACM_OUT__)
         endif()
     elseif(_acm_KIND STREQUAL "win32dll")
         # User-mode DLL (ntdll): NOT a KERNEL_MODULE_TYPE, so set_module_type
@@ -964,7 +996,7 @@ function(add_cargo_module _target _crate _output)
         # fix, which set_module_type applies to every PE module on i386/llvm-mingw.
         if(USE_LLVM_MINGW AND ARCH STREQUAL "i386")
             set(_postlink COMMAND ${CMAKE_COMMAND} -E env python3
-                ${REACTOS_SOURCE_DIR}/sdk/tools/fix_lld_forwarding.py ${_out})
+                ${REACTOS_SOURCE_DIR}/sdk/tools/fix_lld_forwarding.py __ACM_OUT__)
         endif()
     elseif(_acm_KIND STREQUAL "win32exe")
         # User-mode win32 exe (lsass.exe): like win32dll, NOT a KERNEL_MODULE_TYPE
@@ -973,14 +1005,14 @@ function(add_cargo_module _target _crate _output)
         # export-less exe, kept for parity with every PE module).
         if(USE_LLVM_MINGW AND ARCH STREQUAL "i386")
             set(_postlink COMMAND ${CMAKE_COMMAND} -E env python3
-                ${REACTOS_SOURCE_DIR}/sdk/tools/fix_lld_forwarding.py ${_out})
+                ${REACTOS_SOURCE_DIR}/sdk/tools/fix_lld_forwarding.py __ACM_OUT__)
         endif()
     elseif(_acm_KIND STREQUAL "efi" OR _acm_KIND STREQUAL "biosloader")
         # Strip rossym + all (matches uefi.cmake's uefildr POST_BUILD, and the
         # old pcat.cmake freeldr_pe POST_BUILD for the BIOS loader).
         set(_postlink
-            COMMAND ${CMAKE_STRIP} --remove-section=.rossym ${_out}
-            COMMAND ${CMAKE_STRIP} --strip-all ${_out})
+            COMMAND ${CMAKE_STRIP} --remove-section=.rossym __ACM_OUT__
+            COMMAND ${CMAKE_STRIP} --strip-all __ACM_OUT__)
     elseif(_acm_KIND STREQUAL "native")
         # No post-link (rosload's cmake POST_BUILD was a no-op).
     else()
@@ -1035,8 +1067,17 @@ function(add_cargo_module _target _crate _output)
         # build-root-relative output spelling, not Cargo's absolute output.
         file(RELATIVE_PATH _dep_target "${CMAKE_BINARY_DIR}" "${_out}")
     endif()
+    # One copy + the kind's post-link per output (the post-link was written against
+    # __ACM_OUT__).
+    set(_per_out)
+    foreach(_b _o IN ZIP_LISTS _bins _outs)
+        string(REPLACE "__ACM_OUT__" "${_o}" _o_postlink "${_postlink}")
+        list(APPEND _per_out
+            COMMAND ${CMAKE_COMMAND} -E copy "${_cargo_target_dir}/${_stem}/release/${_b}.exe" ${_o}
+            ${_o_postlink})
+    endforeach()
     add_custom_command(
-        OUTPUT ${_out}
+        OUTPUT ${_outs}
         # cargo drive of the reactos-link manifest: build.rs links the cmake-built
         # leaf libs / reused objects + self-built rust staticlib into the final PE,
         # then the kind post-link runs. amd64/arm64: stable + builtin triple.
@@ -1045,13 +1086,12 @@ function(add_cargo_module _target _crate _output)
             cargo build --release
                 --target ${_rust_target}
                 ${_build_std}
-                -p ${_crate} --bin ${_bin}
+                -p ${_crate} ${_bin_args}
                 --manifest-path ${_ws}/Cargo.toml
-        COMMAND ${CMAKE_COMMAND} -E copy ${_cargo_exe} ${_out}
+        ${_per_out}
         COMMAND ${CMAKE_COMMAND} -E env python3 "${_retarget_depfile}"
             --source "${_cargo_depfile}" --cargo-output "${_cargo_exe}"
             --target "${_dep_target}" --output "${_out}.d"
-        ${_postlink}
         DEPENDS ${_srcs} ${_postdep} ${_acm_EXTRA_DEPENDS} "${_retarget_depfile}"
         DEPFILE "${_out}.d"
         JOB_POOL vibeos_cargo_links
@@ -1061,34 +1101,20 @@ function(add_cargo_module _target _crate _output)
     if(POLICY CMP0116)
         cmake_policy(POP)
     endif()
-    add_custom_target(${_target} ALL DEPENDS ${_out})
+    add_custom_target(${_target} ALL DEPENDS ${_outs})
 
     if(NOT _acm_NO_CD)
         if(NOT _acm_DESTINATION)
             set(_acm_DESTINATION reactos/system32)
         endif()
-        if(NOT _acm_NAME_ON_CD)
-            set(_acm_NAME_ON_CD ${_output})
-        endif()
         # add_cd_file's FILE form does NOT auto-wire the cd-target dependency
         # (only the TARGET form does), so wire it by hand. boot/ is processed
         # before drivers/, so livecd/bootcd already exist at the call site.
-        add_cd_file(FILE ${_out} DESTINATION ${_acm_DESTINATION}
-            NAME_ON_CD ${_acm_NAME_ON_CD} NO_CAB FOR all)
         foreach(_cd bootcd livecd bootcdregtest)
             if(TARGET ${_cd})
                 add_dependencies(${_cd} ${_target})
             endif()
         endforeach()
-        # ...and INSTALL it. On the bootcd NO_CAB puts the file loose on the CD, which the
-        # setup boot needs, and leaves it out of reactos.cab, which is what setup installs
-        # from: an installed system had no smss, csrss or winlogon at all. Upstream lists such
-        # binaries twice, loose and in the cabinet; so do we. Only the install directories
-        # (the loader is not installed), and only under the built name, which is the name
-        # the cabinet keeps (a renamed output is installed by its txtsetup.sif row instead).
-        # A file txtsetup.sif already installs (its [SourceDisksFiles] rows: the boot
-        # drivers, hal, ntoskrnl, ntdll...) stays out of the cabinet: both copies ran, and the
-        # second could not overwrite the first (16 ACCESS_DENIED copies per install).
         get_property(_acm_txtsetup GLOBAL PROPERTY VIBEOS_TXTSETUP_FILES)
         if(NOT _acm_txtsetup)
             file(STRINGS ${REACTOS_SOURCE_DIR}/boot/bootdata/txtsetup.sif _acm_lines REGEX "^[A-Za-z0-9_.-]+[ \t]*=")
@@ -1100,16 +1126,33 @@ function(add_cargo_module _target _crate _output)
             endforeach()
             set_property(GLOBAL PROPERTY VIBEOS_TXTSETUP_FILES "${_acm_txtsetup}")
         endif()
-        get_filename_component(_acm_out_name ${_out} NAME)
-        string(TOLOWER "${_acm_out_name}" _acm_out_lc)
-        list(FIND _acm_txtsetup "${_acm_out_lc}" _acm_in_txtsetup)
-        if(_acm_NAME_ON_CD STREQUAL _acm_out_name AND _acm_in_txtsetup EQUAL -1
-           AND _acm_DESTINATION MATCHES "^reactos/system32(/drivers)?$")
-            add_cd_file(FILE ${_out} DESTINATION ${_acm_DESTINATION} FOR bootcd)
-            if(TARGET reactos_cab_inf)
-                add_dependencies(reactos_cab_inf ${_target})
+        foreach(_out ${_outs})
+            get_filename_component(_acm_out_name ${_out} NAME)
+            set(_acm_cd_name ${_acm_NAME_ON_CD})
+            if(NOT _acm_cd_name)
+                set(_acm_cd_name ${_acm_out_name})
             endif()
-        endif()
+            add_cd_file(FILE ${_out} DESTINATION ${_acm_DESTINATION}
+                NAME_ON_CD ${_acm_cd_name} NO_CAB FOR all)
+            # ...and INSTALL it. On the bootcd NO_CAB puts the file loose on the CD, which the
+            # setup boot needs, and leaves it out of reactos.cab, which is what setup installs
+            # from: an installed system had no smss, csrss or winlogon at all. Upstream lists such
+            # binaries twice, loose and in the cabinet; so do we. Only the install directories
+            # (the loader is not installed), and only under the built name, which is the name
+            # the cabinet keeps (a renamed output is installed by its txtsetup.sif row instead).
+            # A file txtsetup.sif already installs (its [SourceDisksFiles] rows: the boot
+            # drivers, hal, ntoskrnl, ntdll...) stays out of the cabinet: both copies ran, and the
+            # second could not overwrite the first (16 ACCESS_DENIED copies per install).
+            string(TOLOWER "${_acm_out_name}" _acm_out_lc)
+            list(FIND _acm_txtsetup "${_acm_out_lc}" _acm_in_txtsetup)
+            if(_acm_cd_name STREQUAL _acm_out_name AND _acm_in_txtsetup EQUAL -1
+               AND _acm_DESTINATION MATCHES "^reactos/system32(/drivers)?$")
+                add_cd_file(FILE ${_out} DESTINATION ${_acm_DESTINATION} FOR bootcd)
+                if(TARGET reactos_cab_inf)
+                    add_dependencies(reactos_cab_inf ${_target})
+                endif()
+            endif()
+        endforeach()
     endif()
 endfunction()
 

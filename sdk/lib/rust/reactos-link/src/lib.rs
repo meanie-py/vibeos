@@ -23,6 +23,37 @@
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
+use std::sync::{Arc, Mutex};
+
+/// One link argument for THIS link: `rustc-link-arg`, or `rustc-link-arg-bin=<bin>=`
+/// when the Linker drives one bin of a family package (see `Linker::for_bin`).
+macro_rules! link_arg {
+    ($s:expr, $($fmt:tt)*) => { $s.emit_link_arg(&format!($($fmt)*)) };
+}
+
+/// Work a family build script would otherwise repeat once per bin — the body crate's
+/// nested cargo build, the host spec2def compile, the parsed compile_commands.json —
+/// done once per build-script process. Keyed by everything the result depends on.
+fn memo<V: Clone>(cache: &Mutex<Vec<(String, V)>>, key: String, make: impl FnOnce() -> V) -> V {
+    if let Some((_, v)) = cache.lock().unwrap().iter().find(|(k, _)| *k == key) {
+        return v.clone();
+    }
+    let v = make();
+    cache.lock().unwrap().push((key, v.clone()));
+    v
+}
+static RUST_LIBS: Mutex<Vec<(String, PathBuf)>> = Mutex::new(Vec::new());
+static HOST_TOOLS: Mutex<Vec<(String, PathBuf)>> = Mutex::new(Vec::new());
+type CcdbEntries = Arc<Vec<Vec<(String, String)>>>;
+static CCDBS: Mutex<Vec<(String, CcdbEntries)>> = Mutex::new(Vec::new());
+
+fn ccdb_entries(db_path: &Path) -> CcdbEntries {
+    memo(&CCDBS, db_path.display().to_string(), || {
+        let db_text = std::fs::read_to_string(db_path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", db_path.display()));
+        Arc::new(parse_ccdb(&db_text))
+    })
+}
 
 pub mod native_deps;
 pub mod cargo_deps;
@@ -553,6 +584,10 @@ pub struct Linker {
     /// loads at once and LdrpLoadDll recursion overflows the default 1MB stack.
     stack_reserve: Option<u64>,
     ks_includes: native_deps::InvocationOutput,
+    /// Raw link arguments appended after the kind's own (see `link_args`).
+    extra_link_args: Vec<String>,
+    /// The bin this link builds, when the package has several (see `for_bin`).
+    bin: Option<String>,
 }
 
 impl Linker {
@@ -618,6 +653,8 @@ impl Linker {
             allow_stdcall_fixup: false,
             stack_reserve: None,
             ks_includes: Default::default(),
+            extra_link_args: Vec::new(),
+            bin: None,
         }
     }
 
@@ -628,6 +665,42 @@ impl Linker {
     /// extern "C"-def / extern "system"-call ABI mismatches (a pre-existing
     /// translation-quality issue). Reproduces cmake's link exactly. Do NOT use
     /// to hide a fresh ABI bug — fix the source instead.
+    /// Link only bin `name` of a package that has several. A FAMILY cell (the 95
+    /// keyboard layouts) is one package with a `[[bin]]` per module: its build.rs
+    /// makes one Linker per bin, and every argument is emitted as
+    /// `rustc-link-arg-bin=<name>=…`, so each PE gets exactly its own link line while
+    /// the shared body crate is built once. Intermediate files go in a per-bin dir.
+    pub fn for_bin(mut self, name: &str) -> Self {
+        self.bin = Some(name.to_string());
+        self
+    }
+
+    /// Raw link arguments, emitted after the kind's own flags, for what the cmake
+    /// link passes that no ModuleKind models (the keyboard layouts' `/MERGE`s into
+    /// one `.data` section).
+    pub fn link_args(mut self, args: &[&str]) -> Self {
+        self.extra_link_args.extend(args.iter().map(|a| a.to_string()));
+        self
+    }
+
+    fn emit_link_arg(&self, arg: &str) {
+        match &self.bin {
+            Some(b) => println!("cargo:rustc-link-arg-bin={b}={arg}"),
+            None => println!("cargo:rustc-link-arg={arg}"),
+        }
+    }
+
+    fn emit_objs(&self, build: &cc::Build, source: &Path) {
+        trace_cc(build, source);
+        let objs = native_deps::compile(build, source);
+        if objs.is_empty() {
+            panic!("cc-rs produced no objects for {}", source.display());
+        }
+        for obj in objs {
+            link_arg!(self, "{}", obj.display());
+        }
+    }
+
     pub fn allow_stdcall_fixup(mut self) -> Self {
         self.allow_stdcall_fixup = true;
         self
@@ -1144,7 +1217,7 @@ impl Linker {
             for f in &self.c_shim_flags {
                 b.flag(f);
             }
-            emit_objs(&b, &abs);
+            self.emit_objs(&b, &abs);
             println!("cargo:rerun-if-changed={}", abs.display());
         }
 
@@ -1186,7 +1259,7 @@ impl Linker {
             // is not expressible via the repo-relative asm_include_dirs above).
             self.add_kernel_asm_includes(&mut b);
             b.flag("-x").flag("assembler-with-cpp");
-            emit_objs(&b, &abs);
+            self.emit_objs(&b, &abs);
             println!("cargo:rerun-if-changed={}", abs.display());
         }
 
@@ -1199,9 +1272,7 @@ impl Linker {
             let dst = self.obj_dir().join("module.rc.res");
             if !cmake_off_forced() && db_path.exists() {
                 // cmake build present: replay cmake's flag-exact windres.
-                let db_text = std::fs::read_to_string(&db_path)
-                    .unwrap_or_else(|e| panic!("read {}: {e}", db_path.display()));
-                let entries = parse_ccdb(&db_text);
+                let entries = ccdb_entries(&db_path);
                 let abs = self.repo_root.join(rc_rel);
                 let marker = format!("CMakeFiles/{res_target}.dir");
                 let (dir, cmd) = lookup_cc(&entries, &abs, &marker).unwrap_or_else(|| {
@@ -1252,7 +1323,7 @@ impl Linker {
                     .unwrap_or_else(|e| panic!("stage committed .res {}: {e}", committed.display()));
                 println!("cargo:rerun-if-changed={}", committed.display());
             }
-            println!("cargo:rustc-link-arg={}", dst.display());
+            link_arg!(self, "{}", dst.display());
         }
 
         // ---- Resource (.res) — checked-in or cmake-built -------------
@@ -1271,14 +1342,14 @@ impl Linker {
             }
             let dst = self.obj_dir().join("module.rc.res");
             std::fs::copy(&src, &dst).unwrap_or_else(|e| panic!("stage .res: {e}"));
-            println!("cargo:rustc-link-arg={}", dst.display());
+            link_arg!(self, "{}", dst.display());
             println!("cargo:rerun-if-changed={}", src.display());
         }
 
         // ---- spec2def → .def (+ optional -stub bodies) ---------------
         if let Some((spec_rel, dll_name)) = &self.spec {
             let (def, stubs) = self.generate_def(spec_rel, dll_name);
-            println!("cargo:rustc-link-arg={}", def.display());
+            link_arg!(self, "{}", def.display());
             println!(
                 "cargo:rerun-if-changed={}",
                 self.repo_root.join(spec_rel).display()
@@ -1304,7 +1375,7 @@ impl Linker {
                     .out_dir(self.obj_dir())
                     .include(self.repo_root.join("sdk/include/reactos"))
                     .flag("-std=gnu2x");
-                emit_objs(&b, &stubs);
+                self.emit_objs(&b, &stubs);
             }
         }
 
@@ -1320,13 +1391,13 @@ impl Linker {
         // by command-line order, so C-first selects the vetted i386-asm variant
         // cmake ships; Rust-first selected not-yet-fully-vetted Rust twins and
         // bugchecked at boot. See feedback_cargo_drive_usermode_target.md.
-        println!("cargo:rustc-link-arg=-Wl,--start-group");
+        link_arg!(self, "-Wl,--start-group");
         for lib in &self.static_libs {
             let full = self.build_dir.join(lib);
             if !full.exists() {
                 panic!("missing static lib: {} — run ninja first", full.display());
             }
-            println!("cargo:rustc-link-arg={}", full.display());
+            link_arg!(self, "{}", full.display());
             // rerun-if-changed on each input .a: a rustc-link-arg is NOT a
             // tracked input, so without this cargo silently reuses a stale
             // binary when an input archive changes (e.g. a rebuilt
@@ -1419,7 +1490,7 @@ impl Linker {
                 if !status.success() {
                     panic!("ar failed for c_from_compile_db {name}");
                 }
-                println!("cargo:rustc-link-arg={}", lib_a.display());
+                link_arg!(self, "{}", lib_a.display());
             }
             } // end else (cmake build configured → compile_commands.json replay)
         }
@@ -1468,14 +1539,14 @@ impl Linker {
             if !status.success() {
                 panic!("ar failed for asm_archive {name}");
             }
-            println!("cargo:rustc-link-arg={}", lib_a.display());
+            link_arg!(self, "{}", lib_a.display());
         }
         if let Some(a) = &rust_a {
-            println!("cargo:rustc-link-arg={}", a.display());
+            link_arg!(self, "{}", a.display());
             println!("cargo:rerun-if-changed={}", a.display());
         }
         for a in &sibling_rust_a {
-            println!("cargo:rustc-link-arg={}", a.display());
+            link_arg!(self, "{}", a.display());
             println!("cargo:rerun-if-changed={}", a.display());
         }
         for lib in &self.late_static_libs {
@@ -1483,12 +1554,12 @@ impl Linker {
             if !full.exists() {
                 panic!("missing static lib: {} — run ninja first", full.display());
             }
-            println!("cargo:rustc-link-arg={}", full.display());
+            link_arg!(self, "{}", full.display());
             println!("cargo:rerun-if-changed={}", full.display());
         }
         for (spec_rel, dll_name, basename) in &self.import_libs {
             let a = self.generate_import_lib(spec_rel, dll_name, basename);
-            println!("cargo:rustc-link-arg={}", a.display());
+            link_arg!(self, "{}", a.display());
             println!(
                 "cargo:rerun-if-changed={}",
                 self.repo_root.join(spec_rel).display()
@@ -1521,16 +1592,16 @@ impl Linker {
                     memcmp_a.display()
                 );
             }
-            println!("cargo:rustc-link-arg={}", memcmp_a.display());
+            link_arg!(self, "{}", memcmp_a.display());
             println!("cargo:rerun-if-changed={}", memcmp_a.display());
         }
-        println!("cargo:rustc-link-arg=-Wl,--end-group");
+        link_arg!(self, "-Wl,--end-group");
 
         let clang_rt = llvm_mingw.join(format!(
             "lib/clang/19/lib/windows/libclang_rt.builtins-{}.a",
             self.arch.clang_rt
         ));
-        println!("cargo:rustc-link-arg={}", clang_rt.display());
+        link_arg!(self, "{}", clang_rt.display());
 
         // ---- BUILTIN-TARGET CRT NEUTRALISATION (stable-toolchain Axis B) ----
         // On a builtin triple the target spec carries the user-mode mingw CRT
@@ -1601,7 +1672,7 @@ impl Linker {
             // builds. Verify with `vibeos-cli repro report <pe>` (→ 0).
             "-Wl,--no-insert-timestamp",
         ] {
-            println!("cargo:rustc-link-arg={f}");
+            link_arg!(self, "{f}");
         }
         // Ship/disk strip (release-strip opt-out for `[profile.release] debug=1`):
         // debug=1 (arm64 line-table symbolication) embeds DWARF in every linked PE
@@ -1615,7 +1686,7 @@ impl Linker {
         // (without it cargo wouldn't rerun this build script → silent no-op strip).
         println!("cargo:rerun-if-env-changed=VIBEOS_STRIP_RELEASE");
         if env::var_os("VIBEOS_STRIP_RELEASE").is_some() {
-            println!("cargo:rustc-link-arg=-Wl,--strip-debug");
+            link_arg!(self, "-Wl,--strip-debug");
         }
         // Layout ground truth (captures(none)/layout-tip debugging): env-gated
         // lld map file — records every archive member pulled and which twin of
@@ -1624,8 +1695,9 @@ impl Linker {
         // (tools/scan_captures.py is the compile-time half of the same audit).
         println!("cargo:rerun-if-env-changed=VIBEOS_LINK_MAP");
         if env::var("VIBEOS_LINK_MAP").as_deref() == Ok("1") {
-            println!(
-                "cargo:rustc-link-arg=-Wl,-Map,{}",
+            link_arg!(
+                self,
+                "-Wl,-Map,{}",
                 self.build_dir
                     .join(format!("{}.map", self.pkg_name))
                     .display()
@@ -1640,28 +1712,28 @@ impl Linker {
         // behavior (which passes neither flag → lld default = fixup-with-warning)
         // so the cargo link is byte-equivalent to the working cmake one.
         if !self.allow_stdcall_fixup {
-            println!("cargo:rustc-link-arg=-Wl,--disable-stdcall-fixup");
+            link_arg!(self, "-Wl,--disable-stdcall-fixup");
         }
         // Custom stack reserve (default 1MB otherwise) — e.g. arm64 csrss.exe's
         // deep LdrpLoadDll chain.
         if let Some(bytes) = self.stack_reserve {
-            println!("cargo:rustc-link-arg=-Wl,--stack,{bytes}");
+            link_arg!(self, "-Wl,--stack,{bytes}");
         }
         // ---- kind-specific subsystem / alignment / sections ----------
         let (entry, image_base): (&String, Option<u64>) = match &kind {
             ModuleKind::KernelExe { entry, image_base } => {
                 // native subsystem; GC unreferenced sections (main.rs anchors
                 // the entry to hold the root); no -shared.
-                println!("cargo:rustc-link-arg=-Wl,--subsystem,native:5.01");
-                println!("cargo:rustc-link-arg=-Wl,--exclude-all-symbols,-file-alignment=0x1000,-section-alignment=0x1000");
-                println!("cargo:rustc-link-arg=-Wl,--gc-sections");
+                link_arg!(self, "-Wl,--subsystem,native:5.01");
+                link_arg!(self, "-Wl,--exclude-all-symbols,-file-alignment=0x1000,-section-alignment=0x1000");
+                link_arg!(self, "-Wl,--gc-sections");
                 (entry, Some(*image_base))
             }
             ModuleKind::KernelDll { entry, image_base } => {
                 // native subsystem PE DLL; keep all sections, 0x1000 align.
-                println!("cargo:rustc-link-arg=-Wl,--subsystem,native:5.01");
-                println!("cargo:rustc-link-arg=-Wl,--exclude-all-symbols,-file-alignment=0x1000,-section-alignment=0x1000");
-                println!("cargo:rustc-link-arg=-shared");
+                link_arg!(self, "-Wl,--subsystem,native:5.01");
+                link_arg!(self, "-Wl,--exclude-all-symbols,-file-alignment=0x1000,-section-alignment=0x1000");
+                link_arg!(self, "-shared");
                 (entry, Some(*image_base))
             }
             ModuleKind::Win32Dll {
@@ -1675,9 +1747,9 @@ impl Linker {
                 // ntdll.dll (console:5.01) and lld-default (GUI 6.0) for
                 // ntdll_vista.dll, which passes no --subsystem.
                 if let Some(s) = subsystem {
-                    println!("cargo:rustc-link-arg=-Wl,--subsystem,{s}");
+                    link_arg!(self, "-Wl,--subsystem,{s}");
                 }
-                println!("cargo:rustc-link-arg=-shared");
+                link_arg!(self, "-shared");
                 // KEEP ALL SECTIONS — match cmake's user-mode DLL link, which
                 // does NOT gc-sections ntdll. rustc adds `--gc-sections` by
                 // default for bin targets; without this override it strips
@@ -1686,7 +1758,7 @@ impl Linker {
                 // BUGCHECK 0x6A in smss init. i386/amd64 tolerated the strip;
                 // arm64 did not. --no-gc-sections must come AFTER rustc's own
                 // --gc-sections so it wins (last flag wins in lld).
-                println!("cargo:rustc-link-arg=-Wl,--no-gc-sections");
+                link_arg!(self, "-Wl,--no-gc-sections");
                 (entry, *image_base)
             }
             ModuleKind::EfiApplication {
@@ -1704,12 +1776,13 @@ impl Linker {
                 // wins) and --enable-auto-image-base. cmake's uefildr omits
                 // the --major-*-version flags the common block adds, but those
                 // are harmless for an EFI app the firmware loads by FAT path.
-                println!("cargo:rustc-link-arg=-Wl,--subsystem,efi_application:5.01");
-                println!(
-                    "cargo:rustc-link-arg=-Wl,--exclude-all-symbols,--file-alignment,0x{a:x},--section-alignment,0x{a:x}",
+                link_arg!(self, "-Wl,--subsystem,efi_application:5.01");
+                link_arg!(
+                    self,
+                    "-Wl,--exclude-all-symbols,--file-alignment,0x{a:x},--section-alignment,0x{a:x}",
                     a = alignment
                 );
-                println!("cargo:rustc-link-arg=-Wl,--gc-sections");
+                link_arg!(self, "-Wl,--gc-sections");
                 // Strip DWARF from uefildr unconditionally. With `[profile.release]
                 // debug=1` the cargo bin embeds line tables, but the loader is
                 // symbolicated via offset math in qemu/sym.sh (not in-image DWARF),
@@ -1718,7 +1791,7 @@ impl Linker {
                 // a DWARF-fat EFI as "Unsupported" was disproven — that line is
                 // firmware noise; the real arm64 break was a corrupted efivars.fd.
                 // So this is leanness, not a boot requirement.) No-op at debug=0.
-                println!("cargo:rustc-link-arg=-Wl,--strip-debug");
+                link_arg!(self, "-Wl,--strip-debug");
                 (entry, *image_base)
             }
             ModuleKind::NativeExe { entry, image_base } => {
@@ -1727,21 +1800,21 @@ impl Linker {
                 // no -shared, DEFAULT PE alignment (cmake passes no
                 // --file/-section-alignment → lld default file 0x200/section
                 // 0x1000). exports flow from .spec2def()'s rosload.def.
-                println!("cargo:rustc-link-arg=-Wl,--subsystem,native:5.01");
-                println!("cargo:rustc-link-arg=-Wl,--gc-sections");
+                link_arg!(self, "-Wl,--subsystem,native:5.01");
+                link_arg!(self, "-Wl,--gc-sections");
                 // Strip DWARF unconditionally (same as EfiApplication above: rosload
                 // is symbolicated via offset math, not in-image debug info, so debug=1
                 // line tables are dead weight here). No-op at debug=0.
-                println!("cargo:rustc-link-arg=-Wl,--strip-debug");
+                link_arg!(self, "-Wl,--strip-debug");
                 (entry, Some(*image_base))
             }
             ModuleKind::BiosLoader { entry, image_base } => {
-                println!("cargo:rustc-link-arg=-Wl,--subsystem,native:5.01");
-                println!("cargo:rustc-link-arg=-Wl,--file-alignment,0x200,--section-alignment,0x200");
-                println!("cargo:rustc-link-arg=-Wl,--gc-sections");
+                link_arg!(self, "-Wl,--subsystem,native:5.01");
+                link_arg!(self, "-Wl,--file-alignment,0x200,--section-alignment,0x200");
+                link_arg!(self, "-Wl,--gc-sections");
                 // Same as EfiApplication/NativeExe: symbolicated by offset math,
                 // not in-image DWARF. The cmake link also ran `strip --strip-all`.
-                println!("cargo:rustc-link-arg=-Wl,--strip-debug");
+                link_arg!(self, "-Wl,--strip-debug");
                 (entry, Some(*image_base))
             }
             ModuleKind::Win32Exe { entry, subsystem } => {
@@ -1750,21 +1823,24 @@ impl Linker {
                 // --exclude-all-symbols (nothing exported), no explicit
                 // --image-base (common --enable-auto-image-base resolves it,
                 // matching cmake). Entry = the CRT startup in libmsvcrtex.a.
-                println!("cargo:rustc-link-arg=-Wl,--subsystem,{subsystem}");
-                println!("cargo:rustc-link-arg=-Wl,--gc-sections");
+                link_arg!(self, "-Wl,--subsystem,{subsystem}");
+                link_arg!(self, "-Wl,--gc-sections");
                 (entry, None)
             }
         };
         // Force-undefined pulls (-u SYM) — keep GC'd-but-needed archive members.
         for sym in &self.force_undefined {
-            println!("cargo:rustc-link-arg=-Wl,-u,{sym}");
+            link_arg!(self, "-Wl,-u,{sym}");
         }
-        println!("cargo:rustc-link-arg=-Wl,-e,{entry}");
+        for a in &self.extra_link_args {
+            link_arg!(self, "{a}");
+        }
+        link_arg!(self, "-Wl,-e,{entry}");
         // Emit an explicit base only when the module pins one; otherwise the
         // common --enable-auto-image-base resolves it (matches cmake's arm64
         // uefildr, which passes no --image-base).
         if let Some(b) = image_base {
-            println!("cargo:rustc-link-arg=-Wl,--image-base,0x{:08x}", b);
+            link_arg!(self, "-Wl,--image-base,0x{:08x}", b);
         }
     }
 
@@ -1786,6 +1862,21 @@ impl Linker {
     /// crates and emit duplicate symbols with different code that
     /// `--allow-multiple-definition` resolves first-match to the wrong variant.
     fn build_rust_crate(
+        &self,
+        crate_name: &str,
+        features: &[&str],
+        default_features: bool,
+        target_stem: &str,
+        kernel: bool,
+        rustflags: Option<&str>,
+    ) -> PathBuf {
+        let key = format!("{crate_name}|{features:?}|{default_features}|{target_stem}|{kernel}|{rustflags:?}");
+        memo(&RUST_LIBS, key, || {
+            self.build_rust_crate_once(crate_name, features, default_features, target_stem, kernel, rustflags)
+        })
+    }
+
+    fn build_rust_crate_once(
         &self,
         crate_name: &str,
         features: &[&str],
@@ -2060,7 +2151,10 @@ impl Linker {
     }
 
     fn obj_dir(&self) -> PathBuf {
-        let d = PathBuf::from(env::var("OUT_DIR").unwrap()).join("objs");
+        let d = PathBuf::from(env::var("OUT_DIR").unwrap()).join(match &self.bin {
+            Some(b) => format!("objs-{b}"),
+            None => "objs".to_string(),
+        });
         std::fs::create_dir_all(&d).expect("mkdir OUT_DIR/objs");
         d
     }
@@ -2070,7 +2164,10 @@ impl Linker {
     /// `stubs` only when `spec_stubs()` opted in.
     fn generate_def(&self, spec_rel: &str, dll_name: &str) -> (PathBuf, PathBuf) {
         let spec2def = self.compile_host_tool("sdk/tools/spec2def/spec2def.c", "spec2def");
-        let out = PathBuf::from(env::var("OUT_DIR").unwrap()).join("spec-gen");
+        let out = PathBuf::from(env::var("OUT_DIR").unwrap()).join(match &self.bin {
+            Some(b) => format!("spec-gen-{b}"),
+            None => "spec-gen".to_string(),
+        });
         std::fs::create_dir_all(&out).expect("mkdir spec-gen");
         let spec = self.repo_root.join(spec_rel);
         if !spec.exists() {
@@ -2309,7 +2406,7 @@ impl Linker {
             if !status.success() {
                 panic!("ar failed for c_from_compile_db {name}");
             }
-            println!("cargo:rustc-link-arg={}", lib_a.display());
+            link_arg!(self, "{}", lib_a.display());
         }
     }
 
@@ -2382,6 +2479,10 @@ impl Linker {
 
     /// Compile a single-.c host tool with the host cc, return its path.
     fn compile_host_tool(&self, src_rel: &str, name: &str) -> PathBuf {
+        memo(&HOST_TOOLS, format!("{src_rel}|{name}"), || self.compile_host_tool_once(src_rel, name))
+    }
+
+    fn compile_host_tool_once(&self, src_rel: &str, name: &str) -> PathBuf {
         let host = env::var("HOST").expect("HOST");
         let out = PathBuf::from(env::var("OUT_DIR").unwrap()).join("host-tools");
         std::fs::create_dir_all(&out).expect("mkdir host-tools");
@@ -2449,16 +2550,6 @@ fn apply_base(build: &mut cc::Build, clang: &Path, set: AsmDefineSet, arch: &Arc
     }
 }
 
-fn emit_objs(build: &cc::Build, source: &Path) {
-    trace_cc(build, source);
-    let objs = native_deps::compile(build, source);
-    if objs.is_empty() {
-        panic!("cc-rs produced no objects for {}", source.display());
-    }
-    for obj in objs {
-        println!("cargo:rustc-link-arg={}", obj.display());
-    }
-}
 
 // ---- geninc self-host (ks*.inc / ksarm64.h from genincdata's .asmdef) -----
 // The kernel asm offset constants (`ks386.inc`/`ksamd64.inc`/`ksarm64.h`) are

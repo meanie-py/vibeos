@@ -127,9 +127,30 @@ extends it from the boot spine to every fully-Rust module.
    - **Not this generator's job**: 34 refusals are kernel drivers and kernel static
      libraries (the USB stack, file systems, storport, ks, …) that build their Rust
      with their own custom command; they are the driver rung (`KernelDll` and
-     driver kinds). The 95 keyboard layouts are one `foreach` over a shared
-     `kbdlayouts-rust` body: a family cell, not 95 generated ones, is the open
-     design question.
+     driver kinds).
+   - **The 95 keyboard layouts: one FAMILY cell, 2026-10-13.** They were one
+     `foreach` over a shared `kbdlayouts-rust` body, so instead of 95 generated
+     cells, `sdk/lib/rust/kbdlayouts-cargo` is one package with a `[[bin]]` per
+     layout, all over the same empty `main.rs`. What it took:
+     - **`Linker::for_bin(name)`** in reactos-link: every argument goes out as
+       `rustc-link-arg-bin=<name>=…`, and intermediates (`.res`, `.def`, objects) go
+       in per-bin dirs, so one build.rs makes 95 separate link lines. The body's
+       nested cargo build, the host spec2def and the parsed `compile_commands.json`
+       are memoized per build-script process, so the body compiles once.
+     - **`add_cargo_module(... BINS <names>)`**: one `cargo build --bins`, then a copy
+       and the kind's post-link and a cd entry per output. Configure fails if BINS
+       and the crate's `[[bin]]` list differ: a layout missing from either would
+       silently not ship. The 95 `.rc`s compile in one OBJECT library,
+       `kbdlayouts_res`.
+     - **`link_args()`** for what no ModuleKind models: cmake's `/MERGE`s of every
+       section into one executable `.data`. A layout imports nothing (win32k reads
+       it in kernel context), so the bin's panic handler is a `__fastfail` trap. It
+       is a rooted lang item, linked even from an rlib nothing references, so its
+       amd64/arm64 unwind entry needs one merge cmake's list lacks, `.pdata`.
+     - Result: `--check` EQUIVALENT on all 285 module/arch pairs with nothing
+       accepted. Each DLL is the same size or one or two 512-byte file-alignment
+       blocks larger (the handler's few bytes). Cargo links all 95 in about a
+       minute per arch.
    - **The user-mode refusals left** (`--survey`, after wave 3): delay imports (9);
      RPC stub C that widl generates into the build dir, `srvsvc_s.c` and kin (8,
      the services); a `SOURCE` list another target builds (6); the i386 body's
