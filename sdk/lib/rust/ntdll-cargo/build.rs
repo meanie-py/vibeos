@@ -22,7 +22,7 @@ fn main() {
     // lld __ImageBase symbol (i386 decorates it ___ImageBase).
     let (target_json, res, image_base, entry): (&str, &str, u64, &str) = match arch.as_str() {
         "x86" => (
-            "i686-kernel.json",
+            "i686-pc-windows-gnu",
             "ntdll-i386.rc.res",
             // Moved up from 0x7c92_0000 to widen kernel32's preferred slot: the
             // kernel32-rust cohab grows kernel32.dll past its old 0x440000 slot

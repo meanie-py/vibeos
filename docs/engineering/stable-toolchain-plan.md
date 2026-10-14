@@ -156,7 +156,8 @@ and the 80 amd64/arm64 target JSONs are **gone**; only i386 keeps a custom json 
 
 ### What shipped
 - `gcc.cmake:add_cargo_module` selects per ARCH: i386 → `i686-kernel.json` + nightly +
-  `-Z build-std`; amd64 → `x86_64-pc-windows-gnu`; arm64 → `aarch64-pc-windows-gnullvm`.
+  `-Z build-std` (since 2026-10-14 for the kernel kinds only; i386 user-mode cells take
+  `i686-pc-windows-gnu` on stable); amd64 → `x86_64-pc-windows-gnu`; arm64 → `aarch64-pc-windows-gnullvm`.
   The engine hook already existed (`kernel_build_std = kernel && target.is_json()`), so a
   builtin target auto-drops build-std for the inner body build too.
 - **80 target JSONs deleted** (42 `x86_64-kernel.json` + 38 `aarch64-kernel.json`). The drift
@@ -228,8 +229,8 @@ Retired by the wow64 lane, not fixed here.
 - reactos-link engine: `sdk/lib/rust/reactos-link/src/lib.rs` (`rust_user_target`,
   `is_json`/`kernel_build_std` gate, `Linker::new`, `ModuleKind`).
 - Outer drive: `sdk/cmake/gcc.cmake` (`add_cargo_module`).
-- Target spec: `sdk/lib/rust/*-cargo/i686-kernel.json` (42 — the ONLY ones left; the 80
-  amd64/arm64 jsons were deleted on land).
+- Target spec: `sdk/lib/rust/*-cargo/i686-kernel.json`, kernel-kind cells only (the 80
+  amd64/arm64 jsons were deleted on land; the i386 user-mode cells' on 2026-10-14).
 - Cargo policy (keep the 4 copies in sync): `sdk/cmake/gcc.cmake:add_cargo_module` (production),
   `tests/qemu/cli/lints.py`, `tools/cargo_orchestrate.py`, `sdk/lib/rust/cargo-cell-args.sh`.
 - Self-recursion detector: `tools/scan_self_recursive.py` + `tools/lint-baseline/scan_self_recursive.txt`.

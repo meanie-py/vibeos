@@ -8,7 +8,7 @@ use std::env;
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
     let (target_json, entry, image_base) = match arch.as_str() {
-        "x86" => ("i686-kernel.json", "_InitializeFmIfs@12", Some(0x750c0000u64)),
+        "x86" => ("i686-pc-windows-gnu", "_InitializeFmIfs@12", Some(0x750c0000u64)),
         "x86_64" => ("x86_64-pc-windows-gnu", "InitializeFmIfs", Some(0x7ff22000000u64)),
         "aarch64" => ("aarch64-pc-windows-gnullvm", "InitializeFmIfs", Some(0x7ff22000000u64)),
         o => panic!("fmifs-cargo: unsupported arch {o}"),

@@ -8,7 +8,7 @@ use std::env;
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
     let (target_json, entry) = match arch.as_str() {
-        "x86" => ("i686-kernel.json", "_mainCRTStartup"),
+        "x86" => ("i686-pc-windows-gnu", "_mainCRTStartup"),
         "x86_64" => ("x86_64-pc-windows-gnu", "mainCRTStartup"),
         "aarch64" => ("aarch64-pc-windows-gnullvm", "mainCRTStartup"),
         o => panic!("whois-cargo: unsupported arch {o}"),

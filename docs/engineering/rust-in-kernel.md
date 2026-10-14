@@ -193,10 +193,14 @@ fix) [ntoskrnl/ntkrnlmp]; **kernelmodedriver** = `native-pefixup
 §"Cargo target model"): **amd64** → `x86_64-pc-windows-gnu`, **arm64** →
 `aarch64-pc-windows-gnullvm` — the BUILTIN triples on pinned **stable**, precompiled std,
 **no `-Z build-std`**, plus `RUSTFLAGS=-C force-frame-pointers=yes` (and amd64-only
-`-C link-self-contained=no`). **i386** → `<crate>/i686-kernel.json` + pinned nightly +
+`-C link-self-contained=no`). **i386 user-mode kinds** (win32dll / win32exe) →
+`i686-pc-windows-gnu` on stable the same way, plus `-C target-feature=-sse,-sse2`
+(reactos-link stubs rsbegin.o's EH-frame registration and clears large-address-aware).
+**i386 kernel kinds** → `<crate>/i686-kernel.json` + pinned nightly +
 `-Z build-std=core,alloc,compiler_builtins -Z build-std-features=compiler-builtins-mem`;
-it is the last build-std cell (needs `rustc-abi: x86-softfloat`) and retires with wow64.
-The `<stem>` (cargo's `target/<stem>/` subdir) is the target triple, or `i686-kernel` on i386.
+they are the last build-std cells (need `rustc-abi: x86-softfloat`) and retire with wow64.
+The `<stem>` (cargo's `target/<stem>/` subdir) is the target triple, or `i686-kernel` for
+an i386 kernel kind.
 
 win32k.sys (the largest module after ntoskrnl) is the kernelmodedriver
 template: `ModuleKind::KernelDll` already equals the kernelmodedriver link-flag
