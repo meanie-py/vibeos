@@ -245,6 +245,11 @@ NTSTATUS WINAPI NtQueryInformationThread(HANDLE Thread, ULONG Class, PVOID Info,
                                          ULONG Length, PULONG ReturnLength);
 NTSTATUS WINAPI NtRemoveIoCompletion(HANDLE Port, PVOID *Key, PVOID *Context,
                                      PVOID Iosb, PLARGE_INTEGER Timeout);
+NTSTATUS WINAPI NtRemoveIoCompletionEx(HANDLE Port, PVOID Info, ULONG Count,
+                                       PULONG Removed, PLARGE_INTEGER Timeout,
+                                       BOOLEAN Alertable);
+NTSTATUS WINAPI NtCancelIoFileEx(HANDLE File, PVOID Request, PVOID Iosb);
+NTSTATUS WINAPI NtCancelSynchronousIoFile(HANDLE Thread, PVOID Request, PVOID Iosb);
 INT WINAPI NtUserEnumDisplayMonitors(HANDLE hDC, PVOID pRect,
                                      PVOID hMonitorList, PVOID monitorRectList,
                                      ULONG listSize);
@@ -4419,6 +4424,33 @@ static NTSTATUS Wow64Manual_NtCancelIoFile(ULONG *a)
     return St;
 }
 
+/* NtCancelIoFileEx / NtCancelSynchronousIoFile: the out IOSB narrows like
+ * NtCancelIoFile's. The request to cancel is matched against the IRP's UserIosb by
+ * VALUE and never dereferenced, so the guest pointer passes as-is. (A guest's own
+ * overlapped I/O is refused (Wow64pRefuseAsync), so only synchronous requests carry a
+ * guest IOSB the kernel could match.) */
+static NTSTATUS Wow64Manual_NtCancelIoFileEx(ULONG *a)
+{
+    HANDLE File = (HANDLE)(LONG_PTR)(LONG)a[0];
+    WOW64_IO_STATUS_BLOCK64_M Iosb64 = {0};
+    NTSTATUS St = NtCancelIoFileEx(File, (PVOID)(ULONG_PTR)a[1], &Iosb64);
+    if (St < 0)
+        Iosb64.Status = (ULONG)St;
+    Wow64pCopyIosbDown(&Iosb64, a[2]);
+    return St;
+}
+
+static NTSTATUS Wow64Manual_NtCancelSynchronousIoFile(ULONG *a)
+{
+    HANDLE Thread = (HANDLE)(LONG_PTR)(LONG)a[0];
+    WOW64_IO_STATUS_BLOCK64_M Iosb64 = {0};
+    NTSTATUS St = NtCancelSynchronousIoFile(Thread, (PVOID)(ULONG_PTR)a[1], &Iosb64);
+    if (St < 0)
+        Iosb64.Status = (ULONG)St;
+    Wow64pCopyIosbDown(&Iosb64, a[2]);
+    return St;
+}
+
 static NTSTATUS Wow64Manual_NtLockFile(ULONG *a)
 {
     HANDLE File = (HANDLE)(LONG_PTR)(LONG)a[0];
@@ -6217,6 +6249,52 @@ static NTSTATUS Wow64Manual_NtRemoveIoCompletion(ULONG *a)
     return St;
 }
 
+/* ---- NtRemoveIoCompletionEx (batched IOCP dequeue) ------------------------
+ * FILE_IO_COMPLETION_INFORMATION is {Key, Apc, IO_STATUS_BLOCK}: 16 bytes for the
+ * guest, 32 for the host. Dequeue into a host array (at most 64 per call: a caller
+ * asking for more gets that many, which the API allows) and narrow each entry. */
+typedef struct _WOW64_FILE_IO_COMPLETION_INFORMATION32_M {
+    ULONG KeyContext;
+    ULONG ApcContext;
+    WOW64_IO_STATUS_BLOCK32_M IoStatusBlock;
+} WOW64_FILE_IO_COMPLETION_INFORMATION32_M;
+
+typedef struct _WOW64_FILE_IO_COMPLETION_INFORMATION64_M {
+    ULONGLONG KeyContext;
+    ULONGLONG ApcContext;
+    WOW64_IO_STATUS_BLOCK64_M IoStatusBlock;
+} WOW64_FILE_IO_COMPLETION_INFORMATION64_M;
+
+static NTSTATUS Wow64Manual_NtRemoveIoCompletionEx(ULONG *a)
+{
+    HANDLE Port = (HANDLE)(LONG_PTR)(LONG)a[0];
+    WOW64_FILE_IO_COMPLETION_INFORMATION32_M *Info32 =
+        (WOW64_FILE_IO_COMPLETION_INFORMATION32_M *)(ULONG_PTR)a[1];
+    ULONG Count = a[2];
+    ULONG *Removed32 = (ULONG *)(ULONG_PTR)a[3];
+    WOW64_FILE_IO_COMPLETION_INFORMATION64_M Info64[64];
+    ULONG Removed = 0, i;
+    NTSTATUS St;
+
+    if (Count > 64)
+        Count = 64;
+    /* Timeout is a LARGE_INTEGER* -- width-identical, guest pointer passes. */
+    St = NtRemoveIoCompletionEx(Port, Info64, Count, &Removed,
+                                (PLARGE_INTEGER)(ULONG_PTR)a[4], (BOOLEAN)a[5]);
+    if (St == 0)
+    {
+        for (i = 0; i < Removed; i++)
+        {
+            Info32[i].KeyContext = (ULONG)Info64[i].KeyContext;
+            Info32[i].ApcContext = (ULONG)Info64[i].ApcContext;
+            Info32[i].IoStatusBlock.Status = (ULONG)Info64[i].IoStatusBlock.Status;
+            Info32[i].IoStatusBlock.Information = (ULONG)Info64[i].IoStatusBlock.Information;
+        }
+        if (Removed32) *Removed32 = Removed;
+    }
+    return St;
+}
+
 /* ---- M18: NtUserEnumDisplayMonitors (count-aware HMONITOR out-array) -----
  * The ROS syscall is FIVE args (the MSDN-shaped 4-arg prototype above it in
  * ntuser.h is commented out — a trap marshal32.exe caught):
@@ -7591,6 +7669,12 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64Manual_NtQueryInformationThread(Arguments);
     if (WOW64_IS("NtRemoveIoCompletion"))
         return Wow64Manual_NtRemoveIoCompletion(Arguments);
+    if (WOW64_IS("NtRemoveIoCompletionEx"))
+        return Wow64Manual_NtRemoveIoCompletionEx(Arguments);
+    if (WOW64_IS("NtCancelIoFileEx"))
+        return Wow64Manual_NtCancelIoFileEx(Arguments);
+    if (WOW64_IS("NtCancelSynchronousIoFile"))
+        return Wow64Manual_NtCancelSynchronousIoFile(Arguments);
     if (WOW64_IS("NtUserEnumDisplayMonitors"))
         return Wow64Manual_NtUserEnumDisplayMonitors(Arguments);
     if (WOW64_IS("NtUserSendInput"))

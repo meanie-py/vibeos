@@ -52,6 +52,7 @@ pub mod driver;
 pub mod error;
 pub mod file;
 pub mod iocomp;
+pub mod cancel_ex;
 pub mod io_tables;
 pub mod ioevent;
 pub mod iofunc;

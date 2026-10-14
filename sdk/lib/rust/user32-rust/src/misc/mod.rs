@@ -4,6 +4,7 @@
 pub mod timer;
 pub mod display;
 pub mod desktop;
+pub mod dpi;
 
 // Wave 5b — shared user32/win32k rtl source, usermode half (rtl/image.c, rtl/text.c).
 pub mod image;

@@ -692,6 +692,7 @@
 @ stdcall KeRemoveDeviceQueue(ptr)
 @ stdcall KeRemoveEntryDeviceQueue(ptr ptr)
 @ stdcall KeRemoveQueue(ptr long ptr)
+@ stdcall KeRemoveQueueEx(ptr long long ptr ptr long)
 @ stdcall KeRemoveQueueDpc(ptr)
 @ stdcall KeRemoveSystemServiceTable(long)
 @ stdcall KeResetEvent(ptr)
@@ -2467,7 +2468,6 @@
 @ stub -version=0xA00+ KeRemoveProcessorGroupAffinity
 @ stub -version=0xA00+ KeRemoveQueueApc
 @ stub -version=0xA00+ KeRemoveQueueDpcEx
-@ stub -version=0xA00+ KeRemoveQueueEx
 @ stub -version=0xA00+ KeReportCacheIncoherentDevice
 @ stub -version=0xA00+ KeRestoreExtendedProcessorState
 @ stub -version=0xA00+ KeRevertToUserAffinityThreadEx

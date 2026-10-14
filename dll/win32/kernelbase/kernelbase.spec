@@ -103,9 +103,6 @@
 @ stub -version=0xA00+ BuildIoRingWriteFileGather
 @ stub -version=0xA00+ CLOSE_LOCAL_HANDLE_INTERNAL
 @ stub -version=0xA00+ CallEnclave
-@ stub -version=0xA00+ CallbackMayRunLong
-@ stub -version=0xA00+ CancelIoEx
-@ stub -version=0xA00+ CancelSynchronousIo
 @ stub -version=0xA00+ CeipIsOptedIn
 @ stub -version=0xA00+ CharLowerA
 @ stub -version=0xA00+ CharLowerBuffA
@@ -238,7 +235,6 @@
 @ stub -version=0xA00+ FindPackagesByPackageFamily
 @ stub -version=0xA00+ FindStringOrdinal
 @ stub -version=0xA00+ FlsGetValue2 # -> NTDLL.RtlFlsGetValue2
-@ stub -version=0xA00+ FlushProcessWriteBuffers # -> NTDLL.NtFlushProcessWriteBuffers
 @ stub -version=0xA00+ ForceSyncFgPolicyInternal
 @ stub -version=0xA00+ FormatApplicationUserModelId
 @ stub -version=0xA00+ FormatApplicationUserModelIdA
@@ -294,7 +290,6 @@
 @ stub -version=0xA00+ GetDiskSpaceInformationW
 @ stub -version=0xA00+ GetDiskSpaceInformationWCOS
 @ stub -version=0xA00+ GetDurationFormatEx
-@ stub -version=0xA00+ GetDynamicTimeZoneInformation
 @ stub -version=0xA00+ GetDynamicTimeZoneInformationEffectiveYears
 @ stub -version=0xA00+ GetEffectivePackageStatusForUser
 @ stub -version=0xA00+ GetEffectivePackageStatusForUserSid
@@ -347,7 +342,6 @@
 @ stub -version=0xA00+ GetNamedPipeClientComputerNameW
 @ stub -version=0xA00+ GetNextFgPolicyRefreshInfoInternal
 @ stub -version=0xA00+ GetNumaNodeProcessorMask2
-@ stub -version=0xA00+ GetNumaNodeProcessorMaskEx
 @ stub -version=0xA00+ GetNumaProximityNodeEx
 @ stub -version=0xA00+ GetOsManufacturingMode
 @ stub -version=0xA00+ GetOsSafeBootMode
@@ -400,7 +394,6 @@
 @ stub -version=0xA00+ GetProcAddressForCaller
 @ stub -version=0xA00+ GetProcessDefaultCpuSetMasks
 @ stub -version=0xA00+ GetProcessDefaultCpuSets
-@ stub -version=0xA00+ GetProcessGroupAffinity
 @ stub -version=0xA00+ GetProcessImageFileNameA
 @ stub -version=0xA00+ GetProcessImageFileNameW
 @ stub -version=0xA00+ GetProcessInformation
@@ -416,7 +409,6 @@
 @ stub -version=0xA00+ GetPtrCalDataArray
 @ stub -version=0xA00+ GetPublisherCacheFolder
 @ stub -version=0xA00+ GetPublisherRootFolder
-@ stub -version=0xA00+ GetQueuedCompletionStatusEx
 @ stub -version=0xA00+ GetRegistryExtensionFlags
 @ stub -version=0xA00+ GetRegistryValueWithFallbackW
 @ stub -version=0xA00+ GetResolvedPackageFullNameForPackageDependency
@@ -457,7 +449,6 @@
 @ stub -version=0xA00+ GetThreadInformation
 @ stub -version=0xA00+ GetThreadSelectedCpuSetMasks
 @ stub -version=0xA00+ GetThreadSelectedCpuSets
-@ stub -version=0xA00+ GetTimeZoneInformationForYear
 @ stub -version=0xA00+ GetUnicodeStringToEightBitSizeRoutine
 @ stub -version=0xA00+ GetUnicodeStringToEightBitStringRoutine
 @ stub -version=0xA00+ GetUserDefaultGeoName
@@ -791,13 +782,11 @@
 @ stub -version=0xA00+ QueryOptionalDelayLoadedAPI
 @ stub -version=0xA00+ QueryPartitionInformation
 @ stub -version=0xA00+ QueryProcessAffinityUpdateMode
-@ stub -version=0xA00+ QueryProcessCycleTime
 @ stub -version=0xA00+ QueryProtectedPolicy
 @ stub -version=0xA00+ QuerySecurityAccessMask
 @ stub -version=0xA00+ QueryStateAtomValueInfo
 @ stub -version=0xA00+ QueryStateContainerCreatedNew
 @ stub -version=0xA00+ QueryStateContainerItemInfo
-@ stub -version=0xA00+ QueryThreadCycleTime
 @ stub -version=0xA00+ QueryThreadpoolStackInformation
 @ stub -version=0xA00+ QueryUnbiasedInterruptTime # -> NTDLL.RtlQueryUnbiasedInterruptTime
 @ stub -version=0xA00+ QueryUnbiasedInterruptTimePrecise
@@ -1104,7 +1093,6 @@
 @ stub -version=0xA00+ WaitForDebugEventEx
 @ stub -version=0xA00+ WaitForMachinePolicyForegroundProcessingInternal
 @ stub -version=0xA00+ WaitForUserPolicyForegroundProcessingInternal
-@ stub -version=0xA00+ WerGetFlags
 @ stub -version=0xA00+ WerRegisterAdditionalProcess
 @ stub -version=0xA00+ WerRegisterAppLocalDump
 @ stub -version=0xA00+ WerRegisterCustomMetadata
@@ -1112,7 +1100,6 @@
 @ stub -version=0xA00+ WerRegisterFile
 @ stub -version=0xA00+ WerRegisterMemoryBlock
 @ stub -version=0xA00+ WerRegisterRuntimeExceptionModule
-@ stub -version=0xA00+ WerSetFlags
 @ stub -version=0xA00+ WerSetMaxProcessHoldMilliseconds
 @ stub -version=0xA00+ WerUnregisterAdditionalProcess
 @ stub -version=0xA00+ WerUnregisterAppLocalDump
@@ -1215,7 +1202,10 @@
 @ stdcall BaseUpdateAppcompatCache(long long long) kernel32.BaseUpdateAppcompatCache
 @ stdcall Beep(long long) kernel32.Beep
 @ stdcall CallNamedPipeW(wstr ptr long ptr long ptr long) kernel32.CallNamedPipeW
+@ stdcall CallbackMayRunLong(ptr) kernel32.CallbackMayRunLong
 @ stdcall CancelIo(long) kernel32.CancelIo
+@ stdcall CancelIoEx(ptr ptr) kernel32.CancelIoEx
+@ stdcall CancelSynchronousIo(ptr) kernel32.CancelSynchronousIo
 @ stdcall CancelThreadpoolIo(ptr) kernel32.CancelThreadpoolIo
 @ stdcall CancelWaitableTimer(long) kernel32.CancelWaitableTimer
 @ stdcall ChangeTimerQueueTimer(ptr ptr long long) kernel32.ChangeTimerQueueTimer
@@ -1396,6 +1386,7 @@
 @ stdcall FlushConsoleInputBuffer(long) kernel32.FlushConsoleInputBuffer
 @ stdcall FlushFileBuffers(long) kernel32.FlushFileBuffers
 @ stdcall FlushInstructionCache(long long long) kernel32.FlushInstructionCache
+@ stdcall FlushProcessWriteBuffers() kernel32.FlushProcessWriteBuffers
 @ stdcall FlushViewOfFile(ptr long) kernel32.FlushViewOfFile
 @ stdcall FoldStringW(long wstr long ptr long) kernel32.FoldStringW
 @ stdcall FormatMessageA(long ptr long long ptr long ptr) kernel32.FormatMessageA
@@ -1481,6 +1472,7 @@
 @ stdcall GetDiskFreeSpaceW(wstr ptr ptr ptr ptr) kernel32.GetDiskFreeSpaceW
 @ stdcall GetDriveTypeA(str) kernel32.GetDriveTypeA
 @ stdcall GetDriveTypeW(wstr) kernel32.GetDriveTypeW
+@ stdcall GetDynamicTimeZoneInformation(ptr) kernel32.GetDynamicTimeZoneInformation
 @ stdcall GetEnvironmentStrings() kernel32.GetEnvironmentStrings
 @ stdcall GetEnvironmentStringsA() kernel32.GetEnvironmentStringsA
 @ stdcall GetEnvironmentStringsW() kernel32.GetEnvironmentStringsW
@@ -1535,6 +1527,7 @@
 @ stdcall GetNamedPipeInfo(long ptr ptr ptr ptr) kernel32.GetNamedPipeInfo
 @ stdcall GetNativeSystemInfo(ptr) kernel32.GetNativeSystemInfo
 @ stdcall GetNumaHighestNodeNumber(ptr) kernel32.GetNumaHighestNodeNumber
+@ stdcall GetNumaNodeProcessorMaskEx(long ptr) kernel32.GetNumaNodeProcessorMaskEx
 @ stdcall GetNumberFormatEx(wstr long wstr ptr wstr long) kernel32.GetNumberFormatEx
 @ stdcall GetNumberFormatW(long long wstr ptr ptr long) kernel32.GetNumberFormatW
 @ stdcall GetNumberOfConsoleInputEvents(long ptr) kernel32.GetNumberOfConsoleInputEvents
@@ -1544,6 +1537,7 @@
 @ stdcall GetPriorityClass(long) kernel32.GetPriorityClass
 @ stdcall GetPrivateObjectSecurity(ptr long ptr long ptr) advapi32.GetPrivateObjectSecurity
 @ stdcall GetProcAddress(long str) kernel32.GetProcAddress
+@ stdcall GetProcessGroupAffinity(ptr ptr ptr) kernel32.GetProcessGroupAffinity
 @ stdcall GetProcessHandleCount(long ptr) kernel32.GetProcessHandleCount
 @ stdcall -norelay GetProcessHeap() kernel32.GetProcessHeap
 @ stdcall GetProcessHeaps(long ptr) kernel32.GetProcessHeaps
@@ -1556,6 +1550,7 @@
 @ stdcall GetProcessWorkingSetSize(long ptr ptr) kernel32.GetProcessWorkingSetSize
 @ stdcall GetProcessWorkingSetSizeEx(long ptr ptr long) kernel32.GetProcessWorkingSetSizeEx
 @ stdcall GetQueuedCompletionStatus(long ptr ptr ptr long) kernel32.GetQueuedCompletionStatus
+@ stdcall GetQueuedCompletionStatusEx(ptr ptr long ptr long long) kernel32.GetQueuedCompletionStatusEx
 @ stdcall GetSecurityDescriptorControl(ptr ptr ptr) advapi32.GetSecurityDescriptorControl
 @ stdcall GetSecurityDescriptorDacl(ptr ptr ptr ptr) advapi32.GetSecurityDescriptorDacl
 @ stdcall GetSecurityDescriptorGroup(ptr ptr ptr) advapi32.GetSecurityDescriptorGroup
@@ -1614,6 +1609,7 @@
 @ stdcall GetTimeFormatEx(wstr long ptr wstr wstr long) kernel32.GetTimeFormatEx
 @ stdcall GetTimeFormatW(long long ptr wstr ptr long) kernel32.GetTimeFormatW
 @ stdcall GetTimeZoneInformation(ptr) kernel32.GetTimeZoneInformation
+@ stdcall GetTimeZoneInformationForYear(long ptr ptr) kernel32.GetTimeZoneInformationForYear
 @ stdcall GetTokenInformation(long long ptr long ptr) advapi32.GetTokenInformation
 @ stdcall GetTraceEnableFlags(double) advapi32.GetTraceEnableFlags
 @ stdcall GetTraceEnableLevel(double) advapi32.GetTraceEnableLevel
@@ -1801,6 +1797,8 @@
 @ stdcall QueryMemoryResourceNotification(ptr ptr) kernel32.QueryMemoryResourceNotification
 @ stdcall QueryPerformanceCounter(ptr) kernel32.QueryPerformanceCounter
 @ stdcall QueryPerformanceFrequency(ptr) kernel32.QueryPerformanceFrequency
+@ stdcall QueryProcessCycleTime(ptr ptr) kernel32.QueryProcessCycleTime
+@ stdcall QueryThreadCycleTime(ptr ptr) kernel32.QueryThreadCycleTime
 @ stdcall QueueUserAPC(ptr long long) kernel32.QueueUserAPC
 @ stdcall QueueUserWorkItem(ptr ptr long) kernel32.QueueUserWorkItem
 @ stdcall -norelay RaiseException(long long long ptr) kernel32.RaiseException
@@ -2041,6 +2039,8 @@
 @ stdcall WaitForThreadpoolWaitCallbacks(ptr long) kernel32.WaitForThreadpoolWaitCallbacks
 @ stdcall WaitForThreadpoolWorkCallbacks(ptr long) kernel32.WaitForThreadpoolWorkCallbacks
 @ stdcall WaitNamedPipeW(wstr long) kernel32.WaitNamedPipeW
+@ stdcall WerGetFlags(ptr ptr) kernel32.WerGetFlags
+@ stdcall WerSetFlags(long) kernel32.WerSetFlags
 @ stdcall WideCharToMultiByte(long long wstr long ptr long ptr ptr) kernel32.WideCharToMultiByte
 @ stdcall Wow64DisableWow64FsRedirection(ptr) kernel32.Wow64DisableWow64FsRedirection
 @ stdcall Wow64EnableWow64FsRedirection(long) kernel32.Wow64EnableWow64FsRedirection

@@ -15,15 +15,15 @@
 @ stdcall -stub -version=0x600+ ConvertGuidToStringA(ptr ptr long)
 @ stdcall -stub -version=0x600+ ConvertGuidToStringW(ptr ptr long)
 @ stdcall -stub -version=0x600+ ConvertInterfaceAliasToLuid(wstr ptr)
-@ stdcall -stub -version=0x600+ ConvertInterfaceGuidToLuid(ptr ptr)
+@ stdcall ConvertInterfaceGuidToLuid(ptr ptr)
 @ stdcall ConvertInterfaceIndexToLuid(long ptr)
-@ stdcall -stub -version=0x600+ ConvertInterfaceLuidToAlias(ptr ptr long)
-@ stdcall -stub -version=0x600+ ConvertInterfaceLuidToGuid(ptr ptr)
-@ stdcall -stub -version=0x600+ ConvertInterfaceLuidToIndex(ptr ptr)
-@ stdcall -stub -version=0x600+ ConvertInterfaceLuidToNameA(ptr ptr long)
-@ stdcall -stub -version=0x600+ ConvertInterfaceLuidToNameW(ptr ptr long)
-@ stdcall -stub -version=0x600+ ConvertInterfaceNameToLuidA(str ptr)
-@ stdcall -stub -version=0x600+ ConvertInterfaceNameToLuidW(wstr ptr)
+@ stdcall ConvertInterfaceLuidToAlias(ptr ptr ptr)
+@ stdcall ConvertInterfaceLuidToGuid(ptr ptr)
+@ stdcall ConvertInterfaceLuidToIndex(ptr ptr)
+@ stdcall ConvertInterfaceLuidToNameA(ptr ptr ptr)
+@ stdcall ConvertInterfaceLuidToNameW(ptr ptr ptr)
+@ stdcall ConvertInterfaceNameToLuidA(str ptr)
+@ stdcall ConvertInterfaceNameToLuidW(wstr ptr)
 @ stdcall -stub -version=0x600+ ConvertLengthToIpv4Mask(long ptr)
 @ stdcall -stub -version=0x600+ ConvertStringToGuidW(wstr ptr)
 @ stdcall CreateIpForwardEntry(ptr)
@@ -47,7 +47,7 @@
 @ stub GetBestInterfaceFromStack
 @ stdcall GetBestRoute(long long long)
 @ stub GetBestRouteFromStack
-@ stdcall -stub -version=0x600+ GetCurrentThreadCompartmentId()
+@ stdcall GetCurrentThreadCompartmentId()
 @ stdcall GetExtendedTcpTable(ptr ptr long long long long)
 @ stdcall GetExtendedUdpTable(ptr ptr long long long long)
 @ stdcall GetFriendlyIfIndex(long)
@@ -56,11 +56,11 @@
 @ stub GetIcmpStatsFromStack
 @ stub GetIcmpStatsFromStackEx
 @ stdcall GetIfEntry(ptr)
-@ stdcall -stub -version=0x600+ GetIfEntry2(ptr)
+@ stdcall GetIfEntry2(ptr)
 @ stdcall -stub -version=0xA00+ GetIfEntry2Ex(long ptr)
 @ stub GetIfEntryFromStack
 @ stdcall GetIfTable(ptr ptr long)
-@ stdcall -stub -version=0x600+ GetIfTable2(ptr)
+@ stdcall GetIfTable2(ptr)
 @ stdcall -stub -version=0x600+ GetIfTable2Ex(long ptr)
 @ stub GetIfTableFromStack
 @ stub GetIgmpList
@@ -111,8 +111,8 @@
 @ stdcall IcmpParseReplies(ptr long)
 @ stdcall IcmpSendEcho2(ptr ptr ptr ptr long ptr long ptr ptr long long)
 @ stdcall IcmpSendEcho(ptr long ptr long ptr ptr long long)
-@ stdcall -stub -version=0x600+ if_indextoname(long ptr)
-@ stdcall -stub -version=0x600+ if_nametoindex(str)
+@ stdcall if_indextoname(long ptr)
+@ stdcall if_nametoindex(str)
 @ stub InternalCreateIpForwardEntry
 @ stub InternalCreateIpNetEntry
 @ stub InternalDeleteIpForwardEntry

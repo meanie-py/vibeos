@@ -128,13 +128,15 @@ pub type POINTER_TOUCH_INFO = tagPOINTER_TOUCH_INFO;
 
 #[no_mangle]
 pub unsafe extern "system" fn CloseTouchInputHandle(handle: HTOUCHINPUT) -> BOOL {
-    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+    // No touch/gesture input ever exists, so no handle can be valid.
+    SetLastError(ERROR_INVALID_HANDLE as DWORD);
     return (FALSE) as BOOL;
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn GetTouchInputInfo(handle: HTOUCHINPUT, count: UINT, ptr: *mut TOUCHINPUT, size: i32) -> BOOL {
-    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+    // No touch/gesture input ever exists, so no handle can be valid.
+    SetLastError(ERROR_INVALID_HANDLE as DWORD);
     return (FALSE) as BOOL;
 }
 
@@ -144,21 +146,33 @@ pub unsafe extern "system" fn IsTouchWindow(hwnd: HWND, flags: *mut ULONG) -> BO
     (FALSE) as i32
 }
 
+extern "system" {
+    fn IsWindow(hWnd: HWND) -> BOOL;
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn RegisterTouchWindow(hwnd: HWND, flags: ULONG) -> BOOL {
-    // FIXME( "hwnd %p, flags %#lx stub!\n", hwnd, flags );
+    // Nothing is remembered: no touch input will ever be delivered.
+    if IsWindow(hwnd) == 0 {
+        SetLastError(ERROR_INVALID_WINDOW_HANDLE as DWORD);
+        return (FALSE) as BOOL;
+    }
     (TRUE) as i32
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn UnregisterTouchWindow(hwnd: HWND) -> BOOL {
-    // FIXME( "hwnd %p stub!\n", hwnd );
+    if IsWindow(hwnd) == 0 {
+        SetLastError(ERROR_INVALID_WINDOW_HANDLE as DWORD);
+        return (FALSE) as BOOL;
+    }
     (TRUE) as i32
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn CloseGestureInfoHandle(handle: HGESTUREINFO) -> BOOL {
-    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+    // No touch/gesture input ever exists, so no handle can be valid.
+    SetLastError(ERROR_INVALID_HANDLE as DWORD);
     return (FALSE) as BOOL;
 }
 
@@ -170,7 +184,8 @@ pub unsafe extern "system" fn GetGestureExtraArgs(handle: HGESTUREINFO, count: U
 
 #[no_mangle]
 pub unsafe extern "system" fn GetGestureInfo(handle: HGESTUREINFO, ptr: *mut GESTUREINFO) -> BOOL {
-    SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
+    // No touch/gesture input ever exists, so no handle can be valid.
+    SetLastError(ERROR_INVALID_HANDLE as DWORD);
     return (FALSE) as BOOL;
 }
 
@@ -189,8 +204,16 @@ pub unsafe extern "system" fn GetGestureConfig(
 
 #[no_mangle]
 pub unsafe extern "system" fn SetGestureConfig(hwnd: HWND, reserved: DWORD, count: UINT, config: *mut GESTURECONFIG, size: UINT) -> BOOL {
-    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
-    return (FALSE) as BOOL;
+    // Accepted and discarded: no gesture is ever generated.
+    if IsWindow(hwnd) == 0 {
+        SetLastError(ERROR_INVALID_WINDOW_HANDLE as DWORD);
+        return (FALSE) as BOOL;
+    }
+    if reserved != 0 || size as usize != core::mem::size_of::<GESTURECONFIG>() || (count != 0 && config.is_null()) {
+        SetLastError(ERROR_INVALID_PARAMETER as DWORD);
+        return (FALSE) as BOOL;
+    }
+    (TRUE) as BOOL
 }
 
 #[no_mangle]

@@ -543,32 +543,7 @@ pub unsafe extern "system" fn NtRemoveIoCompletion(
         if (ListEntry as NTSTATUS == STATUS_TIMEOUT) || (ListEntry as NTSTATUS == STATUS_USER_APC) {
             Status = ListEntry as NTSTATUS;
         } else {
-            Packet = CONTAINING_RECORD!(
-                ListEntry,
-                _IOP_MINI_COMPLETION_PACKET,
-                __bindgen_anon_1.ListEntry
-            ) as PIOP_MINI_COMPLETION_PACKET;
-
-            if (*Packet).__bindgen_anon_1.__bindgen_anon_1.PacketType == IopCompletionPacketIrp {
-                Irp = CONTAINING_RECORD!(
-                    ListEntry,
-                    _IRP,
-                    Tail.Overlay.__bindgen_anon_2.ListEntry
-                ) as PIRP;
-
-                Key = (*Irp).Tail.CompletionKey;
-                Apc = (*Irp).Overlay.AsynchronousParameters.UserApcContext;
-                IoStatus = (*Irp).IoStatus;
-
-                IoFreeIrp(Irp);
-            } else {
-                Key = (*Packet).KeyContext;
-                Apc = (*Packet).ApcContext;
-                IoStatus.__bindgen_anon_1.Status = (*Packet).IoStatus;
-                IoStatus.Information = (*Packet).IoStatusInformation;
-
-                IopFreeMiniPacket(Packet);
-            }
+            (Key, Apc, IoStatus) = iop_take_completion(ListEntry);
 
             Status = 'seh: {
                 if let Err(e) = ntkrnl_sys::probe::write_user(ApcContext, Apc, PreviousMode) {
@@ -587,6 +562,176 @@ pub unsafe extern "system" fn NtRemoveIoCompletion(
         ObDereferenceObject(Queue as PVOID);
     }
 
+    Status
+}
+
+/// Consume one dequeued completion (an IRP or a mini packet, both freed here) and
+/// return what the caller reports: (KeyContext, ApcContext, IoStatus).
+unsafe fn iop_take_completion(ListEntry: PLIST_ENTRY) -> (PVOID, PVOID, _IO_STATUS_BLOCK) {
+    let Packet = CONTAINING_RECORD!(
+        ListEntry,
+        _IOP_MINI_COMPLETION_PACKET,
+        __bindgen_anon_1.ListEntry
+    ) as PIOP_MINI_COMPLETION_PACKET;
+    let mut IoStatus: _IO_STATUS_BLOCK = core::mem::zeroed();
+
+    if (*Packet).__bindgen_anon_1.__bindgen_anon_1.PacketType == IopCompletionPacketIrp {
+        let Irp = CONTAINING_RECORD!(
+            ListEntry,
+            _IRP,
+            Tail.Overlay.__bindgen_anon_2.ListEntry
+        ) as PIRP;
+
+        let Key = (*Irp).Tail.CompletionKey;
+        let Apc = (*Irp).Overlay.AsynchronousParameters.UserApcContext;
+        IoStatus = (*Irp).IoStatus;
+
+        IoFreeIrp(Irp);
+        (Key, Apc, IoStatus)
+    } else {
+        let Key = (*Packet).KeyContext;
+        let Apc = (*Packet).ApcContext;
+        IoStatus.__bindgen_anon_1.Status = (*Packet).IoStatus;
+        IoStatus.Information = (*Packet).IoStatusInformation;
+
+        IopFreeMiniPacket(Packet);
+        (Key, Apc, IoStatus)
+    }
+}
+
+/// `FILE_IO_COMPLETION_INFORMATION` (ntifs.h): one slot of NtRemoveIoCompletionEx's array.
+/// kernel32's OVERLAPPED_ENTRY has the same layout, which GetQueuedCompletionStatusEx
+/// relies on.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct FILE_IO_COMPLETION_INFORMATION {
+    pub KeyContext: PVOID,
+    pub ApcContext: PVOID,
+    pub IoStatusBlock: _IO_STATUS_BLOCK,
+}
+
+extern "system" {
+    fn KeRemoveQueueEx(
+        Queue: PKQUEUE,
+        WaitMode: KPROCESSOR_MODE,
+        Alertable: BOOLEAN,
+        Timeout: PLARGE_INTEGER,
+        EntryArray: *mut PLIST_ENTRY,
+        Count: ULONG,
+    ) -> ULONG;
+}
+
+/// Most completions one call takes: the entries are dequeued into a kernel stack array
+/// first, so the count is bounded; a caller asking for more gets this many and calls again.
+const REMOVE_EX_BATCH: usize = 64;
+
+/// Vista's batched dequeue (GetQueuedCompletionStatusEx). Waits (alertably if asked) for
+/// the first completion only, then takes whatever else is already queued, up to `Count`.
+#[no_mangle]
+pub unsafe extern "system" fn NtRemoveIoCompletionEx(
+    IoCompletionHandle: HANDLE,
+    IoCompletionInformation: *mut FILE_IO_COMPLETION_INFORMATION,
+    Count: ULONG,
+    NumEntriesRemoved: PULONG,
+    Timeout: PLARGE_INTEGER,
+    Alertable: BOOLEAN,
+) -> NTSTATUS {
+    let PreviousMode = ExGetPreviousMode();
+    let mut SafeTimeout: LARGE_INTEGER = core::mem::zeroed();
+    let mut TimeoutPtr = Timeout;
+    let mut Queue: PKQUEUE = core::ptr::null_mut();
+
+    if Count == 0 {
+        return STATUS_INVALID_PARAMETER;
+    }
+    let Take = core::cmp::min(Count as usize, REMOVE_EX_BATCH);
+
+    if PreviousMode != 0i8 {
+        let Status = 'seh: {
+            if let Err(e) = ntkrnl_sys::probe::probe_user_buffer_write(
+                IoCompletionInformation as *const core::ffi::c_void,
+                Take * core::mem::size_of::<FILE_IO_COMPLETION_INFORMATION>(),
+                core::mem::align_of::<PVOID>(),
+                PreviousMode,
+            ) {
+                break 'seh e;
+            }
+            if let Err(e) = ntkrnl_sys::probe::probe_user_buffer_write(
+                NumEntriesRemoved as *const core::ffi::c_void,
+                core::mem::size_of::<ULONG>(),
+                core::mem::align_of::<ULONG>(),
+                PreviousMode,
+            ) {
+                break 'seh e;
+            }
+            if !Timeout.is_null() {
+                match ntkrnl_sys::probe::probe_read_user::<LARGE_INTEGER>(Timeout, PreviousMode) {
+                    Ok(val) => SafeTimeout = val,
+                    Err(e) => break 'seh e,
+                }
+                TimeoutPtr = &mut SafeTimeout;
+            }
+            STATUS_SUCCESS
+        };
+        if Status < 0 {
+            return Status;
+        }
+    }
+
+    let mut Status = ObReferenceObjectByHandle(
+        IoCompletionHandle,
+        IO_COMPLETION_MODIFY_STATE,
+        IoCompletionType,
+        PreviousMode,
+        &mut Queue as *mut PKQUEUE as *mut PVOID,
+        core::ptr::null_mut(),
+    );
+    if Status < 0 {
+        return Status;
+    }
+
+    let mut Entries: [PLIST_ENTRY; REMOVE_EX_BATCH] = [core::ptr::null_mut(); REMOVE_EX_BATCH];
+    let Got = KeRemoveQueueEx(
+        Queue,
+        PreviousMode,
+        Alertable,
+        TimeoutPtr,
+        Entries.as_mut_ptr(),
+        Take as ULONG,
+    ) as usize;
+
+    let mut Removed: ULONG = 0;
+    if Got == 1 && (Entries[0] as usize) < 0x1000 {
+        // STATUS_TIMEOUT / STATUS_USER_APC / STATUS_ALERTED: nothing dequeued.
+        Status = Entries[0] as usize as NTSTATUS;
+    } else {
+        Status = STATUS_SUCCESS;
+        for (i, &Entry) in Entries[..Got].iter().enumerate() {
+            let (Key, Apc, IoStatus) = iop_take_completion(Entry);
+            let Info = FILE_IO_COMPLETION_INFORMATION {
+                KeyContext: Key,
+                ApcContext: Apc,
+                IoStatusBlock: IoStatus,
+            };
+            // Every entry is already off the queue; a fault here loses the rest, as a
+            // fault writing NtRemoveIoCompletion's outputs loses its one.
+            if let Err(e) =
+                ntkrnl_sys::probe::write_user(IoCompletionInformation.add(i), Info, PreviousMode)
+            {
+                Status = e;
+                break;
+            }
+            Removed += 1;
+        }
+    }
+
+    if Status >= 0 || Removed != 0 {
+        if let Err(e) = ntkrnl_sys::probe::write_user(NumEntriesRemoved, Removed, PreviousMode) {
+            Status = e;
+        }
+    }
+
+    ObDereferenceObject(Queue as PVOID);
     Status
 }
 
