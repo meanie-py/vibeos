@@ -513,36 +513,33 @@ media, setup bound the NDIS miniport to the same device under netstack and the a
 wedged in netstack's TX wait (field manual, "Completing the media wakes up code that a missing
 file was holding back"). When netstack moves above NDIS, restore both.
 
-**Status (2026-06-21) — 🟡 SCAFFOLD LANDED (compile-verified ×3, behind `feature = "ndis"`, OFF by
-default); runtime bring-up is the remaining sub-task.** The swappable backend the architecture
-promised is now built and integrated:
-- **`ndisphy.rs` — the `NdisPhy` smoltcp `phy::Device` + the DISPATCH-safe lock-free RX ring** (the
-  design's named "hard part"): a single-producer/single-consumer ring in non-paged `.bss` whose
-  producer (`ProtocolReceive[Packet]` at DISPATCH) only **copies frame bytes in — no smoltcp, no
-  pageable alloc** — and whose consumer (the PASSIVE worker) drains it. This is exactly lan.c's
-  `LanSubmitReceiveWork` model, preserving the single-owner-at-PASSIVE invariant.
-- **`ndis.rs` — the NDIS protocol FFI + lifecycle**: NDIS40 protocol characteristics, the
-  `NdisRegisterProtocol`/`NdisOpenAdapter`/`NdisSend`/`NdisRequest` imports + the ~13 `ProtocolXxx`
-  callbacks (faithful NTAPI signatures), the register→bind→open→OID-MAC-query lifecycle, RX both
-  ways (lookahead-`Receive` and packet-mode `ReceivePacket` walking the `NDIS_BUFFER`/MDL chain into
-  the ring), and TX marshaling a flat frame into an `NDIS_PACKET` + `NDIS_BUFFER` chain for `NdisSend`
-  with `SendComplete` recycling.
-- **`engine.rs` seam**: a `cfg(feature = "ndis")` swap of `device::bringup()→VirtioPhy` for
-  `ndisphy::bringup()→NdisPhy` at the worker's device construction (the interrupt path stays gated to
-  the virtio backend; NDIS RX rides `ProtocolReceive`). The default build is untouched — virtio is the
-  shipping path and `ninja netstack` ×3 + the gated boot smoke are unaffected; the `ndis` feature is
-  compile-verified for all 3 kernel targets via `cargo build --features ndis` (a staticlib leaves the
-  `NdisXxx` externs unresolved, as expected — they resolve at the `netstack.sys` link once an ndis
-  import lib is wired).
+**Status (2026-10-13) — LIVE.** netstack drives the NICs it has a backend for (virtio-net, the
+e1000s, the Pi's GENET and GEM) and falls back to NDIS when it finds none: it registers as an
+NDIS 4.0 protocol, binds the first 802.3 miniport, and runs smoltcp over it (`ndis.rs`,
+`ndisphy.rs`, `engine.rs::ndis_fallback`). `./vibeos-cli smoke --arch <a> --payload ndisprobe`
+(QEMU's e1000 82544GC, which netstack does not claim) shows the whole stack through ndis.sys
+and the e1000 miniport: `[NETSTACK] NDIS: bound adapter`, then a DHCP lease, the gateway ping
+and DNS. `NETSTACK=NDIS` in the boot options skips the direct backends, to put a vendor
+miniport under the OS on a box whose onboard NIC netstack would otherwise claim.
 
-**Coverage now exists (2026-10-09):** `./vibeos-cli smoke --arch <a> --payload ndisprobe`
-drives ndis.sys through QEMU's e1000 82544GC (a model netstack does not claim) and ndisuio:
-bind, OID query/set, send, receive. It passes on all three arches, so a protocol-side
-bring-up can tell an NDIS fault from its own.
+How it behaves:
+- The bind wait has no timeout (PnP installs a downloaded driver's device minutes into boot).
+  Meanwhile the engine is marked dead, so TDI requests fail fast instead of queueing behind a
+  worker that is not polling, and `revive_engine` reopens it on bind. Objects opened while
+  dead are not carried over.
+- RX: `ProtocolReceive` copies header + lookahead into the ring; a frame past the lookahead
+  comes in through `NdisTransferData`. The lookahead is set to the miniport's
+  `OID_GEN_MAXIMUM_LOOKAHEAD`. Both receive handlers set an event the worker waits on.
+- One adapter, the first that binds. More than one NIC, and yielding a device netstack drives
+  directly to a miniport installed for it, are still owed.
 
-**Remaining sub-task (the multi-week part):** get ndis.sys + one miniport (e1000/rtl8139/netkvm) onto
-the QEMU boot path, add the ndis import lib to the `netstack-cargo` link, flip `feature = "ndis"` on,
-and debug the live binding. That is its own lane with its own bring-up bugs (design unchanged below).
+Bugs the scaffold carried, found by running it: it registered as NDIS 5.0 with the 4.0
+structure (refused as `NDIS_STATUS_BAD_CHARACTERISTICS`); its `NDIS_REQUEST` put `Oid` at
+offset 36 on 64-bit, where the `DATA` union starts at 40; it kept its TX buffer in the
+packet's MiniportReserved area instead of ProtocolReserved; it set no packet filter, so no
+frame arrived; it asked for a 1522-byte lookahead the e1000 refuses; and it treated
+`NdisAllocateBufferPool`'s NULL handle as failure, dropping every send (NT's buffer pool is
+nominal: buffers are MDLs, and ndis.sys returns no handle).
 
 **Why.** Drive actual hardware + non-virtio QEMU models (e1000/rtl8139) by sitting netstack as an
 NDIS *protocol* driver above existing miniports, instead of driving virtio directly.

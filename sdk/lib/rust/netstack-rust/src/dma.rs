@@ -115,6 +115,60 @@ pub unsafe fn read_parameters(registry_path: *const UNICODE_STRING) {
     }
 }
 
+/// `NETSTACK=NDIS` in the boot options: leave the NICs netstack drives itself alone
+/// and take one an NDIS miniport drives. For a bench whose onboard NIC netstack
+/// would otherwise claim, to put a vendor's miniport under the OS's traffic.
+pub static NDIS_ONLY: AtomicBool = AtomicBool::new(false);
+
+/// DriverEntry: look for `NETSTACK=NDIS` in Control\SystemStartOptions (the loader's
+/// options, without their slashes, as the kernel stores them).
+pub unsafe fn read_boot_options() {
+    const KEY: [u16; 50] = wide(b"\\Registry\\Machine\\System\\CurrentControlSet\\Control");
+    const VALUE: [u16; 18] = wide(b"SystemStartOptions");
+    const NEEDLE: &[u8] = b"NETSTACK=NDIS";
+    let mut path = KEY;
+    let mut name: UNICODE_STRING = core::mem::zeroed();
+    name.Buffer = path.as_mut_ptr();
+    name.Length = (KEY.len() * 2) as u16;
+    name.MaximumLength = name.Length;
+    let mut oa: OBJECT_ATTRIBUTES = core::mem::zeroed();
+    oa.Length = core::mem::size_of::<OBJECT_ATTRIBUTES>() as u32;
+    oa.ObjectName = &mut name;
+    oa.Attributes = 0x240; // OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE
+    let mut key: HANDLE = ptr::null_mut();
+    if ZwOpenKey(&mut key, 0x20019 /* KEY_READ */, &mut oa) < 0 {
+        return;
+    }
+    let mut value = VALUE;
+    let mut value_name: UNICODE_STRING = core::mem::zeroed();
+    value_name.Buffer = value.as_mut_ptr();
+    value_name.Length = (VALUE.len() * 2) as u16;
+    value_name.MaximumLength = value_name.Length;
+    // KEY_VALUE_PARTIAL_INFORMATION: TitleIndex, Type, DataLength, then the string.
+    let mut info = [0u32; 3 + 256];
+    let mut got = 0u32;
+    let status = ZwQueryValueKey(
+        key,
+        &mut value_name,
+        _KEY_VALUE_INFORMATION_CLASS_KeyValuePartialInformation,
+        info.as_mut_ptr() as PVOID,
+        core::mem::size_of_val(&info) as u32,
+        &mut got,
+    );
+    ZwClose(key);
+    if status < 0 {
+        return;
+    }
+    let chars = (info[2] as usize / 2).min((info.len() - 3) * 2);
+    let text = core::slice::from_raw_parts(info.as_ptr().add(3) as *const u16, chars);
+    let found = text.windows(NEEDLE.len()).any(|w| {
+        w.iter().zip(NEEDLE).all(|(&c, &n)| c < 0x80 && (c as u8).eq_ignore_ascii_case(&n))
+    });
+    if found {
+        NDIS_ONLY.store(true, Ordering::Release);
+    }
+}
+
 /// Bring-up, at PASSIVE_LEVEL, before any queue is made: the NIC's adapter and its
 /// bounce pool, after claiming it a domain of its own when the service is
 /// DMA-remapping compatible. False when the HAL has no adapter or memory to give;

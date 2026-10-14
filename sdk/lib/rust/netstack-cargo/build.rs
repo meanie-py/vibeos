@@ -6,7 +6,7 @@
 //!   `--gc-sections` (so `DriverEntry` is retained).
 //!   entry  `DriverEntry@8` — i386 `_DriverEntry@8`; amd64/arm64 `DriverEntry`.
 //!   base   i386/amd64 `0x00010000`; arm64 `0x7FFB00000000`.
-//!   libs   ntoskrnl + hal import libs (HalGetBusDataByOffset / MmMapIoSpace /
+//!   libs   ntoskrnl + hal + ndis import libs (HalGetBusDataByOffset / MmMapIoSpace /
 //!          KeStallExecutionProcessor are hal/ntoskrnl exports).
 //!
 //! The body crate `netstack-rust` pulls in smoltcp + virtio-drivers; reactos-link
@@ -31,6 +31,8 @@ fn main() {
         .rust_staticlib("netstack-rust")
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .import_lib("hal/hal.spec", "hal.dll", "hal")
+        // The NDIS protocol shim (netstack-rust ndis.rs) for NICs a miniport drives.
+        .import_lib("drivers/network/ndis/ndis.spec", "ndis.sys", "ndis")
         .link(ModuleKind::KernelDll {
             entry: entry.into(),
             image_base,

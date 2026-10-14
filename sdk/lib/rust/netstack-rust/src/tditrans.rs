@@ -293,6 +293,16 @@ pub fn mark_engine_dead() {
     }
 }
 
+/// The worker has a device again (an NDIS miniport bound after `mark_engine_dead`):
+/// accept commands from here on. Objects opened while it was dead were dropped, so
+/// their later commands fail as unknown; a caller reopens.
+pub fn revive_engine() {
+    unsafe {
+        let _lock = SpinLockGuard::acquire(INBOX.lock.get());
+        ENGINE_DEAD.store(false, Ordering::Relaxed);
+    }
+}
+
 /// Complete a command's IRP, if it carries one, with STATUS_NETWORK_UNREACHABLE.
 /// The IRP-less commands (create/associate/close/route/event) only update worker
 /// state that no longer exists, so dropping them is the whole of their effect.

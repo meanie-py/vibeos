@@ -19,7 +19,6 @@ use smoltcp::wire::{
 
 use ntkrnl_sys::ddk::{HANDLE, PVOID, PsCreateSystemThread};
 
-#[cfg(not(feature = "ndis"))]
 use crate::device::{self, VirtioPhy};
 use crate::serial::nsprint;
 use crate::time::{delay_ms, now};
@@ -105,15 +104,14 @@ pub fn start() {
 /// Runtime-selected backend: virtio-net (paravirtual, default) or e1000 (real
 /// emulated NIC, `-device e1000`). Same `phy::Device` surface via delegation,
 /// so the poll loop below stays backend-agnostic.
-#[cfg(not(feature = "ndis"))]
 enum AnyPhy {
     Virtio(VirtioPhy),
     E1000(crate::e1000::E1000Phy),
     Genet(crate::genet::GenetPhy),
     Gem(crate::gem::GemPhy),
+    Ndis(crate::ndisphy::NdisPhy),
 }
 
-#[cfg(not(feature = "ndis"))]
 impl AnyPhy {
     fn mac(&self) -> [u8; 6] {
         match self {
@@ -121,19 +119,19 @@ impl AnyPhy {
             AnyPhy::E1000(e) => e.mac(),
             AnyPhy::Genet(g) => g.mac(),
             AnyPhy::Gem(g) => g.mac(),
+            AnyPhy::Ndis(n) => n.mac(),
         }
     }
 }
 
-#[cfg(not(feature = "ndis"))]
 enum AnyRxToken {
     Virtio(crate::device::VirtioRxToken),
     E1000(crate::e1000::E1000RxToken),
     Genet(crate::genet::GenetRxToken),
     Gem(crate::gem::GemRxToken),
+    Ndis(crate::ndisphy::NdisRxToken),
 }
 
-#[cfg(not(feature = "ndis"))]
 impl smoltcp::phy::RxToken for AnyRxToken {
     fn consume<R, F>(self, f: F) -> R
     where
@@ -144,19 +142,19 @@ impl smoltcp::phy::RxToken for AnyRxToken {
             AnyRxToken::E1000(t) => smoltcp::phy::RxToken::consume(t, f),
             AnyRxToken::Genet(t) => smoltcp::phy::RxToken::consume(t, f),
             AnyRxToken::Gem(t) => smoltcp::phy::RxToken::consume(t, f),
+            AnyRxToken::Ndis(t) => smoltcp::phy::RxToken::consume(t, f),
         }
     }
 }
 
-#[cfg(not(feature = "ndis"))]
 enum AnyTxToken<'a> {
     Virtio(crate::device::VirtioTxToken<'a>),
     E1000(crate::e1000::E1000TxToken<'a>),
     Genet(crate::genet::GenetTxToken<'a>),
     Gem(crate::gem::GemTxToken<'a>),
+    Ndis(crate::ndisphy::NdisTxToken),
 }
 
-#[cfg(not(feature = "ndis"))]
 impl<'a> smoltcp::phy::TxToken for AnyTxToken<'a> {
     fn consume<R, F>(self, len: usize, f: F) -> R
     where
@@ -167,11 +165,11 @@ impl<'a> smoltcp::phy::TxToken for AnyTxToken<'a> {
             AnyTxToken::E1000(t) => smoltcp::phy::TxToken::consume(t, len, f),
             AnyTxToken::Genet(t) => smoltcp::phy::TxToken::consume(t, len, f),
             AnyTxToken::Gem(t) => smoltcp::phy::TxToken::consume(t, len, f),
+            AnyTxToken::Ndis(t) => smoltcp::phy::TxToken::consume(t, len, f),
         }
     }
 }
 
-#[cfg(not(feature = "ndis"))]
 impl smoltcp::phy::Device for AnyPhy {
     type RxToken<'a> = AnyRxToken;
     type TxToken<'a> = AnyTxToken<'a>;
@@ -193,6 +191,9 @@ impl smoltcp::phy::Device for AnyPhy {
             AnyPhy::Gem(g) => g
                 .receive(ts)
                 .map(|(r, t)| (AnyRxToken::Gem(r), AnyTxToken::Gem(t))),
+            AnyPhy::Ndis(n) => n
+                .receive(ts)
+                .map(|(r, t)| (AnyRxToken::Ndis(r), AnyTxToken::Ndis(t))),
         }
     }
 
@@ -202,6 +203,7 @@ impl smoltcp::phy::Device for AnyPhy {
             AnyPhy::E1000(e) => e.transmit(ts).map(AnyTxToken::E1000),
             AnyPhy::Genet(g) => g.transmit(ts).map(AnyTxToken::Genet),
             AnyPhy::Gem(g) => g.transmit(ts).map(AnyTxToken::Gem),
+            AnyPhy::Ndis(n) => n.transmit(ts).map(AnyTxToken::Ndis),
         }
     }
 
@@ -211,6 +213,7 @@ impl smoltcp::phy::Device for AnyPhy {
             AnyPhy::E1000(e) => e.capabilities(),
             AnyPhy::Genet(g) => g.capabilities(),
             AnyPhy::Gem(g) => g.capabilities(),
+            AnyPhy::Ndis(n) => n.capabilities(),
         }
     }
 }
@@ -218,7 +221,6 @@ impl smoltcp::phy::Device for AnyPhy {
 /// Connect a platform NIC's PnP interrupt to `ack`, then let the device raise
 /// it (`enable`). Null, and the device left masked, when there is no interrupt
 /// resource or the connect fails: the worker then polls.
-#[cfg(not(feature = "ndis"))]
 fn connect_platform(
     irq: Option<crate::pnp::PlatformIrq>,
     ack: crate::isr::AckFn,
@@ -238,22 +240,36 @@ fn connect_platform(
     event
 }
 
+/// No NIC of netstack's own: take one an NDIS miniport drives. A miniport can bind
+/// minutes into boot (PnP installs a downloaded driver late), so wait as long as it
+/// takes, with the engine marked dead meanwhile so TDI callers fail fast instead of
+/// queueing behind a worker that is not polling; it comes back once bound.
+fn ndis_fallback() -> Option<crate::ndisphy::NdisPhy> {
+    crate::tditrans::mark_engine_dead();
+    nsprint!("[NETSTACK] no NIC of its own; waiting for an NDIS miniport\n");
+    let phy = crate::ndisphy::bringup()?;
+    crate::tditrans::revive_engine();
+    Some(phy)
+}
+
 unsafe extern "system" fn worker(_context: PVOID) {
     nsprint!("[NETSTACK] M2/M3 engine: starting smoltcp poll loop\n");
 
-    // Device backend: virtio-net (default) or — with `feature = "ndis"` — an NDIS
-    // protocol shim above a real miniport (M11). Both expose the same phy::Device
-    // surface, so the poll loop below is backend-agnostic.
-    #[cfg(not(feature = "ndis"))]
+    // Device backend: a NIC netstack drives itself (virtio-net, the e1000s, the
+    // Pi's GENET and GEM), else an NDIS miniport through the protocol shim (M11).
+    // All expose the same phy::Device surface, so the poll loop is backend-agnostic.
     let mut platform_irq: Option<crate::pnp::PlatformIrq> = None;
-    #[cfg(not(feature = "ndis"))]
-    let mut phy = match device::bringup() {
+    let ndis_only = crate::dma::NDIS_ONLY.load(core::sync::atomic::Ordering::Acquire);
+    if ndis_only {
+        nsprint!("[NETSTACK] NETSTACK=NDIS: not driving any NIC directly\n");
+    }
+    let mut phy = match (!ndis_only).then(device::bringup).flatten() {
         Some(d) => AnyPhy::Virtio(VirtioPhy::new(d)),
-        None => match crate::e1000::bringup() {
+        None => match (!ndis_only).then(crate::e1000::bringup).flatten() {
             Some(d) => AnyPhy::E1000(crate::e1000::E1000Phy::new(d)),
             // No PCI NIC: a platform NIC (pnp.rs) starts moments after
             // DriverEntry when the machine has one.
-            None => match crate::pnp::wait().and_then(|nic| {
+            None => match (!ndis_only).then(crate::pnp::wait).flatten().and_then(|nic| {
                 platform_irq = nic.irq;
                 match nic.kind {
                 crate::pnp::NicKind::Genet => {
@@ -263,22 +279,16 @@ unsafe extern "system" fn worker(_context: PVOID) {
                 }
             }) {
                 Some(phy) => phy,
-                None => {
-                    nsprint!("[NETSTACK] FAIL: M2 device bringup\n");
-                    crate::tditrans::mark_engine_dead();
-                    return;
-                }
+                None => match ndis_fallback() {
+                    Some(n) => AnyPhy::Ndis(n),
+                    None => {
+                        nsprint!("[NETSTACK] FAIL: M2 device bringup\n");
+                        crate::tditrans::mark_engine_dead();
+                        return;
+                    }
+                },
             },
         },
-    };
-    #[cfg(feature = "ndis")]
-    let mut phy = match crate::ndisphy::bringup() {
-        Some(p) => p,
-        None => {
-            nsprint!("[NETSTACK] FAIL: M11 NDIS adapter bringup\n");
-            crate::tditrans::mark_engine_dead();
-            return;
-        }
     };
     let mac = phy.mac();
     // Publish the MAC for the M9 management plane (iphlpapi IFEntry queries).
@@ -287,9 +297,8 @@ unsafe extern "system" fn worker(_context: PVOID) {
     // M10: connect the NIC's interrupt so an arriving frame wakes this worker via
     // an event instead of pure busy-polling: virtio's INTx (x86 and arm64), the
     // GEM's PnP interrupt on the Pi 5. Null on any failure → the loop keeps the `delay_ms`
-    // poll fallback, no regression. The NDIS backend (M11) drives RX from
-    // ProtocolReceive instead, so this is gated off there.
-    #[cfg(not(feature = "ndis"))]
+    // poll fallback, no regression. The NDIS backend's receive handlers set its
+    // event instead.
     let rx_event: *mut ntkrnl_sys::ddk::KEVENT = match &mut phy {
         AnyPhy::Virtio(v) => {
             v.enable_interrupts();
@@ -324,6 +333,7 @@ unsafe extern "system" fn worker(_context: PVOID) {
         AnyPhy::Genet(g) => {
             connect_platform(platform_irq, crate::genet::irq_ack, g.dev().irq_ctx(), || g.dev().enable_interrupts())
         }
+        AnyPhy::Ndis(_) => crate::ndis::rx_event(),
     };
 
     let mut config = Config::new(HardwareAddress::Ethernet(EthernetAddress(mac)));
@@ -625,8 +635,7 @@ unsafe extern "system" fn worker(_context: PVOID) {
         if matches!(&phy, AnyPhy::Genet(g) if g.dev().rearm_irq()) {
             pending = Some(1);
         }
-        #[cfg(not(feature = "ndis"))]
-        {
+                {
             if rx_event.is_null() {
                 delay_ms(pending.map(|d| d.clamp(1, 10)).unwrap_or(10));
             } else {
@@ -646,7 +655,5 @@ unsafe extern "system" fn worker(_context: PVOID) {
                 }
             }
         }
-        #[cfg(feature = "ndis")]
-        delay_ms(pending.map(|d| d.clamp(1, 10)).unwrap_or(10));
     }
 }
