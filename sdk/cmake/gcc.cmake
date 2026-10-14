@@ -748,7 +748,7 @@ endfunction()
 ##                    [NO_CD]                           (skip add_cd_file —
 ##                                                       e.g. uefildr, which
 ##                                                       boot_images embeds)
-##                    [DESTINATION <cd-dir>] [NAME_ON_CD <name>])
+##                    [DESTINATION <cd-dir>...] [NAME_ON_CD <name>])
 ##
 ## <crate> is the cargo bin crate whose build.rs uses reactos-link and is
 ## arch-aware (i686/x86_64/aarch64-kernel.json under the crate dir); its
@@ -770,7 +770,7 @@ include(${CMAKE_CURRENT_LIST_DIR}/cargo_link_context.cmake)
 ## so the shared body crate compiles once instead of once per module (the 95 keyboard
 ## layouts). Each output gets the kind's post-link and its own cd entry.
 function(add_cargo_module _target _crate _output)
-    cmake_parse_arguments(_acm "NO_CD" "KIND;DESTINATION;NAME_ON_CD;BODY_CRATE" "BODY_CRATES;EXTRA_DEPENDS;BINS" ${ARGN})
+    cmake_parse_arguments(_acm "NO_CD;DELAY_IMPORTS" "KIND;NAME_ON_CD;BODY_CRATE" "BODY_CRATES;EXTRA_DEPENDS;BINS;DESTINATION" ${ARGN})
     if(NOT _acm_KIND)
         set(_acm_KIND kerneldll)
     endif()
@@ -1018,6 +1018,17 @@ function(add_cargo_module _target _crate _output)
     else()
         message(FATAL_ERROR "add_cargo_module: unknown KIND ${_acm_KIND}")
     endif()
+    # DELAY_IMPORTS: the cell links gen-delaylib.py libs (Linker::delay_import_lib).
+    # lld leaves their DELAY_IMPORT directory empty; add_delay_importlibs' POST_BUILD
+    # points it at the bracketed table, after set_module_type's own post-link.
+    if(_acm_DELAY_IMPORTS)
+        if(NOT (VIBEOS_ENABLE_DELAYLOAD AND NOT VIBEOS_NO_DELAYLOAD))
+            message(FATAL_ERROR "add_cargo_module(${_target} DELAY_IMPORTS): the cell always "
+                "links real delay-import libs, but this build has delay-load disabled")
+        endif()
+        list(APPEND _postlink COMMAND $<TARGET_FILE:native-pefixup> --delayimport __ACM_OUT__)
+        set(_postdep native-pefixup)
+    endif()
 
     # i386 ONLY: the pinned nightly, single-sourced from `.rust-nightly` at the repo
     # root (bump it THERE, not here). `-Z build-std` + the custom `x86-softfloat`
@@ -1126,32 +1137,37 @@ function(add_cargo_module _target _crate _output)
             endforeach()
             set_property(GLOBAL PROPERTY VIBEOS_TXTSETUP_FILES "${_acm_txtsetup}")
         endif()
+        # DESTINATION may name several directories: comctl32 also ships in two winsxs
+        # assemblies.
         foreach(_out ${_outs})
-            get_filename_component(_acm_out_name ${_out} NAME)
-            set(_acm_cd_name ${_acm_NAME_ON_CD})
-            if(NOT _acm_cd_name)
-                set(_acm_cd_name ${_acm_out_name})
-            endif()
-            add_cd_file(FILE ${_out} DESTINATION ${_acm_DESTINATION}
-                NAME_ON_CD ${_acm_cd_name} NO_CAB FOR all)
-            # ...and INSTALL it. On the bootcd NO_CAB puts the file loose on the CD, which the
-            # setup boot needs, and leaves it out of reactos.cab, which is what setup installs
-            # from: an installed system had no smss, csrss or winlogon at all. Upstream lists such
-            # binaries twice, loose and in the cabinet; so do we. Only the install directories
-            # (the loader is not installed), and only under the built name, which is the name
-            # the cabinet keeps (a renamed output is installed by its txtsetup.sif row instead).
-            # A file txtsetup.sif already installs (its [SourceDisksFiles] rows: the boot
-            # drivers, hal, ntoskrnl, ntdll...) stays out of the cabinet: both copies ran, and the
-            # second could not overwrite the first (16 ACCESS_DENIED copies per install).
-            string(TOLOWER "${_acm_out_name}" _acm_out_lc)
-            list(FIND _acm_txtsetup "${_acm_out_lc}" _acm_in_txtsetup)
-            if(_acm_cd_name STREQUAL _acm_out_name AND _acm_in_txtsetup EQUAL -1
-               AND _acm_DESTINATION MATCHES "^reactos/system32(/drivers)?$")
-                add_cd_file(FILE ${_out} DESTINATION ${_acm_DESTINATION} FOR bootcd)
-                if(TARGET reactos_cab_inf)
-                    add_dependencies(reactos_cab_inf ${_target})
+            foreach(_acm_dest ${_acm_DESTINATION})
+                get_filename_component(_acm_out_name ${_out} NAME)
+                set(_acm_cd_name ${_acm_NAME_ON_CD})
+                if(NOT _acm_cd_name)
+                    set(_acm_cd_name ${_acm_out_name})
                 endif()
-            endif()
+                add_cd_file(FILE ${_out} DESTINATION ${_acm_dest}
+                    NAME_ON_CD ${_acm_cd_name} NO_CAB FOR all)
+                # ...and INSTALL it. On the bootcd NO_CAB puts the file loose on the CD, which the
+                # setup boot needs, and leaves it out of reactos.cab, which is what setup installs
+                # from: an installed system had no smss, csrss or winlogon at all. Upstream lists such
+                # binaries twice, loose and in the cabinet; so do we. Only the install directories
+                # (the loader is not installed: system32, drivers and the winsxs assemblies), and
+                # only under the built name, which is the name
+                # the cabinet keeps (a renamed output is installed by its txtsetup.sif row instead).
+                # A file txtsetup.sif already installs (its [SourceDisksFiles] rows: the boot
+                # drivers, hal, ntoskrnl, ntdll...) stays out of the cabinet: both copies ran, and the
+                # second could not overwrite the first (16 ACCESS_DENIED copies per install).
+                string(TOLOWER "${_acm_out_name}" _acm_out_lc)
+                list(FIND _acm_txtsetup "${_acm_out_lc}" _acm_in_txtsetup)
+                if(_acm_cd_name STREQUAL _acm_out_name AND _acm_in_txtsetup EQUAL -1
+                   AND _acm_dest MATCHES "^reactos/(system32(/drivers)?|winsxs/[^/]+)$")
+                    add_cd_file(FILE ${_out} DESTINATION ${_acm_dest} FOR bootcd)
+                    if(TARGET reactos_cab_inf)
+                        add_dependencies(reactos_cab_inf ${_target})
+                    endif()
+                endif()
+            endforeach()
         endforeach()
     endif()
 endfunction()

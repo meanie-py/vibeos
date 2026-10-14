@@ -90,6 +90,7 @@ REPLACED = (
     "add_library",
     "set_module_type",
     "add_importlibs",
+    "add_delay_importlibs",
     "target_link_libraries",
     "add_pch",
     "add_cd_file",
@@ -107,8 +108,11 @@ TRANSFERRED = (
     "set_wine_module",
 )
 # Properties that only name the output file, which the cell already takes from the link
-# edge (chcp.com, help.exe for cmd_help).
-NAME_PROPERTIES = {"SUFFIX", "OUTPUT_NAME", "PREFIX"}
+# edge (chcp.com, help.exe for cmd_help), and two the cell has no use for: spoolsv's
+# ENABLE_EXPORTS (its exports come from the .def; its import lib from spec2def
+# ADD_IMPORTLIB, which stays, and the link edge writes no --out-implib) and DEFINE_SYMBOL
+# (a define for the target's own compiles, of which there are none left).
+NAME_PROPERTIES = {"SUFFIX", "OUTPUT_NAME", "PREFIX", "ENABLE_EXPORTS", "DEFINE_SYMBOL"}
 # Statements naming the target that neither link nor compile it.
 KEPT = ("project",)
 
@@ -154,7 +158,7 @@ class Cell:
     c_shims: list[str]
     rc: str | None  # rc source, repo relative
     rc_defines: list[str]
-    destination: str | None
+    destinations: list[str]  # CD directories, as the CMakeLists spells them
     name_on_cd: str | None
     # Per arch: did cmake's link carry the body's panic handler? Only then does the cell
     # take panic_common (and with it all of core); otherwise panic-lean.
@@ -164,6 +168,13 @@ class Cell:
     # Per arch, the static libs cmake linked AFTER the body (they lose a duplicate
     # definition to it); the rest of `static_libs` precede it.
     late_libs: dict[str, list[str]] = field(default_factory=dict)
+    # add_delay_importlibs: same shape as import_libs, linked through gen-delaylib.py.
+    delay_import_libs: list[tuple[str, str, str]] = field(default_factory=list)
+    # The c_shims cmake generates into the build dir (widl's RPC stubs, flex output).
+    generated: list[str] = field(default_factory=list)
+    # (basename, delayed) in cmake's link order, when there are delay imports: an
+    # `__imp_` symbol two of the libs define binds to the first (Linker::delay_import_lib).
+    import_order: list[tuple[str, bool]] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
 
 
@@ -198,8 +209,8 @@ def link_edge(arch: str, target: str, repo: Path = REPO) -> Link:
     sub = re.search(r"--subsystem,([\w:.]+)", flags_s)
     base = re.search(r"--image-base,(0x[0-9a-fA-F]+)", flags_s)
     stack = re.search(r"--stack,(\d+)", flags_s)
-    if "--delayload" in flags_s or "delayimp" in (libs_m.group(1) if libs_m else ""):
-        raise GenError(f"{target}: delay imports are not modelled yet")
+    if "--delayload" in flags_s:
+        raise GenError(f"{target}: lld --delayload is not modelled (add_delay_importlibs is)")
     defs = re.findall(r"(\S+\.def)\b", m.group(0).split("\n", 1)[0])
     return Link(
         arch,
@@ -215,9 +226,17 @@ def link_edge(arch: str, target: str, repo: Path = REPO) -> Link:
 
 
 @functools.cache
-def spec_index(repo: Path = REPO) -> dict[str, tuple[str, str]]:
-    """import-lib basename -> (spec, dll file name), from every `spec2def(... ADD_IMPORTLIB)`."""
-    out: dict[str, tuple[str, str]] = {}
+def spec_index(repo: Path = REPO) -> dict[str, tuple[str, str] | None]:
+    """import-lib basename -> (spec, dll file name); None when it cannot be told.
+
+    The build's own `spec2def --implib` command decides (`build-<arch>/build.ninja`):
+    uxtheme's CMakeLists has two `spec2def(uxtheme.dll ...)`, uxtheme_vista.spec under
+    an option, and the build uses uxtheme.spec. A regular import lib hides picking the
+    wrong one (only referenced symbols import); a delay lib carries every thunk, and
+    comctl32 grew twelve delay imports. With no build command, a `spec2def(...
+    ADD_IMPORTLIB)` only counts when it is the only one for that DLL.
+    """
+    cands: dict[str, list[tuple[str, str]]] = {}
     for cm in repo.rglob("CMakeLists.txt"):
         rel = cm.relative_to(repo).as_posix()
         if rel.startswith(("build-", "vendor/", "modules/rostests", ".")):
@@ -228,8 +247,41 @@ def spec_index(repo: Path = REPO) -> dict[str, tuple[str, str]]:
             if "ADD_IMPORTLIB" not in m.group(3):
                 continue
             spec_rel = (cm.parent / spec).relative_to(repo).as_posix()
-            out.setdefault(dll.rsplit(".", 1)[0].lower(), (spec_rel, dll))
+            c = cands.setdefault(dll.rsplit(".", 1)[0].lower(), [])
+            if (spec_rel, dll) not in c:
+                c.append((spec_rel, dll))
+    built: dict[str, set[tuple[str, str]]] = {}
+    for a in ARCHES:
+        for m in re.finditer(
+            r"spec2def [^&|\n]*?-n=(\S+) [^&|\n]*?--implib -d=\S*/lib(\w+)_implib\.def "
+            r"/tmp/vibeos/(\S+\.spec)",
+            _read(repo / f"build-{a}/build.ninja"),
+        ):
+            built.setdefault(m.group(2).lower(), set()).add((m.group(3), m.group(1)))
+    out: dict[str, tuple[str, str] | None] = {}
+    for base in cands.keys() | built.keys():
+        if base in built:
+            out[base] = next(iter(built[base])) if len(built[base]) == 1 else None
+        else:
+            out[base] = cands[base][0] if len(cands[base]) == 1 else None
     return out
+
+
+def cd_dirs(arch: str, output: str, repo: Path = REPO) -> set[str]:
+    """The livecd directories the build puts `output` (build-dir relative) in."""
+    lsts = [
+        p
+        for p in (repo / f"build-{arch}/boot").glob("livecd.*.lst")
+        if p.name not in ("livecd.cmake.lst", "livecd.stripped.lst")
+    ]
+    if len(lsts) != 1:
+        raise GenError(f"build-{arch}/boot: expected one livecd.<config>.lst, found {lsts}")
+    want = f"/tmp/vibeos/build-{arch}/{output}"
+    return {
+        ln.split("=", 1)[0].rsplit("/", 1)[0]
+        for ln in _read(lsts[0]).splitlines()
+        if ln.partition("=")[2] == want
+    }
 
 
 def _rc_command(arch: str, rc_obj: str, repo: Path = REPO) -> tuple[str, list[str]]:
@@ -282,7 +334,7 @@ def cmake_facts(cmake: Path, target: str, libs: list[str] | None = None) -> dict
     whose `lib<name>.a` the module actually links (cmd_help_rust for help.exe)."""
     text = cmake.read_text()
     facts: dict = {
-        "destination": None,
+        "destinations": [],
         "name_on_cd": None,
         "body": None,
         "body_var": "",
@@ -310,12 +362,11 @@ def cmake_facts(cmake: Path, target: str, libs: list[str] | None = None) -> dict
         if cmd == "add_cd_file":
             if "DESTINATION" in a:
                 dest = a[a.index("DESTINATION") + 1]
-                if facts["destination"] not in (None, dest):
-                    # winprint: one add_cd_file per arch, each to its own prtprocs dir.
-                    facts["unknown"].append(
-                        f"add_cd_file to both {facts['destination']} and {dest}"
-                    )
-                facts["destination"] = dest
+                # Several are fine (comctl32 also ships in two winsxs assemblies);
+                # model() checks them against the CD lists the build wrote, which is
+                # what refuses winprint's one-per-arch prtprocs dirs.
+                if dest not in facts["destinations"]:
+                    facts["destinations"].append(dest)
             if "NAME_ON_CD" in a:
                 facts["name_on_cd"] = a[a.index("NAME_ON_CD") + 1]
         elif cmd.lower() in TRANSFERRED:
@@ -373,6 +424,10 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
     # `# main.c  # replaced by Rust (...)` lines are how cohab_census and the coverage
     # tools know a TU was translated: whatever statement held them, they are kept.
     carried: list[str] = []
+    # What the target linked: their INTERFACE usage requirements reached its compiles
+    # (libmsvcrt's `_DLL __USE_CRTIMP`, without which a flex scanner's `stdin` is not
+    # dllimport and `_iob` is left undefined), so the <m>_shims compiles must link them.
+    usage: list[str] = []
 
     def carry(chunk: str) -> None:
         carried.extend(ln.strip() for ln in chunk.splitlines() if SRC_IN_COMMENT.match(ln))
@@ -386,6 +441,10 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
             and (a[0] == cell.target or (cmd == "add_cd_file" and cell.target in a))
         ):
             drop = True
+        if a and a[0] == cell.target and cmd == "add_importlibs":
+            usage += [f"lib{x}" for x in a[1:]]
+        if a and a[0] == cell.target and cmd == "target_link_libraries":
+            usage += [x for x in a[1:] if not x.startswith("${") and x not in ("PRIVATE", "PUBLIC")]
         if a and a[0] == cell.target and cmd.lower() in TRANSFERRED:
             drop = True  # re-emitted below, on the OBJECT libraries
             transferred.append((cmd, raw))
@@ -435,7 +494,13 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
             "# The C still compiled, in an OBJECT library whose compile the cargo link replays."
         )
         shims = f"{cell.target}_shims"
-        block.append(f"add_library({shims} OBJECT {' '.join(Path(c).name for c in cell.c_shims)})")
+        names = [
+            f"${{CMAKE_CURRENT_BINARY_DIR}}/{Path(c).name}" if c in cell.generated else Path(c).name
+            for c in cell.c_shims
+        ]
+        block.append(f"add_library({shims} OBJECT {' '.join(names)})")
+        if usage:
+            block.append(f"target_link_libraries({shims} PRIVATE {' '.join(dict.fromkeys(usage))})")
         if cell.rc_defines:
             block.append(f"target_compile_definitions({shims} PRIVATE {' '.join(cell.rc_defines)})")
         extra.append(f"{cell.target}_shims")
@@ -479,12 +544,14 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
     call = [f"add_cargo_module({cell.target} {cell.target}-cargo {cell.output_name}"]
     call.append(f"    KIND {kind}")
     call.append(f"    BODY_CRATE {cell.body_crate}")
-    if cell.destination:
-        call.append(f"    DESTINATION {cell.destination}")
+    if cell.destinations:
+        call.append(f"    DESTINATION {' '.join(cell.destinations)}")
     else:
         call.append("    NO_CD")
     if cell.name_on_cd:
         call.append(f"    NAME_ON_CD {cell.name_on_cd}")
+    if cell.delay_import_libs:
+        call.append("    DELAY_IMPORTS")
     if extra:
         call.append(f"    EXTRA_DEPENDS {' '.join(extra)})")
     else:
@@ -531,7 +598,8 @@ def model(target: str, repo: Path = REPO) -> Cell:
     per_arch: dict[str, tuple] = {}
     late: dict[str, list[str]] = {a: [] for a in ARCHES}
     for a in ARCHES:
-        imports, static, msvcrtex = [], [], None
+        imports, delayed, static, msvcrtex = [], [], [], None
+        order: list[tuple[str, bool]] = []
         after_body = False
         for lib in links[a].libs:
             name = lib.split("/")[-1]
@@ -547,24 +615,39 @@ def model(target: str, repo: Path = REPO) -> Cell:
                 if m.group(1) in MSVCRTEX:
                     msvcrtex = MSVCRTEX[m.group(1)]
                 continue
+            # add_delay_importlibs: `lib<x>_delayed.a`, which gen-delaylib.py made
+            # from the same implib .def the engine generates.
+            m = re.search(r"CMakeFiles/lib(\w+)_delayed\.dir/lib\1_delayed\.a$", lib)
+            if m:
+                base = m.group(1).lower()
+                if not specs.get(base):
+                    raise GenError(f"{target}: delay import {base}: no single spec2def --implib")
+                if (specs[base][0], specs[base][1], base) not in delayed:
+                    delayed.append((specs[base][0], specs[base][1], base))
+                    order.append((base, True))
+                continue
             m = re.search(r"CMakeFiles/lib(\w+)\.dir/lib\1\.a$", lib)
             if m:
                 base = m.group(1).lower()
-                if base not in specs:
-                    raise GenError(f"{target}: import lib {base} has no spec2def ADD_IMPORTLIB")
+                if not specs.get(base):
+                    raise GenError(f"{target}: import lib {base}: no single spec2def --implib")
                 if (specs[base][0], specs[base][1], base) not in imports:
                     imports.append((specs[base][0], specs[base][1], base))
+                    order.append((base, False))
                 continue
             if lib not in static:
                 static.append(lib)
                 if after_body:
                     late[a].append(lib)
-        per_arch[a] = (tuple(imports), tuple(static), msvcrtex)
-    if len({(v[0], v[2]) for v in per_arch.values()}) > 1:
+        if delayed and not any(re.search(r"/libdelayimp(_rust)?\.a$", lib) for lib in static):
+            raise GenError(f"{target}: delay imports without the delayimp runtime")
+        per_arch[a] = (tuple(imports), tuple(static), msvcrtex, tuple(delayed), tuple(order))
+    if len({(v[0], v[2], v[3], v[4]) for v in per_arch.values()}) > 1:
         raise GenError(f"{target}: imports or CRT differ by arch (not modelled)")
-    imports, _, msvcrtex = per_arch["amd64"]
+    imports, _, msvcrtex, delayed, order = per_arch["amd64"]
     static_by_arch = {a: list(v[1]) for a, v in per_arch.items()}
     shims, rc, rc_defines, spec, stubs = [], None, [], None, False
+    generated: list[str] = []
     for obj in first.inputs:
         nm = obj.split("/")[-1]
         if nm.endswith(".rc.res"):
@@ -579,7 +662,16 @@ def model(target: str, repo: Path = REPO) -> Cell:
         elif nm.endswith(".c.obj"):
             src = cmake_dir / nm.removesuffix(".obj")
             if not src.exists():
-                raise GenError(f"{target}: compiled C {nm} not found beside the CMakeLists")
+                # Generated C: widl's RPC stubs (srvsvc_s.c, from add_rpc_files) and
+                # flex output live in the build dir. The shim is named build-dir
+                # relative, which c_from_compile_db resolves there, and cmake still
+                # generates it (as a source of the <m>_shims OBJECT library).
+                rel = cmake_dir.relative_to(repo) / nm.removesuffix(".obj")
+                if not all((repo / f"build-{a}" / rel).exists() for a in ARCHES):
+                    raise GenError(f"{target}: compiled C {nm} found in no source or build dir")
+                shims.append(rel.as_posix())
+                generated.append(rel.as_posix())
+                continue
             if nm == "rust_cohab_stub.c.obj" and _placeholder(src):
                 continue
             shims.append(src.relative_to(repo).as_posix())
@@ -600,6 +692,19 @@ def model(target: str, repo: Path = REPO) -> Cell:
     stacks = {links[a].stack for a in ARCHES}
     if len(stacks) > 1:
         raise GenError(f"{target}: stack reserve differs by arch {stacks}")
+    # The CMakeLists' add_cd_file statements are read without their if(ARCH ...)
+    # context: the CD list each arch's build wrote must be exactly what they say.
+    var = r"\\\$\\\{\w+\\\}"  # a ${VAR} once re.escape()d
+    pats = [re.compile(re.sub(var, "[^/]+", re.escape(d))) for d in facts["destinations"]]
+    for a in ARCHES:
+        dirs = cd_dirs(a, links[a].output, repo)
+        if len(dirs) != len(pats) or not all(
+            sum(1 for p in pats if p.fullmatch(d)) == 1 for d in dirs
+        ):
+            raise GenError(
+                f"{target}: CD destinations differ by arch ({a} ships to {sorted(dirs)},"
+                f" the CMakeLists names {facts['destinations']})"
+            )
     body, feats, defaults = facts["body"]
     panics = {a: carries_panic_handler(repo / f"build-{a}" / links[a].output) for a in ARCHES}
     return Cell(
@@ -615,6 +720,9 @@ def model(target: str, repo: Path = REPO) -> Cell:
         body_features=feats,
         body_defaults=defaults,
         import_libs=list(imports),
+        delay_import_libs=list(delayed),
+        generated=generated,
+        import_order=list(order) if delayed else [],
         msvcrtex=msvcrtex,
         static_libs=static_by_arch,
         spec=spec,
@@ -622,7 +730,7 @@ def model(target: str, repo: Path = REPO) -> Cell:
         c_shims=shims,
         rc=rc,
         rc_defines=rc_defines,
-        destination=facts["destination"],
+        destinations=facts["destinations"],
         name_on_cd=facts["name_on_cd"],
         panics=panics,
         body_var=facts["body_var"],
@@ -699,8 +807,13 @@ def build_rs(cell: Cell) -> str:
         L.append(f'        .spec2def("{cell.spec[0]}", "{cell.spec[1]}")')
     if cell.spec_stubs:
         L.append("        .spec_stubs()")
-    for spec, dllname, base in cell.import_libs:
-        L.append(f'        .import_lib("{spec}", "{dllname}", "{base}")')
+    regular = {lib[2]: lib for lib in cell.import_libs}
+    delayed = {lib[2]: lib for lib in cell.delay_import_libs}
+    order = cell.import_order or [(b, False) for b in regular] + [(b, True) for b in delayed]
+    for base, delay in order:
+        spec, dllname, _ = (delayed if delay else regular)[base]
+        method = "delay_import_lib" if delay else "import_lib"
+        L.append(f'        .{method}("{spec}", "{dllname}", "{base}")')
     if any(early.values()):
         L.append("        // cmake-built static libraries, reused until each has a cargo home.")
         L.append("        .static_libs(static_libs)")
@@ -916,7 +1029,7 @@ _STUB_CELL: dict = dict(
     c_shims=[],
     rc=None,
     rc_defines=[],
-    destination=None,
+    destinations=[],
     name_on_cd=None,
 )
 

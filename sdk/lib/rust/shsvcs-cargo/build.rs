@@ -26,7 +26,7 @@ fn main() {
         .resource_from_rc("base/services/shsvcs/shsvcs.rc", "shsvcs_res")
         .spec2def("base/services/shsvcs/shsvcs.spec", "shsvcs.dll")
         .spec_stubs()
-        .import_lib("dll/win32/uxtheme/uxtheme_vista.spec", "uxtheme.dll", "uxtheme")
+        .import_lib("dll/win32/uxtheme/uxtheme.spec", "uxtheme.dll", "uxtheme")
         .import_lib("dll/win32/advapi32/advapi32.spec", "advapi32.dll", "advapi32")
         .import_lib("dll/win32/msvcrt/msvcrt.spec", "msvcrt.dll", "msvcrt")
         .import_lib("dll/win32/kernel32/kernel32.spec", "kernel32.dll", "kernel32")
