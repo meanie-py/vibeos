@@ -235,6 +235,25 @@ def test_rerun_does_not_count_its_own_block_as_declared(tmp_path: Path):
     assert not w.apply_block(spec, w.render_block(again, "10.0.1")), "idempotent"
 
 
+def test_a_hand_edit_inside_the_block_is_refused_not_reverted(tmp_path: Path):
+    """Editing a dormant row in place reads as done in the diff, and the next regeneration
+    restores the stub. Refuse instead; a real line above the block is the way in."""
+    spec = tmp_path / "t.spec"
+    spec.write_text(SPEC)
+    r = ref({"New": fn()})
+    w.apply_block(spec, w.render_block(w.plan_module("t.dll", spec, r), "10.0.1"))
+    text = spec.read_text()
+    stub = next(line for line in text.splitlines() if line.endswith(" New"))
+    spec.write_text(text.replace(stub, "@ stdcall New() other.Elsewhere"))
+    block = w.render_block(w.plan_module("t.dll", spec, r), "10.0.1")
+    with pytest.raises(w.HandEditedBlock, match="New"):
+        w.apply_block(spec, block)
+    assert w.apply_block(spec, block, force=True)
+    # The documented route: the real line moves above the block, and the stub leaves.
+    spec.write_text("@ stdcall New() other.Elsewhere\n" + spec.read_text())
+    w.apply_block(spec, w.render_block(w.plan_module("t.dll", spec, r), "10.0.1"))
+
+
 @pytest.mark.parametrize(
     "original",
     [

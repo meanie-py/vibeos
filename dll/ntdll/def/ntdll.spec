@@ -69,17 +69,18 @@
 @ stdcall -stub -version=0x600+ EtwEnumerateProcessRegGuids(ptr long ptr)
 @ stdcall -stub -version=0x502 EtwEnumerateTraceGuids(ptr long ptr)
 @ stdcall -stub -version=0x600+ EtwEventActivityIdControl(long ptr)
-@ stdcall -stub -version=0x600+ EtwEventEnabled(int64 ptr)
+@ stdcall EtwEventEnabled(int64 ptr)
 @ stdcall -stub -version=0x600+ EtwEventProviderEnabled(long long long)
-@ stdcall -stub -version=0x600+ EtwEventRegister(ptr ptr ptr ptr)
-@ stdcall -stub -version=0x600+ EtwEventSetInformation(int64 long ptr long)
-@ stdcall -stub -version=0x600+ EtwEventUnregister(int64)
-@ stdcall -stub -version=0x600+ EtwEventWrite(int64 ptr long ptr)
+@ stdcall EtwEventRegister(ptr ptr ptr ptr)
+@ stdcall EtwEventSetInformation(int64 long ptr long)
+@ stdcall EtwEventUnregister(int64)
+@ stdcall EtwEventWrite(int64 ptr long ptr)
 @ stdcall -stub -version=0x600+ EtwEventWriteEndScenario(long ptr long long)
 @ stdcall -stub -version=0x600+ EtwEventWriteFull(long long long long long long long)
 @ stdcall -stub -version=0x600+ EtwEventWriteStartScenario(long ptr long long)
-@ stdcall -stub -version=0x600+ EtwEventWriteString(long long long long)
-@ stdcall -stub -version=0x600+ EtwEventWriteTransfer(long ptr ptr ptr long long)
+@ stdcall EtwEventWriteString(int64 long int64 ptr)
+@ stdcall EtwEventWriteTransfer(int64 ptr ptr ptr long ptr)
+@ stdcall EtwEventWriteEx(int64 ptr int64 long ptr ptr long ptr)
 @ stdcall -version=0x502 EtwFlushTraceA(double str ptr)
 @ stdcall -version=0x502 EtwFlushTraceW(double wstr ptr)
 @ stdcall EtwGetTraceEnableFlags(double)
@@ -1992,7 +1993,6 @@
 @ stub -version=0xA00+ ApiSetQuerySchema
 @ stub -version=0xA00+ DbgUiConvertStateChangeStructureEx
 @ stub -version=0xA00+ EtwCheckCoverage
-@ stub -version=0xA00+ EtwEventWriteEx
 @ stub -version=0xA00+ EtwEventWriteNoRegistration
 @ stub -version=0xA00+ EvtIntReportAuthzEventAndSourceAsync
 @ stub -version=0xA00+ EvtIntReportEventAndSourceAsync

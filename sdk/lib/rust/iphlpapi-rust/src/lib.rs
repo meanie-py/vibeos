@@ -34,6 +34,7 @@ pub mod iphlpapi {
     pub mod ifenum_reactos; // interface enumeration over TDI (the largest unit, 40 fns)
     pub mod iphlpapi_fakestubs; // the 16 Pf* packet-filter exports (hand-written)
     pub mod iphlpapi_main; // the 74 IP-Helper entry points + qsort *Sorter comparators
+    pub mod luid; // ConvertInterfaceIndexToLuid + FreeMibTable
     pub mod iphlpapi_reactos; // misc ROS-native helpers
     pub mod ipstats_reactos; // IP/TCP/UDP/ICMP stats + the arp/route/tcp/udp tables via TDI
     pub mod media; // DisableMediaSense/RestoreMediaSense

@@ -223,7 +223,43 @@ size and reports `signature:` instead of `linked`; the export now goes to a WINA
 `D3DKMTOpenAdapterFromHdc` (success without an adapter), the clipboard-listener pair
 (fails without a last error), and the rest the list names.
 
+**Done 2026-10-13: the first written bodies, top of the app ranking.** 21 new functions,
+none of them existing code: apps 271 -> 251 missing functions, 671 -> 541 import sites
+(-19%).
+- kernel32 (`client/vista_ex.rs`): the `ProcThreadAttributeList` trio (Wine's layout;
+  `CreateProcess` accepts `EXTENDED_STARTUPINFO_PRESENT` but does not yet APPLY
+  `PARENT_PROCESS` or `HANDLE_LIST` — owed), `CreateEventEx`/`CreateMutexEx`/
+  `CreateWaitableTimerEx` A and W, `Get`/`SetThreadErrorMode` (through
+  `RtlSetThreadErrorMode`: the TEB holds the RTL_SEM encoding, 0x10/0x20/0x40, not the
+  SEM_ values), `RaiseFailFastException`, and `GetLogicalProcessorInformationEx`
+  synthesized from the legacy information class (one processor group; the kernel has
+  no `SystemLogicalProcessorInformationEx`).
+- shell32: `SHGetKnownFolderPath` and `SHGetKnownFolderIDList` over the CSIDL table,
+  `SHGetStockIconInfo` (a subset of SIIDs mapped to our `IDI_SHELL_*` icons; the rest
+  get the generic document icon).
+- ntdll's user-mode ETW (`EtwEventRegister`, `EtwEventWrite*`...): providers register and
+  every event is dropped, which is Windows with no trace session; advapi32's `Event*`
+  forward to them by their Windows names. iphlpapi's `ConvertInterfaceIndexToLuid` and
+  `FreeMibTable`.
+
+`stubs --apply` had silently reverted two of these: an edit made INSIDE the generated
+block (advapi32's `Event*` rows, ntdll's `EtwEventWriteEx`) read as finished in the spec
+diff and was restored to a stub on the next regeneration. Both `stubs` and `forwards` now
+refuse to drop a row from their block that they did not write (`HandEditedBlock`);
+move it above the block.
+
 **Owed on the export surface:**
+- **The rest of the app ranking, in order:** the kernel I/O set (`CancelIoEx` 14 apps,
+  `GetQueuedCompletionStatusEx` 7, `CancelSynchronousIo`, `FlushProcessWriteBuffers`),
+  whose `Nt*` system calls are themselves stubs, so this is kernel work; user32's
+  touch, DisplayConfig, power-notification and DPI calls (gated with no body, 4-6 apps
+  each); setupapi's `SetupDiGetDevicePropertyW` (still C); iphlpapi's `GetIfTable2` and
+  LUID conversions; `GetTimeZoneInformationForYear`, `QueryThreadCycleTime`.
+- **Then the version flip to 10.0** (Windows 11 is 10.0 too, build 22000+): report it,
+  apply Windows' manifest rule in `GetVersionEx` (6.2 unless the manifest declares the
+  Windows 10 `supportedOS`; `RtlGetVersion` is never lied to), and audit the ~88 sources
+  that branch on the version. Last, because a program that sees 10.0 stops taking its
+  XP fallback.
 - **Seed the stub-hit report with real programs.** Its first reading (607 boots: smoke,
   kmtest on all arches, and one amd64 appstorm sweep, which opens every stock app and
   applet): exactly one stub is reached, the SEH smoke probe's deliberate

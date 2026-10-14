@@ -16,7 +16,7 @@
 @ stdcall -stub -version=0x600+ ConvertGuidToStringW(ptr ptr long)
 @ stdcall -stub -version=0x600+ ConvertInterfaceAliasToLuid(wstr ptr)
 @ stdcall -stub -version=0x600+ ConvertInterfaceGuidToLuid(ptr ptr)
-@ stdcall -stub -version=0x600+ ConvertInterfaceIndexToLuid(long ptr)
+@ stdcall ConvertInterfaceIndexToLuid(long ptr)
 @ stdcall -stub -version=0x600+ ConvertInterfaceLuidToAlias(ptr ptr long)
 @ stdcall -stub -version=0x600+ ConvertInterfaceLuidToGuid(ptr ptr)
 @ stdcall -stub -version=0x600+ ConvertInterfaceLuidToIndex(ptr ptr)
@@ -37,7 +37,7 @@
 @ stdcall EnableRouter(ptr ptr)
 @ stdcall FlushIpNetTable(long)
 @ stub FlushIpNetTableFromStack
-@ stdcall -stub -version=0x600+ FreeMibTable(ptr)
+@ stdcall FreeMibTable(ptr)
 @ stdcall GetAdapterIndex(wstr ptr)
 @ stdcall GetAdapterOrderMap()
 @ stdcall GetAdaptersAddresses(long long ptr ptr ptr)

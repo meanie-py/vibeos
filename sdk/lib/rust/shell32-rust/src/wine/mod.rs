@@ -20,3 +20,4 @@ pub mod shlmenu;
 pub mod pidl;
 pub mod shellpath;
 pub mod shellord;
+pub mod knownfolders;

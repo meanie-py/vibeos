@@ -132,8 +132,8 @@
 @ stdcall -stub -version=0x600+ CreateDirectoryTransactedW(wstr wstr ptr ptr)
 @ stdcall CreateDirectoryW(wstr ptr)
 @ stdcall CreateEventA(ptr long long str)
-@ stdcall -stub -version=0x600+ CreateEventExA(ptr str long long)
-@ stdcall -stub -version=0x600+ CreateEventExW(ptr wstr long long)
+@ stdcall CreateEventExA(ptr str long long)
+@ stdcall CreateEventExW(ptr wstr long long)
 @ stdcall CreateEventW(ptr long long wstr)
 @ stdcall CreateFiber(long ptr ptr)
 @ stdcall CreateFiberEx(long long long ptr ptr)
@@ -157,8 +157,8 @@
 @ stdcall CreateMailslotW(ptr long long ptr)
 @ stdcall CreateMemoryResourceNotification(long)
 @ stdcall CreateMutexA(ptr long str)
-@ stdcall -stub -version=0x600+ CreateMutexExA(ptr str long long)
-@ stdcall -stub -version=0x600+ CreateMutexExW(ptr wstr long long)
+@ stdcall CreateMutexExA(ptr str long long)
+@ stdcall CreateMutexExW(ptr wstr long long)
 @ stdcall CreateMutexW(ptr long wstr)
 @ stdcall CreateNamedPipeA(str long long long long long long ptr)
 @ stdcall CreateNamedPipeW(wstr long long long long long long ptr)
@@ -192,8 +192,8 @@
 @ stdcall CreateTimerQueueTimer(ptr long ptr ptr long long long)
 @ stdcall CreateToolhelp32Snapshot(long long)
 @ stdcall CreateWaitableTimerA(ptr long str)
-@ stub -version=0x600+ CreateWaitableTimerExA
-@ stub -version=0x600+ CreateWaitableTimerExW
+@ stdcall CreateWaitableTimerExA(ptr str long long)
+@ stdcall CreateWaitableTimerExW(ptr wstr long long)
 @ stdcall CreateWaitableTimerW(ptr long wstr)
 ;@ stdcall -arch=x86_64 CtrlRoutine()
 @ stdcall DeactivateActCtx(long ptr)
@@ -215,7 +215,7 @@
 @ stub -version=0x600+ DeleteFileTransactedA
 @ stub -version=0x600+ DeleteFileTransactedW
 @ stdcall DeleteFileW(wstr)
-@ stdcall -stub -version=0x600+ DeleteProcThreadAttributeList(ptr)
+@ stdcall DeleteProcThreadAttributeList(ptr)
 @ stdcall DeleteTimerQueue(long)
 @ stdcall DeleteTimerQueueEx(long long)
 @ stdcall DeleteTimerQueueTimer(long long long)
@@ -524,7 +524,7 @@
 @ stdcall GetLogicalDriveStringsW(long ptr)
 @ stdcall GetLogicalDrives()
 @ stdcall GetLogicalProcessorInformation(ptr ptr)
-@ stdcall -stub -version=0x601+ GetLogicalProcessorInformationEx(long ptr ptr)
+@ stdcall GetLogicalProcessorInformationEx(long ptr ptr)
 @ stdcall GetLongPathNameA(str long long)
 @ stub -version=0x600+ GetLongPathNameTransactedA
 @ stub -version=0x600+ GetLongPathNameTransactedW
@@ -643,7 +643,7 @@
 @ stdcall GetTempPathA(long ptr)
 @ stdcall GetTempPathW(long ptr)
 @ stdcall GetThreadContext(long ptr)
-@ stdcall -stub -version=0x600+ GetThreadErrorMode()
+@ stdcall GetThreadErrorMode()
 @ stdcall GetThreadGroupAffinity(ptr ptr)
 @ stdcall GetThreadIOPendingFlag(long ptr)
 @ stdcall GetThreadId(ptr)
@@ -740,7 +740,7 @@
 @ stdcall InitializeCriticalSection(ptr)
 @ stdcall InitializeCriticalSectionAndSpinCount(ptr long)
 @ stdcall -version=0x600+ InitializeCriticalSectionEx(ptr long long)
-@ stdcall -stub -version=0x600+ InitializeProcThreadAttributeList(ptr long long ptr)
+@ stdcall InitializeProcThreadAttributeList(ptr long long ptr)
 @ stdcall InitializeSListHead(ptr) ntdll.RtlInitializeSListHead
 @ stdcall -version=0x600+ InitializeSRWLock(ptr) ntdll.RtlInitializeSRWLock
 @ stdcall -arch=i386 -ret64 InterlockedCompareExchange64(ptr double double) ntdll.RtlInterlockedCompareExchange64
@@ -934,7 +934,7 @@
 @ stdcall QueueUserAPC(ptr long long)
 @ stdcall QueueUserWorkItem(ptr ptr long)
 @ stdcall -norelay RaiseException(long long long ptr)
-@ stdcall -stub -version=0x603+ RaiseFailFastException(ptr ptr long)
+@ stdcall RaiseFailFastException(ptr ptr long)
 @ stdcall ReOpenFile(ptr long long long)
 @ stdcall ReadConsoleA(long ptr long ptr ptr)
 @ stdcall ReadConsoleInputA(long ptr long ptr)
@@ -1128,7 +1128,7 @@
 @ stdcall SetThreadAffinityMask(long long)
 @ stdcall SetThreadContext(long ptr)
 @ stdcall -version=0xA00+ SetThreadDescription(ptr wstr)
-@ stdcall -stub -version=0x600+ SetThreadErrorMode(long ptr)
+@ stdcall SetThreadErrorMode(long ptr)
 @ stdcall SetThreadExecutionState(long)
 @ stdcall SetThreadGroupAffinity(ptr ptr ptr)
 @ stdcall SetThreadIdealProcessor(long long)
@@ -1197,7 +1197,7 @@
 @ stdcall UnregisterWait(long)
 @ stdcall UnregisterWaitEx(long long)
 @ stub -version=0x600+ UpdateCalendarDayOfWeek
-@ stdcall -stub -version=0x600+ UpdateProcThreadAttribute(ptr long ptr ptr ptr ptr ptr)
+@ stdcall UpdateProcThreadAttribute(ptr long ptr ptr ptr ptr ptr)
 @ stdcall UpdateResourceA(long str str long ptr long)
 @ stdcall UpdateResourceW(long wstr wstr long ptr long)
 @ stdcall VDMConsoleOperation(long long)

@@ -509,14 +509,66 @@ def render_block(plan: Plan, build: str) -> str:
     return "\n".join([*head, *body, END]) + "\n"
 
 
-def apply_block(spec: Path, block: str | None, begin: str = BEGIN, end: str = END) -> bool:
+class HandEditedBlock(Exception):
+    """A generated block holds a row the regeneration would drop with nothing replacing it."""
+
+
+def hand_edits(old: str, block: str | None, begin: str, end: str) -> list[str]:
+    """Rows of the generated block on disk that the new block drops while no row outside
+    the block declares the name: an edit made INSIDE the block, which regenerating would
+    silently revert. A row that leaves because the name got a real line elsewhere (the
+    documented way to take one over) is not one of these.
+
+    The incident: an agent turned advapi32's dormant `@ stub EventRegister` rows into
+    forwards in place, `stubs --apply` restored the stubs, and the build shipped without
+    the eight exports while every spec diff looked finished.
+    """
+    m = re.search(rf"{re.escape(begin)}(.*?){re.escape(end)}", old, flags=re.S)
+    if m is None:
+        return []
+    kept = set((block or "").splitlines())
+    outside = spec_rows(strip_block(strip_block(old), FWD_BEGIN, FWD_END))
+    edits = []
+    for line in m.group(1).splitlines():
+        if line in kept or not line.startswith("@") or _generated_row(line, begin):
+            continue
+        if not any(name in outside for name in spec_rows(line)):
+            edits.append(line)
+    return edits
+
+
+def _generated_row(line: str, begin: str) -> bool:
+    """A row in the form the generator writes: dormant at the tier (stubs block), or a
+    same-name forward (forwards block). Those come and go with the reference and the
+    providers; anything else in the block was typed there."""
+    rows = [r for rs in spec_rows(line).values() for r in rs]
+    if not rows:
+        return True
+    if begin == BEGIN:
+        return f"-version={TIER}+" in rows[0].opts
+    name = next(iter(spec_rows(line)))
+    return bool(re.search(rf"\s\w+\.{re.escape(name)}\s*(#.*)?$", line))
+
+
+def apply_block(
+    spec: Path, block: str | None, begin: str = BEGIN, end: str = END, force: bool = False
+) -> bool:
     """Write (or remove, when block is None) the generated block. True if the file changed.
 
     Byte-preserving outside the block: latin-1 round-trips any byte, and the hand-written
     part is never re-flowed. A first version normalized trailing blank lines and a missing
     final newline, which put a spurious hunk in 231 specs that the block never touched.
+
+    Refuses (HandEditedBlock) when the block on disk carries a hand edit the rewrite would
+    discard, unless `force`: move the row above the block, then re-run.
     """
     old = spec.read_bytes().decode("latin-1")
+    if not force and (edits := hand_edits(old, block, begin, end)):
+        raise HandEditedBlock(
+            f"{spec}: {len(edits)} row(s) inside the generated block would be discarded:\n"
+            + "\n".join(f"    {e}" for e in edits)
+            + "\n  Move each above the block as a real line (or pass --force to drop them)."
+        )
     pat = re.compile(rf"\n?{re.escape(begin)}.*?{re.escape(end)}\n", flags=re.S)
     if block is None:
         new = pat.sub("", old)
@@ -1129,7 +1181,7 @@ def cmd_stubs(args: argparse.Namespace) -> int:
     for module, spec, mref in specs_for(modules, ref):
         plan = plan_module(module, spec, mref)
         block = render_block(plan, ref["build"]) if plan.lines or plan.data else None
-        changed = apply_block(spec, block) if args.apply else False
+        changed = apply_block(spec, block, force=args.force) if args.apply else False
         totals["stubs"] += len(plan.lines)
         totals["data"] += len(plan.data)
         totals["skipped"] += len(plan.skipped)
@@ -1160,7 +1212,9 @@ def cmd_forwards(args: argparse.Namespace) -> int:
         providers = [(p, modules[f"{p}.dll"][0]) for p in names]
         lines = plan_forwards(module, spec, providers, ref["modules"][module], version)
         block = render_forwards(module, names, lines) if lines else None
-        changed = apply_block(spec, block, FWD_BEGIN, FWD_END) if args.apply else False
+        changed = (
+            apply_block(spec, block, FWD_BEGIN, FWD_END, force=args.force) if args.apply else False
+        )
         total += len(lines)
         print(
             f"  {len(lines):4d} forwards  {module:14s} -> {'/'.join(names):18s} "
@@ -1289,10 +1343,12 @@ def main(argv: list[str] | None = None) -> int:
     r.set_defaults(fn=cmd_reference)
     s = sub.add_parser("stubs", help="line out missing exports as dormant spec stubs")
     s.add_argument("--apply", action="store_true", help="write the specs (default: dry run)")
+    s.add_argument("--force", action="store_true", help="discard hand edits inside the block")
     s.add_argument("--top", type=int, default=40)
     s.set_defaults(fn=cmd_stubs)
     f = sub.add_parser("forwards", help="forward gated exports to the *_vista DLLs")
     f.add_argument("--apply", action="store_true", help="write the specs (default: dry run)")
+    f.add_argument("--force", action="store_true", help="discard hand edits inside the block")
     f.add_argument("--show", type=int, default=0, help="print the first N lines per module")
     f.add_argument(
         "--check",
@@ -1315,7 +1371,11 @@ def main(argv: list[str] | None = None) -> int:
     gt.add_argument("-v", "--verbose", action="store_true", help="list the linked rows too")
     gt.set_defaults(fn=cmd_gated)
     args = ap.parse_args(argv)
-    return args.fn(args)
+    try:
+        return args.fn(args)
+    except HandEditedBlock as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

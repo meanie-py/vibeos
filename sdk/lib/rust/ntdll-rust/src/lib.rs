@@ -37,6 +37,10 @@ pub mod rtl;
 // etw/trace.c). Always compiled — lands in ntdll.dll proper.
 pub mod etw;
 
+// etw_user — user-mode EtwEvent* provider surface: registers and drops events (no
+// trace session exists). Lands in ntdll.dll proper.
+pub mod etw_user;
+
 // dbg/ — main ntdll.dll debug-UI native wrappers (dbg/dbgui.c). Always
 // compiled — lands in ntdll.dll proper.
 pub mod dbg;
