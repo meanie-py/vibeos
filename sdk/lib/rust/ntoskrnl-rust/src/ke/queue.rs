@@ -216,10 +216,14 @@ pub unsafe extern "system" fn KeReadStateQueue(Queue: PKQUEUE) -> LONG {
     (*Queue).Header.SignalState as LONG
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn KeRemoveQueue(
+/// `KeRemoveQueue` and `KeRemoveQueueEx` share this. `Alertable` is what the wait
+/// stores in `Thread->Alertable` (KxQueueThreadWait clears it): with it set, a user APC
+/// queued to a UserMode waiter unwaits it with STATUS_USER_APC (KiInsertQueueApc), which
+/// is what GetQueuedCompletionStatusEx(fAlertable=TRUE) relies on to run APCs.
+unsafe fn ki_remove_queue(
     Queue: PKQUEUE,
     WaitMode: KPROCESSOR_MODE,
+    Alertable: BOOLEAN,
     Timeout: PLARGE_INTEGER,
 ) -> PLIST_ENTRY {
     let Timeout = opaque_ptr(Timeout);
@@ -246,6 +250,7 @@ pub unsafe extern "system" fn KeRemoveQueue(
                 core::ptr::addr_of_mut!(DueTime),
                 core::ptr::addr_of_mut!(Hand),
             );
+        (*Thread).Alertable = Alertable;
     } else {
         *kt_WaitIrql(Thread) = KeRaiseIrqlToSynchLevel();
         KxQueueThreadWait(
@@ -254,6 +259,7 @@ pub unsafe extern "system" fn KeRemoveQueue(
                 core::ptr::addr_of_mut!(DueTime),
                 core::ptr::addr_of_mut!(Hand),
             );
+        (*Thread).Alertable = Alertable;
         KiAcquireDispatcherLockAtSynchLevel();
     }
 
@@ -308,8 +314,17 @@ pub unsafe extern "system" fn KeRemoveQueue(
                 KiReleaseDispatcherLockFromSynchLevel();
                 KiExitDispatcher(*kt_WaitIrql(Thread));
             } else {
-                if (WaitMode != 0i8) && (kt_ApcState(Thread).UserApcPending != 0) {
-                    QueueEntry = STATUS_USER_APC as isize as PLIST_ENTRY;
+                // The same test every dispatcher wait makes: with Alertable clear it is the
+                // old "user APC already pending" check; with it set, a user APC queued
+                // BEFORE the wait (or an alert) also ends it, which the APC-insert wakeup
+                // cannot cover because the thread was not waiting yet.
+                let alert_status = ntkrnl_sys::inline::ke::KiCheckAlertability(
+                    Thread as _,
+                    Alertable,
+                    WaitMode,
+                );
+                if alert_status != 0 {
+                    QueueEntry = alert_status as isize as PLIST_ENTRY;
                     (*Queue).CurrentCount += 1;
                     break;
                 }
@@ -364,6 +379,7 @@ pub unsafe extern "system" fn KeRemoveQueue(
                 core::ptr::addr_of_mut!(DueTime),
                 core::ptr::addr_of_mut!(Hand),
             );
+            (*Thread).Alertable = Alertable;
             KiAcquireDispatcherLockAtSynchLevel();
             (*Queue).CurrentCount -= 1;
         }
@@ -372,6 +388,57 @@ pub unsafe extern "system" fn KeRemoveQueue(
     KiReleaseDispatcherLockFromSynchLevel();
     KiExitDispatcher(*kt_WaitIrql(Thread));
     QueueEntry
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn KeRemoveQueue(
+    Queue: PKQUEUE,
+    WaitMode: KPROCESSOR_MODE,
+    Timeout: PLARGE_INTEGER,
+) -> PLIST_ENTRY {
+    ki_remove_queue(Queue, WaitMode, 0u8, Timeout)
+}
+
+/// Windows 7's batched dequeue: up to `Count` entries into `EntryArray`. Only the first
+/// removal waits (alertably if asked, until `Timeout`); the rest take what is already
+/// queued. Returns the number of slots written. When the wait ends without an entry,
+/// slot 0 holds the wait status (STATUS_TIMEOUT, STATUS_USER_APC...) and the return is 1,
+/// as from `KeRemoveQueue`, so a caller tests each entry the same way.
+#[no_mangle]
+pub unsafe extern "system" fn KeRemoveQueueEx(
+    Queue: PKQUEUE,
+    WaitMode: KPROCESSOR_MODE,
+    Alertable: BOOLEAN,
+    Timeout: PLARGE_INTEGER,
+    EntryArray: *mut PLIST_ENTRY,
+    Count: ULONG,
+) -> ULONG {
+    if Count == 0 || EntryArray.is_null() {
+        return 0;
+    }
+    let first = ki_remove_queue(Queue, WaitMode, Alertable, Timeout);
+    core::ptr::write_volatile(EntryArray, first);
+    if queue_status(first) {
+        return 1;
+    }
+    let mut zero: LARGE_INTEGER = core::mem::zeroed();
+    let mut n: ULONG = 1;
+    while n < Count {
+        let entry = ki_remove_queue(Queue, WaitMode, 0u8, &mut zero);
+        if queue_status(entry) {
+            break;
+        }
+        core::ptr::write_volatile(EntryArray.add(n as usize), entry);
+        n += 1;
+    }
+    n
+}
+
+/// A KeRemoveQueue result that is an NTSTATUS, not a list entry (no entry lives in the
+/// first page).
+#[inline]
+pub fn queue_status(entry: PLIST_ENTRY) -> bool {
+    (entry as usize) < 0x1000
 }
 
 #[no_mangle]

@@ -811,6 +811,8 @@ extern "C" {
     static mut shell32_hInstance: HINSTANCE;
 }
 
+use crate::island::{GetVersion, CLSID_ShellSearchExt};
+use crate::prelude::LOBYTE;
 use core::ffi::c_void;
 use crate::shellcom::*;
 use crate::types::*;
@@ -1178,21 +1180,27 @@ pub unsafe fn CControlPanelFolder_GetDisplayNameOf_body(this: *mut CControlPanel
 
 pub unsafe fn CControlPanelFolder_SetNameOf_body(this: *mut CControlPanelFolder, hwndOwner: HWND, pidl: PCUITEMID_CHILD, lpName: LPCOLESTR, dwFlags: SHGDNF, pPidlOut: *mut PITEMID_CHILD) -> HRESULT { E_FAIL }
 
-pub unsafe fn CControlPanelFolder_GetDefaultSearchGUID_body(this: *mut CControlPanelFolder, pguid: *mut GUID) -> HRESULT { E_NOTIMPL }
-
-pub unsafe fn CControlPanelFolder_EnumSearches_body(this: *mut CControlPanelFolder, ppenum: *mut *mut IEnumExtraSearch) -> HRESULT { E_NOTIMPL }
-
-pub unsafe fn CControlPanelFolder_GetDefaultColumn_body(this: *mut CControlPanelFolder, dwRes: DWORD, pSort: *mut ULONG, pDisplay: *mut ULONG) -> HRESULT {
-    if !pSort.is_null() {
-        *pSort = 0;
+pub unsafe fn CControlPanelFolder_GetDefaultSearchGUID_body(this: *mut CControlPanelFolder, pguid: *mut GUID) -> HRESULT {
+    if LOBYTE(GetVersion()) >= 6 {
+        return E_NOTIMPL;
     }
-    if !pDisplay.is_null() {
-        *pDisplay = 0;
-    }
+    *pguid = CLSID_ShellSearchExt;
     S_OK
 }
 
+pub unsafe fn CControlPanelFolder_EnumSearches_body(this: *mut CControlPanelFolder, ppenum: *mut *mut IEnumExtraSearch) -> HRESULT {
+    *ppenum = core::ptr::null_mut();
+    E_NOTIMPL
+}
+
+pub unsafe fn CControlPanelFolder_GetDefaultColumn_body(this: *mut CControlPanelFolder, dwRes: DWORD, pSort: *mut ULONG, pDisplay: *mut ULONG) -> HRESULT {
+    E_NOTIMPL // Not required when column 0 is our default.
+}
+
 pub unsafe fn CControlPanelFolder_GetDefaultColumnState_body(this: *mut CControlPanelFolder, iColumn: UINT, pcsFlags: *mut SHCOLSTATEF) -> HRESULT {
+    if LOBYTE(GetVersion()) < 6 {
+        return E_NOTIMPL;
+    }
     if pcsFlags.is_null() || iColumn >= CONTROLPANEL_COL_COUNT {
         return E_INVALIDARG;
     }

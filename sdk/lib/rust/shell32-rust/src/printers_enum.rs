@@ -275,6 +275,7 @@ pub const PRINTER_ENUM_LOCAL: DWORD = 0x00000002;
 pub const SHCOLSTATE_ONBYDEFAULT: DWORD = 0x10;
 
 pub const SHCOLSTATE_TYPE_STR: DWORD = 1;
+pub const SHCOLSTATE_TYPE_INT: DWORD = 2;
 
 pub const SHCONTF_NONFOLDERS: DWORD = 64;
 
@@ -485,7 +486,7 @@ pub static PrinterSFHeader: [shvheader; 6] = [
     },
     shvheader {
         colnameid: (IDS_SHV_COLUMN_DOCUMENTS) as WORD,
-        colstate: (SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT) as WORD,
+        colstate: (SHCOLSTATE_TYPE_INT | SHCOLSTATE_ONBYDEFAULT) as WORD,
         fmt: (LVCFMT_LEFT) as WORD,
         cxChar: (15) as WORD,
     },

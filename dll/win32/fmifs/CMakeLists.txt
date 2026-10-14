@@ -17,6 +17,8 @@ spec2def(fmifs.dll fmifs.spec ADD_IMPORTLIB)
 add_library(fmifs_res OBJECT fmifs.rc)
 target_compile_definitions(fmifs_res PRIVATE UNICODE _UNICODE)
 target_include_directories(fmifs_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+# Generated inputs those compiles read, ordered before them.
+add_dependencies(fmifs_res psdk)
 add_cargo_module(fmifs fmifs-cargo fmifs.dll
     KIND win32dll
     BODY_CRATE fmifs-rust

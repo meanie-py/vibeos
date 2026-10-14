@@ -615,7 +615,11 @@ pub unsafe extern "system" fn DrivesContextMenuCallback(
         }
 
         if idCmd != 0 {
-            (*pqcminfo).idCmdFirst = idCmd + 1; // Note: This assumes the items above are added in ascending id order
+            // Note: This assumes the items above are added in ascending id order.
+            // CORE-18577: We add 2 instead of 1 because the other is for our separator!
+            // Our CDefaultContextMenu::QueryContextMenu incorrectly assumes
+            // all DFM_MERGECONTEXTMENU added items have IDs.
+            (*pqcminfo).idCmdFirst = idCmd + 2;
         }
         hr = S_OK;
     } else if uMsg == DFM_INVOKECOMMAND {

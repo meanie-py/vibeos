@@ -95,9 +95,12 @@ NtSetEaFile
 NtQueryQuotaInformationFile
 NtSetQuotaInformationFile
 NtCancelIoFile
+NtCancelIoFileEx
+NtCancelSynchronousIoFile
 NtNotifyChangeKey
 NtNotifyChangeMultipleKeys
 NtRemoveIoCompletion
+NtRemoveIoCompletionEx
 NtCreateIoCompletion
 NtOpenIoCompletion
 NtCreateThread

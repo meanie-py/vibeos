@@ -1331,6 +1331,8 @@ pub static CPP_COM_WSTR_A3AA8E5ADA40: [WCHAR; 7] = [0x0028, 0x0025, 0x0063, 0x00
 pub static CPP_COM_WSTR_DFA857FD38EE: [WCHAR; 16] = [0x0025, 0x0063, 0x003A, 0x005C, 0x0061, 0x0075, 0x0074, 0x006F, 0x0072, 0x0075, 0x006E, 0x002E, 0x0069, 0x006E, 0x0066, 0x0000];
 pub static CPP_COM_WSTR_F3A549CDECCE: [WCHAR; 7] = [0x0020, 0x0028, 0x0025, 0x0063, 0x003A, 0x0029, 0x0000];
 
+use crate::island::{GetVersion, CLSID_ShellSearchExt};
+use crate::prelude::LOBYTE;
 use core::ffi::c_void;
 use crate::shellcom::*;
 use crate::types::*;
@@ -1771,6 +1773,10 @@ pub unsafe fn CDrivesFolder_ParseDisplayName_v1_body(this: *mut CDrivesFolder, h
         && (*lpszDisplayName.offset(2) == 0x005Cu16
             || *lpszDisplayName.offset(2) == 0)
     {
+        if *lpszDisplayName.offset(2) == 0 && LOBYTE(GetVersion()) < 6 {
+            return E_INVALIDARG; // NT5 does not support parsing "c:"
+        }
+
         let mut szRoot: [WCHAR; 8] = [0; 8];
         PathBuildRootW(
             szRoot.as_mut_ptr(),
@@ -2407,18 +2413,21 @@ pub unsafe fn CDrivesFolder_SetDriveLabel_body(this: *mut CDrivesFolder, hwndOwn
     hr
 }
 
-pub unsafe fn CDrivesFolder_GetDefaultSearchGUID_body(this: *mut CDrivesFolder, pguid: *mut GUID) -> HRESULT { E_NOTIMPL }
+pub unsafe fn CDrivesFolder_GetDefaultSearchGUID_body(this: *mut CDrivesFolder, pguid: *mut GUID) -> HRESULT {
+    if LOBYTE(GetVersion()) >= 6 {
+        return E_NOTIMPL;
+    }
+    *pguid = CLSID_ShellSearchExt;
+    S_OK
+}
 
-pub unsafe fn CDrivesFolder_EnumSearches_body(this: *mut CDrivesFolder, ppenum: *mut *mut IEnumExtraSearch) -> HRESULT { E_NOTIMPL }
+pub unsafe fn CDrivesFolder_EnumSearches_body(this: *mut CDrivesFolder, ppenum: *mut *mut IEnumExtraSearch) -> HRESULT {
+    *ppenum = core::ptr::null_mut();
+    E_NOTIMPL
+}
 
 pub unsafe fn CDrivesFolder_GetDefaultColumn_body(this: *mut CDrivesFolder, dwRes: DWORD, pSort: *mut ULONG, pDisplay: *mut ULONG) -> HRESULT {
-    if !pSort.is_null() {
-        *pSort = 0;
-    }
-    if !pDisplay.is_null() {
-        *pDisplay = 0;
-    }
-    S_OK
+    E_NOTIMPL // Not required when column 0 is our default.
 }
 
 pub unsafe fn CDrivesFolder_GetDefaultColumnState_body(this: *mut CDrivesFolder, iColumn: UINT, pcsFlags: *mut SHCOLSTATEF) -> HRESULT {

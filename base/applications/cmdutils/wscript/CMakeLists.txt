@@ -22,6 +22,9 @@ target_include_directories(wscript_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # How cmake compiled the target's sources, now on the OBJECT libraries.
 set_wine_module_fixme(wscript_shims)
 set_wine_module_fixme(wscript_res)
+# Generated inputs those compiles read, ordered before them.
+add_dependencies(wscript_shims stdole2 wscript_idlheader)
+add_dependencies(wscript_res stdole2 wscript_idlheader)
 set(WSCRIPT_REUSED
     ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
     ${CMAKE_BINARY_DIR}/sdk/lib/delayimp/libdelayimp_rust.a

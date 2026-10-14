@@ -1433,6 +1433,12 @@ pub unsafe fn CDesktopFolder__ParseDisplayNameByParent_body(this: *mut CDesktopF
         bPath = TRUE;
         pidlParent = _ILCreateMyComputer();
     } else if PathIsUNCW(lpszDisplayName) != 0 {
+        // "\\\\..."
+        if *lpszDisplayName.add(2) == b'?' as WCHAR
+            && (*lpszDisplayName.add(3) == b'\\' as WCHAR || *lpszDisplayName.add(3) == 0)
+        {
+            return E_INVALIDARG; // We don't support "\\?\..." paths
+        }
         bPath = TRUE;
         pidlParent = _ILCreateNetwork();
     }
@@ -2023,16 +2029,13 @@ pub unsafe fn CDesktopFolder_SetNameOf_body(this: *mut CDesktopFolder, hwndOwner
 
 pub unsafe fn CDesktopFolder_GetDefaultSearchGUID_body(this: *mut CDesktopFolder, pguid: *mut GUID) -> HRESULT { E_NOTIMPL }
 
-pub unsafe fn CDesktopFolder_EnumSearches_body(this: *mut CDesktopFolder, ppenum: *mut *mut IEnumExtraSearch) -> HRESULT { E_NOTIMPL }
+pub unsafe fn CDesktopFolder_EnumSearches_body(this: *mut CDesktopFolder, ppenum: *mut *mut IEnumExtraSearch) -> HRESULT {
+    *ppenum = core::ptr::null_mut();
+    E_NOTIMPL
+}
 
 pub unsafe fn CDesktopFolder_GetDefaultColumn_body(this: *mut CDesktopFolder, dwRes: DWORD, pSort: *mut ULONG, pDisplay: *mut ULONG) -> HRESULT {
-    if !pSort.is_null() {
-        *pSort = 0;
-    }
-    if !pDisplay.is_null() {
-        *pDisplay = 0;
-    }
-    S_OK
+    E_NOTIMPL // Not required when column 0 is our default.
 }
 
 pub unsafe fn CDesktopFolder_GetDefaultColumnState_body(this: *mut CDesktopFolder, iColumn: UINT, pcsFlags: *mut SHCOLSTATEF) -> HRESULT {

@@ -323,12 +323,16 @@ extern "system" {
     pub fn NtQueryPortInformationProcess();
     pub fn NtGetCurrentProcessorNumber();
     pub fn NtWaitForMultipleObjects32(_: usize, _: usize, _: usize, _: usize, _: usize);
+    pub fn NtCancelIoFileEx(_: usize, _: usize, _: usize);
+    pub fn NtCancelSynchronousIoFile(_: usize, _: usize, _: usize);
+    pub fn NtRemoveIoCompletionEx(_: usize, _: usize, _: usize, _: usize, _: usize, _: usize);
+    pub fn NtFlushProcessWriteBuffers();
 }
 
 // `static mut` (not `static`) so consumers can `addr_of_mut!` to match
 // the original C `ULONG_PTR MainSSDT[]` declaration.
 #[no_mangle]
-pub static mut MainSSDT: [SSDTEntry; 296] = [
+pub static mut MainSSDT: [SSDTEntry; 300] = [
     NtAcceptConnectPort as SSDTEntry,
     NtAccessCheck as SSDTEntry,
     NtAccessCheckAndAuditAlarm as SSDTEntry,
@@ -625,12 +629,16 @@ pub static mut MainSSDT: [SSDTEntry; 296] = [
     NtQueryPortInformationProcess as SSDTEntry,
     NtGetCurrentProcessorNumber as SSDTEntry,
     NtWaitForMultipleObjects32 as SSDTEntry,
+    NtCancelIoFileEx as SSDTEntry,
+    NtCancelSynchronousIoFile as SSDTEntry,
+    NtRemoveIoCompletionEx as SSDTEntry,
+    NtFlushProcessWriteBuffers as SSDTEntry,
 ];
 
 // `argcount * sizeof(void*)` per entry — pointer size differs per arch
 // so the multiplier is computed at const-eval time.
 #[no_mangle]
-pub static mut MainSSPT: [u8; 296] = [
+pub static mut MainSSPT: [u8; 300] = [
     (6 * core::mem::size_of::<usize>()) as u8,
     (8 * core::mem::size_of::<usize>()) as u8,
     (11 * core::mem::size_of::<usize>()) as u8,
@@ -927,7 +935,11 @@ pub static mut MainSSPT: [u8; 296] = [
     (0 * core::mem::size_of::<usize>()) as u8,
     (0 * core::mem::size_of::<usize>()) as u8,
     (5 * core::mem::size_of::<usize>()) as u8,
+    (3 * core::mem::size_of::<usize>()) as u8,
+    (3 * core::mem::size_of::<usize>()) as u8,
+    (6 * core::mem::size_of::<usize>()) as u8,
+    (0 * core::mem::size_of::<usize>()) as u8,
 ];
 
 #[no_mangle]
-pub static mut MainNumberOfSysCalls: u32 = 296;
+pub static mut MainNumberOfSysCalls: u32 = 300;

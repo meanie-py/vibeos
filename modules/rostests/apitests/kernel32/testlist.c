@@ -23,6 +23,7 @@ extern void func_GetLocaleInfo(void);
 extern void func_GetModuleFileName(void);
 extern void func_GetVolumeInformation(void);
 extern void func_InitOnce(void);
+extern void func_IoCancelEx(void);
 extern void func_interlck(void);
 extern void func_IsDBCSLeadByteEx(void);
 extern void func_JapaneseCalendar(void);
@@ -70,6 +71,7 @@ const struct test winetest_testlist[] =
     { "GetModuleFileName",           func_GetModuleFileName },
     { "GetVolumeInformation",        func_GetVolumeInformation },
     { "InitOnce",                    func_InitOnce },
+    { "IoCancelEx",                  func_IoCancelEx },
     { "interlck",                    func_interlck },
     { "IsDBCSLeadByteEx",            func_IsDBCSLeadByteEx },
     { "JapaneseCalendar",            func_JapaneseCalendar },

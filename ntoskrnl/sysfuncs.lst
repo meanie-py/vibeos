@@ -294,3 +294,7 @@ NtWaitForKeyedEvent 4
 NtQueryPortInformationProcess 0
 NtGetCurrentProcessorNumber 0
 NtWaitForMultipleObjects32 5
+NtCancelIoFileEx 3
+NtCancelSynchronousIoFile 3
+NtRemoveIoCompletionEx 6
+NtFlushProcessWriteBuffers 0

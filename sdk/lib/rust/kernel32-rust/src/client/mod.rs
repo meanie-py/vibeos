@@ -29,3 +29,4 @@ pub mod vdm;
 pub mod virtmem;
 pub mod dllmain;
 pub mod vista_ex;
+pub mod win7_misc;

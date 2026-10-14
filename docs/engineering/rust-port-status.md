@@ -2193,6 +2193,10 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
     `_snwprintf` directly.
   They were A/B-checked against a baseline shell32 in-guest on all three arches by
   `tools/payloads/shelltail`. The paragraphs below are the history of getting here.
+  **Upstream changes are ported by hand into the Rust** (the C is inert). Synced to upstream
+  `8ac7f394963`/`26b45cebea8`/`35c272d4ca3` on 2026-10-14: shell32-rust, menuband-rust and
+  recyclebin-rust took all 15 files' changes, including the `SHGetNewLinkInfoW` rewrite
+  (PIDL input, NOUNIQUE/NOLNK/USEURLEXT) and CMenuToolbars no longer expanding `.zip`/`.cab`.
 - **shell32 activatable COM surface — 33 of 33 classes Rust-owned.**
   Rust-owned activated classes now span `CDropTargetHelper`, `CActiveDesktop`,
   `COpenControlPanel`, `CExeDropHandler`, `CCopyAsPathMenu`, `CShellItem`, `CFontsFolder`,
