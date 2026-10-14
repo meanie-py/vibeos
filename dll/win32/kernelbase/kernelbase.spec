@@ -155,8 +155,6 @@
 @ stub -version=0xA00+ CreateDirectory2W
 @ stub -version=0xA00+ CreateDirectoryFromAppW
 @ stub -version=0xA00+ CreateEnclave
-@ stub -version=0xA00+ CreateEventExA
-@ stub -version=0xA00+ CreateEventExW
 @ stub -version=0xA00+ CreateFile2
 @ stub -version=0xA00+ CreateFile2FromAppW
 @ stub -version=0xA00+ CreateFile3
@@ -165,8 +163,6 @@
 @ stub -version=0xA00+ CreateFileMappingFromApp
 @ stub -version=0xA00+ CreateFileMappingNumaW
 @ stub -version=0xA00+ CreateIoRing
-@ stub -version=0xA00+ CreateMutexExA
-@ stub -version=0xA00+ CreateMutexExW
 @ stub -version=0xA00+ CreatePrivateNamespaceW
 @ stub -version=0xA00+ CreatePseudoConsole
 @ stub -version=0xA00+ CreatePseudoConsoleAsUser
@@ -176,7 +172,6 @@
 @ stub -version=0xA00+ CreateStateContainer
 @ stub -version=0xA00+ CreateStateLock
 @ stub -version=0xA00+ CreateStateSubcontainer
-@ stub -version=0xA00+ CreateWaitableTimerExW
 @ stub -version=0xA00+ CtrlRoutine
 @ stub -version=0xA00+ CveEventWrite
 @ stub -version=0xA00+ DecodeRemotePointer # -> NTDLL.RtlDecodeRemotePointer
@@ -188,7 +183,6 @@
 @ stub -version=0xA00+ DeleteFileFromAppW
 @ stub -version=0xA00+ DeletePackageDependency
 @ stub -version=0xA00+ DeletePersistedRegistryValue
-@ stub -version=0xA00+ DeleteProcThreadAttributeList
 @ stub -version=0xA00+ DeleteStateAtomValue
 @ stub -version=0xA00+ DeleteStateContainer
 @ stub -version=0xA00+ DeleteStateContainerValue
@@ -233,15 +227,7 @@
 @ stub -version=0xA00+ EnumerateStateAtomValues
 @ stub -version=0xA00+ EnumerateStateContainerItems
 @ stub -version=0xA00+ EventActivityIdControl # -> NTDLL.EtwEventActivityIdControl
-@ stub -version=0xA00+ EventEnabled # -> NTDLL.EtwEventEnabled
 @ stub -version=0xA00+ EventProviderEnabled # -> NTDLL.EtwEventProviderEnabled
-@ stub -version=0xA00+ EventRegister # -> NTDLL.EtwEventRegister
-@ stub -version=0xA00+ EventSetInformation # -> NTDLL.EtwEventSetInformation
-@ stub -version=0xA00+ EventUnregister # -> NTDLL.EtwEventUnregister
-@ stub -version=0xA00+ EventWrite # -> NTDLL.EtwEventWrite
-@ stub -version=0xA00+ EventWriteEx # -> NTDLL.EtwEventWriteEx
-@ stub -version=0xA00+ EventWriteString # -> NTDLL.EtwEventWriteString
-@ stub -version=0xA00+ EventWriteTransfer # -> NTDLL.EtwEventWriteTransfer
 @ stub -version=0xA00+ ExtensionProgIdExists
 @ stub -version=0xA00+ FindFirstFileExFromAppW
 @ stub -version=0xA00+ FindFirstFileNameW
@@ -345,7 +331,6 @@
 @ stub -version=0xA00+ GetIsEdpEnabled
 @ stub -version=0xA00+ GetIsWdagEnabled
 @ stub -version=0xA00+ GetLocaleInfoHelper
-@ stub -version=0xA00+ GetLogicalProcessorInformationEx
 @ stub -version=0xA00+ GetMachineTypeAttributes
 @ stub -version=0xA00+ GetMappedFileNameA
 @ stub -version=0xA00+ GetMappedFileNameW
@@ -468,7 +453,6 @@
 @ stub -version=0xA00+ GetTempPath2A
 @ stub -version=0xA00+ GetTempPath2W
 @ stub -version=0xA00+ GetThreadEnabledXStateFeatures
-@ stub -version=0xA00+ GetThreadErrorMode
 @ stub -version=0xA00+ GetThreadIdealProcessorEx
 @ stub -version=0xA00+ GetThreadInformation
 @ stub -version=0xA00+ GetThreadSelectedCpuSetMasks
@@ -495,7 +479,6 @@
 @ stub -version=0xA00+ InitializeContext
 @ stub -version=0xA00+ InitializeContext2
 @ stub -version=0xA00+ InitializeEnclave
-@ stub -version=0xA00+ InitializeProcThreadAttributeList
 @ stub -version=0xA00+ InitializeProcessForWsWatch
 @ stub -version=0xA00+ InitializeSynchronizationBarrier
 @ stub -version=0xA00+ InstallELAMCertificateInfo
@@ -833,7 +816,6 @@
 @ stub -version=0xA00+ QuirkIsEnabledForPackage4
 @ stub -version=0xA00+ QuirkIsEnabledForProcess
 @ stub -version=0xA00+ RaiseCustomSystemEventTrigger
-@ stub -version=0xA00+ RaiseFailFastException
 @ stub -version=0xA00+ ReadDirectoryChangesExW
 @ stub -version=0xA00+ ReadStateAtomValue
 @ stub -version=0xA00+ ReadStateContainerValue
@@ -958,7 +940,6 @@
 @ stub -version=0xA00+ SetStateVersion
 @ stub -version=0xA00+ SetStdHandleEx
 @ stub -version=0xA00+ SetSystemTimeAdjustmentPrecise
-@ stub -version=0xA00+ SetThreadErrorMode
 @ stub -version=0xA00+ SetThreadIdealProcessorEx
 @ stub -version=0xA00+ SetThreadInformation
 @ stub -version=0xA00+ SetThreadPreferredUILanguages2
@@ -1066,7 +1047,6 @@
 @ stub -version=0xA00+ UpdatePackageStatus
 @ stub -version=0xA00+ UpdatePackageStatusForUser
 @ stub -version=0xA00+ UpdatePackageStatusForUserSid
-@ stub -version=0xA00+ UpdateProcThreadAttribute
 @ stub -version=0xA00+ UrlApplySchemeA
 @ stub -version=0xA00+ UrlApplySchemeW
 @ stub -version=0xA00+ UrlCanonicalizeA
@@ -1272,6 +1252,8 @@
 @ stdcall CreateDirectoryExW(wstr wstr ptr) kernel32.CreateDirectoryExW
 @ stdcall CreateDirectoryW(wstr ptr) kernel32.CreateDirectoryW
 @ stdcall CreateEventA(ptr long long str) kernel32.CreateEventA
+@ stdcall CreateEventExA(ptr str long long) kernel32.CreateEventExA
+@ stdcall CreateEventExW(ptr wstr long long) kernel32.CreateEventExW
 @ stdcall CreateEventW(ptr long long wstr) kernel32.CreateEventW
 @ stdcall CreateFiber(long ptr ptr) kernel32.CreateFiber
 @ stdcall CreateFiberEx(long long long ptr ptr) kernel32.CreateFiberEx
@@ -1283,6 +1265,8 @@
 @ stdcall CreateIoCompletionPort(long long long long) kernel32.CreateIoCompletionPort
 @ stdcall CreateMemoryResourceNotification(long) kernel32.CreateMemoryResourceNotification
 @ stdcall CreateMutexA(ptr long str) kernel32.CreateMutexA
+@ stdcall CreateMutexExA(ptr str long long) kernel32.CreateMutexExA
+@ stdcall CreateMutexExW(ptr wstr long long) kernel32.CreateMutexExW
 @ stdcall CreateMutexW(ptr long wstr) kernel32.CreateMutexW
 @ stdcall CreateNamedPipeW(wstr long long long long long long ptr) kernel32.CreateNamedPipeW
 @ stdcall CreatePipe(ptr ptr ptr long) kernel32.CreatePipe
@@ -1309,6 +1293,7 @@
 @ stdcall CreateThreadpoolWork(ptr ptr ptr) kernel32.CreateThreadpoolWork
 @ stdcall CreateTimerQueue() kernel32.CreateTimerQueue
 @ stdcall CreateTimerQueueTimer(ptr long ptr ptr long long long) kernel32.CreateTimerQueueTimer
+@ stdcall CreateWaitableTimerExW(ptr wstr long long) kernel32.CreateWaitableTimerExW
 @ stdcall CreateWaitableTimerW(ptr long wstr) kernel32.CreateWaitableTimerW
 @ stdcall CreateWellKnownSid(long ptr ptr ptr) advapi32.CreateWellKnownSid
 @ stdcall DeactivateActCtx(long ptr) kernel32.DeactivateActCtx
@@ -1324,6 +1309,7 @@
 @ stdcall DeleteFiber(ptr) kernel32.DeleteFiber
 @ stdcall DeleteFileA(str) kernel32.DeleteFileA
 @ stdcall DeleteFileW(wstr) kernel32.DeleteFileW
+@ stdcall DeleteProcThreadAttributeList(ptr) kernel32.DeleteProcThreadAttributeList
 @ stdcall DeleteTimerQueue(long) kernel32.DeleteTimerQueue
 @ stdcall DeleteTimerQueueEx(long long) kernel32.DeleteTimerQueueEx
 @ stdcall DeleteTimerQueueTimer(long long long) kernel32.DeleteTimerQueueTimer
@@ -1361,6 +1347,14 @@
 @ stdcall EqualPrefixSid(ptr ptr) advapi32.EqualPrefixSid
 @ stdcall EqualSid(ptr ptr) advapi32.EqualSid
 @ stdcall EscapeCommFunction(long long) kernel32.EscapeCommFunction
+@ stdcall EventEnabled(int64 ptr) advapi32.EventEnabled
+@ stdcall EventRegister(ptr ptr ptr ptr) advapi32.EventRegister
+@ stdcall EventSetInformation(int64 long ptr long) advapi32.EventSetInformation
+@ stdcall EventUnregister(int64) advapi32.EventUnregister
+@ stdcall EventWrite(int64 ptr long ptr) advapi32.EventWrite
+@ stdcall EventWriteEx(int64 ptr int64 long ptr ptr long ptr) advapi32.EventWriteEx
+@ stdcall EventWriteString(int64 long int64 ptr) advapi32.EventWriteString
+@ stdcall EventWriteTransfer(int64 ptr ptr ptr long ptr) advapi32.EventWriteTransfer
 @ stdcall ExitProcess(long) kernel32.ExitProcess
 @ stdcall ExitThread(long) kernel32.ExitThread
 @ stdcall ExpandEnvironmentStringsA(str ptr long) kernel32.ExpandEnvironmentStringsA
@@ -1526,6 +1520,7 @@
 @ stdcall GetLogicalDriveStringsW(long ptr) kernel32.GetLogicalDriveStringsW
 @ stdcall GetLogicalDrives() kernel32.GetLogicalDrives
 @ stdcall GetLogicalProcessorInformation(ptr ptr) kernel32.GetLogicalProcessorInformation
+@ stdcall GetLogicalProcessorInformationEx(long ptr ptr) kernel32.GetLogicalProcessorInformationEx
 @ stdcall GetLongPathNameA(str long long) kernel32.GetLongPathNameA
 @ stdcall GetLongPathNameW(wstr long long) kernel32.GetLongPathNameW
 @ stdcall GetModuleFileNameA(long ptr long) kernel32.GetModuleFileNameA
@@ -1603,6 +1598,7 @@
 @ stdcall GetTempPathW(long ptr) kernel32.GetTempPathW
 @ stdcall GetThreadContext(long ptr) kernel32.GetThreadContext
 @ stdcall GetThreadDescription(ptr ptr) kernel32.GetThreadDescription
+@ stdcall GetThreadErrorMode() kernel32.GetThreadErrorMode
 @ stdcall GetThreadGroupAffinity(ptr ptr) kernel32.GetThreadGroupAffinity
 @ stdcall GetThreadIOPendingFlag(long ptr) kernel32.GetThreadIOPendingFlag
 @ stdcall GetThreadId(ptr) kernel32.GetThreadId
@@ -1676,6 +1672,7 @@
 @ stdcall InitializeCriticalSection(ptr) kernel32.InitializeCriticalSection
 @ stdcall InitializeCriticalSectionAndSpinCount(ptr long) kernel32.InitializeCriticalSectionAndSpinCount
 @ stdcall InitializeCriticalSectionEx(ptr long long) kernel32.InitializeCriticalSectionEx
+@ stdcall InitializeProcThreadAttributeList(ptr long long ptr) kernel32.InitializeProcThreadAttributeList
 @ stdcall InitializeSListHead(ptr) kernel32.InitializeSListHead
 @ stdcall InitializeSRWLock(ptr) kernel32.InitializeSRWLock
 @ stdcall InitializeSecurityDescriptor(ptr long) advapi32.InitializeSecurityDescriptor
@@ -1807,6 +1804,7 @@
 @ stdcall QueueUserAPC(ptr long long) kernel32.QueueUserAPC
 @ stdcall QueueUserWorkItem(ptr ptr long) kernel32.QueueUserWorkItem
 @ stdcall -norelay RaiseException(long long long ptr) kernel32.RaiseException
+@ stdcall RaiseFailFastException(ptr ptr long) kernel32.RaiseFailFastException
 @ stdcall ReOpenFile(ptr long long long) kernel32.ReOpenFile
 @ stdcall ReadConsoleA(long ptr long ptr ptr) kernel32.ReadConsoleA
 @ stdcall ReadConsoleInputA(long ptr long ptr) kernel32.ReadConsoleInputA
@@ -1965,6 +1963,7 @@
 @ stdcall SetSystemTimeAdjustment(long long) kernel32.SetSystemTimeAdjustment
 @ stdcall SetThreadContext(long ptr) kernel32.SetThreadContext
 @ stdcall SetThreadDescription(ptr wstr) kernel32.SetThreadDescription
+@ stdcall SetThreadErrorMode(long ptr) kernel32.SetThreadErrorMode
 @ stdcall SetThreadGroupAffinity(ptr ptr ptr) kernel32.SetThreadGroupAffinity
 @ stdcall SetThreadIdealProcessor(long long) kernel32.SetThreadIdealProcessor
 @ stdcall SetThreadLocale(long) kernel32.SetThreadLocale
@@ -2017,6 +2016,7 @@
 @ stdcall UnmapViewOfFile(ptr) kernel32.UnmapViewOfFile
 @ stdcall UnregisterTraceGuids(double) advapi32.UnregisterTraceGuids
 @ stdcall UnregisterWaitEx(long long) kernel32.UnregisterWaitEx
+@ stdcall UpdateProcThreadAttribute(ptr long ptr ptr ptr ptr ptr) kernel32.UpdateProcThreadAttribute
 @ stdcall VerLanguageNameA(long str long) kernel32.VerLanguageNameA
 @ stdcall VerLanguageNameW(long wstr long) kernel32.VerLanguageNameW
 @ stdcall -ret64 VerSetConditionMask(long long long long) kernel32.VerSetConditionMask

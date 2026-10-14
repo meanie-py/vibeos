@@ -198,12 +198,12 @@ const CSIDL_Type_SystemX86Path: CsidlType = 8;
 /// `szDefaultPath` is either a real wide-string pointer or `MAKEINTRESOURCEW(IDS_*)`
 /// (a small integer cast to a pointer — `IS_INTRESOURCE` then loads it via LoadStringW).
 #[repr(C)]
-struct CsidlData {
-    id: *const GUID,
-    typ: CsidlType,
-    szValueName: *const WCHAR,
-    szDefaultPath: *const WCHAR,
-    nShell32IconIndex: INT,
+pub(crate) struct CsidlData {
+    pub(crate) id: *const GUID,
+    pub(crate) typ: CsidlType,
+    pub(crate) szValueName: *const WCHAR,
+    pub(crate) szDefaultPath: *const WCHAR,
+    pub(crate) nShell32IconIndex: INT,
 }
 // Read-only table holding raw pointers (to other statics / int-resource sentinels).
 unsafe impl Sync for CsidlData {}
@@ -762,7 +762,7 @@ static WS_OEM_Links: [WCHAR; 10] = [0x004F, 0x0045, 0x004D, 0x0020, 0x004C, 0x00
 static WS_CD_Burning: [WCHAR; 11] = [0x0043, 0x0044, 0x0020, 0x0042, 0x0075, 0x0072, 0x006E, 0x0069, 0x006E, 0x0067, 0x0000]; // "CD Burning"
 static WS_Local_Settings_Application_Data_Microsoft_CD_Burning: [WCHAR; 53] = [0x004C, 0x006F, 0x0063, 0x0061, 0x006C, 0x0020, 0x0053, 0x0065, 0x0074, 0x0074, 0x0069, 0x006E, 0x0067, 0x0073, 0x005C, 0x0041, 0x0070, 0x0070, 0x006C, 0x0069, 0x0063, 0x0061, 0x0074, 0x0069, 0x006F, 0x006E, 0x0020, 0x0044, 0x0061, 0x0074, 0x0061, 0x005C, 0x004D, 0x0069, 0x0063, 0x0072, 0x006F, 0x0073, 0x006F, 0x0066, 0x0074, 0x005C, 0x0043, 0x0044, 0x0020, 0x0042, 0x0075, 0x0072, 0x006E, 0x0069, 0x006E, 0x0067, 0x0000]; // "Local Settings\\Application Data\\Microsoft\\CD Burning"
 
-static CSIDL_DATA: [CsidlData; 63] = [
+pub(crate) static CSIDL_DATA: [CsidlData; 63] = [
     CsidlData { id: addr_of!(FOLDERID_Desktop), typ: CSIDL_Type_User, szValueName: WS_Desktop.as_ptr(), szDefaultPath: (54 as usize) as *const WCHAR, nShell32IconIndex: 0 }, // 0x00
     CsidlData { id: addr_of!(FOLDERID_InternetFolder), typ: CSIDL_Type_Disallowed, szValueName: null(), szDefaultPath: null(), nShell32IconIndex: 0 }, // 0x01
     CsidlData { id: addr_of!(FOLDERID_Programs), typ: CSIDL_Type_User, szValueName: WS_Programs.as_ptr(), szDefaultPath: (45 as usize) as *const WCHAR, nShell32IconIndex: 0 }, // 0x02

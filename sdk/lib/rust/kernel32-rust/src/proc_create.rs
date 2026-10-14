@@ -350,6 +350,15 @@ pub unsafe extern "system" fn CreateProcessInternalW(
     }
 
     /* Capture the special window flag */
+    /* EXTENDED_STARTUPINFO_PRESENT (0x00080000): the caller passed a
+     * STARTUPINFOEX whose lpAttributeList was built with
+     * InitializeProcThreadAttributeList/UpdateProcThreadAttribute (client/vista_ex.rs).
+     * The list is accepted and the flag stripped so the call does not fail, but the
+     * attributes are NOT yet applied: PROC_THREAD_ATTRIBUTE_PARENT_PROCESS (needs the
+     * rest of this routine to stop assuming NtCurrentProcess as the parent) and
+     * HANDLE_LIST are owed. */
+    dwCreationFlags &= !0x0008_0000u32;
+
     NoWindow = dwCreationFlags & CREATE_NO_WINDOW;
     dwCreationFlags &= !CREATE_NO_WINDOW;
 

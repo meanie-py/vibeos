@@ -28,3 +28,4 @@ pub mod thread;
 pub mod vdm;
 pub mod virtmem;
 pub mod dllmain;
+pub mod vista_ex;

@@ -221,6 +221,16 @@
 @ stdcall EnumServicesStatusW(long long long ptr long ptr ptr ptr)
 @ stdcall -version=0x502 EnumerateTraceGuids(ptr long ptr) ntdll.EtwEnumerateTraceGuids
 @ stdcall -stub -version=0x600+ EnumerateTraceGuids(ptr long ptr) # EtwEnumerateTraceGuids
+# Windows forwards these to ntdll's Etw* under a different name, which the generated
+# forwards block cannot express. ntdll registers providers and drops events (no session).
+@ stdcall EventEnabled(int64 ptr) ntdll.EtwEventEnabled
+@ stdcall EventRegister(ptr ptr ptr ptr) ntdll.EtwEventRegister
+@ stdcall EventSetInformation(int64 long ptr long) ntdll.EtwEventSetInformation
+@ stdcall EventUnregister(int64) ntdll.EtwEventUnregister
+@ stdcall EventWrite(int64 ptr long ptr) ntdll.EtwEventWrite
+@ stdcall EventWriteEx(int64 ptr int64 long ptr ptr long ptr) ntdll.EtwEventWriteEx
+@ stdcall EventWriteString(int64 long int64 ptr) ntdll.EtwEventWriteString
+@ stdcall EventWriteTransfer(int64 ptr ptr ptr long ptr) ntdll.EtwEventWriteTransfer
 @ stdcall EqualDomainSid(ptr ptr ptr)
 @ stdcall EqualPrefixSid(ptr ptr)
 @ stdcall EqualSid(ptr ptr)
@@ -801,17 +811,9 @@
 @ stub -version=0xA00+ EventAccessQuery
 @ stub -version=0xA00+ EventAccessRemove
 @ stub -version=0xA00+ EventActivityIdControl # -> ntdll.EtwEventActivityIdControl
-@ stub -version=0xA00+ EventEnabled # -> ntdll.EtwEventEnabled
 @ stub -version=0xA00+ EventProviderEnabled # -> ntdll.EtwEventProviderEnabled
-@ stub -version=0xA00+ EventRegister # -> ntdll.EtwEventRegister
-@ stub -version=0xA00+ EventSetInformation # -> ntdll.EtwEventSetInformation
-@ stub -version=0xA00+ EventUnregister # -> ntdll.EtwEventUnregister
-@ stub -version=0xA00+ EventWrite # -> ntdll.EtwEventWrite
 @ stub -version=0xA00+ EventWriteEndScenario # -> ntdll.EtwEventWriteEndScenario
-@ stub -version=0xA00+ EventWriteEx # -> ntdll.EtwEventWriteEx
 @ stub -version=0xA00+ EventWriteStartScenario # -> ntdll.EtwEventWriteStartScenario
-@ stub -version=0xA00+ EventWriteString # -> ntdll.EtwEventWriteString
-@ stub -version=0xA00+ EventWriteTransfer # -> ntdll.EtwEventWriteTransfer
 @ stub -version=0xA00+ FlushEfsCache
 @ stub -version=0xA00+ FreeEncryptedFileMetadata
 @ stub -version=0xA00+ GetDynamicTimeZoneInformationEffectiveYears

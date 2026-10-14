@@ -565,8 +565,8 @@
 # (STATUS_ENTRYPOINT_NOT_FOUND) during csrss startup. shell32-rust implements both
 # (wine/shellord.rs).
 @ stdcall SHGetInstanceExplorer(long) # 2k3:310, Vista:373
-@ stub -version=0x600+ SHGetKnownFolderIDList # Vista:374
-@ stub -version=0x600+ SHGetKnownFolderPath # Vista:375
+@ stdcall SHGetKnownFolderIDList(ptr long ptr ptr) # Vista:374
+@ stdcall SHGetKnownFolderPath(ptr long ptr ptr) # Vista:375
 @ stub -version=0x600+ SHGetLocalizedName # Vista:376
 @ stdcall SHGetMalloc(ptr) # 2k3:311, Vista:377
 @ stdcall SHGetNameFromIDList(ptr long ptr) # Vista:378
@@ -581,7 +581,7 @@
 @ stdcall SHGetSpecialFolderLocation(long long ptr) # 2k3:317, Vista:387
 @ stdcall SHGetSpecialFolderPathA(long ptr long long) # 2k3:318, Vista:388
 @ stdcall SHGetSpecialFolderPathW(long ptr long long) # 2k3:319, Vista:389
-@ stub -version=0x600+ SHGetStockIconInfo # Vista:390
+@ stdcall SHGetStockIconInfo(long long ptr) # Vista:390
 @ stub -version=0x600+ SHGetTemporaryPropertyForItem # Vista:391
 @ stdcall SHGetUnreadMailCountW(ptr wstr ptr ptr ptr long) # 2k3:320, Vista:392
 @ stdcall -version=0x502 SHHelpShortcuts_RunDLL(long long long long) SHHelpShortcuts_RunDLLA # 2k3:321
