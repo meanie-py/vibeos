@@ -3,6 +3,7 @@
 @ stdcall -version=0x600+ AddClipboardFormatListener(ptr)
 @ stdcall AdjustWindowRect(ptr long long)
 @ stdcall AdjustWindowRectEx(ptr long long long)
+@ stdcall AdjustWindowRectExForDpi(ptr long long long long)
 @ stdcall AlignRects(ptr long long long)
 @ stdcall AllowForegroundActivation()
 @ stdcall AllowSetForegroundWindow(long)
@@ -10,6 +11,7 @@
 @ stdcall AnyPopup()
 @ stdcall AppendMenuA(long long long ptr)
 @ stdcall AppendMenuW(long long long ptr)
+@ stdcall AreDpiAwarenessContextsEqual(ptr ptr)
 @ stdcall ArrangeIconicWindows(long)
 @ stdcall AttachThreadInput(long long long) NtUserAttachThreadInput
 @ stdcall BeginDeferWindowPos(long)
@@ -38,8 +40,8 @@
 @ stdcall ChangeDisplaySettingsW(ptr long)
 @ stdcall ChangeMenuA(long long ptr long long)
 @ stdcall ChangeMenuW(long long ptr long long)
-@ stdcall -version=0x600+ ChangeWindowMessageFilter(ptr long)
-@ stdcall -version=0x601+ ChangeWindowMessageFilterEx(ptr long long ptr)
+@ stdcall ChangeWindowMessageFilter(ptr long)
+@ stdcall ChangeWindowMessageFilterEx(ptr long long ptr)
 @ stdcall CharLowerA(str)
 @ stdcall CharLowerBuffA(str long)
 @ stdcall CharLowerBuffW(wstr long)
@@ -70,8 +72,8 @@
 @ stdcall ClipCursor(ptr) NtUserClipCursor
 @ stdcall CloseClipboard() NtUserCloseClipboard
 @ stdcall CloseDesktop(long) NtUserCloseDesktop
-@ stdcall -version=0x601+ CloseGestureInfoHandle(ptr)
-@ stdcall -version=0x601+ CloseTouchInputHandle(ptr)
+@ stdcall CloseGestureInfoHandle(ptr)
+@ stdcall CloseTouchInputHandle(ptr)
 @ stdcall CloseWindow(long)
 @ stdcall CloseWindowStation(long) NtUserCloseWindowStation
 @ stdcall CopyAcceleratorTableA(long ptr long)
@@ -170,8 +172,8 @@
 @ stdcall DisableProcessWindowsGhosting()
 @ stdcall DispatchMessageA(ptr)
 @ stdcall DispatchMessageW(ptr)
-@ stdcall -version=0x600+ DisplayConfigGetDeviceInfo(ptr)
-@ stdcall -version=0x600+ DisplayConfigSetDeviceInfo(ptr)
+@ stdcall DisplayConfigGetDeviceInfo(ptr)
+@ stdcall DisplayConfigSetDeviceInfo(ptr)
 @ stdcall DisplayExitWindowsWarnings(long)
 @ stdcall DlgDirListA(long str long long long)
 @ stdcall DlgDirListComboBoxA(long ptr long long long)
@@ -204,6 +206,7 @@
 @ stdcall EditWndProc(long long long long) EditWndProcA
 @ stdcall EmptyClipboard() NtUserEmptyClipboard
 @ stdcall EnableMenuItem(long long long)
+@ stdcall EnableNonClientDpiScaling(ptr)
 @ stdcall EnableScrollBar(long long long)
 @ stdcall EnableWindow(long long)
 @ stdcall EndDeferWindowPos(long)
@@ -286,7 +289,7 @@
 @ stdcall GetDesktopWindow()
 @ stdcall GetDialogBaseUnits()
 @ stdcall -version=0x602+ GetDisplayAutoRotationPreferences(ptr)
-@ stdcall -version=0x600+ GetDisplayConfigBufferSizes(long ptr ptr)
+@ stdcall GetDisplayConfigBufferSizes(long ptr ptr)
 @ stdcall GetDlgCtrlID(long)
 @ stdcall GetDlgItem(long long)
 @ stdcall GetDlgItemInt(long long ptr long)
@@ -301,7 +304,7 @@
 @ stdcall GetGUIThreadInfo(long ptr) NtUserGetGUIThreadInfo
 @ stdcall -version=0x601+ GetGestureConfig(long long long ptr ptr long)
 @ stdcall -version=0x601+ GetGestureExtraArgs(long long ptr)
-@ stdcall -version=0x601+ GetGestureInfo(long ptr)
+@ stdcall GetGestureInfo(long ptr)
 @ stdcall GetGuiResources(long long) NtUserGetGuiResources
 @ stdcall GetIconInfo(long ptr)
 @ stdcall GetInputDesktop()
@@ -347,11 +350,11 @@
 @ stdcall GetNextDlgTabItem(long long long)
 @ stdcall GetOpenClipboardWindow() NtUserGetOpenClipboardWindow
 @ stdcall GetParent(long)
-@ stdcall -version=0x602+ GetPointerInfo(long ptr)
+@ stdcall GetPointerInfo(long ptr)
 @ stdcall -version=0x602+ GetPointerTouchInfo(long ptr)
 @ stdcall -version=0x602+ GetPointerTouchInfoHistory(long ptr ptr)
-@ stdcall -version=0x601+ GetPointerDevices(ptr ptr)
-@ stdcall -version=0x602+ GetPointerType(long ptr)
+@ stdcall GetPointerDevices(ptr ptr)
+@ stdcall GetPointerType(long ptr)
 @ stdcall GetPriorityClipboardFormat(ptr long) NtUserGetPriorityClipboardFormat
 @ stdcall GetProcessDefaultLayout(ptr)
 @ stdcall -version=0xA00+ GetProcessDpiAwarenessInternal(long ptr)
@@ -378,18 +381,21 @@
 @ stdcall GetSysColorBrush(long)
 @ stdcall GetSystemMenu(long long) ; NtUserGetSystemMenu
 @ stdcall GetSystemMetrics(long)
+@ stdcall GetSystemMetricsForDpi(long long)
 @ stdcall GetTabbedTextExtentA(long str long long ptr)
 @ stdcall GetTabbedTextExtentW(long wstr long long ptr)
 @ stdcall GetTaskmanWindow ()
 @ stdcall GetThreadDesktop(long)
+@ stdcall GetThreadDpiAwarenessContext()
 @ stdcall GetTitleBarInfo(long ptr) NtUserGetTitleBarInfo
 @ stdcall GetTopWindow(long)
-@ stdcall -version=0x601+ GetTouchInputInfo(long long ptr long)
+@ stdcall GetTouchInputInfo(long long ptr long)
 @ stdcall GetUpdateRect(long ptr long)
 @ stdcall GetUpdateRgn(long long long)
 @ stdcall GetUserObjectInformationA(long long ptr long ptr)
 @ stdcall GetUserObjectInformationW(long long ptr long ptr) NtUserGetObjectInformation
 @ stdcall GetUserObjectSecurity (long ptr ptr long ptr)
+@ stdcall GetWindowDpiAwarenessContext(ptr)
 @ stdcall GetWinStationInfo(ptr)
 @ stdcall GetWindow(long long)
 @ stdcall GetWindowContextHelpId(long)
@@ -458,12 +464,12 @@
 @ stdcall IsIconic(long)
 @ stdcall IsMenu(long)
 @ stdcall -stub IsProcess16Bit()
-@ stdcall -version=0x600+ IsProcessDPIAware()
+@ stdcall IsProcessDPIAware()
 @ stdcall IsRectEmpty(ptr)
 @ stdcall IsSETEnabled()
 @ stdcall IsServerSideWindow(long)
-@ stdcall -version=0x601+ IsTouchWindow(long ptr)
-@ stdcall -stub -version=0xA00+ IsValidDpiAwarenessContext(long)
+@ stdcall IsTouchWindow(long ptr)
+@ stdcall IsValidDpiAwarenessContext(ptr)
 @ stdcall IsWinEventHookInstalled(long)
 @ stdcall IsWindow(long)
 @ stdcall IsWindowEnabled(long)
@@ -554,6 +560,7 @@
 @ stdcall PaintMenuBar(long long long long long long) NtUserPaintMenuBar
 @ stdcall PeekMessageA(ptr long long long long)
 @ stdcall PeekMessageW(ptr long long long long)
+@ stdcall PhysicalToLogicalPoint(ptr ptr)
 @ stdcall PostMessageA(long long long long)
 @ stdcall PostMessageW(long long long long)
 @ stdcall PostQuitMessage(long)
@@ -567,7 +574,7 @@
 # PrivateSetDbgTag
 # PrivateSetRipFlags
 @ stdcall PtInRect(ptr double)
-@ stdcall -version=0x600+ QueryDisplayConfig(long ptr ptr ptr ptr ptr)
+@ stdcall QueryDisplayConfig(long ptr ptr ptr ptr ptr)
 @ stdcall QuerySendMessage(ptr) NtUserQuerySendMessage
 @ stdcall RealChildWindowFromPoint(long double) ; Direct call NtUserRealChildWindowFromPoint
 @ stdcall RealGetWindowClass(long ptr long) RealGetWindowClassA
@@ -588,15 +595,16 @@
 @ stdcall RegisterHotKey(long long long long) NtUserRegisterHotKey
 @ stdcall RegisterLogonProcess(long long)
 @ stdcall RegisterMessagePumpHook(ptr)
-@ stdcall -version=0x602+ RegisterPointerDeviceNotifications(long long)
-@ stdcall -version=0x600+ RegisterPowerSettingNotification(long ptr long)
+@ stdcall RegisterPointerDeviceNotifications(long long)
+@ stdcall RegisterPowerSettingNotification(long ptr long)
 @ stdcall -import RegisterRawInputDevices(ptr long long) NtUserRegisterRawInputDevices
 @ stdcall RegisterServicesProcess(long)
 @ stdcall RegisterShellHookWindow(long)
+@ stdcall RegisterSuspendResumeNotification(ptr long)
 @ stdcall RegisterSystemThread(long long)
 @ stdcall RegisterTasklist(long) NtUserRegisterTasklist
 @ stdcall -version=0x602+ RegisterTouchHitTestingWindow(long long)
-@ stdcall -version=0x601+ RegisterTouchWindow(long long)
+@ stdcall RegisterTouchWindow(long long)
 @ stdcall RegisterUserApiHook(ptr)
 @ stdcall RegisterWindowMessageA(str)
 @ stdcall RegisterWindowMessageW(wstr)
@@ -653,7 +661,7 @@
 @ stdcall SetDoubleClickTime(long)
 @ stdcall SetFocus(long) NtUserSetFocus
 @ stdcall SetForegroundWindow(long)
-@ stdcall -version=0x601+ SetGestureConfig(ptr long long ptr long)
+@ stdcall SetGestureConfig(ptr long long ptr long)
 @ stdcall SetInternalWindowPos(long long ptr ptr) NtUserSetInternalWindowPos
 @ stdcall SetKeyboardState(ptr) NtUserSetKeyboardState
 @ stdcall SetLastErrorEx(long long)
@@ -669,9 +677,9 @@
 @ stdcall SetMessageExtraInfo(long)
 @ stdcall SetMessageQueue(long)
 @ stdcall SetParent(long long) NtUserSetParent
-@ stdcall -version=0x600+ SetProcessDPIAware()
+@ stdcall SetProcessDPIAware()
 @ stdcall SetProcessDefaultLayout(long)
-@ stdcall -version=0xA00+ SetProcessDpiAwarenessContext(long)
+@ stdcall SetProcessDpiAwarenessContext(ptr)
 @ stdcall -version=0xA00+ SetProcessDpiAwarenessInternal(long)
 @ stdcall SetProcessWindowStation(long) NtUserSetProcessWindowStation
 @ stdcall SetProgmanWindow (long)
@@ -730,6 +738,7 @@
 @ stdcall SwitchDesktop(long) NtUserSwitchDesktop
 @ stdcall SwitchToThisWindow(long long)
 @ stdcall SystemParametersInfoA(long long ptr long)
+@ stdcall SystemParametersInfoForDpi(long long ptr long long)
 @ stdcall SystemParametersInfoW(long long ptr long)
 @ stdcall TabbedTextOutA(long long long str long long ptr long)
 @ stdcall TabbedTextOutW(long long long wstr long long ptr long)
@@ -760,9 +769,9 @@
 @ stdcall UnregisterDeviceNotification(long)
 @ stdcall UnregisterHotKey(long long) NtUserUnregisterHotKey
 @ stdcall UnregisterMessagePumpHook()
-@ stdcall -version=0x601+ UnregisterTouchWindow(ptr)
-@ stdcall -version=0x600+ UnregisterPowerSettingNotification(ptr)
-@ stdcall -version=0x602+ UnregisterSuspendResumeNotification(ptr)
+@ stdcall UnregisterTouchWindow(ptr)
+@ stdcall UnregisterPowerSettingNotification(ptr)
+@ stdcall UnregisterSuspendResumeNotification(ptr)
 @ stdcall UnregisterUserApiHook() NtUserUnregisterUserApiHook
 @ stdcall UpdateLayeredWindow(long long ptr ptr long ptr long ptr long)
 @ stdcall UpdateLayeredWindowIndirect(long ptr)
@@ -807,9 +816,7 @@
 # Names that build exports and this spec does not declare. Dormant below
 # DLL_EXPORT_VERSION 0xA00; give a name a real line above and re-run to drop it.
 @ stub -version=0xA00+ AddVisualIdentifier
-@ stub -version=0xA00+ AdjustWindowRectExForDpi
 @ stub -version=0xA00+ ApplyWindowAction
-@ stub -version=0xA00+ AreDpiAwarenessContextsEqual
 @ stub -version=0xA00+ CalculatePopupWindowPosition
 @ stub -version=0xA00+ CancelShutdown
 @ stub -version=0xA00+ CheckBannedOneCoreTransformApi
@@ -845,7 +852,6 @@
 @ stub -version=0xA00+ DwmValidateWindow
 @ stub -version=0xA00+ DwmWindowNotificationsEnabled
 @ stub -version=0xA00+ EnableMouseInPointer
-@ stub -version=0xA00+ EnableNonClientDpiScaling
 @ stub -version=0xA00+ EnableOneCoreTransformMode
 @ stub -version=0xA00+ EnableSessionForMMCSS
 @ stub -version=0xA00+ EnableSynchronizedLayout
@@ -906,8 +912,6 @@
 @ stub -version=0xA00+ GetSendMessageReceiver
 @ stub -version=0xA00+ GetShellChangeNotifyWindow
 @ stub -version=0xA00+ GetSystemDpiForProcess
-@ stub -version=0xA00+ GetSystemMetricsForDpi
-@ stub -version=0xA00+ GetThreadDpiAwarenessContext
 @ stub -version=0xA00+ GetThreadDpiHostingBehavior
 @ stub -version=0xA00+ GetTopLevelWindow
 @ stub -version=0xA00+ GetUnpredictedMessagePos
@@ -915,7 +919,6 @@
 @ stub -version=0xA00+ GetWindowBand
 @ stub -version=0xA00+ GetWindowCompositionAttribute
 @ stub -version=0xA00+ GetWindowCompositionInfo
-@ stub -version=0xA00+ GetWindowDpiAwarenessContext
 @ stub -version=0xA00+ GetWindowDpiHostingBehavior
 @ stub -version=0xA00+ GetWindowFeedbackSetting
 @ stub -version=0xA00+ GetWindowMinimizeRect
@@ -961,7 +964,6 @@
 @ stub -version=0xA00+ NotifyOverlayWindow
 @ stub -version=0xA00+ OpenThreadDesktop
 @ stub -version=0xA00+ PaintMonitor
-@ stub -version=0xA00+ PhysicalToLogicalPoint
 @ stub -version=0xA00+ PhysicalToLogicalPointForPerMonitorDPI
 @ stub -version=0xA00+ PrivateRegisterICSProc
 @ stub -version=0xA00+ QueryBSDRWindow
@@ -1001,7 +1003,6 @@
 @ stub -version=0xA00+ RegisterPointerInputTarget
 @ stub -version=0xA00+ RegisterPointerInputTargetEx
 @ stub -version=0xA00+ RegisterSessionPort
-@ stub -version=0xA00+ RegisterSuspendResumeNotification
 @ stub -version=0xA00+ RegisterTouchpadCapableThread
 @ stub -version=0xA00+ RegisterTouchpadCapableWindow
 @ stub -version=0xA00+ ReleaseDwmHitTestWaiters
@@ -1060,7 +1061,6 @@
 @ stub -version=0xA00+ SoundSentry
 @ stub -version=0xA00+ SuppressWindowDisplayChange
 @ stub -version=0xA00+ SwitchDesktopWithFade
-@ stub -version=0xA00+ SystemParametersInfoForDpi
 @ stub -version=0xA00+ UndelegateInput
 @ stub -version=0xA00+ UnregisterPointerInputTarget
 @ stub -version=0xA00+ UnregisterPointerInputTargetEx

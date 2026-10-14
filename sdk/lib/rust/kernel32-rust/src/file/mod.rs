@@ -13,6 +13,7 @@ pub mod filename;
 pub mod find;
 pub mod hardlink;
 pub mod iocompl;
+pub mod io_ex;
 pub mod lfile;
 pub mod lock;
 pub mod mailslot;

@@ -24,6 +24,7 @@ list(APPEND SOURCE
     GetModuleFileName.c
     GetVolumeInformation.c
     InitOnce.c
+    IoCancelEx.c
     interlck.c
     IsDBCSLeadByteEx.c
     JapaneseCalendar.c

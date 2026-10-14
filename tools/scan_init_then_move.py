@@ -17,6 +17,12 @@ Flagged: `X.as_mut_ptr()` passed to an `*Initialize*` routine, then `X.assume_in
 by value. Initialize the object in place (`let mut E: KEVENT = zeroed(); KeInitializeEvent(
 &mut E, ..)`) and keep using `&mut E`. Gated at zero.
 
+Also flagged, the constructor shape: `&mut X` or `&mut X.field` passed to an `*Initialize*`
+routine inside a function that then RETURNS `X` by value (its tail expression, or
+`return X;`). The caller receives a copy at a new address. iomgr's NtCancelIoFileEx shipped
+this way in its first guest run (a KEVENT inside a request struct built by `new_request()`),
+and bugchecked 0x109 on i386 and 0xA on amd64 the first time it waited.
+
 Usage:
     python3 tools/scan_init_then_move.py [paths...]   # default: sdk/lib/rust
     python3 tools/scan_init_then_move.py --lint
@@ -37,6 +43,31 @@ RUST_ROOT = REPO / "sdk" / "lib" / "rust"
 MARKER = "ORIGINAL C SOURCE"
 INIT_RE = re.compile(r"\b(\w*Initiali[sz]e\w*)\s*\(\s*(?:&\s*mut\s+)?(\w+)\.as_mut_ptr\(\)")
 WINDOW = 6000  # chars after the init call to look for the move
+INIT_REF_RE = re.compile(r"\b(\w*Initiali[sz]e\w*)\s*\(\s*&\s*mut\s+(\w+)\b")
+FN_RE = re.compile(r"\bfn\s+\w+[^{;]*\{")
+
+
+def _fn_bodies(code: str) -> list[tuple[int, int]]:
+    """(start, end) of every fn body, by brace matching (comments already blanked)."""
+    out = []
+    for m in FN_RE.finditer(code):
+        depth, i = 1, m.end()
+        while i < len(code) and depth:
+            c = code[i]
+            depth += c == "{"
+            depth -= c == "}"
+            i += 1
+        out.append((m.end(), i - 1))
+    return out
+
+
+def _returned_by_value(body: str, var: str) -> bool:
+    """`var` is the body's tail expression or a `return var;`."""
+    tail = body.rstrip()
+    v = re.escape(var)
+    return bool(
+        re.search(rf"(?:^|[;{{}}\n])\s*{v}\s*$", tail) or re.search(rf"\breturn\s+{v}\s*;", body)
+    )
 
 
 def scan(paths: list[Path]) -> list[tuple[Path, int, str]]:
@@ -65,6 +96,15 @@ def scan(paths: list[Path]) -> list[tuple[Path, int, str]]:
                     findings.append(
                         (f, line, f"{m.group(1)}({var}.as_mut_ptr()) then {var}.assume_init()")
                     )
+            for start, end in _fn_bodies(code):
+                body = code[start:end]
+                for m in INIT_REF_RE.finditer(body):
+                    var = m.group(2)
+                    if _returned_by_value(body, var):
+                        line = code.count("\n", 0, start + m.start()) + 1
+                        findings.append(
+                            (f, line, f"{m.group(1)}(&mut {var}..) then {var} returned by value")
+                        )
     return sorted(findings)
 
 

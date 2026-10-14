@@ -1779,8 +1779,12 @@ KTIMER, KMUTANT, KSEMAPHORE and ERESOURCE. The copy's list still points at the o
 looks non-empty, and `KeSetEvent` unwaits whatever bytes are there. `IoShutdownSystem` did this
 with its shutdown-IRP event, and mountmgr's completion bugchecked at the end of every install.
 Whether the copy survives is up to the optimizer: pcix's capabilities query had the same code
-and never fired. **Fix:** declare the object (`let mut E: KEVENT = zeroed();`), initialize it in
-place and pass `&mut E` from then on. `tools/scan_init_then_move.py` gates it at zero.
+and never fired. The same move hides in a constructor: `fn new_request() -> Req { let mut r =
+..; KeInitializeEvent(&mut r.done, ..); r }` hands the caller a copy. NtCancelIoFileEx shipped
+that way into its first guest run (0x109 on i386, 0xA on amd64, the first time it waited).
+**Fix:** declare the object (`let mut E: KEVENT = zeroed();`), initialize it in place at its
+final address and pass `&mut E` from then on. `tools/scan_init_then_move.py` gates both shapes
+at zero.
 
 ## bindgen, struct layout & literal width
 

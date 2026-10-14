@@ -1046,3 +1046,25 @@ pub unsafe extern "system" fn KeIpiGenericCall(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+unsafe extern "system" fn flush_write_buffers_worker(_: usize) -> usize {
+    0
+}
+
+/// FlushProcessWriteBuffers (Vista): every processor running a thread of this process
+/// must drain its store buffer before this returns, so a later read anywhere sees the
+/// caller's writes (the asymmetric barrier .NET and Chrome's GC lean on). An IPI that
+/// every processor answers is that: taking the interrupt serializes the processor, and
+/// KeIpiGenericCall returns only once all have run the worker. Windows limits it to the
+/// processors running this process; all of them is the conservative superset.
+#[no_mangle]
+pub unsafe extern "system" fn NtFlushProcessWriteBuffers() -> NTSTATUS {
+    extern "system" {
+        fn KeIpiGenericCall(
+            BroadcastFunction: Option<unsafe extern "system" fn(usize) -> usize>,
+            Context: usize,
+        ) -> usize;
+    }
+    KeIpiGenericCall(Some(flush_write_buffers_worker), 0);
+    STATUS_SUCCESS
+}

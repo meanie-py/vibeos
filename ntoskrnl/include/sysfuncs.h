@@ -294,3 +294,7 @@
     SVC_(QueryPortInformationProcess, 0)
     SVC_(GetCurrentProcessorNumber, 0)
     SVC_(WaitForMultipleObjects32, 5)
+    SVC_(CancelIoFileEx, 3)
+    SVC_(CancelSynchronousIoFile, 3)
+    SVC_(RemoveIoCompletionEx, 6)
+    SVC_(FlushProcessWriteBuffers, 0)
