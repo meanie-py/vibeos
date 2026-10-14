@@ -1,7 +1,7 @@
-//! `NdisPhy` — the NDIS-protocol smoltcp `phy::Device` (M11 scaffold).
+//! `NdisPhy` — the NDIS-protocol smoltcp `phy::Device` (M11).
 //!
 //! The drop-in sibling of `VirtioPhy` (`device.rs`): same `phy::Device` surface,
-//! so `engine.rs` swaps backends with a `cfg(feature = "ndis")`. Where `VirtioPhy`
+//! so `engine.rs` falls back to it when no NIC of netstack's own is present. Where `VirtioPhy`
 //! drives a virtio-net device directly, `NdisPhy` sits as an NDIS *protocol* above
 //! an existing miniport (e1000 / rtl8139 / netkvm), per the design (§ M11).
 //!
@@ -13,8 +13,6 @@
 //! smoltcp, no pageable alloc) and the worker drains it on its next poll. This is
 //! exactly `tcpip/datalink/lan.c`'s `LanSubmitReceiveWork` model.
 //!
-//! Status: compile-verified scaffold. Runtime bring-up (ndis.sys + a miniport on
-//! the boot path, then live binding) is the remaining sub-task — see `ndis.rs`.
 
 use alloc::vec;
 use alloc::vec::Vec;

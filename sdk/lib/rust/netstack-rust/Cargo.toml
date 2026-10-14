@@ -16,12 +16,6 @@ crate-type = ["staticlib"]
 
 [features]
 default = []
-# M11: real-NIC support via an NDIS protocol shim above the existing miniports
-# (e1000 / rtl8139 / netkvm). OFF by default — virtio-net is the shipping backend
-# on the QEMU target. Enabling this selects the `NdisPhy` smoltcp Device instead
-# of `VirtioPhy`. See docs/engineering/smoltcp-netstack-design.md § M11. Runtime
-# bring-up (ndis.sys + a miniport on the boot path) is the remaining sub-task.
-ndis = []
 
 [dependencies]
 panic-common = { path = "../panic-common", features = ["kernel"] }

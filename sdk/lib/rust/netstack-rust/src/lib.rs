@@ -29,11 +29,9 @@ pub mod genet;
 // M10: interrupt-driven RX (NIC interrupt -> ISR -> DPC -> event): virtio's INTx
 // on x86, and the platform NICs' interrupt resource from PnP on arm64.
 pub mod isr;
-// M11: real-NIC backend via an NDIS protocol shim (off by default — virtio is the
-// shipping path). Selecting it swaps VirtioPhy -> NdisPhy in engine.rs.
-#[cfg(feature = "ndis")]
+// M11: NICs an NDIS miniport drives, through a protocol shim; engine.rs falls back
+// to it when no NIC of netstack's own is present (or the boot options say NETSTACK=NDIS).
 pub mod ndis;
-#[cfg(feature = "ndis")]
 pub mod ndisphy;
 pub mod netcfg;
 pub mod selftest;
@@ -103,6 +101,7 @@ pub unsafe extern "system" fn DriverEntry(
     RegistryPath: *mut UNICODE_STRING,
 ) -> NTSTATUS {
     dma::read_parameters(RegistryPath);
+    dma::read_boot_options();
     serial::emit(core::format_args!(
         "[NETSTACK] DriverEntry: netstack.sys loaded\n"
     ));

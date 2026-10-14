@@ -135,8 +135,12 @@ pool of 196,512 descriptors), pre-placing the `.sys` (the live image is read-onl
 serial fixes that made the log readable. With a cable in the hub's port the link is up
 4 s after the driver starts, and the ARP round trip to the router passes
 (`[NDISPROBE] done VERDICT=PASS`): a vendor's binary miniport sending and receiving real
-frames through our ndis.sys, usbport and xHCI. Nothing above NDIS uses it yet: netstack
-drives its NICs directly and has no NDIS protocol binding.
+frames through our ndis.sys, usbport and xHCI. Since 2026-10-13 netstack can run the OS's
+traffic over it: netstack binds an NDIS miniport when it finds no NIC of its own, and
+`OPTIPLEX_BOOT_OPTIONS=/NETSTACK=NDIS tools/optiplex/netboot.sh` makes it leave the I217
+alone so the Realtek is the one it takes (`[NETSTACK] NDIS: bound adapter`, then a DHCP
+lease). Proven in QEMU on all three arches (smoke `--payload ndisprobe`); on this board it
+needs the cable in the hub's port.
 
 ## Known gaps
 
