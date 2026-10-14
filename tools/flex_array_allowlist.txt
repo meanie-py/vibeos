@@ -72,8 +72,10 @@ ntkrnlmp-cargo: KeInitializeProcess
 # packet buffer (wire/ipv4.rs:411). Branch-derived constants; correct checks.
 
 
-comctl32-rust: THEMING_CallOriginalClass
-comctl32-rust: THEMING_ScrollbarSubclassProc
+comctl32-cargo: THEMING_CallOriginalClass
+comctl32-cargo: THEMING_ScrollbarSubclassProc
+# (Graded on the comctl32-rust staticlib; cargo links comctl32 since 2026-10-14, so the site
+# is now found in the cargo-linked image.)
 # theming.c's `subclasses[]` and `originalProcs[NUM_SUBCLASSES]` are genuine one-entry static
 # tables under __REACTOS__ (the dialog subclass is `#ifndef __REACTOS__`), indexed by the subclass
 # number a window prop carries; ScrollbarSubclassProc inlines CallOriginalClass.

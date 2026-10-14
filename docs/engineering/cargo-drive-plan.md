@@ -151,12 +151,41 @@ extends it from the boot spine to every fully-Rust module.
        accepted. Each DLL is the same size or one or two 512-byte file-alignment
        blocks larger (the handler's few bytes). Cargo links all 95 in about a
        minute per arch.
-   - **The user-mode refusals left** (`--survey`, after wave 3): delay imports (9);
-     RPC stub C that widl generates into the build dir, `srvsvc_s.c` and kin (8,
-     the services); a `SOURCE` list another target builds (6); the i386 body's
-     `+sse,+sse2` ENV (5: calc, taskmgr, wordpad, 3dtext, format); `add_driver_inf`
-     (4); per-arch link inputs or destinations (3); native exes (autochk and one
-     more).
+   - **Wave 4, 2026-10-14: 18 modules with delay imports or generated C.** apphelp,
+     appwiz, cmd, comctl32, control, iexplore, inetcpl, netsh, spoolsv, wscript (delay
+     imports); eventlog, netlogon, rpcss, schedsvc, seclogon, srvsvc, winspool (widl
+     RPC stubs) and winhlp32 (a flex scanner). What it took:
+     - **`Linker::delay_import_lib()`** runs `sdk/tools/gen-delaylib.py` on the same
+       `spec2def --implib` .def as `import_lib`, as cmake does, and
+       `add_cargo_module(... DELAY_IMPORTS)` adds cmake's `native-pefixup
+       --delayimport`. **Import order is cmake's**, one list for both kinds:
+       gen-delaylib puts a DLL's thunks in one object, so pulling one defines every
+       `__imp_` of that DLL. inetcpl delay-imports shell32 (which also exports
+       `StrChrW`) and imports shlwapi; delayed-first binds `StrChrW` to shell32, and
+       the other order defined it twice and crashed lld in `IdataContents::create`.
+     - **Generated C** (`*_s.c`, `macro.lex.yy.c`) is a `<m>_shims` source named
+       build-dir relative; cmake still generates it, `c_from_compile_db` replays the
+       compile. **The shims library links what the target linked**: libmsvcrt's
+       `INTERFACE _DLL __USE_CRTIMP` reached the target's compiles that way, and
+       without it the scanner's `stdin` was not dllimport (`_iob` undefined).
+     - **The import lib's spec is the one the build used**, read from
+       `build.ninja`'s `spec2def --implib` command, not the first `spec2def()` in a
+       CMakeLists. uxtheme has two (`uxtheme_vista.spec` under an option), and
+       comctl32's delay lib grew twelve uxtheme imports. A regular import lib hides
+       the mistake, so dxdiag (ddraw, dsound) and shsvcs (uxtheme) had it too and are
+       repointed; their imports do not change.
+     - **Several CD destinations** (comctl32's two winsxs assemblies): `DESTINATION`
+       is a list, the winsxs copies go in the cabinet like system32's, and the
+       generator checks each arch's `livecd.<config>.lst` holds exactly the
+       destinations the CMakeLists names, which is what refuses winprint's one
+       prtprocs dir per arch.
+   - **The user-mode refusals left** (`--survey`, after wave 4): a `SOURCE` list
+     another target builds (6); the i386 body's `+sse,+sse2` ENV (5: calc, taskmgr,
+     wordpad, 3dtext, format); `add_driver_inf` (4); per-arch link inputs or
+     destinations (3: acgenral, opengl32, winprint); native exes (2); vendored C
+     compiled into the module (mstsc's rdesktop: rung 6); two one-offs.
+     **Owed:** the ntoskrnl cells (hand-written) import kdcom from `kdcom.spec`,
+     while the build's kdcom import lib comes from `kdrosdbg.spec`.
 3. **Give the C static libraries a cargo home.** `uuid` becomes a GUID crate generated
    from the same IDL/headers; `wine` (vendored libwine) and `conutils` are small. Until
    then cells link the cmake-built `.a` (`static_libs`), which keeps them cmake-bound.

@@ -117,6 +117,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "apphelp-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "apphelp-rust"
 version = "0.1.0"
 dependencies = [
@@ -125,6 +133,14 @@ dependencies = [
  "strsafe-rust",
  "varargs-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "appwiz-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]
@@ -730,6 +746,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cmd-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "cmd-rust"
 version = "0.1.0"
 dependencies = [
@@ -802,6 +826,14 @@ dependencies = [
 [[package]]
 name = "com-sys"
 version = "0.1.0"
+
+[[package]]
+name = "comctl32-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
 
 [[package]]
 name = "comctl32-rust"
@@ -906,6 +938,15 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "control-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]
@@ -1409,6 +1450,14 @@ dependencies = [
  "strsafe-rust",
  "varargs-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "eventlog-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
 ]
 
 [[package]]
@@ -2030,6 +2079,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "iexplore-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "iexplore-rust"
 version = "0.1.0"
 dependencies = [
@@ -2101,6 +2159,14 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "inetcpl-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
 ]
 
 [[package]]
@@ -3322,6 +3388,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "netlogon-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "netlogon-rust"
 version = "0.1.0"
 dependencies = [
@@ -3349,6 +3423,14 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "netsh-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
 ]
 
 [[package]]
@@ -4212,6 +4294,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rpcss-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "rpcss-rust"
 version = "0.1.0"
 dependencies = [
@@ -4553,6 +4643,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "schedsvc-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "schedsvc-rust"
 version = "0.1.0"
 dependencies = [
@@ -4642,6 +4740,14 @@ dependencies = [
  "dbgprint-rust",
  "ntkrnl-sys",
  "win32macros-rust",
+]
+
+[[package]]
+name = "seclogon-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]
@@ -4989,6 +5095,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "spoolsv-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "spoolsv-rust"
 version = "0.1.0"
 dependencies = [
@@ -5007,6 +5121,14 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "srvsvc-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]
@@ -6066,6 +6188,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "winhlp32-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "winhlp32-rust"
 version = "0.1.0"
 dependencies = [
@@ -6131,6 +6261,14 @@ name = "winreg-stub"
 version = "0.1.0"
 dependencies = [
  "midl-rt",
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "winspool-cargo"
+version = "0.1.0"
+dependencies = [
  "panic-common",
  "reactos-link",
 ]
@@ -6430,6 +6568,15 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+]
+
+[[package]]
+name = "wscript-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]

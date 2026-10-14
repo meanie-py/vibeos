@@ -47,7 +47,7 @@ def cell(**kw):
         c_shims=[],
         rc="base/m/rsrc.rc",
         rc_defines=["UNICODE", "_UNICODE"],
-        destination="reactos/system32",
+        destinations=["reactos/system32"],
         name_on_cd=None,
     )
     base.update(kw)
@@ -59,7 +59,7 @@ def test_facts_read_the_body_crate_and_the_cd_destination(tmp_path):
     f.write_text(CMAKE)
     facts = g.cmake_facts(f, "m")
     assert facts["body"] == ("m-rust", [], True)
-    assert facts["destination"] == "reactos/system32"
+    assert facts["destinations"] == ["reactos/system32"]
     assert facts["unknown"] == []
 
 
@@ -138,6 +138,11 @@ def test_real_c_is_replayed_from_its_own_object_library(tmp_path):
     c = cell(c_shims=["base/m/rust_varargs_shim.c"])
     out = g.rewrite_cmake(f, c)
     assert "add_library(m_shims OBJECT rust_varargs_shim.c)" in out
+    # What the target linked carried compile flags (libmsvcrt: _DLL __USE_CRTIMP).
+    assert (
+        "target_link_libraries(m_shims PRIVATE wine libuser32 libmsvcrt libkernel32 libntdll)"
+        in out
+    )
     assert "target_compile_definitions(m_shims PRIVATE UNICODE _UNICODE)" in out
     assert "EXTRA_DEPENDS m_shims m_res" in out
     assert '.c_from_compile_db("m_shims", &["base/m/rust_varargs_shim.c"])' in g.build_rs(c)
@@ -149,11 +154,13 @@ def test_arch_specific_cmake_is_refused(tmp_path):
     # calc: an i386-only RUSTFLAGS for the body the cell would silently drop.
     f.write_text(CMAKE.replace('"" TRUE)', '"" TRUE ${M_RUST_ENV})'))
     assert g.cmake_facts(f, "m")["unknown"] == ["rust_staticlib_variant extras ['${M_RUST_ENV}']"]
-    # winprint: a different CD destination per arch.
+    # Several destinations are read as a list (comctl32's winsxs copies); whether each
+    # arch really ships to all of them (not winprint's one per arch) is model()'s check
+    # against the build's CD lists.
     f.write_text(CMAKE + "add_cd_file(TARGET m DESTINATION reactos/other FOR all)\n")
-    assert g.cmake_facts(f, "m")["unknown"] == [
-        "add_cd_file to both reactos/system32 and reactos/other"
-    ]
+    facts = g.cmake_facts(f, "m")
+    assert facts["unknown"] == []
+    assert facts["destinations"] == ["reactos/system32", "reactos/other"]
 
 
 def test_the_panic_handler_follows_what_cmake_linked_per_arch():
@@ -224,3 +231,32 @@ def test_libs_cmake_linked_after_the_body_stay_after_it():
     assert '"x86" => &["sdk/lib/uuid/libuuid.a"],' in rs
     assert ".static_libs_after_body(late_libs)" in rs
     assert ".static_libs_after_body" not in g.build_rs(cell())
+
+
+def test_delay_imports_link_through_the_engine_and_fix_up_after(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE + "add_delay_importlibs(m user32)\n")
+    assert g.cmake_facts(f, "m")["unknown"] == []
+    c = cell(delay_import_libs=[("win32ss/user/user32/user32.spec", "user32.dll", "user32")])
+    rs = g.build_rs(c)
+    assert '.delay_import_lib("win32ss/user/user32/user32.spec", "user32.dll", "user32")' in rs
+    out = g.rewrite_cmake(f, c)
+    assert "add_delay_importlibs" not in out
+    assert "    DELAY_IMPORTS" in out
+    assert "DELAY_IMPORTS" not in g.rewrite_cmake(f, cell())
+
+
+def test_generated_c_is_compiled_from_the_build_dir(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE)
+    stub = "base/services/m/m_s.c"
+    c = cell(c_shims=[stub], generated=[stub])
+    assert "add_library(m_shims OBJECT ${CMAKE_CURRENT_BINARY_DIR}/m_s.c)" in g.rewrite_cmake(f, c)
+    assert f'.c_from_compile_db("m_shims", &["{stub}"])' in g.build_rs(c)
+
+
+def test_several_cd_destinations_go_to_one_call(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE)
+    c = cell(destinations=["reactos/system32", "reactos/winsxs/${WINARCH}_x"])
+    assert "    DESTINATION reactos/system32 reactos/winsxs/${WINARCH}_x" in g.rewrite_cmake(f, c)

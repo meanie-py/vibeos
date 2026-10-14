@@ -575,7 +575,9 @@ pub struct Linker {
     /// cmake-off they're produced in-build by the self-hosted `native-gendib`.
     /// See `gendib`.
     gendib_libs: Vec<String>,
-    import_libs: Vec<(String, String, String)>,
+    /// (spec, dll, basename, delay-loaded), in call order: the link order decides which
+    /// lib an `__imp_` symbol two of them define comes from (see `delay_import_lib`).
+    import_libs: Vec<(String, String, String, bool)>,
     force_undefined: Vec<String>,
     allow_stdcall_fixup: bool,
     /// `Some(n)` emits `-Wl,--stack,<n>` (reserve, in bytes). For native exes
@@ -982,6 +984,32 @@ impl Linker {
             spec_rel.to_string(),
             dll_name.to_string(),
             basename.to_string(),
+            false,
+        ));
+        self
+    }
+
+    /// Delay-import `dll_name` instead of importing it: cmake's
+    /// `add_delay_importlibs(m <basename>)`. The lib comes from the same
+    /// `spec2def --implib` .def as `import_lib`'s, through `sdk/tools/gen-delaylib.py`
+    /// (llvm-dlltool has no `--output-delaylib`), exactly as cmake builds
+    /// `lib<basename>_delayed.a`. The module still needs the delay-load runtime
+    /// (`libdelayimp.a`, a `static_libs` entry) and, once linked, `native-pefixup
+    /// --delayimport` to point the DELAY_IMPORT directory at the table lld leaves
+    /// unnamed: `add_cargo_module(... DELAY_IMPORTS)` runs it.
+    ///
+    /// Call it in cmake's order relative to `import_lib`. gen-delaylib puts every thunk
+    /// of a DLL in one object, so pulling one drags in all its `__imp_` definitions:
+    /// inetcpl delay-imports shell32, which also exports `StrChrW`, and imports shlwapi.
+    /// cmake lists the delayed libs first, so `StrChrW` binds to shell32's (delayed) and
+    /// shlwapi's member is never pulled; the other way round, both define it and lld
+    /// crashes building the import table. Chainable.
+    pub fn delay_import_lib(mut self, spec_rel: &str, dll_name: &str, basename: &str) -> Self {
+        self.import_libs.push((
+            spec_rel.to_string(),
+            dll_name.to_string(),
+            basename.to_string(),
+            true,
         ));
         self
     }
@@ -1557,8 +1585,12 @@ impl Linker {
             link_arg!(self, "{}", full.display());
             println!("cargo:rerun-if-changed={}", full.display());
         }
-        for (spec_rel, dll_name, basename) in &self.import_libs {
-            let a = self.generate_import_lib(spec_rel, dll_name, basename);
+        for (spec_rel, dll_name, basename, delay) in &self.import_libs {
+            let a = if *delay {
+                self.generate_delay_import_lib(spec_rel, dll_name, basename)
+            } else {
+                self.generate_import_lib(spec_rel, dll_name, basename)
+            };
             link_arg!(self, "{}", a.display());
             println!(
                 "cargo:rerun-if-changed={}",
@@ -2200,27 +2232,7 @@ impl Linker {
     /// a cmake-built one (the spec carries the export names; the target
     /// DLL need not exist).
     fn generate_import_lib(&self, spec_rel: &str, dll_name: &str, basename: &str) -> PathBuf {
-        let spec2def = self.compile_host_tool("sdk/tools/spec2def/spec2def.c", "spec2def");
-        let out = PathBuf::from(env::var("OUT_DIR").unwrap()).join("implib-gen");
-        std::fs::create_dir_all(&out).expect("mkdir implib-gen");
-        let spec = self.repo_root.join(spec_rel);
-        if !spec.exists() {
-            panic!("missing spec {}", spec.display());
-        }
-        let implib_def = out.join(format!("{basename}_implib.def"));
-        let status = Command::new(&spec2def)
-            .arg("--version=0x502")
-            .arg("--dbg")
-            .arg(format!("-n={dll_name}"))
-            .arg(format!("-a={}", self.arch.spec2def))
-            .arg("--implib")
-            .arg(format!("-d={}", implib_def.display()))
-            .arg(&spec)
-            .traced_status()
-            .unwrap_or_else(|e| panic!("spec2def --implib: {e}"));
-        if !status.success() {
-            panic!("spec2def --implib failed for {spec_rel}");
-        }
+        let (out, implib_def) = self.generate_implib_def(spec_rel, dll_name, basename);
         let dlltool = self.repo_root.join(format!(
             ".build-tools/llvm-mingw/bin/{}-dlltool",
             self.arch.triple
@@ -2245,6 +2257,65 @@ impl Linker {
             panic!("dlltool produced no {}", lib_a.display());
         }
         lib_a
+    }
+
+    /// `spec --implib → .def → gen-delaylib.py → lib<NAME>_delayed.a`, the command
+    /// cmake's `generate_import_lib` runs for a delay-import lib.
+    fn generate_delay_import_lib(&self, spec_rel: &str, dll_name: &str, basename: &str) -> PathBuf {
+        let (out, implib_def) = self.generate_implib_def(spec_rel, dll_name, basename);
+        let bin = self.repo_root.join(".build-tools/llvm-mingw/bin");
+        let script = self.repo_root.join("sdk/tools/gen-delaylib.py");
+        let lib_a = out.join(format!("lib{basename}_delayed.a"));
+        let _ = std::fs::remove_file(&lib_a);
+        let status = Command::new("python3")
+            .arg(&script)
+            .arg("--def")
+            .arg(&implib_def)
+            .arg("--arch")
+            .arg(self.arch.name)
+            .arg("--out")
+            .arg(&lib_a)
+            .arg("--clang")
+            .arg(bin.join(format!("{}-clang", self.arch.triple)))
+            .arg("--ar")
+            .arg(bin.join(format!("{}-ar", self.arch.triple)))
+            .current_dir(&out)
+            .traced_status()
+            .unwrap_or_else(|e| panic!("gen-delaylib.py: {e}"));
+        if !status.success() {
+            panic!("gen-delaylib.py failed for {basename}");
+        }
+        if !lib_a.exists() {
+            panic!("gen-delaylib.py produced no {}", lib_a.display());
+        }
+        println!("cargo:rerun-if-changed={}", script.display());
+        lib_a
+    }
+
+    /// `spec2def --implib` → `<OUT_DIR>/implib-gen/<basename>_implib.def`.
+    fn generate_implib_def(&self, spec_rel: &str, dll_name: &str, basename: &str) -> (PathBuf, PathBuf) {
+        let spec2def = self.compile_host_tool("sdk/tools/spec2def/spec2def.c", "spec2def");
+        let out = PathBuf::from(env::var("OUT_DIR").unwrap()).join("implib-gen");
+        std::fs::create_dir_all(&out).expect("mkdir implib-gen");
+        let spec = self.repo_root.join(spec_rel);
+        if !spec.exists() {
+            panic!("missing spec {}", spec.display());
+        }
+        let implib_def = out.join(format!("{basename}_implib.def"));
+        let status = Command::new(&spec2def)
+            .arg("--version=0x502")
+            .arg("--dbg")
+            .arg(format!("-n={dll_name}"))
+            .arg(format!("-a={}", self.arch.spec2def))
+            .arg("--implib")
+            .arg(format!("-d={}", implib_def.display()))
+            .arg(&spec)
+            .traced_status()
+            .unwrap_or_else(|e| panic!("spec2def --implib: {e}"));
+        if !status.success() {
+            panic!("spec2def --implib failed for {spec_rel}");
+        }
+        (out, implib_def)
     }
 
     /// cmake-off (WS1 DEEP): regenerate the xdk-derived SDK headers (`winnt.h`,
