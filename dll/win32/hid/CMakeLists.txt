@@ -21,8 +21,7 @@ target_include_directories(hid_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_include_directories(hid_shims PRIVATE ${REACTOS_SOURCE_DIR}/sdk/lib/drivers/hidparser)
 target_include_directories(hid_res PRIVATE ${REACTOS_SOURCE_DIR}/sdk/lib/drivers/hidparser)
 set(HID_REUSED
-    ${CMAKE_BINARY_DIR}/dll/win32/hid/libhid_hidparser_rust.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
+    ${CMAKE_BINARY_DIR}/dll/win32/hid/libhid_hidparser_rust.a)
 add_cargo_module(hid hid-cargo hid.dll
     KIND win32dll
     BODY_CRATE hid-rust

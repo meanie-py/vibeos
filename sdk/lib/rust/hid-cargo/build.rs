@@ -15,9 +15,9 @@ fn main() {
     };
 
     let late_libs: &[&str] = match arch.as_str() {
-        "x86" => &["dll/win32/hid/libhid_hidparser_rust.a", "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a"],
-        "x86_64" => &["dll/win32/hid/libhid_hidparser_rust.a", "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a"],
-        "aarch64" => &["dll/win32/hid/libhid_hidparser_rust.a", "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a"],
+        "x86" => &["dll/win32/hid/libhid_hidparser_rust.a", "engine:oldnames"],
+        "x86_64" => &["dll/win32/hid/libhid_hidparser_rust.a", "engine:oldnames"],
+        "aarch64" => &["dll/win32/hid/libhid_hidparser_rust.a", "engine:oldnames"],
         _ => unreachable!(),
     };
 

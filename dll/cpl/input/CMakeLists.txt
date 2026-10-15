@@ -21,10 +21,8 @@ add_rc_deps(input.rc ${CMAKE_CURRENT_SOURCE_DIR}/resources/keyboard-shortcuts.ic
 add_library(input_res OBJECT input.rc)
 target_compile_definitions(input_res PRIVATE UNICODE _UNICODE)
 target_include_directories(input_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(INPUT_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(input input-cargo input.dll
     KIND win32dll
     BODY_CRATE input-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS input_res ${INPUT_REUSED})
+    EXTRA_DEPENDS input_res)

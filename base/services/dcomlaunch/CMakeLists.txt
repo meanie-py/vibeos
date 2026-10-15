@@ -11,10 +11,8 @@ spec2def(dcomlaunch.dll dcomlaunch.spec ADD_IMPORTLIB)
 add_library(dcomlaunch_res OBJECT dcomlaunch.rc)
 target_compile_definitions(dcomlaunch_res PRIVATE UNICODE _UNICODE)
 target_include_directories(dcomlaunch_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(DCOMLAUNCH_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(dcomlaunch dcomlaunch-cargo dcomlaunch.dll
     KIND win32dll
     BODY_CRATE dcomlaunch-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS dcomlaunch_res ${DCOMLAUNCH_REUSED})
+    EXTRA_DEPENDS dcomlaunch_res)

@@ -38,7 +38,6 @@ target_include_directories(regedit_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(regedit_shims PRIVATE _CRT_NON_CONFORMING_SWPRINTFS)
 target_compile_definitions(regedit_res PRIVATE _CRT_NON_CONFORMING_SWPRINTFS)
 set(REGEDIT_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
     ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a
     ${CMAKE_BINARY_DIR}/sdk/lib/uuid/libuuid.a)
 add_cargo_module(regedit regedit-cargo regedit.exe

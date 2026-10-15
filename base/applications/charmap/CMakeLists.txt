@@ -14,10 +14,8 @@ add_rc_deps(charmap.rc ${CMAKE_CURRENT_SOURCE_DIR}/res/charmap.ico)
 add_library(charmap_res OBJECT charmap.rc)
 target_compile_definitions(charmap_res PRIVATE UNICODE _UNICODE)
 target_include_directories(charmap_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(CHARMAP_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(charmap charmap-cargo charmap.exe
     KIND win32exe
     BODY_CRATE charmap-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS charmap_res ${CHARMAP_REUSED})
+    EXTRA_DEPENDS charmap_res)

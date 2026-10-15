@@ -15,9 +15,9 @@ fn main() {
     };
 
     let late_libs: &[&str] = match arch.as_str() {
-        "x86" => &["win32ss/user/winsrv/concfg/libconcfg.a", "win32ss/user/winsrv/concfg/libconcfg_rust.a", "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a"],
-        "x86_64" => &["win32ss/user/winsrv/concfg/libconcfg.a", "win32ss/user/winsrv/concfg/libconcfg_rust.a", "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a"],
-        "aarch64" => &["win32ss/user/winsrv/concfg/libconcfg.a", "win32ss/user/winsrv/concfg/libconcfg_rust.a", "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a"],
+        "x86" => &["win32ss/user/winsrv/concfg/libconcfg.a", "win32ss/user/winsrv/concfg/libconcfg_rust.a", "engine:oldnames"],
+        "x86_64" => &["win32ss/user/winsrv/concfg/libconcfg.a", "win32ss/user/winsrv/concfg/libconcfg_rust.a", "engine:oldnames"],
+        "aarch64" => &["win32ss/user/winsrv/concfg/libconcfg.a", "win32ss/user/winsrv/concfg/libconcfg_rust.a", "engine:oldnames"],
         _ => unreachable!(),
     };
 

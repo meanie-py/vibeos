@@ -18,7 +18,6 @@ include_directories(BEFORE ${REACTOS_SOURCE_DIR}/sdk/include/wine)
 add_library(winsta_res OBJECT winsta.rc)
 target_include_directories(winsta_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set(WINSTA_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
     ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(winsta winsta-cargo winsta.dll
     KIND win32dll

@@ -17,10 +17,8 @@ add_rc_deps(access.rc ${CMAKE_CURRENT_SOURCE_DIR}/resources/applet.ico)
 add_library(access_res OBJECT access.rc)
 target_compile_definitions(access_res PRIVATE UNICODE _UNICODE)
 target_include_directories(access_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(ACCESS_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(access access-cargo access.cpl
     KIND win32dll
     BODY_CRATE access-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS access_res ${ACCESS_REUSED})
+    EXTRA_DEPENDS access_res)

@@ -12,15 +12,7 @@ target_compile_definitions(netstat_res PRIVATE UNICODE _UNICODE)
 target_include_directories(netstat_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set(NETSTAT_REUSED
     ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils_rust.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/pseh/libpseh.a)
-if(ARCH STREQUAL "i386")
-    list(APPEND NETSTAT_REUSED ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a)
-endif()
-if(ARCH STREQUAL "arm64")
-    list(APPEND NETSTAT_REUSED ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a)
-endif()
+    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils_rust.a)
 add_cargo_module(netstat netstat-cargo netstat.exe
     KIND win32exe
     BODY_CRATE netstat-rust

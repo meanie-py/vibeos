@@ -17,7 +17,6 @@ target_include_directories(taskkill_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set_wine_module_fixme(taskkill_shims)
 set_wine_module_fixme(taskkill_res)
 set(TASKKILL_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
     ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(taskkill taskkill-cargo taskkill.exe
     KIND win32exe

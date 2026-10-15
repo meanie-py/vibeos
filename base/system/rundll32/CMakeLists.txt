@@ -10,10 +10,8 @@
 add_library(rundll32_res OBJECT rundll32.rc)
 target_compile_definitions(rundll32_res PRIVATE UNICODE _UNICODE)
 target_include_directories(rundll32_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(RUNDLL32_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(rundll32 rundll32-cargo rundll32.exe
     KIND win32exe
     BODY_CRATE rundll32-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS rundll32_res ${RUNDLL32_REUSED})
+    EXTRA_DEPENDS rundll32_res)

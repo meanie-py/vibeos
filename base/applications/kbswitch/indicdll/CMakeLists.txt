@@ -14,7 +14,6 @@ add_library(indicdll_res OBJECT indicdll.rc)
 target_compile_definitions(indicdll_res PRIVATE UNICODE _UNICODE)
 target_include_directories(indicdll_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set(INDICDLL_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
     ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(indicdll indicdll-cargo indicdll.dll
     KIND win32dll

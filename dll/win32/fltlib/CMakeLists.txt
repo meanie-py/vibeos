@@ -20,7 +20,6 @@ target_include_directories(fltlib_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # How cmake compiled the target's sources, now on the OBJECT libraries.
 target_compile_definitions(fltlib_res PRIVATE NTDDI_VERSION=NTDDI_WS03SP1)
 set(FLTLIB_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
     ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(fltlib fltlib-cargo fltlib.dll
     KIND win32dll

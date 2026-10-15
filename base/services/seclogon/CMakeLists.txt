@@ -18,15 +18,7 @@ add_library(seclogon_res OBJECT seclogon.rc)
 target_compile_definitions(seclogon_res PRIVATE UNICODE _UNICODE)
 target_include_directories(seclogon_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set(SECLOGON_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/pseh/libpseh.a)
-if(ARCH STREQUAL "i386")
-    list(APPEND SECLOGON_REUSED ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a)
-endif()
-if(ARCH STREQUAL "arm64")
-    list(APPEND SECLOGON_REUSED ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a)
-endif()
+    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(seclogon seclogon-cargo seclogon.dll
     KIND win32dll
     BODY_CRATE seclogon-rust

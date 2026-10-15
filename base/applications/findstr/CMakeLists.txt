@@ -9,10 +9,8 @@
 # whose windres command the cargo link replays.
 add_library(findstr_res OBJECT findstr.rc)
 target_include_directories(findstr_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(FINDSTR_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(findstr findstr-cargo findstr.exe
     KIND win32exe
     BODY_CRATE findstr-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS findstr_res ${FINDSTR_REUSED})
+    EXTRA_DEPENDS findstr_res)

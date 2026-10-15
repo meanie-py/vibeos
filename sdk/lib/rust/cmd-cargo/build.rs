@@ -15,9 +15,9 @@ fn main() {
     };
 
     let late_libs: &[&str] = match arch.as_str() {
-        "x86" => &["sdk/lib/conutils/libconutils.a", "sdk/lib/libwine/libwine.a", "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a", "sdk/lib/pseh/libpseh.a", "sdk/lib/crt/libchkstk.a", "sdk/lib/conutils/libconutils_rust.a", "sdk/lib/delayimp/libdelayimp_rust.a"],
-        "x86_64" => &["sdk/lib/conutils/libconutils.a", "sdk/lib/libwine/libwine.a", "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a", "sdk/lib/pseh/libpseh.a", "sdk/lib/conutils/libconutils_rust.a", "sdk/lib/delayimp/libdelayimp_rust.a"],
-        "aarch64" => &["sdk/lib/conutils/libconutils.a", "sdk/lib/libwine/libwine.a", "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a", "sdk/lib/pseh/libpseh.a", "sdk/lib/crt/libchkstk.a", "sdk/lib/conutils/libconutils_rust.a", "sdk/lib/delayimp/libdelayimp_rust.a"],
+        "x86" => &["sdk/lib/conutils/libconutils.a", "sdk/lib/libwine/libwine.a", "engine:oldnames", "engine:pseh", "engine:chkstk", "sdk/lib/conutils/libconutils_rust.a", "sdk/lib/delayimp/libdelayimp_rust.a"],
+        "x86_64" => &["sdk/lib/conutils/libconutils.a", "sdk/lib/libwine/libwine.a", "engine:oldnames", "engine:pseh", "sdk/lib/conutils/libconutils_rust.a", "sdk/lib/delayimp/libdelayimp_rust.a"],
+        "aarch64" => &["sdk/lib/conutils/libconutils.a", "sdk/lib/libwine/libwine.a", "engine:oldnames", "engine:pseh", "engine:chkstk", "sdk/lib/conutils/libconutils_rust.a", "sdk/lib/delayimp/libdelayimp_rust.a"],
         _ => unreachable!(),
     };
 

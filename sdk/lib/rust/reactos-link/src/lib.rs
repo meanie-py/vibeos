@@ -952,9 +952,11 @@ impl Linker {
         self
     }
 
-    /// cmake-built sibling static libs (build-i386-relative), in link
-    /// order. Wrapped in `--start-group`/`--end-group` with the Rust
-    /// staticlib first.
+    /// cmake-built sibling static libs (build-dir-relative), in link
+    /// order, inside the `--start-group`/`--end-group` ahead of the Rust
+    /// archives. An entry `engine:<name>` is a library cmake used to build that
+    /// the engine now builds itself, at the same place in the link: see
+    /// `engine_lib` for the ones it knows.
     pub fn static_libs(mut self, builddir_rels: &[&str]) -> Self {
         self.static_libs = builddir_rels.iter().map(|s| s.to_string()).collect();
         self
@@ -1420,11 +1422,9 @@ impl Linker {
         // cmake ships; Rust-first selected not-yet-fully-vetted Rust twins and
         // bugchecked at boot. See feedback_cargo_drive_usermode_target.md.
         link_arg!(self, "-Wl,--start-group");
+        let ar = llvm_mingw.join(format!("bin/{}-ar", self.arch.triple));
         for lib in &self.static_libs {
-            let full = self.build_dir.join(lib);
-            if !full.exists() {
-                panic!("missing static lib: {} — run ninja first", full.display());
-            }
+            let full = self.static_lib_path(lib, &clang, &ar);
             link_arg!(self, "{}", full.display());
             // rerun-if-changed on each input .a: a rustc-link-arg is NOT a
             // tracked input, so without this cargo silently reuses a stale
@@ -1434,7 +1434,6 @@ impl Linker {
             // kept booting a pre-fix _strnicmp despite the .a being rebuilt.
             println!("cargo:rerun-if-changed={}", full.display());
         }
-        let ar = llvm_mingw.join(format!("bin/{}-ar", self.arch.triple));
         // ---- Deep-C residue compiled in-cargo (compile_commands.json replay).
         // In the same C-archive region as static_libs (before the Rust
         // archives). Flag-exact: replay cmake's own clang command per source,
@@ -1526,47 +1525,8 @@ impl Linker {
         // alongside the cmake C archives (same archive semantics + layout
         // region as the cmake equivalent — see asm_archive()).
         for (name, rels) in &self.asm_archives {
-            let mut b = cc::Build::new();
-            apply_base(&mut b, &clang, self.asm_set, &self.arch);
-            self.apply_prefix_map(&mut b);
-            for rel in rels {
-                let abs = self.repo_root.join(rel);
-                if !abs.exists() {
-                    panic!("missing asm source for archive: {}", abs.display());
-                }
-                println!("cargo:rerun-if-changed={}", abs.display());
-            }
-            b.out_dir(self.obj_dir())
-                .define("__ASM__", None)
-                .flag("-nostdinc")
-                .flag("-isystem")
-                .flag(self.repo_root.join("sdk/include/crt").to_str().unwrap())
-                .flag("-isystem")
-                .flag(llvm_mingw.join("lib/clang/19/include").to_str().unwrap());
-            self.add_kernel_asm_includes(&mut b);
-            b.flag("-x").flag("assembler-with-cpp");
-            let mut objs = Vec::new();
-            for rel in rels {
-                let source = self.repo_root.join(rel);
-                let mut single = b.clone();
-                single.file(&source);
-                trace_cc(&single, &source);
-                objs.extend(native_deps::compile(&single, &source));
-            }
-            if objs.is_empty() {
-                panic!("asm_archive {name}: cc-rs produced no objects");
-            }
-            let lib_a = self.obj_dir().join(format!("lib{name}.a"));
-            let _ = std::fs::remove_file(&lib_a); // ar rcs appends; start fresh
-            let status = Command::new(&ar)
-                .arg("rcs")
-                .arg(&lib_a)
-                .args(&objs)
-                .traced_status()
-                .unwrap_or_else(|e| panic!("ar ({}): {e}", ar.display()));
-            if !status.success() {
-                panic!("ar failed for asm_archive {name}");
-            }
+            let rels: Vec<&str> = rels.iter().map(|s| s.as_str()).collect();
+            let lib_a = self.build_archive(name, &rels, &[], &clang, &ar);
             link_arg!(self, "{}", lib_a.display());
         }
         if let Some(a) = &rust_a {
@@ -1578,10 +1538,7 @@ impl Linker {
             println!("cargo:rerun-if-changed={}", a.display());
         }
         for lib in &self.late_static_libs {
-            let full = self.build_dir.join(lib);
-            if !full.exists() {
-                panic!("missing static lib: {} — run ninja first", full.display());
-            }
+            let full = self.static_lib_path(lib, &clang, &ar);
             link_arg!(self, "{}", full.display());
             println!("cargo:rerun-if-changed={}", full.display());
         }
@@ -2217,6 +2174,146 @@ impl Linker {
         }
         cargo_deps::watch(&a.with_extension("d"), &a, &workspace);
         a
+    }
+
+    /// A `static_libs` entry's archive: `engine:<name>` is built here (`engine_lib`),
+    /// anything else is a cmake-built `.a` under the build dir.
+    fn static_lib_path(&self, lib: &str, clang: &Path, ar: &Path) -> PathBuf {
+        if let Some(name) = lib.strip_prefix("engine:") {
+            return self.engine_lib(name, clang, ar);
+        }
+        let full = self.build_dir.join(lib);
+        if !full.exists() {
+            panic!("missing static lib: {} — run ninja first", full.display());
+        }
+        full
+    }
+
+    /// The small cmake static libraries the engine builds from their own sources,
+    /// with the commands cmake ran, so a cell links them without cmake building
+    /// anything first:
+    ///
+    /// - `oldnames`: the import library of msvcrt's POSIX names (`strdup` ->
+    ///   `_strdup`), `dlltool -d sdk/lib/crt/moldname-msvcrt.def -k` (oldnames.cmake).
+    /// - `chkstk`: the stack probe, sdk/lib/crt's `chkstk` target (one `.s` per arch).
+    /// - `pseh`: sdk/lib/pseh's `pseh` target: `dummy.c` (the two `_SEH2_Volatile*`
+    ///   globals `pseh2.h` reads), plus the i386 SEH runtime asm.
+    fn engine_lib(&self, name: &str, clang: &Path, ar: &Path) -> PathBuf {
+        let i386 = self.arch.name == "i386";
+        match name {
+            "oldnames" => {
+                let def = self.repo_root.join("sdk/lib/crt/moldname-msvcrt.def");
+                println!("cargo:rerun-if-changed={}", def.display());
+                let dlltool = self.repo_root.join(format!(
+                    ".build-tools/llvm-mingw/bin/{}-dlltool",
+                    self.arch.triple
+                ));
+                let dir = self.obj_dir().join("engine-oldnames");
+                std::fs::create_dir_all(&dir).ok();
+                let lib_a = dir.join("oldnames.a");
+                let _ = std::fs::remove_file(&lib_a);
+                let status = Command::new(&dlltool)
+                    .arg("-m")
+                    .arg(self.arch.dlltool_machine)
+                    .arg("-d")
+                    .arg(&def)
+                    .arg("-k")
+                    .arg("-l")
+                    .arg("oldnames.a")
+                    .arg("-t")
+                    .arg("oldnames")
+                    .current_dir(&dir)
+                    .traced_status()
+                    .unwrap_or_else(|e| panic!("dlltool ({}): {e}", dlltool.display()));
+                if !status.success() || !lib_a.exists() {
+                    panic!("dlltool failed for engine:oldnames");
+                }
+                lib_a
+            }
+            "chkstk" => {
+                let src = match self.arch.name {
+                    "i386" => "sdk/lib/crt/except/i386/chkstk_asm.s",
+                    "amd64" => "sdk/lib/crt/except/amd64/chkstk_ms.s",
+                    _ => "sdk/lib/crt/except/arm64/chkstk_asm.s",
+                };
+                self.build_archive("engine_chkstk", &[src], &[], clang, ar)
+            }
+            "pseh" => {
+                let asm: &[&str] = if i386 {
+                    &["sdk/lib/pseh/i386/seh.s", "sdk/lib/pseh/i386/seh_prolog.s"]
+                } else {
+                    &[]
+                };
+                self.build_archive("engine_pseh", asm, &["sdk/lib/pseh/dummy.c"], clang, ar)
+            }
+            o => panic!("static_libs: no engine-built library `engine:{o}` (see engine_lib)"),
+        }
+    }
+
+    /// `lib<name>.a` in OUT_DIR from header-free C (`c_rels`, compiled first, the
+    /// order cmake's archives list them) and asm run through the kernel asm include
+    /// chain, as an on-demand archive (see `asm_archive`).
+    fn build_archive(
+        &self,
+        name: &str,
+        asm_rels: &[&str],
+        c_rels: &[&str],
+        clang: &Path,
+        ar: &Path,
+    ) -> PathBuf {
+        let mut objs = Vec::new();
+        for rel in c_rels {
+            let source = self.repo_root.join(rel);
+            if !source.exists() {
+                panic!("missing C source for archive {name}: {}", source.display());
+            }
+            println!("cargo:rerun-if-changed={}", source.display());
+            let mut b = cc::Build::new();
+            apply_base(&mut b, clang, AsmDefineSet::Kernel, &self.arch);
+            self.apply_prefix_map(&mut b);
+            b.file(&source).out_dir(self.obj_dir()).flag("-std=gnu2x");
+            trace_cc(&b, &source);
+            objs.extend(native_deps::compile(&b, &source));
+        }
+        let llvm_mingw = self.repo_root.join(".build-tools/llvm-mingw");
+        let mut b = cc::Build::new();
+        apply_base(&mut b, clang, self.asm_set, &self.arch);
+        self.apply_prefix_map(&mut b);
+        b.out_dir(self.obj_dir())
+            .define("__ASM__", None)
+            .flag("-nostdinc")
+            .flag("-isystem")
+            .flag(self.repo_root.join("sdk/include/crt").to_str().unwrap())
+            .flag("-isystem")
+            .flag(llvm_mingw.join("lib/clang/19/include").to_str().unwrap());
+        self.add_kernel_asm_includes(&mut b);
+        b.flag("-x").flag("assembler-with-cpp");
+        for rel in asm_rels {
+            let source = self.repo_root.join(rel);
+            if !source.exists() {
+                panic!("missing asm source for archive {name}: {}", source.display());
+            }
+            println!("cargo:rerun-if-changed={}", source.display());
+            let mut single = b.clone();
+            single.file(&source);
+            trace_cc(&single, &source);
+            objs.extend(native_deps::compile(&single, &source));
+        }
+        if objs.is_empty() {
+            panic!("archive {name}: cc-rs produced no objects");
+        }
+        let lib_a = self.obj_dir().join(format!("lib{name}.a"));
+        let _ = std::fs::remove_file(&lib_a); // ar rcs appends; start fresh
+        let status = Command::new(ar)
+            .arg("rcs")
+            .arg(&lib_a)
+            .args(&objs)
+            .traced_status()
+            .unwrap_or_else(|e| panic!("ar ({}): {e}", ar.display()));
+        if !status.success() {
+            panic!("ar failed for archive {name}");
+        }
+        lib_a
     }
 
     fn obj_dir(&self) -> PathBuf {

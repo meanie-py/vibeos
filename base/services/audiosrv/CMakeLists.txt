@@ -14,10 +14,8 @@
 add_library(audiosrv_res OBJECT audiosrv.rc)
 target_compile_definitions(audiosrv_res PRIVATE UNICODE _UNICODE)
 target_include_directories(audiosrv_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(AUDIOSRV_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(audiosrv audiosrv-cargo audiosrv.exe
     KIND win32exe
     BODY_CRATE audiosrv-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS audiosrv_res ${AUDIOSRV_REUSED})
+    EXTRA_DEPENDS audiosrv_res)

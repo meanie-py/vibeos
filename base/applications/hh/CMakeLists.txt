@@ -9,10 +9,8 @@ add_rc_deps(hh.rc ${CMAKE_CURRENT_SOURCE_DIR}/hh.ico)
 # whose windres command the cargo link replays.
 add_library(hh_res OBJECT hh.rc)
 target_include_directories(hh_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(HH_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(hh hh-cargo hh.exe
     KIND win32exe
     BODY_CRATE hh-rust
     DESTINATION reactos
-    EXTRA_DEPENDS hh_res ${HH_REUSED})
+    EXTRA_DEPENDS hh_res)

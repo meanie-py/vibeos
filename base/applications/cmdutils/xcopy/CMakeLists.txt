@@ -19,7 +19,6 @@ target_include_directories(xcopy_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set_wine_module_fixme(xcopy_shims)
 set_wine_module_fixme(xcopy_res)
 set(XCOPY_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
     ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(xcopy xcopy-cargo xcopy.exe
     KIND win32exe

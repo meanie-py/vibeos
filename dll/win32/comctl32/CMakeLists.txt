@@ -68,17 +68,9 @@ target_include_directories(comctl32_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # How cmake compiled the target's sources, now on the OBJECT libraries.
 set_wine_module_fixme(comctl32_res)
 set(COMCTL32_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
     ${CMAKE_BINARY_DIR}/sdk/lib/delayimp/libdelayimp_rust.a
     ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/pseh/libpseh.a
     ${CMAKE_BINARY_DIR}/sdk/lib/uuid/libuuid.a)
-if(ARCH STREQUAL "i386")
-    list(APPEND COMCTL32_REUSED ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a)
-endif()
-if(ARCH STREQUAL "arm64")
-    list(APPEND COMCTL32_REUSED ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a)
-endif()
 add_cargo_module(comctl32 comctl32-cargo comctl32.dll
     KIND win32dll
     BODY_CRATE comctl32-rust

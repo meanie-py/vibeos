@@ -103,12 +103,25 @@ def test_an_arch_only_library_is_an_arch_only_dependency(tmp_path):
     f = tmp_path / "CMakeLists.txt"
     f.write_text(CMAKE)
     libs = {a: ["sdk/lib/libwine/libwine.a"] for a in g.ARCHES}
-    libs["i386"].append("sdk/lib/crt/libchkstk.a")
+    libs["i386"].append("sdk/lib/uuid/libuuid.a")
     out = g.rewrite_cmake(f, cell(static_libs=libs))
-    chk = "list(APPEND M_REUSED ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a)"
+    chk = "list(APPEND M_REUSED ${CMAKE_BINARY_DIR}/sdk/lib/uuid/libuuid.a)"
     assert f'if(ARCH STREQUAL "i386")\n    {chk}' in out
     rs = g.build_rs(cell(static_libs=libs))
-    assert '"x86" => &["sdk/lib/libwine/libwine.a", "sdk/lib/crt/libchkstk.a"],' in rs
+    assert '"x86" => &["sdk/lib/libwine/libwine.a", "sdk/lib/uuid/libuuid.a"],' in rs
+
+
+def test_an_engine_built_library_is_linked_but_not_a_cmake_dependency(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE)
+    libs = {a: ["engine:oldnames", "sdk/lib/libwine/libwine.a"] for a in g.ARCHES}
+    libs["i386"].append("engine:chkstk")
+    out = g.rewrite_cmake(f, cell(static_libs=libs))
+    assert "engine:" not in out
+    assert "set(M_REUSED\n    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)" in out
+    rs = g.build_rs(cell(static_libs=libs))
+    assert '"x86" => &["engine:oldnames", "sdk/lib/libwine/libwine.a", "engine:chkstk"],' in rs
+    assert g.ENGINE_LIBS["sdk/lib/crt/libchkstk.a"] == "engine:chkstk"
 
 
 def test_build_rs_names_every_input_and_keeps_an_auto_dll_base():

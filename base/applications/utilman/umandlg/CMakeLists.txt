@@ -12,10 +12,8 @@ spec2def(umandlg.dll umandlg.spec)
 add_library(umandlg_res OBJECT umandlg.rc)
 target_compile_definitions(umandlg_res PRIVATE UNICODE _UNICODE)
 target_include_directories(umandlg_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(UMANDLG_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(umandlg umandlg-cargo umandlg.dll
     KIND win32dll
     BODY_CRATE umandlg-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS umandlg_res ${UMANDLG_REUSED})
+    EXTRA_DEPENDS umandlg_res)

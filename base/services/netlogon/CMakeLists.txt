@@ -20,15 +20,7 @@ add_library(netlogon_res OBJECT netlogon.rc)
 target_compile_definitions(netlogon_res PRIVATE UNICODE _UNICODE)
 target_include_directories(netlogon_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set(NETLOGON_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/pseh/libpseh.a)
-if(ARCH STREQUAL "i386")
-    list(APPEND NETLOGON_REUSED ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a)
-endif()
-if(ARCH STREQUAL "arm64")
-    list(APPEND NETLOGON_REUSED ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a)
-endif()
+    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(netlogon netlogon-cargo netlogon.dll
     KIND win32dll
     BODY_CRATE netlogon-rust

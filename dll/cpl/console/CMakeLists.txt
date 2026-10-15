@@ -18,7 +18,6 @@ add_library(console_res OBJECT console.rc)
 target_compile_definitions(console_res PRIVATE UNICODE _UNICODE)
 target_include_directories(console_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set(CONSOLE_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
     ${CMAKE_BINARY_DIR}/win32ss/user/winsrv/concfg/libconcfg.a
     ${CMAKE_BINARY_DIR}/win32ss/user/winsrv/concfg/libconcfg_rust.a)
 add_cargo_module(console console-cargo console.dll

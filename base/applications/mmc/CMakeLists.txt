@@ -17,7 +17,6 @@ add_library(mmc_res OBJECT mmc.rc)
 target_compile_definitions(mmc_res PRIVATE UNICODE _UNICODE)
 target_include_directories(mmc_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set(MMC_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
     ${CMAKE_BINARY_DIR}/sdk/lib/uuid/libuuid.a)
 add_cargo_module(mmc mmc-cargo mmc.exe
     KIND win32exe

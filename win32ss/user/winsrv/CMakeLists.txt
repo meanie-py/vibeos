@@ -39,8 +39,6 @@ set(WINSRV_REUSED
     ${CMAKE_BINARY_DIR}/win32ss/libwin32ksys.a
     ${CMAKE_BINARY_DIR}/sdk/lib/crt/liblibcntpr.a
     ${CMAKE_BINARY_DIR}/sdk/lib/crt/libcntpr_rust.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/pseh/libpseh.a
     ${CMAKE_BINARY_DIR}/subsystems/win/basesrv/CMakeFiles/libbasesrv.dir/libbasesrv.a
     ${CMAKE_BINARY_DIR}/subsystems/csr/csrsrv/CMakeFiles/libcsrsrv.dir/libcsrsrv.a)
 

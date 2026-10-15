@@ -14,7 +14,6 @@ add_library(deskadp_res OBJECT deskadp.rc)
 target_compile_definitions(deskadp_res PRIVATE UNICODE _UNICODE)
 target_include_directories(deskadp_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set(DESKADP_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
     ${CMAKE_BINARY_DIR}/sdk/lib/uuid/libuuid.a)
 add_cargo_module(deskadp deskadp-cargo deskadp.dll
     KIND win32dll

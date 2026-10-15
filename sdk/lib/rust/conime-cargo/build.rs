@@ -15,9 +15,9 @@ fn main() {
     };
 
     let static_libs: &[&str] = match arch.as_str() {
-        "x86" => &["sdk/lib/libwine/libwine.a", "sdk/lib/pseh/libpseh.a", "sdk/lib/crt/libchkstk.a", "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a"],
-        "x86_64" => &["sdk/lib/libwine/libwine.a", "sdk/lib/pseh/libpseh.a", "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a"],
-        "aarch64" => &["sdk/lib/libwine/libwine.a", "sdk/lib/pseh/libpseh.a", "sdk/lib/crt/libchkstk.a", "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a"],
+        "x86" => &["sdk/lib/libwine/libwine.a", "engine:pseh", "engine:chkstk", "engine:oldnames"],
+        "x86_64" => &["sdk/lib/libwine/libwine.a", "engine:pseh", "engine:oldnames"],
+        "aarch64" => &["sdk/lib/libwine/libwine.a", "engine:pseh", "engine:chkstk", "engine:oldnames"],
         _ => unreachable!(),
     };
 

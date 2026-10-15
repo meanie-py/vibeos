@@ -12,17 +12,8 @@ add_rc_deps(eventvwr.rc ${eventvwr_rc_deps})
 add_library(eventvwr_res OBJECT eventvwr.rc)
 target_compile_definitions(eventvwr_res PRIVATE UNICODE _UNICODE)
 target_include_directories(eventvwr_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(EVENTVWR_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/pseh/libpseh.a)
-if(ARCH STREQUAL "i386")
-    list(APPEND EVENTVWR_REUSED ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a)
-endif()
-if(ARCH STREQUAL "arm64")
-    list(APPEND EVENTVWR_REUSED ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a)
-endif()
 add_cargo_module(eventvwr eventvwr-cargo eventvwr.exe
     KIND win32exe
     BODY_CRATE eventvwr-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS eventvwr_res ${EVENTVWR_REUSED})
+    EXTRA_DEPENDS eventvwr_res)
