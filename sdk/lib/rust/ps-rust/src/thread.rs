@@ -273,6 +273,25 @@ unsafe extern "system" fn PspSystemThreadStartup(StartRoutine: PKSTART_ROUTINE, 
     PspTerminateThreadByPointer(Thread, STATUS_SUCCESS, 1u8);
 }
 
+/// The thread type's open procedure: the full query/set rights imply their NT6
+/// *_LIMITED_INFORMATION counterparts, as on Windows.
+pub unsafe extern "system" fn PspThreadOpen(
+    _Reason: OB_OPEN_REASON,
+    _AccessMode: KPROCESSOR_MODE,
+    _Process: PEPROCESS,
+    _ObjectBody: PVOID,
+    GrantedAccess: *mut ACCESS_MASK,
+    _HandleCount: ULONG,
+) -> NTSTATUS {
+    if *GrantedAccess & THREAD_SET_INFORMATION != 0 {
+        *GrantedAccess |= THREAD_SET_LIMITED_INFORMATION;
+    }
+    if *GrantedAccess & THREAD_QUERY_INFORMATION != 0 {
+        *GrantedAccess |= THREAD_QUERY_LIMITED_INFORMATION;
+    }
+    STATUS_SUCCESS
+}
+
 // ARM64 early boot hit an optimizer-sensitive failure in this routine during
 // Phase 1 system-thread creation. Keeping it uninlined avoids the bad codegen
 // while preserving the Rust implementation on that architecture.
@@ -666,7 +685,10 @@ unsafe fn PspCreateThread(
             (*Process).GrantedAccess = 0;
         }
 
-        (*Thread).GrantedAccess |= THREAD_TERMINATE | THREAD_SET_INFORMATION | THREAD_QUERY_INFORMATION;
+        (*Thread).GrantedAccess |= THREAD_TERMINATE
+            | THREAD_SET_INFORMATION
+            | THREAD_QUERY_INFORMATION
+            | THREAD_QUERY_LIMITED_INFORMATION;
     } else {
         (*Thread).GrantedAccess = THREAD_ALL_ACCESS;
     }

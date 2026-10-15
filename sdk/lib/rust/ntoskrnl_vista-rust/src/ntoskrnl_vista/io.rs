@@ -57,32 +57,7 @@ pub unsafe extern "system" fn IoQueueWorkItemEx(
     );
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn IoSetDevicePropertyData(
-    Pdo: PDEVICE_OBJECT,
-    PropertyKey: *const DEVPROPKEY,
-    Lcid: LCID,
-    Flags: ULONG,
-    Type: DEVPROPTYPE,
-    Size: ULONG,
-    Data: PVOID,
-) -> NTSTATUS {
-    STATUS_NOT_IMPLEMENTED
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn IoGetDevicePropertyData(
-    Pdo: PDEVICE_OBJECT,
-    PropertyKey: *const DEVPROPKEY,
-    Lcid: LCID,
-    Flags: ULONG,
-    Size: ULONG,
-    Data: PVOID,
-    RequiredSize: PULONG,
-    Type: PDEVPROPTYPE,
-) -> NTSTATUS {
-    STATUS_NOT_IMPLEMENTED
-}
+// IoSet/GetDevicePropertyData are ntoskrnl exports now (pnpmgr-rust).
 
 #[no_mangle]
 pub unsafe extern "C" fn IoSetDeviceInterfacePropertyData(

@@ -1964,7 +1964,6 @@ pub unsafe extern "system" fn NtQueryInformationThread(
     let mut Thread: PETHREAD = core::ptr::null_mut();
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
     let mut Status: NTSTATUS;
-    let Access: ULONG;
     let mut Length: ULONG = 0;
     let mut OldIrql: KIRQL = 0;
     let mut ThreadTerminated: ULONG;
@@ -1983,8 +1982,6 @@ pub unsafe extern "system" fn NtQueryInformationThread(
     if Status < 0 {
         return Status;
     }
-
-    Access = THREAD_QUERY_INFORMATION;
 
     // The C fills ThreadInformation in place under _SEH2_TRY; a user-mode caller's
     // buffer is a pool copy here, copied back once at the end (OutputBounce).
@@ -2006,7 +2003,7 @@ pub unsafe extern "system" fn NtQueryInformationThread(
             } else {
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
-                    Access,
+                    THREAD_QUERY_LIMITED_INFORMATION,
                     PsThreadType,
                     PreviousMode,
                     &mut Thread as *mut _ as *mut PVOID,
@@ -2034,7 +2031,7 @@ pub unsafe extern "system" fn NtQueryInformationThread(
             } else {
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
-                    Access,
+                    THREAD_QUERY_LIMITED_INFORMATION,
                     PsThreadType,
                     PreviousMode,
                     &mut Thread as *mut _ as *mut PVOID,
@@ -2065,7 +2062,7 @@ pub unsafe extern "system" fn NtQueryInformationThread(
             } else {
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
-                    Access,
+                    THREAD_QUERY_INFORMATION,
                     PsThreadType,
                     PreviousMode,
                     &mut Thread as *mut _ as *mut PVOID,
@@ -2087,7 +2084,7 @@ pub unsafe extern "system" fn NtQueryInformationThread(
             } else {
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
-                    Access,
+                    THREAD_QUERY_INFORMATION,
                     PsThreadType,
                     PreviousMode,
                     &mut Thread as *mut _ as *mut PVOID,
@@ -2107,29 +2104,17 @@ pub unsafe extern "system" fn NtQueryInformationThread(
             if ThreadInformationLength != Length {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                Status = ObReferenceObjectByHandle(
-                    ThreadHandle,
-                    Access,
-                    PsThreadType,
-                    PreviousMode,
-                    &mut Thread as *mut _ as *mut PVOID,
-                    core::ptr::null_mut(),
-                );
-                if Status >= 0 {
-                    let thread = Thread as *mut _ETHREAD;
-                    let process = (*thread).ThreadsProcess as *mut _EPROCESS;
-                    // Divergence from the C, which answers "is ThreadListHead one entry long".
-                    // That list still holds EXITED threads whose objects a handle keeps alive,
-                    // while NtTerminateThread(NULL) refuses with STATUS_CANT_TERMINATE_SELF on
-                    // ActiveThreads == 1 (LIVE threads). With the two disagreeing, kernel32's
-                    // ExitThread was told "not last", had its self-termination refused, and
-                    // spun in its unreachable loop: svchost's main thread did it on arm64 once
-                    // its services had all exited, and the spin starved the whole guest.
-                    // Ask the question NtTerminateThread asks.
-                    *(ThreadInformation as PULONG) = ((*process).ActiveThreads == 1) as ULONG;
-
-                    ObDereferenceObject(Thread as PVOID);
-                }
+                // This class always refers to the CURRENT thread, whatever handle came
+                // with it (upstream 32bb061415f).
+                let process = (*(PsGetCurrentThread() as *mut _ETHREAD)).ThreadsProcess as *mut _EPROCESS;
+                // Divergence from the old C, which answered "is ThreadListHead one entry
+                // long". That list still holds EXITED threads whose objects a handle keeps
+                // alive, while NtTerminateThread(NULL) refuses with STATUS_CANT_TERMINATE_SELF
+                // on ActiveThreads == 1 (LIVE threads). With the two disagreeing, kernel32's
+                // ExitThread was told "not last", had its self-termination refused, and spun
+                // in its unreachable loop: svchost's main thread did it on arm64 once its
+                // services had all exited. Upstream reached the same answer in 32bb061415f.
+                *(ThreadInformation as PULONG) = ((*process).ActiveThreads == 1) as ULONG;
             }
         }
 
@@ -2141,7 +2126,7 @@ pub unsafe extern "system" fn NtQueryInformationThread(
             } else {
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
-                    Access,
+                    THREAD_QUERY_INFORMATION,
                     PsThreadType,
                     PreviousMode,
                     &mut Thread as *mut _ as *mut PVOID,
@@ -2169,7 +2154,7 @@ pub unsafe extern "system" fn NtQueryInformationThread(
             {
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
-                    Access,
+                    THREAD_QUERY_INFORMATION,
                     PsThreadType,
                     PreviousMode,
                     &mut Thread as *mut _ as *mut PVOID,
@@ -2200,7 +2185,7 @@ pub unsafe extern "system" fn NtQueryInformationThread(
             } else {
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
-                    Access,
+                    THREAD_QUERY_LIMITED_INFORMATION,
                     PsThreadType,
                     PreviousMode,
                     &mut Thread as *mut _ as *mut PVOID,
@@ -2225,7 +2210,7 @@ pub unsafe extern "system" fn NtQueryInformationThread(
             } else {
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
-                    Access,
+                    THREAD_QUERY_INFORMATION,
                     PsThreadType,
                     PreviousMode,
                     &mut Thread as *mut _ as *mut PVOID,
@@ -2249,7 +2234,7 @@ pub unsafe extern "system" fn NtQueryInformationThread(
             } else {
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
-                    Access,
+                    THREAD_QUERY_LIMITED_INFORMATION,
                     PsThreadType,
                     PreviousMode,
                     &mut Thread as *mut _ as *mut PVOID,

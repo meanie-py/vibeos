@@ -1859,7 +1859,20 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   Haiku ($0.01), plus the controller's BusLocation, the VT6421 DMA fix and its CriticalDeviceDatabase
   entries (routed to uniata, our boot storage driver). Still owed from it: shell32's 13 files
   (taken by the shell32-com lane), and mmc_new's ten commits (master's translation is of the C before them;
-  `CActionWnd.cpp` is commented out). Owed, by cluster (upstream-sync): pciidex rewrite
+  `CActionWnd.cpp` is commented out). **2026-10-15 sync (64 commits, upstream c25e4fd7dec):**
+  ported into the Rust: NtGetNextProcess/NtGetNextThread as syscalls (ntdll's user-mode
+  NtGetNextThread retired), the NT6 thread/process access masks with
+  THREAD_QUERY/SET_LIMITED_INFORMATION (thread open procedure, ObpIncrementHandleCount
+  settling GrantedAccess before it), NtQueryInformationThread's per-class rights,
+  KeRemoveQueueDpc's removed flag, x64 handle enumeration (it skipped every other handle),
+  the balancer wait under AddressCreationLock, syssetup's unattended display settings for
+  inactive adapters, serial's PnP queries, comctl32 TB_SETMETRICS, dhcpcsvc RegCloseKey,
+  kbd103 generated. Already ours: TrimWsList's flush, NtRemoveIoCompletion's zeroed status,
+  AmILastThread on ActiveThreads, the fiber checks. Owed from it: DeviceProperty
+  (`pnpprop.c`, its io/pnpmgr hooks; IoGet/SetDevicePropertyData are kernel exports answering
+  STATUS_NOT_IMPLEMENTED until it lands, the interface pair is held back), x86/x64 cache enumeration (`ke/x86x64/cacheinfo.c`),
+  the storport revival (`ioctl.c`, `srb.c` and changes to five translated files), shell32's
+  RegenerateUserEnvironment (shell32-com) and mmc_new's views (cpp-cluster). Owed, by cluster (upstream-sync): pciidex rewrite
   (~15K lines), PCIX arbiters/ECAM, netcfgx and dhcpcsvc alternate configuration, freeldr
   disk registration and boot menu, the Wine 10 ole32/oleaut32/mlang/crypt syncs, msgina and
   syssetup branding. **The msgina branding commit (6ae2d5ab43f) deleted IDI_ROSLOGO/IDI_BAR,

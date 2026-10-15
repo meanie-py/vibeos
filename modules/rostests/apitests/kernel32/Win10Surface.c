@@ -231,7 +231,7 @@ static void Test_NtGetNextThread(void)
     for (;;)
     {
         Next = NULL;
-        Status = pNext(GetCurrentProcess(), Prev, THREAD_QUERY_INFORMATION, 0, 0, &Next);
+        Status = pNext(GetCurrentProcess(), Prev, THREAD_QUERY_LIMITED_INFORMATION, 0, 0, &Next);
         if (Prev)
             CloseHandle(Prev);
         if (Status != 0)
@@ -256,9 +256,7 @@ static void Test_NtGetNextThread(void)
     ok(SawNew, "new thread %lu not seen\n", NewId);
     ok(Status == W10_STATUS_NO_MORE_ENTRIES, "walk ended with %08lx\n", Status);
 
-    /* The Vista limited right on our own thread. (A walk asking for it hit ACCESS_DENIED
-     * on some other thread of this process in our OS, cause not yet established; the walk
-     * above asks for THREAD_QUERY_INFORMATION. See modern-windows-compat-roadmap.md.) */
+    /* The Vista limited right on our own thread, by id. */
     Next = OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, Self);
     ok(Next != NULL, "OpenThread(THREAD_QUERY_LIMITED_INFORMATION) failed: %lu\n", GetLastError());
     if (Next)

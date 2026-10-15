@@ -3803,6 +3803,207 @@ unsafe extern "C" fn GetInstallSourceWin32(
 
     return (FALSE) as i32;
 }
+/// Whether `HARDWARE\DEVICEMAP\VIDEO` points at a device of the service, i.e. whether its
+/// driver is the one running now.
+unsafe fn IsDisplayServiceActive(pszServiceName: &[u16]) -> bool {
+    let mut hKey: HKEY = core::ptr::null_mut();
+    if RegOpenKeyExW(
+        HKEY_LOCAL_MACHINE,
+        w!("HARDWARE\\DEVICEMAP\\VIDEO") as LPCWSTR,
+        0,
+        KEY_QUERY_VALUE,
+        &mut hKey,
+    ) != ERROR_SUCCESS as LONG
+    {
+        return false;
+    }
+
+    // The DEVICEMAP entries point to Services\<ServiceName>\DeviceX.
+    let mut pattern = [0u16; MAX_PATH as usize];
+    let mut n = 0usize;
+    for c in "\\SERVICES\\".encode_utf16().chain(pszServiceName.iter().copied()).chain([b'\\' as u16]) {
+        if n == pattern.len() - 1 {
+            break; // _snwprintf truncates the same way
+        }
+        pattern[n] = c;
+        n += 1;
+    }
+    let pattern = &mut pattern[..n];
+    CharUpperBuffW(pattern.as_mut_ptr(), pattern.len() as DWORD);
+
+    let mut bActive = false;
+    let mut szValueName = [0u16; 64];
+    let mut szData = [0u16; MAX_PATH as usize];
+    let mut dwIndex: DWORD = 0;
+    while !bActive {
+        let mut cchValueName = szValueName.len() as DWORD;
+        let mut cbData = (core::mem::size_of_val(&szData) - core::mem::size_of::<u16>()) as DWORD;
+        let mut dwType: DWORD = 0;
+        if RegEnumValueW(
+            hKey,
+            dwIndex,
+            szValueName.as_mut_ptr(),
+            &mut cchValueName,
+            core::ptr::null_mut(),
+            &mut dwType,
+            szData.as_mut_ptr() as LPBYTE,
+            &mut cbData,
+        ) == ERROR_NO_MORE_ITEMS as LONG
+        {
+            break;
+        }
+        dwIndex += 1;
+        if dwType != REG_SZ {
+            continue;
+        }
+        let data = &mut szData[..cbData as usize / 2];
+        CharUpperBuffW(data.as_mut_ptr(), data.len() as DWORD);
+        bActive = data.windows(pattern.len()).any(|w| w == &pattern[..]);
+    }
+
+    RegCloseKey(hKey);
+    bActive
+}
+
+/// Store `pdm`'s unattended fields as the DefaultSettings of every DeviceN key of the service.
+unsafe fn WriteDisplaySettingsToService(pszServiceName: LPCWSTR, pdm: &DEVMODEW) {
+    let mut hServicesKey: HKEY = core::ptr::null_mut();
+    let mut hServiceKey: HKEY = core::ptr::null_mut();
+    if RegOpenKeyExW(
+        HKEY_LOCAL_MACHINE,
+        w!("SYSTEM\\CurrentControlSet\\Services") as LPCWSTR,
+        0,
+        KEY_ENUMERATE_SUB_KEYS,
+        &mut hServicesKey,
+    ) != ERROR_SUCCESS as LONG
+    {
+        return;
+    }
+    let opened = RegOpenKeyExW(hServicesKey, pszServiceName, 0, KEY_ENUMERATE_SUB_KEYS, &mut hServiceKey);
+    RegCloseKey(hServicesKey);
+    if opened != ERROR_SUCCESS as LONG {
+        return;
+    }
+
+    const DEVICE: &[u8] = b"Device";
+    let mut szDeviceName = [0u16; MAX_PATH as usize];
+    let mut dwIndex: DWORD = 0;
+    loop {
+        let mut cchDeviceName = szDeviceName.len() as DWORD;
+        if RegEnumKeyExW(
+            hServiceKey,
+            dwIndex,
+            szDeviceName.as_mut_ptr(),
+            &mut cchDeviceName,
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+        ) != ERROR_SUCCESS as LONG
+        {
+            break;
+        }
+        dwIndex += 1;
+
+        // _wcsnicmp(szDeviceName, L"Device", 6)
+        let name = &szDeviceName[..cchDeviceName as usize];
+        if name.len() < DEVICE.len()
+            || !name[..DEVICE.len()]
+                .iter()
+                .zip(DEVICE)
+                .all(|(&a, b)| a < 0x80 && (a as u8).eq_ignore_ascii_case(b))
+        {
+            continue;
+        }
+
+        let mut hDeviceKey: HKEY = core::ptr::null_mut();
+        if RegOpenKeyExW(hServiceKey, szDeviceName.as_ptr(), 0, KEY_SET_VALUE, &mut hDeviceKey)
+            != ERROR_SUCCESS as LONG
+        {
+            continue;
+        }
+
+        let set = |value: LPCWSTR, data: &DWORD| {
+            RegSetValueExW(
+                hDeviceKey,
+                value,
+                0,
+                REG_DWORD,
+                data as *const DWORD as *const BYTE,
+                core::mem::size_of::<DWORD>() as DWORD,
+            );
+        };
+        if pdm.dmFields & DM_BITSPERPEL as u32 != 0 {
+            set(w!("DefaultSettings.BitsPerPel") as LPCWSTR, &pdm.dmBitsPerPel);
+        }
+        if pdm.dmFields & DM_PELSWIDTH as u32 != 0 {
+            set(w!("DefaultSettings.XResolution") as LPCWSTR, &pdm.dmPelsWidth);
+        }
+        if pdm.dmFields & DM_PELSHEIGHT as u32 != 0 {
+            set(w!("DefaultSettings.YResolution") as LPCWSTR, &pdm.dmPelsHeight);
+        }
+        if pdm.dmFields & DM_DISPLAYFREQUENCY as u32 != 0 {
+            set(w!("DefaultSettings.VRefresh") as LPCWSTR, &pdm.dmDisplayFrequency);
+        }
+
+        RegCloseKey(hDeviceKey);
+    }
+
+    RegCloseKey(hServiceKey);
+}
+
+/// Display drivers installed during the second stage (e.g. from modules/optional) only
+/// become active after a reboot, so ChangeDisplaySettings cannot reach them. Store the
+/// unattended settings in their registry keys, for the next boot (upstream b2116d022fc).
+unsafe fn ApplyDisplaySettingsToInactiveAdapters(pdm: &DEVMODEW) {
+    if pdm.dmFields == 0 {
+        return;
+    }
+
+    let mut ClassGuid: GUID = core::mem::zeroed();
+    let mut dwGuids: DWORD = 0;
+    if SetupDiClassGuidsFromNameW(w!("Display") as LPCWSTR, &mut ClassGuid, 1, &mut dwGuids) == 0
+        || dwGuids == 0
+    {
+        return;
+    }
+
+    let hDevInfo = SetupDiGetClassDevsW(&ClassGuid, core::ptr::null(), core::ptr::null_mut(), DIGCF_PRESENT);
+    if hDevInfo == INVALID_HANDLE_VALUE as HDEVINFO {
+        return;
+    }
+
+    let mut DevInfoData: SP_DEVINFO_DATA = core::mem::zeroed();
+    DevInfoData.cbSize = core::mem::size_of::<SP_DEVINFO_DATA>() as DWORD;
+    let mut szServiceName = [0u16; MAX_PATH as usize];
+    let mut dwIndex: DWORD = 0;
+    while SetupDiEnumDeviceInfo(hDevInfo, dwIndex, &mut DevInfoData) != 0 {
+        dwIndex += 1;
+        if SetupDiGetDeviceRegistryPropertyW(
+            hDevInfo,
+            &mut DevInfoData,
+            SPDRP_SERVICE,
+            core::ptr::null_mut(),
+            szServiceName.as_mut_ptr() as PBYTE,
+            core::mem::size_of_val(&szServiceName) as DWORD,
+            core::ptr::null_mut(),
+        ) == 0
+        {
+            continue;
+        }
+
+        // The settings of an active adapter were already updated by ChangeDisplaySettings.
+        let len = szServiceName.iter().position(|&c| c == 0).unwrap_or(szServiceName.len());
+        if IsDisplayServiceActive(&szServiceName[..len]) {
+            continue;
+        }
+
+        WriteDisplaySettingsToService(szServiceName.as_ptr(), pdm);
+    }
+
+    SetupDiDestroyDeviceInfoList(hDevInfo);
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn ProcessUnattendSection(pSetupData: PSETUPDATA) {
     let mut InfContext: INFCONTEXT = core::mem::zeroed();
@@ -3936,7 +4137,9 @@ pub unsafe extern "C" fn ProcessUnattendSection(pSetupData: PSETUPDATA) {
     ) != 0
     {
         let mut dm: DEVMODEW = core::mem::zeroed();
+        let mut dmUnattend: DEVMODEW = core::mem::zeroed();
         dm.dmSize = core::mem::size_of::<DEVMODEW>() as WORD;
+        dmUnattend.dmSize = core::mem::size_of::<DEVMODEW>() as WORD;
         if EnumDisplaySettingsW(
             core::ptr::null_mut(),
             ENUM_CURRENT_SETTINGS,
@@ -3975,29 +4178,29 @@ pub unsafe extern "C" fn ProcessUnattendSection(pSetupData: PSETUPDATA) {
                     if _wcsicmp(szName.as_ptr(), w!("BitsPerPel") as LPCWSTR)
                         == 0
                     {
-                        dm.dmFields |= (DM_BITSPERPEL) as u32;
-                        dm.dmBitsPerPel = iValue as DWORD;
+                        dmUnattend.dmFields |= (DM_BITSPERPEL) as u32;
+                        dmUnattend.dmBitsPerPel = iValue as DWORD;
                     } else if _wcsicmp(
                         szName.as_ptr(),
                         w!("XResolution") as LPCWSTR,
                     ) == 0
                     {
-                        dm.dmFields |= (DM_PELSWIDTH) as u32;
-                        dm.dmPelsWidth = iValue as DWORD;
+                        dmUnattend.dmFields |= (DM_PELSWIDTH) as u32;
+                        dmUnattend.dmPelsWidth = iValue as DWORD;
                     } else if _wcsicmp(
                         szName.as_ptr(),
                         w!("YResolution") as LPCWSTR,
                     ) == 0
                     {
-                        dm.dmFields |= (DM_PELSHEIGHT) as u32;
-                        dm.dmPelsHeight = iValue as DWORD;
+                        dmUnattend.dmFields |= (DM_PELSHEIGHT) as u32;
+                        dmUnattend.dmPelsHeight = iValue as DWORD;
                     } else if _wcsicmp(
                         szName.as_ptr(),
                         w!("VRefresh") as LPCWSTR,
                     ) == 0
                     {
-                        dm.dmFields |= (DM_DISPLAYFREQUENCY) as u32;
-                        dm.dmDisplayFrequency = iValue as DWORD;
+                        dmUnattend.dmFields |= (DM_DISPLAYFREQUENCY) as u32;
+                        dmUnattend.dmDisplayFrequency = iValue as DWORD;
                     }
                 }
 
@@ -4006,7 +4209,22 @@ pub unsafe extern "C" fn ProcessUnattendSection(pSetupData: PSETUPDATA) {
                 }
             }
 
+            dm.dmFields |= dmUnattend.dmFields;
+            if dmUnattend.dmFields & DM_BITSPERPEL as u32 != 0 {
+                dm.dmBitsPerPel = dmUnattend.dmBitsPerPel;
+            }
+            if dmUnattend.dmFields & DM_PELSWIDTH as u32 != 0 {
+                dm.dmPelsWidth = dmUnattend.dmPelsWidth;
+            }
+            if dmUnattend.dmFields & DM_PELSHEIGHT as u32 != 0 {
+                dm.dmPelsHeight = dmUnattend.dmPelsHeight;
+            }
+            if dmUnattend.dmFields & DM_DISPLAYFREQUENCY as u32 != 0 {
+                dm.dmDisplayFrequency = dmUnattend.dmDisplayFrequency;
+            }
+
             ChangeDisplaySettingsW(&mut dm, (CDS_UPDATEREGISTRY) as u32);
+            ApplyDisplaySettingsToInactiveAdapters(&dmUnattend);
         }
     }
 

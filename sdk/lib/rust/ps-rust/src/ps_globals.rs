@@ -78,15 +78,10 @@ pub static mut KeUserPopEntrySListResume: PVOID = core::ptr::null_mut();
 // THREAD_ALERT — not in `ntkrnl_sys::constants` (yet); inline here.
 const THREAD_ALERT: ULONG = 0x0004;
 
-// `ntkrnl_sys::constants::PROCESS_ALL_ACCESS` is the Vista+
-// (NTDDI_VERSION >= NTDDI_VISTA) value `... | 0xFFFF` = 0x001FFFFF.
-// The ntoskrnl C build is NT 5.x, where the macro evaluates to
-// `... | 0xFFF` = 0x001F0FFF. Process-create access-checks fail
-// silently when the table has the bigger value, so the kernel hung
-// waiting on session-manager process startup. Use the NT 5.x mask
-// directly here, matching `kernel_c_helpers.c` (which got the right
-// value via the `pstypes.h` macro).
-const PROCESS_ALL_ACCESS_NT5: ULONG = STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0xFFF;
+// GenericAll is the NT6 PROCESS_ALL_ACCESS (0x001FFFFF). It was once pinned to the NT5
+// 0x001F0FFF because the C half of the kernel still built the NT5 macro, and a table
+// wider than the C's mask hung session-manager startup. Upstream 4b4063a01d6 moved the
+// headers to NT6 under __REACTOS__, so both halves now agree on the wide value.
 
 // Psp{Process,Thread}Mapping — `GENERIC_MAPPING` access-rights tables.
 #[no_mangle]
@@ -103,7 +98,7 @@ pub static mut PspProcessMapping: _GENERIC_MAPPING = _GENERIC_MAPPING {
         | PROCESS_SET_INFORMATION
         | PROCESS_SUSPEND_RESUME,
     GenericExecute: STANDARD_RIGHTS_EXECUTE | SYNCHRONIZE,
-    GenericAll: PROCESS_ALL_ACCESS_NT5,
+    GenericAll: PROCESS_ALL_ACCESS,
 };
 
 #[no_mangle]
@@ -114,8 +109,9 @@ pub static mut PspThreadMapping: _GENERIC_MAPPING = _GENERIC_MAPPING {
         | THREAD_SUSPEND_RESUME
         | THREAD_ALERT
         | THREAD_SET_INFORMATION
-        | THREAD_SET_CONTEXT,
-    GenericExecute: STANDARD_RIGHTS_EXECUTE | SYNCHRONIZE,
+        | THREAD_SET_CONTEXT
+        | THREAD_SET_LIMITED_INFORMATION,
+    GenericExecute: STANDARD_RIGHTS_EXECUTE | SYNCHRONIZE | THREAD_QUERY_LIMITED_INFORMATION,
     GenericAll: THREAD_ALL_ACCESS,
 };
 

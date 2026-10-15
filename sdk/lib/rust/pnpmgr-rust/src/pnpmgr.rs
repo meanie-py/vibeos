@@ -1555,6 +1555,38 @@ unsafe fn PiGetDeviceRegistryProperty(
     Status
 }
 
+// IoSet/GetDevicePropertyData: the kernel exports them since upstream 3cc9aa99292, whose
+// headers stopped declaring them as ntoskrnl_vista's. Until its DeviceProperty store
+// (ntoskrnl/io/pnpmgr/pnpprop.c) is ported they answer STATUS_NOT_IMPLEMENTED, as
+// ntoskrnl_vista's stubs did. DEVPROPKEY is not in the kernel island; the key is
+// never dereferenced here.
+#[no_mangle]
+pub unsafe extern "system" fn IoSetDevicePropertyData(
+    _Pdo: PDEVICE_OBJECT,
+    _PropertyKey: *const core::ffi::c_void,
+    _Lcid: ULONG,
+    _Flags: ULONG,
+    _Type: ULONG,
+    _Size: ULONG,
+    _Data: PVOID,
+) -> NTSTATUS {
+    STATUS_NOT_IMPLEMENTED
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn IoGetDevicePropertyData(
+    _Pdo: PDEVICE_OBJECT,
+    _PropertyKey: *const core::ffi::c_void,
+    _Lcid: ULONG,
+    _Flags: ULONG,
+    _Size: ULONG,
+    _Data: PVOID,
+    _RequiredSize: PULONG,
+    _Type: PULONG,
+) -> NTSTATUS {
+    STATUS_NOT_IMPLEMENTED
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn IoGetDeviceProperty(
     DeviceObject: PDEVICE_OBJECT,

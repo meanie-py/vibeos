@@ -515,7 +515,11 @@ pub const SECTION_ALL_ACCESS: ULONG = STANDARD_RIGHTS_REQUIRED | 0x001F;
 
 pub const THREAD_TERMINATE: ULONG = 0x0001;
 pub const THREAD_SET_INFORMATION: ULONG = 0x0020;
-pub const THREAD_ALL_ACCESS: ULONG = STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0x03FF;
+pub const THREAD_SET_LIMITED_INFORMATION: ULONG = 0x0400;
+pub const THREAD_QUERY_LIMITED_INFORMATION: ULONG = 0x0800;
+// The NT6 mask. sdk/include/xdk/pstypes.h selects it under __REACTOS__ too since upstream
+// 4b4063a01d6, so the C and the Rust agree on it again.
+pub const THREAD_ALL_ACCESS: ULONG = STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0xFFFF;
 
 // ============================================================================
 // Audit constants (from setypes.h / se.h)

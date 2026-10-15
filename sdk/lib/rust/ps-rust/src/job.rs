@@ -132,7 +132,7 @@ pub static mut PspJobMapping: _GENERIC_MAPPING = _GENERIC_MAPPING {
         | JOB_OBJECT_SET_ATTRIBUTES
         | JOB_OBJECT_TERMINATE,
     GenericExecute: STANDARD_RIGHTS_EXECUTE | SYNCHRONIZE,
-    GenericAll: STANDARD_RIGHTS_ALL | THREAD_ALL_ACCESS, // bug fixed only in vista
+    GenericAll: JOB_OBJECT_ALL_ACCESS,
 };
 
 /// Indexed by JOBOBJECTINFOCLASS.
