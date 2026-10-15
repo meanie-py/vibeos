@@ -930,7 +930,7 @@ Spend: about $4.63 of the $5 approved for the phase (`-m haiku`). Nothing is unc
    - msxml2 vtables belong in the island.
    - COBJMACROS shims should be generated.
    - wscript's `debugstr_variant` is a placeholder.
-6. **D2** needs a new budget: setup16, stortest, testgui, testchild, rapps_com, devmgmt.
+6. **D2: DONE** 2026-10-15 (see rust-port-status.md's batch D2 row).
    kbswitch, winmine, utilman and the screensavers went to control-plane's wave; the disk
    tools went to CRT.
 

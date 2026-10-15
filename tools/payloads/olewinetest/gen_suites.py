@@ -63,12 +63,20 @@ def main(argv: list[str] | None = None) -> int:
         "the suites run (staged reg.exe), e.g. oleaut32=0x02000000 for page heap: a heap "
         "corruption then faults AT the bad store instead of at a later free",
     )
-    ap.add_argument("--suites", help="comma-separated suites (default: %(default)s)",
-                    default=",".join(SUITES))
-    ap.add_argument("--register", help="comma-separated DLLs to regsvr32 first "
-                    "(default: %(default)s)", default=",".join(REGISTER))
-    ap.add_argument("--out-dir", type=Path, default=HERE,
-                    help="where winetest-suites-<arch>.txt goes (default: this payload)")
+    ap.add_argument(
+        "--suites", help="comma-separated suites (default: %(default)s)", default=",".join(SUITES)
+    )
+    ap.add_argument(
+        "--register",
+        help="comma-separated DLLs to regsvr32 first (default: %(default)s)",
+        default=",".join(REGISTER),
+    )
+    ap.add_argument(
+        "--out-dir",
+        type=Path,
+        default=HERE,
+        help="where winetest-suites-<arch>.txt goes (default: this payload)",
+    )
     args = ap.parse_args(argv)
     suites = tuple(s for s in args.suites.split(",") if s)
     register = tuple(s for s in args.register.split(",") if s)

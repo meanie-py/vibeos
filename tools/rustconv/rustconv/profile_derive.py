@@ -934,7 +934,9 @@ def _target_names(cmake: Path) -> set[str]:
     text = _strip_cmake_comments(_read_with_includes(cmake))
     names = {
         m.group(2)
-        for m in re.finditer(r"\b(add_library|add_executable)\s*\(\s*([A-Za-z0-9_${}]+)", text)
+        # `.` too: rapps_com's target is `rapps.com`, read as `rapps`, so translate found no
+        # owner for its main.c and bought nothing.
+        for m in re.finditer(r"\b(add_library|add_executable)\s*\(\s*([A-Za-z0-9_.${}]+)", text)
         if not m.group(2).startswith("$")
     }
     names.update(_CARGO_KERNEL_RE.findall(text))
@@ -2933,6 +2935,22 @@ _NTDDI_FOR = {
 }
 
 
+def _ntddi_for(win32_winnt: str) -> str:
+    """NTDDI_VERSION matching a _WIN32_WINNT, as sdkddkver.h's mismatch check demands.
+
+    The table holds the service-pack choices; anything else is the release itself
+    (_WIN32_WINNT << 16). A table-only lookup gave the Wine 11.19 imports, which compile
+    at 0x0A00, the 0x502 value, and every island of theirs died on "NTDDI_VERSION and
+    _WIN32_WINNT mismatch!" though the real compile is clean.
+    """
+    if win32_winnt.lower() in _NTDDI_FOR:
+        return _NTDDI_FOR[win32_winnt.lower()]
+    try:
+        return f"0x{int(win32_winnt, 16) << 16:08X}"
+    except ValueError:
+        return "0x05020400"
+
+
 # The root CMakeLists' add_definitions() beyond the version macros that change what a header
 # DECLARES. compile_commands.json isolation strips them as repo-wide, so without these an
 # island sees d3dukmdt.h's WDDM 3.0 default and vendor/libdxg's d3dkmthk.h then names a type
@@ -2977,7 +2995,7 @@ def _default_ver_defs(module: CMakeModule, db_defines: list[str] | None) -> list
         for h in module.module_dir.rglob("*.h")
     )
     if not redefines:
-        ver.setdefault("NTDDI_VERSION", _NTDDI_FOR.get(ver["_WIN32_WINNT"], "0x05020400"))
+        ver.setdefault("NTDDI_VERSION", _ntddi_for(ver["_WIN32_WINNT"]))
     defs = [f"-D{name}={ver[name]}" for name in _VERSION_MACROS if name in ver]
     overridden = {d[2:].partition("=")[0] for d in extra}
     defs += [f"-D{d}" for d in _BASELINE_DEFS if d.partition("=")[0] not in overridden]

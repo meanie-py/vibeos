@@ -182,6 +182,11 @@ def generate(cml: str) -> str:
         words = [r for w in raw if (r := rewrite(w)) is not None]
         if cmd.name in ("add_executable", "add_library"):
             at = 2 if len(words) > 1 and words[1] in ("STATIC", "SHARED", "MODULE", "OBJECT") else 1
+            # add_executable's own keywords precede EXCLUDE_FROM_ALL and the sources: testgui's
+            # `add_executable(testgui WIN32 ..)` became `testgui_c EXCLUDE_FROM_ALL testgui.c
+            # WIN32`, and CMake looked for a source file named WIN32.
+            while at < len(words) and words[at] in ("WIN32", "MACOSX_BUNDLE"):
+                at += 1
             if "EXCLUDE_FROM_ALL" not in words:
                 words.insert(at, "EXCLUDE_FROM_ALL")
             if target in inline:
