@@ -55,6 +55,9 @@ _PYTEST_SUITES = [
     # are compiled only for the target, where nothing runs their tests; a wrong answer
     # from one is a dead device on a board nobody here has.
     (".", ".", "tools/test_arm64_firmware_tables.py"),
+    # The Wi-Fi supplicant (ndis-rust's wpa.rs): a wrong MIC or key looks on the bench like
+    # an access point silently dropping the handshake.
+    (".", ".", "tools/test_wpa_supplicant.py"),
     # An oracle needs an oracle. verify_c_signatures reports its own type-resolution gaps as
     # defects in the code when it is wrong, and reports "verified" over types it never
     # resolved when it is blind — neither shows up in review or in its own output.
