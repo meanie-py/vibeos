@@ -10,8 +10,23 @@ stage:
 - src: build-{arch}/base/applications/network/ipconfig/ipconfig_c.exe
   dest: bin/modrun/ipconfig_c.exe
 cases:
+# Only amd64's smoke boots with a NIC; elsewhere there is no adapter to print.
 - id: plain
+  arches: [i386, arm64]
 - id: all
   args: /all
+  arches: [i386, arm64]
+- id: plain-nic
+  arches: [amd64]
+  diverge: &friendly
+  # The adapter has no `...\Connection` registry key in the guest, so the C prints its
+  # UNINITIALISED name buffer (PrintAdapterTypeAndName); the Rust zero-fills it.
+  - why: 'uninitialised adapter name'
+    c: '^Ethernet Adapter:.*$'
+    rust: '^Ethernet Adapter:\s*$'
+- id: all-nic
+  args: /all
+  arches: [amd64]
+  diverge: *friendly
 - id: bad
   args: /frobnicate

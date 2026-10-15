@@ -48,6 +48,7 @@ from . import (
     local_macros,
     logical_not,
     loop_step,
+    macro_authority,
     offset_restore,
     pointer_depth,
     prelude_resolve,
@@ -5795,6 +5796,21 @@ def stage_macros(
     # `#define calc_HtmlHelp calc_HtmlHelpA` / `...W` pair is one macro here, not two.
     live_if = {"UNICODE": 1, "_UNICODE": 1} if _module_is_unicode(state) else None
     defs, ambiguous = local_macros.module_macros(files, REPO, live_if)
+    # The text scan above settles only the arms `live_if` names; ask the compiler for the rest.
+    live = macro_authority.live_defines(REPO, [f for f in files if f.suffix.lower() == ".c"])
+    if live is not None:
+        compiled_out = sorted(
+            n
+            for n, m in defs.items()
+            if (where := (REPO / m.where.rsplit(":", 1)[0]).resolve()) in live
+            and n not in live[where]
+        )
+        for n in compiled_out:
+            del defs[n]
+        if compiled_out:
+            print(
+                f"macros: in arms this build never compiles, not ported: {', '.join(compiled_out)}"
+            )
     # Functions the module's HEADERS define inline: a macro of the same name wins.
     # A cppapp module's header functions are class members, rendered and translated by
     # cpp_app: read as C they become a free `audio_membuffer(this)` shadowing the class.

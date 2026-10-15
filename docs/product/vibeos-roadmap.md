@@ -602,6 +602,24 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **amd64 ladder: fault64 rung 1 "AV params" (exit 0xBAF2) (FLAKE, open, found 2026-10-14).**
+  The merge-queue gate's amd64 smoke (`-smp 2`) saw fault64.exe's access-violation reach the
+  guest with wrong ExceptionInformation and rejected shell32-com a6e93b659ef8
+  (`/tmp/vibeos-cli/queue-batch-01792023758967068309/20261014-202239-ktj8bpu7-gate-i386+amd64+arm64/smoke-amd64-a1`).
+  The same tree then passed 6/6 (`./vibeos-cli smoke --arch amd64 --ladder --repeat 3`, with and
+  without `--smp 2`), and the change (ftp, Python tooling) is nowhere near exception dispatch.
+  One failure seen; frequency unknown -- a `farm` soak on the ladder would size it.
+
+- **ws2_32: `getservbyname("ftp", "tcp")` fails INTERMITTENTLY on amd64 (FLAKE, open, found
+  2026-10-14).** In one of two identical amd64 modrun runs, both the C ftp (`ftp_c`) and the Rust
+  one printed `ftp: ftp/tcp: unknown service` and exited 1
+  (`/tmp/vibeos-cli/20261014-194635-5y1gb4y3-smoke-amd64`); the next run looked it up fine
+  (`/tmp/vibeos-cli/20261014-195513-7n1vo6ki-smoke-amd64`). Not seen on i386 or arm64. ws2_32-rust's
+  `getservbyname`/`getxyDataEnt` mirror the C, so suspect what is below them (the RNR/namespace
+  provider, the services file read). amd64 is also the only arch whose smoke boots with a NIC.
+  modrun's ftp suite is i386/arm64-only until this is fixed. Repro: `VIBEOS_PAYLOAD=modrun
+  ./vibeos-cli build --arch amd64 && ./vibeos-cli smoke --arch amd64 --payload modrun --repeat 4`.
+
 - **MM: finding free user address space is linear in the VAD count (open, found 2026-10-12).**
   `MiFindEmptyAddressRangeInTree` (`ARM3/vadnode.rs`, as ReactOS's C) walks every VAD in
   order, so N reservations cost O(N²). Upstream's x64 stress in kmtest ZwAllocateVirtualMemory
