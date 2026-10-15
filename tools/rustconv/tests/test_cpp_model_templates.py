@@ -167,3 +167,65 @@ def test_a_field_of_a_two_hop_external_base_is_reached_by_path(tmp_path):
     assert "this_->m_Margin.__base0.__base0.left" in box
     pan = ex.model.classes["Pan"].method("G")[0].lowered
     assert pan == "{ this_->b->m_Margin.__base0.__base0.top = 4; }"
+
+
+DELETE_SRC = """
+class Rich { public: virtual ~Rich() {} };
+class Disp { public: Rich *RichEdit; int *buf; ~Disp() { delete RichEdit; delete[] buf; } };
+int main() { Disp d; d.RichEdit = new Rich(); d.buf = new int[2]; return 0; }
+"""
+
+
+def test_delete_of_an_implicit_this_member_keeps_the_member_path(tmp_path):
+    # rapps: `delete RichEdit;` lowered to `CAppRichEdit__delete(RichEdit)ichEdit;` -- the
+    # whole expression was replaced by the operand's SOURCE text, so its `this_->` edit
+    # landed inside the replaced span and left the tail behind.
+    if shutil.which("clang++") is None:
+        pytest.skip("no host clang++")
+    (tmp_path / "t.cpp").write_text(DELETE_SRC)
+    out = subprocess.run(
+        ["clang++", "-fsyntax-only", "-Xclang", "-ast-dump=json", str(tmp_path / "t.cpp")],
+        capture_output=True,
+        check=True,
+    ).stdout
+    ast = json.loads(out)
+    cdp._attach_files(ast)
+    ex = cpp_model._Extractor(tmp_path, tmp_path)
+    ex.scan_overloads(ast["inner"])
+    ex.walk(ast["inner"])
+    ex.lower_pending()
+    dtor = next(m for m in ex.model.classes["Disp"].methods if m.kind == "dtor").lowered
+    assert "Rich__delete(this_->RichEdit);" in dtor
+    assert "cpp_delete_array(this_->buf);" in dtor
+
+
+UPCAST_SRC = """
+struct Prim { virtual ~Prim() {} virtual struct Box *AsBox() { return 0; } };
+struct Box { virtual ~Box() {} int margin; };
+struct Panel : public Prim, public Box { Box *AsBox() { return this; } int m() { return margin; } };
+int main() { Panel p; return p.AsBox() != 0 && p.m() == 0; }
+"""
+
+
+def test_returning_this_as_a_secondary_base_is_the_subobject(tmp_path):
+    # rapps' `CUiBox *AsBox() { return this; }`: CUiBox is the SECOND base, so the pointer
+    # moves. Lowered as bare `this_`, the model cast it without the offset.
+    if shutil.which("clang++") is None:
+        pytest.skip("no host clang++")
+    (tmp_path / "t.cpp").write_text(UPCAST_SRC)
+    out = subprocess.run(
+        ["clang++", "-fsyntax-only", "-Xclang", "-ast-dump=json", str(tmp_path / "t.cpp")],
+        capture_output=True,
+        check=True,
+    ).stdout
+    ast = json.loads(out)
+    cdp._attach_files(ast)
+    ex = cpp_model._Extractor(tmp_path, tmp_path)
+    ex.scan_overloads(ast["inner"])
+    ex.walk(ast["inner"])
+    ex.lower_pending()
+    panel = ex.model.classes["Panel"]
+    as_box = next(m for m in panel.methods if m.name == "AsBox").lowered
+    assert "(&(this_)->__base1)" in as_box
+    # an implicit-this member of the same base keeps its member path, not a wrapped `this`
+    assert "this_->__base1.margin" in next(m for m in panel.methods if m.name == "m").lowered

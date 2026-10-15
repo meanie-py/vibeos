@@ -116,7 +116,10 @@ Rust — don't requeue it.)
   (CSortableHeader, CSplitter: read their ctors), cleanmgr 1 and mmc_new 21 (all CWindow,
   harmless), certutil/drwtsn32/sndrec32 0. cicero/msctf/msutb/msctfime/ctfmon's saved models
   predate a `Method` field rename (`callconv`) and could not be read; regenerate to audit.
-  The changed ctors lowered at $0 for rapps.
+  The changed ctors lowered at $0 for rapps. The same re-run picks up three more fixes from
+  rapps bring-up: a polymorphic Drop resetting its own vtables, `return this;` as a secondary
+  base (a probe of the saved units found 0 such returns in the shipped apps; `this` PASSED as
+  a base argument is not yet audited), and `delete member;` (cosmetic once the model repairs it).
 - ~290 bare fn aliases in already-shipped crates have the shape `_option_fn_aliases` fixes
   (non-`Option` fn pointer); UB only if the value can be zero. Audit with that pass.
 - certutil: a SHA1/`hashfile` case on a system with a CSP registered (the live CD has none;

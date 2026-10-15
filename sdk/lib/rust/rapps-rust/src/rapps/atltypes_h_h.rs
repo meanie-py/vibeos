@@ -37,7 +37,7 @@ impl CPoint {
     pub unsafe fn __ctor_2(&mut self, initPt: POINT) {
         let this_: *mut Self = self;
         {
-            *(this_ as *mut POINT) = initPt;
+            *(core::ptr::addr_of_mut!((*this_).__base0) as *mut POINT) = initPt;
         }
     }
     pub unsafe fn __ctor_3(&mut self, initSize: SIZE) {
@@ -73,7 +73,7 @@ impl CSize {
     pub unsafe fn __ctor_2(&mut self, initSize: SIZE) {
         let this_: *mut Self = self;
         {
-            *(this_ as *mut SIZE) = initSize;
+            *((core::ptr::addr_of_mut!((*this_).__base0)) as *mut SIZE) = initSize;
         }
     }
     pub unsafe fn __ctor_3(&mut self, initPt: POINT) {

@@ -671,19 +671,31 @@ class Lowerer:
         m = re.match(r"delete\s*(\[\s*\])?\s*(.*)$", t, re.S)
         if m is None:
             return
-        operand = m.group(2).strip()
+        # Surgical: the `delete` keyword becomes the call's head and `)` closes it, so the
+        # operand keeps its OWN edits. Replacing the whole expression with the operand's
+        # source text dropped them and left the tail behind: rapps' `delete RichEdit;`
+        # (an implicit-this member) lowered to `CAppRichEdit__delete(RichEdit)ichEdit;`.
+        head = m.start(2)
         if m.group(1):
-            edits.append((span[0], span[1] - span[0], f"cpp_delete_array({operand})"))
+            edits.append((span[0], head, "cpp_delete_array("))
+            edits.append((span[1], 0, ")"))
             return
         target = n.get("inner", [{}])[0].get("type", {}).get("qualType", "")
         cls = self._class(self._ty(target))
-        repl = f"{cls.name}__delete({operand})" if cls else f"cpp_delete({operand})"
-        edits.append((span[0], span[1] - span[0], repl))
+        edits.append((span[0], head, f"{cls.name}__delete(" if cls else "cpp_delete("))
+        edits.append((span[1], 0, ")"))
 
     def _upcast(self, n: dict, f: str, lo: int, hi: int, edits, unplaced) -> None:
         inner = (n.get("inner") or [{}])[0]
-        if _unwrap_casts(inner).get("kind") == "CXXThisExpr":
-            return  # `this` as a member's object: _member writes the base path itself
+        this_node = _unwrap_casts(inner)
+        if this_node.get("kind") == "CXXThisExpr" and _implicit(this_node):
+            return  # an implicit `this` has no text to wrap: _member writes its base path
+        # An EXPLICIT `this` converted to a base pointer -- `return this;` from rosui.h's
+        # `CUiBox *AsBox()`, or `this` passed as a base -- is the base SUBOBJECT's address.
+        # Left as `this_`, the model wrote `this_ as *mut CUiBox`: CUiBox sits 16 bytes in, so
+        # every layout call went through the wrong vtable and rapps' teardown read RichEdit
+        # from an HWND. (A member access through `this` never gets here: the caller skips a
+        # cast whose parent is the MemberExpr.)
         src = self._ty(inner.get("type", {}).get("qualType", ""))
         dst = self._ty(n.get("type", {}).get("qualType", ""))
         path = self.base_path(src, dst)

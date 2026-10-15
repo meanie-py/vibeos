@@ -5343,6 +5343,19 @@ Each was one fix in the tool; listed so the next module's symptom can be matched
   reading address 0 in `CountSizableChildren` (appstorm: exit 0xc0000005, symbolized with
   `llvm-symbolizer-18 --obj=rapps.exe <RIP>`). `_ctor_prologue` now constructs such a member
   when its class has anything to construct (`_needs_construction`).
+- **`return this;` as a SECONDARY base** (rosui.h's `CUiBox *AsBox() { return this; }`, CUiBox
+  16 bytes into the object): `_upcast` skipped every `this`, so the lowered C said `return
+  this_;` and the model wrote `this_ as *mut CUiBox`. Every layout call then dispatched through
+  the CUiPrimitive vtable at offset 0, and rapps' teardown read `RichEdit` from an HWND.
+  Found with `atl_rust::win::trace` probes: the window glue saw the object at +16, its
+  destructor at +0. An explicit `this` converted to a base is now `(&(this_)->__baseK)`.
+- **`delete member;` through an implicit `this`** lowered to `X__delete(m_Foo)Foo;`: the rule
+  replaced the whole expression with the operand's source text, so the operand's own
+  `this_->` edit fell inside the replaced span. The model repaired every site, which hid it.
+  Now the `delete` keyword alone becomes the call head.
+- **A polymorphic destructor** runs with the class's OWN vtables (C++ resets them first);
+  Drop dispatched through the derived tables, so CPointerArray's destructor reached
+  CUiCollection::OnRemoveItem's `delete ptr`. Drop now calls `__init_vtables` first.
 - **A plain struct holding an ATL type by value** was left to the island, which laid
   `CStringW` out as bindgen's `ATL_CStringW` and derived `Copy` over it. Now cppapp owns it.
 - **`(CALLBACK_TYPE)(-1)`** has no Rust constant: const evaluation rejects a fn pointer that

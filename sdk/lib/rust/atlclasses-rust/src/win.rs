@@ -92,6 +92,66 @@ extern "system" {
         param: LPARAM,
     ) -> HWND;
     fn LoadCursorW(inst: *mut c_void, name: *const u16) -> *mut c_void;
+    fn GetLastError() -> u32;
+    fn OutputDebugStringA(s: *const u8);
+}
+
+/// Fail LOUD when the glue cannot register or create a window: `atl_rust: <what> class=<name
+/// or #atom> inst=<hex> err=<GetLastError>` on the debug channel (the serial log). A window
+/// that silently fails to appear otherwise surfaces minutes later as an unrelated crash in
+/// teardown -- rapps' did, with win32k's only clue a class name printed as empty.
+unsafe fn report_failure(what: &[u8], class: *const u16, inst: *mut c_void) {
+    let err = GetLastError();
+    let mut buf = [0u8; 160];
+    let mut n = 0;
+    let mut put = |b: &[u8]| {
+        for &c in b {
+            if n < buf.len() - 2 {
+                buf[n] = c;
+                n += 1;
+            }
+        }
+    };
+    let hex = |mut v: usize, out: &mut [u8; 18]| -> usize {
+        let mut tmp = [0u8; 16];
+        let mut k = 0;
+        loop {
+            tmp[k] = b"0123456789abcdef"[v & 15];
+            k += 1;
+            v >>= 4;
+            if v == 0 {
+                break;
+            }
+        }
+        for i in 0..k {
+            out[i] = tmp[k - 1 - i];
+        }
+        k
+    };
+    let mut h = [0u8; 18];
+    put(b"atl_rust: ");
+    put(what);
+    put(b" class=");
+    if (class as usize) >> 16 == 0 {
+        put(b"#");
+        let k = hex(class as usize, &mut h);
+        put(&h[..k]);
+    } else {
+        let mut i = 0;
+        while i < 64 && *class.add(i) != 0 {
+            let c = *class.add(i);
+            put(&[if c < 0x80 { c as u8 } else { b'?' }]);
+            i += 1;
+        }
+    }
+    put(b" inst=");
+    let k = hex(inst as usize, &mut h);
+    put(&h[..k]);
+    put(b" err=");
+    let k = hex(err as usize, &mut h);
+    put(&h[..k]);
+    put(b"\n");
+    OutputDebugStringA(buf.as_ptr());
 }
 
 // SetWindowLongPtrW is a MACRO over SetWindowLongW on i386: there is no such export.
@@ -268,6 +328,7 @@ pub unsafe fn create_window<T: MessageMap>(
         wc.hbr_background = (info.background_color as isize + 1) as *mut c_void;
         wc.lpsz_class_name = info.class_name;
         if RegisterClassExW(&wc) == 0 {
+            report_failure(b"RegisterClassExW", info.class_name, inst);
             return core::ptr::null_mut();
         }
     }
@@ -278,7 +339,7 @@ pub unsafe fn create_window<T: MessageMap>(
         let r = core::slice::from_raw_parts(rect, 4);
         (r[0], r[1], r[2] - r[0], r[3] - r[1])
     };
-    CreateWindowExW(
+    let hwnd = CreateWindowExW(
         ex_style,
         info.class_name,
         name,
@@ -291,7 +352,11 @@ pub unsafe fn create_window<T: MessageMap>(
         menu_or_id,
         inst,
         this as *mut c_void,
-    )
+    );
+    if hwnd.is_null() {
+        report_failure(b"CreateWindowExW", info.class_name, inst);
+    }
+    hwnd
 }
 
 /// atlwin.h `_ATL_WNDCLASSINFOW` (`CWndClassInfo`): the class a module's OWN
@@ -358,6 +423,8 @@ pub unsafe fn create_window_info<T: MessageMap>(
     const WS_CHILD: u32 = 0x4000_0000;
     let atom = register_class_info::<T>(info as *mut CWndClassInfo);
     if atom == 0 {
+        let wc = &(*(info as *mut CWndClassInfo)).m_wc;
+        report_failure(b"RegisterClassExW", wc.lpsz_class_name, wc.h_instance);
         return core::ptr::null_mut();
     }
     let menu = if menu_or_id.is_null() && style & WS_CHILD != 0 {
@@ -373,7 +440,7 @@ pub unsafe fn create_window_info<T: MessageMap>(
         let r = core::slice::from_raw_parts(rect, 4);
         (r[0], r[1], r[2].wrapping_sub(r[0]), r[3].wrapping_sub(r[1]))
     };
-    CreateWindowExW(
+    let hwnd = CreateWindowExW(
         ex_style,
         atom as usize as *const u16,
         name,
@@ -386,7 +453,16 @@ pub unsafe fn create_window_info<T: MessageMap>(
         menu,
         crate::module_instance(),
         this as *mut c_void,
-    )
+    );
+    if hwnd.is_null() {
+        let wc = &(*(info as *mut CWndClassInfo)).m_wc;
+        report_failure(
+            b"CreateWindowExW",
+            wc.lpsz_class_name,
+            crate::module_instance(),
+        );
+    }
+    hwnd
 }
 
 /// `CWindowImpl::SubclassWindow`: route an existing window (a control) through `this`.
@@ -665,4 +741,33 @@ pub unsafe fn property_page_set_modified(hwnd: HWND, changed: bool) {
         hwnd as WPARAM,
         0,
     );
+}
+
+/// `atl_rust: <msg> <hex value>` on the debug channel: a one-line probe for bring-up of a
+/// translated window module, where a window that never appears leaves no other trace.
+pub unsafe fn trace(msg: &[u8], value: usize) {
+    let mut buf = [0u8; 120];
+    let mut n = 0;
+    for &c in b"atl_rust: ".iter().chain(msg).chain(b" ") {
+        if n < 80 {
+            buf[n] = c;
+            n += 1;
+        }
+    }
+    let mut tmp = [0u8; 16];
+    let (mut k, mut v) = (0, value);
+    loop {
+        tmp[k] = b"0123456789abcdef"[v & 15];
+        k += 1;
+        v >>= 4;
+        if v == 0 {
+            break;
+        }
+    }
+    for i in 0..k {
+        buf[n] = tmp[k - 1 - i];
+        n += 1;
+    }
+    buf[n] = b'\n';
+    OutputDebugStringA(buf.as_ptr());
 }

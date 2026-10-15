@@ -343,7 +343,7 @@ impl CUiPanel {
 impl CUiWindow_CRichEdit {
     pub unsafe fn AsBox__body(&mut self) -> *mut CUiBox {
         let this_: *mut Self = self;
-        return this_ as *mut CUiBox;
+        return core::ptr::addr_of_mut!((*this_).__base1);
     }
     pub unsafe fn ComputeMinimalSize__body(&mut self, size: *mut SIZE) {
         let this_: *mut Self = self;
@@ -406,7 +406,7 @@ impl CUiWindow_CRichEdit {
 impl CUiWindow_CWindowImpl_CAppInfoDisplay {
     pub unsafe fn AsBox__body(&mut self) -> *mut CUiBox {
         let this_: *mut Self = self;
-        return this_ as *mut CUiBox;
+        return (&raw mut (*this_).__base1);
     }
     pub unsafe fn ComputeMinimalSize__body(&mut self, size: *mut SIZE) {
         let this_: *mut Self = self;
@@ -692,7 +692,7 @@ impl CUiSplitPanel {
     }
     pub unsafe fn AsBox__body(&mut self) -> *mut CUiBox {
         let this_: *mut Self = self;
-        return (this_ as *mut u8).add(core::mem::offset_of!(CUiSplitPanel, __base1)) as *mut CUiBox;
+        return core::ptr::addr_of_mut!((*this_).__base1);
     }
     pub unsafe fn First(&mut self) -> &'static mut CUiCollection {
         let this_: *mut Self = self;
@@ -926,7 +926,7 @@ impl CUiSplitPanel {
 impl CUiWindow_CComboBox {
     pub unsafe fn AsBox__body(&mut self) -> *mut CUiBox {
         let this_: *mut Self = self;
-        return core::ptr::addr_of_mut!((*this_).__base1) as *mut CUiBox;
+        return core::ptr::addr_of_mut!((*this_).__base1);
     }
     pub unsafe fn GetWindow(&mut self) -> HWND {
         let this_: *mut Self = self;
@@ -1064,7 +1064,7 @@ impl CUiWindow_CSearchBar {
 impl CUiWindow_CTreeView {
     pub unsafe fn AsBox__body(&mut self) -> *mut CUiBox {
         let this_: *mut Self = self;
-        return this_ as *mut CUiBox;
+        return core::ptr::addr_of_mut!((*this_).__base1);
     }
     pub unsafe fn ComputeMinimalSize__body(&mut self, size: *mut SIZE) {
         let this_: *mut Self = self;
@@ -1127,7 +1127,7 @@ impl CUiWindow_CTreeView {
 impl CUiWindow_CStatusBar {
     pub unsafe fn AsBox__body(&mut self) -> *mut CUiBox {
         let this_: *mut Self = self;
-        return this_ as *mut CUiBox;
+        return core::ptr::addr_of_mut!((*this_).__base1);
     }
     pub unsafe fn ComputeMinimalSize__body(&mut self, size: *mut SIZE) {
         let this_: *mut Self = self;

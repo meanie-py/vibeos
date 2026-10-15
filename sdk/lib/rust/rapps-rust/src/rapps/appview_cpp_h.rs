@@ -597,7 +597,7 @@ impl CAppScrnshotPreview {
         if !(*this_).AsyncInet.is_null() {
             AsyncInetCancel((*this_).AsyncInet);
         }
-        if (*this_).TempImagePath.IsEmpty() == false {
+        if !(*this_).TempImagePath.IsEmpty() {
             DeleteFileW((*this_).TempImagePath.GetString());
             (*this_).TempImagePath.Empty();
         }
@@ -957,10 +957,6 @@ impl CAppInfoDisplay {
     }
     pub unsafe fn __dtor__body(&mut self) {
         let this_: *mut Self = self;
-        // C source was malformed: `CAppRichEdit__delete(RichEdit)ichEdit;` and
-        // `CAppScrnshotPreview__delete(ScrnshotPrev)hotPrev;`. The stray trailing
-        // identifiers (`ichEdit`, `hotPrev`) are dropped; the member accesses are
-        // restored through `this_` per the class mapping.
         CAppRichEdit__delete((*this_).RichEdit);
         CAppScrnshotPreview__delete((*this_).ScrnshotPrev);
     }
