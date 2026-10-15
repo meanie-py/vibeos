@@ -14866,6 +14866,35 @@ To see a quiet driver's own `DbgPrintEx`, give `Session Manager\Debug Print Filt
 first print is quicker to read in the binary: find its `NdisGetVersion` IAT slot with
 `objdump -p` and look at what the caller compares.
 
+### A vendor Wi-Fi driver starts only when tracing slows it down
+Realtek's Windows 10 RTL8821CU driver (`rtwlanu.sys`, a WDI miniport under `wdi.rs`) went
+through these in turn, on the OptiPlex. Several were bugs in code every driver uses:
+- **No device for the Wi-Fi function**: usbccgp made `MI_00` (Bluetooth, an IAD over
+  interfaces 0-1) and nothing for interface 2. With any IAD present the C enumerated IADs
+  only. Fix: `usbccgp-rust` gives each interface outside an IAD its own `MI_xx` function, as
+  Windows does.
+- **DriverEntry `0xc0000001`, nothing printed**: right after `WdfDriverCreate` it checks
+  `NdisGetVersion() >= 0x60032`; WDI is an NDIS 6.50 model. `NdisGetVersion` reports 6.50.
+- **Firmware download stalls at a random chunk**: the driver keeps several 30 KiB bulk reads
+  queued; xHCI gave each endpoint a 64 KiB bounce arena, so the third submit failed and
+  usbport retried it in a loop that starved the pipe's writes. Fix: data pipes get 256 KiB.
+- **`OpenAdapter` fails every time, and passes once tracing is on**: `NdisMSleep` never
+  slept. The C computes the due time as `(-1) * 10 * Microseconds` in unsigned 32-bit
+  arithmetic, which widens to a positive (absolute, long past) time. Every poll the driver
+  made while starting the chip timed out at once unless something else slowed it. Same
+  family: `NdisWaitEvent(e, 0)` must wait forever, and the C polled. A driver that works
+  only with logging on is a delay primitive returning early: check the wait and sleep
+  calls it imports before anything else.
+- **0x1E calling the LE's `TalTxRxStart`**: dot11wdi.h packs its handler tables to 4 (the
+  driver's own header says 0xCC bytes, 4 + 25 * 8), so the first pointer is at offset 4.
+- **Every property response empty**: `NDIS_OID_REQUEST.DATA.METHOD_INFORMATION` is `Oid,
+  InformationBuffer, InputBufferLength, OutputBufferLength, MethodId, BytesWritten, ...`;
+  MethodId is not second.
+Two boot options did the work here, both reusable: `XHCITRACE[=n]` logs the first n vendor
+and class control transfers, and the bulk transfers and aborts of every device that sent
+one; `WPPTRACE[=level]` enables each WPP provider as it registers and prints its records
+(text arguments as text, which is how HAL-MAC's own messages read).
+
 ### A driver's `WriteFile` hands its lower layer a NULL buffer
 - **Symptom:** ndisuio's write path: `ASSERT FAILED: VirtualAddress != NULL at
   ndis/buffer.c:352`, then 0x1E in ndis.sys. Its IOCTLs all worked.

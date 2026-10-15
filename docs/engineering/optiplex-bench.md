@@ -151,8 +151,12 @@ Windows DriverStore) installs, reads the chip's MAC, links at 1000 Mb/s, and car
 traffic: DHCP 192.168.1.19, gateway ping, DNS, host ping 1.5 ms (`VIBEOS_VENDOR_DRIVERS=<dir>
 VIBEOS_PAYLOAD=ndisprobe,vendordrv`, `OPTIPLEX_BOOT_OPTIONS=/NETSTACK=NDIS`). Getting a Windows 10
 driver that far took five fixes, in the field manual under "A Windows 10 vendor driver never
-starts". The RTL8821CU stick's driver (`rtwlanu.sys`) is a WDI miniport: it also needs the WDI
-upper edge, not yet written. Where an inbox INF also claims the device, build with
+starts". The RTL8821CU stick's driver (`rtwlanu.sys`, Windows 10's inbox copy) is a WDI
+miniport; ndis.sys's WDI upper edge (`wdi.rs`) brings it up and scans: 24 networks, the hidden
+`Piconet` guest network among them by a directed probe (`VIBEOS_WIFI_CONFIG=<file>` stages the
+network's `ssid=`/`psk=` lines as `\SystemRoot\bin\wifi.txt`; keep that file outside every repo).
+Connecting (association, WPA2, the data path) is the next step. Its bring-up bugs are in the
+field manual under "A vendor Wi-Fi driver starts only when tracing slows it down". Where an inbox INF also claims the device, build with
 `VIBEOS_VENDOR_PREFER=1` ("A staged vendor driver never loads").
 
 ## Known gaps

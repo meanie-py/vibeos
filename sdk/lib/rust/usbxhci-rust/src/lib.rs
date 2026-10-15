@@ -61,6 +61,13 @@ pub unsafe extern "system" fn DriverEntry(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
+    // XHCITRACE[=n]: log the first n (default 300) vendor and class control transfers, for
+    // watching a device driver talk to its hardware (register reads and writes, mostly).
+    if let Some(n) = ntkrnl_sys::bootopt::boot_option_u32(b"XHCITRACE", 300) {
+        endpoint::TRACE_LEFT.store(n, core::sync::atomic::Ordering::Relaxed);
+        xlog!("tracing %u vendor/class control transfers", n);
+    }
+
     let p = &mut *core::ptr::addr_of_mut!(RegPacket);
     core::ptr::write_bytes(p as *mut _ as *mut u8, 0, core::mem::size_of::<USBPORT_REGISTRATION_PACKET>());
 

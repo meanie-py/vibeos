@@ -86,6 +86,15 @@ struct VaSink {
     tgt: *mut u8,
     idx: usize,
     wide: bool,
+    /// sscanf_s: every %c/%s/%[ target is followed by its capacity in elements.
+    secure: bool,
+    cap: usize,
+}
+
+impl VaSink {
+    fn new(ap: *mut core::ffi::c_void, secure: bool) -> Self {
+        VaSink { ap, tgt: core::ptr::null_mut(), idx: 0, wide: false, secure, cap: usize::MAX }
+    }
 }
 
 impl Sink for VaSink {
@@ -145,8 +154,19 @@ impl Sink for VaSink {
         self.tgt = unsafe { cnt_va_next_ptr(self.ap) } as *mut u8;
         self.idx = 0;
         self.wide = kind == TargetKind::Wide;
+        if self.secure {
+            // The size is an `unsigned`; its variadic slot is pointer-sized, and on 64-bit
+            // only the low half is defined.
+            self.cap = unsafe { cnt_va_next_ptr(self.ap) } as usize & 0xffff_ffff;
+        }
     }
     fn push(&mut self, e: u32) {
+        if self.idx >= self.cap {
+            // sscanf_s: past the caller's buffer. Count it, write nothing; terminate()
+            // empties the target.
+            self.idx += 1;
+            return;
+        }
         unsafe {
             if self.wide {
                 *(self.tgt as *mut u16).add(self.idx) = e as u16;
@@ -157,6 +177,21 @@ impl Sink for VaSink {
         self.idx += 1;
     }
     fn terminate(&mut self) {
+        if self.secure && self.idx >= self.cap {
+            // No room for the string and its NUL: the target becomes "", as MSVCRT leaves it.
+            // MSVCRT also stops the scan there; this engine carries on with the next
+            // directive, so later targets can still be assigned.
+            if self.cap != 0 {
+                unsafe {
+                    if self.wide {
+                        *(self.tgt as *mut u16) = 0;
+                    } else {
+                        *self.tgt = 0;
+                    }
+                }
+            }
+            return;
+        }
         unsafe {
             if self.wide {
                 *(self.tgt as *mut u16).add(self.idx) = 0;
@@ -177,7 +212,21 @@ pub unsafe extern "C" fn cnt_vsscanf(
 ) -> i32 {
     let input = super::cstr_slice(file);
     let format = super::cstr_slice(fmt);
-    let mut sink = VaSink { ap, tgt: core::ptr::null_mut(), idx: 0, wide: false };
+    let mut sink = VaSink::new(ap, false);
+    scanf_engine::<u8, _>(input, false, format, &mut sink)
+}
+
+/// `int sscanf_s(const char*, const char*, ...)` engine half: sscanf, except each
+/// %c/%s/%[ target is followed by its capacity.
+#[no_mangle]
+pub unsafe extern "C" fn cnt_vsscanf_s(
+    file: *const u8,
+    fmt: *const u8,
+    ap: *mut core::ffi::c_void,
+) -> i32 {
+    let input = super::cstr_slice(file);
+    let format = super::cstr_slice(fmt);
+    let mut sink = VaSink::new(ap, true);
     scanf_engine::<u8, _>(input, false, format, &mut sink)
 }
 
@@ -190,7 +239,7 @@ pub unsafe extern "C" fn cnt_vswscanf(
 ) -> i32 {
     let input = super::wcstr_slice(file);
     let format = super::wcstr_slice(fmt);
-    let mut sink = VaSink { ap, tgt: core::ptr::null_mut(), idx: 0, wide: false };
+    let mut sink = VaSink::new(ap, false);
     scanf_engine::<u16, _>(input, false, format, &mut sink)
 }
 
@@ -211,7 +260,7 @@ pub unsafe extern "C" fn cnt_vsnscanf(
         core::slice::from_raw_parts(file, length)
     };
     let format = super::cstr_slice(fmt);
-    let mut sink = VaSink { ap, tgt: core::ptr::null_mut(), idx: 0, wide: false };
+    let mut sink = VaSink::new(ap, false);
     scanf_engine::<u8, _>(input, true, format, &mut sink)
 }
 
@@ -229,7 +278,7 @@ pub unsafe extern "C" fn cnt_vsnwscanf(
         core::slice::from_raw_parts(file, length)
     };
     let format = super::wcstr_slice(fmt);
-    let mut sink = VaSink { ap, tgt: core::ptr::null_mut(), idx: 0, wide: false };
+    let mut sink = VaSink::new(ap, false);
     scanf_engine::<u16, _>(input, true, format, &mut sink)
 }
 
@@ -779,3 +828,79 @@ pub unsafe extern "C" fn _gcvt_s(
 } // mod floatcvt_cabi
 
 pub use floatcvt_cabi::*;
+
+// ===================================================================
+// strcpy_s / strncpy_s — the bounded copies Windows 8+ drivers import from
+// ntoskrnl. MSVCRT semantics (wine string.c); a bad parameter goes to
+// `_invalid_parameter`, which in the kernel returns unless a handler is set.
+// ===================================================================
+
+const EINVAL: i32 = 22;
+const ERANGE: i32 = 34;
+const STRUNCATE: i32 = 80;
+const TRUNCATE: usize = usize::MAX;
+
+unsafe fn invalid(err: i32) -> i32 {
+    _invalid_parameter(core::ptr::null(), core::ptr::null(), core::ptr::null(), 0, 0);
+    err
+}
+
+/// `errno_t strcpy_s(char *dst, size_t elem, const char *src)`
+#[no_mangle]
+pub unsafe extern "C" fn strcpy_s(dst: *mut u8, elem: usize, src: *const u8) -> i32 {
+    if dst.is_null() || elem == 0 {
+        return invalid(EINVAL);
+    }
+    if src.is_null() {
+        core::ptr::write_volatile(dst, 0);
+        return invalid(EINVAL);
+    }
+    let mut i = 0usize;
+    while i < elem {
+        let c = *src.add(i);
+        *dst.add(i) = c;
+        if c == 0 {
+            return 0;
+        }
+        i += 1;
+    }
+    core::ptr::write_volatile(dst, 0);
+    invalid(ERANGE)
+}
+
+/// `errno_t strncpy_s(char *dst, size_t elem, const char *src, size_t count)`
+#[no_mangle]
+pub unsafe extern "C" fn strncpy_s(dst: *mut u8, elem: usize, src: *const u8, count: usize) -> i32 {
+    if count == 0 {
+        if !dst.is_null() && elem != 0 {
+            core::ptr::write_volatile(dst, 0);
+        }
+        return 0;
+    }
+    if dst.is_null() || elem == 0 {
+        return invalid(EINVAL);
+    }
+    if src.is_null() {
+        core::ptr::write_volatile(dst, 0);
+        return invalid(EINVAL);
+    }
+    let (mut p, mut s) = (dst, src);
+    let (mut e, mut c) = (elem, count);
+    while e != 0 && c != 0 && *s != 0 {
+        *p = *s;
+        p = p.add(1);
+        s = s.add(1);
+        e -= 1;
+        c -= 1;
+    }
+    if e == 0 && count == TRUNCATE {
+        *p.sub(1) = 0;
+        return STRUNCATE;
+    }
+    if e == 0 {
+        core::ptr::write_volatile(dst, 0);
+        return invalid(ERANGE);
+    }
+    *p = 0;
+    0
+}

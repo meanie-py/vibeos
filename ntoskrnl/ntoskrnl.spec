@@ -990,6 +990,7 @@
 @ stdcall PoQueueShutdownWorkItem(ptr)
 @ stdcall PoRegisterDeviceForIdleDetection(ptr long long long)
 @ stdcall PoRegisterDeviceNotify(ptr long long long ptr ptr)
+@ stdcall PoRegisterPowerSettingCallback(ptr ptr ptr ptr ptr)
 @ stdcall PoRegisterSystemState(ptr long)
 @ stdcall PoRequestPowerIrp(ptr long long ptr ptr ptr)
 @ stdcall PoRequestShutdownEvent(ptr)
@@ -999,6 +1000,7 @@
 @ stdcall PoShutdownBugCheck(long long ptr ptr ptr ptr)
 @ stdcall PoStartNextPowerIrp(ptr)
 @ stdcall PoUnregisterSystemState(ptr)
+@ stdcall PoUnregisterPowerSettingCallback(ptr)
 @ stdcall ProbeForRead(ptr long long)
 @ stdcall ProbeForWrite(ptr long long)
 @ stdcall PsAssignImpersonationToken(ptr ptr)
@@ -1668,14 +1670,17 @@
 @ cdecl rand()
 @ varargs sprintf(ptr str)
 @ cdecl srand()
+@ cdecl sscanf_s()
 @ cdecl strcat()
 @ cdecl strchr()
 @ cdecl strcmp()
 @ cdecl strcpy()
+@ cdecl strcpy_s()
 @ cdecl strlen()
 @ cdecl strncat()
 @ cdecl strncmp()
 @ cdecl strncpy()
+@ cdecl strncpy_s()
 @ cdecl strrchr()
 @ cdecl strspn()
 @ cdecl strstr()
@@ -2693,7 +2698,6 @@
 @ stub -version=0xA00+ PoReenableSleepStates
 @ stub -version=0xA00+ PoRegisterCoalescingCallback
 @ stub -version=0xA00+ PoRegisterForEffectivePowerModeNotifications
-@ stub -version=0xA00+ PoRegisterPowerSettingCallback
 @ stub -version=0xA00+ PoRegisterSstNotificationHandler
 @ stub -version=0xA00+ PoSetDeviceBusyEx
 @ stub -version=0xA00+ PoSetFixedWakeSource
@@ -2708,7 +2712,6 @@
 @ stub -version=0xA00+ PoStartDeviceBusy
 @ stub -version=0xA00+ PoUnregisterCoalescingCallback
 @ stub -version=0xA00+ PoUnregisterFromEffectivePowerModeNotifications
-@ stub -version=0xA00+ PoUnregisterPowerSettingCallback
 @ stub -version=0xA00+ PoUnregisterSstNotificationHandler
 @ stub -version=0xA00+ PoUserShutdownCancelled
 @ stub -version=0xA00+ PoUserShutdownInitiated
@@ -3488,11 +3491,8 @@
 @ stub -version=0xA00+ sprintf_s
 @ stub -version=0xA00+ sqrt
 @ stub -version=0xA00+ sqrtf
-@ stub -version=0xA00+ sscanf_s
 @ stub -version=0xA00+ strcat_s
-@ stub -version=0xA00+ strcpy_s
 @ stub -version=0xA00+ strncat_s
-@ stub -version=0xA00+ strncpy_s
 @ stub -version=0xA00+ strnlen
 @ stub -version=0xA00+ strtok_s
 @ stub -version=0xA00+ swprintf_s

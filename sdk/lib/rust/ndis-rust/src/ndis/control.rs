@@ -172,12 +172,15 @@ pub unsafe extern "system" fn NdisWaitEvent(
 
     Timeout.QuadPart = Int32x32To64!(MsToWait as i32, -10000);
 
+    // MsToWait 0 means wait until the event is set (the NDIS contract). The C turned it into
+    // a zero timeout, a poll that fails at once. Realtek's WDI driver (rtwlanu) waits with
+    // MsToWait 0 at four places.
     Status = KeWaitForSingleObject(
         core::ptr::addr_of_mut!((*Event).Event) as PVOID,
         _KWAIT_REASON_Executive,
         (0i32) as KPROCESSOR_MODE,
         TRUE as BOOLEAN,
-        core::ptr::addr_of_mut!(Timeout),
+        if MsToWait == 0 { core::ptr::null_mut() } else { core::ptr::addr_of_mut!(Timeout) },
     );
 
     return (Status == STATUS_SUCCESS) as BOOLEAN;
