@@ -30,7 +30,8 @@ def test_correct_declarations_and_definitions_are_silent():
         '    #[link_name = "_snwprintf"]\n'
         "    pub fn swprintf(buf: *mut WCHAR, count: usize, fmt: *const WCHAR, ...) -> c_int;\n"
         "    fn swprintf(buffer: *mut u16, format: *const u16, ...) -> i32;\n"
-        "    pub fn vswprintf(\n        buf: *mut u16,\n        fmt: *const u16,\n        args: va_list,\n    ) -> c_int;\n"
+        "    pub fn vswprintf(\n        buf: *mut u16,\n        fmt: *const u16,\n"
+        "        args: va_list,\n    ) -> c_int;\n"
         "}\n"
         "pub unsafe fn swprintf(buf: *mut u16, n: usize, fmt: *const u16) -> i32 { 0 }\n"
     )

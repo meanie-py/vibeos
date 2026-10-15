@@ -87,11 +87,7 @@ def scan_text(text: str) -> list[int]:
                 continue
             # The once-through `loop { match .. }` only: a `while`/`for` whose body opens
             # with a match is the mf shape itself.
-            if (
-                len(stack) >= 3
-                and stack[-3][0] == "loop-kw"
-                and _MATCH.match(s, stack[-3][1] + 1)
-            ):
+            if len(stack) >= 3 and stack[-3][0] == "loop-kw" and _MATCH.match(s, stack[-3][1] + 1):
                 continue
             found.append(s.count("\n", 0, m.start()) + 1)
     return found

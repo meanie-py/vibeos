@@ -43,7 +43,7 @@ def test_meant_breaks_are_silent():
         "            _ => { for d in t { g(d); break; } }\n"  # break of the inner loop
         "        }\n"
         "    }\n"
-        "    match y { B => { h(); \"break;\"; } _ => {} }\n"  # no loop, and a string
+        '    match y { B => { h(); "break;"; } _ => {} }\n'  # no loop, and a string
         "}\n"
     )
     assert scan_text(text) == []
