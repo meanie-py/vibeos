@@ -375,6 +375,16 @@ def module_specs(root: Path = ROOT) -> dict[str, list[Path]]:
                 # hal and win32k declare their module twice (per-arch CMake branches).
                 if spec.is_file() and spec not in out[m.group(1).lower()]:
                     out[m.group(1).lower()].append(spec)
+    # A module built through a CMake function has no literal call to find
+    # (d3dcompiler_47 is `add_d3dcompiler_target(47)`, and gap reported it missing):
+    # a directory whose CMakeLists has no spec2def of its own but sits beside
+    # `<dir>.spec` builds `<dir>.dll`.
+    known = {p for specs in out.values() for p in specs}
+    for top in MODULE_TREES:
+        for cm in (root / top).rglob("CMakeLists.txt"):
+            spec = (cm.parent / f"{cm.parent.name}.spec").resolve()
+            if spec.is_file() and spec not in known and "spec2def" not in cm.read_text():
+                out[f"{cm.parent.name.lower()}.dll"].append(spec)
     return dict(out)
 
 
