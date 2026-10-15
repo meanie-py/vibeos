@@ -14802,6 +14802,21 @@ fails the adapter. A rarely taken failure path is worth one forced-failure boot.
   table a C driver calls through is never a safe place to leave a `None`**; a stub that
   fails with a status is.
 
+### A staged vendor driver never loads: an inbox INF takes the device
+- **Symptom:** a vendor package staged with `vendordrv` is on the image, but PnP starts our own
+  driver on its device (`[DA] AddDevice ... (drv \Driver\e1000)` for Intel's `nete1g3e.inf`).
+  Making the vendor INF's `DriverVer` newer changes nothing.
+- **Cause:** setupapi ranks a match by WHERE the ID sits before it compares dates
+  (`driver.c`). Intel writes its model lines `E100C,, PCI\VEN_8086&DEV_100C`: the ID is in the
+  compatible-ID slot, rank 0x3000, while `nete1000.inf` puts it in the hardware-ID slot, 0x2000.
+  That is Windows' documented ranking too; Windows still picks the vendor's because an unsigned
+  driver ranks behind every signed one, and our INFs are unsigned.
+- **Fix:** `VIBEOS_VENDOR_PREFER=1` stages a copy of the vendor INF with its IDs in the
+  hardware-ID slot and a 2099 `DriverVer`, standing in for the signature rule. To see the
+  ranking itself, put `DEBUGCHANNEL=+setupapi` in `Session Manager\Environment` for one boot:
+  setupapi traces every INF it opens and each `Adding driver ... (Rank 0x...)`. It slows the
+  boot several times over, so don't leave it in.
+
 ### A driver's `WriteFile` hands its lower layer a NULL buffer
 - **Symptom:** ndisuio's write path: `ASSERT FAILED: VirtualAddress != NULL at
   ndis/buffer.c:352`, then 0x1E in ndis.sys. Its IOCTLs all worked.

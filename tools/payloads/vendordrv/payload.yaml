@@ -7,6 +7,8 @@
 #   VIBEOS_PAYLOAD=ndisprobe,vendordrv ./vibeos-cli build --arch amd64
 # An `ndisprobe.txt` in that directory ("arp <target ip> <sender ip>") goes to
 # reactos/bin/, pointing ndisprobe's ARP at a real LAN instead of QEMU's slirp.
+# VIBEOS_VENDOR_PREFER=1 makes the vendor INF win a tie with an inbox INF claiming the same
+# hardware ID (stage.py says why); without it QEMU's e1000 goes to our own nete1000.inf.
 name: vendordrv
 description: stage a vendor driver package (INF + files) from VIBEOS_VENDOR_DRIVERS
 

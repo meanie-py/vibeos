@@ -145,6 +145,13 @@ resolves DNS; the host pings it back at 0.7 ms. The OS's own traffic, through Re
 XP x64 binary, our ndis.sys, usbport and the Renesas xHCI. Both NICs are cabled (the I217's
 port and the hub's), so either backend can be tested without touching the bench.
 
+**NDIS 6 (2026-10-14):** ndis.sys runs NDIS 6 miniports, proven in QEMU with Intel's stock
+Windows 7 `e1g6032e.sys`. The board candidates are on any Windows 10/11 machine's DriverStore:
+Realtek's `rtux64w10.sys` for the hub's RTL8153 (NDIS 6 + KMDF) and `rtwlanu.sys` for the
+RTL8821CU stick (a WDI miniport: it also needs the WDI upper edge, not yet written). Where an
+inbox INF also claims the device, build with `VIBEOS_VENDOR_PREFER=1` (see the field manual,
+"A staged vendor driver never loads").
+
 ## Known gaps
 
 - Audio: an HD Audio codec function driver for the ALC280, and the HDMI audio verb timeouts.
