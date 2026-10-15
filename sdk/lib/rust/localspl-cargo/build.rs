@@ -15,9 +15,9 @@ fn main() {
     };
 
     let static_libs: &[&str] = match arch.as_str() {
-        "x86" => &["sdk/lib/skiplist/libskiplist16.a", "engine:wine", "sdk/lib/skiplist/libskiplist_rust.a", "engine:oldnames"],
-        "x86_64" => &["sdk/lib/skiplist/libskiplist16.a", "engine:wine", "sdk/lib/skiplist/libskiplist_rust.a", "engine:oldnames"],
-        "aarch64" => &["sdk/lib/skiplist/libskiplist16.a", "engine:wine", "sdk/lib/skiplist/libskiplist_rust.a", "engine:oldnames"],
+        "x86" => &["engine:c:skiplist16", "engine:wine", "engine:skiplist_rust", "engine:oldnames"],
+        "x86_64" => &["engine:c:skiplist16", "engine:wine", "engine:skiplist_rust", "engine:oldnames"],
+        "aarch64" => &["engine:c:skiplist16", "engine:wine", "engine:skiplist_rust", "engine:oldnames"],
         _ => unreachable!(),
     };
 

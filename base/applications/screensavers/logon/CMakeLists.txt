@@ -11,10 +11,8 @@ add_rc_deps(logon.rc ${logon_rc_deps})
 add_library(logon_res OBJECT logon.rc)
 target_compile_definitions(logon_res PRIVATE UNICODE _UNICODE)
 target_include_directories(logon_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(LOGON_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/scrnsave/libscrnsave.a)
 add_cargo_module(logon logon-cargo logon.scr
     KIND win32exe
     BODY_CRATE logon-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS logon_res ${LOGON_REUSED})
+    EXTRA_DEPENDS logon_res psdk)

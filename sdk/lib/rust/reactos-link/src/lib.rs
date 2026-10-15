@@ -2237,6 +2237,11 @@ impl Linker {
         lib_a
     }
 
+    fn engine_crate(&self, crate_name: &str, features: &[&str], defaults: bool) -> PathBuf {
+        let stem = self.arch.rust_user_target;
+        self.build_rust_crate(crate_name, features, defaults, stem, false, None)
+    }
+
     /// Whether the configured cmake build compiles through ccache (`ENABLE_CCACHE`).
     fn cmake_uses_ccache(&self) -> bool {
         let cache = self.build_dir.join("CMakeCache.txt");
@@ -2273,16 +2278,24 @@ impl Linker {
     /// - `wine`, `conutils`, `uuid`: those cmake targets' C (`replay_target`). They
     ///   read headers cmake generates (psdk/xdk), and uuid's `*_i.c` are widl output,
     ///   so the cell's CMakeLists orders it after those targets (`uuid_sources`).
-    /// - `conutils_rust`: the `conutils-rust` crate, built as a sibling (`rust_lib`)
-    ///   with the flags cmake's custom command gave it.
+    /// - `c:<target>`: any other cmake C target, the same way.
+    /// - `conutils_rust`, `delayimp_rust`, ...: the crate cmake's custom command built
+    ///   into that archive, built as a sibling (`rust_lib`) with the same flags.
     fn engine_lib(&self, name: &str, clang: &Path, ar: &Path) -> PathBuf {
         let i386 = self.arch.name == "i386";
         match name {
             "wine" | "conutils" | "uuid" => self.replay_target(name, ar),
-            "conutils_rust" => {
-                let stem = self.arch.rust_user_target;
-                self.build_rust_crate("conutils-rust", &[], true, stem, false, None)
-            }
+            // The `rust_staticlib_variant` crates (and the hand-rolled custom commands
+            // that do the same): `cargo build -p <crate>` with these features and the
+            // user-mode flags, which on i386 are the `-sse,-sse2` .cargo/config.toml
+            // gave cmake's build from the workspace.
+            "conutils_rust" => self.engine_crate("conutils-rust", &[], true),
+            "delayimp_rust" => self.engine_crate("delayimp-rust", &[], true),
+            "evtlib_rust" => self.engine_crate("evtlib-rust", &[], true),
+            "hid_hidparser_rust" => self.engine_crate("hidparser-rust", &["user"], false),
+            "skiplist_rust" => self.engine_crate("skiplist-rust", &[], true),
+            // Any other cmake C target, by name: `engine:c:<target>`.
+            o if o.starts_with("c:") => self.replay_target(&o[2..], ar),
             "oldnames" => {
                 let def = self.repo_root.join("sdk/lib/crt/moldname-msvcrt.def");
                 println!("cargo:rerun-if-changed={}", def.display());

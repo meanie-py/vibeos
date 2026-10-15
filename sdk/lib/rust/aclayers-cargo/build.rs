@@ -15,9 +15,9 @@ fn main() {
     };
 
     let static_libs: &[&str] = match arch.as_str() {
-        "x86" => &["dll/appcompat/shims/shimlib/libshimlib.a"],
-        "x86_64" => &["dll/appcompat/shims/shimlib/libshimlib.a"],
-        "aarch64" => &["dll/appcompat/shims/shimlib/libshimlib.a"],
+        "x86" => &["engine:c:shimlib"],
+        "x86_64" => &["engine:c:shimlib"],
+        "aarch64" => &["engine:c:shimlib"],
         _ => unreachable!(),
     };
 

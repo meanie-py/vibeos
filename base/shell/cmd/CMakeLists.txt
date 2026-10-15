@@ -70,11 +70,9 @@ target_compile_definitions(cmd_shims PRIVATE UNICODE _UNICODE)
 add_library(cmd_res OBJECT cmd.rc)
 target_compile_definitions(cmd_res PRIVATE UNICODE _UNICODE)
 target_include_directories(cmd_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(CMD_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/delayimp/libdelayimp_rust.a)
 add_cargo_module(cmd cmd-cargo cmd.exe
     KIND win32exe
     BODY_CRATE cmd-rust
     DESTINATION reactos/system32
     DELAY_IMPORTS
-    EXTRA_DEPENDS cmd_shims cmd_res ${CMD_REUSED} psdk xdk)
+    EXTRA_DEPENDS cmd_shims cmd_res psdk xdk)

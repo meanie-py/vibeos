@@ -15,9 +15,9 @@ fn main() {
     };
 
     let late_libs: &[&str] = match arch.as_str() {
-        "x86" => &["engine:uuid", "engine:wine", "engine:oldnames", "sdk/lib/delayimp/libdelayimp_rust.a"],
-        "x86_64" => &["engine:uuid", "engine:wine", "engine:oldnames", "sdk/lib/delayimp/libdelayimp_rust.a"],
-        "aarch64" => &["engine:uuid", "engine:wine", "engine:oldnames", "sdk/lib/delayimp/libdelayimp_rust.a"],
+        "x86" => &["engine:uuid", "engine:wine", "engine:oldnames", "engine:delayimp_rust"],
+        "x86_64" => &["engine:uuid", "engine:wine", "engine:oldnames", "engine:delayimp_rust"],
+        "aarch64" => &["engine:uuid", "engine:wine", "engine:oldnames", "engine:delayimp_rust"],
         _ => unreachable!(),
     };
 
