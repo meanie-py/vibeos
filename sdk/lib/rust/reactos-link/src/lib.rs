@@ -2279,13 +2279,19 @@ impl Linker {
 
     /// Whether the configured cmake build compiles through ccache (`ENABLE_CCACHE`).
     fn cmake_uses_ccache(&self) -> bool {
+        self.cmake_cache_bool("ENABLE_CCACHE").unwrap_or(false)
+    }
+
+    /// A BOOL from the configured build's CMakeCache.txt; None with no configured build.
+    fn cmake_cache_bool(&self, name: &str) -> Option<bool> {
         let cache = self.build_dir.join("CMakeCache.txt");
-        std::fs::read_to_string(cache).is_ok_and(|t| {
-            t.lines().any(|l| {
-                l.starts_with("ENABLE_CCACHE:")
-                    && matches!(l.rsplit('=').next(), Some("1" | "ON" | "TRUE" | "YES"))
-            })
-        })
+        println!("cargo:rerun-if-changed={}", cache.display());
+        let text = std::fs::read_to_string(cache).ok()?;
+        let line = text.lines().find(|l| l.starts_with(&format!("{name}:")))?;
+        Some(matches!(
+            line.rsplit('=').next().map(str::to_ascii_uppercase).as_deref(),
+            Some("1" | "ON" | "TRUE" | "YES" | "Y")
+        ))
     }
 
     /// A `static_libs` entry's archive: `engine:<name>` is built here (`engine_lib`),
@@ -2537,6 +2543,25 @@ impl Linker {
             panic!("dlltool produced no {}", lib_a.display());
         }
         lib_a
+    }
+
+    /// The kernel's `kdcom.dll` import library, from the spec of the KD transport this
+    /// build ships, chosen the way drivers/base/CMakeLists.txt chooses it: kdrosdbg
+    /// (`kdcom.dll` from kdrosdbg.spec) unless `_WINKD_`, then kdcom. The two specs are
+    /// identical today, which is why importing the wrong one went unnoticed; an edit to
+    /// the shipped one must reach the kernel. With no configured build, config.cmake's
+    /// default (`_WINKD_` FALSE) applies. `_WINKD_` + `GDB` ships kdgdb.dll, which no
+    /// kernel import names, so that refuses.
+    pub fn kd_import_lib(self) -> Self {
+        let winkd = self.cmake_cache_bool("_WINKD_").unwrap_or(false);
+        let spec = if !winkd {
+            "drivers/base/kdrosdbg/kdrosdbg.spec"
+        } else if self.cmake_cache_bool("GDB").unwrap_or(false) {
+            panic!("kd_import_lib: _WINKD_ with GDB ships kdgdb.dll, not kdcom.dll (not modelled)")
+        } else {
+            "drivers/base/kdcom/kdcom.spec"
+        };
+        self.import_lib(spec, "kdcom.dll", "kdcom")
     }
 
     /// `spec --implib → .def → gen-delaylib.py → lib<NAME>_delayed.a`, the command
