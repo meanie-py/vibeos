@@ -1774,3 +1774,12 @@ def test_a_tu_that_flips_the_charset_is_an_instantiation_not_the_island():
     # Every TU of an ANSI-declared module defines UNICODE: that is the module's charset.
     assert charset_instantiations([textw, textw], False) == set()
     assert charset_instantiations([texta, texta], True) == set()
+
+
+def test_a_dotted_target_name_is_read_whole(tmp_path):
+    from rustconv.profile_derive import _target_names
+
+    (tmp_path / "CMakeLists.txt").write_text(
+        "add_executable(rapps.com main.c rapps.rc)\nadd_library(lib_x STATIC a.c)\n"
+    )
+    assert _target_names(tmp_path / "CMakeLists.txt") == {"rapps.com", "lib_x"}
