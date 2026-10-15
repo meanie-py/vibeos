@@ -1849,10 +1849,13 @@ pub unsafe extern "system" fn NtSetInformationThread(
         }
 
         ThreadPriorityBoost => {
-            if ThreadInformationLength != core::mem::size_of::<ULONG_PTR>() as ULONG {
+            // A ULONG, as the query side and kernel32's SetThreadPriorityBoost have it. The C
+            // demands sizeof(ULONG_PTR), so SetThreadPriorityBoost failed with ERROR_BAD_LENGTH
+            // on every 64-bit arch; Windows 11 accepts exactly 4 bytes on x64 and x86 alike.
+            if ThreadInformationLength != core::mem::size_of::<ULONG>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                DisableBoost = match ntkrnl_sys::probe::read_back(ThreadInformation as *const ULONG_PTR) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
+                DisableBoost = match ntkrnl_sys::probe::read_back(ThreadInformation as PULONG) { Ok(v) => v as ULONG_PTR, Err(s) => { Status = s; break 'class; } };
 
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
@@ -1863,7 +1866,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
                     core::ptr::null_mut(),
                 );
                 if Status >= 0 {
-                    KeSetDisableBoostThread(core::ptr::addr_of_mut!((*(Thread as *mut _ETHREAD)).Tcb), DisableBoost as BOOLEAN);
+                    KeSetDisableBoostThread(core::ptr::addr_of_mut!((*(Thread as *mut _ETHREAD)).Tcb), (DisableBoost != 0) as BOOLEAN);
 
                     ObDereferenceObject(Thread as PVOID);
                 }
