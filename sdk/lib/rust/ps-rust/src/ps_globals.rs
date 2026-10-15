@@ -78,17 +78,15 @@ pub static mut KeUserPopEntrySListResume: PVOID = core::ptr::null_mut();
 // THREAD_ALERT — not in `ntkrnl_sys::constants` (yet); inline here.
 const THREAD_ALERT: ULONG = 0x0004;
 
-// `ntkrnl_sys::constants::PROCESS_ALL_ACCESS` is the Vista+
-// (NTDDI_VERSION >= NTDDI_VISTA) value `... | 0xFFFF` = 0x001FFFFF.
-// The ntoskrnl C build is NT 5.x, where the macro evaluates to
-// `... | 0xFFF` = 0x001F0FFF. Process-create access-checks fail
-// silently when the table has the bigger value, so the kernel hung
-// waiting on session-manager process startup. Use the NT 5.x mask
-// directly here, matching `kernel_c_helpers.c` (which got the right
-// value via the `pstypes.h` macro).
-const PROCESS_ALL_ACCESS_NT5: ULONG = STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0xFFF;
+// Psp{Process,Thread}Mapping — `GENERIC_MAPPING` access-rights tables, the NT6 ones.
+// Measured on Windows 11 (RtlMapGenericMask through each type's mapping):
+//   process R=0x20410 W=0x20bea X=0x121001 A=0x1fffff
+//   thread  R=0x20048 W=0x20437 X=0x121800 A=0x1fffff
+// i.e. the NT5 tables plus the LIMITED rights. GenericAll must equal the type's
+// ValidAccessMask (psmgr.rs): when the table said 0x1FFFFF while the mask stayed
+// 0x1F0FFF, process-create access checks failed and boot hung in SMSS.
+const PS_ALL_ACCESS_NT6: ULONG = STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0xFFFF;
 
-// Psp{Process,Thread}Mapping — `GENERIC_MAPPING` access-rights tables.
 #[no_mangle]
 pub static mut PspProcessMapping: _GENERIC_MAPPING = _GENERIC_MAPPING {
     GenericRead: STANDARD_RIGHTS_READ | PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
@@ -98,12 +96,11 @@ pub static mut PspProcessMapping: _GENERIC_MAPPING = _GENERIC_MAPPING {
         | PROCESS_VM_OPERATION
         | PROCESS_VM_WRITE
         | PROCESS_DUP_HANDLE
-        | PROCESS_TERMINATE
         | PROCESS_SET_QUOTA
         | PROCESS_SET_INFORMATION
         | PROCESS_SUSPEND_RESUME,
-    GenericExecute: STANDARD_RIGHTS_EXECUTE | SYNCHRONIZE,
-    GenericAll: PROCESS_ALL_ACCESS_NT5,
+    GenericExecute: STANDARD_RIGHTS_EXECUTE | SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE,
+    GenericAll: PS_ALL_ACCESS_NT6,
 };
 
 #[no_mangle]
@@ -114,9 +111,10 @@ pub static mut PspThreadMapping: _GENERIC_MAPPING = _GENERIC_MAPPING {
         | THREAD_SUSPEND_RESUME
         | THREAD_ALERT
         | THREAD_SET_INFORMATION
-        | THREAD_SET_CONTEXT,
-    GenericExecute: STANDARD_RIGHTS_EXECUTE | SYNCHRONIZE,
-    GenericAll: THREAD_ALL_ACCESS,
+        | THREAD_SET_CONTEXT
+        | THREAD_SET_LIMITED_INFORMATION,
+    GenericExecute: STANDARD_RIGHTS_EXECUTE | SYNCHRONIZE | THREAD_QUERY_LIMITED_INFORMATION | THREAD_RESUME,
+    GenericAll: PS_ALL_ACCESS_NT6,
 };
 
 // security.c

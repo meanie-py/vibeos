@@ -136,7 +136,12 @@ const PROCESS_TERMINATE: ACCESS_MASK = 0x0001;
 const PROCESS_SET_QUOTA: ACCESS_MASK = 0x0100;
 const PROCESS_SET_INFORMATION: ACCESS_MASK = 0x0200;
 const PROCESS_SUSPEND_RESUME: ACCESS_MASK = 0x0800;
-const PROCESS_ALL_ACCESS: ACCESS_MASK = 0x001F0FFF;
+// The NT6 (Vista+) masks: the LIMITED rights (process 0x1000/0x2000, thread
+// 0x400/0x800/0x1000) are valid bits. Measured on Windows 11: the process, thread and
+// job types report ValidAccessMask 0x1FFFFF / 0x1FFFFF / 0x1F003F. Under the NT5 masks
+// a THREAD_QUERY_LIMITED_INFORMATION open was silently narrowed to SYNCHRONIZE and the
+// first query through it failed ACCESS_DENIED (NtGetNextThread's callers).
+const PROCESS_ALL_ACCESS: ACCESS_MASK = 0x001FFFFF;
 
 const THREAD_GET_CONTEXT: ACCESS_MASK = 0x0008;
 const THREAD_QUERY_INFORMATION: ACCESS_MASK = 0x0040;
@@ -145,9 +150,9 @@ const THREAD_SUSPEND_RESUME: ACCESS_MASK = 0x0002;
 const THREAD_ALERT: ACCESS_MASK = 0x0004;
 const THREAD_SET_INFORMATION: ACCESS_MASK = 0x0020;
 const THREAD_SET_CONTEXT: ACCESS_MASK = 0x0010;
-const THREAD_ALL_ACCESS: ACCESS_MASK = 0x001F03FF;
+const THREAD_ALL_ACCESS: ACCESS_MASK = 0x001FFFFF;
 
-const JOB_OBJECT_ALL_ACCESS: ACCESS_MASK = 0x001F001F;
+const JOB_OBJECT_ALL_ACCESS: ACCESS_MASK = 0x001F003F;
 
 // ReactOS uses 7 for ALL architectures (3 low bits), matching C #define.
 const MAX_FAST_REFS: usize = 7;

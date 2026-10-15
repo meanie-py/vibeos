@@ -390,8 +390,8 @@ at every DLL_EXPORT_VERSION, and rtworkq is synced to 11.19 to match mfplat.
   VirtualBox, Ubisoft, Rockstar, Logitech Options+ and Microsoft Office. Office alone
   accounts for 219 of the missing functions and most of the 36 missing modules, and
   VirtualBox for 62 (most of them kernel-driver imports). Every other app's imported
-  FUNCTIONS now resolve except QEMU's SHCreateShellItemArrayFromIDLists; the modules they
-  need are listed below.
+  FUNCTIONS now resolve except QEMU's SHCreateShellItemArrayFromIDLists (since ported);
+  the modules they need are listed below.
 - Bodies for what those apps import: kernel32 GetPhysicallyInstalledSystemMemory,
   GetVolumeInformationByHandleW and five forwards; user32's thread DPI-context set;
   ws2_32 GetHostNameW; iphlpapi NotifyUnicastIpAddressChange and InitializeIpInterfaceEntry
@@ -401,13 +401,27 @@ at every DLL_EXPORT_VERSION, and rtworkq is synced to 11.19 to match mfplat.
   BluetoothIsDiscoverable with no-radio errors. ucrtbase `_except1`. `icuuc.dll` (new,
   Rust) for cmake-gui.
 
+- The kernel speaks the NT6 access rights. The process, thread and job types carry the
+  Vista+ valid masks (0x1FFFFF, 0x1FFFFF, 0x1F003F) and Windows 11's generic mappings;
+  a full information right brings its LIMITED partner on every handle (open, create,
+  duplicate), so an NT5-style 0x1F0FFF open is granted 0x1F3FFF as on Windows; and the 48
+  process and 22 thread query classes Windows answers through a LIMITED handle accept one
+  (measured class by class on Windows 11). This was the NtGetNextThread ACCESS_DENIED: the
+  NT5 thread mask silently narrowed THREAD_QUERY_LIMITED_INFORMATION away. Win10Surface
+  pins it (129/129 in the guest and on Windows 11).
+- `sechost` and `cryptsp` were never needed as DLLs: the apps import them through api
+  sets, and the apiset table pointed 34 contracts at those two hosts, which we do not ship.
+  They now go to advapi32 (`update.py` REDIRECT_HOSTS), which exports every function the
+  corpus calls through them. `wer` and `virtdisk` are new (Rust), `xinput1_4` is Wine 11's
+  HID xinput with XInputGetAudioDeviceIds given a body, and shell32's
+  SHCreateShellItemArray / FromIDLists / FromShellItem are ported and exported. That
+  closes every function the non-Office, non-VirtualBox apps import, and every module
+  except Docker's `mi` and three AMD GPU-driver runtimes a vendor driver installs
+  (`amdhip64_6` for Blender, `mantle32`/`mantle64` for Steam).
+
 **Owed on the export surface:**
-- **Modules other apps still need:** `d3dcompiler_47` (Ubisoft), `sechost`, `cryptsp`,
-  `wer` (Logitech Options+), `virtdisk` (Raspberry Pi Imager), `mi` (Docker), `xinput1_4`
-  (Rockstar Social Club). Wine has d3dcompiler_47, sechost, cryptsp-ish (advapi32
-  forwards), wer, virtdisk and xinput1_4; `mi` (WMI's Management Infrastructure) it does
-  not. shell32's SHCreateShellItemArray family (QEMU) is still absent from the Rust
-  shell32. Office: bring it in when the rest is green, it is its own campaign.
+- **Modules other apps still need:** `mi` (Docker; WMI's Management Infrastructure, which
+  Wine does not have). Office: bring it in when the rest is green, it is its own campaign.
 - **d3d11.dll is built only at DLL_EXPORT_VERSION >= 0x600**, so a default build has no
   D3D11CreateDevice at all; Wine's mfplat suite ends on that NULL pointer, and Chrome and
   Office import d3d11. Decide whether to build the d3d family at every version (rtworkq and
@@ -428,13 +442,10 @@ at every DLL_EXPORT_VERSION, and rtworkq is synced to 11.19 to match mfplat.
 - **Tooling:** `port replay` took 87 minutes on mfplat's 525 functions, and there is no
   single "re-island and reassemble from banks" command. Split island groups are now
   reported by `port island` but still not generated.
-- **NtGetNextThread with THREAD_QUERY_LIMITED_INFORMATION hit ACCESS_DENIED** on some thread
-  of the apitest process (amd64 and i386), while `OpenThread(THREAD_QUERY_LIMITED_INFORMATION)`
-  on the test's own thread succeeds and a walk asking THREAD_QUERY_INFORMATION completes.
-  Not yet established which thread or why; suspects: a thread another process created in
-  ours (its security descriptor), and the thread type's NT5 mask (THREAD_ALL_ACCESS 0x3FF as
-  valid mask and GENERIC_ALL; ps_globals.rs records a wider process table once hung
-  session-manager startup). Win10Surface walks with the full query right meanwhile.
+- **Set classes through SET_LIMITED handles:** the NT6 access work (below) measured which
+  NtQueryInformation{Process,Thread} classes a LIMITED handle may read, but not which
+  NtSetInformation classes a `*_SET_LIMITED_INFORMATION` handle may write; every set class
+  still demands the full SET_INFORMATION right.
 - **New partials from the third batch:** iphlpapi change notifications after the
   initial one, IPv6 tables; IDN nameprep without NFKC; consrv's
   SrvGetConsoleCurrentFont leaves the font size zero (frontendctl.c FIXME), so
@@ -466,11 +477,13 @@ at every DLL_EXPORT_VERSION, and rtworkq is synced to 11.19 to match mfplat.
   did), so exporting them as they stand would turn a load failure into a start failure. The Po pair want a success that never calls back
   (or calls back once with the current value, as Windows does: grade it there first).
   The NDIS 6 NetBufferList/miniport surface is the big one after that.
-- **The gated rows left** (`gated`, 82 absent once the UTF-8 pair is out): user32's touch/pointer/gesture,
-  DisplayConfig and DPI-awareness calls (45), ntdll's hash helpers (`MD5*`, `A_SHA*`)
-  and memory/IO resource codecs (19), ntoskrnl's PoFx runtime power (10; ntoskrnl_vista,
-  which the kernel does not link, has NOT_IMPLEMENTED bodies), kernel32's console `*Ex` calls (7), shell32's
-  `SHCreateShellItemArray*` (4). Those need bodies, plus the 13 `NOT_A_BODY` rows.
+- **The gated rows left** (`gated build-amd64`, 2026-10-15: 36 absent, 10 excluded): ntdll's
+  hash helpers (`MD5*`, `A_SHA*`) and memory/IO resource codecs (20), ntoskrnl's PoFx
+  runtime power (10; ntoskrnl_vista, which the kernel does not link, has NOT_IMPLEMENTED
+  bodies), the gdi32 D3DKMT scheduling/adapter calls (7), kernel32's console `*Ex` calls
+  (6), shell32's SHCreateItemInKnownFolder and SHEvaluateSystemCommandTemplate (2) and
+  activeds' ConvertTrusteeToSid. The `excluded` ones have a body that is not one yet (the
+  reason is printed per row).
 - **wpprecorder.sys / wpprecorderum.dll have not served a real vendor driver yet.**
 - **Re-measure** after any of these: `python3 tools/win10_surface.py reference` (cached in
   `~/.cache/vibeos/win10-surface/`), then `gap` over the same 20 app folders under

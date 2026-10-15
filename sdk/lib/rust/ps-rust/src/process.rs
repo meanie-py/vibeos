@@ -1019,7 +1019,9 @@ pub unsafe extern "system" fn PspCreateProcess(
                                   PROCESS_CREATE_PROCESS |
                                   PROCESS_SET_INFORMATION |
                                   STANDARD_RIGHTS_ALL |
-                                  PROCESS_SET_QUOTA;
+                                  PROCESS_SET_QUOTA |
+                                  PROCESS_QUERY_LIMITED_INFORMATION |
+                                  PROCESS_SET_LIMITED_INFORMATION;
     } else {
         (*proc).GrantedAccess = PROCESS_ALL_ACCESS;
     }

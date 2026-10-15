@@ -6479,6 +6479,25 @@ they RETURN a status instead of raising. Do not reach for the DDK `ProbeFor*` th
 assume the kernel-side `ntkrnl_sys::probe` helpers raise either — they do not touch the page,
 they range-check and return `Result`.
 
+### An access right the object type does not list is silently DROPPED, not refused
+
+**Symptom.** An open for a Vista+ right succeeds, and the first call through the handle
+fails `STATUS_ACCESS_DENIED`. NtGetNextThread(..., THREAD_QUERY_LIMITED_INFORMATION) handed
+back thread handles that GetThreadId could not read.
+
+**Cause.** Handle creation stores `desired & ValidAccessMask` (`obhandle.rs`, three sites:
+create, create-unnamed, duplicate), so a right outside the type's valid mask is masked off
+without an error. The ps types carried the NT5 masks the tree's `_WIN32_WINNT=0x502`
+headers spell (`PROCESS_ALL_ACCESS` 0x1F0FFF, `THREAD_ALL_ACCESS` 0x1F03FF), which have no
+LIMITED bits, while user mode built against newer headers asks for them. The two halves
+of a type must also agree: a GenericAll of 0x1FFFFF over a valid mask of 0x1F0FFF hung
+SMSS's process creation once (`ps_globals.rs`).
+
+**Fix.** Give the type the Windows-measured masks (valid mask, generic mapping, and the
+implied LIMITED grants a full right carries), and grade with a test that runs on Windows
+11 as well (`Win10Surface`'s Test_LimitedAccess). A `*_ALL_ACCESS` in a kernel crate is a
+version-dependent constant: write the value the KERNEL means, not what `0x502` expands to.
+
 ### A `#if` on a WINDOWS VERSION comes back as `#[cfg(target_arch)]`
 
 **Symptom.** Either a hard parse error (`attributes on expressions are experimental`, because

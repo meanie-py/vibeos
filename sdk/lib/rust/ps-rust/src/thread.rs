@@ -11,6 +11,10 @@ use ntkrnl_sys::probe::*;
 use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
+// NT6 THREAD_ALL_ACCESS (shadows the NT5 0x1F03FF from `ntkrnl_sys::constants`): the
+// thread type's ValidAccessMask, and what the creator's pseudo-handle access holds.
+const THREAD_ALL_ACCESS: ACCESS_MASK = 0x001FFFFF;
+
 extern "system" {
 
     static mut CcPfEnablePrefetcher: BOOLEAN;
@@ -666,7 +670,11 @@ unsafe fn PspCreateThread(
             (*Process).GrantedAccess = 0;
         }
 
-        (*Thread).GrantedAccess |= THREAD_TERMINATE | THREAD_SET_INFORMATION | THREAD_QUERY_INFORMATION;
+        (*Thread).GrantedAccess |= THREAD_TERMINATE
+            | THREAD_SET_INFORMATION
+            | THREAD_QUERY_INFORMATION
+            | THREAD_SET_LIMITED_INFORMATION
+            | THREAD_QUERY_LIMITED_INFORMATION;
     } else {
         (*Thread).GrantedAccess = THREAD_ALL_ACCESS;
     }
