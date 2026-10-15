@@ -19,10 +19,8 @@ target_compile_definitions(netlogon_shims PRIVATE UNICODE _UNICODE)
 add_library(netlogon_res OBJECT netlogon.rc)
 target_compile_definitions(netlogon_res PRIVATE UNICODE _UNICODE)
 target_include_directories(netlogon_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(NETLOGON_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(netlogon netlogon-cargo netlogon.dll
     KIND win32dll
     BODY_CRATE netlogon-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS netlogon_shims netlogon_res ${NETLOGON_REUSED})
+    EXTRA_DEPENDS netlogon_shims netlogon_res psdk)

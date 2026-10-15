@@ -186,7 +186,12 @@ foreach(IDL_FILE ${IDL_SOURCES})
     get_filename_component(NAME ${IDL_FILE} NAME_WE)
     generate_idl_iids(${CMAKE_SOURCE_DIR}/sdk/include/psdk/${IDL_FILE})
     list(APPEND SOURCE ${NAME}_i.c)
+    list(APPEND UUID_GENERATED ${CMAKE_CURRENT_BINARY_DIR}/${NAME}_i.c)
 endforeach()
+
+# The widl output alone: cargo cells compile libuuid themselves (reactos-link's
+# engine:uuid replays these sources' compile) and only need it generated.
+add_custom_target(uuid_sources DEPENDS ${UUID_GENERATED})
 
 list(APPEND SOURCE
     cguid_i.c

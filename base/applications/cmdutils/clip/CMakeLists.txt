@@ -10,11 +10,8 @@
 add_library(clip_res OBJECT clip.rc)
 target_compile_definitions(clip_res PRIVATE UNICODE _UNICODE)
 target_include_directories(clip_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(CLIP_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils_rust.a)
 add_cargo_module(clip clip-cargo clip.exe
     KIND win32exe
     BODY_CRATE clip-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS clip_res ${CLIP_REUSED})
+    EXTRA_DEPENDS clip_res xdk)

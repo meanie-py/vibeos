@@ -10,11 +10,8 @@
 add_library(ping_res OBJECT ping.rc)
 target_compile_definitions(ping_res PRIVATE UNICODE _UNICODE)
 target_include_directories(ping_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(PING_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils_rust.a)
 add_cargo_module(ping ping-cargo ping.exe
     KIND win32exe
     BODY_CRATE ping-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS ping_res ${PING_REUSED})
+    EXTRA_DEPENDS ping_res xdk)

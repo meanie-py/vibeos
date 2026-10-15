@@ -549,6 +549,8 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
                 block += [f"    list(APPEND {var} ${{CMAKE_BINARY_DIR}}/{lib})" for lib in only]
                 block.append("endif()")
         extra.append(f"${{{var}}}")
+    named = {lib for libs in cell.static_libs.values() for lib in libs}
+    extra += sorted({ENGINE_LIB_DEPS[lib] for lib in named if lib in ENGINE_LIB_DEPS})
     kind = "win32exe" if cell.module_kind == "Win32Exe" else "win32dll"
     call = [f"add_cargo_module({cell.target} {cell.target}-cargo {cell.output_name}"]
     call.append(f"    KIND {kind}")
@@ -576,6 +578,17 @@ ENGINE_LIBS = {
     "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a": "engine:oldnames",
     "sdk/lib/crt/libchkstk.a": "engine:chkstk",
     "sdk/lib/pseh/libpseh.a": "engine:pseh",
+    "sdk/lib/libwine/libwine.a": "engine:wine",
+    "sdk/lib/conutils/libconutils.a": "engine:conutils",
+    "sdk/lib/conutils/libconutils_rust.a": "engine:conutils_rust",
+    "sdk/lib/uuid/libuuid.a": "engine:uuid",
+}
+# The engine replays cmake's compile of these, which reads what cmake generates (psdk
+# and xdk headers, uuid's widl output): the cell builds after the targets that make it.
+ENGINE_LIB_DEPS = {
+    "engine:wine": "psdk",
+    "engine:conutils": "xdk",
+    "engine:uuid": "uuid_sources",
 }
 
 

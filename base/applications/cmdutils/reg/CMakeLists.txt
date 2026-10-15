@@ -27,10 +27,8 @@ target_compile_definitions(reg_shims PRIVATE _CRT_NON_CONFORMING_SWPRINTFS)
 set_wine_module_fixme(reg_shims)
 target_compile_definitions(reg_res PRIVATE _CRT_NON_CONFORMING_SWPRINTFS)
 set_wine_module_fixme(reg_res)
-set(REG_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(reg reg-cargo reg.exe
     KIND win32exe
     BODY_CRATE reg-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS reg_shims reg_res ${REG_REUSED})
+    EXTRA_DEPENDS reg_shims reg_res psdk)

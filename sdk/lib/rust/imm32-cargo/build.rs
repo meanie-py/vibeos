@@ -15,9 +15,9 @@ fn main() {
     };
 
     let late_libs: &[&str] = match arch.as_str() {
-        "x86" => &["sdk/lib/libwine/libwine.a", "win32ss/libwin32ksys.a", "sdk/lib/uuid/libuuid.a"],
-        "x86_64" => &["sdk/lib/libwine/libwine.a", "win32ss/libwin32ksys.a", "sdk/lib/uuid/libuuid.a"],
-        "aarch64" => &["sdk/lib/libwine/libwine.a", "win32ss/libwin32ksys.a", "sdk/lib/uuid/libuuid.a"],
+        "x86" => &["engine:wine", "win32ss/libwin32ksys.a", "engine:uuid"],
+        "x86_64" => &["engine:wine", "win32ss/libwin32ksys.a", "engine:uuid"],
+        "aarch64" => &["engine:wine", "win32ss/libwin32ksys.a", "engine:uuid"],
         _ => unreachable!(),
     };
 

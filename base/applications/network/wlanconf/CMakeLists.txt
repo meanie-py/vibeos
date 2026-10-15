@@ -12,11 +12,8 @@ include_directories(
 add_library(wlanconf_res OBJECT wlanconf.rc)
 target_compile_definitions(wlanconf_res PRIVATE UNICODE _UNICODE)
 target_include_directories(wlanconf_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(WLANCONF_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils_rust.a)
 add_cargo_module(wlanconf wlanconf-cargo wlanconf.exe
     KIND win32exe
     BODY_CRATE wlanconf-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS wlanconf_res ${WLANCONF_REUSED})
+    EXTRA_DEPENDS wlanconf_res xdk)

@@ -10,11 +10,8 @@
 add_library(runas_res OBJECT runas.rc)
 target_compile_definitions(runas_res PRIVATE UNICODE _UNICODE)
 target_include_directories(runas_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(RUNAS_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils_rust.a)
 add_cargo_module(runas runas-cargo runas.exe
     KIND win32exe
     BODY_CRATE runas-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS runas_res ${RUNAS_REUSED})
+    EXTRA_DEPENDS runas_res xdk)

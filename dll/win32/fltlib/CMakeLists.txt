@@ -19,10 +19,8 @@ add_library(fltlib_res OBJECT rsrc.rc)
 target_include_directories(fltlib_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # How cmake compiled the target's sources, now on the OBJECT libraries.
 target_compile_definitions(fltlib_res PRIVATE NTDDI_VERSION=NTDDI_WS03SP1)
-set(FLTLIB_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(fltlib fltlib-cargo fltlib.dll
     KIND win32dll
     BODY_CRATE fltlib-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS fltlib_res ${FLTLIB_REUSED})
+    EXTRA_DEPENDS fltlib_res psdk)

@@ -13,11 +13,8 @@ target_compile_definitions(mode_shims PRIVATE UNICODE _UNICODE)
 add_library(mode_res OBJECT mode.rc)
 target_compile_definitions(mode_res PRIVATE UNICODE _UNICODE)
 target_include_directories(mode_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(MODE_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils_rust.a)
 add_cargo_module(mode mode-cargo mode.com
     KIND win32exe
     BODY_CRATE mode-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS mode_shims mode_res ${MODE_REUSED})
+    EXTRA_DEPENDS mode_shims mode_res xdk)

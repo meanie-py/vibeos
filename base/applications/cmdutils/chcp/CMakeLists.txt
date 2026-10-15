@@ -10,11 +10,8 @@ include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_or
 add_library(chcp_res OBJECT chcp.rc)
 target_compile_definitions(chcp_res PRIVATE UNICODE _UNICODE)
 target_include_directories(chcp_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(CHCP_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils_rust.a)
 add_cargo_module(chcp chcp-cargo chcp.com
     KIND win32exe
     BODY_CRATE chcp-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS chcp_res ${CHCP_REUSED})
+    EXTRA_DEPENDS chcp_res xdk)

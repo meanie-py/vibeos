@@ -13,6 +13,13 @@ must not change is everything the loader and every caller can see:
   sections names and characteristics (never sizes or addresses)
 
     python3 tools/pe_equiv.py old.exe new.exe        # exit 0 equivalent, 1 not, 2 unreadable
+    python3 tools/pe_equiv.py --code old.exe new.exe # and the same bytes at the same RVAs
+
+`--code` is for a change that should not move a byte the loader maps, such as a library
+now built by a different tool from the same source: every section but DWARF must have
+the same address, size and content. Only debug info (object paths, line tables) may
+differ (and `.buildid`, a hash over the whole file), and lld is deterministic, so this
+proves the link chose the same code and data at the same addresses.
     python3 tools/pe_equiv.py --dump some.dll
 
 Pure Python, no toolchain needed. Plan: docs/engineering/cargo-drive-plan.md.
@@ -206,6 +213,19 @@ class PE:
         """Bytes the loader maps: every section but the discardable (debug) ones."""
         return sum(max(vs, rs) for _n, _va, vs, _rp, rs, c in self.sections if not c & 0x02000000)
 
+    def loaded(self) -> list[str]:
+        """Every section but DWARF, as name, address, size and the hash of its bytes.
+
+        `.buildid` is left out too: lld hashes the whole file into it, DWARF included."""
+        out = []
+        for n, va, vs, rp, rs, c in self.sections:
+            dwarf = c & 0x02000000 and (n.startswith("/") or n.startswith(".debug"))
+            if dwarf or n == ".buildid":
+                continue
+            blob = self.data[rp : rp + min(vs, rs)] if rp else b""
+            out.append(f"{n} {va:#x}+{vs:#x} {hashlib.sha256(blob).hexdigest()[:16]}")
+        return out
+
     def contract(self) -> dict[str, list[str]]:
         hdr = [
             f"machine {self.machine:#x}",
@@ -244,10 +264,14 @@ def load(path: Path) -> PE:
         raise PEError(f"{path}: {exc}") from exc
 
 
-def compare(a: PE, b: PE) -> list[str]:
-    """Human-readable differences between two modules' contracts; empty when equivalent."""
+def compare(a: PE, b: PE, code: bool = False) -> list[str]:
+    """Human-readable differences between two modules' contracts; empty when equivalent.
+
+    With `code`, also every mapped section's address, size and bytes (see `--code`)."""
     out = []
     ca, cb = a.contract(), b.contract()
+    if code:
+        ca["loaded"], cb["loaded"] = a.loaded(), b.loaded()
     for key in ca:
         sa, sb = set(ca[key]), set(cb[key])
         for x in sorted(sa - sb):
@@ -265,10 +289,16 @@ def main(argv: list[str] | None = None) -> int:
                 for line in lines:
                     print(f"{key}: {line}")
             return 0
+        code = bool(args) and args[0] == "--code"
+        if code:
+            args = args[1:]
         if len(args) != 2:
-            print(__doc__.strip().splitlines()[0], "\nusage: pe_equiv.py OLD NEW | --dump PE")
+            print(
+                __doc__.strip().splitlines()[0],
+                "\nusage: pe_equiv.py [--code] OLD NEW | --dump PE",
+            )
             return 2
-        diffs = compare(load(Path(args[0])), load(Path(args[1])))
+        diffs = compare(load(Path(args[0])), load(Path(args[1])), code)
     except PEError as exc:
         print(f"pe_equiv: {exc}")
         return 2

@@ -12,11 +12,8 @@ target_compile_definitions(chkdsk_res PRIVATE UNICODE _UNICODE)
 target_include_directories(chkdsk_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # How cmake compiled the target's sources, now on the OBJECT libraries.
 target_compile_definitions(chkdsk_res PRIVATE _CRT_NON_CONFORMING_SWPRINTFS)
-set(CHKDSK_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils_rust.a)
 add_cargo_module(chkdsk chkdsk-cargo chkdsk.exe
     KIND win32exe
     BODY_CRATE chkdsk-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS chkdsk_res ${CHKDSK_REUSED})
+    EXTRA_DEPENDS chkdsk_res xdk)

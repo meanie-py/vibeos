@@ -32,11 +32,8 @@ target_include_directories(net_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # Generated inputs those compiles read, ordered before them.
 add_dependencies(net_shims net_msg)
 add_dependencies(net_res net_msg)
-set(NET_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils_rust.a)
 add_cargo_module(net net-cargo net.exe
     KIND win32exe
     BODY_CRATE net-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS net_shims net_res ${NET_REUSED})
+    EXTRA_DEPENDS net_shims net_res xdk)

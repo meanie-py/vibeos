@@ -124,6 +124,15 @@ def test_an_engine_built_library_is_linked_but_not_a_cmake_dependency(tmp_path):
     assert g.ENGINE_LIBS["sdk/lib/crt/libchkstk.a"] == "engine:chkstk"
 
 
+def test_an_engine_replayed_library_orders_the_cell_after_its_headers(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE)
+    libs = {a: ["engine:wine", "engine:conutils_rust"] for a in g.ARCHES}
+    out = g.rewrite_cmake(f, cell(static_libs=libs))
+    assert "EXTRA_DEPENDS m_res psdk)" in out
+    assert "REUSED" not in out
+
+
 def test_build_rs_names_every_input_and_keeps_an_auto_dll_base():
     rs = g.build_rs(cell(import_libs=[("dll/x/kernel32.spec", "kernel32.dll", "kernel32")]))
     assert '.rust_staticlib("m-rust")' in rs

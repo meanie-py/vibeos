@@ -28,10 +28,8 @@ target_include_directories(rpcss_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # How cmake compiled the target's sources, now on the OBJECT libraries.
 target_compile_options(rpcss_shims PRIVATE "-Wno-cast-calling-convention")
 target_compile_options(rpcss_res PRIVATE "-Wno-cast-calling-convention")
-set(RPCSS_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(rpcss rpcss-cargo rpcss.exe
     KIND win32exe
     BODY_CRATE rpcss-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS rpcss_shims rpcss_res ${RPCSS_REUSED})
+    EXTRA_DEPENDS rpcss_shims rpcss_res psdk)

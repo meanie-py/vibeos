@@ -15,9 +15,9 @@ fn main() {
     };
 
     let late_libs: &[&str] = match arch.as_str() {
-        "x86" => &["engine:pseh", "sdk/lib/libwine/libwine.a", "engine:chkstk", "engine:oldnames"],
-        "x86_64" => &["engine:pseh", "sdk/lib/libwine/libwine.a", "engine:oldnames"],
-        "aarch64" => &["engine:pseh", "sdk/lib/libwine/libwine.a", "engine:chkstk", "engine:oldnames"],
+        "x86" => &["engine:pseh", "engine:wine", "engine:chkstk", "engine:oldnames"],
+        "x86_64" => &["engine:pseh", "engine:wine", "engine:oldnames"],
+        "aarch64" => &["engine:pseh", "engine:wine", "engine:chkstk", "engine:oldnames"],
         _ => unreachable!(),
     };
 

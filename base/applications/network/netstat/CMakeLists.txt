@@ -10,11 +10,8 @@
 add_library(netstat_res OBJECT netstat.rc)
 target_compile_definitions(netstat_res PRIVATE UNICODE _UNICODE)
 target_include_directories(netstat_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(NETSTAT_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils_rust.a)
 add_cargo_module(netstat netstat-cargo netstat.exe
     KIND win32exe
     BODY_CRATE netstat-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS netstat_res ${NETSTAT_REUSED})
+    EXTRA_DEPENDS netstat_res xdk)

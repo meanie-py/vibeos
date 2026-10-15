@@ -11,11 +11,10 @@ add_library(control_res OBJECT control.rc)
 target_compile_definitions(control_res PRIVATE UNICODE _UNICODE)
 target_include_directories(control_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set(CONTROL_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/delayimp/libdelayimp_rust.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/uuid/libuuid.a)
+    ${CMAKE_BINARY_DIR}/sdk/lib/delayimp/libdelayimp_rust.a)
 add_cargo_module(control control-cargo control.exe
     KIND win32exe
     BODY_CRATE control-rust
     DESTINATION reactos/system32
     DELAY_IMPORTS
-    EXTRA_DEPENDS control_res ${CONTROL_REUSED})
+    EXTRA_DEPENDS control_res ${CONTROL_REUSED} uuid_sources)

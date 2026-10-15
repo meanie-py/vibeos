@@ -16,10 +16,8 @@ add_rc_deps(main.rc ${main_rc_deps})
 add_library(main_res OBJECT main.rc)
 target_compile_definitions(main_res PRIVATE UNICODE _UNICODE)
 target_include_directories(main_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(MAIN_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/uuid/libuuid.a)
 add_cargo_module(main main-cargo main.cpl
     KIND win32dll
     BODY_CRATE main-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS main_res ${MAIN_REUSED})
+    EXTRA_DEPENDS main_res uuid_sources)

@@ -29,10 +29,8 @@ target_compile_definitions(winspool_shims PRIVATE UNICODE _UNICODE)
 add_library(winspool_res OBJECT winspool.rc)
 target_compile_definitions(winspool_res PRIVATE UNICODE _UNICODE)
 target_include_directories(winspool_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(WINSPOOL_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(winspool winspool-cargo winspool.drv
     KIND win32dll
     BODY_CRATE winspool-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS winspool_shims winspool_res ${WINSPOOL_REUSED})
+    EXTRA_DEPENDS winspool_shims winspool_res psdk)
