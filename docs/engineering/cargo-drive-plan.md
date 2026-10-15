@@ -226,11 +226,13 @@ extends it from the boot spine to every fully-Rust module.
      and the evtlib/skiplist16 stubs), and the `rust_staticlib_variant`-style crates
      are a table in `engine_lib` (delayimp, evtlib, skiplist, hidparser). 16 cells;
      `pe_equiv --code` 565/565 ×3.
-   - **Left:** `concfg` + `concfg_rust` (console, winsrv: cmake builds the crate with
-     `cargo rustc --crate-type staticlib`, which the engine's sibling build cannot
-     say yet) and `win32ksys` (winsrv, imm32: syscall stubs from generated tables).
-     The kernel and loader cells' `libcntpr` / `mini_hal` / `freeldr_bios_asm` belong
-     to the driver rung.
+   - **Done 2026-10-15 (wave 8): `concfg`, `concfg_rust`, `win32ksys`.** The engine can
+     build a crate as a staticlib its manifest does not list (`build_rust_crate_as`,
+     `cargo rustc --crate-type staticlib`), which is how cmake builds concfg-rust's
+     standalone archive; win32ksys is `engine:c:` over cmake's `sys-stubs.S` compile.
+     **No user-mode cell links a cmake-built static library any more.** What is left
+     is the kernel and loader cells' `libcntpr` / `mini_hal` / `freeldr_bios_asm`,
+     which belong to the driver rung.
 4. **Resources without cmake.** Cells replay cmake's `windres` command today
    (`resource_from_rc`), so they still need cmake configured. The June fallback was a
    committed `.res` per arch; for 189 modules that is a lot of binary in git. Better: the

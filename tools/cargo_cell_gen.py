@@ -594,6 +594,9 @@ ENGINE_LIBS = {
     "sdk/lib/tzlib/libtzlib.a": "engine:c:tzlib",
     "sdk/lib/scrnsave/libscrnsave.a": "engine:c:scrnsave",
     "dll/appcompat/shims/shimlib/libshimlib.a": "engine:c:shimlib",
+    "win32ss/user/winsrv/concfg/libconcfg.a": "engine:c:concfg",
+    "win32ss/user/winsrv/concfg/libconcfg_rust.a": "engine:concfg_rust",
+    "win32ss/libwin32ksys.a": "engine:c:win32ksys",
 }
 # The engine replays cmake's compile of these, which reads what cmake generates (psdk
 # and xdk headers, uuid's widl output): the cell builds after the targets that make it.
@@ -609,6 +612,8 @@ ENGINE_LIB_DEPS = {
     "engine:c:tzlib": "xdk",
     "engine:c:scrnsave": "psdk",
     "engine:c:shimlib": "xdk",
+    "engine:c:concfg": "xdk",
+    "engine:c:win32ksys": "asm",
 }
 
 

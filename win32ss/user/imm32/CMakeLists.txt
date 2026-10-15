@@ -37,10 +37,8 @@ target_compile_definitions(imm32_res PRIVATE UNICODE _UNICODE)
 target_include_directories(imm32_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # How cmake compiled the target's sources, now on the OBJECT libraries.
 target_compile_definitions(imm32_res PRIVATE IMM_WIN3_SUPPORT)
-set(IMM32_REUSED
-    ${CMAKE_BINARY_DIR}/win32ss/libwin32ksys.a)
 add_cargo_module(imm32 imm32-cargo imm32.dll
     KIND win32dll
     BODY_CRATE imm32-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS imm32_res ${IMM32_REUSED} psdk uuid_sources)
+    EXTRA_DEPENDS imm32_res asm psdk uuid_sources)
