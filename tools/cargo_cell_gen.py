@@ -171,6 +171,14 @@ class Cell:
     # `__imp_` symbol two of the libs define binds to the first (Linker::delay_import_lib).
     import_order: list[tuple[str, bool]] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    # Per arch, the RUSTFLAGS cmake built the body with (`ENV "RUSTFLAGS=..."` on its
+    # rust_staticlib_variant): calc and friends pass floats by value, so i386 needs SSE.
+    body_rustflags: dict[str, str] = field(default_factory=dict)
+    # That `set(<VAR>) if(ARCH ...) set(<VAR> ENV ...) endif()` block, which the rewrite
+    # drops with the variant.
+    body_env_block: str = ""
+    # Per arch, when the arches ship to different CD dirs (winprint's prtprocs/<arch>).
+    arch_destinations: dict[str, list[str]] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------- build graph
@@ -336,6 +344,8 @@ def cmake_facts(cmake: Path, target: str, libs: list[str] | None = None) -> dict
         "transfer": [],
         "unknown": [],
         "unicode": False,
+        "body_rustflags": {},
+        "body_env_block": "",
     }
     variants = {}
     linked = {lib.split("/")[-1] for lib in libs or []}
@@ -382,13 +392,39 @@ def cmake_facts(cmake: Path, target: str, libs: list[str] | None = None) -> dict
         facts["body"] = (a[1], feats, a[3].upper() == "TRUE")
         facts["body_var"] = named[0]
         if len(a) > 4:
-            # calc/taskmgr/wordpad pass `${X_RUST_ENV}` (i386 +sse,+sse2 for the body):
-            # the cell would build the body without it, and pe_equiv cannot see a
-            # codegen change.
-            facts["unknown"].append(f"rust_staticlib_variant extras {a[4:]}")
+            # calc/taskmgr/wordpad pass `${X_RUST_ENV}` (i386 +sse,+sse2 for the body).
+            # Only that exact shape is modelled: the cell builds the body with the same
+            # RUSTFLAGS through rust_build_rustflags. Anything else is refused, since
+            # pe_equiv cannot see a codegen change.
+            env = _body_env(text, a[4:])
+            if env is None:
+                facts["unknown"].append(f"rust_staticlib_variant extras {a[4:]}")
+            else:
+                facts["body_rustflags"], facts["body_env_block"] = env
     elif len(named) > 1:
         facts["unknown"].append(f"several bodies {named}")
     return facts
+
+
+def _body_env(text: str, extras: list[str]) -> tuple[dict[str, str], str] | None:
+    """`extras` is one `${VAR}` that is empty but on one arch `ENV "RUSTFLAGS=..."`:
+    ({arch: flags}, the block that sets it). None for any other shape."""
+    m = re.fullmatch(r"\$\{(\w+)\}", extras[0]) if len(extras) == 1 else None
+    if not m:
+        return None
+    var = re.escape(m.group(1))
+    block = re.search(
+        rf"set\({var}\)\n"
+        rf'if\(ARCH STREQUAL "(\w+)"\)\n'
+        rf'\s*set\({var} ENV "RUSTFLAGS=([^"]*)"\)\n'
+        r"endif\(\)\n",
+        text,
+    )
+    if not block or block.group(1) not in ARCHES:
+        return None
+    if len(re.findall(rf"\b{var}\b", text)) != 3:
+        return None  # set twice above, read once by the variant: nothing else
+    return {block.group(1): block.group(2)}, block.group(0)
 
 
 def _names_only(a: list[str]) -> bool:
@@ -407,6 +443,9 @@ def _retarget(cmd: str, raw: str, new: str) -> str:
 def rewrite_cmake(cmake: Path, cell: Cell) -> str:
     """The module's CMakeLists with the target's link statements replaced by the cell."""
     text = cmake.read_text()
+    if cell.body_env_block:
+        # The body's RUSTFLAGS now live in build.rs (Cell.body_rustflags).
+        text = text.replace(cell.body_env_block, "", 1)
     keep, pos = [], 0
     body_lib = None
     body_var = cell.body_var or f"{cell.target}_rust"
@@ -480,6 +519,11 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
     out = "".join(keep).lstrip("\n")
     if body_lib and not shared and re.search(rf"\$\{{{body_lib}_LIB\}}|rust_{body_lib}\b", out):
         raise GenError(f"{cmake}: something else still uses {body_lib}")
+    # An if(ARCH ...) chain whose only statements were the target's (winprint's
+    # add_cd_file per arch) is left with nothing in it.
+    out = re.sub(
+        r"^if\([^\n]*\)\n(?:(?:elseif\([^\n]*\)|else\(\))\n)*endif\(\)\n", "", out, flags=re.M
+    )
     out = re.sub(r"\n{3,}", "\n\n", out).rstrip() + "\n"
     block = [
         "",
@@ -555,7 +599,14 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
     call = [f"add_cargo_module({cell.target} {cell.target}-cargo {cell.output_name}"]
     call.append(f"    KIND {kind}")
     call.append(f"    BODY_CRATE {cell.body_crate}")
-    if cell.destinations:
+    if cell.arch_destinations:
+        var = f"{cell.target.upper()}_DESTINATION"
+        for i, a in enumerate(ARCHES):
+            block.append(f'{"if" if i == 0 else "elseif"}(ARCH STREQUAL "{a}")')
+            block.append(f"    set({var} {' '.join(cell.arch_destinations[a])})")
+        block.append("endif()")
+        call.append(f"    DESTINATION ${{{var}}}")
+    elif cell.destinations:
         call.append(f"    DESTINATION {' '.join(cell.destinations)}")
     else:
         call.append("    NO_CD")
@@ -628,6 +679,10 @@ def _placeholder(path: Path) -> bool:
 
 
 def model(target: str, repo: Path = REPO) -> Cell:
+    if target[:1].isdigit():
+        # The cell is the cargo package `<target>-cargo`, and a package name cannot
+        # start with a digit (3dtext).
+        raise GenError(f"{target}: a cargo package name cannot start with a digit")
     links = {a: link_edge(a, target, repo) for a in ARCHES}
     first = links["amd64"]
     cmake_dir = repo / Path(first.output).parent
@@ -755,15 +810,28 @@ def model(target: str, repo: Path = REPO) -> Cell:
     # context: the CD list each arch's build wrote must be exactly what they say.
     var = r"\\\$\\\{\w+\\\}"  # a ${VAR} once re.escape()d
     pats = [re.compile(re.sub(var, "[^/]+", re.escape(d))) for d in facts["destinations"]]
+    shipped: dict[str, list[str]] = {}
     for a in ARCHES:
         dirs = cd_dirs(a, links[a].output, repo)
-        if len(dirs) != len(pats) or not all(
-            sum(1 for p in pats if p.fullmatch(d)) == 1 for d in dirs
-        ):
+        hits = [
+            [d for d, p in zip(facts["destinations"], pats, strict=True) if p.fullmatch(x)]
+            for x in dirs
+        ]
+        if not dirs or any(len(h) != 1 for h in hits):
             raise GenError(
                 f"{target}: CD destinations differ by arch ({a} ships to {sorted(dirs)},"
                 f" the CMakeLists names {facts['destinations']})"
             )
+        shipped[a] = sorted({h[0] for h in hits}, key=facts["destinations"].index)
+    # winprint ships to one prtprocs dir per arch (an if(ARCH) chain of add_cd_file):
+    # each arch's own list, as long as together they are exactly what the CMakeLists names.
+    per_arch = {}
+    if any(shipped[a] != facts["destinations"] for a in ARCHES):
+        if {d for a in ARCHES for d in shipped[a]} != set(facts["destinations"]):
+            raise GenError(
+                f"{target}: CD destinations {shipped} leave some of {facts['destinations']} unused"
+            )
+        per_arch = shipped
     body, feats, defaults = facts["body"]
     panics = {a: carries_panic_handler(repo / f"build-{a}" / links[a].output) for a in ARCHES}
     return Cell(
@@ -778,6 +846,8 @@ def model(target: str, repo: Path = REPO) -> Cell:
         body_crate=body,
         body_features=feats,
         body_defaults=defaults,
+        body_rustflags=facts["body_rustflags"],
+        body_env_block=facts["body_env_block"],
         import_libs=list(imports),
         delay_import_libs=list(delayed),
         generated=generated,
@@ -790,6 +860,7 @@ def model(target: str, repo: Path = REPO) -> Cell:
         rc=rc,
         rc_defines=rc_defines,
         destinations=facts["destinations"],
+        arch_destinations=per_arch,
         name_on_cd=facts["name_on_cd"],
         panics=panics,
         body_var=facts["body_var"],
@@ -842,7 +913,23 @@ def build_rs(cell: Cell) -> str:
         L.append("        _ => unreachable!(),")
         L.append("    };")
         L.append("")
-    L.append("    Linker::new(target_json)")
+    if cell.body_rustflags:
+        L.append(
+            "    // cmake built the body with these RUSTFLAGS (its rust_staticlib_variant ENV)."
+        )
+        L.append("    let body_rustflags = match arch.as_str() {")
+        for a in ARCHES:
+            if a in cell.body_rustflags:
+                L.append(f'        "{TRIPLE[a]}" => Some("{cell.body_rustflags[a]}"),')
+        L.append("        _ => None,")
+        L.append("    };")
+        L.append("    let mut link = Linker::new(target_json);")
+        L.append("    if let Some(flags) = body_rustflags {")
+        L.append("        link = link.rust_build_rustflags(flags);")
+        L.append("    }")
+        L.append("    link")
+    else:
+        L.append("    Linker::new(target_json)")
     if cell.body_features or not cell.body_defaults:
         feats = ", ".join(f'"{f}"' for f in cell.body_features)
         L.append(
@@ -1104,6 +1191,13 @@ def check(targets: list[str], baseline: Path, repo: Path = REPO) -> int:
                 bad += 1
                 continue
             new = repo / f"build-{a}" / olds[0].relative_to(baseline / a)
+            # The baseline is cmake's PE: when cargo did not relink the module (a failed
+            # build leaves cmake's file in place), comparing it with itself is a vacuous
+            # pass. It happened: an all-arch CARGO_CHECK_FAIL checked 18/18 EQUIVALENT.
+            if not new.exists() or new.read_bytes() == olds[0].read_bytes():
+                print(f"{t:14} {a:6} NOT RELINKED (still the baseline PE: did the build fail?)")
+                bad += 1
+                continue
             try:
                 diffs = pe_equiv.compare(pe_equiv.load(olds[0]), pe_equiv.load(new))
             except pe_equiv.PEError as exc:

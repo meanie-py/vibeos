@@ -190,11 +190,18 @@ extends it from the boot spine to every fully-Rust module.
        generator checks each arch's `livecd.<config>.lst` holds exactly the
        destinations the CMakeLists names, which is what refuses winprint's one
        prtprocs dir per arch.
-   - **The user-mode refusals left** (`--survey`, after wave 4): a `SOURCE` list
-     another target builds (6); the i386 body's `+sse,+sse2` ENV (5: calc, taskmgr,
-     wordpad, 3dtext, format); `add_driver_inf` (4); per-arch link inputs or
-     destinations (3: acgenral, opengl32, winprint); native exes (2); vendored C
-     compiled into the module (mstsc's rdesktop: rung 6); two one-offs.
+   - **Wave 9, 2026-10-15: calc, taskmgr, wordpad, format, winprint, ftp.** The body's
+     i386 `ENV "RUSTFLAGS=+sse,+sse2"` is modelled in its one exact shape (`_body_env`:
+     `set(V)`, `if(ARCH ...) set(V ENV "RUSTFLAGS=...")`, read once by the variant) and
+     becomes `rust_build_rustflags` on that arch. Per-arch CD dirs (winprint's
+     `prtprocs/<arch>`) become one `<M>_DESTINATION` variable. ftp was a new
+     translation. `--check` now refuses a PE that is still the baseline's bytes: an
+     all-arch build failure had checked 18/18 EQUIVALENT against cmake's own files.
+   - **The user-mode refusals left** (`--survey`, after wave 9): a `SOURCE` list
+     another target builds (6); `add_driver_inf` (4); per-arch link inputs (2:
+     acgenral, opengl32); native exes (2); vendored C compiled into the module
+     (mstsc's rdesktop: rung 6); 3dtext (a cargo package name cannot start with a
+     digit; its generated cell is in the stash "wave9 3dtext cell"); two one-offs.
      **Owed:** the ntoskrnl cells (hand-written) import kdcom from `kdcom.spec`,
      while the build's kdcom import lib comes from `kdrosdbg.spec`.
 3. **Give the C static libraries a cargo home.** `uuid` becomes a GUID crate generated

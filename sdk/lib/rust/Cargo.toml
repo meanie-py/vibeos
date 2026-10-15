@@ -1,5 +1,11 @@
 [workspace]
 members = [
+    "winprint-cargo",
+    "wordpad-cargo",
+    "taskmgr-cargo",
+    "ftp-cargo",
+    "format-cargo",
+    "calc-cargo",
     "winhlp32-cargo",
     "winspool-cargo",
     "srvsvc-cargo",

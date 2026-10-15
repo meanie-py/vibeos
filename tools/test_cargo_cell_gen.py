@@ -282,3 +282,33 @@ def test_several_cd_destinations_go_to_one_call(tmp_path):
     f.write_text(CMAKE)
     c = cell(destinations=["reactos/system32", "reactos/winsxs/${WINARCH}_x"])
     assert "    DESTINATION reactos/system32 reactos/winsxs/${WINARCH}_x" in g.rewrite_cmake(f, c)
+
+
+def test_a_body_rustflags_env_is_modelled_only_in_its_exact_shape():
+    block = (
+        "set(M_RUST_ENV)\n"
+        'if(ARCH STREQUAL "i386")\n'
+        '    set(M_RUST_ENV ENV "RUSTFLAGS=-C target-feature=+sse,+sse2")\n'
+        "endif()\n"
+    )
+    text = block + 'rust_staticlib_variant(m_rust m-rust "" TRUE ${M_RUST_ENV})\n'
+    flags, found = g._body_env(text, ["${M_RUST_ENV}"])
+    assert flags == {"i386": "-C target-feature=+sse,+sse2"}
+    assert found == block
+    # Read anywhere else, or not this shape: refused.
+    assert g._body_env(text + "message(${M_RUST_ENV})\n", ["${M_RUST_ENV}"]) is None
+    assert g._body_env(text, ["ENV", "RUSTFLAGS=x"]) is None
+    rs = g.build_rs(cell(body_rustflags={"i386": "-C target-feature=+sse,+sse2"}))
+    assert '"x86" => Some("-C target-feature=+sse,+sse2"),' in rs
+    assert "link = link.rust_build_rustflags(flags);" in rs
+
+
+def test_per_arch_cd_destinations_become_one_variable(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE)
+    dests = {"i386": ["d/w32x86"], "amd64": ["d/x64"], "arm64": ["d/arm64"]}
+    out = g.rewrite_cmake(
+        f, cell(arch_destinations=dests, destinations=["d/x64", "d/arm64", "d/w32x86"])
+    )
+    assert 'if(ARCH STREQUAL "i386")\n    set(M_DESTINATION d/w32x86)\nelseif' in out
+    assert "    DESTINATION ${M_DESTINATION}\n" in out
