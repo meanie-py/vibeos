@@ -2,10 +2,13 @@
 //! "UsbdEx lib" (the USBD handle / URB-allocation helpers declared under the
 //! `/* UsbdEx lib */` section of `sdk/include/ddk/usbdlib.h`).
 //!
-//! Faithful port of the C: every function is `UNIMPLEMENTED` and returns
-//! `STATUS_NOT_IMPLEMENTED` (the `NTSTATUS` ones) or nothing (the `VOID` ones),
-//! exactly as the C did. No state, no allocation, no DDK calls — so the crate
-//! is fully self-contained (no ntkrnl-sys dependency).
+//! The C was `UNIMPLEMENTED` throughout and returned `STATUS_NOT_IMPLEMENTED`, which fails
+//! every KMDF USB client created with `WdfUsbTargetDeviceCreateWithParameters` (any Windows
+//! 8+ driver: KMDF calls `USBD_CreateHandle` and gives up on the device). On Windows these
+//! are thin bookkeeping over the USB stack, so they are implemented here: a handle that
+//! records its client, URBs from nonpaged pool, and `AssignUrbToIoStackLocation` placing the
+//! URB where `IOCTL_INTERNAL_USB_SUBMIT_URB` carries it. Capabilities answer
+//! `STATUS_NOT_SUPPORTED`, as Windows does for one the hub lacks.
 //!
 //! ABI: the usbdlib.h prototypes carry NO `NTAPI` — they are plain **cdecl**
 //! on every arch (unlike the NTAPI cohab crates which use `extern "system"`).
@@ -29,8 +32,54 @@ type PUCHAR = *mut u8;
 type PULONG = *mut u32;
 type USBD_HANDLE = PVOID; // DECLARE_HANDLE(USBD_HANDLE)
 
-// STATUS_NOT_IMPLEMENTED (ntstatus.h)
-const STATUS_NOT_IMPLEMENTED: NTSTATUS = 0xC0000002u32 as NTSTATUS;
+const STATUS_SUCCESS: NTSTATUS = 0;
+const STATUS_NOT_SUPPORTED: NTSTATUS = 0xC00000BBu32 as NTSTATUS;
+const STATUS_INSUFFICIENT_RESOURCES: NTSTATUS = 0xC000009Au32 as NTSTATUS;
+const STATUS_INVALID_PARAMETER: NTSTATUS = 0xC000000Du32 as NTSTATUS;
+const NON_PAGED_POOL: u32 = 0;
+
+extern "system" {
+    fn ExAllocatePoolWithTag(PoolType: u32, NumberOfBytes: usize, Tag: ULONG) -> PVOID;
+    fn ExFreePoolWithTag(P: PVOID, Tag: ULONG);
+}
+
+/// What a USBD_HANDLE points at.
+#[repr(C)]
+struct UsbdHandle {
+    device_object: PVOID,
+    target_device_object: PVOID,
+    contract_version: ULONG,
+    pool_tag: ULONG,
+}
+
+/// Every URB this library hands out starts with this header, so `UrbFree` knows the tag.
+#[repr(C)]
+struct UrbBlock {
+    pool_tag: ULONG,
+    _pad: [u32; 3],
+    // the URB follows, 16-byte aligned
+}
+
+/// sizeof(URB) is under 0x100 on every arch; the isoch variant adds 12-byte packets.
+const URB_BYTES: usize = 0x100;
+const ISO_PACKET_BYTES: usize = 12;
+
+unsafe fn alloc_urb(handle: USBD_HANDLE, bytes: usize, urb: *mut PVOID) -> NTSTATUS {
+    if handle.is_null() || urb.is_null() {
+        return STATUS_INVALID_PARAMETER;
+    }
+    let tag = (*(handle as *mut UsbdHandle)).pool_tag;
+    let total = core::mem::size_of::<UrbBlock>() + bytes;
+    let blk = ExAllocatePoolWithTag(NON_PAGED_POOL, total, tag) as *mut UrbBlock;
+    if blk.is_null() {
+        *urb = core::ptr::null_mut();
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    core::ptr::write_bytes(blk as *mut u8, 0, total);
+    (*blk).pool_tag = tag;
+    *urb = blk.add(1) as PVOID;
+    STATUS_SUCCESS
+}
 
 #[no_mangle]
 pub unsafe extern "C" fn USBD_QueryUsbCapability(
@@ -38,55 +87,87 @@ pub unsafe extern "C" fn USBD_QueryUsbCapability(
     _CapabilityType: *const c_void, // const GUID*
     _OutputBufferLength: ULONG,
     _OutputBuffer: PUCHAR,
-    _ResultLength: PULONG,
+    ResultLength: PULONG,
 ) -> NTSTATUS {
-    STATUS_NOT_IMPLEMENTED
+    // Static streams, chained MDLs, selective suspend and the rest: our usbport offers none.
+    if !ResultLength.is_null() {
+        *ResultLength = 0;
+    }
+    STATUS_NOT_SUPPORTED
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn USBD_AssignUrbToIoStackLocation(
     _USBDHandle: USBD_HANDLE,
-    _IoStackLocation: PVOID, // PIO_STACK_LOCATION
-    _Urb: PVOID,             // PURB
+    IoStackLocation: PVOID, // PIO_STACK_LOCATION
+    Urb: PVOID,             // PURB
 ) {
+    // IO_STACK_LOCATION: four UCHARs, then the Parameters union at pointer alignment;
+    // Parameters.Others.Argument1 is its first pointer, where SUBMIT_URB reads the URB.
+    let argument1 = (IoStackLocation as *mut u8).add(core::mem::size_of::<usize>()) as *mut PVOID;
+    *argument1 = Urb;
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn USBD_CreateHandle(
-    _DeviceObject: PVOID,       // PDEVICE_OBJECT
-    _TargetDeviceObject: PVOID, // PDEVICE_OBJECT
-    _USBDClientContractVersion: ULONG,
-    _PoolTag: ULONG,
-    _USBDHandle: *mut USBD_HANDLE,
+    DeviceObject: PVOID,       // PDEVICE_OBJECT
+    TargetDeviceObject: PVOID, // PDEVICE_OBJECT
+    USBDClientContractVersion: ULONG,
+    PoolTag: ULONG,
+    USBDHandle: *mut USBD_HANDLE,
 ) -> NTSTATUS {
-    STATUS_NOT_IMPLEMENTED
+    if USBDHandle.is_null() || TargetDeviceObject.is_null() {
+        return STATUS_INVALID_PARAMETER;
+    }
+    let h = ExAllocatePoolWithTag(NON_PAGED_POOL, core::mem::size_of::<UsbdHandle>(), PoolTag)
+        as *mut UsbdHandle;
+    if h.is_null() {
+        *USBDHandle = core::ptr::null_mut();
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    h.write(UsbdHandle {
+        device_object: DeviceObject,
+        target_device_object: TargetDeviceObject,
+        contract_version: USBDClientContractVersion,
+        pool_tag: PoolTag,
+    });
+    *USBDHandle = h as USBD_HANDLE;
+    STATUS_SUCCESS
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn USBD_CloseHandle(_USBDHandle: USBD_HANDLE) {}
+pub unsafe extern "C" fn USBD_CloseHandle(USBDHandle: USBD_HANDLE) {
+    if !USBDHandle.is_null() {
+        ExFreePoolWithTag(USBDHandle, (*(USBDHandle as *mut UsbdHandle)).pool_tag);
+    }
+}
 
 #[no_mangle]
 pub unsafe extern "C" fn USBD_UrbAllocate(
-    _USBDHandle: USBD_HANDLE,
-    _Urb: *mut PVOID, // PURB*
+    USBDHandle: USBD_HANDLE,
+    Urb: *mut PVOID, // PURB*
 ) -> NTSTATUS {
-    STATUS_NOT_IMPLEMENTED
+    alloc_urb(USBDHandle, URB_BYTES, Urb)
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn USBD_IsochUrbAllocate(
-    _USBDHandle: USBD_HANDLE,
-    _NumberOfIsochPacket: ULONG,
-    _Urb: *mut PVOID, // PURB*
+    USBDHandle: USBD_HANDLE,
+    NumberOfIsochPacket: ULONG,
+    Urb: *mut PVOID, // PURB*
 ) -> NTSTATUS {
-    STATUS_NOT_IMPLEMENTED
+    alloc_urb(USBDHandle, URB_BYTES + NumberOfIsochPacket as usize * ISO_PACKET_BYTES, Urb)
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn USBD_UrbFree(
     _USBDHandle: USBD_HANDLE,
-    _Urb: PVOID, // PURB
+    Urb: PVOID, // PURB
 ) {
+    if !Urb.is_null() {
+        let blk = (Urb as *mut UrbBlock).sub(1);
+        ExFreePoolWithTag(blk as PVOID, (*blk).pool_tag);
+    }
 }
 
 #[panic_handler]

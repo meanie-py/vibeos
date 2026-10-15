@@ -1861,6 +1861,10 @@ pub unsafe extern "C" fn IopInitializeDriverModule(
 
     Status = IopGetDriverNames(ServiceHandle, &mut DriverName, &mut ServiceName);
     if Status < 0 {
+        ntkrnl_sys::driver_ddk::DbgPrint(
+            b"IopInitializeDriverModule: IopGetDriverNames failed 0x%x\n\0".as_ptr() as *const i8,
+            Status,
+        );
         MmUnloadSystemImage(ModuleObject as PVOID);
         return Status;
     }
@@ -1953,6 +1957,12 @@ pub unsafe extern "C" fn IopInitializeDriverModule(
         &mut driverObject as *mut PDRIVER_OBJECT as *mut PVOID,
     );
     if Status < 0 {
+        // The C prints this after freeing DriverName; print it while the name is still live.
+        ntkrnl_sys::driver_ddk::DbgPrint(
+            b"Error while creating driver object \"%wZ\" status %x\n\0".as_ptr() as *const i8,
+            &mut DriverName as *mut _,
+            Status,
+        );
         ExFreePoolWithTag(nameInfo as PVOID, TAG_IO);
         RtlFreeUnicodeString(&mut ServiceName);
         RtlFreeUnicodeString(&mut DriverName);
@@ -2120,6 +2130,13 @@ pub unsafe extern "C" fn IopInitializeDriverModule(
     Status = (driverInit.unwrap_unchecked())(driverObject, &mut RegistryPath);
     core::ptr::write_volatile(DriverEntryStatus, Status);
     if Status < 0 {
+        // A vendor driver whose DriverEntry fails is otherwise invisible: PnP just never
+        // calls its AddDevice.
+        ntkrnl_sys::driver_ddk::DbgPrint(
+            b"'%wZ' initialization failed, status (0x%08lx)\n\0".as_ptr() as *const i8,
+            &mut DriverName as *mut _,
+            Status,
+        );
         Status = STATUS_FAILED_DRIVER_ENTRY;
     }
 
@@ -2131,6 +2148,11 @@ pub unsafe extern "C" fn IopInitializeDriverModule(
     // Windows does this fixup, keep it for compatibility
     for j in 0..=IRP_MJ_MAXIMUM_FUNCTION {
         if (*driverObject).MajorFunction[j as usize].is_none() {
+            ntkrnl_sys::driver_ddk::DbgPrint(
+                b"Driver <%wZ> set DriverObject->MajorFunction[%lu] to NULL!\n\0".as_ptr() as *const i8,
+                core::ptr::addr_of_mut!((*driverObject).DriverName),
+                j as u32,
+            );
             (*driverObject).MajorFunction[j as usize] = core::mem::transmute(Some(
                 IopInvalidDeviceRequest
                     as unsafe extern "system" fn(*mut DEVICE_OBJECT, PIRP) -> NTSTATUS,

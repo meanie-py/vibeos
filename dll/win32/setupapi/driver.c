@@ -893,6 +893,48 @@ SetupDiBuildDriverInfoList(
                         /* Add (possible) extension to manufacturer section name */
                         Result = SetupDiGetActualSectionToInstallW(
                             currentInfFileDetails->hInf, ManufacturerSection, ManufacturerSection, LINE_LEN, NULL, NULL);
+                        if (Result && SetupGetLineCountW(currentInfFileDetails->hInf, ManufacturerSection) <= 0)
+                        {
+                            /* VibeOS: the models section for the version we report (5.2) is
+                             * empty, which current vendor INFs do on purpose ("[Realtek] ;Empty
+                             * section, so this INf does not support win2000") and put their
+                             * models under NTamd64.10.0. Windows would offer no driver; we load
+                             * NDIS 6 and KMDF drivers, so try the NT 10.0 models before giving
+                             * up. An INF with models for our version never gets here. */
+                            SP_ALTPLATFORM_INFO Nt10;
+                            SYSTEM_INFO SystemInfo;
+                            WCHAR Nt10Section[LINE_LEN];
+                            DWORD BaseLength = strlenW(ManufacturerSection);
+
+                            GetSystemInfo(&SystemInfo);
+                            ZeroMemory(&Nt10, sizeof(Nt10));
+                            Nt10.cbSize = sizeof(Nt10);
+                            Nt10.Platform = VER_PLATFORM_WIN32_NT;
+                            Nt10.MajorVersion = 10;
+                            Nt10.MinorVersion = 0;
+                            Nt10.ProcessorArchitecture = SystemInfo.wProcessorArchitecture;
+                            if (SetupDiGetActualSectionToInstallExW(currentInfFileDetails->hInf, ManufacturerSection,
+                                    &Nt10, Nt10Section, LINE_LEN, NULL, NULL, NULL)
+                                && strlenW(Nt10Section) > BaseLength
+                                && SetupGetLineCountW(currentInfFileDetails->hInf, Nt10Section) > 0)
+                            {
+                                /* Once per INF: every device install rescans every INF */
+                                static ULONG Reported[16];
+                                ULONG Hash = 5381, k;
+                                LPCWSTR c;
+                                BOOL Seen = FALSE;
+                                for (c = FullInfFileName; *c; c++) Hash = Hash * 33 + tolowerW(*c);
+                                for (k = 0; k < ARRAYSIZE(Reported) && Reported[k]; k++)
+                                    if (Reported[k] == Hash) Seen = TRUE;
+                                if (!Seen)
+                                {
+                                    if (k < ARRAYSIZE(Reported)) Reported[k] = Hash;
+                                    ERR("%s: no models for this version; using the NT 10.0 models section %s\n",
+                                        debugstr_w(FullInfFileName), debugstr_w(Nt10Section));
+                                }
+                                strcpyW(ManufacturerSection, Nt10Section);
+                            }
+                        }
                         if (Result)
                         {
                             TRACE("Enumerating devices in manufacturer %s\n", debugstr_w(ManufacturerSection));
