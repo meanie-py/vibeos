@@ -66,6 +66,7 @@ _AUDITED_PYTEST = {
     "pytest:tools/test_scan_formatless_printf.py",
     "pytest:tools/test_scan_fourcc_literals.py",
     "pytest:tools/test_scan_swprintf_count.py",
+    "pytest:tools/test_scan_match_arm_break.py",
     "pytest:tools/test_scan_flex_array_panic.py",
     "pytest:tools/test_scan_import_cc.py",
     "pytest:tools/test_scan_invented_constants.py",

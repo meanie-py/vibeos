@@ -1,6 +1,8 @@
 # icuuc.dll: ICU4C's common library as Windows 10 ships it (unversioned names). Only the
 # ucnv_* converters an application in the corpus imports are here (CMake's Qt 6 cmake-gui),
 # implemented over the Win32 code pages by sdk/lib/rust/icuuc-rust.
+@ cdecl UCNV_FROM_U_CALLBACK_SUBSTITUTE(ptr ptr ptr long long long ptr)
+@ cdecl UCNV_TO_U_CALLBACK_SUBSTITUTE(ptr ptr ptr long long ptr)
 @ cdecl ucnv_cbFromUWriteUChars(ptr ptr ptr long ptr)
 @ cdecl ucnv_cbToUWriteUChars(ptr ptr long long ptr)
 @ cdecl ucnv_close(ptr)

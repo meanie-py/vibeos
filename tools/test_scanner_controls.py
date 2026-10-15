@@ -3232,6 +3232,13 @@ UNCOVERED: dict[str, str] = {
         "decimal, hex with underscores and a suffix, mmioFOURCC, and a literal with no macro "
         "comment beside it."
     ),
+    "scan_match_arm_break": (
+        "main() walks the real tree, but the decision is scan_text(), a pure function over a "
+        "string, driven directly in tools/test_scan_match_arm_break.py. Its fire case is mf's "
+        "session_check_topology shape (a while loop opening with a match); its must-not cases "
+        "pin the once-through `loop { match }` switch idiom, an expression arm, a break of a "
+        "loop nested in the arm, and `break;` inside a string."
+    ),
     "scan_swprintf_count": (
         "main() walks the real tree, but the decision is scan_text(), a pure function over a "
         "string, driven directly in tools/test_scan_swprintf_count.py. Its fire cases are the "

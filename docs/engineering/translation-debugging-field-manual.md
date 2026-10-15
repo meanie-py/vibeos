@@ -1455,6 +1455,21 @@ cursors. To triage, grep `\.(next|prev|Flink|Blink)\)? as \*mut <Struct>` and ch
 offset. The 2026-09-30 sweep found 22 hits; all but this one were offset-0 (secur32's
 `entry`) or were casting to a byte or void pointer.
 
+### A switch `break` that now leaves the loop
+**Symptom.** A loop over a list or an array stops after the first element of one kind.
+mf's session_check_topology leaked one node reference per SetTopology (Wine's suite counted
+eight); welcome's TranslateEscapes stopped translating after the first `\x`.
+
+**Cause.** C's `case X: ...; break;` inside a `for`/`while` leaves the SWITCH. Translated to
+a `match` arm ending in `break;`, it leaves the LOOP, skipping the rest of the iteration
+(mf's `IMFTopologyNode_Release(node)`) and every later element.
+
+**Fix.** Delete the `break;`: a match arm never falls through. Not the once-through
+`loop { match .. }` idiom some translations use for a switch, where leaving the loop is
+leaving the switch. `scan_match_arm_break` gates it; its baseline is the 19 sites
+triaged as deliberate (the C had a `goto` to the function's exit, or the Rust is
+hand-written).
+
 ### A list walk that starts at the head it stops at
 
 **Symptom:** a lookup in a wine/list.h list never finds anything, or a count is always 0.

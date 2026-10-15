@@ -753,7 +753,7 @@ unsafe extern "C" fn topology_add_node(topology: *mut topology, node: *mut topol
         core::ptr::addr_of_mut!((*topology).nodes.nodes) as *mut *mut core::ffi::c_void,
         core::ptr::addr_of_mut!((*topology).nodes.size),
         (*topology).nodes.count + 1,
-        core::mem::size_of::<topology_node>(),
+        core::mem::size_of::<*mut topology_node>(),
     ) == 0
     {
         return E_OUTOFMEMORY;
@@ -798,7 +798,7 @@ unsafe extern "system" fn topology_RemoveNode(
                 memmove(
                     (*topology).nodes.nodes.add(i) as *mut core::ffi::c_void,
                     (*topology).nodes.nodes.add(i.wrapping_add(1)) as *const core::ffi::c_void,
-                    count.wrapping_mul(core::mem::size_of::<topology_node>()),
+                    count.wrapping_mul(core::mem::size_of::<*mut topology_node>()),
                 );
             }
             (*topology).nodes.count = (*topology).nodes.count.wrapping_sub(1);

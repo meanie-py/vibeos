@@ -2316,7 +2316,7 @@ unsafe extern "C" fn session_add_media_sink(
 
     IMFMediaSink_QueryInterface(
         (*media_sink).__bindgen_anon_1.sink,
-        &raw const MF_TOPONODE_DISABLE_PREROLL,
+        &raw const IID_IMFMediaEventGenerator,
         &raw mut (*media_sink).event_generator as *mut *mut ::core::ffi::c_void,
     );
 
@@ -3229,7 +3229,6 @@ unsafe extern "C" fn session_check_topology(mut topology: *mut IMFTopology) -> H
                     return hr;
                 }
 
-                break;
             }
 
             _ => {}
@@ -4643,7 +4642,7 @@ unsafe extern "C" fn transform_stream_update_input_type(node: *mut topo_node, in
     let mut output: UINT = 0;
     let mut hr: HRESULT = 0;
 
-    old_output_types = calloc(((*node).u.transform.output_count as usize) as _, (core::mem::size_of::<IMFMediaType>()) as _) as *mut *mut IMFMediaType;
+    old_output_types = calloc(((*node).u.transform.output_count as usize) as _, (core::mem::size_of::<*mut IMFMediaType>()) as _) as *mut *mut IMFMediaType;
     if old_output_types.is_null() {
         return E_OUTOFMEMORY;
     }

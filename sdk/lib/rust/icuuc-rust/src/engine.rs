@@ -417,21 +417,35 @@ pub unsafe fn cb_from_u_write_uchars(
 
 // ---------------------------------------------------------------- built-in callbacks
 
-/// ICU's UCNV_TO_U_CALLBACK_SUBSTITUTE: ignore RESET/CLOSE/CLONE, otherwise write U+FFFD.
+/// ICU's rule for the SUBSTITUTE callbacks' context: NULL substitutes everything;
+/// UCNV_SUB_STOP_ON_ILLEGAL ("i") substitutes only unassigned units; anything else none.
+unsafe fn substitutes(ctx: *const c_void, reason: i32) -> bool {
+    ctx.is_null() || (*(ctx as *const u8) == b'i' && reason == UCNV_UNASSIGNED)
+}
+
+/// ICU's UCNV_TO_U_CALLBACK_SUBSTITUTE, exported under that name (cmake-gui imports it):
+/// ignore RESET/CLOSE/CLONE; otherwise write U+FFFD, unless the context is
+/// UCNV_SUB_STOP_ON_ILLEGAL ("i") and the unit is illegal rather than unassigned, which
+/// leaves the caller's error standing. Any other non-NULL context also stands aside, as ICU.
+#[export_name = "UCNV_TO_U_CALLBACK_SUBSTITUTE"]
 pub unsafe extern "C" fn default_to_u(
-    _ctx: *const c_void, args: *mut UConverterToUnicodeArgs, _units: *const CChar, _len: i32, reason: i32, err: *mut i32,
+    ctx: *const c_void, args: *mut UConverterToUnicodeArgs, _units: *const CChar, _len: i32, reason: i32, err: *mut i32,
 ) {
     if reason > UCNV_IRREGULAR { return; }
+    if !substitutes(ctx, reason) { return; }
     *err = U_ZERO_ERROR;
     let r = [0xFFFDu16];
     write_uchars(args, r.as_ptr(), 1, 0, err);
 }
 
-/// ICU's UCNV_FROM_U_CALLBACK_SUBSTITUTE: write the converter's substitution bytes.
+/// ICU's UCNV_FROM_U_CALLBACK_SUBSTITUTE, exported under that name: the converter's
+/// substitution bytes, with the same context rule as the to-Unicode one.
+#[export_name = "UCNV_FROM_U_CALLBACK_SUBSTITUTE"]
 pub unsafe extern "C" fn default_from_u(
-    _ctx: *const c_void, args: *mut UConverterFromUnicodeArgs, _units: *const u16, _len: i32, _cp: i32, reason: i32, err: *mut i32,
+    ctx: *const c_void, args: *mut UConverterFromUnicodeArgs, _units: *const u16, _len: i32, _cp: i32, reason: i32, err: *mut i32,
 ) {
     if reason > UCNV_IRREGULAR { return; }
+    if !substitutes(ctx, reason) { return; }
     *err = U_ZERO_ERROR;
     let (b, n) = codec::sub_bytes((*(*args).converter).entry);
     write_bytes(args, &b[..n], 0, err);

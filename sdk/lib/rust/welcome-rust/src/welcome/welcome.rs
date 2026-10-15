@@ -230,7 +230,6 @@ pub unsafe extern "C" fn TranslateEscapes(mut lpString: LPTSTR) {
                         + 1 as size_t)
                         * (core::mem::size_of::<TCHAR>() as size_t)),
                 );
-                break;
             }
 
             /* Unknown escape sequence, ignore it */
