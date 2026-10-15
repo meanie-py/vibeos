@@ -50,7 +50,8 @@ pub unsafe extern "system" fn RtlGetCurrentTransaction() -> HANDLE {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn RtlSetCurrentTransaction(TransactionHandle: HANDLE) -> BOOLEAN {
+/// Returns LOGICAL (a 32-bit ULONG) on Windows, BOOL in our headers: not BOOLEAN.
+pub unsafe extern "system" fn RtlSetCurrentTransaction(TransactionHandle: HANDLE) -> BOOL {
     (*NtCurrentTeb()).CurrentTransactionHandle = TransactionHandle;
     1
 }

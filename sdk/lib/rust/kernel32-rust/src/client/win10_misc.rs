@@ -352,22 +352,26 @@ const XSAVE_FORMAT_XMM_OFFSET: u32 = 160;
 #[cfg(target_arch = "x86_64")]
 mod xs_native {
     pub const ARCH: u32 = super::CONTEXT_AMD64_ARCH;
-    pub const FLAGS_OFFSET: usize = 0x30;
+    pub const FLAGS_OFFSET: usize = core::mem::offset_of!(ntdll_sys::nt::_CONTEXT, ContextFlags);
     /// CONTEXT_FLOATING_POINT
     pub const LEGACY_FLAG: u32 = ARCH | 0x8;
     /// FltSave (XSAVE_FORMAT) inside CONTEXT.
-    pub const LEGACY_OFFSET: usize = 0x100;
-    pub const XMM_COUNT: u32 = 16;
+    pub const LEGACY_OFFSET: usize = core::mem::offset_of!(ntdll_sys::nt::_CONTEXT, __bindgen_anon_1.FltSave);
+    pub const XMM_COUNT: u32 = (2 * core::mem::size_of::<usize>()) as u32; // 16 in 64-bit mode
+    // Measured from the SDK (llvm-mingw): ContextFlags at 0x30, FltSave at 0x100.
+    const _: () = assert!(FLAGS_OFFSET == 48 && LEGACY_OFFSET == 256);
 }
 #[cfg(target_arch = "x86")]
 mod xs_native {
     pub const ARCH: u32 = super::CONTEXT_I386_ARCH;
-    pub const FLAGS_OFFSET: usize = 0;
+    pub const FLAGS_OFFSET: usize = core::mem::offset_of!(ntdll_sys::nt::_CONTEXT, ContextFlags);
     /// CONTEXT_EXTENDED_REGISTERS
     pub const LEGACY_FLAG: u32 = ARCH | 0x20;
     /// ExtendedRegisters (an FXSAVE image) inside CONTEXT.
-    pub const LEGACY_OFFSET: usize = 0xCC;
-    pub const XMM_COUNT: u32 = 8;
+    pub const LEGACY_OFFSET: usize = core::mem::offset_of!(ntdll_sys::nt::_CONTEXT, ExtendedRegisters);
+    pub const XMM_COUNT: u32 = (2 * core::mem::size_of::<usize>()) as u32; // 8 in 32-bit mode
+    // Measured from the SDK (llvm-mingw): ContextFlags first, ExtendedRegisters at 0xCC.
+    const _: () = assert!(FLAGS_OFFSET == 0 && LEGACY_OFFSET == 204);
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
