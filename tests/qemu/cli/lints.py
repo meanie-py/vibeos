@@ -1449,6 +1449,18 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # for it: msvcrt/cnt/rtl are the only translated modules with a differential harness,
     # the other ~40 crates have no oracle at all, and every C source we translate is full
     # of octal mode bits. Baseline is EMPTY and should stay that way.
+    # A FOURCC the model folded to an integer itself, keeping `// MAKEFOURCC('I','M','C','1')`
+    # beside a number that is not those four characters. evr's MFIsFormatYUV had three of
+    # nine wrong; rustc saw two only because they collided with right ones (unreachable
+    # arms). Held to its own comment, so no C is needed. Baseline is EMPTY.
+    sfc = repo / "tools" / "scan_fourcc_literals.py"
+    specs.append(
+        (
+            "scan_fourcc_literals",
+            [py, str(sfc)] if sfc.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     sol = repo / "tools" / "scan_octal_literals.py"
     specs.append(
         (

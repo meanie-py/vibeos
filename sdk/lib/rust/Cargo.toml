@@ -769,6 +769,13 @@ members = [
     "ntoskrnl_vista-rust",
     "sptilib-rust",
     "apisets-rust",
+    "wevtapi-rust",
+    "ndfapi-rust",
+    "dcomp-rust",
+    "qwave-rust",
+    "tbs-rust",
+    "mfreadwrite-rust",
+    "evr-rust",
 ]
 resolver = "2"
 

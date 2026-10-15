@@ -1126,6 +1126,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "dcomp-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "defmt"
 version = "0.3.100"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1487,6 +1498,18 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "evr-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+ "winelist-rust",
 ]
 
 [[package]]
@@ -2860,6 +2883,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "mfreadwrite-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+ "winelist-rust",
+]
+
+[[package]]
 name = "midl-rt"
 version = "0.1.0"
 
@@ -3324,6 +3359,17 @@ dependencies = [
 name = "ncpa-rust"
 version = "0.1.0"
 dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "ndfapi-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
  "ntdll-sys",
  "panic-common",
  "strsafe-rust",
@@ -4075,6 +4121,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "41f2619966050689382d2b44f664f4bc593e129785a36d6ee376ddf37259b924"
 dependencies = [
  "proc-macro2",
+]
+
+[[package]]
+name = "qwave-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+ "winelist-rust",
 ]
 
 [[package]]
@@ -5367,6 +5425,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tbs-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "tcpsvcs-rust"
 version = "0.1.0"
 dependencies = [
@@ -6001,6 +6070,17 @@ dependencies = [
 
 [[package]]
 name = "welcome-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "wevtapi-rust"
 version = "0.1.0"
 dependencies = [
  "conutils-h",

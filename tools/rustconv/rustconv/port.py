@@ -2946,6 +2946,74 @@ _WINE_DBCH_ITEM = re.compile(
 )
 
 
+_NT_LIST_ENTRY_TYPE = re.compile(r"\bP?LIST_ENTRY\b(?!\s*\()")
+
+
+def _wine_list_entry(path: Path, module_dir: Path, crate: Path) -> int:
+    """A Wine module's `struct list` written as NT `LIST_ENTRY`, rewritten to wine/list.h's.
+
+    wine/list.h names its container-of macro `LIST_ENTRY(elem, type, field)`, and the model
+    reads the word as the NT doubly-linked list it knows: mfreadwrite came back with every
+    `struct list entry;` field typed `LIST_ENTRY` (whose links are Flink/Blink, so each
+    `->next` was E0609) and every container-of written as a call of the type alias. Only in
+    a crate that takes `list` from winelist-rust, and only when the module's own C never
+    names the NT type -- otherwise `LIST_ENTRY` may be meant. Returns the rewrite count.
+    """
+    if "winelist-rust" not in (crate / "Cargo.toml").read_text(errors="replace"):
+        return 0
+    c_text = "\n".join(
+        f.read_text(errors="replace") for f in module_dir.glob("*.[ch]") if f.is_file()
+    )
+    if "wine/list.h" not in c_text and "struct list" not in c_text:
+        return 0
+    if _NT_LIST_ENTRY_TYPE.search(c_text):
+        return 0
+    text = path.read_text(errors="replace")
+    n = 0
+
+    def sub(pattern: str, repl: str, s: str) -> str:
+        nonlocal n
+        out, k = re.subn(pattern, repl, s)
+        n += k
+        return out
+
+    text = sub(r"\bLIST_ENTRY\s*\(", "LIST_ENTRY!(", text)
+    text = sub(r"\bPLIST_ENTRY\b", "*mut list", text)
+    text = sub(r"\b_LIST_ENTRY\b", "list", text)  # mf: bindgen's tag spelling
+    text = sub(r"\bLIST_ENTRY\b(?!\s*!)", "list", text)
+    if n:
+        path.write_text(text)
+    return n
+
+
+def _c_struct_tag_names(path: Path, crate_src: Path) -> list[str]:
+    """`struct_NAME` for C's `struct NAME`, rewritten to the crate's own `NAME`.
+
+    The model spells a C struct TAG it has no typedef for as `struct_NAME` (evr's
+    `struct_evr`, mfplat's `struct_buffer`/`struct_sample`/`struct_media_type`): E0412
+    every time. Only when the crate defines `NAME` itself and nothing defines `struct_NAME`.
+    """
+    text = path.read_text(errors="replace")
+    used = set(re.findall(r"\bstruct_(\w+)\b", text))
+    if not used:
+        return []
+    # src/ and src/<module>/ only: a crate's src holds no build output to prune.
+    defs = "\n".join(
+        p.read_text(errors="replace") for p in [*crate_src.glob("*.rs"), *crate_src.glob("*/*.rs")]
+    )
+    done = []
+    for name in sorted(used):
+        if re.search(rf"\b(?:struct|union|type)\s+struct_{name}\b", defs):
+            continue
+        if not re.search(rf"\b(?:struct|union|type)\s+{name}\b", defs):
+            continue
+        text = re.sub(rf"\bstruct_{name}\b", name, text)
+        done.append(name)
+    if done:
+        path.write_text(text)
+    return done
+
+
 def _wine_debug_storage(path: Path) -> list[str]:
     """`WINE_DEFAULT_DEBUG_CHANNEL(ch)` is two statics in a HEADER macro, and resolve writes
     them once in the prelude (`_wine_debug_channels`). A translation that spells its own --
@@ -3760,6 +3828,14 @@ def stage_integrate(stem: str) -> None:
         if crt:
             changed += 1
             print(f"integrate: {path.stem}: CRT data read through its accessor: {', '.join(crt)}")
+        tags = _c_struct_tag_names(path, crate / "src")
+        if tags:
+            changed += 1
+            print(f"integrate: {path.stem}: C struct tag(s) as the crate's type: {', '.join(tags)}")
+        wl = _wine_list_entry(path, REPO / state["module_dir"], crate)
+        if wl:
+            changed += 1
+            print(f"integrate: {path.stem}: {wl} NT LIST_ENTRY(s) as wine/list.h's `list`")
         wine = _wine_debug_storage(path)
         if wine:
             changed += 1
