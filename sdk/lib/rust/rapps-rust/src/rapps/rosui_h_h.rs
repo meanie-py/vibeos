@@ -348,7 +348,7 @@ impl CUiWindow_CRichEdit {
     pub unsafe fn ComputeMinimalSize__body(&mut self, size: *mut SIZE) {
         let this_: *mut Self = self;
         // TODO: Maybe use WM_GETMINMAXINFO?
-        return (*this_).__base1.ComputeMinimalSize(size);
+        return (*this_).__base1.ComputeMinimalSize__body(size);
     }
     pub unsafe fn ComputeContentBounds__body(&mut self, rect: *mut RECT) {
         let this_: *mut Self = self;
@@ -411,7 +411,7 @@ impl CUiWindow_CWindowImpl_CAppInfoDisplay {
     pub unsafe fn ComputeMinimalSize__body(&mut self, size: *mut SIZE) {
         let this_: *mut Self = self;
         // TODO: Maybe use WM_GETMINMAXINFO?
-        return (*this_).__base1.ComputeMinimalSize(size);
+        return (*this_).__base1.ComputeMinimalSize__body(size);
     }
     pub unsafe fn ComputeContentBounds__body(&mut self, rect: *mut RECT) {
         let this_: *mut Self = self;
@@ -476,9 +476,9 @@ impl CUiWindow_CWindowImpl_CAppsListView_CListView {
     }
     pub unsafe fn ComputeMinimalSize__body(&mut self, size: *mut SIZE) {
         let this_: *mut Self = self;
-        // TODO: Maybe use WM_GETMINMAXINFO?
-        return (*this_).__base1.ComputeMinimalSize(size);
-    }
+            // TODO: Maybe use WM_GETMINMAXINFO?
+            return (*this_).__base1.ComputeMinimalSize__body(size);
+        }
     pub unsafe fn ComputeContentBounds__body(&mut self, rect: *mut RECT) {
         let this_: *mut Self = self;
             let mut r: RECT = core::mem::zeroed();
@@ -543,7 +543,7 @@ impl CUiWindow_CToolbar {
     pub unsafe fn ComputeMinimalSize__body(&mut self, size: *mut SIZE) {
         let this_: *mut Self = self;
         // TODO: Maybe use WM_GETMINMAXINFO?
-        return (*this_).__base1.ComputeMinimalSize(size);
+        return (*this_).__base1.ComputeMinimalSize__body(size);
     }
     pub unsafe fn ComputeContentBounds__body(&mut self, rect: *mut RECT) {
         let this_: *mut Self = self;
@@ -604,8 +604,7 @@ impl CUiWindow_CWindowImpl_CApplicationView {
     }
     pub unsafe fn ComputeMinimalSize__body(&mut self, size: *mut SIZE) {
         let this_: *mut Self = self;
-        // TODO: Maybe use WM_GETMINMAXINFO?
-        return (*this_).__base1.ComputeMinimalSize(size);
+        return (*this_).__base1.ComputeMinimalSize__body(size);
     }
     pub unsafe fn ComputeContentBounds__body(&mut self, rect: *mut RECT) {
         let this_: *mut Self = self;
@@ -935,7 +934,7 @@ impl CUiWindow_CComboBox {
     pub unsafe fn ComputeMinimalSize__body(&mut self, size: *mut SIZE) {
         let this_: *mut Self = self;
         // TODO: Maybe use WM_GETMINMAXINFO?
-        return (*this_).__base1.ComputeMinimalSize(size);
+        return (*this_).__base1.ComputeMinimalSize__body(size);
     }
     pub unsafe fn ComputeContentBounds__body(&mut self, rect: *mut RECT) {
         let this_: *mut Self = self;
@@ -1001,7 +1000,7 @@ impl CUiWindow_CSearchBar {
     pub unsafe fn ComputeMinimalSize__body(&mut self, size: *mut SIZE) {
         let this_: *mut Self = self;
         // TODO: Maybe use WM_GETMINMAXINFO?
-        return (*this_).__base1.ComputeMinimalSize(size);
+        return (*this_).__base1.ComputeMinimalSize__body(size);
     }
     pub unsafe fn ComputeContentBounds__body(&mut self, rect: *mut RECT) {
         let this_: *mut Self = self;
@@ -1048,7 +1047,7 @@ impl CUiWindow_CSearchBar {
     }
     pub unsafe fn GetWindowTextW(&mut self, szText: &mut CStringW) {
         let this_: *mut Self = self;
-        let length: INT = (*this_).__base2.__base0.GetWindowTextLengthW() + 1;
+        let length: i32 = (*this_).__base2.__base0.GetWindowTextLengthW() + 1;
         (*this_).__base2.__base0.GetWindowTextW__0(szText.GetBuffer(length), length);
         szText.ReleaseBuffer();
     }
@@ -1069,7 +1068,7 @@ impl CUiWindow_CTreeView {
     pub unsafe fn ComputeMinimalSize__body(&mut self, size: *mut SIZE) {
         let this_: *mut Self = self;
         // TODO: Maybe use WM_GETMINMAXINFO?
-        return (*this_).__base1.ComputeMinimalSize(size);
+        return (*this_).__base1.ComputeMinimalSize__body(size);
     }
     pub unsafe fn ComputeContentBounds__body(&mut self, rect: *mut RECT) {
         let this_: *mut Self = self;
@@ -1132,7 +1131,7 @@ impl CUiWindow_CStatusBar {
     pub unsafe fn ComputeMinimalSize__body(&mut self, size: *mut SIZE) {
         let this_: *mut Self = self;
         // TODO: Maybe use WM_GETMINMAXINFO?
-        return (*this_).__base1.ComputeMinimalSize(size);
+        return (*this_).__base1.ComputeMinimalSize__body(size);
     }
     pub unsafe fn ComputeContentBounds__body(&mut self, rect: *mut RECT) {
         let this_: *mut Self = self;

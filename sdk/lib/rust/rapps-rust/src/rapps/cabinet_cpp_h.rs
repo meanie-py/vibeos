@@ -94,7 +94,7 @@ pub unsafe extern "C" fn fnFileOpen(pszFile: *mut i8, oflag: i32, pmode: i32) ->
         dwCreationDisposition = OPEN_EXISTING;
     }
 
-    MultiByteToWide(pszFile as *const CStringA, core::ptr::addr_of_mut!(szFileName), CP_UTF8);
+    MultiByteToWide(&CStringA::from_ptr(pszFile), core::ptr::addr_of_mut!(szFileName), CP_UTF8);
 
     hFile = CreateFileW(
         szFileName.GetString(),
@@ -148,9 +148,9 @@ pub unsafe extern "C" fn fnNotify(fdint: FDINOTIFICATIONTYPE, pfdin: PFDINOTIFIC
                 let mut szCabFileName = CStringW::new();
 
                 // Append the destination directory to the file name.
-                MultiByteToWide((*pND).OutputDir as *const CStringA, addr_of_mut!(szExtractDir), CP_UTF8);
+                MultiByteToWide(&CStringA::from_ptr((*pND).OutputDir), addr_of_mut!(szExtractDir), CP_UTF8);
                 let codepage: UINT = if ((*pfdin).attribs & (_A_NAME_IS_UTF as u16)) != 0 { CP_UTF8 } else { CP_ACP };
-                MultiByteToWide((*pfdin).psz1 as *const CStringA, addr_of_mut!(szCabFileName), codepage);
+                MultiByteToWide(&CStringA::from_ptr((*pfdin).psz1), addr_of_mut!(szCabFileName), codepage);
 
                 if NotifyFileExtractCallback((szCabFileName.GetString()).cast(), ((*pfdin).cb) as UINT64, ((*pfdin).attribs) as UINT,
                                            (*pND).Callback, (*pND).CallerCookie) == 0

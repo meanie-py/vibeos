@@ -1908,6 +1908,22 @@ impl CStringA {
         }
     }
 
+    /// `CStringA(LPCSTR)`. NULL is the empty string, as in ATL. The C++ builds this
+    /// temporary implicitly wherever a `char*` meets a `const CStringA&` parameter; without
+    /// it rapps' FDI callbacks cast the `char*` itself to `*const CStringA` and read the
+    /// buffer pointer out of the path text (arm64: a fault at address "X:\\Profi").
+    pub unsafe fn from_ptr(pszSrc: *const c_char) -> Self {
+        let mut s = Self::new();
+        if !pszSrc.is_null() {
+            let mut n = 0usize;
+            while *pszSrc.add(n) != 0 {
+                n += 1;
+            }
+            s.SetString(pszSrc, n as i32);
+        }
+        s
+    }
+
     /// `CStringA(LPCWSTR)`. NULL is the empty string, as in ATL.
     pub unsafe fn from_wide(pszSrc: *const WCHAR) -> Self {
         let mut s = Self::new();

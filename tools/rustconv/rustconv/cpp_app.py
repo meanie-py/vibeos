@@ -2371,6 +2371,39 @@ def _match_ctor(base: ClassModel, arg: str) -> int:
     return 0
 
 
+_QUALIFIED_BASE_CALL = re.compile(r"\b(\w+)::this_->((?:__base\d+\.)+)(\w+)(\s*\()")
+
+
+def _qualified_base_calls(body: str, h: Hierarchy) -> str:
+    """`Base::M(..)` from a derived class -- the lowering leaves `Base::this_->__baseK.M(` --
+    is a NON-virtual call to Base's own M. Spelled `this_->__baseK.M(` it reaches the virtual
+    dispatcher, i.e. the derived override that is making the call: rapps' CUiWindow<CToolbar>
+    ::ComputeMinimalSize (`return CUiBox::ComputeMinimalSize(size);`) spun forever, and
+    cicero's CUIFWindow::Initialize shipped the same recursion. A virtual M is called as its
+    body, `M__body`; a non-virtual one just loses the qualifier. Only when the lowering gave
+    a base path: without one, dropping the qualifier would name the derived class's own M."""
+
+    def fix(mt: re.Match) -> str:
+        qual, path, name, paren = mt.group(1), mt.group(2), mt.group(3), mt.group(4)
+        start = h.by_short.get(qual)
+        if start is None:
+            return mt.group(0)
+        queue, seen = [start], set()
+        while queue:
+            c = queue.pop(0)
+            if c.name in seen:
+                continue
+            seen.add(c.name)
+            decl = next((x for x in c.methods if x.rust_name == name), None)
+            if decl is not None:
+                virtual = h.is_virtual(c, decl) and decl.body is not None and not decl.pure
+                return f"this_->{path}{name}{'__body' if virtual else ''}{paren}"
+            queue += [b for _, b in h.module_bases(c)]
+        return mt.group(0)
+
+    return _QUALIFIED_BASE_CALL.sub(fix, body)
+
+
 def _synthetic_method(cls: ClassModel, m: Method, h: Hierarchy, model: ModuleModel) -> str:
     n = cls.name
     # atl_rust's types are named bare on purpose (the prelude maps CSimpleString to CStringW);
@@ -2391,7 +2424,7 @@ def _synthetic_method(cls: ClassModel, m: Method, h: Hierarchy, model: ModuleMod
     ret = ty(m.return_type) if m.kind == "method" or m.kind == "operator" else "void"
     # The body too: atlimagedx.h's `FN_Startup Startup = ..` inside CImageDx is bindgen's
     # CImageDx_FN_Startup. Only names whose Outer_name the island HAS are rewritten.
-    body = ty(m.lowered or "{}")
+    body = _qualified_base_calls(ty(m.lowered or "{}"), h)
     if m.kind == "ctor":
         pro = _ctor_prologue(cls, m, h, model)
         body = "{\n" + "\n".join(pro) + "\n    " + body + "\n}"

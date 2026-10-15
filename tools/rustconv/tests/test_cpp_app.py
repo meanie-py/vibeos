@@ -1225,3 +1225,32 @@ def test_a_class_member_with_no_initializer_is_default_constructed():
         _assign_names(c)
     lines = cpp_app._ctor_prologue(cont, None, h, model)
     assert lines == ["    this_->m_Children.__ctor_0();"]
+
+
+def test_a_qualified_base_call_is_non_virtual():
+    # rapps: CUiWindow<CToolbar>::ComputeMinimalSize's `return CUiBox::ComputeMinimalSize(size);`
+    # reached the virtual dispatcher -- its own override -- and recursed forever.
+    box = ClassModel(
+        "CUiBox",
+        "CUiBox",
+        "class",
+        "r.h",
+        polymorphic=True,
+        methods=[
+            _m("ComputeMinimalSize", params=[("size", "SIZE *")], virtual=True, body=("r.h", 0, 1)),
+            _m("Plain", body=("r.h", 0, 1)),
+        ],
+    )
+    win = ClassModel("CWin", "CWin", "class", "r.h", [Base("CUiBox", "public")], polymorphic=True)
+    model = ModuleModel(classes={c.name: c for c in (box, win)})
+    for c in model.classes.values():
+        _assign_names(c)
+    h = cpp_app.Hierarchy(model)
+    body = (
+        "{ return CUiBox::this_->__base0.ComputeMinimalSize(size); "
+        "CUiBox::this_->__base0.Plain(); CListView::this_->Create(p); }"
+    )
+    out = cpp_app._qualified_base_calls(body, h)
+    assert "this_->__base0.ComputeMinimalSize__body(size)" in out
+    assert "this_->__base0.Plain()" in out and "CUiBox::" not in out
+    assert "CListView::this_->Create(p)" in out  # no base path: left alone

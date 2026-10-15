@@ -120,6 +120,10 @@ Rust — don't requeue it.)
   rapps bring-up: a polymorphic Drop resetting its own vtables, `return this;` as a secondary
   base (a probe of the saved units found 0 such returns in the shipped apps; `this` PASSED as
   a base argument is not yet audited), and `delete member;` (cosmetic once the model repairs it).
+- cpp_lower should spell a C++ implicit converting-constructor TEMPORARY (clang's
+  `ConstructorConversion` into a `const CStringA&` / `const CStringW&` parameter) as an
+  explicit `CStringA(p)`, the way `_temporary` does for written ones. rapps' three FDI
+  sites were hand-fixed and banked; the model's guess was a pointer cast.
 - ~290 bare fn aliases in already-shipped crates have the shape `_option_fn_aliases` fixes
   (non-`Option` fn pointer); UB only if the value can be zero. Audit with that pass.
 - certutil: a SHA1/`hashfile` case on a system with a CSP registered (the live CD has none;

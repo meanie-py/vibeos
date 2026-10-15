@@ -5353,6 +5353,18 @@ Each was one fix in the tool; listed so the next module's symptom can be matched
   replaced the whole expression with the operand's source text, so the operand's own
   `this_->` edit fell inside the replaced span. The model repaired every site, which hid it.
   Now the `delete` keyword alone becomes the call head.
+- **A qualified base call, `Base::M(args)`, from an override of M** is NON-virtual in C++.
+  The lowering left `Base::this_->__baseK.M(`, and `this_->__baseK.M(` in Rust is the virtual
+  dispatcher, which lands on the override making the call. rapps' `CUiWindow<CToolbar>::
+  ComputeMinimalSize` spun forever (appstorm's stuck-thread dump: `rapps.exe+0x29270`,
+  symbolized to CUiBox::ComputeMinimalSize <-> the override); cicero shipped the same in
+  CUIFWindow::Initialize. `_qualified_base_calls` writes `M__body` for a virtual M and drops
+  the qualifier otherwise -- only when the lowering supplied a base path.
+- **A `char*` passed to a `const CStringA&` parameter** builds a temporary in C++. The model
+  wrote `pszFile as *const CStringA` -- reinterpreting the path TEXT as a CStringA object --
+  and `GetString()` returned its first eight bytes as the buffer: rapps' FDI callbacks
+  faulted on arm64 at address 0x69666F72505C3A58, i.e. `"X:\Profi"` (any fault address that
+  decodes as ASCII is this class). Use `&CStringA::from_ptr(p)` (`CStringW::from_ptr` for wide).
 - **A polymorphic destructor** runs with the class's OWN vtables (C++ resets them first);
   Drop dispatched through the derived tables, so CPointerArray's destructor reached
   CUiCollection::OnRemoveItem's `delete ptr`. Drop now calls `__init_vtables` first.

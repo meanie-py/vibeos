@@ -602,6 +602,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **cicero: CUIFWindow::Initialize and CUIFShadow::Initialize recurse forever (open, found
+  2026-10-15, latent).** `cicero-rust/src/cicero/cicuif_cpp_h.rs` (lines ~1942, ~3051 at
+  c94cd0f6a11's tree): each override's `return CUIFObject::Initialize();` became
+  `(*this_).__base0.Initialize()` -- the VIRTUAL dispatcher, i.e. itself -- so anything that
+  initializes a cicero UI window overflows the stack. Boot never reaches it. The generator
+  is fixed (`cpp_app._qualified_base_calls`, from rapps' identical ComputeMinimalSize hang);
+  re-run `port cppapp` + `port replay` for cicero, msutb (18 qualified base calls) and
+  msctfime (4), or hand-fix the two sites to `Initialize__body()` and bank them.
+
 - **MM: finding free user address space is linear in the VAD count (open, found 2026-10-12).**
   `MiFindEmptyAddressRangeInTree` (`ARM3/vadnode.rs`, as ReactOS's C) walks every VAD in
   order, so N reservations cost O(N²). Upstream's x64 stress in kmtest ZwAllocateVirtualMemory
