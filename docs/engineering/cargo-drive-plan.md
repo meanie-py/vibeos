@@ -207,8 +207,9 @@ extends it from the boot spine to every fully-Rust module.
      reads from livecd lists); vendored C compiled into the module
      (mstsc's rdesktop: rung 6); 3dtext (a cargo package name cannot start with a
      digit; its generated cell is in the stash "wave9 3dtext cell"); two one-offs.
-     **Owed:** the ntoskrnl cells (hand-written) import kdcom from `kdcom.spec`,
-     while the build's kdcom import lib comes from `kdrosdbg.spec`.
+     The ntoskrnl cells imported kdcom from `kdcom.spec` while the build ships
+     kdrosdbg's kdcom.dll; identical specs hid it. Fixed 2026-10-15:
+     `Linker::kd_import_lib` picks the spec by `_WINKD_` as drivers/base does.
 3. **Give the C static libraries a cargo home.** `uuid` becomes a GUID crate generated
    from the same IDL/headers; `wine` (vendored libwine) and `conutils` are small. Until
    then cells link the cmake-built `.a` (`static_libs`), which keeps them cmake-bound.
