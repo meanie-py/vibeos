@@ -266,6 +266,8 @@ pub unsafe extern "C" fn cmdscanner(top: ::core::ffi::c_int) {
         if bell != 0 && (*c).c_bell as ::core::ffi::c_int != 0 {
             putchar('\u{7}' as i32);
         }
+        // Not a do-while condition: the C is `for (;;)` ending in this `break`, and its
+        // `continue`s skip it too (scan_dowhile_continue baselines this site).
         if (*c).c_handler
             != Some(
                 help as unsafe extern "C" fn(
