@@ -105,6 +105,18 @@ Rust — don't requeue it.)
   `ATL__ATL_WNDCLASSINFOW::m_wc` is `WNDCLASSEXA`, and prelude `DLGPROC`/`WNDPROC` are spelled
   over `ntdll_sys::HWND__` rather than the island's; both are transmuted at the call site.
   The model also wrote `new_0::<T>()` on non-generic fns and called `__ctor_0CUiWindow`.
+- A `port integrate` pass rewrites extern blocks after the hand bank is applied: a nested
+  block's closing brace is dedented to column 0 and `unsafe extern` loses `unsafe` (rapps'
+  misc/settings/loaddlg). Harmless on edition 2021, but hand text should be final; find the
+  pass and run it before `apply_hand`, or make it preserve the block's own text.
+- **Re-run `port cppapp` + `port replay` for the shipped C++ apps** after the member
+  default-construction fix (`_ctor_prologue`, 2026-10-15; rapps crashed on it). Audit of the
+  saved models: mspaint 10 members (CStyledCursor's `-1`/`CLR_INVALID` cache keys and
+  VirtualBrush's `PAL_MODERN` start zeroed -- first comparison differs, looks benign), certmgr 5
+  (CSortableHeader, CSplitter: read their ctors), cleanmgr 1 and mmc_new 21 (all CWindow,
+  harmless), certutil/drwtsn32/sndrec32 0. cicero/msctf/msutb/msctfime/ctfmon's saved models
+  predate a `Method` field rename (`callconv`) and could not be read; regenerate to audit.
+  The changed ctors lowered at $0 for rapps.
 - ~290 bare fn aliases in already-shipped crates have the shape `_option_fn_aliases` fixes
   (non-`Option` fn pointer); UB only if the value can be zero. Audit with that pass.
 - certutil: a SHA1/`hashfile` case on a system with a CSP registered (the live CD has none;

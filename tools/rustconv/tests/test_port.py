@@ -1203,6 +1203,33 @@ def test_flip_refuses_a_tu_with_no_rust(tmp_path, monkeypatch):
         port.stage_flip("m")
 
 
+def test_flip_finds_a_cppapp_tus_rust_in_its_synthetic_unit(tmp_path, monkeypatch):
+    # rapps: `appdb.cpp`'s Rust is `appdb_cpp_h.rs`; the preflight looked for `appdb.rs`.
+    import pytest as _pytest
+
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    monkeypatch.setattr(port, "STATE_ROOT", tmp_path / "state")
+    hpp = str(tmp_path / "state" / "m" / "cppapp" / "a_cpp.hpp")
+    state = {
+        "stem": "m",
+        "crate": "m-rust",
+        "module_dir": "m",
+        "tus": ["m/a.cpp"],
+        "cpp_tus": ["m/a.cpp"],
+        "cppapp": {"model": "x"},
+        "header_tus": {hpp: "m/a.cpp"},
+    }
+    monkeypatch.setattr(port, "load_state", lambda _s: state)
+    monkeypatch.setattr(port, "_crate_dir", lambda _s: tmp_path / "m-rust")
+    src = tmp_path / "m-rust" / "src" / "m"
+    src.mkdir(parents=True)
+    with _pytest.raises(port.PortError, match="no Rust for a.cpp"):
+        port.stage_flip("m")
+    (src / "a_cpp_h.rs").write_text("")
+    with _pytest.raises(FileNotFoundError, match="CMakeLists"):  # past the preflight
+        port.stage_flip("m")
+
+
 def test_a_dotted_tu_name_becomes_an_identifier_module():
     assert port._module_name("apisets.table.c") == "apisets_table"
     assert port._module_name("enum.c") == "enum"

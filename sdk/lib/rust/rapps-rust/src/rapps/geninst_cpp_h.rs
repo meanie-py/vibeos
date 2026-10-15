@@ -1054,6 +1054,7 @@ impl CommonInfo {
         (*this_).Count = 0;
         (*this_).Silent = IsSilent;
         (*this_).ArpKey = core::ptr::null_mut();
+        (*this_).Entries.__ctor_0();
         {
         }
     }

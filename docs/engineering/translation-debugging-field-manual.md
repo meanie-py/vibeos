@@ -5336,6 +5336,13 @@ Each was one fix in the tool; listed so the next module's symptom can be matched
   the external fallback only looked at the class's own bases, and because clang names the
   cast target `tagRECT` where the base list says `RECT`. It now walks module bases to the
   nearest external one and compares names through the typedef table: `m_Margin.__base0.__base0.left`.
+- **A member object with no initializer** (rapps' `CUiContainer { CUiCollection m_Children; }`,
+  no constructor of its own): the constructor prologue ran bases, vtables and init-list
+  members, but C++ also DEFAULT-CONSTRUCTS every class-typed member. `m_Children` stayed zeroed,
+  its CPointerArray never called DPA_Create, and rapps died at startup on all three arches
+  reading address 0 in `CountSizableChildren` (appstorm: exit 0xc0000005, symbolized with
+  `llvm-symbolizer-18 --obj=rapps.exe <RIP>`). `_ctor_prologue` now constructs such a member
+  when its class has anything to construct (`_needs_construction`).
 - **A plain struct holding an ATL type by value** was left to the island, which laid
   `CStringW` out as bindgen's `ATL_CStringW` and derived `Copy` over it. Now cppapp owns it.
 - **`(CALLBACK_TYPE)(-1)`** has no Rust constant: const evaluation rejects a fn pointer that

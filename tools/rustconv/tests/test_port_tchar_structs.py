@@ -12,6 +12,8 @@ def test_an_explicit_ansi_name_is_never_repointed(tmp_path):
         "pub type WNDCLASSEXW = _WNDCLASSEXW;\n"
         "pub struct _WNDCLASSEXA {}\npub struct _WNDCLASSEXW {}\n"
     )
-    (src / "m" / "a.rs").write_text("// the island spells m_wc as WNDCLASSEXA\nlet w: WNDCLASSEX;\n")
+    (src / "m" / "a.rs").write_text(
+        "// the island spells m_wc as WNDCLASSEXA\nlet w: WNDCLASSEX;\n"
+    )
     out = port._tchar_structs({"stem": "m"}, src / "prelude.rs")
     assert out == {"WNDCLASSEX": "WNDCLASSEXW"}

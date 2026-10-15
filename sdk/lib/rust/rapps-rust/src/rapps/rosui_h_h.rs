@@ -140,6 +140,7 @@ impl CUiBox {
     pub unsafe fn __ctor_0(&mut self) {
         let this_: *mut Self = self;
         (*this_).__init_vtables();
+        (*this_).m_Margin.__ctor_0();
         {
             (*this_).m_HorizontalAlignment = UiAlign_LeftTop;
             (*this_).m_VerticalAlignment = UiAlign_LeftTop;
@@ -252,7 +253,9 @@ impl CUiContainer {
         return &mut (*this_).m_Children;
     }
     pub unsafe fn __ctor_0(&mut self) {
-        let this_: *mut Self = self;}
+        let this_: *mut Self = self;
+        (*this_).m_Children.__ctor_0();
+    }
 }
 
 impl CUiPanel {
@@ -262,6 +265,8 @@ impl CUiPanel {
         (*this_).__base1.__ctor_0();
         (*this_).__base2.__ctor_0();
         (*this_).__init_vtables();
+        (*this_).m_Width.__ctor_0();
+        (*this_).m_Height.__ctor_0();
         {
             (*this_).m_Width = CUiMeasure::FitParent();
             (*this_).m_Height = CUiMeasure::FitParent();
@@ -664,6 +669,10 @@ impl CUiSplitPanel {
         (*this_).__base1.__ctor_0();
         (*this_).__base2.__ctor_0(core::ptr::null_mut());
         (*this_).__init_vtables();
+        (*this_).m_First.__ctor_0();
+        (*this_).m_Second.__ctor_0();
+        (*this_).m_Width.__ctor_0();
+        (*this_).m_Height.__ctor_0();
         {
             (*this_).m_hCursor = core::ptr::null_mut();
             (*this_).m_Width = CUiMeasure::FitParent();

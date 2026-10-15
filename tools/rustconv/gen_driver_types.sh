@@ -7920,7 +7920,7 @@ case "$DRIVER" in
     ;;
   rapps)
     # AUTO-DERIVED by rustconv.profile_derive on 2026-10-15 from base/applications/rapps/CMakeLists.txt
-    # (15 compiled TU(s), 289 headers in the include closure, 139 switch constant(s)).
+    # (16 compiled TU(s), 289 headers in the include closure, 139 switch constant(s)).
     # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
     # that exact sequence is bindgen-able). Review the WHY notes in the report.
     USERMODE=1

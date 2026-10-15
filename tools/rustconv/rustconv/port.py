@@ -1965,12 +1965,13 @@ def stage_flip(stem: str) -> None:
     # expand's translate stitch was refused (no body written), `port check` said "+1 module
     # not translated yet", and the flip went ahead -- the build then failed E0583 on all three
     # arches. A file test, not a cargo run: this is the check that must not be skippable.
-    src = _crate_dir(state) / "src" / stem
+    # The SAME mapping flip_cmake writes into the comment: a cppapp TU's Rust is its
+    # synthetic unit (`appdb.cpp` -> `appdb_cpp_h.rs`), which a `<stem>.rs` test never finds.
     missing = [
         Path(tu).name
         for tu in state.get("tus", [])
-        if not (src / f"{Path(tu).stem}.rs").is_file()
-        and not (src / Path(tu).stem / "mod.rs").is_file()
+        if not _flip_output(state, tu).is_file()
+        and not (_flip_output(state, tu).with_suffix("") / "mod.rs").is_file()
     ]
     if missing:
         raise PortError(
@@ -3815,6 +3816,18 @@ def stage_integrate(stem: str) -> None:
                 None,
             )
         )
+        if source is None:
+            # A synthetic HEADER unit (rapps' atlbase_h_h: CRegKey's bodies) compiles as its
+            # via TU does. Without this its worker's `fn RegDeleteKey(..)` kept the TCHAR
+            # name and all three arches failed the link on it.
+            source = next(
+                (
+                    REPO / via
+                    for unit, via in (state.get("header_tus") or {}).items()
+                    if Path(unit).stem + "_h" == path.stem
+                ),
+                None,
+            )
         if source is not None:
             linked = _aw_extern_link_names(path, source)
             if linked:

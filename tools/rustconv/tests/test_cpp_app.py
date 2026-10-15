@@ -1184,3 +1184,41 @@ def test_a_wide_string_global_is_a_static_of_its_units():
     # Not a lone wide literal (a macro the model must resolve): the model gets it.
     assert wide_string_static(GlobalVar("t", "const WCHAR[4]", "x.h", 'L"a" X')) is None
     assert wide_string_static(GlobalVar("u", "const WCHAR[1]", "x.h", 'L"ab"')) is None
+
+
+def test_a_class_member_with_no_initializer_is_default_constructed():
+    # rapps: CUiContainer has no constructor of its own; its `CUiCollection m_Children`
+    # (a CPointerArray whose constructor calls DPA_Create) was left zeroed, and the first
+    # GetCount read address 0. A plain member, a pointer member and a member whose class
+    # has nothing to construct get no call.
+    arr = ClassModel(
+        "CPointerArray",
+        "CPointerArray",
+        "class",
+        "r.h",
+        polymorphic=True,
+        methods=[_m("CPointerArray", "ctor", [("GrowthRate", "INT")])],
+    )
+    arr.methods[0].params[0].default = "10"
+    coll = ClassModel(
+        "CUiCollection", "CUiCollection", "class", "r.h", [Base("CPointerArray", "public")]
+    )
+    plain = ClassModel("CPlain", "CPlain", "struct", "r.h", fields=[Field("x", "INT")])
+    cont = ClassModel(
+        "CUiContainer",
+        "CUiContainer",
+        "class",
+        "r.h",
+        fields=[
+            Field("m_Children", "CUiCollection"),
+            Field("m_pOther", "CUiCollection *"),
+            Field("m_Plain", "CPlain"),
+            Field("n", "INT"),
+        ],
+    )
+    model = ModuleModel(classes={c.name: c for c in (arr, coll, plain, cont)})
+    h = cpp_app.Hierarchy(model)
+    for c in model.classes.values():
+        _assign_names(c)
+    lines = cpp_app._ctor_prologue(cont, None, h, model)
+    assert lines == ["    this_->m_Children.__ctor_0();"]

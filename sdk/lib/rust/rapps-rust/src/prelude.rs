@@ -147,6 +147,7 @@ pub const SETTINGSSUBKEY: *const u16 = (&[0x0053, 0x006f, 0x0066, 0x0074, 0x0077
 pub const STILL_ACTIVE: NTSTATUS = 0x103usize as NTSTATUS;
 pub const S_FALSE: HRESULT = ((1) as HRESULT);
 pub const S_OK: HRESULT = ((0) as HRESULT);
+pub type TBBUTTONINFO = TBBUTTONINFOW;
 pub const TVI_LAST: HTREEITEM = (((((-(0xfffe as c_int))) as ULONG_PTR)) as HTREEITEM);
 pub const TVI_ROOT: HTREEITEM = (((((-(0x10000 as c_int))) as ULONG_PTR)) as HTREEITEM);
 pub type TV_INSERTSTRUCT = TVINSERTSTRUCTW;

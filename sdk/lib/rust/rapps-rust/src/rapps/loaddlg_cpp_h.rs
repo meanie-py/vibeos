@@ -454,6 +454,8 @@ impl CDownloadManager {
         (*this_).m_Index = 0;
         (*this_).m_bCancelled = (FALSE as i32);
         (*this_).m_fDaf = 0;
+        (*this_).m_ListView.__ctor_0();
+        (*this_).m_ProgressBar.__ctor_0();
         {}
     }
     pub unsafe fn CreateInstanceHelper(Flags: UINT) -> *mut CDownloadManager {

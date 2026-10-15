@@ -2307,7 +2307,35 @@ def _ctor_prologue(
         elif f.default_init is not None:
             v = f.default_init.lstrip("=").strip()
             lines.append(f"    this_->{f.name} = {v};")
+        else:
+            # A class-typed member with no initializer is DEFAULT-CONSTRUCTED. rapps'
+            # CUiContainer (no constructor of its own) left `m_Children` zeroed, so its
+            # CPointerArray never ran DPA_Create, and the first GetCount read address 0 on
+            # all three arches.
+            member = None if re.search(r"[*&\[]", f.c_type) else h.by_short.get(short(f.c_type))
+            if member is not None and _needs_construction(member, h):
+                idx, call = _ctor_call(member, "()")
+                lines.append(f"    this_->{f.name}.__ctor_{idx}{call};")
     return lines
+
+
+def _needs_construction(cls: ClassModel, h: Hierarchy, seen: frozenset = frozenset()) -> bool:
+    """Whether default-constructing `cls` does anything zeroed storage does not already
+    hold: a constructor, a vtable, an in-class initializer, or a base or by-value member
+    that needs one."""
+    if cls.name in seen:
+        return False
+    seen = seen | {cls.name}
+    if cls.polymorphic or any(m.kind == "ctor" for m in cls.methods):
+        return True
+    if any(f.default_init is not None for f in cls.fields if not f.static):
+        return True
+    parts = [h.by_short.get(short(b.name)) for b in cls.bases] + [
+        h.by_short.get(short(f.c_type))
+        for f in cls.fields
+        if not f.static and not re.search(r"[*&\[]", f.c_type)
+    ]
+    return any(p is not None and _needs_construction(p, h, seen) for p in parts)
 
 
 def _ctor_call(base: ClassModel, arg: str) -> tuple[int, str]:

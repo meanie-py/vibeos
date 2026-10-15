@@ -2,6 +2,7 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 extern "system" {
+    #[link_name = "RegDeleteKeyW"]
     fn RegDeleteKey(hKey: HKEY, lpSubKey: LPCTSTR) -> LONG;
 }
 
