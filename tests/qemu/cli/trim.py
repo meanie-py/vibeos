@@ -14,6 +14,13 @@ can use again:
     `cargo test` or clippy lands in `target/<triple>/` or `target/debug/` instead — up to 8.4 G
     in one lane, re-creatable by re-running whatever made it.
 
+  * DEAD CUSTOM TARGETS. A per-module dir holds one subdir per target the module was built
+    for, named after the triple or, for a custom target, after its json (`i686-kernel`). When
+    the cell's `<name>.json` goes (a cell moved onto the builtin triple), that subdir is dead:
+    no build of the current source reads it. 215 of them held 27 G in one lane on 2026-10-15,
+    after the cargo-drive waves moved the i386 kernel cells off `i686-kernel.json`; each one
+    holds a build-std `core` (~106 M) plus ntkrnl-sys.
+
 Unlike `prune`, this never costs a warm build: everything it removes is unreachable by the
 current build configuration, so it can run on live lanes. Two guards keep that true:
 
@@ -80,6 +87,7 @@ class TrimPlan:
     paths: list[tuple[Path, int]] = field(default_factory=list)  # (path, bytes)
     superseded_units: int = 0
     adhoc_dirs: int = 0
+    dead_targets: int = 0
 
     @property
     def total(self) -> int:
@@ -184,6 +192,11 @@ def plan_target(target_root: Path, *, now: float, idle_hours: float) -> TrimPlan
     for d in adhoc:
         plan.paths.append((d, _size(d)))
         plan.adhoc_dirs += 1
+    dead_targets = _dead_custom_targets(target_root, now=now, idle_seconds=min(idle, 3600))
+    for d in dead_targets:
+        plan.paths.append((d, _size(d)))
+        plan.dead_targets += 1
+    adhoc += dead_targets
     for prof in _profile_dirs(target_root):
         if any(prof == d or d in prof.parents for d in adhoc):
             continue  # already going whole
@@ -202,6 +215,43 @@ def plan_target(target_root: Path, *, now: float, idle_hours: float) -> TrimPlan
     return plan
 
 
+# The per-module dirs the CMake build gives each cargo invocation: `<cell>-<arch>-cargo-link`
+# (the cell's own link) and `<cell>-<body>-rustlib` (its body crate's nested build).
+_CELL_LINK = re.compile(r"^(?P<cell>.+?)-(?:i386|amd64|arm64)-cargo-link$")
+_CELL_RUSTLIB = re.compile(r"^(?P<cell>.+?-cargo)-.+-rustlib$")
+# What a per-module dir holds besides its target subdirs.
+_MODULE_DIR_OTHER = {"release", "debug", "CACHEDIR.TAG", "tmp"}
+
+
+def _dead_custom_targets(target_root: Path, *, now: float, idle_seconds: float) -> list[Path]:
+    """Custom-target subdirs (`i686-kernel`) of per-module dirs whose cell no longer has the
+    target's json. Read against THIS worktree's source only; a dir whose cell cannot be found
+    is not judged. The idle window is capped at an hour: the rule is exact, the window only
+    keeps clear of a build that started before the json went."""
+    rust = target_root.parent
+    if rust.name != "rust" or not target_root.is_dir():
+        return []
+    dead = []
+    for entry in target_root.iterdir():
+        m = _CELL_LINK.match(entry.name) or _CELL_RUSTLIB.match(entry.name)
+        if not m or not entry.is_dir() or entry.is_symlink():
+            continue
+        cell = rust / m.group("cell")
+        if not (cell / "Cargo.toml").is_file():
+            continue
+        for sub in entry.iterdir():
+            if sub.name in _MODULE_DIR_OTHER or _ADHOC_TRIPLE.match(sub.name):
+                continue
+            if not sub.is_dir() or sub.is_symlink() or (cell / f"{sub.name}.json").exists():
+                continue
+            try:
+                if now - _newest_mtime(sub) >= idle_seconds:
+                    dead.append(sub)
+            except FileNotFoundError:
+                continue
+    return dead
+
+
 def plan_worktree(worktree: Path, *, now: float | None = None, idle_hours: float = 24) -> TrimPlan:
     now = time.time() if now is None else now
     plan = TrimPlan()
@@ -210,6 +260,7 @@ def plan_worktree(worktree: Path, *, now: float | None = None, idle_hours: float
         plan.paths += sub.paths
         plan.superseded_units += sub.superseded_units
         plan.adhoc_dirs += sub.adhoc_dirs
+        plan.dead_targets += sub.dead_targets
     return plan
 
 

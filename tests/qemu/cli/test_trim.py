@@ -155,3 +155,28 @@ def test_port_staging_trims_idle_targets_and_never_state(tmp_path):
     assert not (root / "idle" / "target-amd64").exists()
     assert (root / "idle" / "state.json").exists() and (root / "idle" / "hand").is_dir()
     assert (root / "busy" / "target-amd64").exists()
+
+
+def test_a_custom_target_whose_json_is_gone_goes_whole(tmp_path):
+    rust = tmp_path / "sdk/lib/rust"
+    target = rust / "target"
+    for cell, has_json in (("old-cargo", False), ("kept-cargo", True)):
+        (rust / cell).mkdir(parents=True)
+        (rust / cell / "Cargo.toml").write_text("")
+        if has_json:
+            (rust / cell / "i686-kernel.json").write_text("{}")
+        for d in (f"{cell}-i386-cargo-link", f"{cell}-body_rust-rustlib"):
+            for sub in ("i686-kernel", "i686-pc-windows-gnu", "release"):
+                (target / d / sub / "release").mkdir(parents=True)
+    # A per-module dir no cell owns is not judged.
+    (target / "gone-cargo-i386-cargo-link/i686-kernel").mkdir(parents=True)
+    old = os.stat(target).st_mtime + 2 * 3600
+    plan = trim.plan_worktree(tmp_path, now=old, idle_hours=24)
+    dead = sorted(str(p.relative_to(target)) for p, _ in plan.paths)
+    assert dead == [
+        "old-cargo-body_rust-rustlib/i686-kernel",
+        "old-cargo-i386-cargo-link/i686-kernel",
+    ]
+    assert plan.dead_targets == 2
+    # Within the hour a build that began before the json went may still be writing it.
+    assert trim.plan_worktree(tmp_path, now=os.stat(target).st_mtime + 60).dead_targets == 0
