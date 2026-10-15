@@ -213,3 +213,35 @@ pub unsafe extern "system" fn SHGetStockIconInfo(siid: INT, uFlags: UINT, psii: 
     }
     S_OK
 }
+
+// SHGetPropertyStoreForWindow returns the window's IPropertyStore (the app user model ID store).
+// This tree has no property-store implementation to hand out, so no store is returned: *ppv is
+// cleared and E_NOTIMPL reported, as the interface can't be produced rather than faking one.
+#[no_mangle]
+pub unsafe extern "system" fn SHGetPropertyStoreForWindow(
+    hwnd: HWND,
+    riid: *const c_void,
+    ppv: *mut *mut c_void,
+) -> HRESULT {
+    if ppv.is_null() {
+        return E_INVALIDARG;
+    }
+    *ppv = core::ptr::null_mut();
+    E_NOTIMPL
+}
+
+// Vista. Windows hands out an IApplicationAssociationRegistration (CLSID
+// ApplicationAssociationRegistration); the Rust shellole has no such class to construct,
+// so the call fails E_NOTIMPL with *ppv cleared, rather than returning an object whose
+// methods would all fail.
+#[no_mangle]
+pub unsafe extern "system" fn SHCreateAssociationRegistration(
+    _riid: *const c_void,
+    ppv: *mut *mut c_void,
+) -> HRESULT {
+    if ppv.is_null() {
+        return E_INVALIDARG;
+    }
+    *ppv = core::ptr::null_mut();
+    E_NOTIMPL
+}

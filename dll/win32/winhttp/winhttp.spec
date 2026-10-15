@@ -7,11 +7,15 @@
 @ stdcall WinHttpCloseHandle(ptr)
 @ stdcall WinHttpConnect(ptr wstr long long)
 @ stdcall WinHttpCrackUrl(wstr long long ptr)
+@ stdcall WinHttpCreateProxyResolver(ptr ptr)
 @ stdcall WinHttpCreateUrl(ptr long ptr ptr)
 @ stdcall WinHttpDetectAutoProxyConfigUrl(long ptr)
+@ stdcall WinHttpFreeProxyResult(ptr)
 @ stdcall WinHttpGetDefaultProxyConfiguration(ptr)
 @ stdcall WinHttpGetIEProxyConfigForCurrentUser(ptr)
 @ stdcall WinHttpGetProxyForUrl(ptr wstr ptr ptr)
+@ stdcall WinHttpGetProxyForUrlEx(ptr wstr ptr ptr)
+@ stdcall WinHttpGetProxyResult(ptr ptr)
 @ stdcall WinHttpOpen(wstr long wstr wstr long)
 @ stdcall WinHttpOpenRequest(ptr wstr wstr wstr wstr ptr long)
 @ stdcall WinHttpQueryAuthSchemes(ptr ptr ptr ptr)
@@ -55,18 +59,14 @@
 @ stub -version=0xA00+ WinHttpConnectionUpdateIfIndexTable
 @ stub -version=0xA00+ WinHttpCreateProxyList
 @ stub -version=0xA00+ WinHttpCreateProxyManager
-@ stub -version=0xA00+ WinHttpCreateProxyResolver
 @ stub -version=0xA00+ WinHttpCreateProxyResult
 @ stub -version=0xA00+ WinHttpCreateUiCompatibleProxyString
-@ stub -version=0xA00+ WinHttpFreeProxyResult
 @ stub -version=0xA00+ WinHttpFreeProxyResultEx
 @ stub -version=0xA00+ WinHttpFreeProxySettings
 @ stub -version=0xA00+ WinHttpFreeProxySettingsEx
 @ stub -version=0xA00+ WinHttpFreeQueryConnectionGroupResult
-@ stub -version=0xA00+ WinHttpGetProxyForUrlEx
 @ stub -version=0xA00+ WinHttpGetProxyForUrlEx2
 @ stub -version=0xA00+ WinHttpGetProxyForUrlHvsi
-@ stub -version=0xA00+ WinHttpGetProxyResult
 @ stub -version=0xA00+ WinHttpGetProxyResultEx
 @ stub -version=0xA00+ WinHttpGetProxySettingsEx
 @ stub -version=0xA00+ WinHttpGetProxySettingsResultEx

@@ -57,3 +57,20 @@ RpcGetAuthorizationContextForClient(RPC_BINDING_HANDLE ClientBinding,
           authz_client_context);
     return RPC_S_NO_CONTEXT_AVAILABLE;
 }
+
+/***********************************************************************
+ *           I_RpcOpenClientProcess (rpcrt4.@)
+ *
+ * Undocumented. Opens a handle on the process that made the current server call. This tree
+ * keeps no record of the client process for a call, so there is nothing to open: the output
+ * handle is NULL and RPC_S_CANNOT_SUPPORT is returned. Wine has no body for this export, and
+ * the parameter list is inferred from how the export is used, so it is unverified.
+ */
+RPC_STATUS WINAPI I_RpcOpenClientProcess(void *binding, DWORD desired_access, HANDLE *client_process)
+{
+    TRACE("(%p, %#lx, %p)\n", binding, desired_access, client_process);
+
+    if (client_process)
+        *client_process = NULL;
+    return RPC_S_CANNOT_SUPPORT;
+}

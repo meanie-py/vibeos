@@ -2,6 +2,7 @@
 spec2def(bthprops.cpl bthprops.cpl.spec)
 
 list(APPEND SOURCE
+    ${CMAKE_CURRENT_SOURCE_DIR}/bthprops_main.c
     ${CMAKE_CURRENT_BINARY_DIR}/bthprops_stubs.c
     ${CMAKE_CURRENT_BINARY_DIR}/bthprops.def)
 

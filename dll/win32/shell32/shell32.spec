@@ -509,7 +509,7 @@
 @ stdcall SHChangeNotify(long long ptr ptr) # 2k3:276, Vista:320
 @ stub -version=0x600+ SHChangeNotifyRegisterThread # Vista:321
 @ stdcall SHChangeNotifySuspendResume(long ptr long long) # 2k3:277, Vista:322
-@ stub -version=0x600+ SHCreateAssociationRegistration # Vista:323
+@ stdcall SHCreateAssociationRegistration(ptr ptr)
 @ stdcall SHCreateDataObject(ptr long ptr ptr ptr ptr) # Vista:324
 @ stdcall SHCreateDefaultContextMenu(ptr ptr ptr) # Vista:325
 @ stdcall SHCreateDefaultExtractIcon(ptr ptr) # Vista:326
@@ -568,6 +568,7 @@
 @ stdcall SHGetKnownFolderIDList(ptr long ptr ptr) # Vista:374
 @ stdcall SHGetKnownFolderPath(ptr long ptr ptr) # Vista:375
 @ stub -version=0x600+ SHGetLocalizedName # Vista:376
+@ stdcall SHGetPropertyStoreForWindow(ptr ptr ptr)
 @ stdcall SHGetMalloc(ptr) # 2k3:311, Vista:377
 @ stdcall SHGetNameFromIDList(ptr long ptr) # Vista:378
 @ stdcall SHGetNewLinkInfo(str str ptr long long) SHGetNewLinkInfoA # 2k3:312, Vista:379
@@ -834,7 +835,6 @@
 @ stub -version=0xA00+ SHELL32_TryVirtualDiscImageDriveEject
 @ stub -version=0xA00+ SHELL32_VerifySaferTrust
 @ stub -version=0xA00+ SHExecuteErrorMessageBox
-@ stub -version=0xA00+ SHGetPropertyStoreForWindow
 @ stub -version=0xA00+ SHGetSetFolderCustomSettings
 @ stub -version=0xA00+ SHOpenOrGetFolderView
 @ stub -version=0xA00+ SHResolveLibrary

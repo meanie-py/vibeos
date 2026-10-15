@@ -70,6 +70,7 @@
 @ stub SecpTranslateNameEx
 @ stdcall SetContextAttributesA(ptr long ptr long)
 @ stdcall SetContextAttributesW(ptr long ptr long)
+@ stdcall SetCredentialsAttributesW(ptr long ptr long)
 @ stdcall TranslateNameA(str long long ptr ptr)
 @ stdcall TranslateNameW(wstr long long ptr ptr)
 @ stdcall UnsealMessage(ptr ptr long ptr) DecryptMessage
@@ -87,7 +88,6 @@
 @ stub -version=0xA00+ SeciAllocateAndSetIPAddress # -> SSPICLI.SeciAllocateAndSetIPAddress
 @ stub -version=0xA00+ SeciFreeCallContext # -> SSPICLI.SeciFreeCallContext
 @ stub -version=0xA00+ SetCredentialsAttributesA # -> SSPICLI.SetCredentialsAttributesA
-@ stub -version=0xA00+ SetCredentialsAttributesW # -> SSPICLI.SetCredentialsAttributesW
 @ stub -version=0xA00+ SspiCompareAuthIdentities # -> SSPICLI.SspiCompareAuthIdentities
 @ stub -version=0xA00+ SspiCopyAuthIdentity # -> SSPICLI.SspiCopyAuthIdentity
 @ stub -version=0xA00+ SspiDecryptAuthIdentity # -> SSPICLI.SspiDecryptAuthIdentity

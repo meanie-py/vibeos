@@ -4949,3 +4949,23 @@ extern "system" {
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// AppContainer profiles are created by the profile service, which this tree does not ship, so a
+// profile can never be created. E_NOTIMPL is the honest result (Wine's stub says the same); the
+// output SID is cleared so a caller never reads a stale pointer.
+#[no_mangle]
+pub unsafe extern "system" fn CreateAppContainerProfile(
+    pszAppContainerName: LPCWSTR,
+    pszDisplayName: LPCWSTR,
+    pszDescription: LPCWSTR,
+    pCapabilities: *mut c_void,
+    dwCapabilityCount: DWORD,
+    ppSidAppContainerSid: *mut *mut c_void,
+) -> i32 {
+    if !ppSidAppContainerSid.is_null() {
+        *ppSidAppContainerSid = core::ptr::null_mut();
+    }
+    E_NOTIMPL_HR
+}
+
+const E_NOTIMPL_HR: i32 = 0x8000_4001u32 as i32;

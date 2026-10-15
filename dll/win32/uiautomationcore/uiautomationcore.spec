@@ -55,7 +55,7 @@
 @ stub TransformPattern_Rotate
 @ stdcall UiaAddEvent(ptr long ptr long ptr long ptr ptr)
 @ stdcall UiaClientsAreListening()
-#@ stub UiaDisconnectAllProviders
+@ stdcall UiaDisconnectAllProviders()
 @ stdcall UiaDisconnectProvider(ptr)
 @ stdcall UiaEventAddWindow(ptr long)
 @ stdcall UiaEventRemoveWindow(ptr long)
@@ -114,7 +114,6 @@
 @ stub -version=0xA00+ PostTestCheckForLeaks
 @ stub -version=0xA00+ StartIgnoringLeaks
 @ stub -version=0xA00+ StopIgnoringLeaks
-@ stub -version=0xA00+ UiaDisconnectAllProviders
 @ stub -version=0xA00+ UiaIAccessibleFromProvider
 @ stub -version=0xA00+ UiaProviderForNonClient
 @ stub -version=0xA00+ UiaRaiseActiveTextPositionChangedEvent

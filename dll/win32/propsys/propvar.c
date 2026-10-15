@@ -1070,6 +1070,22 @@ INT WINAPI PropVariantCompareEx(REFPROPVARIANT propvar1, REFPROPVARIANT propvar2
     return res;
 }
 
+/***********************************************************************
+ *             VariantCompare (propsys.@)
+ *
+ * Undocumented export (urlmon imports it by ordinal). Wine has no body and
+ * marks it a stub, so the signature and semantics here are inferred: a
+ * three-way comparison of two VARIANTs with the default PropVariant rules.
+ * VARIANT and PROPVARIANT share the vt/union layout for the types that
+ * matter to comparison, so the default PropVariant compare is used.
+ */
+INT WINAPI VariantCompare(const VARIANT *var1, const VARIANT *var2)
+{
+    TRACE("%p,%p\n", var1, var2);
+    return PropVariantCompareEx((const PROPVARIANT *)var1, (const PROPVARIANT *)var2,
+                                PVCU_DEFAULT, PVCF_DEFAULT);
+}
+
 HRESULT WINAPI PropVariantToVariant(const PROPVARIANT *propvar, VARIANT *var)
 {
     HRESULT hr = S_OK;

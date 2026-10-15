@@ -208,6 +208,8 @@ _SPEC = """\
 @ cdecl -arch=i386 Twin(long) Twin32
 @ cdecl -arch=win64 Twin(long) Twin64
 123 stdcall -noname Ordinal(long)
+@ stdcall -stub -version=0x600+ GatedStub(ptr)
+@ stub -version=0xA00+ GatedBareStub
 """
 
 
@@ -225,6 +227,10 @@ def test_spec_exports_follow_spec2def_version_arch_and_stub_rules(tmp_path):
     assert x86["X86Only"] == "ok" and x86["NotX86"].startswith("not exported")
     assert x86["Wide"].startswith("not exported") and x86["Twin"] == "ok"
     assert pecheck.spec_exports(sp, "x86_64", 0x600)["RegDeleteTreeA"] == "ok"
+    # A stub outside its version range is not exported at all: an import of it fails
+    # at load, not at call. `-stub` read before `-version` once hid that.
+    assert "0x600+" in e["GatedStub"] and "0xA00+" in e["GatedBareStub"]
+    assert pecheck.spec_exports(sp, "x86_64", 0x600)["GatedStub"] == "stub"
 
 
 def test_an_import_our_dll_does_not_export_fails_the_build(tmp_path, capsys, monkeypatch):

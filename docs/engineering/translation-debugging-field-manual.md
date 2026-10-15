@@ -473,6 +473,12 @@ the ACPI `_GTM` output buffer 8 bytes, a stack overrun at the first ACPI reply. 
 linking, had four more (a LUN list zeroed 8 bytes deep, SMART length checks that accept short
 buffers). `pointer_depth` rewrites `size_of::<*mut T>()` to `T` unless the C function takes the
 size of any pointer type or pointer variable.
+**The reverse also ships.** psapi's `ReadProcessMemory(h, &Peb->Ldr, &LoaderData,
+sizeof(LoaderData))` reads one pointer; the Rust sized it `size_of::<_PEB_LDR_DATA>()` (and the
+next read `size_of::<_LIST_ENTRY>()` into a single `Flink`), so every EnumProcessModules and
+GetModuleBaseName call wrote ~0x50 bytes over its stack locals and survived on layout luck. The
+tell is an out-buffer `&raw mut X as LPVOID` whose size names a struct while `X` is a pointer;
+a 20-line regex over the tree found no other site (2026-10-14).
 
 ### Per-arch provider differs, so a single-arch link check misses it
 `KeRaiseIrql`/`KeLowerIrql` are provided by **ntoskrnl on i386** (plus fastcall
@@ -506,6 +512,11 @@ Same family, three positions, all silent on the arch where the widths happen to 
   `>= FileSize` → zero-filled page → 0x1E STATUS_DISK_CORRUPT_ERROR.
 - **Argument.** An `i64` param declared `u32` (or swapped order) picks up 4 garbage stack bytes
   or shifts every later arg — cdfs got an Mcb `ByteCount` of `0x80000000_00000800`.
+- **Narrow argument taken wide, then range-checked: x64-only.** A `USHORT` (`ADDRESS_FAMILY`)
+  parameter declared `u32` and rejected when `> 0xFFFF`: x64 callers leave the register's upper
+  bits undefined, i386 pushes a clean slot. iphlpapi's `GetIpForwardTable2(AF_INET)` failed
+  ERROR_INVALID_PARAMETER on amd64 only (guest apitest `Win10Surface`, 2026-10-14). Take the
+  C prototype's width; never validate bits the ABI does not define.
 - **`extern static` width drift.** `MmThrottleTop` declared `u64`, defined `u32`, permanently
   tripped the Cc write throttle → `WriteFile` on a FAT volume never returned, with every probe
   in the FS write path showing nothing wrong `[§9.36-throttle]`.

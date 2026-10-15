@@ -64,6 +64,7 @@
 @ stub I_RpcNsBindingSetEntryNameW
 @ stub I_RpcNsInterfaceExported
 @ stub I_RpcNsInterfaceUnexported
+@ stdcall I_RpcOpenClientProcess(ptr long ptr)
 @ stub I_RpcParseSecurity
 @ stub I_RpcPauseExecution
 @ stub I_RpcProxyNewConnection
@@ -578,7 +579,6 @@
 @ stub -version=0xA00+ I_RpcMarshalBindingHandleAndInterfaceForNDF
 @ stub -version=0xA00+ I_RpcMgmtEnableDedicatedThreadPool
 @ stub -version=0xA00+ I_RpcMgmtQueryDedicatedThreadPool
-@ stub -version=0xA00+ I_RpcOpenClientProcess
 @ stub -version=0xA00+ I_RpcOpenClientThread
 @ stub -version=0xA00+ I_RpcServerDisableExceptionFilter
 @ stub -version=0xA00+ I_RpcServerGetAssociationID

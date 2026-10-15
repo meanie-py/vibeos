@@ -82,17 +82,7 @@ pub unsafe extern "system" fn NtAllocateVirtualMemoryEx(
     )
 }
 
-/// `NtOpenKeyEx` — wrapper over `NtOpenKey`. The OpenOptions FEX passes don't
-/// change behavior for its HKLM config probing; a plain open is compatible.
-#[no_mangle]
-pub unsafe extern "system" fn NtOpenKeyEx(
-    KeyHandle: PHANDLE,
-    DesiredAccess: ACCESS_MASK,
-    ObjectAttributes: POBJECT_ATTRIBUTES,
-    _OpenOptions: ULONG,
-) -> NTSTATUS {
-    NtOpenKey(KeyHandle, DesiredAccess, ObjectAttributes)
-}
+// NtOpenKeyEx moved to rtl/openkeyex.rs: it is a Win7 export every arch needs.
 
 /// `LdrGetDllFullName` — copy the module's `FullDllName` (NULL = main image)
 /// into the caller's buffer. Win10/Wine semantics: always NUL-terminated,

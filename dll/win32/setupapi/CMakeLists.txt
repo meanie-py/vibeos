@@ -15,6 +15,7 @@ spec2def(setupapi.dll setupapi.spec ADD_IMPORTLIB)
 list(APPEND SOURCE
     cfgmgr.c
     devclass.c
+    devprop.c
     devinst.c
     dialog.c
     dirid.c

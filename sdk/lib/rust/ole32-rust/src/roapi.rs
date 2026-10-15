@@ -390,6 +390,54 @@ pub unsafe extern "system" fn RoOriginateErrorW(_error: HRESULT, _max_len: u32, 
     0 // Wine stub returns FALSE
 }
 
+// The rest of api-ms-win-core-winrt-error-l1-1-0. There is no error-reporting
+// infrastructure here (no restricted error info, no WER stowed exceptions), so
+// nothing is ever recorded: the BOOL calls report "not reported" as Wine's do, and
+// the flags are the Windows default, RO_ERROR_REPORTING_USESETERRORINFO.
+const RO_ERROR_REPORTING_USESETERRORINFO: u32 = 0x0000_0004;
+const E_POINTER: HRESULT = 0x80004003u32 as i32;
+
+#[no_mangle]
+pub unsafe extern "system" fn RoTransformError(_old: HRESULT, _new: HRESULT, _message: HSTRING) -> BOOL {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RoTransformErrorW(_old: HRESULT, _new: HRESULT, _max_len: u32, _message: *const u16) -> BOOL {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RoGetErrorReportingFlags(flags: *mut u32) -> HRESULT {
+    if flags.is_null() {
+        return E_POINTER;
+    }
+    *flags = RO_ERROR_REPORTING_USESETERRORINFO;
+    S_OK
+}
+
+/// Accepted and ignored, as in Wine: with nothing recorded there is nothing to change.
+#[no_mangle]
+pub unsafe extern "system" fn RoSetErrorReportingFlags(_flags: u32) -> HRESULT {
+    S_OK
+}
+
+/// No error context can be captured without restricted error info; E_FAIL tells the
+/// caller nothing was stowed, where Wine's E_NOTIMPL claims a missing entry point.
+#[no_mangle]
+pub unsafe extern "system" fn RoCaptureErrorContext(_hr: HRESULT) -> HRESULT {
+    E_FAIL
+}
+
+extern "system" {
+    fn RaiseFailFastException(record: *mut c_void, context: *mut c_void, flags: u32);
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RoFailFastWithErrorContext(_hr: HRESULT) {
+    RaiseFailFastException(ptr::null_mut(), ptr::null_mut(), 0);
+}
+
 // ---- RoGetAgileReference ----
 
 #[repr(C)]

@@ -249,7 +249,10 @@ def spec_exports(spec: Path, arch: str, version: int) -> dict[str, str]:
                     lo_v = int(lo, 16)
                     hi_v = 0xFFF if r.endswith("+") else int(hi, 16) if hi else lo_v
                     inc |= lo_v <= version <= hi_v
-                if not inc and state == "ok":
+                # Whatever the row's kind: a `stub` or `-stub` row outside the version
+                # range is not exported at all, and counting it as a stub reported a
+                # load failure as a call-time one.
+                if not inc and not state.startswith("not exported on"):
                     state = f"exported only for -version={opt[9:]}, tree builds {version:#x}"
             elif (opt == "-stub" or opt.startswith("-stub=")) and state == "ok":
                 state = "stub"
