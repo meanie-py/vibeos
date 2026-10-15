@@ -342,7 +342,7 @@ pub unsafe fn CAvailableApplicationInfo__new_in_0(__p: *mut CAvailableApplicatio
 pub unsafe fn CAvailableApplicationInfo__new_0(Parser: *mut CConfigParser, PkgName: &CStringW, Category: AppsCategories, BasePath: &CPathW) -> *mut CAvailableApplicationInfo { CAvailableApplicationInfo__new_in_0(cpp_alloc::<CAvailableApplicationInfo>(), Parser, PkgName, Category, BasePath) }
 pub unsafe fn CAvailableApplicationInfo__delete(p: *mut CAvailableApplicationInfo) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0) as *mut CAppInfo; ((*(*sub).__vtbl).__delete)(sub); }
 impl Drop for CAvailableApplicationInfo {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- CInstalledApplicationInfo (base/applications/rapps/include/appinfo.h)
@@ -659,7 +659,7 @@ pub unsafe fn CPointerArray_CUiPrimitive__new_in_0(__p: *mut CPointerArray_CUiPr
 pub unsafe fn CPointerArray_CUiPrimitive__new_0() -> *mut CPointerArray_CUiPrimitive { CPointerArray_CUiPrimitive__new_in_0(cpp_alloc::<CPointerArray_CUiPrimitive>()) }
 pub unsafe fn CPointerArray_CUiPrimitive__delete(p: *mut CPointerArray_CUiPrimitive) { if p.is_null() { return; } core::ptr::drop_in_place(p); cpp_free(p as *mut core::ffi::c_void); }
 impl Drop for CPointerArray_CUiPrimitive {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- CUiRect (base/applications/rapps/include/rosui.h)
@@ -1086,7 +1086,7 @@ pub unsafe fn CUiWindow_CRichEdit__new_in_0(__p: *mut CUiWindow_CRichEdit) -> *m
 pub unsafe fn CUiWindow_CRichEdit__new_0() -> *mut CUiWindow_CRichEdit { CUiWindow_CRichEdit__new_in_0(cpp_alloc::<CUiWindow_CRichEdit>()) }
 pub unsafe fn CUiWindow_CRichEdit__delete(p: *mut CUiWindow_CRichEdit) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0) as *mut CUiPrimitive; ((*(*sub).__vtbl).__delete)(sub); }
 impl Drop for CUiWindow_CRichEdit {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- CUiWindow_CWindowImpl_CAppInfoDisplay (base/applications/rapps/include/rosui.h)
@@ -1176,7 +1176,7 @@ pub unsafe fn CUiWindow_CWindowImpl_CAppInfoDisplay__new_in_0(__p: *mut CUiWindo
 pub unsafe fn CUiWindow_CWindowImpl_CAppInfoDisplay__new_0() -> *mut CUiWindow_CWindowImpl_CAppInfoDisplay { CUiWindow_CWindowImpl_CAppInfoDisplay__new_in_0(cpp_alloc::<CUiWindow_CWindowImpl_CAppInfoDisplay>()) }
 pub unsafe fn CUiWindow_CWindowImpl_CAppInfoDisplay__delete(p: *mut CUiWindow_CWindowImpl_CAppInfoDisplay) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0) as *mut CUiPrimitive; ((*(*sub).__vtbl).__delete)(sub); }
 impl Drop for CUiWindow_CWindowImpl_CAppInfoDisplay {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- CUiWindow_CWindowImpl_CAppsListView_CListView (base/applications/rapps/include/rosui.h)
@@ -1266,7 +1266,7 @@ pub unsafe fn CUiWindow_CWindowImpl_CAppsListView_CListView__new_in_0(__p: *mut 
 pub unsafe fn CUiWindow_CWindowImpl_CAppsListView_CListView__new_0() -> *mut CUiWindow_CWindowImpl_CAppsListView_CListView { CUiWindow_CWindowImpl_CAppsListView_CListView__new_in_0(cpp_alloc::<CUiWindow_CWindowImpl_CAppsListView_CListView>()) }
 pub unsafe fn CUiWindow_CWindowImpl_CAppsListView_CListView__delete(p: *mut CUiWindow_CWindowImpl_CAppsListView_CListView) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0) as *mut CUiPrimitive; ((*(*sub).__vtbl).__delete)(sub); }
 impl Drop for CUiWindow_CWindowImpl_CAppsListView_CListView {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- CUiWindow_CToolbar (base/applications/rapps/include/rosui.h)
@@ -1356,7 +1356,7 @@ pub unsafe fn CUiWindow_CToolbar__new_in_0(__p: *mut CUiWindow_CToolbar) -> *mut
 pub unsafe fn CUiWindow_CToolbar__new_0() -> *mut CUiWindow_CToolbar { CUiWindow_CToolbar__new_in_0(cpp_alloc::<CUiWindow_CToolbar>()) }
 pub unsafe fn CUiWindow_CToolbar__delete(p: *mut CUiWindow_CToolbar) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0) as *mut CUiPrimitive; ((*(*sub).__vtbl).__delete)(sub); }
 impl Drop for CUiWindow_CToolbar {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- CUiWindow_CWindowImpl_CApplicationView (base/applications/rapps/include/rosui.h)
@@ -1446,7 +1446,7 @@ pub unsafe fn CUiWindow_CWindowImpl_CApplicationView__new_in_0(__p: *mut CUiWind
 pub unsafe fn CUiWindow_CWindowImpl_CApplicationView__new_0() -> *mut CUiWindow_CWindowImpl_CApplicationView { CUiWindow_CWindowImpl_CApplicationView__new_in_0(cpp_alloc::<CUiWindow_CWindowImpl_CApplicationView>()) }
 pub unsafe fn CUiWindow_CWindowImpl_CApplicationView__delete(p: *mut CUiWindow_CWindowImpl_CApplicationView) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0) as *mut CUiPrimitive; ((*(*sub).__vtbl).__delete)(sub); }
 impl Drop for CUiWindow_CWindowImpl_CApplicationView {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- CUiSplitPanel (base/applications/rapps/include/rosui.h)
@@ -1730,7 +1730,7 @@ pub unsafe fn CRichEdit__new_in_0(__p: *mut CRichEdit) -> *mut CRichEdit { if __
 pub unsafe fn CRichEdit__new_0() -> *mut CRichEdit { CRichEdit__new_in_0(cpp_alloc::<CRichEdit>()) }
 pub unsafe fn CRichEdit__delete(p: *mut CRichEdit) { if p.is_null() { return; } core::ptr::drop_in_place(p); cpp_free(p as *mut core::ffi::c_void); }
 impl Drop for CRichEdit {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- __AsyncInet: laid out by the bindgen island (types_<arch>.rs)
@@ -1975,7 +1975,7 @@ pub unsafe fn Brush__new_in_1(__p: *mut Brush, brush: *mut GpBrush, status: Stat
 pub unsafe fn Brush__new_1(brush: *mut GpBrush, status: Status) -> *mut Brush { Brush__new_in_1(cpp_alloc::<Brush>(), brush, status) }
 pub unsafe fn Brush__delete(p: *mut Brush) { if p.is_null() { return; } let sub = p as *mut Brush; ((*(*sub).__vtbl).__delete)(sub); }
 impl Drop for Brush {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- Gdiplus::SolidBrush (sdk/include/psdk/gdiplusbrush.h)
@@ -2088,7 +2088,7 @@ pub unsafe fn Image__new_in_3(__p: *mut Image, image: *mut GpImage, status: Stat
 pub unsafe fn Image__new_3(image: *mut GpImage, status: Status) -> *mut Image { Image__new_in_3(cpp_alloc::<Image>(), image, status) }
 pub unsafe fn Image__delete(p: *mut Image) { if p.is_null() { return; } let sub = p as *mut Image; ((*(*sub).__vtbl).__delete)(sub); }
 impl Drop for Image {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- Gdiplus::Bitmap (sdk/include/psdk/gdiplusheaders.h)
@@ -2282,7 +2282,7 @@ pub unsafe fn CAppScrnshotPreview__new_in_0(__p: *mut CAppScrnshotPreview, BaseP
 pub unsafe fn CAppScrnshotPreview__new_0(BasePath: &CStringW) -> *mut CAppScrnshotPreview { CAppScrnshotPreview__new_in_0(cpp_alloc::<CAppScrnshotPreview>(), BasePath) }
 pub unsafe fn CAppScrnshotPreview__delete(p: *mut CAppScrnshotPreview) { if p.is_null() { return; } core::ptr::drop_in_place(p); cpp_free(p as *mut core::ffi::c_void); }
 impl Drop for CAppScrnshotPreview {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- CAppInfoDisplay (base/applications/rapps/include/appview.h)
@@ -2351,7 +2351,7 @@ pub unsafe fn CAppInfoDisplay__new_in_0(__p: *mut CAppInfoDisplay) -> *mut CAppI
 pub unsafe fn CAppInfoDisplay__new_0() -> *mut CAppInfoDisplay { CAppInfoDisplay__new_in_0(cpp_alloc::<CAppInfoDisplay>()) }
 pub unsafe fn CAppInfoDisplay__delete(p: *mut CAppInfoDisplay) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0) as *mut CUiPrimitive; ((*(*sub).__vtbl).__delete)(sub); }
 impl Drop for CAppInfoDisplay {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- CAppsListView (base/applications/rapps/include/appview.h)
@@ -2443,7 +2443,7 @@ pub unsafe fn CAppsListView__new_in_0(__p: *mut CAppsListView) -> *mut CAppsList
 pub unsafe fn CAppsListView__new_0() -> *mut CAppsListView { CAppsListView__new_in_0(cpp_alloc::<CAppsListView>()) }
 pub unsafe fn CAppsListView__delete(p: *mut CAppsListView) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0) as *mut CUiPrimitive; ((*(*sub).__vtbl).__delete)(sub); }
 impl Drop for CAppsListView {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- CAppsListView::SortContext (base/applications/rapps/include/appview.h)
@@ -2641,7 +2641,7 @@ pub unsafe fn CApplicationView__new_in_0(__p: *mut CApplicationView, MainWindow:
 pub unsafe fn CApplicationView__new_0(MainWindow: *mut CMainWindow) -> *mut CApplicationView { CApplicationView__new_in_0(cpp_alloc::<CApplicationView>(), MainWindow) }
 pub unsafe fn CApplicationView__delete(p: *mut CApplicationView) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0) as *mut CUiPrimitive; ((*(*sub).__vtbl).__delete)(sub); }
 impl Drop for CApplicationView {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- CApplicationView::RESTORELISTSELECTION (base/applications/rapps/include/appview.h)
@@ -2754,7 +2754,7 @@ pub unsafe fn CUiWindow_CComboBox__new_in_0(__p: *mut CUiWindow_CComboBox) -> *m
 pub unsafe fn CUiWindow_CComboBox__new_0() -> *mut CUiWindow_CComboBox { CUiWindow_CComboBox__new_in_0(cpp_alloc::<CUiWindow_CComboBox>()) }
 pub unsafe fn CUiWindow_CComboBox__delete(p: *mut CUiWindow_CComboBox) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0) as *mut CUiPrimitive; ((*(*sub).__vtbl).__delete)(sub); }
 impl Drop for CUiWindow_CComboBox {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- CUiWindow_CSearchBar (base/applications/rapps/include/rosui.h)
@@ -2844,7 +2844,7 @@ pub unsafe fn CUiWindow_CSearchBar__new_in_0(__p: *mut CUiWindow_CSearchBar) -> 
 pub unsafe fn CUiWindow_CSearchBar__new_0() -> *mut CUiWindow_CSearchBar { CUiWindow_CSearchBar__new_in_0(cpp_alloc::<CUiWindow_CSearchBar>()) }
 pub unsafe fn CUiWindow_CSearchBar__delete(p: *mut CUiWindow_CSearchBar) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0) as *mut CUiPrimitive; ((*(*sub).__vtbl).__delete)(sub); }
 impl Drop for CUiWindow_CSearchBar {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- CUiWindow_CTreeView (base/applications/rapps/include/rosui.h)
@@ -2934,7 +2934,7 @@ pub unsafe fn CUiWindow_CTreeView__new_in_0(__p: *mut CUiWindow_CTreeView) -> *m
 pub unsafe fn CUiWindow_CTreeView__new_0() -> *mut CUiWindow_CTreeView { CUiWindow_CTreeView__new_in_0(cpp_alloc::<CUiWindow_CTreeView>()) }
 pub unsafe fn CUiWindow_CTreeView__delete(p: *mut CUiWindow_CTreeView) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0) as *mut CUiPrimitive; ((*(*sub).__vtbl).__delete)(sub); }
 impl Drop for CUiWindow_CTreeView {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- CSideTreeView (base/applications/rapps/include/gui.h)
@@ -2975,7 +2975,7 @@ pub unsafe fn CSideTreeView__new_in_0(__p: *mut CSideTreeView) -> *mut CSideTree
 pub unsafe fn CSideTreeView__new_0() -> *mut CSideTreeView { CSideTreeView__new_in_0(cpp_alloc::<CSideTreeView>()) }
 pub unsafe fn CSideTreeView__delete(p: *mut CSideTreeView) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0) as *mut CUiPrimitive; ((*(*sub).__vtbl).__delete)(sub); }
 impl Drop for CSideTreeView {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- CMainWindow (base/applications/rapps/include/gui.h)
@@ -3051,7 +3051,7 @@ pub unsafe fn CMainWindow__new_in_0(__p: *mut CMainWindow, db: *mut CAppDB, bApp
 pub unsafe fn CMainWindow__new_0(db: *mut CAppDB, bAppwiz: BOOL) -> *mut CMainWindow { CMainWindow__new_in_0(cpp_alloc::<CMainWindow>(), db, bAppwiz) }
 pub unsafe fn CMainWindow__delete(p: *mut CMainWindow) { if p.is_null() { return; } core::ptr::drop_in_place(p); cpp_free(p as *mut core::ffi::c_void); }
 impl Drop for CMainWindow {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- CAsyncLoadIcon (base/applications/rapps/appview.cpp)
@@ -3344,7 +3344,7 @@ pub unsafe fn CUiWindow_CStatusBar__new_in_0(__p: *mut CUiWindow_CStatusBar) -> 
 pub unsafe fn CUiWindow_CStatusBar__new_0() -> *mut CUiWindow_CStatusBar { CUiWindow_CStatusBar__new_in_0(cpp_alloc::<CUiWindow_CStatusBar>()) }
 pub unsafe fn CUiWindow_CStatusBar__delete(p: *mut CUiWindow_CStatusBar) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0) as *mut CUiPrimitive; ((*(*sub).__vtbl).__delete)(sub); }
 impl Drop for CUiWindow_CStatusBar {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- CLocalPtr_char (base/applications/rapps/include/misc.h)
@@ -3651,7 +3651,7 @@ pub unsafe fn SettingsField__new_in_0(__p: *mut SettingsField) -> *mut SettingsF
 pub unsafe fn SettingsField__new_0() -> *mut SettingsField { SettingsField__new_in_0(cpp_alloc::<SettingsField>()) }
 pub unsafe fn SettingsField__delete(p: *mut SettingsField) { if p.is_null() { return; } let sub = p as *mut SettingsField; ((*(*sub).__vtbl).__delete)(sub); }
 impl Drop for SettingsField {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- SettingsFieldBool (base/applications/rapps/settings.cpp)

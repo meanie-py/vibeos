@@ -818,7 +818,17 @@ def _render_class(
         )
     if any(m.kind == "dtor" and m.body and not _empty_body(m) for m in cls.methods):
         lines.append(f"impl Drop for {n} {{")
-        lines.append("    fn drop(&mut self) { unsafe { self.__dtor__body() } }")
+        if cls.polymorphic:
+            # A C++ destructor runs with the object's vtables pointing at ITS OWN class:
+            # CPointerArray's destructor calls OnRemoveItem through DPA_DestroyCallback and
+            # gets the BASE version, which deletes nothing. Dispatching to the derived
+            # CUiCollection::OnRemoveItem (`delete ptr`) freed rapps' CAppInfoDisplay a
+            # second time after ~CApplicationView had. Each base's own Drop resets in turn.
+            lines.append(
+                "    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }"
+            )
+        else:
+            lines.append("    fn drop(&mut self) { unsafe { self.__dtor__body() } }")
         lines.append("}")
     lines.append("")
     return "\n".join(lines)

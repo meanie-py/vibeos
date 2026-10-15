@@ -94,6 +94,9 @@ def test_layout_vtables_and_thunks():
     assert 'cpp_pure_virtual_call("snd::audio_receiver::audio_receive")' in rs
     # a real destructor makes Drop (and so no Copy); a destructor-free class is Copy
     assert "impl Drop for audio_membuffer" in rs
+    # ...and a polymorphic destructor runs with the class's OWN vtables, as in C++ (rapps'
+    # CPointerArray destructor reached the derived OnRemoveItem and double-deleted)
+    assert "unsafe { self.__init_vtables(); self.__dtor__body() }" in rs
     assert "#[derive(Clone, Copy)]\n#[repr(C)]\npub struct audio_producer" in rs
     assert 'Option<unsafe extern "C" fn(u32)>' in rs
 
