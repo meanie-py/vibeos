@@ -602,6 +602,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **amd64 ladder: fault64 rung 1 "AV params" (exit 0xBAF2) (FLAKE, open, found 2026-10-14).**
+  The merge-queue gate's amd64 smoke (`-smp 2`) saw fault64.exe's access-violation reach the
+  guest with wrong ExceptionInformation and rejected shell32-com a6e93b659ef8
+  (`/tmp/vibeos-cli/queue-batch-01792023758967068309/20261014-202239-ktj8bpu7-gate-i386+amd64+arm64/smoke-amd64-a1`).
+  The same tree then passed 6/6 (`./vibeos-cli smoke --arch amd64 --ladder --repeat 3`, with and
+  without `--smp 2`), and the change (ftp, Python tooling) is nowhere near exception dispatch.
+  One failure seen; frequency unknown -- a `farm` soak on the ladder would size it.
+
 - **ws2_32: `getservbyname("ftp", "tcp")` fails INTERMITTENTLY on amd64 (FLAKE, open, found
   2026-10-14).** In one of two identical amd64 modrun runs, both the C ftp (`ftp_c`) and the Rust
   one printed `ftp: ftp/tcp: unknown service` and exited 1
