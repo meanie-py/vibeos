@@ -1211,6 +1211,23 @@ dll/win32/lsasrv/CMakeLists.txt	1	# service.c — replaced by Rust (lsasrv-rust/
 dll/win32/lsasrv/CMakeLists.txt	1	# session.c — replaced by Rust (lsasrv-rust/src/lsasrv/session.rs)
 dll/win32/lsasrv/CMakeLists.txt	1	# srm.c — replaced by Rust (lsasrv-rust/src/lsasrv/srm.rs)
 dll/win32/lsasrv/CMakeLists.txt	1	# utils.c — replaced by Rust (lsasrv-rust/src/lsasrv/utils.rs)
+dll/win32/mf/CMakeLists.txt	1	# clock.c # replaced by Rust (sdk/lib/rust/mf-rust/src/mf/clock.rs)
+dll/win32/mf/CMakeLists.txt	1	# copier.c # replaced by Rust (sdk/lib/rust/mf-rust/src/mf/copier.rs)
+dll/win32/mf/CMakeLists.txt	1	# evr.c # replaced by Rust (sdk/lib/rust/mf-rust/src/mf/evr.rs)
+dll/win32/mf/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/mf-rust/src/mf/main.rs)
+dll/win32/mf/CMakeLists.txt	1	# quality.c # replaced by Rust (sdk/lib/rust/mf-rust/src/mf/quality.rs)
+dll/win32/mf/CMakeLists.txt	1	# sac.c # replaced by Rust (sdk/lib/rust/mf-rust/src/mf/sac.rs)
+dll/win32/mf/CMakeLists.txt	1	# samplegrabber.c # replaced by Rust (sdk/lib/rust/mf-rust/src/mf/samplegrabber.rs)
+dll/win32/mf/CMakeLists.txt	1	# sar.c # replaced by Rust (sdk/lib/rust/mf-rust/src/mf/sar.rs)
+dll/win32/mf/CMakeLists.txt	1	# scheme_handler.c # replaced by Rust (sdk/lib/rust/mf-rust/src/mf/scheme_handler.rs)
+dll/win32/mf/CMakeLists.txt	1	# session.c # replaced by Rust (sdk/lib/rust/mf-rust/src/mf/session.rs)
+dll/win32/mf/CMakeLists.txt	1	# topology.c # replaced by Rust (sdk/lib/rust/mf-rust/src/mf/topology.rs)
+dll/win32/mf/CMakeLists.txt	1	# topology_loader.c # replaced by Rust (sdk/lib/rust/mf-rust/src/mf/topology_loader.rs)
+dll/win32/mfplat/CMakeLists.txt	1	# buffer.c # replaced by Rust (sdk/lib/rust/mfplat-rust/src/mfplat/buffer.rs)
+dll/win32/mfplat/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/mfplat-rust/src/mfplat/main.rs)
+dll/win32/mfplat/CMakeLists.txt	1	# mediatype.c # replaced by Rust (sdk/lib/rust/mfplat-rust/src/mfplat/mediatype.rs)
+dll/win32/mfplat/CMakeLists.txt	1	# queue.c # replaced by Rust (sdk/lib/rust/mfplat-rust/src/mfplat/queue.rs)
+dll/win32/mfplat/CMakeLists.txt	1	# sample.c # replaced by Rust (sdk/lib/rust/mfplat-rust/src/mfplat/sample.rs)
 dll/win32/mfreadwrite/CMakeLists.txt	1	# reader.c # replaced by Rust (sdk/lib/rust/mfreadwrite-rust/src/mfreadwrite/reader.rs)
 dll/win32/mfreadwrite/CMakeLists.txt	1	# writer.c # replaced by Rust (sdk/lib/rust/mfreadwrite-rust/src/mfreadwrite/writer.rs)
 dll/win32/mlang/CMakeLists.txt	1	# compiles rust_cohab_stub.c (wine debug no-ops + IsEqualGUID/min + vtbl
@@ -2068,6 +2085,7 @@ modules/rostests/kmtests/CMakeLists.txt	1	# binary became kmtest.exe. Our confor
 modules/rostests/kmtests/CMakeLists.txt	1	# implementation — NOT the dummy.c stub in the same archive; pseh precedes ntoskrnl on
 modules/rostests/kmtests/CMakeLists.txt	1	# one shim (_InterlockedAddLargeStatistic, see kmt_native_seh_shims.c), boots, and
 modules/rostests/kmtests/CMakeLists.txt	1	# the msvc-env retarget. _except_handler3 resolves from libpseh.a (i386/seh.s, a real
+modules/rostests/winetests/mf/CMakeLists.txt	1	# Wine's mf conformance suite. transform.c is linked for the helpers mf.c shares with it
 modules/rostests/winetests/user32/CMakeLists.txt	1	# (`CONTROL ... ,10,10,100,50 { 1,2,3,4,5 }`), which is what dialog.c's
 ntoskrnl/CMakeLists.txt	1	# define only keeps the dead-mirror C copies (traphandler.c/traphdlr.c,
 ntoskrnl/CMakeLists.txt	1	# guid.c — replaced by Rust (ntoskrnl-rust/src/guid.rs)

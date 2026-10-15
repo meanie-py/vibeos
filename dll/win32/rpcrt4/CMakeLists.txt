@@ -31,6 +31,7 @@ list(APPEND SOURCE
     rpc_assoc.c
     rpc_async.c
     rpc_binding.c
+    rpc_callattr.c
     rpc_message.c
     rpcrt4_main.c
     rpc_transport.c

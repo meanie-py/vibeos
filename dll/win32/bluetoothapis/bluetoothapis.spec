@@ -33,16 +33,16 @@
 @ stub BluetoothGATTAbortReliableWrite
 @ stub BluetoothGATTBeginReliableWrite
 @ stub BluetoothGATTEndReliableWrite
-@ stub BluetoothGATTGetCharacteristicValue
-@ stub BluetoothGATTGetCharacteristics
+@ stdcall BluetoothGATTGetCharacteristicValue(ptr ptr long ptr ptr long)
+@ stdcall BluetoothGATTGetCharacteristics(ptr ptr long ptr ptr long)
 @ stub BluetoothGATTGetDescriptorValue
-@ stub BluetoothGATTGetDescriptors
+@ stdcall BluetoothGATTGetDescriptors(ptr ptr long ptr ptr long)
 @ stub BluetoothGATTGetIncludedServices
-@ stub BluetoothGATTGetServices
-@ stub BluetoothGATTRegisterEvent
-@ stub BluetoothGATTSetCharacteristicValue
-@ stub BluetoothGATTSetDescriptorValue
-@ stub BluetoothGATTUnregisterEvent
+@ stdcall BluetoothGATTGetServices(ptr long ptr ptr long)
+@ stdcall BluetoothGATTRegisterEvent(ptr long ptr ptr ptr ptr long)
+@ stdcall BluetoothGATTSetCharacteristicValue(ptr ptr ptr int64 long)
+@ stdcall BluetoothGATTSetDescriptorValue(ptr ptr ptr long)
+@ stdcall BluetoothGATTUnregisterEvent(ptr long)
 @ stub BluetoothGetDeviceInfo
 @ stub BluetoothGetLocalServiceInfo
 @ stdcall BluetoothGetRadioInfo(ptr ptr)

@@ -851,7 +851,8 @@ selected by `#if`, a `static inline`, and a `.spec` alias each break the headerâ
 assumption independently, and all three are invisible from the source.
 The remembered rule did not hold. That exact declaration shipped in wscript, msiexec, ole32 and
 shell32's recycle bin, copied between preludes by `port resolve`'s tree consensus. cscript
-crashed on every script error. It is now mechanized twice: `scan_varargs_spec_arity`
+crashed on every script error, and mfplat's Rust (found the same day from the other side) on its
+first `MFTRegister`, inside msvcrt's printf. It is now mechanized twice: `scan_varargs_spec_arity`
 (`vibeos-cli check`, baseline empty) holds every variadic `extern` to its `.spec` export's
 fixed arity, and resolve's renderer binds a count-form `swprintf`/`vswprintf` to
 `_snwprintf`/`_vsnwprintf`.
@@ -1399,6 +1400,21 @@ allocation used the real element size, so nothing looked wrong until index 1.
 **Fix.** Cast first: `(field as PREAL).add(i)`, ideally through one helper
 (`consrv/handle.rs::handle_at`). `scan_opaque_ptr_arith` gates it (baseline empty).
 
+### A COM interface the -sys crate carries opaque has no methods and no fields
+**Symptom.** `cannot find function IStream_Seek` (every widl wrapper but the ones some other
+path generated) and `no field cbSize on type ntdll_sys::nt::tagSTATSTG`, though the module's
+own headers define both in full. mfplat's byte stream, 57 errors deep.
+
+**Cause.** A user-mode island blocklists every name ntdll-sys exports, so the module shares
+one identity for NT types. ntdll-sys carries `IStream`, `IStreamVtbl` and `tagSTATSTG` as
+`{ _unused: [u8; 0] }` (rtl's memory stream only needs the pointer), and the blocklist keeps
+the empty version. No vtable means `port macros` has nothing to generate wrappers from.
+
+**Fix.** `UNBLOCK="IStream IStreamVtbl tagSTATSTG STATSTG LPSTREAM"` in the module's `# >>> hand`
+block, then re-island: the island owns the full objidl definitions. Not automatic for every
+opaque name: `_TP_POOL` and friends are opaque in the real headers too, and a local copy of
+those would split their identity from the ntdll-sys functions that take them.
+
 ### `(base as *mut PBYTE).offset(n)` strides by a POINTER, not a byte
 The C's `(PBYTE)base + n` came out as a cast to a pointer *to* a `PBYTE` followed by
 `.offset(n)`, which steps 8 bytes per unit on 64-bit; the result is cast straight back, so it
@@ -1434,6 +1450,21 @@ subtraction.
 cursors. To triage, grep `\.(next|prev|Flink|Blink)\)? as \*mut <Struct>` and check the field's
 offset. The 2026-09-30 sweep found 22 hits; all but this one were offset-0 (secur32's
 `entry`) or were casting to a byte or void pointer.
+
+### A switch `break` that now leaves the loop
+**Symptom.** A loop over a list or an array stops after the first element of one kind.
+mf's session_check_topology leaked one node reference per SetTopology (Wine's suite counted
+eight); welcome's TranslateEscapes stopped translating after the first `\x`.
+
+**Cause.** C's `case X: ...; break;` inside a `for`/`while` leaves the SWITCH. Translated to
+a `match` arm ending in `break;`, it leaves the LOOP, skipping the rest of the iteration
+(mf's `IMFTopologyNode_Release(node)`) and every later element.
+
+**Fix.** Delete the `break;`: a match arm never falls through. Not the once-through
+`loop { match .. }` idiom some translations use for a switch, where leaving the loop is
+leaving the switch. `scan_match_arm_break` gates it; its baseline is the 19 sites
+triaged as deliberate (the C had a `goto` to the function's exit, or the Rust is
+hand-written).
 
 ### A list walk that starts at the head it stops at
 

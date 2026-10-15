@@ -53,6 +53,12 @@
 #endif /* __GNUC__ */
 #endif /* !__WINE_PRINTF_ATTR */
 
+#ifdef WINETEST_WINE_DBG_STUBS
+/* Defined in testlist.c below; declared here for the test TUs that call it without
+ * wine/debug.h (Wine's mf transform.c debugstr helpers). */
+const char * __cdecl wine_dbg_sprintf( const char *format, ... ) __WINE_PRINTF_ATTR(1,2);
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif

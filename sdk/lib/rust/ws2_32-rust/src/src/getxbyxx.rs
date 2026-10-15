@@ -1886,3 +1886,23 @@ pub unsafe extern "system" fn WSACancelAsyncRequest(hAsyncTaskHandle: HANDLE) ->
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+/// Wine protocol.c GetHostNameW: fetch the ANSI name via gethostname, convert with CP_ACP;
+/// WSAEFAULT if `name` is NULL or the converted string (incl. NUL) exceeds `namelen` WCHARs.
+#[no_mangle]
+pub unsafe extern "system" fn GetHostNameW(name: *mut u16, namelen: i32) -> i32 {
+    let mut buf: [i8; 256] = [0; 256]; // [255] stays 0: gethostname copies at most 255 bytes
+    if name.is_null() {
+        SetLastError(WSAEFAULT);
+        return SOCKET_ERROR;
+    }
+    if gethostname(buf.as_mut_ptr(), buf.len() as i32) != 0 {
+        return SOCKET_ERROR; // gethostname already set the last error
+    }
+    if MultiByteToWideChar(0 /* CP_ACP */, 0, buf.as_ptr(), -1, core::ptr::null_mut(), 0) > namelen {
+        SetLastError(WSAEFAULT);
+        return SOCKET_ERROR;
+    }
+    MultiByteToWideChar(0, 0, buf.as_ptr(), -1, name, namelen);
+    0
+}

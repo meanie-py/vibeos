@@ -3462,3 +3462,25 @@ pub unsafe extern "system" fn LocalUnlock(hMem: HLOCAL) -> BOOL {
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+
+/// GetPhysicallyInstalledSystemMemory (Vista SP1+). Real Windows reads the SMBIOS
+/// Memory Device table (installed DIMM capacity, which can exceed what the OS can
+/// address). We have no SMBIOS parser here, so -- like Wine -- we report total
+/// usable physical memory (GlobalMemoryStatusEx.ullTotalPhys) in KiB. Divergence
+/// from Wine: if GlobalMemoryStatusEx fails we propagate FALSE (and its last
+/// error) instead of returning an uninitialised value.
+#[no_mangle]
+pub unsafe extern "system" fn GetPhysicallyInstalledSystemMemory(TotalMemoryInKilobytes: *mut ULONGLONG) -> BOOL {
+    if TotalMemoryInKilobytes.is_null() {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return 0;
+    }
+    let mut Status: MEMORYSTATUSEX = core::mem::zeroed();
+    Status.dwLength = core::mem::size_of::<MEMORYSTATUSEX>() as DWORD;
+    if GlobalMemoryStatusEx(&mut Status) == 0 {
+        return 0;
+    }
+    *TotalMemoryInKilobytes = Status.ullTotalPhys / 1024;
+    1
+}

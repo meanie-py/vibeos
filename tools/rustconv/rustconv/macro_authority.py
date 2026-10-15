@@ -350,6 +350,23 @@ _LINEMARKER = re.compile(r'^# (\d+) "([^"]*)"')
 _DEFINE_LINE = re.compile(r"^#define ([A-Za-z_]\w*)")
 
 
+def _collect_defines(preprocessed: str, live: dict[Path, set[str]]) -> None:
+    """Fold one `-E -dD` output into ``live``: every file the preprocessor ENTERED is a key.
+
+    Entered means live even with no #define of its own: mfplat_private.h holds only inline
+    functions, and its absence read as "no TU includes it", which dropped debugstr_propvar &
+    co. from the crate on the next `port macros`.
+    """
+    current: Path | None = None
+    for line in preprocessed.splitlines():
+        if (m := _LINEMARKER.match(line)) is not None:
+            current = Path(m.group(2)).resolve() if not m.group(2).startswith("<") else None
+            if current is not None:
+                live.setdefault(current, set())
+        elif current is not None and (d := _DEFINE_LINE.match(line)) is not None:
+            live.setdefault(current, set()).add(d.group(1))
+
+
 def live_defines(repo_root: Path, sources: list[Path]) -> dict[Path, set[str]] | None:
     """{file: macro names its LIVE `#define`s create}, by the TUs' own preprocessor (`-E -dD`).
 
@@ -374,12 +391,7 @@ def live_defines(repo_root: Path, sources: list[Path]) -> dict[Path, set[str]] |
             ran = True
             # Present even with no #define of its own: it says THIS source was preprocessed.
             live.setdefault(source.resolve(), set())
-            current: Path | None = None
-            for line in result.stdout.splitlines():
-                if (m := _LINEMARKER.match(line)) is not None:
-                    current = Path(m.group(2)).resolve() if not m.group(2).startswith("<") else None
-                elif current is not None and (d := _DEFINE_LINE.match(line)) is not None:
-                    live.setdefault(current, set()).add(d.group(1))
+            _collect_defines(result.stdout, live)
     return live if ran else None
 
 

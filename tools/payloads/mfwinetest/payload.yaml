@@ -1,4 +1,4 @@
-# Wine's own conformance suites for the Media Foundation stack and the small
+# Wine's own conformance suites for the Media Foundation stack (mfplat, mf) and the small
 # Win10 DLLs imported with it (mfplat, rtworkq, wevtapi, qwave), run by the
 # apitest sweep runner. These modules are Wine imports, so Wine's suites are
 # both their spec and the before/after oracle for their Rust translation.
@@ -6,9 +6,9 @@
 # The list is olewinetest's gen_suites.py pointed at these suites; see that
 # payload for why the list registers DLLs first and why children start on C:.
 name: mfwinetest
-description: Wine mfplat + rtworkq + wevtapi + qwave conformance suites under the apitest sweep runner
+description: Wine mfplat + mf + rtworkq + wevtapi + qwave conformance suites under the apitest sweep runner
 
-build_hint: "tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites mfplat,rtworkq,wevtapi,qwave --register mf,mfreadwrite,evr --out-dir tools/payloads/mfwinetest"
+build_hint: "tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites mfplat,mf,rtworkq,wevtapi,qwave --register mf,mfreadwrite,evr --skip mf:transform --out-dir tools/payloads/mfwinetest"
 
 binaries:
   - src: tools/payloads/apitest/apitest-sweep-{arch}.exe
@@ -22,6 +22,8 @@ binaries:
     dest: bin/apitest-cwd.txt
   - src: build-{arch}/modules/rostests/winetests/mfplat/mfplat_winetest.exe
     dest: bin/mfplat_winetest.exe
+  - src: build-{arch}/modules/rostests/winetests/mf/mf_winetest.exe
+    dest: bin/mf_winetest.exe
   - src: build-{arch}/modules/rostests/winetests/rtworkq/rtworkq_winetest.exe
     dest: bin/rtworkq_winetest.exe
   - src: build-{arch}/modules/rostests/winetests/wevtapi/wevtapi_winetest.exe
