@@ -1141,12 +1141,53 @@ pub unsafe extern "system" fn MmCheckSystemImage(_image_handle: HANDLE) -> NTSTA
     STATUS_SUCCESS
 }
 
-unsafe fn LdrpFetchAddressOfSecurityCookie(_base_address: PVOID, _size_of_image: ULONG) -> PVOID {
-    core::ptr::null_mut()
+/// The image's /GS cookie, from its load-config directory, or null when it has none in range.
+unsafe fn LdrpFetchAddressOfSecurityCookie(base_address: PVOID, size_of_image: ULONG) -> PVOID {
+    const IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG: u16 = 10;
+    let mut dir_size: ULONG = 0;
+    let config_dir = RtlImageDirectoryEntryToData(
+        base_address,
+        TRUE as u32,
+        IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG,
+        &mut dir_size,
+    ) as *const IMAGE_LOAD_CONFIG_DIRECTORY;
+    let through_cookie = core::mem::offset_of!(IMAGE_LOAD_CONFIG_DIRECTORY, SecurityCookie)
+        + core::mem::size_of::<ULONG_PTR>();
+    if config_dir.is_null() || (dir_size as usize) < through_cookie {
+        return core::ptr::null_mut();
+    }
+    let cookie = (*config_dir).SecurityCookie as usize;
+    let base = base_address as usize;
+    if cookie <= base || cookie >= base + size_of_image as usize - core::mem::size_of::<ULONG_PTR>() {
+        return core::ptr::null_mut();
+    }
+    cookie as PVOID
 }
 
-unsafe fn LdrpInitSecurityCookie(_ldr_entry: *mut LDR_DATA_TABLE_ENTRY) -> PVOID {
-    core::ptr::null_mut()
+/// Give a freshly loaded image its own /GS cookie before its entry point runs. Drivers built
+/// with a current WDK check this in `__security_init_cookie` and `__fastfail` when they still
+/// find the compiler's default (Realtek's Windows 10 RTL8153 driver did, at DriverEntry).
+unsafe fn LdrpInitSecurityCookie(ldr_entry: *mut LDR_DATA_TABLE_ENTRY) -> PVOID {
+    let cookie = LdrpFetchAddressOfSecurityCookie((*ldr_entry).DllBase, (*ldr_entry).SizeOfImage)
+        as *mut ULONG_PTR;
+    if cookie.is_null() {
+        return core::ptr::null_mut();
+    }
+    if *cookie as u64 == DEFAULT_SECURITY_COOKIE as u64 || *cookie == 0 {
+        let counter = KeQueryPerformanceCounter(core::ptr::null_mut());
+        // The address is unique; the tick only needs to differ between loads.
+        let mut new_cookie = (cookie as ULONG_PTR) ^ (counter.u.LowPart as ULONG_PTR);
+        // Some images expect the top 16 bits clear, as in the default cookie.
+        #[cfg(target_pointer_width = "64")]
+        if new_cookie as u64 > 0x0000_FFFF_FFFF_FFFFu64 {
+            new_cookie >>= 16;
+        }
+        if new_cookie == 0 || new_cookie == *cookie {
+            new_cookie = (DEFAULT_SECURITY_COOKIE as ULONG_PTR).wrapping_add(1);
+        }
+        *cookie = new_cookie;
+    }
+    cookie as PVOID
 }
 
 // MmLoadSystemImage: translated from mm_sysldr_shims.c. Loads a kernel-mode

@@ -3,8 +3,8 @@
 # usbdlib.h). crate-type=staticlib → libusbdex_rust.a, linked into the
 # `usbdex` cmake static lib (cohabitation, usbdex.c commented out) so every
 # USB consumer picks up the Rust impl. Self-contained: the 7 functions are
-# UNIMPLEMENTED stubs (faithful to the C), so there is no ntkrnl-sys
-# dependency. The functions are plain cdecl (no NTAPI in usbdlib.h) →
+# real since 2026-10-14 (the C was UNIMPLEMENTED stubs); no ntkrnl-sys
+# dependency (pool calls are declared directly). The functions are plain cdecl (no NTAPI in usbdlib.h) →
 # `extern "C"`. 3-arch.
 
 [package]

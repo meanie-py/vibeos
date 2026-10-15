@@ -177,7 +177,9 @@ int main(void)
             break;
         }
         media = *(ULONG *)(buf + sizeof(ULONG));
-        if (media == 0 || !lan || i >= 30)
+        /* An NDIS 6 miniport reports its link asynchronously, after the bind (QEMU's
+         * e1000 under Intel's e1g6 says "up" ~1 s later), so wait on QEMU too. */
+        if (media == 0 || i >= (lan ? 30u : 10u))
         {
             SAY("step link: media connect status %lu (0 = connected) after %lus\n", media, i);
             break;
