@@ -16,15 +16,7 @@ target_include_directories(dwnl_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set(DWNL_REUSED
     ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils.a
     ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils_rust.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/pseh/libpseh.a
     ${CMAKE_BINARY_DIR}/sdk/lib/uuid/libuuid.a)
-if(ARCH STREQUAL "i386")
-    list(APPEND DWNL_REUSED ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a)
-endif()
-if(ARCH STREQUAL "arm64")
-    list(APPEND DWNL_REUSED ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a)
-endif()
 add_cargo_module(dwnl dwnl-cargo dwnl.exe
     KIND win32exe
     BODY_CRATE dwnl-rust

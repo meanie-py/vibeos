@@ -14,10 +14,8 @@ target_include_directories(arp_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # Generated inputs those compiles read, ordered before them.
 add_dependencies(arp_shims arp_msg)
 add_dependencies(arp_res arp_msg)
-set(ARP_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(arp arp-cargo arp.exe
     KIND win32exe
     BODY_CRATE arp-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS arp_shims arp_res ${ARP_REUSED})
+    EXTRA_DEPENDS arp_shims arp_res)

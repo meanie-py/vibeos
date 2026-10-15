@@ -15,10 +15,8 @@ add_rc_deps(hotplug.rc ${hotplug_rc_deps})
 add_library(hotplug_res OBJECT hotplug.rc)
 target_compile_definitions(hotplug_res PRIVATE UNICODE _UNICODE)
 target_include_directories(hotplug_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(HOTPLUG_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(hotplug hotplug-cargo hotplug.dll
     KIND win32dll
     BODY_CRATE hotplug-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS hotplug_res ${HOTPLUG_REUSED})
+    EXTRA_DEPENDS hotplug_res)

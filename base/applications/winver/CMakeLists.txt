@@ -11,10 +11,8 @@
 add_library(winver_res OBJECT winver.rc)
 target_compile_definitions(winver_res PRIVATE UNICODE _UNICODE)
 target_include_directories(winver_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(WINVER_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(winver winver-cargo winver.exe
     KIND win32exe
     BODY_CRATE winver-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS winver_res ${WINVER_REUSED})
+    EXTRA_DEPENDS winver_res)

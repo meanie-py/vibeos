@@ -10,10 +10,8 @@ add_rc_deps(resource.rc ${CMAKE_CURRENT_SOURCE_DIR}/res/setup.ico)
 add_library(wusa_res OBJECT resource.rc)
 target_compile_definitions(wusa_res PRIVATE UNICODE _UNICODE)
 target_include_directories(wusa_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(WUSA_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(wusa wusa-cargo wusa.exe
     KIND win32exe
     BODY_CRATE wusa-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS wusa_res ${WUSA_REUSED})
+    EXTRA_DEPENDS wusa_res)

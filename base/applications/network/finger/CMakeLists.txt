@@ -14,10 +14,8 @@ add_library(finger_shims OBJECT rust_varargs_shim.c)
 # whose windres command the cargo link replays.
 add_library(finger_res OBJECT finger.rc)
 target_include_directories(finger_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(FINGER_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(finger finger-cargo finger.exe
     KIND win32exe
     BODY_CRATE finger-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS finger_shims finger_res ${FINGER_REUSED})
+    EXTRA_DEPENDS finger_shims finger_res)

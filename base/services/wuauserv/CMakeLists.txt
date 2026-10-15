@@ -10,10 +10,8 @@ spec2def(wuauserv.dll wuauserv.spec ADD_IMPORTLIB)
 add_library(wuauserv_res OBJECT wuauserv.rc)
 target_compile_definitions(wuauserv_res PRIVATE UNICODE _UNICODE)
 target_include_directories(wuauserv_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(WUAUSERV_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(wuauserv wuauserv-cargo wuauserv.dll
     KIND win32dll
     BODY_CRATE wuauserv-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS wuauserv_res ${WUAUSERV_REUSED})
+    EXTRA_DEPENDS wuauserv_res)

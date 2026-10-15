@@ -15,9 +15,9 @@ fn main() {
     };
 
     let static_libs: &[&str] = match arch.as_str() {
-        "x86" => &["sdk/lib/dxguid/libdxguid.a", "sdk/lib/udmihelp/libudmihelp.a", "sdk/lib/dmilib/libdmilib.a", "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a"],
-        "x86_64" => &["sdk/lib/dxguid/libdxguid.a", "sdk/lib/udmihelp/libudmihelp.a", "sdk/lib/dmilib/libdmilib.a", "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a"],
-        "aarch64" => &["sdk/lib/dxguid/libdxguid.a", "sdk/lib/udmihelp/libudmihelp.a", "sdk/lib/dmilib/libdmilib.a", "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a"],
+        "x86" => &["sdk/lib/dxguid/libdxguid.a", "sdk/lib/udmihelp/libudmihelp.a", "sdk/lib/dmilib/libdmilib.a", "engine:oldnames"],
+        "x86_64" => &["sdk/lib/dxguid/libdxguid.a", "sdk/lib/udmihelp/libudmihelp.a", "sdk/lib/dmilib/libdmilib.a", "engine:oldnames"],
+        "aarch64" => &["sdk/lib/dxguid/libdxguid.a", "sdk/lib/udmihelp/libudmihelp.a", "sdk/lib/dmilib/libdmilib.a", "engine:oldnames"],
         _ => unreachable!(),
     };
 

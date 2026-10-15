@@ -15,9 +15,9 @@ fn main() {
     };
 
     let late_libs: &[&str] = match arch.as_str() {
-        "x86" => &["sdk/lib/pseh/libpseh.a", "sdk/lib/evtlib/libevtlib.a", "sdk/lib/crt/libchkstk.a", "sdk/lib/evtlib/libevtlib_rust.a", "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a"],
-        "x86_64" => &["sdk/lib/pseh/libpseh.a", "sdk/lib/evtlib/libevtlib.a", "sdk/lib/evtlib/libevtlib_rust.a", "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a"],
-        "aarch64" => &["sdk/lib/pseh/libpseh.a", "sdk/lib/evtlib/libevtlib.a", "sdk/lib/crt/libchkstk.a", "sdk/lib/evtlib/libevtlib_rust.a", "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a"],
+        "x86" => &["engine:pseh", "sdk/lib/evtlib/libevtlib.a", "engine:chkstk", "sdk/lib/evtlib/libevtlib_rust.a", "engine:oldnames"],
+        "x86_64" => &["engine:pseh", "sdk/lib/evtlib/libevtlib.a", "sdk/lib/evtlib/libevtlib_rust.a", "engine:oldnames"],
+        "aarch64" => &["engine:pseh", "sdk/lib/evtlib/libevtlib.a", "engine:chkstk", "sdk/lib/evtlib/libevtlib_rust.a", "engine:oldnames"],
         _ => unreachable!(),
     };
 

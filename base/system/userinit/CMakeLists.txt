@@ -23,8 +23,7 @@ target_include_directories(userinit_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # windres command), so the .res is no longer reused — but the userinit_res
 # OBJECT lib stays (EXTRA_DEPENDS below) to populate compile_commands.json.
 set(USERINIT_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
+    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 
 add_cargo_module(userinit userinit-cargo userinit.exe
     KIND win32exe

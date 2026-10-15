@@ -13,10 +13,8 @@ spec2def(cards.dll cards.spec)
 add_library(cards_res OBJECT cards.rc)
 target_compile_definitions(cards_res PRIVATE UNICODE _UNICODE)
 target_include_directories(cards_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(CARDS_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(cards cards-cargo cards.dll
     KIND win32dll
     BODY_CRATE cards-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS cards_res ${CARDS_REUSED})
+    EXTRA_DEPENDS cards_res)

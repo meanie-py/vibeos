@@ -6,7 +6,6 @@
 # The translated C, kept on disk:
 # mofcomp.c  # replaced by Rust (sdk/lib/rust/mofcomp-rust/src/mofcomp/mofcomp.rs)
 set(MOFCOMP_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
     ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(mofcomp mofcomp-cargo mofcomp.exe
     KIND win32exe

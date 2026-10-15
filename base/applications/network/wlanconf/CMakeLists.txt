@@ -14,15 +14,7 @@ target_compile_definitions(wlanconf_res PRIVATE UNICODE _UNICODE)
 target_include_directories(wlanconf_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set(WLANCONF_REUSED
     ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils_rust.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/pseh/libpseh.a)
-if(ARCH STREQUAL "i386")
-    list(APPEND WLANCONF_REUSED ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a)
-endif()
-if(ARCH STREQUAL "arm64")
-    list(APPEND WLANCONF_REUSED ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a)
-endif()
+    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils_rust.a)
 add_cargo_module(wlanconf wlanconf-cargo wlanconf.exe
     KIND win32exe
     BODY_CRATE wlanconf-rust

@@ -16,7 +16,6 @@ add_library(localmon_res OBJECT localmon.rc)
 target_compile_definitions(localmon_res PRIVATE UNICODE _UNICODE)
 target_include_directories(localmon_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set(LOCALMON_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
     ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(localmon localmon-cargo localmon.dll
     KIND win32dll

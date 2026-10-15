@@ -23,7 +23,6 @@ add_library(dxdiag_res OBJECT dxdiag.rc)
 target_compile_definitions(dxdiag_res PRIVATE UNICODE _UNICODE)
 target_include_directories(dxdiag_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set(DXDIAG_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
     ${CMAKE_BINARY_DIR}/sdk/lib/dmilib/libdmilib.a
     ${CMAKE_BINARY_DIR}/sdk/lib/dxguid/libdxguid.a
     ${CMAKE_BINARY_DIR}/sdk/lib/udmihelp/libudmihelp.a)

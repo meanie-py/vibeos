@@ -15,7 +15,6 @@ add_library(ifmon_res OBJECT ifmon.rc)
 target_compile_definitions(ifmon_res PRIVATE UNICODE _UNICODE)
 target_include_directories(ifmon_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set(IFMON_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
     ${CMAKE_BINARY_DIR}/sdk/lib/uuid/libuuid.a)
 add_cargo_module(ifmon ifmon-cargo ifmon.dll
     KIND win32dll

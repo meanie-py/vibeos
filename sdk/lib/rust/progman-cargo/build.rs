@@ -15,9 +15,9 @@ fn main() {
     };
 
     let late_libs: &[&str] = match arch.as_str() {
-        "x86" => &["sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a"],
-        "x86_64" => &["sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a"],
-        "aarch64" => &["sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a"],
+        "x86" => &["engine:oldnames"],
+        "x86_64" => &["engine:oldnames"],
+        "aarch64" => &["engine:oldnames"],
         _ => unreachable!(),
     };
 

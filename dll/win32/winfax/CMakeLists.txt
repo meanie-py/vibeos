@@ -9,10 +9,8 @@ spec2def(winfax.dll winfax.spec)
 # whose windres command the cargo link replays.
 add_library(winfax_res OBJECT winfax.rc)
 target_include_directories(winfax_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(WINFAX_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(winfax winfax-cargo winfax.dll
     KIND win32dll
     BODY_CRATE winfax-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS winfax_res ${WINFAX_REUSED})
+    EXTRA_DEPENDS winfax_res)

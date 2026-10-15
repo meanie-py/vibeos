@@ -528,8 +528,12 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
     if build_deps and objlibs:
         block.append("# Generated inputs those compiles read, ordered before them.")
         block += [f"add_dependencies({lib} {' '.join(build_deps)})" for lib in objlibs]
-    every = sorted({lib for libs in cell.static_libs.values() for lib in libs})
-    by_arch = {a: set(libs) for a, libs in cell.static_libs.items()}
+    # cmake builds what the cell still reuses; the engine builds `engine:` libraries.
+    reused = {
+        a: [x for x in libs if not x.startswith("engine:")] for a, libs in cell.static_libs.items()
+    }
+    every = sorted({lib for libs in reused.values() for lib in libs})
+    by_arch = {a: set(libs) for a, libs in reused.items()}
     common = [lib for lib in every if all(lib in by_arch[a] for a in ARCHES)]
     if every:
         var = f"{cell.target.upper()}_REUSED"
@@ -564,6 +568,15 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
     if build_deps and not objlibs:
         call.append(f"add_dependencies({cell.target} {' '.join(build_deps)})")
     return out + "\n".join(block + call) + "\n"
+
+
+# cmake static libraries reactos-link builds itself (`engine_lib`): a cell names them
+# `engine:<name>` and no longer waits on cmake to build them.
+ENGINE_LIBS = {
+    "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a": "engine:oldnames",
+    "sdk/lib/crt/libchkstk.a": "engine:chkstk",
+    "sdk/lib/pseh/libpseh.a": "engine:pseh",
+}
 
 
 # ---------------------------------------------------------------- the model
@@ -642,6 +655,7 @@ def model(target: str, repo: Path = REPO) -> Cell:
                     imports.append((specs[base][0], specs[base][1], base))
                     order.append((base, False))
                 continue
+            lib = ENGINE_LIBS.get(lib, lib)
             if lib not in static:
                 static.append(lib)
                 if after_body:

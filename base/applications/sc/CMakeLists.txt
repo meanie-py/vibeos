@@ -25,10 +25,8 @@ add_definitions(-DDEFINE_GUID)
 add_library(sc_res OBJECT sc.rc)
 target_compile_definitions(sc_res PRIVATE UNICODE _UNICODE)
 target_include_directories(sc_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(SC_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(sc sc-cargo sc.exe
     KIND win32exe
     BODY_CRATE sc-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS sc_res ${SC_REUSED})
+    EXTRA_DEPENDS sc_res)

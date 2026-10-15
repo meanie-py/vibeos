@@ -59,10 +59,7 @@ target_include_directories(winlogon_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # from .spec. The residue (winlogon_c) + the .res (winlogon_res) are in-scope
 # target names.
 set(WINLOGON_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/pseh/libpseh.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
+    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 
 add_cargo_module(winlogon winlogon-cargo winlogon.exe
     KIND win32exe

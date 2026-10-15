@@ -19,9 +19,7 @@ include_directories(${REACTOS_SOURCE_DIR}/sdk/include/reactos/subsys)
 # now a Rust port in smss-csrss-rust (crate::entry_point → Rust _main). The
 # ntdll import lib is generated in-cargo from ntdll.spec.
 set(SMSS_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/pseh/libpseh.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/smlib/libsmlib.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a)
+    ${CMAKE_BINARY_DIR}/sdk/lib/smlib/libsmlib.a)
 
 add_cargo_module(smss smss-cargo smss.exe
     KIND native

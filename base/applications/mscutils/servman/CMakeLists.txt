@@ -33,10 +33,8 @@ target_compile_definitions(servman_shims PRIVATE UNICODE _UNICODE)
 add_library(servman_res OBJECT servman.rc)
 target_compile_definitions(servman_res PRIVATE UNICODE _UNICODE)
 target_include_directories(servman_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(SERVMAN_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(servman servman-cargo servman.exe
     KIND win32exe
     BODY_CRATE servman-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS servman_shims servman_res ${SERVMAN_REUSED})
+    EXTRA_DEPENDS servman_shims servman_res)

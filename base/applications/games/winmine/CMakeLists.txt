@@ -13,7 +13,6 @@ add_library(winmine_res OBJECT rsrc.rc)
 target_compile_definitions(winmine_res PRIVATE UNICODE _UNICODE)
 target_include_directories(winmine_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set(WINMINE_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
     ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(winmine winmine-cargo winmine.exe
     KIND win32exe

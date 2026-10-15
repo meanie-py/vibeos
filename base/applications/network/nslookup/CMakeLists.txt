@@ -10,10 +10,8 @@ include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_or
 # whose windres command the cargo link replays.
 add_library(nslookup_res OBJECT nslookup.rc)
 target_include_directories(nslookup_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(NSLOOKUP_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(nslookup nslookup-cargo nslookup.exe
     KIND win32exe
     BODY_CRATE nslookup-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS nslookup_res ${NSLOOKUP_REUSED})
+    EXTRA_DEPENDS nslookup_res)

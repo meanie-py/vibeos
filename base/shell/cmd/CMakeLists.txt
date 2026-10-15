@@ -73,16 +73,8 @@ target_include_directories(cmd_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set(CMD_REUSED
     ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils.a
     ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils_rust.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
     ${CMAKE_BINARY_DIR}/sdk/lib/delayimp/libdelayimp_rust.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/pseh/libpseh.a)
-if(ARCH STREQUAL "i386")
-    list(APPEND CMD_REUSED ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a)
-endif()
-if(ARCH STREQUAL "arm64")
-    list(APPEND CMD_REUSED ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a)
-endif()
+    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(cmd cmd-cargo cmd.exe
     KIND win32exe
     BODY_CRATE cmd-rust

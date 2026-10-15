@@ -6,7 +6,6 @@ include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_or
 # The translated C, kept on disk:
 # schtasks.c  # replaced by Rust (sdk/lib/rust/schtasks-rust/src/schtasks/schtasks.rs)
 set(SCHTASKS_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
     ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(schtasks schtasks-cargo schtasks.exe
     KIND win32exe

@@ -13,7 +13,6 @@ add_library(iexplore_res OBJECT iexplore.rc)
 target_compile_definitions(iexplore_res PRIVATE UNICODE _UNICODE)
 target_include_directories(iexplore_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set(IEXPLORE_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
     ${CMAKE_BINARY_DIR}/sdk/lib/delayimp/libdelayimp_rust.a
     ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(iexplore iexplore-cargo iexplore.exe

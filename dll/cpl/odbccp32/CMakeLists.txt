@@ -10,10 +10,8 @@ spec2def(odbccp32i.cpl odbccp32.spec)
 add_library(odbccp32i_res OBJECT odbccp32.rc)
 target_compile_definitions(odbccp32i_res PRIVATE UNICODE _UNICODE)
 target_include_directories(odbccp32i_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(ODBCCP32I_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(odbccp32i odbccp32i-cargo odbccp32i.cpl
     KIND win32dll
     BODY_CRATE odbccp32i-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS odbccp32i_res ${ODBCCP32I_REUSED})
+    EXTRA_DEPENDS odbccp32i_res)

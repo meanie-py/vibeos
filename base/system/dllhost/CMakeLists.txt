@@ -10,10 +10,8 @@
 add_library(dllhost_res OBJECT dllhost.rc)
 target_compile_definitions(dllhost_res PRIVATE UNICODE _UNICODE)
 target_include_directories(dllhost_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(DLLHOST_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(dllhost dllhost-cargo dllhost.exe
     KIND win32exe
     BODY_CRATE dllhost-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS dllhost_res ${DLLHOST_REUSED})
+    EXTRA_DEPENDS dllhost_res)

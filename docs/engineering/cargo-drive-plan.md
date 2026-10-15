@@ -200,6 +200,17 @@ extends it from the boot spine to every fully-Rust module.
 3. **Give the C static libraries a cargo home.** `uuid` becomes a GUID crate generated
    from the same IDL/headers; `wine` (vendored libwine) and `conutils` are small. Until
    then cells link the cmake-built `.a` (`static_libs`), which keeps them cmake-bound.
+   - **Done 2026-10-14 (wave 5): `oldnames`, `chkstk`, `pseh`.** A `static_libs` entry
+     `engine:<name>` is built by reactos-link (`engine_lib`) at the same place in the
+     link, with cmake's own command: `dlltool -d moldname-msvcrt.def -k` for oldnames,
+     the per-arch stack-probe `.s` for chkstk, `dummy.c` (+ i386 `seh.s`/`seh_prolog.s`)
+     for pseh. 145 cells moved (`ENGINE_LIBS` in the generator maps new ones), and their
+     CMakeLists no longer depend on the three cmake targets. Proof: pe_equiv 565/565 ×3
+     against a baseline built from the same tree, plus symbol + disassembly + `.data`
+     bytes identical to cmake's objects (dummy.c differs only in cc-rs's `.data$<sym>`
+     subsections, which the link folds into `.data`).
+   - **Left, by cells that link it:** `libwine` 40, `conutils` (+ `_rust`) 34, `uuid` 15,
+     `delayimp_rust` 9, then one-offs (win32ksys, scrnsave, dxguid, evtlib, ...).
 4. **Resources without cmake.** Cells replay cmake's `windres` command today
    (`resource_from_rc`), so they still need cmake configured. The June fallback was a
    committed `.res` per arch; for 189 modules that is a lot of binary in git. Better: the

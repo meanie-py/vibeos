@@ -10,10 +10,8 @@ spec2def(serialui.dll serialui.spec)
 add_library(serialui_res OBJECT serialui.rc)
 target_compile_definitions(serialui_res PRIVATE UNICODE _UNICODE)
 target_include_directories(serialui_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(SERIALUI_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(serialui serialui-cargo serialui.dll
     KIND win32dll
     BODY_CRATE serialui-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS serialui_res ${SERIALUI_REUSED})
+    EXTRA_DEPENDS serialui_res)

@@ -15,9 +15,9 @@ fn main() {
     };
 
     let late_libs: &[&str] = match arch.as_str() {
-        "x86" => &["sdk/lib/uuid/libuuid.a", "sdk/lib/libwine/libwine.a", "sdk/lib/pseh/libpseh.a", "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a", "sdk/lib/crt/libchkstk.a", "sdk/lib/delayimp/libdelayimp_rust.a"],
-        "x86_64" => &["sdk/lib/uuid/libuuid.a", "sdk/lib/libwine/libwine.a", "sdk/lib/pseh/libpseh.a", "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a", "sdk/lib/delayimp/libdelayimp_rust.a"],
-        "aarch64" => &["sdk/lib/uuid/libuuid.a", "sdk/lib/libwine/libwine.a", "sdk/lib/pseh/libpseh.a", "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a", "sdk/lib/crt/libchkstk.a", "sdk/lib/delayimp/libdelayimp_rust.a"],
+        "x86" => &["sdk/lib/uuid/libuuid.a", "sdk/lib/libwine/libwine.a", "engine:pseh", "engine:oldnames", "engine:chkstk", "sdk/lib/delayimp/libdelayimp_rust.a"],
+        "x86_64" => &["sdk/lib/uuid/libuuid.a", "sdk/lib/libwine/libwine.a", "engine:pseh", "engine:oldnames", "sdk/lib/delayimp/libdelayimp_rust.a"],
+        "aarch64" => &["sdk/lib/uuid/libuuid.a", "sdk/lib/libwine/libwine.a", "engine:pseh", "engine:oldnames", "engine:chkstk", "sdk/lib/delayimp/libdelayimp_rust.a"],
         _ => unreachable!(),
     };
 

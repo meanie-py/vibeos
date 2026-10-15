@@ -15,10 +15,8 @@ include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_or
 add_library(fsutil_res OBJECT fsutil.rc)
 target_compile_definitions(fsutil_res PRIVATE UNICODE _UNICODE)
 target_include_directories(fsutil_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(FSUTIL_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(fsutil fsutil-cargo fsutil.exe
     KIND win32exe
     BODY_CRATE fsutil-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS fsutil_res ${FSUTIL_REUSED})
+    EXTRA_DEPENDS fsutil_res)

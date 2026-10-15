@@ -12,7 +12,6 @@ add_library(telephon_res OBJECT telephon.rc)
 target_compile_definitions(telephon_res PRIVATE UNICODE _UNICODE)
 target_include_directories(telephon_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set(TELEPHON_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
     ${CMAKE_BINARY_DIR}/sdk/lib/uuid/libuuid.a)
 add_cargo_module(telephon telephon-cargo telephon.cpl
     KIND win32dll

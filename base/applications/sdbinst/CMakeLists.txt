@@ -6,10 +6,7 @@ include_directories(${REACTOS_SOURCE_DIR}/dll/appcompat/apphelp)
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # sdbinst.c  # replaced by Rust (sdk/lib/rust/sdbinst-rust/src/sdbinst/sdbinst.rs)
-set(SDBINST_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(sdbinst sdbinst-cargo sdbinst.exe
     KIND win32exe
     BODY_CRATE sdbinst-rust
-    DESTINATION reactos/system32
-    EXTRA_DEPENDS ${SDBINST_REUSED})
+    DESTINATION reactos/system32)

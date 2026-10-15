@@ -39,7 +39,6 @@ target_include_directories(spoolsv_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_options(spoolsv_shims PRIVATE "-Wno-cast-calling-convention")
 target_compile_options(spoolsv_res PRIVATE "-Wno-cast-calling-convention")
 set(SPOOLSV_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
     ${CMAKE_BINARY_DIR}/sdk/lib/delayimp/libdelayimp_rust.a
     ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(spoolsv spoolsv-cargo spoolsv.exe

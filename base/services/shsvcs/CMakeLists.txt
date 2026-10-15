@@ -13,7 +13,6 @@ add_library(shsvcs_res OBJECT shsvcs.rc)
 target_compile_definitions(shsvcs_res PRIVATE UNICODE _UNICODE)
 target_include_directories(shsvcs_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set(SHSVCS_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
     ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(shsvcs shsvcs-cargo shsvcs.dll
     KIND win32dll

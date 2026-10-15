@@ -15,7 +15,6 @@ add_library(msports_res OBJECT msports.rc)
 target_compile_definitions(msports_res PRIVATE UNICODE _UNICODE)
 target_include_directories(msports_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set(MSPORTS_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
     ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(msports msports-cargo msports.dll
     KIND win32dll
