@@ -362,11 +362,38 @@ kernel32 apitest `Win10Surface`, Windows 11 95/0 first, guest 96/0 on amd64 and 
   callable stub (it is not exported: a load failure); `win10_surface gap` lists imports
   Windows itself does not export apart from our gap.
 
+**Done 2026-10-15: the missing modules, imported from Wine 11.19.** Every OS module the
+corpus imports is built: mfplat, mf, mfreadwrite, evr, wevtapi, ndfapi, dcomp, qwave, tbs
+(gap: 9 modules -> 0; functions 5 -> 1, ucrtbase `_except1`). rtworkq and dxva2 are built
+at every DLL_EXPORT_VERSION, and rtworkq is synced to 11.19 to match mfplat.
+- **Media Foundation has no codecs.** Wine decodes through winegstreamer (a Unix-side
+  GStreamer bridge we cannot use), so attributes, media types, buffers, samples, work
+  queues, the session, topology loader, sample grabber, sinks and the source reader all
+  work, but nothing turns an mp4/AAC/H.264 byte stream into a source or a decoder MFT.
+  An app that only plays media through MF loads and then fails at
+  CreateObjectFromByteStream (MF_E_UNSUPPORTED_BYTESTREAM_TYPE).
+- Found by Wine's suites in the guest (payload `mfwinetest`): our Rust threadpool (a port
+  of an older Wine) waited on the caller's handle, so closing one pending wait's handle
+  made NtWaitForMultipleObjects fail for the whole wait thread and every other wait in
+  the bucket stalled; ported Wine's duplicate-handle + update-serial fix.
+- Bodies Wine leaves as stubs: MFCreateMediaBufferWrapper (graded on Windows 11), real
+  QoS handles, the tbs context calls, DCompositionCreateSurfaceHandle.
+- Guest amd64: wevtapi 10/0, qwave 18/0, rtworkq 176/1 (`flaky_wine`); mfplat completes
+  with Wine's own todo_wine lines plus the codec-dependent checks.
+
 **Owed on the export surface:**
-- **The app ranking is now MODULES, not functions:** Media Foundation (`mf`, `mfplat`,
-  `mfreadwrite`: 3 apps), `wevtapi` and `ndfapi` (2), `dcomp`, `evr`, `qwave`, `tbs` (1).
-  Plus ucrtbase `_except1` (no home in our CRT yet). Widen the corpus before trusting
-  "done": 20 app folders are not the long tail.
+- **mfplat's async waits under emulation:** three tests' 100 ms waits for a work-queue
+  callback time out in the guest (test_MFCreateMFByteStreamOnStream's
+  "STANDARD is not blocked" item, and the startup / startup_counts / undefined_queue_id
+  child processes, which also do not exit within 30 s). Not yet separated into TCG
+  latency vs. a threadpool/rtworkq bug: the next step is the same suite with longer
+  waits, then on KVM.
+- **Codecs for Media Foundation** (above): native Rust demuxers/decoders, or ports of
+  the codec DLLs Windows ships (msmpeg2vdec, msauddecmft). Decide before chasing app
+  playback.
+- **Widen the corpus** before trusting "done": 20 app folders are not the long tail.
+  CMake imports Windows' own `icuuc.dll` (system32 since 1903), which we do not build.
+  Plus ucrtbase `_except1` (no home in our CRT yet).
 - **NtGetNextThread with THREAD_QUERY_LIMITED_INFORMATION hit ACCESS_DENIED** on some thread
   of the apitest process (amd64 and i386), while `OpenThread(THREAD_QUERY_LIMITED_INFORMATION)`
   on the test's own thread succeeds and a walk asking THREAD_QUERY_INFORMATION completes.
