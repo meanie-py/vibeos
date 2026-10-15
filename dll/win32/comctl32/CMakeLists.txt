@@ -67,11 +67,9 @@ target_compile_definitions(comctl32_res PRIVATE UNICODE _UNICODE)
 target_include_directories(comctl32_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # How cmake compiled the target's sources, now on the OBJECT libraries.
 set_wine_module_fixme(comctl32_res)
-set(COMCTL32_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/delayimp/libdelayimp_rust.a)
 add_cargo_module(comctl32 comctl32-cargo comctl32.dll
     KIND win32dll
     BODY_CRATE comctl32-rust
     DESTINATION reactos/system32 reactos/winsxs/${WINARCH}_microsoft.windows.common-controls_6595b64144ccf1df_5.82.2600.2982_none_deadbeef reactos/winsxs/${WINARCH}_microsoft.windows.common-controls_6595b64144ccf1df_6.0.2600.2982_none_deadbeef
     DELAY_IMPORTS
-    EXTRA_DEPENDS comctl32_res ${COMCTL32_REUSED} psdk uuid_sources)
+    EXTRA_DEPENDS comctl32_res psdk uuid_sources)

@@ -25,11 +25,8 @@ spec2def(localspl.dll localspl.spec ADD_IMPORTLIB)
 add_library(localspl_res OBJECT localspl.rc)
 target_compile_definitions(localspl_res PRIVATE UNICODE _UNICODE)
 target_include_directories(localspl_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(LOCALSPL_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/skiplist/libskiplist16.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/skiplist/libskiplist_rust.a)
 add_cargo_module(localspl localspl-cargo localspl.dll
     KIND win32dll
     BODY_CRATE localspl-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS localspl_res ${LOCALSPL_REUSED} psdk)
+    EXTRA_DEPENDS localspl_res psdk)

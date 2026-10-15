@@ -15,10 +15,8 @@ spec2def(aclayers.dll layer.spec)
 # main.c  # replaced by Rust (sdk/lib/rust/aclayers-rust/src/aclayers/main.rs)
 # The C still compiled, in an OBJECT library whose compile the cargo link replays.
 add_library(aclayers_shims OBJECT rust_cohab_stub.c)
-set(ACLAYERS_REUSED
-    ${CMAKE_BINARY_DIR}/dll/appcompat/shims/shimlib/libshimlib.a)
 add_cargo_module(aclayers aclayers-cargo aclayers.dll
     KIND win32dll
     BODY_CRATE aclayers-rust
     DESTINATION reactos/AppPatch
-    EXTRA_DEPENDS aclayers_shims ${ACLAYERS_REUSED})
+    EXTRA_DEPENDS aclayers_shims xdk)

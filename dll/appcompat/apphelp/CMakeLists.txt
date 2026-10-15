@@ -38,11 +38,9 @@ target_compile_definitions(apphelp_shims PRIVATE UNICODE _UNICODE)
 add_library(apphelp_res OBJECT apphelp.rc)
 target_compile_definitions(apphelp_res PRIVATE UNICODE _UNICODE)
 target_include_directories(apphelp_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(APPHELP_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/delayimp/libdelayimp_rust.a)
 add_cargo_module(apphelp apphelp-cargo apphelp.dll
     KIND win32dll
     BODY_CRATE apphelp-rust
     DESTINATION reactos/system32
     DELAY_IMPORTS
-    EXTRA_DEPENDS apphelp_shims apphelp_res ${APPHELP_REUSED})
+    EXTRA_DEPENDS apphelp_shims apphelp_res)

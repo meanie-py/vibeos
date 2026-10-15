@@ -582,6 +582,18 @@ ENGINE_LIBS = {
     "sdk/lib/conutils/libconutils.a": "engine:conutils",
     "sdk/lib/conutils/libconutils_rust.a": "engine:conutils_rust",
     "sdk/lib/uuid/libuuid.a": "engine:uuid",
+    "sdk/lib/delayimp/libdelayimp_rust.a": "engine:delayimp_rust",
+    "sdk/lib/evtlib/libevtlib_rust.a": "engine:evtlib_rust",
+    "sdk/lib/skiplist/libskiplist_rust.a": "engine:skiplist_rust",
+    "dll/win32/hid/libhid_hidparser_rust.a": "engine:hid_hidparser_rust",
+    "sdk/lib/evtlib/libevtlib.a": "engine:c:evtlib",
+    "sdk/lib/skiplist/libskiplist16.a": "engine:c:skiplist16",
+    "sdk/lib/udmihelp/libudmihelp.a": "engine:c:udmihelp",
+    "sdk/lib/dmilib/libdmilib.a": "engine:c:dmilib",
+    "sdk/lib/dxguid/libdxguid.a": "engine:c:dxguid",
+    "sdk/lib/tzlib/libtzlib.a": "engine:c:tzlib",
+    "sdk/lib/scrnsave/libscrnsave.a": "engine:c:scrnsave",
+    "dll/appcompat/shims/shimlib/libshimlib.a": "engine:c:shimlib",
 }
 # The engine replays cmake's compile of these, which reads what cmake generates (psdk
 # and xdk headers, uuid's widl output): the cell builds after the targets that make it.
@@ -589,6 +601,14 @@ ENGINE_LIB_DEPS = {
     "engine:wine": "psdk",
     "engine:conutils": "xdk",
     "engine:uuid": "uuid_sources",
+    "engine:c:evtlib": "xdk",
+    "engine:c:skiplist16": "psdk",
+    "engine:c:udmihelp": "psdk",
+    "engine:c:dmilib": "psdk",
+    "engine:c:dxguid": "psdk",
+    "engine:c:tzlib": "xdk",
+    "engine:c:scrnsave": "psdk",
+    "engine:c:shimlib": "xdk",
 }
 
 

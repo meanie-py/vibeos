@@ -221,8 +221,16 @@ extends it from the boot spine to every fully-Rust module.
      cells moved. Proof: `pe_equiv --code` 565/565 ×3, i.e. every mapped byte the same.
      Linker maps (`VIBEOS_LINK_MAP=1`) showed which members each cell really pulls:
      libwine in 37 of 44, uuid in 12 of 18 (11 distinct `_i.c` members).
-   - **Left, by cells that link it:** `delayimp_rust` 9, then one-offs (win32ksys,
-     scrnsave, dxguid, evtlib, skiplist, ...).
+   - **Done 2026-10-15 (wave 7): the rest of the user-mode list.** `engine:c:<target>`
+     replays any cmake C target (udmihelp, dmilib, dxguid, tzlib, scrnsave, shimlib,
+     and the evtlib/skiplist16 stubs), and the `rust_staticlib_variant`-style crates
+     are a table in `engine_lib` (delayimp, evtlib, skiplist, hidparser). 16 cells;
+     `pe_equiv --code` 565/565 ×3.
+   - **Left:** `concfg` + `concfg_rust` (console, winsrv: cmake builds the crate with
+     `cargo rustc --crate-type staticlib`, which the engine's sibling build cannot
+     say yet) and `win32ksys` (winsrv, imm32: syscall stubs from generated tables).
+     The kernel and loader cells' `libcntpr` / `mini_hal` / `freeldr_bios_asm` belong
+     to the driver rung.
 4. **Resources without cmake.** Cells replay cmake's `windres` command today
    (`resource_from_rc`), so they still need cmake configured. The June fallback was a
    committed `.res` per arch; for 189 modules that is a lot of binary in git. Better: the
