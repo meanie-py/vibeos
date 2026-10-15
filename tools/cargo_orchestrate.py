@@ -284,8 +284,12 @@ def build_pefixup(root: Path, arch: str, out_dir: Path, dry: bool = False) -> Pa
 
 
 def build_std(cell: Cell, arch: str) -> bool:
-    """Only i386's kernel kinds still build core themselves (on the softfloat json)."""
-    return arch == "i386" and cell.kind not in USER_KINDS
+    """Only i386's kernel kinds still build core themselves (on the softfloat json), and
+    only those with an i686-kernel.json: a generated driver cell has none and builds on
+    the builtin triple like its body (gcc.cmake:add_cargo_module)."""
+    if arch != "i386" or cell.kind in USER_KINDS:
+        return False
+    return (repo_root() / "sdk/lib/rust" / cell.crate / "i686-kernel.json").exists()
 
 
 def cell_stem(cell: Cell, arch: str) -> str:

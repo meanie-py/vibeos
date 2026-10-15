@@ -8,8 +8,10 @@
 #                   `-C` flags restore what the retired json used to carry
 #                   (`link-self-contained=no`, `force-frame-pointers=yes`); the
 #                   linker is pinned in sdk/lib/rust/.cargo/config.toml.
-#   i386 user     → (KIND win32dll / win32exe) the builtin `i686-pc-windows-gnu` on
-#                   stable, like amd64, plus the bodies' `-sse,-sse2`.
+#   i386 user     → (KIND win32dll / win32exe, or a kernel kind whose crate has no
+#                   i686-kernel.json: the generated drivers) the builtin
+#                   `i686-pc-windows-gnu` on stable, like amd64, plus the bodies'
+#                   `-sse,-sse2`.
 #   i386 kernel   → the custom `i686-kernel.json` + nightly `-Z build-std`. It
 #                   needs `rustc-abi: x86-softfloat`, which no builtin triple
 #                   offers. Retired by the wow64 lane, not fixed here.
@@ -34,7 +36,8 @@ cell_args() {
     _arch="$1"
     _crate="$2"
     _kind="${3:-kerneldll}"
-    if [ "$_arch" = i386 ] && { [ "$_kind" = win32dll ] || [ "$_kind" = win32exe ]; }; then
+    if [ "$_arch" = i386 ] && { [ "$_kind" = win32dll ] || [ "$_kind" = win32exe ] ||
+        [ ! -e "${VIBEOS_ROOT:-.}/sdk/lib/rust/$_crate/i686-kernel.json" ]; }; then
         _arch=i386-user
     fi
     case "$_arch" in
