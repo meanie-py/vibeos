@@ -1602,6 +1602,32 @@ def _wine_config_undefs(repo_root: Path) -> frozenset[str]:
     return frozenset(_CONFIG_UNDEF_RE.findall(text))
 
 
+_CHARSET_TOGGLE_RE = re.compile(r"^#\s*(define|undef)\s+(UNICODE|_UNICODE|_MBCS)\b")
+
+
+def charset_instantiations(prologues: list[list[str]], module_unicode: bool) -> set[int]:
+    """Indexes of the TUs whose prologue switches the character set AWAY from the module's.
+
+    fc compiles text.h twice: texta.c opens with `#undef UNICODE` / `#define _MBCS`, textw.c
+    keeps the module's UNICODE, and each instantiates the TCHAR template once. Merged into the
+    module wrapper, texta.c's toggles flipped the WHOLE island to ANSI, and conutils.h (which
+    `#error`s without _UNICODE) killed bindgen. Such a TU is an instantiation of a template
+    header, not a different module: the island follows the module's compile charset, and the
+    translation makes the template generic over the char type. Only when the TUs DISAGREE --
+    a module whose every TU flips the charset still means it, and keeps its toggles."""
+    effective = []
+    for lines in prologues:
+        unicode = module_unicode
+        for line in lines:
+            m = _CHARSET_TOGGLE_RE.match(line)
+            if m and m.group(2) == "UNICODE":
+                unicode = m.group(1) == "define"
+        effective.append(unicode)
+    if len(set(effective)) < 2:
+        return set()
+    return {i for i, u in enumerate(effective) if u != module_unicode}
+
+
 def merge_prologue(merged: list[str], lines: list[str]) -> None:
     """Fold one TU's prologue into the module wrapper, keeping THAT TU's order.
 
@@ -3431,6 +3457,7 @@ def derive(
         tus, repo_root, set(module.definitions) | set(db.module_defines if db else ())
     )
     wrapper: list[str] = []
+    prologues: list[list[str]] = []
     for tu in tus:
         # Defined by EVERY compile of this TU: the global ReactOS definition, the language,
         # and the module's character set (set_module_type ... UNICODE).
@@ -3449,7 +3476,22 @@ def derive(
                     "wrapper keeps both arms; review",
                 )
             )
+        prologues.append(lines)
+    flipped = charset_instantiations(prologues, module.unicode)
+    for i, (tu, lines) in enumerate(zip(tus, prologues, strict=True)):
+        if i in flipped:
+            findings.append(
+                Finding(
+                    "info",
+                    "CHARSET_INSTANTIATION",
+                    f"{_rel(tu, repo_root)} switches the character set in its prologue; its "
+                    "toggles are left out of the island (the module's charset wins) -- port the "
+                    "template it instantiates generically over the char type",
+                )
+            )
+            lines = [ln for ln in lines if not _CHARSET_TOGGLE_RE.match(ln)]
         merge_prologue(wrapper, lines)
+    flipped_tus = {tus[i] for i in flipped}
     if module.pch_header is not None and any(t not in module.pch_skip for t in tus):
         pch_line = f'#include "{module.pch_header.name}"'
         if pch_line not in wrapper:
@@ -3473,7 +3515,10 @@ def derive(
             src = tu_by_key.get(key)
             if src is None:
                 continue
-            merge_prologue(lines, scan_preamble(_read(src), known_undefined)[0])
+            own = scan_preamble(_read(src), known_undefined)[0]
+            if src in flipped_tus:
+                own = [ln for ln in own if not _CHARSET_TOGGLE_RE.match(ln)]
+            merge_prologue(lines, own)
         # Only if a TU in THIS island actually compiles with the PCH. wldap32 splits
         # exactly along that line: ber.c is the PCH-skipped TU and it is also the one
         # whose headers conflict with precomp.h's.

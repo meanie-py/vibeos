@@ -924,13 +924,11 @@ Spend: about $4.63 of the $5 approved for the phase (`-m haiku`). Nothing is unc
    restored six cargo cells' build-order dependencies on generated files, which a fresh build
    raced on.
 2. **ftp: DONE** 2026-10-14 (see rust-port-status.md's batch D1 row).
-3. **fc.** It needs per-TU UNICODE islands (`texta.c`/`textw.c`). State is in
-   `~/vibeos-rust-staging/port/fc/`, including the `chk-*.txt` per-arch checks.
+3. **fc: DONE** 2026-10-14 (see rust-port-status.md's batch D1 row).
 4. **cscript** (built from wscript's sources with `-DCSCRIPT_BUILD`) is still C.
 5. **Tool gaps (shared, $0):**
    - msxml2 vtables belong in the island.
    - COBJMACROS shims should be generated.
-   - `ARRAY_SIZE!`/`_countof!` return u32 (win32macros-rust).
    - wscript's `debugstr_variant` is a placeholder.
 6. **D2** needs a new budget: setup16, stortest, testgui, testchild, rapps_com, devmgmt.
    kbswitch, winmine, utilman and the screensavers went to control-plane's wave; the disk

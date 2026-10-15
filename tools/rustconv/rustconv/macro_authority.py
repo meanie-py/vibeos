@@ -278,6 +278,8 @@ def live_defines(repo_root: Path, sources: list[Path]) -> dict[Path, set[str]] |
             if result.returncode != 0:
                 continue
             ran = True
+            # Present even with no #define of its own: it says THIS source was preprocessed.
+            live.setdefault(source.resolve(), set())
             current: Path | None = None
             for line in result.stdout.splitlines():
                 if (m := _LINEMARKER.match(line)) is not None:

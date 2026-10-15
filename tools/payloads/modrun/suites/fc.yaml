@@ -1,0 +1,68 @@
+# fc (base/applications/cmdutils/fc -> fc-rust). The shipped Rust diffed against the
+# pre-flip C (`python -m rustconv.c_oracle`) on the fc*.txt inputs in modrun/data: the text
+# compare in both instantiations of the text.h template (ANSI, and UTF-16 under /U), its
+# switches, the binary compare, wildcards and the argument errors.
+module: fc
+variants:
+  c: '%SystemRoot%\bin\modrun\fc_c.exe'
+  rust: '%SystemRoot%\system32\fc.exe'
+ninja:
+- fc_c
+stage:
+- src: build-{arch}/base/applications/cmdutils/fc/fc_c.exe
+  dest: bin/modrun/fc_c.exe
+- src: tools/payloads/modrun/data/fc1.txt
+  dest: bin/modrun/data/fc1.txt
+- src: tools/payloads/modrun/data/fc2.txt
+  dest: bin/modrun/data/fc2.txt
+- src: tools/payloads/modrun/data/fcw1.txt
+  dest: bin/modrun/data/fcw1.txt
+- src: tools/payloads/modrun/data/fcw2.txt
+  dest: bin/modrun/data/fcw2.txt
+cases:
+- id: text
+  args: '%SystemRoot%\bin\modrun\data\fc1.txt %SystemRoot%\bin\modrun\data\fc2.txt'
+- id: ignore_case
+  args: '/C %SystemRoot%\bin\modrun\data\fc1.txt %SystemRoot%\bin\modrun\data\fc2.txt'
+- id: whitespace
+  args: '/W %SystemRoot%\bin\modrun\data\fc1.txt %SystemRoot%\bin\modrun\data\fc2.txt'
+- id: case_and_whitespace
+  args: '/C /W %SystemRoot%\bin\modrun\data\fc1.txt %SystemRoot%\bin\modrun\data\fc2.txt'
+- id: line_numbers
+  args: '/N %SystemRoot%\bin\modrun\data\fc1.txt %SystemRoot%\bin\modrun\data\fc2.txt'
+- id: abbreviate
+  args: '/A %SystemRoot%\bin\modrun\data\fc1.txt %SystemRoot%\bin\modrun\data\fc2.txt'
+- id: keep_tabs
+  args: '/T %SystemRoot%\bin\modrun\data\fc1.txt %SystemRoot%\bin\modrun\data\fc2.txt'
+- id: line_buffers
+  args: '/LB2 %SystemRoot%\bin\modrun\data\fc1.txt %SystemRoot%\bin\modrun\data\fc2.txt'
+- id: resync_lines
+  args: '/1 %SystemRoot%\bin\modrun\data\fc1.txt %SystemRoot%\bin\modrun\data\fc2.txt'
+- id: same_contents
+  args: '/N %SystemRoot%\bin\modrun\data\fc1.txt %SystemRoot%\bin\modrun\data\..\data\fc1.txt'
+- id: same_name
+  args: '%SystemRoot%\bin\modrun\data\fc1.txt %SystemRoot%\bin\modrun\data\fc1.txt'
+- id: binary
+  args: '/B %SystemRoot%\bin\modrun\data\fc1.txt %SystemRoot%\bin\modrun\data\fc2.txt'
+- id: ascii_forced
+  args: '/L %SystemRoot%\bin\modrun\data\fc1.txt %SystemRoot%\bin\modrun\data\fc2.txt'
+- id: unicode
+  args: '/U %SystemRoot%\bin\modrun\data\fcw1.txt %SystemRoot%\bin\modrun\data\fcw2.txt'
+- id: unicode_ignore_case
+  args: '/U /C /N %SystemRoot%\bin\modrun\data\fcw1.txt %SystemRoot%\bin\modrun\data\fcw2.txt'
+- id: ansi_reads_utf16
+  args: '%SystemRoot%\bin\modrun\data\fcw1.txt %SystemRoot%\bin\modrun\data\fcw2.txt'
+- id: one_side_wild
+  args: '%SystemRoot%\bin\modrun\data\fc1.txt %SystemRoot%\bin\modrun\data\fc?.txt'
+- id: missing
+  args: '%SystemRoot%\bin\modrun\data\fc1.txt %SystemRoot%\bin\modrun\data\nosuch.txt'
+- id: needs_files
+  args: '%SystemRoot%\bin\modrun\data\fc1.txt'
+- id: help
+  args: '/?'
+- id: bad_switch
+  args: '/Z %SystemRoot%\bin\modrun\data\fc1.txt %SystemRoot%\bin\modrun\data\fc2.txt'
+- id: three_files
+  args: '%SystemRoot%\bin\modrun\data\fc1.txt %SystemRoot%\bin\modrun\data\fc2.txt %SystemRoot%\bin\modrun\data\fc1.txt'
+- id: bad_lb
+  args: '/LBx %SystemRoot%\bin\modrun\data\fc1.txt %SystemRoot%\bin\modrun\data\fc2.txt'

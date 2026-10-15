@@ -770,6 +770,7 @@ members = [
     "sptilib-rust",
     "apisets-rust",
     "ftp-rust",
+    "fc-rust",
 ]
 resolver = "2"
 

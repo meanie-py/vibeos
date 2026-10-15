@@ -1574,6 +1574,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "fc-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+ "winelist-rust",
+]
+
+[[package]]
 name = "find-cargo"
 version = "0.1.0"
 dependencies = [

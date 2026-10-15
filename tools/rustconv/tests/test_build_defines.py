@@ -170,3 +170,16 @@ def test_mathf_arch_gated_floats_survive():
     names = {f.name for f in scan_file(MSVCRT / "mathf.c").functions}
     for fn in ("sinf", "cosf", "tanf", "atan2f", "expf", "logf", "sqrtf", "floorf", "ceilf"):
         assert fn in names, f"{fn} was dropped — an arch conditional got folded away"
+
+
+def test_a_module_header_no_tu_includes_has_only_dead_macros():
+    from pathlib import Path
+
+    from rustconv.port import _compiled_out
+
+    fc_c, fc_h, noros = Path("/m/fc.c"), Path("/m/fc.h"), Path("/m/conutils_noros.h")
+    where = {"MAX_VIEW_SIZE": fc_h, "ConPuts": noros, "IS_DOTS": fc_c, "OLD": fc_h}
+    live = {fc_c: {"IS_DOTS"}, fc_h: {"MAX_VIEW_SIZE"}}
+    assert _compiled_out(where, live, [fc_c]) == ["ConPuts", "OLD"]
+    # A TU nobody preprocessed could be the one that includes it: undecidable, kept.
+    assert _compiled_out(where, live, [fc_c, Path("/m/other.c")]) == ["OLD"]
