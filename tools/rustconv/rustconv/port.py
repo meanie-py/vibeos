@@ -97,7 +97,13 @@ def _module_sources(module_dir: Path) -> list[Path]:
 
 def load_state(stem: str) -> dict:
     p = _state_path(stem)
-    return json.loads(p.read_text()) if p.is_file() else {"stem": stem, "stages": []}
+    state = json.loads(p.read_text()) if p.is_file() else {"stem": stem, "stages": []}
+    # Every compile-db question this run asks (and every `translate` it spawns) is about
+    # THIS target's compile of a file another target may compile too (cscript/wscript).
+    from .macro_authority import set_cmake_target
+
+    set_cmake_target(state.get("target"))
+    return state
 
 
 def _record(state: dict, stage: str, started: float, **result) -> None:
@@ -1568,6 +1574,18 @@ def stage_translate(
         proc = subprocess.run(
             cmd, cwd=REPO / "tools" / "rustconv", capture_output=True, text=True, env=env
         )
+        refused = set(_NO_REPLAY.findall(proc.stdout + proc.stderr)) & _hand_covered(stem)
+        if refused:
+            # A body the bank cannot replay because its C changed under it (wscript's
+            # print_resource, bought from cscript's preprocess) but that a HAND bank replaces
+            # anyway: nothing is owed, so assemble the TU without it rather than refuse it.
+            cmd += ["--skip-fn", *sorted(refused - set(skipped))]
+            # Recorded like any --skip-fn, so apply_hand knows the hand item has no bought
+            # counterpart left in the file to replace.
+            state["skip_fn"] = sorted(set(state.get("skip_fn", [])) | refused)
+            proc = subprocess.run(
+                cmd, cwd=REPO / "tools" / "rustconv", capture_output=True, text=True, env=env
+            )
         if state.get("cppapp") and tu in vias and not dry_run and out.is_file():
             from . import cpp_app, cpp_model
 
@@ -6171,6 +6189,27 @@ def _hand_dir(stem: str) -> Path:
     return STATE_ROOT / stem / "hand"
 
 
+#: response_cache's refusal to re-buy a body whose purchase no longer replays.
+_NO_REPLAY = re.compile(r": (\w+) already has purchased output which did not replay")
+
+
+def _hand_covered(stem: str) -> set[str]:
+    """C function names a hand bank replaces: each banked name, and `F` for a banked `F_v`."""
+    out: set[str] = set()
+    for entry in _hand_dir(stem).glob("*.json"):
+        try:
+            banked = json.loads(entry.read_text())
+        except (OSError, ValueError):
+            continue
+        name = banked.get("name", "")
+        if banked.get("added") or not name or name == "*":
+            continue
+        out.add(name)
+        if name.endswith("_v"):
+            out.add(name[:-2])
+    return out
+
+
 def stage_hand(stem: str, specs: list[str], drop: bool = False) -> None:
     """Bank a function as it now stands in the crate, so every replay puts it back.
 
@@ -6376,8 +6415,14 @@ def apply_hand(stem: str, early_only: bool = False) -> int:
     state = load_state(stem)
     modules = _crate_dir(state) / "src" / stem
     applied = 0
+    skipped = set(state.get("skip_fn", []))
     for entry in sorted(_hand_dir(stem).glob("*.json")):
         h = json.loads(entry.read_text())
+        # A hand item over a body the translate SKIPPED (`skip_fn`) has nothing in the file to
+        # replace: it goes in like an added item. wscript's print_resource_v, whose bought body
+        # was cscript's and no longer replays, is the case.
+        if h["name"] in skipped or (h["name"].endswith("_v") and h["name"][:-2] in skipped):
+            h["added"] = True
         if early_only and not (h["name"] == "*" or h.get("added")):
             continue
         path = modules / h["file"]

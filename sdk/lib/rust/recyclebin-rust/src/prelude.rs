@@ -256,6 +256,10 @@ macro_rules! MoveMemory {
 pub use crate::MoveMemory;
 
 extern "C" {
+    // The C's count-form `swprintf(buf, n, fmt, ...)` is a static inline in <stdio.h> over
+    // `_vsnwprintf`; msvcrt's EXPORTED `swprintf` is the legacy `(buf, fmt, ...)`, which
+    // read `n` as the format pointer (cscript crashed reporting a script error).
+    #[link_name = "_snwprintf"]
     pub fn swprintf(buf: *mut WCHAR, count: usize, fmt: *const WCHAR, ...) -> c_int;
 }
 

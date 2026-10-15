@@ -1,0 +1,105 @@
+# cscript (base/applications/cmdutils/cscript): wscript's sources built with -DCSCRIPT_BUILD,
+# which ships as wscript-rust's `cscript` feature. The shipped Rust diffed against the pre-flip
+# C (`python -m rustconv.c_oracle`) on the scripts in modrun/data: the usage and input errors,
+# the IHost surface from JScript and VBScript (after registering the engines), a runtime script error, a .wsf job (main.c's
+# run_wsf, through msxml), //E: and //T:. Not FullName/Path: they name the host binary, which
+# is a different file for the two variants. The same body runs wscript.exe; its own two arms
+# (interactive by default, "WScript" in two messages) have no oracle yet -- see
+# rust-port-status.md.
+module: cscript
+variants:
+  c: '%SystemRoot%\bin\modrun\cscript_c.exe'
+  rust: '%SystemRoot%\system32\cscript.exe'
+ninja:
+- cscript_c
+stage:
+- src: build-{arch}/base/applications/cmdutils/cscript/cscript_c.exe
+  dest: bin/modrun/cscript_c.exe
+- src: tools/payloads/modrun/data/cscript1.js
+  dest: bin/modrun/data/cscript1.js
+- src: tools/payloads/modrun/data/cscript2.vbs
+  dest: bin/modrun/data/cscript2.vbs
+- src: tools/payloads/modrun/data/cscript3.js
+  dest: bin/modrun/data/cscript3.js
+- src: tools/payloads/modrun/data/cscript4.wsf
+  dest: bin/modrun/data/cscript4.wsf
+- src: tools/payloads/modrun/data/cscript5.txt
+  dest: bin/modrun/data/cscript5.txt
+- src: tools/payloads/modrun/data/cscript6.js
+  dest: bin/modrun/data/cscript6.js
+cases:
+- id: usage
+  expect:
+  - 'Usage: CScript scriptname.extension'
+- id: no_script_file
+  args: '//nologo'
+  expect:
+  - 'Input Error: There is no script file specified.'
+- id: file_not_found
+  args: '//nologo %SystemRoot%\bin\modrun\data\nosuch.js'
+  expect:
+  - 'Input Error: Can not find script file'
+- id: bad_timeout
+  args: '//nologo //T:x %SystemRoot%\bin\modrun\data\cscript1.js'
+# The live CD registers no COM server: without these the script cases stop at "Could not
+# find engine for .js" (and the .wsf job at REGDB_E_CLASSNOTREG) in BOTH variants, which
+# agree and grade nothing. regsvr32 is itself Rust (regsvr32-rust).
+- id: register_jscript
+  variants:
+    regsvr32: '%SystemRoot%\system32\regsvr32.exe'
+  args: '/s jscript.dll'
+- id: register_vbscript
+  variants:
+    regsvr32: '%SystemRoot%\system32\regsvr32.exe'
+  args: '/s vbscript.dll'
+- id: register_msxml3
+  variants:
+    regsvr32: '%SystemRoot%\system32\regsvr32.exe'
+  args: '/s msxml3.dll'
+# ...and no script file association either: main.c's get_engine_clsid reads HKCR\.js ->
+# JSFile\ScriptEngine -> a ProgID, which wsh's setup INF writes, not DllRegisterServer.
+# reg.exe is Rust too (reg-rust).
+- id: assoc_js
+  variants:
+    reg: '%SystemRoot%\system32\reg.exe'
+  args: 'add HKCR\.js /ve /d JSFile /f'
+- id: assoc_js_engine
+  variants:
+    reg: '%SystemRoot%\system32\reg.exe'
+  args: 'add HKCR\JSFile\ScriptEngine /ve /d JScript /f'
+- id: assoc_vbs
+  variants:
+    reg: '%SystemRoot%\system32\reg.exe'
+  args: 'add HKCR\.vbs /ve /d VBSFile /f'
+- id: assoc_vbs_engine
+  variants:
+    reg: '%SystemRoot%\system32\reg.exe'
+  args: 'add HKCR\VBSFile\ScriptEngine /ve /d VBScript /f'
+- id: jscript_host
+  args: '//nologo %SystemRoot%\bin\modrun\data\cscript1.js one "two words" //B three'
+  expect:
+  - 'hello 42 -1 null 1.5'
+- id: jscript_banner
+  args: '%SystemRoot%\bin\modrun\data\cscript1.js'
+  expect:
+  - 'Script Host'
+- id: vbscript_host
+  args: '//nologo %SystemRoot%\bin\modrun\data\cscript2.vbs a b'
+  expect:
+  - 'vbs 21 -1'
+- id: script_error
+  args: '//nologo %SystemRoot%\bin\modrun\data\cscript3.js'
+  expect:
+  - 'before'
+- id: wsf_job
+  args: '//nologo %SystemRoot%\bin\modrun\data\cscript4.wsf'
+  expect:
+  - 'job one, jscript'
+- id: forced_engine
+  args: '//nologo //E:jscript %SystemRoot%\bin\modrun\data\cscript5.txt'
+  expect:
+  - 'forced engine'
+- id: timeout
+  args: '//nologo //T:1 %SystemRoot%\bin\modrun\data\cscript6.js'
+  expect:
+  - 'Script execution time was exceeded'
