@@ -15,9 +15,9 @@ fn main() {
     };
 
     let late_libs: &[&str] = match arch.as_str() {
-        "x86" => &["win32ss/user/winsrv/concfg/libconcfg.a", "win32ss/user/winsrv/concfg/libconcfg_rust.a", "engine:oldnames"],
-        "x86_64" => &["win32ss/user/winsrv/concfg/libconcfg.a", "win32ss/user/winsrv/concfg/libconcfg_rust.a", "engine:oldnames"],
-        "aarch64" => &["win32ss/user/winsrv/concfg/libconcfg.a", "win32ss/user/winsrv/concfg/libconcfg_rust.a", "engine:oldnames"],
+        "x86" => &["engine:c:concfg", "engine:concfg_rust", "engine:oldnames"],
+        "x86_64" => &["engine:c:concfg", "engine:concfg_rust", "engine:oldnames"],
+        "aarch64" => &["engine:c:concfg", "engine:concfg_rust", "engine:oldnames"],
         _ => unreachable!(),
     };
 

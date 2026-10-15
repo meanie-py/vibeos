@@ -1845,9 +1845,36 @@ impl Linker {
         kernel: bool,
         rustflags: Option<&str>,
     ) -> PathBuf {
-        let key = format!("{crate_name}|{features:?}|{default_features}|{target_stem}|{kernel}|{rustflags:?}");
+        self.build_rust_crate_as(crate_name, features, default_features, target_stem, kernel, rustflags, false)
+    }
+
+    /// `build_rust_crate`, and with `staticlib` the crate is built as one even though
+    /// its manifest only says rlib (`cargo rustc --crate-type staticlib`), as cmake
+    /// builds concfg-rust's standalone archive.
+    #[allow(clippy::too_many_arguments)]
+    fn build_rust_crate_as(
+        &self,
+        crate_name: &str,
+        features: &[&str],
+        default_features: bool,
+        target_stem: &str,
+        kernel: bool,
+        rustflags: Option<&str>,
+        staticlib: bool,
+    ) -> PathBuf {
+        let key = format!(
+            "{crate_name}|{features:?}|{default_features}|{target_stem}|{kernel}|{rustflags:?}|{staticlib}"
+        );
         memo(&RUST_LIBS, key, || {
-            self.build_rust_crate_once(crate_name, features, default_features, target_stem, kernel, rustflags)
+            self.build_rust_crate_once(
+                crate_name,
+                features,
+                default_features,
+                target_stem,
+                kernel,
+                rustflags,
+                staticlib,
+            )
         })
     }
 
@@ -1859,6 +1886,7 @@ impl Linker {
         target_stem: &str,
         kernel: bool,
         rustflags: Option<&str>,
+        staticlib: bool,
     ) -> PathBuf {
         let lib_file = format!("lib{}.a", crate_name.replace('-', "_"));
         let workspace = self.repo_root.join("sdk/lib/rust");
@@ -1913,7 +1941,9 @@ impl Linker {
         } else {
             Command::new("cargo")
         };
-        cmd.arg("build").arg("--release").arg("--target");
+        cmd.arg(if staticlib { "rustc" } else { "build" })
+            .arg("--release")
+            .arg("--target");
         // out_stem = the subdir cargo writes under.
         let out_stem: String = if kernel {
             cmd.arg(self.target.arg());
@@ -1929,6 +1959,9 @@ impl Linker {
             self.arch.rust_user_target.to_string()
         };
         cmd.arg("-p").arg(crate_name);
+        if staticlib {
+            cmd.arg("--crate-type").arg("staticlib");
+        }
         if !default_features {
             cmd.arg("--no-default-features");
         }
@@ -2294,6 +2327,15 @@ impl Linker {
             "evtlib_rust" => self.engine_crate("evtlib-rust", &[], true),
             "hid_hidparser_rust" => self.engine_crate("hidparser-rust", &["user"], false),
             "skiplist_rust" => self.engine_crate("skiplist-rust", &[], true),
+            // concfg-rust is an rlib (winsrv-rust's dependency); cmake builds the
+            // console CPL's archive with `cargo rustc --crate-type staticlib
+            // --features standalone`, and on i386 RUSTFLAGS `-sse,-sse2
+            // -C no-prepopulate-passes` (win32ss/user/winsrv/concfg/CMakeLists.txt).
+            "concfg_rust" => {
+                let flags = i386.then_some("-C target-feature=-sse,-sse2 -C no-prepopulate-passes");
+                let stem = self.arch.rust_user_target;
+                self.build_rust_crate_as("concfg-rust", &["standalone"], true, stem, false, flags, true)
+            }
             // Any other cmake C target, by name: `engine:c:<target>`.
             o if o.starts_with("c:") => self.replay_target(&o[2..], ar),
             "oldnames" => {
