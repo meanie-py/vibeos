@@ -3818,6 +3818,16 @@ cnt-rust's math tables alone) and Rust's use of the char-literal quote for LIFET
 makes `&'static` open a string that a regex-pass stripper closes on the next tick in the file.
 The scanner tokenizes left to right for that reason.
 
+### A MAKEFOURCC the model folded itself lands on the wrong integer
+**Symptom:** evr's `MFIsFormatYUV` came back as `| 808530521 // MAKEFOURCC('I','M','C','1')`:
+three of nine FOURCCs wrong (IMC1 carried Y210's value, NV11 carried NV12's), and rustc
+noticed only because two of them COLLIDED with correct arms (`unreachable pattern`). A wrong
+value that collides with nothing compiles and quietly answers FALSE for a real format.
+**Cause:** `MAKEFOURCC(...)` is an expression, not a constant, so fact sealing does not carry
+it; the model does the shifts in its head and keeps the macro as a comment.
+**Fix: `tools/scan_fourcc_literals.py`** (empty baseline, gate-wired) holds every literal to the
+`MAKEFOURCC`/`mmioFOURCC` comment written beside it, so it needs no C.
+
 ### Flavor-variant constants are their own drop-class `[§9.97]`
 `SYNCH_LEVEL` differs between UP and MP builds, and the translation froze the UP value in
 **five independent sites** → `-smp 2` `KeIrql` kmtest failures. Single source of truth per

@@ -382,12 +382,21 @@ at every DLL_EXPORT_VERSION, and rtworkq is synced to 11.19 to match mfplat.
   with Wine's own todo_wine lines plus the codec-dependent checks.
 
 **Owed on the export surface:**
-- **mfplat's async waits under emulation:** three tests' 100 ms waits for a work-queue
-  callback time out in the guest (test_MFCreateMFByteStreamOnStream's
-  "STANDARD is not blocked" item, and the startup / startup_counts / undefined_queue_id
-  child processes, which also do not exit within 30 s). Not yet separated into TCG
-  latency vs. a threadpool/rtworkq bug: the next step is the same suite with longer
-  waits, then on KVM.
+- **mfplat's one real async failure:** mfplat.c:3308, "MFASYNC_CALLBACK_QUEUE_STANDARD is
+  not blocked": with an IO-queue read blocked inside IStream_Read, a standard-queue work
+  item does not run within 100 ms. rtworkq gives each system queue its own pool (standard
+  max 1, IO max 4) and our Tp* honour `env->Pool`, so the pools are separate on paper;
+  next is the same wait lengthened, then KVM, to split TCG latency from a real stall.
+  The three child-process failures are NOT MF: run directly in the guest, startup is
+  33/0, undefined_queue_id 12/0, startup_counts 68/1 (the refcount check Wine marks
+  flaky). Spawned from the test, they print "child process wait failed" -- the sweep's
+  console-child spawn, still to be explained.
+- **Rust for Media Foundation:** mfplat and mf are translated and banked but parked at 57
+  and 164 compile errors (`rust-port-status.md`, Win10 surface wave). Tooling owed from
+  that run: `port island` generates only a module's MAIN island group (mfplat's
+  mediatype.c/sample.c groups never became crate islands; worked around with a hand
+  section in the arm); `port replay` took 87 minutes on mfplat's 525 functions; and there
+  is no single "re-island and reassemble from banks" command.
 - **Codecs for Media Foundation** (above): native Rust demuxers/decoders, or ports of
   the codec DLLs Windows ships (msmpeg2vdec, msauddecmft). Decide before chasing app
   playback.

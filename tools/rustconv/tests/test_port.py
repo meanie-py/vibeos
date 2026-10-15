@@ -1246,6 +1246,54 @@ def test_an_empty_dep_wiring_drops_the_stale_block(tmp_path):
     assert prelude.read_text() == "use x;\n"
 
 
+def test_wine_list_fields_typed_as_nt_list_entry_are_rewritten(tmp_path):
+    # mfreadwrite: `struct list entry;` came back as `entry: LIST_ENTRY` (Flink/Blink, so every
+    # `->next` was E0609) and wine/list.h's container-of as a call of the NT type alias.
+    crate = tmp_path / "m-rust"
+    crate.mkdir()
+    (crate / "Cargo.toml").write_text('[dependencies]\nwinelist-rust = { path = "../w" }\n')
+    mod = tmp_path / "m"
+    mod.mkdir()
+    (mod / "a.c").write_text('#include "wine/list.h"\nstruct t { struct list entry; };\n')
+    rs = tmp_path / "a.rs"
+    rs.write_text(
+        "pub struct t { pub entry: LIST_ENTRY, pub p: PLIST_ENTRY, pub q: _LIST_ENTRY }\n"
+        "fn f(p: *mut LIST_ENTRY) { let e = LIST_ENTRY(p, t, entry); let g = LIST_ENTRY!(p, t, entry); }\n"
+    )
+    assert port._wine_list_entry(rs, mod, crate) == 5
+    out = rs.read_text()
+    assert (
+        "entry: list," in out
+        and "q: list }" in out
+        and "p: *mut list" in out
+        and "f(p: *mut list)" in out
+    )
+    assert out.count("LIST_ENTRY!(p, t, entry)") == 2
+    assert port._wine_list_entry(rs, mod, crate) == 0
+
+
+def test_nt_list_entry_is_left_alone_where_the_c_uses_it(tmp_path):
+    crate = tmp_path / "m-rust"
+    crate.mkdir()
+    (crate / "Cargo.toml").write_text("winelist-rust\n")
+    mod = tmp_path / "m"
+    mod.mkdir()
+    (mod / "a.c").write_text('#include "wine/list.h"\nLIST_ENTRY Head;\n')
+    rs = tmp_path / "a.rs"
+    rs.write_text("static mut Head: LIST_ENTRY = zeroed();\n")
+    assert port._wine_list_entry(rs, mod, crate) == 0
+
+
+def test_c_struct_tag_spelled_struct_name_becomes_the_crates_type(tmp_path):
+    src = tmp_path / "src"
+    (src / "m").mkdir(parents=True)
+    (src / "m" / "a.rs").write_text("pub struct buffer { x: u32 }\n")
+    rs = src / "m" / "b.rs"
+    rs.write_text("fn f(b: *mut struct_buffer, s: *mut struct_other) {}\n")
+    assert port._c_struct_tag_names(rs, src) == ["buffer"]
+    assert "b: *mut buffer, s: *mut struct_other" in rs.read_text()
+
+
 def test_a_function_the_crate_defines_is_never_declared_extern(tmp_path):
     # fc: texta.rs defines TextCompareA; an `extern` for it beside the sibling `use` is E0255.
     (tmp_path / "texta.rs").write_text(
