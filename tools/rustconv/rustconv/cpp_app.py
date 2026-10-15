@@ -1616,7 +1616,7 @@ def _render_atl_glue(cls: ClassModel, h: Hierarchy, model: ModuleModel, win: Atl
         style, ex_style = _WIN_TRAITS[traits]
         params = (
             "parent: HWND, rect: *mut RECT, name: LPCWSTR, style: DWORD, ex_style: DWORD, "
-            "menu_or_id: UINT"
+            "menu_or_id: impl atl_rust::win::MenuOrId"
         )
         lines.append(
             "    /// ATL `CWindowImpl::Create(hWndParent, rect, szWindowName, dwStyle, dwExStyle, "
@@ -1638,14 +1638,14 @@ def _render_atl_glue(cls: ClassModel, h: Hierarchy, model: ModuleModel, win: Atl
                 "        atl_rust::win::create_window_info(self as *mut Self, "
                 "atl_rust::win::class_info_ptr(Self::GetWndClassInfo() as *mut _), parent as _, "
                 "rect as *const i32, name as *const u16, style as u32, ex_style as u32, "
-                "menu_or_id as usize as *mut core::ffi::c_void) as HWND"
+                "menu_or_id.menu_or_id()) as HWND"
             )
         else:
             lines.append(
                 "        atl_rust::win::create_window("
                 f"self as *mut Self, &{n}__WND_CLASS, parent as _, "
                 "rect as *const i32, name as *const u16, style as u32, ex_style as u32, "
-                "menu_or_id as usize as *mut core::ffi::c_void) as HWND"
+                "menu_or_id.menu_or_id()) as HWND"
             )
         lines.append("    }")
         lines.append(f"    pub unsafe fn Create(&mut self, {params}) -> HWND {{")

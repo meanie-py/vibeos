@@ -210,6 +210,38 @@ pub unsafe fn def_window_proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LRE
     }
 }
 
+/// ATL's `_U_MENUorID`: `CWindowImpl::Create`'s last argument is EITHER a menu handle or a
+/// child-window id, and the C++ class converts from both. A plain `UINT` parameter truncated
+/// an `HMENU` on 64-bit; this keeps each caller's own spelling (`IDC_X`, `0`, `hMenu`).
+pub trait MenuOrId {
+    fn menu_or_id(self) -> *mut c_void;
+}
+impl MenuOrId for u32 {
+    fn menu_or_id(self) -> *mut c_void {
+        self as usize as *mut c_void
+    }
+}
+impl MenuOrId for i32 {
+    fn menu_or_id(self) -> *mut c_void {
+        self as u32 as usize as *mut c_void // `_U_MENUorID(UINT nID)`: zero-extended
+    }
+}
+impl MenuOrId for usize {
+    fn menu_or_id(self) -> *mut c_void {
+        self as *mut c_void
+    }
+}
+impl MenuOrId for u64 {
+    fn menu_or_id(self) -> *mut c_void {
+        self as usize as *mut c_void
+    }
+}
+impl<P> MenuOrId for *mut P {
+    fn menu_or_id(self) -> *mut c_void {
+        self.cast()
+    }
+}
+
 /// `CWindowImpl::Create`: register the class on first use, then create with `this` as the
 /// create parameter. `rect` is `*const RECT` (null: CW_USEDEFAULT), as ATL's `_U_RECT`.
 #[allow(clippy::too_many_arguments)]

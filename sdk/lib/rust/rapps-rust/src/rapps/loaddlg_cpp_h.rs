@@ -1,7 +1,6 @@
 use crate::prelude::*;
 use crate::rapps::geninst_cpp_h::ExtractArchiveForExecution;
 use crate::rapps::integrity_cpp_h::VerifyInteg;
-use crate::rapps::misc_cpp_h::{GetSilentInstallParameters, GuessInstallerType};
 // Deterministic UTF-16 literals from the selected C++ helper closure.
 pub static CPP_COM_WSTR_1B4F33C91A81: [WCHAR; 10] = [0x0052, 0x0041, 0x0070, 0x0070, 0x0073, 0x002F, 0x0031, 0x002E, 0x0031, 0x0000];
 pub static CPP_COM_WSTR_1B9334FEECE6: [WCHAR; 2] = [0x0022, 0x0000];
@@ -24,7 +23,6 @@ use core::ffi::c_void;
 pub static mut g_hDownloadWnd: HWND = core::ptr::null_mut();
 
 static mut CertGetSubjectAndIssuer_dummy: i32 = 0;
-
 
 
 
@@ -428,12 +426,6 @@ impl CDowloadingAppsListView {
         Item.iItem = ItemIndex;
 
         return (*this_).__base0.InsertItem(core::ptr::addr_of_mut!(Item));
-    }
-    pub unsafe fn AddRow(&mut self, RowIndex: INT, szAppName: LPCWSTR, Status: DownloadStatus) {
-        let this_: *mut Self = self;
-        let mut szStatus = LoadStatusString(Status);
-        (*this_).AddItem(RowIndex, szAppName as LPWSTR);
-        (*this_).SetDownloadStatus(RowIndex, Status);
     }
     pub unsafe fn AddColumn(&mut self, Index: INT, Width: INT, Format: INT) -> BOOL {
         let this_: *mut Self = self;
@@ -1264,5 +1256,15 @@ impl CDownloadManager {
         }
 
         SendMessageW(hDlg, WM_SETSTATUS, (DLSTATUS_FINISHED) as WPARAM, 0);
+    }
+}
+
+// CDowloadingAppsListView::AddRow: the model's body was rejected; hand-written.
+impl CDowloadingAppsListView {
+    pub unsafe fn AddRow(&mut self, RowIndex: INT, szAppName: LPCWSTR, Status: DownloadStatus) {
+        let this_: *mut Self = self;
+        let mut szStatus = LoadStatusString(Status);
+        (*this_).AddItem(RowIndex, szAppName as LPWSTR);
+        (*this_).SetDownloadStatus(RowIndex, Status);
     }
 }

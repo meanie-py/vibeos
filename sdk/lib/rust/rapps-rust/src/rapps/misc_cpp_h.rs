@@ -629,67 +629,6 @@ pub unsafe extern "C" fn GetSilentInstallParameters(InstallerType: InstallerType
         }
     }
 }
-/// misc.cpp `IsSameRegKey(HKEY, HKEY)`, hand-written: its function-local `struct NameInfo :
-/// UNICODE_STRING` (a buffer the string points into, set up by its constructor) has no model
-/// layout. Built in place and never moved, as the C++ local is.
-unsafe extern "C" fn IsSameRegKey__1(hKey1: HKEY, hKey2: HKEY) -> BOOL {
-    // CompareObjectHandles is Win10+ so we check the path instead.
-    #[repr(C)]
-    struct NameInfo {
-        base: UNICODE_STRING,
-        Allocation: [WCHAR; MAX_PATH as usize],
-    }
-    let mut Name1: NameInfo = core::mem::zeroed();
-    let mut Name2: NameInfo = core::mem::zeroed();
-    for n in [&mut Name1, &mut Name2] {
-        n.base.MaximumLength = core::mem::size_of_val(&n.Allocation) as USHORT;
-        n.base.Buffer = n.Allocation.as_mut_ptr();
-    }
-    let mut Length: ULONG = 0;
-    (NtQueryObject(
-        hKey1 as HANDLE,
-        ObjectNameInformation,
-        core::ptr::addr_of_mut!(Name1) as PVOID,
-        core::mem::size_of::<NameInfo>() as ULONG,
-        &mut Length,
-    ) >= 0
-        && NtQueryObject(
-            hKey2 as HANDLE,
-            ObjectNameInformation,
-            core::ptr::addr_of_mut!(Name2) as PVOID,
-            core::mem::size_of::<NameInfo>() as ULONG,
-            &mut Length,
-        ) >= 0
-        && RtlCompareUnicodeString(&Name1.base, &Name2.base, TRUE as BOOLEAN) == 0) as BOOL
-}
-
-/// misc.cpp `RegKeyHasValues`, hand-written (the model's body did not parse).
-pub unsafe extern "C" fn RegKeyHasValues(hKey: HKEY, Path: LPCWSTR, wowsam: REGSAM) -> HRESULT {
-    let mut key = CRegKey__make_0();
-    let mut err: LONG = key.Open(hKey, Path, KEY_QUERY_VALUE | wowsam);
-    if err == ERROR_SUCCESS as LONG {
-        let mut name: [WCHAR; 1] = [0; 1];
-        let mut cchname: DWORD = name.len() as DWORD;
-        let mut cbsize: DWORD = 0;
-        err = RegEnumValueW(
-            key.op_to_HKEY(),
-            0,
-            name.as_mut_ptr(),
-            &mut cchname,
-            core::ptr::null_mut(),
-            core::ptr::null_mut(),
-            core::ptr::null_mut(),
-            &mut cbsize,
-        ) as LONG;
-        if err == ERROR_NO_MORE_ITEMS as LONG {
-            return S_FALSE as HRESULT;
-        }
-        if err == ERROR_MORE_DATA as LONG {
-            err = ERROR_SUCCESS as LONG;
-        }
-    }
-    HRESULT_FROM_WIN32!(err)
-}
 
 /// misc.cpp `GuessInstallerType`, hand-written: the model's body did not parse twice. Its
 /// `goto done` exits are `break 'done`, and `done:`'s CloseHandle runs on every path.
@@ -793,4 +732,66 @@ pub unsafe extern "C" fn GuessInstallerType(Installer: LPCWSTR, ExtraInfo: &mut 
     }
     CloseHandle(hFile);
     it
+}
+
+/// misc.cpp `IsSameRegKey(HKEY, HKEY)`, hand-written: its function-local `struct NameInfo :
+/// UNICODE_STRING` (a buffer the string points into, set up by its constructor) has no model
+/// layout. Built in place and never moved, as the C++ local is.
+unsafe extern "C" fn IsSameRegKey__1(hKey1: HKEY, hKey2: HKEY) -> BOOL {
+    // CompareObjectHandles is Win10+ so we check the path instead.
+    #[repr(C)]
+    struct NameInfo {
+        base: UNICODE_STRING,
+        Allocation: [WCHAR; MAX_PATH as usize],
+    }
+    let mut Name1: NameInfo = core::mem::zeroed();
+    let mut Name2: NameInfo = core::mem::zeroed();
+    for n in [&mut Name1, &mut Name2] {
+        n.base.MaximumLength = core::mem::size_of_val(&n.Allocation) as USHORT;
+        n.base.Buffer = n.Allocation.as_mut_ptr();
+    }
+    let mut Length: ULONG = 0;
+    (NtQueryObject(
+        hKey1 as HANDLE,
+        ObjectNameInformation,
+        core::ptr::addr_of_mut!(Name1) as PVOID,
+        core::mem::size_of::<NameInfo>() as ULONG,
+        &mut Length,
+    ) >= 0
+        && NtQueryObject(
+            hKey2 as HANDLE,
+            ObjectNameInformation,
+            core::ptr::addr_of_mut!(Name2) as PVOID,
+            core::mem::size_of::<NameInfo>() as ULONG,
+            &mut Length,
+        ) >= 0
+        && RtlCompareUnicodeString(&Name1.base, &Name2.base, TRUE as BOOLEAN) == 0) as BOOL
+}
+
+/// misc.cpp `RegKeyHasValues`, hand-written (the model's body did not parse).
+pub unsafe extern "C" fn RegKeyHasValues(hKey: HKEY, Path: LPCWSTR, wowsam: REGSAM) -> HRESULT {
+    let mut key = CRegKey__make_0();
+    let mut err: LONG = key.Open(hKey, Path, KEY_QUERY_VALUE | wowsam);
+    if err == ERROR_SUCCESS as LONG {
+        let mut name: [WCHAR; 1] = [0; 1];
+        let mut cchname: DWORD = name.len() as DWORD;
+        let mut cbsize: DWORD = 0;
+        err = RegEnumValueW(
+            key.op_to_HKEY(),
+            0,
+            name.as_mut_ptr(),
+            &mut cchname,
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            &mut cbsize,
+        ) as LONG;
+        if err == ERROR_NO_MORE_ITEMS as LONG {
+            return S_FALSE as HRESULT;
+        }
+        if err == ERROR_MORE_DATA as LONG {
+            err = ERROR_SUCCESS as LONG;
+        }
+    }
+    HRESULT_FROM_WIN32!(err)
 }

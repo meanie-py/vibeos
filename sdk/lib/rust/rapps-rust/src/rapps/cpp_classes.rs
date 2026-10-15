@@ -1546,10 +1546,10 @@ impl CUiSplitPanel {
         atl_rust::win::def_window_proc(self.__base2.m_hWnd as _, msg as u32, w as usize, l as isize) as LRESULT
     }
     /// ATL `CWindowImpl::Create(hWndParent, rect, szWindowName, dwStyle, dwExStyle, MenuOrID)`; a zero style is CControlWinTraits's (`T::GetWndStyle`). Named as the C++ qualifies it, since a class's own `Create` hides it.
-    pub unsafe fn CWindowImpl_Create(&mut self, parent: HWND, rect: *mut RECT, name: LPCWSTR, style: DWORD, ex_style: DWORD, menu_or_id: UINT) -> HWND {
+    pub unsafe fn CWindowImpl_Create(&mut self, parent: HWND, rect: *mut RECT, name: LPCWSTR, style: DWORD, ex_style: DWORD, menu_or_id: impl atl_rust::win::MenuOrId) -> HWND {
         let style = if style == 0 { (WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS) as DWORD } else { style };
         let ex_style = if ex_style == 0 { (0) as DWORD } else { ex_style };
-        atl_rust::win::create_window(self as *mut Self, &CUiSplitPanel__WND_CLASS, parent as _, rect as *const i32, name as *const u16, style as u32, ex_style as u32, menu_or_id as usize as *mut core::ffi::c_void) as HWND
+        atl_rust::win::create_window(self as *mut Self, &CUiSplitPanel__WND_CLASS, parent as _, rect as *const i32, name as *const u16, style as u32, ex_style as u32, menu_or_id.menu_or_id()) as HWND
     }
     pub unsafe fn SubclassWindow(&mut self, hwnd: HWND) -> BOOL {
         atl_rust::win::subclass_window(self as *mut Self, hwnd as _) as BOOL
@@ -2267,10 +2267,10 @@ impl CAppScrnshotPreview {
         atl_rust::win::def_window_proc(self.__base0.m_hWnd as _, msg as u32, w as usize, l as isize) as LRESULT
     }
     /// ATL `CWindowImpl::Create(hWndParent, rect, szWindowName, dwStyle, dwExStyle, MenuOrID)`; a zero style is CControlWinTraits's (`T::GetWndStyle`). Named as the C++ qualifies it, since a class's own `Create` hides it.
-    pub unsafe fn CWindowImpl_Create(&mut self, parent: HWND, rect: *mut RECT, name: LPCWSTR, style: DWORD, ex_style: DWORD, menu_or_id: UINT) -> HWND {
+    pub unsafe fn CWindowImpl_Create(&mut self, parent: HWND, rect: *mut RECT, name: LPCWSTR, style: DWORD, ex_style: DWORD, menu_or_id: impl atl_rust::win::MenuOrId) -> HWND {
         let style = if style == 0 { (WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS) as DWORD } else { style };
         let ex_style = if ex_style == 0 { (0) as DWORD } else { ex_style };
-        atl_rust::win::create_window_info(self as *mut Self, atl_rust::win::class_info_ptr(Self::GetWndClassInfo() as *mut _), parent as _, rect as *const i32, name as *const u16, style as u32, ex_style as u32, menu_or_id as usize as *mut core::ffi::c_void) as HWND
+        atl_rust::win::create_window_info(self as *mut Self, atl_rust::win::class_info_ptr(Self::GetWndClassInfo() as *mut _), parent as _, rect as *const i32, name as *const u16, style as u32, ex_style as u32, menu_or_id.menu_or_id()) as HWND
     }
     pub unsafe fn SubclassWindow(&mut self, hwnd: HWND) -> BOOL {
         atl_rust::win::subclass_window(self as *mut Self, hwnd as _) as BOOL
@@ -2336,10 +2336,10 @@ impl CAppInfoDisplay {
         atl_rust::win::def_window_proc(self.__base0.__base2.m_hWnd as _, msg as u32, w as usize, l as isize) as LRESULT
     }
     /// ATL `CWindowImpl::Create(hWndParent, rect, szWindowName, dwStyle, dwExStyle, MenuOrID)`; a zero style is CControlWinTraits's (`T::GetWndStyle`). Named as the C++ qualifies it, since a class's own `Create` hides it.
-    pub unsafe fn CWindowImpl_Create(&mut self, parent: HWND, rect: *mut RECT, name: LPCWSTR, style: DWORD, ex_style: DWORD, menu_or_id: UINT) -> HWND {
+    pub unsafe fn CWindowImpl_Create(&mut self, parent: HWND, rect: *mut RECT, name: LPCWSTR, style: DWORD, ex_style: DWORD, menu_or_id: impl atl_rust::win::MenuOrId) -> HWND {
         let style = if style == 0 { (WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS) as DWORD } else { style };
         let ex_style = if ex_style == 0 { (0) as DWORD } else { ex_style };
-        atl_rust::win::create_window_info(self as *mut Self, atl_rust::win::class_info_ptr(Self::GetWndClassInfo() as *mut _), parent as _, rect as *const i32, name as *const u16, style as u32, ex_style as u32, menu_or_id as usize as *mut core::ffi::c_void) as HWND
+        atl_rust::win::create_window_info(self as *mut Self, atl_rust::win::class_info_ptr(Self::GetWndClassInfo() as *mut _), parent as _, rect as *const i32, name as *const u16, style as u32, ex_style as u32, menu_or_id.menu_or_id()) as HWND
     }
     pub unsafe fn SubclassWindow(&mut self, hwnd: HWND) -> BOOL {
         atl_rust::win::subclass_window(self as *mut Self, hwnd as _) as BOOL
@@ -2422,10 +2422,10 @@ impl CAppsListView {
         atl_rust::win::def_window_proc(self.__base0.__base2.__base0.m_hWnd as _, msg as u32, w as usize, l as isize) as LRESULT
     }
     /// ATL `CWindowImpl::Create(hWndParent, rect, szWindowName, dwStyle, dwExStyle, MenuOrID)`; a zero style is CControlWinTraits's (`T::GetWndStyle`). Named as the C++ qualifies it, since a class's own `Create` hides it.
-    pub unsafe fn CWindowImpl_Create(&mut self, parent: HWND, rect: *mut RECT, name: LPCWSTR, style: DWORD, ex_style: DWORD, menu_or_id: UINT) -> HWND {
+    pub unsafe fn CWindowImpl_Create(&mut self, parent: HWND, rect: *mut RECT, name: LPCWSTR, style: DWORD, ex_style: DWORD, menu_or_id: impl atl_rust::win::MenuOrId) -> HWND {
         let style = if style == 0 { (WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS) as DWORD } else { style };
         let ex_style = if ex_style == 0 { (0) as DWORD } else { ex_style };
-        atl_rust::win::create_window(self as *mut Self, &CAppsListView__WND_CLASS, parent as _, rect as *const i32, name as *const u16, style as u32, ex_style as u32, menu_or_id as usize as *mut core::ffi::c_void) as HWND
+        atl_rust::win::create_window(self as *mut Self, &CAppsListView__WND_CLASS, parent as _, rect as *const i32, name as *const u16, style as u32, ex_style as u32, menu_or_id.menu_or_id()) as HWND
     }
     pub unsafe fn SubclassWindow(&mut self, hwnd: HWND) -> BOOL {
         atl_rust::win::subclass_window(self as *mut Self, hwnd as _) as BOOL
@@ -2626,10 +2626,10 @@ impl CApplicationView {
         atl_rust::win::def_window_proc(self.__base0.__base2.m_hWnd as _, msg as u32, w as usize, l as isize) as LRESULT
     }
     /// ATL `CWindowImpl::Create(hWndParent, rect, szWindowName, dwStyle, dwExStyle, MenuOrID)`; a zero style is CControlWinTraits's (`T::GetWndStyle`). Named as the C++ qualifies it, since a class's own `Create` hides it.
-    pub unsafe fn CWindowImpl_Create(&mut self, parent: HWND, rect: *mut RECT, name: LPCWSTR, style: DWORD, ex_style: DWORD, menu_or_id: UINT) -> HWND {
+    pub unsafe fn CWindowImpl_Create(&mut self, parent: HWND, rect: *mut RECT, name: LPCWSTR, style: DWORD, ex_style: DWORD, menu_or_id: impl atl_rust::win::MenuOrId) -> HWND {
         let style = if style == 0 { (WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS) as DWORD } else { style };
         let ex_style = if ex_style == 0 { (0) as DWORD } else { ex_style };
-        atl_rust::win::create_window_info(self as *mut Self, atl_rust::win::class_info_ptr(Self::GetWndClassInfo() as *mut _), parent as _, rect as *const i32, name as *const u16, style as u32, ex_style as u32, menu_or_id as usize as *mut core::ffi::c_void) as HWND
+        atl_rust::win::create_window_info(self as *mut Self, atl_rust::win::class_info_ptr(Self::GetWndClassInfo() as *mut _), parent as _, rect as *const i32, name as *const u16, style as u32, ex_style as u32, menu_or_id.menu_or_id()) as HWND
     }
     pub unsafe fn SubclassWindow(&mut self, hwnd: HWND) -> BOOL {
         atl_rust::win::subclass_window(self as *mut Self, hwnd as _) as BOOL
@@ -3036,10 +3036,10 @@ impl CMainWindow {
         atl_rust::win::def_window_proc(self.__base0.m_hWnd as _, msg as u32, w as usize, l as isize) as LRESULT
     }
     /// ATL `CWindowImpl::Create(hWndParent, rect, szWindowName, dwStyle, dwExStyle, MenuOrID)`; a zero style is CFrameWinTraits's (`T::GetWndStyle`). Named as the C++ qualifies it, since a class's own `Create` hides it.
-    pub unsafe fn CWindowImpl_Create(&mut self, parent: HWND, rect: *mut RECT, name: LPCWSTR, style: DWORD, ex_style: DWORD, menu_or_id: UINT) -> HWND {
+    pub unsafe fn CWindowImpl_Create(&mut self, parent: HWND, rect: *mut RECT, name: LPCWSTR, style: DWORD, ex_style: DWORD, menu_or_id: impl atl_rust::win::MenuOrId) -> HWND {
         let style = if style == 0 { (WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_CLIPSIBLINGS) as DWORD } else { style };
         let ex_style = if ex_style == 0 { (WS_EX_APPWINDOW | WS_EX_WINDOWEDGE) as DWORD } else { ex_style };
-        atl_rust::win::create_window_info(self as *mut Self, atl_rust::win::class_info_ptr(Self::GetWndClassInfo() as *mut _), parent as _, rect as *const i32, name as *const u16, style as u32, ex_style as u32, menu_or_id as usize as *mut core::ffi::c_void) as HWND
+        atl_rust::win::create_window_info(self as *mut Self, atl_rust::win::class_info_ptr(Self::GetWndClassInfo() as *mut _), parent as _, rect as *const i32, name as *const u16, style as u32, ex_style as u32, menu_or_id.menu_or_id()) as HWND
     }
     pub unsafe fn SubclassWindow(&mut self, hwnd: HWND) -> BOOL {
         atl_rust::win::subclass_window(self as *mut Self, hwnd as _) as BOOL
@@ -3490,12 +3490,12 @@ impl CDownloaderProgress {
         atl_rust::win::def_window_proc(self.__base0.m_hWnd as _, msg as u32, w as usize, l as isize) as LRESULT
     }
     /// ATL `CWindowImpl::Create(hWndParent, rect, szWindowName, dwStyle, dwExStyle, MenuOrID)`; a zero style is CControlWinTraits's (`T::GetWndStyle`). Named as the C++ qualifies it, since a class's own `Create` hides it.
-    pub unsafe fn CWindowImpl_Create(&mut self, parent: HWND, rect: *mut RECT, name: LPCWSTR, style: DWORD, ex_style: DWORD, menu_or_id: UINT) -> HWND {
+    pub unsafe fn CWindowImpl_Create(&mut self, parent: HWND, rect: *mut RECT, name: LPCWSTR, style: DWORD, ex_style: DWORD, menu_or_id: impl atl_rust::win::MenuOrId) -> HWND {
         let style = if style == 0 { (WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS) as DWORD } else { style };
         let ex_style = if ex_style == 0 { (0) as DWORD } else { ex_style };
-        atl_rust::win::create_window(self as *mut Self, &CDownloaderProgress__WND_CLASS, parent as _, rect as *const i32, name as *const u16, style as u32, ex_style as u32, menu_or_id as usize as *mut core::ffi::c_void) as HWND
+        atl_rust::win::create_window(self as *mut Self, &CDownloaderProgress__WND_CLASS, parent as _, rect as *const i32, name as *const u16, style as u32, ex_style as u32, menu_or_id.menu_or_id()) as HWND
     }
-    pub unsafe fn Create(&mut self, parent: HWND, rect: *mut RECT, name: LPCWSTR, style: DWORD, ex_style: DWORD, menu_or_id: UINT) -> HWND {
+    pub unsafe fn Create(&mut self, parent: HWND, rect: *mut RECT, name: LPCWSTR, style: DWORD, ex_style: DWORD, menu_or_id: impl atl_rust::win::MenuOrId) -> HWND {
         self.CWindowImpl_Create(parent, rect, name, style, ex_style, menu_or_id)
     }
     pub unsafe fn SubclassWindow(&mut self, hwnd: HWND) -> BOOL {

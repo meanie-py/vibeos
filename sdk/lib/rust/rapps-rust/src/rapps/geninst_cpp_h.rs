@@ -1,6 +1,5 @@
 use crate::prelude::*;
 use crate::rapps::configparser_cpp_h::ReadIniValue;
-use crate::rapps::misc_cpp_h::RegKeyHasValues;
 // Deterministic UTF-16 literals from the selected C++ helper closure.
 pub static CPP_COM_WSTR_00E541DC6A23: [WCHAR; 4] = [0x002C, 0x0025, 0x0064, 0x0000];
 pub static CPP_COM_WSTR_0DEDEAA7DBFB: [WCHAR; 14] = [0x0025, 0x0073, 0x005C, 0x007E, 0x0052, 0x0041, 0x004D, 0x0025, 0x0075, 0x002E, 0x0074, 0x006D, 0x0070, 0x0000];

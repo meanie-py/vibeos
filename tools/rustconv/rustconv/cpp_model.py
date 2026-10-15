@@ -1366,21 +1366,23 @@ class _Extractor:
         self.model.functions.append(ff)
         self.pending.append((ff, body, None))
 
-    def base_path(self, frm: str, to: str) -> str:
+    def base_path(self, frm: str, to: str, *, deep: bool = False) -> str:
         """`__baseK.` hops from class `frm` to its (transitive) base `to`, by short name.
         A base the module does not define (CWindowImpl<...>) is reached as the class's
-        external base when `to` is not a module class at all -- through module bases too:
-        rapps' CUiMargin reaches RECT via CUiRect, and clang names that cast `tagRECT`
-        where the base list spells `RECT`, so names compare through the typedef table.
-        Without the path the member went through the generated Deref, a reference made
-        through a raw pointer (dangerous_implicit_autorefs)."""
+        external base when `to` is not a module class at all.
+
+        `deep` (a plain-struct field reached through a cast, `_plain_base_field`): the
+        external base may sit behind module bases -- rapps' CUiMargin reaches RECT via
+        CUiRect -- and clang names that cast `tagRECT` where the base list says `RECT`, so
+        names compare through the typedef table. It is opt-in because the lowered text is
+        the purchase cache key: widening every caller re-keyed 17 of rapps' paid units."""
         if frm == to:
             return ""
         by_short = {q.split("::")[-1]: c for q, c in self.model.classes.items()}
         start = by_short.get(frm)
         if start is None:
             return ""
-        target = self._tag(to)
+        target = self._tag(to) if deep else to
         queue = [(start, "")]
         seen = set()
         external: list[str] | None = None  # the NEAREST class with outside bases decides
@@ -1390,7 +1392,7 @@ class _Extractor:
             for i, b in enumerate(cls.bases):
                 short = atl_base_alias(b.name)
                 hop = f"{path}__base{i}."
-                if short == to or self._tag(short) == target:
+                if short == to or (deep and self._tag(short) == target):
                     return hop
                 nxt = by_short.get(short)
                 if nxt is None:
@@ -1398,8 +1400,8 @@ class _Extractor:
                 elif short not in seen:
                     seen.add(short)
                     queue.append((nxt, hop))
-            if outside and external is None:
-                external = outside
+            if external is None and (outside or not deep):
+                external = outside  # not deep: only the starting class's own bases count
         if to not in by_short and external is not None and len(external) == 1:
             return external[0]
         return ""

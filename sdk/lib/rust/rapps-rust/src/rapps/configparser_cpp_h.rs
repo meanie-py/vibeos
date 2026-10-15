@@ -10,15 +10,6 @@ pub static CPP_COM_WSTR_E17C172CF886: [WCHAR; 9] = [0x0025, 0x0073, 0x002E, 0x00
 
 use core::ffi::c_void;
 
-// misc.h: `#define CurrentArchitecture L"x86"` etc. The island's byte-string constant of the same name is
-// a narrow mistranslation of that wide macro, and `%s` in the wide printf wants WCHARs.
-#[cfg(target_arch = "x86")]
-static CurrentArchitectureW: [WCHAR; 4] = [0x78, 0x38, 0x36, 0];
-#[cfg(target_arch = "x86_64")]
-static CurrentArchitectureW: [WCHAR; 6] = [0x61, 0x6d, 0x64, 0x36, 0x34, 0];
-#[cfg(target_arch = "aarch64")]
-static CurrentArchitectureW: [WCHAR; 6] = [0x61, 0x72, 0x6d, 0x36, 0x34, 0];
-
 
 
 
@@ -231,3 +222,12 @@ impl CSectionNames {
     pub unsafe fn __ctor_0(&mut self) {
         let this_: *mut Self = self;}
 }
+
+// misc.h: `#define CurrentArchitecture L"x86"` etc. The island's byte-string constant of the same name is
+// a narrow mistranslation of that wide macro, and `%s` in the wide printf wants WCHARs.
+#[cfg(target_arch = "x86")]
+static CurrentArchitectureW: [WCHAR; 4] = [0x78, 0x38, 0x36, 0];
+#[cfg(target_arch = "x86_64")]
+static CurrentArchitectureW: [WCHAR; 6] = [0x61, 0x6d, 0x64, 0x36, 0x34, 0];
+#[cfg(target_arch = "aarch64")]
+static CurrentArchitectureW: [WCHAR; 6] = [0x61, 0x72, 0x6d, 0x36, 0x34, 0];

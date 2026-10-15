@@ -4159,6 +4159,10 @@ def _tchar_structs(state: dict, prelude: Path) -> dict[str, str]:
     )
     out = {}
     for name, base in _A_ALIAS_RE.findall(text):
+        if name.endswith("A") and f"{name[:-1]}W" in defined:
+            # `WNDCLASSEXA = _WNDCLASSEXA` is the explicit ANSI name, not a TCHAR one: rapps
+            # had `WNDCLASSEXA = _WNDCLASSEXW` written because a comment spelled it.
+            continue
         if f"{base}W" in defined and re.search(rf"\b{re.escape(name)}\b", units):
             out[name] = f"{base}W"
     return out

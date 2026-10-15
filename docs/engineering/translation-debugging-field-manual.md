@@ -5330,6 +5330,12 @@ Each was one fix in the tool; listed so the next module's symptom can be matched
   with a prefix (`ATL_`, `Gdiplus_`), and the bodies spell them bare; the island glue aliases
   the ones the module uses (never generics, never atl_rust's own). `DllExports::GdipX(..)` is
   lowered to the bare extern.
+- **A field of a base two hops away, outside the module** (`m_Margin.left`, where CUiMargin
+  derives CUiRect derives RECT): eleven `dangerous_implicit_autorefs` denials, since Rust
+  reached `left` through two generated Derefs on a raw pointer. `base_path` gave up because
+  the external fallback only looked at the class's own bases, and because clang names the
+  cast target `tagRECT` where the base list says `RECT`. It now walks module bases to the
+  nearest external one and compares names through the typedef table: `m_Margin.__base0.__base0.left`.
 - **A plain struct holding an ATL type by value** was left to the island, which laid
   `CStringW` out as bindgen's `ATL_CStringW` and derived `Copy` over it. Now cppapp owns it.
 - **`(CALLBACK_TYPE)(-1)`** has no Rust constant: const evaluation rejects a fn pointer that
@@ -5897,6 +5903,18 @@ output. Every one of the 63 predates `facce583b65` (2026-09-12), which added
 `ResponseCache.refuse_repurchase` — "already has purchased output which did not replay. Refusing
 to buy it again automatically." The class is closed by a guard that already exists; the number
 is history, not a live leak.
+
+**That guard can over-fire on a contract section that DESCRIBES rather than grants.** rapps'
+`port replay` refused 17 of 34 units of accepted bodies with the same message. The C was
+unchanged, and so were the contract's section titles; what moved was text inside two
+sections that are derived from the tree: cppapp's class context (the Rust shape of each class,
+which improves with the tooling) and the ATL types section, which lists atl_rust's API as
+extracted from its source (one session's new `CStringW::Trim` re-keyed every body naming a
+CStringW). Neither grants something a pre-change body lacked, so an entry whose titles are
+unchanged and all `_DERIVED_SECTIONS` now replays. A NEW section still changes the titles and
+still misses. The refusal now says WHY it missed (`no entry`, `the C body changed`, `the
+contract changed (capabilities ..)`, `the seal set grew by ..`); before that, the cause had
+been guessed wrong once (a lowering change, narrowed on the strength of the guess; narrow is right anyway, since a changed lowered body re-BUYS rather than refuses).
 
 **The general rule behind that second trap: A LEDGER THAT OMITS FAILURES REPORTS THAT NOTHING
 EVER FAILED.** `meta.json` is the specific case, and the error it produces is not a wrong

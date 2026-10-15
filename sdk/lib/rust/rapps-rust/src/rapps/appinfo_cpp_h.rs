@@ -52,11 +52,6 @@ pub static CPP_COM_WSTR_FB245110A679: [WCHAR; 7] = [0x0052, 0x0065, 0x0061, 0x00
 
 use core::ffi::c_void;
 
-/// C++ implicit `CStringW(LPCWSTR)` for a `const CStringW&` parameter.
-unsafe fn cs_w(p: LPCWSTR) -> CStringW {
-    CStringW::from_ptr(p)
-}
-
 unsafe extern "C" fn ClampAvailableCategory(Category: AppsCategories) -> AppsCategories {
     if Category <= ENUM_LASTCATEGORY {
         return Category;
@@ -722,4 +717,9 @@ impl CInstalledApplicationInfo {
 
         return bSuccess;
     }
+}
+
+/// C++ implicit `CStringW(LPCWSTR)` for a `const CStringW&` parameter.
+unsafe fn cs_w(p: LPCWSTR) -> CStringW {
+    CStringW::from_ptr(p)
 }

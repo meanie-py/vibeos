@@ -67,6 +67,13 @@ hand-written: cabinet's `FNCLOSE(fnFileClose)` (an FDI macro that names the func
 `CDowloadingAppsListView::AddRow`, and misc's `RegKeyHasValues`, `IsSameRegKey` (a
 function-local struct with a constructor) and `GuessInstallerType`.
 
+2026-10-15: the crate is at 0 `cargo check` errors on all three arches. Two Sonnet
+integrators split the 25 units (UI / the rest); everything they edited is banked in
+`~/vibeos-rust-staging/port/rapps/hand/` (~150 entries), so `port replay rapps` puts it back.
+Total spend so far ~$0.71. Fidelity fixes they found beyond type errors: a `!(x & F) != 0`
+precedence bug, `GetWndClassInfo` statics rebuilt per call (re-registering the class), and
+the GDI+ screenshot math done in double as the C++ does.
+
 ## Queue after rapps
 
 Shell extensions: zipfldr, fontext, netshell, stobject, acppage, cabview, mydocs, sendmail,
@@ -90,6 +97,14 @@ Rust — don't requeue it.)
   `this` as its control ID the way ATL's `CWindowImplBaseT::Create` does;
   `create_window_info` (a module's own GetWndClassInfo) does. Unify them, and check the
   shipped window modules when doing so.
+- rapps integrators' local workarounds that want an atl_rust/prelude home: `CAtlList::FindPos`
+  (returns POSITION; `Find` returns bool), `CStringW::{Replace(str,str), FindOneOf,
+  CopyChars, GetEnvironmentVariable}`, `CStringA::Append`, `InterlockedIncrement64` in
+  win32macros-rust, and an `atl_rust::win::unsubclass_window` (loaddlg declares GetPropW /
+  RemovePropW locally and hard-codes atl_rust's prop names). The island's
+  `ATL__ATL_WNDCLASSINFOW::m_wc` is `WNDCLASSEXA`, and prelude `DLGPROC`/`WNDPROC` are spelled
+  over `ntdll_sys::HWND__` rather than the island's; both are transmuted at the call site.
+  The model also wrote `new_0::<T>()` on non-generic fns and called `__ctor_0CUiWindow`.
 - ~290 bare fn aliases in already-shipped crates have the shape `_option_fn_aliases` fixes
   (non-`Option` fn pointer); UB only if the value can be zero. Audit with that pass.
 - certutil: a SHA1/`hashfile` case on a system with a CSP registered (the live CD has none;

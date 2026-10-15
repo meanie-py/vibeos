@@ -1,6 +1,5 @@
 use crate::prelude::*;
 use crate::rapps::settings_cpp_h::FillDefaultSettings;
-use crate::rapps::settings_cpp_h::SaveSettings;
 // Deterministic UTF-16 literals from the selected C++ helper closure.
 pub static CPP_COM_WSTR_96A296D224F2: [WCHAR; 1] = [0x0000];
 

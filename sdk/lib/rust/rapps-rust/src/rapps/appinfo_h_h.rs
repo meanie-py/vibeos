@@ -2,7 +2,7 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
-// DEFINE_ENUM_FLAG_OPERATORS(UninstallCommandFlags) is a function-like C++ macro that generates bitwise operator overloads. It is skipped here, as the preamble rules require. The repeated invocations are not emitted.
+// No file-scope declarations to emit. This preamble contains only C++ operator overloads and `DEFINE_ENUM_FLAG_OPERATORS(UninstallCommandFlags)` invocations. Those generate functions, which are out of scope here, and the enum they reference is declared elsewhere.
 
 
 

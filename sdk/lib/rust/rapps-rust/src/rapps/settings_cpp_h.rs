@@ -89,24 +89,6 @@ unsafe extern "C" fn LoadAllSettings(key: &mut CRegKey, settings: &mut SETTINGS_
     return bLoadedAny;
 }
 
-unsafe extern "system" {
-    // not bound by the island or the prelude
-    fn GetEnvironmentVariableW(lpName: LPCWSTR, lpBuffer: LPWSTR, nSize: DWORD) -> DWORD;
-}
-
-/// `CStringW::GetEnvironmentVariable(PCXSTR)` -- cstringt.h:658. atl_rust has no such member.
-unsafe fn CStringW_GetEnvironmentVariable(s: &mut CStringW, pszVar: LPCWSTR) -> BOOL {
-    let nLength: i32 = GetEnvironmentVariableW(pszVar, core::ptr::null_mut(), 0) as i32;
-    if nLength > 0 {
-        let pszBuffer = s.GetBuffer(nLength);
-        GetEnvironmentVariableW(pszVar, pszBuffer, nLength as DWORD);
-        s.ReleaseBuffer();
-        return 1;
-    }
-    s.Empty();
-    return 0;
-}
-
 unsafe extern "C" fn GetDefaultDownloadDirectory(szDownloadDir: &mut CStringW) {
     if (SHGetFolderPathW(core::ptr::null_mut(), (CSIDL_PERSONAL as i32), core::ptr::null_mut(), SHGFP_TYPE_CURRENT, szDownloadDir.GetBuffer((MAX_PATH as i32)))) < 0
     {
@@ -305,4 +287,22 @@ impl SettingsFieldString {
         let lResult: LONG = key.QueryStringValue((*this_).m_RegName, (*this_).m_pStringStore, core::ptr::addr_of_mut!(nChar));
         return (lResult == (ERROR_SUCCESS as i32)) as BOOL;
     }
+}
+
+/// `CStringW::GetEnvironmentVariable(PCXSTR)` -- cstringt.h:658. atl_rust has no such member.
+unsafe fn CStringW_GetEnvironmentVariable(s: &mut CStringW, pszVar: LPCWSTR) -> BOOL {
+    let nLength: i32 = GetEnvironmentVariableW(pszVar, core::ptr::null_mut(), 0) as i32;
+    if nLength > 0 {
+        let pszBuffer = s.GetBuffer(nLength);
+        GetEnvironmentVariableW(pszVar, pszBuffer, nLength as DWORD);
+        s.ReleaseBuffer();
+        return 1;
+    }
+    s.Empty();
+    return 0;
+}
+
+unsafe extern "system" {
+    // not bound by the island or the prelude
+    fn GetEnvironmentVariableW(lpName: LPCWSTR, lpBuffer: LPWSTR, nSize: DWORD) -> DWORD;
 }

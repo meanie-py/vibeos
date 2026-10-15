@@ -124,15 +124,6 @@ pub static mut g_AsyncIconTaskId: UINT = 0;
 
 
 
-/// winnt.h `InterlockedIncrement64` (an intrinsic, so win32macros_rust only carries the 32-bit forms):
-/// atomically adds one and returns the NEW value. `lock cmpxchg8b`/`lock xadd` need no alignment for
-/// correctness on x86, which is all the i386 `LONGLONG` member can promise.
-#[inline]
-unsafe fn InterlockedIncrement64(addend: *mut LONGLONG) -> LONGLONG {
-    let atomic = &*(addend as *const core::sync::atomic::AtomicI64);
-    atomic.fetch_add(1, core::sync::atomic::Ordering::SeqCst).wrapping_add(1)
-}
-
 #[no_mangle]
 pub unsafe extern "C" fn DeleteMenuEx(hMenu: HMENU, uPosition: UINT, uFlags: UINT) -> BOOL {
     let mut pos: INT;
@@ -2116,7 +2107,7 @@ impl CApplicationView {
         // Pick the "Programs" sub-menu for building the context menu.
         let hMenu: HMENU = GetSubMenu((*(*this_).m_MainWindow).__base0.GetMenu(), 1);
 
-        return (*this_).CWindowImpl_Create(hwndParent, &mut r, CPP_COM_WSTR_96A296D224F2.as_ptr(), WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS, 0, hMenu as usize as UINT);
+        return (*this_).CWindowImpl_Create(hwndParent, &mut r, CPP_COM_WSTR_96A296D224F2.as_ptr(), WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS, 0, hMenu);
     }
     pub unsafe fn SetRedraw(&mut self, bRedraw: BOOL) {
         let this_: *mut Self = self;
@@ -2334,4 +2325,13 @@ impl CAsyncLoadIcon {
     }
     pub unsafe fn __ctor_0(&mut self) {
         let this_: *mut Self = self;}
+}
+
+/// winnt.h `InterlockedIncrement64` (an intrinsic, so win32macros_rust only carries the 32-bit forms):
+/// atomically adds one and returns the NEW value. `lock cmpxchg8b`/`lock xadd` need no alignment for
+/// correctness on x86, which is all the i386 `LONGLONG` member can promise.
+#[inline]
+unsafe fn InterlockedIncrement64(addend: *mut LONGLONG) -> LONGLONG {
+    let atomic = &*(addend as *const core::sync::atomic::AtomicI64);
+    atomic.fetch_add(1, core::sync::atomic::Ordering::SeqCst).wrapping_add(1)
 }

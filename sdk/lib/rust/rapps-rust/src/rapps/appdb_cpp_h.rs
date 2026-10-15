@@ -1,6 +1,5 @@
 use crate::prelude::*;
 use crate::rapps::appinfo_h_h::IsInstalledEnum;
-use crate::rapps::misc_cpp_h::IsSameRegKey__0;
 // Deterministic UTF-16 literals from the selected C++ helper closure.
 pub static CPP_COM_WSTR_03259284055C: [WCHAR; 6] = [0x002A, 0x002E, 0x0074, 0x006D, 0x0070, 0x0000];
 pub static CPP_COM_WSTR_075DF3C8587C: [WCHAR; 6] = [0x002A, 0x002E, 0x0069, 0x0063, 0x006F, 0x0000];

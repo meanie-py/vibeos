@@ -436,7 +436,9 @@ class Lowerer:
         if not static_type or self._class(static_type) is None:
             return False
         target = self._ty(base.get("type", {}).get("qualType", ""))
-        path = self.base_path(static_type, target) or self.base_path(static_type, "\0external")
+        path = self.base_path(static_type, target, deep=True) or self.base_path(
+            static_type, "\0external", deep=True
+        )
         if not path:
             return False
         put(n["range"]["end"], 0, path, n.get("name", "?"))
