@@ -24,23 +24,74 @@ pub unsafe extern "system" fn GetAppPathFromLink(
     S_OK
 }
 
+// The process's explicit AppUserModelID (taskbar grouping). Behaviour measured on
+// Windows 11: Set(NULL) and any ID of 128+ characters are E_INVALIDARG; Set("") is
+// accepted and CLEARS the ID; Get with none set returns E_FAIL and NULLs *AppID; Get(NULL)
+// faults on Windows (no probe here either). The copy handed out is CoTaskMem, the caller's
+// to free. The upstream C returned the placeholder "ROS FixMe" and stored nothing.
+static APP_USER_MODEL_ID: core::sync::atomic::AtomicPtr<u16> =
+    core::sync::atomic::AtomicPtr::new(core::ptr::null_mut());
+// Get copies the string while Set may free it: one tiny lock spans both.
+static APP_USER_MODEL_ID_LOCK: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(false);
+
+extern "system" {
+    fn CoTaskMemFree(memory: LPVOID);
+}
+
+unsafe fn app_id_lock() {
+    use core::sync::atomic::Ordering;
+    while APP_USER_MODEL_ID_LOCK
+        .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .is_err()
+    {
+        core::hint::spin_loop();
+    }
+}
+
+fn app_id_unlock() {
+    APP_USER_MODEL_ID_LOCK.store(false, core::sync::atomic::Ordering::Release);
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn GetCurrentProcessExplicitAppUserModelID(
     AppID: *mut PWSTR,
 ) -> HRESULT {
-    SHStrDupW(
-        [b'R' as u16, b'O' as u16, b'S' as u16, b' ' as u16,
-         b'F' as u16, b'i' as u16, b'x' as u16, b'M' as u16, b'e' as u16, 0u16]
-            .as_ptr(),
-        AppID as *mut LPWSTR,
-    )
+    *AppID = core::ptr::null_mut();
+    app_id_lock();
+    let id = APP_USER_MODEL_ID.load(core::sync::atomic::Ordering::Relaxed);
+    let hr = if id.is_null() { E_FAIL } else { SHStrDupW(id, AppID as *mut LPWSTR) };
+    app_id_unlock();
+    hr
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn SetCurrentProcessExplicitAppUserModelID(
-    _AppID: PCWSTR,
+    AppID: PCWSTR,
 ) -> HRESULT {
-    FIXME!("SetCurrentProcessExplicitAppUserModelID stub\n");
+    if AppID.is_null() {
+        return E_INVALIDARG;
+    }
+    let mut len = 0usize;
+    while *AppID.add(len) != 0 {
+        len += 1;
+        if len >= 128 {
+            return E_INVALIDARG;
+        }
+    }
+    let mut copy: LPWSTR = core::ptr::null_mut();
+    if len != 0 {
+        let hr = SHStrDupW(AppID, &mut copy);
+        if hr < 0 {
+            return hr;
+        }
+    }
+    app_id_lock();
+    let old = APP_USER_MODEL_ID.swap(copy, core::sync::atomic::Ordering::Relaxed);
+    app_id_unlock();
+    if !old.is_null() {
+        CoTaskMemFree(old as LPVOID);
+    }
     S_OK
 }
 

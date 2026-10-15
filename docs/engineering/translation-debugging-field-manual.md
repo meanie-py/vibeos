@@ -421,6 +421,22 @@ hit this one (shlfileop.cpp, drive.cpp, CRecycleBin.cpp). Before believing a "mi
 grep `precomp.h` for the name: a `#define` there beats every other explanation, and the fix is
 to call the macro's *expansion*.
 
+### A C header INLINE declared extern links the export that shares its name
+**Symptom.** An access violation inside msvcrt's printf engine on the first call, reading
+a tiny address (mfplat: `0x27`) as a wide string. The C module never crashed there.
+
+**Cause.** C's counted `swprintf(buf, count, fmt, ...)` is a `static inline` in
+sdk/include/crt/stdio.h over `_vsnwprintf`. msvcrt.dll does export a `swprintf`, but it is
+the legacy `(buf, fmt, ...)` form. A translation that declares the C prototype in an
+`extern` block compiles cleanly and links the legacy export, which reads the count as the
+format pointer. `port resolve`'s tree consensus copied the declaration from crate to crate,
+so ole32, msiexec (the custom-action pipe name), wscript and the recycle bin shipped it too.
+
+**Fix.** `#[link_name = "_snwprintf"]` on the counted declaration (rtl-actctx had it right).
+`scan_swprintf_count` gates both directions (baseline empty). The class is wider than one
+function: before declaring any CRT name extern, check that the export of that name has the
+C header's signature, not just the same name.
+
 ### An out-parameter (`PVOID*`) declared as a plain pointer takes the caller's NULL by value
 **Symptom:** a function "succeeds" but the caller's handle stays NULL; the next call through it
 fails or dereferences NULL. **Cause:** setuplib's `OpenBootStore(PVOID* Handle, ...)` was
@@ -1387,6 +1403,21 @@ allocation used the real element size, so nothing looked wrong until index 1.
 
 **Fix.** Cast first: `(field as PREAL).add(i)`, ideally through one helper
 (`consrv/handle.rs::handle_at`). `scan_opaque_ptr_arith` gates it (baseline empty).
+
+### A COM interface the -sys crate carries opaque has no methods and no fields
+**Symptom.** `cannot find function IStream_Seek` (every widl wrapper but the ones some other
+path generated) and `no field cbSize on type ntdll_sys::nt::tagSTATSTG`, though the module's
+own headers define both in full. mfplat's byte stream, 57 errors deep.
+
+**Cause.** A user-mode island blocklists every name ntdll-sys exports, so the module shares
+one identity for NT types. ntdll-sys carries `IStream`, `IStreamVtbl` and `tagSTATSTG` as
+`{ _unused: [u8; 0] }` (rtl's memory stream only needs the pointer), and the blocklist keeps
+the empty version. No vtable means `port macros` has nothing to generate wrappers from.
+
+**Fix.** `UNBLOCK="IStream IStreamVtbl tagSTATSTG STATSTG LPSTREAM"` in the module's `# >>> hand`
+block, then re-island: the island owns the full objidl definitions. Not automatic for every
+opaque name: `_TP_POOL` and friends are opaque in the real headers too, and a local copy of
+those would split their identity from the ntdll-sys functions that take them.
 
 ### `(base as *mut PBYTE).offset(n)` strides by a POINTER, not a byte
 The C's `(PBYTE)base + n` came out as a cast to a pointer *to* a `PBYTE` followed by

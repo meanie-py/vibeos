@@ -278,7 +278,7 @@
 @ stub -version=0xA00+ InitializeCompartmentEntry
 @ stub -version=0xA00+ InitializeFlVirtualInterfaceEntry
 @ stub -version=0xA00+ InitializeIpForwardEntry
-@ stub -version=0xA00+ InitializeIpInterfaceEntry
+@ stdcall InitializeIpInterfaceEntry(ptr)
 @ stub -version=0xA00+ InitializeUnicastIpAddressEntry
 @ stub -version=0xA00+ InternalCleanupPersistentStore
 @ stub -version=0xA00+ InternalCreateAnycastIpAddressEntry
@@ -342,7 +342,7 @@
 @ stub -version=0xA00+ NotifyNetworkConnectivityHintChange
 @ stub -version=0xA00+ NotifyStableUnicastIpAddressTable
 @ stub -version=0xA00+ NotifyTeredoPortChange
-@ stub -version=0xA00+ NotifyUnicastIpAddressChange
+@ stdcall NotifyUnicastIpAddressChange(long ptr ptr long ptr)
 @ stub -version=0xA00+ OpenCompartment
 @ stub -version=0xA00+ ParseNetworkString
 @ stub -arch=win64 -version=0xA00+ PfAddFiltersToInterface

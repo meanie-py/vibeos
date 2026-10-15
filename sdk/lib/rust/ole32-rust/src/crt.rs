@@ -15,6 +15,10 @@ extern "C" {
     pub fn strlen(s: *const c_char) -> usize;
     pub fn snprintf(s: *mut c_char, n: usize, fmt: *const c_char, ...) -> c_int;
     pub fn sprintf(s: *mut c_char, fmt: *const c_char, ...) -> c_int;
+    // The COUNTED swprintf is a header inline over _vsnwprintf: msvcrt.dll's own `swprintf`
+    // export is the legacy (buffer, format, ...) form, so the count would be read as the
+    // format. `scan_swprintf_count` gates it.
+    #[link_name = "_snwprintf"]
     pub fn swprintf(s: *mut u16, n: usize, fmt: *const u16, ...) -> c_int;
     pub fn wcschr(s: *const u16, c: u16) -> *mut u16;
     pub fn wcslen(s: *const u16) -> usize;

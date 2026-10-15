@@ -126,6 +126,10 @@ extern "C" {
     pub fn free(p: *mut c_void); // atlclasses-rust/src/lib.rs
     pub fn malloc(size: usize) -> *mut c_void; // atlclasses-rust/src/lib.rs
     pub fn ros_dbg_log( cls: ::core::ffi::c_uint, ch: *mut __wine_debug_channel, file: *const ::core::ffi::c_char, func: *const ::core::ffi::c_char, line: ::core::ffi::c_int, format: *const ::core::ffi::c_char, ... ) -> ::core::ffi::c_int; // winegdi-rust/src/types_i386.rs
+    // The COUNTED swprintf is a header inline over _vsnwprintf: msvcrt.dll's own `swprintf`
+    // export is the legacy (buffer, format, ...) form, so the count would be read as the
+    // format. `scan_swprintf_count` gates it.
+    #[link_name = "_snwprintf"]
     pub fn swprintf(s: *mut u16, n: usize, fmt: *const u16, ...) -> c_int; // ole32-rust/src/crt.rs
     pub fn wcschr(s: *const u16, c: u16) -> *mut u16; // advapi32-rust/src/wine/cred.rs
     pub fn wcscpy(dst: *mut u16, src: *const u16) -> *mut u16; // advapi32-rust/src/prelude.rs

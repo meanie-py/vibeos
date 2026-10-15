@@ -256,6 +256,10 @@ macro_rules! MoveMemory {
 pub use crate::MoveMemory;
 
 extern "C" {
+    // The COUNTED swprintf is a header inline over _vsnwprintf: msvcrt.dll's own `swprintf`
+    // export is the legacy (buffer, format, ...) form, so the count would be read as the
+    // format. `scan_swprintf_count` gates it.
+    #[link_name = "_snwprintf"]
     pub fn swprintf(buf: *mut WCHAR, count: usize, fmt: *const WCHAR, ...) -> c_int;
 }
 

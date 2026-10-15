@@ -1461,6 +1461,18 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A counted `swprintf(buf, n, fmt, ...)` declared extern links msvcrt's LEGACY export,
+    # `swprintf(buf, fmt, ...)` -- C's counted form is a header inline over _vsnwprintf --
+    # so the count is read as the format. mfplat crashed on it; ole32, msiexec, wscript and
+    # the recycle bin shipped it. Baseline is EMPTY.
+    ssw = repo / "tools" / "scan_swprintf_count.py"
+    specs.append(
+        (
+            "scan_swprintf_count",
+            [py, str(ssw)] if ssw.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     sol = repo / "tools" / "scan_octal_literals.py"
     specs.append(
         (

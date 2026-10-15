@@ -870,7 +870,7 @@
 @ stub -version=0xA00+ EvaluateProximityToPolygon
 @ stub -version=0xA00+ FrostCrashedWindow
 @ stub -version=0xA00+ GetAutoRotationState
-@ stub -version=0xA00+ GetAwarenessFromDpiAwarenessContext
+@ stdcall GetAwarenessFromDpiAwarenessContext(ptr)
 @ stub -version=0xA00+ GetCIMSSM
 @ stub -version=0xA00+ GetClipboardAccessToken
 @ stub -version=0xA00+ GetClipboardMetadata
@@ -880,8 +880,8 @@
 @ stub -version=0xA00+ GetDesktopID
 @ stub -version=0xA00+ GetDialogControlDpiChangeBehavior
 @ stub -version=0xA00+ GetDialogDpiChangeBehavior
-@ stub -version=0xA00+ GetDpiAwarenessContextForProcess
-@ stub -version=0xA00+ GetDpiFromDpiAwarenessContext
+@ stdcall GetDpiAwarenessContextForProcess(ptr)
+@ stdcall GetDpiFromDpiAwarenessContext(ptr)
 @ stub -version=0xA00+ GetExtendedPointerDeviceProperty
 @ stub -version=0xA00+ GetIconInfoExA
 @ stub -version=0xA00+ GetIconInfoExW
@@ -1038,7 +1038,7 @@
 @ stub -version=0xA00+ SetProcessRestrictionExemption
 @ stub -version=0xA00+ SetShellChangeNotifyWindow
 @ stub -version=0xA00+ SetThreadCursorCreationScaling
-@ stub -version=0xA00+ SetThreadDpiAwarenessContext
+@ stdcall SetThreadDpiAwarenessContext(ptr)
 @ stub -version=0xA00+ SetThreadDpiHostingBehavior
 @ stub -version=0xA00+ SetThreadInputBlocked
 @ stub -version=0xA00+ SetUserObjectCapability

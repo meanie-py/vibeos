@@ -3232,6 +3232,13 @@ UNCOVERED: dict[str, str] = {
         "decimal, hex with underscores and a suffix, mmioFOURCC, and a literal with no macro "
         "comment beside it."
     ),
+    "scan_swprintf_count": (
+        "main() walks the real tree, but the decision is scan_text(), a pure function over a "
+        "string, driven directly in tools/test_scan_swprintf_count.py. Its fire cases are the "
+        "shipped counted declaration with no link_name and the two-argument form relinked to "
+        "_snwprintf; its must-not cases pin the correct `_snwprintf` link, the legacy form, a "
+        "multi-line vswprintf and a Rust definition of the name."
+    ),
     "scan_octal_literals": (
         "main() walks the real tree, but the matcher and the comment/literal tokenizer are "
         "pure functions over a string — scan_text()/strip_noise() — and are driven directly "

@@ -506,6 +506,7 @@
 @ stdcall GetFileSizeEx(long ptr)
 @ stdcall GetFileTime(long ptr ptr ptr)
 @ stdcall GetFileType(long)
+@ stdcall GetFileVersionInfoW(wstr long long ptr) version.GetFileVersionInfoW
 @ stdcall -version=0x600+ GetFinalPathNameByHandleA(ptr str long long)
 @ stdcall -arch=arm64 GetFinalPathNameByHandleW(ptr wstr long long) kernel32_vista.GetFinalPathNameByHandleW
 @ stdcall GetFirmwareEnvironmentVariableA(str str ptr long)
@@ -584,7 +585,7 @@
 @ stdcall GetPackagePath(ptr long ptr ptr)
 @ stdcall GetPackagePathByFullName(wstr ptr ptr)
 @ stdcall GetPackagesByPackageFamily(wstr ptr ptr ptr ptr)
-@ stdcall -stub -version=0x600+ GetPhysicallyInstalledSystemMemory(ptr)
+@ stdcall GetPhysicallyInstalledSystemMemory(ptr)
 @ stdcall GetPriorityClass(long)
 @ stdcall GetPrivateProfileIntA(str str long str)
 @ stdcall GetPrivateProfileIntW(wstr wstr long wstr)
@@ -693,7 +694,7 @@
 @ stdcall GetVersionExA(ptr)
 @ stdcall GetVersionExW(ptr)
 @ stdcall GetVolumeInformationA(str ptr long ptr ptr ptr ptr long)
-@ stub -version=0x600+ GetVolumeInformationByHandleW
+@ stdcall GetVolumeInformationByHandleW(long wstr long ptr ptr ptr wstr long)
 @ stdcall GetVolumeInformationW(wstr ptr long ptr ptr ptr ptr long)
 @ stdcall GetVolumeNameForVolumeMountPointA(str ptr long)
 @ stdcall GetVolumeNameForVolumeMountPointW(wstr ptr long)
@@ -836,6 +837,8 @@
 @ stdcall LCMapStringA(long long str long ptr long)
 @ stdcall LCMapStringEx(long long wstr long ptr long ptr ptr long)
 @ stdcall LCMapStringW(long long wstr long ptr long)
+@ stdcall LoadStringA(long long ptr long) user32.LoadStringA
+@ stdcall LoadStringW(long long ptr long) user32.LoadStringW
 @ stdcall LZClose(long)
 @ stdcall LZCloseFile(long)
 @ stdcall LZCopy(long long)
@@ -848,7 +851,7 @@
 @ stdcall LZSeek(long long long)
 @ stdcall LZStart()
 @ stdcall LeaveCriticalSection(ptr) ntdll.RtlLeaveCriticalSection
-@ stub -version=0x600+ LeaveCriticalSectionWhenCallbackReturns
+@ stdcall LeaveCriticalSectionWhenCallbackReturns(ptr ptr) ntdll.TpCallbackLeaveCriticalSectionOnCompletion
 @ stdcall LoadLibraryA(str)
 @ stdcall LoadLibraryExA(str long long)
 @ stdcall LoadLibraryExW(wstr long long)
@@ -995,6 +998,7 @@
 @ stdcall QueueUserWorkItem(ptr ptr long)
 @ stdcall -norelay RaiseException(long long long ptr)
 @ stdcall RaiseFailFastException(ptr ptr long)
+@ stdcall RegSetKeyValueW(long wstr wstr long ptr long) advapi32.RegSetKeyValueW
 @ stdcall ReOpenFile(ptr long long long)
 @ stdcall ReadConsoleA(long ptr long ptr ptr)
 @ stdcall ReadConsoleInputA(long ptr long ptr)
@@ -1273,6 +1277,7 @@
 @ stdcall -version=0x500-0x502 ValidateLocale(long)
 @ stdcall VerLanguageNameA(long str long)
 @ stdcall VerLanguageNameW(long wstr long)
+@ stdcall VerQueryValueW(ptr wstr ptr ptr) version.VerQueryValueW
 @ stdcall -ret64 VerSetConditionMask(long long long long) ntdll.VerSetConditionMask
 @ stdcall VerifyConsoleIoHandle(long)
 @ stub -version=0x600+ VerifyScripts

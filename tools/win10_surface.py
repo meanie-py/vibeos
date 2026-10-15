@@ -751,7 +751,6 @@ NOT_A_BODY = {
     "RtlConvertLCIDToString": "returns STATUS_NOT_IMPLEMENTED",
     "RtlIsValidLocaleName": "answers TRUE for every name",
     "SHCreateItemInKnownFolder": "returns E_NOTIMPL",
-    "GetCurrentProcessExplicitAppUserModelID": 'returns the placeholder ID "ROS FixMe"',
     "AddClipboardFormatListener": "fails without setting a last error",
     "RemoveClipboardFormatListener": "fails without setting a last error",
     "ConvertTrusteeToSid": "the spec row's prototype is unknown",
