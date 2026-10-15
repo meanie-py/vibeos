@@ -351,11 +351,8 @@ extern "system" {
     pub fn UrlCreateFromPathW(pszPath: LPCWSTR, pszUrl: LPWSTR, pcchUrl: LPDWORD, dwReserved: DWORD) -> HRESULT; // shlwapi.h
 }
 
-// ---- wine/debug.h `debugstr_variant` is a static inline that formats the VARIANT for WARN only.
-// Same placeholder as oleaut32-rust's debug_shims: the string is diagnostic text, never program logic.
-pub fn debugstr_variant(_p: *const VARIANT) -> *const c_char {
-    b"?\0".as_ptr() as *const c_char
-}
+// ---- wine/debug.h `debugstr_variant`: a static inline, ported once in win32macros-rust.
+pub use win32macros_rust::debugstr_variant;
 
 // ==== port resolve: tree consensus (generated -- re-run `rustconv port resolve`) ====
 pub const CLSCTX_INPROC_HANDLER: DWORD = 0x2; // ole32-rust/src/compobj/com.rs
