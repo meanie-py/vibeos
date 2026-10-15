@@ -3546,9 +3546,12 @@ pub unsafe extern "system" fn NdisMSleep(MicrosecondsToSleep: ULONG) {
         );
     }
 
-    DueTime.QuadPart = ((-(1 as ::core::ffi::c_int)
-        * 10 as ::core::ffi::c_int) as ULONG)
-        .wrapping_mul(MicrosecondsToSleep) as LONGLONG;
+    // A relative due time: negative, in 100 ns units. The C computed `(-1) * 10 * Microseconds`
+    // in 32-bit unsigned arithmetic, so it widened to a large POSITIVE value, an absolute time
+    // long past, and the timer fired at once: NdisMSleep never slept. Drivers that poll their
+    // hardware with it (Realtek's WDI Wi-Fi driver while it starts the chip) then time out at
+    // once, and succeed only when something else happens to slow them down.
+    DueTime.QuadPart = -(MicrosecondsToSleep as LONGLONG) * 10;
 
     KeInitializeTimer(&mut Timer);
     KeSetTimer(&mut Timer, DueTime, core::ptr::null_mut());

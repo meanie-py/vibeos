@@ -421,22 +421,6 @@ hit this one (shlfileop.cpp, drive.cpp, CRecycleBin.cpp). Before believing a "mi
 grep `precomp.h` for the name: a `#define` there beats every other explanation, and the fix is
 to call the macro's *expansion*.
 
-### A C header INLINE declared extern links the export that shares its name
-**Symptom.** An access violation inside msvcrt's printf engine on the first call, reading
-a tiny address (mfplat: `0x27`) as a wide string. The C module never crashed there.
-
-**Cause.** C's counted `swprintf(buf, count, fmt, ...)` is a `static inline` in
-sdk/include/crt/stdio.h over `_vsnwprintf`. msvcrt.dll does export a `swprintf`, but it is
-the legacy `(buf, fmt, ...)` form. A translation that declares the C prototype in an
-`extern` block compiles cleanly and links the legacy export, which reads the count as the
-format pointer. `port resolve`'s tree consensus copied the declaration from crate to crate,
-so ole32, msiexec (the custom-action pipe name), wscript and the recycle bin shipped it too.
-
-**Fix.** `#[link_name = "_snwprintf"]` on the counted declaration (rtl-actctx had it right).
-`scan_swprintf_count` gates both directions (baseline empty). The class is wider than one
-function: before declaring any CRT name extern, check that the export of that name has the
-C header's signature, not just the same name.
-
 ### An out-parameter (`PVOID*`) declared as a plain pointer takes the caller's NULL by value
 **Symptom:** a function "succeeds" but the caller's handle stays NULL; the next call through it
 fails or dereferences NULL. **Cause:** setuplib's `OpenBootStore(PVOID* Handle, ...)` was
@@ -495,6 +479,11 @@ next read `size_of::<_LIST_ENTRY>()` into a single `Flink`), so every EnumProces
 GetModuleBaseName call wrote ~0x50 bytes over its stack locals and survived on layout luck. The
 tell is an out-buffer `&raw mut X as LPVOID` whose size names a struct while `X` is a pointer;
 a 20-line regex over the tree found no other site (2026-10-14).
+**One level too DEEP shrinks an array.** wscript's `calloc(argc, sizeof(*strs))` (`strs` a
+`BSTR *`) came back as `size_of::<OLECHAR>()`, the element's element. Every multi-argument
+`WScript.Echo` overran the array and dropped its second argument, and the host crashed a few
+calls later. `scan_calloc_elem_type` (`vibeos-cli check`, baseline empty) flags a
+`calloc(n, size_of::<T>()) as *mut U` with a character-sized `T` and a wider `U`.
 
 ### Per-arch provider differs, so a single-arch link check misses it
 `KeRaiseIrql`/`KeLowerIrql` are provided by **ntoskrnl on i386** (plus fastcall
@@ -860,6 +849,13 @@ one command: **before writing an `extern` for a CRT sibling, run `llvm-nm --unde
 on the C object and confirm the symbol is actually imported under that name.** A header arm
 selected by `#if`, a `static inline`, and a `.spec` alias each break the header→symbol
 assumption independently, and all three are invisible from the source.
+The remembered rule did not hold. That exact declaration shipped in wscript, msiexec, ole32 and
+shell32's recycle bin, copied between preludes by `port resolve`'s tree consensus. cscript
+crashed on every script error, and mfplat's Rust (found the same day from the other side) on its
+first `MFTRegister`, inside msvcrt's printf. It is now mechanized twice: `scan_varargs_spec_arity`
+(`vibeos-cli check`, baseline empty) holds every variadic `extern` to its `.spec` export's
+fixed arity, and resolve's renderer binds a count-form `swprintf`/`vswprintf` to
+`_snwprintf`/`_vsnwprintf`.
 
 **Two parse traps that produced confidently wrong answers first**, both now in the GOOD control
 fixture so a regression surfaces as a false positive: count against comment-MASKED text
@@ -1968,6 +1964,17 @@ A function BODY can take the wrong arm too. fmifs's `Chkdsk` came back with the 
 `GetVolumeNameForVolumeMountPointW` lookup where the live `#ifdef __REACTOS__` arm is a plain
 `wcscpy`. The translate audit flags these (`PREPROCESSOR ARMS ... the #if arm is LIVE`), so
 read every such finding against the Rust before flipping.
+
+The arm can also be the wrong TARGET's. cscript compiles wscript's three `.c` with
+`-DCSCRIPT_BUILD`, and every rustconv reader of `compile_commands.json` took the first entry
+naming a file, so wscript-rust was translated from cscript's preprocess. It shipped
+non-interactive (`wshInteractive = VARIANT_FALSE`) and printed "Usage: CScript". The
+translate audit cannot see this, because the arm it took IS live, for the other target.
+`macro_authority.pick_entry` now takes the ported target's entry (port sets it from
+state.json), else the one whose target lives in the source's own directory. A file compiled
+only by a FOREIGN target borrows from its owner's surviving TUs. dinput/dinput8 and the
+d3dx9_NN family share sources the same way. The two variants of one body are a cargo feature
+(`wscript-rust/cscript`), not a second crate.
 
 ### A C macro that reads the CALLER's locals cannot be a plain `macro_rules!` port
 **Symptom:** `no rules expected <ident>` at call sites that pass one argument more than the
@@ -14921,6 +14928,35 @@ To see a quiet driver's own `DbgPrintEx`, give `Session Manager\Debug Print Filt
 `IHVNETWORK`/`IHVDRIVER` DWORD of `0xFFFFFFFF` for one boot. A driver that fails before its
 first print is quicker to read in the binary: find its `NdisGetVersion` IAT slot with
 `objdump -p` and look at what the caller compares.
+
+### A vendor Wi-Fi driver starts only when tracing slows it down
+Realtek's Windows 10 RTL8821CU driver (`rtwlanu.sys`, a WDI miniport under `wdi.rs`) went
+through these in turn, on the OptiPlex. Several were bugs in code every driver uses:
+- **No device for the Wi-Fi function**: usbccgp made `MI_00` (Bluetooth, an IAD over
+  interfaces 0-1) and nothing for interface 2. With any IAD present the C enumerated IADs
+  only. Fix: `usbccgp-rust` gives each interface outside an IAD its own `MI_xx` function, as
+  Windows does.
+- **DriverEntry `0xc0000001`, nothing printed**: right after `WdfDriverCreate` it checks
+  `NdisGetVersion() >= 0x60032`; WDI is an NDIS 6.50 model. `NdisGetVersion` reports 6.50.
+- **Firmware download stalls at a random chunk**: the driver keeps several 30 KiB bulk reads
+  queued; xHCI gave each endpoint a 64 KiB bounce arena, so the third submit failed and
+  usbport retried it in a loop that starved the pipe's writes. Fix: data pipes get 256 KiB.
+- **`OpenAdapter` fails every time, and passes once tracing is on**: `NdisMSleep` never
+  slept. The C computes the due time as `(-1) * 10 * Microseconds` in unsigned 32-bit
+  arithmetic, which widens to a positive (absolute, long past) time. Every poll the driver
+  made while starting the chip timed out at once unless something else slowed it. Same
+  family: `NdisWaitEvent(e, 0)` must wait forever, and the C polled. A driver that works
+  only with logging on is a delay primitive returning early: check the wait and sleep
+  calls it imports before anything else.
+- **0x1E calling the LE's `TalTxRxStart`**: dot11wdi.h packs its handler tables to 4 (the
+  driver's own header says 0xCC bytes, 4 + 25 * 8), so the first pointer is at offset 4.
+- **Every property response empty**: `NDIS_OID_REQUEST.DATA.METHOD_INFORMATION` is `Oid,
+  InformationBuffer, InputBufferLength, OutputBufferLength, MethodId, BytesWritten, ...`;
+  MethodId is not second.
+Two boot options did the work here, both reusable: `XHCITRACE[=n]` logs the first n vendor
+and class control transfers, and the bulk transfers and aborts of every device that sent
+one; `WPPTRACE[=level]` enables each WPP provider as it registers and prints its records
+(text arguments as text, which is how HAL-MAC's own messages read).
 
 ### A driver's `WriteFile` hands its lower layer a NULL buffer
 - **Symptom:** ndisuio's write path: `ASSERT FAILED: VirtualAddress != NULL at

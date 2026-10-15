@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<!-- modrun cscript suite: a .wsf job, parsed through msxml (main.c's run_wsf). -->
+<package>
+  <job id="one">
+    <script language="JScript">
+      WScript.Echo("job one, jscript");
+    </script>
+    <script language="VBScript">
+      WScript.Echo "job one, vbscript"
+    </script>
+  </job>
+</package>

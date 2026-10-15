@@ -29,6 +29,7 @@ one is a HARD FAIL with the build command to fix it — never a silent fallback 
 from __future__ import annotations
 
 import json
+import os
 import re
 import shlex
 import subprocess
@@ -67,6 +68,95 @@ def register_via(header: Path, tu: Path) -> None:
     _VIA[header.resolve()] = tu.resolve()
     function_like_macros.cache_clear()
     string_literal_macros.cache_clear()
+
+
+#: The CMake target being ported, when one is known (port sets it from state.json). It is an
+#: environment variable, not a module global, so a `translate` that port runs as a child
+#: process asks the same question of the compile db.
+_TARGET_ENV = "RUSTCONV_CMAKE_TARGET"
+
+
+def set_cmake_target(target: str | None) -> None:
+    if target:
+        os.environ[_TARGET_ENV] = target
+    else:
+        os.environ.pop(_TARGET_ENV, None)
+    function_like_macros.cache_clear()
+    string_literal_macros.cache_clear()
+
+
+def _entry_target(entry: dict) -> tuple[str, str] | None:
+    """(directory, name) of the CMake target that produced `entry`, from its object path."""
+    out = str(entry.get("output", ""))
+    if not out:
+        m = re.search(r"-o\s+(\S+)", str(entry.get("command", "")))
+        out = m.group(1) if m else ""
+    m = re.search(r"(?:^|/)(?:(.*)/)?CMakeFiles/([^/]+)\.dir/", out.replace("\\", "/"))
+    if m is None:
+        return None
+    return (m.group(1) or "", m.group(2))
+
+
+def _flag_set(entry: dict) -> frozenset[str]:
+    argv = shlex.split(entry.get("command") or " ".join(entry.get("arguments", [])))
+    return frozenset(a for a in argv if a.startswith(("-D", "-U", "-I")))
+
+
+def _defines_target(directory: Path) -> bool:
+    cml = directory / "CMakeLists.txt"
+    try:
+        text = cml.read_text(errors="replace")
+    except OSError:
+        return False
+    return bool(re.search(r"^\s*(add_executable|add_library|add_cargo_module)\s*\(", text, re.M))
+
+
+def pick_entry(entries: list[dict], source: Path, repo_root: Path) -> dict | None:
+    """The compile command that answers for `source` among the db entries naming it.
+
+    A file can be compiled by several targets with different flags. cscript compiles
+    wscript's three .c with `-DCSCRIPT_BUILD`; dinput/dinput8 and the d3dx9_NN family
+    do the same with a version macro. Taking the first entry, as every reader here used
+    to, picks a target by db order: wscript-rust was translated from cscript's
+    preprocessed text and shipped non-interactive, announcing itself as "CScript".
+
+    The target being ported (`set_cmake_target`) wins. Otherwise the entry of a target
+    defined in the source's own directory or an ancestor of it (shell32 lists
+    `dialogs/*.cpp`) answers. A file compiled only by FOREIGN targets answers through
+    them only when its own directory defines no target; when it does (wscript's .c after
+    the flip, compiled by cscript alone), None makes the caller borrow from the owner's
+    surviving TUs instead. Owners that disagree among themselves are refused.
+    """
+    if not entries:
+        return None
+    wanted = os.environ.get(_TARGET_ENV)
+    if wanted:
+        named = [e for e in entries if (_entry_target(e) or ("", ""))[1] == wanted]
+        if named:
+            return named[0]
+    src_dir = source.resolve().parent
+    owned: list[dict] = []
+    for e in entries:
+        where = _entry_target(e)
+        if where is None:
+            owned.append(e)  # no object path to attribute by: the old behaviour
+            continue
+        tdir = (repo_root / where[0]).resolve()
+        if tdir == src_dir or tdir in src_dir.parents:
+            owned.append(e)
+    pool = owned
+    if not owned:
+        if _defines_target(src_dir):
+            return None
+        pool = entries
+    if len({_flag_set(e) for e in pool}) > 1:
+        names = sorted({(_entry_target(e) or ("", "?"))[1] for e in pool})
+        raise MacroAuthorityError(
+            f"{source}: compiled by {', '.join(names)} with different flags, and none is "
+            f"the target being ported\nfix: pass the CMake target (port's state.json "
+            f"'target', or {_TARGET_ENV}=<name>)"
+        )
+    return pool[0]
 
 
 def flags_source(path: Path) -> Path:
@@ -119,6 +209,7 @@ def _compile_entry(repo_root: Path, arch: str, source: Path) -> list[str] | None
     except (OSError, ValueError) as error:
         raise MacroAuthorityError(f"unreadable {db_path}: {error}") from error
     wanted = source.name
+    matches = []
     for entry in db:
         recorded = entry.get("file", "")
         if not recorded.endswith(wanted):
@@ -129,9 +220,12 @@ def _compile_entry(repo_root: Path, arch: str, source: Path) -> list[str] | None
             str(source.relative_to(repo_root))
         ):
             continue
-        argv = shlex.split(entry.get("command") or " ".join(entry.get("arguments", [])))
-        return [a.replace(CANONICAL_BUILD_ROOT, str(repo_root)) for a in argv]
-    return None
+        matches.append(entry)
+    entry = pick_entry(matches, source, repo_root)
+    if entry is None:
+        return None
+    argv = shlex.split(entry.get("command") or " ".join(entry.get("arguments", [])))
+    return [a.replace(CANONICAL_BUILD_ROOT, str(repo_root)) for a in argv]
 
 
 def _includer_entry(repo_root: Path, arch: str, header: Path) -> list[str] | None:
@@ -450,6 +544,8 @@ def _sibling_in(
         tu = Path(recorded)
         if tu.parent not in wanted_dirs or tu.suffix not in _SOURCE_SUFFIXES:
             continue
+        if pick_entry([entry], tu, repo_root) is None:
+            continue  # a foreign target's compile of the dir's file (cscript's of wscript's)
         argv = shlex.split(entry.get("command") or " ".join(entry.get("arguments", [])))
         argv = [a.replace(CANONICAL_BUILD_ROOT, str(repo_root)) for a in argv]
         if want_cxx and not _is_cxx(tu) and tu.name == "rust_cohab_stub.c":

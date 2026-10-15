@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "cscript-cargo",
     "wdfldr-cargo",
     "watchdog-cargo",
     "usbstor-cargo",

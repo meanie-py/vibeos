@@ -113,7 +113,159 @@ pub unsafe extern "system" fn IoWMIRegistrationControl(
     DeviceObject: PDEVICE_OBJECT,
     Action: ULONG,
 ) -> NTSTATUS {
-    let DeviceObject = opaque_ptr(DeviceObject);
+    // There is no WMI data provider support. A WPP trace provider (callback registration) is
+    // enabled on the spot when the WPPTRACE boot option asks for it, so its messages reach the
+    // debug port; everything else is accepted and left alone.
+    if Action & WMIREG_FLAG_CALLBACK != 0 && Action & 0xFF == WMIREG_ACTION_REGISTER && !DeviceObject.is_null() {
+        let level = wpp_level();
+        if level != 0 {
+            wpp_enable(DeviceObject as *mut WppControlBlock, level);
+        }
+    }
+    STATUS_SUCCESS
+}
+
+// ---- WPP tracing to the debug port (boot option WPPTRACE[=level]) ----------------------------
+//
+// Windows delivers a WPP provider's messages to an ETW session; there is none here, so a boot
+// option stands one in: each provider that registers is enabled at once, at the given level
+// (default 3, warnings) with every flag, under our own logger handle, and WmiTraceMessage
+// prints the records. A WPP record carries the message number and its arguments, not the
+// format string (that lives in the driver's PDB), so a line is the provider, the number, and
+// the arguments, with strings shown as text: drivers that trace preformatted messages read
+// as they would in a log.
+
+const WMIREG_ACTION_REGISTER: ULONG = 1;
+const WMIREG_FLAG_CALLBACK: ULONG = 0x8000_0000;
+const IRP_MN_ENABLE_EVENTS: u8 = 0x04;
+const TRACE_ENABLE_FLAGS_CLASS: ULONG = 2;
+const TRACE_ENABLE_LEVEL_CLASS: ULONG = 3;
+/// Our logger handle: any non-zero value WPP stores and hands back. Its low byte is left
+/// zero: the enabled level travels there.
+const WPP_LOGGER: ULONGLONG = 0x5750_5054_5241_4300;
+
+/// 0: not read yet; 0xFF: tracing off; otherwise the level.
+static WPP_LEVEL: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+
+unsafe fn wpp_level() -> u8 {
+    use core::sync::atomic::Ordering;
+    let v = WPP_LEVEL.load(Ordering::Relaxed);
+    if v != 0 {
+        return if v == 0xFF { 0 } else { v as u8 };
+    }
+    let lvl = match ntkrnl_sys::bootopt::boot_option_u32(b"WPPTRACE", 3) {
+        Some(n) if n != 0 => n.min(0xFE),
+        _ => 0xFF,
+    };
+    WPP_LEVEL.store(lvl, Ordering::Relaxed);
+    if lvl == 0xFF { 0 } else { lvl as u8 }
+}
+
+/// WPP_TRACE_CONTROL_BLOCK (km-init.h): what a callback registration points at. Its first
+/// member is the callback; providers registered together are chained through Next.
+#[repr(C)]
+struct WppControlBlock {
+    Callback: Option<unsafe extern "system" fn(u8, PVOID, ULONG, PVOID, PVOID, *mut ULONG) -> NTSTATUS>,
+    ControlGuid: *const GUID,
+    Next: *mut WppControlBlock,
+}
+
+unsafe fn wpp_enable(first: *mut WppControlBlock, level: u8) {
+    // One registration covers the whole chain: only the first block carries the callback,
+    // and it finds each provider by the GUID in the enable request.
+    let Some(callback) = (*first).Callback else { return };
+    let mut cb = first;
+    let mut n = 0;
+    while !cb.is_null() && n < 16 {
+        let guid = (*cb).ControlGuid;
+        if guid.is_null() {
+            break;
+        }
+        let mut wnode: WNODE_HEADER = core::mem::zeroed();
+        wnode.BufferSize = core::mem::size_of::<WNODE_HEADER>() as ULONG;
+        wnode.HistoricalContext = WPP_LOGGER | level as ULONGLONG;
+        wnode.Guid = *guid;
+        wnode.Flags = WNODE_FLAG_TRACED_GUID;
+        let mut size: ULONG = 0;
+        let status = callback(IRP_MN_ENABLE_EVENTS, guid as PVOID, wnode.BufferSize,
+            &mut wnode as *mut WNODE_HEADER as PVOID, first as PVOID, &mut size);
+        let g = &*guid;
+        ntkrnl_sys::driver_ddk::DbgPrint(b"[WPP] provider {%08lx-%04x-%04x} enabled at level %u: %x\n\0".as_ptr() as *const i8,
+            g.Data1, g.Data2 as u32, g.Data3 as u32, level as u32, status);
+        cb = (*cb).Next;
+        n += 1;
+    }
+}
+
+/// The trace records of the enabled providers. Called from the WmiTraceMessage trampoline
+/// (variadic_shims.c) with the argument pairs pulled.
+#[no_mangle]
+pub unsafe extern "C" fn WmipTraceMessagePairs(
+    LoggerHandle: ULONGLONG,
+    _MessageFlags: ULONG,
+    MessageGuid: *const GUID,
+    MessageNumber: USHORT,
+    Data: *const *const u8,
+    Lengths: *const usize,
+    Count: ULONG,
+) -> NTSTATUS {
+    if LoggerHandle & !0xFF != WPP_LOGGER & !0xFF {
+        return STATUS_INVALID_HANDLE;
+    }
+    let mut line = [0u8; 256];
+    let mut n = 0usize;
+    let mut put = |b: &[u8], n: &mut usize| {
+        for &c in b {
+            if *n + 1 < line.len() {
+                line[*n] = c;
+                *n += 1;
+            }
+        }
+    };
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    for i in 0..Count as usize {
+        let p = *Data.add(i);
+        let len = *Lengths.add(i);
+        if p.is_null() {
+            continue;
+        }
+        let bytes = core::slice::from_raw_parts(p, len.min(200));
+        put(b" ", &mut n);
+        // A NUL-terminated printable string: as text.
+        let text = len > 1 && bytes.last() == Some(&0)
+            && bytes[..bytes.len() - 1].iter().all(|&c| c == b'\t' || (0x20..0x7F).contains(&c) || c == b'\n' || c == b'\r');
+        if text {
+            for &c in &bytes[..bytes.len() - 1] {
+                if c != b'\n' && c != b'\r' {
+                    put(&[c], &mut n);
+                }
+            }
+        } else if len <= 8 {
+            // A number: little-endian, as hex.
+            let mut v: u64 = 0;
+            for (k, &c) in bytes.iter().enumerate() {
+                v |= (c as u64) << (8 * k);
+            }
+            put(b"0x", &mut n);
+            let mut started = false;
+            for k in (0..16).rev() {
+                let d = ((v >> (4 * k)) & 0xF) as usize;
+                if d != 0 || started || k == 0 {
+                    started = true;
+                    put(&[HEX[d]], &mut n);
+                }
+            }
+        } else {
+            put(b"<", &mut n);
+            for &c in bytes.iter().take(16) {
+                put(&[HEX[(c >> 4) as usize], HEX[(c & 0xF) as usize]], &mut n);
+            }
+            put(b">", &mut n);
+        }
+    }
+    line[n] = 0;
+    let g = if MessageGuid.is_null() { 0 } else { (*MessageGuid).Data1 };
+    ntkrnl_sys::driver_ddk::DbgPrint(b"[WPP] %08lx#%u:%s\n\0".as_ptr() as *const i8, g, MessageNumber as u32, line.as_ptr());
     STATUS_SUCCESS
 }
 
@@ -347,32 +499,30 @@ pub unsafe extern "system" fn WmiQueryTraceInformation(
     RequiredLength: *mut ULONG,
     Buffer: PVOID,
 ) -> NTSTATUS {
-    let TraceInformation = opaque_ptr(TraceInformation);
-    let RequiredLength = opaque_ptr(RequiredLength);
-    let Buffer = opaque_ptr(Buffer);
-    STATUS_NOT_IMPLEMENTED
+    // Only the enable settings of our own debug-port logger (see wpp_enable): the level is
+    // carried in the logger handle's low byte, and every flag is on.
+    let wnode = Buffer as *const WNODE_HEADER;
+    if wnode.is_null() || (*wnode).HistoricalContext & !0xFF != WPP_LOGGER & !0xFF || TraceInformation.is_null() {
+        return STATUS_NOT_IMPLEMENTED;
+    }
+    let level = ((*wnode).HistoricalContext & 0xFF) as u8;
+    match TraceInformationClass {
+        TRACE_ENABLE_FLAGS_CLASS if TraceInformationLength >= 4 => {
+            *(TraceInformation as *mut ULONG) = 0xFFFF_FFFF;
+        }
+        TRACE_ENABLE_LEVEL_CLASS if TraceInformationLength >= 1 => {
+            *(TraceInformation as *mut u8) = level;
+        }
+        _ => return STATUS_NOT_IMPLEMENTED,
+    }
+    if !RequiredLength.is_null() {
+        core::ptr::write_volatile(RequiredLength, if TraceInformationClass == TRACE_ENABLE_FLAGS_CLASS { 4 } else { 1 });
+    }
+    STATUS_SUCCESS
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn WmiTraceMessage(
-    LoggerHandle: TRACEHANDLE,
-    MessageFlags: ULONG,
-    MessageGuid: LPGUID,
-    MessageNumber: USHORT,
-) -> NTSTATUS {
-    STATUS_NOT_IMPLEMENTED
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn WmiTraceMessageVa(
-    LoggerHandle: TRACEHANDLE,
-    MessageFlags: ULONG,
-    MessageGuid: LPGUID,
-    MessageNumber: USHORT,
-    MessageArgList: va_list,
-) -> NTSTATUS {
-    STATUS_NOT_IMPLEMENTED
-}
+// WmiTraceMessage / WmiTraceMessageVa are C (variadic_shims.c): they pull the variadic
+// argument pairs and call WmipTraceMessagePairs above.
 
 #[no_mangle]
 pub unsafe extern "system" fn WmiFlushTrace(LoggerInfo: PWMI_LOGGER_INFORMATION) -> NTSTATUS {

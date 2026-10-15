@@ -57,4 +57,12 @@ def stage_entries(arch: str) -> list[dict]:
                 out.append({"src": str(p), "dest": f"system32/drivers/{p.name.lower()}"})
             elif p.suffix.lower() == ".dll":
                 out.append({"src": str(p), "dest": f"system32/{p.name.lower()}"})
+    # VIBEOS_WIFI_CONFIG: the bench network for a Wi-Fi driver's WDI layer (ssid=, psk=, ...),
+    # read from \\SystemRoot\\bin\\wifi.txt. A path, never the values: they stay in that file.
+    wifi = os.environ.get("VIBEOS_WIFI_CONFIG")
+    if wifi:
+        cfg = Path(wifi).expanduser()
+        if not cfg.is_file():
+            sys.exit(f"vendordrv: VIBEOS_WIFI_CONFIG={wifi} is not a file")
+        out.append({"src": str(cfg), "dest": "bin/wifi.txt"})
     return out

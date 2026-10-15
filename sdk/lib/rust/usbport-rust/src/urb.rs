@@ -834,10 +834,13 @@ pub unsafe extern "system" fn USBPORT_HandleSubmitURB(
     if Function as u32 > URB_FUNCTION_MAX {
         Status = USBPORT_USBDStatusToNtStatus(Urb, USBD_STATUS_INVALID_URB_FUNCTION);
 
+        DbgPrint(b"USBPORT_HandleSubmitURB: Unknown URB function - %x !!!\n\0".as_ptr() as *const i8, Function as u32);
+
         return Status;
     }
 
     if (*FdoExtension).TimerFlags & USBPORT_TMFLAG_RH_SUSPENDED != 0 {
+        DbgPrint(b"USBPORT_HandleSubmitURB: Bad Request\n\0".as_ptr() as *const i8);
         USBPORT_USBDStatusToNtStatus(Urb, USBD_STATUS_DEVICE_GONE);
 
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_PENDING;
@@ -859,6 +862,7 @@ pub unsafe extern "system" fn USBPORT_HandleSubmitURB(
     }
 
     if USBPORT_ValidateDeviceHandle((*PdoExtension).FdoDevice, DeviceHandle) == 0 {
+        DbgPrint(b"USBPORT_HandleSubmitURB: Not valid device handle\n\0".as_ptr() as *const i8);
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_PENDING;
         IoMarkIrpPending(Irp);
         IoCsqInsertIrp(
@@ -873,12 +877,15 @@ pub unsafe extern "system" fn USBPORT_HandleSubmitURB(
     InterlockedIncrement(core::ptr::addr_of_mut!((*DeviceHandle).DeviceHandleLock));
 
     match Function as u32 {
-        URB_FUNCTION_ISOCH_TRANSFER => {}
+        URB_FUNCTION_ISOCH_TRANSFER => {
+            DbgPrint(b"USBPORT_HandleSubmitURB: URB_FUNCTION_ISOCH_TRANSFER UNIMPLEMENTED. FIXME. \n\0".as_ptr() as *const i8);
+        }
 
         URB_FUNCTION_BULK_OR_INTERRUPT_TRANSFER | URB_FUNCTION_CONTROL_TRANSFER => {
             Status = USBPORT_ValidateURB(FdoDevice, Irp, Urb, 0, 0);
 
             if !NT_SUCCESS(Status) {
+                DbgPrint(b"USBPORT_HandleSubmitURB: Not valid URB\n\0".as_ptr() as *const i8);
             } else {
                 Status = USBPORT_HandleDataTransfers(Urb);
             }
@@ -895,6 +902,7 @@ pub unsafe extern "system" fn USBPORT_HandleSubmitURB(
             Status = USBPORT_ValidateURB(FdoDevice, Irp, Urb, 1, 0);
 
             if !NT_SUCCESS(Status) {
+                DbgPrint(b"USBPORT_HandleSubmitURB: Not valid URB\n\0".as_ptr() as *const i8);
             } else {
                 Status = USBPORT_HandleVendorOrClass(Irp, Urb);
             }
@@ -909,12 +917,14 @@ pub unsafe extern "system" fn USBPORT_HandleSubmitURB(
             Status = USBPORT_ValidateURB(FdoDevice, Irp, Urb, 1, 0);
 
             if !NT_SUCCESS(Status) {
+                DbgPrint(b"USBPORT_HandleSubmitURB: Not valid URB\n\0".as_ptr() as *const i8);
             } else {
                 Status = USBPORT_HandleGetSetDescriptor(Irp, Urb);
             }
         }
 
         URB_FUNCTION_GET_MS_FEATURE_DESCRIPTOR => {
+            DbgPrint(b"USBPORT_HandleSubmitURB: URB_FUNCTION_GET_MS_FEATURE_DESCRIPTOR (0x2A) NOT_SUPPORTED\n\0".as_ptr() as *const i8);
             return USBPORT_USBDStatusToNtStatus(Urb, USBD_STATUS_INVALID_URB_FUNCTION);
         }
 
@@ -925,6 +935,7 @@ pub unsafe extern "system" fn USBPORT_HandleSubmitURB(
             Status = USBPORT_ValidateURB(FdoDevice, Irp, Urb, 1, 0);
 
             if !NT_SUCCESS(Status) {
+                DbgPrint(b"USBPORT_HandleSubmitURB: Not valid URB\n\0".as_ptr() as *const i8);
             } else {
                 Status = USBPORT_HandleGetStatus(Irp, Urb);
             }
@@ -942,12 +953,14 @@ pub unsafe extern "system" fn USBPORT_HandleSubmitURB(
             Status = USBPORT_ValidateURB(FdoDevice, Irp, Urb, 1, 0);
 
             if !NT_SUCCESS(Status) {
+                DbgPrint(b"USBPORT_HandleSubmitURB: Not valid URB\n\0".as_ptr() as *const i8);
             } else {
                 Status = USBPORT_HandleGetConfiguration(Urb);
             }
         }
 
         URB_FUNCTION_GET_INTERFACE => {
+            DbgPrint(b"USBPORT_HandleSubmitURB: URB_FUNCTION_GET_INTERFACE (0x27) NOT_SUPPORTED\n\0".as_ptr() as *const i8);
             return USBPORT_USBDStatusToNtStatus(Urb, USBD_STATUS_INVALID_URB_FUNCTION);
         }
 
@@ -977,6 +990,7 @@ pub unsafe extern "system" fn USBPORT_HandleSubmitURB(
             Status = USBPORT_ValidateURB(FdoDevice, Irp, Urb, 1, 1);
 
             if !NT_SUCCESS(Status) {
+                DbgPrint(b"USBPORT_HandleSubmitURB: Not valid URB\n\0".as_ptr() as *const i8);
             } else {
                 Status = USBPORT_HandleSetOrClearFeature(Urb);
             }
@@ -987,22 +1001,28 @@ pub unsafe extern "system" fn USBPORT_HandleSubmitURB(
         }
 
         URB_FUNCTION_TAKE_FRAME_LENGTH_CONTROL => {
+            DbgPrint(b"USBPORT_HandleSubmitURB: URB_FUNCTION_TAKE_FRAME_LENGTH_CONTROL (0x03) NOT_SUPPORTED\n\0".as_ptr() as *const i8);
             return USBPORT_USBDStatusToNtStatus(Urb, USBD_STATUS_NOT_SUPPORTED);
         }
 
         URB_FUNCTION_RELEASE_FRAME_LENGTH_CONTROL => {
+            DbgPrint(b"USBPORT_HandleSubmitURB: URB_FUNCTION_RELEASE_FRAME_LENGTH_CONTROL (0x04) NOT_SUPPORTED\n\0".as_ptr() as *const i8);
             return USBPORT_USBDStatusToNtStatus(Urb, USBD_STATUS_NOT_SUPPORTED);
         }
 
         URB_FUNCTION_GET_FRAME_LENGTH => {
+            DbgPrint(b"USBPORT_HandleSubmitURB: URB_FUNCTION_GET_FRAME_LENGTH (0x05) NOT_SUPPORTED\n\0".as_ptr() as *const i8);
             return USBPORT_USBDStatusToNtStatus(Urb, USBD_STATUS_NOT_SUPPORTED);
         }
 
         URB_FUNCTION_SET_FRAME_LENGTH => {
+            DbgPrint(b"USBPORT_HandleSubmitURB: URB_FUNCTION_SET_FRAME_LENGTH (0x06) NOT_SUPPORTED\n\0".as_ptr() as *const i8);
             return USBPORT_USBDStatusToNtStatus(Urb, USBD_STATUS_NOT_SUPPORTED);
         }
 
-        _ => {}
+        _ => {
+            DbgPrint(b"USBPORT_HandleSubmitURB: Unknown URB Function - %x\n\0".as_ptr() as *const i8, Function as u32);
+        }
     }
 
     if Status == STATUS_PENDING {

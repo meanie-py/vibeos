@@ -180,7 +180,10 @@ pub struct MiniportDriverCharacteristics {
     pub DevicePnPEventNotifyHandler: Option<unsafe extern "system" fn(NDIS_HANDLE, PVOID)>,
     pub ShutdownHandlerEx: Option<unsafe extern "system" fn(NDIS_HANDLE, u32)>,
     pub CancelOidRequestHandler: Option<unsafe extern "system" fn(NDIS_HANDLE, PVOID)>,
-    // NDIS 6.1+: DirectOidRequestHandler, CancelDirectOidRequestHandler; 6.80: Synchronous.
+    // NDIS 6.1+
+    pub DirectOidRequestHandler: Option<unsafe extern "system" fn(NDIS_HANDLE, *mut NdisOidRequest) -> NDIS_STATUS>,
+    pub CancelDirectOidRequestHandler: Option<unsafe extern "system" fn(NDIS_HANDLE, PVOID)>,
+    // NDIS 6.80: SynchronousOidRequestHandler.
 }
 
 #[repr(C)]
@@ -582,6 +585,9 @@ pub unsafe extern "system" fn NdisMSetMiniportAttributes(
     if a6.is_null() {
         return NDIS_STATUS_INVALID_PARAMETER;
     }
+    if crate::ndis::wdi::refuse_attributes(NdisMiniportHandle, (*Attributes).Type) {
+        return NDIS_STATUS_SUCCESS;
+    }
     match (*Attributes).Type {
         NDIS_OBJECT_TYPE_MINIPORT_ADAPTER_REGISTRATION_ATTRIBUTES => {
             let r = &*(Attributes as *const RegistrationAttributes);
@@ -863,6 +869,10 @@ pub unsafe extern "system" fn NdisMOidRequestComplete(
     OidRequest: *mut NdisOidRequest,
     Status: NDIS_STATUS,
 ) {
+    // A WDI driver completing one of the WDI layer's own commands.
+    if crate::ndis::wdi::oid_request_complete(MiniportAdapterHandle, OidRequest, Status) {
+        return;
+    }
     let req = (*OidRequest).SourceReserved[0] as PNDIS_REQUEST;
     let set = (*req).RequestType == NdisRequestSetInformation;
     if set {
@@ -886,6 +896,10 @@ pub unsafe extern "system" fn NdisMOidRequestComplete(
 
 #[no_mangle]
 pub unsafe extern "system" fn NdisMIndicateStatusEx(MiniportAdapterHandle: NDIS_HANDLE, StatusIndication: *mut StatusIndication) {
+    // A WDI driver's indications are all for the WDI layer.
+    if crate::ndis::wdi::indicate_status(MiniportAdapterHandle, StatusIndication) {
+        return;
+    }
     let a6 = adapter_of(MiniportAdapterHandle as PLOGICAL_ADAPTER);
     let s = &*StatusIndication;
     if a6.is_null() || s.StatusCode != NDIS_STATUS_LINK_STATE || s.StatusBuffer.is_null() {

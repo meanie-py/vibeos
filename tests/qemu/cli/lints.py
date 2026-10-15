@@ -1461,10 +1461,6 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
-    # A counted `swprintf(buf, n, fmt, ...)` declared extern links msvcrt's LEGACY export,
-    # `swprintf(buf, fmt, ...)` -- C's counted form is a header inline over _vsnwprintf --
-    # so the count is read as the format. mfplat crashed on it; ole32, msiexec, wscript and
-    # the recycle bin shipped it. Baseline is EMPTY.
     # A C switch's `case X: ...; break;` inside a loop, translated to a match arm whose
     # trailing `break;` now leaves the LOOP: mf's session_check_topology leaked a node
     # reference per SetTopology, welcome's TranslateEscapes stopped at the first `\x`.
@@ -1477,11 +1473,27 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
-    ssw = repo / "tools" / "scan_swprintf_count.py"
+    # `calloc(n, size_of::<OLECHAR>()) as *mut BSTR` for the C's `calloc(n, sizeof(*strs))`:
+    # the element's element. wscript's Host_Echo overran its array on every multi-argument
+    # Echo, dropped the second argument and crashed the host (modrun's cscript suite).
+    # Baseline is EMPTY.
+    sce = repo / "tools" / "scan_calloc_elem_type.py"
     specs.append(
         (
-            "scan_swprintf_count",
-            [py, str(ssw)] if ssw.is_file() else ["MISSING"],
+            "scan_calloc_elem_type",
+            [py, str(sce)] if sce.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # A variadic extern whose fixed arity is not its .spec export's. The C's count-form
+    # `swprintf(buf, n, fmt, ...)` is a <stdio.h> inline over _vsnwprintf; bound to msvcrt's
+    # legacy `swprintf(ptr wstr)` export, `n` became the format pointer (cscript crashed on
+    # every script error; msiexec, ole32 and the recycle bin had it too). Baseline is EMPTY.
+    svs = repo / "tools" / "scan_varargs_spec_arity.py"
+    specs.append(
+        (
+            "scan_varargs_spec_arity",
+            [py, str(svs)] if svs.is_file() else ["MISSING"],
             "stdout",
         )
     )
