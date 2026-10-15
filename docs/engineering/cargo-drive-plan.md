@@ -201,15 +201,80 @@ extends it from the boot spine to every fully-Rust module.
      `nativecui` exactly like a Win32 exe but for the subsystem (user-mode Rust,
      `--gc-sections`, auto image base), so it is `ModuleKind::Win32Exe` with
      `native:5.01` and no msvcrtex (NtProcessStartup comes from libnt.a).
-   - **The user-mode refusals left** (`--survey`, after wave 10): a `SOURCE` list
-     another target builds (6); `add_driver_inf` (4, drivers); per-arch link inputs
-     (2: acgenral, opengl32); usetup (ships on the boot CD only, which the CD check
-     reads from livecd lists); vendored C compiled into the module
-     (mstsc's rdesktop: rung 6); 3dtext (a cargo package name cannot start with a
-     digit; its generated cell is in the stash "wave9 3dtext cell"); two one-offs.
-     The ntoskrnl cells imported kdcom from `kdcom.spec` while the build ships
+   - **The ntoskrnl cells imported kdcom from `kdcom.spec`** while the build ships
      kdrosdbg's kdcom.dll; identical specs hid it. Fixed 2026-10-15:
      `Linker::kd_import_lib` picks the spec by `_WINKD_` as drivers/base does.
+   - **Wave 11, 2026-10-15: 7 user-mode one-offs and the driver rung, 43 modules.**
+     fc, 3dtext, acgenral, gdi32_vista, opengl32, usetup, welcome; and 36 kernel-mode
+     modules: the USB stack (usbport, usbehci, usbohci, usbuhci, usbhub, usbccgp,
+     usbstor, usbaudio), storage (scsiport, atapi, disk, ramdisk, storahci, buslogic,
+     pciidex), file systems (fastfat, npfs, msfs, mup, fs_rec, fltmgr, mountmgr), HID
+     (hidclass, hidusb, kbdhid, mouhid), ks, ksecdd, dxg, ndis, e1000, wmilib,
+     watchdog, wdfldr and the font drivers bmfd and ftfd. `--check` 129/129
+     EQUIVALENT, CD placement included. What it took:
+     - **Kernel-mode cells are `ModuleKind::KernelDll`** with set_module_type's type
+       as the KIND (its post-link). A driver's body is either a
+       `rust_staticlib_variant` or the drivers' own `add_custom_command(... cargo
+       build ...)`, which `_custom_body` reads in its one shape (crate, per-arch
+       RUSTFLAGS) and the rewrite drops. The body builds as cmake built it:
+       `rust_user_target()`, the builtin triple, `-sse,-sse2` on i386.
+     - **An i386 kernel cell with no `i686-kernel.json` builds on the builtin triple**
+       too (gcc.cmake, cargo-cell-args.sh, cargo_orchestrate.py: one rule). On the
+       json it linked a second `core` beside the body's, 64-76 KB per driver, and
+       resolved `mem*` statically instead of importing them from ntoskrnl.
+     - **`Linker::keep_all_sections()`.** KernelDll never overrode rustc's own
+       `--gc-sections`, though its comment said it kept everything: arm64, with
+       per-function sections, dropped code cmake keeps (wmilib lost its panic path,
+       relocations and `.data`). Generated kernel cells keep every section, as
+       cmake's links do. **Owed:** the hand-made kernel DLL cells (hal, kdcom,
+       bootvid, the 21 drivers cut before the generator) still gc; aligning them
+       changes boot-critical modules and needs its own proof.
+     - **`Linker::link_order()`: the libraries in cmake's exact order.** The engine
+       had put import libs after every archive. The first library that defines a
+       symbol wins, and import libs and archives overlap: amd64's ntoskrnl exports
+       `memcmp` (imported in cmake's link, static in ours), and usetup's
+       `libinflib_rust.a` carries ntkrnl-sys's raw-dylib ntoskrnl import of
+       `NlsMbOemCodePageTag`, which cmake resolved from ntdll's import lib first.
+       Generated cells now list body, `import:<lib>` and static libs in cmake's
+       order (first occurrence; cmake repeats libraries for its groups).
+     - **panic-lean's `panic_fastfail()`** for a kernel cell whose cmake-built driver
+       carried no handler: an `int 0x29` trap that references nothing.
+     - **More `engine:` libraries**, so no generated cell links a cmake-built static
+       library: mesa, zlib_solo, memcmp, libcntpr, ioevent, wdmguid, freetype, setjmp,
+       aux_klib (replayed C), and inflib_rust, cntpr_rust, cryptlib_rust,
+       sptilib_rust, ntoskrnl_vista_rust/utf8 (crates). A static library whose only
+       sources are empty stubs (user32_vista_static, inflib) is left out of the link.
+     - **Shapes:** per-arch C/asm inputs are per-arch shims (acgenral's amd64
+       `msys2.c`, opengl32's i386 `glapi_x86.s`; the shims library exists only on
+       arches that have any); a `${SOURCE}` list of placeholders another target
+       shares is spelled out in that statement (gdi32_vista_static); a target name
+       that starts with a digit gets its body crate's stem (3dtext -> text3d-cargo);
+       `-Wl,-e,__ImageBase` (`ENTRYPOINT 0`) is read as the entry; a subsystem
+       version per arch (welcome's i386 `windows:4.00`); `add_driver_inf` is kept;
+       `if(STACK_PROTECTOR) target_sources(... gcc_ssp_*)` becomes a configure error
+       for that module.
+     - **CD placement is part of `--check`.** `--save-baseline` records every list
+       entry and reactos.cab directory; a cell may add only the loose boot-CD copy
+       add_cargo_module makes. Boot-CD-only placements (usetup as the setup boot's
+       smss.exe, welcome as the CD root's setup.exe) are `add_cargo_cd_file`, and
+       `NO_CAB` passes through (usbaudio is not installed).
+     - **Found on the way: add_cargo_module never put a cell in reactos.cab** unless
+       it shipped to system32, drivers or winsxs, so regedit, hh, winhlp32, iexplore,
+       the wbem tools, aclayers and winprint were on the CD but missing from every
+       install since their waves. Any `reactos/...` destination is installed now.
+     - **Refused: user32_vista.** cmake's link binds its two exports to user32's
+       import thunks before it reaches the body, so the Rust (dpi.rs) has never been
+       linked: user32_vista.dll only forwards. A cell links the body, which is a
+       different module (and calls SetLastError with no kernel32 import). The
+       generator now refuses a module that exports what it imports. Its generated
+       cell is in the stash "wave11 user32_vista cell".
+   - **install-smoke amd64-uefi passes** with the wave (usetup is the boot CD's smss.exe,
+     so this is the only gate that runs it; the cabinet fix is what setup installs from),
+     in 44m12s. That is as slow as the same run with cmake's 36 drivers (49m35s): the
+     slowdown since 10-09 is older than the wave (roadmap registry).
+   - **Still refused** (`--survey`): mstsc (vendored rdesktop C, rung 6); psapi_static
+     and the other C_STATIC_LIBRARY targets (their consumers link them; each needs an
+     `engine:` entry when a consumer moves).
 3. **Give the C static libraries a cargo home.** `uuid` becomes a GUID crate generated
    from the same IDL/headers; `wine` (vendored libwine) and `conutils` are small. Until
    then cells link the cmake-built `.a` (`static_libs`), which keeps them cmake-bound.

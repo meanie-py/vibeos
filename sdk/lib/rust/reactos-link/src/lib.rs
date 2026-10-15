@@ -556,6 +556,10 @@ pub struct Linker {
     static_libs: Vec<String>,
     /// cmake-built libs linked AFTER the Rust archives (see `static_libs_after_body`).
     late_static_libs: Vec<String>,
+    /// cmake's own order of the body, import libs and static libs (`link_order`).
+    link_order: Option<Vec<String>>,
+    /// `--no-gc-sections` after rustc's own `--gc-sections` (`keep_all_sections`).
+    keep_all_sections: bool,
     /// Pre-expanded asm assembled into a `.a` and linked INSIDE the
     /// `--start-group` as an on-demand archive (NOT a force-included object
     /// like `asm`). (archive-basename, asm-rels). Use this when the cmake
@@ -649,6 +653,8 @@ impl Linker {
             link_stubs: false,
             static_libs: Vec::new(),
             late_static_libs: Vec::new(),
+            link_order: None,
+            keep_all_sections: false,
             asm_archives: Vec::new(),
             c_db_libs: Vec::new(),
             gendib_libs: Vec::new(),
@@ -685,6 +691,70 @@ impl Linker {
     pub fn link_args(mut self, args: &[&str]) -> Self {
         self.extra_link_args.extend(args.iter().map(|a| a.to_string()));
         self
+    }
+
+    /// One import lib (regular or delay).
+    fn emit_import_lib(&self, lib: &(String, String, String, bool)) {
+        let (spec_rel, dll_name, basename, delay) = lib;
+        let a = if *delay {
+            self.generate_delay_import_lib(spec_rel, dll_name, basename)
+        } else {
+            self.generate_import_lib(spec_rel, dll_name, basename)
+        };
+        link_arg!(self, "{}", a.display());
+        println!(
+            "cargo:rerun-if-changed={}",
+            self.repo_root.join(spec_rel).display()
+        );
+    }
+
+    /// The module's own compiled archives: the compile_commands.json replays
+    /// (c_from_compile_db) and the pre-expanded asm archives.
+    fn emit_own_archives(&self, clang: &Path, ar: &Path) {
+        // ---- Deep-C residue compiled in-cargo (compile_commands.json replay).
+        // In the same C-archive region as static_libs (before the Rust
+        // archives). Flag-exact: replay cmake's own clang command per source,
+        // strip the ninja-built .pch (keep the configure-time cmake_pch.h
+        // force-include), redirect -o into OUT_DIR. Drops `ninja <lib>` for the
+        // residue that static_libs() used to reuse.
+        if !self.c_db_libs.is_empty() {
+            let db_path = self.build_dir.join("compile_commands.json");
+            if cmake_off_forced() || !db_path.exists() {
+                // cmake-off (WS1 DEEP): no compile_commands.json. Compile each
+                // c_db lib from its committed per-arch flag template
+                // (`sdk/lib/rust/reactos-link/cflags/<name>.<arch>.flags`) plus
+                // the native-hpp-generated xdk headers (`winnt.h` etc.). Mirrors
+                // the WS2 (`ks*.inc`) / WS3 (`.res`) committed-fallback pattern:
+                // cmake's compile_commands.json wins when a build is configured
+                // (the replay branch below — it can never go stale against the
+                // committed flags), the committed flags fill in only when there
+                // is no cmake build at all. Regen via `tools/gen_cflags.py`.
+                self.compile_c_db_committed(clang, ar);
+            } else {
+            let db_text = std::fs::read_to_string(&db_path).unwrap_or_else(|e| {
+                panic!(
+                    "c_from_compile_db needs {} — configure cmake with \
+                     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON: {e}",
+                    db_path.display()
+                )
+            });
+            let entries = parse_ccdb(&db_text);
+            println!("cargo:rerun-if-changed={}", db_path.display());
+            for (name, sources) in &self.c_db_libs {
+                let rels: Vec<&str> = sources.iter().map(|s| s.as_str()).collect();
+                let lib_a = self.replay_c_archive(name, &rels, &entries, ar);
+                link_arg!(self, "{}", lib_a.display());
+            }
+            } // end else (cmake build configured → compile_commands.json replay)
+        }
+        // Pre-expanded asm assembled into on-demand archives, IN the group
+        // alongside the cmake C archives (same archive semantics + layout
+        // region as the cmake equivalent — see asm_archive()).
+        for (name, rels) in &self.asm_archives {
+            let rels: Vec<&str> = rels.iter().map(|s| s.as_str()).collect();
+            let lib_a = self.build_archive(name, &rels, &[], clang, ar);
+            link_arg!(self, "{}", lib_a.display());
+        }
     }
 
     fn emit_link_arg(&self, arg: &str) {
@@ -975,6 +1045,28 @@ impl Linker {
         self
     }
 
+    /// The libraries in cmake's exact order: `"body"` (the Rust archives), `"import:<basename>"`
+    /// (an `import_lib`/`delay_import_lib` by its basename) and static libs as for
+    /// `static_libs`. In a COFF link the first library on the command line that defines
+    /// a symbol wins, and import libs and archives overlap: amd64's ntoskrnl exports
+    /// `memcmp`, which a driver's `libmemcmp.a` after the body also defines, and usetup's
+    /// `libinflib_rust.a` carries ntkrnl-sys's raw-dylib ntoskrnl import of
+    /// NlsMbOemCodePageTag, which cmake's link resolved from ntdll's import lib first.
+    /// The module's own objects (c_from_compile_db, asm archives) go first, as a
+    /// target's objects do in cmake's link. Replaces static_libs / static_libs_after_body.
+    pub fn link_order(mut self, items: &[&str]) -> Self {
+        self.link_order = Some(items.iter().map(|s| s.to_string()).collect());
+        self
+    }
+
+    /// Keep every section, as cmake's kernel-mode driver links do: rustc passes
+    /// `--gc-sections` to every bin link, and a KernelDll does not override it
+    /// (arm64, with per-function sections, then drops code cmake keeps).
+    pub fn keep_all_sections(mut self) -> Self {
+        self.keep_all_sections = true;
+        self
+    }
+
     /// Generate a PE *import* lib from a `.spec` instead of consuming a
     /// cmake-built one (e.g. HAL importing ntoskrnl). `spec_rel`
     /// repo-relative; `dll_name` the `-n=` arg; `basename` the dlltool
@@ -1046,8 +1138,12 @@ impl Linker {
     /// configure-time `cmake_pch.h` force-include, so it is self-contained.
     /// `name` IS the cmake target name (disambiguates a source compiled into
     /// multiple targets via its `CMakeFiles/<name>.dir` object dir). Chainable —
-    /// call once per archive, in C-first link order.
+    /// call once per archive, in C-first link order. An empty `sources` adds nothing:
+    /// a generated cell passes each arch's list, and acgenral compiles C on amd64 only.
     pub fn c_from_compile_db(mut self, name: &str, sources: &[&str]) -> Self {
+        if sources.is_empty() {
+            return self;
+        }
         self.c_db_libs.push((
             name.to_string(),
             sources.iter().map(|s| s.to_string()).collect(),
@@ -1425,6 +1521,36 @@ impl Linker {
         // bugchecked at boot. See feedback_cargo_drive_usermode_target.md.
         link_arg!(self, "-Wl,--start-group");
         let ar = llvm_mingw.join(format!("bin/{}-ar", self.arch.triple));
+        if let Some(order) = &self.link_order {
+            assert!(
+                self.static_libs.is_empty() && self.late_static_libs.is_empty(),
+                "link_order replaces static_libs/static_libs_after_body"
+            );
+            self.emit_own_archives(&clang, &ar);
+            for item in order {
+                if item == "body" {
+                    for a in rust_a.iter().chain(sibling_rust_a.iter()) {
+                        link_arg!(self, "{}", a.display());
+                        println!("cargo:rerun-if-changed={}", a.display());
+                    }
+                } else if let Some(base) = item.strip_prefix("import:") {
+                    let lib = self.import_libs.iter().find(|l| l.2 == base);
+                    let lib = lib.unwrap_or_else(|| panic!("link_order names import:{base}, which no import_lib declares"));
+                    self.emit_import_lib(lib);
+                } else {
+                    let full = self.static_lib_path(item, &clang, &ar);
+                    link_arg!(self, "{}", full.display());
+                    println!("cargo:rerun-if-changed={}", full.display());
+                }
+            }
+            for lib in &self.import_libs {
+                assert!(
+                    order.iter().any(|i| i.strip_prefix("import:") == Some(lib.2.as_str())),
+                    "link_order leaves out import:{}",
+                    lib.2
+                );
+            }
+        } else {
         for lib in &self.static_libs {
             let full = self.static_lib_path(lib, &clang, &ar);
             link_arg!(self, "{}", full.display());
@@ -1436,50 +1562,7 @@ impl Linker {
             // kept booting a pre-fix _strnicmp despite the .a being rebuilt.
             println!("cargo:rerun-if-changed={}", full.display());
         }
-        // ---- Deep-C residue compiled in-cargo (compile_commands.json replay).
-        // In the same C-archive region as static_libs (before the Rust
-        // archives). Flag-exact: replay cmake's own clang command per source,
-        // strip the ninja-built .pch (keep the configure-time cmake_pch.h
-        // force-include), redirect -o into OUT_DIR. Drops `ninja <lib>` for the
-        // residue that static_libs() used to reuse.
-        if !self.c_db_libs.is_empty() {
-            let db_path = self.build_dir.join("compile_commands.json");
-            if cmake_off_forced() || !db_path.exists() {
-                // cmake-off (WS1 DEEP): no compile_commands.json. Compile each
-                // c_db lib from its committed per-arch flag template
-                // (`sdk/lib/rust/reactos-link/cflags/<name>.<arch>.flags`) plus
-                // the native-hpp-generated xdk headers (`winnt.h` etc.). Mirrors
-                // the WS2 (`ks*.inc`) / WS3 (`.res`) committed-fallback pattern:
-                // cmake's compile_commands.json wins when a build is configured
-                // (the replay branch below — it can never go stale against the
-                // committed flags), the committed flags fill in only when there
-                // is no cmake build at all. Regen via `tools/gen_cflags.py`.
-                self.compile_c_db_committed(&clang, &ar);
-            } else {
-            let db_text = std::fs::read_to_string(&db_path).unwrap_or_else(|e| {
-                panic!(
-                    "c_from_compile_db needs {} — configure cmake with \
-                     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON: {e}",
-                    db_path.display()
-                )
-            });
-            let entries = parse_ccdb(&db_text);
-            println!("cargo:rerun-if-changed={}", db_path.display());
-            for (name, sources) in &self.c_db_libs {
-                let rels: Vec<&str> = sources.iter().map(|s| s.as_str()).collect();
-                let lib_a = self.replay_c_archive(name, &rels, &entries, &ar);
-                link_arg!(self, "{}", lib_a.display());
-            }
-            } // end else (cmake build configured → compile_commands.json replay)
-        }
-        // Pre-expanded asm assembled into on-demand archives, IN the group
-        // alongside the cmake C archives (same archive semantics + layout
-        // region as the cmake equivalent — see asm_archive()).
-        for (name, rels) in &self.asm_archives {
-            let rels: Vec<&str> = rels.iter().map(|s| s.as_str()).collect();
-            let lib_a = self.build_archive(name, &rels, &[], &clang, &ar);
-            link_arg!(self, "{}", lib_a.display());
-        }
+        self.emit_own_archives(&clang, &ar);
         if let Some(a) = &rust_a {
             link_arg!(self, "{}", a.display());
             println!("cargo:rerun-if-changed={}", a.display());
@@ -1493,18 +1576,10 @@ impl Linker {
             link_arg!(self, "{}", full.display());
             println!("cargo:rerun-if-changed={}", full.display());
         }
-        for (spec_rel, dll_name, basename, delay) in &self.import_libs {
-            let a = if *delay {
-                self.generate_delay_import_lib(spec_rel, dll_name, basename)
-            } else {
-                self.generate_import_lib(spec_rel, dll_name, basename)
-            };
-            link_arg!(self, "{}", a.display());
-            println!(
-                "cargo:rerun-if-changed={}",
-                self.repo_root.join(spec_rel).display()
-            );
+        for lib in &self.import_libs {
+            self.emit_import_lib(lib);
         }
+        } // end else (no link_order)
         // memcmp FALLBACK, builtin targets only (stable-toolchain Axis B).
         //
         // The PRECOMPILED `core` calls `memcmp` (core::slice::cmp, reached from
@@ -1707,10 +1782,17 @@ impl Linker {
                 (entry, Some(*image_base))
             }
             ModuleKind::KernelDll { entry, image_base } => {
-                // native subsystem PE DLL; keep all sections, 0x1000 align.
+                // native subsystem PE DLL, 0x1000 align. rustc's own `--gc-sections`
+                // applies unless `keep_all_sections()`, which cmake's links match:
+                // the hand-written kernel DLL cells (hal, kdcom, bootvid, the
+                // drivers cut before the generator) still gc.
                 link_arg!(self, "-Wl,--subsystem,native:5.01");
                 link_arg!(self, "-Wl,--exclude-all-symbols,-file-alignment=0x1000,-section-alignment=0x1000");
                 link_arg!(self, "-shared");
+                if self.keep_all_sections {
+                    // After rustc's --gc-sections, so it wins (the last flag does).
+                    link_arg!(self, "-Wl,--no-gc-sections");
+                }
                 (entry, Some(*image_base))
             }
             ModuleKind::Win32Dll {
@@ -2334,6 +2416,19 @@ impl Linker {
             "delayimp_rust" => self.engine_crate("delayimp-rust", &[], true),
             "evtlib_rust" => self.engine_crate("evtlib-rust", &[], true),
             "hid_hidparser_rust" => self.engine_crate("hidparser-rust", &["user"], false),
+            // sdk/lib/inflib's custom command: RUSTFLAGS -sse,-sse2 on i386 (what the
+            // config gives too), empty elsewhere (no config rustflags there either).
+            "inflib_rust" => self.engine_crate("inflib-rust", &[], true),
+            "cryptlib_rust" => self.engine_crate("cryptlib-rust", &[], true),
+            "sptilib_rust" => self.engine_crate("sptilib-rust", &[], true),
+            "ntoskrnl_vista_rust" => self.engine_crate("ntoskrnl_vista-rust", &[], true),
+            "ntoskrnl_vista_utf8" => self.engine_crate("utf8", &[], true),
+            // libcntpr.cmake: `float` on amd64/arm64 only; the user-target build adds
+            // its `-C no-prepopulate-passes` (and i386's -sse,-sse2) for cnt-rust-lib.
+            "cntpr_rust" => {
+                let feats: &[&str] = if i386 { &[] } else { &["float"] };
+                self.engine_crate("cnt-rust-lib", feats, true)
+            }
             "skiplist_rust" => self.engine_crate("skiplist-rust", &[], true),
             // concfg-rust is an rlib (winsrv-rust's dependency); cmake builds the
             // console CPL's archive with `cargo rustc --crate-type staticlib

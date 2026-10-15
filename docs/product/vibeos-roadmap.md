@@ -789,6 +789,13 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   conventions. The diagnostics are `~/vibeos-rust-staging/i386-flush-ebp-diag.patch`.
   Still owed besides: deciding whether install-smoke joins a scheduled run (its own verb,
   ~10 min, not a gate stage). arm64 needs a non-IDE disk layout first.
+  **amd64-uefi has slowed to 44-50 min (2026-10-15, from 11m45s on 10-09); OPEN.** It
+  still passes. The setup stage's file copy shows ~245 cdrom `[GAP]` lines (a CD read
+  waiting ~6 s, with as many MCN polls in between) where smoke boots show none. Not the
+  cargo-drive wave 11 driver cells: the same run with cmake's builds of all 36 of them
+  took 49m35s with 247 gaps (`/tmp/vibeos-cli/20261015-112517-etjkvvuq-install-smoke-amd64-uefi`,
+  cargo cells `.../20261015-104049-cwraqy32-...`). Host load during both runs not ruled
+  out; first step is a run on an idle host, then bisect master since 10-09.
 
 - **27 constants defined with two values inside ONE crate, parked in a lint baseline**
   (TRIAGED 2026-10-09). `scan_const_contradictions` had reported userenv's
