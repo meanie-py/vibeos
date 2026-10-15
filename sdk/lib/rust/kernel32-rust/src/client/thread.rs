@@ -20,7 +20,7 @@ type PCSR_CREATE_REMOTE_THREAD =
 // The NT6 THREAD_ALL_ACCESS (upstream a6bdabdaf62's THREAD_ALL_ACCESS_NT6): the thread
 // type's valid mask and GENERIC_ALL are the NT6 ones since 4b4063a01d6, so the handle
 // CreateRemoteThread returns carries the Vista rights (the *_LIMITED_INFORMATION pair).
-const THREAD_ALL_ACCESS: ACCESS_MASK = 0x1FFFFF;
+const THREAD_ALL_ACCESS_NT6: ACCESS_MASK = 0x1FFFFF;
 const STATUS_NO_YIELD_PERFORMED: NTSTATUS = 0x40000024u32 as NTSTATUS;
 const INVALID_ACTIVATION_CONTEXT: PACTIVATION_CONTEXT = -1isize as PACTIVATION_CONTEXT;
 
@@ -206,7 +206,7 @@ pub unsafe extern "system" fn CreateRemoteThread(
     /* Create the Kernel Thread Object */
     Status = NtCreateThread(
         &mut hThread,
-        THREAD_ALL_ACCESS,
+        THREAD_ALL_ACCESS_NT6,
         ObjectAttributes,
         hProcess,
         &mut ClientId,

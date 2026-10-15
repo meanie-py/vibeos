@@ -3805,7 +3805,7 @@ unsafe extern "C" fn GetInstallSourceWin32(
 }
 /// Whether `HARDWARE\DEVICEMAP\VIDEO` points at a device of the service, i.e. whether its
 /// driver is the one running now.
-unsafe fn IsDisplayServiceActive(pszServiceName: &[u16]) -> bool {
+unsafe fn IsDisplayServiceActive(pszServiceName: LPCWSTR) -> bool {
     let mut hKey: HKEY = core::ptr::null_mut();
     if RegOpenKeyExW(
         HKEY_LOCAL_MACHINE,
@@ -3819,17 +3819,18 @@ unsafe fn IsDisplayServiceActive(pszServiceName: &[u16]) -> bool {
     }
 
     // The DEVICEMAP entries point to Services\<ServiceName>\DeviceX.
-    let mut pattern = [0u16; MAX_PATH as usize];
-    let mut n = 0usize;
-    for c in "\\SERVICES\\".encode_utf16().chain(pszServiceName.iter().copied()).chain([b'\\' as u16]) {
-        if n == pattern.len() - 1 {
-            break; // _snwprintf truncates the same way
-        }
-        pattern[n] = c;
-        n += 1;
-    }
-    let pattern = &mut pattern[..n];
-    CharUpperBuffW(pattern.as_mut_ptr(), pattern.len() as DWORD);
+    let mut szPattern = [0u16; MAX_PATH as usize];
+    _snwprintf(
+        szPattern.as_mut_ptr(),
+        szPattern.len(),
+        w!("\\SERVICES\\%s\\") as LPCWSTR,
+        pszServiceName,
+    );
+    szPattern[szPattern.len() - 1] = 0;
+    let n = wcslen(szPattern.as_ptr());
+    let pattern = &mut szPattern[..n];
+    // _wcsupr
+    CharUpperBuffW(pattern.as_mut_ptr(), n as DWORD);
 
     let mut bActive = false;
     let mut szValueName = [0u16; 64];
@@ -3853,12 +3854,11 @@ unsafe fn IsDisplayServiceActive(pszServiceName: &[u16]) -> bool {
             break;
         }
         dwIndex += 1;
-        if dwType != REG_SZ {
-            continue;
+        if dwType == REG_SZ {
+            let data = &mut szData[..cbData as usize / 2];
+            CharUpperBuffW(data.as_mut_ptr(), data.len() as DWORD);
+            bActive = data.windows(pattern.len()).any(|w| w == &pattern[..]);
         }
-        let data = &mut szData[..cbData as usize / 2];
-        CharUpperBuffW(data.as_mut_ptr(), data.len() as DWORD);
-        bActive = data.windows(pattern.len()).any(|w| w == &pattern[..]);
     }
 
     RegCloseKey(hKey);
@@ -3993,8 +3993,7 @@ unsafe fn ApplyDisplaySettingsToInactiveAdapters(pdm: &DEVMODEW) {
         }
 
         // The settings of an active adapter were already updated by ChangeDisplaySettings.
-        let len = szServiceName.iter().position(|&c| c == 0).unwrap_or(szServiceName.len());
-        if IsDisplayServiceActive(&szServiceName[..len]) {
+        if IsDisplayServiceActive(szServiceName.as_ptr()) {
             continue;
         }
 
