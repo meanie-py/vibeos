@@ -262,6 +262,101 @@ pub unsafe fn create_window<T: MessageMap>(
     )
 }
 
+/// atlwin.h `_ATL_WNDCLASSINFOW` (`CWndClassInfo`): the class a module's OWN
+/// `GetWndClassInfo()` hands `CWindowImpl::Create` (rapps writes one per window to set an
+/// icon, a menu and a cursor). Laid out as the C++ struct; the generated glue asserts its size
+/// against the island's before casting to it.
+#[repr(C)]
+pub struct CWndClassInfo {
+    m_wc: WndClassExW,
+    m_lpsz_orig_name: *const u16,
+    p_wnd_proc: Option<WndProc>,
+    m_lpsz_cursor_id: *const u16,
+    m_b_system_cursor: i32,
+    m_atom: u16,
+    m_sz_auto_name: [u16; 5 + 2 * core::mem::size_of::<usize>()],
+}
+
+/// The island's `CWndClassInfo` (whatever bindgen named it) as atl_rust's, refused at
+/// COMPILE time unless the two are the same size: a drifted layout must not register a class
+/// from the wrong bytes.
+pub fn class_info_ptr<C>(p: *mut C) -> *mut c_void {
+    const { assert!(core::mem::size_of::<C>() == core::mem::size_of::<CWndClassInfo>()) };
+    p as *mut c_void
+}
+
+/// `_ATL_WNDCLASSINFOW::Register`. Its `m_wc.lpfnWndProc` is ATL's `StartWindowProc`, the
+/// thunk's entry; here the class's procedure is [`window_proc`] for `T`, which finds the
+/// object by window property instead -- the module's procedure never sees a difference.
+/// The cursor is (re)loaded from `m_lpszCursorID` exactly as ATL does, even when that is
+/// NULL and the initializer had already set `hCursor`.
+unsafe fn register_class_info<T: MessageMap>(info: *mut CWndClassInfo) -> u16 {
+    let info = &mut *info;
+    if info.m_wc.h_instance.is_null() {
+        info.m_wc.h_instance = crate::module_instance();
+    }
+    if info.m_atom == 0 {
+        let from = if info.m_b_system_cursor != 0 {
+            core::ptr::null_mut()
+        } else {
+            crate::resource_instance()
+        };
+        info.m_wc.h_cursor = LoadCursorW(from, info.m_lpsz_cursor_id);
+        info.m_wc.lpfn_wnd_proc = Some(window_proc::<T>);
+        info.m_atom = RegisterClassExW(&info.m_wc);
+    }
+    info.m_atom
+}
+
+/// `CWindowImpl::Create` for a class with its own `GetWndClassInfo()` (`info`, the island's
+/// `CWndClassInfo` as a pointer), then `CWindowImplBaseT::Create`: no atom, no window; a
+/// child window with no menu/ID gets `this` as its ID (ATL's `(HMENU)(UINT_PTR)this`); a null
+/// `rect` is `rcDefault`. The caller has already applied the window traits to the styles.
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn create_window_info<T: MessageMap>(
+    this: *mut T,
+    info: *mut c_void,
+    parent: HWND,
+    rect: *const i32,
+    name: *const u16,
+    style: u32,
+    ex_style: u32,
+    menu_or_id: *mut c_void,
+) -> HWND {
+    const WS_CHILD: u32 = 0x4000_0000;
+    let atom = register_class_info::<T>(info as *mut CWndClassInfo);
+    if atom == 0 {
+        return core::ptr::null_mut();
+    }
+    let menu = if menu_or_id.is_null() && style & WS_CHILD != 0 {
+        this as *mut c_void
+    } else {
+        menu_or_id
+    };
+    const CW_USEDEFAULT: i32 = 0x8000_0000u32 as i32;
+    let (x, y, w, h) = if rect.is_null() {
+        // rcDefault = { CW_USEDEFAULT, CW_USEDEFAULT, 0, 0 }: right-left wraps to CW_USEDEFAULT.
+        (CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT)
+    } else {
+        let r = core::slice::from_raw_parts(rect, 4);
+        (r[0], r[1], r[2].wrapping_sub(r[0]), r[3].wrapping_sub(r[1]))
+    };
+    CreateWindowExW(
+        ex_style,
+        atom as usize as *const u16,
+        name,
+        style,
+        x,
+        y,
+        w,
+        h,
+        parent,
+        menu,
+        crate::module_instance(),
+        this as *mut c_void,
+    )
+}
+
 /// `CWindowImpl::SubclassWindow`: route an existing window (a control) through `this`.
 pub unsafe fn subclass_window<T: MessageMap>(this: *mut T, hwnd: HWND) -> bool {
     if hwnd.is_null() || !object::<T>(hwnd).is_null() {

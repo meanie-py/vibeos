@@ -712,6 +712,7 @@ members = [
     "mmc_new-rust",
     "certmgr-rust",
     "drwtsn32-rust",
+    "rapps-rust",
     "at-rust",
     "eventcreate-rust",
     "fsutil-rust",

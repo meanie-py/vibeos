@@ -4090,6 +4090,18 @@ name = "random"
 version = "0.1.0"
 
 [[package]]
+name = "rapps-rust"
+version = "0.1.0"
+dependencies = [
+ "atlclasses-rust",
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "rasadhlp-rust"
 version = "0.1.0"
 dependencies = [

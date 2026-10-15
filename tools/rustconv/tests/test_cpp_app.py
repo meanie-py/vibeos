@@ -1171,3 +1171,16 @@ def test_a_method_with_a_lifetime_parameter_is_still_moved_into_its_impl():
     assert "impl CRecentFileEntry {" in out
     assert "pub unsafe fn FileName<'a>(&mut self) -> &'a CAtlString {" in out
     assert "CRecentFileEntry__FileName" not in out
+
+
+def test_a_wide_string_global_is_a_static_of_its_units():
+    from rustconv.cpp_app import wide_string_static
+    from rustconv.cpp_model import GlobalVar
+
+    g = GlobalVar("UsageString", "const WCHAR[6]", "x.h", 'L"a\\\\\\n"')
+    assert wide_string_static(g) == "pub static UsageString: [u16; 6] = [97, 92, 10, 0, 0, 0];"
+    g = GlobalVar("s", "WCHAR []", "x.h", 'L"hi"')
+    assert wide_string_static(g) == "pub static mut s: [u16; 3] = [104, 105, 0];"
+    # Not a lone wide literal (a macro the model must resolve): the model gets it.
+    assert wide_string_static(GlobalVar("t", "const WCHAR[4]", "x.h", 'L"a" X')) is None
+    assert wide_string_static(GlobalVar("u", "const WCHAR[1]", "x.h", 'L"ab"')) is None

@@ -31,7 +31,13 @@ from pathlib import Path
 
 from . import cpp_templates
 from .cpp_core import c_type_to_rust
-from .cpp_model import ATL_BASE_ALIASES, ATL_IMPL_METHODS, ClassModel, Method, ModuleModel
+from .cpp_model import (
+    ATL_IMPL_METHODS,
+    ClassModel,
+    Method,
+    ModuleModel,
+    atl_base_alias,
+)
 
 
 class CppAppError(RuntimeError):
@@ -49,8 +55,7 @@ _FNPTR_RE = re.compile(
 
 def short(name: str) -> str:
     """A class's short name; ATL's window templates are their CWindow (cpp_model)."""
-    n = name.split("<")[0].split("::")[-1].strip()
-    return ATL_BASE_ALIASES.get(n, n)
+    return atl_base_alias(name)
 
 
 def atl_template(cls: ClassModel) -> str | None:
@@ -425,10 +430,58 @@ def render_classes(
         out.append("")
     for cls in model.classes.values():
         out.append(_render_class(cls, h, model, cls.name in island_structs and _plain(cls)))
+    if any(c.method("GetWndClassInfo") for c in model.classes.values() if not c.external):
+        out.append(_START_WINDOW_PROC)
     out.append(_render_globals(model, h))
     out.append(_render_global_init(model, h))
     out.append(_render_island_glue(model, island))
     return "\n".join(out) + "\n"
+
+
+# atl_rust's own spellings of ATL types, re-exported by every C++ crate's prelude.
+_ATL_RUST_PROVIDED = frozenset(
+    {
+        "CStringW",
+        "CStringA",
+        "CString",
+        "CSimpleString",
+        "CComPtr",
+        "CHeapPtr",
+        "CComHeapPtr",
+        "CSimpleArray",
+        "CSimpleMap",
+        "CAtlList",
+        "POSITION",
+        "CLocalAllocator",
+        "CCRTAllocator",
+        "CPath",
+        "CPathW",
+        "CRegKey",
+        # CStringW's own template machinery: a module's `CStringT<..>` spelling IS CStringW.
+        "CStringT",
+        "CSimpleStringT",
+        "ChTraitsCRT",
+        "StrTraitATL",
+    }
+)
+
+
+# C++ namespaces whose types bindgen prefixes and whose members the module names bare.
+_ISLAND_NAMESPACES = ("ATL", "Gdiplus")
+# Never re-exported bare: a const named `Ok` would shadow Result::Ok across the crate.
+_RUST_PRELUDE = frozenset({"Ok", "Err", "Some", "None", "Option", "Result", "Box", "Vec"})
+
+
+def _model_words(model: ModuleModel) -> frozenset[str]:
+    """Every identifier in the module's lowered bodies and declared types."""
+    texts: list[str] = []
+    for c in model.classes.values():
+        texts += [f.c_type for f in c.fields]
+        for m in c.methods:
+            texts += [m.lowered or "", m.return_type, *(p.c_type for p in m.params)]
+    texts += [f.lowered + f.signature for f in model.functions]
+    texts += [g.c_type for g in model.globals]
+    return frozenset(re.findall(r"[A-Za-z_]\w*", "\n".join(texts)))
 
 
 def _render_island_glue(model: ModuleModel, island: str) -> str:
@@ -466,6 +519,37 @@ def _render_island_glue(model: ModuleModel, island: str) -> str:
     for name, found in sorted(types.items()):
         if len(found) == 1 and name not in island_names and name not in rendered:
             lines.append(f"pub type {name} = {found[0]}_{name};")
+    # And a type in ATL's namespace: bindgen spells `ATL::CWndClassInfo` `ATL_CWndClassInfo`,
+    # the module's own `GetWndClassInfo()` says `CWndClassInfo`. Only names the module uses
+    # and atl_rust does not provide (its CStringW/CComPtr/... are the prelude's).
+    # GDI+'s C++ API lives in `namespace Gdiplus` the same way (`Gdiplus_Status`), and so do
+    # its enum constants (`Gdiplus_Unit_UnitPixel`, which the bodies say `UnitPixel`).
+    used = _model_words(model)
+    aliased: set[str] = set()
+    for ns in _ISLAND_NAMESPACES:
+        # Not a GENERIC one (`ATL_StrTraitATL<..>`): a bare alias of it is missing arguments.
+        for m in re.finditer(rf"^pub (?:type|struct|union) {ns}_(\w+)\b(?!\s*<)", island, re.M):
+            name = m.group(1)
+            if (
+                name in used
+                and name not in island_names
+                and name not in rendered
+                and name not in _ATL_RUST_PROVIDED
+                and name not in aliased
+            ):
+                aliased.add(name)
+                lines.append(f"pub type {name} = {ns}_{name};")
+        for m in re.finditer(rf"^pub const {ns}_(\w+?)_(\w+): ({ns}_\1) = ", island, re.M):
+            name = m.group(2)
+            if (
+                name in used
+                and name not in island_names
+                and name not in _RUST_PRELUDE
+                and name not in aliased
+                and not re.search(rf"^pub const {re.escape(name)}\b", island, re.M)
+            ):
+                aliased.add(name)
+                lines.append(f"pub const {name}: {m.group(3)} = {ns}_{m.group(1)}_{name};")
     for m in re.finditer(
         r"((?:^#\[[^\n]*\]\n)*)^pub struct (\w+) \{\n\s*pub _base: (\w+),", island, re.M
     ):
@@ -489,7 +573,15 @@ def _render_island_glue(model: ModuleModel, island: str) -> str:
 
 
 def _plain(cls: ClassModel) -> bool:
-    return not cls.methods and not cls.bases and not cls.polymorphic
+    """A struct the island may lay out. Not one holding an ATL type by value: bindgen lays
+    rapps' `CStringW DownloadFileName` out as its own `ATL_CStringW` and derives Copy over it;
+    cppapp's layout uses atl_rust's CStringW, which owns and frees its buffer."""
+    return (
+        not cls.methods
+        and not cls.bases
+        and not cls.polymorphic
+        and not any(not f.static and _ATL_OWNING.search(f.c_type) for f in cls.fields)
+    )
 
 
 def _render_class(
@@ -511,7 +603,8 @@ def _render_class(
     lines = [f"// ---- {cls.qualified} ({cls.file})", f"{derive}#[repr(C)]", f"pub {kw} {n} {{"]
     if h.has_own_vtbl(cls):
         lines.append(f"    pub __vtbl: *const {n}__vtbl,")
-    for i, b in enumerate(cls.bases):
+    for i in _base_layout_order(cls, h):
+        b = cls.bases[i]
         bn = short(b.name)
         if bn in h.by_short:
             lines.append(f"    pub __base{i}: {bn},")
@@ -649,8 +742,11 @@ def _render_class(
     impl.append("}")
     lines.extend(impl)
     lines.append("")
-    if atl_template(cls):
-        lines.append(_render_atl_glue(cls, h, model))
+    if cls.com_map is not None:
+        lines.append(_render_com_object_glue(cls, h, model))
+    win = atl_window(cls, h)
+    if win is not None:
+        lines.append(_render_atl_glue(cls, h, model, win))
     elif _exe_module_base(cls) is not None:
         lines.append(_render_exe_module_glue(cls, model))
     elif cls.bases and not h.com_bases(cls):
@@ -748,6 +844,8 @@ def has_drop(cls: ClassModel, h: Hierarchy) -> bool:
     if any(m.kind == "dtor" and m.body and not _empty_body(m) for m in cls.methods):
         return True
     if any(not f.static and _ATL_OWNING.search(f.c_type) for f in cls.fields):
+        return True
+    if any(_ATL_OWNING.match(b.name) for b in cls.bases):  # rapps' CLocalPtr<T> : CHeapPtr
         return True
     if any(has_drop(b, h) for _, b in h.module_bases(cls)):
         return True
@@ -1014,6 +1112,131 @@ def _template_name(name: str) -> str:
     return name.split("<")[0].split("::")[-1].strip()
 
 
+def _base_layout_order(cls: ClassModel, h: Hierarchy) -> list[int]:
+    """The order base subobjects are LAID OUT in (their `__baseK` names keep declaration
+    order). C++ puts the primary base -- the first one with a vptr -- at offset 0, ahead of
+    non-polymorphic bases declared before it. That matters for ATL's COM roots: rapps'
+    `CDownloadManager : CComCoClass<..>, CComObjectRootEx<..>, IUnknown` has its IUnknown
+    vptr at offset 0, and a `CComPtr<CDownloadManager>` releases through offset 0. Only
+    those roots are moved: an ATL window base, non-polymorphic in this model, is polymorphic
+    in C++ and already first."""
+    order = list(range(len(cls.bases)))
+    roots = {i for i, b in enumerate(cls.bases) if _template_name(b.name) in _ATL_COM_ROOTS}
+    if not roots:
+        return order
+    first = next(
+        (
+            i
+            for i, b in enumerate(cls.bases)
+            if i not in roots
+            and (
+                short(b.name) in h.com
+                or (short(b.name) in h.by_short and h.by_short[short(b.name)].polymorphic)
+            )
+        ),
+        None,
+    )
+    if first is None or any(i not in roots for i in range(first)):
+        return order
+    return [first, *(i for i in order if i != first)]
+
+
+def _iface_path(h: Hierarchy, cls: ClassModel, iface: str) -> str | None:
+    """The field path to `cls`'s subobject for COM interface `iface`, through module bases."""
+    for i, b in enumerate(cls.bases):
+        if short(b.name) == iface:
+            return f"__base{i}"
+    for i, b in h.module_bases(cls):
+        sub = _iface_path(h, b, iface)
+        if sub is not None:
+            return f"__base{i}.{sub}"
+    return None
+
+
+def _render_com_object_glue(cls: ClassModel, h: Hierarchy, model: ModuleModel) -> str:
+    """What `CComObject<T>` adds over a class with a COM map, given to the class itself:
+    QueryInterface over the map, AddRef/Release on CComObjectRootEx's count (destroying at
+    0 the way `CComObject`'s destructor does: FinalRelease, module Unlock, then the class's
+    own destructor), and `CComObject<T>::CreateInstance` as atl_rust::com::ComObject."""
+    n = cls.name
+    root = next(
+        (i for i, b in enumerate(cls.bases) if _template_name(b.name) == "CComObjectRootEx"), None
+    )
+    if root is None:
+        raise CppAppError(f"{cls.qualified}: a COM map, but no CComObjectRootEx base of its own")
+    unk = {slot.name: slot for slot in h.com.get("IUnknown", [])}
+    if set(unk) < {"QueryInterface", "AddRef", "Release"}:
+        raise CppAppError(f"{cls.qualified}: the island lays out no IUnknownVtbl")
+    qi = unk["QueryInterface"]
+    entries = []
+    for e in cls.com_map or []:
+        if e.macro == "COM_INTERFACE_ENTRY" and len(e.args) == 1:
+            iid, via = f"IID_{e.args[0]}", e.args[0]
+        elif e.macro == "COM_INTERFACE_ENTRY_IID" and len(e.args) == 2:
+            iid, via = e.args[0], e.args[1]
+        elif e.macro == "COM_INTERFACE_ENTRY2" and len(e.args) == 2:
+            iid, via = f"IID_{e.args[0]}", e.args[1]
+        else:
+            raise CppAppError(f"{cls.qualified}: COM map entry {e.macro}({', '.join(e.args)})")
+        path = _iface_path(h, cls, short(via))
+        if path is None:
+            raise CppAppError(f"{cls.qualified}: {e.macro} names {via}, which it does not derive")
+        entries.append(
+            f"atl_rust::com::ComMapEntry {{ iid: core::ptr::addr_of!({iid}) as *const c_void, "
+            f"offset: core::mem::offset_of!({n}, {path}) }}"
+        )
+    ctor = next(
+        (i for i, m in enumerate(m for m in cls.methods if m.kind == "ctor") if not m.params),
+        None if any(m.kind == "ctor" for m in cls.methods) else 0,
+    )
+    if ctor is None:
+        raise CppAppError(f"{cls.qualified}: CComObject<T> needs a default constructor")
+    (a_riid, t_riid), (a_ppv, t_ppv) = qi.params
+    fc = cls.method("FinalConstruct")
+    fr = cls.method("FinalRelease")
+    construct = f"(*p).{fc[0].rust_name}() as i32" if fc else "0"
+    release = f"(*p).{fr[0].rust_name}(); " if fr else ""
+    return "\n".join(
+        [
+            f"impl {n} {{",
+            f"    /// `CComObject<{n}>::QueryInterface`: the COM map, first match.",
+            f"    pub unsafe fn QueryInterface(&mut self, {a_riid}: {t_riid}, {a_ppv}: {t_ppv})"
+            f" -> {qi.ret} {{",
+            f"        let map: [atl_rust::com::ComMapEntry; {len(entries)}] = "
+            f"[{', '.join(entries)}];",
+            "        atl_rust::com::internal_query_interface(self as *mut Self as *mut c_void, "
+            f"&map, {a_riid} as *const c_void, {a_ppv} as *mut *mut c_void) as {qi.ret}",
+            "    }",
+            f"    pub unsafe fn AddRef(&mut self) -> {unk['AddRef'].ret} {{",
+            f"        atl_rust::com::internal_add_ref(&mut self.__base{root}) as "
+            f"{unk['AddRef'].ret}",
+            "    }",
+            f"    pub unsafe fn Release(&mut self) -> {unk['Release'].ret} {{",
+            f"        let n = atl_rust::com::internal_release(&mut self.__base{root});",
+            f"        if n == 0 {{ {n}__com_destroy(self); }}",
+            f"        n as {unk['Release'].ret}",
+            "    }",
+            "}",
+            f"/// `delete` of a `CComObject<{n}>`: its destructor's FinalRelease and module "
+            f"Unlock, then {n}'s own.",
+            f"unsafe fn {n}__com_destroy(p: *mut {n}) {{ {release}"
+            f"atl_rust::com::module_unlock(); {n}__delete(p); }}",
+            f"impl atl_rust::com::ComObject for {n} {{",
+            "    unsafe fn create_instance(pp: *mut *mut Self) -> i32 {",
+            "        *pp = core::ptr::null_mut();",
+            f"        let p = {n}__new_{ctor}();",
+            "        if p.is_null() { return atl_rust::com::E_OUTOFMEMORY; }",
+            "        atl_rust::com::module_lock();",
+            f"        let hr: i32 = {construct};",
+            f"        if hr != 0 {{ {n}__com_destroy(p); return hr; }}",
+            "        *pp = p;",
+            "        hr",
+            "    }",
+            "}",
+        ]
+    )
+
+
 # rosdlgs.h `CPropertyPageImpl<T>` overridable -> (atl_rust::win::PropertyPage method, its
 # parameters, the arguments passed on, the return cast or None for a `void`).
 _PROPERTY_PAGE_HOOKS = {
@@ -1082,7 +1305,13 @@ def _property_page_glue(cls: ClassModel, idd: str, base: str) -> list[str]:
 
 
 # An external ATL template base whose data atl_rust lays out.
-_ATL_RUST_BASES = {"CAtlExeModuleT": "atl_rust::exe::CAtlExeModule"}
+_ATL_RUST_BASES = {
+    "CAtlExeModuleT": "atl_rust::exe::CAtlExeModule",
+    # atlcom.h's COM object roots: the reference count, and CComCoClass's empty base.
+    "CComObjectRootEx": "atl_rust::com::CComObjectRootEx",
+    "CComCoClass": "atl_rust::com::CComCoClass",
+}
+_ATL_COM_ROOTS = ("CComObjectRootEx", "CComCoClass")
 
 _REPO = Path(__file__).resolve().parents[3]
 
@@ -1235,9 +1464,115 @@ def _drop_hidden_glue(lines: list[str], own: set[str]) -> list[str]:
     return out
 
 
-def _render_atl_glue(cls: ClassModel, h: Hierarchy, model: ModuleModel) -> str:
-    n, t = cls.name, atl_template(cls)
-    base = next(f"__base{i}" for i, b in enumerate(cls.bases) if short(b.name) == "CWindow")
+@dataclass
+class AtlWindow:
+    """Where a class's ATL window template is: which one, the field path to its CWindow
+    subobject, and (CWindowImpl) its window-traits argument."""
+
+    template: str
+    path: str
+    traits: str | None = None
+
+
+_ATL_WINDOW_TEMPLATES = ("CWindowImpl", "CDialogImpl", "CPropertyPageImpl")
+
+
+def _template_args(name: str) -> list[str]:
+    if "<" not in name:
+        return []
+    return [a.strip() for a in _split(name[name.index("<") + 1 : name.rindex(">")]) if a.strip()]
+
+
+def atl_window(cls: ClassModel, h: Hierarchy) -> AtlWindow | None:
+    """The ATL window template `cls` IS (CRTP: `CWindowImpl<cls, ..>`), found among its bases
+    or, through a template instance, deeper: rapps' `CAppInfoDisplay :
+    CUiWindow<CWindowImpl<CAppInfoDisplay>>` is the window, at `__base0.__base2`, while the
+    instance `CUiWindow_CWindowImpl_CAppInfoDisplay` is not one (its CRTP argument is the
+    derived class, whose message map ATL calls)."""
+
+    def to_cwindow(name: str, seen: frozenset[str] = frozenset()) -> str | None:
+        if name == "CWindow":
+            return ""
+        c = h.by_short.get(name)
+        if c is None or name in seen:
+            return None
+        for i, b in enumerate(c.bases):
+            sub = to_cwindow(atl_base_alias(b.name), seen | {name})
+            if sub is not None:
+                return f"__base{i}" + (f".{sub}" if sub else "")
+        return None
+
+    def search(c: ClassModel, prefix: str) -> AtlWindow | None:
+        for i, b in enumerate(c.bases):
+            t = _template_name(b.name)
+            if t not in _ATL_WINDOW_TEMPLATES:
+                continue
+            args = _template_args(b.name)
+            if args and short(args[0]) != cls.name:
+                continue
+            sub = to_cwindow(atl_base_alias(b.name))
+            if sub is None:
+                raise CppAppError(f"{cls.qualified}: {b.name} reaches no CWindow")
+            traits = args[2] if t == "CWindowImpl" and len(args) > 2 else None
+            return AtlWindow(t, f"{prefix}__base{i}" + (f".{sub}" if sub else ""), traits)
+        for i, b in h.module_bases(c):
+            r = search(b, f"{prefix}__base{i}.")
+            if r is not None:
+                return r
+        return None
+
+    return search(cls, "")
+
+
+# atlwin.h window traits -> (dwStyle, dwExStyle) that `T::GetWndStyle(0)` /
+# `GetWndExStyle(0)` substitute for a zero style. CWindowImpl's default is CControlWinTraits.
+_WIN_TRAITS = {
+    "CControlWinTraits": ("WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS", "0"),
+    "CFrameWinTraits": (
+        "WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_CLIPSIBLINGS",
+        "WS_EX_APPWINDOW | WS_EX_WINDOWEDGE",
+    ),
+    "CMDIChildWinTraits": (
+        "WS_OVERLAPPEDWINDOW | WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS",
+        "WS_EX_MDICHILD",
+    ),
+}
+
+_START_WINDOW_PROC = """/// ATL `CWindowImplBaseT::StartWindowProc`, which a module's own
+/// `GetWndClassInfo()` names as its class's window procedure. ATL's is the thunk's
+/// entry; atl_rust routes the object by window property instead and registers its own
+/// procedure in its place
+/// (`atl_rust::win::create_window_info`), so this one is never the class's procedure.
+pub unsafe extern "system" fn StartWindowProc(
+    hwnd: HWND, msg: UINT, w: WPARAM, l: LPARAM,
+) -> LRESULT {
+    DefWindowProcW(hwnd, msg, w, l)
+}
+"""
+
+
+def _render_process_window_message(cls: ClassModel, h: Hierarchy) -> list[str]:
+    """The `MessageMap` body: from BEGIN_MSG_MAP, or the class's hand-written
+    `ProcessWindowMessage` (rapps' CUiSplitPanel, CAppInfoDisplay), which IS the map."""
+    if cls.msg_map is not None:
+        return _render_msg_map(cls, h)
+    own = cls.method("ProcessWindowMessage")
+    if not own:
+        raise CppAppError(
+            f"{cls.qualified}: an ATL window with neither BEGIN_MSG_MAP nor ProcessWindowMessage"
+        )
+    return [
+        "        let mut r: LRESULT = 0;",
+        f"        let handled = self.{own[0].rust_name}(hwnd as _, msg as _, w as _, l as _, "
+        "&mut r, map_id as _) != 0;",
+        "        *result = r as isize;",
+        "        handled",
+    ]
+
+
+def _render_atl_glue(cls: ClassModel, h: Hierarchy, model: ModuleModel, win: AtlWindow) -> str:
+    n, t = cls.name, win.template
+    base = win.path
     lines = [
         f"impl core::ops::Deref for {n} {{ type Target = CWindow; "
         f"fn deref(&self) -> &CWindow {{ &self.{base} }} }}",
@@ -1246,7 +1581,7 @@ def _render_atl_glue(cls: ClassModel, h: Hierarchy, model: ModuleModel) -> str:
         f"impl atl_rust::win::MessageMap for {n} {{",
         "    unsafe fn process_window_message(&mut self, hwnd: atl_rust::win::HWND, msg: u32, "
         "w: usize, l: isize, result: &mut isize, map_id: u32) -> bool {",
-        *_render_msg_map(cls, h),
+        *_render_process_window_message(cls, h),
         "    }",
         "    unsafe fn hwnd_slot(&mut self) -> *mut atl_rust::win::HWND {",
         f"        core::ptr::addr_of_mut!(self.{base}.m_hWnd) as *mut atl_rust::win::HWND",
@@ -1275,19 +1610,47 @@ def _render_atl_glue(cls: ClassModel, h: Hierarchy, model: ModuleModel) -> str:
     for k, v in cls.constants:
         lines.append(f"    pub const {k}: i32 = {v};")
     if t == "CWindowImpl":
+        traits = _template_name(win.traits) if win.traits else "CControlWinTraits"
+        if traits not in _WIN_TRAITS:
+            raise CppAppError(f"{cls.qualified}: window traits {win.traits}")
+        style, ex_style = _WIN_TRAITS[traits]
+        params = (
+            "parent: HWND, rect: *mut RECT, name: LPCWSTR, style: DWORD, ex_style: DWORD, "
+            "menu_or_id: UINT"
+        )
         lines.append(
             "    /// ATL `CWindowImpl::Create(hWndParent, rect, szWindowName, dwStyle, dwExStyle, "
-            "MenuOrID)`."
+            f"MenuOrID)`; a zero style is {traits}'s (`T::GetWndStyle`). Named as the C++ "
+            "qualifies it, since a class's own `Create` hides it."
+        )
+        lines.append(f"    pub unsafe fn CWindowImpl_Create(&mut self, {params}) -> HWND {{")
+        lines.append(
+            f"        let style = if style == 0 {{ ({style}) as DWORD }} else {{ style }};"
         )
         lines.append(
-            "    pub unsafe fn Create(&mut self, parent: HWND, rect: *mut RECT, name: LPCWSTR, "
-            "style: DWORD, ex_style: DWORD, menu_or_id: UINT) -> HWND {"
+            f"        let ex_style = if ex_style == 0 {{ ({ex_style}) as DWORD }} "
+            "else { ex_style };"
         )
+        if cls.method("GetWndClassInfo"):
+            # The class registers its own CWndClassInfo (icon, menu, cursor), as ATL's
+            # CWindowImpl::Create does through T::GetWndClassInfo().Register().
+            lines.append(
+                "        atl_rust::win::create_window_info(self as *mut Self, "
+                "atl_rust::win::class_info_ptr(Self::GetWndClassInfo() as *mut _), parent as _, "
+                "rect as *const i32, name as *const u16, style as u32, ex_style as u32, "
+                "menu_or_id as usize as *mut core::ffi::c_void) as HWND"
+            )
+        else:
+            lines.append(
+                "        atl_rust::win::create_window("
+                f"self as *mut Self, &{n}__WND_CLASS, parent as _, "
+                "rect as *const i32, name as *const u16, style as u32, ex_style as u32, "
+                "menu_or_id as usize as *mut core::ffi::c_void) as HWND"
+            )
+        lines.append("    }")
+        lines.append(f"    pub unsafe fn Create(&mut self, {params}) -> HWND {{")
         lines.append(
-            "        atl_rust::win::create_window("
-            f"self as *mut Self, &{n}__WND_CLASS, parent as _, "
-            "rect as *const i32, name as *const u16, style as u32, ex_style as u32, "
-            "menu_or_id as usize as *mut core::ffi::c_void) as HWND"
+            "        self.CWindowImpl_Create(parent, rect, name, style, ex_style, menu_or_id)"
         )
         lines.append("    }")
         lines.append("    pub unsafe fn SubclassWindow(&mut self, hwnd: HWND) -> BOOL {")
@@ -1327,7 +1690,7 @@ def _render_atl_glue(cls: ClassModel, h: Hierarchy, model: ModuleModel) -> str:
     own = {m.rust_name for m in cls.methods if m.kind == "method"}
     lines[glue_start:] = _drop_hidden_glue(lines[glue_start:], own)
     lines.append("}")
-    if t == "CWindowImpl":
+    if t == "CWindowImpl" and not cls.method("GetWndClassInfo"):
         lines.extend(_wnd_class_info(cls))
     return "\n".join(lines)
 
@@ -1343,6 +1706,10 @@ def _external_base(name: str, model: ModuleModel | None = None) -> str:
         tb = cpp_templates.template_base(name, lambda a: rust_type(a, model) if model else a)
         if tb is not None:
             return tb.rust_type
+        if _ATL_OWNING.match(name.strip()) and model is not None:
+            # An atl_rust generic (`CLocalPtr<T> : CHeapPtr<T, CLocalAllocator>`): the same
+            # layout a field of that type gets.
+            return rust_type(name, model)
         raise CppAppError(f"external template base {name} has no Rust layout; port it first")
     return name.split("::")[-1].strip()
 
@@ -1417,10 +1784,72 @@ def aggregate_static(g, h: Hierarchy, model: ModuleModel) -> str | None:
     return None if single is None else f"pub static {mut}{g.name}: {cls.name} = {single};"
 
 
+_C_ESCAPES = {"n": 10, "t": 9, "r": 13, "0": 0, "a": 7, "b": 8, "f": 12, "v": 11}
+
+
+def _wide_units(body: str) -> list[int] | None:
+    """A wide literal's body as UTF-16 code units, C escapes decoded; None for an escape
+    this does not know (the model gets the global instead)."""
+    out: list[int] = []
+    i = 0
+    while i < len(body):
+        c = body[i]
+        if c != "\\":
+            out.extend(
+                int.from_bytes(c.encode("utf-16-le")[k : k + 2], "little")
+                for k in range(0, len(c.encode("utf-16-le")), 2)
+            )
+            i += 1
+            continue
+        nxt = body[i + 1 : i + 2]
+        if nxt in ("\\", '"', "'", "?"):
+            out.append(ord(nxt))
+            i += 2
+        elif nxt == "x":
+            m = re.match(r"[0-9A-Fa-f]+", body[i + 2 :])
+            if m is None:
+                return None
+            out.append(int(m.group(0), 16) & 0xFFFF)
+            i += 2 + m.end()
+        elif nxt in "1234567":
+            m = re.match(r"[0-7]{1,3}", body[i + 1 :])
+            out.append(int(m.group(0), 8))  # type: ignore[union-attr]
+            i += 1 + m.end()  # type: ignore[union-attr]
+        elif nxt in _C_ESCAPES:
+            out.append(_C_ESCAPES[nxt])
+            i += 2
+        else:
+            return None
+    return out
+
+
+def wide_string_static(g) -> str | None:
+    """`const WCHAR UsageString[] = L"..";` as a static `[u16; N]`, units and NUL padding
+    exactly as the C array holds them. A wide literal needs no model, and a header-only
+    unit holding nothing else is one translate refuses."""
+    t = " ".join(g.c_type.split())
+    m = re.fullmatch(r"(const )?(?:WCHAR|wchar_t)\s*\[(\d*)\]", t)
+    if m is None or not g.init:
+        return None
+    lit = re.fullmatch(r'L"((?:[^"\\]|\\.)*)"', g.init.strip(), re.S)
+    units = _wide_units(lit.group(1)) if lit else None
+    if units is None:
+        return None
+    n = int(m.group(2)) if m.group(2) else len(units) + 1
+    if len(units) > n:
+        return None
+    vals = ", ".join(str(u) for u in [*units, *([0] * (n - len(units)))])
+    return f"pub static {'' if m.group(1) else 'mut '}{g.name}: [u16; {n}] = [{vals}];"
+
+
 def _render_globals(model: ModuleModel, h: Hierarchy) -> str:
     """Module globals of CLASS type, zeroed until `__cxx_global_init` constructs them."""
     out = []
     for g in model.globals:
+        wide = wide_string_static(g)
+        if wide is not None:
+            out.append(wide)
+            continue
         agg = aggregate_static(g, h, model)
         if agg is not None:
             out.append(agg)
@@ -1655,8 +2084,8 @@ def synthetic_tus(model: ModuleModel, island: str = "") -> dict[str, str]:
         cls = h.by_short.get(short(g.c_type))
         if cls is not None and "*" not in g.c_type and "[" not in g.c_type:
             continue
-        if aggregate_static(g, h, model) is not None:
-            continue  # rendered in cpp_classes.rs, field by field
+        if aggregate_static(g, h, model) is not None or wide_string_static(g) is not None:
+            continue  # rendered in cpp_classes.rs, field by field / unit by unit
         decl = _c_declarator(g.c_type, g.name)
         init = f" = {g.init}" if g.init and not g.init.startswith("(") else ""
         heads.setdefault(g.file, []).append(

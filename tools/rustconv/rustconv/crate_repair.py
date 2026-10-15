@@ -33,6 +33,7 @@ acceptance can be audited from the ledger without re-reading a compiler scratch 
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import re
@@ -457,11 +458,16 @@ _SPACE = 0x20
 _NEWLINE = 0x0A
 
 
+@functools.lru_cache(maxsize=256)
 def _mask_lexical(data: bytes) -> bytes:
     """Blank comments, string literals and char literals, preserving every byte offset.
 
     Byte-exact on purpose: rustc reports BYTE offsets, and translated sources routinely carry
     non-ASCII in comments, so any str round-trip would shift the offsets we splice at.
+
+    Memoized on the content: some 30 rules mask the WHOLE file once per diagnostic, and this
+    is a per-byte loop. On rapps (800 diagnostics, 100 KB units) one crate-repair ran over an
+    hour in this function; the file only changes when an edit lands, which is a new key.
     """
     out = bytearray(data)
     index = 0

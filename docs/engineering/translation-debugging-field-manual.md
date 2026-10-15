@@ -5273,6 +5273,38 @@ file (see "a rising count mid-grind is progress" in `shell32/mod.rs`).
   ~40 lines below where the grep stopped; adding it again is E0592, and the real gap was only
   the `as_mut_ptr` spelling of `GetAddressOf`.
 
+### An ATL window whose `ProcessWindowMessage` is HAND-WRITTEN got an empty message map
+
+**Symptom:** none at compile time. The window is created but every message goes to
+`DefWindowProc`, so it never lays out its children or answers a command. **Cause:**
+`port cppapp` rendered `MessageMap::process_window_message` only from `BEGIN_MSG_MAP`. rapps
+writes `BOOL ProcessWindowMessage(..)` by hand instead (CUiSplitPanel, CAppInfoDisplay,
+CApplicationView, CMainWindow), and those maps came out as `false`. **Fix:** the glue calls
+the class's own `ProcessWindowMessage` when there is no map, and refuses a window with
+neither. It was caught before anything shipped: a scan of every shipped `cpp_classes.rs`
+found no empty map over a hand-written one.
+
+The same rapps pass found three more silent shapes in the window glue:
+- The CRTP base sits inside a template instance (`CAppInfoDisplay :
+  CUiWindow<CWindowImpl<CAppInfoDisplay>>`), so the glue belongs to the derived class at
+  `__base0.__base2`, not to the instance.
+- `CWindowImpl<T, CListView>` derives from rosctrls' CListView, not CWindow.
+- A class's own `Create` hides `CWindowImpl::Create`. The qualified call is lowered to
+  `CWindowImpl_Create`, which the glue always renders.
+
+### A template instantiation's arguments are DESUGARED in clang's specialization
+
+**Symptom:** cppapp refuses `external template base CToolbar<> has no Rust layout`, or a
+`CLocalPtr<WCHAR>` stays spelled with angle brackets in a synthetic unit while the class
+`CLocalPtr_wchar_t` exists. **Cause:** a `ClassTemplateSpecializationDecl`'s
+`TemplateArgument`s are canonical types: `CToolbar<>` is `CToolbar<unsigned long>` (the
+default `DWORD_PTR`, with a per-arch width), and `CLocalPtr<WCHAR>` is
+`CLocalPtr<wchar_t>`. A pointer such as `A<PP> *` carries no `desugaredQualType` to pair
+with the written spelling. **Fix (`cpp_model`):** an argument equal to its parameter's
+default, compared in either spelling, is bound by the default's written spelling. A spelling
+that misses the instance table is retried with its arguments' typedefs resolved from the
+TU's file-scope `TypedefDecl`s.
+
 ### A vtable SLOT the interface parser could not read renumbers every slot after it
 
 **Symptom.** A hand-rolled COM interface comes out of `--cpp-com` with one fewer method than

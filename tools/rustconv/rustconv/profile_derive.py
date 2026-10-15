@@ -4366,7 +4366,8 @@ def scaffold_crate(
         # glob: atl-rust's primitive aliases (WCHAR, BOOL) would collide with the island's.
         texts = [tu.read_text(errors="replace") for tu in m.compiled_tus if tu.is_file()]
         com = any(re.search(r"\bCComHeapPtr\b", t) for t in texts)
-        path = any(re.search(r"\bCPath\b", t) for t in texts)
+        # atlpath.h's typedefs: CPath is CPathT<CString>, CPathW CPathT<CStringW> (rapps).
+        path = any(re.search(r"\bCPathW?\b", t) for t in texts)
         # The C++ standard library containers (atl_rust::stl). drwtsn32 declares its
         # std::vector/std::map members in a header, so the module's own headers count too.
         own_headers = {h for tu in m.compiled_tus for h in tu.parent.glob("*.h*") if h.is_file()}
@@ -4395,7 +4396,13 @@ def scaffold_crate(
             # parameter (CWindow::GetWindowText) is handed a CStringW in a UNICODE module.
             "pub use atl_rust::CStringW as CSimpleString;\n"
             + ("pub use atl_rust::CComHeapPtr;\n" if com else "")
-            + ("pub use atl_rust::CPath;\n" if path else "")
+            + ("pub use atl_rust::CPath;\npub use atl_rust::CPath as CPathW;\n" if path else "")
+            # shellutils.h's creator over atl_rust::com (a class with a COM map).
+            + (
+                "pub use atl_rust::com::ShellObjectCreator;\n"
+                if any(re.search(r"\bShellObjectCreator\b", t) for t in texts)
+                else ""
+            )
             + (
                 "pub use atl_rust::stl::{npos, StdMap, StdPair, StdString, StdVector, "
                 "StdWString};\n"

@@ -56,18 +56,16 @@ and all shared-file edits stay central. The brief that worked (Sonnet; mmc_new) 
   matches itself forever (an integrator lost 3 hours to this). Run long stages in the
   foreground with a long timeout.
 
-## Next: rapps (needs per-instantiation templates)
+## rapps (in progress, 2026-10-14)
 
-`port cppapp rapps` fails: `CPointerArray<CUiPrimitive>` has no layout. rapps' `rosui.h`
-templates depend on their argument — `CPointerArray<T, GrowthRate>` (rosui.h:12) and
-`CUiWindow<T = CWindow> : CUiPrimitive, CUiBox, T` (rosui.h:482, T is a BASE class; 9
-distinct instantiations). `cpp_templates.REGISTRY` only covers argument-independent templates.
-Design: take each `ClassTemplateSpecializationDecl` from clang's AST and render one concrete
-class per instantiation (mangled name, e.g. `CUiWindow_CListView`), so layout/vtable/base
-embedding reuse the normal class path. The scaffolded crate is parked at
-`~/vibeos-rust-staging/port/rapps/parked/rapps-rust`; un-park by moving it back to
-`sdk/lib/rust/` and re-adding the workspace member. The same mechanism unblocks cleanmgr's
-`CLocalPtr<T>` properly.
+Tooling done for it (pipeline doc § `port cppapp`): per-instantiation class templates, the
+rosctrls.h controls modeled as external classes (only reached methods are translated), ATL
+COM objects over `atl_rust::com`, and the window glue for a hand-written
+`ProcessWindowMessage`/`GetWndClassInfo`, CRTP through a template, `CWindowImpl<T, TBase>`
+and window traits. Translation: 607 functions, $0.58. Five were rejected and are to be
+hand-written: cabinet's `FNCLOSE(fnFileClose)` (an FDI macro that names the function), loaddlg's
+`CDowloadingAppsListView::AddRow`, and misc's `RegKeyHasValues`, `IsSameRegKey` (a
+function-local struct with a constructor) and `GuessInstallerType`.
 
 ## Queue after rapps
 
@@ -80,8 +78,15 @@ Rust — don't requeue it.)
 
 - Deterministic lowering of per-arch `#if` chains in C++ synthetic units (drwtsn32's
   CONTEXT access was hand-written as `cfg` blocks instead).
-- A shared `rosctrls` crate: certmgr hand-ports `rosctrls.h` into `src/rosctrls.rs`; the
-  next consumer should share it rather than copy it.
+- certmgr's hand-ported `src/rosctrls.rs`: rosctrls.h is now modeled by cppapp (rapps), so
+  a certmgr regeneration should drop the hand port.
+- The shell extensions need what rapps half-built: `atl_rust::com` covers a COM object's
+  IUnknown, but not a DLL's object map (`BEGIN_OBJECT_MAP`/`OBJECT_ENTRY_AUTO`), class
+  factories, `DllGetClassObject`/`DllCanUnloadNow`, or `.rgs` registration.
+- `atl_rust::win::create_window` (the DECLARE_WND_CLASS path) does not give a child window
+  `this` as its control ID the way ATL's `CWindowImplBaseT::Create` does;
+  `create_window_info` (a module's own GetWndClassInfo) does. Unify them, and check the
+  shipped window modules when doing so.
 - ~290 bare fn aliases in already-shipped crates have the shape `_option_fn_aliases` fixes
   (non-`Option` fn pointer); UB only if the value can be zero. Audit with that pass.
 - certutil: a SHA1/`hashfile` case on a system with a CSP registered (the live CD has none;
