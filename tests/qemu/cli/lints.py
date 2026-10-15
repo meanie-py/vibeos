@@ -1461,6 +1461,30 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # `calloc(n, size_of::<OLECHAR>()) as *mut BSTR` for the C's `calloc(n, sizeof(*strs))`:
+    # the element's element. wscript's Host_Echo overran its array on every multi-argument
+    # Echo, dropped the second argument and crashed the host (modrun's cscript suite).
+    # Baseline is EMPTY.
+    sce = repo / "tools" / "scan_calloc_elem_type.py"
+    specs.append(
+        (
+            "scan_calloc_elem_type",
+            [py, str(sce)] if sce.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # A variadic extern whose fixed arity is not its .spec export's. The C's count-form
+    # `swprintf(buf, n, fmt, ...)` is a <stdio.h> inline over _vsnwprintf; bound to msvcrt's
+    # legacy `swprintf(ptr wstr)` export, `n` became the format pointer (cscript crashed on
+    # every script error; msiexec, ole32 and the recycle bin had it too). Baseline is EMPTY.
+    svs = repo / "tools" / "scan_varargs_spec_arity.py"
+    specs.append(
+        (
+            "scan_varargs_spec_arity",
+            [py, str(svs)] if svs.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     sol = repo / "tools" / "scan_octal_literals.py"
     specs.append(
         (

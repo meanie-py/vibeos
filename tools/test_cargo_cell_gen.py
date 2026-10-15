@@ -319,3 +319,22 @@ def test_a_native_app_links_as_an_exe_with_its_subsystem_and_no_crt():
     rs = g.build_rs(cell(subsystem="native:5.01", entries=entries, msvcrtex=None))
     assert 'subsystem: "native:5.01".into(),' in rs
     assert "msvcrtex_crt" not in rs
+
+
+def test_a_shim_from_another_directory_keeps_its_path(tmp_path):
+    # cscript compiles wscript's varargs shim: `cscript.dir/__/wscript/rust_varargs_shim.c.obj`.
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE)
+    shim = "base/wscript/rust_varargs_shim.c"
+    c = cell(c_shims=[shim], foreign=[shim])
+    out = g.rewrite_cmake(f, c)
+    assert f"add_library(m_shims OBJECT ${{REACTOS_SOURCE_DIR}}/{shim})" in out
+    assert f'.c_from_compile_db("m_shims", &["{shim}"])' in g.build_rs(c)
+
+
+def test_the_engine_built_delayimp_counts_as_the_delayimp_runtime():
+    # Checked after the ENGINE_LIBS mapping, so the engine's name must count: cscript was
+    # refused "delay imports without the delayimp runtime" while linking it.
+    assert g._links_delayimp(["engine:uuid", "engine:delayimp_rust"])
+    assert g._links_delayimp(["sdk/lib/delayimp/libdelayimp.a"])
+    assert not g._links_delayimp(["engine:uuid", "engine:wine"])

@@ -1052,6 +1052,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cscript-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "csq-rust"
 version = "0.1.0"
 dependencies = [

@@ -10,6 +10,10 @@ name = "wscript_rust"
 path = "src/lib.rs"
 crate-type = ["staticlib"]
 
+[features]
+# cscript.exe: the same sources built with `-DCSCRIPT_BUILD` (the console script host).
+cscript = []
+
 [dependencies]
 # C-variadic entry points -> rust_varargs_shim.c (stable Rust cannot define one).
 varargs-rust = { path = "../varargs-rust" }

@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "cscript-cargo",
     "autochk-cargo",
     "winprint-cargo",
     "wordpad-cargo",

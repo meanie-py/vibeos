@@ -479,6 +479,11 @@ next read `size_of::<_LIST_ENTRY>()` into a single `Flink`), so every EnumProces
 GetModuleBaseName call wrote ~0x50 bytes over its stack locals and survived on layout luck. The
 tell is an out-buffer `&raw mut X as LPVOID` whose size names a struct while `X` is a pointer;
 a 20-line regex over the tree found no other site (2026-10-14).
+**One level too DEEP shrinks an array.** wscript's `calloc(argc, sizeof(*strs))` (`strs` a
+`BSTR *`) came back as `size_of::<OLECHAR>()`, the element's element. Every multi-argument
+`WScript.Echo` overran the array and dropped its second argument, and the host crashed a few
+calls later. `scan_calloc_elem_type` (`vibeos-cli check`, baseline empty) flags a
+`calloc(n, size_of::<T>()) as *mut U` with a character-sized `T` and a wider `U`.
 
 ### Per-arch provider differs, so a single-arch link check misses it
 `KeRaiseIrql`/`KeLowerIrql` are provided by **ntoskrnl on i386** (plus fastcall
@@ -844,6 +849,12 @@ one command: **before writing an `extern` for a CRT sibling, run `llvm-nm --unde
 on the C object and confirm the symbol is actually imported under that name.** A header arm
 selected by `#if`, a `static inline`, and a `.spec` alias each break the header→symbol
 assumption independently, and all three are invisible from the source.
+The remembered rule did not hold. That exact declaration shipped in wscript, msiexec, ole32 and
+shell32's recycle bin, copied between preludes by `port resolve`'s tree consensus. cscript
+crashed on every script error. It is now mechanized twice: `scan_varargs_spec_arity`
+(`vibeos-cli check`, baseline empty) holds every variadic `extern` to its `.spec` export's
+fixed arity, and resolve's renderer binds a count-form `swprintf`/`vswprintf` to
+`_snwprintf`/`_vsnwprintf`.
 
 **Two parse traps that produced confidently wrong answers first**, both now in the GOOD control
 fixture so a regression surfaces as a false positive: count against comment-MASKED text
@@ -1922,6 +1933,17 @@ A function BODY can take the wrong arm too. fmifs's `Chkdsk` came back with the 
 `GetVolumeNameForVolumeMountPointW` lookup where the live `#ifdef __REACTOS__` arm is a plain
 `wcscpy`. The translate audit flags these (`PREPROCESSOR ARMS ... the #if arm is LIVE`), so
 read every such finding against the Rust before flipping.
+
+The arm can also be the wrong TARGET's. cscript compiles wscript's three `.c` with
+`-DCSCRIPT_BUILD`, and every rustconv reader of `compile_commands.json` took the first entry
+naming a file, so wscript-rust was translated from cscript's preprocess. It shipped
+non-interactive (`wshInteractive = VARIANT_FALSE`) and printed "Usage: CScript". The
+translate audit cannot see this, because the arm it took IS live, for the other target.
+`macro_authority.pick_entry` now takes the ported target's entry (port sets it from
+state.json), else the one whose target lives in the source's own directory. A file compiled
+only by a FOREIGN target borrows from its owner's surviving TUs. dinput/dinput8 and the
+d3dx9_NN family share sources the same way. The two variants of one body are a cargo feature
+(`wscript-rust/cscript`), not a second crate.
 
 ### A C macro that reads the CALLER's locals cannot be a plain `macro_rules!` port
 **Symptom:** `no rules expected <ident>` at call sites that pass one argument more than the

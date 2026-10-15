@@ -167,6 +167,8 @@ class Cell:
     delay_import_libs: list[tuple[str, str, str]] = field(default_factory=list)
     # The c_shims cmake generates into the build dir (widl's RPC stubs, flex output).
     generated: list[str] = field(default_factory=list)
+    # The c_shims from OUTSIDE the module's directory (cscript compiles ../wscript's).
+    foreign: list[str] = field(default_factory=list)
     # (basename, delayed) in cmake's link order, when there are delay imports: an
     # `__imp_` symbol two of the libs define binds to the first (Linker::delay_import_lib).
     import_order: list[tuple[str, bool]] = field(default_factory=list)
@@ -541,7 +543,11 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
         )
         shims = f"{cell.target}_shims"
         names = [
-            f"${{CMAKE_CURRENT_BINARY_DIR}}/{Path(c).name}" if c in cell.generated else Path(c).name
+            f"${{CMAKE_CURRENT_BINARY_DIR}}/{Path(c).name}"
+            if c in cell.generated
+            else f"${{REACTOS_SOURCE_DIR}}/{c}"
+            if c in cell.foreign
+            else Path(c).name
             for c in cell.c_shims
         ]
         block.append(f"add_library({shims} OBJECT {' '.join(names)})")
@@ -678,6 +684,13 @@ def _placeholder(path: Path) -> bool:
     return not body.strip()
 
 
+def _links_delayimp(static: list[str]) -> bool:
+    """Whether a link's static libs (after the ENGINE_LIBS mapping) carry the delayimp runtime."""
+    return any(
+        re.search(r"/libdelayimp(_rust)?\.a$|^engine:delayimp(_rust)?$", lib) for lib in static
+    )
+
+
 def model(target: str, repo: Path = REPO) -> Cell:
     if target[:1].isdigit():
         # The cell is the cargo package `<target>-cargo`, and a package name cannot
@@ -755,7 +768,10 @@ def model(target: str, repo: Path = REPO) -> Cell:
                 static.append(lib)
                 if after_body:
                     late[a].append(lib)
-        if delayed and not any(re.search(r"/libdelayimp(_rust)?\.a$", lib) for lib in static):
+        # Matched AFTER the ENGINE_LIBS mapping: once the engine built delayimp_rust itself,
+        # the cmake path never reached this list and every new delay-importing cell (cscript)
+        # was refused for a runtime it was linking all along.
+        if delayed and not _links_delayimp(static):
             raise GenError(f"{target}: delay imports without the delayimp runtime")
         per_arch[a] = (tuple(imports), tuple(static), msvcrtex, tuple(delayed), tuple(order))
     if len({(v[0], v[2], v[3], v[4]) for v in per_arch.values()}) > 1:
@@ -764,6 +780,7 @@ def model(target: str, repo: Path = REPO) -> Cell:
     static_by_arch = {a: list(v[1]) for a, v in per_arch.items()}
     shims, rc, rc_defines, spec, stubs = [], None, [], None, False
     generated: list[str] = []
+    foreign: list[str] = []
     for obj in first.inputs:
         nm = obj.split("/")[-1]
         if nm.endswith(".rc.res"):
@@ -777,6 +794,12 @@ def model(target: str, repo: Path = REPO) -> Cell:
             spec = ((cmake_dir / m.group(2)).relative_to(repo).as_posix(), m.group(1))
         elif nm.endswith(".c.obj"):
             src = cmake_dir / nm.removesuffix(".obj")
+            # A source from outside the module's directory: CMake spells each `..` of its
+            # path as `__` under `<target>.dir/` (cscript compiles ../wscript's varargs shim).
+            m = re.search(r"\.dir/((?:__/)+.*)\.obj$", obj)
+            if m:
+                src = (cmake_dir / m.group(1).replace("__/", "../")).resolve()
+                foreign.append(src.relative_to(repo).as_posix())
             if not src.exists():
                 # Generated C: widl's RPC stubs (srvsvc_s.c, from add_rpc_files) and
                 # flex output live in the build dir. The shim is named build-dir
@@ -861,6 +884,7 @@ def model(target: str, repo: Path = REPO) -> Cell:
         spec=spec,
         spec_stubs=stubs,
         c_shims=shims,
+        foreign=foreign,
         rc=rc,
         rc_defines=rc_defines,
         destinations=facts["destinations"],
