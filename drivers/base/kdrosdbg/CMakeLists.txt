@@ -17,5 +17,9 @@ spec2def(kdcom.dll kdrosdbg.spec ADD_IMPORTLIB)
 # EXTRA_DEPENDS: cmake targets whose .a the cargo link reuses — cportlib
 # (pulls rust_cport → libcport_rust.a, cport.c now being Rust) + memcmp — so
 # `ninja kdcom` builds them before the opaque cargo link.
+# The version resource: cmake compiles it in this OBJECT library, whose windres
+# command the cargo link replays.
+add_library(kdcom_res OBJECT kdrosdbg.rc)
+target_include_directories(kdcom_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_kernel_dll(kdcom kdcom-cargo kdcom.dll BODY_CRATE kdcom-rust
-    EXTRA_DEPENDS cportlib memcmp)
+    EXTRA_DEPENDS kdcom_res psdk cportlib memcmp)

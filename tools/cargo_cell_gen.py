@@ -339,6 +339,13 @@ def _one_list(arch: str, stem: str, repo: Path) -> Path | None:
     return lsts[0] if lsts else None
 
 
+@functools.cache
+def txtsetup_files(repo: Path = REPO) -> frozenset[str]:
+    """The files txtsetup.sif names (lower case), read as add_cargo_module reads them."""
+    sif = (repo / "boot/bootdata/txtsetup.sif").read_text(errors="replace")
+    return frozenset(m.lower() for m in re.findall(r"(?m)^([A-Za-z0-9_.-]+)[ \t]*=", sif))
+
+
 def cd_placement(arch: str, output: str, repo: Path = REPO) -> list[str]:
     """Every place the CDs put `output`: `<cd>:<path on the CD>` for the loose lists and
     `cab:<dir number>` for reactos.cab, which is what setup installs. A cell that ships
@@ -696,6 +703,8 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
     def carry(chunk: str) -> None:
         carried.extend(ln.strip() for ln in chunk.splitlines() if SRC_IN_COMMENT.match(ln))
 
+    guards = _enclosing_ifs(text, cell.target)
+
     for s, e, cmd, raw in _statements(text):
         a = _args(raw)
         drop = False
@@ -799,13 +808,17 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
     # add_cd_file per arch) is left with nothing in it.
     # The comment block right above such an if (welcome's "Reduce the required subsystem
     # ...") explained the statement it held, and goes with it.
-    out = re.sub(
-        r"^(?:#[^\n]*\n)*if\([^\n]*\)\n(?:[ \t]*\n)*"
-        r"(?:(?:elseif\([^\n]*\)|else\(\))\n(?:[ \t]*\n)*)*endif\(\)\n",
-        "",
-        out,
-        flags=re.M,
+    # Repeated, because emptying an inner chain empties the if around it (pciide's
+    # per-arch body flags inside its NOT ENABLE_UNIATA).
+    empty_if = re.compile(
+        r"^(?:[ \t]*#[^\n]*\n)*[ \t]*if\([^\n]*\)\n(?:[ \t]*\n)*"
+        r"(?:[ \t]*(?:elseif\([^\n]*\)|else\(\))\n(?:[ \t]*\n)*)*[ \t]*endif\(\)\n",
+        re.M,
     )
+    while True:
+        out, n = empty_if.subn("", out)
+        if not n:
+            break
     out = re.sub(r"\n{3,}", "\n\n", out).rstrip() + "\n"
     block = [
         "",
@@ -939,7 +952,32 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
     if build_deps and not objlibs:
         call.append(f"add_dependencies({cell.target} {' '.join(build_deps)})")
     call += [f"add_cargo_cd_file({cell.target} {x})" for x in cell.extra_cd]
-    return out + "\n".join(block + call) + "\n"
+    lines = block + call
+    for cond in reversed(guards):
+        # The target was built only under this condition (pciide's NOT ENABLE_UNIATA), so
+        # the cell is too; the emptied original if is gone with the cleanup above.
+        lines = [lines[0], f"if({cond})"] + ["    " + ln if ln else ln for ln in lines[1:]]
+        lines.append("endif()")
+    return out + "\n".join(lines) + "\n"
+
+
+def _enclosing_ifs(text: str, target: str) -> list[str]:
+    """The conditions of the if() blocks the target's add_library/add_executable sits in,
+    outermost first. Only a plain if() is modelled: a target in an elseif/else branch
+    depends on the conditions before it, which one wrapping if cannot say."""
+    stack: list[str | None] = []
+    for _s, _e, cmd, raw in _statements(text):
+        if cmd == "if":
+            stack.append(" ".join(raw.split()))
+        elif cmd in ("elseif", "else") and stack:
+            stack[-1] = None
+        elif cmd == "endif" and stack:
+            stack.pop()
+        elif cmd in ("add_library", "add_executable") and _args(raw)[:1] == [target]:
+            if any(c is None for c in stack):
+                raise GenError(f"{target}: its link is in an elseif/else branch")
+            return [c for c in stack if c is not None]
+    return []
 
 
 # cmake static libraries reactos-link builds itself (`engine_lib`): a cell names them
@@ -1786,14 +1824,22 @@ def check(targets: list[str], baseline: Path, repo: Path = REPO) -> int:
             # one accepted addition. Anything removed is a file some CD or install lost.
             cd_old = json.loads((baseline / "targets.json").read_text()).get(t, {}).get(f"cd:{a}")
             loose = set()
+            note_txtsetup = False
             if cd_old is not None:
                 cd_new = set(cd_placement(a, str(new.relative_to(repo / f"build-{a}"))))
                 gone, added = set(cd_old) - cd_new, cd_new - set(cd_old)
                 loose = {x for x in added if x.startswith(("bootcd:", "bootcdregtest:"))}
+                # A file txtsetup.sif installs (a boot driver) stays out of the cabinet,
+                # where cmake's add_cd_file put a second copy that could not overwrite it.
+                if new.name.lower() in txtsetup_files(repo):
+                    by_txtsetup = {x for x in gone if x.startswith("cab:")}
+                    gone -= by_txtsetup
+                    note_txtsetup = bool(by_txtsetup)
                 diffs += [f"cd: - {x}" for x in sorted(gone)]
                 diffs += [f"cd: + {x}" for x in sorted(added - loose)]
             note = " (+ panic_common imports)" if extra else ""
             note += " (+ loose on the boot CD)" if loose else ""
+            note += " (- cab: txtsetup.sif installs it)" if note_txtsetup else ""
             note += " (+ rsbegin .ctors/.dtors)" if rsbegin else ""
             note += " (+ the lean handler's .pdata)" if lean_unwind else ""
             note += " (+ __chkstk: frame pointers)" if probes else ""

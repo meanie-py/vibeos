@@ -302,7 +302,8 @@ pub fn link(flavor: Flavor) {
         linker = linker.resource("../hal-cargo/data/hal-i386.rc.res");
     }
 
-    linker.link(ModuleKind::KernelDll {
+    // cmake's kernel-mode links keep every section.
+    linker.keep_all_sections().link(ModuleKind::KernelDll {
         entry: entry.into(),
         image_base,
     });
