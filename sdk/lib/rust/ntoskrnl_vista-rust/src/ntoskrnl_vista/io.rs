@@ -1,6 +1,6 @@
 use crate::ntoskrnl_vista::fsrtl::PECP_LIST;
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{IoQueueWorkItem, LCID, PDEVICE_OBJECT, PIO_WORKITEM, PIO_WORKITEM_ROUTINE_EX, PIRP, PUNICODE_STRING};
+use ntkrnl_sys::ddk::{DEVPROPKEY, DEVPROPTYPE, IoQueueWorkItem, LCID, PDEVICE_OBJECT, PIO_WORKITEM, PIO_WORKITEM_ROUTINE_EX, PIRP, PUNICODE_STRING};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----

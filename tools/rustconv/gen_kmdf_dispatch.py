@@ -32,6 +32,11 @@ SRC_ROOT = HERE.parents[2]  # tools/rustconv/.. -> repo root
 KMDF = SRC_ROOT / "sdk/lib/rust/kmdf-sys/src"
 TYPES = KMDF / "types_amd64.rs"
 OUT = KMDF / "dispatch.rs"
+# The cdrom read path's getters: i386 InstCombine turned the inbounds `.add` plus the
+# unreachable-on-None of `unwrap_unchecked` into a bare ud2 (BUGCHECK 0x1E at the ARC boot
+# read), so these two step with wrapping_add and answer NULL on a missing slot (65e95bb1ea9,
+# which hand-edited them here before the generator knew).
+NO_UNCHECKED = {"WdfObjectGetTypedContextWorker", "WdfRequestGetFileObject"}
 
 
 def split_top_level(s: str):
@@ -64,6 +69,27 @@ def match_paren(s: str, open_idx: int):
             if depth == 0:
                 return i
     raise ValueError("unbalanced paren")
+
+
+def _shared_names_import() -> str:
+    """An explicit import for the type names BOTH globs export.
+
+    Two globs that export one name make every use of it ambiguous (E0659): the 2026-10-15
+    upstream headers moved DEVPROPTYPE/PDEVPROPTYPE into the kernel island while kmdf-sys's
+    types still carry their own copy. An explicit import outranks both globs, and the
+    kernel's is the identity this file's types resolve on."""
+    rust = OUT.parent.parent.parent  # sdk/lib/rust
+    pat = re.compile(r"^pub (?:type|struct|union) ((?!__Bindgen)\w+)\b", re.M)
+    shared: set[str] | None = None
+    for arch in ("i386", "amd64", "arm64"):
+        mine = set(pat.findall((OUT.parent / f"types_{arch}.rs").read_text()))
+        ddk = set(pat.findall((rust / "ntkrnl-sys" / "src" / f"bindgen_{arch}.rs").read_text()))
+        both = mine & ddk
+        shared = both if shared is None else shared & both
+    if not shared:
+        return ""
+    names = ", ".join(sorted(shared))
+    return f"// in both globs; the kernel's identity wins:\nuse ntkrnl_sys::ddk::{{{names}}};\n"
 
 
 def main():
@@ -121,13 +147,22 @@ def main():
         sig_params = ", ".join(params)
         fwd = ", ".join(["WdfDriverGlobals"] + names)
         ret_clause = f" -> {ret}" if ret else ""
+        if api in NO_UNCHECKED:
+            step, call = "wrapping_add", (
+                f"    match __f {{\n"
+                f"        Some(f) => f({fwd}),\n"
+                f"        None => core::ptr::null_mut(),\n"
+                f"    }}\n"
+            )
+        else:
+            step, call = "add", f"    (__f.unwrap_unchecked())({fwd})\n"
         out.append(
             f"#[inline]\n"
             f"pub unsafe fn {api}({sig_params}){ret_clause} {{\n"
             f"    let __f: {pfn} = ::core::mem::transmute::<WDFFUNC, {pfn}>(\n"
-            f"        *WdfFunctions_01017.add(_WDFFUNCENUM_{api}TableIndex as usize));\n"
-            f"    (__f.unwrap_unchecked())({fwd})\n"
-            f"}}\n"
+            f"        *WdfFunctions_01017.{step}(_WDFFUNCENUM_{api}TableIndex as usize));\n"
+            + call
+            + f"}}\n"
         )
 
     header = (
@@ -142,9 +177,11 @@ def main():
         "use crate::types::*;\n"
         "// kernel types in the signatures (NTSTATUS, ACCESS_MASK, PCUNICODE_STRING, ...):\n"
         "// blocklisted out of crate::types and resolved on the single ntkrnl-sys ddk identity.\n"
-        "use ntkrnl_sys::ddk::*;\n\n"
+        "use ntkrnl_sys::ddk::*;\n"
+        + _shared_names_import()
+        + "\n"
     )
-    OUT.write_text(header + "\n".join(out) + "\n")
+    OUT.write_text(header + "\n".join(out).rstrip("\n") + "\n")
     print(f"wrote {OUT}  ({len(out)} dispatchers, {len(skipped)} skipped)")
     if skipped:
         for api, why in skipped[:40]:

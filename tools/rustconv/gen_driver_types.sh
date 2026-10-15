@@ -383,6 +383,9 @@ case "$DRIVER" in
     VER_DEFS=( -DWINVER=0x603 -D_WIN32_WINNT=0x603 -DNTDDI_VERSION=0x06030000
                -DWDF_DEVICE_NO_WDMSEC_H -DKMDF_MAJOR_VERSION_STRING=01 -DKMDF_MINOR_VERSION_STRING=017 )
     EXTRA_INC=( -I"${SRC}/vendor/wdf/include/kmdf/1.17" -I"${SRC}/vendor/wdf/include/shared" -I"${SRC}/vendor/wdf/include" )
+    # Not the <driver>-rust default: the comment above always said kmdf-sys/src, but nothing
+    # set it, so a regeneration wrote a stray kmdf-rust/ crate and left kmdf-sys stale.
+    OUT_CRATE_DIR="${OUT_CRATE_DIR:-${SRC}/sdk/lib/rust/kmdf-sys/src}"
     ;;
   fastfat)
     # fastfat.sys — the FAT filesystem (drivers/filesystems/fastfat, MS-architecture,
