@@ -482,6 +482,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "calc-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "calc-rust"
 version = "0.1.0"
 dependencies = [
@@ -1715,6 +1723,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "format-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "format-rust"
 version = "0.1.0"
 dependencies = [
@@ -1809,6 +1825,14 @@ dependencies = [
  "strsafe-rust",
  "varargs-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "ftp-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
 ]
 
 [[package]]
@@ -5368,6 +5392,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "taskmgr-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "taskmgr-rust"
 version = "0.1.0"
 dependencies = [
@@ -6259,6 +6291,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "winprint-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "winprint-rust"
 version = "0.1.0"
 dependencies = [
@@ -6485,6 +6525,14 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "wordpad-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
 ]
 
 [[package]]
