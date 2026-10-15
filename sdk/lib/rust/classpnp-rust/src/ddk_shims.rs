@@ -285,9 +285,8 @@ const EMPTY: *const i8 = b"\0".as_ptr() as *const i8;
 #[no_mangle] pub unsafe extern "C" fn ExInitializeSetTimerParameters(p: PVOID) {}
 #[no_mangle] pub unsafe extern "C" fn ExInitializeDeleteTimerParameters(p: PVOID) {}
 
-// ============================ Po power-setting (stubs) ============================
-#[no_mangle] pub unsafe extern "system" fn PoRegisterPowerSettingCallback(devobj: PVOID, guid: PVOID, cb: PVOID, ctx: PVOID, h: *mut PVOID) -> NTSTATUS { if !h.is_null() {*h=core::ptr::null_mut();} 0 }
-#[no_mangle] pub unsafe extern "system" fn PoUnregisterPowerSettingCallback(h: PVOID) -> NTSTATUS { 0 }
+// Po power-setting callbacks: ntoskrnl exports them (po-rust/src/setting.rs); the stubs that
+// stood in here are gone.
 
 // ============================ Simple SLIST ============================
 #[no_mangle] pub unsafe extern "C" fn SimpleInitSlistHdr(h: *mut PVOID) { *h = core::ptr::null_mut(); }

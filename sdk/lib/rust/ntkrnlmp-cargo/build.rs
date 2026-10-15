@@ -103,6 +103,10 @@ fn main() {
         "ntoskrnl/lto_workaround.c",
         "ntoskrnl/mm_lock_outlines.c",
         "ntoskrnl/ntprintf_trampoline.c",
+        // scanf_trampoline.c: the C-variadic sscanf/sscanf_s/swscanf/_snscanf shells over
+        // cnt-rust's scanf engine (Rust cannot define a variadic on stable). ntoskrnl
+        // exports sscanf_s, which Windows 8+ drivers import.
+        "sdk/lib/rust/cnt-rust/src/cabi/scanf_trampoline.c",
         // sehtry.c: real __try/__except + __try/__finally trampolines for Rust
         // kernel code (ntkrnl_sys::seh); native SEH on amd64/arm64, a hand-built
         // fs:[0] frame on i386. -fms-extensions comes from c_shim_flags below.

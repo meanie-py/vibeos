@@ -75,3 +75,51 @@ RtlStringCbPrintfA(char *pszDest, size_t cbDest, const char *pszFormat, ...)
 
     return (written + 1 > cbDest) ? STATUS_BUFFER_OVERFLOW : STATUS_SUCCESS;
 }
+
+/* WmiTraceMessage / WmiTraceMessageVa: a WPP trace record is the message's GUID and number
+ * followed by (pointer, length) argument pairs, ended by a NULL pointer. The pairs are pulled
+ * here and handed to wmi-rust, which prints them when a boot option has enabled tracing. */
+#define WMI_TRACE_MAX_ARGS 16
+extern NTSTATUS WmipTraceMessagePairs(ULONGLONG LoggerHandle, ULONG MessageFlags,
+                                      const void *MessageGuid, USHORT MessageNumber,
+                                      void **Data, SIZE_T *Lengths, ULONG Count);
+
+static NTSTATUS WmipTraceMessageList(ULONGLONG LoggerHandle, ULONG MessageFlags,
+                                     const void *MessageGuid, USHORT MessageNumber, va_list ap)
+{
+    void *Data[WMI_TRACE_MAX_ARGS];
+    SIZE_T Lengths[WMI_TRACE_MAX_ARGS];
+    ULONG Count = 0;
+    for (;;)
+    {
+        void *p = va_arg(ap, void *);
+        SIZE_T n;
+        if (p == NULL)
+            break;
+        n = va_arg(ap, SIZE_T);
+        if (Count < WMI_TRACE_MAX_ARGS)
+        {
+            Data[Count] = p;
+            Lengths[Count] = n;
+            Count++;
+        }
+    }
+    return WmipTraceMessagePairs(LoggerHandle, MessageFlags, MessageGuid, MessageNumber, Data, Lengths, Count);
+}
+
+NTSTATUS __cdecl
+WmiTraceMessage(ULONGLONG LoggerHandle, ULONG MessageFlags, const void *MessageGuid, USHORT MessageNumber, ...)
+{
+    va_list ap;
+    NTSTATUS Status;
+    va_start(ap, MessageNumber);
+    Status = WmipTraceMessageList(LoggerHandle, MessageFlags, MessageGuid, MessageNumber, ap);
+    va_end(ap);
+    return Status;
+}
+
+NTSTATUS NTAPI
+WmiTraceMessageVa(ULONGLONG LoggerHandle, ULONG MessageFlags, const void *MessageGuid, USHORT MessageNumber, va_list MessageArgList)
+{
+    return WmipTraceMessageList(LoggerHandle, MessageFlags, MessageGuid, MessageNumber, MessageArgList);
+}

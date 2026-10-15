@@ -677,10 +677,12 @@ pub unsafe extern "C" fn USBCCGP_EnumWithAssociationDescriptor(
     //
     // allocate function descriptor array
     //
+    // Room for the IADs' functions and for every interface no IAD covers (see below).
+    let NumInterfaces = (*(*FDODeviceExtension).ConfigurationDescriptor).bNumInterfaces as ULONG;
     (*FDODeviceExtension).FunctionDescriptor = AllocateItem(
         NonPagedPool,
         (core::mem::size_of::<USBC_FUNCTION_DESCRIPTOR>() as usize)
-            .wrapping_mul(DescriptorCount as usize) as ULONG,
+            .wrapping_mul((DescriptorCount + NumInterfaces) as usize) as ULONG,
     ) as PUSBC_FUNCTION_DESCRIPTOR;
     if (*FDODeviceExtension).FunctionDescriptor.is_null() {
         //
@@ -724,9 +726,67 @@ pub unsafe extern "C" fn USBCCGP_EnumWithAssociationDescriptor(
     }
 
     //
+    // An interface no IAD covers is a function of its own. The C enumerated IADs only, so on
+    // a device with both it dropped every such interface: the RTL8821CU's Bluetooth is an IAD
+    // (interfaces 0-1) and its Wi-Fi, interface 2, never got a device. Windows' usbccgp gives
+    // the ungrouped interface its own MI_xx function, as the legacy path below would.
+    //
+    let mut Count = DescriptorCount;
+    let mut Interface: ULONG = 0;
+    while Interface < NumInterfaces {
+        let mut Covered = false;
+        let mut I: ULONG = 0;
+        while I < DescriptorCount {
+            let Iad = USBCCGP_GetAssociationDescriptorAtIndex((*FDODeviceExtension).ConfigurationDescriptor, I);
+            if !Iad.is_null()
+                && Interface >= (*Iad).bFirstInterface as ULONG
+                && Interface < (*Iad).bFirstInterface as ULONG + (*Iad).bInterfaceCount as ULONG
+            {
+                Covered = true;
+                break;
+            }
+            I += 1;
+        }
+        if !Covered {
+            let InterfaceDescriptor = USBD_ParseConfigurationDescriptorEx(
+                (*FDODeviceExtension).ConfigurationDescriptor as PVOID,
+                (*FDODeviceExtension).ConfigurationDescriptor as PVOID,
+                Interface as LONG,
+                0,
+                -1,
+                -1,
+                -1,
+            );
+            if !InterfaceDescriptor.is_null() {
+                let Function = (*FDODeviceExtension).FunctionDescriptor.offset(Count as isize);
+                (*Function).FunctionNumber = Interface as UCHAR;
+                (*Function).NumberOfInterfaces = 1;
+                (*Function).InterfaceDescriptorList =
+                    AllocateItem(NonPagedPool, core::mem::size_of::<PUSB_INTERFACE_DESCRIPTOR>() as ULONG)
+                        as *mut PUSB_INTERFACE_DESCRIPTOR;
+                if (*Function).InterfaceDescriptorList.is_null() {
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                *(*Function).InterfaceDescriptorList = InterfaceDescriptor;
+                Status = USBCCG_InitIdsWithInterfaceDescriptor(FDODeviceExtension, InterfaceDescriptor, Interface, Function);
+                if !NT_SUCCESS(Status) {
+                    return Status;
+                }
+                DbgPrint(
+                    b"[USBCCGP] interface %lu is in no IAD: function MI_%02lx of its own\n\0".as_ptr() as PCSTR,
+                    Interface,
+                    Interface,
+                );
+                Count += 1;
+            }
+        }
+        Interface += 1;
+    }
+
+    //
     // store function descriptor count
     //
-    (*FDODeviceExtension).FunctionDescriptorCount = DescriptorCount;
+    (*FDODeviceExtension).FunctionDescriptorCount = Count;
 
     //
     // done

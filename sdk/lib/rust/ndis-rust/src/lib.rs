@@ -34,6 +34,7 @@ pub mod ndis {
     pub mod miniport;
     pub mod misc;
     pub mod ndis6; // NDIS 6 miniports under the NDIS 5 wrapper (not a translation)
+    pub mod wdi; // the Microsoft half of a WDI Wi-Fi driver (not a translation)
     pub mod protocol;
     pub mod string;
     pub mod time;
