@@ -319,3 +319,155 @@ def test_a_native_app_links_as_an_exe_with_its_subsystem_and_no_crt():
     rs = g.build_rs(cell(subsystem="native:5.01", entries=entries, msvcrtex=None))
     assert 'subsystem: "native:5.01".into(),' in rs
     assert "msvcrtex_crt" not in rs
+
+
+def test_a_source_list_of_placeholders_is_spelled_out_for_the_other_target(tmp_path):
+    (tmp_path / "rust_cohab_stub.c").write_text("/* placeholder */\ntypedef int x_t;\n")
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE + "add_library(m_static ${SOURCE})\n")
+    assert g.cmake_facts(f, "m")["unknown"] == []
+    out = g.rewrite_cmake(f, cell(cmake_dir=tmp_path))
+    assert "add_library(m_static rust_cohab_stub.c main.h)" in out
+
+
+DRIVER = """\
+set(D_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
+rust_storage_target(D_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-d-target" d-rust)
+set(D_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libd_rust.a")
+if(ARCH STREQUAL "i386")
+    set(D_RUST_TARGET "i686-pc-windows-gnu")
+    set(D_RUST_RUSTFLAGS "-C target-feature=-sse,-sse2")
+elseif(ARCH STREQUAL "amd64")
+    set(D_RUST_TARGET "x86_64-pc-windows-gnu")
+    set(D_RUST_RUSTFLAGS "")
+elseif(ARCH STREQUAL "arm64")
+    set(D_RUST_TARGET "aarch64-pc-windows-gnullvm")
+    set(D_RUST_RUSTFLAGS "")
+endif()
+rust_crate_sources(D_RUST_SRCS "${D_RUST_WORKSPACE_DIR}" d-rust)
+add_custom_command(
+    OUTPUT ${D_RUST_LIB}
+    COMMAND ${CMAKE_COMMAND} -E env
+        CARGO_TARGET_DIR=${D_RUST_TARGET_DIR}
+        RUSTFLAGS=${D_RUST_RUSTFLAGS}
+        cargo build --release --target ${D_RUST_TARGET}
+            -p d-rust
+            --manifest-path ${D_RUST_WORKSPACE_DIR}/Cargo.toml
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${D_RUST_TARGET_DIR}/${D_RUST_TARGET}/release/libd_rust.a
+        ${D_RUST_LIB}
+    DEPENDS ${D_RUST_SRCS}
+            ${D_RUST_WORKSPACE_DIR}/d-rust/Cargo.toml
+    WORKING_DIRECTORY ${D_RUST_WORKSPACE_DIR}
+    COMMENT "Building d-rust (${D_RUST_TARGET})"
+    VERBATIM)
+add_custom_target(rust_d DEPENDS ${D_RUST_LIB})
+add_library(d MODULE rust_cohab_stub.c d.rc)
+set_module_type(d kernelmodedriver)
+add_importlibs(d ntoskrnl hal)
+add_dependencies(d rust_d)
+target_link_libraries(d ${D_RUST_LIB})
+add_cd_file(TARGET d DESTINATION reactos/system32/drivers NO_CAB FOR all)
+add_driver_inf(d d.inf)
+"""
+
+
+def test_a_driver_custom_command_is_its_body():
+    body = g._custom_body(DRIVER)
+    assert body["crate"] == "d-rust" and body["archive"] == "libd_rust.a"
+    assert body["rustflags"] == {"i386": "-C target-feature=-sse,-sse2"}
+    assert body["custom_target"] == "rust_d"
+    # Any other shape of the command is not modelled: here, a feature.
+    assert g._custom_body(DRIVER.replace("-p d-rust", "-p d-rust --features x")) is None
+
+
+def test_a_driver_rewrite_drops_its_body_command_and_keeps_its_inf(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    # The header comment sits on the body's first set(): it outlives the statements
+    # (cohab_census counts its `.c` names), and the emptied if-chain must not take it.
+    f.write_text("# d.sys: a.c b.c -> d-rust\n" + DRIVER)
+    facts = g.cmake_facts(f, "d")
+    assert facts["unknown"] == [] and facts["no_cab"] and facts["module_type"] == "kernelmodedriver"
+    c = cell(
+        target="d",
+        cmake_dir=tmp_path,
+        output_name="d.sys",
+        module_kind="KernelDll",
+        kernel_kind="kernelmodedriver",
+        custom_body=g._custom_body(DRIVER),
+        body_crate="d-rust",
+        destinations=["reactos/system32/drivers"],
+        no_cab=True,
+        static_libs={a: [] for a in g.ARCHES},
+        msvcrtex=None,
+        rc=None,
+    )
+    out = g.rewrite_cmake(f, c)
+    assert "cargo build" not in out and "D_RUST" not in out and "rust_d" not in out
+    assert "add_driver_inf(d d.inf)" in out
+    assert out.startswith("# d.sys: a.c b.c -> d-rust\n")
+    assert "KIND kernelmodedriver" in out and "    NO_CAB" in out
+
+
+def test_a_kernel_cell_builds_its_body_on_the_user_triple_and_keeps_every_section():
+    rs = g.build_rs(
+        cell(
+            module_kind="KernelDll",
+            entries={a: "DriverEntry" for a in g.ARCHES},
+            image_base={a: 0x10000 for a in g.ARCHES},
+            msvcrtex=None,
+            static_libs={a: [] for a in g.ARCHES},
+            link_order={a: ["import:ntoskrnl", "body", "engine:c:memcmp"] for a in g.ARCHES},
+        )
+    )
+    assert '"x86" => ("i686-pc-windows-gnu", "DriverEntry", 0x10000u64),' in rs
+    assert ".rust_user_target()" in rs and ".keep_all_sections()" in rs
+    assert '"x86" => &["import:ntoskrnl", "body", "engine:c:memcmp"],' in rs
+    assert ".link_order(link_order)" in rs and ".static_libs(" not in rs
+    assert "ModuleKind::KernelDll" in rs
+
+
+def test_a_kernel_cell_without_the_bodys_handler_traps():
+    main = g.main_rs(cell(module_kind="KernelDll", panics=dict.fromkeys(g.ARCHES, False)))
+    assert "panic_lean::panic_fastfail()" in main
+    deps = g._panic_deps(cell(module_kind="KernelDll", panics=dict.fromkeys(g.ARCHES, False)))
+    assert "panic-lean" in deps and "panic-common" not in deps
+
+
+def test_a_boot_cd_only_placement_and_a_lowered_subsystem(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(
+        CMAKE
+        + 'if(ARCH STREQUAL "i386")\n'
+        + '    target_link_options(m PRIVATE "-Wl,--subsystem,windows:4.00")\n'
+        + "endif()\n"
+        + "add_cd_file(TARGET m DESTINATION root NO_CAB NAME_ON_CD setup.exe FOR bootcd)\n"
+    )
+    facts = g.cmake_facts(f, "m")
+    assert facts["unknown"] == [] and facts["name_on_cd"] is None
+    assert facts["extra_cd"] == ["DESTINATION root NO_CAB NAME_ON_CD setup.exe FOR bootcd"]
+    subs = {"i386": "windows:4.00", "amd64": "windows:5.01", "arm64": "windows:5.01"}
+    c = cell(cmake_dir=tmp_path, extra_cd=facts["extra_cd"], subsystems=subs)
+    out = g.rewrite_cmake(f, c)
+    assert "target_link_options" not in out and "if(ARCH" not in out
+    assert "add_cargo_cd_file(m DESTINATION root NO_CAB NAME_ON_CD setup.exe FOR bootcd)" in out
+    assert '"x86" => "windows:4.00",' in g.build_rs(c)
+
+
+def test_a_stack_protector_object_becomes_a_configure_error(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(
+        CMAKE
+        + "if(STACK_PROTECTOR)\n"
+        + "    target_sources(m PRIVATE $<TARGET_OBJECTS:gcc_ssp_nt>)\n"
+        + "endif()\n"
+    )
+    assert g.cmake_facts(f, "m")["ssp"]
+    out = g.rewrite_cmake(f, cell(cmake_dir=tmp_path))
+    assert 'message(FATAL_ERROR "m is linked by cargo' in out and "if(STACK_PROTECTOR)" in out
+
+
+def test_a_cell_for_a_digit_leading_target_takes_its_body_crates_name():
+    c = cell(target="3dtext", body_crate="text3d-rust")
+    assert c.crate == "text3d-cargo"
+    assert 'name = "text3d"' in g.cargo_toml(c)
