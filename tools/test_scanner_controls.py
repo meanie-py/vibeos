@@ -3225,6 +3225,13 @@ UNCOVERED: dict[str, str] = {
         "must-not cases pin the u32 rop, the version DWORD, the call-proc `== 0xFFFF0000` "
         "form, the fixed `& !0xFFFF` form and C quoted in a comment."
     ),
+    "scan_fourcc_literals": (
+        "main() walks the real tree, but the decision is scan_text(), a pure function over a "
+        "string, driven directly in tools/test_scan_fourcc_literals.py. Its fire case is the "
+        "shape that shipped (evr's IMC1/NV11 folds); its must-not cases pin correct folds in "
+        "decimal, hex with underscores and a suffix, mmioFOURCC, and a literal with no macro "
+        "comment beside it."
+    ),
     "scan_octal_literals": (
         "main() walks the real tree, but the matcher and the comment/literal tokenizer are "
         "pure functions over a string — scan_text()/strip_noise() — and are driven directly "

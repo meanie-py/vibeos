@@ -1761,6 +1761,16 @@ def test_a_sizeof_case_label_is_a_number_not_an_arm(tmp_path):
     assert idents == {"SIZE_OF_NT4_DATA", "EXTRA"}
 
 
+def test_ntddi_follows_a_win32_winnt_outside_the_table():
+    """A module compiled at 0x0A00 (the Wine 11.19 imports) gets the matching NTDDI_VERSION,
+    not the 0x502 fallback that trips sdkddkver.h's mismatch #error in its island."""
+    from rustconv.profile_derive import _ntddi_for
+
+    assert _ntddi_for("0x0A00") == "0x0A000000"
+    assert _ntddi_for("0x502") == "0x05020400"  # the table's service-pack choice still wins
+    assert _ntddi_for("0x603") == "0x06030000"
+
+
 def test_a_tu_that_flips_the_charset_is_an_instantiation_not_the_island():
     """fc: texta.c `#undef UNICODE`s to instantiate text.h as ANSI while textw.c keeps the
     module's UNICODE. Merged into the wrapper, texta.c's toggles made the whole island ANSI

@@ -1041,6 +1041,7 @@ dll/win32/crtdll/CMakeLists.txt	1	# advapi32: the shared CRT's rand_s calls Syst
 dll/win32/crtdll/CMakeLists.txt	1	# dllmain.c is msvcrt-crt-rust src/legacy.rs (CRTDLL_* names, which crtdll.spec maps).
 dll/win32/dbghelp/CMakeLists.txt	1	# elf_module.c
 dll/win32/dbghelp/CMakeLists.txt	1	# macho_module.c
+dll/win32/dcomp/CMakeLists.txt	1	# device.c # replaced by Rust (sdk/lib/rust/dcomp-rust/src/dcomp/device.rs)
 dll/win32/dnsapi/CMakeLists.txt	1	# adns.c
 dll/win32/dnsapi/CMakeLists.txt	1	# adns.c context.c memory.c names.c query.c record.c rpc.c stubs.c → dnsapi-rust
 dll/win32/dnsapi/CMakeLists.txt	1	# context.c
@@ -1053,6 +1054,11 @@ dll/win32/dnsapi/CMakeLists.txt	1	# query.c
 dll/win32/dnsapi/CMakeLists.txt	1	# record.c
 dll/win32/dnsapi/CMakeLists.txt	1	# rpc.c
 dll/win32/dnsapi/CMakeLists.txt	1	# stubs.c)
+dll/win32/evr/CMakeLists.txt	1	# evr.c # replaced by Rust (sdk/lib/rust/evr-rust/src/evr/evr.rs)
+dll/win32/evr/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/evr-rust/src/evr/main.rs)
+dll/win32/evr/CMakeLists.txt	1	# mixer.c # replaced by Rust (sdk/lib/rust/evr-rust/src/evr/mixer.rs)
+dll/win32/evr/CMakeLists.txt	1	# presenter.c # replaced by Rust (sdk/lib/rust/evr-rust/src/evr/presenter.rs)
+dll/win32/evr/CMakeLists.txt	1	# sample.c # replaced by Rust (sdk/lib/rust/evr-rust/src/evr/sample.rs)
 dll/win32/fltlib/CMakeLists.txt	1	# fltlib.c # replaced by Rust (sdk/lib/rust/fltlib-rust/src/fltlib/fltlib.rs)
 dll/win32/fltlib/CMakeLists.txt	1	# message.c # replaced by Rust (sdk/lib/rust/fltlib-rust/src/fltlib/message.rs)
 dll/win32/fltlib/CMakeLists.txt	1	# stubs.c # replaced by Rust (sdk/lib/rust/fltlib-rust/src/fltlib/stubs.rs)
@@ -1196,6 +1202,8 @@ dll/win32/lsasrv/CMakeLists.txt	1	# service.c — replaced by Rust (lsasrv-rust/
 dll/win32/lsasrv/CMakeLists.txt	1	# session.c — replaced by Rust (lsasrv-rust/src/lsasrv/session.rs)
 dll/win32/lsasrv/CMakeLists.txt	1	# srm.c — replaced by Rust (lsasrv-rust/src/lsasrv/srm.rs)
 dll/win32/lsasrv/CMakeLists.txt	1	# utils.c — replaced by Rust (lsasrv-rust/src/lsasrv/utils.rs)
+dll/win32/mfreadwrite/CMakeLists.txt	1	# reader.c # replaced by Rust (sdk/lib/rust/mfreadwrite-rust/src/mfreadwrite/reader.rs)
+dll/win32/mfreadwrite/CMakeLists.txt	1	# writer.c # replaced by Rust (sdk/lib/rust/mfreadwrite-rust/src/mfreadwrite/writer.rs)
 dll/win32/mlang/CMakeLists.txt	1	# compiles rust_cohab_stub.c (wine debug no-ops + IsEqualGUID/min + vtbl
 dll/win32/mlang/CMakeLists.txt	1	# mlang.c is translated to Rust (sdk/lib/rust/mlang-rust, kept on disk per the
 dll/win32/mlang/CMakeLists.txt	1	# spec2def-generated mlang_stubs.c for the `stub`-only entries), compiles the
@@ -1253,6 +1261,7 @@ dll/win32/mswsock/CMakeLists.txt	1	# nsplookup.c
 dll/win32/mswsock/CMakeLists.txt	1	# nsplookup.c — replaced by Rust (mswsock-rust src/mswsock/nsplookup.rs — RNR/namespace-provider Get/Set/EnumService* + NSP* dispatch)
 dll/win32/mswsock/CMakeLists.txt	1	# stubs.c
 dll/win32/mswsock/CMakeLists.txt	1	# stubs.c — replaced by Rust (mswsock-rust src/mswsock/stubs.rs — ServiceMain/StartWsdpService/WSPStartup/DllMain + export stubs)
+dll/win32/ndfapi/CMakeLists.txt	1	# ndfapi_main.c # replaced by Rust (sdk/lib/rust/ndfapi-rust/src/ndfapi/ndfapi_main.rs)
 dll/win32/netapi32/CMakeLists.txt	1	# STILL C (correctly): the WIDL-generated MIDL client stubs (*_c.c, built by add_rpc_files above)
 dll/win32/netapi32/CMakeLists.txt	1	# and netapi32_stubs.c. The Rust declares those prototypes as imports (src/rpc_stubs.rs,
 dll/win32/netapi32/CMakeLists.txt	1	# apibuf.c (→ netapi32-rust src/netapi32/apibuf.rs)
@@ -1356,6 +1365,7 @@ dll/win32/oleaut32/CMakeLists.txt	1	# variant.c — replaced by Rust (oleaut32-r
 dll/win32/oleaut32/CMakeLists.txt	1	# vartype.c — replaced by Rust (oleaut32-rust vartype.rs — VarXxxFromYyy coercion matrix, 253 exports; full)
 dll/win32/psapi/CMakeLists.txt	1	# psapi.c # replaced by Rust (sdk/lib/rust/psapi-rust/src/psapi/psapi.rs)
 dll/win32/psapi/CMakeLists.txt	1	# psapi.c is Rust now (psapi-rust, `rustconv port`); the C stays on disk. psapi_static keeps
+dll/win32/qwave/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/qwave-rust/src/qwave/main.rs)
 dll/win32/rasadhlp/CMakeLists.txt	1	# add_pch dropped with precomp.h: the only remaining C is generated (rasadhlp_stubs.c)
 dll/win32/rasadhlp/CMakeLists.txt	1	# autodial.c
 dll/win32/rasadhlp/CMakeLists.txt	1	# autodial.c init.c winsock.c → rasadhlp-rust
@@ -1572,6 +1582,7 @@ dll/win32/syssetup/CMakeLists.txt	1	# rust_varargs_shim.c is no longer built (re
 dll/win32/syssetup/CMakeLists.txt	1	# security.c
 dll/win32/syssetup/CMakeLists.txt	1	# wizard.c
 dll/win32/syssetup/CMakeLists.txt	1	#addons.c
+dll/win32/tbs/CMakeLists.txt	1	# tbs.c # replaced by Rust (sdk/lib/rust/tbs-rust/src/tbs/tbs.rs)
 dll/win32/ucrtbase/CMakeLists.txt	1	# printf.c (sprintf/_vsnprintf) and ucrt_varargs_shim.c (the `...` entry points as
 dll/win32/ucrtbase/CMakeLists.txt	1	# stubs.c (atexit, operator_new/delete, _chkesp_failed, __acrt_initialize_sse2) is
 dll/win32/userenv/CMakeLists.txt	1	# desktop.c
@@ -1601,6 +1612,7 @@ dll/win32/version/CMakeLists.txt	1	# #[no_mangle] symbols are the sole providers
 dll/win32/version/CMakeLists.txt	1	# since every version.c symbol was removed).
 dll/win32/version/CMakeLists.txt	1	# version-rust cohab: the entire version.c body (GetFileVersionInfo*/VerQueryValue*/
 dll/win32/version/CMakeLists.txt	1	# version.c — replaced by Rust (sdk/lib/rust/version-rust); cohab-linked
+dll/win32/wevtapi/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/wevtapi-rust/src/wevtapi/main.rs)
 dll/win32/winfax/CMakeLists.txt	1	# winfax.c # replaced by Rust (sdk/lib/rust/winfax-rust/src/winfax/winfax.rs)
 dll/win32/winsta/CMakeLists.txt	1	# logon.c # replaced by Rust (sdk/lib/rust/winsta-rust/src/winsta/logon.rs)
 dll/win32/winsta/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/winsta-rust/src/winsta/main.rs)

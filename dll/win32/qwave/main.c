@@ -24,7 +24,6 @@
 #include "qos2.h"
 #include <stdlib.h>
 #include "wine/debug.h"
-#include "wine/list.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(qwave);
 
@@ -33,37 +32,33 @@ WINE_DEFAULT_DEBUG_CHANNEL(qwave);
  * nothing past it could be reached. Flows are still not supported. */
 struct qos_handle
 {
-    struct list entry;
+    struct qos_handle *next;
 };
 
-static struct list qos_handles = LIST_INIT(qos_handles);
-static CRITICAL_SECTION qos_cs;
-static CRITICAL_SECTION_DEBUG qos_cs_debug =
-{
-    0, 0, &qos_cs,
-    { &qos_cs_debug.ProcessLocksList, &qos_cs_debug.ProcessLocksList },
-      0, 0, { (DWORD_PTR)(__FILE__ ": qos_cs") }
-};
-static CRITICAL_SECTION qos_cs = { &qos_cs_debug, -1, 0, 0, 0, 0 };
+static struct qos_handle *qos_handles;
+static LONG qos_lock;
 
-/* Must be called with qos_cs held. */
-static struct qos_handle *find_handle(HANDLE handle)
+/* QoS handles are created and closed rarely; a spinlock keeps the table free of
+ * static CRITICAL_SECTION initializers. */
+static void lock_handles(void)
 {
-    struct qos_handle *qos;
+    while (InterlockedCompareExchange(&qos_lock, 1, 0)) SwitchToThread();
+}
 
-    LIST_FOR_EACH_ENTRY(qos, &qos_handles, struct qos_handle, entry)
-        if ((HANDLE)qos == handle) return qos;
-    return NULL;
+static void unlock_handles(void)
+{
+    InterlockedExchange(&qos_lock, 0);
 }
 
 static BOOL is_valid_handle(HANDLE handle)
 {
-    BOOL valid;
+    struct qos_handle *qos;
 
-    EnterCriticalSection(&qos_cs);
-    valid = find_handle(handle) != NULL;
-    LeaveCriticalSection(&qos_cs);
-    return valid;
+    lock_handles();
+    for (qos = qos_handles; qos; qos = qos->next)
+        if ((HANDLE)qos == handle) break;
+    unlock_handles();
+    return qos != NULL;
 }
 
 /* The answer for a flow call: no such handle, or a handle with no flow support. */
@@ -88,9 +83,10 @@ BOOL WINAPI QOSCreateHandle(PQOS_VERSION version, PHANDLE handle)
         SetLastError(ERROR_NOT_ENOUGH_MEMORY);
         return FALSE;
     }
-    EnterCriticalSection(&qos_cs);
-    list_add_tail(&qos_handles, &qos->entry);
-    LeaveCriticalSection(&qos_cs);
+    lock_handles();
+    qos->next = qos_handles;
+    qos_handles = qos;
+    unlock_handles();
     *handle = (HANDLE)qos;
     return TRUE;
 }
@@ -104,13 +100,18 @@ BOOL WINAPI QOSAddSocketToFlow(HANDLE handle, SOCKET socket, PSOCKADDR addr,
 
 BOOL WINAPI QOSCloseHandle(HANDLE handle)
 {
-    struct qos_handle *qos;
+    struct qos_handle *qos, **link;
 
     TRACE("%p\n", handle);
-    EnterCriticalSection(&qos_cs);
-    if ((qos = find_handle(handle)))
-        list_remove(&qos->entry);
-    LeaveCriticalSection(&qos_cs);
+
+    lock_handles();
+    for (link = &qos_handles; (qos = *link); link = &qos->next)
+        if ((HANDLE)qos == handle)
+        {
+            *link = qos->next;
+            break;
+        }
+    unlock_handles();
     if (!qos)
     {
         SetLastError(ERROR_INVALID_HANDLE);
