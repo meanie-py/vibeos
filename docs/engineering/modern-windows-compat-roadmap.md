@@ -320,13 +320,65 @@ Apps 191 -> 125 missing functions, 356 -> 209 import sites (-41%).
   guest: the sweep has no writable directory on the live CD (owed: a writable volume
   for the apitest payload, then grade it there).
 
+**Done 2026-10-14 (third batch): every load-time import of the 20-app corpus resolves.**
+Apps 125 -> 1 missing function (ucrtbase `_except1`, a stub), 209 -> 1 import site.
+Nothing in the corpus fails to load for a missing export of a module we build. Test:
+kernel32 apitest `Win10Surface`, Windows 11 95/0 first, guest 96/0 on amd64 and i386.
+- Loader: `SetDefaultDllDirectories`/`AddDllDirectory`/`RemoveDllDirectory` and the
+  `LOAD_LIBRARY_SEARCH_*` flags (kernel32 `client/dlldirs.rs`, beside
+  BaseComputeProcessDllPath, which is where our search path is built; Wine's order and
+  error codes). `LoadLibraryExW` used to ignore those flags.
+- `GetProductInfo` forwarded to `ntdll.RtlGetProductInfo`, which no target compiled
+  (`sdk/lib/rtl/product.c`): ported into ntdll-rust `rtl/version.rs`. `NtOpenKeyEx` lived
+  in the arm64/amd64-only WOW64 shim; now every arch. `RtlUTF8ToUnicodeN` and its pair had
+  bodies (`utf8` crate) and no rows. `NtGetNextThread` over a process snapshot; the KTM
+  calls fail STATUS_NOT_IMPLEMENTED (Wine fakes success) and the TEB's current
+  transaction is real.
+- api-ms-win-security-base-* now resolves to advapi32 (kernel32 has none of AccessCheck,
+  EqualSid & co.).
+- kernel32 (`win10_misc.rs`, `pathcch.rs`, `idn.rs`, console): the whole PathCch family
+  (Wine's path.c; our api-set host for api-ms-win-core-path is kernel32), XState/context,
+  CopyFile2, mitigation policy, AppModel package queries (APPMODEL_ERROR_NO_PACKAGE), Pss
+  (ERROR_NOT_SUPPORTED), ResolveLocaleName, SetWaitableTimerEx, UnmapViewOfFileEx,
+  IdnToAscii/Unicode/NameprepUnicode (exact RFC 3492; nameprep has no NFKC),
+  GetCurrentConsoleFontEx, K32EnumProcessModulesEx.
+- psapi: EnumProcessModules and its module lookup read `sizeof(PEB_LDR_DATA)` into a
+  pointer variable, overrunning the stack on every call since the Rust port; fixed.
+- user32/win32k: AddClipboardFormatListener posts WM_CLIPBOARDUPDATE (a listener list in
+  win32k-rust `clipboard.rs`, reached through two NtUserCallHwnd routines numbered outside
+  the shared enum, as SETFOREGROUNDWINDOWMOUSE is); pointer/pen queries fail as for an
+  unknown pointer id; SetCoalescableTimer.
+- shcore.dll is built (against ole32, not the declined combase), its DPI calls forwarding
+  to shell32's Windows-graded ones. setupapi/cfgmgr32: SetupDiGetDevicePropertyW, the
+  Keys/Set pair and CM_Get_DevNode_Property* over the legacy registry properties
+  (DEVPKEY_Device_* pid = SPDRP + 2). iphlpapi `*2` tables/routes/neighbours (IPv4, from
+  the legacy tables; change notifications deliver only the initial one), ws2_32
+  GetAddrInfoExW (sync+async+cancel), WSAPoll, WSASendMsg; winhttp proxy resolver over
+  the module's PAC code; ole32 winrt-error set; advapi32 AddMandatoryAce,
+  EventActivityIdControl; esent fails JET_errFeatureNotAvailable; and honest
+  not-present answers for AAD join, AppContainer, SHGetPropertyStoreForWindow,
+  SHCreateAssociationRegistration.
+- Tooling: `pecheck.spec_exports` reported a `-stub -version=` row outside its range as a
+  callable stub (it is not exported: a load failure); `win10_surface gap` lists imports
+  Windows itself does not export apart from our gap.
+
 **Owed on the export surface:**
-- **The rest of the app ranking:** setupapi's `SetupDiGetDevicePropertyW` (5 apps, still
-  C); `shcore.dll` imported directly (3 apps: the module is not built; a forwarder-only
-  shcore over shell32 would serve them, if the declined restructure allows it);
-  `SetDefaultDllDirectories`/`AddDllDirectory` (loader work in ntdll);
-  `GetProductInfo` (its forward target is dead); `GetBestRoute2`;
-  `SHGetPropertyStoreForWindow`; `GetPointerPenInfo`.
+- **The app ranking is now MODULES, not functions:** Media Foundation (`mf`, `mfplat`,
+  `mfreadwrite`: 3 apps), `wevtapi` and `ndfapi` (2), `dcomp`, `evr`, `qwave`, `tbs` (1).
+  Plus ucrtbase `_except1` (no home in our CRT yet). Widen the corpus before trusting
+  "done": 20 app folders are not the long tail.
+- **NtGetNextThread with THREAD_QUERY_LIMITED_INFORMATION hit ACCESS_DENIED** on some thread
+  of the apitest process (amd64 and i386), while `OpenThread(THREAD_QUERY_LIMITED_INFORMATION)`
+  on the test's own thread succeeds and a walk asking THREAD_QUERY_INFORMATION completes.
+  Not yet established which thread or why; suspects: a thread another process created in
+  ours (its security descriptor), and the thread type's NT5 mask (THREAD_ALL_ACCESS 0x3FF as
+  valid mask and GENERIC_ALL; ps_globals.rs records a wider process table once hung
+  session-manager startup). Win10Surface walks with the full query right meanwhile.
+- **New partials from the third batch:** iphlpapi change notifications after the
+  initial one, IPv6 tables; IDN nameprep without NFKC; consrv's
+  SrvGetConsoleCurrentFont leaves the font size zero (frontendctl.c FIXME), so
+  GetCurrentConsoleFont(Ex) under-report; DeriveAppContainerSidFromAppContainerName
+  (E_NOTIMPL, the SHA-256 derivation is owed).
 - **Bodies that answer honestly but not fully:** `GetNamedPipeServerProcessId` (npfs has
   no attribute FSCTL); `GetProcessInformation(ProcessMachineTypeInfo)` (no
   NtQuerySystemInformationEx); Get/SetRestrictedErrorInfo stay E_NOTIMPL as in Wine.

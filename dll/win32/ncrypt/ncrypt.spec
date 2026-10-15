@@ -59,7 +59,7 @@
 @ stub GetSChannelInterface
 @ stub NCryptCloseKeyProtector
 @ stub NCryptCloseProtectionDescriptor
-@ stub NCryptCreateClaim
+@ stdcall NCryptCreateClaim(long long long ptr ptr long ptr long)
 @ stdcall NCryptCreatePersistedKey(long ptr wstr wstr long long)
 @ stub NCryptCreateProtectionDescriptor
 @ stdcall NCryptDecrypt(long ptr long ptr ptr long ptr long)

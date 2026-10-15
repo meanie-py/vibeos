@@ -266,3 +266,54 @@ pub unsafe extern "system" fn RtlGetVersion(lpVersionInformation: PRTL_OSVERSION
 
     STATUS_SUCCESS
 }
+
+// winnt.h PRODUCT_* values RtlGetProductInfo reports.
+const PRODUCT_UNDEFINED: ULONG = 0x0000_0000;
+const PRODUCT_BUSINESS: ULONG = 0x0000_0006;
+const PRODUCT_STANDARD_SERVER: ULONG = 0x0000_0007;
+const PRODUCT_ENTERPRISE_SERVER: ULONG = 0x0000_000A;
+const PRODUCT_PROFESSIONAL: ULONG = 0x0000_0030;
+
+/// C: `BOOLEAN WINAPI RtlGetProductInfo(ULONG OSMajorVersion, ULONG OSMinorVersion,
+/// ULONG SpMajorVersion, ULONG SpMinorVersion, PULONG ReturnedProductType)`
+/// (sdk/lib/rtl/product.c, which no target compiles: kernel32's GetProductInfo
+/// forwards here and was a dead forward). Pre-Vista versions have no product SKU and
+/// report PRODUCT_UNDEFINED with FALSE, as Windows does.
+///
+/// Divergence from product.c: the type comes from RtlGetNtProductType rather than a
+/// raw SharedUserData read, so the ReactOS product-type override that GetVersionEx
+/// reports (SetRosSpecificInfo) is reported here too and the two never disagree.
+#[no_mangle]
+pub unsafe extern "system" fn RtlGetProductInfo(
+    OSMajorVersion: ULONG,
+    OSMinorVersion: ULONG,
+    _SpMajorVersion: ULONG,
+    _SpMinorVersion: ULONG,
+    ReturnedProductType: PULONG,
+) -> BOOLEAN {
+    if ReturnedProductType.is_null() {
+        return 0;
+    }
+    if OSMajorVersion < 6 {
+        write_volatile(ReturnedProductType, PRODUCT_UNDEFINED);
+        return 0;
+    }
+    let mut product_type: _NT_PRODUCT_TYPE = zeroed();
+    RtlGetNtProductType(&mut product_type);
+    let sku = if product_type == NtProductWinNt {
+        if OSMajorVersion == 6 && OSMinorVersion == 0 {
+            PRODUCT_BUSINESS
+        } else {
+            PRODUCT_PROFESSIONAL
+        }
+    } else if product_type == NtProductLanManNt {
+        PRODUCT_ENTERPRISE_SERVER
+    } else if product_type == NtProductServer {
+        PRODUCT_STANDARD_SERVER
+    } else {
+        write_volatile(ReturnedProductType, PRODUCT_UNDEFINED);
+        return 0;
+    };
+    write_volatile(ReturnedProductType, sku);
+    1
+}

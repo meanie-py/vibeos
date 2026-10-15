@@ -33,6 +33,7 @@ pub mod prelude; // the ONE import surface: in-crate re-exports + imports + the 
 pub mod src {
     pub mod addrconv; // inet_addr/ntoa/pton/ntop + the hton/ntoh family
     pub mod addrinfo; // getaddrinfo/GetAddrInfoW/getnameinfo + DNS lookup
+    pub mod addrinfoex; // GetAddrInfoExW/Cancel/OverlappedResult + FreeAddrInfoEx(W) (Vista+, hand-written)
     pub mod r#async; // the WSAAsync* window-message worker thread
     pub mod bhook; // blocking-hook stubs
     pub mod dcatalog; // TCATALOG — the transport-provider catalog
@@ -53,6 +54,7 @@ pub mod src {
     pub mod nspinstl; // WSCInstall/UnInstallNameSpace
     pub mod nsprovid; // NSPROVIDER — a loaded NSP
     pub mod nsquery; // NSQUERY — WSALookupService*
+    pub mod poll; // WSAPoll over select() (Vista+, hand-written)
     pub mod qos; // QOS stubs
     pub mod qshelpr; // the WSALookupService helper/marshalling layer
     pub mod rasdial; // RAS auto-dial stubs
@@ -60,6 +62,7 @@ pub mod src {
     pub mod rnr; // registration & name resolution
     pub mod select; // select/__WSAFDIsSet
     pub mod send; // send/sendto/WSASend/WSASendTo
+    pub mod sendmsg; // WSASendMsg (Vista+, hand-written)
     pub mod sockctrl; // bind/listen/connect/shutdown/get*name/get-setsockopt
     pub mod socklife; // socket/WSASocket/accept/WSAAccept/closesocket
     pub mod spinstal; // WSCInstall/DeinstallProvider

@@ -76,6 +76,10 @@
 @ stdcall CM_Get_DevNode_Custom_PropertyW(long wstr ptr ptr ptr long)
 @ stdcall CM_Get_DevNode_Custom_Property_ExA(long str ptr ptr ptr long ptr)
 @ stdcall CM_Get_DevNode_Custom_Property_ExW(long wstr ptr ptr ptr long ptr)
+@ stdcall CM_Get_DevNode_PropertyW(long ptr ptr ptr ptr long)
+@ stdcall CM_Get_DevNode_Property_ExW(long ptr ptr ptr ptr long ptr)
+@ stdcall CM_Get_DevNode_Property_Keys(long ptr ptr long)
+@ stdcall CM_Get_DevNode_Property_Keys_Ex(long ptr ptr long ptr)
 @ stdcall CM_Get_DevNode_Registry_PropertyA(long long ptr ptr ptr long)
 @ stdcall CM_Get_DevNode_Registry_PropertyW(long long ptr ptr ptr long)
 @ stdcall CM_Get_DevNode_Registry_Property_ExA(long long ptr ptr ptr long ptr)
@@ -365,8 +369,8 @@
 @ stdcall SetupDiGetDeviceInterfaceDetailW(long ptr ptr long ptr ptr)
 @ stub -version=0x600+ SetupDiGetDeviceInterfacePropertyKeys
 @ stub -version=0x600+ SetupDiGetDeviceInterfacePropertyW
-@ stub -version=0x600+ SetupDiGetDevicePropertyKeys
-@ stdcall -stub -version=0x600+ SetupDiGetDevicePropertyW(ptr ptr ptr ptr ptr long ptr long)
+@ stdcall SetupDiGetDevicePropertyKeys(ptr ptr ptr long ptr long)
+@ stdcall SetupDiGetDevicePropertyW(ptr ptr ptr ptr ptr long ptr long)
 @ stdcall SetupDiGetDeviceRegistryPropertyA(long ptr long ptr ptr long ptr)
 @ stdcall SetupDiGetDeviceRegistryPropertyW(long ptr long ptr ptr long ptr)
 @ stdcall SetupDiGetDriverInfoDetailA(ptr ptr ptr ptr long ptr)
@@ -428,7 +432,7 @@
 @ stdcall SetupDiSetDeviceInstallParamsW(ptr ptr ptr)
 @ stub SetupDiSetDeviceInterfaceDefault
 @ stub -version=0x600+ SetupDiSetDeviceInterfacePropertyW
-@ stub -version=0x600+ SetupDiSetDevicePropertyW
+@ stdcall SetupDiSetDevicePropertyW(ptr ptr ptr long ptr long long)
 @ stdcall SetupDiSetDeviceRegistryPropertyA(ptr ptr long ptr long)
 @ stdcall SetupDiSetDeviceRegistryPropertyW(ptr ptr long ptr long)
 @ stdcall SetupDiSetDriverInstallParamsA(ptr ptr ptr ptr)

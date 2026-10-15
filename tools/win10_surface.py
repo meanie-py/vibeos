@@ -1085,6 +1085,17 @@ def gap(
     redist: dict[str, set[str]] = defaultdict(set)
     apisets: dict[str, set[str]] = defaultdict(set)
     unmapped: dict[str, set[str]] = defaultdict(set)  # api sets our loader cannot resolve
+    # (dll, fn) -> apps, for imports Windows' own host does not export either: a delay-load
+    # or a binary that never loads on Windows. Reported apart, never as our gap.
+    not_windows: dict[tuple[str, str], set[str]] = defaultdict(set)
+
+    def windows_names(module: str) -> set[str] | None:
+        entry = ref["modules"].get(module)
+        if entry is None:
+            return None
+        return {n for t in entry.values() for n in t["exports"]}
+
+    win_names: dict[str, set[str] | None] = {}
     if ros is None:
         ros = read_ros_apisets(ROS_APISETS.read_text()) if ROS_APISETS.is_file() else {}
     unparsed = 0
@@ -1102,6 +1113,11 @@ def gap(
             if REDIST.match(dll):
                 redist[dll].add(app)
                 continue
+            win_host = resolve_apiset(dll, schema) or dll
+            win_host = win_host if win_host.endswith(".dll") else win_host + ".dll"
+            if win_host not in win_names:
+                win_names[win_host] = windows_names(win_host)
+            on_windows = win_names[win_host]
             if resolve_apiset(dll, schema) is not None:
                 apisets[dll].add(app)
                 host = ros_apiset_host(dll, ros)
@@ -1124,6 +1140,10 @@ def gap(
             for n in names:
                 if n.startswith("#"):
                     continue
+                if on_windows is not None and n not in on_windows:
+                    if have.get(n) != "ok":
+                        not_windows[(dll, n)].add(app)
+                    continue
                 state = have.get(n, "surface-only")
                 if state != "ok":
                     need[(dll, n)].add(app)
@@ -1144,6 +1164,10 @@ def gap(
                 {"dll": d, "fn": f, "why": why[(d, f)], "apps": sorted(a)}
                 for (d, f), a in need.items()
             ),
+            key=lambda r: (-len(r["apps"]), r["dll"], r["fn"]),
+        ),
+        "not_on_windows": sorted(
+            ({"dll": d, "fn": f, "apps": sorted(a)} for (d, f), a in not_windows.items()),
             key=lambda r: (-len(r["apps"]), r["dll"], r["fn"]),
         ),
         "missing_modules": ranked(missing_module),
@@ -1325,6 +1349,13 @@ def cmd_gap(args: argparse.Namespace) -> int:
     )
     for r in fns[: args.top]:
         print(f"  {len(r['apps']):4d}  {r['why']:12s}  {r['dll']}!{r['fn']}")
+    nw = res["not_on_windows"]
+    print(
+        f"imports Windows {ref['build']} does not export either (delay-loads or dead code; "
+        f"not our gap): {len(nw)}"
+    )
+    for r in nw[: args.top]:
+        print(f"  {len(r['apps']):4d}  {r['dll']}!{r['fn']}  ({', '.join(r['apps'])})")
     for title, key in (
         ("Windows modules we do not build", "missing_modules"),
         ("redistributables (VC++/DirectX runtimes, not OS surface)", "redistributables"),

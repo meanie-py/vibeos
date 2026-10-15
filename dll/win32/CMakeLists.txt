@@ -203,7 +203,9 @@ add_subdirectory(setupapi)
 add_subdirectory(sfc)
 add_subdirectory(sfc_os)
 add_subdirectory(sfcfiles)
-#add_subdirectory(shcore)
+# shcore alone is built, against ole32 rather than combase: programs import
+# shcore.dll directly (GetDpiForMonitor & co.), and it needs nothing from the split.
+add_subdirectory(shcore)
 add_subdirectory(shdoclc)
 add_subdirectory(shdocvw)
 add_subdirectory(shell32)

@@ -40,6 +40,7 @@ extern "fastcall" {
     // nm: `@co_IntSendMessage@16` / `@co_IntSendMessageNoWait@16` (message.c)
     fn co_IntSendMessage(hWnd: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> isize;
     fn co_IntSendMessageNoWait(hWnd: HWND, Msg: u32, wParam: usize, lParam: isize) -> isize;
+    fn UserPostMessage(Wnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> BOOL;
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
@@ -49,6 +50,112 @@ extern "C" {
     fn DIB_FreeConvertedBitmapInfo(converted: *mut BITMAPINFO, orig: *mut BITMAPINFO, Usage: DWORD);
     fn co_IntSendMessage(hWnd: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> isize;
     fn co_IntSendMessageNoWait(hWnd: HWND, Msg: u32, wParam: usize, lParam: isize) -> isize;
+    fn UserPostMessage(Wnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> BOOL;
+}
+
+// ---- clipboard format listeners (Vista: AddClipboardFormatListener) ----
+//
+// Windows keeps a per-window-station list of windows that are posted
+// WM_CLIPBOARDUPDATE whenever the clipboard contents change; it is the modern
+// replacement for the WM_DRAWCLIPBOARD viewer chain and needs no cooperation
+// between the registered windows. Ours is one list for all window stations, keyed
+// by station, touched only under the exclusive user lock. Entries hold the HWND
+// rather than the PWND, and a window leaves the list when it is freed
+// (UserClipboardFreeWindow), so a notification never reaches a dead window.
+
+/// The NtUserCallHwnd routines user32 reaches these through. Outside the
+/// SimpleCallRoutines enum, as HWNDLOCK_ROUTINE_SETFOREGROUNDWINDOWMOUSE is, so that no
+/// existing routine number moves.
+pub const HWND_ROUTINE_ADDCLIPBOARDFORMATLISTENER: DWORD = 0xfffd_0060;
+pub const HWND_ROUTINE_REMOVECLIPBOARDFORMATLISTENER: DWORD = 0xfffd_0061;
+
+// USERTAG_CLIPBOARD again: listener nodes are clipboard state.
+#[repr(C)]
+struct ClipListener {
+    next: *mut ClipListener,
+    winsta: PWINSTATION_OBJECT,
+    hwnd: HWND,
+}
+
+static mut CLIP_LISTENERS: *mut ClipListener = core::ptr::null_mut();
+
+/// Caller holds the user lock exclusively. Wine's semantics: registering a window
+/// twice, or removing one that is not registered, is ERROR_INVALID_PARAMETER.
+pub unsafe fn UserAddClipboardFormatListener(hWnd: HWND) -> BOOL {
+    let pWindow = UserGetWindowObject(hWnd);
+    if pWindow.is_null() {
+        return FALSE as BOOL;
+    }
+    let pWinStaObj = IntGetWinStaForCbAccess();
+    if pWinStaObj.is_null() {
+        return FALSE as BOOL;
+    }
+    let hwnd = UserHMGetHandle(pWindow);
+    let mut node = CLIP_LISTENERS;
+    while !node.is_null() {
+        if (*node).hwnd == hwnd {
+            ObDereferenceObject(pWinStaObj as PVOID);
+            EngSetLastError(ERROR_INVALID_PARAMETER);
+            return FALSE as BOOL;
+        }
+        node = (*node).next;
+    }
+    let new = ExAllocatePoolWithTag(
+        PagedPool,
+        core::mem::size_of::<ClipListener>() as SIZE_T,
+        USERTAG_CLIPBOARD,
+    ) as *mut ClipListener;
+    if new.is_null() {
+        ObDereferenceObject(pWinStaObj as PVOID);
+        EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
+        return FALSE as BOOL;
+    }
+    (*new).next = CLIP_LISTENERS;
+    (*new).winsta = pWinStaObj;
+    (*new).hwnd = hwnd;
+    CLIP_LISTENERS = new;
+    ObDereferenceObject(pWinStaObj as PVOID);
+    TRUE as BOOL
+}
+
+/// Unlinks `hwnd`'s entry; FALSE if it had none.
+unsafe fn IntRemoveClipboardListener(hwnd: HWND) -> bool {
+    let mut link: *mut *mut ClipListener = &raw mut CLIP_LISTENERS;
+    while !(*link).is_null() {
+        let node = *link;
+        if (*node).hwnd == hwnd {
+            *link = (*node).next;
+            ExFreePoolWithTag(node as PVOID, USERTAG_CLIPBOARD);
+            return true;
+        }
+        link = &raw mut (*node).next;
+    }
+    false
+}
+
+/// Caller holds the user lock exclusively.
+pub unsafe fn UserRemoveClipboardFormatListener(hWnd: HWND) -> BOOL {
+    let pWindow = UserGetWindowObject(hWnd);
+    if pWindow.is_null() {
+        return FALSE as BOOL;
+    }
+    if !IntRemoveClipboardListener(UserHMGetHandle(pWindow)) {
+        EngSetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE as BOOL;
+    }
+    TRUE as BOOL
+}
+
+/// Posts WM_CLIPBOARDUPDATE to every listener on `pWinStaObj`: at the same points the
+/// viewer chain is sent WM_DRAWCLIPBOARD.
+unsafe fn IntNotifyClipboardListeners(pWinStaObj: PWINSTATION_OBJECT) {
+    let mut node = CLIP_LISTENERS;
+    while !node.is_null() {
+        if (*node).winsta == pWinStaObj {
+            UserPostMessage((*node).hwnd, WM_CLIPBOARDUPDATE, 0, 0);
+        }
+        node = (*node).next;
+    }
 }
 
 // ---- file-scope preamble (translated) ----
@@ -559,6 +666,7 @@ unsafe fn UserClipboardReleaseImpl(pWindow: PWND) {
                 0,
             );
         }
+        IntNotifyClipboardListeners(pWinStaObj);
     }
 
     ObDereferenceObject(pWinStaObj as PVOID);
@@ -578,6 +686,12 @@ pub unsafe extern "C" fn UserClipboardFreeWindow(pWindow: PWND) {
 
 unsafe fn UserClipboardFreeWindowImpl(pWindow: PWND) {
     let pWinStaObj: PWINSTATION_OBJECT;
+
+    // Before the station lookup, which fails during process teardown: a listener
+    // entry must not outlive its window.
+    if !pWindow.is_null() {
+        IntRemoveClipboardListener(UserHMGetHandle(pWindow));
+    }
 
     pWinStaObj = IntGetWinStaForCbAccess();
     if pWinStaObj.is_null() {
@@ -730,6 +844,7 @@ pub unsafe extern "system" fn UserCloseClipboard() -> BOOL {
                     0,
                 );
             }
+            IntNotifyClipboardListeners(pWinStaObj);
         }
     }
 

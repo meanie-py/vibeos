@@ -2317,3 +2317,31 @@ HRESULT WINAPI UiaDisconnectProvider(IRawElementProviderSimple *elprov)
 
     return S_OK;
 }
+
+/***********************************************************************
+ *          UiaDisconnectAllProviders (uiautomationcore.@)
+ *
+ * Disconnects every provider node this process hosts, one at a time, the same way
+ * UiaDisconnectProvider disconnects one. Wine's body is a FIXME that returns S_OK without
+ * disconnecting anything; this one walks the provider-thread node map so the S_OK is true.
+ */
+HRESULT WINAPI UiaDisconnectAllProviders(void)
+{
+    struct rb_entry *rb_entry;
+
+    TRACE("\n");
+
+    /* Held across the walk (the section is recursive, and the helper re-enters it):
+     * dropping it between reading the head and disconnecting it would let another
+     * thread free that entry's runtime id first. */
+    EnterCriticalSection(&provider_thread_cs);
+    while (provider_thread.ref && (rb_entry = rb_head(provider_thread.node_map.root)))
+    {
+        /* Removes the map entry, so the head moves on and the loop terminates. */
+        uia_provider_thread_disconnect_node(
+            RB_ENTRY_VALUE(rb_entry, struct uia_provider_thread_map_entry, entry)->runtime_id);
+    }
+    LeaveCriticalSection(&provider_thread_cs);
+
+    return S_OK;
+}

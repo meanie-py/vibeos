@@ -95,3 +95,17 @@ pub unsafe extern "system" fn GetSecurityUserInfo(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// SetCredentialsAttributesW sets attributes on a credential handle by dispatching to the security
+// package that owns it. None of the packages this tree ships has the entry (the v1 package tables
+// carry no SetCredentialsAttributes slot), so the call is unsupported, as Windows reports for a
+// package without it.
+#[no_mangle]
+pub unsafe extern "system" fn SetCredentialsAttributesW(
+    phCredential: PCredHandle,
+    ulAttribute: ULONG,
+    pBuffer: PVOID,
+    cbBuffer: ULONG,
+) -> SECURITY_STATUS {
+    SEC_E_UNSUPPORTED_FUNCTION
+}

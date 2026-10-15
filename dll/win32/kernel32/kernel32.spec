@@ -5,6 +5,7 @@
 @ stdcall AddAtomW(wstr)
 @ stdcall AddConsoleAliasA(str str str) ;check
 @ stdcall AddConsoleAliasW(wstr wstr wstr) ;check
+@ stdcall AddDllDirectory(wstr)
 @ stdcall AddLocalAlternateComputerNameA(str ptr)
 @ stdcall AddLocalAlternateComputerNameW(wstr ptr)
 @ stdcall AddRefActCtx(ptr)
@@ -77,6 +78,7 @@
 @ stdcall ClearCommError(long ptr ptr)
 @ stdcall CloseConsoleHandle(long)
 @ stdcall CloseHandle(long)
+@ stdcall ClosePackageInfo(ptr)
 @ stdcall -stub -version=0x600+ ClosePrivateNamespace(ptr long)
 @ stdcall CloseProfileUserMapping()
 @ stdcall -version=0x600+ CloseThreadpool(ptr) ntdll.TpReleasePool
@@ -113,6 +115,8 @@
 @ stdcall -stub -version=0x600+ ConvertSystemTimeToCalDateTime(ptr long ptr)
 @ stdcall ConvertThreadToFiber(ptr)
 @ stdcall ConvertThreadToFiberEx(ptr long)
+@ stdcall CopyContext(ptr long ptr)
+@ stdcall CopyFile2(wstr wstr ptr)
 @ stdcall CopyFileA(str str long)
 @ stdcall CopyFileExA(str str ptr ptr ptr long)
 @ stdcall CopyFileExW(wstr wstr ptr ptr ptr long)
@@ -329,6 +333,7 @@
 @ stdcall FindNextVolumeMountPointA(long str long)
 @ stdcall FindNextVolumeMountPointW(long wstr long)
 @ stdcall FindNextVolumeW(long ptr long)
+@ stdcall FindPackagesByPackageFamily(wstr long ptr ptr ptr ptr ptr)
 @ stdcall FindResourceA(long str str)
 @ stdcall FindResourceExA(long str str long)
 @ stdcall FindResourceExW(long wstr wstr long)
@@ -443,10 +448,15 @@
 @ stdcall GetCurrencyFormatW(long long wstr ptr wstr long)
 @ stdcall GetCurrentActCtx(ptr)
 @ stdcall GetCurrentConsoleFont(long long ptr)
-@ stdcall -version=0x600+ GetCurrentConsoleFontEx(ptr long ptr)
+@ stdcall GetCurrentConsoleFontEx(ptr long ptr)
 @ stdcall GetCurrentDirectoryA(long ptr)
 @ stdcall GetCurrentDirectoryW(long ptr)
+@ stdcall GetCurrentPackageFamilyName(ptr ptr)
+@ stdcall GetCurrentPackageFullName(ptr ptr)
 @ stdcall GetCurrentPackageId(ptr ptr)
+@ stdcall GetCurrentPackageInfo(long ptr ptr ptr)
+@ stdcall GetCurrentPackagePath(ptr ptr)
+@ stdcall GetCurrentPackageVirtualizationContext()
 @ stdcall -norelay GetCurrentProcess()
 @ stdcall -norelay GetCurrentProcessId()
 @ stdcall GetCurrentProcessorNumber() ntdll.RtlGetCurrentProcessorNumber
@@ -566,6 +576,14 @@
 @ stdcall GetNumberOfConsoleMouseButtons(ptr)
 @ stdcall GetOEMCP()
 @ stdcall GetOverlappedResult(long ptr ptr long)
+@ stdcall GetPackageApplicationIds(ptr ptr ptr ptr)
+@ stdcall GetPackageFamilyName(long ptr ptr)
+@ stdcall GetPackageFullName(long ptr ptr)
+@ stdcall GetPackageId(ptr ptr ptr)
+@ stdcall GetPackageInfo(ptr long ptr ptr ptr)
+@ stdcall GetPackagePath(ptr long ptr ptr)
+@ stdcall GetPackagePathByFullName(wstr ptr ptr)
+@ stdcall GetPackagesByPackageFamily(wstr ptr ptr ptr ptr)
 @ stdcall -stub -version=0x600+ GetPhysicallyInstalledSystemMemory(ptr)
 @ stdcall GetPriorityClass(long)
 @ stdcall GetPrivateProfileIntA(str str long str)
@@ -588,13 +606,14 @@
 @ stdcall GetProcessId(long)
 @ stdcall GetProcessIdOfThread(ptr)
 @ stdcall GetProcessIoCounters(long ptr)
+@ stdcall GetProcessMitigationPolicy(long long ptr long)
 @ stdcall GetProcessPriorityBoost(long ptr)
 @ stdcall GetProcessShutdownParameters(ptr ptr)
 @ stdcall GetProcessTimes(long ptr ptr ptr ptr)
 @ stdcall GetProcessVersion(long)
 @ stdcall GetProcessWorkingSetSize(long ptr ptr)
 @ stdcall GetProcessWorkingSetSizeEx(long ptr ptr long)
-@ stdcall -version=0x600+ GetProductInfo(long long long long ptr) ntdll.RtlGetProductInfo
+@ stdcall GetProductInfo(long long long long ptr) ntdll.RtlGetProductInfo
 @ stdcall GetProfileIntA(str str long)
 @ stdcall GetProfileIntW(wstr wstr long)
 @ stdcall GetProfileSectionA(str ptr long)
@@ -605,6 +624,7 @@
 @ stdcall GetQueuedCompletionStatusEx(ptr ptr long ptr long long)
 @ stdcall GetShortPathNameA(str ptr long)
 @ stdcall GetShortPathNameW(wstr ptr long)
+@ stdcall GetStagedPackagePathByFullName(wstr ptr ptr)
 @ stdcall GetStartupInfoA(ptr)
 @ stdcall GetStartupInfoW(ptr)
 @ stdcall GetStdHandle(long)
@@ -684,6 +704,7 @@
 @ stdcall GetWindowsDirectoryA(ptr long)
 @ stdcall GetWindowsDirectoryW(ptr long)
 @ stdcall GetWriteWatch(long ptr long ptr ptr ptr)
+@ stdcall GetXStateFeaturesMask(ptr ptr)
 @ stdcall GlobalAddAtomA(str)
 @ stdcall GlobalAddAtomW(wstr)
 @ stdcall GlobalAlloc(long long)
@@ -728,15 +749,17 @@
 @ stdcall -version=0x351-0x502 HeapUsage(long long long long ptr)
 @ stdcall HeapValidate(long long ptr)
 @ stdcall HeapWalk(long ptr)
-@ stdcall -stub -version=0x600+ IdnToAscii(long wstr long ptr long)
-@ stdcall -stub -version=0x600+ IdnToNameprepUnicode(long wstr long ptr long)
-@ stdcall -stub -version=0x600+ IdnToUnicode(long wstr long ptr long)
+@ stdcall IdnToAscii(long wstr long ptr long)
+@ stdcall IdnToNameprepUnicode(long wstr long ptr long)
+@ stdcall IdnToUnicode(long wstr long ptr long)
 @ stdcall InitAtomTable(long)
 @ stdcall -version=0x600+ InitOnceBeginInitialize(ptr long ptr ptr)
 @ stdcall -version=0x600+ InitOnceComplete(ptr long ptr)
 @ stdcall -version=0x600+ InitOnceExecuteOnce(ptr ptr ptr ptr)
 @ stdcall -version=0x600+ InitOnceInitialize(ptr) ntdll.RtlRunOnceInitialize
 @ stdcall -version=0x600+ InitializeConditionVariable(ptr) ntdll.RtlInitializeConditionVariable
+@ stdcall InitializeContext(ptr long ptr ptr)
+@ stdcall InitializeContext2(ptr long ptr ptr int64)
 @ stdcall InitializeCriticalSection(ptr)
 @ stdcall InitializeCriticalSectionAndSpinCount(ptr long)
 @ stdcall -version=0x600+ InitializeCriticalSectionEx(ptr long long)
@@ -752,7 +775,8 @@
 @ stdcall -arch=i386 InterlockedIncrement(ptr)
 @ stdcall InterlockedPopEntrySList(ptr) ntdll.RtlInterlockedPopEntrySList
 @ stdcall InterlockedPushEntrySList(ptr ptr) ntdll.RtlInterlockedPushEntrySList
-@ fastcall -version=0x600+ InterlockedPushListSList(ptr ptr ptr long) ntdll.RtlInterlockedPushListSList
+@ fastcall InterlockedPushListSList(ptr ptr ptr long) ntdll.RtlInterlockedPushListSList
+@ stdcall InterlockedPushListSListEx(ptr ptr ptr long) ntdll.RtlInterlockedPushListSListEx
 @ stdcall InvalidateConsoleDIBits(long long)
 @ stdcall IsBadCodePtr(ptr)
 @ stdcall IsBadHugeReadPtr(ptr long)
@@ -786,7 +810,7 @@
 @ stdcall K32EnumPageFilesA(ptr ptr) EnumPageFilesA
 @ stdcall K32EnumPageFilesW(ptr ptr) EnumPageFilesW
 @ stdcall K32EnumProcessModules(long ptr long ptr) EnumProcessModules
-@ stdcall -stub -version=0x601+ K32EnumProcessModulesEx(long ptr long ptr long); EnumProcessModulesEx
+@ stdcall K32EnumProcessModulesEx(long ptr long ptr long) EnumProcessModulesEx
 @ stdcall K32EnumProcesses(ptr long ptr) EnumProcesses
 @ stdcall K32GetDeviceDriverBaseNameA(ptr ptr long) GetDeviceDriverBaseNameA
 @ stdcall K32GetDeviceDriverBaseNameW(ptr ptr long) GetDeviceDriverBaseNameW
@@ -845,6 +869,7 @@
 @ stdcall LocalSize(long)
 @ stdcall LocalUnlock(long)
 @ stdcall -version=0x600+ LocaleNameToLCID(wstr long)
+@ stdcall LocateXStateFeature(ptr long ptr)
 @ stdcall LockFile(long long long long long)
 @ stdcall LockFileEx(long long long long long ptr)
 @ stdcall LockResource(long)
@@ -891,6 +916,7 @@
 @ stdcall OpenJobObjectW(long long wstr)
 @ stdcall OpenMutexA(long long str)
 @ stdcall OpenMutexW(long long wstr)
+@ stdcall OpenPackageInfoByFullName(wstr long ptr)
 @ stub -version=0x600+ OpenPrivateNamespaceA
 @ stub -version=0x600+ OpenPrivateNamespaceW
 @ stdcall OpenProcess(long long long)
@@ -902,6 +928,30 @@
 @ stdcall OpenWaitableTimerW(long long wstr)
 @ stdcall OutputDebugStringA(str)
 @ stdcall OutputDebugStringW(wstr)
+@ stdcall PackageFamilyNameFromFullName(wstr ptr ptr)
+@ stdcall PackageNameAndPublisherIdFromFamilyName(wstr ptr ptr ptr ptr)
+@ stdcall PathAllocCanonicalize(wstr long ptr)
+@ stdcall PathAllocCombine(wstr wstr long ptr)
+@ stdcall PathCchAddBackslash(wstr long)
+@ stdcall PathCchAddBackslashEx(wstr long ptr ptr)
+@ stdcall PathCchAddExtension(wstr long wstr)
+@ stdcall PathCchAppend(wstr long wstr)
+@ stdcall PathCchAppendEx(wstr long wstr long)
+@ stdcall PathCchCanonicalize(ptr long wstr)
+@ stdcall PathCchCanonicalizeEx(ptr long wstr long)
+@ stdcall PathCchCombine(ptr long wstr wstr)
+@ stdcall PathCchCombineEx(ptr long wstr wstr long)
+@ stdcall PathCchFindExtension(wstr long ptr)
+@ stdcall PathCchIsRoot(wstr)
+@ stdcall PathCchRemoveBackslash(wstr long)
+@ stdcall PathCchRemoveBackslashEx(wstr long ptr ptr)
+@ stdcall PathCchRemoveExtension(wstr long)
+@ stdcall PathCchRemoveFileSpec(wstr long)
+@ stdcall PathCchRenameExtension(wstr long wstr)
+@ stdcall PathCchSkipRoot(wstr ptr)
+@ stdcall PathCchStripPrefix(wstr long)
+@ stdcall PathCchStripToRoot(wstr long)
+@ stdcall PathIsUNCEx(wstr ptr)
 @ stdcall PeekConsoleInputA(ptr ptr long ptr)
 @ stdcall PeekConsoleInputW(ptr ptr long ptr)
 @ stdcall PeekNamedPipe(long ptr long ptr ptr ptr)
@@ -914,6 +964,16 @@
 @ stdcall Process32Next(ptr ptr)
 @ stdcall Process32NextW(ptr ptr)
 @ stdcall ProcessIdToSessionId(long ptr)
+@ stdcall PssCaptureSnapshot(long long long ptr)
+@ stdcall PssDuplicateSnapshot(long long long ptr long)
+@ stdcall PssFreeSnapshot(long long)
+@ stdcall PssQuerySnapshot(long long ptr long)
+@ stdcall PssWalkMarkerCreate(ptr ptr)
+@ stdcall PssWalkMarkerFree(long)
+@ stdcall PssWalkMarkerGetPosition(long ptr)
+@ stdcall PssWalkMarkerSeekToBeginning(long)
+@ stdcall PssWalkMarkerSetPosition(long long)
+@ stdcall PssWalkSnapshot(long long long ptr long)
 @ stdcall PulseEvent(long)
 @ stdcall PurgeComm(long long)
 @ stub -version=0x600+ QueryActCtxSettingsW
@@ -973,6 +1033,7 @@
 @ stub -version=0x600+ RemoveDirectoryTransactedA
 @ stub -version=0x600+ RemoveDirectoryTransactedW
 @ stdcall RemoveDirectoryW(wstr)
+@ stdcall RemoveDllDirectory(ptr)
 @ stdcall RemoveLocalAlternateComputerNameA(str long)
 @ stdcall RemoveLocalAlternateComputerNameW(wstr long)
 @ stub -version=0x600+ RemoveSecureMemoryCacheCallback
@@ -986,6 +1047,7 @@
 @ stdcall RequestWakeupLatency(long)
 @ stdcall ResetEvent(long)
 @ stdcall ResetWriteWatch(ptr long)
+@ stdcall ResolveLocaleName(wstr ptr long)
 @ stdcall RestoreLastError(long) ntdll.RtlRestoreLastWin32Error
 @ stdcall ResumeThread(long)
 @ stdcall -arch=x86_64,arm64 RtlAddFunctionTable(ptr long long) ntdll.RtlAddFunctionTable
@@ -1061,6 +1123,7 @@
 @ stdcall SetCurrentDirectoryW(wstr)
 @ stdcall SetDefaultCommConfigA(str ptr long)
 @ stdcall SetDefaultCommConfigW(wstr ptr long)
+@ stdcall SetDefaultDllDirectories(long)
 @ stdcall SetDllDirectoryA(str)
 @ stdcall SetDllDirectoryW(wstr)
 @ stub -version=0x600+ SetDynamicTimeZoneInformation
@@ -1111,6 +1174,7 @@
 @ stdcall SetProcessAffinityMask(long long)
 @ stub -version=0x600+ SetProcessAffinityUpdateMode
 @ stdcall SetProcessDEPPolicy(long)
+@ stdcall SetProcessMitigationPolicy(long ptr long)
 @ stdcall SetProcessPriorityBoost(long long)
 @ stdcall SetProcessShutdownParameters(long long)
 @ stdcall SetProcessWorkingSetSize(long long long)
@@ -1153,6 +1217,8 @@
 @ stdcall SetVolumeMountPointW(wstr wstr)
 @ stdcall SetWaitableTimer(long ptr long ptr ptr long)
 @ stdcall SetupComm(long long long)
+@ stdcall SetWaitableTimerEx(long ptr long ptr ptr ptr long)
+@ stdcall SetXStateFeaturesMask(ptr int64)
 @ stdcall ShowConsoleCursor(long long)
 @ stdcall SignalObjectAndWait(long long long long)
 @ stdcall SizeofResource(long long)
@@ -1191,6 +1257,7 @@
 @ stdcall UnlockFile(long long long long long)
 @ stdcall UnlockFileEx(long long long long ptr)
 @ stdcall UnmapViewOfFile(ptr)
+@ stdcall UnmapViewOfFileEx(ptr long)
 @ stub -version=0x600+ UnregisterApplicationRecoveryCallback
 @ stub -version=0x600+ UnregisterApplicationRestart
 @ stdcall UnregisterConsoleIME()
@@ -1354,7 +1421,6 @@
 # DLL_EXPORT_VERSION 0xA00; give a name a real line above and re-run to drop it.
 @ stub -version=0xA00+ ActivateActCtxWorker
 @ stub -version=0xA00+ ActivatePackageVirtualizationContext
-@ stub -version=0xA00+ AddDllDirectory # -> api-ms-win-core-libraryloader-l1-1-0.AddDllDirectory
 @ stub -version=0xA00+ AddIntegrityLabelToBoundaryDescriptor
 @ stub -version=0xA00+ AddRefActCtxWorker
 @ stub -version=0xA00+ AddResourceAttributeAce
@@ -1449,11 +1515,8 @@
 @ stub -version=0xA00+ CheckTokenCapability
 @ stub -version=0xA00+ CheckTokenMembershipEx
 @ stub -version=0xA00+ CloseIoRing # -> api-ms-win-core-ioring-l1-1-0.CloseIoRing
-@ stub -version=0xA00+ ClosePackageInfo # -> kernelbase.ClosePackageInfo
 @ stub -version=0xA00+ ClosePseudoConsole
 @ stub -version=0xA00+ CloseState # -> kernelbase.CloseState
-@ stub -version=0xA00+ CopyContext
-@ stub -version=0xA00+ CopyFile2
 @ stub -version=0xA00+ CreateActCtxWWorker
 @ stub -version=0xA00+ CreateDirectory2A
 @ stub -version=0xA00+ CreateDirectory2W
@@ -1486,7 +1549,6 @@
 @ stub -arch=win64 -version=0xA00+ ExecuteUmsThread
 @ stub -version=0xA00+ FindActCtxSectionGuidWorker
 @ stub -version=0xA00+ FindActCtxSectionStringWWorker
-@ stub -version=0xA00+ FindPackagesByPackageFamily # -> kernelbase.FindPackagesByPackageFamily
 @ stub -version=0xA00+ FindStringOrdinal
 @ stub -version=0xA00+ FlsGetValue2 # -> kernelbase.FlsGetValue2
 @ stub -version=0xA00+ FormatApplicationUserModelId # -> kernelbase.FormatApplicationUserModelId
@@ -1499,11 +1561,6 @@
 @ stub -version=0xA00+ GetCachedSigningLevel
 @ stub -version=0xA00+ GetCurrentActCtxWorker
 @ stub -version=0xA00+ GetCurrentApplicationUserModelId # -> kernelbase.GetCurrentApplicationUserModelId
-@ stub -version=0xA00+ GetCurrentPackageFamilyName # -> kernelbase.GetCurrentPackageFamilyName
-@ stub -version=0xA00+ GetCurrentPackageFullName # -> kernelbase.GetCurrentPackageFullName
-@ stub -version=0xA00+ GetCurrentPackageInfo # -> kernelbase.GetCurrentPackageInfo
-@ stub -version=0xA00+ GetCurrentPackagePath # -> kernelbase.GetCurrentPackagePath
-@ stub -version=0xA00+ GetCurrentPackageVirtualizationContext
 @ stub -arch=win64 -version=0xA00+ GetCurrentUmsThread
 @ stub -version=0xA00+ GetDateFormatAWorker
 @ stub -version=0xA00+ GetDateFormatWWorker
@@ -1522,21 +1579,11 @@
 @ stub -version=0xA00+ GetNumaNodeProcessorMask2 # -> api-ms-win-core-systemtopology-l1-1-2.GetNumaNodeProcessorMask2
 @ stub -version=0xA00+ GetNumaProximityNodeEx
 @ stub -version=0xA00+ GetOverlappedResultEx # -> api-ms-win-core-io-l1-1-1.GetOverlappedResultEx
-@ stub -version=0xA00+ GetPackageApplicationIds # -> kernelbase.GetPackageApplicationIds
-@ stub -version=0xA00+ GetPackageFamilyName # -> kernelbase.GetPackageFamilyName
-@ stub -version=0xA00+ GetPackageFullName # -> kernelbase.GetPackageFullName
-@ stub -version=0xA00+ GetPackageId # -> kernelbase.GetPackageId
-@ stub -version=0xA00+ GetPackageInfo # -> kernelbase.GetPackageInfo
-@ stub -version=0xA00+ GetPackagePath # -> kernelbase.GetPackagePath
-@ stub -version=0xA00+ GetPackagePathByFullName # -> kernelbase.GetPackagePathByFullName
-@ stub -version=0xA00+ GetPackagesByPackageFamily # -> kernelbase.GetPackagesByPackageFamily
 @ stub -version=0xA00+ GetProcessDefaultCpuSetMasks # -> api-ms-win-core-processthreads-l1-1-6.GetProcessDefaultCpuSetMasks
 @ stub -version=0xA00+ GetProcessDefaultCpuSets # -> api-ms-win-core-processthreads-l1-1-3.GetProcessDefaultCpuSets
-@ stub -version=0xA00+ GetProcessMitigationPolicy # -> api-ms-win-core-processthreads-l1-1-1.GetProcessMitigationPolicy
 @ stub -version=0xA00+ GetProcessPreferredUILanguages
 @ stub -version=0xA00+ GetProcessesInVirtualizationContext
 @ stub -version=0xA00+ GetProcessorSystemCycleTime # -> api-ms-win-core-sysinfo-l1-2-2.GetProcessorSystemCycleTime
-@ stub -version=0xA00+ GetStagedPackagePathByFullName # -> kernelbase.GetStagedPackagePathByFullName
 @ stub -version=0xA00+ GetStateFolder # -> kernelbase.GetStateFolder
 @ stub -version=0xA00+ GetSystemAppDataKey # -> kernelbase.GetSystemAppDataKey
 @ stub -version=0xA00+ GetSystemCpuSetInformation # -> api-ms-win-core-processthreads-l1-1-3.GetSystemCpuSetInformation
@@ -1550,15 +1597,11 @@
 @ stub -arch=win64 -version=0xA00+ GetUmsCompletionListEvent
 @ stub -arch=win64 -version=0xA00+ GetUmsSystemThreadInformation
 @ stub -version=0xA00+ GetUserDefaultGeoName
-@ stub -version=0xA00+ GetXStateFeaturesMask
 @ stub -version=0xA00+ GlobalAddAtomExA
 @ stub -version=0xA00+ GlobalAddAtomExW
-@ stub -version=0xA00+ InitializeContext
-@ stub -version=0xA00+ InitializeContext2
 @ stub -version=0xA00+ InitializeEnclave # -> api-ms-win-core-enclave-l1-1-0.InitializeEnclave
 @ stub -version=0xA00+ InitializeSynchronizationBarrier
 @ stub -version=0xA00+ InstallELAMCertificateInfo # -> api-ms-win-core-sysinfo-l1-2-1.InstallELAMCertificateInfo
-@ stub -version=0xA00+ InterlockedPushListSListEx # -> NTDLL.RtlInterlockedPushListSListEx
 @ stub -version=0xA00+ IsEnclaveTypeSupported # -> api-ms-win-core-enclave-l1-1-0.IsEnclaveTypeSupported
 @ stub -version=0xA00+ IsIoRingOpSupported # -> api-ms-win-core-ioring-l1-1-0.IsIoRingOpSupported
 @ stub -version=0xA00+ IsNativeVhdBoot
@@ -1572,7 +1615,6 @@
 @ stub -version=0xA00+ LoadPackagedLibrary
 @ stub -version=0xA00+ LocalFileTimeToLocalSystemTime # -> api-ms-win-core-timezone-l1-1-1.LocalFileTimeToLocalSystemTime
 @ stub -version=0xA00+ LocalSystemTimeToLocalFileTime # -> api-ms-win-core-timezone-l1-1-1.LocalSystemTimeToLocalFileTime
-@ stub -version=0xA00+ LocateXStateFeature
 @ stub -version=0xA00+ LogUnexpectedCodepath # -> NTDLL.RtlLogUnexpectedCodepath
 @ stub -version=0xA00+ MapViewOfFileFromApp # -> api-ms-win-core-memory-l1-1-1.MapViewOfFileFromApp
 @ stub -version=0xA00+ NotifyMountMgr
@@ -1580,29 +1622,16 @@
 @ stub -version=0xA00+ OOBEComplete
 @ stub -version=0xA00+ OfferVirtualMemory # -> api-ms-win-core-memory-l1-1-2.OfferVirtualMemory
 @ stub -version=0xA00+ OpenConsoleWStub
-@ stub -version=0xA00+ OpenPackageInfoByFullName # -> kernelbase.OpenPackageInfoByFullName
 @ stub -version=0xA00+ OpenState # -> kernelbase.OpenState
 @ stub -version=0xA00+ OpenStateExplicit # -> kernelbase.OpenStateExplicit
-@ stub -version=0xA00+ PackageFamilyNameFromFullName # -> kernelbase.PackageFamilyNameFromFullName
 @ stub -version=0xA00+ PackageFamilyNameFromId # -> kernelbase.PackageFamilyNameFromId
 @ stub -version=0xA00+ PackageFullNameFromId # -> kernelbase.PackageFullNameFromId
 @ stub -version=0xA00+ PackageIdFromFullName # -> kernelbase.PackageIdFromFullName
-@ stub -version=0xA00+ PackageNameAndPublisherIdFromFamilyName # -> kernelbase.PackageNameAndPublisherIdFromFamilyName
 @ stub -version=0xA00+ ParseApplicationUserModelId # -> kernelbase.ParseApplicationUserModelId
 @ stub -version=0xA00+ PopIoRingCompletion # -> api-ms-win-core-ioring-l1-1-0.PopIoRingCompletion
-@ stub -version=0xA00+ PssCaptureSnapshot
-@ stub -version=0xA00+ PssDuplicateSnapshot
-@ stub -version=0xA00+ PssFreeSnapshot
-@ stub -version=0xA00+ PssQuerySnapshot
-@ stub -version=0xA00+ PssWalkMarkerCreate
-@ stub -version=0xA00+ PssWalkMarkerFree
-@ stub -version=0xA00+ PssWalkMarkerGetPosition
 @ stub -version=0xA00+ PssWalkMarkerRewind
 @ stub -version=0xA00+ PssWalkMarkerSeek
-@ stub -version=0xA00+ PssWalkMarkerSeekToBeginning
-@ stub -version=0xA00+ PssWalkMarkerSetPosition
 @ stub -version=0xA00+ PssWalkMarkerTell
-@ stub -version=0xA00+ PssWalkSnapshot
 @ stub -version=0xA00+ QueryActCtxSettingsWWorker
 @ stub -version=0xA00+ QueryActCtxWWorker
 @ stub -version=0xA00+ QueryIdleProcessorCycleTimeEx
@@ -1635,23 +1664,19 @@
 @ stub -version=0xA00+ ReleasePseudoConsole
 @ stub -version=0xA00+ RemoveDirectory2A
 @ stub -version=0xA00+ RemoveDirectory2W
-@ stub -version=0xA00+ RemoveDllDirectory # -> api-ms-win-core-libraryloader-l1-1-0.RemoveDllDirectory
 @ stub -version=0xA00+ ResizePseudoConsole
 @ stub -version=0xA00+ ResolveDelayLoadedAPI # -> NTDLL.LdrResolveDelayLoadedAPI
 @ stub -version=0xA00+ ResolveDelayLoadsFromDll # -> NTDLL.LdrResolveDelayLoadsFromDll
-@ stub -version=0xA00+ ResolveLocaleName
 @ stub -arch=win64 -version=0xA00+ RtlIsEcCode # -> NTDLL.RtlIsEcCode
 @ stub -arch=win64 -version=0xA00+ RtlVirtualUnwind2
 @ stub -version=0xA00+ SetCachedSigningLevel
 @ stub -version=0xA00+ SetComputerNameEx2W
-@ stub -version=0xA00+ SetDefaultDllDirectories # -> api-ms-win-core-libraryloader-l1-1-0.SetDefaultDllDirectories
 @ stub -version=0xA00+ SetIoRateControlInformationJobObject
 @ stub -version=0xA00+ SetIoRingCompletionEvent # -> api-ms-win-core-ioring-l1-1-0.SetIoRingCompletionEvent
 @ stub -version=0xA00+ SetProcessDefaultCpuSetMasks # -> api-ms-win-core-processthreads-l1-1-6.SetProcessDefaultCpuSetMasks
 @ stub -version=0xA00+ SetProcessDefaultCpuSets # -> api-ms-win-core-processthreads-l1-1-3.SetProcessDefaultCpuSets
 @ stub -version=0xA00+ SetProcessDynamicEHContinuationTargets # -> api-ms-win-core-processthreads-l1-1-4.SetProcessDynamicEHContinuationTargets
 @ stub -version=0xA00+ SetProcessDynamicEnforcedCetCompatibleRanges # -> api-ms-win-core-processthreads-l1-1-6.SetProcessDynamicEnforcedCetCompatibleRanges
-@ stub -version=0xA00+ SetProcessMitigationPolicy # -> api-ms-win-core-processthreads-l1-1-1.SetProcessMitigationPolicy
 @ stub -version=0xA00+ SetProcessPreferredUILanguages
 @ stub -version=0xA00+ SetProtectedPolicy # -> api-ms-win-core-processthreads-l1-1-2.SetProtectedPolicy
 @ stub -version=0xA00+ SetThreadSelectedCpuSetMasks # -> api-ms-win-core-processthreads-l1-1-6.SetThreadSelectedCpuSetMasks
@@ -1662,8 +1687,6 @@
 @ stub -arch=win64 -version=0xA00+ SetUmsThreadInformation
 @ stub -version=0xA00+ SetUserGeoName
 @ stub -version=0xA00+ SetVolumeMountPointWStub
-@ stub -version=0xA00+ SetWaitableTimerEx # -> api-ms-win-core-synch-l1-1-0.SetWaitableTimerEx
-@ stub -version=0xA00+ SetXStateFeaturesMask
 @ stub -version=0xA00+ SortCloseHandle
 @ stub -version=0xA00+ SortGetHandle
 @ stub -version=0xA00+ SubmitIoRing # -> api-ms-win-core-ioring-l1-1-0.SubmitIoRing
@@ -1684,7 +1707,6 @@
 @ stub -version=0xA00+ TlsGetValue2 # -> kernelbase.TlsGetValue2
 @ stub -version=0xA00+ TzSpecificLocalTimeToSystemTimeEx # -> api-ms-win-core-timezone-l1-1-0.TzSpecificLocalTimeToSystemTimeEx
 @ stub -arch=win64 -version=0xA00+ UmsThreadYield
-@ stub -version=0xA00+ UnmapViewOfFileEx # -> api-ms-win-core-memory-l1-1-1.UnmapViewOfFileEx
 @ stub -version=0xA00+ UnregisterBadMemoryNotification
 @ stub -version=0xA00+ UnregisterWaitUntilOOBECompleted
 @ stub -version=0xA00+ WaitForDebugEventEx # -> api-ms-win-core-debug-l1-1-2.WaitForDebugEventEx

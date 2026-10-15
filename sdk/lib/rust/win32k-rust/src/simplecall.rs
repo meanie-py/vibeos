@@ -872,6 +872,20 @@ pub unsafe extern "system" fn NtUserCallHwnd(
             0
         }
 
+        crate::clipboard::HWND_ROUTINE_ADDCLIPBOARDFORMATLISTENER => {
+            UserEnterExclusive();
+            let Ret = crate::clipboard::UserAddClipboardFormatListener(hWnd);
+            UserLeave();
+            Ret as DWORD_PTR
+        }
+
+        crate::clipboard::HWND_ROUTINE_REMOVECLIPBOARDFORMATLISTENER => {
+            UserEnterExclusive();
+            let Ret = crate::clipboard::UserRemoveClipboardFormatListener(hWnd);
+            UserLeave();
+            Ret as DWORD_PTR
+        }
+
         HWND_ROUTINE_DWP_GETENABLEDPOPUP => {
             UserEnterShared();
             let mut pWnd: PWND = UserGetWindowObject(hWnd);

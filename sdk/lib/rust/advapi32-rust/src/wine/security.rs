@@ -1048,6 +1048,61 @@ pub unsafe extern "system" fn AddAccessDeniedAceEx(
     1
 }
 
+// SYSTEM_MANDATORY_LABEL_ACE (winnt.h): header(4) + mask(4) + SID. The mask holds the
+// integrity policy (NO_WRITE_UP=1, NO_READ_UP=2, NO_EXECUTE_UP=4); anything else is rejected.
+const SYSTEM_MANDATORY_LABEL_ACE_TYPE: u8 = 0x11;
+const SYSTEM_MANDATORY_LABEL_VALID_MASK: DWORD = 0x7;
+const SECURITY_MAX_SID_SIZE: usize = 68;
+
+// Wine's kernelbase AddMandatoryAce is RtlAddMandatoryAce(...SYSTEM_MANDATORY_LABEL_ACE_TYPE...).
+// Our ntdll exports RtlAddMandatoryAce only as a 0x600+ stub, so the ACE is built here and
+// appended with AddAce (which does the ACL-capacity and revision checks), as the ntdll body does.
+#[no_mangle]
+pub unsafe extern "system" fn AddMandatoryAce(
+    pAcl: PACL,
+    dwAceRevision: DWORD,
+    dwAceFlags: DWORD,
+    MandatoryPolicy: DWORD,
+    pSid: PSID,
+) -> BOOL {
+    if MandatoryPolicy & !SYSTEM_MANDATORY_LABEL_VALID_MASK != 0 {
+        SetLastError(ERROR_INVALID_PARAMETER as DWORD);
+        return FALSE as BOOL;
+    }
+    if RtlValidSid(pSid) == 0 {
+        SetLastError(ERROR_INVALID_SID as DWORD);
+        return FALSE as BOOL;
+    }
+    // A valid SID is at most SECURITY_MAX_SID_SIZE bytes, so the buffer below always fits it.
+    let sid_len = RtlLengthSid(pSid) as usize;
+    let ace_size = 4 + 4 + sid_len;
+    let mut buf = [0u8; 4 + 4 + SECURITY_MAX_SID_SIZE];
+    buf[0] = SYSTEM_MANDATORY_LABEL_ACE_TYPE;
+    buf[1] = dwAceFlags as u8;
+    buf[2..4].copy_from_slice(&(ace_size as u16).to_le_bytes());
+    buf[4..8].copy_from_slice(&MandatoryPolicy.to_le_bytes());
+    core::ptr::copy_nonoverlapping(pSid as *const u8, buf.as_mut_ptr().add(8), sid_len);
+    AddAce(pAcl, dwAceRevision, MAXDWORD, buf.as_mut_ptr() as LPVOID, ace_size as DWORD)
+}
+
+// Conditional ACEs (Windows 10 claims-based conditions) need the ACE condition-expression
+// parser, which this tree does not have. Wine's body is FIXME + FALSE with no error code;
+// we report ERROR_CALL_NOT_IMPLEMENTED so a caller can tell "not supported" from a bad ACL.
+#[no_mangle]
+pub unsafe extern "system" fn AddConditionalAce(
+    pAcl: PACL,
+    dwAceRevision: DWORD,
+    dwAceFlags: DWORD,
+    ace_type: u8,
+    AccessMask: DWORD,
+    pSid: PSID,
+    ConditionStr: *mut u16,
+    ReturnLength: *mut DWORD,
+) -> BOOL {
+    SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
+    FALSE as BOOL
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn AddAce(
     pAcl: PACL,

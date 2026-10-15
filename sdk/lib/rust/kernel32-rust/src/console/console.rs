@@ -655,6 +655,110 @@ pub unsafe extern "system" fn GetCurrentConsoleFont(
     return 1;
 }
 
+/// wincon.h CONSOLE_FONT_INFOEX (84 bytes on every arch).
+#[repr(C)]
+pub struct CONSOLE_FONT_INFOEX {
+    pub cbSize: ULONG,
+    pub nFont: DWORD,
+    pub dwFontSize: COORD,
+    pub FontFamily: UINT,
+    pub FontWeight: UINT,
+    pub FaceName: [WCHAR; 32],
+}
+const _: () = assert!(core::mem::size_of::<CONSOLE_FONT_INFOEX>() == 84);
+
+/// Reads one value of HKCU\Console, the defaults conhost's settings code (concfg)
+/// applies, into `out` (at most `out_len` bytes). Returns the data length, 0 if absent.
+unsafe fn console_default(name: &[u16], out: *mut u8, out_len: usize) -> usize {
+    const CONSOLE: [u16; 8] = [b'C' as u16, b'o' as u16, b'n' as u16, b's' as u16,
+        b'o' as u16, b'l' as u16, b'e' as u16, 0];
+    let mut hkcu: HANDLE = core::ptr::null_mut();
+    if !NT_SUCCESS(RtlOpenCurrentUser(KEY_READ, &mut hkcu)) {
+        return 0;
+    }
+    let mut key_name: UNICODE_STRING = core::mem::zeroed();
+    RtlInitUnicodeString(&mut key_name, CONSOLE.as_ptr());
+    let mut attr: OBJECT_ATTRIBUTES = core::mem::zeroed();
+    attr.Length = core::mem::size_of::<OBJECT_ATTRIBUTES>() as ULONG;
+    attr.RootDirectory = hkcu;
+    attr.ObjectName = &mut key_name;
+    attr.Attributes = OBJ_CASE_INSENSITIVE;
+    let mut key: HANDLE = core::ptr::null_mut();
+    let status = NtOpenKey(&mut key, KEY_QUERY_VALUE, &mut attr);
+    NtClose(hkcu);
+    if !NT_SUCCESS(status) {
+        return 0;
+    }
+    let mut value: UNICODE_STRING = core::mem::zeroed();
+    RtlInitUnicodeString(&mut value, name.as_ptr());
+    // KEY_VALUE_PARTIAL_INFORMATION header (12 bytes) + the 32-WCHAR face name.
+    let mut buf = [0u64; 10];
+    let mut len: ULONG = 0;
+    let status = NtQueryValueKey(
+        key,
+        &mut value,
+        KeyValuePartialInformation,
+        buf.as_mut_ptr() as PVOID,
+        core::mem::size_of_val(&buf) as ULONG,
+        &mut len,
+    );
+    NtClose(key);
+    if !NT_SUCCESS(status) {
+        return 0;
+    }
+    let info = buf.as_ptr() as *const KEY_VALUE_PARTIAL_INFORMATION;
+    let n = ((*info).DataLength as usize).min(out_len);
+    core::ptr::copy_nonoverlapping((*info).Data.as_ptr(), out, n);
+    n
+}
+
+/// Vista. The console server reports only the font index and size (and the size not
+/// yet: SrvGetConsoleCurrentFont in consrv/frontendctl.c is a FIXME that leaves it
+/// zero), so the face name, family and weight come from the HKCU\Console defaults
+/// the console was created with. A per-title or shortcut override is not reflected.
+#[no_mangle]
+pub unsafe extern "system" fn GetCurrentConsoleFontEx(
+    hConsoleOutput: HANDLE,
+    bMaximumWindow: BOOL,
+    lpConsoleCurrentFontEx: *mut CONSOLE_FONT_INFOEX,
+) -> BOOL {
+    if lpConsoleCurrentFontEx.is_null()
+        || (*lpConsoleCurrentFontEx).cbSize as usize != core::mem::size_of::<CONSOLE_FONT_INFOEX>()
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return 0;
+    }
+    let mut info: CONSOLE_FONT_INFO = core::mem::zeroed();
+    if GetCurrentConsoleFont(hConsoleOutput, bMaximumWindow, &mut info) == 0 {
+        return 0;
+    }
+    let out = &mut *lpConsoleCurrentFontEx;
+    out.nFont = info.nFont;
+    out.dwFontSize = info.dwFontSize;
+    out.FaceName = [0; 32];
+    console_default(
+        &[b'F' as u16, b'a' as u16, b'c' as u16, b'e' as u16, b'N' as u16, b'a' as u16,
+          b'm' as u16, b'e' as u16, 0],
+        out.FaceName.as_mut_ptr() as *mut u8,
+        31 * 2,
+    );
+    let mut dw: u32 = 0;
+    out.FontFamily = if console_default(
+        &[b'F' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'F' as u16, b'a' as u16,
+          b'm' as u16, b'i' as u16, b'l' as u16, b'y' as u16, 0],
+        &mut dw as *mut u32 as *mut u8,
+        4,
+    ) == 4 { dw } else { 0 }; // FF_DONTCARE
+    dw = 0;
+    out.FontWeight = if console_default(
+        &[b'F' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'W' as u16, b'e' as u16,
+          b'i' as u16, b'g' as u16, b'h' as u16, b't' as u16, 0],
+        &mut dw as *mut u32 as *mut u8,
+        4,
+    ) == 4 { dw } else { 0 }; // FW_DONTCARE
+    1
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn GetNumberOfConsoleFonts() -> u32 {
     let mut ApiMessage: CONSOLE_API_MESSAGE = core::mem::zeroed();

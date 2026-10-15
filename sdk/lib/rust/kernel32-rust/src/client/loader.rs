@@ -429,15 +429,28 @@ pub unsafe extern "system" fn LoadLibraryExW(
         FreeString = 1;
     }
 
-    /* Compute the load path */
-    SearchPath = BaseComputeProcessDllPath(
-        if (dwFlags & LOAD_WITH_ALTERED_SEARCH_PATH) != 0 {
-            DllName.Buffer
-        } else {
-            core::ptr::null_mut()
-        },
-        core::ptr::null_mut(),
-    );
+    /* Compute the load path: the LOAD_LIBRARY_SEARCH_* order when those flags (passed
+     * here, or the SetDefaultDllDirectories default) apply, else the legacy order. */
+    SearchPath = match super::dlldirs::search_flags_path(DllName.Buffer, dwFlags) {
+        Ok(p) => p,
+        Err(e) => {
+            BaseSetLastNTError(e);
+            if FreeString != 0 {
+                RtlFreeUnicodeString(&mut DllName);
+            }
+            return core::ptr::null_mut();
+        }
+    };
+    if SearchPath.is_null() {
+        SearchPath = BaseComputeProcessDllPath(
+            if (dwFlags & LOAD_WITH_ALTERED_SEARCH_PATH) != 0 {
+                DllName.Buffer
+            } else {
+                core::ptr::null_mut()
+            },
+            core::ptr::null_mut(),
+        );
+    }
     if SearchPath.is_null() {
         /* Getting DLL path failed, so set last error, free mem and return */
         BaseSetLastNTError(STATUS_NO_MEMORY);

@@ -156,7 +156,7 @@
 156 stub JetCloseDatabase
 157 stub JetCloseFile
 158 stub JetCloseFileInstance
-159 stub JetCloseTable
+159 stdcall JetCloseTable(ptr ptr)
 160 stub JetCommitTransaction
 161 stub JetCompact
 162 stub JetComputeStats
@@ -226,10 +226,10 @@
 226 stub JetIndexRecordCount
 227 stub JetInit2
 228 stub JetInit3
-229 stub JetInit
+229 stdcall JetInit(ptr)
 230 stub JetIntersectIndexes
 231 stub JetMakeKey
-232 stub JetMove
+232 stdcall JetMove(ptr ptr long long)
 233 stub JetOSSnapshotAbort
 234 stub JetOSSnapshotFreeze
 235 stub JetOSSnapshotPrepare
@@ -255,7 +255,7 @@
 255 stub JetRestore2
 256 stub JetRestore
 257 stub JetRestoreInstance
-258 stub JetRetrieveColumn
+258 stdcall JetRetrieveColumn(ptr ptr long ptr long ptr long ptr)
 259 stub JetRetrieveColumns
 260 stub JetRetrieveKey
 261 stub JetRetrieveTaggedColumnList
@@ -281,13 +281,20 @@
 281 stub JetStopService
 282 stub JetStopServiceInstance
 283 stub JetTerm2
-284 stub JetTerm
+284 stdcall JetTerm(ptr)
 285 stub JetTruncateLog
 286 stub JetTruncateLogInstance
 287 stub JetUnregisterCallback
 288 stub JetUpdate2
 289 stub JetUpdate
 290 stub JetUpgradeDatabase
+@ stdcall JetAttachDatabase2W(ptr ptr long long)
+@ stdcall JetBeginSessionW(ptr ptr wstr wstr)
+@ stdcall JetCreateInstanceW(ptr wstr)
+@ stdcall JetGetTableColumnInfoW(ptr ptr wstr ptr long long)
+@ stdcall JetOpenDatabaseW(ptr wstr wstr ptr long)
+@ stdcall JetOpenTableW(ptr long ptr ptr long long ptr)
+@ stdcall JetSetSystemParameterW(ptr ptr long ptr wstr)
 291 stub ese
 292 stub esent
 
@@ -308,7 +315,6 @@
 @ stub -arch=win32 -version=0xA00+ JetAddColumnW@28
 @ stub -version=0xA00+ JetAttachDatabase2A
 @ stub -arch=win32 -version=0xA00+ JetAttachDatabase2A@16
-@ stub -version=0xA00+ JetAttachDatabase2W
 @ stub -arch=win32 -version=0xA00+ JetAttachDatabase2W@16
 @ stub -version=0xA00+ JetAttachDatabase3
 @ stub -version=0xA00+ JetAttachDatabase3A
@@ -340,7 +346,6 @@
 @ stub -arch=win32 -version=0xA00+ JetBeginExternalBackupInstance@8
 @ stub -version=0xA00+ JetBeginSessionA
 @ stub -arch=win32 -version=0xA00+ JetBeginSessionA@16
-@ stub -version=0xA00+ JetBeginSessionW
 @ stub -arch=win32 -version=0xA00+ JetBeginSessionW@16
 @ stub -version=0xA00+ JetBeginSurrogateBackup
 @ stub -arch=win32 -version=0xA00+ JetBeginSurrogateBackup@16
@@ -405,7 +410,6 @@
 @ stub -arch=win32 -version=0xA00+ JetCreateInstance2W@16
 @ stub -version=0xA00+ JetCreateInstanceA
 @ stub -arch=win32 -version=0xA00+ JetCreateInstanceA@8
-@ stub -version=0xA00+ JetCreateInstanceW
 @ stub -arch=win32 -version=0xA00+ JetCreateInstanceW@8
 @ stub -version=0xA00+ JetCreateTableA
 @ stub -arch=win32 -version=0xA00+ JetCreateTableA@24
@@ -604,7 +608,6 @@
 @ stub -arch=win32 -version=0xA00+ JetGetSystemParameterW@24
 @ stub -version=0xA00+ JetGetTableColumnInfoA
 @ stub -arch=win32 -version=0xA00+ JetGetTableColumnInfoA@24
-@ stub -version=0xA00+ JetGetTableColumnInfoW
 @ stub -arch=win32 -version=0xA00+ JetGetTableColumnInfoW@24
 @ stub -version=0xA00+ JetGetTableIndexInfoA
 @ stub -arch=win32 -version=0xA00+ JetGetTableIndexInfoA@24
@@ -667,7 +670,6 @@
 @ stub -arch=win32 -version=0xA00+ JetOnlinePatchDatabasePage@32
 @ stub -version=0xA00+ JetOpenDatabaseA
 @ stub -arch=win32 -version=0xA00+ JetOpenDatabaseA@20
-@ stub -version=0xA00+ JetOpenDatabaseW
 @ stub -arch=win32 -version=0xA00+ JetOpenDatabaseW@20
 @ stub -version=0xA00+ JetOpenFileA
 @ stub -arch=win32 -version=0xA00+ JetOpenFileA@16
@@ -683,7 +685,6 @@
 @ stub -arch=win32 -version=0xA00+ JetOpenFileW@16
 @ stub -version=0xA00+ JetOpenTableA
 @ stub -arch=win32 -version=0xA00+ JetOpenTableA@28
-@ stub -version=0xA00+ JetOpenTableW
 @ stub -arch=win32 -version=0xA00+ JetOpenTableW@28
 @ stub -arch=win32 -version=0xA00+ JetOpenTempTable2@28
 @ stub -arch=win32 -version=0xA00+ JetOpenTempTable3@28
@@ -796,7 +797,6 @@
 @ stub -arch=win32 -version=0xA00+ JetSetSessionParameter@16
 @ stub -version=0xA00+ JetSetSystemParameterA
 @ stub -arch=win32 -version=0xA00+ JetSetSystemParameterA@20
-@ stub -version=0xA00+ JetSetSystemParameterW
 @ stub -arch=win32 -version=0xA00+ JetSetSystemParameterW@20
 @ stub -version=0xA00+ JetSetTableInfo
 @ stub -version=0xA00+ JetSetTableInfoA

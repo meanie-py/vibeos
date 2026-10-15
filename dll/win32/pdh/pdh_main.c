@@ -87,6 +87,20 @@ struct counter
 
 #define PDH_MAGIC_COUNTER   0x50444831 /* 'PDH1' */
 
+/* The PSDK pdh.h carries no formatted counter array items; layout as in the SDK. */
+typedef struct _PDH_FMT_COUNTERVALUE_ITEM_A
+{
+    LPSTR szName;
+    PDH_FMT_COUNTERVALUE FmtValue;
+} PDH_FMT_COUNTERVALUE_ITEM_A, *PPDH_FMT_COUNTERVALUE_ITEM_A;
+
+typedef struct _PDH_FMT_COUNTERVALUE_ITEM_W
+{
+    LPWSTR szName;
+    PDH_FMT_COUNTERVALUE FmtValue;
+} PDH_FMT_COUNTERVALUE_ITEM_W, *PPDH_FMT_COUNTERVALUE_ITEM_W;
+
+
 static struct counter *create_counter( void )
 {
     struct counter *counter;
@@ -760,6 +774,110 @@ PDH_STATUS WINAPI PdhGetFormattedCounterValue( PDH_HCOUNTER handle, DWORD format
         value->CStatus = ERROR_SUCCESS;
         if (type) *type = counter->type;
     }
+
+    LeaveCriticalSection( &pdh_handle_cs );
+    return ret;
+}
+
+static PDH_STATUS get_formatted_counter_array( PDH_HCOUNTER handle, DWORD format,
+                                                LPDWORD bufsize, LPDWORD count, void *buffer, BOOL wide )
+{
+    PDH_STATUS ret;
+    struct counter *counter = handle;
+    PDH_FMT_COUNTERVALUE value;
+    DWORD needed = sizeof(PDH_FMT_COUNTERVALUE_ITEM_W) + (wide ? sizeof(WCHAR) : sizeof(CHAR));
+
+    /* Only single-instance counters exist here, so the array always has one item. */
+    *count = 1;
+
+    if (!buffer || *bufsize < needed)
+    {
+        *bufsize = needed;
+        return PDH_MORE_DATA;
+    }
+
+    if (!(ret = format_value( counter, format, &counter->one, &counter->two, &value )))
+    {
+        PPDH_FMT_COUNTERVALUE_ITEM_W item = buffer;
+        char *name = (char *)buffer + sizeof(PDH_FMT_COUNTERVALUE_ITEM_W);
+        item->FmtValue = value;
+        item->FmtValue.CStatus = ERROR_SUCCESS;
+        if (wide)
+        {
+            item->szName = (LPWSTR)name;
+            *(WCHAR *)name = 0;
+        }
+        else
+        {
+            ((PPDH_FMT_COUNTERVALUE_ITEM_A)item)->szName = (LPSTR)name;
+            *name = 0;
+        }
+    }
+    *bufsize = needed;
+    return ret;
+}
+
+/***********************************************************************
+ *              PdhGetFormattedCounterArrayW   (PDH.@)
+ */
+PDH_STATUS WINAPI PdhGetFormattedCounterArrayW( PDH_HCOUNTER handle, DWORD format,
+                                                 LPDWORD bufsize, LPDWORD count,
+                                                 PPDH_FMT_COUNTERVALUE_ITEM_W buffer )
+{
+    PDH_STATUS ret;
+    struct counter *counter;
+
+    TRACE("%p %lx %p %p %p\n", handle, format, bufsize, count, buffer);
+
+    if (!bufsize || !count) return PDH_INVALID_ARGUMENT;
+
+    EnterCriticalSection( &pdh_handle_cs );
+    counter = handle;
+    if (!counter || counter->magic != PDH_MAGIC_COUNTER)
+    {
+        LeaveCriticalSection( &pdh_handle_cs );
+        return PDH_INVALID_HANDLE;
+    }
+    if (counter->status)
+    {
+        LeaveCriticalSection( &pdh_handle_cs );
+        return PDH_INVALID_DATA;
+    }
+
+    ret = get_formatted_counter_array( handle, format, bufsize, count, buffer, TRUE );
+
+    LeaveCriticalSection( &pdh_handle_cs );
+    return ret;
+}
+
+/***********************************************************************
+ *              PdhGetFormattedCounterArrayA   (PDH.@)
+ */
+PDH_STATUS WINAPI PdhGetFormattedCounterArrayA( PDH_HCOUNTER handle, DWORD format,
+                                                 LPDWORD bufsize, LPDWORD count,
+                                                 PPDH_FMT_COUNTERVALUE_ITEM_A buffer )
+{
+    PDH_STATUS ret;
+    struct counter *counter;
+
+    TRACE("%p %lx %p %p %p\n", handle, format, bufsize, count, buffer);
+
+    if (!bufsize || !count) return PDH_INVALID_ARGUMENT;
+
+    EnterCriticalSection( &pdh_handle_cs );
+    counter = handle;
+    if (!counter || counter->magic != PDH_MAGIC_COUNTER)
+    {
+        LeaveCriticalSection( &pdh_handle_cs );
+        return PDH_INVALID_HANDLE;
+    }
+    if (counter->status)
+    {
+        LeaveCriticalSection( &pdh_handle_cs );
+        return PDH_INVALID_DATA;
+    }
+
+    ret = get_formatted_counter_array( handle, format, bufsize, count, buffer, FALSE );
 
     LeaveCriticalSection( &pdh_handle_cs );
     return ret;

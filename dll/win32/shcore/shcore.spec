@@ -7,14 +7,14 @@
 @ stub DllGetActivationFactory
 @ stub -private DllGetClassObject
 @ stdcall GetCurrentProcessExplicitAppUserModelID(ptr)
-@ stdcall -stub GetDpiForMonitor(long long ptr ptr)
+@ stdcall GetDpiForMonitor(ptr long ptr ptr) shell32.GetDpiForMonitor
 @ stub GetDpiForShellUIComponent
 @ stdcall GetFeatureEnabledState(long long)
 # @ stub GetFeatureVariant
-@ stdcall -stub GetProcessDpiAwareness(long ptr)
+@ stdcall GetProcessDpiAwareness(ptr ptr) shell32.GetProcessDpiAwareness
 @ stdcall GetProcessReference(ptr)
 @ stdcall GetScaleFactorForDevice(long)
-@ stdcall GetScaleFactorForMonitor(long ptr)
+@ stdcall GetScaleFactorForMonitor(ptr ptr) shell32.GetScaleFactorForMonitor
 @ stub IStream_Copy
 @ stdcall IStream_Read(ptr ptr long) _IStream_Read
 @ stub IStream_ReadStr
@@ -90,7 +90,7 @@
 @ stdcall SHUnicodeToAnsi(wstr ptr ptr)
 @ stdcall SHUnicodeToUnicode(wstr ptr long)
 @ stdcall SetCurrentProcessExplicitAppUserModelID(wstr)
-@ stdcall -stub SetProcessDpiAwareness(long)
+@ stdcall SetProcessDpiAwareness(long) shell32.SetProcessDpiAwareness
 @ stdcall SetProcessReference(ptr)
 @ stdcall SubscribeFeatureStateChangeNotification(ptr ptr ptr)
 @ stub UnregisterScaleChangeEvent

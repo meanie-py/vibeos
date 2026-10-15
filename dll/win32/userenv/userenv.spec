@@ -1,6 +1,8 @@
+@ stdcall CreateAppContainerProfile(wstr wstr wstr ptr long ptr)
 132 stdcall CreateEnvironmentBlock(ptr ptr long)
 133 stdcall DeleteProfileA(str str str)
 134 stdcall DeleteProfileW(wstr wstr wstr)
+@ stdcall DeriveAppContainerSidFromAppContainerName(wstr ptr)
 176 stdcall DestroyEnvironmentBlock(ptr)
 @ stub -private DllCanUnloadNow                                              #stdcall DllCanUnloadNow()
 @ stub -private DllGetClassObject                                            #stdcall DllGetClassObject(ptr ptr ptr)
@@ -128,10 +130,8 @@
 # DLL_EXPORT_VERSION 0xA00; give a name a real line above and re-run to drop it.
 @ stub -version=0xA00+ AreThereVisibleLogoffScripts
 @ stub -version=0xA00+ AreThereVisibleShutdownScripts
-@ stub -version=0xA00+ CreateAppContainerProfile
 @ stub -version=0xA00+ CreateProfile
 @ stub -version=0xA00+ DeleteAppContainerProfile
-@ stub -version=0xA00+ DeriveAppContainerSidFromAppContainerName
 @ stub -version=0xA00+ DeriveRestrictedAppContainerSidFromAppContainerSidAndRestrictedName
 @ stub -version=0xA00+ GenerateGPNotification
 @ stub -version=0xA00+ GetAppContainerFolderPath

@@ -1886,39 +1886,21 @@ static BOOL run_script( char *script, DWORD size, const WCHAR *url, WINHTTP_PROX
     return InternetDeInitializeAutoProxyDll( NULL, 0 );
 }
 
-/***********************************************************************
- *          WinHttpGetProxyForUrl (winhttp.@)
- */
-BOOL WINAPI WinHttpGetProxyForUrl( HINTERNET hsession, LPCWSTR url, WINHTTP_AUTOPROXY_OPTIONS *options,
-                                   WINHTTP_PROXY_INFO *info )
+/* PAC lookup shared by WinHttpGetProxyForUrl and the proxy resolver. */
+static BOOL get_proxy_for_url( const WCHAR *url, WINHTTP_AUTOPROXY_OPTIONS *options, WINHTTP_PROXY_INFO *info )
 {
     WCHAR *detected_pac_url = NULL;
     const WCHAR *pac_url;
-    struct session *session;
     char *script;
     DWORD size;
     BOOL ret = FALSE;
 
-    TRACE("%p, %s, %p, %p\n", hsession, debugstr_w(url), options, info);
-
-    if (!(session = (struct session *)grab_object( hsession )))
-    {
-        SetLastError( ERROR_INVALID_HANDLE );
-        return FALSE;
-    }
-    if (session->hdr.type != WINHTTP_HANDLE_TYPE_SESSION)
-    {
-        release_object( &session->hdr );
-        SetLastError( ERROR_WINHTTP_INCORRECT_HANDLE_TYPE );
-        return FALSE;
-    }
     if (!url || !options || !info ||
         !(options->dwFlags & (WINHTTP_AUTOPROXY_AUTO_DETECT|WINHTTP_AUTOPROXY_CONFIG_URL)) ||
         ((options->dwFlags & WINHTTP_AUTOPROXY_AUTO_DETECT) && !options->dwAutoDetectFlags) ||
         ((options->dwFlags & WINHTTP_AUTOPROXY_AUTO_DETECT) &&
          (options->dwFlags & WINHTTP_AUTOPROXY_CONFIG_URL)))
     {
-        release_object( &session->hdr );
         SetLastError( ERROR_INVALID_PARAMETER );
         return FALSE;
     }
@@ -1937,8 +1919,538 @@ BOOL WINAPI WinHttpGetProxyForUrl( HINTERNET hsession, LPCWSTR url, WINHTTP_AUTO
 
 done:
     GlobalFree( detected_pac_url );
+    if (ret) SetLastError( ERROR_SUCCESS );
+    return ret;
+}
+
+/***********************************************************************
+ *          WinHttpGetProxyForUrl (winhttp.@)
+ */
+BOOL WINAPI WinHttpGetProxyForUrl( HINTERNET hsession, LPCWSTR url, WINHTTP_AUTOPROXY_OPTIONS *options,
+                                   WINHTTP_PROXY_INFO *info )
+{
+    struct session *session;
+    BOOL ret;
+
+    TRACE("%p, %s, %p, %p\n", hsession, debugstr_w(url), options, info);
+
+    if (!(session = (struct session *)grab_object( hsession )))
+    {
+        SetLastError( ERROR_INVALID_HANDLE );
+        return FALSE;
+    }
+    if (session->hdr.type != WINHTTP_HANDLE_TYPE_SESSION)
+    {
+        release_object( &session->hdr );
+        SetLastError( ERROR_WINHTTP_INCORRECT_HANDLE_TYPE );
+        return FALSE;
+    }
+    ret = get_proxy_for_url( url, options, info );
     release_object( &session->hdr );
     if (ret) SetLastError( ERROR_SUCCESS );
+    return ret;
+}
+
+/* ---- proxy resolver (WinHttpCreateProxyResolver & friends, Vista+) ----------------------
+ *
+ * Wine's own versions of these four APIs are stubs that fail with
+ * ERROR_WINHTTP_AUTO_PROXY_SERVICE_ERROR, so this is a real implementation on top of the
+ * module's PAC machinery (get_proxy_for_url).  The Windows contract:
+ *   WinHttpCreateProxyResolver  - child handle of a session
+ *   WinHttpGetProxyForUrlEx     - starts an ASYNCHRONOUS lookup (needs a WINHTTP_FLAG_ASYNC
+ *                                 session), returns ERROR_IO_PENDING, and signals
+ *                                 WINHTTP_CALLBACK_STATUS_GETPROXYFORURL_COMPLETE on the
+ *                                 handle's status callback (inherited from the session)
+ *   WinHttpGetProxyResult       - after completion: the ordered proxy entry list, or the error
+ *   WinHttpFreeProxyResult      - releases that list
+ * Divergences: the lookup runs on one short-lived thread per request; the options flags that
+ * only tune Windows' autoproxy service (RUN_*PROCESS, NO_CACHE_*, SORT_RESULTS, ALLOW_CM,
+ * fAutoLogonIfChallenged) are accepted and ignored; PAC results are limited to what
+ * parse_script_result reports (the first PROXY entry, or DIRECT).
+ */
+
+#ifndef WINHTTP_HANDLE_TYPE_PROXY_RESOLVER
+#define WINHTTP_HANDLE_TYPE_PROXY_RESOLVER 4
+#endif
+
+enum resolver_state { RESOLVER_IDLE, RESOLVER_PENDING, RESOLVER_DONE };
+
+struct proxy_resolver
+{
+    struct object_header hdr;
+    struct session *session;
+    CRITICAL_SECTION cs;
+    enum resolver_state state;
+    DWORD error;                    /* outcome of the finished lookup */
+    WINHTTP_PROXY_RESULT result;    /* entries of the finished lookup (GlobalAlloc'd) */
+};
+
+struct resolve_work
+{
+    struct proxy_resolver *resolver;
+    WCHAR *url;
+    WINHTTP_AUTOPROXY_OPTIONS options;
+    WCHAR *config_url;
+};
+
+static void free_proxy_result( WINHTTP_PROXY_RESULT *result )
+{
+    DWORD i;
+
+    if (!result) return;
+    for (i = 0; i < result->cEntries; i++) GlobalFree( result->pEntries[i].pwszProxy );
+    GlobalFree( result->pEntries );
+    result->cEntries = 0;
+    result->pEntries = NULL;
+}
+
+/***********************************************************************
+ *          WinHttpFreeProxyResult (winhttp.@)
+ */
+void WINAPI WinHttpFreeProxyResult( WINHTTP_PROXY_RESULT *result )
+{
+    TRACE("%p\n", result);
+    free_proxy_result( result );
+}
+
+static WCHAR *globaldup_sized( const WCHAR *src, DWORD len )
+{
+    WCHAR *dst = GlobalAlloc( 0, (len + 1) * sizeof(WCHAR) );
+    if (dst)
+    {
+        memcpy( dst, src, len * sizeof(WCHAR) );
+        dst[len] = 0;
+    }
+    return dst;
+}
+
+static DWORD copy_proxy_result( const WINHTTP_PROXY_RESULT *src, WINHTTP_PROXY_RESULT *dst )
+{
+    DWORD i;
+
+    dst->cEntries = 0;
+    dst->pEntries = NULL;
+    if (!src->cEntries) return ERROR_SUCCESS;
+    if (!(dst->pEntries = GlobalAlloc( GMEM_ZEROINIT, src->cEntries * sizeof(*dst->pEntries) )))
+        return ERROR_OUTOFMEMORY;
+    dst->cEntries = src->cEntries;
+    for (i = 0; i < src->cEntries; i++)
+    {
+        dst->pEntries[i] = src->pEntries[i];
+        dst->pEntries[i].pwszProxy = NULL;
+        if (src->pEntries[i].pwszProxy &&
+            !(dst->pEntries[i].pwszProxy = globaldup_sized( src->pEntries[i].pwszProxy,
+                                                            strlenW( src->pEntries[i].pwszProxy ) )))
+        {
+            free_proxy_result( dst );
+            return ERROR_OUTOFMEMORY;
+        }
+    }
+    return ERROR_SUCCESS;
+}
+
+/* Turns a WinHTTP proxy list ("host:port", "http://host:port", "http=h1:p1;https=h2:p2",
+ * separated by ';' or white space) into result entries for a URL of scheme `scheme`.  A list
+ * that yields nothing for this URL scheme means "go direct". */
+static DWORD proxy_list_to_result( INTERNET_SCHEME scheme, const WCHAR *list, WINHTTP_PROXY_RESULT *result )
+{
+    static const WCHAR httpW[] = {'h','t','t','p',0};
+    static const WCHAR httpsW[] = {'h','t','t','p','s',0};
+    static const WCHAR http_prefixW[] = {'h','t','t','p',':','/','/',0};
+    static const WCHAR https_prefixW[] = {'h','t','t','p','s',':','/','/',0};
+    const WCHAR *p, *end;
+    DWORD max_entries = 1, n = 0;
+
+    for (p = list; *p; p++) if (*p == ';' || *p == ' ' || *p == '\t') max_entries++;
+    if (!(result->pEntries = GlobalAlloc( GMEM_ZEROINIT, max_entries * sizeof(*result->pEntries) )))
+        return ERROR_OUTOFMEMORY;
+
+    p = list;
+    while (*p)
+    {
+        const WCHAR *tok, *host, *colon, *eq, *slash;
+        INTERNET_SCHEME proxy_scheme = INTERNET_SCHEME_HTTP;
+        DWORD port, host_len;
+        BOOL specific = FALSE;
+
+        while (*p == ';' || *p == ' ' || *p == '\t') p++;
+        if (!*p) break;
+        tok = p;
+        for (end = p; *end && *end != ';' && *end != ' ' && *end != '\t'; end++) ;
+        p = end;
+
+        /* "scheme=proxy": only the entry for the URL's own scheme applies */
+        eq = tok;
+        while (eq < end && *eq != '=' && *eq != ':' && *eq != '/') eq++;
+        if (eq < end && *eq == '=')
+        {
+            DWORD plen = eq - tok;
+            if (plen == 4 && !strncmpiW( tok, httpW, 4 )) specific = (scheme == INTERNET_SCHEME_HTTP);
+            else if (plen == 5 && !strncmpiW( tok, httpsW, 5 )) specific = (scheme == INTERNET_SCHEME_HTTPS);
+            if (!specific) continue;          /* ftp=, socks=, or another scheme's proxy */
+            tok = eq + 1;
+        }
+        if (end - tok >= 8 && !strncmpiW( tok, https_prefixW, 8 ))
+        {
+            proxy_scheme = INTERNET_SCHEME_HTTPS;
+            tok += 8;
+        }
+        else if (end - tok >= 7 && !strncmpiW( tok, http_prefixW, 7 )) tok += 7;
+
+        host = tok;
+        slash = host;
+        while (slash < end && *slash != '/') slash++;       /* drop any trailing path */
+        colon = NULL;
+        if (*host == '[')                                   /* [IPv6]:port */
+        {
+            const WCHAR *rb = host;
+            while (rb < slash && *rb != ']') rb++;
+            if (rb < slash && rb + 1 < slash && rb[1] == ':') colon = rb + 1;
+        }
+        else
+        {
+            const WCHAR *c;
+            for (c = host; c < slash; c++) if (*c == ':') colon = c;
+        }
+        host_len = (colon ? colon : slash) - host;
+        if (!host_len) continue;
+
+        port = (proxy_scheme == INTERNET_SCHEME_HTTPS) ? 443 : 80;
+        if (colon && colon + 1 < slash)
+        {
+            const WCHAR *c;
+            DWORD v = 0;
+            for (c = colon + 1; c < slash && *c >= '0' && *c <= '9' && v < 65536; c++) v = v * 10 + (*c - '0');
+            if (c != slash || v == 0 || v > 65535) continue;    /* malformed port */
+            port = v;
+        }
+        if (!(result->pEntries[n].pwszProxy = globaldup_sized( host, host_len )))
+        {
+            result->cEntries = n;
+            free_proxy_result( result );
+            return ERROR_OUTOFMEMORY;
+        }
+        result->pEntries[n].fProxy = TRUE;
+        result->pEntries[n].fBypass = FALSE;
+        result->pEntries[n].ProxyScheme = proxy_scheme;
+        result->pEntries[n].ProxyPort = port;
+        n++;
+    }
+    result->cEntries = n;
+    if (!n)
+    {
+        /* nothing applies to this URL: direct */
+        result->cEntries = 1;
+        result->pEntries[0].fProxy = FALSE;
+    }
+    return ERROR_SUCCESS;
+}
+
+static DWORD direct_result( BOOL bypassed, WINHTTP_PROXY_RESULT *result )
+{
+    if (!(result->pEntries = GlobalAlloc( GMEM_ZEROINIT, sizeof(*result->pEntries) ))) return ERROR_OUTOFMEMORY;
+    result->cEntries = 1;
+    result->pEntries[0].fProxy = FALSE;
+    result->pEntries[0].fBypass = bypassed;
+    return ERROR_SUCCESS;
+}
+
+/* Runs one lookup.  On ERROR_SUCCESS `result` holds the entries. */
+static DWORD resolve_proxy_for_url( struct session *session, const WCHAR *url,
+                                    WINHTTP_AUTOPROXY_OPTIONS *options, WINHTTP_PROXY_RESULT *result )
+{
+    WINHTTP_PROXY_INFO info;
+    URL_COMPONENTSW uc;
+    INTERNET_SCHEME scheme = INTERNET_SCHEME_HTTP;
+    WCHAR *host = NULL;
+    DWORD err = ERROR_SUCCESS;
+
+    memset( result, 0, sizeof(*result) );
+    memset( &uc, 0, sizeof(uc) );
+    uc.dwStructSize = sizeof(uc);
+    uc.dwHostNameLength = -1;
+    if (!WinHttpCrackUrl( url, 0, 0, &uc )) return GetLastError();
+    scheme = uc.nScheme;
+    if (!(host = globaldup_sized( uc.lpszHostName, uc.dwHostNameLength ))) return ERROR_OUTOFMEMORY;
+
+    if (options->dwFlags & (WINHTTP_AUTOPROXY_AUTO_DETECT|WINHTTP_AUTOPROXY_CONFIG_URL))
+    {
+        memset( &info, 0, sizeof(info) );
+        if (get_proxy_for_url( url, options, &info ))
+        {
+            if (info.dwAccessType == WINHTTP_ACCESS_TYPE_NAMED_PROXY && info.lpszProxy)
+                err = proxy_list_to_result( scheme, info.lpszProxy, result );
+            else
+                err = direct_result( FALSE, result );
+            heap_free( (WCHAR *)info.lpszProxy );
+            heap_free( (WCHAR *)info.lpszProxyBypass );
+            GlobalFree( host );
+            return err;
+        }
+        err = GetLastError();
+        if (!err) err = ERROR_WINHTTP_AUTO_PROXY_SERVICE_ERROR;
+        if (!(options->dwFlags & WINHTTP_AUTOPROXY_ALLOW_STATIC)) goto done;
+        err = ERROR_SUCCESS;
+    }
+
+    /* static settings of the session (explicit proxy or the WinHTTP default) */
+    if (session->access == WINHTTP_ACCESS_TYPE_NAMED_PROXY && session->proxy_server)
+    {
+        if (should_bypass_proxy( session, host )) err = direct_result( TRUE, result );
+        else err = proxy_list_to_result( scheme, session->proxy_server, result );
+    }
+    else err = direct_result( FALSE, result );
+
+done:
+    GlobalFree( host );
+    return err;
+}
+
+static void proxy_resolver_destroy( struct object_header *hdr )
+{
+    struct proxy_resolver *resolver = (struct proxy_resolver *)hdr;
+
+    TRACE("%p\n", resolver);
+
+    free_proxy_result( &resolver->result );
+    release_object( &resolver->session->hdr );
+    resolver->cs.DebugInfo->Spare[0] = 0;
+    DeleteCriticalSection( &resolver->cs );
+    heap_free( resolver );
+}
+
+static BOOL proxy_resolver_query_option( struct object_header *hdr, DWORD option, void *buffer, DWORD *buflen )
+{
+    FIXME("unimplemented option %u\n", option);
+    SetLastError( ERROR_WINHTTP_INVALID_OPTION );
+    return FALSE;
+}
+
+static BOOL proxy_resolver_set_option( struct object_header *hdr, DWORD option, void *buffer, DWORD buflen )
+{
+    FIXME("unimplemented option %u\n", option);
+    SetLastError( ERROR_WINHTTP_INVALID_OPTION );
+    return FALSE;
+}
+
+static const struct object_vtbl proxy_resolver_vtbl =
+{
+    proxy_resolver_destroy,
+    proxy_resolver_query_option,
+    proxy_resolver_set_option
+};
+
+/***********************************************************************
+ *          WinHttpCreateProxyResolver (winhttp.@)
+ */
+DWORD WINAPI WinHttpCreateProxyResolver( HINTERNET hsession, HINTERNET *hresolver )
+{
+    struct proxy_resolver *resolver;
+    struct session *session;
+    HINTERNET handle = NULL;
+    DWORD ret = ERROR_SUCCESS;
+
+    TRACE("%p, %p\n", hsession, hresolver);
+
+    if (!hresolver) return ERROR_INVALID_PARAMETER;
+    *hresolver = NULL;
+
+    if (!(session = (struct session *)grab_object( hsession ))) return ERROR_INVALID_HANDLE;
+    if (session->hdr.type != WINHTTP_HANDLE_TYPE_SESSION)
+    {
+        release_object( &session->hdr );
+        return ERROR_WINHTTP_INCORRECT_HANDLE_TYPE;
+    }
+    if (!(resolver = heap_alloc_zero( sizeof(*resolver) )))
+    {
+        release_object( &session->hdr );
+        return ERROR_OUTOFMEMORY;
+    }
+    resolver->hdr.type = WINHTTP_HANDLE_TYPE_PROXY_RESOLVER;
+    resolver->hdr.vtbl = &proxy_resolver_vtbl;
+    resolver->hdr.refs = 1;
+    resolver->hdr.flags = session->hdr.flags;
+    resolver->hdr.callback = session->hdr.callback;
+    resolver->hdr.notify_mask = session->hdr.notify_mask;
+    resolver->hdr.context = session->hdr.context;
+    resolver->hdr.redirect_policy = session->hdr.redirect_policy;
+    list_init( &resolver->hdr.children );
+    InitializeCriticalSection( &resolver->cs );
+    resolver->cs.DebugInfo->Spare[0] = (DWORD_PTR)(__FILE__ ": proxy_resolver.cs");
+    resolver->state = RESOLVER_IDLE;
+
+    addref_object( &session->hdr );
+    resolver->session = session;
+    list_add_head( &session->hdr.children, &resolver->hdr.entry );
+
+    if (!(handle = alloc_handle( &resolver->hdr ))) ret = ERROR_OUTOFMEMORY;
+    else
+    {
+        resolver->hdr.handle = handle;
+        send_callback( &session->hdr, WINHTTP_CALLBACK_STATUS_HANDLE_CREATED, &handle, sizeof(handle) );
+        *hresolver = handle;
+    }
+
+    release_object( &resolver->hdr );
+    release_object( &session->hdr );
+    TRACE("returning %p (%u)\n", handle, ret);
+    return ret;
+}
+
+#ifdef __REACTOS__
+static DWORD CALLBACK resolve_proc( void *arg )
+#else
+static DWORD WINAPI resolve_proc( void *arg )
+#endif
+{
+    struct resolve_work *work = arg;
+    struct proxy_resolver *resolver = work->resolver;
+    WINHTTP_PROXY_RESULT result;
+    DWORD err;
+
+    err = resolve_proxy_for_url( resolver->session, work->url, &work->options, &result );
+
+    EnterCriticalSection( &resolver->cs );
+    free_proxy_result( &resolver->result );
+    resolver->result = result;
+    resolver->error = err;
+    resolver->state = RESOLVER_DONE;
+    LeaveCriticalSection( &resolver->cs );
+
+    /* the outcome (or the error) is fetched with WinHttpGetProxyResult */
+    send_callback( &resolver->hdr, WINHTTP_CALLBACK_STATUS_GETPROXYFORURL_COMPLETE, NULL, 0 );
+
+    release_object( &resolver->hdr );
+    heap_free( work->url );
+    heap_free( work->config_url );
+    heap_free( work );
+    return 0;
+}
+
+/***********************************************************************
+ *          WinHttpGetProxyForUrlEx (winhttp.@)
+ */
+DWORD WINAPI WinHttpGetProxyForUrlEx( HINTERNET hresolver, const WCHAR *url, WINHTTP_AUTOPROXY_OPTIONS *options,
+                                      DWORD_PTR ctx )
+{
+    struct proxy_resolver *resolver;
+    struct resolve_work *work;
+    HANDLE thread;
+    DWORD flags, ret;
+
+    TRACE("%p, %s, %p, %lx\n", hresolver, debugstr_w(url), options, ctx);
+
+    if (!(resolver = (struct proxy_resolver *)grab_object( hresolver ))) return ERROR_INVALID_HANDLE;
+    if (resolver->hdr.type != WINHTTP_HANDLE_TYPE_PROXY_RESOLVER)
+    {
+        release_object( &resolver->hdr );
+        return ERROR_WINHTTP_INCORRECT_HANDLE_TYPE;
+    }
+    if (!url || !options) goto invalid;
+    flags = options->dwFlags;
+    if (!(flags & (WINHTTP_AUTOPROXY_AUTO_DETECT|WINHTTP_AUTOPROXY_CONFIG_URL|WINHTTP_AUTOPROXY_ALLOW_STATIC)) ||
+        ((flags & WINHTTP_AUTOPROXY_AUTO_DETECT) && !options->dwAutoDetectFlags) ||
+        ((flags & WINHTTP_AUTOPROXY_AUTO_DETECT) && (flags & WINHTTP_AUTOPROXY_CONFIG_URL)) ||
+        ((flags & WINHTTP_AUTOPROXY_CONFIG_URL) && !options->lpszAutoConfigUrl))
+        goto invalid;
+    if (!(resolver->hdr.flags & WINHTTP_FLAG_ASYNC))
+    {
+        /* the resolver reports through the status callback, which only async sessions have */
+        release_object( &resolver->hdr );
+        return ERROR_WINHTTP_INCORRECT_HANDLE_TYPE;
+    }
+
+    if (!(work = heap_alloc_zero( sizeof(*work) )))
+    {
+        release_object( &resolver->hdr );
+        return ERROR_OUTOFMEMORY;
+    }
+    work->options = *options;
+    if (!(work->url = strdupW( url )) ||
+        (options->lpszAutoConfigUrl && !(work->config_url = strdupW( options->lpszAutoConfigUrl ))))
+    {
+        heap_free( work->url );
+        heap_free( work );
+        release_object( &resolver->hdr );
+        return ERROR_OUTOFMEMORY;
+    }
+    work->options.lpszAutoConfigUrl = work->config_url;
+    work->resolver = resolver;     /* keeps the reference grab_object took */
+
+    EnterCriticalSection( &resolver->cs );
+    if (resolver->state == RESOLVER_PENDING)
+    {
+        LeaveCriticalSection( &resolver->cs );
+        ret = ERROR_WINHTTP_INCORRECT_HANDLE_STATE;   /* one lookup at a time */
+        goto fail;
+    }
+    free_proxy_result( &resolver->result );
+    resolver->error = ERROR_SUCCESS;
+    resolver->state = RESOLVER_PENDING;
+    resolver->hdr.context = ctx;
+    LeaveCriticalSection( &resolver->cs );
+
+    if (!(thread = CreateThread( NULL, 0, resolve_proc, work, 0, NULL )))
+    {
+        ret = GetLastError();
+        EnterCriticalSection( &resolver->cs );
+        resolver->state = RESOLVER_IDLE;
+        LeaveCriticalSection( &resolver->cs );
+        goto fail;
+    }
+    CloseHandle( thread );
+    return ERROR_IO_PENDING;
+
+fail:
+    heap_free( work->url );
+    heap_free( work->config_url );
+    heap_free( work );
+    release_object( &resolver->hdr );
+    return ret;
+
+invalid:
+    release_object( &resolver->hdr );
+    return ERROR_INVALID_PARAMETER;
+}
+
+/***********************************************************************
+ *          WinHttpGetProxyResult (winhttp.@)
+ */
+DWORD WINAPI WinHttpGetProxyResult( HINTERNET hresolver, WINHTTP_PROXY_RESULT *result )
+{
+    struct proxy_resolver *resolver;
+    DWORD ret;
+
+    TRACE("%p, %p\n", hresolver, result);
+
+    if (!(resolver = (struct proxy_resolver *)grab_object( hresolver ))) return ERROR_INVALID_HANDLE;
+    if (resolver->hdr.type != WINHTTP_HANDLE_TYPE_PROXY_RESOLVER)
+    {
+        release_object( &resolver->hdr );
+        return ERROR_WINHTTP_INCORRECT_HANDLE_TYPE;
+    }
+    if (!result)
+    {
+        release_object( &resolver->hdr );
+        return ERROR_INVALID_PARAMETER;
+    }
+
+    EnterCriticalSection( &resolver->cs );
+    switch (resolver->state)
+    {
+    case RESOLVER_DONE:
+        if (resolver->error) ret = resolver->error;
+        else ret = copy_proxy_result( &resolver->result, result );
+        break;
+    case RESOLVER_PENDING:
+        ret = ERROR_IO_PENDING;
+        break;
+    default:    /* no GetProxyForUrlEx was issued on this handle */
+        ret = ERROR_WINHTTP_INCORRECT_HANDLE_STATE;
+        break;
+    }
+    LeaveCriticalSection( &resolver->cs );
+    release_object( &resolver->hdr );
     return ret;
 }
 

@@ -47,6 +47,7 @@ extern void func_TerminateProcess(void);
 extern void func_TunnelCache(void);
 extern void func_UEFIFirmware(void);
 extern void func_WideCharToMultiByte(void);
+extern void func_Win10Surface(void);
 extern void func_Win8Surface(void);
 
 const struct test winetest_testlist[] =
@@ -96,6 +97,7 @@ const struct test winetest_testlist[] =
     { "TunnelCache",                 func_TunnelCache },
     { "UEFIFirmware",                func_UEFIFirmware },
     { "WideCharToMultiByte",         func_WideCharToMultiByte },
+    { "Win10Surface",                func_Win10Surface },
     { "Win8Surface",                 func_Win8Surface },
     { 0, 0 }
 };

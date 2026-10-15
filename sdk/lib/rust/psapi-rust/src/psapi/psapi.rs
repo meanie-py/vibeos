@@ -144,7 +144,9 @@ unsafe extern "system" fn FindModule(
         hProcess,
         &raw mut (*ProcInfo.PebBaseAddress).Ldr as LPCVOID,
         &raw mut LoaderData as LPVOID,
-        core::mem::size_of::<_PEB_LDR_DATA>() as SIZE_T,
+        // The PEB's Ldr POINTER, as the C's sizeof(LoaderData): sizing it as the
+        // struct it points at overran this stack slot by the whole PEB_LDR_DATA.
+        core::mem::size_of::<PPEB_LDR_DATA>() as SIZE_T,
         core::ptr::null_mut::<ULONG_PTR>(),
     ) == 0
     {
@@ -164,7 +166,8 @@ unsafe extern "system" fn FindModule(
         hProcess,
         &raw mut (*LoaderData).InMemoryOrderModuleList.Flink as LPCVOID,
         &raw mut ListEntry as LPVOID,
-        core::mem::size_of::<_LIST_ENTRY>() as SIZE_T,
+        // One Flink pointer (C: sizeof(ListEntry)), not a whole LIST_ENTRY.
+        core::mem::size_of::<PLIST_ENTRY>() as SIZE_T,
         core::ptr::null_mut::<ULONG_PTR>(),
     ) == 0
     {
@@ -481,6 +484,36 @@ pub unsafe extern "system" fn EnumProcesses(
     return (TRUE) as BOOL;
 }
 
+// LIST_MODULES_* (psapi.h).
+const LIST_MODULES_32BIT: DWORD = 0x01;
+const LIST_MODULES_64BIT: DWORD = 0x02;
+const LIST_MODULES_ALL: DWORD = 0x03;
+
+/// Vista. The filter picks 32- and/or 64-bit modules; LIST_MODULES_DEFAULT (0) is the
+/// caller's own bitness. Every module a native process loads has the bitness of this
+/// build — enumerating a WoW64 process's 32-bit list from 64-bit code is not supported
+/// here — so asking only for the other bitness lists nothing, and anything else is
+/// EnumProcessModules.
+#[no_mangle]
+pub unsafe extern "system" fn EnumProcessModulesEx(
+    hProcess: HANDLE,
+    lphModule: *mut HMODULE,
+    cb: DWORD,
+    lpcbNeeded: LPDWORD,
+    dwFilterFlag: DWORD,
+) -> BOOL {
+    if dwFilterFlag & !LIST_MODULES_ALL != 0 {
+        SetLastError(ERROR_INVALID_PARAMETER as DWORD);
+        return FALSE as BOOL;
+    }
+    let other = if core::mem::size_of::<usize>() == 8 { LIST_MODULES_32BIT } else { LIST_MODULES_64BIT };
+    if dwFilterFlag == other {
+        *lpcbNeeded = 0;
+        return TRUE as BOOL;
+    }
+    EnumProcessModules(hProcess, lphModule, cb, lpcbNeeded)
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn EnumProcessModules(
     mut hProcess: HANDLE,
@@ -520,7 +553,9 @@ pub unsafe extern "system" fn EnumProcessModules(
         hProcess,
         &raw mut (*ProcInfo.PebBaseAddress).Ldr as LPCVOID,
         &raw mut LoaderData as LPVOID,
-        core::mem::size_of::<_PEB_LDR_DATA>() as SIZE_T,
+        // The PEB's Ldr POINTER, as the C's sizeof(LoaderData): sizing it as the
+        // struct it points at overran this stack slot by the whole PEB_LDR_DATA.
+        core::mem::size_of::<PPEB_LDR_DATA>() as SIZE_T,
         core::ptr::null_mut::<ULONG_PTR>(),
     ) == 0
     {
@@ -535,7 +570,8 @@ pub unsafe extern "system" fn EnumProcessModules(
         hProcess,
         &raw mut (*LoaderData).InLoadOrderModuleList.Flink as LPCVOID,
         &raw mut ListEntry as LPVOID,
-        core::mem::size_of::<_LIST_ENTRY>() as SIZE_T,
+        // One Flink pointer (C: sizeof(ListEntry)), not a whole LIST_ENTRY.
+        core::mem::size_of::<PLIST_ENTRY>() as SIZE_T,
         core::ptr::null_mut::<ULONG_PTR>(),
     ) == 0
     {

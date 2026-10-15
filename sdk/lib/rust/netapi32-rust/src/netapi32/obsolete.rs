@@ -836,3 +836,30 @@ pub unsafe extern "system" fn NetServiceInstall(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// NetGetAadJoinInformation reports the Azure AD (Entra ID) join state. This machine is not
+// AAD-joined and no DSREG join provider exists, so the answer is "not joined": S_OK with a NULL
+// join-info pointer, which is the documented not-joined result. Wine's version is a stub that
+// returns ERROR_CALL_NOT_IMPLEMENTED; answering the question is more honest than failing it.
+#[no_mangle]
+pub unsafe extern "system" fn NetGetAadJoinInformation(
+    tenant_id: LPCWSTR,
+    join_info: *mut *mut c_void,
+) -> i32 {
+    let _ = tenant_id;
+    if join_info.is_null() {
+        return E_INVALIDARG_HR;
+    }
+    *join_info = core::ptr::null_mut();
+    S_OK_HR
+}
+
+// NetGetAadJoinInformation never allocates join info on this machine (it always reports not
+// joined), so there is nothing to release; freeing NULL is the documented no-op.
+#[no_mangle]
+pub unsafe extern "system" fn NetFreeAadJoinInformation(join_info: *mut c_void) {
+    let _ = join_info;
+}
+
+const S_OK_HR: i32 = 0;
+const E_INVALIDARG_HR: i32 = 0x8007_0057u32 as i32;

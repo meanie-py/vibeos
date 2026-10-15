@@ -50,6 +50,7 @@ list(APPEND SOURCE
     TunnelCache.c
     UEFIFirmware.c
     WideCharToMultiByte.c
+    Win10Surface.c
     Win8Surface.c
     WriteFile.c
 )
