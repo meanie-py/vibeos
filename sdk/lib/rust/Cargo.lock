@@ -296,6 +296,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "autochk-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "autochk-rust"
 version = "0.1.0"
 dependencies = [

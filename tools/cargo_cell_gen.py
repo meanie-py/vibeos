@@ -695,8 +695,10 @@ def model(target: str, repo: Path = REPO) -> Cell:
     if not facts["body"]:
         raise GenError(f"{target}: no rust_staticlib_variant names its body crate")
     if first.kind == "C_EXECUTABLE":
-        if not (first.subsystem or "").startswith(("windows", "console")):
-            raise GenError(f"{target}: {first.subsystem} exe is not modelled (native?)")
+        # A native app (autochk, usetup: set_module_type nativecui) links exactly like a
+        # Win32 exe but for its subsystem: user-mode Rust, --gc-sections, auto image base.
+        if not (first.subsystem or "").startswith(("windows", "console", "native")):
+            raise GenError(f"{target}: {first.subsystem} exe is not modelled")
         module_kind = "Win32Exe"
     elif first.kind in ("C_MODULE_LIBRARY", "C_SHARED_LIBRARY"):
         # A kernel-mode driver or a win32k font driver links native:, with a kernel
@@ -801,7 +803,9 @@ def model(target: str, repo: Path = REPO) -> Cell:
     # set_module_type(... UNICODE) is the one target-level define a user module's
     # compiles get; the OBJECT libraries that replace the target must carry it.
     rc_defines = ["UNICODE", "_UNICODE"] if facts["unicode"] else []
-    if module_kind == "Win32Exe" and not msvcrtex:
+    native = (first.subsystem or "").startswith("native")
+    if module_kind == "Win32Exe" and not msvcrtex and not native:
+        # (A native app has no CRT: NtProcessStartup comes from libnt.a.)
         raise GenError(f"{target}: exe without a msvcrtex CRT startup")
     stacks = {links[a].stack for a in ARCHES}
     if len(stacks) > 1:

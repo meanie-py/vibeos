@@ -312,3 +312,10 @@ def test_per_arch_cd_destinations_become_one_variable(tmp_path):
     )
     assert 'if(ARCH STREQUAL "i386")\n    set(M_DESTINATION d/w32x86)\nelseif' in out
     assert "    DESTINATION ${M_DESTINATION}\n" in out
+
+
+def test_a_native_app_links_as_an_exe_with_its_subsystem_and_no_crt():
+    entries = {a: "NtProcessStartup" for a in g.ARCHES}
+    rs = g.build_rs(cell(subsystem="native:5.01", entries=entries, msvcrtex=None))
+    assert 'subsystem: "native:5.01".into(),' in rs
+    assert "msvcrtex_crt" not in rs
