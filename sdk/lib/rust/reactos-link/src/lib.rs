@@ -269,7 +269,9 @@ pub enum ModuleKind {
     /// startup the C runtime provides — `_wWinMainCRTStartup` (GUI) /
     /// `_mainCRTStartup` (CUI), force-pulled from `libmsvcrtex.a`, which calls
     /// the Rust `wWinMain`/`main`. All the version/auto-base/allow-multiple-def/
-    /// disable-stdcall-fixup flags come from the common block.
+    /// disable-stdcall-fixup flags come from the common block. A user-mode NATIVE app
+    /// (`set_module_type nativecui`: autochk, usetup) is this kind too, with
+    /// `native:5.01` and `NtProcessStartup`: cmake links it the same way.
     Win32Exe { entry: String, subsystem: String },
 }
 

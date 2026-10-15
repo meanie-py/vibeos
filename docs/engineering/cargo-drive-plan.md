@@ -197,9 +197,14 @@ extends it from the boot spine to every fully-Rust module.
      `prtprocs/<arch>`) become one `<M>_DESTINATION` variable. ftp was a new
      translation. `--check` now refuses a PE that is still the baseline's bytes: an
      all-arch build failure had checked 18/18 EQUIVALENT against cmake's own files.
-   - **The user-mode refusals left** (`--survey`, after wave 9): a `SOURCE` list
-     another target builds (6); `add_driver_inf` (4); per-arch link inputs (2:
-     acgenral, opengl32); native exes (2); vendored C compiled into the module
+   - **Wave 10, 2026-10-15: autochk**, the first native app. cmake links
+     `nativecui` exactly like a Win32 exe but for the subsystem (user-mode Rust,
+     `--gc-sections`, auto image base), so it is `ModuleKind::Win32Exe` with
+     `native:5.01` and no msvcrtex (NtProcessStartup comes from libnt.a).
+   - **The user-mode refusals left** (`--survey`, after wave 10): a `SOURCE` list
+     another target builds (6); `add_driver_inf` (4, drivers); per-arch link inputs
+     (2: acgenral, opengl32); usetup (ships on the boot CD only, which the CD check
+     reads from livecd lists); vendored C compiled into the module
      (mstsc's rdesktop: rung 6); 3dtext (a cargo package name cannot start with a
      digit; its generated cell is in the stash "wave9 3dtext cell"); two one-offs.
      **Owed:** the ntoskrnl cells (hand-written) import kdcom from `kdcom.spec`,
