@@ -3,16 +3,16 @@
 @ stdcall -private DllRegisterServer()
 @ stdcall -private DllUnregisterServer()
 @ stub MFConvertColorInfoFromDXVA
-@ stdcall -import MFConvertColorInfoToDXVA(ptr ptr)
+@ stdcall MFConvertColorInfoToDXVA(ptr ptr) mfplat.MFConvertColorInfoToDXVA
 @ stub MFConvertFromFP16Array
 @ stub MFConvertToFP16Array
-@ stdcall -import MFCopyImage(ptr long ptr long long long)
-@ stdcall -import MFCreateDXSurfaceBuffer(ptr ptr long ptr)
-@ stdcall -import MFCreateVideoMediaType(ptr ptr)
+@ stdcall MFCopyImage(ptr long ptr long long long) mfplat.MFCopyImage
+@ stdcall MFCreateDXSurfaceBuffer(ptr ptr long ptr) mfplat.MFCreateDXSurfaceBuffer
+@ stdcall MFCreateVideoMediaType(ptr ptr) mfplat.MFCreateVideoMediaType
 @ stub MFCreateVideoMediaTypeFromBitMapInfoHeader
-@ stdcall -import MFCreateVideoMediaTypeFromSubtype(ptr ptr)
+@ stdcall MFCreateVideoMediaTypeFromSubtype(ptr ptr) mfplat.MFCreateVideoMediaTypeFromSubtype
 @ stub MFCreateVideoMediaTypeFromVideoInfoHeader2
-@ stdcall -import MFCreateVideoMediaTypeFromVideoInfoHeader(ptr long long long long int64 ptr ptr)
+@ stdcall MFCreateVideoMediaTypeFromVideoInfoHeader(ptr long long long long int64 ptr ptr) mfplat.MFCreateVideoMediaTypeFromVideoInfoHeader
 @ stdcall MFCreateVideoMixer(ptr ptr ptr ptr)
 @ stdcall MFCreateVideoMixerAndPresenter(ptr ptr ptr ptr ptr ptr)
 @ stub MFCreateVideoOTA
@@ -20,9 +20,9 @@
 @ stdcall MFCreateVideoPresenter(ptr ptr ptr ptr)
 @ stdcall MFCreateVideoSampleAllocator(ptr ptr)
 @ stdcall MFCreateVideoSampleFromSurface(ptr ptr)
-@ stdcall -import MFGetPlaneSize(long long long ptr)
-@ stdcall -import MFGetStrideForBitmapInfoHeader(long long ptr)
+@ stdcall MFGetPlaneSize(long long long ptr) mfplat.MFGetPlaneSize
+@ stdcall MFGetStrideForBitmapInfoHeader(long long ptr) mfplat.MFGetStrideForBitmapInfoHeader
 @ stub MFGetUncompressedVideoFormat
 @ stub MFInitVideoFormat
-@ stdcall -import MFInitVideoFormat_RGB(ptr long long long)
+@ stdcall MFInitVideoFormat_RGB(ptr long long long) mfplat.MFInitVideoFormat_RGB
 @ stdcall MFIsFormatYUV(long)
