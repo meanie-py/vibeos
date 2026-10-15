@@ -38,9 +38,7 @@ from tools.source_walk import source_files
 _CH = r"'(\\?.)'"
 FOURCC = re.compile(
     r"\b(0[xX][0-9a-fA-F_]+|\d[\d_]*)(?:[iu](?:8|16|32|64|size))?"
-    r"[^\n/]*?//\s*(?:MAKEFOURCC|mmioFOURCC)\(\s*"
-    + r"\s*,\s*".join([_CH] * 4)
-    + r"\s*\)"
+    r"[^\n/]*?//\s*(?:MAKEFOURCC|mmioFOURCC)\(\s*" + r"\s*,\s*".join([_CH] * 4) + r"\s*\)"
 )
 _ESC = {"\\'": "'", "\\\\": "\\", "\\0": "\0"}
 
@@ -64,8 +62,12 @@ def scan_text(text: str) -> list[tuple[int, str, int, int]]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--root", action="append", default=None,
-                    help="directory to scan (repeatable); defaults to sdk/")
+    ap.add_argument(
+        "--root",
+        action="append",
+        default=None,
+        help="directory to scan (repeatable); defaults to sdk/",
+    )
     args = ap.parse_args()
     repo = Path(__file__).resolve().parent.parent
     findings = files = 0

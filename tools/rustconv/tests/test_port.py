@@ -1245,7 +1245,12 @@ def test_wine_list_fields_typed_as_nt_list_entry_are_rewritten(tmp_path):
     )
     assert port._wine_list_entry(rs, mod, crate) == 5
     out = rs.read_text()
-    assert "entry: list," in out and "q: list }" in out and "p: *mut list" in out and "f(p: *mut list)" in out
+    assert (
+        "entry: list," in out
+        and "q: list }" in out
+        and "p: *mut list" in out
+        and "f(p: *mut list)" in out
+    )
     assert out.count("LIST_ENTRY!(p, t, entry)") == 2
     assert port._wine_list_entry(rs, mod, crate) == 0
 

@@ -1,4 +1,4 @@
-"""Tests for scan_fourcc_literals — a MAKEFOURCC folded to the wrong integer (evr's MFIsFormatYUV)."""
+"""Tests for scan_fourcc_literals: a MAKEFOURCC folded to the wrong integer (evr)."""
 
 from __future__ import annotations
 

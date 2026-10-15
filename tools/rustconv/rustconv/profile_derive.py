@@ -2907,8 +2907,6 @@ _NTDDI_FOR = {
 }
 
 
-
-
 def _ntddi_for(win32_winnt: str) -> str:
     """NTDDI_VERSION matching a _WIN32_WINNT, as sdkddkver.h's mismatch check demands.
 
