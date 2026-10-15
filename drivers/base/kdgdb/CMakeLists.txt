@@ -16,5 +16,9 @@ spec2def(kdgdb.dll kdgdb.spec)
 #
 #   gdb_input.c gdb_receive.c gdb_send.c kdcom.c kdpacket.c utils.c
 #   i386_sup.c / amd64_sup.c  -- replaced by Rust (kdgdb-rust); kept on disk.
+# The version resource: cmake compiles it in this OBJECT library, whose windres
+# command the cargo link replays.
+add_library(kdcom_res OBJECT kdgdb.rc)
+target_include_directories(kdcom_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_kernel_dll(kdcom kdgdb-cargo kdcom.dll BODY_CRATE kdgdb-rust
-    EXTRA_DEPENDS cportlib libcntpr memcmp)
+    EXTRA_DEPENDS kdcom_res psdk cportlib libcntpr memcmp)

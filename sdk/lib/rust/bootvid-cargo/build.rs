@@ -38,6 +38,8 @@ fn main() {
         // cmake's `add_importlibs(bootvid ntoskrnl hal)`.
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .import_lib("hal/hal.spec", "hal.dll", "hal")
+        // cmake's kernel-mode links keep every section.
+        .keep_all_sections()
         .link(ModuleKind::KernelDll {
             // ENTRYPOINT 0: no DllMain (ntoskrnl resolves the Vid* exports by
             // name). Entry = lld's image-base symbol, arch-decorated.

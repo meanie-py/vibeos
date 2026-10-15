@@ -38,6 +38,9 @@ fn main() {
         .c_shims(&["sdk/lib/rust/cnt-rust/src/cabi/scanf_trampoline.c"])
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .import_lib("hal/hal.spec", "hal.dll", "hal")
+        .resource_from_rc("drivers/base/kdcom/kdcom.rc", "kdcom_res")
+        // cmake's kernel-mode links keep every section.
+        .keep_all_sections()
         .link(ModuleKind::KernelDll {
             entry: entry.into(),
             image_base,
