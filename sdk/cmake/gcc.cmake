@@ -748,7 +748,9 @@ endfunction()
 ##                    [NO_CD]                           (skip add_cd_file —
 ##                                                       e.g. uefildr, which
 ##                                                       boot_images embeds)
-##                    [DESTINATION <cd-dir>...] [NAME_ON_CD <name>])
+##                    [DESTINATION <cd-dir>...] [NAME_ON_CD <name>]
+##                    [NO_CAB]                          (not in reactos.cab:
+##                                                       setup does not install it))
 ##
 ## <crate> is the cargo bin crate whose build.rs uses reactos-link and is
 ## arch-aware (i686/x86_64/aarch64-kernel.json under the crate dir); its
@@ -770,7 +772,7 @@ include(${CMAKE_CURRENT_LIST_DIR}/cargo_link_context.cmake)
 ## so the shared body crate compiles once instead of once per module (the 95 keyboard
 ## layouts). Each output gets the kind's post-link and its own cd entry.
 function(add_cargo_module _target _crate _output)
-    cmake_parse_arguments(_acm "NO_CD;DELAY_IMPORTS" "KIND;NAME_ON_CD;BODY_CRATE" "BODY_CRATES;EXTRA_DEPENDS;BINS;DESTINATION" ${ARGN})
+    cmake_parse_arguments(_acm "NO_CD;NO_CAB;DELAY_IMPORTS" "KIND;NAME_ON_CD;BODY_CRATE" "BODY_CRATES;EXTRA_DEPENDS;BINS;DESTINATION" ${ARGN})
     if(NOT _acm_KIND)
         set(_acm_KIND kerneldll)
     endif()
@@ -799,8 +801,12 @@ function(add_cargo_module _target _crate _output)
     # kernel json links a SECOND `core` (its own build-std one beside the body's
     # precompiled one): 70-78 KB per module that panics. reactos-link stubs rsbegin.o's
     # EH-frame registration and clears the triple's --large-address-aware.
+    # A kernel-kind cell with no i686-kernel.json of its own does the same: the drivers
+    # tools/cargo_cell_gen.py generates build their body on the builtin triple, as
+    # cmake's custom command did, and the json would add that second `core`.
     set(_i386_user FALSE)
-    if(ARCH STREQUAL "i386" AND (_acm_KIND STREQUAL "win32dll" OR _acm_KIND STREQUAL "win32exe"))
+    if(ARCH STREQUAL "i386" AND (_acm_KIND STREQUAL "win32dll" OR _acm_KIND STREQUAL "win32exe"
+                                 OR NOT EXISTS "${_ws}/${_crate}/i686-kernel.json"))
         set(_i386_user TRUE)
     endif()
     if(_i386_user)
@@ -1128,6 +1134,7 @@ function(add_cargo_module _target _crate _output)
         cmake_policy(POP)
     endif()
     add_custom_target(${_target} ALL DEPENDS ${_outs})
+    set_property(TARGET ${_target} PROPERTY CARGO_OUTPUTS ${_outs})
 
     if(NOT _acm_NO_CD)
         if(NOT _acm_DESTINATION)
@@ -1166,17 +1173,22 @@ function(add_cargo_module _target _crate _output)
                 # ...and INSTALL it. On the bootcd NO_CAB puts the file loose on the CD, which the
                 # setup boot needs, and leaves it out of reactos.cab, which is what setup installs
                 # from: an installed system had no smss, csrss or winlogon at all. Upstream lists such
-                # binaries twice, loose and in the cabinet; so do we. Only the install directories
-                # (the loader is not installed: system32, drivers and the winsxs assemblies), and
+                # binaries twice, loose and in the cabinet; so do we. Only the install tree
+                # (`reactos/...`: the loader and the CD root are not installed), and
                 # only under the built name, which is the name
                 # the cabinet keeps (a renamed output is installed by its txtsetup.sif row instead).
                 # A file txtsetup.sif already installs (its [SourceDisksFiles] rows: the boot
                 # drivers, hal, ntoskrnl, ntdll...) stays out of the cabinet: both copies ran, and the
                 # second could not overwrite the first (16 ACCESS_DENIED copies per install).
+                # This once matched only system32, drivers and winsxs, and regedit, hh, winhlp32,
+                # iexplore, the wbem tools, aclayers and winprint shipped on the CD but were
+                # never installed.
                 string(TOLOWER "${_acm_out_name}" _acm_out_lc)
                 list(FIND _acm_txtsetup "${_acm_out_lc}" _acm_in_txtsetup)
+                # NO_CAB: the module's add_cd_file said so (usbaudio ships loose on the
+                # boot CD and setup does not install it).
                 if(_acm_cd_name STREQUAL _acm_out_name AND _acm_in_txtsetup EQUAL -1
-                   AND _acm_dest MATCHES "^reactos/(system32(/drivers)?|winsxs/[^/]+)$")
+                   AND _acm_dest MATCHES "^reactos(/|$)" AND NOT _acm_NO_CAB)
                     add_cd_file(FILE ${_out} DESTINATION ${_acm_dest} FOR bootcd)
                     if(TARGET reactos_cab_inf)
                         add_dependencies(reactos_cab_inf ${_target})
@@ -1184,6 +1196,37 @@ function(add_cargo_module _target _crate _output)
                 endif()
             endforeach()
         endforeach()
+    endif()
+endfunction()
+
+## One more CD placement for a cargo-linked module, in add_cd_file's own words:
+##   add_cargo_cd_file(<target> DESTINATION <dir> [NO_CAB] [NAME_ON_CD <n>] FOR <cds>)
+## add_cd_file's TARGET form needs a cmake-linked target; this is its FILE form on the
+## cell's output plus the dependencies the FILE form does not wire. For what
+## add_cargo_module's own DESTINATION does not cover: usetup ships only on the boot CD
+## (as smss.exe), welcome also as the boot CD's root setup.exe.
+function(add_cargo_cd_file _target)
+    get_property(_outs TARGET ${_target} PROPERTY CARGO_OUTPUTS)
+    list(LENGTH _outs _n)
+    if(NOT _n EQUAL 1)
+        message(FATAL_ERROR "add_cargo_cd_file(${_target}): needs a one-output add_cargo_module")
+    endif()
+    cmake_parse_arguments(_accd "NO_CAB" "" "FOR" ${ARGN})
+    add_cd_file(FILE ${_outs} ${ARGN})
+    set(_cds ${_accd_FOR})
+    if("all" IN_LIST _cds)
+        list(APPEND _cds bootcd livecd regtest)
+    endif()
+    foreach(_cd ${_cds})
+        if(_cd STREQUAL "regtest")
+            set(_cd bootcdregtest)
+        endif()
+        if(TARGET ${_cd})
+            add_dependencies(${_cd} ${_target})
+        endif()
+    endforeach()
+    if(NOT _accd_NO_CAB AND ("bootcd" IN_LIST _cds) AND TARGET reactos_cab_inf)
+        add_dependencies(reactos_cab_inf ${_target})
     endif()
 endfunction()
 
