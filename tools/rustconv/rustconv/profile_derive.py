@@ -934,7 +934,9 @@ def _target_names(cmake: Path) -> set[str]:
     text = _strip_cmake_comments(_read_with_includes(cmake))
     names = {
         m.group(2)
-        for m in re.finditer(r"\b(add_library|add_executable)\s*\(\s*([A-Za-z0-9_${}]+)", text)
+        # `.` too: rapps_com's target is `rapps.com`, read as `rapps`, so translate found no
+        # owner for its main.c and bought nothing.
+        for m in re.finditer(r"\b(add_library|add_executable)\s*\(\s*([A-Za-z0-9_.${}]+)", text)
         if not m.group(2).startswith("$")
     }
     names.update(_CARGO_KERNEL_RE.findall(text))

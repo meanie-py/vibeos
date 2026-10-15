@@ -785,6 +785,12 @@ members = [
     "evr-rust",
     "ftp-rust",
     "fc-rust",
+    "setup16-rust",
+    "stortest-rust",
+    "testgui-rust",
+    "testchild-rust",
+    "devmgmt-rust",
+    "rapps_com-rust",
 ]
 resolver = "2"
 

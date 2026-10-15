@@ -1266,6 +1266,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "devmgmt-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "dhcpcsvc-rust"
 version = "0.1.0"
 dependencies = [
@@ -4204,6 +4215,17 @@ name = "random"
 version = "0.1.0"
 
 [[package]]
+name = "rapps_com-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "rasadhlp-rust"
 version = "0.1.0"
 dependencies = [
@@ -4973,6 +4995,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "setup16-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "setuplib-rust"
 version = "0.1.0"
 dependencies = [
@@ -5299,6 +5332,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "stortest-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "strsafe-difftest"
 version = "0.1.0"
 dependencies = [
@@ -5533,6 +5578,28 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
  "winedebug-rust",
+]
+
+[[package]]
+name = "testchild-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "testgui-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
