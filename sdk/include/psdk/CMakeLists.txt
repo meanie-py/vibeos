@@ -89,6 +89,8 @@ list(APPEND SOURCE
     dxgicommon.idl
     dxgidebug.idl
     dxgiformat.idl
+    evr.idl
+    evr9.idl
     dxgitype.idl
     dxva2api.idl
     dxvahd.idl
@@ -114,8 +116,12 @@ list(APPEND SOURCE
     mediaobj.idl
     metahost.idl
     mfidl.idl
+    mfd3d12.idl
+    mfmediaengine.idl
     mfobjects.idl
+    mfplay.idl
     mftransform.idl
+    mfreadwrite.idl
     mimeinfo.idl
     mimeole.idl
     mlang.idl
@@ -133,6 +139,7 @@ list(APPEND SOURCE
     msxml2.idl
     msxml6.idl
     natupnp.idl
+    ndattrib.idl
     netcon.idl
     netfw.idl
     oaidl.idl

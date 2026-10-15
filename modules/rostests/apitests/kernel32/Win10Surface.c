@@ -5,7 +5,7 @@
  *              PathCch*, IDN, module enumeration, NtGetNextThread, transactions in the TEB,
  *              UTF-8 conversion, clipboard listeners, InitializeContext, package identity,
  *              WSAPoll/GetAddrInfoEx, iphlpapi tables, shcore DPI, and the setupapi /
- *              cfgmgr32 device property getters. Everything beyond kernel32/user32/gdi32/ntdll
+ *              cfgmgr32 device property getters, MFCreateMediaBufferWrapper. Everything beyond kernel32/user32/gdi32/ntdll
  *              is looked up at run time so the same binary grades Windows 11.
  */
 #include "precomp.h"
@@ -842,6 +842,86 @@ static void Test_DllDirectories(void)
     pSetDefault(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
 }
 
+/* ---- 19 ---- */
+/* IMFMediaBuffer by hand: mfobjects.h drags the whole COM header set into this TU. */
+typedef struct W10_MFBUF W10_MFBUF;
+typedef struct
+{
+    HRESULT (WINAPI *QueryInterface)(W10_MFBUF *, REFIID, void **);
+    ULONG (WINAPI *AddRef)(W10_MFBUF *);
+    ULONG (WINAPI *Release)(W10_MFBUF *);
+    HRESULT (WINAPI *Lock)(W10_MFBUF *, BYTE **, DWORD *, DWORD *);
+    HRESULT (WINAPI *Unlock)(W10_MFBUF *);
+    HRESULT (WINAPI *GetCurrentLength)(W10_MFBUF *, DWORD *);
+    HRESULT (WINAPI *SetCurrentLength)(W10_MFBUF *, DWORD);
+    HRESULT (WINAPI *GetMaxLength)(W10_MFBUF *, DWORD *);
+} W10_MFBUF_VTBL;
+struct W10_MFBUF { const W10_MFBUF_VTBL *lpVtbl; };
+
+static void Test_MediaBufferWrapper(void)
+{
+    HRESULT (WINAPI *pCreateMem)(DWORD, W10_MFBUF **) = (void *)GetDyn(L"mfplat.dll", "MFCreateMemoryBuffer");
+    HRESULT (WINAPI *pWrap)(W10_MFBUF *, DWORD, DWORD, W10_MFBUF **) = (void *)GetDyn(L"mfplat.dll", "MFCreateMediaBufferWrapper");
+    W10_MFBUF *Parent = NULL, *Wrap = NULL;
+    BYTE *PData = NULL, *WData = NULL;
+    DWORD Max = 0xdead, Cur = 0xdead;
+    HRESULT hr;
+
+    if (!pCreateMem || !pWrap)
+    {
+        skip("mfplat buffer functions not available\n");
+        return;
+    }
+    hr = pCreateMem(16, &Parent);
+    ok(hr == S_OK, "MFCreateMemoryBuffer: %08lx\n", hr);
+    if (FAILED(hr))
+        return;
+    Parent->lpVtbl->SetCurrentLength(Parent, 10);
+
+    hr = pWrap(Parent, 2, 6, &Wrap);
+    ok(hr == S_OK, "wrap 2+6 of 10: %08lx\n", hr);
+    if (SUCCEEDED(hr))
+    {
+        Wrap->lpVtbl->GetMaxLength(Wrap, &Max);
+        Wrap->lpVtbl->GetCurrentLength(Wrap, &Cur);
+        trace("wrap max %lu cur %lu\n", Max, Cur);
+        ok(Max == 6, "max %lu\n", Max);
+        ok(Cur == 6, "cur %lu\n", Cur);
+        Parent->lpVtbl->Lock(Parent, &PData, NULL, NULL);
+        Parent->lpVtbl->Unlock(Parent);
+        hr = Wrap->lpVtbl->Lock(Wrap, &WData, &Max, &Cur);
+        ok(hr == S_OK, "Lock: %08lx\n", hr);
+        ok(WData == PData + 2, "data %p vs parent %p\n", WData, PData);
+        if (SUCCEEDED(hr))
+            Wrap->lpVtbl->Unlock(Wrap);
+        hr = Wrap->lpVtbl->SetCurrentLength(Wrap, 7);
+        ok(hr == E_INVALIDARG, "SetCurrentLength past max: %08lx\n", hr);
+        hr = Wrap->lpVtbl->SetCurrentLength(Wrap, 3);
+        ok(hr == S_OK, "SetCurrentLength 3: %08lx\n", hr);
+        Wrap->lpVtbl->Release(Wrap);
+    }
+
+    Wrap = (void *)0xdeadbeef;
+    hr = pWrap(Parent, 8, 6, &Wrap);
+    trace("wrap 8+6 of 10: %08lx %p\n", hr, Wrap);
+    ok(hr == E_OUTOFMEMORY, "wrap past valid data: %08lx\n", hr);
+    ok(Wrap == (void *)0xdeadbeef, "out touched on failure: %p\n", Wrap);
+    if (SUCCEEDED(hr) && Wrap) Wrap->lpVtbl->Release(Wrap);
+
+    Wrap = NULL;
+    hr = pWrap(Parent, 10, 0, &Wrap);
+    trace("wrap 10+0 of 10: %08lx\n", hr);
+    ok(hr == S_OK, "zero-length wrap at end: %08lx\n", hr);
+    if (SUCCEEDED(hr) && Wrap) Wrap->lpVtbl->Release(Wrap);
+
+    hr = pWrap(Parent, 0, 4, NULL);
+    trace("NULL out: %08lx\n", hr);
+    ok(hr == E_POINTER, "NULL out: %08lx\n", hr);
+    /* A NULL buffer faults on Windows 11; not probed. */
+
+    Parent->lpVtbl->Release(Parent);
+}
+
 START_TEST(Win10Surface)
 {
     Test_GetProductInfo();
@@ -862,4 +942,5 @@ START_TEST(Win10Surface)
     Test_SetupApiProperty();
     Test_CfgMgrProperty();
     Test_DllDirectories();
+    Test_MediaBufferWrapper();
 }

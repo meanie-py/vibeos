@@ -109,7 +109,9 @@ dll/win32/cryptui             # Synced to Wine-10.0
 dll/win32/dbgeng              # Synced to Wine-10.0
 dll/win32/dbghelp             # Synced to WineStaging-5.16
 dll/win32/dciman32            # Synced to Wine-10.1-dev (b00c7619f1b)
+dll/win32/dcomp               # Synced to Wine-11.19
 dll/win32/dwmapi              # Synced to Wine-8.14
+dll/win32/evr                 # Synced to Wine-11.19
 dll/win32/faultrep            # Synced to Wine-10.0
 dll/win32/feclient            # Synced to Wine-10.0
 dll/win32/fontsub             # Synced to Wine-10.0
@@ -141,6 +143,9 @@ dll/win32/mcicda              # Synced to Wine-10.0
 dll/win32/mciqtz32            # Synced to Wine-10.0
 dll/win32/mciseq              # Synced to Wine-10.0
 dll/win32/mciwave             # Synced to Wine-10.0
+dll/win32/mf                  # Synced to Wine-11.19
+dll/win32/mfplat              # Synced to Wine-11.19 (+ MFCreateMediaBufferWrapper, ReactOS)
+dll/win32/mfreadwrite         # Synced to Wine-11.19
 dll/win32/mgmtapi             # Synced to Wine-10.0
 dll/win32/mlang               # Synced to Wine-10.0
 dll/win32/mmdevapi            # Synced to WineStaging-4.18
@@ -180,6 +185,7 @@ dll/win32/msxml4              # Synced to Wine-10.0
 dll/win32/msxml6              # Synced to Wine-10.0
 dll/win32/ncrypt              # Synced to Wine-11.19
 dll/win32/nddeapi             # Synced to Wine-10.0
+dll/win32/ndfapi              # Synced to Wine-11.19
 dll/win32/netapi32            # Forked at Wine-1.3.34
 dll/win32/netutils            # Synced to Wine-10.0
 dll/win32/npptools            # Synced to Wine-10.0
@@ -204,6 +210,7 @@ dll/win32/pstorec             # Synced to Wine-10.0
 dll/win32/qmgr                # Synced to Wine-10.0
 dll/win32/qmgrprxy            # Synced to Wine-10.0
 dll/win32/query               # Synced to Wine-10.0
+dll/win32/qwave               # Synced to Wine-11.19 (+ real handles, QOSRemoveSocketFromFlow/QueryFlow/SetFlow, ReactOS)
 dll/win32/rasapi32            # Synced to Wine-10.0
 dll/win32/regapi              # Synced to Wine-10.0
 dll/win32/resutils            # Synced to Wine-10.0
@@ -212,7 +219,7 @@ dll/win32/riched32            # Synced to Wine-10.0
 dll/win32/rpcrt4              # Synced to Wine-10.0
 dll/win32/rsabase             # Synced to Wine-10.0
 dll/win32/rsaenh              # Synced to Wine-11.19
-dll/win32/rtworkq             # Synced to Wine-10.0
+dll/win32/rtworkq             # Synced to Wine-11.19
 dll/win32/sccbase             # Synced to Wine-10.0
 dll/win32/schannel            # Synced to WineStaging-3.3
 dll/win32/scrrun              # Synced to Wine-10.0
@@ -235,6 +242,7 @@ dll/win32/sti                 # Synced to Wine-10.0
 dll/win32/sxs                 # Synced to Wine-10.0
 dll/win32/t2embed             # Synced to Wine-10.0
 dll/win32/tapi32              # Synced to Wine-10.0
+dll/win32/tbs                 # Synced to Wine-11.19 (+ Tbsip_* context calls, ReactOS)
 dll/win32/traffic             # Synced to Wine-10.0
 dll/win32/twain_32            # Synced to Wine-10.0
 dll/win32/uiautomationcore    # Synced to Wine-10.0
@@ -248,6 +256,7 @@ dll/win32/version             # Synced to WineStaging-4.18 (Requires kernelbase)
 dll/win32/vssapi              # Synced to WineStaging-4.18
 dll/win32/wbemdisp            # Synced to WineStaging-4.18
 dll/win32/wbemprox            # Synced to WineStaging-4.18
+dll/win32/wevtapi             # Synced to Wine-11.19
 dll/win32/windowscodecs       # Synced to Wine-10.0
 dll/win32/windowscodecsext    # Synced to Wine-10.0
 dll/win32/wing32              # Synced to Wine-10.0
