@@ -7,7 +7,7 @@ reads what that link ACTUALLY does, from each `build-<arch>/build.ninja` (entry 
 subsystem, image base, the libraries, the `.def`, the resources), and writes the
 reactos-link cell that does the same thing:
 
-  sdk/lib/rust/<m>-cargo/{Cargo.toml, build.rs, src/main.rs, i686-kernel.json}
+  sdk/lib/rust/<m>-cargo/{Cargo.toml, build.rs, src/main.rs}
   + the workspace member, + the module's CMakeLists rewritten to `add_cargo_module`.
 
     python3 tools/cargo_cell_gen.py winmine            # dry run: show what it would write
@@ -40,12 +40,10 @@ RUST = REPO / "sdk/lib/rust"
 ARCHES = ("i386", "amd64", "arm64")
 TRIPLE = {"i386": "x86", "amd64": "x86_64", "arm64": "aarch64"}
 TARGET = {
-    "i386": "i686-kernel.json",
+    "i386": "i686-pc-windows-gnu",
     "amd64": "x86_64-pc-windows-gnu",
     "arm64": "aarch64-pc-windows-gnullvm",
 }
-# The user-mode (hard-float) variant every user cell carries; see cargo_orchestrate.
-USER_JSON_FROM = RUST / "userinit-cargo/i686-kernel.json"
 MSVCRTEX = {"wexe": "ExeWide", "exe": "ExeAnsi", "dll": "Dll"}
 # What panic_common's user handler imports (its report, stack walk and exit).
 PANIC_COMMON_IMPORTS = {
@@ -74,16 +72,13 @@ DEAD_IMPORTS = {
 # cmake's rust_staticlib_variant did not; a frame pointer can push a big frame over the
 # probe threshold. ntdll exports __chkstk on amd64/arm64 and kernel32 forwards it there.
 STACK_PROBE_IMPORTS = {"kernel32.dll!__chkstk", "ntdll.dll!__chkstk"}
-# What compiler-builtins' `mem` feature defines on i386 (see check()).
-I386_BUILTIN_MEM = {"memcmp", "memcpy", "memmove", "memset", "strlen", "bcmp"}
+# i386 only: the builtin i686-pc-windows-gnu triple links rsbegin.o/rsend.o, whose one
+# `.ctors`/`.dtors` entry each (EH-frame registration, a no-op here: see reactos-link)
+# lld's MinGW writer puts in sections of their own.
+I386_RSBEGIN_SECTIONS = {"sections: + .ctors 0x40000040", "sections: + .dtors 0x40000040"}
 # How much more the loader may map for a cargo-linked module than for cmake's: the cell's
 # own handler, startup and section padding. All of core is ~200 KB on amd64.
 SIZE_SLACK = 16 * 1024
-# i386 only, and only where the cell keeps panic_common: the cell builds its own core
-# (nightly build-std on the kernel json) beside the body's i686-pc-windows-gnu one, so
-# the handler links a second copy of core::fmt, measured at 70-78 KB. The fix is a
-# user-target i386 cell (owed: docs/engineering/cargo-drive-plan.md).
-I386_SECOND_CORE = 80 * 1024
 # Statements on the target that the cargo cell replaces outright.
 REPLACED = (
     "add_executable",
@@ -950,7 +945,6 @@ def apply(cell: Cell, repo: Path = REPO) -> list[Path]:
     (crate / "Cargo.toml").write_text(toml)
     (crate / "build.rs").write_text(rs)
     (crate / "src/main.rs").write_text(main_rs(cell))
-    (crate / "i686-kernel.json").write_bytes(USER_JSON_FROM.read_bytes())
     ws = repo / "sdk/lib/rust/Cargo.toml"
     text = ws.read_text()
     member = f'    "{cell.target}-cargo",\n'
@@ -1073,45 +1067,30 @@ def check(targets: list[str], baseline: Path, repo: Path = REPO) -> int:
                 for d in diffs
                 if a != "i386" and d.removeprefix("imports: + ") in STACK_PROBE_IMPORTS
             }
-            # i386 cells build core with `-Z build-std-features=compiler-builtins-mem`, so the
-            # mem/str intrinsics resolve statically instead of importing the CRT's (userinit
-            # and lsass have linked that way since June). Accepted as a removal, i386 only.
-            builtins = {
-                d
-                for d in diffs
-                if a == "i386"
-                and d.startswith("imports: - ")
-                and d.split("!", 1)[-1] in I386_BUILTIN_MEM
-            }
+            rsbegin = {d for d in diffs if a == "i386" and d in I386_RSBEGIN_SECTIONS}
             dead = {d for d in diffs if d.removeprefix("imports: - ") in DEAD_IMPORTS.get(t, ())}
             # A panic-lean cell links only what its body, CRT and exports reach; cmake's
             # link also kept whatever shared an archive member with the body's panic
             # path. An import can only vanish when no linked code references it, so the
             # removals are that unreachable code. Reported, never silent.
             lean = (
-                (
-                    {d for d in diffs if d.startswith("imports: - ")}
-                    if not _cell_uses_panic_common(t, a, repo)
-                    else set()
-                )
-                - builtins
-                - dead
-            )
-            diffs = [d for d in diffs if d not in extra | builtins | probes | dead | lean]
+                {d for d in diffs if d.startswith("imports: - ")}
+                if not _cell_uses_panic_common(t, a, repo)
+                else set()
+            ) - dead
+            diffs = [d for d in diffs if d not in extra | rsbegin | probes | dead | lean]
             # Size is not part of the contract, but a cell must not carry code cmake's
             # link did not: that is how all of core rode into 94 modules unnoticed.
             grew = pe_equiv.load(new).mapped_size() - pe_equiv.load(olds[0]).mapped_size()
-            second_core = a == "i386" and _cell_uses_panic_common(t, a, repo)
-            slack = SIZE_SLACK + (I386_SECOND_CORE if second_core else 0)
-            if grew > slack:
-                diffs.append(f"size: mapped image grew {grew // 1024} KB (slack {slack // 1024})")
+            if grew > SIZE_SLACK:
+                diffs.append(
+                    f"size: mapped image grew {grew // 1024} KB (slack {SIZE_SLACK // 1024})"
+                )
             note = " (+ panic_common imports)" if extra else ""
-            note += " (mem intrinsics from compiler-builtins)" if builtins else ""
+            note += " (+ rsbegin .ctors/.dtors)" if rsbegin else ""
             note += " (+ __chkstk: frame pointers)" if probes else ""
             note += " (- dead-code import, see DEAD_IMPORTS)" if dead else ""
             note += f" (- {len(lean)} imports only the panic path reached)" if lean else ""
-            if second_core and grew > SIZE_SLACK:
-                note += f" (+{grew // 1024} KB: i386 second core)"
             print(f"{t:14} {a:6} {'EQUIVALENT' + note if not diffs else 'DIFFERENT'}")
             for d in diffs[:12]:
                 print(f"    {d}")

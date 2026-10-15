@@ -29,10 +29,10 @@ case "$module" in
   ntdll_vista) crate="ntdll_vista-cargo"; dll="build-$arch/dll/ntdll/nt_0600/ntdll_vista.dll" ;;
   *) echo "module must be ntdll or ntdll_vista" >&2; exit 2 ;;
 esac
-# Shared cargo-invocation policy (builtin triple on amd64, nightly + build-std
-# on i386). Sets CELL_TARGET / CELL_STEM / CELL_STD / CELL_TOOLCHAIN.
+# Shared cargo-invocation policy (ntdll is a user-mode cell: the builtin triple,
+# stable, on every arch). Sets CELL_TARGET / CELL_STEM / CELL_STD / CELL_TOOLCHAIN.
 VIBEOS_ROOT="$PWD" . sdk/lib/rust/cargo-cell-args.sh
-cell_args "$arch" "$crate" || exit 2
+cell_args "$arch" "$crate" win32dll || exit 2
 
 BUILD="build-$arch"
 CARGO_OUT="sdk/lib/rust/target/$CELL_STEM/release/$module.exe"

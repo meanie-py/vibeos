@@ -40,6 +40,10 @@ THE SANCTIONED FIX (when it trips)
 WHAT COUNTS AS A DOOMED CMakeLists
     One that carries `-C target-feature=-sse,-sse2` AND the builtin `i686-pc-windows-gnu`
     triple AND no custom `.json` target. (A crate already on a softfloat json is safe.)
+    Plus `sdk/cmake/gcc.cmake` itself: since 2026-10-14 add_cargo_module links every i386
+    user-mode cell (KIND win32dll / win32exe, ~160 of them) on the builtin triple with the
+    bodies' `-sse,-sse2`, so they share the bodies' fate. Only the kernel kinds' cells
+    are on the softfloat json now.
 """
 
 from __future__ import annotations
@@ -51,6 +55,8 @@ import tempfile
 from pathlib import Path
 
 SSE_FLAG = "target-feature=-sse,-sse2"
+# Build-system files that put many crates on the combo at once (see the docstring).
+EXTRA_SITES = ("sdk/cmake/gcc.cmake",)
 BUILTIN_TRIPLE = "i686-pc-windows-gnu"
 PHASE_OUT_NOTE = "being phased out"
 
@@ -88,6 +94,12 @@ def find_doomed_cmakelists(root: Path) -> list[Path]:
             continue
         if SSE_FLAG in text and BUILTIN_TRIPLE in text and "i686-kernel.json" not in text:
             hits.append(path)
+    for rel in EXTRA_SITES:
+        path = root / rel
+        if path.is_file():
+            text = path.read_text(errors="replace")
+            if SSE_FLAG in text and BUILTIN_TRIPLE in text:
+                hits.append(path)
     return sorted(hits)
 
 

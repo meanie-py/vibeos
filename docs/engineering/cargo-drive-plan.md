@@ -94,14 +94,25 @@ extends it from the boot spine to every fully-Rust module.
        existing cell from its baseline.
      - **`--check` guards size**: the mapped image may not grow more than 16 KB.
        amd64 is now +21 KB across the whole wave, arm64 3 KB smaller than cmake.
-     - **Owed: i386 cells on the user target.** An i386 cell builds its own `core`
-       (nightly build-std on the kernel json) beside the body's
-       i686-pc-windows-gnu one, so a cell that keeps `panic_common` links a second
-       copy of `core::fmt`: 70-78 KB each, 3.9 MB for the wave. `--check` names it
-       and bounds it at 80 KB. Moving the cell to `i686-pc-windows-gnu` removes it
-       and a slice of the nightly surface, but that triple links `rsbegin.o`
-       (wants libgcc's `___register_frame_info`), and the lint, orchestrator and
-       `cargo-cell-args.sh` replays must learn the target too.
+     - **i386 cells on the user target, 2026-10-14.** An i386 cell built its own
+       `core` (nightly build-std on the kernel json) beside the body's
+       i686-pc-windows-gnu one, so a cell that kept `panic_common` linked a second
+       copy of `core::fmt`, 70-78 KB each. Every i386 user-mode cell (KIND win32dll /
+       win32exe, 160 of them, ntdll included) now links the builtin
+       `i686-pc-windows-gnu` on stable, like amd64; only the kernel kinds keep the
+       softfloat json and nightly. Across all 285 i386 cargo-linked PEs the mapped
+       size fell 6.9 MB. What the triple brings, and how it is met:
+       - `rsbegin.o` (linked even with `link-self-contained=no`) registers the
+         image's `.eh_frame` with libgcc. Nothing unwinds in a panic=abort image
+         with no libgcc, so reactos-link gives `__register_frame_info` /
+         `__deregister_frame_info` no-op bodies. Its `.ctors`/`.dtors` entry each get
+         a 4-byte section (lld's MinGW writer makes those sections, so `/MERGE`
+         cannot fold them); `--check` accepts exactly those two on i386.
+       - The spec's `--large-address-aware` is cleared (`-Xlink=-largeaddressaware:no`).
+       - mem/str intrinsics are imported from msvcrt or ntdll again, as cmake's links
+         did; the build-std `compiler-builtins-mem` copies are gone.
+       - The cell keeps the bodies' `-sse,-sse2`, the combination rustc is phasing
+         out; `tools/scan_i386_sse_abi.py` counts gcc.cmake as a site.
    - **Wave 3, 2026-10-13: 22 modules** the generator learned to accept: chcp,
      chkdsk, cmd_help, console, dbgprint, extrac32, fltlib, hid, imm32, logon, mmc,
      mode, more, msiexec, progman, reg, regedit, route, taskkill, tree, wmic, xcopy.

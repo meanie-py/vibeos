@@ -25,7 +25,7 @@ fn main() {
     // Subsystem (windows:5.01) is identical on all arches; only the CRT entry's
     // decoration differs — i386 prefixes `_`, amd64/arm64 are undecorated.
     let (target_json, entry) = match arch.as_str() {
-        "x86" => ("i686-kernel.json", "_wWinMainCRTStartup"),
+        "x86" => ("i686-pc-windows-gnu", "_wWinMainCRTStartup"),
         "x86_64" => ("x86_64-pc-windows-gnu", "wWinMainCRTStartup"),
         "aarch64" => ("aarch64-pc-windows-gnullvm", "wWinMainCRTStartup"),
         o => panic!("lsass-cargo: unsupported arch {o}"),

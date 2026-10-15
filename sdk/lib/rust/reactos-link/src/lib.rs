@@ -1677,6 +1677,43 @@ impl Linker {
             // -L must precede llvm-mingw's sysroot lib dir so OUR empty libmsvcrt.a
             // wins the search. rustc emits link-search paths before the late args.
             println!("cargo:rustc-link-search=native={}", stub_dir.display());
+            // i686-pc-windows-gnu ALSO links `rsbegin.o`/`rsend.o` from the sysroot
+            // (not a self-contained object, so `link-self-contained=no` keeps them).
+            // rsbegin's `.ctors` entry registers the image's DWARF `.eh_frame` with
+            // libgcc's unwinder: `__register_frame_info` / `__deregister_frame_info`.
+            // Our cells are panic=abort and link no libgcc (its stub is empty, above),
+            // so nothing ever unwinds and there is no unwinder to register with. Give
+            // the two calls no-op bodies; an undefined-symbol error is the alternative.
+            if self.arch.name == "i386" {
+                let src = stub_dir.join("eh_frame_register.c");
+                std::fs::write(
+                    &src,
+                    "/* reactos-link: rsbegin.o's EH-frame registration, for a panic=abort\n\
+                     * image with no unwinder (see lib.rs). */\n\
+                     void __register_frame_info(const void *b, void *o) { (void)b; (void)o; }\n\
+                     void __deregister_frame_info(const void *b) { (void)b; }\n",
+                )
+                .expect("write eh_frame_register.c");
+                let obj = stub_dir.join("eh_frame_register.o");
+                let clang = llvm_mingw.join(format!("bin/{}-clang", self.arch.triple));
+                let st = Command::new(&clang)
+                    .args(["-O2", "-c", "-ffreestanding", "-fno-asynchronous-unwind-tables"])
+                    .arg(&src)
+                    .arg("-o")
+                    .arg(&obj)
+                    .traced_status()
+                    .unwrap_or_else(|e| panic!("eh_frame_register: {}: {e}", clang.display()));
+                assert!(st.success(), "eh_frame_register: compile failed");
+                link_arg!(self, "{}", obj.display());
+                // rsbegin/rsend's `.ctors`/`.dtors` entry each become a 4-byte section
+                // (lld's MinGW writer makes those sections itself, so no /MERGE reaches
+                // them). crt-startup-rust walks __CTOR_LIST__ and calls the no-op above.
+                //
+                // The builtin spec's pre-link args also set --large-address-aware, which
+                // cmake's link does not: a 32-bit module must not claim >2 GB pointers
+                // on our say-so. The MinGW driver has no negative form; COFF's has.
+                link_arg!(self, "-Wl,-Xlink=-largeaddressaware:no");
+            }
         }
 
         // ---- PE link flags (common to every module kind) -------------

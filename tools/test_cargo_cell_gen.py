@@ -120,7 +120,7 @@ def test_build_rs_names_every_input_and_keeps_an_auto_dll_base():
     # A DLL cmake gave no --image-base keeps lld's auto base: None, never a guess.
     bases = {"i386": None, "amd64": 0x7FE60000000, "arm64": 0x7FE60000000}
     dll = g.build_rs(cell(module_kind="Win32Dll", image_base=bases, msvcrtex="Dll"))
-    assert '"x86" => ("i686-kernel.json", "wWinMainCRTStartup", None)' in dll
+    assert '"x86" => ("i686-pc-windows-gnu", "wWinMainCRTStartup", None)' in dll
     assert "Some(0x7fe60000000u64)" in dll
 
 
