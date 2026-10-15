@@ -146,10 +146,40 @@ class Submission:
         )
 
 
+# A network blip, not an answer from the remote. The router-first resolver here drops
+# lookups now and then; one `Could not resolve hostname github.com` in a conductor's
+# fetch killed it twice in one night (2026-10-15) and left the queue with no conductor.
+TRANSIENT_NETWORK = re.compile(
+    r"Could not resolve hostname|Temporary failure in name resolution|"
+    r"Connection (timed out|reset|refused|closed)|Network is unreachable|"
+    r"Could not resolve host|Operation timed out|early EOF|unexpected disconnect"
+)
+NETWORK_COMMANDS = ("fetch", "push", "ls-remote", "pull")
+NETWORK_RETRY_DELAYS = (5, 15, 30, 60)
+
+
+def run_git(repo: Path, args: tuple[str, ...], timeout: float) -> subprocess.CompletedProcess:
+    """`git <args>`; a network command that fails on a TRANSIENT_NETWORK error is retried
+    after each of NETWORK_RETRY_DELAYS. Anything the remote actually said (a rejected
+    push, a missing ref) is returned at once."""
+    for delay in (*NETWORK_RETRY_DELAYS, None):
+        cp = subprocess.run(
+            ["git", *args], cwd=str(repo), capture_output=True, text=True, timeout=timeout
+        )
+        if (
+            cp.returncode == 0
+            or delay is None
+            or not args
+            or args[0] not in NETWORK_COMMANDS
+            or not TRANSIENT_NETWORK.search(cp.stderr)
+        ):
+            return cp
+        time.sleep(delay)
+    raise AssertionError("unreachable")
+
+
 def git(repo: Path, *args: str, check: bool = True, timeout: float = 900) -> str:
-    cp = subprocess.run(
-        ["git", *args], cwd=str(repo), capture_output=True, text=True, timeout=timeout
-    )
+    cp = run_git(repo, args, timeout)
     if check and cp.returncode != 0:
         raise QueueError(f"git {' '.join(args)} failed ({cp.returncode}): {cp.stderr.strip()}")
     return cp.stdout.strip()
