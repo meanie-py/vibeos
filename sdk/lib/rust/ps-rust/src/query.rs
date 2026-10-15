@@ -263,6 +263,28 @@ const THREAD_QUERY_LIMITED_CLASSES: &[i32] = &[
     0, 1, 14, 20, 22, 23, 24, 25, 30, 33, 35, 36, 38, 39, 40, 41, 42, 43, 45, 54, 55, 59,
 ];
 
+// The same measurement for NtSetInformation{Process,Thread} (a throwaway suspended child
+// process and thread, zero-filled buffers): only these classes accept a handle holding
+// just PROCESS_SET_LIMITED_INFORMATION 0x2000 / THREAD_SET_LIMITED_INFORMATION 0x400.
+const PROCESS_SET_LIMITED_CLASSES: &[i32] = &[25, 66, 72, 95];
+const THREAD_SET_LIMITED_CLASSES: &[i32] = &[3, 14, 38, 39];
+
+fn process_set_access(class: PROCESSINFOCLASS) -> ACCESS_MASK {
+    if PROCESS_SET_LIMITED_CLASSES.contains(&(class as i32)) {
+        PROCESS_SET_LIMITED_INFORMATION
+    } else {
+        PROCESS_SET_INFORMATION
+    }
+}
+
+fn thread_set_access(class: THREADINFOCLASS) -> ACCESS_MASK {
+    if THREAD_SET_LIMITED_CLASSES.contains(&(class as i32)) {
+        THREAD_SET_LIMITED_INFORMATION
+    } else {
+        THREAD_SET_INFORMATION
+    }
+}
+
 fn process_query_access(class: PROCESSINFOCLASS) -> ACCESS_MASK {
     if PROCESS_QUERY_LIMITED_CLASSES.contains(&(class as i32)) {
         PROCESS_QUERY_LIMITED_INFORMATION
@@ -1136,7 +1158,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
         return Status;
     }
 
-    Access = PROCESS_SET_INFORMATION;
+    Access = process_set_access(ProcessInformationClass);
     if ProcessInformationClass == ProcessSessionInformation {
         Access |= PROCESS_SET_SESSIONID;
     } else if ProcessInformationClass == ProcessExceptionPort {
@@ -1571,6 +1593,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
     ThreadInformation: PVOID,
     ThreadInformationLength: ULONG,
 ) -> NTSTATUS {
+    let SetAccess = thread_set_access(ThreadInformationClass);
     let ThreadHandle = opaque_ptr(ThreadHandle);
     let ThreadInformation = opaque_ptr(ThreadInformation);
     let mut Thread: PETHREAD = core::ptr::null_mut();
@@ -1617,7 +1640,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
                         HasPrivilege = SeCheckPrivilegedObject(
                             SeIncreaseBasePriorityPrivilege,
                             ThreadHandle,
-                            THREAD_SET_INFORMATION,
+                            SetAccess,
                             PreviousMode,
                         );
                         if HasPrivilege == 0 {
@@ -1627,7 +1650,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
 
                     Status = ObReferenceObjectByHandle(
                         ThreadHandle,
-                        THREAD_SET_INFORMATION,
+                        SetAccess,
                         PsThreadType,
                         PreviousMode,
                         &mut Thread as *mut _ as *mut PVOID,
@@ -1659,7 +1682,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
                         } else {
                             Status = ObReferenceObjectByHandle(
                                 ThreadHandle,
-                                THREAD_SET_INFORMATION,
+                                SetAccess,
                                 PsThreadType,
                                 PreviousMode,
                                 &mut Thread as *mut _ as *mut PVOID,
@@ -1673,7 +1696,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
                     } else {
                         Status = ObReferenceObjectByHandle(
                             ThreadHandle,
-                            THREAD_SET_INFORMATION,
+                            SetAccess,
                             PsThreadType,
                             PreviousMode,
                             &mut Thread as *mut _ as *mut PVOID,
@@ -1687,7 +1710,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
                 } else {
                     Status = ObReferenceObjectByHandle(
                         ThreadHandle,
-                        THREAD_SET_INFORMATION,
+                        SetAccess,
                         PsThreadType,
                         PreviousMode,
                         &mut Thread as *mut _ as *mut PVOID,
@@ -1712,7 +1735,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
                 } else {
                     Status = ObReferenceObjectByHandle(
                         ThreadHandle,
-                        THREAD_SET_INFORMATION,
+                        SetAccess,
                         PsThreadType,
                         PreviousMode,
                         &mut Thread as *mut _ as *mut PVOID,
@@ -1775,7 +1798,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
 
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
-                    THREAD_SET_INFORMATION,
+                    SetAccess,
                     PsThreadType,
                     PreviousMode,
                     &mut Thread as *mut _ as *mut PVOID,
@@ -1800,7 +1823,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
                 } else {
                     Status = ObReferenceObjectByHandle(
                         ThreadHandle,
-                        THREAD_SET_INFORMATION,
+                        SetAccess,
                         PsThreadType,
                         PreviousMode,
                         &mut Thread as *mut _ as *mut PVOID,
@@ -1833,7 +1856,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
 
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
-                    THREAD_SET_INFORMATION,
+                    SetAccess,
                     PsThreadType,
                     PreviousMode,
                     &mut Thread as *mut _ as *mut PVOID,
@@ -1855,7 +1878,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
 
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
-                    THREAD_SET_INFORMATION,
+                    SetAccess,
                     PsThreadType,
                     PreviousMode,
                     &mut Thread as *mut _ as *mut PVOID,
@@ -1936,7 +1959,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
                 } else {
                     Status = ObReferenceObjectByHandle(
                         ThreadHandle,
-                        THREAD_SET_INFORMATION,
+                        SetAccess,
                         PsThreadType,
                         PreviousMode,
                         &mut Thread as *mut _ as *mut PVOID,
@@ -1961,7 +1984,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
             } else {
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
-                    THREAD_SET_INFORMATION,
+                    SetAccess,
                     PsThreadType,
                     PreviousMode,
                     &mut Thread as *mut _ as *mut PVOID,

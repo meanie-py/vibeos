@@ -39,6 +39,12 @@
 #ifndef PROCESS_QUERY_LIMITED_INFORMATION
 #define PROCESS_QUERY_LIMITED_INFORMATION 0x1000
 #endif
+#ifndef PROCESS_SET_LIMITED_INFORMATION
+#define PROCESS_SET_LIMITED_INFORMATION 0x2000
+#endif
+#ifndef THREAD_SET_LIMITED_INFORMATION
+#define THREAD_SET_LIMITED_INFORMATION  0x0400
+#endif
 #ifndef THREAD_QUERY_LIMITED_INFORMATION
 #define THREAD_QUERY_LIMITED_INFORMATION  0x0800
 #endif
@@ -326,6 +332,66 @@ static void Test_LimitedAccess(void)
     Status = pQueryThread(Handle, 9 /* ThreadQuerySetWin32StartAddress */, &Start, sizeof(Start), NULL);
     ok(Status == STATUS_ACCESS_DENIED, "Win32StartAddress through LIMITED: %08lx\n", Status);
     CloseHandle(Handle);
+}
+
+/* ---- 6c ---- SET_LIMITED rights and AppContainer SIDs, measured on Windows 11. */
+static void Test_SetLimitedAndAppContainer(void)
+{
+    HRESULT (WINAPI *pDerive)(PCWSTR, PSID *) = (void *)GetDyn(L"userenv.dll", "DeriveAppContainerSidFromAppContainerName");
+    BOOL (WINAPI *pSidToString)(PSID, LPWSTR *) = (void *)GetDyn(L"advapi32.dll", "ConvertSidToStringSidW");
+    static const struct { PCWSTR Name; PCWSTR Sid; } Vectors[] =
+    {
+        { L"A", L"S-1-15-2-3937069567-81109666-199193729-4036909440-616594969-3159470276-4124008600" },
+        { L"MiXeD.Name", L"S-1-15-2-3698160147-719388521-3053721999-2255265465-4147969449-1549999297-4093912397" },
+        { L"\u00c4bc", L"S-1-15-2-3850436856-106003566-1273259897-518191818-2117240025-143405102-2816276476" },
+    };
+    WCHAR Long[66];
+    PSID Sid;
+    LPWSTR Str;
+    HANDLE Handle;
+    HRESULT hr;
+    UINT i;
+
+    /* ThreadPriorityBoost takes SET_LIMITED; ProcessPriorityClass wants the full right. */
+    Handle = OpenThread(THREAD_SET_LIMITED_INFORMATION, FALSE, GetCurrentThreadId());
+    ok(Handle != NULL, "OpenThread(SET_LIMITED) failed: %lu\n", GetLastError());
+    ok(SetThreadPriorityBoost(Handle, FALSE), "SetThreadPriorityBoost through SET_LIMITED: %lu\n", GetLastError());
+    CloseHandle(Handle);
+    Handle = OpenProcess(PROCESS_SET_LIMITED_INFORMATION, FALSE, GetCurrentProcessId());
+    ok(Handle != NULL, "OpenProcess(SET_LIMITED) failed: %lu\n", GetLastError());
+    SetLastError(0xdeadbeef);
+    ok(!SetPriorityClass(Handle, NORMAL_PRIORITY_CLASS) && GetLastError() == ERROR_ACCESS_DENIED,
+       "SetPriorityClass through SET_LIMITED: %lu\n", GetLastError());
+    CloseHandle(Handle);
+
+    if (!pDerive || !pSidToString)
+    {
+        win_skip("DeriveAppContainerSidFromAppContainerName missing\n");
+        return;
+    }
+    for (i = 0; i < ARRAYSIZE(Vectors); i++)
+    {
+        Sid = NULL;
+        hr = pDerive(Vectors[i].Name, &Sid);
+        ok(hr == S_OK, "%ls: %08lx\n", Vectors[i].Name, hr);
+        if (FAILED(hr) || !Sid)
+            continue;
+        Str = NULL;
+        ok(pSidToString(Sid, &Str) && Str && !wcscmp(Str, Vectors[i].Sid), "%u: %ls\n", i, Str ? Str : L"(null)");
+        LocalFree(Str);
+        FreeSid(Sid);
+    }
+    for (i = 0; i < 65; i++)
+        Long[i] = L'a';
+    Long[65] = 0;
+    Sid = (PSID)(ULONG_PTR)0x1234;
+    ok(pDerive(Long, &Sid) == E_INVALIDARG && Sid == (PSID)(ULONG_PTR)0x1234, "65 units: out %p\n", Sid);
+    Long[64] = 0;
+    Sid = NULL;
+    ok(pDerive(Long, &Sid) == S_OK && Sid, "64 units refused\n");
+    if (Sid) FreeSid(Sid);
+    Sid = (PSID)(ULONG_PTR)0x1234;
+    ok(pDerive(L"", &Sid) == E_INVALIDARG && Sid == (PSID)(ULONG_PTR)0x1234, "empty: out %p\n", Sid);
 }
 
 /* ---- 7 ---- */
@@ -1053,6 +1119,7 @@ START_TEST(Win10Surface)
     Test_EnumProcessModulesEx();
     Test_NtGetNextThread();
     Test_LimitedAccess();
+    Test_SetLimitedAndAppContainer();
     Test_Transaction();
     Test_NtOpenKeyEx();
     Test_Utf8();

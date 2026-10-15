@@ -406,9 +406,13 @@ at every DLL_EXPORT_VERSION, and rtworkq is synced to 11.19 to match mfplat.
   a full information right brings its LIMITED partner on every handle (open, create,
   duplicate), so an NT5-style 0x1F0FFF open is granted 0x1F3FFF as on Windows; and the 48
   process and 22 thread query classes Windows answers through a LIMITED handle accept one
-  (measured class by class on Windows 11). This was the NtGetNextThread ACCESS_DENIED: the
+  (measured class by class on Windows 11); likewise the 4 process and 4 thread set
+  classes a SET_LIMITED handle may write. This was the NtGetNextThread ACCESS_DENIED: the
   NT5 thread mask silently narrowed THREAD_QUERY_LIMITED_INFORMATION away. Win10Surface
-  pins it (129/129 in the guest and on Windows 11).
+  pins it.
+- userenv's DeriveAppContainerSidFromAppContainerName derives the SID as Windows 11 does
+  (measured): S-1-15-2 plus the first seven little-endian words of SHA-256 over the
+  lowercased UTF-16LE name, 1 to 64 units, the output untouched on error.
 - `sechost` and `cryptsp` were never needed as DLLs: the apps import them through api
   sets, and the apiset table pointed 34 contracts at those two hosts, which we do not ship.
   They now go to advapi32 (`update.py` REDIRECT_HOSTS), which exports every function the
@@ -442,15 +446,10 @@ at every DLL_EXPORT_VERSION, and rtworkq is synced to 11.19 to match mfplat.
 - **Tooling:** `port replay` took 87 minutes on mfplat's 525 functions, and there is no
   single "re-island and reassemble from banks" command. Split island groups are now
   reported by `port island` but still not generated.
-- **Set classes through SET_LIMITED handles:** the NT6 access work (below) measured which
-  NtQueryInformation{Process,Thread} classes a LIMITED handle may read, but not which
-  NtSetInformation classes a `*_SET_LIMITED_INFORMATION` handle may write; every set class
-  still demands the full SET_INFORMATION right.
 - **New partials from the third batch:** iphlpapi change notifications after the
   initial one, IPv6 tables; IDN nameprep without NFKC; consrv's
   SrvGetConsoleCurrentFont leaves the font size zero (frontendctl.c FIXME), so
-  GetCurrentConsoleFont(Ex) under-report; DeriveAppContainerSidFromAppContainerName
-  (E_NOTIMPL, the SHA-256 derivation is owed).
+  GetCurrentConsoleFont(Ex) under-report.
 - **Bodies that answer honestly but not fully:** `GetNamedPipeServerProcessId` (npfs has
   no attribute FSCTL); `GetProcessInformation(ProcessMachineTypeInfo)` (no
   NtQuerySystemInformationEx); Get/SetRestrictedErrorInfo stay E_NOTIMPL as in Wine.

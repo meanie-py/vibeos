@@ -141,7 +141,7 @@ const PROCESS_SUSPEND_RESUME: ACCESS_MASK = 0x0800;
 // job types report ValidAccessMask 0x1FFFFF / 0x1FFFFF / 0x1F003F. Under the NT5 masks
 // a THREAD_QUERY_LIMITED_INFORMATION open was silently narrowed to SYNCHRONIZE and the
 // first query through it failed ACCESS_DENIED (NtGetNextThread's callers).
-const PROCESS_ALL_ACCESS: ACCESS_MASK = 0x001FFFFF;
+const PROCESS_ALL_ACCESS_NT6: ACCESS_MASK = 0x001FFFFF;
 
 const THREAD_GET_CONTEXT: ACCESS_MASK = 0x0008;
 const THREAD_QUERY_INFORMATION: ACCESS_MASK = 0x0040;
@@ -150,9 +150,9 @@ const THREAD_SUSPEND_RESUME: ACCESS_MASK = 0x0002;
 const THREAD_ALERT: ACCESS_MASK = 0x0004;
 const THREAD_SET_INFORMATION: ACCESS_MASK = 0x0020;
 const THREAD_SET_CONTEXT: ACCESS_MASK = 0x0010;
-const THREAD_ALL_ACCESS: ACCESS_MASK = 0x001FFFFF;
+const THREAD_ALL_ACCESS_NT6: ACCESS_MASK = 0x001FFFFF;
 
-const JOB_OBJECT_ALL_ACCESS: ACCESS_MASK = 0x001F003F;
+const JOB_OBJECT_ALL_ACCESS_NT6: ACCESS_MASK = 0x001F003F;
 
 // ReactOS uses 7 for ALL architectures (3 low bits), matching C #define.
 const MAX_FAST_REFS: usize = 7;
@@ -568,7 +568,7 @@ unsafe fn PspInitPhase0(loader_block: PLOADER_PARAMETER_BLOCK) -> BOOLEAN {
     RtlInitUnicodeString(&mut name, w!("Process").as_ptr() as *const u16);
     object_type_initializer.DefaultNonPagedPoolCharge = core::mem::size_of::<_EPROCESS>() as ULONG;
     object_type_initializer.GenericMapping = PspProcessMapping;
-    object_type_initializer.ValidAccessMask = PROCESS_ALL_ACCESS;
+    object_type_initializer.ValidAccessMask = PROCESS_ALL_ACCESS_NT6;
     object_type_initializer.DeleteProcedure = Some(PspDeleteProcess);
     ObCreateObjectType(&mut name, &mut object_type_initializer, core::ptr::null_mut(), &raw mut PsProcessType);
 
@@ -576,7 +576,7 @@ unsafe fn PspInitPhase0(loader_block: PLOADER_PARAMETER_BLOCK) -> BOOLEAN {
     object_type_initializer.Length = core::mem::size_of::<_OBJECT_TYPE_INITIALIZER>() as USHORT;
     object_type_initializer.DefaultNonPagedPoolCharge = core::mem::size_of::<_ETHREAD>() as ULONG;
     object_type_initializer.GenericMapping = PspThreadMapping;
-    object_type_initializer.ValidAccessMask = THREAD_ALL_ACCESS;
+    object_type_initializer.ValidAccessMask = THREAD_ALL_ACCESS_NT6;
     object_type_initializer.DeleteProcedure = Some(PspDeleteThread);
     ObCreateObjectType(&mut name, &mut object_type_initializer, core::ptr::null_mut(), &raw mut PsThreadType);
 
@@ -585,7 +585,7 @@ unsafe fn PspInitPhase0(loader_block: PLOADER_PARAMETER_BLOCK) -> BOOLEAN {
     object_type_initializer.DefaultNonPagedPoolCharge = core::mem::size_of::<_EJOB>() as ULONG;
     object_type_initializer.GenericMapping = PspJobMapping;
     object_type_initializer.InvalidAttributes = 0;
-    object_type_initializer.ValidAccessMask = JOB_OBJECT_ALL_ACCESS;
+    object_type_initializer.ValidAccessMask = JOB_OBJECT_ALL_ACCESS_NT6;
     object_type_initializer.CloseProcedure = Some(crate::job::PspCloseJob);
     object_type_initializer.DeleteProcedure = Some(PspDeleteJob);
     ObCreateObjectType(&mut name, &mut object_type_initializer, core::ptr::null_mut(), &raw mut PsJobType);
@@ -620,7 +620,7 @@ unsafe fn PspInitPhase0(loader_block: PLOADER_PARAMETER_BLOCK) -> BOOLEAN {
 
     status = PspCreateProcess(
         &raw mut PspInitialSystemProcessHandle,
-        PROCESS_ALL_ACCESS,
+        PROCESS_ALL_ACCESS_NT6,
         &mut object_attributes,
         core::ptr::null_mut(),
         0,
@@ -675,7 +675,7 @@ unsafe fn PspInitPhase0(loader_block: PLOADER_PARAMETER_BLOCK) -> BOOLEAN {
 
     status = PsCreateSystemThread(
         &mut sys_thread_handle,
-        THREAD_ALL_ACCESS,
+        THREAD_ALL_ACCESS_NT6,
         &mut object_attributes,
         core::ptr::null_mut(),
         core::ptr::null_mut(),

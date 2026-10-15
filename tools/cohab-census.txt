@@ -1638,6 +1638,7 @@ dll/win32/version/CMakeLists.txt	1	# #[no_mangle] symbols are the sole providers
 dll/win32/version/CMakeLists.txt	1	# since every version.c symbol was removed).
 dll/win32/version/CMakeLists.txt	1	# version-rust cohab: the entire version.c body (GetFileVersionInfo*/VerQueryValue*/
 dll/win32/version/CMakeLists.txt	1	# version.c — replaced by Rust (sdk/lib/rust/version-rust); cohab-linked
+dll/win32/wer/CMakeLists.txt	1	# Written in Rust (sdk/lib/rust/wer-rust): wer.dll (WER API, no WER service); port of Wine's dlls/wer/main.c.
 dll/win32/wevtapi/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/wevtapi-rust/src/wevtapi/main.rs)
 dll/win32/winfax/CMakeLists.txt	1	# winfax.c # replaced by Rust (sdk/lib/rust/winfax-rust/src/winfax/winfax.rs)
 dll/win32/winsta/CMakeLists.txt	1	# logon.c # replaced by Rust (sdk/lib/rust/winsta-rust/src/winsta/logon.rs)
@@ -1753,6 +1754,8 @@ dll/win32/wshtcpip/CMakeLists.txt	1	# wshtcpip.c)
 dll/win32/wsock32/CMakeLists.txt	1	# deterministically (zero paid API calls). stubs.c is commented out below and kept on disk
 dll/win32/wsock32/CMakeLists.txt	1	# stubs.c
 dll/win32/wsock32/CMakeLists.txt	1	# stubs.c → wsock32-rust
+dll/win32/xinput1_3/CMakeLists.txt	1	# Wine 11.19's HID implementation (dlls/xinput1_3/main.c); xinput1_4 builds the same
+dll/win32/xinput1_4/CMakeLists.txt	1	# XInputGetCapabilitiesEx (#108) and XInputGetAudioDeviceIds (#10, audio.c) are 1_4 only.
 drivers/base/beep/CMakeLists.txt	1	# beep.c is translated to Rust (sdk/lib/rust/beep-rust, kept on disk per the
 drivers/base/bootvid/CMakeLists.txt	1	# framebuf/bootvid.c (+ included <drivers/bootvid/framebuf.c>) and the
 drivers/base/bootvid/CMakeLists.txt	1	# shared common.c/console.c/fontdata.c are translated to Rust
