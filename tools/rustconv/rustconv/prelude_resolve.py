@@ -595,6 +595,8 @@ def consensus(name: str, items: list[Item]) -> tuple[Item | None, str]:
         spellings = {_char_pointees(i.text) for i in fns}
         if len({len(s) for s in spellings}) == 1 and len(spellings) > 1:
             return None, "signature disagreement (char pointee: i8/u8/c_char)"
+        if _width_split(fns):
+            return None, "signature disagreement (integer width)"
         return _most_common(fns), ""
     if any(i.kind == "type" for i in items):
         return None, "a type: add its header to the island allowlist"
@@ -639,6 +641,72 @@ _CHAR_PTR = re.compile(
     r"\*\s*(?:const|mut)\s+(?:(?:::)?core::ffi::)?(i8|u8|c_char|CHAR)\b"
     r"|\b(L?P(?:C)?STR|PC?CHAR|PC?CH)\b"
 )
+
+
+_WIDTH = {
+    **dict.fromkeys(("i8", "u8", "c_char", "c_uchar", "c_schar", "CHAR", "UCHAR", "BYTE"), 8),
+    **dict.fromkeys(
+        (
+            "i16",
+            "u16",
+            "c_short",
+            "c_ushort",
+            "wint_t",
+            "wchar_t",
+            "WCHAR",
+            "WORD",
+            "USHORT",
+            "SHORT",
+            "wctype_t",
+        ),
+        16,
+    ),
+    **dict.fromkeys(
+        ("i32", "u32", "c_int", "c_uint", "INT", "UINT", "BOOL", "DWORD", "LONG", "ULONG"), 32
+    ),
+    **dict.fromkeys(("i64", "u64", "c_longlong", "c_ulonglong", "LONGLONG", "ULONGLONG"), 64),
+}
+
+
+def _int_widths(decl: str) -> tuple[int | None, ...] | None:
+    """The integer width of each by-value parameter and of the return, in order (None for a
+    pointer or a type this table does not know), or None if the declaration is unreadable."""
+    m = re.search(r"\bfn\s+\w+\s*\((.*)\)\s*(?:->\s*([^;{]+))?", decl, re.S)
+    if m is None:
+        return None
+    params, depth, cur = [], 0, ""
+    for c in m.group(1):
+        if c in "(<[":
+            depth += 1
+        elif c in ")]" or (c == ">" and not cur.endswith("-")):
+            depth -= 1
+        if c == "," and depth == 0:
+            params.append(cur)
+            cur = ""
+        else:
+            cur += c
+    params.append(cur)
+    types = [p.split(":", 1)[1] if ":" in p else p for p in params if p.strip()]
+    types.append(m.group(2) or "()")
+
+    def width(t: str) -> int | None:
+        t = t.strip().split("::")[-1]
+        return None if "*" in t else _WIDTH.get(t)
+
+    return tuple(width(t) for t in types)
+
+
+def _width_split(fns: list[Item]) -> bool:
+    """Two declarations that pass/return an integer of a different WIDTH at one position.
+
+    Most crates had copied `towupper(c: c_int) -> c_int`, and the vote handed fc that
+    signature for the CRT's `wint_t towupper(wint_t)`: reading the full eax of a function that
+    returns an unsigned short trusts bits the callee never set. A width split is the module's
+    own prototype's to settle, as an ABI or arity split is."""
+    shapes = [w for w in (_int_widths(i.text) for i in fns) if w is not None]
+    if len({len(w) for w in shapes}) != 1:
+        return False
+    return any(len({w[k] for w in shapes} - {None}) > 1 for k in range(len(shapes[0])))
 
 
 def _char_pointees(decl: str) -> tuple[str, ...]:

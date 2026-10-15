@@ -8,16 +8,16 @@ use std::env;
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
     let (target_json, entry, image_base) = match arch.as_str() {
-        "x86" => ("i686-kernel.json", "_DllMainCRTStartup@12", Some(0x6c600000u64)),
+        "x86" => ("i686-pc-windows-gnu", "_DllMainCRTStartup@12", Some(0x6c600000u64)),
         "x86_64" => ("x86_64-pc-windows-gnu", "DllMainCRTStartup", Some(0x7fe39000000u64)),
         "aarch64" => ("aarch64-pc-windows-gnullvm", "DllMainCRTStartup", Some(0x7fe39000000u64)),
         o => panic!("wuauserv-cargo: unsupported arch {o}"),
     };
 
     let static_libs: &[&str] = match arch.as_str() {
-        "x86" => &["sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a"],
-        "x86_64" => &["sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a"],
-        "aarch64" => &["sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a"],
+        "x86" => &["engine:oldnames"],
+        "x86_64" => &["engine:oldnames"],
+        "aarch64" => &["engine:oldnames"],
         _ => unreachable!(),
     };
 

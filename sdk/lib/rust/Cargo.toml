@@ -1,5 +1,12 @@
 [workspace]
 members = [
+    "autochk-cargo",
+    "winprint-cargo",
+    "wordpad-cargo",
+    "taskmgr-cargo",
+    "ftp-cargo",
+    "format-cargo",
+    "calc-cargo",
     "winhlp32-cargo",
     "winspool-cargo",
     "srvsvc-cargo",
@@ -776,6 +783,8 @@ members = [
     "tbs-rust",
     "mfreadwrite-rust",
     "evr-rust",
+    "ftp-rust",
+    "fc-rust",
 ]
 resolver = "2"
 

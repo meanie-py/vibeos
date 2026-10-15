@@ -11,10 +11,8 @@ add_rc_deps(mplay32.rc ${mplay32_rc_deps})
 add_library(mplay32_res OBJECT mplay32.rc)
 target_compile_definitions(mplay32_res PRIVATE UNICODE _UNICODE)
 target_include_directories(mplay32_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(MPLAY32_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(mplay32 mplay32-cargo mplay32.exe
     KIND win32exe
     BODY_CRATE mplay32-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS mplay32_res ${MPLAY32_REUSED})
+    EXTRA_DEPENDS mplay32_res)

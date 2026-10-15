@@ -18,11 +18,8 @@ add_rc_deps(timedate.rc ${timedate_rc_deps})
 add_library(timedate_res OBJECT timedate.rc)
 target_compile_definitions(timedate_res PRIVATE UNICODE _UNICODE)
 target_include_directories(timedate_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(TIMEDATE_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/tzlib/libtzlib.a)
 add_cargo_module(timedate timedate-cargo timedate.cpl
     KIND win32dll
     BODY_CRATE timedate-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS timedate_res ${TIMEDATE_REUSED})
+    EXTRA_DEPENDS timedate_res xdk)

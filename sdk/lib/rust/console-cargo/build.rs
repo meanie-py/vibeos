@@ -8,16 +8,16 @@ use std::env;
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
     let (target_json, entry, image_base) = match arch.as_str() {
-        "x86" => ("i686-kernel.json", "_DllMainCRTStartup@12", None),
+        "x86" => ("i686-pc-windows-gnu", "_DllMainCRTStartup@12", None),
         "x86_64" => ("x86_64-pc-windows-gnu", "DllMainCRTStartup", None),
         "aarch64" => ("aarch64-pc-windows-gnullvm", "DllMainCRTStartup", None),
         o => panic!("console-cargo: unsupported arch {o}"),
     };
 
     let late_libs: &[&str] = match arch.as_str() {
-        "x86" => &["win32ss/user/winsrv/concfg/libconcfg.a", "win32ss/user/winsrv/concfg/libconcfg_rust.a", "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a"],
-        "x86_64" => &["win32ss/user/winsrv/concfg/libconcfg.a", "win32ss/user/winsrv/concfg/libconcfg_rust.a", "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a"],
-        "aarch64" => &["win32ss/user/winsrv/concfg/libconcfg.a", "win32ss/user/winsrv/concfg/libconcfg_rust.a", "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a"],
+        "x86" => &["engine:c:concfg", "engine:concfg_rust", "engine:oldnames"],
+        "x86_64" => &["engine:c:concfg", "engine:concfg_rust", "engine:oldnames"],
+        "aarch64" => &["engine:c:concfg", "engine:concfg_rust", "engine:oldnames"],
         _ => unreachable!(),
     };
 

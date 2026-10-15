@@ -23,19 +23,8 @@ target_compile_definitions(eventlog_shims PRIVATE UNICODE _UNICODE)
 add_library(eventlog_res OBJECT eventlog.rc)
 target_compile_definitions(eventlog_res PRIVATE UNICODE _UNICODE)
 target_include_directories(eventlog_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(EVENTLOG_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/evtlib/libevtlib.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/evtlib/libevtlib_rust.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/pseh/libpseh.a)
-if(ARCH STREQUAL "i386")
-    list(APPEND EVENTLOG_REUSED ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a)
-endif()
-if(ARCH STREQUAL "arm64")
-    list(APPEND EVENTLOG_REUSED ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a)
-endif()
 add_cargo_module(eventlog eventlog-cargo eventlog.exe
     KIND win32exe
     BODY_CRATE eventlog-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS eventlog_shims eventlog_res ${EVENTLOG_REUSED})
+    EXTRA_DEPENDS eventlog_shims eventlog_res xdk)

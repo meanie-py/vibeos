@@ -48,6 +48,7 @@ from . import (
     local_macros,
     logical_not,
     loop_step,
+    macro_authority,
     offset_restore,
     pointer_depth,
     prelude_resolve,
@@ -4966,6 +4967,19 @@ def _settle_by_prototype(state: dict, names: set[str], workspace: Path, crate: P
     return out
 
 
+def _crate_defined_fns(modules_dir: Path) -> set[str]:
+    """Names the crate's own modules define as `pub fn` -- generic, extern or not."""
+    return {
+        m.group(1)
+        for rs in modules_dir.glob("*.rs")
+        for m in re.finditer(
+            r"^\s*pub(?:\([^)]*\))?\s+(?:unsafe\s+)?(?:extern\s+\"[^\"]+\"\s+)?fn\s+(\w+)",
+            rs.read_text(errors="replace"),
+            re.M,
+        )
+    }
+
+
 def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
     """Functions the module's C calls and no Rust declares, two ways, both exact:
 
@@ -4990,15 +5004,19 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
         | {k for k, v in prelude_resolve.existing_block(prelude).items() if v.kind == "fn"}
         | set(prelude_resolve.existing_substrate(prelude))
     )
-    names = (set(names) | prelude_resolve.existing_externs(prelude)) - declared
+    stem = state["stem"]
+    modules_dir = _crate_dir(state) / "src" / stem
+    # Nor one the crate's own modules define: that is a sibling to wire, not an import. fc's
+    # texta.rs defines TextCompareA, and an `extern` for it (kept by the merge below on
+    # every later run) collided with the sibling `use` (E0255).
+    defined = _crate_defined_fns(modules_dir)
+    names = (set(names) | prelude_resolve.existing_externs(prelude)) - declared - defined
     sigs: dict[str, tuple[str, str, str]] = {}
     module_dir = REPO / state["module_dir"]
     files = _module_sources(module_dir)
     defs, _ambiguous = local_macros.module_macros(
         files, REPO, {"UNICODE": 1, "_UNICODE": 1} if _module_is_unicode(state) else None
     )
-    stem = state["stem"]
-    modules_dir = _crate_dir(state) / "src" / stem
     aliases: dict[str, str] = {}
     for name in sorted(names):
         m = defs.get(name)
@@ -5857,6 +5875,22 @@ def _without_token_pasting(macros: dict) -> tuple[dict, list[str]]:
     return {n: m for n, m in macros.items() if n not in pasting}, sorted(pasting)
 
 
+def _compiled_out(where: dict[str, Path], live: dict[Path, set[str]], tus: list[Path]) -> list[str]:
+    """The macros (name -> defining file) the TUs' preprocessor never defined.
+
+    A module header no TU entered at all is dead whole: fc's conutils_noros.h (included only
+    `#ifndef __REACTOS__`) offered ConPuts/ConPrintf/StdOut shims for purchase in place of the
+    real conutils. That needs every TU preprocessed -- one with no compile command could be
+    the includer."""
+    every_tu = all(t in live for t in tus)
+    return sorted(
+        n
+        for n, f in where.items()
+        if (f in live and n not in live[f])
+        or (every_tu and f not in live and f.suffix.lower() == ".h")
+    )
+
+
 def stage_macros(
     stem: str, *, model: str, cost_cap: float, dry_run: bool, thinking: str = "on"
 ) -> None:
@@ -5871,11 +5905,38 @@ def stage_macros(
     # `#define calc_HtmlHelp calc_HtmlHelpA` / `...W` pair is one macro here, not two.
     live_if = {"UNICODE": 1, "_UNICODE": 1} if _module_is_unicode(state) else None
     defs, ambiguous = local_macros.module_macros(files, REPO, live_if)
+    # The text scan above settles only the arms `live_if` names; ask the compiler for the rest.
+    live = macro_authority.live_defines(REPO, [f for f in files if f.suffix.lower() == ".c"])
+    if live is not None:
+        compiled_out = _compiled_out(
+            {n: (REPO / m.where.rsplit(":", 1)[0]).resolve() for n, m in defs.items()},
+            live,
+            [f.resolve() for f in files if f.suffix.lower() == ".c"],
+        )
+        for n in compiled_out:
+            del defs[n]
+        if compiled_out:
+            print(
+                f"macros: in arms this build never compiles, not ported: {', '.join(compiled_out)}"
+            )
     # Functions the module's HEADERS define inline: a macro of the same name wins.
     # A cppapp module's header functions are class members, rendered and translated by
     # cpp_app: read as C they become a free `audio_membuffer(this)` shadowing the class.
     if not state.get("cppapp"):
-        for name, fn in local_macros.header_functions(_module_headers(module_dir), REPO).items():
+        inline = local_macros.header_functions(_module_headers(module_dir), REPO)
+        if live is not None and all(f.resolve() in live for f in files if f.suffix.lower() == ".c"):
+            # Not #defines, so only "no TU entered the header" applies: a header nobody
+            # includes defines nothing (fc's conutils_noros.h ConPuts/ConPrintf).
+            dead = sorted(
+                n
+                for n, f in inline.items()
+                if (REPO / f.where.rsplit(":", 1)[0]).resolve() not in live
+            )
+            for n in dead:
+                del inline[n]
+            if dead:
+                print(f"macros: inline in a header no TU includes, not ported: {', '.join(dead)}")
+        for name, fn in inline.items():
             defs.setdefault(name, fn)
     names = prelude_resolve.unresolved_names(
         state["crate"],
@@ -6038,6 +6099,12 @@ def stage_replay(
         thinking="off",
         replay_only=True,
     )
+    # A whole-module bank (`file.rs:*`) replaces the reassembled module outright, and an
+    # ADDED item has no bought counterpart to wait for, so both go back BEFORE resolve and
+    # macros read the crate: fc's text_h.rs reassembled from the bought, non-generic bodies
+    # asked macros to buy an IS_SPACE the generic module never calls, and without texta.rs's
+    # added TextCompareA resolve declared it `extern` instead of wiring the sibling.
+    apply_hand(stem, early_only=True)
     stage_resolve(stem)
     stage_macros(stem, model="deepseek", cost_cap=0.0, dry_run=False)
     stage_integrate(stem)
@@ -6114,6 +6181,7 @@ def stage_hand(stem: str, specs: list[str], drop: bool = False) -> None:
     `file.rs:New=Old` captures `New` and puts it over the BOUGHT function `Old`.
     `file.rs:+Name` banks an ADDED item -- one with no C/C++ origin, such as a hand-ported
     member template (CImageDx::get_fn) -- which a replay appends when the file lacks it.
+    `file.rs:*` banks the whole module, which a replay writes back verbatim.
     """
 
     state = load_state(stem)
@@ -6132,8 +6200,14 @@ def stage_hand(stem: str, specs: list[str], drop: bool = False) -> None:
             print(f"hand: dropped {spec}")
             continue
         text = (modules / fname).read_text()
-        lo, hi = hand_span(text, name, where=f"hand: {spec}")
-        body = text[lo:hi]
+        if name == "*":
+            # The whole module: fc's text.h is a TCHAR template made generic by hand -- a
+            # trait, its two impls and a generic struct around the bought bodies, none of
+            # them a function the per-item bank can span.
+            body = text
+        else:
+            lo, hi = hand_span(text, name, where=f"hand: {spec}")
+            body = text[lo:hi]
         entry.write_text(
             json.dumps({"file": fname, "name": replaces, "text": body, "added": added}, indent=1)
         )
@@ -6295,16 +6369,24 @@ def hand_names(stem: str) -> set[tuple[str, str]]:
     return out
 
 
-def apply_hand(stem: str) -> int:
-    """Put every banked hand function back over whatever the replay produced for it."""
+def apply_hand(stem: str, early_only: bool = False) -> int:
+    """Put every banked hand function back over whatever the replay produced for it
+    (`early_only`: just the whole-module banks and the added items)."""
 
     state = load_state(stem)
     modules = _crate_dir(state) / "src" / stem
     applied = 0
     for entry in sorted(_hand_dir(stem).glob("*.json")):
         h = json.loads(entry.read_text())
+        if early_only and not (h["name"] == "*" or h.get("added")):
+            continue
         path = modules / h["file"]
         text = path.read_text()
+        if h["name"] == "*":
+            if text != h["text"]:
+                path.write_text(h["text"])
+            applied += 1
+            continue
         # Applied-ness is judged at the item's OWN span below, never `h["text"] in text`
         # anywhere: cicero's CUIFColorTableSys::DoneBrush passed as applied because
         # CUIFColorTableOff10's identical, already-fixed body was in the file.

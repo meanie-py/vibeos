@@ -80,7 +80,10 @@ static void dump_threads(DWORD pid)
 }
 
 /* UTF-16 output (a console program writing wide text into a pipe) -> UTF-8, so both
- * variants reach the grader in one encoding whatever their CRT chose. */
+ * variants reach the grader in one encoding whatever their CRT chose. Narrow output that is
+ * not UTF-8 is in the console's OEM codepage (conutils converts to it): fc printed `thr\xE9e`,
+ * the host's serial reader decodes UTF-8 and replaced the byte, and both copies of the record
+ * failed their checksum -- reported as transport loss, never graded. */
 static char *as_utf8(char *buf, DWORD *len)
 {
     DWORD n = *len, zeros = 0, i;
@@ -89,7 +92,23 @@ static char *as_utf8(char *buf, DWORD *len)
         zeros += buf[i] == 0;
     wide = (n >= 2 && (BYTE)buf[0] == 0xFF && (BYTE)buf[1] == 0xFE) || (n >= 4 && zeros * 3 > n / 2 * 2);
     if (!wide)
-        return buf;
+    {
+        int wn;
+        WCHAR *w;
+        char *u;
+        int out;
+        if (!n || MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, buf, (int)n, NULL, 0) > 0)
+            return buf;
+        wn = MultiByteToWideChar(CP_OEMCP, 0, buf, (int)n, NULL, 0);
+        w = (WCHAR *)malloc(wn * sizeof(WCHAR));
+        MultiByteToWideChar(CP_OEMCP, 0, buf, (int)n, w, wn);
+        out = WideCharToMultiByte(CP_UTF8, 0, w, wn, NULL, 0, NULL, NULL);
+        u = (char *)malloc(out + 1);
+        WideCharToMultiByte(CP_UTF8, 0, w, wn, u, out, NULL, NULL);
+        free(w);
+        *len = (DWORD)out;
+        return u;
+    }
     {
         const WCHAR *w = (const WCHAR *)buf;
         int wn = (int)(n / 2), out;

@@ -11,10 +11,8 @@ add_subdirectory(umandlg)
 add_library(utilman_res OBJECT utilman.rc)
 target_compile_definitions(utilman_res PRIVATE UNICODE _UNICODE)
 target_include_directories(utilman_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(UTILMAN_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(utilman utilman-cargo utilman.exe
     KIND win32exe
     BODY_CRATE utilman-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS utilman_res ${UTILMAN_REUSED})
+    EXTRA_DEPENDS utilman_res)

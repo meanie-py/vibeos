@@ -1769,3 +1769,18 @@ def test_ntddi_follows_a_win32_winnt_outside_the_table():
     assert _ntddi_for("0x0A00") == "0x0A000000"
     assert _ntddi_for("0x502") == "0x05020400"  # the table's service-pack choice still wins
     assert _ntddi_for("0x603") == "0x06030000"
+
+
+def test_a_tu_that_flips_the_charset_is_an_instantiation_not_the_island():
+    """fc: texta.c `#undef UNICODE`s to instantiate text.h as ANSI while textw.c keeps the
+    module's UNICODE. Merged into the wrapper, texta.c's toggles made the whole island ANSI
+    and conutils.h `#error`ed. A module whose TUs all agree keeps its toggles."""
+    from rustconv.profile_derive import charset_instantiations
+
+    texta = ["#undef UNICODE", "#undef _UNICODE", "#define _MBCS", '#include "text.h"']
+    textw = ["#define UNICODE", "#define _UNICODE", "#undef _MBCS", '#include "text.h"']
+    fc = ['#include "fc.h"']
+    assert charset_instantiations([fc, texta, textw], True) == {1}
+    # Every TU of an ANSI-declared module defines UNICODE: that is the module's charset.
+    assert charset_instantiations([textw, textw], False) == set()
+    assert charset_instantiations([texta, texta], True) == set()

@@ -8,16 +8,16 @@ use std::env;
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
     let (target_json, entry, image_base) = match arch.as_str() {
-        "x86" => ("i686-kernel.json", "_DllMain@12", Some(0x77480000u64)),
+        "x86" => ("i686-pc-windows-gnu", "_DllMain@12", Some(0x77480000u64)),
         "x86_64" => ("x86_64-pc-windows-gnu", "DllMain", Some(0x7ff6d000000u64)),
         "aarch64" => ("aarch64-pc-windows-gnullvm", "DllMain", Some(0x7ff6d000000u64)),
         o => panic!("apphelp-cargo: unsupported arch {o}"),
     };
 
     let late_libs: &[&str] = match arch.as_str() {
-        "x86" => &["sdk/lib/delayimp/libdelayimp_rust.a"],
-        "x86_64" => &["sdk/lib/delayimp/libdelayimp_rust.a"],
-        "aarch64" => &["sdk/lib/delayimp/libdelayimp_rust.a"],
+        "x86" => &["engine:delayimp_rust"],
+        "x86_64" => &["engine:delayimp_rust"],
+        "aarch64" => &["engine:delayimp_rust"],
         _ => unreachable!(),
     };
 

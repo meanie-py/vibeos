@@ -7,7 +7,7 @@ reads what that link ACTUALLY does, from each `build-<arch>/build.ninja` (entry 
 subsystem, image base, the libraries, the `.def`, the resources), and writes the
 reactos-link cell that does the same thing:
 
-  sdk/lib/rust/<m>-cargo/{Cargo.toml, build.rs, src/main.rs, i686-kernel.json}
+  sdk/lib/rust/<m>-cargo/{Cargo.toml, build.rs, src/main.rs}
   + the workspace member, + the module's CMakeLists rewritten to `add_cargo_module`.
 
     python3 tools/cargo_cell_gen.py winmine            # dry run: show what it would write
@@ -40,12 +40,10 @@ RUST = REPO / "sdk/lib/rust"
 ARCHES = ("i386", "amd64", "arm64")
 TRIPLE = {"i386": "x86", "amd64": "x86_64", "arm64": "aarch64"}
 TARGET = {
-    "i386": "i686-kernel.json",
+    "i386": "i686-pc-windows-gnu",
     "amd64": "x86_64-pc-windows-gnu",
     "arm64": "aarch64-pc-windows-gnullvm",
 }
-# The user-mode (hard-float) variant every user cell carries; see cargo_orchestrate.
-USER_JSON_FROM = RUST / "userinit-cargo/i686-kernel.json"
 MSVCRTEX = {"wexe": "ExeWide", "exe": "ExeAnsi", "dll": "Dll"}
 # What panic_common's user handler imports (its report, stack walk and exit).
 PANIC_COMMON_IMPORTS = {
@@ -74,16 +72,13 @@ DEAD_IMPORTS = {
 # cmake's rust_staticlib_variant did not; a frame pointer can push a big frame over the
 # probe threshold. ntdll exports __chkstk on amd64/arm64 and kernel32 forwards it there.
 STACK_PROBE_IMPORTS = {"kernel32.dll!__chkstk", "ntdll.dll!__chkstk"}
-# What compiler-builtins' `mem` feature defines on i386 (see check()).
-I386_BUILTIN_MEM = {"memcmp", "memcpy", "memmove", "memset", "strlen", "bcmp"}
+# i386 only: the builtin i686-pc-windows-gnu triple links rsbegin.o/rsend.o, whose one
+# `.ctors`/`.dtors` entry each (EH-frame registration, a no-op here: see reactos-link)
+# lld's MinGW writer puts in sections of their own.
+I386_RSBEGIN_SECTIONS = {"sections: + .ctors 0x40000040", "sections: + .dtors 0x40000040"}
 # How much more the loader may map for a cargo-linked module than for cmake's: the cell's
 # own handler, startup and section padding. All of core is ~200 KB on amd64.
 SIZE_SLACK = 16 * 1024
-# i386 only, and only where the cell keeps panic_common: the cell builds its own core
-# (nightly build-std on the kernel json) beside the body's i686-pc-windows-gnu one, so
-# the handler links a second copy of core::fmt, measured at 70-78 KB. The fix is a
-# user-target i386 cell (owed: docs/engineering/cargo-drive-plan.md).
-I386_SECOND_CORE = 80 * 1024
 # Statements on the target that the cargo cell replaces outright.
 REPLACED = (
     "add_executable",
@@ -176,6 +171,14 @@ class Cell:
     # `__imp_` symbol two of the libs define binds to the first (Linker::delay_import_lib).
     import_order: list[tuple[str, bool]] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    # Per arch, the RUSTFLAGS cmake built the body with (`ENV "RUSTFLAGS=..."` on its
+    # rust_staticlib_variant): calc and friends pass floats by value, so i386 needs SSE.
+    body_rustflags: dict[str, str] = field(default_factory=dict)
+    # That `set(<VAR>) if(ARCH ...) set(<VAR> ENV ...) endif()` block, which the rewrite
+    # drops with the variant.
+    body_env_block: str = ""
+    # Per arch, when the arches ship to different CD dirs (winprint's prtprocs/<arch>).
+    arch_destinations: dict[str, list[str]] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------- build graph
@@ -341,6 +344,8 @@ def cmake_facts(cmake: Path, target: str, libs: list[str] | None = None) -> dict
         "transfer": [],
         "unknown": [],
         "unicode": False,
+        "body_rustflags": {},
+        "body_env_block": "",
     }
     variants = {}
     linked = {lib.split("/")[-1] for lib in libs or []}
@@ -387,13 +392,39 @@ def cmake_facts(cmake: Path, target: str, libs: list[str] | None = None) -> dict
         facts["body"] = (a[1], feats, a[3].upper() == "TRUE")
         facts["body_var"] = named[0]
         if len(a) > 4:
-            # calc/taskmgr/wordpad pass `${X_RUST_ENV}` (i386 +sse,+sse2 for the body):
-            # the cell would build the body without it, and pe_equiv cannot see a
-            # codegen change.
-            facts["unknown"].append(f"rust_staticlib_variant extras {a[4:]}")
+            # calc/taskmgr/wordpad pass `${X_RUST_ENV}` (i386 +sse,+sse2 for the body).
+            # Only that exact shape is modelled: the cell builds the body with the same
+            # RUSTFLAGS through rust_build_rustflags. Anything else is refused, since
+            # pe_equiv cannot see a codegen change.
+            env = _body_env(text, a[4:])
+            if env is None:
+                facts["unknown"].append(f"rust_staticlib_variant extras {a[4:]}")
+            else:
+                facts["body_rustflags"], facts["body_env_block"] = env
     elif len(named) > 1:
         facts["unknown"].append(f"several bodies {named}")
     return facts
+
+
+def _body_env(text: str, extras: list[str]) -> tuple[dict[str, str], str] | None:
+    """`extras` is one `${VAR}` that is empty but on one arch `ENV "RUSTFLAGS=..."`:
+    ({arch: flags}, the block that sets it). None for any other shape."""
+    m = re.fullmatch(r"\$\{(\w+)\}", extras[0]) if len(extras) == 1 else None
+    if not m:
+        return None
+    var = re.escape(m.group(1))
+    block = re.search(
+        rf"set\({var}\)\n"
+        rf'if\(ARCH STREQUAL "(\w+)"\)\n'
+        rf'\s*set\({var} ENV "RUSTFLAGS=([^"]*)"\)\n'
+        r"endif\(\)\n",
+        text,
+    )
+    if not block or block.group(1) not in ARCHES:
+        return None
+    if len(re.findall(rf"\b{var}\b", text)) != 3:
+        return None  # set twice above, read once by the variant: nothing else
+    return {block.group(1): block.group(2)}, block.group(0)
 
 
 def _names_only(a: list[str]) -> bool:
@@ -412,6 +443,9 @@ def _retarget(cmd: str, raw: str, new: str) -> str:
 def rewrite_cmake(cmake: Path, cell: Cell) -> str:
     """The module's CMakeLists with the target's link statements replaced by the cell."""
     text = cmake.read_text()
+    if cell.body_env_block:
+        # The body's RUSTFLAGS now live in build.rs (Cell.body_rustflags).
+        text = text.replace(cell.body_env_block, "", 1)
     keep, pos = [], 0
     body_lib = None
     body_var = cell.body_var or f"{cell.target}_rust"
@@ -485,6 +519,11 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
     out = "".join(keep).lstrip("\n")
     if body_lib and not shared and re.search(rf"\$\{{{body_lib}_LIB\}}|rust_{body_lib}\b", out):
         raise GenError(f"{cmake}: something else still uses {body_lib}")
+    # An if(ARCH ...) chain whose only statements were the target's (winprint's
+    # add_cd_file per arch) is left with nothing in it.
+    out = re.sub(
+        r"^if\([^\n]*\)\n(?:(?:elseif\([^\n]*\)|else\(\))\n)*endif\(\)\n", "", out, flags=re.M
+    )
     out = re.sub(r"\n{3,}", "\n\n", out).rstrip() + "\n"
     block = [
         "",
@@ -533,8 +572,12 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
     if build_deps and objlibs:
         block.append("# Generated inputs those compiles read, ordered before them.")
         block += [f"add_dependencies({lib} {' '.join(build_deps)})" for lib in objlibs]
-    every = sorted({lib for libs in cell.static_libs.values() for lib in libs})
-    by_arch = {a: set(libs) for a, libs in cell.static_libs.items()}
+    # cmake builds what the cell still reuses; the engine builds `engine:` libraries.
+    reused = {
+        a: [x for x in libs if not x.startswith("engine:")] for a, libs in cell.static_libs.items()
+    }
+    every = sorted({lib for libs in reused.values() for lib in libs})
+    by_arch = {a: set(libs) for a, libs in reused.items()}
     common = [lib for lib in every if all(lib in by_arch[a] for a in ARCHES)]
     if every:
         var = f"{cell.target.upper()}_REUSED"
@@ -550,11 +593,20 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
                 block += [f"    list(APPEND {var} ${{CMAKE_BINARY_DIR}}/{lib})" for lib in only]
                 block.append("endif()")
         extra.append(f"${{{var}}}")
+    named = {lib for libs in cell.static_libs.values() for lib in libs}
+    extra += sorted({ENGINE_LIB_DEPS[lib] for lib in named if lib in ENGINE_LIB_DEPS})
     kind = "win32exe" if cell.module_kind == "Win32Exe" else "win32dll"
     call = [f"add_cargo_module({cell.target} {cell.target}-cargo {cell.output_name}"]
     call.append(f"    KIND {kind}")
     call.append(f"    BODY_CRATE {cell.body_crate}")
-    if cell.destinations:
+    if cell.arch_destinations:
+        var = f"{cell.target.upper()}_DESTINATION"
+        for i, a in enumerate(ARCHES):
+            block.append(f'{"if" if i == 0 else "elseif"}(ARCH STREQUAL "{a}")')
+            block.append(f"    set({var} {' '.join(cell.arch_destinations[a])})")
+        block.append("endif()")
+        call.append(f"    DESTINATION ${{{var}}}")
+    elif cell.destinations:
         call.append(f"    DESTINATION {' '.join(cell.destinations)}")
     else:
         call.append("    NO_CD")
@@ -571,6 +623,51 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
     return out + "\n".join(block + call) + "\n"
 
 
+# cmake static libraries reactos-link builds itself (`engine_lib`): a cell names them
+# `engine:<name>` and no longer waits on cmake to build them.
+ENGINE_LIBS = {
+    "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a": "engine:oldnames",
+    "sdk/lib/crt/libchkstk.a": "engine:chkstk",
+    "sdk/lib/pseh/libpseh.a": "engine:pseh",
+    "sdk/lib/libwine/libwine.a": "engine:wine",
+    "sdk/lib/conutils/libconutils.a": "engine:conutils",
+    "sdk/lib/conutils/libconutils_rust.a": "engine:conutils_rust",
+    "sdk/lib/uuid/libuuid.a": "engine:uuid",
+    "sdk/lib/delayimp/libdelayimp_rust.a": "engine:delayimp_rust",
+    "sdk/lib/evtlib/libevtlib_rust.a": "engine:evtlib_rust",
+    "sdk/lib/skiplist/libskiplist_rust.a": "engine:skiplist_rust",
+    "dll/win32/hid/libhid_hidparser_rust.a": "engine:hid_hidparser_rust",
+    "sdk/lib/evtlib/libevtlib.a": "engine:c:evtlib",
+    "sdk/lib/skiplist/libskiplist16.a": "engine:c:skiplist16",
+    "sdk/lib/udmihelp/libudmihelp.a": "engine:c:udmihelp",
+    "sdk/lib/dmilib/libdmilib.a": "engine:c:dmilib",
+    "sdk/lib/dxguid/libdxguid.a": "engine:c:dxguid",
+    "sdk/lib/tzlib/libtzlib.a": "engine:c:tzlib",
+    "sdk/lib/scrnsave/libscrnsave.a": "engine:c:scrnsave",
+    "dll/appcompat/shims/shimlib/libshimlib.a": "engine:c:shimlib",
+    "win32ss/user/winsrv/concfg/libconcfg.a": "engine:c:concfg",
+    "win32ss/user/winsrv/concfg/libconcfg_rust.a": "engine:concfg_rust",
+    "win32ss/libwin32ksys.a": "engine:c:win32ksys",
+}
+# The engine replays cmake's compile of these, which reads what cmake generates (psdk
+# and xdk headers, uuid's widl output): the cell builds after the targets that make it.
+ENGINE_LIB_DEPS = {
+    "engine:wine": "psdk",
+    "engine:conutils": "xdk",
+    "engine:uuid": "uuid_sources",
+    "engine:c:evtlib": "xdk",
+    "engine:c:skiplist16": "psdk",
+    "engine:c:udmihelp": "psdk",
+    "engine:c:dmilib": "psdk",
+    "engine:c:dxguid": "psdk",
+    "engine:c:tzlib": "xdk",
+    "engine:c:scrnsave": "psdk",
+    "engine:c:shimlib": "xdk",
+    "engine:c:concfg": "xdk",
+    "engine:c:win32ksys": "asm",
+}
+
+
 # ---------------------------------------------------------------- the model
 
 
@@ -582,6 +679,10 @@ def _placeholder(path: Path) -> bool:
 
 
 def model(target: str, repo: Path = REPO) -> Cell:
+    if target[:1].isdigit():
+        # The cell is the cargo package `<target>-cargo`, and a package name cannot
+        # start with a digit (3dtext).
+        raise GenError(f"{target}: a cargo package name cannot start with a digit")
     links = {a: link_edge(a, target, repo) for a in ARCHES}
     first = links["amd64"]
     cmake_dir = repo / Path(first.output).parent
@@ -594,8 +695,10 @@ def model(target: str, repo: Path = REPO) -> Cell:
     if not facts["body"]:
         raise GenError(f"{target}: no rust_staticlib_variant names its body crate")
     if first.kind == "C_EXECUTABLE":
-        if not (first.subsystem or "").startswith(("windows", "console")):
-            raise GenError(f"{target}: {first.subsystem} exe is not modelled (native?)")
+        # A native app (autochk, usetup: set_module_type nativecui) links exactly like a
+        # Win32 exe but for its subsystem: user-mode Rust, --gc-sections, auto image base.
+        if not (first.subsystem or "").startswith(("windows", "console", "native")):
+            raise GenError(f"{target}: {first.subsystem} exe is not modelled")
         module_kind = "Win32Exe"
     elif first.kind in ("C_MODULE_LIBRARY", "C_SHARED_LIBRARY"):
         # A kernel-mode driver or a win32k font driver links native:, with a kernel
@@ -647,6 +750,7 @@ def model(target: str, repo: Path = REPO) -> Cell:
                     imports.append((specs[base][0], specs[base][1], base))
                     order.append((base, False))
                 continue
+            lib = ENGINE_LIBS.get(lib, lib)
             if lib not in static:
                 static.append(lib)
                 if after_body:
@@ -699,7 +803,9 @@ def model(target: str, repo: Path = REPO) -> Cell:
     # set_module_type(... UNICODE) is the one target-level define a user module's
     # compiles get; the OBJECT libraries that replace the target must carry it.
     rc_defines = ["UNICODE", "_UNICODE"] if facts["unicode"] else []
-    if module_kind == "Win32Exe" and not msvcrtex:
+    native = (first.subsystem or "").startswith("native")
+    if module_kind == "Win32Exe" and not msvcrtex and not native:
+        # (A native app has no CRT: NtProcessStartup comes from libnt.a.)
         raise GenError(f"{target}: exe without a msvcrtex CRT startup")
     stacks = {links[a].stack for a in ARCHES}
     if len(stacks) > 1:
@@ -708,15 +814,28 @@ def model(target: str, repo: Path = REPO) -> Cell:
     # context: the CD list each arch's build wrote must be exactly what they say.
     var = r"\\\$\\\{\w+\\\}"  # a ${VAR} once re.escape()d
     pats = [re.compile(re.sub(var, "[^/]+", re.escape(d))) for d in facts["destinations"]]
+    shipped: dict[str, list[str]] = {}
     for a in ARCHES:
         dirs = cd_dirs(a, links[a].output, repo)
-        if len(dirs) != len(pats) or not all(
-            sum(1 for p in pats if p.fullmatch(d)) == 1 for d in dirs
-        ):
+        hits = [
+            [d for d, p in zip(facts["destinations"], pats, strict=True) if p.fullmatch(x)]
+            for x in dirs
+        ]
+        if not dirs or any(len(h) != 1 for h in hits):
             raise GenError(
                 f"{target}: CD destinations differ by arch ({a} ships to {sorted(dirs)},"
                 f" the CMakeLists names {facts['destinations']})"
             )
+        shipped[a] = sorted({h[0] for h in hits}, key=facts["destinations"].index)
+    # winprint ships to one prtprocs dir per arch (an if(ARCH) chain of add_cd_file):
+    # each arch's own list, as long as together they are exactly what the CMakeLists names.
+    per_arch = {}
+    if any(shipped[a] != facts["destinations"] for a in ARCHES):
+        if {d for a in ARCHES for d in shipped[a]} != set(facts["destinations"]):
+            raise GenError(
+                f"{target}: CD destinations {shipped} leave some of {facts['destinations']} unused"
+            )
+        per_arch = shipped
     body, feats, defaults = facts["body"]
     panics = {a: carries_panic_handler(repo / f"build-{a}" / links[a].output) for a in ARCHES}
     return Cell(
@@ -731,6 +850,8 @@ def model(target: str, repo: Path = REPO) -> Cell:
         body_crate=body,
         body_features=feats,
         body_defaults=defaults,
+        body_rustflags=facts["body_rustflags"],
+        body_env_block=facts["body_env_block"],
         import_libs=list(imports),
         delay_import_libs=list(delayed),
         generated=generated,
@@ -743,6 +864,7 @@ def model(target: str, repo: Path = REPO) -> Cell:
         rc=rc,
         rc_defines=rc_defines,
         destinations=facts["destinations"],
+        arch_destinations=per_arch,
         name_on_cd=facts["name_on_cd"],
         panics=panics,
         body_var=facts["body_var"],
@@ -795,7 +917,23 @@ def build_rs(cell: Cell) -> str:
         L.append("        _ => unreachable!(),")
         L.append("    };")
         L.append("")
-    L.append("    Linker::new(target_json)")
+    if cell.body_rustflags:
+        L.append(
+            "    // cmake built the body with these RUSTFLAGS (its rust_staticlib_variant ENV)."
+        )
+        L.append("    let body_rustflags = match arch.as_str() {")
+        for a in ARCHES:
+            if a in cell.body_rustflags:
+                L.append(f'        "{TRIPLE[a]}" => Some("{cell.body_rustflags[a]}"),')
+        L.append("        _ => None,")
+        L.append("    };")
+        L.append("    let mut link = Linker::new(target_json);")
+        L.append("    if let Some(flags) = body_rustflags {")
+        L.append("        link = link.rust_build_rustflags(flags);")
+        L.append("    }")
+        L.append("    link")
+    else:
+        L.append("    Linker::new(target_json)")
     if cell.body_features or not cell.body_defaults:
         feats = ", ".join(f'"{f}"' for f in cell.body_features)
         L.append(
@@ -950,7 +1088,6 @@ def apply(cell: Cell, repo: Path = REPO) -> list[Path]:
     (crate / "Cargo.toml").write_text(toml)
     (crate / "build.rs").write_text(rs)
     (crate / "src/main.rs").write_text(main_rs(cell))
-    (crate / "i686-kernel.json").write_bytes(USER_JSON_FROM.read_bytes())
     ws = repo / "sdk/lib/rust/Cargo.toml"
     text = ws.read_text()
     member = f'    "{cell.target}-cargo",\n'
@@ -1058,6 +1195,13 @@ def check(targets: list[str], baseline: Path, repo: Path = REPO) -> int:
                 bad += 1
                 continue
             new = repo / f"build-{a}" / olds[0].relative_to(baseline / a)
+            # The baseline is cmake's PE: when cargo did not relink the module (a failed
+            # build leaves cmake's file in place), comparing it with itself is a vacuous
+            # pass. It happened: an all-arch CARGO_CHECK_FAIL checked 18/18 EQUIVALENT.
+            if not new.exists() or new.read_bytes() == olds[0].read_bytes():
+                print(f"{t:14} {a:6} NOT RELINKED (still the baseline PE: did the build fail?)")
+                bad += 1
+                continue
             try:
                 diffs = pe_equiv.compare(pe_equiv.load(olds[0]), pe_equiv.load(new))
             except pe_equiv.PEError as exc:
@@ -1073,45 +1217,30 @@ def check(targets: list[str], baseline: Path, repo: Path = REPO) -> int:
                 for d in diffs
                 if a != "i386" and d.removeprefix("imports: + ") in STACK_PROBE_IMPORTS
             }
-            # i386 cells build core with `-Z build-std-features=compiler-builtins-mem`, so the
-            # mem/str intrinsics resolve statically instead of importing the CRT's (userinit
-            # and lsass have linked that way since June). Accepted as a removal, i386 only.
-            builtins = {
-                d
-                for d in diffs
-                if a == "i386"
-                and d.startswith("imports: - ")
-                and d.split("!", 1)[-1] in I386_BUILTIN_MEM
-            }
+            rsbegin = {d for d in diffs if a == "i386" and d in I386_RSBEGIN_SECTIONS}
             dead = {d for d in diffs if d.removeprefix("imports: - ") in DEAD_IMPORTS.get(t, ())}
             # A panic-lean cell links only what its body, CRT and exports reach; cmake's
             # link also kept whatever shared an archive member with the body's panic
             # path. An import can only vanish when no linked code references it, so the
             # removals are that unreachable code. Reported, never silent.
             lean = (
-                (
-                    {d for d in diffs if d.startswith("imports: - ")}
-                    if not _cell_uses_panic_common(t, a, repo)
-                    else set()
-                )
-                - builtins
-                - dead
-            )
-            diffs = [d for d in diffs if d not in extra | builtins | probes | dead | lean]
+                {d for d in diffs if d.startswith("imports: - ")}
+                if not _cell_uses_panic_common(t, a, repo)
+                else set()
+            ) - dead
+            diffs = [d for d in diffs if d not in extra | rsbegin | probes | dead | lean]
             # Size is not part of the contract, but a cell must not carry code cmake's
             # link did not: that is how all of core rode into 94 modules unnoticed.
             grew = pe_equiv.load(new).mapped_size() - pe_equiv.load(olds[0]).mapped_size()
-            second_core = a == "i386" and _cell_uses_panic_common(t, a, repo)
-            slack = SIZE_SLACK + (I386_SECOND_CORE if second_core else 0)
-            if grew > slack:
-                diffs.append(f"size: mapped image grew {grew // 1024} KB (slack {slack // 1024})")
+            if grew > SIZE_SLACK:
+                diffs.append(
+                    f"size: mapped image grew {grew // 1024} KB (slack {SIZE_SLACK // 1024})"
+                )
             note = " (+ panic_common imports)" if extra else ""
-            note += " (mem intrinsics from compiler-builtins)" if builtins else ""
+            note += " (+ rsbegin .ctors/.dtors)" if rsbegin else ""
             note += " (+ __chkstk: frame pointers)" if probes else ""
             note += " (- dead-code import, see DEAD_IMPORTS)" if dead else ""
             note += f" (- {len(lean)} imports only the panic path reached)" if lean else ""
-            if second_core and grew > SIZE_SLACK:
-                note += f" (+{grew // 1024} KB: i386 second core)"
             print(f"{t:14} {a:6} {'EQUIVALENT' + note if not diffs else 'DIFFERENT'}")
             for d in diffs[:12]:
                 print(f"    {d}")

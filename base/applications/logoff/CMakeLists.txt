@@ -10,19 +10,8 @@
 add_library(logoff_res OBJECT logoff.rc)
 target_compile_definitions(logoff_res PRIVATE UNICODE _UNICODE)
 target_include_directories(logoff_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(LOGOFF_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils_rust.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/pseh/libpseh.a)
-if(ARCH STREQUAL "i386")
-    list(APPEND LOGOFF_REUSED ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a)
-endif()
-if(ARCH STREQUAL "arm64")
-    list(APPEND LOGOFF_REUSED ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a)
-endif()
 add_cargo_module(logoff logoff-cargo logoff.exe
     KIND win32exe
     BODY_CRATE logoff-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS logoff_res ${LOGOFF_REUSED})
+    EXTRA_DEPENDS logoff_res xdk)

@@ -185,3 +185,30 @@ def test_a_record_ending_in_cr_is_not_lost():
     serial = f"{rec}\n{rec}\r\n[MODRUN] exit m.x c rc=0x0 ms=1 records=1\n"
     out, exits = mr.parse(serial)
     assert out[("m.x", "c")] == ["one\r"] and "LOST" not in exits[("m.x", "c")][2]
+
+
+def test_return_minus_one_is_an_exit_code_not_a_crash(suites):
+    # fc returns FCRET_INVALID (-1) on every usage error; both variants agree.
+    serial = _serial(
+        "[MODRUN:m.same:c] Disk 0 usage",
+        "[MODRUN] exit m.same c rc=0xffffffff ms=5",
+        "[MODRUN:m.same:rust] Disk 0 usage",
+        "[MODRUN] exit m.same rust rc=0xffffffff ms=5",
+    )
+    report, failures = mr.grade(serial, "amd64-uefi")
+    assert not [f for f in failures if f.startswith("m.same")], failures
+
+
+def test_a_non_ascii_record_survives_the_latin1_serial(suites):
+    # serial_client.py decodes LATIN-1; the guest checksums the UTF-8 bytes.
+    sent = "Disk 0 thrΘe"
+    wire = sent.encode("utf-8").decode("latin-1")
+    serial = "\n".join(
+        [
+            f"[MODRUN:m.same:c:0:{mr.checksum(sent, 0):04x}] {wire}",
+            "[MODRUN] exit m.same c rc=0x00000000 ms=5 records=1",
+        ]
+    )
+    out, exits = mr.parse(serial)
+    assert out[("m.same", "c")] == [sent]
+    assert "LOST" not in exits[("m.same", "c")][2]

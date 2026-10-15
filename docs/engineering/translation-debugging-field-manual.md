@@ -492,6 +492,11 @@ blind to all of it.
 
 ### Width mismatches: return, argument, and static
 Same family, three positions, all silent on the arch where the widths happen to agree.
+- **Copied by vote.** `port resolve` copies a missing extern from tree consensus, and most
+  crates had typed the CRT's `wint_t towupper(wint_t)` as `towupper(c: c_int) -> c_int` -- a
+  caller reading all of EAX from a function that returns an unsigned short. Consensus now
+  refuses a declaration set that disagrees on an integer WIDTH at any position, and the
+  module's own C prototype settles it.
 - **Return.** A `-> u32` decl over a `BOOLEAN`(u8) definition: the callee sets only `AL`, the
   caller reads all of `EAX` → false-"true" on non-`xor eax,eax` paths, nondeterministic (reads
   as a flaky boot). Real damage: `RtlEqualUnicodeString` false match snapped ftfd.dll against
@@ -1965,6 +1970,13 @@ buffers at half size, `RegEnumValueW` told 128 WCHARs into 128 bytes), each need
 `port resolve` writes a generated `UNICODE TCHAR family` prelude block (`TCHAR = WCHAR` …)
 whenever every TU's real compile command carries `-DUNICODE`. A `port fix` reply had already
 built a shim casting `LPTSTR` to `*mut i8` around the wrong type -- delete such shims on sight.
+
+**A TU that flips the charset is a template instantiation, not the module's charset.** fc's
+texta.c opens `#undef UNICODE` / `#define _MBCS` and includes text.h; textw.c includes it
+again wide. Merged into the module island, texta.c's toggles made the WHOLE island ANSI and
+conutils.h `#error`ed. `profile_derive` now drops the toggles of a TU whose charset disagrees
+with the module's (finding `CHARSET_INSTANTIATION`), and the Rust for the template is generic
+over the char type, one instantiation exported per TU (fc-rust's `text_h.rs`).
 
 ### The same rule for TYPEDEFS: a private `type` alias that disagrees on WIDTH
 The entry above is about shadow *structs*; this is the same disease one level down, and it is
@@ -14822,6 +14834,47 @@ fails the adapter. A rarely taken failure path is worth one forced-failure boot.
   runs and calls the execution routine at DISPATCH_LEVEL; `Put` frees it. **A slot in a
   table a C driver calls through is never a safe place to leave a `None`**; a stub that
   fails with a status is.
+
+### A staged vendor driver never loads: an inbox INF takes the device
+- **Symptom:** a vendor package staged with `vendordrv` is on the image, but PnP starts our own
+  driver on its device (`[DA] AddDevice ... (drv \Driver\e1000)` for Intel's `nete1g3e.inf`).
+  Making the vendor INF's `DriverVer` newer changes nothing.
+- **Cause:** setupapi ranks a match by WHERE the ID sits before it compares dates
+  (`driver.c`). Intel writes its model lines `E100C,, PCI\VEN_8086&DEV_100C`: the ID is in the
+  compatible-ID slot, rank 0x3000, while `nete1000.inf` puts it in the hardware-ID slot, 0x2000.
+  That is Windows' documented ranking too; Windows still picks the vendor's because an unsigned
+  driver ranks behind every signed one, and our INFs are unsigned.
+- **Fix:** `VIBEOS_VENDOR_PREFER=1` stages a copy of the vendor INF with its IDs in the
+  hardware-ID slot and a 2099 `DriverVer`, standing in for the signature rule. To see the
+  ranking itself, put `DEBUGCHANNEL=+setupapi` in `Session Manager\Environment` for one boot:
+  setupapi traces every INF it opens and each `Adding driver ... (Rank 0x...)`. It slows the
+  boot several times over, so don't leave it in.
+
+### A Windows 10 vendor driver never starts, one quiet step at a time
+Realtek's Windows 10 RTL8153 driver (NDIS 6.40 on KMDF) failed five ways in turn; most
+left nothing in the log. In the order they bite:
+- **No driver offered** (`DevInstallW failed with error 259`): the INF's `[Manufacturer]`
+  names only `NTamd64.10.0` models and leaves the undecorated section empty on purpose.
+  setupapi matches decorations against the 5.2 we report, as Windows would. Fix: when the
+  section valid for our version is empty, `driver.c` uses the NT 10.0 models (logged once
+  per INF). An INF with models for our version is unaffected.
+- **Installed but never loaded** (`fixme: unknown dirid 13`): `ServiceBinary = %13%\x.sys`.
+  DIRID 13 is the driver store, where Windows 10 runs drivers from. Fix: `dirid.c` maps it to
+  `%windir%\inf`, where vendordrv stages the package.
+- **0x1E `c000001d` at DriverEntry, RIP in the driver's string data**: the driver's
+  `__security_init_cookie` `__fastfail`s (`int 0x29`) on the compiler's default /GS cookie.
+  Windows' loader gives each image a random cookie; `sysldr.rs` had translated
+  `LdrpInitSecurityCookie` into an empty stub. Fix: ported from the C beside it.
+- **`DriverEntry failed 0xc0000001`, nothing else** (the IO manager now prints that line):
+  DriverEntry begins `if (NdisGetVersion() < 0x60028) return STATUS_UNSUCCESSFUL`. Fix:
+  `NdisGetVersion` reports 6.40.
+- **`WDFTrace: USBD_CreateHandle failed`, init `c0000001`**: KMDF clients created with
+  `WdfUsbTargetDeviceCreateWithParameters` (any Windows 8+ driver) need usbdex, which was
+  all `STATUS_NOT_IMPLEMENTED`. Fix: real handle and URB bookkeeping in `usbdex-rust`.
+To see a quiet driver's own `DbgPrintEx`, give `Session Manager\Debug Print Filter` an
+`IHVNETWORK`/`IHVDRIVER` DWORD of `0xFFFFFFFF` for one boot. A driver that fails before its
+first print is quicker to read in the binary: find its `NdisGetVersion` IAT slot with
+`objdump -p` and look at what the caller compares.
 
 ### A driver's `WriteFile` hands its lower layer a NULL buffer
 - **Symptom:** ndisuio's write path: `ASSERT FAILED: VirtualAddress != NULL at

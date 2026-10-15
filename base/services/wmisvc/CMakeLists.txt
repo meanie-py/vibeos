@@ -10,10 +10,8 @@ spec2def(wmisvc.dll wmisvc.spec ADD_IMPORTLIB)
 add_library(wmisvc_res OBJECT wmisvc.rc)
 target_compile_definitions(wmisvc_res PRIVATE UNICODE _UNICODE)
 target_include_directories(wmisvc_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(WMISVC_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(wmisvc wmisvc-cargo wmisvc.dll
     KIND win32dll
     BODY_CRATE wmisvc-rust
     DESTINATION reactos/system32/wbem
-    EXTRA_DEPENDS wmisvc_res ${WMISVC_REUSED})
+    EXTRA_DEPENDS wmisvc_res)

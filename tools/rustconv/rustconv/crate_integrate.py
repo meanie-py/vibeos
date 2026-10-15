@@ -1262,7 +1262,9 @@ _TOP_LEVEL_PUB_RE = re.compile(
     # `CRecycleBin_ParseRecycleBinPath_RustBridge` is defined and public in `recycle_bin.rs`,
     # and CRecycleBinFolderViewCB still could not see it.
     r"^(?:#\[[^\]]*\]\s*)*pub\s+(?:unsafe\s+)?(?:extern\s+\"[A-Za-z0-9_-]+\"\s+)?"
-    r"(fn|struct|enum|union|trait|type|const|static\s+mut|static)\s+([A-Za-z_][A-Za-z0-9_]*)",
+    # A C global named after a Rust keyword is defined as a RAW identifier (`r#type`); the
+    # name group keeps the `r#`, or the index records it as `r` and imports that.
+    r"(fn|struct|enum|union|trait|type|const|static\s+mut|static)\s+((?:r#)?[A-Za-z_][A-Za-z0-9_]*)",
     re.M,
 )
 
@@ -1502,6 +1504,21 @@ def resolve_in_crate_imports(code: str, crate: Path) -> tuple[str, list[str]]:
 
     notes: list[str] = stale_notes
     imports: list[str] = []
+    # The same keyword-named global as the bodies spell it: c2rust renames `type` to `type_0`,
+    # while the defining preamble wrote `r#type`. ftp's main.c `int type;` is read from four
+    # sibling modules that way. Import the raw name under the c2rust one.
+    for name in sorted(n for n in owners if n.startswith("r#")):
+        alias = f"{name[2:]}_0"
+        if alias in words and alias not in local and alias not in already and alias not in provided:
+            mods = owners[name]
+            if len(mods) == 1:
+                imports.append(f"use {next(iter(mods))}::{name} as {alias};")
+    raw_used = set(re.findall(r"\br#[A-Za-z_][A-Za-z0-9_]*\b", _without_comments(code)))
+    # `defined_names` cannot see a raw identifier, so the defining file would import itself.
+    raw_local = {n for _, n in _top_level_pub_items(code)}
+    for name in sorted((raw_used & owners.keys()) - local - raw_local):
+        if len(owners[name]) == 1:
+            imports.append(f"use {next(iter(owners[name]))}::{name};")
     for name in sorted(words & owners.keys()):
         if name in local or name in already or name in provided:
             continue

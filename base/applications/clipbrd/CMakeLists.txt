@@ -14,10 +14,8 @@
 add_library(clipbrd_res OBJECT clipbrd.rc)
 target_compile_definitions(clipbrd_res PRIVATE UNICODE _UNICODE)
 target_include_directories(clipbrd_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(CLIPBRD_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(clipbrd clipbrd-cargo clipbrd.exe
     KIND win32exe
     BODY_CRATE clipbrd-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS clipbrd_res ${CLIPBRD_REUSED})
+    EXTRA_DEPENDS clipbrd_res)

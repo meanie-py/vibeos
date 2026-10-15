@@ -10,10 +10,8 @@ add_rc_deps(resource.rc ${CMAKE_CURRENT_SOURCE_DIR}/res/regedt32.ico)
 add_library(regedt32_res OBJECT resource.rc)
 target_compile_definitions(regedt32_res PRIVATE UNICODE _UNICODE)
 target_include_directories(regedt32_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(REGEDT32_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(regedt32 regedt32-cargo regedt32.exe
     KIND win32exe
     BODY_CRATE regedt32-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS regedt32_res ${REGEDT32_REUSED})
+    EXTRA_DEPENDS regedt32_res)

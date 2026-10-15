@@ -190,6 +190,23 @@ def test_a_c_variadic_hand_port_is_banked_as_one_piece(tmp_path, monkeypatch):
     assert (mods / "f.rs").read_text() == "fn A() {}\n\n" + hand + "\n"
 
 
+def test_a_whole_module_is_banked_and_replayed_verbatim(tmp_path, monkeypatch):
+    # fc's text.h: the bought W bodies made generic by hand, around a trait and its impls.
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    monkeypatch.setattr(port, "STATE_ROOT", tmp_path / "state")
+    state = {"stem": "m", "crate": "m-rust", "stages": []}
+    (tmp_path / "state" / "m").mkdir(parents=True)
+    (tmp_path / "state" / "m" / "state.json").write_text(json.dumps(state))
+    mods = tmp_path / "sdk" / "lib" / "rust" / "m-rust" / "src" / "m"
+    mods.mkdir(parents=True)
+    hand = "pub trait TChar {}\nimpl TChar for u16 {}\nunsafe fn F<T: TChar>() {}\n"
+    (mods / "t.rs").write_text(hand)
+    port.stage_hand("m", ["t.rs:*"])
+    (mods / "t.rs").write_text("unsafe fn F() {}\n")  # the replay's bought, non-generic F
+    assert port.apply_hand("m") == 1
+    assert (mods / "t.rs").read_text() == hand
+
+
 def test_hand_span_finds_an_import_renamed_in_rust_only():
     text = (
         "fn A() {}\n\n"
@@ -1275,3 +1292,12 @@ def test_c_struct_tag_spelled_struct_name_becomes_the_crates_type(tmp_path):
     rs.write_text("fn f(b: *mut struct_buffer, s: *mut struct_other) {}\n")
     assert port._c_struct_tag_names(rs, src) == ["buffer"]
     assert "b: *mut buffer, s: *mut struct_other" in rs.read_text()
+
+
+def test_a_function_the_crate_defines_is_never_declared_extern(tmp_path):
+    # fc: texta.rs defines TextCompareA; an `extern` for it beside the sibling `use` is E0255.
+    (tmp_path / "texta.rs").write_text(
+        '#[no_mangle]\npub unsafe extern "C" fn TextCompareA(p: *mut F) -> i32 { 0 }\n'
+        "pub unsafe fn TextCompare<T: TChar>() {}\nunsafe fn Private() {}\n"
+    )
+    assert port._crate_defined_fns(tmp_path) == {"TextCompareA", "TextCompare"}

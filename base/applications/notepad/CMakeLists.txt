@@ -18,10 +18,8 @@ add_rc_deps(rsrc.rc ${CMAKE_CURRENT_SOURCE_DIR}/res/notepad.ico)
 add_library(notepad_res OBJECT rsrc.rc)
 target_compile_definitions(notepad_res PRIVATE UNICODE _UNICODE)
 target_include_directories(notepad_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(NOTEPAD_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(notepad notepad-cargo notepad.exe
     KIND win32exe
     BODY_CRATE notepad-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS notepad_res ${NOTEPAD_REUSED})
+    EXTRA_DEPENDS notepad_res)

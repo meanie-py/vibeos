@@ -14,10 +14,10 @@ cd "$(dirname "$0")/../../../.."  # → repo root
 OBJDUMP=".build-tools/llvm-mingw/bin/llvm-objdump"
 
 arch="${1:-i386}"
-# Shared cargo-invocation policy (builtin triple on amd64/arm64, nightly +
-# build-std on i386). Sets CELL_TARGET / CELL_STEM / CELL_STD / CELL_TOOLCHAIN.
+# Shared cargo-invocation policy (ntdll is a user-mode cell: the builtin triple,
+# stable, on every arch). Sets CELL_TARGET / CELL_STEM / CELL_STD / CELL_TOOLCHAIN.
 VIBEOS_ROOT="$PWD" . sdk/lib/rust/cargo-cell-args.sh
-cell_args "$arch" ntdll-cargo || { echo "usage: $0 [i386|amd64|arm64]" >&2; exit 2; }
+cell_args "$arch" ntdll-cargo win32dll || { echo "usage: $0 [i386|amd64|arm64]" >&2; exit 2; }
 
 if [ ! -d "build-$arch" ]; then echo "build-$arch/ missing — run cmake first." >&2; exit 1; fi
 if [ -n "$CELL_STD" ]; then

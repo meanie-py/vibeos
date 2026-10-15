@@ -22,13 +22,8 @@ add_rc_deps(dxdiag.rc ${CMAKE_CURRENT_SOURCE_DIR}/res/dxdiag.ico)
 add_library(dxdiag_res OBJECT dxdiag.rc)
 target_compile_definitions(dxdiag_res PRIVATE UNICODE _UNICODE)
 target_include_directories(dxdiag_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(DXDIAG_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/dmilib/libdmilib.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/dxguid/libdxguid.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/udmihelp/libudmihelp.a)
 add_cargo_module(dxdiag dxdiag-cargo dxdiag.exe
     KIND win32exe
     BODY_CRATE dxdiag-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS dxdiag_res ${DXDIAG_REUSED})
+    EXTRA_DEPENDS dxdiag_res psdk)

@@ -139,8 +139,21 @@ frames through our ndis.sys, usbport and xHCI. Since 2026-10-13 netstack can run
 traffic over it: netstack binds an NDIS miniport when it finds no NIC of its own, and
 `OPTIPLEX_BOOT_OPTIONS=/NETSTACK=NDIS tools/optiplex/netboot.sh` makes it leave the I217
 alone so the Realtek is the one it takes (`[NETSTACK] NDIS: bound adapter`, then a DHCP
-lease). Proven in QEMU on all three arches (smoke `--payload ndisprobe`); on this board it
-needs the cable in the hub's port.
+lease). On this board (2026-10-14): PnP installs the driver 151 s into boot, netstack binds
+it a second later, and by 166 s it holds a DHCP lease from the router, pings the gateway and
+resolves DNS; the host pings it back at 0.7 ms. The OS's own traffic, through Realtek's stock
+XP x64 binary, our ndis.sys, usbport and the Renesas xHCI. Both NICs are cabled (the I217's
+port and the hub's), so either backend can be tested without touching the bench.
+
+**NDIS 6 (2026-10-14):** ndis.sys runs NDIS 6 miniports. On this board Realtek's stock
+**Windows 10** driver for the hub's RTL8153 (`rtux64w10.sys` 10.38, NDIS 6.40 on KMDF 1.15, from a
+Windows DriverStore) installs, reads the chip's MAC, links at 1000 Mb/s, and carries netstack's
+traffic: DHCP 192.168.1.19, gateway ping, DNS, host ping 1.5 ms (`VIBEOS_VENDOR_DRIVERS=<dir>
+VIBEOS_PAYLOAD=ndisprobe,vendordrv`, `OPTIPLEX_BOOT_OPTIONS=/NETSTACK=NDIS`). Getting a Windows 10
+driver that far took five fixes, in the field manual under "A Windows 10 vendor driver never
+starts". The RTL8821CU stick's driver (`rtwlanu.sys`) is a WDI miniport: it also needs the WDI
+upper edge, not yet written. Where an inbox INF also claims the device, build with
+`VIBEOS_VENDOR_PREFER=1` ("A staged vendor driver never loads").
 
 ## Known gaps
 

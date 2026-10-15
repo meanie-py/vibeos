@@ -18,10 +18,8 @@ target_compile_definitions(progman_shims PRIVATE UNICODE _UNICODE)
 add_library(progman_res OBJECT progman.rc)
 target_compile_definitions(progman_res PRIVATE UNICODE _UNICODE)
 target_include_directories(progman_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(PROGMAN_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(progman progman-cargo progman.exe
     KIND win32exe
     BODY_CRATE progman-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS progman_shims progman_res ${PROGMAN_REUSED})
+    EXTRA_DEPENDS progman_shims progman_res)

@@ -12,11 +12,8 @@ include_directories(BEFORE ${REACTOS_SOURCE_DIR}/sdk/include/wine)
 add_library(avicap32_res OBJECT avicap32.rc)
 target_compile_definitions(avicap32_res PRIVATE UNICODE _UNICODE)
 target_include_directories(avicap32_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(AVICAP32_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(avicap32 avicap32-cargo avicap32.dll
     KIND win32dll
     BODY_CRATE avicap32-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS avicap32_res ${AVICAP32_REUSED})
+    EXTRA_DEPENDS avicap32_res psdk)

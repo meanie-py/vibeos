@@ -10,10 +10,8 @@ add_rc_deps(magnify.rc ${CMAKE_CURRENT_SOURCE_DIR}/res/magnify.ico)
 # whose windres command the cargo link replays.
 add_library(magnify_res OBJECT magnify.rc)
 target_include_directories(magnify_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(MAGNIFY_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(magnify magnify-cargo magnify.exe
     KIND win32exe
     BODY_CRATE magnify-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS magnify_res ${MAGNIFY_REUSED})
+    EXTRA_DEPENDS magnify_res)

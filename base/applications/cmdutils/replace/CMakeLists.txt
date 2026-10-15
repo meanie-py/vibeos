@@ -14,19 +14,8 @@ target_compile_definitions(replace_shims PRIVATE UNICODE _UNICODE)
 add_library(replace_res OBJECT replace.rc)
 target_compile_definitions(replace_res PRIVATE UNICODE _UNICODE)
 target_include_directories(replace_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(REPLACE_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils_rust.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/pseh/libpseh.a)
-if(ARCH STREQUAL "i386")
-    list(APPEND REPLACE_REUSED ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a)
-endif()
-if(ARCH STREQUAL "arm64")
-    list(APPEND REPLACE_REUSED ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a)
-endif()
 add_cargo_module(replace replace-cargo replace.exe
     KIND win32exe
     BODY_CRATE replace-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS replace_shims replace_res ${REPLACE_REUSED})
+    EXTRA_DEPENDS replace_shims replace_res xdk)

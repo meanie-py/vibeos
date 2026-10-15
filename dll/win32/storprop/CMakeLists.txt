@@ -13,10 +13,8 @@ spec2def(storprop.dll storprop.spec)
 add_library(storprop_res OBJECT storprop.rc)
 target_compile_definitions(storprop_res PRIVATE UNICODE _UNICODE)
 target_include_directories(storprop_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(STORPROP_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(storprop storprop-cargo storprop.dll
     KIND win32dll
     BODY_CRATE storprop-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS storprop_res ${STORPROP_REUSED})
+    EXTRA_DEPENDS storprop_res)

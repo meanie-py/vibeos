@@ -8,16 +8,16 @@ use std::env;
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
     let (target_json, entry) = match arch.as_str() {
-        "x86" => ("i686-kernel.json", "_wmainCRTStartup"),
+        "x86" => ("i686-pc-windows-gnu", "_wmainCRTStartup"),
         "x86_64" => ("x86_64-pc-windows-gnu", "wmainCRTStartup"),
         "aarch64" => ("aarch64-pc-windows-gnullvm", "wmainCRTStartup"),
         o => panic!("dwnl-cargo: unsupported arch {o}"),
     };
 
     let static_libs: &[&str] = match arch.as_str() {
-        "x86" => &["sdk/lib/conutils/libconutils.a", "sdk/lib/uuid/libuuid.a", "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a", "sdk/lib/pseh/libpseh.a", "sdk/lib/crt/libchkstk.a", "sdk/lib/conutils/libconutils_rust.a"],
-        "x86_64" => &["sdk/lib/conutils/libconutils.a", "sdk/lib/uuid/libuuid.a", "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a", "sdk/lib/pseh/libpseh.a", "sdk/lib/conutils/libconutils_rust.a"],
-        "aarch64" => &["sdk/lib/conutils/libconutils.a", "sdk/lib/uuid/libuuid.a", "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a", "sdk/lib/pseh/libpseh.a", "sdk/lib/crt/libchkstk.a", "sdk/lib/conutils/libconutils_rust.a"],
+        "x86" => &["engine:conutils", "engine:uuid", "engine:oldnames", "engine:pseh", "engine:chkstk", "engine:conutils_rust"],
+        "x86_64" => &["engine:conutils", "engine:uuid", "engine:oldnames", "engine:pseh", "engine:conutils_rust"],
+        "aarch64" => &["engine:conutils", "engine:uuid", "engine:oldnames", "engine:pseh", "engine:chkstk", "engine:conutils_rust"],
         _ => unreachable!(),
     };
 

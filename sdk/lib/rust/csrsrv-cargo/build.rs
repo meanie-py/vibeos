@@ -25,7 +25,7 @@ use std::env;
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
     let (target_json, entry, image_base): (&str, &str, u64) = match arch.as_str() {
-        "x86" => ("i686-kernel.json", "_DllMain@12", 0x1000_0000),
+        "x86" => ("i686-pc-windows-gnu", "_DllMain@12", 0x1000_0000),
         "x86_64" => ("x86_64-pc-windows-gnu", "DllMain", 0x1_8000_0000),
         "aarch64" => ("aarch64-pc-windows-gnullvm", "DllMain", 0x1_8000_0000),
         o => panic!("csrsrv-cargo: unsupported arch {o}"),

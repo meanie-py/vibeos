@@ -10,10 +10,8 @@
 add_library(write_res OBJECT rsrc.rc)
 target_compile_definitions(write_res PRIVATE UNICODE _UNICODE)
 target_include_directories(write_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(WRITE_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(write write-cargo write.exe
     KIND win32exe
     BODY_CRATE write-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS write_res ${WRITE_REUSED})
+    EXTRA_DEPENDS write_res)

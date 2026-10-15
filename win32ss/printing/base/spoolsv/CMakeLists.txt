@@ -38,13 +38,9 @@ target_include_directories(spoolsv_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # How cmake compiled the target's sources, now on the OBJECT libraries.
 target_compile_options(spoolsv_shims PRIVATE "-Wno-cast-calling-convention")
 target_compile_options(spoolsv_res PRIVATE "-Wno-cast-calling-convention")
-set(SPOOLSV_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/delayimp/libdelayimp_rust.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(spoolsv spoolsv-cargo spoolsv.exe
     KIND win32exe
     BODY_CRATE spoolsv-rust
     DESTINATION reactos/system32
     DELAY_IMPORTS
-    EXTRA_DEPENDS spoolsv_shims spoolsv_res ${SPOOLSV_REUSED})
+    EXTRA_DEPENDS spoolsv_shims spoolsv_res psdk)

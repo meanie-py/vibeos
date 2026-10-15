@@ -8,16 +8,16 @@ use std::env;
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
     let (target_json, entry, image_base) = match arch.as_str() {
-        "x86" => ("i686-kernel.json", "_DllMain@12", Some(0x780e0000u64)),
+        "x86" => ("i686-pc-windows-gnu", "_DllMain@12", Some(0x780e0000u64)),
         "x86_64" => ("x86_64-pc-windows-gnu", "DllMain", Some(0x7ff76000000u64)),
         "aarch64" => ("aarch64-pc-windows-gnullvm", "DllMain", Some(0x7ff76000000u64)),
         o => panic!("aclayers-cargo: unsupported arch {o}"),
     };
 
     let static_libs: &[&str] = match arch.as_str() {
-        "x86" => &["dll/appcompat/shims/shimlib/libshimlib.a"],
-        "x86_64" => &["dll/appcompat/shims/shimlib/libshimlib.a"],
-        "aarch64" => &["dll/appcompat/shims/shimlib/libshimlib.a"],
+        "x86" => &["engine:c:shimlib"],
+        "x86_64" => &["engine:c:shimlib"],
+        "aarch64" => &["engine:c:shimlib"],
         _ => unreachable!(),
     };
 

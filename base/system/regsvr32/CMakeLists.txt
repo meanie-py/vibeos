@@ -10,10 +10,8 @@
 add_library(regsvr32_res OBJECT regsvr32.rc)
 target_compile_definitions(regsvr32_res PRIVATE UNICODE _UNICODE)
 target_include_directories(regsvr32_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(REGSVR32_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(regsvr32 regsvr32-cargo regsvr32.exe
     KIND win32exe
     BODY_CRATE regsvr32-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS regsvr32_res ${REGSVR32_REUSED})
+    EXTRA_DEPENDS regsvr32_res)

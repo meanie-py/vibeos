@@ -9,10 +9,8 @@
 # whose windres command the cargo link replays.
 add_library(mshta_res OBJECT mshta.rc)
 target_include_directories(mshta_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(MSHTA_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(mshta mshta-cargo mshta.exe
     KIND win32exe
     BODY_CRATE mshta-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS mshta_res ${MSHTA_REUSED})
+    EXTRA_DEPENDS mshta_res)

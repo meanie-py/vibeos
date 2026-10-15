@@ -923,19 +923,12 @@ Spend: about $4.63 of the $5 approved for the phase (`-m haiku`). Nothing is unc
 1. **The upstream shell32 ports: DONE**, landed 2026-10-14 as `5857362c9eb3`. That commit also
    restored six cargo cells' build-order dependencies on generated files, which a fresh build
    raced on.
-2. **ftp.** The scaffold is parked at `~/vibeos-rust-staging/port/ftp/parked/` (crate plus
-   `gen_arm.sh`).
-   - About 87 functions are still to translate, roughly $0.10–0.15 on Haiku. That fits the
-     ~$0.37 left, but ask before spending it.
-   - Hand-write the five `setjmp` functions. The one live `longjmp` (`cmdabort` on SIGINT
-     during a proxy transfer) becomes a flag that `proxtrans` polls.
-3. **fc.** It needs per-TU UNICODE islands (`texta.c`/`textw.c`). State is in
-   `~/vibeos-rust-staging/port/fc/`, including the `chk-*.txt` per-arch checks.
+2. **ftp: DONE** 2026-10-14 (see rust-port-status.md's batch D1 row).
+3. **fc: DONE** 2026-10-14 (see rust-port-status.md's batch D1 row).
 4. **cscript** (built from wscript's sources with `-DCSCRIPT_BUILD`) is still C.
 5. **Tool gaps (shared, $0):**
    - msxml2 vtables belong in the island.
    - COBJMACROS shims should be generated.
-   - `ARRAY_SIZE!`/`_countof!` return u32 (win32macros-rust).
    - wscript's `debugstr_variant` is a placeholder.
 6. **D2** needs a new budget: setup16, stortest, testgui, testchild, rapps_com, devmgmt.
    kbswitch, winmine, utilman and the screensavers went to control-plane's wave; the disk

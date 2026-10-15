@@ -16,12 +16,8 @@ target_include_directories(msiexec_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # How cmake compiled the target's sources, now on the OBJECT libraries.
 set_wine_module_fixme(msiexec_shims)
 set_wine_module_fixme(msiexec_res)
-set(MSIEXEC_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/uuid/libuuid.a)
 add_cargo_module(msiexec msiexec-cargo msiexec.exe
     KIND win32exe
     BODY_CRATE msiexec-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS msiexec_shims msiexec_res ${MSIEXEC_REUSED})
+    EXTRA_DEPENDS msiexec_shims msiexec_res psdk uuid_sources)

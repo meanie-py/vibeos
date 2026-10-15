@@ -296,6 +296,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "autochk-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "autochk-rust"
 version = "0.1.0"
 dependencies = [
@@ -479,6 +487,14 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "calc-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
 ]
 
 [[package]]
@@ -1597,6 +1613,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "fc-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+ "winelist-rust",
+]
+
+[[package]]
 name = "find-cargo"
 version = "0.1.0"
 dependencies = [
@@ -1738,6 +1766,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "format-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "format-rust"
 version = "0.1.0"
 dependencies = [
@@ -1828,6 +1864,26 @@ name = "ftfd-rust"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "ftp-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "ftp-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
  "panic-common",
  "strsafe-rust",
  "varargs-rust",
@@ -5414,6 +5470,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "taskmgr-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "taskmgr-rust"
 version = "0.1.0"
 dependencies = [
@@ -6327,6 +6391,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "winprint-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "winprint-rust"
 version = "0.1.0"
 dependencies = [
@@ -6553,6 +6625,14 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "wordpad-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
 ]
 
 [[package]]

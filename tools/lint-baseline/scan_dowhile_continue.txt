@@ -9,6 +9,7 @@ sdk/lib/rust/ex-rust/src/pool/expool.rs: fn ExAllocatePoolWithTag: loop ends in 
 sdk/lib/rust/ex-rust/src/pool/expool.rs: fn ExpInsertPoolTracker: loop ends in a do-while condition that `continue` skips
 sdk/lib/rust/explorer-rust/src/explorer/startup.rs: fn AutoStartupApplications: loop ends in a do-while condition that `continue` skips
 sdk/lib/rust/framebuf-rust/src/screen.rs: fn DrvGetModes: `continue` skips the while loop's trailing `OutputSize` update
+sdk/lib/rust/ftp-rust/src/ftp/main.rs: fn cmdscanner: loop ends in a do-while condition that `continue` skips
 sdk/lib/rust/iphlpapi-rust/src/iphlpapi/iphlpapi_main.rs: fn NhGetGuidFromInterfaceName: loop ends in a do-while condition that `continue` skips
 sdk/lib/rust/kdbg-rust/src/kdb_cli.rs: fn KdbpCliMainLoop: `continue` skips the while loop's trailing `Continue` update
 sdk/lib/rust/kdbg-rust/src/kdb_cli.rs: fn KdbpCmdBreakPointList: loop ends in a do-while condition that `continue` skips

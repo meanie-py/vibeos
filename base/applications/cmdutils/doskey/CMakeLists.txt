@@ -10,10 +10,8 @@
 add_library(doskey_res OBJECT doskey.rc)
 target_compile_definitions(doskey_res PRIVATE UNICODE _UNICODE)
 target_include_directories(doskey_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(DOSKEY_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(doskey doskey-cargo doskey.exe
     KIND win32exe
     BODY_CRATE doskey-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS doskey_res ${DOSKEY_REUSED})
+    EXTRA_DEPENDS doskey_res)

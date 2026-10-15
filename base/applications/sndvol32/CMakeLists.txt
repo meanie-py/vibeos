@@ -18,10 +18,8 @@ target_compile_definitions(sndvol32_shims PRIVATE UNICODE _UNICODE)
 add_library(sndvol32_res OBJECT sndvol32.rc)
 target_compile_definitions(sndvol32_res PRIVATE UNICODE _UNICODE)
 target_include_directories(sndvol32_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(SNDVOL32_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(sndvol32 sndvol32-cargo sndvol32.exe
     KIND win32exe
     BODY_CRATE sndvol32-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS sndvol32_shims sndvol32_res ${SNDVOL32_REUSED})
+    EXTRA_DEPENDS sndvol32_shims sndvol32_res)

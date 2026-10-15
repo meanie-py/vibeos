@@ -11,10 +11,8 @@ add_library(expand_c OBJECT rust_varargs_shim.c)
 # whose windres command the cargo link replays.
 add_library(expand_res OBJECT expand.rc)
 target_include_directories(expand_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(EXPAND_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(expand expand-cargo expand.exe
     KIND win32exe
     BODY_CRATE expand-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS expand_c expand_res ${EXPAND_REUSED})
+    EXTRA_DEPENDS expand_c expand_res)

@@ -18,10 +18,8 @@ add_rc_deps(powercfg.rc ${powercfg_rc_deps})
 add_library(powercfg_res OBJECT powercfg.rc)
 target_compile_definitions(powercfg_res PRIVATE UNICODE _UNICODE)
 target_include_directories(powercfg_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(POWERCFG_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(powercfg powercfg-cargo powercfg.cpl
     KIND win32dll
     BODY_CRATE powercfg-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS powercfg_res ${POWERCFG_REUSED})
+    EXTRA_DEPENDS powercfg_res)

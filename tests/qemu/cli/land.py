@@ -85,7 +85,7 @@ class LandAbort(RuntimeError):
 
 
 def _git(repo: Path, *args: str, check: bool = True) -> str:
-    cp = subprocess.run(["git", *args], cwd=str(repo), capture_output=True, text=True, timeout=600)
+    cp = queue.run_git(repo, args, 600)
     if check and cp.returncode != 0:
         raise LandAbort(f"git {' '.join(args)} failed ({cp.returncode}): {cp.stderr.strip()}")
     return cp.stdout.strip()

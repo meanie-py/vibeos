@@ -88,6 +88,13 @@ def test_layout_differences_are_equivalent_contract_differences_are_not():
     assert any(x.startswith("header: - image_base") for x in pe_equiv.compare(a, d))
 
 
+def test_code_mode_holds_every_mapped_byte():
+    a = pe_equiv.PE(make_pe(["Alpha", "Beta"]))
+    b = pe_equiv.PE(make_pe(["Alpha", "Beta"], code=b"\x90\xc3"))
+    assert pe_equiv.compare(a, a, code=True) == []
+    assert any(x.startswith("loaded: - .text") for x in pe_equiv.compare(a, b, code=True))
+
+
 def test_not_a_pe_is_an_error_not_a_verdict(tmp_path):
     f = tmp_path / "x.dll"
     f.write_bytes(b"not a pe")

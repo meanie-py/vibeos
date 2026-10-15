@@ -37,12 +37,8 @@ target_include_directories(regedit_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # How cmake compiled the target's sources, now on the OBJECT libraries.
 target_compile_definitions(regedit_shims PRIVATE _CRT_NON_CONFORMING_SWPRINTFS)
 target_compile_definitions(regedit_res PRIVATE _CRT_NON_CONFORMING_SWPRINTFS)
-set(REGEDIT_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/uuid/libuuid.a)
 add_cargo_module(regedit regedit-cargo regedit.exe
     KIND win32exe
     BODY_CRATE regedit-rust
     DESTINATION reactos
-    EXTRA_DEPENDS regedit_shims regedit_res ${REGEDIT_REUSED})
+    EXTRA_DEPENDS regedit_shims regedit_res psdk uuid_sources)

@@ -68,6 +68,25 @@ def test_a_body_no_arch_compiles_is_reported_compiled_out(monkeypatch):
     assert e.value.names == {"Dump"}
 
 
+def test_a_body_c2rust_refused_is_a_hard_error_not_compiled_out(monkeypatch):
+    # ftp main.c `help`: c2rust logs "Failed to translate help: name not declared: 'cmdtab'"
+    # and omits it, which looked exactly like a compiled-out function.
+    monkeypatch.setattr(anchor, "_transpile_text", lambda *a, **kw: "pub unsafe fn Kept() {}")
+    monkeypatch.setattr(anchor, "_anchor_elsewhere", _elsewhere({}, []))
+    monkeypatch.setitem(
+        anchor._C2RUST_REFUSED, Path("pilot.c"), {"help": "name not declared: 'cmdtab'"}
+    )
+    with pytest.raises(anchor.C2RustError) as e:
+        anchor.build_anchor_map(Path("pilot.c"), strict=True, required_names={"Kept", "help"})
+    assert not isinstance(e.value, anchor.CompiledOut)
+    assert "help (name not declared: 'cmdtab')" in str(e.value)
+
+
+def test_the_refusal_line_is_read_from_c2rust_stderr():
+    line = "\x1b[31merror:\x1b[0m Failed to translate help: name not declared: 'cmdtab'\n"
+    assert anchor._REFUSED_RE.findall(line) == [("help", "name not declared: 'cmdtab'")]
+
+
 def test_attached_isystem_is_kept():
     # the arm64 db spells `-isystem/…/crt` under -nostdinc
     flags = anchor._extract_clang_flags(

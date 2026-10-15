@@ -103,12 +103,34 @@ def test_an_arch_only_library_is_an_arch_only_dependency(tmp_path):
     f = tmp_path / "CMakeLists.txt"
     f.write_text(CMAKE)
     libs = {a: ["sdk/lib/libwine/libwine.a"] for a in g.ARCHES}
-    libs["i386"].append("sdk/lib/crt/libchkstk.a")
+    libs["i386"].append("sdk/lib/uuid/libuuid.a")
     out = g.rewrite_cmake(f, cell(static_libs=libs))
-    chk = "list(APPEND M_REUSED ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a)"
+    chk = "list(APPEND M_REUSED ${CMAKE_BINARY_DIR}/sdk/lib/uuid/libuuid.a)"
     assert f'if(ARCH STREQUAL "i386")\n    {chk}' in out
     rs = g.build_rs(cell(static_libs=libs))
-    assert '"x86" => &["sdk/lib/libwine/libwine.a", "sdk/lib/crt/libchkstk.a"],' in rs
+    assert '"x86" => &["sdk/lib/libwine/libwine.a", "sdk/lib/uuid/libuuid.a"],' in rs
+
+
+def test_an_engine_built_library_is_linked_but_not_a_cmake_dependency(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE)
+    libs = {a: ["engine:oldnames", "sdk/lib/libwine/libwine.a"] for a in g.ARCHES}
+    libs["i386"].append("engine:chkstk")
+    out = g.rewrite_cmake(f, cell(static_libs=libs))
+    assert "engine:" not in out
+    assert "set(M_REUSED\n    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)" in out
+    rs = g.build_rs(cell(static_libs=libs))
+    assert '"x86" => &["engine:oldnames", "sdk/lib/libwine/libwine.a", "engine:chkstk"],' in rs
+    assert g.ENGINE_LIBS["sdk/lib/crt/libchkstk.a"] == "engine:chkstk"
+
+
+def test_an_engine_replayed_library_orders_the_cell_after_its_headers(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE)
+    libs = {a: ["engine:wine", "engine:conutils_rust"] for a in g.ARCHES}
+    out = g.rewrite_cmake(f, cell(static_libs=libs))
+    assert "EXTRA_DEPENDS m_res psdk)" in out
+    assert "REUSED" not in out
 
 
 def test_build_rs_names_every_input_and_keeps_an_auto_dll_base():
@@ -120,7 +142,7 @@ def test_build_rs_names_every_input_and_keeps_an_auto_dll_base():
     # A DLL cmake gave no --image-base keeps lld's auto base: None, never a guess.
     bases = {"i386": None, "amd64": 0x7FE60000000, "arm64": 0x7FE60000000}
     dll = g.build_rs(cell(module_kind="Win32Dll", image_base=bases, msvcrtex="Dll"))
-    assert '"x86" => ("i686-kernel.json", "wWinMainCRTStartup", None)' in dll
+    assert '"x86" => ("i686-pc-windows-gnu", "wWinMainCRTStartup", None)' in dll
     assert "Some(0x7fe60000000u64)" in dll
 
 
@@ -260,3 +282,40 @@ def test_several_cd_destinations_go_to_one_call(tmp_path):
     f.write_text(CMAKE)
     c = cell(destinations=["reactos/system32", "reactos/winsxs/${WINARCH}_x"])
     assert "    DESTINATION reactos/system32 reactos/winsxs/${WINARCH}_x" in g.rewrite_cmake(f, c)
+
+
+def test_a_body_rustflags_env_is_modelled_only_in_its_exact_shape():
+    block = (
+        "set(M_RUST_ENV)\n"
+        'if(ARCH STREQUAL "i386")\n'
+        '    set(M_RUST_ENV ENV "RUSTFLAGS=-C target-feature=+sse,+sse2")\n'
+        "endif()\n"
+    )
+    text = block + 'rust_staticlib_variant(m_rust m-rust "" TRUE ${M_RUST_ENV})\n'
+    flags, found = g._body_env(text, ["${M_RUST_ENV}"])
+    assert flags == {"i386": "-C target-feature=+sse,+sse2"}
+    assert found == block
+    # Read anywhere else, or not this shape: refused.
+    assert g._body_env(text + "message(${M_RUST_ENV})\n", ["${M_RUST_ENV}"]) is None
+    assert g._body_env(text, ["ENV", "RUSTFLAGS=x"]) is None
+    rs = g.build_rs(cell(body_rustflags={"i386": "-C target-feature=+sse,+sse2"}))
+    assert '"x86" => Some("-C target-feature=+sse,+sse2"),' in rs
+    assert "link = link.rust_build_rustflags(flags);" in rs
+
+
+def test_per_arch_cd_destinations_become_one_variable(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE)
+    dests = {"i386": ["d/w32x86"], "amd64": ["d/x64"], "arm64": ["d/arm64"]}
+    out = g.rewrite_cmake(
+        f, cell(arch_destinations=dests, destinations=["d/x64", "d/arm64", "d/w32x86"])
+    )
+    assert 'if(ARCH STREQUAL "i386")\n    set(M_DESTINATION d/w32x86)\nelseif' in out
+    assert "    DESTINATION ${M_DESTINATION}\n" in out
+
+
+def test_a_native_app_links_as_an_exe_with_its_subsystem_and_no_crt():
+    entries = {a: "NtProcessStartup" for a in g.ARCHES}
+    rs = g.build_rs(cell(subsystem="native:5.01", entries=entries, msvcrtex=None))
+    assert 'subsystem: "native:5.01".into(),' in rs
+    assert "msvcrtex_crt" not in rs
