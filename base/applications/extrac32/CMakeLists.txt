@@ -5,10 +5,8 @@
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # extrac32.c  # replaced by Rust (sdk/lib/rust/extrac32-rust/src/extrac32/extrac32.rs)
-set(EXTRAC32_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(extrac32 extrac32-cargo extrac32.exe
     KIND win32exe
     BODY_CRATE extrac32-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS ${EXTRAC32_REUSED})
+    EXTRA_DEPENDS psdk)

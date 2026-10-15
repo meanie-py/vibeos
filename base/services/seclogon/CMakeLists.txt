@@ -17,10 +17,8 @@ target_compile_definitions(seclogon_shims PRIVATE UNICODE _UNICODE)
 add_library(seclogon_res OBJECT seclogon.rc)
 target_compile_definitions(seclogon_res PRIVATE UNICODE _UNICODE)
 target_include_directories(seclogon_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(SECLOGON_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(seclogon seclogon-cargo seclogon.dll
     KIND win32dll
     BODY_CRATE seclogon-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS seclogon_shims seclogon_res ${SECLOGON_REUSED})
+    EXTRA_DEPENDS seclogon_shims seclogon_res psdk)

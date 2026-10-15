@@ -13,10 +13,8 @@ add_rc_deps(deskmon.rc ${CMAKE_CURRENT_SOURCE_DIR}/resources/monitor.ico)
 add_library(deskmon_res OBJECT deskmon.rc)
 target_compile_definitions(deskmon_res PRIVATE UNICODE _UNICODE)
 target_include_directories(deskmon_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(DESKMON_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/uuid/libuuid.a)
 add_cargo_module(deskmon deskmon-cargo deskmon.dll
     KIND win32dll
     BODY_CRATE deskmon-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS deskmon_res ${DESKMON_REUSED})
+    EXTRA_DEPENDS deskmon_res uuid_sources)

@@ -10,11 +10,8 @@ include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_or
 add_library(ipconfig_res OBJECT ipconfig.rc)
 target_compile_definitions(ipconfig_res PRIVATE UNICODE _UNICODE)
 target_include_directories(ipconfig_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(IPCONFIG_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils_rust.a)
 add_cargo_module(ipconfig ipconfig-cargo ipconfig.exe
     KIND win32exe
     BODY_CRATE ipconfig-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS ipconfig_res ${IPCONFIG_REUSED})
+    EXTRA_DEPENDS ipconfig_res xdk)

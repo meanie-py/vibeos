@@ -12,10 +12,8 @@ spec2def(shsvcs.dll shsvcs.spec ADD_IMPORTLIB)
 add_library(shsvcs_res OBJECT shsvcs.rc)
 target_compile_definitions(shsvcs_res PRIVATE UNICODE _UNICODE)
 target_include_directories(shsvcs_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(SHSVCS_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(shsvcs shsvcs-cargo shsvcs.dll
     KIND win32dll
     BODY_CRATE shsvcs-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS shsvcs_res ${SHSVCS_REUSED})
+    EXTRA_DEPENDS shsvcs_res psdk)

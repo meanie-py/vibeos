@@ -30,10 +30,8 @@ target_include_directories(winhlp32_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # How cmake compiled the target's sources, now on the OBJECT libraries.
 set_wine_module_fixme(winhlp32_shims)
 set_wine_module_fixme(winhlp32_res)
-set(WINHLP32_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(winhlp32 winhlp32-cargo winhlp32.exe
     KIND win32exe
     BODY_CRATE winhlp32-rust
     DESTINATION reactos
-    EXTRA_DEPENDS winhlp32_shims winhlp32_res ${WINHLP32_REUSED})
+    EXTRA_DEPENDS winhlp32_shims winhlp32_res psdk)

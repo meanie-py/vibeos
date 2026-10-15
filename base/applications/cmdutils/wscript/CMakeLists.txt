@@ -26,12 +26,10 @@ set_wine_module_fixme(wscript_res)
 add_dependencies(wscript_shims stdole2 wscript_idlheader)
 add_dependencies(wscript_res stdole2 wscript_idlheader)
 set(WSCRIPT_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/delayimp/libdelayimp_rust.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/uuid/libuuid.a)
+    ${CMAKE_BINARY_DIR}/sdk/lib/delayimp/libdelayimp_rust.a)
 add_cargo_module(wscript wscript-cargo wscript.exe
     KIND win32exe
     BODY_CRATE wscript-rust
     DESTINATION reactos/system32
     DELAY_IMPORTS
-    EXTRA_DEPENDS wscript_shims wscript_res ${WSCRIPT_REUSED})
+    EXTRA_DEPENDS wscript_shims wscript_res ${WSCRIPT_REUSED} psdk uuid_sources)

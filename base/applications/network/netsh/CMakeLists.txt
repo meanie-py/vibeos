@@ -22,11 +22,8 @@ target_compile_definitions(netsh_shims PRIVATE UNICODE _UNICODE)
 add_library(netsh_res OBJECT netsh.rc)
 target_compile_definitions(netsh_res PRIVATE UNICODE _UNICODE)
 target_include_directories(netsh_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(NETSH_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils_rust.a)
 add_cargo_module(netsh netsh-cargo netsh.exe
     KIND win32exe
     BODY_CRATE netsh-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS netsh_shims netsh_res ${NETSH_REUSED})
+    EXTRA_DEPENDS netsh_shims netsh_res xdk)

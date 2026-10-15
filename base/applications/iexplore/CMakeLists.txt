@@ -13,11 +13,10 @@ add_library(iexplore_res OBJECT iexplore.rc)
 target_compile_definitions(iexplore_res PRIVATE UNICODE _UNICODE)
 target_include_directories(iexplore_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set(IEXPLORE_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/delayimp/libdelayimp_rust.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
+    ${CMAKE_BINARY_DIR}/sdk/lib/delayimp/libdelayimp_rust.a)
 add_cargo_module(iexplore iexplore-cargo iexplore.exe
     KIND win32exe
     BODY_CRATE iexplore-rust
     DESTINATION reactos
     DELAY_IMPORTS
-    EXTRA_DEPENDS iexplore_res ${IEXPLORE_REUSED})
+    EXTRA_DEPENDS iexplore_res ${IEXPLORE_REUSED} psdk)

@@ -15,9 +15,9 @@ fn main() {
     };
 
     let static_libs: &[&str] = match arch.as_str() {
-        "x86" => &["sdk/lib/libwine/libwine.a"],
-        "x86_64" => &["sdk/lib/libwine/libwine.a"],
-        "aarch64" => &["sdk/lib/libwine/libwine.a"],
+        "x86" => &["engine:wine"],
+        "x86_64" => &["engine:wine"],
+        "aarch64" => &["engine:wine"],
         _ => unreachable!(),
     };
 

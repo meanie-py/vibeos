@@ -207,10 +207,22 @@ extends it from the boot spine to every fully-Rust module.
      for pseh. 145 cells moved (`ENGINE_LIBS` in the generator maps new ones), and their
      CMakeLists no longer depend on the three cmake targets. Proof: pe_equiv 565/565 ×3
      against a baseline built from the same tree, plus symbol + disassembly + `.data`
-     bytes identical to cmake's objects (dummy.c differs only in cc-rs's `.data$<sym>`
-     subsections, which the link folds into `.data`).
-   - **Left, by cells that link it:** `libwine` 40, `conutils` (+ `_rust`) 34, `uuid` 15,
-     `delayimp_rust` 9, then one-offs (win32ksys, scrnsave, dxguid, evtlib, ...).
+     bytes identical to cmake's objects. (`dummy.c` first came out with cc-rs's
+     per-symbol `.data$<sym>` subsections, which reordered its two globals in comctl32
+     and winspool; the engine's C now compiles `-fno-data-sections` like cmake's.)
+   - **Done 2026-10-15 (wave 6): `wine`, `conutils`, `conutils_rust`, `uuid`.** The C
+     libraries are `replay_target`: every source compile_commands.json records for that
+     cmake target, in its order (which is cmake's archive order, and decides which of
+     libuuid's 397 doubly-defined GUIDs wins), each with cmake's exact command, through
+     ccache when cmake uses it so the replay hits cmake's own cache entries.
+     `conutils_rust` is the crate built as a sibling, with cmake's flags. The C reads
+     generated headers, so those cells order after `psdk`/`xdk`, and uuid's after
+     `uuid_sources` (its widl output alone; `ENGINE_LIB_DEPS` in the generator). 88
+     cells moved. Proof: `pe_equiv --code` 565/565 ×3, i.e. every mapped byte the same.
+     Linker maps (`VIBEOS_LINK_MAP=1`) showed which members each cell really pulls:
+     libwine in 37 of 44, uuid in 12 of 18 (11 distinct `_i.c` members).
+   - **Left, by cells that link it:** `delayimp_rust` 9, then one-offs (win32ksys,
+     scrnsave, dxguid, evtlib, skiplist, ...).
 4. **Resources without cmake.** Cells replay cmake's `windres` command today
    (`resource_from_rc`), so they still need cmake configured. The June fallback was a
    committed `.res` per arch; for 189 modules that is a lot of binary in git. Better: the
@@ -228,6 +240,12 @@ extends it from the boot spine to every fully-Rust module.
 2. `--save-baseline DIR <modules>` while cmake still links them.
 3. `--apply <modules>`; then build ×3 (`vibeos-cli build`).
 4. `--check DIR <modules>`, then smoke ×3, then land.
+
+A change that should not move a single mapped byte (a library now built by another
+tool from the same source) gets the stricter proof: snapshot every cargo PE first, then
+`python3 tools/pe_equiv.py --code OLD NEW` on each. lld is deterministic, so only DWARF
+and `.buildid` may differ. `VIBEOS_LINK_MAP=1` on a build writes `build-<arch>/<cell>.map`,
+which names every archive member each link pulled.
 
 The generator reads the link from `build-<arch>/build.ninja`, so it must run on a graph
 cmake configured from the ORIGINAL CMakeLists. To redo a module after `--apply`, put its

@@ -13,10 +13,8 @@ add_rc_deps(indicdll.rc ${indicdll_rc_deps})
 add_library(indicdll_res OBJECT indicdll.rc)
 target_compile_definitions(indicdll_res PRIVATE UNICODE _UNICODE)
 target_include_directories(indicdll_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(INDICDLL_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(indicdll indicdll-cargo indicdll.dll
     KIND win32dll
     BODY_CRATE indicdll-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS indicdll_res ${INDICDLL_REUSED})
+    EXTRA_DEPENDS indicdll_res psdk)

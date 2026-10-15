@@ -12,11 +12,8 @@ target_compile_definitions(route_res PRIVATE UNICODE _UNICODE)
 target_include_directories(route_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # How cmake compiled the target's sources, now on the OBJECT libraries.
 target_compile_definitions(route_res PRIVATE _CRT_NON_CONFORMING_SWPRINTFS)
-set(ROUTE_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils_rust.a)
 add_cargo_module(route route-cargo route.exe
     KIND win32exe
     BODY_CRATE route-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS route_res ${ROUTE_REUSED})
+    EXTRA_DEPENDS route_res xdk)

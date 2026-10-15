@@ -24,10 +24,8 @@ spec2def(spoolss.dll spoolss.spec ADD_IMPORTLIB)
 add_library(spoolss_res OBJECT spoolss.rc)
 target_compile_definitions(spoolss_res PRIVATE UNICODE _UNICODE)
 target_include_directories(spoolss_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(SPOOLSS_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(spoolss spoolss-cargo spoolss.dll
     KIND win32dll
     BODY_CRATE spoolss-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS spoolss_res ${SPOOLSS_REUSED})
+    EXTRA_DEPENDS spoolss_res psdk)

@@ -1464,59 +1464,8 @@ impl Linker {
             let entries = parse_ccdb(&db_text);
             println!("cargo:rerun-if-changed={}", db_path.display());
             for (name, sources) in &self.c_db_libs {
-                // Disambiguate sources compiled into multiple cmake targets by
-                // the target's object dir. `name` IS the cmake target name.
-                let marker = format!("CMakeFiles/{name}.dir");
-                let out_sub = self.obj_dir().join(format!("ccdb-{name}"));
-                std::fs::create_dir_all(&out_sub).ok();
-                let mut objs = Vec::new();
-                for rel in sources {
-                    // Normal sources are repo-relative; GENERATED sources (e.g.
-                    // the RPC `*_s.c` server stub from add_rpc_files) live under
-                    // build-<arch>/ — pass them build-dir-relative and fall back
-                    // to build_dir when the repo path doesn't exist. Keeps the
-                    // API arch-agnostic (no `build-i386/` hardcoded in rel).
-                    let repo_abs = self.repo_root.join(rel);
-                    let abs = if repo_abs.exists() {
-                        repo_abs
-                    } else {
-                        self.build_dir.join(rel)
-                    };
-                    let (dir, cmd) = lookup_cc(&entries, &abs, &marker).unwrap_or_else(|| {
-                        panic!(
-                            "no compile_commands.json entry for {} in target {name} \
-                             (marker {marker}) — is it a source of that cmake target?",
-                            abs.display()
-                        )
-                    });
-                    let stem = abs
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or_else(|| panic!("bad source path {}", abs.display()));
-                    let obj = out_sub.join(format!("{stem}.o"));
-                    let args = transform_cc(&cmd, obj.to_str().expect("utf8 obj path"));
-                    let status = Command::new(&args[0])
-                        .args(&args[1..])
-                        .current_dir(&dir)
-                        .native_status(&abs)
-                        .unwrap_or_else(|e| panic!("replay clang for {rel} (lib {name}): {e}"));
-                    if !status.success() {
-                        panic!("c_from_compile_db: compile failed for {rel} (lib {name})");
-                    }
-                    objs.push(obj);
-                    println!("cargo:rerun-if-changed={}", abs.display());
-                }
-                let lib_a = self.obj_dir().join(format!("lib{name}.a"));
-                let _ = std::fs::remove_file(&lib_a); // ar rcs appends; start fresh
-                let status = Command::new(&ar)
-                    .arg("rcs")
-                    .arg(&lib_a)
-                    .args(&objs)
-                    .traced_status()
-                    .unwrap_or_else(|e| panic!("ar ({}): {e}", ar.display()));
-                if !status.success() {
-                    panic!("ar failed for c_from_compile_db {name}");
-                }
+                let rels: Vec<&str> = sources.iter().map(|s| s.as_str()).collect();
+                let lib_a = self.replay_c_archive(name, &rels, &entries, &ar);
                 link_arg!(self, "{}", lib_a.display());
             }
             } // end else (cmake build configured → compile_commands.json replay)
@@ -2176,6 +2125,129 @@ impl Linker {
         a
     }
 
+    /// `lib<target>.a` from every source compile_commands.json records for cmake target
+    /// `target`, in the order it records them, which is the order cmake archives them:
+    /// a symbol two members define (libuuid has 397) resolves to the first.
+    fn replay_target(&self, target: &str, ar: &Path) -> PathBuf {
+        let db_path = self.build_dir.join("compile_commands.json");
+        if !db_path.exists() {
+            panic!(
+                "engine:{target} replays cmake's compile of it and needs {} — \
+                 configure the build dir first",
+                db_path.display()
+            );
+        }
+        println!("cargo:rerun-if-changed={}", db_path.display());
+        let entries = ccdb_entries(&db_path);
+        let marker = format!("CMakeFiles/{target}.dir/");
+        let mut sources: Vec<String> = Vec::new();
+        for o in entries.iter() {
+            if !file_command(o).contains(&marker) {
+                continue;
+            }
+            let file = o.iter().find(|(k, _)| k == "file").map(|(_, v)| v.clone());
+            let file = file.unwrap_or_else(|| panic!("compile_commands entry without file"));
+            if !sources.contains(&file) {
+                sources.push(file);
+            }
+        }
+        if sources.is_empty() {
+            panic!("engine:{target}: compile_commands.json has no sources for cmake target {target}");
+        }
+        let rels: Vec<&str> = sources.iter().map(|s| s.as_str()).collect();
+        self.replay_c_archive(target, &rels, &entries, ar)
+    }
+
+    /// `lib<name>.a` from `sources`, each compiled with the exact command cmake's
+    /// compile_commands.json records for it in cmake target `name` (the `.pch` dropped,
+    /// `-o` into OUT_DIR): `c_from_compile_db`, and the engine-built C libraries.
+    fn replay_c_archive(
+        &self,
+        name: &str,
+        sources: &[&str],
+        entries: &[Vec<(String, String)>],
+        ar: &Path,
+    ) -> PathBuf {
+        // Disambiguate sources compiled into multiple cmake targets by
+        // the target's object dir. `name` IS the cmake target name.
+        let marker = format!("CMakeFiles/{name}.dir");
+        let out_sub = self.obj_dir().join(format!("ccdb-{name}"));
+        std::fs::create_dir_all(&out_sub).ok();
+        let mut objs = Vec::new();
+        for rel in sources {
+            // Normal sources are repo-relative; GENERATED sources (e.g.
+            // the RPC `*_s.c` server stub from add_rpc_files) live under
+            // build-<arch>/ — pass them build-dir-relative and fall back
+            // to build_dir when the repo path doesn't exist. Keeps the
+            // API arch-agnostic (no `build-i386/` hardcoded in rel).
+            let repo_abs = self.repo_root.join(rel);
+            let abs = if repo_abs.exists() {
+                repo_abs
+            } else {
+                self.build_dir.join(rel)
+            };
+            let (dir, cmd) = lookup_cc(entries, &abs, &marker).unwrap_or_else(|| {
+                panic!(
+                    "no compile_commands.json entry for {} in target {name} \
+                     (marker {marker}) — is it a source of that cmake target?",
+                    abs.display()
+                )
+            });
+            let stem = abs
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or_else(|| panic!("bad source path {}", abs.display()));
+            let obj = out_sub.join(format!("{stem}.o"));
+            if objs.contains(&obj) {
+                panic!("{name}: two sources compile to {} — objects are named by stem", obj.display());
+            }
+            let args = transform_cc(&cmd, obj.to_str().expect("utf8 obj path"));
+            // cmake compiles through ccache (RULE_LAUNCH_COMPILE) and compile_commands.json
+            // leaves the launcher out. The same command from the same directory hits the
+            // entry cmake's own compile left.
+            let mut c = if self.cmake_uses_ccache() {
+                let mut c = Command::new("ccache");
+                c.arg(&args[0]);
+                c
+            } else {
+                Command::new(&args[0])
+            };
+            let status = c
+                .args(&args[1..])
+                .current_dir(&dir)
+                .native_status(&abs)
+                .unwrap_or_else(|e| panic!("replay clang for {rel} (lib {name}): {e}"));
+            if !status.success() {
+                panic!("c_from_compile_db: compile failed for {rel} (lib {name})");
+            }
+            objs.push(obj);
+            println!("cargo:rerun-if-changed={}", abs.display());
+        }
+        let lib_a = self.obj_dir().join(format!("lib{name}.a"));
+        let _ = std::fs::remove_file(&lib_a); // ar rcs appends; start fresh
+        let status = Command::new(ar)
+            .arg("rcs")
+            .arg(&lib_a)
+            .args(&objs)
+            .traced_status()
+            .unwrap_or_else(|e| panic!("ar ({}): {e}", ar.display()));
+        if !status.success() {
+            panic!("ar failed for c_from_compile_db {name}");
+        }
+        lib_a
+    }
+
+    /// Whether the configured cmake build compiles through ccache (`ENABLE_CCACHE`).
+    fn cmake_uses_ccache(&self) -> bool {
+        let cache = self.build_dir.join("CMakeCache.txt");
+        std::fs::read_to_string(cache).is_ok_and(|t| {
+            t.lines().any(|l| {
+                l.starts_with("ENABLE_CCACHE:")
+                    && matches!(l.rsplit('=').next(), Some("1" | "ON" | "TRUE" | "YES"))
+            })
+        })
+    }
+
     /// A `static_libs` entry's archive: `engine:<name>` is built here (`engine_lib`),
     /// anything else is a cmake-built `.a` under the build dir.
     fn static_lib_path(&self, lib: &str, clang: &Path, ar: &Path) -> PathBuf {
@@ -2198,9 +2270,19 @@ impl Linker {
     /// - `chkstk`: the stack probe, sdk/lib/crt's `chkstk` target (one `.s` per arch).
     /// - `pseh`: sdk/lib/pseh's `pseh` target: `dummy.c` (the two `_SEH2_Volatile*`
     ///   globals `pseh2.h` reads), plus the i386 SEH runtime asm.
+    /// - `wine`, `conutils`, `uuid`: those cmake targets' C (`replay_target`). They
+    ///   read headers cmake generates (psdk/xdk), and uuid's `*_i.c` are widl output,
+    ///   so the cell's CMakeLists orders it after those targets (`uuid_sources`).
+    /// - `conutils_rust`: the `conutils-rust` crate, built as a sibling (`rust_lib`)
+    ///   with the flags cmake's custom command gave it.
     fn engine_lib(&self, name: &str, clang: &Path, ar: &Path) -> PathBuf {
         let i386 = self.arch.name == "i386";
         match name {
+            "wine" | "conutils" | "uuid" => self.replay_target(name, ar),
+            "conutils_rust" => {
+                let stem = self.arch.rust_user_target;
+                self.build_rust_crate("conutils-rust", &[], true, stem, false, None)
+            }
             "oldnames" => {
                 let def = self.repo_root.join("sdk/lib/crt/moldname-msvcrt.def");
                 println!("cargo:rerun-if-changed={}", def.display());
@@ -2271,7 +2353,14 @@ impl Linker {
             let mut b = cc::Build::new();
             apply_base(&mut b, clang, AsmDefineSet::Kernel, &self.arch);
             self.apply_prefix_map(&mut b);
-            b.file(&source).out_dir(self.obj_dir()).flag("-std=gnu2x");
+            // cmake compiles one section per kind; cc-rs's default -ffunction-sections
+            // -fdata-sections gives every global its own `.data$<sym>`, which the link
+            // orders differently, moving the globals and every reference to them.
+            b.file(&source)
+                .out_dir(self.obj_dir())
+                .flag("-std=gnu2x")
+                .flag("-fno-function-sections")
+                .flag("-fno-data-sections");
             trace_cc(&b, &source);
             objs.extend(native_deps::compile(&b, &source));
         }

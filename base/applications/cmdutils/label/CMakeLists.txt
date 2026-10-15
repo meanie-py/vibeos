@@ -13,11 +13,8 @@ target_compile_definitions(label_shims PRIVATE UNICODE _UNICODE)
 add_library(label_res OBJECT label.rc)
 target_compile_definitions(label_res PRIVATE UNICODE _UNICODE)
 target_include_directories(label_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(LABEL_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils_rust.a)
 add_cargo_module(label label-cargo label.exe
     KIND win32exe
     BODY_CRATE label-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS label_shims label_res ${LABEL_REUSED})
+    EXTRA_DEPENDS label_shims label_res xdk)

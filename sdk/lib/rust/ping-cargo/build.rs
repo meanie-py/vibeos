@@ -15,9 +15,9 @@ fn main() {
     };
 
     let static_libs: &[&str] = match arch.as_str() {
-        "x86" => &["sdk/lib/conutils/libconutils.a", "engine:pseh", "engine:chkstk", "engine:oldnames", "sdk/lib/conutils/libconutils_rust.a"],
-        "x86_64" => &["sdk/lib/conutils/libconutils.a", "engine:pseh", "engine:oldnames", "sdk/lib/conutils/libconutils_rust.a"],
-        "aarch64" => &["sdk/lib/conutils/libconutils.a", "engine:pseh", "engine:chkstk", "engine:oldnames", "sdk/lib/conutils/libconutils_rust.a"],
+        "x86" => &["engine:conutils", "engine:pseh", "engine:chkstk", "engine:oldnames", "engine:conutils_rust"],
+        "x86_64" => &["engine:conutils", "engine:pseh", "engine:oldnames", "engine:conutils_rust"],
+        "aarch64" => &["engine:conutils", "engine:pseh", "engine:chkstk", "engine:oldnames", "engine:conutils_rust"],
         _ => unreachable!(),
     };
 

@@ -10,10 +10,8 @@
 add_library(conime_res OBJECT conime.rc)
 target_compile_definitions(conime_res PRIVATE UNICODE _UNICODE)
 target_include_directories(conime_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(CONIME_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(conime conime-cargo conime.exe
     KIND win32exe
     BODY_CRATE conime-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS conime_res ${CONIME_REUSED})
+    EXTRA_DEPENDS conime_res psdk)

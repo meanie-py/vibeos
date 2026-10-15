@@ -58,11 +58,8 @@ target_compile_definitions(diskpart_res PRIVATE UNICODE _UNICODE)
 target_include_directories(diskpart_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # Generated inputs those compiles read, ordered before them.
 add_dependencies(diskpart_res diskpart_msg)
-set(DISKPART_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils_rust.a)
 add_cargo_module(diskpart diskpart-cargo diskpart.exe
     KIND win32exe
     BODY_CRATE diskpart-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS diskpart_res ${DISKPART_REUSED})
+    EXTRA_DEPENDS diskpart_res xdk)

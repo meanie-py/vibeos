@@ -12,10 +12,8 @@ spec2def(newdev.dll newdev.spec ADD_IMPORTLIB)
 add_library(newdev_res OBJECT newdev.rc)
 target_compile_definitions(newdev_res PRIVATE UNICODE _UNICODE)
 target_include_directories(newdev_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(NEWDEV_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(newdev newdev-cargo newdev.dll
     KIND win32dll
     BODY_CRATE newdev-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS newdev_res ${NEWDEV_REUSED})
+    EXTRA_DEPENDS newdev_res psdk)

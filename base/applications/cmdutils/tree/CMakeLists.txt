@@ -10,11 +10,8 @@ include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_or
 add_library(tree_res OBJECT tree.rc)
 target_compile_definitions(tree_res PRIVATE UNICODE _UNICODE)
 target_include_directories(tree_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(TREE_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils_rust.a)
 add_cargo_module(tree tree-cargo tree.com
     KIND win32exe
     BODY_CRATE tree-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS tree_res ${TREE_REUSED})
+    EXTRA_DEPENDS tree_res xdk)

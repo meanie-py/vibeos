@@ -10,11 +10,8 @@
 add_library(cacls_res OBJECT cacls.rc)
 target_compile_definitions(cacls_res PRIVATE UNICODE _UNICODE)
 target_include_directories(cacls_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(CACLS_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils_rust.a)
 add_cargo_module(cacls cacls-cargo cacls.exe
     KIND win32exe
     BODY_CRATE cacls-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS cacls_res ${CACLS_REUSED})
+    EXTRA_DEPENDS cacls_res xdk)
