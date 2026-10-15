@@ -147,10 +147,10 @@ impl CUiBox {
     }
     pub unsafe fn ComputeRect__body(&mut self, mut parentRect: RECT, mut currentRect: RECT, newRect: *mut RECT) {
         let this_: *mut Self = self;
-            parentRect.left += (*this_).m_Margin.left;
-            parentRect.right -= (*this_).m_Margin.right;
-            parentRect.top += (*this_).m_Margin.top;
-            parentRect.bottom -= (*this_).m_Margin.bottom;
+            parentRect.left += (*this_).m_Margin.__base0.__base0.left;
+            parentRect.right -= (*this_).m_Margin.__base0.__base0.right;
+            parentRect.top += (*this_).m_Margin.__base0.__base0.top;
+            parentRect.bottom -= (*this_).m_Margin.__base0.__base0.bottom;
 
             if parentRect.right < parentRect.left {
                 parentRect.right = parentRect.left;
@@ -687,11 +687,11 @@ impl CUiSplitPanel {
     }
     pub unsafe fn First(&mut self) -> &'static mut CUiCollection {
         let this_: *mut Self = self;
-        return (*this_).m_First.__base2.Children();
+        return &mut *((*this_).m_First.__base2.Children());
     }
     pub unsafe fn Second(&mut self) -> &'static mut CUiCollection {
         let this_: *mut Self = self;
-        return (*this_).m_Second.__base2.Children();
+        return &mut *((*this_).m_Second.__base2.Children());
     }
     pub unsafe fn ComputeMinimalSize__body(&mut self, size: *mut SIZE) {
         let this_: *mut Self = self;
@@ -821,7 +821,7 @@ impl CUiSplitPanel {
         *theResult = 0;
         if Msg == WM_SETCURSOR {
             SetCursor((*this_).m_hCursor);
-            *theResult = TRUE;
+            *theResult = TRUE as LRESULT;
         } else if Msg == WM_LBUTTONDOWN {
             (*this_).__base2.SetCapture();
         } else if Msg == WM_LBUTTONUP || Msg == WM_RBUTTONDOWN {

@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use crate::rapps::appinfo_h_h::IsInstalledEnum;
+use crate::rapps::misc_cpp_h::IsSameRegKey__0;
 // Deterministic UTF-16 literals from the selected C++ helper closure.
 pub static CPP_COM_WSTR_03259284055C: [WCHAR; 6] = [0x002A, 0x002E, 0x0074, 0x006D, 0x0070, 0x0000];
 pub static CPP_COM_WSTR_075DF3C8587C: [WCHAR; 6] = [0x002A, 0x002E, 0x0069, 0x0063, 0x006F, 0x0000];
@@ -43,7 +44,7 @@ pub static g_RegSamEnum: [REGSAM; 3] = [0, KEY_WOW64_32KEY, KEY_WOW64_64KEY];
 
 
 unsafe extern "C" fn GetRootKeyInfo(Index: u32, RegSam: *mut REGSAM) -> HKEY {
-    C_ASSERT!(_countof!(g_RootKeyEnum) == _countof!(g_RegSamEnum));
+    C_ASSERT!(core::mem::size_of::<[HKEY; 3]>() / core::mem::size_of::<HKEY>() == _countof!(g_RegSamEnum) as usize);
     if (Index as usize) < _countof!(g_RootKeyEnum) as usize {
         *RegSam = g_RegSamEnum[Index as usize];
         return g_RootKeyEnum[Index as usize];
@@ -54,34 +55,34 @@ unsafe extern "C" fn GetRootKeyInfo(Index: u32, RegSam: *mut REGSAM) -> HKEY {
 unsafe extern "C" fn ClearList(list: &mut CAtlList<*mut CAppInfo>) {
     let mut InfoListPosition = list.GetHeadPosition();
     while !InfoListPosition.is_null() {
-        let Info: *mut CAppInfo = list.GetNext(&mut InfoListPosition);
+        let Info: *mut CAppInfo = *list.GetNext(&mut InfoListPosition);
         CAppInfo__delete(Info);
     }
     list.RemoveAll();
 }
 
-unsafe extern "C" fn DeleteWithWildcard(Dir: *const CStringW, Filter: *const CStringW) {
+unsafe extern "C" fn DeleteWithWildcard(Dir: &CPathW, Filter: LPCWSTR) {
     let mut hFind: HANDLE = INVALID_HANDLE_VALUE;
     let mut FindFileData: WIN32_FIND_DATAW = core::mem::zeroed();
 
-    let mut DirWithFilter = CStringW::from_ptr((*Dir).GetString());
-    DirWithFilter += (*Filter).GetString();
+    let mut DirWithFilter: CPathW = Dir.clone();
+    DirWithFilter += Filter;
 
-    hFind = FindFirstFileW(DirWithFilter.GetString(), (core::ptr::addr_of_mut!(FindFileData)).cast());
+    hFind = FindFirstFileW(DirWithFilter.GetString(), core::ptr::addr_of_mut!(FindFileData).cast());
 
     if hFind == INVALID_HANDLE_VALUE {
         return;
     }
 
     loop {
-        let mut szTmp = CStringW::from_ptr((*Dir).GetString());
+        let mut szTmp: CPathW = Dir.clone();
         szTmp += FindFileData.cFileName.as_ptr();
 
         if (FindFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0 {
             DeleteFileW(szTmp.GetString());
         }
 
-        if FindNextFileW(hFind, (core::ptr::addr_of_mut!(FindFileData)).cast()) == 0 {
+        if FindNextFileW(hFind, core::ptr::addr_of_mut!(FindFileData).cast()) == 0 {
             break;
         }
     }
@@ -94,12 +95,12 @@ impl CAppDB {
         ClearList(&mut (*this_).m_Available);
 
         let mut AppsPath: CPathW = (*this_).m_BasePath.clone();
-        AppsPath += RAPPS_DATABASE_SUBDIR;
+        AppsPath += RAPPS_DATABASE_SUBDIR.as_ptr();
         let mut WildcardPath: CPathW = AppsPath.clone();
         WildcardPath += CPP_COM_WSTR_BF93837DC388.as_ptr();
 
         let mut FindFileData: WIN32_FIND_DATAW = core::mem::zeroed();
-        let mut hFind: HANDLE = FindFirstFileW(WildcardPath.GetString(), &mut FindFileData);
+        let mut hFind: HANDLE = FindFirstFileW(WildcardPath.GetString(), core::ptr::addr_of_mut!(FindFileData).cast());
         if hFind == INVALID_HANDLE_VALUE {
             return (FALSE) as BOOL;
         }
@@ -109,20 +110,17 @@ impl CAppDB {
             PathRemoveExtensionW(szPkgName.GetBuffer((MAX_PATH as i32)));
             szPkgName.ReleaseBuffer();
 
-            let mut Info: *mut CAppInfo = core::ptr::addr_of_mut!(
-                (*(*this_).FindAvailableByPackageName(&szPkgName)).__base0
-            );
+            // static upcast of a possibly-NULL CAvailableApplicationInfo*: CAppInfo is its first base
+            let mut Info: *mut CAppInfo = (*this_).FindAvailableByPackageName(&szPkgName) as *mut CAppInfo;
             ATLASSERT!(Info == core::ptr::null_mut());
             if Info.is_null() {
-                Info = core::ptr::addr_of_mut!(
-                    (*CAppDB::CreateAvailableAppInstance(&szPkgName, &AppsPath)).__base0
-                );
+                Info = CAppDB::CreateAvailableAppInstance(&szPkgName, AppsPath.GetString()) as *mut CAppInfo;
                 if !Info.is_null() {
                     (*this_).m_Available.AddTail(Info);
                 }
             }
 
-            if FindNextFileW(hFind, &mut FindFileData) == 0 {
+            if FindNextFileW(hFind, core::ptr::addr_of_mut!(FindFileData).cast()) == 0 {
                 break;
             }
         }
@@ -190,7 +188,7 @@ impl CAppDB {
 
         let cat: AppsCategories = if bIsUpdate != 0 { ENUM_UPDATES } else { ENUM_INSTALLED_APPLICATIONS };
         let mut pInfo: *mut CInstalledApplicationInfo;
-        pInfo = CInstalledApplicationInfo__new_0(hSubKey.Detach(), KeyName, cat, KeyIndex);
+        pInfo = CInstalledApplicationInfo__new_0(hSubKey.Detach(), &CStringW::from_ptr(KeyName), cat, KeyIndex);
         if !pInfo.is_null() && (*pInfo).Valid() != 0
         {
             return pInfo;
@@ -225,8 +223,8 @@ impl CAppDB {
         };
 
         let mut CurrentListPosition: POSITION = list.GetHeadPosition();
-        while CurrentListPosition as usize != 0 {
-            let Info: *mut CAppInfo = list.GetNext(&mut CurrentListPosition);
+        while !CurrentListPosition.is_null() {
+            let Info: *mut CAppInfo = *list.GetNext(&mut CurrentListPosition);
 
             if IncludeAll || Type == (*Info).iCategory {
                 List.AddTail(Info);
@@ -237,7 +235,7 @@ impl CAppDB {
         let this_: *mut Self = self;
         let mut CurrentListPosition = (*this_).m_Available.GetHeadPosition();
         while !CurrentListPosition.is_null() {
-            let Info: *mut CAppInfo = (*this_).m_Available.GetNext(&mut CurrentListPosition);
+            let Info: *mut CAppInfo = *(*this_).m_Available.GetNext(&mut CurrentListPosition);
             if (*Info).szIdentifier.Compare(name.GetString()) == 0 {
                 return Info as *mut CAvailableApplicationInfo;
             }
@@ -246,7 +244,7 @@ impl CAppDB {
     }
     pub unsafe fn UpdateAvailable(&mut self) {
         let this_: *mut Self = self;
-        if CreateDirectoryW((*this_).m_BasePath, core::ptr::null_mut()) == 0
+        if CreateDirectoryW((*this_).m_BasePath.GetString(), core::ptr::null_mut()) == 0
             && GetLastError() != ERROR_ALREADY_EXISTS
         {
             return;
@@ -257,16 +255,16 @@ impl CAppDB {
         }
 
         DownloadApplicationsDB(
-            if SettingsInfo.bUseSource != 0 { (SettingsInfo.szSourceURL).as_ptr() } else { APPLICATION_DATABASE_URL },
+            if SettingsInfo.bUseSource != 0 { (SettingsInfo.szSourceURL).as_ptr() } else { APPLICATION_DATABASE_URL.as_ptr() },
             (SettingsInfo.bUseSource == 0) as i32,
         );
 
-        let mut AppsPath: CPathW = (*this_).m_BasePath;
-        AppsPath += RAPPS_DATABASE_SUBDIR;
+        let mut AppsPath: CPathW = (*this_).m_BasePath.clone();
+        AppsPath += RAPPS_DATABASE_SUBDIR.as_ptr();
         if ExtractFilesFromCab__0(
-            APPLICATION_DATABASE_NAME,
-            (*this_).m_BasePath,
-            AppsPath,
+            &CStringW::from_ptr(APPLICATION_DATABASE_NAME.as_ptr()),
+            &(*this_).m_BasePath.m_strPath,
+            &AppsPath.m_strPath,
             None,
             core::ptr::null_mut(),
         ) == 0
@@ -274,9 +272,9 @@ impl CAppDB {
             return;
         }
 
-        let mut CabFile: CPathW = (*this_).m_BasePath;
-        CabFile += APPLICATION_DATABASE_NAME;
-        DeleteFileW(CabFile);
+        let mut CabFile: CPathW = (*this_).m_BasePath.clone();
+        CabFile += APPLICATION_DATABASE_NAME.as_ptr();
+        DeleteFileW(CabFile.GetString());
 
         (*this_).EnumerateFiles();
     }
@@ -291,23 +289,23 @@ impl CAppDB {
         let this_: *mut Self = self;
         // Delete icons
         let mut AppsPath: CPathW = (*this_).m_BasePath.clone();
-        AppsPath += RAPPS_DATABASE_SUBDIR;
+        AppsPath += RAPPS_DATABASE_SUBDIR.as_ptr();
         let mut IconPath: CPathW = AppsPath.clone();
         IconPath += CPP_COM_WSTR_FAB65EAA8D3C.as_ptr();
-        DeleteWithWildcard(IconPath.clone(), (CPP_COM_WSTR_075DF3C8587C.as_ptr()).cast());
+        DeleteWithWildcard(&IconPath, CPP_COM_WSTR_075DF3C8587C.as_ptr());
 
         // Delete leftover screenshots
         let mut ScrnshotFolder: CPathW = AppsPath.clone();
         ScrnshotFolder += CPP_COM_WSTR_4ACCF377958C.as_ptr();
-        DeleteWithWildcard(ScrnshotFolder.clone(), (CPP_COM_WSTR_03259284055C.as_ptr()).cast());
+        DeleteWithWildcard(&ScrnshotFolder, CPP_COM_WSTR_03259284055C.as_ptr());
 
         // Delete data base files (*.txt)
-        DeleteWithWildcard(AppsPath.clone(), (CPP_COM_WSTR_BF93837DC388.as_ptr()).cast());
+        DeleteWithWildcard(&AppsPath, CPP_COM_WSTR_BF93837DC388.as_ptr());
 
-        RemoveDirectoryW(IconPath);
-        RemoveDirectoryW(ScrnshotFolder);
-        RemoveDirectoryW(AppsPath);
-        RemoveDirectoryW((*this_).m_BasePath.clone());
+        RemoveDirectoryW(IconPath.GetString());
+        RemoveDirectoryW(ScrnshotFolder.GetString());
+        RemoveDirectoryW(AppsPath.GetString());
+        RemoveDirectoryW((*this_).m_BasePath.GetString());
     }
     pub unsafe fn RemoveInstalledAppFromRegistry(Info: *const CAppInfo) -> DWORD {
         // Validate that this is actually an installed app / update
@@ -337,7 +335,7 @@ impl CAppDB {
         return CAppDB::EnumerateRegistry(core::ptr::null_mut(), Name);
     }
     pub unsafe fn CreateInstalledAppInstance(KeyName: LPCWSTR, User: BOOL, WowSam: REGSAM) -> *mut CInstalledApplicationInfo {
-        let hRootKey: HKEY = if User != 0 { HKEY_CURRENT_USER } else { HKEY_LOCAL_MACHINE };
+        let hRootKey: HKEY = if User != 0 { HKEY_CURRENT_USER as HKEY } else { HKEY_LOCAL_MACHINE as HKEY };
         let KeyIndex: UINT = if User != 0 { (0) } else { if (WowSam & KEY_WOW64_64KEY) != 0 { 2 } else { 1 } };
         let mut hKey: CRegKey = CRegKey__make_0();
         if hKey.Open(hRootKey, UNINSTALL_SUBKEY, KEY_READ | WowSam) == (ERROR_SUCCESS as i32) {
@@ -348,17 +346,19 @@ impl CAppDB {
     pub unsafe fn CreateAvailableAppInstance(PkgName: &CStringW, DBPath: PCWSTR) -> *mut CAvailableApplicationInfo {
         let mut pAppInfo: *mut CAvailableApplicationInfo;
         let mut AppsPath: CPathW = if !DBPath.is_null() {
-            CPathW(DBPath)
+            CPathW::from_ptr(DBPath)
         } else {
-            let mut tmp = CPathW(CAppDB::GetDefaultPath());
-            tmp += RAPPS_DATABASE_SUBDIR;
+            let mut tmp = CPathW::from_cstring(&CAppDB::GetDefaultPath());
+            tmp += RAPPS_DATABASE_SUBDIR.as_ptr();
             tmp
         };
-        let mut ManifestPath: CPathW = CPathW(AppsPath);
-        ManifestPath += PkgName.clone() + MANIFEST_DOTEXT;
-        let Parser: *mut CConfigParser = CConfigParser__new_0(&ManifestPath);
+        let mut ManifestPath: CPathW = AppsPath.clone();
+        let mut ManifestName: CStringW = PkgName.clone();
+        ManifestName += MANIFEST_DOTEXT;
+        ManifestPath += &ManifestName;
+        let Parser: *mut CConfigParser = CConfigParser__new_0(&ManifestPath.m_strPath);
         let mut Cat: i32 = 0;
-        if (((*Parser).GetInt(DB_CATEGORY, &mut Cat)) == 0) {
+        if (((*Parser).GetInt(&CStringW::from_ptr(DB_CATEGORY.as_ptr()), &mut Cat)) == 0) {
             Cat = (ENUM_INVALID) as i32;
         }
 
@@ -379,7 +379,7 @@ impl CEnumInstalledRootKey {
             // We don't want to display duplicate entries on systems without WoW64 keys support.
             // When ROS starts supporting the WOW REGSAM flags,
             // this code can be changed back to IsSystem64Bit() ? 3 : 2.
-            (*this_).m_Count = 2 + ((IsSameRegKey(HKEY_LOCAL_MACHINE, UNINSTALL_SUBKEY, KEY_WOW64_64KEY,
+            (*this_).m_Count = 2 + ((IsSameRegKey__0(HKEY_LOCAL_MACHINE as HKEY, UNINSTALL_SUBKEY, KEY_WOW64_64KEY,
                                                             UNINSTALL_SUBKEY, KEY_WOW64_32KEY) == 0) as UINT);
         }
     }

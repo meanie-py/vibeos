@@ -25,7 +25,7 @@ pub unsafe extern "C" fn ErrorFromHResult(hr: HRESULT) -> UINT {
 
 pub unsafe extern "C" fn NotifyFileExtractCallback(ItemPath: *const CStringW, UncompressedSize: UINT64, FileAttributes: UINT, Callback: EXTRACTCALLBACK, Cookie: *mut core::ffi::c_void) -> BOOL {
     let eci = EXTRACTCALLBACKINFO {
-        ItemPath: CStringW::from_ptr((*ItemPath).GetString()),
+        ItemPath: ItemPath as *const ATL_CStringW,
         UncompressedSize: UncompressedSize,
         FileAttributes: FileAttributes,
     };

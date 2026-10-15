@@ -38,8 +38,8 @@ impl Color {
         {
         }
     }
-    pub unsafe fn GetValue(&mut self) -> Gdiplus_ARGB {
-        let this_: *mut Self = self;
+    pub unsafe fn GetValue(&self) -> Gdiplus_ARGB {
+        let this_: *const Self = self;
         (*this_).Argb
     }
     pub unsafe fn MakeARGB(a: u8, r: u8, g: u8, b: u8) -> u32 {

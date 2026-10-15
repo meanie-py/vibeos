@@ -89,7 +89,7 @@ unsafe extern "C" fn IsUrlValid(Url: *const u16) -> i32 {
 }
 
 unsafe extern "C" fn IsCheckedDlgItem(hDlg: HWND, nIDDlgItem: i32) -> i32 {
-    return (SendDlgItemMessageW(hDlg, nIDDlgItem, BM_GETCHECK, 0, 0) == BST_CHECKED) as i32;
+    return (SendDlgItemMessageW(hDlg, nIDDlgItem, BM_GETCHECK, 0, 0) == BST_CHECKED as LRESULT) as i32;
 }
 
 unsafe extern "C" fn AdjustListViewHeader(hWndList: HWND) {
@@ -256,19 +256,13 @@ unsafe extern "system" fn SettingsDlgProc(hDlg: HWND, Msg: UINT, wParam: WPARAM,
 
                         GetWindowTextW(GetDlgItem(hDlg, (IDC_PROXY_SERVER as i32)), szProxy.GetBuffer((MAX_PATH as i32)), (MAX_PATH as i32));
                         szProxy.ReleaseBuffer();
-                        CopyChars(
-                            NewSettingsInfo.szProxyServer.as_mut_ptr(), _countof!(NewSettingsInfo.szProxyServer), szProxy.GetString(),
-                            szProxy.GetLength() + 1);
+                        core::ptr::copy_nonoverlapping(szProxy.GetString(), NewSettingsInfo.szProxyServer.as_mut_ptr(), (szProxy.GetLength() + 1) as usize); // CStringW::CopyChars == memcpy
 
                         GetWindowTextW(GetDlgItem(hDlg, (IDC_NO_PROXY_FOR as i32)), szNoProxy.GetBuffer((MAX_PATH as i32)), (MAX_PATH as i32));
                         szNoProxy.ReleaseBuffer();
-                        CopyChars(
-                            NewSettingsInfo.szNoProxyFor.as_mut_ptr(), _countof!(NewSettingsInfo.szNoProxyFor), szNoProxy.GetString(),
-                            szNoProxy.GetLength() + 1);
+                        core::ptr::copy_nonoverlapping(szNoProxy.GetString(), NewSettingsInfo.szNoProxyFor.as_mut_ptr(), (szNoProxy.GetLength() + 1) as usize); // CStringW::CopyChars == memcpy
 
-                        CopyChars(
-                            NewSettingsInfo.szDownloadDir.as_mut_ptr(), _countof!(NewSettingsInfo.szDownloadDir), szDir.GetString(),
-                            szDir.GetLength() + 1);
+                        core::ptr::copy_nonoverlapping(szDir.GetString(), NewSettingsInfo.szDownloadDir.as_mut_ptr(), (szDir.GetLength() + 1) as usize); // CStringW::CopyChars == memcpy
                         dwAttr = GetFileAttributesW(szDir.GetString());
                         if dwAttr == INVALID_FILE_ATTRIBUTES || (dwAttr & FILE_ATTRIBUTE_DIRECTORY) == 0
                         {
@@ -301,9 +295,7 @@ unsafe extern "system" fn SettingsDlgProc(hDlg: HWND, Msg: UINT, wParam: WPARAM,
                         }
                         else
                         {
-                            CopyChars(
-                                NewSettingsInfo.szSourceURL.as_mut_ptr(), _countof!(NewSettingsInfo.szSourceURL), szSource.GetString(),
-                                szSource.GetLength() + 1);
+                            core::ptr::copy_nonoverlapping(szSource.GetString(), NewSettingsInfo.szSourceURL.as_mut_ptr(), (szSource.GetLength() + 1) as usize); // CStringW::CopyChars == memcpy
                         }
 
                         if SettingsInfo.bSmallIcons != NewSettingsInfo.bSmallIcons
@@ -360,5 +352,7 @@ pub unsafe extern "C" fn CreateSettingsDlg(hwnd: HWND) {
     };
     g_pNewSettingsInfo = core::ptr::addr_of_mut!(NewSettingsInfo);
 
-    DialogBoxW!(hInst, MAKEINTRESOURCEW!(IDD_SETTINGS_DIALOG), hwnd, SettingsDlgProc);
+    DialogBoxW!(hInst, MAKEINTRESOURCEW!(IDD_SETTINGS_DIALOG), hwnd,
+        // prelude's DLGPROC is spelled over ntdll_sys's HWND__, the island's over types_arch's: same ABI
+        Some(core::mem::transmute::<unsafe extern "system" fn(HWND, UINT, WPARAM, LPARAM) -> INT_PTR, _>(SettingsDlgProc)));
 }

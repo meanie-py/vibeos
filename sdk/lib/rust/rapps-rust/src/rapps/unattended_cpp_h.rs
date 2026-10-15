@@ -44,7 +44,7 @@ unsafe extern "C" fn SearchForAppWithDisplayName(db: &mut CAppDB, Type: AppsCate
     (*db).GetApps(&mut List, Type);
     let mut it = List.GetHeadPosition();
     while !(it as usize == 0) {
-        let Info: *mut CAppInfo = List.GetNext(&mut it);
+        let Info: *mut CAppInfo = *List.GetNext(&mut it);
         if ((SearchPatternMatch((&(*Info).szDisplayName).GetString(), Name)) != 0) {
             return Info;
         }
@@ -62,7 +62,7 @@ unsafe extern "C" fn HandleInstallCommand(db: *mut CAppDB, szCommand: LPWSTR, mu
 
     if argcLeft < 1 {
         InitRappsConsole();
-        ConResMsgPrintf(core::ptr::addr_of_mut!(csStdOut), core::ptr::null_mut(), IDS_CMD_NEED_PACKAGE_NAME, szCommand);
+        ConResMsgPrintf(core::ptr::addr_of_mut!(csStdOut), 0, IDS_CMD_NEED_PACKAGE_NAME, szCommand);
         return (FALSE as i32);
     }
 
@@ -70,7 +70,7 @@ unsafe extern "C" fn HandleInstallCommand(db: *mut CAppDB, szCommand: LPWSTR, mu
     let mut i: i32 = 0;
     while i < argcLeft {
         let PackageName: LPCWSTR = *argvLeft.add(i as usize);
-        let AppInfo: *mut CAppInfo = (*db).FindByPackageName(PackageName);
+        let AppInfo: *mut CAppInfo = (*db).FindByPackageName(&CStringW::from_ptr(PackageName));
         if !AppInfo.is_null() {
             Applications.AddTail(AppInfo);
         }
@@ -92,7 +92,7 @@ unsafe extern "C" fn HandleSetupCommand(db: *mut CAppDB, szCommand: LPWSTR, mut 
     if argcLeft != 1
     {
         InitRappsConsole();
-        ConResMsgPrintf(core::ptr::addr_of_mut!(csStdOut), core::ptr::null_mut(), IDS_CMD_NEED_FILE_NAME, szCommand);
+        ConResMsgPrintf(core::ptr::addr_of_mut!(csStdOut), 0, IDS_CMD_NEED_FILE_NAME, szCommand);
         return (FALSE) as BOOL;
     }
 
@@ -111,7 +111,7 @@ unsafe extern "C" fn HandleSetupCommand(db: *mut CAppDB, szCommand: LPWSTR, mut 
         {
             if SetupGetStringFieldW(core::ptr::addr_of_mut!(Context), 1, szPkgName.as_mut_ptr(), _countof!(szPkgName), core::ptr::null_mut()) != 0
             {
-                let AppInfo: *mut CAppInfo = (*db).FindByPackageName(szPkgName.as_mut_ptr());
+                let AppInfo: *mut CAppInfo = (*db).FindByPackageName(&CStringW::from_ptr(szPkgName.as_ptr()));
                 if !AppInfo.is_null()
                 {
                     Applications.AddTail(AppInfo);
@@ -199,7 +199,7 @@ unsafe extern "C" fn HandleUninstallCommand(db: &mut CAppDB, argcLeft: UINT, arg
 
         if pInfo.is_null() {
             pInfo = core::ptr::addr_of_mut!(
-                (*CAppDB::CreateInstalledAppByRegistryKey(name)).__base0
+                (*CAppDB::CreateInstalledAppByRegistryKey__1(name)).__base0
             );
         }
         pDelete = pInfo;
@@ -228,7 +228,7 @@ unsafe extern "C" fn HandleGenerateInstallerCommand(db: &mut CAppDB, mut argcLef
         return (FALSE) as BOOL;
     }
 
-    let pAI: *mut CAvailableApplicationInfo = db.FindAvailableByPackageName(*argvLeft.add(0 as usize));
+    let pAI: *mut CAvailableApplicationInfo = db.FindAvailableByPackageName(&CStringW::from_ptr(*argvLeft.add(0 as usize)));
     if pAI.is_null() {
         return (FALSE) as BOOL;
     }
@@ -238,7 +238,7 @@ unsafe extern "C" fn HandleGenerateInstallerCommand(db: &mut CAppDB, mut argcLef
 
 unsafe extern "C" fn HandleFindCommand(db: *mut CAppDB, szCommand: LPWSTR, argcLeft: i32, argvLeft: *mut LPWSTR) -> BOOL {
     if argcLeft < 1 {
-        ConResMsgPrintf(core::ptr::addr_of_mut!(csStdOut), core::ptr::null_mut(), IDS_CMD_NEED_PARAMS, szCommand);
+        ConResMsgPrintf(core::ptr::addr_of_mut!(csStdOut), 0, IDS_CMD_NEED_PARAMS, szCommand);
         return (FALSE) as BOOL;
     }
 
@@ -248,11 +248,11 @@ unsafe extern "C" fn HandleFindCommand(db: *mut CAppDB, szCommand: LPWSTR, argcL
     let mut i: i32 = 0;
     while i < argcLeft {
         let lpszSearch: LPCWSTR = *argvLeft.offset(i as isize) as LPCWSTR;
-        ConResMsgPrintf(core::ptr::addr_of_mut!(csStdOut), core::ptr::null_mut(), IDS_CMD_FIND_RESULT_FOR, lpszSearch);
+        ConResMsgPrintf(core::ptr::addr_of_mut!(csStdOut), 0, IDS_CMD_FIND_RESULT_FOR, lpszSearch);
 
         let mut CurrentListPosition: POSITION = List.GetHeadPosition();
         while !CurrentListPosition.is_null() {
-            let Info: *mut CAppInfo = List.GetNext(&mut CurrentListPosition);
+            let Info: *mut CAppInfo = *List.GetNext(&mut CurrentListPosition);
 
             if SearchPatternMatch((&(*Info).szDisplayName).GetString(), lpszSearch) != 0 || SearchPatternMatch((&(*Info).szComments).GetString(), lpszSearch) != 0 {
                 ConPrintf(core::ptr::addr_of_mut!(csStdOut), CPP_COM_WSTR_C890C70025FA.as_ptr(), (*Info).szDisplayName.GetString(), (*Info).szIdentifier.GetString());
@@ -268,7 +268,7 @@ unsafe extern "C" fn HandleFindCommand(db: *mut CAppDB, szCommand: LPWSTR, argcL
 
 unsafe extern "C" fn HandleInfoCommand(db: *mut CAppDB, szCommand: LPWSTR, argcLeft: i32, argvLeft: *mut LPWSTR) -> BOOL {
     if argcLeft < 1 {
-        ConResMsgPrintf(core::ptr::addr_of_mut!(csStdOut), core::ptr::null_mut(), IDS_CMD_NEED_PARAMS, szCommand);
+        ConResMsgPrintf(core::ptr::addr_of_mut!(csStdOut), 0, IDS_CMD_NEED_PARAMS, szCommand);
         return (FALSE) as BOOL;
     }
 
@@ -277,9 +277,9 @@ unsafe extern "C" fn HandleInfoCommand(db: *mut CAppDB, szCommand: LPWSTR, argcL
         let PackageName: LPCWSTR = *argvLeft.offset(i as isize);
         let AppInfo: *mut CAppInfo = (*db).FindByPackageName(&CStringW::from_ptr(PackageName));
         if AppInfo.is_null() {
-            ConResMsgPrintf(core::ptr::addr_of_mut!(csStdOut), core::ptr::null_mut(), IDS_CMD_PACKAGE_NOT_FOUND, PackageName);
+            ConResMsgPrintf(core::ptr::addr_of_mut!(csStdOut), 0, IDS_CMD_PACKAGE_NOT_FOUND, PackageName);
         } else {
-            ConResMsgPrintf(core::ptr::addr_of_mut!(csStdOut), core::ptr::null_mut(), IDS_CMD_PACKAGE_INFO, PackageName);
+            ConResMsgPrintf(core::ptr::addr_of_mut!(csStdOut), 0, IDS_CMD_PACKAGE_INFO, PackageName);
 
             ConPuts(core::ptr::addr_of_mut!(csStdOut), (&(*AppInfo).szDisplayName).GetString());
 
@@ -346,7 +346,7 @@ pub unsafe extern "C" fn ParseCmdAndExecute(lpCmdLine: LPWSTR, bIsFirstLaunch: B
     db.__ctor_0(&CAppDB::GetDefaultPath());
 
     let bAppwizMode: BOOL = (argc > 1
-        && MatchCmdOption(*argv.add(1 as usize), CMD_KEY_APPWIZ) != 0) as BOOL;
+        && MatchCmdOption(*argv.add(1 as usize), CMD_KEY_APPWIZ.as_ptr()) != 0) as BOOL;
     if bAppwizMode == 0 {
         let mut lock = CUpdateDatabaseMutex__make_0();
         if SettingsInfo.bUpdateAtStart != 0 || bIsFirstLaunch != 0 {
@@ -411,24 +411,24 @@ pub unsafe extern "C" fn ParseCmdAndExecute(lpCmdLine: LPWSTR, bIsFirstLaunch: B
         return (TRUE) as BOOL;
     }
 
-    if MatchCmdOption(*argv.add(1 as usize), CMD_KEY_INSTALL) != 0 {
+    if MatchCmdOption(*argv.add(1 as usize), CMD_KEY_INSTALL.as_ptr()) != 0 {
         return HandleInstallCommand(core::ptr::addr_of_mut!(db), *argv.add(1 as usize), argc - 2, argv.add(2 as usize));
-    } else if MatchCmdOption(*argv.add(1 as usize), CMD_KEY_SETUP) != 0 {
+    } else if MatchCmdOption(*argv.add(1 as usize), CMD_KEY_SETUP.as_ptr()) != 0 {
         return HandleSetupCommand(core::ptr::addr_of_mut!(db), *argv.add(1 as usize), argc - 2, argv.add(2 as usize));
-    } else if MatchCmdOption(*argv.add(1 as usize), CMD_KEY_UNINSTALL) != 0 {
+    } else if MatchCmdOption(*argv.add(1 as usize), CMD_KEY_UNINSTALL.as_ptr()) != 0 {
         return HandleUninstallCommand(&mut db, (argc - 2) as UINT, argv.add(2 as usize));
-    } else if MatchCmdOption(*argv.add(1 as usize), CMD_KEY_GENINST) != 0 {
+    } else if MatchCmdOption(*argv.add(1 as usize), CMD_KEY_GENINST.as_ptr()) != 0 {
         return HandleGenerateInstallerCommand(&mut db, (argc - 2) as UINT, argv.add(2 as usize));
     }
 
     InitRappsConsole();
 
-    if MatchCmdOption(*argv.add(1 as usize), CMD_KEY_FIND) != 0 {
+    if MatchCmdOption(*argv.add(1 as usize), CMD_KEY_FIND.as_ptr()) != 0 {
         return HandleFindCommand(core::ptr::addr_of_mut!(db), *argv.add(1 as usize), argc - 2, argv.add(2 as usize));
-    } else if MatchCmdOption(*argv.add(1 as usize), CMD_KEY_INFO) != 0 {
+    } else if MatchCmdOption(*argv.add(1 as usize), CMD_KEY_INFO.as_ptr()) != 0 {
         return HandleInfoCommand(core::ptr::addr_of_mut!(db), *argv.add(1 as usize), argc - 2, argv.add(2 as usize));
-    } else if MatchCmdOption(*argv.add(1 as usize), CMD_KEY_HELP) != 0
-        || MatchCmdOption(*argv.add(1 as usize), CMD_KEY_HELP_ALT) != 0
+    } else if MatchCmdOption(*argv.add(1 as usize), CMD_KEY_HELP.as_ptr()) != 0
+        || MatchCmdOption(*argv.add(1 as usize), CMD_KEY_HELP_ALT.as_ptr()) != 0
     {
         PrintHelpCommand();
         return (TRUE) as BOOL;

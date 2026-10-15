@@ -186,7 +186,7 @@ unsafe extern "C" fn ExtractFilesFromZip(Archive: LPCWSTR, OutputDir: &CStringW,
                     if zerr <= 0 {
                         break 'read;
                     }
-                    zerr = if WriteFile(hFile, buf, len, core::ptr::addr_of_mut!(cb), core::ptr::null_mut()) != 0 && cb == len {
+                    zerr = if WriteFile(hFile, buf as *const core::ffi::c_void, len, core::ptr::addr_of_mut!(cb), core::ptr::null_mut()) != 0 && cb == len {
                         (UNZ_OK as i32)
                     } else {
                         UNZ_ERRNO
@@ -237,7 +237,7 @@ unsafe extern "C" fn ErrorBox__1(Error: UINT) -> UINT {
 
 unsafe extern "C" fn GetCommonString(Name: LPCWSTR, Output: &mut CStringW, Default: LPCWSTR) -> LPCWSTR {
     let Info: &mut InstallInfo = &mut *(g_pInfo as *mut InstallInfo);
-    let found: BOOL = (*Info.Parser).GetString(Name, Output);
+    let found: BOOL = (*Info.Parser).GetString(&CStringW::from_ptr(Name), Output);
     if found != 0 && !Output.IsEmpty() {
     } else {
         *Output = CStringW::from_ptr(Default);
@@ -247,7 +247,7 @@ unsafe extern "C" fn GetCommonString(Name: LPCWSTR, Output: &mut CStringW, Defau
 
 unsafe extern "C" fn GetGenerateString(Name: LPCWSTR, Output: &mut CStringW, Default: LPCWSTR) -> LPCWSTR {
     let Info = g_pInfo as *mut InstallInfo;
-    let r: UINT = (*(*Info).Parser).GetSectionString(DB_GENINSTSECTION, Name, Output);
+    let r: UINT = (*(*Info).Parser).GetSectionString(DB_GENINSTSECTION.as_ptr(), Name, Output);
     return (if r != 0 {
         Output
     } else {
@@ -291,7 +291,7 @@ unsafe extern "C" fn GetCustomIconPath(Info: &mut InstallInfo, Path: &mut CStrin
         if Path.Compare(DB_NONE) == 0 {
             return HRESULT_FROM_WIN32!(ERROR_CAN_NOT_COMPLETE);
         }
-        *Path = BuildPath__T1(Info.InstallDir, &*Path);
+        *Path = BuildPath__T1(&Info.InstallDir, Path.GetString());
         let mut idx: i32 = PathParseIconLocation(Path.GetBuffer(0));
         Path.ReleaseBuffer();
         let mut hIco: HICON = core::ptr::null_mut();
@@ -299,7 +299,11 @@ unsafe extern "C" fn GetCustomIconPath(Info: &mut InstallInfo, Path: &mut CStrin
             DestroyIcon(hIco);
         }
         if idx != 0 {
-            Path.AppendFormat(CPP_COM_WSTR_00E541DC6A23.as_ptr(), idx);
+            {
+                let mut t = CStringW::new();
+                atl_format!(t, CPP_COM_WSTR_00E541DC6A23.as_ptr(), idx);
+                *Path += t.GetString();
+            }
         }
         return if !hIco.is_null() { S_OK } else { S_FALSE };
     }
@@ -346,7 +350,7 @@ unsafe extern "C" fn CreateMainShortcut(Target: &CStringW) -> CStringW {
     }
 
     let mut cat: INT = 0;
-    if (*(*Info).Parser).GetInt(DB_CATEGORY, &mut cat) != 0 && (cat) as u32 == ENUM_CAT_GAMES {
+    if (*(*Info).Parser).GetInt(&CStringW::from_ptr(DB_CATEGORY.as_ptr()), &mut cat) != 0 && (cat) as u32 == ENUM_CAT_GAMES {
         // Try to find the name of the Games folder in the Start Menu
         if GetLocalizedSMFolderName(CPP_COM_WSTR_C4BCB038C3E6.as_ptr(), CPP_COM_WSTR_9F8FE8679897.as_ptr(), CPP_COM_WSTR_1A89CDFC4B57.as_ptr(), &mut tmp) != 0 {
             path = BuildPath__T0(&path, (&tmp).GetString());
@@ -366,7 +370,12 @@ unsafe extern "C" fn CreateMainShortcut(Target: &CStringW) -> CStringW {
     }
 
     let mut link: CComPtr<IShellLinkW> = CComPtr::new();
-    hr = (*link.p).CoCreateInstance(CLSID_ShellLink, IID_IShellLinkW);
+    // ATL's CComPtr::CoCreateInstance(clsid, ...): ole32's CoCreateInstance for IID_IShellLinkW,
+    // in the default CLSCTX_ALL context (atl_rust's CComPtr has no such method).
+    extern "system" {
+        fn CoCreateInstance(rclsid: *const GUID, pUnkOuter: *mut core::ffi::c_void, dwClsContext: DWORD, riid: *const GUID, ppv: *mut *mut core::ffi::c_void) -> HRESULT;
+    }
+    hr = CoCreateInstance(core::ptr::addr_of!(CLSID_ShellLink), core::ptr::null_mut(), 0x17, core::ptr::addr_of!(IID_IShellLinkW), link.GetAddressOf() as *mut *mut core::ffi::c_void);
     if hr >= 0 {
         hr = (*link.Get()).SetPath(Target.GetString());
         if hr >= 0 {
@@ -378,7 +387,7 @@ unsafe extern "C" fn CreateMainShortcut(Target: &CStringW) -> CStringW {
             }
 
             if GetCustomIconPath(&mut *Info, &mut tmp) >= 0 {
-                let p: LPWSTR = tmp.GetBuffer();
+                let p: LPWSTR = tmp.GetBuffer(0);
                 let idx: INT = PathParseIconLocation(p);
                 (*link.Get()).SetIconLocation(p, idx);
             }
@@ -501,7 +510,7 @@ unsafe extern "C" fn AddUninstallOperationsFromDB(Name: LPCWSTR, UnOp: WCHAR, Pa
         }
     }
 }
-unsafe extern "system" fn ExtractCallback(arg0: &EXTRACTCALLBACKINFO, Context: *mut core::ffi::c_void) -> BOOL {
+unsafe extern "system" fn ExtractCallback(arg0: *const EXTRACTCALLBACKINFO, Context: *mut core::ffi::c_void) -> BOOL {
     let Info: &mut InstallInfo = &mut *(Context as *mut InstallInfo);
     (*Info).__base0.Count += 1;
     return (TRUE) as BOOL;
@@ -525,7 +534,7 @@ unsafe extern "system" fn ExtractAndInstallThread(Parameter: LPVOID) -> DWORD {
         return ErrorBox__1(ERROR_BAD_FORMAT);
     }
 
-    GetCommonString(DB_SCOPE, &mut tmp, CPP_COM_WSTR_96A296D224F2.as_ptr());
+    GetCommonString(DB_SCOPE.as_ptr(), &mut tmp, CPP_COM_WSTR_96A296D224F2.as_ptr());
     if tmp.CompareNoCase(CPP_COM_WSTR_FB538A5E49E1.as_ptr()) == 0 {
         Info.PerUser = (TRUE as i32);
     } else if tmp.CompareNoCase(CPP_COM_WSTR_D90DD1A02058.as_ptr()) == 0 {
@@ -590,10 +599,10 @@ unsafe extern "system" fn ExtractAndInstallThread(Parameter: LPVOID) -> DWORD {
         core::ptr::null_mut(),
     ) as _;
     if Info.__base0.Error == 0 {
-        arpkey.RecurseDeleteKey(GENERATE_ARPSUBKEY);
+        arpkey.RecurseDeleteKey(GENERATE_ARPSUBKEY.as_ptr());
         Info.__base0.Error = Info.__base0.Entries.Create(
             arpkey.op_to_HKEY(),
-            GENERATE_ARPSUBKEY,
+            GENERATE_ARPSUBKEY.as_ptr(),
             core::ptr::null_mut(),
             REG_OPTION_NON_VOLATILE,
             KEY_READ | KEY_WRITE,
@@ -609,7 +618,7 @@ unsafe extern "system" fn ExtractAndInstallThread(Parameter: LPVOID) -> DWORD {
         Info.__base0.Error = ExtractArchive(
             Archive,
             &tempdir,
-            ExtractCallback,
+            Some(ExtractCallback),
             Info as *mut InstallInfo as *mut core::ffi::c_void,
         );
     }
@@ -631,8 +640,8 @@ unsafe extern "system" fn ExtractAndInstallThread(Parameter: LPVOID) -> DWORD {
         }
 
         if !Info.MainApp.IsEmpty() {
-            AddUninstallOperationsFromDB(DB_GENINST_DELREG, (UNOP_REGKEY) as WCHAR, CStringW(CPP_COM_WSTR_96A296D224F2.as_ptr()));
-            AddUninstallOperationsFromDB(DB_GENINST_DELREGEMPTY, (UNOP_EMPTYREGKEY) as WCHAR, CStringW(CPP_COM_WSTR_96A296D224F2.as_ptr()));
+            AddUninstallOperationsFromDB(DB_GENINST_DELREG, (UNOP_REGKEY) as WCHAR, CStringW::from_ptr(CPP_COM_WSTR_96A296D224F2.as_ptr()));
+            AddUninstallOperationsFromDB(DB_GENINST_DELREGEMPTY, (UNOP_EMPTYREGKEY) as WCHAR, CStringW::from_ptr(CPP_COM_WSTR_96A296D224F2.as_ptr()));
             AddUninstallOperationsFromDB(DB_GENINST_DELFILE, (UNOP_FILE) as WCHAR, CStringW::from_ptr(CPP_COM_WSTR_B7FC02907B1F.as_ptr()));
             AddUninstallOperationsFromDB(DB_GENINST_DELDIR, (UNOP_DIR) as WCHAR, CStringW::from_ptr(CPP_COM_WSTR_B7FC02907B1F.as_ptr()));
             AddUninstallOperationsFromDB(DB_GENINST_DELDIREMPTY, (UNOP_EMPTYDIR) as WCHAR, CStringW::from_ptr(CPP_COM_WSTR_B7FC02907B1F.as_ptr()));
@@ -651,10 +660,18 @@ unsafe extern "system" fn ExtractAndInstallThread(Parameter: LPVOID) -> DWORD {
             let modechar: WCHAR = if Info.PerUser != 0 { 'U' as WCHAR } else { 'M' as WCHAR };
             let unparamsfmt: LPCWSTR = CPP_COM_WSTR_6D0C747DAF9C.as_ptr();
             tmp = tmp.Mid__1(0, cch as i32);
-            tmp.AppendFormat(unparamsfmt, CPP_COM_WSTR_96A296D224F2.as_ptr(), modechar, bitness, arpkeyname);
+            {
+                let mut t = CStringW::new();
+                atl_format!(t, unparamsfmt, CPP_COM_WSTR_96A296D224F2.as_ptr(), modechar, bitness, arpkeyname);
+                tmp += t.GetString();
+            }
             WriteArpEntry(CPP_COM_WSTR_778F0B2CD2E9.as_ptr(), tmp.GetString(), REG_SZ);
             tmp = tmp.Mid__1(0, cch as i32);
-            tmp.AppendFormat(unparamsfmt, CPP_COM_WSTR_5853A555D865.as_ptr(), modechar, bitness, arpkeyname);
+            {
+                let mut t = CStringW::new();
+                atl_format!(t, unparamsfmt, CPP_COM_WSTR_5853A555D865.as_ptr(), modechar, bitness, arpkeyname);
+                tmp += t.GetString();
+            }
             WriteArpEntry(CPP_COM_WSTR_A165A2B30CA1.as_ptr(), tmp.GetString(), REG_SZ);
 
             hr = GetCustomIconPath(Info, &mut tmp);
@@ -666,7 +683,7 @@ unsafe extern "system" fn ExtractAndInstallThread(Parameter: LPVOID) -> DWORD {
                 );
             }
 
-            if *GetCommonString(DB_VERSION, &mut tmp, CPP_COM_WSTR_96A296D224F2.as_ptr()) != 0 {
+            if *GetCommonString(DB_VERSION.as_ptr(), &mut tmp, CPP_COM_WSTR_96A296D224F2.as_ptr()) != 0 {
                 WriteArpEntry(CPP_COM_WSTR_A53534ACF67B.as_ptr(), tmp.GetString(), REG_SZ);
             }
 
@@ -675,7 +692,7 @@ unsafe extern "system" fn ExtractAndInstallThread(Parameter: LPVOID) -> DWORD {
             atl_format!(tmp, CPP_COM_WSTR_14094E4E55B4.as_ptr(), st.wYear, st.wMonth, st.wDay);
             WriteArpEntry(CPP_COM_WSTR_5CA3FA95E5B2.as_ptr(), tmp.GetString(), REG_SZ);
 
-            if *GetCommonString(DB_PUBLISHER, &mut tmp, CPP_COM_WSTR_96A296D224F2.as_ptr()) != 0 {
+            if *GetCommonString(DB_PUBLISHER.as_ptr(), &mut tmp, CPP_COM_WSTR_96A296D224F2.as_ptr()) != 0 {
                 WriteArpEntry(CPP_COM_WSTR_FA2812BAE08A.as_ptr(), tmp.GetString(), REG_SZ);
             }
 
@@ -768,23 +785,20 @@ unsafe extern "system" fn UIDlgProc(hDlg: HWND, uMsg: UINT, wParam: WPARAM, lPar
 }
 
 unsafe extern "C" fn CreateUI(Silent: BOOL, ThreadProc: LPTHREAD_START_ROUTINE) -> BOOL {
-    let _ = DLGW;
-    let _ = 150;
-    let _ = DLGH;
-    let _ = 20;
-    let _ = PAD;
-    let _ = 4;
-    let PADx2: u16 = PAD * 2;
-    let _ = CHILDCOUNT;
-    let _ = 1;
+    // enum { DLGW = 150, DLGH = 20, PAD = 4, PADx2 = PAD * 2, CHILDCOUNT = 1 };
+    const DLGW: u16 = 150;
+    const DLGH: u16 = 20;
+    const PAD: u16 = 4;
+    const PADx2: u16 = PAD * 2;
+    const CHILDCOUNT: u16 = 1;
     let DlgStyle: UINT = WS_CAPTION | DS_MODALFRAME | DS_NOFAILCREATE | DS_CENTER;
     let DlgTmpl: [u16; 40] = [
         LOWORD!(DlgStyle), HIWORD!(DlgStyle), 0, 0, CHILDCOUNT, 0, 0, DLGW, DLGH, 0, 0, 0,
-        PBS_MARQUEE, HIWORD!(WS_CHILD | WS_VISIBLE), 0, 0, PAD, PAD, DLGW - PADx2, DLGH - PADx2, 1,
+        PBS_MARQUEE as u16, HIWORD!(WS_CHILD | WS_VISIBLE), 0, 0, PAD, PAD, DLGW - PADx2, DLGH - PADx2, 1,
         'm' as u16, 's' as u16, 'c' as u16, 't' as u16, 'l' as u16, 's' as u16, '_' as u16, 'p' as u16, 'r' as u16, 'o' as u16, 'g' as u16, 'r' as u16, 'e' as u16, 's' as u16, 's' as u16, '3' as u16, '2' as u16, 0, 0,
     ];
     let hWnd: HWND = CreateDialogIndirectParamW(core::ptr::null_mut(), DlgTmpl.as_ptr() as LPCDLGTEMPLATE, core::ptr::null_mut(),
-                                           UIDlgProc, (ThreadProc).map_or(0, |f| f as usize) as usize as LPARAM);
+                                           core::mem::transmute(UIDlgProc as unsafe extern "system" fn(HWND, UINT, WPARAM, LPARAM) -> INT_PTR), (ThreadProc).map_or(0, |f| f as usize) as usize as LPARAM);
     if hWnd.is_null() {
         ErrorBox__1(GetLastError());
         return (FALSE) as BOOL;
@@ -800,7 +814,7 @@ unsafe extern "C" fn CreateUI(Silent: BOOL, ThreadProc: LPTHREAD_START_ROUTINE) 
 }
 #[no_mangle]
 pub unsafe extern "C" fn ExtractAndRunGeneratedInstaller(AppInfo: &CAvailableApplicationInfo, Archive: LPCWSTR, Silent: bool) -> BOOL {
-    let mut Info = InstallInfo__make_0(AppInfo.__base0.szDisplayName.GetString(), *AppInfo.GetConfigParser(), Archive);
+    let mut Info = InstallInfo__make_0(AppInfo.__base0.szDisplayName.GetString(), &mut *(*(AppInfo as *const CAvailableApplicationInfo as *mut CAvailableApplicationInfo)).GetConfigParser(), Archive);
     Info.__base0.Silent = Silent as BOOL;
     g_pInfo = core::ptr::addr_of_mut!(Info.__base0);
     return if CreateUI(Info.__base0.Silent, Some(ExtractAndInstallThread)) != 0 {
@@ -818,16 +832,16 @@ unsafe extern "system" fn UninstallThread(Parameter: LPVOID) -> DWORD {
     let mut path = CStringW::new();
     let mut installdir = CStringW::new();
     path.LoadStringW(IDS_INSTGEN_CONFIRMUNINST);
-    atl_format!(tmp, path.GetString(), Info.__base0.AppName.GetString());
+    atl_format!(tmp, path.GetString(), Info.__base0.AppName);
     if Info.__base0.Silent == 0
-        && MessageBox(Info.__base0.GetGuiOwner(), tmp.GetString(), Info.__base0.AppName.GetString(), MB_YESNO | MB_ICONQUESTION) != (IDYES as i32)
+        && MessageBox(Info.__base0.GetGuiOwner(), tmp.GetString(), Info.__base0.AppName, MB_YESNO | MB_ICONQUESTION) != (IDYES as i32)
     {
         Info.__base0.Error = ERROR_CANCELLED as _;
         SendMessage(Info.__base0.hDlg, IM_END, 0, 0);
         return 0;
     }
 
-    Info.__base0.Error = Info.__base0.Entries.Open((*Info.__base0.ArpKey).op_to_HKEY(), GENERATE_ARPSUBKEY, KEY_READ) as _;
+    Info.__base0.Error = Info.__base0.Entries.Open((*Info.__base0.ArpKey).op_to_HKEY(), GENERATE_ARPSUBKEY.as_ptr(), KEY_READ) as _;
     if Info.__base0.Error != 0 {
         return ErrorBox__1(Info.__base0.Error);
     }
@@ -849,7 +863,7 @@ unsafe extern "system" fn UninstallThread(Parameter: LPVOID) -> DWORD {
     Info.__base0.Count *= (UINSTALLSTAGECOUNT as u32);
     SendMessage(Info.__base0.hDlg, IM_STARTPROGRESS, 0, 0);
 
-    if GetRegString(&*Info.__base0.ArpKey, CPP_COM_WSTR_78CC81EE96C2.as_ptr(), &mut installdir) == core::ptr::null() || installdir.IsEmpty() {
+    if GetRegString(&mut *Info.__base0.ArpKey, CPP_COM_WSTR_78CC81EE96C2.as_ptr(), &mut installdir) == core::ptr::null() || installdir.IsEmpty() {
         return ErrorBox__1(ERROR_INVALID_NAME);
     }
 
@@ -890,7 +904,7 @@ unsafe extern "system" fn UninstallThread(Parameter: LPVOID) -> DWORD {
                     {
                         let mut wowsam: REGSAM = 0;
                         let mut hKey: HKEY = core::ptr::null_mut();
-                        path.Format(CPP_COM_WSTR_1327FD68831E.as_ptr(), data.as_ptr());
+                        atl_format!(path, CPP_COM_WSTR_1327FD68831E.as_ptr(), data.as_ptr());
                         if path.CompareNoCase(CPP_COM_WSTR_8E490F9323D5.as_ptr()) == 0 {
                             hKey = HKEY_CLASSES_ROOT;
                         } else if path.CompareNoCase(CPP_COM_WSTR_D02D0BCFE5D4.as_ptr()) == 0 {
@@ -993,7 +1007,7 @@ pub unsafe extern "C" fn ExtractArchiveForExecution(pszArchive: PCWSTR, PackageN
     let mut TempDirBuf = [0u16; (MAX_PATH) as _];
     let mut UniqueDir = [0u16; (MAX_PATH) as _];
     let pAppInfo: *mut CAvailableApplicationInfo = CAppDB::CreateAvailableAppInstance(PackageName, core::ptr::null_mut());
-    Deleter_CAvailableApplicationInfodel(pAppInfo);
+    let _del = Deleter_CAvailableApplicationInfo__make_0(pAppInfo);
     if pAppInfo.is_null() {
         return HResultFromWin32(ERROR_NOT_FOUND);
     }
@@ -1011,7 +1025,7 @@ pub unsafe extern "C" fn ExtractArchiveForExecution(pszArchive: PCWSTR, PackageN
     hr = HResultFromWin32(ExtractArchive(pszArchive, TempDir, None, core::ptr::null_mut()));
     if hr >= 0 {
         let mut Exe = CStringW::new();
-        if (*pCfg).GetSectionString(DB_EXEINZIPSECTION, DB_EXEINZIP_EXE, &mut Exe) <= 0 {
+        if (*pCfg).GetSectionString(DB_EXEINZIPSECTION.as_ptr(), DB_EXEINZIP_EXE.as_ptr(), &mut Exe) <= 0 {
             let mut wfd: WIN32_FIND_DATAW = core::mem::zeroed();
             Exe = BuildPath__T0(TempDir, CPP_COM_WSTR_523F3509AA5C.as_ptr());
             let hFind: HANDLE = FindFirstFileW(Exe.GetString(), (core::ptr::addr_of_mut!(wfd)).cast());

@@ -218,7 +218,7 @@ impl CWindow {
     pub unsafe fn SetTimer(&mut self, nIDEvent: UINT_PTR, nElapse: UINT, lpfnTimer: Option<unsafe extern "C" fn(HWND, UINT, UINT_PTR, DWORD)>) -> UINT_PTR {
         let this_: *mut Self = self;
             ATLASSERT!(IsWindow((*this_).m_hWnd));
-            return SetTimer((*this_).m_hWnd, nIDEvent, nElapse, lpfnTimer as TIMERPROC);
+            return SetTimer((*this_).m_hWnd, nIDEvent, nElapse, core::mem::transmute(lpfnTimer));
         }
     pub unsafe fn SetWindowPos(&mut self, hWndInsertAfter: HWND, x: i32, y: i32, cx: i32, cy: i32, nFlags: UINT) -> BOOL {
         let this_: *mut Self = self;

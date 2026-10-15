@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use crate::rapps::loaddlg_cpp_h::DownloadApplication;
 use crate::rapps::appinfo_h_h::IsAvailableEnum;
 use crate::rapps::appinfo_h_h::IsInstalledEnum;
 // Deterministic UTF-16 literals from the selected C++ helper closure.
@@ -95,7 +96,7 @@ pub unsafe extern "C" fn MainWindowLoop(wnd: *mut CMainWindow, nShowCmd: INT) {
 impl CSideTreeView {
     pub unsafe fn __ctor_0(&mut self) {
         let this_: *mut Self = self;
-        (*this_).__base0.__ctor_0CUiWindow();
+        (*this_).__base0.__ctor_0();
         (*this_).__init_vtables();
         (*this_).hImageTreeView = ImageList_Create((TREEVIEW_ICON_SIZE as i32), (TREEVIEW_ICON_SIZE as i32), (GetSystemColorDepth() | (ILC_MASK as i32)) as UINT, 0, 1);
         {
@@ -204,7 +205,7 @@ impl CMainWindow {
     }
     pub unsafe fn CreateStatusBar(&mut self) -> BOOL {
         let this_: *mut Self = self;
-        (*this_).m_StatusBar = CUiWindow_CStatusBar__new_0::<CStatusBar>();
+        (*this_).m_StatusBar = CUiWindow_CStatusBar__new_0();
         (*(*this_).m_StatusBar).__base1.m_VerticalAlignment = UiAlign_RightBtm;
         (*(*this_).m_StatusBar).__base1.m_HorizontalAlignment = UiAlign_Stretch;
         (*(*(*this_).m_ClientPanel).__base2.Children()).__base0.Append(core::ptr::addr_of_mut!((*(*this_).m_StatusBar).__base0));
@@ -218,7 +219,7 @@ impl CMainWindow {
         (*(*this_).m_TreeView).__base0.__base1.m_HorizontalAlignment = UiAlign_Stretch;
         (*(*this_).m_VSplitter).First().__base0.Append(core::ptr::addr_of_mut!((*(*this_).m_TreeView).__base0.__base0));
 
-        return ((*(*this_).m_TreeView).Create((*this_).__base0.m_hWnd, 0) != core::ptr::null_mut()) as BOOL;
+        return ((*(*this_).m_TreeView).__base0.__base2.Create((*this_).__base0.m_hWnd, 0) != core::ptr::null_mut()) as BOOL;
     }
     pub unsafe fn CreateApplicationView(&mut self) -> BOOL {
         let this_: *mut Self = self;
@@ -270,7 +271,7 @@ impl CMainWindow {
 
             GetWindowRect((*(*this_).m_StatusBar).__base2.__base0.m_hWnd, core::ptr::addr_of_mut!(rBottom));
 
-            (*(*this_).m_VSplitter).__base1.m_Margin.bottom = rBottom.bottom - rBottom.top;
+            (*(*this_).m_VSplitter).__base1.m_Margin.__base0.__base0.bottom = rBottom.bottom - rBottom.top;
         }
 
         (*this_).bUpdating = (FALSE as i32);
@@ -447,7 +448,7 @@ impl CMainWindow {
                             // FIXME: Prevent collapse (COMCTL32 is buggy)
                             // https://bugs.winehq.org/show_bug.cgi?id=53727
                             if (*this_).m_bAppwizMode != 0 && (((*(lParam as LPNMTREEVIEW)).action & TVE_TOGGLE) == TVE_COLLAPSE) {
-                                *theResult = TRUE;
+                                *theResult = TRUE as _;
                                 return (TRUE) as BOOL; // Handled
                             }
                         }
@@ -581,8 +582,8 @@ impl CMainWindow {
             }
 
             WM_TIMER => {
-                if wParam == SEARCH_TIMER_ID {
-                    KillTimer(hwnd, SEARCH_TIMER_ID);
+                if wParam == SEARCH_TIMER_ID as WPARAM {
+                    KillTimer(hwnd, SEARCH_TIMER_ID as UINT_PTR);
 
                     (*this_).UpdateApplicationsList((*this_).SelectedEnumType, (FALSE) as BOOL, (FALSE) as BOOL);
                 }
@@ -819,7 +820,7 @@ impl CMainWindow {
         let this_: *mut Self = self;
         let mut CurrentListPosition: POSITION = List.GetHeadPosition();
         while CurrentListPosition as usize != 0 {
-            let Info: *mut CAppInfo = List.GetNext(&mut CurrentListPosition);
+            let Info: *mut CAppInfo = *List.GetNext(&mut CurrentListPosition);
             if (*this_).szSearchPattern.IsEmpty() || SearchPatternMatch((&(*Info).szDisplayName).GetString(), (&(*this_).szSearchPattern).GetString()) != 0 ||
                 SearchPatternMatch((&(*Info).szComments).GetString(), (&(*this_).szSearchPattern).GetString()) != 0
             {
@@ -830,30 +831,37 @@ impl CMainWindow {
         (*(*this_).m_ApplicationView).AddApplication(core::ptr::null_mut(), (FALSE) as BOOL); // Tell the list we are done
     }
     pub unsafe fn GetWndClassInfo() -> *mut CWndClassInfo {
-        let csStyle: DWORD = CS_VREDRAW | CS_HREDRAW;
+        // A C++ function-local `static` is built once: re-running the initializer on every call would
+        // reset m_atom to 0 and re-register the class.
         static mut wc: CWndClassInfo = unsafe { core::mem::zeroed() };
-        wc = CWndClassInfo {
-            wc: WNDCLASSEX {
-                cbSize: core::mem::size_of::<WNDCLASSEX>() as u32,
-                style: csStyle,
-                lpfnWndProc: StartWindowProc,
-                cbClsExtra: 0,
-                cbWndExtra: 0,
-                hInstance: core::ptr::null_mut(),
-                hIcon: (LoadIconW(_AtlBaseModule.GetModuleInstance(), MAKEINTRESOURCEW!(IDI_MAIN))).cast(),
-                hCursor: LoadCursorW(core::ptr::null_mut(), IDC_ARROW),
-                hbrBackground: (COLOR_BTNFACE + 1) as HBRUSH,
-                lpszMenuName: MAKEINTRESOURCEW!(IDR_MAINMENU),
-                lpszClassName: szWindowClass,
-                hIconSm: core::ptr::null_mut(),
-            },
-            m_lpszOrigName: core::ptr::null_mut(),
-            pWndProc: None,
-            m_lpszCursorID: IDC_ARROW,
-            m_bSystemCursors: TRUE,
-            m_atom: 0,
-            m_szAutoName: CPP_COM_WSTR_96A296D224F2.as_ptr(),
-        };
+        static mut INITIALIZED: bool = false;
+        if !INITIALIZED {
+            let csStyle: DWORD = CS_VREDRAW | CS_HREDRAW;
+            wc = CWndClassInfo {
+                // the island spells m_wc as WNDCLASSEXA; the A/W layouts are identical
+                m_wc: core::mem::transmute(WNDCLASSEXW {
+                    cbSize: core::mem::size_of::<WNDCLASSEX>() as UINT,
+                    style: csStyle,
+                    lpfnWndProc: Some(core::mem::transmute::<unsafe extern "system" fn(HWND, UINT, WPARAM, LPARAM) -> LRESULT, _>(StartWindowProc)),
+                    cbClsExtra: 0,
+                    cbWndExtra: 0,
+                    hInstance: core::ptr::null_mut(),
+                    hIcon: (LoadIconW(_AtlBaseModule.GetModuleInstance(), MAKEINTRESOURCEW!(IDI_MAIN))).cast(),
+                    hCursor: LoadCursorW(core::ptr::null_mut(), IDC_ARROW),
+                    hbrBackground: (COLOR_BTNFACE + 1) as HBRUSH,
+                    lpszMenuName: MAKEINTRESOURCEW!(IDR_MAINMENU),
+                    lpszClassName: szWindowClass,
+                    hIconSm: core::ptr::null_mut(),
+                }),
+                m_lpszOrigName: core::ptr::null_mut(),
+                pWndProc: None,
+                m_lpszCursorID: IDC_ARROW,
+                m_bSystemCursor: (TRUE as i32),
+                m_atom: 0,
+                m_szAutoName: core::mem::zeroed(), // _T("") -- array length is 5 + 2*sizeof(void*), per arch
+            };
+            INITIALIZED = true;
+        }
         return core::ptr::addr_of_mut!(wc);
     }
     pub unsafe fn Create(&mut self) -> HWND {
@@ -889,11 +897,20 @@ impl CMainWindow {
         if bChecked != 0 {
             (*this_).m_Selected.AddTail(Info);
         } else {
-            let Pos: POSITION = (*this_).m_Selected.Find(Info);
-            ATLASSERT!(!Pos.is_null());
+            // CAtlList::Find(Info) returns the element's POSITION; atl_rust's Find only answers bool, so walk the list
+            let mut SelPos: POSITION = core::ptr::null_mut();
+            let mut Walk: POSITION = (*this_).m_Selected.GetHeadPosition();
+            while !Walk.is_null() {
+                let PosCur: POSITION = Walk;
+                if *(*this_).m_Selected.GetNext(&mut Walk) == Info {
+                    SelPos = PosCur;
+                    break;
+                }
+            }
+            ATLASSERT!(!SelPos.is_null());
 
-            if !Pos.is_null() {
-                (*this_).m_Selected.RemoveAt(Pos);
+            if !SelPos.is_null() {
+                (*this_).m_Selected.RemoveAt(SelPos);
             }
         }
 
@@ -901,7 +918,7 @@ impl CMainWindow {
     }
     pub unsafe fn InstallApplication(&mut self, Info: *mut CAppInfo) -> BOOL {
         let this_: *mut Self = self;
-        return (!Info.is_null() && (*this_).DownloadApplication(Info)) as BOOL;
+        return (!Info.is_null() && (DownloadApplication(Info) != 0)) as BOOL;
     }
     pub unsafe fn SearchTextChanged(&mut self, SearchText: &mut CStringW) -> BOOL {
         let this_: *mut Self = self;
@@ -913,7 +930,7 @@ impl CMainWindow {
 
         let mut dwDelay: DWORD = 0;
         SystemParametersInfoW(SPI_GETMENUSHOWDELAY, 0, core::ptr::addr_of_mut!(dwDelay) as *mut DWORD as LPVOID, 0);
-        (*this_).__base0.SetTimer(SEARCH_TIMER_ID, dwDelay, None);
+        (*this_).__base0.SetTimer(SEARCH_TIMER_ID as UINT_PTR, dwDelay, None);
 
         return (TRUE) as BOOL;
     }
@@ -931,7 +948,7 @@ impl CMainWindow {
 
         let mut FocusIndex: i32;
 
-        FocusIndex = TabOrderHwndList.Find(GetFocus());
+        FocusIndex = TabOrderHwndList.Find(&GetFocus());
         if FocusIndex == -1 {
             FocusIndex = 0; // focus the first window in the list
         } else {

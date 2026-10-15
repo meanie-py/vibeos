@@ -25,11 +25,13 @@ pub static mut gWinModule: CAtlWinModule = unsafe { core::mem::zeroed() };
 
 #[no_mangle]
 pub unsafe extern "system" fn wWinMain(hInstance: HINSTANCE, hPrevInstance: HINSTANCE, lpCmdLine: LPWSTR, nShowCmd: INT) -> INT {
-    let mut gdiplusStartupInput = GdiplusStartupInput__make_0();
+    let mut gdiplusStartupInput = GdiplusStartupInput__make_0(None, 0, 0);
     let mut gdiplusToken: ULONG_PTR = 0;
 
-    gModule.Init(ObjectMap, hInstance, core::ptr::null_mut());
-    GdiplusStartup(core::ptr::addr_of_mut!(gdiplusToken), core::ptr::addr_of_mut!(gdiplusStartupInput), core::ptr::null_mut());
+    // CComModule::Init(ObjectMap, hInstance, NULL): ObjectMap holds only the terminator entry
+    // (pclsid == NULL), so the pfnObjectMain walk visits nothing (atlbase.h); the module keeps the map.
+    gModule.m_pObjMap = core::ptr::addr_of_mut!(ObjectMap) as *mut _ATL_OBJMAP_ENTRY;
+    GdiplusStartup(core::ptr::addr_of_mut!(gdiplusToken), core::ptr::addr_of!(gdiplusStartupInput) as *const _, core::ptr::null_mut());
 
     if GetUserDefaultUILanguage() == MAKELANGID!(LANG_HEBREW, SUBLANG_DEFAULT)
     {
@@ -47,7 +49,7 @@ pub unsafe extern "system" fn wWinMain(hInstance: HINSTANCE, hPrevInstance: HINS
     let bSuccess: BOOL = ParseCmdAndExecute(GetCommandLineW(), bIsFirstLaunch, (SW_SHOWNORMAL as i32));
 
     GdiplusShutdown(gdiplusToken);
-    gModule.Term();
+    // CComModule::Term(): the map has no entries (and the auto-map is empty), so nothing to release.
 
     return if bSuccess != 0 { 0 } else { 1 };
 }

@@ -29,7 +29,7 @@ pub static mut hLog: HANDLE = core::ptr::null_mut();
 
 #[allow(non_snake_case)]
 
-const FOLDERID_UserProgramFiles: GUID = GUID { data1: 0x5CD7AEE2, data2: 0x2219, data3: 0x4A67, data4: [0xB8, 0x5D, 0x6C, 0x9C, 0xE1, 0x56, 0x60, 0xCB] };
+const FOLDERID_UserProgramFiles: GUID = GUID { Data1: 0x5CD7AEE2, Data2: 0x2219, Data3: 0x4A67, Data4: [0xB8, 0x5D, 0x6C, 0x9C, 0xE1, 0x56, 0x60, 0xCB] };
 #[no_mangle]
 pub unsafe extern "C" fn ErrorBox__0(hOwner: HWND, mut Error: UINT) -> UINT {
     if Error == 0 {
@@ -71,7 +71,7 @@ unsafe extern "system" fn NothingDlgProc(hDlg: HWND, uMsg: UINT, _wParam: WPARAM
     if uMsg == WM_CLOSE {
         (DestroyWindow(hDlg)) as _
     } else {
-        FALSE
+        FALSE as INT_PTR
     }
 }
 #[no_mangle]
@@ -89,7 +89,7 @@ pub unsafe extern "C" fn EmulateDialogReposition(hwnd: HWND) {
         core::ptr::null_mut(),
         core::ptr::addr_of!(DlgTmpl) as LPDLGTEMPLATE,
         core::ptr::null_mut(),
-        NothingDlgProc,
+        core::mem::transmute(NothingDlgProc as unsafe extern "system" fn(HWND, UINT, WPARAM, LPARAM) -> INT_PTR),
     );
     if !hDlg.is_null() {
         let mut r: RECT = core::mem::zeroed();
@@ -280,7 +280,7 @@ pub unsafe extern "C" fn GetStorageDirectory(Directory: *mut CStringW) -> BOOL {
         let DirectoryStr: LPWSTR = (*cd).GetBuffer(MAX_PATH as i32);
         let bHasPath: BOOL = SHGetSpecialFolderPathW(core::ptr::null_mut(), DirectoryStr, (CSIDL_LOCAL_APPDATA as i32), (TRUE) as BOOL);
         if bHasPath != 0 {
-            PathAppendW(DirectoryStr, RAPPS_NAME);
+            PathAppendW(DirectoryStr, RAPPS_NAME.as_ptr());
         }
         (*cd).ReleaseBuffer();
 
@@ -357,7 +357,8 @@ pub unsafe extern "C" fn GetInstalledVersion_WowUser(szVersionResult: *mut CStri
     let mut bHasSucceded: BOOL = (FALSE as i32);
     let mut key = CRegKey__make_0();
     let mut szVersion: CStringW = CStringW::new();
-    let mut szPath: CStringW = CStringW(CPP_COM_WSTR_0D896F4ECFCA.as_ptr()) + szRegName;
+    let mut szPath: CStringW = CStringW::from_ptr(CPP_COM_WSTR_0D896F4ECFCA.as_ptr());
+    szPath += szRegName.GetString();
 
     if key.Open(if IsUserKey != 0 { HKEY_CURRENT_USER } else { HKEY_LOCAL_MACHINE }, szPath.GetString(), keyWow | KEY_READ) !=
         (ERROR_SUCCESS as i32)
@@ -454,7 +455,7 @@ pub unsafe extern "C" fn UnixTimeToFileTime(dwUnixTime: DWORD, pFileTime: LPFILE
     // Note that LONGLONG is a 64-bit value
     let mut ll: i64;
 
-    ll = Int32x32To64(dwUnixTime as i32, 10000000) + 116444736000000000;
+    ll = (dwUnixTime as i32 as i64) * (10000000i32 as i64) + 116444736000000000;
     (*pFileTime).dwLowDateTime = (ll as DWORD);
     (*pFileTime).dwHighDateTime = (ll >> 32) as DWORD;
 }
@@ -518,7 +519,7 @@ pub unsafe extern "C" fn DeleteDirectoryTree(Dir: LPCWSTR, hwnd: HWND) -> BOOL {
     let mut from = CStringW::from_ptr(Dir);
     let cch: UINT = from.GetLength() as UINT;
     from.Append(CPP_COM_WSTR_B422CF60B57F.as_ptr());
-    let p: LPWSTR = from.GetBuffer();
+    let p: LPWSTR = from.GetBuffer(0);
     *p.add(cch as usize) = 0x0000u16; // Double null-terminate
     *p.add((cch + 1) as usize) = 0x0000u16;
     let fof: UINT = FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT;
@@ -563,13 +564,13 @@ pub unsafe extern "C" fn GetSpecialPath(csidl: UINT, Path: &mut CStringW, hwnd: 
     return S_OK;
 }
 #[no_mangle]
-pub unsafe extern "C" fn GetKnownPath(kfid: REFKNOWNFOLDERID, Path: &mut CStringW, Flags: DWORD) -> HRESULT {
+pub unsafe extern "C" fn GetKnownPath(kfid: *const KNOWNFOLDERID, Path: &mut CStringW, Flags: DWORD) -> HRESULT {
     let mut p: PWSTR = core::ptr::null_mut();
     let f: FARPROC = GetProcAddress(LoadLibraryW(CPP_COM_WSTR_97829A80D968.as_ptr()), b"SHGetKnownFolderPath\0".as_ptr() as *const i8);
     if f.is_none() {
         return HRESULT_FROM_WIN32!(ERROR_OLD_WIN_VERSION);
     }
-    let hr: HRESULT = (core::mem::transmute::<FARPROC, unsafe extern "system" fn(REFKNOWNFOLDERID, UINT, HANDLE, *mut PWSTR) -> HRESULT>(f))(kfid, Flags, core::ptr::null_mut(), &mut p as *mut PWSTR as *mut PWSTR);
+    let hr: HRESULT = (core::mem::transmute::<FARPROC, unsafe extern "system" fn(*const KNOWNFOLDERID, UINT, HANDLE, *mut PWSTR) -> HRESULT>(f))(kfid, Flags, core::ptr::null_mut(), &mut p as *mut PWSTR as *mut PWSTR);
     if hr < 0 {
         return hr;
     }
@@ -604,16 +605,16 @@ unsafe extern "C" fn ReadAt(Handle: HANDLE, Offset: UINT, Buffer: LPVOID, Size: 
 pub unsafe extern "C" fn GetSilentInstallParameters(InstallerType: InstallerType, ExtraInfo: UINT, Installer: LPCWSTR, Parameters: &mut CStringW) -> BOOL {
     match InstallerType {
         INSTALLER_MSI => {
-            atl_format!(Parameters, CPP_COM_WSTR_B951C1B4FB5A.as_ptr(), Installer);
+            atl_format!(*Parameters, CPP_COM_WSTR_B951C1B4FB5A.as_ptr(), Installer);
             return (TRUE) as BOOL;
         }
 
         INSTALLER_INNO => {
             let pszInnoParams: LPCWSTR = CPP_COM_WSTR_CEA6748FA84E.as_ptr();
             if ExtraInfo != 0 {
-                atl_format!(Parameters, CPP_COM_WSTR_FB47CCC40FE6.as_ptr(), pszInnoParams);
+                atl_format!(*Parameters, CPP_COM_WSTR_FB47CCC40FE6.as_ptr(), pszInnoParams);
             } else {
-                atl_format!(Parameters, CPP_COM_WSTR_1A217ADA0F04.as_ptr(), pszInnoParams); // https://jrsoftware.org/files/is5.5-whatsnew.htm
+                atl_format!(*Parameters, CPP_COM_WSTR_1A217ADA0F04.as_ptr(), pszInnoParams); // https://jrsoftware.org/files/is5.5-whatsnew.htm
             }
             return (TRUE) as BOOL;
         }
@@ -693,6 +694,13 @@ pub unsafe extern "C" fn RegKeyHasValues(hKey: HKEY, Path: LPCWSTR, wowsam: REGS
 /// misc.cpp `GuessInstallerType`, hand-written: the model's body did not parse twice. Its
 /// `goto done` exits are `break 'done`, and `done:`'s CloseHandle runs on every path.
 pub unsafe extern "C" fn GuessInstallerType(Installer: LPCWSTR, ExtraInfo: &mut UINT) -> InstallerType {
+    // kernel32 resource/library entry points the crate prelude does not declare.
+    extern "system" {
+        fn LoadLibraryExW(lpLibFileName: LPCWSTR, hFile: HANDLE, dwFlags: DWORD) -> HMODULE;
+        fn FindResourceW(hModule: HMODULE, lpName: LPCWSTR, lpType: LPCWSTR) -> *mut c_void;
+        fn LoadResource(hModule: HMODULE, hResInfo: *mut c_void) -> HGLOBAL;
+        fn LockResource(hResData: HGLOBAL) -> LPVOID;
+    }
     *ExtraInfo = 0;
     let mut it: InstallerType = INSTALLER_UNKNOWN;
 

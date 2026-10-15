@@ -1369,33 +1369,48 @@ class _Extractor:
     def base_path(self, frm: str, to: str) -> str:
         """`__baseK.` hops from class `frm` to its (transitive) base `to`, by short name.
         A base the module does not define (CWindowImpl<...>) is reached as the class's
-        external base when `to` is not a module class at all."""
+        external base when `to` is not a module class at all -- through module bases too:
+        rapps' CUiMargin reaches RECT via CUiRect, and clang names that cast `tagRECT`
+        where the base list spells `RECT`, so names compare through the typedef table.
+        Without the path the member went through the generated Deref, a reference made
+        through a raw pointer (dangerous_implicit_autorefs)."""
         if frm == to:
             return ""
         by_short = {q.split("::")[-1]: c for q, c in self.model.classes.items()}
         start = by_short.get(frm)
         if start is None:
             return ""
+        target = self._tag(to)
         queue = [(start, "")]
         seen = set()
+        external: list[str] | None = None  # the NEAREST class with outside bases decides
         while queue:
             cls, path = queue.pop(0)
+            outside = []
             for i, b in enumerate(cls.bases):
                 short = atl_base_alias(b.name)
                 hop = f"{path}__base{i}."
-                if short == to:
+                if short == to or self._tag(short) == target:
                     return hop
                 nxt = by_short.get(short)
-                if nxt is not None and short not in seen:
+                if nxt is None:
+                    outside.append(hop)
+                elif short not in seen:
                     seen.add(short)
                     queue.append((nxt, hop))
-        if to not in by_short:
-            external = [
-                i for i, b in enumerate(start.bases) if atl_base_alias(b.name) not in by_short
-            ]
-            if len(external) == 1:
-                return f"__base{external[0]}."
+            if outside and external is None:
+                external = outside
+        if to not in by_short and external is not None and len(external) == 1:
+            return external[0]
         return ""
+
+    def _tag(self, name: str) -> str:
+        """A type name with its typedef chain resolved: `RECT` -> `tagRECT`."""
+        seen = set()
+        while name in self.typedef_map and name not in seen:
+            seen.add(name)
+            name = re.sub(r"^(?:struct|class|union)\s+", "", self.typedef_map[name])
+        return name
 
     def lower_pending(self) -> None:
         low = cpp_lower.Lowerer(

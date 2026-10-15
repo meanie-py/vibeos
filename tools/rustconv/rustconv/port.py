@@ -3662,6 +3662,11 @@ def stage_integrate(stem: str) -> None:
     assembled = _cppapp_assemble_all(state)
     if assembled:
         print(f"integrate: assembled {', '.join(assembled)} into their classes")
+    # A translate rewrites its units and drops the hand bank's bodies; only replay used to put
+    # them back, so rapps' hand-written functions vanished after every translate+integrate.
+    # After assembly: a method bank (`Class::Method`) lives inside its `impl`.
+    if _hand_dir(stem).is_dir():
+        apply_hand(stem)
     ptr_types, decls = _pointer_decls(state)
     ptr_targets = pointer_depth.pointer_targets(_island_texts(crate))
     depth_fixed: list[str] = []

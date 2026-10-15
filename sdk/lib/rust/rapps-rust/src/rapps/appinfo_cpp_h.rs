@@ -52,6 +52,11 @@ pub static CPP_COM_WSTR_FB245110A679: [WCHAR; 7] = [0x0052, 0x0065, 0x0061, 0x00
 
 use core::ffi::c_void;
 
+/// C++ implicit `CStringW(LPCWSTR)` for a `const CStringW&` parameter.
+unsafe fn cs_w(p: LPCWSTR) -> CStringW {
+    CStringW::from_ptr(p)
+}
+
 unsafe extern "C" fn ClampAvailableCategory(Category: AppsCategories) -> AppsCategories {
     if Category <= ENUM_LASTCATEGORY {
         return Category;
@@ -121,7 +126,7 @@ impl CAvailableApplicationInfo {
     pub unsafe fn InsertVersionInfo(&mut self, RichEdit: *mut CAppRichEdit) {
         let this_: *mut Self = self;
         let mut szRegName = CStringW::new();
-        (*(*this_).m_Parser).GetString(DB_REGNAME, &mut szRegName);
+        (*(*this_).m_Parser).GetString(&cs_w(DB_REGNAME.as_ptr()), &mut szRegName);
 
         let bIsInstalled: BOOL = (GetInstalledVersion(core::ptr::null_mut(), &szRegName) != 0
             || GetInstalledVersion(core::ptr::null_mut(), &(*this_).__base0.szDisplayName) != 0) as BOOL;
@@ -203,7 +208,7 @@ impl CAvailableApplicationInfo {
         }
 
         (*RichEdit).__base0.__base2.InsertText__1(&szLoadedAInfoText, CFE_BOLD);
-        (*RichEdit).__base0.__base2.InsertText__1(&szLoadedTextAvailability, core::ptr::null_mut());
+        (*RichEdit).__base0.__base2.InsertText__1(&szLoadedTextAvailability, 0);
         (*RichEdit).__base0.__base2.InsertText__1(&szLangInfo, CFE_ITALIC);
     }
     pub unsafe fn RetrieveLanguages(&mut self) {
@@ -211,7 +216,7 @@ impl CAvailableApplicationInfo {
         (*this_).m_LanguagesLoaded = true;
 
         let mut szBuffer = CStringW::new();
-        if (((*(*this_).m_Parser).GetString(CPP_COM_WSTR_26FFD6EE464E.as_ptr(), &mut szBuffer)) == 0) {
+        if (((*(*this_).m_Parser).GetString(&cs_w(CPP_COM_WSTR_26FFD6EE464E.as_ptr()), &mut szBuffer)) == 0) {
             return;
         }
 
@@ -223,7 +228,9 @@ impl CAvailableApplicationInfo {
                 break;
             }
 
-            szLocale = CPP_COM_WSTR_0F49EBDF1CC4.as_ptr() + szLocale;
+            let mut szHex = CStringW::from_ptr(CPP_COM_WSTR_0F49EBDF1CC4.as_ptr()); // L"0x" + szLocale
+            szHex += szLocale.GetString();
+            szLocale = szHex;
 
             let mut iLCID: INT = 0;
             if StrToIntExW(szLocale.GetString(), STIF_SUPPORT_HEX, core::ptr::addr_of_mut!(iLCID)) != 0 {
@@ -234,9 +241,9 @@ impl CAvailableApplicationInfo {
     pub unsafe fn LicenseString(&mut self) -> CStringW {
         let this_: *mut Self = self;
         let mut IntBuffer: INT = 0;
-        (*(*this_).m_Parser).GetInt(CPP_COM_WSTR_315FEC7351A6.as_ptr(), &mut IntBuffer);
+        (*(*this_).m_Parser).GetInt(&cs_w(CPP_COM_WSTR_315FEC7351A6.as_ptr()), &mut IntBuffer);
         let mut szLicenseString = CStringW::new();
-        (*(*this_).m_Parser).GetString(CPP_COM_WSTR_2F4874C5D79E.as_ptr(), &mut szLicenseString);
+        (*(*this_).m_Parser).GetString(&cs_w(CPP_COM_WSTR_2F4874C5D79E.as_ptr()), &mut szLicenseString);
         let mut licenseType: LicenseType = core::mem::zeroed();
 
         if ((IsKnownLicenseType(IntBuffer)) != 0) {
@@ -284,16 +291,16 @@ impl CAvailableApplicationInfo {
         (*this_).m_ScrnshotRetrieved = false;
         (*this_).m_LanguagesLoaded = false;
         {
-            (*(*this_).m_Parser).GetString(CPP_COM_WSTR_76E480513E2C.as_ptr(), &mut (*this_).__base0.szDisplayName);
-            (*(*this_).m_Parser).GetString(CPP_COM_WSTR_1F7A38F3D6FA.as_ptr(), &mut (*this_).__base0.szDisplayVersion);
-            (*(*this_).m_Parser).GetString(CPP_COM_WSTR_53ED98F6553A.as_ptr(), &mut (*this_).m_szUrlDownload);
-            (*(*this_).m_Parser).GetString(CPP_COM_WSTR_6AC123285056.as_ptr(), &mut (*this_).__base0.szComments);
+            (*(*this_).m_Parser).GetString(&cs_w(CPP_COM_WSTR_76E480513E2C.as_ptr()), &mut (*this_).__base0.szDisplayName);
+            (*(*this_).m_Parser).GetString(&cs_w(CPP_COM_WSTR_1F7A38F3D6FA.as_ptr()), &mut (*this_).__base0.szDisplayVersion);
+            (*(*this_).m_Parser).GetString(&cs_w(CPP_COM_WSTR_53ED98F6553A.as_ptr()), &mut (*this_).m_szUrlDownload);
+            (*(*this_).m_Parser).GetString(&cs_w(CPP_COM_WSTR_6AC123285056.as_ptr()), &mut (*this_).__base0.szComments);
 
             let mut IconPath: CPathW = BasePath.clone();
             IconPath += CPP_COM_WSTR_FAB65EAA8D3C.as_ptr();
 
             let mut IconName = CStringW::new();
-            if (*(*this_).m_Parser).GetString(CPP_COM_WSTR_5FFE2A98CFCF.as_ptr(), &mut IconName) != 0 {
+            if (*(*this_).m_Parser).GetString(&cs_w(CPP_COM_WSTR_5FFE2A98CFCF.as_ptr()), &mut IconName) != 0 {
                 IconPath += IconName.GetString();
             } else {
                 // inifile.ico
@@ -308,12 +315,12 @@ impl CAvailableApplicationInfo {
 
             let mut iSizeBytes: INT = 0;
 
-            if (*(*this_).m_Parser).GetInt(CPP_COM_WSTR_ECA766B01C05.as_ptr(), &mut iSizeBytes) != 0 {
+            if (*(*this_).m_Parser).GetInt(&cs_w(CPP_COM_WSTR_ECA766B01C05.as_ptr()), &mut iSizeBytes) != 0 {
                 StrFormatByteSizeW((iSizeBytes) as LONGLONG, (*this_).m_szSize.GetBuffer((MAX_PATH as i32)), MAX_PATH);
                 (*this_).m_szSize.ReleaseBuffer();
             }
 
-            (*(*this_).m_Parser).GetString(CPP_COM_WSTR_399A2A38C25B.as_ptr(), &mut (*this_).m_szUrlSite);
+            (*(*this_).m_Parser).GetString(&cs_w(CPP_COM_WSTR_399A2A38C25B.as_ptr()), &mut (*this_).m_szUrlSite);
         }
     }
     pub unsafe fn __dtor__body(&mut self) {
@@ -323,9 +330,9 @@ impl CAvailableApplicationInfo {
     pub unsafe fn IsCompatible(&mut self) -> bool {
         let this_: *mut Self = self;
         let mut szBuffer: CStringW = CStringW::new();
-        if (*(*this_).m_Parser).GetString(DB_NTVER, &mut szBuffer) != 0 {
+        if (*(*this_).m_Parser).GetString(&cs_w(DB_NTVER.as_ptr()), &mut szBuffer) != 0 {
             let start: LPWSTR = szBuffer.GetString() as LPWSTR;
-            let mut p: LPWSTR;
+            let mut p: LPWSTR = core::ptr::null_mut();
             let mut MinNTVer: ULONG = wcstoul(start, core::ptr::addr_of_mut!(p), 0);
             if p > start {
                 let NTVersion: ULONG = GetNTVersion();
@@ -350,7 +357,7 @@ impl CAvailableApplicationInfo {
         let this_: *mut Self = self;
         let mut pszKeyName: LPCWSTR = core::ptr::null_mut();
         let mut szRegName = CStringW::new();
-        (*(*this_).m_Parser).GetString(DB_REGNAME, &mut szRegName);
+        (*(*this_).m_Parser).GetString(&cs_w(DB_REGNAME.as_ptr()), &mut szRegName);
         if GetInstalledVersion(core::ptr::null_mut(), &szRegName) != 0 {
             pszKeyName = szRegName.GetString();
         } else if GetInstalledVersion(core::ptr::null_mut(), &(*this_).__base0.szDisplayName) != 0 {
@@ -378,7 +385,7 @@ impl CAvailableApplicationInfo {
     pub unsafe fn RetrieveScreenshot__body(&mut self, Path: &mut CStringW) -> BOOL {
         let this_: *mut Self = self;
         if !(*this_).m_ScrnshotRetrieved {
-            static_assert(MAX_SCRNSHOT_NUM < 10000, b"MAX_SCRNSHOT_NUM is too big\0".as_ptr() as *const i8);
+            const _: () = assert!(MAX_SCRNSHOT_NUM < 10000, "MAX_SCRNSHOT_NUM is too big");
             let mut i = 0;
             while i < MAX_SCRNSHOT_NUM {
                 let mut ScrnshotField = CStringW::new();
@@ -391,7 +398,7 @@ impl CAvailableApplicationInfo {
                 }
 
                 if PathIsURLW(ScrnshotLocation.GetString()) != 0 {
-                    (*this_).m_szScrnshotLocation.Add(&ScrnshotLocation);
+                    (*this_).m_szScrnshotLocation.Add(ScrnshotLocation);
                 }
                 i += 1;
             }
@@ -399,7 +406,7 @@ impl CAvailableApplicationInfo {
         }
 
         if (*this_).m_szScrnshotLocation.GetSize() > 0 {
-            *Path = (*this_).m_szScrnshotLocation[0];
+            *Path = (*(*this_).m_szScrnshotLocation.GetAt(0)).clone();
         }
 
         (!Path.IsEmpty()) as BOOL
@@ -421,10 +428,10 @@ impl CAvailableApplicationInfo {
     pub unsafe fn GetDownloadInfo__body(&mut self, Url: &mut CStringW, Sha1: &mut CStringW, SizeInBytes: &mut ULONG) {
         let this_: *mut Self = self;
         *Url = CStringW::from_ptr((*this_).m_szUrlDownload.GetString());
-        (*(*this_).m_Parser).GetString(CPP_COM_WSTR_DAF6B1A9B9B2.as_ptr(), Sha1);
+        (*(*this_).m_Parser).GetString(&cs_w(CPP_COM_WSTR_DAF6B1A9B9B2.as_ptr()), Sha1);
         let mut iSizeBytes: INT = 0;
 
-        if (*(*this_).m_Parser).GetInt(CPP_COM_WSTR_ECA766B01C05.as_ptr(), &mut iSizeBytes) != 0 {
+        if (*(*this_).m_Parser).GetInt(&cs_w(CPP_COM_WSTR_ECA766B01C05.as_ptr()), &mut iSizeBytes) != 0 {
             *SizeInBytes = iSizeBytes as ULONG;
         } else {
             *SizeInBytes = 0;
@@ -440,13 +447,13 @@ impl CAvailableApplicationInfo {
     pub unsafe fn GetInstallerType__body(&mut self, NestedType: bool) -> InstallerType {
         let this_: *mut Self = self;
         let mut str = CStringW::new();
-        (*(*this_).m_Parser).GetString(DB_INSTALLER, &mut str);
-        if str.CompareNoCase(DB_INSTALLER_GENERATE) == 0 {
+        (*(*this_).m_Parser).GetString(&cs_w(DB_INSTALLER.as_ptr()), &mut str);
+        if str.CompareNoCase(DB_INSTALLER_GENERATE.as_ptr()) == 0 {
             return INSTALLER_GENERATE;
-        } else if str.CompareNoCase(DB_INSTALLER_EXEINZIP) == 0 {
+        } else if str.CompareNoCase(DB_INSTALLER_EXEINZIP.as_ptr()) == 0 {
             if NestedType {
                 let mut nested = CStringW::new();
-                (*(*this_).m_Parser).GetSectionString(DB_EXEINZIPSECTION, DB_INSTALLER, &mut nested);
+                (*(*this_).m_Parser).GetSectionString(DB_EXEINZIPSECTION.as_ptr(), DB_INSTALLER.as_ptr(), &mut nested);
                 let it: InstallerType = GetInstallerTypeFromString(&nested);
                 if it != INSTALLER_UNKNOWN {
                     return it;
@@ -459,7 +466,7 @@ impl CAvailableApplicationInfo {
     pub unsafe fn GetInstallerInfo__body(&mut self, SilentParameters: &mut CStringW) -> InstallerType {
         let this_: *mut Self = self;
         let it: InstallerType = (*this_).GetInstallerType(true);
-        (*(*this_).m_Parser).GetString(DB_SILENTARGS, SilentParameters);
+        (*(*this_).m_Parser).GetString(&cs_w(DB_SILENTARGS.as_ptr()), SilentParameters);
         return it;
     }
     pub unsafe fn UninstallApplication__body(&mut self, Flags: UninstallCommandFlags) -> BOOL {
@@ -484,7 +491,7 @@ impl CInstalledApplicationInfo {
         if nChars > 0 && *Buffer.add((nChars - 1) as usize) == UNICODE_NULL {
             nChars -= 1;
         }
-        String.ReleaseBuffer(nChars as i32);
+        String.ReleaseBufferSetLength(nChars as i32);
 
         if lResult != (ERROR_SUCCESS as i32) {
             String.Empty();
@@ -496,7 +503,7 @@ impl CInstalledApplicationInfo {
             let dwLen: DWORD = ExpandEnvironmentStringsW(String.GetString(), core::ptr::null_mut(), 0);
             if dwLen > 0 {
                 let bSuccess: BOOL = (ExpandEnvironmentStringsW(String.GetString(), Tmp.GetBuffer(dwLen as i32), dwLen) == dwLen) as BOOL;
-                Tmp.ReleaseBuffer((dwLen - 1) as i32);
+                Tmp.ReleaseBufferSetLength((dwLen - 1) as i32);
                 if bSuccess != 0 {
                     *String = Tmp;
                 } else {
@@ -535,11 +542,11 @@ impl CInstalledApplicationInfo {
             ZeroMemory!(core::ptr::addr_of_mut!(InstallLocalTime) as *mut core::ffi::c_void, core::mem::size_of::<SYSTEMTIME>());
             // Check if we have 8 characters to parse the datetime.
             // Maybe other formats exist as well?
-            (*this_).m_szInstallDate = (*this_).m_szInstallDate.Trim();
+            (*this_).m_szInstallDate.Trim();
             if (*this_).m_szInstallDate.GetLength() == 8 {
                 InstallLocalTime.wYear = wcstol((*this_).m_szInstallDate.Left(4).GetString(), core::ptr::null_mut(), 10) as WORD;
-                InstallLocalTime.wMonth = wcstol((*this_).m_szInstallDate.Mid(4, 2).GetString(), core::ptr::null_mut(), 10) as WORD;
-                InstallLocalTime.wDay = wcstol((*this_).m_szInstallDate.Mid(6, 2).GetString(), core::ptr::null_mut(), 10) as WORD;
+                InstallLocalTime.wMonth = wcstol((*this_).m_szInstallDate.Mid__1(4, 2).GetString(), core::ptr::null_mut(), 10) as WORD;
+                InstallLocalTime.wDay = wcstol((*this_).m_szInstallDate.Mid__1(6, 2).GetString(), core::ptr::null_mut(), 10) as WORD;
             }
         }
         // It might be a DWORD (Unix timestamp). try again.
@@ -598,7 +605,7 @@ impl CInstalledApplicationInfo {
         let this_: *mut Self = self;
         (*this_).__base0.__ctor_0(KeyName, Category);
         (*this_).__init_vtables();
-        (*this_).m_hKey = Key;
+        (*this_).m_hKey.__ctor_2(Key);
         (*this_).m_KeyInfo = KeyInfo;
         {
             if (*this_).GetApplicationRegString(CPP_COM_WSTR_B242AF06724D.as_ptr(), &mut (*this_).__base0.szDisplayName) != 0 {
@@ -636,15 +643,15 @@ impl CInstalledApplicationInfo {
         (*RichEdit).__base0.__base2.InsertText__0(CPP_COM_WSTR_075DE2B906DB.as_ptr(), 0);
 
         (*RichEdit).InsertTextWithString(IDS_INFO_VERSION, &(*this_).__base0.szDisplayVersion, 0);
-        (*this_).AddApplicationRegString(RichEdit, IDS_INFO_PUBLISHER, CPP_COM_WSTR_FA2812BAE08A.as_ptr(), 0);
-        (*this_).AddApplicationRegString(RichEdit, IDS_INFO_REGOWNER, CPP_COM_WSTR_5791C8D02050.as_ptr(), 0);
-        (*this_).AddApplicationRegString(RichEdit, IDS_INFO_PRODUCTID, CPP_COM_WSTR_DADEA80AA90C.as_ptr(), 0);
-        (*this_).AddApplicationRegString(RichEdit, IDS_INFO_HELPLINK, CPP_COM_WSTR_64A91C9B1419.as_ptr(), CFM_LINK);
-        (*this_).AddApplicationRegString(RichEdit, IDS_INFO_HELPPHONE, CPP_COM_WSTR_699F16D9775E.as_ptr(), 0);
-        (*this_).AddApplicationRegString(RichEdit, IDS_INFO_README, CPP_COM_WSTR_FB245110A679.as_ptr(), 0);
-        (*this_).AddApplicationRegString(RichEdit, IDS_INFO_CONTACT, CPP_COM_WSTR_669B6BCDE4FD.as_ptr(), 0);
-        (*this_).AddApplicationRegString(RichEdit, IDS_INFO_UPDATEINFO, CPP_COM_WSTR_03B46E091F0A.as_ptr(), CFM_LINK);
-        (*this_).AddApplicationRegString(RichEdit, IDS_INFO_INFOABOUT, CPP_COM_WSTR_1DFDAEEF5CAD.as_ptr(), CFM_LINK);
+        (*this_).AddApplicationRegString(RichEdit, IDS_INFO_PUBLISHER, &cs_w(CPP_COM_WSTR_FA2812BAE08A.as_ptr()), 0);
+        (*this_).AddApplicationRegString(RichEdit, IDS_INFO_REGOWNER, &cs_w(CPP_COM_WSTR_5791C8D02050.as_ptr()), 0);
+        (*this_).AddApplicationRegString(RichEdit, IDS_INFO_PRODUCTID, &cs_w(CPP_COM_WSTR_DADEA80AA90C.as_ptr()), 0);
+        (*this_).AddApplicationRegString(RichEdit, IDS_INFO_HELPLINK, &cs_w(CPP_COM_WSTR_64A91C9B1419.as_ptr()), CFM_LINK);
+        (*this_).AddApplicationRegString(RichEdit, IDS_INFO_HELPPHONE, &cs_w(CPP_COM_WSTR_699F16D9775E.as_ptr()), 0);
+        (*this_).AddApplicationRegString(RichEdit, IDS_INFO_README, &cs_w(CPP_COM_WSTR_FB245110A679.as_ptr()), 0);
+        (*this_).AddApplicationRegString(RichEdit, IDS_INFO_CONTACT, &cs_w(CPP_COM_WSTR_669B6BCDE4FD.as_ptr()), 0);
+        (*this_).AddApplicationRegString(RichEdit, IDS_INFO_UPDATEINFO, &cs_w(CPP_COM_WSTR_03B46E091F0A.as_ptr()), CFM_LINK);
+        (*this_).AddApplicationRegString(RichEdit, IDS_INFO_INFOABOUT, &cs_w(CPP_COM_WSTR_1DFDAEEF5CAD.as_ptr()), CFM_LINK);
         (*RichEdit).InsertTextWithString(IDS_INFO_COMMENTS, &(*this_).__base0.szComments, 0);
 
         if (*this_).m_szInstallDate.IsEmpty() != false {
@@ -652,8 +659,8 @@ impl CInstalledApplicationInfo {
         }
 
         (*RichEdit).InsertTextWithString(IDS_INFO_INSTALLDATE, &(*this_).m_szInstallDate, 0);
-        (*this_).AddApplicationRegString(RichEdit, IDS_INFO_INSTLOCATION, CPP_COM_WSTR_78CC81EE96C2.as_ptr(), 0);
-        (*this_).AddApplicationRegString(RichEdit, IDS_INFO_INSTALLSRC, CPP_COM_WSTR_75422E667C20.as_ptr(), 0);
+        (*this_).AddApplicationRegString(RichEdit, IDS_INFO_INSTLOCATION, &cs_w(CPP_COM_WSTR_78CC81EE96C2.as_ptr()), 0);
+        (*this_).AddApplicationRegString(RichEdit, IDS_INFO_INSTALLSRC, &cs_w(CPP_COM_WSTR_75422E667C20.as_ptr()), 0);
 
         if (*this_).m_szUninstallString.IsEmpty() != false {
             (*this_).RetrieveUninstallStrings();
@@ -668,12 +675,12 @@ impl CInstalledApplicationInfo {
     }
     pub unsafe fn GetDisplayInfo__body(&mut self, License: &mut CStringW, Size: &mut CStringW, UrlSite: &mut CStringW, UrlDownload: &mut CStringW) {
         let this_: *mut Self = self;
-        ASSERT!(((FALSE) != 0) && "Should not be called");
+        ATLASSERT!(false && "Should not be called");
     }
     pub unsafe fn GetInstallerType__body(&mut self, NestedType: bool) -> InstallerType {
         let this_: *mut Self = self;
         let mut reg: CRegKey = CRegKey__make_0();
-        if reg.Open((*this_).m_hKey.op_to_HKEY(), GENERATE_ARPSUBKEY, KEY_READ) == (ERROR_SUCCESS as i32) {
+        if reg.Open((*this_).m_hKey.op_to_HKEY(), GENERATE_ARPSUBKEY.as_ptr(), KEY_READ) == (ERROR_SUCCESS as i32) {
             return INSTALLER_GENERATE;
         }
         return INSTALLER_UNKNOWN;
@@ -681,7 +688,7 @@ impl CInstalledApplicationInfo {
     pub unsafe fn UninstallApplication__body(&mut self, Flags: UninstallCommandFlags) -> BOOL {
         let this_: *mut Self = self;
         if (*this_).GetInstallerType(false) == INSTALLER_GENERATE && (Flags & UCF_SAMEPROCESS) != 0 {
-            return UninstallGenerated(*this_, Flags);
+            return UninstallGenerated(&mut *this_, Flags);
         }
 
         let bModify: BOOL = (Flags & UCF_MODIFY) as BOOL;

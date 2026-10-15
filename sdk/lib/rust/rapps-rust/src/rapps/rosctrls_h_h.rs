@@ -103,7 +103,7 @@ impl CListView {
     }
     pub unsafe fn SortItems(&mut self, pfnCompare: PFNLVCOMPARE, lParam: PVOID) -> BOOL {
         let this_: *mut Self = self;
-        return (*this_).__base0.SendMessageW__0(LVM_SORTITEMS, lParam as WPARAM, pfnCompare as LPARAM) as BOOL;
+        return (*this_).__base0.SendMessageW__0(LVM_SORTITEMS, lParam as WPARAM, pfnCompare.map_or(0usize, |f| f as usize) as LPARAM) as BOOL;
     }
     pub unsafe fn GetSelectionMark(&mut self) -> i32 {
         let this_: *mut Self = self;
@@ -197,7 +197,7 @@ impl CStatusBar {
     pub unsafe fn Create(&mut self, hwndParent: HWND, hMenu: HMENU) -> HWND {
         let this_: *mut Self = self;
         (*this_).__base0.m_hWnd = CreateWindowExW(0,
-            STATUSCLASSNAMEW,
+            STATUSCLASSNAMEW.as_ptr(),
             core::ptr::null_mut(),
             WS_CHILD | WS_VISIBLE | SBARS_SIZEGRIP,
             0, 0, 0, 0,
@@ -215,14 +215,14 @@ impl CStatusBar {
 }
 
 impl CTreeView {
-    pub unsafe fn Create(&mut self, hwndParent: HWND, dwStyles: DWORD) -> HWND {
+    pub unsafe fn Create(&mut self, hwndParent: HWND, mut dwStyles: DWORD) -> HWND {
         let this_: *mut Self = self;
         if dwStyles == 0 {
             dwStyles = WS_CHILD | WS_VISIBLE | TVS_HASLINES | TVS_SHOWSELALWAYS;
         }
 
         (*this_).__base0.m_hWnd = CreateWindowExW(WS_EX_CLIENTEDGE,
-            WC_TREEVIEWW,
+            WC_TREEVIEWW.as_ptr(),
             CPP_COM_WSTR_96A296D224F2.as_ptr(),
             dwStyles,
             0, 28, 200, 350,

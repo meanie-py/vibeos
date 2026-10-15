@@ -124,6 +124,15 @@ pub static mut g_AsyncIconTaskId: UINT = 0;
 
 
 
+/// winnt.h `InterlockedIncrement64` (an intrinsic, so win32macros_rust only carries the 32-bit forms):
+/// atomically adds one and returns the NEW value. `lock cmpxchg8b`/`lock xadd` need no alignment for
+/// correctness on x86, which is all the i386 `LONGLONG` member can promise.
+#[inline]
+unsafe fn InterlockedIncrement64(addend: *mut LONGLONG) -> LONGLONG {
+    let atomic = &*(addend as *const core::sync::atomic::AtomicI64);
+    atomic.fetch_add(1, core::sync::atomic::Ordering::SeqCst).wrapping_add(1)
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn DeleteMenuEx(hMenu: HMENU, uPosition: UINT, uFlags: UINT) -> BOOL {
     let mut pos: INT;
@@ -235,7 +244,7 @@ unsafe extern "system" fn AsyncLoadIconProc(Param: LPVOID) -> DWORD {
                 ) as HICON;
             } else if ExtractIconExW(
                 (*task).Location.as_ptr(),
-                PathParseIconLocationW((*task).Location.as_ptr()),
+                PathParseIconLocationW((*task).Location.as_mut_ptr()),
                 phBigIcon,
                 phSmallIcon,
                 1,
@@ -323,7 +332,7 @@ impl CAppScrnshotPreview {
                                     SendMessageW(GetParent((*this_).__base0.m_hWnd), WM_RAPPS_RESIZE_CHILDREN, 0, 0);
                                     (*this_).__base0.InvalidateRect(core::ptr::null(), 0);
                                     (*this_).TempImagePath =
-                                        (*DownloadParam).DownloadFileName; // record tmp file path in order to delete it when cleanup
+                                        (*DownloadParam).DownloadFileName.clone(); // record tmp file path in order to delete it when cleanup
                                 } else {
                                     // the picture downloaded is already outdated. delete it.
                                     DeleteFileW((*DownloadParam).DownloadFileName.GetString());
@@ -359,7 +368,7 @@ impl CAppScrnshotPreview {
                     break 'switch;
                 }
                 WM_PRINTCLIENT => {
-                    if (lParam & PRF_CHECKVISIBLE) != 0 {
+                    if (lParam & PRF_CHECKVISIBLE as LPARAM) != 0 {
                         if (((*this_).__base0.IsWindowVisible()) == 0) {
                             break 'switch;
                         }
@@ -367,7 +376,7 @@ impl CAppScrnshotPreview {
                     let mut rect: CRect = CRect__make_0();
                     (*this_).__base0.GetClientRect(core::ptr::addr_of_mut!(rect.__base0));
 
-                    (*this_).PaintOnDC(wParam as HDC, rect.Width(), rect.Height(), (lParam & PRF_ERASEBKGND) as BOOL);
+                    (*this_).PaintOnDC(wParam as HDC, rect.Width(), rect.Height(), (lParam & PRF_ERASEBKGND as LPARAM) as BOOL);
                     break 'switch;
                 }
                 WM_ERASEBKGND => {
@@ -410,7 +419,7 @@ impl CAppScrnshotPreview {
         }
         (*this_).LoadingAnimationFrame = 0;
         (*this_).bLoadingTimerOn = (TRUE as i32);
-        (*this_).__base0.SetTimer(TIMER_LOADING_ANIMATION, 1000 / LOADING_ANIMATION_FPS, 0);
+        (*this_).__base0.SetTimer(TIMER_LOADING_ANIMATION as UINT_PTR, 1000 / LOADING_ANIMATION_FPS, None);
     }
     pub unsafe fn DisplayFailed(&mut self) {
         let this_: *mut Self = self;
@@ -457,32 +466,33 @@ impl CAppScrnshotPreview {
                 let mut dotBrush: SolidBrush = SolidBrush__zeroed();
                 dotBrush.__ctor_0(&(Color__make_3(255, 100, 100, 100)));
 
-                graphics.SetSmoothingMode(SmoothingMode::SmoothingModeAntiAlias);
+                graphics.SetSmoothingMode(SmoothingModeAntiAlias);
 
                 // Paint three dot
                 let DotWidth: f32 = (*this_).GetLoadingDotWidth(width, height);
+                // C++ evaluates these in double (the literals are double) and narrows to REAL at the call
                 graphics.FillEllipse__1(
                     core::ptr::addr_of!(dotBrush.__base0) as *const Brush,
-                    (width as REAL) / 2.0 - (min!(width, height) as REAL) * 2.0 / 16.0 - DotWidth / 2.0,
-                    (height as REAL) / 2.0
-                        - (*this_).GetFrameDotShift((*this_).LoadingAnimationFrame + (LOADING_ANIMATION_FPS / 4) as i32, width, height) - DotWidth / 2.0,
+                    ((width as REAL) as f64 / 2.0 - (min!(width, height) as f64) * 2.0 / 16.0 - (DotWidth as f64) / 2.0) as REAL,
+                    ((height as REAL) as f64 / 2.0
+                        - ((*this_).GetFrameDotShift((*this_).LoadingAnimationFrame + (LOADING_ANIMATION_FPS / 4) as i32, width, height) as f64) - (DotWidth as f64) / 2.0) as REAL,
                     DotWidth,
                     DotWidth,
                 );
 
                 graphics.FillEllipse__1(
                     core::ptr::addr_of!(dotBrush.__base0) as *const Brush,
-                    (width as REAL) / 2.0 - DotWidth / 2.0,
-                    (height as REAL) / 2.0 - (*this_).GetFrameDotShift((*this_).LoadingAnimationFrame, width, height) - DotWidth / 2.0,
+                    ((width as REAL) as f64 / 2.0 - (DotWidth as f64) / 2.0) as REAL,
+                    ((height as REAL) as f64 / 2.0 - ((*this_).GetFrameDotShift((*this_).LoadingAnimationFrame, width, height) as f64) - (DotWidth as f64) / 2.0) as REAL,
                     DotWidth,
                     DotWidth,
                 );
 
                 graphics.FillEllipse__1(
                     core::ptr::addr_of!(dotBrush.__base0) as *const Brush,
-                    (width as REAL) / 2.0 + (min!(width, height) as REAL) * 2.0 / 16.0 - DotWidth / 2.0,
-                    (height as REAL) / 2.0
-                        - (*this_).GetFrameDotShift((*this_).LoadingAnimationFrame - (LOADING_ANIMATION_FPS / 4) as i32, width, height) - DotWidth / 2.0,
+                    ((width as REAL) as f64 / 2.0 + (min!(width, height) as f64) * 2.0 / 16.0 - (DotWidth as f64) / 2.0) as REAL,
+                    ((height as REAL) as f64 / 2.0
+                        - ((*this_).GetFrameDotShift((*this_).LoadingAnimationFrame - (LOADING_ANIMATION_FPS / 4) as i32, width, height) as f64) - (DotWidth as f64) / 2.0) as REAL,
                     DotWidth,
                     DotWidth,
                 );
@@ -517,7 +527,7 @@ impl CAppScrnshotPreview {
                     (*this_).hBrokenImgIcon,
                     (*this_).BrokenImgSize,
                     (*this_).BrokenImgSize,
-                    core::ptr::null_mut(),
+                    0,
                     core::ptr::null_mut(),
                     DI_NORMAL | DI_COMPAT,
                 );
@@ -538,33 +548,42 @@ impl CAppScrnshotPreview {
     }
     pub unsafe fn GetFrameDotShift(&mut self, Frame: i32, width: i32, height: i32) -> f32 {
         let this_: *mut Self = self;
-        return (min!(width, height) as f64 * (1.0 / 16.0) * (2.0 / (2.0 - sqrt(3.0))) * (max!(sin(((Frame as f32) * 2.0 * PI / (LOADING_ANIMATION_PERIOD as f32 * LOADING_ANIMATION_FPS)) as f64), sqrt(3.0) / 2.0) - sqrt(3.0) / 2.0)) as f32;
+        // min(int,int) * double ... : the whole expression is double, truncated to float on return
+        let Angle: f64 = ((Frame as f32) * 2.0) as f64 * PI / ((LOADING_ANIMATION_PERIOD * LOADING_ANIMATION_FPS) as f64);
+        return (min!(width, height) as f64 * (1.0 / 16.0) * (2.0 / (2.0 - sqrt(3.0))) * (max!(sin(Angle), sqrt(3.0) / 2.0) - sqrt(3.0) / 2.0)) as f32;
     }
     pub unsafe fn GetWndClassInfo() -> *mut CWndClassInfo {
-        let csStyle: DWORD = CS_VREDRAW | CS_HREDRAW;
+        // A C++ function-local `static` is initialised once; re-running the initializer per call would reset
+        // m_atom to 0 and re-register the class.
         static mut wc: CWndClassInfo = unsafe { core::mem::zeroed() };
-        wc = CWndClassInfo {
-            m_wc: WNDCLASSEXW {
-                cbSize: core::mem::size_of::<WNDCLASSEX>() as UINT,
-                style: csStyle,
-                lpfnWndProc: StartWindowProc,
-                cbClsExtra: 0,
-                cbWndExtra: 0,
-                hInstance: core::ptr::null_mut(),
-                hIcon: core::ptr::null_mut(),
-                hCursor: LoadCursorW(core::ptr::null_mut(), IDC_ARROW),
-                hbrBackground: (COLOR_BTNFACE + 1) as HBRUSH,
-                lpszMenuName: core::ptr::null(),
-                lpszClassName: CPP_COM_WSTR_DE9FCDB32E36.as_ptr(),
-                hIconSm: core::ptr::null_mut(),
-            },
-            m_lpszOrigName: core::ptr::null_mut(),
-            pWndProc: None,
-            m_lpszCursorID: IDC_ARROW,
-            m_bSystemCursor: (TRUE as i32),
-            m_atom: 0,
-            m_szAutoName: CPP_COM_WSTR_96A296D224F2.as_ptr(),
-        };
+        static mut wc_inited: bool = false;
+        if !wc_inited {
+            let csStyle: DWORD = CS_VREDRAW | CS_HREDRAW;
+            wc = CWndClassInfo {
+                // the island spells m_wc as WNDCLASSEXA; the A/W layouts are identical
+                m_wc: core::mem::transmute(WNDCLASSEXW {
+                    cbSize: core::mem::size_of::<WNDCLASSEX>() as UINT,
+                    style: csStyle,
+                    lpfnWndProc: Some(core::mem::transmute::<unsafe extern "system" fn(HWND, UINT, WPARAM, LPARAM) -> LRESULT, _>(StartWindowProc)),
+                    cbClsExtra: 0,
+                    cbWndExtra: 0,
+                    hInstance: core::ptr::null_mut(),
+                    hIcon: core::ptr::null_mut(),
+                    hCursor: LoadCursorW(core::ptr::null_mut(), IDC_ARROW),
+                    hbrBackground: (COLOR_BTNFACE + 1) as usize as HBRUSH,
+                    lpszMenuName: core::ptr::null(),
+                    lpszClassName: CPP_COM_WSTR_DE9FCDB32E36.as_ptr(),
+                    hIconSm: core::ptr::null_mut(),
+                }),
+                m_lpszOrigName: core::ptr::null(),
+                pWndProc: None,
+                m_lpszCursorID: IDC_ARROW,
+                m_bSystemCursor: (TRUE as i32),
+                m_atom: 0,
+                m_szAutoName: core::mem::zeroed(), // _T("") -- array length is 5 + 2*sizeof(void*), per arch
+            };
+            wc_inited = true;
+        }
         return core::ptr::addr_of_mut!(wc);
     }
     pub unsafe fn Create(&mut self, hParent: HWND) -> HWND {
@@ -606,7 +625,7 @@ impl CAppScrnshotPreview {
         if PathIsURLW(lpszLocation) != 0 {
             (*this_).DisplayLoading();
 
-            let DownloadParam: *mut ScrnshotDownloadParam = cpp_new::<ScrnshotDownloadParam>();
+            let DownloadParam: *mut ScrnshotDownloadParam = __ScrnshotDownloadParam__new_0();
             if DownloadParam.is_null() {
                 return (FALSE) as BOOL;
             }
@@ -686,17 +705,13 @@ impl CAppScrnshotPreview {
                 if !(*this_).pImage.is_null() {
                     // return the width needed to display image inside the window.
                     // and always keep window w/h ratio inside [ 1/SCRNSHOT_MAX_ASPECT_RAT, SCRNSHOT_MAX_ASPECT_RAT ]
-                    return floor(
-                        (Height as f32)
-                            * max!(
-                                min!(
-                                    ((*(*this_).pImage).GetWidth() as f32)
-                                        / ((*(*this_).pImage).GetHeight() as f32),
-                                    (SCRNSHOT_MAX_ASPECT_RAT as f32),
-                                ),
-                                1.0f32 / (SCRNSHOT_MAX_ASPECT_RAT as f32),
-                            ),
-                    ) as i32;
+                    // C++ `max(float, 1.0 / (float)RAT)` promotes to double, so the product and floor() are double
+                    let MinRatio: f32 = min!(
+                        ((*(*this_).pImage).GetWidth() as f32) / ((*(*this_).pImage).GetHeight() as f32),
+                        (SCRNSHOT_MAX_ASPECT_RAT as f32),
+                    );
+                    let Ratio: f64 = max!(MinRatio as f64, 1.0 / ((SCRNSHOT_MAX_ASPECT_RAT as f32) as f64));
+                    return floor(((Height as f32) as f64) * Ratio) as i32;
                 }
                 return 0;
             }
@@ -737,7 +752,7 @@ impl CAppInfoDisplay {
         match message {
             WM_CREATE => {
                 (*this_).RichEdit = CAppRichEdit__new_0();
-                (*(*(*this_).RichEdit).__base0.__base2).Create(hwnd);
+                (*(*this_).RichEdit).__base0.__base2.Create(hwnd);
 
                 let mut Directory: CStringW = CStringW::new();
                 GetStorageDirectory(&mut Directory);
@@ -755,7 +770,7 @@ impl CAppInfoDisplay {
             }
             WM_NOTIFY => {
                 let NotifyHeader: *mut NMHDR = lParam as *mut NMHDR;
-                if (*NotifyHeader).hwndFrom == (*(*(*this_).RichEdit).__base0.__base2.__base0).m_hWnd {
+                if (*NotifyHeader).hwndFrom == ((*(*this_).RichEdit).__base0.__base2.__base0.m_hWnd).cast() {
                     match (*NotifyHeader).code {
                         EN_LINK => {
                             (*this_).OnLink(lParam as *mut ENLINK);
@@ -765,7 +780,7 @@ impl CAppInfoDisplay {
                 }
             }
             WM_SYSCOLORCHANGE => {
-                (*(*(*this_).RichEdit).__base0.__base2.__base0).SendMessageW__0(EM_SETBKGNDCOLOR, 0, GetSysColor((COLOR_BTNFACE as i32)));
+                (*(*this_).RichEdit).__base0.__base2.__base0.SendMessageW__0(EM_SETBKGNDCOLOR, 0, GetSysColor((COLOR_BTNFACE as i32)) as LPARAM);
             }
             _ => {}
         }
@@ -845,31 +860,37 @@ impl CAppInfoDisplay {
         (*this_).__base0.__base2.UpdateWindow();
     }
     pub unsafe fn GetWndClassInfo() -> &'static mut CWndClassInfo {
-        const csStyle: DWORD = CS_VREDRAW | CS_HREDRAW;
-        static mut wc: CWndClassInfo = CWndClassInfo {
-            m_wc: WNDCLASSEXW {
-                cbSize: core::mem::size_of::<WNDCLASSEX>() as UINT,
-                style: csStyle,
-                lpfnWndProc: StartWindowProc,
-                cbClsExtra: 0,
-                cbWndExtra: 0,
-                hInstance: core::ptr::null_mut(),
-                hIcon: core::ptr::null_mut(),
-                hCursor: core::ptr::null_mut(),
-                hbrBackground: core::ptr::without_provenance_mut::<core::ffi::c_void>(
-                    (COLOR_BTNFACE + 1) as usize,
-                ) as HBRUSH,
-                lpszMenuName: core::ptr::null_mut(),
-                lpszClassName: CPP_COM_WSTR_BE3990BCF6A7.as_ptr(),
-                hIconSm: core::ptr::null_mut(),
-            },
-            m_lpszOrigName: core::ptr::null_mut(),
-            pWndProc: None,
-            m_lpszCursorID: IDC_ARROW,
-            m_bSystemCursor: (TRUE as i32),
-            m_atom: 0,
-            m_szAutoName: CPP_COM_WSTR_96A296D224F2.as_ptr(),
-        };
+        // A C++ function-local `static` is initialised once; re-running the initializer per call would reset
+        // m_atom to 0 and re-register the class.
+        static mut wc: CWndClassInfo = unsafe { core::mem::zeroed() };
+        static mut wc_inited: bool = false;
+        if !wc_inited {
+            let csStyle: DWORD = CS_VREDRAW | CS_HREDRAW;
+            wc = CWndClassInfo {
+                // the island spells m_wc as WNDCLASSEXA; the A/W layouts are identical
+                m_wc: core::mem::transmute(WNDCLASSEXW {
+                    cbSize: core::mem::size_of::<WNDCLASSEX>() as UINT,
+                    style: csStyle,
+                    lpfnWndProc: Some(core::mem::transmute::<unsafe extern "system" fn(HWND, UINT, WPARAM, LPARAM) -> LRESULT, _>(StartWindowProc)),
+                    cbClsExtra: 0,
+                    cbWndExtra: 0,
+                    hInstance: core::ptr::null_mut(),
+                    hIcon: core::ptr::null_mut(),
+                    hCursor: core::ptr::null_mut(),
+                    hbrBackground: (COLOR_BTNFACE + 1) as usize as HBRUSH,
+                    lpszMenuName: core::ptr::null(),
+                    lpszClassName: CPP_COM_WSTR_BE3990BCF6A7.as_ptr(),
+                    hIconSm: core::ptr::null_mut(),
+                }),
+                m_lpszOrigName: core::ptr::null(),
+                pWndProc: None,
+                m_lpszCursorID: IDC_ARROW,
+                m_bSystemCursor: (TRUE as i32),
+                m_atom: 0,
+                m_szAutoName: core::mem::zeroed(), // _T("") -- array length is 5 + 2*sizeof(void*), per arch
+            };
+            wc_inited = true;
+        }
         return &mut *core::ptr::addr_of_mut!(wc);
     }
     pub unsafe fn Create(&mut self, hwndParent: HWND) -> HWND {
@@ -961,7 +982,7 @@ impl CAppsListView {
         if !(*this_).m_Watermark.IsEmpty() {
             let mut rc: RECT = core::mem::zeroed();
             (*this_).__base0.__base2.__base0.GetClientRect(core::ptr::addr_of_mut!(rc));
-            let oldFont: HGDIOBJ = SelectFont!(wParam as HDC, GetStockFont!(DEFAULT_GUI_FONT));
+            let oldFont: HGDIOBJ = SelectFont!(wParam as HDC, GetStockFont!(DEFAULT_GUI_FONT)) as HGDIOBJ;
             DrawShadowText(
                 wParam as HDC, (*this_).m_Watermark.GetString(), ((*this_).m_Watermark.GetLength()) as UINT, core::ptr::addr_of_mut!(rc),
                 DT_CENTER | DT_VCENTER | DT_NOPREFIX | DT_SINGLELINE, GetSysColor((COLOR_GRAYTEXT as i32)),
@@ -1034,7 +1055,7 @@ impl CAppsListView {
         let mut hColumn: HDITEMW = core::mem::zeroed();
         let mut nHeaderID: INT = (*pnmv).iSubItem;
 
-        if ((*this_).__base0.__base2.__base0.GetWindowLongPtr(GWL_STYLE) & (!LVS_NOSORTHEADER) as _) == 0 {
+        if ((*this_).__base0.__base2.__base0.GetWindowLongPtr(GWL_STYLE as i32) & ((!LVS_NOSORTHEADER) as LONG_PTR)) == 0 {
             return;
         }
 
@@ -1149,11 +1170,11 @@ impl CAppsListView {
 
         let hwnd: HWND = (*this_).__base0.__base2.Create(
             hwndParent,
-            r,
+            ATL__U_RECT { m_lpRect: core::ptr::addr_of_mut!(r) },
             core::ptr::null(),
             style,
             WS_EX_CLIENTEDGE,
-            0,
+            ATL__U_MENUorID { m_hMenu: core::ptr::null_mut() },
             core::ptr::null_mut(),
         );
 
@@ -1300,7 +1321,7 @@ impl CAppsListView {
             if Index == -1 {
                 return (FALSE) as BOOL;
             }
-            CAsyncLoadIcon::Queue((*this_).__base0.__base2.__base0.m_hWnd, *AppInfo, true);
+            CAsyncLoadIcon::Queue((*this_).__base0.__base2.__base0.m_hWnd, &mut *AppInfo, true);
 
             (*this_).__base0.__base2.SetItemText(Index, 1, if (*AppInfo).szDisplayVersion.IsEmpty() { CPP_COM_WSTR_D4C31F2B2950.as_ptr() } else { (*AppInfo).szDisplayVersion.GetString() });
             (*this_).__base0.__base2.SetItemText(Index, 2, if (*AppInfo).szComments.IsEmpty() { CPP_COM_WSTR_D4C31F2B2950.as_ptr() } else { (*AppInfo).szComments.GetString() });
@@ -1312,7 +1333,7 @@ impl CAppsListView {
             if Index == -1 {
                 return (FALSE) as BOOL;
             }
-            CAsyncLoadIcon::Queue((*this_).__base0.__base2.__base0.m_hWnd, *AppInfo, false);
+            CAsyncLoadIcon::Queue((*this_).__base0.__base2.__base0.m_hWnd, &mut *AppInfo, false);
 
             if InitialCheckState != 0 {
                 (*this_).SetCheckState(Index, (TRUE as i32));
@@ -1441,7 +1462,7 @@ impl CMainToolbar {
                 idCommand: (ID_INSTALL as i32),
                 fsState: (TBSTATE_ENABLED as u8),
                 fsStyle: (BTNS_BUTTON | BTNS_AUTOSIZE) as u8,
-                bReserved: [0],
+                bReserved: core::mem::zeroed(),
                 dwData: 0,
                 iString: szInstallBtn.GetString() as INT_PTR,
             },
@@ -1450,7 +1471,7 @@ impl CMainToolbar {
                 idCommand: (ID_UNINSTALL as i32),
                 fsState: (TBSTATE_ENABLED as u8),
                 fsStyle: (BTNS_BUTTON | BTNS_AUTOSIZE) as u8,
-                bReserved: [0],
+                bReserved: core::mem::zeroed(),
                 dwData: 0,
                 iString: szUninstallBtn.GetString() as INT_PTR,
             },
@@ -1459,7 +1480,7 @@ impl CMainToolbar {
                 idCommand: (ID_MODIFY as i32),
                 fsState: (TBSTATE_ENABLED as u8),
                 fsStyle: (BTNS_BUTTON | BTNS_AUTOSIZE) as u8,
-                bReserved: [0],
+                bReserved: core::mem::zeroed(),
                 dwData: 0,
                 iString: szModifyBtn.GetString() as INT_PTR,
             },
@@ -1468,7 +1489,7 @@ impl CMainToolbar {
                 idCommand: (ID_CHECK_ALL as i32),
                 fsState: (TBSTATE_ENABLED as u8),
                 fsStyle: (BTNS_BUTTON | BTNS_AUTOSIZE) as u8,
-                bReserved: [0],
+                bReserved: core::mem::zeroed(),
                 dwData: 0,
                 iString: szSelectAllBtn.GetString() as INT_PTR,
             },
@@ -1477,7 +1498,7 @@ impl CMainToolbar {
                 idCommand: 0,
                 fsState: (TBSTATE_ENABLED as u8),
                 fsStyle: (BTNS_SEP as u8),
-                bReserved: [0],
+                bReserved: core::mem::zeroed(),
                 dwData: 0,
                 iString: 0,
             },
@@ -1486,7 +1507,7 @@ impl CMainToolbar {
                 idCommand: (ID_REFRESH as i32),
                 fsState: (TBSTATE_ENABLED as u8),
                 fsStyle: (BTNS_BUTTON | BTNS_AUTOSIZE) as u8,
-                bReserved: [0],
+                bReserved: core::mem::zeroed(),
                 dwData: 0,
                 iString: szRefreshBtn.GetString() as INT_PTR,
             },
@@ -1495,7 +1516,7 @@ impl CMainToolbar {
                 idCommand: (ID_RESETDB as i32),
                 fsState: (TBSTATE_ENABLED as u8),
                 fsStyle: (BTNS_BUTTON | BTNS_AUTOSIZE) as u8,
-                bReserved: [0],
+                bReserved: core::mem::zeroed(),
                 dwData: 0,
                 iString: szUpdateDbBtn.GetString() as INT_PTR,
             },
@@ -1503,7 +1524,7 @@ impl CMainToolbar {
 
         (*this_).__base0.__base2.__base0.m_hWnd = CreateWindowExW(
             0,
-            TOOLBARCLASSNAMEW,
+            TOOLBARCLASSNAMEW.as_ptr(),
             core::ptr::null_mut(),
             WS_CHILD | WS_VISIBLE | TBSTYLE_FLAT | TBSTYLE_TOOLTIPS | TBSTYLE_LIST,
             0,
@@ -1681,7 +1702,7 @@ impl CApplicationView {
                 let mut rTop: RECT = core::mem::zeroed();
 
                 GetWindowRect((*(*this_).m_Toolbar).__base0.__base2.__base0.m_hWnd, core::ptr::addr_of_mut!(rTop));
-                (*(*this_).m_HSplitter).__base1.m_Margin.top = rTop.bottom - rTop.top;
+                (*(*this_).m_HSplitter).__base1.m_Margin.__base0.__base0.top = rTop.bottom - rTop.top;
                 if bSuccess == 0 {
                     return -1; // creation failure
                 }
@@ -1705,7 +1726,7 @@ impl CApplicationView {
                                 /* Check if the focus has been moved to another item */
                                 if ((*pnic).uChanged & LVIF_STATE) != 0
                                     && ((*pnic).uNewState & LVIS_FOCUSED) != 0
-                                    && !((*pnic).uOldState & LVIS_FOCUSED) != 0
+                                    && ((*pnic).uOldState & LVIS_FOCUSED) == 0
                                 {
                                     (*this_).ItemGetFocus((*pnic).lParam as usize as LPVOID);
                                 }
@@ -1755,7 +1776,7 @@ impl CApplicationView {
                             _ => {}
                         }
                     }
-                } else if pNotifyHeader_is_toolbar(pNotifyHeader, this_) {
+                } else if (*pNotifyHeader).hwndFrom == ((*(*this_).m_Toolbar).__base0.GetWindow()).cast() {
                     'inner2: {
                         match (*pNotifyHeader).code {
                             TTN_GETDISPINFO => {
@@ -1819,22 +1840,22 @@ impl CApplicationView {
     }
     pub unsafe fn CreateSearchBar(&mut self) -> BOOL {
         let this_: *mut Self = self;
-        (*this_).m_SearchBar = CUiWindow_CSearchBar__new_0::<CSearchBar>();
+        (*this_).m_SearchBar = CUiWindow_CSearchBar__new_0();
         (*(*this_).m_SearchBar).__base1.m_VerticalAlignment = UiAlign_LeftTop;
         (*(*this_).m_SearchBar).__base1.m_HorizontalAlignment = UiAlign_RightBtm;
-        (*(*this_).m_SearchBar).__base1.m_Margin.top = 4;
-        (*(*this_).m_SearchBar).__base1.m_Margin.right = (TOOLBAR_PADDING as i32);
+        (*(*this_).m_SearchBar).__base1.m_Margin.__base0.__base0.top = 4;
+        (*(*this_).m_SearchBar).__base1.m_Margin.__base0.__base0.right = (TOOLBAR_PADDING as i32);
 
         return ((*(*this_).m_SearchBar).__base2.Create((*(*this_).m_Toolbar).__base0.__base2.__base0.m_hWnd) != core::ptr::null_mut()) as BOOL;
     }
     pub unsafe fn CreateComboBox(&mut self) -> BOOL {
         let this_: *mut Self = self;
-        (*this_).m_ComboBox = CUiWindow_CComboBox__new_0::<CComboBox>();
+        (*this_).m_ComboBox = CUiWindow_CComboBox__new_0();
         (*(*this_).m_ComboBox).__base1.m_VerticalAlignment = UiAlign_LeftTop;
         (*(*this_).m_ComboBox).__base1.m_HorizontalAlignment = UiAlign_RightBtm;
-        (*(*this_).m_ComboBox).__base1.m_Margin.top = 4;
+        (*(*this_).m_ComboBox).__base1.m_Margin.__base0.__base0.top = 4;
 
-        ((*(*this_).m_ComboBox).__base2.Create((*(*(*this_).m_Toolbar).__base0.__base2.__base0).m_hWnd) != core::ptr::null_mut()) as BOOL
+        ((*(*this_).m_ComboBox).__base2.Create((*(*this_).m_Toolbar).__base0.__base2.__base0.m_hWnd) != core::ptr::null_mut()) as BOOL
     }
     pub unsafe fn CreateHSplitter(&mut self) -> BOOL {
         let this_: *mut Self = self;
@@ -1853,8 +1874,8 @@ impl CApplicationView {
     pub unsafe fn CreateListView(&mut self) -> BOOL {
         let this_: *mut Self = self;
         (*this_).m_ListView = CAppsListView__new_0();
-        (*(*(*this_).m_ListView).__base0.__base1).m_VerticalAlignment = UiAlign_Stretch;
-        (*(*(*this_).m_ListView).__base0.__base1).m_HorizontalAlignment = UiAlign_Stretch;
+        (*(*this_).m_ListView).__base0.__base1.m_VerticalAlignment = UiAlign_Stretch;
+        (*(*this_).m_ListView).__base0.__base1.m_HorizontalAlignment = UiAlign_Stretch;
         (*(*this_).m_HSplitter).First().__base0.Append(core::ptr::addr_of_mut!((*(*this_).m_ListView).__base0.__base0));
 
         return ((*(*this_).m_ListView).Create((*this_).__base0.__base2.m_hWnd) != core::ptr::null_mut()) as BOOL;
@@ -1916,8 +1937,8 @@ impl CApplicationView {
             }
         }
 
-        (*(*this_).m_ComboBox).__base1.m_Margin.right = (*(*this_).m_SearchBar).__base2.m_Width
-            + (*(*this_).m_SearchBar).__base1.m_Margin.right
+        (*(*this_).m_ComboBox).__base1.m_Margin.__base0.__base0.right = (*(*this_).m_SearchBar).__base2.m_Width
+            + (*(*this_).m_SearchBar).__base1.m_Margin.__base0.__base0.right
             + (TOOLBAR_PADDING as i32);
         count = ((*(*this_).m_ComboBox).CountSizableChildren()) as i32;
         hdwp = BeginDeferWindowPos(count);
@@ -1957,9 +1978,9 @@ impl CApplicationView {
                         (*(*this_).m_SearchBar).GetWindowTextW(&mut szWndText);
                         if szBuf.Compare(szWndText.GetString()) == 0 {
                             szWndText = CStringW::from_ptr(CPP_COM_WSTR_96A296D224F2.as_ptr());
-                            (*(*this_).m_MainWindow).SearchTextChanged(&szWndText);
+                            (*(*this_).m_MainWindow).SearchTextChanged(&mut szWndText);
                         } else {
-                            (*(*this_).m_MainWindow).SearchTextChanged(&szWndText);
+                            (*(*this_).m_MainWindow).SearchTextChanged(&mut szWndText);
                         }
                     }
                     _ => {}
@@ -2055,37 +2076,37 @@ impl CApplicationView {
         CUiSplitPanel__delete((*this_).m_HSplitter);
     }
     pub unsafe fn GetWndClassInfo() -> *mut CWndClassInfo {
-        let csStyle: DWORD = CS_VREDRAW | CS_HREDRAW;
+        // A C++ function-local `static` is initialised once; re-running the initializer per call would reset
+        // m_atom to 0 and re-register the class.
         static mut wc: CWndClassInfo = unsafe { core::mem::zeroed() };
         static mut wc_inited: bool = false;
         if !wc_inited {
+            let csStyle: DWORD = CS_VREDRAW | CS_HREDRAW;
             wc = CWndClassInfo {
-                m_wc: WNDCLASSEX {
+                // the island spells m_wc as WNDCLASSEXA; the A/W layouts are identical
+                m_wc: core::mem::transmute(WNDCLASSEXW {
                     cbSize: core::mem::size_of::<WNDCLASSEX>() as UINT,
-                    style: CS_VREDRAW | CS_HREDRAW,
-                    lpfnWndProc: Some(StartWindowProc),
+                    style: csStyle,
+                    lpfnWndProc: Some(core::mem::transmute::<unsafe extern "system" fn(HWND, UINT, WPARAM, LPARAM) -> LRESULT, _>(StartWindowProc)),
                     cbClsExtra: 0,
                     cbWndExtra: 0,
                     hInstance: core::ptr::null_mut(),
                     hIcon: core::ptr::null_mut(),
                     hCursor: core::ptr::null_mut(),
-                    hbrBackground: core::ptr::null_mut(),
+                    hbrBackground: (COLOR_BTNFACE + 1) as usize as HBRUSH,
                     lpszMenuName: core::ptr::null(),
                     lpszClassName: CPP_COM_WSTR_7AFA86ACD8E9.as_ptr(),
                     hIconSm: core::ptr::null_mut(),
-                },
+                }),
                 m_lpszOrigName: core::ptr::null(),
                 pWndProc: None,
                 m_lpszCursorID: IDC_ARROW,
                 m_bSystemCursor: (TRUE as i32),
                 m_atom: 0,
-                m_szAutoName: CPP_COM_WSTR_96A296D224F2.as_ptr(),
+                m_szAutoName: core::mem::zeroed(), // _T("") -- array length is 5 + 2*sizeof(void*), per arch
             };
-            // hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1); integer-to-pointer cast is not const-evaluable, so set at runtime.
-            wc.m_wc.hbrBackground = (COLOR_BTNFACE + 1) as usize as HBRUSH;
             wc_inited = true;
         }
-        let _ = csStyle;
         return core::ptr::addr_of_mut!(wc);
     }
     pub unsafe fn Create(&mut self, hwndParent: HWND) -> HWND {
@@ -2095,7 +2116,7 @@ impl CApplicationView {
         // Pick the "Programs" sub-menu for building the context menu.
         let hMenu: HMENU = GetSubMenu((*(*this_).m_MainWindow).__base0.GetMenu(), 1);
 
-        return (*this_).CWindowImpl_Create(hwndParent, &mut r, CPP_COM_WSTR_96A296D224F2.as_ptr(), WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS, 0, hMenu, );
+        return (*this_).CWindowImpl_Create(hwndParent, &mut r, CPP_COM_WSTR_96A296D224F2.as_ptr(), WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS, 0, hMenu as usize as UINT);
     }
     pub unsafe fn SetRedraw(&mut self, bRedraw: BOOL) {
         let this_: *mut Self = self;
@@ -2282,8 +2303,8 @@ impl CAsyncLoadIcon {
         if AppInfo.RetrieveIcon(&mut szIconPath) == 0 {
             return core::ptr::null_mut();
         }
-        let cbstr: SIZE_T = ((szIconPath.GetLength() + 1) as SIZE_T) * (core::mem::size_of::<WCHAR>()) as _;
-        let task: *mut CAsyncLoadIcon = malloc(core::mem::size_of::<CAsyncLoadIcon>() + (cbstr) as _) as *mut CAsyncLoadIcon;
+        let cbstr: SIZE_T = ((szIconPath.GetLength() + 1) as SIZE_T) * (core::mem::size_of::<WCHAR>() as SIZE_T);
+        let task: *mut CAsyncLoadIcon = malloc(core::mem::size_of::<CAsyncLoadIcon>() + cbstr as usize) as *mut CAsyncLoadIcon;
         if task.is_null() {
             return core::ptr::null_mut();
         }

@@ -10,6 +10,15 @@ pub static CPP_COM_WSTR_E17C172CF886: [WCHAR; 9] = [0x0025, 0x0073, 0x002E, 0x00
 
 use core::ffi::c_void;
 
+// misc.h: `#define CurrentArchitecture L"x86"` etc. The island's byte-string constant of the same name is
+// a narrow mistranslation of that wide macro, and `%s` in the wide printf wants WCHARs.
+#[cfg(target_arch = "x86")]
+static CurrentArchitectureW: [WCHAR; 4] = [0x78, 0x38, 0x36, 0];
+#[cfg(target_arch = "x86_64")]
+static CurrentArchitectureW: [WCHAR; 6] = [0x61, 0x6d, 0x64, 0x36, 0x34, 0];
+#[cfg(target_arch = "aarch64")]
+static CurrentArchitectureW: [WCHAR; 6] = [0x61, 0x72, 0x6d, 0x36, 0x34, 0];
+
 
 
 
@@ -101,21 +110,21 @@ impl CConfigParser {
         len = 0;
         while len < result {
             // Explicitly use the null terminator!
-            let mut tmp: CString = CStringW::from_ptr(Buffer.GetBuffer(0).add(len as usize));
+            let mut tmp: CStringW = CStringW::from_ptr(Buffer.GetBuffer(0).add(len as usize));
             if tmp.GetLength() > 0 {
                 len += (tmp.GetLength() + 1) as DWORD;
 
                 let idx: i32 = tmp.Find('=' as WCHAR, 0);
                 if idx >= 0 {
-                    let mut key: CString = tmp.Left(idx);
+                    let mut key: CStringW = tmp.Left(idx);
 
                     // Is this key already present from a more specific translation?
                     if (*this_).m_Keys.FindKey(&key) >= 0 {
                         continue;
                     }
 
-                    let mut value: CString = tmp.Mid(idx + 1);
-                    (*this_).m_Keys.Add(&key, &value);
+                    let mut value: CStringW = tmp.Mid(idx + 1);
+                    (*this_).m_Keys.Add(key, value);
                 } else {
                     DPRINT1!("ERROR: invalid key/value pair: '%S'\n", tmp.GetString());
                 }
@@ -171,34 +180,34 @@ impl CConfigParser {
         let mut NeutralLoc: *mut WCHAR = FullLoc.as_mut_ptr().add(2);
         GetLocaleInfoW(GetUserDefaultLCID(), LOCALE_ILANGUAGE, FullLoc.as_mut_ptr(), _countof!(FullLoc) as i32);
 
-        SecBuf.Format(CPP_COM_WSTR_E17C172CF886.as_ptr(), Section, FullLoc.as_ptr(), CurrentArchitecture);
+        atl_format!(SecBuf, CPP_COM_WSTR_E17C172CF886.as_ptr(), Section, FullLoc.as_ptr(), CurrentArchitectureW.as_ptr());
         hr = ReadIniValue((*this_).szConfigPath.GetString(), SecBuf.GetString(), Name, Result);
         if hr > 0 {
             return hr as UINT;
         }
 
         if *NeutralLoc != 0 {
-            SecBuf.Format(CPP_COM_WSTR_E17C172CF886.as_ptr(), Section, NeutralLoc as *const WCHAR, CurrentArchitecture);
+            atl_format!(SecBuf, CPP_COM_WSTR_E17C172CF886.as_ptr(), Section, NeutralLoc as *const WCHAR, CurrentArchitectureW.as_ptr());
             hr = ReadIniValue((*this_).szConfigPath.GetString(), SecBuf.GetString(), Name, Result);
             if hr > 0 {
                 return hr as UINT;
             }
         }
 
-        SecBuf.Format(CPP_COM_WSTR_11BF324B77A7.as_ptr(), Section, CurrentArchitecture);
+        atl_format!(SecBuf, CPP_COM_WSTR_11BF324B77A7.as_ptr(), Section, CurrentArchitectureW.as_ptr());
         hr = ReadIniValue((*this_).szConfigPath.GetString(), SecBuf.GetString(), Name, Result);
         if hr > 0 {
             return hr as UINT;
         }
 
-        SecBuf.Format(CPP_COM_WSTR_11BF324B77A7.as_ptr(), Section, FullLoc.as_ptr());
+        atl_format!(SecBuf, CPP_COM_WSTR_11BF324B77A7.as_ptr(), Section, FullLoc.as_ptr());
         hr = ReadIniValue((*this_).szConfigPath.GetString(), SecBuf.GetString(), Name, Result);
         if hr > 0 {
             return hr as UINT;
         }
 
         if *NeutralLoc != 0 {
-            SecBuf.Format(CPP_COM_WSTR_11BF324B77A7.as_ptr(), Section, NeutralLoc as *const WCHAR);
+            atl_format!(SecBuf, CPP_COM_WSTR_11BF324B77A7.as_ptr(), Section, NeutralLoc as *const WCHAR);
             hr = ReadIniValue((*this_).szConfigPath.GetString(), SecBuf.GetString(), Name, Result);
             if hr > 0 {
                 return hr as UINT;

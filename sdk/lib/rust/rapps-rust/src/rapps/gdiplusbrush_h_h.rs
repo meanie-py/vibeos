@@ -36,7 +36,7 @@ impl Brush {
 }
 
 impl SolidBrush {
-    pub unsafe fn __ctor_0(&mut self, color: &mut Color) {
+    pub unsafe fn __ctor_0(&mut self, color: &Color) {
         let this_: *mut Self = self;
         (*this_).__base0.__ctor_0();
         (*this_).__init_vtables();

@@ -83,6 +83,9 @@ Rust — don't requeue it.)
 - The shell extensions need what rapps half-built: `atl_rust::com` covers a COM object's
   IUnknown, but not a DLL's object map (`BEGIN_OBJECT_MAP`/`OBJECT_ENTRY_AUTO`), class
   factories, `DllGetClassObject`/`DllCanUnloadNow`, or `.rgs` registration.
+- rapps' `src/gdiplus_flat.rs` is a hand-made extern block, copied from desk-rust's C island:
+  the C++ island binds no `Gdiplus::DllExports` function. gen_driver_types should bind the
+  flat functions reached by an external class's bodies.
 - `atl_rust::win::create_window` (the DECLARE_WND_CLASS path) does not give a child window
   `this` as its control ID the way ATL's `CWindowImplBaseT::Create` does;
   `create_window_info` (a module's own GetWndClassInfo) does. Unify them, and check the

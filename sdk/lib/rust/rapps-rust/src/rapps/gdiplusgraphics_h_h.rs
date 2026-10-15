@@ -19,7 +19,7 @@ impl Graphics {
         {
             let mut graphics: *mut GpGraphics = core::ptr::null_mut();
             if !image.is_null() {
-                (*this_).lastStatus = GdipGetImageGraphicsContext(getNat(image), core::ptr::addr_of_mut!(graphics));
+                (*this_).lastStatus = GdipGetImageGraphicsContext((*image).nativeImage, core::ptr::addr_of_mut!(graphics));
             }
             (*this_).SetNativeGraphics(graphics);
         }
@@ -62,11 +62,11 @@ impl Graphics {
     pub unsafe fn DrawImage__12(&mut self, image: *mut Image, x: REAL, y: REAL, width: REAL, height: REAL) -> Status {
         let this_: *mut Self = self;
         return (*this_).SetStatus(
-            GdipDrawImageRect((*this_).nativeGraphics, if !image.is_null() { getNat(image) } else { core::ptr::null_mut() }, x, y, width, height));
+            GdipDrawImageRect((*this_).nativeGraphics, if !image.is_null() { (*image).nativeImage } else { core::ptr::null_mut() }, x, y, width, height));
     }
     pub unsafe fn FillEllipse__1(&mut self, brush: *const Brush, x: REAL, y: REAL, width: REAL, height: REAL) -> Status {
         let this_: *mut Self = self;
-        return (*this_).SetStatus(GdipFillEllipse((*this_).nativeGraphics, if !brush.is_null() { getNat(brush) } else { core::ptr::null_mut() }, x, y, width, height));
+        return (*this_).SetStatus(GdipFillEllipse((*this_).nativeGraphics, if !brush.is_null() { (*brush).nativeBrush } else { core::ptr::null_mut() }, x, y, width, height));
     }
     pub unsafe fn SetSmoothingMode(&mut self, smoothingMode: SmoothingMode) -> Status {
         let this_: *mut Self = self;
@@ -74,7 +74,7 @@ impl Graphics {
         }
     pub unsafe fn SetStatus(&mut self, status: Status) -> Status {
         let this_: *mut Self = self;
-        if status != Ok {
+        if status != Gdiplus_Status_Ok {
             (*this_).lastStatus = status;
         }
         return status;

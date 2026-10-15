@@ -91,7 +91,7 @@ impl Image {
     }
     pub unsafe fn SetStatus(&mut self, status: Status) -> Status {
         let this_: *mut Self = self;
-        if status != Ok {
+        if status != Gdiplus_Status_Ok {
             (*this_).lastStatus = status;
         }
         return status;
@@ -109,7 +109,7 @@ impl Bitmap {
         (*this_).__init_vtables();
         {
             let mut bitmap: *mut Gdiplus_GpBitmap = core::ptr::null_mut();
-            (*this_).__base0.lastStatus = GdipCreateBitmapFromGraphics(width, height, if !target.is_null() { getNat(target) } else { core::ptr::null_mut() }, core::ptr::addr_of_mut!(bitmap));
+            (*this_).__base0.lastStatus = GdipCreateBitmapFromGraphics(width, height, if !target.is_null() { (*target).nativeGraphics } else { core::ptr::null_mut() }, core::ptr::addr_of_mut!(bitmap));
             (*this_).__base0.SetNativeImage((bitmap).cast());
         }
     }
@@ -118,9 +118,9 @@ impl Bitmap {
         (*this_).__base0.__ctor_2();
         (*this_).__init_vtables();
         {
-            let mut bitmap: Gdiplus_GpBitmap = core::ptr::null_mut();
+            let mut bitmap: *mut Gdiplus_GpBitmap = core::ptr::null_mut();
             (*this_).__base0.lastStatus = GdipCreateBitmapFromGdiDib(gdiBitmapInfo, gdiBitmapData, core::ptr::addr_of_mut!(bitmap));
-            (*this_).__base0.SetNativeImage(bitmap);
+            (*this_).__base0.SetNativeImage((bitmap).cast());
         }
     }
     pub unsafe fn __ctor_2(&mut self, width: INT, height: INT, format: Gdiplus_PixelFormat) {

@@ -60,7 +60,7 @@ unsafe extern "C" fn SaveAllSettings(key: &mut CRegKey, settings: &mut SETTINGS_
 
     let mut InfoListPosition: POSITION = infoFields.GetHeadPosition();
     while !InfoListPosition.is_null() {
-        let Info: *mut SettingsField = infoFields.GetNext(&mut InfoListPosition);
+        let Info: *mut SettingsField = *infoFields.GetNext(&mut InfoListPosition);
         if (*Info).Save(key) == 0 {
             bAllSuccess = (FALSE as i32);
             // TODO: error log
@@ -78,7 +78,7 @@ unsafe extern "C" fn LoadAllSettings(key: &mut CRegKey, settings: &mut SETTINGS_
 
     let mut InfoListPosition: POSITION = infoFields.GetHeadPosition();
     while !InfoListPosition.is_null() {
-        let Info: *mut SettingsField = infoFields.GetNext(&mut InfoListPosition);
+        let Info: *mut SettingsField = *infoFields.GetNext(&mut InfoListPosition);
         if (*Info).Load(key) != 0 {
             bLoadedAny = (TRUE as i32);
         }
@@ -89,11 +89,29 @@ unsafe extern "C" fn LoadAllSettings(key: &mut CRegKey, settings: &mut SETTINGS_
     return bLoadedAny;
 }
 
+unsafe extern "system" {
+    // not bound by the island or the prelude
+    fn GetEnvironmentVariableW(lpName: LPCWSTR, lpBuffer: LPWSTR, nSize: DWORD) -> DWORD;
+}
+
+/// `CStringW::GetEnvironmentVariable(PCXSTR)` -- cstringt.h:658. atl_rust has no such member.
+unsafe fn CStringW_GetEnvironmentVariable(s: &mut CStringW, pszVar: LPCWSTR) -> BOOL {
+    let nLength: i32 = GetEnvironmentVariableW(pszVar, core::ptr::null_mut(), 0) as i32;
+    if nLength > 0 {
+        let pszBuffer = s.GetBuffer(nLength);
+        GetEnvironmentVariableW(pszVar, pszBuffer, nLength as DWORD);
+        s.ReleaseBuffer();
+        return 1;
+    }
+    s.Empty();
+    return 0;
+}
+
 unsafe extern "C" fn GetDefaultDownloadDirectory(szDownloadDir: &mut CStringW) {
     if (SHGetFolderPathW(core::ptr::null_mut(), (CSIDL_PERSONAL as i32), core::ptr::null_mut(), SHGFP_TYPE_CURRENT, szDownloadDir.GetBuffer((MAX_PATH as i32)))) < 0
     {
         szDownloadDir.ReleaseBuffer();
-        if (szDownloadDir.GetEnvironmentVariableW(CPP_COM_WSTR_27508D7A01A2.as_ptr())) == 0
+        if (CStringW_GetEnvironmentVariable(szDownloadDir, CPP_COM_WSTR_27508D7A01A2.as_ptr())) == 0
         {
             *szDownloadDir = CStringW::from_ptr(CPP_COM_WSTR_A675DF50141C.as_ptr());
         }
@@ -112,7 +130,8 @@ unsafe extern "C" fn ValidateStringSettings(pSettingsInfo: PSETTINGS_INFO) {
         let mut szDownloadDir = CStringW::new();
         GetDefaultDownloadDirectory(&mut szDownloadDir);
 
-        CStringW::CopyChars((*pSettingsInfo).szDownloadDir.as_mut_ptr(), _countof!((*pSettingsInfo).szDownloadDir), szDownloadDir.GetString(), szDownloadDir.GetLength() + 1);
+        // CStringW::CopyChars(dst, dstLen, src, n) is memcpy(dst, src, n * sizeof(WCHAR)) (atlsimpstr.h)
+        core::ptr::copy_nonoverlapping(szDownloadDir.GetString(), (*pSettingsInfo).szDownloadDir.as_mut_ptr(), (szDownloadDir.GetLength() + 1) as usize);
     }
 }
 #[no_mangle]

@@ -83,7 +83,7 @@ impl CRegKey {
 
         let mut hKey: HKEY = core::ptr::null_mut();
         let mut lRes: LONG = RegCreateKeyEx(hKeyParent, lpszKeyName, 0, lpszClass,
-                                     dwOptions, samDesired, lpSecAttr, &mut hKey,
+                                     dwOptions, samDesired, lpSecAttr, (core::ptr::addr_of_mut!(hKey)).cast(),
                                      lpdwDisposition);
         if lRes == (ERROR_SUCCESS as i32) {
             (*this_).Close();

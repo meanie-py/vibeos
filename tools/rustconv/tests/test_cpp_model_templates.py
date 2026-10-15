@@ -130,3 +130,40 @@ def test_a_function_template_is_one_function_per_instantiation(model):
 
 def test_relative_path_is_inside_the_module(model):
     assert Path(model.classes["A_P"].file).name == "t.cpp"
+
+
+BASE_SRC = """
+#include "../inc/r.h"
+class CUiRect : public RECT { public: CUiRect() { left = 0; } };
+class CUiMargin : public CUiRect { public: CUiMargin() {} };
+class Box { public: CUiMargin m_Margin; int F(RECT &r) { r.left += m_Margin.left; return 0; } };
+class Pan { public: Box *b; void G() { b->m_Margin.top = 4; } };
+int main() { Box x; Pan p; p.b = &x; p.G(); RECT r; return x.F(r); }
+"""
+
+
+def test_a_field_of_a_two_hop_external_base_is_reached_by_path(tmp_path):
+    # rapps' CUiMargin -> CUiRect -> RECT: clang casts to `tagRECT`, the base list says
+    # `RECT`, and RECT is two hops away. Without the path, Rust went through the Deref.
+    if shutil.which("clang++") is None:
+        pytest.skip("no host clang++")
+    (tmp_path / "inc").mkdir()
+    (tmp_path / "inc" / "r.h").write_text("typedef struct tagRECT { int left; int top; } RECT;\n")
+    d = tmp_path / "mod"
+    d.mkdir()
+    (d / "t.cpp").write_text(BASE_SRC)
+    out = subprocess.run(
+        ["clang++", "-fsyntax-only", "-Xclang", "-ast-dump=json", str(d / "t.cpp")],
+        capture_output=True,
+        check=True,
+    ).stdout
+    ast = json.loads(out)
+    cdp._attach_files(ast)
+    ex = cpp_model._Extractor(d, d)
+    ex.scan_overloads(ast["inner"])
+    ex.walk(ast["inner"])
+    ex.lower_pending()
+    box = ex.model.classes["Box"].method("F")[0].lowered
+    assert "this_->m_Margin.__base0.__base0.left" in box
+    pan = ex.model.classes["Pan"].method("G")[0].lowered
+    assert pan == "{ this_->b->m_Margin.__base0.__base0.top = 4; }"

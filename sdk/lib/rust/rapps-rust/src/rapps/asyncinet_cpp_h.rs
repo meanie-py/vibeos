@@ -11,7 +11,7 @@ pub unsafe extern "C" fn AsyncInetDownload(lpszAgent: LPCWSTR, dwAccessType: DWO
     AsyncInet = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (core::mem::size_of::<ASYNCINET>()) as SIZE_T) as pASYNCINET;
     if AsyncInet.is_null()
     {
-        OutputDebugStringA(concat!("At File: ", concat!(file!(), "\0").as_ptr(), " HeapAlloc returned 0\n", "\0").as_ptr() as *const i8);
+        OutputDebugStringA(concat!("At File: ", file!(), " HeapAlloc returned 0\n", "\0").as_ptr() as *const i8);
         return core::ptr::null_mut();
     }
 
@@ -36,7 +36,7 @@ pub unsafe extern "C" fn AsyncInetDownload(lpszAgent: LPCWSTR, dwAccessType: DWO
         if !(*AsyncInet).hInternet.is_null()
         {
             OldCallbackFunc = InternetSetStatusCallbackW((*AsyncInet).hInternet, Some(AsyncInetStatusCallback));
-            if OldCallbackFunc != INTERNET_INVALID_STATUS_CALLBACK
+            if OldCallbackFunc.map_or(0usize, |f| f as usize) != usize::MAX
             {
                 InetOpenUrlFlag |= INTERNET_FLAG_PASSIVE | INTERNET_FLAG_RESYNCHRONIZE;
                 if bAllowCache == 0

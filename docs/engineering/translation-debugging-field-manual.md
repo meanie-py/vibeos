@@ -5305,6 +5305,42 @@ default, compared in either spelling, is bound by the default's written spelling
 that misses the instance table is retried with its arguments' typedefs resolved from the
 TU's file-scope `TypedefDecl`s.
 
+### Small C++-pipeline shapes that cost rapps a re-buy or a hundred errors
+
+Each was one fix in the tool; listed so the next module's symptom can be matched to one.
+- **A comment between the declarator and the brace** (`BOOL F(..) // note` then `{`): the
+  free-function signature is joined onto one line and the comment swallowed the `{`; the
+  stitch dropped the function ("Planned Rust definitions absent"). `cpp_model` strips comments
+  from the signature text.
+- **A macro-spelled declarator** (fdi.h's `FNCLOSE(fnFileClose)`): the signature text names
+  no function, so the planner expected `FNCLOSE` and refused the correct `fnFileClose`. The
+  signature is now spelled from clang's type.
+- **A module function TEMPLATE** (`template <class T> static CStringW BuildPath(const T&, ..)`)
+  was never modeled, so 18 call sites named a missing function. Each instantiation is now a
+  free function (`BuildPath__T0`) reached through the decl map. clang prints a reference to an
+  array parameter as `const char &[4]`, without the parentheses.
+- **The COM C-layout pass shadowed an imported bindgen helper**: it appended
+  `__BindgenBitfieldUnit` without its impl (an `impl` has no name to carry), and 159 bitfield
+  accessors lost `get_const`. Helpers the island already uses are no longer appended.
+- **A `THIS_`-less slot** in an undocumented shell header (`STDMETHOD(X)(ULONG flags, ..)`):
+  the C++ ABI still passes `this`, so the slot gets its `This` back. A capitalized parameter
+  (`ULONG Unknown`) met a constant of that name and became a refutable pattern; such
+  parameters get a trailing `_`.
+- **A namespaced type or C API**: bindgen spells `ATL::CWndClassInfo` and `Gdiplus::Status`
+  with a prefix (`ATL_`, `Gdiplus_`), and the bodies spell them bare; the island glue aliases
+  the ones the module uses (never generics, never atl_rust's own). `DllExports::GdipX(..)` is
+  lowered to the bare extern.
+- **A plain struct holding an ATL type by value** was left to the island, which laid
+  `CStringW` out as bindgen's `ATL_CStringW` and derived `Copy` over it. Now cppapp owns it.
+- **`(CALLBACK_TYPE)(-1)`** has no Rust constant: const evaluation rejects a fn pointer that
+  points at no fn. `sdk_macros` refuses it, and the call site compares the pointer bits.
+- **A header-only unit holding one global** (`const WCHAR UsageString[] = L"RAPPS [/" CMD_KEY_HELP
+  L"] .."`) is refused by translate (no function) and adopted by no stage. A wide-string global
+  is now a deterministic `[u16; N]` static in cpp_classes.rs, with the line splices joined and
+  the string macros folded first.
+- **crate-repair took over an hour** on a 100 KB-unit crate. Some 30 rules re-masked the
+  whole file per diagnostic, in a per-byte Python loop. Memoized on content: 6 minutes.
+
 ### A vtable SLOT the interface parser could not read renumbers every slot after it
 
 **Symptom.** A hand-rolled COM interface comes out of `--cpp-com` with one fewer method than

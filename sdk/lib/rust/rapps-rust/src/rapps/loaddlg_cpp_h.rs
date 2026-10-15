@@ -1,6 +1,7 @@
 use crate::prelude::*;
 use crate::rapps::geninst_cpp_h::ExtractArchiveForExecution;
 use crate::rapps::integrity_cpp_h::VerifyInteg;
+use crate::rapps::misc_cpp_h::{GetSilentInstallParameters, GuessInstallerType};
 // Deterministic UTF-16 literals from the selected C++ helper closure.
 pub static CPP_COM_WSTR_1B4F33C91A81: [WCHAR; 10] = [0x0052, 0x0041, 0x0070, 0x0070, 0x0073, 0x002F, 0x0031, 0x002E, 0x0031, 0x0000];
 pub static CPP_COM_WSTR_1B9334FEECE6: [WCHAR; 2] = [0x0022, 0x0000];
@@ -55,10 +56,17 @@ static mut CertGetSubjectAndIssuer_dummy: i32 = 0;
 
 
 unsafe extern "C" fn IsTrustedPinnedCert(Subject: LPCSTR, Issuer: LPCSTR) -> bool {
-    if strcmp(Subject, CERT_SUBJECT_INFO) != 0 {
+    extern "C" {
+        fn strcmp(a: *const core::ffi::c_char, b: *const core::ffi::c_char) -> core::ffi::c_int;
+    }
+    // CERT_SUBJECT_INFO
+    if strcmp(Subject, b"rapps.reactos.org\0".as_ptr() as LPCSTR) != 0 {
         return false;
     }
-    return strcmp(Issuer, CERT_ISSUER_INFO_OLD) == 0 || strcmp(Issuer, CERT_ISSUER_INFO_NEW) == 0;
+    // CERT_ISSUER_INFO_PREFIX is defined, so the C++ takes the StrStrA prefix branch (not the
+    // CERT_ISSUER_INFO_OLD/NEW strcmp branch of the #else).
+    return Issuer == StrStrA(Issuer, b"US\r\nLet's Encrypt\r\nR\0".as_ptr() as LPCSTR) as LPCSTR
+        || Issuer == StrStrA(Issuer, b"US\r\nLet's Encrypt\r\nYR\0".as_ptr() as LPCSTR) as LPCSTR;
 }
 #[no_mangle]
 pub unsafe extern "C" fn LoadStatusString(StatusParam: DownloadStatus) -> CStringW {
@@ -138,13 +146,13 @@ unsafe extern "C" fn MessageBox_LoadString(hOwnerWnd: HWND, StringID: INT) {
     }
 }
 
-unsafe extern "C" fn ShowLastError(hWndOwner: HWND, bInetError: BOOL, dwLastError: DWORD) -> BOOL {
+unsafe extern "C" fn ShowLastError(mut hWndOwner: HWND, bInetError: BOOL, dwLastError: DWORD) -> BOOL {
     let mut lpMsg = CLocalPtr_wchar_t__make_0();
 
     if FormatMessageW(
             FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_IGNORE_INSERTS |
                 (if bInetError != 0 { FORMAT_MESSAGE_FROM_HMODULE } else { FORMAT_MESSAGE_FROM_SYSTEM }),
-            (if bInetError != 0 { GetModuleHandleW(CPP_COM_WSTR_BDC14411E891.as_ptr()) } else { core::ptr::null_mut() }),
+            (if bInetError != 0 { GetModuleHandleW(CPP_COM_WSTR_BDC14411E891.as_ptr()) as *const core::ffi::c_void } else { core::ptr::null() }),
             dwLastError,
             LANG_USER_DEFAULT,
             core::ptr::addr_of_mut!(lpMsg.__base0) as LPWSTR,
@@ -158,7 +166,7 @@ unsafe extern "C" fn ShowLastError(hWndOwner: HWND, bInetError: BOOL, dwLastErro
     if !hWndOwner.is_null() && IsWindowVisible(hWndOwner) == 0 {
         hWndOwner = core::ptr::null_mut();
     }
-    MessageBoxW(hWndOwner, lpMsg.__base0.lpMsg, core::ptr::null_mut(), MB_OK | MB_ICONERROR);
+    MessageBoxW(hWndOwner, lpMsg.__base0.m_pData, core::ptr::null_mut(), MB_OK | MB_ICONERROR);
     return (TRUE) as BOOL;
 }
 #[no_mangle]
@@ -193,12 +201,12 @@ pub unsafe extern "C" fn DownloadApplication(pAppInfo: *mut CAppInfo) -> BOOL {
 #[no_mangle]
 pub unsafe extern "C" fn DownloadApplicationsDB(lpUrl: LPCWSTR, IsOfficial: BOOL) {
     let mut pDM: CComPtr<CDownloadManager> = CComPtr::new();
-    if CDownloadManager::CreateInstance((DAF_MODAL) as i32, pDM.GetAddressOf()) == 0 {
+    if CDownloadManager::CreateInstance((DAF_MODAL) as i32, &mut pDM) == 0 {
         return;
     }
 
     let mut DatabaseDLInfo: DownloadInfo = DownloadInfo__make_0();
-    DatabaseDLInfo.szUrl.operator_assign(lpUrl);
+    DatabaseDLInfo.szUrl = CStringW::from_ptr(lpUrl);
     DatabaseDLInfo.szName.LoadStringW(IDS_DL_DIALOG_DB_DISP);
     DatabaseDLInfo.DLType = if IsOfficial != 0 { DLTYPE_DBUPDATE } else { DLTYPE_DBUPDATE_UNOFFICIAL };
 
@@ -219,28 +227,30 @@ impl DownloadInfo {
     }
     pub unsafe fn __ctor_1(&mut self, AppInfo: &CAppInfo, DAF: UINT) {
         let this_: *mut Self = self;
+        // The C++ parameter is `const CAppInfo &` and calls its (non-const here) methods.
+        let AppInfo: *mut CAppInfo = AppInfo as *const CAppInfo as *mut CAppInfo;
         (*this_).DLType = DLTYPE_APPLICATION;
         (*this_).IExecType = INSTALLER_UNKNOWN;
         (*this_).Flags = DAF;
         {
-            AppInfo.GetDownloadInfo(&mut (*this_).szUrl, &mut (*this_).szSHA1, &mut (*this_).SizeInBytes);
-            (*this_).szName = AppInfo.szDisplayName;
-            (*this_).IType = AppInfo.GetInstallerType(false);
-            (*this_).szPackageName = AppInfo.szIdentifier;
+            (*AppInfo).GetDownloadInfo(&mut (*this_).szUrl, &mut (*this_).szSHA1, &mut (*this_).SizeInBytes);
+            (*this_).szName = (*AppInfo).szDisplayName.clone();
+            (*this_).IType = (*AppInfo).GetInstallerType(false);
+            (*this_).szPackageName = (*AppInfo).szIdentifier.clone();
 
             if ((*this_).Flags & DAF_SILENT) != 0 {
-                (*this_).IExecType = AppInfo.GetInstallerInfo(&mut (*this_).szSilentInstallArgs);
+                (*this_).IExecType = (*AppInfo).GetInstallerInfo(&mut (*this_).szSilentInstallArgs);
             }
 
-            let cfg: *mut CConfigParser = (*(AppInfo as *const CAppInfo as *const CAvailableApplicationInfo)).GetConfigParser();
+            let cfg: *mut CConfigParser = (*(AppInfo as *mut CAvailableApplicationInfo)).GetConfigParser();
             if !cfg.is_null() {
-                (*cfg).GetString(DB_SAVEAS, &mut (*this_).szFileName);
-                (*cfg).GetString(DB_DEPENDENCIES, &mut (*this_).szDependencies);
+                (*cfg).GetString(&CStringW::from_ptr(DB_SAVEAS.as_ptr()), &mut (*this_).szFileName);
+                (*cfg).GetString(&CStringW::from_ptr(DB_DEPENDENCIES.as_ptr()), &mut (*this_).szDependencies);
             }
         }
     }
-    pub unsafe fn Equal(&mut self, other: &DownloadInfo) -> bool {
-        let this_: *mut Self = self;
+    pub unsafe fn Equal(&self, other: &DownloadInfo) -> bool {
+        let this_: *const Self = self;
         return (*this_).DLType == other.DLType && lstrcmpW((*this_).szUrl.GetString(), other.szUrl.GetString()) == 0;
     }
 }
@@ -384,14 +394,16 @@ impl CDowloadingAppsListView {
         let style: DWORD = WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_NOSORTHEADER |
             LVS_NOCOLUMNHEADER;
 
-        let hwnd: HWND = (*this_).__base0.Create(hwndParent, r, core::ptr::null_mut(), style, WS_EX_CLIENTEDGE, 0, core::ptr::null_mut());
+        let hwnd: HWND = (*this_).__base0.Create(hwndParent, ATL__U_RECT { m_lpRect: core::ptr::addr_of_mut!(r) }, core::ptr::null(), style, WS_EX_CLIENTEDGE, ATL__U_MENUorID { m_hMenu: core::ptr::null_mut() }, core::ptr::null_mut());
 
         (*this_).AddColumn(0, 150, (LVCFMT_LEFT as i32));
         (*this_).AddColumn(1, 120, (LVCFMT_LEFT as i32));
 
         return hwnd;
     }
-    pub unsafe fn LoadList(&mut self, arrInfo: CSimpleArray<DownloadInfo>, Start: UINT) {
+    // C++ takes the array BY VALUE (a deep copy); the body only reads it, and atl_rust's CSimpleArray
+    // has no copy constructor, so it is borrowed (no observable difference).
+    pub unsafe fn LoadList(&mut self, arrInfo: &CSimpleArray<DownloadInfo>, Start: UINT) {
         let this_: *mut Self = self;
         let base: INT = (*this_).__base0.GetItemCount();
         let mut i: INT = Start as INT;
@@ -514,7 +526,7 @@ impl CDownloadManager {
         let start: UINT = count;
         let mut i: UINT = 0;
         while i < count {
-            if Info.Equal(&(*this_).m_List[i as usize]) {
+            if Info.Equal(&*(*this_).m_List.GetAt(i as i32)) {
                 return; // Already in the list
             }
             i += 1;
@@ -529,23 +541,42 @@ impl CDownloadManager {
                 }
                 'body: {
                     pos = deps.Find(0x007Cu16, 0);
-                    let mut pkg: CStringW = (if pos > 0 {
+                    let mut pkg: CStringW = if pos > 0 {
                         deps.Left(pos)
                     } else {
                         CStringW::from_ptr(deps.GetString())
-                    })
-                    .Trim();
+                    };
+                    pkg.Trim();
 
                     // In the future a package might need to specify dependency version or WoW64
                     // information ("vcredist*x64" etc), for now, just remove possible modifiers.
-                    let suffix: i32 = pkg.FindOneOf(CPP_COM_WSTR_3A7F15C7DA56.as_ptr());
+                    // CStringW::FindOneOf (wcspbrk): atl_rust has none, so scan for the first
+                    // character of pkg that is in the set.
+                    let suffix: i32 = {
+                        let set: *const WCHAR = CPP_COM_WSTR_3A7F15C7DA56.as_ptr();
+                        let mut found: i32 = -1;
+                        let mut k: i32 = 0;
+                        while k < pkg.GetLength() && found < 0 {
+                            let ch: WCHAR = pkg.GetAt(k);
+                            let mut q: *const WCHAR = set;
+                            while *q != 0 {
+                                if *q == ch {
+                                    found = k;
+                                    break;
+                                }
+                                q = q.add(1);
+                            }
+                            k += 1;
+                        }
+                        found
+                    };
                     if suffix > 0 {
                         pkg = pkg.Left(suffix);
                     }
 
                     let pApp: *mut CAvailableApplicationInfo =
                         CAppDB::CreateAvailableAppInstance(&pkg, core::ptr::null_mut());
-                    Deleter_CAvailableApplicationInfodel(pApp);
+                    let _del = Deleter_CAvailableApplicationInfo__make_0(pApp);
                     if pApp.is_null() || (*pApp).IsInstalled(core::ptr::null_mut()) {
                         break 'body;
                     }
@@ -560,9 +591,23 @@ impl CDownloadManager {
             }
         }
 
-        (*this_).m_List.Add(Info.clone());
+        // m_List.Add(Info): CSimpleArray copy-constructs the element (member-wise copy).
+        let mut InfoCopy = DownloadInfo__make_0();
+        InfoCopy.DLType = Info.DLType;
+        InfoCopy.IType = Info.IType;
+        InfoCopy.IExecType = Info.IExecType;
+        InfoCopy.Flags = Info.Flags;
+        InfoCopy.szUrl = Info.szUrl.clone();
+        InfoCopy.szName = Info.szName.clone();
+        InfoCopy.szSHA1 = Info.szSHA1.clone();
+        InfoCopy.szPackageName = Info.szPackageName.clone();
+        InfoCopy.szFileName = Info.szFileName.clone();
+        InfoCopy.szSilentInstallArgs = Info.szSilentInstallArgs.clone();
+        InfoCopy.szDependencies = Info.szDependencies.clone();
+        InfoCopy.SizeInBytes = Info.SizeInBytes;
+        (*this_).m_List.Add(InfoCopy);
         if !(*this_).m_hDlg.is_null() {
-            (*this_).m_ListView.LoadList(&mut (*this_).m_List, start);
+            (*this_).m_ListView.LoadList(&(*this_).m_List, start);
         }
     }
     pub unsafe fn Show(&mut self) {
@@ -571,9 +616,9 @@ impl CDownloadManager {
         let bSilent: BOOL = (*this_).IsSilentDialog();
         let bModal: BOOL = (*this_).m_bModal;
         if bModal != 0 && bSilent == 0 {
-            DialogBoxParamW(hInst, MAKEINTRESOURCEW!(IDD_DOWNLOAD_DIALOG), hMainWnd, CDownloadManager::DlgProc, this_ as LPARAM);
+            DialogBoxParamW(hInst, MAKEINTRESOURCEW!(IDD_DOWNLOAD_DIALOG), hMainWnd, core::mem::transmute(CDownloadManager::DlgProc as unsafe extern "system" fn(HWND, UINT, WPARAM, LPARAM) -> INT_PTR), this_ as LPARAM);
         } else if (*this_).m_hDlg.is_null() || IsWindow((*this_).m_hDlg) == 0 {
-            hDlg = CreateDialogParamW(hInst, MAKEINTRESOURCEW!(IDD_DOWNLOAD_DIALOG), hMainWnd, CDownloadManager::DlgProc, this_ as LPARAM);
+            hDlg = CreateDialogParamW(hInst, MAKEINTRESOURCEW!(IDD_DOWNLOAD_DIALOG), hMainWnd, core::mem::transmute(CDownloadManager::DlgProc as unsafe extern "system" fn(HWND, UINT, WPARAM, LPARAM) -> INT_PTR), this_ as LPARAM);
         }
 
         // A DialogBox dialog cannot be invisible, it is forced visible after WM_INITDIALOG returns.
@@ -621,7 +666,33 @@ impl CDownloadManager {
                 GetWindowTextW(hDlg, (*this_).m_szCaptionFmt.as_mut_ptr(), (_countof!((*this_).m_szCaptionFmt)) as i32);
                 let mut buf: CStringW = CStringW::new();
                 buf = CStringW::from_ptr((*this_).m_szCaptionFmt.as_ptr());
-                buf.Replace(CPP_COM_WSTR_D217C45C6798.as_ptr(), CPP_COM_WSTR_96A296D224F2.as_ptr());
+                // buf.Replace(L"%ls", L""): atl_rust's CStringW only has the one-character
+                // Replace, so rebuild the string with every occurrence of the pattern replaced.
+                {
+                    let pszOld: *const WCHAR = CPP_COM_WSTR_D217C45C6798.as_ptr();
+                    let pszNew: *const WCHAR = CPP_COM_WSTR_96A296D224F2.as_ptr();
+                    let mut nOld: usize = 0;
+                    while *pszOld.add(nOld) != 0 {
+                        nOld += 1;
+                    }
+                    let mut out = CStringW::new();
+                    let nLen: usize = buf.GetLength() as usize;
+                    let mut i: usize = 0;
+                    while i < nLen {
+                        let mut m: usize = 0;
+                        while m < nOld && i + m < nLen && buf.GetAt((i + m) as i32) == *pszOld.add(m) {
+                            m += 1;
+                        }
+                        if nOld != 0 && m == nOld {
+                            out += pszNew;
+                            i += nOld;
+                        } else {
+                            out.AppendChar(buf.GetAt(i as i32));
+                            i += 1;
+                        }
+                    }
+                    buf = out;
+                }
                 SetWindowTextW(hDlg, buf.GetString()); // "Downloading..."
 
                 let hItem: HWND = GetDlgItem(hDlg, (IDC_DOWNLOAD_PROGRESS as i32));
@@ -632,14 +703,14 @@ impl CDownloadManager {
                     (*this_).m_ProgressBar.__base0.SendMessageW__0(PBM_SETRANGE, 0, MAKELPARAM!(0, 100));
                     (*this_).m_ProgressBar.__base0.SendMessageW__0(PBM_SETPOS, 0, 0);
                     if (*this_).m_List.GetSize() > 0 {
-                        (*this_).m_ProgressBar.SetProgress(0, (*this_).m_List[0 as usize].SizeInBytes);
+                        (*this_).m_ProgressBar.SetProgress(0, (*(*this_).m_List.GetAt(0)).SizeInBytes);
                     }
                 }
 
                 if (*this_).m_ListView.Create(hDlg) == core::ptr::null_mut() {
                     return (FALSE) as INT_PTR;
                 }
-                (*this_).m_ListView.LoadList(&mut (*this_).m_List, 0);
+                (*this_).m_ListView.LoadList(&(*this_).m_List, 0);
 
                 ShowWindow(hDlg, if (*this_).IsSilentDialog() != 0 { (SW_HIDE as i32) } else { (SW_SHOW as i32) });
                 (*this_).StartWorkerThread();
@@ -657,7 +728,22 @@ impl CDownloadManager {
             WM_CLOSE => {
                 (*this_).m_bCancelled = (TRUE as i32);
                 if !(*this_).m_ProgressBar.op_to_HWND().is_null() {
-                    (*this_).m_ProgressBar.UnsubclassWindow(TRUE);
+                    // UnsubclassWindow(TRUE): atl_rust's win module has no unsubclass, so undo
+                    // subclass_window by hand (restore the saved wndproc, drop its two props).
+                    extern "system" {
+                        fn GetPropW(hWnd: HWND, lpString: LPCWSTR) -> HANDLE;
+                        fn RemovePropW(hWnd: HWND, lpString: LPCWSTR) -> HANDLE;
+                    }
+                    let prop_this: [WCHAR; 12] = [0x41, 0x74, 0x6C, 0x52, 0x75, 0x73, 0x74, 0x54, 0x68, 0x69, 0x73, 0];
+                    let prop_super: [WCHAR; 13] = [0x41, 0x74, 0x6C, 0x52, 0x75, 0x73, 0x74, 0x53, 0x75, 0x70, 0x65, 0x72, 0];
+                    let hwndOld: HWND = (*this_).m_ProgressBar.__base0.m_hWnd;
+                    let sup: HANDLE = GetPropW(hwndOld, prop_super.as_ptr());
+                    if !sup.is_null() {
+                        SetWindowLongPtrW(hwndOld, GWLP_WNDPROC, sup as usize as _);
+                    }
+                    RemovePropW(hwndOld, prop_super.as_ptr());
+                    RemovePropW(hwndOld, prop_this.as_ptr());
+                    (*this_).m_ProgressBar.__base0.m_hWnd = core::ptr::null_mut();
                 }
                 return if (*this_).m_bModal != 0 && (*this_).IsSilentDialog() == 0 {
                     (EndDialog(hDlg, 0)) as _
@@ -682,7 +768,10 @@ impl CDownloadManager {
             }
 
             WM_ISCANCELLED => {
-                return SetDlgMsgResult(hDlg, uMsg, (*this_).m_bCancelled);
+                // SetDlgMsgResult(hDlg, uMsg, r): uMsg is not one of the messages windowsx.h returns r
+                // directly for, so r goes to DWLP_MSGRESULT and TRUE is returned.
+                SetWindowLongPtr(hDlg, DWLP_MSGRESULT, ((*this_).m_bCancelled as LRESULT) as LPARAM);
+                return (TRUE) as INT_PTR;
             }
 
             WM_SETSTATUS => {
@@ -691,7 +780,8 @@ impl CDownloadManager {
             }
 
             WM_GETINSTANCE => {
-                return SetDlgMsgResult(hDlg, uMsg, this_ as INT_PTR);
+                SetWindowLongPtr(hDlg, DWLP_MSGRESULT, ((this_ as INT_PTR) as LRESULT) as LPARAM);
+                return (TRUE) as INT_PTR;
             }
 
             WM_GETNEXT => {
@@ -699,14 +789,15 @@ impl CDownloadManager {
                 if (*this_).m_bCancelled == 0 && ((*this_).m_Index as usize) < ((*this_).m_List.GetSize() as usize) {
                     let idx: usize = (*this_).m_Index as usize;
                     (*this_).m_Index += 1;
-                    pItem = core::ptr::addr_of_mut!((*this_).m_List[idx]);
+                    pItem = (*this_).m_List.GetAt(idx as i32);
                 }
-                return SetDlgMsgResult(hDlg, uMsg, pItem as INT_PTR);
+                SetWindowLongPtr(hDlg, DWLP_MSGRESULT, ((pItem as INT_PTR) as LRESULT) as LPARAM);
+                return (TRUE) as INT_PTR;
             }
 
             _ => {}
         }
-        return FALSE;
+        return FALSE as INT_PTR;
     }
     pub unsafe fn UpdateProgress(&mut self, ulProgress: ULONG, ulProgressMax: ULONG) {
         let this_: *mut Self = self;
@@ -777,12 +868,12 @@ impl CDownloadManager {
             'run: {
                 // is this URL an update package for RAPPS? if so store it in a different place
                 if Info.DLType != DLTYPE_APPLICATION {
-                    if GetStorageDirectory(Path) == 0 {
+                    if GetStorageDirectory(core::ptr::addr_of_mut!(Path.m_strPath)) == 0 {
                         ShowLastError(hMainWnd, (FALSE) as BOOL, GetLastError());
                         break 'end;
                     }
                 } else {
-                    Path = SettingsInfo.szDownloadDir;
+                    Path = CPathW::from_ptr(SettingsInfo.szDownloadDir.as_ptr());
                 }
 
                 // build the path for the download
@@ -795,8 +886,8 @@ impl CDownloadManager {
                 }
 
                 // is the path valid? can we access it?
-                if GetFileAttributesW(Path) == INVALID_FILE_ATTRIBUTES {
-                    if CreateDirectoryW(Path, core::ptr::null_mut()) == 0 {
+                if GetFileAttributesW(Path.GetString()) == INVALID_FILE_ATTRIBUTES {
+                    if CreateDirectoryW(Path.GetString(), core::ptr::null_mut()) == 0 {
                         ShowLastError(hMainWnd, (FALSE) as BOOL, GetLastError());
                         break 'end;
                     }
@@ -804,7 +895,7 @@ impl CDownloadManager {
 
                 match Info.DLType {
                     DLTYPE_DBUPDATE | DLTYPE_DBUPDATE_UNOFFICIAL => {
-                        Path += APPLICATION_DATABASE_NAME;
+                        Path += APPLICATION_DATABASE_NAME.as_ptr();
                     }
                     DLTYPE_APPLICATION => {
                         let mut name = CStringW::from_ptr(Info.szFileName.GetString());
@@ -819,10 +910,10 @@ impl CDownloadManager {
 
                 if (Info.DLType == DLTYPE_APPLICATION)
                     && Info.szSHA1.GetAt(0 as i32) != 0
-                    && GetFileAttributesW(Path) != INVALID_FILE_ATTRIBUTES
+                    && GetFileAttributesW(Path.GetString()) != INVALID_FILE_ATTRIBUTES
                 {
                     // only open it in case of total correctness
-                    if VerifyInteg(Info.szSHA1.GetString(), Path) != 0 {
+                    if VerifyInteg(Info.szSHA1.GetString(), Path.GetString()) != 0 {
                         break 'run;
                     }
                 }
@@ -939,11 +1030,11 @@ impl CDownloadManager {
                     // Ideally we would use PathCreateFromUrlAlloc here, but that is not exported (yet)
                     let hr: HRESULT = PathCreateFromUrlW(Info.szUrl.GetString(), LocalFilePath.as_mut_ptr(), core::ptr::addr_of_mut!(cchPath), 0);
                     if hr >= 0 {
-                        if CopyFileW(LocalFilePath.as_mut_ptr(), Path, (FALSE) as BOOL) != 0 {
+                        if CopyFileW(LocalFilePath.as_mut_ptr(), Path.GetString(), (FALSE) as BOOL) != 0 {
                             // Remove the readonly flag in case we are copying from a read-only medium
-                            let attr: DWORD = GetFileAttributesW(Path);
+                            let attr: DWORD = GetFileAttributesW(Path.GetString());
                             if attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_READONLY) != 0 {
-                                SetFileAttributesW(Path, attr & !FILE_ATTRIBUTE_READONLY);
+                                SetFileAttributesW(Path.GetString(), attr & !FILE_ATTRIBUTE_READONLY);
                             }
 
                             break 'run;
@@ -969,7 +1060,7 @@ impl CDownloadManager {
 
                 free((urlComponents.lpszScheme).cast());
 
-                hOut = CreateFileW(Path, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, core::ptr::null_mut(), CREATE_ALWAYS, 0, core::ptr::null_mut());
+                hOut = CreateFileW(Path.GetString(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, core::ptr::null_mut(), CREATE_ALWAYS, 0, core::ptr::null_mut());
                 if hOut == INVALID_HANDLE_VALUE {
                     ShowLastError(hDlg, (FALSE) as BOOL, GetLastError());
                     break 'end;
@@ -989,7 +1080,7 @@ impl CDownloadManager {
 
                     if WriteFile(
                         hOut,
-                        core::ptr::addr_of_mut!(lpBuffer[0 as usize]),
+                        lpBuffer.as_ptr() as *const core::ffi::c_void,
                         dwBytesRead,
                         core::ptr::addr_of_mut!(dwBytesWritten),
                         core::ptr::null_mut(),
@@ -1035,10 +1126,10 @@ impl CDownloadManager {
                     }
 
                     SetWindowTextW(hDlg, szMsgText.GetString());
-                    SetWindowTextW(hStatus, Path);
+                    SetWindowTextW(hStatus, Path.GetString());
 
                     // this may take a while, depending on the file size
-                    if VerifyInteg(Info.szSHA1.GetString(), Path) == 0 {
+                    if VerifyInteg(Info.szSHA1.GetString(), Path.GetString()) == 0 {
                         if szMsgText.LoadStringW(IDS_INTEG_CHECK_FAIL) == 0 {
                             DPRINT1!("Unable to load string\n");
                             break 'end;
@@ -1072,7 +1163,7 @@ impl CDownloadManager {
 
                 if Info.IType == INSTALLER_GENERATE {
                     params = CStringW::from_ptr(CPP_COM_WSTR_C2B264989196.as_ptr());
-                    params += CStringW(if bSilentInstall != 0 {
+                    params += (if bSilentInstall != 0 {
                         CPP_COM_WSTR_5853A555D865.as_ptr()
                     } else {
                         CPP_COM_WSTR_96A296D224F2.as_ptr()
@@ -1087,7 +1178,7 @@ impl CDownloadManager {
                     GetModuleFileNameW(core::ptr::null_mut(), shExInfo.lpFile as *mut WCHAR, MAX_PATH);
                     app.ReleaseBuffer();
                 } else if Info.IType == INSTALLER_EXEINZIP {
-                    let hr: HRESULT = ExtractArchiveForExecution(Path, &Info.szPackageName, &mut tempdir, &mut app);
+                    let hr: HRESULT = ExtractArchiveForExecution(Path.GetString(), &Info.szPackageName, &mut tempdir, &mut app);
                     if hr < 0 {
                         ShowLastError(hDlg, (FALSE) as BOOL, (hr) as DWORD);
                         break 'end;
@@ -1104,10 +1195,10 @@ impl CDownloadManager {
                         let mut it: InstallerType = Info.IExecType;
 
                         if it == INSTALLER_UNKNOWN || it == INSTALLER_EXEINZIP {
-                            it = GuessInstallerType(shExInfo.lpFile, extrainfo);
+                            it = GuessInstallerType(shExInfo.lpFile, &mut extrainfo);
                         }
 
-                        if GetSilentInstallParameters(it, extrainfo, shExInfo.lpFile, params.GetString()) != 0 {
+                        if GetSilentInstallParameters(it, extrainfo, shExInfo.lpFile, &mut params) != 0 {
                             shExInfo.lpParameters = params.GetString();
                             if it == INSTALLER_MSI {
                                 shExInfo.lpFile = CPP_COM_WSTR_F1C8A68A6FAF.as_ptr(); // params contains the .msi path
@@ -1164,10 +1255,10 @@ impl CDownloadManager {
                 if bCancelled != 0
                     || Info.IType == INSTALLER_GENERATE
                     || Info.IType == INSTALLER_EXEINZIP
-                    || OpensWithExplorer(Path) == 0
-                    || (HIBYTE!(ClassifyFile(Path))) as i32 != PERCEIVED_TYPE_COMPRESSED
+                    || OpensWithExplorer(Path.GetString()) == 0
+                    || (HIBYTE!(ClassifyFile(Path.GetString()))) as i32 != PERCEIVED_TYPE_COMPRESSED
                 {
-                    DeleteFileW(Path);
+                    DeleteFileW(Path.GetString());
                 }
             }
         }
