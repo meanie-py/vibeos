@@ -157,6 +157,56 @@ typedef const struct _WAVEFORMATEX *LPCWAVEFORMATEX;
 #define  WAVE_FORMAT_EXTENSIBLE			0xFFFE  /* Microsoft */
 #endif
 
+/* Media Foundation audio subtypes (mfapi.h) */
+#ifndef WAVE_FORMAT_DTS
+#define WAVE_FORMAT_DTS 0x0008
+#endif
+#ifndef WAVE_FORMAT_DRM
+#define WAVE_FORMAT_DRM 0x0009
+#endif
+#ifndef WAVE_FORMAT_WMAVOICE9
+#define WAVE_FORMAT_WMAVOICE9 0x000a
+#endif
+#ifndef WAVE_FORMAT_WMAUDIO2
+#define WAVE_FORMAT_WMAUDIO2 0x0161
+#endif
+#ifndef WAVE_FORMAT_WMAUDIO3
+#define WAVE_FORMAT_WMAUDIO3 0x0162
+#endif
+#ifndef WAVE_FORMAT_WMAUDIO_LOSSLESS
+#define WAVE_FORMAT_WMAUDIO_LOSSLESS 0x0163
+#endif
+#ifndef WAVE_FORMAT_WMASPDIF
+#define WAVE_FORMAT_WMASPDIF 0x0164
+#endif
+#ifndef WAVE_FORMAT_MPEG_ADTS_AAC
+#define WAVE_FORMAT_MPEG_ADTS_AAC 0x1600
+#endif
+#ifndef WAVE_FORMAT_MPEG_HEAAC
+#define WAVE_FORMAT_MPEG_HEAAC 0x1610
+#endif
+#ifndef WAVE_FORMAT_RAW_AAC1
+#define WAVE_FORMAT_RAW_AAC1 0x00ff
+#endif
+#ifndef WAVE_FORMAT_ALAC
+#define WAVE_FORMAT_ALAC 0x6c61
+#endif
+#ifndef WAVE_FORMAT_OPUS
+#define WAVE_FORMAT_OPUS 0x704f
+#endif
+#ifndef WAVE_FORMAT_AMR_NB
+#define WAVE_FORMAT_AMR_NB 0x7361
+#endif
+#ifndef WAVE_FORMAT_AMR_WB
+#define WAVE_FORMAT_AMR_WB 0x7362
+#endif
+#ifndef WAVE_FORMAT_AMR_WP
+#define WAVE_FORMAT_AMR_WP 0x7363
+#endif
+#ifndef WAVE_FORMAT_FLAC
+#define WAVE_FORMAT_FLAC 0xf1ac
+#endif
+
 #define WAVE_FORMAT_DEVELOPMENT         	(0xFFFF)
 
 typedef struct adpcmcoef_tag {
@@ -412,6 +462,22 @@ typedef struct mpeg1waveformat_tag {
 	DWORD		dwPTSLow;
 	DWORD		dwPTSHigh;
 } MPEG1WAVEFORMAT,* PMPEG1WAVEFORMAT;
+
+typedef struct heaacwaveinfo_tag
+{
+    WAVEFORMATEX wfx;
+    WORD wPayloadType;
+    WORD wAudioProfileLevelIndication;
+    WORD wStructType;
+    WORD wReserved1;
+    DWORD dwReserved2;
+} HEAACWAVEINFO, *PHEAACWAVEINFO;
+
+typedef struct heaacwaveformat_tag
+{
+    HEAACWAVEINFO wfInfo;
+    BYTE pbAudioSpecificConfig[1];
+} HEAACWAVEFORMAT, *PHEAACWAVEFORMAT;
 
 #define	ACM_MPEG_LAYER1		0x0001
 #define	ACM_MPEG_LAYER2		0x0002

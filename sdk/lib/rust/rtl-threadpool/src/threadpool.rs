@@ -3,7 +3,7 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::mm::*;
-use ntkrnl_sys::ddk::{DWORD_PTR, FILE_COMPLETION_INFORMATION, _FILE_INFORMATION_CLASS_FileCompletionInformation as FileCompletionInformation, IMAGE_NT_HEADERS, _IO_STATUS_BLOCK, LARGE_INTEGER, LIST_ENTRY, NtClose, NtCreateEvent, NtCreateIoCompletion, NtQueryPerformanceCounter, NtQuerySystemTime, NtReleaseMutant, NtReleaseSemaphore, NtRemoveIoCompletion, NtSetEvent, NtSetInformationFile, NtSetInformationThread, NtSetIoCompletion, NtWaitForMultipleObjects, NtWaitForSingleObject, PHANDLE, PLARGE_INTEGER, PTHREAD_START_ROUTINE, RTL_CONDITION_VARIABLE, RTL_CRITICAL_SECTION, RtlAllocateHeap, RtlCreateUserThread, RtlDeleteCriticalSection, RtlEnterCriticalSection, RtlExitUserThread, RtlFreeHeap, RtlImageNtHeader, RtlInitUnicodeString, RtlInitializeConditionVariable, RtlInitializeCriticalSection, RtlLeaveCriticalSection, RtlNtStatusToDosError, RtlSleepConditionVariableCS, RtlWakeAllConditionVariable, RtlWakeConditionVariable, _EVENT_TYPE_SynchronizationEvent, THREAD_NAME_INFORMATION, _THREADINFOCLASS_ThreadNameInformation as ThreadNameInformation};
+use ntkrnl_sys::ddk::{DWORD_PTR, FILE_COMPLETION_INFORMATION, _FILE_INFORMATION_CLASS_FileCompletionInformation as FileCompletionInformation, IMAGE_NT_HEADERS, _IO_STATUS_BLOCK, LARGE_INTEGER, LIST_ENTRY, NtClose, NtCreateEvent, NtDuplicateObject, NtCreateIoCompletion, NtQueryPerformanceCounter, NtQuerySystemTime, NtReleaseMutant, NtReleaseSemaphore, NtRemoveIoCompletion, NtSetEvent, NtSetInformationFile, NtSetInformationThread, NtSetIoCompletion, NtWaitForMultipleObjects, NtWaitForSingleObject, PHANDLE, PLARGE_INTEGER, PTHREAD_START_ROUTINE, RTL_CONDITION_VARIABLE, RTL_CRITICAL_SECTION, RtlAllocateHeap, RtlCreateUserThread, RtlDeleteCriticalSection, RtlEnterCriticalSection, RtlExitUserThread, RtlFreeHeap, RtlImageNtHeader, RtlInitUnicodeString, RtlInitializeConditionVariable, RtlInitializeCriticalSection, RtlLeaveCriticalSection, RtlNtStatusToDosError, RtlSleepConditionVariableCS, RtlWakeAllConditionVariable, RtlWakeConditionVariable, _EVENT_TYPE_SynchronizationEvent, THREAD_NAME_INFORMATION, _THREADINFOCLASS_ThreadNameInformation as ThreadNameInformation};
 use core::ffi::c_void;
 // crate substrate: win32 aliases, public TP_* types, WT_* flags,
 // RtlGetProcessHeap / GetCurrent* helpers (NtCurrentTeb impl), and the
@@ -147,6 +147,11 @@ pub struct threadpool_object_u_wait {
     pub wait_entry: list,
     pub timeout: ULONGLONG,
     pub handle: HANDLE,
+    /// Our own duplicate of `handle`, which is what the wait thread waits on. A caller may
+    /// close its handle while the wait is pending (rtworkq closes a waitable timer right after
+    /// submitting it), and NtWaitForMultipleObjects fails the WHOLE bucket on one invalid handle:
+    /// every other wait sharing the thread would stall. Wine's fix, ported.
+    pub duped_handle: HANDLE,
     pub flags: DWORD,
     pub rtl_callback: RTL_WAITORTIMERCALLBACKFUNC,
 }
@@ -195,6 +200,9 @@ pub struct threadpool_object {
     pub num_pending_callbacks: LONG,
     pub num_running_callbacks: LONG,
     pub num_associated_callbacks: LONG,
+    /// Bumped when TpSetWait points a wait at a different handle, so a signal the wait thread
+    /// collected for the old handle is not delivered against the new one.
+    pub update_serial: LONG,
     pub u: threadpool_object_u,
 }
 
@@ -589,6 +597,7 @@ unsafe extern "system" fn waitqueue_thread_proc(param: PVOID) {
         [core::ptr::null_mut(); MAXIMUM_WAITQUEUE_OBJECTS];
     let mut handles: [HANDLE; MAXIMUM_WAITQUEUE_OBJECTS + 1] =
         [core::ptr::null_mut(); MAXIMUM_WAITQUEUE_OBJECTS + 1];
+    let mut update_serials: [LONG; MAXIMUM_WAITQUEUE_OBJECTS] = [0; MAXIMUM_WAITQUEUE_OBJECTS];
     let bucket = param as *mut waitqueue_bucket;
     let mut wait: *mut threadpool_object;
     let mut next: *mut threadpool_object;
@@ -646,7 +655,12 @@ unsafe extern "system" fn waitqueue_thread_proc(param: PVOID) {
 
                 InterlockedIncrement(core::ptr::addr_of_mut!((*wait).refcount));
                 objects[num_handles as usize] = wait;
-                handles[num_handles as usize] = (*wait).u.wait.handle;
+                handles[num_handles as usize] = if (*wait).u.wait.duped_handle.is_null() {
+                    (*wait).u.wait.handle
+                } else {
+                    (*wait).u.wait.duped_handle
+                };
+                update_serials[num_handles as usize] = (*wait).update_serial;
                 num_handles += 1;
             }
 
@@ -682,7 +696,9 @@ unsafe extern "system" fn waitqueue_thread_proc(param: PVOID) {
 
             if status >= STATUS_WAIT_0 && status < STATUS_WAIT_0 + num_handles as i32 {
                 wait = objects[(status - STATUS_WAIT_0) as usize];
-                if !(*wait).u.wait.bucket.is_null() {
+                if !(*wait).u.wait.bucket.is_null()
+                    && (*wait).update_serial == update_serials[(status - STATUS_WAIT_0) as usize]
+                {
                     if ((*wait).u.wait.flags & WT_EXECUTEONLYONCE) != 0 {
                         list_remove(core::ptr::addr_of_mut!((*wait).u.wait.wait_entry));
                         list_add_tail(
@@ -815,6 +831,7 @@ unsafe fn tp_waitqueue_lock(wait: *mut threadpool_object) -> NTSTATUS {
     (*wait).u.wait.wait_pending = 0;
     (*wait).u.wait.timeout = 0;
     (*wait).u.wait.handle = INVALID_HANDLE_VALUE as HANDLE;
+    (*wait).u.wait.duped_handle = core::ptr::null_mut();
 
     RtlEnterCriticalSection(core::ptr::addr_of_mut!(waitqueue.cs));
 
@@ -1235,6 +1252,7 @@ unsafe fn tp_object_initialize(object: *mut threadpool_object, pool: *mut thread
     (*object).num_pending_callbacks = 0;
     (*object).num_running_callbacks = 0;
     (*object).num_associated_callbacks = 0;
+    (*object).update_serial = 0;
 
     if !environment.is_null() {
         if (*environment).Version != 1 && (*environment).Version != 3 {
@@ -1405,6 +1423,13 @@ unsafe fn tp_object_prepare_shutdown(object: *mut threadpool_object) {
     }
 }
 
+unsafe fn tp_wait_close_duped_handle(wait: *mut threadpool_object) {
+    if !(*wait).u.wait.duped_handle.is_null() {
+        NtClose((*wait).u.wait.duped_handle);
+        (*wait).u.wait.duped_handle = core::ptr::null_mut();
+    }
+}
+
 unsafe fn tp_object_release(object: *mut threadpool_object) -> BOOL {
     if InterlockedDecrement(core::ptr::addr_of_mut!((*object).refcount)) != 0 {
         return 0;
@@ -1421,6 +1446,10 @@ unsafe fn tp_object_release(object: *mut threadpool_object) -> BOOL {
         RtlLeaveCriticalSection(core::ptr::addr_of_mut!((*group).cs));
 
         tp_group_release(group);
+    }
+
+    if (*object).type_ == TP_OBJECT_TYPE_WAIT {
+        tp_wait_close_duped_handle(object);
     }
 
     tp_threadpool_unlock((*object).pool);
@@ -2201,6 +2230,22 @@ pub unsafe extern "system" fn TpSetWait(wait: *mut TP_WAIT, handle: HANDLE, time
 
     RtlEnterCriticalSection(core::ptr::addr_of_mut!(waitqueue.cs));
 
+    let same_handle = (*this).u.wait.handle == handle;
+    tp_wait_close_duped_handle(this);
+    if !handle.is_null()
+        && NtDuplicateObject(
+            -1isize as HANDLE, // NtCurrentProcess()
+            handle,
+            -1isize as HANDLE,
+            core::ptr::addr_of_mut!((*this).u.wait.duped_handle),
+            0,
+            0,
+            DUPLICATE_SAME_ACCESS,
+        ) != 0
+    {
+        // Wait on the caller's handle as before; only closing it early is unprotected.
+        (*this).u.wait.duped_handle = core::ptr::null_mut();
+    }
     (*this).u.wait.handle = handle;
 
     if !handle.is_null() || (*this).u.wait.wait_pending != 0 {
@@ -2225,6 +2270,9 @@ pub unsafe extern "system" fn TpSetWait(wait: *mut TP_WAIT, handle: HANDLE, time
             (*this).u.wait.wait_pending = 0;
         }
 
+        if !same_handle {
+            (*this).update_serial += 1;
+        }
         NtSetEvent((*bucket).update_event, core::ptr::null_mut());
     }
 

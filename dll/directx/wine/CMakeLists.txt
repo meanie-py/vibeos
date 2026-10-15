@@ -93,8 +93,10 @@ if(DLL_EXPORT_VERSION GREATER_EQUAL 0x600)
     add_subdirectory(d3dx11_43)
     add_subdirectory(dwrite)
     add_subdirectory(dxgi)
-    add_subdirectory(dxva2)
 endif()
+
+# dxva2 is built at every DLL_EXPORT_VERSION: evr (Media Foundation's renderer) imports it.
+add_subdirectory(dxva2)
 
 if(DLL_EXPORT_VERSION GREATER_EQUAL 0xA00)
     add_subdirectory(d3d12)

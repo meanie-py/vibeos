@@ -581,6 +581,7 @@ static inline void winetest_add_failures( LONG new_failures )
 
 #include <stdio.h>
 #include <excpt.h>
+#include <ctype.h>
 #ifdef __REACTOS__
 #include <oleauto.h>
 #endif
@@ -917,6 +918,8 @@ extern const char *wine_dbgstr_guid( const GUID *guid );
 extern const char *wine_dbgstr_point( const POINT *guid );
 extern const char *wine_dbgstr_size( const SIZE *guid );
 extern const char *wine_dbgstr_rect( const RECT *rect );
+extern const char *wine_dbgstr_fourcc( unsigned int fourcc );
+static inline const char *debugstr_fourcc( unsigned int cc ) { return wine_dbgstr_fourcc( cc ); }
 #ifdef WINETEST_USE_DBGSTR_LONGLONG
 extern const char *wine_dbgstr_longlong( ULONGLONG ll );
 #endif
@@ -1290,6 +1293,22 @@ const char *wine_dbgstr_rect( const RECT *rect )
 #else
     sprintf( res, "(%ld,%ld)-(%ld,%ld)", rect->left, rect->top, rect->right, rect->bottom );
 #endif
+    release_temp_buffer( res, strlen(res) + 1 );
+    return res;
+}
+
+const char *wine_dbgstr_fourcc( unsigned int fourcc )
+{
+    char str[4] = { (char)fourcc, (char)(fourcc >> 8), (char)(fourcc >> 16), (char)(fourcc >> 24) };
+    char *res = get_temp_buffer( 16 );
+
+    if (!fourcc)
+        strcpy( res, "''" );
+    else if (isprint( (unsigned char)str[0] ) && isprint( (unsigned char)str[1] ) &&
+             isprint( (unsigned char)str[2] ) && isprint( (unsigned char)str[3] ))
+        sprintf( res, "'%.4s'", str );
+    else
+        sprintf( res, "0x%08x", fourcc );
     release_temp_buffer( res, strlen(res) + 1 );
     return res;
 }
