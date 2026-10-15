@@ -1759,3 +1759,18 @@ def test_a_sizeof_case_label_is_a_number_not_an_arm(tmp_path):
     )
     idents = {c.ident for c in find_switch_constants([_mod(tmp_path) / "helper.c"], root)}
     assert idents == {"SIZE_OF_NT4_DATA", "EXTRA"}
+
+
+def test_a_tu_that_flips_the_charset_is_an_instantiation_not_the_island():
+    """fc: texta.c `#undef UNICODE`s to instantiate text.h as ANSI while textw.c keeps the
+    module's UNICODE. Merged into the wrapper, texta.c's toggles made the whole island ANSI
+    and conutils.h `#error`ed. A module whose TUs all agree keeps its toggles."""
+    from rustconv.profile_derive import charset_instantiations
+
+    texta = ["#undef UNICODE", "#undef _UNICODE", "#define _MBCS", '#include "text.h"']
+    textw = ["#define UNICODE", "#define _UNICODE", "#undef _MBCS", '#include "text.h"']
+    fc = ['#include "fc.h"']
+    assert charset_instantiations([fc, texta, textw], True) == {1}
+    # Every TU of an ANSI-declared module defines UNICODE: that is the module's charset.
+    assert charset_instantiations([textw, textw], False) == set()
+    assert charset_instantiations([texta, texta], True) == set()

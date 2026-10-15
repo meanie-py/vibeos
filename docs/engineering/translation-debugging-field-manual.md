@@ -486,6 +486,11 @@ blind to all of it.
 
 ### Width mismatches: return, argument, and static
 Same family, three positions, all silent on the arch where the widths happen to agree.
+- **Copied by vote.** `port resolve` copies a missing extern from tree consensus, and most
+  crates had typed the CRT's `wint_t towupper(wint_t)` as `towupper(c: c_int) -> c_int` -- a
+  caller reading all of EAX from a function that returns an unsigned short. Consensus now
+  refuses a declaration set that disagrees on an integer WIDTH at any position, and the
+  module's own C prototype settles it.
 - **Return.** A `-> u32` decl over a `BOOLEAN`(u8) definition: the callee sets only `AL`, the
   caller reads all of `EAX` → false-"true" on non-`xor eax,eax` paths, nondeterministic (reads
   as a flaky boot). Real damage: `RtlEqualUnicodeString` false match snapped ftfd.dll against
@@ -1954,6 +1959,13 @@ buffers at half size, `RegEnumValueW` told 128 WCHARs into 128 bytes), each need
 `port resolve` writes a generated `UNICODE TCHAR family` prelude block (`TCHAR = WCHAR` …)
 whenever every TU's real compile command carries `-DUNICODE`. A `port fix` reply had already
 built a shim casting `LPTSTR` to `*mut i8` around the wrong type -- delete such shims on sight.
+
+**A TU that flips the charset is a template instantiation, not the module's charset.** fc's
+texta.c opens `#undef UNICODE` / `#define _MBCS` and includes text.h; textw.c includes it
+again wide. Merged into the module island, texta.c's toggles made the WHOLE island ANSI and
+conutils.h `#error`ed. `profile_derive` now drops the toggles of a TU whose charset disagrees
+with the module's (finding `CHARSET_INSTANTIATION`), and the Rust for the template is generic
+over the char type, one instantiation exported per TU (fc-rust's `text_h.rs`).
 
 ### The same rule for TYPEDEFS: a private `type` alias that disagrees on WIDTH
 The entry above is about shadow *structs*; this is the same disease one level down, and it is
