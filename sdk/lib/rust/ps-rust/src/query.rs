@@ -1813,10 +1813,13 @@ pub unsafe extern "system" fn NtSetInformationThread(
         }
 
         ThreadIdealProcessor => {
-            if ThreadInformationLength != core::mem::size_of::<ULONG_PTR>() as ULONG {
+            // A ULONG on every arch (Windows 11 accepts exactly 4 bytes), and the success
+            // status is the PREVIOUS ideal processor, which kernel32's SetThreadIdealProcessor
+            // returns as its result. The C wanted a ULONG_PTR and returned STATUS_SUCCESS.
+            if ThreadInformationLength != core::mem::size_of::<ULONG>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                IdealProcessor = match ntkrnl_sys::probe::read_back(ThreadInformation as *const ULONG_PTR) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
+                IdealProcessor = match ntkrnl_sys::probe::read_back(ThreadInformation as PULONG) { Ok(v) => v as ULONG_PTR, Err(s) => { Status = s; break 'class; } };
 
                 if IdealProcessor > MAXIMUM_PROCESSORS as ULONG_PTR {
                     Status = STATUS_INVALID_PARAMETER;
@@ -1830,10 +1833,10 @@ pub unsafe extern "system" fn NtSetInformationThread(
                         core::ptr::null_mut(),
                     );
                     if Status >= 0 {
-                        KeSetIdealProcessorThread(
+                        Status = KeSetIdealProcessorThread(
                             core::ptr::addr_of_mut!((*(Thread as *mut _ETHREAD)).Tcb),
                             IdealProcessor as UCHAR,
-                        );
+                        ) as NTSTATUS;
 
                         Teb = (*(Thread as *mut _ETHREAD)).Tcb.Teb;
                         if !Teb.is_null() && (ExAcquireRundownProtection(core::ptr::addr_of_mut!((*(Thread as *mut _ETHREAD)).RundownProtect)) != 0) {

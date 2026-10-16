@@ -182,8 +182,10 @@ pub static PsThreadInfoClass: [INFORMATION_CLASS_INFO; 28] = [
     /* 10 ThreadZeroTlsCell                    */ iqs_same::<ULONG, ULONG>(ICIF_SET),
     /* 11 ThreadPerformanceCount               */ iqs_same::<LARGE_INTEGER, ULONG>(ICIF_QUERY),
     /* 12 ThreadAmILastThread                  */ iqs_same::<ULONG, ULONG>(ICIF_QUERY),
-    /* 13 ThreadIdealProcessor                 */ iqs_same::<ULONG_PTR, ULONG>(ICIF_SET),
-    /* 14 ThreadPriorityBoost                  */ iqs::<ULONG, ULONG, ULONG_PTR, ULONG>(ICIF_QUERY | ICIF_SET),
+    // 13 and 14 SET a ULONG (the C table said ULONG_PTR): Windows 11 accepts exactly 4
+    // bytes for both, on x64 and x86, and kernel32 passes a ULONG.
+    /* 13 ThreadIdealProcessor                 */ iqs_same::<ULONG, ULONG>(ICIF_SET),
+    /* 14 ThreadPriorityBoost                  */ iqs_same::<ULONG, ULONG>(ICIF_QUERY | ICIF_SET),
     /* 15 ThreadSetTlsArrayAddress             */ iqs_same::<*const u8, ULONG>(ICIF_SET | ICIF_SIZE_VARIABLE),
     /* 16 ThreadIsIoPending                    */ iqs_same::<ULONG, ULONG>(ICIF_QUERY),
     /* 17 ThreadHideFromDebugger               */ iqs_same::<C_CHAR, ULONG>(ICIF_SET | ICIF_SET_SIZE_VARIABLE),

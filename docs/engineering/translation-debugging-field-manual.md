@@ -6479,6 +6479,21 @@ they RETURN a status instead of raising. Do not reach for the DDK `ProbeFor*` th
 assume the kernel-side `ntkrnl_sys::probe` helpers raise either — they do not touch the page,
 they range-check and return `Result`.
 
+### An info class whose C size is ULONG_PTR where Windows takes a ULONG
+
+**Symptom.** A kernel32 setter fails `ERROR_BAD_LENGTH` (24) on amd64 and arm64 only:
+SetThreadPriorityBoost and SetThreadIdealProcessor, both broken since the port.
+
+**Cause.** ReactOS's `ps_i.h` table and the matching `query.c` arms give ThreadIdealProcessor
+and ThreadPriorityBoost a SET size of `sizeof(ULONG_PTR)`; kernel32 passes a ULONG, and so
+does every Windows caller. On i386 the two are the same width, which is how it hid. The
+length is checked twice (`info_class.rs` via DefaultSetInfoBufferCheck, then the arm), so
+fixing one site changes nothing.
+
+**Fix.** Measure the accepted sizes on Windows (a loop over sizes 1..16 on a throwaway
+handle) and make the table and the arm agree with it. The same probe showed
+ThreadIdealProcessor's success status is the previous processor, which kernel32 returns.
+
 ### An access right the object type does not list is silently DROPPED, not refused
 
 **Symptom.** An open for a Vista+ right succeeds, and the first call through the handle

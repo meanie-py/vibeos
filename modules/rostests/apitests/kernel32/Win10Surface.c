@@ -346,6 +346,7 @@ static void Test_SetLimitedAndAppContainer(void)
         { L"\u00c4bc", L"S-1-15-2-3850436856-106003566-1273259897-518191818-2117240025-143405102-2816276476" },
     };
     WCHAR Long[66];
+    DWORD Prev;
     PSID Sid;
     LPWSTR Str;
     HANDLE Handle;
@@ -357,6 +358,11 @@ static void Test_SetLimitedAndAppContainer(void)
     ok(Handle != NULL, "OpenThread(SET_LIMITED) failed: %lu\n", GetLastError());
     ok(SetThreadPriorityBoost(Handle, FALSE), "SetThreadPriorityBoost through SET_LIMITED: %lu\n", GetLastError());
     CloseHandle(Handle);
+    /* ThreadIdealProcessor sets a ULONG and answers the previous processor. */
+    Prev = SetThreadIdealProcessor(GetCurrentThread(), 0);
+    ok(Prev != (DWORD)-1, "SetThreadIdealProcessor: %lu\n", GetLastError());
+    Prev = SetThreadIdealProcessor(GetCurrentThread(), 0);
+    ok(Prev == 0, "previous ideal processor %lu, expected 0\n", Prev);
     Handle = OpenProcess(PROCESS_SET_LIMITED_INFORMATION, FALSE, GetCurrentProcessId());
     ok(Handle != NULL, "OpenProcess(SET_LIMITED) failed: %lu\n", GetLastError());
     SetLastError(0xdeadbeef);
