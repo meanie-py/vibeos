@@ -12,8 +12,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import build as build_mod
 from . import (
+    artifact_store,
     cargoswap,
     checkpoint,
     debugcmd,
@@ -28,6 +28,7 @@ from . import (
     tooling,
     winref,
 )
+from . import build as build_mod
 from . import conformance as conformance_mod
 from . import difftest as difftest_mod
 from . import farm as farm_mod
@@ -94,6 +95,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = p.add_subparsers(dest="cmd", required=True)
     checkpoint.add_parser(sub)
+    artifact_store.add_parser(sub)
     host_clock.add_parser(sub)
     pi4.add_parser(sub)
     pi5.add_parser(sub)
@@ -110,6 +112,16 @@ def build_parser() -> argparse.ArgumentParser:
     b = sub.add_parser("build", help="ninja + binary-lints + build-index + stamp")
     arch_arg(b)
     b.add_argument("--clean", action="store_true", help="cold: nuke all rust targets")
+    b.add_argument(
+        "--artifact-store",
+        type=Path,
+        help="opt in to supervised immutable amd64 body archives at this absolute store path",
+    )
+    b.add_argument(
+        "--artifact-store-verify",
+        action="store_true",
+        help="with --artifact-store, independently rebuild requested archives and compare bytes",
+    )
     b.add_argument(
         "--extra-target",
         action="append",
@@ -484,6 +496,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     g.add_argument("--no-build", action="store_true", help="smoke only (media must be current)")
     g.add_argument("--clean", action="store_true", help="cold builds (implies build)")
+    g.add_argument(
+        "--artifact-store",
+        type=Path,
+        help="exercise the opt-in immutable body store in the amd64 gate build",
+    )
+    g.add_argument(
+        "--artifact-store-verify",
+        action="store_true",
+        help="independently verify selected amd64 archives during the gate build",
+    )
     g.add_argument(
         "--keep-going", action="store_true", help="ninja -k0 in each build: collect ALL failures"
     )

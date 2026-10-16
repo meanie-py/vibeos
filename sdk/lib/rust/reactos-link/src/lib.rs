@@ -60,6 +60,7 @@ pub mod cargo_deps;
 pub mod compiler_env;
 mod storage;
 mod body_storage;
+mod artifact_store;
 
 // ---- cmake-off `--trace` (ninja-`-v`-style command list) ------------------
 // When `VIBEOS_LINK_TRACE` names a DIRECTORY, every command the engine spawns is
@@ -2256,6 +2257,21 @@ impl Linker {
                     .unwrap_or_else(|| env::var_os(name));
                 (name, value)
             }).collect();
+        let effective_flags = flags.iter().find(|(name, _)| **name == "RUSTFLAGS")
+            .and_then(|(_, value)| value.as_ref())
+            .map(|value| value.to_str().expect("non-UTF8 Rust flags"))
+            .unwrap_or("");
+        let cargo_cwd = cmd.get_current_dir().map(Path::to_path_buf)
+            .unwrap_or_else(|| env::current_dir().expect("nested Cargo working directory"));
+        if let Some(archive) = artifact_store::get(
+            &self.repo_root, &self.pkg_name, crate_name, self.arch.name, &out_stem,
+            features, default_features, kernel, staticlib, effective_flags,
+            flags.iter().any(|(name, value)| **name != "RUSTFLAGS"
+                && value.as_ref().is_some_and(|value| !value.is_empty())),
+            &cargo_cwd,
+        ) {
+            return archive;
+        }
         let configuration = format!("{target_identity:?}|{pin:?}|{flags:?}");
         let emit_ir = env::var("VIBEOS_EMIT_LLVM_IR").as_deref() == Ok("1");
         let shared = body_storage::enabled(shards, emit_ir).then(|| {

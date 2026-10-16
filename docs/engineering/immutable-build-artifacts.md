@@ -1,13 +1,17 @@
 # Immutable build artifacts across lanes
 
-Status: proposed implementation design, 2026-10-15. Documentation only; no
-artifact-store implementation or activation is authorized by this document.
-Ship this design with the next shared-storage commit before implementation begins.
-Dependency: the within-worktree body-sharding changes described below are currently
-uncommitted on `shared-rust-bodies`, not established mainline behavior. Land them with
-this document, or first, before using them as the measurement baseline.
-Step 1 owner: Codex, the author of this design and the pending body-sharding changes;
-a handoff must name a replacement owner and preserve the measurement artifacts.
+Status: implementation authorized by the user on 2026-10-15; the measurement gate
+and full three-architecture cold gate passed for the opt-in amd64 pilot. Default builds do not use
+store hits. The design and
+within-worktree sharding baseline were committed together as `eaa4c573a9a` on
+`shared-rust-bodies` before this implementation began; that local commit is not a
+claim of mainline landing. Step 1 owner: Codex. A handoff must name a replacement
+owner and preserve the measurement artifacts.
+
+Discovery is available through `vibeos-cli artifact-store inventory` and `plan`;
+`plan --revision` replays tracked historical closures under an explicitly proposed
+execution context. These commands report candidates, not cache hits. Measurements
+are recorded under `disk-optimization-results/20261016-artifact-spike/`.
 
 ## Objective and scope
 
@@ -33,7 +37,7 @@ Do not promise total fleet savings or transparent Cargo replacement from the pil
 
 - `sdk/lib/rust/reactos-link/src/lib.rs::build_rust_crate_once` constructs the
   nested Cargo command, including per-target ABI flags and compiler selection.
-- The pending `body_storage.rs` change shares mutable targets within one worktree, partitioned
+- The baseline `body_storage.rs` change shares mutable targets within one worktree, partitioned
   by configuration and body shard. Its lock covers Cargo, depfile reads, and copying
   the archive into the consumer's `OUT_DIR`. It is not a cross-worktree cache.
 - `cargo_deps.rs` reads Cargo's `.d` and emits `cargo:rerun-if-changed` inputs.
@@ -156,6 +160,15 @@ external native compilation, outside-root source includes, or undeclared generat
 inputs. Builtin stable targets come first, including eligible i386 kernel bodies;
 custom-target build-std and compiler-builtins generation require a separate recipe
 for the particular actions that use them, not a blanket exclusion of i386 kernels.
+
+Plain native DLL import attributes are different from bundled static libraries.
+Pinned 1.92 compiler negative controls on Linux and amd64 Windows proved that an
+absent default/dylib library permits a static archive, leaves its native symbol
+undefined, and becomes a final-consumer requirement; the equivalent `kind="static"`
+fails without the library. Discovery accepts narrowly parsed literal default/dylib
+attributes and the existing raw-dylib `+verbatim` form. It rejects other modifiers,
+unknown keys, bundled static libraries and conditional `cfg_attr(link(...))` until
+modeled. These controls live in `tools/test_artifact_native_inputs.py`.
 
 A source inspection of the working tree on 2026-10-15 found no `build.rs` or explicit
 build/proc-macro setting in ntkrnl-sys, ntdll-sys, panic-common, panic-lean, cnt-rust-lib,
@@ -355,17 +368,61 @@ budget does not authorize evicting a live or pinned result.
 
 ## Proposed interfaces and telemetry
 
-Names below are proposed, not existing commands. Add them to the CLI rather than
-creating a remembered collection of shell recipes:
+The first implementation exposes these commands through the existing CLI:
 
-- `build --artifact-store off|pilot|on`: default off during rollout; pilot restricts
-  recipes, on is unavailable until expansion acceptance. Persist explicitly per arch.
-- `build --artifact-store-required`: fail if selected pilot actions cannot use the
-  store; distinguish a valid cold miss from an ineligible action.
-- `artifact-store status|explain|verify|gc`: report unique bytes, active refs, action
-  identity differences, digest integrity, and a GC dry run with explicit apply.
-- `build --artifact-store-verify`: bypass action hits, independently rebuild eligible
-  actions in fresh scratch and compare with existing entries. Do not overwrite them.
+- `build --arch amd64 --artifact-store /absolute/store`: select the six audited
+  body packages (CRT startup, CRT entry bridge, DLL entry shim, console utilities,
+  beep and kernel). Selected requests are required to satisfy eligibility; failures
+  do not fall back. Other bodies retain existing storage. The store must be outside
+  the checkout. A plain build reconciles the opt-in back to off.
+- Add `--artifact-store-verify` to independently rebuild and compare selected actions
+  once per supervisor session. A command/environment nonce forces requests even when
+  Ninja and Cargo would otherwise be fresh. An empty store requires two independent
+  builds before a verification receipt can claim a comparison.
+- `gate --artifact-store /absolute/store [--artifact-store-verify]` forwards the
+  selection to its amd64 build. Other architectures use their existing storage;
+  the final warm amd64 media restage retains the store without repeating verification.
+- `artifact-store build-body --store /absolute/store --body NAME --output REPORT_DIR`
+  exercises one body under disk/CPU admission. `--features`, `--no-default-features`
+  and `--kernel` specify the request; `--clean` and `--verify` exercise rebuild modes.
+- `artifact-store status --store PATH` reports filesystem accounting, not content
+  integrity. `artifact-store gc --store PATH` is a dry run; `--apply` collects only
+  unreferenced objects after the grace interval. Live sessions and durable references
+  protect objects independently of their age.
+- `artifact-store repair --store PATH --action SHA256 --output REPORT_DIR` explicitly
+  rebuilds a missing indexed blob. The current source, compiler and recipe must match
+  the original action exactly; output bytes must match its recorded digest. Existing
+  corrupt blobs are rejected, and references/index entries are preserved. Normal
+  builds fail on missing blobs until repair succeeds; repair never serves consumers.
+
+Store path and supervisor-verified toolchain identity are persistent Cargo command
+inputs. Session capabilities are private, short-lived inputs, not dependency watches.
+Full toolchain hashes are checked before and after the supervised build; misses also
+retain a worker postcheck. This avoids expanding every consumer's dependency file
+with the entire compiler installation.
+
+The supervisor audits ambient Cargo configuration before and after the outer build,
+including when all consumers are fresh. Its bounded cwd scope covers the amd64
+build directory, Rust workspace and direct package directories, their ancestors,
+the canonical mount's ancestors and effective Cargo home. Each request supplies
+its actual nested Cargo cwd and must fall within that audited scope. Only inert
+target settings are allowed; profile, build, environment and target-flag overrides
+outside the explicit recipe fail. Missing-config membership is checked by this
+supervisor scan, not recursive Cargo watches on `/` or the home directory.
+
+The local prototype fingerprints native tool contents but still includes their
+resolved installation paths in the tool descriptor. Worktrees using the same local
+installation can share; identical installations at different paths can miss. Before
+remote collaborator reuse, separate physical mount locations from logical tool
+identity and prove that normalization with independently installed toolchains.
+Remote transport and authentication are not implemented by this local store.
+
+Reference retirement currently accompanies an explicit store-enabled amd64 clean:
+only after private Cargo outputs are successfully removed does the supervisor drop
+their durable references. Standalone body references remain. Removing worktrees or
+pruning outputs outside this path conservatively leaves references behind; automatic
+retirement for those lifecycle operations remains required before broad rollout.
+Never reclaim those references solely because a lane is old.
 
 `--clean` must not silently become an action-cache hit. Preserve its independent-rebuild
 intent by bypassing action hits on clean gates; compiler caches follow existing policy.
@@ -509,8 +566,9 @@ must retain a functional local build path, with unsupported/offline behavior exp
 Portable identity covers equivalent toolchains/platforms, not arbitrary cross-host ABI
 compatibility. Storage compression and remote eviction are independent of blob identity.
 
-Rollback is `artifact-store off` followed by normal consumer regeneration through the
-existing sharded path. It must work without deleting the store or disturbing another
+Rollback is a normal `vibeos-cli build --arch amd64` without `--artifact-store`;
+it reconciles the CMake mode to off and regenerates consumers through the existing
+sharded path. It must work without deleting the store or disturbing another
 lane. Activation remains opt-in until the acceptance evidence is recorded. No migration
 of existing mutable targets into the trusted store by filename, and no pruning of other
 lanes as part of this project.

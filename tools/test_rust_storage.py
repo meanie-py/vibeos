@@ -117,12 +117,9 @@ def test_report_counts_inodes_once_and_does_not_follow_symlinks(tmp_path):
     assert inventory["allocated_bytes"] == result["allocated_bytes"]
     assert inventory["content_hashed"] is False
     assert inventory["duplicates"] == {}
-    assert result["duplicates"][".rmeta"] == {
-        "total_bytes": 16,
-        "duplicate_bytes": 8,
-        "files": 2,
-        "distinct": 1,
-    }
+    assert result["content"]["verified_logical_bytes"] == 16
+    assert result["content"]["duplicate_inodes"] == 1
+    assert result["content"]["distinct_contents"] == 1
 
 
 def test_body_storage_lock_markers_and_snapshot_independence(tmp_path):

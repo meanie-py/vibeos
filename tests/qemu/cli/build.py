@@ -9,10 +9,12 @@ LINK_FAIL distinctly with i386 PE-decoration hints.
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -185,7 +187,8 @@ def _clean(run: Run, repo: Path, arch: str) -> None:
     # (det-plan §stale-cargo / task #41). Remove them so ninja re-runs the link.
     outputs = provenance.discover_rust_module_outputs(repo, arch)
     for p in targets:
-        shutil.rmtree(p, ignore_errors=True)
+        if p.exists():
+            shutil.rmtree(p)
     for a in archives + outputs:
         a.unlink(missing_ok=True)
     run.log(
@@ -414,7 +417,7 @@ def build(args, repo: Path) -> int:
             if not _hold_wow64_source(run, repo, arch, args, reads):
                 return run.finalize(repo)
             with diskspace.reserve(repo, "build"):
-                rc = _build_locked(args, repo, run, arch, cfg, build_dir, cold)
+                rc = _build_supervised(args, repo, run, arch, cfg, build_dir, cold)
             if rc == 0:
                 _trim_own_target(repo)
             return rc
@@ -1080,7 +1083,80 @@ def _refresh_wowx64_cpu(run, repo: Path) -> bool:
     return True
 
 
-def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: bool) -> int:
+def _build_supervised(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: bool) -> int:
+    store_root = getattr(args, "artifact_store", None)
+    verify = bool(getattr(args, "artifact_store_verify", False))
+    if store_root is None and not verify:
+        return _build_locked(args, repo, run, arch, cfg, build_dir, cold)
+    completed_rc = None
+    try:
+        if store_root is None:
+            raise ValueError("--artifact-store-verify requires --artifact-store")
+        if arch != "amd64":
+            raise ValueError("immutable body store currently supports --arch amd64 only")
+        if not Path(store_root).is_absolute():
+            raise ValueError("--artifact-store must name an absolute directory")
+        if getattr(args, "incremental", False) or os.environ.get(
+            "VIBEOS_RUST_INCREMENTAL", ""
+        ).lower() in ("1", "true", "yes"):
+            raise ValueError("immutable body store does not support incremental builds")
+        from tools.artifact_executor import PIN
+        from tools.artifact_runtime import record_outer_result, supervise
+
+        toolchain = Path.home() / ".rustup" / "toolchains" / PIN
+        run.extra["artifact_store"] = {
+            "root": str(store_root),
+            "report": str(run.dir / "artifact-supervisor" / "summary.json"),
+            "verify": verify,
+            "clean": cold,
+        }
+        with supervise(
+            repo,
+            Path(store_root),
+            toolchain,
+            run.dir / "artifact-supervisor",
+            clean=cold,
+            verify=verify,
+        ) as supervisor:
+            completed_rc = _build_locked(
+                args,
+                repo,
+                run,
+                arch,
+                cfg,
+                build_dir,
+                cold,
+                artifact_env={
+                    "VIBEOS_ARTIFACT_SUPERVISOR": str(supervisor),
+                    "VIBEOS_ARTIFACT_PYTHON": sys.executable,
+                    "VIBEOS_ARTIFACT_TOOLCHAIN_ID": json.loads(supervisor.read_text())[
+                        "toolchain_key"
+                    ],
+                },
+            )
+            record_outer_result(supervisor, completed_rc)
+        return completed_rc
+    except (OSError, ValueError, RuntimeError) as exc:
+        if completed_rc == 0:
+            # A failed supervisor postcheck invalidates a stamp minted by the
+            # otherwise successful build; smoke must not accept that result.
+            (build_dir / provenance.STAMP_NAME).unlink(missing_ok=True)
+        run.classification = "ARTIFACT_STORE_FAIL"
+        run.add(Stage("artifact-store", status="fail", detail=str(exc)))
+        return run.finalize(repo)
+
+
+def _build_locked(
+    args,
+    repo: Path,
+    run,
+    arch: str,
+    cfg,
+    build_dir: Path,
+    cold: bool,
+    *,
+    artifact_env: dict[str, str] | None = None,
+) -> int:
     if not _isolation_preflight(run, repo, build_dir):
         return run.finalize(repo)
     wrapped = _maybe_canonize(
@@ -1163,6 +1239,23 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
     shards = getattr(args, "rust_storage_shards", None)
     body_shards = getattr(args, "rust_body_shards", None)
     storage_options = _storage_options(build_dir, shards, body_shards)
+    artifact_mode = "ON" if artifact_env else "OFF"
+    # Reconcile on every invocation: a plain build turns the opt-in off. Changing
+    # the generated Cargo command makes Ninja invoke Cargo, whose environment
+    # watch reruns build.rs and changes its archive path safely.
+    if _value_in_cache(build_dir, "VIBEOS_ARTIFACT_STORE_MODE") != artifact_mode:
+        storage_options.append(f"-DVIBEOS_ARTIFACT_STORE_MODE={artifact_mode}")
+    artifact_root = str(getattr(args, "artifact_store", "") or "") if artifact_env else ""
+    if _value_in_cache(build_dir, "VIBEOS_ARTIFACT_STORE_ROOT") != artifact_root:
+        storage_options.append(f"-DVIBEOS_ARTIFACT_STORE_ROOT={artifact_root}")
+    verify_nonce = (
+        str(run.dir) if artifact_env and getattr(args, "artifact_store_verify", False) else ""
+    )
+    if _value_in_cache(build_dir, "VIBEOS_ARTIFACT_VERIFY_NONCE") != verify_nonce:
+        storage_options.append(f"-DVIBEOS_ARTIFACT_VERIFY_NONCE={verify_nonce}")
+    toolchain_id = (artifact_env or {}).get("VIBEOS_ARTIFACT_TOOLCHAIN_ID", "")
+    if _value_in_cache(build_dir, "VIBEOS_ARTIFACT_TOOLCHAIN_ID") != toolchain_id:
+        storage_options.append(f"-DVIBEOS_ARTIFACT_TOOLCHAIN_ID={toolchain_id}")
     if storage_options:
         cp = run.run(
             wrap(["cmake", *storage_options, "."]),
@@ -1182,6 +1275,10 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
 
     if cold:
         _clean(run, repo, arch)
+        if artifact_env:
+            from tools.artifact_runtime import retire_build_refs
+
+            retire_build_refs(Path(artifact_env["VIBEOS_ARTIFACT_SUPERVISOR"]))
 
     # --- reproducible builds: pin SOURCE_DATE_EPOCH (rung 2b) ---
     # Set it in our env so every subprocess (cmake configure inside _setup_cache,
@@ -1231,6 +1328,8 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
     build_env = hostjobs.environment(
         repo, build_env, canonical=canon.is_canonical(build_dir), run_dir=run.dir
     )
+    if artifact_env:
+        build_env.update(artifact_env)
 
     # --- WoW64 guests (amd64): build what the livecd stages from build-fex-hello/ ---
     # The guests are not in git and no ninja edge makes them, so a tree that never

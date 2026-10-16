@@ -886,6 +886,10 @@ function(add_cargo_module _target _crate _output)
     # reach it). Confined to the kernel — other modules' build.rs ignore the
     # env. Default off = zero cost.
     set(_cargo_env "CARGO_TARGET_DIR=${_cargo_target_dir}" "CARGO_BUILD_JOBS=1"
+        "VIBEOS_ARTIFACT_STORE_MODE=${VIBEOS_ARTIFACT_STORE_MODE}"
+        "VIBEOS_ARTIFACT_STORE_ROOT=${VIBEOS_ARTIFACT_STORE_ROOT}"
+        "VIBEOS_ARTIFACT_VERIFY_NONCE=${VIBEOS_ARTIFACT_VERIFY_NONCE}"
+        "VIBEOS_ARTIFACT_TOOLCHAIN_ID=${VIBEOS_ARTIFACT_TOOLCHAIN_ID}"
         "VIBEOS_RUST_BODY_SHARDS=${VIBEOS_RUST_BODY_SHARDS}")
     if(VIBEOS_LOCKDEP AND _crate MATCHES "^(ntoskrnl-cargo|ntkrnlmp-cargo)$")
         list(APPEND _cargo_env VIBEOS_LOCKDEP=1)
