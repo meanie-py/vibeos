@@ -60,3 +60,37 @@ def test_island_glue_reexports_class_enums_and_derefs_struct_bases():
     out = cpp_app._render_island_glue(model, island)
     assert "pub const USER_TIMER_ID: CUIFWindow__bindgen_ty_1 = CUIFWindow_USER_TIMER_ID;" in out
     assert "impl core::ops::Deref for INPUTCONTEXTDX { type Target = INPUTCONTEXT;" in out
+
+
+def test_an_instantiation_has_one_key_however_it_is_spelled():
+    from rustconv.cpp_templates import instance_key
+
+    assert instance_key("ATL::CUiWindow< CTreeView >") == "CUiWindow<CTreeView>"
+    assert instance_key("class CUiWindow<CWindowImpl<X> >") == "CUiWindow<CWindowImpl<X>>"
+
+
+def test_an_instance_is_named_by_its_written_arguments():
+    from rustconv.cpp_templates import instance_name
+
+    assert instance_name("CUiWindow", ["CWindowImpl<CAppsListView, CListView>"]) == (
+        "CUiWindow_CWindowImpl_CAppsListView_CListView"
+    )
+    assert instance_name("CToolbar", []) == "CToolbar"
+
+
+def test_spelled_instantiations_are_rewritten_nested_ones_too():
+    from rustconv.cpp_templates import rewrite_instances
+
+    table = {
+        "CUiWindow<CTreeView>": "CUiWindow_CTreeView",
+        "CPointerArray<CUiWindow_CTreeView>": "CPointerArray_CUiWindow_CTreeView",
+    }
+    text = "CUiWindow<CTreeView> *p = new CUiWindow< CTreeView >(); CComPtr<IFoo> q;"
+    assert rewrite_instances(text, table) == (
+        "CUiWindow_CTreeView *p = new CUiWindow_CTreeView(); CComPtr<IFoo> q;"
+    )
+    assert rewrite_instances("CPointerArray<CUiWindow<CTreeView>> a;", table) == (
+        "CPointerArray_CUiWindow_CTreeView a;"
+    )
+    # An unknown instantiation is left as written; a known one inside it is still found.
+    assert rewrite_instances("Other<CUiWindow<CTreeView>>", table) == "Other<CUiWindow_CTreeView>"

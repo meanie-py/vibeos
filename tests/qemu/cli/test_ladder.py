@@ -1083,6 +1083,19 @@ def test_refresh_names_what_it_is_missing(tmp_path):
     assert ladder.refresh_blocker(repo) is None
 
 
+def test_only_x64_guests_are_deferred_and_only_without_amd64_importlibs(tmp_path):
+    repo = tmp_path
+    todo = ["selfmod64 (absent)", "apc64 (tools/fex/hello-compute/Apc64.c is newer)"]
+    assert ladder.x64_refresh_deferred(repo, todo) == todo
+    # A 32-bit guest is never deferred, whatever build-amd64 holds.
+    assert ladder.x64_refresh_deferred(repo, [*todo, "file32 (absent)"]) == todo
+    assert ladder.x64_refresh_deferred(repo, []) == []
+    lib = repo / ladder.GUEST_PREREQ_X64
+    lib.parent.mkdir(parents=True)
+    lib.write_bytes(b"")
+    assert ladder.x64_refresh_deferred(repo, todo) == []
+
+
 class _FakeRun:
     def __init__(self):
         self.stages = []

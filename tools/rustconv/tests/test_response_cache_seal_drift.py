@@ -127,3 +127,31 @@ def test_a_changed_c_body_may_be_bought_again(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="did not replay"):
         cache.refuse_repurchase("F", body_text="old truncated body")
     cache.refuse_repurchase("F", body_text="the whole body, FINALLY and all")
+
+
+CLASS_CTX = "\n## C++ class context (deterministic — the classes are generated, and in scope)\n"
+
+
+def test_a_moved_class_listing_keeps_the_banked_entry(tmp_path, monkeypatch):
+    """rapps: 17 units refused because the DESCRIBED class shape improved after purchase."""
+    cache = _cache(tmp_path, monkeypatch)
+    sealed = frozenset({"call:Helper"})
+    old = FACT_ENVELOPE + CLASS_CTX + "pub struct C { pub __base0: ATL_CHeapPtr }\n"
+    new = FACT_ENVELOPE + CLASS_CTX + "pub struct C { pub __base0: CHeapPtr<u8> }\n"
+    cache.put(BODY, BODY, RUST, old, sealed)
+    assert cache.get(BODY, BODY, new, sealed) == RUST
+
+
+def test_a_capability_beside_the_class_listing_still_misses(tmp_path, monkeypatch):
+    cache = _cache(tmp_path, monkeypatch)
+    sealed = frozenset({"call:Helper"})
+    cache.put(BODY, BODY, RUST, CLASS_CTX + "a\n", sealed)
+    assert cache.get(BODY, BODY, CLASS_CTX + "b\n" + RAII, sealed) is None
+
+
+def test_a_grown_atl_api_listing_keeps_the_banked_entry(tmp_path, monkeypatch):
+    atl = "\n## ATL types (deterministic — provided by the `atl-rust` crate, in scope)\n"
+    cache = _cache(tmp_path, monkeypatch)
+    sealed = frozenset({"call:Helper"})
+    cache.put(BODY, BODY, RUST, atl + "fn GetString()\n" + CLASS_CTX, sealed)
+    assert cache.get(BODY, BODY, atl + "fn GetString()\nfn Trim()\n" + CLASS_CTX, sealed) == RUST

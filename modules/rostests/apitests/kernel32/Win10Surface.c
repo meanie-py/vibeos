@@ -36,6 +36,18 @@
 #ifndef WM_CLIPBOARDUPDATE
 #define WM_CLIPBOARDUPDATE 0x031D
 #endif
+#ifndef PROCESS_QUERY_LIMITED_INFORMATION
+#define PROCESS_QUERY_LIMITED_INFORMATION 0x1000
+#endif
+#ifndef PROCESS_SET_LIMITED_INFORMATION
+#define PROCESS_SET_LIMITED_INFORMATION 0x2000
+#endif
+#ifndef THREAD_SET_LIMITED_INFORMATION
+#define THREAD_SET_LIMITED_INFORMATION  0x0400
+#endif
+#ifndef THREAD_QUERY_LIMITED_INFORMATION
+#define THREAD_QUERY_LIMITED_INFORMATION  0x0800
+#endif
 #define W10_LIST_MODULES_ALL    3
 #define W10_LIST_MODULES_32BIT  1
 #define W10_STATUS_NO_MORE_ENTRIES ((NTSTATUS)0x8000001A)
@@ -231,7 +243,7 @@ static void Test_NtGetNextThread(void)
     for (;;)
     {
         Next = NULL;
-        Status = pNext(GetCurrentProcess(), Prev, THREAD_QUERY_INFORMATION, 0, 0, &Next);
+        Status = pNext(GetCurrentProcess(), Prev, THREAD_QUERY_LIMITED_INFORMATION, 0, 0, &Next);
         if (Prev)
             CloseHandle(Prev);
         if (Status != 0)
@@ -256,17 +268,136 @@ static void Test_NtGetNextThread(void)
     ok(SawNew, "new thread %lu not seen\n", NewId);
     ok(Status == W10_STATUS_NO_MORE_ENTRIES, "walk ended with %08lx\n", Status);
 
-    /* The Vista limited right on our own thread. (A walk asking for it hit ACCESS_DENIED
-     * on some other thread of this process in our OS, cause not yet established; the walk
-     * above asks for THREAD_QUERY_INFORMATION. See modern-windows-compat-roadmap.md.) */
-    Next = OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, Self);
-    ok(Next != NULL, "OpenThread(THREAD_QUERY_LIMITED_INFORMATION) failed: %lu\n", GetLastError());
-    if (Next)
-        CloseHandle(Next);
+    /* The walk asks for the Vista LIMITED right, as callers do: GetThreadId above reads
+     * ThreadBasicInformation through it. (Under the NT5 access masks the kernel narrowed
+     * that right away and every query failed ACCESS_DENIED.) */
 
     ResumeThread(Thread);
     WaitForSingleObject(Thread, 5000);
     CloseHandle(Thread);
+}
+
+/* ---- 6b ---- The NT6 LIMITED access rights. Values measured on Windows 11. */
+typedef struct { ULONG Attributes; ACCESS_MASK GrantedAccess; ULONG HandleCount, PointerCount, Reserved[10]; } W10_OBJECT_BASIC;
+
+static ACCESS_MASK W10_Granted(HANDLE Handle)
+{
+    NTSTATUS (NTAPI *pQuery)(HANDLE, ULONG, PVOID, ULONG, PULONG) = (void *)GetNt("NtQueryObject");
+    W10_OBJECT_BASIC Info;
+
+    if (!pQuery || pQuery(Handle, 0 /* ObjectBasicInformation */, &Info, sizeof(Info), NULL) != 0)
+        return 0xffffffff;
+    return Info.GrantedAccess;
+}
+
+static void Test_LimitedAccess(void)
+{
+    NTSTATUS (NTAPI *pQueryProcess)(HANDLE, ULONG, PVOID, ULONG, PULONG) =
+        (void *)GetNt("NtQueryInformationProcess");
+    NTSTATUS (NTAPI *pQueryThread)(HANDLE, ULONG, PVOID, ULONG, PULONG) =
+        (void *)GetNt("NtQueryInformationThread");
+    DWORD Pid = GetCurrentProcessId(), Tid = GetCurrentThreadId();
+    FILETIME Times[4];
+    ULONG_PTR Port;
+    PVOID Start;
+    HANDLE Handle;
+    NTSTATUS Status;
+
+    /* A full information right brings its LIMITED partner. */
+    Handle = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, Pid);
+    ok(Handle != NULL, "OpenProcess(QUERY_INFORMATION) failed: %lu\n", GetLastError());
+    ok(W10_Granted(Handle) == 0x1400, "granted %08lx, expected 0x1400\n", W10_Granted(Handle));
+    CloseHandle(Handle);
+    Handle = OpenProcess(0x1f0fff, FALSE, Pid);
+    ok(W10_Granted(Handle) == 0x1f3fff, "NT5 PROCESS_ALL_ACCESS granted %08lx\n", W10_Granted(Handle));
+    CloseHandle(Handle);
+    Handle = OpenThread(0x1f03ff, FALSE, Tid);
+    ok(W10_Granted(Handle) == 0x1f1fff, "NT5 THREAD_ALL_ACCESS granted %08lx\n", W10_Granted(Handle));
+    CloseHandle(Handle);
+
+    /* A LIMITED handle answers the classes Windows lets it, and only those. */
+    Handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, Pid);
+    ok(Handle != NULL, "OpenProcess(QUERY_LIMITED) failed: %lu\n", GetLastError());
+    ok(W10_Granted(Handle) == PROCESS_QUERY_LIMITED_INFORMATION, "granted %08lx\n", W10_Granted(Handle));
+    ok(GetProcessId(Handle) == Pid, "GetProcessId through LIMITED: %lu\n", GetProcessId(Handle));
+    ok(GetProcessTimes(Handle, &Times[0], &Times[1], &Times[2], &Times[3]),
+       "GetProcessTimes through LIMITED: %lu\n", GetLastError());
+    Status = pQueryProcess(Handle, 7 /* ProcessDebugPort */, &Port, sizeof(Port), NULL);
+    ok(Status == STATUS_ACCESS_DENIED, "ProcessDebugPort through LIMITED: %08lx\n", Status);
+    CloseHandle(Handle);
+
+    Handle = OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, Tid);
+    ok(Handle != NULL, "OpenThread(QUERY_LIMITED) failed: %lu\n", GetLastError());
+    ok(GetThreadId(Handle) == Tid, "GetThreadId through LIMITED: %lu\n", GetThreadId(Handle));
+    Status = pQueryThread(Handle, 9 /* ThreadQuerySetWin32StartAddress */, &Start, sizeof(Start), NULL);
+    ok(Status == STATUS_ACCESS_DENIED, "Win32StartAddress through LIMITED: %08lx\n", Status);
+    CloseHandle(Handle);
+}
+
+/* ---- 6c ---- SET_LIMITED rights and AppContainer SIDs, measured on Windows 11. */
+static void Test_SetLimitedAndAppContainer(void)
+{
+    HRESULT (WINAPI *pDerive)(PCWSTR, PSID *) = (void *)GetDyn(L"userenv.dll", "DeriveAppContainerSidFromAppContainerName");
+    BOOL (WINAPI *pSidToString)(PSID, LPWSTR *) = (void *)GetDyn(L"advapi32.dll", "ConvertSidToStringSidW");
+    static const struct { PCWSTR Name; PCWSTR Sid; } Vectors[] =
+    {
+        { L"A", L"S-1-15-2-3937069567-81109666-199193729-4036909440-616594969-3159470276-4124008600" },
+        { L"MiXeD.Name", L"S-1-15-2-3698160147-719388521-3053721999-2255265465-4147969449-1549999297-4093912397" },
+        { L"\u00c4bc", L"S-1-15-2-3850436856-106003566-1273259897-518191818-2117240025-143405102-2816276476" },
+    };
+    WCHAR Long[66];
+    DWORD Prev;
+    PSID Sid;
+    LPWSTR Str;
+    HANDLE Handle;
+    HRESULT hr;
+    UINT i;
+
+    /* ThreadPriorityBoost takes SET_LIMITED; ProcessPriorityClass wants the full right. */
+    Handle = OpenThread(THREAD_SET_LIMITED_INFORMATION, FALSE, GetCurrentThreadId());
+    ok(Handle != NULL, "OpenThread(SET_LIMITED) failed: %lu\n", GetLastError());
+    ok(SetThreadPriorityBoost(Handle, FALSE), "SetThreadPriorityBoost through SET_LIMITED: %lu\n", GetLastError());
+    CloseHandle(Handle);
+    /* ThreadIdealProcessor sets a ULONG and answers the previous processor. */
+    Prev = SetThreadIdealProcessor(GetCurrentThread(), 0);
+    ok(Prev != (DWORD)-1, "SetThreadIdealProcessor: %lu\n", GetLastError());
+    Prev = SetThreadIdealProcessor(GetCurrentThread(), 0);
+    ok(Prev == 0, "previous ideal processor %lu, expected 0\n", Prev);
+    Handle = OpenProcess(PROCESS_SET_LIMITED_INFORMATION, FALSE, GetCurrentProcessId());
+    ok(Handle != NULL, "OpenProcess(SET_LIMITED) failed: %lu\n", GetLastError());
+    SetLastError(0xdeadbeef);
+    ok(!SetPriorityClass(Handle, NORMAL_PRIORITY_CLASS) && GetLastError() == ERROR_ACCESS_DENIED,
+       "SetPriorityClass through SET_LIMITED: %lu\n", GetLastError());
+    CloseHandle(Handle);
+
+    if (!pDerive || !pSidToString)
+    {
+        win_skip("DeriveAppContainerSidFromAppContainerName missing\n");
+        return;
+    }
+    for (i = 0; i < ARRAYSIZE(Vectors); i++)
+    {
+        Sid = NULL;
+        hr = pDerive(Vectors[i].Name, &Sid);
+        ok(hr == S_OK, "%ls: %08lx\n", Vectors[i].Name, hr);
+        if (FAILED(hr) || !Sid)
+            continue;
+        Str = NULL;
+        ok(pSidToString(Sid, &Str) && Str && !wcscmp(Str, Vectors[i].Sid), "%u: %ls\n", i, Str ? Str : L"(null)");
+        LocalFree(Str);
+        FreeSid(Sid);
+    }
+    for (i = 0; i < 65; i++)
+        Long[i] = L'a';
+    Long[65] = 0;
+    Sid = (PSID)(ULONG_PTR)0x1234;
+    ok(pDerive(Long, &Sid) == E_INVALIDARG && Sid == (PSID)(ULONG_PTR)0x1234, "65 units: out %p\n", Sid);
+    Long[64] = 0;
+    Sid = NULL;
+    ok(pDerive(Long, &Sid) == S_OK && Sid, "64 units refused\n");
+    if (Sid) FreeSid(Sid);
+    Sid = (PSID)(ULONG_PTR)0x1234;
+    ok(pDerive(L"", &Sid) == E_INVALIDARG && Sid == (PSID)(ULONG_PTR)0x1234, "empty: out %p\n", Sid);
 }
 
 /* ---- 7 ---- */
@@ -666,6 +797,70 @@ static void Test_ShcoreDpi(void)
     ok(X > 0 && Y > 0, "dpi %u x %u\n", X, Y);
 }
 
+/* ---- 16b ---- shell32's IShellItemArray creators, through the raw vtable. */
+typedef struct W10_Unk { const struct W10_UnkVtbl *lpVtbl; } W10_Unk;
+typedef struct W10_UnkVtbl
+{
+    HRESULT (STDMETHODCALLTYPE *QueryInterface)(W10_Unk *, REFIID, void **);
+    ULONG (STDMETHODCALLTYPE *AddRef)(W10_Unk *);
+    ULONG (STDMETHODCALLTYPE *Release)(W10_Unk *);
+    void *BindToHandler, *GetPropertyStore, *GetPropertyDescriptionList, *GetAttributes;
+    HRESULT (STDMETHODCALLTYPE *GetCount)(W10_Unk *, DWORD *);
+    HRESULT (STDMETHODCALLTYPE *GetItemAt)(W10_Unk *, DWORD, W10_Unk **);
+} W10_UnkVtbl;
+
+static void Test_ShellItemArray(void)
+{
+    HRESULT (WINAPI *pLocation)(HWND, int, void **) = (void *)GetDyn(L"shell32.dll", "SHGetSpecialFolderLocation");
+    HRESULT (WINAPI *pFromIDLists)(UINT, void **, W10_Unk **) = (void *)GetDyn(L"shell32.dll", "SHCreateShellItemArrayFromIDLists");
+    HRESULT (WINAPI *pFromItem)(W10_Unk *, REFIID, void **) = (void *)GetDyn(L"shell32.dll", "SHCreateShellItemArrayFromShellItem");
+    void (WINAPI *pFree)(void *) = (void *)GetDyn(L"shell32.dll", "ILFree");
+    HRESULT (WINAPI *pCoInit)(void *) = (void *)GetDyn(L"ole32.dll", "CoInitialize");
+    static const GUID IID_ShellItemArray = { 0xb63ea76d, 0x1f85, 0x456f, { 0xa1, 0x9c, 0x48, 0x15, 0x9e, 0xfa, 0x85, 0x8b } };
+    W10_Unk *Array = (void *)0xdeadbeef, *Item = NULL, *Again = NULL;
+    void *Pidls[2] = { NULL, NULL };
+    DWORD Count = 0;
+    HRESULT hr;
+
+    ok(pFromIDLists != NULL, "SHCreateShellItemArrayFromIDLists not exported\n");
+    ok(pFromItem != NULL, "SHCreateShellItemArrayFromShellItem not exported\n");
+    if (!pLocation || !pFromIDLists || !pFromItem || !pFree || !pCoInit)
+        return;
+    pCoInit(NULL); /* Windows 11 answers CO_E_NOTINITIALIZED first without it */
+    hr = pFromIDLists(0, Pidls, &Array);
+    ok(hr == E_INVALIDARG, "zero items: %08lx\n", hr);
+    ok(Array == NULL, "out not cleared: %p\n", Array);
+    if (FAILED(pLocation(NULL, 0x11 /* CSIDL_DRIVES */, &Pidls[0])) ||
+        FAILED(pLocation(NULL, 0x00 /* CSIDL_DESKTOP */, &Pidls[1])))
+        return;
+
+    hr = pFromIDLists(2, Pidls, &Array);
+    ok(hr == S_OK, "FromIDLists: %08lx\n", hr);
+    if (SUCCEEDED(hr))
+    {
+        ok(Array->lpVtbl->GetCount(Array, &Count) == S_OK && Count == 2, "count %lu\n", Count);
+        hr = Array->lpVtbl->GetItemAt(Array, 2, &Item);
+        ok(hr == E_FAIL && Item == NULL, "item past the end: %08lx %p\n", hr, Item);
+        hr = Array->lpVtbl->GetItemAt(Array, 0, &Item);
+        ok(hr == S_OK && Item != NULL, "item 0: %08lx\n", hr);
+        Array->lpVtbl->Release(Array);
+    }
+    if (Item)
+    {
+        hr = pFromItem(Item, &IID_ShellItemArray, (void **)&Again);
+        ok(hr == S_OK, "FromShellItem: %08lx\n", hr);
+        if (SUCCEEDED(hr))
+        {
+            ok(Again->lpVtbl->GetCount(Again, &Count) == S_OK && Count == 1, "count %lu\n", Count);
+            Again->lpVtbl->Release(Again);
+        }
+        Item->lpVtbl->Release(Item);
+    }
+    /* A NULL item faults on Windows 11 (ours answers E_INVALIDARG); not probed. */
+    pFree(Pidls[0]);
+    pFree(Pidls[1]);
+}
+
 /* ---- 17 ---- */
 static void Test_SetupApiProperty(void)
 {
@@ -929,6 +1124,8 @@ START_TEST(Win10Surface)
     Test_Idn();
     Test_EnumProcessModulesEx();
     Test_NtGetNextThread();
+    Test_LimitedAccess();
+    Test_SetLimitedAndAppContainer();
     Test_Transaction();
     Test_NtOpenKeyEx();
     Test_Utf8();
@@ -939,6 +1136,7 @@ START_TEST(Win10Surface)
     Test_Winsock();
     Test_IpHelper();
     Test_ShcoreDpi();
+    Test_ShellItemArray();
     Test_SetupApiProperty();
     Test_CfgMgrProperty();
     Test_DllDirectories();

@@ -959,3 +959,504 @@ pub unsafe extern "system" fn SHCreateShellItemArrayFromDataObject(
 ) -> HRESULT {
     CShellItemArray_CreateInstance(pdo, riid, ppv)
 }
+
+
+// CSimpleShellItemArray: IShellItemArray over a plain heap array of AddRef'd IShellItem*.
+const SIATTRIBFLAGS_AND: SIATTRIBFLAGS = 1;
+const SIATTRIBFLAGS_MASK: SIATTRIBFLAGS = 3;
+
+#[repr(C)]
+pub struct CSimpleShellItemArray {
+    pub IShellItemArray_iface: IShellItemArray,
+    pub ref_count: core::sync::atomic::AtomicI32,
+    pub m_items: *mut *mut IShellItem,
+    pub m_count: usize,
+}
+
+unsafe extern "system" fn CSimpleShellItemArray_IShellItemArray_QueryInterface(
+    This: *mut IShellItemArray,
+    riid: REFIID,
+    ppvObject: *mut *mut core::ffi::c_void,
+) -> HRESULT {
+    let this = (This as *mut u8).sub(core::mem::offset_of!(
+        CSimpleShellItemArray,
+        IShellItemArray_iface
+    )) as *mut CSimpleShellItemArray;
+    CSimpleShellItemArray_QueryInterface(this, riid, ppvObject)
+}
+unsafe extern "system" fn CSimpleShellItemArray_IShellItemArray_AddRef(
+    This: *mut IShellItemArray,
+) -> ULONG {
+    let this = (This as *mut u8).sub(core::mem::offset_of!(
+        CSimpleShellItemArray,
+        IShellItemArray_iface
+    )) as *mut CSimpleShellItemArray;
+    CSimpleShellItemArray_AddRef(this)
+}
+unsafe extern "system" fn CSimpleShellItemArray_IShellItemArray_Release(
+    This: *mut IShellItemArray,
+) -> ULONG {
+    let this = (This as *mut u8).sub(core::mem::offset_of!(
+        CSimpleShellItemArray,
+        IShellItemArray_iface
+    )) as *mut CSimpleShellItemArray;
+    CSimpleShellItemArray_Release(this)
+}
+unsafe extern "system" fn CSimpleShellItemArray_IShellItemArray_BindToHandler(
+    This: *mut IShellItemArray,
+    pbc: *mut IBindCtx,
+    bhid: REFGUID,
+    riid: REFIID,
+    ppvOut: *mut *mut core::ffi::c_void,
+) -> HRESULT {
+    let this = (This as *mut u8).sub(core::mem::offset_of!(
+        CSimpleShellItemArray,
+        IShellItemArray_iface
+    )) as *mut CSimpleShellItemArray;
+    CSimpleShellItemArray_BindToHandler_body(this, pbc, bhid, riid, ppvOut)
+}
+unsafe extern "system" fn CSimpleShellItemArray_IShellItemArray_GetPropertyStore(
+    This: *mut IShellItemArray,
+    flags: GETPROPERTYSTOREFLAGS,
+    riid: REFIID,
+    ppv: *mut *mut core::ffi::c_void,
+) -> HRESULT {
+    let this = (This as *mut u8).sub(core::mem::offset_of!(
+        CSimpleShellItemArray,
+        IShellItemArray_iface
+    )) as *mut CSimpleShellItemArray;
+    CSimpleShellItemArray_GetPropertyStore_body(this, flags, riid, ppv)
+}
+unsafe extern "system" fn CSimpleShellItemArray_IShellItemArray_GetPropertyDescriptionList(
+    This: *mut IShellItemArray,
+    keyType: REFPROPERTYKEY,
+    riid: REFIID,
+    ppv: *mut *mut core::ffi::c_void,
+) -> HRESULT {
+    let this = (This as *mut u8).sub(core::mem::offset_of!(
+        CSimpleShellItemArray,
+        IShellItemArray_iface
+    )) as *mut CSimpleShellItemArray;
+    CSimpleShellItemArray_GetPropertyDescriptionList_body(this, keyType, riid, ppv)
+}
+unsafe extern "system" fn CSimpleShellItemArray_IShellItemArray_GetAttributes(
+    This: *mut IShellItemArray,
+    AttribFlags: SIATTRIBFLAGS,
+    sfgaoMask: SFGAOF,
+    psfgaoAttribs: *mut SFGAOF,
+) -> HRESULT {
+    let this = (This as *mut u8).sub(core::mem::offset_of!(
+        CSimpleShellItemArray,
+        IShellItemArray_iface
+    )) as *mut CSimpleShellItemArray;
+    CSimpleShellItemArray_GetAttributes_body(this, AttribFlags, sfgaoMask, psfgaoAttribs)
+}
+unsafe extern "system" fn CSimpleShellItemArray_IShellItemArray_GetCount(
+    This: *mut IShellItemArray,
+    pdwNumItems: *mut DWORD,
+) -> HRESULT {
+    let this = (This as *mut u8).sub(core::mem::offset_of!(
+        CSimpleShellItemArray,
+        IShellItemArray_iface
+    )) as *mut CSimpleShellItemArray;
+    CSimpleShellItemArray_GetCount_body(this, pdwNumItems)
+}
+unsafe extern "system" fn CSimpleShellItemArray_IShellItemArray_GetItemAt(
+    This: *mut IShellItemArray,
+    dwIndex: DWORD,
+    ppsi: *mut *mut IShellItem,
+) -> HRESULT {
+    let this = (This as *mut u8).sub(core::mem::offset_of!(
+        CSimpleShellItemArray,
+        IShellItemArray_iface
+    )) as *mut CSimpleShellItemArray;
+    CSimpleShellItemArray_GetItemAt_body(this, dwIndex, ppsi)
+}
+unsafe extern "system" fn CSimpleShellItemArray_IShellItemArray_EnumItems(
+    This: *mut IShellItemArray,
+    ppenumShellItems: *mut *mut IEnumShellItems,
+) -> HRESULT {
+    let this = (This as *mut u8).sub(core::mem::offset_of!(
+        CSimpleShellItemArray,
+        IShellItemArray_iface
+    )) as *mut CSimpleShellItemArray;
+    CSimpleShellItemArray_EnumItems_body(this, ppenumShellItems)
+}
+
+pub static CSIMPLESHELLITEMARRAY_ISHELLITEMARRAY_VTBL: IShellItemArrayVtbl = IShellItemArrayVtbl {
+    QueryInterface: CSimpleShellItemArray_IShellItemArray_QueryInterface,
+    AddRef: CSimpleShellItemArray_IShellItemArray_AddRef,
+    Release: CSimpleShellItemArray_IShellItemArray_Release,
+    BindToHandler: CSimpleShellItemArray_IShellItemArray_BindToHandler,
+    GetPropertyStore: CSimpleShellItemArray_IShellItemArray_GetPropertyStore,
+    GetPropertyDescriptionList: CSimpleShellItemArray_IShellItemArray_GetPropertyDescriptionList,
+    GetAttributes: CSimpleShellItemArray_IShellItemArray_GetAttributes,
+    GetCount: CSimpleShellItemArray_IShellItemArray_GetCount,
+    GetItemAt: CSimpleShellItemArray_IShellItemArray_GetItemAt,
+    EnumItems: CSimpleShellItemArray_IShellItemArray_EnumItems,
+};
+
+unsafe fn CSimpleShellItemArray_QueryInterface(
+    this: *mut CSimpleShellItemArray,
+    riid: REFIID,
+    ppv: *mut *mut core::ffi::c_void,
+) -> HRESULT {
+    if ppv.is_null() {
+        return E_POINTER;
+    }
+    *ppv = core::ptr::null_mut();
+    if cpp_com_iid_equal(riid, core::ptr::addr_of!(IID_IUnknown))
+        || cpp_com_iid_equal(riid, core::ptr::addr_of!(IID_IShellItemArray))
+    {
+        *ppv = core::ptr::addr_of_mut!((*this).IShellItemArray_iface) as *mut core::ffi::c_void;
+    } else {
+        return E_NOINTERFACE;
+    }
+    CSimpleShellItemArray_AddRef(this);
+    S_OK
+}
+
+unsafe fn CSimpleShellItemArray_AddRef(this: *mut CSimpleShellItemArray) -> ULONG {
+    (*this)
+        .ref_count
+        .fetch_add(1, core::sync::atomic::Ordering::SeqCst) as ULONG
+        + 1
+}
+
+unsafe fn CSimpleShellItemArray_Release(this: *mut CSimpleShellItemArray) -> ULONG {
+    let refs = (*this)
+        .ref_count
+        .fetch_sub(1, core::sync::atomic::Ordering::SeqCst)
+        - 1;
+    if refs == 0 {
+        CSimpleShellItemArray_dtor_body(this);
+        Shell32RustObjectUnlock();
+        HeapFree(GetProcessHeap(), 0, this as *mut core::ffi::c_void);
+    }
+    refs as ULONG
+}
+
+// ~CSimpleShellItemArray: CAtlArray<CComPtr<IShellItem>> releases every held item, then its buffer.
+pub unsafe fn CSimpleShellItemArray_dtor_body(this: *mut CSimpleShellItemArray) -> () {
+    let items = (*this).m_items;
+    if !items.is_null() {
+        for i in 0..(*this).m_count {
+            let item = *items.add(i);
+            if !item.is_null() {
+                ((*(*item).lpVtbl).Release)(item);
+            }
+        }
+        HeapFree(GetProcessHeap(), 0, items as *mut core::ffi::c_void);
+        (*this).m_items = core::ptr::null_mut();
+        (*this).m_count = 0;
+    }
+}
+
+pub unsafe fn CSimpleShellItemArray_Initialize_body(
+    this: *mut CSimpleShellItemArray,
+    pitems: *mut *mut IShellItem,
+    count: UINT,
+) -> HRESULT {
+    // m_items.SetCount(0) cannot fail here; the array is sized once up front instead of grown per Add.
+    // A zero-length request still gets a valid 1-slot block so m_items is never a dangling pointer.
+    let bytes = (count as usize).max(1) * core::mem::size_of::<*mut IShellItem>();
+    let items = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, bytes) as *mut *mut IShellItem;
+    if items.is_null() {
+        return E_OUTOFMEMORY;
+    }
+    (*this).m_items = items;
+    (*this).m_count = 0;
+    for i in 0..count as usize {
+        let ptr = *pitems.add(i);
+        if ptr.is_null() {
+            return E_INVALIDARG;
+        }
+        ((*(*ptr).lpVtbl).AddRef)(ptr);
+        *items.add((*this).m_count) = ptr;
+        (*this).m_count += 1;
+    }
+    S_OK
+}
+
+pub unsafe fn CSimpleShellItemArray_BindToHandler_body(
+    this: *mut CSimpleShellItemArray,
+    pbc: *mut IBindCtx,
+    rbhid: REFGUID,
+    riid: REFIID,
+    ppv: *mut *mut core::ffi::c_void,
+) -> HRESULT {
+    *ppv = NULL;
+    E_NOTIMPL
+}
+
+pub unsafe fn CSimpleShellItemArray_GetPropertyStore_body(
+    this: *mut CSimpleShellItemArray,
+    flags: GETPROPERTYSTOREFLAGS,
+    riid: REFIID,
+    ppv: *mut *mut core::ffi::c_void,
+) -> HRESULT {
+    *ppv = NULL;
+    E_NOTIMPL
+}
+
+pub unsafe fn CSimpleShellItemArray_GetPropertyDescriptionList_body(
+    this: *mut CSimpleShellItemArray,
+    keyType: REFPROPERTYKEY,
+    riid: REFIID,
+    ppv: *mut *mut core::ffi::c_void,
+) -> HRESULT {
+    *ppv = NULL;
+    E_NOTIMPL
+}
+
+pub unsafe fn CSimpleShellItemArray_GetAttributes_body(
+    this: *mut CSimpleShellItemArray,
+    dwAttribFlags: SIATTRIBFLAGS,
+    sfgaoMask: SFGAOF,
+    psfgaoAttribs: *mut SFGAOF,
+) -> HRESULT {
+    let mut hr: HRESULT = S_OK;
+    let mut attr: SFGAOF = 0;
+
+    if psfgaoAttribs.is_null() {
+        return E_POINTER;
+    }
+
+    for i in 0..(*this).m_count {
+        let item = *(*this).m_items.add(i);
+        hr = ((*(*item).lpVtbl).GetAttributes)(item, sfgaoMask, &mut attr);
+        if hr < 0 {
+            break;
+        }
+
+        if i == 0 {
+            *psfgaoAttribs = attr;
+            continue;
+        }
+
+        if (dwAttribFlags & SIATTRIBFLAGS_MASK) == SIATTRIBFLAGS_AND {
+            *psfgaoAttribs &= attr;
+        } else {
+            *psfgaoAttribs |= attr;
+        }
+    }
+
+    if hr >= 0 {
+        if *psfgaoAttribs == sfgaoMask {
+            return S_OK;
+        }
+        return S_FALSE;
+    }
+    hr
+}
+
+pub unsafe fn CSimpleShellItemArray_GetCount_body(
+    this: *mut CSimpleShellItemArray,
+    pdwNumItems: *mut DWORD,
+) -> HRESULT {
+    if pdwNumItems.is_null() {
+        return E_INVALIDARG;
+    }
+    *pdwNumItems = (*this).m_count as DWORD;
+    S_OK
+}
+
+pub unsafe fn CSimpleShellItemArray_GetItemAt_body(
+    this: *mut CSimpleShellItemArray,
+    dwIndex: DWORD,
+    ppsi: *mut *mut IShellItem,
+) -> HRESULT {
+    if ppsi.is_null() {
+        return E_INVALIDARG;
+    }
+    *ppsi = core::ptr::null_mut();
+    if dwIndex as usize >= (*this).m_count {
+        return E_FAIL;
+    }
+    let item = *(*this).m_items.add(dwIndex as usize);
+    *ppsi = item;
+    ((*(*item).lpVtbl).AddRef)(item);
+    S_OK
+}
+
+pub unsafe fn CSimpleShellItemArray_EnumItems_body(
+    this: *mut CSimpleShellItemArray,
+    ppenumShellItems: *mut *mut IEnumShellItems,
+) -> HRESULT {
+    *ppenumShellItems = core::ptr::null_mut();
+    E_NOTIMPL
+}
+
+// Internal activation: shellutils.h ShellObjectCreatorInit<T> uses this non-aggregating factory.
+pub unsafe fn CreateShellItemArrayFromItems(
+    items: *mut *mut IShellItem,
+    cidl: UINT,
+    riid: REFIID,
+    ppv: *mut *mut core::ffi::c_void,
+) -> HRESULT {
+    if ppv.is_null() {
+        return E_POINTER;
+    }
+    *ppv = core::ptr::null_mut();
+    let this = HeapAlloc(
+        GetProcessHeap(),
+        HEAP_ZERO_MEMORY,
+        core::mem::size_of::<CSimpleShellItemArray>(),
+    ) as *mut CSimpleShellItemArray;
+    if this.is_null() {
+        return E_OUTOFMEMORY;
+    }
+    core::ptr::write(
+        this,
+        CSimpleShellItemArray {
+            IShellItemArray_iface: IShellItemArray {
+                lpVtbl: core::ptr::addr_of!(CSIMPLESHELLITEMARRAY_ISHELLITEMARRAY_VTBL),
+            },
+            ref_count: core::sync::atomic::AtomicI32::new(1),
+            m_items: core::ptr::null_mut(),
+            m_count: 0,
+        },
+    );
+    Shell32RustObjectLock();
+    let mut hr = CSimpleShellItemArray_Initialize_body(this, items, cidl);
+    if hr >= 0 {
+        hr = CSimpleShellItemArray_QueryInterface(this, riid, ppv);
+    }
+    CSimpleShellItemArray_Release(this);
+    hr
+}
+
+// CComHeapPtr<IShellItem *> array: releases every created item, then frees the buffer.
+unsafe fn CSimpleShellItemArray_free_scratch(array: *mut *mut IShellItem, cidl: UINT) {
+    for i in 0..cidl as usize {
+        let item = *array.add(i);
+        if !item.is_null() {
+            ((*(*item).lpVtbl).Release)(item);
+        }
+    }
+    HeapFree(GetProcessHeap(), 0, array as *mut core::ffi::c_void);
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn SHCreateShellItemArray(
+    pidlParent: PCIDLIST_ABSOLUTE,
+    psf: *mut IShellFolder,
+    cidl: UINT,
+    ppidl: *const PCUITEMID_CHILD,
+    ppsiItemArray: *mut *mut IShellItemArray,
+) -> HRESULT {
+    let mut hr: HRESULT = E_FAIL;
+
+    if ppsiItemArray.is_null() {
+        return E_POINTER;
+    }
+    *ppsiItemArray = core::ptr::null_mut();
+
+    if pidlParent.is_null() && psf.is_null() {
+        return E_POINTER;
+    }
+
+    if ppidl.is_null() {
+        return E_INVALIDARG;
+    }
+
+    // CComHeapPtr::Allocate(0) allocates zero bytes; keep one slot so a valid block still comes back.
+    let array = HeapAlloc(
+        GetProcessHeap(),
+        HEAP_ZERO_MEMORY,
+        (cidl as usize).max(1) * core::mem::size_of::<*mut IShellItem>(),
+    ) as *mut *mut IShellItem;
+    if array.is_null() {
+        return E_OUTOFMEMORY;
+    }
+
+    for i in 0..cidl as usize {
+        hr = SHCreateShellItem(pidlParent, psf, *ppidl.add(i) as LPCITEMIDLIST, array.add(i));
+        if hr < 0 {
+            break;
+        }
+    }
+
+    if hr >= 0 {
+        hr = CreateShellItemArrayFromItems(
+            array,
+            cidl,
+            core::ptr::addr_of!(IID_IShellItemArray),
+            ppsiItemArray as *mut *mut core::ffi::c_void,
+        );
+    }
+
+    CSimpleShellItemArray_free_scratch(array, cidl);
+    hr
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn SHCreateShellItemArrayFromIDLists(
+    cidl: UINT,
+    pidlArray: *const PCIDLIST_ABSOLUTE,
+    ppsiItemArray: *mut *mut IShellItemArray,
+) -> HRESULT {
+    let mut hr: HRESULT = S_OK;
+
+    if ppsiItemArray.is_null() {
+        return E_POINTER;
+    }
+    *ppsiItemArray = core::ptr::null_mut();
+
+    if cidl == 0 || pidlArray.is_null() {
+        return E_INVALIDARG;
+    }
+
+    let array = HeapAlloc(
+        GetProcessHeap(),
+        HEAP_ZERO_MEMORY,
+        (cidl as usize) * core::mem::size_of::<*mut IShellItem>(),
+    ) as *mut *mut IShellItem;
+    if array.is_null() {
+        return E_OUTOFMEMORY;
+    }
+
+    for i in 0..cidl as usize {
+        hr = SHCreateShellItem(
+            core::ptr::null(),
+            core::ptr::null_mut(),
+            *pidlArray.add(i) as LPCITEMIDLIST,
+            array.add(i),
+        );
+        if hr < 0 {
+            break;
+        }
+    }
+
+    if hr >= 0 {
+        hr = CreateShellItemArrayFromItems(
+            array,
+            cidl,
+            core::ptr::addr_of!(IID_IShellItemArray),
+            ppsiItemArray as *mut *mut core::ffi::c_void,
+        );
+    }
+
+    CSimpleShellItemArray_free_scratch(array, cidl);
+    hr
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn SHCreateShellItemArrayFromShellItem(
+    psi: *mut IShellItem,
+    riid: REFIID,
+    ppv: *mut *mut core::ffi::c_void,
+) -> HRESULT {
+    let mut items: [*mut IShellItem; 1] = [psi];
+
+    if ppv.is_null() {
+        return E_POINTER;
+    }
+    *ppv = core::ptr::null_mut();
+
+    if psi.is_null() {
+        return E_INVALIDARG;
+    }
+
+    CreateShellItemArrayFromItems(items.as_mut_ptr(), 1, riid, ppv)
+}

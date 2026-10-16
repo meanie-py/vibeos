@@ -136,3 +136,68 @@ def retype_aliases(island: str, sources: str, map_type: Callable[[str], str]) ->
             flags=re.M,
         )
     return island
+
+
+# ---------------------------------------------------------------------------------------
+# Per-instantiation classes: a template whose layout DEPENDS on its arguments
+# ---------------------------------------------------------------------------------------
+#
+# rapps' `CUiWindow<T> : CUiPrimitive, CUiBox, T` embeds T as a base, so no generic Rust
+# struct can lay it out. cpp_model takes each instantiation clang made
+# (ClassTemplateSpecializationDecl: fields, bases and the USED bodies, all with T substituted)
+# as one concrete class, `CUiWindow_CTreeView`, and every spelling of that instantiation in
+# the module is rewritten to the class name. From there it is an ordinary class.
+
+
+def instance_key(spelling: str) -> str:
+    """`ATL::CUiWindow< CTreeView >` -> `CUiWindow<CTreeView>`: one key however written."""
+    t = re.sub(r"\b(?:const|volatile|struct|class|enum)\s+", "", spelling)
+    t = re.sub(r"\b[A-Za-z_]\w*::", "", t)
+    return re.sub(r"\s+", "", t)
+
+
+def instance_name(template: str, args: list[str]) -> str:
+    """The concrete class name: `CUiWindow` + [`CWindowImpl<CAppInfoDisplay>`] ->
+    `CUiWindow_CWindowImpl_CAppInfoDisplay`. All-default arguments leave the bare name."""
+    parts = [re.sub(r"\W+", "_", instance_key(a)).strip("_") for a in args]
+    return "_".join([template, *[p for p in parts if p]])
+
+
+def rewrite_instances(
+    text: str, table: dict[str, str], canon: Callable[[str], str] | None = None
+) -> str:
+    """Every spelled instantiation in `text` that `table` (instance_key -> class name) knows,
+    as its class name; nested ones too (`CPointerArray<CUiWindow<CTreeView>>`). `canon`
+    resolves typedefs in a key clang spelled desugared (`CLocalPtr<WCHAR>` is the instance
+    `CLocalPtr<wchar_t>`)."""
+    if not table or not text or "<" not in text:
+        return text
+    names = sorted({k.split("<", 1)[0] for k in table}, key=len, reverse=True)
+    pat = re.compile(r"\b(?:[A-Za-z_]\w*::)*(" + "|".join(map(re.escape, names)) + r")\s*<")
+    out: list[str] = []
+    i = 0
+    while True:
+        m = pat.search(text, i)
+        if m is None:
+            out.append(text[i:])
+            return "".join(out)
+        j, depth = m.end(), 1
+        while j < len(text) and depth:
+            depth += (text[j] == "<") - (text[j] == ">")
+            j += 1
+        if depth:
+            out.append(text[i:])
+            return "".join(out)
+        inner = text[m.end() : j - 1]
+        key = instance_key(f"{m.group(1)}<{inner}>")
+        hit = (
+            table.get(key)
+            or table.get(instance_key(f"{m.group(1)}<{rewrite_instances(inner, table, canon)}>"))
+            or (table.get(canon(key)) if canon else None)
+        )
+        if hit is None:
+            out.append(text[i : m.end()])
+            i = m.end()
+            continue
+        out.append(text[i : m.start()] + hit)
+        i = j
