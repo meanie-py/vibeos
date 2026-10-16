@@ -8,10 +8,10 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::probe::*;
 
 use ntkrnl_sys::ddk::{
-    _ETIMER, _ETHREAD, _KAPC, _KDPC, _KTHREAD, _KTIMER,
+    _ETIMER, _ETHREAD, _KAPC, _KDPC, _KTIMER,
     ACCESS_MASK, ETIMER, ExGetPreviousMode,
     KPROCESSOR_MODE, KeCancelTimer,
-    KeFlushQueuedDpcs, KeInitializeSpinLock, KeInsertQueueApc,
+    KeFlushQueuedDpcs, KeInitializeApc, KeInitializeSpinLock, KeInsertQueueApc,
     KeReadStateTimer, KeRemoveQueueApc,
     KeRemoveQueueDpc, LARGE_INTEGER, PETHREAD, PETIMER, PHANDLE,
     PKAPC, PKNORMAL_ROUTINE, PLARGE_INTEGER, POBJECT_ATTRIBUTES,
@@ -21,6 +21,7 @@ use ntkrnl_sys::ddk::{
     ObCreateObjectType, ObDereferenceObjectEx, ObReferenceObjectByHandle,
     ObReferenceObjectSafe, _TIMER_TYPE_NotificationTimer,
     _TIMER_TYPE_SynchronizationTimer, _KWAIT_REASON_Executive,
+    _KAPC_ENVIRONMENT_CurrentApcEnvironment,
 };
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 // KDEFERRED_ROUTINE, KeAcquireSpinLockAtDpcLevel, KeReleaseSpinLockFromDpcLevel
@@ -71,7 +72,6 @@ extern "system" {
     fn ObCreateObject( ProbeMode: KPROCESSOR_MODE, ObjectType: POBJECT_TYPE, ObjectAttributes: POBJECT_ATTRIBUTES, AccessMode: KPROCESSOR_MODE, Reserved: PVOID, ObjectSize: ULONG, PagedPoolCharge: ULONG, NonPagedPoolCharge: ULONG, Object: *mut PVOID, ) -> NTSTATUS;
     fn ObInsertObject( Object: PVOID, AccessState: PVOID, DesiredAccess: ACCESS_MASK, AdditionalReferences: ULONG, ReferencedObject: *mut PVOID, Handle: PHANDLE, ) -> NTSTATUS;
     fn ObOpenObjectByName( ObjectAttributes: POBJECT_ATTRIBUTES, ObjectType: POBJECT_TYPE, AccessMode: KPROCESSOR_MODE, AccessState: PVOID, DesiredAccess: ACCESS_MASK, ParseContext: PVOID, Handle: PHANDLE, ) -> NTSTATUS;
-    fn KeInitializeApc( Apc: *mut _KAPC, Thread: *mut _KTHREAD, Environment: u8, KernelRoutine: unsafe extern "C" fn( *mut _KAPC, *mut PKNORMAL_ROUTINE, *mut PVOID, *mut PVOID, *mut PVOID, ), RundownRoutine: PVOID, NormalRoutine: PKNORMAL_ROUTINE, Mode: KPROCESSOR_MODE, Context: PVOID, );
     fn KeSetTimerEx( Timer: *mut _KTIMER, DueTime: LARGE_INTEGER, Period: LONG, Dpc: *mut _KDPC, ) -> BOOLEAN;
 }
 extern "C" {
@@ -86,7 +86,6 @@ extern "system" {
 }
 
 const IO_NO_INCREMENT: u8 = 0;
-const CurrentApcEnvironment: u8 = 0x02;
 const ICIF_PROBE_READ_WRITE: ULONG = 0x00000003;
 
 #[no_mangle]
@@ -222,7 +221,7 @@ unsafe extern "system" fn ExpTimerDpcRoutine(
     }
 }
 
-unsafe extern "C" fn ExpTimerApcKernelRoutine(
+unsafe extern "system" fn ExpTimerApcKernelRoutine(
     Apc: *mut _KAPC,
     NormalRoutine: *mut PKNORMAL_ROUTINE,
     NormalContext: *mut PVOID,
@@ -697,9 +696,9 @@ pub unsafe extern "system" fn NtSetTimer(
             KeInitializeApc(
                 core::ptr::addr_of_mut!((*Timer).TimerApc),
                 core::ptr::addr_of_mut!((*Thread).Tcb),
-                CurrentApcEnvironment,
-                ExpTimerApcKernelRoutine,
-                core::ptr::null_mut(),
+                _KAPC_ENVIRONMENT_CurrentApcEnvironment,
+                Some(ExpTimerApcKernelRoutine),
+                None,
                 core::mem::transmute::<PTIMER_APC_ROUTINE, PKNORMAL_ROUTINE>(TimerApcRoutine),
                 PreviousMode,
                 TimerContext,

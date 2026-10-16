@@ -1,0 +1,88 @@
+{
+  "all_bodies": {
+    "snapshot_inodes": 2011,
+    "verified_exclusive_snapshot_inodes": 2011,
+    "snapshot_allocated_bytes": 11135602688,
+    "unique_content_groups": 843,
+    "new_store_blobs_allocated_bytes": 4769673216,
+    "direct_archive_only_net_before_overheads_bytes": 6365929472,
+    "copying_archive_only_net_before_overheads_bytes": -4769673216,
+    "additional_publication_peak_before_worker_source_overheads_bytes": 4769673216,
+    "shared_intermediate_reclaim_credit_bytes": 0,
+    "primary_archive_reclaim_credit_bytes": 0
+  },
+  "top5_source_eligible": {
+    "snapshot_inodes": 432,
+    "verified_exclusive_snapshot_inodes": 432,
+    "snapshot_allocated_bytes": 2300452864,
+    "unique_content_groups": 9,
+    "new_store_blobs_allocated_bytes": 47984640,
+    "direct_archive_only_net_before_overheads_bytes": 2252468224,
+    "copying_archive_only_net_before_overheads_bytes": -47984640,
+    "additional_publication_peak_before_worker_source_overheads_bytes": 47984640,
+    "shared_intermediate_reclaim_credit_bytes": 0,
+    "primary_archive_reclaim_credit_bytes": 0
+  },
+  "source_variants": {
+    "{\"body\": \"crt-startup-rust\", \"default_features\": false, \"features\": [\"wcrtexe\"], \"force_staticlib\": false}": {
+      "eligible": false,
+      "reasons": [
+        "sdk/lib/rust/crt-startup-rust: native library input unsupported in mbstr.rs"
+      ]
+    },
+    "{\"body\": \"crt-startup-rust\", \"default_features\": false, \"features\": [\"crtdll\"], \"force_staticlib\": false}": {
+      "eligible": false,
+      "reasons": [
+        "sdk/lib/rust/crt-startup-rust: native library input unsupported in mbstr.rs"
+      ]
+    },
+    "{\"body\": \"crt-startup-rust\", \"default_features\": false, \"features\": [\"crtexe\"], \"force_staticlib\": false}": {
+      "eligible": false,
+      "reasons": [
+        "sdk/lib/rust/crt-startup-rust: native library input unsupported in mbstr.rs"
+      ]
+    },
+    "{\"body\": \"crt0-rust\", \"default_features\": false, \"features\": [\"wide\"], \"force_staticlib\": false}": {
+      "eligible": true,
+      "reasons": []
+    },
+    "{\"body\": \"crt0-rust\", \"default_features\": false, \"features\": [\"ansi\"], \"force_staticlib\": false}": {
+      "eligible": true,
+      "reasons": []
+    },
+    "{\"body\": \"crt-dllmain-rust\", \"default_features\": true, \"features\": [], \"force_staticlib\": false}": {
+      "eligible": false,
+      "reasons": [
+        "sdk/lib/rust/crt-dllmain-rust: native library input unsupported in lib.rs"
+      ]
+    },
+    "{\"body\": \"conutils-rust\", \"default_features\": true, \"features\": [], \"force_staticlib\": false}": {
+      "eligible": true,
+      "reasons": []
+    },
+    "{\"body\": \"cnt-rust-lib\", \"default_features\": true, \"features\": [\"float\"], \"force_staticlib\": false}": {
+      "eligible": false,
+      "reasons": [
+        "sdk/lib/rust/cnt-rust/Cargo.toml: unsupported keys ['target']"
+      ]
+    },
+    "{\"body\": \"cnt-rust-lib\", \"default_features\": true, \"features\": [], \"force_staticlib\": false}": {
+      "eligible": false,
+      "reasons": [
+        "sdk/lib/rust/cnt-rust/Cargo.toml: unsupported keys ['target']"
+      ]
+    },
+    "{\"body\": \"cnt-rust-lib\", \"default_features\": true, \"features\": [\"float\", \"freeldr\"], \"force_staticlib\": false}": {
+      "eligible": false,
+      "reasons": [
+        "sdk/lib/rust/cnt-rust/Cargo.toml: unsupported keys ['target']"
+      ]
+    },
+    "{\"body\": \"cnt-rust-lib\", \"default_features\": true, \"features\": [\"freeldr\"], \"force_staticlib\": false}": {
+      "eligible": false,
+      "reasons": [
+        "sdk/lib/rust/cnt-rust/Cargo.toml: unsupported keys ['target']"
+      ]
+    }
+  }
+}

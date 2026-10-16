@@ -72,11 +72,14 @@ def test_nested_inputs_rebuild_consumers_only(tmp_path, crate_types, watch_neste
         "outer/build.rs",
         f'''#[path = "{REPO}/sdk/lib/rust/reactos-link/src/cargo_deps.rs"] mod cargo_deps;
     #[path = "{REPO}/sdk/lib/rust/reactos-link/src/compiler_env.rs"] mod compiler_env;
+    #[path = "{REPO}/sdk/lib/rust/reactos-link/src/body_storage.rs"] mod body_storage;
     use std::{{env, fs, path::PathBuf, process::Command}};
     fn main() {{
         let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
         let root = manifest.parent().unwrap().to_path_buf();
-        let target = root.join("nested");
+        let storage =
+            body_storage::Shared::acquire(&root, "host", "body", b"host-test", 1).unwrap();
+        let target = storage.target_dir();
         let mut command = Command::new("cargo");
         command.args(["build", "--offline", "-p", "body", "--target-dir"])
             .arg(&target).current_dir(&root);
@@ -85,7 +88,10 @@ def test_nested_inputs_rebuild_consumers_only(tmp_path, crate_types, watch_neste
         let lib = target.join("debug/libbody.a");
         {watch}
         println!("cargo:rerun-if-changed=build.rs");
-        println!("cargo:rustc-link-search=native={{}}", target.join("debug").display());
+        let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
+        let owned = storage.snapshot(&lib, &out, b"body-default").unwrap();
+        drop(storage);
+        println!("cargo:rustc-link-search=native={{}}", owned.parent().unwrap().display());
         println!("cargo:rustc-link-lib=static=body");
         let count = root.join("invocations");
         let old = fs::read_to_string(&count).unwrap_or_default();

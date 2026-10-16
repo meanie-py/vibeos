@@ -1,0 +1,600 @@
+{
+  "schema_version": 2,
+  "root": "/home/curi/Projects/os-playground/vibeos/sdk/lib/rust/target",
+  "roots": [
+    {
+      "path": "/home/curi/Projects/os-playground/vibeos/sdk/lib/rust/target",
+      "kind": "workspace"
+    },
+    {
+      "path": "/home/curi/Projects/os-playground/vibeos/build-amd64",
+      "kind": "build"
+    },
+    {
+      "path": "/home/curi/Projects/os-playground/vibeos/build-arm64",
+      "kind": "build"
+    },
+    {
+      "path": "/home/curi/Projects/os-playground/vibeos/build-i386",
+      "kind": "build"
+    }
+  ],
+  "started_at": "2026-10-16T00:23:36.632495+00:00",
+  "finished_at": "2026-10-16T00:25:24.109215+00:00",
+  "elapsed_seconds": 104.80971417899127,
+  "content_hashed": true,
+  "unique_inodes": 204392,
+  "allocated_bytes": 61846265856,
+  "logical_bytes": 61210302742,
+  "path_count": 207581,
+  "directory_inodes": 48772,
+  "regular_inodes": 154508,
+  "symlink_inodes": 1112,
+  "roles": {
+    "other": {
+      "unique_inodes": 2368,
+      "directory_inodes": 274,
+      "allocated_bytes": 577003520,
+      "path_count": 2387,
+      "regular_inodes": 2094,
+      "logical_bytes": 569735345
+    },
+    "legacy_private_body": {
+      "unique_inodes": 7404,
+      "directory_inodes": 4871,
+      "allocated_bytes": 378130432,
+      "path_count": 7460,
+      "regular_inodes": 2533,
+      "logical_bytes": 352094358
+    },
+    "outer_target_other": {
+      "unique_inodes": 75786,
+      "directory_inodes": 15384,
+      "allocated_bytes": 4096823296,
+      "path_count": 76792,
+      "regular_inodes": 60402,
+      "logical_bytes": 3869131549
+    },
+    "consumer_snapshot_other": {
+      "unique_inodes": 6757,
+      "directory_inodes": 2735,
+      "allocated_bytes": 36114432,
+      "path_count": 6757,
+      "regular_inodes": 4022,
+      "logical_bytes": 24537036
+    },
+    "consumer_snapshot": {
+      "unique_inodes": 2011,
+      "regular_inodes": 2011,
+      "allocated_bytes": 11135602688,
+      "logical_bytes": 11127699932,
+      "path_count": 2011
+    },
+    "outer_host_other": {
+      "unique_inodes": 24056,
+      "directory_inodes": 7278,
+      "allocated_bytes": 5830189056,
+      "path_count": 24796,
+      "regular_inodes": 16778,
+      "logical_bytes": 5750951503
+    },
+    "outer_host_dependencies": {
+      "unique_inodes": 9430,
+      "directory_inodes": 724,
+      "allocated_bytes": 7243128832,
+      "path_count": 9430,
+      "regular_inodes": 8706,
+      "logical_bytes": 7208432060
+    },
+    "body_other": {
+      "unique_inodes": 14162,
+      "directory_inodes": 2607,
+      "allocated_bytes": 522334208,
+      "path_count": 14234,
+      "regular_inodes": 11555,
+      "logical_bytes": 471204273
+    },
+    "body_primary_archive": {
+      "unique_inodes": 843,
+      "regular_inodes": 843,
+      "allocated_bytes": 4771282944,
+      "logical_bytes": 4766406044,
+      "path_count": 1642
+    },
+    "body_dependencies": {
+      "unique_inodes": 1770,
+      "regular_inodes": 1770,
+      "allocated_bytes": 8034816000,
+      "logical_bytes": 8029386950,
+      "path_count": 1770
+    },
+    "ambiguous": {
+      "unique_inodes": 52,
+      "regular_inodes": 52,
+      "allocated_bytes": 10469376,
+      "logical_bytes": 10340274,
+      "path_count": 104
+    },
+    "build_other": {
+      "unique_inodes": 42689,
+      "directory_inodes": 10653,
+      "allocated_bytes": 9770721280,
+      "path_count": 42691,
+      "regular_inodes": 30924,
+      "logical_bytes": 9651713810,
+      "symlink_inodes": 1112
+    },
+    "direct_cmake_other": {
+      "unique_inodes": 14379,
+      "directory_inodes": 4246,
+      "allocated_bytes": 241053696,
+      "path_count": 14411,
+      "regular_inodes": 10133,
+      "logical_bytes": 188314135
+    },
+    "direct_cmake_dependencies": {
+      "unique_inodes": 2274,
+      "regular_inodes": 2274,
+      "allocated_bytes": 6788038656,
+      "logical_bytes": 6782085117,
+      "path_count": 2274
+    },
+    "direct_cmake_primary_archive": {
+      "unique_inodes": 411,
+      "regular_inodes": 411,
+      "allocated_bytes": 2410557440,
+      "logical_bytes": 2408270356,
+      "path_count": 822
+    }
+  },
+  "role_references": {
+    "other": {
+      "unique_inodes": 2368,
+      "directory_inodes": 274,
+      "allocated_bytes": 577003520,
+      "path_count": 2387,
+      "regular_inodes": 2094,
+      "logical_bytes": 569735345
+    },
+    "legacy_private_body": {
+      "unique_inodes": 7404,
+      "directory_inodes": 4871,
+      "allocated_bytes": 378130432,
+      "path_count": 7460,
+      "regular_inodes": 2533,
+      "logical_bytes": 352094358
+    },
+    "outer_target_other": {
+      "unique_inodes": 75786,
+      "directory_inodes": 15384,
+      "allocated_bytes": 4096823296,
+      "path_count": 76792,
+      "regular_inodes": 60402,
+      "logical_bytes": 3869131549
+    },
+    "consumer_snapshot_other": {
+      "unique_inodes": 6757,
+      "directory_inodes": 2735,
+      "allocated_bytes": 36114432,
+      "path_count": 6757,
+      "regular_inodes": 4022,
+      "logical_bytes": 24537036
+    },
+    "consumer_snapshot": {
+      "unique_inodes": 2011,
+      "regular_inodes": 2011,
+      "allocated_bytes": 11135602688,
+      "logical_bytes": 11127699932,
+      "path_count": 2011
+    },
+    "outer_host_other": {
+      "unique_inodes": 24056,
+      "directory_inodes": 7278,
+      "allocated_bytes": 5830189056,
+      "path_count": 24796,
+      "regular_inodes": 16778,
+      "logical_bytes": 5750951503
+    },
+    "outer_host_dependencies": {
+      "unique_inodes": 9430,
+      "directory_inodes": 724,
+      "allocated_bytes": 7243128832,
+      "path_count": 9430,
+      "regular_inodes": 8706,
+      "logical_bytes": 7208432060
+    },
+    "body_other": {
+      "unique_inodes": 14187,
+      "directory_inodes": 2607,
+      "allocated_bytes": 527167488,
+      "path_count": 14284,
+      "regular_inodes": 11580,
+      "logical_bytes": 475975197
+    },
+    "body_primary_archive": {
+      "unique_inodes": 843,
+      "regular_inodes": 843,
+      "allocated_bytes": 4771282944,
+      "logical_bytes": 4766406044,
+      "path_count": 1642
+    },
+    "body_dependencies": {
+      "unique_inodes": 1795,
+      "regular_inodes": 1795,
+      "allocated_bytes": 8039649280,
+      "logical_bytes": 8034157874,
+      "path_count": 1820
+    },
+    "build_other": {
+      "unique_inodes": 42689,
+      "directory_inodes": 10653,
+      "allocated_bytes": 9770721280,
+      "path_count": 42691,
+      "regular_inodes": 30924,
+      "logical_bytes": 9651713810,
+      "symlink_inodes": 1112
+    },
+    "direct_cmake_other": {
+      "unique_inodes": 14406,
+      "directory_inodes": 4246,
+      "allocated_bytes": 246689792,
+      "path_count": 14465,
+      "regular_inodes": 10160,
+      "logical_bytes": 193883485
+    },
+    "direct_cmake_dependencies": {
+      "unique_inodes": 2301,
+      "regular_inodes": 2301,
+      "allocated_bytes": 6793674752,
+      "logical_bytes": 6787654467,
+      "path_count": 2328
+    },
+    "direct_cmake_primary_archive": {
+      "unique_inodes": 411,
+      "regular_inodes": 411,
+      "allocated_bytes": 2410557440,
+      "logical_bytes": 2408270356,
+      "path_count": 822
+    }
+  },
+  "layouts": {
+    "other": {
+      "unique_inodes": 2368,
+      "directory_inodes": 274,
+      "allocated_bytes": 577003520,
+      "path_count": 2387,
+      "regular_inodes": 2094,
+      "logical_bytes": 569735345
+    },
+    "legacy_private_body": {
+      "unique_inodes": 7404,
+      "directory_inodes": 4871,
+      "allocated_bytes": 378130432,
+      "path_count": 7460,
+      "regular_inodes": 2533,
+      "logical_bytes": 352094358
+    },
+    "outer_coordinator": {
+      "unique_inodes": 109272,
+      "directory_inodes": 23386,
+      "allocated_bytes": 17170141184,
+      "path_count": 111018,
+      "regular_inodes": 85886,
+      "logical_bytes": 16828515112
+    },
+    "consumer_snapshot": {
+      "unique_inodes": 8768,
+      "directory_inodes": 2735,
+      "allocated_bytes": 11171717120,
+      "path_count": 8768,
+      "regular_inodes": 6033,
+      "logical_bytes": 11152236968
+    },
+    "body_shard": {
+      "unique_inodes": 16800,
+      "directory_inodes": 2607,
+      "allocated_bytes": 13333266432,
+      "path_count": 17696,
+      "regular_inodes": 14193,
+      "logical_bytes": 13271768191
+    },
+    "build_other": {
+      "unique_inodes": 42689,
+      "directory_inodes": 10653,
+      "allocated_bytes": 9770721280,
+      "path_count": 42691,
+      "regular_inodes": 30924,
+      "logical_bytes": 9651713810,
+      "symlink_inodes": 1112
+    },
+    "direct_cmake_private": {
+      "unique_inodes": 12983,
+      "directory_inodes": 3599,
+      "allocated_bytes": 5601128448,
+      "path_count": 13189,
+      "regular_inodes": 9384,
+      "logical_bytes": 5555157061
+    },
+    "direct_cmake_shared": {
+      "unique_inodes": 4108,
+      "directory_inodes": 647,
+      "allocated_bytes": 3844157440,
+      "path_count": 4372,
+      "regular_inodes": 3461,
+      "logical_bytes": 3829081897
+    }
+  },
+  "allocated_by_extension": {
+    "": 7427780608,
+    ".TAG": 10338304,
+    ".json": 119582720,
+    ".timestamp": 40587264,
+    ".d": 132120576,
+    ".exe": 971911168,
+    ".rlib": 15631745024,
+    ".rmeta": 8826212352,
+    ".o": 217395200,
+    ".a": 21668450304,
+    ".lock": 0,
+    ".request-v1": 24911872,
+    ".res": 229797888,
+    ".c": 63795200,
+    ".def": 90939392,
+    ".so": 166227968,
+    ".config-v1": 294912,
+    ".rs": 13402112,
+    ".h": 115634176,
+    ".hpp": 8192,
+    ".cpp": 3174400,
+    ".tar": 4231168,
+    ".cmake": 15421440,
+    ".txt": 1331200,
+    ".inc": 167936,
+    ".s": 159744,
+    ".inl": 20480,
+    ".ime": 10678272,
+    ".dir": 13520896,
+    ".obj": 933175296,
+    ".dll": 1867853824,
+    ".com": 9207808,
+    ".bin": 17043456,
+    ".mc": 35786752,
+    ".rc": 159744,
+    ".tlb": 6291456,
+    ".scr": 5795840,
+    ".sort": 12288,
+    ".lst": 2355200,
+    ".lnk": 454656,
+    ".inf": 16371712,
+    ".dyn": 180224,
+    ".efi": 1847296,
+    ".sys": 356700160,
+    ".acm": 19099648,
+    ".cpl": 76464128,
+    ".ocx": 6963200,
+    ".drv": 20549632,
+    ".iso": 2532950016,
+    ".sdb": 32768,
+    ".nls": 30744576,
+    ".msstyles": 18391040,
+    ".INI": 5197824,
+    ".cab": 77824,
+    ".ninja": 81956864,
+    ".check_cache": 24576,
+    ".3": 24576,
+    ".out": 98304,
+    ".yaml": 237568,
+    ".verify_globs": 12288,
+    ".ini": 4096,
+    ".23038_none_deadbeef": 4096,
+    ".2982_none_deadbeef": 8192,
+    ".0_none_deadbeef": 4096,
+    ".manifest": 20480,
+    ".wav": 16384,
+    ".ttf": 217088,
+    ".cmd": 8192,
+    ".otf": 8192,
+    ".sfd": 4096,
+    ".pfm": 8192,
+    ".pfb": 8192,
+    ".msc": 32768,
+    ".NET": 4096,
+    ".3705": 4096,
+    ".50727": 4096,
+    ".4322": 4096,
+    ".ico": 4096,
+    ".stamp": 0
+  },
+  "configurations": [
+    {
+      "root_index": 0,
+      "architecture": "amd64",
+      "directory_label": "cbabc351ba78e8a9",
+      "observed_shards": [
+        0
+      ]
+    },
+    {
+      "root_index": 0,
+      "architecture": "amd64",
+      "directory_label": "eed449eebf68ba2d",
+      "observed_shards": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "root_index": 0,
+      "architecture": "i386",
+      "directory_label": "e4b4d372c2248e75",
+      "observed_shards": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "root_index": 0,
+      "architecture": "i386",
+      "directory_label": "17bf15d2b52d02b0",
+      "observed_shards": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "root_index": 0,
+      "architecture": "i386",
+      "directory_label": "eadeaf89016a80ff",
+      "observed_shards": [
+        0,
+        3
+      ]
+    },
+    {
+      "root_index": 0,
+      "architecture": "arm64",
+      "directory_label": "1e1531d0eeccac08",
+      "observed_shards": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "root_index": 0,
+      "architecture": "arm64",
+      "directory_label": "4893112bd0730e08",
+      "observed_shards": [
+        3
+      ]
+    },
+    {
+      "root_index": 0,
+      "architecture": "arm64",
+      "directory_label": "321bfaf804d4407b",
+      "observed_shards": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "root_index": 0,
+      "architecture": "i386",
+      "directory_label": "c83b2f4d7982d476",
+      "observed_shards": [
+        2,
+        3
+      ]
+    },
+    {
+      "root_index": 0,
+      "architecture": "arm64",
+      "directory_label": "143a901417f6b438",
+      "observed_shards": [
+        3
+      ]
+    },
+    {
+      "root_index": 0,
+      "architecture": "i386",
+      "directory_label": "dcca57792be19018",
+      "observed_shards": [
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "root_index": 0,
+      "architecture": "amd64",
+      "directory_label": "ff00ca30fac39de6",
+      "observed_shards": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "root_index": 0,
+      "architecture": "amd64",
+      "directory_label": "3352e337abcc3712",
+      "observed_shards": [
+        3
+      ]
+    },
+    {
+      "root_index": 0,
+      "architecture": "amd64",
+      "directory_label": "c4ce9e5aab6b2496",
+      "observed_shards": [
+        3
+      ]
+    }
+  ],
+  "content": {
+    "verified_inodes": 27829,
+    "distinct_contents": 6755,
+    "verified_allocated_bytes": 46126407680,
+    "verified_logical_bytes": 46033809795,
+    "duplicate_groups": 1808,
+    "duplicate_inodes": 21074,
+    "duplicate_allocated_bytes": 27516227584,
+    "cross_role_duplicate_groups": 1634,
+    "cross_role_duplicate_allocated_bytes": 25122492416,
+    "unique_content_allocated_bytes": 18610180096,
+    "hashed_bytes_read": 46033809795,
+    "hash_seconds": 90.78724932328623
+  },
+  "duplicates": {
+    "verified_inodes": 27829,
+    "distinct_contents": 6755,
+    "verified_allocated_bytes": 46126407680,
+    "verified_logical_bytes": 46033809795,
+    "duplicate_groups": 1808,
+    "duplicate_inodes": 21074,
+    "duplicate_allocated_bytes": 27516227584,
+    "cross_role_duplicate_groups": 1634,
+    "cross_role_duplicate_allocated_bytes": 25122492416,
+    "unique_content_allocated_bytes": 18610180096,
+    "hashed_bytes_read": 46033809795,
+    "hash_seconds": 90.78724932328623
+  },
+  "coverage": {
+    "complete": true,
+    "hash_complete": true,
+    "candidate_status_counts": {
+      "verified": 27829
+    },
+    "errors": [],
+    "symlink_inodes_skipped": 1112,
+    "symlink_paths_skipped": 1112,
+    "ambiguous_role_inodes": 52,
+    "regular_inodes_with_unobserved_hardlinks": 0,
+    "error_count": 0
+  },
+  "method": {
+    "allocated": "st_blocks * 512, every observed inode counted once globally; includes directories/symlinks",
+    "logical": "regular file st_size, once per inode",
+    "identity": "SHA-256 actual bytes across all .a/.lib/.rlib/.rmeta, regardless of filename or extension",
+    "races": "device/inode/mode/size/mtime_ns/ctime_ns/blocks/nlink checked before+after read and all aliases at end; directories checked around enumeration; roots reopened",
+    "duplicates": "sum allocated blocks minus largest member per content group; a conservative redundant-copy allocation, NOT reclaimable space",
+    "roles": "exclusive partition; multi-role inodes go to ambiguous; role_references overlaps intentionally",
+    "limits": [
+      "Live survey is not an atomic filesystem snapshot; files can change after their final check.",
+      "Block accounting cannot detect reflink/dedup/compression sharing or filesystem metadata beyond observed inodes.",
+      "Observed configuration/shard directory labels are not semantic action keys or effective shard settings.",
+      "Private layout presence does not establish staleness, reachability, or permission to prune.",
+      "Body shard intermediates can remain needed by other misses; net savings require action eligibility, store/snapshot/scratch/GC accounting."
+    ]
+  }
+}

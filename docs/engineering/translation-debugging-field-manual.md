@@ -527,6 +527,20 @@ Same family, three positions, all silent on the arch where the widths happen to 
   bits undefined, i386 pushes a clean slot. iphlpapi's `GetIpForwardTable2(AF_INET)` failed
   ERROR_INVALID_PARAMETER on amd64 only (guest apitest `Win10Surface`, 2026-10-14). Take the
   C prototype's width; never validate bits the ABI does not define.
+- **A small enum value does not make its ABI a byte.** The timer translation declared
+  `KeInitializeApc`'s environment as `u8` instead of the DDK's 32-bit
+  `KAPC_ENVIRONMENT`. Both the October 11 archived MP kernel and the October 15
+  immutable-store gate emitted `movb $2,%r8b` in `NtSetTimer`, while the callee
+  compared all of `r8d` against `CurrentApcEnvironment`. Stale upper bits bypass
+  normalization, leaving APC index 2; the timer DPC later panics indexing the
+  two-element `ApcStatePointer` array (`ke/apc.rs:138`). The exact earlier failure
+  is `vibeos-flake-farm/fails/auto/20261011-185307-ydzbq0v5-smoke-amd64-BUGCHECK`.
+  Use the canonical DDK declaration and enum constant, with typed `Some`/`None`
+  callbacks; the callback must also be `extern "system"` for i386. Verify the
+  rebuilt caller initializes the full argument register. The repaired UP and MP
+  amd64 images emit `movl $2,%r8d`; both i386 callbacks emit `ret $20` and carry
+  the `@20` decoration. Never clamp the index
+  to hide an ABI mismatch.
 - **`extern static` width drift.** `MmThrottleTop` declared `u64`, defined `u32`, permanently
   tripped the Cc write throttle → `WriteFile` on a FAT volume never returned, with every probe
   in the FS write path showing nothing wrong `[§9.36-throttle]`.

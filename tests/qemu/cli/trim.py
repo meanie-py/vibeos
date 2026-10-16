@@ -14,6 +14,21 @@ can use again:
     `cargo test` or clippy lands in `target/<triple>/` or `target/debug/` instead — up to 8.4 G
     in one lane, re-creatable by re-running whatever made it.
 
+  * DEAD CUSTOM TARGETS. A per-module dir holds one subdir per target the module was built
+    for, named after the triple or, for a custom target, after its json (`i686-kernel`). When
+    the cell's `<name>.json` goes (a cell moved onto the builtin triple), that subdir is dead:
+    no build of the current source reads it. 215 of them held 27 G in one lane on 2026-10-15,
+    after the cargo-drive waves moved the i386 kernel cells off `i686-kernel.json`; each one
+    holds a build-std `core` (~106 M) plus ntkrnl-sys.
+
+  * RETIRED LAYOUTS. Two private layouts are left behind when a lane's build moves on.
+    A `build-<arch>/**/rust-*-target` dir that the arch's build.ninja no longer names
+    belonged to a module whose Rust build moved to a cargo cell (5.1 G of 6.8 G in one
+    amd64 build dir, 2026-10-16). And once every configured arch shares nested body
+    builds (VIBEOS_RUST_BODY_SHARDS non-zero), each cell's old private
+    `<cell>-<body>-rustlib` dir is read by nothing (54 G in one lane); a diagnostic
+    IR build still uses them, which the idle window covers.
+
 Unlike `prune`, this never costs a warm build: everything it removes is unreachable by the
 current build configuration, so it can run on live lanes. Two guards keep that true:
 
@@ -80,6 +95,8 @@ class TrimPlan:
     paths: list[tuple[Path, int]] = field(default_factory=list)  # (path, bytes)
     superseded_units: int = 0
     adhoc_dirs: int = 0
+    dead_targets: int = 0
+    retired_dirs: int = 0
 
     @property
     def total(self) -> int:
@@ -184,6 +201,11 @@ def plan_target(target_root: Path, *, now: float, idle_hours: float) -> TrimPlan
     for d in adhoc:
         plan.paths.append((d, _size(d)))
         plan.adhoc_dirs += 1
+    dead_targets = _dead_custom_targets(target_root, now=now, idle_seconds=min(idle, 3600))
+    for d in dead_targets:
+        plan.paths.append((d, _size(d)))
+        plan.dead_targets += 1
+    adhoc += dead_targets
     for prof in _profile_dirs(target_root):
         if any(prof == d or d in prof.parents for d in adhoc):
             continue  # already going whole
@@ -202,6 +224,105 @@ def plan_target(target_root: Path, *, now: float, idle_hours: float) -> TrimPlan
     return plan
 
 
+# The per-module dirs the CMake build gives each cargo invocation: `<cell>-<arch>-cargo-link`
+# (the cell's own link) and `<cell>-<body>-rustlib` (its body crate's nested build).
+_CELL_LINK = re.compile(r"^(?P<cell>.+?)-(?:i386|amd64|arm64)-cargo-link$")
+_CELL_RUSTLIB = re.compile(r"^(?P<cell>.+?-cargo)-.+-rustlib$")
+# What a per-module dir holds besides its target subdirs.
+_MODULE_DIR_OTHER = {"release", "debug", "CACHEDIR.TAG", "tmp"}
+
+
+def _dead_custom_targets(target_root: Path, *, now: float, idle_seconds: float) -> list[Path]:
+    """Custom-target subdirs (`i686-kernel`) of per-module dirs whose cell no longer has the
+    target's json. Read against THIS worktree's source only; a dir whose cell cannot be found
+    is not judged. The idle window is capped at an hour: the rule is exact, the window only
+    keeps clear of a build that started before the json went."""
+    rust = target_root.parent
+    if rust.name != "rust" or not target_root.is_dir():
+        return []
+    dead = []
+    for entry in target_root.iterdir():
+        m = _CELL_LINK.match(entry.name) or _CELL_RUSTLIB.match(entry.name)
+        if not m or not entry.is_dir() or entry.is_symlink():
+            continue
+        cell = rust / m.group("cell")
+        if not (cell / "Cargo.toml").is_file():
+            continue
+        for sub in entry.iterdir():
+            if sub.name in _MODULE_DIR_OTHER or _ADHOC_TRIPLE.match(sub.name):
+                continue
+            if not sub.is_dir() or sub.is_symlink() or (cell / f"{sub.name}.json").exists():
+                continue
+            try:
+                if now - _newest_mtime(sub) >= idle_seconds:
+                    dead.append(sub)
+            except FileNotFoundError:
+                continue
+    return dead
+
+
+_ARCHES = ("i386", "amd64", "arm64")
+
+
+def _cache_value(build: Path, name: str) -> str | None:
+    try:
+        text = (build / "CMakeCache.txt").read_text(errors="replace")
+    except OSError:
+        return None
+    m = re.search(rf"^{name}:[A-Z]+=(.*)$", text, re.M)
+    return m.group(1).strip() if m else None
+
+
+def _retired_layouts(worktree: Path, *, now: float, idle_seconds: float) -> list[Path]:
+    dead = []
+
+    def idle(path: Path) -> bool:
+        try:
+            return now - _newest_mtime(path) >= idle_seconds
+        except FileNotFoundError:
+            return False
+
+    builds = [worktree / f"build-{a}" for a in _ARCHES if (worktree / f"build-{a}").is_dir()]
+    for build in builds:
+        try:
+            ninja = (build / "build.ninja").read_text(errors="replace")
+        except OSError:
+            continue  # unconfigured: nothing says what is live
+        for parent, dirs, _files in os.walk(build):
+            for name in list(dirs):
+                if name.startswith("rust-") and name.endswith("-target"):
+                    path = Path(parent) / name
+                    dirs.remove(name)
+                    if f"/{name}" not in ninja and not path.is_symlink() and idle(path):
+                        dead.append(path)
+                elif name in ("CMakeFiles", ".git") or name.endswith("-target"):
+                    dirs.remove(name)
+    # Cells of an arch whose cache shares link dirs no longer read their own.
+    target_root = worktree / "sdk/lib/rust/target"
+    for build in builds:
+        arch = build.name.removeprefix("build-")
+        if (
+            _cache_value(build, "VIBEOS_CARGO_LINK_SHARDS") in (None, "", "0")
+            or not target_root.is_dir()
+        ):
+            continue
+        for entry in target_root.glob(f"*-{arch}-cargo-link"):
+            if entry.is_dir() and not entry.is_symlink() and idle(entry):
+                dead.append(entry)
+    shards = [_cache_value(b, "VIBEOS_RUST_BODY_SHARDS") for b in builds]
+    target = worktree / "sdk/lib/rust/target"
+    if builds and target.is_dir() and all(s not in (None, "", "0") for s in shards):
+        for entry in target.iterdir():
+            if (
+                _CELL_RUSTLIB.match(entry.name)
+                and entry.is_dir()
+                and not entry.is_symlink()
+                and idle(entry)
+            ):
+                dead.append(entry)
+    return dead
+
+
 def plan_worktree(worktree: Path, *, now: float | None = None, idle_hours: float = 24) -> TrimPlan:
     now = time.time() if now is None else now
     plan = TrimPlan()
@@ -210,6 +331,15 @@ def plan_worktree(worktree: Path, *, now: float | None = None, idle_hours: float
         plan.paths += sub.paths
         plan.superseded_units += sub.superseded_units
         plan.adhoc_dirs += sub.adhoc_dirs
+        plan.dead_targets += sub.dead_targets
+    going = {p for p, _ in plan.paths}
+    for d in _retired_layouts(worktree, now=now, idle_seconds=idle_hours * 3600):
+        if d in going or any(g in d.parents for g in going):
+            continue
+        # A unit already planned inside a retired dir goes with it.
+        plan.paths = [(p, s) for p, s in plan.paths if d not in p.parents]
+        plan.paths.append((d, _size(d)))
+        plan.retired_dirs += 1
     return plan
 
 

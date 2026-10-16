@@ -167,6 +167,20 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_cargo_link_context.py"),
     (".", ".", "tools/test_cargo_orchestrate.py"),
     (".", ".", "tools/test_rust_storage.py"),
+    (".", ".", "tools/test_rust_storage_report.py"),
+    (".", ".", "tools/test_artifact_inputs.py"),
+    (".", ".", "tools/test_artifact_worker.py"),
+    (".", ".", "tools/test_artifact_executor.py"),
+    (".", ".", "tools/test_artifact_economics.py"),
+    (".", ".", "tools/test_artifact_native_inputs.py"),
+    (".", ".", "tools/test_artifact_dlltool.py"),
+    (".", ".", "tools/test_artifact_consumer.py"),
+    (".", ".", "tools/test_artifact_store.py"),
+    (".", ".", "tools/test_artifact_runtime.py"),
+    (".", ".", "tools/test_artifact_runtime_real.py"),
+    (".", ".", "tools/test_artifact_ninja.py"),
+    (".", ".", "tools/test_artifact_repair.py"),
+    (".", ".", "tools/test_artifact_config.py"),
     (".", ".", "tools/test_host_jobs.py"),
     (".", ".", "tools/test_binary_facts.py"),
     (".", ".", "tools/test_binary_scanner_cache.py"),
@@ -359,6 +373,12 @@ def check_tooling(args, repo: Path) -> int:
             futures = [pool.submit(execute, label, cmd, kw) for label, cmd, kw in checks]
             results = [future.result() for future in futures]
         if receipts:
+            for label in sorted(receipts.stale_generated_hits()):
+                i = next(i for i, (lbl, _cmd, _kw) in enumerate(checks) if lbl == label)
+                _lbl, cmd, kw = checks[i]
+                print(f"Generated headers changed under the reused {label} result; rerunning it.")
+                results[i] = _run(label, cmd, repo, **kw)
+                receipts.mark_rerun(label)
             try:
                 receipts.finish()
             except (OSError, RuntimeError) as error:

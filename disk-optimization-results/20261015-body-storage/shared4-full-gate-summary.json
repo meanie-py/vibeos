@@ -1,0 +1,335 @@
+{
+  "run_id": "20261015-191430-26o27ggr-gate-i386+amd64+arm64",
+  "command": "gate",
+  "arch": "i386+amd64+arm64",
+  "worktree": "/home/curi/Projects/os-playground/vibeos",
+  "verdict": "WARN",
+  "classification": "",
+  "duration_ms": 1174232,
+  "stages": [
+    {
+      "name": "host-disk",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "38.9G free; admission headroom SHORT",
+      "salient": []
+    },
+    {
+      "name": "build:i386",
+      "exit": 0,
+      "seconds": 613.3957988979964,
+      "status": "ok",
+      "detail": "built",
+      "salient": []
+    },
+    {
+      "name": "ladder:i386",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "skip",
+      "detail": "no WoW64 CPU layer on this arch's media \u2014 32-bit guests cannot run here, so the ladder does not apply",
+      "salient": []
+    },
+    {
+      "name": "build:arm64",
+      "exit": 0,
+      "seconds": 800.4217277380085,
+      "status": "ok",
+      "detail": "built",
+      "salient": []
+    },
+    {
+      "name": "ladder:arm64",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "skip",
+      "detail": "13/13 guests are BUILT but none is staged on this arch's media \u2014 staging is snapshotted when the media is assembled; restage with: VIBEOS_FEX=1 ./vibeos-cli build --arch arm64",
+      "salient": []
+    },
+    {
+      "name": "build:amd64",
+      "exit": 0,
+      "seconds": 767.4005150779994,
+      "status": "ok",
+      "detail": "built + WoW64 restaged",
+      "salient": []
+    },
+    {
+      "name": "tooling",
+      "exit": 0,
+      "seconds": 187.72738214601122,
+      "status": "ok",
+      "detail": "check-tooling clean",
+      "salient": []
+    },
+    {
+      "name": "ladder:amd64",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "13 parity + 0 diagnostic WoW64 guests staged \u2014 boot watched past the desktop marker",
+      "salient": []
+    },
+    {
+      "name": "difftest",
+      "exit": 0,
+      "seconds": 148.93553521300782,
+      "status": "ok",
+      "detail": "difftest clean",
+      "salient": []
+    },
+    {
+      "name": "lint:arm64",
+      "exit": 0,
+      "seconds": 27.18572500499431,
+      "status": "ok",
+      "detail": "check --strict clean",
+      "salient": []
+    },
+    {
+      "name": "lint:source-early",
+      "exit": 0,
+      "seconds": 17.89352489200246,
+      "status": "ok",
+      "detail": "check --strict clean",
+      "salient": []
+    },
+    {
+      "name": "lint:i386",
+      "exit": 0,
+      "seconds": 92.11929872899782,
+      "status": "ok",
+      "detail": "check --strict clean",
+      "salient": []
+    },
+    {
+      "name": "lint:source-deferred",
+      "exit": 0,
+      "seconds": 189.82342385599623,
+      "status": "ok",
+      "detail": "check --strict clean",
+      "salient": []
+    },
+    {
+      "name": "lint:amd64",
+      "exit": 0,
+      "seconds": 325.59427501499886,
+      "status": "ok",
+      "detail": "check --strict clean",
+      "salient": []
+    },
+    {
+      "name": "cohab:arm64",
+      "exit": 0,
+      "seconds": 0.7389349239965668,
+      "status": "ok",
+      "detail": "flipped modules fully covered",
+      "salient": []
+    },
+    {
+      "name": "cohab:amd64",
+      "exit": 0,
+      "seconds": 1.1691329479945125,
+      "status": "ok",
+      "detail": "flipped modules fully covered",
+      "salient": []
+    },
+    {
+      "name": "cohab:i386",
+      "exit": 0,
+      "seconds": 0.7806474810058717,
+      "status": "ok",
+      "detail": "flipped modules fully covered",
+      "salient": []
+    },
+    {
+      "name": "smoke:i386",
+      "exit": 0,
+      "seconds": 67.29963306400168,
+      "status": "ok",
+      "detail": "WARN",
+      "salient": []
+    },
+    {
+      "name": "smoke:amd64",
+      "exit": 0,
+      "seconds": 91.20528635899245,
+      "status": "ok",
+      "detail": "WARN",
+      "salient": []
+    },
+    {
+      "name": "smoke:arm64",
+      "exit": 0,
+      "seconds": 372.40885576899746,
+      "status": "ok",
+      "detail": "WARN",
+      "salient": []
+    },
+    {
+      "name": "smoke:net",
+      "exit": 0,
+      "seconds": 90.32037684399984,
+      "status": "ok",
+      "detail": "OK",
+      "salient": []
+    },
+    {
+      "name": "smoke:amd64-bios",
+      "exit": 0,
+      "seconds": 127.88045016399701,
+      "status": "ok",
+      "detail": "WARN",
+      "salient": []
+    },
+    {
+      "name": "conformance:i386",
+      "exit": 0,
+      "seconds": 261.5950504329958,
+      "status": "ok",
+      "detail": "PASS",
+      "salient": []
+    },
+    {
+      "name": "conformance:amd64",
+      "exit": 0,
+      "seconds": 326.24802686998737,
+      "status": "ok",
+      "detail": "PASS",
+      "salient": []
+    },
+    {
+      "name": "conformance:arm64",
+      "exit": 0,
+      "seconds": 166.855613281994,
+      "status": "ok",
+      "detail": "PASS",
+      "salient": []
+    },
+    {
+      "name": "stamp",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "warn",
+      "detail": "dirty tree \u2014 no push stamp",
+      "salient": []
+    }
+  ],
+  "command_timings": [
+    {
+      "stage": "build:amd64",
+      "start_seconds": 0.035567,
+      "seconds": 532.865463,
+      "exit": 0
+    },
+    {
+      "stage": "build:i386",
+      "start_seconds": 0.036047,
+      "seconds": 613.395677,
+      "exit": 0
+    },
+    {
+      "stage": "build:arm64",
+      "start_seconds": 0.037648,
+      "seconds": 800.421288,
+      "exit": 0
+    },
+    {
+      "stage": "build:amd64:restage",
+      "start_seconds": 613.43321,
+      "seconds": 234.534168,
+      "exit": 0
+    }
+  ],
+  "artifacts": {
+    "full_log": "/tmp/vibeos-cli/20261015-191430-26o27ggr-gate-i386+amd64+arm64/full.log"
+  },
+  "arches": [
+    "i386",
+    "amd64",
+    "arm64"
+  ],
+  "matrix": {
+    "amd64-bios": {
+      "verdict": "WARN",
+      "classification": "",
+      "attempts": 1,
+      "recovered": false,
+      "hang_kind": null,
+      "wedge_confirmed": false,
+      "census_stuck": 0,
+      "run_dir": "/tmp/vibeos-cli/20261015-191430-26o27ggr-gate-i386+amd64+arm64/smoke-amd64-bios-a1/20261015-192838-svhh8loj-smoke-amd64-bios"
+    },
+    "conf:i386": {
+      "verdict": "PASS",
+      "classification": "",
+      "attempts": 1,
+      "recovered": false,
+      "hang_kind": null,
+      "wedge_confirmed": false,
+      "census_stuck": 0,
+      "run_dir": "/tmp/vibeos-cli/20261015-191430-26o27ggr-gate-i386+amd64+arm64/conf-i386-a1"
+    },
+    "arm64": {
+      "verdict": "WARN",
+      "classification": "",
+      "attempts": 1,
+      "recovered": false,
+      "hang_kind": null,
+      "wedge_confirmed": false,
+      "census_stuck": 0,
+      "run_dir": "/tmp/vibeos-cli/20261015-191430-26o27ggr-gate-i386+amd64+arm64/smoke-arm64-a1/20261015-192751-kehsub1u-smoke-arm64"
+    },
+    "i386": {
+      "verdict": "WARN",
+      "classification": "",
+      "attempts": 1,
+      "recovered": false,
+      "hang_kind": null,
+      "wedge_confirmed": false,
+      "census_stuck": 0,
+      "run_dir": "/tmp/vibeos-cli/20261015-191430-26o27ggr-gate-i386+amd64+arm64/smoke-i386-a1/20261015-192444-wvze93pp-smoke-i386"
+    },
+    "conf:arm64": {
+      "verdict": "PASS",
+      "classification": "",
+      "attempts": 1,
+      "recovered": false,
+      "hang_kind": null,
+      "wedge_confirmed": false,
+      "census_stuck": 0,
+      "run_dir": "/tmp/vibeos-cli/20261015-191430-26o27ggr-gate-i386+amd64+arm64/conf-arm64-a1"
+    },
+    "amd64": {
+      "verdict": "WARN",
+      "classification": "",
+      "attempts": 1,
+      "recovered": false,
+      "hang_kind": null,
+      "wedge_confirmed": false,
+      "census_stuck": 0,
+      "run_dir": "/tmp/vibeos-cli/20261015-191430-26o27ggr-gate-i386+amd64+arm64/smoke-amd64-a1/20261015-192838-0zoji96p-smoke-amd64"
+    },
+    "net": {
+      "verdict": "OK",
+      "classification": "",
+      "attempts": 1,
+      "recovered": false,
+      "hang_kind": null,
+      "wedge_confirmed": false,
+      "census_stuck": 0,
+      "run_dir": "/tmp/vibeos-cli/20261015-191430-26o27ggr-gate-i386+amd64+arm64/smoke-net-a1"
+    },
+    "conf:amd64": {
+      "verdict": "PASS",
+      "classification": "",
+      "attempts": 1,
+      "recovered": false,
+      "hang_kind": null,
+      "wedge_confirmed": false,
+      "census_stuck": 0,
+      "run_dir": "/tmp/vibeos-cli/20261015-191430-26o27ggr-gate-i386+amd64+arm64/conf-amd64-a1"
+    }
+  }
+}
