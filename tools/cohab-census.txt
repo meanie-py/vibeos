@@ -1957,6 +1957,14 @@ drivers/storage/port/scsiport/CMakeLists.txt	1	# scsiport.sys — Rust cohabitat
 drivers/storage/port/storahci/CMakeLists.txt	1	# storahci.c replaced by Rust (storahci-rust). AHCI storport miniport; links storport.
 drivers/storage/port/storport/CMakeLists.txt	1	# fdo/miniport/misc/pdo/storport/stubs.c replaced by Rust (storport-rust); guid.c stays C
 drivers/storage/port/storport/CMakeLists.txt	1	# rust_varargs_shim.c — va_start/va_arg trampolines for the cdecl-varargs exports
+drivers/storage/port/storport/CMakeLists.txt	1	#fdo.c
+drivers/storage/port/storport/CMakeLists.txt	1	#ioctl.c
+drivers/storage/port/storport/CMakeLists.txt	1	#miniport.c
+drivers/storage/port/storport/CMakeLists.txt	1	#misc.c
+drivers/storage/port/storport/CMakeLists.txt	1	#pdo.c
+drivers/storage/port/storport/CMakeLists.txt	1	#srb.c
+drivers/storage/port/storport/CMakeLists.txt	1	#storport.c
+drivers/storage/port/storport/CMakeLists.txt	1	#stubs.c
 drivers/usb/usbaudio/CMakeLists.txt	1	# C bodies replaced by Rust (usbaudio/pool/filter/pin.c) — kept on disk per the never-delete rule.
 drivers/usb/usbaudio/CMakeLists.txt	1	# The .c files are kept on disk per the never-delete rule; guid.c stays compiled as a data-only
 drivers/usb/usbaudio/CMakeLists.txt	1	# guid.c stays as the data-only TU (DEFINE_GUID).
@@ -2292,6 +2300,7 @@ ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/util.c
 ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/volume.c # Replaced by Rust volume.rs
 ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnpdma.c # Replaced by Rust
 ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnpirp.c # Replaced by Rust pnpirp.rs
+ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnpprop.c # Replaced by Rust (DeviceProperty, upstream 3cc9aa99292)
 ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnputil.c # Replaced by Rust pnputil.rs
 ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/amd64/kdx64.c
 ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/i386/kdx86.c
@@ -2362,6 +2371,7 @@ ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/ke/thrdschd.c
 ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/ke/time.c
 ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/ke/timerobj.c
 ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/ke/wait.c
+ntoskrnl/ntos.cmake	2	#${REACTOS_SOURCE_DIR}/ntoskrnl/ke/x86x64/cacheinfo.c # Replaced by Rust (upstream 83a6af0773b)
 ntoskrnl/ntos.cmake	2	#${REACTOS_SOURCE_DIR}/ntoskrnl/ke/x86x64/cpuinfo.c
 ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/close.c
 ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/complete.c

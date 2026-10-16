@@ -36,7 +36,19 @@ add_custom_target(rust_storport DEPENDS ${STORPORT_RUST_LIB})
 # (StorPortDebugPrint/ExtendedFunction/Notification). Stable Rust cannot DEFINE a
 # C-variadic fn; the logic stays in storport-rust's *_v twins. Delete once c_variadic
 # stabilizes (rust-lang#44930).
-add_library(storport MODULE guid.c rust_varargs_shim.c storport.rc ${CMAKE_CURRENT_BINARY_DIR}/storport.def)
+# C bodies replaced by Rust (storport-rust), kept on disk as the translation reference:
+# commented entries of the list the target expands, so the translator can prove their owner.
+list(APPEND SOURCE
+    #fdo.c
+    #ioctl.c
+    #miniport.c
+    #misc.c
+    #pdo.c
+    #srb.c
+    #storport.c
+    #stubs.c
+    )
+add_library(storport MODULE ${SOURCE} guid.c rust_varargs_shim.c storport.rc ${CMAKE_CURRENT_BINARY_DIR}/storport.def)
 set_module_type(storport kernelmodedriver)
 add_importlibs(storport ntoskrnl hal)
 add_dependencies(storport rust_storport)

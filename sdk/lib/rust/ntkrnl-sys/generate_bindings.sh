@@ -46,6 +46,10 @@ cat > "$WRAPPER" << 'HEADER'
    the arm64input virtio driver translation (drivers/input/arm64input). */
 #include <ntddkbd.h>
 #include <ntddmou.h>
+/* The CPUID register layouts ke/x86x64/cacheinfo.c decodes (upstream 83a6af0773b). */
+#if defined(_M_IX86) || defined(_M_AMD64)
+#include <x86x64/Cpuid.h>
+#endif
 HEADER
 
 # Common bindgen flags

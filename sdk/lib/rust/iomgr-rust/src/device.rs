@@ -268,9 +268,17 @@ pub unsafe extern "system" fn IopDeleteDevice(ObjectBody: PVOID) {
         IopFreeDeviceNode(DeviceNode);
     }
 
+    // Drop the device's entries from the property store (upstream 3cc9aa99292).
+    PiPropReleaseDevice(DeviceObject);
+
     if !(*DeviceObject).DriverObject.is_null() {
         ObDereferenceObject((*DeviceObject).DriverObject as PVOID);
     }
+}
+
+extern "C" {
+    // ntoskrnl-rust pnpmgr/pnpprop.rs; the C declares it without NTAPI, so cdecl on i386.
+    fn PiPropReleaseDevice(DeviceObject: PDEVICE_OBJECT);
 }
 
 unsafe fn IopAttachDeviceToDeviceStackSafe(

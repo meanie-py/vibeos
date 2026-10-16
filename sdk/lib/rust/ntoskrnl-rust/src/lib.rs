@@ -247,6 +247,7 @@ pub mod ke;
 // into lpc resolve at link time via #[no_mangle]; kernel-rust force-includes its
 // symbols via `extern crate lpc_rust`.
 pub mod mm;
+pub mod pnpmgr;
 // ob extracted to ob-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.
 // pnpmgr extracted to pnpmgr-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.  // Phase 1: pnputil + pnpirp only (leaf files)
 // po extracted to po-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.

@@ -256,6 +256,7 @@ const PlugPlayControlResetDevice: ULONG = 20;
 
 const DeviceClassChangeEvent: ULONG = 0x02;
 const DeviceInstallEvent: ULONG = 0x04;
+const DevicePropertyChangeEvent: ULONG = ntkrnl_sys::ddk::_PLUGPLAY_EVENT_CATEGORY_DevicePropertyChangeEvent as ULONG;
 const TargetDeviceChangeEvent: ULONG = 0x01;
 
 const SynchronizationEvent: ULONG = 0x01;
@@ -376,6 +377,53 @@ pub unsafe extern "C" fn IopQueueDeviceChangeEvent(
 
     STATUS_SUCCESS
 }
+
+/// {F455D791-057F-48D8-B075-D125C401A137} (umpnpmgr/sysguid.h).
+static GUID_PNP_PROPERTY_UPDATE: GUID = GUID {
+    Data1: 0xF455D791,
+    Data2: 0x057F,
+    Data3: 0x48D8,
+    Data4: [0xB0, 0x75, 0xD1, 0x25, 0xC4, 0x01, 0xA1, 0x37],
+};
+
+/// Queue a DevicePropertyChangeEvent for umpnpmgr (upstream 3cc9aa99292): the property
+/// store raises it when a device's property set changes.
+#[no_mangle]
+pub unsafe extern "C" fn IopQueueDevicePropertyChangeEvent(DeviceId: ntkrnl_sys::ddk::PCUNICODE_STRING) -> NTSTATUS {
+    let DeviceId = opaque_ptr_const(DeviceId);
+    // FIELD_OFFSET(PLUGPLAY_EVENT_BLOCK, TargetDevice.DeviceIds) + Length + sizeof(UNICODE_NULL)
+    let probe = core::mem::MaybeUninit::<_PLUGPLAY_EVENT_BLOCK>::uninit();
+    let base = probe.as_ptr();
+    let ids_offset = core::ptr::addr_of!((*base).__bindgen_anon_1.TargetDevice.DeviceIds) as usize - base as usize;
+    let TotalSize = ids_offset + (*DeviceId).Length as usize + core::mem::size_of::<u16>();
+    let EntrySize = core::mem::offset_of!(PNP_EVENT_ENTRY, Event) + TotalSize;
+
+    // ExAllocatePoolZero(NonPagedPool, EntrySize, TAG_IO)
+    let EventEntry = ntkrnl_sys::ddk::ExAllocatePoolWithTag(NonPagedPool as _, EntrySize as _, u32::from_le_bytes(*b"Io  ")) as PPNP_EVENT_ENTRY;
+    if EventEntry.is_null() {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    core::ptr::write_bytes(EventEntry as *mut u8, 0, EntrySize);
+
+    (*EventEntry).Event.EventGuid = GUID_PNP_PROPERTY_UPDATE;
+    (*EventEntry).Event.EventCategory = DevicePropertyChangeEvent as u32;
+    (*EventEntry).Event.TotalSize = TotalSize as ULONG;
+
+    core::ptr::copy_nonoverlapping(
+        (*DeviceId).Buffer as *const u8,
+        core::ptr::addr_of_mut!((*EventEntry).Event.__bindgen_anon_1.TargetDevice.DeviceIds) as *mut u8,
+        (*DeviceId).Length as usize,
+    );
+
+    InsertHeadList(
+        &raw mut IopPnpEventQueueHead,
+        core::ptr::addr_of_mut!((*EventEntry).ListEntry),
+    );
+    KeSetEvent(core::ptr::addr_of_mut!(IopPnpNotifyEvent) as PVOID, 0i32, 0u8);
+
+    STATUS_SUCCESS
+}
+
 
 #[no_mangle]
 pub unsafe extern "C" fn IopQueueDeviceInstallEvent(
@@ -1152,7 +1200,9 @@ unsafe fn PiIsDevNodeStarted(DeviceNode: PDEVICE_NODE) -> BOOLEAN {
     }
 }
 
-unsafe fn IopGetDeviceNodeStatus(DeviceNode: PDEVICE_NODE) -> ULONG {
+// Not static since upstream 3cc9aa99292: the property store (pnpprop) reports DEVPKEY_Device_DevNodeStatus.
+#[no_mangle]
+pub unsafe extern "C" fn IopGetDeviceNodeStatus(DeviceNode: PDEVICE_NODE) -> ULONG {
     let mut Output = DN_NT_ENUMERATOR | DN_NT_DRIVER;
 
     if (*DeviceNode).Parent == IopRootDeviceNode {

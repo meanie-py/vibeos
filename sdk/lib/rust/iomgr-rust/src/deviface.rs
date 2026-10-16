@@ -382,6 +382,24 @@ unsafe fn IopOpenOrCreateSymbolicLinkSubKeys(
     STATUS_SUCCESS
 }
 
+/// The device and instance keys of a device interface, for the property store (pnpprop,
+/// upstream 3cc9aa99292).
+#[no_mangle]
+pub unsafe extern "C" fn IopOpenDeviceInterfaceKeys(
+    SymbolicLinkName: PCUNICODE_STRING,
+    DesiredAccess: ACCESS_MASK,
+    DeviceKey: PHANDLE,
+    InstanceKey: PHANDLE,
+) -> NTSTATUS {
+    OpenRegistryHandlesFromSymbolicLink(
+        SymbolicLinkName,
+        DesiredAccess,
+        core::ptr::null_mut(),
+        DeviceKey,
+        InstanceKey,
+    )
+}
+
 unsafe fn OpenRegistryHandlesFromSymbolicLink(
     SymbolicLinkName: PCUNICODE_STRING,
     DesiredAccess: ACCESS_MASK,
