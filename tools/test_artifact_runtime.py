@@ -156,6 +156,9 @@ class FakeStore:
 
 
 class FakeExecutor:
+    TARGETS = runtime._apis().executor.TARGETS
+    FLAGS = runtime._apis().executor.FLAGS
+
     def __init__(self, api):
         self.api = api
         self.provisions = self.preparations = self.executions = 0
@@ -170,11 +173,23 @@ class FakeExecutor:
         return {"rustc": "fake pinned compiler", "tree": "changed" if self.changed else "fixed"}
 
     def request_context(
-        self, toolchain, provisioned, body, *, features=(), default_features=True, kernel=True
+        self,
+        toolchain,
+        provisioned,
+        body,
+        *,
+        features=(),
+        default_features=True,
+        kernel=True,
+        target=runtime.TARGET,
+        flags=None,
     ):
+        if flags is None:
+            flags = runtime.KERNEL_FLAGS if kernel else ""
         return {
             "toolchain": copy.deepcopy(provisioned),
-            "target": runtime.TARGET,
+            "target": {"builtin": target},
+            "effective_flags": (flags + " " if flags else "") + runtime._DLLTOOL_FLAG,
             "body": body,
             "features": list(features),
             "default_features": default_features,
@@ -610,6 +625,21 @@ def test_clean_ref_retirement_keeps_standalone_foreign_and_current_lease_pins(ha
         assert runtime.retire_build_refs(path, _api=api) == []
 
 
+def test_a_clean_build_retires_only_its_own_arch_refs(harness):
+    # A clean i386 build removes i386's Cargo outputs only; amd64's fresh build scripts
+    # still link their blobs, so their refs must survive it.
+    api = harness
+    i386 = "cargo:beep-cargo|/tmp/vibeos/sdk/lib/rust/target/beep-cargo-i386-cargo-link/out"
+    amd64 = "cargo:beep-cargo|/tmp/vibeos/sdk/lib/rust/target/beep-cargo-amd64-cargo-link/out"
+    with supervise(api) as path:
+        request(api, path, i386)
+        request(api, path, amd64)
+    with supervise(api, clean=True, arch="i386") as path:
+        retired = runtime.retire_build_refs(path, _api=api)
+    assert [ref["consumer"] for ref in retired] == [i386]
+    assert (str(api.repo), amd64) in api.store.refs
+
+
 def test_warm_build_cannot_retire_cargo_references(harness):
     with supervise(harness) as path, pytest.raises(runtime.RuntimeError_, match="clean supervisor"):
         runtime.retire_build_refs(path, _api=harness)
@@ -655,6 +685,8 @@ def test_cli_request_protocol_and_actual_options(monkeypatch, capsys):
                 "default_features": False,
                 "kernel": True,
                 "flags": runtime.KERNEL_FLAGS + " ",
+                "architecture": "amd64",
+                "target": runtime.TARGET,
             },
         )
     ]

@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_rust_consumer_requires_supervisor_and_forwards_actual_request(tmp_path):
+def test_rust_consumer_without_a_supervisor_builds_privately_and_forwards_request(tmp_path):
     module = ROOT / "sdk/lib/rust/reactos-link/src/artifact_store.rs"
     harness = tmp_path / "consumer.rs"
     harness.write_text(
@@ -33,7 +33,9 @@ def test_rust_consumer_requires_supervisor_and_forwards_actual_request(tmp_path)
     env["VIBEOS_ARTIFACT_STORE_MODE"] = "ON"
     env.pop("VIBEOS_ARTIFACT_SUPERVISOR", None)
     result = subprocess.run(command, env=env, capture_output=True, text=True)
-    assert result.returncode != 0 and "without a live" in result.stderr
+    # On by default, so a raw ninja has no supervisor: it builds the body privately.
+    assert result.returncode == 0 and "result=None" in result.stdout
+    assert "no vibeos-cli build supervisor" in result.stdout
     package = tmp_path / "tools"
     package.mkdir()
     (package / "__init__.py").touch()

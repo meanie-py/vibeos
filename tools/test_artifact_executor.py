@@ -419,3 +419,35 @@ def test_changed_inputs_after_compile_are_rejected(prepared, monkeypatch, change
     assert report["failure_stage"] == (
         "toolchain-postcheck" if changed == "toolchain" else "prepared-input-postcheck"
     )
+
+
+def test_each_architecture_recipe_compiles_its_own_triple_with_its_audited_flags(provisioned):
+    toolchain, tool = provisioned
+    amd64 = executor.request_context(toolchain, tool, "body", kernel=True)
+    # The amd64 recipe is unchanged by the per-arch table, so its existing actions stay hits.
+    assert amd64 == executor.request_context(
+        toolchain,
+        tool,
+        "body",
+        kernel=True,
+        target=executor.TARGETS["amd64"],
+        flags=executor.FLAGS[("amd64", True)],
+    )
+    i386 = executor.request_context(
+        toolchain,
+        tool,
+        "body",
+        kernel=False,
+        target=executor.TARGETS["i386"],
+        flags=executor.FLAGS[("i386", False)],
+    )
+    assert i386["target"] == {"builtin": "i686-pc-windows-gnu"}
+    assert "i686-pc-windows-gnu" in i386["effective_config"]["argv"]
+    assert i386["environment"]["RUSTFLAGS"].startswith("-C target-feature=-sse,-sse2 -C dlltool=")
+    assert i386 != amd64
+    # Flags from another arch's recipe, or none at all where SSE must be off, are refused.
+    for target, flags in (("i686-pc-windows-gnu", ""), ("x86_64-pc-windows-gnu", "-C opt-level=3")):
+        with pytest.raises(RuntimeError, match="unaudited RUSTFLAGS"):
+            executor.request_context(toolchain, tool, "body", target=target, flags=flags)
+    with pytest.raises(RuntimeError, match="builtin recipe triple"):
+        executor.request_context(toolchain, tool, "body", target="i686-kernel", flags="")

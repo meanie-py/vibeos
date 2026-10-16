@@ -1083,23 +1083,41 @@ def _refresh_wowx64_cpu(run, repo: Path) -> bool:
     return True
 
 
+def default_artifact_store() -> Path:
+    """The immutable body store every lane shares unless told otherwise: outside every
+    worktree, so no lane's clean or prune reaches it."""
+    root = os.environ.get("VIBEOS_ARTIFACT_STORE_ROOT")
+    return Path(root) if root else Path.home() / "vibeos-artifact-store"
+
+
 def _build_supervised(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: bool) -> int:
     store_root = getattr(args, "artifact_store", None)
     verify = bool(getattr(args, "artifact_store_verify", False))
+    incremental = getattr(args, "incremental", False) or os.environ.get(
+        "VIBEOS_RUST_INCREMENTAL", ""
+    ).lower() in ("1", "true", "yes")
+    # On by default. An incremental build keeps the ordinary private path (the store
+    # rebuilds an archive from scratch, which incremental exists to avoid); asking for
+    # the store explicitly with --incremental is still refused below.
+    if (
+        store_root is None
+        and not verify
+        and not incremental
+        and not getattr(args, "no_artifact_store", False)
+    ):
+        store_root = default_artifact_store()
+        args.artifact_store = store_root
     if store_root is None and not verify:
         return _build_locked(args, repo, run, arch, cfg, build_dir, cold)
     completed_rc = None
     try:
         if store_root is None:
             raise ValueError("--artifact-store-verify requires --artifact-store")
-        if arch != "amd64":
-            raise ValueError("immutable body store currently supports --arch amd64 only")
         if not Path(store_root).is_absolute():
             raise ValueError("--artifact-store must name an absolute directory")
-        if getattr(args, "incremental", False) or os.environ.get(
-            "VIBEOS_RUST_INCREMENTAL", ""
-        ).lower() in ("1", "true", "yes"):
+        if incremental:
             raise ValueError("immutable body store does not support incremental builds")
+        Path(store_root).mkdir(parents=True, exist_ok=True)
         from tools.artifact_executor import PIN
         from tools.artifact_runtime import record_outer_result, supervise
 
@@ -1117,6 +1135,7 @@ def _build_supervised(args, repo: Path, run, arch: str, cfg, build_dir: Path, co
             run.dir / "artifact-supervisor",
             clean=cold,
             verify=verify,
+            arch=arch,
         ) as supervisor:
             completed_rc = _build_locked(
                 args,

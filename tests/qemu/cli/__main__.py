@@ -115,7 +115,13 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument(
         "--artifact-store",
         type=Path,
-        help="opt in to supervised immutable amd64 body archives at this absolute store path",
+        help="immutable body archive store (default: $VIBEOS_ARTIFACT_STORE_ROOT or "
+        "~/vibeos-artifact-store, shared by every lane)",
+    )
+    b.add_argument(
+        "--no-artifact-store",
+        action="store_true",
+        help="build every nested Rust body privately instead of through the shared store",
     )
     b.add_argument(
         "--artifact-store-verify",
@@ -499,12 +505,12 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument(
         "--artifact-store",
         type=Path,
-        help="exercise the opt-in immutable body store in the amd64 gate build",
+        help="immutable body store for the gate's builds (default: the shared store)",
     )
     g.add_argument(
         "--artifact-store-verify",
         action="store_true",
-        help="independently verify selected amd64 archives during the gate build",
+        help="independently verify the store's archives during the gate builds",
     )
     g.add_argument(
         "--keep-going", action="store_true", help="ninja -k0 in each build: collect ALL failures"

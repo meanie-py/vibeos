@@ -473,7 +473,7 @@ def _build_once(
         cmd.append("--no-check")
     if getattr(args, "clean", False) and not restage:
         cmd.append("--clean")
-    if arch == "amd64" and getattr(args, "artifact_store", None):
+    if getattr(args, "artifact_store", None):
         cmd.extend(["--artifact-store", str(args.artifact_store)])
         if getattr(args, "artifact_store_verify", False) and not restage:
             cmd.append("--artifact-store-verify")
@@ -856,17 +856,14 @@ def gate(args, repo: Path) -> int:
     run = Run("gate", "+".join(arches))
     store_requested = getattr(args, "artifact_store", None)
     verify_requested = getattr(args, "artifact_store_verify", False)
-    if (verify_requested and not store_requested) or (
-        store_requested and (not do_build or "amd64" not in arches)
-    ):
+    if (verify_requested and not store_requested) or (store_requested and not do_build):
         run.classification = "ARTIFACT_STORE_FAIL"
         run.add(
             Stage(
                 "artifact-store",
                 status="fail",
                 detail=(
-                    "store verification requires --artifact-store; "
-                    "store gating requires an amd64 build"
+                    "store verification requires --artifact-store; store gating requires a build"
                 ),
             )
         )

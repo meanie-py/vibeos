@@ -3,6 +3,7 @@
 import argparse
 import json
 import subprocess
+from pathlib import Path
 from types import SimpleNamespace
 
 from . import artifact_store
@@ -29,7 +30,6 @@ def test_build_rejects_unsupported_store_modes_before_build(tmp_path, monkeypatc
     monkeypatch.setattr(build, "_build_locked", unexpected)
     for root, verify, arch, incremental in (
         (None, True, "amd64", False),
-        (tmp_path / "store", False, "arm64", False),
         (tmp_path.__class__("relative"), False, "amd64", False),
         (tmp_path / "store", False, "amd64", True),
     ):
@@ -39,6 +39,45 @@ def test_build_rejects_unsupported_store_modes_before_build(tmp_path, monkeypatc
         run = Run()
         assert build._build_supervised(args, tmp_path, run, arch, None, tmp_path, False) == 2
         assert run.classification == "ARTIFACT_STORE_FAIL"
+
+
+def test_build_uses_the_shared_store_by_default_on_every_arch(tmp_path, monkeypatch):
+    from . import build
+
+    supervised = []
+
+    def supervise(repo, store_root, *args, **kwargs):
+        supervised.append(store_root)
+        raise ValueError("stop before building")
+
+    monkeypatch.setenv("VIBEOS_ARTIFACT_STORE_ROOT", str(tmp_path / "shared"))
+    monkeypatch.setattr("tools.artifact_runtime.supervise", supervise)
+    monkeypatch.setattr(build, "_build_locked", lambda *a, **k: 0)
+    for arch in ("i386", "amd64", "arm64"):
+        args = SimpleNamespace(artifact_store=None, artifact_store_verify=False, incremental=False)
+        build._build_supervised(args, tmp_path, _Run(), arch, None, tmp_path, False)
+    assert supervised == [tmp_path / "shared"] * 3
+    # Opted out, or incremental: the private path, and no store.
+    for opt in ({"no_artifact_store": True}, {"incremental": True}):
+        args = SimpleNamespace(
+            artifact_store=None, artifact_store_verify=False, **{"incremental": False, **opt}
+        )
+        assert build._build_supervised(args, tmp_path, _Run(), "amd64", None, tmp_path, False) == 0
+    assert len(supervised) == 3
+
+
+class _Run:
+    classification = ""
+    dir = Path("/nonexistent-run")
+
+    def __init__(self):
+        self.extra = {}
+
+    def add(self, stage):
+        pass
+
+    def finalize(self, repo):
+        return 2
 
 
 def arguments(*argv):

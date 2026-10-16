@@ -1,6 +1,7 @@
 """Bounded ambient Cargo audits reject unmodeled original compiler inputs."""
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -179,3 +180,41 @@ def test_inert_config_edit_keeps_hit_and_registers_existing_file_watch(guarded_a
         assert second["hit"] and second["builder_calls"] == 0
         assert str(path) in second["watches"]
         assert str(api.repo / "tools/artifact_config.py") in second["watches"]
+
+
+def test_the_engine_gate_audits_the_flags_the_worker_compiles_with():
+    # reactos-link keeps a copy of the recipe's RUSTFLAGS table so a body built with
+    # anything else takes the private path instead of failing the build at the store.
+    from tools import artifact_executor
+
+    rs = (
+        Path(__file__).parent.parent / "sdk/lib/rust/reactos-link/src/artifact_store.rs"
+    ).read_text()
+    body = rs[rs.index("fn audited_flags") : rs.index("fn member")]
+    table = {}
+    for arches, kernel, flags in re.findall(
+        r'\("([a-z0-9" |]+)", (true|false)\) => "([^"]*)"', body
+    ):
+        for arch in re.findall(r"[a-z0-9]+", arches):
+            table[(arch, kernel == "true")] = flags
+    assert table == artifact_executor.FLAGS
+    targets = dict(re.findall(r'"([a-z0-9]+)" => Some\("([a-z0-9_-]+)"\)', rs))
+    assert targets == artifact_executor.TARGETS
+
+
+def test_a_requested_target_s_config_rustflags_are_refused_unless_the_request_replaces_them(
+    config_repo,
+):
+    # Cargo uses [target.<triple>].rustflags only when RUSTFLAGS is unset; the isolated
+    # worker reads no config, so an applying entry would compile something else.
+    write_config(
+        config_repo / "sdk/lib/rust/.cargo",
+        '[target.i686-pc-windows-gnu]\nrustflags=["-C","target-feature=-sse,-sse2"]\n',
+    )
+    cwd = config_repo / "sdk/lib/rust/body"
+    request = dict(cargo_cwd=cwd, environment={}, target="i686-pc-windows-gnu")
+    with pytest.raises(guard.ConfigError, match="i686-pc-windows-gnu"):
+        guard.audit_request(config_repo, **request)
+    assert guard.audit_request(config_repo, rustflags_set=True, **request)["watches"]
+    # Building another target, the entry cannot apply.
+    guard.audit_request(config_repo, cargo_cwd=cwd, environment={})

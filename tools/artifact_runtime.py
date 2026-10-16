@@ -1,4 +1,4 @@
-"""Opt-in amd64 body adapter: supervised leases, exact discovery and isolated misses.
+"""Body adapter: supervised leases, exact discovery and isolated misses, per arch.
 
 The outer build owns disk admission and the supervisor through final media/link
 completion. Requests wait for the store action lock before acquiring a compile
@@ -25,6 +25,7 @@ from types import SimpleNamespace
 
 SCHEMA = "vibeos-artifact-runtime-v1"
 TARGET = "x86_64-pc-windows-gnu"
+_DLLTOOL_FLAG = "-C dlltool=/native-tools/bin/llvm-dlltool"
 SUPPORTED_BODIES = frozenset(
     {
         "crt-startup-rust",
@@ -202,9 +203,12 @@ def supervise(
     verify=False,
     *,
     repair_action=None,
+    arch=None,
     _api=None,
 ):
     """Own outer-build leases and record public, capability-free outcome evidence.
+
+    `arch` is the architecture being built; a clean build retires only its refs.
 
     Caller already owns its disk reservation. No compile permit is acquired
     here. Final toolchain validation precedes a successful/verified outcome.
@@ -298,6 +302,7 @@ def supervise(
                     "verify": verify,
                     "restored_actions": sorted({h.action_key for h in restored}),
                     "repair_action": repair_action,
+                    "arch": arch,
                 }
                 summary["restored_actions"] = state["restored_actions"]
                 summary["preflight_mode"] = (
@@ -404,19 +409,33 @@ def _request_options(
     emit_ir,
     force_staticlib,
 ):
+    targets = _apis().executor.TARGETS
     if body not in SUPPORTED_BODIES:
-        raise RuntimeError_(f"body is outside the opt-in pilot allowlist: {body}")
-    if architecture != "amd64" or target != TARGET or build_std or emit_ir or force_staticlib:
-        raise RuntimeError_("pilot requires builtin amd64 manifest staticlibs without build-std/IR")
+        raise RuntimeError_(f"body is outside the store allowlist: {body}")
+    if targets.get(architecture) != target or build_std or emit_ir or force_staticlib:
+        raise RuntimeError_(
+            "store requires builtin-target manifest staticlibs without build-std/IR"
+        )
     if not isinstance(kernel, bool) or not isinstance(default_features, bool):
         raise RuntimeError_("kernel and default_features must be booleans")
-    if not isinstance(flags, str) or flags.strip() != (KERNEL_FLAGS if kernel else ""):
-        raise RuntimeError_("unsupported pilot RUSTFLAGS")
+    if (
+        not isinstance(flags, str)
+        or flags.strip() != _apis().executor.FLAGS[(architecture, kernel)]
+    ):
+        raise RuntimeError_(f"unsupported RUSTFLAGS for {architecture}: {flags!r}")
     if not isinstance(features, (list, tuple)) or any(
         not isinstance(f, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", f) for f in features
     ):
         raise RuntimeError_("features must be explicit nonempty package feature names")
     return {"features": tuple(sorted(set(features))), "default_features": default_features}
+
+
+def _recipe(context):
+    """The (target, flags) recipe an action context was made from."""
+    flags = context["effective_flags"]
+    if not flags.endswith(_DLLTOOL_FLAG):
+        raise RuntimeError_("action context lacks the audited dlltool flag")
+    return {"target": context["target"]["builtin"], "flags": flags[: -len(_DLLTOOL_FLAG)].strip()}
 
 
 def _watches(repo, discovery):
@@ -454,7 +473,12 @@ def _watches(repo, discovery):
 
 
 def retire_build_refs(supervisor, *, _api=None):
-    """Release Cargo refs AFTER explicit amd64 output removal under build lock.
+    """Release Cargo refs AFTER the clean build's output removal under build lock.
+
+    Only the supervised arch's: a clean build removes that arch's Cargo outputs, and a
+    consumer's identity carries its per-arch target dir (`<cell>-<arch>-cargo-link`).
+    The other arches' fresh build scripts still point at their blobs, so releasing
+    their refs would let GC delete a file the next warm build links.
 
     The supervisor's preflight pins remain until outer-build exit. The caller
     must already have removed current Cargo outputs using its ordinary clean
@@ -467,9 +491,11 @@ def retire_build_refs(supervisor, *, _api=None):
     store = api.storage.Store(Path(state["store_root"]))
     lane = state["repo"]
     retired = []
+    arch = state.get("arch")
+    marker = f"-{arch}-cargo-link/" if arch else ""
     with store.attach_session(state["session_token"]):
         for reference in store.list_refs(lane):
-            if reference["consumer"].startswith("cargo:"):
+            if reference["consumer"].startswith("cargo:") and marker in reference["consumer"]:
                 with store.consumer_guard(lane, reference["consumer"]) as guard:
                     store.release_ref(lane, reference["consumer"], guard=guard)
                 retired.append(reference)
@@ -550,6 +576,7 @@ def _body_builder(api, state, repo, toolchain, body, kernel, options, context, d
             kernel=kernel,
             provisioned=state["provisioned"],
             **options,
+            **_recipe(context),
         )
         if prepared["action_key"] != expected or prepared["context"] != context:
             raise RuntimeError_("worker preparation differs from discovered action/context")
@@ -639,7 +666,12 @@ def request(
     store = api.storage.Store(Path(state["store_root"]))
     with store.attach_session(state["session_token"]) as session:
         config_before = _config_guard().audit_request(
-            repo, cargo_cwd=cargo_cwd, kernel=kernel, broker=Path(state["broker"])
+            repo,
+            cargo_cwd=cargo_cwd,
+            kernel=kernel,
+            broker=Path(state["broker"]),
+            target=target,
+            rustflags_set=bool(flags.strip()),
         )
         manifest_path = repo / "sdk/lib/rust" / body / "Cargo.toml"
         manifest = api.inputs.tomllib.loads(manifest_path.read_text())
@@ -648,7 +680,13 @@ def request(
         ) != ["staticlib"]:
             raise RuntimeError_("pilot requires the requested package's manifest staticlib")
         context = api.executor.request_context(
-            toolchain, state["provisioned"], body, kernel=kernel, **options
+            toolchain,
+            state["provisioned"],
+            body,
+            kernel=kernel,
+            target=target,
+            flags=flags.strip(),
+            **options,
         )
         discovery_started = time.monotonic()
         discovery = api.inputs.discover(
@@ -701,7 +739,12 @@ def request(
             raise RuntimeError_("lane inputs changed while waiting/building the artifact")
         revalidation_seconds = time.monotonic() - revalidation_started
         config_after = _config_guard().audit_request(
-            repo, cargo_cwd=cargo_cwd, kernel=kernel, broker=Path(state["broker"])
+            repo,
+            cargo_cwd=cargo_cwd,
+            kernel=kernel,
+            broker=Path(state["broker"]),
+            target=target,
+            rustflags_set=bool(flags.strip()),
         )
         watches = sorted(set(watches) | set(config_after["watches"]))
         reference = store.bind(str(repo), consumer, expected, session=session)
@@ -748,7 +791,7 @@ def _repair_request(api, state, manifest):
         raise RuntimeError_("repair manifest has no selected package")
     body = Path(package).name
     if package != "sdk/lib/rust/" + body or body not in SUPPORTED_BODIES:
-        raise RuntimeError_("repair package is outside the opt-in pilot allowlist")
+        raise RuntimeError_("repair package is outside the store allowlist")
     if request.get("profile") != "release" or request.get("invocation") != "cargo build --lib":
         raise RuntimeError_("repair requires a manifest staticlib release recipe")
     if manifest["dependency_actions"] or [
@@ -768,14 +811,21 @@ def _repair_request(api, state, manifest):
         False,
     )
     toolchain = Path(state["toolchain"])
+    executor = api.executor
     contexts = [
         (
             kernel,
-            api.executor.request_context(
-                toolchain, state["provisioned"], body, kernel=kernel, **options
+            executor.request_context(
+                toolchain,
+                state["provisioned"],
+                body,
+                kernel=kernel,
+                target=executor.TARGETS[arch],
+                flags=flags,
+                **options,
             ),
         )
-        for kernel in (False, True)
+        for (arch, kernel), flags in executor.FLAGS.items()
     ]
     matches = [
         (kernel, context) for kernel, context in contexts if context == descriptor.get("context")
@@ -916,6 +966,8 @@ def main():
     child.add_argument("--kernel", action="store_true")
     child.add_argument("--flags", default="")
     child.add_argument("--cargo-cwd", type=Path)
+    child.add_argument("--arch", default="amd64")
+    child.add_argument("--target", default=TARGET)
     repair_parser = commands.add_parser(
         "repair", help="explicitly reproduce one missing indexed blob"
     )
@@ -935,6 +987,8 @@ def main():
             default_features=not args.no_default_features,
             kernel=args.kernel,
             flags=args.flags,
+            architecture=args.arch,
+            target=args.target,
             **({"cargo_cwd": args.cargo_cwd} if args.cargo_cwd is not None else {}),
         )
         sys.stdout.write(protocol_lines(result))

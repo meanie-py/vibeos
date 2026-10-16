@@ -1,8 +1,9 @@
 # Immutable build artifacts across lanes
 
-Status: implementation authorized by the user on 2026-10-15; the measurement gate
-and full three-architecture cold gate passed for the opt-in amd64 pilot. Default builds do not use
-store hits. The design and
+Status: ON BY DEFAULT on all three architectures since 2026-10-16 (user's call: take
+the amd64 pilot to every arch and every build, then widen the body set). The measurement
+gate and a full three-architecture cold gate passed for the opt-in amd64 pilot first;
+the per-arch recipe and the default are below under "Proposed interfaces". The design and
 within-worktree sharding baseline were committed together as `eaa4c573a9a` on
 `shared-rust-bodies` before this implementation began; that local commit is not a
 claim of mainline landing. Step 1 owner: Codex. A handoff must name a replacement
@@ -370,18 +371,31 @@ budget does not authorize evicting a live or pinned result.
 
 The first implementation exposes these commands through the existing CLI:
 
-- `build --arch amd64 --artifact-store /absolute/store`: select the six audited
-  body packages (CRT startup, CRT entry bridge, DLL entry shim, console utilities,
-  beep and kernel). Selected requests are required to satisfy eligibility; failures
-  do not fall back. Other bodies retain existing storage. The store must be outside
-  the checkout. A plain build reconciles the opt-in back to off.
+- `build --arch <a>` uses the shared store at `$VIBEOS_ARTIFACT_STORE_ROOT`, default
+  `~/vibeos-artifact-store`, for the six audited body packages (CRT startup, CRT entry
+  bridge, DLL entry shim, console utilities, beep and kernel). `--artifact-store PATH`
+  names another store; `--no-artifact-store`, or an incremental build, keeps every body
+  on the existing storage. The store must be outside every checkout.
+- **Per-arch recipe.** A body is eligible on a builtin triple only (x86_64-pc-windows-gnu,
+  i686-pc-windows-gnu, aarch64-pc-windows-gnullvm), with exactly the RUSTFLAGS
+  reactos-link gives it there (`FLAGS` in `tools/artifact_executor.py`: frame pointers
+  for kernel-mode bodies, `-sse,-sse2` for every i386 body). Target and flags are part
+  of the action context, so the worker compiles exactly that. The amd64 recipe is
+  byte-identical to the pilot's, so its actions stay hits. reactos-link keeps a copy of
+  the flags table (`artifact_store.rs`, held equal by `test_artifact_config.py`): a
+  body on a custom target JSON (the i386 kernel, `i686-kernel`) or with other flags
+  takes the private path instead of failing at the store. So does a build with no
+  vibeos-cli supervisor (a raw `canon-run.sh ninja`), with a cargo warning.
+- **Requested-target config.** The request audit holds the requested triple's
+  `[target.<triple>]` section to `linker`, plus `rustflags` only when the request
+  sets RUSTFLAGS itself, which replaces them; the worker reads no Cargo config.
 - Add `--artifact-store-verify` to independently rebuild and compare selected actions
   once per supervisor session. A command/environment nonce forces requests even when
   Ninja and Cargo would otherwise be fresh. An empty store requires two independent
   builds before a verification receipt can claim a comparison.
 - `gate --artifact-store /absolute/store [--artifact-store-verify]` forwards the
-  selection to its amd64 build. Other architectures use their existing storage;
-  the final warm amd64 media restage retains the store without repeating verification.
+  selection to every arch's build (the builds use the default store anyway); the final
+  warm amd64 media restage retains the store without repeating verification.
 - `artifact-store build-body --store /absolute/store --body NAME --output REPORT_DIR`
   exercises one body under disk/CPU admission. `--features`, `--no-default-features`
   and `--kernel` specify the request; `--clean` and `--verify` exercise rebuild modes.
@@ -402,7 +416,7 @@ retain a worker postcheck. This avoids expanding every consumer's dependency fil
 with the entire compiler installation.
 
 The supervisor audits ambient Cargo configuration before and after the outer build,
-including when all consumers are fresh. Its bounded cwd scope covers the amd64
+including when all consumers are fresh. Its bounded cwd scope covers every arch's
 build directory, Rust workspace and direct package directories, their ancestors,
 the canonical mount's ancestors and effective Cargo home. Each request supplies
 its actual nested Cargo cwd and must fall within that audited scope. Only inert
@@ -417,7 +431,7 @@ remote collaborator reuse, separate physical mount locations from logical tool
 identity and prove that normalization with independently installed toolchains.
 Remote transport and authentication are not implemented by this local store.
 
-Reference retirement currently accompanies an explicit store-enabled amd64 clean:
+Reference retirement currently accompanies a store-enabled clean build:
 only after private Cargo outputs are successfully removed does the supervisor drop
 their durable references. Standalone body references remain. Removing worktrees or
 pruning outputs outside this path conservatively leaves references behind; automatic
@@ -566,9 +580,12 @@ must retain a functional local build path, with unsupported/offline behavior exp
 Portable identity covers equivalent toolchains/platforms, not arbitrary cross-host ABI
 compatibility. Storage compression and remote eviction are independent of blob identity.
 
-Rollback is a normal `vibeos-cli build --arch amd64` without `--artifact-store`;
-it reconciles the CMake mode to off and regenerates consumers through the existing
-sharded path. It must work without deleting the store or disturbing another
-lane. Activation remains opt-in until the acceptance evidence is recorded. No migration
+Rollback is `vibeos-cli build --arch <a> --no-artifact-store`; it reconciles the CMake
+mode to off and regenerates consumers through the existing sharded path. It must work
+without deleting the store or disturbing another lane. **Owed** before widening the body
+set: automatic reference retirement when a lane is pruned or removed (its durable refs
+now outlive it and pin their blobs; the store is small, so this leaks bytes, not
+correctness), and the per-request latency (about 0.8 s, mostly discovery and
+revalidation, overlapped across a parallel build). No migration
 of existing mutable targets into the trusted store by filename, and no pruning of other
 lanes as part of this project.

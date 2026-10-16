@@ -19,7 +19,8 @@ from .artifacts import Run
     [
         ("amd64", False, True),
         ("amd64", True, False),
-        ("i386", False, False),
+        ("i386", False, True),
+        ("arm64", True, False),
     ],
 )
 def test_gate_forwards_store_without_reverifying_restage(tmp_path, arch, restage, expected):
@@ -33,7 +34,7 @@ def test_gate_forwards_store_without_reverifying_restage(tmp_path, arch, restage
     run = cast(Run, SimpleNamespace(run=execute))
     result = gate._build_once(tmp_path, run, arch, args, restage=restage)
     assert result["ok"]
-    assert ("--artifact-store" in calls[0]) == (arch == "amd64")
+    assert "--artifact-store" in calls[0]
     assert ("--artifact-store-verify" in calls[0]) == expected
 
 

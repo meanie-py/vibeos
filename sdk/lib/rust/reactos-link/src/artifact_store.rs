@@ -1,8 +1,33 @@
-//! Opt-in immutable body archive consumer. The build supervisor owns the lease
-//! through the outer link; this short-lived build script never releases it.
+//! Immutable body archive consumer. The build supervisor owns the lease through
+//! the outer link; this short-lived build script never releases it.
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+/// The builtin triple each architecture's eligible bodies build on. A body on a custom
+/// target JSON (the i386 kernel's `i686-kernel`) needs build-std, which the store's
+/// worker recipe does not model, so it keeps the ordinary path.
+fn builtin_target(arch: &str) -> Option<&'static str> {
+    match arch {
+        "amd64" => Some("x86_64-pc-windows-gnu"),
+        "i386" => Some("i686-pc-windows-gnu"),
+        "arm64" => Some("aarch64-pc-windows-gnullvm"),
+        _ => None,
+    }
+}
+
+/// The exact RUSTFLAGS the worker's recipe compiles an eligible body with, by arch and
+/// kernel mode: tools/artifact_executor.py FLAGS, which tools/test_artifact_config.py
+/// holds this copy to. A body built with anything else keeps the ordinary path.
+fn audited_flags(arch: &str, kernel: bool) -> Option<&'static str> {
+    Some(match (arch, kernel) {
+        ("amd64" | "arm64", false) => "",
+        ("amd64" | "arm64", true) => "-C force-frame-pointers=yes",
+        ("i386", false) => "-C target-feature=-sse,-sse2",
+        ("i386", true) => "-C target-feature=-sse,-sse2 -C force-frame-pointers=yes",
+        _ => return None,
+    })
+}
 
 fn member(body: &str) -> bool {
     matches!(body, "crt-startup-rust" | "crt0-rust" | "crt-dllmain-rust"
@@ -42,15 +67,22 @@ pub fn get(
         Ok("ON") => {},
         _ => panic!("VIBEOS_ARTIFACT_STORE_MODE must be ON or OFF"),
     }
-    // This first rollout explicitly selects these bodies on amd64 only.
-    if !member(body) || arch != "amd64" { return None; }
-    assert_eq!(target, "x86_64-pc-windows-gnu", "artifact store requires builtin amd64 target");
+    if !member(body)
+        || builtin_target(arch) != Some(target)
+        || audited_flags(arch, kernel) != Some(flags.trim())
+    {
+        return None;
+    }
     assert!(!staticlib, "artifact store does not yet support crate-type overrides");
     assert!(!other_flags, "artifact store does not support additional encoded/build Rust flags");
     assert_ne!(env::var("VIBEOS_EMIT_LLVM_IR").as_deref(), Ok("1"),
         "artifact store does not support LLVM IR emission");
-    let supervisor = env::var_os("VIBEOS_ARTIFACT_SUPERVISOR")
-        .expect("artifact store enabled without a live vibeos-cli build supervisor");
+    // The store is on by default, so a raw `ninja` (canon-run.sh) reaches here with
+    // no vibeos-cli supervisor to own the lease: build this body the ordinary way.
+    let Some(supervisor) = env::var_os("VIBEOS_ARTIFACT_SUPERVISOR") else {
+        println!("cargo:warning=artifact store: no vibeos-cli build supervisor; building {body} privately");
+        return None;
+    };
     let python = env::var_os("VIBEOS_ARTIFACT_PYTHON")
         .expect("artifact store supervisor did not supply its Python interpreter");
     let consumer = format!("cargo:{package}|{}|{body}|{features:?}|{default_features}|{kernel}",
@@ -61,7 +93,9 @@ pub fn get(
         .arg("--cargo-cwd").arg(cargo_cwd)
         .arg("--body").arg(body).arg("--consumer").arg(consumer)
         .arg("--features").arg(features.join(","))
-        .arg(format!("--flags={flags}"));
+        .arg(format!("--flags={flags}"))
+        .arg("--arch").arg(arch)
+        .arg("--target").arg(target);
     if !default_features { command.arg("--no-default-features"); }
     if kernel { command.arg("--kernel"); }
     let output = command.output().expect("launch immutable artifact helper");

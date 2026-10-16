@@ -1,4 +1,4 @@
-"""Measurement-only isolated, pinned amd64 body executor. No store or hits.
+"""Isolated, pinned body executor for the builtin Windows targets. No store or hits.
 
 Run only through host-jobs and an externally held disk reservation. Trusted
 provisioned toolchain/runtime mounts are hashed; they must not be modified by
@@ -32,6 +32,26 @@ CANON = Path("/tmp/vibeos")
 WORKSPACE = Path("sdk/lib/rust")
 IMPLEMENTATION_REPO = Path(artifact_inputs.__file__).resolve().parents[1]
 PREPARED_SCHEMA = "vibeos-prepared-body-inputs-v1"
+# The builtin triple each architecture's eligible bodies build on. Custom target JSONs
+# (the i386 kernel's i686-kernel) need build-std and are not an audited recipe.
+TARGETS = {
+    "amd64": "x86_64-pc-windows-gnu",
+    "i386": "i686-pc-windows-gnu",
+    "arm64": "aarch64-pc-windows-gnullvm",
+}
+AMD64 = TARGETS["amd64"]
+# The exact RUSTFLAGS reactos-link gives an eligible nested body build, by (arch,
+# kernel). Kernel-mode bodies on a builtin triple restore frame pointers; every i386
+# crate builds without SSE. The worker compiles with exactly these, so they are part
+# of the action identity; anything else is refused rather than approximated.
+FLAGS = {
+    ("amd64", False): "",
+    ("amd64", True): "-C force-frame-pointers=yes",
+    ("arm64", False): "",
+    ("arm64", True): "-C force-frame-pointers=yes",
+    ("i386", False): "-C target-feature=-sse,-sse2",
+    ("i386", True): "-C target-feature=-sse,-sse2 -C force-frame-pointers=yes",
+}
 
 
 def file_digest(path: Path) -> dict:
@@ -132,7 +152,7 @@ def _provisioned_copy(tool: dict) -> dict:
         "/native-tools/lib/libLLVM.so.19.1",
     }
     if set(result.get("native_tools", {})) != expected_tools:
-        raise RuntimeError("provisioned native-tool mapping differs from audited amd64 recipe")
+        raise RuntimeError("provisioned native-tool mapping differs from the audited recipe")
     required = {"/toolchain/bin/cargo", "/toolchain/bin/rustc", *expected_tools}
     libraries = result.get("runtime_libraries")
     if not isinstance(libraries, list):
@@ -510,6 +530,7 @@ def validate_prepared(output: Path, report: dict) -> dict:
         features=tuple(options.get("features", ())),
         default_features=options.get("default_features", True),
         kernel=config.get("kernel", True),
+        **config.get("recipe", {}),
     )
     if expected_context != context:
         raise RuntimeError("prepared action context differs from the current exact recipe")
@@ -551,8 +572,13 @@ def request_context(
     features: tuple[str, ...] = (),
     default_features: bool = True,
     kernel: bool = True,
+    target: str = AMD64,
+    flags: str | None = None,
 ) -> dict:
     """Return the exact context used for discovery and a subsequent miss worker.
+
+    `target` is a builtin triple from TARGETS and `flags` the body's exact RUSTFLAGS
+    (None: the amd64 recipe's, by `kernel`).
 
     Provisioning/hash timings and physical worker paths do not affect identity.
     The supervisor may reuse its already-hashed trusted compiler description.
@@ -564,6 +590,12 @@ def request_context(
     if any(not isinstance(feature, str) for feature in features):
         raise RuntimeError("feature names must be strings")
     features = tuple(sorted(set(features)))
+    if target not in TARGETS.values():
+        raise RuntimeError(f"target is not a builtin recipe triple: {target}")
+    if flags is None:
+        flags = FLAGS[("amd64", kernel)]
+    if flags not in {f for (a, _k), f in FLAGS.items() if TARGETS[a] == target}:
+        raise RuntimeError(f"unaudited RUSTFLAGS for {target}: {flags!r}")
     tool = _provisioned_copy(provisioned)
     env = {
         "PATH": "/native-tools/bin:/toolchain/bin",
@@ -572,8 +604,7 @@ def request_context(
         "CARGO_TARGET_DIR": "/target",
         "TMPDIR": "/scratch",
         "RUSTC": "/toolchain/bin/rustc",
-        "RUSTFLAGS": ("-C force-frame-pointers=yes " if kernel else "")
-        + "-C dlltool=/native-tools/bin/llvm-dlltool",
+        "RUSTFLAGS": (flags + " " if flags else "") + "-C dlltool=/native-tools/bin/llvm-dlltool",
         "CARGO_INCREMENTAL": "0",
         "CARGO_NET_OFFLINE": "true",
         "LC_ALL": "C",
@@ -584,7 +615,7 @@ def request_context(
         "build",
         "--release",
         "--target",
-        "x86_64-pc-windows-gnu",
+        target,
         "-p",
         body,
         "--manifest-path",
@@ -601,7 +632,7 @@ def request_context(
     if not default_features:
         argv.append("--no-default-features")
     context = {
-        "target": {"builtin": "x86_64-pc-windows-gnu"},
+        "target": {"builtin": target},
         "effective_flags": env["RUSTFLAGS"],
         "effective_config": {"argv": argv, "config_files": [], "crate_type": "manifest staticlib"},
         "toolchain": tool,
@@ -631,6 +662,8 @@ def prepare(
     default_features: bool = True,
     kernel: bool = True,
     provisioned: dict | None = None,
+    target: str = AMD64,
+    flags: str | None = None,
 ) -> dict:
     started = time.monotonic()
     output.mkdir(parents=True, exist_ok=False)
@@ -645,6 +678,8 @@ def prepare(
         features=features,
         default_features=default_features,
         kernel=kernel,
+        target=target,
+        flags=flags,
     )
     env = context["environment"]
     argv = context["effective_config"]["argv"]
@@ -679,6 +714,7 @@ def prepare(
         **{name: str(output / name) for name in ("target", "cargo-home", "home", "scratch")},
     }
     config["request_options"] = request_options
+    config["recipe"] = {"target": target, "flags": flags}
     (output / "worker.json").write_bytes(canonical(config))
     graph = validate_graph(output, discovery["descriptor"], config)
     # Cargo metadata queries rustc and leaves this cache without compiling.
@@ -783,7 +819,9 @@ def run(output: Path) -> dict:
                 report["exit_code"] = result.returncode
         archive = (
             output
-            / "target/x86_64-pc-windows-gnu/release"
+            / "target"
+            / report["context"]["target"]["builtin"]
+            / "release"
             / ("lib" + report["body"].replace("-", "_") + ".a")
         )
         if result.returncode != 0 or not archive.is_file():

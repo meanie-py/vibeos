@@ -21,7 +21,15 @@ except ImportError:
 
 TARGET = "x86_64-pc-windows-gnu"
 CANONICAL_ROOT = Path("/tmp/vibeos")
-IRRELEVANT_TARGETS = {"i686-pc-windows-gnu", "aarch64-pc-windows-gnullvm", "i686-kernel"}
+# Every target a nested Cargo in this tree can select. The REQUESTED one is held to
+# the audited recipe (see _allowed); settings for the others cannot reach its build.
+KNOWN_TARGETS = {
+    "x86_64-pc-windows-gnu",
+    "i686-pc-windows-gnu",
+    "aarch64-pc-windows-gnullvm",
+    "i686-kernel",
+}
+ARCHES = ("i386", "amd64", "arm64")
 SCRUBBED_BUILD_ENV = {"CARGO_BUILD_TARGET", "CARGO_BUILD_RUSTFLAGS", "CARGO_BUILD_RUSTC"}
 SCRUBBED_UNSTABLE_ENV = {"CARGO_UNSTABLE_BUILD_STD", "CARGO_UNSTABLE_BUILD_STD_FEATURES"}
 
@@ -33,7 +41,7 @@ class ConfigError(ValueError):
 def cargo_scope(repo: Path) -> list[Path]:
     repo = repo.resolve()
     workspace = repo / "sdk/lib/rust"
-    paths = {repo / "build-amd64", workspace}
+    paths = {*(repo / f"build-{arch}" for arch in ARCHES), workspace}
     if workspace.is_dir():
         paths.update(
             path
@@ -115,7 +123,13 @@ def _config_bytes(path: Path) -> bytes:
     return data
 
 
-def _allowed(config: dict, path: Path) -> None:
+def _allowed(
+    config: dict, path: Path, requested: str | None = None, rustflags_set: bool = False
+) -> None:
+    """`requested` is the build's target triple (None: a scope audit with no request).
+    Its section may set only a linker, which a staticlib never runs, and `rustflags`
+    only when the request sets RUSTFLAGS itself, which then replaces them. The other
+    known targets' settings cannot reach this build."""
     if set(config) - {"target"}:
         raise ConfigError(f"unsupported original Cargo configuration section: {path}")
     targets = config.get("target", {})
@@ -124,26 +138,35 @@ def _allowed(config: dict, path: Path) -> None:
     for target, settings in targets.items():
         if not isinstance(settings, dict):
             raise ConfigError(f"invalid Cargo target table: {path}: {target}")
-        if target == TARGET:
-            if set(settings) - {"linker"} or (
+        if target not in KNOWN_TARGETS:
+            raise ConfigError(f"unaudited Cargo target selector: {path}: {target}")
+        if target == requested:
+            allowed = {"linker", "rustflags"} if rustflags_set else {"linker"}
+            if set(settings) - allowed or (
                 "linker" in settings and not isinstance(settings["linker"], str)
             ):
-                raise ConfigError(f"unsupported original amd64 Cargo target configuration: {path}")
-        elif target in IRRELEVANT_TARGETS:
-            if set(settings) - {"linker", "runner", "rustflags", "rustdocflags"}:
-                raise ConfigError(f"unaudited Cargo target configuration: {path}: {target}")
-            for key, value in settings.items():
-                if not isinstance(value, str) and not (
-                    key != "linker"
-                    and isinstance(value, list)
-                    and all(isinstance(item, str) for item in value)
-                ):
-                    raise ConfigError(f"invalid Cargo target setting: {path}: {target}.{key}")
-        else:
-            raise ConfigError(f"unaudited Cargo target selector: {path}: {target}")
+                raise ConfigError(f"unsupported Cargo target configuration for {target}: {path}")
+            continue
+        if set(settings) - {"linker", "runner", "rustflags", "rustdocflags"}:
+            raise ConfigError(f"unaudited Cargo target configuration: {path}: {target}")
+        for key, value in settings.items():
+            if not isinstance(value, str) and not (
+                key != "linker"
+                and isinstance(value, list)
+                and all(isinstance(item, str) for item in value)
+            ):
+                raise ConfigError(f"invalid Cargo target setting: {path}: {target}.{key}")
 
 
-def _audit(repo: Path, cwds: list[Path], *, environment: dict | None, broker: Path | None) -> dict:
+def _audit(
+    repo: Path,
+    cwds: list[Path],
+    *,
+    environment: dict | None,
+    broker: Path | None,
+    requested: str | None = None,
+    rustflags_set: bool = False,
+) -> dict:
     env = dict(os.environ if environment is None else environment)
     _environment(env, broker)
     directories = set()
@@ -170,7 +193,7 @@ def _audit(repo: Path, cwds: list[Path], *, environment: dict | None, broker: Pa
                 raise ConfigError(f"symlinked Cargo configuration is unaudited: {path}")
             payload = _config_bytes(path)
             try:
-                _allowed(tomllib.loads(payload.decode("utf-8")), path)
+                _allowed(tomllib.loads(payload.decode("utf-8")), path, requested, rustflags_set)
             except (UnicodeError, tomllib.TOMLDecodeError) as error:
                 raise ConfigError(
                     f"invalid original Cargo configuration: {path}: {error}"
@@ -188,8 +211,9 @@ def _audit(repo: Path, cwds: list[Path], *, environment: dict | None, broker: Pa
 
 
 def audit_scope(repo: Path, *, environment: dict | None = None, broker: Path | None = None) -> dict:
-    """Bounded preflight/postcheck, including additions when no request executes."""
-    return _audit(repo, cargo_scope(repo), environment=environment, broker=broker)
+    """Bounded preflight/postcheck, including additions when no request executes. With no
+    request in hand it holds the amd64 section to the strict form, as it always has."""
+    return _audit(repo, cargo_scope(repo), environment=environment, broker=broker, requested=TARGET)
 
 
 def audit_request(
@@ -199,6 +223,16 @@ def audit_request(
     kernel: bool = False,
     environment: dict | None = None,
     broker: Path | None = None,
+    target: str = TARGET,
+    rustflags_set: bool = False,
 ) -> dict:
     cwd = mapped_cwd(repo, cargo_cwd, kernel=kernel)
-    return {"mapped_cwd": str(cwd), **_audit(repo, [cwd], environment=environment, broker=broker)}
+    audit = _audit(
+        repo,
+        [cwd],
+        environment=environment,
+        broker=broker,
+        requested=target,
+        rustflags_set=rustflags_set,
+    )
+    return {"mapped_cwd": str(cwd), **audit}
