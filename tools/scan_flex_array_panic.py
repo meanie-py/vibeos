@@ -273,11 +273,23 @@ def declared_cargo_images(build: Path, arch: str) -> list[tuple[str, Path]]:
     ninja = build / "build.ninja"
     if not ninja.is_file():
         return []
+    text = ninja.read_text(errors="replace")
     rx = re.compile(
         rf"sdk/lib/rust/target/([A-Za-z0-9_-]+)-{arch}-cargo-link/[A-Za-z0-9_.-]+"
         r"/release/[A-Za-z0-9_.-]+\.(?:exe|dll|sys|efi)\b"
     )
-    found = {m.group(0): m.group(1) for m in rx.finditer(ninja.read_text(errors="replace"))}
+    found = {m.group(0): m.group(1) for m in rx.finditer(text)}
+    # Cells that share a link dir (`cell-link-v1-<arch>-<n>`) are named by the cargo
+    # command that writes the image: its `-p <crate>`, in the same ninja statement.
+    shared = re.compile(
+        rf"sdk/lib/rust/target/cell-link-v1-{arch}-[0-9]+/[A-Za-z0-9_.-]+"
+        r"/release/[A-Za-z0-9_.-]+\.(?:exe|dll|sys|efi)\b"
+    )
+    for statement in re.split(r"\n(?=build )", text):
+        crate = re.search(r" -p ([A-Za-z0-9_-]+-cargo) ", statement)
+        if crate:
+            for m in shared.finditer(statement):
+                found.setdefault(m.group(0), crate.group(1))
     return sorted((crate, REPO / rel) for rel, crate in found.items())
 
 

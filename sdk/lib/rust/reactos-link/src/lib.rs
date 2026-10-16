@@ -59,6 +59,8 @@ pub mod native_deps;
 pub mod cargo_deps;
 pub mod compiler_env;
 mod storage;
+mod body_storage;
+mod artifact_store;
 
 // ---- cmake-off `--trace` (ninja-`-v`-style command list) ------------------
 // When `VIBEOS_LINK_TRACE` names a DIRECTORY, every command the engine spawns is
@@ -1903,9 +1905,9 @@ impl Linker {
         }
     }
 
-    /// Build one workspace Rust staticlib crate (`crate-type=["staticlib"]`)
-    /// into its own per-crate `target/<pkg>-<crate>-rustlib` dir, returning
-    /// the path to its `lib<crate_>.a`. `default_features=false` →
+    /// Build one workspace Rust staticlib crate (`crate-type=["staticlib"]`),
+    /// returning a consumer-owned archive when sharing is enabled, or the
+    /// private target's archive in legacy mode. `default_features=false` →
     /// `--no-default-features`.
     ///
     /// `kernel=true` (the main module body, e.g. ntoskrnl-rust / ntdll-rust):
@@ -1917,9 +1919,9 @@ impl Linker {
     /// sibling corrupts cnt-rust-lib's by-value f64 ABI (`x86-softfloat`) and
     /// crashes i386 boot.
     ///
-    /// PER-CRATE dir (not shared): a shared dir lets cargo feature-unify across
-    /// crates and emit duplicate symbols with different code that
-    /// `--allow-multiple-definition` resolves first-match to the wrong variant.
+    /// Separate Cargo invocations preserve feature selection. Shared body storage
+    /// holds a shard lock until the archive is copied into this consumer's OUT_DIR;
+    /// the outer linker never consumes a mutable shared primary archive.
     fn build_rust_crate(
         &self,
         crate_name: &str,
@@ -2228,6 +2230,58 @@ impl Linker {
                 }
             }
         }
+        println!("cargo:rerun-if-env-changed=VIBEOS_RUST_BODY_SHARDS");
+        let shards = body_storage::parse_shards(env::var("VIBEOS_RUST_BODY_SHARDS").ok().as_deref());
+        // Target JSON basenames are not identities: i686-kernel has distinct ABI
+        // variants. Partition by the actual spec and compiler pin. Cargo itself
+        // fingerprints features; keep them out of this key to reuse dependencies.
+        let target_identity = match (&self.target, kernel) {
+            (RustTarget::Json(path), true) => {
+                println!("cargo:rerun-if-changed={}", path.display());
+                std::fs::read(path).expect("read nested Cargo target spec")
+            }
+            _ => out_stem.as_bytes().to_vec(),
+        };
+        let pin_file = self.repo_root.join(if kernel_build_std {
+            ".rust-nightly"
+        } else {
+            "rust-toolchain.toml"
+        });
+        println!("cargo:rerun-if-changed={}", pin_file.display());
+        let pin = std::fs::read(&pin_file).expect("read nested Cargo toolchain pin");
+        let flags: Vec<_> = ["RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS", "CARGO_BUILD_RUSTFLAGS"]
+            .iter()
+            .map(|name| {
+                let value = cmd.get_envs().find(|(key, _)| key == name)
+                    .map(|(_, value)| value.map(|v| v.to_os_string()))
+                    .unwrap_or_else(|| env::var_os(name));
+                (name, value)
+            }).collect();
+        let effective_flags = flags.iter().find(|(name, _)| **name == "RUSTFLAGS")
+            .and_then(|(_, value)| value.as_ref())
+            .map(|value| value.to_str().expect("non-UTF8 Rust flags"))
+            .unwrap_or("");
+        let cargo_cwd = cmd.get_current_dir().map(Path::to_path_buf)
+            .unwrap_or_else(|| env::current_dir().expect("nested Cargo working directory"));
+        if let Some(archive) = artifact_store::get(
+            &self.repo_root, &self.pkg_name, crate_name, self.arch.name, &out_stem,
+            features, default_features, kernel, staticlib, effective_flags,
+            flags.iter().any(|(name, value)| **name != "RUSTFLAGS"
+                && value.as_ref().is_some_and(|value| !value.is_empty())),
+            &cargo_cwd,
+        ) {
+            return archive;
+        }
+        let configuration = format!("{target_identity:?}|{pin:?}|{flags:?}");
+        let emit_ir = env::var("VIBEOS_EMIT_LLVM_IR").as_deref() == Ok("1");
+        let shared = body_storage::enabled(shards, emit_ir).then(|| {
+            body_storage::Shared::acquire(&workspace, self.arch.name, crate_name,
+                configuration.as_bytes(), shards)
+                .unwrap_or_else(|e| panic!("shared body storage: {e}"))
+        });
+        let tgt_dir = shared.as_ref().map(|storage| storage.target_dir().to_path_buf())
+            .unwrap_or(tgt_dir);
+        cmd.env("CARGO_TARGET_DIR", &tgt_dir);
         let status = cmd
             .traced_status()
             .unwrap_or_else(|e| panic!("cargo build -p {crate_name}: {e}"));
@@ -2238,8 +2292,17 @@ impl Linker {
         if !a.exists() {
             panic!("{crate_name} produced no {lib_file} at {}", a.display());
         }
+        // Read the matching depfile while the shard remains locked too.
         cargo_deps::watch(&a.with_extension("d"), &a, &workspace);
-        a
+        match shared {
+            Some(storage) => {
+                let request = format!("{crate_name}|{features:?}|{default_features}|{kernel}|{staticlib}|{configuration}");
+                let out = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR"));
+                storage.snapshot(&a, &out, request.as_bytes())
+                    .unwrap_or_else(|e| panic!("snapshot nested Cargo archive: {e}"))
+            }
+            None => a,
+        }
     }
 
     /// `lib<target>.a` from every source compile_commands.json records for cmake target

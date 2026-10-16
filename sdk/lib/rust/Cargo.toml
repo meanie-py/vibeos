@@ -909,6 +909,14 @@ debug = 1
 # The appcompat shim DLLs register their shims as `.shm$BBB` records that only shimlib's section
 # walk ever reads, so the DLL reaches each crate through ONE anchor symbol (lib.rs). One codegen
 # unit keeps every record in the anchor's object; split, the records' objects stay unlinked.
+# Build scripts (each `*-cargo` cell's build.rs and the reactos-link engine it runs)
+# execute on the host at build time; nothing ships them or debugs them. Each of the
+# ~730 per-arch cell link dirs held a 7.5 MB build script, 5.5 MB of it DWARF from
+# `debug = 1` and std, beside its own debug-built reactos-link/cc rlibs: 16 GB a lane.
+[profile.release.build-override]
+debug = 0
+strip = "debuginfo"
+
 [profile.release.package.aclayers-rust]
 codegen-units = 1
 

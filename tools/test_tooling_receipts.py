@@ -165,6 +165,40 @@ def test_generated_headers_affect_only_declared_suite(repo):
     assert invoke(repo)[1] == {LABEL}
 
 
+def test_headers_regenerated_under_a_reused_result_are_rerun_not_failed(repo):
+    # A gate's builds rewrite build-*/sdk/include while check-tooling runs. A receipt
+    # reused at the start is then stale: the caller reruns it instead of the gate
+    # failing the lane (shell32-com b20d7379364c), and without the rerun it still fails.
+    label = "pytest:tools/rustconv/tests"
+    (repo / ".git/info/exclude").write_text("build-*/\n")
+    header = repo / "build-amd64/sdk/include/psdk/oleidl.h"
+    header.parent.mkdir(parents=True)
+    header.write_text("v1")
+    with receipts.ReceiptSession(repo) as session:
+        session.run(label, [], lambda: (label, True, "passed"))
+        session.finish()
+
+    def session_with_headers_moving():
+        session = receipts.ReceiptSession(repo)
+        session.__enter__()
+        session.run(label, [], lambda: pytest.fail("receipt missed"))
+        assert label in session.hits
+        header.write_text("v2")
+        return session
+
+    session = session_with_headers_moving()
+    assert session.stale_generated_hits() == {label}
+    session.mark_rerun(label)
+    session.finish()
+    session.__exit__(None, None, None)
+
+    header.write_text("v1")
+    session = session_with_headers_moving()
+    with pytest.raises(RuntimeError, match="after receipt reuse"):
+        session.finish()
+    session.__exit__(None, None, None)
+
+
 def test_runtime_environment_and_actual_tool_bytes(tmp_path, monkeypatch):
     tool = tmp_path / "compiler"
     tool.write_text("compiler one")

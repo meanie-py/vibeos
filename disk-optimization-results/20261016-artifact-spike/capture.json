@@ -1,0 +1,36 @@
+[
+  {
+    "accounting": "copied logical bytes; wall time includes discovery, copy+verification, snapshot rediscovery, original rediscovery, chmod; not build/isolation time",
+    "body": "beep-rust",
+    "context_path": "/home/curi/vibeos-rust-staging/artifact-spike/amd64-context.json",
+    "report": {
+      "action_key": "719c60153819125d7e279944a771f9b8a2d3ca955cd1a5e6be2c7af9c112b835",
+      "checkout_consistency": "captured bytes only; original checkout not claimed atomic",
+      "copied_bytes": 19825548,
+      "copied_files": 67,
+      "elapsed_seconds": 4.029223514997284,
+      "execution_status": "source capture only; compiler isolation and ABI command unproven",
+      "schema": "vibeos-body-source-capture-v1-spike",
+      "source_manifest_policy": "raw manifests preserved; semantic projection rederived",
+      "source_projection_key": "6632e55ce6a6b860fbfb9ed4bdbea6af6375fb694c65f3cb502a2fc9c0f98188"
+    },
+    "snapshot": "/home/curi/vibeos-rust-staging/artifact-spike/capture-beep-rust-1792110714104250229"
+  },
+  {
+    "accounting": "copied logical bytes; wall time includes discovery, copy+verification, snapshot rediscovery, original rediscovery, chmod; not build/isolation time",
+    "body": "kernel-rust",
+    "context_path": "/home/curi/vibeos-rust-staging/artifact-spike/amd64-context.json",
+    "report": {
+      "action_key": "1542a1d79ab5c3b7e55835ab6765cccb091e0a733fa96ab3f74895e6bf68f0d4",
+      "checkout_consistency": "captured bytes only; original checkout not claimed atomic",
+      "copied_bytes": 37700221,
+      "copied_files": 562,
+      "elapsed_seconds": 7.8105505870044,
+      "execution_status": "source capture only; compiler isolation and ABI command unproven",
+      "schema": "vibeos-body-source-capture-v1-spike",
+      "source_manifest_policy": "raw manifests preserved; semantic projection rederived",
+      "source_projection_key": "6edbf0ee315290a89b139e45381f96825691bc6be3a3aaf1695a67b9f6ad955d"
+    },
+    "snapshot": "/home/curi/vibeos-rust-staging/artifact-spike/capture-kernel-rust-1792110718135174291"
+  }
+]

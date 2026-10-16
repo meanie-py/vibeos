@@ -344,7 +344,8 @@ def _trim(args, repo: Path) -> int:
         if plan.paths:
             print(
                 f"  {_fmt(plan.total)}  {wt.name}  "
-                f"({plan.superseded_units} superseded units, {plan.adhoc_dirs} ad-hoc dirs)"
+                f"({plan.superseded_units} superseded units, {plan.adhoc_dirs} ad-hoc dirs, "
+                f"{plan.dead_targets} dead custom targets, {plan.retired_dirs} retired layouts)"
             )
     staging = trim.plan_port_staging(idle_hours=idle)
     if staging.paths:

@@ -12,8 +12,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import build as build_mod
 from . import (
+    artifact_store,
     cargoswap,
     checkpoint,
     debugcmd,
@@ -28,6 +28,7 @@ from . import (
     tooling,
     winref,
 )
+from . import build as build_mod
 from . import conformance as conformance_mod
 from . import difftest as difftest_mod
 from . import farm as farm_mod
@@ -94,6 +95,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = p.add_subparsers(dest="cmd", required=True)
     checkpoint.add_parser(sub)
+    artifact_store.add_parser(sub)
     host_clock.add_parser(sub)
     pi4.add_parser(sub)
     pi5.add_parser(sub)
@@ -111,6 +113,22 @@ def build_parser() -> argparse.ArgumentParser:
     arch_arg(b)
     b.add_argument("--clean", action="store_true", help="cold: nuke all rust targets")
     b.add_argument(
+        "--artifact-store",
+        type=Path,
+        help="immutable body archive store (default: $VIBEOS_ARTIFACT_STORE_ROOT or "
+        "~/vibeos-artifact-store, shared by every lane)",
+    )
+    b.add_argument(
+        "--no-artifact-store",
+        action="store_true",
+        help="build every nested Rust body privately instead of through the shared store",
+    )
+    b.add_argument(
+        "--artifact-store-verify",
+        action="store_true",
+        help="with --artifact-store, independently rebuild requested archives and compare bytes",
+    )
+    b.add_argument(
         "--extra-target",
         action="append",
         default=[],
@@ -122,6 +140,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         choices=range(17),
         help="persist direct staticlib storage layout: 0 private, 1-16 local Cargo shards",
+    )
+    b.add_argument(
+        "--rust-body-shards",
+        type=int,
+        choices=range(17),
+        help="persist nested body storage layout: 0 private, 1-16 local Cargo shards",
     )
     b.add_argument(
         "--incremental",
@@ -478,6 +502,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     g.add_argument("--no-build", action="store_true", help="smoke only (media must be current)")
     g.add_argument("--clean", action="store_true", help="cold builds (implies build)")
+    g.add_argument(
+        "--artifact-store",
+        type=Path,
+        help="immutable body store for the gate's builds (default: the shared store)",
+    )
+    g.add_argument(
+        "--artifact-store-verify",
+        action="store_true",
+        help="independently verify the store's archives during the gate builds",
+    )
     g.add_argument(
         "--keep-going", action="store_true", help="ninja -k0 in each build: collect ALL failures"
     )
