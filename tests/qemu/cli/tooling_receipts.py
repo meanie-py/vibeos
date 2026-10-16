@@ -367,7 +367,7 @@ class ReceiptSession:
         a fresh run is what the same tree gets when no receipt exists, so failing here
         rejected a lane resubmitted unchanged after a halted train (shell32-com
         b20d7379364c) while its base-only regate, with no receipt, passed."""
-        generated = GENERATED_INPUT_CHECKS & self.hits
+        generated = self.hits & GENERATED_INPUT_CHECKS
         if generated and generated_identity(self.repo) != self.generated_before:
             return generated
         return set()
