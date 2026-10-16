@@ -707,6 +707,44 @@ pub unsafe fn RtlULongAdd(augend: ULONG, addend: ULONG, output: *mut ULONG) -> N
     }
 }
 
+/// ntintsafe.h `RtlULongLongMult`, as intsafe.h computes it -- 32x32 partial products, so
+/// i386 needs no 64-bit multiply helper. u64_ERROR and STATUS_INTEGER_OVERFLOW on
+/// overflow, never a wrapped product.
+#[inline]
+pub unsafe fn RtlULongLongMult(
+    multiplicand: u64,
+    multiplier: u64,
+    output: *mut u64,
+) -> NTSTATUS {
+    let m1_low = multiplicand & 0xffff_ffff;
+    let m2_low = multiplier & 0xffff_ffff;
+    let m1_hi = multiplicand >> 32;
+    let m2_hi = multiplier >> 32;
+    let temp = if m1_hi == 0 {
+        m1_low * m2_hi
+    } else if m2_hi == 0 {
+        m1_hi * m2_low
+    } else {
+        *output = u64::MAX;
+        return 0xC000_0095_u32 as NTSTATUS; // STATUS_INTEGER_OVERFLOW
+    };
+    if temp > 0xffff_ffff {
+        *output = u64::MAX;
+        return 0xC000_0095_u32 as NTSTATUS; // STATUS_INTEGER_OVERFLOW
+    }
+    // ULongLongAdd(Temp << 32, M1Low * M2Low)
+    match (temp << 32).checked_add(m1_low * m2_low) {
+        Some(v) => {
+            *output = v;
+            0 // STATUS_SUCCESS
+        }
+        None => {
+            *output = u64::MAX;
+            0xC000_0095_u32 as NTSTATUS // STATUS_INTEGER_OVERFLOW
+        }
+    }
+}
+
 /// ntintsafe.h `RtlUShortAdd`: RtlULongAdd at USHORT width -- USHORT_ERROR (0xFFFF) and
 /// STATUS_INTEGER_OVERFLOW on overflow, never a wrapped sum.
 #[inline]

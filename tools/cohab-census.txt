@@ -1972,7 +1972,7 @@ drivers/storage/port/scsiport/CMakeLists.txt	1	# rust_varargs_shim.c — va_star
 drivers/storage/port/scsiport/CMakeLists.txt	1	# scsiport.c stubs.c) — kept on disk per the never-delete rule.
 drivers/storage/port/scsiport/CMakeLists.txt	1	# scsiport.sys — Rust cohabitation flip (8 .c -> Rust; guid.c stays C)
 drivers/storage/port/storahci/CMakeLists.txt	1	# storahci.c replaced by Rust (storahci-rust). AHCI storport miniport; links storport.
-drivers/storage/port/storport/CMakeLists.txt	1	# fdo/miniport/misc/pdo/storport/stubs.c replaced by Rust (storport-rust); guid.c stays C
+drivers/storage/port/storport/CMakeLists.txt	1	# guid.c # replaced by Rust (sdk/lib/rust/storport-rust/src/storport/guid.rs)
 drivers/storage/port/storport/CMakeLists.txt	1	# rust_varargs_shim.c — va_start/va_arg trampolines for the cdecl-varargs exports
 drivers/storage/port/storport/CMakeLists.txt	1	#fdo.c
 drivers/storage/port/storport/CMakeLists.txt	1	#ioctl.c

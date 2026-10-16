@@ -31,8 +31,8 @@ pub struct _BBENUMFILECONTEXT {
     pub hDelFile: HDELFILE,
 }
 pub type BBENUMFILECONTEXT = _BBENUMFILECONTEXT;
-#[no_mangle] #[no_mangle]
-#[no_mangle] pub unsafe extern "system" fn CloseRecycleBinHandle(hDeletedFile: HDELFILE) -> BOOL {
+#[no_mangle]
+pub unsafe extern "system" fn CloseRecycleBinHandle(hDeletedFile: HDELFILE) -> BOOL {
     let rbf = IRecycleBinFileFromHDELFILE(hDeletedFile);
     let hr: HRESULT = (IRecycleBinFile_Release(rbf)) as i32;
     if hr >= 0 {
@@ -363,8 +363,8 @@ pub unsafe extern "C" fn GetRecycleBinFileHandle(
     );
     context.hDelFile
 }
-#[no_mangle] #[no_mangle]
-#[no_mangle] pub unsafe extern "C" fn RemoveFromRecycleBinDatabase(pFI: *const RECYCLEBINFILEIDENTITY) -> BOOL {
+#[no_mangle]
+pub unsafe extern "C" fn RemoveFromRecycleBinDatabase(pFI: *const RECYCLEBINFILEIDENTITY) -> BOOL {
     let mut ret: BOOL = (FALSE) as i32;
     let hDelFile = GetRecycleBinFileHandle(core::ptr::null_mut(), pFI);
     if !hDelFile.is_null() {

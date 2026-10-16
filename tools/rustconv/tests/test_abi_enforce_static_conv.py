@@ -508,3 +508,14 @@ def test_a_gen_driver_types_island_counts_as_an_island(tmp_path):
         'pub type CB = Option<unsafe extern "system" fn()>;\n'
     )
     assert _detect_concrete_stdcall_slots(crate) is False
+
+
+def test_a_same_line_attribute_is_not_taken_as_indentation(tmp_path: Path):
+    # storport's StorPortWritePortUshort: the deterministic lowering writes the attribute on
+    # the signature's line, and each rewrite prefixed its own with it (three #[no_mangle]).
+    c = tmp_path / "stubs.c"
+    c.write_text("VOID NTAPI Foo(PVOID p)\n{\n}\n")
+    rust = '#[no_mangle] pub unsafe extern "system" fn Foo(p: PVOID) {\n}\n'
+    once = enforce_abi_from_c(rust, c)
+    assert once.count("#[no_mangle]") == 1
+    assert enforce_abi_from_c(once, c) == once

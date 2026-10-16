@@ -5554,6 +5554,15 @@ pub const _AUTHZ_CONTEXT_INFORMATION_CLASS_AuthzContextInfoPrivileges:
 needs it most. That is how authz's seven got past a hand-rolled check and had to be caught by
 `verify_match_consts` at build time. Use `re.DOTALL` and allow `\s*` after the colon.
 
+**The alias has its own trap: an enumerator the C also uses as a VARIABLE name.** storport's
+`EXTENSION_TYPE` has `FdoExtension`/`PdoExtension`, and half its functions take a parameter
+spelled the same. In C the parameter shadows the enumerator. In Rust, a function parameter is a
+PATTERN, so with `const FdoExtension` in scope `fn f(FdoExtension: PFDO_DEVICE_EXTENSION)` names
+the constant, and the parameter reads as a u32 (103 E0614 per arch; the model had also invented
+a file-scope `const FdoExtension: u32 = 2;` itself). `port resolve` now spells the island's
+prefixed name at the enumerator's uses in the functions that do not bind it, and keeps both the
+prelude alias and any module stand-in out (`_bound_idents`).
+
 ### A deferral note outlives the premise that justified it
 `ARM3/virtual.rs` skipped an ARM64-only block of `NtAllocateVirtualMemory` and said so:
 *"Skipped in this Rust port — arm64 boot currently fails before user-mode allocation, so this

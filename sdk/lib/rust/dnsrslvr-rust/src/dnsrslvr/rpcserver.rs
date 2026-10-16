@@ -29,8 +29,8 @@ pub unsafe extern "system" fn RpcThreadRoutine(lpParameter: LPVOID) -> u32 {
     DPRINT!("RpcServerListen finished");
     0
 }
-#[no_mangle] #[no_mangle]
-#[no_mangle] pub unsafe extern "system" fn CRrReadCache(
+#[no_mangle]
+pub unsafe extern "system" fn CRrReadCache(
     pwszServerName: DNSRSLVR_HANDLE,
     ppCacheEntries: *mut *mut DNS_CACHE_ENTRY,
 ) -> u32 {

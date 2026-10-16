@@ -540,3 +540,20 @@ def test_a_count_form_swprintf_binds_the_function_its_inline_calls():
     assert _crt_inline_alias("fn vswprintf(b: *mut u16, f: *const u16, a: va_list) -> i32;") == ""
     assert _crt_inline_alias('#[link_name = "_snwprintf"]\n' + count) == ""
     assert _crt_inline_alias("fn sprintf(s: *mut i8, n: usize, f: *const i8, ...) -> c_int;") == ""
+
+
+def test_a_kernel_crate_never_takes_the_console_crate(tmp_path):
+    # storport-rust (on ntkrnl-sys) was handed all of conutils-h and the dependency.
+    ws = tmp_path / "ws"
+    (ws / "conutils-h" / "src").mkdir(parents=True)
+    (ws / "conutils-h" / "src" / "lib.rs").write_text("pub unsafe fn ConPuts() {}\n")
+    for name, dep in (("kern", "ntkrnl-sys"), ("user", "ntdll-sys")):
+        crate = ws / name
+        (crate / "src").mkdir(parents=True)
+        (crate / "src" / "prelude.rs").write_text("// x\n")
+        (crate / "Cargo.toml").write_text(f'[dependencies]\n{dep} = {{ path = "../{dep}" }}\n')
+    pr.refresh_shared_crates(ws / "kern", ws)
+    assert "conutils" not in (ws / "kern" / "src" / "prelude.rs").read_text()
+    assert "conutils" not in (ws / "kern" / "Cargo.toml").read_text()
+    pr.refresh_shared_crates(ws / "user", ws)
+    assert "pub use conutils_h::{ConPuts};" in (ws / "user" / "src" / "prelude.rs").read_text()

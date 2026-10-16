@@ -18,18 +18,18 @@ extern "C" {
     fn set_profile_header(profile: *mut profile, header: PPROFILEHEADER);
     fn close_profile(profile: HPROFILE) -> BOOL;
     fn FIXME(format: *const i8, ...);
-    #[no_mangle] #[no_mangle] #[no_mangle] pub unsafe extern "system" fn GetColorDirectoryW(machine: *const u16, buffer: *mut u16, size: *mut u32) -> i32;
+    #[no_mangle] pub unsafe extern "system" fn GetColorDirectoryW(machine: *const u16, buffer: *mut u16, size: *mut u32) -> i32;
     unsafe fn basename(path: PCWSTR, base: LPWSTR) ;
-    #[no_mangle] #[no_mangle] #[no_mangle] pub unsafe extern "system" fn GetStandardColorSpaceProfileW(machine: *const u16, id: u32, profile: *mut u16, size: *mut u32) -> i32;
-    #[no_mangle] #[no_mangle] #[no_mangle] pub unsafe extern "system" fn InstallColorProfileW(machine: *const u16, profile: *const u16) -> i32;
-    #[no_mangle] #[no_mangle] #[no_mangle] pub unsafe extern "system" fn OpenColorProfileW(profile: *mut PROFILE, access: u32, share: u32, creation: u32) -> *mut core::ffi::c_void;
-    #[no_mangle] #[no_mangle] #[no_mangle] pub unsafe extern "system" fn CloseColorProfile(handle: *mut core::ffi::c_void) -> i32;
+    #[no_mangle] pub unsafe extern "system" fn GetStandardColorSpaceProfileW(machine: *const u16, id: u32, profile: *mut u16, size: *mut u32) -> i32;
+    #[no_mangle] pub unsafe extern "system" fn InstallColorProfileW(machine: *const u16, profile: *const u16) -> i32;
+    #[no_mangle] pub unsafe extern "system" fn OpenColorProfileW(profile: *mut PROFILE, access: u32, share: u32, creation: u32) -> *mut core::ffi::c_void;
+    #[no_mangle] pub unsafe extern "system" fn CloseColorProfile(handle: *mut core::ffi::c_void) -> i32;
     unsafe fn profile_AtoW(profile: *const PROFILE, out: *mut PROFILE) -> BOOL;
     unsafe fn set_profile_device_key(profile: *const u16, data: *const u8, size: u32) -> i32;
     // Assume these forward declarations exist elsewhere #[no_mangle]
     // Assume these forward declarations exist elsewhere #[no_mangle]
     // Assume these forward declarations exist elsewhere pub unsafe extern "system" fn WcsOpenColorProfileW( cdm: *mut PROFILE, camp: *mut PROFILE, gmmp: *mut PROFILE, access: u32, sharing: u32, creation: u32, flags: u32, ) -> *mut core::ffi::c_void;
-    #[no_mangle] #[no_mangle] #[no_mangle] pub unsafe extern "system" fn DisassociateColorProfileFromDeviceW(machine: *const u16, profile: *const u16, device: *const u16) -> i32;
+    #[no_mangle] pub unsafe extern "system" fn DisassociateColorProfileFromDeviceW(machine: *const u16, profile: *const u16, device: *const u16) -> i32;
 }
 unsafe extern "system" {
     fn lstrlenW(lpString: *const u16) -> i32;
