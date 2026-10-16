@@ -1,5 +1,10 @@
 # Disk optimization, September 13, 2026
 
+Next proposed step: [immutable build artifacts across lanes](immutable-build-artifacts.md).
+That design covers cross-worktree reuse, dependency identity, reader lifetime, retention,
+and phased implementation. It is documentation only; the storage changes below remain
+worktree-local.
+
 Direct CMake static-library builds now use four Cargo target directories per
 architecture and worktree. 111 declarations were migrated with
 `tools/migrate_rust_storage.py`; the outer Cargo link coordinators and their
@@ -121,3 +126,86 @@ delete-only retention.
 i386/amd64 `partmgr.sys` and ARM64 `gdi32.dll`. Generated systemd units also
 passed `systemd-analyze --user verify`. An actual activation attempt returned
 `RETENTION_REFUSED: fleet activity in progress`; no host policy was installed.
+
+
+## Nested body storage
+
+`reactos-link` now groups nested body builds into four worktree-local shards per
+architecture, target specification, compiler pin, and effective Rust flags.
+Each body retains a separate Cargo invocation, preserving feature selection.
+Outer link coordinators retain their independent target directories.
+Explicit `VIBEOS_EMIT_LLVM_IR=1` diagnostic builds retain per-module directories
+so `tools/audit-captures.sh` continues to find the exact module it audits.
+
+Use `./vibeos-cli build --arch amd64 --rust-body-shards N` to persist a shard
+count in that architecture's CMake cache: `0` selects private targets; `1`–`16`
+select sharing. This is separate from `--rust-storage-shards`, which controls
+CMake's direct staticlib builds. The old three-body pilot still applies when
+body sharing is disabled and its environment switch is explicitly enabled.
+
+A shard lock covers Cargo, reading the resulting dependency closure, and copying
+the archive into the consumer's `OUT_DIR`. The linker uses that independent copy,
+never the shared primary filename. Feature variants of the same body therefore
+cannot replace an archive while another consumer links it. The directory key
+includes target JSON **contents**, not just its basename. Exact-byte identity
+markers make hash collisions fail loudly. No cross-worktree outputs or hardlinks
+are introduced, and existing cold-target discovery includes the new shards.
+
+`python3 tools/rust_storage_report.py --workspace --no-hash` inventories allocated
+file bytes, counting each inode once, including consumer snapshots. Omit
+`--no-hash` to additionally measure byte-identical artifacts. Repeated Cargo
+filenames are not content hashes and must not be reported as identical bytes.
+Compare private/shared runs from the same source, including clean and unchanged
+build times; retain the CLI artifact directories with the measurements. Old
+private architecture outputs are removed by the normal `--clean` discovery;
+other architectures and host build outputs remain protected.
+
+Regression coverage includes real Cargo feature variants linked after both
+same-name builds, lock exclusion, independent snapshots, collision rejection,
+and Ninja propagation of dependency source, manifest, asset, and generated-input
+changes.
+
+Measured amd64 comparison, 2026-10-15 (same OS and engine sources):
+
+| Allocated file bytes | Private bodies | Four body shards |
+|---|---:|---:|
+| Workspace Cargo targets, including retained host outputs and snapshots | 21.612 GiB | 11.766 GiB |
+| CMake build directory | 5.276 GiB | 5.207 GiB |
+| Unchanged build, binary scans omitted in both | 9 s | 9 s |
+
+The workspace reduction is 9.846 GiB (45.6%). `pe_equiv --code` found identical
+loaded sections, addresses, imports, exports, and resources in all ten sampled
+PEs: ntoskrnl/ntkrnlmp, hal/halmp, ntdll, kernel32, win32k, beep, null, and condrv.
+Debug sections and build IDs are excluded by that checker. This is an amd64
+measurement, not a fleet-wide extrapolation or proof that four shards is optimal.
+
+Ninja took 900.89 s for the initial private build and 619.92 s for the shared
+clean rebuild. The initial build also provisioned C outputs; compiler caches and
+fleet load were not controlled. These are observed times, not an isolated speedup
+claim. Both used shared compiler caches. A repeated layout option initially forced
+CMake to rerun and caused a 170.16 s relink; the CLI now skips that reconfigure
+when the persisted shard counts already match. The 9 s warm figures use that fix.
+
+Raw inventories, CLI summaries, and the ten-PE comparison are retained in
+`disk-optimization-results/20261015-body-storage/`. The cold runs are
+`20261015-175513-gkinw5el-build-amd64` (private) and
+`20261015-182150-t53sike9-build-amd64` (shared); warm runs are
+`20261015-182057-6_sbs_hy-build-amd64` and
+`20261015-183303-u2zk1_x9-build-amd64`. Shared-build binary scanning was deferred
+to the full gate.
+
+Validation completed in `20261015-191430-26o27ggr-gate-i386+amd64+arm64`:
+all three architecture builds, desktop smokes, strict checks, cohab coverage,
+136 tooling checks, differential tests, amd64 BIOS boot and 16 network tests
+passed. Conformance passed 102/102 on i386 and ARM64 and 105/105 on amd64.
+The gate recorded amd64 WoW64 ladder coverage; ARM64's optional FEX ladder
+was not staged. Screenshots were inspected. The final verdict is WARN solely
+because the uncommitted tree cannot receive a push stamp; nothing was pushed.
+
+The preceding clean builds passed on all three architectures; their summaries
+are also retained beside the final gate summary. The first gate parent was
+interrupted by a server restart while its clean build children continued. A
+subsequent gate was terminated with exit 143 before finalization; its completed
+checks are not presented as a complete gate. The final gate reused the clean
+outputs and finished normally. These interruptions and admission waits make
+full-gate wall time unsuitable as a storage-performance comparison.

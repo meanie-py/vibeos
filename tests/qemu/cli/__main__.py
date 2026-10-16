@@ -124,6 +124,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="persist direct staticlib storage layout: 0 private, 1-16 local Cargo shards",
     )
     b.add_argument(
+        "--rust-body-shards",
+        type=int,
+        choices=range(17),
+        help="persist nested body storage layout: 0 private, 1-16 local Cargo shards",
+    )
+    b.add_argument(
         "--incremental",
         action="store_true",
         help="fast-iterate: rustc incremental (Rust sccache OFF; non-reproducible, not for gate)",

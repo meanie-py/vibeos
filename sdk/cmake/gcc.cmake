@@ -885,7 +885,8 @@ function(add_cargo_module _target _crate _output)
     # crate is not a cargo dep of the bin crate, so an outer --features can't
     # reach it). Confined to the kernel — other modules' build.rs ignore the
     # env. Default off = zero cost.
-    set(_cargo_env "CARGO_TARGET_DIR=${_cargo_target_dir}" "CARGO_BUILD_JOBS=1")
+    set(_cargo_env "CARGO_TARGET_DIR=${_cargo_target_dir}" "CARGO_BUILD_JOBS=1"
+        "VIBEOS_RUST_BODY_SHARDS=${VIBEOS_RUST_BODY_SHARDS}")
     if(VIBEOS_LOCKDEP AND _crate MATCHES "^(ntoskrnl-cargo|ntkrnlmp-cargo)$")
         list(APPEND _cargo_env VIBEOS_LOCKDEP=1)
     endif()

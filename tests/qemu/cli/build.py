@@ -469,6 +469,19 @@ def _value_in_cache(build_dir: Path, var: str) -> str:
     return ""
 
 
+def _storage_options(build_dir: Path, shards: int | None, body_shards: int | None) -> list[str]:
+    # Repeating a persistent setting must not touch CMakeCache.txt: every Cargo
+    # link script watches it, so an unnecessary configure relinks the whole OS.
+    return [
+        f"-D{key}={value}"
+        for key, value in (
+            ("VIBEOS_RUST_STORAGE_SHARDS", shards),
+            ("VIBEOS_RUST_BODY_SHARDS", body_shards),
+        )
+        if value is not None and _value_in_cache(build_dir, key) != str(value)
+    ]
+
+
 def _maybe_canonize(
     run,
     repo: Path,
@@ -1148,9 +1161,11 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         return canon.wrap(repo, cmd) if wrapped else cmd
 
     shards = getattr(args, "rust_storage_shards", None)
-    if shards is not None:
+    body_shards = getattr(args, "rust_body_shards", None)
+    storage_options = _storage_options(build_dir, shards, body_shards)
+    if storage_options:
         cp = run.run(
-            wrap(["cmake", f"-DVIBEOS_RUST_STORAGE_SHARDS={shards}", "."]),
+            wrap(["cmake", *storage_options, "."]),
             cwd=build_dir,
             stage="storage-config",
             timeout=600,

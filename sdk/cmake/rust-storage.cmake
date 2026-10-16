@@ -27,3 +27,10 @@ function(rust_storage_target output legacy crate)
     math(EXPR _shard "0x${_hash} % ${VIBEOS_RUST_STORAGE_SHARDS}")
     set(${output} "${CMAKE_BINARY_DIR}/rust-shared-${_shard}-target" PARENT_SCOPE)
 endfunction()
+
+# Nested body builds use a separate set of shards. Outer link coordinators must
+# never acquire a target directory that their own build script needs.
+set(VIBEOS_RUST_BODY_SHARDS "4" CACHE STRING "Nested Rust body storage shards (0: private; 1-16: shared)")
+if(NOT VIBEOS_RUST_BODY_SHARDS MATCHES "^([0-9]|1[0-6])$")
+    message(FATAL_ERROR "VIBEOS_RUST_BODY_SHARDS must be an integer from 0 to 16")
+endif()

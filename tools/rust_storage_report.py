@@ -12,7 +12,7 @@ import os
 from pathlib import Path
 
 
-def measure(root: Path) -> dict:
+def measure(root: Path, *, hash_content: bool = True) -> dict:
     totals = collections.Counter()
     groups = collections.defaultdict(dict)
     inodes = set()
@@ -29,7 +29,7 @@ def measure(root: Path) -> dict:
             inodes.add(inode)
             ext = path.suffix
             totals[ext] += st.st_blocks * 512
-            if ext in (".a", ".rlib", ".rmeta"):
+            if hash_content and ext in (".a", ".rlib", ".rmeta"):
                 digest = hashlib.sha256()
                 with path.open("rb") as stream:
                     for chunk in iter(lambda: stream.read(1024 * 1024), b""):
@@ -38,6 +38,7 @@ def measure(root: Path) -> dict:
     return {
         "root": str(root.resolve()),
         "allocated_bytes": sum(totals.values()),
+        "content_hashed": hash_content,
         "allocated_by_extension": dict(totals),
         "duplicates": {
             ext: {
@@ -53,12 +54,24 @@ def measure(root: Path) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--arch", required=True, choices=("i386", "amd64", "arm64"))
+    scope = parser.add_mutually_exclusive_group(required=True)
+    scope.add_argument("--arch", choices=("i386", "amd64", "arm64"))
+    scope.add_argument(
+        "--workspace",
+        action="store_true",
+        help="measure workspace Cargo outputs, including body shards and consumer snapshots",
+    )
+    parser.add_argument(
+        "--no-hash",
+        action="store_true",
+        help="allocated-byte inventory only; does not claim byte-identical duplication",
+    )
     args = parser.parse_args()
-    root = Path(__file__).resolve().parents[1] / f"build-{args.arch}"
+    repo = Path(__file__).resolve().parents[1]
+    root = repo / "sdk/lib/rust/target" if args.workspace else repo / f"build-{args.arch}"
     if not root.is_dir() or root.is_symlink():
         parser.error(f"missing or symlinked local build directory: {root}")
-    print(json.dumps(measure(root), indent=2))
+    print(json.dumps(measure(root, hash_content=not args.no_hash), indent=2))
     return 0
 
 

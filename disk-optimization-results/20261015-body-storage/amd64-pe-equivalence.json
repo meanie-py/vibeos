@@ -1,0 +1,12 @@
+{
+  "win32ss/win32k.sys": [],
+  "ntoskrnl/ntoskrnl.exe": [],
+  "ntoskrnl/ntkrnlmp/ntkrnlmp.exe": [],
+  "dll/ntdll/ntdll.dll": [],
+  "dll/win32/kernel32/kernel32.dll": [],
+  "hal/halx86/halmp.dll": [],
+  "hal/halx86/hal.dll": [],
+  "drivers/base/beep/beep.sys": [],
+  "drivers/base/null/null.sys": [],
+  "drivers/base/condrv/condrv.sys": []
+}
