@@ -55,6 +55,9 @@ fn main() {
         .c_shim_flags(&["-DCRT_PRINTF_HEADERLESS"])
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .import_lib("hal/hal.spec", "hal.dll", "hal")
+        .resource_from_rc("drivers/base/kdgdb/kdgdb.rc", "kdcom_res")
+        // cmake's kernel-mode links keep every section.
+        .keep_all_sections()
         .link(ModuleKind::KernelDll {
             entry: entry.into(),
             image_base,

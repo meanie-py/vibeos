@@ -491,7 +491,7 @@ Full plan, oracles and safety rules:
 | # | Boss | First rung | Size | Status (2026-10-05) |
 |---|------|-----------|------|--------|
 | 12a | **Windows 10 kernel export surface**, shared by everything below | An import-gap census tool: missing exports across real Windows 10 drivers and apps, ranked | L | proposed |
-| 12b | **Modern hardware drivers**: KMDF (built, 1.17) on real drivers, NVMe (`nvme.sys` works on all three arches on MSI-X interrupts, 63 commands deep with direct DMA, 2026-10-07), NDIS 6 (miniport core in ndis.sys 2026-10-14: Intel's stock Win7 e1g6 driver carries netstack's DHCP/DNS in QEMU; and Realtek's stock Win10 RTL8153 driver, NDIS 6.40 on KMDF, runs the OptiPlex's traffic over USB), Vista audio stack, Wi-Fi (the OptiPlex's RTL8821CU stick has only a WDI driver on Windows 10/11: ndis.sys's own WDI upper edge brings Realtek's stock driver up and scans, 2026-10-15; association, a WPA2 supplicant and the data path are next), HID-over-I²C | NVMe StorPort miniport on the 7010 | XL | proposed |
+| 12b | **Modern hardware drivers**: KMDF (built, 1.17) on real drivers, NVMe (`nvme.sys` works on all three arches on MSI-X interrupts, 63 commands deep with direct DMA, 2026-10-07), NDIS 6 (miniport core in ndis.sys 2026-10-14: Intel's stock Win7 e1g6 driver carries netstack's DHCP/DNS in QEMU; and Realtek's stock Win10 RTL8153 driver, NDIS 6.40 on KMDF, runs the OptiPlex's traffic over USB), Vista audio stack, Wi-Fi (the OptiPlex's RTL8821CU stick has only a WDI driver on Windows 10/11: ndis.sys's own WDI upper edge runs Realtek's stock driver: scan, association, a WPA2-Personal supplicant of our own, and netstack's DHCP/DNS over a WPA2 network, 2026-10-15), HID-over-I²C | NVMe StorPort miniport on the 7010 | XL | proposed |
 | 12c | **Real GPU**: XP x64 driver (XDDM), then WDDM 1.1, then WDDM 2.x (dxgkrnl + a CDD-style adapter so win32k keeps its interface) | Radeon HD 5450 on AMD's XP x64 driver | XXL | proposed |
 | 12d | **Latest Google Chrome**: Windows 10 user-mode surface (mostly Wine), then the sandbox's four kernel primitives (syscall filter, integrity levels, job limits, namespace isolation) plus Windows-exact ntdll stubs | `chrome --headless --no-sandbox --dump-dom` as a smoke ladder rung | XL | proposed |
 
@@ -1107,7 +1107,8 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   fmod now carry Wine's errno/`_matherr` contract in both CRTs (`__cnt_math_error`). Still
   owed: the rest of cnt-rust's C89 set (trig, sqrt, ldexp, _logb, ...) onto libm with the
   same contract, and the ieee754 Bessel C onto libm. Still `-stub`: the `_d*`/`_fd*` internal helpers
-  (`_dexp`, `_dnorm`, `_dpoly`, ...) and `_except1`. Owner: ucrt-rust.
+  (`_dexp`, `_dnorm`, `_dpoly`, ...). `_except1` is real since 2026-10-15 (Nmap imports it):
+  Wine's ladder in `ucrt-rust/src/fenv/except1.rs`, host-tested. Owner: ucrt-rust.
 - **spec2def's generated `*_stubs.c` were the last C in the CRT DLLs** (FIXED 2026-10-06).
   spec2def now emits `*_stubs.rs` for every spec module (515, about 190 with stub bodies), each
   compiled by a single `rustc --emit=obj`; build-system.md, "spec2def stubs". Each arch's Rust

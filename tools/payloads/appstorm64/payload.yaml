@@ -86,6 +86,11 @@ guest_sets:
       - base/applications/dxdiag/dxdiag.exe
       - base/applications/rapps/rapps.exe
       - base/applications/cleanmgr/cleanmgr/cleanmgr.exe
+      # appstorm's list grew these (aa6a2359ed3) after this set was written; left out,
+      # each ran as native arm64 and was scored FAIL for the machine mismatch.
+      - base/applications/mscutils/certmgr/certmgr.exe
+      - base/applications/mmc_new/mmc_new.exe
+      - base/applications/drwtsn32/drwtsn32.exe
       - base/applications/mplay32/mplay32.exe
       - base/applications/sndrec32/sndrec32.exe
       - base/shell/explorer/explorer.exe

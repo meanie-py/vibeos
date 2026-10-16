@@ -1,0 +1,69 @@
+{
+  "complete": true,
+  "inventory_started_at": "2026-10-16T00:23:36.632495+00:00",
+  "inventory_finished_at": "2026-10-16T00:25:24.109215+00:00",
+  "source_eligible_archive_only_model": {
+    "snapshot_inodes": 1074,
+    "verified_exclusive_snapshot_inodes": 1074,
+    "unknown_or_ambiguous_snapshot_inodes": 0,
+    "snapshot_allocated_bytes": 5758980096,
+    "unique_content_groups": 21,
+    "new_store_blobs_allocated_bytes": 112635904,
+    "direct_archive_only_net_before_overheads_bytes": 5646344192,
+    "copying_archive_only_net_before_overheads_bytes": -112635904,
+    "additional_publication_peak_before_worker_source_overheads_bytes": 112635904,
+    "shared_intermediate_reclaim_credit_bytes": 0,
+    "primary_archive_reclaim_credit_bytes": 0
+  },
+  "source_eligible_by_architecture": {
+    "amd64": {
+      "snapshot_inodes": 358,
+      "verified_exclusive_snapshot_inodes": 358,
+      "unknown_or_ambiguous_snapshot_inodes": 0,
+      "snapshot_allocated_bytes": 1588891648,
+      "unique_content_groups": 7,
+      "new_store_blobs_allocated_bytes": 31072256,
+      "direct_archive_only_net_before_overheads_bytes": 1557819392,
+      "copying_archive_only_net_before_overheads_bytes": -31072256,
+      "additional_publication_peak_before_worker_source_overheads_bytes": 31072256,
+      "shared_intermediate_reclaim_credit_bytes": 0,
+      "primary_archive_reclaim_credit_bytes": 0
+    },
+    "arm64": {
+      "snapshot_inodes": 358,
+      "verified_exclusive_snapshot_inodes": 358,
+      "unknown_or_ambiguous_snapshot_inodes": 0,
+      "snapshot_allocated_bytes": 2181918720,
+      "unique_content_groups": 7,
+      "new_store_blobs_allocated_bytes": 42672128,
+      "direct_archive_only_net_before_overheads_bytes": 2139246592,
+      "copying_archive_only_net_before_overheads_bytes": -42672128,
+      "additional_publication_peak_before_worker_source_overheads_bytes": 42672128,
+      "shared_intermediate_reclaim_credit_bytes": 0,
+      "primary_archive_reclaim_credit_bytes": 0
+    },
+    "i386": {
+      "snapshot_inodes": 358,
+      "verified_exclusive_snapshot_inodes": 358,
+      "unknown_or_ambiguous_snapshot_inodes": 0,
+      "snapshot_allocated_bytes": 1988169728,
+      "unique_content_groups": 7,
+      "new_store_blobs_allocated_bytes": 38891520,
+      "direct_archive_only_net_before_overheads_bytes": 1949278208,
+      "copying_archive_only_net_before_overheads_bytes": -38891520,
+      "additional_publication_peak_before_worker_source_overheads_bytes": 38891520,
+      "shared_intermediate_reclaim_credit_bytes": 0,
+      "primary_archive_reclaim_credit_bytes": 0
+    }
+  },
+  "discovery_tool_sha256": "e150aac6f79c1e47dcc056b531650f937b9c8d89c532059e3399aec0897b67ee",
+  "method": [
+    "Body/feature/default/force-staticlib attribution from verified markers/manifests.",
+    "SHA256 actual inventory bytes, unique inodes; retain largest allocation per content.",
+    "Direct removes verified consumer snapshots and adds blobs; all other outputs stay.",
+    "Copying keeps snapshots and adds blobs; still owes source/scratch/ref/GC overhead.",
+    "Optional discover uses current source and actual recorded request features; missing context means action_key is null.",
+    "Source support does not prove execution eligibility, historical provenance, cross-lane reuse, or reproducibility.",
+    "Keep historical/configuration variants; no currentness or pruning assumptions."
+  ]
+}

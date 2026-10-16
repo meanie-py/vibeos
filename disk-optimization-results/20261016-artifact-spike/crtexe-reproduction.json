@@ -1,0 +1,23 @@
+{
+  "action_key": "b7ab28dce67801b14da0fb9bc0944f15a2db93487bc69821cb0cb1d91aeac522",
+  "archive": "/home/curi/vibeos-rust-staging/artifact-pilot/llvm-store/v1/blobs/sha256/53/53e78263340a533fbecdcfce6447a41bb2823a62f829e94fa81d5f5af3b0476b",
+  "archive_bytes": 4487702,
+  "archive_sha256_independent": "53e78263340a533fbecdcfce6447a41bb2823a62f829e94fa81d5f5af3b0476b",
+  "body": "crt-startup-rust",
+  "builder_calls": 2,
+  "evidence": "/home/curi/vibeos-rust-staging/artifact-pilot/crtexe-llvm-verify-1/supervisor/artifact-supervisor-5bp9xcah/activity/b1ecdb88c17e4375a0c69ab262c94764.json",
+  "hit": false,
+  "manifest": "/home/curi/vibeos-rust-staging/artifact-pilot/llvm-store/v1/actions/b7ab28dce67801b14da0fb9bc0944f15a2db93487bc69821cb0cb1d91aeac522.json",
+  "reference": "/home/curi/vibeos-rust-staging/artifact-pilot/llvm-store/v1/refs/3ff5922a16dd98debcb7a299fe5f4e61b139e45c41392e8d6b6608b086b69c8e.json",
+  "sampled_worker_target_peak_allocated_bytes": 4624384,
+  "schema": "vibeos-artifact-runtime-v1",
+  "timings": {
+    "compile_seconds": 0.8027547749952646,
+    "discovery_seconds": 0.12544634399819188,
+    "lookup_wait_build_seconds": 5.076359972008504,
+    "revalidation_seconds": 0.12501457499456592,
+    "total_seconds": 5.376017143003992
+  },
+  "verification_compared": true,
+  "verified_rebuild": true
+}

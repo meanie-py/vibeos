@@ -152,11 +152,15 @@ traffic: DHCP 192.168.1.19, gateway ping, DNS, host ping 1.5 ms (`VIBEOS_VENDOR_
 VIBEOS_PAYLOAD=ndisprobe,vendordrv`, `OPTIPLEX_BOOT_OPTIONS=/NETSTACK=NDIS`). Getting a Windows 10
 driver that far took five fixes, in the field manual under "A Windows 10 vendor driver never
 starts". The RTL8821CU stick's driver (`rtwlanu.sys`, Windows 10's inbox copy) is a WDI
-miniport; ndis.sys's WDI upper edge (`wdi.rs`) brings it up and scans: 24 networks, the hidden
-`Piconet` guest network among them by a directed probe (`VIBEOS_WIFI_CONFIG=<file>` stages the
-network's `ssid=`/`psk=` lines as `\SystemRoot\bin\wifi.txt`; keep that file outside every repo).
-Connecting (association, WPA2, the data path) is the next step. Its bring-up bugs are in the
-field manual under "A vendor Wi-Fi driver starts only when tracing slows it down". Where an inbox INF also claims the device, build with
+miniport; ndis.sys's WDI upper edge (`wdi.rs`) brings it up, scans (24 networks, the hidden
+`Piconet` guest network among them by a directed probe), associates, runs the WPA2-Personal
+handshake (`wpa.rs`), and carries netstack's traffic (2026-10-15): DHCP 192.168.1.7 from the
+router through the guest network, gateway ping, DNS. Build with
+`VIBEOS_WIFI_CONFIG=<file> VIBEOS_VENDOR_DRIVERS=<rtwlanu dir> VIBEOS_PAYLOAD=ndisprobe,vendordrv`
+and boot with `OPTIPLEX_BOOT_OPTIONS=/NETSTACK=NDIS`. The file holds `ssid=`, `psk=` (the
+passphrase) and `hidden=1` lines and is staged as `\SystemRoot\bin\wifi.txt`; keep it outside
+every repo. Its bugs are in the field manual under "A vendor Wi-Fi driver starts only when
+tracing slows it down". Where an inbox INF also claims the device, build with
 `VIBEOS_VENDOR_PREFER=1` ("A staged vendor driver never loads").
 
 ## Known gaps

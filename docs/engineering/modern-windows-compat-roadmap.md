@@ -381,28 +381,53 @@ at every DLL_EXPORT_VERSION, and rtworkq is synced to 11.19 to match mfplat.
 - Guest amd64: wevtapi 10/0, qwave 18/0, rtworkq 176/1 (`flaky_wine`); mfplat completes
   with Wine's own todo_wine lines plus the codec-dependent checks.
 
+**Done 2026-10-15 (later): Media Foundation is Rust, and the corpus is wider.**
+- mfplat and mf flipped. Graded on Wine's mfplat, mf and topology suites against the C
+  built from the same tree, the two now fail identically (see rust-port-status.md for the
+  four translation bugs the comparison found, and the two lints that came out of them).
+- The corpus grew from 20 app folders to 34 (`win10_surface.py gap`, 60 apps, 4096 images):
+  LLVM, Node.js, qBittorrent, qTox, QEMU, Raspberry Pi Imager, Gpg4win, Docker, Oracle
+  VirtualBox, Ubisoft, Rockstar, Logitech Options+ and Microsoft Office. Office alone
+  accounts for 219 of the missing functions and most of the 36 missing modules, and
+  VirtualBox for 62 (most of them kernel-driver imports). Every other app's imported
+  FUNCTIONS now resolve except QEMU's SHCreateShellItemArrayFromIDLists; the modules they
+  need are listed below.
+- Bodies for what those apps import: kernel32 GetPhysicallyInstalledSystemMemory,
+  GetVolumeInformationByHandleW and five forwards; user32's thread DPI-context set;
+  ws2_32 GetHostNameW; iphlpapi NotifyUnicastIpAddressChange and InitializeIpInterfaceEntry
+  (measured on Windows 11: 0xFF "unchanged" sentinels, not the zeros the docs describe);
+  shell32's explicit AppUserModelID pair (measured too); rpcrt4
+  RpcServerInqCallAttributes{A,W}; the bluetoothapis GATT set and bthprops
+  BluetoothIsDiscoverable with no-radio errors. ucrtbase `_except1`. `icuuc.dll` (new,
+  Rust) for cmake-gui.
+
 **Owed on the export surface:**
-- **mfplat's one real async failure:** mfplat.c:3308, "MFASYNC_CALLBACK_QUEUE_STANDARD is
-  not blocked": with an IO-queue read blocked inside IStream_Read, a standard-queue work
-  item does not run within 100 ms. rtworkq gives each system queue its own pool (standard
-  max 1, IO max 4) and our Tp* honour `env->Pool`, so the pools are separate on paper;
-  next is the same wait lengthened, then KVM, to split TCG latency from a real stall.
-  The three child-process failures are NOT MF: run directly in the guest, startup is
-  33/0, undefined_queue_id 12/0, startup_counts 68/1 (the refcount check Wine marks
-  flaky). Spawned from the test, they print "child process wait failed" -- the sweep's
-  console-child spawn, still to be explained.
-- **Rust for Media Foundation:** mfplat and mf are translated and banked but parked at 57
-  and 164 compile errors (`rust-port-status.md`, Win10 surface wave). Tooling owed from
-  that run: `port island` generates only a module's MAIN island group (mfplat's
-  mediatype.c/sample.c groups never became crate islands; worked around with a hand
-  section in the arm); `port replay` took 87 minutes on mfplat's 525 functions; and there
-  is no single "re-island and reassemble from banks" command.
+- **Modules other apps still need:** `d3dcompiler_47` (Ubisoft), `sechost`, `cryptsp`,
+  `wer` (Logitech Options+), `virtdisk` (Raspberry Pi Imager), `mi` (Docker), `xinput1_4`
+  (Rockstar Social Club). Wine has d3dcompiler_47, sechost, cryptsp-ish (advapi32
+  forwards), wer, virtdisk and xinput1_4; `mi` (WMI's Management Infrastructure) it does
+  not. shell32's SHCreateShellItemArray family (QEMU) is still absent from the Rust
+  shell32. Office: bring it in when the rest is green, it is its own campaign.
+- **d3d11.dll is built only at DLL_EXPORT_VERSION >= 0x600**, so a default build has no
+  D3D11CreateDevice at all; Wine's mfplat suite ends on that NULL pointer, and Chrome and
+  Office import d3d11. Decide whether to build the d3d family at every version (rtworkq and
+  dxva2 already are).
+- **mfplat.c:3308, "MFASYNC_CALLBACK_QUEUE_STANDARD is not blocked"**, now failing in the
+  C and the Rust alike (the Rust passed it once): with an IO-queue read blocked, a
+  standard-queue work item does not run within 100 ms, and the test then releases the
+  NULL result and dies. rtworkq gives each system queue its own pool (standard max 1, IO
+  max 4) and our Tp* honour `env->Pool`; next is the same wait lengthened, then KVM, to split
+  TCG latency from a real stall. The three child-process "wait failed" lines are the same
+  suite's children; run directly they pass.
+- **mf's converter scenario:** both builds fail mf.c's "SetTopology ... requiring a
+  converter" checks (no converter MFT is registered: the codec gap below).
 - **Codecs for Media Foundation** (above): native Rust demuxers/decoders, or ports of
-  the codec DLLs Windows ships (msmpeg2vdec, msauddecmft). Decide before chasing app
-  playback.
-- **Widen the corpus** before trusting "done": 20 app folders are not the long tail.
-  CMake imports Windows' own `icuuc.dll` (system32 since 1903), which we do not build.
-  Plus ucrtbase `_except1` (no home in our CRT yet).
+  the codec DLLs Windows ships (msmpeg2vdec, msauddecmft, resampledmo). The suites need
+  the resampler DMO and the audio endpoint (MMDeviceEnumerator) before they can finish.
+- **icuuc under a real Qt:** host-tested only. Run cmake-gui in the guest.
+- **Tooling:** `port replay` took 87 minutes on mfplat's 525 functions, and there is no
+  single "re-island and reassemble from banks" command. Split island groups are now
+  reported by `port island` but still not generated.
 - **NtGetNextThread with THREAD_QUERY_LIMITED_INFORMATION hit ACCESS_DENIED** on some thread
   of the apitest process (amd64 and i386), while `OpenThread(THREAD_QUERY_LIMITED_INFORMATION)`
   on the test's own thread succeeds and a walk asking THREAD_QUERY_INFORMATION completes.

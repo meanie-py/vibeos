@@ -16,7 +16,8 @@
  * silently clean, which is exactly the failure this harness exists to stop.
  *
  * Suite list: %SystemRoot%\bin\apitest-suites.txt, one exe name per line
- * ('#' comments). DERIVED at build time from the staged binaries, never
+ * ('#' comments; `set NAME=VALUE` sets the environment of the children after it).
+ * DERIVED at build time from the staged binaries, never
  * hand-maintained -- ExPushLock sat unrun for the length of a whole merge
  * because the kmtest list is committed and nothing reconciles it against the
  * tests that exist.
@@ -690,6 +691,21 @@ int main(void)
         *nl = 0;
         if (!line[0] || line[0] == '#')
             continue;
+
+        /* "set NAME=VALUE": an environment variable every LATER child inherits ("set
+         * NAME=" clears it). WINETEST_REPORT_SUCCESS=1 makes a suite print each passing
+         * ok() too, which is how a crash with no stack is placed: the last line before it. */
+        if (!strncmp(line, "set ", 4))
+        {
+            char *eq = strchr(line + 4, '=');
+            if (eq)
+            {
+                *eq = 0;
+                SetEnvironmentVariableA(line + 4, eq[1] ? eq + 1 : NULL);
+                emit("[APITEST-SWEEP] env %s=%s\n", line + 4, eq + 1);
+                continue;
+            }
+        }
         ++total;
 
         /* "<suite.exe> <subtest>": run just that subtest (gen_suites --only suite:subtest).

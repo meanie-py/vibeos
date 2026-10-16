@@ -1,0 +1,87 @@
+{
+  "method": "One cold producer per distinct key among 16 source states. Each request variant weighted by one amd64 archive from main inventory, not cumulative consumer copies. Proposed common recipe; no observed cache hits.",
+  "rows": [
+    {
+      "body": "crt-startup-rust",
+      "features": [
+        "crtexe"
+      ],
+      "eligible_requests": 16,
+      "requests": 16,
+      "distinct_projected_keys": 1,
+      "distinct_whole_manifest_keys": 11,
+      "weight_archive_bytes": 4493312,
+      "measured_compile_seconds": 0.46616013698803727
+    },
+    {
+      "body": "crt-startup-rust",
+      "features": [
+        "wcrtexe"
+      ],
+      "eligible_requests": 16,
+      "requests": 16,
+      "distinct_projected_keys": 1,
+      "distinct_whole_manifest_keys": 11,
+      "weight_archive_bytes": 4493312
+    },
+    {
+      "body": "crt-startup-rust",
+      "features": [
+        "crtdll"
+      ],
+      "eligible_requests": 16,
+      "requests": 16,
+      "distinct_projected_keys": 1,
+      "distinct_whole_manifest_keys": 11,
+      "weight_archive_bytes": 4485120
+    },
+    {
+      "body": "crt0-rust",
+      "features": [
+        "ansi"
+      ],
+      "eligible_requests": 16,
+      "requests": 16,
+      "distinct_projected_keys": 1,
+      "distinct_whole_manifest_keys": 11,
+      "weight_archive_bytes": 4382720
+    },
+    {
+      "body": "crt0-rust",
+      "features": [
+        "wide"
+      ],
+      "eligible_requests": 16,
+      "requests": 16,
+      "distinct_projected_keys": 1,
+      "distinct_whole_manifest_keys": 11,
+      "weight_archive_bytes": 4382720
+    },
+    {
+      "body": "crt-dllmain-rust",
+      "features": [],
+      "eligible_requests": 16,
+      "requests": 16,
+      "distinct_projected_keys": 1,
+      "distinct_whole_manifest_keys": 11,
+      "weight_archive_bytes": 4382720
+    },
+    {
+      "body": "conutils-rust",
+      "features": [],
+      "eligible_requests": 16,
+      "requests": 16,
+      "distinct_projected_keys": 3,
+      "distinct_whole_manifest_keys": 11,
+      "weight_archive_bytes": 4452352,
+      "measured_compile_seconds": 2.608666225001798
+    }
+  ],
+  "rates": {
+    "request_reuse": 0.9196428571428571,
+    "byte_weighted_reuse": 0.9195887160558924,
+    "measured_compile_weighted_reuse": 0.8314506691642243,
+    "whole_manifest_byte_weighted_reuse": 0.3125,
+    "compile_weight_coverage": "2 of 7 request variants; others unmeasured, excluded"
+  }
+}

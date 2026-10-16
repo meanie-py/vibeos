@@ -1917,6 +1917,16 @@ families:
       - fesetexceptflag
       - fesetround
       - fetestexcept
+  except1:
+    provenance: wine-port
+    replaces:
+      - the ucrtbase.spec -stub entry _except1 (no body existed in any CRT source here; Nmap imports it)
+    oracle: >
+      ucrt-difftest's except1_ladder test, on the host: Wine's msvcrt math.c _except1 read case by case -- every fpe/cw branch of the silent-raise vs SEH-exception ladder, the result saturation, the 64-bit MXCSR -> x87 control-word remap and the _setfp word, plus an exhaustive check over fpe 0..0x1f x cw 0..0x3f that exactly one outcome happens. The hardware calls it makes are the fenv family's, graded by tools/payloads/fenv. Not yet run in the guest.
+    note: >
+      A PORT (src/fenv/except1.rs, its ladder in except1_pure.rs) of Wine's msvcrt math.c _except1 at _MSVCR_VER >= 120; feraiseexcept is a private copy of Wine's until the crate exports one.
+    exports:
+      - _except1
   fenv_x87_sse:
     provenance: wine-port
     arches: [i386]

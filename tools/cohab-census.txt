@@ -1211,6 +1211,23 @@ dll/win32/lsasrv/CMakeLists.txt	1	# service.c — replaced by Rust (lsasrv-rust/
 dll/win32/lsasrv/CMakeLists.txt	1	# session.c — replaced by Rust (lsasrv-rust/src/lsasrv/session.rs)
 dll/win32/lsasrv/CMakeLists.txt	1	# srm.c — replaced by Rust (lsasrv-rust/src/lsasrv/srm.rs)
 dll/win32/lsasrv/CMakeLists.txt	1	# utils.c — replaced by Rust (lsasrv-rust/src/lsasrv/utils.rs)
+dll/win32/mf/CMakeLists.txt	1	# clock.c # replaced by Rust (sdk/lib/rust/mf-rust/src/mf/clock.rs)
+dll/win32/mf/CMakeLists.txt	1	# copier.c # replaced by Rust (sdk/lib/rust/mf-rust/src/mf/copier.rs)
+dll/win32/mf/CMakeLists.txt	1	# evr.c # replaced by Rust (sdk/lib/rust/mf-rust/src/mf/evr.rs)
+dll/win32/mf/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/mf-rust/src/mf/main.rs)
+dll/win32/mf/CMakeLists.txt	1	# quality.c # replaced by Rust (sdk/lib/rust/mf-rust/src/mf/quality.rs)
+dll/win32/mf/CMakeLists.txt	1	# sac.c # replaced by Rust (sdk/lib/rust/mf-rust/src/mf/sac.rs)
+dll/win32/mf/CMakeLists.txt	1	# samplegrabber.c # replaced by Rust (sdk/lib/rust/mf-rust/src/mf/samplegrabber.rs)
+dll/win32/mf/CMakeLists.txt	1	# sar.c # replaced by Rust (sdk/lib/rust/mf-rust/src/mf/sar.rs)
+dll/win32/mf/CMakeLists.txt	1	# scheme_handler.c # replaced by Rust (sdk/lib/rust/mf-rust/src/mf/scheme_handler.rs)
+dll/win32/mf/CMakeLists.txt	1	# session.c # replaced by Rust (sdk/lib/rust/mf-rust/src/mf/session.rs)
+dll/win32/mf/CMakeLists.txt	1	# topology.c # replaced by Rust (sdk/lib/rust/mf-rust/src/mf/topology.rs)
+dll/win32/mf/CMakeLists.txt	1	# topology_loader.c # replaced by Rust (sdk/lib/rust/mf-rust/src/mf/topology_loader.rs)
+dll/win32/mfplat/CMakeLists.txt	1	# buffer.c # replaced by Rust (sdk/lib/rust/mfplat-rust/src/mfplat/buffer.rs)
+dll/win32/mfplat/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/mfplat-rust/src/mfplat/main.rs)
+dll/win32/mfplat/CMakeLists.txt	1	# mediatype.c # replaced by Rust (sdk/lib/rust/mfplat-rust/src/mfplat/mediatype.rs)
+dll/win32/mfplat/CMakeLists.txt	1	# queue.c # replaced by Rust (sdk/lib/rust/mfplat-rust/src/mfplat/queue.rs)
+dll/win32/mfplat/CMakeLists.txt	1	# sample.c # replaced by Rust (sdk/lib/rust/mfplat-rust/src/mfplat/sample.rs)
 dll/win32/mfreadwrite/CMakeLists.txt	1	# reader.c # replaced by Rust (sdk/lib/rust/mfreadwrite-rust/src/mfreadwrite/reader.rs)
 dll/win32/mfreadwrite/CMakeLists.txt	1	# writer.c # replaced by Rust (sdk/lib/rust/mfreadwrite-rust/src/mfreadwrite/writer.rs)
 dll/win32/mlang/CMakeLists.txt	1	# compiles rust_cohab_stub.c (wine debug no-ops + IsEqualGUID/min + vtbl
@@ -1750,9 +1767,9 @@ drivers/base/kdrosdbg/CMakeLists.txt	1	# kdrosdbg.c is translated to Rust (sdk/l
 drivers/base/kdvm/CMakeLists.txt	1	# backdoor port-I/O `KdVmExchange` (kdvbox_asm.S) is rendered as a cfg-gated
 drivers/base/kdvm/CMakeLists.txt	1	# kdvm.c / kdvbox.c (+ kdvbox_asm.S) are translated to Rust
 drivers/base/kdvm/CMakeLists.txt	1	# kdvm.c kdvbox.c kdvbox_asm.S -- replaced by Rust (kdvm-rust); kept on disk.
-drivers/base/nmidebug/CMakeLists.txt	1	# as in the bootvid/kdcom cargo cuts. nmidebug.c/nmidebug.rc kept on disk, no
 drivers/base/nmidebug/CMakeLists.txt	1	# nmidebug.c is translated to Rust (sdk/lib/rust/nmidebug-rust, kept on disk per
-drivers/base/null/CMakeLists.txt	1	# (null.rc) is dropped, exactly as in the bootvid/kdcom cargo cuts. null.c/null.rc
+drivers/base/nmidebug/CMakeLists.txt	1	# registers it on the boot media. nmidebug.c is kept on disk, no longer compiled.
+drivers/base/null/CMakeLists.txt	1	# i386 forwarder fix) and registers it on the boot media. null.c is kept on
 drivers/base/null/CMakeLists.txt	1	# null.c is translated to Rust (sdk/lib/rust/null-rust, kept on disk per the
 drivers/bus/acpi/CMakeLists.txt	1	# ${ACPICA_DIR}/executer/exdump.c
 drivers/bus/acpi/CMakeLists.txt	1	# ${ACPICA_DIR}/namespace/nsdump.c
@@ -1835,12 +1852,12 @@ drivers/hid/mouhid/CMakeLists.txt	1	# mouhid.c is replaced by Rust (sdk/lib/rust
 drivers/hid/mouhid/CMakeLists.txt	1	# replaced by Rust (sdk/lib/rust/mouhid-rust): mouhid.c
 drivers/input/arm64input/CMakeLists.txt	1	# arm64-only virtio-input driver. arm64input.c is fully translated to Rust
 drivers/input/arm64input/CMakeLists.txt	1	# cmake's add_library(MODULE) + rust_cohab_stub.c + custom_command scaffolding —
-drivers/input/i8042prt/CMakeLists.txt	1	# C guid.c symbol is unreferenced dead residue (kept on disk). The version
+drivers/input/i8042prt/CMakeLists.txt	1	# C guid.c symbol is unreferenced dead residue (kept on disk).
 drivers/input/i8042prt/CMakeLists.txt	1	# add_library(MODULE) + rust_cohab_stub.c + the per-arch custom_command — it is
 drivers/input/i8042prt/CMakeLists.txt	1	# guid.c is NOT linked: i8042prt-rust defines its sole poclass GUID
 drivers/input/kbdclass/CMakeLists.txt	1	# The functional C sources (kbdclass.c + misc.c) were translated to Rust
 drivers/input/kbdclass/CMakeLists.txt	1	# guid.c is NOT linked: kbdclass-rust defines its sole interface GUID
-drivers/input/kbdclass/CMakeLists.txt	1	# the C guid.c symbol is unreferenced dead residue (kept on disk). The version
+drivers/input/kbdclass/CMakeLists.txt	1	# the C guid.c symbol is unreferenced dead residue (kept on disk). PSEH_LIB is
 drivers/input/mouclass/CMakeLists.txt	1	# guid.c is dropped (dead residue): mouclass-rust self-provides
 drivers/input/mouclass/CMakeLists.txt	1	# mouclass.c + misc.c are translated to Rust (sdk/lib/rust/mouclass-rust, kept
 drivers/ksfilter/ks/CMakeLists.txt	2	# api.c allocators.c bag.c device.c deviceinterface.c driver.c clocks.c connectivity.c
@@ -1908,7 +1925,7 @@ drivers/storage/ide/atapi/CMakeLists.txt	1	# wmi.c)
 drivers/storage/ide/legide/CMakeLists.txt	1	# legide.sys — Rust cohabitation flip (legide.c -> legide-rust), i386 only
 drivers/storage/ide/legide/CMakeLists.txt	1	# list(APPEND SOURCE legide.c)
 drivers/storage/ide/legide/CMakeLists.txt	1	# to Rust in sdk/lib/rust/legide-rust (rustconv port, sealed DeepSeek); legide.c stays on disk.
-drivers/storage/ide/pciide/CMakeLists.txt	1	# pciide.c is translated to Rust (sdk/lib/rust/pciide-rust, kept on disk per the
+drivers/storage/ide/pciide/CMakeLists.txt	1	# pciide.c is translated to Rust (pciide-rust). The ENABLE_UNIATA gate is a build
 drivers/storage/ide/pciidex/CMakeLists.txt	1	# FDO+PDO core (fdo/pdo/pciidex/miniport/power/acpi.c) plus the chipset/ layer (per-vendor
 drivers/storage/ide/pciidex/CMakeLists.txt	1	# PciIdeXDebugPrint is DEFINED by a 3-line trampoline in rust_varargs_shim.c (stable Rust
 drivers/storage/ide/pciidex/CMakeLists.txt	1	# acpi.c
@@ -2076,6 +2093,7 @@ modules/rostests/kmtests/CMakeLists.txt	1	# binary became kmtest.exe. Our confor
 modules/rostests/kmtests/CMakeLists.txt	1	# implementation — NOT the dummy.c stub in the same archive; pseh precedes ntoskrnl on
 modules/rostests/kmtests/CMakeLists.txt	1	# one shim (_InterlockedAddLargeStatistic, see kmt_native_seh_shims.c), boots, and
 modules/rostests/kmtests/CMakeLists.txt	1	# the msvc-env retarget. _except_handler3 resolves from libpseh.a (i386/seh.s, a real
+modules/rostests/winetests/mf/CMakeLists.txt	1	# Wine's mf conformance suite. transform.c is linked for the helpers mf.c shares with it
 modules/rostests/winetests/user32/CMakeLists.txt	1	# (`CONTROL ... ,10,10,100,50 { 1,2,3,4,5 }`), which is what dialog.c's
 ntoskrnl/CMakeLists.txt	1	# define only keeps the dead-mirror C copies (traphandler.c/traphdlr.c,
 ntoskrnl/CMakeLists.txt	1	# guid.c — replaced by Rust (ntoskrnl-rust/src/guid.rs)

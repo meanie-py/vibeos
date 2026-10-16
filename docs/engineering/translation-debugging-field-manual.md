@@ -527,6 +527,20 @@ Same family, three positions, all silent on the arch where the widths happen to 
   bits undefined, i386 pushes a clean slot. iphlpapi's `GetIpForwardTable2(AF_INET)` failed
   ERROR_INVALID_PARAMETER on amd64 only (guest apitest `Win10Surface`, 2026-10-14). Take the
   C prototype's width; never validate bits the ABI does not define.
+- **A small enum value does not make its ABI a byte.** The timer translation declared
+  `KeInitializeApc`'s environment as `u8` instead of the DDK's 32-bit
+  `KAPC_ENVIRONMENT`. Both the October 11 archived MP kernel and the October 15
+  immutable-store gate emitted `movb $2,%r8b` in `NtSetTimer`, while the callee
+  compared all of `r8d` against `CurrentApcEnvironment`. Stale upper bits bypass
+  normalization, leaving APC index 2; the timer DPC later panics indexing the
+  two-element `ApcStatePointer` array (`ke/apc.rs:138`). The exact earlier failure
+  is `vibeos-flake-farm/fails/auto/20261011-185307-ydzbq0v5-smoke-amd64-BUGCHECK`.
+  Use the canonical DDK declaration and enum constant, with typed `Some`/`None`
+  callbacks; the callback must also be `extern "system"` for i386. Verify the
+  rebuilt caller initializes the full argument register. The repaired UP and MP
+  amd64 images emit `movl $2,%r8d`; both i386 callbacks emit `ret $20` and carry
+  the `@20` decoration. Never clamp the index
+  to hide an ABI mismatch.
 - **`extern static` width drift.** `MmThrottleTop` declared `u64`, defined `u32`, permanently
   tripped the Cc write throttle → `WriteFile` on a FAT volume never returned, with every probe
   in the FS write path showing nothing wrong `[§9.36-throttle]`.
@@ -851,7 +865,8 @@ selected by `#if`, a `static inline`, and a `.spec` alias each break the header�
 assumption independently, and all three are invisible from the source.
 The remembered rule did not hold. That exact declaration shipped in wscript, msiexec, ole32 and
 shell32's recycle bin, copied between preludes by `port resolve`'s tree consensus. cscript
-crashed on every script error. It is now mechanized twice: `scan_varargs_spec_arity`
+crashed on every script error, and mfplat's Rust (found the same day from the other side) on its
+first `MFTRegister`, inside msvcrt's printf. It is now mechanized twice: `scan_varargs_spec_arity`
 (`vibeos-cli check`, baseline empty) holds every variadic `extern` to its `.spec` export's
 fixed arity, and resolve's renderer binds a count-form `swprintf`/`vswprintf` to
 `_snwprintf`/`_vsnwprintf`.
@@ -1399,6 +1414,21 @@ allocation used the real element size, so nothing looked wrong until index 1.
 **Fix.** Cast first: `(field as PREAL).add(i)`, ideally through one helper
 (`consrv/handle.rs::handle_at`). `scan_opaque_ptr_arith` gates it (baseline empty).
 
+### A COM interface the -sys crate carries opaque has no methods and no fields
+**Symptom.** `cannot find function IStream_Seek` (every widl wrapper but the ones some other
+path generated) and `no field cbSize on type ntdll_sys::nt::tagSTATSTG`, though the module's
+own headers define both in full. mfplat's byte stream, 57 errors deep.
+
+**Cause.** A user-mode island blocklists every name ntdll-sys exports, so the module shares
+one identity for NT types. ntdll-sys carries `IStream`, `IStreamVtbl` and `tagSTATSTG` as
+`{ _unused: [u8; 0] }` (rtl's memory stream only needs the pointer), and the blocklist keeps
+the empty version. No vtable means `port macros` has nothing to generate wrappers from.
+
+**Fix.** `UNBLOCK="IStream IStreamVtbl tagSTATSTG STATSTG LPSTREAM"` in the module's `# >>> hand`
+block, then re-island: the island owns the full objidl definitions. Not automatic for every
+opaque name: `_TP_POOL` and friends are opaque in the real headers too, and a local copy of
+those would split their identity from the ntdll-sys functions that take them.
+
 ### `(base as *mut PBYTE).offset(n)` strides by a POINTER, not a byte
 The C's `(PBYTE)base + n` came out as a cast to a pointer *to* a `PBYTE` followed by
 `.offset(n)`, which steps 8 bytes per unit on 64-bit; the result is cast straight back, so it
@@ -1434,6 +1464,21 @@ subtraction.
 cursors. To triage, grep `\.(next|prev|Flink|Blink)\)? as \*mut <Struct>` and check the field's
 offset. The 2026-09-30 sweep found 22 hits; all but this one were offset-0 (secur32's
 `entry`) or were casting to a byte or void pointer.
+
+### A switch `break` that now leaves the loop
+**Symptom.** A loop over a list or an array stops after the first element of one kind.
+mf's session_check_topology leaked one node reference per SetTopology (Wine's suite counted
+eight); welcome's TranslateEscapes stopped translating after the first `\x`.
+
+**Cause.** C's `case X: ...; break;` inside a `for`/`while` leaves the SWITCH. Translated to
+a `match` arm ending in `break;`, it leaves the LOOP, skipping the rest of the iteration
+(mf's `IMFTopologyNode_Release(node)`) and every later element.
+
+**Fix.** Delete the `break;`: a match arm never falls through. Not the once-through
+`loop { match .. }` idiom some translations use for a switch, where leaving the loop is
+leaving the switch. `scan_match_arm_break` gates it; its baseline is the 19 sites
+triaged as deliberate (the C had a `goto` to the function's exit, or the Rust is
+hand-written).
 
 ### A list walk that starts at the head it stops at
 
@@ -14922,6 +14967,13 @@ through these in turn, on the OptiPlex. Several were bugs in code every driver u
 - **Every property response empty**: `NDIS_OID_REQUEST.DATA.METHOD_INFORMATION` is `Oid,
   InformationBuffer, InputBufferLength, OutputBufferLength, MethodId, BytesWritten, ...`;
   MethodId is not second.
+- **0xA (P1 = 4, read, DISPATCH) inside the LE's `TxDataSend`, on the first EAPOL frame**:
+  the driver reads every transmitted NBL's `NetBufferListInfo[MediaSpecificInformation]` as a
+  Native Wi-Fi `DOT11_EXTSTA_SEND_CONTEXT` (exemption action at +4), WDI frame or not. Fix:
+  `wdi.rs` attaches one to each frame it sends.
+- **Keys install, the link comes up, and no data frame reaches the protocols**: the target
+  decrypts a frame and strips its CCMP header and MIC but leaves the Protected bit set, so a
+  filter on that bit dropped all of them. A decrypted frame is recognized by its LLC/SNAP.
 Two boot options did the work here, both reusable: `XHCITRACE[=n]` logs the first n vendor
 and class control transfers, and the bulk transfers and aborts of every device that sent
 one; `WPPTRACE[=level]` enables each WPP provider as it registers and prints its records

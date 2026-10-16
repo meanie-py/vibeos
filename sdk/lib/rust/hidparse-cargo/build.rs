@@ -5,7 +5,7 @@
 //! `add_library(hidparse MODULE rust_cohab_stub.c hidparse.rc hidparse.def)` +
 //! `set_module_type(hidparse kernelmodedriver)` +
 //! `spec2def(hidparse.sys hidparse.spec)` +
-//! `add_importlibs(hidparse ntoskrnl)` cohab. Version resource dropped.
+//! `add_importlibs(hidparse ntoskrnl)` cohab.
 //!
 //! native:5.01, -shared, --exclude-all-symbols + 0x1000 align; entry
 //! _DriverEntry@8 / DriverEntry; base 0x10000 (x86) / 0x7FFB00000000 (arm64);
@@ -41,6 +41,9 @@ fn main() {
         .spec2def("drivers/hid/hidparse/hidparse.spec", "hidparse.sys")
         // memcmp comes from compiler-builtins-mem (build-std); libmemcmp.a dropped.
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
+        .resource_from_rc("drivers/hid/hidparse/hidparse.rc", "hidparse_res")
+        // cmake's kernel-mode links keep every section.
+        .keep_all_sections()
         .link(ModuleKind::KernelDll {
             entry: entry.into(),
             image_base,
