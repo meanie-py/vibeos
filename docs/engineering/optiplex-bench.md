@@ -160,8 +160,12 @@ router through the guest network, gateway ping, DNS. Build with
 `VIBEOS_WIFI_CONFIG=<file> VIBEOS_VENDOR_DRIVERS=<rtwlanu dir> VIBEOS_PAYLOAD=ndisprobe,vendordrv`
 and boot with `OPTIPLEX_BOOT_OPTIONS=/NETSTACK=NDIS`. The file holds `ssid=`, `psk=` (the
 passphrase) and `hidden=1` lines and is staged as `\SystemRoot\bin\wifi.txt`; keep it outside
-every repo. Its bugs are in the field manual under "A vendor Wi-Fi driver starts only when
-tracing slows it down". Where an inbox INF also claims the device, build with
+every repo. The link stays joined: when the LE drops the AP (it deletes the peer), the worker
+resets the connection and joins again, backing off from 5 s to a minute while attempts fail
+(2026-10-16: the link came back with a fresh 4-way handshake, and the host pinged the board
+again on its unchanged lease). `/WIFIDROP=<s>` drops the link on purpose once, s seconds after it
+first comes up, to exercise that without touching the router. Its bugs are in the field manual
+under "A vendor Wi-Fi driver starts only when tracing slows it down". Where an inbox INF also claims the device, build with
 `VIBEOS_VENDOR_PREFER=1` ("A staged vendor driver never loads").
 
 ## Known gaps
