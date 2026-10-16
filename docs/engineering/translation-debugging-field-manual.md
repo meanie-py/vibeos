@@ -14987,6 +14987,13 @@ through these in turn, on the OptiPlex. Several were bugs in code every driver u
 - **Every property response empty**: `NDIS_OID_REQUEST.DATA.METHOD_INFORMATION` is `Oid,
   InformationBuffer, InputBufferLength, OutputBufferLength, MethodId, BytesWritten, ...`;
   MethodId is not second.
+- **0xA (P1 = 4, read, DISPATCH) inside the LE's `TxDataSend`, on the first EAPOL frame**:
+  the driver reads every transmitted NBL's `NetBufferListInfo[MediaSpecificInformation]` as a
+  Native Wi-Fi `DOT11_EXTSTA_SEND_CONTEXT` (exemption action at +4), WDI frame or not. Fix:
+  `wdi.rs` attaches one to each frame it sends.
+- **Keys install, the link comes up, and no data frame reaches the protocols**: the target
+  decrypts a frame and strips its CCMP header and MIC but leaves the Protected bit set, so a
+  filter on that bit dropped all of them. A decrypted frame is recognized by its LLC/SNAP.
 Two boot options did the work here, both reusable: `XHCITRACE[=n]` logs the first n vendor
 and class control transfers, and the bulk transfers and aborts of every device that sent
 one; `WPPTRACE[=level]` enables each WPP provider as it registers and prints its records

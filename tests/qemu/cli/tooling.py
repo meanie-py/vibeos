@@ -55,6 +55,9 @@ _PYTEST_SUITES = [
     # are compiled only for the target, where nothing runs their tests; a wrong answer
     # from one is a dead device on a board nobody here has.
     (".", ".", "tools/test_arm64_firmware_tables.py"),
+    # The Wi-Fi supplicant (ndis-rust's wpa.rs): a wrong MIC or key looks on the bench like
+    # an access point silently dropping the handshake.
+    (".", ".", "tools/test_wpa_supplicant.py"),
     # An oracle needs an oracle. verify_c_signatures reports its own type-resolution gaps as
     # defects in the code when it is wrong, and reports "verified" over types it never
     # resolved when it is blind — neither shows up in review or in its own output.
@@ -75,6 +78,9 @@ _PYTEST_SUITES = [
     (".", ".", "tools/payloads/olewinetest/test_classify_failures.py"),
     # kmtest lists are hand-kept; a name the arch compiles out reads as a NO-END crash.
     (".", ".", "tools/payloads/kmtest/test_kmtest_lists.py"),
+    # appstorm64's guest set is hand-kept against appstorm's app table; an app missing
+    # from it runs native and reads as an app failure.
+    (".", ".", "tools/payloads/appstorm/test_appstorm64_roots.py"),
     # x86 conformance's writable root: a missed entry silently boots the read-only CD again.
     (".", ".", "tools/conformance/test_mk_writable_livecd.py"),
     # modrun's grader is the whole verdict (the guest only reports), so it gets an oracle.

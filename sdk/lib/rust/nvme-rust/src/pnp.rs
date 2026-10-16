@@ -517,15 +517,18 @@ unsafe fn connect(fdo: &mut Fdo) -> Option<u32> {
     fdo.passive = passive;
     let count = (*table).MessageCount;
     let entries = core::slice::from_raw_parts((*table).MessageInfo.as_ptr(), count as usize);
+    // I/O shares the admin vector when there is only one message. Read through get(),
+    // so a table the kernel left empty prints a 0 rather than panicking the driver.
+    let vector = |i: usize| entries.get(i).map_or(0, |m| m.Vector);
     let io = if count > 2 { "vectors from" } else { "vector" };
     nvprint!(
         "controller {}: MSI-X: {} message(s) connected at {}: admin on vector {}, I/O on {} {}\n",
         n,
         count,
         Level(passive, (*table).UnifiedIrql),
-        entries[0].Vector,
+        vector(0),
         io,
-        entries[(count as usize - 1).min(1)].Vector
+        vector(if count > 1 { 1 } else { 0 })
     );
     Some(count)
 }

@@ -60,10 +60,6 @@ ntkrnlmp-cargo: KeInitializeProcess
 # x86_64_table, indexed by the opcode entry's runtime bytemode2 (i386_dis.rs:3346). A real
 # static table, nothing allocated; the check is correct.
 
-@i386 nvme-cargo: _RNvNtC9nvme_rust3pnp7connect
-# `entries` is a slice built with from_raw_parts(MessageInfo, MessageCount) (pnp.rs:427);
-# the length-1 constant is branch-derived, as in the rtl-rust entries above.
-
 * : _ZN7zlib_rs7inflate8inftrees13inflate_tableE
 @amd64,arm64 * : _ZN7smoltcp4wire4ipv44Repr4emitE
 @i386 * : _RINvMs5_NtNtC7smoltcp4wire4ipv4NtB6_4Repr4emitQShEBa_
