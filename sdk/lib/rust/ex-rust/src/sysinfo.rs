@@ -1561,7 +1561,10 @@ unsafe extern "C" fn QSI_SystemHandleInformation(Buffer: PVOID, Size: ULONG, Req
                 }
             }
 
-            Handle.Value = (Handle.Value as ULONG_PTR + core::mem::size_of::<HANDLE>()) as _;
+            // Index++, not Value += sizeof(HANDLE): handle values step by 4 (two tag bits)
+            // on every arch, so the old step skipped every other handle on 64-bit.
+            let NextIndex = Handle.__bindgen_anon_1.Index() + 1;
+            Handle.__bindgen_anon_1.set_Index(NextIndex);
         }
 
         next = (*next).Flink;
@@ -2351,7 +2354,10 @@ unsafe extern "C" fn QSI_SystemExtendedHandleInformation(Buffer: PVOID, Size: UL
                 }
             }
 
-            Handle.Value = (Handle.Value as ULONG_PTR + core::mem::size_of::<HANDLE>()) as _;
+            // Index++, not Value += sizeof(HANDLE): handle values step by 4 (two tag bits)
+            // on every arch, so the old step skipped every other handle on 64-bit.
+            let NextIndex = Handle.__bindgen_anon_1.Index() + 1;
+            Handle.__bindgen_anon_1.set_Index(NextIndex);
         }
 
         next = (*next).Flink;

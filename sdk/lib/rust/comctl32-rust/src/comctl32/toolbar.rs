@@ -6619,8 +6619,10 @@ unsafe extern "C" fn TOOLBAR_SetMaxTextRows(mut infoPtr: *mut TOOLBAR_INFO, mut 
 unsafe extern "C" fn TOOLBAR_SetMetrics(mut infoPtr: *mut TOOLBAR_INFO, mut pMetrics: *mut TBMETRICS) -> LRESULT {
     let mut changed: BOOL = FALSE;
 
-    if pMetrics.is_null() {
-        return FALSE as LRESULT;
+    if pMetrics.is_null()
+        || (*pMetrics).cbSize as usize != ::core::mem::size_of::<TBMETRICS>() as usize
+    {
+        return 0 as LRESULT;
     }
 
     if ((*pMetrics).dwMask & TBMF_PAD as DWORD) != 0 {
@@ -6629,7 +6631,7 @@ unsafe extern "C" fn TOOLBAR_SetMetrics(mut infoPtr: *mut TOOLBAR_INFO, mut pMet
         changed = TRUE as BOOL;
     }
 
-    if ((*pMetrics).dwMask & TBMF_PAD as DWORD) != 0 {
+    if ((*pMetrics).dwMask & TBMF_BARPAD as DWORD) != 0 {
         (*infoPtr).szBarPadding.cx = (*pMetrics).cxBarPad as LONG;
         (*infoPtr).szBarPadding.cy = (*pMetrics).cyBarPad as LONG;
         changed = TRUE as BOOL;
@@ -6645,7 +6647,8 @@ unsafe extern "C" fn TOOLBAR_SetMetrics(mut infoPtr: *mut TOOLBAR_INFO, mut pMet
         TOOLBAR_CalcToolbar(infoPtr);
     }
 
-    return TRUE as LRESULT;
+    // TB_SETMETRICS's return value is ignored (upstream 9b120aa796e).
+    return 0 as LRESULT;
 }
 
 unsafe extern "C" fn TOOLBAR_SetPadding(

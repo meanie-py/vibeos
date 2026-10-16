@@ -278,6 +278,10 @@ def normalize(snapshot: Path, projection: dict, destination: Path) -> dict:
             lines.append("[" + table + "]")
             lines.extend(_toml(name) + " = " + _toml(item) for name, item in sorted(value.items()))
         (output / "Cargo.toml").write_text("\n".join(lines) + "\n")
+    # Data a package embeds from outside its root, at the same repository path.
+    for relative in descriptor.get("data_inputs", {}):
+        (destination / relative).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(snapshot / relative, destination / relative)
     selected = descriptor["request"]["package"]
 
     def relative(key):

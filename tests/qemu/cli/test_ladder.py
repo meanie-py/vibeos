@@ -9,7 +9,6 @@ the bug -- one is a regression, the other is a lane that was never staged.
 from __future__ import annotations
 
 import os
-import re
 import shutil
 import subprocess
 import time
@@ -1084,6 +1083,19 @@ def test_refresh_names_what_it_is_missing(tmp_path):
     assert ladder.refresh_blocker(repo) is None
 
 
+def test_only_x64_guests_are_deferred_and_only_without_amd64_importlibs(tmp_path):
+    repo = tmp_path
+    todo = ["selfmod64 (absent)", "apc64 (tools/fex/hello-compute/Apc64.c is newer)"]
+    assert ladder.x64_refresh_deferred(repo, todo) == todo
+    # A 32-bit guest is never deferred, whatever build-amd64 holds.
+    assert ladder.x64_refresh_deferred(repo, [*todo, "file32 (absent)"]) == todo
+    assert ladder.x64_refresh_deferred(repo, []) == []
+    lib = repo / ladder.GUEST_PREREQ_X64
+    lib.parent.mkdir(parents=True)
+    lib.write_bytes(b"")
+    assert ladder.x64_refresh_deferred(repo, todo) == []
+
+
 class _FakeRun:
     def __init__(self):
         self.stages = []
@@ -1127,6 +1139,49 @@ def test_build_stage_builds_then_reports_ok(tmp_path):
     assert run.stages[-1].status == "ok" and "reg32" in run.stages[-1].detail
 
 
+def _stale_x64_guest(repo: Path) -> None:
+    exe = repo / "build-fex-hello" / "apc64.exe"
+    exe.write_bytes(b"MZ")
+    os.utime(exe, (_T0 - 5000, _T0 - 5000))
+    assert any(t.startswith("apc64 (") for t in ladder.guests_to_refresh(repo))
+
+
+def test_build_stage_defers_x64_guests_before_amd64_has_importlibs(tmp_path):
+    """A fresh build-amd64 has no importlibs before its first ninja, so the
+    builder skips the x86-64 guests. That is a deferral, not a failure: it failed
+    every first amd64 build in a fresh worktree with an edited x64 guest source."""
+    from tests.qemu.cli import build
+
+    repo = _built_tree(tmp_path)
+    _buildable(repo)
+    _stale_x64_guest(repo)
+    (repo / ladder.GUEST_BUILDER).write_text("echo '[!] apc64.exe skipped'\n")
+    os.utime(repo / ladder.GUEST_BUILDER, (_T0 - 10000, _T0 - 10000))
+    run = _FakeRun()
+    deferred = build._refresh_wow64_guests(run, repo)
+    assert isinstance(deferred, list) and any(d.startswith("apc64 (") for d in deferred)
+    assert run.classification is None
+    assert run.stages[-1].status == "ok" and "deferred" in run.stages[-1].detail
+
+
+def test_build_stage_fails_on_x64_guests_once_amd64_has_importlibs(tmp_path):
+    """With build-amd64's importlibs present, a skipped x86-64 guest is a real
+    failure again -- the deferral must not become a permanent excuse."""
+    from tests.qemu.cli import build
+
+    repo = _built_tree(tmp_path)
+    _buildable(repo)
+    prereq = repo / ladder.GUEST_PREREQ_X64
+    prereq.parent.mkdir(parents=True, exist_ok=True)
+    prereq.write_bytes(b"")
+    _stale_x64_guest(repo)
+    (repo / ladder.GUEST_BUILDER).write_text("echo '[!] apc64.exe skipped'\n")
+    os.utime(repo / ladder.GUEST_BUILDER, (_T0 - 10000, _T0 - 10000))
+    run = _FakeRun()
+    assert build._refresh_wow64_guests(run, repo) is False
+    assert run.classification == "GUEST_BUILD_FAIL" and "apc64" in run.stages[-1].detail
+
+
 def test_build_stage_skips_loudly_without_an_i386_tree(tmp_path):
     """Not this build's failure -- amd64 media is complete without guests -- but
     the stage that could have built them says why it did not."""
@@ -1137,25 +1192,3 @@ def test_build_stage_skips_loudly_without_an_i386_tree(tmp_path):
     run = _FakeRun()
     assert build._refresh_wow64_guests(run, repo) is True
     assert run.stages[-1].status == "skip" and "toolchain" in run.stages[-1].detail
-
-
-def test_a_stale_x64_guest_waits_for_amd64s_import_libraries(tmp_path):
-    """A pruned build-amd64 has no libkernel32.a until the amd64 build that would rebuild
-    selfmod64 runs, so that build refused to start (GUEST_BUILD_FAIL) and never could.
-    The x64 guests defer; the 32-bit ones, linked against build-i386, never do."""
-    repo = _built_tree(tmp_path)
-    todo = ["selfmod64 (tools/fex/hello-compute/Selfmod32.c is newer)", "selfmod32 (x is newer)"]
-    assert ladder.deferred_x64_guests(repo, todo) == [todo[0]]
-    lib = repo / ladder.X64_GUEST_PREREQ
-    lib.parent.mkdir(parents=True)
-    lib.write_bytes(b"!<arch>\n")
-    assert ladder.deferred_x64_guests(repo, todo) == []
-
-
-def test_every_x64_guest_links_the_prerequisite_deferral_checks():
-    """X64_GUEST_PREREQ stands in for every x64_guest's import libraries; each one the
-    builder makes must name kernel32, or the deferral checks the wrong file."""
-    script = (Path(__file__).resolve().parents[3] / ladder.GUEST_BUILDER).read_text()
-    built = re.findall(r"^x64_guest (\w+)\.exe .*\"\$K64\"", script, re.M)
-    assert set(built) == set(ladder.STAGED_LADDER)
-    assert ladder.X64_GUEST_PREREQ.endswith("kernel32.dir/libkernel32.a")

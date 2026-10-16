@@ -10,6 +10,8 @@ use crate::types::*;
 // kernel types in the signatures (NTSTATUS, ACCESS_MASK, PCUNICODE_STRING, ...):
 // blocklisted out of crate::types and resolved on the single ntkrnl-sys ddk identity.
 use ntkrnl_sys::ddk::*;
+// in both globs; the kernel's identity wins:
+use ntkrnl_sys::ddk::{DEVPROPGUID, DEVPROPID, DEVPROPKEY, DEVPROPTYPE, PDEVPROPTYPE, _DEVPROPKEY};
 
 #[inline]
 pub unsafe fn WdfChildListCreate(Device: WDFDEVICE, Config: PWDF_CHILD_LIST_CONFIG, ChildListAttributes: PWDF_OBJECT_ATTRIBUTES, ChildList: *mut WDFCHILDLIST) -> NTSTATUS {

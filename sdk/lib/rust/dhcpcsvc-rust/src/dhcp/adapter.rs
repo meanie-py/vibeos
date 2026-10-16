@@ -510,10 +510,7 @@ pub unsafe extern "system" fn PrepareAdapterForService(Adapter: *mut DHCP_ADAPTE
             DhcpEnabled = 1;
         }
 
-        // adapter.c:169 calls CloseHandle on an HKEY (not RegCloseKey) — faithful to the C.
-        // Cast at the call site rather than re-declaring CloseHandle with a narrowed HKEY
-        // parameter, which clashes with the prelude's HANDLE-typed declaration.
-        CloseHandle(AdapterKey as HANDLE);
+        RegCloseKey(AdapterKey);
     } else {
         DhcpEnabled = 1;
     }

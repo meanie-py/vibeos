@@ -16,15 +16,9 @@ const LOCALE_SYSTEM_DEFAULT: LCID = 0x0800;
 const LOCALE_CUSTOM_DEFAULT: LCID = 0x0C00;
 const LOCALE_CUSTOM_UI_DEFAULT: LCID = 0x1400;
 
-// CRT helpers (libcntpr / ntdll CRT) used by the locale-table init + lookup.
+// CRT helper (libcntpr / ntdll CRT) used by the locale lookup.
 extern "C" {
     fn strlen(s: PCSTR) -> usize;
-    fn qsort(
-        base: *mut c_void,
-        nmemb: usize,
-        size: usize,
-        compar: unsafe extern "C" fn(*const c_void, *const c_void) -> core::ffi::c_int,
-    );
 }
 
 impl _LOCALE_ENTRY {
@@ -519,59 +513,27 @@ pub static RtlpLocaleTable: [LOCALE_ENTRY; 448] = [
 
 pub static mut RtlpLocaleIndexTable: [USHORT; 448] = [0; 448];
 
-#[repr(C)]
-pub struct _SORT_ENTRY {
-    pub Lcid: LCID,
-    pub Index: USHORT,
-}
-pub type SORT_ENTRY = _SORT_ENTRY;
-pub type PSORT_ENTRY = *mut _SORT_ENTRY;
-unsafe extern "C" fn LcidSortEntryCompare(a: *const core::ffi::c_void, b: *const core::ffi::c_void) -> core::ffi::c_int {
-    let SortEntryA = a as PSORT_ENTRY;
-    let SortEntryB = b as PSORT_ENTRY;
-    ((*SortEntryA).Lcid - (*SortEntryB).Lcid) as core::ffi::c_int
-}
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlpInitializeLocaleTable() -> NTSTATUS {
-    let SortTable: PSORT_ENTRY;
-    let SortTableSize: SIZE_T;
-
     NtQueryDefaultLocale(1u8, core::ptr::addr_of_mut!(RtlpUserDefaultLcid));
     NtQueryDefaultLocale(0u8, core::ptr::addr_of_mut!(RtlpSystemDefaultLcid));
 
+    // An insertion sort into the index table, in place (upstream 3cc9aa99292): the kernel
+    // initializes this table too now and has no process heap for the old qsort copy. It
+    // also retires the comparator's `Lcid - Lcid` on unsigned values.
     let count = RtlpLocaleTable.len();
-    SortTableSize = (core::mem::size_of::<SORT_ENTRY>() * count) as SIZE_T;
-    SortTable = RtlAllocateHeap(RtlGetProcessHeap(), 0, SortTableSize as _) as PSORT_ENTRY;
-    if SortTable.is_null() {
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
     let mut i: USHORT = 0;
     while (i as usize) < count {
-        (*SortTable.add(i as usize)).Lcid = RtlpLocaleTable[i as usize].Lcid();
-        (*SortTable.add(i as usize)).Index = i;
+        let Lcid = RtlpLocaleTable[i as usize].Lcid();
+        let mut j: USHORT = i;
+        while j > 0 && RtlpLocaleTable[RtlpLocaleIndexTable[(j - 1) as usize] as usize].Lcid() > Lcid {
+            RtlpLocaleIndexTable[j as usize] = RtlpLocaleIndexTable[(j - 1) as usize];
+            j -= 1;
+        }
+        RtlpLocaleIndexTable[j as usize] = i;
         i += 1;
     }
-
-    qsort(
-        SortTable as *mut core::ffi::c_void,
-        count,
-        core::mem::size_of::<SORT_ENTRY>(),
-        LcidSortEntryCompare
-            as unsafe extern "C" fn(
-                *const core::ffi::c_void,
-                *const core::ffi::c_void,
-            ) -> core::ffi::c_int,
-    );
-
-    let mut i: USHORT = 0;
-    while (i as usize) < count {
-        RtlpLocaleIndexTable[i as usize] = (*SortTable.add(i as usize)).Index;
-        i += 1;
-    }
-
-    RtlFreeHeap(RtlGetProcessHeap(), 0, SortTable as PVOID);
 
     STATUS_SUCCESS
 }

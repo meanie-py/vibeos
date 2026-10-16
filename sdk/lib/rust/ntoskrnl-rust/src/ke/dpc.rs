@@ -990,6 +990,7 @@ pub unsafe extern "system" fn KeRemoveQueueDpc(Dpc: PKDPC) -> BOOLEAN {
     let Dpc = opaque_ptr(Dpc);
     let DpcData: PKDPC_DATA;
     let Enable: BOOLEAN;
+    let mut Removed: BOOLEAN = 0;
 
     Enable = KeDisableInterrupts();
 
@@ -1001,6 +1002,7 @@ pub unsafe extern "system" fn KeRemoveQueueDpc(Dpc: PKDPC) -> BOOLEAN {
             (*DpcData).DpcQueueDepth -= 1;
             RemoveEntryList(&mut (*Dpc).DpcListEntry as *mut LIST_ENTRY);
             (*Dpc).DpcData = core::ptr::null_mut();
+            Removed = 1;
         }
 
         KiReleaseSpinLock(&mut (*DpcData).DpcLock as *mut _ as PKSPIN_LOCK);
@@ -1008,7 +1010,8 @@ pub unsafe extern "system" fn KeRemoveQueueDpc(Dpc: PKDPC) -> BOOLEAN {
 
     KeRestoreInterrupts(Enable);
 
-    if !DpcData.is_null() { 1u8 } else { 0u8 }
+    // Another processor may have dequeued it before the lock was taken.
+    Removed
 }
 
 #[no_mangle]

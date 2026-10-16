@@ -668,10 +668,46 @@ def _crate_staticlibs(repo: Path, build_dir: Path, crate: Path) -> tuple[Path | 
         ps = [p for p in ps if p.is_file()]
         return max(ps, key=lambda p: p.stat().st_mtime) if ps else None
 
-    return (
-        _newest([p for p in cands if _in_cargo_target(p)]),
-        _newest([p for p in cands if not _in_cargo_target(p)]),
+    cargo_out = _newest([p for p in cands if _in_cargo_target(p)])
+    # A body the artifact store served is linked from a shared immutable blob, not a
+    # file under this tree, and any private copy left here is an old one. Its
+    # "cargo ran" clock is the lane's store reference for it, rewritten on every
+    # request, hit or miss: a blob's own mtime is not, since an edit that rebuilds to
+    # the same bytes reuses it.
+    ref = _store_ref(repo, build_dir.name.removeprefix("build-"), crate.name)
+    if ref is not None and (cargo_out is None or ref.stat().st_mtime > cargo_out.stat().st_mtime):
+        cargo_out = ref
+    return cargo_out, _newest([p for p in cands if not _in_cargo_target(p)])
+
+
+def _store_ref(repo: Path, arch: str, body: str) -> Path | None:
+    """This lane's newest artifact-store reference for `body` built for `arch`."""
+    root = os.environ.get("VIBEOS_ARTIFACT_STORE_ROOT") or str(
+        Path.home() / "vibeos-artifact-store"
     )
+    refs = Path(root) / "v1" / "refs"
+    if not refs.is_dir():
+        return None
+    lane = str(repo.resolve())
+    markers = (f"-{arch}-cargo-link/", f"/cell-link-v1-{arch}-")
+    newest = None
+    for path in refs.glob("*.json"):
+        try:
+            record = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        consumer = record.get("consumer", "")
+        fields = consumer.split("|")
+        if (
+            record.get("lane") == lane
+            and consumer.startswith("cargo:")
+            and len(fields) > 2
+            and fields[2] == body
+            and any(m in fields[1] for m in markers)
+            and (newest is None or path.stat().st_mtime > newest.stat().st_mtime)
+        ):
+            newest = path
+    return newest
 
 
 _CARGO_CALL_RE = re.compile(

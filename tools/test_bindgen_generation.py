@@ -29,6 +29,7 @@ def fixture_repo(root):
         "ntoskrnl/mm/ARM3/miarm.h",
         "sdk/include/ntddkbd.h",
         "sdk/include/ntddmou.h",
+        "sdk/include/reactos/x86x64/Cpuid.h",
     ):
         dest = root / name
         dest.parent.mkdir(parents=True, exist_ok=True)

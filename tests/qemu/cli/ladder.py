@@ -404,7 +404,22 @@ def stale_guests(repo: Path) -> list[str]:
 # without this probe a tree with no build-i386 would "refresh" into a partial set,
 # which is the all-or-nothing hole `gate_decision` reports.
 GUEST_PREREQ = "build-i386/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a"
+# The x86-64 ladder links build-amd64's own import libraries, which the amd64 build
+# that refreshes the guests makes only in its ninja stage, AFTER the refresh. On a
+# first (or half-configured) build-amd64 they cannot exist yet.
+GUEST_PREREQ_X64 = "build-amd64/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a"
 GUEST_TOOLCHAIN = ".build-tools/llvm-mingw/bin/i686-w64-mingw32-clang"
+
+
+def x64_refresh_deferred(repo: Path, todo: list[str]) -> list[str]:
+    """The entries of `todo` that cannot be built yet: x86-64 guests in a tree
+    whose build-amd64 has no importlibs. Empty once they exist. The amd64 build
+    builds these after its ninja and restages, so a fresh tree -- the merge
+    queue's integration tree is one -- still grades CURRENT x86-64 guests rather
+    than shipping stale ones until "the next build"."""
+    if (repo / GUEST_PREREQ_X64).is_file():
+        return []
+    return [t for t in todo if t.split(" ", 1)[0] in STAGED_LADDER]
 
 
 def guests_to_refresh(repo: Path) -> list[str]:
@@ -423,25 +438,6 @@ def guests_to_refresh(repo: Path) -> list[str]:
         else:
             out.extend(s for s in stale if s.startswith(f"{guest} ("))
     return out
-
-
-#: What every STAGED_LADDER guest links (build-hello-compute.sh's x64_guest): amd64's own
-#: import libraries, which a pruned or fresh build-amd64 gets only from the build that is
-#: about to stage the guests.
-X64_GUEST_PREREQ = "build-amd64/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a"
-
-
-def deferred_x64_guests(repo: Path, todo: list[str]) -> list[str]:
-    """The entries of `todo` (guests_to_refresh's) that cannot be built YET.
-
-    An x64 guest whose source is newer than its binary needs build-amd64's import libraries
-    to be rebuilt. When those do not exist the amd64 build that would make them must not
-    refuse to start over it -- on a pruned tree it then never could -- so these wait for
-    the next amd64 build, and the gate grades what the media carries meanwhile.
-    """
-    if (repo / X64_GUEST_PREREQ).is_file():
-        return []
-    return [entry for entry in todo if entry.split(" ", 1)[0] in STAGED_LADDER]
 
 
 def refresh_blocker(repo: Path) -> str | None:

@@ -48,6 +48,7 @@ pub mod userenv {
     pub mod registry; // per-user hive load/unload + registry copy helpers
     pub mod setup; // the shell-folder tables (CommonShellFolders/UserShellFolders) setup
     pub mod sid; // SID → profile-key string helpers
+    pub mod sha256; // FIPS 180-4 SHA-256 (AppContainer SID derivation)
     pub mod userenv; // DllMain + the module entry glue
 }
 

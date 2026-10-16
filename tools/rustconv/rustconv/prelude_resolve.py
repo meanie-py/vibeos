@@ -874,6 +874,11 @@ SHARED_CRATES: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
 #: got cabinet-rust's crate-internal #[no_mangle] copies as externs, which do not link.
 OPT_IN_SHARED = frozenset({"winelist_rust"})
 
+#: Shared crates that are user mode by nature: a kernel crate (one on ntkrnl-sys) never takes
+#: them. storport-rust's first resolve re-exported all of conutils-h -- console streams in a
+#: storage driver -- and made it a dependency, from names it never used.
+USERMODE_SHARED = frozenset({"conutils_h"})
+
 
 def _crate_calls(crate_dir: Path, names: set[str]) -> set[str]:
     """Which of `names` the crate's modules call (the prelude itself excluded)."""
@@ -931,7 +936,10 @@ def refresh_shared_crates(crate_dir: Path, workspace: Path) -> list[str]:
     own.discard("")
     changed: list[str] = []
     manifest = (crate_dir / "Cargo.toml").read_text()
+    kernel = bool(re.search(r"^ntkrnl-sys\s*=", manifest, re.M))
     for (ident, module), names in shared_provides(workspace).items():
+        if kernel and ident in USERMODE_SHARED:
+            continue
         if (
             ident in OPT_IN_SHARED
             and not re.search(rf"^{re.escape(ident.replace('_', '-'))}\s*=", manifest, re.M)

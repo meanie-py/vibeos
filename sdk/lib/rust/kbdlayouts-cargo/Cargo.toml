@@ -21,6 +21,10 @@ name = "kbd101a"
 path = "src/main.rs"
 
 [[bin]]
+name = "kbd103"
+path = "src/main.rs"
+
+[[bin]]
 name = "kbd106"
 path = "src/main.rs"
 

@@ -625,6 +625,7 @@ unsafe fn ObpCloseHandleTableEntry(
 unsafe fn ObpIncrementHandleCount(
     object: PVOID,
     access_state: PACCESS_STATE,
+    granted_access: *mut ACCESS_MASK,
     access_mode: KPROCESSOR_MODE,
     handle_attributes: ULONG,
     process: PEPROCESS,
@@ -776,23 +777,30 @@ unsafe fn ObpIncrementHandleCount(
 
     ObpReleaseObjectLock(object_header);
 
+    // The handle's access is settled HERE, before the open procedure, so the type can
+    // widen it: the NT6 *_LIMITED_INFORMATION rights that the full query/set rights imply
+    // (ObpAddImpliedAccess; upstream does the thread half in PspThreadOpen, f71318e5d6a).
+    // Callers without an access state (inherit, duplicate within the source's rights) pass
+    // the access they already hold.
+    if !access_state.is_null() {
+        let desired_access =
+            (*access_state).RemainingDesiredAccess | (*access_state).PreviouslyGrantedAccess;
+        *granted_access = ObpAddImpliedAccess(
+            object_type,
+            desired_access & ((*object_type).TypeInfo.ValidAccessMask | ACCESS_SYSTEM_SECURITY),
+        );
+    }
+
     status = STATUS_SUCCESS;
     if (*object_type).TypeInfo.OpenProcedure.is_some() {
         ObpCalloutStart(&mut callout_irql as *mut _);
-        // GrantedAccess is an in/out POINTER since the merge's NT6 callback change, so
-        // it needs a local the callee can write through — exactly as the C does.
-        let mut granted_access: ACCESS_MASK = if !access_state.is_null() {
-            (*access_state).PreviouslyGrantedAccess
-        } else {
-            0
-        };
         status = crate::obsecure::ObpCallOpenProcedure(
             (*object_type).TypeInfo.OpenProcedure,
             open_reason,
             probe_mode,
             process,
             object,
-            core::ptr::addr_of_mut!(granted_access),
+            granted_access,
             process_handle_count as ULONG,
         );
         ObpCalloutEnd(callout_irql, b"Open\0".as_ptr() as PCHAR, object_type, object);
@@ -971,6 +979,50 @@ unsafe fn ObpIncrementUnnamedHandleCount(
     status
 }
 
+
+// NT6: a full information right implies its LIMITED counterpart, so code that asks for
+// PROCESS_QUERY_LIMITED_INFORMATION (or the thread one) works through any handle opened
+// the old way. Measured on Windows 11: a process opened for 0x1F0FFF is granted
+// 0x1F3FFF, a thread opened for 0x1F03FF is granted 0x1F1FFF, and each right below
+// brings its partner alone. Applied wherever a handle's GrantedAccess is computed
+// (create, create-unnamed, duplicate).
+const PROCESS_SET_INFORMATION_: ACCESS_MASK = 0x0200;
+const PROCESS_QUERY_INFORMATION_: ACCESS_MASK = 0x0400;
+const PROCESS_QUERY_LIMITED_INFORMATION_: ACCESS_MASK = 0x1000;
+const PROCESS_SET_LIMITED_INFORMATION_: ACCESS_MASK = 0x2000;
+const THREAD_SUSPEND_RESUME_: ACCESS_MASK = 0x0002;
+const THREAD_SET_INFORMATION_: ACCESS_MASK = 0x0020;
+const THREAD_QUERY_INFORMATION_: ACCESS_MASK = 0x0040;
+const THREAD_SET_LIMITED_INFORMATION_: ACCESS_MASK = 0x0400;
+const THREAD_QUERY_LIMITED_INFORMATION_: ACCESS_MASK = 0x0800;
+const THREAD_RESUME_: ACCESS_MASK = 0x1000;
+
+extern "C" {
+    static mut PsThreadType: POBJECT_TYPE;
+}
+
+unsafe fn ObpAddImpliedAccess(object_type: POBJECT_TYPE, mut access: ACCESS_MASK) -> ACCESS_MASK {
+    if object_type == PsProcessType {
+        if access & PROCESS_QUERY_INFORMATION_ != 0 {
+            access |= PROCESS_QUERY_LIMITED_INFORMATION_;
+        }
+        if access & PROCESS_SET_INFORMATION_ != 0 {
+            access |= PROCESS_SET_LIMITED_INFORMATION_;
+        }
+    } else if object_type == PsThreadType {
+        if access & THREAD_QUERY_INFORMATION_ != 0 {
+            access |= THREAD_QUERY_LIMITED_INFORMATION_;
+        }
+        if access & THREAD_SET_INFORMATION_ != 0 {
+            access |= THREAD_SET_LIMITED_INFORMATION_;
+        }
+        if access & THREAD_SUSPEND_RESUME_ != 0 {
+            access |= THREAD_RESUME_;
+        }
+    }
+    access
+}
+
 unsafe fn ObpCreateUnnamedHandle(
     object: PVOID,
     mut desired_access: ACCESS_MASK,
@@ -1026,8 +1078,8 @@ unsafe fn ObpCreateUnnamedHandle(
         return status;
     }
 
-    granted_access = desired_access
-        & ((*object_type).TypeInfo.ValidAccessMask | ACCESS_SYSTEM_SECURITY);
+    granted_access = ObpAddImpliedAccess(object_type, desired_access
+        & ((*object_type).TypeInfo.ValidAccessMask | ACCESS_SYSTEM_SECURITY));
 
     if additional_references != 0 {
         InterlockedExchangeAddSizeT(
@@ -1099,8 +1151,7 @@ unsafe fn ObpCreateHandle(
     let object_type: POBJECT_TYPE;
     let handle_table: PVOID;
     let mut status: NTSTATUS;
-    let mut desired_access: ACCESS_MASK;
-    let mut granted_access: ACCESS_MASK;
+    let mut granted_access: ACCESS_MASK = 0;
     let aux_data: PAUX_ACCESS_DATA;
 
     object_header = OBJECT_TO_OBJECT_HEADER(object);
@@ -1133,6 +1184,7 @@ unsafe fn ObpCreateHandle(
     status = ObpIncrementHandleCount(
         object,
         access_state,
+        &mut granted_access as *mut _,
         access_mode,
         handle_attributes,
         PsGetCurrentProcess() as *mut _EPROCESS ,
@@ -1153,12 +1205,6 @@ unsafe fn ObpCreateHandle(
     }
 
     new_entry.__bindgen_anon_1.ObAttributes |= (handle_attributes & OBJ_HANDLE_ATTRIBUTES) as ObAttrType;
-
-    desired_access = (*access_state).RemainingDesiredAccess
-        | (*access_state).PreviouslyGrantedAccess;
-
-    granted_access = desired_access
-        & ((*object_type).TypeInfo.ValidAccessMask | ACCESS_SYSTEM_SECURITY);
 
     (*access_state).PreviouslyGrantedAccess = granted_access;
 
@@ -1361,7 +1407,6 @@ unsafe fn _ObpDuplicateHandleCallback(
 ) -> BOOLEAN {
     let object_header: POBJECT_HEADER;
     let mut ret = 0u8;
-    let mut access_state: _ACCESS_STATE = core::mem::zeroed();
     let mut status: NTSTATUS;
 
     ret = ((*handle_table_entry).__bindgen_anon_1.ObAttributes & OBJ_INHERIT as ObAttrType != 0) as u8;
@@ -1374,11 +1419,10 @@ unsafe fn _ObpDuplicateHandleCallback(
 
         ExUnlockHandleTableEntry(handle_table, old_entry);
 
-        access_state.PreviouslyGrantedAccess = (*handle_table_entry).__bindgen_anon_2.GrantedAccess;
-
         status = ObpIncrementHandleCount(
             core::ptr::addr_of_mut!((*object_header).Body) as PVOID,
-            &mut access_state as *mut _,
+            core::ptr::null_mut(),
+            core::ptr::addr_of_mut!((*handle_table_entry).__bindgen_anon_2.GrantedAccess),
             0i8,
             ((*handle_table_entry).__bindgen_anon_1.ObAttributes as ULONG) & OBJ_HANDLE_ATTRIBUTES,
             process,
@@ -1668,8 +1712,8 @@ pub unsafe extern "system" fn ObDuplicateObject(
         );
     }
 
-    target_access = desired_access
-        & ((*object_type).TypeInfo.ValidAccessMask | ACCESS_SYSTEM_SECURITY);
+    target_access = ObpAddImpliedAccess(object_type, desired_access
+        & ((*object_type).TypeInfo.ValidAccessMask | ACCESS_SYSTEM_SECURITY));
     new_handle_entry.__bindgen_anon_2.GrantedAccess = target_access;
 
     if target_access & !source_access != 0 {
@@ -1696,6 +1740,7 @@ pub unsafe extern "system" fn ObDuplicateObject(
         status = ObpIncrementHandleCount(
             source_object,
             passed_access_state,
+            core::ptr::addr_of_mut!(new_handle_entry.__bindgen_anon_2.GrantedAccess),
             previous_mode,
             handle_attributes,
             PsGetCurrentProcess() as *mut _EPROCESS ,

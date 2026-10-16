@@ -64,6 +64,16 @@ _ARCHES = ("i386", "amd64", "arm64")
 _VIA: dict[Path, Path] = {}
 
 
+#: {source dir: dir whose compiled TU carries its flags}, for sources no target compiles
+#: and no CMakeLists names any more (the keyboard layouts since cargo-drive: kbd_layouts
+#: registers each layout dir against dll/keyboard's kbdlayouts_flags stub).
+_FLAGS_DIRS: dict[Path, Path] = {}
+
+
+def register_flags_dir(source_dir: Path, flags_dir: Path) -> None:
+    _FLAGS_DIRS[source_dir.resolve()] = flags_dir.resolve()
+
+
 def register_via(header: Path, tu: Path) -> None:
     _VIA[header.resolve()] = tu.resolve()
     function_like_macros.cache_clear()
@@ -507,8 +517,12 @@ def _sibling_target_entry(repo_root: Path, arch: str, source: Path) -> list[str]
 
 
 def _borrow_dirs(repo_root: Path, source: Path) -> list[Path]:
-    """The TU's own directory, then the nearest ancestor whose CMakeLists.txt names it."""
+    """The TU's own directory, then a registered flags dir, then the nearest ancestor whose
+    CMakeLists.txt names it."""
     dirs = [source.parent.relative_to(repo_root)]
+    flags_dir = _FLAGS_DIRS.get(source.parent.resolve())
+    if flags_dir is not None:
+        return [*dirs, flags_dir.relative_to(repo_root.resolve())]
     for ancestor in source.parent.parents:
         if ancestor == repo_root or repo_root not in ancestor.parents:
             break

@@ -237,6 +237,9 @@ class Discovery:
         self.roots: dict[str, Path] = {}
         self.raw_manifests: dict[str, str] = {}
         self.evidence: dict = {}
+        # In-repo data files a package embeds from outside its own root (hal-rust's
+        # pci.ids tables): repo-relative path -> digest. Part of the action key.
+        self.data_inputs: dict[str, dict] = {}
 
     def logical(self, path: Path) -> str:
         if not _under(path.resolve(), self.repo):
@@ -285,8 +288,16 @@ class Discovery:
             raise Ineligible(f"{logical}: inherited workspace package fields unsupported")
         library = raw.get("lib", {})
         _check_keys(library, LIB_KEYS, f"{logical}/lib")
-        if raw.get("lints"):
-            raise Ineligible(f"{logical}: manifest lints not yet modeled")
+        # Lints change diagnostics, never codegen; they are still part of the key, and
+        # the worker's manifest carries them, so it reports what the lane reports.
+        # (fastfat-rust's [lints.rust] declares its never-set check-cfg names.)
+        lints = raw.get("lints", {})
+        if (
+            not isinstance(lints, dict)
+            or lints.get("workspace")
+            or any(not isinstance(table, dict) for table in lints.values())
+        ):
+            raise Ineligible(f"{logical}: only package-local [lints.<tool>] tables supported")
         self.manifests[logical] = raw
         self.roots[logical] = manifest.parent
         self.raw_manifests[logical] = data.decode()
@@ -556,6 +567,36 @@ class Discovery:
             # proves a deliberately absent dylib does not become a body input.
         if re.search(r"\.(?:incbin|include)\s", text):
             raise Ineligible(f"{key}: assembly external input unsupported in {path.name}")
+        # A data embed relative to the package dir, the one computed include modeled:
+        # include_bytes!/include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "<literal>")).
+        # A target outside the package root must be a regular file in the repository,
+        # outside outputs and VCS; its bytes are keyed and captured like a source.
+        # Not include!: code from outside the package would escape this audit.
+        manifest_dir = re.compile(
+            r"\b(include_str|include_bytes)\s*!\s*\(\s*concat\s*!\s*\(\s*env\s*!\s*"
+            r'\(\s*"CARGO_MANIFEST_DIR"\s*\)\s*,\s*"([^"\\]*)"\s*,?\s*\)\s*,?\s*\)'
+        )
+        for match in list(manifest_dir.finditer(text)):
+            target = Path(str(root) + match.group(2)).resolve()
+            rel = target.relative_to(self.repo).parts if _under(target, self.repo) else ()
+            if (
+                not rel
+                or rel[0] in {"target", ".git"}
+                or rel[0].startswith("build-")
+                or "target" in rel
+                or not target.is_file()
+                or target.is_symlink()
+            ):
+                raise Ineligible(
+                    f"{key}: data include outside the repository sources in {path.name}"
+                )
+            if not _under(target, root):
+                data = self.read(target)
+                self.data_inputs[self.logical(target)] = {
+                    "sha256": hashlib.sha256(data).hexdigest(),
+                    "bytes": len(data),
+                }
+            text = text.replace(match.group(0), " " * len(match.group(0)), 1)
         # Deliberately conservative textual inspection also sees comments and
         # inactive cfg branches. Nonliteral includes are unsupported.
         for match in re.finditer(
@@ -711,6 +752,7 @@ def discover(
             packages[key] = {
                 "package": raw["package"],
                 "lib": raw.get("lib", {}),
+                "lints": raw.get("lints", {}),
                 "features": node["features"],
                 "edges": node["edges"],
                 "inventory": state.inventory(key),
@@ -734,6 +776,9 @@ def discover(
             "packages": packages,
             "lock": lock_projection,
         }
+        if state.data_inputs:
+            # Only when present, so every action without one keeps its key.
+            descriptor["data_inputs"] = dict(sorted(state.data_inputs.items()))
         result["source_projection_key"] = digest(descriptor)
         result["descriptor"] = {**descriptor, "context": context}
         result["whole_manifest_key"] = digest(

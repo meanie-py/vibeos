@@ -47,3 +47,28 @@ def test_an_export_the_c_does_not_define_is_an_error(tmp_path, monkeypatch):
     )
     with pytest.raises(kl.LayoutError, match="KbdNlsLayerDescriptor"):
         kl.wire_spec("kbdxx", {"mod.rs": MOD})
+
+
+CELL = """# header
+
+[package]
+name = "kbdlayouts-cargo"
+
+[[bin]]
+name = "kbda"
+path = "src/main.rs"
+
+[[bin]]
+name = "kbdc"
+path = "src/main.rs"
+"""
+
+
+def test_the_cell_gets_a_bin_per_layout_in_list_order(tmp_path):
+    cell = tmp_path / "Cargo.toml"
+    cell.write_text(CELL)
+    assert kl.wire_bins(["kbda", "kbdb", "kbdc"], cell)
+    assert cell.read_text() == CELL.replace(
+        '[[bin]]\nname = "kbdc"', '[[bin]]\nname = "kbdb"\npath = "src/main.rs"\n\n[[bin]]\nname = "kbdc"'
+    )
+    assert not kl.wire_bins(["kbda", "kbdb", "kbdc"], cell)

@@ -14,6 +14,7 @@ use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 use super::helpers::*;
 
 extern "system" {
+    fn MmRebalanceMemoryConsumers();
     fn MmRebalanceMemoryConsumersAndWait();
 }
 #[cfg(target_arch = "x86")]
@@ -2601,7 +2602,15 @@ pub unsafe extern "system" fn MmArmAccessFault(
         // parked in faults for 2h at 768M, 20261010-054207-p5m0hi2a). Failing the
         // fault kills only the starving app, whose exit frees the pages that
         // kernel-internal waiters (MiMakeSystemAddressValid) retry for.
-        MmRebalanceMemoryConsumersAndWait();
+        // Never wait on the balancer while holding AddressCreationLock (upstream
+        // CORE-20761): its trim can need that lock, so only kick it.
+        if (*(CurrentProcess as *mut _EPROCESS)).AddressCreationLock.Owner as PVOID
+            == KeGetCurrentThread() as PVOID
+        {
+            MmRebalanceMemoryConsumers();
+        } else {
+            MmRebalanceMemoryConsumersAndWait();
+        }
     }
 
     Status

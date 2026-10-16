@@ -94,6 +94,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_payload_drain.py"),
     (".", ".", "tools/test_wine_registry_resources.py"),
     (".", ".", "tools/test_gen_delaylib.py"),
+    (".", ".", "tools/test_gen_apisets_table.py"),
     # The characterisation driver's accusation rule. Its failure mode is to
     # quarantine INNOCENT tests -- it blamed seven for a drain bug, and four more
     # for the VM watchdog on the very next run after that was fixed. Raising
@@ -354,6 +355,14 @@ def check_tooling(args, repo: Path) -> int:
                     {"cwd": repo / pkg, "env_pp": pp},
                 )
             )
+
+    if getattr(args, "skip_generated", False):
+        from .tooling_receipts import GENERATED_INPUT_CHECKS
+
+        skipped = sorted(label for label, _c, _k in checks if label in GENERATED_INPUT_CHECKS)
+        checks = [check for check in checks if check[0] not in GENERATED_INPUT_CHECKS]
+        for label in skipped:
+            print(f"  - {label}  SKIPPED (--skip-generated: reads this tree's build output)")
 
     from contextlib import nullcontext
 

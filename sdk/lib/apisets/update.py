@@ -18,7 +18,11 @@ REDIRECT_HOSTS = {
     'ucrtbase.dll': 'msvcrt.dll',
     'shcore.dll': 'shell32.dll',
     'winmmbase.dll': 'winmm.dll',
-    'gdi32full.dll': 'gdi32.dll'
+    'gdi32full.dll': 'gdi32.dll',
+    # advapi32 still carries the service, LSA lookup, SDDL, credential and CryptoAPI
+    # functions Windows moved into these two.
+    'sechost.dll': 'advapi32.dll',
+    'cryptsp.dll': 'advapi32.dll',
 }
 
 OUTPUT_HEADER = """/*

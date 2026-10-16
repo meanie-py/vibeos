@@ -286,6 +286,12 @@ def _find_defs(code: str, name: str):
 
         line_start = code.rfind("\n", 0, hm.start()) + 1
         indent = code[line_start : hm.start()]
+        # Attributes sharing the signature's line (`#[no_mangle] pub unsafe extern "system" fn`,
+        # the deterministic lowering's one-line shape) are scaffolding like the lines above it,
+        # not indentation: taken as indent, every rewrite prefixed its own `#[no_mangle]` lines
+        # with them (storport's StorPortWritePortUshort came out with three).
+        if indent.strip() and _ATTR_OR_BLANK.match(indent):
+            indent = indent[: len(indent) - len(indent.lstrip(" \t"))]
         span_start = line_start
         while span_start > 0:
             prev_nl = span_start - 1

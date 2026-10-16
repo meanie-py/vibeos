@@ -38,6 +38,7 @@ KMT_TESTFUNC Test_HalPortIo;
 KMT_TESTFUNC Test_HalSystemInfo;
 KMT_TESTFUNC Test_IoCreateFile;
 KMT_TESTFUNC Test_IoDeviceInterface;
+KMT_TESTFUNC Test_IoDeviceProperty;
 KMT_TESTFUNC Test_IoEvent;
 KMT_TESTFUNC Test_IoFilesystem;
 KMT_TESTFUNC Test_IoInterrupt;
@@ -133,6 +134,7 @@ const KMT_TEST TestList[] =
     { "HalSystemInfo",                      Test_HalSystemInfo },
     { "IoCreateFile",                       Test_IoCreateFile },
     { "IoDeviceInterface",                  Test_IoDeviceInterface },
+    { "IoDeviceProperty",                   Test_IoDeviceProperty },
     { "IoEvent",                            Test_IoEvent },
     { "IoFilesystem",                       Test_IoFilesystem },
     { "IoInterrupt",                        Test_IoInterrupt },

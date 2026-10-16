@@ -71,13 +71,12 @@ could have caught in seconds. Every line below is a batch that actually bounced.
 - **`./vibeos-cli check-tooling`** when the lane touches `tools/*.py`. `ruff check` plus a `-k`
   pytest subset is NOT this gate: `ruff format --check` is a separate check inside it, and one
   unformatted dict literal bounced a batch as TOOLING_FAIL after the full queue wait.
-- **`./vibeos-cli check --strict --scope source-deferred`** when the lane adds a file walk,
-  or any Python the source scanners read. The gate runs that partition in STRICT mode and
-  plain `check` does not, so `check` goes green on exactly what the conductor rejects as
-  LINT_FAIL. It takes ten seconds and reproduces the verdict. (`scan_unpruned_walk` bounced a
-  batch for a bare `rglob("*.rs")` over a crate — not a style point: a crate's `target/` holds
-  generated copies of its own modules, so an unpruned walk answers questions from build
-  artifacts. Use `tools/source_walk.py source_files()`.)
+- **`./vibeos-cli check`** before any submission. It runs every source scanner and FAILS on a
+  NEW finding with or without `--strict` (until 2026-10-16 it only warned, so it went green on
+  exactly what the conductor rejects as LINT_FAIL). `--strict` adds only the coverage rule and
+  the per-arch guards. (`scan_unpruned_walk` once bounced a batch for a bare `rglob("*.rs")`
+  over a crate — a crate's `target/` holds generated copies of its own modules, so an unpruned
+  walk answers questions from build artifacts. Use `tools/source_walk.py source_files()`.)
 - **`./vibeos-cli difftest`** when the lane wires a new `.rs` into `msvcrt-crt-rust` /
   `cnt-rust` / `rtl-rust`. The host harness links the subject crate beside the reference C, so a
   new `#[no_mangle]` can collide with a test's own fake stub or the reference TU's data globals

@@ -1,18 +1,19 @@
+# storport-rust — see src/lib.rs for the module map.
 [package]
 name = "storport-rust"
 version = "0.1.0"
 edition = "2021"
 autobins = false
-autoexamples = false
-autotests = false
-autobenches = false
 
 [lib]
+name = "storport_rust"
+path = "src/lib.rs"
 crate-type = ["staticlib"]
 
 [dependencies]
-panic-common = { path = "../panic-common", features = ["kernel"] }
-ntkrnl-sys = { path = "../ntkrnl-sys" }
-# C-variadic entry points -> drivers/storage/port/storport/rust_varargs_shim.c (stable
-# Rust cannot DEFINE one, nor va_arg); VaArgs reads the va_list it hands over.
+strsafe-rust = { path = "../strsafe-rust" }
+# C-variadic entry points -> rust_varargs_shim.c (stable Rust cannot define one).
 varargs-rust = { path = "../varargs-rust" }
+panic-common = { path = "../panic-common", features = ["kernel"] }
+ntkrnl-sys = { path = "../ntkrnl-sys", features = ["driver_slist"] }
+win32macros-rust = { path = "../win32macros-rust" }

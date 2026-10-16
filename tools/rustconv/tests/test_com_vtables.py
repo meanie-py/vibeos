@@ -74,3 +74,49 @@ def test_methods_dispatch_through_the_slot_with_this_first():
     # A `void` slot: no return type, and the `->` of a sibling never unbalances the split.
     assert "pub unsafe fn Ping(&mut self, n: DWORD) {" in impls
     assert "Some(f) => f(self, n)," in impls
+
+
+def test_an_imported_bindgen_helper_is_not_shadowed_by_the_c_pass_copy():
+    from rustconv.com_vtables import merge
+
+    island = (
+        "pub struct IFoo {\n    pub vtable_: *const IFoo__bindgen_vtable,\n}\n"
+        "pub struct S {\n    pub _bitfield_1: __BindgenBitfieldUnit<[u8; 4usize]>,\n}\n"
+    )
+    c_pass = (
+        "pub struct __BindgenBitfieldUnit<Storage> {\n    storage: Storage,\n}\n"
+        "pub struct IFoo {\n    pub lpVtbl: *mut IFooVtbl,\n}\n"
+        "pub struct IFooVtbl {\n    pub x: u32,\n}\n"
+    )
+    text, _ = merge(island, c_pass)
+    assert "pub struct __BindgenBitfieldUnit" not in text
+    assert "pub struct IFooVtbl" in text
+
+
+def test_a_slot_declared_without_this_gets_it_back():
+    from rustconv.com_vtables import merge
+
+    island = "pub struct IFoo {\n    pub vtable_: *const IFoo__bindgen_vtable,\n}\n"
+    c_pass = (
+        "pub struct IFoo {\n    pub lpVtbl: *mut IFooVtbl,\n}\n"
+        "pub struct IFooVtbl {\n"
+        '    pub Release: Option<unsafe extern "system" fn(This: *mut IFoo) -> ULONG>,\n'
+        '    pub Init: Option<unsafe extern "system" fn(flags: ULONG) -> HRESULT>,\n'
+        "}\n"
+    )
+    text, _ = merge(island, c_pass)
+    assert "fn(This: *mut IFoo) -> ULONG" in text
+    assert "fn(This: *mut IFoo, flags: ULONG) -> HRESULT" in text
+
+
+def test_a_capitalized_parameter_cannot_be_read_as_a_constant_pattern():
+    island = (
+        "pub struct IFoo {\n    pub lpVtbl: *mut IFooVtbl,\n}\n"
+        "pub struct IFooVtbl {\n"
+        '    pub Help: Option<unsafe extern "system" fn(This: *mut IFoo, Unknown: ULONG) '
+        "-> HRESULT>,\n"
+        "}\n"
+    )
+    impls = com_vtables.methods(island)
+    assert "pub unsafe fn Help(&mut self, Unknown_: ULONG) -> HRESULT {" in impls
+    assert "Some(f) => f(self, Unknown_)," in impls

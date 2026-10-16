@@ -29,7 +29,7 @@ endif()
 add_rostests_file(TARGET combase_winetest)
 add_library(wine.combase.test MODULE wine.combase.test.c ${CMAKE_CURRENT_BINARY_DIR}/wine.combase.test.def)
 target_link_libraries(wine.combase.test wine)
-set_module_type(wine.combase.test win32dll)
+set_module_type(wine.combase.test win32dll IMAGEBASE default)
 add_importlibs(wine.combase.test combase msvcrt kernel32 ntdll)
 
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU")

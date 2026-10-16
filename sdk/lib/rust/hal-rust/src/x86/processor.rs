@@ -40,7 +40,7 @@ pub unsafe extern "system" fn HaliHaltSystem() {
 
 // (smp APIC build: the MP-aware version in smp_processor.rs takes the symbol;
 // hal_pic stays UP so it keeps this stub)
-#[cfg(any(not(feature = "smp"), hal_pic, feature = "minihal"))]
+#[cfg(any(not(feature = "smp"), all(target_arch = "x86", not(feature = "apic")), feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalAllProcessorsStarted() -> BOOLEAN {
     1 /* TRUE */

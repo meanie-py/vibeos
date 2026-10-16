@@ -305,6 +305,7 @@ pub const MAXUCHAR: u32 = 255;
 pub const MAXUSHORT: u32 = 65535;
 pub const MAXULONG: u32 = 4294967295;
 pub const MAXLONGLONG: u64 = 9223372036854775807;
+pub const MINLONGLONG: i64 = -9223372036854775808;
 pub const VER_WORKSTATION_NT: u32 = 1073741824;
 pub const VER_SERVER_NT: u32 = 2147483648;
 pub const VER_SUITE_SMALLBUSINESS: u32 = 1;
@@ -2641,6 +2642,42 @@ pub const PNP_DEVICE_FAILED: u32 = 4;
 pub const PNP_DEVICE_REMOVED: u32 = 8;
 pub const PNP_DEVICE_RESOURCE_REQUIREMENTS_CHANGED: u32 = 16;
 pub const PNP_DEVICE_NOT_DISABLEABLE: u32 = 32;
+pub const DEVPROP_TYPEMOD_ARRAY: u32 = 4096;
+pub const DEVPROP_TYPEMOD_LIST: u32 = 8192;
+pub const DEVPROP_TYPE_EMPTY: u32 = 0;
+pub const DEVPROP_TYPE_NULL: u32 = 1;
+pub const DEVPROP_TYPE_SBYTE: u32 = 2;
+pub const DEVPROP_TYPE_BYTE: u32 = 3;
+pub const DEVPROP_TYPE_INT16: u32 = 4;
+pub const DEVPROP_TYPE_UINT16: u32 = 5;
+pub const DEVPROP_TYPE_INT32: u32 = 6;
+pub const DEVPROP_TYPE_UINT32: u32 = 7;
+pub const DEVPROP_TYPE_INT64: u32 = 8;
+pub const DEVPROP_TYPE_UINT64: u32 = 9;
+pub const DEVPROP_TYPE_FLOAT: u32 = 10;
+pub const DEVPROP_TYPE_DOUBLE: u32 = 11;
+pub const DEVPROP_TYPE_DECIMAL: u32 = 12;
+pub const DEVPROP_TYPE_GUID: u32 = 13;
+pub const DEVPROP_TYPE_CURRENCY: u32 = 14;
+pub const DEVPROP_TYPE_DATE: u32 = 15;
+pub const DEVPROP_TYPE_FILETIME: u32 = 16;
+pub const DEVPROP_TYPE_BOOLEAN: u32 = 17;
+pub const DEVPROP_TYPE_STRING: u32 = 18;
+pub const DEVPROP_TYPE_STRING_LIST: u32 = 8210;
+pub const DEVPROP_TYPE_SECURITY_DESCRIPTOR: u32 = 19;
+pub const DEVPROP_TYPE_SECURITY_DESCRIPTOR_STRING: u32 = 20;
+pub const DEVPROP_TYPE_DEVPROPKEY: u32 = 21;
+pub const DEVPROP_TYPE_DEVPROPTYPE: u32 = 22;
+pub const DEVPROP_TYPE_BINARY: u32 = 4099;
+pub const DEVPROP_TYPE_ERROR: u32 = 23;
+pub const DEVPROP_TYPE_NTSTATUS: u32 = 24;
+pub const DEVPROP_TYPE_STRING_INDIRECT: u32 = 25;
+pub const MAX_DEVPROP_TYPE: u32 = 25;
+pub const MAX_DEVPROP_TYPEMOD: u32 = 8192;
+pub const DEVPROP_MASK_TYPE: u32 = 4095;
+pub const DEVPROP_MASK_TYPEMOD: u32 = 61440;
+pub const DEVPROPID_FIRST_USABLE: u32 = 2;
+pub const PLUGPLAY_PROPERTY_PERSISTENT: u32 = 1;
 pub const PNP_REPLACE_NO_MAP: u64 = 9223372036854775807;
 pub const PNP_REPLACE_PARAMETERS_VERSION: u32 = 2;
 pub const PNP_REPLACE_DRIVER_INTERFACE_VERSION: u32 = 1;
@@ -3141,8 +3178,8 @@ pub const THREAD_SET_INFORMATION: u32 = 32;
 pub const THREAD_SET_LIMITED_INFORMATION: u32 = 1024;
 pub const THREAD_QUERY_LIMITED_INFORMATION: u32 = 2048;
 pub const PROCESS_DUP_HANDLE: u32 = 64;
-pub const PROCESS_ALL_ACCESS: u32 = 2035711;
-pub const THREAD_ALL_ACCESS: u32 = 2032639;
+pub const PROCESS_ALL_ACCESS: u32 = 2097151;
+pub const THREAD_ALL_ACCESS: u32 = 2097151;
 pub const LOW_PRIORITY: u32 = 0;
 pub const LOW_REALTIME_PRIORITY: u32 = 16;
 pub const HIGH_PRIORITY: u32 = 31;
@@ -15802,6 +15839,22 @@ pub struct _TARGET_DEVICE_REMOVAL_NOTIFICATION {
 }
 pub type TARGET_DEVICE_REMOVAL_NOTIFICATION = _TARGET_DEVICE_REMOVAL_NOTIFICATION;
 pub type PTARGET_DEVICE_REMOVAL_NOTIFICATION = *mut _TARGET_DEVICE_REMOVAL_NOTIFICATION;
+pub type DEVPROPTYPE = ULONG;
+pub type PDEVPROPTYPE = *mut ULONG;
+pub type DEVPROP_BOOLEAN = CHAR;
+pub type PDEVPROP_BOOLEAN = *mut CHAR;
+pub type DEVPROPGUID = GUID;
+pub type PDEVPROPGUID = *mut GUID;
+pub type DEVPROPID = ULONG;
+pub type PDEVPROPID = *mut ULONG;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _DEVPROPKEY {
+    pub fmtid: DEVPROPGUID,
+    pub pid: DEVPROPID,
+}
+pub type DEVPROPKEY = _DEVPROPKEY;
+pub type PDEVPROPKEY = *mut _DEVPROPKEY;
 pub type PREPLACE_MAP_MEMORY = ::core::option::Option<
     unsafe extern "system" fn(
         TargetPhysicalAddress: PHYSICAL_ADDRESS,
@@ -52425,6 +52478,9 @@ pub struct _EXTENDED_DEVOBJ_EXTENSION {
     pub StartIoKey: LONG,
     pub StartIoFlags: ULONG,
     pub Vpb: *mut _VPB,
+    pub DependencyNode: PVOID,
+    pub InterruptContext: PVOID,
+    pub VerifierContext: PVOID,
 }
 pub type EXTENDED_DEVOBJ_EXTENSION = _EXTENDED_DEVOBJ_EXTENSION;
 pub type PEXTENDED_DEVOBJ_EXTENSION = *mut _EXTENDED_DEVOBJ_EXTENSION;
@@ -56719,10 +56775,12 @@ pub const _PLUGPLAY_EVENT_CATEGORY_DeviceClassChangeEvent: _PLUGPLAY_EVENT_CATEG
 pub const _PLUGPLAY_EVENT_CATEGORY_CustomDeviceEvent: _PLUGPLAY_EVENT_CATEGORY = 3;
 pub const _PLUGPLAY_EVENT_CATEGORY_DeviceInstallEvent: _PLUGPLAY_EVENT_CATEGORY = 4;
 pub const _PLUGPLAY_EVENT_CATEGORY_DeviceArrivalEvent: _PLUGPLAY_EVENT_CATEGORY = 5;
-pub const _PLUGPLAY_EVENT_CATEGORY_PowerEvent: _PLUGPLAY_EVENT_CATEGORY = 6;
-pub const _PLUGPLAY_EVENT_CATEGORY_VetoEvent: _PLUGPLAY_EVENT_CATEGORY = 7;
-pub const _PLUGPLAY_EVENT_CATEGORY_BlockedDriverEvent: _PLUGPLAY_EVENT_CATEGORY = 8;
-pub const _PLUGPLAY_EVENT_CATEGORY_MaxPlugEventCategory: _PLUGPLAY_EVENT_CATEGORY = 9;
+pub const _PLUGPLAY_EVENT_CATEGORY_VetoEvent: _PLUGPLAY_EVENT_CATEGORY = 6;
+pub const _PLUGPLAY_EVENT_CATEGORY_BlockedDriverEvent: _PLUGPLAY_EVENT_CATEGORY = 7;
+pub const _PLUGPLAY_EVENT_CATEGORY_InvalidIDEvent: _PLUGPLAY_EVENT_CATEGORY = 8;
+pub const _PLUGPLAY_EVENT_CATEGORY_DevicePropertyChangeEvent: _PLUGPLAY_EVENT_CATEGORY = 9;
+pub const _PLUGPLAY_EVENT_CATEGORY_DeviceInstanceRemovalEvent: _PLUGPLAY_EVENT_CATEGORY = 10;
+pub const _PLUGPLAY_EVENT_CATEGORY_MaxPlugEventCategory: _PLUGPLAY_EVENT_CATEGORY = 11;
 pub type _PLUGPLAY_EVENT_CATEGORY = ::core::ffi::c_uint;
 pub use self::_PLUGPLAY_EVENT_CATEGORY as PLUGPLAY_EVENT_CATEGORY;
 #[repr(C)]
@@ -67955,6 +68013,210 @@ pub struct _THREAD_NAME_INFORMATION {
 }
 pub type THREAD_NAME_INFORMATION = _THREAD_NAME_INFORMATION;
 pub type PTHREAD_NAME_INFORMATION = *mut _THREAD_NAME_INFORMATION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _THREAD_LAST_SYSCALL_INFORMATION {
+    pub FirstArgument: PVOID,
+    pub SystemCallNumber: USHORT,
+    pub WaitTime: ULONG64,
+}
+pub type THREAD_LAST_SYSCALL_INFORMATION = _THREAD_LAST_SYSCALL_INFORMATION;
+pub type PTHREAD_LAST_SYSCALL_INFORMATION = *mut _THREAD_LAST_SYSCALL_INFORMATION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _THREAD_CYCLE_TIME_INFORMATION {
+    pub AccumulatedCycles: ULONG64,
+    pub CurrentCycleCount: ULONG64,
+}
+pub type THREAD_CYCLE_TIME_INFORMATION = _THREAD_CYCLE_TIME_INFORMATION;
+pub type PTHREAD_CYCLE_TIME_INFORMATION = *mut _THREAD_CYCLE_TIME_INFORMATION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _THREAD_TEB_INFORMATION {
+    pub TebInformation: PVOID,
+    pub TebOffset: ULONG,
+    pub BytesToRead: ULONG,
+}
+pub type THREAD_TEB_INFORMATION = _THREAD_TEB_INFORMATION;
+pub type PTHREAD_TEB_INFORMATION = *mut _THREAD_TEB_INFORMATION;
+pub const _THREAD_UMS_INFORMATION_COMMAND_UmsInformationCommandInvalid:
+    _THREAD_UMS_INFORMATION_COMMAND = 0;
+pub const _THREAD_UMS_INFORMATION_COMMAND_UmsInformationCommandAttach:
+    _THREAD_UMS_INFORMATION_COMMAND = 1;
+pub const _THREAD_UMS_INFORMATION_COMMAND_UmsInformationCommandDetach:
+    _THREAD_UMS_INFORMATION_COMMAND = 2;
+pub const _THREAD_UMS_INFORMATION_COMMAND_UmsInformationCommandQuery:
+    _THREAD_UMS_INFORMATION_COMMAND = 3;
+pub type _THREAD_UMS_INFORMATION_COMMAND = ::core::ffi::c_uint;
+pub use self::_THREAD_UMS_INFORMATION_COMMAND as THREAD_UMS_INFORMATION_COMMAND;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _THREAD_UMS_INFORMATION {
+    pub Command: THREAD_UMS_INFORMATION_COMMAND,
+    pub CompletionList: *mut _RTL_UMS_COMPLETION_LIST,
+    pub UmsContext: *mut _RTL_UMS_CONTEXT,
+    pub __bindgen_anon_1: _THREAD_UMS_INFORMATION__bindgen_ty_1,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union _THREAD_UMS_INFORMATION__bindgen_ty_1 {
+    pub Flags: ULONG,
+    pub __bindgen_anon_1: _THREAD_UMS_INFORMATION__bindgen_ty_1__bindgen_ty_1,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _THREAD_UMS_INFORMATION__bindgen_ty_1__bindgen_ty_1 {
+    pub _bindgen_align: [u32; 0],
+    pub _bitfield_1: __BindgenBitfieldUnit<[u8; 4usize]>,
+}
+impl _THREAD_UMS_INFORMATION__bindgen_ty_1__bindgen_ty_1 {
+    #[inline]
+    #[allow(unnecessary_transmutes)]
+    pub fn IsUmsSchedulerThread(&self) -> ULONG {
+        unsafe { (self._bitfield_1.get_const::<0usize, 1u8>() as u32) }
+    }
+    #[inline]
+    #[allow(unnecessary_transmutes)]
+    pub fn set_IsUmsSchedulerThread(&mut self, val: ULONG) {
+        unsafe {
+            let val: u32 = val as u32;
+            self._bitfield_1.set_const::<0usize, 1u8>(val as u64)
+        }
+    }
+    #[inline]
+    #[allow(unnecessary_transmutes)]
+    pub unsafe fn IsUmsSchedulerThread_raw(this: *const Self) -> ULONG {
+        unsafe {
+            (
+                <__BindgenBitfieldUnit<[u8; 4usize]>>::raw_get_const::<0usize, 1u8>(
+                    ::core::ptr::addr_of!((*this)._bitfield_1),
+                ) as u32)
+        }
+    }
+    #[inline]
+    #[allow(unnecessary_transmutes)]
+    pub unsafe fn set_IsUmsSchedulerThread_raw(this: *mut Self, val: ULONG) {
+        unsafe {
+            let val: u32 = val as u32;
+            <__BindgenBitfieldUnit<[u8; 4usize]>>::raw_set_const::<0usize, 1u8>(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    #[allow(unnecessary_transmutes)]
+    pub fn IsUmsWorkerThread(&self) -> ULONG {
+        unsafe { (self._bitfield_1.get_const::<1usize, 1u8>() as u32) }
+    }
+    #[inline]
+    #[allow(unnecessary_transmutes)]
+    pub fn set_IsUmsWorkerThread(&mut self, val: ULONG) {
+        unsafe {
+            let val: u32 = val as u32;
+            self._bitfield_1.set_const::<1usize, 1u8>(val as u64)
+        }
+    }
+    #[inline]
+    #[allow(unnecessary_transmutes)]
+    pub unsafe fn IsUmsWorkerThread_raw(this: *const Self) -> ULONG {
+        unsafe {
+            (
+                <__BindgenBitfieldUnit<[u8; 4usize]>>::raw_get_const::<1usize, 1u8>(
+                    ::core::ptr::addr_of!((*this)._bitfield_1),
+                ) as u32)
+        }
+    }
+    #[inline]
+    #[allow(unnecessary_transmutes)]
+    pub unsafe fn set_IsUmsWorkerThread_raw(this: *mut Self, val: ULONG) {
+        unsafe {
+            let val: u32 = val as u32;
+            <__BindgenBitfieldUnit<[u8; 4usize]>>::raw_set_const::<1usize, 1u8>(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    #[allow(unnecessary_transmutes)]
+    pub fn SpareBits(&self) -> ULONG {
+        unsafe { (self._bitfield_1.get_const::<2usize, 30u8>() as u32) }
+    }
+    #[inline]
+    #[allow(unnecessary_transmutes)]
+    pub fn set_SpareBits(&mut self, val: ULONG) {
+        unsafe {
+            let val: u32 = val as u32;
+            self._bitfield_1.set_const::<2usize, 30u8>(val as u64)
+        }
+    }
+    #[inline]
+    #[allow(unnecessary_transmutes)]
+    pub unsafe fn SpareBits_raw(this: *const Self) -> ULONG {
+        unsafe {
+            (<__BindgenBitfieldUnit<[u8; 4usize]>>::raw_get_const::<
+                2usize,
+                30u8,
+            >(::core::ptr::addr_of!((*this)._bitfield_1))
+                as u32)
+        }
+    }
+    #[inline]
+    #[allow(unnecessary_transmutes)]
+    pub unsafe fn set_SpareBits_raw(this: *mut Self, val: ULONG) {
+        unsafe {
+            let val: u32 = val as u32;
+            <__BindgenBitfieldUnit<[u8; 4usize]>>::raw_set_const::<2usize, 30u8>(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    #[allow(unnecessary_transmutes)]
+    pub fn new_bitfield_1(
+        IsUmsSchedulerThread: ULONG,
+        IsUmsWorkerThread: ULONG,
+        SpareBits: ULONG,
+    ) -> __BindgenBitfieldUnit<[u8; 4usize]> {
+        let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 4usize]> = Default::default();
+        __bindgen_bitfield_unit.set_const::<0usize, 1u8>({
+            let IsUmsSchedulerThread: u32 = IsUmsSchedulerThread as u32;
+            IsUmsSchedulerThread as u64
+        });
+        __bindgen_bitfield_unit.set_const::<1usize, 1u8>({
+            let IsUmsWorkerThread: u32 = IsUmsWorkerThread as u32;
+            IsUmsWorkerThread as u64
+        });
+        __bindgen_bitfield_unit.set_const::<2usize, 30u8>({
+            let SpareBits: u32 = SpareBits as u32;
+            SpareBits as u64
+        });
+        __bindgen_bitfield_unit
+    }
+}
+pub type THREAD_UMS_INFORMATION = _THREAD_UMS_INFORMATION;
+pub type PTHREAD_UMS_INFORMATION = *mut _THREAD_UMS_INFORMATION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _THREAD_PROFILING_INFORMATION {
+    pub HardwareCounters: ULONG64,
+    pub Flags: ULONG,
+    pub Enable: ULONG,
+    pub PerformanceData: *mut _THREAD_PERFORMANCE_DATA,
+}
+pub type THREAD_PROFILING_INFORMATION = _THREAD_PROFILING_INFORMATION;
+pub type PTHREAD_PROFILING_INFORMATION = *mut _THREAD_PROFILING_INFORMATION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _POWER_THROTTLING_THREAD_STATE {
+    pub Version: ULONG,
+    pub ControlMask: ULONG,
+    pub StateMask: ULONG,
+}
+pub type POWER_THROTTLING_THREAD_STATE = _POWER_THROTTLING_THREAD_STATE;
+pub type PPOWER_THROTTLING_THREAD_STATE = *mut _POWER_THROTTLING_THREAD_STATE;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _JOB_SET_ARRAY {
@@ -83670,6 +83932,21 @@ pub struct _ACTIVATION_CONTEXT_DATA {
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _ASSEMBLY_STORAGE_MAP {
+    pub _address: u8,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _RTL_UMS_COMPLETION_LIST {
+    pub _address: u8,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _RTL_UMS_CONTEXT {
+    pub _address: u8,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _THREAD_PERFORMANCE_DATA {
     pub _address: u8,
 }
 #[repr(C)]

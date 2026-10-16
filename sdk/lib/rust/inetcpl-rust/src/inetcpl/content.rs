@@ -16,8 +16,8 @@ unsafe extern "C" fn display_cert_manager(parent: HWND, flags: DWORD) -> BOOL {
 
     return CryptUIDlgCertMgr(core::ptr::addr_of_mut!(dlg) as PCCRYPTUI_CERT_MGR_STRUCT);
 }
-#[no_mangle] #[no_mangle]
-#[no_mangle] pub unsafe extern "system" fn LaunchSiteCertDialog(parent: HWND) -> BOOL {
+#[no_mangle]
+pub unsafe extern "system" fn LaunchSiteCertDialog(parent: HWND) -> BOOL {
     return display_cert_manager(parent, 0);
 }
 #[no_mangle]

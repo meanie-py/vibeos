@@ -1525,7 +1525,6 @@ dependencies = [
 name = "e1000-rust"
 version = "0.1.0"
 dependencies = [
- "conutils-h",
  "ntkrnl-sys",
  "panic-common",
  "strsafe-rust",
@@ -4063,7 +4062,6 @@ dependencies = [
 name = "ntoskrnl_vista-rust"
 version = "0.1.0"
 dependencies = [
- "conutils-h",
  "ntkrnl-sys",
  "panic-common",
  "strsafe-rust",
@@ -4168,6 +4166,7 @@ version = "0.1.0"
 dependencies = [
  "com-sys",
  "panic-common",
+ "win32macros-rust",
  "winedebug-rust",
  "winelist-rust",
 ]
@@ -4542,6 +4541,18 @@ dependencies = [
 [[package]]
 name = "random"
 version = "0.1.0"
+
+[[package]]
+name = "rapps-rust"
+version = "0.1.0"
+dependencies = [
+ "atlclasses-rust",
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
 
 [[package]]
 name = "rapps_com-rust"
@@ -5612,7 +5623,6 @@ dependencies = [
 name = "sptilib-rust"
 version = "0.1.0"
 dependencies = [
- "conutils-h",
  "ntkrnl-sys",
  "panic-common",
  "strsafe-rust",
@@ -5666,7 +5676,9 @@ version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
  "panic-common",
+ "strsafe-rust",
  "varargs-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -6582,6 +6594,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "virtdisk-rust"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+]
+
+[[package]]
 name = "virtio-drivers"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6625,7 +6644,6 @@ dependencies = [
 name = "watchdog-rust"
 version = "0.1.0"
 dependencies = [
- "conutils-h",
  "ntkrnl-sys",
  "panic-common",
  "strsafe-rust",
@@ -6648,7 +6666,6 @@ dependencies = [
 name = "wdfldr-rust"
 version = "0.1.0"
 dependencies = [
- "conutils-h",
  "ntkrnl-sys",
  "panic-common",
  "strsafe-rust",
@@ -6696,6 +6713,13 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "wer-rust"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
 ]
 
 [[package]]

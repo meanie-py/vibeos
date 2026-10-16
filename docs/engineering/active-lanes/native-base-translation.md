@@ -56,8 +56,6 @@ What the batch added to the shared crates and tools:
   anonymous member instead.
 - **scan_cc_mismatch**: a qualified call into a `-sys` module that defines a Rust fn of
   that name (`ntkrnl_sys::inline::ke::KeInitializeSpinLock`) is not the crate's extern.
-- **vibeos-cli build**: on a pruned build-amd64, stale x64 WoW64 guests wait for the import
-  libraries that build produces, instead of failing the build (GUEST_BUILD_FAIL).
 
 ## Next (after A′)
 
@@ -91,8 +89,8 @@ What the batch added to the shared crates and tools:
 
 ## Lessons from E′+G that a resume should know
 
-- **Run `./vibeos-cli check --strict --scope source-deferred` before `land`.** The land
-  preflight runs it and plain `check` does not. On E′+G it caught a real bug: sptilib's
+- **Run `./vibeos-cli check` before `land`.** Since 2026-10-16 it fails on a NEW finding
+  in every source partition; before that only the land preflight's strict run did. On E′+G it caught a real bug: sptilib's
   `_SEH2_TRY` compiled as a no-op borrowed from cdfs, and resolve no longer donates PSEH
   names.
 - **A kernel-library crate needs a `TARGETS` entry** in

@@ -2,6 +2,7 @@
 list(APPEND _keyboard_layouts
     kbd101
     kbd101a
+    kbd103
     kbd106
     kbd106n
     kbda1
@@ -109,6 +110,12 @@ foreach(_keyboard_layout ${_keyboard_layouts})
 endforeach()
 add_library(kbdlayouts_res OBJECT ${_keyboard_rcs})
 add_dependencies(kbdlayouts_res xdk)
+
+# The layouts' C compile environment, kept for `python -m rustconv.kbd_layouts`: it ports a
+# layout from clang's AST of its .c, which no target compiles any more, so it borrows this
+# TU's command (the directory's flags, as the old per-layout targets had). Never linked.
+add_library(kbdlayouts_flags OBJECT EXCLUDE_FROM_ALL rust_cohab_stub.c)
+add_dependencies(kbdlayouts_flags xdk)
 
 add_cargo_module(kbdlayouts kbdlayouts-cargo .dll
     KIND win32dll

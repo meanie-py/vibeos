@@ -26,7 +26,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from . import c_data_port as cdp
-from . import cpp_lower
+from . import cpp_lower, cpp_templates
+from .cpp_templates import instance_key, instance_name
 
 
 def _anon_field(anon: ClassModel) -> str:
@@ -124,6 +125,14 @@ class ClassModel:
     # A class from outside the module the module's classes build on (ATL's CWindow): rendered
     # like a module class, but only the methods the module reaches are translated.
     external: bool = False
+    # The class template this class instantiates (`CUiWindow` for `CUiWindow_CTreeView`):
+    # inside its own bodies the bare template name is the injected class name, i.e. itself.
+    template: str | None = None
+    # Its template parameters and the arguments bound to them, `[("T", "CTreeView")]`: a
+    # body's text still spells `T` and `GrowthRate`, which mean the arguments here.
+    template_args: list[tuple[str, str]] = field(default_factory=list)
+    # BEGIN_COM_MAP entries (COM_INTERFACE_ENTRY(IFoo), ...), in order; None without a map.
+    com_map: list[MsgMapEntry] | None = None
 
     def method(self, name: str) -> list[Method]:
         return [m for m in self.methods if m.name == name]
@@ -177,6 +186,9 @@ class ModuleModel:
     # File-scope typedefs of the module's .cpp files, as (file, text): main.cpp's
     # `typedef HWND (WINAPI *FN_HtmlHelpW)(..)`. A header's are the island's.
     typedefs: list[tuple[str, str]] = field(default_factory=list)
+    # Each spelling of a template instantiation (cpp_templates.instance_key) -> the concrete
+    # class that lays it out (`CUiWindow<CTreeView>` -> `CUiWindow_CTreeView`).
+    instances: dict[str, str] = field(default_factory=dict)
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=1, sort_keys=True)
@@ -197,8 +209,11 @@ class ModuleModel:
                 methods.append(Method(**m))
             c["methods"] = methods
             c["constants"] = [tuple(k) for k in c.get("constants", [])]
+            c["template_args"] = [tuple(k) for k in c.get("template_args", [])]
             if c["msg_map"] is not None:
                 c["msg_map"] = [MsgMapEntry(**e) for e in c["msg_map"]]
+            if c.get("com_map") is not None:
+                c["com_map"] = [MsgMapEntry(**e) for e in c["com_map"]]
             out.classes[name] = ClassModel(**c)
         out.globals = [GlobalVar(**g) for g in raw["globals"]]
         out.functions = [FreeFunc(**f) for f in raw.get("functions", [])]
@@ -209,6 +224,7 @@ class ModuleModel:
         out.allocators = raw.get("allocators", {})
         out.allocator_fns = raw.get("allocator_fns", {})
         out.typedefs = [tuple(t) for t in raw.get("typedefs", [])]
+        out.instances = raw.get("instances", {})
         return out
 
 
@@ -235,6 +251,96 @@ def allocator_role(name: str, qual_type: str) -> str | None:
 # ---------------------------------------------------------------------------------------
 # AST helpers
 # ---------------------------------------------------------------------------------------
+
+
+_TEMPLATE_USE_RE = re.compile(r"\b(?:\w+::)*\w+\s*<")
+
+
+def _instance_spellings(written: str, desugared: str) -> list[tuple[str, str]]:
+    """Pair each template-id in `written` with its counterpart in `desugared`, in order:
+    `CLocalPtr<WCHAR> *` / `CLocalPtr<wchar_t> *` -> [("CLocalPtr<WCHAR>",
+    "CLocalPtr<wchar_t>")]. Only when both spell the same templates in the same order."""
+
+    def ids(text: str) -> list[str]:
+        out = []
+        for m in _TEMPLATE_USE_RE.finditer(text):
+            j, depth = m.end(), 1
+            while j < len(text) and depth:
+                depth += (text[j] == "<") - (text[j] == ">")
+                j += 1
+            if not depth:
+                out.append(text[m.start() : j])
+        return out
+
+    a, b = ids(written), ids(desugared)
+    if len(a) != len(b) or any(short_name(x) != short_name(y) for x, y in zip(a, b, strict=True)):
+        return []
+    return list(zip(a, b, strict=True))
+
+
+def _template_args(spec: dict) -> list[str]:
+    """A ClassTemplateSpecializationDecl's arguments as written by clang: a type's spelling,
+    an integer's value."""
+    out = []
+    for a in spec.get("inner", []):
+        if a.get("kind") != "TemplateArgument":
+            continue
+        if "type" in a:
+            out.append(a["type"]["qualType"])
+        elif "value" in a:
+            out.append(str(a["value"]))
+        else:
+            raise CppModelError(
+                f"template {spec.get('name')}: an argument that is neither a type nor a value"
+            )
+    return out
+
+
+def _signature_from_ast(n: dict) -> str:
+    """`int fnFileClose(INT_PTR hf)`: a FunctionDecl's declarator from its type and parameter
+    names, with its calling convention as winnt.h spells it."""
+    qt = n.get("type", {}).get("qualType", "")
+    params = []
+    for i, p in enumerate(x for x in n.get("inner", []) if x.get("kind") == "ParmVarDecl"):
+        t, name = p["type"]["qualType"], p.get("name", f"arg{i}")
+        # A reference/pointer to an array or function spells its name inside: `(&Base)[260]`.
+        # clang writes an instantiated one without the parentheses (`const char &[4]`).
+        m = re.fullmatch(r"(.*?)\(?([&*])\)?(\[.*\]|\(.*\))", t)
+        params.append(f"{m.group(1)}({m.group(2)}{name}){m.group(3)}" if m else f"{t} {name}")
+    cc = " WINAPI" if "stdcall" in qt else ""
+    static = "static " if n.get("storageClass") == "static" else ""
+    return f"{static}{_return_type(qt)}{cc} {n['name']}({', '.join(params) or 'void'})"
+
+
+def _template_param_names(tmpl: dict) -> list[str]:
+    return [
+        p.get("name", f"__param{i}")
+        for i, p in enumerate(
+            p
+            for p in tmpl.get("inner", [])
+            if p.get("kind")
+            in ("TemplateTypeParmDecl", "NonTypeTemplateParmDecl", "TemplateTemplateParmDecl")
+        )
+    ]
+
+
+def _template_defaults(tmpl: dict) -> list[tuple[str, ...] | None]:
+    """Each template parameter's default argument -- its spelling then clang's desugared
+    form, or an integer's value -- None if it has none."""
+    out: list[tuple[str, ...] | None] = []
+    for p in tmpl.get("inner", []):
+        if p.get("kind") not in ("TemplateTypeParmDecl", "NonTypeTemplateParmDecl"):
+            continue
+        d = p.get("defaultArg")
+        if d is None:
+            out.append(None)
+        elif "type" in d:
+            t = d["type"]
+            out.append(tuple(x for x in (t["qualType"], t.get("desugaredQualType")) if x))
+        else:
+            v = _const_value(p) if p.get("inner") else None
+            out.append(None if v is None else (str(v),))
+    return out
 
 
 def _file_of(node: dict, key: str = "loc") -> str | None:
@@ -348,6 +454,41 @@ def parse_msg_map(class_text: str) -> list[MsgMapEntry] | None:
     ]
 
 
+_COM_MAP_RE = re.compile(r"BEGIN_COM_MAP\s*\(\s*\w+\s*\)(?P<body>.*?)END_COM_MAP\s*\(\s*\)", re.S)
+
+
+def parse_com_map(class_text: str) -> list[MsgMapEntry] | None:
+    """The BEGIN_COM_MAP entries, in order: QueryInterface walks them FIRST MATCH, and
+    `IID_IUnknown` answers with the first one's interface."""
+    m = _COM_MAP_RE.search(class_text)
+    if m is None:
+        return None
+    body = re.sub(r"//[^\n]*|/\*.*?\*/", "", m.group("body"), flags=re.S)
+    return [
+        MsgMapEntry(e.group(1), [a.strip() for a in _split_top(e.group(2))])
+        for e in _MSG_ENTRY_RE.finditer(body)
+    ]
+
+
+# What CComObject<T> declares over a class with a COM map: the IUnknown its vtables call.
+_COM_OBJECT_UNKNOWN = (
+    ("QueryInterface", [Param("riid", "REFIID"), Param("ppvObject", "void **")], "HRESULT"),
+    ("AddRef", [], "ULONG"),
+    ("Release", [], "ULONG"),
+)
+
+
+def _add_com_object_unknown(cls: ClassModel) -> None:
+    """`CComObject<T>`'s QueryInterface/AddRef/Release, as members of T: body-less (nothing is
+    translated), rendered by cpp_app's COM-object glue, found by the interface vtables and by
+    a body's `p->AddRef()` like any member."""
+    for name, params, ret in _COM_OBJECT_UNKNOWN:
+        if not cls.method(name):
+            m = Method(name, "method", list(params), ret)
+            m.rust_name = name
+            cls.methods.append(m)
+
+
 def _split_top(text: str) -> list[str]:
     """Split on top-level commas. `<>` nests too: a map entry's template argument
     (`CHAIN_MSG_MAP(CBase<CCanvasWindow, x>)`) is one argument."""
@@ -383,6 +524,24 @@ EXTERNAL_CLASSES = {
     # atlimage.h: mspaint calls CImage's STATIC GetImporterFilterString/
     # GetExporterFilterString (GDI+ codec lists); only what is reached is translated.
     "CImage": "sdk/lib/atl/atlimage.h",
+    # rosctrls.h: header-only common-control wrappers over CWindow (no data of their own).
+    # certmgr hand-ported its slice before these were modeled; rapps derives from them, and
+    # CToolbar<TItemData> is a template, laid out per instantiation like a module one.
+    "CListView": "sdk/include/reactos/ui/rosctrls.h",
+    "CToolbar": "sdk/include/reactos/ui/rosctrls.h",
+    "CStatusBar": "sdk/include/reactos/ui/rosctrls.h",
+    "CTreeView": "sdk/include/reactos/ui/rosctrls.h",
+    "CTooltips": "sdk/include/reactos/ui/rosctrls.h",
+    # GDI+'s C++ API (psdk gdiplus*.h): header-only wrappers over the flat Gdip* exports.
+    # rapps draws its screenshot preview with Graphics/SolidBrush/Bitmap.
+    "GdiplusBase": "sdk/include/psdk/gdiplusbase.h",
+    "Graphics": "sdk/include/psdk/gdiplusgraphics.h",
+    "Image": "sdk/include/psdk/gdiplusheaders.h",
+    "Bitmap": "sdk/include/psdk/gdiplusheaders.h",
+    "Brush": "sdk/include/psdk/gdiplusbrush.h",
+    "SolidBrush": "sdk/include/psdk/gdiplusbrush.h",
+    "Color": "sdk/include/psdk/gdipluscolor.h",
+    "GdiplusStartupInput": "sdk/include/psdk/gdiplusinit.h",
 }
 # ATL's window templates are, for layout and member lookup, their CWindow: the template's own
 # machinery (thunk, Create, DefWindowProc, message routing) is atl_rust::win plus the per-class
@@ -405,6 +564,25 @@ ATL_IMPL_METHODS = cpp_lower.ATL_IMPL_METHODS
 
 def short_name(name: str) -> str:
     return name.split("<")[0].split("::")[-1].strip()
+
+
+# Which template argument of an ATL window template is its TBase (the class it derives from).
+_ATL_TBASE_ARG = {"CWindowImpl": 1, "CDialogImpl": 1, "CWindowImplBaseT": 0}
+
+
+def atl_base_alias(name: str) -> str:
+    """A base's short name for layout and member lookup: an ATL window template is its TBase
+    -- CWindow by default, but rapps' `CWindowImpl<CAppsListView, CListView>` derives from
+    rosctrls' CListView, whose methods the class calls as its own."""
+    t = short_name(name)
+    if t not in ATL_BASE_ALIASES:
+        return t
+    k = _ATL_TBASE_ARG.get(t)
+    if k is not None and "<" in name:
+        args = _split_top(name[name.index("<") + 1 : name.rindex(">")])
+        if len(args) > k:
+            return short_name(args[k])
+    return ATL_BASE_ALIASES[t]
 
 
 def _sig(m: Method) -> str:
@@ -527,6 +705,10 @@ class _Extractor:
         self._fn_defaults: dict[str, list[str | None]] = {}
         self._overloads: dict[str, list[str]] = {}
         self.method_by_id: dict[str, Method] = {}
+        # Every file-scope typedef seen (`WCHAR` -> `wchar_t`): instance keys (canon_key).
+        self.typedef_map: dict[str, str] = {}
+        # (function template, instantiation type) -> its free function's name.
+        self._fn_instances: dict[tuple[str, str], str] = {}
         # (Method | FreeFunc, CompoundStmt node, this class) to lower once the TU is walked:
         # a body can name a member of a class defined LATER in the same TU.
         self.pending: list[tuple[Method | FreeFunc, dict, str | None]] = []
@@ -548,12 +730,18 @@ class _Extractor:
     def walk(self, nodes: list, scope: str = "", record: str | None = None) -> None:
         for n in nodes:
             kind = n.get("kind")
+            if kind == "TypedefDecl" and record is None and n.get("name"):
+                self.typedef_map.setdefault(n["name"], n.get("type", {}).get("qualType", ""))
             if kind in ("NamespaceDecl", "LinkageSpecDecl"):
                 inner_scope = f"{scope}{n['name']}::" if n.get("name") else scope
                 self.walk(n.get("inner", []), inner_scope)
             elif kind == "CXXRecordDecl" and n.get("completeDefinition"):
                 if not n.get("isImplicit") and (self.mine(_file_of(n)) or self.external_class(n)):
                     self.record(n, scope, record)
+            elif kind == "ClassTemplateDecl" and record is None:
+                self.class_template(n, scope)
+            elif kind == "FunctionTemplateDecl" and record is None:
+                self.function_template(n)
             elif kind in _METHOD_KINDS and record is None:
                 self.out_of_line(n)
             elif (
@@ -590,8 +778,170 @@ class _Extractor:
             elif kind == "VarDecl" and record is None and self.mine(_file_of(n)):
                 self.global_var(n)
 
-    def record(self, n: dict, scope: str, outer: str | None) -> None:
-        name = n.get("name") or ""
+    def class_template(self, n: dict, scope: str) -> None:
+        """A module class template: each instantiation clang made is a class of its own.
+
+        The pattern itself is never a class -- its layout depends on its arguments
+        (`CUiWindow<T> : .., public T`). An instantiation has the arguments substituted in its
+        bases, fields and signatures, and carries the bodies this TU USES (another TU may
+        instantiate more of them: _register attaches those)."""
+        pattern = next((c for c in n.get("inner", []) if c.get("kind") == "CXXRecordDecl"), None)
+        if pattern is None or not (self.mine(_file_of(pattern)) or self.external_class(pattern)):
+            return
+        defaults = _template_defaults(n)
+        for spec in n.get("inner", []):
+            if spec.get("kind") != "ClassTemplateSpecializationDecl" or not spec.get(
+                "completeDefinition"
+            ):
+                continue
+            args = _template_args(spec)
+            # An argument equal to its default is bound by the default's SPELLING: clang
+            # gives `CToolbar<>`'s argument desugared (`unsigned long`, a width that differs
+            # per arch), the header says `DWORD_PTR`.
+            for i, a in enumerate(args):
+                d = defaults[i] if i < len(defaults) else None
+                if d is not None and instance_key(a) in {instance_key(x) for x in d}:
+                    args[i] = d[0]
+            written = list(args)
+            while written and len(written) <= len(defaults):
+                d = defaults[len(written) - 1]
+                if d is None or written[-1] != d[0]:
+                    break
+                written.pop()
+            name = instance_name(n["name"], written)
+            for k in range(len(written), len(args) + 1):
+                for form in (args[:k], [self.rewrite(a) for a in args[:k]]):
+                    self.model.instances[instance_key(f"{n['name']}<{', '.join(form)}>")] = name
+            self.record(spec, scope, None, name=name, template=n["name"])
+            params = _template_param_names(n)
+            if len(params) != len(args):
+                raise CppModelError(f"template {n['name']}: {len(params)} parameters, {args}")
+            self.model.classes[name].template_args = list(zip(params, args, strict=True))
+
+    def instance_sugar(self, nodes: list) -> None:
+        """Typedef spellings of an instantiation: clang names `CLocalPtr<WCHAR>`'s
+        specialization by its desugared argument (`CLocalPtr<wchar_t>`), while the module's
+        text says WCHAR. Every type in the module's own declarations that desugars to a known
+        instantiation teaches its written spelling."""
+        if not self.model.instances:
+            return
+        stack = [n for n in nodes if self.mine(_file_of(n))]
+        while stack:
+            n = stack.pop()
+            t = n.get("type")
+            if isinstance(t, dict) and "<" in t.get("desugaredQualType", ""):
+                for written, sugar in _instance_spellings(t["qualType"], t["desugaredQualType"]):
+                    hit = self.model.instances.get(instance_key(sugar))
+                    if hit is not None:
+                        self.model.instances.setdefault(instance_key(written), hit)
+            stack.extend(x for x in n.get("inner", []) if isinstance(x, dict))
+
+    def function_template(self, n: dict) -> None:
+        """A module function template (rapps' `template <class T> static CStringW
+        BuildPath(const T &Base, LPCWSTR Append)`): each instantiation clang made is a free
+        function of its own, `BuildPath__T0`, named in first-seen order and keyed by its
+        type so every TU agrees, and calls reach it through the decl map as an overload's do."""
+        pattern = next((c for c in n.get("inner", []) if c.get("kind") == "FunctionDecl"), None)
+        if pattern is None or not self.mine(_file_of(pattern)):
+            return
+        for inst in n.get("inner", []):
+            if inst.get("kind") != "FunctionDecl" or not any(
+                x.get("kind") == "TemplateArgument" for x in inst.get("inner", [])
+            ):
+                continue
+            key = (n["name"], inst.get("type", {}).get("qualType", ""))
+            rust = self._fn_instances.setdefault(
+                key, f"{n['name']}__T{sum(1 for k in self._fn_instances if k[0] == n['name'])}"
+            )
+            self.decls[inst["id"]] = cpp_lower.DeclInfo("", "function", n["name"], rust)
+            body = next((x for x in inst.get("inner", []) if x["kind"] == "CompoundStmt"), None)
+            if body is None or any(f.name == rust for f in self.model.functions):
+                continue
+            whole = _span(inst)
+            if whole is None:
+                continue
+            ff = FreeFunc(
+                rust,
+                _signature_from_ast(inst).replace(f" {n['name']}(", f" {rust}(", 1),
+                self.rel(whole[0]),
+                "",
+                inst.get("storageClass") == "static",
+            )
+            self.model.functions.append(ff)
+            self.pending.append((ff, body, None))
+
+    def rewrite(self, text: str) -> str:
+        return cpp_templates.rewrite_instances(text, self.model.instances, self.canon_key)
+
+    def canon_key(self, key: str) -> str:
+        """An instance key with each argument's typedef names resolved, as clang spells a
+        specialization's arguments: `CLocalPtr<WCHAR>` -> `CLocalPtr<wchar_t>`."""
+        if "<" not in key:
+            return key
+        head, args = key.split("<", 1)
+
+        def resolve(m: re.Match) -> str:
+            name, seen = m.group(0), set()
+            while name in self.typedef_map and name not in seen:
+                seen.add(name)
+                name = self.typedef_map[name]
+            return name
+
+        for _ in range(4):  # typedef chains re-expose names: WCHAR -> wchar_t is one step
+            args = re.sub(r"\b[A-Za-z_]\w*\b", resolve, args)
+        return instance_key(f"{head}<{args}")
+
+    def apply_instances(self) -> None:
+        """Every spelled instantiation in the model -> its concrete class name. Run before a
+        TU's bodies are lowered (base paths are found by class name) and after (the lowered
+        text still spells `CUiWindow<CTreeView> *`)."""
+        if not self.model.instances:
+            return
+        rw = self.rewrite
+        for cls in self.model.classes.values():
+            for b in cls.bases:
+                b.name = rw(b.name)
+            for f in cls.fields:
+                f.c_type = rw(f.c_type)
+            for m in cls.methods:
+                m.return_type = rw(m.return_type)
+                for p in m.params:
+                    p.c_type = rw(p.c_type)
+                m.inits = [(rw(a), rw(b)) for a, b in m.inits]
+                m.lowered_inits = [(rw(a), rw(b)) for a, b in m.lowered_inits]
+                if m.lowered:
+                    m.lowered = rw(m.lowered)
+                    if cls.template:
+                        m.lowered = self._bind_template(cls, m.lowered)
+        for g in self.model.globals:
+            g.c_type = rw(g.c_type)
+            g.init = rw(g.init) if g.init else g.init
+        for fn in self.model.functions:
+            fn.signature = rw(fn.signature)
+            fn.lowered = rw(fn.lowered)
+        self.model.typedefs = [(f, rw(t)) for f, t in self.model.typedefs]
+
+    def _bind_template(self, cls: ClassModel, text: str) -> str:
+        """An instantiation's body: the template's own names, bound. The injected class name
+        (bare `CPointerArray`) is the instance; a parameter is its argument (`GrowthRate` ->
+        `10`, `reinterpret_cast<T *>` -> `<CUiPrimitive *>`). A member reached through a
+        dependent base, `T::m_hWnd`, was already given its path by the lowering
+        (`T::this_->__base2.m_hWnd`): the qualifier is the dependent base's name for it."""
+        text = re.sub(rf"\b{re.escape(cls.template or '')}\b(?!\s*<)", cls.name, text)
+        for param, arg in cls.template_args:
+            text = re.sub(rf"\b{re.escape(param)}::(?=this_->)", "", text)
+            text = re.sub(rf"(?<![\w.>:]){re.escape(param)}\b", self.rewrite(arg), text)
+        return text
+
+    def record(
+        self,
+        n: dict,
+        scope: str,
+        outer: str | None,
+        name: str | None = None,
+        template: str | None = None,
+    ) -> None:
+        name = name or n.get("name") or ""
         if not name:
             return  # an anonymous struct/union member: its fields belong to the parent
         qualified = f"{outer}::{name}" if outer else f"{scope}{name}"
@@ -616,13 +966,17 @@ class _Extractor:
             ],
             polymorphic=bool(n.get("definitionData", {}).get("isPolymorphic")),
             nested_in=outer,
+            template=template,
         )
         text = self.src.text(span) or ""
         cls.msg_map = parse_msg_map(text)
+        cls.com_map = parse_com_map(text)
         cls.external = self.external_class(n)
         wc = re.search(r"\bDECLARE_WND_CLASS(_EX)?\s*\(((?:[^()]|\([^()]*\))*)\)", text)
         if wc:
             cls.wnd_class = [a.strip() for a in _split_top(wc.group(2))]
+            if self.unicode:  # rapps' DECLARE_WND_CLASS_EX(_T("SplitterWindowClass"), ..)
+                cls.wnd_class = [cpp_lower.unicode_text_macros(a) for a in cls.wnd_class]
         access = "private" if cls.tag == "class" else "public"
         self.model.classes[qualified] = cls
         for c in n.get("inner", []):
@@ -654,6 +1008,8 @@ class _Extractor:
                 self.record(c, scope, qualified)
         _assign_names(cls)
         self._register(n, cls, scope, first=True)
+        if cls.com_map is not None:
+            _add_com_object_unknown(cls)
 
     def _anon_record(self, n: dict, fdecl: dict, cls: ClassModel) -> ClassModel | None:
         """An anonymous `union { UINT m_uFlags; FN_LAYOUTCHANGE m_fnLayoutChange; };` member
@@ -768,6 +1124,13 @@ class _Extractor:
                 )
                 if first and m.body is not None:
                     self._queue(m, c, cls.qualified)
+                elif not first and cls.template and m.body is None:
+                    # An instantiation's member is instantiated where it is USED: this TU may
+                    # have the body an earlier one did not.
+                    late = self.method(c, m.access)
+                    if late is not None and late.body is not None:
+                        m.body, m.inits, m.inline = late.body, late.inits, True
+                        self._queue(m, c, cls.qualified)
             elif (
                 k == "CXXRecordDecl"
                 and c.get("completeDefinition")
@@ -980,6 +1343,15 @@ class _Extractor:
         if whole is None or bspan is None:
             return
         sig = self.src.text((whole[0], whole[1], bspan[1])) or ""
+        # The signature is joined onto one line below: a comment between the declarator and
+        # the brace (asyncinet.cpp's `BOOL AsyncInetCleanUp(..) // close all handle..`) would
+        # swallow everything after it, the `{` included.
+        sig = re.sub(r"//[^\n]*|/\*.*?\*/", " ", sig, flags=re.S)
+        if not re.search(rf"\b{re.escape(n['name'])}\s*\(", sig):
+            # The declarator is a macro's (cabinet.cpp's `FNCLOSE(fnFileClose)`, fdi.h): the
+            # text names no function, so the worker was asked for `FNCLOSE` and the planner
+            # missed the `fnFileClose` it correctly wrote. Spell it from clang's type instead.
+            sig = _signature_from_ast(n)
         if rust != n["name"]:
             sig = re.sub(rf"\b{re.escape(n['name'])}(?=\s*\()", rust, sig, count=1)
         ff = FreeFunc(
@@ -992,42 +1364,58 @@ class _Extractor:
         self.model.functions.append(ff)
         self.pending.append((ff, body, None))
 
-    def base_path(self, frm: str, to: str) -> str:
+    def base_path(self, frm: str, to: str, *, deep: bool = False) -> str:
         """`__baseK.` hops from class `frm` to its (transitive) base `to`, by short name.
         A base the module does not define (CWindowImpl<...>) is reached as the class's
-        external base when `to` is not a module class at all."""
+        external base when `to` is not a module class at all.
+
+        `deep` (a plain-struct field reached through a cast, `_plain_base_field`): the
+        external base may sit behind module bases -- rapps' CUiMargin reaches RECT via
+        CUiRect -- and clang names that cast `tagRECT` where the base list says `RECT`, so
+        names compare through the typedef table. It is opt-in because the lowered text is
+        the purchase cache key: widening every caller re-keyed 17 of rapps' paid units."""
         if frm == to:
             return ""
         by_short = {q.split("::")[-1]: c for q, c in self.model.classes.items()}
         start = by_short.get(frm)
         if start is None:
             return ""
+        target = self._tag(to) if deep else to
         queue = [(start, "")]
         seen = set()
+        external: list[str] | None = None  # the NEAREST class with outside bases decides
         while queue:
             cls, path = queue.pop(0)
+            outside = []
             for i, b in enumerate(cls.bases):
-                short = b.name.split("<")[0].split("::")[-1].strip()
-                short = ATL_BASE_ALIASES.get(short, short)
+                short = atl_base_alias(b.name)
                 hop = f"{path}__base{i}."
-                if short == to:
+                if short == to or (deep and self._tag(short) == target):
                     return hop
                 nxt = by_short.get(short)
-                if nxt is not None and short not in seen:
+                if nxt is None:
+                    outside.append(hop)
+                elif short not in seen:
                     seen.add(short)
                     queue.append((nxt, hop))
-        if to not in by_short:
-            external = [
-                i
-                for i, b in enumerate(start.bases)
-                if ATL_BASE_ALIASES.get(short_name(b.name), short_name(b.name)) not in by_short
-            ]
-            if len(external) == 1:
-                return f"__base{external[0]}."
+            if external is None and (outside or not deep):
+                external = outside  # not deep: only the starting class's own bases count
+        if to not in by_short and external is not None and len(external) == 1:
+            return external[0]
         return ""
 
+    def _tag(self, name: str) -> str:
+        """A type name with its typedef chain resolved: `RECT` -> `tagRECT`."""
+        seen = set()
+        while name in self.typedef_map and name not in seen:
+            seen.add(name)
+            name = re.sub(r"^(?:struct|class|union)\s+", "", self.typedef_map[name])
+        return name
+
     def lower_pending(self) -> None:
-        low = cpp_lower.Lowerer(self.decls, self.model.classes, self.base_path)
+        low = cpp_lower.Lowerer(
+            self.decls, self.model.classes, self.base_path, self.model.instances, self.canon_key
+        )
         own = sorted(
             f
             for pat in ("*.h", "*.hpp", "*.cpp")
@@ -1042,6 +1430,7 @@ class _Extractor:
             out = low.lower(node, span, owner)
             text = cpp_lower.concat_string_macros(out.text, strings)
             text = cpp_lower.ppv_arg_macros(text)
+            text = cpp_lower.atl_qualified_glue(text)
             target.lowered = cpp_lower.unicode_text_macros(text) if self.unicode else text
             target.unplaced = out.unplaced
             target.calls = [(a, b) for a, b in out.calls]
@@ -1055,6 +1444,13 @@ class _Extractor:
             text = _ctor_args(out.text, (member, owner.split("::")[-1]))
             if text is not None:
                 m.lowered_inits.append((member, text))
+        for g in self.model.globals:
+            # A string initializer gets what translation phases 2, 4 and 6 do to it: line
+            # splices joined, TEXT() widened, a module string macro beside a literal folded
+            # (rapps' `L"RAPPS [/" CMD_KEY_HELP L"] ..."` usage string).
+            if g.init and '"' in g.init:
+                text = cpp_lower.concat_string_macros(g.init.replace("\\\n", ""), strings)
+                g.init = cpp_lower.unicode_text_macros(text) if self.unicode else text
         self.pending.clear()
         self.pending_inits.clear()
 
@@ -1105,7 +1501,10 @@ def extract(
         ex._anon_seen, ex._anon_registered = set(), set()
         ex.scan_overloads(ast.get("inner", []))
         ex.walk(ast.get("inner", []))
+        ex.instance_sugar(ast.get("inner", []))
+        ex.apply_instances()
         ex.lower_pending()
+        ex.apply_instances()
         del ast
     if cache_dir is not None:
         cache_dir.mkdir(parents=True, exist_ok=True)

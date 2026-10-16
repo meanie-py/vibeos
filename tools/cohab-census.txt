@@ -241,6 +241,21 @@ base/applications/notepad/CMakeLists.txt	1	# text.c # replaced by Rust (sdk/lib/
 base/applications/osk/CMakeLists.txt	1	# keyboard.c # replaced by Rust (sdk/lib/rust/osk-rust/src/osk/keyboard/mod.rs, generated: port data)
 base/applications/osk/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/osk-rust/src/osk/main.rs)
 base/applications/osk/CMakeLists.txt	1	# settings.c # replaced by Rust (sdk/lib/rust/osk-rust/src/osk/settings.rs)
+base/applications/rapps/CMakeLists.txt	1	# appdb.cpp # replaced by Rust (sdk/lib/rust/rapps-rust/src/rapps/appdb_cpp_h.rs)
+base/applications/rapps/CMakeLists.txt	1	# appinfo.cpp # replaced by Rust (sdk/lib/rust/rapps-rust/src/rapps/appinfo_cpp_h.rs)
+base/applications/rapps/CMakeLists.txt	1	# appview.cpp # replaced by Rust (sdk/lib/rust/rapps-rust/src/rapps/appview_cpp_h.rs)
+base/applications/rapps/CMakeLists.txt	1	# asyncinet.cpp # replaced by Rust (sdk/lib/rust/rapps-rust/src/rapps/asyncinet_cpp_h.rs)
+base/applications/rapps/CMakeLists.txt	1	# cabinet.cpp # replaced by Rust (sdk/lib/rust/rapps-rust/src/rapps/cabinet_cpp_h.rs)
+base/applications/rapps/CMakeLists.txt	1	# configparser.cpp # replaced by Rust (sdk/lib/rust/rapps-rust/src/rapps/configparser_cpp_h.rs)
+base/applications/rapps/CMakeLists.txt	1	# geninst.cpp # replaced by Rust (sdk/lib/rust/rapps-rust/src/rapps/geninst_cpp_h.rs)
+base/applications/rapps/CMakeLists.txt	1	# gui.cpp # replaced by Rust (sdk/lib/rust/rapps-rust/src/rapps/gui_cpp_h.rs)
+base/applications/rapps/CMakeLists.txt	1	# integrity.cpp # replaced by Rust (sdk/lib/rust/rapps-rust/src/rapps/integrity_cpp_h.rs)
+base/applications/rapps/CMakeLists.txt	1	# loaddlg.cpp # replaced by Rust (sdk/lib/rust/rapps-rust/src/rapps/loaddlg_cpp_h.rs)
+base/applications/rapps/CMakeLists.txt	1	# misc.cpp # replaced by Rust (sdk/lib/rust/rapps-rust/src/rapps/misc_cpp_h.rs)
+base/applications/rapps/CMakeLists.txt	1	# settings.cpp # replaced by Rust (sdk/lib/rust/rapps-rust/src/rapps/settings_cpp_h.rs)
+base/applications/rapps/CMakeLists.txt	1	# settingsdlg.cpp # replaced by Rust (sdk/lib/rust/rapps-rust/src/rapps/settingsdlg_cpp_h.rs)
+base/applications/rapps/CMakeLists.txt	1	# unattended.cpp # replaced by Rust (sdk/lib/rust/rapps-rust/src/rapps/unattended_cpp_h.rs)
+base/applications/rapps/CMakeLists.txt	1	# winmain.cpp # replaced by Rust (sdk/lib/rust/rapps-rust/src/rapps/winmain_cpp_h.rs)
 base/applications/rapps_com/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/rapps_com-rust/src/rapps_com/main.rs)
 base/applications/regedit/CMakeLists.txt	1	# about.c # replaced by Rust (sdk/lib/rust/regedit-rust/src/regedit/about.rs)
 base/applications/regedit/CMakeLists.txt	1	# childwnd.c # replaced by Rust (sdk/lib/rust/regedit-rust/src/regedit/childwnd.rs)
@@ -1651,6 +1666,7 @@ dll/win32/wdmaud.drv/CMakeLists.txt	1	# legacy.c # replaced by Rust (sdk/lib/rus
 dll/win32/wdmaud.drv/CMakeLists.txt	1	# mixer.c # replaced by Rust (sdk/lib/rust/wdmaud_drv-rust/src/wdmaud_drv/mixer.rs)
 dll/win32/wdmaud.drv/CMakeLists.txt	1	# mmixer.c # replaced by Rust (sdk/lib/rust/wdmaud_drv-rust/src/wdmaud_drv/mmixer.rs)
 dll/win32/wdmaud.drv/CMakeLists.txt	1	# wdmaud.c # replaced by Rust (sdk/lib/rust/wdmaud_drv-rust/src/wdmaud_drv/wdmaud.rs)
+dll/win32/wer/CMakeLists.txt	1	# Written in Rust (sdk/lib/rust/wer-rust): wer.dll (WER API, no WER service); port of Wine's dlls/wer/main.c.
 dll/win32/wevtapi/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/wevtapi-rust/src/wevtapi/main.rs)
 dll/win32/winfax/CMakeLists.txt	1	# winfax.c # replaced by Rust (sdk/lib/rust/winfax-rust/src/winfax/winfax.rs)
 dll/win32/winsta/CMakeLists.txt	1	# logon.c # replaced by Rust (sdk/lib/rust/winsta-rust/src/winsta/logon.rs)
@@ -1766,6 +1782,8 @@ dll/win32/wshtcpip/CMakeLists.txt	1	# wshtcpip.c)
 dll/win32/wsock32/CMakeLists.txt	1	# deterministically (zero paid API calls). stubs.c is commented out below and kept on disk
 dll/win32/wsock32/CMakeLists.txt	1	# stubs.c
 dll/win32/wsock32/CMakeLists.txt	1	# stubs.c → wsock32-rust
+dll/win32/xinput1_3/CMakeLists.txt	1	# Wine 11.19's HID implementation (dlls/xinput1_3/main.c); xinput1_4 builds the same
+dll/win32/xinput1_4/CMakeLists.txt	1	# XInputGetCapabilitiesEx (#108) and XInputGetAudioDeviceIds (#10, audio.c) are 1_4 only.
 drivers/base/beep/CMakeLists.txt	1	# beep.c is translated to Rust (sdk/lib/rust/beep-rust, kept on disk per the
 drivers/base/bootvid/CMakeLists.txt	1	# framebuf/bootvid.c (+ included <drivers/bootvid/framebuf.c>) and the
 drivers/base/bootvid/CMakeLists.txt	1	# shared common.c/console.c/fontdata.c are translated to Rust
@@ -1985,8 +2003,16 @@ drivers/storage/port/scsiport/CMakeLists.txt	1	# rust_varargs_shim.c — va_star
 drivers/storage/port/scsiport/CMakeLists.txt	1	# scsiport.c stubs.c) — kept on disk per the never-delete rule.
 drivers/storage/port/scsiport/CMakeLists.txt	1	# scsiport.sys — Rust cohabitation flip (8 .c -> Rust; guid.c stays C)
 drivers/storage/port/storahci/CMakeLists.txt	1	# storahci.c replaced by Rust (storahci-rust). AHCI storport miniport; links storport.
-drivers/storage/port/storport/CMakeLists.txt	1	# fdo/miniport/misc/pdo/storport/stubs.c replaced by Rust (storport-rust); guid.c stays C
+drivers/storage/port/storport/CMakeLists.txt	1	# guid.c # replaced by Rust (sdk/lib/rust/storport-rust/src/storport/guid.rs)
 drivers/storage/port/storport/CMakeLists.txt	1	# rust_varargs_shim.c — va_start/va_arg trampolines for the cdecl-varargs exports
+drivers/storage/port/storport/CMakeLists.txt	1	#fdo.c
+drivers/storage/port/storport/CMakeLists.txt	1	#ioctl.c
+drivers/storage/port/storport/CMakeLists.txt	1	#miniport.c
+drivers/storage/port/storport/CMakeLists.txt	1	#misc.c
+drivers/storage/port/storport/CMakeLists.txt	1	#pdo.c
+drivers/storage/port/storport/CMakeLists.txt	1	#srb.c
+drivers/storage/port/storport/CMakeLists.txt	1	#storport.c
+drivers/storage/port/storport/CMakeLists.txt	1	#stubs.c
 drivers/usb/usbaudio/CMakeLists.txt	1	# C bodies replaced by Rust (usbaudio/pool/filter/pin.c) — kept on disk per the never-delete rule.
 drivers/usb/usbaudio/CMakeLists.txt	1	# The .c files are kept on disk per the never-delete rule; guid.c stays compiled as a data-only
 drivers/usb/usbaudio/CMakeLists.txt	1	# guid.c stays as the data-only TU (DEFINE_GUID).
@@ -2330,6 +2356,7 @@ ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/util.c
 ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/volume.c # Replaced by Rust volume.rs
 ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnpdma.c # Replaced by Rust
 ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnpirp.c # Replaced by Rust pnpirp.rs
+ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnpprop.c # Replaced by Rust (DeviceProperty, upstream 3cc9aa99292)
 ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnputil.c # Replaced by Rust pnputil.rs
 ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/amd64/kdx64.c
 ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/i386/kdx86.c
@@ -2400,6 +2427,7 @@ ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/ke/thrdschd.c
 ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/ke/time.c
 ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/ke/timerobj.c
 ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/ke/wait.c
+ntoskrnl/ntos.cmake	2	#${REACTOS_SOURCE_DIR}/ntoskrnl/ke/x86x64/cacheinfo.c # Replaced by Rust (upstream 83a6af0773b)
 ntoskrnl/ntos.cmake	2	#${REACTOS_SOURCE_DIR}/ntoskrnl/ke/x86x64/cpuinfo.c
 ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/close.c
 ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/complete.c

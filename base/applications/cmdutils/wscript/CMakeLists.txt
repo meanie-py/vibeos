@@ -31,3 +31,5 @@ add_cargo_module(wscript wscript-cargo wscript.exe
     DESTINATION reactos/system32
     DELAY_IMPORTS
     EXTRA_DEPENDS wscript_shims wscript_res psdk uuid_sources)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

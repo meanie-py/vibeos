@@ -1249,6 +1249,33 @@ def test_flip_refuses_a_tu_with_no_rust(tmp_path, monkeypatch):
         port.stage_flip("m")
 
 
+def test_flip_finds_a_cppapp_tus_rust_in_its_synthetic_unit(tmp_path, monkeypatch):
+    # rapps: `appdb.cpp`'s Rust is `appdb_cpp_h.rs`; the preflight looked for `appdb.rs`.
+    import pytest as _pytest
+
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    monkeypatch.setattr(port, "STATE_ROOT", tmp_path / "state")
+    hpp = str(tmp_path / "state" / "m" / "cppapp" / "a_cpp.hpp")
+    state = {
+        "stem": "m",
+        "crate": "m-rust",
+        "module_dir": "m",
+        "tus": ["m/a.cpp"],
+        "cpp_tus": ["m/a.cpp"],
+        "cppapp": {"model": "x"},
+        "header_tus": {hpp: "m/a.cpp"},
+    }
+    monkeypatch.setattr(port, "load_state", lambda _s: state)
+    monkeypatch.setattr(port, "_crate_dir", lambda _s: tmp_path / "m-rust")
+    src = tmp_path / "m-rust" / "src" / "m"
+    src.mkdir(parents=True)
+    with _pytest.raises(port.PortError, match="no Rust for a.cpp"):
+        port.stage_flip("m")
+    (src / "a_cpp_h.rs").write_text("")
+    with _pytest.raises(FileNotFoundError, match="CMakeLists"):  # past the preflight
+        port.stage_flip("m")
+
+
 def test_a_dotted_tu_name_becomes_an_identifier_module():
     assert port._module_name("apisets.table.c") == "apisets_table"
     assert port._module_name("enum.c") == "enum"
@@ -1384,3 +1411,73 @@ def test_com_method_names_are_the_islands_vtable_slots(tmp_path):
         "    pub Read: Option<fn()>,\n}\npub struct NotAVtable {\n    pub x: u32,\n}\n"
     )
     assert port.com_method_names(tmp_path) == {"IStream_QueryInterface", "IStream_Read"}
+
+
+def test_a_module_flipped_around_a_data_tu_is_derived_from_its_commented_list(
+    tmp_path, monkeypatch
+):
+    # storport keeps guid.c compiled beside its commented-out list, so the "already
+    # flipped" refusal never fired and derive recorded guid.c as the ONE unit.
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    monkeypatch.setattr(port, "require_built", lambda _m: None)
+    monkeypatch.setattr(port, "recorded_mode", lambda _m, _t: False)
+    mod = tmp_path / "drivers" / "x"
+    mod.mkdir(parents=True)
+    for c in ("guid.c", "fdo.c"):
+        (mod / c).write_text("")
+    (mod / "CMakeLists.txt").write_text(
+        "list(APPEND SOURCE\n    #fdo.c\n    )\nadd_library(x MODULE ${SOURCE} guid.c)\n"
+    )
+    seen = {}
+
+    def fake(*_a, **kw):
+        seen.update(kw)
+        from types import SimpleNamespace as M
+
+        return M(errors=[])
+
+    monkeypatch.setattr(port.pd, "derive", fake)
+    port.derive(mod, None)
+    assert seen["flipped_sources"] is True
+
+
+def test_switch_facts_are_collected_on_every_built_arch(tmp_path, monkeypatch):
+    # CmResourceTypeDma reaches i386/amd64 through the HAL island; arm64 has none.
+    from types import SimpleNamespace as M
+
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    (tmp_path / "build-arm64").mkdir()
+    per_arch = {"i386": ["A"], "arm64": ["A", "CmResourceTypeDma"]}
+    monkeypatch.setattr(port, "switch_facts", lambda dp: dp.facts)
+    monkeypatch.setattr(port, "derive", lambda *_a, arch, **_k: M(facts=per_arch[arch]))
+    dp = M(facts=per_arch["i386"], module=M(is_usermode=False))
+    assert port._switch_facts_all_arches(dp, tmp_path, None, "x") == ["A", "CmResourceTypeDma"]
+
+
+def test_an_enumerator_the_crate_also_binds_is_spelled_prefixed(tmp_path):
+    # storport: `fn f(FdoExtension: PFDO_DEVICE_EXTENSION)` read as a constant pattern once a
+    # `const FdoExtension` was in scope (prelude alias, or the model's own file-scope const).
+    from types import SimpleNamespace as M
+
+    mods = tmp_path / "m"
+    mods.mkdir()
+    (mods / "a.rs").write_text(
+        "const FdoExtension: u32 = 2;\n"
+        'pub unsafe extern "C" fn f(FdoExtension: PFDO) {\n    (*FdoExtension).X = 1;\n}\n'
+        'pub unsafe extern "C" fn g(D: PDEV) {\n'
+        "    (*D).ExtensionType = FdoExtension;\n    (*D).FdoExtension = D;\n}\n"
+    )
+    assert port._module_consts(mods) == {"FdoExtension"}
+    assert port._bound_idents(mods, {"FdoExtension", "Other"}) == {"FdoExtension"}
+    port._drop_module_const(mods, "FdoExtension")
+    item = M(text="const FdoExtension: EXTENSION_TYPE = EXTENSION_TYPE_FdoExtension;")
+    port._spell_enumerator_prefixed(mods, "FdoExtension", item)
+    out = (mods / "a.rs").read_text()
+    assert "const FdoExtension" not in out
+    assert "(*FdoExtension).X = 1;" in out  # f binds it: the parameter
+    assert "(*D).ExtensionType = EXTENSION_TYPE_FdoExtension;" in out
+    assert "(*D).FdoExtension = D;" in out  # a field, never the enumerator
+
+
+def test_a_module_with_no_functions_has_no_fn_chunks():
+    assert port._fn_chunks("pub const A: u32 = 1;\n") == []

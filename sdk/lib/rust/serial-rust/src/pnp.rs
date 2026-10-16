@@ -708,21 +708,41 @@ pub unsafe extern "system" fn SerialPnp(
         7 => {
             /* IRP_MN_QUERY_DEVICE_RELATIONS */
             match (*Stack).Parameters.QueryDeviceRelations.Type as u32 {
-                0 => {
-                    /* BusRelations */
-                    /* TRACE_ */
-                    return ForwardIrpAndForget(DeviceObject, Irp);
-                }
-                3 => {
-                    /* RemovalRelations */
-                    /* TRACE_ */
-                    return ForwardIrpAndForget(DeviceObject, Irp);
+                0 | 3 => {
+                    /* BusRelations, RemovalRelations: serial has no children and nothing
+                     * that must go with it, so both are an empty list (upstream
+                     * d46d76da072). */
+                    let DeviceRelations = ntkrnl_sys::ddk::ExAllocatePoolWithTag(
+                        ntkrnl_sys::ddk::_POOL_TYPE_PagedPool,
+                        core::mem::offset_of!(ntkrnl_sys::ddk::_DEVICE_RELATIONS, Objects) as _,
+                        0x6C72_6553 as ULONG, // SERIAL_TAG 'lreS'
+                    ) as *mut ntkrnl_sys::ddk::_DEVICE_RELATIONS;
+                    if DeviceRelations.is_null() {
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                    } else {
+                        (*DeviceRelations).Count = 0;
+                        Information = DeviceRelations as ULONG_PTR;
+                        Status = STATUS_SUCCESS;
+                    }
                 }
                 _ => {
                     /* TRACE_ Unknown type */
                     return ForwardIrpAndForget(DeviceObject, Irp);
                 }
             }
+        }
+        8 => {
+            /* IRP_MN_QUERY_INTERFACE */
+            return ForwardIrpAndForget(DeviceObject, Irp);
+        }
+        9 => {
+            /* IRP_MN_QUERY_CAPABILITIES */
+            DeviceExtension = (*DeviceObject).DeviceExtension as PSERIAL_DEVICE_EXTENSION;
+            Status = if IoForwardIrpSynchronously((*DeviceExtension).LowerDevice, Irp) != 0 {
+                (*Irp).IoStatus.__bindgen_anon_1.Status
+            } else {
+                STATUS_UNSUCCESSFUL
+            };
         }
         13 => {
             /* IRP_MN_FILTER_RESOURCE_REQUIREMENTS */

@@ -1,0 +1,16 @@
+# wer-rust — wer.dll (Windows Error Reporting API, no WER service); see src/lib.rs.
+[package]
+name = "wer-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+
+[lib]
+name = "wer_rust"
+path = "src/lib.rs"
+# rlib too: the host tests (`cargo test -p wer-rust --lib`) need it.
+crate-type = ["staticlib", "rlib"]
+
+# Windows-only: its `.drectve` asm does not assemble on the Linux host the tests run on.
+[target.'cfg(windows)'.dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }

@@ -389,6 +389,9 @@ case "$DRIVER" in
     VER_DEFS=( -DWINVER=0x603 -D_WIN32_WINNT=0x603 -DNTDDI_VERSION=0x06030000
                -DWDF_DEVICE_NO_WDMSEC_H -DKMDF_MAJOR_VERSION_STRING=01 -DKMDF_MINOR_VERSION_STRING=017 )
     EXTRA_INC=( -I"${SRC}/vendor/wdf/include/kmdf/1.17" -I"${SRC}/vendor/wdf/include/shared" -I"${SRC}/vendor/wdf/include" )
+    # Not the <driver>-rust default: the comment above always said kmdf-sys/src, but nothing
+    # set it, so a regeneration wrote a stray kmdf-rust/ crate and left kmdf-sys stale.
+    OUT_CRATE_DIR="${OUT_CRATE_DIR:-${SRC}/sdk/lib/rust/kmdf-sys/src}"
     ;;
   fastfat)
     # fastfat.sys — the FAT filesystem (drivers/filesystems/fastfat, MS-architecture,
@@ -598,19 +601,36 @@ case "$DRIVER" in
                -DDLL_EXPORT_VERSION=0x502 -DDEBUG )
     ;;
   storport)
-    # Storage port driver (drivers/storage/port/storport). Private structs (FDO_DEVICE_EXTENSION,
-    # PDO_DEVICE_EXTENSION, MINIPORT_DEVICE_EXTENSION, DRIVER_OBJECT_EXTENSION, DRIVER_INIT_DATA,
-    # MINIPORT, UNIT_DATA, EXTENSION_TYPE) live in precomp.h; the public storport.h miniport
-    # interface (HW_INITIALIZATION_DATA, SCSI_REQUEST_BLOCK, STOR_*) is not in the kernel bindgen
-    # → allowlist both. NT 5.2 default (no version macros).
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-16 from drivers/storage/port/storport/CMakeLists.txt
+    # (11 compiled TU(s), 84 headers in the include closure, 72 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=0
+    REAL_UNIONS=1
+    EXTRA_BL_ITEMS=( KeInitializeSpinLock )
     DRIVER_DIR="${SRC}/drivers/storage/port/storport"
-    WRAPPER_INC=$'#include "precomp.h"'
-    ALLOW_FILES=( --allowlist-file '.*storport[/\\]precomp\.h'
-                  --allowlist-file '.*[/\\]storport\.h' )
-    UNBLOCK="_SCSI_REQUEST_BLOCK"
-    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
-               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
-               -DDLL_EXPORT_VERSION=0x502 )
+    WRAPPER_INC=$'#include <ntdef.h>\n#include <initguid.h>\n#include <ioevent.h>\n#include <wdmguid.h>\n#define DEVICE_TYPE ULONG\n#include <ntddstor.h>\n#include "ntdef.h"\n#include "precomp.h"\n#include "inline.h"\n#include "wdm.h"\n#define NDEBUG\n#include <debug/driverdbg.h>\n#include <debug.h>\n#include <stdarg.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]debug[/\\]driverdbg\.h' --allowlist-file '.*[/\\]initguid\.h'
+                  --allowlist-file '.*[/\\]ioevent\.h'
+                  --allowlist-file '.*[/\\]mountdev\.h'
+                  --allowlist-file '.*[/\\]ntdddisk\.h'
+                  --allowlist-file '.*[/\\]ntddscsi\.h'
+                  --allowlist-file '.*[/\\]ntddstor\.h'
+                  --allowlist-file '.*[/\\]ntintsafe\.h'
+                  --allowlist-file '.*[/\\]ntstrsafe\.h'
+                  --allowlist-file '.*[/\\]storport\.h'
+                  --allowlist-file '.*[/\\]wdmguid\.h'
+                  --allowlist-file '.*storport[/\\].*\.h'
+                  --allowlist-file '.*[/\\]ntdef\.h'
+                  --allowlist-file '.*[/\\]wdm\.h' )
+    # OPAQUE in ntkrnl-sys ({ _address: u8 }) but defined by an allowlisted header and named by
+    # this module's C, so the island emits the real layout (fields reachable).
+    UNBLOCK="_SCSI_REQUEST_BLOCK SCSI_REQUEST_BLOCK PSCSI_REQUEST_BLOCK"
+    EXTRA_INC=( -I"${SRC}/drivers/storage/port/storport" -I"${SRC}/build-i386/drivers/storage/port/storport" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/lib/drivers/sptilib" -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
   serial)
     # 8250/16550 UART COM driver (drivers/serial/serial). Private SERIAL_DEVICE_EXTENSION +
@@ -7923,6 +7943,67 @@ case "$DRIVER" in
     # after them, and hoisting one ahead swaps which header an include resolves to.
     LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/vendor/mesa" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  rapps)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-15 from base/applications/rapps/CMakeLists.txt
+    # (16 compiled TU(s), 289 headers in the include closure, 139 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 277 external prototype(s) declared by the include closure, 66 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=0
+    BLOCKLIST_FUNCS_FROM_CRATE=1
+    DRIVER_DIR="${SRC}/base/applications/rapps"
+    LANG_ARGS=( -x c++ -std=gnu++17 )
+    WRAPPER_INC=$'#include "defines.h"\n#include <shlobj.h>\n#include <shlwapi.h>\n#include <setupapi.h>\n#include <commctrl.h>\n#include "resource.h"\n#include "rapps.h"\n#include <sha1.h>\n#include "rosui.h"\n#include "crichedit.h"\n#include <debug.h>\n#include <fdi.h>\n#include <fcntl.h>\n#include <wininet.h>\n#include <atlbase.h>\n#include "asyncinet.h"\n#include "appview.h"\n#include "gui.h"\n#include <shlobj_undoc.h>\n#include <shlguid_undoc.h>\n#include <atlcom.h>\n#include <atltypes.h>\n#include <atlwin.h>\n#include <shellutils.h>\n#include <ui/rosctrls.h>\n#include <gdiplus.h>\n#include <math.h>\n#include <windowsx.h>\n#include <shlwapi_undoc.h>\n#include <process.h>\n#undef SubclassWindow\n#include "dialogs.h"\n#include "appdb.h"\n#include "appinfo.h"\n#include "configparser.h"\n#include "settings.h"\n#include "misc.h"\n#include "unattended.h"\n#include "winmain.h"\n#include <conutils.h>\n#include "minizip/ioapi.h"\n#include "minizip/iowin32.h"\n#include "minizip/unzip.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]conutils\.h'
+                  --allowlist-file '.*[/\\]fdi\.h'
+                  --allowlist-file '.*[/\\]gdiplus\.h'
+                  --allowlist-file '.*[/\\]minizip[/\\]ioapi\.h'
+                  --allowlist-file '.*[/\\]minizip[/\\]iowin32\.h'
+                  --allowlist-file '.*[/\\]minizip[/\\]unzip\.h'
+                  --allowlist-file '.*[/\\]rappsmsg\.h'
+                  --allowlist-file '.*[/\\]richedit\.h'
+                  --allowlist-file '.*[/\\]setupapi\.h'
+                  --allowlist-file '.*[/\\]sha1\.h'
+                  --allowlist-file '.*[/\\]shellapi\.h'
+                  --allowlist-file '.*[/\\]shellutils\.h'
+                  --allowlist-file '.*[/\\]shlguid_undoc\.h'
+                  --allowlist-file '.*[/\\]shlobj\.h'
+                  --allowlist-file '.*[/\\]shlobj_undoc\.h'
+                  --allowlist-file '.*[/\\]shlwapi\.h'
+                  --allowlist-file '.*[/\\]shlwapi_undoc\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  --allowlist-file '.*[/\\]ui[/\\]rosctrls\.h'
+                  --allowlist-file '.*[/\\]windowsx\.h'
+                  --allowlist-file '.*[/\\]wingdi\.h'
+                  --allowlist-file '.*[/\\]wininet\.h'
+                  --allowlist-file '.*[/\\]winnls\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*rapps[/\\].*\.h'
+                  --allowlist-file '.*[/\\]atlbase\.h'
+                  --allowlist-file '.*[/\\]atlpath\.h'
+                  --allowlist-file '.*[/\\]atlsimpstr\.h'
+                  --allowlist-file '.*[/\\]atlstr\.h'
+                  --allowlist-file '.*[/\\]atlwin\.h'
+                  --allowlist-file '.*[/\\]gdiplusbrush\.h'
+                  --allowlist-file '.*[/\\]gdiplusenums\.h'
+                  --allowlist-file '.*[/\\]gdiplusgpstubs\.h'
+                  --allowlist-file '.*[/\\]gdiplusinit\.h'
+                  --allowlist-file '.*[/\\]gdipluspixelformats\.h'
+                  --allowlist-file '.*[/\\]gdiplustypes\.h'
+                  --allowlist-file '.*[/\\]objidl\.h'
+                  --allowlist-file '.*[/\\]shobjidl\.h'
+                  --allowlist-file '.*[/\\]shtypes\.h' )
+    # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
+    UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
+    EXTRA_INC=( -I"${SRC}/base/applications/rapps" -I"${SRC}/build-i386/base/applications/rapps" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/base/applications/rapps/include" -I"${SRC}/sdk/lib/cryptlib" -I"${SRC}/sdk/lib/conutils" -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/vendor/zlib/contrib" -I"${SRC}/vendor/zlib/contrib/minizip" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/sdk/lib/atl" -I"${SRC}/vendor/symcrypt/inc" -I"${SRC}/vendor/symcrypt/lib" -I"${SRC}/.build-tools/llvm-mingw/i686-w64-mingw32/include/c++/v1" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DUSE_CERT_PINNING -DUNICODE -D_ATL_NO_EXCEPTIONS -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
   ftp)
     # AUTO-DERIVED by rustconv.profile_derive on 2026-10-14 from base/applications/network/ftp/CMakeLists.txt

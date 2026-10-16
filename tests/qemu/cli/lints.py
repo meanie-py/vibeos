@@ -201,8 +201,15 @@ def _lint_stage(
     findings_from: str = "stdout",
     by_exit_code: bool = False,
     cp: subprocess.CompletedProcess | None = None,
+    new_fail: bool | None = None,
 ) -> Stage:
     """Run one lint; classify NEW-vs-baseline. Advisory unless strict.
+
+    new_fail: whether a NEW finding fails the stage, separately from `strict`, which
+    then governs only COVERAGE (a missing tool, a scanner that exits without findings).
+    None means "same as strict". Plain `check` passes True: a new finding is exactly
+    what `land` and the gate refuse, so a local check that only warned about one was
+    green-lighting the submission it would bounce.
 
     by_exit_code: judge purely on the tool's --check exit status instead of
     line-baseline-diff. Required for BINARY lints (scan_ud2, sacred_primitives):
@@ -211,6 +218,7 @@ def _lint_stage(
     — every line reads as "new". These tools already encode the correct per-arch
     pass/fail in their exit code (their own EXPECTED-site classification), so the
     exit code is the right signal."""
+    fail_new = strict if new_fail is None else new_fail
     if cmd[0] == "NOCHECK":
         # Genuinely nothing to lint (no matching sources). Not a coverage loss.
         return run.add(Stage(name, status="skip", detail="no sources to check"))
@@ -246,7 +254,7 @@ def _lint_stage(
         text = _rel((cp.stdout or "") + "\n" + (cp.stderr or ""), repo)
         if cp.returncode == 0:
             return run.add(Stage(name, exit=0, status="ok"))
-        st = "fail" if strict else "warn"
+        st = "fail" if fail_new else "warn"
         salient = [ln for ln in text.splitlines() if "*** BUG" in ln or "FAIL" in ln][:3]
         return run.add(
             Stage(
@@ -266,7 +274,7 @@ def _lint_stage(
     # shellcheck/verify_* exit nonzero whenever ANY finding exists, but those
     # are baselined/accepted; only new ones matter.
     if new:
-        st = "fail" if strict else "warn"
+        st = "fail" if fail_new else "warn"
         return run.add(
             Stage(
                 name,
@@ -1755,7 +1763,14 @@ def lint_jobs() -> int:
     return n
 
 
-def run_source_lints(run: Run, repo: Path, *, strict: bool, only: set[str] | None = None) -> None:
+def run_source_lints(
+    run: Run,
+    repo: Path,
+    *,
+    strict: bool,
+    only: set[str] | None = None,
+    new_fail: bool | None = None,
+) -> None:
     """Execute the scanners CONCURRENTLY, then classify them in spec order.
 
     The scanners are independent read-only passes over the source tree, each
@@ -1794,7 +1809,16 @@ def run_source_lints(run: Run, repo: Path, *, strict: bool, only: set[str] | Non
         for name, cmd in runnable:
             done[name] = run.run(cmd, cwd=repo, stage=f"lint:{name}")
     for name, cmd, src in todo:
-        _lint_stage(run, repo, name, cmd, strict=strict, findings_from=src, cp=done.get(name))
+        _lint_stage(
+            run,
+            repo,
+            name,
+            cmd,
+            strict=strict,
+            findings_from=src,
+            cp=done.get(name),
+            new_fail=new_fail,
+        )
 
 
 def lint_tool_names(repo: Path) -> set[str]:

@@ -4709,7 +4709,7 @@ def test_partial_check_runs_only_selected_and_reports_scope(tmp_path, monkeypatc
     monkeypatch.setattr(lints, "source_lint_specs", lambda repo: specs)
     called = []
 
-    def stage(run, repo, name, cmd, *, strict, findings_from, cp=None):
+    def stage(run, repo, name, cmd, *, strict, findings_from, cp=None, new_fail=None):
         # `cp` mirrors the real _lint_stage: run_source_lints executes the
         # scanners concurrently and hands the finished process to the classifier.
         called.append((name, strict))
@@ -4786,12 +4786,58 @@ def test_source_lint_api_rejects_unknown_selection(tmp_path, monkeypatch):
         lints.run_source_lints(Run("check", "amd64"), tmp_path, strict=True, only={"typo"})
 
 
+@pytest.mark.parametrize("strict", [False, True])
+def test_plain_check_fails_on_a_new_finding(tmp_path, monkeypatch, strict):
+    """A NEW finding fails `check` with or without --strict.
+
+    It is exactly what `land`'s preflight and the gate refuse. When plain `check` only
+    warned, 18 of 56 local checks (2026-10-14..16) ended WARN with a NEW finding and
+    exit 0, and the lane then learned about it from `land`."""
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "runs")
+    monkeypatch.setattr(lints, "source_lint_specs", lambda repo: [("scanA", ["scanA"], "stdout")])
+    monkeypatch.setattr(lints, "_baseline", lambda *a: {"a.rs:1: old"})
+    monkeypatch.setattr(
+        Run,
+        "run",
+        lambda self, *a, **k: subprocess.CompletedProcess([], 1, "a.rs:1: old\nb.rs:2: new\n", ""),
+    )
+    monkeypatch.setattr(lints, "run_committed_drift_guard", lambda *a, **k: None)
+    rc = debugcmd_mod.check(Namespace(strict=strict, arch=None), tmp_path)
+    assert rc == 1
+    summary = json.loads(next((tmp_path / "runs").glob("*-check-all/summary.json")).read_text())
+    assert summary["verdict"] == "FAIL"
+
+
+def test_plain_check_still_only_warns_on_a_missing_tool(tmp_path, monkeypatch):
+    """Coverage stays strict-only: a laptop without shellcheck can still run `check`."""
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "runs")
+    monkeypatch.setattr(lints, "source_lint_specs", lambda repo: [("sc", ["MISSING"], "stdout")])
+    assert debugcmd_mod.check(Namespace(strict=False, arch=None), tmp_path) == 0
+    run = Run("check", "all")
+    assert (
+        lints._lint_stage(run, tmp_path, "sc", ["MISSING"], strict=False, new_fail=True).status
+        == "warn"
+    )
+    assert lints._lint_stage(run, tmp_path, "sc", ["MISSING"], strict=True).status == "fail"
+
+
+def test_build_check_new_findings_stay_advisory(tmp_path, monkeypatch):
+    """`build --check` keeps the old contract: new_fail defaults to strict (False)."""
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "runs")
+    monkeypatch.setattr(lints, "_baseline", lambda *a: set())
+    run = Run("build", "amd64")
+    monkeypatch.setattr(
+        run, "run", lambda *a, **k: subprocess.CompletedProcess([], 1, "b.rs:2: new\n", "")
+    )
+    assert lints._lint_stage(run, tmp_path, "s", ["s"], strict=False).status == "warn"
+
+
 @pytest.mark.parametrize("scope", ["source", "arch", None])
 @pytest.mark.parametrize("fail", [False, True])
 def test_check_partitions_preserve_full_coverage(tmp_path, monkeypatch, scope, fail):
     seen = []
 
-    def source(run, repo, *, strict):
+    def source(run, repo, *, strict, **_):
         assert strict
         seen.append("source")
         run.add(Stage("source", status="fail" if fail else "ok"))
@@ -7089,6 +7135,84 @@ def test_lint_preflight_blocks_a_red_check_tooling(tiny_repo: Path, tmp_path, mo
         land_mod._lint_preflight(tiny_repo, Run("land", "t"), _Args())
     # the failing check must be NAMED — "exit 1" alone sends you back to re-run it by hand
     assert "ruff:tools/*.py" in str(ei.value)
+
+
+def _diverge(repo: Path, lane_text: str, up_text: str, path: str = "a.txt") -> None:
+    """`up` = upstream with its own commit; HEAD = the lane with another."""
+    _git(repo, "branch", "up")
+    _git(repo, "checkout", "-q", "up")
+    (repo / path).write_text(up_text)
+    _git(repo, "commit", "-qam", "up")
+    _git(repo, "checkout", "-q", "-")
+    (repo / "lane.txt").write_text(lane_text)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "lane")
+
+
+def test_premerge_is_skipped_when_the_lane_already_contains_master(
+    tiny_repo, tmp_path, monkeypatch
+):
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    _git(tiny_repo, "branch", "up")
+    run = Run("land", "t")
+    with land_mod._premerge_worktree(tiny_repo, run, upstream="up") as pm:
+        assert pm is None
+    assert run.stages[-1].status == "skip"
+
+
+def test_premerge_refuses_a_lane_that_conflicts_with_master(tiny_repo, tmp_path, monkeypatch):
+    """The conductor bounces a CONFLICT only after the queue wait; merge-tree sees it now."""
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    _git(tiny_repo, "branch", "up")
+    _git(tiny_repo, "checkout", "-q", "up")
+    (tiny_repo / "a.txt").write_text("master's\n")
+    _git(tiny_repo, "commit", "-qam", "up")
+    _git(tiny_repo, "checkout", "-q", "-")
+    (tiny_repo / "a.txt").write_text("lane's\n")
+    _git(tiny_repo, "commit", "-qam", "lane")
+    with (
+        pytest.raises(land_mod.LandAbort) as ei,
+        land_mod._premerge_worktree(tiny_repo, Run("land", "t"), upstream="up"),
+    ):
+        pytest.fail("must not yield")
+    assert "CONFLICTS" in str(ei.value) and "a.txt" in str(ei.value)
+
+
+def test_premerge_checks_out_the_MERGED_tree_and_removes_it(tiny_repo, tmp_path, monkeypatch):
+    """The 2026-10-16 shape: the lane's tip is clean, master changed an input under it.
+    Only a tree holding BOTH sides can see that, and nothing of it may outlive the land."""
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    monkeypatch.setattr(land_mod, "_provision_premerge", lambda repo, wt: None)
+    _diverge(tiny_repo, "lane work\n", "master moved\n")
+    head = land_mod._git(tiny_repo, "rev-parse", "HEAD")
+    run = Run("land", "t")
+    with land_mod._premerge_worktree(tiny_repo, run, upstream="up") as pm:
+        assert pm is not None
+        wt, master = pm
+        assert master == land_mod._git(tiny_repo, "rev-parse", "up")
+        assert (wt / "a.txt").read_text() == "master moved\n"
+        assert (wt / "lane.txt").read_text() == "lane work\n"
+    assert not wt.exists()
+    assert str(wt) not in land_mod._git(tiny_repo, "worktree", "list")
+    assert land_mod._git(tiny_repo, "rev-parse", "HEAD") == head, "the lane itself is untouched"
+    assert land_mod._git(tiny_repo, "status", "--porcelain") == ""
+
+
+def test_merged_lint_preflight_names_the_merge_and_skips_generated(
+    tiny_repo, tmp_path, monkeypatch
+):
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    _fake_cli(tiny_repo, rc=1, out="  ✗ pytest:tools/test_gen_apisets_table.py\n$*")
+    p = tiny_repo / "vibeos-cli"
+    p.write_text('#!/bin/sh\necho "  ✗ pytest:tools/test_x.py args=$*"\nexit 1\n')
+    run = Run("land", "t")
+    with pytest.raises(land_mod.LandAbort) as ei:
+        land_mod._lint_preflight(tiny_repo, run, _Args(), merged="87b381060c21aaaa")
+    msg = str(ei.value)
+    assert "MERGED with origin/master 87b381060c21" in msg
+    assert "git merge origin/master" in msg
+    log = (run.dir / "preflight-check-tooling@merged.log").read_text()
+    assert "args=check-tooling --skip-generated" in log
 
 
 def test_lint_preflight_KEEPS_the_output_it_captured(tiny_repo: Path, tmp_path, monkeypatch):
@@ -11921,6 +12045,40 @@ def test_staging_amd64_build_holds_build_i386_still(tmp_path, monkeypatch):
     assert not held("amd64", no_wow64_stage=True)
     assert not held("i386", no_wow64_stage=False)
     assert not held("arm64", no_wow64_stage=False)
+
+
+def test_staging_amd64_waits_on_an_i386_tree_that_does_not_exist_yet(tmp_path, monkeypatch):
+    """Launched beside a fresh i386 build on a pruned worktree, amd64 used to skip the
+    lock (no build-i386 yet) and fail at configure on the SysWOW64 closure. The lock is
+    keyed by path, so it is taken anyway; a directory the holder created is then read,
+    and one nothing created is refused up front with the fix."""
+    i386 = tmp_path / "build-i386"
+    taken: list[str] = []
+
+    def acquire(d, **kw):
+        taken.append(Path(d).name)
+        if provision:
+            i386.mkdir()  # the concurrent i386 build provisioned it, then released
+        return 7
+
+    monkeypatch.setattr(build_mod.hostlock, "acquire_build_dir", acquire)
+    monkeypatch.setattr(build_mod.hostlock, "release", lambda fd: None)
+    args = types.SimpleNamespace(no_wow64_stage=False)
+
+    provision = True
+    run = build_mod.Run("build", "amd64")
+    with contextlib.ExitStack() as reads:
+        assert build_mod._hold_wow64_source(run, tmp_path, "amd64", args, reads)
+    assert taken == ["build-i386"]
+
+    i386.rmdir()
+    taken.clear()
+    provision = False
+    run = build_mod.Run("build", "amd64")
+    with contextlib.ExitStack() as reads:
+        assert not build_mod._hold_wow64_source(run, tmp_path, "amd64", args, reads)
+    assert taken == ["build-i386"]
+    assert run.classification == "NO_BUILD_DIR"
 
 
 def test_a_host_launch_failure_does_not_cancel_the_payload_runs():

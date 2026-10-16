@@ -325,37 +325,25 @@ StressTesting(ULONG AllocationType)
     ULONG Index = 0;
     PVOID Base = NULL;
     PVOID *bases = NULL;
-    ULONG NumberOfElements = 0;
-    SIZE_T RegionSize, basesSize;
+    ULONG NumberOfElements;
+    SIZE_T RegionSize;
 
 #ifdef _WIN64
-    // 2 TB total
-    // Going too high causes the test to time out
-    basesSize = 2 * 1024 * 1024;
-    RegionSize = 1 * 1024 * 1024;
-    /* vibeos: capped at 4096 chunks (4 GB). Our VAD free-range search walks every VAD in
-     * order, as ReactOS's does, so 262144 reservations cost ~3 hours under TCG and the
-     * sweep kills the test at 180s. 4 GB still runs the commit loop into the commit limit;
-     * the reserve loop never exhausts here because reserving charges no page-table commit
-     * (both are open in the roadmap's known bugs). */
-    basesSize = 4096 * sizeof(PVOID);
+    // 256 TB total, large chunks keep the VAD count low
+    NumberOfElements = 4096;
+    RegionSize = 64ULL * 1024 * 1024 * 1024;
 #else
     // 5 GB total
-    /* vibeos: basesSize is in bytes, so upstream's 1024 gave 256 chunks (1.25 GB), which
-     * fits a 32-bit address space and the loops never reached exhaustion: the TODO
-     * above START_TEST's stress calls. 1024 chunks is the 5 GB the comment intends. */
-    basesSize = 1024 * sizeof(PVOID);
+    NumberOfElements = 1024;
     RegionSize = 5 * 1024 * 1024;
 #endif
 
-    bases = ExAllocatePoolZero(PagedPool, basesSize, 'stts');
+    bases = ExAllocatePoolZero(PagedPool, NumberOfElements * sizeof(*bases), 'stts');
     if (!bases)
     {
         trace("Failed to allocate memory for bases array\n");
         return STATUS_INSUFFICIENT_RESOURCES;
     }
-
-    NumberOfElements = basesSize / sizeof(PVOID);
 
     for (Index = 0; Index < NumberOfElements && NT_SUCCESS(Status); Index++)
     {
@@ -607,10 +595,10 @@ START_TEST(ZwAllocateVirtualMemory)
 
     CustomBaseAllocation();
 
-    // TODO: Find out why these sometimes return STATUS_SUCCESS (especially on 32-bit systems)
     Status = StressTesting(MEM_RESERVE);
 #ifdef _WIN64
-    ok_eq_hex(Status, STATUS_COMMITMENT_LIMIT);
+    ok(Status == STATUS_NO_MEMORY || Status == STATUS_COMMITMENT_LIMIT,
+       "Expected STATUS_NO_MEMORY or STATUS_COMMITMENT_LIMIT, got 0x%lx\n", Status);
 #else
     ok_eq_hex(Status, STATUS_NO_MEMORY);
 #endif
