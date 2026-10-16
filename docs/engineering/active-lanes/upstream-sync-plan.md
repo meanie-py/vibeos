@@ -36,21 +36,16 @@ is a lead.
 
 ---
 
-## RESUME HERE (parked 2026-10-15, waiting on control-plane's build-system change)
+## RESUME HERE (2026-10-16: the 2026-10-15 sync is submitted to the merge queue)
 
-Branch `upstream-sync-2` in worktree `vibeos-upstream-sync`, tip `3f58acad7d4`, NOT landed and
-NOT queued (withdrawn on the owner's word: control-plane will ping when ready). It carries the
-2026-10-15 upstream merge (64 commits to upstream c25e4fd7dec) and everything ported on it:
-the hand ports, the kernel/HAL island regen, the $0.10 Haiku translations (pnpprop, cacheinfo)
-and the conformance re-baselines. Every commit was green at its own tree: build x3, smoke x3,
-`check --strict`, `check-tooling`. Gate history: `59b86e722bb` was rejected CONFORMANCE_RED
-(RtlRangeList -1 and the ZwAllocateVirtualMemory stress rewrite, both upstream test changes);
-`3f58acad7d4` re-baselines them from that gate's own results, and has not been gated.
-
-To resume: `git fetch && git merge origin/master`, rebuild x3, `./vibeos-cli land`.
-Still owed (roadmap "2026-10-15 sync"): the storport revival -- awaiting the owner's call on
-replacing storport-rust vs porting into a new crate; its regenerated type island is parked in
-the stash `upstream-sync: storport island regen for the revival (pending port decision)`.
+Branch `upstream-sync-2` in worktree `vibeos-upstream-sync`: the 2026-10-15 upstream merge (64
+commits to upstream c25e4fd7dec), its hand ports, the kernel/HAL island regen, the Haiku
+translations (pnpprop, cacheinfo, $0.10; storport re-ported over its old crate, $0.25), the
+conformance re-baselines for upstream's own kmtest changes, and origin/master merged on
+2026-10-16 (the immutable artifact store). Green before submitting: build x3, smoke x3,
+`check --strict`, `check-tooling`. Check `./vibeos-cli land-status --mine` for the verdict.
+Still owed (roadmap "2026-10-15 sync"): IoGet/SetDeviceInterfacePropertyData (Win10 stubs);
+shell32's RegenerateUserEnvironment (shell32-com) and mmc_new's views (cpp-cluster).
 
 ## Measured, 2026-09-20 (re-derive before trusting — these will drift)
 
