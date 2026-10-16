@@ -523,6 +523,14 @@ def _execute(repo, broker, output, executor):
     return _read_json(output / "report.json")
 
 
+def _staticlib(manifest):
+    """A manifest staticlib: `cargo build --lib` writes the archive the store
+    publishes. An extra `rlib` (cmlib-rust, rtl-rust: bodies that are also Rust
+    dependencies) changes nothing about that archive."""
+    kinds = manifest.get("lib", {}).get("crate-type")
+    return isinstance(kinds, list) and "staticlib" in kinds and set(kinds) <= {"staticlib", "rlib"}
+
+
 def _ineligible(state, body, reasons, started):
     """An unsupported graph builds through the existing private path: a dispatch
     decision, recorded with its reason, never a claimed hit. Strict mode (tests and
@@ -689,9 +697,7 @@ def request(
         manifest = (
             api.inputs.tomllib.loads(manifest_path.read_text()) if manifest_path.is_file() else {}
         )
-        if manifest.get("package", {}).get("name") != body or manifest.get("lib", {}).get(
-            "crate-type"
-        ) != ["staticlib"]:
+        if manifest.get("package", {}).get("name") != body or not _staticlib(manifest):
             return _ineligible(
                 state, body, ["not a manifest staticlib at sdk/lib/rust/<body>"], started
             )
@@ -851,9 +857,7 @@ def _repair_request(api, state, manifest):
     kernel, context = matches[0]
     repo = Path(state["repo"])
     package_manifest = api.inputs.tomllib.loads((repo / package / "Cargo.toml").read_text())
-    if package_manifest.get("package", {}).get("name") != body or package_manifest.get(
-        "lib", {}
-    ).get("crate-type") != ["staticlib"]:
+    if package_manifest.get("package", {}).get("name") != body or not _staticlib(package_manifest):
         raise RuntimeError_("repair requires the current package's manifest staticlib")
     discovery = api.inputs.discover(
         repo, body, context, cargo=str(toolchain / "bin/cargo"), **options

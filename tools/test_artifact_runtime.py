@@ -744,6 +744,13 @@ def test_any_workspace_staticlib_is_a_candidate_not_just_the_pilot_six(harness):
     )
     with supervise(api) as path:
         assert runtime.request(path, "other-rust", "cargo:other", _api=api)["builder_calls"] == 1
+        # A body that is also a Rust dependency (staticlib + rlib) is a candidate too.
+        both = api.repo / "sdk/lib/rust/both-rust"
+        (both / "src").mkdir(parents=True)
+        (both / "Cargo.toml").write_text(
+            '[package]\nname="both-rust"\nversion="0.1.0"\n[lib]\ncrate-type=["staticlib","rlib"]\n'
+        )
+        assert runtime.request(path, "both-rust", "cargo:both", _api=api)["builder_calls"] == 1
         # A package that is not a manifest staticlib is ineligible, not an error.
         missing = runtime.request(path, "no-such-rust", "cargo:none", _api=api)
         assert missing["status"] == "ineligible"
