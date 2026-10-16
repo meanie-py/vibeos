@@ -21,6 +21,11 @@ def add_parser(sub) -> None:
     gc.add_argument("--store", type=Path, required=True)
     gc.add_argument("--apply", action="store_true")
     gc.add_argument("--grace-seconds", type=float, default=3600)
+    gc.add_argument(
+        "--keep-dead-refs",
+        action="store_true",
+        help="treat every durable ref as live, even when its worktree or cargo out dir is gone",
+    )
     gc.set_defaults(fn=maintenance_command)
     repair = commands.add_parser("repair", help="explicitly reproduce one missing indexed blob")
     repair.add_argument("--store", type=Path, required=True)
@@ -101,6 +106,7 @@ def add_parser(sub) -> None:
 
 
 def maintenance_command(args, repo: Path) -> int:
+    from tools.artifact_runtime import lane_ref_alive
     from tools.artifact_store import Store
 
     try:
@@ -110,7 +116,11 @@ def maintenance_command(args, repo: Path) -> int:
         result = (
             store.status()
             if args.artifact_command == "status"
-            else store.gc(apply=args.apply, grace_seconds=args.grace_seconds)
+            else store.gc(
+                apply=args.apply,
+                grace_seconds=args.grace_seconds,
+                ref_alive=None if args.keep_dead_refs else lane_ref_alive,
+            )
         )
         print(json.dumps(result, indent=2, sort_keys=True))
         return 0

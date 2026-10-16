@@ -420,6 +420,7 @@ def build(args, repo: Path) -> int:
                 rc = _build_supervised(args, repo, run, arch, cfg, build_dir, cold)
             if rc == 0:
                 _trim_own_target(repo)
+                _scheduled_store_gc(args)
             return rc
     except hostlock.buildpolicy.PolicyError as exc:
         run.classification = "BUILD_POLICY_REFUSED"
@@ -444,6 +445,27 @@ def _trim_own_target(repo: Path) -> None:
             )
     except OSError as exc:
         print(f"[trim] skipped: {exc}")
+
+
+def _scheduled_store_gc(args) -> None:
+    """Collect the shared artifact store at most daily, after a green build (see
+    `tools.artifact_runtime.scheduled_gc`). Never fails the build."""
+    if getattr(args, "no_artifact_store", False) or os.environ.get("VIBEOS_STORE_GC") == "0":
+        return
+    store = getattr(args, "artifact_store", None) or default_artifact_store()
+    try:
+        from tools.artifact_runtime import scheduled_gc
+
+        report = scheduled_gc(Path(store))
+    except Exception as exc:  # maintenance must never fail a green build
+        print(f"[store-gc] skipped: {exc}")
+        return
+    if report is not None:
+        print(
+            f"[store-gc] dropped {len(report['dead_refs'])} dead refs, "
+            f"{len(report['actions'])} actions, {len(report['blobs'])} blobs, "
+            f"{len(report['staging'])} staging dirs"
+        )
 
 
 def _flag_in_cache(build_dir: Path, flag: str) -> bool:
