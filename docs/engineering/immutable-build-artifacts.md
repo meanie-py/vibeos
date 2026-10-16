@@ -14,6 +14,42 @@ Discovery is available through `vibeos-cli artifact-store inventory` and `plan`;
 execution context. These commands report candidates, not cache hits. Measurements
 are recorded under `disk-optimization-results/20261016-artifact-spike/`.
 
+## Rollout, 2026-10-16 (measured)
+
+Every nested body build on a builtin triple with the recipe's flags now goes to the
+store; discovery decides eligibility per graph. 372 of the 391 workspace bodies
+(`staticlib`, or `staticlib` + `rlib`) pass discovery, and a prepare-only pass over all
+372 (discovery, snapshot, normalization and the worker's graph check, no compile) is
+clean. Per build, about 8-9 requests per arch are ineligible and build privately; the
+supervisor summary lists each body with its reason. Today they are: build scripts
+(hal-rust, ntdll-rust), registry crates (cabinet-rust's libz-rs-sys, vioblk-rust's
+virtio-drivers), target-specific dependency tables (rtl-rust through cnt-rust),
+`build-dependencies` (svcctl-stub, winreg-stub) and manifest lints (fastfat-rust).
+Bodies on the i386 kernel's custom target JSON and the per-crate
+`no-prepopulate-passes` builds (cnt-rust-lib, rtl-rust i386) are never offered.
+
+| Measurement (same host, same commit) | Result |
+|---|---|
+| Fleet before (`prune` dry run, 9 trees, 2026-10-15) | 808.5 G of build output; 90-125 G per lane |
+| Second lane, cold three-arch build, store already warm | 33 G: cargo target 15 G (cell link dirs 11 G, private body shards 4 G), build dirs 5.1-5.6 G each |
+| Same lane, cold, store being filled at once | i386 16m17s, arm64 16m04s, amd64 32m05s (amd64 waits for i386: SysWOW64) |
+| First lane rebuilt against that store | 608/643/639 hits, **0 misses, 0 body compiles**, 4-8 min per arch |
+| Store after both lanes | 4.5 G, 2,143 actions (all three arches, two implementation revisions) |
+
+An action key includes the store's own implementation (`implementation_identity`), so
+an edit to `tools/artifact_*.py` re-fills the store once. Found by the rollout and fixed:
+a dependency's renamed `[lib]` (scsidisk) lost in discovery's resolution manifests; a
+package nested in another's root (delayimp-rust's hooks) colliding in the worker
+projection; a fresh worktree's first build supervising before `.build-tools` and the
+host-jobs broker exist.
+
+**Next, by size:** the cell link dirs (`<cell>-<arch>-cargo-link`) hold about 7 MB
+each of host-side build tooling (the build script, cc and reactos-link rlibs) compiled
+again for each of ~724 cells: about 5 G a lane. Sharing them needs sharded outer target
+dirs (the outer Cargo lock is held for the whole link), and every tool that finds a
+cell's outputs by its dir name moves with it. The build dirs' C objects are the other
+large part; ccache already shares their compiles.
+
 ## Objective and scope
 
 Let worktrees reuse unchanged build results without recompiling them or retaining
