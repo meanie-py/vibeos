@@ -149,6 +149,24 @@ _TOKEN_ENUMERATION_RE = re.compile(r"(?m)^((?:Call t|T)okens) \(\d+\): .*$")
 _ENVELOPE_BODY_RE = re.compile(r"(?ms)^(## Deterministic (?:fact|call) envelope)\n.*?(?=\n## |\Z)")
 
 
+# A contract section that DESCRIBES rather than grants: cppapp's class context lists the
+# Rust shape of each module class a body names (fields, bases, reached methods). It is
+# derived from the class model, which improves every time the tooling does -- rapps had
+# 17 units of accepted bodies refused because an external base became a typed alias and
+# a rosctrls class gained a reached method. Nothing in it is an API a pre-change body
+# could not have used; integration repairs drift in the description. So an entry whose
+# capability TITLES are unchanged and all derived replays even when the listing moved.
+# The ATL types section likewise lists atl_rust's API as extracted from its source: a
+# method added there (CStringW::Trim, for rapps) re-keyed every body naming CStringW. A
+# body bought against the older listing uses a subset of it; a method removed or changed
+# fails its compile loudly. A NEW section (the local-RAII grant) still changes the titles.
+_DERIVED_SECTIONS = ("C++ class context", "ATL types")
+
+
+def _derived_only(titles: list[str]) -> bool:
+    return all(t.startswith(_DERIVED_SECTIONS) for t in titles)
+
+
 def _capability(contract: str) -> str:
     collapsed = _ENVELOPE_BODY_RE.sub(r"\1 <verification prose>", contract or "")
     return _TOKEN_ENUMERATION_RE.sub(r"\1: <enumeration>", collapsed)
@@ -280,6 +298,9 @@ class ResponseCache:
                 self._manifest = json.loads(self.manifest_path.read_text())
             except (OSError, ValueError):
                 self._manifest = {}
+        # name -> why its last `get` missed, quoted by `refuse_repurchase`: "did not replay"
+        # alone sent rapps' integrator guessing at the cause twice.
+        self.miss_reason: dict[str, str] = {}
 
     def get(
         self,
@@ -306,6 +327,7 @@ class ResponseCache:
         """
         entry = self._manifest.get(name)
         if not entry or entry.get("hash") != _hash(body_text):
+            self.miss_reason[name] = "no entry" if not entry else "the C body changed"
             return None
         # `caps` marks an entry stamped under the settled rule; only those are held to
         # an exact capability hash. Anything older stamped a different normalization of
@@ -313,10 +335,18 @@ class ResponseCache:
         # contract can prove instead — see `_legacy_contract_ok`.
         if "caps" in entry:
             if entry["contract"] != _hash(_capability(contract)):
-                return None
+                titles = _capability_titles(contract)
+                if entry["caps"] != titles or not _derived_only(titles):
+                    self.miss_reason[name] = (
+                        f"the contract changed (capabilities {entry['caps']} -> {titles})"
+                    )
+                    return None
         elif "contract" in entry and not _legacy_contract_ok(entry["contract"], contract):
+            self.miss_reason[name] = "a pre-normalization contract with a capability"
             return None
         if not _sealed_ok(entry.get("sealed"), sealed):
+            grew = sorted(set(sealed or ()) - set(entry.get("sealed") or []))
+            self.miss_reason[name] = f"the seal set grew by {grew[:8]}"
             return None
         f = self.dir / entry.get("file", "")
         if not f.exists():
@@ -328,6 +358,7 @@ class ResponseCache:
         if not text.strip():
             return None
         if _SEAL_TOKEN_RE.search(text):
+            self.miss_reason[name] = "the banked text holds a seal token"
             return None  # poisoned by a pre-fix run: re-translate instead of replaying
         return text
 
@@ -373,7 +404,8 @@ class ResponseCache:
             return
         if accepted or self.get_rejected(name) is not None:
             raise ValueError(
-                f"{self.dir}: {name} already has purchased output which did not replay. "
+                f"{self.dir}: {name} already has purchased output which did not replay"
+                f" ({self.miss_reason.get(name, 'reason not recorded')}). "
                 "Refusing to buy it again automatically; inspect/repair the banked body "
                 "and its audit first. If the C is unchanged but a seal got stricter since the "
                 f"purchase, re-buy just this body with `--rebuy-fn {name}`; --no-resume is an "

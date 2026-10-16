@@ -55,7 +55,8 @@ you boot to turn one on for your build:
 - `/STORTEST`: winlogon starts `stortest.exe`, which looks for the `VIBEUSB` stick or the Pi
   4's `VIBEOS_RPI4` card for up to two minutes and runs write+flush+read-back on it. Off by
   default since 2026-10-08: it used to start whenever any USB disk was present, which on the
-  bench is every boot (the Pico's disk), and it writes to the boot card.
+  bench is every boot (the Pico's disk), and it writes to the boot card. On the Pi 5,
+  `vibeos-cli pi5 boot --stortest` runs the whole check with no stick (`pi5-bench.md`).
 - `/PROCTRACE`: the kernel's per-process and per-thread breadcrumbs (`[PS]`, `[MM]
   InitProcAS`, `[IRQL-CHK]`, `[APC]`).
 

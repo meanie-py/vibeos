@@ -2074,12 +2074,13 @@ def stage_flip(stem: str) -> None:
     # expand's translate stitch was refused (no body written), `port check` said "+1 module
     # not translated yet", and the flip went ahead -- the build then failed E0583 on all three
     # arches. A file test, not a cargo run: this is the check that must not be skippable.
-    src = _crate_dir(state) / "src" / stem
+    # The SAME mapping flip_cmake writes into the comment: a cppapp TU's Rust is its
+    # synthetic unit (`appdb.cpp` -> `appdb_cpp_h.rs`), which a `<stem>.rs` test never finds.
     missing = [
         Path(tu).name
         for tu in state.get("tus", [])
-        if not (src / f"{Path(tu).stem}.rs").is_file()
-        and not (src / Path(tu).stem / "mod.rs").is_file()
+        if not _flip_output(state, tu).is_file()
+        and not (_flip_output(state, tu).with_suffix("") / "mod.rs").is_file()
     ]
     if missing:
         raise PortError(
@@ -3859,6 +3860,11 @@ def stage_integrate(stem: str) -> None:
     assembled = _cppapp_assemble_all(state)
     if assembled:
         print(f"integrate: assembled {', '.join(assembled)} into their classes")
+    # A translate rewrites its units and drops the hand bank's bodies; only replay used to put
+    # them back, so rapps' hand-written functions vanished after every translate+integrate.
+    # After assembly: a method bank (`Class::Method`) lives inside its `impl`.
+    if _hand_dir(stem).is_dir():
+        apply_hand(stem)
     ptr_types, decls = _pointer_decls(state)
     ptr_targets = pointer_depth.pointer_targets(_island_texts(crate))
     depth_fixed: list[str] = []
@@ -4024,6 +4030,18 @@ def stage_integrate(stem: str) -> None:
                 None,
             )
         )
+        if source is None:
+            # A synthetic HEADER unit (rapps' atlbase_h_h: CRegKey's bodies) compiles as its
+            # via TU does. Without this its worker's `fn RegDeleteKey(..)` kept the TCHAR
+            # name and all three arches failed the link on it.
+            source = next(
+                (
+                    REPO / via
+                    for unit, via in (state.get("header_tus") or {}).items()
+                    if Path(unit).stem + "_h" == path.stem
+                ),
+                None,
+            )
         if source is not None:
             linked = _aw_extern_link_names(path, source)
             if linked:
@@ -4368,6 +4386,10 @@ def _tchar_structs(state: dict, prelude: Path) -> dict[str, str]:
     )
     out = {}
     for name, base in _A_ALIAS_RE.findall(text):
+        if name.endswith("A") and f"{name[:-1]}W" in defined:
+            # `WNDCLASSEXA = _WNDCLASSEXA` is the explicit ANSI name, not a TCHAR one: rapps
+            # had `WNDCLASSEXA = _WNDCLASSEXW` written because a comment spelled it.
+            continue
         if f"{base}W" in defined and re.search(rf"\b{re.escape(name)}\b", units):
             out[name] = f"{base}W"
     return out

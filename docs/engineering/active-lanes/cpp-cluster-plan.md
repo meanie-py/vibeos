@@ -56,18 +56,40 @@ and all shared-file edits stay central. The brief that worked (Sonnet; mmc_new) 
   matches itself forever (an integrator lost 3 hours to this). Run long stages in the
   foreground with a long timeout.
 
-## Next: rapps (needs per-instantiation templates)
+## rapps (FLIPPED 2026-10-15)
 
-`port cppapp rapps` fails: `CPointerArray<CUiPrimitive>` has no layout. rapps' `rosui.h`
-templates depend on their argument — `CPointerArray<T, GrowthRate>` (rosui.h:12) and
-`CUiWindow<T = CWindow> : CUiPrimitive, CUiBox, T` (rosui.h:482, T is a BASE class; 9
-distinct instantiations). `cpp_templates.REGISTRY` only covers argument-independent templates.
-Design: take each `ClassTemplateSpecializationDecl` from clang's AST and render one concrete
-class per instantiation (mangled name, e.g. `CUiWindow_CListView`), so layout/vtable/base
-embedding reuse the normal class path. The scaffolded crate is parked at
-`~/vibeos-rust-staging/port/rapps/parked/rapps-rust`; un-park by moving it back to
-`sdk/lib/rust/` and re-adding the workspace member. The same mechanism unblocks cleanmgr's
-`CLocalPtr<T>` properly.
+**RESUME HERE (2026-10-15 night):** landing is PAUSED at the user's request while the
+control plane reworks the build system; they will ping when it is time. Then: `git fetch &&
+git merge origin/master`, `./vibeos-cli build --arch {i386,amd64,arm64}` on the merged tree,
+`./vibeos-cli land`. The lane tip was withdrawn from the queue (`land --withdraw`), never
+gated. appstorm rapps PASS x3 on this lane (i386/amd64 at eaa7815, arm64 at 8ab976d).
+
+Tooling done for it (pipeline doc § `port cppapp`): per-instantiation class templates, the
+rosctrls.h controls modeled as external classes (only reached methods are translated), ATL
+COM objects over `atl_rust::com`, and the window glue for a hand-written
+`ProcessWindowMessage`/`GetWndClassInfo`, CRTP through a template, `CWindowImpl<T, TBase>`
+and window traits. Translation: 607 functions, $0.58. Five were rejected and are to be
+hand-written: cabinet's `FNCLOSE(fnFileClose)` (an FDI macro that names the function), loaddlg's
+`CDowloadingAppsListView::AddRow`, and misc's `RegKeyHasValues`, `IsSameRegKey` (a
+function-local struct with a constructor) and `GuessInstallerType`.
+
+2026-10-15: the crate is at 0 `cargo check` errors on all three arches. Two Sonnet
+integrators split the 25 units (UI / the rest); everything they edited is banked in
+`~/vibeos-rust-staging/port/rapps/hand/` (~150 entries), so `port replay rapps` puts it back.
+Total spend so far ~$0.71. Fidelity fixes they found beyond type errors: a `!(x & F) != 0`
+precedence bug, `GetWndClassInfo` statics rebuilt per call (re-registering the class), and
+the GDI+ screenshot math done in double as the C++ does.
+
+2026-10-15, flipped: appstorm opens "ReactOS Applications Manager" on all three arches
+(i386 9.0 s, amd64 8.2 s, arm64 47.6 s). `port replay rapps` rebuilds it at $0 from the bank
+plus ~155 hand entries. Total spend ~$0.73. Bring-up found six generator bugs, each now a
+tool fix with a test: member objects not default-constructed, Drop dispatching through the
+derived vtables, `return this;` as a secondary base, `delete member;` dropping its operand's
+edits, qualified base calls going virtual (infinite recursion), and a `char*` cast to a
+CStringA object. `check` then flagged three more in the shipped Rust: two `!BOOL != 0`
+(CWindow::DestroyWindow always FALSE; RemoveSelectedAppFromRegistry always bailing) and an
+array passed by value into variadic ConPrintf (`rapps /?`). Bring-up method that worked:
+`llvm-symbolizer-18 --obj=<exe> <RIP>` on the serial dump, then `atl_rust::win::trace` probes.
 
 ## Queue after rapps
 
@@ -80,8 +102,45 @@ Rust — don't requeue it.)
 
 - Deterministic lowering of per-arch `#if` chains in C++ synthetic units (drwtsn32's
   CONTEXT access was hand-written as `cfg` blocks instead).
-- A shared `rosctrls` crate: certmgr hand-ports `rosctrls.h` into `src/rosctrls.rs`; the
-  next consumer should share it rather than copy it.
+- certmgr's hand-ported `src/rosctrls.rs`: rosctrls.h is now modeled by cppapp (rapps), so
+  a certmgr regeneration should drop the hand port.
+- The shell extensions need what rapps half-built: `atl_rust::com` covers a COM object's
+  IUnknown, but not a DLL's object map (`BEGIN_OBJECT_MAP`/`OBJECT_ENTRY_AUTO`), class
+  factories, `DllGetClassObject`/`DllCanUnloadNow`, or `.rgs` registration.
+- rapps' `src/gdiplus_flat.rs` is a hand-made extern block, copied from desk-rust's C island:
+  the C++ island binds no `Gdiplus::DllExports` function. gen_driver_types should bind the
+  flat functions reached by an external class's bodies.
+- `atl_rust::win::create_window` (the DECLARE_WND_CLASS path) does not give a child window
+  `this` as its control ID the way ATL's `CWindowImplBaseT::Create` does;
+  `create_window_info` (a module's own GetWndClassInfo) does. Unify them, and check the
+  shipped window modules when doing so.
+- rapps integrators' local workarounds that want an atl_rust/prelude home: `CAtlList::FindPos`
+  (returns POSITION; `Find` returns bool), `CStringW::{Replace(str,str), FindOneOf,
+  CopyChars, GetEnvironmentVariable}`, `CStringA::Append`, `InterlockedIncrement64` in
+  win32macros-rust, and an `atl_rust::win::unsubclass_window` (loaddlg declares GetPropW /
+  RemovePropW locally and hard-codes atl_rust's prop names). The island's
+  `ATL__ATL_WNDCLASSINFOW::m_wc` is `WNDCLASSEXA`, and prelude `DLGPROC`/`WNDPROC` are spelled
+  over `ntdll_sys::HWND__` rather than the island's; both are transmuted at the call site.
+  The model also wrote `new_0::<T>()` on non-generic fns and called `__ctor_0CUiWindow`.
+- A `port integrate` pass rewrites extern blocks after the hand bank is applied: a nested
+  block's closing brace is dedented to column 0 and `unsafe extern` loses `unsafe` (rapps'
+  misc/settings/loaddlg). Harmless on edition 2021, but hand text should be final; find the
+  pass and run it before `apply_hand`, or make it preserve the block's own text.
+- **Re-run `port cppapp` + `port replay` for the shipped C++ apps** after the member
+  default-construction fix (`_ctor_prologue`, 2026-10-15; rapps crashed on it). Audit of the
+  saved models: mspaint 10 members (CStyledCursor's `-1`/`CLR_INVALID` cache keys and
+  VirtualBrush's `PAL_MODERN` start zeroed -- first comparison differs, looks benign), certmgr 5
+  (CSortableHeader, CSplitter: read their ctors), cleanmgr 1 and mmc_new 21 (all CWindow,
+  harmless), certutil/drwtsn32/sndrec32 0. cicero/msctf/msutb/msctfime/ctfmon's saved models
+  predate a `Method` field rename (`callconv`) and could not be read; regenerate to audit.
+  The changed ctors lowered at $0 for rapps. The same re-run picks up three more fixes from
+  rapps bring-up: a polymorphic Drop resetting its own vtables, `return this;` as a secondary
+  base (a probe of the saved units found 0 such returns in the shipped apps; `this` PASSED as
+  a base argument is not yet audited), and `delete member;` (cosmetic once the model repairs it).
+- cpp_lower should spell a C++ implicit converting-constructor TEMPORARY (clang's
+  `ConstructorConversion` into a `const CStringA&` / `const CStringW&` parameter) as an
+  explicit `CStringA(p)`, the way `_temporary` does for written ones. rapps' three FDI
+  sites were hand-fixed and banked; the model's guess was a pointer cast.
 - ~290 bare fn aliases in already-shipped crates have the shape `_option_fn_aliases` fixes
   (non-`Option` fn pointer); UB only if the value can be zero. Audit with that pass.
 - certutil: a SHA1/`hashfile` case on a system with a CSP registered (the live CD has none;

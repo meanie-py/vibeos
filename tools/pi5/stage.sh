@@ -5,6 +5,9 @@
 #   tools/pi5/stage.sh --no-reboot    # stage only
 #   tools/pi5/stage.sh --freeldr-ini  # print the Pi 5's freeldr.ini (make-card.sh uses it)
 #
+# VIBEOS_LOADER_OPTIONS (e.g. "/STORTEST") is appended to every entry's Options=
+# line for this staging only, so an opt-in diagnostic needs no edit to freeldr.ini.
+#
 # The board must be in its Linux stager (any normal boot; see card/config.txt).
 # Every file is checked by SHA-256 on the board before the reboot, and the
 # payload manifest records which commit went on, as tools/pi4/bench.sh stage does.
@@ -18,7 +21,13 @@ REPO=$(cd "$HERE/../.." && pwd)
 # The Pi 4's freeldr.ini, but the menu times out: nothing at the Pi 5 presses a
 # key during an unattended boot. CRLF is kept.
 freeldr_ini() {
-    sed 's/^TimeOut=-1\(\r\{0,1\}\)$/TimeOut=5\1/' "$REPO/tools/pi4/freeldr.ini"
+    local extra=${VIBEOS_LOADER_OPTIONS:-}
+    case "$extra" in
+        *[\\\&\|]*) echo "pi5-stage: VIBEOS_LOADER_OPTIONS may not contain \\ & or |" >&2; exit 2 ;;
+    esac
+    sed -e 's/^TimeOut=-1\(\r\{0,1\}\)$/TimeOut=5\1/' \
+        -e "s|^\\(Options=[^\r]*\\)\\(\r\\{0,1\\}\\)\$|\\1${extra:+ $extra}\\2|" \
+        "$REPO/tools/pi4/freeldr.ini"
 }
 
 case "${1:-}" in

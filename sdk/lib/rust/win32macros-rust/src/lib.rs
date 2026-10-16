@@ -1286,6 +1286,184 @@ pub unsafe fn debugstr_guid<T>(id: *const T) -> *const core::ffi::c_char {
     unsafe { wine_dbgstr_guid(id) }
 }
 
+// Every item from here that calls libwine is `#[inline]` or generic, so it is codegened only in
+// a crate that calls it. A plain `pub fn` lands in this rlib's own object, which every consumer
+// pulls in for the macros' helpers, and apphelp (no libwine) failed to link `wine_dbg_sprintf`.
+
+/// wine/debug.h:228 `wine_dbgstr_longlong`: hex, the high half only when it is nonzero.
+#[inline]
+pub unsafe fn wine_dbgstr_longlong(ll: u64) -> *const core::ffi::c_char {
+    // `unsigned long` is 32 bits on every Windows target (LLP64), so `%lx` takes a u32.
+    unsafe {
+        if ll >> 32 != 0 {
+            wine_dbg_sprintf(c"%lx%08lx".as_ptr(), (ll >> 32) as u32, ll as u32)
+        } else {
+            wine_dbg_sprintf(c"%lx".as_ptr(), ll as u32)
+        }
+    }
+}
+
+// oaidl.h VARTYPE bits (wtypes.h).
+const VT_TYPEMASK: u16 = 0x0fff;
+const VT_VECTOR: u16 = 0x1000;
+const VT_ARRAY: u16 = 0x2000;
+const VT_BYREF: u16 = 0x4000;
+const VT_BSTR_BLOB: u16 = 0x0fff;
+const VT_EMPTY: u16 = 0;
+const VT_NULL: u16 = 1;
+const VT_I2: u16 = 2;
+const VT_I4: u16 = 3;
+const VT_R4: u16 = 4;
+const VT_R8: u16 = 5;
+const VT_CY: u16 = 6;
+const VT_DATE: u16 = 7;
+const VT_BSTR: u16 = 8;
+const VT_DISPATCH: u16 = 9;
+const VT_ERROR: u16 = 10;
+const VT_BOOL: u16 = 11;
+const VT_VARIANT: u16 = 12;
+const VT_UNKNOWN: u16 = 13;
+const VT_I1: u16 = 16;
+const VT_UI1: u16 = 17;
+const VT_UI2: u16 = 18;
+const VT_UI4: u16 = 19;
+const VT_I8: u16 = 20;
+const VT_UI8: u16 = 21;
+const VT_INT: u16 = 22;
+const VT_UINT: u16 = 23;
+const VT_VOID: u16 = 24;
+const VT_RECORD: u16 = 36;
+
+const VARIANT_TYPES: [&core::ffi::CStr; 74] = [
+    c"VT_EMPTY", c"VT_NULL", c"VT_I2", c"VT_I4", c"VT_R4", c"VT_R8", c"VT_CY", c"VT_DATE",
+    c"VT_BSTR", c"VT_DISPATCH", c"VT_ERROR", c"VT_BOOL", c"VT_VARIANT", c"VT_UNKNOWN",
+    c"VT_DECIMAL", c"15", c"VT_I1", c"VT_UI1", c"VT_UI2", c"VT_UI4", c"VT_I8", c"VT_UI8",
+    c"VT_INT", c"VT_UINT", c"VT_VOID", c"VT_HRESULT", c"VT_PTR", c"VT_SAFEARRAY",
+    c"VT_CARRAY", c"VT_USERDEFINED", c"VT_LPSTR", c"VT_LPWSTR", c"32", c"33", c"34", c"35",
+    c"VT_RECORD", c"VT_INT_PTR", c"VT_UINT_PTR", c"39", c"40", c"41", c"42", c"43", c"44", c"45",
+    c"46", c"47", c"48", c"49", c"50", c"51", c"52", c"53", c"54", c"55", c"56", c"57", c"58", c"59",
+    c"60", c"61", c"62", c"63", c"VT_FILETIME", c"VT_BLOB", c"VT_STREAM", c"VT_STORAGE",
+    c"VT_STREAMED_OBJECT", c"VT_STORED_OBJECT", c"VT_BLOB_OBJECT", c"VT_CF", c"VT_CLSID",
+    c"VT_VERSIONED_STREAM",
+];
+
+const VARIANT_FLAGS: [&core::ffi::CStr; 16] = [
+    c"", c"|VT_VECTOR", c"|VT_ARRAY", c"|VT_VECTOR|VT_ARRAY", c"|VT_BYREF",
+    c"|VT_VECTOR|VT_BYREF", c"|VT_ARRAY|VT_BYREF", c"|VT_VECTOR|VT_ARRAY|VT_BYREF",
+    c"|VT_RESERVED", c"|VT_VECTOR|VT_RESERVED", c"|VT_ARRAY|VT_RESERVED",
+    c"|VT_VECTOR|VT_ARRAY|VT_RESERVED", c"|VT_BYREF|VT_RESERVED",
+    c"|VT_VECTOR|VT_BYREF|VT_RESERVED", c"|VT_ARRAY|VT_BYREF|VT_RESERVED",
+    c"|VT_VECTOR|VT_ARRAY|VT_BYREF|VT_RESERVED",
+];
+
+/// wine/debug.h:238 `wine_dbgstr_vt`.
+#[inline]
+pub unsafe fn wine_dbgstr_vt(vt: u16) -> *const core::ffi::c_char {
+    if vt & !VT_TYPEMASK != 0 {
+        return unsafe {
+            wine_dbg_sprintf(
+                c"%s%s".as_ptr(),
+                wine_dbgstr_vt(vt & VT_TYPEMASK),
+                VARIANT_FLAGS[(vt >> 12) as usize].as_ptr(),
+            )
+        };
+    }
+    if let Some(name) = VARIANT_TYPES.get(vt as usize) {
+        return name.as_ptr();
+    }
+    if vt == VT_BSTR_BLOB {
+        return c"VT_BSTR_BLOB".as_ptr();
+    }
+    unsafe { wine_dbg_sprintf(c"vt(invalid %x)".as_ptr(), vt as core::ffi::c_uint) }
+}
+
+/// wine/debug.h `debugstr_vt(vt)` is `wine_dbgstr_vt(vt)`.
+#[inline(always)]
+pub unsafe fn debugstr_vt(vt: u16) -> *const core::ffi::c_char {
+    unsafe { wine_dbgstr_vt(vt) }
+}
+
+/// wine/debug.h:302 `wine_dbgstr_variant`. Generic over the pointee, like `wine_dbgstr_guid`,
+/// so each island's own `VARIANT` passes straight in. The layout read here is oaidl.h's and the
+/// same on every target: `vt` at 0, three reserved WORDs, the value union at 8 (pointer-sized
+/// members included, since the union is 8-aligned for its `LONGLONG`/`DOUBLE` members), and
+/// `BRECORD`'s second pointer `pRecInfo` right after `pvRecord`.
+pub unsafe fn wine_dbgstr_variant<T>(v: *const T) -> *const core::ffi::c_char {
+    use core::ffi::{c_int, c_uint, c_void};
+    if v.is_null() {
+        return c"(null)".as_ptr();
+    }
+    let vt = unsafe { *(v as *const u16) };
+    let val = unsafe { (v as *const u8).add(8) };
+    // Every `at!` read is inside the `unsafe` block below: `v` is a VARIANT, whose union is
+    // 16 bytes on every target.
+    macro_rules! at {
+        ($t:ty) => { *(val as *const $t) };
+    }
+    let p = v as *const c_void;
+    unsafe {
+        if vt & VT_BYREF != 0 {
+            if vt == VT_VARIANT | VT_BYREF {
+                return wine_dbg_sprintf(
+                    c"%p {VT_VARIANT|VT_BYREF: %s}".as_ptr(),
+                    p,
+                    wine_dbgstr_variant(at!(*const u8)),
+                );
+            }
+            if vt == VT_BSTR | VT_BYREF {
+                let r = at!(*const *const u16);
+                return wine_dbg_sprintf(
+                    c"%p {VT_BSTR|VT_BYREF: %s}".as_ptr(),
+                    p,
+                    if r.is_null() { c"(none)".as_ptr() } else { wine_dbgstr_w(*r) },
+                );
+            }
+            return wine_dbg_sprintf(c"%p {%s %p}".as_ptr(), p, wine_dbgstr_vt(vt), at!(*const c_void));
+        }
+        if vt & (VT_ARRAY | VT_VECTOR) != 0 {
+            return wine_dbg_sprintf(c"%p {%s %p}".as_ptr(), p, wine_dbgstr_vt(vt), at!(*const c_void));
+        }
+        // C's variadic promotions: short/char to int, float to double.
+        match vt {
+            VT_EMPTY => wine_dbg_sprintf(c"%p {VT_EMPTY}".as_ptr(), p),
+            VT_NULL => wine_dbg_sprintf(c"%p {VT_NULL}".as_ptr(), p),
+            VT_I2 => wine_dbg_sprintf(c"%p {VT_I2: %d}".as_ptr(), p, at!(i16) as c_int),
+            VT_I4 => wine_dbg_sprintf(c"%p {VT_I4: %d}".as_ptr(), p, at!(i32)),
+            VT_R4 => wine_dbg_sprintf(c"%p {VT_R4: %f}".as_ptr(), p, at!(f32) as f64),
+            VT_R8 => wine_dbg_sprintf(c"%p {VT_R8: %lf}".as_ptr(), p, at!(f64)),
+            VT_CY => wine_dbg_sprintf(c"%p {VT_CY: %s}".as_ptr(), p, wine_dbgstr_longlong(at!(u64))),
+            VT_DATE => wine_dbg_sprintf(c"%p {VT_DATE: %lf}".as_ptr(), p, at!(f64)),
+            VT_BSTR => wine_dbg_sprintf(c"%p {VT_BSTR: %s}".as_ptr(), p, wine_dbgstr_w(at!(*const u16))),
+            VT_DISPATCH => wine_dbg_sprintf(c"%p {VT_DISPATCH: %p}".as_ptr(), p, at!(*const c_void)),
+            VT_ERROR => wine_dbg_sprintf(c"%p {VT_ERROR: %08x}".as_ptr(), p, at!(u32)),
+            VT_BOOL => wine_dbg_sprintf(c"%p {VT_BOOL: %x}".as_ptr(), p, at!(i16) as c_int),
+            VT_UNKNOWN => wine_dbg_sprintf(c"%p {VT_UNKNOWN: %p}".as_ptr(), p, at!(*const c_void)),
+            VT_I1 => wine_dbg_sprintf(c"%p {VT_I1: %d}".as_ptr(), p, at!(i8) as c_int),
+            VT_UI1 => wine_dbg_sprintf(c"%p {VT_UI1: %u}".as_ptr(), p, at!(u8) as c_uint),
+            VT_UI2 => wine_dbg_sprintf(c"%p {VT_UI2: %d}".as_ptr(), p, at!(u16) as c_int),
+            VT_UI4 => wine_dbg_sprintf(c"%p {VT_UI4: %d}".as_ptr(), p, at!(u32)),
+            VT_I8 => wine_dbg_sprintf(c"%p {VT_I8: %s}".as_ptr(), p, wine_dbgstr_longlong(at!(u64))),
+            VT_UI8 => wine_dbg_sprintf(c"%p {VT_UI8: %s}".as_ptr(), p, wine_dbgstr_longlong(at!(u64))),
+            VT_INT => wine_dbg_sprintf(c"%p {VT_INT: %d}".as_ptr(), p, at!(i32)),
+            VT_UINT => wine_dbg_sprintf(c"%p {VT_UINT: %u}".as_ptr(), p, at!(u32)),
+            VT_VOID => wine_dbg_sprintf(c"%p {VT_VOID}".as_ptr(), p),
+            VT_RECORD => wine_dbg_sprintf(
+                c"%p {VT_RECORD: %p %p}".as_ptr(),
+                p,
+                at!(*const c_void),
+                *(val.add(core::mem::size_of::<usize>()) as *const *const c_void),
+            ),
+            _ => wine_dbg_sprintf(c"%p {vt %s}".as_ptr(), p, wine_dbgstr_vt(vt)),
+        }
+    }
+}
+
+/// wine/debug.h `debugstr_variant(v)` is `wine_dbgstr_variant(v)`.
+#[inline(always)]
+pub unsafe fn debugstr_variant<T>(v: *const T) -> *const core::ffi::c_char {
+    unsafe { wine_dbgstr_variant(v) }
+}
+
 /// wine/debug.h: `wine_dbgstr_a(s)` is `wine_dbgstr_an(s, -1)`, an inline like the above.
 #[inline(always)]
 pub unsafe fn wine_dbgstr_a(s: *const core::ffi::c_char) -> *const core::ffi::c_char {
@@ -1932,6 +2110,65 @@ macro_rules! HRESULT_FROM_WIN32 {
 }
 #[macro_export]
 macro_rules! __HRESULT_FROM_WIN32 { ($($t:tt)*) => { $crate::HRESULT_FROM_WIN32!($($t)*) }; }
+
+#[cfg(test)]
+mod no_symbols_tests {
+    /// Cargo.toml's promise, "nothing here emits a symbol": every `pub fn` is `#[inline]` or
+    /// generic, so it is codegened only in a crate that calls it. A plain one lands in this
+    /// rlib's object, every consumer links it, and one that imports libwine (`wine_dbgstr_vt`)
+    /// broke apphelp's link, which has no libwine.
+    extern crate std;
+    use std::{format, vec::Vec};
+
+    #[test]
+    fn every_pub_fn_is_inline_or_generic() {
+        let src = include_str!("lib.rs");
+        let lines: Vec<&str> = src.lines().collect();
+        let mut plain = Vec::new();
+        for (i, line) in lines.iter().enumerate() {
+            let l = line.trim_start();
+            let Some(rest) = l.strip_prefix("pub unsafe fn ").or_else(|| l.strip_prefix("pub fn "))
+            else {
+                continue;
+            };
+            if line.starts_with(' ') || rest.split('(').next().unwrap_or("").contains('<') {
+                continue; // a method or nested item, or generic
+            }
+            let attrs = lines[..i].iter().rev().take_while(|p| p.trim_start().starts_with("#[") || p.trim_start().starts_with("///"));
+            if !attrs.into_iter().any(|a| a.contains("#[inline")) {
+                plain.push(format!("lib.rs:{}: {}", i + 1, l));
+            }
+        }
+        assert!(plain.is_empty(), "not #[inline] and not generic:\n{}", plain.join("\n"));
+    }
+}
+
+#[cfg(test)]
+mod variant_name_tests {
+    //! wine/debug.h's tables, indexed by VARTYPE (wtypes.h). Only the tables: the formatting
+    //! goes through libwine's `wine_dbg_sprintf`, which a host test cannot link.
+    use super::*;
+
+    #[test]
+    fn variant_types_are_indexed_by_vartype() {
+        let name = |vt: u16| VARIANT_TYPES[vt as usize].to_str().unwrap();
+        assert_eq!(name(VT_EMPTY), "VT_EMPTY");
+        assert_eq!(name(VT_UNKNOWN), "VT_UNKNOWN");
+        assert_eq!(name(15), "15");
+        assert_eq!(name(VT_VOID), "VT_VOID");
+        assert_eq!(name(VT_RECORD), "VT_RECORD");
+        assert_eq!(name(64), "VT_FILETIME");
+        assert_eq!(name(73), "VT_VERSIONED_STREAM");
+    }
+
+    #[test]
+    fn variant_flags_are_indexed_by_the_top_nibble() {
+        let flags = |vt: u16| VARIANT_FLAGS[(vt >> 12) as usize].to_str().unwrap();
+        assert_eq!(flags(VT_VECTOR), "|VT_VECTOR");
+        assert_eq!(flags(VT_ARRAY | VT_BYREF), "|VT_ARRAY|VT_BYREF");
+        assert_eq!(flags(0x8000), "|VT_RESERVED");
+    }
+}
 
 #[cfg(test)]
 mod hresult_tests {

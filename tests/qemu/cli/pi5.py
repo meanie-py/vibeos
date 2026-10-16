@@ -30,6 +30,14 @@ SSH_WAIT = 150  # seconds from power-on to the stager's sshd
 # Notepad open, 0% of the loader's text screen or a dark frame).
 DESKTOP_RGB = (50, 121, 187)
 DESKTOP_SHARE = 0.2
+# `pi5 boot --stortest`: the volume stortest.exe looks for, served by the Pico as its
+# remote disk, and the two payloads its read and write checks compare against
+# (stortest.c's MARKER_SUBSTR and WRITE_CONTENT).
+STORTEST_LABEL = "VIBEUSB"
+STORTEST_MARKER = b"vibeos usb e2e marker\r\n"
+STORTEST_WROTE = b"vibeos wrote this through fastfat+usbstor\r\n"
+# stortest polls 120 s for the volume, then writes; this is the wait after the desktop.
+STORTEST_WAIT = 240
 
 
 def bench_dir() -> Path:
@@ -76,6 +84,39 @@ def desktop_share(path: Path) -> float | None:
     px = list(zip(data[0::3], data[1::3], data[2::3], strict=True))
     near = sum(1 for r, g, b in px if abs(r - r0) < 20 and abs(g - g0) < 20 and abs(b - b0) < 25)
     return near / len(px)
+
+
+def stortest_image(path: Path) -> None:
+    """A 32 MiB FAT volume labelled VIBEUSB holding MARKER.TXT, with no partition
+    table: the Pico serves its image as a volume at offset 0."""
+    with open(path, "wb") as f:
+        f.truncate(32 << 20)
+    marker = path.with_name("MARKER.TXT")
+    marker.write_bytes(STORTEST_MARKER)
+    for cmd in (
+        ["mkfs.fat", "-n", STORTEST_LABEL, str(path)],
+        ["mcopy", "-i", str(path), str(marker), "::MARKER.TXT"],
+    ):
+        subprocess.run(cmd, check=True, capture_output=True)
+
+
+def stortest_verdict(text: str) -> tuple[str | None, list[str]]:
+    """("ok" | "fail" | None while still running, this boot's [STORTEST] lines)."""
+    lines = [ln.strip() for ln in text.splitlines() if "[STORTEST]" in ln]
+    if any("[STORTEST] ALL OK" in ln for ln in lines):
+        return "ok", lines
+    if any("[STORTEST] FAILURES" in ln or "no VIBEUSB volume" in ln for ln in lines):
+        return "fail", lines
+    return None, lines
+
+
+def stortest_readback(image: Path) -> bytes | None:
+    """WRITETST.TXT as it landed on the served image: the medium's own account of the
+    write, read on the host rather than by the guest that did it."""
+    cp = subprocess.run(
+        ["mtype", "-i", str(image), "::WRITETST.TXT"], capture_output=True, timeout=30
+    )
+    return cp.stdout if cp.returncode == 0 else None
 
 
 def doctor_stages(repo: Path) -> list[Stage]:
@@ -266,7 +307,25 @@ def _boot(run: Run, args, repo: Path) -> int:
     serial = pi4.serial_file(state) if pi4._pid_runs(state.get("pid"), "pico_serial.py") else None
     start = serial.stat().st_size if serial and serial.exists() else 0
 
-    cp = run.run(_script(repo, "stage.sh"), cwd=repo, stage="stage", timeout=600)
+    options = " ".join([*args.options, *(["/STORTEST"] if args.stortest else [])])
+    image = None
+    if args.stortest:
+        # Its grade is read off serial; an HDMI-only boot cannot give one.
+        if serial is None:
+            run.classification = "BENCH_UNHEALTHY"
+            run.add(
+                Stage(
+                    "stortest",
+                    status="fail",
+                    detail="no serial console",
+                    salient=["tools/pi5/serial.sh up"],
+                )
+            )
+            return run.finalize(repo)
+        image = run.dir / "vibeusb.img"
+        stortest_image(image)
+    env = {**os.environ, "VIBEOS_LOADER_OPTIONS": options} if options else None
+    cp = run.run(_script(repo, "stage.sh"), cwd=repo, env=env, stage="stage", timeout=600)
     manifest = payload_manifest()
     head = subprocess.run(
         ["git", "rev-parse", "--short=12", "HEAD"], cwd=repo, capture_output=True, text=True
@@ -283,7 +342,62 @@ def _boot(run: Run, args, repo: Path) -> int:
         )
         return run.finalize(repo)
     run.extra["payload"] = manifest
-    run.add(Stage("stage", detail=f"{head} (tryboot)"))
+    run.add(Stage("stage", detail=f"{head} (tryboot){' ' + options if options else ''}"))
+
+    if image is None:
+        return _await(run, args, repo, serial, start)
+    # The Pico must hold the medium from before the reboot until stortest is done;
+    # it drops it the moment the server exits.
+    log = (run.dir / "serve-image.log").open("w")
+    server = subprocess.Popen(
+        [*_script(repo, "pico.sh"), "serve-image", str(image), "--writable"],
+        cwd=repo,
+        stdout=log,
+        stderr=subprocess.STDOUT,
+    )
+    try:
+        time.sleep(5)
+        if server.poll() is not None:
+            run.classification = "BENCH_UNHEALTHY"
+            run.add(
+                Stage(
+                    "serve-image",
+                    status="fail",
+                    detail=f"exit {server.returncode}",
+                    salient=[f"see {run.dir / 'serve-image.log'}"],
+                )
+            )
+            return run.finalize(repo)
+        run.add(Stage("serve-image", detail=f"{STORTEST_LABEL} writable"))
+        rc = _await(run, args, repo, serial, start, stortest=True)
+    finally:
+        server.terminate()
+        try:
+            server.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            server.kill()
+        log.close()
+    if not run.classification:
+        wrote = stortest_readback(image)
+        if wrote != STORTEST_WROTE:
+            run.classification = "STORTEST_FAIL"
+            run.add(
+                Stage(
+                    "readback",
+                    status="fail",
+                    detail="WRITETST.TXT missing" if wrote is None else "WRITETST.TXT differs",
+                    salient=[repr(wrote)[:120]],
+                )
+            )
+            return run.finalize(repo)
+        run.add(Stage("readback", detail="WRITETST.TXT on the image matches"))
+        return run.finalize(repo)
+    return rc
+
+
+def _await(
+    run: Run, args, repo: Path, serial: Path | None, start: int, stortest: bool = False
+) -> int:
 
     if serial is not None:
         run.extra["live_serial"] = str(serial)
@@ -291,6 +405,8 @@ def _boot(run: Run, args, repo: Path) -> int:
         pi4._save_serial(run, text)
         if reached:
             run.add(Stage("desktop", detail=pi4.MARKER))
+            if stortest:
+                _await_stortest(run, serial, start)
         else:
             verdict = triage.classify(text, reached=False, fail_marker=None, debugcon=None)
             run.classification = verdict["classification"]
@@ -303,7 +419,7 @@ def _boot(run: Run, args, repo: Path) -> int:
                 Stage("desktop", status="fail", detail=verdict["classification"], salient=salient)
             )
         pi4._screenshot(run, repo, hdmi=_script(repo, "hdmi.sh"))
-        return run.finalize(repo)
+        return 0 if stortest and not run.classification else run.finalize(repo)
 
     # No serial console: HDMI is the only witness. Weaker than the marker (it sees
     # a desktop, not that the shell finished), so it can pass only as a warning.
@@ -347,6 +463,35 @@ def _boot(run: Run, args, repo: Path) -> int:
     return run.finalize(repo)
 
 
+def _await_stortest(run: Run, serial: Path, start: int) -> None:
+    deadline = time.monotonic() + STORTEST_WAIT
+    while True:
+        try:
+            with open(serial, "rb") as f:
+                f.seek(start)
+                text = f.read().decode("utf-8", errors="replace")
+        except OSError:
+            text = ""
+        verdict, lines = stortest_verdict(text)
+        if verdict is not None or time.monotonic() > deadline:
+            break
+        time.sleep(5)
+    pi4._save_serial(run, text)
+    run.extra["stortest"] = lines
+    if verdict == "ok":
+        run.add(Stage("stortest", detail=lines[-1]))
+        return
+    run.classification = "STORTEST_FAIL" if verdict else "HANG_TIMEOUT"
+    run.add(
+        Stage(
+            "stortest",
+            status="fail",
+            detail="failed" if verdict else f"no verdict {STORTEST_WAIT}s after the desktop",
+            salient=lines[-6:] or ["no [STORTEST] line: did winlogon start it?"],
+        )
+    )
+
+
 def add_parser(sub) -> None:
     p = sub.add_parser("pi5", help="Raspberry Pi 5 bench: lease, doctor, boot this tree")
     p.set_defaults(fn=command)
@@ -368,6 +513,19 @@ def add_parser(sub) -> None:
         help="seconds from the tryboot reboot to the desktop",
     )
     boot.add_argument("--allow-stale", action="store_true")
+    boot.add_argument(
+        "--options",
+        nargs="+",
+        default=[],
+        metavar="OPT",
+        help="loader options for this boot only, e.g. /PROCTRACE (pi5-bench.md)",
+    )
+    boot.add_argument(
+        "--stortest",
+        action="store_true",
+        help="serve a VIBEUSB image from the Pico, boot with /STORTEST, grade stortest.exe "
+        "on serial and the written file on the image",
+    )
 
 
 def command(args, repo: Path) -> int:

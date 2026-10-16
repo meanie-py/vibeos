@@ -909,9 +909,17 @@ def _hold_wow64_source(run, repo: Path, arch: str, args, reads: contextlib.ExitS
     no i386 build takes amd64's, so this cannot deadlock. The gate is unaffected:
     it builds amd64 with --no-wow64-stage beside i386 and restages once i386 is
     done, which is the way to get both in parallel by hand too.
+
+    The lock is taken even when build-i386 does not exist yet: the lock file is keyed by
+    path, not by the directory, so an i386 build provisioning a fresh tree holds it from
+    its first moment. Skipping on a missing directory let `build --arch i386` and
+    `build --arch amd64` launched together on a pruned worktree race straight into the
+    configure-time closure check and fail there with CMake's "closure INCOMPLETE"
+    (2026-10-16). If the directory is still missing once the lock is ours, nothing is
+    building it, and the same configure would fail: refuse up front with the fix.
     """
     i386 = repo / "build-i386"
-    if arch != "amd64" or getattr(args, "no_wow64_stage", False) or not i386.is_dir():
+    if arch != "amd64" or getattr(args, "no_wow64_stage", False):
         return True
     t0 = time.monotonic()
     reader = "amd64 SysWOW64 staging"
@@ -937,6 +945,20 @@ def _hold_wow64_source(run, repo: Path, arch: str, args, reads: contextlib.ExitS
         return False
     reads.callback(hostlock.release, fd)
     waited = time.monotonic() - t0
+    if not i386.is_dir():
+        run.classification = "NO_BUILD_DIR"
+        run.add(
+            Stage(
+                "wow64-source",
+                status="fail",
+                detail="build-i386 missing: amd64 media stages SysWOW64 from it",
+                salient=[
+                    "build i386 first (`vibeos-cli build --arch i386`), or pass "
+                    "--no-wow64-stage and restage after it; `gate` orders this itself"
+                ],
+            )
+        )
+        return False
     run.add(
         Stage(
             "wow64-source",
@@ -975,6 +997,19 @@ def _refresh_wow64_guests(run, repo: Path) -> bool:
         timeout=900,
     )
     left = ladder.guests_to_refresh(repo)
+    x64_blocker = ladder.x64_refresh_blocker(repo, left)
+    if cp.returncode == 0 and x64_blocker:
+        # The builder skips an x86-64 guest whose amd64 importlib is absent; on a
+        # first amd64 build that is every one of them, since ninja has not run yet.
+        # Like refresh_blocker above, not a failure of THIS build.
+        run.add(
+            Stage(
+                "wow64-guests",
+                status="skip",
+                detail=f"{len(left)} guest(s) left unbuilt: {x64_blocker}",
+            )
+        )
+        return True
     if cp.returncode != 0 or left:
         run.classification = "GUEST_BUILD_FAIL"
         run.add(

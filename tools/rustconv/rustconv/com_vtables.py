@@ -74,13 +74,45 @@ def merge(island: str, c_pass: str) -> tuple[str, list[str]]:
     c_bodies = {n: t for n, t in c_items if n in ifaces and re.search(r"\blpVtbl\b", t) is not None}
     out: list[str] = []
     for n, t in items(island):
-        out.append(c_bodies.get(n, t) if n else t)
+        out.append(_add_missing_this(n, c_bodies.get(n, t)) if n else t)
     have = {n for n, _ in items(island) if n}
-    added = [t for n, t in c_items if n and n not in have]
+    added = [
+        _add_missing_this(n, t)
+        for n, t in c_items
+        if n and n not in have and not _imported_helper(n, island)
+    ]
     tail = "".join(out) + (
         "\n// COM interfaces' C layout (rustconv.com_vtables)\n" + "".join(added) if added else ""
     )
     return tail, sorted(ifaces - set(c_bodies))
+
+
+# bindgen spells the ABI "stdcall" on i386 at this point; "system" comes later.
+_SLOT_FN_RE = re.compile(r'(unsafe extern "\w+" fn\s*\()(\s*)(?!\s*This\s*:)')
+
+
+def _add_missing_this(name: str, text: str) -> str:
+    """A `IFooVtbl` slot declared without `THIS_` gets its `This: *mut IFoo` back.
+
+    ReactOS's undocumented shell headers write some C-section methods as `STDMETHOD(X)(ULONG
+    flags, ..)` with no `THIS_` (IAssociationArrayInitialize). The C++ call passes `this` all
+    the same -- that is the ABI -- so the slot as written is one parameter short, and the
+    generated `(*p).InitClassElements(..)` passed the object where `flags` goes."""
+    if not name.endswith("Vtbl") or not name.startswith("I"):
+        return text
+    iface = name[: -len("Vtbl")]
+    return _SLOT_FN_RE.sub(lambda m: f"{m.group(1)}{m.group(2)}This: *mut {iface}, ", text)
+
+
+def _imported_helper(name: str, island: str) -> bool:
+    """bindgen's runtime helpers (`__BindgenBitfieldUnit`, `__IncompleteArrayField`, ..) that
+    the island USES without defining: they arrive by import (ntdll-sys's glob) with their
+    impls. Appending the C pass's copy -- the struct alone, an `impl` has no name to carry --
+    shadowed the import, and rapps lost every bitfield accessor (`get_const`, 159 errors)."""
+    return (
+        name.startswith(("__Bindgen", "__Incomplete"))
+        and re.search(rf"\b{re.escape(name)}\b", island) is not None
+    )
 
 
 def _split_top(s: str) -> list[str]:
@@ -129,6 +161,11 @@ def methods(island: str) -> str:
                 continue
             name, _abi, params, ret = sm.groups()
             ps = _split_top(params)[1:]  # the first is `This`
+            # A capitalized parameter name can be a constant in scope -- shlobj_undoc.h's
+            # `IRegTreeOptions::ShowHelp(.., ULONG Unknown)` met ntdll-sys's `Unknown` media
+            # type, and a constant in a parameter is a refutable PATTERN (E0005). Constants
+            # are capitalized, parameters rarely are: those get a trailing underscore.
+            ps = [re.sub(r"^\s*([A-Z]\w*)\s*:", r"\1_:", p) for p in ps]
             names = [p.split(":", 1)[0].strip() for p in ps]
             sig = ", ".join(["&mut self", *ps])
             r = f" -> {ret.rstrip(',').strip()}" if ret else ""

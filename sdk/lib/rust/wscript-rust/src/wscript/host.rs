@@ -112,7 +112,10 @@ unsafe extern "C" fn print_string(string: *const WCHAR) {
         core::ptr::null(),
         core::ptr::null_mut(),
     ) as DWORD;
-    buf = malloc(len as usize) as *mut core::ffi::c_char;
+    // The C allocates `len` (WCHARs) and converts `lena` (bytes) into it, overrunning the heap
+    // under any OEM codepage that needs two bytes for a character; main.c's twin sizes by the
+    // byte count, as this does. Reached whenever stdout is not a console (a pipe, a file).
+    buf = malloc(lena as usize) as *mut core::ffi::c_char;
     if buf.is_null() {
         return;
     }

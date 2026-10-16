@@ -309,10 +309,29 @@ extern "system" {
 // END ORIGINAL C SOURCE
 // ============================================================================
 
-// DeriveAppContainerSidFromAppContainerName maps a profile name to its S-1-15-2-... SID.
-// That SID is a fixed hash of the lowercased name, and this tree has no reference for the exact
-// digest-to-subauthority layout to check against, so no SID is fabricated: arguments are validated
-// as Windows does, then E_NOTIMPL is returned with the output cleared.
+// DeriveAppContainerSidFromAppContainerName, as MEASURED on Windows 11:
+//   * name NULL / out NULL / empty / more than 64 UTF-16 units -> E_INVALIDARG, *out untouched.
+//   * SID = S-1-15-2-d0..d6: lowercase the name per UTF-16 unit (RtlDowncaseUnicodeChar),
+//     SHA-256 the UTF-16LE bytes (no terminating NUL), d0..d6 = first seven LE u32 words of the digest.
+//   * allocated with AllocateAndInitializeSid (8 subauthorities) so the caller releases it with FreeSid.
+extern "system" {
+    fn RtlDowncaseUnicodeChar(SourceCharacter: u16) -> u16;
+    #[link_name = "AllocateAndInitializeSid"]
+    fn AcSidAllocateAndInitializeSid(
+        pIdentifierAuthority: *mut [u8; 6],
+        nSubAuthorityCount: u8,
+        dwSubAuthority0: u32,
+        dwSubAuthority1: u32,
+        dwSubAuthority2: u32,
+        dwSubAuthority3: u32,
+        dwSubAuthority4: u32,
+        dwSubAuthority5: u32,
+        dwSubAuthority6: u32,
+        dwSubAuthority7: u32,
+        pSid: *mut *mut c_void,
+    ) -> i32;
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn DeriveAppContainerSidFromAppContainerName(
     pszAppContainerName: LPCWSTR,
@@ -321,9 +340,38 @@ pub unsafe extern "system" fn DeriveAppContainerSidFromAppContainerName(
     if pszAppContainerName.is_null() || ppsidAppContainerSid.is_null() {
         return E_INVALIDARG_HR;
     }
-    *ppsidAppContainerSid = core::ptr::null_mut();
-    E_NOTIMPL_HR
+    // Bounded scan: never read past the 65th unit.
+    let mut len = 0usize;
+    while len <= 64 && *pszAppContainerName.add(len) != 0 {
+        len += 1;
+    }
+    if len == 0 || len > 64 {
+        return E_INVALIDARG_HR;
+    }
+    let mut bytes = [0u8; 128];
+    let mut i = 0usize;
+    while i < len {
+        let c = RtlDowncaseUnicodeChar(*pszAppContainerName.add(i));
+        let le = c.to_le_bytes();
+        bytes[2 * i] = le[0];
+        bytes[2 * i + 1] = le[1];
+        i += 1;
+    }
+    let d = crate::userenv::sha256::sha256(&bytes[..2 * len]);
+    let w = |k: usize| u32::from_le_bytes([d[4 * k], d[4 * k + 1], d[4 * k + 2], d[4 * k + 3]]);
+    // SECURITY_APP_PACKAGE_AUTHORITY = {0,0,0,0,0,15}; SECURITY_APP_PACKAGE_BASE_RID = 2.
+    let mut auth: [u8; 6] = [0, 0, 0, 0, 0, 15];
+    let mut sid: *mut c_void = core::ptr::null_mut();
+    if AcSidAllocateAndInitializeSid(
+        &mut auth, 8, 2, w(0), w(1), w(2), w(3), w(4), w(5), w(6), &mut sid,
+    ) == 0
+    {
+        return E_OUTOFMEMORY_HR;
+    }
+    *ppsidAppContainerSid = sid;
+    S_OK_HR
 }
 
 const E_INVALIDARG_HR: i32 = 0x8007_0057u32 as i32;
-const E_NOTIMPL_HR: i32 = 0x8000_4001u32 as i32;
+const E_OUTOFMEMORY_HR: i32 = 0x8007_000Eu32 as i32;
+const S_OK_HR: i32 = 0;

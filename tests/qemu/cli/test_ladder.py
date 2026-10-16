@@ -1083,6 +1083,19 @@ def test_refresh_names_what_it_is_missing(tmp_path):
     assert ladder.refresh_blocker(repo) is None
 
 
+def test_x64_guests_left_unbuilt_only_excused_by_a_missing_amd64_importlib(tmp_path):
+    repo = tmp_path
+    left = ["selfmod64 (absent)", "apc64 (tools/fex/hello-compute/Apc64.c is newer)"]
+    assert "build-amd64" in (ladder.x64_refresh_blocker(repo, left) or "")
+    # A 32-bit guest left behind is a real failure whatever build-amd64 holds.
+    assert ladder.x64_refresh_blocker(repo, [*left, "file32 (absent)"]) is None
+    assert ladder.x64_refresh_blocker(repo, []) is None
+    lib = repo / ladder.GUEST_PREREQ_X64
+    lib.parent.mkdir(parents=True)
+    lib.write_bytes(b"")
+    assert ladder.x64_refresh_blocker(repo, left) is None
+
+
 class _FakeRun:
     def __init__(self):
         self.stages = []

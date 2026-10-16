@@ -602,6 +602,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **cicero: CUIFWindow::Initialize and CUIFShadow::Initialize recurse forever (open, found
+  2026-10-15, latent).** `cicero-rust/src/cicero/cicuif_cpp_h.rs` (lines ~1942, ~3051 at
+  c94cd0f6a11's tree): each override's `return CUIFObject::Initialize();` became
+  `(*this_).__base0.Initialize()` -- the VIRTUAL dispatcher, i.e. itself -- so anything that
+  initializes a cicero UI window overflows the stack. Boot never reaches it. The generator
+  is fixed (`cpp_app._qualified_base_calls`, from rapps' identical ComputeMinimalSize hang);
+  re-run `port cppapp` + `port replay` for cicero, msutb (18 qualified base calls) and
+  msctfime (4), or hand-fix the two sites to `Initialize__body()` and bank them.
+
 - **amd64 ladder: fault64 rung 1 "AV params" (exit 0xBAF2) (FLAKE, open, found 2026-10-14).**
   The merge-queue gate's amd64 smoke (`-smp 2`) saw fault64.exe's access-violation reach the
   guest with wrong ExceptionInformation and rejected shell32-com a6e93b659ef8
