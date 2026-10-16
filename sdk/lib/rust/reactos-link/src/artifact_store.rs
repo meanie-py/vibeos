@@ -29,12 +29,23 @@ fn audited_flags(arch: &str, kernel: bool) -> Option<&'static str> {
     })
 }
 
-fn member(body: &str) -> bool {
-    matches!(body, "crt-startup-rust" | "crt0-rust" | "crt-dllmain-rust"
-        | "conutils-rust" | "beep-rust" | "kernel-rust")
+/// The helper's answer: a leased archive with its watches, or that the store does not
+/// model this body's graph (a build script, a registry crate, ...), which then builds
+/// the ordinary way.
+#[derive(Debug, PartialEq)]
+enum Response {
+    Archive(PathBuf, Vec<PathBuf>),
+    Ineligible(String),
 }
 
-fn response(text: &str) -> Result<(PathBuf, Vec<PathBuf>), String> {
+fn response(text: &str) -> Result<Response, String> {
+    if let Some(reason) = text.strip_prefix("ineligible\t") {
+        let reason = reason.strip_suffix('\n').ok_or("unterminated ineligible response")?;
+        if reason.is_empty() || reason.contains(['\t', '\r', '\n', '\0']) {
+            return Err("invalid ineligible response".into());
+        }
+        return Ok(Response::Ineligible(reason.to_string()));
+    }
     let mut archive = None;
     let mut watches = Vec::new();
     for line in text.lines() {
@@ -50,7 +61,7 @@ fn response(text: &str) -> Result<(PathBuf, Vec<PathBuf>), String> {
     }
     let archive = archive.ok_or("artifact helper returned no archive")?;
     if watches.is_empty() { return Err("artifact helper returned no dependency watches".into()); }
-    Ok((archive, watches))
+    Ok(Response::Archive(archive, watches))
 }
 
 pub fn get(
@@ -67,16 +78,17 @@ pub fn get(
         Ok("ON") => {},
         _ => panic!("VIBEOS_ARTIFACT_STORE_MODE must be ON or OFF"),
     }
-    if !member(body)
-        || builtin_target(arch) != Some(target)
+    // Every body goes to the store when its build is one the worker's recipe models;
+    // the helper's discovery then decides whether its graph is. The rest (a custom
+    // target JSON, other flags, a crate-type override, IR emission) build privately.
+    if builtin_target(arch) != Some(target)
         || audited_flags(arch, kernel) != Some(flags.trim())
+        || staticlib
+        || other_flags
+        || env::var("VIBEOS_EMIT_LLVM_IR").as_deref() == Ok("1")
     {
         return None;
     }
-    assert!(!staticlib, "artifact store does not yet support crate-type overrides");
-    assert!(!other_flags, "artifact store does not support additional encoded/build Rust flags");
-    assert_ne!(env::var("VIBEOS_EMIT_LLVM_IR").as_deref(), Ok("1"),
-        "artifact store does not support LLVM IR emission");
     // The store is on by default, so a raw `ninja` (canon-run.sh) reaches here with
     // no vibeos-cli supervisor to own the lease: build this body the ordinary way.
     let Some(supervisor) = env::var_os("VIBEOS_ARTIFACT_SUPERVISOR") else {
@@ -102,7 +114,10 @@ pub fn get(
     assert!(output.status.success(), "immutable artifact helper failed: {}",
         String::from_utf8_lossy(&output.stderr));
     let text = std::str::from_utf8(&output.stdout).expect("artifact helper emitted non-UTF8 response");
-    let (archive, watches) = response(text).unwrap_or_else(|error| panic!("{error}"));
+    let (archive, watches) = match response(text).unwrap_or_else(|error| panic!("{error}")) {
+        Response::Archive(archive, watches) => (archive, watches),
+        Response::Ineligible(_) => return None,
+    };
     assert!(archive.is_file(), "artifact helper returned a missing archive: {}", archive.display());
     for watch in watches { println!("cargo:rerun-if-changed={}", watch.display()); }
     Some(archive)
@@ -117,8 +132,16 @@ mod tests {
             "archive\t/a\narchive\t/b\nwatch\t/c\n", "archive\t/a\nwatch\t/b\tx\n"] {
             assert!(response(text).is_err(), "{text:?}");
         }
-        let (archive, watches) = response("archive\t/store/blob\nwatch\t/source/dir\n").unwrap();
-        assert_eq!(archive, PathBuf::from("/store/blob"));
-        assert_eq!(watches, vec![PathBuf::from("/source/dir")]);
+        assert_eq!(
+            response("archive\t/store/blob\nwatch\t/source/dir\n").unwrap(),
+            Response::Archive(PathBuf::from("/store/blob"), vec![PathBuf::from("/source/dir")])
+        );
+        assert_eq!(
+            response("ineligible\tbuild script unsupported\n").unwrap(),
+            Response::Ineligible("build script unsupported".into())
+        );
+        for text in ["ineligible\t\n", "ineligible\tno newline", "ineligible\ta\tb\n"] {
+            assert!(response(text).is_err(), "{text:?}");
+        }
     }
 }

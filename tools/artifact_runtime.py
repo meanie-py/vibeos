@@ -26,16 +26,6 @@ from types import SimpleNamespace
 SCHEMA = "vibeos-artifact-runtime-v1"
 TARGET = "x86_64-pc-windows-gnu"
 _DLLTOOL_FLAG = "-C dlltool=/native-tools/bin/llvm-dlltool"
-SUPPORTED_BODIES = frozenset(
-    {
-        "crt-startup-rust",
-        "crt0-rust",
-        "crt-dllmain-rust",
-        "conutils-rust",
-        "beep-rust",
-        "kernel-rust",
-    }
-)
 KERNEL_FLAGS = "-C force-frame-pointers=yes"
 
 
@@ -132,6 +122,7 @@ def _receipt_stats(activity):
     attempts = [_read_json(path) for path in sorted(activity.glob("*.json"))]
     receipts = [r for r in attempts if r.get("status", "success") == "success"]
     failures = [r for r in attempts if r.get("status") == "failed"]
+    ineligible = [r for r in attempts if r.get("status") == "ineligible"]
     peaks = [
         r["sampled_worker_target_peak_allocated_bytes"]
         for r in receipts
@@ -142,6 +133,8 @@ def _receipt_stats(activity):
         "successful_requests": len(receipts),
         "failed_requests": len(failures),
         "failure_examples": [{"body": r["body"], "error": r["error"]} for r in failures[:10]],
+        "ineligible_requests": len(ineligible),
+        "ineligible_bodies": {r["body"]: r["reasons"][0] for r in ineligible},
         "hits": sum(bool(r["hit"]) for r in receipts),
         "misses": sum(not r["hit"] for r in receipts),
         "builder_calls": sum(r["builder_calls"] for r in receipts),
@@ -303,6 +296,7 @@ def supervise(
                     "restored_actions": sorted({h.action_key for h in restored}),
                     "repair_action": repair_action,
                     "arch": arch,
+                    "strict": os.environ.get("VIBEOS_ARTIFACT_STRICT") == "1",
                 }
                 summary["restored_actions"] = state["restored_actions"]
                 summary["preflight_mode"] = (
@@ -410,8 +404,8 @@ def _request_options(
     force_staticlib,
 ):
     targets = _apis().executor.TARGETS
-    if body not in SUPPORTED_BODIES:
-        raise RuntimeError_(f"body is outside the store allowlist: {body}")
+    if not isinstance(body, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", body):
+        raise RuntimeError_(f"body must name one workspace package: {body!r}")
     if targets.get(architecture) != target or build_std or emit_ir or force_staticlib:
         raise RuntimeError_(
             "store requires builtin-target manifest staticlibs without build-std/IR"
@@ -529,6 +523,23 @@ def _execute(repo, broker, output, executor):
     return _read_json(output / "report.json")
 
 
+def _ineligible(state, body, reasons, started):
+    """An unsupported graph builds through the existing private path: a dispatch
+    decision, recorded with its reason, never a claimed hit. Strict mode (tests and
+    eligibility work) refuses it instead, so nothing exercises the old path quietly."""
+    if state.get("strict"):
+        raise RuntimeError_(f"strict store: {body} is ineligible: " + "; ".join(reasons))
+    result = {
+        "schema": SCHEMA,
+        "status": "ineligible",
+        "body": body,
+        "reasons": list(reasons),
+        "timings": {"total_seconds": time.monotonic() - started},
+    }
+    _write_json(Path(state["activity"]) / (uuid.uuid4().hex + ".json"), result)
+    return result
+
+
 def _record_request_failures(function):
     @wraps(function)
     def observed(supervisor, body, consumer, **options):
@@ -638,8 +649,9 @@ def request(
 ):
     """Return a leased immutable archive and current-lane dependency watches.
 
-    Caller selection is explicit. An unsupported selected request, dead lease,
-    invalid store entry, compiler error, or changed input is fatal.
+    A body whose graph the store does not model returns an `ineligible` result and
+    builds privately (fatal under VIBEOS_ARTIFACT_STRICT=1). A dead lease, invalid
+    store entry, compiler error, or changed input is fatal.
     """
     started = time.monotonic()
     options = _request_options(
@@ -674,11 +686,15 @@ def request(
             rustflags_set=bool(flags.strip()),
         )
         manifest_path = repo / "sdk/lib/rust" / body / "Cargo.toml"
-        manifest = api.inputs.tomllib.loads(manifest_path.read_text())
+        manifest = (
+            api.inputs.tomllib.loads(manifest_path.read_text()) if manifest_path.is_file() else {}
+        )
         if manifest.get("package", {}).get("name") != body or manifest.get("lib", {}).get(
             "crate-type"
         ) != ["staticlib"]:
-            raise RuntimeError_("pilot requires the requested package's manifest staticlib")
+            return _ineligible(
+                state, body, ["not a manifest staticlib at sdk/lib/rust/<body>"], started
+            )
         context = api.executor.request_context(
             toolchain,
             state["provisioned"],
@@ -693,9 +709,7 @@ def request(
             repo, body, context, cargo=str(toolchain / "bin/cargo"), **options
         )
         if not discovery.get("eligible") or not discovery.get("action_key"):
-            raise RuntimeError_(
-                "selected body discovery ineligible: " + "; ".join(discovery.get("reasons", []))
-            )
+            return _ineligible(state, body, discovery.get("reasons") or ["no action key"], started)
         discovery_seconds = time.monotonic() - discovery_started
         descriptor, expected = discovery["descriptor"], discovery["action_key"]
         if _key(descriptor) != expected or descriptor["context"] != context:
@@ -790,8 +804,8 @@ def _repair_request(api, state, manifest):
     if not isinstance(package, str):
         raise RuntimeError_("repair manifest has no selected package")
     body = Path(package).name
-    if package != "sdk/lib/rust/" + body or body not in SUPPORTED_BODIES:
-        raise RuntimeError_("repair package is outside the store allowlist")
+    if package != "sdk/lib/rust/" + body:
+        raise RuntimeError_("repair package is not a workspace body")
     if request.get("profile") != "release" or request.get("invocation") != "cargo build --lib":
         raise RuntimeError_("repair requires a manifest staticlib release recipe")
     if manifest["dependency_actions"] or [
@@ -947,6 +961,9 @@ def _repair(supervisor, action, started, *, _api=None):
 
 def protocol_lines(result):
     """Small line protocol for build.rs; metadata stays in the private receipt."""
+    if result.get("status") == "ineligible":
+        reason = re.sub(r"[\0\r\n\t]", " ", "; ".join(result["reasons"]))
+        return f"ineligible\t{reason}\n"
     values = [("archive", result["archive"]), *(("watch", p) for p in result["watches"])]
     for _, path in values:
         if not Path(path).is_absolute() or any(c in path for c in "\0\r\n\t"):

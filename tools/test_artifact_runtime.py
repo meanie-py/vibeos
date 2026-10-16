@@ -715,3 +715,35 @@ def test_cli_failure_is_stderr_and_nonzero_without_fallback(monkeypatch, capsys)
     output = capsys.readouterr()
     assert output.out == ""
     assert "selected body cannot execute" in output.err
+
+
+def test_an_ineligible_graph_builds_privately_and_is_counted_unless_strict(harness, monkeypatch):
+    api = harness
+    api.ineligible = True
+    with supervise(api) as path:
+        result = request(api, path)
+        assert result["status"] == "ineligible"
+        assert result["reasons"] == ["unsupported fixture input"]
+        assert runtime.protocol_lines(result) == "ineligible\tunsupported fixture input\n"
+        assert api.executor.preparations == 0
+    summary = json.loads((api.context / "summary.json").read_text())
+    assert summary["requests"]["ineligible_requests"] == 1
+    assert summary["requests"]["ineligible_bodies"] == {"beep-rust": "unsupported fixture input"}
+    assert summary["requests"]["hits"] == summary["requests"]["misses"] == 0
+    monkeypatch.setenv("VIBEOS_ARTIFACT_STRICT", "1")
+    with supervise(api) as path, pytest.raises(runtime.RuntimeError_, match="strict store"):
+        request(api, path)
+
+
+def test_any_workspace_staticlib_is_a_candidate_not_just_the_pilot_six(harness):
+    api = harness
+    package = api.repo / "sdk/lib/rust/other-rust"
+    (package / "src").mkdir(parents=True)
+    (package / "Cargo.toml").write_text(
+        '[package]\nname="other-rust"\nversion="0.1.0"\n[lib]\ncrate-type=["staticlib"]\n'
+    )
+    with supervise(api) as path:
+        assert runtime.request(path, "other-rust", "cargo:other", _api=api)["builder_calls"] == 1
+        # A package that is not a manifest staticlib is ineligible, not an error.
+        missing = runtime.request(path, "no-such-rust", "cargo:none", _api=api)
+        assert missing["status"] == "ineligible"

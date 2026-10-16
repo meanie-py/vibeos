@@ -190,7 +190,8 @@ def test_the_engine_gate_audits_the_flags_the_worker_compiles_with():
     rs = (
         Path(__file__).parent.parent / "sdk/lib/rust/reactos-link/src/artifact_store.rs"
     ).read_text()
-    body = rs[rs.index("fn audited_flags") : rs.index("fn member")]
+    start = rs.index("fn audited_flags")
+    body = rs[start : rs.index("\n}\n", start)]
     table = {}
     for arches, kernel, flags in re.findall(
         r'\("([a-z0-9" |]+)", (true|false)\) => "([^"]*)"', body
