@@ -450,7 +450,7 @@ pub unsafe extern "C" fn MMixerGetLineControls(
             MixerControl = CONTAINING_RECORD!(Entry, MIXERCONTROL_EXT, Entry) as LPMIXERCONTROL_EXT;
 
             /* copy mixer control */
-            (*MixerContext).Copy_0.unwrap_unchecked()(
+            (*MixerContext).Copy.unwrap_unchecked()(
                 (*MixerLineControls).pamxctrl.offset(Index as isize) as PVOID,
                 &raw mut (*MixerControl).Control as PVOID,
                 core::mem::size_of::<MIXERCONTROLW>() as ULONG,
@@ -486,7 +486,7 @@ pub unsafe extern "C" fn MMixerGetLineControls(
             MixerControl = CONTAINING_RECORD!(Entry, MIXERCONTROL_EXT, Entry) as LPMIXERCONTROL_EXT;
             if (*MixerLineControls).__bindgen_anon_1.dwControlType == (*MixerControl).Control.dwControlType {
                 /* found a control with that type */
-                (*MixerContext).Copy_0.unwrap_unchecked()(
+                (*MixerContext).Copy.unwrap_unchecked()(
                     (*MixerLineControls).pamxctrl as PVOID,
                     &raw mut (*MixerControl).Control as PVOID,
                     core::mem::size_of::<MIXERCONTROLW>() as ULONG,
@@ -535,7 +535,7 @@ pub unsafe extern "C" fn MMixerGetLineControls(
         );
 
         /* copy the controls */
-        (*MixerContext).Copy_0.unwrap_unchecked()(
+        (*MixerContext).Copy.unwrap_unchecked()(
             (*MixerLineControls).pamxctrl as PVOID,
             &raw mut (*MixerControl).Control as PVOID,
             core::mem::size_of::<MIXERCONTROLW>() as ULONG,

@@ -626,7 +626,7 @@ pub unsafe extern "C" fn MMixerCreateDestinationLine(
     (*DestinationLine).Line.fdwLine = MIXERLINE_LINEF_ACTIVE as DWORD;
 
     if !LineName.is_null() {
-        (*MixerContext).Copy_0.unwrap_unchecked()(
+        (*MixerContext).Copy.unwrap_unchecked()(
             &raw mut (*DestinationLine).Line.szShortName as *mut WCHAR as PVOID,
             LineName as PVOID,
             (min(
@@ -639,7 +639,7 @@ pub unsafe extern "C" fn MMixerCreateDestinationLine(
         (*DestinationLine).Line.szShortName
             [(MIXER_SHORT_NAME_CHARS - 1) as usize] = 0x0000u16;
 
-        (*MixerContext).Copy_0.unwrap_unchecked()(
+        (*MixerContext).Copy.unwrap_unchecked()(
             &raw mut (*DestinationLine).Line.szName as *mut WCHAR as PVOID,
             LineName as PVOID,
             (min(
@@ -1405,7 +1405,7 @@ pub unsafe extern "C" fn MMixerGetComponentAndTargetType(
             core::ptr::addr_of!(KSCATEGORY_AUDIO),
         ) || IsEqualGUIDAligned(
             core::ptr::addr_of!(Guid),
-            core::ptr::addr_of!(PINNAME_CAPTURE),
+            core::ptr::addr_of!(PINNAME_VIDEO_CAPTURE) /* ksmedia.h: PINNAME_CAPTURE */,
         ) {
             /* type wavein */
             *TargetType = MIXERLINE_TARGETTYPE_WAVEIN as ULONG;
@@ -1569,24 +1569,24 @@ pub unsafe extern "C" fn MMixerBuildMixerSourceLine(
 
     if Status == MM_STATUS_SUCCESS {
         /* store pin name as line name */
-        (*MixerContext).Copy_0.unwrap_unchecked()(
+        (*MixerContext).Copy.unwrap_unchecked()(
             core::ptr::addr_of_mut!((*SrcLine).Line.szShortName) as PVOID,
             PinName as PVOID,
             (min(
-                MIXER_SHORT_NAME_CHARS,
-                (wcslen(PinName as *const wchar_t) + 1) as _,
-            ) * (core::mem::size_of::<WCHAR>()) as _) as ULONG,
+                MIXER_SHORT_NAME_CHARS as usize,
+                wcslen(PinName as *const wchar_t) as usize + 1,
+            ) * core::mem::size_of::<WCHAR>()) as ULONG,
         );
         (*SrcLine).Line.szShortName
             [(MIXER_SHORT_NAME_CHARS - 1) as usize] = 0x0000u16;
 
-        (*MixerContext).Copy_0.unwrap_unchecked()(
+        (*MixerContext).Copy.unwrap_unchecked()(
             core::ptr::addr_of_mut!((*SrcLine).Line.szName) as PVOID,
             PinName as PVOID,
             (min(
-                MIXER_LONG_NAME_CHARS,
-                (wcslen(PinName as *const wchar_t) + 1) as _,
-            ) * (core::mem::size_of::<WCHAR>()) as _) as ULONG,
+                MIXER_LONG_NAME_CHARS as usize,
+                wcslen(PinName as *const wchar_t) as usize + 1,
+            ) * core::mem::size_of::<WCHAR>()) as ULONG,
         );
         (*SrcLine).Line.szName[(MIXER_LONG_NAME_CHARS - 1) as usize] =
             0x0000u16;

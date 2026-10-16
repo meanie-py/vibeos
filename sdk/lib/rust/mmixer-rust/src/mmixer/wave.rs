@@ -209,15 +209,15 @@ pub unsafe extern "C" fn MMixerInitializeDataFormat(
     (*DataFormat).WaveFormatEx.nAvgBytesPerSec = (*WaveFormatEx).nAvgBytesPerSec;
     (*DataFormat).WaveFormatEx.wBitsPerSample = (*WaveFormatEx).wBitsPerSample;
     (*DataFormat).WaveFormatEx.cbSize = cbSize as WORD;
-    (*DataFormat).DataFormat.FormatSize = (core::mem::size_of::<KSDATAFORMAT>() as usize)
+    (*DataFormat).DataFormat.c2rust_unnamed.FormatSize = (core::mem::size_of::<KSDATAFORMAT>() as usize)
         .wrapping_add(core::mem::size_of::<WAVEFORMATEX>() as usize)
         .wrapping_add(cbSize as usize) as ULONG;
-    (*DataFormat).DataFormat.Flags = 0;
-    (*DataFormat).DataFormat.Reserved = 0;
-    (*DataFormat).DataFormat.MajorFormat = KSDATAFORMAT_TYPE_AUDIO;
-    (*DataFormat).DataFormat.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
-    (*DataFormat).DataFormat.Specifier = KSDATAFORMAT_SPECIFIER_WAVEFORMATEX;
-    (*DataFormat).DataFormat.SampleSize = 4;
+    (*DataFormat).DataFormat.c2rust_unnamed.Flags = 0;
+    (*DataFormat).DataFormat.c2rust_unnamed.Reserved = 0;
+    (*DataFormat).DataFormat.c2rust_unnamed.MajorFormat = KSDATAFORMAT_TYPE_AUDIO;
+    (*DataFormat).DataFormat.c2rust_unnamed.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
+    (*DataFormat).DataFormat.c2rust_unnamed.Specifier = KSDATAFORMAT_SPECIFIER_WAVEFORMATEX;
+    (*DataFormat).DataFormat.c2rust_unnamed.SampleSize = 4;
 
     /* Write additional fields for Extensible audio format */
     if (*WaveFormatEx).wFormatTag == (WAVE_FORMAT_EXTENSIBLE as u16) {
@@ -310,18 +310,18 @@ pub unsafe extern "C" fn MMixerFindAudioDataRange(
     DataRange = (MultipleItem.offset(1 as isize)) as PKSDATARANGE;
     Index = 0 as ULONG;
     while Index < (*MultipleItem).Count {
-        if (*DataRange).FormatSize as usize == (core::mem::size_of::<KSDATARANGE_AUDIO>()) as usize {
+        if (*DataRange).c2rust_unnamed.FormatSize as usize == (core::mem::size_of::<KSDATARANGE_AUDIO>()) as usize {
             DataRangeAudio = DataRange as PKSDATARANGE_AUDIO;
             if IsEqualGUIDAligned(
-                core::ptr::addr_of_mut!((*DataRangeAudio).DataRange.MajorFormat),
+                core::ptr::addr_of_mut!((*DataRangeAudio).DataRange.c2rust_unnamed.MajorFormat),
                 core::ptr::addr_of!(KSDATAFORMAT_TYPE_AUDIO),
             ) != false
                 && IsEqualGUIDAligned(
-                    core::ptr::addr_of_mut!((*DataRangeAudio).DataRange.SubFormat),
+                    core::ptr::addr_of_mut!((*DataRangeAudio).DataRange.c2rust_unnamed.SubFormat),
                     core::ptr::addr_of!(KSDATAFORMAT_SUBTYPE_PCM),
                 ) != false
                 && IsEqualGUIDAligned(
-                    core::ptr::addr_of_mut!((*DataRangeAudio).DataRange.Specifier),
+                    core::ptr::addr_of_mut!((*DataRangeAudio).DataRange.c2rust_unnamed.Specifier),
                     core::ptr::addr_of!(KSDATAFORMAT_SPECIFIER_WAVEFORMATEX),
                 ) != false
             {
@@ -338,7 +338,7 @@ pub unsafe extern "C" fn MMixerFindAudioDataRange(
             }
         }
         DataRange = (DataRange as ULONG_PTR)
-            .wrapping_add((*DataRange).FormatSize as ULONG_PTR) as PKSDATARANGE;
+            .wrapping_add((*DataRange).c2rust_unnamed.FormatSize as ULONG_PTR) as PKSDATARANGE;
         Index = Index.wrapping_add(1);
     }
     return MM_STATUS_UNSUCCESSFUL;
@@ -713,7 +713,7 @@ pub unsafe extern "C" fn MMixerWaveOutCapabilities(
     }
 
     /* copy capabilities */
-    (*MixerContext).Copy_0.unwrap_unchecked()(
+    (*MixerContext).Copy.unwrap_unchecked()(
         Caps as PVOID,
         core::ptr::addr_of_mut!((*WaveInfo).u.OutCaps) as PVOID,
         core::mem::size_of::<WAVEOUTCAPSW>() as ULONG,
@@ -913,7 +913,7 @@ pub unsafe extern "C" fn MMixerGetWaveDevicePath(
     }
 
     /* copy device path */
-    (*MixerContext).Copy_0.unwrap_unchecked()(
+    (*MixerContext).Copy.unwrap_unchecked()(
         *DevicePath as PVOID,
         (*MixerData).DeviceName as PVOID,
         (Length as usize).wrapping_mul(core::mem::size_of::<WCHAR>()) as ULONG,

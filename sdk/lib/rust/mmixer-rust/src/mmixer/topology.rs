@@ -135,7 +135,7 @@ pub unsafe extern "C" fn MMixerInitializeTopologyNodes(
         (*(*Topology).TopologyNodes.offset(Index as isize)).NodeIndex = Index;
 
         /* store topology node type */
-        (*MixerContext).Copy_0.unwrap_unchecked()(
+        (*MixerContext).Copy.unwrap_unchecked()(
             core::ptr::addr_of_mut!((*(*Topology).TopologyNodes.offset(Index as isize)).NodeType) as PVOID,
             Guids.offset(Index as isize) as *mut GUID as PVOID,
             core::mem::size_of::<GUID>() as ULONG,
@@ -179,7 +179,7 @@ pub unsafe extern "C" fn MMixerAddPinConnection(
 
     if Count != 0 {
         /* copy existing nodes */
-        (*MixerContext).Copy_0.unwrap_unchecked()(
+        (*MixerContext).Copy.unwrap_unchecked()(
             NewNodes as PVOID,
             OldNodes as PVOID,
             (::core::mem::size_of::<PTOPOLOGY>() as usize).wrapping_mul(Count as usize) as ULONG,
@@ -232,7 +232,7 @@ pub unsafe extern "C" fn MMixerAddPinConnection(
 
     if Count != 0 {
         /* copy existing nodes */
-        (*MixerContext).Copy_0.unwrap_unchecked()(
+        (*MixerContext).Copy.unwrap_unchecked()(
             NewPinsIndex as PVOID,
             OldPinsIndex as PVOID,
             (::core::mem::size_of::<ULONG>() as usize).wrapping_mul(Count as usize) as ULONG,
@@ -319,14 +319,14 @@ pub unsafe extern "C" fn MMixerHandleNodeToNodeConnection(
 
     if Count != 0 {
         /* copy existing nodes */
-        (*MixerContext).Copy_0.unwrap_unchecked()(
+        (*MixerContext).Copy.unwrap_unchecked()(
             NewNodes as PVOID,
             (*OutNode).NodeConnectedFrom as PVOID,
             (core::mem::size_of::<PTOPOLOGY>() as usize).wrapping_mul(Count as usize) as ULONG,
         );
 
         /* copy existing logical pin node array */
-        (*MixerContext).Copy_0.unwrap_unchecked()(
+        (*MixerContext).Copy.unwrap_unchecked()(
             NewLogicalPinNodeConnectedFrom as PVOID,
             (*OutNode).LogicalPinNodeConnectedFrom as PVOID,
             (core::mem::size_of::<ULONG>() as usize).wrapping_mul(Count as usize) as ULONG,
@@ -375,7 +375,7 @@ pub unsafe extern "C" fn MMixerHandleNodeToNodeConnection(
 
     if Count != 0 {
         /* copy existing nodes */
-        (*MixerContext).Copy_0.unwrap_unchecked()(
+        (*MixerContext).Copy.unwrap_unchecked()(
             NewNodes as PVOID,
             (*InNode).NodeConnectedTo as PVOID,
             (core::mem::size_of::<PTOPOLOGY>() as usize).wrapping_mul(Count as usize) as ULONG,
@@ -416,7 +416,7 @@ pub unsafe extern "C" fn MMixerAddPinToPinConnection(
         return MM_STATUS_NO_MEMORY;
     }
     if Count != 0 {
-        (*MixerContext).Copy_0.unwrap_unchecked()(
+        (*MixerContext).Copy.unwrap_unchecked()(
             NewPinsIndex as PVOID,
             (*InPin).PinConnectedTo as PVOID,
             (::core::mem::size_of::<ULONG>() as usize).wrapping_mul(Count as usize) as ULONG,
@@ -435,7 +435,7 @@ pub unsafe extern "C" fn MMixerAddPinToPinConnection(
         return MM_STATUS_NO_MEMORY;
     }
     if Count != 0 {
-        (*MixerContext).Copy_0.unwrap_unchecked()(
+        (*MixerContext).Copy.unwrap_unchecked()(
             NewPinsIndex as PVOID,
             (*OutPin).PinConnectedFrom as PVOID,
             (::core::mem::size_of::<ULONG>() as usize).wrapping_mul(Count as usize) as ULONG,
@@ -585,7 +585,7 @@ pub unsafe extern "C" fn MMixerAddPinIndexToArray(
         if *OutPins.offset(Index as isize) != MAXULONG as ULONG {
             if *OutPins.offset(Index as isize) > PinId {
                 /* shift entries up */
-                (*MixerContext).Copy_0.unwrap_unchecked()(
+                (*MixerContext).Copy.unwrap_unchecked()(
                     OutPins.offset(Index.wrapping_add(1 as ULONG) as isize)
                         as *mut ::core::ffi::c_ulong as PVOID,
                     OutPins.offset(Index as isize) as *mut ::core::ffi::c_ulong as PVOID,
@@ -748,7 +748,7 @@ pub unsafe extern "C" fn MMixerGetAllUpOrDownstreamPinsFromNodeIndex(
     ASSERT!((*Topology).TopologyNodesCount > NodeIndex);
 
     /* get topology node */
-    TopologyNode = &mut (*Topology).TopologyNodes[NodeIndex as usize] as *mut _;
+    TopologyNode = (*Topology).TopologyNodes.add(NodeIndex as usize);
 
     /* now visit all upstream pins & nodes */
     MMixerGetUpOrDownStreamPins(MixerContext, Topology, TopologyNode, bUpStream, OutPinsCount, OutPins);

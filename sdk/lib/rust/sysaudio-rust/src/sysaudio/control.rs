@@ -1,7 +1,6 @@
 use crate::prelude::*;
 use ntkrnl_sys::ddk::{GUID, LPWSTR, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, RtlFreeUnicodeString, RtlStringFromGUID};
 use core::ffi::c_void;
-use crate::types::*;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
@@ -292,7 +291,7 @@ pub unsafe extern "C" fn ComputeCompatibleFormat(
 
     Length = (core::mem::size_of::<KSP_PIN>()
         + core::mem::size_of::<KSMULTIPLE_ITEM>()
-        + (*ClientFormat).DataFormat.FormatSize as usize) as ULONG;
+        + (*ClientFormat).DataFormat.c2rust_unnamed.FormatSize as usize) as ULONG;
     PinRequest = AllocateItem(NonPagedPool, Length as SIZE_T) as PKSP_PIN;
     if PinRequest.is_null() {
         return STATUS_UNSUCCESSFUL;
@@ -305,12 +304,12 @@ pub unsafe extern "C" fn ComputeCompatibleFormat(
 
     MultipleItem = PinRequest.offset(1 as isize) as PKSMULTIPLE_ITEM;
     (*MultipleItem).Count = 1 as ULONG;
-    (*MultipleItem).Size = (*ClientFormat).DataFormat.FormatSize;
+    (*MultipleItem).Size = (*ClientFormat).DataFormat.c2rust_unnamed.FormatSize;
 
     core::ptr::copy(
         ClientFormat as *const u8,
         MultipleItem.offset(1 as isize) as *mut u8,
-        (*ClientFormat).DataFormat.FormatSize as usize,
+        (*ClientFormat).DataFormat.c2rust_unnamed.FormatSize as usize,
     );
     /* Query the miniport data intersection handler */
     Status = KsSynchronousIoControlDevice(
@@ -377,27 +376,27 @@ pub unsafe extern "C" fn ComputeCompatibleFormat(
     bFound = (FALSE as i32);
     Index = 0 as ULONG;
     while Index < (*MultipleItem).Count {
-        if (*AudioRange).DataRange.FormatSize as usize
+        if (*AudioRange).DataRange.c2rust_unnamed.FormatSize as usize
             != core::mem::size_of::<KSDATARANGE_AUDIO>() as usize
         {
             UNIMPLEMENTED!();
             AudioRange = (AudioRange as *mut u8)
-                .offset((*AudioRange).DataRange.FormatSize as isize)
+                .offset((*AudioRange).DataRange.c2rust_unnamed.FormatSize as isize)
                 as PKSDATARANGE_AUDIO;
             Index = Index.wrapping_add(1);
             continue;
         }
         /* Select best quality available */
 
-        (*MixerFormat).DataFormat.FormatSize =
+        (*MixerFormat).DataFormat.c2rust_unnamed.FormatSize =
             (core::mem::size_of::<KSDATAFORMAT>()
                 + core::mem::size_of::<WAVEFORMATEX>()) as ULONG;
-        (*MixerFormat).DataFormat.Flags = 0 as ULONG;
-        (*MixerFormat).DataFormat.Reserved = 0 as ULONG;
-        (*MixerFormat).DataFormat.MajorFormat = KSDATAFORMAT_TYPE_AUDIO;
-        (*MixerFormat).DataFormat.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
-        (*MixerFormat).DataFormat.Specifier = KSDATAFORMAT_SPECIFIER_WAVEFORMATEX;
-        (*MixerFormat).DataFormat.SampleSize = 4 as ULONG;
+        (*MixerFormat).DataFormat.c2rust_unnamed.Flags = 0 as ULONG;
+        (*MixerFormat).DataFormat.c2rust_unnamed.Reserved = 0 as ULONG;
+        (*MixerFormat).DataFormat.c2rust_unnamed.MajorFormat = KSDATAFORMAT_TYPE_AUDIO;
+        (*MixerFormat).DataFormat.c2rust_unnamed.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
+        (*MixerFormat).DataFormat.c2rust_unnamed.Specifier = KSDATAFORMAT_SPECIFIER_WAVEFORMATEX;
+        (*MixerFormat).DataFormat.c2rust_unnamed.SampleSize = 4 as ULONG;
         (*MixerFormat).WaveFormatEx.wFormatTag = (*ClientFormat).WaveFormatEx.wFormatTag;
         /* HACK: AC97 does not support mono render / record */
         (*MixerFormat).WaveFormatEx.nChannels = 2 as WORD;
@@ -428,7 +427,7 @@ pub unsafe extern "C" fn ComputeCompatibleFormat(
         break;
 
         AudioRange = (AudioRange as *mut u8)
-            .offset((*AudioRange).DataRange.FormatSize as isize)
+            .offset((*AudioRange).DataRange.c2rust_unnamed.FormatSize as isize)
             as PKSDATARANGE_AUDIO;
         Index = Index.wrapping_add(1);
     }

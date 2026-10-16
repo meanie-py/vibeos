@@ -151,13 +151,13 @@ pub unsafe extern "C" fn MMixerCheckFilterPinMidiSupport(
     Index = 0;
     while Index < (*MultipleItem).Count {
         if IsEqualGUIDAligned(
-            core::ptr::addr_of_mut!((*DataRange).MajorFormat),
+            core::ptr::addr_of_mut!((*DataRange).c2rust_unnamed.MajorFormat),
             core::ptr::addr_of!(KSDATAFORMAT_TYPE_MUSIC),
         ) && IsEqualGUIDAligned(
-            core::ptr::addr_of_mut!((*DataRange).SubFormat),
+            core::ptr::addr_of_mut!((*DataRange).c2rust_unnamed.SubFormat),
             core::ptr::addr_of!(KSDATAFORMAT_SUBTYPE_MIDI),
         ) && IsEqualGUIDAligned(
-            core::ptr::addr_of_mut!((*DataRange).Specifier),
+            core::ptr::addr_of_mut!((*DataRange).c2rust_unnamed.Specifier),
             core::ptr::addr_of!(KSDATAFORMAT_SPECIFIER_NONE),
         ) {
             /* pin supports midi datarange */
@@ -194,7 +194,7 @@ pub unsafe extern "C" fn MMixerCheckFilterPinMidiSupport(
         }
 
         /* move to next datarange */
-        DataRange = ((DataRange as ULONG_PTR).wrapping_add((*DataRange).FormatSize as ULONG_PTR))
+        DataRange = ((DataRange as ULONG_PTR).wrapping_add((*DataRange).c2rust_unnamed.FormatSize as ULONG_PTR))
             as PKSDATARANGE;
 
         /* alignment assert */
@@ -301,17 +301,17 @@ pub unsafe extern "C" fn MMixerOpenMidiPin(
     /* initialize data format */
     core::ptr::copy_nonoverlapping(
         &raw const KSDATAFORMAT_TYPE_MUSIC as *const u8,
-        &raw mut (*DataFormat).MajorFormat as *mut u8,
+        &raw mut (*DataFormat).c2rust_unnamed.MajorFormat as *mut u8,
         core::mem::size_of::<GUID>(),
     );
     core::ptr::copy_nonoverlapping(
         &raw const KSDATAFORMAT_SUBTYPE_MIDI as *const u8,
-        &raw mut (*DataFormat).SubFormat as *mut u8,
+        &raw mut (*DataFormat).c2rust_unnamed.SubFormat as *mut u8,
         core::mem::size_of::<GUID>(),
     );
     core::ptr::copy_nonoverlapping(
         &raw const KSDATAFORMAT_SPECIFIER_NONE as *const u8,
-        &raw mut (*DataFormat).Specifier as *mut u8,
+        &raw mut (*DataFormat).c2rust_unnamed.Specifier as *mut u8,
         core::mem::size_of::<GUID>(),
     );
 
@@ -363,8 +363,7 @@ pub unsafe extern "C" fn MMixerGetMidiInfoByIndexAndType(
     /* get first entry */
     Entry = (*ListHead).Flink as PLIST_ENTRY;
     while Entry != ListHead {
-        MidiInfo = (Entry as ULONG_PTR)
-            .wrapping_sub(core::mem::offset_of!(MIDI_INFO, Entry))
+        MidiInfo = (Entry as *mut u8).wrapping_sub(core::mem::offset_of!(MIDI_INFO, Entry))
             as LPMIDI_INFO;
         if Index == DeviceIndex {
             *OutMidiInfo = MidiInfo;
@@ -404,7 +403,7 @@ pub unsafe extern "C" fn MMixerMidiOutCapabilities(
     }
 
     /* copy capabilities */
-    (*MixerContext).Copy_0.unwrap_unchecked()(
+    (*MixerContext).Copy.unwrap_unchecked()(
         Caps as PVOID,
         core::ptr::addr_of_mut!((*MidiInfo).u.OutCaps) as PVOID,
         core::mem::size_of::<MIDIOUTCAPSW>() as ULONG,
@@ -510,7 +509,7 @@ pub unsafe extern "C" fn MMixerGetMidiDevicePath(
     }
 
     /* copy device path */
-    (*MixerContext).Copy_0.unwrap_unchecked()(
+    (*MixerContext).Copy.unwrap_unchecked()(
         *DevicePath as PVOID,
         (*MixerData).DeviceName as PVOID,
         (Length as usize).wrapping_mul(core::mem::size_of::<WCHAR>() as usize) as ULONG,

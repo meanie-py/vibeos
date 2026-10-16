@@ -27,7 +27,7 @@ pub static mut MixerContext: MIXER_CONTEXT = unsafe {
         Free: Some(Free as unsafe extern "C" fn(PVOID) -> ()),
         Open: Some(Open as unsafe extern "C" fn(LPWSTR, PHANDLE) -> MIXER_STATUS),
         Close: Some(Close as unsafe extern "C" fn(HANDLE) -> MIXER_STATUS),
-        Copy_0: Some(Copy as unsafe extern "C" fn(PVOID, PVOID, ULONG) -> ()),
+        Copy: Some(Copy as unsafe extern "C" fn(PVOID, PVOID, ULONG) -> ()),
         OpenKey: Some(
             OpenKey as unsafe extern "C" fn(HANDLE, LPWSTR, ULONG, PHANDLE) -> MIXER_STATUS,
         ),

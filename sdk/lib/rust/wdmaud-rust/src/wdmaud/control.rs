@@ -320,28 +320,28 @@ pub unsafe extern "system" fn WdmAudGetDeviceInterface(
             core::mem::size_of::<WDMAUD_DEVICE_INFO>() as ULONG,
         );
     } else {
-        _SEH2_TRY;
-        {
-            ProbeForWrite(
-                (*DeviceInfo).u.Interface.DeviceInterfaceString as PVOID,
-                Length as SIZE_T,
-                core::mem::size_of::<WCHAR>() as ULONG,
-            );
-            core::ptr::copy(
-                Device as *const u8,
-                (*DeviceInfo).u.Interface.DeviceInterfaceString as *mut u8,
-                Length as usize,
-            );
-        }
-        if _SEH2_Volatile0_local != 0 {
+        // __try { ProbeForWrite; copy } __except (EXCEPTION_EXECUTE_HANDLER): the user
+        // buffer is probed under a real handler (ntkrnl_sys::seh), not the dead PSEH arm.
+        let caught = ntkrnl_sys::seh::try_except(
+            &mut (),
+            |_| {
+                ProbeForWrite(
+                    (*DeviceInfo).u.Interface.DeviceInterfaceString as PVOID,
+                    Length as SIZE_T,
+                    core::mem::size_of::<WCHAR>() as ULONG,
+                );
+                core::ptr::copy(
+                    Device as *const u8,
+                    (*DeviceInfo).u.Interface.DeviceInterfaceString as *mut u8,
+                    Length as usize,
+                );
+            },
+            |_, _| ntkrnl_sys::seh::EXCEPTION_EXECUTE_HANDLER,
+        );
+        if let Err(code) = caught {
             FreeItem(Device as PVOID);
-            return SetIrpIoStatus(
-                Irp,
-                _SEH2_VolatileExceptionCode_local,
-                0 as ULONG,
-            );
+            return SetIrpIoStatus(Irp, code, 0 as ULONG);
         }
-        _SEH2_END;
     }
 
     FreeItem(Device as PVOID);

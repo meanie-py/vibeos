@@ -1084,7 +1084,7 @@ pub unsafe extern "C" fn MMixerSetGetMuxControlDetails(
                 /* copy details */
                 (*ListText.add(Index as usize)).dwParam1 = (*SourceLine).Line.dwLineID;
                 (*ListText.add(Index as usize)).dwParam2 = (*SourceLine).Line.dwComponentType;
-                (*MixerContext).Copy_0.unwrap_unchecked()(
+                (*MixerContext).Copy.unwrap_unchecked()(
                     core::ptr::addr_of_mut!((*ListText.add(Index as usize)).szName) as *mut WCHAR
                         as PVOID,
                     core::ptr::addr_of_mut!((*SourceLine).Line.szName) as *mut WCHAR as PVOID,
@@ -1323,7 +1323,7 @@ pub unsafe extern "C" fn MMixerGetDeviceNameWithComponentId(
                 );
                 if Status == MM_STATUS_SUCCESS as MIXER_STATUS
                 {
-                    (*MixerContext).Copy_0.unwrap_unchecked()(
+                    (*MixerContext).Copy.unwrap_unchecked()(
                         OutDeviceName as PVOID,
                         DeviceName as PVOID,
                         min(

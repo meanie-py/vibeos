@@ -176,9 +176,7 @@ pub unsafe extern "system" fn WdmaudAddDevice(
     IoInitializeTimer(
         DeviceObject,
         Some(WdmAudTimerRoutine),
-        ::core::mem::transmute::<Option<unsafe extern "C" fn(PDEVICE_OBJECT, PVOID) -> ()>, PVOID>(
-            Some(WdmAudTimerRoutine),
-        ),
+        WdmAudTimerRoutine as PVOID,
     );
 
     /* allocate ks device header */
@@ -282,19 +280,10 @@ pub unsafe extern "system" fn WdmAudCreate(DeviceObject: PDEVICE_OBJECT, Irp: PI
 
 #[no_mangle]
 pub unsafe extern "system" fn WdmAudClose(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
     /* nothing to do complete request */
-    if false {
-        // KS_IMPLEMENTED block (compiled out in the C source)
-        let DeviceExtension: PDEVICE_EXTENSION = (*DeviceObject).DeviceExtension as PDEVICE_EXTENSION;
-        Status = KsDereferenceSoftwareBusObject((*DeviceExtension).DeviceHeader);
-
-        if NT_SUCCESS!(Status) {
-            if !(*DeviceExtension).SysAudioNotification.is_null() {
-                Status = IoUnregisterPlugPlayNotification((*DeviceExtension).SysAudioNotification);
-            }
-        }
-    }
+    // entry.c's `#if KS_IMPLEMENTED` block (KsDereferenceSoftwareBusObject + unregistering
+    // the SysAudio notification) is compiled out, and could not compile: it uses a `Status`
+    // and a `DeviceExtension` this function never declares. Nothing to translate.
 
     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
     (*Irp).IoStatus.Information = 0;

@@ -4,7 +4,6 @@ pub static RUSTCONV_WSTR_C554B73F8939: [u16; 5] = [0x005Cu16, 0x003F, 0x003F, 0x
 use crate::prelude::*;
 use ntkrnl_sys::ddk::{DEVICE_INTERFACE_CHANGE_NOTIFICATION, GUID, _IO_STATUS_BLOCK, IoRegisterDeviceInterface, IoRegisterPlugPlayNotification, IoSetDeviceInterfaceState, _OBJECT_ATTRIBUTES, ObReferenceObjectByHandle, PDEVICE_OBJECT, PDRIVER_OBJECT, PFILE_OBJECT, PHANDLE, PUNICODE_STRING, RtlAppendUnicodeStringToString, RtlAppendUnicodeToString, RtlFreeUnicodeString, ZwClose, ZwCreateFile};
 use core::ffi::c_void;
-use crate::types::*;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)

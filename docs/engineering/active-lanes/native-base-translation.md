@@ -1,8 +1,7 @@
 # Native ReactOS base — translation lane (`msvcrt-homebrew` worktree)
 
-> **PAUSED 2026-10-15 at the user's request: do not `land` until control-plane's build-system
-> change is ready and they ping this lane.** Then `git fetch && git merge origin/master` and
-> resume from "A′ in progress" below. The A′ work is committed on the lane branch, not landed.
+> **Resumed 2026-10-16.** control-plane's immutable-build change (the shared artifact store,
+> [`immutable-build-artifacts.md`](../immutable-build-artifacts.md)) is merged into the lane.
 
 The CRT is done on the porting axis (see [msvcrt-from-pieces-plan.md](msvcrt-from-pieces-plan.md)),
 so this worktree took on the rest of ReactOS base that no other translation lane touches. The
@@ -34,16 +33,23 @@ sndblst. Port state is in `~/vibeos-rust-staging/port/<stem>/`, logs in
 `legacy` (`audioleg`) and `soundblaster` are built or present but nothing links them (prune
 candidates); everything C++ belongs to cpp-cluster.
 
-`cargo check` state when paused (amd64): beepmidi, mmdrv, sndblst, mmebuddy and mment4 at 0;
-kmixer, wdmaud, wdmaud_drv, mmixer and sysaudio still red. To resume, run, per crate,
+**sysaudio is flipped (2026-10-16)**: all five TUs are Rust, and `rust_cohab_stub.c` is the
+MODULE's only C source. It had to go first. The wip commit swapped the pilot's `lib.rs`
+(`pin` only) for the scaffold's, so CMake's existing `sysaudio-rust` build compiled the
+four red modules and broke the build on every arch. A crate CMake already builds is never
+"not flipped". Fixes: a stray `use crate::types::*;` in each of the four files (ambiguous
+with the prelude's TRUE/FALSE), explicit `ntkrnl_sys::ddk` imports in `pin.rs`, and
+`KSDATAFORMAT` fields reached as `.c2rust_unnamed.X` places, not through `Deref`, since a
+`Deref` borrow inside the packed `KSDATAFORMAT_WAVEFORMATEX` is E0793.
+
+`cargo check` state (amd64): beepmidi, mmdrv, sndblst, mmebuddy, mment4 and sysaudio at 0;
+kmixer, wdmaud, wdmaud_drv and mmixer still red. To resume, run, per crate,
 `port resolve` → `crate-repair <crate>-rust --arches i386 amd64 arm64` → `port check`, then
 hand-fix what is left:
 - **Copy_0** (mmixer, wdmaud, wdmaud_drv): crate-repair's keyword-field rule now renames it
   to the island's `Copy` when rustc offers that name; one repair pass should clear it.
 - **`_byteswap_*` / `lrintf`** (kmixer, wdmaud_drv): now in win32macros-rust; resolve
   re-lists them in the prelude (the `pub const fn` pattern fix).
-- **sysaudio**: `pin.rs` now imports the crate prelude; resolve has to see its names, so
-  rerun resolve, then fix the ten unaligned packed-field references (E0793) in control.rs.
 - **wdmaud_drv**: `STATIC_KSCATEGORY_WDMAUD`, six `#[cfg]`-on-expression sites in mixer.rs,
   five `break` outside a labelled block in legacy.rs.
 - **wdmaud**: `_SEH2_TRY`/`_SEH2_END` in control.rs (rewrite with
@@ -53,8 +59,7 @@ hand-fix what is left:
   `kernel`/`user` features like hidparser-rust, and have wdmaud.drv link
   `rust_staticlib_variant(... mmixer-rust "user" FALSE)`.
 
-Then flip all ten (sysaudio by hand: its CMake has the pilot's custom cargo plumbing, and
-sysaudio-difftest reads `src/pin.rs`), build ×3, smoke ×3, `check --strict --scope
+Then flip the other nine (sysaudio-difftest reads `sysaudio-rust/src/pin.rs`; keep that path), build ×3, smoke ×3, `check --strict --scope
 source-deferred`, and land. Bank hand fixes with `port hand <stem> <file.rs>:<fn>`.
 
 What the batch added to the shared crates:

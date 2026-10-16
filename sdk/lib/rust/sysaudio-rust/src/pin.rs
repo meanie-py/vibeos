@@ -1,6 +1,7 @@
 // The crate prelude is the one import surface, as for the rest of sysaudio-rust; the pilot's
 // own glob list collided with it once the other four TUs' island arrived.
 use crate::prelude::*;
+use ntkrnl_sys::ddk::{IoGetRelatedDeviceObject, ObReferenceObjectByHandle, RtlAssert, ZwClose};
 // wdm.h aliases the driver spelling to the import-address table. raw-dylib
 // supplies that indirection, so this names the exported POBJECT_TYPE value.
 #[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
@@ -214,7 +215,7 @@ pub unsafe extern "C" fn SetMixerInputOutputFormat(
         core::ptr::addr_of_mut!(PinRequest) as *mut core::ffi::c_void,
         (core::mem::size_of::<KSP_PIN>()) as ULONG,
         InputFormat as *mut core::ffi::c_void,
-        (*InputFormat).__bindgen_anon_1.as_ref().FormatSize,
+        (*InputFormat).__bindgen_anon_1.FormatSize,
         core::ptr::addr_of_mut!(BytesReturned),
     );
     if !ntkrnl_sys::base::NT_SUCCESS(Status) {
@@ -230,7 +231,7 @@ pub unsafe extern "C" fn SetMixerInputOutputFormat(
         core::ptr::addr_of_mut!(PinRequest) as *mut core::ffi::c_void,
         (core::mem::size_of::<KSP_PIN>()) as ULONG,
         OutputFormat as *mut core::ffi::c_void,
-        (*OutputFormat).__bindgen_anon_1.as_ref().FormatSize,
+        (*OutputFormat).__bindgen_anon_1.FormatSize,
         core::ptr::addr_of_mut!(BytesReturned),
     );
     return Status;
@@ -477,7 +478,7 @@ pub unsafe extern "system" fn DispatchCreateSysAudioPin(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    RtlZeroMemory(
+    RtlZeroMemory!(
         DispatchContext as *mut core::ffi::c_void,
         core::mem::size_of::<DISPATCH_CONTEXT>(),
     );

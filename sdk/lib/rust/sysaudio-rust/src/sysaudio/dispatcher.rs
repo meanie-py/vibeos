@@ -17,7 +17,6 @@ pub static RUSTCONV_WSTR_E1E6E71B0243: [u16; 59] = [
 use crate::prelude::*;
 use ntkrnl_sys::ddk::{PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, RtlInitUnicodeString, ZwLoadDriver};
 use core::ffi::c_void;
-use crate::types::*;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)

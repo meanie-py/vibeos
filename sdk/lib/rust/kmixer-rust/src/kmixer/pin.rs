@@ -60,7 +60,7 @@ pub unsafe extern "C" fn PerformSampleRateConversion(
     mut Result: *mut PVOID,
     mut ResultLength: PULONG,
 ) -> NTSTATUS {
-    let mut FloatSave: KFLOATING_SAVE = 0;
+    let mut FloatSave: KFLOATING_SAVE = core::mem::zeroed();
     let mut Status: NTSTATUS = 0;
     let mut Index: ULONG = 0;
     let mut State: *mut SRC_STATE = core::ptr::null_mut::<SRC_STATE>();
@@ -586,12 +586,16 @@ pub unsafe extern "C" fn PerformQualityConversion(
 
         Index = 0 as ULONG;
         while Index < Samples {
-            Sample = *BufferIn.offset(Index as isize) as USHORT;
+            // Divergence from pin.c: it stores the 32-bit sample in its USHORT `Sample`
+            // first, so `Sample /= 65536` is always 0 and this branch emits silence. Keep the
+            // full ULONG and take its high half, as the scaling in the other branches intends.
+            let mut Wide: ULONG = *BufferIn.offset(Index as isize);
             if cfg!(target_arch = "x86") {
-                Sample = _byteswap_ulong(Sample);
+                Wide = _byteswap_ulong(Wide);
             }
-            Sample = Sample / (65536 as USHORT);
-            *BufferOut.offset(Index as isize) = (Sample & (0xFFFF as USHORT)) as USHORT;
+            Wide /= 65536 as ULONG;
+            Sample = (Wide & (0xFFFF as ULONG)) as USHORT;
+            *BufferOut.offset(Index as isize) = Sample;
             Index = Index.wrapping_add(1);
         }
         *Result = BufferOut as PVOID;

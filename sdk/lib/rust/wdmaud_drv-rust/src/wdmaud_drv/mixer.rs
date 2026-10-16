@@ -50,7 +50,7 @@ pub unsafe extern "C" fn PerformSampleRateConversion(
     let mut State: *mut SRC_STATE;
     let mut Data: SRC_DATA = core::mem::zeroed();
     let mut ResultOut: PUCHAR;
-    let mut error: ::core::ffi::c_int;
+    let mut error: ::core::ffi::c_int = core::mem::zeroed();
     let mut FloatIn: PFLOAT;
     let mut FloatOut: PFLOAT;
     let mut NumSamples: ULONG;
@@ -394,8 +394,9 @@ pub unsafe extern "C" fn PerformQualityConversion(
         while Index < Samples {
             Sample = *Buffer.offset(Index as isize) as USHORT;
             Sample = (Sample as ::core::ffi::c_int * 2) as USHORT;
-            #[cfg(target_arch = "x86")]
-            Sample = _byteswap_ushort(Sample);
+            if cfg!(target_arch = "x86") {
+                Sample = _byteswap_ushort(Sample);
+            }
             *BufferOut.offset(Index as isize) = Sample;
             Index = Index.wrapping_add(1);
         }
@@ -417,8 +418,9 @@ pub unsafe extern "C" fn PerformQualityConversion(
         while Index < Samples {
             Sample = *Buffer.offset(Index as isize) as ULONG;
             Sample = Sample.wrapping_mul(16777216);
-            #[cfg(target_arch = "x86")]
-            Sample = _byteswap_ulong(Sample);
+            if cfg!(target_arch = "x86") {
+                Sample = _byteswap_ulong(Sample);
+            }
             *BufferOut.offset(Index as isize) = Sample;
             Index = Index.wrapping_add(1);
         }
@@ -441,8 +443,9 @@ pub unsafe extern "C" fn PerformQualityConversion(
         while Index < Samples {
             Sample = *BufferIn.offset(Index as isize) as ULONG;
             Sample = Sample.wrapping_mul(65536);
-            #[cfg(target_arch = "x86")]
-            Sample = _byteswap_ulong(Sample);
+            if cfg!(target_arch = "x86") {
+                Sample = _byteswap_ulong(Sample);
+            }
             *BufferOut.offset(Index as isize) = Sample;
             Index = Index.wrapping_add(1);
         }
@@ -464,8 +467,9 @@ pub unsafe extern "C" fn PerformQualityConversion(
         Index = 0;
         while Index < Samples {
             Sample = *BufferIn.offset(Index as isize);
-            #[cfg(target_arch = "x86")]
-            Sample = _byteswap_ushort(Sample);
+            if cfg!(target_arch = "x86") {
+                Sample = _byteswap_ushort(Sample);
+            }
             Sample = (Sample as ::core::ffi::c_int / 256) as USHORT;
             *BufferOut.offset(Index as isize) =
                 (Sample as ::core::ffi::c_int & 0xFF) as UCHAR;
@@ -489,8 +493,9 @@ pub unsafe extern "C" fn PerformQualityConversion(
         Index = 0;
         while Index < Samples {
             Sample = *BufferIn.offset(Index as isize);
-            #[cfg(target_arch = "x86")]
-            Sample = _byteswap_ulong(Sample);
+            if cfg!(target_arch = "x86") {
+                Sample = _byteswap_ulong(Sample);
+            }
             Sample = Sample.wrapping_div(16777216);
             *BufferOut.offset(Index as isize) =
                 (Sample & 0xFF) as UCHAR;
@@ -513,12 +518,16 @@ pub unsafe extern "C" fn PerformQualityConversion(
 
         Index = 0;
         while Index < Samples {
-            Sample = *BufferIn.offset(Index as isize) as USHORT;
-            #[cfg(target_arch = "x86")]
-            Sample = _byteswap_ulong(Sample);
-            Sample = (Sample as ::core::ffi::c_int / 65536) as USHORT;
-            *BufferOut.offset(Index as isize) =
-                (Sample as ::core::ffi::c_int & 0xFFFF) as USHORT;
+            // Divergence from mixer.c: it stores the 32-bit sample in its USHORT `Sample`
+            // first, so `Sample /= 65536` is always 0 and this branch emits silence. Keep the
+            // full ULONG and take its high half, as the scaling in the other branches intends.
+            let mut Wide: ULONG = *BufferIn.offset(Index as isize);
+            if cfg!(target_arch = "x86") {
+                Wide = _byteswap_ulong(Wide);
+            }
+            Wide /= 65536;
+            Sample = (Wide & 0xFFFF) as USHORT;
+            *BufferOut.offset(Index as isize) = Sample;
             Index = Index.wrapping_add(1);
         }
         *Result = BufferOut as PVOID;

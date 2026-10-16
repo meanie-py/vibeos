@@ -12,7 +12,6 @@ pub static RUSTCONV_WSTR_C5890CA79737: [u16; 17] = [
 use crate::prelude::*;
 use ntkrnl_sys::ddk::{GUID, IoAttachDeviceToDeviceStack, IoCreateDevice, IoCreateSymbolicLink, IoDeleteDevice, IoDeleteSymbolicLink, IoRegisterShutdownNotification, IoUnregisterPlugPlayNotification, PDEVICE_OBJECT, PDRIVER_OBJECT, PIO_STACK_LOCATION, PIRP, PUNICODE_STRING, RtlFreeUnicodeString, ZwClose};
 use core::ffi::c_void;
-use crate::types::*;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)

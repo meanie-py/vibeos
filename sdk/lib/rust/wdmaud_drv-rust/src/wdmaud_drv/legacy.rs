@@ -222,8 +222,8 @@ pub unsafe extern "C" fn WdmAudGetCapabilitiesByLegacy(
             DeviceInfo.u.MixCaps.szPname[(MAXPNAMELEN - 1) as usize] =
                 0x0000u16;
             CopyWideString!(
-                (*MixerCaps).szPname.as_mut_ptr(),
-                DeviceInfo.u.MixCaps.szPname.as_mut_ptr(),
+                core::ptr::addr_of_mut!((*MixerCaps).szPname) as *mut WCHAR,
+                core::ptr::addr_of_mut!(DeviceInfo.u.MixCaps.szPname) as *mut WCHAR,
             );
 
             (*MixerCaps).cDestinations = DeviceInfo.u.MixCaps.cDestinations;
@@ -231,7 +231,6 @@ pub unsafe extern "C" fn WdmAudGetCapabilitiesByLegacy(
             (*MixerCaps).vDriverVersion = DeviceInfo.u.MixCaps.vDriverVersion;
             (*MixerCaps).wMid = DeviceInfo.u.MixCaps.wMid;
             (*MixerCaps).wPid = DeviceInfo.u.MixCaps.wPid;
-            break;
         }
         WAVE_OUT_DEVICE_TYPE => {
             let mut WaveOutCaps: LPWAVEOUTCAPSW = Capabilities as LPWAVEOUTCAPSW;
@@ -243,14 +242,13 @@ pub unsafe extern "C" fn WdmAudGetCapabilitiesByLegacy(
 
             (*WaveOutCaps).vDriverVersion = DeviceInfo.u.WaveOutCaps.vDriverVersion;
             CopyWideString!(
-                (*WaveOutCaps).szPname.as_mut_ptr(),
-                DeviceInfo.u.WaveOutCaps.szPname.as_mut_ptr(),
+                core::ptr::addr_of_mut!((*WaveOutCaps).szPname) as *mut WCHAR,
+                core::ptr::addr_of_mut!(DeviceInfo.u.WaveOutCaps.szPname) as *mut WCHAR,
             );
 
             (*WaveOutCaps).dwFormats = DeviceInfo.u.WaveOutCaps.dwFormats;
             (*WaveOutCaps).wChannels = DeviceInfo.u.WaveOutCaps.wChannels;
             (*WaveOutCaps).dwSupport = DeviceInfo.u.WaveOutCaps.dwSupport;
-            break;
         }
         WAVE_IN_DEVICE_TYPE => {
             let mut WaveInCaps: LPWAVEINCAPSW = Capabilities as LPWAVEINCAPSW;
@@ -263,14 +261,13 @@ pub unsafe extern "C" fn WdmAudGetCapabilitiesByLegacy(
 
             (*WaveInCaps).vDriverVersion = DeviceInfo.u.WaveInCaps.vDriverVersion;
             CopyWideString!(
-                (*WaveInCaps).szPname.as_mut_ptr(),
-                DeviceInfo.u.WaveInCaps.szPname.as_mut_ptr(),
+                core::ptr::addr_of_mut!((*WaveInCaps).szPname) as *mut WCHAR,
+                core::ptr::addr_of_mut!(DeviceInfo.u.WaveInCaps.szPname) as *mut WCHAR,
             );
 
             (*WaveInCaps).dwFormats = DeviceInfo.u.WaveInCaps.dwFormats;
             (*WaveInCaps).wChannels = DeviceInfo.u.WaveInCaps.wChannels;
             (*WaveInCaps).wReserved1 = 0;
-            break;
         }
         MIDI_IN_DEVICE_TYPE => {
             let mut MidiInCaps: LPMIDIINCAPSW = Capabilities as LPMIDIINCAPSW;
@@ -284,10 +281,9 @@ pub unsafe extern "C" fn WdmAudGetCapabilitiesByLegacy(
             (*MidiInCaps).dwSupport = DeviceInfo.u.MidiInCaps.dwSupport;
 
             CopyWideString!(
-                (*MidiInCaps).szPname.as_mut_ptr(),
-                DeviceInfo.u.MidiInCaps.szPname.as_mut_ptr(),
+                core::ptr::addr_of_mut!((*MidiInCaps).szPname) as *mut WCHAR,
+                core::ptr::addr_of_mut!(DeviceInfo.u.MidiInCaps.szPname) as *mut WCHAR,
             );
-            break;
         }
         MIDI_OUT_DEVICE_TYPE => {
             let mut MidiOutCaps: LPMIDIOUTCAPSW = Capabilities as LPMIDIOUTCAPSW;
@@ -301,10 +297,9 @@ pub unsafe extern "C" fn WdmAudGetCapabilitiesByLegacy(
             (*MidiOutCaps).dwSupport = DeviceInfo.u.MidiOutCaps.dwSupport;
 
             CopyWideString!(
-                (*MidiOutCaps).szPname.as_mut_ptr(),
-                DeviceInfo.u.MidiOutCaps.szPname.as_mut_ptr(),
+                core::ptr::addr_of_mut!((*MidiOutCaps).szPname) as *mut WCHAR,
+                core::ptr::addr_of_mut!(DeviceInfo.u.MidiOutCaps.szPname) as *mut WCHAR,
             );
-            break;
         }
         _ => {}
     }
@@ -318,7 +313,7 @@ pub unsafe extern "C" fn WdmAudOpenSoundDeviceByLegacy(
 ) -> MMRESULT {
     let mut hDevInfo: HDEVINFO = core::ptr::null_mut();
     let mut DeviceInterfaceData: SP_DEVICE_INTERFACE_DATA = core::mem::zeroed();
-    let mut SWBusGuid: GUID = STATIC_KSCATEGORY_WDMAUD;
+    let mut SWBusGuid: GUID = KSCATEGORY_WDMAUD;
     let mut DeviceInterfaceDetailData: PSP_DEVICE_INTERFACE_DETAIL_DATA_W = core::ptr::null_mut();
 
     if KernelHandle == INVALID_HANDLE_VALUE {

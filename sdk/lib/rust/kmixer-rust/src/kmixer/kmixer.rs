@@ -16,7 +16,7 @@ pub unsafe extern "system" fn KMix_Pnp(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) 
     DPRINT!("KMix_Pnp called for func %x\n", (*IrpStack).MinorFunction);
 
     if (*IrpStack).MinorFunction == IRP_MN_QUERY_PNP_DEVICE_STATE {
-        (*Irp).IoStatus.Information |= (PNP_DEVICE_NOT_DISABLEABLE as _);
+        (*Irp).IoStatus.Information |= PNP_DEVICE_NOT_DISABLEABLE as ULONG_PTR;
     }
 
     return KsDefaultDispatchPnp(DeviceObject, Irp);
