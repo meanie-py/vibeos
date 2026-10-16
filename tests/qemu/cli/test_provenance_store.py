@@ -41,6 +41,6 @@ def test_the_lane_s_newest_ref_for_the_body_and_arch_is_cargo_s_output(tmp_path,
     cargo_out, _copied = provenance._crate_staticlibs(repo, build, crate)
     assert cargo_out == ref
     # A source edit after the build's last request is stale, as with a private archive.
-    assert cargo_out.stat().st_mtime > (crate / "src/lib.rs").stat().st_mtime
+    assert ref.stat().st_mtime > (crate / "src/lib.rs").stat().st_mtime
     os.utime(crate / "src/lib.rs", (3500, 3500))
-    assert cargo_out.stat().st_mtime < (crate / "src/lib.rs").stat().st_mtime
+    assert ref.stat().st_mtime < (crate / "src/lib.rs").stat().st_mtime
