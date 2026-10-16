@@ -190,6 +190,35 @@ def test_a_c_variadic_hand_port_is_banked_as_one_piece(tmp_path, monkeypatch):
     assert (mods / "f.rs").read_text() == "fn A() {}\n\n" + hand + "\n"
 
 
+def test_a_hand_twin_over_a_skipped_body_goes_in_like_an_added_item(tmp_path, monkeypatch):
+    # wscript's print_resource was bought from cscript's preprocess and no longer replays;
+    # translate skips it (skip_fn), so the banked `_v` twin has nothing to replace.
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    monkeypatch.setattr(port, "STATE_ROOT", tmp_path / "state")
+    state = {"stem": "m", "crate": "m-rust", "stages": []}
+    (tmp_path / "state" / "m").mkdir(parents=True)
+    (tmp_path / "state" / "m" / "state.json").write_text(json.dumps(state))
+    mods = tmp_path / "sdk" / "lib" / "rust" / "m-rust" / "src" / "m"
+    mods.mkdir(parents=True)
+    hand = 'unsafe extern "C" fn P_v(id: u32, ap: *mut c_void) {\n    y();\n}'
+    (mods / "f.rs").write_text("fn A() {}\n\n" + hand + "\n")
+    port.stage_hand("m", ["f.rs:P_v"])
+    assert port._hand_covered("m") == {"P_v", "P"}
+    (mods / "f.rs").write_text("fn A() {}\n")  # replayed with P skipped
+    with pytest.raises(port.PortError):
+        port.apply_hand("m")  # not recorded as skipped: stale, and loud about it
+    state = json.loads((tmp_path / "state" / "m" / "state.json").read_text())
+    state["skip_fn"] = ["P"]
+    (tmp_path / "state" / "m" / "state.json").write_text(json.dumps(state))
+    assert port.apply_hand("m", early_only=True) == 1
+    assert hand in (mods / "f.rs").read_text()
+
+
+def test_the_replay_refusal_names_the_function():
+    out = "x/.responses/m__main: print_resource already has purchased output which did not replay."
+    assert port._NO_REPLAY.findall(out) == ["print_resource"]
+
+
 def test_a_whole_module_is_banked_and_replayed_verbatim(tmp_path, monkeypatch):
     # fc's text.h: the bought W bodies made generic by hand, around a trait and its impls.
     monkeypatch.setattr(port, "REPO", tmp_path)
@@ -1301,3 +1330,51 @@ def test_a_function_the_crate_defines_is_never_declared_extern(tmp_path):
         "pub unsafe fn TextCompare<T: TChar>() {}\nunsafe fn Private() {}\n"
     )
     assert port._crate_defined_fns(tmp_path) == {"TextCompareA", "TextCompare"}
+
+
+def test_split_island_groups_names_each_ignored_group_and_its_tus():
+    script = (
+        "  mfplat|mfplat-types_1|mfplat-types_2)\n"
+        '    case "$DRIVER" in\n'
+        "      # island types_1 — 1 TU(s):\n"
+        "      # mediatype.c\n"
+        "      mfplat-types_1)\n"
+        "        ;;\n"
+        "      # island types_2 — 2 TU(s):\n"
+        "      # sample.c other.c\n"
+        "      mfplat-types_2)\n"
+        "        ;;\n"
+        "    esac\n"
+    )
+    assert port.split_island_groups(script, "mfplat") == [
+        ("types_1", ["mediatype.c"]),
+        ("types_2", ["sample.c", "other.c"]),
+    ]
+    assert port.split_island_groups(script, "mf") == []
+
+
+def test_guid_libraries_are_every_sdk_lib_the_target_links():
+    libs = port.guid_libraries(port.REPO / "dll" / "win32" / "mfplat" / "CMakeLists.txt")
+    assert {"uuid", "dmoguids", "mfuuid", "strmiids", "dxguid"} <= set(libs)
+    assert "wine" not in libs and "oldnames" not in libs  # sdk/lib/<name> must exist
+
+
+def test_drop_guid_library_copies_cuts_only_what_a_linked_library_defines(tmp_path):
+    guid = (
+        "#[no_mangle]\npub static mut {n}: GUID = _GUID {{\n    Data1: 1,\n    Data2: 2,\n"
+        "    Data3: 3,\n    Data4: [0; 8],\n}};\n\n"
+    )
+    f = tmp_path / "main.rs"
+    f.write_text(guid.format(n="EVRConfig_ForceBob") + guid.format(n="MY_OWN") + "fn x() {}\n")
+    assert port.drop_guid_library_copies(f, {"EVRConfig_ForceBob"}) == ["EVRConfig_ForceBob"]
+    text = f.read_text()
+    assert "EVRConfig_ForceBob" not in text
+    assert "pub static mut MY_OWN: GUID" in text and text.endswith("fn x() {}\n")
+
+
+def test_com_method_names_are_the_islands_vtable_slots(tmp_path):
+    (tmp_path / "types_amd64.rs").write_text(
+        "#[repr(C)]\npub struct IStreamVtbl {\n    pub QueryInterface: Option<fn()>,\n"
+        "    pub Read: Option<fn()>,\n}\npub struct NotAVtable {\n    pub x: u32,\n}\n"
+    )
+    assert port.com_method_names(tmp_path) == {"IStream_QueryInterface", "IStream_Read"}

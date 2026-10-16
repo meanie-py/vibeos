@@ -1793,3 +1793,33 @@ def test_a_dotted_target_name_is_read_whole(tmp_path):
         "add_executable(rapps.com main.c rapps.rc)\nadd_library(lib_x STATIC a.c)\n"
     )
     assert _target_names(tmp_path / "CMakeLists.txt") == {"rapps.com", "lib_x"}
+
+
+def test_a_cargo_linked_module_still_owns_its_flipped_sources(tmp_path):
+    # cargo_cell_gen keeps no source list: the translated C survives only as a comment block,
+    # and the flags moved to `<m>_shims`. `port replay` refused every cargo-linked module with
+    # "no proven CMake source owner" until the parse read both.
+    from rustconv.profile_derive import _target_names, parse_cmakelists
+
+    mod = tmp_path / "base" / "wscript"
+    mod.mkdir(parents=True)
+    for name in ("host.c", "main.c", "rust_varargs_shim.c"):
+        (mod / name).write_text("")
+    (mod / "CMakeLists.txt").write_text(
+        "# wscript.exe is all Rust (wscript-rust) and cargo links it:\n"
+        "# The translated C, kept on disk:\n"
+        "# host.c  # replaced by Rust (sdk/lib/rust/wscript-rust/src/wscript/host.rs)\n"
+        "# main.c  # replaced by Rust (sdk/lib/rust/wscript-rust/src/wscript/main.rs)\n"
+        "add_library(wscript_shims OBJECT rust_varargs_shim.c)\n"
+        "target_compile_definitions(wscript_shims PRIVATE UNICODE _UNICODE)\n"
+        "add_cargo_module(wscript wscript-cargo wscript.exe\n"
+        "    KIND win32exe\n    BODY_CRATE wscript-rust)\n"
+    )
+    cml = mod / "CMakeLists.txt"
+    assert "wscript" in _target_names(cml)
+    live = parse_cmakelists(cml, tmp_path, arch="amd64", target="wscript")
+    assert live.compiled_tus == []
+    m = parse_cmakelists(cml, tmp_path, arch="amd64", target="wscript", flipped_sources=True)
+    assert sorted(p.name for p in m.compiled_tus) == ["host.c", "main.c"]
+    assert m.module_type == "win32cui" and m.unicode
+    assert "-DUNICODE" in m.definitions

@@ -1045,3 +1045,42 @@ pub extern "system" fn SetCurrentThreadCompartmentId(CompartmentId: u32) -> u32 
         E_INVALID_PARAMETER
     }
 }
+
+// The initial-notification worker casts the callback as
+// `extern "system" fn(PVOID ctx, PMIB_xxx Row, MIB_NOTIFICATION_TYPE)`, which is exactly
+// PUNICAST_IPADDRESS_CHANGE_CALLBACK (stdcall on i386), so it is shared.
+
+/// C: `NETIO_STATUS NotifyUnicastIpAddressChange(ADDRESS_FAMILY Family,
+/// PUNICAST_IPADDRESS_CHANGE_CALLBACK Callback, PVOID CallerContext, BOOLEAN InitialNotification,
+/// HANDLE *NotificationHandle)`.  Same contract and divergence as NotifyIpInterfaceChange (real
+/// cancellable handle, initial notification from a pool item, later changes never delivered).
+/// DEVIATION from Wine: Wine returns a NULL handle and calls the callback inline; here the
+/// handle works with CancelMibChangeNotify2.
+#[no_mangle]
+pub unsafe extern "system" fn NotifyUnicastIpAddressChange(
+    Family: u16,
+    Callback: usize,
+    CallerContext: *mut c_void,
+    InitialNotification: u8,
+    NotificationHandle: *mut *mut c_void,
+) -> u32 {
+    register_notify(Family as u32, Callback, CallerContext, InitialNotification, NotificationHandle)
+}
+
+/// C: `VOID InitializeIpInterfaceEntry(PMIB_IPINTERFACE_ROW Row)`: prepares a row for
+/// SetIpInterfaceEntry, where "all ones" means "leave this setting unchanged". Measured on
+/// Windows 11 (amd64): the whole row, padding included, becomes 0xFF, then Family,
+/// InterfaceLuid, InterfaceIndex, BaseReachableTime, RetransmitTime, PathMtuDiscoveryTimeout
+/// and NlMtu are zeroed. (Microsoft's remarks say only "other fields ... zero", which is
+/// not what it does.) No NULL check: Windows has none either.
+#[no_mangle]
+pub unsafe extern "system" fn InitializeIpInterfaceEntry(Row: *mut MIB_IPINTERFACE_ROW) {
+    core::ptr::write_bytes(Row as *mut u8, 0xFF, core::mem::size_of::<MIB_IPINTERFACE_ROW>());
+    (*Row).Family = 0; // AF_UNSPEC
+    (*Row).InterfaceLuid = 0;
+    (*Row).InterfaceIndex = 0;
+    (*Row).BaseReachableTime = 0;
+    (*Row).RetransmitTime = 0;
+    (*Row).PathMtuDiscoveryTimeout = 0;
+    (*Row).NlMtu = 0;
+}

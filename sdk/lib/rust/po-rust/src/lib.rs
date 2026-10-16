@@ -16,3 +16,4 @@ pub mod events;
 pub mod poshtdwn;
 pub mod povolume;
 pub mod power;
+pub mod setting;

@@ -1,0 +1,1 @@
+WScript.Echo("forced engine via //E:jscript on a .txt file");

@@ -2890,3 +2890,87 @@ pub unsafe extern "system" fn GetVolumePathNamesForVolumeNameW(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+
+/// GetVolumeInformationByHandleW (Vista+). Same as GetVolumeInformationW but the
+/// volume is identified by an already-open handle (any file/dir/volume handle on
+/// it). Logic follows Wine 11 kernelbase/volume.c; error mapping via
+/// BaseSetLastNTError. Divergence from Wine: none in behaviour (stack buffers are
+/// u64-backed so the FILE_FS_* structs are naturally aligned).
+#[no_mangle]
+pub unsafe extern "system" fn GetVolumeInformationByHandleW(
+    hFile: HANDLE,
+    lpVolumeNameBuffer: LPWSTR,
+    nVolumeNameSize: DWORD,
+    lpVolumeSerialNumber: LPDWORD,
+    lpMaximumComponentLength: LPDWORD,
+    lpFileSystemFlags: LPDWORD,
+    lpFileSystemNameBuffer: LPWSTR,
+    nFileSystemNameSize: DWORD,
+) -> BOOL {
+    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
+    // sizeof(FILE_FS_*_INFORMATION) + MAX_PATH WCHARs, rounded up, 8-aligned.
+    const BUFQ: usize = 80; // 640 bytes >= 24/16 + 520
+    let mut Buffer: [u64; BUFQ] = [0; BUFQ];
+    let BufSize: ULONG = (BUFQ * core::mem::size_of::<u64>()) as ULONG;
+
+    if !lpVolumeNameBuffer.is_null() || !lpVolumeSerialNumber.is_null() {
+        let VolumeInfo = Buffer.as_mut_ptr() as PFILE_FS_VOLUME_INFORMATION;
+        let Status = NtQueryVolumeInformationFile(
+            hFile,
+            &mut IoStatusBlock,
+            VolumeInfo as *mut c_void,
+            BufSize,
+            FileFsVolumeInformation,
+        );
+        if !NT_SUCCESS(Status) {
+            BaseSetLastNTError(Status);
+            return 0;
+        }
+        if !lpVolumeNameBuffer.is_null() {
+            let Len = (*VolumeInfo).VolumeLabelLength as usize;
+            /* Room for the label plus the terminating NUL, in WCHARs */
+            if (nVolumeNameSize as usize) < Len / core::mem::size_of::<WCHAR>() + 1 {
+                SetLastError(ERROR_BAD_LENGTH);
+                return 0;
+            }
+            RtlCopyMemory(lpVolumeNameBuffer as *mut c_void, (*VolumeInfo).VolumeLabel.as_ptr() as *const c_void, Len);
+            *lpVolumeNameBuffer.add(Len / core::mem::size_of::<WCHAR>()) = 0;
+        }
+        if !lpVolumeSerialNumber.is_null() {
+            *lpVolumeSerialNumber = (*VolumeInfo).VolumeSerialNumber;
+        }
+    }
+
+    if !lpMaximumComponentLength.is_null() || !lpFileSystemFlags.is_null() || !lpFileSystemNameBuffer.is_null() {
+        let VolumeAttr = Buffer.as_mut_ptr() as PFILE_FS_ATTRIBUTE_INFORMATION;
+        let Status = NtQueryVolumeInformationFile(
+            hFile,
+            &mut IoStatusBlock,
+            VolumeAttr as *mut c_void,
+            BufSize,
+            FileFsAttributeInformation,
+        );
+        if !NT_SUCCESS(Status) {
+            BaseSetLastNTError(Status);
+            return 0;
+        }
+        if !lpFileSystemNameBuffer.is_null() {
+            let Len = (*VolumeAttr).FileSystemNameLength as usize;
+            if (nFileSystemNameSize as usize) < Len / core::mem::size_of::<WCHAR>() + 1 {
+                SetLastError(ERROR_BAD_LENGTH);
+                return 0;
+            }
+            RtlCopyMemory(lpFileSystemNameBuffer as *mut c_void, (*VolumeAttr).FileSystemName.as_ptr() as *const c_void, Len);
+            *lpFileSystemNameBuffer.add(Len / core::mem::size_of::<WCHAR>()) = 0;
+        }
+        if !lpMaximumComponentLength.is_null() {
+            *lpMaximumComponentLength = (*VolumeAttr).MaximumComponentNameLength;
+        }
+        if !lpFileSystemFlags.is_null() {
+            *lpFileSystemFlags = (*VolumeAttr).FileSystemAttributes;
+        }
+    }
+
+    1
+}

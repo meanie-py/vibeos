@@ -180,7 +180,10 @@ pub struct MiniportDriverCharacteristics {
     pub DevicePnPEventNotifyHandler: Option<unsafe extern "system" fn(NDIS_HANDLE, PVOID)>,
     pub ShutdownHandlerEx: Option<unsafe extern "system" fn(NDIS_HANDLE, u32)>,
     pub CancelOidRequestHandler: Option<unsafe extern "system" fn(NDIS_HANDLE, PVOID)>,
-    // NDIS 6.1+: DirectOidRequestHandler, CancelDirectOidRequestHandler; 6.80: Synchronous.
+    // NDIS 6.1+
+    pub DirectOidRequestHandler: Option<unsafe extern "system" fn(NDIS_HANDLE, *mut NdisOidRequest) -> NDIS_STATUS>,
+    pub CancelDirectOidRequestHandler: Option<unsafe extern "system" fn(NDIS_HANDLE, PVOID)>,
+    // NDIS 6.80: SynchronousOidRequestHandler.
 }
 
 #[repr(C)]
@@ -384,10 +387,10 @@ const NDIS_STATUS_INVALID_PARAMETER: NDIS_STATUS = 0xC000_000Du32 as NDIS_STATUS
 const NDIS_STATUS_LINK_STATE: NDIS_STATUS = 0x4001_0017;
 const NDIS_STATUS_MEDIA_CONNECT_: NDIS_STATUS = 0x4001_000B;
 const NDIS_STATUS_MEDIA_DISCONNECT_: NDIS_STATUS = 0x4001_000C;
-const MEDIA_CONNECT_STATE_CONNECTED: u32 = 1;
+pub const MEDIA_CONNECT_STATE_CONNECTED: u32 = 1;
 const NDIS_SEND_FLAGS_DISPATCH_LEVEL: u32 = 0x1;
 const NDIS_RETURN_FLAGS_DISPATCH_LEVEL: u32 = 0x1;
-const NDIS_RECEIVE_FLAGS_RESOURCES: u32 = 0x2;
+pub const NDIS_RECEIVE_FLAGS_RESOURCES: u32 = 0x2;
 const NDIS_RWL_AT_DISPATCH_LEVEL: u8 = 0x1;
 const NDIS6_TAG: u32 = u32::from_le_bytes(*b"6SDN");
 
@@ -581,6 +584,9 @@ pub unsafe extern "system" fn NdisMSetMiniportAttributes(
     let a6 = adapter_of(NdisMiniportHandle as PLOGICAL_ADAPTER);
     if a6.is_null() {
         return NDIS_STATUS_INVALID_PARAMETER;
+    }
+    if crate::ndis::wdi::refuse_attributes(NdisMiniportHandle, (*Attributes).Type) {
+        return NDIS_STATUS_SUCCESS;
     }
     match (*Attributes).Type {
         NDIS_OBJECT_TYPE_MINIPORT_ADAPTER_REGISTRATION_ATTRIBUTES => {
@@ -863,6 +869,10 @@ pub unsafe extern "system" fn NdisMOidRequestComplete(
     OidRequest: *mut NdisOidRequest,
     Status: NDIS_STATUS,
 ) {
+    // A WDI driver completing one of the WDI layer's own commands.
+    if crate::ndis::wdi::oid_request_complete(MiniportAdapterHandle, OidRequest, Status) {
+        return;
+    }
     let req = (*OidRequest).SourceReserved[0] as PNDIS_REQUEST;
     let set = (*req).RequestType == NdisRequestSetInformation;
     if set {
@@ -886,13 +896,25 @@ pub unsafe extern "system" fn NdisMOidRequestComplete(
 
 #[no_mangle]
 pub unsafe extern "system" fn NdisMIndicateStatusEx(MiniportAdapterHandle: NDIS_HANDLE, StatusIndication: *mut StatusIndication) {
-    let a6 = adapter_of(MiniportAdapterHandle as PLOGICAL_ADAPTER);
+    // A WDI driver's indications are all for the WDI layer.
+    if crate::ndis::wdi::indicate_status(MiniportAdapterHandle, StatusIndication) {
+        return;
+    }
     let s = &*StatusIndication;
-    if a6.is_null() || s.StatusCode != NDIS_STATUS_LINK_STATE || s.StatusBuffer.is_null() {
+    if s.StatusCode != NDIS_STATUS_LINK_STATE || s.StatusBuffer.is_null() {
         log6!("status %x indicated\n", s.StatusCode);
         return;
     }
-    let ls = &*(s.StatusBuffer as *const LinkState);
+    indicate_link_state(MiniportAdapterHandle, &*(s.StatusBuffer as *const LinkState));
+}
+
+/// A link-state change, told to the NDIS 5 protocols as media connect/disconnect. The WDI
+/// layer, whose indications never reach NdisMIndicateStatusEx's own path, calls it directly.
+pub unsafe fn indicate_link_state(MiniportAdapterHandle: NDIS_HANDLE, ls: &LinkState) {
+    let a6 = adapter_of(MiniportAdapterHandle as PLOGICAL_ADAPTER);
+    if a6.is_null() {
+        return;
+    }
     let up = ls.MediaConnectState == MEDIA_CONNECT_STATE_CONNECTED;
     (*a6).gen.XmitLinkSpeed = ls.XmitLinkSpeed;
     (*a6).gen.RcvLinkSpeed = ls.RcvLinkSpeed;
@@ -1162,7 +1184,7 @@ struct Indicated {
 }
 
 /// Copy `nb`'s data into `dst`, returning the bytes copied.
-unsafe fn copy_nb(nb: *mut NetBuffer, dst: &mut [u8]) -> usize {
+pub unsafe fn copy_nb(nb: *mut NetBuffer, dst: &mut [u8]) -> usize {
     let h = &(*nb).u.h;
     let mut want = core::cmp::min(h.DataLength, dst.len());
     let mut mdl = h.CurrentMdl;

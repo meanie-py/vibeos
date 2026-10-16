@@ -22,6 +22,7 @@
 #include <stddef.h> /* size_t */
 
 extern int cnt_vsscanf(const char *file, const char *fmt, va_list *ap);
+extern int cnt_vsscanf_s(const char *file, const char *fmt, va_list *ap);
 extern int cnt_vswscanf(const unsigned short *file,
                         const unsigned short *fmt, va_list *ap);
 extern int cnt_vsnscanf(const char *file, size_t length,
@@ -40,6 +41,16 @@ int sscanf(const char *str, const char *format, ...)
     int r;
     va_start(ap, format);
     r = cnt_vsscanf(str, format, &ap);
+    va_end(ap);
+    return r;
+}
+
+int sscanf_s(const char *str, const char *format, ...)
+{
+    va_list ap;
+    int r;
+    va_start(ap, format);
+    r = cnt_vsscanf_s(str, format, &ap);
     va_end(ap);
     return r;
 }

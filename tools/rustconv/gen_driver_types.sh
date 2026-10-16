@@ -8302,7 +8302,13 @@ case "$DRIVER" in
     # split groups (mediatype.c, sample.c) need ride in the main wrapper too.
     if [ "$DRIVER" = mfplat ]; then
       WRAPPER_INC+=$'\n#include "dxva.h"\n#include "dxva2api.h"\n#include "dvdmedia.h"\n#include "ks.h"\n#include "ksmedia.h"\n#include "amvideo.h"'
+      # uuids.h pulls the MPEG-2 format/subtype GUIDs in from ksuuids.h.
+      ALLOW_FILES+=( --allowlist-file '.*[/\\]ksuuids\.h' )
     fi
+    # ntdll-sys carries IStream and STATSTG OPAQUE (rtl's memory stream only needs the
+    # pointer), so blocklisting them leaves mfplat's byte stream with no Stat/Seek/SetSize
+    # slots and a STATSTG with no fields. This island owns the full objidl definitions.
+    UNBLOCK="IStream IStreamVtbl tagSTATSTG STATSTG LPSTREAM"
     # <<< hand
     ;;
   mf)
@@ -8352,6 +8358,11 @@ case "$DRIVER" in
     # after them, and hoisting one ahead swaps which header an include resolves to.
     LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/vendor/symcrypt/inc" -I"${SRC}/vendor/symcrypt/lib" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/vendor/mesa" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x0A00 -DNTDDI_VERSION=0x0A000000 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D__USE_CRTIMP -D__WINESRC__ -D_CRT_NO_POSIX_ERROR_CODES )
+    # >>> hand
+    # ntdll-sys carries IStream and STATSTG OPAQUE; the scheme handler needs the full objidl
+    # definitions (and their widl wrappers). Same as mfplat.
+    UNBLOCK="IStream IStreamVtbl tagSTATSTG STATSTG LPSTREAM"
+    # <<< hand
     ;;
   setup16)
     # AUTO-DERIVED by rustconv.profile_derive on 2026-10-15 from base/applications/setup16/CMakeLists.txt

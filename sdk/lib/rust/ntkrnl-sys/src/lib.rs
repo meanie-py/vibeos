@@ -37,6 +37,7 @@
 // ============================================================================
 
 pub mod base;
+pub mod bootopt;
 pub mod cm_control;
 pub mod cmres;
 pub mod constants;

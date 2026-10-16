@@ -919,6 +919,28 @@ def _interface_include_index(repo_root: Path) -> dict[str, tuple[Path, ...]]:
 
 
 _CARGO_KERNEL_RE = re.compile(r"\badd_cargo_module\s*\(\s*(\w+)[^)]*\bKIND\s+kernelexe\b")
+#: A user-mode module whose link tools/cargo_cell_gen.py moved to cargo. Its CMakeLists keeps
+#: no source list: the translated C survives only as the comment block below, and the flags
+#: its sources were compiled with moved onto the `<name>_shims` OBJECT library.
+_CARGO_USER_RE = re.compile(
+    r"\badd_cargo_module\s*\(\s*([\w.]+)[^)]*\bKIND\s+(win32exe|win32dll)\b"
+)
+_KEPT_ON_DISK = "# The translated C, kept on disk:"
+
+
+def _kept_on_disk(raw_text: str) -> list[str]:
+    """The `# a.c  # replaced by Rust (...)` entries cargo_cell_gen carried into its block."""
+    out: list[str] = []
+    lines = raw_text.splitlines()
+    for i, line in enumerate(lines):
+        if line.strip() != _KEPT_ON_DISK:
+            continue
+        for entry in lines[i + 1 :]:
+            m = _COMMENTED_ENTRY.match(entry)
+            if m is None:
+                break
+            out.append(m.group(1))
+    return out
 
 
 def _cargo_kernel_targets(cmake: Path) -> set[str]:
@@ -940,6 +962,7 @@ def _target_names(cmake: Path) -> set[str]:
         if not m.group(2).startswith("$")
     }
     names.update(_CARGO_KERNEL_RE.findall(text))
+    names.update(m.group(1) for m in _CARGO_USER_RE.finditer(text))
     return names
 
 
@@ -989,6 +1012,7 @@ def parse_cmakelists(
     pch_skip: set[Path] = set()
     rpc: list[str] = []
     link_deps: dict[str, list[str]] = {}
+    cargo_user: list[str] = []
 
     def cond() -> str | None:
         live = [c for c in cond_stack if c]
@@ -1037,6 +1061,19 @@ def parse_cmakelists(
             module_types[args[0]] = ("kernel", False)
             if "EXTRA_DEPENDS" in args:
                 link_deps.setdefault(args[0], []).extend(args[args.index("EXTRA_DEPENDS") + 1 :])
+        elif (
+            name == "add_cargo_module"
+            and len(args_raw) >= 3
+            and _CARGO_USER_RE.match(f"add_cargo_module({raw})")
+        ):
+            # Without this a cargo-linked module had no owner for its own flipped sources, so
+            # `port replay` refused every one of them ("no proven CMake source owner").
+            kept = _kept_on_disk(raw_text) if flipped_sources else []
+            restored_sources.extend(k for k in kept if k not in restored_sources)
+            exe = "win32exe" in args_raw
+            targets[args[0]] = ("executable" if exe else "library", kept)
+            module_types[args[0]] = ("win32cui" if exe else "win32dll", False)
+            cargo_user.append(args[0])
         elif name == "target_link_libraries" and len(args) >= 2:
             link_deps.setdefault(args[0], []).extend(
                 a for a in args[1:] if a not in ("PUBLIC", "PRIVATE", "INTERFACE")
@@ -1082,6 +1119,12 @@ def parse_cmakelists(
             )
     if target not in targets:
         raise ProfileDeriveError(f"{cmake}: no target {target!r} (have: {', '.join(targets)})")
+    for cell in cargo_user:
+        shims = f"{cell}_shims"
+        per_target_defs.setdefault(cell, []).extend(per_target_defs.get(shims, []))
+        link_deps.setdefault(cell, []).extend(link_deps.get(shims, []))
+        unicode = "-DUNICODE" in per_target_defs[cell]
+        module_types[cell] = (module_types[cell][0], unicode)
 
     def target_entries(name: str) -> list[SourceEntry]:
         out: list[SourceEntry] = []
@@ -2868,7 +2911,9 @@ def load_compile_db(repo_root: Path, module: CMakeModule, arch: str) -> CompileD
     # compiled by `netio` too — with `-D_WIN32_WINNT=0x600` against afd's 0x502. Picking the
     # wrong one silently changes every version-gated struct layout in the island.
     want = {p.resolve() for p in module.compiled_tus}
-    obj_marker = f"CMakeFiles/{module.name}.dir/"
+    # A cargo-linked module (cargo_cell_gen) compiles no TU under its own name: its flags
+    # live on the `<name>_shims` OBJECT library, which the cell's link replays.
+    obj_markers = (f"CMakeFiles/{module.name}.dir/", f"CMakeFiles/{module.name}_shims.dir/")
     baseline: set[str] | None = None
     mine: set[str] = set()
     files: set[Path] = set()
@@ -2885,7 +2930,7 @@ def load_compile_db(repo_root: Path, module: CMakeModule, arch: str) -> CompileD
         local = Path(f.replace(canon, str(repo_root)))
         objs = re.findall(r"-o\s+(\S+)", cmd)
         if objs:
-            if not any(obj_marker in o for o in objs):
+            if not any(m in o for o in objs for m in obj_markers):
                 continue
         elif local.resolve() not in want and not _is_within(local, module.module_dir):
             continue  # no -o to attribute by: fall back to the source location

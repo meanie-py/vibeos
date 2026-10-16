@@ -8,8 +8,15 @@
 //! GetDpiForSystem / GetDpiForWindow / SetProcessDPIAware / SetProcessDpiAwarenessContext /
 //! LogicalToPhysicalPoint live in user32_vista-rust, which also owns the awareness state.
 use win32k_sys::win32k::*;
+use core::sync::atomic::{AtomicU32, Ordering};
 
 extern "system" {
+    fn TlsAlloc() -> DWORD;
+    fn TlsFree(dwTlsIndex: DWORD) -> BOOL;
+    fn TlsGetValue(dwTlsIndex: DWORD) -> PVOID;
+    fn TlsSetValue(dwTlsIndex: DWORD, lpTlsValue: PVOID) -> BOOL;
+    fn GetProcessId(Process: HANDLE) -> DWORD;
+    fn GetCurrentProcessId() -> DWORD;
     fn SetLastError(dwErrCode: DWORD);
     fn MulDiv(nNumber: INT, nNumerator: INT, nDenominator: INT) -> INT;
 }
@@ -78,9 +85,9 @@ pub unsafe extern "system" fn AreDpiAwarenessContextsEqual(
 
 #[no_mangle]
 pub unsafe extern "system" fn GetThreadDpiAwarenessContext() -> DPI_AWARENESS_CONTEXT {
-    // No per-thread override exists (SetThreadDpiAwarenessContext is not provided): the
-    // thread inherits the process awareness.
-    process_dpi_context() as DPI_AWARENESS_CONTEXT
+    // A SetThreadDpiAwarenessContext override wins; otherwise the thread inherits the process.
+    let o = thread_dpi_override();
+    if o != 0 { o as DPI_AWARENESS_CONTEXT } else { process_dpi_context() as DPI_AWARENESS_CONTEXT }
 }
 
 #[no_mangle]
@@ -203,4 +210,131 @@ pub unsafe extern "system" fn SystemParametersInfoForDpi(
         }
     }
     1
+}
+
+const TLS_OUT_OF_INDEXES_: DWORD = 0xFFFF_FFFF;
+const DPI_AWARENESS_INVALID_: INT = -1;
+
+/// TLS slot holding this thread's DPI override as a pseudo-handle (-1..-5); NULL = no override
+/// (thread follows the process).  Allocated lazily; a pseudo-handle is never 0, so NULL is free.
+static DPI_TLS: AtomicU32 = AtomicU32::new(TLS_OUT_OF_INDEXES_);
+
+fn dpi_tls_index() -> Option<DWORD> {
+    let cur = DPI_TLS.load(Ordering::Acquire);
+    if cur != TLS_OUT_OF_INDEXES_ {
+        return Some(cur);
+    }
+    let idx = unsafe { TlsAlloc() };
+    if idx == TLS_OUT_OF_INDEXES_ {
+        return None;
+    }
+    match DPI_TLS.compare_exchange(TLS_OUT_OF_INDEXES_, idx, Ordering::AcqRel, Ordering::Acquire) {
+        Ok(_) => Some(idx),
+        Err(winner) => {
+            unsafe { TlsFree(idx) };
+            Some(winner)
+        }
+    }
+}
+
+/// This thread's override pseudo-handle, or 0 when it has none.
+fn thread_dpi_override() -> isize {
+    let idx = DPI_TLS.load(Ordering::Acquire);
+    if idx == TLS_OUT_OF_INDEXES_ {
+        return 0; // nobody has ever set an override
+    }
+    unsafe { TlsGetValue(idx) as isize }
+}
+
+/// Canonical pseudo-handle for a normalize() kind.
+fn kind_to_pseudo(kind: u32) -> isize {
+    match kind {
+        0 => CTX_UNAWARE,
+        1 => CTX_SYSTEM_AWARE,
+        2 => CTX_PER_MONITOR_AWARE,
+        3 => CTX_PER_MONITOR_AWARE_V2,
+        _ => CTX_UNAWARE_GDISCALED,
+    }
+}
+
+/// Returns the PREVIOUS context (the override, else the process awareness); NULL +
+/// ERROR_INVALID_PARAMETER for an invalid context.  Setting the context the process already has
+/// clears the override (Wine clears it on the PROCESS flag, which the previous-context value
+/// returned from Get carries; our pseudo-handles have no such flag).
+#[no_mangle]
+pub unsafe extern "system" fn SetThreadDpiAwarenessContext(
+    context: DPI_AWARENESS_CONTEXT,
+) -> DPI_AWARENESS_CONTEXT {
+    let kind = match normalize(context as isize) {
+        Some(k) => k,
+        None => {
+            SetLastError(ERROR_INVALID_PARAMETER);
+            return core::ptr::null_mut();
+        }
+    };
+    let new = kind_to_pseudo(kind);
+    let prev = match thread_dpi_override() {
+        0 => process_dpi_context(),
+        o => o,
+    };
+    let stored = if new == process_dpi_context() { 0 } else { new };
+    if stored == 0 && thread_dpi_override() == 0 {
+        return prev as DPI_AWARENESS_CONTEXT; // nothing to clear, avoid allocating a slot
+    }
+    let idx = match dpi_tls_index() {
+        Some(i) => i,
+        None => return core::ptr::null_mut(), // LastError set by TlsAlloc
+    };
+    if TlsSetValue(idx, stored as PVOID) == 0 {
+        return core::ptr::null_mut();
+    }
+    prev as DPI_AWARENESS_CONTEXT
+}
+
+/// DPI_AWARENESS_INVALID (-1) for an invalid context; V2 reports PER_MONITOR_AWARE and
+/// GDISCALED reports UNAWARE, as Windows/Wine do.
+#[no_mangle]
+pub unsafe extern "system" fn GetAwarenessFromDpiAwarenessContext(
+    context: DPI_AWARENESS_CONTEXT,
+) -> DPI_AWARENESS {
+    (match normalize(context as isize) {
+        Some(0) | Some(4) => 0,
+        Some(1) => 1,
+        Some(2) | Some(3) => 2,
+        _ => DPI_AWARENESS_INVALID_,
+    }) as DPI_AWARENESS
+}
+
+/// 96 for unaware, the system DPI for system-aware (always 96 here: one monitor), 0 for
+/// per-monitor.  DEVIATION: Wine returns the garbage DPI bits of an arbitrary invalid value;
+/// we return 0.
+#[no_mangle]
+pub unsafe extern "system" fn GetDpiFromDpiAwarenessContext(
+    context: DPI_AWARENESS_CONTEXT,
+) -> UINT {
+    match normalize(context as isize) {
+        Some(0) | Some(1) | Some(4) => USER_DEFAULT_SCREEN_DPI as UINT,
+        _ => 0,
+    }
+}
+
+/// Current process (NULL, pseudo-handle or a real handle to ourselves): its awareness.  Any
+/// other process: UNAWARE (Wine: "not supported on other process").  DEVIATION: an invalid
+/// handle returns NULL with the GetProcessId error instead of UNAWARE.
+#[no_mangle]
+pub unsafe extern "system" fn GetDpiAwarenessContextForProcess(
+    hProcess: HANDLE,
+) -> DPI_AWARENESS_CONTEXT {
+    if hProcess.is_null() || hProcess as isize == -1 {
+        return process_dpi_context() as DPI_AWARENESS_CONTEXT;
+    }
+    let pid = GetProcessId(hProcess);
+    if pid == 0 {
+        return core::ptr::null_mut();
+    }
+    if pid == GetCurrentProcessId() {
+        process_dpi_context() as DPI_AWARENESS_CONTEXT
+    } else {
+        CTX_UNAWARE as DPI_AWARENESS_CONTEXT
+    }
 }

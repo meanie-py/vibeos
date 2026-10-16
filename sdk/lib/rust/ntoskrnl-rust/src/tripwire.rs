@@ -62,6 +62,9 @@
 //!   XHCI_MSI_MESSAGES=<hex>  not read by the kernel: usbport asks pci.sys for this
 //!                       many messages for an xHCI controller instead of one, so
 //!                       a rig with MSI-X off proves a multiple-message MSI block.
+//!   MEMCENSUS=1         a line splitting physical memory by what holds it at every
+//!                       process's address-space teardown (ARM3/census.rs), for a
+//!                       sweep that loses free memory the commit charge cannot see.
 //!   RUSTPANIC_SELFTEST=1  deliberate Rust panic!() at arm time — proves the
 //!                       shared panic handler (panic-common): expect the
 //!                       "*** RUST PANIC in ntoskrnl …" report + backtrace,
@@ -335,6 +338,11 @@ unsafe fn apply_token(tok: &[u8]) {
         // KD=COM2 is consumed directly by kd64 KdInitSystem (via
         // VibeTripwireHasToken, long before this Mm-phase parse). Recognized
         // here only so it doesn't trip the unknown-token error below.
+    } else if let Some(val) = token_val(tok, b"MEMCENSUS") {
+        if val == b"1" {
+            crate::ARM3::census::MEMCENSUS_ARMED.store(true, core::sync::atomic::Ordering::Relaxed);
+            DbgPrint(b"[TRIPWIRE] memory census armed: a [MEMCENSUS] line at every process teardown\n\0".as_ptr());
+        }
     } else if tok == b"UEXCVERBOSE" {
         // Print EVERY first-chance user exception in full, lifting the per-code
         // cap in ke/arm64/stubs.rs `uexc_should_print` (which exists because

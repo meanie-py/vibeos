@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "cscript-cargo",
     "wdfldr-cargo",
     "watchdog-cargo",
     "usbstor-cargo",
@@ -823,9 +824,12 @@ members = [
     "ndfapi-rust",
     "dcomp-rust",
     "qwave-rust",
+    "icuuc-rust",
     "tbs-rust",
     "mfreadwrite-rust",
     "evr-rust",
+    "mfplat-rust",
+    "mf-rust",
     "ftp-rust",
     "fc-rust",
     "setup16-rust",
