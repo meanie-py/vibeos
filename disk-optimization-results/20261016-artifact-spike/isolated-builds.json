@@ -1,0 +1,262 @@
+{
+  "beep-rust": {
+    "body": "beep-rust",
+    "action_key": "b6b113cfdda56656079abe042d5b05c21a2ec6dcedaf9931dafa50557e4b2afe",
+    "prepare_seconds": 6.885326443007216,
+    "toolchain_hash_seconds": 1.3335235530103091,
+    "compile_seconds": 9.258795080007985,
+    "compile_status": "success",
+    "archive": {
+      "bytes": 4478262,
+      "path": "/home/curi/vibeos-rust-staging/artifact-executor/beep-native-a/target/x86_64-pc-windows-gnu/release/libbeep_rust.a",
+      "sha256": "d497e81bd5f018b2f9f009edc0c8808cec6f6acb1447bbac000c6b22bdf79c37"
+    },
+    "retained": {
+      "projection": {
+        "allocated_bytes": 19853312,
+        "files": 65,
+        "logical_bytes": 19687380,
+        "unique_inodes": 65
+      },
+      "scratch": {
+        "allocated_bytes": 0,
+        "files": 2,
+        "logical_bytes": 0,
+        "unique_inodes": 2
+      },
+      "snapshot": {
+        "allocated_bytes": 19976192,
+        "files": 66,
+        "logical_bytes": 19831055,
+        "unique_inodes": 66
+      },
+      "target": {
+        "allocated_bytes": 106823680,
+        "files": 27,
+        "logical_bytes": 111230540,
+        "unique_inodes": 26
+      }
+    },
+    "sampled_target_peak_allocated_bytes": 106823680,
+    "rustc_invocations": 3,
+    "isolation_probe": {
+      "environment_keys": [
+        "CARGO_HOME",
+        "CARGO_INCREMENTAL",
+        "CARGO_NET_OFFLINE",
+        "CARGO_TARGET_DIR",
+        "HOME",
+        "LC_ALL",
+        "PATH",
+        "RUSTC",
+        "RUSTFLAGS",
+        "TMPDIR",
+        "TZ"
+      ],
+      "host_checkout_hidden": true,
+      "host_home_hidden": true,
+      "network_connect_errno": 101,
+      "network_devices": "Inter-|   Receive                                                |  Transmit\n face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed\n    lo:       0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0\n",
+      "readonly_source_errno": 30
+    },
+    "toolchain_postcheck": "identical",
+    "lane_input_revalidation": "identical",
+    "full_report": "/home/curi/vibeos-rust-staging/artifact-executor/beep-native-a/report.json",
+    "full_report_sha256": "832982101ccaf7dda890561b24ea77d0def235e6bb43b5cf20f3374997740c27"
+  },
+  "kernel-rust": {
+    "body": "kernel-rust",
+    "action_key": "dd2f2bba6c865273eb9649c419e52fa6f867d3b7d8e33eefd2494b3474c9c273",
+    "prepare_seconds": 12.611468507995596,
+    "toolchain_hash_seconds": 0.9890134019951802,
+    "compile_seconds": 32.03675822999503,
+    "compile_status": "success",
+    "archive": {
+      "bytes": 14442014,
+      "path": "/home/curi/vibeos-rust-staging/artifact-executor/kernel-native-a/target/x86_64-pc-windows-gnu/release/libkernel_rust.a",
+      "sha256": "8b22833a9240ee8eef7d095e11488b34ce4d945236ddd725e8d5beeab8bb7703"
+    },
+    "retained": {
+      "projection": {
+        "allocated_bytes": 38825984,
+        "files": 560,
+        "logical_bytes": 37548241,
+        "unique_inodes": 560
+      },
+      "scratch": {
+        "allocated_bytes": 0,
+        "files": 4,
+        "logical_bytes": 0,
+        "unique_inodes": 4
+      },
+      "snapshot": {
+        "allocated_bytes": 39006208,
+        "files": 561,
+        "logical_bytes": 37772106,
+        "unique_inodes": 561
+      },
+      "target": {
+        "allocated_bytes": 202301440,
+        "files": 266,
+        "logical_bytes": 215873822,
+        "unique_inodes": 265
+      }
+    },
+    "sampled_target_peak_allocated_bytes": 202301440,
+    "rustc_invocations": 34,
+    "isolation_probe": {
+      "environment_keys": [
+        "CARGO_HOME",
+        "CARGO_INCREMENTAL",
+        "CARGO_NET_OFFLINE",
+        "CARGO_TARGET_DIR",
+        "HOME",
+        "LC_ALL",
+        "PATH",
+        "RUSTC",
+        "RUSTFLAGS",
+        "TMPDIR",
+        "TZ"
+      ],
+      "host_checkout_hidden": true,
+      "host_home_hidden": true,
+      "network_connect_errno": 101,
+      "network_devices": "Inter-|   Receive                                                |  Transmit\n face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed\n    lo:       0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0\n",
+      "readonly_source_errno": 30
+    },
+    "toolchain_postcheck": "identical",
+    "lane_input_revalidation": "identical",
+    "full_report": "/home/curi/vibeos-rust-staging/artifact-executor/kernel-native-a/report.json",
+    "full_report_sha256": "a09a4b648fcfed4659675db1ca9297f689b9c24a179e68c6cd19e6db278617f1"
+  },
+  "crt-startup-rust": {
+    "body": "crt-startup-rust",
+    "action_key": "942979a7195c891ea0c49a53b64f4f643ac2d4a4d3d8be7d3e3c57b282927c30",
+    "prepare_seconds": 1.6763986560108606,
+    "toolchain_hash_seconds": 0.9943677539995406,
+    "compile_seconds": 0.46616013698803727,
+    "compile_status": "success",
+    "archive": {
+      "bytes": 4487702,
+      "path": "/home/curi/vibeos-rust-staging/artifact-executor/crt-startup-native-a/target/x86_64-pc-windows-gnu/release/libcrt_startup_rust.a",
+      "sha256": "9f344a5d62cc6f6a52ca4d47f1d36179a1a53422814a463723b846560f248ad9"
+    },
+    "retained": {
+      "projection": {
+        "allocated_bytes": 180224,
+        "files": 26,
+        "logical_bytes": 120234,
+        "unique_inodes": 26
+      },
+      "scratch": {
+        "allocated_bytes": 0,
+        "files": 0,
+        "logical_bytes": 0,
+        "unique_inodes": 0
+      },
+      "snapshot": {
+        "allocated_bytes": 311296,
+        "files": 27,
+        "logical_bytes": 258583,
+        "unique_inodes": 27
+      },
+      "target": {
+        "allocated_bytes": 4624384,
+        "files": 20,
+        "logical_bytes": 9059299,
+        "unique_inodes": 19
+      }
+    },
+    "sampled_target_peak_allocated_bytes": 4624384,
+    "rustc_invocations": 2,
+    "isolation_probe": {
+      "environment_keys": [
+        "CARGO_HOME",
+        "CARGO_INCREMENTAL",
+        "CARGO_NET_OFFLINE",
+        "CARGO_TARGET_DIR",
+        "HOME",
+        "LC_ALL",
+        "PATH",
+        "RUSTC",
+        "RUSTFLAGS",
+        "TMPDIR",
+        "TZ"
+      ],
+      "host_checkout_hidden": true,
+      "host_home_hidden": true,
+      "network_connect_errno": 101,
+      "network_devices": "Inter-|   Receive                                                |  Transmit\n face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed\n    lo:       0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0\n",
+      "readonly_source_errno": 30
+    },
+    "toolchain_postcheck": "identical",
+    "lane_input_revalidation": "identical",
+    "full_report": "/home/curi/vibeos-rust-staging/artifact-executor/crt-startup-native-a/report.json",
+    "full_report_sha256": "33c917d78a4a84e5d6e0dd9b39d67639a7b51ecbba504c00b98866393be3efd0"
+  },
+  "conutils-rust": {
+    "body": "conutils-rust",
+    "action_key": "a8138c9b4b3637fe14956eb5aeecf3d5cb9b7e177c5a9c4ffb284b469203af14",
+    "prepare_seconds": 3.025365730005433,
+    "toolchain_hash_seconds": 0.9973919569893042,
+    "compile_seconds": 2.608666225001798,
+    "compile_status": "success",
+    "archive": {
+      "bytes": 4449984,
+      "path": "/home/curi/vibeos-rust-staging/artifact-executor/conutils-native-a/target/x86_64-pc-windows-gnu/release/libconutils_rust.a",
+      "sha256": "f9edf3a89391ae7f3e88fe0ae8ec2b722b48477761dffbe3ac2870a09a9f69b9"
+    },
+    "retained": {
+      "projection": {
+        "allocated_bytes": 5398528,
+        "files": 27,
+        "logical_bytes": 5324693,
+        "unique_inodes": 27
+      },
+      "scratch": {
+        "allocated_bytes": 0,
+        "files": 0,
+        "logical_bytes": 0,
+        "unique_inodes": 0
+      },
+      "snapshot": {
+        "allocated_bytes": 5533696,
+        "files": 28,
+        "logical_bytes": 5461045,
+        "unique_inodes": 28
+      },
+      "target": {
+        "allocated_bytes": 27914240,
+        "files": 27,
+        "logical_bytes": 32282562,
+        "unique_inodes": 26
+      }
+    },
+    "sampled_target_peak_allocated_bytes": 27914240,
+    "rustc_invocations": 3,
+    "isolation_probe": {
+      "environment_keys": [
+        "CARGO_HOME",
+        "CARGO_INCREMENTAL",
+        "CARGO_NET_OFFLINE",
+        "CARGO_TARGET_DIR",
+        "HOME",
+        "LC_ALL",
+        "PATH",
+        "RUSTC",
+        "RUSTFLAGS",
+        "TMPDIR",
+        "TZ"
+      ],
+      "host_checkout_hidden": true,
+      "host_home_hidden": true,
+      "network_connect_errno": 101,
+      "network_devices": "Inter-|   Receive                                                |  Transmit\n face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed\n    lo:       0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0\n",
+      "readonly_source_errno": 30
+    },
+    "toolchain_postcheck": "identical",
+    "lane_input_revalidation": "identical",
+    "full_report": "/home/curi/vibeos-rust-staging/artifact-executor/conutils-native-a/report.json",
+    "full_report_sha256": "cc24e12ffcd562610fc108c1963962ee409780e45fb75ef9e9f242cd79936785"
+  }
+}

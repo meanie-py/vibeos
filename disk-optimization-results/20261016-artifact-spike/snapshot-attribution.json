@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "inventory_started_at": "2026-10-16T00:23:36.632495+00:00",
+  "inventory_finished_at": "2026-10-16T00:25:24.109215+00:00",
+  "snapshot_inodes": 2011,
+  "attributed_bodies": 264,
+  "attributed_snapshot_inodes": 2011,
+  "attributed_snapshot_allocated_bytes": 11135602688,
+  "method": [
+    "Read .body-storage.request-v1 length-delimited fields; verify unchanged against saved inventory and before/after no-symlink reads.",
+    "Resolve marker package to current Cargo.toml package name and lib name; verify archive filename; keep manifest SHA256.",
+    "Count each observed snapshot inode once; hashes/configuration/request fields preserved separately.",
+    "Configuration/request SHA256 identifies stored descriptor bytes, not semantic action keys or eligibility.",
+    "Historical/stale configurations are retained; no currentness, cross-lane reuse, or reclaimability is inferred."
+  ],
+  "inventory_file": "/home/curi/vibeos-rust-staging/artifact-inventory/main-inventory-v2.json",
+  "inventory_sha256": "7aa87803b3661c12cc867436a42757425eb2b05758f015ad41462bf492197339",
+  "unknown_count": 0,
+  "unknown_examples": [],
+  "largest_bodies": {
+    "crt-startup-rust": {
+      "snapshot_inodes": 483,
+      "allocated_bytes": 2614398976
+    },
+    "crt0-rust": {
+      "snapshot_inodes": 324,
+      "allocated_bytes": 1720045568
+    },
+    "crt-dllmain-rust": {
+      "snapshot_inodes": 159,
+      "allocated_bytes": 844128256
+    },
+    "conutils-rust": {
+      "snapshot_inodes": 108,
+      "allocated_bytes": 580407296
+    },
+    "cnt-rust-lib": {
+      "snapshot_inodes": 46,
+      "allocated_bytes": 384774144
+    },
+    "delayimp-rust": {
+      "snapshot_inodes": 30,
+      "allocated_bytes": 159522816
+    },
+    "smss-csrss-rust": {
+      "snapshot_inodes": 18,
+      "allocated_bytes": 100040704
+    },
+    "kernel-rust": {
+      "snapshot_inodes": 6,
+      "allocated_bytes": 92184576
+    },
+    "utf8": {
+      "snapshot_inodes": 15,
+      "allocated_bytes": 76992512
+    },
+    "rtl-rust": {
+      "snapshot_inodes": 9,
+      "allocated_bytes": 72511488
+    },
+    "cport-rust": {
+      "snapshot_inodes": 13,
+      "allocated_bytes": 63590400
+    },
+    "cmlib-rust": {
+      "snapshot_inodes": 12,
+      "allocated_bytes": 62001152
+    },
+    "hal-rust": {
+      "snapshot_inodes": 8,
+      "allocated_bytes": 51818496
+    },
+    "sptilib-rust": {
+      "snapshot_inodes": 9,
+      "allocated_bytes": 49270784
+    },
+    "win32k-kernel-rust": {
+      "snapshot_inodes": 3,
+      "allocated_bytes": 39800832
+    },
+    "freeldr-rust": {
+      "snapshot_inodes": 6,
+      "allocated_bytes": 38735872
+    },
+    "ntdll-rust": {
+      "snapshot_inodes": 6,
+      "allocated_bytes": 35905536
+    },
+    "hidparser-rust": {
+      "snapshot_inodes": 6,
+      "allocated_bytes": 33071104
+    },
+    "wscript-rust": {
+      "snapshot_inodes": 6,
+      "allocated_bytes": 32989184
+    },
+    "netstack-rust": {
+      "snapshot_inodes": 3,
+      "allocated_bytes": 32784384
+    }
+  }
+}

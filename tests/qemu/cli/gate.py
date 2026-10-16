@@ -473,6 +473,10 @@ def _build_once(
         cmd.append("--no-check")
     if getattr(args, "clean", False) and not restage:
         cmd.append("--clean")
+    if arch == "amd64" and getattr(args, "artifact_store", None):
+        cmd.extend(["--artifact-store", str(args.artifact_store)])
+        if getattr(args, "artifact_store_verify", False) and not restage:
+            cmd.append("--artifact-store-verify")
     if defer_wow64:
         cmd.append("--no-wow64-stage")
     if getattr(args, "keep_going", False):
@@ -850,6 +854,23 @@ def gate(args, repo: Path) -> int:
     smoke_extra: list[str] = ["--no-net", "--smp", str(GATE_SMP)]
 
     run = Run("gate", "+".join(arches))
+    store_requested = getattr(args, "artifact_store", None)
+    verify_requested = getattr(args, "artifact_store_verify", False)
+    if (verify_requested and not store_requested) or (
+        store_requested and (not do_build or "amd64" not in arches)
+    ):
+        run.classification = "ARTIFACT_STORE_FAIL"
+        run.add(
+            Stage(
+                "artifact-store",
+                status="fail",
+                detail=(
+                    "store verification requires --artifact-store; "
+                    "store gating requires an amd64 build"
+                ),
+            )
+        )
+        return run.finalize(repo)
     # Host free space BEFORE anything builds. A full disk does not present as a
     # disk problem — it surfaces as a RED with no failing test, an ENOSPC while
     # WRITING the verdict, and a harness "low on memory" message that points away

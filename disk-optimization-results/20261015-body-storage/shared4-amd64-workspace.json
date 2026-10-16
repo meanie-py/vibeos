@@ -1,0 +1,27 @@
+{
+  "root": "/home/curi/Projects/os-playground/vibeos/sdk/lib/rust/target",
+  "allocated_bytes": 12633432064,
+  "content_hashed": false,
+  "allocated_by_extension": {
+    ".TAG": 4792320,
+    ".json": 24477696,
+    "": 2310750208,
+    ".d": 30650368,
+    ".exe": 177287168,
+    ".timestamp": 11264000,
+    ".rlib": 3669352448,
+    ".rmeta": 1486077952,
+    ".c": 2854912,
+    ".o": 39473152,
+    ".lock": 0,
+    ".a": 4723998720,
+    ".request-v1": 8314880,
+    ".def": 26284032,
+    ".res": 19005440,
+    ".so": 97476608,
+    ".config-v1": 90112,
+    ".rs": 1232896,
+    ".h": 49152
+  },
+  "duplicates": {}
+}
