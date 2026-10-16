@@ -359,6 +359,12 @@ def check_tooling(args, repo: Path) -> int:
             futures = [pool.submit(execute, label, cmd, kw) for label, cmd, kw in checks]
             results = [future.result() for future in futures]
         if receipts:
+            for label in sorted(receipts.stale_generated_hits()):
+                i = next(i for i, (lbl, _cmd, _kw) in enumerate(checks) if lbl == label)
+                _lbl, cmd, kw = checks[i]
+                print(f"Generated headers changed under the reused {label} result; rerunning it.")
+                results[i] = _run(label, cmd, repo, **kw)
+                receipts.mark_rerun(label)
             try:
                 receipts.finish()
             except (OSError, RuntimeError) as error:

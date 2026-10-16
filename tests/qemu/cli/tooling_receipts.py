@@ -294,6 +294,8 @@ class ReceiptSession:
         self.pending: dict[str, Result] = {}
         self.generated_keys: set[str] = set()
         self.hits: set[str] = set()
+        # Generated-input hits the caller re-ran because the headers moved under them.
+        self.rerun: set[str] = set()
         self.guard = threading.Lock()
         self.closed = False
 
@@ -353,6 +355,24 @@ class ReceiptSession:
             with self.guard:
                 self.pending[key] = result
         return result
+
+    def stale_generated_hits(self) -> set[str]:
+        """Reused results keyed on generated headers that have changed since the session
+        began. A gate's own builds regenerate `build-*/sdk/include` while check-tooling
+        runs, so a receipt that was valid at the start describes headers the gate no
+        longer has. Rerun these (and call `mark_rerun`) rather than reporting a failure:
+        a fresh run is what the same tree gets when no receipt exists, so failing here
+        rejected a lane resubmitted unchanged after a halted train (shell32-com
+        b20d7379364c) while its base-only regate, with no receipt, passed."""
+        generated = {"pytest:tools/rustconv/tests"} & self.hits
+        if generated and generated_identity(self.repo) != self.generated_before:
+            return generated
+        return set()
+
+    def mark_rerun(self, label: str) -> None:
+        with self.guard:
+            self.rerun.add(label)
+            self.hits.discard(label)
 
     def finish(self) -> None:
         try:
