@@ -108,7 +108,9 @@ def classify(relative: Path, kind: str = "workspace") -> dict[str, Any]:
             label["role"] = "body_primary_archive"
         else:
             label["role"] = "body_other"
-    elif kind == "workspace" and first.endswith("-cargo-link"):
+    elif kind == "workspace" and (
+        first.endswith("-cargo-link") or first.startswith("cell-link-v1-")
+    ):
         label.update(layout="outer_coordinator", storage_root=first)
         if len(parts) > 2 and parts[1] in {"release", "debug"}:
             label["role"] = "outer_host_dependencies" if parts[2] == "deps" else "outer_host_other"

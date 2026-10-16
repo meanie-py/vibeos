@@ -486,10 +486,13 @@ def retire_build_refs(supervisor, *, _api=None):
     lane = state["repo"]
     retired = []
     arch = state.get("arch")
-    marker = f"-{arch}-cargo-link/" if arch else ""
+    # Per-cell dirs end `<cell>-<arch>-cargo-link`; shared shards are
+    # `cell-link-v1-<arch>-<n>`.
+    markers = (f"-{arch}-cargo-link/", f"/cell-link-v1-{arch}-") if arch else ("",)
     with store.attach_session(state["session_token"]):
         for reference in store.list_refs(lane):
-            if reference["consumer"].startswith("cargo:") and marker in reference["consumer"]:
+            consumer = reference["consumer"]
+            if consumer.startswith("cargo:") and any(m in consumer for m in markers):
                 with store.consumer_guard(lane, reference["consumer"]) as guard:
                     store.release_ref(lane, reference["consumer"], guard=guard)
                 retired.append(reference)

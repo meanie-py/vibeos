@@ -297,6 +297,18 @@ def _retired_layouts(worktree: Path, *, now: float, idle_seconds: float) -> list
                         dead.append(path)
                 elif name in ("CMakeFiles", ".git") or name.endswith("-target"):
                     dirs.remove(name)
+    # Cells of an arch whose cache shares link dirs no longer read their own.
+    target_root = worktree / "sdk/lib/rust/target"
+    for build in builds:
+        arch = build.name.removeprefix("build-")
+        if (
+            _cache_value(build, "VIBEOS_CARGO_LINK_SHARDS") in (None, "", "0")
+            or not target_root.is_dir()
+        ):
+            continue
+        for entry in target_root.glob(f"*-{arch}-cargo-link"):
+            if entry.is_dir() and not entry.is_symlink() and idle(entry):
+                dead.append(entry)
     shards = [_cache_value(b, "VIBEOS_RUST_BODY_SHARDS") for b in builds]
     target = worktree / "sdk/lib/rust/target"
     if builds and target.is_dir() and all(s not in (None, "", "0") for s in shards):

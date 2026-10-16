@@ -212,3 +212,20 @@ def test_retired_layouts_go_only_when_the_lane_s_own_config_retired_them(tmp_pat
     assert plan.retired_dirs == 2
     # Nothing recent goes.
     assert trim.plan_worktree(wt, now=os.stat(target).st_mtime + 60, idle_hours=1).paths == []
+
+
+def test_per_cell_link_dirs_retire_once_their_arch_shares_link_dirs(tmp_path):
+    wt = tmp_path
+    build = wt / "build-amd64"
+    build.mkdir()
+    (build / "build.ninja").write_text("")
+    target = wt / "sdk/lib/rust/target"
+    for d in ("beep-cargo-amd64-cargo-link/release", "beep-cargo-i386-cargo-link/release"):
+        (target / d).mkdir(parents=True)
+    later = os.stat(target).st_mtime + 2 * 3600
+    (build / "CMakeCache.txt").write_text("VIBEOS_CARGO_LINK_SHARDS:STRING=0\n")
+    assert trim.plan_worktree(wt, now=later, idle_hours=1).paths == []
+    (build / "CMakeCache.txt").write_text("VIBEOS_CARGO_LINK_SHARDS:STRING=24\n")
+    plan = trim.plan_worktree(wt, now=later, idle_hours=1)
+    # Only amd64's: i386 has no configured build saying it moved.
+    assert [p.name for p, _ in plan.paths] == ["beep-cargo-amd64-cargo-link"]

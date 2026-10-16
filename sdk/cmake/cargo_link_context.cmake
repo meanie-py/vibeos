@@ -1,6 +1,9 @@
 # Outer cargo builds hold their output-directory lock across build.rs and its
-# nested compiler/linker work. A shared target/ silently serializes Ninja's DAG.
-# Keep each module AND architecture independent; sccache shares immutable work.
+# nested compiler/linker work. ONE shared target/ silently serializes Ninja's DAG.
+# So each architecture's cells share VIBEOS_CARGO_LINK_SHARDS target dirs (default:
+# one per CPU, the link pool's width), a cell picking its shard by a stable hash of its
+# crate. A private dir per cell (0) compiled the same host build tooling -- the build
+# script, reactos-link and cc, ~7.5 MB -- once for each of ~724 cells: 5 G a lane.
 function(reactos_cargo_link_context workspace crate arch output_dir)
     get_property(_configured GLOBAL PROPERTY _REACTOS_CARGO_POOL_CONFIGURED)
     if(NOT _configured)
@@ -20,6 +23,18 @@ function(reactos_cargo_link_context workspace crate arch output_dir)
         endif()
         set_property(GLOBAL APPEND PROPERTY JOB_POOLS "vibeos_cargo_links=${_jobs}")
         set_property(GLOBAL PROPERTY _REACTOS_CARGO_POOL_CONFIGURED TRUE)
+        set(VIBEOS_CARGO_LINK_SHARDS "${_jobs}" CACHE STRING
+            "Cargo cell link target dirs per architecture (0: one per cell)")
+        if(NOT VIBEOS_CARGO_LINK_SHARDS MATCHES "^[0-9]+$")
+            message(FATAL_ERROR "VIBEOS_CARGO_LINK_SHARDS must be a nonnegative integer")
+        endif()
     endif()
-    set(${output_dir} "${workspace}/target/${crate}-${arch}-cargo-link" PARENT_SCOPE)
+    if(VIBEOS_CARGO_LINK_SHARDS EQUAL 0)
+        set(${output_dir} "${workspace}/target/${crate}-${arch}-cargo-link" PARENT_SCOPE)
+        return()
+    endif()
+    string(SHA256 _hash "${crate}")
+    string(SUBSTRING "${_hash}" 0 7 _hash)
+    math(EXPR _shard "0x${_hash} % ${VIBEOS_CARGO_LINK_SHARDS}")
+    set(${output_dir} "${workspace}/target/cell-link-v1-${arch}-${_shard}" PARENT_SCOPE)
 endfunction()
