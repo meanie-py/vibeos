@@ -5468,6 +5468,27 @@ def test_conformance_asks_the_build_for_the_kmtest_corpus(monkeypatch, tmp_path)
         assert "--up-kernel" not in seen[0], f"{arch}: conformance must not test the UP kernel"
 
 
+def test_conformance_only_without_write_baseline_refuses_before_building(monkeypatch, tmp_path):
+    """A mistyped `--only` used to be refused AFTER a full kmtest build and sweep (exit 2,
+    no verdict); it must cost nothing."""
+    from types import SimpleNamespace
+
+    seen: list[list[str]] = []
+    monkeypatch.setattr(conformance_mod, "_worktree_provisioning_gaps", lambda *_a: [])
+    monkeypatch.setattr(conformance_mod, "_load_parser", lambda _r: object())
+    monkeypatch.setattr(conformance_mod, "_run_dir", lambda _a: tmp_path)
+    monkeypatch.setattr(
+        conformance_mod.subprocess,
+        "run",
+        lambda cmd, **kw: (seen.append(cmd), SimpleNamespace(returncode=0))[1],
+    )
+    args = SimpleNamespace(
+        arch="i386", smp=0, no_build=False, write_baseline=False, only=["X"], timeout=None
+    )
+    assert conformance_mod._conformance_once(args, tmp_path) == 2
+    assert seen == []
+
+
 def test_worktree_provisioning_preflight(tmp_path):
     gaps = conformance_mod._worktree_provisioning_gaps(tmp_path, "arm64")
     blob = "\n".join(gaps)

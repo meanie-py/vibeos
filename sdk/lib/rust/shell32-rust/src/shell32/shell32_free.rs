@@ -101,44 +101,91 @@ pub unsafe extern "system" fn RegenerateUserEnvironment(
     lpEnvironment: *mut *mut core::ffi::c_void,
     bUpdateSelf: i32,
 ) -> i32 {
+    // Upstream c25e4fd7dec (Wine/Windows behaviour): the right token rights, no handle or
+    // block leaks on any path, `=X:` variables preserved, and variables the new block no
+    // longer has are deleted from the process.
     let mut hUserToken: *mut core::ffi::c_void = core::ptr::null_mut();
-    if OpenProcessToken(GetCurrentProcess(), TOKEN_READ | TOKEN_WRITE, &mut hUserToken) == 0 {
+    let mut pEnv: *mut core::ffi::c_void = core::ptr::null_mut();
+
+    if lpEnvironment.is_null() {
         return FALSE;
     }
 
-    let bResult: i32 = CreateEnvironmentBlock(lpEnvironment, hUserToken, TRUE);
-    if bResult == 0 || lpEnvironment.is_null() {
+    if OpenProcessToken(
+        GetCurrentProcess(),
+        TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY,
+        &mut hUserToken,
+    ) == 0
+    {
+        return FALSE;
+    }
+
+    if CreateEnvironmentBlock(&mut pEnv, hUserToken, TRUE) == 0 {
         CloseHandle(hUserToken);
         return FALSE;
     }
 
+    *lpEnvironment = pEnv;
+    let bResult: i32 = TRUE;
+
     if bUpdateSelf != 0 {
-        let mut pszz: PWSTR = (*lpEnvironment) as PWSTR;
-        if pszz.is_null() {
-            return FALSE;
+        let mut pszz = pEnv as PWSTR;
+        while !pszz.is_null() && *pszz != 0 {
+            if *pszz != 0x003D {
+                let pchEqual: PWSTR = wcschr(pszz, 0x003Du16);
+                if !pchEqual.is_null() {
+                    *pchEqual = 0;
+                    SetEnvironmentVariableW(pszz, pchEqual.add(1));
+                    *pchEqual = 0x003D;
+                }
+            }
+            pszz = pszz.add(wcslen(pszz) + 1);
         }
 
-        while *pszz != 0 {
-            let cch: usize = wcslen(pszz);
-            let pchEqual: PWSTR = wcschr(pszz, 0x003Du16);
-            if !pchEqual.is_null() {
-                // C++: `CStringW strName(pszz, pchEqual - pszz)` — a length in CHARACTERS. The
-                // translation subtracted the addresses as integers, i.e. BYTES, and then copied
-                // that many UTF-16 units into a fixed MAX_PATH buffer: twice the name, so every
-                // variable came out as `NAME=value…`, and a long one overran the buffer.
-                // `offset_from` counts elements; CStringW has no fixed cap, like the original.
-                let name_len = pchEqual.offset_from(pszz) as i32;
-                let mut strName = CStringW::new();
-                strName.SetString(pszz, name_len);
-                SetEnvironmentVariableW(strName.as_ptr(), pchEqual.add(1 as usize));
+        let pCurEnv: PWSTR = GetEnvironmentStringsW();
+        if !pCurEnv.is_null() {
+            let mut pCur = pCurEnv;
+            while *pCur != 0 {
+                if *pCur != 0x003D {
+                    let pchEqual: PWSTR = wcschr(pCur, 0x003Du16);
+                    if !pchEqual.is_null() {
+                        let name_len = pchEqual.offset_from(pCur) as usize;
+                        // The C keeps the new block's names upper-cased in a CSimpleMap; a
+                        // case-insensitive match on the name scans the same block.
+                        if !env_block_has_name(pEnv as PWSTR, pCur, name_len) {
+                            *pchEqual = 0;
+                            SetEnvironmentVariableW(pCur, core::ptr::null());
+                            *pchEqual = 0x003D;
+                        }
+                    }
+                }
+                pCur = pCur.add(wcslen(pCur) + 1);
             }
-            pszz = pszz.add(cch + 1 as usize);
+            FreeEnvironmentStringsW(pCurEnv);
         }
+
+        // We free the environment block now that we have applied it to the process;
+        // the caller gets NULL back in *lpEnvironment in this case.
+        DestroyEnvironmentBlock(pEnv);
+        *lpEnvironment = core::ptr::null_mut();
     }
 
     CloseHandle(hUserToken);
-
     bResult
+}
+
+/// Whether `block` (a `NAME=value\0...\0` environment) defines `name[..len]`, ignoring case
+/// and the `=X:` entries.
+unsafe fn env_block_has_name(block: PWSTR, name: PWSTR, len: usize) -> bool {
+    let mut p = block;
+    while *p != 0 {
+        let n = wcslen(p);
+        if *p != 0x003D && n > len && *p.add(len) == 0x003D && _wcsnicmp(p, name, len) == 0 {
+            return true;
+        }
+        p = p.add(n + 1);
+    }
+    false
 }
 #[no_mangle]
 pub unsafe extern "C" fn IDefClF_fnConstructor(

@@ -48,6 +48,7 @@ HalSystemInfo
 # d3b1c045c5d). The note above is kept as the audit trail of what it used to do.
 IoCreateFile
 IoDeviceInterface
+IoDeviceProperty
 IoEvent
 # QUARANTINED 2026-07-10 (amd64 sweep 2): BUGCHECK 0x1E — AV in
 # MiFindEmptyAddressRangeInTree+0x173 (Rust, ARM3/vadnode.rs:370). Triage owed — real
