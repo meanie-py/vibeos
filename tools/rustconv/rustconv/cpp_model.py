@@ -803,12 +803,10 @@ class _Extractor:
                 if d is not None and instance_key(a) in {instance_key(x) for x in d}:
                     args[i] = d[0]
             written = list(args)
-            while (
-                written
-                and len(written) <= len(defaults)
-                and defaults[len(written) - 1] is not None
-                and written[-1] == defaults[len(written) - 1][0]
-            ):
+            while written and len(written) <= len(defaults):
+                d = defaults[len(written) - 1]
+                if d is None or written[-1] != d[0]:
+                    break
                 written.pop()
             name = instance_name(n["name"], written)
             for k in range(len(written), len(args) + 1):

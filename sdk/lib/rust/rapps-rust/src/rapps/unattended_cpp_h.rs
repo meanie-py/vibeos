@@ -332,7 +332,7 @@ unsafe extern "C" fn PrintHelpCommand() {
     ConPrintf(core::ptr::addr_of_mut!(csStdOut), CPP_COM_WSTR_9D313EA1711F.as_ptr());
 
     ConResPuts(core::ptr::addr_of_mut!(csStdOut), IDS_CMD_USAGE);
-    ConPrintf(core::ptr::addr_of_mut!(csStdOut), CPP_COM_WSTR_481F1A6D4120.as_ptr(), UsageString);
+    ConPrintf(core::ptr::addr_of_mut!(csStdOut), CPP_COM_WSTR_481F1A6D4120.as_ptr(), UsageString.as_ptr());
 }
 #[no_mangle]
 pub unsafe extern "C" fn ParseCmdAndExecute(lpCmdLine: LPWSTR, bIsFirstLaunch: BOOL, nCmdShow: i32) -> BOOL {

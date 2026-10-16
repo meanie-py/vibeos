@@ -332,7 +332,7 @@ impl CMainWindow {
     }
     pub unsafe fn RemoveSelectedAppFromRegistry(&mut self) -> BOOL {
         let this_: *mut Self = self;
-        if !IsInstalledEnum(((*this_).SelectedEnumType) as i32) != 0 {
+        if IsInstalledEnum(((*this_).SelectedEnumType) as i32) == 0 {
             return (FALSE) as BOOL;
         }
 

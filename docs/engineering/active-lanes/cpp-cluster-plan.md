@@ -56,7 +56,7 @@ and all shared-file edits stay central. The brief that worked (Sonnet; mmc_new) 
   matches itself forever (an integrator lost 3 hours to this). Run long stages in the
   foreground with a long timeout.
 
-## rapps (in progress, 2026-10-14)
+## rapps (FLIPPED 2026-10-15)
 
 Tooling done for it (pipeline doc § `port cppapp`): per-instantiation class templates, the
 rosctrls.h controls modeled as external classes (only reached methods are translated), ATL
@@ -73,6 +73,17 @@ integrators split the 25 units (UI / the rest); everything they edited is banked
 Total spend so far ~$0.71. Fidelity fixes they found beyond type errors: a `!(x & F) != 0`
 precedence bug, `GetWndClassInfo` statics rebuilt per call (re-registering the class), and
 the GDI+ screenshot math done in double as the C++ does.
+
+2026-10-15, flipped: appstorm opens "ReactOS Applications Manager" on all three arches
+(i386 9.0 s, amd64 8.2 s, arm64 47.6 s). `port replay rapps` rebuilds it at $0 from the bank
+plus ~155 hand entries. Total spend ~$0.73. Bring-up found six generator bugs, each now a
+tool fix with a test: member objects not default-constructed, Drop dispatching through the
+derived vtables, `return this;` as a secondary base, `delete member;` dropping its operand's
+edits, qualified base calls going virtual (infinite recursion), and a `char*` cast to a
+CStringA object. `check` then flagged three more in the shipped Rust: two `!BOOL != 0`
+(CWindow::DestroyWindow always FALSE; RemoveSelectedAppFromRegistry always bailing) and an
+array passed by value into variadic ConPrintf (`rapps /?`). Bring-up method that worked:
+`llvm-symbolizer-18 --obj=<exe> <RIP>` on the serial dump, then `atl_rust::win::trace` probes.
 
 ## Queue after rapps
 

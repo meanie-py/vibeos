@@ -345,7 +345,7 @@ class ResponseCache:
             self.miss_reason[name] = "a pre-normalization contract with a capability"
             return None
         if not _sealed_ok(entry.get("sealed"), sealed):
-            grew = sorted(set(sealed) - set(entry.get("sealed") or []))
+            grew = sorted(set(sealed or ()) - set(entry.get("sealed") or []))
             self.miss_reason[name] = f"the seal set grew by {grew[:8]}"
             return None
         f = self.dir / entry.get("file", "")

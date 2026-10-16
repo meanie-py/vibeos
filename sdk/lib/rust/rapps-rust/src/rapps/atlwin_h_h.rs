@@ -89,7 +89,7 @@ impl CWindow {
         let this_: *mut Self = self;
             ATLASSERT!(IsWindow((*this_).m_hWnd));
 
-            if !DestroyWindow((*this_).m_hWnd) != 0 {
+            if DestroyWindow((*this_).m_hWnd) == 0 {
                 return (FALSE) as BOOL;
             }
 
