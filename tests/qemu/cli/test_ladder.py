@@ -1083,6 +1083,19 @@ def test_refresh_names_what_it_is_missing(tmp_path):
     assert ladder.refresh_blocker(repo) is None
 
 
+def test_x64_guests_wait_for_build_amd64_importlibs(tmp_path):
+    """A freshly configured build-amd64 has no importlibs until the build this
+    stage precedes makes them: skip, never GUEST_BUILD_FAIL forever."""
+    repo = _built_tree(tmp_path)
+    _buildable(repo)
+    todo = ["selfmod64 (tools/fex/hello-compute/Selfmod32.c is newer)"]
+    assert "build-amd64" in (ladder.refresh_blocker(repo, todo) or "")
+    assert ladder.refresh_blocker(repo, ["spawn32 (absent)"]) is None
+    (repo / ladder.GUEST_PREREQ_X64).parent.mkdir(parents=True)
+    (repo / ladder.GUEST_PREREQ_X64).write_bytes(b"")
+    assert ladder.refresh_blocker(repo, todo) is None
+
+
 class _FakeRun:
     def __init__(self):
         self.stages = []

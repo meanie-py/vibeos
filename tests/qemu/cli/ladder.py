@@ -405,6 +405,11 @@ def stale_guests(repo: Path) -> list[str]:
 # which is the all-or-nothing hole `gate_decision` reports.
 GUEST_PREREQ = "build-i386/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a"
 GUEST_TOOLCHAIN = ".build-tools/llvm-mingw/bin/i686-w64-mingw32-clang"
+# The x86-64 ladder links build-amd64's OWN importlibs, which the amd64 build makes
+# AFTER this stage runs. A freshly configured build-amd64 (a failed configure, a
+# --clean) has none yet, and the builder skips those guests -- which read as
+# GUEST_BUILD_FAIL on a build that could never get past it.
+GUEST_PREREQ_X64 = "build-amd64/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a"
 
 
 def guests_to_refresh(repo: Path) -> list[str]:
@@ -425,14 +430,20 @@ def guests_to_refresh(repo: Path) -> list[str]:
     return out
 
 
-def refresh_blocker(repo: Path) -> str | None:
-    """Why the guests cannot be built in this tree, or None if they can."""
+def refresh_blocker(repo: Path, todo: list[str] | None = None) -> str | None:
+    """Why the guests in `todo` (default: any) cannot be built in this tree, or None."""
     if not (repo / GUEST_TOOLCHAIN).is_file():
         return f"no i386 toolchain at {GUEST_TOOLCHAIN}"
     if not (repo / GUEST_PREREQ).is_file():
         return (
             "no build-i386 importlibs to link the guests against — "
             "build i386 first: ./vibeos-cli build --arch i386"
+        )
+    x64 = [t for t in todo or [] if t.split(" ", 1)[0] in STAGED_LADDER]
+    if x64 and not (repo / GUEST_PREREQ_X64).is_file():
+        return (
+            "build-amd64 has no importlibs yet (this build makes them) -- "
+            "the next amd64 build refreshes them"
         )
     return None
 

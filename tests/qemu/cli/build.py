@@ -955,7 +955,7 @@ def _refresh_wow64_guests(run, repo: Path) -> bool:
     if not todo:
         run.add(Stage("wow64-guests", status="ok", detail="current"))
         return True
-    blocker = ladder.refresh_blocker(repo)
+    blocker = ladder.refresh_blocker(repo, todo)
     if blocker:
         # Not a failure of THIS build: the amd64 media is complete without them,
         # and gate_decision reports the ladder it then cannot grade. Said here too,
