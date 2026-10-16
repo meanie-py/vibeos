@@ -327,3 +327,47 @@ def test_package_lints_are_keyed_and_inherited_lints_refused(fixture):
     result = discover(fixture, "body", CONTEXT, workspace=fixture)
     assert not result["eligible"]
     assert any("lints" in reason for reason in result["reasons"])
+
+
+def test_a_manifest_dir_data_include_outside_the_package_is_keyed(fixture):
+    # hal-rust embeds hal/halx86/legacy/bus/pci_*.ids: data from outside its root,
+    # which must change the key when it changes and never be read from outputs.
+    write(fixture, "data/table.ids", "v1\n")
+    write(
+        fixture,
+        "body/src/lib.rs",
+        "pub static T: &[u8] = include_bytes!(concat!(\n"
+        '    env!("CARGO_MANIFEST_DIR"),\n    "/../data/table.ids"\n));\n',
+    )
+    first = project(fixture)
+    assert first["descriptor"]["data_inputs"] == {
+        "data/table.ids": {
+            "sha256": first["descriptor"]["data_inputs"]["data/table.ids"]["sha256"],
+            "bytes": 3,
+        }
+    }
+    assert "data/table.ids" in first["provenance"]["reads"]
+    write(fixture, "data/table.ids", "v2\n")
+    assert project(fixture)["action_key"] != first["action_key"]
+    # Into a build output: refused.
+    write(fixture, "build-amd64/gen.ids", "x\n")
+    write(
+        fixture,
+        "body/src/lib.rs",
+        "pub static T: &[u8] = include_bytes!(concat!(\n"
+        '    env!("CARGO_MANIFEST_DIR"), "/../build-amd64/gen.ids"));\n',
+    )
+    result = discover(fixture, "body", CONTEXT, workspace=fixture)
+    assert not result["eligible"] and "data include" in result["reasons"][0]
+    # include! of code from outside the package is not a data include.
+    write(fixture, "data/code.rs", "pub fn f() {}\n")
+    write(
+        fixture,
+        "body/src/lib.rs",
+        'include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/code.rs"));\n',
+    )
+    assert not discover(fixture, "body", CONTEXT, workspace=fixture)["eligible"]
+
+
+def test_bodies_without_a_data_include_keep_their_key_shape(fixture):
+    assert "data_inputs" not in project(fixture)["descriptor"]
