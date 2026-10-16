@@ -5,9 +5,9 @@
 //! because nothing links against them (every raw extern decl rustconv emitted is
 //! stripped at integration).
 //!
-//! Policy: TRACE/WARN are winemacros.rs's token-discarding macros, never fns; ERR/FIXME print the raw format string (no
-//! interpolation) to the debugger so failures stay loud. debugstr_* return a
-//! static placeholder — their results are only ever consumed as TRACE/WARN args.
+//! Policy: TRACE/WARN are winemacros.rs's token-discarding macros, never fns; ERR/FIXME print
+//! through winedebug-rust's `DbgPrint` with their arguments, so the debugstr_* a live ERR/FIXME
+//! formats are real (win32macros-rust's wine/debug.h port).
 //!
 //! NOT C-VARIADIC, deliberately — identical to `ole32-rust/src/debug_shims.rs`.
 //! The wine originals are variadic and rustconv declared them that way, but the
@@ -107,16 +107,50 @@ pub fn SUCCEEDED(hr: i32) -> bool {
     hr >= 0
 }
 
-// wine debugstr_* — consumed only as (no-op) TRACE/WARN args.
+// wine debugstr_*. ERR!/FIXME! interpolate their arguments (winedebug-rust's `DbgPrint`), so
+// these must produce the real text: a "?" placeholder here printed "asking for unsupported
+// interface ?" for every live FIXME. The formatting is win32macros-rust's port of wine/debug.h
+// over libwine (which oleaut32 links). TRACE!/WARN! discard their tokens, so the calls inside
+// them are never type-checked or evaluated.
+//
+// Generic over the pointee, unlike ole32's `*const c_void` twin. The Tier-D modules here were
+// translated with `--c2rust`, which expands the C preprocessor — so these are REAL calls, passing
+// the C's real argument types (`debugstr_w(LPCWSTR)`, `debugstr_guid(const GUID*)`, and olefont's
+// `*const c_void`). Accepting any `*const T` lets the C's own types stand. Safe fns, as the
+// placeholders were: they only read what the C's TRACE would have read.
 static PLACEHOLDER: &[u8] = b"?\0";
 
-// Generic over the pointee, unlike ole32's `*const c_void` twin. ole32 gets away with the
-// concrete type because its call sites sit inside a `TRACE!` macro that DISCARDS its args,
-// so they are never type-checked. The Tier-D modules here were translated with `--c2rust`,
-// which expands the C preprocessor — so these are REAL calls, passing the C's real argument
-// types (`debugstr_w(LPCWSTR)`, `debugstr_guid(const GUID*)`). Casting at every call site
-// would work but is churn on generated code; accepting any `*const T` is exact and lets the
-// C's own types stand.
+pub fn debugstr_w<T>(p: *const T) -> *const c_char {
+    unsafe { win32macros_rust::debugstr_w(p as *const u16) }
+}
+
+pub fn debugstr_a<T>(p: *const T) -> *const c_char {
+    unsafe { win32macros_rust::debugstr_a(p as *const c_char) }
+}
+
+pub fn debugstr_guid<T>(p: *const T) -> *const c_char {
+    unsafe { win32macros_rust::debugstr_guid(p) }
+}
+
+pub fn debugstr_variant<T>(p: *const T) -> *const c_char {
+    unsafe { win32macros_rust::debugstr_variant(p) }
+}
+
+/// olepicture.c calls this spelling (wine/debug.h aliases the two).
+pub fn wine_dbgstr_variant<T>(p: *const T) -> *const c_char {
+    unsafe { win32macros_rust::wine_dbgstr_variant(p) }
+}
+
+pub fn debugstr_vt(vt: u16) -> *const c_char {
+    unsafe { win32macros_rust::debugstr_vt(vt) }
+}
+
+pub fn wine_dbgstr_longlong(ll: u64) -> *const c_char {
+    unsafe { win32macros_rust::wine_dbgstr_longlong(ll) }
+}
+
+// Reached only inside TRACE!/WARN!, whose tokens are discarded: no live call exists to give
+// them a real signature to match (`debugstr_an`/`debugstr_wn` take a length the C passes).
 macro_rules! debugstr_stub {
     ($($name:ident),+ $(,)?) => {$(
         pub fn $name<T>(_p: *const T) -> *const c_char {
@@ -125,16 +159,4 @@ macro_rules! debugstr_stub {
     )+};
 }
 
-debugstr_stub!(
-    debugstr_a,
-    debugstr_w,
-    debugstr_an,
-    debugstr_wn,
-    debugstr_guid,
-    debugstr_vt,
-    debugstr_vf,
-    debugstr_variant,
-    // olepicture.c calls this spelling (wine/debug.h aliases the two).
-    wine_dbgstr_variant,
-    wine_dbgstr_longlong,
-);
+debugstr_stub!(debugstr_an, debugstr_wn, debugstr_vf);

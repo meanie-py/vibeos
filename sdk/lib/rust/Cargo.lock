@@ -4095,6 +4095,7 @@ version = "0.1.0"
 dependencies = [
  "com-sys",
  "panic-common",
+ "win32macros-rust",
  "winedebug-rust",
  "winelist-rust",
 ]

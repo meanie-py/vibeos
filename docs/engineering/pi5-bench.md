@@ -12,6 +12,16 @@ different is how a build reaches the board.
 ./vibeos-cli pi5 lease take --minutes 60 --why "..."   # separate from the Pi 4's lease
 ```
 
+**Opt-in boot diagnostics** (`pi4-bench.md` lists them) go on the command line, not into
+`freeldr.ini`: `pi5 boot --options /PROCTRACE` appends to every entry's `Options=` for that
+staging only (`VIBEOS_LOADER_OPTIONS` to `stage.sh`). `pi5 boot --stortest` is the USB
+storage end-to-end check: it serves a fresh FAT image labelled `VIBEUSB` (holding
+`MARKER.TXT`) as the Pico's writable remote disk, boots with `/STORTEST`, grades
+`stortest.exe`'s `[STORTEST] ALL OK` on serial, and then reads `WRITETST.TXT` back off the
+image on the host, so the write is proven by the medium rather than by the guest that made
+it. It needs the serial listener (`tools/pi5/serial.sh up`). The card is labelled
+`VIBEOS_RPI5`, which stortest does not match, so it never writes to the card.
+
 VibeOS reached the desktop on the Pi 5 on 2026-10-04. The first hands-free
 `pi5 boot` took 2m48s from SSH stage to desktop. Since 2026-10-06/07 both of RP1's
 xHCI controllers (XHC0, XHC1) run under `usbxhci.sys`, so every USB port works and the

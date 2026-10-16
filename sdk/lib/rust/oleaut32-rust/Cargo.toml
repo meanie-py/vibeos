@@ -20,3 +20,4 @@ winedebug-rust = { path = "../winedebug-rust" }
 panic-common = { path = "../panic-common", features = ["user"] }
 com-sys = { path = "../com-sys" }
 winelist-rust = { path = "../winelist-rust" }
+win32macros-rust = { path = "../win32macros-rust" }

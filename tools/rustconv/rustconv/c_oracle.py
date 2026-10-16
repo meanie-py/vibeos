@@ -17,12 +17,19 @@ ships it unless asked (`ninja diskpart_c`), and it is a separate file so the sou
 parsers (cohab census, profile_derive) still see only what the module ships.
 
     python -m rustconv.c_oracle base/system/diskpart [--check]
+
+A module cargo links (`add_cargo_module`, tools/cargo_cell_gen.py) keeps its flipped-TU
+comments but no longer says how cmake built it: the importlibs, module type and defines moved
+into the cargo cell. Its oracle is generated from the CMakeLists as it stood just before the
+commit that introduced `add_cargo_module` (`git log -S`), the last text that did, with the
+current text's flipped TUs commented out in it (a flip in that same commit left none).
 """
 
 from __future__ import annotations
 
 import argparse
 import re
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -240,11 +247,51 @@ def _prune_empty_ifs(lines: list[str]) -> list[str]:
     return lines
 
 
+def _git(cwd: Path, *args: str) -> str:
+    cp = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
+    if cp.returncode:
+        raise OracleError(f"git {' '.join(args)}: {cp.stderr.strip()}")
+    return cp.stdout
+
+
+def pre_cargo(cml_path: Path) -> str:
+    """The CMakeLists text from before the module went to `add_cargo_module`: the parent of
+    the oldest commit that changed how often that string occurs in the file."""
+    where = cml_path.resolve().parent
+    rel = _git(where, "ls-files", "--full-name", cml_path.name).strip()
+    shas = _git(
+        where, "log", "--reverse", "--format=%H", "-S", "add_cargo_module", "--", cml_path.name
+    )
+    if not rel or not shas.split():
+        raise OracleError(f"{cml_path}: no commit introduced add_cargo_module (born cargo?)")
+    try:
+        return _git(where, "show", f"{shas.split()[0]}^:{rel}")
+    except OracleError:
+        raise OracleError(f"{cml_path}: born in cargo form, no C build to oracle") from None
+
+
+def reflip(old: str, cml: str) -> str:
+    """`old` with the TUs `cml` marks flipped commented out the same way. A module flipped and
+    moved to cargo in ONE commit (cscript) has no flipped line before that commit: its text is
+    the plain C build, and this is the flip the cargo commit made."""
+    flipped = {f.group(1) for line in cml.splitlines() if (f := _FLIPPED.match(line))}
+    out = []
+    for line in old.splitlines():
+        entry = line.strip().rstrip(")").strip()
+        if entry in flipped and not line.lstrip().startswith("#"):
+            indent = line[: len(line) - len(line.lstrip())]
+            line = f"{indent}# {entry}  # replaced by Rust" + (
+                ")" if line.rstrip().endswith(")") else ""
+            )
+        out.append(line)
+    return "\n".join(out) + "\n"
+
+
 def write(module_dir: Path, *, check: bool = False) -> bool:
     """Write (or with check, compare) the module's oracle. True when already current."""
     cml_path = module_dir / "CMakeLists.txt"
     cml = cml_path.read_text()
-    want = generate(cml)
+    want = generate(reflip(pre_cargo(cml_path), cml) if "add_cargo_module(" in cml else cml)
     path = module_dir / ORACLE_FILE
     current = path.is_file() and path.read_text() == want and f"include({ORACLE_FILE})" in cml
     if check or current:

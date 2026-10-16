@@ -1,0 +1,52 @@
+# wscript (base/applications/cmdutils/wscript -> wscript-rust, cargo-linked). The shipped Rust
+# diffed against the pre-flip C (`python -m rustconv.c_oracle`, from the CMakeLists before the
+# cargo commit). cscript.yaml grades the body both share; this grades wscript's own arms, the
+# ones that once shipped as cscript's: the interactive default (no arguments returns quietly
+# where cscript prints Usage; WScript.Interactive is true) and "WScript" in the load-error
+# message (load_error). Every case that prints runs //B, so nothing opens a message box.
+module: wscript
+variants:
+  c: '%SystemRoot%\bin\modrun\wscript_c.exe'
+  rust: '%SystemRoot%\system32\wscript.exe'
+ninja:
+- wscript_c
+stage:
+- src: build-{arch}/base/applications/cmdutils/wscript/wscript_c.exe
+  dest: bin/modrun/wscript_c.exe
+- src: tools/payloads/modrun/data/wscript1.js
+  dest: bin/modrun/data/wscript1.js
+- src: tools/payloads/modrun/data/cscript1.js
+  dest: bin/modrun/data/cscript1.js
+cases:
+- id: no_arguments
+- id: no_script_file
+  args: '//B //nologo'
+  expect:
+  - 'Input Error: There is no script file specified.'
+# A name CreateFile refuses for a reason other than not-found (ERROR_INVALID_NAME): only then
+# does main.c print the load error. A directory reads as not-found on the CD.
+- id: load_error
+  args: '//B //nologo %SystemRoot%\bin\modrun\data\bad<name.js'
+  expect:
+  - 'WScript Error: Loading script'
+# The engines and the .js association, as in cscript.yaml: the live CD has neither.
+- id: register_jscript
+  variants:
+    regsvr32: '%SystemRoot%\system32\regsvr32.exe'
+  args: '/s jscript.dll'
+- id: assoc_js
+  variants:
+    reg: '%SystemRoot%\system32\reg.exe'
+  args: 'add HKCR\.js /ve /d JSFile /f'
+- id: assoc_js_engine
+  variants:
+    reg: '%SystemRoot%\system32\reg.exe'
+  args: 'add HKCR\JSFile\ScriptEngine /ve /d JScript /f'
+- id: interactive_default
+  args: '//nologo %SystemRoot%\bin\modrun\data\wscript1.js'
+- id: batch_mode
+  args: '//B //nologo %SystemRoot%\bin\modrun\data\wscript1.js'
+- id: batch_echo
+  args: '//B //nologo %SystemRoot%\bin\modrun\data\cscript1.js one "two words"'
+  expect:
+  - 'hello 42 -1 null 1.5'
