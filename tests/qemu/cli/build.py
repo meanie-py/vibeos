@@ -447,6 +447,40 @@ def _trim_own_target(repo: Path) -> None:
         print(f"[trim] skipped: {exc}")
 
 
+def _inputs_moved(repo: Path, start_tree: str | None) -> list[str]:
+    """Build-input paths that differ between the tree this build started from and now.
+
+    Scoped like the stamp's own fingerprint (`provenance.NON_BUILD_PATHSPEC`), so editing
+    a doc while a build runs is not a reason to throw the build away. An unreadable
+    snapshot answers "nothing moved", the behaviour before this check existed."""
+    if start_tree is None:
+        return []
+    try:
+        end_tree = warmth.worktree_tree(repo)
+        if end_tree == start_tree:
+            return []
+        cp = subprocess.run(
+            [
+                "git",
+                "diff-tree",
+                "-r",
+                "--name-only",
+                start_tree,
+                end_tree,
+                "--",
+                ".",
+                *provenance.NON_BUILD_PATHSPEC,
+            ],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (OSError, RuntimeError, subprocess.SubprocessError):
+        return []
+    return [line for line in cp.stdout.splitlines() if line]
+
+
 def _scheduled_store_gc(args) -> None:
     """Collect the shared artifact store at most daily, after a green build (see
     `tools.artifact_runtime.scheduled_gc`). Never fails the build."""
@@ -1237,6 +1271,16 @@ def _build_locked(
     *,
     artifact_env: dict[str, str] | None = None,
 ) -> int:
+    # --- input snapshot: what this build is about to compile ---
+    # The stamp and the warm receipt below fingerprint the tree as it is when the build
+    # ENDS. An edit made after ninja compiled a file therefore read as built: smoke booted
+    # media carrying the old object as FRESH, and land accepted the tree. Snapshot the
+    # tree here and refuse to stamp one that moved (`_inputs_moved`).
+    try:
+        start_tree = warmth.worktree_tree(repo)
+    except (OSError, RuntimeError, subprocess.SubprocessError):
+        start_tree = None
+
     if not _isolation_preflight(run, repo, build_dir):
         return run.finalize(repo)
     wrapped = _maybe_canonize(
@@ -1807,6 +1851,22 @@ def _build_locked(
     # Source analysis belongs to check/gate; local build opts in explicitly.
     if getattr(args, "check", False):
         lints.run_source_lints(run, repo, strict=False)
+
+    moved = _inputs_moved(repo, start_tree)
+    if moved:
+        run.classification = "BUILD_INPUTS_MOVED"
+        run.add(
+            Stage(
+                "inputs-moved",
+                status="fail",
+                detail=(
+                    f"{len(moved)} build input(s) changed while this build ran, so it built "
+                    "neither tree; no stamp or warm receipt written. Rebuild."
+                ),
+                salient=moved[:8],
+            )
+        )
+        return run.finalize(repo)
 
     # --- write provenance stamp ---
     stamp = provenance.make_stamp(repo, arch, cold=cold, ts=int(time.time()))
