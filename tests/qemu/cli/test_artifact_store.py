@@ -50,6 +50,8 @@ def test_build_uses_the_shared_store_by_default_on_every_arch(tmp_path, monkeypa
         supervised.append(store_root)
         raise ValueError("stop before building")
 
+    monkeypatch.setattr(build.canon, "ensure_toolchain", lambda repo: True)
+    monkeypatch.setattr(build.hostjobs, "ensure", lambda repo: None)
     monkeypatch.setenv("VIBEOS_ARTIFACT_STORE_ROOT", str(tmp_path / "shared"))
     monkeypatch.setattr("tools.artifact_runtime.supervise", supervise)
     monkeypatch.setattr(build, "_build_locked", lambda *a, **k: 0)

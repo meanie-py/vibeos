@@ -39,6 +39,7 @@ def test_gate_forwards_store_without_reverifying_restage(tmp_path, arch, restage
 
 
 def test_failed_postcheck_removes_successful_build_stamp(tmp_path, monkeypatch):
+    _no_provisioning(monkeypatch)
     supervisor = tmp_path / "supervisor.json"
     supervisor.write_text(json.dumps({"toolchain_key": "fixture"}))
     output = tmp_path / "build"
@@ -65,3 +66,11 @@ def test_failed_postcheck_removes_successful_build_stamp(tmp_path, monkeypatch):
     assert run.classification == "ARTIFACT_STORE_FAIL"
     assert not stamp.exists()
     assert "toolchain changed" in stages[-1].detail
+
+
+def _no_provisioning(monkeypatch):
+    """The supervised build provisions the toolchain and broker first; not here."""
+    from . import build
+
+    monkeypatch.setattr(build.canon, "ensure_toolchain", lambda repo: True)
+    monkeypatch.setattr(build.hostjobs, "ensure", lambda repo: None)

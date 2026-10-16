@@ -1118,6 +1118,12 @@ def _build_supervised(args, repo: Path, run, arch: str, cfg, build_dir: Path, co
         if incremental:
             raise ValueError("immutable body store does not support incremental builds")
         Path(store_root).mkdir(parents=True, exist_ok=True)
+        # The supervisor hashes the worker toolchain (llvm-dlltool under .build-tools)
+        # and admits misses through the host-jobs broker before the build would
+        # provision either, so a fresh worktree's first build provisions them here.
+        if not canon.ensure_toolchain(repo):
+            raise ValueError(".build-tools/llvm-mingw missing and no sibling llvm-mingw-* dir")
+        hostjobs.ensure(repo)
         from tools.artifact_executor import PIN
         from tools.artifact_runtime import record_outer_result, supervise
 
