@@ -48,8 +48,8 @@ static const app_t apps[] = {
     /* /D skips the drive picker: the handler scan, then the property sheet (a C++
      * CPropertyPageImpl app, Rust since batch 3). */
     { "cleanmgr", "cleanmgr.exe", "/D %SystemDrive%", NULL, "Disk Cleanup$" },
-    { "certmgr", "certmgr.exe", "" },
-    { "mmc_new", "mmc_new.exe", "" },   /* C++ MDI + COM (IConsole2, IImageList), Rust since batch 4 */   /* C++ CDialogImpl + CAtlExeModuleT, Rust since batch 4 */
+    { "certmgr", "certmgr.exe", "" },   /* C++ CDialogImpl + CAtlExeModuleT, Rust since batch 4 */
+    { "mmc_new", "mmc_new.exe", "" },   /* C++ MDI + COM (IConsole2, IImageList), Rust since batch 4 */
     /* Run with no -p, Dr. Watson's right answer is its usage box (C++ and Rust alike). */
     { "drwtsn32", "drwtsn32.exe", "", "Usage: DrWtsn32" },
     { "explorer-folder", "explorer.exe", "%WINDIR%" },

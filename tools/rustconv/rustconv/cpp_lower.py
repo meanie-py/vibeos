@@ -28,6 +28,7 @@ import re
 from dataclasses import dataclass, field
 
 from . import c_data_port as cdp
+from . import cpp_templates
 
 # ATL template methods a CWindowImpl/CDialogImpl subclass calls through an implicit `this`.
 # cpp_model re-exports this one set (it imports this module, so it cannot own it).
@@ -64,6 +65,16 @@ _ATL_GLUE_DEFAULTS: dict[tuple[str, int], list[str | None]] = {
 _TEXT_MACRO = re.compile(
     r"\b(?:TEXT|_TEXT|__TEXT|_T)\(\s*(\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*')\s*\)"
 )
+
+
+_ATL_QUALIFIED_GLUE = re.compile(r"\b(CWindowImpl|CDialogImpl)(?:<[^;{}()]*?>)?::this_->(\w+)\s*\(")
+
+
+def atl_qualified_glue(text: str) -> str:
+    """`CWindowImpl::Create(..)` -> `this_->CWindowImpl_Create(..)`. A class's own `Create`
+    hides the ATL template's in C++ name lookup, and the qualified call is how rapps reaches it
+    anyway; the generated glue answers it under that qualified name (cpp_app)."""
+    return _ATL_QUALIFIED_GLUE.sub(lambda m: f"this_->{m.group(1)}_{m.group(2)}(", text)
 
 
 def unicode_text_macros(text: str) -> str:
@@ -191,6 +202,10 @@ def _tok(loc: dict, body_file: str, lo: int, hi: int) -> tuple[int, int] | None:
     return None
 
 
+# Namespaces that wrap a C API (extern "C" functions): a call through one is the bare extern.
+_C_API_NAMESPACES = frozenset({"DllExports"})
+
+
 def _strip_type(qt: str) -> str:
     t = re.sub(r"\b(const|volatile|struct|class)\b", "", qt)
     t = t.replace("*", "").replace("&", "").strip()
@@ -200,10 +215,20 @@ def _strip_type(qt: str) -> str:
 class Lowerer:
     """Per-TU: decl ids are only meaningful inside the AST that produced them."""
 
-    def __init__(self, decls: dict[str, DeclInfo], classes: dict, base_path) -> None:
+    def __init__(
+        self,
+        decls: dict[str, DeclInfo],
+        classes: dict,
+        base_path,
+        instances: dict[str, str] | None = None,
+        canon=None,
+    ) -> None:
         self.decls = decls
         self.classes = classes  # qualified name -> ClassModel
         self.base_path = base_path  # (from_class_short, to_class_short) -> "__base1." | ""
+        # A template instantiation's spelling -> its concrete class (cpp_templates).
+        self.instances = instances or {}
+        self.canon = canon or (lambda k: k)
         self.ctor_index = {}  # (class short, ctorType qualType) -> N
         self._span: tuple[str, int, int] = ("", 0, 0)
 
@@ -338,7 +363,7 @@ class Lowerer:
                 put(n["range"]["end"], 0, "this_->" + path, name)
             return
         # The static type BEFORE any derived-to-base cast: the base path is ours to write.
-        static_type = _strip_type(this_node.get("type", {}).get("qualType", ""))
+        static_type = self._ty(this_node.get("type", {}).get("qualType", ""))
         if implicit_this:
             static_type = (this_class or "").split("::")[-1]
         path = self.base_path(static_type, info.owner.split("::")[-1]) if static_type else ""
@@ -407,11 +432,13 @@ class Lowerer:
             # template's member is the class's own generated glue, never the base's.
             return False
         obj = (base.get("inner") or [{}])[0]
-        static_type = _strip_type(obj.get("type", {}).get("qualType", ""))
+        static_type = self._ty(obj.get("type", {}).get("qualType", ""))
         if not static_type or self._class(static_type) is None:
             return False
-        target = _strip_type(base.get("type", {}).get("qualType", ""))
-        path = self.base_path(static_type, target) or self.base_path(static_type, "\0external")
+        target = self._ty(base.get("type", {}).get("qualType", ""))
+        path = self.base_path(static_type, target, deep=True) or self.base_path(
+            static_type, "\0external", deep=True
+        )
         if not path:
             return False
         put(n["range"]["end"], 0, path, n.get("name", "?"))
@@ -500,6 +527,17 @@ class Lowerer:
         """A STATIC member named without its class (`_shared()` inside CImageDx): after
         assembly it is an associated fn, reachable only as `CImageDx::_shared()`."""
         info = self.decls.get(n.get("referencedDecl", {}).get("id", ""))
+        if info is None and n.get("referencedDecl", {}).get("kind") == "FunctionDecl":
+            # gdiplus's `DllExports::GdipCreateSolidFill(..)`: a namespace around the flat
+            # extern "C" API, whose Rust is the bare extern. Left qualified, every GDI+
+            # wrapper body named a module that does not exist.
+            span = _node_span(n, f, lo, hi)
+            if span is not None:
+                text = cdp_text(f, lo + span[0], lo + span[1])
+                m = re.fullmatch(r"(?:::)?((?:\w+::)+)(\w+)", text.strip())
+                if m and m.group(1).rstrip(":").split("::")[-1] in _C_API_NAMESPACES:
+                    edits.append((span[0], span[1] - span[0], m.group(2)))
+            return
         if info is not None and info.kind == "field" and info.static:
             # A static data member, `s_nLock` or `CWaitCursor::s_nLock`: cpp_classes.rs
             # renders it as the static `CWaitCursor__s_nLock`.
@@ -593,7 +631,7 @@ class Lowerer:
             t = "new " + t[pm.end() :]
         else:
             tag = None
-        alloc = _strip_type(n.get("type", {}).get("qualType", ""))
+        alloc = self._ty(n.get("type", {}).get("qualType", ""))
         if n.get("isArray"):
             m = re.match(r"new\s+(.+?)\s*\[(.*)\]\s*$", t, re.S)
             if m:
@@ -633,21 +671,33 @@ class Lowerer:
         m = re.match(r"delete\s*(\[\s*\])?\s*(.*)$", t, re.S)
         if m is None:
             return
-        operand = m.group(2).strip()
+        # Surgical: the `delete` keyword becomes the call's head and `)` closes it, so the
+        # operand keeps its OWN edits. Replacing the whole expression with the operand's
+        # source text dropped them and left the tail behind: rapps' `delete RichEdit;`
+        # (an implicit-this member) lowered to `CAppRichEdit__delete(RichEdit)ichEdit;`.
+        head = m.start(2)
         if m.group(1):
-            edits.append((span[0], span[1] - span[0], f"cpp_delete_array({operand})"))
+            edits.append((span[0], head, "cpp_delete_array("))
+            edits.append((span[1], 0, ")"))
             return
         target = n.get("inner", [{}])[0].get("type", {}).get("qualType", "")
-        cls = self._class(_strip_type(target))
-        repl = f"{cls.name}__delete({operand})" if cls else f"cpp_delete({operand})"
-        edits.append((span[0], span[1] - span[0], repl))
+        cls = self._class(self._ty(target))
+        edits.append((span[0], head, f"{cls.name}__delete(" if cls else "cpp_delete("))
+        edits.append((span[1], 0, ")"))
 
     def _upcast(self, n: dict, f: str, lo: int, hi: int, edits, unplaced) -> None:
         inner = (n.get("inner") or [{}])[0]
-        if _unwrap_casts(inner).get("kind") == "CXXThisExpr":
-            return  # `this` as a member's object: _member writes the base path itself
-        src = _strip_type(inner.get("type", {}).get("qualType", ""))
-        dst = _strip_type(n.get("type", {}).get("qualType", ""))
+        this_node = _unwrap_casts(inner)
+        if this_node.get("kind") == "CXXThisExpr" and _implicit(this_node):
+            return  # an implicit `this` has no text to wrap: _member writes its base path
+        # An EXPLICIT `this` converted to a base pointer -- `return this;` from rosui.h's
+        # `CUiBox *AsBox()`, or `this` passed as a base -- is the base SUBOBJECT's address.
+        # Left as `this_`, the model wrote `this_ as *mut CUiBox`: CUiBox sits 16 bytes in, so
+        # every layout call went through the wrong vtable and rapps' teardown read RichEdit
+        # from an HWND. (A member access through `this` never gets here: the caller skips a
+        # cast whose parent is the MemberExpr.)
+        src = self._ty(inner.get("type", {}).get("qualType", ""))
+        dst = self._ty(n.get("type", {}).get("qualType", ""))
         path = self.base_path(src, dst)
         if not path:
             return  # the primary base: the same address, a cast is enough
@@ -668,7 +718,7 @@ class Lowerer:
 
         Surgical: one insertion after the declarator name, so the argument text keeps its
         own edits (an upcast of an argument, a member path inside it)."""
-        cls = self._class(_strip_type(n.get("type", {}).get("qualType", "")))
+        cls = self._class(self._ty(n.get("type", {}).get("qualType", "")))
         if cls is None or "*" in n["type"]["qualType"] or "&" in n["type"]["qualType"]:
             return
         if "[" in n["type"]["qualType"]:
@@ -705,7 +755,7 @@ class Lowerer:
 
     def _temporary(self, n: dict, f: str, lo: int, hi: int, edits) -> None:
         """`audio_format(44100, 16, 2)` as an expression -> `audio_format__make_N(...)`."""
-        cls = self._class(_strip_type(n.get("type", {}).get("qualType", "")))
+        cls = self._class(self._ty(n.get("type", {}).get("qualType", "")))
         span = _node_span(n, f, lo, hi)
         if span is None:
             return
@@ -734,6 +784,16 @@ class Lowerer:
         edits.append((span[0], m.end(), f"{cls.name}__make_{self._ctor_n(cls, construct)}"))
 
     # -- helpers -----------------------------------------------------------------------
+
+    def _ty(self, qt: str) -> str:
+        """`_strip_type`, with a template instantiation named by its concrete class."""
+        t = re.sub(r"\b(const|volatile|struct|class)\b", "", qt).replace("*", "").replace("&", "")
+        if "<" in t:
+            key = cpp_templates.instance_key(t)
+            hit = self.instances.get(key) or self.instances.get(self.canon(key))
+            if hit is not None:
+                return hit
+        return _strip_type(qt)
 
     def _class(self, short: str):
         for q, c in self.classes.items():

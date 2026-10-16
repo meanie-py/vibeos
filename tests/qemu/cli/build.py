@@ -909,9 +909,17 @@ def _hold_wow64_source(run, repo: Path, arch: str, args, reads: contextlib.ExitS
     no i386 build takes amd64's, so this cannot deadlock. The gate is unaffected:
     it builds amd64 with --no-wow64-stage beside i386 and restages once i386 is
     done, which is the way to get both in parallel by hand too.
+
+    The lock is taken even when build-i386 does not exist yet: the lock file is keyed by
+    path, not by the directory, so an i386 build provisioning a fresh tree holds it from
+    its first moment. Skipping on a missing directory let `build --arch i386` and
+    `build --arch amd64` launched together on a pruned worktree race straight into the
+    configure-time closure check and fail there with CMake's "closure INCOMPLETE"
+    (2026-10-16). If the directory is still missing once the lock is ours, nothing is
+    building it, and the same configure would fail: refuse up front with the fix.
     """
     i386 = repo / "build-i386"
-    if arch != "amd64" or getattr(args, "no_wow64_stage", False) or not i386.is_dir():
+    if arch != "amd64" or getattr(args, "no_wow64_stage", False):
         return True
     t0 = time.monotonic()
     reader = "amd64 SysWOW64 staging"
@@ -937,6 +945,20 @@ def _hold_wow64_source(run, repo: Path, arch: str, args, reads: contextlib.ExitS
         return False
     reads.callback(hostlock.release, fd)
     waited = time.monotonic() - t0
+    if not i386.is_dir():
+        run.classification = "NO_BUILD_DIR"
+        run.add(
+            Stage(
+                "wow64-source",
+                status="fail",
+                detail="build-i386 missing: amd64 media stages SysWOW64 from it",
+                salient=[
+                    "build i386 first (`vibeos-cli build --arch i386`), or pass "
+                    "--no-wow64-stage and restage after it; `gate` orders this itself"
+                ],
+            )
+        )
+        return False
     run.add(
         Stage(
             "wow64-source",
@@ -949,37 +971,42 @@ def _hold_wow64_source(run, repo: Path, arch: str, args, reads: contextlib.ExitS
     return True
 
 
-def _refresh_wow64_guests(run, repo: Path) -> bool:
-    """Make the graded WoW64 guests current. False = hard failure (stage added)."""
+def _refresh_wow64_guests(run, repo: Path, stage: str = "wow64-guests") -> bool | list[str]:
+    """Make the graded WoW64 guests current. False = hard failure (stage added).
+
+    A list = success with those x86-64 guests DEFERRED: they link build-amd64's
+    own importlibs, which a fresh build-amd64 does not have before its first
+    ninja. The caller refreshes them again after ninja and restages."""
     todo = ladder.guests_to_refresh(repo)
     if not todo:
-        run.add(Stage("wow64-guests", status="ok", detail="current"))
+        run.add(Stage(stage, status="ok", detail="current"))
         return True
-    blocker = ladder.refresh_blocker(repo, todo)
+    blocker = ladder.refresh_blocker(repo)
     if blocker:
         # Not a failure of THIS build: the amd64 media is complete without them,
         # and gate_decision reports the ladder it then cannot grade. Said here too,
         # so the cause is on the stage that could have fixed it.
         run.add(
             Stage(
-                "wow64-guests",
+                stage,
                 status="skip",
                 detail=f"{len(todo)} guest(s) need building but {blocker}",
             )
         )
         return True
+    deferred = ladder.x64_refresh_deferred(repo, todo)
     cp = run.run(
         ["bash", str(repo / ladder.GUEST_BUILDER)],
         cwd=repo,
-        stage="wow64-guests",
+        stage=stage,
         timeout=900,
     )
-    left = ladder.guests_to_refresh(repo)
+    left = [g for g in ladder.guests_to_refresh(repo) if g not in deferred]
     if cp.returncode != 0 or left:
         run.classification = "GUEST_BUILD_FAIL"
         run.add(
             Stage(
-                "wow64-guests",
+                stage,
                 exit=cp.returncode,
                 status="fail",
                 detail=f"{ladder.GUEST_BUILDER} left: "
@@ -989,7 +1016,13 @@ def _refresh_wow64_guests(run, repo: Path) -> bool:
             )
         )
         return False
-    run.add(Stage("wow64-guests", status="ok", detail=f"built: {', '.join(todo)}"))
+    built = [t for t in todo if t not in deferred]
+    detail = f"built: {', '.join(built)}" if built else "nothing buildable yet"
+    if deferred:
+        detail += f"; deferred until build-amd64 has importlibs: {', '.join(deferred)}"
+        run.add(Stage(stage, status="ok", detail=detail))
+        return deferred
+    run.add(Stage(stage, status="ok", detail=detail))
     return True
 
 
@@ -1366,12 +1399,13 @@ def _build_locked(
     # stage them. Only when needed: a rebuilt guest re-runs configure.
     # Deferred staging must not build guests either: they link build-i386's
     # importlibs, which is the tree a deferring caller is rebuilding right now.
-    if (
-        arch == "amd64"
-        and not getattr(args, "no_wow64_stage", False)
-        and not _refresh_wow64_guests(run, repo)
-    ):
-        return run.finalize(repo)
+    guests_deferred: list[str] = []
+    if arch == "amd64" and not getattr(args, "no_wow64_stage", False):
+        refreshed = _refresh_wow64_guests(run, repo)
+        if refreshed is False:
+            return run.finalize(repo)
+        if isinstance(refreshed, list):
+            guests_deferred = refreshed
     if arch == "arm64" and not _refresh_wowx64_cpu(run, repo):
         return run.finalize(repo)
 
@@ -1560,6 +1594,44 @@ def _build_locked(
         )
         return run.finalize(repo)
     relinked = _ninja_did_work(cp.stdout or "")
+    if guests_deferred:
+        # The first ninja produced build-amd64's importlibs: build the x86-64
+        # guests now and run ninja once more, which restages them onto the
+        # livecd (add_cd_file depends on each exe; a NEW exe re-runs configure
+        # through the directory dependency in wow64cpu's CMakeLists).
+        if _refresh_wow64_guests(run, repo, stage="wow64-guests-x64") is not True:
+            if not run.classification:
+                run.classification = "GUEST_BUILD_FAIL"
+                run.add(
+                    Stage(
+                        "wow64-guests-x64",
+                        status="fail",
+                        detail="x86-64 guests still unbuildable after the first ninja: "
+                        + ", ".join(guests_deferred),
+                    )
+                )
+            return run.finalize(repo)
+        cp = run.run(
+            wrap(["ninja", *_ninja_jobs(), *_ninja_keep_going(args), *targets, *cohab]),
+            cwd=build_dir,
+            env=build_env,
+            stage="ninja-restage",
+            timeout=1800,
+        )
+        if cp.returncode != 0:
+            cls, salient = _classify_build_failure(cp.stdout, cp.stderr, cp.returncode)
+            run.classification = cls
+            run.add(
+                Stage(
+                    "ninja-restage",
+                    exit=cp.returncode,
+                    status="fail",
+                    detail=f"restaging the deferred x86-64 guests failed ({cls})",
+                    salient=salient or ["see full log"],
+                )
+            )
+            return run.finalize(repo)
+        run.add(Stage("ninja-restage", status="ok", detail="x86-64 guests staged"))
     run.add(
         Stage(
             "ninja-reaffirm",

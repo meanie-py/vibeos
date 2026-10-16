@@ -602,6 +602,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **cicero: CUIFWindow::Initialize and CUIFShadow::Initialize recurse forever (open, found
+  2026-10-15, latent).** `cicero-rust/src/cicero/cicuif_cpp_h.rs` (lines ~1942, ~3051 at
+  c94cd0f6a11's tree): each override's `return CUIFObject::Initialize();` became
+  `(*this_).__base0.Initialize()` -- the VIRTUAL dispatcher, i.e. itself -- so anything that
+  initializes a cicero UI window overflows the stack. Boot never reaches it. The generator
+  is fixed (`cpp_app._qualified_base_calls`, from rapps' identical ComputeMinimalSize hang);
+  re-run `port cppapp` + `port replay` for cicero, msutb (18 qualified base calls) and
+  msctfime (4), or hand-fix the two sites to `Initialize__body()` and bank them.
+
 - **amd64 ladder: fault64 rung 1 "AV params" (exit 0xBAF2) (FLAKE, open, found 2026-10-14).**
   The merge-queue gate's amd64 smoke (`-smp 2`) saw fault64.exe's access-violation reach the
   guest with wrong ExceptionInformation and rejected shell32-com a6e93b659ef8
@@ -664,19 +673,25 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the sleeper returns 0 and the guest exits 0xBA41. Seen 2026-10-10 in one amd64 queue gate
   (`queue-batch-01791615634859147470`, rejecting a89a87f06a30), and twice on arm64 in
   `flake-report`; the same tree then passed 6/6 `smoke --arch amd64 --ladder`, and the rung
-  passed in 128 other gate boots. A lost wakeup between `KeAlertThread`/APC insertion and the
-  wait's alertable check is the first place to look.
+  passed in 128 other gate boots. 2026-10-16: the only artifact
+  (`fails/auto/20261010-031022-9huqnnxb-smoke-amd64-LADDER_FAIL`) shows exit `Code` 0, i.e.
+  the 10 s join TIMED OUT with the sleeper still asleep. That fits a lost APC but equally an
+  APC queued before the sleeper's routine started: thread init delivers it (rung 5), and
+  SleepEx then sleeps 30 s. The old rung slept 200 ms and hoped, on a boot busy with PnP
+  installs. The kernel's insert/wait pair serializes on the dispatcher lock (no window found
+  by reading). Forcing the start race (no head start) passed 3/3, so it is NOT proven.
+  The rung now waits for the sleeper's routine to signal before queueing, and on failure
+  prints whether it started, the join result and `APCs run`. **Next hit: `APCs run 0` with
+  a started sleeper = a real lost APC (kernel); anything else names the test.**
 
-- **`apc32.exe` rung 7: kernel panic in `KiInsertQueueApc` (FLAKE, open, 2026-10-11).** Just
-  after "rung7 16 threads terminated", ntoskrnl panicked at `ke/apc.rs:138`, "index out of
-  bounds: the len is 2 but the index is 2". That is `ApcStatePointer[(*Apc).ApcStateIndex]`
-  with index 2, `CurrentApcEnvironment`. `KeInitializeApc` resolves that value (apc.rs:491), so
-  the likelier source is line 135: for an `InsertApcEnvironment` APC it copies the THREAD's own
-  `ApcStateIndex`. A KTHREAD whose index reads 2 is being torn down or already freed, and only
-  this thread-kill storm reaches that. Seen once: amd64 queue gate
-  `queue-batch-01791758650912626247/20261011-184411-z164r63f-gate-*`, which rejected
-  warnings-burndown b8eac0dccad2, a fastfat-only change. 58 other boots today passed the same
-  rung. Start with who can queue an APC to a thread that is exiting (special-pool the KTHREAD).
+- **`apc32.exe` rung 7: kernel panic in `KiInsertQueueApc` (FIXED 2026-10-15, `61998182a8f`).**
+  ntoskrnl panicked at `ke/apc.rs:138`, "index out of bounds: the len is 2 but the index is 2",
+  during the rung-7 timer/thread storm. It was not a teardown race: `NtSetTimer`'s translation
+  passed `KeInitializeApc`'s environment as a `u8` (`movb $2,%r8b`) while the callee compares
+  all of `r8d`, so stale upper bits skipped normalization and left `ApcStateIndex` 2. Fixed by
+  the DDK's 32-bit `KAPC_ENVIRONMENT` and an `extern "system"` callback (field manual: "A small
+  enum value does not make its ABI a byte"). Evidence: `queue-batch-01791758650912626247/
+  20261011-184411-z164r63f-gate-*` and `fails/auto/20261011-185307-ydzbq0v5-smoke-amd64-BUGCHECK`.
 
 - **OptiPlex USB 3 card: root hub sometimes never enumerates, and the boot stalls (FIXED
   2026-10-11, rare trigger not yet seen again on the board).** The stalled boot's log shows

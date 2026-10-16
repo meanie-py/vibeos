@@ -4093,6 +4093,7 @@ version = "0.1.0"
 dependencies = [
  "com-sys",
  "panic-common",
+ "win32macros-rust",
  "winedebug-rust",
  "winelist-rust",
 ]
@@ -4467,6 +4468,18 @@ dependencies = [
 [[package]]
 name = "random"
 version = "0.1.0"
+
+[[package]]
+name = "rapps-rust"
+version = "0.1.0"
+dependencies = [
+ "atlclasses-rust",
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
 
 [[package]]
 name = "rapps_com-rust"
@@ -6493,6 +6506,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "virtdisk-rust"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+]
+
+[[package]]
 name = "virtio-drivers"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6582,6 +6602,13 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "wer-rust"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
 ]
 
 [[package]]

@@ -5373,6 +5373,112 @@ file (see "a rising count mid-grind is progress" in `shell32/mod.rs`).
   ~40 lines below where the grep stopped; adding it again is E0592, and the real gap was only
   the `as_mut_ptr` spelling of `GetAddressOf`.
 
+### An ATL window whose `ProcessWindowMessage` is HAND-WRITTEN got an empty message map
+
+**Symptom:** none at compile time. The window is created but every message goes to
+`DefWindowProc`, so it never lays out its children or answers a command. **Cause:**
+`port cppapp` rendered `MessageMap::process_window_message` only from `BEGIN_MSG_MAP`. rapps
+writes `BOOL ProcessWindowMessage(..)` by hand instead (CUiSplitPanel, CAppInfoDisplay,
+CApplicationView, CMainWindow), and those maps came out as `false`. **Fix:** the glue calls
+the class's own `ProcessWindowMessage` when there is no map, and refuses a window with
+neither. It was caught before anything shipped: a scan of every shipped `cpp_classes.rs`
+found no empty map over a hand-written one.
+
+The same rapps pass found three more silent shapes in the window glue:
+- The CRTP base sits inside a template instance (`CAppInfoDisplay :
+  CUiWindow<CWindowImpl<CAppInfoDisplay>>`), so the glue belongs to the derived class at
+  `__base0.__base2`, not to the instance.
+- `CWindowImpl<T, CListView>` derives from rosctrls' CListView, not CWindow.
+- A class's own `Create` hides `CWindowImpl::Create`. The qualified call is lowered to
+  `CWindowImpl_Create`, which the glue always renders.
+
+### A template instantiation's arguments are DESUGARED in clang's specialization
+
+**Symptom:** cppapp refuses `external template base CToolbar<> has no Rust layout`, or a
+`CLocalPtr<WCHAR>` stays spelled with angle brackets in a synthetic unit while the class
+`CLocalPtr_wchar_t` exists. **Cause:** a `ClassTemplateSpecializationDecl`'s
+`TemplateArgument`s are canonical types: `CToolbar<>` is `CToolbar<unsigned long>` (the
+default `DWORD_PTR`, with a per-arch width), and `CLocalPtr<WCHAR>` is
+`CLocalPtr<wchar_t>`. A pointer such as `A<PP> *` carries no `desugaredQualType` to pair
+with the written spelling. **Fix (`cpp_model`):** an argument equal to its parameter's
+default, compared in either spelling, is bound by the default's written spelling. A spelling
+that misses the instance table is retried with its arguments' typedefs resolved from the
+TU's file-scope `TypedefDecl`s.
+
+### Small C++-pipeline shapes that cost rapps a re-buy or a hundred errors
+
+Each was one fix in the tool; listed so the next module's symptom can be matched to one.
+- **A comment between the declarator and the brace** (`BOOL F(..) // note` then `{`): the
+  free-function signature is joined onto one line and the comment swallowed the `{`; the
+  stitch dropped the function ("Planned Rust definitions absent"). `cpp_model` strips comments
+  from the signature text.
+- **A macro-spelled declarator** (fdi.h's `FNCLOSE(fnFileClose)`): the signature text names
+  no function, so the planner expected `FNCLOSE` and refused the correct `fnFileClose`. The
+  signature is now spelled from clang's type.
+- **A module function TEMPLATE** (`template <class T> static CStringW BuildPath(const T&, ..)`)
+  was never modeled, so 18 call sites named a missing function. Each instantiation is now a
+  free function (`BuildPath__T0`) reached through the decl map. clang prints a reference to an
+  array parameter as `const char &[4]`, without the parentheses.
+- **The COM C-layout pass shadowed an imported bindgen helper**: it appended
+  `__BindgenBitfieldUnit` without its impl (an `impl` has no name to carry), and 159 bitfield
+  accessors lost `get_const`. Helpers the island already uses are no longer appended.
+- **A `THIS_`-less slot** in an undocumented shell header (`STDMETHOD(X)(ULONG flags, ..)`):
+  the C++ ABI still passes `this`, so the slot gets its `This` back. A capitalized parameter
+  (`ULONG Unknown`) met a constant of that name and became a refutable pattern; such
+  parameters get a trailing `_`.
+- **A namespaced type or C API**: bindgen spells `ATL::CWndClassInfo` and `Gdiplus::Status`
+  with a prefix (`ATL_`, `Gdiplus_`), and the bodies spell them bare; the island glue aliases
+  the ones the module uses (never generics, never atl_rust's own). `DllExports::GdipX(..)` is
+  lowered to the bare extern.
+- **A field of a base two hops away, outside the module** (`m_Margin.left`, where CUiMargin
+  derives CUiRect derives RECT): eleven `dangerous_implicit_autorefs` denials, since Rust
+  reached `left` through two generated Derefs on a raw pointer. `base_path` gave up because
+  the external fallback only looked at the class's own bases, and because clang names the
+  cast target `tagRECT` where the base list says `RECT`. It now walks module bases to the
+  nearest external one and compares names through the typedef table: `m_Margin.__base0.__base0.left`.
+- **A member object with no initializer** (rapps' `CUiContainer { CUiCollection m_Children; }`,
+  no constructor of its own): the constructor prologue ran bases, vtables and init-list
+  members, but C++ also DEFAULT-CONSTRUCTS every class-typed member. `m_Children` stayed zeroed,
+  its CPointerArray never called DPA_Create, and rapps died at startup on all three arches
+  reading address 0 in `CountSizableChildren` (appstorm: exit 0xc0000005, symbolized with
+  `llvm-symbolizer-18 --obj=rapps.exe <RIP>`). `_ctor_prologue` now constructs such a member
+  when its class has anything to construct (`_needs_construction`).
+- **`return this;` as a SECONDARY base** (rosui.h's `CUiBox *AsBox() { return this; }`, CUiBox
+  16 bytes into the object): `_upcast` skipped every `this`, so the lowered C said `return
+  this_;` and the model wrote `this_ as *mut CUiBox`. Every layout call then dispatched through
+  the CUiPrimitive vtable at offset 0, and rapps' teardown read `RichEdit` from an HWND.
+  Found with `atl_rust::win::trace` probes: the window glue saw the object at +16, its
+  destructor at +0. An explicit `this` converted to a base is now `(&(this_)->__baseK)`.
+- **`delete member;` through an implicit `this`** lowered to `X__delete(m_Foo)Foo;`: the rule
+  replaced the whole expression with the operand's source text, so the operand's own
+  `this_->` edit fell inside the replaced span. The model repaired every site, which hid it.
+  Now the `delete` keyword alone becomes the call head.
+- **A qualified base call, `Base::M(args)`, from an override of M** is NON-virtual in C++.
+  The lowering left `Base::this_->__baseK.M(`, and `this_->__baseK.M(` in Rust is the virtual
+  dispatcher, which lands on the override making the call. rapps' `CUiWindow<CToolbar>::
+  ComputeMinimalSize` spun forever (appstorm's stuck-thread dump: `rapps.exe+0x29270`,
+  symbolized to CUiBox::ComputeMinimalSize <-> the override); cicero shipped the same in
+  CUIFWindow::Initialize. `_qualified_base_calls` writes `M__body` for a virtual M and drops
+  the qualifier otherwise -- only when the lowering supplied a base path.
+- **A `char*` passed to a `const CStringA&` parameter** builds a temporary in C++. The model
+  wrote `pszFile as *const CStringA` -- reinterpreting the path TEXT as a CStringA object --
+  and `GetString()` returned its first eight bytes as the buffer: rapps' FDI callbacks
+  faulted on arm64 at address 0x69666F72505C3A58, i.e. `"X:\Profi"` (any fault address that
+  decodes as ASCII is this class). Use `&CStringA::from_ptr(p)` (`CStringW::from_ptr` for wide).
+- **A polymorphic destructor** runs with the class's OWN vtables (C++ resets them first);
+  Drop dispatched through the derived tables, so CPointerArray's destructor reached
+  CUiCollection::OnRemoveItem's `delete ptr`. Drop now calls `__init_vtables` first.
+- **A plain struct holding an ATL type by value** was left to the island, which laid
+  `CStringW` out as bindgen's `ATL_CStringW` and derived `Copy` over it. Now cppapp owns it.
+- **`(CALLBACK_TYPE)(-1)`** has no Rust constant: const evaluation rejects a fn pointer that
+  points at no fn. `sdk_macros` refuses it, and the call site compares the pointer bits.
+- **A header-only unit holding one global** (`const WCHAR UsageString[] = L"RAPPS [/" CMD_KEY_HELP
+  L"] .."`) is refused by translate (no function) and adopted by no stage. A wide-string global
+  is now a deterministic `[u16; N]` static in cpp_classes.rs, with the line splices joined and
+  the string macros folded first.
+- **crate-repair took over an hour** on a 100 KB-unit crate. Some 30 rules re-masked the
+  whole file per diagnostic, in a per-byte Python loop. Memoized on content: 6 minutes.
+
 ### A vtable SLOT the interface parser could not read renumbers every slot after it
 
 **Symptom.** A hand-rolled COM interface comes out of `--cpp-com` with one fewer method than
@@ -5939,6 +6045,18 @@ output. Every one of the 63 predates `facce583b65` (2026-09-12), which added
 to buy it again automatically." The class is closed by a guard that already exists; the number
 is history, not a live leak.
 
+**That guard can over-fire on a contract section that DESCRIBES rather than grants.** rapps'
+`port replay` refused 17 of 34 units of accepted bodies with the same message. The C was
+unchanged, and so were the contract's section titles; what moved was text inside two
+sections that are derived from the tree: cppapp's class context (the Rust shape of each class,
+which improves with the tooling) and the ATL types section, which lists atl_rust's API as
+extracted from its source (one session's new `CStringW::Trim` re-keyed every body naming a
+CStringW). Neither grants something a pre-change body lacked, so an entry whose titles are
+unchanged and all `_DERIVED_SECTIONS` now replays. A NEW section still changes the titles and
+still misses. The refusal now says WHY it missed (`no entry`, `the C body changed`, `the
+contract changed (capabilities ..)`, `the seal set grew by ..`); before that, the cause had
+been guessed wrong once (a lowering change, narrowed on the strength of the guess; narrow is right anyway, since a changed lowered body re-BUYS rather than refuses).
+
 **The general rule behind that second trap: A LEDGER THAT OMITS FAILURES REPORTS THAT NOTHING
 EVER FAILED.** `meta.json` is the specific case, and the error it produces is not a wrong
 number — it is a clean one. Classifying retries from it put the entire reject class at exactly
@@ -6501,6 +6619,40 @@ this class sails through every check you would run first.
 they RETURN a status instead of raising. Do not reach for the DDK `ProbeFor*` there, and do not
 assume the kernel-side `ntkrnl_sys::probe` helpers raise either — they do not touch the page,
 they range-check and return `Result`.
+
+### An info class whose C size is ULONG_PTR where Windows takes a ULONG
+
+**Symptom.** A kernel32 setter fails `ERROR_BAD_LENGTH` (24) on amd64 and arm64 only:
+SetThreadPriorityBoost and SetThreadIdealProcessor, both broken since the port.
+
+**Cause.** ReactOS's `ps_i.h` table and the matching `query.c` arms give ThreadIdealProcessor
+and ThreadPriorityBoost a SET size of `sizeof(ULONG_PTR)`; kernel32 passes a ULONG, and so
+does every Windows caller. On i386 the two are the same width, which is how it hid. The
+length is checked twice (`info_class.rs` via DefaultSetInfoBufferCheck, then the arm), so
+fixing one site changes nothing.
+
+**Fix.** Measure the accepted sizes on Windows (a loop over sizes 1..16 on a throwaway
+handle) and make the table and the arm agree with it. The same probe showed
+ThreadIdealProcessor's success status is the previous processor, which kernel32 returns.
+
+### An access right the object type does not list is silently DROPPED, not refused
+
+**Symptom.** An open for a Vista+ right succeeds, and the first call through the handle
+fails `STATUS_ACCESS_DENIED`. NtGetNextThread(..., THREAD_QUERY_LIMITED_INFORMATION) handed
+back thread handles that GetThreadId could not read.
+
+**Cause.** Handle creation stores `desired & ValidAccessMask` (`obhandle.rs`, three sites:
+create, create-unnamed, duplicate), so a right outside the type's valid mask is masked off
+without an error. The ps types carried the NT5 masks the tree's `_WIN32_WINNT=0x502`
+headers spell (`PROCESS_ALL_ACCESS` 0x1F0FFF, `THREAD_ALL_ACCESS` 0x1F03FF), which have no
+LIMITED bits, while user mode built against newer headers asks for them. The two halves
+of a type must also agree: a GenericAll of 0x1FFFFF over a valid mask of 0x1F0FFF hung
+SMSS's process creation once (`ps_globals.rs`).
+
+**Fix.** Give the type the Windows-measured masks (valid mask, generic mapping, and the
+implied LIMITED grants a full right carries), and grade with a test that runs on Windows
+11 as well (`Win10Surface`'s Test_LimitedAccess). A `*_ALL_ACCESS` in a kernel crate is a
+version-dependent constant: write the value the KERNEL means, not what `0x502` expands to.
 
 ### A `#if` on a WINDOWS VERSION comes back as `#[cfg(target_arch)]`
 

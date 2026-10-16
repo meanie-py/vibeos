@@ -39,3 +39,55 @@ def test_desktop_share(tmp_path: Path) -> None:
     Image.new("RGB", (1920, 1080), (7, 7, 7)).save(dark)
     assert pi5.desktop_share(dark) == 0.0
     assert pi5.desktop_share(tmp_path / "missing.png") is None
+
+
+def test_stortest_image_is_the_volume_stortest_looks_for(tmp_path: Path) -> None:
+    import shutil
+    import subprocess
+
+    if not (shutil.which("mkfs.fat") and shutil.which("mtype")):
+        pytest.skip("dosfstools/mtools not installed")
+    img = tmp_path / "vibeusb.img"
+    pi5.stortest_image(img)
+    label = subprocess.run(["mlabel", "-i", str(img), "-s", "::"], capture_output=True, text=True)
+    assert pi5.STORTEST_LABEL in label.stdout
+    marker = subprocess.run(["mtype", "-i", str(img), "::MARKER.TXT"], capture_output=True)
+    assert b"vibeos usb e2e marker" in marker.stdout
+    assert pi5.stortest_readback(img) is None  # stortest has not written yet
+
+
+def test_stortest_verdict() -> None:
+    running = "[STORTEST] start\n[STORTEST] found VIBEUSB at E:\n"
+    assert pi5.stortest_verdict(running)[0] is None
+    ok = running + "[STORTEST] write+readback OK (43 bytes)\n[STORTEST] ALL OK drive E:\n"
+    assert pi5.stortest_verdict(ok) == ("ok", [*running.split("\n")[:2], *ok.split("\n")[2:4]])
+    assert pi5.stortest_verdict("[STORTEST] FAILURES (see above)\n")[0] == "fail"
+    assert (
+        pi5.stortest_verdict("[STORTEST] FAIL: no VIBEUSB volume found after 120s\n")[0] == "fail"
+    )
+
+
+def test_stage_appends_loader_options_to_every_entry() -> None:
+    import os
+    import subprocess
+
+    repo = Path(__file__).resolve().parents[3]
+    stage = repo / "tools" / "pi5" / "stage.sh"
+
+    def ini(**env: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["bash", str(stage), "--freeldr-ini"],
+            env={**os.environ, **env},
+            capture_output=True,
+        )
+
+    # Bytes, not text: the file is CRLF and the CR must survive the edit.
+    plain = [ln for ln in ini().stdout.split(b"\n") if ln.startswith(b"Options=")]
+    extra = [
+        ln
+        for ln in ini(VIBEOS_LOADER_OPTIONS="/STORTEST").stdout.split(b"\n")
+        if ln.startswith(b"Options=")
+    ]
+    assert plain and len(extra) == len(plain)
+    assert all(e == p[:-1] + b" /STORTEST\r" for p, e in zip(plain, extra, strict=True))
+    assert ini(VIBEOS_LOADER_OPTIONS="/X|Y").returncode == 2

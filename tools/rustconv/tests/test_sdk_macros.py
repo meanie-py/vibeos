@@ -193,6 +193,15 @@ def test_a_callback_cast_coerces_and_reaches_an_integer_through_its_bits(monkeyp
     assert "core::mem::transmute::<PFNLVCOMPARE, usize>(" in out and " as PFNLVCOMPARE" not in out
 
 
+def test_an_integer_cast_to_a_callback_is_refused(monkeypatch):
+    """wininet's INTERNET_INVALID_STATUS_CALLBACK, `(INTERNET_STATUS_CALLBACK)(-1L)`: a
+    sentinel pointer, not a fn: no Rust constant can hold it (const eval rejects a fn pointer
+    to no fn), and `let __cb: Option<fn> = -1` does not compile either."""
+    monkeypatch.setattr(sdk_macros, "_OPTION_TYPES", {"INTERNET_STATUS_CALLBACK"})
+    with pytest.raises(LowerError):
+        lower_expansion("((INTERNET_STATUS_CALLBACK)(-1L))", {"INTERNET_STATUS_CALLBACK"})
+
+
 def test_pointer_minus_pointer_is_refused(monkeypatch):
     monkeypatch.setattr(sdk_macros, "_POINTER_TYPES", {"PUCHAR"})
     with pytest.raises(LowerError):

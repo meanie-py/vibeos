@@ -11,6 +11,10 @@ use ntkrnl_sys::probe::*;
 use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
+// NT6 THREAD_ALL_ACCESS (the SDK name means the NT5 0x1F03FF at this tree's 0x502): the
+// thread type's ValidAccessMask, and what the creator's pseudo-handle access holds.
+const THREAD_ALL_ACCESS_NT6: ACCESS_MASK = 0x001FFFFF;
+
 extern "system" {
 
     static mut CcPfEnablePrefetcher: BOOLEAN;
@@ -688,9 +692,10 @@ unsafe fn PspCreateThread(
         (*Thread).GrantedAccess |= THREAD_TERMINATE
             | THREAD_SET_INFORMATION
             | THREAD_QUERY_INFORMATION
+            | THREAD_SET_LIMITED_INFORMATION
             | THREAD_QUERY_LIMITED_INFORMATION;
     } else {
-        (*Thread).GrantedAccess = THREAD_ALL_ACCESS;
+        (*Thread).GrantedAccess = THREAD_ALL_ACCESS_NT6;
     }
 
     KeReadyThread(&mut (*Thread).Tcb);
@@ -1105,7 +1110,7 @@ pub unsafe extern "system" fn NtOpenThread(
 
     if SeSinglePrivilegeCheck(SeDebugPrivilege, PreviousMode) != 0 {
         if AccessState.RemainingDesiredAccess & MAXIMUM_ALLOWED != 0 {
-            AccessState.PreviouslyGrantedAccess |= THREAD_ALL_ACCESS;
+            AccessState.PreviouslyGrantedAccess |= THREAD_ALL_ACCESS_NT6;
         } else {
             AccessState.PreviouslyGrantedAccess |= AccessState.RemainingDesiredAccess;
         }

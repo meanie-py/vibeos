@@ -125,3 +125,67 @@ def test_a_win32_executable_keeps_its_keyword_ahead_of_the_sources():
     )
     out = generate(cml)
     assert "add_executable(testgui_c WIN32 EXCLUDE_FROM_ALL testgui.c)" in out, out
+
+
+def _git(repo, *args):
+    import subprocess
+
+    subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@t", *args],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+
+
+_PLAIN_C = """\
+list(APPEND SOURCE
+    a.c
+    b.c
+    precomp.h)
+
+add_executable(cs ${SOURCE} rsrc.rc)
+target_link_libraries(cs uuid wine)
+set_module_type(cs win32cui UNICODE)
+add_importlibs(cs ole32 msvcrt kernel32 ntdll)
+add_cd_file(TARGET cs DESTINATION reactos/system32 FOR all)
+"""
+
+_CARGO = """\
+# The translated C, kept on disk:
+# a.c  # replaced by Rust (sdk/lib/rust/cs-rust/src/a.rs)
+# b.c  # replaced by Rust (sdk/lib/rust/cs-rust/src/b.rs)
+add_library(cs_res OBJECT rsrc.rc)
+add_cargo_module(cs cs-cargo cs.exe
+    KIND win32exe
+    BODY_CRATE cs-rust)
+"""
+
+
+def test_a_cargo_module_is_oracled_from_its_pre_cargo_text(tmp_path):
+    """cscript: flipped AND moved to cargo in one commit. The cargo text says nothing about
+    how cmake built it; the text before that commit is the C build, minus the flip."""
+    _git(tmp_path, "init", "-q")
+    cml = tmp_path / "CMakeLists.txt"
+    cml.write_text(_PLAIN_C)
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "c")
+    cml.write_text(_CARGO)
+    _git(tmp_path, "commit", "-qam", "cargo")
+    assert co.write(tmp_path) is False
+    out = (tmp_path / "c_oracle.cmake").read_text()
+    assert "set(SOURCE_C_ORACLE\n    a.c\n    b.c\n    precomp.h\n)" in out
+    assert "add_executable(cs_c EXCLUDE_FROM_ALL ${SOURCE_C_ORACLE} rsrc.rc)" in out
+    assert "add_importlibs(cs_c ole32 msvcrt kernel32 ntdll)" in out
+    assert "add_cd_file" not in out and "cargo" not in out
+    _git(tmp_path, "commit", "-qam", "include the oracle")
+    assert co.write(tmp_path, check=True) is True  # later commits do not move the source
+
+
+def test_a_module_born_cargo_says_so(tmp_path):
+    _git(tmp_path, "init", "-q")
+    (tmp_path / "CMakeLists.txt").write_text(_CARGO)
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "born cargo")
+    with pytest.raises(co.OracleError, match="born in cargo form"):
+        co.write(tmp_path)

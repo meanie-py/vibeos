@@ -778,14 +778,17 @@ unsafe fn ObpIncrementHandleCount(
     ObpReleaseObjectLock(object_header);
 
     // The handle's access is settled HERE, before the open procedure, so the type can
-    // widen it: the thread type adds the NT6 *_LIMITED_INFORMATION rights that its full
-    // query/set rights imply (upstream f71318e5d6a). Callers without an access state
-    // (inherit, duplicate within the source's rights) pass the access they already hold.
+    // widen it: the NT6 *_LIMITED_INFORMATION rights that the full query/set rights imply
+    // (ObpAddImpliedAccess; upstream does the thread half in PspThreadOpen, f71318e5d6a).
+    // Callers without an access state (inherit, duplicate within the source's rights) pass
+    // the access they already hold.
     if !access_state.is_null() {
         let desired_access =
             (*access_state).RemainingDesiredAccess | (*access_state).PreviouslyGrantedAccess;
-        *granted_access =
-            desired_access & ((*object_type).TypeInfo.ValidAccessMask | ACCESS_SYSTEM_SECURITY);
+        *granted_access = ObpAddImpliedAccess(
+            object_type,
+            desired_access & ((*object_type).TypeInfo.ValidAccessMask | ACCESS_SYSTEM_SECURITY),
+        );
     }
 
     status = STATUS_SUCCESS;
@@ -976,6 +979,50 @@ unsafe fn ObpIncrementUnnamedHandleCount(
     status
 }
 
+
+// NT6: a full information right implies its LIMITED counterpart, so code that asks for
+// PROCESS_QUERY_LIMITED_INFORMATION (or the thread one) works through any handle opened
+// the old way. Measured on Windows 11: a process opened for 0x1F0FFF is granted
+// 0x1F3FFF, a thread opened for 0x1F03FF is granted 0x1F1FFF, and each right below
+// brings its partner alone. Applied wherever a handle's GrantedAccess is computed
+// (create, create-unnamed, duplicate).
+const PROCESS_SET_INFORMATION_: ACCESS_MASK = 0x0200;
+const PROCESS_QUERY_INFORMATION_: ACCESS_MASK = 0x0400;
+const PROCESS_QUERY_LIMITED_INFORMATION_: ACCESS_MASK = 0x1000;
+const PROCESS_SET_LIMITED_INFORMATION_: ACCESS_MASK = 0x2000;
+const THREAD_SUSPEND_RESUME_: ACCESS_MASK = 0x0002;
+const THREAD_SET_INFORMATION_: ACCESS_MASK = 0x0020;
+const THREAD_QUERY_INFORMATION_: ACCESS_MASK = 0x0040;
+const THREAD_SET_LIMITED_INFORMATION_: ACCESS_MASK = 0x0400;
+const THREAD_QUERY_LIMITED_INFORMATION_: ACCESS_MASK = 0x0800;
+const THREAD_RESUME_: ACCESS_MASK = 0x1000;
+
+extern "C" {
+    static mut PsThreadType: POBJECT_TYPE;
+}
+
+unsafe fn ObpAddImpliedAccess(object_type: POBJECT_TYPE, mut access: ACCESS_MASK) -> ACCESS_MASK {
+    if object_type == PsProcessType {
+        if access & PROCESS_QUERY_INFORMATION_ != 0 {
+            access |= PROCESS_QUERY_LIMITED_INFORMATION_;
+        }
+        if access & PROCESS_SET_INFORMATION_ != 0 {
+            access |= PROCESS_SET_LIMITED_INFORMATION_;
+        }
+    } else if object_type == PsThreadType {
+        if access & THREAD_QUERY_INFORMATION_ != 0 {
+            access |= THREAD_QUERY_LIMITED_INFORMATION_;
+        }
+        if access & THREAD_SET_INFORMATION_ != 0 {
+            access |= THREAD_SET_LIMITED_INFORMATION_;
+        }
+        if access & THREAD_SUSPEND_RESUME_ != 0 {
+            access |= THREAD_RESUME_;
+        }
+    }
+    access
+}
+
 unsafe fn ObpCreateUnnamedHandle(
     object: PVOID,
     mut desired_access: ACCESS_MASK,
@@ -1031,8 +1078,8 @@ unsafe fn ObpCreateUnnamedHandle(
         return status;
     }
 
-    granted_access = desired_access
-        & ((*object_type).TypeInfo.ValidAccessMask | ACCESS_SYSTEM_SECURITY);
+    granted_access = ObpAddImpliedAccess(object_type, desired_access
+        & ((*object_type).TypeInfo.ValidAccessMask | ACCESS_SYSTEM_SECURITY));
 
     if additional_references != 0 {
         InterlockedExchangeAddSizeT(
@@ -1665,8 +1712,8 @@ pub unsafe extern "system" fn ObDuplicateObject(
         );
     }
 
-    target_access = desired_access
-        & ((*object_type).TypeInfo.ValidAccessMask | ACCESS_SYSTEM_SECURITY);
+    target_access = ObpAddImpliedAccess(object_type, desired_access
+        & ((*object_type).TypeInfo.ValidAccessMask | ACCESS_SYSTEM_SECURITY));
     new_handle_entry.__bindgen_anon_2.GrantedAccess = target_access;
 
     if target_access & !source_access != 0 {

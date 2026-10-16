@@ -247,6 +247,60 @@ pub unsafe extern "system" fn PsReferenceProcessFilePointer(
     if !section.is_null() { STATUS_SUCCESS } else { STATUS_UNSUCCESSFUL }
 }
 
+// Info classes Windows answers through a handle holding only the LIMITED query right
+// (PROCESS_QUERY_LIMITED_INFORMATION 0x1000 / THREAD_QUERY_LIMITED_INFORMATION 0x800).
+// Measured on Windows 11 by opening the current process/thread for the LIMITED right
+// alone and querying every class with a correctly sized buffer; every class not listed
+// answered ACCESS_DENIED there and needs the full QUERY_INFORMATION right. A handle
+// opened for the full right holds the LIMITED one too (ob-rust's ObpAddImpliedAccess),
+// so this only widens what a LIMITED handle can do.
+const PROCESS_QUERY_LIMITED_CLASSES: &[i32] = &[
+    0, 1, 2, 3, 4, 12, 14, 18, 20, 21, 22, 24, 26, 27, 29, 33, 37, 38, 39, 43, 45, 46, 49,
+    50, 52, 60, 61, 64, 66, 67, 69, 70, 71, 72, 74, 75, 76, 77, 82, 87, 88, 92, 94, 96, 109,
+    110, 111, 114,
+];
+const THREAD_QUERY_LIMITED_CLASSES: &[i32] = &[
+    0, 1, 14, 20, 22, 23, 24, 25, 30, 33, 35, 36, 38, 39, 40, 41, 42, 43, 45, 54, 55, 59,
+];
+
+// The same measurement for NtSetInformation{Process,Thread} (a throwaway suspended child
+// process and thread, zero-filled buffers): only these classes accept a handle holding
+// just PROCESS_SET_LIMITED_INFORMATION 0x2000 / THREAD_SET_LIMITED_INFORMATION 0x400.
+const PROCESS_SET_LIMITED_CLASSES: &[i32] = &[25, 66, 72, 95];
+const THREAD_SET_LIMITED_CLASSES: &[i32] = &[3, 14, 38, 39];
+
+fn process_set_access(class: PROCESSINFOCLASS) -> ACCESS_MASK {
+    if PROCESS_SET_LIMITED_CLASSES.contains(&(class as i32)) {
+        PROCESS_SET_LIMITED_INFORMATION
+    } else {
+        PROCESS_SET_INFORMATION
+    }
+}
+
+fn thread_set_access(class: THREADINFOCLASS) -> ACCESS_MASK {
+    if THREAD_SET_LIMITED_CLASSES.contains(&(class as i32)) {
+        THREAD_SET_LIMITED_INFORMATION
+    } else {
+        THREAD_SET_INFORMATION
+    }
+}
+
+fn process_query_access(class: PROCESSINFOCLASS) -> ACCESS_MASK {
+    if PROCESS_QUERY_LIMITED_CLASSES.contains(&(class as i32)) {
+        PROCESS_QUERY_LIMITED_INFORMATION
+    } else {
+        PROCESS_QUERY_INFORMATION
+    }
+}
+
+fn thread_query_access(class: THREADINFOCLASS) -> ACCESS_MASK {
+    if THREAD_QUERY_LIMITED_CLASSES.contains(&(class as i32)) {
+        THREAD_QUERY_LIMITED_INFORMATION
+    } else {
+        THREAD_QUERY_INFORMATION
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn NtQueryInformationProcess(
     ProcessHandle: HANDLE,
@@ -262,6 +316,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
     let mut Status: NTSTATUS;
     let mut Length: ULONG = 0;
+    let QueryAccess = process_query_access(ProcessInformationClass);
 
     Status = DefaultQueryInfoBufferCheck(
         ProcessInformationClass,
@@ -307,7 +362,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
 
                 Status = ObReferenceObjectByHandle(
                     ProcessHandle,
-                    PROCESS_QUERY_INFORMATION,
+                    QueryAccess,
                     PsProcessType,
                     PreviousMode,
                     &mut Process as *mut _ as *mut PVOID,
@@ -341,7 +396,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
 
                 Status = ObReferenceObjectByHandle(
                     ProcessHandle,
-                    PROCESS_QUERY_INFORMATION,
+                    QueryAccess,
                     PsProcessType,
                     PreviousMode,
                     &mut Process as *mut _ as *mut PVOID,
@@ -403,7 +458,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
 
                 Status = ObReferenceObjectByHandle(
                     ProcessHandle,
-                    PROCESS_QUERY_INFORMATION,
+                    QueryAccess,
                     PsProcessType,
                     PreviousMode,
                     &mut Process as *mut _ as *mut PVOID,
@@ -445,7 +500,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
 
                 Status = ObReferenceObjectByHandle(
                     ProcessHandle,
-                    PROCESS_QUERY_INFORMATION,
+                    QueryAccess,
                     PsProcessType,
                     PreviousMode,
                     &mut Process as *mut _ as *mut PVOID,
@@ -472,7 +527,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
 
                 Status = ObReferenceObjectByHandle(
                     ProcessHandle,
-                    PROCESS_QUERY_INFORMATION,
+                    QueryAccess,
                     PsProcessType,
                     PreviousMode,
                     &mut Process as *mut _ as *mut PVOID,
@@ -504,7 +559,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
 
                 Status = ObReferenceObjectByHandle(
                     ProcessHandle,
-                    PROCESS_QUERY_INFORMATION,
+                    QueryAccess,
                     PsProcessType,
                     PreviousMode,
                     &mut Process as *mut _ as *mut PVOID,
@@ -532,7 +587,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
 
                 Status = ObReferenceObjectByHandle(
                     ProcessHandle,
-                    PROCESS_QUERY_INFORMATION,
+                    QueryAccess,
                     PsProcessType,
                     PreviousMode,
                     &mut Process as *mut _ as *mut PVOID,
@@ -556,7 +611,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
             } else {
                 Status = ObReferenceObjectByHandle(
                     ProcessHandle,
-                    PROCESS_QUERY_INFORMATION,
+                    QueryAccess,
                     PsProcessType,
                     PreviousMode,
                     &mut Process as *mut _ as *mut PVOID,
@@ -591,7 +646,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
 
                 Status = ObReferenceObjectByHandle(
                     ProcessHandle,
-                    PROCESS_QUERY_INFORMATION,
+                    QueryAccess,
                     PsProcessType,
                     PreviousMode,
                     &mut Process as *mut _ as *mut PVOID,
@@ -616,7 +671,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
 
                 Status = ObReferenceObjectByHandle(
                     ProcessHandle,
-                    PROCESS_QUERY_INFORMATION,
+                    QueryAccess,
                     PsProcessType,
                     PreviousMode,
                     &mut Process as *mut _ as *mut PVOID,
@@ -650,7 +705,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
 
                     Status = ObReferenceObjectByHandle(
                         ProcessHandle,
-                        PROCESS_QUERY_INFORMATION,
+                        QueryAccess,
                         PsProcessType,
                         PreviousMode,
                         &mut Process as *mut _ as *mut PVOID,
@@ -670,7 +725,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
 
                     Status = ObReferenceObjectByHandle(
                         ProcessHandle,
-                        PROCESS_QUERY_INFORMATION,
+                        QueryAccess,
                         PsProcessType,
                         PreviousMode,
                         &mut Process as *mut _ as *mut PVOID,
@@ -694,7 +749,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
 
                 Status = ObReferenceObjectByHandle(
                     ProcessHandle,
-                    PROCESS_QUERY_INFORMATION,
+                    QueryAccess,
                     PsProcessType,
                     PreviousMode,
                     &mut Process as *mut _ as *mut PVOID,
@@ -715,7 +770,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
 
             Status = ObReferenceObjectByHandle(
                 ProcessHandle,
-                PROCESS_QUERY_INFORMATION,
+                QueryAccess,
                 PsProcessType,
                 PreviousMode,
                 &mut Process as *mut _ as *mut PVOID,
@@ -749,7 +804,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
 
             Status = ObReferenceObjectByHandle(
                 ProcessHandle,
-                PROCESS_QUERY_INFORMATION,
+                QueryAccess,
                 PsProcessType,
                 PreviousMode,
                 &mut Process as *mut _ as *mut PVOID,
@@ -798,7 +853,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
 
                 Status = ObReferenceObjectByHandle(
                     ProcessHandle,
-                    PROCESS_QUERY_INFORMATION,
+                    QueryAccess,
                     PsProcessType,
                     PreviousMode,
                     &mut Process as *mut _ as *mut PVOID,
@@ -824,7 +879,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
 
                 Status = ObReferenceObjectByHandle(
                     ProcessHandle,
-                    PROCESS_QUERY_INFORMATION,
+                    QueryAccess,
                     PsProcessType,
                     PreviousMode,
                     &mut Process as *mut _ as *mut PVOID,
@@ -902,7 +957,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
 
                 Status = ObReferenceObjectByHandle(
                     ProcessHandle,
-                    PROCESS_QUERY_INFORMATION,
+                    QueryAccess,
                     PsProcessType,
                     PreviousMode,
                     &mut Process as *mut _ as *mut PVOID,
@@ -950,7 +1005,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
 
                 Status = ObReferenceObjectByHandle(
                     ProcessHandle,
-                    PROCESS_QUERY_INFORMATION,
+                    QueryAccess,
                     PsProcessType,
                     PreviousMode,
                     &mut Process as *mut _ as *mut PVOID,
@@ -977,7 +1032,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
 
                 Status = ObReferenceObjectByHandle(
                     ProcessHandle,
-                    PROCESS_QUERY_INFORMATION,
+                    QueryAccess,
                     PsProcessType,
                     PreviousMode,
                     &mut Process as *mut _ as *mut PVOID,
@@ -1103,7 +1158,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
         return Status;
     }
 
-    Access = PROCESS_SET_INFORMATION;
+    Access = process_set_access(ProcessInformationClass);
     if ProcessInformationClass == ProcessSessionInformation {
         Access |= PROCESS_SET_SESSIONID;
     } else if ProcessInformationClass == ProcessExceptionPort {
@@ -1538,6 +1593,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
     ThreadInformation: PVOID,
     ThreadInformationLength: ULONG,
 ) -> NTSTATUS {
+    let SetAccess = thread_set_access(ThreadInformationClass);
     let ThreadHandle = opaque_ptr(ThreadHandle);
     let ThreadInformation = opaque_ptr(ThreadInformation);
     let mut Thread: PETHREAD = core::ptr::null_mut();
@@ -1584,7 +1640,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
                         HasPrivilege = SeCheckPrivilegedObject(
                             SeIncreaseBasePriorityPrivilege,
                             ThreadHandle,
-                            THREAD_SET_INFORMATION,
+                            SetAccess,
                             PreviousMode,
                         );
                         if HasPrivilege == 0 {
@@ -1594,7 +1650,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
 
                     Status = ObReferenceObjectByHandle(
                         ThreadHandle,
-                        THREAD_SET_INFORMATION,
+                        SetAccess,
                         PsThreadType,
                         PreviousMode,
                         &mut Thread as *mut _ as *mut PVOID,
@@ -1626,7 +1682,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
                         } else {
                             Status = ObReferenceObjectByHandle(
                                 ThreadHandle,
-                                THREAD_SET_INFORMATION,
+                                SetAccess,
                                 PsThreadType,
                                 PreviousMode,
                                 &mut Thread as *mut _ as *mut PVOID,
@@ -1640,7 +1696,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
                     } else {
                         Status = ObReferenceObjectByHandle(
                             ThreadHandle,
-                            THREAD_SET_INFORMATION,
+                            SetAccess,
                             PsThreadType,
                             PreviousMode,
                             &mut Thread as *mut _ as *mut PVOID,
@@ -1654,7 +1710,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
                 } else {
                     Status = ObReferenceObjectByHandle(
                         ThreadHandle,
-                        THREAD_SET_INFORMATION,
+                        SetAccess,
                         PsThreadType,
                         PreviousMode,
                         &mut Thread as *mut _ as *mut PVOID,
@@ -1679,7 +1735,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
                 } else {
                     Status = ObReferenceObjectByHandle(
                         ThreadHandle,
-                        THREAD_SET_INFORMATION,
+                        SetAccess,
                         PsThreadType,
                         PreviousMode,
                         &mut Thread as *mut _ as *mut PVOID,
@@ -1742,7 +1798,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
 
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
-                    THREAD_SET_INFORMATION,
+                    SetAccess,
                     PsThreadType,
                     PreviousMode,
                     &mut Thread as *mut _ as *mut PVOID,
@@ -1757,27 +1813,30 @@ pub unsafe extern "system" fn NtSetInformationThread(
         }
 
         ThreadIdealProcessor => {
-            if ThreadInformationLength != core::mem::size_of::<ULONG_PTR>() as ULONG {
+            // A ULONG on every arch (Windows 11 accepts exactly 4 bytes), and the success
+            // status is the PREVIOUS ideal processor, which kernel32's SetThreadIdealProcessor
+            // returns as its result. The C wanted a ULONG_PTR and returned STATUS_SUCCESS.
+            if ThreadInformationLength != core::mem::size_of::<ULONG>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                IdealProcessor = match ntkrnl_sys::probe::read_back(ThreadInformation as *const ULONG_PTR) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
+                IdealProcessor = match ntkrnl_sys::probe::read_back(ThreadInformation as PULONG) { Ok(v) => v as ULONG_PTR, Err(s) => { Status = s; break 'class; } };
 
                 if IdealProcessor > MAXIMUM_PROCESSORS as ULONG_PTR {
                     Status = STATUS_INVALID_PARAMETER;
                 } else {
                     Status = ObReferenceObjectByHandle(
                         ThreadHandle,
-                        THREAD_SET_INFORMATION,
+                        SetAccess,
                         PsThreadType,
                         PreviousMode,
                         &mut Thread as *mut _ as *mut PVOID,
                         core::ptr::null_mut(),
                     );
                     if Status >= 0 {
-                        KeSetIdealProcessorThread(
+                        Status = KeSetIdealProcessorThread(
                             core::ptr::addr_of_mut!((*(Thread as *mut _ETHREAD)).Tcb),
                             IdealProcessor as UCHAR,
-                        );
+                        ) as NTSTATUS;
 
                         Teb = (*(Thread as *mut _ETHREAD)).Tcb.Teb;
                         if !Teb.is_null() && (ExAcquireRundownProtection(core::ptr::addr_of_mut!((*(Thread as *mut _ETHREAD)).RundownProtect)) != 0) {
@@ -1793,21 +1852,24 @@ pub unsafe extern "system" fn NtSetInformationThread(
         }
 
         ThreadPriorityBoost => {
-            if ThreadInformationLength != core::mem::size_of::<ULONG_PTR>() as ULONG {
+            // A ULONG, as the query side and kernel32's SetThreadPriorityBoost have it. The C
+            // demands sizeof(ULONG_PTR), so SetThreadPriorityBoost failed with ERROR_BAD_LENGTH
+            // on every 64-bit arch; Windows 11 accepts exactly 4 bytes on x64 and x86 alike.
+            if ThreadInformationLength != core::mem::size_of::<ULONG>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                DisableBoost = match ntkrnl_sys::probe::read_back(ThreadInformation as *const ULONG_PTR) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
+                DisableBoost = match ntkrnl_sys::probe::read_back(ThreadInformation as PULONG) { Ok(v) => v as ULONG_PTR, Err(s) => { Status = s; break 'class; } };
 
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
-                    THREAD_SET_INFORMATION,
+                    SetAccess,
                     PsThreadType,
                     PreviousMode,
                     &mut Thread as *mut _ as *mut PVOID,
                     core::ptr::null_mut(),
                 );
                 if Status >= 0 {
-                    KeSetDisableBoostThread(core::ptr::addr_of_mut!((*(Thread as *mut _ETHREAD)).Tcb), DisableBoost as BOOLEAN);
+                    KeSetDisableBoostThread(core::ptr::addr_of_mut!((*(Thread as *mut _ETHREAD)).Tcb), (DisableBoost != 0) as BOOLEAN);
 
                     ObDereferenceObject(Thread as PVOID);
                 }
@@ -1822,7 +1884,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
 
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
-                    THREAD_SET_INFORMATION,
+                    SetAccess,
                     PsThreadType,
                     PreviousMode,
                     &mut Thread as *mut _ as *mut PVOID,
@@ -1903,7 +1965,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
                 } else {
                     Status = ObReferenceObjectByHandle(
                         ThreadHandle,
-                        THREAD_SET_INFORMATION,
+                        SetAccess,
                         PsThreadType,
                         PreviousMode,
                         &mut Thread as *mut _ as *mut PVOID,
@@ -1928,7 +1990,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
             } else {
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
-                    THREAD_SET_INFORMATION,
+                    SetAccess,
                     PsThreadType,
                     PreviousMode,
                     &mut Thread as *mut _ as *mut PVOID,
@@ -1964,6 +2026,7 @@ pub unsafe extern "system" fn NtQueryInformationThread(
     let mut Thread: PETHREAD = core::ptr::null_mut();
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
     let mut Status: NTSTATUS;
+    let Access: ULONG;
     let mut Length: ULONG = 0;
     let mut OldIrql: KIRQL = 0;
     let mut ThreadTerminated: ULONG;
@@ -1982,6 +2045,8 @@ pub unsafe extern "system" fn NtQueryInformationThread(
     if Status < 0 {
         return Status;
     }
+
+    Access = thread_query_access(ThreadInformationClass);
 
     // The C fills ThreadInformation in place under _SEH2_TRY; a user-mode caller's
     // buffer is a pool copy here, copied back once at the end (OutputBounce).
@@ -2003,7 +2068,7 @@ pub unsafe extern "system" fn NtQueryInformationThread(
             } else {
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
-                    THREAD_QUERY_LIMITED_INFORMATION,
+                    Access,
                     PsThreadType,
                     PreviousMode,
                     &mut Thread as *mut _ as *mut PVOID,
@@ -2031,7 +2096,7 @@ pub unsafe extern "system" fn NtQueryInformationThread(
             } else {
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
-                    THREAD_QUERY_LIMITED_INFORMATION,
+                    Access,
                     PsThreadType,
                     PreviousMode,
                     &mut Thread as *mut _ as *mut PVOID,
@@ -2062,7 +2127,7 @@ pub unsafe extern "system" fn NtQueryInformationThread(
             } else {
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
-                    THREAD_QUERY_INFORMATION,
+                    Access,
                     PsThreadType,
                     PreviousMode,
                     &mut Thread as *mut _ as *mut PVOID,
@@ -2084,7 +2149,7 @@ pub unsafe extern "system" fn NtQueryInformationThread(
             } else {
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
-                    THREAD_QUERY_INFORMATION,
+                    Access,
                     PsThreadType,
                     PreviousMode,
                     &mut Thread as *mut _ as *mut PVOID,
@@ -2115,6 +2180,7 @@ pub unsafe extern "system" fn NtQueryInformationThread(
                 // in its unreachable loop: svchost's main thread did it on arm64 once its
                 // services had all exited. Upstream reached the same answer in 32bb061415f.
                 *(ThreadInformation as PULONG) = ((*process).ActiveThreads == 1) as ULONG;
+                Status = STATUS_SUCCESS;
             }
         }
 
@@ -2126,7 +2192,7 @@ pub unsafe extern "system" fn NtQueryInformationThread(
             } else {
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
-                    THREAD_QUERY_INFORMATION,
+                    Access,
                     PsThreadType,
                     PreviousMode,
                     &mut Thread as *mut _ as *mut PVOID,
@@ -2154,7 +2220,7 @@ pub unsafe extern "system" fn NtQueryInformationThread(
             {
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
-                    THREAD_QUERY_INFORMATION,
+                    Access,
                     PsThreadType,
                     PreviousMode,
                     &mut Thread as *mut _ as *mut PVOID,
@@ -2185,7 +2251,7 @@ pub unsafe extern "system" fn NtQueryInformationThread(
             } else {
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
-                    THREAD_QUERY_LIMITED_INFORMATION,
+                    Access,
                     PsThreadType,
                     PreviousMode,
                     &mut Thread as *mut _ as *mut PVOID,
@@ -2210,7 +2276,7 @@ pub unsafe extern "system" fn NtQueryInformationThread(
             } else {
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
-                    THREAD_QUERY_INFORMATION,
+                    Access,
                     PsThreadType,
                     PreviousMode,
                     &mut Thread as *mut _ as *mut PVOID,
@@ -2234,7 +2300,7 @@ pub unsafe extern "system" fn NtQueryInformationThread(
             } else {
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
-                    THREAD_QUERY_LIMITED_INFORMATION,
+                    Access,
                     PsThreadType,
                     PreviousMode,
                     &mut Thread as *mut _ as *mut PVOID,

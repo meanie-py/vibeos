@@ -1,0 +1,16 @@
+# virtdisk-rust — virtdisk.dll for a system with NO virtual-disk (VHD/VHDX/ISO attach) provider; see src/lib.rs.
+[package]
+name = "virtdisk-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+
+[lib]
+name = "virtdisk_rust"
+path = "src/lib.rs"
+# rlib too: the host tests (`cargo test -p virtdisk-rust --lib`) need it.
+crate-type = ["staticlib", "rlib"]
+
+# Windows-only: its `.drectve` asm does not assemble on the Linux host the tests run on.
+[target.'cfg(windows)'.dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }

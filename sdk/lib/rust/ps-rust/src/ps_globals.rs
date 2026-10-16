@@ -78,12 +78,15 @@ pub static mut KeUserPopEntrySListResume: PVOID = core::ptr::null_mut();
 // THREAD_ALERT — not in `ntkrnl_sys::constants` (yet); inline here.
 const THREAD_ALERT: ULONG = 0x0004;
 
-// GenericAll is the NT6 PROCESS_ALL_ACCESS (0x001FFFFF). It was once pinned to the NT5
-// 0x001F0FFF because the C half of the kernel still built the NT5 macro, and a table
-// wider than the C's mask hung session-manager startup. Upstream 4b4063a01d6 moved the
-// headers to NT6 under __REACTOS__, so both halves now agree on the wide value.
+// Psp{Process,Thread}Mapping — `GENERIC_MAPPING` access-rights tables, the NT6 ones.
+// Measured on Windows 11 (RtlMapGenericMask through each type's mapping):
+//   process R=0x20410 W=0x20bea X=0x121001 A=0x1fffff
+//   thread  R=0x20048 W=0x20437 X=0x121800 A=0x1fffff
+// i.e. the NT5 tables plus the LIMITED rights. GenericAll must equal the type's
+// ValidAccessMask (psmgr.rs): when the table said 0x1FFFFF while the mask stayed
+// 0x1F0FFF, process-create access checks failed and boot hung in SMSS.
+const PS_ALL_ACCESS_NT6: ULONG = STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0xFFFF;
 
-// Psp{Process,Thread}Mapping — `GENERIC_MAPPING` access-rights tables.
 #[no_mangle]
 pub static mut PspProcessMapping: _GENERIC_MAPPING = _GENERIC_MAPPING {
     GenericRead: STANDARD_RIGHTS_READ | PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
@@ -93,12 +96,11 @@ pub static mut PspProcessMapping: _GENERIC_MAPPING = _GENERIC_MAPPING {
         | PROCESS_VM_OPERATION
         | PROCESS_VM_WRITE
         | PROCESS_DUP_HANDLE
-        | PROCESS_TERMINATE
         | PROCESS_SET_QUOTA
         | PROCESS_SET_INFORMATION
         | PROCESS_SUSPEND_RESUME,
-    GenericExecute: STANDARD_RIGHTS_EXECUTE | SYNCHRONIZE,
-    GenericAll: PROCESS_ALL_ACCESS,
+    GenericExecute: STANDARD_RIGHTS_EXECUTE | SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE,
+    GenericAll: PS_ALL_ACCESS_NT6,
 };
 
 #[no_mangle]
@@ -111,8 +113,8 @@ pub static mut PspThreadMapping: _GENERIC_MAPPING = _GENERIC_MAPPING {
         | THREAD_SET_INFORMATION
         | THREAD_SET_CONTEXT
         | THREAD_SET_LIMITED_INFORMATION,
-    GenericExecute: STANDARD_RIGHTS_EXECUTE | SYNCHRONIZE | THREAD_QUERY_LIMITED_INFORMATION,
-    GenericAll: THREAD_ALL_ACCESS,
+    GenericExecute: STANDARD_RIGHTS_EXECUTE | SYNCHRONIZE | THREAD_QUERY_LIMITED_INFORMATION | THREAD_RESUME,
+    GenericAll: PS_ALL_ACCESS_NT6,
 };
 
 // security.c

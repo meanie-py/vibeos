@@ -94,6 +94,9 @@ def test_layout_vtables_and_thunks():
     assert 'cpp_pure_virtual_call("snd::audio_receiver::audio_receive")' in rs
     # a real destructor makes Drop (and so no Copy); a destructor-free class is Copy
     assert "impl Drop for audio_membuffer" in rs
+    # ...and a polymorphic destructor runs with the class's OWN vtables, as in C++ (rapps'
+    # CPointerArray destructor reached the derived OnRemoveItem and double-deleted)
+    assert "unsafe { self.__init_vtables(); self.__dtor__body() }" in rs
     assert "#[derive(Clone, Copy)]\n#[repr(C)]\npub struct audio_producer" in rs
     assert 'Option<unsafe extern "C" fn(u32)>' in rs
 
@@ -1171,3 +1174,83 @@ def test_a_method_with_a_lifetime_parameter_is_still_moved_into_its_impl():
     assert "impl CRecentFileEntry {" in out
     assert "pub unsafe fn FileName<'a>(&mut self) -> &'a CAtlString {" in out
     assert "CRecentFileEntry__FileName" not in out
+
+
+def test_a_wide_string_global_is_a_static_of_its_units():
+    from rustconv.cpp_app import wide_string_static
+    from rustconv.cpp_model import GlobalVar
+
+    g = GlobalVar("UsageString", "const WCHAR[6]", "x.h", 'L"a\\\\\\n"')
+    assert wide_string_static(g) == "pub static UsageString: [u16; 6] = [97, 92, 10, 0, 0, 0];"
+    g = GlobalVar("s", "WCHAR []", "x.h", 'L"hi"')
+    assert wide_string_static(g) == "pub static mut s: [u16; 3] = [104, 105, 0];"
+    # Not a lone wide literal (a macro the model must resolve): the model gets it.
+    assert wide_string_static(GlobalVar("t", "const WCHAR[4]", "x.h", 'L"a" X')) is None
+    assert wide_string_static(GlobalVar("u", "const WCHAR[1]", "x.h", 'L"ab"')) is None
+
+
+def test_a_class_member_with_no_initializer_is_default_constructed():
+    # rapps: CUiContainer has no constructor of its own; its `CUiCollection m_Children`
+    # (a CPointerArray whose constructor calls DPA_Create) was left zeroed, and the first
+    # GetCount read address 0. A plain member, a pointer member and a member whose class
+    # has nothing to construct get no call.
+    arr = ClassModel(
+        "CPointerArray",
+        "CPointerArray",
+        "class",
+        "r.h",
+        polymorphic=True,
+        methods=[_m("CPointerArray", "ctor", [("GrowthRate", "INT")])],
+    )
+    arr.methods[0].params[0].default = "10"
+    coll = ClassModel(
+        "CUiCollection", "CUiCollection", "class", "r.h", [Base("CPointerArray", "public")]
+    )
+    plain = ClassModel("CPlain", "CPlain", "struct", "r.h", fields=[Field("x", "INT")])
+    cont = ClassModel(
+        "CUiContainer",
+        "CUiContainer",
+        "class",
+        "r.h",
+        fields=[
+            Field("m_Children", "CUiCollection"),
+            Field("m_pOther", "CUiCollection *"),
+            Field("m_Plain", "CPlain"),
+            Field("n", "INT"),
+        ],
+    )
+    model = ModuleModel(classes={c.name: c for c in (arr, coll, plain, cont)})
+    h = cpp_app.Hierarchy(model)
+    for c in model.classes.values():
+        _assign_names(c)
+    lines = cpp_app._ctor_prologue(cont, None, h, model)
+    assert lines == ["    this_->m_Children.__ctor_0();"]
+
+
+def test_a_qualified_base_call_is_non_virtual():
+    # rapps: CUiWindow<CToolbar>::ComputeMinimalSize's `return CUiBox::ComputeMinimalSize(size);`
+    # reached the virtual dispatcher -- its own override -- and recursed forever.
+    box = ClassModel(
+        "CUiBox",
+        "CUiBox",
+        "class",
+        "r.h",
+        polymorphic=True,
+        methods=[
+            _m("ComputeMinimalSize", params=[("size", "SIZE *")], virtual=True, body=("r.h", 0, 1)),
+            _m("Plain", body=("r.h", 0, 1)),
+        ],
+    )
+    win = ClassModel("CWin", "CWin", "class", "r.h", [Base("CUiBox", "public")], polymorphic=True)
+    model = ModuleModel(classes={c.name: c for c in (box, win)})
+    for c in model.classes.values():
+        _assign_names(c)
+    h = cpp_app.Hierarchy(model)
+    body = (
+        "{ return CUiBox::this_->__base0.ComputeMinimalSize(size); "
+        "CUiBox::this_->__base0.Plain(); CListView::this_->Create(p); }"
+    )
+    out = cpp_app._qualified_base_calls(body, h)
+    assert "this_->__base0.ComputeMinimalSize__body(size)" in out
+    assert "this_->__base0.Plain()" in out and "CUiBox::" not in out
+    assert "CListView::this_->Create(p)" in out  # no base path: left alone
