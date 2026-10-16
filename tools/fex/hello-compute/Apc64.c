@@ -142,9 +142,14 @@ static void ResetApcs(void)
 
 /* ---- thread bodies ----------------------------------------------------- */
 
+/* rung 4: set once the sleeper's routine runs. An APC queued before then is
+ * delivered by thread initialization (rung 5), BEFORE SleepEx -- which then
+ * sleeps its full 30 s and reads exactly like a lost APC. */
+static HANDLE SleeperEntered;
 static DWORD WINAPI AlertableSleeper(LPVOID Param)
 {
     (void)Param;
+    SetEvent(SleeperEntered);
     return SleepEx(30000, TRUE);
 }
 
@@ -309,19 +314,29 @@ void start(void)
     /* rung 4 */
     {
         DWORD Code = 0, Tid = 0;
+        DWORD Entered, Joined;
         ResetApcs();
+        SleeperEntered = CreateEventA(NULL, TRUE, FALSE, NULL);
         h = CreateThread(NULL, 0, AlertableSleeper, NULL, 0, &Tid);
-        if (!h)
+        if (!h || !SleeperEntered)
             Fail(TAG "rung4 CreateThread failed\n", A64_FAIL_CROSS);
-        Sleep(200); /* into its SleepEx */
+        /* Only once its routine runs, then into its SleepEx. */
+        Entered = WaitForSingleObject(SleeperEntered, 30000);
+        Sleep(200);
         QueueUserAPC(RecordApc, h, 0x4444);
-        if (WaitForSingleObject(h, 10000) != WAIT_OBJECT_0 || !GetExitCodeThread(h, &Code) ||
+        Joined = WaitForSingleObject(h, 10000);
+        if (Entered != WAIT_OBJECT_0 || Joined != WAIT_OBJECT_0 || !GetExitCodeThread(h, &Code) ||
             Code != WAIT_IO_COMPLETION || ApcCount != 1 || ApcSeen[0] != 0x4444 || ApcTid[0] != Tid)
         {
+            /* APCs run 0 with the sleeper still waiting = the APC was LOST. */
+            SayHex(TAG "rung4 sleeper started (0 = yes)", Entered);
+            SayHex(TAG "rung4 join (0 = exited)", Joined);
+            SayHex(TAG "rung4 APCs run", (ULONG_PTR)ApcCount);
             SayHex(TAG "rung4 sleeper exit", Code);
             Fail(TAG "rung4 APC to a waiting thread lost\n", A64_FAIL_CROSS);
         }
         CloseHandle(h);
+        CloseHandle(SleeperEntered);
         Say(TAG "rung4 APC into another thread's wait OK\n");
     }
 
