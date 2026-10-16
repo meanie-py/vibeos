@@ -12,13 +12,17 @@
 // pcr, dma per-item-gated). Every other module is full-HAL and is
 // `#[cfg(not(feature = "minihal"))]` so its kernel deps stay out of
 // libhal_rust_mini.a. feedback_freeldr_clean_build_regression
-// APIC interrupt-model backend (LAPIC/IOAPIC/TPR). `hal_apic` = amd64 always,
-// or i386 with the `apic` feature (i386-apic-hal lane). See build.rs.
-#[cfg(hal_apic)]
+// APIC interrupt-model backend (LAPIC/IOAPIC/TPR). The two interrupt flavors are
+// written as cfg expressions throughout this crate (a build script used to emit
+// them as `hal_apic`/`hal_pic`, which kept hal-rust out of the artifact store):
+//   APIC: any(target_arch = "x86_64", all(target_arch = "x86", feature = "apic"))
+//   PIC:  all(target_arch = "x86", not(feature = "apic"))
+// amd64 is always APIC; i386 is APIC with the `apic` feature (i386-apic-hal lane).
+#[cfg(any(target_arch = "x86_64", all(target_arch = "x86", feature = "apic")))]
 pub mod apic;
-#[cfg(hal_apic)]
+#[cfg(any(target_arch = "x86_64", all(target_arch = "x86", feature = "apic")))]
 pub mod apic_halinit;
-#[cfg(hal_apic)]
+#[cfg(any(target_arch = "x86_64", all(target_arch = "x86", feature = "apic")))]
 pub mod apictimer;
 pub mod beep;
 pub mod buildtype;
@@ -62,7 +66,7 @@ pub mod kdpci;
 // ACPI\PNP0303. File kept (never-delete). Task #4.
 #[cfg(any())]
 pub mod legacy_halpnpdd;
-#[cfg(hal_apic)]
+#[cfg(any(target_arch = "x86_64", all(target_arch = "x86", feature = "apic")))]
 pub mod madt;
 #[cfg(not(feature = "minihal"))]
 pub mod memory;
@@ -75,14 +79,14 @@ pub mod pcibus;
 pub mod pcidata;
 pub mod pcr;
 pub mod pic;
-#[cfg(all(hal_pic, not(feature = "minihal")))]
+#[cfg(all(all(target_arch = "x86", not(feature = "apic")), not(feature = "minihal")))]
 pub mod pic_halinit;
-#[cfg(hal_pic)]
+#[cfg(all(target_arch = "x86", not(feature = "apic")))]
 pub mod pic_pic;
 #[cfg(not(feature = "minihal"))]
 pub mod processor;
 pub mod reboot;
-#[cfg(hal_apic)]
+#[cfg(any(target_arch = "x86_64", all(target_arch = "x86", feature = "apic")))]
 pub mod rtctimer;
 // portio: i386 port-I/O PCI config — needed by BOTH flavors (bus/IO, not
 // interrupt-controller), so it stays keyed on the arch, not the flavor.
@@ -90,7 +94,7 @@ pub mod rtctimer;
 pub mod portio;
 // profil: RTC-based profiling for the PIC flavor. The APIC flavor profiles via
 // the LAPIC timer (apictimer), so this is hal_pic-only.
-#[cfg(all(hal_pic, not(feature = "minihal")))]
+#[cfg(all(all(target_arch = "x86", not(feature = "apic")), not(feature = "minihal")))]
 pub mod profil;
 pub mod spinlock;
 #[cfg(not(feature = "minihal"))]
@@ -99,18 +103,18 @@ pub mod sysbus;
 pub mod sysinfo;
 // timer: the 8254 PIT system clock — PIC flavor only (and the FreeLDR mini-HAL,
 // which is always hal_pic). The APIC flavor's clock is the RTC (rtctimer).
-#[cfg(hal_pic)]
+#[cfg(all(target_arch = "x86", not(feature = "apic")))]
 pub mod timer;
-#[cfg(hal_apic)]
+#[cfg(any(target_arch = "x86_64", all(target_arch = "x86", feature = "apic")))]
 pub mod tsc;
 // SMP AP-start + real-IPI backend (smp-bringup-quest.md M2/M5). Keyed on the
 // APIC flavor, not the arch: amd64 is always hal_apic, and i386 gets it on the
 // (now default) APIC HAL — SMP requires the LAPIC/IOAPIC/MADT the PIC flavor
 // lacks, so hal_pic stays UP. The colliding UP stubs in up.rs/processor.rs are
 // cfg'd out under this same condition (their stub gate flips to hal_pic).
-#[cfg(all(feature = "smp", hal_apic, not(feature = "minihal")))]
+#[cfg(all(feature = "smp", any(target_arch = "x86_64", all(target_arch = "x86", feature = "apic")), not(feature = "minihal")))]
 pub mod smp_processor;
-#[cfg(all(feature = "smp", hal_apic, not(feature = "minihal")))]
+#[cfg(all(feature = "smp", any(target_arch = "x86_64", all(target_arch = "x86", feature = "apic")), not(feature = "minihal")))]
 pub(crate) mod trampoline;
 pub mod up;
 pub mod usage;

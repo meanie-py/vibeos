@@ -48,7 +48,7 @@ pub fn is_message_token(vector: u32) -> bool {
     vector <= MESSAGE_TOKEN && vector > MESSAGE_TOKEN - MAX_MESSAGES
 }
 
-#[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), hal_apic))]
+#[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), any(target_arch = "x86_64", all(target_arch = "x86", feature = "apic"))))]
 mod imp {
     pub(super) use crate::x86::apic::{allocate_message_block, message_capacity, message_target, release_message_vector};
 }
@@ -73,7 +73,7 @@ mod imp {
 }
 
 /// No message-capable interrupt controller (the PIC HAL).
-#[cfg(not(any(all(any(target_arch = "x86", target_arch = "x86_64"), hal_apic), target_arch = "aarch64")))]
+#[cfg(not(any(all(any(target_arch = "x86", target_arch = "x86_64"), any(target_arch = "x86_64", all(target_arch = "x86", feature = "apic"))), target_arch = "aarch64")))]
 mod imp {
     use ntkrnl_sys::ddk::{KAFFINITY, KIRQL};
     pub(super) unsafe fn message_capacity() -> u32 {
