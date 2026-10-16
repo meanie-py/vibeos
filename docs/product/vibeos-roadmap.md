@@ -667,16 +667,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   passed in 128 other gate boots. A lost wakeup between `KeAlertThread`/APC insertion and the
   wait's alertable check is the first place to look.
 
-- **`apc32.exe` rung 7: kernel panic in `KiInsertQueueApc` (FLAKE, open, 2026-10-11).** Just
-  after "rung7 16 threads terminated", ntoskrnl panicked at `ke/apc.rs:138`, "index out of
-  bounds: the len is 2 but the index is 2". That is `ApcStatePointer[(*Apc).ApcStateIndex]`
-  with index 2, `CurrentApcEnvironment`. `KeInitializeApc` resolves that value (apc.rs:491), so
-  the likelier source is line 135: for an `InsertApcEnvironment` APC it copies the THREAD's own
-  `ApcStateIndex`. A KTHREAD whose index reads 2 is being torn down or already freed, and only
-  this thread-kill storm reaches that. Seen once: amd64 queue gate
-  `queue-batch-01791758650912626247/20261011-184411-z164r63f-gate-*`, which rejected
-  warnings-burndown b8eac0dccad2, a fastfat-only change. 58 other boots today passed the same
-  rung. Start with who can queue an APC to a thread that is exiting (special-pool the KTHREAD).
+- **`apc32.exe` rung 7: kernel panic in `KiInsertQueueApc` (FIXED 2026-10-15, `61998182a8f`).**
+  ntoskrnl panicked at `ke/apc.rs:138`, "index out of bounds: the len is 2 but the index is 2",
+  during the rung-7 timer/thread storm. It was not a teardown race: `NtSetTimer`'s translation
+  passed `KeInitializeApc`'s environment as a `u8` (`movb $2,%r8b`) while the callee compares
+  all of `r8d`, so stale upper bits skipped normalization and left `ApcStateIndex` 2. Fixed by
+  the DDK's 32-bit `KAPC_ENVIRONMENT` and an `extern "system"` callback (field manual: "A small
+  enum value does not make its ABI a byte"). Evidence: `queue-batch-01791758650912626247/
+  20261011-184411-z164r63f-gate-*` and `fails/auto/20261011-185307-ydzbq0v5-smoke-amd64-BUGCHECK`.
 
 - **OptiPlex USB 3 card: root hub sometimes never enumerates, and the boot stalls (FIXED
   2026-10-11, rare trigger not yet seen again on the board).** The stalled boot's log shows
