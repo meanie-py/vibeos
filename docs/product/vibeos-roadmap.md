@@ -664,8 +664,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the sleeper returns 0 and the guest exits 0xBA41. Seen 2026-10-10 in one amd64 queue gate
   (`queue-batch-01791615634859147470`, rejecting a89a87f06a30), and twice on arm64 in
   `flake-report`; the same tree then passed 6/6 `smoke --arch amd64 --ladder`, and the rung
-  passed in 128 other gate boots. A lost wakeup between `KeAlertThread`/APC insertion and the
-  wait's alertable check is the first place to look.
+  passed in 128 other gate boots. 2026-10-16: the only artifact
+  (`fails/auto/20261010-031022-9huqnnxb-smoke-amd64-LADDER_FAIL`) shows exit `Code` 0, i.e.
+  the 10 s join TIMED OUT with the sleeper still asleep. That fits a lost APC but equally an
+  APC queued before the sleeper's routine started: thread init delivers it (rung 5), and
+  SleepEx then sleeps 30 s. The old rung slept 200 ms and hoped, on a boot busy with PnP
+  installs. The kernel's insert/wait pair serializes on the dispatcher lock (no window found
+  by reading). Forcing the start race (no head start) passed 3/3, so it is NOT proven.
+  The rung now waits for the sleeper's routine to signal before queueing, and on failure
+  prints whether it started, the join result and `APCs run`. **Next hit: `APCs run 0` with
+  a started sleeper = a real lost APC (kernel); anything else names the test.**
 
 - **`apc32.exe` rung 7: kernel panic in `KiInsertQueueApc` (FIXED 2026-10-15, `61998182a8f`).**
   ntoskrnl panicked at `ke/apc.rs:138`, "index out of bounds: the len is 2 but the index is 2",
