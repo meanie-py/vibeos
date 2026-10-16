@@ -1,8 +1,5 @@
 # Native ReactOS base — translation lane (`msvcrt-homebrew` worktree)
 
-> **Resumed 2026-10-16.** control-plane's immutable-build change (the shared artifact store,
-> [`immutable-build-artifacts.md`](../immutable-build-artifacts.md)) is merged into the lane.
-
 The CRT is done on the porting axis (see [msvcrt-from-pieces-plan.md](msvcrt-from-pieces-plan.md)),
 so this worktree took on the rest of ReactOS base that no other translation lane touches. The
 other lanes are control-plane, rustconv-speedrun/cpp-cluster and shell32. Per-module status
@@ -22,52 +19,45 @@ is in [`rust-port-status.md`](../rust-port-status.md), never here.
   - hid.dll links `hidparser-rust`, so the C hidparser targets are gone.
   - The batch row in rust-port-status.md has the details.
 
-## A′ in progress: the plain-C audio stack (resume here)
+## A′: the plain-C audio stack (done 2026-10-16)
 
-Translated 2026-10-15 for **$0.66** (Haiku, 0 rejects), committed, **not flipped**: the
-CMake files still build the C, so the tree boots exactly as before. Ten crates:
-mmixer, mmebuddy, mment4, wdmaud (the .sys), wdmaud_drv (`dll/win32/wdmaud.drv`, stem
-`wdmaud_drv`), kmixer, sysaudio (the four TUs beside the pilot's `pin.rs`), mmdrv, beepmidi,
-sndblst. Port state is in `~/vibeos-rust-staging/port/<stem>/`, logs in
-`~/vibeos-rust-staging/batch-a/`. Not in the batch: `uartmidi`, `shared` (`audio`),
-`legacy` (`audioleg`) and `soundblaster` are built or present but nothing links them (prune
-candidates); everything C++ belongs to cpp-cluster.
+Ten modules on Haiku for **$0.66**, all flipped and booting on three arches: mmixer,
+mmebuddy, mment4, wdmaud.sys, wdmaud.drv (stem `wdmaud_drv`), kmixer, sysaudio, mmdrv,
+beepmidi and sndblst. The row in rust-port-status.md has the details; port state is in
+`~/vibeos-rust-staging/port/<stem>/` with the hand fixes banked. Not in the batch:
+`uartmidi`, `shared` (`audio`), `legacy` (`audioleg`) and `soundblaster` are built or
+present but nothing links them (prune candidates); everything C++ belongs to cpp-cluster.
 
-**sysaudio is flipped (2026-10-16)**: all five TUs are Rust, and `rust_cohab_stub.c` is the
-MODULE's only C source. It had to go first. The wip commit swapped the pilot's `lib.rs`
-(`pin` only) for the scaffold's, so CMake's existing `sysaudio-rust` build compiled the
-four red modules and broke the build on every arch. A crate CMake already builds is never
-"not flipped". Fixes: a stray `use crate::types::*;` in each of the four files (ambiguous
-with the prelude's TRUE/FALSE), explicit `ntkrnl_sys::ddk` imports in `pin.rs`, and
-`KSDATAFORMAT` fields reached as `.c2rust_unnamed.X` places, not through `Deref`, since a
-`Deref` borrow inside the packed `KSDATAFORMAT_WAVEFORMATEX` is E0793.
+Lessons a resume or the next batch should know:
+- **A crate CMake already builds is never "not flipped."** sysaudio's CMake built
+  `sysaudio-rust` for the pilot's `pin.rs`, so swapping in the scaffold's `lib.rs` put four
+  red modules into every arch's build. Grep CMake for the crate before scaffolding over it.
+- **Don't edit sources while a build runs.** The artifact store snapshots each body's inputs
+  and rejects a result whose lane inputs changed mid-build ("lane inputs changed; result
+  rejected"). Editing ntkrnl-sys during an i386 build failed win32k's link.
+- **A dual-mode library crate** (mmixer: kernel in wdmaud.sys, user in wdmaud.drv) takes
+  `kernel`/`user` features mapped onto panic-common's, like hidparser-rust. The scanners
+  judge its kernel island against the user consumer's import libraries, so an uncalled
+  kernel declaration can still be reported (the two SList entries in scan_import_cc's
+  baseline).
+- **A header FORCEINLINE that is an import on one arch** (`KeSaveFloatingPointState`)
+  belongs in `ntkrnl_sys::inline`, per arch. The island's extern links on x86 and
+  fails on arm64.
 
-`cargo check` state (amd64): beepmidi, mmdrv, sndblst, mmebuddy, mment4 and sysaudio at 0;
-kmixer, wdmaud, wdmaud_drv and mmixer still red. To resume, run, per crate,
-`port resolve` → `crate-repair <crate>-rust --arches i386 amd64 arm64` → `port check`, then
-hand-fix what is left:
-- **Copy_0** (mmixer, wdmaud, wdmaud_drv): crate-repair's keyword-field rule now renames it
-  to the island's `Copy` when rustc offers that name; one repair pass should clear it.
-- **`_byteswap_*` / `lrintf`** (kmixer, wdmaud_drv): now in win32macros-rust; resolve
-  re-lists them in the prelude (the `pub const fn` pattern fix).
-- **wdmaud_drv**: `STATIC_KSCATEGORY_WDMAUD`, six `#[cfg]`-on-expression sites in mixer.rs,
-  five `break` outside a labelled block in legacy.rs.
-- **wdmaud**: `_SEH2_TRY`/`_SEH2_END` in control.rs (rewrite with
-  `ntdll_sys::seh::try_except` or a non-raising call), `PDEVICE_EXTENSION`.
-- **mmixer**: `PINNAME_CAPTURE`, an index through `*mut __TOPOLOGY_NODE__`, seven E0793 in
-  wave.rs. It links into both wdmaud.sys and the user-mode wdmaud.drv: give it
-  `kernel`/`user` features like hidparser-rust, and have wdmaud.drv link
-  `rust_staticlib_variant(... mmixer-rust "user" FALSE)`.
-
-Then flip the other nine (sysaudio-difftest reads `sysaudio-rust/src/pin.rs`; keep that path), build ×3, smoke ×3, `check --strict --scope
-source-deferred`, and land. Bank hand fixes with `port hand <stem> <file.rs>:<fn>`.
-
-What the batch added to the shared crates:
+What the batch added to the shared crates and tools:
 - **mmebuddy-macros-rust** (new): `mmebuddy_debug.h` / `mmebuddy.h` / `sndtypes.h` statement
   macros, in a quiet `_NDEBUG` and a printing `_DBG` flavour (mmebuddy and wdmaud.drv define
   NDEBUG; mment4 and sndblst do not). `port macros` cannot lower them: `__FILE__` is the
   probe's per-arch temp path.
 - **win32macros-rust**: `_byteswap_ushort/_ulong/_uint64` and math.h's inline `lrintf`.
+- **ntkrnl-sys**: `inline::ke::{KeSave,KeRestore}FloatingPointState`.
+- **crate-repair**: a union reached through the island's `Deref` inside a packed struct
+  (E0793), or through a raw pointer to the union itself (the autoref lint), names the
+  anonymous member instead.
+- **scan_cc_mismatch**: a qualified call into a `-sys` module that defines a Rust fn of
+  that name (`ntkrnl_sys::inline::ke::KeInitializeSpinLock`) is not the crate's extern.
+- **vibeos-cli build**: on a pruned build-amd64, stale x64 WoW64 guests wait for the import
+  libraries that build produces, instead of failing the build (GUEST_BUILD_FAIL).
 
 ## Next (after A′)
 

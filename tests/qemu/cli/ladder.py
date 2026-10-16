@@ -425,6 +425,25 @@ def guests_to_refresh(repo: Path) -> list[str]:
     return out
 
 
+#: What every STAGED_LADDER guest links (build-hello-compute.sh's x64_guest): amd64's own
+#: import libraries, which a pruned or fresh build-amd64 gets only from the build that is
+#: about to stage the guests.
+X64_GUEST_PREREQ = "build-amd64/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a"
+
+
+def deferred_x64_guests(repo: Path, todo: list[str]) -> list[str]:
+    """The entries of `todo` (guests_to_refresh's) that cannot be built YET.
+
+    An x64 guest whose source is newer than its binary needs build-amd64's import libraries
+    to be rebuilt. When those do not exist the amd64 build that would make them must not
+    refuse to start over it -- on a pruned tree it then never could -- so these wait for
+    the next amd64 build, and the gate grades what the media carries meanwhile.
+    """
+    if (repo / X64_GUEST_PREREQ).is_file():
+        return []
+    return [entry for entry in todo if entry.split(" ", 1)[0] in STAGED_LADDER]
+
+
 def refresh_blocker(repo: Path) -> str | None:
     """Why the guests cannot be built in this tree, or None if they can."""
     if not (repo / GUEST_TOOLCHAIN).is_file():

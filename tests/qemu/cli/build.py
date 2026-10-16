@@ -968,13 +968,25 @@ def _refresh_wow64_guests(run, repo: Path) -> bool:
             )
         )
         return True
+    deferred = ladder.deferred_x64_guests(repo, todo)
+    if deferred and len(deferred) == len(todo):
+        run.add(
+            Stage(
+                "wow64-guests",
+                status="skip",
+                detail=f"{len(deferred)} x64 guest(s) need build-amd64's import libraries, "
+                "which this build makes; the next amd64 build refreshes them",
+                salient=deferred[:4],
+            )
+        )
+        return True
     cp = run.run(
         ["bash", str(repo / ladder.GUEST_BUILDER)],
         cwd=repo,
         stage="wow64-guests",
         timeout=900,
     )
-    left = ladder.guests_to_refresh(repo)
+    left = [g for g in ladder.guests_to_refresh(repo) if g not in deferred]
     if cp.returncode != 0 or left:
         run.classification = "GUEST_BUILD_FAIL"
         run.add(
@@ -989,7 +1001,11 @@ def _refresh_wow64_guests(run, repo: Path) -> bool:
             )
         )
         return False
-    run.add(Stage("wow64-guests", status="ok", detail=f"built: {', '.join(todo)}"))
+    built = [g for g in todo if g not in deferred]
+    detail = f"built: {', '.join(built)}"
+    if deferred:
+        detail += f"; deferred until build-amd64 has import libraries: {', '.join(deferred)}"
+    run.add(Stage("wow64-guests", status="ok", detail=detail))
     return True
 
 

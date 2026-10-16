@@ -2775,6 +2775,90 @@ def test_a_raw_pointer_autoref_through_an_island_deref_names_the_anonymous_membe
     assert plan.edits[0].original == "Lun"
 
 
+_KSDATAFORMAT_ISLAND = (
+    b"#[repr(C)]\npub union KSDATAFORMAT {\n    pub __bindgen_anon_1: KSDATAFORMAT__bindgen_ty_1,\n"
+    b"    pub Alignment: LONGLONG,\n}\n"
+    b"#[repr(C)]\npub struct KSDATAFORMAT__bindgen_ty_1 {\n    pub FormatSize: ULONG,\n"
+    b"    pub MajorFormat: GUID,\n}\n"
+    b"#[repr(C, packed)]\npub struct KSDATAFORMAT_WAVEFORMATEX {\n"
+    b"    pub DataFormat: KSDATAFORMAT,\n    pub WaveFormatEx: WAVEFORMATEX,\n}\n"
+)
+
+
+def test_a_raw_pointer_to_the_union_itself_takes_its_type_from_the_lints_label():
+    # mmixer: `(*DataRange).MajorFormat` with `DataRange: PKSDATARANGE`. There is no `.owner`
+    # field to look up; the lint's secondary label names the pointer's type instead.
+    from rustconv.crate_repair import harvest_field_types
+
+    src = b"pub unsafe fn f(r: *mut KSDATAFORMAT) -> ULONG {\n    (*r).FormatSize\n}\n"
+    start = src.index(b"(*r)")
+    cut = src.index(b".FormatSize")
+    diag = _diag(
+        "implicit autoref creates a reference to the dereference of a raw pointer",
+        code="dangerous_implicit_autorefs",
+        spans=[
+            _span("src/a.rs", start, cut + len(b".FormatSize"), is_primary=True, line=2),
+            _span(
+                "src/a.rs",
+                start + 2,
+                start + 3,
+                label="this raw pointer has type `*mut types_arch::KSDATAFORMAT`",
+            ),
+        ],
+        children=[
+            {
+                "message": "try using a raw pointer method instead",
+                "level": "help",
+                "spans": [
+                    _span("src/a.rs", start, start, replacement="(&"),
+                    _span("src/a.rs", cut, cut, replacement=")"),
+                ],
+                "children": [],
+            }
+        ],
+    )
+    sources = {"types_amd64.rs": _KSDATAFORMAT_ISLAND}
+    plan = propose_edits(
+        [diag],
+        _reader({"src/a.rs": src}),
+        target="amd64",
+        rules=[RULE_ANON_UNION],
+        anon_unions=harvest_anon_unions(sources),
+        field_types=harvest_field_types(sources),
+    )
+    assert [e.replacement for e in plan.edits] == ["__bindgen_anon_1.FormatSize"]
+
+
+def test_a_union_in_a_packed_struct_is_reached_through_its_member_not_its_deref():
+    # sysaudio: `(*MixerFormat).DataFormat.FormatSize = ..` is E0793 -- the island's Deref on
+    # the KSDATAFORMAT union borrows a field of the packed KSDATAFORMAT_WAVEFORMATEX.
+    from rustconv.crate_repair import RULE_PACKED_FIELD_PTR, harvest_field_types
+
+    src = (
+        b"pub unsafe fn f(w: *mut KSDATAFORMAT_WAVEFORMATEX) {\n"
+        b"    (*w).DataFormat.FormatSize = 0;\n}\n"
+    )
+    start = src.index(b"(*w)")
+    end = src.index(b".FormatSize")
+    diag = _diag(
+        "reference to packed field is unaligned",
+        code="E0793",
+        spans=[_span("src/a.rs", start, end, is_primary=True, line=2)],
+    )
+    sources = {"types_amd64.rs": _KSDATAFORMAT_ISLAND}
+    plan = propose_edits(
+        [diag],
+        _reader({"src/a.rs": src}),
+        target="amd64",
+        rules=[RULE_PACKED_FIELD_PTR],
+        anon_unions=harvest_anon_unions(sources),
+        field_types=harvest_field_types(sources),
+    )
+    assert [(e.original, e.replacement) for e in plan.edits] == [
+        ("FormatSize", "__bindgen_anon_1.FormatSize")
+    ]
+
+
 def test_truthiness_converts_a_foreign_macros_argument_not_its_result():
     """`assert!(x as INT)`: rustc blames the argument tokens inside the invocation. Wrapping the
     call's `()` result grew one `!= 0` layer around comctl32's 34 asserts every pass."""

@@ -1,5 +1,7 @@
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{ExAllocatePool, ExFreePool, GUID, KFLOATING_SAVE, KeRestoreFloatingPointState, KeSaveFloatingPointState, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP, PLARGE_INTEGER, RtlAssert};
+use ntkrnl_sys::ddk::{ExAllocatePool, ExFreePool, GUID, KFLOATING_SAVE, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP, PLARGE_INTEGER, RtlAssert};
+// ke.h: an import on x86, a FORCEINLINE no-op on amd64/arm64.
+use ntkrnl_sys::inline::ke::{KeRestoreFloatingPointState, KeSaveFloatingPointState};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----

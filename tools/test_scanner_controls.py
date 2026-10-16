@@ -3665,6 +3665,47 @@ def test_cc_mismatch_counts_a_sys_crate_import_as_a_declaration(tmp_path: Path, 
     assert not cc.scan_crate(str(lib / "clean-rust/src"))
 
 
+def test_cc_mismatch_a_call_into_a_sys_crates_rust_inline_is_not_its_extern(
+    tmp_path: Path, monkeypatch
+):
+    """The A' audio preludes wrap ke.h's FORCEINLINE as `ntkrnl_sys::inline::ke::
+    KeInitializeSpinLock(..)`, a Rust fn with a body. The same crate's bindgen file also
+    declares an extern "C" KeInitializeSpinLock, and the island declares it "system". The
+    qualified call must resolve to the inline, not the extern: no split. The same call to a
+    module that only re-exports the extern still counts."""
+    cc = _cc_mod()
+    lib = _materialize(
+        tmp_path,
+        {
+            "demo-sys/src/bindgen_i386.rs": (
+                'extern "C" {\n    pub fn KeInitializeSpinLock(SpinLock: *mut usize);\n}\n'
+            ),
+            "demo-sys/src/inline/ke.rs": (
+                "pub unsafe fn KeInitializeSpinLock(SpinLock: *mut usize) {\n"
+                "    *SpinLock = 0;\n}\n"
+            ),
+            "audio-rust/src/prelude.rs": (
+                "pub unsafe fn KeInitializeSpinLock(l: *mut usize) {\n"
+                "    demo_sys::inline::ke::KeInitializeSpinLock(l)\n}\n"
+            ),
+            "audio-rust/src/types_i386.rs": (
+                'extern "system" {\n    pub fn KeInitializeSpinLock(SpinLock: *mut usize);\n}\n'
+            ),
+            "split-rust/src/a.rs": (
+                "fn f(l: *mut usize) { demo_sys::ddk::KeInitializeSpinLock(l) }\n"
+            ),
+            "split-rust/src/types_i386.rs": (
+                'extern "system" {\n    pub fn KeInitializeSpinLock(SpinLock: *mut usize);\n}\n'
+            ),
+        },
+    )
+    monkeypatch.setattr(cc, "BASE", str(lib))
+    monkeypatch.setattr(cc, "_SYS_CACHE", {})
+    assert not [h for h in cc.scan_crate(str(lib / "audio-rust/src")) if "DECL_CC_SPLIT" in h]
+    split = [h for h in cc.scan_crate(str(lib / "split-rust/src")) if "DECL_CC_SPLIT" in h]
+    assert split, "a call through a module with no Rust body must still count as the extern"
+
+
 def test_cc_mismatch_ignores_a_commented_out_declaration(tmp_path: Path):
     """section.rs keeps `// DUPLICATE: fn KeRaiseIrql(..)` inside an extern "system" block
     next to a live extern "C" one. A comment is not a declaration: no split, no mismatch."""

@@ -9,6 +9,7 @@ the bug -- one is a regression, the other is a lane that was never staged.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -1136,3 +1137,25 @@ def test_build_stage_skips_loudly_without_an_i386_tree(tmp_path):
     run = _FakeRun()
     assert build._refresh_wow64_guests(run, repo) is True
     assert run.stages[-1].status == "skip" and "toolchain" in run.stages[-1].detail
+
+
+def test_a_stale_x64_guest_waits_for_amd64s_import_libraries(tmp_path):
+    """A pruned build-amd64 has no libkernel32.a until the amd64 build that would rebuild
+    selfmod64 runs, so that build refused to start (GUEST_BUILD_FAIL) and never could.
+    The x64 guests defer; the 32-bit ones, linked against build-i386, never do."""
+    repo = _built_tree(tmp_path)
+    todo = ["selfmod64 (tools/fex/hello-compute/Selfmod32.c is newer)", "selfmod32 (x is newer)"]
+    assert ladder.deferred_x64_guests(repo, todo) == [todo[0]]
+    lib = repo / ladder.X64_GUEST_PREREQ
+    lib.parent.mkdir(parents=True)
+    lib.write_bytes(b"!<arch>\n")
+    assert ladder.deferred_x64_guests(repo, todo) == []
+
+
+def test_every_x64_guest_links_the_prerequisite_deferral_checks():
+    """X64_GUEST_PREREQ stands in for every x64_guest's import libraries; each one the
+    builder makes must name kernel32, or the deferral checks the wrong file."""
+    script = (Path(__file__).resolve().parents[3] / ladder.GUEST_BUILDER).read_text()
+    built = re.findall(r"^x64_guest (\w+)\.exe .*\"\$K64\"", script, re.M)
+    assert set(built) == set(ladder.STAGED_LADDER)
+    assert ladder.X64_GUEST_PREREQ.endswith("kernel32.dir/libkernel32.a")

@@ -3705,6 +3705,19 @@ _RE_NO_LITERAL_FIELD = re.compile(
 _AUTOREF_LINT = "implicit autoref creates a reference to the dereference of a raw pointer"
 
 
+#: The lint's secondary label on the pointer: ``this raw pointer has type `*mut KSDATAFORMAT` ``.
+_RE_AUTOREF_POINTEE = re.compile(r"raw pointer has type `\*(?:mut|const) (?P<ty>[\w:]+)`")
+
+
+def _autoref_pointee(diagnostic: Mapping[str, Any]) -> str | None:
+    """The bare type name the autoref lint's raw pointer points at, from its span label."""
+    for item in diagnostic.get("spans") or []:
+        m = _RE_AUTOREF_POINTEE.search(str(item.get("label") or ""))
+        if m is not None:
+            return m.group("ty").split("::")[-1]
+    return None
+
+
 def _anon_union_autoref(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -3733,10 +3746,18 @@ def _anon_union_autoref(
     prefix = data[int(span.get("byte_start") or 0) : cut].decode("utf-8", "replace")
     rest = re.match(rb"\.\s*(\w+)", data[cut:])
     owner = re.search(r"\.\s*(\w+)\s*$", prefix)
-    if rest is None or owner is None:
+    if rest is None or (owner is None and not re.fullmatch(r"\(\s*\*\s*\w+\s*\)", prefix.strip())):
         return [], [], False
     field_name = rest.group(1).decode()
-    types = ctx.field_types.get(owner.group(1), frozenset())
+    if owner is not None:
+        what = f"`.{owner.group(1)}`"
+        types = ctx.field_types.get(owner.group(1), frozenset())
+    else:
+        # `(*p).Field` with `p: *mut _U` itself (mmixer's `(*DataRange).MajorFormat`): no
+        # owner field to look up, but rustc's secondary label names the pointer's type.
+        pointee = _autoref_pointee(diagnostic)
+        what = f"`*mut {pointee}`"
+        types = frozenset({pointee}) if pointee else frozenset()
     paths = {ctx.anon_unions.get((t, field_name)) for t in types}
     if len(types) != 1 or len(paths) != 1 or None in paths:
         return (
@@ -3747,7 +3768,7 @@ def _anon_union_autoref(
                     "autoref_owner_ambiguous",
                     file_name,
                     int(span.get("line_start") or 0),
-                    f"`.{owner.group(1)}` has types {sorted(types) or '?'}; no single anonymous "
+                    f"{what} has types {sorted(types) or '?'}; no single anonymous "
                     f"member reaches `{field_name}`",
                 )
             ],
@@ -4067,6 +4088,41 @@ def _macro_place_deref_rule(
     return [edit], [], True
 
 
+def _packed_union_member_edit(
+    span: Mapping[str, Any], data: bytes, place: str, ctx: _Ctx
+) -> Edit | None:
+    """E0793's place is a `.Owner` union whose next `.Field` only its anonymous member has."""
+    end = int(span.get("byte_end") or 0)
+    nxt = re.match(rb"\s*\.\s*(\w+)", data[end : end + 64])
+    owner = re.search(r"\.\s*(\w+)\s*$", place)
+    if not ctx.anon_unions or nxt is None or owner is None:
+        return None
+    name = nxt.group(1).decode()
+    types = ctx.field_types.get(owner.group(1), frozenset())
+    paths = {ctx.anon_unions.get((t, name)) for t in types}
+    if len(types) != 1 or len(paths) != 1 or None in paths:
+        return None
+    path = next(iter(paths))
+    assert path is not None
+    at = end + nxt.start(1)
+    return Edit(
+        file_name=str(span.get("file_name") or ""),
+        byte_start=at,
+        byte_end=at + len(name),
+        replacement=path,
+        rule=RULE_PACKED_FIELD_PTR,
+        authority=(
+            f"rustc E0793: `{place[:40]}` is a union in a #[repr(packed)] struct and reaches "
+            f"`{name}` only through its Deref; `{path.rsplit('.', 1)[0]}` names the same place "
+            "without forming a reference"
+        ),
+        original=name,
+        line=int(span.get("line_start") or 0),
+        column=int(span.get("column_start") or 0),
+        targets=(ctx.target,),
+    )
+
+
 def _packed_field_ptr_rule(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -4098,6 +4154,12 @@ def _packed_field_ptr_rule(
     # The span covers the PLACE expression; the offending `.as_ptr()` follows it.
     tail = _RE_AS_PTR.match(data[end : end + 16].decode("utf-8", "replace"))
     place = data[start:end].decode("utf-8", "replace")
+    # `(*w).DataFormat.FormatSize` with `DataFormat` a union inside a packed struct: the field
+    # is reached through the island's `Deref`, whose `&self` is the unaligned reference. The
+    # anonymous member names the same place without one (sysaudio/mmixer's KSDATAFORMAT).
+    union_member = _packed_union_member_edit(span, data, place, ctx) if tail is None else None
+    if union_member is not None:
+        return [union_member], [], True
     # C's `sizeof(p->Field)` came across as `size_of_val(&p.Field)`: the size of the field's
     # TYPE, read off a raw place pointer, never a reference.
     wrap = re.search(
