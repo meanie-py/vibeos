@@ -43,12 +43,13 @@ package nested in another's root (delayimp-rust's hooks) colliding in the worker
 projection; a fresh worktree's first build supervising before `.build-tools` and the
 host-jobs broker exist.
 
-**Next, by size:** the cell link dirs (`<cell>-<arch>-cargo-link`) hold about 7 MB
-each of host-side build tooling (the build script, cc and reactos-link rlibs) compiled
-again for each of ~724 cells: about 5 G a lane. Sharing them needs sharded outer target
-dirs (the outer Cargo lock is held for the whole link), and every tool that finds a
-cell's outputs by its dir name moves with it. The build dirs' C objects are the other
-large part; ccache already shares their compiles.
+**Cell link dirs, since:** each cell's private `<cell>-<arch>-cargo-link` dir held
+about 7.5 MB of host-side build tooling compiled again for each of ~724 cells. Cells
+now share `VIBEOS_CARGO_LINK_SHARDS` dirs per arch (default two per CPU;
+`sdk/cmake/cargo_link_context.cmake` has the A/B): 11 G -> 7 G a lane, builds within
+2-7%. What remains in a lane is each cell's own output, the private body shards
+(about 4 G) and the build dirs' C objects (about 5.5 G per arch), which ccache
+already shares the compiles of.
 
 ## Objective and scope
 
