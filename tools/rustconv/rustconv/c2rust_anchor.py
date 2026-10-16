@@ -67,7 +67,7 @@ def _find_db_entries(c_file: Path, arch: str | None = None) -> list[tuple[dict, 
     on i386 `WINAPI` IS such an attribute while on amd64 it is nothing. msvcrt's
     except.c fails on the i386 db and transpiles cleanly on the amd64 one.
     """
-    from .macro_authority import flags_source
+    from .macro_authority import flags_source, pick_entry
 
     c_file = flags_source(c_file)
     cf = str(c_file.resolve())
@@ -86,10 +86,11 @@ def _find_db_entries(c_file: Path, arch: str | None = None) -> list[tuple[dict, 
                 db = json.load(f)
         except Exception:
             continue
-        for e in db:
-            if str(Path(_decanon(e["file"])).resolve()) == cf:
-                out.append((e, REACTOS_ROOT / bd))
-                break
+        picked = pick_entry(
+            [e for e in db if str(Path(_decanon(e["file"])).resolve()) == cf], c_file, REACTOS_ROOT
+        )
+        if picked is not None:
+            out.append((picked, REACTOS_ROOT / bd))
     if not out:
         # A FLIPPED .c has no db entry of its own. Borrow exactly what the call seal borrows
         # (macro_authority): a surviving sibling TU's flags with this file substituted in, or,
@@ -115,7 +116,7 @@ def _find_db_entry(c_file: Path, arch: str | None = None) -> tuple[dict, Path] |
     `_transpile_text` falls back, and only after the pinned arch's db has actually
     failed, and it says so when it does.
     """
-    from .macro_authority import flags_source
+    from .macro_authority import flags_source, pick_entry
 
     c_file = flags_source(c_file)
     cf = str(c_file.resolve())
@@ -128,9 +129,11 @@ def _find_db_entry(c_file: Path, arch: str | None = None) -> tuple[dict, Path] |
                 db = json.load(f)
         except Exception:
             continue
-        for e in db:
-            if str(Path(_decanon(e["file"])).resolve()) == cf:
-                return e, (REACTOS_ROOT / bd)
+        picked = pick_entry(
+            [e for e in db if str(Path(_decanon(e["file"])).resolve()) == cf], c_file, REACTOS_ROOT
+        )
+        if picked is not None:
+            return picked, (REACTOS_ROOT / bd)
     return None
 
 

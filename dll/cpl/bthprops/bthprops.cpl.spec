@@ -37,7 +37,7 @@
 @ stub BluetoothGetDeviceInfo
 @ stdcall -import BluetoothGetRadioInfo(ptr ptr)
 @ stdcall BluetoothIsConnectable(ptr)
-@ stub BluetoothIsDiscoverable
+@ stdcall BluetoothIsDiscoverable(ptr)
 @ stub BluetoothIsVersionAvailable
 @ stub BluetoothMapClassOfDeviceToImageIndex
 @ stub BluetoothMapClassOfDeviceToString

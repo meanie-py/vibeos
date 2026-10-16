@@ -1,0 +1,2421 @@
+{
+  "kind": "proposed-user-body-recipe-not-observed-hits",
+  "context": {
+    "target": "x86_64-pc-windows-gnu",
+    "effective_flags": [],
+    "effective_config": {
+      "cargo_home": "empty-worker-home",
+      "workspace_config_sha256": "d269efb2dea503987674de3c1c416d4be26feea0b9ecc30e96b2af02819300a2"
+    },
+    "toolchain": {
+      "cargo_version": "cargo 1.92.0 (344c4567c 2025-10-21)",
+      "rustc_version": "rustc 1.92.0 (ded5c06cf 2025-12-08)\nbinary: rustc\ncommit-hash: ded5c06cf21d2b93bffd5d884aa6e96934ee4234\ncommit-date: 2025-12-08\nhost: x86_64-unknown-linux-gnu\nrelease: 1.92.0\nLLVM version: 21.1.3",
+      "files_sha256": "b9e0e964ff8037f3ca11b85e3f6c60d28421b22be292d7ab9f6d54f7f5b4d697",
+      "host": "x86_64-unknown-linux-gnu"
+    },
+    "environment": {},
+    "execution_policy": "proposed-v1-user-body-path-only-no-network"
+  },
+  "records": [
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos",
+      "head": "eaa4c573a9a9b2e99923ec58caa432b83b99828f",
+      "body": "crt-startup-rust",
+      "features": [
+        "crtexe"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "37e8ac4bafaf05533607d649cc837899b777bf101abf43c3f83feb0287f1650d",
+        "source_projection_key": "40b572fe7025f022cc8b19abd379537ded11120d1c5a963f35a14c07a42180cb",
+        "whole_manifest_key": "4c494b170491c963cac43c9ff08d83ba66bbda598b594685f910e217940cc999",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.14316942098957952
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos",
+      "head": "eaa4c573a9a9b2e99923ec58caa432b83b99828f",
+      "body": "crt-startup-rust",
+      "features": [
+        "wcrtexe"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "50002f8559c0fcaa86fe20ec5d8fec71388588f668c676f0d8a3adb15807cf7a",
+        "source_projection_key": "54a276275b2ff4bbd47af597461b573573e439141c68bfbbf382331d6c1fe561",
+        "whole_manifest_key": "4eaa3681f02b93a15f3b1aba0d69b68da15e81f589a8e4691de0f28f5d6d8565",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.1365092110063415
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos",
+      "head": "eaa4c573a9a9b2e99923ec58caa432b83b99828f",
+      "body": "crt-startup-rust",
+      "features": [
+        "crtdll"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "888f1e57b0e9946cc3032a4d44711e3a3d83de93f84e31782a2c4eb06197c68e",
+        "source_projection_key": "2eaf8c370669d5389c667d15189bcfc618c3e8f3974c241a9c0706cacf174bc0",
+        "whole_manifest_key": "d30a21937e1db5289c010b593beadbf2345c68e355c961004d694bb8c9fd03d2",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.13651494799705688
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos",
+      "head": "eaa4c573a9a9b2e99923ec58caa432b83b99828f",
+      "body": "crt0-rust",
+      "features": [
+        "ansi"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "d38f8197015f866c019740d4cdfadf0c98e21fd8b9353ab1a3b310ed0605fe0c",
+        "source_projection_key": "dfcfbda01d54db4b72afadd7c1615f75178319fb32fd586016b5d096734aaf16",
+        "whole_manifest_key": "c471eb98d6bdb7d81caec8b7e8bce460ae528b7d8c04b861d9642f5ae6a452e5",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12317,
+        "package_count": 2
+      },
+      "seconds": 0.13170555200485978
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos",
+      "head": "eaa4c573a9a9b2e99923ec58caa432b83b99828f",
+      "body": "crt0-rust",
+      "features": [
+        "wide"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "6b145f74f1b5b6580e15cee7d7c4019ac518b534f0d31498268fa51f38ac2f41",
+        "source_projection_key": "0a26174c2706a0e2ead2b6b7ef46fa7590b8794182af636a485afc29d906dc29",
+        "whole_manifest_key": "cbe476962e799667c30811717ed90d64fee646c81648fb713a12300f7d17fd5c",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12317,
+        "package_count": 2
+      },
+      "seconds": 0.12211250999826007
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos",
+      "head": "eaa4c573a9a9b2e99923ec58caa432b83b99828f",
+      "body": "crt-dllmain-rust",
+      "features": [],
+      "default_features": true,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "9d1a4f192bbb4cbd53f2d54c65251ef89bfea475ef2547a57ae9a9d606e52e6d",
+        "source_projection_key": "4d8304389428f540f9f68a472c16d29adc8090294f32d155e70959a42f8b9c8c",
+        "whole_manifest_key": "2a41053fc86b2ca495984ea62f6d8e98197e8e526cc9c0eefe7bc5c2f53521c7",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12366,
+        "package_count": 2
+      },
+      "seconds": 0.12518341300892644
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos",
+      "head": "eaa4c573a9a9b2e99923ec58caa432b83b99828f",
+      "body": "conutils-rust",
+      "features": [],
+      "default_features": true,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "c89d71d27eb48c268fb310b7363e27ab162dde5b7a992824e81bbf3b52cc41ef",
+        "source_projection_key": "4b0569c24d88becfc620c78acd558aa589d0752a986a82b704ce120dad7c86cd",
+        "whole_manifest_key": "e64ae0d8d16dc4d736637e2cc1858e047c1dcfe76cffe0d8105b47f518f75c5d",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 5323737,
+        "package_count": 3
+      },
+      "seconds": 0.4432479490060359
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-conductor",
+      "head": "9ae38a50499bbcc2d1b98c3e78bb401f5de41df4",
+      "body": "crt-startup-rust",
+      "features": [
+        "crtexe"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "37e8ac4bafaf05533607d649cc837899b777bf101abf43c3f83feb0287f1650d",
+        "source_projection_key": "40b572fe7025f022cc8b19abd379537ded11120d1c5a963f35a14c07a42180cb",
+        "whole_manifest_key": "4c494b170491c963cac43c9ff08d83ba66bbda598b594685f910e217940cc999",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.16553648200351745
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-conductor",
+      "head": "9ae38a50499bbcc2d1b98c3e78bb401f5de41df4",
+      "body": "crt-startup-rust",
+      "features": [
+        "wcrtexe"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "50002f8559c0fcaa86fe20ec5d8fec71388588f668c676f0d8a3adb15807cf7a",
+        "source_projection_key": "54a276275b2ff4bbd47af597461b573573e439141c68bfbbf382331d6c1fe561",
+        "whole_manifest_key": "4eaa3681f02b93a15f3b1aba0d69b68da15e81f589a8e4691de0f28f5d6d8565",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.13701765199948568
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-conductor",
+      "head": "9ae38a50499bbcc2d1b98c3e78bb401f5de41df4",
+      "body": "crt-startup-rust",
+      "features": [
+        "crtdll"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "888f1e57b0e9946cc3032a4d44711e3a3d83de93f84e31782a2c4eb06197c68e",
+        "source_projection_key": "2eaf8c370669d5389c667d15189bcfc618c3e8f3974c241a9c0706cacf174bc0",
+        "whole_manifest_key": "d30a21937e1db5289c010b593beadbf2345c68e355c961004d694bb8c9fd03d2",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.12637047600583173
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-conductor",
+      "head": "9ae38a50499bbcc2d1b98c3e78bb401f5de41df4",
+      "body": "crt0-rust",
+      "features": [
+        "ansi"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "d38f8197015f866c019740d4cdfadf0c98e21fd8b9353ab1a3b310ed0605fe0c",
+        "source_projection_key": "dfcfbda01d54db4b72afadd7c1615f75178319fb32fd586016b5d096734aaf16",
+        "whole_manifest_key": "c471eb98d6bdb7d81caec8b7e8bce460ae528b7d8c04b861d9642f5ae6a452e5",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12317,
+        "package_count": 2
+      },
+      "seconds": 0.10952525900211185
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-conductor",
+      "head": "9ae38a50499bbcc2d1b98c3e78bb401f5de41df4",
+      "body": "crt0-rust",
+      "features": [
+        "wide"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "6b145f74f1b5b6580e15cee7d7c4019ac518b534f0d31498268fa51f38ac2f41",
+        "source_projection_key": "0a26174c2706a0e2ead2b6b7ef46fa7590b8794182af636a485afc29d906dc29",
+        "whole_manifest_key": "cbe476962e799667c30811717ed90d64fee646c81648fb713a12300f7d17fd5c",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12317,
+        "package_count": 2
+      },
+      "seconds": 0.10465471399948001
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-conductor",
+      "head": "9ae38a50499bbcc2d1b98c3e78bb401f5de41df4",
+      "body": "crt-dllmain-rust",
+      "features": [],
+      "default_features": true,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "9d1a4f192bbb4cbd53f2d54c65251ef89bfea475ef2547a57ae9a9d606e52e6d",
+        "source_projection_key": "4d8304389428f540f9f68a472c16d29adc8090294f32d155e70959a42f8b9c8c",
+        "whole_manifest_key": "2a41053fc86b2ca495984ea62f6d8e98197e8e526cc9c0eefe7bc5c2f53521c7",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12366,
+        "package_count": 2
+      },
+      "seconds": 0.11483220600348432
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-conductor",
+      "head": "9ae38a50499bbcc2d1b98c3e78bb401f5de41df4",
+      "body": "conutils-rust",
+      "features": [],
+      "default_features": true,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "c89d71d27eb48c268fb310b7363e27ab162dde5b7a992824e81bbf3b52cc41ef",
+        "source_projection_key": "4b0569c24d88becfc620c78acd558aa589d0752a986a82b704ce120dad7c86cd",
+        "whole_manifest_key": "e64ae0d8d16dc4d736637e2cc1858e047c1dcfe76cffe0d8105b47f518f75c5d",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 5323737,
+        "package_count": 3
+      },
+      "seconds": 0.39975746101117693
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-conformance",
+      "head": "cd278dda272b75e088bbe7063730676ca4f96fd6",
+      "body": "crt-startup-rust",
+      "features": [
+        "crtexe"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "37e8ac4bafaf05533607d649cc837899b777bf101abf43c3f83feb0287f1650d",
+        "source_projection_key": "40b572fe7025f022cc8b19abd379537ded11120d1c5a963f35a14c07a42180cb",
+        "whole_manifest_key": "609f7832cc8dffc11e64bdda5323719f138809329d4bdb9edef3cf247c0930a1",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.11969697900349274
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-conformance",
+      "head": "cd278dda272b75e088bbe7063730676ca4f96fd6",
+      "body": "crt-startup-rust",
+      "features": [
+        "wcrtexe"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "50002f8559c0fcaa86fe20ec5d8fec71388588f668c676f0d8a3adb15807cf7a",
+        "source_projection_key": "54a276275b2ff4bbd47af597461b573573e439141c68bfbbf382331d6c1fe561",
+        "whole_manifest_key": "7a02e035a5e7cfe0055ce2cfd6647c18af09667f2fc0de622e290feeccf8f80f",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.11726242200529668
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-conformance",
+      "head": "cd278dda272b75e088bbe7063730676ca4f96fd6",
+      "body": "crt-startup-rust",
+      "features": [
+        "crtdll"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "888f1e57b0e9946cc3032a4d44711e3a3d83de93f84e31782a2c4eb06197c68e",
+        "source_projection_key": "2eaf8c370669d5389c667d15189bcfc618c3e8f3974c241a9c0706cacf174bc0",
+        "whole_manifest_key": "0c5d9d688ac4fb18dfdd269abbafce1107774b9eeddbfeb973c64236a1dd6d2d",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.10577485300018452
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-conformance",
+      "head": "cd278dda272b75e088bbe7063730676ca4f96fd6",
+      "body": "crt0-rust",
+      "features": [
+        "ansi"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "d38f8197015f866c019740d4cdfadf0c98e21fd8b9353ab1a3b310ed0605fe0c",
+        "source_projection_key": "dfcfbda01d54db4b72afadd7c1615f75178319fb32fd586016b5d096734aaf16",
+        "whole_manifest_key": "6fd8e9c60062953f711bd1610e02e95d09fd6e89f430385617953b2af387c51a",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12317,
+        "package_count": 2
+      },
+      "seconds": 0.10122791799949482
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-conformance",
+      "head": "cd278dda272b75e088bbe7063730676ca4f96fd6",
+      "body": "crt0-rust",
+      "features": [
+        "wide"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "6b145f74f1b5b6580e15cee7d7c4019ac518b534f0d31498268fa51f38ac2f41",
+        "source_projection_key": "0a26174c2706a0e2ead2b6b7ef46fa7590b8794182af636a485afc29d906dc29",
+        "whole_manifest_key": "1f90d508fbd01f4fb7ee315e0c058b85e2e1943b435d61a13a697cf34490b131",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12317,
+        "package_count": 2
+      },
+      "seconds": 0.10131296899635345
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-conformance",
+      "head": "cd278dda272b75e088bbe7063730676ca4f96fd6",
+      "body": "crt-dllmain-rust",
+      "features": [],
+      "default_features": true,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "9d1a4f192bbb4cbd53f2d54c65251ef89bfea475ef2547a57ae9a9d606e52e6d",
+        "source_projection_key": "4d8304389428f540f9f68a472c16d29adc8090294f32d155e70959a42f8b9c8c",
+        "whole_manifest_key": "bc8787ad933a66425312f2ed92b56aed26ab6d6de23fea2c086686fd06be422d",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12366,
+        "package_count": 2
+      },
+      "seconds": 0.11062914801004808
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-conformance",
+      "head": "cd278dda272b75e088bbe7063730676ca4f96fd6",
+      "body": "conutils-rust",
+      "features": [],
+      "default_features": true,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "e7a305c83ffa80c33de7b8362775569c98b320079e2d31d9284f224bcda1175f",
+        "source_projection_key": "6731cccf7dd1dfb7dedf0f5290515028088625be9ee5fdba4a941b0f0393ada0",
+        "whole_manifest_key": "ac64ce516436601dfc8a4ae5e596fecbf2d897bd673c49a0ba422064e6ebd4b2",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 5322810,
+        "package_count": 3
+      },
+      "seconds": 0.4129953480005497
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-cpp-cluster",
+      "head": "c1caccef1bd7705be2f19132a80c88dd708b202d",
+      "body": "crt-startup-rust",
+      "features": [
+        "crtexe"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "37e8ac4bafaf05533607d649cc837899b777bf101abf43c3f83feb0287f1650d",
+        "source_projection_key": "40b572fe7025f022cc8b19abd379537ded11120d1c5a963f35a14c07a42180cb",
+        "whole_manifest_key": "664c06cc2b97ac88c0c04f83d819a7971446ebfc7898c6a4c2318bb2c4af27e5",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.1283019700058503
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-cpp-cluster",
+      "head": "c1caccef1bd7705be2f19132a80c88dd708b202d",
+      "body": "crt-startup-rust",
+      "features": [
+        "wcrtexe"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "50002f8559c0fcaa86fe20ec5d8fec71388588f668c676f0d8a3adb15807cf7a",
+        "source_projection_key": "54a276275b2ff4bbd47af597461b573573e439141c68bfbbf382331d6c1fe561",
+        "whole_manifest_key": "e936dc0f7e3b80ee1cacd85f9126cbcfbee494308e9efca479e43e22088c2ec9",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.11598147399490699
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-cpp-cluster",
+      "head": "c1caccef1bd7705be2f19132a80c88dd708b202d",
+      "body": "crt-startup-rust",
+      "features": [
+        "crtdll"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "888f1e57b0e9946cc3032a4d44711e3a3d83de93f84e31782a2c4eb06197c68e",
+        "source_projection_key": "2eaf8c370669d5389c667d15189bcfc618c3e8f3974c241a9c0706cacf174bc0",
+        "whole_manifest_key": "29743e79e70fd056def269a5cc06dd3fe7e1fbd3807919e4117a0a3fa6490027",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.13305072698858567
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-cpp-cluster",
+      "head": "c1caccef1bd7705be2f19132a80c88dd708b202d",
+      "body": "crt0-rust",
+      "features": [
+        "ansi"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "d38f8197015f866c019740d4cdfadf0c98e21fd8b9353ab1a3b310ed0605fe0c",
+        "source_projection_key": "dfcfbda01d54db4b72afadd7c1615f75178319fb32fd586016b5d096734aaf16",
+        "whole_manifest_key": "66bef1ca1948020785a0ee2adc9f84cece718d0eafcb0c1b2201791a96bab608",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12317,
+        "package_count": 2
+      },
+      "seconds": 0.10992870100017171
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-cpp-cluster",
+      "head": "c1caccef1bd7705be2f19132a80c88dd708b202d",
+      "body": "crt0-rust",
+      "features": [
+        "wide"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "6b145f74f1b5b6580e15cee7d7c4019ac518b534f0d31498268fa51f38ac2f41",
+        "source_projection_key": "0a26174c2706a0e2ead2b6b7ef46fa7590b8794182af636a485afc29d906dc29",
+        "whole_manifest_key": "11184c55c17a70af2ee7b61f114e021fa2162993ffce17a510505c2e3ebac2c7",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12317,
+        "package_count": 2
+      },
+      "seconds": 0.15478981300839223
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-cpp-cluster",
+      "head": "c1caccef1bd7705be2f19132a80c88dd708b202d",
+      "body": "crt-dllmain-rust",
+      "features": [],
+      "default_features": true,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "9d1a4f192bbb4cbd53f2d54c65251ef89bfea475ef2547a57ae9a9d606e52e6d",
+        "source_projection_key": "4d8304389428f540f9f68a472c16d29adc8090294f32d155e70959a42f8b9c8c",
+        "whole_manifest_key": "a8ed948c71d7a3db1f53d9f012ffdf486c68bcaa098b92979274749063afcaa7",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12366,
+        "package_count": 2
+      },
+      "seconds": 0.10536512799444608
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-cpp-cluster",
+      "head": "c1caccef1bd7705be2f19132a80c88dd708b202d",
+      "body": "conutils-rust",
+      "features": [],
+      "default_features": true,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "c89d71d27eb48c268fb310b7363e27ab162dde5b7a992824e81bbf3b52cc41ef",
+        "source_projection_key": "4b0569c24d88becfc620c78acd558aa589d0752a986a82b704ce120dad7c86cd",
+        "whole_manifest_key": "b134938a18581608a73fbe6acca8a72a83d8a1e69d5d885fffe1dc98e0c8ed71",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 5323737,
+        "package_count": 3
+      },
+      "seconds": 0.402637032995699
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-fex",
+      "head": "df61987b9e6136ac17a5874abf989d7dd7fe90a8",
+      "body": "crt-startup-rust",
+      "features": [
+        "crtexe"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "37e8ac4bafaf05533607d649cc837899b777bf101abf43c3f83feb0287f1650d",
+        "source_projection_key": "40b572fe7025f022cc8b19abd379537ded11120d1c5a963f35a14c07a42180cb",
+        "whole_manifest_key": "e66a23b99837fcd14d10c808cf8ea3644d21b4987956a79a7b87f0ddf74ff3ad",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.14208889799192548
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-fex",
+      "head": "df61987b9e6136ac17a5874abf989d7dd7fe90a8",
+      "body": "crt-startup-rust",
+      "features": [
+        "wcrtexe"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "50002f8559c0fcaa86fe20ec5d8fec71388588f668c676f0d8a3adb15807cf7a",
+        "source_projection_key": "54a276275b2ff4bbd47af597461b573573e439141c68bfbbf382331d6c1fe561",
+        "whole_manifest_key": "c552c04c93ebb2b850583715ad93d2bef3c9455e6606163ae4b56f39ce5e3c7e",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.13541203198838048
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-fex",
+      "head": "df61987b9e6136ac17a5874abf989d7dd7fe90a8",
+      "body": "crt-startup-rust",
+      "features": [
+        "crtdll"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "888f1e57b0e9946cc3032a4d44711e3a3d83de93f84e31782a2c4eb06197c68e",
+        "source_projection_key": "2eaf8c370669d5389c667d15189bcfc618c3e8f3974c241a9c0706cacf174bc0",
+        "whole_manifest_key": "8c333f4e56a27b7c4e490a3ad39f888baea9a3803f8862d5a86036923c06ec65",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.12807851198886055
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-fex",
+      "head": "df61987b9e6136ac17a5874abf989d7dd7fe90a8",
+      "body": "crt0-rust",
+      "features": [
+        "ansi"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "d38f8197015f866c019740d4cdfadf0c98e21fd8b9353ab1a3b310ed0605fe0c",
+        "source_projection_key": "dfcfbda01d54db4b72afadd7c1615f75178319fb32fd586016b5d096734aaf16",
+        "whole_manifest_key": "e6f239f7ee0ace2a671d437b0c1e018516dceb6237e619c21d3f983712e0295b",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12317,
+        "package_count": 2
+      },
+      "seconds": 0.11073389899684116
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-fex",
+      "head": "df61987b9e6136ac17a5874abf989d7dd7fe90a8",
+      "body": "crt0-rust",
+      "features": [
+        "wide"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "6b145f74f1b5b6580e15cee7d7c4019ac518b534f0d31498268fa51f38ac2f41",
+        "source_projection_key": "0a26174c2706a0e2ead2b6b7ef46fa7590b8794182af636a485afc29d906dc29",
+        "whole_manifest_key": "14a377113844a624b0502b5a5427abb3dac865b10bc5f71538179b2db943f0dc",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12317,
+        "package_count": 2
+      },
+      "seconds": 0.12607616600871552
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-fex",
+      "head": "df61987b9e6136ac17a5874abf989d7dd7fe90a8",
+      "body": "crt-dllmain-rust",
+      "features": [],
+      "default_features": true,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "9d1a4f192bbb4cbd53f2d54c65251ef89bfea475ef2547a57ae9a9d606e52e6d",
+        "source_projection_key": "4d8304389428f540f9f68a472c16d29adc8090294f32d155e70959a42f8b9c8c",
+        "whole_manifest_key": "f8901250e75db05b318439d05a07c7a92a4ff47e4f017c47bc4e443be5afd084",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12366,
+        "package_count": 2
+      },
+      "seconds": 0.12440954000339843
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-fex",
+      "head": "df61987b9e6136ac17a5874abf989d7dd7fe90a8",
+      "body": "conutils-rust",
+      "features": [],
+      "default_features": true,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "c89d71d27eb48c268fb310b7363e27ab162dde5b7a992824e81bbf3b52cc41ef",
+        "source_projection_key": "4b0569c24d88becfc620c78acd558aa589d0752a986a82b704ce120dad7c86cd",
+        "whole_manifest_key": "61816a343a43d8761bd9249cd47e36478ae65f70eff9318424628f1ee7fe8dfc",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 5323737,
+        "package_count": 3
+      },
+      "seconds": 0.4239205990015762
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-gicv3",
+      "head": "cc53d01b091e365cccbc7e56f7a929963331d379",
+      "body": "crt-startup-rust",
+      "features": [
+        "crtexe"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "37e8ac4bafaf05533607d649cc837899b777bf101abf43c3f83feb0287f1650d",
+        "source_projection_key": "40b572fe7025f022cc8b19abd379537ded11120d1c5a963f35a14c07a42180cb",
+        "whole_manifest_key": "4c494b170491c963cac43c9ff08d83ba66bbda598b594685f910e217940cc999",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.13598989600723144
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-gicv3",
+      "head": "cc53d01b091e365cccbc7e56f7a929963331d379",
+      "body": "crt-startup-rust",
+      "features": [
+        "wcrtexe"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "50002f8559c0fcaa86fe20ec5d8fec71388588f668c676f0d8a3adb15807cf7a",
+        "source_projection_key": "54a276275b2ff4bbd47af597461b573573e439141c68bfbbf382331d6c1fe561",
+        "whole_manifest_key": "4eaa3681f02b93a15f3b1aba0d69b68da15e81f589a8e4691de0f28f5d6d8565",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.13094735601043794
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-gicv3",
+      "head": "cc53d01b091e365cccbc7e56f7a929963331d379",
+      "body": "crt-startup-rust",
+      "features": [
+        "crtdll"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "888f1e57b0e9946cc3032a4d44711e3a3d83de93f84e31782a2c4eb06197c68e",
+        "source_projection_key": "2eaf8c370669d5389c667d15189bcfc618c3e8f3974c241a9c0706cacf174bc0",
+        "whole_manifest_key": "d30a21937e1db5289c010b593beadbf2345c68e355c961004d694bb8c9fd03d2",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.14251206800690852
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-gicv3",
+      "head": "cc53d01b091e365cccbc7e56f7a929963331d379",
+      "body": "crt0-rust",
+      "features": [
+        "ansi"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "d38f8197015f866c019740d4cdfadf0c98e21fd8b9353ab1a3b310ed0605fe0c",
+        "source_projection_key": "dfcfbda01d54db4b72afadd7c1615f75178319fb32fd586016b5d096734aaf16",
+        "whole_manifest_key": "c471eb98d6bdb7d81caec8b7e8bce460ae528b7d8c04b861d9642f5ae6a452e5",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12317,
+        "package_count": 2
+      },
+      "seconds": 0.37658843300596345
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-gicv3",
+      "head": "cc53d01b091e365cccbc7e56f7a929963331d379",
+      "body": "crt0-rust",
+      "features": [
+        "wide"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "6b145f74f1b5b6580e15cee7d7c4019ac518b534f0d31498268fa51f38ac2f41",
+        "source_projection_key": "0a26174c2706a0e2ead2b6b7ef46fa7590b8794182af636a485afc29d906dc29",
+        "whole_manifest_key": "cbe476962e799667c30811717ed90d64fee646c81648fb713a12300f7d17fd5c",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12317,
+        "package_count": 2
+      },
+      "seconds": 0.1768977809988428
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-gicv3",
+      "head": "cc53d01b091e365cccbc7e56f7a929963331d379",
+      "body": "crt-dllmain-rust",
+      "features": [],
+      "default_features": true,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "9d1a4f192bbb4cbd53f2d54c65251ef89bfea475ef2547a57ae9a9d606e52e6d",
+        "source_projection_key": "4d8304389428f540f9f68a472c16d29adc8090294f32d155e70959a42f8b9c8c",
+        "whole_manifest_key": "2a41053fc86b2ca495984ea62f6d8e98197e8e526cc9c0eefe7bc5c2f53521c7",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12366,
+        "package_count": 2
+      },
+      "seconds": 0.14407442801166326
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-gicv3",
+      "head": "cc53d01b091e365cccbc7e56f7a929963331d379",
+      "body": "conutils-rust",
+      "features": [],
+      "default_features": true,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "c89d71d27eb48c268fb310b7363e27ab162dde5b7a992824e81bbf3b52cc41ef",
+        "source_projection_key": "4b0569c24d88becfc620c78acd558aa589d0752a986a82b704ce120dad7c86cd",
+        "whole_manifest_key": "e64ae0d8d16dc4d736637e2cc1858e047c1dcfe76cffe0d8105b47f518f75c5d",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 5323737,
+        "package_count": 3
+      },
+      "seconds": 0.5488116600026842
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-graviton",
+      "head": "a512740c394429474b1861c53e7e74cebfa522e1",
+      "body": "crt-startup-rust",
+      "features": [
+        "crtexe"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "37e8ac4bafaf05533607d649cc837899b777bf101abf43c3f83feb0287f1650d",
+        "source_projection_key": "40b572fe7025f022cc8b19abd379537ded11120d1c5a963f35a14c07a42180cb",
+        "whole_manifest_key": "17efd922b2eb806de0c4c618b04f7703de0db8e5caa0985d5d8f3bd62c32f7da",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.2208085000020219
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-graviton",
+      "head": "a512740c394429474b1861c53e7e74cebfa522e1",
+      "body": "crt-startup-rust",
+      "features": [
+        "wcrtexe"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "50002f8559c0fcaa86fe20ec5d8fec71388588f668c676f0d8a3adb15807cf7a",
+        "source_projection_key": "54a276275b2ff4bbd47af597461b573573e439141c68bfbbf382331d6c1fe561",
+        "whole_manifest_key": "4ceb5ba28476b2b5a8e23c3b208083e007f4c7dac6625afb92b365fc6c0927c5",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.3565585800097324
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-graviton",
+      "head": "a512740c394429474b1861c53e7e74cebfa522e1",
+      "body": "crt-startup-rust",
+      "features": [
+        "crtdll"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "888f1e57b0e9946cc3032a4d44711e3a3d83de93f84e31782a2c4eb06197c68e",
+        "source_projection_key": "2eaf8c370669d5389c667d15189bcfc618c3e8f3974c241a9c0706cacf174bc0",
+        "whole_manifest_key": "f76b3e1e99706eba3d7dd0b619b15144cc95366fa10c79f4740247c8da8dbe27",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.4536132180073764
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-graviton",
+      "head": "a512740c394429474b1861c53e7e74cebfa522e1",
+      "body": "crt0-rust",
+      "features": [
+        "ansi"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "d38f8197015f866c019740d4cdfadf0c98e21fd8b9353ab1a3b310ed0605fe0c",
+        "source_projection_key": "dfcfbda01d54db4b72afadd7c1615f75178319fb32fd586016b5d096734aaf16",
+        "whole_manifest_key": "37997033cb68957421b6d546b5bda45f9ad177754d4f71ea514d4fc7a874f719",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12317,
+        "package_count": 2
+      },
+      "seconds": 0.23067406099289656
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-graviton",
+      "head": "a512740c394429474b1861c53e7e74cebfa522e1",
+      "body": "crt0-rust",
+      "features": [
+        "wide"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "6b145f74f1b5b6580e15cee7d7c4019ac518b534f0d31498268fa51f38ac2f41",
+        "source_projection_key": "0a26174c2706a0e2ead2b6b7ef46fa7590b8794182af636a485afc29d906dc29",
+        "whole_manifest_key": "5ed8105cbe45c1d191e896f1bc3ede33d99a4576b2f89c38f6d437c3a8099948",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12317,
+        "package_count": 2
+      },
+      "seconds": 0.12979781499598175
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-graviton",
+      "head": "a512740c394429474b1861c53e7e74cebfa522e1",
+      "body": "crt-dllmain-rust",
+      "features": [],
+      "default_features": true,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "9d1a4f192bbb4cbd53f2d54c65251ef89bfea475ef2547a57ae9a9d606e52e6d",
+        "source_projection_key": "4d8304389428f540f9f68a472c16d29adc8090294f32d155e70959a42f8b9c8c",
+        "whole_manifest_key": "9dc53064f21c26803f16a7fec1cd8a2d21e5415dd92c5a38770aafb4a697e9aa",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12366,
+        "package_count": 2
+      },
+      "seconds": 0.13489991800452117
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-graviton",
+      "head": "a512740c394429474b1861c53e7e74cebfa522e1",
+      "body": "conutils-rust",
+      "features": [],
+      "default_features": true,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "c89d71d27eb48c268fb310b7363e27ab162dde5b7a992824e81bbf3b52cc41ef",
+        "source_projection_key": "4b0569c24d88becfc620c78acd558aa589d0752a986a82b704ce120dad7c86cd",
+        "whole_manifest_key": "f072691e9f35ae0f193118b8de4cb8efe2e7f24a9b73fd70e4b5c7b62d7318ff",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 5323737,
+        "package_count": 3
+      },
+      "seconds": 0.4429676610016031
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-integration",
+      "head": "97764e31f30e97bf377b6a48a311f823fce877b6",
+      "body": "crt-startup-rust",
+      "features": [
+        "crtexe"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "37e8ac4bafaf05533607d649cc837899b777bf101abf43c3f83feb0287f1650d",
+        "source_projection_key": "40b572fe7025f022cc8b19abd379537ded11120d1c5a963f35a14c07a42180cb",
+        "whole_manifest_key": "4c494b170491c963cac43c9ff08d83ba66bbda598b594685f910e217940cc999",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.15512897800363135
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-integration",
+      "head": "97764e31f30e97bf377b6a48a311f823fce877b6",
+      "body": "crt-startup-rust",
+      "features": [
+        "wcrtexe"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "50002f8559c0fcaa86fe20ec5d8fec71388588f668c676f0d8a3adb15807cf7a",
+        "source_projection_key": "54a276275b2ff4bbd47af597461b573573e439141c68bfbbf382331d6c1fe561",
+        "whole_manifest_key": "4eaa3681f02b93a15f3b1aba0d69b68da15e81f589a8e4691de0f28f5d6d8565",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.1416344159952132
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-integration",
+      "head": "97764e31f30e97bf377b6a48a311f823fce877b6",
+      "body": "crt-startup-rust",
+      "features": [
+        "crtdll"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "888f1e57b0e9946cc3032a4d44711e3a3d83de93f84e31782a2c4eb06197c68e",
+        "source_projection_key": "2eaf8c370669d5389c667d15189bcfc618c3e8f3974c241a9c0706cacf174bc0",
+        "whole_manifest_key": "d30a21937e1db5289c010b593beadbf2345c68e355c961004d694bb8c9fd03d2",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.1396863440022571
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-integration",
+      "head": "97764e31f30e97bf377b6a48a311f823fce877b6",
+      "body": "crt0-rust",
+      "features": [
+        "ansi"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "d38f8197015f866c019740d4cdfadf0c98e21fd8b9353ab1a3b310ed0605fe0c",
+        "source_projection_key": "dfcfbda01d54db4b72afadd7c1615f75178319fb32fd586016b5d096734aaf16",
+        "whole_manifest_key": "c471eb98d6bdb7d81caec8b7e8bce460ae528b7d8c04b861d9642f5ae6a452e5",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12317,
+        "package_count": 2
+      },
+      "seconds": 0.13988135100225918
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-integration",
+      "head": "97764e31f30e97bf377b6a48a311f823fce877b6",
+      "body": "crt0-rust",
+      "features": [
+        "wide"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "6b145f74f1b5b6580e15cee7d7c4019ac518b534f0d31498268fa51f38ac2f41",
+        "source_projection_key": "0a26174c2706a0e2ead2b6b7ef46fa7590b8794182af636a485afc29d906dc29",
+        "whole_manifest_key": "cbe476962e799667c30811717ed90d64fee646c81648fb713a12300f7d17fd5c",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12317,
+        "package_count": 2
+      },
+      "seconds": 0.12361676299769897
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-integration",
+      "head": "97764e31f30e97bf377b6a48a311f823fce877b6",
+      "body": "crt-dllmain-rust",
+      "features": [],
+      "default_features": true,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "9d1a4f192bbb4cbd53f2d54c65251ef89bfea475ef2547a57ae9a9d606e52e6d",
+        "source_projection_key": "4d8304389428f540f9f68a472c16d29adc8090294f32d155e70959a42f8b9c8c",
+        "whole_manifest_key": "2a41053fc86b2ca495984ea62f6d8e98197e8e526cc9c0eefe7bc5c2f53521c7",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12366,
+        "package_count": 2
+      },
+      "seconds": 0.16419478500029072
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-integration",
+      "head": "97764e31f30e97bf377b6a48a311f823fce877b6",
+      "body": "conutils-rust",
+      "features": [],
+      "default_features": true,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "c89d71d27eb48c268fb310b7363e27ab162dde5b7a992824e81bbf3b52cc41ef",
+        "source_projection_key": "4b0569c24d88becfc620c78acd558aa589d0752a986a82b704ce120dad7c86cd",
+        "whole_manifest_key": "e64ae0d8d16dc4d736637e2cc1858e047c1dcfe76cffe0d8105b47f518f75c5d",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 5323737,
+        "package_count": 3
+      },
+      "seconds": 0.4742083329911111
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-integration-2",
+      "head": "20b8abeb14689ac02e89d6fa1794b61e8d63b049",
+      "body": "crt-startup-rust",
+      "features": [
+        "crtexe"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "37e8ac4bafaf05533607d649cc837899b777bf101abf43c3f83feb0287f1650d",
+        "source_projection_key": "40b572fe7025f022cc8b19abd379537ded11120d1c5a963f35a14c07a42180cb",
+        "whole_manifest_key": "609f7832cc8dffc11e64bdda5323719f138809329d4bdb9edef3cf247c0930a1",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.15679012300097384
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-integration-2",
+      "head": "20b8abeb14689ac02e89d6fa1794b61e8d63b049",
+      "body": "crt-startup-rust",
+      "features": [
+        "wcrtexe"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "50002f8559c0fcaa86fe20ec5d8fec71388588f668c676f0d8a3adb15807cf7a",
+        "source_projection_key": "54a276275b2ff4bbd47af597461b573573e439141c68bfbbf382331d6c1fe561",
+        "whole_manifest_key": "7a02e035a5e7cfe0055ce2cfd6647c18af09667f2fc0de622e290feeccf8f80f",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.13032694600406103
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-integration-2",
+      "head": "20b8abeb14689ac02e89d6fa1794b61e8d63b049",
+      "body": "crt-startup-rust",
+      "features": [
+        "crtdll"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "888f1e57b0e9946cc3032a4d44711e3a3d83de93f84e31782a2c4eb06197c68e",
+        "source_projection_key": "2eaf8c370669d5389c667d15189bcfc618c3e8f3974c241a9c0706cacf174bc0",
+        "whole_manifest_key": "0c5d9d688ac4fb18dfdd269abbafce1107774b9eeddbfeb973c64236a1dd6d2d",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.14866304298629984
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-integration-2",
+      "head": "20b8abeb14689ac02e89d6fa1794b61e8d63b049",
+      "body": "crt0-rust",
+      "features": [
+        "ansi"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "d38f8197015f866c019740d4cdfadf0c98e21fd8b9353ab1a3b310ed0605fe0c",
+        "source_projection_key": "dfcfbda01d54db4b72afadd7c1615f75178319fb32fd586016b5d096734aaf16",
+        "whole_manifest_key": "6fd8e9c60062953f711bd1610e02e95d09fd6e89f430385617953b2af387c51a",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12317,
+        "package_count": 2
+      },
+      "seconds": 0.12788538399036042
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-integration-2",
+      "head": "20b8abeb14689ac02e89d6fa1794b61e8d63b049",
+      "body": "crt0-rust",
+      "features": [
+        "wide"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "6b145f74f1b5b6580e15cee7d7c4019ac518b534f0d31498268fa51f38ac2f41",
+        "source_projection_key": "0a26174c2706a0e2ead2b6b7ef46fa7590b8794182af636a485afc29d906dc29",
+        "whole_manifest_key": "1f90d508fbd01f4fb7ee315e0c058b85e2e1943b435d61a13a697cf34490b131",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12317,
+        "package_count": 2
+      },
+      "seconds": 0.16150113800540566
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-integration-2",
+      "head": "20b8abeb14689ac02e89d6fa1794b61e8d63b049",
+      "body": "crt-dllmain-rust",
+      "features": [],
+      "default_features": true,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "9d1a4f192bbb4cbd53f2d54c65251ef89bfea475ef2547a57ae9a9d606e52e6d",
+        "source_projection_key": "4d8304389428f540f9f68a472c16d29adc8090294f32d155e70959a42f8b9c8c",
+        "whole_manifest_key": "bc8787ad933a66425312f2ed92b56aed26ab6d6de23fea2c086686fd06be422d",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12366,
+        "package_count": 2
+      },
+      "seconds": 0.14286680899385829
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-integration-2",
+      "head": "20b8abeb14689ac02e89d6fa1794b61e8d63b049",
+      "body": "conutils-rust",
+      "features": [],
+      "default_features": true,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "e7a305c83ffa80c33de7b8362775569c98b320079e2d31d9284f224bcda1175f",
+        "source_projection_key": "6731cccf7dd1dfb7dedf0f5290515028088625be9ee5fdba4a941b0f0393ada0",
+        "whole_manifest_key": "ac64ce516436601dfc8a4ae5e596fecbf2d897bd673c49a0ba422064e6ebd4b2",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 5322810,
+        "package_count": 3
+      },
+      "seconds": 0.43864485499216244
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-msvcrt-homebrew",
+      "head": "d1f0a1a1f6891f7723b9c98788ea42a7ba57542e",
+      "body": "crt-startup-rust",
+      "features": [
+        "crtexe"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "37e8ac4bafaf05533607d649cc837899b777bf101abf43c3f83feb0287f1650d",
+        "source_projection_key": "40b572fe7025f022cc8b19abd379537ded11120d1c5a963f35a14c07a42180cb",
+        "whole_manifest_key": "7a9851ca9e96e5f02e073669f390b553263d0ab0aeaed8ca917ea132b40d2ddf",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.16654197800380643
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-msvcrt-homebrew",
+      "head": "d1f0a1a1f6891f7723b9c98788ea42a7ba57542e",
+      "body": "crt-startup-rust",
+      "features": [
+        "wcrtexe"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "50002f8559c0fcaa86fe20ec5d8fec71388588f668c676f0d8a3adb15807cf7a",
+        "source_projection_key": "54a276275b2ff4bbd47af597461b573573e439141c68bfbbf382331d6c1fe561",
+        "whole_manifest_key": "7ae50568ea4a18069a53b0ef142fc108c22da56e446b1165e7c0bf59131ddfdf",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.140195265004877
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-msvcrt-homebrew",
+      "head": "d1f0a1a1f6891f7723b9c98788ea42a7ba57542e",
+      "body": "crt-startup-rust",
+      "features": [
+        "crtdll"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "888f1e57b0e9946cc3032a4d44711e3a3d83de93f84e31782a2c4eb06197c68e",
+        "source_projection_key": "2eaf8c370669d5389c667d15189bcfc618c3e8f3974c241a9c0706cacf174bc0",
+        "whole_manifest_key": "16879b41e47d23d1675e2f4524a4b8b6f3fc19f68a9fc16f3ea0e21feb16e887",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.15732132300036028
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-msvcrt-homebrew",
+      "head": "d1f0a1a1f6891f7723b9c98788ea42a7ba57542e",
+      "body": "crt0-rust",
+      "features": [
+        "ansi"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "d38f8197015f866c019740d4cdfadf0c98e21fd8b9353ab1a3b310ed0605fe0c",
+        "source_projection_key": "dfcfbda01d54db4b72afadd7c1615f75178319fb32fd586016b5d096734aaf16",
+        "whole_manifest_key": "01743fb796e9ffe50fb7a86e5c6242ef7784c15312eb182cfae83992acd6dbc0",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12317,
+        "package_count": 2
+      },
+      "seconds": 0.1492429919890128
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-msvcrt-homebrew",
+      "head": "d1f0a1a1f6891f7723b9c98788ea42a7ba57542e",
+      "body": "crt0-rust",
+      "features": [
+        "wide"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "6b145f74f1b5b6580e15cee7d7c4019ac518b534f0d31498268fa51f38ac2f41",
+        "source_projection_key": "0a26174c2706a0e2ead2b6b7ef46fa7590b8794182af636a485afc29d906dc29",
+        "whole_manifest_key": "187fa27823d637c36671c1f353687ed29472322947f627f333b2922d3a5bfcf5",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12317,
+        "package_count": 2
+      },
+      "seconds": 0.13726419198792428
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-msvcrt-homebrew",
+      "head": "d1f0a1a1f6891f7723b9c98788ea42a7ba57542e",
+      "body": "crt-dllmain-rust",
+      "features": [],
+      "default_features": true,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "9d1a4f192bbb4cbd53f2d54c65251ef89bfea475ef2547a57ae9a9d606e52e6d",
+        "source_projection_key": "4d8304389428f540f9f68a472c16d29adc8090294f32d155e70959a42f8b9c8c",
+        "whole_manifest_key": "90a37dcddff0afeb1bbaf1e60bdca70c57e474986c472cfd4f1b3cd808fbb88e",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12366,
+        "package_count": 2
+      },
+      "seconds": 0.14916830501169898
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-msvcrt-homebrew",
+      "head": "d1f0a1a1f6891f7723b9c98788ea42a7ba57542e",
+      "body": "conutils-rust",
+      "features": [],
+      "default_features": true,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "c89d71d27eb48c268fb310b7363e27ab162dde5b7a992824e81bbf3b52cc41ef",
+        "source_projection_key": "4b0569c24d88becfc620c78acd558aa589d0752a986a82b704ce120dad7c86cd",
+        "whole_manifest_key": "72d4b5cff6c9cc97f01b744c2e7daf633b656b8f7a6dac1ec5449c914b88cef6",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 5323737,
+        "package_count": 3
+      },
+      "seconds": 0.4612189069885062
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-research",
+      "head": "d15fa7de6ef01da5a9e1f1101f408e0d437787aa",
+      "body": "crt-startup-rust",
+      "features": [
+        "crtexe"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "37e8ac4bafaf05533607d649cc837899b777bf101abf43c3f83feb0287f1650d",
+        "source_projection_key": "40b572fe7025f022cc8b19abd379537ded11120d1c5a963f35a14c07a42180cb",
+        "whole_manifest_key": "18e0e2cd3a0690deaa54cd2bfeb2d8673d58d592731fbc003607f3b4d81658a5",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.1493676219979534
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-research",
+      "head": "d15fa7de6ef01da5a9e1f1101f408e0d437787aa",
+      "body": "crt-startup-rust",
+      "features": [
+        "wcrtexe"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "50002f8559c0fcaa86fe20ec5d8fec71388588f668c676f0d8a3adb15807cf7a",
+        "source_projection_key": "54a276275b2ff4bbd47af597461b573573e439141c68bfbbf382331d6c1fe561",
+        "whole_manifest_key": "b8e6920811c48555e25b8d5a917c9b95eafc4a4551bceb18e93c40ad2aac4657",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.131295612998656
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-research",
+      "head": "d15fa7de6ef01da5a9e1f1101f408e0d437787aa",
+      "body": "crt-startup-rust",
+      "features": [
+        "crtdll"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "888f1e57b0e9946cc3032a4d44711e3a3d83de93f84e31782a2c4eb06197c68e",
+        "source_projection_key": "2eaf8c370669d5389c667d15189bcfc618c3e8f3974c241a9c0706cacf174bc0",
+        "whole_manifest_key": "f5e6567ed804f510493be121a26c2ea89553e83f897a1c94dcef95d7da262f25",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.12764429800154176
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-research",
+      "head": "d15fa7de6ef01da5a9e1f1101f408e0d437787aa",
+      "body": "crt0-rust",
+      "features": [
+        "ansi"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "d38f8197015f866c019740d4cdfadf0c98e21fd8b9353ab1a3b310ed0605fe0c",
+        "source_projection_key": "dfcfbda01d54db4b72afadd7c1615f75178319fb32fd586016b5d096734aaf16",
+        "whole_manifest_key": "3e02157f9bc6670335d6388e6924c22cf26770bb786c00f019dde7fc1ca16cb7",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12317,
+        "package_count": 2
+      },
+      "seconds": 0.13117561700346414
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-research",
+      "head": "d15fa7de6ef01da5a9e1f1101f408e0d437787aa",
+      "body": "crt0-rust",
+      "features": [
+        "wide"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "6b145f74f1b5b6580e15cee7d7c4019ac518b534f0d31498268fa51f38ac2f41",
+        "source_projection_key": "0a26174c2706a0e2ead2b6b7ef46fa7590b8794182af636a485afc29d906dc29",
+        "whole_manifest_key": "3ed778479cc0af2e7b8f0d6c0183637c0ae17dff5e29614588c0dd0ba79d1bb5",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12317,
+        "package_count": 2
+      },
+      "seconds": 0.1777725030115107
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-research",
+      "head": "d15fa7de6ef01da5a9e1f1101f408e0d437787aa",
+      "body": "crt-dllmain-rust",
+      "features": [],
+      "default_features": true,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "9d1a4f192bbb4cbd53f2d54c65251ef89bfea475ef2547a57ae9a9d606e52e6d",
+        "source_projection_key": "4d8304389428f540f9f68a472c16d29adc8090294f32d155e70959a42f8b9c8c",
+        "whole_manifest_key": "b3f9f67f1580cff6b61766cf9b79edf5816c3fd3169328ae567feb1b16517107",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12366,
+        "package_count": 2
+      },
+      "seconds": 0.12109715399856213
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-research",
+      "head": "d15fa7de6ef01da5a9e1f1101f408e0d437787aa",
+      "body": "conutils-rust",
+      "features": [],
+      "default_features": true,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "c89d71d27eb48c268fb310b7363e27ab162dde5b7a992824e81bbf3b52cc41ef",
+        "source_projection_key": "4b0569c24d88becfc620c78acd558aa589d0752a986a82b704ce120dad7c86cd",
+        "whole_manifest_key": "4ce79b38516cd6769860e3bdec679c8b75f8fd19212fe9089ccd6b8f8e73395e",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 5323737,
+        "package_count": 3
+      },
+      "seconds": 0.3938964400003897
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-rustconv-speedrun",
+      "head": "116ddc2ab7882942d14bd78d9eeef384b1425f36",
+      "body": "crt-startup-rust",
+      "features": [
+        "crtexe"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "37e8ac4bafaf05533607d649cc837899b777bf101abf43c3f83feb0287f1650d",
+        "source_projection_key": "40b572fe7025f022cc8b19abd379537ded11120d1c5a963f35a14c07a42180cb",
+        "whole_manifest_key": "baf06f6f0a3247d6edfceb3bf9db8df3b912c85cd03b405d1b5f33b6c75f967e",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.1270886900019832
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-rustconv-speedrun",
+      "head": "116ddc2ab7882942d14bd78d9eeef384b1425f36",
+      "body": "crt-startup-rust",
+      "features": [
+        "wcrtexe"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "50002f8559c0fcaa86fe20ec5d8fec71388588f668c676f0d8a3adb15807cf7a",
+        "source_projection_key": "54a276275b2ff4bbd47af597461b573573e439141c68bfbbf382331d6c1fe561",
+        "whole_manifest_key": "f3a8e166a397976b3b0a1a5ca599f010f8deed2d5bdcab16915d280aaea3ffec",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.11508284100273158
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-rustconv-speedrun",
+      "head": "116ddc2ab7882942d14bd78d9eeef384b1425f36",
+      "body": "crt-startup-rust",
+      "features": [
+        "crtdll"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "888f1e57b0e9946cc3032a4d44711e3a3d83de93f84e31782a2c4eb06197c68e",
+        "source_projection_key": "2eaf8c370669d5389c667d15189bcfc618c3e8f3974c241a9c0706cacf174bc0",
+        "whole_manifest_key": "e60c6a2fd7e82c92d2536db9f32fa8133eea0190b8d8e257a7d893222c6009cb",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.11317763599799946
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-rustconv-speedrun",
+      "head": "116ddc2ab7882942d14bd78d9eeef384b1425f36",
+      "body": "crt0-rust",
+      "features": [
+        "ansi"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "d38f8197015f866c019740d4cdfadf0c98e21fd8b9353ab1a3b310ed0605fe0c",
+        "source_projection_key": "dfcfbda01d54db4b72afadd7c1615f75178319fb32fd586016b5d096734aaf16",
+        "whole_manifest_key": "d342effa459f3d76b3a2a9b0c5cdc0fa6b724dd799cbfe11b1bd9041614893f9",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12317,
+        "package_count": 2
+      },
+      "seconds": 0.12314998099463992
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-rustconv-speedrun",
+      "head": "116ddc2ab7882942d14bd78d9eeef384b1425f36",
+      "body": "crt0-rust",
+      "features": [
+        "wide"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "6b145f74f1b5b6580e15cee7d7c4019ac518b534f0d31498268fa51f38ac2f41",
+        "source_projection_key": "0a26174c2706a0e2ead2b6b7ef46fa7590b8794182af636a485afc29d906dc29",
+        "whole_manifest_key": "200ad56b92ce9c0bdea96bb1ad9e54df2176227753cfde415212978697a0e0a2",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12317,
+        "package_count": 2
+      },
+      "seconds": 0.12928592698881403
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-rustconv-speedrun",
+      "head": "116ddc2ab7882942d14bd78d9eeef384b1425f36",
+      "body": "crt-dllmain-rust",
+      "features": [],
+      "default_features": true,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "9d1a4f192bbb4cbd53f2d54c65251ef89bfea475ef2547a57ae9a9d606e52e6d",
+        "source_projection_key": "4d8304389428f540f9f68a472c16d29adc8090294f32d155e70959a42f8b9c8c",
+        "whole_manifest_key": "85829f3cbc8484f6c6df1470cf25fb2071d43f99d4109fae98169dc89dd545bc",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12366,
+        "package_count": 2
+      },
+      "seconds": 0.09792696298973169
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-rustconv-speedrun",
+      "head": "116ddc2ab7882942d14bd78d9eeef384b1425f36",
+      "body": "conutils-rust",
+      "features": [],
+      "default_features": true,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "ebe16357fa5ea9e4edb0652bfde3b7aaf3805bb7df06ecabb9b9dc11ad288802",
+        "source_projection_key": "7acc6aca55d38ec1453b369db0b65bde3a13b68221df7c24960a64d1423dfe0a",
+        "whole_manifest_key": "b64dd3d9a6988d1be8c91a6573d911438cc3a608ad77d3ef40bfaa1df174fd6b",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 5322843,
+        "package_count": 3
+      },
+      "seconds": 0.4078820259892382
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-shell32-com",
+      "head": "1a29ce449155f3ea4de301be693fa987ff93973a",
+      "body": "crt-startup-rust",
+      "features": [
+        "crtexe"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "37e8ac4bafaf05533607d649cc837899b777bf101abf43c3f83feb0287f1650d",
+        "source_projection_key": "40b572fe7025f022cc8b19abd379537ded11120d1c5a963f35a14c07a42180cb",
+        "whole_manifest_key": "b4cc1b94da45d384f4e76880e441bd410019072ab5367cc4c0f04c381d44abb0",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.18614630799856968
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-shell32-com",
+      "head": "1a29ce449155f3ea4de301be693fa987ff93973a",
+      "body": "crt-startup-rust",
+      "features": [
+        "wcrtexe"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "50002f8559c0fcaa86fe20ec5d8fec71388588f668c676f0d8a3adb15807cf7a",
+        "source_projection_key": "54a276275b2ff4bbd47af597461b573573e439141c68bfbbf382331d6c1fe561",
+        "whole_manifest_key": "8c675fcf18fd367c0ec869e6561c0a96df1ad1d6d1952ab2bdf989c67853a287",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.13569557599839754
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-shell32-com",
+      "head": "1a29ce449155f3ea4de301be693fa987ff93973a",
+      "body": "crt-startup-rust",
+      "features": [
+        "crtdll"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "888f1e57b0e9946cc3032a4d44711e3a3d83de93f84e31782a2c4eb06197c68e",
+        "source_projection_key": "2eaf8c370669d5389c667d15189bcfc618c3e8f3974c241a9c0706cacf174bc0",
+        "whole_manifest_key": "ae32521ac991813c45cc0f70f011af1b25f020ec342c64ee1171603d1e8d92fa",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.1300452850118745
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-shell32-com",
+      "head": "1a29ce449155f3ea4de301be693fa987ff93973a",
+      "body": "crt0-rust",
+      "features": [
+        "ansi"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "d38f8197015f866c019740d4cdfadf0c98e21fd8b9353ab1a3b310ed0605fe0c",
+        "source_projection_key": "dfcfbda01d54db4b72afadd7c1615f75178319fb32fd586016b5d096734aaf16",
+        "whole_manifest_key": "b83c54a6240127fc3e5e31a170d251c552804845d9e2b454a189b7fb8c2e3d01",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12317,
+        "package_count": 2
+      },
+      "seconds": 0.13137689400173258
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-shell32-com",
+      "head": "1a29ce449155f3ea4de301be693fa987ff93973a",
+      "body": "crt0-rust",
+      "features": [
+        "wide"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "6b145f74f1b5b6580e15cee7d7c4019ac518b534f0d31498268fa51f38ac2f41",
+        "source_projection_key": "0a26174c2706a0e2ead2b6b7ef46fa7590b8794182af636a485afc29d906dc29",
+        "whole_manifest_key": "ae27bf08e94d17d8c0c3e494a1678098cf5865603b246e17ef62180da9c9915b",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12317,
+        "package_count": 2
+      },
+      "seconds": 0.13244346099963877
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-shell32-com",
+      "head": "1a29ce449155f3ea4de301be693fa987ff93973a",
+      "body": "crt-dllmain-rust",
+      "features": [],
+      "default_features": true,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "9d1a4f192bbb4cbd53f2d54c65251ef89bfea475ef2547a57ae9a9d606e52e6d",
+        "source_projection_key": "4d8304389428f540f9f68a472c16d29adc8090294f32d155e70959a42f8b9c8c",
+        "whole_manifest_key": "f608a5ea711ec5888dfbdf935056fd841d2c9a2a251cc41fbcf4b9a6c53c994e",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12366,
+        "package_count": 2
+      },
+      "seconds": 0.1309105349937454
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-shell32-com",
+      "head": "1a29ce449155f3ea4de301be693fa987ff93973a",
+      "body": "conutils-rust",
+      "features": [],
+      "default_features": true,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "c89d71d27eb48c268fb310b7363e27ab162dde5b7a992824e81bbf3b52cc41ef",
+        "source_projection_key": "4b0569c24d88becfc620c78acd558aa589d0752a986a82b704ce120dad7c86cd",
+        "whole_manifest_key": "cee679cfbd773805bc70809c94522f4c0d7fbb0eec2c52cc4eeefa0e2213e296",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 5323737,
+        "package_count": 3
+      },
+      "seconds": 0.39982509599940386
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-smp",
+      "head": "46fb14c7a94dae637cb4f6844793556722ec97f5",
+      "body": "crt-startup-rust",
+      "features": [
+        "crtexe"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "37e8ac4bafaf05533607d649cc837899b777bf101abf43c3f83feb0287f1650d",
+        "source_projection_key": "40b572fe7025f022cc8b19abd379537ded11120d1c5a963f35a14c07a42180cb",
+        "whole_manifest_key": "6978ea7ab95cfdbdc601234586528ab7feecac487917fdc6675ddbc0fbbf38aa",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.15154756799165625
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-smp",
+      "head": "46fb14c7a94dae637cb4f6844793556722ec97f5",
+      "body": "crt-startup-rust",
+      "features": [
+        "wcrtexe"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "50002f8559c0fcaa86fe20ec5d8fec71388588f668c676f0d8a3adb15807cf7a",
+        "source_projection_key": "54a276275b2ff4bbd47af597461b573573e439141c68bfbbf382331d6c1fe561",
+        "whole_manifest_key": "71f8cec8a835fc6a58e0752acf970aa47013e626510526566afbe1e2c1918125",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.13802294999186415
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-smp",
+      "head": "46fb14c7a94dae637cb4f6844793556722ec97f5",
+      "body": "crt-startup-rust",
+      "features": [
+        "crtdll"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "888f1e57b0e9946cc3032a4d44711e3a3d83de93f84e31782a2c4eb06197c68e",
+        "source_projection_key": "2eaf8c370669d5389c667d15189bcfc618c3e8f3974c241a9c0706cacf174bc0",
+        "whole_manifest_key": "4d0f594b74f612b957fd59f020e0b93e099377a74db7b5c7b146300844791c43",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.1440520890027983
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-smp",
+      "head": "46fb14c7a94dae637cb4f6844793556722ec97f5",
+      "body": "crt0-rust",
+      "features": [
+        "ansi"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "d38f8197015f866c019740d4cdfadf0c98e21fd8b9353ab1a3b310ed0605fe0c",
+        "source_projection_key": "dfcfbda01d54db4b72afadd7c1615f75178319fb32fd586016b5d096734aaf16",
+        "whole_manifest_key": "55f97e0a6769b184a5bf49f68781abeb0fcc6952c65638ce872322342814585a",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12317,
+        "package_count": 2
+      },
+      "seconds": 0.1418827820016304
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-smp",
+      "head": "46fb14c7a94dae637cb4f6844793556722ec97f5",
+      "body": "crt0-rust",
+      "features": [
+        "wide"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "6b145f74f1b5b6580e15cee7d7c4019ac518b534f0d31498268fa51f38ac2f41",
+        "source_projection_key": "0a26174c2706a0e2ead2b6b7ef46fa7590b8794182af636a485afc29d906dc29",
+        "whole_manifest_key": "e743c62875a4a18c82cc194ff011390d94f2170d6d4311942c423c2c854ec69c",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12317,
+        "package_count": 2
+      },
+      "seconds": 0.13324595199082978
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-smp",
+      "head": "46fb14c7a94dae637cb4f6844793556722ec97f5",
+      "body": "crt-dllmain-rust",
+      "features": [],
+      "default_features": true,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "9d1a4f192bbb4cbd53f2d54c65251ef89bfea475ef2547a57ae9a9d606e52e6d",
+        "source_projection_key": "4d8304389428f540f9f68a472c16d29adc8090294f32d155e70959a42f8b9c8c",
+        "whole_manifest_key": "eabf916939758456e66c87f4c36c46e5228e91fdec2f00e27abeb239dc2ca1c0",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12366,
+        "package_count": 2
+      },
+      "seconds": 0.13505782900028862
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-smp",
+      "head": "46fb14c7a94dae637cb4f6844793556722ec97f5",
+      "body": "conutils-rust",
+      "features": [],
+      "default_features": true,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "c89d71d27eb48c268fb310b7363e27ab162dde5b7a992824e81bbf3b52cc41ef",
+        "source_projection_key": "4b0569c24d88becfc620c78acd558aa589d0752a986a82b704ce120dad7c86cd",
+        "whole_manifest_key": "fa6eb7c1e3d6124995444be4fa3936dccdbd45d6e6be81c8065b19bb6dade05b",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 5323737,
+        "package_count": 3
+      },
+      "seconds": 0.44723291898844764
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-upstream-sync",
+      "head": "59b86e722bbdd186c643b93868b1074d5e563153",
+      "body": "crt-startup-rust",
+      "features": [
+        "crtexe"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "37e8ac4bafaf05533607d649cc837899b777bf101abf43c3f83feb0287f1650d",
+        "source_projection_key": "40b572fe7025f022cc8b19abd379537ded11120d1c5a963f35a14c07a42180cb",
+        "whole_manifest_key": "6978ea7ab95cfdbdc601234586528ab7feecac487917fdc6675ddbc0fbbf38aa",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.157644375009113
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-upstream-sync",
+      "head": "59b86e722bbdd186c643b93868b1074d5e563153",
+      "body": "crt-startup-rust",
+      "features": [
+        "wcrtexe"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "50002f8559c0fcaa86fe20ec5d8fec71388588f668c676f0d8a3adb15807cf7a",
+        "source_projection_key": "54a276275b2ff4bbd47af597461b573573e439141c68bfbbf382331d6c1fe561",
+        "whole_manifest_key": "71f8cec8a835fc6a58e0752acf970aa47013e626510526566afbe1e2c1918125",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.18204596400028095
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-upstream-sync",
+      "head": "59b86e722bbdd186c643b93868b1074d5e563153",
+      "body": "crt-startup-rust",
+      "features": [
+        "crtdll"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "888f1e57b0e9946cc3032a4d44711e3a3d83de93f84e31782a2c4eb06197c68e",
+        "source_projection_key": "2eaf8c370669d5389c667d15189bcfc618c3e8f3974c241a9c0706cacf174bc0",
+        "whole_manifest_key": "4d0f594b74f612b957fd59f020e0b93e099377a74db7b5c7b146300844791c43",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.14350773900514469
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-upstream-sync",
+      "head": "59b86e722bbdd186c643b93868b1074d5e563153",
+      "body": "crt0-rust",
+      "features": [
+        "ansi"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "d38f8197015f866c019740d4cdfadf0c98e21fd8b9353ab1a3b310ed0605fe0c",
+        "source_projection_key": "dfcfbda01d54db4b72afadd7c1615f75178319fb32fd586016b5d096734aaf16",
+        "whole_manifest_key": "55f97e0a6769b184a5bf49f68781abeb0fcc6952c65638ce872322342814585a",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12317,
+        "package_count": 2
+      },
+      "seconds": 0.12898075600969605
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-upstream-sync",
+      "head": "59b86e722bbdd186c643b93868b1074d5e563153",
+      "body": "crt0-rust",
+      "features": [
+        "wide"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "6b145f74f1b5b6580e15cee7d7c4019ac518b534f0d31498268fa51f38ac2f41",
+        "source_projection_key": "0a26174c2706a0e2ead2b6b7ef46fa7590b8794182af636a485afc29d906dc29",
+        "whole_manifest_key": "e743c62875a4a18c82cc194ff011390d94f2170d6d4311942c423c2c854ec69c",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12317,
+        "package_count": 2
+      },
+      "seconds": 0.13342017099785153
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-upstream-sync",
+      "head": "59b86e722bbdd186c643b93868b1074d5e563153",
+      "body": "crt-dllmain-rust",
+      "features": [],
+      "default_features": true,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "9d1a4f192bbb4cbd53f2d54c65251ef89bfea475ef2547a57ae9a9d606e52e6d",
+        "source_projection_key": "4d8304389428f540f9f68a472c16d29adc8090294f32d155e70959a42f8b9c8c",
+        "whole_manifest_key": "eabf916939758456e66c87f4c36c46e5228e91fdec2f00e27abeb239dc2ca1c0",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12366,
+        "package_count": 2
+      },
+      "seconds": 0.16375518700806424
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-upstream-sync",
+      "head": "59b86e722bbdd186c643b93868b1074d5e563153",
+      "body": "conutils-rust",
+      "features": [],
+      "default_features": true,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "c89d71d27eb48c268fb310b7363e27ab162dde5b7a992824e81bbf3b52cc41ef",
+        "source_projection_key": "4b0569c24d88becfc620c78acd558aa589d0752a986a82b704ce120dad7c86cd",
+        "whole_manifest_key": "fa6eb7c1e3d6124995444be4fa3936dccdbd45d6e6be81c8065b19bb6dade05b",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 5323737,
+        "package_count": 3
+      },
+      "seconds": 0.4275937730126316
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-warnings-burndown",
+      "head": "09fa034f9338e4a9474d3792ef838143983fc1d7",
+      "body": "crt-startup-rust",
+      "features": [
+        "crtexe"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "37e8ac4bafaf05533607d649cc837899b777bf101abf43c3f83feb0287f1650d",
+        "source_projection_key": "40b572fe7025f022cc8b19abd379537ded11120d1c5a963f35a14c07a42180cb",
+        "whole_manifest_key": "5ca6747cc42b2dd02886dacf58f0d563b81a31ea2a456d8b1f475016eb8e4344",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.14098572499642614
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-warnings-burndown",
+      "head": "09fa034f9338e4a9474d3792ef838143983fc1d7",
+      "body": "crt-startup-rust",
+      "features": [
+        "wcrtexe"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "50002f8559c0fcaa86fe20ec5d8fec71388588f668c676f0d8a3adb15807cf7a",
+        "source_projection_key": "54a276275b2ff4bbd47af597461b573573e439141c68bfbbf382331d6c1fe561",
+        "whole_manifest_key": "2da80c0bd39956e518521504f231a3aa70039b9086df5ea7c020380b84677fb9",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.1297432739957003
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-warnings-burndown",
+      "head": "09fa034f9338e4a9474d3792ef838143983fc1d7",
+      "body": "crt-startup-rust",
+      "features": [
+        "crtdll"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "888f1e57b0e9946cc3032a4d44711e3a3d83de93f84e31782a2c4eb06197c68e",
+        "source_projection_key": "2eaf8c370669d5389c667d15189bcfc618c3e8f3974c241a9c0706cacf174bc0",
+        "whole_manifest_key": "a2c01050d256774a809d8092704ab72914ccb11a9a1ec3cd9f9e1e66f55aedb5",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 119442,
+        "package_count": 2
+      },
+      "seconds": 0.13675626899930649
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-warnings-burndown",
+      "head": "09fa034f9338e4a9474d3792ef838143983fc1d7",
+      "body": "crt0-rust",
+      "features": [
+        "ansi"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "d38f8197015f866c019740d4cdfadf0c98e21fd8b9353ab1a3b310ed0605fe0c",
+        "source_projection_key": "dfcfbda01d54db4b72afadd7c1615f75178319fb32fd586016b5d096734aaf16",
+        "whole_manifest_key": "9e469e636b25ab5cfa2f65a45751ab89bbd8e4ddee3aea452e9695033209e591",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12317,
+        "package_count": 2
+      },
+      "seconds": 0.12249346599855926
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-warnings-burndown",
+      "head": "09fa034f9338e4a9474d3792ef838143983fc1d7",
+      "body": "crt0-rust",
+      "features": [
+        "wide"
+      ],
+      "default_features": false,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "6b145f74f1b5b6580e15cee7d7c4019ac518b534f0d31498268fa51f38ac2f41",
+        "source_projection_key": "0a26174c2706a0e2ead2b6b7ef46fa7590b8794182af636a485afc29d906dc29",
+        "whole_manifest_key": "accb086d7118d81a751c4fc223e25af09653f1ab33c640a15cd93ec21107d19b",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12317,
+        "package_count": 2
+      },
+      "seconds": 0.11764408799353987
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-warnings-burndown",
+      "head": "09fa034f9338e4a9474d3792ef838143983fc1d7",
+      "body": "crt-dllmain-rust",
+      "features": [],
+      "default_features": true,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "9d1a4f192bbb4cbd53f2d54c65251ef89bfea475ef2547a57ae9a9d606e52e6d",
+        "source_projection_key": "4d8304389428f540f9f68a472c16d29adc8090294f32d155e70959a42f8b9c8c",
+        "whole_manifest_key": "99dcfda2c8e5d5fa470cc11e4cea18402754fba51c5f70ff0343321c5ee6e83c",
+        "missing_context": [],
+        "files": 2,
+        "bytes": 12366,
+        "package_count": 2
+      },
+      "seconds": 0.11919893900630996
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos-warnings-burndown",
+      "head": "09fa034f9338e4a9474d3792ef838143983fc1d7",
+      "body": "conutils-rust",
+      "features": [],
+      "default_features": true,
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "e7a305c83ffa80c33de7b8362775569c98b320079e2d31d9284f224bcda1175f",
+        "source_projection_key": "6731cccf7dd1dfb7dedf0f5290515028088625be9ee5fdba4a941b0f0393ada0",
+        "whole_manifest_key": "40dcedff51aea64a6b273da72bcab27f40c2c3de40fffd11e6d60522a0c7618e",
+        "missing_context": [],
+        "files": 22,
+        "bytes": 5322810,
+        "package_count": 3
+      },
+      "seconds": 0.4467076219880255
+    }
+  ]
+}

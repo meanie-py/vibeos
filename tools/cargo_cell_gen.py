@@ -179,6 +179,8 @@ class Cell:
     delay_import_libs: list[tuple[str, str, str]] = field(default_factory=list)
     # The c_shims cmake generates into the build dir (widl's RPC stubs, flex output).
     generated: list[str] = field(default_factory=list)
+    # The c_shims from OUTSIDE the module's directory (cscript compiles ../wscript's).
+    foreign: list[str] = field(default_factory=list)
     # (basename, delayed) in cmake's link order, when there are delay imports: an
     # `__imp_` symbol two of the libs define binds to the first (Linker::delay_import_lib).
     import_order: list[tuple[str, bool]] = field(default_factory=list)
@@ -337,6 +339,13 @@ def _one_list(arch: str, stem: str, repo: Path) -> Path | None:
     if len(lsts) > 1:
         raise GenError(f"build-{arch}/boot: several {stem}.<config>.lst: {lsts}")
     return lsts[0] if lsts else None
+
+
+@functools.cache
+def txtsetup_files(repo: Path = REPO) -> frozenset[str]:
+    """The files txtsetup.sif names (lower case), read as add_cargo_module reads them."""
+    sif = (repo / "boot/bootdata/txtsetup.sif").read_text(errors="replace")
+    return frozenset(m.lower() for m in re.findall(r"(?m)^([A-Za-z0-9_.-]+)[ \t]*=", sif))
 
 
 def cd_placement(arch: str, output: str, repo: Path = REPO) -> list[str]:
@@ -696,6 +705,8 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
     def carry(chunk: str) -> None:
         carried.extend(ln.strip() for ln in chunk.splitlines() if SRC_IN_COMMENT.match(ln))
 
+    guards = _enclosing_ifs(text, cell.target)
+
     for s, e, cmd, raw in _statements(text):
         a = _args(raw)
         drop = False
@@ -799,13 +810,17 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
     # add_cd_file per arch) is left with nothing in it.
     # The comment block right above such an if (welcome's "Reduce the required subsystem
     # ...") explained the statement it held, and goes with it.
-    out = re.sub(
-        r"^(?:#[^\n]*\n)*if\([^\n]*\)\n(?:[ \t]*\n)*"
-        r"(?:(?:elseif\([^\n]*\)|else\(\))\n(?:[ \t]*\n)*)*endif\(\)\n",
-        "",
-        out,
-        flags=re.M,
+    # Repeated, because emptying an inner chain empties the if around it (pciide's
+    # per-arch body flags inside its NOT ENABLE_UNIATA).
+    empty_if = re.compile(
+        r"^(?:[ \t]*#[^\n]*\n)*[ \t]*if\([^\n]*\)\n(?:[ \t]*\n)*"
+        r"(?:[ \t]*(?:elseif\([^\n]*\)|else\(\))\n(?:[ \t]*\n)*)*[ \t]*endif\(\)\n",
+        re.M,
     )
+    while True:
+        out, n = empty_if.subn("", out)
+        if not n:
+            break
     out = re.sub(r"\n{3,}", "\n\n", out).rstrip() + "\n"
     block = [
         "",
@@ -826,7 +841,11 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
             "# The C still compiled, in an OBJECT library whose compile the cargo link replays."
         )
         names = [
-            f"${{CMAKE_CURRENT_BINARY_DIR}}/{Path(c).name}" if c in cell.generated else Path(c).name
+            f"${{CMAKE_CURRENT_BINARY_DIR}}/{Path(c).name}"
+            if c in cell.generated
+            else f"${{REACTOS_SOURCE_DIR}}/{c}"
+            if c in cell.foreign
+            else Path(c).name
             for c in cell.c_shims
         ]
         if guarded:
@@ -939,7 +958,32 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
     if build_deps and not objlibs:
         call.append(f"add_dependencies({cell.target} {' '.join(build_deps)})")
     call += [f"add_cargo_cd_file({cell.target} {x})" for x in cell.extra_cd]
-    return out + "\n".join(block + call) + "\n"
+    lines = block + call
+    for cond in reversed(guards):
+        # The target was built only under this condition (pciide's NOT ENABLE_UNIATA), so
+        # the cell is too; the emptied original if is gone with the cleanup above.
+        lines = [lines[0], f"if({cond})"] + ["    " + ln if ln else ln for ln in lines[1:]]
+        lines.append("endif()")
+    return out + "\n".join(lines) + "\n"
+
+
+def _enclosing_ifs(text: str, target: str) -> list[str]:
+    """The conditions of the if() blocks the target's add_library/add_executable sits in,
+    outermost first. Only a plain if() is modelled: a target in an elseif/else branch
+    depends on the conditions before it, which one wrapping if cannot say."""
+    stack: list[str | None] = []
+    for _s, _e, cmd, raw in _statements(text):
+        if cmd == "if":
+            stack.append(" ".join(raw.split()))
+        elif cmd in ("elseif", "else") and stack:
+            stack[-1] = None
+        elif cmd == "endif" and stack:
+            stack.pop()
+        elif cmd in ("add_library", "add_executable") and _args(raw)[:1] == [target]:
+            if any(c is None for c in stack):
+                raise GenError(f"{target}: its link is in an elseif/else branch")
+            return [c for c in stack if c is not None]
+    return []
 
 
 # cmake static libraries reactos-link builds itself (`engine_lib`): a cell names them
@@ -1018,6 +1062,13 @@ def _placeholder(path: Path) -> bool:
     body = re.sub(r"/\*.*?\*/|//[^\n]*", "", path.read_text(errors="replace"), flags=re.S)
     body = re.sub(r"typedef\s+int\s+\w+\s*;", "", body)
     return not body.strip()
+
+
+def _links_delayimp(static: list[str]) -> bool:
+    """Whether a link's static libs (after the ENGINE_LIBS mapping) carry the delayimp runtime."""
+    return any(
+        re.search(r"/libdelayimp(_rust)?\.a$|^engine:delayimp(_rust)?$", lib) for lib in static
+    )
 
 
 def _placeholder_archive(arch: str, lib: str, repo: Path) -> bool:
@@ -1145,9 +1196,10 @@ def model(target: str, repo: Path = REPO) -> Cell:
                     late[a].append(lib)
         if not after_body:
             raise GenError(f"{target}: {a} link has no {body_ar}")
-        if delayed and not any(
-            re.search(r"/libdelayimp(_rust)?\.a$|^engine:delayimp_rust$", lib) for lib in static
-        ):
+        # Matched AFTER the ENGINE_LIBS mapping: once the engine built delayimp_rust itself,
+        # the cmake path never reached this list and every new delay-importing cell (cscript)
+        # was refused for a runtime it was linking all along.
+        if delayed and not _links_delayimp(static):
             raise GenError(f"{target}: delay imports without the delayimp runtime")
         per_arch[a] = (tuple(imports), tuple(static), msvcrtex, tuple(delayed), tuple(order))
     if len({(v[0], v[2], v[3], v[4]) for v in per_arch.values()}) > 1:
@@ -1157,6 +1209,7 @@ def model(target: str, repo: Path = REPO) -> Cell:
     static_by_arch = {a: list(v[1]) for a, v in per_arch.items()}
     shims, rc, rc_defines, spec, stubs = [], None, [], None, False
     generated: list[str] = []
+    foreign: list[str] = []
     # The inputs are read from the amd64 link; an `if(ARCH ...)` that adds a file on some
     # arches (acgenral's msys2.c on amd64, opengl32's i386 asm trampolines) is a shim of
     # those arches only. Every other input must agree.
@@ -1188,6 +1241,12 @@ def model(target: str, repo: Path = REPO) -> Cell:
             spec = ((cmake_dir / m.group(2)).relative_to(repo).as_posix(), m.group(1))
         elif nm.endswith(".c.obj"):
             src = cmake_dir / nm.removesuffix(".obj")
+            # A source from outside the module's directory: CMake spells each `..` of its
+            # path as `__` under `<target>.dir/` (cscript compiles ../wscript's varargs shim).
+            m = re.search(r"\.dir/((?:__/)+.*)\.obj$", obj)
+            if m:
+                src = (cmake_dir / m.group(1).replace("__/", "../")).resolve()
+                foreign.append(src.relative_to(repo).as_posix())
             if not src.exists():
                 # Generated C: widl's RPC stubs (srvsvc_s.c, from add_rpc_files) and
                 # flex output live in the build dir. The shim is named build-dir
@@ -1290,6 +1349,7 @@ def model(target: str, repo: Path = REPO) -> Cell:
         spec=spec,
         spec_stubs=stubs,
         c_shims=shims,
+        foreign=foreign,
         rc=rc,
         rc_defines=rc_defines,
         destinations=facts["destinations"],
@@ -1786,14 +1846,22 @@ def check(targets: list[str], baseline: Path, repo: Path = REPO) -> int:
             # one accepted addition. Anything removed is a file some CD or install lost.
             cd_old = json.loads((baseline / "targets.json").read_text()).get(t, {}).get(f"cd:{a}")
             loose = set()
+            note_txtsetup = False
             if cd_old is not None:
                 cd_new = set(cd_placement(a, str(new.relative_to(repo / f"build-{a}"))))
                 gone, added = set(cd_old) - cd_new, cd_new - set(cd_old)
                 loose = {x for x in added if x.startswith(("bootcd:", "bootcdregtest:"))}
+                # A file txtsetup.sif installs (a boot driver) stays out of the cabinet,
+                # where cmake's add_cd_file put a second copy that could not overwrite it.
+                if new.name.lower() in txtsetup_files(repo):
+                    by_txtsetup = {x for x in gone if x.startswith("cab:")}
+                    gone -= by_txtsetup
+                    note_txtsetup = bool(by_txtsetup)
                 diffs += [f"cd: - {x}" for x in sorted(gone)]
                 diffs += [f"cd: + {x}" for x in sorted(added - loose)]
             note = " (+ panic_common imports)" if extra else ""
             note += " (+ loose on the boot CD)" if loose else ""
+            note += " (- cab: txtsetup.sif installs it)" if note_txtsetup else ""
             note += " (+ rsbegin .ctors/.dtors)" if rsbegin else ""
             note += " (+ the lean handler's .pdata)" if lean_unwind else ""
             note += " (+ __chkstk: frame pointers)" if probes else ""

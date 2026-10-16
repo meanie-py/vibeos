@@ -409,6 +409,48 @@ def test_a_driver_rewrite_drops_its_body_command_and_keeps_its_inf(tmp_path):
     assert "KIND kernelmodedriver" in out and "    NO_CAB" in out
 
 
+def _driver_cell(tmp_path):
+    return cell(
+        target="d",
+        cmake_dir=tmp_path,
+        output_name="d.sys",
+        module_kind="KernelDll",
+        kernel_kind="kernelmodedriver",
+        custom_body=g._custom_body(DRIVER),
+        body_crate="d-rust",
+        destinations=["reactos/system32/drivers"],
+        no_cab=True,
+        static_libs={a: [] for a in g.ARCHES},
+        msvcrtex=None,
+        rc=None,
+    )
+
+
+def test_a_driver_built_under_a_condition_is_a_cell_under_the_same_condition(tmp_path):
+    # pciide is built only if(NOT ENABLE_UNIATA). The per-arch body flags inside it empty
+    # first, which empties the outer if: both go, and the cell is wrapped in the condition.
+    f = tmp_path / "CMakeLists.txt"
+    lines = [ln for ln in DRIVER.splitlines(keepends=True) if "add_driver_inf" not in ln]
+    body = "".join("    " + ln if ln.strip() else ln for ln in lines)
+    f.write_text("if(NOT ENABLE_UNIATA)\n" + body + "endif()\nadd_driver_inf(x x.inf)\n")
+    out = g.rewrite_cmake(f, _driver_cell(tmp_path))
+    assert out.count("if(NOT ENABLE_UNIATA)") == 1 and "ARCH STREQUAL" not in out
+    guarded = out[out.index("if(NOT ENABLE_UNIATA)") :]
+    assert "    add_cargo_module(d d-cargo d.sys" in guarded
+    assert guarded.rstrip().endswith("endif()")
+
+
+def test_a_driver_in_an_else_branch_is_refused(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text("if(X)\nelse()\n" + DRIVER + "endif()\n")
+    try:
+        g.rewrite_cmake(f, _driver_cell(tmp_path))
+    except g.GenError as exc:
+        assert "else" in str(exc)
+    else:
+        raise AssertionError("an else-branch link was rewritten")
+
+
 def test_a_kernel_cell_builds_its_body_on_the_user_triple_and_keeps_every_section():
     rs = g.build_rs(
         cell(
@@ -471,3 +513,22 @@ def test_a_cell_for_a_digit_leading_target_takes_its_body_crates_name():
     c = cell(target="3dtext", body_crate="text3d-rust")
     assert c.crate == "text3d-cargo"
     assert 'name = "text3d"' in g.cargo_toml(c)
+
+
+def test_a_shim_from_another_directory_keeps_its_path(tmp_path):
+    # cscript compiles wscript's varargs shim: `cscript.dir/__/wscript/rust_varargs_shim.c.obj`.
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE)
+    shim = "base/wscript/rust_varargs_shim.c"
+    c = cell(c_shims=[shim], foreign=[shim])
+    out = g.rewrite_cmake(f, c)
+    assert f"add_library(m_shims OBJECT ${{REACTOS_SOURCE_DIR}}/{shim})" in out
+    assert f'.c_from_compile_db("m_shims", &["{shim}"])' in g.build_rs(c)
+
+
+def test_the_engine_built_delayimp_counts_as_the_delayimp_runtime():
+    # Checked after the ENGINE_LIBS mapping, so the engine's name must count: cscript was
+    # refused "delay imports without the delayimp runtime" while linking it.
+    assert g._links_delayimp(["engine:uuid", "engine:delayimp_rust"])
+    assert g._links_delayimp(["sdk/lib/delayimp/libdelayimp.a"])
+    assert not g._links_delayimp(["engine:uuid", "engine:wine"])

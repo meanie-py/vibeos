@@ -15,8 +15,12 @@ use core::ffi::c_void;
 static mut wshVersionW: [WCHAR; 4] =
     unsafe { ::core::mem::transmute::<[u8; 8], [WCHAR; 4]>(*b"5\0.\08\0\0\0") };
 
+// wscript.exe starts interactive (message boxes); cscript.exe, built from these same
+// sources with `-DCSCRIPT_BUILD` (the `cscript` feature), is the console host. The first
+// translation read cscript's compile of host.c and shipped wscript non-interactive.
 #[no_mangle]
-pub static mut wshInteractive: VARIANT_BOOL = VARIANT_FALSE;
+pub static mut wshInteractive: VARIANT_BOOL =
+    if cfg!(feature = "cscript") { VARIANT_FALSE } else { VARIANT_TRUE };
 
 #[no_mangle]
 pub static mut wshTimeout: LONG = 0 as LONG;
@@ -430,7 +434,11 @@ unsafe extern "system" fn Host_Echo(iface: *mut IHost, args: *mut SAFEARRAY) -> 
     }
 
     argc = (ubound - lbound + 1) as u32;
-    strs = calloc((argc as usize) as _, (core::mem::size_of::<OLECHAR>()) as _) as *mut BSTR;
+    // The C's `sizeof(*strs)`: a BSTR, i.e. a POINTER. The translation sized it as one
+    // OLECHAR, so every Echo of more than one argument overran the array -- the second
+    // argument's string vanished (`WScript.Echo("hello", 42)` printed "hello ") and the
+    // corrupted heap crashed the host a few calls later.
+    strs = calloc((argc as usize) as _, (core::mem::size_of::<BSTR>()) as _) as *mut BSTR;
     if strs.is_null() {
         SafeArrayUnaccessData(args);
         return E_OUTOFMEMORY;

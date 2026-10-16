@@ -3,6 +3,7 @@
 #[macro_use]
 pub mod helpers;
 // Tier 1+2
+pub mod census;
 pub mod commit;
 pub mod contmem;
 pub mod drvmgmt;

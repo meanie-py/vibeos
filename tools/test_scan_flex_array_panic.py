@@ -285,6 +285,22 @@ def test_cargo_images_are_declared_by_the_build_graph_for_one_arch(tmp_path):
     assert str(got[0][1]).startswith(str(s.REPO / "sdk/lib/rust/target/smss-cargo-amd64"))
 
 
+def test_a_cell_in_a_shared_link_dir_is_named_by_its_cargo_command(tmp_path):
+    (tmp_path / "build.ninja").write_text(
+        "build drivers/base/beep/beep.sys: CUSTOM_COMMAND x\n"
+        "  COMMAND = cd /tmp/vibeos/sdk/lib/rust && cargo build --release --target "
+        "x86_64-pc-windows-gnu -p beep-cargo --bin beep && cmake -E copy "
+        "/tmp/vibeos/sdk/lib/rust/target/cell-link-v1-amd64-7/x86_64-pc-windows-gnu/"
+        "release/beep.exe beep.sys\n"
+        "build drivers/base/null/null.sys: CUSTOM_COMMAND x\n"
+        "  COMMAND = cargo build -p null-cargo --bin null && cmake -E copy "
+        "/tmp/vibeos/sdk/lib/rust/target/cell-link-v1-amd64-7/x86_64-pc-windows-gnu/"
+        "release/null.exe null.sys\n"
+    )
+    got = s.declared_cargo_images(tmp_path, "amd64")
+    assert [(c, p.name) for c, p in got] == [("beep-cargo", "beep.exe"), ("null-cargo", "null.exe")]
+
+
 def test_a_linked_location_resolves_by_address():
     """No relocations in a linked image: the &Location and its file pointer are both
     resolved addresses into the one .rdata."""

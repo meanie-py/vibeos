@@ -332,6 +332,10 @@
 @ stdcall NdisMPauseComplete(ptr)
 @ stdcall NdisMRegisterInterruptEx(ptr ptr ptr ptr)
 @ stdcall NdisMRegisterMiniportDriver(ptr ptr ptr ptr ptr)
+@ stdcall NdisMRegisterWdiMiniportDriver(ptr ptr ptr ptr ptr ptr)
+@ stdcall NdisMDeregisterWdiMiniportDriver(ptr)
+@ stdcall NdisMAllocatePort(ptr ptr)
+@ stdcall NdisMFreePort(ptr long)
 @ stdcall NdisMRegisterScatterGatherDma(ptr ptr ptr)
 @ stdcall NdisMRestartComplete(ptr long)
 @ stdcall NdisMSendNetBufferListsComplete(ptr ptr long)
@@ -477,7 +481,6 @@
 @ stub -version=0xA00+ NdisLWMRegisterMiniportDriver
 @ stub -version=0xA00+ NdisLWMStartNetworkInterface
 @ stub -version=0xA00+ NdisLWMUninitializeNetworkInterface
-@ stub -version=0xA00+ NdisMAllocatePort
 @ stub -version=0xA00+ NdisMAllocateSharedMemoryAsyncEx
 @ stub -version=0xA00+ NdisMCmOidRequest
 @ stub -version=0xA00+ NdisMCmRegisterAddressFamilyEx
@@ -486,10 +489,8 @@
 @ stub -version=0xA00+ NdisMCoOidRequestComplete
 @ stub -version=0xA00+ NdisMCoSendNetBufferListsComplete
 @ stub -version=0xA00+ NdisMConfigMSIXTableEntry
-@ stub -version=0xA00+ NdisMDeregisterWdiMiniportDriver
 @ stub -version=0xA00+ NdisMDirectOidRequestComplete
 @ stub -version=0xA00+ NdisMEnableVirtualization
-@ stub -version=0xA00+ NdisMFreePort
 @ stub -version=0xA00+ NdisMGetMiniportInitAttributes
 @ stub -version=0xA00+ NdisMGetOffloadHandlers
 @ stub -version=0xA00+ NdisMGetVirtualDeviceLocation
@@ -506,7 +507,6 @@
 @ stub -version=0xA00+ NdisMQueueDpcEx
 @ stub -version=0xA00+ NdisMReadConfigBlock
 @ stub -version=0xA00+ NdisMReenumerateFailedAdapter
-@ stub -version=0xA00+ NdisMRegisterWdiMiniportDriver
 @ stub -version=0xA00+ NdisMRequestDpc
 @ stub -version=0xA00+ NdisMResetMiniport
 @ stub -version=0xA00+ NdisMSetInterfaceCompartment

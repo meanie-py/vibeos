@@ -1,0 +1,183 @@
+{
+  "kind": "proposed-recipe-projection-not-observed-hit",
+  "records": [
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos",
+      "head": "eaa4c573a9a9b2e99923ec58caa432b83b99828f",
+      "body": "beep-rust",
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "719c60153819125d7e279944a771f9b8a2d3ca955cd1a5e6be2c7af9c112b835",
+        "source_projection_key": "6632e55ce6a6b860fbfb9ed4bdbea6af6375fb694c65f3cb502a2fc9c0f98188",
+        "whole_manifest_key": "e0c8f70191de7d6fe570d44855dffdb4a371628ac05442021a4dc04bd6963b3f",
+        "missing_context": [],
+        "files": 60,
+        "bytes": 19686279,
+        "package_count": 3
+      }
+    },
+    {
+      "worktree": "/home/curi/Projects/os-playground/vibeos",
+      "head": "eaa4c573a9a9b2e99923ec58caa432b83b99828f",
+      "body": "kernel-rust",
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "1542a1d79ab5c3b7e55835ab6765cccb091e0a733fa96ab3f74895e6bf68f0d4",
+        "source_projection_key": "6edbf0ee315290a89b139e45381f96825691bc6be3a3aaf1695a67b9f6ad955d",
+        "whole_manifest_key": "4834b2078a0c8f077d089a81b258d8d212830798cbabd1d035ab3603b4afd0c9",
+        "missing_context": [],
+        "files": 524,
+        "bytes": 37535682,
+        "package_count": 34
+      }
+    },
+    {
+      "worktree": "historical tracked snapshot",
+      "head": "890939fad27d03b0f98af08d7240f8fe84165b4a",
+      "body": "beep-rust",
+      "historical_limit": "Proposed current execution context, not proof of historical toolchains/configuration or untracked generated inputs.",
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "61493079d94c00d9d3706d210947b7bc509b77cf0ea5bfd747a951fc7d5c8fe7",
+        "source_projection_key": "7131abf0adbd73a0df173236f4e47f39d49b311bc6f83846f55669793328690e",
+        "whole_manifest_key": "18a814e854397423ed383a49be7fd67e3d63d5665564053fd04fef46e3177e0a",
+        "missing_context": [],
+        "files": 59,
+        "bytes": 19682229,
+        "package_count": 3
+      }
+    },
+    {
+      "worktree": "historical tracked snapshot",
+      "head": "890939fad27d03b0f98af08d7240f8fe84165b4a",
+      "body": "kernel-rust",
+      "historical_limit": "Proposed current execution context, not proof of historical toolchains/configuration or untracked generated inputs.",
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "08ef5c6a8f1d058fa556bf78a1db9c986366c9bce8094eb0f18f836432cf30d8",
+        "source_projection_key": "2cb9374eac0ea2d68e51a85a01bedf6e12c9b1b556ecdf0d246c299659eede65",
+        "whole_manifest_key": "2e5a3c572708a3508acb2b601ba4e4369679b47bd3cb03ca209d60cea276dd90",
+        "missing_context": [],
+        "files": 522,
+        "bytes": 37522598,
+        "package_count": 34
+      }
+    },
+    {
+      "worktree": "historical tracked snapshot",
+      "head": "76ff3c4f8d49c98fc98b76491eaaa6fb1a151536",
+      "body": "beep-rust",
+      "historical_limit": "Proposed current execution context, not proof of historical toolchains/configuration or untracked generated inputs.",
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "61493079d94c00d9d3706d210947b7bc509b77cf0ea5bfd747a951fc7d5c8fe7",
+        "source_projection_key": "7131abf0adbd73a0df173236f4e47f39d49b311bc6f83846f55669793328690e",
+        "whole_manifest_key": "12037a88d0b71205ae8dd3540cefa3b8961592441d392e2bacc8ed2d8dd09977",
+        "missing_context": [],
+        "files": 59,
+        "bytes": 19682229,
+        "package_count": 3
+      }
+    },
+    {
+      "worktree": "historical tracked snapshot",
+      "head": "76ff3c4f8d49c98fc98b76491eaaa6fb1a151536",
+      "body": "kernel-rust",
+      "historical_limit": "Proposed current execution context, not proof of historical toolchains/configuration or untracked generated inputs.",
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "08ef5c6a8f1d058fa556bf78a1db9c986366c9bce8094eb0f18f836432cf30d8",
+        "source_projection_key": "2cb9374eac0ea2d68e51a85a01bedf6e12c9b1b556ecdf0d246c299659eede65",
+        "whole_manifest_key": "440055832c7bbc15d0bef19f5b7b3743bd9e82620c47ba419678842f4ef21f5d",
+        "missing_context": [],
+        "files": 522,
+        "bytes": 37522598,
+        "package_count": 34
+      }
+    },
+    {
+      "worktree": "historical tracked snapshot",
+      "head": "263a1bb5994a25a14f349dba33f89bdf06d5c3c0",
+      "body": "beep-rust",
+      "historical_limit": "Proposed current execution context, not proof of historical toolchains/configuration or untracked generated inputs.",
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "61493079d94c00d9d3706d210947b7bc509b77cf0ea5bfd747a951fc7d5c8fe7",
+        "source_projection_key": "7131abf0adbd73a0df173236f4e47f39d49b311bc6f83846f55669793328690e",
+        "whole_manifest_key": "24dc0df1bab7f81a827d6796612d72203468389e382e75f9e6a060987e6cbbdb",
+        "missing_context": [],
+        "files": 59,
+        "bytes": 19682229,
+        "package_count": 3
+      }
+    },
+    {
+      "worktree": "historical tracked snapshot",
+      "head": "263a1bb5994a25a14f349dba33f89bdf06d5c3c0",
+      "body": "kernel-rust",
+      "historical_limit": "Proposed current execution context, not proof of historical toolchains/configuration or untracked generated inputs.",
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "08ef5c6a8f1d058fa556bf78a1db9c986366c9bce8094eb0f18f836432cf30d8",
+        "source_projection_key": "2cb9374eac0ea2d68e51a85a01bedf6e12c9b1b556ecdf0d246c299659eede65",
+        "whole_manifest_key": "f2a6737f8253eb01224c1179d658a9f52ad50b727eaac74e7bbe216aa7adb58c",
+        "missing_context": [],
+        "files": 522,
+        "bytes": 37522598,
+        "package_count": 34
+      }
+    },
+    {
+      "worktree": "historical tracked snapshot",
+      "head": "76ff3c4f8d49c98fc98b76491eaaa6fb1a151536",
+      "body": "beep-rust",
+      "historical_limit": "Proposed current execution context, not proof of historical toolchains/configuration or untracked generated inputs.",
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "61493079d94c00d9d3706d210947b7bc509b77cf0ea5bfd747a951fc7d5c8fe7",
+        "source_projection_key": "7131abf0adbd73a0df173236f4e47f39d49b311bc6f83846f55669793328690e",
+        "whole_manifest_key": "12037a88d0b71205ae8dd3540cefa3b8961592441d392e2bacc8ed2d8dd09977",
+        "missing_context": [],
+        "files": 59,
+        "bytes": 19682229,
+        "package_count": 3
+      }
+    },
+    {
+      "worktree": "historical tracked snapshot",
+      "head": "76ff3c4f8d49c98fc98b76491eaaa6fb1a151536",
+      "body": "kernel-rust",
+      "historical_limit": "Proposed current execution context, not proof of historical toolchains/configuration or untracked generated inputs.",
+      "result": {
+        "schema": "vibeos-body-input-projection-v1-spike",
+        "eligible": true,
+        "reasons": [],
+        "action_key": "08ef5c6a8f1d058fa556bf78a1db9c986366c9bce8094eb0f18f836432cf30d8",
+        "source_projection_key": "2cb9374eac0ea2d68e51a85a01bedf6e12c9b1b556ecdf0d246c299659eede65",
+        "whole_manifest_key": "440055832c7bbc15d0bef19f5b7b3743bd9e82620c47ba419678842f4ef21f5d",
+        "missing_context": [],
+        "files": 522,
+        "bytes": 37522598,
+        "package_count": 34
+      }
+    }
+  ]
+}

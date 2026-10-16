@@ -155,3 +155,77 @@ def test_port_staging_trims_idle_targets_and_never_state(tmp_path):
     assert not (root / "idle" / "target-amd64").exists()
     assert (root / "idle" / "state.json").exists() and (root / "idle" / "hand").is_dir()
     assert (root / "busy" / "target-amd64").exists()
+
+
+def test_a_custom_target_whose_json_is_gone_goes_whole(tmp_path):
+    rust = tmp_path / "sdk/lib/rust"
+    target = rust / "target"
+    for cell, has_json in (("old-cargo", False), ("kept-cargo", True)):
+        (rust / cell).mkdir(parents=True)
+        (rust / cell / "Cargo.toml").write_text("")
+        if has_json:
+            (rust / cell / "i686-kernel.json").write_text("{}")
+        for d in (f"{cell}-i386-cargo-link", f"{cell}-body_rust-rustlib"):
+            for sub in ("i686-kernel", "i686-pc-windows-gnu", "release"):
+                (target / d / sub / "release").mkdir(parents=True)
+    # A per-module dir no cell owns is not judged.
+    (target / "gone-cargo-i386-cargo-link/i686-kernel").mkdir(parents=True)
+    old = os.stat(target).st_mtime + 2 * 3600
+    plan = trim.plan_worktree(tmp_path, now=old, idle_hours=24)
+    dead = sorted(str(p.relative_to(target)) for p, _ in plan.paths)
+    assert dead == [
+        "old-cargo-body_rust-rustlib/i686-kernel",
+        "old-cargo-i386-cargo-link/i686-kernel",
+    ]
+    assert plan.dead_targets == 2
+    # Within the hour a build that began before the json went may still be writing it.
+    assert trim.plan_worktree(tmp_path, now=os.stat(target).st_mtime + 60).dead_targets == 0
+
+
+def test_retired_layouts_go_only_when_the_lane_s_own_config_retired_them(tmp_path):
+    wt = tmp_path
+    build = wt / "build-amd64"
+    for d in ("base/live/rust-live_rust-target/x", "base/old/rust-old_rust-target/x"):
+        (build / d).mkdir(parents=True)
+    (build / "build.ninja").write_text(
+        "build x: CUSTOM CARGO_TARGET_DIR=/tmp/vibeos/build-amd64/base/live/rust-live_rust-target\n"
+    )
+    target = wt / "sdk/lib/rust/target"
+    (target / "beep-cargo-beep_rust-rustlib/x86_64-pc-windows-gnu").mkdir(parents=True)
+    (target / "body-storage-v1-amd64-00-0-rustlib/x").mkdir(parents=True)
+    later = os.stat(target).st_mtime + 2 * 3600
+
+    def names(plan):
+        return sorted(str(p.relative_to(wt)) for p, _ in plan.paths)
+
+    # Body sharding not configured: the per-cell dir may still be the live layout.
+    (build / "CMakeCache.txt").write_text("VIBEOS_RUST_BODY_SHARDS:STRING=0\n")
+    assert names(trim.plan_worktree(wt, now=later, idle_hours=1)) == [
+        "build-amd64/base/old/rust-old_rust-target"
+    ]
+    (build / "CMakeCache.txt").write_text("VIBEOS_RUST_BODY_SHARDS:STRING=4\n")
+    plan = trim.plan_worktree(wt, now=later, idle_hours=1)
+    assert names(plan) == [
+        "build-amd64/base/old/rust-old_rust-target",
+        "sdk/lib/rust/target/beep-cargo-beep_rust-rustlib",
+    ]
+    assert plan.retired_dirs == 2
+    # Nothing recent goes.
+    assert trim.plan_worktree(wt, now=os.stat(target).st_mtime + 60, idle_hours=1).paths == []
+
+
+def test_per_cell_link_dirs_retire_once_their_arch_shares_link_dirs(tmp_path):
+    wt = tmp_path
+    build = wt / "build-amd64"
+    build.mkdir()
+    (build / "build.ninja").write_text("")
+    target = wt / "sdk/lib/rust/target"
+    for d in ("beep-cargo-amd64-cargo-link/release", "beep-cargo-i386-cargo-link/release"):
+        (target / d).mkdir(parents=True)
+    later = os.stat(target).st_mtime + 2 * 3600
+    (build / "CMakeCache.txt").write_text("VIBEOS_CARGO_LINK_SHARDS:STRING=0\n")
+    assert trim.plan_worktree(wt, now=later, idle_hours=1).paths == []
+    (build / "CMakeCache.txt").write_text("VIBEOS_CARGO_LINK_SHARDS:STRING=24\n")
+    plan = trim.plan_worktree(wt, now=later, idle_hours=1)
+    # Only amd64's: i386 has no configured build saying it moved.
+    assert [p.name for p, _ in plan.paths] == ["beep-cargo-amd64-cargo-link"]

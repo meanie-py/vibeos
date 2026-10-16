@@ -16,8 +16,8 @@
 //!          cntpr `liblibcntpr.a` + its Rust half `libcntpr_rust.a`).
 //!
 //! Unlike the kernelmodedrivers, framebuf does NOT import ntoskrnl/hal — only
-//! win32k (which itself imports ntoskrnl). The version resource (framebuf.rc)
-//! is dropped, as in the other cargo cuts. Cohab body built with the user
+//! win32k (which itself imports ntoskrnl).
+//! Cohab body built with the user
 //! target -sse,-sse2; the kernel softfloat json here is correct for a
 //! kernel-mode display driver.
 //!
@@ -47,6 +47,9 @@ fn main() {
         // cold-link confirms framebuf needs no C residue (no c_from_compile_db).
         .rust_lib("cnt-rust-lib", cnt_feats, true)
         .import_lib("win32ss/win32k.spec", "win32k.sys", "win32k")
+        .resource_from_rc("win32ss/drivers/displays/framebuf/framebuf.rc", "framebuf_res")
+        // cmake's kernel-mode links keep every section.
+        .keep_all_sections()
         .link(ModuleKind::KernelDll {
             entry: entry.into(),
             image_base,

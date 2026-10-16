@@ -106,6 +106,22 @@ def test_a_missing_exit_and_an_unexpected_pass_both_fail(suites):
     assert any("m.known: XPASS" in f for f in failures)
 
 
+def test_a_case_the_media_never_had_is_not_reported_as_a_dead_guest(suites):
+    # The suite gained `m.same` after the ISO was built: the guest finished its list without it.
+    serial = _serial(
+        "[MODRUN] case m.differs variants=2",
+        "[MODRUN] exit m.differs c rc=0x00000000 ms=5",
+        "[MODRUN] exit m.differs rust rc=0x00000000 ms=5",
+        "[MODRUN] done cases=1",
+    )
+    _, failures = mr.grade(serial, "i386")
+    assert any(f.startswith("m.same: c: not on the media") for f in failures)
+    # Announced but unfinished is still the guest's fault.
+    serial = _serial("[MODRUN] case m.same variants=2", "[MODRUN] done cases=1")
+    _, failures = mr.grade(serial, "i386")
+    assert any(f.startswith("m.same: c: never finished") for f in failures)
+
+
 def test_a_torn_copy_is_recovered_and_a_lost_record_is_transport_not_a_diff(suites):
     whole = _serial(
         "[MODRUN:m.same:c] Disk 0 pid=1",

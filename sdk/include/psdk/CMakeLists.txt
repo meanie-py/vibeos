@@ -106,6 +106,7 @@ list(APPEND SOURCE
     httprequest.idl
     iads.idl
     icftypes.idl
+    icodecapi.idl
     ieautomation.idl
     imnact.idl
     imnxport.idl
@@ -142,6 +143,7 @@ list(APPEND SOURCE
     ndattrib.idl
     netcon.idl
     netfw.idl
+    netlistmgr.idl
     oaidl.idl
     objectarray.idl
     objidl.idl

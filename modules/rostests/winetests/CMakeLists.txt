@@ -145,6 +145,7 @@ if(DLL_EXPORT_VERSION GREATER_EQUAL 0x600)
 endif()
 
 # Media Foundation and its dependencies are built at every DLL_EXPORT_VERSION.
+add_subdirectory(mf)
 add_subdirectory(mfplat)
 add_subdirectory(qwave)
 add_subdirectory(rtworkq)

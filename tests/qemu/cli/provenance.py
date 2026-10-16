@@ -251,7 +251,12 @@ def workspace_cargo_targets(repo: Path, arch: str) -> list[Path]:
     if root.resolve() != repo.resolve() / "sdk/lib/rust/target":
         raise ValueError(f"refusing symlinked workspace target: {root}")
     stems = [stem, "i686-pc-windows-gnu"] if base == "i386" else [stem]
-    parents = [root, *sorted(root.glob("*-rustlib")), *sorted(root.glob("*-cargo-link"))]
+    parents = [
+        root,
+        *sorted(root.glob("*-rustlib")),
+        *sorted(root.glob("*-cargo-link")),
+        *sorted(root.glob("cell-link-v1-*")),
+    ]
     result = []
     for parent in parents:
         for target in stems:

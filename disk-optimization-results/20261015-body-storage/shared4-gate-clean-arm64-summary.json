@@ -1,0 +1,301 @@
+{
+  "run_id": "20261015-183428-_9xx1ri_-build-arm64",
+  "command": "build",
+  "arch": "arm64",
+  "worktree": "/home/curi/Projects/os-playground/vibeos",
+  "verdict": "OK",
+  "classification": "",
+  "duration_ms": 1679213,
+  "stages": [
+    {
+      "name": "canonize",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "fresh configure @ /tmp/vibeos",
+      "salient": []
+    },
+    {
+      "name": "payloads",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "kmtest",
+      "salient": []
+    },
+    {
+      "name": "clean",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "0t+0a+0o",
+      "salient": []
+    },
+    {
+      "name": "cache",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "root=/home/curi/Projects/os-playground  ccache\u2192/home/curi/Projects/os-playground/ccache  sccache\u2192/home/curi/Projects/os-playground/sccache",
+      "salient": []
+    },
+    {
+      "name": "fex",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "current",
+      "salient": []
+    },
+    {
+      "name": "wowx64-cpu",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "current",
+      "salient": []
+    },
+    {
+      "name": "fex-probes",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "current",
+      "salient": []
+    },
+    {
+      "name": "ninja-prime",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "generated headers",
+      "salient": []
+    },
+    {
+      "name": "cleandead",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "0 dead output(s) removed",
+      "salient": []
+    },
+    {
+      "name": "ninja",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "livecd",
+      "salient": []
+    },
+    {
+      "name": "flag-verify",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "VIBEOS_LOCKDEP=OFF \u2194 VIBEOS_LOCKDEP absent in ntoskrnl.exe",
+      "salient": []
+    },
+    {
+      "name": "flag-verify",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "VIBEOS_CSWITCHDEP=OFF \u2194 VIBEOS_CSWITCHDEP absent in ntoskrnl.exe",
+      "salient": []
+    },
+    {
+      "name": "ninja-reaffirm",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "no-op \u2014 optional passes invalidated nothing",
+      "salient": []
+    },
+    {
+      "name": "closure-prune",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "0 output(s) outside the closure removed",
+      "salient": []
+    },
+    {
+      "name": "ccache-stats",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "2622471h/181295m  94% hit",
+      "salient": []
+    },
+    {
+      "name": "sccache-stats",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "9139h/2776m  77% hit",
+      "salient": []
+    },
+    {
+      "name": "mkramdisk",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "full",
+      "salient": []
+    },
+    {
+      "name": "binary-lints",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "skip",
+      "detail": "--no-check: the caller's own lint lane (gate/land) runs them",
+      "salient": []
+    },
+    {
+      "name": "build-index",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "",
+      "salient": []
+    },
+    {
+      "name": "stamp",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "cold",
+      "salient": []
+    },
+    {
+      "name": "artifact-check",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "media present + fresh",
+      "salient": []
+    },
+    {
+      "name": "warm-receipt",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "tree ab12a1ee9668",
+      "salient": []
+    }
+  ],
+  "command_timings": [
+    {
+      "stage": "canonize",
+      "start_seconds": 480.846104,
+      "seconds": 29.596798,
+      "exit": 0
+    },
+    {
+      "stage": "fex",
+      "start_seconds": 510.657498,
+      "seconds": 29.231885,
+      "exit": 0
+    },
+    {
+      "stage": "wowx64-cpu",
+      "start_seconds": 539.890274,
+      "seconds": 3.916672,
+      "exit": 0
+    },
+    {
+      "stage": "fex-probes",
+      "start_seconds": 543.807156,
+      "seconds": 3.241722,
+      "exit": 0
+    },
+    {
+      "stage": "ninja-prime",
+      "start_seconds": 547.04946,
+      "seconds": 20.995274,
+      "exit": 0
+    },
+    {
+      "stage": "ninja-cleandead",
+      "start_seconds": 568.044995,
+      "seconds": 0.195559,
+      "exit": 0
+    },
+    {
+      "stage": "ninja",
+      "start_seconds": 568.393941,
+      "seconds": 875.905704,
+      "exit": 0
+    },
+    {
+      "stage": "ninja-reaffirm",
+      "start_seconds": 1444.365103,
+      "seconds": 0.978363,
+      "exit": 0
+    },
+    {
+      "stage": "ccache-stats",
+      "start_seconds": 1446.561645,
+      "seconds": 0.005554,
+      "exit": 0
+    },
+    {
+      "stage": "sccache-stats",
+      "start_seconds": 1446.567419,
+      "seconds": 0.015705,
+      "exit": 0
+    },
+    {
+      "stage": "mkramdisk",
+      "start_seconds": 1446.583337,
+      "seconds": 14.452017,
+      "exit": 0
+    },
+    {
+      "stage": "build-index",
+      "start_seconds": 1461.035523,
+      "seconds": 0.412555,
+      "exit": 0
+    }
+  ],
+  "artifacts": {
+    "full_log": "/tmp/vibeos-cli/20261015-183428-_9xx1ri_-build-arm64/full.log"
+  },
+  "admission": {
+    "enabled": true,
+    "scheduler": "host-jobs",
+    "job_class": "interactive",
+    "cpu_wait_s": 0.0,
+    "builddir_wait_s": 0.007053610010189004,
+    "cpu_granted": false,
+    "builddir_granted": true
+  },
+  "build_policy": {
+    "version": 1,
+    "leases": 6,
+    "max_builds": 3,
+    "ninja_jobs": 6,
+    "cargo_jobs": 1
+  },
+  "cache_stats_scope": "shared cumulative snapshots; not per-build attribution",
+  "ccache": {
+    "hits": 2622471,
+    "misses": 181295,
+    "hit_rate": 0.9353387550886915
+  },
+  "sccache": {
+    "requests": 23280,
+    "hits": 9139,
+    "misses": 2776,
+    "hit_rate": 0.7670163659253042,
+    "non_cacheable": 11251,
+    "non_cacheable_reasons": {
+      "missing input": 3527,
+      "-": 3541,
+      "crate-type": 4179,
+      "missing emit": 4
+    },
+    "cache_errors": 1,
+    "compilations": 2776
+  }
+}

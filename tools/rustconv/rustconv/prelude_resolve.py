@@ -1641,6 +1641,24 @@ def _x86_alias(sig: str) -> str:
     return f'    #[cfg_attr(target_arch = "x86", link_name = "{m.group(1)}{m.group(2) or "W"}")]\n'
 
 
+#: <stdio.h>'s conforming `swprintf`/`vswprintf` (buffer, COUNT, format) are static inlines over
+#: `_vsnwprintf`; msvcrt's EXPORTED names are the legacy (buffer, format) pair. A count-form
+#: declaration bound to the export passes the count as the format pointer: wscript-rust's
+#: OnScriptError crashed cscript on every script error, and recyclebin/msiexec had the same.
+_CRT_COUNT_FORM = {"swprintf": "_snwprintf", "vswprintf": "_vsnwprintf"}
+
+
+def _crt_inline_alias(sig: str) -> str:
+    """The `link_name` a count-form `swprintf`/`vswprintf` declaration needs, or ""."""
+    m = re.search(r"\bfn\s+(\w+)\s*\(([^)]*)\)", sig)
+    if m is None or m.group(1) not in _CRT_COUNT_FORM or re.search(r"#\[link_name", sig):
+        return ""
+    fixed = [a for a in m.group(2).split(",") if a.strip() and a.strip() != "..."]
+    if len(fixed) < 3 or (m.group(1) == "vswprintf" and len(fixed) < 4):
+        return ""
+    return f'    #[link_name = "{_CRT_COUNT_FORM[m.group(1)]}"]\n'
+
+
 def render(copied: dict[str, Item]) -> str:
     consts = [i for i in copied.values() if i.kind in ("const", "type")]
     fns: dict[str, list[Item]] = {}
@@ -1658,7 +1676,7 @@ def render(copied: dict[str, Item]) -> str:
                 if i.text.startswith(("fn", "static"))
                 else re.sub(r"^.*?\bfn\b", "fn", i.text)
             )
-            out.append(f"{_x86_alias(text)}    pub {text} // {i.path}")
+            out.append(f"{_x86_alias(text)}{_crt_inline_alias(text)}    pub {text} // {i.path}")
         out.append("}")
     out.append(END)
     return "\n".join(out) + "\n"

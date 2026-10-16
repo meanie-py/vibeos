@@ -234,6 +234,12 @@ def _normal(lines: list[str], rules: list[tuple[str, str]]) -> list[str]:
 def grade(serial: str, arch: str) -> tuple[list[str], list[str]]:
     """(report lines, failures) for one boot's serial."""
     out, exits = parse(serial)
+    # The guest announces each case it read from the media's list. A case this tree's suites
+    # name but the guest never announced, in a run that reached `done`, was not ON the media:
+    # the suite changed after the build. Reported as "guest died", it sent a hunt after a
+    # crash that never happened (cscript's regsvr32 cases, graded against an older arm64 ISO).
+    announced = set(re.findall(r"\[MODRUN\] case (\S+) variants=", serial))
+    finished = "[MODRUN] done cases=" in serial
     report, failures = [], []
     for c in cases(arch):
         why: list[str] = []
@@ -243,6 +249,12 @@ def grade(serial: str, arch: str) -> tuple[list[str], list[str]]:
         hits = [0] * len(c.diverge)
         for v in c.variants:
             ex = exits.get((c.id, v))
+            if ex is None and finished and c.id not in announced:
+                why.append(
+                    f"{v}: not on the media (the suite changed after it was built; rebuild "
+                    f"with VIBEOS_PAYLOAD=modrun ./vibeos-cli build --arch <arch>)"
+                )
+                continue
             if ex is None:
                 why.append(f"{v}: never finished (no exit line: guest died, or modrun stopped)")
                 continue

@@ -1,0 +1,245 @@
+{
+  "run_id": "20261015-183428-aswq11vt-build-i386",
+  "command": "build",
+  "arch": "i386",
+  "worktree": "/home/curi/Projects/os-playground/vibeos",
+  "verdict": "OK",
+  "classification": "",
+  "duration_ms": 1509948,
+  "stages": [
+    {
+      "name": "canonize",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "fresh configure @ /tmp/vibeos",
+      "salient": []
+    },
+    {
+      "name": "payloads",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "kmtest",
+      "salient": []
+    },
+    {
+      "name": "clean",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "0t+0a+0o",
+      "salient": []
+    },
+    {
+      "name": "cache",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "root=/home/curi/Projects/os-playground  ccache\u2192/home/curi/Projects/os-playground/ccache  sccache\u2192/home/curi/Projects/os-playground/sccache",
+      "salient": []
+    },
+    {
+      "name": "ninja-prime",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "generated headers",
+      "salient": []
+    },
+    {
+      "name": "cleandead",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "0 dead output(s) removed",
+      "salient": []
+    },
+    {
+      "name": "ninja",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "livecd",
+      "salient": []
+    },
+    {
+      "name": "flag-verify",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "VIBEOS_LOCKDEP=OFF \u2194 VIBEOS_LOCKDEP absent in ntoskrnl.exe",
+      "salient": []
+    },
+    {
+      "name": "flag-verify",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "VIBEOS_CSWITCHDEP=OFF \u2194 VIBEOS_CSWITCHDEP absent in ntoskrnl.exe",
+      "salient": []
+    },
+    {
+      "name": "ninja-reaffirm",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "relinked 2 target(s) invalidated by the optional passes",
+      "salient": []
+    },
+    {
+      "name": "closure-prune",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "0 output(s) outside the closure removed",
+      "salient": []
+    },
+    {
+      "name": "ccache-stats",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "2622486h/181669m  94% hit",
+      "salient": []
+    },
+    {
+      "name": "sccache-stats",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "9163h/2783m  77% hit",
+      "salient": []
+    },
+    {
+      "name": "binary-lints",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "skip",
+      "detail": "--no-check: the caller's own lint lane (gate/land) runs them",
+      "salient": []
+    },
+    {
+      "name": "build-index",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "",
+      "salient": []
+    },
+    {
+      "name": "stamp",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "cold",
+      "salient": []
+    },
+    {
+      "name": "artifact-check",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "media present + fresh",
+      "salient": []
+    },
+    {
+      "name": "warm-receipt",
+      "exit": 0,
+      "seconds": 0.0,
+      "status": "ok",
+      "detail": "tree ab12a1ee9668",
+      "salient": []
+    }
+  ],
+  "command_timings": [
+    {
+      "stage": "canonize",
+      "start_seconds": 467.496541,
+      "seconds": 31.704962,
+      "exit": 0
+    },
+    {
+      "stage": "ninja-prime",
+      "start_seconds": 499.419536,
+      "seconds": 25.778919,
+      "exit": 0
+    },
+    {
+      "stage": "ninja-cleandead",
+      "start_seconds": 525.198678,
+      "seconds": 0.269291,
+      "exit": 0
+    },
+    {
+      "stage": "ninja",
+      "start_seconds": 525.468548,
+      "seconds": 977.274585,
+      "exit": 0
+    },
+    {
+      "stage": "ninja-reaffirm",
+      "start_seconds": 1502.861072,
+      "seconds": 1.794367,
+      "exit": 0
+    },
+    {
+      "stage": "ccache-stats",
+      "start_seconds": 1505.629514,
+      "seconds": 0.00521,
+      "exit": 0
+    },
+    {
+      "stage": "sccache-stats",
+      "start_seconds": 1505.63491,
+      "seconds": 0.014378,
+      "exit": 0
+    },
+    {
+      "stage": "build-index",
+      "start_seconds": 1505.649481,
+      "seconds": 0.59578,
+      "exit": 0
+    }
+  ],
+  "artifacts": {
+    "full_log": "/tmp/vibeos-cli/20261015-183428-aswq11vt-build-i386/full.log"
+  },
+  "admission": {
+    "enabled": true,
+    "scheduler": "host-jobs",
+    "job_class": "interactive",
+    "cpu_wait_s": 0.0,
+    "builddir_wait_s": 0.014756468997802585,
+    "cpu_granted": false,
+    "builddir_granted": true
+  },
+  "build_policy": {
+    "version": 1,
+    "leases": 6,
+    "max_builds": 3,
+    "ninja_jobs": 6,
+    "cargo_jobs": 1
+  },
+  "cache_stats_scope": "shared cumulative snapshots; not per-build attribution",
+  "ccache": {
+    "hits": 2622486,
+    "misses": 181669,
+    "hit_rate": 0.9352143515604523
+  },
+  "sccache": {
+    "requests": 23332,
+    "hits": 9163,
+    "misses": 2783,
+    "hit_rate": 0.7670349907918969,
+    "non_cacheable": 11272,
+    "non_cacheable_reasons": {
+      "crate-type": 4183,
+      "missing input": 3535,
+      "-": 3550,
+      "missing emit": 4
+    },
+    "cache_errors": 1,
+    "compilations": 2783
+  }
+}

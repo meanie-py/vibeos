@@ -46,6 +46,9 @@ fn main() {
         // the cargo-cut driver/DLL fleet already took).
         .rust_lib("cport-rust", &[], true)
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
+        .resource_from_rc("drivers/base/kdrosdbg/kdrosdbg.rc", "kdcom_res")
+        // cmake's kernel-mode links keep every section.
+        .keep_all_sections()
         .link(ModuleKind::KernelDll {
             // ENTRYPOINT 0: the DLL has no DllMain (ntoskrnl resolves the 8
             // spec exports by name). The entry symbol is lld's image-base

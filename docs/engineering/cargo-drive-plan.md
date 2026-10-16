@@ -226,9 +226,7 @@ extends it from the boot spine to every fully-Rust module.
        `--gc-sections`, though its comment said it kept everything: arm64, with
        per-function sections, dropped code cmake keeps (wmilib lost its panic path,
        relocations and `.data`). Generated kernel cells keep every section, as
-       cmake's links do. **Owed:** the hand-made kernel DLL cells (hal, kdcom,
-       bootvid, the 21 drivers cut before the generator) still gc; aligning them
-       changes boot-critical modules and needs its own proof.
+       cmake's links do. The hand-made kernel cells followed in wave 12.
      - **`Linker::link_order()`: the libraries in cmake's exact order.** The engine
        had put import libs after every archive. The first library that defines a
        symbol wins, and import libs and archives overlap: amd64's ntoskrnl exports
@@ -272,6 +270,39 @@ extends it from the boot spine to every fully-Rust module.
      so this is the only gate that runs it; the cabinet fix is what setup installs from),
      in 44m12s. That is as slow as the same run with cmake's 36 drivers (49m35s): the
      slowdown since 10-09 is older than the wave (roadmap registry).
+   - **Wave 12, 2026-10-15: the hand-made kernel cells, 30 modules.** The kernel
+     cells cut by hand before the generator existed gc'd their sections and had
+     dropped their version resources.
+     - **14 regenerated from a cmake twin:** beep, condrv, i8042prt, kbdclass,
+       mouclass, nmidebug, null, nvme, pci, pciide, processr, swenum, sysfb, usbd.
+       Each had lost its cmake link at its cut, so a temporary cohab recipe (body
+       custom command, `rust_cohab_stub.c`, the `.rc`, set_module_type
+       kernelmodedriver, the cell's import libs) was put back, built, baselined and
+       generated from like any wave. `--check` 42/42 EQUIVALENT. The i386 bodies move
+       off `i686-kernel.json` onto the builtin triple, as every generated cell.
+     - **16 edited by hand:** `keep_all_sections()` on hal/halmp (hal-link),
+       bootvid, the four kd transports (kdcom, kdcom-serial, kdgdb, kdvm), classpnp,
+       framebuf, hidparse, netstack, vioblk, arm64input, sdhc, wpprecorder and
+       win32k; the version resource back (`resource_from_rc` over a `<m>_res` OBJECT
+       library) on classpnp, framebuf, hidparse and the kd transports. Why not
+       generated: netstack and vioblk need `i686-kernel.json` (zerocopy's float code
+       will not build `-sse` on the builtin triple, a body shape cmake's custom
+       command cannot express); hidparse links two body crates; classpnp, framebuf
+       and the kd transports link engine crates and C shims the twin recipe does not
+       model; arm64input, sdhc and wpprecorder are not built on every arch, and the
+       generator models three; bootvid and hal are their own recipes. **Owed:**
+       bootvid's resource: its `.rc` is a `#cmakedefine` template configured into the
+       build dir, which `resource_from_rc` (a source-tree path) cannot replay.
+     - **What it costs on arm64:** keeping every section keeps the unreferenced
+       `core` code lld collected, about 300 KB a module (kdcom's `.text` goes from
+       268 bytes to 132 KB). cmake's arm64 links always carried it, which is why the
+       generated cells match cmake inside the 16 KB slack. On i386 and amd64 the
+       hand-edited cells change only by their resource.
+     - **Generator:** a target inside a plain `if()` (pciide's `NOT ENABLE_UNIATA`)
+       becomes a cell inside the same `if()`, and an emptied if-chain nested in another
+       empties it too; a target in an `elseif`/`else` branch is refused. `--check`
+       accepts a `cab:` placement dropped for a file txtsetup.sif installs, which
+       add_cargo_module keeps out of the cabinet on purpose.
    - **Still refused** (`--survey`): mstsc (vendored rdesktop C, rung 6); psapi_static
      and the other C_STATIC_LIBRARY targets (their consumers link them; each needs an
      `engine:` entry when a consumer moves).

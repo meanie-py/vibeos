@@ -366,7 +366,7 @@ dependencies = [
 name = "beep-cargo"
 version = "0.1.0"
 dependencies = [
- "panic-common",
+ "panic-lean",
  "reactos-link",
 ]
 
@@ -943,7 +943,7 @@ dependencies = [
 name = "condrv-cargo"
 version = "0.1.0"
 dependencies = [
- "panic-common",
+ "panic-lean",
  "reactos-link",
 ]
 
@@ -1093,6 +1093,15 @@ name = "cryptlib-rust"
 version = "0.1.0"
 dependencies = [
  "panic-common",
+]
+
+[[package]]
+name = "cscript-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]
@@ -2301,6 +2310,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "icuuc-rust"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+]
+
+[[package]]
 name = "iexplore-cargo"
 version = "0.1.0"
 dependencies = [
@@ -2506,7 +2522,7 @@ dependencies = [
 name = "kbdclass-cargo"
 version = "0.1.0"
 dependencies = [
- "panic-common",
+ "panic-lean",
  "reactos-link",
 ]
 
@@ -3117,6 +3133,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "mf-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+ "winelist-rust",
+]
+
+[[package]]
+name = "mfplat-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+ "winelist-rust",
+]
+
+[[package]]
 name = "mfreadwrite-rust"
 version = "0.1.0"
 dependencies = [
@@ -3312,7 +3352,7 @@ dependencies = [
 name = "mouclass-cargo"
 version = "0.1.0"
 dependencies = [
- "panic-common",
+ "panic-lean",
  "reactos-link",
 ]
 
@@ -4229,7 +4269,7 @@ dependencies = [
 name = "pciide-cargo"
 version = "0.1.0"
 dependencies = [
- "panic-common",
+ "panic-lean",
  "reactos-link",
 ]
 
@@ -4399,7 +4439,7 @@ dependencies = [
 name = "processr-cargo"
 version = "0.1.0"
 dependencies = [
- "panic-common",
+ "panic-lean",
  "reactos-link",
 ]
 
@@ -5714,7 +5754,7 @@ dependencies = [
 name = "swenum-cargo"
 version = "0.1.0"
 dependencies = [
- "panic-common",
+ "panic-lean",
  "reactos-link",
 ]
 

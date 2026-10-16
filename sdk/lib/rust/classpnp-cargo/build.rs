@@ -6,7 +6,6 @@
 //! rust_cohab_stub.c)` + `set_module_type(classpnp kernelmodedriver)` +
 //! `spec2def(classpnp.sys classpnp.spec)` + `add_importlibs(classpnp ntoskrnl
 //! hal)` + `target_link_libraries(… ntoskrnl_vista libcntpr pseh)` cohab.
-//! Version resource dropped (as in every driver cargo cut).
 //!
 //! native:5.01, -shared, --exclude-all-symbols + 0x1000 align; entry
 //! _DriverEntry@8 / DriverEntry; base 0x10000 (x86) / 0x7FFB00000000 (arm64);
@@ -78,6 +77,9 @@ fn main() {
         .static_libs(&static_libs)
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .import_lib("hal/hal.spec", "hal.dll", "hal")
+        .resource_from_rc("drivers/storage/class/classpnp/class.rc", "classpnp_res")
+        // cmake's kernel-mode links keep every section.
+        .keep_all_sections()
         .link(ModuleKind::KernelDll {
             entry: entry.into(),
             image_base,
