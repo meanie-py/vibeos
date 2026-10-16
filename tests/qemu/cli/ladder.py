@@ -405,6 +405,20 @@ def stale_guests(repo: Path) -> list[str]:
 # which is the all-or-nothing hole `gate_decision` reports.
 GUEST_PREREQ = "build-i386/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a"
 GUEST_TOOLCHAIN = ".build-tools/llvm-mingw/bin/i686-w64-mingw32-clang"
+# The x86-64 guests (STAGED_LADDER) link build-amd64's OWN importlibs, which a
+# fresh build-amd64 does not have until its first ninja. The builder skips them
+# then, so an amd64 build that refreshes guests BEFORE ninja must defer these
+# rather than fail on them -- it failed every first amd64 build in a fresh
+# worktree whose x64 guest sources were newer than their exes (2026-10-16).
+GUEST_PREREQ_X64 = "build-amd64/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a"
+
+
+def x64_refresh_deferred(repo: Path, todo: list[str]) -> list[str]:
+    """The entries of `todo` that cannot be built yet: x86-64 guests in a tree
+    whose build-amd64 has no importlibs. Empty once they exist."""
+    if (repo / GUEST_PREREQ_X64).is_file():
+        return []
+    return [t for t in todo if t.split(" ", 1)[0] in STAGED_LADDER]
 
 
 def guests_to_refresh(repo: Path) -> list[str]:

@@ -1126,6 +1126,49 @@ def test_build_stage_builds_then_reports_ok(tmp_path):
     assert run.stages[-1].status == "ok" and "reg32" in run.stages[-1].detail
 
 
+def _stale_x64_guest(repo: Path) -> None:
+    exe = repo / "build-fex-hello" / "apc64.exe"
+    exe.write_bytes(b"MZ")
+    os.utime(exe, (_T0 - 5000, _T0 - 5000))
+    assert any(t.startswith("apc64 (") for t in ladder.guests_to_refresh(repo))
+
+
+def test_build_stage_defers_x64_guests_before_amd64_has_importlibs(tmp_path):
+    """A fresh build-amd64 has no importlibs before its first ninja, so the
+    builder skips the x86-64 guests. That is a deferral, not a failure: it failed
+    every first amd64 build in a fresh worktree with an edited x64 guest source."""
+    from tests.qemu.cli import build
+
+    repo = _built_tree(tmp_path)
+    _buildable(repo)
+    _stale_x64_guest(repo)
+    (repo / ladder.GUEST_BUILDER).write_text("echo '[!] apc64.exe skipped'\n")
+    os.utime(repo / ladder.GUEST_BUILDER, (_T0 - 10000, _T0 - 10000))
+    run = _FakeRun()
+    deferred = build._refresh_wow64_guests(run, repo)
+    assert isinstance(deferred, list) and any(d.startswith("apc64 (") for d in deferred)
+    assert run.classification is None
+    assert run.stages[-1].status == "ok" and "deferred" in run.stages[-1].detail
+
+
+def test_build_stage_fails_on_x64_guests_once_amd64_has_importlibs(tmp_path):
+    """With build-amd64's importlibs present, a skipped x86-64 guest is a real
+    failure again -- the deferral must not become a permanent excuse."""
+    from tests.qemu.cli import build
+
+    repo = _built_tree(tmp_path)
+    _buildable(repo)
+    prereq = repo / ladder.GUEST_PREREQ_X64
+    prereq.parent.mkdir(parents=True, exist_ok=True)
+    prereq.write_bytes(b"")
+    _stale_x64_guest(repo)
+    (repo / ladder.GUEST_BUILDER).write_text("echo '[!] apc64.exe skipped'\n")
+    os.utime(repo / ladder.GUEST_BUILDER, (_T0 - 10000, _T0 - 10000))
+    run = _FakeRun()
+    assert build._refresh_wow64_guests(run, repo) is False
+    assert run.classification == "GUEST_BUILD_FAIL" and "apc64" in run.stages[-1].detail
+
+
 def test_build_stage_skips_loudly_without_an_i386_tree(tmp_path):
     """Not this build's failure -- amd64 media is complete without guests -- but
     the stage that could have built them says why it did not."""
