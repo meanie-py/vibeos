@@ -314,3 +314,16 @@ def test_a_dependency_s_lib_name_is_the_edge_name(fixture):
     manifest.write_text(manifest.read_text() + '[lib]\nname = "renamed"\n')
     edges = project(fixture)["descriptor"]["packages"]["body"]["edges"]
     assert {"name": "renamed", "package": "dep"} in edges
+
+
+def test_package_lints_are_keyed_and_inherited_lints_refused(fixture):
+    manifest = fixture / "body/Cargo.toml"
+    base = manifest.read_text()
+    manifest.write_text(base + '[lints.rust]\nunexpected_cfgs = { level = "warn" }\n')
+    first = project(fixture)
+    manifest.write_text(base + '[lints.rust]\nunexpected_cfgs = { level = "deny" }\n')
+    assert project(fixture)["action_key"] != first["action_key"]
+    manifest.write_text(base + "[lints]\nworkspace = true\n")
+    result = discover(fixture, "body", CONTEXT, workspace=fixture)
+    assert not result["eligible"]
+    assert any("lints" in reason for reason in result["reasons"])

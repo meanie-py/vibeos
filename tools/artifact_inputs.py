@@ -285,8 +285,16 @@ class Discovery:
             raise Ineligible(f"{logical}: inherited workspace package fields unsupported")
         library = raw.get("lib", {})
         _check_keys(library, LIB_KEYS, f"{logical}/lib")
-        if raw.get("lints"):
-            raise Ineligible(f"{logical}: manifest lints not yet modeled")
+        # Lints change diagnostics, never codegen; they are still part of the key, and
+        # the worker's manifest carries them, so it reports what the lane reports.
+        # (fastfat-rust's [lints.rust] declares its never-set check-cfg names.)
+        lints = raw.get("lints", {})
+        if (
+            not isinstance(lints, dict)
+            or lints.get("workspace")
+            or any(not isinstance(table, dict) for table in lints.values())
+        ):
+            raise Ineligible(f"{logical}: only package-local [lints.<tool>] tables supported")
         self.manifests[logical] = raw
         self.roots[logical] = manifest.parent
         self.raw_manifests[logical] = data.decode()
@@ -711,6 +719,7 @@ def discover(
             packages[key] = {
                 "package": raw["package"],
                 "lib": raw.get("lib", {}),
+                "lints": raw.get("lints", {}),
                 "features": node["features"],
                 "edges": node["edges"],
                 "inventory": state.inventory(key),
