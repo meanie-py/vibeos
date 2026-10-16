@@ -304,3 +304,13 @@ def test_forced_staticlib_is_a_distinct_action(fixture):
     assert (
         forced["descriptor"]["request"]["invocation"] == "cargo rustc --lib --crate-type staticlib"
     )
+
+
+def test_a_dependency_s_lib_name_is_the_edge_name(fixture):
+    # scsidisk-rust's `[lib] name = "scsidisk"`: the extern name Cargo gives the edge.
+    # Discovery's private resolution manifest once dropped it, predicted `dep_lib`,
+    # and the worker's real graph refused the result (nvme-rust, 2026-10-16).
+    manifest = fixture / "dep/Cargo.toml"
+    manifest.write_text(manifest.read_text() + '[lib]\nname = "renamed"\n')
+    edges = project(fixture)["descriptor"]["packages"]["body"]["edges"]
+    assert {"name": "renamed", "package": "dep"} in edges

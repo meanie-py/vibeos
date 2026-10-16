@@ -341,6 +341,11 @@ class Discovery:
                     "[lib]",
                     'path = "lib.rs"',
                 ]
+                # The library name is the extern name dependents' edges carry
+                # (scsidisk-rust's lib is `scsidisk`); without it Cargo derives
+                # `scsidisk_rust` and the graph no longer matches the real build.
+                if "name" in raw.get("lib", {}):
+                    lines.append("name = " + _toml(raw["lib"]["name"]))
                 (destination / "lib.rs").write_text("pub fn resolution_stub() {}\n")
                 deps = raw.get("dependencies", {})
                 if deps:
