@@ -813,8 +813,12 @@ def request(
             raise RuntimeError_("store result/action verification mismatch")
         lookup_build_seconds = time.monotonic() - lookup_started
         revalidation_started = time.monotonic()
-        current = api.inputs.discover(
-            repo, body, context, cargo=str(toolchain / "bin/cargo"), **options
+        current = (
+            discovery
+            if api.inputs.unchanged(discovery)
+            else api.inputs.discover(
+                repo, body, context, cargo=str(toolchain / "bin/cargo"), **options
+            )
         )
         if not current.get("eligible") or current.get("action_key") != expected:
             raise RuntimeError_("lane inputs changed while waiting/building the artifact")
