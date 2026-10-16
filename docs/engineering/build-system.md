@@ -101,8 +101,10 @@ Two ways rustc gets `core`/`alloc`/`compiler_builtins`:
   the *prebuilt* std that rustup ships for the exact triple. Used for **amd64 + arm64**,
   by BOTH the library crates and (since 2026-07-12) the 42 `*-cargo` link cells. **These
   arches are entirely on pinned STABLE rustc** (`rust-toolchain.toml`).
+  i386's user-mode cells (KIND win32dll / win32exe) joined them on `i686-pc-windows-gnu`
+  on 2026-10-14.
 - **`-Z build-std` + custom `.json`** — rustc compiles std from source for a bespoke
-  target. The **only** remaining user is **i386** (`i686-kernel.json`, the no-SSE
+  target. The **only** remaining user is the **i386 kernel kinds** (`i686-kernel.json`, the no-SSE
   **softfloat** kernel target — `rustc-abi: x86-softfloat` has no builtin triple, so no
   prebuilt std can exist). That cell alone needs nightly (pinned in `.rust-nightly`), and
   it is *retired* by the wow64 lane rather than fixed. `compiler_builtins` supplies what
@@ -156,7 +158,8 @@ generate time.
 - **amd64/arm64**: pinned stable, builtin triple, prebuilt core.
 - **i386**: stable `i686` cannot be used, because it requires sse2 (disabling it warns of a
   future hard error) and the C is `-march=pentium`. The stubs use the pinned nightly and
-  ntdll-cargo's user-mode `i686-kernel.json`, compiled against a sysroot that
+  `tools/spec-stubs-core/i686-kernel.json` (the pentium json the user-mode cells used
+  before they moved to the builtin triple), compiled against a sysroot that
   `tools/spec-stubs-core` builds once per build dir with `-Z build-std`. A float argument is
   printed as its bit pattern there, because the f32→f64 promotion would call
   compiler-builtins' `__extendsfdf2`, which a stub object cannot link.

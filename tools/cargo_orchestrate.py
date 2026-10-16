@@ -48,6 +48,9 @@ ARCH_STEM = {
     "amd64": "x86_64-pc-windows-gnu",
     "arm64": "aarch64-pc-windows-gnullvm",
 }
+# i386 user-mode cells take the builtin triple, like amd64 (gcc.cmake:add_cargo_module).
+I386_USER_STEM = "i686-pc-windows-gnu"
+USER_KINDS = ("win32dll", "win32exe")
 # arch → whether the produced PE is 64-bit (drives pefixup's -D_TARGET_PE64)
 ARCH_PE64 = {"i386": False, "amd64": True, "arm64": True}
 
@@ -280,8 +283,22 @@ def build_pefixup(root: Path, arch: str, out_dir: Path, dry: bool = False) -> Pa
     return exe
 
 
+def build_std(cell: Cell, arch: str) -> bool:
+    """Only i386's kernel kinds still build core themselves (on the softfloat json), and
+    only those with an i686-kernel.json: a generated driver cell has none and builds on
+    the builtin triple like its body (gcc.cmake:add_cargo_module)."""
+    if arch != "i386" or cell.kind in USER_KINDS:
+        return False
+    return (repo_root() / "sdk/lib/rust" / cell.crate / "i686-kernel.json").exists()
+
+
+def cell_stem(cell: Cell, arch: str) -> str:
+    """The --target stem: cargo's target/<stem>/ subdir."""
+    return I386_USER_STEM if arch == "i386" and not build_std(cell, arch) else ARCH_STEM[arch]
+
+
 def target_json(root: Path, cell: Cell, arch: str) -> Path:
-    """A build-std cell's custom target spec (i386 only)."""
+    """A build-std cell's custom target spec (i386 kernel kinds only)."""
     return root / "sdk/lib/rust" / cell.crate / f"{ARCH_STEM[arch]}.json"
 
 
@@ -296,7 +313,7 @@ def cargo_target_dir(root: Path, cell: Cell, arch: str) -> Path:
     against the first one's `core`. Each variant gets a directory of its own, keyed by
     the json's hash."""
     ws = root / "sdk/lib/rust"
-    if arch != "i386":
+    if not build_std(cell, arch):
         return ws / "target"
     digest = hashlib.sha256(target_json(root, cell, arch).read_bytes()).hexdigest()[:12]
     return ws / "target" / f"orchestrate-{arch}-{digest}"
@@ -304,7 +321,7 @@ def cargo_target_dir(root: Path, cell: Cell, arch: str) -> Path:
 
 def built_exe(root: Path, cell: Cell, arch: str) -> Path:
     """Where cargo drops a cell's linked .exe."""
-    stem = ARCH_STEM[arch]
+    stem = cell_stem(cell, arch)
     bin_name = cell.crate.removesuffix("-cargo")
     return cargo_target_dir(root, cell, arch) / stem / "release" / f"{bin_name}.exe"
 
@@ -342,14 +359,14 @@ def _cargo_build_group(
 ) -> None:
     """One cargo invocation for cells that share a target spec and target dir."""
     ws = root / "sdk/lib/rust"
-    stem = ARCH_STEM[arch]
-    # Mirror gcc.cmake:add_cargo_module. i386 is the only build-std cell left (it
-    # needs the `x86-softfloat` kernel json, which has no builtin triple); amd64 and
-    # arm64 link the BUILTIN triple on pinned stable, with the two `-C` flags that
-    # restore what the retired json carried. Keep in sync with gcc.cmake +
-    # tests/qemu/cli/lints.py.
+    stem = cell_stem(cells[0], arch)
+    # Mirror gcc.cmake:add_cargo_module. i386's kernel kinds are the only build-std
+    # cells left (they need the `x86-softfloat` kernel json, which has no builtin
+    # triple); everything else links the BUILTIN triple on pinned stable, with the
+    # `-C` flags that restore what the retired json carried. Keep in sync with
+    # gcc.cmake + sdk/lib/rust/cargo-cell-args.sh.
     env = dict(os.environ)
-    if arch == "i386":
+    if build_std(cells[0], arch):
         # Every cell in a group has the same json bytes (cargo_target_dir's key).
         target = str(target_json(root, cells[0], arch))
         std_args = [
@@ -364,8 +381,10 @@ def _cargo_build_group(
         std_args = []
         # link-self-contained is amd64-only: gnullvm rejects the flag outright.
         rustflags = "-C force-frame-pointers=yes"
-        if arch == "amd64":
+        if arch in ("amd64", "i386"):
             rustflags += " -C link-self-contained=no"
+        if arch == "i386":
+            rustflags += " -C target-feature=-sse,-sse2"
         env["RUSTFLAGS"] = rustflags
 
     env["CARGO_TARGET_DIR"] = str(target_dir)

@@ -261,6 +261,91 @@ pub unsafe extern "system" fn GetPointerInfo(id: UINT32, info: *mut POINTER_INFO
     (TRUE) as BOOL
 }
 
+// Pen and touch pointers do not exist on this machine. Windows reports an unknown pointer id
+// as ERROR_INVALID_PARAMETER and an unknown device handle as ERROR_INVALID_HANDLE; both
+// are returned here for every input, and the caller's output buffers are never written on
+// failure. The POINTER_PEN_INFO / POINTER_TOUCH_INFO buffers are therefore typed opaquely.
+// user32's SetTimer is a Rust wrapper over this system call, not a linkable symbol.
+extern "system" {
+    fn NtUserSetTimer(hWnd: HWND, nIDEvent: ULONG_PTR, uElapse: UINT, lpTimerFunc: *const c_void) -> ULONG_PTR;
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn GetPointerDevice(device: HANDLE, pointer_device: *mut POINTER_DEVICE_INFO) -> BOOL {
+    // No pointer device exists, so no device handle can be valid.
+    SetLastError(ERROR_INVALID_HANDLE as DWORD);
+    (FALSE) as BOOL
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn GetPointerDeviceRects(device: HANDLE, pointer_device_rect: *mut RECT, display_rect: *mut RECT) -> BOOL {
+    // No pointer device exists, so no device handle can be valid.
+    SetLastError(ERROR_INVALID_HANDLE as DWORD);
+    (FALSE) as BOOL
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn GetPointerPenInfo(pointer_id: UINT32, pen_info: *mut c_void) -> BOOL {
+    // No pen pointer with any id exists.
+    SetLastError(ERROR_INVALID_PARAMETER as DWORD);
+    (FALSE) as BOOL
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn GetPointerPenInfoHistory(pointer_id: UINT32, entries_count: *mut UINT32, pen_info: *mut c_void) -> BOOL {
+    // No pen pointer with any id exists, so there is no history to report.
+    SetLastError(ERROR_INVALID_PARAMETER as DWORD);
+    (FALSE) as BOOL
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn GetPointerFrameTouchInfo(pointer_id: UINT32, pointer_count: *mut UINT32, touch_info: *mut c_void) -> BOOL {
+    // No touch pointer with any id exists, so there is no frame to report.
+    SetLastError(ERROR_INVALID_PARAMETER as DWORD);
+    (FALSE) as BOOL
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn GetPointerFrameTouchInfoHistory(
+    pointer_id: UINT32,
+    entries_count: *mut UINT32,
+    pointer_count: *mut UINT32,
+    touch_info: *mut c_void,
+) -> BOOL {
+    // No touch pointer with any id exists, so there is no frame history to report.
+    SetLastError(ERROR_INVALID_PARAMETER as DWORD);
+    (FALSE) as BOOL
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn SkipPointerFrameMessages(pointer_id: UINT32) -> BOOL {
+    // No pointer with any id exists, so there is no frame whose messages could be skipped.
+    SetLastError(ERROR_INVALID_PARAMETER as DWORD);
+    (FALSE) as BOOL
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn SetCoalescableTimer(
+    hwnd: HWND,
+    id_event: ULONG_PTR,
+    elapse: UINT,
+    timer_func: *const c_void,
+    tolerance_delay: ULONG,
+) -> ULONG_PTR {
+    // Windows 8+ coalescing: the tolerance is a hint the system may use to batch wakeups, and
+    // this system never coalesces, so it is ignored and the timer is an ordinary SetTimer.
+    let _ = tolerance_delay;
+    NtUserSetTimer(hwnd, id_event, elapse, timer_func)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn IsWindowArranged(hwnd: HWND) -> BOOL {
+    // Wine's IsWindowArranged is FIXME + FALSE, and this tree has no window-arrangement
+    // (snap/dock) feature, so no window is ever reported as arranged.
+    let _ = hwnd;
+    (FALSE) as BOOL
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn ChangeWindowMessageFilter(message: UINT, flag: DWORD) -> BOOL {
     // FIXME( "%x %08lx\n", message, flag );

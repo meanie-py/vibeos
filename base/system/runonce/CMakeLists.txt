@@ -10,10 +10,8 @@ add_rc_deps(runonce.rc ${CMAKE_CURRENT_SOURCE_DIR}/res/icon.ico)
 add_library(runonce_res OBJECT runonce.rc)
 target_compile_definitions(runonce_res PRIVATE UNICODE _UNICODE)
 target_include_directories(runonce_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(RUNONCE_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(runonce runonce-cargo runonce.exe
     KIND win32exe
     BODY_CRATE runonce-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS runonce_res ${RUNONCE_REUSED})
+    EXTRA_DEPENDS runonce_res)

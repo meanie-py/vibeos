@@ -67,7 +67,7 @@ def _find_db_entries(c_file: Path, arch: str | None = None) -> list[tuple[dict, 
     on i386 `WINAPI` IS such an attribute while on amd64 it is nothing. msvcrt's
     except.c fails on the i386 db and transpiles cleanly on the amd64 one.
     """
-    from .macro_authority import flags_source
+    from .macro_authority import flags_source, pick_entry
 
     c_file = flags_source(c_file)
     cf = str(c_file.resolve())
@@ -86,10 +86,11 @@ def _find_db_entries(c_file: Path, arch: str | None = None) -> list[tuple[dict, 
                 db = json.load(f)
         except Exception:
             continue
-        for e in db:
-            if str(Path(_decanon(e["file"])).resolve()) == cf:
-                out.append((e, REACTOS_ROOT / bd))
-                break
+        picked = pick_entry(
+            [e for e in db if str(Path(_decanon(e["file"])).resolve()) == cf], c_file, REACTOS_ROOT
+        )
+        if picked is not None:
+            out.append((picked, REACTOS_ROOT / bd))
     if not out:
         # A FLIPPED .c has no db entry of its own. Borrow exactly what the call seal borrows
         # (macro_authority): a surviving sibling TU's flags with this file substituted in, or,
@@ -115,7 +116,7 @@ def _find_db_entry(c_file: Path, arch: str | None = None) -> tuple[dict, Path] |
     `_transpile_text` falls back, and only after the pinned arch's db has actually
     failed, and it says so when it does.
     """
-    from .macro_authority import flags_source
+    from .macro_authority import flags_source, pick_entry
 
     c_file = flags_source(c_file)
     cf = str(c_file.resolve())
@@ -128,9 +129,11 @@ def _find_db_entry(c_file: Path, arch: str | None = None) -> tuple[dict, Path] |
                 db = json.load(f)
         except Exception:
             continue
-        for e in db:
-            if str(Path(_decanon(e["file"])).resolve()) == cf:
-                return e, (REACTOS_ROOT / bd)
+        picked = pick_entry(
+            [e for e in db if str(Path(_decanon(e["file"])).resolve()) == cf], c_file, REACTOS_ROOT
+        )
+        if picked is not None:
+            return picked, (REACTOS_ROOT / bd)
     return None
 
 
@@ -582,6 +585,9 @@ def _transpile_attempt(
                 f"{_c2rust_reason(proc.stderr, proc.stdout)}"
             )
             return None
+        refused = dict(_REFUSED_RE.findall(proc.stderr or ""))
+        if refused:
+            _C2RUST_REFUSED.setdefault(c_file, {}).update(refused)
         result = _unprefix_intrinsics(rs.read_text(errors="replace"))
     finally:
         shutil.rmtree(out_dir, ignore_errors=True)
@@ -649,6 +655,14 @@ def build_anchor_map(
                 f"the requested one does not compile them: {', '.join(sorted(found))}",
                 file=sys.stderr,
             )
+        refused = {n: r for n, r in _C2RUST_REFUSED.get(c_file, {}).items() if n in absent}
+        if refused:
+            raise C2RustError(
+                f"{c_file}: c2rust could not translate "
+                + "; ".join(f"{n} ({r.strip()})" for n, r in sorted(refused.items()))
+                + " -- not compiled out, so not droppable. Hand-write it (--skip-fn) or "
+                "fix what c2rust cannot see."
+            )
         if absent == missing - set(found) and absent and not _ANCHOR_FAILURES.get(c_file):
             raise CompiledOut(c_file, absent)
         missing = missing - set(found)
@@ -662,6 +676,14 @@ def build_anchor_map(
 
 
 _ANCHOR_FAILURES: dict[Path, list[str]] = {}
+
+#: Functions c2rust REFUSED, per file: `Failed to translate help: name not declared: 'cmdtab'`.
+#: c2rust logs the line and carries on, so the definition is simply absent from its output --
+#: exactly how a compiled-out function looks. ftp's main.c `help` (a block-scope
+#: `extern struct cmd cmdtab[];`) was dropped as a "dead branch" that way: a live command,
+#: never translated, never billed, reported as working as intended.
+_C2RUST_REFUSED: dict[Path, dict[str, str]] = {}
+_REFUSED_RE = re.compile(r"Failed to translate ([A-Za-z_]\w*): ([^\n\x1b]*)")
 
 
 def _anchor_elsewhere(

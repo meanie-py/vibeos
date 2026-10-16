@@ -18,10 +18,8 @@ add_rc_deps(mmsys.rc ${mmsys_rc_deps})
 add_library(mmsys_res OBJECT mmsys.rc)
 target_compile_definitions(mmsys_res PRIVATE UNICODE _UNICODE)
 target_include_directories(mmsys_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(MMSYS_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(mmsys mmsys-cargo mmsys.cpl
     KIND win32dll
     BODY_CRATE mmsys-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS mmsys_res ${MMSYS_REUSED})
+    EXTRA_DEPENDS mmsys_res)

@@ -764,6 +764,7 @@ $if(_WINNT_)
 #define MAXDWORD  0xffffffff
 $endif(_WINNT_)
 #define MAXLONGLONG (0x7fffffffffffffffLL)
+#define MINLONGLONG (~MAXLONGLONG)
 
 /* 32 to 64 bit multiplication. GCC is really bad at optimizing the native math */
 #if defined(_M_IX86) && !defined(_M_ARM) && !defined(_M_ARM64) && \

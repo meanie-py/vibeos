@@ -308,3 +308,22 @@ extern "system" {
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// DeriveAppContainerSidFromAppContainerName maps a profile name to its S-1-15-2-... SID.
+// That SID is a fixed hash of the lowercased name, and this tree has no reference for the exact
+// digest-to-subauthority layout to check against, so no SID is fabricated: arguments are validated
+// as Windows does, then E_NOTIMPL is returned with the output cleared.
+#[no_mangle]
+pub unsafe extern "system" fn DeriveAppContainerSidFromAppContainerName(
+    pszAppContainerName: LPCWSTR,
+    ppsidAppContainerSid: *mut *mut c_void,
+) -> i32 {
+    if pszAppContainerName.is_null() || ppsidAppContainerSid.is_null() {
+        return E_INVALIDARG_HR;
+    }
+    *ppsidAppContainerSid = core::ptr::null_mut();
+    E_NOTIMPL_HR
+}
+
+const E_INVALIDARG_HR: i32 = 0x8007_0057u32 as i32;
+const E_NOTIMPL_HR: i32 = 0x8000_4001u32 as i32;

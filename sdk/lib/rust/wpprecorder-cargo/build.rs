@@ -18,6 +18,8 @@ fn main() {
         .rust_staticlib("wpprecorder-rust")
         .spec2def("drivers/base/wpprecorder/wpprecorder.spec", "wpprecorder.sys")
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
+        // cmake's kernel-mode links keep every section.
+        .keep_all_sections()
         .link(ModuleKind::KernelDll {
             entry: "DriverEntry".into(),
             image_base,

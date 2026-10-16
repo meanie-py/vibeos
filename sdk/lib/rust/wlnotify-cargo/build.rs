@@ -8,16 +8,16 @@ use std::env;
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
     let (target_json, entry, image_base) = match arch.as_str() {
-        "x86" => ("i686-kernel.json", "_DllMain@12", Some(0x6c910000u64)),
+        "x86" => ("i686-pc-windows-gnu", "_DllMain@12", Some(0x6c910000u64)),
         "x86_64" => ("x86_64-pc-windows-gnu", "DllMain", Some(0x7fe44000000u64)),
         "aarch64" => ("aarch64-pc-windows-gnullvm", "DllMain", Some(0x7fe44000000u64)),
         o => panic!("wlnotify-cargo: unsupported arch {o}"),
     };
 
     let static_libs: &[&str] = match arch.as_str() {
-        "x86" => &["sdk/lib/libwine/libwine.a"],
-        "x86_64" => &["sdk/lib/libwine/libwine.a"],
-        "aarch64" => &["sdk/lib/libwine/libwine.a"],
+        "x86" => &["engine:wine"],
+        "x86_64" => &["engine:wine"],
+        "aarch64" => &["engine:wine"],
         _ => unreachable!(),
     };
 

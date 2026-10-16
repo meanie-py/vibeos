@@ -87,6 +87,10 @@ static const WCHAR *create_system_dirid( int dirid )
         strcatW( buffer, Drivers );
         break;
     case DIRID_INF:
+    case 13: /* DIRID_DRIVER_STORE (Windows 10 1709+): the package's driver store folder. */
+        /* VibeOS keeps no per-package store; %windir%\inf, where the package's INF and
+         * files are staged, is the closest equivalent. Modern INFs install
+         * `ServiceBinary = %13%\foo.sys` and load the driver from there. */
         GetWindowsDirectoryW( buffer, MAX_PATH );
         strcatW( buffer, Inf );
         break;

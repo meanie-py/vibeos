@@ -8,7 +8,11 @@
 #                   `-C` flags restore what the retired json used to carry
 #                   (`link-self-contained=no`, `force-frame-pointers=yes`); the
 #                   linker is pinned in sdk/lib/rust/.cargo/config.toml.
-#   i386          → the custom `i686-kernel.json` + nightly `-Z build-std`. It
+#   i386 user     → (KIND win32dll / win32exe, or a kernel kind whose crate has no
+#                   i686-kernel.json: the generated drivers) the builtin
+#                   `i686-pc-windows-gnu` on stable, like amd64, plus the bodies'
+#                   `-sse,-sse2`.
+#   i386 kernel   → the custom `i686-kernel.json` + nightly `-Z build-std`. It
 #                   needs `rustc-abi: x86-softfloat`, which no builtin triple
 #                   offers. Retired by the wow64 lane, not fixed here.
 #
@@ -19,7 +23,7 @@
 #
 # Usage (from the repo root, before `cd sdk/lib/rust`):
 #     . sdk/lib/rust/cargo-cell-args.sh
-#     cell_args "$arch" ntdll-cargo
+#     cell_args "$arch" ntdll-cargo win32dll    # KIND as add_cargo_module has it
 #     cargo $CELL_TOOLCHAIN build --release --target "$CELL_TARGET" $CELL_STD \
 #         -p ntdll-cargo --bin ntdll
 #     out="sdk/lib/rust/target/$CELL_STEM/release/ntdll.exe"
@@ -31,7 +35,20 @@
 cell_args() {
     _arch="$1"
     _crate="$2"
+    _kind="${3:-kerneldll}"
+    if [ "$_arch" = i386 ] && { [ "$_kind" = win32dll ] || [ "$_kind" = win32exe ] ||
+        [ ! -e "${VIBEOS_ROOT:-.}/sdk/lib/rust/$_crate/i686-kernel.json" ]; }; then
+        _arch=i386-user
+    fi
     case "$_arch" in
+        i386-user)
+            CELL_STEM="i686-pc-windows-gnu"
+            CELL_TARGET="$CELL_STEM"
+            CELL_STD=""
+            CELL_TOOLCHAIN=""
+            RUSTFLAGS="-C force-frame-pointers=yes -C link-self-contained=no -C target-feature=-sse,-sse2"
+            export RUSTFLAGS
+            ;;
         i386)
             CELL_STEM="i686-kernel"
             CELL_TARGET="$_crate/i686-kernel.json"

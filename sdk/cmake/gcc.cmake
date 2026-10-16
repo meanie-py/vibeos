@@ -748,7 +748,9 @@ endfunction()
 ##                    [NO_CD]                           (skip add_cd_file —
 ##                                                       e.g. uefildr, which
 ##                                                       boot_images embeds)
-##                    [DESTINATION <cd-dir>...] [NAME_ON_CD <name>])
+##                    [DESTINATION <cd-dir>...] [NAME_ON_CD <name>]
+##                    [NO_CAB]                          (not in reactos.cab:
+##                                                       setup does not install it))
 ##
 ## <crate> is the cargo bin crate whose build.rs uses reactos-link and is
 ## arch-aware (i686/x86_64/aarch64-kernel.json under the crate dir); its
@@ -770,7 +772,7 @@ include(${CMAKE_CURRENT_LIST_DIR}/cargo_link_context.cmake)
 ## so the shared body crate compiles once instead of once per module (the 95 keyboard
 ## layouts). Each output gets the kind's post-link and its own cd entry.
 function(add_cargo_module _target _crate _output)
-    cmake_parse_arguments(_acm "NO_CD;DELAY_IMPORTS" "KIND;NAME_ON_CD;BODY_CRATE" "BODY_CRATES;EXTRA_DEPENDS;BINS;DESTINATION" ${ARGN})
+    cmake_parse_arguments(_acm "NO_CD;NO_CAB;DELAY_IMPORTS" "KIND;NAME_ON_CD;BODY_CRATE" "BODY_CRATES;EXTRA_DEPENDS;BINS;DESTINATION" ${ARGN})
     if(NOT _acm_KIND)
         set(_acm_KIND kerneldll)
     endif()
@@ -790,15 +792,28 @@ function(add_cargo_module _target _crate _output)
     # ABI-identical: `abi-return-struct-as-int` — the only spec field that flips
     # — is read solely by the 32-bit x86 callconv, so it is inert here.
     #
-    # i386 stays on the custom json + nightly build-std: it needs
-    # `rustc-abi: x86-softfloat`, which has no builtin triple. That cell is
-    # retired by the wow64 lane (i386 kernel goes away), not fixed here. NOTE that
-    # is necessary, not sufficient: this branch has no KIND test, so user-mode
-    # cells take the kernel json too (ntdll is KIND win32dll), and SysWOW64 stages
-    # i386 user-mode PEs for as long as we run x86 apps. Splitting this by KIND is
-    # what would actually shrink the nightly surface -- untested, see
-    # docs/engineering/active-lanes/x64-primary-plan.md item 4.
-    if(ARCH STREQUAL "i386")
+    # i386 KERNEL kinds stay on the custom json + nightly build-std: they need
+    # `rustc-abi: x86-softfloat`, which has no builtin triple. That cell is retired
+    # by the wow64 lane (the i386 kernel goes away), not fixed here. The user-mode
+    # kinds left it on 2026-10-14 (below).
+    # i386 user-mode cells (win32dll / win32exe) take the BUILTIN i686-pc-windows-gnu
+    # triple on stable, like amd64: their bodies already build there, and a cell on the
+    # kernel json links a SECOND `core` (its own build-std one beside the body's
+    # precompiled one): 70-78 KB per module that panics. reactos-link stubs rsbegin.o's
+    # EH-frame registration and clears the triple's --large-address-aware.
+    # A kernel-kind cell with no i686-kernel.json of its own does the same: the drivers
+    # tools/cargo_cell_gen.py generates build their body on the builtin triple, as
+    # cmake's custom command did, and the json would add that second `core`.
+    set(_i386_user FALSE)
+    if(ARCH STREQUAL "i386" AND (_acm_KIND STREQUAL "win32dll" OR _acm_KIND STREQUAL "win32exe"
+                                 OR NOT EXISTS "${_ws}/${_crate}/i686-kernel.json"))
+        set(_i386_user TRUE)
+    endif()
+    if(_i386_user)
+        set(_stem "i686-pc-windows-gnu")
+        set(_rust_target "${_stem}")
+        set(_build_std "")
+    elseif(ARCH STREQUAL "i386")
         set(_stem "i686-kernel")
         set(_rust_target "${_ws}/${_crate}/${_stem}.json")
         set(_build_std -Z build-std=core,alloc,compiler_builtins
@@ -815,7 +830,7 @@ function(add_cargo_module _target _crate _output)
         message(FATAL_ERROR "add_cargo_module: unsupported ARCH ${ARCH}")
     endif()
 
-    if(NOT ARCH STREQUAL "i386")
+    if(NOT ARCH STREQUAL "i386" OR _i386_user)
         # The precompiled `core` calls memcmp (core::slice::cmp) — `-Z build-std`
         # used to supply it via `compiler-builtins-mem`. reactos-link links
         # sdk/lib/crt/libmemcmp.a as a link-group FALLBACK on the builtin targets,
@@ -870,7 +885,12 @@ function(add_cargo_module _target _crate _output)
     # crate is not a cargo dep of the bin crate, so an outer --features can't
     # reach it). Confined to the kernel — other modules' build.rs ignore the
     # env. Default off = zero cost.
-    set(_cargo_env "CARGO_TARGET_DIR=${_cargo_target_dir}" "CARGO_BUILD_JOBS=1")
+    set(_cargo_env "CARGO_TARGET_DIR=${_cargo_target_dir}" "CARGO_BUILD_JOBS=1"
+        "VIBEOS_ARTIFACT_STORE_MODE=${VIBEOS_ARTIFACT_STORE_MODE}"
+        "VIBEOS_ARTIFACT_STORE_ROOT=${VIBEOS_ARTIFACT_STORE_ROOT}"
+        "VIBEOS_ARTIFACT_VERIFY_NONCE=${VIBEOS_ARTIFACT_VERIFY_NONCE}"
+        "VIBEOS_ARTIFACT_TOOLCHAIN_ID=${VIBEOS_ARTIFACT_TOOLCHAIN_ID}"
+        "VIBEOS_RUST_BODY_SHARDS=${VIBEOS_RUST_BODY_SHARDS}")
     if(VIBEOS_LOCKDEP AND _crate MATCHES "^(ntoskrnl-cargo|ntkrnlmp-cargo)$")
         list(APPEND _cargo_env VIBEOS_LOCKDEP=1)
     endif()
@@ -1036,7 +1056,7 @@ function(add_cargo_module _target _crate _output)
     # rust-toolchain.toml (no RUSTUP_TOOLCHAIN override → the toolchain file wins).
     # See docs/engineering/stable-toolchain-plan.md.
     set(_toolchain_env "")
-    if(ARCH STREQUAL "i386")
+    if(ARCH STREQUAL "i386" AND NOT _i386_user)
         file(STRINGS "${CMAKE_SOURCE_DIR}/.rust-nightly" _rust_nightly LIMIT_COUNT 1)
         set(_toolchain_env RUSTUP_TOOLCHAIN=${_rust_nightly})
     else()
@@ -1060,8 +1080,14 @@ function(add_cargo_module _target _crate _output)
         # tests/qemu/cli/lints.py, tools/cargo_orchestrate.py and
         # sdk/lib/rust/cargo-cell-args.sh, which re-run the same cargo links.)
         set(_rustflags "-C force-frame-pointers=yes")
-        if(ARCH STREQUAL "amd64")
+        if(ARCH STREQUAL "amd64" OR _i386_user)
             set(_rustflags "${_rustflags} -C link-self-contained=no")
+        endif()
+        if(_i386_user)
+            # The bodies' i386 policy (reactos-link restates it for them): no SSE in
+            # our own user-mode code. Under the builtin triple this is the combination
+            # rustc is phasing out (tools/scan_i386_sse_abi.py tracks it).
+            set(_rustflags "${_rustflags} -C target-feature=-sse,-sse2")
         endif()
         set(_toolchain_env "RUSTFLAGS=${_rustflags}")
     endif()
@@ -1091,8 +1117,8 @@ function(add_cargo_module _target _crate _output)
         OUTPUT ${_outs}
         # cargo drive of the reactos-link manifest: build.rs links the cmake-built
         # leaf libs / reused objects + self-built rust staticlib into the final PE,
-        # then the kind post-link runs. amd64/arm64: stable + builtin triple.
-        # i386: nightly + build-std + the softfloat kernel json.
+        # then the kind post-link runs. amd64/arm64 and i386 user-mode: stable +
+        # builtin triple. i386 kernel kinds: nightly + build-std + the softfloat json.
         COMMAND ${CMAKE_COMMAND} -E env ${_toolchain_env} ${_cargo_env}
             cargo build --release
                 --target ${_rust_target}
@@ -1113,6 +1139,7 @@ function(add_cargo_module _target _crate _output)
         cmake_policy(POP)
     endif()
     add_custom_target(${_target} ALL DEPENDS ${_outs})
+    set_property(TARGET ${_target} PROPERTY CARGO_OUTPUTS ${_outs})
 
     if(NOT _acm_NO_CD)
         if(NOT _acm_DESTINATION)
@@ -1151,17 +1178,22 @@ function(add_cargo_module _target _crate _output)
                 # ...and INSTALL it. On the bootcd NO_CAB puts the file loose on the CD, which the
                 # setup boot needs, and leaves it out of reactos.cab, which is what setup installs
                 # from: an installed system had no smss, csrss or winlogon at all. Upstream lists such
-                # binaries twice, loose and in the cabinet; so do we. Only the install directories
-                # (the loader is not installed: system32, drivers and the winsxs assemblies), and
+                # binaries twice, loose and in the cabinet; so do we. Only the install tree
+                # (`reactos/...`: the loader and the CD root are not installed), and
                 # only under the built name, which is the name
                 # the cabinet keeps (a renamed output is installed by its txtsetup.sif row instead).
                 # A file txtsetup.sif already installs (its [SourceDisksFiles] rows: the boot
                 # drivers, hal, ntoskrnl, ntdll...) stays out of the cabinet: both copies ran, and the
                 # second could not overwrite the first (16 ACCESS_DENIED copies per install).
+                # This once matched only system32, drivers and winsxs, and regedit, hh, winhlp32,
+                # iexplore, the wbem tools, aclayers and winprint shipped on the CD but were
+                # never installed.
                 string(TOLOWER "${_acm_out_name}" _acm_out_lc)
                 list(FIND _acm_txtsetup "${_acm_out_lc}" _acm_in_txtsetup)
+                # NO_CAB: the module's add_cd_file said so (usbaudio ships loose on the
+                # boot CD and setup does not install it).
                 if(_acm_cd_name STREQUAL _acm_out_name AND _acm_in_txtsetup EQUAL -1
-                   AND _acm_dest MATCHES "^reactos/(system32(/drivers)?|winsxs/[^/]+)$")
+                   AND _acm_dest MATCHES "^reactos(/|$)" AND NOT _acm_NO_CAB)
                     add_cd_file(FILE ${_out} DESTINATION ${_acm_dest} FOR bootcd)
                     if(TARGET reactos_cab_inf)
                         add_dependencies(reactos_cab_inf ${_target})
@@ -1169,6 +1201,37 @@ function(add_cargo_module _target _crate _output)
                 endif()
             endforeach()
         endforeach()
+    endif()
+endfunction()
+
+## One more CD placement for a cargo-linked module, in add_cd_file's own words:
+##   add_cargo_cd_file(<target> DESTINATION <dir> [NO_CAB] [NAME_ON_CD <n>] FOR <cds>)
+## add_cd_file's TARGET form needs a cmake-linked target; this is its FILE form on the
+## cell's output plus the dependencies the FILE form does not wire. For what
+## add_cargo_module's own DESTINATION does not cover: usetup ships only on the boot CD
+## (as smss.exe), welcome also as the boot CD's root setup.exe.
+function(add_cargo_cd_file _target)
+    get_property(_outs TARGET ${_target} PROPERTY CARGO_OUTPUTS)
+    list(LENGTH _outs _n)
+    if(NOT _n EQUAL 1)
+        message(FATAL_ERROR "add_cargo_cd_file(${_target}): needs a one-output add_cargo_module")
+    endif()
+    cmake_parse_arguments(_accd "NO_CAB" "" "FOR" ${ARGN})
+    add_cd_file(FILE ${_outs} ${ARGN})
+    set(_cds ${_accd_FOR})
+    if("all" IN_LIST _cds)
+        list(APPEND _cds bootcd livecd regtest)
+    endif()
+    foreach(_cd ${_cds})
+        if(_cd STREQUAL "regtest")
+            set(_cd bootcdregtest)
+        endif()
+        if(TARGET ${_cd})
+            add_dependencies(${_cd} ${_target})
+        endif()
+    endforeach()
+    if(NOT _accd_NO_CAB AND ("bootcd" IN_LIST _cds) AND TARGET reactos_cab_inf)
+        add_dependencies(reactos_cab_inf ${_target})
     endif()
 endfunction()
 
@@ -1279,10 +1342,10 @@ endfunction()
 
 # spec2def's stubs are Rust: one `rustc --emit=obj` per module, no cargo. amd64 and
 # arm64 compile on pinned stable against the builtin triples' prebuilt core. i386
-# compiles on the pinned nightly against the user-mode cells' pentium/x86-softfloat
-# json, whose core comes from one `-Z build-std` run (tools/spec-stubs-core) shared
-# by every module. Stable i686 cannot stand in: it requires sse2 and the C here is
-# -march=pentium.
+# compiles on the pinned nightly against a pentium/x86-softfloat json (the one the
+# i386 user-mode cells used until they moved to the builtin triple), whose core comes
+# from one `-Z build-std` run (tools/spec-stubs-core) shared by every module. Stable
+# i686 cannot stand in: it requires sse2 and the C here is -march=pentium.
 set(SPEC_STUBS_RUSTC_FLAGS
     --edition 2021 --crate-type=lib --emit=obj
     -C opt-level=2 -C panic=abort -C force-frame-pointers=yes)
@@ -1290,7 +1353,7 @@ set(SPEC_STUBS_RUSTC_ENV)
 set(SPEC_STUBS_RUSTC_DEPENDS)
 if(ARCH STREQUAL "i386")
     file(STRINGS "${REACTOS_SOURCE_DIR}/.rust-nightly" _spec_stubs_nightly LIMIT_COUNT 1)
-    set(_spec_stubs_json "${REACTOS_SOURCE_DIR}/sdk/lib/rust/ntdll-cargo/i686-kernel.json")
+    set(_spec_stubs_json "${REACTOS_SOURCE_DIR}/tools/spec-stubs-core/i686-kernel.json")
     set(_spec_stubs_target_dir "${CMAKE_BINARY_DIR}/spec-stubs-core/${_spec_stubs_nightly}")
     set(_spec_stubs_sysroot "${CMAKE_BINARY_DIR}/spec-stubs-core/sysroot")
     set(_spec_stubs_stamp "${_spec_stubs_sysroot}.stamp")

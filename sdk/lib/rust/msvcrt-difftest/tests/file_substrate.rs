@@ -26,7 +26,7 @@
 //! filesystem underneath.
 
 use std::ffi::CString;
-use std::sync::Once;
+use std::sync::{Mutex, MutexGuard, Once};
 
 type FILEP = *mut core::ffi::c_void;
 
@@ -88,9 +88,17 @@ const O_TEXT: i32 = 0x4000;
 
 
 static INIT: Once = Once::new();
+static SERIAL: Mutex<()> = Mutex::new(());
 
-fn init() {
+/// Initialise the reference CRT once, and hold this guard for the whole test. The CRT's
+/// errno is process-global too: run in parallel, another test's failing call (EINVAL)
+/// landed between `failures_propagate_all_the_way_to_errno`'s `ref_fopen` and its errno
+/// check, and bounced a land preflight (2026-10-15). A test that panics poisons the
+/// lock; the next one takes it anyway, so one failure stays one failure.
+fn init() -> MutexGuard<'static, ()> {
+    let guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     INIT.call_once(|| unsafe { ref_msvcrt_init_io() });
+    guard
 }
 
 /// A path unique to this test AND this process. The CRT state under test is
@@ -139,7 +147,7 @@ fn siblings_of(path: &std::path::Path) -> String {
 
 #[test]
 fn buffered_write_round_trips_to_the_real_filesystem() {
-    init();
+    let _serial = init();
     let (c_path, path) = tmp_path("buffered");
     let body = b"the quick brown fox\njumped over 0123456789\n";
 
@@ -177,7 +185,7 @@ fn buffered_write_round_trips_to_the_real_filesystem() {
 
 #[test]
 fn seek_and_tell_agree_with_the_bytes() {
-    init();
+    let _serial = init();
     let (c_path, path) = tmp_path("seek");
     std::fs::write(&path, b"0123456789abcdef").unwrap();
 
@@ -203,7 +211,7 @@ fn seek_and_tell_agree_with_the_bytes() {
 
 #[test]
 fn the_fd_layer_works_and_reports_length() {
-    init();
+    let _serial = init();
     let (c_path, path) = tmp_path("fd");
     let body = b"low-level bytes";
 
@@ -249,7 +257,7 @@ fn the_fd_layer_works_and_reports_length() {
 /// msvcrt_set_errno → the reference's own errno.
 #[test]
 fn failures_propagate_all_the_way_to_errno() {
-    init();
+    let _serial = init();
     let missing = CString::new(format!(
         "{}/definitely-not-here-{}",
         std::env::temp_dir().display(),
@@ -303,7 +311,7 @@ fn failures_propagate_all_the_way_to_errno() {
 /// cost a failing test to learn, which is the test doing its job.
 #[test]
 fn the_console_write_path_is_reachable() {
-    init();
+    let _serial = init();
     let dev_null = CString::new("/dev/null").unwrap();
 
     unsafe {

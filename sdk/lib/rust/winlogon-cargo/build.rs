@@ -28,7 +28,7 @@ fn main() {
     // ANSI `WinMain` (`_WinMain@16`) and the CRT entry is `WinMainCRTStartup`
     // (NOT the wide `wWinMainCRTStartup` that lsass/userinit use).
     let (target_json, entry) = match arch.as_str() {
-        "x86" => ("i686-kernel.json", "_WinMainCRTStartup"),
+        "x86" => ("i686-pc-windows-gnu", "_WinMainCRTStartup"),
         "x86_64" => ("x86_64-pc-windows-gnu", "WinMainCRTStartup"),
         "aarch64" => ("aarch64-pc-windows-gnullvm", "WinMainCRTStartup"),
         o => panic!("winlogon-cargo: unsupported arch {o}"),

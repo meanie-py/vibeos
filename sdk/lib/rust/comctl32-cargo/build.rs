@@ -8,16 +8,16 @@ use std::env;
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
     let (target_json, entry, image_base) = match arch.as_str() {
-        "x86" => ("i686-kernel.json", "_DllMainCRTStartup@12", Some(0x7b850000u64)),
+        "x86" => ("i686-pc-windows-gnu", "_DllMainCRTStartup@12", Some(0x7b850000u64)),
         "x86_64" => ("x86_64-pc-windows-gnu", "DllMainCRTStartup", Some(0x7ffa9000000u64)),
         "aarch64" => ("aarch64-pc-windows-gnullvm", "DllMainCRTStartup", Some(0x7ffa9000000u64)),
         o => panic!("comctl32-cargo: unsupported arch {o}"),
     };
 
     let late_libs: &[&str] = match arch.as_str() {
-        "x86" => &["sdk/lib/uuid/libuuid.a", "sdk/lib/libwine/libwine.a", "sdk/lib/pseh/libpseh.a", "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a", "sdk/lib/crt/libchkstk.a", "sdk/lib/delayimp/libdelayimp_rust.a"],
-        "x86_64" => &["sdk/lib/uuid/libuuid.a", "sdk/lib/libwine/libwine.a", "sdk/lib/pseh/libpseh.a", "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a", "sdk/lib/delayimp/libdelayimp_rust.a"],
-        "aarch64" => &["sdk/lib/uuid/libuuid.a", "sdk/lib/libwine/libwine.a", "sdk/lib/pseh/libpseh.a", "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a", "sdk/lib/crt/libchkstk.a", "sdk/lib/delayimp/libdelayimp_rust.a"],
+        "x86" => &["engine:uuid", "engine:wine", "engine:pseh", "engine:oldnames", "engine:chkstk", "engine:delayimp_rust"],
+        "x86_64" => &["engine:uuid", "engine:wine", "engine:pseh", "engine:oldnames", "engine:delayimp_rust"],
+        "aarch64" => &["engine:uuid", "engine:wine", "engine:pseh", "engine:oldnames", "engine:chkstk", "engine:delayimp_rust"],
         _ => unreachable!(),
     };
 

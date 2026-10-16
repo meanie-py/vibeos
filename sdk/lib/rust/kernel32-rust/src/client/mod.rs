@@ -31,3 +31,7 @@ pub mod dllmain;
 pub mod vista_ex;
 pub mod win7_misc;
 pub mod win8_misc;
+pub mod win10_misc;
+pub mod pathcch;
+pub mod dlldirs;
+pub mod idn;

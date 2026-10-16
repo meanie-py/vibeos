@@ -3225,6 +3225,35 @@ UNCOVERED: dict[str, str] = {
         "must-not cases pin the u32 rop, the version DWORD, the call-proc `== 0xFFFF0000` "
         "form, the fixed `& !0xFFFF` form and C quoted in a comment."
     ),
+    "scan_fourcc_literals": (
+        "main() walks the real tree, but the decision is scan_text(), a pure function over a "
+        "string, driven directly in tools/test_scan_fourcc_literals.py. Its fire case is the "
+        "shape that shipped (evr's IMC1/NV11 folds); its must-not cases pin correct folds in "
+        "decimal, hex with underscores and a suffix, mmioFOURCC, and a literal with no macro "
+        "comment beside it."
+    ),
+    "scan_match_arm_break": (
+        "main() walks the real tree, but the decision is scan_text(), a pure function over a "
+        "string, driven directly in tools/test_scan_match_arm_break.py. Its fire case is mf's "
+        "session_check_topology shape (a while loop opening with a match); its must-not cases "
+        "pin the once-through `loop { match }` switch idiom, an expression arm, a break of a "
+        "loop nested in the arm, and `break;` inside a string."
+    ),
+    "scan_calloc_elem_type": (
+        "main() walks the real tree, but the decision is scan_text(), a pure function over a "
+        "string, driven directly in tools/test_scan_calloc_elem_type.py. Its fire cases are "
+        "the shape that shipped (wscript's BSTR array sized in OLECHARs) and a byte array of "
+        "pointers; its must-not cases pin matching elements, a pointer-sized table, a void "
+        "buffer, a flexible-array tail and C quoted in a comment."
+    ),
+    "scan_varargs_spec_arity": (
+        "main() walks the real tree and its .spec files, but the decision is scan_text() over "
+        "a string and a spec map from spec_arities(), both driven directly in "
+        "tools/test_scan_varargs_spec_arity.py. Its fire cases are the shape that shipped "
+        "(wscript's count-form swprintf) and a link_name alias; its must-not cases pin the "
+        "_snwprintf binding, the legacy two-argument form, non-variadic and unknown names, "
+        "and a commented-out declaration."
+    ),
     "scan_octal_literals": (
         "main() walks the real tree, but the matcher and the comment/literal tokenizer are "
         "pure functions over a string — scan_text()/strip_noise() — and are driven directly "

@@ -188,3 +188,21 @@ SECURITY_STATUS SEC_ENTRY SspiPrepareForCredWrite( PSEC_WINNT_AUTH_IDENTITY_OPAQ
 
     return SEC_E_OK;
 }
+
+/***********************************************************************
+ *		QueryContextAttributesExW (SSPICLI.@)
+ *
+ * Undocumented export; Wine marks it a stub. The Ex form adds the size of the
+ * caller's output buffer. The secur32 providers are not given a size, so
+ * cbBuffer is not checked here: the request goes through the same provider
+ * dispatch as QueryContextAttributesW, and a package that does not implement
+ * the attribute answers SEC_E_UNSUPPORTED_FUNCTION.
+ */
+SECURITY_STATUS SEC_ENTRY QueryContextAttributesExW( PCtxtHandle context, ULONG attr,
+                                                     void *buffer, ULONG size )
+{
+    TRACE( "%p %lu %p %lu\n", context, attr, buffer, size );
+
+    if (!buffer) return SEC_E_INVALID_PARAMETER;
+    return QueryContextAttributesW( context, attr, buffer );
+}

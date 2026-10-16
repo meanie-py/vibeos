@@ -16,10 +16,8 @@ add_rc_deps(msconfig.rc ${CMAKE_CURRENT_SOURCE_DIR}/res/msconfig.ico)
 add_library(msconfig_res OBJECT msconfig.rc)
 target_compile_definitions(msconfig_res PRIVATE UNICODE _UNICODE)
 target_include_directories(msconfig_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(MSCONFIG_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(msconfig msconfig-cargo msconfig.exe
     KIND win32exe
     BODY_CRATE msconfig-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS msconfig_res ${MSCONFIG_REUSED})
+    EXTRA_DEPENDS msconfig_res)

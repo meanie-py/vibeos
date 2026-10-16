@@ -1759,3 +1759,67 @@ def test_a_sizeof_case_label_is_a_number_not_an_arm(tmp_path):
     )
     idents = {c.ident for c in find_switch_constants([_mod(tmp_path) / "helper.c"], root)}
     assert idents == {"SIZE_OF_NT4_DATA", "EXTRA"}
+
+
+def test_ntddi_follows_a_win32_winnt_outside_the_table():
+    """A module compiled at 0x0A00 (the Wine 11.19 imports) gets the matching NTDDI_VERSION,
+    not the 0x502 fallback that trips sdkddkver.h's mismatch #error in its island."""
+    from rustconv.profile_derive import _ntddi_for
+
+    assert _ntddi_for("0x0A00") == "0x0A000000"
+    assert _ntddi_for("0x502") == "0x05020400"  # the table's service-pack choice still wins
+    assert _ntddi_for("0x603") == "0x06030000"
+
+
+def test_a_tu_that_flips_the_charset_is_an_instantiation_not_the_island():
+    """fc: texta.c `#undef UNICODE`s to instantiate text.h as ANSI while textw.c keeps the
+    module's UNICODE. Merged into the wrapper, texta.c's toggles made the whole island ANSI
+    and conutils.h `#error`ed. A module whose TUs all agree keeps its toggles."""
+    from rustconv.profile_derive import charset_instantiations
+
+    texta = ["#undef UNICODE", "#undef _UNICODE", "#define _MBCS", '#include "text.h"']
+    textw = ["#define UNICODE", "#define _UNICODE", "#undef _MBCS", '#include "text.h"']
+    fc = ['#include "fc.h"']
+    assert charset_instantiations([fc, texta, textw], True) == {1}
+    # Every TU of an ANSI-declared module defines UNICODE: that is the module's charset.
+    assert charset_instantiations([textw, textw], False) == set()
+    assert charset_instantiations([texta, texta], True) == set()
+
+
+def test_a_dotted_target_name_is_read_whole(tmp_path):
+    from rustconv.profile_derive import _target_names
+
+    (tmp_path / "CMakeLists.txt").write_text(
+        "add_executable(rapps.com main.c rapps.rc)\nadd_library(lib_x STATIC a.c)\n"
+    )
+    assert _target_names(tmp_path / "CMakeLists.txt") == {"rapps.com", "lib_x"}
+
+
+def test_a_cargo_linked_module_still_owns_its_flipped_sources(tmp_path):
+    # cargo_cell_gen keeps no source list: the translated C survives only as a comment block,
+    # and the flags moved to `<m>_shims`. `port replay` refused every cargo-linked module with
+    # "no proven CMake source owner" until the parse read both.
+    from rustconv.profile_derive import _target_names, parse_cmakelists
+
+    mod = tmp_path / "base" / "wscript"
+    mod.mkdir(parents=True)
+    for name in ("host.c", "main.c", "rust_varargs_shim.c"):
+        (mod / name).write_text("")
+    (mod / "CMakeLists.txt").write_text(
+        "# wscript.exe is all Rust (wscript-rust) and cargo links it:\n"
+        "# The translated C, kept on disk:\n"
+        "# host.c  # replaced by Rust (sdk/lib/rust/wscript-rust/src/wscript/host.rs)\n"
+        "# main.c  # replaced by Rust (sdk/lib/rust/wscript-rust/src/wscript/main.rs)\n"
+        "add_library(wscript_shims OBJECT rust_varargs_shim.c)\n"
+        "target_compile_definitions(wscript_shims PRIVATE UNICODE _UNICODE)\n"
+        "add_cargo_module(wscript wscript-cargo wscript.exe\n"
+        "    KIND win32exe\n    BODY_CRATE wscript-rust)\n"
+    )
+    cml = mod / "CMakeLists.txt"
+    assert "wscript" in _target_names(cml)
+    live = parse_cmakelists(cml, tmp_path, arch="amd64", target="wscript")
+    assert live.compiled_tus == []
+    m = parse_cmakelists(cml, tmp_path, arch="amd64", target="wscript", flipped_sources=True)
+    assert sorted(p.name for p in m.compiled_tus) == ["host.c", "main.c"]
+    assert m.module_type == "win32cui" and m.unicode
+    assert "-DUNICODE" in m.definitions

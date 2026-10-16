@@ -18,5 +18,7 @@ fn main() {
         .rust_staticlib("sdhc-rust")
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .import_lib("hal/hal.spec", "hal.dll", "hal")
+        // cmake's kernel-mode links keep every section.
+        .keep_all_sections()
         .link(ModuleKind::KernelDll { entry: entry.into(), image_base });
 }

@@ -190,6 +190,52 @@ def test_a_c_variadic_hand_port_is_banked_as_one_piece(tmp_path, monkeypatch):
     assert (mods / "f.rs").read_text() == "fn A() {}\n\n" + hand + "\n"
 
 
+def test_a_hand_twin_over_a_skipped_body_goes_in_like_an_added_item(tmp_path, monkeypatch):
+    # wscript's print_resource was bought from cscript's preprocess and no longer replays;
+    # translate skips it (skip_fn), so the banked `_v` twin has nothing to replace.
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    monkeypatch.setattr(port, "STATE_ROOT", tmp_path / "state")
+    state = {"stem": "m", "crate": "m-rust", "stages": []}
+    (tmp_path / "state" / "m").mkdir(parents=True)
+    (tmp_path / "state" / "m" / "state.json").write_text(json.dumps(state))
+    mods = tmp_path / "sdk" / "lib" / "rust" / "m-rust" / "src" / "m"
+    mods.mkdir(parents=True)
+    hand = 'unsafe extern "C" fn P_v(id: u32, ap: *mut c_void) {\n    y();\n}'
+    (mods / "f.rs").write_text("fn A() {}\n\n" + hand + "\n")
+    port.stage_hand("m", ["f.rs:P_v"])
+    assert port._hand_covered("m") == {"P_v", "P"}
+    (mods / "f.rs").write_text("fn A() {}\n")  # replayed with P skipped
+    with pytest.raises(port.PortError):
+        port.apply_hand("m")  # not recorded as skipped: stale, and loud about it
+    state = json.loads((tmp_path / "state" / "m" / "state.json").read_text())
+    state["skip_fn"] = ["P"]
+    (tmp_path / "state" / "m" / "state.json").write_text(json.dumps(state))
+    assert port.apply_hand("m", early_only=True) == 1
+    assert hand in (mods / "f.rs").read_text()
+
+
+def test_the_replay_refusal_names_the_function():
+    out = "x/.responses/m__main: print_resource already has purchased output which did not replay."
+    assert port._NO_REPLAY.findall(out) == ["print_resource"]
+
+
+def test_a_whole_module_is_banked_and_replayed_verbatim(tmp_path, monkeypatch):
+    # fc's text.h: the bought W bodies made generic by hand, around a trait and its impls.
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    monkeypatch.setattr(port, "STATE_ROOT", tmp_path / "state")
+    state = {"stem": "m", "crate": "m-rust", "stages": []}
+    (tmp_path / "state" / "m").mkdir(parents=True)
+    (tmp_path / "state" / "m" / "state.json").write_text(json.dumps(state))
+    mods = tmp_path / "sdk" / "lib" / "rust" / "m-rust" / "src" / "m"
+    mods.mkdir(parents=True)
+    hand = "pub trait TChar {}\nimpl TChar for u16 {}\nunsafe fn F<T: TChar>() {}\n"
+    (mods / "t.rs").write_text(hand)
+    port.stage_hand("m", ["t.rs:*"])
+    (mods / "t.rs").write_text("unsafe fn F() {}\n")  # the replay's bought, non-generic F
+    assert port.apply_hand("m") == 1
+    assert (mods / "t.rs").read_text() == hand
+
+
 def test_hand_span_finds_an_import_renamed_in_rust_only():
     text = (
         "fn A() {}\n\n"
@@ -1254,3 +1300,108 @@ def test_an_empty_dep_wiring_drops_the_stale_block(tmp_path):
     assert port._DEP_BEGIN in prelude.read_text()
     port._write_dep_block(prelude, {})
     assert prelude.read_text() == "use x;\n"
+
+
+def test_wine_list_fields_typed_as_nt_list_entry_are_rewritten(tmp_path):
+    # mfreadwrite: `struct list entry;` came back as `entry: LIST_ENTRY` (Flink/Blink, so every
+    # `->next` was E0609) and wine/list.h's container-of as a call of the NT type alias.
+    crate = tmp_path / "m-rust"
+    crate.mkdir()
+    (crate / "Cargo.toml").write_text('[dependencies]\nwinelist-rust = { path = "../w" }\n')
+    mod = tmp_path / "m"
+    mod.mkdir()
+    (mod / "a.c").write_text('#include "wine/list.h"\nstruct t { struct list entry; };\n')
+    rs = tmp_path / "a.rs"
+    rs.write_text(
+        "pub struct t { pub entry: LIST_ENTRY, pub p: PLIST_ENTRY, pub q: _LIST_ENTRY }\n"
+        "fn f(p: *mut LIST_ENTRY) { let e = LIST_ENTRY(p, t, entry); let g = LIST_ENTRY!(p, t, entry); }\n"
+    )
+    assert port._wine_list_entry(rs, mod, crate) == 5
+    out = rs.read_text()
+    assert (
+        "entry: list," in out
+        and "q: list }" in out
+        and "p: *mut list" in out
+        and "f(p: *mut list)" in out
+    )
+    assert out.count("LIST_ENTRY!(p, t, entry)") == 2
+    assert port._wine_list_entry(rs, mod, crate) == 0
+
+
+def test_nt_list_entry_is_left_alone_where_the_c_uses_it(tmp_path):
+    crate = tmp_path / "m-rust"
+    crate.mkdir()
+    (crate / "Cargo.toml").write_text("winelist-rust\n")
+    mod = tmp_path / "m"
+    mod.mkdir()
+    (mod / "a.c").write_text('#include "wine/list.h"\nLIST_ENTRY Head;\n')
+    rs = tmp_path / "a.rs"
+    rs.write_text("static mut Head: LIST_ENTRY = zeroed();\n")
+    assert port._wine_list_entry(rs, mod, crate) == 0
+
+
+def test_c_struct_tag_spelled_struct_name_becomes_the_crates_type(tmp_path):
+    src = tmp_path / "src"
+    (src / "m").mkdir(parents=True)
+    (src / "m" / "a.rs").write_text("pub struct buffer { x: u32 }\n")
+    rs = src / "m" / "b.rs"
+    rs.write_text("fn f(b: *mut struct_buffer, s: *mut struct_other) {}\n")
+    assert port._c_struct_tag_names(rs, src) == ["buffer"]
+    assert "b: *mut buffer, s: *mut struct_other" in rs.read_text()
+
+
+def test_a_function_the_crate_defines_is_never_declared_extern(tmp_path):
+    # fc: texta.rs defines TextCompareA; an `extern` for it beside the sibling `use` is E0255.
+    (tmp_path / "texta.rs").write_text(
+        '#[no_mangle]\npub unsafe extern "C" fn TextCompareA(p: *mut F) -> i32 { 0 }\n'
+        "pub unsafe fn TextCompare<T: TChar>() {}\nunsafe fn Private() {}\n"
+    )
+    assert port._crate_defined_fns(tmp_path) == {"TextCompareA", "TextCompare"}
+
+
+def test_split_island_groups_names_each_ignored_group_and_its_tus():
+    script = (
+        "  mfplat|mfplat-types_1|mfplat-types_2)\n"
+        '    case "$DRIVER" in\n'
+        "      # island types_1 — 1 TU(s):\n"
+        "      # mediatype.c\n"
+        "      mfplat-types_1)\n"
+        "        ;;\n"
+        "      # island types_2 — 2 TU(s):\n"
+        "      # sample.c other.c\n"
+        "      mfplat-types_2)\n"
+        "        ;;\n"
+        "    esac\n"
+    )
+    assert port.split_island_groups(script, "mfplat") == [
+        ("types_1", ["mediatype.c"]),
+        ("types_2", ["sample.c", "other.c"]),
+    ]
+    assert port.split_island_groups(script, "mf") == []
+
+
+def test_guid_libraries_are_every_sdk_lib_the_target_links():
+    libs = port.guid_libraries(port.REPO / "dll" / "win32" / "mfplat" / "CMakeLists.txt")
+    assert {"uuid", "dmoguids", "mfuuid", "strmiids", "dxguid"} <= set(libs)
+    assert "wine" not in libs and "oldnames" not in libs  # sdk/lib/<name> must exist
+
+
+def test_drop_guid_library_copies_cuts_only_what_a_linked_library_defines(tmp_path):
+    guid = (
+        "#[no_mangle]\npub static mut {n}: GUID = _GUID {{\n    Data1: 1,\n    Data2: 2,\n"
+        "    Data3: 3,\n    Data4: [0; 8],\n}};\n\n"
+    )
+    f = tmp_path / "main.rs"
+    f.write_text(guid.format(n="EVRConfig_ForceBob") + guid.format(n="MY_OWN") + "fn x() {}\n")
+    assert port.drop_guid_library_copies(f, {"EVRConfig_ForceBob"}) == ["EVRConfig_ForceBob"]
+    text = f.read_text()
+    assert "EVRConfig_ForceBob" not in text
+    assert "pub static mut MY_OWN: GUID" in text and text.endswith("fn x() {}\n")
+
+
+def test_com_method_names_are_the_islands_vtable_slots(tmp_path):
+    (tmp_path / "types_amd64.rs").write_text(
+        "#[repr(C)]\npub struct IStreamVtbl {\n    pub QueryInterface: Option<fn()>,\n"
+        "    pub Read: Option<fn()>,\n}\npub struct NotAVtable {\n    pub x: u32,\n}\n"
+    )
+    assert port.com_method_names(tmp_path) == {"IStream_QueryInterface", "IStream_Read"}

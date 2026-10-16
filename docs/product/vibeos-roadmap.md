@@ -491,7 +491,7 @@ Full plan, oracles and safety rules:
 | # | Boss | First rung | Size | Status (2026-10-05) |
 |---|------|-----------|------|--------|
 | 12a | **Windows 10 kernel export surface**, shared by everything below | An import-gap census tool: missing exports across real Windows 10 drivers and apps, ranked | L | proposed |
-| 12b | **Modern hardware drivers**: KMDF (built, 1.17) on real drivers, NVMe (`nvme.sys` works on all three arches on MSI-X interrupts, 63 commands deep with direct DMA, 2026-10-07), NDIS 6, Vista audio stack, Wi-Fi, HID-over-I²C | NVMe StorPort miniport on the 7010 | XL | proposed |
+| 12b | **Modern hardware drivers**: KMDF (built, 1.17) on real drivers, NVMe (`nvme.sys` works on all three arches on MSI-X interrupts, 63 commands deep with direct DMA, 2026-10-07), NDIS 6 (miniport core in ndis.sys 2026-10-14: Intel's stock Win7 e1g6 driver carries netstack's DHCP/DNS in QEMU; and Realtek's stock Win10 RTL8153 driver, NDIS 6.40 on KMDF, runs the OptiPlex's traffic over USB), Vista audio stack, Wi-Fi (the OptiPlex's RTL8821CU stick has only a WDI driver on Windows 10/11: ndis.sys's own WDI upper edge runs Realtek's stock driver: scan, association, a WPA2-Personal supplicant of our own, and netstack's DHCP/DNS over a WPA2 network, 2026-10-15), HID-over-I²C | NVMe StorPort miniport on the 7010 | XL | proposed |
 | 12c | **Real GPU**: XP x64 driver (XDDM), then WDDM 1.1, then WDDM 2.x (dxgkrnl + a CDD-style adapter so win32k keeps its interface) | Radeon HD 5450 on AMD's XP x64 driver | XXL | proposed |
 | 12d | **Latest Google Chrome**: Windows 10 user-mode surface (mostly Wine), then the sandbox's four kernel primitives (syscall filter, integrity levels, job limits, namespace isolation) plus Windows-exact ntdll stubs | `chrome --headless --no-sandbox --dump-dom` as a smoke ladder rung | XL | proposed |
 
@@ -610,6 +610,24 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   is fixed (`cpp_app._qualified_base_calls`, from rapps' identical ComputeMinimalSize hang);
   re-run `port cppapp` + `port replay` for cicero, msutb (18 qualified base calls) and
   msctfime (4), or hand-fix the two sites to `Initialize__body()` and bank them.
+
+- **amd64 ladder: fault64 rung 1 "AV params" (exit 0xBAF2) (FLAKE, open, found 2026-10-14).**
+  The merge-queue gate's amd64 smoke (`-smp 2`) saw fault64.exe's access-violation reach the
+  guest with wrong ExceptionInformation and rejected shell32-com a6e93b659ef8
+  (`/tmp/vibeos-cli/queue-batch-01792023758967068309/20261014-202239-ktj8bpu7-gate-i386+amd64+arm64/smoke-amd64-a1`).
+  The same tree then passed 6/6 (`./vibeos-cli smoke --arch amd64 --ladder --repeat 3`, with and
+  without `--smp 2`), and the change (ftp, Python tooling) is nowhere near exception dispatch.
+  One failure seen; frequency unknown -- a `farm` soak on the ladder would size it.
+
+- **ws2_32: `getservbyname("ftp", "tcp")` fails INTERMITTENTLY on amd64 (FLAKE, open, found
+  2026-10-14).** In one of two identical amd64 modrun runs, both the C ftp (`ftp_c`) and the Rust
+  one printed `ftp: ftp/tcp: unknown service` and exited 1
+  (`/tmp/vibeos-cli/20261014-194635-5y1gb4y3-smoke-amd64`); the next run looked it up fine
+  (`/tmp/vibeos-cli/20261014-195513-7n1vo6ki-smoke-amd64`). Not seen on i386 or arm64. ws2_32-rust's
+  `getservbyname`/`getxyDataEnt` mirror the C, so suspect what is below them (the RNR/namespace
+  provider, the services file read). amd64 is also the only arch whose smoke boots with a NIC.
+  modrun's ftp suite is i386/arm64-only until this is fixed. Repro: `VIBEOS_PAYLOAD=modrun
+  ./vibeos-cli build --arch amd64 && ./vibeos-cli smoke --arch amd64 --payload modrun --repeat 4`.
 
 - **MM: finding free user address space is linear in the VAD count (open, found 2026-10-12).**
   `MiFindEmptyAddressRangeInTree` (`ARM3/vadnode.rs`, as ReactOS's C) walks every VAD in
@@ -780,6 +798,13 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   conventions. The diagnostics are `~/vibeos-rust-staging/i386-flush-ebp-diag.patch`.
   Still owed besides: deciding whether install-smoke joins a scheduled run (its own verb,
   ~10 min, not a gate stage). arm64 needs a non-IDE disk layout first.
+  **amd64-uefi has slowed to 44-50 min (2026-10-15, from 11m45s on 10-09); OPEN.** It
+  still passes. The setup stage's file copy shows ~245 cdrom `[GAP]` lines (a CD read
+  waiting ~6 s, with as many MCN polls in between) where smoke boots show none. Not the
+  cargo-drive wave 11 driver cells: the same run with cmake's builds of all 36 of them
+  took 49m35s with 247 gaps (`/tmp/vibeos-cli/20261015-112517-etjkvvuq-install-smoke-amd64-uefi`,
+  cargo cells `.../20261015-104049-cwraqy32-...`). Host load during both runs not ruled
+  out; first step is a run on an idle host, then bisect master since 10-09.
 
 - **27 constants defined with two values inside ONE crate, parked in a lint baseline**
   (TRIAGED 2026-10-09). `scan_const_contradictions` had reported userenv's
@@ -1091,7 +1116,8 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   fmod now carry Wine's errno/`_matherr` contract in both CRTs (`__cnt_math_error`). Still
   owed: the rest of cnt-rust's C89 set (trig, sqrt, ldexp, _logb, ...) onto libm with the
   same contract, and the ieee754 Bessel C onto libm. Still `-stub`: the `_d*`/`_fd*` internal helpers
-  (`_dexp`, `_dnorm`, `_dpoly`, ...) and `_except1`. Owner: ucrt-rust.
+  (`_dexp`, `_dnorm`, `_dpoly`, ...). `_except1` is real since 2026-10-15 (Nmap imports it):
+  Wine's ladder in `ucrt-rust/src/fenv/except1.rs`, host-tested. Owner: ucrt-rust.
 - **spec2def's generated `*_stubs.c` were the last C in the CRT DLLs** (FIXED 2026-10-06).
   spec2def now emits `*_stubs.rs` for every spec module (515, about 190 with stub bodies), each
   compiled by a single `rustc --emit=obj`; build-system.md, "spec2def stubs". Each arch's Rust

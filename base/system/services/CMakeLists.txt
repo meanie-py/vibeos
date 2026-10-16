@@ -51,13 +51,9 @@ target_include_directories(services_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # (configured after base/), so DEPENDS on their .a FILE paths for parallel-build
 # ordering. The 8 import libs are generated in-cargo from .spec. The residue
 # (services_c) + the .res (services_res) are in-scope target names.
-set(SERVICES_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/pseh/libpseh.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 
 add_cargo_module(services services-cargo services.exe
     KIND win32exe
     BODY_CRATE services-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS services_c services_res ${SERVICES_REUSED})
+    EXTRA_DEPENDS services_c services_res)

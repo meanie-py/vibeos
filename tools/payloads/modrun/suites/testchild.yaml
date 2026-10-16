@@ -1,0 +1,15 @@
+# testchild (base/applications/testchild -> testchild-rust, batch D2). The shipped Rust diffed
+# against the pre-flip C: five Sleep(0)s, a 3 s sleep, then ExitProcess(42). The other D2
+# programs have no headless behaviour to grade: setup16, devmgmt and testgui open windows,
+# rapps.com launches rapps.exe, and stortest waits two minutes for a USB test volume.
+module: testchild
+variants:
+  c: '%SystemRoot%\bin\modrun\testchild_c.exe'
+  rust: '%SystemRoot%\system32\testchild.exe'
+ninja:
+- testchild_c
+stage:
+- src: build-{arch}/base/applications/testchild/testchild_c.exe
+  dest: bin/modrun/testchild_c.exe
+cases:
+- id: exit42

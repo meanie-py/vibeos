@@ -13,10 +13,8 @@ add_rc_deps(osk.rc ${osk_rc_deps})
 add_library(osk_res OBJECT osk.rc)
 target_compile_definitions(osk_res PRIVATE UNICODE _UNICODE)
 target_include_directories(osk_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(OSK_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(osk osk-cargo osk.exe
     KIND win32exe
     BODY_CRATE osk-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS osk_res ${OSK_REUSED})
+    EXTRA_DEPENDS osk_res)

@@ -2,6 +2,7 @@
 # CR4.OSFXSR is not set until Phase 1 (KiInitMachineDependent),
 # but pool init runs in Phase 0 (MmArmInitSystem).
 [target.i686-pc-windows-gnu]
+linker = "/home/curi/Projects/os-playground/vibeos/.build-tools/llvm-mingw/bin/i686-w64-mingw32-clang"
 rustflags = ["-C", "target-feature=-sse,-sse2"]
 
 # Custom kernel target for the cargo-driven build PoC. Uses

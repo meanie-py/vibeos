@@ -330,6 +330,25 @@ def test_gap_says_why_a_name_is_missing(tmp_path: Path):
     }, "a name only in the generated block is absent here, which gap reports as surface-only"
 
 
+def test_gap_reports_names_windows_lacks_apart_from_our_gap(tmp_path: Path, monkeypatch):
+    """Cheat Engine imports kernel32!AccessCheck, which Windows' kernel32 does not export
+    either (a delay-load that never resolves there). Counting it as our gap sends someone
+    to add an export Windows never had."""
+    app = tmp_path / "App" / "a.exe"
+    app.parent.mkdir()
+    pe = w.PE("x86_64", imports={"k.dll": ["Have", "Missing", "NotOnWindows"]})
+    monkeypatch.setattr(w, "iter_images", lambda corpus: [("App", app)])
+    monkeypatch.setattr(w, "read_pe_file", lambda p: pe)
+    monkeypatch.setattr(w, "module_specs", lambda root: {"k.dll": [tmp_path / "k.spec"]})
+    monkeypatch.setattr(w, "export_version", lambda root: 0x502)
+    monkeypatch.setattr(w, "_windows_files", lambda win, m: (tmp_path / m, None))
+    monkeypatch.setattr(w, "_classify", lambda spec, arch, version: {"Have": "ok"})
+    ref = {"windows": str(tmp_path), "modules": {"k.dll": _ref("Have", "Missing")}}
+    res = w.gap([tmp_path], ref, {}, root=tmp_path, ros={})
+    assert [(r["fn"], r["why"]) for r in res["missing_functions"]] == [("Missing", "surface-only")]
+    assert res["not_on_windows"] == [{"dll": "k.dll", "fn": "NotOnWindows", "apps": ["App"]}]
+
+
 @pytest.mark.parametrize(
     ("dll", "redist"),
     [
@@ -497,3 +516,17 @@ def test_a_forward_to_a_provider_that_links_back_is_private(tmp_path: Path):
     ref = {"x64": {"exports": {"WahX": {"data": False}}}}
     lines = w.plan_forwards("ws2_32.dll", mod, [("ws2help", prov)], ref, 0x502)
     assert lines == ["@ stdcall -version=0x400-0x5ff -private WahX(ptr) ws2help.WahX"]
+
+
+def test_module_specs_finds_a_module_built_through_a_cmake_function(tmp_path):
+    lit = tmp_path / "dll" / "plain"
+    fn = tmp_path / "dll" / "d3dcompiler_47"
+    lit.mkdir(parents=True)
+    fn.mkdir(parents=True)
+    (lit / "CMakeLists.txt").write_text("spec2def(plain.dll plain.spec)\n")
+    (lit / "plain.spec").write_text("@ stdcall A()\n")
+    (fn / "CMakeLists.txt").write_text("add_d3dcompiler_target(47)\n")
+    (fn / "d3dcompiler_47.spec").write_text("@ stdcall D3DCompile()\n")
+    specs = w.module_specs(tmp_path)
+    assert specs["plain.dll"] == [(lit / "plain.spec").resolve()]
+    assert specs["d3dcompiler_47.dll"] == [(fn / "d3dcompiler_47.spec").resolve()]

@@ -427,7 +427,15 @@ pub unsafe extern "system" fn NdisGetSharedDataAlignment() -> ULONG {
 pub unsafe extern "system" fn NdisGetVersion() -> UINT {
     NDIS_DbgPrint!(MAX_TRACE, b"Called.\n\0".as_ptr() as *const ::core::ffi::c_char);
 
-    return NDIS_VERSION;
+    // ReactOS answers its own 5.1. Since ndis6.rs, NDIS 6 miniports load too, and current
+    // ones refuse below their minimum: Realtek's Windows 10 RTL8153 driver opens DriverEntry
+    // with `if (NdisGetVersion() < 0x60028) return STATUS_UNSUCCESSFUL`, and its WDI Wi-Fi
+    // driver (rtwlanu) checks for 0x60032 right after WdfDriverCreate, WDI being an NDIS 6.50
+    // (Windows 10) model. 6.50 is the least that satisfies them; NDIS 5 drivers only read
+    // the number.
+    const NDIS_VERSION_REPORTED: UINT = 0x0006_0032;
+    let _ = NDIS_VERSION;
+    return NDIS_VERSION_REPORTED;
 }
 #[no_mangle]
 pub unsafe extern "system" fn NdisGeneratePartialCancelId() -> UCHAR {

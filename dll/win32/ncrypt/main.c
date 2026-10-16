@@ -243,6 +243,16 @@ SECURITY_STATUS WINAPI NCryptCreatePersistedKey(NCRYPT_PROV_HANDLE provider, NCR
     return ERROR_SUCCESS;
 }
 
+SECURITY_STATUS WINAPI NCryptCreateClaim(NCRYPT_KEY_HANDLE subject_key, NCRYPT_KEY_HANDLE authority_key,
+                                         DWORD claim_type, NCryptBufferDesc *parameters, BYTE *claim_blob,
+                                         DWORD claim_blob_size, DWORD *result_size, DWORD flags)
+{
+    /* Claim generation needs key-attestation support that this provider lacks. */
+    FIXME("(%#Ix, %#Ix, %#lx, %p, %p, %lu, %p, %#lx): stub\n", subject_key, authority_key,
+          claim_type, parameters, claim_blob, claim_blob_size, result_size, flags);
+    return NTE_NOT_SUPPORTED;
+}
+
 SECURITY_STATUS WINAPI NCryptDecrypt(NCRYPT_KEY_HANDLE key, BYTE *input, DWORD insize, void *padding,
                                      BYTE *output, DWORD outsize, DWORD *result, DWORD flags)
 {

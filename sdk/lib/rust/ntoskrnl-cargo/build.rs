@@ -103,6 +103,10 @@ fn main() {
         "ntoskrnl/lto_workaround.c",
         "ntoskrnl/mm_lock_outlines.c",
         "ntoskrnl/ntprintf_trampoline.c",
+        // scanf_trampoline.c: the C-variadic sscanf/sscanf_s/swscanf/_snscanf shells over
+        // cnt-rust's scanf engine (Rust cannot define a variadic on stable). ntoskrnl
+        // exports sscanf_s, which Windows 8+ drivers import.
+        "sdk/lib/rust/cnt-rust/src/cabi/scanf_trampoline.c",
         // sehtry.c: real __try/__except + __try/__finally trampolines for Rust
         // kernel code (ntkrnl_sys::seh); native SEH on amd64/arm64, a hand-built
         // fs:[0] frame on i386. -fms-extensions comes from c_shim_flags below.
@@ -233,8 +237,9 @@ fn main() {
         // libkdcom.a / libbootvid.a (the cmake-built kdcom.dll / bootvid.dll
         // IMPORT libs) DROPPED 2026-06-20 — the kernel now self-hosts both
         // imports from their .spec via .import_lib below (the hal pattern).
-        // kdcom.spec = 8 stdcall exports (Kd{D0,D3}Transition/DebuggerInitialize
-        // {0,1}/ReceivePacket/Restore/Save/SendPacket); bootvid.spec = 11 Vid*.
+        // The kdcom.dll spec (kdrosdbg.spec unless _WINKD_: .kd_import_lib) = 8
+        // stdcall exports (Kd{D0,D3}Transition/DebuggerInitialize{0,1}/ReceivePacket/
+        // Restore/Save/SendPacket); bootvid.spec = 11 Vid*.
         // Symbol-identical: the cmake .a is itself spec2def-generated from these
         // same specs. bootvid.dll is cargo-driven (bootvid-cargo); these were
         // only the import libraries, not bodies.
@@ -482,7 +487,7 @@ fn main() {
     linker = linker.import_lib("hal/hal.spec", "hal.dll", "hal");
     // Self-host the kdcom.dll / bootvid.dll import libs from their specs
     // (replaces the dropped cmake-built libkdcom.a / libbootvid.a import libs).
-    linker = linker.import_lib("drivers/base/kdcom/kdcom.spec", "kdcom.dll", "kdcom");
+    linker = linker.kd_import_lib();
     linker = linker.import_lib("drivers/base/bootvid/bootvid.spec", "bootvid.dll", "bootvid");
     linker
         .static_libs(&static_libs)

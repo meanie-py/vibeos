@@ -112,3 +112,16 @@ def test_an_oracle_output_name_is_suffixed_too():
         'set_target_properties(cmd_help PROPERTIES OUTPUT_NAME "help")\n'
     )
     assert 'set_target_properties(cmd_help_c PROPERTIES OUTPUT_NAME "help_c")' in co.generate(cml)
+
+
+def test_a_win32_executable_keeps_its_keyword_ahead_of_the_sources():
+    from rustconv.c_oracle import generate
+
+    cml = (
+        "add_executable(testgui WIN32\n"
+        "    # testgui.c  # replaced by Rust (sdk/lib/rust/testgui-rust/src/testgui/testgui.rs)\n"
+        "    rust_cohab_stub.c\n    )\n"
+        "set_module_type(testgui win32gui UNICODE)\n"
+    )
+    out = generate(cml)
+    assert "add_executable(testgui_c WIN32 EXCLUDE_FROM_ALL testgui.c)" in out, out

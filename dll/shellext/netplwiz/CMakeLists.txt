@@ -11,11 +11,8 @@ spec2def(netplwiz.dll netplwiz.spec)
 add_library(netplwiz_res OBJECT netplwiz.rc)
 target_compile_definitions(netplwiz_res PRIVATE UNICODE _UNICODE)
 target_include_directories(netplwiz_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(NETPLWIZ_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(netplwiz netplwiz-cargo netplwiz.dll
     KIND win32dll
     BODY_CRATE netplwiz-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS netplwiz_res ${NETPLWIZ_REUSED})
+    EXTRA_DEPENDS netplwiz_res psdk)

@@ -12,10 +12,8 @@ add_rc_deps(hdwwiz.rc ${hdwwiz_rc_deps})
 add_library(hdwwiz_res OBJECT hdwwiz.rc)
 target_compile_definitions(hdwwiz_res PRIVATE UNICODE _UNICODE)
 target_include_directories(hdwwiz_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(HDWWIZ_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(hdwwiz hdwwiz-cargo hdwwiz.cpl
     KIND win32dll
     BODY_CRATE hdwwiz-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS hdwwiz_res ${HDWWIZ_REUSED})
+    EXTRA_DEPENDS hdwwiz_res)

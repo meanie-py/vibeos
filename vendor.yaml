@@ -2064,6 +2064,30 @@ ours:
       code is foreign, the responsibility is ours, and the lines stay in the
       translation denominator.
 
+  # ── Wine 11.19 imports for the Windows 10 app surface: OURS ─────────────
+  - paths:
+      - dll/win32/dcomp
+      - dll/win32/evr
+      - dll/win32/mf
+      - dll/win32/mfplat
+      - dll/win32/mfreadwrite
+      - dll/win32/ndfapi
+      - dll/win32/qwave
+      - dll/win32/tbs
+      - dll/win32/wevtapi
+      - sdk/lib/mfuuid
+    name: Media Foundation and the small Win10 DLLs (Wine 11.19 imports)
+    origin: Wine (LGPL-2.1-or-later), mostly `Copyright <year> <person> for CodeWeavers`
+    tier: "Tier 2-3 (userland DLL queue)"
+    reason: >
+      IMPORTED 2026-10-15 because the app corpus imports them (modern-windows-compat
+      roadmap, export-surface section): every OS module the 20-app corpus loads is now
+      built. Same decision as the shipped Wine modules above — forked, shipped, on the
+      translation path — and Wine's own suites for them (winetests mfplat, qwave,
+      wevtapi, rtworkq) are the before/after oracle, run in the guest by the
+      `mfwinetest` payload. mf flagged UNCLASSIFIED at 8 files; the rest sit below the
+      `--suspects` threshold and are the same case.
+
   # ── Wine-derived code declined at build time: still OURS ────────────────
   - paths:
       - dll/win32/combase
@@ -2134,6 +2158,9 @@ ours:
       - modules/rostests/winetests/shcore
       - modules/rostests/winetests/uiautomationcore
       - modules/rostests/winetests/vbscript
+      - modules/rostests/winetests/mfplat
+      - modules/rostests/winetests/qwave
+      - modules/rostests/winetests/wevtapi
     name: Wine conformance tests
     origin: Wine's own test suite (LGPL-2.1-or-later)
     reason: >

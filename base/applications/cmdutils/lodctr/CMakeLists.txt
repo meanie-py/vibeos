@@ -5,10 +5,7 @@
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # lodctr_main.c  # replaced by Rust (sdk/lib/rust/lodctr-rust/src/lodctr/lodctr_main.rs)
-set(LODCTR_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(lodctr lodctr-cargo lodctr.exe
     KIND win32exe
     BODY_CRATE lodctr-rust
-    DESTINATION reactos/system32
-    EXTRA_DEPENDS ${LODCTR_REUSED})
+    DESTINATION reactos/system32)

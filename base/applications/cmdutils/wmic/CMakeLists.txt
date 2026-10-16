@@ -16,11 +16,8 @@ target_include_directories(wmic_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # How cmake compiled the target's sources, now on the OBJECT libraries.
 set_wine_module_fixme(wmic_shims)
 set_wine_module_fixme(wmic_res)
-set(WMIC_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)
 add_cargo_module(wmic wmic-cargo wmic.exe
     KIND win32exe
     BODY_CRATE wmic-rust
     DESTINATION reactos/system32/wbem
-    EXTRA_DEPENDS wmic_shims wmic_res ${WMIC_REUSED})
+    EXTRA_DEPENDS wmic_shims wmic_res psdk)

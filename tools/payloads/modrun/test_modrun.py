@@ -106,6 +106,22 @@ def test_a_missing_exit_and_an_unexpected_pass_both_fail(suites):
     assert any("m.known: XPASS" in f for f in failures)
 
 
+def test_a_case_the_media_never_had_is_not_reported_as_a_dead_guest(suites):
+    # The suite gained `m.same` after the ISO was built: the guest finished its list without it.
+    serial = _serial(
+        "[MODRUN] case m.differs variants=2",
+        "[MODRUN] exit m.differs c rc=0x00000000 ms=5",
+        "[MODRUN] exit m.differs rust rc=0x00000000 ms=5",
+        "[MODRUN] done cases=1",
+    )
+    _, failures = mr.grade(serial, "i386")
+    assert any(f.startswith("m.same: c: not on the media") for f in failures)
+    # Announced but unfinished is still the guest's fault.
+    serial = _serial("[MODRUN] case m.same variants=2", "[MODRUN] done cases=1")
+    _, failures = mr.grade(serial, "i386")
+    assert any(f.startswith("m.same: c: never finished") for f in failures)
+
+
 def test_a_torn_copy_is_recovered_and_a_lost_record_is_transport_not_a_diff(suites):
     whole = _serial(
         "[MODRUN:m.same:c] Disk 0 pid=1",
@@ -185,3 +201,30 @@ def test_a_record_ending_in_cr_is_not_lost():
     serial = f"{rec}\n{rec}\r\n[MODRUN] exit m.x c rc=0x0 ms=1 records=1\n"
     out, exits = mr.parse(serial)
     assert out[("m.x", "c")] == ["one\r"] and "LOST" not in exits[("m.x", "c")][2]
+
+
+def test_return_minus_one_is_an_exit_code_not_a_crash(suites):
+    # fc returns FCRET_INVALID (-1) on every usage error; both variants agree.
+    serial = _serial(
+        "[MODRUN:m.same:c] Disk 0 usage",
+        "[MODRUN] exit m.same c rc=0xffffffff ms=5",
+        "[MODRUN:m.same:rust] Disk 0 usage",
+        "[MODRUN] exit m.same rust rc=0xffffffff ms=5",
+    )
+    report, failures = mr.grade(serial, "amd64-uefi")
+    assert not [f for f in failures if f.startswith("m.same")], failures
+
+
+def test_a_non_ascii_record_survives_the_latin1_serial(suites):
+    # serial_client.py decodes LATIN-1; the guest checksums the UTF-8 bytes.
+    sent = "Disk 0 thrΘe"
+    wire = sent.encode("utf-8").decode("latin-1")
+    serial = "\n".join(
+        [
+            f"[MODRUN:m.same:c:0:{mr.checksum(sent, 0):04x}] {wire}",
+            "[MODRUN] exit m.same c rc=0x00000000 ms=5 records=1",
+        ]
+    )
+    out, exits = mr.parse(serial)
+    assert out[("m.same", "c")] == [sent]
+    assert "LOST" not in exits[("m.same", "c")][2]

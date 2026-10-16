@@ -5,10 +5,7 @@ spec2def(ncpa.cpl ncpa.spec)
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # ncpa.c  # replaced by Rust (sdk/lib/rust/ncpa-rust/src/ncpa/ncpa.rs)
-set(NCPA_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(ncpa ncpa-cargo ncpa.cpl
     KIND win32dll
     BODY_CRATE ncpa-rust
-    DESTINATION reactos/system32
-    EXTRA_DEPENDS ${NCPA_REUSED})
+    DESTINATION reactos/system32)

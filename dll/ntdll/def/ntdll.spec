@@ -263,7 +263,7 @@
 @ stdcall NtCloseObjectAuditAlarm(ptr ptr long)
 @ stdcall -stub -version=0x600+ NtCommitComplete(ptr ptr)
 @ stdcall -stub -version=0x600+ NtCommitEnlistment(ptr ptr)
-@ stdcall -stub -version=0x600+ NtCommitTransaction(ptr long)
+@ stdcall NtCommitTransaction(ptr long)
 @ stdcall NtCompactKeys(long ptr)
 @ stdcall NtCompareObjects(ptr ptr)
 @ stdcall NtCompareTokens(ptr ptr ptr)
@@ -300,7 +300,7 @@
 @ stub -version=0x600+ NtCreateThreadEx
 @ stdcall NtCreateTimer(ptr long ptr long)
 @ stdcall NtCreateToken(ptr long ptr long ptr ptr ptr ptr ptr ptr ptr ptr ptr)
-@ stdcall -stub -version=0x600+ NtCreateTransaction(ptr long ptr ptr ptr long long long ptr wstr)
+@ stdcall NtCreateTransaction(ptr long ptr ptr ptr long long long ptr ptr)
 @ stdcall -stub -version=0x600+ NtCreateTransactionManager(ptr long ptr wstr long long)
 @ stdcall -stub -version=0x600+ NtCreateUserProcess(ptr ptr long long ptr ptr long long ptr long long)
 @ stdcall NtCreateWaitablePort(ptr ptr long long long)
@@ -348,7 +348,7 @@
 @ stdcall NtGetDevicePowerState(ptr ptr)
 @ stdcall -stub -version=0x600+ NtGetMUIRegistryInfo(long ptr ptr)
 @ stdcall -stub -version=0x600+ NtGetNextProcess(long long long long ptr)
-@ stdcall -stub -version=0x600+ NtGetNextThread(ptr ptr long long long ptr)
+@ stdcall NtGetNextThread(ptr ptr long long long ptr)
 @ stdcall -stub -version=0x600+ NtGetNlsSectionPtr(long long long ptr ptr)
 @ stdcall -stub -version=0x600+ NtGetNotificationResourceManager(ptr ptr long ptr ptr long long)
 @ stdcall NtGetPlugPlayEvent(long long ptr long)
@@ -391,7 +391,7 @@
 @ stdcall NtOpenIoCompletion(ptr long ptr)
 @ stdcall NtOpenJobObject(ptr long ptr)
 @ stdcall NtOpenKey(ptr long ptr)
-@ stdcall -arch=arm64,x86_64 NtOpenKeyEx(ptr long ptr long)
+@ stdcall NtOpenKeyEx(ptr long ptr long)
 @ stdcall -stub -version=0x600+ NtOpenKeyTransacted(ptr long ptr ptr)
 @ stdcall NtOpenKeyedEvent(ptr long ptr)
 @ stdcall NtOpenMutant(ptr long ptr)
@@ -515,7 +515,7 @@
 @ stdcall NtResumeThread(long long)
 @ stdcall -stub -version=0x600+ NtRollbackComplete(ptr ptr)
 @ stdcall -stub -version=0x600+ NtRollbackEnlistment(ptr long ptr long)
-@ stdcall -stub -version=0x600+ NtRollbackTransaction(ptr long)
+@ stdcall NtRollbackTransaction(ptr long)
 @ stdcall -stub -version=0x600+ NtRollforwardTransactionManager(ptr ptr)
 @ stdcall NtSaveKey(long long)
 @ stdcall NtSaveKeyEx(ptr ptr long)
@@ -888,7 +888,7 @@
 @ stdcall RtlGetCurrentPeb()
 @ stdcall RtlGetCurrentProcessorNumber() ; 5.2 SP1 and higher
 @ stdcall RtlGetCurrentProcessorNumberEx(ptr)
-@ stdcall -stub -version=0x600+ RtlGetCurrentTransaction()
+@ stdcall RtlGetCurrentTransaction()
 @ stdcall RtlGetDaclSecurityDescriptor(ptr ptr ptr ptr)
 @ stdcall RtlGetElementGenericTable(ptr long)
 @ stdcall RtlGetElementGenericTableAvl(ptr long)
@@ -912,7 +912,7 @@
 @ stdcall RtlGetOwnerSecurityDescriptor(ptr ptr ptr)
 @ stdcall -stub -version=0x600+ RtlGetParentLocaleName(wstr long long long)
 @ stdcall RtlGetProcessHeaps(long ptr)
-@ stdcall -version=0x600+ RtlGetProductInfo(long long long long ptr)
+@ stdcall RtlGetProductInfo(long long long long ptr)
 @ stdcall RtlGetSaclSecurityDescriptor(ptr ptr ptr ptr)
 @ stdcall RtlGetSecurityDescriptorRMControl(ptr ptr)
 @ stdcall RtlGetSetBootStatusData(ptr long long ptr long long)
@@ -1167,7 +1167,7 @@
 @ stdcall RtlSetCriticalSectionSpinCount(ptr long)
 @ stdcall RtlSetCurrentDirectory_U(ptr)
 @ stdcall RtlSetCurrentEnvironment(wstr ptr)
-@ stdcall -stub -version=0x600+ RtlSetCurrentTransaction(ptr)
+@ stdcall RtlSetCurrentTransaction(ptr)
 @ stdcall RtlSetDaclSecurityDescriptor(ptr long ptr long)
 @ stdcall -stub -version=0x600+ RtlSetDynamicTimeZoneInformation(long)
 @ stdcall RtlSetEnvironmentStrings(wstr long)
@@ -1245,6 +1245,8 @@
 @ stdcall RtlUnicodeToMultiByteN(ptr long ptr ptr long)
 @ stdcall RtlUnicodeToMultiByteSize(ptr ptr long)
 @ stdcall RtlUnicodeToOemN(ptr long ptr ptr long)
+@ stdcall RtlUnicodeToUTF8N(ptr long ptr ptr long)
+@ stdcall RtlUTF8ToUnicodeN(ptr long ptr ptr long)
 @ stdcall RtlUniform(ptr)
 @ stdcall RtlUnlockBootStatusData(ptr)
 @ stdcall -stub -version=0x600+ RtlUnlockCurrentThread()
@@ -1484,7 +1486,7 @@
 @ stdcall ZwCloseObjectAuditAlarm(ptr ptr long)
 @ stdcall -stub -version=0x600+ ZwCommitComplete(ptr ptr)
 @ stdcall -stub -version=0x600+ ZwCommitEnlistment(ptr ptr)
-@ stdcall -stub -version=0x600+ ZwCommitTransaction(ptr long)
+@ stdcall ZwCommitTransaction(ptr long) NtCommitTransaction
 @ stdcall ZwCompactKeys(long ptr)
 @ stdcall ZwCompareObjects(ptr ptr)
 @ stdcall ZwCompareTokens(ptr ptr ptr)
@@ -1520,7 +1522,7 @@
 @ stdcall -stub -version=0x600+ ZwCreateThreadEx(ptr long ptr ptr ptr ptr long long long long ptr)
 @ stdcall ZwCreateTimer(ptr long ptr long)
 @ stdcall ZwCreateToken(ptr long ptr long ptr ptr ptr ptr ptr ptr ptr ptr ptr)
-@ stdcall -stub -version=0x600+ ZwCreateTransaction(ptr long ptr ptr ptr long long long ptr wstr)
+@ stdcall ZwCreateTransaction(ptr long ptr ptr ptr long long long ptr ptr) NtCreateTransaction
 @ stdcall -stub -version=0x600+ ZwCreateTransactionManager(ptr long ptr ptr long long)
 @ stdcall -stub -version=0x600+ ZwCreateUserProcess(ptr ptr long long ptr ptr long long ptr ptr ptr)
 @ stdcall ZwCreateWaitablePort(ptr ptr long long long)
@@ -1567,7 +1569,7 @@
 @ stdcall ZwGetDevicePowerState(ptr ptr)
 @ stdcall -stub -version=0x600+ ZwGetMUIRegistryInfo(long ptr ptr)
 @ stdcall -stub -version=0x600+ ZwGetNextProcess(ptr long long long ptr)
-@ stdcall -stub -version=0x600+ ZwGetNextThread(ptr ptr long long long ptr)
+@ stdcall ZwGetNextThread(ptr ptr long long long ptr) NtGetNextThread
 @ stdcall -stub -version=0x600+ ZwGetNlsSectionPtr(long long ptr ptr ptr)
 @ stdcall -stub -version=0x600+ ZwGetNotificationResourceManager(ptr ptr long ptr ptr long ptr)
 @ stdcall ZwGetPlugPlayEvent(long long ptr long)
@@ -1731,7 +1733,7 @@
 @ stdcall ZwResumeThread(long long)
 @ stdcall -stub -version=0x600+ ZwRollbackComplete(ptr ptr)
 @ stdcall -stub -version=0x600+ ZwRollbackEnlistment(ptr ptr)
-@ stdcall -stub -version=0x600+ ZwRollbackTransaction(ptr long)
+@ stdcall ZwRollbackTransaction(ptr long) NtRollbackTransaction
 @ stdcall -stub -version=0x600+ ZwRollforwardTransactionManager(ptr ptr)
 @ stdcall ZwSaveKey(long long)
 @ stdcall ZwSaveKeyEx(ptr ptr long)
@@ -1838,7 +1840,7 @@
 @ cdecl -arch=i386 _alldvrm()
 @ cdecl -arch=i386 -ret64 _allmul(double double)
 @ cdecl -arch=i386 -norelay -private _alloca_probe()
-@ cdecl -version=0x600+ -arch=i386 -private _alloca_probe_16()
+@ cdecl -arch=i386 -private _alloca_probe_16()
 @ stub -version=0x600+ -arch=i386 _alloca_probe_8
 @ cdecl -arch=i386 -ret64 _allrem(double double)
 @ cdecl -arch=i386 _allshl()
@@ -2453,11 +2455,9 @@
 @ stub -version=0xA00+ RtlTlsSetValue
 @ stub -version=0xA00+ RtlTryConvertSRWLockSharedToExclusiveOrRelease
 @ stub -version=0xA00+ RtlUTF8StringToUnicodeString
-@ stub -version=0xA00+ RtlUTF8ToUnicodeN
 @ stub -version=0xA00+ RtlUdiv128
 @ stub -arch=win64 -version=0xA00+ RtlUmsThreadYield
 @ stub -version=0xA00+ RtlUnicodeStringToUTF8String
-@ stub -version=0xA00+ RtlUnicodeToUTF8N
 @ stub -version=0xA00+ RtlUnregisterFeatureConfigurationChangeNotification
 @ stub -version=0xA00+ RtlUnsubscribeFromFeatureUsageNotifications
 @ stub -version=0xA00+ RtlUnsubscribeWnfNotificationWaitForCompletion

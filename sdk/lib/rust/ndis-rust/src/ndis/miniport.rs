@@ -1282,6 +1282,19 @@ pub unsafe extern "C" fn MiniDoRequest(
     let mut OldIrql: KIRQL = core::mem::zeroed();
     NDIS_DbgPrint!(DEBUG_MINIPORT, b"Called.\n\0".as_ptr() as *const i8);
 
+    // An NDIS 6 miniport's OID handler expects PASSIVE_LEVEL, so it is called without the
+    // raise below; a pended request completes through NdisMOidRequestComplete.
+    let a6 = crate::ndis::ndis6::adapter_of(Adapter);
+    if !a6.is_null() {
+        (*Adapter).NdisMiniportBlock.PendingRequest = NdisRequest;
+        Status = crate::ndis::ndis6::do_request(a6, NdisRequest);
+        if Status != NDIS_STATUS_PENDING {
+            (*Adapter).NdisMiniportBlock.PendingRequest = core::ptr::null_mut();
+            MiniWorkItemComplete(Adapter, NdisWorkItemRequest);
+        }
+        return Status;
+    }
+
     KeRaiseIrql((DISPATCH_LEVEL) as KIRQL, core::ptr::addr_of_mut!(OldIrql));
 
     KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*Adapter).NdisMiniportBlock.Lock));
@@ -3533,9 +3546,12 @@ pub unsafe extern "system" fn NdisMSleep(MicrosecondsToSleep: ULONG) {
         );
     }
 
-    DueTime.QuadPart = ((-(1 as ::core::ffi::c_int)
-        * 10 as ::core::ffi::c_int) as ULONG)
-        .wrapping_mul(MicrosecondsToSleep) as LONGLONG;
+    // A relative due time: negative, in 100 ns units. The C computed `(-1) * 10 * Microseconds`
+    // in 32-bit unsigned arithmetic, so it widened to a large POSITIVE value, an absolute time
+    // long past, and the timer fired at once: NdisMSleep never slept. Drivers that poll their
+    // hardware with it (Realtek's WDI Wi-Fi driver while it starts the chip) then time out at
+    // once, and succeed only when something else happens to slow them down.
+    DueTime.QuadPart = -(MicrosecondsToSleep as LONGLONG) * 10;
 
     KeInitializeTimer(&mut Timer);
     KeSetTimer(&mut Timer, DueTime, core::ptr::null_mut());

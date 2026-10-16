@@ -49,3 +49,20 @@ pub fn panic_lean(module: &'static [u8], _info: &core::panic::PanicInfo) -> ! {
         core::hint::spin_loop();
     }
 }
+
+/// The handler for a kernel-mode cell whose body cannot panic: no report, because
+/// reporting is a call out and a reference to `core` (the cmake-built driver had no
+/// handler at all; the generator reads that from its imports). It fails fast instead
+/// (`int 0x29` / `brk #0xf003`), which the kernel turns into a loud bugcheck 0x139.
+/// The keyboard layouts' cell does the same.
+#[inline(always)]
+pub fn panic_fastfail() -> ! {
+    const FAST_FAIL_FATAL_APP_EXIT: u32 = 7;
+    // SAFETY: __fastfail never returns and touches nothing but the code register.
+    unsafe {
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        core::arch::asm!("int 0x29", in("ecx") FAST_FAIL_FATAL_APP_EXIT, options(noreturn));
+        #[cfg(target_arch = "aarch64")]
+        core::arch::asm!("brk #0xf003", in("x0") FAST_FAIL_FATAL_APP_EXIT as u64, options(noreturn));
+    }
+}

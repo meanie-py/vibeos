@@ -11,6 +11,8 @@
 
 #ifndef KSMEDIA_H
 #define KSMEDIA_H
+/* The Windows SDK guard; mfapi.h keys its KS_VIDEOINFOHEADER prototypes on it. */
+#define _KSMEDIA_
 
 /*
     KS CATEGORIES

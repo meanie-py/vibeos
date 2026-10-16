@@ -13,19 +13,8 @@ target_compile_definitions(attrib_shims PRIVATE UNICODE _UNICODE)
 add_library(attrib_res OBJECT attrib.rc)
 target_compile_definitions(attrib_res PRIVATE UNICODE _UNICODE)
 target_include_directories(attrib_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(ATTRIB_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils_rust.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/pseh/libpseh.a)
-if(ARCH STREQUAL "i386")
-    list(APPEND ATTRIB_REUSED ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a)
-endif()
-if(ARCH STREQUAL "arm64")
-    list(APPEND ATTRIB_REUSED ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a)
-endif()
 add_cargo_module(attrib attrib-cargo attrib.exe
     KIND win32exe
     BODY_CRATE attrib-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS attrib_shims attrib_res ${ATTRIB_REUSED})
+    EXTRA_DEPENDS attrib_shims attrib_res xdk)

@@ -320,13 +320,126 @@ Apps 191 -> 125 missing functions, 356 -> 209 import sites (-41%).
   guest: the sweep has no writable directory on the live CD (owed: a writable volume
   for the apitest payload, then grade it there).
 
+**Done 2026-10-14 (third batch): every load-time import of the 20-app corpus resolves.**
+Apps 125 -> 1 missing function (ucrtbase `_except1`, a stub), 209 -> 1 import site.
+Nothing in the corpus fails to load for a missing export of a module we build. Test:
+kernel32 apitest `Win10Surface`, Windows 11 95/0 first, guest 96/0 on amd64 and i386.
+- Loader: `SetDefaultDllDirectories`/`AddDllDirectory`/`RemoveDllDirectory` and the
+  `LOAD_LIBRARY_SEARCH_*` flags (kernel32 `client/dlldirs.rs`, beside
+  BaseComputeProcessDllPath, which is where our search path is built; Wine's order and
+  error codes). `LoadLibraryExW` used to ignore those flags.
+- `GetProductInfo` forwarded to `ntdll.RtlGetProductInfo`, which no target compiled
+  (`sdk/lib/rtl/product.c`): ported into ntdll-rust `rtl/version.rs`. `NtOpenKeyEx` lived
+  in the arm64/amd64-only WOW64 shim; now every arch. `RtlUTF8ToUnicodeN` and its pair had
+  bodies (`utf8` crate) and no rows. `NtGetNextThread` over a process snapshot; the KTM
+  calls fail STATUS_NOT_IMPLEMENTED (Wine fakes success) and the TEB's current
+  transaction is real.
+- api-ms-win-security-base-* now resolves to advapi32 (kernel32 has none of AccessCheck,
+  EqualSid & co.).
+- kernel32 (`win10_misc.rs`, `pathcch.rs`, `idn.rs`, console): the whole PathCch family
+  (Wine's path.c; our api-set host for api-ms-win-core-path is kernel32), XState/context,
+  CopyFile2, mitigation policy, AppModel package queries (APPMODEL_ERROR_NO_PACKAGE), Pss
+  (ERROR_NOT_SUPPORTED), ResolveLocaleName, SetWaitableTimerEx, UnmapViewOfFileEx,
+  IdnToAscii/Unicode/NameprepUnicode (exact RFC 3492; nameprep has no NFKC),
+  GetCurrentConsoleFontEx, K32EnumProcessModulesEx.
+- psapi: EnumProcessModules and its module lookup read `sizeof(PEB_LDR_DATA)` into a
+  pointer variable, overrunning the stack on every call since the Rust port; fixed.
+- user32/win32k: AddClipboardFormatListener posts WM_CLIPBOARDUPDATE (a listener list in
+  win32k-rust `clipboard.rs`, reached through two NtUserCallHwnd routines numbered outside
+  the shared enum, as SETFOREGROUNDWINDOWMOUSE is); pointer/pen queries fail as for an
+  unknown pointer id; SetCoalescableTimer.
+- shcore.dll is built (against ole32, not the declined combase), its DPI calls forwarding
+  to shell32's Windows-graded ones. setupapi/cfgmgr32: SetupDiGetDevicePropertyW, the
+  Keys/Set pair and CM_Get_DevNode_Property* over the legacy registry properties
+  (DEVPKEY_Device_* pid = SPDRP + 2). iphlpapi `*2` tables/routes/neighbours (IPv4, from
+  the legacy tables; change notifications deliver only the initial one), ws2_32
+  GetAddrInfoExW (sync+async+cancel), WSAPoll, WSASendMsg; winhttp proxy resolver over
+  the module's PAC code; ole32 winrt-error set; advapi32 AddMandatoryAce,
+  EventActivityIdControl; esent fails JET_errFeatureNotAvailable; and honest
+  not-present answers for AAD join, AppContainer, SHGetPropertyStoreForWindow,
+  SHCreateAssociationRegistration.
+- Tooling: `pecheck.spec_exports` reported a `-stub -version=` row outside its range as a
+  callable stub (it is not exported: a load failure); `win10_surface gap` lists imports
+  Windows itself does not export apart from our gap.
+
+**Done 2026-10-15: the missing modules, imported from Wine 11.19.** Every OS module the
+corpus imports is built: mfplat, mf, mfreadwrite, evr, wevtapi, ndfapi, dcomp, qwave, tbs
+(gap: 9 modules -> 0; functions 5 -> 1, ucrtbase `_except1`). rtworkq and dxva2 are built
+at every DLL_EXPORT_VERSION, and rtworkq is synced to 11.19 to match mfplat.
+- **Media Foundation has no codecs.** Wine decodes through winegstreamer (a Unix-side
+  GStreamer bridge we cannot use), so attributes, media types, buffers, samples, work
+  queues, the session, topology loader, sample grabber, sinks and the source reader all
+  work, but nothing turns an mp4/AAC/H.264 byte stream into a source or a decoder MFT.
+  An app that only plays media through MF loads and then fails at
+  CreateObjectFromByteStream (MF_E_UNSUPPORTED_BYTESTREAM_TYPE).
+- Found by Wine's suites in the guest (payload `mfwinetest`): our Rust threadpool (a port
+  of an older Wine) waited on the caller's handle, so closing one pending wait's handle
+  made NtWaitForMultipleObjects fail for the whole wait thread and every other wait in
+  the bucket stalled; ported Wine's duplicate-handle + update-serial fix.
+- Bodies Wine leaves as stubs: MFCreateMediaBufferWrapper (graded on Windows 11), real
+  QoS handles, the tbs context calls, DCompositionCreateSurfaceHandle.
+- Guest amd64: wevtapi 10/0, qwave 18/0, rtworkq 176/1 (`flaky_wine`); mfplat completes
+  with Wine's own todo_wine lines plus the codec-dependent checks.
+
+**Done 2026-10-15 (later): Media Foundation is Rust, and the corpus is wider.**
+- mfplat and mf flipped. Graded on Wine's mfplat, mf and topology suites against the C
+  built from the same tree, the two now fail identically (see rust-port-status.md for the
+  four translation bugs the comparison found, and the two lints that came out of them).
+- The corpus grew from 20 app folders to 34 (`win10_surface.py gap`, 60 apps, 4096 images):
+  LLVM, Node.js, qBittorrent, qTox, QEMU, Raspberry Pi Imager, Gpg4win, Docker, Oracle
+  VirtualBox, Ubisoft, Rockstar, Logitech Options+ and Microsoft Office. Office alone
+  accounts for 219 of the missing functions and most of the 36 missing modules, and
+  VirtualBox for 62 (most of them kernel-driver imports). Every other app's imported
+  FUNCTIONS now resolve except QEMU's SHCreateShellItemArrayFromIDLists; the modules they
+  need are listed below.
+- Bodies for what those apps import: kernel32 GetPhysicallyInstalledSystemMemory,
+  GetVolumeInformationByHandleW and five forwards; user32's thread DPI-context set;
+  ws2_32 GetHostNameW; iphlpapi NotifyUnicastIpAddressChange and InitializeIpInterfaceEntry
+  (measured on Windows 11: 0xFF "unchanged" sentinels, not the zeros the docs describe);
+  shell32's explicit AppUserModelID pair (measured too); rpcrt4
+  RpcServerInqCallAttributes{A,W}; the bluetoothapis GATT set and bthprops
+  BluetoothIsDiscoverable with no-radio errors. ucrtbase `_except1`. `icuuc.dll` (new,
+  Rust) for cmake-gui.
+
 **Owed on the export surface:**
-- **The rest of the app ranking:** setupapi's `SetupDiGetDevicePropertyW` (5 apps, still
-  C); `shcore.dll` imported directly (3 apps: the module is not built; a forwarder-only
-  shcore over shell32 would serve them, if the declined restructure allows it);
-  `SetDefaultDllDirectories`/`AddDllDirectory` (loader work in ntdll);
-  `GetProductInfo` (its forward target is dead); `GetBestRoute2`;
-  `SHGetPropertyStoreForWindow`; `GetPointerPenInfo`.
+- **Modules other apps still need:** `d3dcompiler_47` (Ubisoft), `sechost`, `cryptsp`,
+  `wer` (Logitech Options+), `virtdisk` (Raspberry Pi Imager), `mi` (Docker), `xinput1_4`
+  (Rockstar Social Club). Wine has d3dcompiler_47, sechost, cryptsp-ish (advapi32
+  forwards), wer, virtdisk and xinput1_4; `mi` (WMI's Management Infrastructure) it does
+  not. shell32's SHCreateShellItemArray family (QEMU) is still absent from the Rust
+  shell32. Office: bring it in when the rest is green, it is its own campaign.
+- **d3d11.dll is built only at DLL_EXPORT_VERSION >= 0x600**, so a default build has no
+  D3D11CreateDevice at all; Wine's mfplat suite ends on that NULL pointer, and Chrome and
+  Office import d3d11. Decide whether to build the d3d family at every version (rtworkq and
+  dxva2 already are).
+- **mfplat.c:3308, "MFASYNC_CALLBACK_QUEUE_STANDARD is not blocked"**, now failing in the
+  C and the Rust alike (the Rust passed it once): with an IO-queue read blocked, a
+  standard-queue work item does not run within 100 ms, and the test then releases the
+  NULL result and dies. rtworkq gives each system queue its own pool (standard max 1, IO
+  max 4) and our Tp* honour `env->Pool`; next is the same wait lengthened, then KVM, to split
+  TCG latency from a real stall. The three child-process "wait failed" lines are the same
+  suite's children; run directly they pass.
+- **mf's converter scenario:** both builds fail mf.c's "SetTopology ... requiring a
+  converter" checks (no converter MFT is registered: the codec gap below).
+- **Codecs for Media Foundation** (above): native Rust demuxers/decoders, or ports of
+  the codec DLLs Windows ships (msmpeg2vdec, msauddecmft, resampledmo). The suites need
+  the resampler DMO and the audio endpoint (MMDeviceEnumerator) before they can finish.
+- **icuuc under a real Qt:** host-tested only. Run cmake-gui in the guest.
+- **Tooling:** `port replay` took 87 minutes on mfplat's 525 functions, and there is no
+  single "re-island and reassemble from banks" command. Split island groups are now
+  reported by `port island` but still not generated.
+- **NtGetNextThread with THREAD_QUERY_LIMITED_INFORMATION hit ACCESS_DENIED** on some thread
+  of the apitest process (amd64 and i386), while `OpenThread(THREAD_QUERY_LIMITED_INFORMATION)`
+  on the test's own thread succeeds and a walk asking THREAD_QUERY_INFORMATION completes.
+  Not yet established which thread or why; suspects: a thread another process created in
+  ours (its security descriptor), and the thread type's NT5 mask (THREAD_ALL_ACCESS 0x3FF as
+  valid mask and GENERIC_ALL; ps_globals.rs records a wider process table once hung
+  session-manager startup). Win10Surface walks with the full query right meanwhile.
+- **New partials from the third batch:** iphlpapi change notifications after the
+  initial one, IPv6 tables; IDN nameprep without NFKC; consrv's
+  SrvGetConsoleCurrentFont leaves the font size zero (frontendctl.c FIXME), so
+  GetCurrentConsoleFont(Ex) under-report; DeriveAppContainerSidFromAppContainerName
+  (E_NOTIMPL, the SHA-256 derivation is owed).
 - **Bodies that answer honestly but not fully:** `GetNamedPipeServerProcessId` (npfs has
   no attribute FSCTL); `GetProcessInformation(ProcessMachineTypeInfo)` (no
   NtQuerySystemInformationEx); Get/SetRestrictedErrorInfo stay E_NOTIMPL as in Wine.

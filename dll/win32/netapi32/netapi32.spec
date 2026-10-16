@@ -147,6 +147,8 @@
 @ stdcall NetFileClose(wstr long)
 @ stdcall NetFileEnum(wstr wstr wstr long ptr long ptr ptr ptr)
 @ stdcall NetFileGetInfo(wstr long long ptr)
+@ stdcall NetFreeAadJoinInformation(ptr)
+@ stdcall NetGetAadJoinInformation(wstr ptr)
 @ stdcall NetGetAnyDCName(wstr wstr ptr)
 @ stdcall NetGetDCName(wstr wstr ptr)
 @ stdcall NetGetDisplayInformationIndex(wstr long wstr ptr)
@@ -365,8 +367,6 @@
 @ stub -version=0xA00+ NetDfsGetSupportedNamespaceVersion # -> DFSCLI.NetDfsGetSupportedNamespaceVersion
 @ stub -version=0xA00+ NetDfsRemoveRootTarget # -> DFSCLI.NetDfsRemoveRootTarget
 @ stub -version=0xA00+ NetEnumerateServiceAccounts # -> LOGONCLI.NetEnumerateServiceAccounts
-@ stub -version=0xA00+ NetFreeAadJoinInformation # -> DSREG.DsrFreeJoinInfo
-@ stub -version=0xA00+ NetGetAadJoinInformation # -> DSREG.DsrGetJoinInfo
 @ stub -version=0xA00+ NetIsServiceAccount # -> LOGONCLI.NetIsServiceAccount
 @ stub -version=0xA00+ NetIsServiceAccount2 # -> LOGONCLI.NetIsServiceAccount2
 @ stub -version=0xA00+ NetProvisionComputerAccount # -> NETJOIN.NetProvisionComputerAccount

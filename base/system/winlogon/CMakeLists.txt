@@ -58,14 +58,9 @@ target_include_directories(winlogon_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # paths for parallel-build ordering. The 10 import libs are generated in-cargo
 # from .spec. The residue (winlogon_c) + the .res (winlogon_res) are in-scope
 # target names.
-set(WINLOGON_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/pseh/libpseh.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 
 add_cargo_module(winlogon winlogon-cargo winlogon.exe
     KIND win32exe
     BODY_CRATE winlogon-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS winlogon_c winlogon_res ${WINLOGON_REUSED})
+    EXTRA_DEPENDS winlogon_c winlogon_res)

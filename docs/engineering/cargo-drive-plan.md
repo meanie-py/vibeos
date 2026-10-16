@@ -94,14 +94,25 @@ extends it from the boot spine to every fully-Rust module.
        existing cell from its baseline.
      - **`--check` guards size**: the mapped image may not grow more than 16 KB.
        amd64 is now +21 KB across the whole wave, arm64 3 KB smaller than cmake.
-     - **Owed: i386 cells on the user target.** An i386 cell builds its own `core`
-       (nightly build-std on the kernel json) beside the body's
-       i686-pc-windows-gnu one, so a cell that keeps `panic_common` links a second
-       copy of `core::fmt`: 70-78 KB each, 3.9 MB for the wave. `--check` names it
-       and bounds it at 80 KB. Moving the cell to `i686-pc-windows-gnu` removes it
-       and a slice of the nightly surface, but that triple links `rsbegin.o`
-       (wants libgcc's `___register_frame_info`), and the lint, orchestrator and
-       `cargo-cell-args.sh` replays must learn the target too.
+     - **i386 cells on the user target, 2026-10-14.** An i386 cell built its own
+       `core` (nightly build-std on the kernel json) beside the body's
+       i686-pc-windows-gnu one, so a cell that kept `panic_common` linked a second
+       copy of `core::fmt`, 70-78 KB each. Every i386 user-mode cell (KIND win32dll /
+       win32exe, 160 of them, ntdll included) now links the builtin
+       `i686-pc-windows-gnu` on stable, like amd64; only the kernel kinds keep the
+       softfloat json and nightly. Across all 285 i386 cargo-linked PEs the mapped
+       size fell 6.9 MB. What the triple brings, and how it is met:
+       - `rsbegin.o` (linked even with `link-self-contained=no`) registers the
+         image's `.eh_frame` with libgcc. Nothing unwinds in a panic=abort image
+         with no libgcc, so reactos-link gives `__register_frame_info` /
+         `__deregister_frame_info` no-op bodies. Its `.ctors`/`.dtors` entry each get
+         a 4-byte section (lld's MinGW writer makes those sections, so `/MERGE`
+         cannot fold them); `--check` accepts exactly those two on i386.
+       - The spec's `--large-address-aware` is cleared (`-Xlink=-largeaddressaware:no`).
+       - mem/str intrinsics are imported from msvcrt or ntdll again, as cmake's links
+         did; the build-std `compiler-builtins-mem` copies are gone.
+       - The cell keeps the bodies' `-sse,-sse2`, the combination rustc is phasing
+         out; `tools/scan_i386_sse_abi.py` counts gcc.cmake as a site.
    - **Wave 3, 2026-10-13: 22 modules** the generator learned to accept: chcp,
      chkdsk, cmd_help, console, dbgprint, extrac32, fltlib, hid, imm32, logon, mmc,
      mode, more, msiexec, progman, reg, regedit, route, taskkill, tree, wmic, xcopy.
@@ -179,16 +190,158 @@ extends it from the boot spine to every fully-Rust module.
        generator checks each arch's `livecd.<config>.lst` holds exactly the
        destinations the CMakeLists names, which is what refuses winprint's one
        prtprocs dir per arch.
-   - **The user-mode refusals left** (`--survey`, after wave 4): a `SOURCE` list
-     another target builds (6); the i386 body's `+sse,+sse2` ENV (5: calc, taskmgr,
-     wordpad, 3dtext, format); `add_driver_inf` (4); per-arch link inputs or
-     destinations (3: acgenral, opengl32, winprint); native exes (2); vendored C
-     compiled into the module (mstsc's rdesktop: rung 6); two one-offs.
-     **Owed:** the ntoskrnl cells (hand-written) import kdcom from `kdcom.spec`,
-     while the build's kdcom import lib comes from `kdrosdbg.spec`.
+   - **Wave 9, 2026-10-15: calc, taskmgr, wordpad, format, winprint, ftp.** The body's
+     i386 `ENV "RUSTFLAGS=+sse,+sse2"` is modelled in its one exact shape (`_body_env`:
+     `set(V)`, `if(ARCH ...) set(V ENV "RUSTFLAGS=...")`, read once by the variant) and
+     becomes `rust_build_rustflags` on that arch. Per-arch CD dirs (winprint's
+     `prtprocs/<arch>`) become one `<M>_DESTINATION` variable. ftp was a new
+     translation. `--check` now refuses a PE that is still the baseline's bytes: an
+     all-arch build failure had checked 18/18 EQUIVALENT against cmake's own files.
+   - **Wave 10, 2026-10-15: autochk**, the first native app. cmake links
+     `nativecui` exactly like a Win32 exe but for the subsystem (user-mode Rust,
+     `--gc-sections`, auto image base), so it is `ModuleKind::Win32Exe` with
+     `native:5.01` and no msvcrtex (NtProcessStartup comes from libnt.a).
+   - **The ntoskrnl cells imported kdcom from `kdcom.spec`** while the build ships
+     kdrosdbg's kdcom.dll; identical specs hid it. Fixed 2026-10-15:
+     `Linker::kd_import_lib` picks the spec by `_WINKD_` as drivers/base does.
+   - **Wave 11, 2026-10-15: 7 user-mode one-offs and the driver rung, 43 modules.**
+     fc, 3dtext, acgenral, gdi32_vista, opengl32, usetup, welcome; and 36 kernel-mode
+     modules: the USB stack (usbport, usbehci, usbohci, usbuhci, usbhub, usbccgp,
+     usbstor, usbaudio), storage (scsiport, atapi, disk, ramdisk, storahci, buslogic,
+     pciidex), file systems (fastfat, npfs, msfs, mup, fs_rec, fltmgr, mountmgr), HID
+     (hidclass, hidusb, kbdhid, mouhid), ks, ksecdd, dxg, ndis, e1000, wmilib,
+     watchdog, wdfldr and the font drivers bmfd and ftfd. `--check` 129/129
+     EQUIVALENT, CD placement included. What it took:
+     - **Kernel-mode cells are `ModuleKind::KernelDll`** with set_module_type's type
+       as the KIND (its post-link). A driver's body is either a
+       `rust_staticlib_variant` or the drivers' own `add_custom_command(... cargo
+       build ...)`, which `_custom_body` reads in its one shape (crate, per-arch
+       RUSTFLAGS) and the rewrite drops. The body builds as cmake built it:
+       `rust_user_target()`, the builtin triple, `-sse,-sse2` on i386.
+     - **An i386 kernel cell with no `i686-kernel.json` builds on the builtin triple**
+       too (gcc.cmake, cargo-cell-args.sh, cargo_orchestrate.py: one rule). On the
+       json it linked a second `core` beside the body's, 64-76 KB per driver, and
+       resolved `mem*` statically instead of importing them from ntoskrnl.
+     - **`Linker::keep_all_sections()`.** KernelDll never overrode rustc's own
+       `--gc-sections`, though its comment said it kept everything: arm64, with
+       per-function sections, dropped code cmake keeps (wmilib lost its panic path,
+       relocations and `.data`). Generated kernel cells keep every section, as
+       cmake's links do. The hand-made kernel cells followed in wave 12.
+     - **`Linker::link_order()`: the libraries in cmake's exact order.** The engine
+       had put import libs after every archive. The first library that defines a
+       symbol wins, and import libs and archives overlap: amd64's ntoskrnl exports
+       `memcmp` (imported in cmake's link, static in ours), and usetup's
+       `libinflib_rust.a` carries ntkrnl-sys's raw-dylib ntoskrnl import of
+       `NlsMbOemCodePageTag`, which cmake resolved from ntdll's import lib first.
+       Generated cells now list body, `import:<lib>` and static libs in cmake's
+       order (first occurrence; cmake repeats libraries for its groups).
+     - **panic-lean's `panic_fastfail()`** for a kernel cell whose cmake-built driver
+       carried no handler: an `int 0x29` trap that references nothing.
+     - **More `engine:` libraries**, so no generated cell links a cmake-built static
+       library: mesa, zlib_solo, memcmp, libcntpr, ioevent, wdmguid, freetype, setjmp,
+       aux_klib (replayed C), and inflib_rust, cntpr_rust, cryptlib_rust,
+       sptilib_rust, ntoskrnl_vista_rust/utf8 (crates). A static library whose only
+       sources are empty stubs (user32_vista_static, inflib) is left out of the link.
+     - **Shapes:** per-arch C/asm inputs are per-arch shims (acgenral's amd64
+       `msys2.c`, opengl32's i386 `glapi_x86.s`; the shims library exists only on
+       arches that have any); a `${SOURCE}` list of placeholders another target
+       shares is spelled out in that statement (gdi32_vista_static); a target name
+       that starts with a digit gets its body crate's stem (3dtext -> text3d-cargo);
+       `-Wl,-e,__ImageBase` (`ENTRYPOINT 0`) is read as the entry; a subsystem
+       version per arch (welcome's i386 `windows:4.00`); `add_driver_inf` is kept;
+       `if(STACK_PROTECTOR) target_sources(... gcc_ssp_*)` becomes a configure error
+       for that module.
+     - **CD placement is part of `--check`.** `--save-baseline` records every list
+       entry and reactos.cab directory; a cell may add only the loose boot-CD copy
+       add_cargo_module makes. Boot-CD-only placements (usetup as the setup boot's
+       smss.exe, welcome as the CD root's setup.exe) are `add_cargo_cd_file`, and
+       `NO_CAB` passes through (usbaudio is not installed).
+     - **Found on the way: add_cargo_module never put a cell in reactos.cab** unless
+       it shipped to system32, drivers or winsxs, so regedit, hh, winhlp32, iexplore,
+       the wbem tools, aclayers and winprint were on the CD but missing from every
+       install since their waves. Any `reactos/...` destination is installed now.
+     - **Refused: user32_vista.** cmake's link binds its two exports to user32's
+       import thunks before it reaches the body, so the Rust (dpi.rs) has never been
+       linked: user32_vista.dll only forwards. A cell links the body, which is a
+       different module (and calls SetLastError with no kernel32 import). The
+       generator now refuses a module that exports what it imports. Its generated
+       cell is in the stash "wave11 user32_vista cell".
+   - **install-smoke amd64-uefi passes** with the wave (usetup is the boot CD's smss.exe,
+     so this is the only gate that runs it; the cabinet fix is what setup installs from),
+     in 44m12s. That is as slow as the same run with cmake's 36 drivers (49m35s): the
+     slowdown since 10-09 is older than the wave (roadmap registry).
+   - **Wave 12, 2026-10-15: the hand-made kernel cells, 30 modules.** The kernel
+     cells cut by hand before the generator existed gc'd their sections and had
+     dropped their version resources.
+     - **14 regenerated from a cmake twin:** beep, condrv, i8042prt, kbdclass,
+       mouclass, nmidebug, null, nvme, pci, pciide, processr, swenum, sysfb, usbd.
+       Each had lost its cmake link at its cut, so a temporary cohab recipe (body
+       custom command, `rust_cohab_stub.c`, the `.rc`, set_module_type
+       kernelmodedriver, the cell's import libs) was put back, built, baselined and
+       generated from like any wave. `--check` 42/42 EQUIVALENT. The i386 bodies move
+       off `i686-kernel.json` onto the builtin triple, as every generated cell.
+     - **16 edited by hand:** `keep_all_sections()` on hal/halmp (hal-link),
+       bootvid, the four kd transports (kdcom, kdcom-serial, kdgdb, kdvm), classpnp,
+       framebuf, hidparse, netstack, vioblk, arm64input, sdhc, wpprecorder and
+       win32k; the version resource back (`resource_from_rc` over a `<m>_res` OBJECT
+       library) on classpnp, framebuf, hidparse and the kd transports. Why not
+       generated: netstack and vioblk need `i686-kernel.json` (zerocopy's float code
+       will not build `-sse` on the builtin triple, a body shape cmake's custom
+       command cannot express); hidparse links two body crates; classpnp, framebuf
+       and the kd transports link engine crates and C shims the twin recipe does not
+       model; arm64input, sdhc and wpprecorder are not built on every arch, and the
+       generator models three; bootvid and hal are their own recipes. **Owed:**
+       bootvid's resource: its `.rc` is a `#cmakedefine` template configured into the
+       build dir, which `resource_from_rc` (a source-tree path) cannot replay.
+     - **What it costs on arm64:** keeping every section keeps the unreferenced
+       `core` code lld collected, about 300 KB a module (kdcom's `.text` goes from
+       268 bytes to 132 KB). cmake's arm64 links always carried it, which is why the
+       generated cells match cmake inside the 16 KB slack. On i386 and amd64 the
+       hand-edited cells change only by their resource.
+     - **Generator:** a target inside a plain `if()` (pciide's `NOT ENABLE_UNIATA`)
+       becomes a cell inside the same `if()`, and an emptied if-chain nested in another
+       empties it too; a target in an `elseif`/`else` branch is refused. `--check`
+       accepts a `cab:` placement dropped for a file txtsetup.sif installs, which
+       add_cargo_module keeps out of the cabinet on purpose.
+   - **Still refused** (`--survey`): mstsc (vendored rdesktop C, rung 6); psapi_static
+     and the other C_STATIC_LIBRARY targets (their consumers link them; each needs an
+     `engine:` entry when a consumer moves).
 3. **Give the C static libraries a cargo home.** `uuid` becomes a GUID crate generated
    from the same IDL/headers; `wine` (vendored libwine) and `conutils` are small. Until
    then cells link the cmake-built `.a` (`static_libs`), which keeps them cmake-bound.
+   - **Done 2026-10-14 (wave 5): `oldnames`, `chkstk`, `pseh`.** A `static_libs` entry
+     `engine:<name>` is built by reactos-link (`engine_lib`) at the same place in the
+     link, with cmake's own command: `dlltool -d moldname-msvcrt.def -k` for oldnames,
+     the per-arch stack-probe `.s` for chkstk, `dummy.c` (+ i386 `seh.s`/`seh_prolog.s`)
+     for pseh. 145 cells moved (`ENGINE_LIBS` in the generator maps new ones), and their
+     CMakeLists no longer depend on the three cmake targets. Proof: pe_equiv 565/565 ×3
+     against a baseline built from the same tree, plus symbol + disassembly + `.data`
+     bytes identical to cmake's objects. (`dummy.c` first came out with cc-rs's
+     per-symbol `.data$<sym>` subsections, which reordered its two globals in comctl32
+     and winspool; the engine's C now compiles `-fno-data-sections` like cmake's.)
+   - **Done 2026-10-15 (wave 6): `wine`, `conutils`, `conutils_rust`, `uuid`.** The C
+     libraries are `replay_target`: every source compile_commands.json records for that
+     cmake target, in its order (which is cmake's archive order, and decides which of
+     libuuid's 397 doubly-defined GUIDs wins), each with cmake's exact command, through
+     ccache when cmake uses it so the replay hits cmake's own cache entries.
+     `conutils_rust` is the crate built as a sibling, with cmake's flags. The C reads
+     generated headers, so those cells order after `psdk`/`xdk`, and uuid's after
+     `uuid_sources` (its widl output alone; `ENGINE_LIB_DEPS` in the generator). 88
+     cells moved. Proof: `pe_equiv --code` 565/565 ×3, i.e. every mapped byte the same.
+     Linker maps (`VIBEOS_LINK_MAP=1`) showed which members each cell really pulls:
+     libwine in 37 of 44, uuid in 12 of 18 (11 distinct `_i.c` members).
+   - **Done 2026-10-15 (wave 7): the rest of the user-mode list.** `engine:c:<target>`
+     replays any cmake C target (udmihelp, dmilib, dxguid, tzlib, scrnsave, shimlib,
+     and the evtlib/skiplist16 stubs), and the `rust_staticlib_variant`-style crates
+     are a table in `engine_lib` (delayimp, evtlib, skiplist, hidparser). 16 cells;
+     `pe_equiv --code` 565/565 ×3.
+   - **Done 2026-10-15 (wave 8): `concfg`, `concfg_rust`, `win32ksys`.** The engine can
+     build a crate as a staticlib its manifest does not list (`build_rust_crate_as`,
+     `cargo rustc --crate-type staticlib`), which is how cmake builds concfg-rust's
+     standalone archive; win32ksys is `engine:c:` over cmake's `sys-stubs.S` compile.
+     **No user-mode cell links a cmake-built static library any more.** What is left
+     is the kernel and loader cells' `libcntpr` / `mini_hal` / `freeldr_bios_asm`,
+     which belong to the driver rung.
 4. **Resources without cmake.** Cells replay cmake's `windres` command today
    (`resource_from_rc`), so they still need cmake configured. The June fallback was a
    committed `.res` per arch; for 189 modules that is a lot of binary in git. Better: the
@@ -206,6 +359,12 @@ extends it from the boot spine to every fully-Rust module.
 2. `--save-baseline DIR <modules>` while cmake still links them.
 3. `--apply <modules>`; then build ×3 (`vibeos-cli build`).
 4. `--check DIR <modules>`, then smoke ×3, then land.
+
+A change that should not move a single mapped byte (a library now built by another
+tool from the same source) gets the stricter proof: snapshot every cargo PE first, then
+`python3 tools/pe_equiv.py --code OLD NEW` on each. lld is deterministic, so only DWARF
+and `.buildid` may differ. `VIBEOS_LINK_MAP=1` on a build writes `build-<arch>/<cell>.map`,
+which names every archive member each link pulled.
 
 The generator reads the link from `build-<arch>/build.ninja`, so it must run on a graph
 cmake configured from the ORIGINAL CMakeLists. To redo a module after `--apply`, put its

@@ -13,10 +13,8 @@ add_rc_deps(openglcfg.rc ${CMAKE_CURRENT_SOURCE_DIR}/resources/openglcfg.ico)
 add_library(openglcfg_res OBJECT openglcfg.rc)
 target_compile_definitions(openglcfg_res PRIVATE UNICODE _UNICODE)
 target_include_directories(openglcfg_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(OPENGLCFG_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(openglcfg openglcfg-cargo openglcfg.cpl
     KIND win32dll
     BODY_CRATE openglcfg-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS openglcfg_res ${OPENGLCFG_REUSED})
+    EXTRA_DEPENDS openglcfg_res)

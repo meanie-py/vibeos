@@ -483,14 +483,22 @@ pub unsafe extern "system" fn SetClipboardData(uFormat: UINT, hMem: HANDLE) -> H
     hRet
 }
 
+// win32k's NtUserCallHwnd routines for the listener list (win32k-rust clipboard.rs):
+// outside the SimpleCallRoutines enum so no existing routine number moves.
+const HWND_ROUTINE_ADDCLIPBOARDFORMATLISTENER: DWORD = 0xfffd_0060;
+const HWND_ROUTINE_REMOVECLIPBOARDFORMATLISTENER: DWORD = 0xfffd_0061;
+
+/// Registers `hwnd` to be posted WM_CLIPBOARDUPDATE whenever the clipboard contents
+/// change. Fails with ERROR_INVALID_WINDOW_HANDLE for a bad window and
+/// ERROR_INVALID_PARAMETER for one already registered.
 #[no_mangle]
 pub unsafe extern "system" fn AddClipboardFormatListener(hwnd: HWND) -> BOOL {
-    0
+    NtUserCallHwnd(hwnd, HWND_ROUTINE_ADDCLIPBOARDFORMATLISTENER) as BOOL
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn RemoveClipboardFormatListener(hwnd: HWND) -> u32 {
-    0
+pub unsafe extern "system" fn RemoveClipboardFormatListener(hwnd: HWND) -> BOOL {
+    NtUserCallHwnd(hwnd, HWND_ROUTINE_REMOVECLIPBOARDFORMATLISTENER) as BOOL
 }
 
 #[no_mangle]

@@ -9,10 +9,8 @@
 # whose windres command the cargo link replays.
 add_library(whois_res OBJECT whois.rc)
 target_include_directories(whois_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(WHOIS_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(whois whois-cargo whois.exe
     KIND win32exe
     BODY_CRATE whois-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS whois_res ${WHOIS_REUSED})
+    EXTRA_DEPENDS whois_res)

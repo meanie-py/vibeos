@@ -8,16 +8,16 @@ use std::env;
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
     let (target_json, entry, image_base) = match arch.as_str() {
-        "x86" => ("i686-kernel.json", "_ImmDllInitialize@12", Some(0x79800000u64)),
+        "x86" => ("i686-pc-windows-gnu", "_ImmDllInitialize@12", Some(0x79800000u64)),
         "x86_64" => ("x86_64-pc-windows-gnu", "ImmDllInitialize", Some(0x7ff9a000000u64)),
         "aarch64" => ("aarch64-pc-windows-gnullvm", "ImmDllInitialize", Some(0x7ff9a000000u64)),
         o => panic!("imm32-cargo: unsupported arch {o}"),
     };
 
     let late_libs: &[&str] = match arch.as_str() {
-        "x86" => &["sdk/lib/libwine/libwine.a", "win32ss/libwin32ksys.a", "sdk/lib/uuid/libuuid.a"],
-        "x86_64" => &["sdk/lib/libwine/libwine.a", "win32ss/libwin32ksys.a", "sdk/lib/uuid/libuuid.a"],
-        "aarch64" => &["sdk/lib/libwine/libwine.a", "win32ss/libwin32ksys.a", "sdk/lib/uuid/libuuid.a"],
+        "x86" => &["engine:wine", "engine:c:win32ksys", "engine:uuid"],
+        "x86_64" => &["engine:wine", "engine:c:win32ksys", "engine:uuid"],
+        "aarch64" => &["engine:wine", "engine:c:win32ksys", "engine:uuid"],
         _ => unreachable!(),
     };
 

@@ -2,6 +2,7 @@
 spec2def(bluetoothapis.dll bluetoothapis.spec ADD_IMPORTLIB)
 
 list(APPEND SOURCE
+    gatt.c
     main.c
     sdp.c
     ${CMAKE_CURRENT_BINARY_DIR}/bluetoothapis_stubs.c

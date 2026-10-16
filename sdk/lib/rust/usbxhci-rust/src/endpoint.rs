@@ -27,7 +27,7 @@ use crate::controller::*;
 use crate::hw::*;
 use crate::types::*;
 use crate::xlog;
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use ntkrnl_sys::ddk::{BOOLEAN, KIRQL, PULONG, PVOID, ULONG};
 use ntkrnl_sys::ke::{KeAcquireSpinLock, KeReleaseSpinLock};
 
@@ -45,9 +45,18 @@ const MAX_TDS: usize = 32;
 /// Data-stage TRBs per transfer (one per scatter/gather element).
 const MAX_DATA_TRBS: usize = 24;
 /// Private DMA pages: never share a cache line with a caller's pool allocation.
-/// The bitmap permits up to 16 small requests, or one 64 KiB request, per pipe.
-const PAYLOAD_PAGES: u32 = 16;
-const PAYLOAD_BYTES: usize = PAYLOAD_PAGES as usize * PAGE;
+/// One request is at most 64 KiB (MaxTransferSize). A control pipe's arena holds one such
+/// request; a bulk or interrupt pipe's holds four, since drivers keep several reads queued
+/// (Realtek's Wi-Fi driver posts 30 KiB receive buffers, and a third one used to find the
+/// arena full, failing the submit in a loop usbport retried forever).
+const MAX_TRANSFER_PAGES: u32 = 16;
+const PAYLOAD_BYTES: usize = MAX_TRANSFER_PAGES as usize * PAGE;
+const CONTROL_ARENA_PAGES: u32 = 16;
+const DATA_ARENA_PAGES: u32 = 64;
+
+fn arena_pages(transfer_type: u32) -> u32 {
+    if transfer_type == USBPORT_TRANSFER_TYPE_CONTROL { CONTROL_ARENA_PAGES } else { DATA_ARENA_PAGES }
+}
 /// Usable TRBs per ring: the last one is the Link TRB.
 const RING_USABLE: u32 = RING_TRBS as u32 - 1;
 
@@ -101,7 +110,8 @@ pub struct XhciEndpoint {
     pub count: u32,
     pub payload_va: *mut u8,
     pub payload_pa: u64,
-    pub payload_used: u32,
+    pub payload_used: u64,
+    pub arena_pages: u32,
 }
 
 /// usbport's per-transfer miniport area (MiniPortTransferSize).
@@ -138,8 +148,8 @@ unsafe fn prepare_payload(ep: &mut XhciEndpoint, td: &mut XhciTransfer, caller: 
         return false;
     }
     let pages = (td.requested + PAGE as u32 - 1) / PAGE as u32;
-    let mask = (1u32 << pages) - 1;
-    let Some(first) = (0..=PAYLOAD_PAGES - pages).find(|&i| ep.payload_used & (mask << i) == 0) else {
+    let mask = (1u64 << pages) - 1;
+    let Some(first) = (0..=ep.arena_pages - pages).find(|&i| ep.payload_used & (mask << i) == 0) else {
         return false;
     };
     ep.payload_used |= mask << first;
@@ -162,7 +172,7 @@ unsafe fn finish_payload(ep: &mut XhciEndpoint, td: &mut XhciTransfer) {
         dma_invalidate(va, td.payload_pages as usize * PAGE);
         core::ptr::copy_nonoverlapping(va, td.caller_va, td.transferred.min(td.requested) as usize);
     }
-    ep.payload_used &= !(((1u32 << td.payload_pages) - 1) << td.payload_first);
+    ep.payload_used &= !(((1u64 << td.payload_pages) - 1) << td.payload_first);
     td.payload_pages = 0;
 }
 
@@ -619,7 +629,7 @@ pub unsafe extern "system" fn XHCI_QueryEndpointRequirements(
     let ep0 = p.TransferType == USBPORT_TRANSFER_TYPE_CONTROL && p.EndpointAddress & 0x0F == 0;
     // EP0's ring lives with its slot; every endpoint also gets an isolated
     // payload arena from usbport's physically contiguous common-buffer allocator.
-    req.HeaderBufferSize = (PAYLOAD_BYTES + if ep0 { 0 } else { PAGE }) as u32;
+    req.HeaderBufferSize = (arena_pages(p.TransferType) as usize * PAGE + if ep0 { 0 } else { PAGE }) as u32;
     req.MaxTransferSize = match p.TransferType {
         USBPORT_TRANSFER_TYPE_INTERRUPT => 0x1000,
         _ => 0x10000,
@@ -643,7 +653,8 @@ pub unsafe extern "system" fn XHCI_OpenEndpoint(
     ep.dci = if ep.is_control { dci(p.EndpointAddress as u32 & 0x0F) } else { dci(p.EndpointAddress as u32) };
     ep.state = USBPORT_ENDPOINT_PAUSED;
     let ring_bytes = if ep.dci == 1 { 0 } else { PAGE };
-    if p.BufferVA == 0 || p.BufferLength < (ring_bytes + PAYLOAD_BYTES) as u32 {
+    ep.arena_pages = arena_pages(p.TransferType);
+    if p.BufferVA == 0 || p.BufferLength < (ring_bytes + ep.arena_pages as usize * PAGE) as u32 {
         return MP_STATUS_NO_RESOURCES;
     }
     ep.payload_va = (p.BufferVA as *mut u8).add(ring_bytes);
@@ -838,6 +849,23 @@ pub unsafe extern "system" fn XHCI_CloseEndpoint(xhciExtension: PVOID, xhciEndpo
 /// Build one TD on the endpoint's ring.
 #[no_mangle]
 pub unsafe extern "system" fn XHCI_SubmitTransfer(
+    xhciExtension: PVOID,
+    xhciEndpoint: PVOID,
+    TransferParameters: PUSBPORT_TRANSFER_PARAMETERS,
+    xhciTransfer: PVOID,
+    SgList: PUSBPORT_SCATTER_GATHER_LIST,
+) -> MPSTATUS {
+    let status = submit_transfer(xhciExtension, xhciEndpoint, TransferParameters, xhciTransfer, SgList);
+    let ep = &*(xhciEndpoint as *const XhciEndpoint);
+    if ep.dci != 1 && TRACE_LEFT.load(Ordering::Relaxed) != 0 && traced_slot(ep.slot) {
+        TRACE_LEFT.fetch_sub(1, Ordering::Relaxed);
+        xlog!("slot %u ep %u: submit %u bytes -> %u (%u queued)", ep.slot, ep.dci,
+            (*TransferParameters).TransferBufferLength, status as u32, ep.count);
+    }
+    status
+}
+
+unsafe fn submit_transfer(
     xhciExtension: PVOID,
     xhciEndpoint: PVOID,
     TransferParameters: PUSBPORT_TRANSFER_PARAMETERS,
@@ -1061,6 +1089,55 @@ unsafe fn note_hub_descriptor(x: &mut XhciExtension, slot: u32, td: &XhciTransfe
     xlog!("slot %u: hub, %u ports, TT think time %u", slot, st.hub_ports, st.hub_ttt);
 }
 
+/// Control transfers left to trace (boot option XHCITRACE).
+pub static TRACE_LEFT: AtomicU32 = AtomicU32::new(0);
+/// Devices whose bulk and interrupt transfers, and aborts, are traced too: a bit per slot
+/// that has sent a vendor request (a vendor driver at work, not a class driver).
+static TRACE_SLOTS: AtomicU64 = AtomicU64::new(0);
+
+fn traced_slot(slot: u32) -> bool {
+    slot < 64 && TRACE_SLOTS.load(Ordering::Relaxed) & (1u64 << slot) != 0
+}
+
+/// Received bytes, 16 to a line.
+unsafe fn trace_bytes(p: *const u8, n: usize) {
+    let mut i = 0;
+    while i < n {
+        let mut b = [0u32; 16];
+        for k in 0..16 {
+            b[k] = if i + k < n { *p.add(i + k) as u32 } else { 0 };
+        }
+        xlog!("  %02x: %02x %02x %02x %02x %02x %02x %02x %02x  %02x %02x %02x %02x %02x %02x %02x %02x", i as u32,
+            b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]);
+        i += 16;
+    }
+}
+
+/// One line per finished vendor or class control transfer: the setup packet, the outcome,
+/// and up to the first 8 bytes of data either way.
+unsafe fn trace_control(ep: &XhciEndpoint, td: &XhciTransfer, status: u32) {
+    let s = core::ptr::read_unaligned(core::ptr::addr_of!((*td.params).SetupPacket) as *const [u8; 8]);
+    if s[0] & 0x60 == 0 {
+        return; // standard requests: enumeration, not the driver's conversation
+    }
+    if s[0] & 0x60 == 0x40 && ep.slot < 64 {
+        TRACE_SLOTS.fetch_or(1u64 << ep.slot, Ordering::Relaxed);
+    }
+    if TRACE_LEFT.fetch_sub(1, Ordering::Relaxed) == 0 {
+        TRACE_LEFT.store(0, Ordering::Relaxed);
+        return;
+    }
+    let mut d = [0u8; 8];
+    let n = (if s[0] & 0x80 != 0 { td.transferred } else { td.requested }).min(8) as usize;
+    if n != 0 && !td.caller_va.is_null() {
+        core::ptr::copy_nonoverlapping(td.caller_va, d.as_mut_ptr(), n);
+    }
+    xlog!("slot %u ctl %02x %02x %04x %04x len %u -> %x, %u: %02x %02x %02x %02x %02x %02x %02x %02x",
+        ep.slot, s[0] as u32, s[1] as u32, u16::from_le_bytes([s[2], s[3]]) as u32, u16::from_le_bytes([s[4], s[5]]) as u32,
+        td.requested, status, td.transferred,
+        d[0] as u32, d[1] as u32, d[2] as u32, d[3] as u32, d[4] as u32, d[5] as u32, d[6] as u32, d[7] as u32);
+}
+
 /// Hand every finished transfer, in order, back to usbport.
 #[no_mangle]
 pub unsafe extern "system" fn XHCI_PollEndpoint(xhciExtension: PVOID, xhciEndpoint: PVOID) {
@@ -1085,6 +1162,17 @@ pub unsafe extern "system" fn XHCI_PollEndpoint(xhciExtension: PVOID, xhciEndpoi
 
         finish_payload(ep, td);
         let status = usbd_status(td.cc);
+        if TRACE_LEFT.load(Ordering::Relaxed) != 0 {
+            if ep.dci == 1 {
+                trace_control(ep, td, status as u32);
+            } else if traced_slot(ep.slot) && TRACE_LEFT.fetch_sub(1, Ordering::Relaxed) != 0 {
+                xlog!("slot %u ep %u: %s %u bytes -> %x, %u", ep.slot, ep.dci,
+                    if td.inbound { b"in\0".as_ptr() } else { b"out\0".as_ptr() }, td.requested, status as u32, td.transferred);
+                if td.inbound && td.transferred != 0 && !td.caller_va.is_null() {
+                    trace_bytes(td.caller_va, td.transferred.min(48) as usize);
+                }
+            }
+        }
         if status != USBD_STATUS_SUCCESS {
             xlog!("slot %u ep %u: transfer failed, cc %u", ep.slot, ep.dci, td.cc);
         } else if ep.dci == 1 {
@@ -1110,6 +1198,9 @@ pub unsafe extern "system" fn XHCI_AbortTransfer(
     let ep = &mut *(xhciEndpoint as *mut XhciEndpoint);
     let target = xhciTransfer as *mut XhciTransfer;
     let mut was_done = (*target).done.load(Ordering::SeqCst);
+    if TRACE_LEFT.load(Ordering::Relaxed) != 0 && traced_slot(ep.slot) {
+        xlog!("slot %u ep %u: abort of a %u-byte transfer (finished %u)", ep.slot, ep.dci, (*target).requested, was_done as u32);
+    }
 
     if !was_done && !ep.halted {
         let cc = ep_command(x, ep, TRB_STOP_ENDPOINT);

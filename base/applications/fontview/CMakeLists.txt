@@ -14,10 +14,8 @@ target_compile_definitions(fontview_shims PRIVATE UNICODE _UNICODE)
 add_library(fontview_res OBJECT fontview.rc)
 target_compile_definitions(fontview_res PRIVATE UNICODE _UNICODE)
 target_include_directories(fontview_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(FONTVIEW_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(fontview fontview-cargo fontview.exe
     KIND win32exe
     BODY_CRATE fontview-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS fontview_shims fontview_res ${FONTVIEW_REUSED})
+    EXTRA_DEPENDS fontview_shims fontview_res)

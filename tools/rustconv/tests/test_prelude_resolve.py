@@ -511,3 +511,32 @@ def test_a_kernel_sys_constant_is_wired_from_the_one_module_that_defines_it(tmp_
     assert "TWICE" not in found and "base" in why["TWICE"] and "constants" in why["TWICE"]
     assert "NESTED" not in found  # not top level
     assert "FROM_GLOB" not in found  # the glob is the island's own
+
+
+def test_an_integer_width_split_is_the_prototypes_to_settle():
+    """fc got the vote's `towupper(c: c_int) -> c_int` for the CRT's `wint_t towupper(wint_t)`."""
+    int_ = [F("pub fn towupper(c: c_int) -> c_int;", path=f"{c}.rs") for c in "abc"]
+    wint = F("pub fn towupper(c: wint_t) -> wint_t;", path="d.rs")
+    pick, why = consensus("towupper", [*int_, wint])
+    assert pick is None and why == "signature disagreement (integer width)"
+    # Same widths spelled differently are one signature; pointers never vote.
+    same = [
+        F("pub fn f(a: DWORD, p: *mut u16) -> BOOL;"),
+        F("pub fn f(a: u32, p: *mut WCHAR) -> i32;", path="b.rs"),
+    ]
+    assert consensus("f", same)[0] is not None
+
+
+def test_a_count_form_swprintf_binds_the_function_its_inline_calls():
+    # msvcrt's exported `swprintf` is the legacy (buf, fmt, ...): a copied count-form
+    # declaration read `n` as the format pointer and cscript crashed on a script error.
+    from rustconv.prelude_resolve import _crt_inline_alias
+
+    count = "fn swprintf(s: *mut u16, n: usize, fmt: *const u16, ...) -> c_int;"
+    assert _crt_inline_alias(count) == '    #[link_name = "_snwprintf"]\n'
+    vcount = "fn vswprintf(s: *mut u16, n: usize, fmt: *const u16, a: va_list) -> c_int;"
+    assert _crt_inline_alias(vcount) == '    #[link_name = "_vsnwprintf"]\n'
+    assert _crt_inline_alias("fn swprintf(buf: *mut u16, fmt: *const u16, ...) -> i32;") == ""
+    assert _crt_inline_alias("fn vswprintf(b: *mut u16, f: *const u16, a: va_list) -> i32;") == ""
+    assert _crt_inline_alias('#[link_name = "_snwprintf"]\n' + count) == ""
+    assert _crt_inline_alias("fn sprintf(s: *mut i8, n: usize, f: *const i8, ...) -> c_int;") == ""

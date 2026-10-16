@@ -13,10 +13,8 @@ add_rc_deps(wined3dcfg.rc ${CMAKE_CURRENT_SOURCE_DIR}/resources/wined3dcfg.ico)
 add_library(wined3dcfg_res OBJECT wined3dcfg.rc)
 target_compile_definitions(wined3dcfg_res PRIVATE UNICODE _UNICODE)
 target_include_directories(wined3dcfg_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(WINED3DCFG_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(wined3dcfg wined3dcfg-cargo wined3dcfg.cpl
     KIND win32dll
     BODY_CRATE wined3dcfg-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS wined3dcfg_res ${WINED3DCFG_REUSED})
+    EXTRA_DEPENDS wined3dcfg_res)

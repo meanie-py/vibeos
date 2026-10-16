@@ -156,6 +156,17 @@ def checksum(text: str, seq: int) -> int:
     return (h ^ (h >> 16)) & 0xFFFF
 
 
+def _readings(text: str) -> tuple[str, ...]:
+    """The record as sent, whichever way the host decoded the serial bytes. The live harness
+    (tests/qemu/serial_client.py) decodes LATIN-1, a saved log is read as UTF-8: a guest
+    line holding `thr\u0398e` arrives as `thr\xce\x98e` in the first, and the UTF-8 checksum
+    the guest computed matched neither copy -- every non-ASCII line read as transport loss."""
+    try:
+        return (text.encode("latin-1").decode("utf-8"), text)
+    except UnicodeError:
+        return (text,)
+
+
 def parse(serial: str) -> tuple[dict, dict]:
     """(case, variant) -> output lines, and (case, variant) -> (rc, ms, flags).
 
@@ -181,7 +192,13 @@ def parse(serial: str) -> tuple[dict, dict]:
         if m:
             seq, want = int(m.group(3)), int(m.group(5), 16)
             text = next(
-                (t for t in (m.group(6), m.group(6)[:-1]) if checksum(t, seq) == want), None
+                (
+                    t
+                    for t in _readings(m.group(6))
+                    for t in (t, t[:-1])
+                    if checksum(t, seq) == want
+                ),
+                None,
             )
             if text is None:
                 continue  # a torn copy; its twin may be whole
@@ -217,6 +234,12 @@ def _normal(lines: list[str], rules: list[tuple[str, str]]) -> list[str]:
 def grade(serial: str, arch: str) -> tuple[list[str], list[str]]:
     """(report lines, failures) for one boot's serial."""
     out, exits = parse(serial)
+    # The guest announces each case it read from the media's list. A case this tree's suites
+    # name but the guest never announced, in a run that reached `done`, was not ON the media:
+    # the suite changed after the build. Reported as "guest died", it sent a hunt after a
+    # crash that never happened (cscript's regsvr32 cases, graded against an older arm64 ISO).
+    announced = set(re.findall(r"\[MODRUN\] case (\S+) variants=", serial))
+    finished = "[MODRUN] done cases=" in serial
     report, failures = [], []
     for c in cases(arch):
         why: list[str] = []
@@ -226,6 +249,12 @@ def grade(serial: str, arch: str) -> tuple[list[str], list[str]]:
         hits = [0] * len(c.diverge)
         for v in c.variants:
             ex = exits.get((c.id, v))
+            if ex is None and finished and c.id not in announced:
+                why.append(
+                    f"{v}: not on the media (the suite changed after it was built; rebuild "
+                    f"with VIBEOS_PAYLOAD=modrun ./vibeos-cli build --arch <arch>)"
+                )
+                continue
             if ex is None:
                 why.append(f"{v}: never finished (no exit line: guest died, or modrun stopped)")
                 continue
@@ -244,7 +273,9 @@ def grade(serial: str, arch: str) -> tuple[list[str], list[str]]:
                 )
                 continue
             code = int(rc, 16)
-            if code >= _STATUS_CRASH and "TIMEOUT" not in flags:
+            # 0xFFFFFFFF is `return -1` (fc's FCRET_INVALID on every usage error), not an
+            # NTSTATUS: its facility bits are all set, which no exception code uses.
+            if code >= _STATUS_CRASH and code != 0xFFFFFFFF and "TIMEOUT" not in flags:
                 why.append(f"{v}: crashed, exit 0x{code:08x}")
             lines = _normal(out.get((c.id, v), []), c.normalize)
             for e in c.expect:

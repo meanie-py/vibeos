@@ -14,7 +14,7 @@ fn main() {
     // 6.0). i386 decorates the entry (_DllMain@12) + has a 32-bit base.
     let (target_json, res, image_base, entry): (&str, &str, u64, &str) = match arch.as_str() {
         "x86" => (
-            "i686-kernel.json", "ntdll_vista-i386.rc.res", 0x6fc7_0000, "_DllMain@12",
+            "i686-pc-windows-gnu", "ntdll_vista-i386.rc.res", 0x6fc7_0000, "_DllMain@12",
         ),
         "x86_64" => (
             "x86_64-pc-windows-gnu", "ntdll_vista-amd64.rc.res", 0x7fe_b200_0000, "DllMain",

@@ -33,9 +33,7 @@
 # DLL_EXPORT_VERSION 0xA00; give a name a real line above and re-run to drop it.
 @ stub -version=0xA00+ AcquireStateLock
 @ stub -version=0xA00+ AddDependencyToProcessPackageGraph
-@ stub -version=0xA00+ AddDllDirectory
 @ stub -version=0xA00+ AddExtensionProgId
-@ stub -version=0xA00+ AddMandatoryAce
 @ stub -version=0xA00+ AddPackageDependency
 @ stub -version=0xA00+ AddPackageDependency2
 @ stub -version=0xA00+ AddPackageNameAliasesByPackageDependency
@@ -127,7 +125,6 @@
 @ stub -version=0xA00+ ChrCmpIA
 @ stub -version=0xA00+ ChrCmpIW
 @ stub -version=0xA00+ CloseIoRing
-@ stub -version=0xA00+ ClosePackageInfo
 @ stub -version=0xA00+ ClosePrivateNamespace
 @ stub -version=0xA00+ ClosePseudoConsole
 @ stub -version=0xA00+ CloseState
@@ -139,8 +136,6 @@
 @ stub -version=0xA00+ CommitStateAtom
 @ stub -version=0xA00+ ConvertAuxiliaryCounterToPerformanceCounter
 @ stub -version=0xA00+ ConvertPerformanceCounterToAuxiliaryCounter
-@ stub -version=0xA00+ CopyContext
-@ stub -version=0xA00+ CopyFile2
 @ stub -version=0xA00+ CopyFileFromAppW
 @ stub -arch=win64 -version=0xA00+ CopyMemoryNonTemporal # -> NTDLL.RtlCopyMemoryNonTemporal
 @ stub -version=0xA00+ CouldMultiUserAppsBehaviorBePossibleForPackage
@@ -219,7 +214,6 @@
 @ stub -version=0xA00+ EnumerateExtensionNames
 @ stub -version=0xA00+ EnumerateStateAtomValues
 @ stub -version=0xA00+ EnumerateStateContainerItems
-@ stub -version=0xA00+ EventActivityIdControl # -> NTDLL.EtwEventActivityIdControl
 @ stub -version=0xA00+ EventProviderEnabled # -> NTDLL.EtwEventProviderEnabled
 @ stub -version=0xA00+ ExtensionProgIdExists
 @ stub -version=0xA00+ FindFirstFileExFromAppW
@@ -228,7 +222,6 @@
 @ stub -version=0xA00+ FindNLSStringEx
 @ stub -version=0xA00+ FindNextFileNameW
 @ stub -version=0xA00+ FindPackageDependency
-@ stub -version=0xA00+ FindPackagesByPackageFamily
 @ stub -version=0xA00+ FindStringOrdinal
 @ stub -version=0xA00+ FlsGetValue2 # -> NTDLL.RtlFlsGetValue2
 @ stub -version=0xA00+ ForceSyncFgPolicyInternal
@@ -260,18 +253,13 @@
 @ stub -version=0xA00+ GetConsoleOriginalTitleW
 @ stub -version=0xA00+ GetConsoleScreenBufferInfoEx
 @ stub -version=0xA00+ GetCurrentApplicationUserModelId
-@ stub -version=0xA00+ GetCurrentConsoleFontEx
 @ stub -version=0xA00+ GetCurrentPackageApplicationContext
 @ stub -version=0xA00+ GetCurrentPackageApplicationResourcesContext
 @ stub -version=0xA00+ GetCurrentPackageContext
-@ stub -version=0xA00+ GetCurrentPackageFamilyName
-@ stub -version=0xA00+ GetCurrentPackageFullName
 @ stub -version=0xA00+ GetCurrentPackageGlobalizationContext
-@ stub -version=0xA00+ GetCurrentPackageInfo
 @ stub -version=0xA00+ GetCurrentPackageInfo2
 @ stub -version=0xA00+ GetCurrentPackageInfo3
 @ stub -version=0xA00+ GetCurrentPackageInfo_PackageNameAliases
-@ stub -version=0xA00+ GetCurrentPackagePath
 @ stub -version=0xA00+ GetCurrentPackagePath2
 @ stub -version=0xA00+ GetCurrentPackageResourcesContext
 @ stub -version=0xA00+ GetCurrentPackageSecurityContext
@@ -341,29 +329,22 @@
 @ stub -version=0xA00+ GetOsSafeBootMode
 @ stub -version=0xA00+ GetOverlappedResultEx
 @ stub -version=0xA00+ GetPackageApplicationContext
-@ stub -version=0xA00+ GetPackageApplicationIds
 @ stub -version=0xA00+ GetPackageApplicationProperty
 @ stub -version=0xA00+ GetPackageApplicationPropertyString
 @ stub -version=0xA00+ GetPackageApplicationResourcesContext
 @ stub -version=0xA00+ GetPackageContext
 @ stub -version=0xA00+ GetPackageDependencyInformation
-@ stub -version=0xA00+ GetPackageFamilyName
 @ stub -version=0xA00+ GetPackageFamilyNameFromFilePath
 @ stub -version=0xA00+ GetPackageFamilyNameFromProgId
 @ stub -version=0xA00+ GetPackageFamilyNameFromToken
-@ stub -version=0xA00+ GetPackageFullName
 @ stub -version=0xA00+ GetPackageFullNameFromToken
 @ stub -version=0xA00+ GetPackageGlobalizationContext
 @ stub -version=0xA00+ GetPackageGlobalizationProperty
 @ stub -version=0xA00+ GetPackageGraphRevisionId
-@ stub -version=0xA00+ GetPackageId
-@ stub -version=0xA00+ GetPackageInfo
 @ stub -version=0xA00+ GetPackageInfo2
 @ stub -version=0xA00+ GetPackageInfo3
 @ stub -version=0xA00+ GetPackageNameAliasesByPackageFullName
 @ stub -version=0xA00+ GetPackageOSMaxVersionTested
-@ stub -version=0xA00+ GetPackagePath
-@ stub -version=0xA00+ GetPackagePathByFullName
 @ stub -version=0xA00+ GetPackagePathByFullName2
 @ stub -version=0xA00+ GetPackagePathOnVolume
 @ stub -version=0xA00+ GetPackageProperty
@@ -378,7 +359,6 @@
 @ stub -version=0xA00+ GetPackageTargetPlatformProperty
 @ stub -version=0xA00+ GetPackageVolumeSisPath
 @ stub -version=0xA00+ GetPackagedDataForFile
-@ stub -version=0xA00+ GetPackagesByPackageFamily
 @ stub -version=0xA00+ GetPerformanceInfo
 @ stub -version=0xA00+ GetPersistedFileLocationW
 @ stub -version=0xA00+ GetPersistedRegistryLocationW
@@ -391,11 +371,9 @@
 @ stub -version=0xA00+ GetProcessImageFileNameA
 @ stub -version=0xA00+ GetProcessImageFileNameW
 @ stub -version=0xA00+ GetProcessMemoryInfo
-@ stub -version=0xA00+ GetProcessMitigationPolicy
 @ stub -version=0xA00+ GetProcessPreferredUILanguages
 @ stub -version=0xA00+ GetProcessesUsingPackageDependency
 @ stub -version=0xA00+ GetProcessorSystemCycleTime
-@ stub -version=0xA00+ GetProductInfo
 @ stub -version=0xA00+ GetProtocolAumid
 @ stub -version=0xA00+ GetProtocolProperty
 @ stub -version=0xA00+ GetPtrCalData
@@ -413,7 +391,6 @@
 @ stub -version=0xA00+ GetSharedLocalFolder
 @ stub -version=0xA00+ GetStagedPackageOrigin
 @ stub -version=0xA00+ GetStagedPackageOrigin2
-@ stub -version=0xA00+ GetStagedPackagePathByFullName
 @ stub -version=0xA00+ GetStagedPackagePathByFullName2
 @ stub -version=0xA00+ GetStateContainerDepth
 @ stub -version=0xA00+ GetStateFolder
@@ -450,22 +427,14 @@
 @ stub -version=0xA00+ GetVolumeInformationByHandleW
 @ stub -version=0xA00+ GetWsChanges
 @ stub -version=0xA00+ GetWsChangesEx
-@ stub -version=0xA00+ GetXStateFeaturesMask
 @ stub -version=0xA00+ GuardCheckLongJumpTarget
 @ stub -version=0xA00+ HasPolicyForegroundProcessingCompletedInternal
 @ stub -version=0xA00+ HashData
-@ stub -version=0xA00+ IdnToAscii
-@ stub -version=0xA00+ IdnToNameprepUnicode
-@ stub -version=0xA00+ IdnToUnicode
 @ stub -version=0xA00+ IncrementPackageStatusVersion
-@ stub -version=0xA00+ InitializeContext
-@ stub -version=0xA00+ InitializeContext2
 @ stub -version=0xA00+ InitializeEnclave
 @ stub -version=0xA00+ InitializeProcessForWsWatch
 @ stub -version=0xA00+ InitializeSynchronizationBarrier
 @ stub -version=0xA00+ InstallELAMCertificateInfo
-@ stub -version=0xA00+ InterlockedPushListSList # -> NTDLL.RtlInterlockedPushListSList
-@ stub -version=0xA00+ InterlockedPushListSListEx # -> NTDLL.RtlInterlockedPushListSListEx
 @ stub -version=0xA00+ InternalLcidToName
 @ stub -version=0xA00+ Internal_EnumCalendarInfo
 @ stub -version=0xA00+ Internal_EnumDateFormats
@@ -514,7 +483,6 @@
 @ stub -version=0xA00+ IsValidRelativeSecurityDescriptor
 @ stub -version=0xA00+ IsWow64GuestMachineSupported
 @ stub -version=0xA00+ IsWow64Process2
-@ stub -version=0xA00+ K32EnumProcessModulesEx
 @ stub -version=0xA00+ K32GetWsChangesEx
 @ stub -version=0xA00+ KernelBaseGetGlobalData
 @ stub -version=0xA00+ KernelbasePostInit
@@ -531,7 +499,6 @@
 @ stub -version=0xA00+ LoadStringW
 @ stub -version=0xA00+ LocalFileTimeToLocalSystemTime
 @ stub -version=0xA00+ LocalSystemTimeToLocalFileTime
-@ stub -version=0xA00+ LocateXStateFeature
 @ stub -version=0xA00+ LogFeatureProcessUsage
 @ stub -version=0xA00+ LogStagedFeatureUsage
 @ stub -version=0xA00+ MapPredefinedHandleInternal
@@ -562,7 +529,6 @@
 @ stub -version=0xA00+ OpenDedicatedMemoryPartition
 @ stub -version=0xA00+ OpenFileMappingFromApp
 @ stub -version=0xA00+ OpenGlobalizationUserSettingsKey
-@ stub -version=0xA00+ OpenPackageInfoByFullName
 @ stub -version=0xA00+ OpenPackageInfoByFullNameForMachine
 @ stub -version=0xA00+ OpenPackageInfoByFullNameForUser
 @ stub -version=0xA00+ OpenPrivateNamespaceW
@@ -573,7 +539,6 @@
 @ stub -version=0xA00+ OpenStateExplicitForUserSid
 @ stub -version=0xA00+ OpenStateExplicitForUserSidString
 @ stub -version=0xA00+ OverrideRoamingDataModificationTimesInRange
-@ stub -version=0xA00+ PackageFamilyNameFromFullName
 @ stub -version=0xA00+ PackageFamilyNameFromFullNameA
 @ stub -version=0xA00+ PackageFamilyNameFromId
 @ stub -version=0xA00+ PackageFamilyNameFromIdA
@@ -585,7 +550,6 @@
 @ stub -version=0xA00+ PackageIdFromFullNameA
 @ stub -version=0xA00+ PackageIdFromProductId
 @ stub -version=0xA00+ PackageIsEffectiveSupportedUsersMultiple
-@ stub -version=0xA00+ PackageNameAndPublisherIdFromFamilyName
 @ stub -version=0xA00+ PackageNameAndPublisherIdFromFamilyNameA
 @ stub -version=0xA00+ PackagePublisherAddUserIfNecessary
 @ stub -version=0xA00+ PackagePublisherIdFromPublisher
@@ -600,31 +564,10 @@
 @ stub -version=0xA00+ PathAddBackslashW
 @ stub -version=0xA00+ PathAddExtensionA
 @ stub -version=0xA00+ PathAddExtensionW
-@ stub -version=0xA00+ PathAllocCanonicalize
-@ stub -version=0xA00+ PathAllocCombine
 @ stub -version=0xA00+ PathAppendA
 @ stub -version=0xA00+ PathAppendW
 @ stub -version=0xA00+ PathCanonicalizeA
 @ stub -version=0xA00+ PathCanonicalizeW
-@ stub -version=0xA00+ PathCchAddBackslash
-@ stub -version=0xA00+ PathCchAddBackslashEx
-@ stub -version=0xA00+ PathCchAddExtension
-@ stub -version=0xA00+ PathCchAppend
-@ stub -version=0xA00+ PathCchAppendEx
-@ stub -version=0xA00+ PathCchCanonicalize
-@ stub -version=0xA00+ PathCchCanonicalizeEx
-@ stub -version=0xA00+ PathCchCombine
-@ stub -version=0xA00+ PathCchCombineEx
-@ stub -version=0xA00+ PathCchFindExtension
-@ stub -version=0xA00+ PathCchIsRoot
-@ stub -version=0xA00+ PathCchRemoveBackslash
-@ stub -version=0xA00+ PathCchRemoveBackslashEx
-@ stub -version=0xA00+ PathCchRemoveExtension
-@ stub -version=0xA00+ PathCchRemoveFileSpec
-@ stub -version=0xA00+ PathCchRenameExtension
-@ stub -version=0xA00+ PathCchSkipRoot
-@ stub -version=0xA00+ PathCchStripPrefix
-@ stub -version=0xA00+ PathCchStripToRoot
 @ stub -version=0xA00+ PathCombineA
 @ stub -version=0xA00+ PathCombineW
 @ stub -version=0xA00+ PathCommonPrefixA
@@ -659,7 +602,6 @@
 @ stub -version=0xA00+ PathIsSameRootA
 @ stub -version=0xA00+ PathIsSameRootW
 @ stub -version=0xA00+ PathIsUNCA
-@ stub -version=0xA00+ PathIsUNCEx
 @ stub -version=0xA00+ PathIsUNCServerA
 @ stub -version=0xA00+ PathIsUNCServerShareA
 @ stub -version=0xA00+ PathIsUNCServerShareW
@@ -748,16 +690,6 @@
 @ stub -version=0xA00+ PsmIsChildKey
 @ stub -version=0xA00+ PsmIsDynamicKey
 @ stub -version=0xA00+ PsmIsValidKey
-@ stub -version=0xA00+ PssCaptureSnapshot
-@ stub -version=0xA00+ PssDuplicateSnapshot
-@ stub -version=0xA00+ PssFreeSnapshot
-@ stub -version=0xA00+ PssQuerySnapshot
-@ stub -version=0xA00+ PssWalkMarkerCreate
-@ stub -version=0xA00+ PssWalkMarkerFree
-@ stub -version=0xA00+ PssWalkMarkerGetPosition
-@ stub -version=0xA00+ PssWalkMarkerSeekToBeginning
-@ stub -version=0xA00+ PssWalkMarkerSetPosition
-@ stub -version=0xA00+ PssWalkSnapshot
 @ stub -version=0xA00+ PublishStateChangeNotification
 @ stub -version=0xA00+ PublisherFromPackageFullName
 @ stub -version=0xA00+ QISearch
@@ -831,7 +763,6 @@
 @ stub -version=0xA00+ RemoveDirectory2A
 @ stub -version=0xA00+ RemoveDirectory2W
 @ stub -version=0xA00+ RemoveDirectoryFromAppW
-@ stub -version=0xA00+ RemoveDllDirectory
 @ stub -version=0xA00+ RemoveExtensionProgIds
 @ stub -version=0xA00+ RemovePackageDependency
 @ stub -version=0xA00+ RemovePackageStatus
@@ -842,7 +773,6 @@
 @ stub -version=0xA00+ ResizePseudoConsole
 @ stub -version=0xA00+ ResolveDelayLoadedAPI
 @ stub -version=0xA00+ ResolveDelayLoadsFromDll
-@ stub -version=0xA00+ ResolveLocaleName
 @ stub -version=0xA00+ RestoreThreadPreferredUILanguages
 @ stub -version=0xA00+ RsopLoggingEnabledInternal
 @ stub -version=0xA00+ SHCoCreateInstance
@@ -884,7 +814,6 @@
 @ stub -version=0xA00+ SetConsoleHistoryInfo
 @ stub -version=0xA00+ SetConsoleScreenBufferInfoEx
 @ stub -version=0xA00+ SetCurrentConsoleFontEx
-@ stub -version=0xA00+ SetDefaultDllDirectories
 @ stub -version=0xA00+ SetDynamicTimeZoneInformation
 @ stub -version=0xA00+ SetEventWhenCallbackReturns # -> NTDLL.TpCallbackSetEventOnCompletion
 @ stub -version=0xA00+ SetExtensionProperty
@@ -904,7 +833,6 @@
 @ stub -version=0xA00+ SetProcessDynamicEHContinuationTargets
 @ stub -version=0xA00+ SetProcessDynamicEnforcedCetCompatibleRanges
 @ stub -version=0xA00+ SetProcessGroupAffinity
-@ stub -version=0xA00+ SetProcessMitigationPolicy
 @ stub -version=0xA00+ SetProcessPreferredUILanguages
 @ stub -version=0xA00+ SetProcessValidCallTargets
 @ stub -version=0xA00+ SetProcessValidCallTargetsForMappedView
@@ -922,8 +850,6 @@
 @ stub -version=0xA00+ SetThreadpoolTimerEx # -> NTDLL.TpSetTimerEx
 @ stub -version=0xA00+ SetThreadpoolWaitEx # -> NTDLL.TpSetWaitEx
 @ stub -version=0xA00+ SetUserGeoName
-@ stub -version=0xA00+ SetWaitableTimerEx
-@ stub -version=0xA00+ SetXStateFeaturesMask
 @ stub -version=0xA00+ SharedLocalIsEnabled
 @ stub -version=0xA00+ SpecialMBToWC
 @ stub -version=0xA00+ StrCSpnA
@@ -1007,7 +933,6 @@
 @ stub -version=0xA00+ TryCreatePackageDependency2
 @ stub -version=0xA00+ TzSpecificLocalTimeToSystemTimeEx
 @ stub -version=0xA00+ UnmapViewOfFile2
-@ stub -version=0xA00+ UnmapViewOfFileEx
 @ stub -version=0xA00+ UnregisterApplicationRestart
 @ stub -version=0xA00+ UnregisterBadMemoryNotification
 @ stub -version=0xA00+ UnregisterGPNotificationInternal
@@ -1159,6 +1084,8 @@
 @ stdcall AddAuditAccessObjectAce(ptr long long long ptr ptr ptr long long) advapi32.AddAuditAccessObjectAce
 @ stdcall AddConsoleAliasA(str str str) kernel32.AddConsoleAliasA
 @ stdcall AddConsoleAliasW(wstr wstr wstr) kernel32.AddConsoleAliasW
+@ stdcall AddDllDirectory(wstr) kernel32.AddDllDirectory
+@ stdcall AddMandatoryAce(ptr long long long ptr) advapi32.AddMandatoryAce
 @ stdcall AddRefActCtx(ptr) kernel32.AddRefActCtx
 @ stdcall AddVectoredContinueHandler(long ptr) kernel32.AddVectoredContinueHandler
 @ stdcall AddVectoredExceptionHandler(long ptr) kernel32.AddVectoredExceptionHandler
@@ -1193,6 +1120,7 @@
 @ stdcall ClearCommBreak(long) kernel32.ClearCommBreak
 @ stdcall ClearCommError(long ptr ptr) kernel32.ClearCommError
 @ stdcall CloseHandle(long) kernel32.CloseHandle
+@ stdcall ClosePackageInfo(ptr) kernel32.ClosePackageInfo
 @ stdcall CloseThreadpool(ptr) kernel32.CloseThreadpool
 @ stdcall CloseThreadpoolCleanupGroup(ptr) kernel32.CloseThreadpoolCleanupGroup
 @ stdcall CloseThreadpoolCleanupGroupMembers(ptr long ptr) kernel32.CloseThreadpoolCleanupGroupMembers
@@ -1213,6 +1141,8 @@
 @ stdcall ConvertThreadToFiber(ptr) kernel32.ConvertThreadToFiber
 @ stdcall ConvertThreadToFiberEx(ptr long) kernel32.ConvertThreadToFiberEx
 @ stdcall ConvertToAutoInheritPrivateObjectSecurity(ptr ptr ptr ptr long ptr) advapi32.ConvertToAutoInheritPrivateObjectSecurity
+@ stdcall CopyContext(ptr long ptr) kernel32.CopyContext
+@ stdcall CopyFile2(wstr wstr ptr) kernel32.CopyFile2
 @ stdcall CopyFileExW(wstr wstr ptr ptr ptr long) kernel32.CopyFileExW
 @ stdcall CopyFileW(wstr wstr long) kernel32.CopyFileW
 @ stdcall CopySid(long ptr ptr) advapi32.CopySid
@@ -1320,6 +1250,7 @@
 @ stdcall EqualPrefixSid(ptr ptr) advapi32.EqualPrefixSid
 @ stdcall EqualSid(ptr ptr) advapi32.EqualSid
 @ stdcall EscapeCommFunction(long long) kernel32.EscapeCommFunction
+@ stdcall EventActivityIdControl(long ptr) advapi32.EventActivityIdControl
 @ stdcall EventEnabled(int64 ptr) advapi32.EventEnabled
 @ stdcall EventRegister(ptr ptr ptr ptr) advapi32.EventRegister
 @ stdcall EventSetInformation(int64 long ptr long) advapi32.EventSetInformation
@@ -1359,6 +1290,7 @@
 @ stdcall FindNextFileW(long ptr) kernel32.FindNextFileW
 @ stdcall FindNextStreamW(ptr ptr) kernel32.FindNextStreamW
 @ stdcall FindNextVolumeW(long ptr long) kernel32.FindNextVolumeW
+@ stdcall FindPackagesByPackageFamily(wstr long ptr ptr ptr ptr ptr) kernel32.FindPackagesByPackageFamily
 @ stdcall FindResourceExW(long wstr wstr long) kernel32.FindResourceExW
 @ stdcall FindResourceW(long wstr wstr) kernel32.FindResourceW
 @ stdcall FindVolumeClose(ptr) kernel32.FindVolumeClose
@@ -1437,9 +1369,14 @@
 @ stdcall GetCurrencyFormatW(long long wstr ptr wstr long) kernel32.GetCurrencyFormatW
 @ stdcall GetCurrentActCtx(ptr) kernel32.GetCurrentActCtx
 @ stdcall GetCurrentConsoleFont(long long ptr) kernel32.GetCurrentConsoleFont
+@ stdcall GetCurrentConsoleFontEx(ptr long ptr) kernel32.GetCurrentConsoleFontEx
 @ stdcall GetCurrentDirectoryA(long ptr) kernel32.GetCurrentDirectoryA
 @ stdcall GetCurrentDirectoryW(long ptr) kernel32.GetCurrentDirectoryW
+@ stdcall GetCurrentPackageFamilyName(ptr ptr) kernel32.GetCurrentPackageFamilyName
+@ stdcall GetCurrentPackageFullName(ptr ptr) kernel32.GetCurrentPackageFullName
 @ stdcall GetCurrentPackageId(ptr ptr) kernel32.GetCurrentPackageId
+@ stdcall GetCurrentPackageInfo(long ptr ptr ptr) kernel32.GetCurrentPackageInfo
+@ stdcall GetCurrentPackagePath(ptr ptr) kernel32.GetCurrentPackagePath
 @ stdcall -norelay GetCurrentProcess() kernel32.GetCurrentProcess
 @ stdcall -norelay GetCurrentProcessId() kernel32.GetCurrentProcessId
 @ stdcall GetCurrentProcessorNumber() kernel32.GetCurrentProcessorNumber
@@ -1519,6 +1456,14 @@
 @ stdcall GetNumberOfConsoleMouseButtons(ptr) kernel32.GetNumberOfConsoleMouseButtons
 @ stdcall GetOEMCP() kernel32.GetOEMCP
 @ stdcall GetOverlappedResult(long ptr ptr long) kernel32.GetOverlappedResult
+@ stdcall GetPackageApplicationIds(ptr ptr ptr ptr) kernel32.GetPackageApplicationIds
+@ stdcall GetPackageFamilyName(long ptr ptr) kernel32.GetPackageFamilyName
+@ stdcall GetPackageFullName(long ptr ptr) kernel32.GetPackageFullName
+@ stdcall GetPackageId(ptr ptr ptr) kernel32.GetPackageId
+@ stdcall GetPackageInfo(ptr long ptr ptr ptr) kernel32.GetPackageInfo
+@ stdcall GetPackagePath(ptr long ptr ptr) kernel32.GetPackagePath
+@ stdcall GetPackagePathByFullName(wstr ptr ptr) kernel32.GetPackagePathByFullName
+@ stdcall GetPackagesByPackageFamily(wstr ptr ptr ptr ptr) kernel32.GetPackagesByPackageFamily
 @ stdcall GetPriorityClass(long) kernel32.GetPriorityClass
 @ stdcall GetPrivateObjectSecurity(ptr long ptr long ptr) advapi32.GetPrivateObjectSecurity
 @ stdcall GetProcAddress(long str) kernel32.GetProcAddress
@@ -1529,12 +1474,14 @@
 @ stdcall GetProcessId(long) kernel32.GetProcessId
 @ stdcall GetProcessIdOfThread(ptr) kernel32.GetProcessIdOfThread
 @ stdcall GetProcessInformation(ptr long ptr long) kernel32.GetProcessInformation
+@ stdcall GetProcessMitigationPolicy(long long ptr long) kernel32.GetProcessMitigationPolicy
 @ stdcall GetProcessPriorityBoost(long ptr) kernel32.GetProcessPriorityBoost
 @ stdcall GetProcessShutdownParameters(ptr ptr) kernel32.GetProcessShutdownParameters
 @ stdcall GetProcessTimes(long ptr ptr ptr ptr) kernel32.GetProcessTimes
 @ stdcall GetProcessVersion(long) kernel32.GetProcessVersion
 @ stdcall GetProcessWorkingSetSize(long ptr ptr) kernel32.GetProcessWorkingSetSize
 @ stdcall GetProcessWorkingSetSizeEx(long ptr ptr long) kernel32.GetProcessWorkingSetSizeEx
+@ stdcall GetProductInfo(long long long long ptr) kernel32.GetProductInfo
 @ stdcall GetQueuedCompletionStatus(long ptr ptr ptr long) kernel32.GetQueuedCompletionStatus
 @ stdcall GetQueuedCompletionStatusEx(ptr ptr long ptr long long) kernel32.GetQueuedCompletionStatusEx
 @ stdcall GetSecurityDescriptorControl(ptr ptr ptr) advapi32.GetSecurityDescriptorControl
@@ -1549,6 +1496,7 @@
 @ stdcall GetSidLengthRequired(long) advapi32.GetSidLengthRequired
 @ stdcall GetSidSubAuthority(ptr long) advapi32.GetSidSubAuthority
 @ stdcall GetSidSubAuthorityCount(ptr) advapi32.GetSidSubAuthorityCount
+@ stdcall GetStagedPackagePathByFullName(wstr ptr ptr) kernel32.GetStagedPackagePathByFullName
 @ stdcall GetStartupInfoW(ptr) kernel32.GetStartupInfoW
 @ stdcall GetStdHandle(long) kernel32.GetStdHandle
 @ stdcall GetStringTypeA(long long str long ptr) kernel32.GetStringTypeA
@@ -1621,6 +1569,7 @@
 @ stdcall GetWindowsDirectoryA(ptr long) kernel32.GetWindowsDirectoryA
 @ stdcall GetWindowsDirectoryW(ptr long) kernel32.GetWindowsDirectoryW
 @ stdcall GetWriteWatch(long ptr long ptr ptr ptr) kernel32.GetWriteWatch
+@ stdcall GetXStateFeaturesMask(ptr ptr) kernel32.GetXStateFeaturesMask
 @ stdcall GlobalAlloc(long long) kernel32.GlobalAlloc
 @ stdcall GlobalFlags(long) kernel32.GlobalFlags
 @ stdcall GlobalFree(long) kernel32.GlobalFree
@@ -1644,6 +1593,9 @@
 @ stdcall HeapUnlock(long) kernel32.HeapUnlock
 @ stdcall HeapValidate(long long ptr) kernel32.HeapValidate
 @ stdcall HeapWalk(long ptr) kernel32.HeapWalk
+@ stdcall IdnToAscii(long wstr long ptr long) kernel32.IdnToAscii
+@ stdcall IdnToNameprepUnicode(long wstr long ptr long) kernel32.IdnToNameprepUnicode
+@ stdcall IdnToUnicode(long wstr long ptr long) kernel32.IdnToUnicode
 @ stdcall ImpersonateAnonymousToken(ptr) advapi32.ImpersonateAnonymousToken
 @ stdcall ImpersonateLoggedOnUser(long) advapi32.ImpersonateLoggedOnUser
 @ stdcall ImpersonateNamedPipeClient(long) advapi32.ImpersonateNamedPipeClient
@@ -1653,6 +1605,8 @@
 @ stdcall InitOnceInitialize(ptr) kernel32.InitOnceInitialize
 @ stdcall InitializeAcl(ptr long long) advapi32.InitializeAcl
 @ stdcall InitializeConditionVariable(ptr) kernel32.InitializeConditionVariable
+@ stdcall InitializeContext(ptr long ptr ptr) kernel32.InitializeContext
+@ stdcall InitializeContext2(ptr long ptr ptr int64) kernel32.InitializeContext2
 @ stdcall InitializeCriticalSection(ptr) kernel32.InitializeCriticalSection
 @ stdcall InitializeCriticalSectionAndSpinCount(ptr long) kernel32.InitializeCriticalSectionAndSpinCount
 @ stdcall InitializeCriticalSectionEx(ptr long long) kernel32.InitializeCriticalSectionEx
@@ -1670,6 +1624,8 @@
 @ stdcall -arch=i386 InterlockedIncrement(ptr) kernel32.InterlockedIncrement
 @ stdcall InterlockedPopEntrySList(ptr) kernel32.InterlockedPopEntrySList
 @ stdcall InterlockedPushEntrySList(ptr ptr) kernel32.InterlockedPushEntrySList
+@ fastcall InterlockedPushListSList(ptr ptr ptr long) kernel32.InterlockedPushListSList
+@ stdcall InterlockedPushListSListEx(ptr ptr ptr long) kernel32.InterlockedPushListSListEx
 @ stdcall IsDBCSLeadByte(long) kernel32.IsDBCSLeadByte
 @ stdcall IsDBCSLeadByteEx(long long) kernel32.IsDBCSLeadByteEx
 @ stdcall IsDebuggerPresent() kernel32.IsDebuggerPresent
@@ -1694,6 +1650,7 @@
 @ stdcall K32EnumPageFilesA(ptr ptr) kernel32.K32EnumPageFilesA
 @ stdcall K32EnumPageFilesW(ptr ptr) kernel32.K32EnumPageFilesW
 @ stdcall K32EnumProcessModules(long ptr long ptr) kernel32.K32EnumProcessModules
+@ stdcall K32EnumProcessModulesEx(long ptr long ptr long) kernel32.K32EnumProcessModulesEx
 @ stdcall K32EnumProcesses(ptr long ptr) kernel32.K32EnumProcesses
 @ stdcall K32GetDeviceDriverBaseNameA(ptr ptr long) kernel32.K32GetDeviceDriverBaseNameA
 @ stdcall K32GetDeviceDriverBaseNameW(ptr ptr long) kernel32.K32GetDeviceDriverBaseNameW
@@ -1733,6 +1690,7 @@
 @ stdcall LocalSize(long) kernel32.LocalSize
 @ stdcall LocalUnlock(long) kernel32.LocalUnlock
 @ stdcall LocaleNameToLCID(wstr long) kernel32.LocaleNameToLCID
+@ stdcall LocateXStateFeature(ptr long ptr) kernel32.LocateXStateFeature
 @ stdcall LockFile(long long long long long) kernel32.LockFile
 @ stdcall LockFileEx(long long long long long ptr) kernel32.LockFileEx
 @ stdcall LockResource(long) kernel32.LockResource
@@ -1759,6 +1717,7 @@
 @ stdcall OpenFileById(ptr ptr long long ptr long) kernel32.OpenFileById
 @ stdcall OpenFileMappingW(long long wstr) kernel32.OpenFileMappingW
 @ stdcall OpenMutexW(long long wstr) kernel32.OpenMutexW
+@ stdcall OpenPackageInfoByFullName(wstr long ptr) kernel32.OpenPackageInfoByFullName
 @ stdcall OpenProcess(long long long) kernel32.OpenProcess
 @ stdcall -private OpenProcessToken(long long ptr) kernel32.OpenProcessToken
 @ stdcall OpenSemaphoreW(long long wstr) kernel32.OpenSemaphoreW
@@ -1767,6 +1726,30 @@
 @ stdcall OpenWaitableTimerW(long long wstr) kernel32.OpenWaitableTimerW
 @ stdcall OutputDebugStringA(str) kernel32.OutputDebugStringA
 @ stdcall OutputDebugStringW(wstr) kernel32.OutputDebugStringW
+@ stdcall PackageFamilyNameFromFullName(wstr ptr ptr) kernel32.PackageFamilyNameFromFullName
+@ stdcall PackageNameAndPublisherIdFromFamilyName(wstr ptr ptr ptr ptr) kernel32.PackageNameAndPublisherIdFromFamilyName
+@ stdcall PathAllocCanonicalize(wstr long ptr) kernel32.PathAllocCanonicalize
+@ stdcall PathAllocCombine(wstr wstr long ptr) kernel32.PathAllocCombine
+@ stdcall PathCchAddBackslash(wstr long) kernel32.PathCchAddBackslash
+@ stdcall PathCchAddBackslashEx(wstr long ptr ptr) kernel32.PathCchAddBackslashEx
+@ stdcall PathCchAddExtension(wstr long wstr) kernel32.PathCchAddExtension
+@ stdcall PathCchAppend(wstr long wstr) kernel32.PathCchAppend
+@ stdcall PathCchAppendEx(wstr long wstr long) kernel32.PathCchAppendEx
+@ stdcall PathCchCanonicalize(ptr long wstr) kernel32.PathCchCanonicalize
+@ stdcall PathCchCanonicalizeEx(ptr long wstr long) kernel32.PathCchCanonicalizeEx
+@ stdcall PathCchCombine(ptr long wstr wstr) kernel32.PathCchCombine
+@ stdcall PathCchCombineEx(ptr long wstr wstr long) kernel32.PathCchCombineEx
+@ stdcall PathCchFindExtension(wstr long ptr) kernel32.PathCchFindExtension
+@ stdcall PathCchIsRoot(wstr) kernel32.PathCchIsRoot
+@ stdcall PathCchRemoveBackslash(wstr long) kernel32.PathCchRemoveBackslash
+@ stdcall PathCchRemoveBackslashEx(wstr long ptr ptr) kernel32.PathCchRemoveBackslashEx
+@ stdcall PathCchRemoveExtension(wstr long) kernel32.PathCchRemoveExtension
+@ stdcall PathCchRemoveFileSpec(wstr long) kernel32.PathCchRemoveFileSpec
+@ stdcall PathCchRenameExtension(wstr long wstr) kernel32.PathCchRenameExtension
+@ stdcall PathCchSkipRoot(wstr ptr) kernel32.PathCchSkipRoot
+@ stdcall PathCchStripPrefix(wstr long) kernel32.PathCchStripPrefix
+@ stdcall PathCchStripToRoot(wstr long) kernel32.PathCchStripToRoot
+@ stdcall PathIsUNCEx(wstr ptr) kernel32.PathIsUNCEx
 @ stdcall PeekConsoleInputA(ptr ptr long ptr) kernel32.PeekConsoleInputA
 @ stdcall PeekConsoleInputW(ptr ptr long ptr) kernel32.PeekConsoleInputW
 @ stdcall PeekNamedPipe(long ptr long ptr ptr ptr) kernel32.PeekNamedPipe
@@ -1776,6 +1759,16 @@
 @ stdcall PrivilegeCheck(ptr ptr ptr) advapi32.PrivilegeCheck
 @ stdcall PrivilegedServiceAuditAlarmW(wstr wstr long ptr long) advapi32.PrivilegedServiceAuditAlarmW
 @ stdcall ProcessIdToSessionId(long ptr) kernel32.ProcessIdToSessionId
+@ stdcall PssCaptureSnapshot(long long long ptr) kernel32.PssCaptureSnapshot
+@ stdcall PssDuplicateSnapshot(long long long ptr long) kernel32.PssDuplicateSnapshot
+@ stdcall PssFreeSnapshot(long long) kernel32.PssFreeSnapshot
+@ stdcall PssQuerySnapshot(long long ptr long) kernel32.PssQuerySnapshot
+@ stdcall PssWalkMarkerCreate(ptr ptr) kernel32.PssWalkMarkerCreate
+@ stdcall PssWalkMarkerFree(long) kernel32.PssWalkMarkerFree
+@ stdcall PssWalkMarkerGetPosition(long ptr) kernel32.PssWalkMarkerGetPosition
+@ stdcall PssWalkMarkerSeekToBeginning(long) kernel32.PssWalkMarkerSeekToBeginning
+@ stdcall PssWalkMarkerSetPosition(long long) kernel32.PssWalkMarkerSetPosition
+@ stdcall PssWalkSnapshot(long long long ptr long) kernel32.PssWalkSnapshot
 @ stdcall PulseEvent(long) kernel32.PulseEvent
 @ stdcall PurgeComm(long long) kernel32.PurgeComm
 @ stdcall QueryActCtxW(long ptr ptr long ptr long ptr) kernel32.QueryActCtxW
@@ -1867,11 +1860,13 @@
 @ stdcall ReleaseSemaphore(long long ptr) kernel32.ReleaseSemaphore
 @ stdcall RemoveDirectoryA(str) kernel32.RemoveDirectoryA
 @ stdcall RemoveDirectoryW(wstr) kernel32.RemoveDirectoryW
+@ stdcall RemoveDllDirectory(ptr) kernel32.RemoveDllDirectory
 @ stdcall RemoveVectoredContinueHandler(ptr) kernel32.RemoveVectoredContinueHandler
 @ stdcall RemoveVectoredExceptionHandler(ptr) kernel32.RemoveVectoredExceptionHandler
 @ stdcall ReplaceFileW(wstr wstr wstr long ptr ptr) kernel32.ReplaceFileW
 @ stdcall ResetEvent(long) kernel32.ResetEvent
 @ stdcall ResetWriteWatch(ptr long) kernel32.ResetWriteWatch
+@ stdcall ResolveLocaleName(wstr ptr long) kernel32.ResolveLocaleName
 @ stdcall RestoreLastError(long) kernel32.RestoreLastError
 @ stdcall ResumeThread(long) kernel32.ResumeThread
 @ stdcall RevertToSelf() advapi32.RevertToSelf
@@ -1911,6 +1906,7 @@
 @ stdcall SetCriticalSectionSpinCount(ptr long) kernel32.SetCriticalSectionSpinCount
 @ stdcall SetCurrentDirectoryA(str) kernel32.SetCurrentDirectoryA
 @ stdcall SetCurrentDirectoryW(wstr) kernel32.SetCurrentDirectoryW
+@ stdcall SetDefaultDllDirectories(long) kernel32.SetDefaultDllDirectories
 @ stdcall SetEndOfFile(long) kernel32.SetEndOfFile
 @ stdcall SetEnvironmentStringsW(ptr) kernel32.SetEnvironmentStringsW
 @ stdcall SetEnvironmentVariableA(str str) kernel32.SetEnvironmentVariableA
@@ -1938,6 +1934,7 @@
 @ stdcall SetPriorityClass(long long) kernel32.SetPriorityClass
 @ stdcall SetPrivateObjectSecurity(long ptr ptr ptr long) advapi32.SetPrivateObjectSecurity
 @ stdcall SetProcessInformation(ptr long ptr long) kernel32.SetProcessInformation
+@ stdcall SetProcessMitigationPolicy(long ptr long) kernel32.SetProcessMitigationPolicy
 @ stdcall SetProcessPriorityBoost(long long) kernel32.SetProcessPriorityBoost
 @ stdcall SetProcessShutdownParameters(long long) kernel32.SetProcessShutdownParameters
 @ stdcall SetProcessWorkingSetSize(long long long) kernel32.SetProcessWorkingSetSize
@@ -1975,6 +1972,8 @@
 @ stdcall SetUnhandledExceptionFilter(ptr) kernel32.SetUnhandledExceptionFilter
 @ stdcall SetUserGeoID(long) kernel32.SetUserGeoID
 @ stdcall SetWaitableTimer(long ptr long ptr ptr long) kernel32.SetWaitableTimer
+@ stdcall SetWaitableTimerEx(long ptr long ptr ptr ptr long) kernel32.SetWaitableTimerEx
+@ stdcall SetXStateFeaturesMask(ptr int64) kernel32.SetXStateFeaturesMask
 @ stdcall SetupComm(long long long) kernel32.SetupComm
 @ stdcall SignalObjectAndWait(long long long long) kernel32.SignalObjectAndWait
 @ stdcall SizeofResource(long long) kernel32.SizeofResource
@@ -2007,6 +2006,7 @@
 @ stdcall UnlockFile(long long long long long) kernel32.UnlockFile
 @ stdcall UnlockFileEx(long long long long ptr) kernel32.UnlockFileEx
 @ stdcall UnmapViewOfFile(ptr) kernel32.UnmapViewOfFile
+@ stdcall UnmapViewOfFileEx(ptr long) kernel32.UnmapViewOfFileEx
 @ stdcall UnregisterTraceGuids(double) advapi32.UnregisterTraceGuids
 @ stdcall UnregisterWaitEx(long long) kernel32.UnregisterWaitEx
 @ stdcall UpdateProcThreadAttribute(ptr long ptr ptr ptr ptr ptr) kernel32.UpdateProcThreadAttribute

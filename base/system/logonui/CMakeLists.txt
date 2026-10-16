@@ -11,10 +11,8 @@
 add_library(logonui_res OBJECT logonui.rc)
 target_compile_definitions(logonui_res PRIVATE UNICODE _UNICODE)
 target_include_directories(logonui_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(LOGONUI_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(logonui logonui-cargo logonui.exe
     KIND win32exe
     BODY_CRATE logonui-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS logonui_res ${LOGONUI_REUSED})
+    EXTRA_DEPENDS logonui_res)

@@ -473,6 +473,17 @@ the ACPI `_GTM` output buffer 8 bytes, a stack overrun at the first ACPI reply. 
 linking, had four more (a LUN list zeroed 8 bytes deep, SMART length checks that accept short
 buffers). `pointer_depth` rewrites `size_of::<*mut T>()` to `T` unless the C function takes the
 size of any pointer type or pointer variable.
+**The reverse also ships.** psapi's `ReadProcessMemory(h, &Peb->Ldr, &LoaderData,
+sizeof(LoaderData))` reads one pointer; the Rust sized it `size_of::<_PEB_LDR_DATA>()` (and the
+next read `size_of::<_LIST_ENTRY>()` into a single `Flink`), so every EnumProcessModules and
+GetModuleBaseName call wrote ~0x50 bytes over its stack locals and survived on layout luck. The
+tell is an out-buffer `&raw mut X as LPVOID` whose size names a struct while `X` is a pointer;
+a 20-line regex over the tree found no other site (2026-10-14).
+**One level too DEEP shrinks an array.** wscript's `calloc(argc, sizeof(*strs))` (`strs` a
+`BSTR *`) came back as `size_of::<OLECHAR>()`, the element's element. Every multi-argument
+`WScript.Echo` overran the array and dropped its second argument, and the host crashed a few
+calls later. `scan_calloc_elem_type` (`vibeos-cli check`, baseline empty) flags a
+`calloc(n, size_of::<T>()) as *mut U` with a character-sized `T` and a wider `U`.
 
 ### Per-arch provider differs, so a single-arch link check misses it
 `KeRaiseIrql`/`KeLowerIrql` are provided by **ntoskrnl on i386** (plus fastcall
@@ -486,6 +497,11 @@ blind to all of it.
 
 ### Width mismatches: return, argument, and static
 Same family, three positions, all silent on the arch where the widths happen to agree.
+- **Copied by vote.** `port resolve` copies a missing extern from tree consensus, and most
+  crates had typed the CRT's `wint_t towupper(wint_t)` as `towupper(c: c_int) -> c_int` -- a
+  caller reading all of EAX from a function that returns an unsigned short. Consensus now
+  refuses a declaration set that disagrees on an integer WIDTH at any position, and the
+  module's own C prototype settles it.
 - **Return.** A `-> u32` decl over a `BOOLEAN`(u8) definition: the callee sets only `AL`, the
   caller reads all of `EAX` → false-"true" on non-`xor eax,eax` paths, nondeterministic (reads
   as a flaky boot). Real damage: `RtlEqualUnicodeString` false match snapped ftfd.dll against
@@ -506,6 +522,25 @@ Same family, three positions, all silent on the arch where the widths happen to 
   `>= FileSize` → zero-filled page → 0x1E STATUS_DISK_CORRUPT_ERROR.
 - **Argument.** An `i64` param declared `u32` (or swapped order) picks up 4 garbage stack bytes
   or shifts every later arg — cdfs got an Mcb `ByteCount` of `0x80000000_00000800`.
+- **Narrow argument taken wide, then range-checked: x64-only.** A `USHORT` (`ADDRESS_FAMILY`)
+  parameter declared `u32` and rejected when `> 0xFFFF`: x64 callers leave the register's upper
+  bits undefined, i386 pushes a clean slot. iphlpapi's `GetIpForwardTable2(AF_INET)` failed
+  ERROR_INVALID_PARAMETER on amd64 only (guest apitest `Win10Surface`, 2026-10-14). Take the
+  C prototype's width; never validate bits the ABI does not define.
+- **A small enum value does not make its ABI a byte.** The timer translation declared
+  `KeInitializeApc`'s environment as `u8` instead of the DDK's 32-bit
+  `KAPC_ENVIRONMENT`. Both the October 11 archived MP kernel and the October 15
+  immutable-store gate emitted `movb $2,%r8b` in `NtSetTimer`, while the callee
+  compared all of `r8d` against `CurrentApcEnvironment`. Stale upper bits bypass
+  normalization, leaving APC index 2; the timer DPC later panics indexing the
+  two-element `ApcStatePointer` array (`ke/apc.rs:138`). The exact earlier failure
+  is `vibeos-flake-farm/fails/auto/20261011-185307-ydzbq0v5-smoke-amd64-BUGCHECK`.
+  Use the canonical DDK declaration and enum constant, with typed `Some`/`None`
+  callbacks; the callback must also be `extern "system"` for i386. Verify the
+  rebuilt caller initializes the full argument register. The repaired UP and MP
+  amd64 images emit `movl $2,%r8d`; both i386 callbacks emit `ret $20` and carry
+  the `@20` decoration. Never clamp the index
+  to hide an ABI mismatch.
 - **`extern static` width drift.** `MmThrottleTop` declared `u64`, defined `u32`, permanently
   tripped the Cc write throttle → `WriteFile` on a FAT volume never returned, with every probe
   in the FS write path showing nothing wrong `[§9.36-throttle]`.
@@ -828,6 +863,13 @@ one command: **before writing an `extern` for a CRT sibling, run `llvm-nm --unde
 on the C object and confirm the symbol is actually imported under that name.** A header arm
 selected by `#if`, a `static inline`, and a `.spec` alias each break the header→symbol
 assumption independently, and all three are invisible from the source.
+The remembered rule did not hold. That exact declaration shipped in wscript, msiexec, ole32 and
+shell32's recycle bin, copied between preludes by `port resolve`'s tree consensus. cscript
+crashed on every script error, and mfplat's Rust (found the same day from the other side) on its
+first `MFTRegister`, inside msvcrt's printf. It is now mechanized twice: `scan_varargs_spec_arity`
+(`vibeos-cli check`, baseline empty) holds every variadic `extern` to its `.spec` export's
+fixed arity, and resolve's renderer binds a count-form `swprintf`/`vswprintf` to
+`_snwprintf`/`_vsnwprintf`.
 
 **Two parse traps that produced confidently wrong answers first**, both now in the GOOD control
 fixture so a regression surfaces as a false positive: count against comment-MASKED text
@@ -1372,6 +1414,21 @@ allocation used the real element size, so nothing looked wrong until index 1.
 **Fix.** Cast first: `(field as PREAL).add(i)`, ideally through one helper
 (`consrv/handle.rs::handle_at`). `scan_opaque_ptr_arith` gates it (baseline empty).
 
+### A COM interface the -sys crate carries opaque has no methods and no fields
+**Symptom.** `cannot find function IStream_Seek` (every widl wrapper but the ones some other
+path generated) and `no field cbSize on type ntdll_sys::nt::tagSTATSTG`, though the module's
+own headers define both in full. mfplat's byte stream, 57 errors deep.
+
+**Cause.** A user-mode island blocklists every name ntdll-sys exports, so the module shares
+one identity for NT types. ntdll-sys carries `IStream`, `IStreamVtbl` and `tagSTATSTG` as
+`{ _unused: [u8; 0] }` (rtl's memory stream only needs the pointer), and the blocklist keeps
+the empty version. No vtable means `port macros` has nothing to generate wrappers from.
+
+**Fix.** `UNBLOCK="IStream IStreamVtbl tagSTATSTG STATSTG LPSTREAM"` in the module's `# >>> hand`
+block, then re-island: the island owns the full objidl definitions. Not automatic for every
+opaque name: `_TP_POOL` and friends are opaque in the real headers too, and a local copy of
+those would split their identity from the ntdll-sys functions that take them.
+
 ### `(base as *mut PBYTE).offset(n)` strides by a POINTER, not a byte
 The C's `(PBYTE)base + n` came out as a cast to a pointer *to* a `PBYTE` followed by
 `.offset(n)`, which steps 8 bytes per unit on 64-bit; the result is cast straight back, so it
@@ -1407,6 +1464,21 @@ subtraction.
 cursors. To triage, grep `\.(next|prev|Flink|Blink)\)? as \*mut <Struct>` and check the field's
 offset. The 2026-09-30 sweep found 22 hits; all but this one were offset-0 (secur32's
 `entry`) or were casting to a byte or void pointer.
+
+### A switch `break` that now leaves the loop
+**Symptom.** A loop over a list or an array stops after the first element of one kind.
+mf's session_check_topology leaked one node reference per SetTopology (Wine's suite counted
+eight); welcome's TranslateEscapes stopped translating after the first `\x`.
+
+**Cause.** C's `case X: ...; break;` inside a `for`/`while` leaves the SWITCH. Translated to
+a `match` arm ending in `break;`, it leaves the LOOP, skipping the rest of the iteration
+(mf's `IMFTopologyNode_Release(node)`) and every later element.
+
+**Fix.** Delete the `break;`: a match arm never falls through. Not the once-through
+`loop { match .. }` idiom some translations use for a switch, where leaving the loop is
+leaving the switch. `scan_match_arm_break` gates it; its baseline is the 19 sites
+triaged as deliberate (the C had a `goto` to the function's exit, or the Rust is
+hand-written).
 
 ### A list walk that starts at the head it stops at
 
@@ -1907,6 +1979,17 @@ A function BODY can take the wrong arm too. fmifs's `Chkdsk` came back with the 
 `wcscpy`. The translate audit flags these (`PREPROCESSOR ARMS ... the #if arm is LIVE`), so
 read every such finding against the Rust before flipping.
 
+The arm can also be the wrong TARGET's. cscript compiles wscript's three `.c` with
+`-DCSCRIPT_BUILD`, and every rustconv reader of `compile_commands.json` took the first entry
+naming a file, so wscript-rust was translated from cscript's preprocess. It shipped
+non-interactive (`wshInteractive = VARIANT_FALSE`) and printed "Usage: CScript". The
+translate audit cannot see this, because the arm it took IS live, for the other target.
+`macro_authority.pick_entry` now takes the ported target's entry (port sets it from
+state.json), else the one whose target lives in the source's own directory. A file compiled
+only by a FOREIGN target borrows from its owner's surviving TUs. dinput/dinput8 and the
+d3dx9_NN family share sources the same way. The two variants of one body are a cargo feature
+(`wscript-rust/cscript`), not a second crate.
+
 ### A C macro that reads the CALLER's locals cannot be a plain `macro_rules!` port
 **Symptom:** `no rules expected <ident>` at call sites that pass one argument more than the
 macro takes, or E0425 for a local (`infoPtr`, `hwnd`) inside a prelude macro's expansion.
@@ -1954,6 +2037,13 @@ buffers at half size, `RegEnumValueW` told 128 WCHARs into 128 bytes), each need
 `port resolve` writes a generated `UNICODE TCHAR family` prelude block (`TCHAR = WCHAR` …)
 whenever every TU's real compile command carries `-DUNICODE`. A `port fix` reply had already
 built a shim casting `LPTSTR` to `*mut i8` around the wrong type -- delete such shims on sight.
+
+**A TU that flips the charset is a template instantiation, not the module's charset.** fc's
+texta.c opens `#undef UNICODE` / `#define _MBCS` and includes text.h; textw.c includes it
+again wide. Merged into the module island, texta.c's toggles made the WHOLE island ANSI and
+conutils.h `#error`ed. `profile_derive` now drops the toggles of a TU whose charset disagrees
+with the module's (finding `CHARSET_INSTANTIATION`), and the Rust for the template is generic
+over the char type, one instantiation exported per TU (fc-rust's `text_h.rs`).
 
 ### The same rule for TYPEDEFS: a private `type` alias that disagrees on WIDTH
 The entry above is about shadow *structs*; this is the same disease one level down, and it is
@@ -3794,6 +3884,16 @@ of which it shipped first and then failed on: float exponents (`6.93e-01` — 78
 cnt-rust's math tables alone) and Rust's use of the char-literal quote for LIFETIMES, which
 makes `&'static` open a string that a regex-pass stripper closes on the next tick in the file.
 The scanner tokenizes left to right for that reason.
+
+### A MAKEFOURCC the model folded itself lands on the wrong integer
+**Symptom:** evr's `MFIsFormatYUV` came back as `| 808530521 // MAKEFOURCC('I','M','C','1')`:
+three of nine FOURCCs wrong (IMC1 carried Y210's value, NV11 carried NV12's), and rustc
+noticed only because two of them COLLIDED with correct arms (`unreachable pattern`). A wrong
+value that collides with nothing compiles and quietly answers FALSE for a real format.
+**Cause:** `MAKEFOURCC(...)` is an expression, not a constant, so fact sealing does not carry
+it; the model does the shifts in its head and keeps the macro as a comment.
+**Fix: `tools/scan_fourcc_literals.py`** (empty baseline, gate-wired) holds every literal to the
+`MAKEFOURCC`/`mmioFOURCC` comment written beside it, so it needs no C.
 
 ### Flavor-variant constants are their own drop-class `[§9.97]`
 `SYNCH_LEVEL` differs between UP and MP builds, and the translation froze the UP value in
@@ -14919,6 +15019,83 @@ fails the adapter. A rarely taken failure path is worth one forced-failure boot.
   runs and calls the execution routine at DISPATCH_LEVEL; `Put` frees it. **A slot in a
   table a C driver calls through is never a safe place to leave a `None`**; a stub that
   fails with a status is.
+
+### A staged vendor driver never loads: an inbox INF takes the device
+- **Symptom:** a vendor package staged with `vendordrv` is on the image, but PnP starts our own
+  driver on its device (`[DA] AddDevice ... (drv \Driver\e1000)` for Intel's `nete1g3e.inf`).
+  Making the vendor INF's `DriverVer` newer changes nothing.
+- **Cause:** setupapi ranks a match by WHERE the ID sits before it compares dates
+  (`driver.c`). Intel writes its model lines `E100C,, PCI\VEN_8086&DEV_100C`: the ID is in the
+  compatible-ID slot, rank 0x3000, while `nete1000.inf` puts it in the hardware-ID slot, 0x2000.
+  That is Windows' documented ranking too; Windows still picks the vendor's because an unsigned
+  driver ranks behind every signed one, and our INFs are unsigned.
+- **Fix:** `VIBEOS_VENDOR_PREFER=1` stages a copy of the vendor INF with its IDs in the
+  hardware-ID slot and a 2099 `DriverVer`, standing in for the signature rule. To see the
+  ranking itself, put `DEBUGCHANNEL=+setupapi` in `Session Manager\Environment` for one boot:
+  setupapi traces every INF it opens and each `Adding driver ... (Rank 0x...)`. It slows the
+  boot several times over, so don't leave it in.
+
+### A Windows 10 vendor driver never starts, one quiet step at a time
+Realtek's Windows 10 RTL8153 driver (NDIS 6.40 on KMDF) failed five ways in turn; most
+left nothing in the log. In the order they bite:
+- **No driver offered** (`DevInstallW failed with error 259`): the INF's `[Manufacturer]`
+  names only `NTamd64.10.0` models and leaves the undecorated section empty on purpose.
+  setupapi matches decorations against the 5.2 we report, as Windows would. Fix: when the
+  section valid for our version is empty, `driver.c` uses the NT 10.0 models (logged once
+  per INF). An INF with models for our version is unaffected.
+- **Installed but never loaded** (`fixme: unknown dirid 13`): `ServiceBinary = %13%\x.sys`.
+  DIRID 13 is the driver store, where Windows 10 runs drivers from. Fix: `dirid.c` maps it to
+  `%windir%\inf`, where vendordrv stages the package.
+- **0x1E `c000001d` at DriverEntry, RIP in the driver's string data**: the driver's
+  `__security_init_cookie` `__fastfail`s (`int 0x29`) on the compiler's default /GS cookie.
+  Windows' loader gives each image a random cookie; `sysldr.rs` had translated
+  `LdrpInitSecurityCookie` into an empty stub. Fix: ported from the C beside it.
+- **`DriverEntry failed 0xc0000001`, nothing else** (the IO manager now prints that line):
+  DriverEntry begins `if (NdisGetVersion() < 0x60028) return STATUS_UNSUCCESSFUL`. Fix:
+  `NdisGetVersion` reports 6.40.
+- **`WDFTrace: USBD_CreateHandle failed`, init `c0000001`**: KMDF clients created with
+  `WdfUsbTargetDeviceCreateWithParameters` (any Windows 8+ driver) need usbdex, which was
+  all `STATUS_NOT_IMPLEMENTED`. Fix: real handle and URB bookkeeping in `usbdex-rust`.
+To see a quiet driver's own `DbgPrintEx`, give `Session Manager\Debug Print Filter` an
+`IHVNETWORK`/`IHVDRIVER` DWORD of `0xFFFFFFFF` for one boot. A driver that fails before its
+first print is quicker to read in the binary: find its `NdisGetVersion` IAT slot with
+`objdump -p` and look at what the caller compares.
+
+### A vendor Wi-Fi driver starts only when tracing slows it down
+Realtek's Windows 10 RTL8821CU driver (`rtwlanu.sys`, a WDI miniport under `wdi.rs`) went
+through these in turn, on the OptiPlex. Several were bugs in code every driver uses:
+- **No device for the Wi-Fi function**: usbccgp made `MI_00` (Bluetooth, an IAD over
+  interfaces 0-1) and nothing for interface 2. With any IAD present the C enumerated IADs
+  only. Fix: `usbccgp-rust` gives each interface outside an IAD its own `MI_xx` function, as
+  Windows does.
+- **DriverEntry `0xc0000001`, nothing printed**: right after `WdfDriverCreate` it checks
+  `NdisGetVersion() >= 0x60032`; WDI is an NDIS 6.50 model. `NdisGetVersion` reports 6.50.
+- **Firmware download stalls at a random chunk**: the driver keeps several 30 KiB bulk reads
+  queued; xHCI gave each endpoint a 64 KiB bounce arena, so the third submit failed and
+  usbport retried it in a loop that starved the pipe's writes. Fix: data pipes get 256 KiB.
+- **`OpenAdapter` fails every time, and passes once tracing is on**: `NdisMSleep` never
+  slept. The C computes the due time as `(-1) * 10 * Microseconds` in unsigned 32-bit
+  arithmetic, which widens to a positive (absolute, long past) time. Every poll the driver
+  made while starting the chip timed out at once unless something else slowed it. Same
+  family: `NdisWaitEvent(e, 0)` must wait forever, and the C polled. A driver that works
+  only with logging on is a delay primitive returning early: check the wait and sleep
+  calls it imports before anything else.
+- **0x1E calling the LE's `TalTxRxStart`**: dot11wdi.h packs its handler tables to 4 (the
+  driver's own header says 0xCC bytes, 4 + 25 * 8), so the first pointer is at offset 4.
+- **Every property response empty**: `NDIS_OID_REQUEST.DATA.METHOD_INFORMATION` is `Oid,
+  InformationBuffer, InputBufferLength, OutputBufferLength, MethodId, BytesWritten, ...`;
+  MethodId is not second.
+- **0xA (P1 = 4, read, DISPATCH) inside the LE's `TxDataSend`, on the first EAPOL frame**:
+  the driver reads every transmitted NBL's `NetBufferListInfo[MediaSpecificInformation]` as a
+  Native Wi-Fi `DOT11_EXTSTA_SEND_CONTEXT` (exemption action at +4), WDI frame or not. Fix:
+  `wdi.rs` attaches one to each frame it sends.
+- **Keys install, the link comes up, and no data frame reaches the protocols**: the target
+  decrypts a frame and strips its CCMP header and MIC but leaves the Protected bit set, so a
+  filter on that bit dropped all of them. A decrypted frame is recognized by its LLC/SNAP.
+Two boot options did the work here, both reusable: `XHCITRACE[=n]` logs the first n vendor
+and class control transfers, and the bulk transfers and aborts of every device that sent
+one; `WPPTRACE[=level]` enables each WPP provider as it registers and prints its records
+(text arguments as text, which is how HAL-MAC's own messages read).
 
 ### A driver's `WriteFile` hands its lower layer a NULL buffer
 - **Symptom:** ndisuio's write path: `ASSERT FAILED: VirtualAddress != NULL at

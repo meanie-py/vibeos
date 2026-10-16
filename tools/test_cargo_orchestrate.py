@@ -14,7 +14,7 @@ co = importlib.util.module_from_spec(_spec)
 sys.modules["cargo_orchestrate"] = co
 _spec.loader.exec_module(co)
 
-I386 = [c for c in co.CELLS.values() if "i386" in c.arches]
+I386 = [c for c in co.CELLS.values() if "i386" in c.arches and co.build_std(c, "i386")]
 
 
 def _digest(cell) -> str:
@@ -33,19 +33,22 @@ def test_each_i386_target_dir_holds_exactly_one_json_variant():
 
 def test_the_kernel_and_user_mode_cells_really_differ():
     """The split this guards is deliberate (345bab65b7a): soft-float in the kernel,
-    hard-float where C calls expect f32 in ST0. If it ever collapses to one variant,
-    this test is what should be revisited -- not the grouping."""
+    hard-float where C calls expect f32 in ST0 (win32k). The user-mode cells left the
+    json for the builtin triple on 2026-10-14. If the json variants ever collapse to
+    one, this test is what should be revisited -- not the grouping."""
     ntoskrnl, ntdll, win32k = (co.CELLS[n] for n in ("ntoskrnl", "ntdll", "win32k"))
-    soft = co.target_json(REPO, ntoskrnl, "i386").read_text()
-    assert "+soft-float" in soft
-    for cell in (ntdll, win32k):
-        assert "+soft-float" not in co.target_json(REPO, cell, "i386").read_text()
-        assert co.cargo_target_dir(REPO, cell, "i386") != co.cargo_target_dir(
-            REPO, ntoskrnl, "i386"
-        )
+    assert "+soft-float" in co.target_json(REPO, ntoskrnl, "i386").read_text()
+    assert "+soft-float" not in co.target_json(REPO, win32k, "i386").read_text()
+    assert co.cargo_target_dir(REPO, win32k, "i386") != co.cargo_target_dir(REPO, ntoskrnl, "i386")
+    assert not co.build_std(ntdll, "i386")
+    assert co.cell_stem(ntdll, "i386") == "i686-pc-windows-gnu"
 
 
-def test_the_builtin_triple_arches_keep_the_shared_target_dir():
-    for arch in ("amd64", "arm64"):
-        dirs = {co.cargo_target_dir(REPO, c, arch) for c in co.CELLS.values() if arch in c.arches}
+def test_the_builtin_triple_cells_keep_the_shared_target_dir():
+    for arch in ("i386", "amd64", "arm64"):
+        dirs = {
+            co.cargo_target_dir(REPO, c, arch)
+            for c in co.CELLS.values()
+            if arch in c.arches and not co.build_std(c, arch)
+        }
         assert dirs == {REPO / "sdk/lib/rust/target"}

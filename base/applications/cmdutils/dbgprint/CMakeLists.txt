@@ -5,10 +5,7 @@
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # dbgprint.c  # replaced by Rust (sdk/lib/rust/dbgprint_app-rust/src/dbgprint_app/dbgprint.rs)
-set(DBGPRINT_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(dbgprint dbgprint-cargo dbgprint.exe
     KIND win32exe
     BODY_CRATE dbgprint_app-rust
-    DESTINATION reactos/system32
-    EXTRA_DEPENDS ${DBGPRINT_REUSED})
+    DESTINATION reactos/system32)

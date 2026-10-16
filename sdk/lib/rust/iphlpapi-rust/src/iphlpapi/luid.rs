@@ -136,7 +136,7 @@ const _: () = assert!(core::mem::offset_of!(MIB_IF_ROW2, InOctets) == 1208);
 const _: () = assert!(core::mem::offset_of!(MIB_IF_ROW2, OutQLen) == 1344);
 
 #[inline]
-fn luid_index(luid: u64) -> u32 {
+pub(crate) fn luid_index(luid: u64) -> u32 {
     ((luid >> 24) & LUID_INDEX_MASK) as u32
 }
 
@@ -146,12 +146,12 @@ fn luid_type(luid: u64) -> u32 {
 }
 
 #[inline]
-fn make_luid(if_type: u32, index: u32) -> u64 {
+pub(crate) fn make_luid(if_type: u32, index: u32) -> u64 {
     ((if_type as u64 & 0xFFFF) << 48) | ((index as u64 & LUID_INDEX_MASK) << 24)
 }
 
 /// Looks up the interface row for `index`. None when the index is 0, out of range, or unknown.
-unsafe fn lookup_row(index: u32) -> Option<MIB_IFROW> {
+pub(crate) unsafe fn lookup_row(index: u32) -> Option<MIB_IFROW> {
     if index == 0 || index as u64 > LUID_INDEX_MASK {
         return None;
     }

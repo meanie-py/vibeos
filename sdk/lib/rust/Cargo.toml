@@ -1,5 +1,56 @@
 [workspace]
 members = [
+    "cscript-cargo",
+    "wdfldr-cargo",
+    "watchdog-cargo",
+    "usbstor-cargo",
+    "storahci-cargo",
+    "ramdisk-cargo",
+    "ndis-cargo",
+    "ftfd-cargo",
+    "e1000-cargo",
+    "disk-cargo",
+    "bmfd-cargo",
+    "atapi-cargo",
+    "wmilib-cargo",
+    "usbuhci-cargo",
+    "usbport-cargo",
+    "usbohci-cargo",
+    "usbhub-cargo",
+    "usbehci-cargo",
+    "usbccgp-cargo",
+    "usbaudio-cargo",
+    "scsiport-cargo",
+    "pciidex-cargo",
+    "npfs-cargo",
+    "mup-cargo",
+    "msfs-cargo",
+    "mountmgr-cargo",
+    "mouhid-cargo",
+    "ksecdd-cargo",
+    "ks-cargo",
+    "kbdhid-cargo",
+    "hidusb-cargo",
+    "hidclass-cargo",
+    "fs_rec-cargo",
+    "fltmgr-cargo",
+    "fastfat-cargo",
+    "dxg-cargo",
+    "buslogic-cargo",
+    "welcome-cargo",
+    "usetup-cargo",
+    "opengl32-cargo",
+    "gdi32_vista-cargo",
+    "acgenral-cargo",
+    "text3d-cargo",
+    "fc-cargo",
+    "autochk-cargo",
+    "winprint-cargo",
+    "wordpad-cargo",
+    "taskmgr-cargo",
+    "ftp-cargo",
+    "format-cargo",
+    "calc-cargo",
     "winhlp32-cargo",
     "winspool-cargo",
     "srvsvc-cargo",
@@ -770,6 +821,24 @@ members = [
     "ntoskrnl_vista-rust",
     "sptilib-rust",
     "apisets-rust",
+    "wevtapi-rust",
+    "ndfapi-rust",
+    "dcomp-rust",
+    "qwave-rust",
+    "icuuc-rust",
+    "tbs-rust",
+    "mfreadwrite-rust",
+    "evr-rust",
+    "mfplat-rust",
+    "mf-rust",
+    "ftp-rust",
+    "fc-rust",
+    "setup16-rust",
+    "stortest-rust",
+    "testgui-rust",
+    "testchild-rust",
+    "devmgmt-rust",
+    "rapps_com-rust",
 ]
 resolver = "2"
 
@@ -841,6 +910,14 @@ debug = 1
 # The appcompat shim DLLs register their shims as `.shm$BBB` records that only shimlib's section
 # walk ever reads, so the DLL reaches each crate through ONE anchor symbol (lib.rs). One codegen
 # unit keeps every record in the anchor's object; split, the records' objects stay unlinked.
+# Build scripts (each `*-cargo` cell's build.rs and the reactos-link engine it runs)
+# execute on the host at build time; nothing ships them or debugs them. Each of the
+# ~730 per-arch cell link dirs held a 7.5 MB build script, 5.5 MB of it DWARF from
+# `debug = 1` and std, beside its own debug-built reactos-link/cc rlibs: 16 GB a lane.
+[profile.release.build-override]
+debug = 0
+strip = "debuginfo"
+
 [profile.release.package.aclayers-rust]
 codegen-units = 1
 

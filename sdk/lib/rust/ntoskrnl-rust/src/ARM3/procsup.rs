@@ -1243,6 +1243,8 @@ pub unsafe extern "system" fn MmCleanProcessAddressSpace(Process: PEPROCESS) {
     // the process's ledger goes back in one go, whichever path removed each VAD.
     super::commit::MiReturnProcessCommitment(Process as _);
 
+    super::census::MiMemoryCensusAtExit(Process as _);
+
     MmUnlockAddressSpace(core::ptr::addr_of_mut!((*(Process as *mut _EPROCESS)).Vm));
 }
 

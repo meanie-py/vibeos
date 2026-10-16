@@ -9,10 +9,8 @@ include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_or
 # whose windres command the cargo link replays.
 add_library(sort_res OBJECT sort.rc)
 target_include_directories(sort_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(SORT_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 add_cargo_module(sort sort-cargo sort.exe
     KIND win32exe
     BODY_CRATE sort-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS sort_res ${SORT_REUSED})
+    EXTRA_DEPENDS sort_res)

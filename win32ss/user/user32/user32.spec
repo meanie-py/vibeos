@@ -1,6 +1,6 @@
 ; Functions exported by Win 2K3 SP2
 @ stdcall ActivateKeyboardLayout(long long) NtUserActivateKeyboardLayout
-@ stdcall -version=0x600+ AddClipboardFormatListener(ptr)
+@ stdcall AddClipboardFormatListener(ptr)
 @ stdcall AdjustWindowRect(ptr long long)
 @ stdcall AdjustWindowRectEx(ptr long long long)
 @ stdcall AdjustWindowRectExForDpi(ptr long long long long)
@@ -102,7 +102,7 @@
 @ stdcall CreateMenu()
 @ stdcall CreatePopupMenu()
 @ stdcall CreateSystemThreads(long)
-@ stdcall -version=0xA00+ CreateSyntheticPointerDevice(long long long)
+@ stdcall CreateSyntheticPointerDevice(long long long)
 @ stdcall CreateWindowExA(long str str long long long long long long long long ptr)
 @ stdcall CreateWindowExW(long wstr wstr long long long long long long long long ptr)
 @ stdcall CreateWindowStationA(str long long ptr)
@@ -236,7 +236,7 @@
 @ stdcall EnumWindowStationsW(ptr long)
 @ stdcall EnumWindows(ptr long)
 @ stdcall EqualRect(ptr ptr)
-@ stdcall -version=0x602+ EvaluateProximityToRect(ptr ptr ptr)
+@ stdcall EvaluateProximityToRect(ptr ptr ptr)
 @ stdcall ExcludeUpdateRgn(long long) NtUserExcludeUpdateRgn
 @ stdcall ExitWindowsEx(long long)
 @ stdcall FillRect(long ptr long)
@@ -288,7 +288,7 @@
 # GetDbgTagFlags
 @ stdcall GetDesktopWindow()
 @ stdcall GetDialogBaseUnits()
-@ stdcall -version=0x602+ GetDisplayAutoRotationPreferences(ptr)
+@ stdcall GetDisplayAutoRotationPreferences(ptr)
 @ stdcall GetDisplayConfigBufferSizes(long ptr ptr)
 @ stdcall GetDlgCtrlID(long)
 @ stdcall GetDlgItem(long long)
@@ -296,14 +296,14 @@
 @ stdcall GetDlgItemTextA(long long ptr long)
 @ stdcall GetDlgItemTextW(long long ptr long)
 @ stdcall GetDoubleClickTime() NtUserGetDoubleClickTime
-@ stdcall -version=0x601+ GetDpiForMonitorInternal(ptr long ptr ptr)
+@ stdcall GetDpiForMonitorInternal(ptr long ptr ptr)
 @ stdcall -version=0xA00+ GetDpiForSystem()
 @ stdcall -version=0xA00+ GetDpiForWindow(ptr)
 @ stdcall GetFocus()
 @ stdcall GetForegroundWindow() NtUserGetForegroundWindow
 @ stdcall GetGUIThreadInfo(long ptr) NtUserGetGUIThreadInfo
-@ stdcall -version=0x601+ GetGestureConfig(long long long ptr ptr long)
-@ stdcall -version=0x601+ GetGestureExtraArgs(long long ptr)
+@ stdcall GetGestureConfig(long long long ptr ptr long)
+@ stdcall GetGestureExtraArgs(long long ptr)
 @ stdcall GetGestureInfo(long ptr)
 @ stdcall GetGuiResources(long long) NtUserGetGuiResources
 @ stdcall GetIconInfo(long ptr)
@@ -351,13 +351,19 @@
 @ stdcall GetOpenClipboardWindow() NtUserGetOpenClipboardWindow
 @ stdcall GetParent(long)
 @ stdcall GetPointerInfo(long ptr)
-@ stdcall -version=0x602+ GetPointerTouchInfo(long ptr)
-@ stdcall -version=0x602+ GetPointerTouchInfoHistory(long ptr ptr)
+@ stdcall GetPointerTouchInfo(long ptr)
+@ stdcall GetPointerTouchInfoHistory(long ptr ptr)
 @ stdcall GetPointerDevices(ptr ptr)
 @ stdcall GetPointerType(long ptr)
+@ stdcall GetPointerDevice(ptr ptr)
+@ stdcall GetPointerDeviceRects(ptr ptr ptr)
+@ stdcall GetPointerFrameTouchInfo(long ptr ptr)
+@ stdcall GetPointerFrameTouchInfoHistory(long ptr ptr ptr)
+@ stdcall GetPointerPenInfo(long ptr)
+@ stdcall GetPointerPenInfoHistory(long ptr ptr)
 @ stdcall GetPriorityClipboardFormat(ptr long) NtUserGetPriorityClipboardFormat
 @ stdcall GetProcessDefaultLayout(ptr)
-@ stdcall -version=0xA00+ GetProcessDpiAwarenessInternal(long ptr)
+@ stdcall GetProcessDpiAwarenessInternal(long ptr)
 @ stdcall GetProcessWindowStation() NtUserGetProcessWindowStation
 @ stdcall GetProgmanWindow ()
 @ stdcall GetPropA(long str)
@@ -400,7 +406,7 @@
 @ stdcall GetWindow(long long)
 @ stdcall GetWindowContextHelpId(long)
 @ stdcall GetWindowDC(long) NtUserGetWindowDC
-@ stdcall -version=0x601+ GetWindowDisplayAffinity(long ptr)
+@ stdcall GetWindowDisplayAffinity(long ptr)
 @ stdcall GetWindowInfo(long ptr)
 @ stdcall GetWindowLongA(long long)
 @ stdcall -arch=x86_64,arm64 GetWindowLongPtrA(ptr long)
@@ -472,9 +478,10 @@
 @ stdcall IsValidDpiAwarenessContext(ptr)
 @ stdcall IsWinEventHookInstalled(long)
 @ stdcall IsWindow(long)
+@ stdcall IsWindowArranged(long)
 @ stdcall IsWindowEnabled(long)
 @ stdcall IsWindowInDestroy(long)
-@ stdcall -version=0x600+ IsWindowRedirectedForPrint(long)
+@ stdcall IsWindowRedirectedForPrint(long)
 @ stdcall IsWindowUnicode(long)
 @ stdcall IsWindowVisible(long)
 @ stdcall -stub IsWow64Message()
@@ -508,7 +515,7 @@
 @ stdcall LockWindowStation(long) NtUserLockWindowStation
 @ stdcall LockWindowUpdate(long) NtUserLockWindowUpdate
 @ stdcall LockWorkStation() NtUserLockWorkStation
-@ stdcall -version=0x600+ LogicalToPhysicalPoint(long ptr)
+@ stdcall LogicalToPhysicalPoint(long ptr)
 @ stdcall -stub -version=0x602+ LogicalToPhysicalPointForPerMonitorDPI(long ptr)
 @ stdcall LookupIconIdFromDirectory(ptr long)
 @ stdcall LookupIconIdFromDirectoryEx(ptr long long long long)
@@ -555,7 +562,7 @@
 @ stdcall OpenWindowStationA(str long long)
 @ stdcall OpenWindowStationW(wstr long long)
 @ stdcall PackDDElParam(long long long)
-@ stdcall -version=0x602+ PackTouchHitTestingProximityEvaluation(ptr ptr)
+@ stdcall PackTouchHitTestingProximityEvaluation(ptr ptr)
 @ stdcall PaintDesktop(long) NtUserPaintDesktop
 @ stdcall PaintMenuBar(long long long long long long) NtUserPaintMenuBar
 @ stdcall PeekMessageA(ptr long long long long)
@@ -603,14 +610,14 @@
 @ stdcall RegisterSuspendResumeNotification(ptr long)
 @ stdcall RegisterSystemThread(long long)
 @ stdcall RegisterTasklist(long) NtUserRegisterTasklist
-@ stdcall -version=0x602+ RegisterTouchHitTestingWindow(long long)
+@ stdcall RegisterTouchHitTestingWindow(long long)
 @ stdcall RegisterTouchWindow(long long)
 @ stdcall RegisterUserApiHook(ptr)
 @ stdcall RegisterWindowMessageA(str)
 @ stdcall RegisterWindowMessageW(wstr)
 @ stdcall ReleaseCapture()
 @ stdcall ReleaseDC(long long)
-@ stdcall -version=0x600+ RemoveClipboardFormatListener(long)
+@ stdcall RemoveClipboardFormatListener(ptr)
 @ stdcall RemoveMenu(long long long) NtUserRemoveMenu
 @ stdcall RemovePropA(long str)
 @ stdcall RemovePropW(long wstr)
@@ -646,6 +653,7 @@
 @ stdcall SetClassWord(long long long) ; Direct call NtUserSetClassWord
 @ stdcall SetClipboardData(long long)
 @ stdcall SetClipboardViewer(long) NtUserSetClipboardViewer
+@ stdcall SetCoalescableTimer(long long long ptr long)
 @ stdcall SetConsoleReserveKeys(long long) NtUserSetConsoleReserveKeys
 @ stdcall SetCursor(long) NtUserSetCursor
 @ stdcall SetCursorContents(ptr ptr) NtUserSetCursorContents
@@ -653,8 +661,8 @@
 # SetDbgTag
 @ stdcall SetDebugErrorLevel(long)
 @ stdcall SetDeskWallpaper(ptr)
-@ stdcall -version=0x602+ SetDisplayAutoRotationPreferences(long)
-@ stdcall -version=0x600+ SetDisplayConfig(long ptr long ptr long)
+@ stdcall SetDisplayAutoRotationPreferences(long)
+@ stdcall SetDisplayConfig(long ptr long ptr long)
 @ stdcall SetDlgItemInt(long long long long)
 @ stdcall SetDlgItemTextA(long long str)
 @ stdcall SetDlgItemTextW(long long wstr)
@@ -680,7 +688,7 @@
 @ stdcall SetProcessDPIAware()
 @ stdcall SetProcessDefaultLayout(long)
 @ stdcall SetProcessDpiAwarenessContext(ptr)
-@ stdcall -version=0xA00+ SetProcessDpiAwarenessInternal(long)
+@ stdcall SetProcessDpiAwarenessInternal(long)
 @ stdcall SetProcessWindowStation(long) NtUserSetProcessWindowStation
 @ stdcall SetProgmanWindow (long)
 @ stdcall SetPropA(long str long)
@@ -705,9 +713,9 @@
 @ stdcall SetUserObjectInformationW(long long ptr long) NtUserSetObjectInformation
 @ stdcall SetUserObjectSecurity(long ptr ptr)
 @ stdcall SetWinEventHook(long long long ptr long long long)
-@ stdcall -version=0x601+ SetWindowCompositionAttribute(ptr ptr)
+@ stdcall SetWindowCompositionAttribute(ptr ptr)
 @ stdcall SetWindowContextHelpId(long long)
-@ stdcall -version=0x601+ SetWindowDisplayAffinity(long long)
+@ stdcall SetWindowDisplayAffinity(long long)
 @ stdcall SetWindowLongA(long long long)
 @ stdcall -arch=x86_64,arm64 SetWindowLongPtrA(ptr long ptr)
 @ stdcall -arch=x86_64,arm64 SetWindowLongPtrW(ptr long ptr)
@@ -730,8 +738,9 @@
 @ stdcall ShowStartGlass(long)
 @ stdcall ShowWindow(long long) NtUserShowWindow
 @ stdcall ShowWindowAsync(long long) NtUserShowWindowAsync
-@ stdcall -version=0x600+ ShutdownBlockReasonCreate(long wstr)
-@ stdcall -version=0x600+ ShutdownBlockReasonDestroy(long)
+@ stdcall ShutdownBlockReasonCreate(long wstr)
+@ stdcall ShutdownBlockReasonDestroy(long)
+@ stdcall SkipPointerFrameMessages(long)
 @ stdcall SoftModalMessageBox(ptr)
 @ stdcall SubtractRect(ptr ptr ptr)
 @ stdcall SwapMouseButton(long)
@@ -811,6 +820,10 @@
 @ stdcall wvsprintfW(ptr wstr ptr)
 @ extern -arch=i386 Wow64Transition
 
+@ stdcall GetAwarenessFromDpiAwarenessContext(ptr)
+@ stdcall GetDpiAwarenessContextForProcess(ptr)
+@ stdcall GetDpiFromDpiAwarenessContext(ptr)
+@ stdcall SetThreadDpiAwarenessContext(ptr)
 # BEGIN win10-surface stubs
 # Generated by tools/win10_surface.py from Windows 10.0.26100.9457; do not edit by hand.
 # Names that build exports and this spec does not declare. Dormant below
@@ -861,7 +874,6 @@
 @ stub -version=0xA00+ EvaluateProximityToPolygon
 @ stub -version=0xA00+ FrostCrashedWindow
 @ stub -version=0xA00+ GetAutoRotationState
-@ stub -version=0xA00+ GetAwarenessFromDpiAwarenessContext
 @ stub -version=0xA00+ GetCIMSSM
 @ stub -version=0xA00+ GetClipboardAccessToken
 @ stub -version=0xA00+ GetClipboardMetadata
@@ -871,8 +883,6 @@
 @ stub -version=0xA00+ GetDesktopID
 @ stub -version=0xA00+ GetDialogControlDpiChangeBehavior
 @ stub -version=0xA00+ GetDialogDpiChangeBehavior
-@ stub -version=0xA00+ GetDpiAwarenessContextForProcess
-@ stub -version=0xA00+ GetDpiFromDpiAwarenessContext
 @ stub -version=0xA00+ GetExtendedPointerDeviceProperty
 @ stub -version=0xA00+ GetIconInfoExA
 @ stub -version=0xA00+ GetIconInfoExW
@@ -885,26 +895,20 @@
 @ stub -version=0xA00+ GetMagnificationLensCtxInformation
 @ stub -version=0xA00+ GetPhysicalCursorPos
 @ stub -version=0xA00+ GetPointerCursorId
-@ stub -version=0xA00+ GetPointerDevice
 @ stub -version=0xA00+ GetPointerDeviceCursors
 @ stub -version=0xA00+ GetPointerDeviceInputSpace
 @ stub -version=0xA00+ GetPointerDeviceOrientation
 @ stub -version=0xA00+ GetPointerDeviceProperties
-@ stub -version=0xA00+ GetPointerDeviceRects
 @ stub -version=0xA00+ GetPointerFrameArrivalTimes
 @ stub -version=0xA00+ GetPointerFrameInfo
 @ stub -version=0xA00+ GetPointerFrameInfoHistory
 @ stub -version=0xA00+ GetPointerFramePenInfo
 @ stub -version=0xA00+ GetPointerFramePenInfoHistory
 @ stub -version=0xA00+ GetPointerFrameTimes
-@ stub -version=0xA00+ GetPointerFrameTouchInfo
-@ stub -version=0xA00+ GetPointerFrameTouchInfoHistory
 @ stub -version=0xA00+ GetPointerFrameTouchpadInfo
 @ stub -version=0xA00+ GetPointerFrameTouchpadInfoHistory
 @ stub -version=0xA00+ GetPointerInfoHistory
 @ stub -version=0xA00+ GetPointerInputTransform
-@ stub -version=0xA00+ GetPointerPenInfo
-@ stub -version=0xA00+ GetPointerPenInfoHistory
 @ stub -version=0xA00+ GetPointerTouchpadInfo
 @ stub -version=0xA00+ GetPointerTouchpadInfoHistory
 @ stub -version=0xA00+ GetProcessUIContextInformation
@@ -952,7 +956,6 @@
 @ stub -version=0xA00+ IsThreadMessageQueueAttached
 @ stub -version=0xA00+ IsThreadTSFEventAware
 @ stub -version=0xA00+ IsTopLevelWindow
-@ stub -version=0xA00+ IsWindowArranged
 @ stub -version=0xA00+ IsWindowDisplayChangeSuppressed
 @ stub -version=0xA00+ MBToWCSExt
 @ stub -version=0xA00+ MITGetCursorUpdateHandle
@@ -1013,7 +1016,6 @@
 @ stub -version=0xA00+ ReportWindowContentInertia
 @ stub -version=0xA00+ ResolveDesktopForWOW
 @ stub -version=0xA00+ SetAdditionalForegroundBoostProcesses
-@ stub -version=0xA00+ SetCoalescableTimer
 @ stub -version=0xA00+ SetCoreWindow
 @ stub -version=0xA00+ SetCoveredWindowStates
 @ stub -version=0xA00+ SetDesktopColorTransform
@@ -1037,7 +1039,6 @@
 @ stub -version=0xA00+ SetProcessRestrictionExemption
 @ stub -version=0xA00+ SetShellChangeNotifyWindow
 @ stub -version=0xA00+ SetThreadCursorCreationScaling
-@ stub -version=0xA00+ SetThreadDpiAwarenessContext
 @ stub -version=0xA00+ SetThreadDpiHostingBehavior
 @ stub -version=0xA00+ SetThreadInputBlocked
 @ stub -version=0xA00+ SetUserObjectCapability
@@ -1057,7 +1058,6 @@
 @ stub -version=0xA00+ ShowSystemCursor
 @ stub -version=0xA00+ ShutdownBlockReasonQuery
 @ stub -version=0xA00+ SignalRedirectionStartComplete
-@ stub -version=0xA00+ SkipPointerFrameMessages
 @ stub -version=0xA00+ SoundSentry
 @ stub -version=0xA00+ SuppressWindowDisplayChange
 @ stub -version=0xA00+ SwitchDesktopWithFade

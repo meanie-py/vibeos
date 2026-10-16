@@ -144,6 +144,9 @@ if(DLL_EXPORT_VERSION GREATER_EQUAL 0x600)
     add_subdirectory(uiautomationcore)
 endif()
 
-if(DLL_EXPORT_VERSION GREATER_EQUAL 0x603)
-   add_subdirectory(rtworkq)
-endif()
+# Media Foundation and its dependencies are built at every DLL_EXPORT_VERSION.
+add_subdirectory(mf)
+add_subdirectory(mfplat)
+add_subdirectory(qwave)
+add_subdirectory(rtworkq)
+add_subdirectory(wevtapi)

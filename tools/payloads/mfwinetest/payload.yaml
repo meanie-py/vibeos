@@ -1,0 +1,41 @@
+# Wine's own conformance suites for the Media Foundation stack (mfplat, mf) and the small
+# Win10 DLLs imported with it (mfplat, rtworkq, wevtapi, qwave), run by the
+# apitest sweep runner. These modules are Wine imports, so Wine's suites are
+# both their spec and the before/after oracle for their Rust translation.
+#
+# The list is olewinetest's gen_suites.py pointed at these suites; see that
+# payload for why the list registers DLLs first and why children start on C:.
+name: mfwinetest
+description: Wine mfplat + mf + rtworkq + wevtapi + qwave conformance suites under the apitest sweep runner
+
+build_hint: "tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites mfplat,mf,rtworkq,wevtapi,qwave --register mf,mfreadwrite,evr --skip mf:transform --out-dir tools/payloads/mfwinetest"
+
+binaries:
+  - src: tools/payloads/apitest/apitest-sweep-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/apitest-sweep.exe
+  - src: tools/payloads/mfwinetest/winetest-suites-{arch}.txt
+    dest: bin/apitest-suites.txt
+  - src: tools/payloads/mfwinetest/winetest-skip-{arch}.txt
+    dest: bin/apitest-skip.txt
+  - src: tools/payloads/mfwinetest/cwd.txt
+    dest: bin/apitest-cwd.txt
+  - src: build-{arch}/modules/rostests/winetests/mfplat/mfplat_winetest.exe
+    dest: bin/mfplat_winetest.exe
+  - src: build-{arch}/modules/rostests/winetests/mf/mf_winetest.exe
+    dest: bin/mf_winetest.exe
+  - src: build-{arch}/modules/rostests/winetests/rtworkq/rtworkq_winetest.exe
+    dest: bin/rtworkq_winetest.exe
+  - src: build-{arch}/modules/rostests/winetests/wevtapi/wevtapi_winetest.exe
+    dest: bin/wevtapi_winetest.exe
+  - src: build-{arch}/modules/rostests/winetests/qwave/qwave_winetest.exe
+    dest: bin/qwave_winetest.exe
+  - src: build-{arch}/base/system/regsvr32/regsvr32.exe
+    dest: bin/regsvr32.exe
+  - src: build-{arch}/base/applications/cmdutils/reg/reg.exe
+    dest: bin/reg.exe
+
+test:
+  launch_marker: "[APITEST-SWEEP] done"
+  launch_drain_secs: 3600
+  launch_idle_secs: 600

@@ -880,6 +880,9 @@ unsafe extern "C" fn PrintNodeType(NodeType: UINT) {
 }
 
 unsafe extern "C" fn PrintAdapterTypeAndName(mut pAdapterInfo: PIP_ADAPTER_INFO) {
+    // Zero-filled where the C's is uninitialised: GetAdapterFriendlyName writes it only when
+    // the adapter's `...\{4D36E972-...}\<adapter>\Connection` key exists, so with no key the
+    // C prints stack garbage as the name (`?` in the amd64 guest) and this prints it empty.
     let mut szFriendlyName: [WCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
     GetAdapterFriendlyName(
         &raw mut (*pAdapterInfo).AdapterName as PSTR,

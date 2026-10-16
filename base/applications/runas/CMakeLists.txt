@@ -10,19 +10,8 @@
 add_library(runas_res OBJECT runas.rc)
 target_compile_definitions(runas_res PRIVATE UNICODE _UNICODE)
 target_include_directories(runas_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(RUNAS_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/conutils/libconutils_rust.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/pseh/libpseh.a)
-if(ARCH STREQUAL "i386")
-    list(APPEND RUNAS_REUSED ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a)
-endif()
-if(ARCH STREQUAL "arm64")
-    list(APPEND RUNAS_REUSED ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a)
-endif()
 add_cargo_module(runas runas-cargo runas.exe
     KIND win32exe
     BODY_CRATE runas-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS runas_res ${RUNAS_REUSED})
+    EXTRA_DEPENDS runas_res xdk)
