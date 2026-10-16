@@ -27,8 +27,19 @@ boot path never touches (see `tools/coverage/` — the never-executed-rust regis
 ## Resume here (2026-10-12)
 
 The survey below is history. The current state, and the ordered queue of owed work, is the
-**last progress-log entry**: "2026-10-12 — hibernation handoff". Re-derive every number in it
+**progress-log entry** "2026-10-12 — hibernation handoff". Re-derive every number in it
 from `tools/conformance-baseline/<arch>/kmtest.txt` and a fresh sweep before trusting it.
+
+Read the two research-lane entries after it before taking its queue. They reorder it.
+Windows 11 now grades these suites (`tools/conformance-baseline/win11-amd64/kmtest.txt`),
+and it says:
+- RtlStack/RtlStackKM (item 1) fail identically on Windows, so they are not a stack-walker
+  defect.
+- The rows that are clean on Windows but fail in the guest are the real queue.
+- ExDoubleList and NpfsFileInfo, both filed as expected, pass on Windows x64 and want a
+  second look.
+- Four new kmtests (EtwActivity, EtwProvider, ExPool2, FeatureConfig) are owed a
+  two-sweep banking.
 
 ## Survey findings (2026-07-10 — verified, start from here)
 
