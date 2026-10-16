@@ -180,3 +180,35 @@ def test_a_custom_target_whose_json_is_gone_goes_whole(tmp_path):
     assert plan.dead_targets == 2
     # Within the hour a build that began before the json went may still be writing it.
     assert trim.plan_worktree(tmp_path, now=os.stat(target).st_mtime + 60).dead_targets == 0
+
+
+def test_retired_layouts_go_only_when_the_lane_s_own_config_retired_them(tmp_path):
+    wt = tmp_path
+    build = wt / "build-amd64"
+    for d in ("base/live/rust-live_rust-target/x", "base/old/rust-old_rust-target/x"):
+        (build / d).mkdir(parents=True)
+    (build / "build.ninja").write_text(
+        "build x: CUSTOM CARGO_TARGET_DIR=/tmp/vibeos/build-amd64/base/live/rust-live_rust-target\n"
+    )
+    target = wt / "sdk/lib/rust/target"
+    (target / "beep-cargo-beep_rust-rustlib/x86_64-pc-windows-gnu").mkdir(parents=True)
+    (target / "body-storage-v1-amd64-00-0-rustlib/x").mkdir(parents=True)
+    later = os.stat(target).st_mtime + 2 * 3600
+
+    def names(plan):
+        return sorted(str(p.relative_to(wt)) for p, _ in plan.paths)
+
+    # Body sharding not configured: the per-cell dir may still be the live layout.
+    (build / "CMakeCache.txt").write_text("VIBEOS_RUST_BODY_SHARDS:STRING=0\n")
+    assert names(trim.plan_worktree(wt, now=later, idle_hours=1)) == [
+        "build-amd64/base/old/rust-old_rust-target"
+    ]
+    (build / "CMakeCache.txt").write_text("VIBEOS_RUST_BODY_SHARDS:STRING=4\n")
+    plan = trim.plan_worktree(wt, now=later, idle_hours=1)
+    assert names(plan) == [
+        "build-amd64/base/old/rust-old_rust-target",
+        "sdk/lib/rust/target/beep-cargo-beep_rust-rustlib",
+    ]
+    assert plan.retired_dirs == 2
+    # Nothing recent goes.
+    assert trim.plan_worktree(wt, now=os.stat(target).st_mtime + 60, idle_hours=1).paths == []
