@@ -11923,6 +11923,40 @@ def test_staging_amd64_build_holds_build_i386_still(tmp_path, monkeypatch):
     assert not held("arm64", no_wow64_stage=False)
 
 
+def test_staging_amd64_waits_on_an_i386_tree_that_does_not_exist_yet(tmp_path, monkeypatch):
+    """Launched beside a fresh i386 build on a pruned worktree, amd64 used to skip the
+    lock (no build-i386 yet) and fail at configure on the SysWOW64 closure. The lock is
+    keyed by path, so it is taken anyway; a directory the holder created is then read,
+    and one nothing created is refused up front with the fix."""
+    i386 = tmp_path / "build-i386"
+    taken: list[str] = []
+
+    def acquire(d, **kw):
+        taken.append(Path(d).name)
+        if provision:
+            i386.mkdir()  # the concurrent i386 build provisioned it, then released
+        return 7
+
+    monkeypatch.setattr(build_mod.hostlock, "acquire_build_dir", acquire)
+    monkeypatch.setattr(build_mod.hostlock, "release", lambda fd: None)
+    args = types.SimpleNamespace(no_wow64_stage=False)
+
+    provision = True
+    run = build_mod.Run("build", "amd64")
+    with contextlib.ExitStack() as reads:
+        assert build_mod._hold_wow64_source(run, tmp_path, "amd64", args, reads)
+    assert taken == ["build-i386"]
+
+    i386.rmdir()
+    taken.clear()
+    provision = False
+    run = build_mod.Run("build", "amd64")
+    with contextlib.ExitStack() as reads:
+        assert not build_mod._hold_wow64_source(run, tmp_path, "amd64", args, reads)
+    assert taken == ["build-i386"]
+    assert run.classification == "NO_BUILD_DIR"
+
+
 def test_a_host_launch_failure_does_not_cancel_the_payload_runs():
     from . import smoke as smoke_mod
 
