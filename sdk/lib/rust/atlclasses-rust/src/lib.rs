@@ -34,11 +34,12 @@
 #![cfg_attr(not(test), no_std)]
 #![allow(non_snake_case, non_camel_case_types, clippy::missing_safety_doc)]
 
+pub mod com;
 pub mod exe;
 pub mod stl;
 pub mod win;
 
-use core::ffi::c_void;
+use core::ffi::{c_char, c_void};
 use core::marker::PhantomData;
 use core::sync::atomic::{AtomicPtr, Ordering};
 
@@ -531,6 +532,17 @@ impl<T> CComPtr<T> {
         self.p = p;
     }
 
+    /// ATL's `operator=(T*)`: AddRef the new pointer, release the old, hold the new.
+    pub unsafe fn assign(&mut self, p: *mut T) {
+        if !p.is_null() {
+            com::com_add_ref(p as *mut c_void);
+        }
+        let old = core::mem::replace(&mut self.p, p);
+        if !old.is_null() {
+            com_release(old as *mut c_void);
+        }
+    }
+
     /// ATL's `Detach()`: surrender the reference to the caller without releasing it.
     pub fn Detach(&mut self) -> *mut T {
         let p = self.p;
@@ -694,6 +706,18 @@ impl<T> CSimpleArray<T> {
         self.m_aT = core::ptr::null_mut();
         self.m_nSize = 0;
         self.m_nAllocSize = 0;
+    }
+}
+
+impl<T: PartialEq> CSimpleArray<T> {
+    /// `Find(const T& t)` — atlsimpcoll.h: the index of the first equal element, or -1.
+    pub unsafe fn Find(&self, t: &T) -> i32 {
+        for i in 0..self.m_nSize {
+            if *self.m_aT.add(i as usize) == *t {
+                return i;
+            }
+        }
+        -1
     }
 }
 
@@ -1051,6 +1075,28 @@ impl<T> CAtlList<T> {
         }
     }
 
+    /// `RemoveAt(POSITION pos)` — atlcoll.h: unlink that node, destroy its element, free it.
+    pub unsafe fn RemoveAt(&mut self, pos: POSITION) {
+        let node = pos as *mut CAtlListNode<T>;
+        if node.is_null() {
+            return;
+        }
+        let (prev, next) = ((*node).prev, (*node).next);
+        if prev.is_null() {
+            self.head = next;
+        } else {
+            (*prev).next = next;
+        }
+        if next.is_null() {
+            self.tail = prev;
+        } else {
+            (*next).prev = prev;
+        }
+        core::ptr::drop_in_place(core::ptr::addr_of_mut!((*node).element));
+        CCRTAllocator::Free(node as *mut c_void);
+        self.count -= 1;
+    }
+
     /// Point `neighbor` (the node before `node` when `before`, else after) at `node`, or the
     /// list's head/tail when there is no neighbor.
     unsafe fn relink(
@@ -1164,6 +1210,37 @@ pub struct CStringW {
     m_pszData: *mut WCHAR,
     m_nLength: i32,
     m_nAlloc: i32,
+}
+
+/// cstringt.h `DefaultTrimChars()`: `{ ' ', '\t', '\r', '\n', 0 }`. ATL tests membership with
+/// `FindChar` (`wcschr`), which also finds the terminator, so a NUL inside the length trims.
+fn is_trim_char(c: WCHAR) -> bool {
+    matches!(c, 0x20 | 0x09 | 0x0D | 0x0A | 0)
+}
+
+/// `wcsspn` (`including`) / `wcscspn`: the length of the leading run of `p` whose characters
+/// are (or are not) in `set`. StringSpanIncluding / StringSpanExcluding in cstringt.h.
+unsafe fn wide_span(p: *const WCHAR, set: *const WCHAR, including: bool) -> i32 {
+    let mut n = 0;
+    loop {
+        let c = *p.add(n);
+        if c == 0 {
+            return n as i32;
+        }
+        let mut s = set;
+        let mut found = false;
+        while *s != 0 {
+            if *s == c {
+                found = true;
+                break;
+            }
+            s = s.add(1);
+        }
+        if found != including {
+            return n as i32;
+        }
+        n += 1;
+    }
 }
 
 /// The `L""` every empty `CStringW` hands out, so `as_ptr()` is never null.
@@ -1378,6 +1455,75 @@ impl CStringW {
             s.SetString(self.as_ptr().add(first as usize), count);
         }
         s
+    }
+
+    /// `Tokenize(pszTokens, iStart)` — cstringt.h:947, line for line: skip leading token
+    /// characters, return the run up to the next one, and leave `iStart` one past it; -1 and
+    /// an empty string once the input is exhausted.
+    pub unsafe fn Tokenize(&self, pszTokens: *const WCHAR, iStart: &mut i32) -> Self {
+        if *iStart < 0 {
+            return Self::new(); // ATL throws E_INVALIDARG; no unwinding here
+        }
+        if pszTokens.is_null() || *pszTokens == 0 {
+            if *iStart < self.m_nLength {
+                return self.Mid(*iStart);
+            }
+            *iStart = -1;
+            return Self::new();
+        }
+        if *iStart < self.m_nLength {
+            let rest = self.as_ptr().add(*iStart as usize);
+            let iRangeOffset = wide_span(rest, pszTokens, true);
+            if iRangeOffset + *iStart < self.m_nLength {
+                let iNewStart = *iStart + iRangeOffset;
+                let nCount = wide_span(self.as_ptr().add(iNewStart as usize), pszTokens, false);
+                *iStart = iNewStart + nCount + 1;
+                return self.Mid__1(iNewStart, nCount);
+            }
+        }
+        *iStart = -1;
+        Self::new()
+    }
+
+    /// `Trim()` — cstringt.h: `TrimRight().TrimLeft()` of `DefaultTrimChars()`, in place,
+    /// returning the string itself as ATL's `CStringT&` does.
+    pub unsafe fn Trim(&mut self) -> &mut Self {
+        self.TrimRight().TrimLeft()
+    }
+
+    /// `TrimLeft()` — cstringt.h:1001 over `DefaultTrimChars()` (` \t\r\n`).
+    pub unsafe fn TrimLeft(&mut self) -> &mut Self {
+        let nLength = self.m_nLength;
+        if self.m_pszData.is_null() {
+            return self;
+        }
+        let pszBuffer = self.m_pszData;
+        let mut nCount = 0;
+        while nCount < nLength && is_trim_char(*pszBuffer.add(nCount as usize)) {
+            nCount += 1;
+        }
+        if nCount > 0 {
+            core::ptr::copy(
+                pszBuffer.add(nCount as usize),
+                pszBuffer,
+                (nLength - nCount) as usize,
+            );
+        }
+        self.ReleaseBufferSetLength(nLength - nCount);
+        self
+    }
+
+    /// `TrimRight()` — cstringt.h:1032 over `DefaultTrimChars()`.
+    pub unsafe fn TrimRight(&mut self) -> &mut Self {
+        let mut nLength = self.m_nLength;
+        if self.m_pszData.is_null() {
+            return self;
+        }
+        while nLength > 0 && is_trim_char(*self.m_pszData.add(nLength as usize - 1)) {
+            nLength -= 1;
+        }
+        self.ReleaseBufferSetLength(nLength);
+        self
     }
 
     /// `ReverseFind(XCHAR ch)` — cstringt.h: the index of the LAST `ch`, or -1.
@@ -1749,6 +1895,8 @@ impl Clone for CStringW {
 pub struct CStringA {
     m_pszData: *mut u8,
     m_nLength: i32,
+    /// Characters the buffer holds, terminator included (0 while `m_pszData` is null).
+    m_nAlloc: i32,
 }
 
 impl CStringA {
@@ -1756,7 +1904,24 @@ impl CStringA {
         CStringA {
             m_pszData: core::ptr::null_mut(),
             m_nLength: 0,
+            m_nAlloc: 0,
         }
+    }
+
+    /// `CStringA(LPCSTR)`. NULL is the empty string, as in ATL. The C++ builds this
+    /// temporary implicitly wherever a `char*` meets a `const CStringA&` parameter; without
+    /// it rapps' FDI callbacks cast the `char*` itself to `*const CStringA` and read the
+    /// buffer pointer out of the path text (arm64: a fault at address "X:\\Profi").
+    pub unsafe fn from_ptr(pszSrc: *const c_char) -> Self {
+        let mut s = Self::new();
+        if !pszSrc.is_null() {
+            let mut n = 0usize;
+            while *pszSrc.add(n) != 0 {
+                n += 1;
+            }
+            s.SetString(pszSrc, n as i32);
+        }
+        s
     }
 
     /// `CStringA(LPCWSTR)`. NULL is the empty string, as in ATL.
@@ -1797,7 +1962,118 @@ impl CStringA {
         *p.add(n as usize) = 0;
         s.m_pszData = p;
         s.m_nLength = n;
+        s.m_nAlloc = n + 1;
         s
+    }
+
+    /// Grow the buffer to hold `nChars` characters plus the terminator (CStringW's Reserve).
+    unsafe fn Reserve(&mut self, nChars: i32) {
+        if nChars < self.m_nAlloc {
+            return;
+        }
+        let need = nChars + 1;
+        let p = <CLocalAllocator as CAllocator>::Reallocate(
+            self.m_pszData as *mut c_void,
+            need as usize,
+        ) as *mut u8;
+        if p.is_null() {
+            return;
+        }
+        self.m_pszData = p;
+        self.m_nAlloc = need;
+        *self.m_pszData.add(self.m_nLength as usize) = 0;
+    }
+
+    /// `SetString(PCXSTR, int nLength)`: copy `nLength` chars and terminate.
+    pub unsafe fn SetString(&mut self, pszSrc: *const c_char, nLength: i32) {
+        if pszSrc.is_null() || nLength <= 0 {
+            self.m_nLength = 0;
+            if !self.m_pszData.is_null() {
+                *self.m_pszData = 0;
+            }
+            return;
+        }
+        self.Reserve(nLength);
+        if self.m_pszData.is_null() {
+            return;
+        }
+        core::ptr::copy_nonoverlapping(pszSrc as *const u8, self.m_pszData, nLength as usize);
+        *self.m_pszData.add(nLength as usize) = 0;
+        self.m_nLength = nLength;
+    }
+
+    /// `GetBuffer(int nMinBufferLength)` — atlsimpstr.h: writable, at least that many chars.
+    pub unsafe fn GetBuffer(&mut self, nMinBufferLength: i32) -> *mut c_char {
+        self.Reserve(nMinBufferLength.max(self.m_nLength));
+        self.m_pszData as *mut c_char
+    }
+
+    /// `ReleaseBuffer(int nNewLength = -1)`: measured to the NUL.
+    pub unsafe fn ReleaseBuffer(&mut self) {
+        if self.m_pszData.is_null() {
+            self.m_nLength = 0;
+            return;
+        }
+        let mut n = 0;
+        while *self.m_pszData.add(n) != 0 {
+            n += 1;
+        }
+        self.m_nLength = n as i32;
+    }
+
+    /// `ReleaseBufferSetLength(int nNewLength)`: the caller's length, terminated there.
+    pub unsafe fn ReleaseBufferSetLength(&mut self, nNewLength: i32) {
+        if self.m_pszData.is_null() {
+            self.m_nLength = 0;
+            return;
+        }
+        self.m_nLength = nNewLength;
+        *self.m_pszData.add(nNewLength as usize) = 0;
+    }
+
+    /// `GetAllocLength()` — atlsimpstr.h: the characters the buffer can hold, NOT counting
+    /// the terminator (ATL's `nAllocLength`).
+    pub fn GetAllocLength(&self) -> i32 {
+        (self.m_nAlloc - 1).max(0)
+    }
+
+    /// `GetAt(int iChar)` — atlsimpstr.h; ATL asserts `iChar` is in range.
+    pub unsafe fn GetAt(&self, iChar: i32) -> c_char {
+        if self.m_pszData.is_null() || iChar < 0 || iChar >= self.m_nLength {
+            return 0;
+        }
+        *self.m_pszData.add(iChar as usize) as c_char
+    }
+
+    /// `Mid(int iFirst)` — cstringt.h, clamped as CStringW's.
+    pub unsafe fn Mid(&self, iFirst: i32) -> Self {
+        let first = iFirst.clamp(0, self.m_nLength);
+        let mut s = Self::new();
+        s.SetString(
+            (self.GetString() as *const c_char).add(first as usize),
+            self.m_nLength - first,
+        );
+        s
+    }
+
+    /// `Replace(XCHAR chOld, XCHAR chNew)` — cstringt.h:925: every `chOld` up to the first
+    /// NUL (FindChar is `strchr`), the count replaced.
+    pub unsafe fn Replace(&mut self, chOld: c_char, chNew: c_char) -> i32 {
+        if self.m_pszData.is_null() {
+            return 0;
+        }
+        let mut nCount = 0;
+        let mut p = self.m_pszData as *mut c_char;
+        while *p != 0 {
+            if *p == chOld {
+                *p = chNew;
+                nCount += 1;
+            }
+            p = p.add(1);
+        }
+        // A NUL `chOld`: ATL's strchr finds the terminator, overwrites it and then searches
+        // past the end of the buffer. Not reproduced -- the string is left terminated.
+        nCount
     }
 
     /// `(LPCSTR)str` -- never NULL, like `CStringW::GetString`.
@@ -1830,11 +2106,16 @@ impl Drop for CStringA {
     }
 }
 
-/// `CPath` (atlpath.h's `CPathT<CStringW>`), as far as modules use it.
+/// `CPath` (atlpath.h's `CPathT<CStringW>`, also spelled `CPathW`), as far as modules use it.
+/// Each method is atlpath.h's body: shlwapi's `Path*W` on a `MAX_PATH` buffer of `m_strPath`.
 #[cfg(feature = "path")]
+#[derive(Clone)]
 pub struct CPath {
     pub m_strPath: CStringW,
 }
+
+#[cfg(feature = "path")]
+const MAX_PATH: i32 = 260;
 
 #[cfg(feature = "path")]
 extern "system" {
@@ -1844,15 +2125,100 @@ extern "system" {
         cchMax: UINT,
         dwFlags: u32,
     ) -> BOOL;
+    fn PathAppendW(pszPath: *mut WCHAR, pszMore: *const WCHAR) -> BOOL;
+    fn PathCanonicalizeW(pszDst: *mut WCHAR, pszSrc: *const WCHAR) -> BOOL;
+    fn PathFindFileNameW(pszPath: *const WCHAR) -> *const WCHAR;
+    fn PathFindExtensionW(pszPath: *const WCHAR) -> *const WCHAR;
+    fn PathAddBackslashW(pszPath: *mut WCHAR) -> *mut WCHAR;
+    fn PathAddExtensionW(pszPath: *mut WCHAR, pszExt: *const WCHAR) -> BOOL;
+    fn PathRemoveFileSpecW(pszPath: *mut WCHAR) -> BOOL;
+    fn PathFileExistsW(pszPath: *const WCHAR) -> BOOL;
 }
 
 #[cfg(feature = "path")]
 impl CPath {
+    /// `CPathT()`: an empty path.
+    pub fn new() -> Self {
+        CPath {
+            m_strPath: CStringW::new(),
+        }
+    }
+
     /// `CPathT(PCXSTR pszPath)`.
     pub unsafe fn from_ptr(pszPath: *const WCHAR) -> Self {
         CPath {
             m_strPath: CStringW::from_ptr(pszPath),
         }
+    }
+
+    /// `CPathT(const StringType&)` through `PCXSTR`: a copy of the string.
+    pub unsafe fn from_cstring(s: &CStringW) -> Self {
+        Self::from_ptr(s.GetString())
+    }
+
+    /// `AddBackslash()`.
+    pub unsafe fn AddBackslash(&mut self) {
+        let str = self.m_strPath.GetBuffer(MAX_PATH);
+        PathAddBackslashW(str);
+        self.m_strPath.ReleaseBuffer();
+    }
+
+    /// `AddExtension(pszExtension)`.
+    pub unsafe fn AddExtension(&mut self, pszExtension: *const WCHAR) -> BOOL {
+        let str = self.m_strPath.GetBuffer(MAX_PATH);
+        let result = PathAddExtensionW(str, pszExtension);
+        self.m_strPath.ReleaseBuffer();
+        result
+    }
+
+    /// `Append(pszMore)`: shlwapi joins with exactly one backslash.
+    pub unsafe fn Append(&mut self, pszMore: *const WCHAR) -> BOOL {
+        let str = self.m_strPath.GetBuffer(MAX_PATH);
+        let result = PathAppendW(str, pszMore);
+        self.m_strPath.ReleaseBuffer();
+        result
+    }
+
+    /// `Canonicalize()`: through a temporary, as PathCanonicalize may not run in place.
+    pub unsafe fn Canonicalize(&mut self) {
+        let mut strTemp = CStringW::new();
+        let str = strTemp.GetBuffer(MAX_PATH);
+        PathCanonicalizeW(str, self.m_strPath.GetString());
+        strTemp.ReleaseBuffer();
+        self.m_strPath = strTemp;
+    }
+
+    /// `FileExists()`.
+    pub unsafe fn FileExists(&self) -> BOOL {
+        PathFileExistsW(self.m_strPath.GetString())
+    }
+
+    /// `FindExtension()`: the extension's index, -1 for none.
+    pub unsafe fn FindExtension(&self) -> INT {
+        let str = self.m_strPath.GetString();
+        let extension = PathFindExtensionW(str);
+        if *extension == 0 {
+            return -1;
+        }
+        extension.offset_from(str) as INT
+    }
+
+    /// `FindFileName()`: the file name's index, -1 for none.
+    pub unsafe fn FindFileName(&self) -> INT {
+        let str = self.m_strPath.GetString();
+        let filename = PathFindFileNameW(str);
+        if *filename == 0 {
+            return -1;
+        }
+        filename.offset_from(str) as INT
+    }
+
+    /// `RemoveFileSpec()`.
+    pub unsafe fn RemoveFileSpec(&mut self) -> BOOL {
+        let str = self.m_strPath.GetBuffer(MAX_PATH);
+        let result = PathRemoveFileSpecW(str);
+        self.m_strPath.ReleaseBuffer();
+        result
     }
 
     /// atlpath.h:180 `CompactPathEx(UINT nMaxChars, DWORD dwFlags = 0)`, line for line.
@@ -1869,6 +2235,42 @@ impl CPath {
     pub fn GetString(&self) -> *const WCHAR {
         self.m_strPath.GetString()
     }
+
+    /// `operator const StringType&()`.
+    pub fn as_cstring(&self) -> &CStringW {
+        &self.m_strPath
+    }
+}
+
+#[cfg(feature = "path")]
+impl Default for CPath {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// `operator+=(PCXSTR pszMore)`: `Append`, not string concatenation.
+#[cfg(feature = "path")]
+impl core::ops::AddAssign<*const WCHAR> for CPath {
+    fn add_assign(&mut self, pszMore: *const WCHAR) {
+        unsafe {
+            self.Append(pszMore);
+        }
+    }
+}
+
+#[cfg(feature = "path")]
+impl core::ops::AddAssign<*mut WCHAR> for CPath {
+    fn add_assign(&mut self, pszMore: *mut WCHAR) {
+        *self += pszMore as *const WCHAR;
+    }
+}
+
+#[cfg(feature = "path")]
+impl core::ops::AddAssign<&CStringW> for CPath {
+    fn add_assign(&mut self, more: &CStringW) {
+        *self += more.GetString();
+    }
 }
 
 impl Drop for CStringW {
@@ -1877,6 +2279,43 @@ impl Drop for CStringW {
             if !self.m_pszData.is_null() {
                 <CLocalAllocator as CAllocator>::Free(self.m_pszData as *mut c_void);
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod collection_tests {
+    use super::*;
+
+    #[test]
+    fn simple_array_find_is_the_first_equal_index() {
+        let mut a: CSimpleArray<u32> = CSimpleArray::new();
+        unsafe {
+            a.Add(7);
+            a.Add(9);
+            a.Add(7);
+            assert_eq!(a.Find(&7), 0);
+            assert_eq!(a.Find(&9), 1);
+            assert_eq!(a.Find(&3), -1);
+        }
+    }
+
+    #[test]
+    fn atl_list_remove_at_relinks_head_middle_and_tail() {
+        let mut l: CAtlList<u32> = CAtlList::new();
+        unsafe {
+            let p1 = l.AddTail(1);
+            let p2 = l.AddTail(2);
+            let p3 = l.AddTail(3);
+            l.RemoveAt(p2);
+            let mut pos = l.GetHeadPosition();
+            assert_eq!(*l.GetNext(&mut pos), 1);
+            assert_eq!(*l.GetNext(&mut pos), 3);
+            assert!(pos.is_null());
+            l.RemoveAt(p1);
+            l.RemoveAt(p3);
+            assert!(l.IsEmpty());
+            assert_eq!(l.GetCount(), 0);
         }
     }
 }

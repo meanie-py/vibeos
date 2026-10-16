@@ -1198,9 +1198,16 @@ headers, multiple inheritance, init lists, global objects) went 569 → 0 errors
 through tool fixes and one Haiku integrator pass. Since handled (batches 2-4): ATL
 `CAtlExeModuleT`, member-object message-map handlers, several COM interfaces on one class
 (overload picked by vtable-slot arity), a module's STL use (`std::string`/`vector`/`map` →
-`atl_rust::stl` over a stub-STL island, `ISLAND_STL=1`). Still refused loudly: class
-templates whose layout depends on the argument (rapps' `CPointerArray<T>`, `CUiWindow<T>`;
-plan in `active-lanes/cpp-cluster-plan.md`). Stage order matters: run `resolve` and `macros`
+`atl_rust::stl` over a stub-STL island, `ISLAND_STL=1`). Class templates whose layout depends on the argument, from batch 5 (rapps):
+each instantiation clang made (`ClassTemplateSpecializationDecl`) is a concrete class,
+`CUiWindow<CTreeView>` → `CUiWindow_CTreeView`. Its bases and fields come with T
+substituted, and so do the bodies the TU USES; a later TU adds the bodies it instantiates. Every
+spelling of the instantiation in the module (bases, fields, signatures, lowered text, the
+injected class name, `T`/`GrowthRate` in a body) is rewritten to that name. Templates
+from rosctrls.h (`CToolbar<>`) work the same way, since rosctrls' controls are now external
+classes like CWindow. ATL COM objects (`CComObjectRootEx` + `BEGIN_COM_MAP`) get `CComObject<T>`'s
+QueryInterface/AddRef/Release on the class itself, over `atl_rust::com`, with the interface
+vptr laid out at offset 0 as C++ puts it. Stage order matters: run `resolve` and `macros`
 AFTER `translate`, or the prelude facts and externs come out empty.
 
 ## `body-audit`: did a pre-seal body keep its C's calls? (2026-09-26)

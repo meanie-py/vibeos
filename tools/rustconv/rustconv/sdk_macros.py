@@ -364,6 +364,15 @@ class _Parser:
         raise LowerError(f"unexpected token {tok!r}")
 
 
+def _is_integer_literal(node: Node) -> bool:
+    """`1`, `-1`, `-1L`, `(-(1))`: an integer constant expression of literals only."""
+    if node.kind == "num":
+        return not re.search(r"[.eE]", node.text) or node.text.lower().startswith("0x")
+    if node.kind == "unary" and node.text in ("-", "+", "~"):
+        return all(_is_integer_literal(k) for k in node.kids)
+    return False
+
+
 def _is_null(node: Node) -> bool:
     """`((void *)0)` -- the expansion of NULL."""
     return (
@@ -561,6 +570,14 @@ def _emit(node: Node) -> tuple[str, str | None]:
         # bits: taskmgr's ListView_SortItems is `(LPARAM)(PFNLVCOMPARE)(pfn)`. `Option<fn>`
         # is pointer-sized with None at 0, the C pointer's own representation.
         if ty in _OPTION_TYPES and not _ptr:
+            if _is_integer_literal(inner) and not (inner.kind == "num" and inner.text == "0"):
+                # An INTEGER cast to a callback (wininet's INTERNET_INVALID_STATUS_CALLBACK,
+                # `(INTERNET_STATUS_CALLBACK)(-1L)`): a sentinel, never a fn. Rust has no
+                # constant for it -- const evaluation rejects a fn pointer that points at no
+                # fn -- so refuse: the call site compares the pointer's bits by hand.
+                raise LowerError(
+                    f"an integer cast to callback type {ty} is a sentinel with no Rust constant"
+                )
             return f"({{ let __cb: {ty} = {_emit(inner)[0]}; __cb }})", ty
         itext, ity = _emit(inner)
         if ity in _OPTION_TYPES and ty not in _OPTION_TYPES:

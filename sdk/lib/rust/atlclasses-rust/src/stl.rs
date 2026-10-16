@@ -25,7 +25,11 @@ pub struct StdVector<T> {
 
 impl<T> StdVector<T> {
     pub const fn new() -> Self {
-        Self { data: core::ptr::null_mut(), len: 0, cap: 0 }
+        Self {
+            data: core::ptr::null_mut(),
+            len: 0,
+            cap: 0,
+        }
     }
 
     /// Grow to hold at least `n`. libstdc++ doubles; an allocation failure is `std::bad_alloc`,
@@ -163,7 +167,9 @@ pub const npos: usize = usize::MAX;
 
 impl<C: StdChar> StdBasicString<C> {
     pub const fn new() -> Self {
-        Self { buf: StdVector::new() }
+        Self {
+            buf: StdVector::new(),
+        }
     }
 
     /// `std::basic_string(const C*)`: copy up to the NUL. A null pointer is UB in C++; it is
@@ -242,14 +248,20 @@ impl<C: StdChar> StdBasicString<C> {
     pub unsafe fn find_last_of(&self, set: *const C) -> usize {
         let n = c_len(set);
         let set = core::slice::from_raw_parts(set, n);
-        self.chars().iter().rposition(|c| set.contains(c)).unwrap_or(npos)
+        self.chars()
+            .iter()
+            .rposition(|c| set.contains(c))
+            .unwrap_or(npos)
     }
 
     /// `find_first_of(set)`.
     pub unsafe fn find_first_of(&self, set: *const C) -> usize {
         let n = c_len(set);
         let set = core::slice::from_raw_parts(set, n);
-        self.chars().iter().position(|c| set.contains(c)).unwrap_or(npos)
+        self.chars()
+            .iter()
+            .position(|c| set.contains(c))
+            .unwrap_or(npos)
     }
 
     /// `substr(pos, n)`; `n` may be `npos`. `pos > size()` throws `std::out_of_range` in C++,
@@ -295,7 +307,11 @@ impl<C: StdChar> StdBasicString<C> {
     /// terminator, as in C++; past it, null.
     pub fn at(&self, i: usize) -> *mut C {
         if self.buf.empty() {
-            return if i == 0 { empty_nul::<C>() as *mut C } else { core::ptr::null_mut() };
+            return if i == 0 {
+                empty_nul::<C>() as *mut C
+            } else {
+                core::ptr::null_mut()
+            };
         }
         self.buf.at(i)
     }
@@ -346,7 +362,9 @@ impl<C: StdChar> Default for StdBasicString<C> {
 
 impl<C: StdChar> Clone for StdBasicString<C> {
     fn clone(&self) -> Self {
-        Self { buf: self.buf.clone() }
+        Self {
+            buf: self.buf.clone(),
+        }
     }
 }
 
@@ -389,7 +407,9 @@ pub struct StdMap<K: Ord, V> {
 
 impl<K: Ord, V> StdMap<K, V> {
     pub const fn new() -> Self {
-        Self { items: StdVector::new() }
+        Self {
+            items: StdVector::new(),
+        }
     }
 
     fn search(&self, k: &K) -> Result<usize, usize> {
@@ -417,7 +437,13 @@ impl<K: Ord, V> StdMap<K, V> {
         match self.search(&k) {
             Ok(_) => false,
             Err(i) => {
-                self.insert_at(i, StdPair { first: k, second: v });
+                self.insert_at(
+                    i,
+                    StdPair {
+                        first: k,
+                        second: v,
+                    },
+                );
                 true
             }
         }
@@ -435,7 +461,13 @@ impl<K: Ord, V> StdMap<K, V> {
     pub unsafe fn insert_or_assign(&mut self, k: K, v: V) {
         match self.search(&k) {
             Ok(i) => (*self.items.at(i)).second = v,
-            Err(i) => self.insert_at(i, StdPair { first: k, second: v }),
+            Err(i) => self.insert_at(
+                i,
+                StdPair {
+                    first: k,
+                    second: v,
+                },
+            ),
         }
     }
 
@@ -473,7 +505,13 @@ impl<K: Ord, V: Default> StdMap<K, V> {
         let i = match self.search(&k) {
             Ok(i) => i,
             Err(i) => {
-                self.insert_at(i, StdPair { first: k, second: V::default() });
+                self.insert_at(
+                    i,
+                    StdPair {
+                        first: k,
+                        second: V::default(),
+                    },
+                );
                 i
             }
         };
