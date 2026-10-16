@@ -28,6 +28,12 @@ can use again:
     builds (VIBEOS_RUST_BODY_SHARDS non-zero), each cell's old private
     `<cell>-<body>-rustlib` dir is read by nothing (54 G in one lane); a diagnostic
     IR build still uses them, which the idle window covers.
+    A `body-storage-v1-<arch>-<config>-<n>-rustlib` shard that no build has acquired for
+    three days goes too: since the shared artifact store builds every eligible body,
+    only the ineligible ones still build into shards, and the rest are dead weight
+    (13 G of shards in one lane on 2026-10-16). Its `.body-storage.lock` mtime is the
+    last use (reactos-link stamps it on every acquire); a shard locked right now is
+    never a candidate.
 
 Unlike `prune`, this never costs a warm build: everything it removes is unreachable by the
 current build configuration, so it can run on live lanes. Two guards keep that true:
@@ -80,6 +86,8 @@ _ADHOC_TRIPLE = re.compile(
     r"^(x86_64|i[3-6]86|aarch64|arm64ec|armv7|thumbv7a)-[a-z0-9_]+-[a-z0-9_]+(-[a-z0-9_]+)?$"
 )
 _ADHOC_NAMES = {"debug"}
+# `tools/cargo_orchestrate.py`'s private target dirs: re-created by re-running it.
+_ADHOC_ORCHESTRATE = re.compile(r"^orchestrate-(?:i386|amd64|arm64)-[0-9a-f]{12}$")
 
 _HASH = re.compile(r"-([0-9a-f]{16})(?:\.|$)")
 # The fingerprint fields that make two units DIFFERENT things rather than versions of one.
@@ -191,7 +199,11 @@ def plan_target(target_root: Path, *, now: float, idle_hours: float) -> TrimPlan
     idle = idle_hours * 3600
     adhoc: list[Path] = []
     for entry in target_root.iterdir():
-        named_adhoc = entry.name in _ADHOC_NAMES or _ADHOC_TRIPLE.match(entry.name)
+        named_adhoc = (
+            entry.name in _ADHOC_NAMES
+            or _ADHOC_TRIPLE.match(entry.name)
+            or _ADHOC_ORCHESTRATE.match(entry.name)
+        )
         if named_adhoc and entry.is_dir() and not entry.is_symlink():
             try:
                 if now - _newest_mtime(entry) >= idle:
@@ -309,6 +321,7 @@ def _retired_layouts(worktree: Path, *, now: float, idle_seconds: float) -> list
         for entry in target_root.glob(f"*-{arch}-cargo-link"):
             if entry.is_dir() and not entry.is_symlink() and idle(entry):
                 dead.append(entry)
+    dead += _idle_body_shards(worktree / "sdk/lib/rust/target", now=now)
     shards = [_cache_value(b, "VIBEOS_RUST_BODY_SHARDS") for b in builds]
     target = worktree / "sdk/lib/rust/target"
     if builds and target.is_dir() and all(s not in (None, "", "0") for s in shards):
@@ -320,6 +333,35 @@ def _retired_layouts(worktree: Path, *, now: float, idle_seconds: float) -> list
                 and idle(entry)
             ):
                 dead.append(entry)
+    return dead
+
+
+_BODY_SHARD = re.compile(r"^body-storage-v1-(?:i386|amd64|arm64)-[0-9a-f]{16}-\d+-rustlib$")
+BODY_SHARD_IDLE_SECONDS = 72 * 3600
+
+
+def _idle_body_shards(target_root: Path, *, now: float) -> list[Path]:
+    import fcntl
+
+    dead = []
+    if not target_root.is_dir():
+        return dead
+    for entry in target_root.iterdir():
+        if not _BODY_SHARD.match(entry.name) or not entry.is_dir() or entry.is_symlink():
+            continue
+        lock = entry / ".body-storage.lock"
+        try:
+            if now - lock.stat().st_mtime < BODY_SHARD_IDLE_SECONDS:
+                continue
+            with open(lock, "rb") as handle:
+                try:
+                    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    continue  # a build holds it right now
+                fcntl.flock(handle, fcntl.LOCK_UN)
+        except FileNotFoundError:
+            continue  # no lock yet: being created, or not ours to judge
+        dead.append(entry)
     return dead
 
 
