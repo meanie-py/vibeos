@@ -142,8 +142,9 @@ alone so the Realtek is the one it takes (`[NETSTACK] NDIS: bound adapter`, then
 lease). On this board (2026-10-14): PnP installs the driver 151 s into boot, netstack binds
 it a second later, and by 166 s it holds a DHCP lease from the router, pings the gateway and
 resolves DNS; the host pings it back at 0.7 ms. The OS's own traffic, through Realtek's stock
-XP x64 binary, our ndis.sys, usbport and the Renesas xHCI. Both NICs are cabled (the I217's
-port and the hub's), so either backend can be tested without touching the bench.
+XP x64 binary, our ndis.sys, usbport and the Renesas xHCI. Since 2026-10-15 only the I217's
+port is cabled (the hub's cable went back to the Pi 5); testing the RTL8153 needs a cable in
+the hub's port again, while the Wi-Fi stick needs none.
 
 **NDIS 6 (2026-10-14):** ndis.sys runs NDIS 6 miniports. On this board Realtek's stock
 **Windows 10** driver for the hub's RTL8153 (`rtux64w10.sys` 10.38, NDIS 6.40 on KMDF 1.15, from a
