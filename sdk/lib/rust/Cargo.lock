@@ -1513,7 +1513,6 @@ dependencies = [
 name = "e1000-rust"
 version = "0.1.0"
 dependencies = [
- "conutils-h",
  "ntkrnl-sys",
  "panic-common",
  "strsafe-rust",
@@ -3990,7 +3989,6 @@ dependencies = [
 name = "ntoskrnl_vista-rust"
 version = "0.1.0"
 dependencies = [
- "conutils-h",
  "ntkrnl-sys",
  "panic-common",
  "strsafe-rust",
@@ -5540,7 +5538,6 @@ dependencies = [
 name = "sptilib-rust"
 version = "0.1.0"
 dependencies = [
- "conutils-h",
  "ntkrnl-sys",
  "panic-common",
  "strsafe-rust",
@@ -5594,7 +5591,9 @@ version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
  "panic-common",
+ "strsafe-rust",
  "varargs-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -6557,7 +6556,6 @@ dependencies = [
 name = "watchdog-rust"
 version = "0.1.0"
 dependencies = [
- "conutils-h",
  "ntkrnl-sys",
  "panic-common",
  "strsafe-rust",
@@ -6580,7 +6578,6 @@ dependencies = [
 name = "wdfldr-rust"
 version = "0.1.0"
 dependencies = [
- "conutils-h",
  "ntkrnl-sys",
  "panic-common",
  "strsafe-rust",

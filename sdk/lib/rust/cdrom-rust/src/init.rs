@@ -223,8 +223,10 @@ const FILE_READ_ONLY_DEVICE: u32 = 0x02;
 const CLASS_PERF_RESTORE_MINIMUM: u32 = 0x10; // typical minimum  // was 5 (LLM-invented); bindgen-correct
 const SCSI_CDROM_OPC_TIMEOUT: u32 = 0x104; // placeholder (actual value ~300 seconds)  // was 100 (LLM-invented); bindgen-correct
 const MediaPresent: u32 = 1;
-const DEVPROP_TRUE: i32 = 1;
-const DEVPROP_FALSE: i32 = 0;
+// devpropdef.h: DEVPROP_BOOLEAN is a CHAR and TRUE is ((DEVPROP_BOOLEAN)-1), i.e. 0xFF.
+// A 4-byte 1 here was rejected by the property store's boolean validation.
+const DEVPROP_TRUE: i8 = -1;
+const DEVPROP_FALSE: i8 = 0;
 const DEVPROP_TYPE_BOOLEAN: u32 = 0x00000011; // DEVPROP_TYPE_BOOLEAN
 const DevicePropertyRemovalPolicy: u32 = 19; // DEVICE_REGISTRY_PROPERTY
 const FILE_REMOVABLE_MEDIA: u32 = 0x01;
@@ -517,9 +519,9 @@ pub unsafe extern "system" fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> N
             (*(*deviceExtension).DeviceObject).Characteristics,
             FILE_REMOVABLE_MEDIA,
         ) != 0) as i32;
-        let mut propCritical: i32;
-        let mut propPortable: i32;
-        let mut propRemovable: i32;
+        let mut propCritical: i8;
+        let mut propPortable: i8;
+        let mut propRemovable: i8;
 
         status = DeviceIsPortable(deviceExtension, &mut isPortable);
 
@@ -539,8 +541,8 @@ pub unsafe extern "system" fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> N
                 0,
                 0,
                 DEVPROP_TYPE_BOOLEAN,
-                core::mem::size_of::<i32>() as u32,
-                &propPortable as *const i32 as *const core::ffi::c_void,
+                core::mem::size_of::<i8>() as u32,
+                &propPortable as *const i8 as *const core::ffi::c_void,
             );
         }
 
@@ -553,8 +555,8 @@ pub unsafe extern "system" fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> N
                 0,
                 0,
                 DEVPROP_TYPE_BOOLEAN,
-                core::mem::size_of::<i32>() as u32,
-                &propRemovable as *const i32 as *const core::ffi::c_void,
+                core::mem::size_of::<i8>() as u32,
+                &propRemovable as *const i8 as *const core::ffi::c_void,
             );
         }
 
@@ -572,8 +574,8 @@ pub unsafe extern "system" fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> N
                 0,
                 0,
                 DEVPROP_TYPE_BOOLEAN,
-                core::mem::size_of::<i32>() as u32,
-                &propCritical as *const i32 as *const core::ffi::c_void,
+                core::mem::size_of::<i8>() as u32,
+                &propCritical as *const i8 as *const core::ffi::c_void,
             );
         }
     }

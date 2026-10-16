@@ -74,6 +74,10 @@ NTSTATUS WINAPI NtOpenProcessToken(HANDLE Process, ACCESS_MASK Access,
                                    PHANDLE TokenHandle);
 NTSTATUS WINAPI NtOpenThreadToken(HANDLE Thread, ACCESS_MASK Access,
                                   BOOLEAN OpenAsSelf, PHANDLE TokenHandle);
+NTSTATUS WINAPI NtGetNextProcess(HANDLE Process, ACCESS_MASK Access,
+                                 ULONG Attributes, ULONG Flags, PHANDLE NewProcess);
+NTSTATUS WINAPI NtGetNextThread(HANDLE Process, HANDLE Thread, ACCESS_MASK Access,
+                                ULONG Attributes, ULONG Flags, PHANDLE NewThread);
 NTSTATUS WINAPI NtDuplicateObject(HANDLE SourceProcess, HANDLE SourceHandle,
                                   HANDLE TargetProcess, PHANDLE TargetHandle,
                                   ACCESS_MASK Access, ULONG Attributes,
@@ -756,6 +760,26 @@ static NTSTATUS Wow64Manual_NtOpenThreadToken(ULONG *a)
                                     (BOOLEAN)a[2], &Token);
     if (St >= 0)
         Wow64pPutHandle(a[3], Token);
+    return St;
+}
+
+static NTSTATUS Wow64Manual_NtGetNextProcess(ULONG *a)
+{
+    HANDLE Next = NULL;
+    NTSTATUS St = NtGetNextProcess((HANDLE)(LONG_PTR)(LONG)a[0], a[1], a[2], a[3], &Next);
+    if (St >= 0)
+        Wow64pPutHandle(a[4], Next);
+    return St;
+}
+
+static NTSTATUS Wow64Manual_NtGetNextThread(ULONG *a)
+{
+    HANDLE Next = NULL;
+    NTSTATUS St = NtGetNextThread((HANDLE)(LONG_PTR)(LONG)a[0],
+                                  (HANDLE)(LONG_PTR)(LONG)a[1],
+                                  a[2], a[3], a[4], &Next);
+    if (St >= 0)
+        Wow64pPutHandle(a[5], Next);
     return St;
 }
 
@@ -7335,6 +7359,10 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64Manual_NtOpenThreadToken(Arguments);
     if (WOW64_IS("NtDuplicateObject"))
         return Wow64Manual_NtDuplicateObject(Arguments);
+    if (WOW64_IS("NtGetNextProcess"))
+        return Wow64Manual_NtGetNextProcess(Arguments);
+    if (WOW64_IS("NtGetNextThread"))
+        return Wow64Manual_NtGetNextThread(Arguments);
     if (WOW64_IS("NtDuplicateToken"))
         return Wow64Manual_NtDuplicateToken(Arguments);
     if (WOW64_IS("NtCreateEventPair"))

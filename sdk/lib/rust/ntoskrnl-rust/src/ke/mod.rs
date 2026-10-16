@@ -26,6 +26,8 @@ pub mod spinlock;
 pub mod flightrec;
 pub mod synctrace;
 pub mod census;
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub mod x86x64;
 #[cfg(feature = "lockdep")]
 pub mod lockdep;
 #[cfg(feature = "cswitchdep")]

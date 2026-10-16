@@ -259,9 +259,23 @@ def derive(
             lines = "\n".join(str(f) for f in blocking)
             raise PortError(f"profile_derive reports BLOCKING errors -- fix these first:\n{lines}")
         return dp
+    # A module flipped around a TU that stays C is flipped too: storport keeps guid.c (GUID
+    # data) compiled beside the commented-out list, so the "already flipped" refusal below
+    # never fired and derive recorded guid.c as the module's ONE translation unit.
+    restored: list[str] = []
+    if cml.is_file():
+        _, restored = pd.uncomment_flipped_source_lists(
+            cml.read_text(errors="replace"), module_dir.resolve(), REPO, arch
+        )
     try:
         dp = pd.derive(
-            module_dir.resolve(), REPO, arch=arch, target=target, usermode=usermode, stem=stem
+            module_dir.resolve(),
+            REPO,
+            arch=arch,
+            target=target,
+            usermode=usermode,
+            flipped_sources=bool(restored),
+            stem=stem,
         )
     except pd.ProfileDeriveError as e:
         # After the cohab flip the module compiles only its rust_*.c scaffolding; the C the
@@ -326,6 +340,72 @@ def _pattern_idents(modules_dir: Path) -> set[str]:
     return out
 
 
+_FN_ITEM = re.compile(r"^(?:pub(?:\([^)]*\))? )?(?:unsafe )?(?:extern \"[^\"]+\" )?fn \w+", re.M)
+
+
+def _binds(chunk: str, name: str) -> bool:
+    """Whether a function item binds `name` as a parameter or a `let`."""
+    n = re.escape(name)
+    head = chunk.split("{", 1)[0]
+    return bool(
+        re.search(rf"[(,]\s*(?:mut\s+)?{n}\s*:", head)
+        or re.search(rf"\blet\s+(?:mut\s+)?{n}\b", chunk)
+    )
+
+
+def _fn_chunks(text: str) -> list[tuple[int, int]]:
+    """Spans of column-0 fn items (the stitcher writes every function at column 0)."""
+    starts = [m.start() for m in _FN_ITEM.finditer(text)]
+    return list(zip(starts, [*starts[1:], len(text)][: len(starts)], strict=True))
+
+
+def _bound_idents(modules_dir: Path, names: set[str]) -> set[str]:
+    out: set[str] = set()
+    for rs in modules_dir.glob("*.rs"):
+        text = rs.read_text(errors="replace")
+        for a, b in _fn_chunks(text):
+            out |= {n for n in names - out if _binds(text[a:b], n)}
+    return out
+
+
+_MODULE_CONST = re.compile(r"^(?:pub(?:\([^)]*\))? )?const (\w+)\s*:[^=]+=[^;]+;[^\n]*\n", re.M)
+
+
+def _module_consts(modules_dir: Path) -> set[str]:
+    return {
+        m.group(1)
+        for rs in modules_dir.glob("*.rs")
+        for m in _MODULE_CONST.finditer(rs.read_text(errors="replace"))
+    }
+
+
+def _drop_module_const(modules_dir: Path, name: str) -> None:
+    """Remove a translated module's file-scope stand-in for an island enumerator."""
+    for rs in modules_dir.glob("*.rs"):
+        text = rs.read_text(errors="replace")
+        new = _MODULE_CONST.sub(lambda m: "" if m.group(1) == name else m.group(0), text)
+        if new != text:
+            rs.write_text(new)
+
+
+def _spell_enumerator_prefixed(modules_dir: Path, name: str, alias) -> None:
+    """Write `<E>_<name>` for the enumerator in every function that does not bind `name`."""
+    prefixed = alias.text.rsplit("=", 1)[1].strip().rstrip(";")
+    use = re.compile(rf"(?<![.\w]){re.escape(name)}\b(?!\s*:[^:])")
+    for rs in modules_dir.glob("*.rs"):
+        text = rs.read_text(errors="replace")
+        out, last = [], 0
+        for a, b in _fn_chunks(text):
+            chunk = text[a:b]
+            out.append(text[last:a])
+            out.append(chunk if _binds(chunk, name) else use.sub(prefixed, chunk))
+            last = b
+        out.append(text[last:])
+        new = "".join(out)
+        if new != text:
+            rs.write_text(new)
+
+
 def _undefined_pattern_constants(src: Path, modules_dir: Path, sys_src: Path | None) -> set[str]:
     """Upper-case match-arm identifiers that no `const`/`static` or prelude import defines."""
     wanted = {n for n in _pattern_idents(modules_dir) if prelude_resolve.looks_constant(n)}
@@ -345,6 +425,25 @@ def _undefined_pattern_constants(src: Path, modules_dir: Path, sys_src: Path | N
     return wanted - defined
 
 
+def _switch_facts_all_arches(
+    dp: pd.DerivedProfile, module_dir: Path, target: str | None, stem: str
+) -> list[str]:
+    """`switch_facts` on every built arch, not just the one derive audits (i386).
+
+    The -sys crates differ per arch: storport's `CmResourceTypeDma` and
+    `IRP_MN_FILTER_RESOURCE_REQUIREMENTS` reach i386/amd64 through the HAL island, and arm64
+    has no HAL island. Derive audited i386, seeded nothing, and translate -- whose audit
+    runs on arm64 -- refused every TU with SWITCH_CONST_IN_BASE_HEADER.
+    """
+    names = set(switch_facts(dp))
+    for arch in ("amd64", "arm64"):
+        if not (REPO / f"build-{arch}").is_dir():
+            continue
+        other = derive(module_dir, target, arch=arch, usermode=dp.module.is_usermode, stem=stem)
+        names |= set(switch_facts(other))
+    return sorted(names)
+
+
 def _seed_switch_facts(state: dict, prelude: Path) -> None:
     names = state.get("switch_facts", [])
     if not names or not prelude.is_file():
@@ -353,6 +452,12 @@ def _seed_switch_facts(state: dict, prelude: Path) -> None:
     # Judged by the facts block itself: `_resolve_facts` hands back its input untouched when
     # every name is already there, which read as "could not evaluate" on the second run.
     left = set(names) - set(prelude_resolve.existing_facts(prelude))
+    # The refusal below says "transcribe by hand", and a hand line inside the generated facts
+    # block is erased by the next resolve -- so a hand `pub const NAME` anywhere else in the
+    # prelude must satisfy it, or the instruction could never be followed (storport's
+    # CmResourceTypeDma, which sdk_facts cannot evaluate).
+    text = prelude.read_text()
+    left = {n for n in left if not re.search(rf"^pub const {re.escape(n)}\b", text, re.M)}
     if left:
         raise PortError(
             f"clang could not evaluate case-label constant(s) {', '.join(sorted(left))}: "
@@ -368,6 +473,7 @@ def stage_derive(
     functions: str | None = None,
     block: list[str] | None = None,
     stem: str | None = None,
+    replace_crate: bool = False,
 ) -> pd.DerivedProfile:
     started = time.time()
     dp = derive(module_dir, target, usermode=usermode, stem=stem)
@@ -429,7 +535,18 @@ def stage_derive(
     # scaffold refusing to overwrite it was the only thing between a paid translation and
     # the kernel's sources. Checked before anything is written.
     crate_dir = REPO / "sdk" / "lib" / "rust" / dp.crate_name
-    if crate_dir.is_dir() and load_state(stem).get("crate") != dp.crate_name:
+    # --replace-crate is the owner-approved exception: a module whose OLD translation
+    # (pre-`port`, no prelude) is being re-ported over itself, as storport-rust was. It
+    # still refuses unless this module's own CMakeLists names the crate, which is what
+    # tells "my predecessor" apart from the dbgprint-rust case.
+    if replace_crate and crate_dir.is_dir():
+        cml = (module_dir / "CMakeLists.txt").read_text(errors="replace")
+        if dp.crate_name not in cml:
+            raise SystemExit(
+                f"derive: {stem}: --replace-crate refused: {module_dir}/CMakeLists.txt never "
+                f"names {dp.crate_name}, so that crate is not this module's predecessor"
+            )
+    elif crate_dir.is_dir() and load_state(stem).get("crate") != dp.crate_name:
         raise SystemExit(
             f"derive: {stem}: crate {dp.crate_name} already exists and is not this module's "
             f"({crate_dir.relative_to(REPO)}); give it its own name with `port derive --stem`"
@@ -458,7 +575,7 @@ def stage_derive(
         # Never the rust_*.c cohab scaffolding a flipped module's re-derive also lists.
         tus=[str(p.relative_to(REPO)) for p in kept],
         usermode=dp.module.is_usermode,
-        switch_facts=switch_facts(dp),
+        switch_facts=_switch_facts_all_arches(dp, module_dir, target, stem),
         switch_enums=sorted(
             m.group(1)
             for f in dp.findings
@@ -4826,8 +4943,26 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
             set(load_state(stem).get("switch_enums", [])) | _pattern_idents(modules_dir)
         ) - set(copied)
         aliases = prelude_resolve.island_enum_aliases(todo | case_enums, crate / "src", island_sys)
+        # An enumerator the crate ALSO binds (a parameter, a `let`) cannot be a prelude const:
+        # Rust reads `fn f(FdoExtension: PFDO_DEVICE_EXTENSION)` as a constant PATTERN when a
+        # `const FdoExtension` is in scope, so every storport function taking its extension
+        # saw a u32 (103 E0614 per arch). In C the binding shadows the enumerator, so the
+        # functions that bind it never mean the enumerator; the others get the island's
+        # prefixed name written in place.
+        kept_enums = {n: i for n, i in copied.items() if i.path == "island enum"}
+        # ...and the same enumerator re-invented as a file-scope `const FdoExtension: u32 = 2;`
+        # in a translated module (storport.c's preamble): it shadows the binding exactly as
+        # the prelude alias does, and as a definition it never reaches `todo` at all.
+        invented = prelude_resolve.island_enum_aliases(
+            _module_consts(modules_dir), crate / "src", island_sys
+        )
+        bound = _bound_idents(modules_dir, set(aliases) | set(kept_enums) | set(invented))
+        for name in sorted(bound):
+            item = aliases.pop(name, None) or copied.pop(name, None) or invented[name]
+            _drop_module_const(modules_dir, name)
+            _spell_enumerator_prefixed(modules_dir, name, item)
         copied.update(aliases)
-        todo -= set(aliases)
+        todo -= set(aliases) | bound
         items = prelude_resolve.workspace_items(todo, workspace, crate)
         for name in types_only & set(items):
             items[name] = [i for i in items[name] if i.kind == "type"]
@@ -6099,7 +6234,14 @@ def stage_macros(
                 del inline[n]
             if dead:
                 print(f"macros: inline in a header no TU includes, not ported: {', '.join(dead)}")
+        # A header `port headers` adopted is a unit of the crate: its functions are that
+        # stage's, sealed and c2rust-anchored. Porting them here too put storport's six
+        # inline.h helpers in the prelude AND in inline_h.rs (macros ran before resolve made
+        # the unit's functions crate-visible, so they still read as unresolved).
+        owned = tuple(state.get("header_tus", {}))
         for name, fn in inline.items():
+            if owned and fn.where.split(":", 1)[0].endswith(owned):
+                continue
             defs.setdefault(name, fn)
     names = prelude_resolve.unresolved_names(
         state["crate"],
@@ -7246,6 +7388,7 @@ def _main(args) -> int:
                 args.functions,
                 args.block,
                 args.stem,
+                args.replace_crate,
             )
         elif args.port_stage == "island":
             stage_island(args.stem)
@@ -7388,6 +7531,12 @@ def add_parser(sub) -> None:
         default=None,
         help="name the port (state, crate <stem>-rust, gen arm) other than the CMake target, "
         "when that crate already belongs to another module; remembered",
+    )
+    stages.choices["derive"].add_argument(
+        "--replace-crate",
+        action="store_true",
+        help="re-port over this module's own existing <stem>-rust crate (the owner's call: "
+        "it replaces paid output); refused unless the module's CMakeLists names the crate",
     )
     for name in ("island", "integrate", "resolve", "status", "flip"):
         stages.add_parser(name).add_argument("stem")

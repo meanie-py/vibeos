@@ -1875,7 +1875,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   Haiku ($0.01), plus the controller's BusLocation, the VT6421 DMA fix and its CriticalDeviceDatabase
   entries (routed to uniata, our boot storage driver). Still owed from it: shell32's 13 files
   (taken by the shell32-com lane), and mmc_new's ten commits (master's translation is of the C before them;
-  `CActionWnd.cpp` is commented out). Owed, by cluster (upstream-sync): pciidex rewrite
+  `CActionWnd.cpp` is commented out). **2026-10-15 sync (64 commits, upstream c25e4fd7dec):**
+  ported into the Rust: NtGetNextProcess/NtGetNextThread as syscalls (ntdll's user-mode
+  NtGetNextThread retired), the NT6 thread/process access masks with
+  THREAD_QUERY/SET_LIMITED_INFORMATION (thread open procedure, ObpIncrementHandleCount
+  settling GrantedAccess before it), NtQueryInformationThread's per-class rights,
+  KeRemoveQueueDpc's removed flag, x64 handle enumeration (it skipped every other handle),
+  the balancer wait under AddressCreationLock, syssetup's unattended display settings for
+  inactive adapters, serial's PnP queries, comctl32 TB_SETMETRICS, dhcpcsvc RegCloseKey,
+  kbd103 generated. Already ours: TrimWsList's flush, NtRemoveIoCompletion's zeroed status,
+  AmILastThread on ActiveThreads, the fiber checks. Then translated sealed on Haiku and integrated ($0.10): DeviceProperty (`pnpprop.c` -> ntoskrnl-rust pnpmgr/pnpprop.rs, plus its hooks: the property-change event, interface keys, release on IopDeleteDevice, kernel-mode Rtl locale table) and x86/x64 cache enumeration (`cacheinfo.c` -> ke/x86x64, with both KiGetCacheInformation rewritten onto it; amd64 cpu.rs had Intel/AMD swapped against ketypes.h since 0e95a343b33). Storport re-ported over its old crate with `rustconv port` (owner's call, 2026-10-16; all 8 TUs incl. upstream's new `ioctl.c`/`srb.c`, plus inline.h; $0.25 Haiku, 0/0/0 from a $0 `port replay`). Owed from it: IoGet/SetDeviceInterfacePropertyData still exported as Win10 stubs, shell32's RegenerateUserEnvironment (shell32-com) and mmc_new's views (cpp-cluster). Owed, by cluster (upstream-sync): pciidex rewrite
   (~15K lines), PCIX arbiters/ECAM, netcfgx and dhcpcsvc alternate configuration, freeldr
   disk registration and boot menu, the Wine 10 ole32/oleaut32/mlang/crypt syncs, msgina and
   syssetup branding. **The msgina branding commit (6ae2d5ab43f) deleted IDI_ROSLOGO/IDI_BAR,

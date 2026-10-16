@@ -134,6 +134,8 @@ NtSetInformationProcess
 NtOpenProcessToken
 NtOpenThreadToken
 NtDuplicateObject
+NtGetNextProcess
+NtGetNextThread
 NtDuplicateToken
 NtCreateEventPair
 NtOpenEventPair

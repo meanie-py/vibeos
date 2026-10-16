@@ -68,8 +68,9 @@ struct CPU_INFO {
     AsUINT32: [u32; 4],
 }
 
-const CPU_INTEL: ULONG = 1;
-const CPU_AMD: ULONG = 2;
+// ndk/amd64/ketypes.h CPU_VENDORS (upstream 0e95a343b33 renumbered it: AMD 1, Intel 2).
+const CPU_INTEL: ULONG = 2;
+const CPU_AMD: ULONG = 1;
 const CPU_VIA: ULONG = 3;
 const CPU_UNKNOWN: ULONG = 0;
 
@@ -388,77 +389,26 @@ pub unsafe extern "C" fn KiGetFeatureBits() -> ULONG64 {
 
 #[no_mangle]
 pub unsafe extern "C" fn KiGetCacheInformation() {
+    // Upstream 83a6af0773b: the descriptors come from the shared x86/x64 enumeration
+    // (ke/x86x64/cacheinfo.rs), which reads leaf 4 / 0x8000001D and falls back to leaf 2
+    // or AMD's legacy 0x80000005/6; this only picks out L2 for the PCR.
+    let Prcb = KeGetCurrentPrcb() as *mut _KPRCB;
     let Pcr = KeGetPcr() as PKIPCR;
-    let Vendor: ULONG;
-    let mut CacheRequests: ULONG = 0;
-    let mut i: ULONG;
-    let mut CurrentRegister: ULONG;
-    let mut RegisterByte: UCHAR;
-    let mut FirstPass: BOOLEAN = 1u8;
-    let mut CpuInfo: CPU_INFO = core::mem::zeroed();
 
     (*Pcr).SecondLevelCacheSize = 0;
 
-    Vendor = KiGetCpuVendor();
-    if Vendor == 0 {
-        return;
-    }
+    (*Prcb).CacheCount = crate::ke::x86x64::cacheinfo::KiGetCpuCacheDescriptors(
+        (*Prcb).Cache.as_mut_ptr(),
+        (*Prcb).Cache.len() as ULONG,
+        (*Pcr).Prcb.CpuVendor as ntkrnl_sys::ddk::CPU_VENDORS,
+    );
 
-    match Vendor {
-        CPU_INTEL => {
-            KiCpuId(&mut CpuInfo, 0);
-            if CpuInfo.Eax >= 2 {
-                loop {
-                    KiCpuId(&mut CpuInfo, 2);
-
-                    if FirstPass != 0 {
-                        CacheRequests = CpuInfo.Eax & 0xFF;
-                        CpuInfo.Eax &= 0xFFFFFF00;
-                        FirstPass = 0u8;
-                    }
-
-                    i = 0;
-                    while i < 4 {
-                        CurrentRegister = CpuInfo.AsUINT32[i as usize];
-
-                        if (CurrentRegister & 0x80000000) != 0 {
-                            i += 1;
-                            continue;
-                        }
-
-                        while CurrentRegister != 0 {
-                            RegisterByte = (CurrentRegister & 0xFF) as UCHAR;
-                            CurrentRegister >>= 8;
-                            if RegisterByte == 0 {
-                                continue;
-                            }
-
-                            if ((RegisterByte > 0x40) && (RegisterByte <= 0x49)) ||
-                               ((RegisterByte > 0x80) && (RegisterByte <= 0x89)) {
-                                RegisterByte &= 0x0F;
-                                (*Pcr).SecondLevelCacheSize = 0x10000 << RegisterByte;
-                            }
-                        }
-                        i += 1;
-                    }
-
-                    CacheRequests -= 1;
-                    if CacheRequests == 0 {
-                        break;
-                    }
-                }
-            }
+    for i in 0..(*Prcb).CacheCount as usize {
+        if (*Prcb).Cache[i].Level == 2 {
+            (*Pcr).SecondLevelCacheSize = (*Prcb).Cache[i].Size;
+            (*Pcr).SecondLevelCacheAssociativity = (*Prcb).Cache[i].Associativity;
+            break;
         }
-
-        CPU_AMD => {
-            KiCpuId(&mut CpuInfo, 0x80000000);
-            if CpuInfo.Eax >= 6 {
-                KiCpuId(&mut CpuInfo, 0x80000006);
-                (*Pcr).SecondLevelCacheSize = (CpuInfo.Ecx & 0xFFFF0000) >> 6;
-            }
-        }
-
-        _ => {}
     }
 }
 

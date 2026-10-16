@@ -286,6 +286,8 @@ macro_rules! ASSERT {
 /// build strips it, and we build with DBG.
 #[macro_export]
 macro_rules! NT_ASSERT {
-    ($e:expr) => { $crate::ASSERT!($e) };
-    ($e:expr, $msg:expr) => { $crate::ASSERT!($e, $msg) };
+    // rustfmt leaves a trailing comma after a multi-line condition; without `$(,)?` it
+    // matched no arm ("unexpected end of macro invocation" in storport's ioctl/srb).
+    ($e:expr $(,)?) => { $crate::ASSERT!($e) };
+    ($e:expr, $msg:expr $(,)?) => { $crate::ASSERT!($e, $msg) };
 }

@@ -163,6 +163,7 @@ list(APPEND SOURCE
     #$<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnpmgr.c>
     # pnpnotify.c: Rust version on all arches
     #$<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnpnotify.c>
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnpprop.c  # Replaced by Rust (DeviceProperty, upstream 3cc9aa99292)
     #$<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnpreport.c>
     # ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnpres.c  # Replaced by Rust pnpres.rs
     #$<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnproot.c>
@@ -386,6 +387,7 @@ if(ARCH STREQUAL "i386")
         # NOT enabled: ke/i386/cpu.c and ke/amd64/cpu.c are Rust here, so a live
         # cpuinfo.c would duplicate symbols the Rust twins already export.
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/x86x64/cpuinfo.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/x86x64/cacheinfo.c  # Replaced by Rust (upstream 83a6af0773b)
     )
 elseif(ARCH STREQUAL "amd64")
     list(APPEND ASM_SOURCE
@@ -424,6 +426,7 @@ elseif(ARCH STREQUAL "amd64")
         # NOT enabled: ke/i386/cpu.c and ke/amd64/cpu.c are Rust here, so a live
         # cpuinfo.c would duplicate symbols the Rust twins already export.
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/x86x64/cpuinfo.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/x86x64/cacheinfo.c  # Replaced by Rust (upstream 83a6af0773b)
         )
 elseif(ARCH STREQUAL "arm64")
     list(APPEND ASM_SOURCE

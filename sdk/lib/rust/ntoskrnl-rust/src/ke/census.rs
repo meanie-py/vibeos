@@ -50,11 +50,9 @@ use ntkrnl_sys::ddk::{
     HANDLE, KeDelayExecutionThread, PsCreateSystemThread, ZwClose, _EPROCESS, _ETHREAD, _KTHREAD,
 };
 
-// 0x1F03FF = STANDARD_RIGHTS_REQUIRED|SYNCHRONIZE|0x3FF. xdk/pstypes.h picks this
-// under `#if (NTDDI_VERSION >= NTDDI_VISTA) ... #else`, and this tree builds
-// -D_WIN32_WINNT=0x502 (Server 2003), so the PRE-Vista branch is the live one. The
-// Vista value 0x1FFFFF asks for 0xFC00 of thread rights the object's GENERIC_MAPPING
-// does not grant, which an open would refuse rather than silently narrow.
+// 0x1F03FF = STANDARD_RIGHTS_REQUIRED|SYNCHRONIZE|0x3FF, the NT5 THREAD_ALL_ACCESS. The
+// thread type has accepted the NT6 0x1FFFFF since upstream 4b4063a01d6; the NT5 subset
+// is all this thread's creator needs.
 const THREAD_ALL_ACCESS: u32 = 0x001F_03FF;
 
 use super::ke_defs::{kt_State, kt_WaitTime};

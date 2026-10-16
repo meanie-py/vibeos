@@ -272,6 +272,12 @@ static void Test_NtGetNextThread(void)
      * ThreadBasicInformation through it. (Under the NT5 access masks the kernel narrowed
      * that right away and every query failed ACCESS_DENIED.) */
 
+    /* The Vista limited right on our own thread, by id. */
+    Next = OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, Self);
+    ok(Next != NULL, "OpenThread(THREAD_QUERY_LIMITED_INFORMATION) failed: %lu\n", GetLastError());
+    if (Next)
+        CloseHandle(Next);
+
     ResumeThread(Thread);
     WaitForSingleObject(Thread, 5000);
     CloseHandle(Thread);

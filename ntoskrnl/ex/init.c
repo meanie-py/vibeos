@@ -29,6 +29,10 @@ MmArmInitSystem(
     IN PLOADER_PARAMETER_BLOCK LoaderBlock
 );
 
+NTSTATUS
+NTAPI
+RtlpInitializeLocaleTable(VOID);
+
 typedef struct _INIT_BUFFER
 {
     WCHAR DebugBuffer[256];
@@ -1935,6 +1939,9 @@ Phase1InitializationDiscard(IN PVOID Context)
         if (_u) { while (*_s) *_u = (ULONG)*_s++; }
     }
 #endif
+
+    /* Initialize the Rtl locale table */
+    RtlpInitializeLocaleTable();
 
     /* Initialize Cache Views */
     ARM64_UART_TRACE("[PHASE1] CcInitializeCacheManager\r\n");

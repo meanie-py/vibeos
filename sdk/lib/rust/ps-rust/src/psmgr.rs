@@ -569,6 +569,7 @@ unsafe fn PspInitPhase0(loader_block: PLOADER_PARAMETER_BLOCK) -> BOOLEAN {
     object_type_initializer.DefaultNonPagedPoolCharge = core::mem::size_of::<_EPROCESS>() as ULONG;
     object_type_initializer.GenericMapping = PspProcessMapping;
     object_type_initializer.ValidAccessMask = PROCESS_ALL_ACCESS_NT6;
+    object_type_initializer.OpenProcedure = None;
     object_type_initializer.DeleteProcedure = Some(PspDeleteProcess);
     ObCreateObjectType(&mut name, &mut object_type_initializer, core::ptr::null_mut(), &raw mut PsProcessType);
 
@@ -577,6 +578,7 @@ unsafe fn PspInitPhase0(loader_block: PLOADER_PARAMETER_BLOCK) -> BOOLEAN {
     object_type_initializer.DefaultNonPagedPoolCharge = core::mem::size_of::<_ETHREAD>() as ULONG;
     object_type_initializer.GenericMapping = PspThreadMapping;
     object_type_initializer.ValidAccessMask = THREAD_ALL_ACCESS_NT6;
+    object_type_initializer.OpenProcedure = Some(crate::thread::PspThreadOpen);
     object_type_initializer.DeleteProcedure = Some(PspDeleteThread);
     ObCreateObjectType(&mut name, &mut object_type_initializer, core::ptr::null_mut(), &raw mut PsThreadType);
 
@@ -586,6 +588,7 @@ unsafe fn PspInitPhase0(loader_block: PLOADER_PARAMETER_BLOCK) -> BOOLEAN {
     object_type_initializer.GenericMapping = PspJobMapping;
     object_type_initializer.InvalidAttributes = 0;
     object_type_initializer.ValidAccessMask = JOB_OBJECT_ALL_ACCESS_NT6;
+    object_type_initializer.OpenProcedure = None;
     object_type_initializer.CloseProcedure = Some(crate::job::PspCloseJob);
     object_type_initializer.DeleteProcedure = Some(PspDeleteJob);
     ObCreateObjectType(&mut name, &mut object_type_initializer, core::ptr::null_mut(), &raw mut PsJobType);

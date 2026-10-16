@@ -299,3 +299,5 @@ NtCancelSynchronousIoFile 3
 NtRemoveIoCompletionEx 6
 NtFlushProcessWriteBuffers 0
 NtCompareObjects 2
+NtGetNextProcess 5
+NtGetNextThread 6

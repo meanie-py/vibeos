@@ -328,12 +328,14 @@ extern "system" {
     pub fn NtRemoveIoCompletionEx(_: usize, _: usize, _: usize, _: usize, _: usize, _: usize);
     pub fn NtFlushProcessWriteBuffers();
     pub fn NtCompareObjects(_: usize, _: usize);
+    pub fn NtGetNextProcess(_: usize, _: usize, _: usize, _: usize, _: usize);
+    pub fn NtGetNextThread(_: usize, _: usize, _: usize, _: usize, _: usize, _: usize);
 }
 
 // `static mut` (not `static`) so consumers can `addr_of_mut!` to match
 // the original C `ULONG_PTR MainSSDT[]` declaration.
 #[no_mangle]
-pub static mut MainSSDT: [SSDTEntry; 301] = [
+pub static mut MainSSDT: [SSDTEntry; 303] = [
     NtAcceptConnectPort as SSDTEntry,
     NtAccessCheck as SSDTEntry,
     NtAccessCheckAndAuditAlarm as SSDTEntry,
@@ -635,12 +637,14 @@ pub static mut MainSSDT: [SSDTEntry; 301] = [
     NtRemoveIoCompletionEx as SSDTEntry,
     NtFlushProcessWriteBuffers as SSDTEntry,
     NtCompareObjects as SSDTEntry,
+    NtGetNextProcess as SSDTEntry,
+    NtGetNextThread as SSDTEntry,
 ];
 
 // `argcount * sizeof(void*)` per entry — pointer size differs per arch
 // so the multiplier is computed at const-eval time.
 #[no_mangle]
-pub static mut MainSSPT: [u8; 301] = [
+pub static mut MainSSPT: [u8; 303] = [
     (6 * core::mem::size_of::<usize>()) as u8,
     (8 * core::mem::size_of::<usize>()) as u8,
     (11 * core::mem::size_of::<usize>()) as u8,
@@ -942,7 +946,9 @@ pub static mut MainSSPT: [u8; 301] = [
     (6 * core::mem::size_of::<usize>()) as u8,
     (0 * core::mem::size_of::<usize>()) as u8,
     (2 * core::mem::size_of::<usize>()) as u8,
+    (5 * core::mem::size_of::<usize>()) as u8,
+    (6 * core::mem::size_of::<usize>()) as u8,
 ];
 
 #[no_mangle]
-pub static mut MainNumberOfSysCalls: u32 = 301;
+pub static mut MainNumberOfSysCalls: u32 = 303;

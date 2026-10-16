@@ -265,18 +265,19 @@ pub unsafe extern "system" fn PsGetNextProcessThread(
     found_thread
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn PsGetNextProcess(old_process: PEPROCESS) -> PEPROCESS {
-    let old_process = opaque_ptr(old_process);
+/// Walks the active process list forwards, or backwards when `reverse` (NtGetNextProcess's
+/// PROCESS_GET_NEXT_FLAGS_PREVIOUS_PROCESS).
+unsafe fn PsGetNextProcessEx(old_process: PEPROCESS, reverse: bool) -> PEPROCESS {
     let mut entry: PLIST_ENTRY;
     let mut found_process: PEPROCESS = core::ptr::null_mut();
 
     KeAcquireGuardedMutex(core::ptr::addr_of_mut!(PspActiveProcessMutex));
 
     if !old_process.is_null() {
-        entry = (*(old_process as *mut _EPROCESS)).ActiveProcessLinks.Flink;
+        let links = &(*(old_process as *mut _EPROCESS)).ActiveProcessLinks;
+        entry = if reverse { links.Blink } else { links.Flink };
     } else {
-        entry = PsActiveProcessHead.Flink;
+        entry = if reverse { PsActiveProcessHead.Blink } else { PsActiveProcessHead.Flink };
     }
 
     while entry != core::ptr::addr_of_mut!(PsActiveProcessHead) as PLIST_ENTRY {
@@ -290,7 +291,7 @@ pub unsafe extern "system" fn PsGetNextProcess(old_process: PEPROCESS) -> PEPROC
         }
 
         found_process = core::ptr::null_mut();
-        entry = (*entry).Flink;
+        entry = if reverse { (*entry).Blink } else { (*entry).Flink };
     }
 
     KeReleaseGuardedMutex(core::ptr::addr_of_mut!(PspActiveProcessMutex));
@@ -300,6 +301,11 @@ pub unsafe extern "system" fn PsGetNextProcess(old_process: PEPROCESS) -> PEPROC
     }
 
     found_process
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn PsGetNextProcess(old_process: PEPROCESS) -> PEPROCESS {
+    PsGetNextProcessEx(opaque_ptr(old_process), false)
 }
 
 unsafe fn PspComputeQuantumAndPriority(
@@ -1578,6 +1584,165 @@ pub unsafe extern "system" fn NtOpenProcess(
     }
 
     status
+}
+
+const PROCESS_GET_NEXT_FLAGS_PREVIOUS_PROCESS: ULONG = 0x0000_0001;
+const STATUS_NO_MORE_ENTRIES: NTSTATUS = 0x8000_001A_u32 as i32;
+
+/// Opens `object` for the caller and stores the handle through `new_handle`, closing it
+/// again if that store faults. Consumes the caller's reference on `object`.
+unsafe fn PspOpenNextObject(
+    object: PVOID,
+    object_type: POBJECT_TYPE,
+    handle_attributes: ULONG,
+    desired_access: ACCESS_MASK,
+    previous_mode: KPROCESSOR_MODE,
+    new_handle: PHANDLE,
+) -> NTSTATUS {
+    let mut handle: HANDLE = core::ptr::null_mut();
+    let status = ObOpenObjectByPointer(
+        object,
+        handle_attributes,
+        core::ptr::null_mut(),
+        desired_access,
+        object_type,
+        previous_mode,
+        &mut handle,
+    );
+    ObDereferenceObject(object);
+    if status < 0 {
+        return status;
+    }
+
+    if let Err(s) = probe_write_user(new_handle, handle, previous_mode) {
+        ObCloseHandle(handle, previous_mode);
+        return s;
+    }
+    STATUS_SUCCESS
+}
+
+/// NtGetNextProcess (Vista; upstream b4e138b0301): a handle to the process after
+/// `ProcessHandle` (or the first one) in the active process list.
+#[no_mangle]
+pub unsafe extern "system" fn NtGetNextProcess(
+    ProcessHandle: HANDLE,
+    DesiredAccess: ACCESS_MASK,
+    HandleAttributes: ULONG,
+    Flags: ULONG,
+    NewProcessHandle: PHANDLE,
+) -> NTSTATUS {
+    let previous_mode = KeGetPreviousMode();
+    let mut process: PEPROCESS = core::ptr::null_mut();
+
+    if let Err(s) = probe_write_user(NewProcessHandle, core::ptr::null_mut(), previous_mode) {
+        return s;
+    }
+
+    if Flags & !PROCESS_GET_NEXT_FLAGS_PREVIOUS_PROCESS != 0 {
+        return STATUS_INVALID_PARAMETER;
+    }
+    let reverse = Flags & PROCESS_GET_NEXT_FLAGS_PREVIOUS_PROCESS != 0;
+
+    let handle_attributes = ObpValidateAttributes(HandleAttributes, previous_mode);
+
+    if !ProcessHandle.is_null() {
+        let status = ObReferenceObjectByHandle(
+            ProcessHandle,
+            PROCESS_QUERY_INFORMATION,
+            PsProcessType,
+            previous_mode,
+            &mut process as *mut PEPROCESS as *mut PVOID,
+            core::ptr::null_mut(),
+        );
+        if status < 0 {
+            return status;
+        }
+    }
+
+    // Drops the reference on `process`.
+    let next = PsGetNextProcessEx(process, reverse);
+    if next.is_null() {
+        return STATUS_NO_MORE_ENTRIES;
+    }
+
+    PspOpenNextObject(
+        next as PVOID,
+        PsProcessType,
+        handle_attributes,
+        DesiredAccess,
+        previous_mode,
+        NewProcessHandle,
+    )
+}
+
+/// NtGetNextThread (Vista; upstream 05c8323ee2b): a handle to the thread of
+/// `ProcessHandle` after `ThreadHandle` (or its first one).
+#[no_mangle]
+pub unsafe extern "system" fn NtGetNextThread(
+    ProcessHandle: HANDLE,
+    ThreadHandle: HANDLE,
+    DesiredAccess: ACCESS_MASK,
+    HandleAttributes: ULONG,
+    Flags: ULONG,
+    NewThreadHandle: PHANDLE,
+) -> NTSTATUS {
+    let previous_mode = KeGetPreviousMode();
+    let mut process: PEPROCESS = core::ptr::null_mut();
+    let mut thread: PETHREAD = core::ptr::null_mut();
+
+    if let Err(s) = probe_write_user(NewThreadHandle, core::ptr::null_mut(), previous_mode) {
+        return s;
+    }
+
+    // Reserved, must be 0.
+    if Flags != 0 {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    let handle_attributes = ObpValidateAttributes(HandleAttributes, previous_mode);
+
+    let mut status = ObReferenceObjectByHandle(
+        ProcessHandle,
+        PROCESS_QUERY_INFORMATION,
+        PsProcessType,
+        previous_mode,
+        &mut process as *mut PEPROCESS as *mut PVOID,
+        core::ptr::null_mut(),
+    );
+    if status < 0 {
+        return status;
+    }
+
+    if !ThreadHandle.is_null() {
+        status = ObReferenceObjectByHandle(
+            ThreadHandle,
+            THREAD_QUERY_LIMITED_INFORMATION,
+            crate::thread::PsThreadType,
+            previous_mode,
+            &mut thread as *mut PETHREAD as *mut PVOID,
+            core::ptr::null_mut(),
+        );
+        if status < 0 {
+            ObDereferenceObject(process as PVOID);
+            return status;
+        }
+    }
+
+    // Drops the reference on `thread`.
+    let next = PsGetNextProcessThread(process, thread);
+    ObDereferenceObject(process as PVOID);
+    if next.is_null() {
+        return STATUS_NO_MORE_ENTRIES;
+    }
+
+    PspOpenNextObject(
+        next as PVOID,
+        crate::thread::PsThreadType,
+        handle_attributes,
+        DesiredAccess,
+        previous_mode,
+        NewThreadHandle,
+    )
 }
 
 // ============================================================================

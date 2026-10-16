@@ -618,188 +618,28 @@ pub unsafe extern "system" fn KiGetFeatureBits() -> ULONG64 {
 // CODE_SEG("INIT")
 #[no_mangle]
 pub unsafe extern "system" fn KiGetCacheInformation() {
+    // Upstream 83a6af0773b: the descriptors come from the shared x86/x64 enumeration
+    // (ke/x86x64/cacheinfo.rs). The NT5 KPRCB has no Cache[] array, so -- as upstream's
+    // NTDDI < VISTA branch -- they go to a local one.
     let Pcr = KeGetPcr() as PKIPCR;
-    let mut CpuInfo: _CPU_INFO = core::mem::zeroed();
-    let mut CacheRequests: ULONG = 0;
-    let mut CurrentRegister: ULONG;
-    let mut RegisterByte: UCHAR;
-    let mut Associativity: UCHAR = 0;
-    let mut Size: ULONG;
-    let CacheLine: ULONG = 64;
-    let mut CurrentSize: ULONG = 0;
-    let mut FirstPass: BOOLEAN = 1;
+    let mut CacheDescriptors: [ntkrnl_sys::ddk::CACHE_DESCRIPTOR; 5] = core::mem::zeroed();
 
     (*Pcr).SecondLevelCacheSize = 0;
 
-    match KiGetCpuVendor() {
-        CPU_INTEL => {
-            KiCpuId(&mut CpuInfo, 0);
-            if CpuInfo.__bindgen_anon_1.Eax >= 2 {
-                loop {
-                    KiCpuId(&mut CpuInfo, 2);
+    let CacheCount = crate::ke::x86x64::cacheinfo::KiGetCpuCacheDescriptors(
+        CacheDescriptors.as_mut_ptr(),
+        CacheDescriptors.len() as ULONG,
+        KiGetCpuVendor() as ntkrnl_sys::ddk::CPU_VENDORS,
+    );
 
-                    if FirstPass != 0 {
-                        CacheRequests = CpuInfo.__bindgen_anon_1.Eax & 0xFF;
-                        CpuInfo.__bindgen_anon_1.Eax &= 0xFFFFFF00;
-                        FirstPass = 0;
-                    }
-
-                    for i in 0..4 {
-                        CurrentRegister = CpuInfo.AsUINT32[i];
-
-                        if CurrentRegister & 0x80000000 != 0 {
-                            continue;
-                        }
-
-                        while CurrentRegister != 0 {
-                            RegisterByte = (CurrentRegister & 0xFF) as UCHAR;
-                            CurrentRegister >>= 8;
-                            if RegisterByte == 0 {
-                                continue;
-                            }
-
-                            Size = 0;
-                            match RegisterByte {
-                                0x06 | 0x08 => {
-                                    KePrefetchNTAGranularity = 32;
-                                }
-                                0x09 => {
-                                    KePrefetchNTAGranularity = 64;
-                                }
-                                0x0a | 0x0c => {
-                                    KePrefetchNTAGranularity = 32;
-                                }
-                                0x0d | 0x0e => {
-                                    KePrefetchNTAGranularity = 64;
-                                }
-                                0x1d => {
-                                    Size = 128 * 1024;
-                                    Associativity = 2;
-                                }
-                                0x21 => {
-                                    Size = 256 * 1024;
-                                    Associativity = 8;
-                                }
-                                0x24 => {
-                                    Size = 1024 * 1024;
-                                    Associativity = 16;
-                                }
-                                0x2c | 0x30 => {
-                                    KePrefetchNTAGranularity = 64;
-                                }
-                                0x41..=0x45 => {
-                                    Size = (1 << (RegisterByte - 0x41)) * 128 * 1024;
-                                    Associativity = 4;
-                                }
-                                0x48 => {
-                                    Size = 3 * 1024 * 1024;
-                                    Associativity = 12;
-                                }
-                                0x49 => {
-                                    Size = 4 * 1024 * 1024;
-                                    Associativity = 16;
-                                }
-                                0x4e => {
-                                    Size = 6 * 1024 * 1024;
-                                    Associativity = 24;
-                                }
-                                0x60 | 0x66 | 0x67 | 0x68 => {
-                                    KePrefetchNTAGranularity = 64;
-                                }
-                                0x78 => {
-                                    Size = 1024 * 1024;
-                                    Associativity = 4;
-                                }
-                                0x79..=0x7d => {
-                                    Size = (1 << (RegisterByte - 0x79)) * 128 * 1024;
-                                    Associativity = 8;
-                                }
-                                0x7f => {
-                                    Size = 512 * 1024;
-                                    Associativity = 2;
-                                }
-                                0x80 => {
-                                    Size = 512 * 1024;
-                                    Associativity = 8;
-                                }
-                                0x82..=0x85 => {
-                                    Size = (1 << (RegisterByte - 0x82)) * 256 * 1024;
-                                    Associativity = 8;
-                                }
-                                0x86 => {
-                                    Size = 512 * 1024;
-                                    Associativity = 4;
-                                }
-                                0x87 => {
-                                    Size = 1024 * 1024;
-                                    Associativity = 8;
-                                }
-                                0xf0 => {
-                                    KePrefetchNTAGranularity = 64;
-                                }
-                                0xf1 => {
-                                    KePrefetchNTAGranularity = 128;
-                                }
-                                _ => {}
-                            }
-                            if Size != 0 && (Size / Associativity as ULONG) > CurrentSize {
-                                CurrentSize = Size / Associativity as ULONG;
-                                (*Pcr).SecondLevelCacheSize = Size;
-                                (*Pcr).SecondLevelCacheAssociativity = Associativity;
-                            }
-                        }
-                    }
-
-                    CacheRequests -= 1;
-                    if CacheRequests == 0 {
-                        break;
-                    }
-                }
-            }
+    for d in &CacheDescriptors[..CacheCount as usize] {
+        KeLargestCacheLine = KeLargestCacheLine.max(d.LineSize as ULONG);
+        if d.Level == 1 && d.Type != ntkrnl_sys::ddk::_PROCESSOR_CACHE_TYPE_CacheInstruction {
+            KePrefetchNTAGranularity = d.LineSize as ULONG;
+        } else if d.Level == 2 {
+            (*Pcr).SecondLevelCacheSize = d.Size;
+            (*Pcr).SecondLevelCacheAssociativity = d.Associativity;
         }
-        CPU_AMD => {
-            KiCpuId(&mut CpuInfo, 0x80000000);
-            if CpuInfo.__bindgen_anon_1.Eax >= 0x80000005 {
-                KiCpuId(&mut CpuInfo, 0x80000005);
-                KePrefetchNTAGranularity = CpuInfo.__bindgen_anon_1.Ecx & 0xFF;
-
-                KiCpuId(&mut CpuInfo, 0x80000000);
-                if CpuInfo.__bindgen_anon_1.Eax >= 0x80000006 {
-                    KiCpuId(&mut CpuInfo, 0x80000006);
-
-                    let CacheLine = CpuInfo.__bindgen_anon_1.Ecx & 0xFF;
-
-                    RegisterByte = ((CpuInfo.__bindgen_anon_1.Ecx >> 12) & 0xFF) as UCHAR;
-                    Associativity = match RegisterByte {
-                        2 => 2,
-                        4 => 4,
-                        6 => 8,
-                        8 | 15 => 16,
-                        _ => 1,
-                    };
-
-                    Size = (CpuInfo.__bindgen_anon_1.Ecx >> 16) << 10;
-
-                    if ((*KeGetCurrentPrcb()).CpuType == 6)
-                        && ((*KeGetCurrentPrcb()).CpuStep == 0x300)
-                    {
-                        Size = 64 * 1024;
-                    }
-
-                    (*Pcr).SecondLevelCacheSize = Size;
-                    (*Pcr).SecondLevelCacheAssociativity = Associativity;
-
-                    if CacheLine > KeLargestCacheLine {
-                        KeLargestCacheLine = CacheLine;
-                    }
-                }
-            }
-        }
-        _ => {}
-    }
-
-    if CacheLine > KeLargestCacheLine {
-        KeLargestCacheLine = CacheLine;
     }
 }
 

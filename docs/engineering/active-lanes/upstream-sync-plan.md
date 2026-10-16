@@ -36,6 +36,17 @@ is a lead.
 
 ---
 
+## RESUME HERE (2026-10-16: the 2026-10-15 sync is submitted to the merge queue)
+
+Branch `upstream-sync-2` in worktree `vibeos-upstream-sync`: the 2026-10-15 upstream merge (64
+commits to upstream c25e4fd7dec), its hand ports, the kernel/HAL island regen, the Haiku
+translations (pnpprop, cacheinfo, $0.10; storport re-ported over its old crate, $0.25), the
+conformance re-baselines for upstream's own kmtest changes, and origin/master merged on
+2026-10-16 (the immutable artifact store). Green before submitting: build x3, smoke x3,
+`check --strict`, `check-tooling`. Check `./vibeos-cli land-status --mine` for the verdict.
+Still owed (roadmap "2026-10-15 sync"): IoGet/SetDeviceInterfacePropertyData (Win10 stubs);
+shell32's RegenerateUserEnvironment (shell32-com) and mmc_new's views (cpp-cluster).
+
 ## Measured, 2026-09-20 (re-derive before trusting — these will drift)
 
 ```

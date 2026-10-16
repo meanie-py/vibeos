@@ -25,11 +25,14 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 from . import c_data_port as cdp
+from . import macro_authority as ma
 from .config import REACTOS_ROOT
 
 REPO = REACTOS_ROOT  # the invoked tree, not this file's checkout
 KEYBOARD = REPO / "dll" / "keyboard"
 CRATE = REPO / "sdk" / "lib" / "rust" / "kbdlayouts-rust" / "src"
+# The family cell that links every layout DLL: one [[bin]] per layout.
+CELL = REPO / "sdk" / "lib" / "rust" / "kbdlayouts-cargo" / "Cargo.toml"
 BEGIN = "// BEGIN GENERATED: layouts (python -m rustconv.kbd_layouts)"
 END = "// END GENERATED: layouts"
 # c_data_port stamps its files with this; only files carrying it are the generator's to prune.
@@ -170,7 +173,30 @@ def wire_lib(names: list[str]) -> bool:
     return new != text
 
 
+def wire_bins(names: list[str], cell: Path | None = None) -> bool:
+    """The family cell's [[bin]] list: one per layout, in the CMake list's order.
+
+    `add_cargo_module(... BINS)` refuses to configure when it differs from
+    `_keyboard_layouts`, and this generator needs a configured tree (its compile commands)
+    to port a new layout. So the bins are written FIRST, from the list alone: an upstream
+    sync's new layout (kbd103, 2026-10-15) then configures, and the port runs after."""
+    cell = cell or CELL
+    text = cell.read_text()
+    i = text.find("[[bin]]")
+    if i < 0:
+        raise LayoutError(f"{cell}: no [[bin]] section")
+    bins = "\n".join(f'[[bin]]\nname = "{n}"\npath = "src/main.rs"\n' for n in names)
+    new = text[:i] + bins
+    if new != text:
+        cell.write_text(new)
+    return new != text
+
+
 def _one(n: str, arches: tuple[str, ...]) -> tuple[str, dict[str, str] | None, str]:
+    # No target compiles a layout's .c since the cargo family cell; dll/keyboard's
+    # kbdlayouts_flags stub carries the directory's compile flags (in the worker: the
+    # registry is per process).
+    ma.register_flags_dir(KEYBOARD / n, KEYBOARD)
     try:
         return n, generate(n, arches), ""
     except (LayoutError, cdp.DataPortError) as e:
@@ -190,6 +216,7 @@ def main(argv: list[str] | None = None) -> int:
     if unknown:
         print(f"kbd_layouts: not in _keyboard_layouts: {unknown}")
         return 2
+    wire_bins(every)
 
     with ProcessPoolExecutor(max_workers=a.jobs) as ex:
         results = list(ex.map(_one, todo, [arches] * len(todo)))

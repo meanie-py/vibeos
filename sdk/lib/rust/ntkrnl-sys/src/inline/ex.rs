@@ -98,6 +98,47 @@ pub unsafe fn ExInitializeWorkItem(
 }
 
 // ============================================================================
+// The SList pop/push the lookaside inlines below use
+// ============================================================================
+
+/// Inside ntoskrnl the implementation symbols (`RtlInterlocked*EntrySList`) bind locally. A
+/// separate .sys cannot see them -- ntoskrnl exports what wdm.h gives a DRIVER instead:
+/// `ExpInterlocked*EntrySList` off x86, the fastcall `InterlockedPop/PushEntrySList` on i386.
+/// storport.sys, the first driver to inline a lookaside allocate, failed to link on all three
+/// arches. Drivers turn on `driver_slist` (as `import_mm_user_probe_address`).
+#[cfg(not(feature = "driver_slist"))]
+mod lookaside_slist {
+    pub use crate::interlocked::{
+        InterlockedPopEntrySList as pop, InterlockedPushEntrySList as push,
+    };
+}
+#[cfg(feature = "driver_slist")]
+mod lookaside_slist {
+    use crate::base::{PSLIST_ENTRY, PSLIST_HEADER};
+
+    #[inline]
+    pub unsafe fn pop(list_head: PSLIST_HEADER) -> PSLIST_ENTRY {
+        #[cfg(not(target_arch = "x86"))]
+        {
+            crate::ddk::ExpInterlockedPopEntrySList(list_head.cast()).cast()
+        }
+        #[cfg(target_arch = "x86")]
+        {
+            extern "fastcall" {
+                #[link_name = "InterlockedPopEntrySList"]
+                fn imp(list_head: PSLIST_HEADER) -> PSLIST_ENTRY;
+            }
+            imp(list_head)
+        }
+    }
+
+    #[inline]
+    pub unsafe fn push(list_head: PSLIST_HEADER, entry: PSLIST_ENTRY) -> PSLIST_ENTRY {
+        super::InterlockedPushEntrySList(list_head.cast(), entry.cast()).cast()
+    }
+}
+
+// ============================================================================
 // ExAllocateFromNPagedLookasideList (FORCEINLINE from wdm.h)
 // ============================================================================
 
@@ -111,7 +152,7 @@ pub unsafe fn ExAllocateFromNPagedLookasideList(
 
     let list_head = core::ptr::addr_of_mut!((*l).__bindgen_anon_1.ListHead)
         as crate::base::PSLIST_HEADER;
-    let entry = crate::interlocked::InterlockedPopEntrySList(list_head);
+    let entry = lookaside_slist::pop(list_head);
 
     if !entry.is_null() {
         entry as PVOID
@@ -147,7 +188,7 @@ pub unsafe fn ExFreeToNPagedLookasideList(
             f(entry);
         }
     } else {
-        crate::interlocked::InterlockedPushEntrySList(
+        lookaside_slist::push(
             list_head,
             entry as crate::base::PSLIST_ENTRY,
         );
@@ -168,7 +209,7 @@ pub unsafe fn ExAllocateFromPagedLookasideList(
 
     let list_head = core::ptr::addr_of_mut!((*l).__bindgen_anon_1.ListHead)
         as crate::base::PSLIST_HEADER;
-    let entry = crate::interlocked::InterlockedPopEntrySList(list_head);
+    let entry = lookaside_slist::pop(list_head);
 
     if !entry.is_null() {
         entry as PVOID
@@ -204,7 +245,7 @@ pub unsafe fn ExFreeToPagedLookasideList(
             f(entry);
         }
     } else {
-        crate::interlocked::InterlockedPushEntrySList(
+        lookaside_slist::push(
             list_head,
             entry as crate::base::PSLIST_ENTRY,
         );

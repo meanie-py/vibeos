@@ -10,6 +10,10 @@
 #   flip they take the test's Vista column instead, which still differs from Windows 11 in thread
 #   GenericExecute (+THREAD_RESUME 0x1000) and job (+JOB_OBJECT_IMPERSONATE 0x20); give the test
 #   a Windows 10 column then.
+# 2026-10-15: RtlRangeList pass 538 -> 537: upstream 09a03ec307d deleted one RtlFindRange check.
+#   ZwAllocateVirtualMemory pass 1003/4 -> 581/3: upstream's StressTesting rewrite (4096 x 64 GB
+#   chunks, element counts) replaced our 4096-chunk cap; fewer chunks, fewer every-tenth checks. The
+#   reserve loop now exhausts the address space, so the 613 page-table-commit row is gone. Left: 145, 246.
 # 2026-10-12: ZwAllocateVirtualMemory pass 374/11 -> 1003/4. Upstream's test sync renumbered it (147->145,
 #   512->613); NtAllocateVirtualMemory now takes ZeroBits as NT does (a 32-bit limit, clamped to
 #   the VAD ceiling) instead of failing INVALID_PARAMETER_3, clearing the ZERO BITS rows. Left:
@@ -260,7 +264,7 @@ RtlMemoryKM OK pass=1081 fail=3 skip=1 exit=0
     assert RtlMemory.c:235
     assert RtlMemory.c:254
     assert RtlMemory.c:277
-RtlRangeList OK pass=538 fail=0 skip=0 exit=0
+RtlRangeList OK pass=537 fail=0 skip=0 exit=0
 RtlRegistryKM OK pass=210 fail=0 skip=0 exit=0
 RtlSplayTreeKM OK pass=139 fail=0 skip=0 exit=0
 RtlStackKM OK pass=29 fail=11 skip=0 exit=0
@@ -294,10 +298,9 @@ TcpIpConnect OK pass=27 fail=7 skip=0 exit=0
     assert connect.c:236
     assert connect.c:237
 SeTokenFiltering OK pass=11 fail=0 skip=0 exit=0
-ZwAllocateVirtualMemory OK pass=1003 fail=4 skip=0 exit=0
+ZwAllocateVirtualMemory OK pass=581 fail=3 skip=0 exit=0
     assert ZwAllocateVirtualMemory.c:145
     assert ZwAllocateVirtualMemory.c:246
-    assert ZwAllocateVirtualMemory.c:613
 ZwCreateSection OK pass=284 fail=3 skip=1 exit=0
     assert ZwCreateSection.c:354
     assert ZwCreateSection.c:378

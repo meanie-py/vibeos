@@ -299,3 +299,5 @@
     SVC_(RemoveIoCompletionEx, 6)
     SVC_(FlushProcessWriteBuffers, 0)
     SVC_(CompareObjects, 2)
+    SVC_(GetNextProcess, 5)
+    SVC_(GetNextThread, 6)

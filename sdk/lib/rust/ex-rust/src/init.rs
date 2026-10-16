@@ -424,6 +424,11 @@ unsafe fn ExpCreateSystemRootLink(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTA
     STATUS_SUCCESS
 }
 
+extern "system" {
+    // rtl-sync locale.rs
+    fn RtlpInitializeLocaleTable() -> NTSTATUS;
+}
+
 unsafe fn ExpInitNls(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
     let mut SectionSize: LARGE_INTEGER = core::mem::zeroed();
     let mut Status: NTSTATUS;
@@ -1535,6 +1540,10 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
 
     uart_trace!("[PHASE1] ExpInitNls");
     ExpInitNls(LoaderBlock);
+
+    // The Rtl locale table in kernel mode (upstream 3cc9aa99292): the property store's
+    // RtlLCIDToCultureName needs it.
+    RtlpInitializeLocaleTable();
 
     uart_trace!("[PHASE1] CcInitializeCacheManager");
     if CcInitializeCacheManager() == 0 {
