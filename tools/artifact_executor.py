@@ -256,7 +256,9 @@ def normalize(snapshot: Path, projection: dict, destination: Path) -> dict:
         source = snapshot / key
         output = destination / key
         if key in active:
-            shutil.copytree(source, output)
+            # A package can sit inside another's root (delayimp-rust/hooks/failure):
+            # the enclosing copy already brought the same snapshot bytes.
+            shutil.copytree(source, output, dirs_exist_ok=True)
             # Capture is read-only. This fresh compiler projection is mutable
             # during setup only, and mounted read-only before the compiler runs.
             for directory, _, files in os.walk(output):
@@ -264,7 +266,7 @@ def normalize(snapshot: Path, projection: dict, destination: Path) -> dict:
                 for name in files:
                     os.chmod(Path(directory) / name, 0o644)
         else:
-            output.mkdir(parents=True)
+            output.mkdir(parents=True, exist_ok=True)
             (output / "__artifact_inactive.rs").write_text(
                 "// inactive Cargo resolution candidate\n"
             )

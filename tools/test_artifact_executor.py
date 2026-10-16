@@ -451,3 +451,32 @@ def test_each_architecture_recipe_compiles_its_own_triple_with_its_audited_flags
             executor.request_context(toolchain, tool, "body", target=target, flags=flags)
     with pytest.raises(RuntimeError, match="builtin recipe triple"):
         executor.request_context(toolchain, tool, "body", target="i686-kernel", flags="")
+
+
+def test_normalize_keeps_a_package_nested_inside_another_s_root(tmp_path):
+    # delayimp-rust carries its hook crates at hooks/failure and hooks/notify: the
+    # enclosing package's copy already brings them, so their own copy must not collide.
+    snapshot = tmp_path / "snapshot"
+    ws = snapshot / "sdk/lib/rust"
+    for key, text in (
+        (
+            "outer",
+            '[package]\nname="outer"\nversion="0.1.0"\n[dependencies]\ninner={path="inner"}\n',
+        ),
+        ("outer/inner", '[package]\nname="inner"\nversion="0.1.0"\n'),
+    ):
+        (ws / key / "src").mkdir(parents=True)
+        (ws / key / "Cargo.toml").write_text(text)
+        (ws / key / "src/lib.rs").write_text("pub fn f() {}\n")
+    (ws / "Cargo.toml").write_text("[workspace]\n")
+    projection = {
+        "descriptor": {
+            "packages": {"sdk/lib/rust/outer": {}, "sdk/lib/rust/outer/inner": {}},
+            "request": {"package": "sdk/lib/rust/outer", "profile": "release"},
+            "profiles": {},
+        }
+    }
+    out = tmp_path / "projection"
+    executor.normalize(snapshot, projection, out)
+    assert (out / "sdk/lib/rust/outer/inner/src/lib.rs").is_file()
+    assert "inner" in (out / "sdk/lib/rust/outer/inner/Cargo.toml").read_text()
