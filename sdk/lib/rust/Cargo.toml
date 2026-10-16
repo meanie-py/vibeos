@@ -825,6 +825,8 @@ members = [
     "dcomp-rust",
     "qwave-rust",
     "icuuc-rust",
+    "virtdisk-rust",
+    "wer-rust",
     "tbs-rust",
     "mfreadwrite-rust",
     "evr-rust",

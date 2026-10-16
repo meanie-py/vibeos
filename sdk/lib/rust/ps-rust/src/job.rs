@@ -124,6 +124,10 @@ pub static mut PspUseJobSchedulingClasses: BOOLEAN = 0;
 pub static mut PspJobSchedulingClasses: [u8; PSP_JOB_SCHEDULING_CLASSES] =
     [1 * 6, 2 * 6, 3 * 6, 4 * 6, 5 * 6, 6 * 6, 7 * 6, 8 * 6, 9 * 6, 10 * 6];
 
+// JOB_OBJECT_ALL_ACCESS as Vista+ defines it (adds JOB_OBJECT_IMPERSONATE 0x20); the
+// job type's ValidAccessMask in psmgr.rs. Windows 11 maps GenericAll to this.
+const JOB_OBJECT_ALL_ACCESS_NT6: ACCESS_MASK = 0x001F003F;
+
 #[no_mangle]
 pub static mut PspJobMapping: _GENERIC_MAPPING = _GENERIC_MAPPING {
     GenericRead: STANDARD_RIGHTS_READ | JOB_OBJECT_QUERY,
@@ -132,7 +136,7 @@ pub static mut PspJobMapping: _GENERIC_MAPPING = _GENERIC_MAPPING {
         | JOB_OBJECT_SET_ATTRIBUTES
         | JOB_OBJECT_TERMINATE,
     GenericExecute: STANDARD_RIGHTS_EXECUTE | SYNCHRONIZE,
-    GenericAll: STANDARD_RIGHTS_ALL | THREAD_ALL_ACCESS, // bug fixed only in vista
+    GenericAll: JOB_OBJECT_ALL_ACCESS_NT6, // the NT5 table said THREAD_ALL_ACCESS; Vista fixed it
 };
 
 /// Indexed by JOBOBJECTINFOCLASS.

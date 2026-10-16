@@ -6493,6 +6493,40 @@ they RETURN a status instead of raising. Do not reach for the DDK `ProbeFor*` th
 assume the kernel-side `ntkrnl_sys::probe` helpers raise either — they do not touch the page,
 they range-check and return `Result`.
 
+### An info class whose C size is ULONG_PTR where Windows takes a ULONG
+
+**Symptom.** A kernel32 setter fails `ERROR_BAD_LENGTH` (24) on amd64 and arm64 only:
+SetThreadPriorityBoost and SetThreadIdealProcessor, both broken since the port.
+
+**Cause.** ReactOS's `ps_i.h` table and the matching `query.c` arms give ThreadIdealProcessor
+and ThreadPriorityBoost a SET size of `sizeof(ULONG_PTR)`; kernel32 passes a ULONG, and so
+does every Windows caller. On i386 the two are the same width, which is how it hid. The
+length is checked twice (`info_class.rs` via DefaultSetInfoBufferCheck, then the arm), so
+fixing one site changes nothing.
+
+**Fix.** Measure the accepted sizes on Windows (a loop over sizes 1..16 on a throwaway
+handle) and make the table and the arm agree with it. The same probe showed
+ThreadIdealProcessor's success status is the previous processor, which kernel32 returns.
+
+### An access right the object type does not list is silently DROPPED, not refused
+
+**Symptom.** An open for a Vista+ right succeeds, and the first call through the handle
+fails `STATUS_ACCESS_DENIED`. NtGetNextThread(..., THREAD_QUERY_LIMITED_INFORMATION) handed
+back thread handles that GetThreadId could not read.
+
+**Cause.** Handle creation stores `desired & ValidAccessMask` (`obhandle.rs`, three sites:
+create, create-unnamed, duplicate), so a right outside the type's valid mask is masked off
+without an error. The ps types carried the NT5 masks the tree's `_WIN32_WINNT=0x502`
+headers spell (`PROCESS_ALL_ACCESS` 0x1F0FFF, `THREAD_ALL_ACCESS` 0x1F03FF), which have no
+LIMITED bits, while user mode built against newer headers asks for them. The two halves
+of a type must also agree: a GenericAll of 0x1FFFFF over a valid mask of 0x1F0FFF hung
+SMSS's process creation once (`ps_globals.rs`).
+
+**Fix.** Give the type the Windows-measured masks (valid mask, generic mapping, and the
+implied LIMITED grants a full right carries), and grade with a test that runs on Windows
+11 as well (`Win10Surface`'s Test_LimitedAccess). A `*_ALL_ACCESS` in a kernel crate is a
+version-dependent constant: write the value the KERNEL means, not what `0x502` expands to.
+
 ### A `#if` on a WINDOWS VERSION comes back as `#[cfg(target_arch)]`
 
 **Symptom.** Either a hard parse error (`attributes on expressions are experimental`, because
