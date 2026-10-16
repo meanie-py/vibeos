@@ -2985,6 +2985,17 @@ def _c2rust_anon_rule(
     )
 
 
+def _similar_field_suggestions(diagnostic: Mapping[str, Any]) -> set[str]:
+    """The replacements rustc offers under "a field with a similar name exists"."""
+    return {
+        str(span.get("suggested_replacement"))
+        for child in diagnostic.get("children") or []
+        if "similar name" in str(child.get("message") or "")
+        for span in child.get("spans") or []
+        if span.get("suggested_replacement")
+    }
+
+
 def _keyword_field_rule(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -3005,8 +3016,17 @@ def _keyword_field_rule(
         return [], [], False
     field_name = m.group("field")
     base = field_name[:-2] if field_name.endswith("_0") else field_name
+    replacement, authority = (
+        f"{base}_",
+        "bindgen renames a keyword-named C field with a trailing underscore",
+    )
     if base not in _BINDGEN_KEYWORDS:
-        return [], [], False
+        # c2rust also suffixes `_0` onto a field named like a prelude item (mmixer's
+        # MIXER_CONTEXT `Copy` became `Copy_0`), which bindgen leaves alone. Taken only when
+        # rustc itself names the C spelling as the existing field.
+        if base == field_name or base not in _similar_field_suggestions(diagnostic):
+            return [], [], False
+        replacement, authority = base, "rustc names the C field spelling c2rust suffixed with `_0`"
     span = next((s for s in diagnostic.get("spans") or [] if s.get("is_primary")), None)
     if span is None:
         return [], [], False
@@ -3021,9 +3041,9 @@ def _keyword_field_rule(
                 file_name=file_name,
                 byte_start=start,
                 byte_end=end,
-                replacement=f"{base}_",
+                replacement=replacement,
                 rule=RULE_KEYWORD_FIELD,
-                authority="bindgen renames a keyword-named C field with a trailing underscore",
+                authority=authority,
                 original=field_name,
                 line=int(span.get("line_start") or 0),
                 column=int(span.get("column_start") or 0),

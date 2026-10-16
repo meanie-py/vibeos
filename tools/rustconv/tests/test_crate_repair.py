@@ -1863,6 +1863,34 @@ def test_a_keyword_field_in_a_struct_literal_takes_bindgens_spelling():
     assert [(e.original, e.replacement) for e in plan.edits] == [("type_0", "type_")]
 
 
+def test_a_c2rust_suffixed_field_takes_the_c_name_only_when_rustc_offers_it():
+    # mmixer's MIXER_CONTEXT `Copy` (a prelude trait name) came through c2rust as `Copy_0`.
+    from rustconv.crate_repair import RULE_KEYWORD_FIELD
+
+    src = b"fn f() { (*c).Copy_0.unwrap()(); (*c).Gone_0 = 1; }\n"
+    diags = []
+    for name, offer in ((b"Copy_0", "Copy"), (b"Gone_0", None)):
+        at = src.index(name)
+        child = {
+            "message": "a field with a similar name exists",
+            "level": "help",
+            "spans": [_span("src/a.rs", at, at + len(name)) | {"suggested_replacement": offer}],
+            "children": [],
+        }
+        diags.append(
+            _diag(
+                f"no field `{name.decode()}` on type `MIXER_CONTEXT`",
+                code="E0609",
+                spans=[_span("src/a.rs", at, at + len(name), is_primary=True)],
+                children=[child] if offer else [],
+            )
+        )
+    plan = propose_edits(
+        diags, _reader({"src/a.rs": src}), target="amd64", rules=[RULE_KEYWORD_FIELD]
+    )
+    assert [(e.original, e.replacement) for e in plan.edits] == [("Copy_0", "Copy")]
+
+
 def test_a_c2rust_anonymous_member_hop_is_dropped_where_rustc_says_it_is_absent():
     from rustconv.crate_repair import RULE_C2RUST_HOP
 

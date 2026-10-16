@@ -495,8 +495,30 @@ def _transpile_text(
         f"no .rs produced for {c_file.name} — this file cannot be anchored on any built "
         f"arch; pass --no-c2rust to translate it pure-LLM as a deliberate choice.\n    "
         + "\n    ".join(attempts)
+        + known_panic_causes(attempts)
     )
     return None
+
+
+# c2rust's internal assertions, mapped to the C that trips them. The panic text names a line
+# of c2rust, never the C; each of these cost a hunt the first time.
+_KNOWN_PANICS = {
+    "arg_tys.len() == exprs.len()": (
+        "a call passes a different number of arguments than the callee's declared prototype. "
+        "Usually an unprototyped K&R declaration `T f();` called with arguments: mmixer's "
+        "precomp.h declared `MMixerPrintTopology();` and controls.c passed it the topology. "
+        "Give the declaration its real parameter list (C fix, not a translation workaround)."
+    ),
+}
+
+
+def known_panic_causes(attempts: list[str]) -> str:
+    """A `\n    cause: ...` line for each known c2rust panic among the attempts."""
+    return "".join(
+        f"\n    cause: {why}"
+        for text, why in _KNOWN_PANICS.items()
+        if any(text in a for a in attempts)
+    )
 
 
 def _transpile_one(

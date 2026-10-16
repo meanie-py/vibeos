@@ -379,6 +379,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "beepmidi-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "bitflags"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2732,6 +2744,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "kmixer-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntkrnl-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "ks-cargo"
 version = "0.1.0"
 dependencies = [
@@ -3154,6 +3177,56 @@ dependencies = [
  "atlclasses-rust",
  "conutils-h",
  "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "mmdrv-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "mmebuddy-macros-rust"
+version = "0.1.0"
+
+[[package]]
+name = "mmebuddy-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "mmebuddy-macros-rust",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "mment4-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "mmebuddy-macros-rust",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "mmixer-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntkrnl-sys",
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
@@ -5363,6 +5436,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sndblst-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "mmebuddy-macros-rust",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "sndrec32-rust"
 version = "0.1.0"
 dependencies = [
@@ -5665,8 +5750,11 @@ dependencies = [
 name = "sysaudio-rust"
 version = "0.1.0"
 dependencies = [
+ "conutils-h",
  "ntkrnl-sys",
  "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -6522,6 +6610,29 @@ version = "0.1.0"
 dependencies = [
  "conutils-h",
  "ntkrnl-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "wdmaud-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntkrnl-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "wdmaud_drv-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "mmebuddy-macros-rust",
+ "ntdll-sys",
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",

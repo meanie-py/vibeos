@@ -1301,3 +1301,9 @@ def test_a_function_the_crate_defines_is_never_declared_extern(tmp_path):
         "pub unsafe fn TextCompare<T: TChar>() {}\nunsafe fn Private() {}\n"
     )
     assert port._crate_defined_fns(tmp_path) == {"TextCompareA", "TextCompare"}
+
+
+def test_an_invalid_stem_is_offered_a_valid_one():
+    """`3dtext` and `wdmaud.drv` are CMake targets that cannot name a crate."""
+    assert port._stem_hint("3dtext") == "dtext3"
+    assert port._stem_hint("wdmaud.drv") == "wdmaud_drv"

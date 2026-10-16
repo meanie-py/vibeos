@@ -355,6 +355,14 @@ def _seed_switch_facts(state: dict, prelude: Path) -> None:
         )
 
 
+def _stem_hint(stem: str) -> str:
+    """A valid crate stem near `stem`: digits moved off the front, other characters to `_`.
+
+    wdmaud.drv's target used to be told `--stem wdmaud.drv`, the name it had just refused.
+    """
+    return re.sub(r"[^A-Za-z0-9_-]", "_", re.sub(r"^([0-9]+)(.*)$", r"\2\1", stem))
+
+
 def stage_derive(
     module_dir: Path,
     target: str | None,
@@ -371,10 +379,11 @@ def stage_derive(
     # with a digit: the 3dtext screensaver's target scaffolded `3dtext-rust` and broke
     # `cargo metadata` for the whole workspace. Refuse before anything is written.
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]*", stem):
-        hint = re.sub(r"^([0-9]+)(.*)$", r"\2\1", stem)
+        hint = _stem_hint(stem)
         raise PortError(
             f"stem {stem!r} is not a valid crate name (`{stem}-rust`; cargo needs a leading "
-            f"letter): re-run with --stem <name>, e.g. --stem {hint}"
+            f"letter and only letters, digits, `_` and `-`): re-run with --stem <name>, "
+            f"e.g. --stem {hint}"
         )
     _add_island_headers(dp, load_state(stem).get("island_headers", {}))
     arm = pd.emit_profile(dp)

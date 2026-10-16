@@ -1,7 +1,8 @@
 # Native ReactOS base — translation lane (`msvcrt-homebrew` worktree)
 
-> **PAUSED 2026-10-12 (Sunday) until next weekend.** Everything below is landed on master;
-> nothing is in flight, uncommitted, or parked in `/tmp`. Resume from "Next" below.
+> **PAUSED 2026-10-15 at the user's request: do not `land` until control-plane's build-system
+> change is ready and they ping this lane.** Then `git fetch && git merge origin/master` and
+> resume from "A′ in progress" below. The A′ work is committed on the lane branch, not landed.
 
 The CRT is done on the porting axis (see [msvcrt-from-pieces-plan.md](msvcrt-from-pieces-plan.md)),
 so this worktree took on the rest of ReactOS base that no other translation lane touches. The
@@ -22,12 +23,50 @@ is in [`rust-port-status.md`](../rust-port-status.md), never here.
   - hid.dll links `hidparser-rust`, so the C hidparser targets are gone.
   - The batch row in rust-port-status.md has the details.
 
-## Next (in this order)
+## A′ in progress: the plain-C audio stack (resume here)
 
-1. **A′, the plain-C audio stack:** mmixer, mmebuddy, wdmaud, kmixer, sysaudio, mment4,
-   mmdrv, beepmidi, sndblst. Use the same shape as E′+G: Haiku (`-m haiku`) with a $5 cap,
-   then `port` derive → … → flip, then gate ×3.
-2. **C, RDBSS and copysup.** First check what still links or loads RDBSS. If nothing does,
+Translated 2026-10-15 for **$0.66** (Haiku, 0 rejects), committed, **not flipped**: the
+CMake files still build the C, so the tree boots exactly as before. Ten crates:
+mmixer, mmebuddy, mment4, wdmaud (the .sys), wdmaud_drv (`dll/win32/wdmaud.drv`, stem
+`wdmaud_drv`), kmixer, sysaudio (the four TUs beside the pilot's `pin.rs`), mmdrv, beepmidi,
+sndblst. Port state is in `~/vibeos-rust-staging/port/<stem>/`, logs in
+`~/vibeos-rust-staging/batch-a/`. Not in the batch: `uartmidi`, `shared` (`audio`),
+`legacy` (`audioleg`) and `soundblaster` are built or present but nothing links them (prune
+candidates); everything C++ belongs to cpp-cluster.
+
+`cargo check` state when paused (amd64): beepmidi, mmdrv, sndblst, mmebuddy and mment4 at 0;
+kmixer, wdmaud, wdmaud_drv, mmixer and sysaudio still red. To resume, run, per crate,
+`port resolve` → `crate-repair <crate>-rust --arches i386 amd64 arm64` → `port check`, then
+hand-fix what is left:
+- **Copy_0** (mmixer, wdmaud, wdmaud_drv): crate-repair's keyword-field rule now renames it
+  to the island's `Copy` when rustc offers that name; one repair pass should clear it.
+- **`_byteswap_*` / `lrintf`** (kmixer, wdmaud_drv): now in win32macros-rust; resolve
+  re-lists them in the prelude (the `pub const fn` pattern fix).
+- **sysaudio**: `pin.rs` now imports the crate prelude; resolve has to see its names, so
+  rerun resolve, then fix the ten unaligned packed-field references (E0793) in control.rs.
+- **wdmaud_drv**: `STATIC_KSCATEGORY_WDMAUD`, six `#[cfg]`-on-expression sites in mixer.rs,
+  five `break` outside a labelled block in legacy.rs.
+- **wdmaud**: `_SEH2_TRY`/`_SEH2_END` in control.rs (rewrite with
+  `ntdll_sys::seh::try_except` or a non-raising call), `PDEVICE_EXTENSION`.
+- **mmixer**: `PINNAME_CAPTURE`, an index through `*mut __TOPOLOGY_NODE__`, seven E0793 in
+  wave.rs. It links into both wdmaud.sys and the user-mode wdmaud.drv: give it
+  `kernel`/`user` features like hidparser-rust, and have wdmaud.drv link
+  `rust_staticlib_variant(... mmixer-rust "user" FALSE)`.
+
+Then flip all ten (sysaudio by hand: its CMake has the pilot's custom cargo plumbing, and
+sysaudio-difftest reads `src/pin.rs`), build ×3, smoke ×3, `check --strict --scope
+source-deferred`, and land. Bank hand fixes with `port hand <stem> <file.rs>:<fn>`.
+
+What the batch added to the shared crates:
+- **mmebuddy-macros-rust** (new): `mmebuddy_debug.h` / `mmebuddy.h` / `sndtypes.h` statement
+  macros, in a quiet `_NDEBUG` and a printing `_DBG` flavour (mmebuddy and wdmaud.drv define
+  NDEBUG; mment4 and sndblst do not). `port macros` cannot lower them: `__FILE__` is the
+  probe's per-arch temp path.
+- **win32macros-rust**: `_byteswap_ushort/_ulong/_uint64` and math.h's inline `lrintf`.
+
+## Next (after A′)
+
+1. **C, RDBSS and copysup.** First check what still links or loads RDBSS. If nothing does,
    it is a prune candidate rather than a translation.
 
 ## Not ours: skip these

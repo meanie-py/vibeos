@@ -1,23 +1,6 @@
-use crate::types::*;
-use core::ffi::c_void;
-use ntkrnl_sys::base::*;
-use ntkrnl_sys::constants::*;
-use ntkrnl_sys::ddk::{
-    IoGetRelatedDeviceObject, ObReferenceObjectByHandle, ZwClose, PDEVICE_OBJECT, PFILE_OBJECT,
-    PHANDLE, PIO_STACK_LOCATION, PIRP,
-};
-use ntkrnl_sys::driver_ddk::*;
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::inline::tier1::{
-    IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoSkipCurrentIrpStackLocation,
-};
-use ntkrnl_sys::mm::*;
-use ntkrnl_sys::ob::*;
-use ntkrnl_sys::rtl::*;
-
-use crate::types::KSPROPERTY_CONNECTION_KSPROPERTY_CONNECTION_DATAFORMAT as KSPROPERTY_CONNECTION_DATAFORMAT;
-use crate::types::SYSAUDIO_IOCTL_KS_PROPERTY as IOCTL_KS_PROPERTY;
-use ntkrnl_sys::ddk::{RtlAssert, KPROCESSOR_MODE, SIZE_T, ULONG_PTR};
+// The crate prelude is the one import surface, as for the rest of sysaudio-rust; the pilot's
+// own glob list collided with it once the other four TUs' island arrived.
+use crate::prelude::*;
 // wdm.h aliases the driver spelling to the import-address table. raw-dylib
 // supplies that indirection, so this names the exported POBJECT_TYPE value.
 #[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
@@ -105,7 +88,7 @@ pub unsafe extern "system" fn Pin_fnDeviceIoControl(
     if !(Status >= 0) {
         (*Irp).IoStatus.Information = 0;
         (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
-        IoCompleteRequest(Irp, IO_NO_INCREMENT);
+        IoCompleteRequest(Irp, (IO_NO_INCREMENT as i8));
         return Status;
     }
 
@@ -123,7 +106,7 @@ pub unsafe extern "system" fn Pin_fnDeviceIoControl(
 
     (*Irp).IoStatus.Information = BytesReturned as ULONG_PTR;
     (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
-    IoCompleteRequest(Irp, IO_NO_INCREMENT);
+    IoCompleteRequest(Irp, (IO_NO_INCREMENT as i8));
 
     return Status;
 }
@@ -169,14 +152,14 @@ pub unsafe extern "system" fn Pin_fnWrite(DeviceObject: PDEVICE_OBJECT, Irp: PIR
         dprint1!(100, "failed\n");
         (*Irp).IoStatus.Information = 0;
         (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
-        IoCompleteRequest(Irp, IO_NO_INCREMENT);
+        IoCompleteRequest(Irp, (IO_NO_INCREMENT as i8));
         return Status;
     }
 
     IoSkipCurrentIrpStackLocation(Irp);
     IoStack = IoGetNextIrpStackLocation(Irp);
     (*IoStack).FileObject = FileObject;
-    (*IoStack).MajorFunction = IRP_MJ_DEVICE_CONTROL;
+    (*IoStack).MajorFunction = (IRP_MJ_DEVICE_CONTROL as u8);
 
     Status = IoCallDriver(IoGetRelatedDeviceObject(FileObject), Irp);
     ObDereferenceObject((FileObject).cast());
@@ -205,7 +188,7 @@ pub unsafe extern "system" fn Pin_fnClose(DeviceObject: PDEVICE_OBJECT, Irp: PIR
 
     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
     (*Irp).IoStatus.Information = 0;
-    IoCompleteRequest(Irp, IO_NO_INCREMENT);
+    IoCompleteRequest(Irp, (IO_NO_INCREMENT as i8));
     return STATUS_SUCCESS;
 }
 #[no_mangle]
@@ -471,7 +454,7 @@ pub unsafe extern "system" fn DispatchCreateSysAudioPin(
 
     if !NT_SUCCESS(Status) {
         (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
-        IoCompleteRequest(Irp, IO_NO_INCREMENT);
+        IoCompleteRequest(Irp, (IO_NO_INCREMENT as i8));
         return Status;
     }
 
@@ -479,7 +462,7 @@ pub unsafe extern "system" fn DispatchCreateSysAudioPin(
 
     if !NT_SUCCESS(Status) {
         (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
-        IoCompleteRequest(Irp, IO_NO_INCREMENT);
+        IoCompleteRequest(Irp, (IO_NO_INCREMENT as i8));
         return Status;
     }
 
@@ -490,7 +473,7 @@ pub unsafe extern "system" fn DispatchCreateSysAudioPin(
 
     if DispatchContext.is_null() {
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_INSUFFICIENT_RESOURCES;
-        IoCompleteRequest(Irp, IO_NO_INCREMENT);
+        IoCompleteRequest(Irp, (IO_NO_INCREMENT as i8));
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -510,7 +493,7 @@ pub unsafe extern "system" fn DispatchCreateSysAudioPin(
     if !NT_SUCCESS(Status) {
         FreeItem(DispatchContext as *mut core::ffi::c_void);
         (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
-        IoCompleteRequest(Irp, IO_NO_INCREMENT);
+        IoCompleteRequest(Irp, (IO_NO_INCREMENT as i8));
         return Status;
     }
 
@@ -529,6 +512,6 @@ pub unsafe extern "system" fn DispatchCreateSysAudioPin(
     }
 
     (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
-    IoCompleteRequest(Irp, IO_NO_INCREMENT);
+    IoCompleteRequest(Irp, (IO_NO_INCREMENT as i8));
     return Status;
 }
