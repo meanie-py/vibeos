@@ -57,8 +57,8 @@ is in [`rust-port-status.md`](../rust-port-status.md), never here.
 
 ## Lessons from E′+G that a resume should know
 
-- **Run `./vibeos-cli check --strict --scope source-deferred` before `land`.** The land
-  preflight runs it and plain `check` does not. On E′+G it caught a real bug: sptilib's
+- **Run `./vibeos-cli check` before `land`.** Since 2026-10-16 it fails on a NEW finding
+  in every source partition; before that only the land preflight's strict run did. On E′+G it caught a real bug: sptilib's
   `_SEH2_TRY` compiled as a no-op borrowed from cdfs, and resolve no longer donates PSEH
   names.
 - **A kernel-library crate needs a `TARGETS` entry** in
