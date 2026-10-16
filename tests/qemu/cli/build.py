@@ -975,6 +975,19 @@ def _refresh_wow64_guests(run, repo: Path) -> bool:
         timeout=900,
     )
     left = ladder.guests_to_refresh(repo)
+    x64_blocker = ladder.x64_refresh_blocker(repo, left)
+    if cp.returncode == 0 and x64_blocker:
+        # The builder skips an x86-64 guest whose amd64 importlib is absent; on a
+        # first amd64 build that is every one of them, since ninja has not run yet.
+        # Like refresh_blocker above, not a failure of THIS build.
+        run.add(
+            Stage(
+                "wow64-guests",
+                status="skip",
+                detail=f"{len(left)} guest(s) left unbuilt: {x64_blocker}",
+            )
+        )
+        return True
     if cp.returncode != 0 or left:
         run.classification = "GUEST_BUILD_FAIL"
         run.add(

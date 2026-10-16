@@ -404,6 +404,10 @@ def stale_guests(repo: Path) -> list[str]:
 # without this probe a tree with no build-i386 would "refresh" into a partial set,
 # which is the all-or-nothing hole `gate_decision` reports.
 GUEST_PREREQ = "build-i386/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a"
+# The x86-64 ladder links build-amd64's own import libraries, which the amd64 build
+# that refreshes the guests makes only in its ninja stage, AFTER the refresh. On a
+# first (or half-configured) build-amd64 they cannot exist yet.
+GUEST_PREREQ_X64 = "build-amd64/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a"
 GUEST_TOOLCHAIN = ".build-tools/llvm-mingw/bin/i686-w64-mingw32-clang"
 
 
@@ -435,6 +439,20 @@ def refresh_blocker(repo: Path) -> str | None:
             "build i386 first: ./vibeos-cli build --arch i386"
         )
     return None
+
+
+def x64_refresh_blocker(repo: Path, left: list[str]) -> str | None:
+    """Why the guests in `left` (guests_to_refresh entries) are legitimately unbuilt:
+    every one is x86-64 and build-amd64 has no import libraries yet. None otherwise,
+    including when any 32-bit guest is left, which no amd64 state excuses."""
+    if not left or (repo / GUEST_PREREQ_X64).is_file():
+        return None
+    if not all(entry.split(" ", 1)[0].endswith("64") for entry in left):
+        return None
+    return (
+        "no build-amd64 importlibs to link the x86-64 guests against yet — "
+        "the next amd64 build makes them"
+    )
 
 
 def _newer_than(repo: Path, guest: str, exe: Path, sources: list[str]) -> list[str]:
