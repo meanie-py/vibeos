@@ -678,7 +678,7 @@ pub unsafe extern "C" fn GuessInstallerType(Installer: LPCWSTR, ExtraInfo: &mut 
             let mut sig: [UINT; 3] = [0; 3];
             const _: () = assert!(0x30 + 12 >= 0x30 + core::mem::size_of::<[UINT; 3]>());
             core::ptr::copy_nonoverlapping(
-                buf.as_ptr().add(0x30),
+                buf[0x30..].as_ptr(),
                 sig.as_mut_ptr() as *mut BYTE,
                 core::mem::size_of_val(&sig),
             );

@@ -787,7 +787,7 @@ unsafe extern "C" fn CreateUI(Silent: BOOL, ThreadProc: LPTHREAD_START_ROUTINE) 
     // enum { DLGW = 150, DLGH = 20, PAD = 4, PADx2 = PAD * 2, CHILDCOUNT = 1 };
     const DLGW: u16 = 150;
     const DLGH: u16 = 20;
-    const PAD: u16 = 4;
+    const PAD: u16 = 4; // nolint: const-contradiction (geninst.cpp dialog padding in DLUs, function-local enum)
     const PADx2: u16 = PAD * 2;
     const CHILDCOUNT: u16 = 1;
     let DlgStyle: UINT = WS_CAPTION | DS_MODALFRAME | DS_NOFAILCREATE | DS_CENTER;
