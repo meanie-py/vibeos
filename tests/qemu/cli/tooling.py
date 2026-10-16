@@ -356,6 +356,14 @@ def check_tooling(args, repo: Path) -> int:
                 )
             )
 
+    if getattr(args, "skip_generated", False):
+        from .tooling_receipts import GENERATED_INPUT_CHECKS
+
+        skipped = sorted(label for label, _c, _k in checks if label in GENERATED_INPUT_CHECKS)
+        checks = [check for check in checks if check[0] not in GENERATED_INPUT_CHECKS]
+        for label in skipped:
+            print(f"  - {label}  SKIPPED (--skip-generated: reads this tree's build output)")
+
     from contextlib import nullcontext
 
     context = (

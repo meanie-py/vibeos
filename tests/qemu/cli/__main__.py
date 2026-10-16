@@ -1166,6 +1166,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ct.add_argument("--no-types", action="store_true", help="skip pyright")
     ct.add_argument("--no-tests", action="store_true", help="skip pytest")
+    ct.add_argument(
+        "--skip-generated",
+        action="store_true",
+        help="skip the suites that read this tree's build-<arch> output (for a tree with no "
+        "builds, e.g. land's merged-with-master preflight); reported as skipped, not passed",
+    )
     ct.set_defaults(fn=tooling.check_tooling)
 
     dt = sub.add_parser(

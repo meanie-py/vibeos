@@ -38,6 +38,9 @@ _LIVE = {
     "pytest:tools/test_nested_cargo_deps.py",
     "pytest:tools/test_bindgen_generation.py",
 }
+# Checks whose inputs include THIS checkout's generated build output (build-<arch>/
+# compile_commands.json, generated SDK headers). They cannot run in a tree without builds.
+GENERATED_INPUT_CHECKS = frozenset({"pytest:tools/rustconv/tests"})
 # Audited source/fixture suites. Adding a suite to the runner does not establish
 # its input contract: new suites run live until explicitly reviewed here.
 _AUDITED_PYTEST = {
@@ -317,7 +320,7 @@ class ReceiptSession:
         def normalize(value: object) -> str:
             return str(value).replace(str(self.repo), "<repo>")
 
-        generated = self.generated_before if label == "pytest:tools/rustconv/tests" else None
+        generated = self.generated_before if label in GENERATED_INPUT_CHECKS else None
         key = _digest(
             [
                 self.key,
@@ -364,7 +367,7 @@ class ReceiptSession:
         a fresh run is what the same tree gets when no receipt exists, so failing here
         rejected a lane resubmitted unchanged after a halted train (shell32-com
         b20d7379364c) while its base-only regate, with no receipt, passed."""
-        generated = {"pytest:tools/rustconv/tests"} & self.hits
+        generated = GENERATED_INPUT_CHECKS & self.hits
         if generated and generated_identity(self.repo) != self.generated_before:
             return generated
         return set()

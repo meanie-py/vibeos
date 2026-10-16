@@ -65,8 +65,11 @@ gate, and every queued lane is a blocked agent. That is what the merge queue add
 from __future__ import annotations
 
 import argparse
+import contextlib
+import functools
 import json
 import os
+import shutil
 import signal
 import subprocess
 import time
@@ -251,7 +254,138 @@ def _warm_preflight(repo: Path, run: Run, args) -> None:
     )
 
 
-def _lint_preflight(repo: Path, run: Run, args) -> None:
+def _merged_labels(merged: str) -> tuple[str, str]:
+    """(stage/artifact suffix, message clause) for a preflight run on the PREMERGE tree."""
+    if not merged:
+        return "", ""
+    return "@merged", f" on this lane MERGED with origin/master {merged[:12]}"
+
+
+def _merged_hint(merged: str) -> str:
+    if not merged:
+        return ""
+    return (
+        "\n  your tip alone may be clean: master moved under the lane (a regenerated table, a"
+        "\n  new baseline entry, a renamed helper). `git fetch && git merge origin/master`,"
+        "\n  reproduce there, fix, rebuild, and `land` again."
+    )
+
+
+@contextlib.contextmanager
+def _premerge_worktree(repo: Path, run: Run, upstream: str = "origin/master"):
+    """Yield (worktree, master_sha) holding THIS lane merged with origin/master, or None.
+
+    The tip preflights below are an approximation in one direction: they lint the lane
+    tip, while the conductor lints the tip MERGED with master. Whatever master changed
+    since the lane last merged is invisible to them, and that is the commonest way a lane
+    with a clean tip still bounces: on 2026-10-16 native-batch's tip passed check-tooling,
+    then lost a 75-minute gate to `test_gen_apisets_table` because master had edited
+    `apisets.table.c` and the committed generated table was now stale.
+
+      * Lane already contains origin/master → None: the tip IS the merged tree.
+      * `git merge-tree` reports a conflict → LandAbort now, with the paths. The conductor
+        would bounce the same CONFLICT, but only after the queue wait.
+      * Otherwise the merged tree is checked out DETACHED into a scratch worktree under
+        the shared git dir (one per lane and pid; ~1.3G, no build dirs) and removed after.
+
+    Fail OPEN like every other preflight: if git cannot produce the tree, warn and let
+    the conductor be the oracle. It mutates nothing of the lane's: the merge commit is
+    an unreferenced object and the worktree is this process's own.
+    """
+    try:
+        master = _git(repo, "rev-parse", upstream)
+    except LandAbort as exc:
+        run.add(Stage("premerge", status="warn", detail=f"no {upstream}: {exc}"[:300]))
+        yield None
+        return
+    if _git_ok(repo, "merge-base", "--is-ancestor", master, "HEAD"):
+        run.add(Stage("premerge", status="skip", detail="lane already contains origin/master"))
+        yield None
+        return
+    cp = queue.run_git(
+        repo, ("merge-tree", "--write-tree", "--name-only", "--no-messages", "HEAD", master), 600
+    )
+    lines = cp.stdout.split("\n")
+    if cp.returncode == 1:
+        paths = [ln for ln in lines[1:] if ln.strip()]
+        run.classification = "CONFLICT"
+        raise LandAbort(
+            f"this lane CONFLICTS with origin/master {master[:12]} — the conductor would bounce "
+            "it after the queue wait:\n    "
+            + "\n    ".join(paths[:20])
+            + "\n  `git fetch && git merge origin/master`, resolve, rebuild, `land` again."
+        )
+    if cp.returncode != 0 or not lines[0].strip():
+        run.add(Stage("premerge", status="warn", detail=f"merge-tree failed: {cp.stderr[-200:]}"))
+        yield None
+        return
+    commit = _git(
+        repo,
+        "commit-tree",
+        lines[0].strip(),
+        "-p",
+        "HEAD",
+        "-p",
+        master,
+        "-m",
+        "land preflight: lane merged with origin/master",
+    )
+    root = queue._common_dir(repo) / "vibeos-premerge"
+    root.mkdir(exist_ok=True)
+    _sweep_premerge(repo, root)
+    wt = root / f"{repo.resolve().name}-{os.getpid()}"
+    try:
+        _git(repo, "worktree", "add", "--detach", str(wt), commit)
+    except LandAbort as exc:
+        run.add(Stage("premerge", status="warn", detail=f"could not check out: {exc}"[:300]))
+        yield None
+        return
+    try:
+        _provision_premerge(repo, wt)
+    except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
+        queue.run_git(repo, ("worktree", "remove", "--force", str(wt)), 600)
+        shutil.rmtree(wt, ignore_errors=True)
+        run.add(Stage("premerge", status="warn", detail=f"could not provision: {exc}"[:300]))
+        yield None
+        return
+    run.add(Stage("premerge", status="ok", detail=f"lane + origin/master {master[:12]} at {wt}"))
+    try:
+        yield wt, master
+    finally:
+        queue.run_git(repo, ("worktree", "remove", "--force", str(wt)), 600)
+        shutil.rmtree(wt, ignore_errors=True)
+
+
+def _provision_premerge(repo: Path, wt: Path) -> None:
+    """What a fresh lane gets before its first check-tooling, minus the builds.
+
+    Measured on a bare checkout (2026-10-16): every tooling check passes except the four
+    `test_artifact_*` suites, which need the pinned toolchain and the `host-jobs` binary,
+    and `pytest:tools/rustconv/tests`, which reads build-<arch> (`--skip-generated`).
+    The toolchain is content-addressed and commit-independent, the one thing the fleet
+    isolation law lets a worktree share, so it is linked to the lane's own target."""
+    from . import hostjobs
+
+    lane_tc = repo / ".build-tools" / "llvm-mingw"
+    if lane_tc.exists():
+        link = wt / ".build-tools" / "llvm-mingw"
+        link.parent.mkdir(parents=True, exist_ok=True)
+        link.symlink_to(lane_tc.resolve())
+    hostjobs.ensure(wt)
+
+
+def _sweep_premerge(repo: Path, root: Path) -> None:
+    """Remove premerge worktrees whose owning `land` died before its `finally` ran."""
+    for d in root.iterdir():
+        pid = d.name.rsplit("-", 1)[-1]
+        if not pid.isdigit() or Path(f"/proc/{pid}").exists():
+            continue
+        queue.run_git(repo, ("worktree", "remove", "--force", str(d)), 600)
+        shutil.rmtree(d, ignore_errors=True)
+    queue.run_git(repo, ("worktree", "prune"), 600)
+
+
+def _lint_preflight(repo: Path, run: Run, args, *, merged: str = "") -> None:
     """Run `check-tooling` HERE, before this lane consumes a batched gate.
 
     The conductor already runs this exact command, so this can never block anything the
@@ -266,31 +400,36 @@ def _lint_preflight(repo: Path, run: Run, args) -> None:
       * it needs no build-<arch>, so no fleet-isolation question arises;
       * failing here is strictly earlier than failing there — never *more* strict.
 
-    It is an approximation in one direction only: we lint the lane tip, while the
-    conductor lints the tip MERGED with master. So this can miss a failure the merge
-    introduces. That is fine — it is an early filter, not a replacement for the gate.
+    It runs twice when the lane is behind master: on the tip here, and with `merged=` on
+    the lane MERGED with origin/master (`_premerge_worktree`), which is what the conductor
+    actually gates. The tip run alone missed every failure the merge introduces.
 
     FAIL OPEN if the check itself cannot run (missing venv, no ruff, timeout). A broken
     preflight must never be able to wedge the fleet's ability to land; only a check that
     ran and returned nonzero blocks.
     """
+    tag, where = _merged_labels(merged)
     if getattr(args, "skip_lint", False):
-        run.add(Stage("lint", status="skip", detail="--skip-lint: check-tooling not run"))
+        run.add(Stage(f"lint{tag}", status="skip", detail="--skip-lint: check-tooling not run"))
         return
     if _docs_only_vs_master(repo):
-        run.add(Stage("lint", status="skip", detail="docs-only delta: nothing for it to lint"))
+        run.add(
+            Stage(f"lint{tag}", status="skip", detail="docs-only delta: nothing for it to lint")
+        )
         return
     t0 = time.monotonic()
     try:
         cp = subprocess.run(
-            [str(repo / "vibeos-cli"), "check-tooling"],
+            # The premerge tree has no build-<arch>: skip only the suites that read one
+            # (they still run on the tip, above, and in the conductor's gate).
+            [str(repo / "vibeos-cli"), "check-tooling", *(["--skip-generated"] if merged else [])],
             cwd=str(repo),
             capture_output=True,
             text=True,
             timeout=1800,
         )
     except (OSError, subprocess.SubprocessError) as exc:
-        run.add(Stage("lint", status="warn", detail=f"check-tooling could not run: {exc}"))
+        run.add(Stage(f"lint{tag}", status="warn", detail=f"check-tooling could not run: {exc}"))
         return
     dt = time.monotonic() - t0
     if cp.returncode and any(
@@ -299,7 +438,7 @@ def _lint_preflight(repo: Path, run: Run, args) -> None:
         run.classification = "DISK_ADMISSION_FAIL"
         raise LandAbort(cp.stdout.strip())
     if cp.returncode == 0:
-        run.add(Stage("lint", status="ok", detail=f"check-tooling clean ({dt:.0f}s)"))
+        run.add(Stage(f"lint{tag}", status="ok", detail=f"check-tooling clean ({dt:.0f}s)"))
         return
     # PERSIST what we captured before aborting. check-tooling prints the failing
     # test's own output after the summary, and this is the only copy of it: the
@@ -307,23 +446,24 @@ def _lint_preflight(repo: Path, run: Run, args) -> None:
     # ✗ line and nothing to debug. That is not hypothetical — a preflight abort on
     # 2026-09-06 named only `pytest:.` for a failure that did not reproduce, and
     # the evidence was gone.
-    log = run.dir / "preflight-check-tooling.log"
+    log = run.dir / f"preflight-check-tooling{tag}.log"
     try:
         log.write_text((cp.stdout or "") + (cp.stderr or ""), encoding="utf-8", errors="replace")
     except OSError:
         pass
     salient = [ln.strip() for ln in (cp.stdout or "").splitlines() if "✗" in ln]
     raise LandAbort(
-        "check-tooling FAILED — fix it before queueing, or the conductor bounces the whole "
+        f"check-tooling FAILED{where} — fix it before queueing, or the conductor bounces the whole "
         "batch (3 builds + 4 boots of fleet load) for it:\n    "
         + ("\n    ".join(salient) if salient else f"exit {cp.returncode}")
         + f"\n  captured output: {log}"
         + "\n  run `./vibeos-cli check-tooling` for the detail."
+        + _merged_hint(merged)
         + "\n  override (report every use): ./vibeos-cli land --skip-lint"
     )
 
 
-def _source_lint_preflight(repo: Path, run: Run, args) -> None:
+def _source_lint_preflight(repo: Path, run: Run, args, *, merged: str = "") -> None:
     """Run the conductor's OWN source-lint partitions here, before the batched gate.
 
     `_lint_preflight` above is named "lint" but only ever ran `check-tooling`. The gate
@@ -345,22 +485,25 @@ def _source_lint_preflight(repo: Path, run: Run, args) -> None:
     SCANNER_ERROR, and only a real NEW-findings verdict blocks. Everything else warns,
     matching the fail-open rule the check-tooling half already follows.
     """
+    tag, where = _merged_labels(merged)
     if getattr(args, "skip_lint", False):
         return
     if _docs_only_vs_master(repo):
         for part in ("source-early", "source-deferred"):
-            run.add(Stage(f"lint:{part}", status="skip", detail="docs-only delta"))
+            run.add(Stage(f"lint:{part}{tag}", status="skip", detail="docs-only delta"))
         return
     from .gate import _lint_once
 
     for part in ("source-early", "source-deferred"):
         try:
-            result = _lint_once(repo, part, run.dir / f"preflight-lint-{part}")
+            result = _lint_once(repo, part, run.dir / f"preflight-lint-{part}{tag}")
         except (OSError, subprocess.SubprocessError) as exc:
-            run.add(Stage(f"lint:{part}", status="warn", detail=f"could not run: {exc}"))
+            run.add(Stage(f"lint:{part}{tag}", status="warn", detail=f"could not run: {exc}"))
             continue
         if result["ok"]:
-            run.add(Stage(f"lint:{part}", status="ok", detail=f"clean ({result['seconds']:.0f}s)"))
+            run.add(
+                Stage(f"lint:{part}{tag}", status="ok", detail=f"clean ({result['seconds']:.0f}s)")
+            )
             continue
         if result["classification"] == "SCANNER_ERROR":
             # Infrastructure, not a finding — the conductor has a built tree and we may
@@ -372,33 +515,33 @@ def _source_lint_preflight(repo: Path, run: Run, args) -> None:
             # reported `scan_const_contradictions: 4 new` right beside a marshalgen crash
             # (a stale build dir), submitted three times on "could not complete", and the
             # conductor's gate caught the finding ~80 minutes later.
-            real = _real_findings(run.dir / f"preflight-lint-{part}")
+            real = _real_findings(run.dir / f"preflight-lint-{part}{tag}")
             if real:
                 raise LandAbort(
-                    f"check --strict --scope {part} found NEW findings (another scanner in "
+                    f"check --strict --scope {part}{where} found NEW findings (another scanner in "
                     "the partition also crashed, which does not excuse these):\n    "
                     + "\n    ".join(real[:8])
-                    + f"\n  artifact: {run.dir / f'preflight-lint-{part}'}"
+                    + f"\n  artifact: {run.dir / f'preflight-lint-{part}{tag}'}"
                     + f"\n  reproduce: ./vibeos-cli check --strict --scope {part}"
+                    + _merged_hint(merged)
                     + "\n  override (report every use): ./vibeos-cli land --skip-lint"
                 )
             run.add(
                 Stage(
-                    f"lint:{part}",
+                    f"lint:{part}{tag}",
                     status="warn",
                     detail=f"could not complete here ({result['salient'] or 'scanner error'})",
                 )
             )
             continue
         raise LandAbort(
-            f"check --strict --scope {part} FAILED — fix it before queueing, or the "
+            f"check --strict --scope {part} FAILED{where} — fix it before queueing, or the "
             "conductor bounces the whole batch (3 builds + 4 boots of fleet load) for a "
             "source lint:\n    "
             + (result["salient"] or f"exit {result['exit']}")
-            + f"\n  artifact: {run.dir / f'preflight-lint-{part}'}"
+            + f"\n  artifact: {run.dir / f'preflight-lint-{part}{tag}'}"
             + f"\n  reproduce: ./vibeos-cli check --strict --scope {part}"
-            + "\n  (plain `./vibeos-cli check` does NOT run this partition in strict mode,"
-            " so a green `check` is not evidence here.)"
+            + _merged_hint(merged)
             + "\n  override (report every use): ./vibeos-cli land --skip-lint"
         )
 
@@ -529,12 +672,26 @@ def _concurrent_preflights(repo: Path, run: Run, args) -> None:
 
     steps = (_lint_preflight, _source_lint_preflight, _arch_lint_preflight, _difftest_preflight)
     aborts: list[str] = []
-    with cf.ThreadPoolExecutor(max_workers=len(steps)) as ex:
-        for fut in [ex.submit(step, repo, run, args) for step in steps]:
-            try:
-                fut.result()
-            except LandAbort as exc:
-                aborts.append(str(exc))
+    with contextlib.ExitStack() as stack:
+        premerge = None
+        if not getattr(args, "skip_lint", False) and not _docs_only_vs_master(repo):
+            premerge = stack.enter_context(_premerge_worktree(repo, run))
+        calls = [functools.partial(step, repo, run, args) for step in steps]
+        if premerge:
+            # The build-independent pair again, on what the conductor will actually gate.
+            # Tooling receipts live in the shared git dir and are keyed on content, so
+            # only the checks whose inputs the merge changed really re-run.
+            wt, master = premerge
+            calls += [
+                functools.partial(step, wt, run, args, merged=master)
+                for step in (_lint_preflight, _source_lint_preflight)
+            ]
+        with cf.ThreadPoolExecutor(max_workers=len(calls)) as ex:
+            for fut in [ex.submit(call) for call in calls]:
+                try:
+                    fut.result()
+                except LandAbort as exc:
+                    aborts.append(str(exc))
     if aborts:
         raise LandAbort("\n\n".join(aborts))
 

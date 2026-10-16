@@ -189,7 +189,9 @@ def check(args, repo: Path) -> int:
         run.add(
             Stage("partial", status="warn", detail="selected source scanners only; not a full gate")
         )
-        lints.run_source_lints(run, repo, strict=bool(getattr(args, "strict", False)), only=only)
+        lints.run_source_lints(
+            run, repo, strict=bool(getattr(args, "strict", False)), only=only, new_fail=True
+        )
         return run.finalize(repo)
     if ub is not None:
         # --update-baseline           -> "__ALL__" (blanket; the footgun, see lints)
@@ -216,7 +218,12 @@ def check(args, repo: Path) -> int:
         return 0
     run = Run("check", args.arch if getattr(args, "arch", None) else "all")
     strict = bool(getattr(args, "strict", False))
-    lints.run_source_lints(run, repo, strict=strict)
+    # NEW findings fail with or without --strict: they are what `land`'s preflight and
+    # the gate refuse, and a plain check that merely warned about them was how lanes
+    # submitted work the preflight then bounced (18 of 56 plain checks, 2026-10-14..16,
+    # ended WARN with a NEW finding and exit 0). --strict still adds the coverage rule
+    # (a missing tool fails) and the per-arch guards.
+    lints.run_source_lints(run, repo, strict=strict, new_fail=True)
     if strict:
         _strict_arch_checks(run, repo, getattr(args, "arch", None))
     return run.finalize(repo)

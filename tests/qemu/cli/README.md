@@ -528,8 +528,12 @@ the lock, so there is no daemon to supervise and nothing that can be "down".
   one line 101 characters long. Only a check that *ran and returned nonzero* blocks;
   if the preflight itself cannot run it warns and proceeds, because a broken
   preflight must never be able to wedge the fleet's ability to land. `--skip-lint`
-  overrides (report every use). It lints the lane tip, not the tip merged with
-  master, so it is an early filter and not a replacement for the gate. The gate's
+  overrides (report every use). When the lane is behind master it also runs
+  check-tooling (`--skip-generated`) and both source partitions on the lane MERGED
+  with origin/master, in a throwaway worktree under `.git/vibeos-premerge/` — the
+  tree the conductor actually gates. The tip alone missed every failure master
+  introduces under a lane (a generated table gone stale, a new baseline entry). A
+  conflict with master aborts here too, instead of after the queue wait. The gate's
   **source-lint partitions and host difftests** run there too, by the same rules and
   the same override — the difftests since a lane whose own `ucrt-difftest` could not
   link turned 17 of 18 batched gates red on 2026-09-25.
