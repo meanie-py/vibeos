@@ -512,6 +512,42 @@ typedef struct mpeglayer3waveformat_tag {
 #define MPEGLAYER3_FLAG_PADDING_ON	0x00000001
 #define MPEGLAYER3_FLAG_PADDING_OFF	0x00000002
 
+typedef struct msaudio1waveformat_tag {
+	WAVEFORMATEX wfx;
+	WORD         wSamplesPerBlock;
+	WORD         wEncodeOptions;
+} MSAUDIO1WAVEFORMAT, *LPMSAUDIO1WAVEFORMAT;
+
+#define WMAUDIO_BITS_PER_SAMPLE 16
+#define WMAUDIO_MAX_CHANNELS     2
+
+#define MSAUDIO1_BITS_PER_SAMPLE     WMAUDIO_BITS_PER_SAMPLE
+#define MSAUDIO1_MAX_CHANNELS        WMAUDIO_MAX_CHANNELS
+#define MSAUDIO1_WFX_EXTRA_BYTES     (sizeof(MSAUDIO1WAVEFORMAT) - sizeof(WAVEFORMATEX))
+
+typedef struct wmaudio2waveformat_tag {
+	WAVEFORMATEX wfx;
+	DWORD        dwSamplesPerBlock;
+	WORD         wEncodeOptions;
+	DWORD        dwSuperBlockAlign;
+} WMAUDIO2WAVEFORMAT, *LPWMAUDIO2WAVEFORMAT;
+
+#define WMAUDIO2_BITS_PER_SAMPLE     WMAUDIO_BITS_PER_SAMPLE
+#define WMAUDIO2_MAX_CHANNELS        WMAUDIO_MAX_CHANNELS
+#define WMAUDIO2_WFX_EXTRA_BYTES     (sizeof(WMAUDIO2WAVEFORMAT) - sizeof(WAVEFORMATEX))
+
+typedef struct wmaudio3waveformat_tag {
+	WAVEFORMATEX wfx;
+	WORD         wValidBitsPerSample;
+	DWORD        dwChannelMask;
+	DWORD        dwReserved1;
+	DWORD        dwReserved2;
+	WORD         wEncodeOptions;
+	WORD         wReserved3;
+} WMAUDIO3WAVEFORMAT, *LPWMAUDIO3WAVEFORMAT;
+
+#define WMAUDIO3_WFX_EXTRA_BYTES     (sizeof(WMAUDIO3WAVEFORMAT) - sizeof(WAVEFORMATEX))
+
 #ifdef GUID_DEFINED
 
 #ifndef _WAVEFORMATEXTENSIBLE_

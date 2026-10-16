@@ -445,8 +445,8 @@
 @ stdcall RpcRevertToSelf()
 @ stdcall RpcRevertToSelfEx(ptr)
 @ stdcall RpcServerInqBindings(ptr)
-@ stub RpcServerInqCallAttributesA
-@ stub RpcServerInqCallAttributesW
+@ stdcall RpcServerInqCallAttributesA(ptr ptr)
+@ stdcall RpcServerInqCallAttributesW(ptr ptr)
 @ stdcall RpcServerInqDefaultPrincNameA(long ptr)
 @ stdcall RpcServerInqDefaultPrincNameW(long ptr)
 @ stub RpcServerInqIf

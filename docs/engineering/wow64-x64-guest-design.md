@@ -36,20 +36,43 @@ raise, debug print, Get/SetThreadContext), threads (TLS, per-thread SEH, 4 concu
 code generation incl. kernel-side writes into code, and process creation incl.
 CreateRemoteThread into a running x86-64 child.
 
-**Resume here (2026-10-12).** Everything below is landed on master (through `20b8abeb1468`), and
-the full FEX ladder was green at 1 GB: 26 guests at `0x600D`, i386 included once wow64 completed
-the loader's `int 0x2d` debug services (field manual, "Every i386 guest under FEX dies at
-`_DebugService+0x17`"). The land gate does NOT boot these guests. Before landing anything that
-touches wow64, wowx64, FEX or Mm, run the ladder by hand on `VIBEOS_FEX=1` arm64 media. Owed,
-most valuable first:
-1. Free-RAM drift: ~70 MB lost across an appstorm64 sweep, in uncharged memory (image pages,
-   cache, pool), not in commit charge. See "Memory exhaustion" below.
+**Resume here (2026-10-15).** The full FEX ladder is green at 1 GB on master: 27 guests at
+`0x600D`, i386 included once wow64 completed the loader's `int 0x2d` debug services (field
+manual, "Every i386 guest under FEX dies at `_DebugService+0x17`"). The land gate does NOT boot
+these guests, and that has already cost one red: `ac29134e356` (ProbeForWrite touches pages)
+turned selfmod rung 7 red on master from its landing (2026-10-12), because the guest's acceptance test knew only
+`STATUS_PARTIAL_COPY` and nobody ran the ladder after the merge. Before landing anything that
+touches wow64, wowx64, FEX or Mm, run `./vibeos-cli smoke --arch arm64 --ladder` on `VIBEOS_FEX=1`
+media. Owed, most valuable first:
+1. Free-RAM drift, now located. `--tripwire MEMCENSUS=1` prints a `[MEMCENSUS]` line at every
+   process teardown (`ARM3/census.rs`). On a 2 GB appstorm64 sweep (`20261015-160239-v2cpm7j0`)
+   available memory fell 99 MB from notepad to the end while commit stayed at 22-36 MB:
+   - +68 MB ReactOS-Mm pages (the MC_USER consumer, +83 MB);
+   - +15 MB transition pages ("other");
+   - +11 MB private memory;
+   - page tables and paged pool +4 MB together;
+   - nonpaged pool flat.
+   The growth comes in steps at apps that load images nothing has loaded before (rapps +18 MB,
+   control +11 MB, the first applet +10 MB, the ladder guests at boot), then about 1 MB per new
+   `.cpl`. So this is a per-file image/section cache that is never released, not a per-launch
+   leak. Windows keeps those pages too, but on the standby list, where they count as available
+   and are reclaimed under pressure. Here they count against available, and the 768 MB run that
+   died at ~18 MB free says they are not trimmed. Next: confirm with a low-memory sweep (does
+   `ros` shrink when free gets low?), then make cached section pages reclaimable.
+   Census caveat: `private` includes ~780 MB that is present from the first line on (the
+   loader-mapped ramdisk, by its size), so read it as a delta.
 2. Commit not yet charged: copy-on-write pages of image and file views, PEB/TEB pages, kernel
    pool (`ARM3/commit.rs` header).
 3. The rest of the cnt CRT (`wcslen`, `strlen`, ...) is still unoptimised byte loops
    ("Per-syscall cost" below).
 4. win32k callbacks cost ~2x native under FEX.
 5. An appstorm64 sweep on a quiet host, re-timed against the per-syscall numbers.
+6. Two appstorm64 failures in that sweep, not yet looked at and with no earlier x86-64 result
+   to compare: `notepad-save` (the saved file is empty) and `cpl-console` (exit 1 after 203 s).
+   The sweep's other three failures were certmgr, mmc_new and drwtsn32, which appstorm gained
+   without appstorm64 staging them, so they ran native. They are staged now, and
+   `tools/payloads/appstorm/test_appstorm64_roots.py` (check-tooling) keeps the two lists in
+   step.
 
 They are graded where the media carries them (`tests/qemu/cli/ladder.py` `STAGED_LADDER`): they
 need build-amd64 to exist at all, so an arm64-only tree does not owe them. `hello64` (no

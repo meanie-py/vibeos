@@ -303,6 +303,7 @@ rung6:
         BYTE patch[CODE_LEN];
         BYTE readback[CODE_LEN];   /* never the same buffer as `patch` */
         LONG st;
+        LONG write_st;   /* the direct write's own status; `st` is reused below */
 
         if (!NtWVM || !NtRVM)
         {
@@ -315,6 +316,7 @@ rung6:
         cells[1] = 0xC0DEFACE;
         st = NtWVM(GetCurrentProcess(), code, patch, CODE_LEN,
                    (SIZE_T *)&cells[0]);
+        write_st = st;
         ReportHex("[selfmod32] rung7 NtWriteVirtualMemory =", (DWORD)st);
         ReportHex("[selfmod32] rung7 bytes written =", (DWORD)cells[0]);
         ReportHex("[selfmod32] rung7 canary past the count cell =", (DWORD)cells[1]);
@@ -335,9 +337,18 @@ rung6:
          * probe/copy faults now observable it returns STATUS_PARTIAL_COPY with 0
          * written, which is the truth. The rung was asserting the bug.
          *
-         * Accepting it BLINDLY would be the other mistake, so the refusal is
+         * Since ProbeForWrite touches each target page again, as NT's does
+         * (ac29134e356), the refusal comes from the PROBE rather than the copy, and
+         * MmCopyVirtualMemory returns the probe's own exception code with 0
+         * written: STATUS_ACCESS_VIOLATION, which is what Windows answers too
+         * (WriteProcessMemory into a read-only page fails with ERROR_NOACCESS).
+         * Both are honest refusals.
+         *
+         * Accepting either BLINDLY would be the other mistake, so the refusal is
          * only accepted when the page is genuinely not writable. */
-        if (st == (LONG)0x8000000D && cells[0] == 0)   /* STATUS_PARTIAL_COPY */
+        if ((st == (LONG)0x8000000D            /* STATUS_PARTIAL_COPY */
+             || st == (LONG)0xC0000005)        /* STATUS_ACCESS_VIOLATION */
+            && cells[0] == 0)
         {
             MEMORY_BASIC_INFORMATION mbi;
             SIZE_T got = VirtualQuery((LPCVOID)code, &mbi, sizeof(mbi));
@@ -411,10 +422,16 @@ rung6:
                    "kernel honours it\n");
             ReportHex("[selfmod32] rung7 page protection seen by the kernel =",
                       mbi.Protect);
-            if (st >= 0)
-                Report("[selfmod32] rung7 BUG: ...but NtWriteVirtualMemory "
-                       "returned SUCCESS with a full byte count. A refused "
+            /* Only a FAIL since it reads the write's own status: until then it
+             * read NtReadVirtualMemory's, printed on every FEX boot, and was
+             * ignored as noise. */
+            if (write_st >= 0)
+            {
+                Report("[selfmod32] FAIL: rung7 — NtWriteVirtualMemory "
+                       "returned SUCCESS but the write did not land. A refused "
                        "write must say so.\n");
+                ExitProcess(SM_FAIL_COUNT);
+            }
 
             /* Undo the trap the way WriteProcessMemory does, then require the
              * write to land AND the new code to run — so the rung still gates

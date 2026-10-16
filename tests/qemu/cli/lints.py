@@ -1461,6 +1461,18 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A C switch's `case X: ...; break;` inside a loop, translated to a match arm whose
+    # trailing `break;` now leaves the LOOP: mf's session_check_topology leaked a node
+    # reference per SetTopology, welcome's TranslateEscapes stopped at the first `\x`.
+    # The baseline is 19 triaged deliberate exits (goto-to-exit in the C, hand-written Rust).
+    smb = repo / "tools" / "scan_match_arm_break.py"
+    specs.append(
+        (
+            "scan_match_arm_break",
+            [py, str(smb)] if smb.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # `calloc(n, size_of::<OLECHAR>()) as *mut BSTR` for the C's `calloc(n, sizeof(*strs))`:
     # the element's element. wscript's Host_Echo overran its array on every multi-argument
     # Echo, dropped the second argument and crashed the host (modrun's cscript suite).

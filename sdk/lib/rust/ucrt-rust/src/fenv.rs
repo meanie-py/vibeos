@@ -28,6 +28,9 @@
 
 use core::ffi::c_int;
 
+// `_except1`: the compiler's libm-call wrappers report a raised FP exception here.
+mod except1;
+
 const _SW_INEXACT: u32 = 0x1;
 const _SW_UNDERFLOW: u32 = 0x2;
 const _SW_OVERFLOW: u32 = 0x4;

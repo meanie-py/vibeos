@@ -33,6 +33,8 @@ fn main() {
         .import_lib("hal/hal.spec", "hal.dll", "hal")
         // The NDIS protocol shim (netstack-rust ndis.rs) for NICs a miniport drives.
         .import_lib("drivers/network/ndis/ndis.spec", "ndis.sys", "ndis")
+        // cmake's kernel-mode links keep every section.
+        .keep_all_sections()
         .link(ModuleKind::KernelDll {
             entry: entry.into(),
             image_base,

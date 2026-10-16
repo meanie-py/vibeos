@@ -679,7 +679,7 @@
 @ stdcall SHGetItemFromObject(ptr long ptr)
 @ stdcall SHGetItemFromDataObject(ptr long ptr ptr)
 
-@ stdcall -version=0x601+ GetCurrentProcessExplicitAppUserModelID(wstr)
+@ stdcall GetCurrentProcessExplicitAppUserModelID(wstr)
 @ stdcall SetCurrentProcessExplicitAppUserModelID(wstr)
 
 # Win8.1+ shcore DPI/scaling exports (api-ms-win-shcore-* routes here; shcore is not built).

@@ -52,3 +52,16 @@ BOOL WINAPI BluetoothIsConnectable(HANDLE radio)
     TRACE("(%p)\n", radio);
     return bthprops_no_radio(radio);
 }
+
+/***********************************************************************
+ *           BluetoothIsDiscoverable (bthprops.@)
+ *
+ * Returns FALSE: NULL means "any local radio" and there are none; a non-NULL
+ * handle cannot be a radio. Wine's BluetoothIsDiscoverable also yields FALSE
+ * in both cases (find-first-radio fails / IOCTL on a bogus handle fails).
+ */
+BOOL WINAPI BluetoothIsDiscoverable(HANDLE radio)
+{
+    TRACE("(%p)\n", radio);
+    return bthprops_no_radio(radio);
+}
