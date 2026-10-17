@@ -113,8 +113,7 @@ What the batch added to the shared crates and tools:
 4. **Batch H flipped (2026-10-17):** reactos.exe, blue, ndisuio, netio, rtl8139, tdi and
    tzlib. The row in rust-port-status.md has the details. After it, the ReactOS-native
    plain-C tail is small: tdihelpers (done, item 5), sdk/lib/crt's `strtol` lib (done,
-   item 5), normaliz's
-   native part, the boot loader's `blcmlib`/`blrtl`, and cdrom's data TUs. The rest is Wine
+   item 5), normaliz (Wine-derived after all, item 5), the boot loader's `blcmlib`/`blrtl`, and cdrom's data TUs (data.c done, item 5). The rest is Wine
    (needs the owner's call) or other lanes'. Measured from build-amd64/compile_commands.json,
    filtering any TU with a Wine debug channel or `wine/` include.
 5. **tdihelpers is one shared Rust library (2026-10-17, $0.06).** `tdi.c`/`tdiconn.c` are
@@ -133,6 +132,19 @@ What the batch added to the shared crates and tools:
    toupper from it, which cnt-difftest grades against the C. It now links them from
    libcntpr_rust.a, as hal.dll does. Linked on all three arches; smoke boots on all three,
    and amd64 smoke:net passed 16/16. `acpi_new`, which is not built, still names the library.
+   **cdrom's `data.c` is Rust ($0, `rustconv.c_data_port`).** Its two hack tables went
+   into cdrom-rust's `src/data`. The tool runs directly because cdrom-rust predates `port`.
+   `guid.c` stays C, since its GUIDs are header DEFINE_GUIDs the data port does not emit.
+   - **Header tables are left to C.** `cdrom.h`'s WDF context-type infos are selectany in
+     every C includer, and the shim still includes them. Rust copies would be strong
+     definitions, and the link guard refused them; the port takes only data.c's own
+     tables (`headers=("…/data.c",), scope_tables=False`).
+   - **Tool fixes.** An unevaluated enum constant fails only where a table uses it. An
+     island's `[T; 0]` is an incomplete declaration, not a length mismatch.
+   - **Smoke** passes on all three arches.
+   - **normaliz is not native:** IdnToAscii/IdnToUnicode say "Taken from Wine
+     kernel32/locale.c", and nameprep.c is their table. It waits for the owner's call on
+     Wine.
 6. Pick the next native area from `rust-port-status.md` (what is still C and not on the
    skip list below).
 
