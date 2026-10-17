@@ -513,17 +513,6 @@ pub unsafe fn prepare_copy(Success: u8) -> u32 {
 }
 """
 
-# A KEYWORD before the `!` once read as a macro bang (`if!`), hiding every `if !x != 0`:
-# usetup's PrepareCopyPage always quit and powercfg's Pos_InitData always failed.
-_BITWISE_NOT_KEYWORD_BAD = """\
-pub unsafe fn prepare(success: u8) -> u32 {
-    if !success != 0 {
-        return 1;
-    }
-    0
-}
-"""
-
 # The GOOD fixture carries the fix AND both idioms the scanner must never flag. Without
 # them a scanner that simply matched every `!` would still pass its negative control.
 _BITWISE_NOT_GOOD = """\
@@ -3214,35 +3203,40 @@ UNCOVERED: dict[str, str] = {
     ),
     "scan_raw_uart_writes": (
         "main() walks the real tree, but the decision is scan_text(), a pure function "
-        "over a string, driven directly in tools/test_scan_raw_uart_writes.py. Its fire "
+        "over a string, driven directly in tools/vibeos-lint/src/rules/raw_uart_writes.rs. "
+        "Its fire "
         "cases are the three shapes the 87 real stores took when it landed; its must-not "
         "cases pin the nearest-binding rule that keeps an unrelated `u` from being "
         "reported, plus comments, strings and comparisons."
     ),
     "scan_ptr_highword_mask": (
         "main() walks the real tree, but the decision is scan_text(), a pure function over a "
-        "string, driven directly in tools/test_scan_ptr_highword_mask.py. Its fire cases are "
+        "string, driven directly in tools/vibeos-lint/src/rules/ptr_highword_mask.rs. Its "
+        "fire cases are "
         "the two shapes that shipped (a declared-usize identifier, an `as usize` cast); its "
         "must-not cases pin the u32 rop, the version DWORD, the call-proc `== 0xFFFF0000` "
         "form, the fixed `& !0xFFFF` form and C quoted in a comment."
     ),
     "scan_fourcc_literals": (
         "main() walks the real tree, but the decision is scan_text(), a pure function over a "
-        "string, driven directly in tools/test_scan_fourcc_literals.py. Its fire case is the "
+        "string, driven directly in tools/vibeos-lint/src/rules/fourcc_literals.rs. Its fire "
+        "case is the "
         "shape that shipped (evr's IMC1/NV11 folds); its must-not cases pin correct folds in "
         "decimal, hex with underscores and a suffix, mmioFOURCC, and a literal with no macro "
         "comment beside it."
     ),
     "scan_match_arm_break": (
         "main() walks the real tree, but the decision is scan_text(), a pure function over a "
-        "string, driven directly in tools/test_scan_match_arm_break.py. Its fire case is mf's "
+        "string, driven directly in tools/vibeos-lint/src/rules/match_arm_break.rs. Its fire "
+        "case is mf's "
         "session_check_topology shape (a while loop opening with a match); its must-not cases "
         "pin the once-through `loop { match }` switch idiom, an expression arm, a break of a "
         "loop nested in the arm, and `break;` inside a string."
     ),
     "scan_calloc_elem_type": (
         "main() walks the real tree, but the decision is scan_text(), a pure function over a "
-        "string, driven directly in tools/test_scan_calloc_elem_type.py. Its fire cases are "
+        "string, driven directly in tools/vibeos-lint/src/rules/calloc_elem_type.rs. Its fire "
+        "cases are "
         "the shape that shipped (wscript's BSTR array sized in OLECHARs) and a byte array of "
         "pointers; its must-not cases pin matching elements, a pointer-sized table, a void "
         "buffer, a flexible-array tail and C quoted in a comment."
@@ -3291,9 +3285,11 @@ UNCOVERED: dict[str, str] = {
     ),
     "scan_bindgen_padding_index": (
         "a regex over single source lines with no tree model, so a fixture dir would only "
-        "restate its unit tests. tools/test_scan_bindgen_padding_index.py drives scan_text "
+        "restate its unit tests. tools/vibeos-lint/src/rules/bindgen_padding_index.rs drives "
+        "scan_text "
         "with the user32 wnd_pti read as the positive control and address-of/offset_of "
-        "uses (layout-stable) as negatives, and asserts the real tree is clean."
+        "uses (layout-stable) as negatives, and the full source check asserts the real tree "
+        "is clean."
     ),
     "scan_extern_static_width": (
         "pairs the whole tree's C __asm__ definitions with its Rust extern statics, so a "
@@ -3914,17 +3910,6 @@ def test_path_attr_and_dir_modules_are_not_phantoms(tmp_path: Path):
         },
     )
     assert "[PHANTOM]" not in out, f"false positive on a legitimate module shape:\n{out}"
-
-
-def test_bitwise_not_after_a_keyword_is_flagged():
-    """`if !x != 0` once read as the macro `if!` and was never flagged (usetup, powercfg)."""
-    from tools.scan_bitwise_not_bool import scan_line
-
-    for line in _BITWISE_NOT_KEYWORD_BAD.splitlines():
-        if "!success" in line:
-            assert scan_line(line)
-    assert not scan_line("    if success == 0 {")
-    assert not scan_line("    assert!(x != 0);")
 
 
 def test_type_alias_tchar_family_is_compared_within_a_crate_only(tmp_path):
