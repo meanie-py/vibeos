@@ -194,3 +194,14 @@ pub unsafe fn TermSetMenuClose(Console: PCONSRV_CONSOLE, Enable: BOOL) -> BOOL {
     let vtbl = (*fe_iface).Vtbl;
     ((*vtbl).SetMenuClose.unwrap())(fe_iface, Enable)
 }
+
+#[inline(always)]
+pub unsafe fn TermGetFontSize(Console: PCONSRV_CONSOLE, pSize: PCOORD) {
+    let fe_iface = core::ptr::addr_of_mut!((*Console).FrontEndIFace);
+    let vtbl = (*fe_iface).Vtbl;
+    // A frontend without the op reports no font (0x0) rather than taking csrss down.
+    match (*vtbl).GetFontSize {
+        Some(GetFontSize) => GetFontSize(fe_iface, pSize),
+        None => *pSize = COORD { X: 0, Y: 0 },
+    }
+}

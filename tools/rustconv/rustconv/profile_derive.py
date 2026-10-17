@@ -4623,13 +4623,8 @@ def scaffold_crate(
     # The MACROS only, by name: a glob would also pull win32macros' type aliases
     # (HANDLE, WCHAR) into the prelude next to the island's, and every use of either
     # becomes E0659 ambiguous.
-    macro_src = dp.env.repo_root / "sdk" / "lib" / "rust" / "win32macros-rust" / "src"
-    names = sorted(
-        {
-            n
-            for f in (macro_src.glob("*.rs") if macro_src.is_dir() else [])
-            for n in re.findall(r"macro_rules!\s+([A-Za-z_]\w*)", f.read_text())
-        }
+    names = exported_macro_names(
+        dp.env.repo_root / "sdk" / "lib" / "rust" / "win32macros-rust" / "src"
     )
     if names:
         win32_reexport = (
@@ -4934,3 +4929,19 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def exported_macro_names(macro_src: Path) -> list[str]:
+    """The `#[macro_export]` macros of a crate's source: what `pub use krate::{..}` can name.
+    A helper `macro_rules!` local to a function body (win32macros' `at!` inside
+    wine_dbgstr_variant) is no crate-root name, and importing it is E0432 in every prelude."""
+    return sorted(
+        {
+            n
+            for f in (macro_src.glob("*.rs") if macro_src.is_dir() else [])
+            for n in re.findall(
+                r"(?m)^\s*#\[macro_export\](?:\s*#\[[^\]]*\])*\s*macro_rules!\s+([A-Za-z_]\w*)",
+                f.read_text(),
+            )
+        }
+    )

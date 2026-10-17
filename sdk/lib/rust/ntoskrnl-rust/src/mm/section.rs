@@ -3811,11 +3811,8 @@ pub unsafe extern "system" fn MmMapViewOfSection(
         }
 
         // Windows refuses a reservation of a section that cannot be written
-        // (ZwMapViewOfSection.c:236; the C had no such check). A reserved view reaching past
-        // the end of the file (211) is NOT supported: the segment has no pages there, and
-        // unmapping such a view corrupted the file's cached pages for every later test
-        // (wrong data, then a BUGCHECK 0x1E on x86, 2026-10-16), so it stays refused below.
-        // \Device\PhysicalMemory is not a file.
+        // (ZwMapViewOfSection.c:236; the C had no such check). \Device\PhysicalMemory is not
+        // a file.
         let Reserve = (AllocationType & MEM_RESERVE) != 0;
         let IsFile = (*Section).u.Flags.PhysicalMemory() == 0;
         if IsFile && Reserve && (Initial & WRITE) == 0 {
@@ -3838,7 +3835,8 @@ pub unsafe extern "system" fn MmMapViewOfSection(
             let rem = (*SectionOffset).QuadPart & (PAGE_SIZE as i64 - 1);
             (*SectionOffset).QuadPart -= rem;
             if core::ptr::read_volatile(ViewSize) != 0 {
-                core::ptr::write_volatile(ViewSize, core::ptr::read_volatile(ViewSize) + rem as SIZE_T);
+                // Saturate: a ViewSize near the top wrapped to a small size and mapped it.
+                core::ptr::write_volatile(ViewSize, core::ptr::read_volatile(ViewSize).saturating_add(rem as SIZE_T));
             }
             (*SectionOffset).QuadPart
         };
@@ -3854,7 +3852,19 @@ pub unsafe extern "system" fn MmMapViewOfSection(
         }
 
         // Check if the offset and size are bigger than the section itself
-        if (ViewOffset as u64).wrapping_add(current_view_size as u64) > (*Section).SizeOfSection.QuadPart as u64 {
+        // A reservation of a file view may reach past the end of the file, which can grow into
+        // it (ZwMapViewOfSection.c:211). It may not exceed the user address space: a ViewSize of
+        // -1 would otherwise page-round to 0 and "succeed" with an empty view (:295).
+        if IsFile && Reserve && current_view_size > MM_HIGHEST_VAD_ADDRESS as SIZE_T {
+            MmUnlockAddressSpace(AddressSpace);
+            if IsAttached != 0 {
+                KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
+            }
+            return STATUS_INVALID_VIEW_SIZE;
+        }
+        if !(IsFile && Reserve)
+            && (ViewOffset as u64).wrapping_add(current_view_size as u64) > (*Section).SizeOfSection.QuadPart as u64
+        {
             if (*Section).u.Flags.PhysicalMemory() == 0 || ExGetPreviousMode() != 0i8 {
                 MmUnlockAddressSpace(AddressSpace);
                 if IsAttached != 0 {

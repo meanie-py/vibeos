@@ -49,20 +49,53 @@ unsafe fn KiUserTrap(TrapFrame: PKTRAP_FRAME) -> bool {
 
 #[inline(always)]
 unsafe fn KiWriteSystemTime(SystemTime: *mut KSYSTEM_TIME, NewTime: ULARGE_INTEGER) {
-    // Volatile stores: the write ORDER is the readers' torn-read guard, and
-    // plain stores to disjoint fields are reorderable by LLVM.
+    // The protocol is ndk/kefuncs.h's: High2Time FIRST marks an update in
+    // progress, the low part next, High1Time LAST. Readers take High1Time,
+    // then LowPart, and accept only if High2Time still equals High1Time, so a
+    // reader that sees the new High1Time is guaranteed the new LowPart.
+    // This used to write High1Time first and High2Time last (and the 64-bit
+    // path its u64 before High2Time): a reader on another CPU could then pair
+    // the NEW high word with the OLD low word and see both high words agree --
+    // a time ~7 minutes off each time LowPart wraps. Volatile, because the
+    // ORDER is the guard and LLVM may reorder plain stores to disjoint fields.
+    core::ptr::write_volatile(
+        core::ptr::addr_of_mut!((*SystemTime).High2Time),
+        NewTime.__bindgen_anon_1.HighPart as i32,
+    );
     #[cfg(target_pointer_width = "64")]
     {
-        core::ptr::write_volatile(SystemTime as *mut u64, NewTime.QuadPart);
-        core::ptr::write_volatile(core::ptr::addr_of_mut!((*SystemTime).High2Time), NewTime.__bindgen_anon_1.HighPart as i32);
+        // One 64-bit store (LowPart + High1Time), as the C. Not
+        // write_volatile::<u64>: KUSER_SHARED_DATA.SystemTime sits at +0x14,
+        // only 4-aligned, so that is UB (debug-assertions' alignment check
+        // fires on it). A single unaligned str/mov is what the C compiles to;
+        // like Windows, it relies on the 8 bytes sharing a cache line, which
+        // makes it single-copy atomic on x86-64 and on arm64 with LSE2.
+        let p = SystemTime as *mut u64;
+        let v = NewTime.QuadPart;
+        #[cfg(target_arch = "aarch64")]
+        core::arch::asm!(
+            // arm64 is weakly ordered: High2Time must be visible first.
+            "dmb ishst",
+            "str {v}, [{p}]",
+            p = in(reg) p,
+            v = in(reg) v,
+            options(nostack, preserves_flags),
+        );
+        #[cfg(target_arch = "x86_64")]
+        core::arch::asm!(
+            "mov qword ptr [{p}], {v}",
+            p = in(reg) p,
+            v = in(reg) v,
+            options(nostack, preserves_flags),
+        );
     }
     #[cfg(target_pointer_width = "32")]
     {
-        // Write order must be: High1Time, LowPart, High2Time (matching C code)
-        // This allows readers to detect torn reads by comparing High1Time == High2Time
-        core::ptr::write_volatile(core::ptr::addr_of_mut!((*SystemTime).High1Time), NewTime.__bindgen_anon_1.HighPart as i32);
         core::ptr::write_volatile(core::ptr::addr_of_mut!((*SystemTime).LowPart), NewTime.__bindgen_anon_1.LowPart);
-        core::ptr::write_volatile(core::ptr::addr_of_mut!((*SystemTime).High2Time), NewTime.__bindgen_anon_1.HighPart as i32);
+        core::ptr::write_volatile(
+            core::ptr::addr_of_mut!((*SystemTime).High1Time),
+            NewTime.__bindgen_anon_1.HighPart as i32,
+        );
     }
 }
 

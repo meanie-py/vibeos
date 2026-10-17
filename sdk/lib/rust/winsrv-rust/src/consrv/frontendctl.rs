@@ -548,7 +548,7 @@ pub unsafe extern "system" fn SrvGetConsoleFontSize(
 
 pub(crate) unsafe fn SrvGetConsoleFontSizeImpl(
     ApiMessage: *mut CONSOLE_API_MESSAGE,
-    _Console: PCONSRV_CONSOLE,
+    Console: PCONSRV_CONSOLE,
     ProcessData: *mut CONSOLE_PROCESS_DATA,
 ) -> i32 {
     let GetFontSizeRequest = core::ptr::addr_of_mut!(
@@ -567,8 +567,17 @@ pub(crate) unsafe fn SrvGetConsoleFontSizeImpl(
         return Status;
     }
 
+    // One font, index 0 (the C left this a FIXME and returned garbage). Any
+    // other index fails ERROR_INVALID_PARAMETER, as on Windows 11.
+    let Status = if (*GetFontSizeRequest).FontIndex != 0 {
+        STATUS_INVALID_PARAMETER
+    } else {
+        TermGetFontSize(Console, core::ptr::addr_of_mut!((*GetFontSizeRequest).FontSize));
+        STATUS_SUCCESS
+    };
+
     ConSrvReleaseScreenBuffer(Buff, 1u8);
-    STATUS_SUCCESS
+    Status
 }
 
 #[no_mangle]
@@ -588,7 +597,7 @@ pub unsafe extern "system" fn SrvGetConsoleCurrentFont(
 
 pub(crate) unsafe fn SrvGetConsoleCurrentFontImpl(
     ApiMessage: *mut CONSOLE_API_MESSAGE,
-    _Console: PCONSRV_CONSOLE,
+    Console: PCONSRV_CONSOLE,
     ProcessData: *mut CONSOLE_PROCESS_DATA,
 ) -> i32 {
     let GetCurrentFontRequest = core::ptr::addr_of_mut!(
@@ -608,6 +617,18 @@ pub(crate) unsafe fn SrvGetConsoleCurrentFontImpl(
     }
 
     (*GetCurrentFontRequest).FontIndex = 0;
+    if (*GetCurrentFontRequest).MaximumWindow != 0 {
+        // Windows answers the MAXIMUM WINDOW size here, in characters -- the
+        // dwMaximumWindowSize of GetConsoleScreenBufferInfo -- not a font size
+        // (measured on Windows 11: 120x84 for a 120x9001 buffer).
+        let mut Largest: COORD = core::mem::zeroed();
+        TermGetLargestConsoleWindowSize(Console, &mut Largest);
+        Largest.X = core::cmp::min(Largest.X, (*Buff).ScreenBufferSize.X);
+        Largest.Y = core::cmp::min(Largest.Y, (*Buff).ScreenBufferSize.Y);
+        (*GetCurrentFontRequest).FontSize = Largest;
+    } else {
+        TermGetFontSize(Console, core::ptr::addr_of_mut!((*GetCurrentFontRequest).FontSize));
+    }
 
     ConSrvReleaseScreenBuffer(Buff, 1u8);
     STATUS_SUCCESS

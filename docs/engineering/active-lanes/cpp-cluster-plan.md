@@ -58,11 +58,12 @@ and all shared-file edits stay central. The brief that worked (Sonnet; mmc_new) 
 
 ## rapps (FLIPPED 2026-10-15)
 
-**RESUME HERE (2026-10-15 night):** landing is PAUSED at the user's request while the
-control plane reworks the build system; they will ping when it is time. Then: `git fetch &&
-git merge origin/master`, `./vibeos-cli build --arch {i386,amd64,arm64}` on the merged tree,
-`./vibeos-cli land`. The lane tip was withdrawn from the queue (`land --withdraw`), never
-gated. appstorm rapps PASS x3 on this lane (i386/amd64 at eaa7815, arm64 at 8ab976d).
+**RESUME HERE (2026-10-16 night):** rapps and the 2026-10-16 owed-items batch are on master
+(`d2d76dfa041`; appstorm 54/54 x3). Landing is now a merge request to the integration
+session (`vibeos-integration-f2`), not `./vibeos-cli land`. Next: the shell extensions, which
+first need a DLL object map / class factories in `atl_rust::com` (see Owed). A named stash
+`6298017a93468426bae860a6887d8112086980cf` holds whitespace-only churn the old port CLI wrote
+into ten shipped crates; it is safe to drop.
 
 Tooling done for it (pipeline doc § `port cppapp`): per-instantiation class templates, the
 rosctrls.h controls modeled as external classes (only reached methods are translated), ATL

@@ -346,6 +346,26 @@ def _crate_for_stem(repo: Path, stem: str) -> Path | None:
     return None
 
 
+def _crate_for_rel(repo: Path, rel: str) -> Path | None:
+    """`_crate_for_stem` for a built binary, with its extension as the tiebreak.
+
+    The stem alone is ambiguous when two binaries share one: wdmaud.sys is wdmaud-rust
+    while wdmaud.drv is wdmaud_drv-rust. By stem both mapped to the KERNEL crate, so the
+    staleness net judged wdmaud.drv against libwdmaud_rust.a, which it never links, and a
+    cold arm64 gate whose kernel lib happened to finish after the .drv link went
+    BUILD_INCOMPLETE on a current tree (integration batch 4, 2026-10-17). It also meant
+    wdmaud.drv's real crate was never checked. `<stem>_<ext>-rust` wins when it is a
+    linked member crate; otherwise the stem convention stands.
+    """
+    path = Path(rel)
+    ext = path.suffix.lower().lstrip(".")
+    if ext:
+        exact = _crate_for_stem(repo, f"{path.stem}_{ext}")
+        if exact is not None:
+            return exact
+    return _crate_for_stem(repo, path.stem)
+
+
 @functools.lru_cache(maxsize=4)
 def _cmake_named_crates(repo: str) -> frozenset[str] | None:
     """Every `<name>-rust` crate some CMake file names (a cohab flip's
@@ -493,8 +513,7 @@ def boot_set_cohab_rels(repo: Path, arch: str) -> list[str]:
     return sorted(
         rel
         for rel in boot_set
-        if Path(rel).suffix.lower() in _PE_SUFFIXES
-        and _crate_for_stem(repo, Path(rel).stem) is not None
+        if Path(rel).suffix.lower() in _PE_SUFFIXES and _crate_for_rel(repo, rel) is not None
     )
 
 
@@ -555,7 +574,7 @@ def cohab_staleness_reasons(repo: Path, arch: str) -> list[str]:
     build_dir = repo / f"build-{archcfg.base_arch(arch)}"
     reasons = []
     for rel in boot_set_cohab_rels(repo, arch):
-        crate = _crate_for_stem(repo, Path(rel).stem)
+        crate = _crate_for_rel(repo, rel)
         assert crate is not None  # boot_set_cohab_rels only returns mapped rels
         artifact = build_dir / rel
         if not artifact.is_file():

@@ -64,14 +64,14 @@ impl CSnapinCacheEntry {
             let mut Buffer = [0u16; (MAX_PATH) as _];
             let mut dwSize: ULONG;
             let mut ret: LONG;
-    
+
             let mut SnapinKey = CRegKey__make_0();
             ret = SnapinKey.Open(SnapinsKey.op_to_HKEY(), guidString, KEY_READ);
             if ret != (ERROR_SUCCESS as i32)
             {
                 return core::ptr::null_mut();
             }
-    
+
             let mut NodeTypesKey = CRegKey__make_0();
             ret = NodeTypesKey.Open(SnapinKey.op_to_HKEY(), CPP_COM_WSTR_F6E5A95477AE.as_ptr(), KEY_READ);
             if ret != (ERROR_SUCCESS as i32)
@@ -80,7 +80,7 @@ impl CSnapinCacheEntry {
                 return core::ptr::null_mut();
             }
             NodeTypesKey.Close();
-    
+
             let mut Name = CStringW::new();
             dwSize = (MAX_PATH as ULONG) * (core::mem::size_of::<WCHAR>() as ULONG);
             if SnapinKey.QueryStringValue(CPP_COM_WSTR_0C8C69F592A1.as_ptr(), IndirectBuffer.as_mut_ptr(), core::ptr::addr_of_mut!(dwSize)) == (ERROR_SUCCESS as i32)
@@ -94,7 +94,7 @@ impl CSnapinCacheEntry {
                     Name.Empty();
                 }
             }
-    
+
             if Name.IsEmpty()
             {
                 dwSize = (MAX_PATH as ULONG) * (core::mem::size_of::<WCHAR>() as ULONG);
@@ -103,29 +103,29 @@ impl CSnapinCacheEntry {
                     Name = CStringW::from_ptr(Buffer.as_ptr());
                 }
             }
-    
+
             if Name.IsEmpty()
             {
                 SnapinKey.Close();
                 return core::ptr::null_mut();
             }
-    
+
             let mut AboutGuidString = CStringW::new();
             dwSize = (MAX_PATH as ULONG) * (core::mem::size_of::<WCHAR>() as ULONG);
             if SnapinKey.QueryStringValue(CPP_COM_WSTR_099909F467C7.as_ptr(), Buffer.as_mut_ptr(), core::ptr::addr_of_mut!(dwSize)) == (ERROR_SUCCESS as i32)
             {
                 AboutGuidString = CStringW::from_ptr(Buffer.as_ptr());
             }
-    
+
             SnapinKey.Close();
-    
+
             if AboutGuidString.IsEmpty()
             {
                 return core::ptr::null_mut();
             }
-    
+
             let mut GuidString = CStringW::from_ptr(guidString);
-    
+
             return CSnapinCacheEntry__new_0(&GuidString, &AboutGuidString, &Name, hImageList);
         }
 }

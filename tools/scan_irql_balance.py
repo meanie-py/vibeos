@@ -169,10 +169,19 @@ def _call_name(node, src: bytes):
     if fn.type == "identifier":
         return src[fn.start_byte : fn.end_byte].decode(errors="replace"), args
     if fn.type == "scoped_identifier":
+        # A path into the standard library is never a workspace function, but
+        # summaries are keyed by bare name: `core::ptr::read` would inherit any
+        # workspace `fn read` that sleeps (sdhc's Host::read does).
+        path = src[fn.start_byte : fn.end_byte].decode(errors="replace")
+        if path.lstrip(":").split("::", 1)[0] in _STD_ROOTS:
+            return None
         name = fn.child_by_field_name("name")
         if name is not None:
             return src[name.start_byte : name.end_byte].decode(errors="replace"), args
     return None
+
+
+_STD_ROOTS = {"core", "std", "alloc"}
 
 
 # Not arguments: punctuation, and COMMENTS — tree-sitter makes an inline

@@ -199,6 +199,25 @@ def test_headers_regenerated_under_a_reused_result_are_rerun_not_failed(repo):
     session.__exit__(None, None, None)
 
 
+def test_headers_regenerated_after_revalidation_do_not_fail_the_session(repo):
+    # The gate's builds can rewrite build-*/sdk/include between the caller's
+    # stale_generated_hits() (which found the reused result current) and finish().
+    # A live run finishing at that moment would have passed; so must the hit.
+    label = "pytest:tools/rustconv/tests"
+    (repo / ".git/info/exclude").write_text("build-*/\n")
+    header = repo / "build-amd64/sdk/include/psdk/oleidl.h"
+    header.parent.mkdir(parents=True)
+    header.write_text("v1")
+    with receipts.ReceiptSession(repo) as session:
+        session.run(label, [], lambda: (label, True, "passed"))
+        session.finish()
+    with receipts.ReceiptSession(repo) as session:
+        session.run(label, [], lambda: pytest.fail("receipt missed"))
+        assert session.stale_generated_hits() == set()
+        header.write_text("v2")
+        session.finish()
+
+
 def test_runtime_environment_and_actual_tool_bytes(tmp_path, monkeypatch):
     tool = tmp_path / "compiler"
     tool.write_text("compiler one")

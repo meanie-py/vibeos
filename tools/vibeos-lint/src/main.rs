@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 use std::path::PathBuf;
-use vibeos_lint::{rules, Corpus, Rule};
+use vibeos_lint::{rules, Corpus, Rule, SourceNeeds};
 
 fn run() -> Result<(), String> {
     let mut root = PathBuf::from(".");
@@ -65,8 +65,21 @@ fn run() -> Result<(), String> {
     }
     let pool = builder.build().map_err(|e| e.to_string())?;
     let results = pool.install(|| {
-        let corpus =
-            Corpus::load_paths(&root, &inputs, selected.iter().any(|r| r.needs_c_sources()))?;
+        let needs = SourceNeeds {
+            workspace_rust: selected
+                .iter()
+                .any(|r| !r.needs_sdk_rust() && !r.needs_cdecl_sources()),
+            module_c: selected.iter().any(|r| r.needs_c_sources()),
+            tracked_c: selected.iter().any(|r| r.needs_c_twins()),
+            cargo_manifests: selected.iter().any(|r| r.needs_module_tree()),
+            sdk_rust: selected.iter().any(|r| r.needs_sdk_rust()),
+            cdecl_sources: selected.iter().any(|r| r.needs_cdecl_sources()),
+        };
+        let extras: Vec<PathBuf> = selected
+            .iter()
+            .flat_map(|r| r.extra_files().iter().map(PathBuf::from))
+            .collect();
+        let corpus = Corpus::load_scopes_with_extra(&root, &inputs, needs, &extras)?;
         vibeos_lint::execute(&corpus, &selected)
     })?;
     // Buffer all results until every plugin succeeds; never publish partial coverage.
