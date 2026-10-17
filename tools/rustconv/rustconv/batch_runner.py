@@ -144,6 +144,9 @@ def _submit_claude(
         cache_read_tokens = 0
         cache_write_tokens = 0
         stop_reason = None
+        # Set once the stream reports usage. Never set before, so every Claude attempt's
+        # result.json said `cost_usd: null` and the ledgers summed nothing for Haiku runs.
+        usage_known = False
 
         try:
             with client.messages.stream(**kwargs) as stream:
@@ -159,12 +162,14 @@ def _submit_claude(
                                     sink.write(delta_text)  # flush to disk now
                         elif event.type == "message_delta" and hasattr(event, "usage"):
                             output_tokens = event.usage.output_tokens
+                            usage_known = True
                             stop_reason = (
                                 event.delta.stop_reason if hasattr(event, "delta") else None
                             )
                         elif event.type == "message_start" and hasattr(event, "message"):
                             u = event.message.usage
                             input_tokens = u.input_tokens
+                            usage_known = True
                             # cache_*_input_tokens are billed separately from input_tokens
                             cache_read_tokens = getattr(u, "cache_read_input_tokens", 0) or 0
                             cache_write_tokens = getattr(u, "cache_creation_input_tokens", 0) or 0
@@ -179,6 +184,7 @@ def _submit_claude(
                 output_tokens=output_tokens,
                 cache_read_tokens=cache_read_tokens,
                 cache_write_tokens=cache_write_tokens,
+                usage_known=usage_known,
                 success=False,
                 error=f"stream interrupted: {stream_err}",
             )
@@ -196,6 +202,7 @@ def _submit_claude(
                 output_tokens=output_tokens,
                 cache_read_tokens=cache_read_tokens,
                 cache_write_tokens=cache_write_tokens,
+                usage_known=usage_known,
                 success=False,
                 error=f"empty output (stop_reason={stop_reason}, {output_tokens} output tokens)",
             )
@@ -208,6 +215,7 @@ def _submit_claude(
                 output_tokens=output_tokens,
                 cache_read_tokens=cache_read_tokens,
                 cache_write_tokens=cache_write_tokens,
+                usage_known=usage_known,
                 success=False,
                 error=(
                     f"truncated output at {output_tokens} tokens "
@@ -224,6 +232,7 @@ def _submit_claude(
             output_tokens=output_tokens,
             cache_read_tokens=cache_read_tokens,
             cache_write_tokens=cache_write_tokens,
+            usage_known=usage_known,
             success=True,
         )
 

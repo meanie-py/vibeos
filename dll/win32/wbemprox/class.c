@@ -125,6 +125,9 @@ static HRESULT WINAPI enum_class_object_Next(
     if (lTimeout != WBEM_INFINITE && !once++) FIXME("timeout not supported\n");
 
     *puReturned = 0;
+#ifdef __REACTOS__
+    if (view->status != S_OK) return view->status;
+#endif
 
     for (i = 0; i < uCount; i++)
     {

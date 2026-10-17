@@ -1,0 +1,5 @@
+add_definitions(-D_WIN32_WINNT=0x0A00)
+add_executable(mi_apitest mi.c testlist.c)
+set_module_type(mi_apitest win32cui)
+add_importlibs(mi_apitest mi user32 msvcrt kernel32)
+add_rostests_file(TARGET mi_apitest)

@@ -25,3 +25,9 @@ panic-common = { path = "../panic-common", features = ["user"] }
 ntdll-sys = { path = "../ntdll-sys" }
 winelist-rust = { path = "../winelist-rust" }
 winsrv-sys = { path = "../winsrv-sys" }
+
+[features]
+# Never enabled. rtl-version's lib.rs is #[path]-included by client/version.rs for its
+# comparison; its two #[no_mangle] exports sit behind `feature = "exports"`, which must stay
+# off here (ntdll owns RtlVerifyVersionInfo / VerSetConditionMask).
+exports = []

@@ -2447,8 +2447,8 @@
 @ stub -version=0xA00+ KeQueryInterruptTimePrecise
 @ stub -version=0xA00+ KeQueryLogicalProcessorRelationship
 @ stub -version=0xA00+ KeQueryMaximumGroupCount
-@ stub -version=0xA00+ KeQueryMaximumProcessorCount
-@ stub -version=0xA00+ KeQueryMaximumProcessorCountEx
+@ stdcall KeQueryMaximumProcessorCount()
+@ stdcall KeQueryMaximumProcessorCountEx(long)
 @ stub -version=0xA00+ KeQueryNodeActiveAffinity
 @ stub -version=0xA00+ KeQueryNodeActiveAffinity2
 @ stub -version=0xA00+ KeQueryNodeActiveProcessorCount
