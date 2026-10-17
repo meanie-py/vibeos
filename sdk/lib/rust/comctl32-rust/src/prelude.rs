@@ -512,7 +512,7 @@ extern "C" {
     pub fn strcat(dst: *mut c_char, src: *const c_char) -> *mut c_char; // crt-shared-rust/src/prelude.rs
     pub fn strcpy(dest: *mut i8, src: *const i8) -> *mut i8; // cabinet-rust/src/cabinet/cabinet_main.rs
     pub fn strlen(s: *const i8) -> usize; // advapi32-rust/src/prelude.rs
-    pub fn towupper(c: c_int) -> c_int; // dnsapi-rust/src/prelude.rs
+    pub fn towupper(c: wint_t) -> wint_t; // dnsapi-rust/src/prelude.rs
     pub fn wcschr(s: *const u16, c: u16) -> *mut u16; // advapi32-rust/src/wine/cred.rs
     pub fn wcscmp(a: *const u16, b: *const u16) -> c_int; // browser-rust/src/prelude.rs
     pub fn wcscspn(s: *const u16, set: *const u16) -> usize; // kernel32-rust/src/prelude.rs
