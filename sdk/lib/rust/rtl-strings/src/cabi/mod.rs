@@ -89,8 +89,10 @@ const TAG_OSTR: u32 = u32::from_be_bytes(*b"RTSO"); // C literal 'RTSO' -- sdk/l
 //      paths still fire (and RtlAllocateHeap isn't linkable on host).
 #[cfg(feature = "kernel")]
 extern "system" {
-    fn RtlpAllocateMemory(Bytes: u32, Tag: u32) -> *mut u8;
-    fn RtlpFreeMemory(Mem: *mut u8, Tag: u32);
+    // rtlp.h: `PVOID RtlpAllocateMemory(ULONG, ULONG)`, `VOID RtlpFreeMemory(PVOID, ULONG)`;
+    // spelled exactly as path_wave's declaration of the same symbols.
+    fn RtlpAllocateMemory(Bytes: u32, Tag: u32) -> *mut core::ffi::c_void;
+    fn RtlpFreeMemory(Mem: *mut core::ffi::c_void, Tag: u32);
 }
 #[cfg(all(not(feature = "kernel"), target_os = "windows"))]
 extern "system" {
@@ -102,7 +104,7 @@ extern "system" {
 unsafe fn rtl_alloc(bytes: usize, tag: u32) -> *mut u8 {
     #[cfg(feature = "kernel")]
     {
-        RtlpAllocateMemory(bytes as u32, tag)
+        (RtlpAllocateMemory(bytes as u32, tag)).cast()
     }
     #[cfg(all(not(feature = "kernel"), target_os = "windows"))]
     {
@@ -121,7 +123,7 @@ unsafe fn rtl_free(p: *mut u8, tag: u32) {
     #[cfg(feature = "kernel")]
     {
         if !p.is_null() {
-            RtlpFreeMemory(p, tag);
+            RtlpFreeMemory((p).cast(), tag);
         }
     }
     #[cfg(all(not(feature = "kernel"), target_os = "windows"))]
@@ -5617,8 +5619,8 @@ extern "system" {
     ) -> i32;
     fn RtlMapGenericMask(access_mask: *mut u32, generic_mapping: *const GENERIC_MAPPING_FFI);
     fn RtlEqualLuid(luid1: *const LUID_FFI, luid2: *const LUID_FFI) -> u8;
-    fn NtClose(handle: *mut u8) -> i32;
 }
+use path_wave::NtClose;
 
 #[inline]
 unsafe fn round_up_4(n: u32) -> u32 {
@@ -6048,7 +6050,7 @@ pub unsafe extern "system" fn RtlCreateUserSecurityObject(
         token_handle,
         generic_mapping,
     );
-    let _ = NtClose(token_handle);
+    let _ = NtClose(token_handle.cast());
     RtlFreeHeap(RtlGetProcessHeap(), 0, sd_ptr);
     status
 }
@@ -6309,13 +6311,13 @@ pub unsafe extern "system" fn RtlDefaultNpAcl(p_acl: *mut *mut u8) -> i32 {
         &mut return_length,
     );
     if status != env::STATUS_BUFFER_TOO_SMALL {
-        let _ = NtClose(token_handle);
+        let _ = NtClose(token_handle.cast());
         return status;
     }
 
     let owner_sid_buf = RtlAllocateHeap(RtlGetProcessHeap(), 0, return_length as usize);
     if owner_sid_buf.is_null() {
-        let _ = NtClose(token_handle);
+        let _ = NtClose((token_handle).cast());
         return STATUS_NO_MEMORY;
     }
 
@@ -6328,7 +6330,7 @@ pub unsafe extern "system" fn RtlDefaultNpAcl(p_acl: *mut *mut u8) -> i32 {
     );
     if !nt_success(status) {
         RtlFreeHeap(RtlGetProcessHeap(), 0, owner_sid_buf);
-        let _ = NtClose(token_handle);
+        let _ = NtClose((token_handle).cast());
         return status;
     }
 
@@ -6346,7 +6348,7 @@ pub unsafe extern "system" fn RtlDefaultNpAcl(p_acl: *mut *mut u8) -> i32 {
     let acl = RtlAllocateHeap(RtlGetProcessHeap(), 0, acl_size as usize);
     if acl.is_null() {
         RtlFreeHeap(RtlGetProcessHeap(), 0, owner_sid_buf);
-        let _ = NtClose(token_handle);
+        let _ = NtClose((token_handle).cast());
         return STATUS_NO_MEMORY;
     }
     *p_acl = acl;
@@ -6393,7 +6395,7 @@ pub unsafe extern "system" fn RtlDefaultNpAcl(p_acl: *mut *mut u8) -> i32 {
     }
 
     RtlFreeHeap(RtlGetProcessHeap(), 0, owner_sid_buf);
-    let _ = NtClose(token_handle);
+    let _ = NtClose((token_handle).cast());
     status
 }
 
@@ -6449,7 +6451,7 @@ pub unsafe extern "system" fn RtlNewSecurityGrantedAccess(
     };
 
     if !caller_token {
-        let _ = NtClose(token);
+        let _ = NtClose((token).cast());
     }
 
     let needed = core::mem::size_of::<PRIVILEGE_SET_FFI>() as u32;
@@ -6596,8 +6598,8 @@ pub unsafe extern "system" fn RtlInitializeResource(resource: *mut res::RTL_RESO
 pub unsafe extern "system" fn RtlDeleteResource(resource: *mut res::RTL_RESOURCE) {
     let r = &mut *resource;
     let _ = RtlDeleteCriticalSection(&mut r.Lock as *mut _ as *mut u8);
-    let _ = NtClose(r.ExclusiveSemaphore);
-    let _ = NtClose(r.SharedSemaphore);
+    let _ = NtClose((r.ExclusiveSemaphore).cast());
+    let _ = NtClose((r.SharedSemaphore).cast());
     r.OwningThread = core::ptr::null_mut();
     r.ExclusiveWaiters = 0;
     r.SharedWaiters = 0;
@@ -6807,15 +6809,13 @@ pub unsafe extern "system" fn RtlReleaseResource(resource: *mut res::RTL_RESOURC
 /// `%u`) — same as the C original.
 #[no_mangle]
 pub unsafe extern "system" fn RtlDumpResource(resource: *mut res::RTL_RESOURCE) {
-    extern "C" {
-        fn DbgPrint(fmt: *const u8, ...) -> u32;
-    }
+    use path_wave::DbgPrint;
     let r = &*resource;
 
     // C: "RtlDumpResource(%p):\n\tactive count = %d\n\twaiting readers = %u\n\twaiting writers = %u\n"
     let fmt1 = b"RtlDumpResource(%p):\n\tactive count = %d\n\twaiting readers = %u\n\twaiting writers = %u\n\0";
     let _ = DbgPrint(
-        fmt1.as_ptr(),
+        (fmt1.as_ptr()).cast(),
         resource as *const u8,
         r.NumberActive,
         r.SharedWaiters,
@@ -6824,7 +6824,7 @@ pub unsafe extern "system" fn RtlDumpResource(resource: *mut res::RTL_RESOURCE) 
 
     if r.NumberActive != 0 {
         let fmt2 = b"\towner thread = %p\n\0";
-        let _ = DbgPrint(fmt2.as_ptr(), r.OwningThread);
+        let _ = DbgPrint((fmt2.as_ptr()).cast(), r.OwningThread);
     }
 }
 
@@ -7199,7 +7199,7 @@ pub unsafe extern "system" fn RtlCreateUserThread(
         if !thread_handle.is_null() {
             *thread_handle = handle;
         } else {
-            let _ = NtClose(handle);
+            let _ = NtClose((handle).cast());
         }
         if !client_id.is_null() {
             *client_id = thread_cid;
@@ -9009,7 +9009,7 @@ mod path_wave {
     // failed did so without a word on the serial port. Variadic, so extern "C"
     // (cdecl) on every arch — the same binding RtlDumpResource already uses.
     extern "C" {
-        fn DbgPrint(fmt: *const i8, ...) -> u32;
+        pub fn DbgPrint(fmt: *const i8, ...) -> u32;
     }
     #[inline]
     unsafe fn RtlInitEmptyUnicodeString(dest: *mut UNICODE_STRING, buf: PWSTR, max: u16) {
@@ -9025,12 +9025,12 @@ mod path_wave {
         // rtlp.h: RtlpAllocateStringMemory/RtlpFreeStringMemory are C MACROS for
         // RtlpAllocateMemory/RtlpFreeMemory — C never emits a `RtlpAllocateString*`
         // symbol. Bind the real macro targets and wrap them inline below.
-        fn RtlpAllocateMemory(Bytes: ULONG, Tag: ULONG) -> PWSTR;
-        fn RtlpFreeMemory(Mem: *mut core::ffi::c_void, Tag: ULONG);
+        pub fn RtlpAllocateMemory(Bytes: u32, Tag: u32) -> *mut core::ffi::c_void;
+        pub fn RtlpFreeMemory(Mem: *mut core::ffi::c_void, Tag: u32);
         fn RtlGetCurrentPeb() -> PPEB;
         fn RtlAcquirePebLock();
         fn RtlReleasePebLock();
-        fn NtClose(Handle: HANDLE) -> NTSTATUS;
+        pub fn NtClose(Handle: HANDLE) -> NTSTATUS;
         fn NtOpenFile(
             FileHandle: *mut HANDLE,
             DesiredAccess: u32,
@@ -9076,7 +9076,7 @@ mod path_wave {
     // RtlpAllocateStringMemory/RtlpFreeStringMemory: rtlp.h macros → Rtlp{Allocate,Free}Memory.
     #[inline]
     unsafe fn RtlpAllocateStringMemory(Length: ULONG, Tag: ULONG) -> PWSTR {
-        RtlpAllocateMemory(Length, Tag)
+        (RtlpAllocateMemory(Length, Tag)).cast()
     }
     #[inline]
     unsafe fn RtlpFreeStringMemory(Buffer: *mut core::ffi::c_void, Tag: ULONG) {

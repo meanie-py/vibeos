@@ -1,14 +1,12 @@
 use ntdll_sys::nt::*;
+// The crate's own functions: the definition is the declaration.
+use crate::client::utils::Basep8BitStringToDynamicUnicodeString;
 use crate::prelude::*;
 use core::ffi::c_void;
 use crate::k32_externs::InitializeObjectAttributes;
 
 extern "system" {
     fn Basep8BitStringToStaticUnicodeString(String: LPCSTR) -> PUNICODE_STRING;
-    fn Basep8BitStringToDynamicUnicodeString(
-        UnicodeString: *mut _UNICODE_STRING,
-        AnsiString: LPCSTR,
-    ) -> BOOLEAN;
 }
 
 // RtlMoveMemory is a macro for memmove (overlap-safe) in the C headers.

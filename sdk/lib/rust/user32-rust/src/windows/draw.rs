@@ -1,4 +1,10 @@
 use win32k_sys::win32k::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::windows::dialog::CreateFontIndirectW;
+use crate::winbase::MoveToEx;
+// The crate's own functions: the definition is the declaration.
+use crate::windows::font::DrawTextW;
+use crate::windows::rect::IsRectEmpty;
 use core::ffi::c_void;
 // user32-internal cohab symbols (UserApiHook trio, LoadUserApiHook, guah,
 // gfServerProcess) live in the surviving C objects / internal.rs.
@@ -21,7 +27,6 @@ extern "system" {
     fn GetStockObject(i: core::ffi::c_int) -> HGDIOBJ;
     fn GetSysColor(nIndex: core::ffi::c_int) -> COLORREF;
     fn LineTo(hdc: HDC, x: core::ffi::c_int, y: core::ffi::c_int) -> BOOL;
-    fn MoveToEx(hdc: HDC, x: core::ffi::c_int, y: core::ffi::c_int, lppt: *mut POINT) -> BOOL;
     fn Polygon(hdc: HDC, apt: *const POINT, cpt: core::ffi::c_int) -> BOOL;
     fn Ellipse(hdc: HDC, left: i32, top: i32, right: i32, bottom: i32) -> BOOL;
     fn SetDCBrushColor(hdc: HDC, color: COLORREF) -> COLORREF;
@@ -29,7 +34,6 @@ extern "system" {
     fn BitBlt(hdc: HDC, x: core::ffi::c_int, y: core::ffi::c_int, cx: core::ffi::c_int, cy: core::ffi::c_int, hdcSrc: HDC, x1: core::ffi::c_int, y1: core::ffi::c_int, rop: u32) -> i32;
     fn CreateBitmap(nWidth: core::ffi::c_int, nHeight: core::ffi::c_int, nPlanes: u32, nBitCount: u32, lpBits: *const core::ffi::c_void) -> HBITMAP;
     fn CreateCompatibleDC(hdc: HDC) -> HDC;
-    fn CreateFontIndirectW(lplf: *const LOGFONTW) -> HFONT;
     fn DeleteDC(hdc: HDC) -> i32;
     fn DeleteObject(ho: HGDIOBJ) -> i32;
     fn GetCurrentObject(hdc: HDC, type_: u32) -> HGDIOBJ;
@@ -51,9 +55,7 @@ extern "system" {
     fn lstrcpyW(lpString1: LPWSTR, lpString2: LPCWSTR) -> LPWSTR;
     fn DrawIconEx(hdc: HDC, xLeft: INT, yTop: INT, hIcon: HICON, cxWidth: INT, cyHeight: INT, istepIfAniCur: UINT, hbrFlickerFreeDraw: HBRUSH, diFlags: UINT) -> BOOL;
     fn DrawTextA(hdc: HDC, lpchText: LPSTR, cchText: INT, lprc: LPRECT, format: UINT) -> INT;
-    fn DrawTextW(hdc: HDC, lpchText: LPWSTR, cchText: INT, lprc: LPRECT, format: UINT) -> INT;
     fn OffsetViewportOrgEx(hdc: HDC, x: INT, y: INT, lppt: *mut POINT) -> BOOL;
-    fn IsRectEmpty(lprc: *mut RECT) -> i32;
     fn GetSysColorBrush(nIndex: i32) -> HBRUSH;
     fn InflateRect(lprc: LPRECT, dx: i32, dy: i32) -> BOOL;
     fn GetMapMode(hdc: HDC) -> i32;

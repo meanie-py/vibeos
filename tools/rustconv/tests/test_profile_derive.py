@@ -34,6 +34,7 @@ from rustconv.profile_derive import (
     find_switch_constants,
     header_symbols,
     is_shim_tu,
+    late_includes,
     merge_prologue,
     parse_cmakelists,
     resolve_sys_crate,
@@ -1339,11 +1340,12 @@ class TestFlippedModule:
             "rust_strsafe_shim.c",
             "rust_cohab_fat.c",
             "rust_layout_assert.c",
+            "rust_cohab_stub.cpp",
         ):
             assert is_shim_tu(Path("dll/cpl/sysdm") / name), name
 
     def test_a_real_tu_is_not_mistaken_for_scaffolding(self):
-        for name in ("sysdm.c", "environment.c", "rustle.c", "trust.c"):
+        for name in ("sysdm.c", "environment.c", "rustle.c", "trust.c", "rustle.cpp"):
             assert not is_shim_tu(Path("dll/cpl/sysdm") / name), name
 
     def test_a_commented_out_source_list_is_restored(self):
@@ -1823,3 +1825,52 @@ def test_a_cargo_linked_module_still_owns_its_flipped_sources(tmp_path):
     assert sorted(p.name for p in m.compiled_tus) == ["host.c", "main.c"]
     assert m.module_type == "win32cui" and m.unicode
     assert "-DUNICODE" in m.definitions
+
+
+def test_late_includes_are_file_scope_and_live_only():
+    """wscript's main.c includes <msxml2.h> at line 749 under `#ifdef __REACTOS__`; the
+    prologue mirror stopped at the first code line, so the island had none of msxml2.h."""
+    src = (
+        "#include <windows.h>\n"
+        "static int x;\n"
+        "#ifdef __REACTOS__\n"
+        "#include <msxml2.h>\n"
+        "#endif\n"
+        "#ifndef __REACTOS__\n"
+        "#include <unistd.h>\n"
+        "#endif\n"
+        "#ifdef SOMETHING_UNKNOWN\n"
+        "#include <maybe.h>\n"
+        "#endif\n"
+        "/* a comment\n"
+        "#include <commented.h>\n"
+        "*/\n"
+        "void f(void)\n"
+        "{\n"
+        '    const char *s = "{";\n'
+        '#include "body.inl"\n'
+        "}\n"
+        '#include "after.h"\n'
+    )
+    live, undecided = late_includes(src)
+    assert live == [(4, "#include <msxml2.h>"), (20, '#include "after.h"')]
+    assert undecided == [(10, "#include <maybe.h>")]
+
+
+def test_a_cpp_cohab_stub_is_a_shim_not_a_translation_unit():
+    """A flipped C++ app keeps rust_cohab_stub.cpp; rapps recorded it as a TU."""
+    assert is_shim_tu(Path("base/applications/rapps/rust_cohab_stub.cpp"))
+    assert is_shim_tu(Path("dll/win32/x/rust_varargs_shim.c"))
+    assert not is_shim_tu(Path("base/applications/rapps/appview.cpp"))
+    assert not is_shim_tu(Path("base/applications/rapps/rust_notes.h"))
+
+
+def test_only_exported_macros_are_reexported(tmp_path):
+    (tmp_path / "lib.rs").write_text(
+        "#[macro_export]\nmacro_rules! ZeroMemory { () => {} }\n"
+        "#[macro_export]\n#[doc(hidden)]\nmacro_rules! HIWORD { () => {} }\n"
+        "pub fn f() {\n    macro_rules! at { () => {} }\n}\n"
+    )
+    from rustconv.profile_derive import exported_macro_names
+
+    assert exported_macro_names(tmp_path) == ["HIWORD", "ZeroMemory"]

@@ -1,15 +1,30 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
-use ntkrnl_sys::globals::*;
+// One declaration per external symbol: ddk_shims.rs.
+use crate::ddk_shims::FlagOn;
+use crate::ddk_shims::CdFreePool;
+// The crate's own functions: the definition is the declaration.
+use crate::cdmacros::CdAcquireFcbExclusive;
+use crate::cachesup::CdCreateInternalStream;
+use crate::cdmacros::CdFreeIoContext;
+use crate::cdmacros::CdIncrementReferenceCounts;
+use crate::dirsup::CdLookupNextDirent;
+use crate::deviosup::CdPerformDevIoCtrlEx;
+use crate::ddk_shims::CdRaiseStatus;
+use crate::cdmacros::CdReleaseFcb;
+use crate::dirsup::CdUpdateDirentFromRawDirent;
+use crate::cdmacros::RtlEqualMemory;
+use crate::cdmacros::SafeNodeType;
+use crate::cdmacros::SwapCopyUchar4;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CLONG, ExDeleteResourceLite, ExInitializeFastMutex, ExInitializeResourceLite, _IO_STATUS_BLOCK, IoDeleteDevice, IoFreeIrp, IoGetCurrentIrpStackLocation, PDEVICE_OBJECT, PFILE_LOCK, PIO_STACK_LOCATION, PLARGE_INTEGER, PRTL_GENERIC_ALLOCATE_ROUTINE, PRTL_GENERIC_COMPARE_ROUTINE, PRTL_GENERIC_FREE_ROUTINE, PRTL_GENERIC_TABLE, PVPB, RtlInitializeGenericTable, RtlLookupElementGenericTable, VPB};
+use ntkrnl_sys::ddk::{ExDeleteResourceLite, ExInitializeFastMutex, ExInitializeResourceLite, _IO_STATUS_BLOCK, IoDeleteDevice, IoFreeIrp, IoGetCurrentIrpStackLocation, PFILE_LOCK, PIO_STACK_LOCATION, PRTL_GENERIC_ALLOCATE_ROUTINE, PRTL_GENERIC_COMPARE_ROUTINE, PRTL_GENERIC_FREE_ROUTINE, RtlInitializeGenericTable, RtlLookupElementGenericTable, VPB};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{CCB, CDROM_TOC_LARGE, CD_MCB_ENTRY, COMPOUND_DIRENT, DIRENT, DIRENT_ENUM_CONTEXT, FCB, FCB_DATA, FCB_INDEX, FCB_NONPAGED, FILE_ENUM_CONTEXT, FILE_ID, IRP_CONTEXT, IRP_CONTEXT_FLAG_IN_TEARDOWN, IRP_CONTEXT_LITE, NODE_TYPE_CODE, PATH_ENTRY, PFCB, TRACK_DATA, VCB, VCB_STATE_AUDIO_DISK, VCB_STATE_CDXA, VCB_STATE_REMOVABLE_MEDIA, VOLUME_DEVICE_OBJECT, _VCB_CONDITION_VcbMountInProgress as VcbMountInProgress};
+use crate::types::{CCB, CDROM_TOC_LARGE, CD_MCB_ENTRY, COMPOUND_DIRENT, DIRENT, FCB, FCB_DATA, FCB_INDEX, FCB_NONPAGED, FILE_ENUM_CONTEXT, FILE_ID, IRP_CONTEXT, IRP_CONTEXT_FLAG_IN_TEARDOWN, IRP_CONTEXT_LITE, NODE_TYPE_CODE, PATH_ENTRY, PFCB, TRACK_DATA, VCB, VCB_STATE_AUDIO_DISK, VCB_STATE_CDXA, VCB_STATE_REMOVABLE_MEDIA, VOLUME_DEVICE_OBJECT, _VCB_CONDITION_VcbMountInProgress as VcbMountInProgress};
 use ntkrnl_sys::ddk::{DEVICE_OBJECT, ExFreePoolWithTag, FAST_MUTEX, FSRTL_ADVANCED_FCB_HEADER, OPLOCK, RTL_GENERIC_TABLE, _RTL_GENERIC_COMPARE_RESULTS_GenericEqual as GenericEqual, _RTL_GENERIC_COMPARE_RESULTS_GenericGreaterThan as GenericGreaterThan, _RTL_GENERIC_COMPARE_RESULTS_GenericLessThan as GenericLessThan, _UNICODE_STRING};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlInitializeOplock, FsRtlNotifyInitializeSync, FsRtlNotifyUninitializeSync, FsRtlTeardownPerStreamContexts};
@@ -19,8 +34,6 @@ use ntkrnl_sys::ddk::{PopEntryList, PIRP};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::cddata::{CdData};
 use crate::ddk_shims::{FsRtlFreeFileLock, FsRtlUninitializeOplock};
-// resolve_imports.py: explicit kernel/private-type imports
-use crate::ddk_shims::{ASSERT_EXCLUSIVE_CDDATA, ASSERT_EXCLUSIVE_VCB};
 use crate::glue::{CdNonPagedPool};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CDROM_READ_TOC_EX};
@@ -38,7 +51,6 @@ extern "C" {
     fn CdBugCheck(a: usize, b: usize, c: usize);
 }
 extern "C" {
-    fn CdFreePool(P: *mut *mut core::ffi::c_void);
 }
 extern "C" {
     fn CdGetFcbOplock(Fcb: *mut FCB) -> *mut OPLOCK;
@@ -47,13 +59,11 @@ extern "C" {
     fn CdInitializeMcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
 }
 extern "C" {
-    fn CdRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
 }
 extern "C" {
     fn FsRtlSetupAdvancedHeader( Header: *mut FSRTL_ADVANCED_FCB_HEADER, Mutex: *mut FAST_MUTEX, );
 }
 extern "C" {
-    fn _SEH2_AbnormalTermination() -> i32;
 }
 extern "C" {
     fn CdUpdateMediaChangeCount(Vcb: *mut VCB, MediaChangeCount: ULONG);
@@ -73,7 +83,6 @@ extern "C" {
     fn CdAddInitialAllocation(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, StartingBlock: u32, DataLength: i64);
 }
 extern "C" {
-    fn CdIncrementReferenceCounts(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, RefInc: i32, UserRefInc: i32);
 }
 extern "C" {
     fn InsertTailList(ListHead: *mut LIST_ENTRY, Entry: *mut LIST_ENTRY);
@@ -91,13 +100,11 @@ extern "C" {
     fn CdLockFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
 }
 extern "C" {
-    fn CdLookupNextDirent(IrpContext: *mut IRP_CONTEXT, ParentFcb: *mut FCB, CurrentDirContext: *mut DIRENT_ENUM_CONTEXT, PreviousDirContext: *const DIRENT_ENUM_CONTEXT) -> i32;
 }
 extern "C" {
     fn CdUnlockFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
 }
 extern "C" {
-    fn CdUpdateDirentFromRawDirent(IrpContext: *mut IRP_CONTEXT, ParentFcb: *mut FCB, DirContext: *const DIRENT_ENUM_CONTEXT, Dirent: *mut DIRENT);
 }
 extern "C" {
     fn LlBlockAlign(Vcb: *mut VCB, FileSize: i64) -> i64;
@@ -106,7 +113,6 @@ extern "C" {
     fn CdAllocateCcb(IrpContext: *mut IRP_CONTEXT) -> *mut CCB;
 }
 extern "C" {
-    fn FlagOn(Flags: u32, Flag: u32) -> i32;
 }
 extern "C" {
     fn ClearFlag(Flags: *mut u32, Mask: u32);
@@ -115,7 +121,6 @@ extern "C" {
     fn CdRestoreThreadContext(IrpContext: *mut IRP_CONTEXT);
 }
 extern "C" {
-    fn CdFreeIoContext(IoContext: *mut c_void);
 }
 extern "C" {
     fn CdLockCdData();
@@ -131,7 +136,6 @@ extern "system" {
 }
 extern "C" {
     // CdPerformDevIoCtrlEx is plain cdecl (no FASTCALL in cdprocs.h).
-    fn CdPerformDevIoCtrlEx( IrpContext: *mut IRP_CONTEXT, IoControlCode: u32, DeviceObject: *mut DEVICE_OBJECT, InputBuffer: *mut u8, InputBufferLength: usize, OutputBuffer: *mut u8, OutputBufferLength: usize, InternalDeviceIoControl: u8, Wait: u8, IoStatusBlock: *mut _IO_STATUS_BLOCK, ) -> i32;
 }
 extern "C" {
     fn CdAllocateFcbNonpaged(IrpContext: *mut IRP_CONTEXT) -> *mut FCB_NONPAGED;
@@ -140,7 +144,6 @@ extern "system" {
     fn FsRtlAllocatePoolWithTag(PoolType: u32, NumberOfBytes: u32, Tag: u32) -> *mut core::ffi::c_void;
 }
 extern "C" {
-    fn SwapCopyUchar4(dest: *mut u32, src: *const u8);
 }
 extern "C" {
     fn CdLbnToMmSsFf(lbn: u32, dest: *mut u8);
@@ -160,7 +163,6 @@ extern "C" {
     fn CdDeallocateFcbData(IrpContext: *mut IRP_CONTEXT, fcb: *mut core::ffi::c_void);
 }
 extern "C" {
-    fn CdCreateInternalStream( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Fcb: *mut FCB, Name: *const _UNICODE_STRING, );
 }
 extern "C" {
     fn CdFidSetDirectory(FileId: *mut FILE_ID);
@@ -193,7 +195,6 @@ extern "C" {
     fn CopyUchar4(Dst: *mut u32, Src: *const u8);
 }
 extern "C" {
-    fn RtlEqualMemory(B1: *const core::ffi::c_void, B2: *const core::ffi::c_void, Length: usize) -> i32;
 }
 extern "C" {
     fn LlBytesFromBlocks(Vcb: *mut VCB, Block: u32) -> LONGLONG;
@@ -211,7 +212,6 @@ extern "system" {
     static CdAudioLabel: [u8; 32];
 }
 extern "C" {
-    fn CdAcquireFcbExclusive(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Wait: u8) -> u32;
 }
 extern "C" {
     fn CdDecrementReferenceCounts(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, RefCount: u32, UserRefCount: u32);
@@ -223,13 +223,11 @@ extern "C" {
     fn CdDeleteInternalStream(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
 }
 extern "C" {
-    fn CdReleaseFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
 }
 extern "C" {
     fn CdRemovePrefix(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
 }
 extern "C" {
-    fn SafeNodeType(Node: *mut FCB) -> u32;
 }
 extern "system" {
     // PFILE_LOCK NTAPI FsRtlAllocateFileLock(PCOMPLETE_LOCK_IRP_ROUTINE, PUNLOCK_ROUTINE);
@@ -655,7 +653,7 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
                         IrpContext,
                         Vcb,
                         path_table_fcb,
-                        &raw const CdInternalStreamNames[0],
+                        &raw mut CdInternalStreamNames[0],
                     );
 
                     // Root index
@@ -698,7 +696,7 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
                         IrpContext,
                         Vcb,
                         root_index_fcb,
-                        &raw const CdInternalStreamNames[1],
+                        &raw mut CdInternalStreamNames[1],
                     );
 
                     // Volume dasd
@@ -771,7 +769,7 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
                         IrpContext,
                         Vcb,
                         path_table_fcb,
-                        &raw const CdInternalStreamNames[0],
+                        &raw mut CdInternalStreamNames[0],
                     );
 
                     // Root index
@@ -821,7 +819,7 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
                         IrpContext,
                         Vcb,
                         root_index_fcb,
-                        &raw const CdInternalStreamNames[1],
+                        &raw mut CdInternalStreamNames[1],
                     );
 
                     // Volume dasd
@@ -872,8 +870,8 @@ pub unsafe extern "C" fn CdDeleteVcb(
 ) {
     unsafe {
         PAGED_CODE!();
-        ASSERT_EXCLUSIVE_CDDATA();
-        ASSERT_EXCLUSIVE_VCB(Vcb);
+        ASSERT_EXCLUSIVE_CDDATA!();
+        ASSERT_EXCLUSIVE_VCB!(Vcb);
         UNREFERENCED_PARAMETER!(IrpContext);
 
         CdFreePool(core::ptr::addr_of_mut!((*Vcb).SwapVpb) as *mut *mut core::ffi::c_void);
@@ -1097,7 +1095,7 @@ pub unsafe extern "C" fn CdInitializeFcbFromFileContext(
                     IrpContext,
                     ParentFcb,
                     core::ptr::addr_of_mut!((*CurrentCompoundDirent).DirContext),
-                    core::ptr::addr_of!((*(*FileContext).CurrentDirent).DirContext),
+                    core::ptr::addr_of_mut!((*(*FileContext).CurrentDirent).DirContext),
                 ) == 0
                 {
                     CdRaiseStatus(IrpContext, STATUS_FILE_CORRUPT_ERROR);
@@ -1108,7 +1106,7 @@ pub unsafe extern "C" fn CdInitializeFcbFromFileContext(
                 CdUpdateDirentFromRawDirent(
                     IrpContext,
                     ParentFcb,
-                    core::ptr::addr_of!((*CurrentCompoundDirent).DirContext),
+                    core::ptr::addr_of_mut!((*CurrentCompoundDirent).DirContext),
                     core::ptr::addr_of_mut!((*CurrentCompoundDirent).Dirent),
                 );
             }
@@ -1267,7 +1265,7 @@ pub unsafe extern "C" fn CdTeardownStructures(
         |_| {
             {
                 loop {
-                    if SafeNodeType(CurrentFcb) != CDFS_NTC_FCB_DATA
+                    if SafeNodeType((CurrentFcb).cast()) != CDFS_NTC_FCB_DATA
                         && (*CurrentFcb).FcbUserReference == 0
                         && !(*fcb_idx(CurrentFcb)).FileObject.is_null()
                     {
@@ -1409,13 +1407,13 @@ pub unsafe extern "C" fn CdProcessToc(
 
     'retry_read_toc: loop {
         status = CdPerformDevIoCtrlEx(
-            IrpContext,
+            (IrpContext).cast(),
             if use_read_toc != 0 { IOCTL_CDROM_READ_TOC } else { IOCTL_CDROM_READ_TOC_EX },
             TargetDeviceObject,
-            &raw mut command as *mut u8,
-            core::mem::size_of::<CDROM_READ_TOC_EX>(),
-            CdromToc as *mut u8,
-            core::mem::size_of::<CDROM_TOC_LARGE>(),
+            (&raw mut command as *mut u8).cast(),
+            (core::mem::size_of::<CDROM_READ_TOC_EX>()) as _,
+            (CdromToc as *mut u8).cast(),
+            (core::mem::size_of::<CDROM_TOC_LARGE>()) as _,
             0,
             1,
             &raw mut iosb,

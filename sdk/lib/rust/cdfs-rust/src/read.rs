@@ -1,4 +1,10 @@
 use ntkrnl_sys::base::NT_SUCCESS;
+// One declaration per external symbol: types.rs.
+use crate::types::CdDecodeFileObject;
+// The crate's own functions: the definition is the declaration.
+use crate::cddata::CdCompleteRequest;
+use crate::cdmacros::CdMapUserBuffer;
+use crate::verfysup::CdVerifyFcbOperation;
 use ntkrnl_sys::base::NTSTATUS;
 use ntkrnl_sys::base::STATUS_SUCCESS;
 use ntkrnl_sys::constants::{STATUS_END_OF_FILE, STATUS_FILE_LOCK_CONFLICT, STATUS_INVALID_DEVICE_REQUEST, STATUS_PENDING};
@@ -10,7 +16,7 @@ use ntkrnl_sys::ddk::{CcCopyRead, CcInitializeCacheMap, CcMdlRead, CcSetReadAhea
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CCB, CCB_FLAG_ALLOW_EXTENDED_DASD_IO, CCB_FLAG_DISMOUNT_ON_CLOSE, CD_DATA, CD_IO_CONTEXT, CdOplockComplete, CdPrePostIrp, FCB, FCB_STATE_RAWSECTOR_MASK, IRP_CONTEXT, IRP_CONTEXT_FLAG_ALLOC_IO, IRP_CONTEXT_FLAG_FORCE_POST, IRP_CONTEXT_FLAG_WAIT, TYPE_OF_OPEN, _TYPE_OF_OPEN_UnopenedFileObject as UnopenedFileObject, _TYPE_OF_OPEN_UserDirectoryOpen as UserDirectoryOpen, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen, _TYPE_OF_OPEN_UserVolumeOpen as UserVolumeOpen};
-use ntkrnl_sys::ddk::{FILE_OBJECT, IRP, OPLOCK};
+use ntkrnl_sys::ddk::{IRP, OPLOCK};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlCheckOplock};
 use crate::glue::{CDFS_BUG_CHECK_READ, FO_SYNCHRONOUS_IO, IRP_MN_MDL, IRP_NOCACHE, IRP_PAGING_IO};
@@ -25,7 +31,6 @@ use ntkrnl_sys::ddk::ULONG_PTR;
 
 // cdecl cdfs-internal routines (C defs in filobsup.c are plain cdecl, no NTAPI).
 extern "C" {
-    fn CdDecodeFileObject( IrpContext: *mut IRP_CONTEXT, FileObject: *mut FILE_OBJECT, Fcb: *mut *mut FCB, Ccb: *mut *mut CCB, ) -> TYPE_OF_OPEN;
 }
 
 extern "C" {
@@ -41,7 +46,6 @@ extern "C" {
     fn CdAllocateIoContext() -> *mut CD_IO_CONTEXT;
 }
 extern "C" {
-    fn CdCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: NTSTATUS);
 }
 extern "C" {
     fn CdFsdPostRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP) -> NTSTATUS;
@@ -50,7 +54,6 @@ extern "C" {
     fn CdGetFcbOplock(Fcb: *mut FCB) -> *mut OPLOCK;
 }
 extern "C" {
-    fn CdMapUserBuffer(IrpContext: *mut IRP_CONTEXT, UserBuffer: *mut *mut c_void,);
 }
 extern "C" {
     fn CdNonCachedRead( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, StartingOffset: i64, ReadByteCount: u32, ) -> NTSTATUS;
@@ -65,7 +68,6 @@ extern "C" {
     fn CdReleaseFile(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
 }
 extern "C" {
-    fn CdVerifyFcbOperation(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB,) -> i32;
 }
 extern "C" {
     fn ExGetCurrentResourceThread() -> *mut c_void;
@@ -94,7 +96,7 @@ pub unsafe extern "C" fn CdCommonRead(
 
     // Early zero-length check
     if (*IrpSp).Parameters.Read.Length == 0 {
-        CdCompleteRequest(IrpContext, Irp, STATUS_SUCCESS);
+        CdCompleteRequest((IrpContext).cast(), Irp, STATUS_SUCCESS);
         return STATUS_SUCCESS;
     }
 
@@ -106,7 +108,7 @@ pub unsafe extern "C" fn CdCommonRead(
     // _Analysis_suppress_lock_checking_(Fcb->Resource);  // pragma, ignored
 
     if (TypeOfOpen == UnopenedFileObject) || (TypeOfOpen == UserDirectoryOpen) {
-        CdCompleteRequest(IrpContext, Irp, STATUS_INVALID_DEVICE_REQUEST);
+        CdCompleteRequest((IrpContext).cast(), Irp, STATUS_INVALID_DEVICE_REQUEST);
         return STATUS_INVALID_DEVICE_REQUEST;
     }
 
@@ -371,7 +373,7 @@ pub unsafe extern "C" fn CdCommonRead(
     if Status == STATUS_CANT_WAIT {
         Status = CdFsdPostRequest(IrpContext, Irp);
     } else {
-        CdCompleteRequest(IrpContext, Irp, Status);
+        CdCompleteRequest((IrpContext).cast(), Irp, Status);
     }
 
     Status

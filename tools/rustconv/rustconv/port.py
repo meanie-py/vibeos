@@ -40,6 +40,7 @@ import time
 from pathlib import Path
 
 from . import (
+    bank_import,
     crate_integrate,
     dead_regions,
     default_arm,
@@ -1119,7 +1120,15 @@ CPPAPP_SEAL_REVISION = 2
 
 
 def _unit_hash(tu: str) -> str:
-    data = (REPO / tu).read_bytes() + f"\0seal-rev={CPPAPP_SEAL_REVISION}".encode()
+    # The class model is hashed in too: a unit's banked bodies are keyed on the context the
+    # prompt carries, not only on the unit's own text. mmc_new's re-render (upstream's
+    # views) left nine units byte-identical, so translate skipped them as current, and
+    # `port replay` then found no banked body for any of them.
+    unit = REPO / tu
+    model = unit.parent / "cpp_model.json"
+    data = unit.read_bytes() + f"\0seal-rev={CPPAPP_SEAL_REVISION}".encode()
+    if model.is_file():
+        data += b"\0model=" + hashlib.sha256(model.read_bytes()).digest()
     return hashlib.sha256(data).hexdigest()[:16]
 
 
@@ -1191,7 +1200,14 @@ def stage_cppapp(stem: str) -> None:
     state = load_state(stem)
     started = time.time()
     module_dir = REPO / state["module_dir"]
-    cpp_tus = state.get("cpp_tus") or [t for t in state["tus"] if t.lower().endswith(CPP_SUFFIXES)]
+    # The stored list keeps its order (unit names and banks are keyed by it), but a C++ TU
+    # the module gained since joins it: mmc_new's CActionWnd.cpp (upstream 88da81d9b8b)
+    # reached `tus` on re-derive and was never modelled, because the first run's list won.
+    fresh = [
+        t for t in state["tus"] if t.lower().endswith(CPP_SUFFIXES) and not pd.is_shim_tu(Path(t))
+    ]
+    cpp_tus = [t for t in state.get("cpp_tus") or [] if not pd.is_shim_tu(Path(t))]
+    cpp_tus += [t for t in fresh if t not in cpp_tus]
     if not cpp_tus:
         raise PortError(f"{stem}: no C++ TU to model")
     out = _cppapp_dir(stem)
@@ -1213,7 +1229,10 @@ def stage_cppapp(stem: str) -> None:
     island_structs = frozenset(re.findall(r"^pub (?:struct|union) (\w+)", island, re.M))
     island_i386 = _crate_dir(state) / "src" / "types_i386.rs"
     island_text = island_i386.read_text(errors="replace") if island_i386.is_file() else ""
-    generated = cpp_app.render_classes(model, island_structs, island_text)
+    hand_methods, hand_names = _hand_definitions(_crate_dir(state) / "src", stem)
+    generated = cpp_app.render_classes(
+        model, island_structs, island_text, hand_methods=hand_methods, hand_names=hand_names
+    )
     (crate_src / "cpp_classes.rs").write_text(generated)
     deferred = _defer_island_classes(_crate_dir(state) / "src", stem, generated)
     if deferred:
@@ -1225,6 +1244,8 @@ def stage_cppapp(stem: str) -> None:
         via = body_file if body_file in cpp_tus else _including_tu(REPO / body_file, cpp_tus)
         units[str(out / name)] = via
     state["cpp_tus"] = cpp_tus
+    for gone in sorted(set(state.get("header_tus", {})) - set(units)):
+        _park_dropped_unit(state, gone)
     # `tus` keeps meaning "the TUs the module compiles" (facts and macros are evaluated
     # against them); _units() is what changes: the synthetic units replace them.
     state["header_tus"] = units
@@ -1244,12 +1265,66 @@ def stage_cppapp(stem: str) -> None:
     )
 
 
+def _own_reexports(prelude: Path) -> set[str]:
+    """Names a prelude re-exports BY NAME from the crate's own modules."""
+    text = prelude.read_text(errors="replace") if prelude.is_file() else ""
+    names: set[str] = set()
+    for group, single in re.findall(r"(?m)^pub use crate::[\w:]+::(?:\{([^}]*)\}|(\w+))\s*;", text):
+        names |= {n.strip() for n in (group or single).split(",") if n.strip() and n.strip() != "*"}
+    return names
+
+
+def _park_dropped_unit(state: dict, unit: str) -> None:
+    """A synthetic unit this regeneration no longer writes (cicero's `cicarray_h.hpp` once
+    its template became the registered generic again) leaves its module in the crate and
+    `pub mod` in lib.rs, still compiling the old bodies. Moved, never deleted -- it was
+    translated -- to the stem's staging dir; its bodies stay banked in `.responses`."""
+    out = _tu_output(state, unit)
+    if not out.is_file():
+        return
+    park = STATE_ROOT / state["stem"] / f"orphans-{time.strftime('%Y%m%d')}"
+    park.mkdir(parents=True, exist_ok=True)
+    os.replace(out, park / out.name)
+    lib = _crate_dir(state) / "src" / "lib.rs"
+    if lib.is_file():
+        text = lib.read_text()
+        lib.write_text(re.sub(rf"(?m)^[ \t]*pub mod {re.escape(out.stem)};[ \t]*\n", "", text))
+    print(f"cppapp: unit {Path(unit).name} is gone: parked {out.name} in {park}, unwired")
+
+
 def _including_tu(header: Path, tus: list[str]) -> str:
     """A TU that includes `header` (any one: a header compiles the same in each)."""
     for t in tus:
         if header.name in (REPO / t).read_text(errors="replace"):
             return t
     return tus[0]  # reached through a precompiled header that names it transitively
+
+
+# The crate's own generated files; everything else directly under src/ is hand-written.
+_GENERATED_SRC = re.compile(r"^(?:lib|prelude|types(?:_\w+)?)\.rs$")
+
+
+def _hand_definitions(src: Path, stem: str) -> tuple[dict[str, set[str]], frozenset[str]]:
+    """What the crate's hand-written modules (src/*.rs beside the generated ones) define:
+    each `impl Class { pub fn .. }` method by class, and every name the prelude re-exports
+    from them (`pub use crate::windowimpl::{..}`). cppapp renders neither again."""
+    methods: dict[str, set[str]] = {}
+    for f in sorted(src.glob("*.rs")):
+        if _GENERATED_SRC.match(f.name):
+            continue
+        text = f.read_text(errors="replace")
+        for m in re.finditer(r"(?m)^impl (\w+) \{\n(.*?)^\}", text, re.S):
+            found = re.findall(r"(?m)^    pub (?:unsafe )?fn (\w+)", m.group(2))
+            methods.setdefault(m.group(1), set()).update(found)
+    names: set[str] = set()
+    prelude = src / "prelude.rs"
+    if prelude.is_file():
+        for mod, body in re.findall(
+            r"(?m)^pub use crate::(\w+)::(\{[^}]*\}|\w+);", prelude.read_text(errors="replace")
+        ):
+            if mod != stem and (src / f"{mod}.rs").is_file():
+                names.update(re.findall(r"\w+", body))
+    return methods, frozenset(names)
 
 
 def _cppapp_wire_crate(state: dict) -> None:
@@ -1277,12 +1352,14 @@ def _cppapp_wire_crate(state: dict) -> None:
     # and declares its globals `extern` (mspaint's CCanvasWindow, toolsModel), so two globs
     # made every one of them E0659-ambiguous -- 600 errors. An explicit `use` outranks a glob.
     generated = (crate / "src" / stem / "cpp_classes.rs").read_text(errors="replace")
+    _, hand_names = _hand_definitions(crate / "src", stem)
     names = sorted(
         set(
             re.findall(
                 r"^pub (?:unsafe fn|fn|struct|static mut|static|type|const) (\w+)", generated, re.M
             )
         )
+        - hand_names
     )
     block = (
         f"{_CPPAPP_BEGIN}\npub use crate::{stem}::cpp_classes::*;\n"
@@ -1933,12 +2010,52 @@ def stage_translate(
             reason = refused[-1] if refused else f"rc={d['rc']}"
             why.append(f"{Path(d['tu']).name}: {reason}")
         if why:
+            missing = {m for w in why for m in re.findall(r"no accepted cached body for (\S+)", w)}
+            elsewhere = bank_import.banked_elsewhere(_unit_paths(state), missing, REPO)
+            hint = "".join(
+                f"\n  {n} of the missing bodies are banked in {root}: "
+                f"`port bank-import {state['stem']} --from {root}`, then replay again"
+                for root, n in sorted(elsewhere.items())
+            )
             raise PortError(
                 "replay: unit(s) the bank cannot fully reassemble -- each file is stale, or "
                 "rebuilt without its refused preamble. Buy the missing bodies first "
-                "(`port translate <stem> -m <model> --cost-cap X`):\n  " + "\n  ".join(why)
+                "(`port translate <stem> -m <model> --cost-cap X`):\n  " + "\n  ".join(why) + hint
             )
     return spent, [Path(d["tu"]).name for d in done]
+
+
+def _unit_paths(state: dict) -> list[Path]:
+    return [Path(u) if Path(u).is_absolute() else REPO / u for u in _units(state)]
+
+
+def stage_bank_import(stem: str, *, sources: list[Path] | None, dry_run: bool) -> None:
+    """Merge this module's banks from sibling worktrees into this one's (see bank_import)."""
+    from .response_cache import RESPONSES_DIR
+
+    state = load_state(stem)
+    banks = (
+        [Path(r) / "tools" / "rustconv" / ".responses" for r in sources]
+        if sources
+        else bank_import.sibling_bank_dirs(REPO)
+    )
+    if not banks:
+        raise PortError("bank-import: no other worktree has a response bank")
+    units = _unit_paths(state)
+    for bank in banks:
+        if not bank.is_dir():
+            raise PortError(f"bank-import: {bank} is not a response bank")
+        rep = bank_import.import_banks(units, bank, RESPONSES_DIR, REPO, dry_run=dry_run)
+        root = bank.parent.parent.parent
+        verb = "would copy" if dry_run else "copied"
+        print(
+            f"bank-import: {root}: {verb} {rep.files} file(s), {rep.entries} entry(ies) into "
+            f"{len(rep.namespaces)} namespace(s)"
+        )
+        for c in rep.conflicts:
+            print(f"bank-import:   kept ours, theirs differs: {c}")
+        for f in rep.foreign:
+            print(f"bank-import:   skipped {f}: claimed by a different source file")
 
 
 def _fn_item_span(text: str, name: str) -> tuple[int, int] | None:
@@ -2233,6 +2350,12 @@ def stage_flip(stem: str) -> None:
         )
     _record(state, "flip", started, changed=changed)
     print(f"flip: {cml.relative_to(REPO)} {'rewritten' if changed else 'already flipped'}")
+    # A flip leaves the module linked by cmake around the stub; the cargo cell is the next
+    # step, and `vibeos-cli check` (scan_cmake_linked_rust) fails until it is taken.
+    print(
+        f"next: ./vibeos-cli build on each arch, then "
+        f"python3 tools/cargo_cell_gen.py --convert {state['target']}"
+    )
 
 
 # --------------------------------------------------------------------------------------
@@ -2575,9 +2698,11 @@ _UNIT_PLACEHOLDER = re.compile(
 
 
 def _strip_unit_placeholders(state: dict) -> list[str]:
-    """Drop every `static NAME: () = ();` (and its attributes) from the module's outputs."""
+    """Drop every `static NAME: () = ();` (and its attributes) from the module's outputs --
+    its UNITS: a cppapp module's are the synthetic headers, and walking only `tus` left
+    cicero's `#[inline] pub static cicGetFN__T5: () = ();` beside the real fn (E0428)."""
     changed = []
-    for tu in state["tus"]:
+    for tu in _units(state):
         path = _tu_output(state, tu)
         if not path.is_file():
             continue
@@ -4951,6 +5076,13 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
         case_enums = (
             set(load_state(stem).get("switch_enums", [])) | _pattern_idents(modules_dir)
         ) - set(copied)
+        # A name the prelude already re-exports from the crate's own modules (cppapp's
+        # `pub use crate::cicero::cpp_classes::{.., POINTING_TIMER_ID, ..}`) needs no alias, and
+        # one copied by an earlier run is a second definition of it (E0255).
+        own = _own_reexports(prelude)
+        case_enums -= own
+        for name in sorted(own & {n for n, i in copied.items() if i.path == "island enum"}):
+            copied.pop(name)
         aliases = prelude_resolve.island_enum_aliases(todo | case_enums, crate / "src", island_sys)
         # An enumerator the crate ALSO binds (a parameter, a `let`) cannot be a prelude const:
         # Rust reads `fn f(FdoExtension: PFDO_DEVICE_EXTENSION)` as a constant PATTERN when a
@@ -6410,6 +6542,7 @@ def stage_replay(
     constants among them reached `port fix` unresolved, and the model invented values.
     """
     started = time.time()
+    before = _module_texts(stem)
     stage_translate(
         stem,
         model="deepseek",
@@ -6462,7 +6595,66 @@ def stage_replay(
     stage_resolve(stem)
     _one_trailing_newline(_crate_dir(load_state(stem)) / "src")
     stage_check(stem)
+    changed = unbanked_changes(before, _module_texts(stem), _banked_items(stem))
+    if changed:
+        print(
+            f"replay: WARNING {len(changed)} function(s) the crate had came back DIFFERENT and "
+            "no hand bank holds them -- if the crate's version was a hand fix, the replay just "
+            "reverted it. Diff against git; bank the ones to keep with `port hand "
+            f"{stem} {' '.join(changed)}` and replay again: {', '.join(changed)}"
+        )
     print(f"replay: {(time.time() - started) / 60:.1f} min")
+
+
+_TOP_FN = re.compile(
+    r'(?m)^(?:pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?(?:extern\s+"\w+"\s+)?fn\s+(\w+)'
+)
+
+
+def _module_texts(stem: str) -> dict[str, str]:
+    modules = _crate_dir(load_state(stem)) / "src" / stem
+    return {p.name: p.read_text() for p in sorted(modules.glob("*.rs"))} if modules.is_dir() else {}
+
+
+def _banked_items(stem: str) -> set[tuple[str, str]]:
+    hand = _hand_dir(stem)
+    out: set[tuple[str, str]] = set()
+    for entry in sorted(hand.glob("*.json")) if hand.is_dir() else ():
+        h = json.loads(entry.read_text())
+        out.add((h["file"], h["name"]))
+    return out
+
+
+def unbanked_changes(
+    before: dict[str, str], after: dict[str, str], banked: set[tuple[str, str]]
+) -> list[str]:
+    """`file.rs:fn` for each top-level function a replay changed or lost that no bank holds.
+
+    A replay rebuilds the crate from what was bought plus the hand bank, so a fix made by
+    hand and never banked is silently reverted: wscript's Host_Echo went back to sizing its
+    BSTR array in OLECHARs -- the heap overrun modrun had caught a day earlier -- and the
+    replayed crate still compiled clean on all three arches (2026-10-16).
+    """
+    out: list[str] = []
+    for file, old in before.items():
+        if (file, "*") in banked:
+            continue
+        new = after.get(file, "")
+        for name in dict.fromkeys(_TOP_FN.findall(old)):
+            if (file, name) in banked:
+                continue
+            try:
+                lo, hi = hand_span(old, name, where="")
+            except PortError:
+                continue
+            try:
+                nlo, nhi = hand_span(new, name, where="")
+            except PortError:
+                out.append(f"{file}:{name}")
+                continue
+            if old[lo:hi] != new[nlo:nhi]:
+                out.append(f"{file}:{name}")
+    return out
 
 
 def _one_trailing_newline(src: Path) -> int:
@@ -6549,11 +6741,64 @@ def stage_hand(stem: str, specs: list[str], drop: bool = False) -> None:
         else:
             lo, hi = hand_span(text, name, where=f"hand: {spec}")
             body = text[lo:hi]
-        entry.write_text(
-            json.dumps({"file": fname, "name": replaces, "text": body, "added": added}, indent=1)
-        )
+        bank = {"file": fname, "name": replaces, "text": body, "added": added}
+        origin = None if added or name == "*" else _c_origin(state, fname, replaces)
+        if origin is not None:
+            bank["c_sha"] = origin
+        entry.write_text(json.dumps(bank, indent=1))
         print(f"hand: banked {spec} ({len(body.splitlines())} lines)")
     _record(state, "hand", started, specs=specs, drop=drop)
+
+
+def _c_definition_span(text: str, name: str) -> tuple[int, int] | None:
+    """The definition of C function `name` in `text`, from its line to its closing brace (a
+    prototype or a call is skipped: what follows the parameter list must be a body)."""
+    from .lex_mask import mask_code
+
+    masked = mask_code(text)
+    for m in re.finditer(rf"\b{re.escape(name)}\s*\(", masked):
+        depth, i = 0, m.end() - 1
+        while i < len(masked):
+            depth += {"(": 1, ")": -1}.get(masked[i], 0)
+            if depth == 0:
+                break
+            i += 1
+        j = i + 1
+        while j < len(masked) and masked[j] in " \t\r\n":
+            j += 1
+        if j >= len(masked) or masked[j] != "{":
+            continue
+        depth, k = 0, j
+        while k < len(masked):
+            depth += {"{": 1, "}": -1}.get(masked[k], 0)
+            if depth == 0:
+                return text.rfind("\n", 0, m.start()) + 1, k + 1
+            k += 1
+    return None
+
+
+_C_COMMENTS = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
+
+
+def _c_origin(state: dict, fname: str, name: str) -> str | None:
+    """sha256 of the C a hand bank of `fname:name` was written against: the definition of
+    `name` in the unit `fname` translates (a cppapp module's synthetic unit names a method
+    `Class__Method` exactly as the bank does). Comments and whitespace do not count. None
+    when there is no such definition (a class layout, a preamble constant)."""
+    if "tus" not in state:
+        return None
+    unit = next((u for u in _units(state) if _module_name(u) == Path(fname).stem), None)
+    if unit is None:
+        return None
+    path = Path(unit) if Path(unit).is_absolute() else REPO / unit
+    if not path.is_file():
+        return None
+    text = path.read_text(errors="replace")
+    span = _c_definition_span(text, name)
+    if span is None:
+        return None
+    code = " ".join(_C_COMMENTS.sub(" ", text[span[0] : span[1]]).split())
+    return hashlib.sha256(code.encode()).hexdigest()
 
 
 _ITEM_HEAD = (
@@ -6718,6 +6963,21 @@ def apply_hand(stem: str, early_only: bool = False) -> int:
     modules = _crate_dir(state) / "src" / stem
     applied = 0
     skipped = set(state.get("skip_fn", []))
+    # A bank is applied by NAME, so one whose C changed upstream would put its old body back
+    # silently: mmc_new's CAddDialog::OnCommand kept `new CSnapin(CacheEntry)` through the
+    # 2026-10-15 sync that added the node id. Refused, all at once, before anything is written.
+    stale = []
+    for entry in sorted(_hand_dir(stem).glob("*.json")):
+        h = json.loads(entry.read_text())
+        if h.get("c_sha") and _c_origin(state, h["file"], h["name"]) not in (h["c_sha"], None):
+            stale.append(f"{h['file']}:{h['name']}")
+    if stale:
+        raise PortError(
+            f"hand: {len(stale)} bank(s) were written against C that has since changed: "
+            + ", ".join(stale)
+            + f"\nfix: port the C change into each function, then re-capture it with "
+            f"`port hand {stem} <file.rs:Name>` (or `port hand --drop {stem} ..` to re-buy it)"
+        )
     for entry in sorted(_hand_dir(stem).glob("*.json")):
         h = json.loads(entry.read_text())
         # A hand item over a body the translate SKIPPED (`skip_fn`) has nothing in the file to
@@ -7384,13 +7644,22 @@ def main(args) -> int:
         # Every stage writes crate files; leave them as `git diff --check` wants them, so a
         # commit after any stage passes (fifteen of Wave I's generated files did not).
         stem = getattr(args, "stem", None)
-        if stem and _state_path(stem).is_file() and args.port_stage != "status":
+        if stem and _state_path(stem).is_file() and not _writes_nothing(args):
             src = _crate_dir(load_state(stem)) / "src"
             if src.is_dir():
                 _one_trailing_newline(src)
         return rc
     finally:
         held.close()
+
+
+def _writes_nothing(args) -> bool:
+    """A stage that leaves the crate as it found it, so the whitespace pass must too: a dry
+    run of `bank-import` over ten shipped crates rewrote ~2,000 lines of their blank-line
+    indentation, which they were committed with before the pass existed."""
+    if args.port_stage in ("status", "check", "bank-import") or getattr(args, "dry_run", False):
+        return True
+    return args.port_stage == "hand" and not getattr(args, "apply", False)
 
 
 def _main(args) -> int:
@@ -7469,6 +7738,8 @@ def _main(args) -> int:
                 dry_run=args.dry_run,
                 thinking=args.thinking,
             )
+        elif args.port_stage == "bank-import":
+            stage_bank_import(args.stem, sources=args.sources, dry_run=args.dry_run)
         elif args.port_stage == "replay":
             stage_replay(
                 args.stem, fix_cap=args.fix_cap, fix_rounds=args.fix_rounds, model=args.model
@@ -7592,6 +7863,20 @@ def add_parser(sub) -> None:
     q.add_argument("--cost-cap", type=float, default=0.30)
     q.add_argument("--dry-run", action="store_true")
     q.add_argument("--thinking", choices=("on", "off"), default="on")
+    q = stages.add_parser(
+        "bank-import",
+        help="copy this module's paid response banks from sibling worktrees (missing files "
+        "only; never overwrites)",
+    )
+    q.add_argument("stem")
+    q.add_argument(
+        "--from",
+        dest="sources",
+        nargs="*",
+        type=Path,
+        help="worktree roots to read (default: every other worktree)",
+    )
+    q.add_argument("--dry-run", action="store_true")
     q = stages.add_parser("replay", help="rebuild the crate from the banks, in order, for $0")
     q.add_argument("stem")
     q.add_argument("--fix-cap", type=float, default=0.0, help="USD of NEW fix purchases")

@@ -37,7 +37,7 @@ pub unsafe extern "C" fn LoadProvider(mut FileSystem: PWCHAR) -> PIFS_PROVIDER {
     ListEntry = (*core::ptr::addr_of_mut!(ProviderListHead)).Flink as PLIST_ENTRY;
     while ListEntry != core::ptr::addr_of_mut!(ProviderListHead) as PLIST_ENTRY {
         Provider = (ListEntry as ULONG_PTR).wrapping_sub(
-            core::ptr::addr_of_mut!((*core::ptr::null_mut::<IFS_PROVIDER>()).ListEntry) as ULONG_PTR,
+            core::mem::offset_of!(IFS_PROVIDER, ListEntry) as ULONG_PTR,
         ) as *mut IFS_PROVIDER as PIFS_PROVIDER;
         if _wcsicmp(
             (*Provider).Name as *const wchar_t,

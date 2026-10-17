@@ -1,5 +1,15 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::base::*;
+// One declaration per external symbol: ddk_shims.rs.
+use crate::ddk_shims::FlagOn;
+use crate::ddk_shims::CdFreePool;
+// The crate's own functions: the definition is the declaration.
+use crate::cdmacros::CdFreeIoContext;
+use crate::cdmacros::CdMapUserBuffer;
+use crate::ddk_shims::CdRaiseStatus;
+use crate::cdmacros::SafeNodeType;
+use crate::cdmacros::SectorOffset;
+use crate::cdmacros::SwapCopyUchar4;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::interlocked::*;
@@ -21,16 +31,13 @@ use crate::types::{RAW_READ_INFO, TRACK_MODE_TYPE, _TRACK_MODE_TYPE_CDDA as CDDA
 extern "C" {
 }
 extern "C" {
-    fn SectorOffset(byte_count: u32) -> i32;
 }
 extern "C" {
     fn SectorsFromBytes(byte_count: u32) -> u32;
 }
 extern "C" {
-    fn CdRaiseStatus(IrpContext: PIRP_CONTEXT, Status: NTSTATUS) -> !;
 }
 extern "C" {
-    fn SafeNodeType(fcb: *mut FCB) -> u32;
 }
 extern "C" {
     static CdAudioPlayHeader: AUDIO_PLAY_HEADER;
@@ -42,7 +49,6 @@ extern "C" {
     static CdXAFileHeader: RIFF_HEADER;
 }
 extern "C" {
-    fn FlagOn(flags: u32, mask: u32) -> i32;
 }
 extern "C" {
     fn CdNormalizeAndRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
@@ -51,10 +57,8 @@ extern "C" {
     fn SetFlag(Flags: *mut u32, Flag: u32);
 }
 extern "C" {
-    fn ASSERT_IRP(Irp: PIRP);
 }
 extern "C" {
-    fn ASSERT_IRP_CONTEXT(IrpContext: PIRP_CONTEXT);
 }
 extern "C" {
     // these mimic the MSVC __try/__except/__end
@@ -85,7 +89,6 @@ extern "C" {
     fn CdUnlockVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
 }
 extern "C" {
-    fn CdFreePool(pool: *mut *mut c_void);
 }
 extern "C" {
     fn PagedCode();
@@ -112,7 +115,6 @@ extern "C" {
     fn Min(a: u32, b: u32) -> u32;
 }
 extern "C" {
-    fn SwapCopyUchar4(dest: *mut u32, src: *mut u8);
 }
 extern "C" {
     fn CdAcquireCacheForRead(IrpContext: *mut IRP_CONTEXT);
@@ -126,14 +128,12 @@ extern "system" {
 extern "C" {
 }
 extern "C" {
-    fn CdFreeIoContext(IoContext: *mut CD_IO_CONTEXT);
 }
 extern "C" {
 }
 extern "C" {
 }
 extern "C" {
-    fn CdMapUserBuffer(irp_context: *mut IRP_CONTEXT, user_buffer: *mut *mut core::ffi::c_void);
 }
 extern "system" {
     fn Add2Ptr(ptr: *mut core::ffi::c_void, offset: u32, _type: *const i8) -> *mut core::ffi::c_void;
@@ -269,14 +269,14 @@ pub unsafe extern "C" fn CdNonCachedRead(
     let vcb_ptr = (*Fcb).Vcb;
     let vcb_state = (*vcb_ptr).VcbState;
     if ((vcb_state & VCB_STATE_AUDIO_DISK) != 0)
-        && ((SafeNodeType(Fcb) == CDFS_NTC_FCB_INDEX) || (SafeNodeType(Fcb) == CDFS_NTC_FCB_PATH_TABLE))
+        && ((SafeNodeType((Fcb).cast()) == CDFS_NTC_FCB_INDEX) || (SafeNodeType((Fcb).cast()) == CDFS_NTC_FCB_PATH_TABLE))
     {
         CdReadAudioSystemFile(IrpContext, Fcb, StartingOffset, ByteCount, UserBuffer);
         return STATUS_SUCCESS;
     }
 
     // Check if sector cache should be marked waitable
-    if (SafeNodeType(Fcb) == CDFS_NTC_FCB_INDEX)
+    if (SafeNodeType((Fcb).cast()) == CDFS_NTC_FCB_INDEX)
         && (!(*vcb_ptr).SectorCacheBuffer.is_null())
         && (VcbMounted == (*(*IrpContext).Vcb).VcbCondition)
     {
@@ -749,8 +749,8 @@ pub unsafe extern "C" fn CdCreateUserMdl(
     UNREFERENCED_PARAMETER!(Operation as usize);
     UNREFERENCED_PARAMETER!(IrpContext as usize);
 
-    ASSERT_IRP_CONTEXT(IrpContext);
-    ASSERT_IRP((*IrpContext).Irp);
+    ASSERT_IRP_CONTEXT!(IrpContext);
+    ASSERT_IRP!((*IrpContext).Irp);
     NT_ASSERT!((*(*IrpContext).Irp).MdlAddress.is_null() as i32);
 
     //
@@ -986,7 +986,7 @@ pub unsafe extern "C" fn CdPrepareBuffers(
         if ((DiskOffset as u32 & 2047) != 0) || // SECTOR_MASK = SECTOR_SIZE-1 (2047)
            (((CurrentByteCount & 2047) != 0) && (CurrentByteCount < 2048)) // SECTOR_SIZE = 2048
         {
-            ntkrnl_sys::ASSERT!(SafeNodeType(Fcb) != 0x0304); // CDFS_NTC_FCB_INDEX
+            ntkrnl_sys::ASSERT!(SafeNodeType((Fcb).cast()) != 0x0304); // CDFS_NTC_FCB_INDEX
 
             if ((*IrpContext).Flags & IRP_CONTEXT_FLAG_WAIT) == 0 {
                 // DUMMY_PSEH: cannot raise+catch. Return CANT_WAIT as a sentinel
@@ -1598,7 +1598,7 @@ pub unsafe extern "C" fn CdMultipleAsync(
         CompletionRoutine = core::mem::transmute::<_, PIO_COMPLETION_ROUTINE>(CdMultiAsyncCompletionRoutine as usize);
     }
 
-    if (SafeNodeType(Fcb) == CDFS_NTC_FCB_INDEX) &&
+    if (SafeNodeType((Fcb).cast()) == CDFS_NTC_FCB_INDEX) &&
         ((*Fcb).Vcb as *mut u8).is_null() == false && // Assuming SectorCacheBuffer is at offset? Need to correct.
         // Actually: (NULL != Fcb->Vcb->SectorCacheBuffer)
         // Will implement as:
@@ -1856,7 +1856,7 @@ pub unsafe extern "C" fn CdSingleAsync(
 ) {
     PAGED_CODE!();
 
-    if (SafeNodeType(Fcb) == CDFS_NTC_FCB_INDEX)
+    if (SafeNodeType((Fcb).cast()) == CDFS_NTC_FCB_INDEX)
         && !(*(*Fcb).Vcb).SectorCacheBuffer.is_null()
         && (VcbMounted == (*(*IrpContext).Vcb).VcbCondition)
     {
@@ -1996,7 +1996,7 @@ pub unsafe extern "system" fn CdMultiAsyncCompletionRoutine(
         // _Analysis_assume_lock_held_(...); (annotation, omitted)
         ExReleaseResourceForThreadLite((*IoContext).__bindgen_anon_1.__bindgen_anon_1.as_ref().Resource, (*IoContext).__bindgen_anon_1.__bindgen_anon_1.as_ref().ResourceThreadId);
 
-        CdFreeIoContext(IoContext);
+        CdFreeIoContext((IoContext).cast());
 
         return STATUS_SUCCESS;
     } else {
@@ -2058,7 +2058,7 @@ pub unsafe extern "system" fn CdSingleAsyncCompletionRoutine(
     // _Analysis_assume_ removed: SAL no-op annotation; argument must never be evaluated (0xB8 class)
     ExReleaseResourceForThreadLite((*io_context).__bindgen_anon_1.__bindgen_anon_1.as_ref().Resource, (*io_context).__bindgen_anon_1.__bindgen_anon_1.as_ref().ResourceThreadId);
 
-    CdFreeIoContext(io_context);
+    CdFreeIoContext((io_context).cast());
     return STATUS_SUCCESS;
 }
 #[no_mangle]
@@ -2087,7 +2087,7 @@ pub unsafe extern "C" fn CdReadAudioSystemFile(
 
     PAGED_CODE!();
 
-    if SafeNodeType(Fcb) == CDFS_NTC_FCB_PATH_TABLE {
+    if SafeNodeType((Fcb).cast()) == CDFS_NTC_FCB_PATH_TABLE {
         NT_ASSERT!((StartingOffset == 0) as i32);
 
         RawPath = LocalBuffer.as_mut_ptr() as *mut RAW_PATH_ISO;

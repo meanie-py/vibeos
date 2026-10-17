@@ -238,6 +238,33 @@ pub unsafe extern "C" fn HidParser_SearchReportInCollection(
     }
     return core::ptr::null_mut::<HID_REPORT>();
 }
+/// Calls `f` on every report stored in a collection context: a collection's own reports
+/// before its sub-collections', which is the order the descriptor declared them.
+pub unsafe fn HidParser_VisitReports(Context: PVOID, f: &mut dyn FnMut(PHID_REPORT)) {
+    let CollectionContext = Context as PHID_COLLECTION_CONTEXT;
+    visit_reports(
+        CollectionContext,
+        &raw mut (*CollectionContext).__anon_0.RawData as PHID_COLLECTION,
+        f,
+    );
+}
+
+unsafe fn visit_reports(
+    CollectionContext: PHID_COLLECTION_CONTEXT,
+    Collection: PHID_COLLECTION,
+    f: &mut dyn FnMut(PHID_REPORT),
+) {
+    let base = &raw mut (*CollectionContext).__anon_0.RawData as *mut UCHAR;
+    let offsets = &raw mut (*Collection).Offsets as *mut ULONG;
+    for Index in 0..(*Collection).ReportCount {
+        f(base.add(*offsets.add(Index as usize) as usize) as PHID_REPORT);
+    }
+    for Index in 0..(*Collection).NodeCount {
+        let at = *offsets.add((*Collection).ReportCount.wrapping_add(Index) as usize);
+        visit_reports(CollectionContext, base.add(at as usize) as PHID_COLLECTION, f);
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn HidParser_GetReportInCollection(
     Context: PVOID,

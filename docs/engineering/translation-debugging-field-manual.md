@@ -318,6 +318,14 @@ field, and kdbg's symbol loader walks `InInitializationOrderLinks`. **Fix:** pas
 `core::mem::size_of::<T>()` and `core::mem::offset_of!(T, Field)` at every site, including
 first-field ones, so the layout is stated, not assumed. `tools/scan_containing_record_null.py`
 gates it at zero.
+The other spelling computes offsetof by hand through a null place:
+`&raw mut (*core::ptr::null_mut::<T>()).Field as ULONG_PTR`, or the `addr_of_mut!` form. The
+number is right, but it is UB even though only an address is taken: a field projection is an
+in-bounds offset of its base, and null is in bounds of nothing. rustc's `deref_nullptr` flags
+only some spellings, 7 of the 78 the tree had on 2026-10-16 (Wine's `LIST_ENTRY` in
+mf/mfplat/mfreadwrite/rpcss, and eventlog, ndis, storport, fmifs, spoolss, localspl). All 78
+are `core::mem::offset_of!` now, via `tools/null_offset_to_offset_of.py --apply`; its `--lint`
+mode gates the null place at zero.
 ### Phantom symbols — declaring something that is not a symbol
 A C **macro** or **FORCEINLINE** has no out-of-line symbol; `extern`-declaring it demands a
 symbol that exists nowhere. It may "resolve" by accident and break later when an unrelated
@@ -618,6 +626,12 @@ gate-red), and the span must **be** the whole argument, because rustc labels the
 disagreeing operand, so in `SetAutoDaylight(SendDlgItemMessage(..) != BST_UNCHECKED as i64)` it
 blames a sub-expression of argument 0 and casting *that* to `BOOL` is well-formed and wrong.
 syssetup: 34 sites the width rule could only withhold, plus 55 more it stood down from.
+A crate-local alias is in scope only where it is visible. fastfat's flush.rs declares
+`type FAT_FLUSH_TYPE = i32;` without `pub`, and the rule wrote `as FAT_FLUSH_TYPE` into three
+callers in other modules (E0412). The pass loop kept the edits because the same pass fixed
+more than it broke. `harvest_alias_scope` now records, for each alias the crate declares only
+privately, the files that can name it, and the rule declines elsewhere (`alias_not_in_scope`).
+Over the tree it agrees with all 181 compiling uses of such aliases.
 
 ### An `extern` declaration for a symbol YOUR OWN CRATE defines
 The worst version of a width mismatch, because both halves are yours and neither compiler nor
@@ -880,6 +894,32 @@ reported **3,790** phantom findings against a true count of 15, and the identica
 `crate_repair`'s argument-index counter the same night. If you are counting top-level commas in
 Rust, assume `->` is there to ruin it.
 
+### Collapsing a clashing extern to ONE declaration: attributes, struct copies, alias spellings
+Symptom: `tools/extern_to_use.py` (one canonical declaration plus `use` everywhere else) leaves a
+crate that won't compile, or that compiles and binds a different symbol. Three causes, one per
+kind of residue (2026-10-17, about 30 crates):
+- **The attributes belong to the declaration.** menuband declared `GetWindowLongPtrW` under
+  `#[cfg_attr(target_pointer_width = "32", link_name = "GetWindowLongW")]`. The first version of
+  the tool deleted the `fn` line and left the attribute above it, where it attached itself to the
+  NEXT declaration in the block. That rebinds an unrelated import on i386 only, with no
+  diagnostic. Fix: the tool removes the attribute lines together with their declaration, and
+  refuses (`KEPT`) to merge two declarations whose attributes differ, because they may bind
+  different symbols on some arch.
+- **A per-module copy of a C struct is a distinct Rust type.** This happened with DDE structs in
+  user32, `POWER_STATE` in acpi (a one-field copy of what the ddk declares as a union), three
+  `IUnknown`s in menuband, and `GUID`/`BITMAP`/`IStream` in ole32. Once one declaration survives,
+  a caller that passes its own copy fails with E0308. Fix: dedupe to one definition with
+  `pub use`, or `.cast()` at the pointer argument. Never use `as _` on a struct by value.
+- **ntdll-sys aliases are not the canonical spelling.** On 64-bit, `SIZE_T`/`WPARAM`/`LPARAM` are
+  `u64`/`i64`, while most canonical declarations spell them `usize`/`isize`. They have the same
+  width on every arch but are different Rust types. Rewrite each call site from rustc's own span
+  as `as usize` or `as _`, which bakes no width in. Watch precedence when the cast lands inside
+  `a * b`.
+
+The pass also finds real bugs. kernel32's `ExitThread`/`ExitProcess` were declared as returning,
+cdfs's FSP dispatcher discarded a status, and `DbgPrint`, `memmove` and `BaseSetLastNTError` had
+return values silently dropped.
+
 ### A `transmute` at a callback-install site erases the CALLING CONVENTION
 **The same bug without a transmute: a callback DEFINED `extern "C"` and cast into its slot.**
 setuplib's `RtlQueryRegistryValues` query routines, boot-store enumerators and INF entry
@@ -943,6 +983,21 @@ that transmutes past the stale field once, in one place. **When you sweep a call
 after a header change, compare parameter TYPES, not just how many there are** — an arity sweep
 passes clean on exactly this bug, and `ULONG_PTR == ULONG` on i386 makes a plain ABI mismatch
 read as an arch-specific mystery.
+
+### A callback declared through a FUNCTION CLASS loses its convention in translation
+Symptom: none on amd64 or arm64. On i386, a stdcall caller invokes a cdecl callee, which leaves
+its arguments on the stack, so the caller's `esp` is off by their size after every call.
+Cause: the C spells the convention once, in the typedef. `typedef NTSTATUS (NTAPI
+POWER_SETTING_CALLBACK)(..)` is followed by `POWER_SETTING_CALLBACK DevicePowerSettingCallback;`,
+and the definition below it carries no NTAPI. A translation reading the definition writes
+`extern "C"`. bindgen does the same: cdrom's i386 island declares these functions `extern "C"`,
+so `scan_cc_mismatch`, which treats the island as evidence, sees agreement. Per-module
+redeclarations hid the rest: each caller's local `extern` typed the callback the way the
+definition did, until `extern_to_use` gave every call site the definition (2026-10-17).
+Fix: define it `extern "system"` (cdrom's two `EVT_WDF_WORKITEM`s and its power-setting
+callback, classpnp's `EXT_CALLBACK`). `tools/scan_fnclass_cc.py` gates the class: every
+NTAPI-family function-class typedef, plus kmdf's `EVT_*`, against the Rust definition of each
+function declared through one.
 
 ### Per-arch `#[cfg]` twins: the OTHER nominal-ABI workaround, and what it hides
 Same root cause as the transmute above — `extern "system" fn` unifies with neither
@@ -1690,8 +1745,14 @@ way, and they still compiled.
 A third form is a C stub DEFINITION in the module's own cohab file. fastfat's fatdata.h
 `DebugTrace`/`DebugUnwind`/`DebugDump`/`DbgDoit` are `{NOTHING;}` in a free build. The Rust
 called them as FFI into `VOID DebugTrace(...) {}` bodies in rust_cohab_stub.c, about 880 calls
-(fixed 2026-10-11: crate macros that discard their tokens). `scan_macro_fn_shadow` did not
-flag them, so check why its harvest misses a driver-private header like fatdata.h.
+(fixed 2026-10-11: crate macros that discard their tokens). `scan_macro_fn_shadow` missed them
+because its harvest of argument-discarding C macros knew `__noop`, `((void)0)` and
+`do {} while(0)`, but not a bare block. It now expands empty object-like macros (`NOTHING`)
+first, and treats `{}` / `{;}` as a discard. The widened harvest found 28 more in cdfs: the
+`ASSERT_*` family (`{ NOTHING; }` without `CD_SANITY`, which cddata.h force-undefines even
+under DBG), lowered to empty fns, extern declarations and `#[no_mangle]` no-op exports. It also
+found fastfat's `DebugDoit`, an extern bound to a `VOID DebugDoit(PVOID)` cohab stub that took
+`u32`, with two counter increments the free build never evaluates.
 
 ### A C macro that NULLS its argument, translated as a by-value `fn`, silently double-frees
 Symptom: 0x19 BAD_POOL_HEADER "at the next free" (special pool escalates it to 0x1E in a pool
@@ -1863,6 +1924,26 @@ at zero.
 Bugs that compile and link clean but corrupt memory or strings at runtime, because the Rust
 mirror, literal width, or field offset silently disagrees with C.
 
+### The SDK header can be the wrong side: a `dwSize` struct that disagrees with Windows
+**Symptom:** on 64-bit only, a C or bindgen-islanded caller's `Process32FirstW` fails (wbemprox's
+`Win32_Process` returned WBEM_E_FAILED for every query; our wbemprox.dll fails the same way on
+Windows 11 itself), while the Rust kernel32 that implements it is fine.
+**Cause:** `sdk/include/psdk/tlhelp32.h` declared `th32DefaultHeapID` and the HEAPLIST32 /
+HEAPENTRY32 pointer-width fields as DWORD. kernel32-rust had the Windows layout (ULONG_PTR,
+SIZE_T), so a caller built from the header passed `dwSize` 556 where the callee expects 568,
+and the size check refused it. Every island generated from that header inherited the error
+(drwtsn32, taskkill, taskmgr, umandlg).
+**Fix:** correct the header to the Windows layout, then regenerate the islands built from it
+(`gen_driver_types.sh <module>`; a C++ module's island carries post-generation fixes, so edit
+those fields by hand instead). Running OUR DLL on Windows (load it, `DllGetClassObject`) splits
+"our code" from "our OS" in one step.
+The same class runs the other way when a callee adopts the LARGER version of a versioned
+struct: every pointer step over it must move too. iphlpapi's `GetAdaptersAddresses` was
+switched to report `Length` = the LH size, but still started its packed strings at
+`current_aa.add(1)` on the XP-typed pointer, so AdapterName landed on `FirstGatewayAddress`
+and wbemprox walked string bytes as a list (`0x4000000000000000`). Grep the pointer's type,
+not just the size constant.
+
 ### Never hand-roll a shadow struct for a type bindgen already emits
 The single highest-yield rule in this section. Hand-rolled mirrors drift; bindgen's are
 size-verified. Real damage:
@@ -2002,6 +2083,13 @@ passed `infoPtr` first, a few did not. **Fix:** hand-port above the generated bl
 replay keeps it), with each captured local as an explicit LEADING parameter, and make every call
 site pass it. One parse error like this halts rustc before type checking, which also makes
 crate-repair's pass look like it fixed everything (10 errors left, 0 applied).
+The goto form is worse, because no parameter can carry it: mmc_new's `CHK_HR(stmt)` is
+`do { hr = (stmt); if (FAILED(hr)) goto CleanUp; } while (0)`, and its `macro_rules!` port
+names both the caller's `hr` and the caller's `'CleanUp` label, so every use is E0425 + E0426,
+reported at the PRELUDE line rather than the call site. Expand it in the body
+(`hr = ..; if hr < 0 { break 'CleanUp; }` inside a `'CleanUp: { .. }` block, as mscfile's
+bodies already were) and bank the function. Owed in `port macros`: lower a goto-carrying
+macro by inlining it at the call sites, not as a `macro_rules!`.
 
 ### A UNICODE module inherits the ANSI TCHAR family from the `-sys` glob
 `ntdll-sys` is generated WITHOUT `-DUNICODE`, so its bindgen carries `pub type LPTSTR = LPSTR;`.
@@ -3189,6 +3277,11 @@ the C says FileEndOfFileInformation (20). Every file-backed section larger than 
 back SECTION_NOT_EXTENDED, and setup's cabinet extraction lost 964 files. ps-rust's apphelp
 passed 0 for FileBasicInformation. `scan_info_class_literals` requires the class to be named in
 every file-information call (gated at zero).
+The same file can hold the right constant and still call with an invented one: `mm/section.rs`
+defines `FSRTL_MOD_WRITE_TOP_LEVEL_IRP = 0x03`, yet `MmCheckDirtySegment` passed
+`IoSetTopLevelIrp(0x80000000)`. Anything above `FSRTL_MAX_TOP_LEVEL_IRP_FLAG` is taken for a real
+IRP, so fastfat's FatCommonWrite read a NodeType at 0x80000000 and bugchecked 0x23, but only
+under memory pressure, on a page-out of a dirty data-file page, which hid it for months.
 
 **And a correct constant cast too narrow:** disk.sys set `(SRB_CLASS_FLAGS_PERSISTANT as USHORT)
 as u32` on its flush SRB: 0x20000000 as `u16` is 0. classpnp then freed an SRB that lives in the
@@ -3260,6 +3353,18 @@ WEOF and fill-byte idiom, is allowed).
   `A` function misbehaves and its `W` twin does not, diff the two Rust bodies against each
   other before anything else -- the C keeps them parallel, so any non-parallel literal is the
   suspect.
+- **An object's `Type` field is the same class, and conformance is what sees it.** Three
+  kernel initializers wrote `Type` as a literal neighbour: `KeInitializeDeviceQueue` 7
+  (GateObject, not DeviceQueueObject 20), `KeInitializeProfile` 24 (ThreadedDpcObject, not
+  ProfileObject 23), `IoCreateController` 3 (IO_TYPE_DEVICE, not IO_TYPE_CONTROLLER 2). Nothing
+  dispatched on them, so nothing broke; KeDevQueue.c:51 caught the first and a grep for
+  `\.Type = <digits>` found the other two. Name the KOBJECTS value from bindgen
+  (`ddk::_KOBJECTS_*`).
+- **A per-arch macro re-spelled as a `cfg`'d fn hides from every constant scanner.**
+  ARM3/section.rs had `fn MI_MAX_ZERO_BITS() { #[cfg(64)] 21 #[cfg(32)] 20 }`; the C's
+  `internal/<arch>/mm.h` says 21/53/21 and the i386 island has 21. i386 refused ZeroBits 21 as
+  INVALID_PARAMETER_4 (ZwMapViewOfSection.c:181). Use the island's constant, or check each arm
+  against `internal/<arch>/*.h`.
 - **A constant that lives in only SOME arches' islands cannot simply be imported.**
   `KEY_ALL_ACCESS` is in `hal_bindgen_i386/amd64` and **not** `hal_bindgen_arm64`, so `use`-ing
   it breaks the arm64 build. Declare it locally *and pin it* —
@@ -5408,6 +5513,26 @@ TU's file-scope `TypedefDecl`s.
 ### Small C++-pipeline shapes that cost rapps a re-buy or a hundred errors
 
 Each was one fix in the tool; listed so the next module's symptom can be matched to one.
+- **A hand bank outlives the C it was written for.** `port replay` re-applies a bank by
+  NAME, so a function whose C changed upstream keeps its old body silently: after the
+  2026-10-15 sync, mmc_new's `CAddDialog::OnCommand` still built `new CSnapin(CacheEntry)`
+  without upstream's node id, and four more banks (`ParseWindowPlacement`'s S_FALSE,
+  `PreMessageLoop`'s CActionWnd registration, CCustomizeDialog's toolbar refresh) had the
+  same shape. A bank now records the hash of its C definition (`c_sha`, comments and
+  whitespace ignored) and `port replay` refuses every bank whose C changed since, naming
+  them; port the change into each body and re-capture it with `port hand`. Banks captured
+  before this carry no hash and are not checked until re-captured. Dropping is wrong too: two of the stale banks were the class LAYOUTS carrying
+  ATL's `m_thunk`/`m_pfnSuperWindowProc`, and the generic glue without them loses the MDI
+  frame's DefFrameProc.
+- **`CAtlList::GetNext(&mut pos)` returns the element's SLOT.** The C++ `(CConsoleWnd*)
+  list.GetNext(pos)` came back as `list.GetNext(&mut pos) as *mut CConsoleWnd`, which for a
+  list of pointers casts `*mut *mut X` to `*mut X` and compiles; five mmc_new sites read
+  list-node memory as the window (WM_CLOSE to a bogus HWND, then a use-after-free of the
+  root node). Deref instead. `tools/scan_atl_slot_cast.py` gates it in `vibeos-cli check`.
+- **Hand-written window glue beside the generated one.** A crate whose `src/*.rs` defines
+  `impl Class { DefWindowProc / Create }` or re-exports `CWndProcThunk` from its prelude now
+  wins: `port cppapp` skips its generic copies (they were E0592/E0252, and the generic
+  DefWindowProc ignores `m_pfnSuperWindowProc`).
 - **A comment between the declarator and the brace** (`BOOL F(..) // note` then `{`): the
   free-function signature is joined onto one line and the comment swallowed the `{`; the
   stitch dropped the function ("Planned Rust definitions absent"). `cpp_model` strips comments
@@ -5457,14 +5582,18 @@ Each was one fix in the tool; listed so the next module's symptom can be matched
   The lowering left `Base::this_->__baseK.M(`, and `this_->__baseK.M(` in Rust is the virtual
   dispatcher, which lands on the override making the call. rapps' `CUiWindow<CToolbar>::
   ComputeMinimalSize` spun forever (appstorm's stuck-thread dump: `rapps.exe+0x29270`,
-  symbolized to CUiBox::ComputeMinimalSize <-> the override); cicero shipped the same in
-  CUIFWindow::Initialize. `_qualified_base_calls` writes `M__body` for a virtual M and drops
-  the qualifier otherwise -- only when the lowering supplied a base path.
+  symbolized to CUiBox::ComputeMinimalSize <-> the override). The shipped crates held 36 more
+  (cicero 17, mspaint 9 including every tool's `OnEndDraw`, msutb 9, msctfime 1).
+  `_qualified_base_calls` writes `M__body` for a virtual M and drops the qualifier otherwise
+  -- only when the lowering supplied a base path. `tools/scan_override_self_dispatch.py`
+  (a `check` lint) flags an `M__body` that calls `(*this_).__baseN.M(`.
 - **A `char*` passed to a `const CStringA&` parameter** builds a temporary in C++. The model
   wrote `pszFile as *const CStringA` -- reinterpreting the path TEXT as a CStringA object --
   and `GetString()` returned its first eight bytes as the buffer: rapps' FDI callbacks
   faulted on arm64 at address 0x69666F72505C3A58, i.e. `"X:\Profi"` (any fault address that
   decodes as ASCII is this class). Use `&CStringA::from_ptr(p)` (`CStringW::from_ptr` for wide).
+  cpp_lower now writes the implicit construction out (`use(CStringA(p))`, `Cls__make_N(p)` for
+  a module class); a string literal argument is left as written.
 - **A polymorphic destructor** runs with the class's OWN vtables (C++ resets them first);
   Drop dispatched through the derived tables, so CPointerArray's destructor reached
   CUiCollection::OnRemoveItem's `delete ptr`. Drop now calls `__init_vtables` first.
@@ -5478,6 +5607,37 @@ Each was one fix in the tool; listed so the next module's symptom can be matched
   the string macros folded first.
 - **crate-repair took over an hour** on a 100 KB-unit crate. Some 30 rules re-masked the
   whole file per diagnostic, in a per-byte Python loop. Memoized on content: 6 minutes.
+- **A static member DEFINED out of line** (`CUIFBitmapDC *CUIFBitmapDC::s_phdcDst = NULL;`):
+  every use after the definition refers to the definition's decl id, which was never
+  registered. The lowering left `CUIFBitmapDC::s_phdcDst` (cicero regeneration: 116 E0599), and
+  the definition itself became a stray class-less global `s_phdcDst` in the unit's preamble.
+  The definition now aliases the in-class decl. Its initializer is carried to the static
+  too: msctfime SHIPPED `TLS__s_dwTlsIndex = 0` for `= (DWORD)-1`, a valid TLS index that
+  `TLS::Uninitialize` would free. An initializer `_static_member_init` cannot render is a
+  hard error, never a zeroed static.
+- **A new virtual that hides an inherited one of the same name** (cicero's
+  `CUIFWindow::OnTimer(WPARAM)` over `CUIFObject::OnTimer()`): both vtable thunks were
+  `CUIFWindow__vt_b0b0_OnTimer` (E0428). The hiding slot's thunk takes `__<Class>`.
+- **An empty constructor, `X() { }`**, rendered `{ { } }`, which tree-sitter-cpp reads as a
+  declaration with a brace initializer. The scanner dropped the definition, nothing
+  translated it, and every `X__make_0` called a missing `__ctor_0`. If a synthetic-unit function
+  is missing from the translate log's `Functions: N`, run `scan_file` over the unit.
+- **A template instance's init list is the pattern's text**: `: CicArrayBase(sizeof(T_ITEM))`
+  kept `T_ITEM`, and a templated base (`: CIC_IMCC_LOCK<T_DATA>(h)`) missed `_ctor_args`'
+  head match, so the prologue stripped its first and last characters as if they were the
+  parentheses (`__ctor_0(IC_IMCC_LOCK<T_DATA>(h)`). Both are bound/matched now.
+- **A template with a hand-written generic** (`cpp_templates.REGISTRY`: cicero's `CicArray<T>`,
+  `CicIMCCLock<T>`) must never be instantiated per argument: msutb and msctfime build against
+  the generic, so per-instance classes change cicero's API under them.
+- **A function-local `macro_rules!` in a shared crate** (win32macros-rust's `at!` inside
+  `wine_dbgstr_variant`) was re-exported by name from every refreshed prelude: E0432.
+  Only `#[macro_export]` macros are listed.
+- **A regeneration that drops a unit** leaves the old unit's module in the crate, still
+  compiling. `port cppapp` now parks it under the stem's staging dir and unwires it.
+- **A module ported in ANOTHER worktree replays nothing here**: each worktree has its own
+  `.responses`, so cicero's 15 units all missed. Run `port bank-import <stem>` (from every
+  sibling, missing files only, never overwriting); a failed replay names the sibling holding
+  the missing bodies.
 
 ### A vtable SLOT the interface parser could not read renumbers every slot after it
 
@@ -6654,6 +6814,20 @@ implied LIMITED grants a full right carries), and grade with a test that runs on
 11 as well (`Win10Surface`'s Test_LimitedAccess). A `*_ALL_ACCESS` in a kernel crate is a
 version-dependent constant: write the value the KERNEL means, not what `0x502` expands to.
 
+### An undeclared cfg is a branch that never compiles, and the warning is the only trace
+Symptom: the Rust always takes one side of a translated `#ifdef`, whatever the C build defines.
+rustc says so once, as `unexpected_cfgs`, and the census filed that lint under NOISE until
+2026-10-17. Cause: the translation renamed a C define into a cfg or feature that nothing
+declares and nothing sets. cdfs wrote `cfg!(not(reactos))` where `reactos` is a Cargo feature,
+not a cfg, so `CdQueryFsDeviceInfo` always returned the non-ReactOS `FILE_DEVICE_CD_ROM`. desk
+gated `pCDevSettings_AllocAndCopyString` on `feature = "unicode"`, and desk is built UNICODE, so
+it ran the ANSI branch on a wide string: every display device name came out one character
+long. oleaut32 hung a `feature = "__REACTOS__"` choice on a split the C does not make.
+Fix: decide each site against what the C build defines, never against what the name suggests.
+Fix a misspelling. Declare a gate that is off on purpose in the crate's `[features]` (or in
+`check-cfg` for a tool cfg like `kani`), with a comment naming the C define, so that the next
+misspelling still warns. The census now counts `unexpected_cfgs` as LOGIC.
+
 ### A `#if` on a WINDOWS VERSION comes back as `#[cfg(target_arch)]`
 
 **Symptom.** Either a hard parse error (`attributes on expressions are experimental`, because
@@ -6710,8 +6884,23 @@ WIN7/VISTA blocks the WS03 build compiles out: `FSCTL_REQUEST_OPLOCK`,
 and zero-on-dealloc FSCTLs, and the VISTA user-writable-section share check. They are gated
 the same way now (`ntddi_ge_ntddi_{vista,win7,win8,winthreshold}`). The inverse appeared in
 the same crate: `#[cfg(not(reactos))]` for `#ifndef __REACTOS__`. Nothing sets `reactos`, so
-the code the C excludes compiled IN. `scan_cfg_vs_c` only judges ARCH conditionals; a version
-scanner is owed (the lane plan).
+the code the C excludes compiled IN. `tools/scan_version_vs_c.py` gates the class now: it
+evaluates each C function's version and `__REACTOS__` chains at the module's real version and
+flags a Rust twin that still calls something only a dead branch calls. Its first tree-wide run
+(2026-10-16) found 7 more in other crates. The worst was classpnp's `ClasspDeleteTimer`. At
+WIN8 `TickTimer` is an inline `KTIMER`, and the WINBLUE `ExDeleteTimer` path read its
+dispatcher header as an `EX_TIMER` pointer, then zeroed it on every FDO teardown. comctl32's
+syslink deleted the parent's `WM_CTLCOLORSTATIC` brush, which ReactOS deliberately keeps. The
+rest were behavioural: cmd's Win7 `%HIGHESTNUMANODENUMBER%`, tooltips asking the parent again,
+threadpool naming threads, fastfat's eager `FsRtlAreThereWaitingFileLocks`, and the runtime-dead
+disk-accounting calls. Take the version from the BUILD, not a guess. The cargo-link cutovers
+rewrote whole CMakeLists files, and the module's version went with them: classpnp is 0x602 /
+NTDDI_WIN8 (`git show 7a67eeddf88^:drivers/storage/class/classpnp/CMakeLists.txt`), and so is
+the translation. The scanner reads build.ninja first and the CMakeLists history when the file
+is no longer compiled. Gate the Rust with `cfg!(name)` in an expression rather than
+`#[cfg(name)]` on a block: it compiles out the same, keeps the code type-checked, and leaves
+no unused imports. Declare the name in `[lints.rust] check-cfg`. Use `if cfg!(g) { .. }` or
+`cfg!(g) && ..`, not an early return the scanner cannot see.
 
 **Stacked `#[cfg]`s AND together.** Deleting an item's per-arch twin can leave its
 `#[cfg(target_arch = "x86")]` behind, which then fuses with the next item's
@@ -7831,6 +8020,14 @@ at ring 3, and exports both trampolines. `ntdll_sys::seh::rpc_try(|| Stub(..))` 
 call. It exits 1 while any stub call is left unwrapped, so its listing is the to-do list.
 Test: netprobe's rpc-raise step calls OpenSCManagerW on a host that does not exist and
 expects 1722.
+**A native-SEH C thunk is NOT this fix on i386.** The `*_seh.c` thunks (advapi32's
+eventlog_seh.c, ole32's rpcss_seh.c and stubmanager_seh.c) get a real `__try` only on
+amd64/arm64 and are a plain call on i386, because clang's i386 native SEH is unreliable. So
+csrss died BUGCHECK 0xF4 on i386: winsrv's hard-error path called ReportEventW while the
+EventLog service was exiting, and the stub's 0x6be went through the "guard". `rpc_try` goes
+through ntdll's trampoline and works on i386; advapi32 now uses it for those three calls, and
+the thunk is gone. ole32's two thunks (its Rust has no ntdll-sys) call `RtlSehTryExcept`
+directly in their i386 branch instead of the plain call.
 
 ### DUMMY_PSEH turns a protected capture into an unprotected `memcpy` `[§9.59]`
 A whole class, not three bugs: in C, a kernel API captures a caller buffer inside `_SEH2_TRY`;
@@ -12481,6 +12678,18 @@ and `q35,mem` for UEFI) before blaming the cap. A HAL bounce through map registe
 scsiport masters looked right and broke uniata, which does its own bouncing: scsiport's
 `IoFlushAdapterBuffers` then copies an untouched map buffer over the data.
 
+### Free memory drifts down app after app while commit stays flat (arm64)
+Symptom: a long sweep (appstorm64) loses available memory with every new image it loads, the
+commit charge does not move, and a smaller VM starves apps at 7-20 MB free. `--tripwire
+MEMCENSUS=1` puts the loss in the `ros` column: section pages the ReactOS Mm allocated, held by
+their segment after the last view went. Cause: arm64's `MmPageOutPhysicalAddress` returned
+UNSUCCESSFUL for a page with no process rmap (a bring-up `#ifdef _M_ARM64` carried into the
+Rust), so the balancer could never release a cached page there; and it trimmed only below 256
+free pages. Fix: the segment (`WriteSegment`) path on every arch, plus trimming below
+`MmLowMemoryThreshold` (`docs/engineering/mm-section-cache-standby-design.md`). An arm64
+`#ifdef` that turns a bugcheck or a reclaim into "return UNSUCCESSFUL" hides the work, not just
+the crash; when memory runs out on arm64 only, grep for them first.
+
 ### Other Mm one-offs
 - **A registry/hive addition that "shouldn't matter" trips an early 0x50** `[§9.10]` — the
   config manager loads the hive early and growing it shifts everything. **Don't ship the hive
@@ -12524,6 +12733,30 @@ calling the lock "vacuous" on a UP port. At `-smp 2` vioblk's completion interru
 while `HwStartIo` was mid-submit on CPU 0, matched a token not yet recorded, and handed
 virtio-drivers a zero-length buffer (`assert_ne!` in `queue.rs` `recycle_descriptors`). A lock
 held on one side only is no lock: check the thread side AND the interrupt side.
+
+### On ONE CPU, a woken waiter that spins on its waker's lock waits out a whole quantum
+**Symptom:** a threadpool work item takes 0-470 ms to start on an idle guest, every sample near
+a multiple of the 15.6 ms tick (mfplat.c's "MFASYNC_CALLBACK_QUEUE_STANDARD is not blocked"
+100 ms check failed most runs). Plain `SetEvent` hand-offs are ~60 us, so kernel dispatch is
+fine; the CPU reads 0% idle during the pool stages, and the thread doing
+`WaitForThreadpoolWorkCallbacks` has burned seconds of CPU.
+**Cause:** `condvar.c`'s `InternalWake` called `NtReleaseKeyedEvent` while holding the CV's lock
+bit. The released waiter still carried the +1 of its last event wait, so it preempted the
+waker at once, found the bit set, and spun on it (`InternalSleep`'s post-wake check, `pause`
+in a loop). With one CPU the waker cannot run to clear the bit until the spinner's boost
+decays at its quantum end. A spin is only a wait if the holder can run meanwhile; on UP, a
+spinner that outranks the holder IS the hold.
+**Fix:** never make a syscall that readies another thread while holding a spin bit. The CV
+lock now covers only the list: waiters to wake are unlinked and marked under it, the bit is
+dropped, then each is released with no timeout. A waiter that times out checks under the lock
+whether it was already claimed, and if so waits for its release instead of leaving it pending.
+That second wait needs the KERNEL to be honest: `ExpReleaseOrWaitForKeyedEvent` reported
+STATUS_TIMEOUT when the counterpart had dequeued the thread and released its semaphore while the
+wait was timing out, so a claimed waiter waited again for a wake it had already been given and
+hung (the threadpool timer thread, every time: mf's 10 ms presentation clock stopped). An empty
+`KeyedWaitChain` after a failed wait now means the pairing happened, and returns STATUS_SUCCESS.
+Measure with `tools/payloads/wakeprobe` (median 36 ms, max 197 ms before; ~95 us, max 2 ms
+after, on amd64 TCG). Windows 11 is ~10 us.
 
 ### A dropped interrupt RESTORE: one CPU spins IF=0 on a lock while the holder waits for its TB ack
 **Symptom:** amd64 `-smp 2` `HANG_TIMEOUT`, serial silent after `[user32] DllMain PROCESS_ATTACH`
@@ -12947,6 +13180,32 @@ command table (128 bytes plus 16 per entry) became bigger than a page, it packed
 page, and it asked for a 0-byte common buffer.
 **Fix:** report `BYTES_TO_PAGES(MaximumLength) + 1` for a bus master and 1 otherwise, as
 `x86/dma.rs` does. "Map registers are free here" is true of the hardware, not of the contract.
+
+### x86 HAL: a queued adapter-channel request gets map registers it never asked for
+**Symptom:** BUGCHECK 0xA, a write to 0 at DISPATCH_LEVEL in the HAL's memcpy, under
+`IoMapTransfer` from `USBPORT_MapTransfer`, minutes into heavy USB traffic (Wi-Fi on the
+OptiPlex). The bugcheck says `hal.dll+`; the board runs `halmp.dll`, so symbolicate that.
+**Cause:** `HalAllocateAdapterChannel` gives map registers only when the adapter
+`NeedsMapRegisters`; `IoFreeAdapterChannel`, starting a request that queued while the channel
+was busy, checked only the count (the C has the same line). usbport's scatter/gather adapter
+passes a count, so a queued transfer got map registers, `IoMapTransfer` took the copy path,
+and copied into an entry with no buffer behind it.
+**Fix:** check `NeedsMapRegisters` there too. Contention is the trigger, so a light boot
+never shows it.
+
+### The loader faults with ESR EC 0 right after dropping from EL2 to EL1
+- **Symptom:** on a board whose firmware hands off at EL2 (Pi 4, Pi 5), `[FLDR] ctx-el1`
+  prints and then `!!FLDR-EL1-FAULT esr=0x02000000 far=0 ... ec=0x00`, the ELR inside
+  ordinary loader code (printf's flag parsing). QEMU, handing off at EL1, never shows it.
+- **Cause:** `Arm64DropToEl1` erets into EL1 with SCTLR_EL1.M/C/I clear, so until the MMU
+  is on every fetch and load reads DRAM, and DRAM is missing whatever the firmware's EL2
+  caches never wrote back: here, the loader page holding printf, read as zeros (`udf`).
+  It surfaced when a debug print was restored inside that window (582e3f20ad4); the few
+  lines that had run there before happened to be in DRAM.
+- **Fix:** clean and invalidate the data caches to PoC by set/way, plus `ic iallu`, in
+  the same asm block as the `eret` (a function call in between could dirty a line), and
+  keep the flat window free of anything but the MMU enable. Any EL or MMU transition
+  that turns caching off needs that clean first.
 
 ### A UEFI boot with no display hangs in the loader (and then bugchecks 0xB4)
 - **Symptom:** with no display device (a server; `smoke --arch arm64 --headless`) the

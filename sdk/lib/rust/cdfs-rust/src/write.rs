@@ -1,14 +1,20 @@
 use ntkrnl_sys::base::*;
+// One declaration per external symbol: types.rs.
+use crate::types::CdDecodeFileObject;
+// The crate's own functions: the definition is the declaration.
+use crate::cddata::CdCompleteRequest;
+use crate::cdmacros::CdMapUserBuffer;
+use crate::verfysup::CdVerifyFcbOperation;
 use ntkrnl_sys::constants::{STATUS_END_OF_FILE, STATUS_INVALID_DEVICE_REQUEST, STATUS_PENDING};
 use ntkrnl_sys::ddk::{
-    ERESOURCE_THREAD, FILE_OBJECT, IoGetCurrentIrpStackLocation, IRP, KeInitializeEvent,
+    ERESOURCE_THREAD, IoGetCurrentIrpStackLocation, IRP, KeInitializeEvent,
     PIO_STACK_LOCATION, ULONG_PTR, _EVENT_TYPE_NotificationEvent,
 };
 use ntkrnl_sys::rtl::RtlZeroMemory;
 use core::ffi::c_void;
 use crate::types::{
     CCB, CCB_FLAG_ALLOW_EXTENDED_DASD_IO, CCB_FLAG_DISMOUNT_ON_CLOSE, CD_IO_CONTEXT, FCB,
-    IRP_CONTEXT, IRP_CONTEXT_FLAG_ALLOC_IO, IRP_CONTEXT_FLAG_WAIT, SECTOR_MASK, TYPE_OF_OPEN,
+    IRP_CONTEXT, IRP_CONTEXT_FLAG_ALLOC_IO, IRP_CONTEXT_FLAG_WAIT, SECTOR_MASK,
     _TYPE_OF_OPEN_UserVolumeOpen as UserVolumeOpen,
 };
 use crate::ddk_shims::{BooleanFlagOn, CdRaiseStatus, ClearFlag, FlagOn, FsRtlNormalizeNtstatus, SetFlag};
@@ -16,13 +22,9 @@ use crate::glue::{CDFS_BUG_CHECK_WRITE, FO_SYNCHRONOUS_IO, STATUS_CANT_WAIT};
 
 // cdecl cdfs-internal routines.
 extern "C" {
-    fn CdDecodeFileObject(IrpContext: *mut IRP_CONTEXT, FileObject: *mut FILE_OBJECT, Fcb: *mut *mut FCB, Ccb: *mut *mut CCB) -> TYPE_OF_OPEN;
-    fn CdCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: NTSTATUS);
     fn CdAcquireFileShared(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
-    fn CdVerifyFcbOperation(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> u32;
     fn CdVolumeDasdWrite(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, StartingOffset: LONGLONG, WriteByteCount: ULONG) -> NTSTATUS;
     fn CdAllocateIoContext() -> *mut CD_IO_CONTEXT;
-    fn CdMapUserBuffer(IrpContext: *mut IRP_CONTEXT, UserBuffer: *mut *mut c_void);
     fn CdReleaseFile(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
     fn CdFsdPostRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP) -> NTSTATUS;
     fn ExGetCurrentResourceThread() -> *mut c_void;
@@ -49,7 +51,7 @@ pub unsafe extern "C" fn CdCommonWrite(IrpContext: *mut IRP_CONTEXT, mut Irp: *m
 
     //  If this is a zero length write then return SUCCESS immediately.
     if (*IrpSp).Parameters.Write.Length == 0 {
-        CdCompleteRequest(IrpContext, Irp, STATUS_SUCCESS);
+        CdCompleteRequest((IrpContext).cast(), Irp, STATUS_SUCCESS);
         return STATUS_SUCCESS;
     }
 
@@ -58,7 +60,7 @@ pub unsafe extern "C" fn CdCommonWrite(IrpContext: *mut IRP_CONTEXT, mut Irp: *m
     let mut Ccb: *mut CCB = core::ptr::null_mut();
     let TypeOfOpen = CdDecodeFileObject(IrpContext, (*IrpSp).FileObject, &mut Fcb, &mut Ccb);
     if TypeOfOpen != UserVolumeOpen {
-        CdCompleteRequest(IrpContext, Irp, STATUS_INVALID_DEVICE_REQUEST);
+        CdCompleteRequest((IrpContext).cast(), Irp, STATUS_INVALID_DEVICE_REQUEST);
         return STATUS_INVALID_DEVICE_REQUEST;
     }
 
@@ -195,7 +197,7 @@ pub unsafe extern "C" fn CdCommonWrite(IrpContext: *mut IRP_CONTEXT, mut Irp: *m
     if Status == STATUS_CANT_WAIT {
         Status = CdFsdPostRequest(IrpContext, Irp);
     } else {
-        CdCompleteRequest(IrpContext, Irp, Status);
+        CdCompleteRequest((IrpContext).cast(), Irp, Status);
     }
     Status
 }

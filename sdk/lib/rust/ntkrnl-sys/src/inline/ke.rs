@@ -596,6 +596,82 @@ pub unsafe fn KxReleaseSpinLock(spin_lock: *mut ULONG_PTR) {
     core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
 }
 
+/// In-stack queued spinlocks as NT has them (an MCS lock), on every arch: `*SpinLock` holds
+/// the TAIL of the waiter queue, and each `KSPIN_LOCK_QUEUE.Lock` carries LQ_WAIT (bit 0)
+/// while its owner waits and LQ_OWN (bit 1) while it holds the lock. The C's queued
+/// routines are `#if 0` ("broken": they exchange on `LockHandle->Next`, not the lock) and
+/// its live ones are a plain spinlock under "HACK", which is what this replaced: held,
+/// `*SpinLock` read as the owner stamp `Thread | 1` and the queue entry never carried
+/// LQ_OWN (kmtest KeSpinLock.c:278, checked build).
+///
+/// The in-stack family must be the ONLY one that touches these locks. Audited
+/// 2026-10-16: every lock reached through `KeAcquireInStackQueuedSpinLock*` (APC queue,
+/// process, ERESOURCE, ExpResourceSpinLock, storport's PdoListLock/FlowControl, classpnp's
+/// SyncLock) is reached through no plain-spinlock API, and the numbered
+/// `KeAcquireQueuedSpinLock*` family stays plain because it only ever takes the PRCB's
+/// LockQueue[] entries. A plain acquire on a queued lock would see a pointer (bit 0
+/// clear) and "take" it beside the owner.
+///
+/// amd64 and arm64 moved onto it 2026-10-17. Their in-stack callers are the same shared
+/// code (ke-inlines, ntkrnl-sys inlines, ex, storport, classpnp), so the audit above holds;
+/// what differed was only where the exports live (ntoskrnl on amd64, hal.dll on arm64).
+pub const LQ_WAIT: usize = 1;
+pub const LQ_OWN: usize = 2;
+
+#[inline]
+pub unsafe fn KxAcquireInStackQueuedSpinLock(queue: *mut ddk::KSPIN_LOCK_QUEUE) {
+    use core::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
+    let lock = (*queue).Lock as *mut ULONG_PTR;
+    cswdep_spin_acquire(lock);
+    let flags = AtomicUsize::from_ptr(core::ptr::addr_of_mut!((*queue).Lock) as *mut usize);
+    core::ptr::write_volatile(core::ptr::addr_of_mut!((*queue).Next), core::ptr::null_mut());
+    let prev = AtomicUsize::from_ptr(lock as *mut usize).swap(queue as usize, Ordering::AcqRel)
+        as *mut ddk::KSPIN_LOCK_QUEUE;
+    if prev.is_null() {
+        flags.fetch_or(LQ_OWN, Ordering::Relaxed);
+        return;
+    }
+    // Mark ourselves waiting BEFORE we are reachable from the queue, so the releaser's
+    // WAIT->OWN flip can never land first.
+    flags.fetch_or(LQ_WAIT, Ordering::SeqCst);
+    AtomicPtr::from_ptr(core::ptr::addr_of_mut!((*prev).Next)).store(queue, Ordering::Release);
+    while flags.load(Ordering::Acquire) & LQ_WAIT != 0 {
+        core::hint::spin_loop();
+    }
+}
+
+#[inline]
+pub unsafe fn KxReleaseInStackQueuedSpinLock(queue: *mut ddk::KSPIN_LOCK_QUEUE) {
+    use core::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
+    let flags = AtomicUsize::from_ptr(core::ptr::addr_of_mut!((*queue).Lock) as *mut usize);
+    let lock = (flags.load(Ordering::Relaxed) & !(LQ_WAIT | LQ_OWN)) as *mut ULONG_PTR;
+    cswdep_spin_release(lock);
+    flags.fetch_and(!(LQ_WAIT | LQ_OWN), Ordering::Relaxed);
+    let next = AtomicPtr::from_ptr(core::ptr::addr_of_mut!((*queue).Next));
+    let mut waiter = next.load(Ordering::Acquire);
+    if waiter.is_null() {
+        // Nobody queued behind us: free the lock, unless one is arriving right now.
+        if AtomicUsize::from_ptr(lock as *mut usize)
+            .compare_exchange(queue as usize, 0, Ordering::Release, Ordering::Relaxed)
+            .is_ok()
+        {
+            return;
+        }
+        // It swapped itself in as the tail and will link to us; wait for the link.
+        loop {
+            waiter = next.load(Ordering::Acquire);
+            if !waiter.is_null() {
+                break;
+            }
+            core::hint::spin_loop();
+        }
+    }
+    next.store(core::ptr::null_mut(), Ordering::Relaxed);
+    // Hand over: the waiter's WAIT clears and OWN sets in one step.
+    AtomicUsize::from_ptr(core::ptr::addr_of_mut!((*waiter).Lock) as *mut usize)
+        .fetch_xor(LQ_WAIT | LQ_OWN, Ordering::Release);
+}
+
 // ============================================================================
 // KeGetContextReturnRegister (FORCEINLINE from ke.h per arch)
 // ============================================================================

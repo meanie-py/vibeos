@@ -44,6 +44,23 @@ Lessons a resume or the next batch should know:
   belongs in `ntkrnl_sys::inline`, per arch. The island's extern links on x86 and
   fails on arm64.
 
+**Graded 2026-10-16 (`audio-convert-difftest`, $0).** kmixer's `pin.c` and wdmaud.drv's
+`mixer.c` carry the same PCM converters, and their C is right in only two cases: 8-bit
+channel up-mixing and 16→32-bit. Everywhere else it is wrong:
+- The channel converter sizes its buffer in samples, not bytes. It reads the input at
+  byte offsets, fills one channel too many on the last frame, and reports a sample count
+  as the length. So every 16-bit mono↔stereo stream overran the pool (kmixer) or the
+  heap (wdmaud.drv).
+- The quality converter never re-centres unsigned 8-bit samples. 8→32 maps silence to full
+  scale.
+- Under `_X86_` it byte-swaps every sample, so i386 produced different audio from amd64 for
+  the same stream.
+
+The Rust in both crates now does the right thing, with divergence comments. The harness
+grades it against the C where the C is defined, and against an independent PCM model
+everywhere else. It also pins each C defect, so a later fix to the C shows up as a test
+change.
+
 What the batch added to the shared crates and tools:
 - **mmebuddy-macros-rust** (new): `mmebuddy_debug.h` / `mmebuddy.h` / `sndtypes.h` statement
   macros, in a quiet `_NDEBUG` and a printing `_DBG` flavour (mmebuddy and wdmaud.drv define
@@ -57,10 +74,25 @@ What the batch added to the shared crates and tools:
 - **scan_cc_mismatch**: a qualified call into a `-sys` module that defines a Rust fn of
   that name (`ntkrnl_sys::inline::ke::KeInitializeSpinLock`) is not the crate's extern.
 
-## Next (after A′)
+## Next
 
-1. **C, RDBSS and copysup.** First check what still links or loads RDBSS. If nothing does,
-   it is a prune candidate rather than a translation.
+1. **Area C is closed by pruning, not translating (2026-10-16).** Nothing in the tree links
+   rdbsslib, rxce or copysup (19.5k lines of C; upstream they serve the NFS redirector,
+   which this tree does not carry), and nothing links sound's `shared` (`audio`) or
+   `uartmidi`. Their `add_subdirectory` lines are commented out with the reason; the C stays
+   on disk, so re-enabling one is a one-line change if a consumer ever arrives.
+2. **The static `crt` library is pruned too** (`#include(crt.cmake)`, 2026-10-16). Nothing
+   linked it and no target pulled it in, so its ~720 TUs only appeared in
+   compile_commands.json.
+3. More audio difftest targets, ranked by a survey on 2026-10-16:
+   - mmixer's `MMixerSetGetVolumeControlDetails` (`sup.c:648`): its round trip is off by
+     one, and `Value == Max` gives 0x10000.
+   - mmixer's topology walkers (`topology.c:568-1077`): duplicate inserts, `Visited` set
+     on the wrong node, and nothing guards against cycles.
+   - mmebuddy's `DoWaveStreaming`/`CompleteIO` (`streaming.c`): looped playback never
+     counts its loops down.
+4. Pick the next native area from `rust-port-status.md` (what is still C and not on the
+   skip list below).
 
 ## Not ours: skip these
 
@@ -75,12 +107,13 @@ What the batch added to the shared crates and tools:
 
 ## Owed (small)
 
-- **A test for the substrate-in-declared fix.** In `port.py`, `_resolve_externs`'s
-  `declared` now includes `prelude_resolve.existing_substrate(prelude)`. Without that, a
-  substrate alias was declared twice. It is the one tool change from E′+G that has no test.
-- **A merge driver for `gen_driver_types.sh`.** Every lane appends arms to it, so merges
-  conflict. E′+G resolved one by taking the union of the arms (labels contain `-`).
-- **psapi's `main.c` (DllMain) is still C.** It stayed outside the batch's hand-flip.
+Closed 2026-10-16: the substrate-in-declared test (`_prelude_declared_fns`), the merge
+driver (`tools/merge_drivers.py`, which also merges the cohab census), and psapi's
+`main.c` (psapi-rust's `dllmain` feature, built only for psapi.dll). `port resolve`'s
+"10+ minutes" did not reproduce: resolve plus crate-repair took 2-7 minutes per crate on
+2026-10-16. The first run per stem compiles ntkrnl-sys cold in its private
+`target-<arch>`, which is the likely source of the earlier figure.
+
 - The three tech-debt items are in the roadmap's "Known bugs & flakes" registry, so they
   are not repeated here:
   - the i386-uefi install's fastfat flush fault;

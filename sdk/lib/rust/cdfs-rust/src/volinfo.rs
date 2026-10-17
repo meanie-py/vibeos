@@ -1,11 +1,16 @@
 use ntkrnl_sys::base::*;
+// One declaration per external symbol: types.rs.
+use crate::types::CdDecodeFileObject;
+// The crate's own functions: the definition is the declaration.
+use crate::cdmacros::CdAcquireVcbShared;
+use crate::cddata::CdCompleteRequest;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{FILE_FS_ATTRIBUTE_INFORMATION, FILE_FS_DEVICE_INFORMATION, FILE_FS_SIZE_INFORMATION, FILE_FS_VOLUME_INFORMATION, IoGetCurrentIrpStackLocation, PFILE_FS_ATTRIBUTE_INFORMATION, PFILE_FS_DEVICE_INFORMATION, PFILE_FS_SIZE_INFORMATION, PFILE_FS_VOLUME_INFORMATION, PIO_STACK_LOCATION, PIRP, PLARGE_INTEGER};
 use ntkrnl_sys::ddk::{_FSINFOCLASS_FileFsAttributeInformation as FileFsAttributeInformation, _FSINFOCLASS_FileFsDeviceInformation as FileFsDeviceInformation, _FSINFOCLASS_FileFsSizeInformation as FileFsSizeInformation, _FSINFOCLASS_FileFsVolumeInformation as FileFsVolumeInformation};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{FCB, IRP_CONTEXT, PCCB, PFCB, PIRP_CONTEXT, PVCB, VCB};
-use ntkrnl_sys::ddk::{FSRTL_ADVANCED_FCB_HEADER, PFILE_OBJECT};
+use ntkrnl_sys::ddk::FSRTL_ADVANCED_FCB_HEADER;
 
 // ---- FileFsSectorSizeInformation is a Win8 addition absent from ReactOS's
 // ndk/iotypes.h FSINFOCLASS (which ends at FileFsDriverPathInformation = 9).
@@ -26,7 +31,6 @@ use crate::glue::{CDFS_BUG_CHECK_VOLINFO};
 
 // cdecl cdfs-internal routines (C defs in filobsup.c are plain cdecl, no NTAPI).
 extern "C" {
-    fn CdDecodeFileObject(IrpContext: PIRP_CONTEXT, FileObject: PFILE_OBJECT, Fcb: *mut PFCB, Ccb: *mut PCCB) -> u32;
 }
 
 extern "C" {
@@ -37,7 +41,6 @@ extern "system" {
     fn FsRtlGetSectorSizeInformation( RealDevice: *mut core::ffi::c_void, Buffer: PFILE_FS_SECTOR_SIZE_INFORMATION, ) -> i32;
 }
 extern "C" {
-    fn CdAcquireVcbShared(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Flag: u8) -> u8;
 }
 extern "C" {
     fn CdReleaseVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
@@ -46,7 +49,6 @@ extern "C" {
     fn CdVerifyVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
 }
 extern "C" {
-    fn CdCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
 }
 
 // ---- file-scope preamble (translated) ----
@@ -73,7 +75,7 @@ pub unsafe extern "C" fn CdCommonQueryVolInfo(IrpContext: PIRP_CONTEXT, Irp: PIR
     let TypeOfOpen: u32 = CdDecodeFileObject(IrpContext, (*IrpSp).FileObject, &mut Fcb, &mut Ccb);
 
     if TypeOfOpen == UnopenedFileObject {
-        CdCompleteRequest(IrpContext, Irp, STATUS_INVALID_PARAMETER);
+        CdCompleteRequest((IrpContext).cast(), Irp, STATUS_INVALID_PARAMETER);
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -139,7 +141,7 @@ pub unsafe extern "C" fn CdCommonQueryVolInfo(IrpContext: PIRP_CONTEXT, Irp: PIR
     );
 
 
-    CdCompleteRequest(IrpContext, Irp, Status);
+    CdCompleteRequest((IrpContext).cast(), Irp, Status);
     return Status;
 }
 #[no_mangle]
@@ -225,7 +227,7 @@ pub unsafe extern "C" fn CdQueryFsDeviceInfo(
     (*Buffer).Characteristics = (*device_obj).Characteristics;
 
     const FILE_DEVICE_CD_ROM: u32 = 0x00000002;
-    if cfg!(not(reactos)) {
+    if cfg!(not(feature = "reactos")) {
         (*Buffer).DeviceType = FILE_DEVICE_CD_ROM;
     } else {
         (*Buffer).DeviceType = (*device_obj).DeviceType;

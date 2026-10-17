@@ -1757,10 +1757,10 @@ unsafe extern "system" fn audio_renderer_stream_Flush(mut iface: *mut IMFStreamS
         hr = MF_E_STREAMSINK_REMOVED;
     } else {
         obj = ((*renderer).queue.next as *mut u8).offset(
-            -(&raw mut (*core::ptr::null_mut::<queued_object>()).entry as usize as isize),
+            -(core::mem::offset_of!(queued_object, entry) as usize as isize),
         ) as *mut queued_object;
         obj2 = ((*obj).entry.next as *mut u8).offset(
-            -(&raw mut (*core::ptr::null_mut::<queued_object>()).entry as usize as isize),
+            -(core::mem::offset_of!(queued_object, entry) as usize as isize),
         ) as *mut queued_object;
         while &raw mut (*obj).entry != &raw mut (*renderer).queue {
             if (*obj).type_ == OBJECT_TYPE_MARKER {
@@ -1775,7 +1775,7 @@ unsafe extern "system" fn audio_renderer_stream_Flush(mut iface: *mut IMFStreamS
             release_pending_object(obj);
             obj = obj2;
             obj2 = ((*obj).entry.next as *mut u8).offset(
-                -(&raw mut (*core::ptr::null_mut::<queued_object>()).entry as usize as isize),
+                -(core::mem::offset_of!(queued_object, entry) as usize as isize),
             ) as *mut queued_object;
         }
         (*renderer).queued_frames = 0;
@@ -2226,11 +2226,11 @@ unsafe extern "C" fn audio_renderer_render(
     let mut pts: LONGLONG = 0;
     let mut hr: HRESULT = 0;
     obj = ((*renderer).queue.next as *mut ::core::ffi::c_char).offset(
-        -(&raw mut (*::core::ptr::null_mut::<queued_object>()).entry as ::core::ffi::c_ulonglong
+        -(core::mem::offset_of!(queued_object, entry) as ::core::ffi::c_ulonglong
             as isize),
     ) as *mut queued_object;
     obj2 = ((*obj).entry.next as *mut ::core::ffi::c_char).offset(
-        -(&raw mut (*::core::ptr::null_mut::<queued_object>()).entry as ::core::ffi::c_ulonglong
+        -(core::mem::offset_of!(queued_object, entry) as ::core::ffi::c_ulonglong
             as isize),
     ) as *mut queued_object;
     while &raw mut (*obj).entry != &raw mut (*renderer).queue {
@@ -2346,7 +2346,7 @@ unsafe extern "C" fn audio_renderer_render(
         release_pending_object(obj);
         obj = obj2;
         obj2 = ((*obj).entry.next as *mut ::core::ffi::c_char).offset(
-            -(&raw mut (*::core::ptr::null_mut::<queued_object>()).entry as ::core::ffi::c_ulonglong
+            -(core::mem::offset_of!(queued_object, entry) as ::core::ffi::c_ulonglong
                 as isize),
         ) as *mut queued_object;
     }

@@ -1,4 +1,14 @@
 use ntkrnl_sys::base::*;
+// One declaration per external symbol: ddk_shims.rs.
+use crate::ddk_shims::FlagOn;
+// One declaration per external symbol: types.rs.
+use crate::types::CdSetFileObject;
+// The crate's own functions: the definition is the declaration.
+use crate::cddata::CdCompleteRequest;
+use crate::cdmacros::CdIncrementReferenceCounts;
+use crate::ddk_shims::CdRaiseStatus;
+use crate::dirsup::CdUpdateDirentFromRawDirent;
+use crate::cdmacros::SafeNodeType;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ddk::{CcMdlReadComplete, CcUninitializeCacheMap, IoGetCurrentIrpStackLocation, MmFlushImageSection, _MMFLUSH_TYPE_MmFlushForWrite, PFILE_OBJECT, PIRP, FSRTL_ADVANCED_FCB_HEADER, RtlTimeFieldsToTime, TIME_FIELDS};
 // resolve_imports.py: explicit kernel/private-type imports
@@ -78,10 +88,8 @@ unsafe fn CdConvertCdTimeToNtTime(
 }
 
 extern "C" {
-    fn ASSERT_IRP_CONTEXT(IrpContext: *mut IRP_CONTEXT);
 }
 extern "C" {
-    fn ASSERT_FCB(Fcb: *mut FCB);
 }
 extern "C" {
     fn CdLockFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
@@ -93,13 +101,11 @@ extern "system" {
     fn IoCreateStreamFileObjectLite( FileObject: *mut core::ffi::c_void, DeviceObject: *mut core::ffi::c_void, ) -> *mut FILE_OBJECT;
 }
 extern "C" {
-    fn CdSetFileObject( IrpContext: *mut IRP_CONTEXT, FileObject: *mut FILE_OBJECT, Type: u32, Fcb: *mut FCB, Ccb: *mut core::ffi::c_void, );
 }
 extern "C" {
     fn CdLockVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
 }
 extern "C" {
-    fn CdIncrementReferenceCounts( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Count: u32, Flags: u32, );
 }
 extern "C" {
     fn CdUnlockVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
@@ -108,7 +114,6 @@ extern "system" {
     fn CcInitializeCacheMap( FileObject: *mut FILE_OBJECT, FileSizes: *mut core::ffi::c_void, PinAccess: BOOLEAN, Callbacks: *mut core::ffi::c_void, LazyWriteContext: *mut core::ffi::c_void, );
 }
 extern "C" {
-    fn FlagOn(Flags: u32, Flag: u32) -> u32;
 }
 extern "C" {
     fn CdInitializeDirContext( IrpContext: *mut IRP_CONTEXT, DirContext: *mut DIRENT_ENUM_CONTEXT, );
@@ -123,13 +128,11 @@ extern "C" {
     fn CdLookupDirent( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, StreamOffset: u32, DirContext: *mut DIRENT_ENUM_CONTEXT, );
 }
 extern "C" {
-    fn CdUpdateDirentFromRawDirent( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, DirContext: *const DIRENT_ENUM_CONTEXT, Dirent: *mut DIRENT, );
 }
 extern "C" {
     fn CdUpdateDirentName(IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT, IgnoreCase: u32);
 }
 extern "C" {
-    fn CdRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS) -> !;
 }
 extern "C" {
     fn BlockAlign(Vcb: *mut VCB, Length: u32) -> u32;
@@ -170,10 +173,8 @@ extern "system" {
     fn ObDereferenceObject(Object: *mut core::ffi::c_void);
 }
 extern "C" {
-    fn CdCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
 }
 extern "C" {
-    fn ASSERT_EXCLUSIVE_VCB(Vcb: *mut VCB);
 }
 extern "C" {
     fn CdFspClose(Vcb: *mut VCB);
@@ -191,7 +192,6 @@ extern "C" {
     fn CdReleaseAllFiles(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
 }
 extern "C" {
-    fn SafeNodeType(Fcb: *mut FCB) -> u32;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -216,8 +216,8 @@ pub unsafe extern "C" fn CdCreateInternalStream(
 
     // PAGED_CODE(); - ignored
 
-    ASSERT_IRP_CONTEXT(IrpContext);
-    ASSERT_FCB(Fcb);
+    ASSERT_IRP_CONTEXT!(IrpContext);
+    ASSERT_FCB!(Fcb);
 
     CdLockFcb(IrpContext, Fcb);
 
@@ -300,7 +300,7 @@ pub unsafe extern "C" fn CdCreateInternalStream(
                         CdUpdateDirentFromRawDirent(
                             IrpContext,
                             Fcb,
-                            &DirContext,
+                            &raw mut DirContext,
                             &mut Dirent,
                         );
 
@@ -415,9 +415,9 @@ pub unsafe extern "C" fn CdDeleteInternalStream(
     // UNREFERENCED_PARAMETER( IrpContext );
     let _ = IrpContext;
 
-    ASSERT_IRP_CONTEXT(IrpContext);
+    ASSERT_IRP_CONTEXT!(IrpContext);
 
-    ASSERT_FCB(Fcb);
+    ASSERT_FCB!(Fcb);
 
     CdLockFcb(IrpContext, Fcb);
 
@@ -449,7 +449,7 @@ pub unsafe extern "C" fn CdCompleteMdl(
     FileObject = (*IoGetCurrentIrpStackLocation(Irp)).FileObject;
     CcMdlReadComplete(FileObject, (*Irp).MdlAddress);
     (*Irp).MdlAddress = core::ptr::null_mut();
-    CdCompleteRequest(IrpContext, Irp, STATUS_SUCCESS);
+    CdCompleteRequest((IrpContext).cast(), Irp, STATUS_SUCCESS);
     return STATUS_SUCCESS;
 }
 #[no_mangle]
@@ -466,7 +466,7 @@ pub unsafe extern "C" fn CdPurgeVolume(
 
     unsafe {
         PAGED_CODE!();
-        ASSERT_EXCLUSIVE_VCB(Vcb);
+        ASSERT_EXCLUSIVE_VCB!(Vcb);
         CdFspClose(Vcb);
         CdAcquireAllFiles(IrpContext, Vcb);
 
@@ -514,7 +514,7 @@ pub unsafe extern "C" fn CdPurgeVolume(
             }
 
             if DismountUnderway != 0
-                && SafeNodeType(ThisFcb) != CDFS_NTC_FCB_DATA
+                && SafeNodeType((ThisFcb).cast()) != CDFS_NTC_FCB_DATA
                 && !(*fcb_index(ThisFcb)).FileObject.is_null()
             {
                 CdDeleteInternalStream(IrpContext, ThisFcb);

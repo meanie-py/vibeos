@@ -1,10 +1,24 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::base::*;
+// One declaration per external symbol: ddk_shims.rs.
+use crate::ddk_shims::FlagOn;
+use crate::ddk_shims::CdFreePool;
+// One declaration per external symbol: types.rs.
+use crate::types::CdDecodeFileObject;
+// The crate's own functions: the definition is the declaration.
+use crate::cdmacros::CdAcquireVcbShared;
+use crate::cddata::CdCompleteRequest;
+use crate::namesup::CdGenerate8dot3Name;
+use crate::namesup::CdIs8dot3Name;
+use crate::cdmacros::CdMapUserBuffer;
+use crate::ddk_shims::CdRaiseStatus;
+use crate::verfysup::CdVerifyFcbOperation;
+use crate::cdmacros::RtlEqualMemory;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ddk::{FILE_BOTH_DIR_INFORMATION, FILE_DIRECTORY_INFORMATION, FILE_FULL_DIR_INFORMATION, FILE_ID_BOTH_DIR_INFORMATION, FILE_ID_FULL_DIR_INFORMATION, FILE_NAMES_INFORMATION, IoGetCurrentIrpStackLocation, PIO_STACK_LOCATION, PIRP, PSTRING, RtlUpcaseUnicodeString};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CCB, CCB_FLAG_ENUM_INITIALIZED, CCB_FLAG_ENUM_MATCH_ALL, CCB_FLAG_ENUM_NAME_EXP_HAS_WILD, CCB_FLAG_ENUM_NOMATCH_CONSTANT_ENTRY, CCB_FLAG_ENUM_RETURN_NEXT, CCB_FLAG_ENUM_VERSION_EXP_HAS_WILD, CCB_FLAG_ENUM_VERSION_MATCH_ALL, CCB_FLAG_IGNORE_CASE, CD_NAME, DIRENT, DIRENT_FLAG_CONSTANT_ENTRY, FCB, FCB_INDEX, FILE_ENUM_CONTEXT, IRP_CONTEXT, PCCB, PFCB, PFILE_ENUM_CONTEXT, PIRP_CONTEXT, PVCB};
-use ntkrnl_sys::ddk::{FILE_OBJECT, IO_STACK_LOCATION, IRP, POOL_TYPE, _FILE_INFORMATION_CLASS_FileBothDirectoryInformation as FileBothDirectoryInformation, _FILE_INFORMATION_CLASS_FileDirectoryInformation as FileDirectoryInformation, _FILE_INFORMATION_CLASS_FileFullDirectoryInformation as FileFullDirectoryInformation, _FILE_INFORMATION_CLASS_FileIdBothDirectoryInformation as FileIdBothDirectoryInformation, _FILE_INFORMATION_CLASS_FileIdFullDirectoryInformation as FileIdFullDirectoryInformation, _FILE_INFORMATION_CLASS_FileNamesInformation as FileNamesInformation, _UNICODE_STRING};
+use ntkrnl_sys::ddk::{IO_STACK_LOCATION, IRP, POOL_TYPE, _FILE_INFORMATION_CLASS_FileBothDirectoryInformation as FileBothDirectoryInformation, _FILE_INFORMATION_CLASS_FileDirectoryInformation as FileDirectoryInformation, _FILE_INFORMATION_CLASS_FileFullDirectoryInformation as FileFullDirectoryInformation, _FILE_INFORMATION_CLASS_FileIdBothDirectoryInformation as FileIdBothDirectoryInformation, _FILE_INFORMATION_CLASS_FileIdFullDirectoryInformation as FileIdFullDirectoryInformation, _FILE_INFORMATION_CLASS_FileNamesInformation as FileNamesInformation, _UNICODE_STRING};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlNotifyFullChangeDirectory};
 use crate::glue::{CDFS_BUG_CHECK_DIRCTRL, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_READONLY, STATUS_NO_MORE_FILES};
@@ -12,11 +26,9 @@ use crate::types::{CD_ATTRIBUTE_ASSOC, CD_ATTRIBUTE_DIRECTORY, CD_ATTRIBUTE_HIDD
 
 // cdecl cdfs-internal routines (C defs in filobsup.c are plain cdecl, no NTAPI).
 extern "C" {
-    fn CdDecodeFileObject( IrpContext: *mut IRP_CONTEXT, FileObject: *mut FILE_OBJECT, Fcb: *mut *mut FCB, Ccb: *mut *mut CCB, ) -> u32;
 }
 
 extern "C" {
-    fn CdAcquireVcbShared(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Exclusive: BOOLEAN) -> u8;
 }
 extern "C" {
     fn CdVerifyVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
@@ -25,7 +37,6 @@ extern "C" {
     fn CdReleaseVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
 }
 extern "C" {
-    fn CdCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
 }
 extern "C" {
     fn CdLockFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
@@ -34,13 +45,11 @@ extern "C" {
     fn CdUnlockFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
 }
 extern "C" {
-    fn CdFreePool(pBuffer: *mut *mut u16);
 }
 extern "C" {
     fn CdConvertNameToCdName(IrpContext: PIRP_CONTEXT, WildCardName: *mut CD_NAME);
 }
 extern "C" {
-    fn CdRaiseStatus(IrpContext: PIRP_CONTEXT, Status: NTSTATUS) -> !;
 }
 extern "C" {
     fn CdLookupInitialFileDirent(IrpContext: PIRP_CONTEXT, Fcb: PFCB, FileContext: PFILE_ENUM_CONTEXT, DirentOffset: ULONG);
@@ -69,10 +78,8 @@ extern "system" {
     fn FsRtlDoesNameContainWildCards(Name: *mut _UNICODE_STRING) -> BOOLEAN;
 }
 extern "C" {
-    fn CdGenerate8dot3Name( IrpContext: *mut IRP_CONTEXT, pFileName: *const _UNICODE_STRING, DirentOffset: u32, Buffer: *mut u16, Length: *mut u16, );
 }
 extern "C" {
-    fn CdIs8dot3Name(IrpContext: *mut IRP_CONTEXT, FileName: _UNICODE_STRING) -> i32;
 }
 extern "C" {
     fn CdIsNameInExpression( IrpContext: *mut IRP_CONTEXT, CurrentName: *mut CD_NAME, SearchExpression: *mut CD_NAME, WildcardFlags: u32, CheckVersion: BOOLEAN, ) -> BOOLEAN;
@@ -81,19 +88,15 @@ extern "C" {
     fn CdLookupLastFileDirent( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, FileContext: *mut FILE_ENUM_CONTEXT, );
 }
 extern "C" {
-    fn FlagOn(Flags: u32, Flag: u32) -> i32;
 }
 extern "C" {
-    fn RtlEqualMemory( Buffer1: *const core::ffi::c_void, Buffer2: *const core::ffi::c_void, Length: usize, ) -> i32;
 }
 extern "C" {
-    fn CdMapUserBuffer(IrpContext: *mut IRP_CONTEXT, UserBuffer: *mut *mut u8);
 }
 extern "C" {
     fn CdAcquireFileShared(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
 }
 extern "C" {
-    fn CdVerifyFcbOperation(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> u32;
 }
 extern "C" {
     fn CdConvertCdTimeToNtTime(IrpContext: *mut IRP_CONTEXT, CdTime: *mut i8, NtTime: *mut LARGE_INTEGER);
@@ -140,7 +143,7 @@ pub unsafe extern "C" fn CdCommonDirControl(
             core::ptr::addr_of_mut!(Ccb),
         ) != UserDirectoryOpen
         {
-            CdCompleteRequest(IrpContext, Irp, STATUS_INVALID_PARAMETER);
+            CdCompleteRequest((IrpContext).cast(), Irp, STATUS_INVALID_PARAMETER);
             return STATUS_INVALID_PARAMETER;
         }
 
@@ -152,7 +155,7 @@ pub unsafe extern "C" fn CdCommonDirControl(
                 CdNotifyChangeDirectory(IrpContext, Irp, IrpSp, Ccb)
             }
             _ => {
-                CdCompleteRequest(IrpContext, Irp, STATUS_INVALID_DEVICE_REQUEST);
+                CdCompleteRequest((IrpContext).cast(), Irp, STATUS_INVALID_DEVICE_REQUEST);
                 STATUS_INVALID_DEVICE_REQUEST
             }
         };
@@ -214,14 +217,14 @@ pub unsafe extern "C" fn CdQueryDirectory(
             core::mem::offset_of!(FILE_ID_BOTH_DIR_INFORMATION, FileName) as u32
         }
         _ => {
-            CdCompleteRequest(IrpContext, Irp, STATUS_INVALID_INFO_CLASS);
+            CdCompleteRequest((IrpContext).cast(), Irp, STATUS_INVALID_INFO_CLASS);
             return STATUS_INVALID_INFO_CLASS;
         }
     };
 
     // Get the user buffer.
     let mut user_buf_raw: *mut u8 = core::ptr::null_mut();
-    CdMapUserBuffer(IrpContext, &mut user_buf_raw);
+    CdMapUserBuffer(IrpContext, (&raw mut user_buf_raw).cast());
     UserBuffer = user_buf_raw;
 
     // Initialize the file enumeration context.
@@ -473,13 +476,13 @@ pub unsafe extern "C" fn CdQueryDirectory(
                                             FileContext.ShortName.FileName.Length as i8;
                                     } else {
                                         let is_8dot3_name = CdIs8dot3Name(
-                                            IrpContext,
+                                            (IrpContext).cast(),
                                             (*ThisDirent).CdFileName.FileName,
                                         );
                                         if is_8dot3_name == 0 {
                                             CdGenerate8dot3Name(
-                                                IrpContext,
-                                                core::ptr::addr_of!((*ThisDirent).CdCaseFileName.FileName),
+                                                (IrpContext).cast(),
+                                                core::ptr::addr_of_mut!((*ThisDirent).CdCaseFileName.FileName),
                                                 (*ThisDirent).DirentOffset,
                                                 (*DirInfo).ShortName.as_mut_ptr(),
                                                 core::ptr::addr_of_mut!(FileContext.ShortName.FileName.Length),
@@ -539,7 +542,7 @@ pub unsafe extern "C" fn CdQueryDirectory(
     );
 
     (*Irp).IoStatus.Information = Information as _;
-    CdCompleteRequest(IrpContext, Irp, Status);
+    CdCompleteRequest((IrpContext).cast(), Irp, Status);
     return Status;
 }
 #[no_mangle]
@@ -581,7 +584,7 @@ pub unsafe extern "C" fn CdNotifyChangeDirectory(
         |_, _| CdReleaseVcb(IrpContext, (*IrpContext).Vcb),
     );
 
-    CdCompleteRequest(IrpContext, core::ptr::null_mut(), STATUS_SUCCESS);
+    CdCompleteRequest((IrpContext).cast(), core::ptr::null_mut(), STATUS_SUCCESS);
 
     return STATUS_PENDING;
 }
@@ -625,7 +628,7 @@ pub unsafe extern "C" fn CdInitializeEnumeration(
         FileName = (*IrpSp).Parameters.QueryDirectory.FileName;
         if !FileName.is_null() && (*FileName).Length > 0 {
             if ((*Ccb).Flags & CCB_FLAG_ENUM_MATCH_ALL) == 0 {
-                CdFreePool(&mut (*Ccb).SearchExpression.FileName.Buffer);
+                CdFreePool((&raw mut (*Ccb).SearchExpression.FileName.Buffer).cast());
             }
             // ClearFlag(Ccb->Flags, CCB_FLAG_ENUM_MATCH_ALL);
             (*Ccb).Flags &= !CCB_FLAG_ENUM_MATCH_ALL;
@@ -750,7 +753,7 @@ pub unsafe extern "C" fn CdInitializeEnumeration(
         } else {
             // Otherwise cleanup any buffer allocated here.
             if (CcbFlags & CCB_FLAG_ENUM_MATCH_ALL) == 0 {
-                CdFreePool(&mut SearchExpression.FileName.Buffer);
+                CdFreePool((&raw mut SearchExpression.FileName.Buffer).cast());
             }
         }
     } else {
@@ -941,11 +944,11 @@ pub unsafe extern "C" fn CdEnumerateIndex(
                 // The long name didn't match — try short name.
                 if ((*Ccb).SearchExpression.VersionString.Length == 0)
                     && FlagOn((*ThisDirent).Flags as u32, DIRENT_FLAG_CONSTANT_ENTRY) == 0
-                    && CdIs8dot3Name(IrpContext, (*ThisDirent).CdFileName.FileName) == 0
+                    && CdIs8dot3Name((IrpContext).cast(), (*ThisDirent).CdFileName.FileName) == 0
                 {
                     CdGenerate8dot3Name(
-                        IrpContext,
-                        core::ptr::addr_of!((*ThisDirent).CdCaseFileName.FileName),
+                        (IrpContext).cast(),
+                        core::ptr::addr_of_mut!((*ThisDirent).CdCaseFileName.FileName),
                         (*ThisDirent).DirentOffset,
                         (*FileContext).ShortName.FileName.Buffer,
                         core::ptr::addr_of_mut!((*FileContext).ShortName.FileName.Length),

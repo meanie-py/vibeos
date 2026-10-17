@@ -1,9 +1,10 @@
 use crate::prelude::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::externs::HeapAlloc;
 use core::ffi::c_void;
 
 extern "system" {
     fn GetProcessHeap() -> PVOID;
-    fn HeapAlloc(hHeap: PVOID, dwFlags: ULONG, dwBytes: usize) -> PVOID;
     fn HeapFree(hHeap: PVOID, dwFlags: ULONG, lpMem: PVOID) -> i32;
 }
 
@@ -204,7 +205,7 @@ pub unsafe extern "system" fn IsTokenRestricted(TokenHandle: HANDLE) -> BOOL {
     }
 
     loop {
-        lpGroups = HeapAlloc(GetProcessHeap(), 0, RetLength as usize) as PTOKEN_GROUPS;
+        lpGroups = HeapAlloc(GetProcessHeap(), 0, (RetLength) as SIZE_T) as PTOKEN_GROUPS;
         if lpGroups.is_null() {
             SetLastError(ERROR_OUTOFMEMORY);
             return 0;

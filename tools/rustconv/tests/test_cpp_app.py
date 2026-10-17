@@ -916,6 +916,52 @@ def test_a_property_page_gets_rosdlgs_glue_and_its_overrides():
     assert "atl_rust::win::property_page_map(self as *mut Self, hwnd, msg, l, result)" in rs
 
 
+def test_hand_written_window_glue_and_aliases_win_over_the_generic_ones():
+    """mmc_new's MDI frame needs ATL's m_pfnSuperWindowProc honoured (DefFrameProc /
+    DefMDIChildProc), which atl_rust's generic DefWindowProc does not do; its windowimpl.rs
+    defines DefWindowProc/Create and its own CWndProcThunk. The generic copies are not
+    rendered beside them (E0592/E0252), and the rest of the glue still is."""
+    w = ClassModel("W", "W", "class", "w.h")
+    w.bases = [Base("CWindowImpl<W>", "public")]
+    w.msg_map = parse_msg_map("BEGIN_MSG_MAP(W)\nEND_MSG_MAP()")
+    rs = cpp_app.render_classes(_atl_model(w))
+    assert "pub unsafe fn DefWindowProc(" in rs and "pub unsafe fn Create(" in rs
+    rs = cpp_app.render_classes(_atl_model(w), hand_methods={"W": {"DefWindowProc", "Create"}})
+    assert "pub unsafe fn DefWindowProc(" not in rs
+    assert "pub unsafe fn Create(" not in rs
+    assert "pub unsafe fn SubclassWindow(" in rs
+    assert "impl atl_rust::win::MessageMap for W {" in rs
+    island = "pub struct ATL_CWndProcThunk {\n    pub cd: u32,\n}\n"
+    m = ModuleModel()
+    f = ClassModel("F", "F", "class", "f.h")
+    f.fields = [Field("m_thunk", "CWndProcThunk")]
+    m.classes = {"F": f}
+    assert "pub type CWndProcThunk = ATL_CWndProcThunk;" in cpp_app._render_island_glue(m, island)
+    glue = cpp_app._render_island_glue(m, island, frozenset({"CWndProcThunk"}))
+    assert "CWndProcThunk" not in glue
+
+
+def test_port_reads_hand_definitions_from_the_crate(tmp_path):
+    from rustconv import port
+
+    src = tmp_path / "src"
+    (src / "m").mkdir(parents=True)
+    (src / "windowimpl.rs").write_text(
+        "impl CMainWnd {\n    pub unsafe fn DefWindowProc(&mut self) {}\n"
+        "    pub fn Create(&mut self) {}\n    fn private_helper() {}\n}\n"
+    )
+    # Generated files never count, even with an impl block in them.
+    (src / "prelude.rs").write_text(
+        "pub use crate::windowimpl::{CAtlString, CWndProcThunk};\n"
+        "pub use crate::m::cpp_classes::{CMainWnd};\npub use atl_rust::{CStringW};\n"
+        "impl X {\n    pub fn not_hand(&self) {}\n}\n"
+    )
+    (src / "m" / "cpp_classes.rs").write_text("impl CMainWnd {\n    pub fn Gen() {}\n}\n")
+    methods, names = port._hand_definitions(src, "m")
+    assert methods == {"CMainWnd": {"DefWindowProc", "Create"}}
+    assert names == {"CAtlString", "CWndProcThunk"}
+
+
 def test_a_message_map_entry_can_name_a_member_objects_handler():
     """certmgr's MESSAGE_HANDLER(WM_SIZE, m_Splitter.OnSize): the handler is a method of a
     module class held by value, so the dispatch calls through the field."""
@@ -1254,3 +1300,23 @@ def test_a_qualified_base_call_is_non_virtual():
     assert "this_->__base0.ComputeMinimalSize__body(size)" in out
     assert "this_->__base0.Plain()" in out and "CUiBox::" not in out
     assert "CListView::this_->Create(p)" in out  # no base path: left alone
+
+
+def test_an_empty_constructor_is_a_definition_the_scanner_sees(tmp_path):
+    # cicero's `CUIFSystemInfo() { }`: wrapped as `{ { } }` it parses as a declaration with
+    # a brace initializer, the scanner dropped it, and `__make_0` called a missing `__ctor_0`.
+    from pathlib import Path
+
+    from rustconv.cpp_app import Hierarchy, _synthetic_method
+    from rustconv.scanner import scan_file
+
+    m = _model()
+    info = ClassModel("SysInfo", "SysInfo", "class", "s.h")
+    info.fields = [Field("n", "unsigned int")]
+    info.methods = [_m("SysInfo", "ctor", body=("s.h", 0, 1), lowered="{ }")]
+    _assign_names(info)
+    m.classes[info.qualified] = info
+    unit = _synthetic_method(info, info.methods[0], Hierarchy(m), m)
+    p = Path(tmp_path) / "s_h.hpp"
+    p.write_text(unit)
+    assert [f.name for f in scan_file(p).functions] == ["SysInfo____ctor_0"]

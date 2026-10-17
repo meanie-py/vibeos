@@ -1,4 +1,14 @@
 use win32k_sys::win32k::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::winbase::ExtTextOutW;
+use crate::windows::window::HeapAlloc;
+use crate::windows::message::HeapReAlloc;
+// The crate's own functions: the definition is the declaration.
+use crate::windows::draw::DrawStateW;
+use crate::windows::font::DrawTextW;
+use crate::windows::class::GetWindowLongPtrW;
+use crate::windows::rect::IsRectEmpty;
+use crate::windows::cursoricon::LoadCursorW;
 use core::ffi::c_void;
 
 // WARN/ERR/FIXME/TRACE are wine debug-channel macros (no-op here, matching the
@@ -29,17 +39,14 @@ unsafe fn IS_INTRESOURCE(p: *const c_void) -> BOOL {
 
 extern "system" {
     // --- gdi32 / user32 / cohab imports (resolve at link) ---
-    fn DrawTextW(hdc: HDC, lpchText: LPCWSTR, cchText: core::ffi::c_int, lprc: *mut RECT, format: u32) -> core::ffi::c_int;
     fn SetRect(lprc: *mut RECT, xLeft: core::ffi::c_int, yTop: core::ffi::c_int, xRight: core::ffi::c_int, yBottom: core::ffi::c_int) -> i32;
     fn GetClientRect(hwnd: HWND, rc: *mut RECT) -> i32;
     fn GetWindowLongW(hwnd: HWND, index: i32) -> i32;
     fn SetWindowLongW(hwnd: HWND, index: i32, newLong: LONG) -> LONG;
-    fn GetWindowLongPtrW(hwnd: HWND, index: i32) -> isize;
     fn SelectObject(hdc: HDC, h: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
     fn FillRect(hdc: HDC, rc: *const RECT, hbr: HBRUSH) -> i32;
     fn FrameRect(hdc: HDC, rc: *const RECT, hbr: HBRUSH) -> i32;
     fn DrawEdge(hdc: HDC, qrc: *mut RECT, edge: UINT, grfFlags: UINT) -> BOOL;
-    fn IsRectEmpty(lprc: *const RECT) -> BOOL;
     fn IsWindowEnabled(hwnd: HWND) -> i32;
     fn IsWindow(hwnd: HWND) -> BOOL;
     fn IsWindowVisible(hwnd: HWND) -> BOOL;
@@ -52,7 +59,6 @@ extern "system" {
     fn LoadIconA(hInstance: HINSTANCE, name: LPCSTR) -> HICON;
     fn LoadIconW(hInstance: HINSTANCE, name: LPCWSTR) -> HICON;
     fn LoadCursorA(hInstance: HINSTANCE, name: LPCSTR) -> HCURSOR;
-    fn LoadCursorW(hInstance: HINSTANCE, name: LPCWSTR) -> HCURSOR;
     fn LoadImageA(hInstance: HINSTANCE, name: LPCSTR, type_: UINT, cx: i32, cy: i32, flags: UINT) -> HANDLE;
     fn LoadImageW(hInstance: HINSTANCE, name: LPCWSTR, type_: UINT, cx: i32, cy: i32, flags: UINT) -> HANDLE;
     fn LoadBitmapA(hInstance: HINSTANCE, name: LPCSTR) -> HBITMAP;
@@ -60,12 +66,8 @@ extern "system" {
     fn SetTextColor(hdc: HDC, color: COLORREF) -> COLORREF;
     fn GetSysColor(index: i32) -> COLORREF;
     fn GetProcessHeap() -> *mut core::ffi::c_void;
-    fn HeapAlloc(heap: *mut core::ffi::c_void, flags: u32, size: usize) -> *mut core::ffi::c_void;
-    fn HeapReAlloc(heap: *mut core::ffi::c_void, flags: u32, mem: *mut core::ffi::c_void, size: usize) -> *mut core::ffi::c_void;
     fn HeapFree(heap: *mut core::ffi::c_void, flags: u32, mem: *mut core::ffi::c_void) -> i32;
     fn InternalGetWindowText(hwnd: HWND, text: *mut u16, max: i32) -> i32;
-    fn ExtTextOutW(hdc: HDC, x: i32, y: i32, options: u32, rc: *const RECT, text: *const u16, count: i32, dx: *const i32) -> i32;
-    fn DrawStateW(hdc: HDC, hbr: HBRUSH, cb: *mut core::ffi::c_void, ldata: LPARAM, wdata: WPARAM, x: i32, y: i32, cx: i32, cy: i32, flags: u32) -> i32;
     fn DrawIconEx(hdc: HDC, x: i32, y: i32, hIcon: HICON, cx: i32, cy: i32, istep: u32, flickerFreeDraw: HBRUSH, flags: u32) -> i32;
     fn CreateCompatibleDC(hdc: HDC) -> HDC;
     fn CreateSolidBrush(color: COLORREF) -> HBRUSH;
@@ -747,7 +749,7 @@ unsafe extern "system" fn STATIC_PaintTextfn(hwnd: HWND, hdc: HDC, style: DWORD)
 
     'no_TextOut: {
         buf_size = 256;
-        text = HeapAlloc(GetProcessHeap(), 0, buf_size as usize * core::mem::size_of::<WCHAR>()) as *mut WCHAR;
+        text = HeapAlloc(GetProcessHeap(), 0, (buf_size as usize * core::mem::size_of::<WCHAR>()) as SIZE_T) as *mut WCHAR;
         if text.is_null() {
             break 'no_TextOut;
         }
@@ -758,7 +760,7 @@ unsafe extern "system" fn STATIC_PaintTextfn(hwnd: HWND, hdc: HDC, style: DWORD)
                 break;
             }
             buf_size *= 2;
-            text = HeapReAlloc(GetProcessHeap(), 0, text as *mut core::ffi::c_void, buf_size as usize * core::mem::size_of::<WCHAR>()) as *mut WCHAR;
+            text = HeapReAlloc(GetProcessHeap(), 0, text as *mut core::ffi::c_void, (buf_size as usize * core::mem::size_of::<WCHAR>()) as SIZE_T) as *mut WCHAR;
             if text.is_null() {
                 break 'no_TextOut;
             }
@@ -769,13 +771,13 @@ unsafe extern "system" fn STATIC_PaintTextfn(hwnd: HWND, hdc: HDC, style: DWORD)
         }
 
         if (style & SS_TYPEMASK) == SS_SIMPLE && style & SS_NOPREFIX != 0 {
-            ExtTextOutW(hdc, rc.left, rc.top, ETO_CLIPPED | ETO_OPAQUE, &rc, text, len, core::ptr::null());
+            ExtTextOutW(hdc, rc.left, rc.top, ETO_CLIPPED | ETO_OPAQUE, &rc, text, (len) as UINT, core::ptr::null());
         } else {
             let mut flags: UINT = DST_COMPLEX as UINT;
             if style & WS_DISABLED != 0 {
                 flags |= DSS_DISABLED as UINT;
             }
-            DrawStateW(hdc, hBrush, STATIC_DrawTextCallback as *mut core::ffi::c_void,
+            DrawStateW(hdc, hBrush, Some(STATIC_DrawTextCallback),
                        text as LPARAM, format as WPARAM,
                        rc.left, rc.top,
                        rc.right - rc.left, rc.bottom - rc.top,

@@ -1,10 +1,8 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::mm::*;
-use ntkrnl_sys::ddk::{DWORD_PTR, FILE_COMPLETION_INFORMATION, _FILE_INFORMATION_CLASS_FileCompletionInformation as FileCompletionInformation, IMAGE_NT_HEADERS, _IO_STATUS_BLOCK, LARGE_INTEGER, LIST_ENTRY, NtClose, NtCreateEvent, NtDuplicateObject, NtCreateIoCompletion, NtQueryPerformanceCounter, NtQuerySystemTime, NtReleaseMutant, NtReleaseSemaphore, NtRemoveIoCompletion, NtSetEvent, NtSetInformationFile, NtSetInformationThread, NtSetIoCompletion, NtWaitForMultipleObjects, NtWaitForSingleObject, PHANDLE, PLARGE_INTEGER, PTHREAD_START_ROUTINE, RTL_CONDITION_VARIABLE, RTL_CRITICAL_SECTION, RtlAllocateHeap, RtlCreateUserThread, RtlDeleteCriticalSection, RtlEnterCriticalSection, RtlExitUserThread, RtlFreeHeap, RtlImageNtHeader, RtlInitUnicodeString, RtlInitializeConditionVariable, RtlInitializeCriticalSection, RtlLeaveCriticalSection, RtlNtStatusToDosError, RtlSleepConditionVariableCS, RtlWakeAllConditionVariable, RtlWakeConditionVariable, _EVENT_TYPE_SynchronizationEvent, THREAD_NAME_INFORMATION, _THREADINFOCLASS_ThreadNameInformation as ThreadNameInformation};
-use core::ffi::c_void;
+use ntkrnl_sys::ddk::{FILE_COMPLETION_INFORMATION, _FILE_INFORMATION_CLASS_FileCompletionInformation as FileCompletionInformation, IMAGE_NT_HEADERS, _IO_STATUS_BLOCK, LARGE_INTEGER, NtClose, NtCreateEvent, NtDuplicateObject, NtCreateIoCompletion, NtQuerySystemTime, NtReleaseMutant, NtReleaseSemaphore, NtRemoveIoCompletion, NtSetEvent, NtSetInformationFile, NtSetInformationThread, NtSetIoCompletion, NtWaitForMultipleObjects, PTHREAD_START_ROUTINE, RTL_CONDITION_VARIABLE, RTL_CRITICAL_SECTION, RtlAllocateHeap, RtlCreateUserThread, RtlDeleteCriticalSection, RtlEnterCriticalSection, RtlExitUserThread, RtlFreeHeap, RtlImageNtHeader, RtlInitUnicodeString, RtlInitializeConditionVariable, RtlInitializeCriticalSection, RtlLeaveCriticalSection, RtlSleepConditionVariableCS, RtlWakeAllConditionVariable, RtlWakeConditionVariable, _EVENT_TYPE_SynchronizationEvent, THREAD_NAME_INFORMATION, _THREADINFOCLASS_ThreadNameInformation as ThreadNameInformation};
 // crate substrate: win32 aliases, public TP_* types, WT_* flags,
 // RtlGetProcessHeap / GetCurrent* helpers (NtCurrentTeb impl), and the
 // wine intrusive-list port + LIST_ENTRY! macro.
@@ -383,14 +381,17 @@ unsafe fn array_reserve(elements: *mut *mut core::ffi::c_void, capacity: *mut co
 }
 
 unsafe fn set_thread_name(name: *const WCHAR) {
-    let mut info: THREAD_NAME_INFORMATION = core::mem::zeroed();
-    RtlInitUnicodeString(core::ptr::addr_of_mut!(info.ThreadName), name);
-    NtSetInformationThread(
-        GetCurrentThread(),
-        ThreadNameInformation,
-        core::ptr::addr_of_mut!(info) as PVOID,
-        core::mem::size_of::<THREAD_NAME_INFORMATION>() as ULONG,
-    );
+    // threadpool.c: `#ifndef __REACTOS__ // This is impossible on non vista+`.
+    if cfg!(not_reactos) {
+        let mut info: THREAD_NAME_INFORMATION = core::mem::zeroed();
+        RtlInitUnicodeString(core::ptr::addr_of_mut!(info.ThreadName), name);
+        NtSetInformationThread(
+            GetCurrentThread(),
+            ThreadNameInformation,
+            core::ptr::addr_of_mut!(info) as PVOID,
+            core::mem::size_of::<THREAD_NAME_INFORMATION>() as ULONG,
+        );
+    }
 }
 unsafe extern "system" fn timerqueue_thread_proc(param: PVOID) -> ULONG {
     let _ = param;

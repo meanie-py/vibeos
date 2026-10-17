@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use crate::cicero::cicimc_t::CicIMCCLock;
 use core::ffi::c_void;
 
 
@@ -72,13 +71,13 @@ impl CicIMCLock {
         if (ImmGetIMCCSize((*(*this_).__base0.m_pIC).hCompStr) as usize) < core::mem::size_of::<COMPOSITIONSTRING>() {
             return (FALSE) as BOOL;
         }
-    
+
         let mut imccLock: CicIMCCLock<COMPOSITIONSTRING> = core::mem::zeroed();
         imccLock.__ctor_0((*(*this_).__base0.m_pIC).hCompStr);
         if !imccLock.operator_bool() {
             return (FALSE) as BOOL;
         }
-    
+
         return (imccLock.get().dwCompStrLen > 0) as BOOL;
     }
     pub unsafe fn UseVerticalCompWindow(&mut self) -> BOOL {
@@ -98,7 +97,7 @@ impl CicIMCLock {
         if hIMC.is_null() {
             return E_INVALIDARG;
         }
-    
+
         let pIC: LPINPUTCONTEXTDX = ImmLockIMC(hIMC) as LPINPUTCONTEXTDX;
         *ppIC = pIC;
         return if !pIC.is_null() { S_OK } else { E_FAIL };

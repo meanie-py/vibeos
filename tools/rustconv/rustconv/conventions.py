@@ -89,6 +89,7 @@ KW_TO_CONV: dict[str, str] = {
     "STDCALL": "system",
     "CALLBACK": "system",  # psdk/minwindef.h:109
     "PASCAL": "system",  # psdk/minwindef.h:117
+    "MI_CALL": "system",  # psdk/mi.h:310 (OMI MI.h: __stdcall on _WIN32, as mi.dll)
     "pascal": "system",  # psdk/minwindef.h:100
     "STDMETHODCALLTYPE": "system",  # psdk/basetyps.h:37
     "STDAPICALLTYPE": "system",  # psdk/basetyps.h:39
@@ -131,6 +132,7 @@ KW_TO_CONV: dict[str, str] = {
     "__RPC_CALLEE": "system",  # psdk/rpcndr.h:86
     # --- __cdecl ---
     "CDECL": "cdecl",
+    "MI_MAIN_CALL": "cdecl",  # psdk/mi.h:288 (MI_Application_InitializeV1, cdecl on i386 Win11)
     "WINAPIV": "cdecl",  # psdk/minwindef.h:114
     "STDAPIV": "cdecl",  # psdk/basetyps.h:45
     "STDAPIVCALLTYPE": "cdecl",  # psdk/basetyps.h:40

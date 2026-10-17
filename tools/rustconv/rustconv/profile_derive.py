@@ -661,7 +661,10 @@ def _strip_cmake_comments(text: str) -> str:
 #: `rust_*.c` (12 distinct names as of 2026-08-07: rust_varargs_shim, rust_scanf_shim,
 #: rust_strsafe_shim, rust_cohab_fat, rust_layout_assert, …). None is a translation surface, so
 #: a module whose whole compiled source list is these is FLIPPED, not un-translated.
-_SHIM_TU_RE = re.compile(r"^rust_\w*\.c$")
+#: A flipped C++ app keeps a `rust_cohab_stub.cpp` (so its target keeps the C++ flags), and
+#: until this matched `.cpp` too, certmgr, certutil, drwtsn32 and rapps recorded that stub as
+#: one of their translation units.
+_SHIM_TU_RE = re.compile(r"^rust_\w*\.(?:c|cpp)$")
 
 
 def is_shim_tu(path: Path) -> bool:
@@ -1799,29 +1802,8 @@ def scan_preamble(
         if d is None:
             continue
         kind = d.group(1)
-        if kind in ("ifdef", "ifndef", "if"):
-            guard = _guard_macro(line)
-            if guard is not None and guard[0] in known_undefined:
-                # dead when the arm wanted it DEFINED
-                arms.append(guard[1])
-            elif guard is not None and guard[0] in known_defined:
-                arms.append(not guard[1])
-            else:
-                conditional = True
-                arms.append(None)
-            continue
-        if kind in ("elif",):
-            conditional = True
-            if arms:
-                arms[-1] = None
-            continue
-        if kind == "else":
-            if arms and arms[-1] is not None:
-                arms[-1] = not arms[-1]
-            continue
-        if kind == "endif":
-            if arms:
-                arms.pop()
+        if kind in _COND_DIRECTIVES:
+            conditional |= _step_arms(arms, kind, line, known_undefined, known_defined)
             continue
         if any(a for a in arms):
             continue  # inside a decidably-dead arm
@@ -1835,6 +1817,85 @@ def scan_preamble(
         if kind in ("include", "define", "undef"):
             keep.append(line.strip())
     return keep, conditional
+
+
+def _step_arms(
+    arms: list[bool | None],
+    kind: str,
+    line: str,
+    known_undefined: frozenset[str],
+    known_defined: frozenset[str],
+) -> bool:
+    """Apply one conditional directive to the dead-arm stack. True = it was undecidable.
+
+    Each entry is "this arm is dead"; None = undecided, so the caller keeps both arms.
+    """
+    if kind in ("ifdef", "ifndef", "if"):
+        guard = _guard_macro(line)
+        if guard is not None and guard[0] in known_undefined:
+            arms.append(guard[1])  # dead when the arm wanted it DEFINED
+        elif guard is not None and guard[0] in known_defined:
+            arms.append(not guard[1])
+        else:
+            arms.append(None)
+            return True
+    elif kind == "elif":
+        if arms:
+            arms[-1] = None
+        return True
+    elif kind == "else":
+        if arms and arms[-1] is not None:
+            arms[-1] = not arms[-1]
+    elif kind == "endif" and arms:
+        arms.pop()
+    return False
+
+
+def late_includes(
+    text: str,
+    known_undefined: frozenset[str] = frozenset(),
+    known_defined: frozenset[str] = KNOWN_DEFINED,
+) -> tuple[list[tuple[int, str]], list[tuple[int, str]]]:
+    """File-scope ``#include`` lines AFTER the prologue: (live, undecidable), each (lineno, text).
+
+    wscript's main.c includes ``<msxml2.h>`` at line 749, under ``#ifdef __REACTOS__``, right
+    before the .wsf code that uses it. The prologue mirror stops at the first code line, so
+    the island allowlisted msxml2.h and still carried none of it -- nothing in the wrapper
+    included it -- and the IXMLDOM* vtables were transcribed by hand instead. Only includes
+    at brace depth 0 count (one inside a function body is a template instantiation, not a
+    declaration the module's types come from), and only in decidably-live arms; the caller
+    decides which of these are headers the island may take.
+    """
+    raw = text.splitlines()
+    start = len(_prologue_lines(text))
+    live: list[tuple[int, str]] = []
+    undecided: list[tuple[int, str]] = []
+    arms: list[bool | None] = []
+    depth = 0
+    in_comment = False
+    for i, line in enumerate(raw):
+        code = line
+        if in_comment:
+            if "*/" not in code:
+                continue
+            code = code.split("*/", 1)[1]
+            in_comment = False
+        code = re.sub(r"/\*.*?\*/", " ", code)
+        if "/*" in code:
+            code, in_comment = code.split("/*", 1)[0], True
+        code = re.sub(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'', '""', code).split("//", 1)[0]
+        d = _DIRECTIVE_RE.match(line)
+        if d is not None:
+            kind = d.group(1)
+            if kind in _COND_DIRECTIVES:
+                _step_arms(arms, kind, line, known_undefined, known_defined)
+            elif kind == "include" and i >= start and depth == 0 and _INCLUDE_RE.match(line):
+                if any(a for a in arms):
+                    continue
+                (undecided if None in arms else live).append((i + 1, line.strip()))
+            continue
+        depth += code.count("{") - code.count("}")
+    return live, undecided
 
 
 _PACKING_RE = re.compile(r"#\s*include\s*[<\"](?:pshpack\d*|poppack)\.h[>\"]|#\s*pragma\s+pack\b")
@@ -3521,6 +3582,44 @@ def derive(
     )
     wrapper: list[str] = []
     prologues: list[list[str]] = []
+    late: dict[Path, list[str]] = {}
+
+    def _carried_late_includes(
+        tu: Path, undef: frozenset[str], defined: frozenset[str]
+    ) -> list[str]:
+        """The TU's file-scope late includes the island may take: headers the allowlist
+        already admits (a domain/generated header the module names), never initguid.h
+        (it switches DEFINE_GUID to storage for every header after it, and owns no type).
+        Module-local, CRT and base-platform late includes are templates or host fallbacks
+        far more often than declarations (scanf.h, versionlie.inl, <unistd.h>)."""
+        carried: list[str] = []
+        live, undecided = late_includes(_read(tu), undef, defined)
+        for lineno, line in live:
+            m = _INCLUDE_RE.match(line)
+            assert m is not None
+            name = (m.group(1) or m.group(2))[1:-1].replace("\\", "/")
+            if Path(name).name.lower() == "initguid.h" or _hdr_regex(name) not in allow_reasons:
+                continue
+            carried.append(line)
+            findings.append(
+                Finding(
+                    "info",
+                    "LATE_INCLUDE",
+                    f"{_rel(tu, repo_root)}:{lineno} includes {name} after its prologue; "
+                    "the wrapper carries it at the end so the island holds its types",
+                )
+            )
+        for lineno, line in undecided:
+            findings.append(
+                Finding(
+                    "warn",
+                    "LATE_INCLUDE_UNDECIDED",
+                    f"{_rel(tu, repo_root)}:{lineno} `{line}` sits under a conditional this "
+                    "derive cannot decide; NOT carried into the wrapper -- review",
+                )
+            )
+        return carried
+
     for tu in tus:
         # Defined by EVERY compile of this TU: the global ReactOS definition, the language,
         # and the module's character set (set_module_type ... UNICODE).
@@ -3530,6 +3629,8 @@ def derive(
             | ({"UNICODE", "_UNICODE"} if module.unicode else set())
         )
         lines, conditional = scan_preamble(_read(tu), known_undefined, known_defined)
+        late[tu] = _carried_late_includes(tu, known_undefined, known_defined)
+        lines = lines + late[tu]
         if conditional:
             findings.append(
                 Finding(
@@ -3578,7 +3679,7 @@ def derive(
             src = tu_by_key.get(key)
             if src is None:
                 continue
-            own = scan_preamble(_read(src), known_undefined)[0]
+            own = scan_preamble(_read(src), known_undefined)[0] + late.get(src, [])
             if src in flipped_tus:
                 own = [ln for ln in own if not _CHARSET_TOGGLE_RE.match(ln)]
             merge_prologue(lines, own)
@@ -4522,13 +4623,8 @@ def scaffold_crate(
     # The MACROS only, by name: a glob would also pull win32macros' type aliases
     # (HANDLE, WCHAR) into the prelude next to the island's, and every use of either
     # becomes E0659 ambiguous.
-    macro_src = dp.env.repo_root / "sdk" / "lib" / "rust" / "win32macros-rust" / "src"
-    names = sorted(
-        {
-            n
-            for f in (macro_src.glob("*.rs") if macro_src.is_dir() else [])
-            for n in re.findall(r"macro_rules!\s+([A-Za-z_]\w*)", f.read_text())
-        }
+    names = exported_macro_names(
+        dp.env.repo_root / "sdk" / "lib" / "rust" / "win32macros-rust" / "src"
     )
     if names:
         win32_reexport = (
@@ -4833,3 +4929,19 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def exported_macro_names(macro_src: Path) -> list[str]:
+    """The `#[macro_export]` macros of a crate's source: what `pub use krate::{..}` can name.
+    A helper `macro_rules!` local to a function body (win32macros' `at!` inside
+    wine_dbgstr_variant) is no crate-root name, and importing it is E0432 in every prelude."""
+    return sorted(
+        {
+            n
+            for f in (macro_src.glob("*.rs") if macro_src.is_dir() else [])
+            for n in re.findall(
+                r"(?m)^\s*#\[macro_export\](?:\s*#\[[^\]]*\])*\s*macro_rules!\s+([A-Za-z_]\w*)",
+                f.read_text(),
+            )
+        }
+    )

@@ -10,7 +10,7 @@ machinery at this board (its own lease, `VIBEOS_BENCH_BOARD=optiplex`).
 | Power | The Pi 4's Shelly plug | `tools/optiplex/power.sh status / cycle` |
 | Keyboard, mouse, disk | Pico `picousb5` | `tools/optiplex/pico.sh ...` |
 | Screen | Capture card `vid_345f` behind a VGA-to-HDMI converter (the 9020 has VGA and DisplayPort, no HDMI; the converter needs its USB power lead) | `tools/optiplex/hdmi.sh out.png` |
-| Serial | The 9020's COM1, RS-232 to a Prolific PL2303GT on the host: Windows **COM7**, 115200 8N1. coreboot logs every boot here (`debug_level = Debug`), and VibeOS's loader and kernel debug output follow (`/DEBUGPORT=COM1 /BAUDRATE=115200`) | `tools/optiplex/serial.sh up / status`; the live capture is named in `<bench>/serial-current.json`. `python3 tools/pi4/serial_times.py <capture dir> --gaps 10` (or `--lines`) puts arrival times on the latest boot |
+| Serial | The 9020's COM1, RS-232 to a Prolific PL2303GT on the host: Windows **COM7**, 115200 8N1. coreboot logs every boot here (`debug_level = Debug`), and VibeOS's loader and kernel debug output follow (`/DEBUGPORT=COM1 /BAUDRATE=115200`) | `tools/optiplex/serial.sh up / status`; the live capture is named in `<bench>/serial-current.json`. `python3 tools/pi4/serial_times.py <capture dir> --gaps 10` (or `--lines`) puts arrival times on the latest boot. The board boots the MP pair (`ntkrnlmp.exe`, `halmp.dll`), which a bugcheck still prints as `ntoskrnl.exe+` and `hal.dll+`: symbolicate those frames as `./vibeos-cli sym --arch amd64 halmp.dll+0x...` |
 
 The Pi 5 keeps the other card (`vid_534d`, `tools/pi5/env.sh`).
 
@@ -160,8 +160,12 @@ router through the guest network, gateway ping, DNS. Build with
 `VIBEOS_WIFI_CONFIG=<file> VIBEOS_VENDOR_DRIVERS=<rtwlanu dir> VIBEOS_PAYLOAD=ndisprobe,vendordrv`
 and boot with `OPTIPLEX_BOOT_OPTIONS=/NETSTACK=NDIS`. The file holds `ssid=`, `psk=` (the
 passphrase) and `hidden=1` lines and is staged as `\SystemRoot\bin\wifi.txt`; keep it outside
-every repo. Its bugs are in the field manual under "A vendor Wi-Fi driver starts only when
-tracing slows it down". Where an inbox INF also claims the device, build with
+every repo. The link stays joined: when the LE drops the AP (it deletes the peer), the worker
+resets the connection and joins again, backing off from 5 s to a minute while attempts fail
+(2026-10-16: the link came back with a fresh 4-way handshake, and the host pinged the board
+again on its unchanged lease). `/WIFIDROP=<s>` drops the link on purpose once, s seconds after it
+first comes up, to exercise that without touching the router. Its bugs are in the field manual
+under "A vendor Wi-Fi driver starts only when tracing slows it down". Where an inbox INF also claims the device, build with
 `VIBEOS_VENDOR_PREFER=1` ("A staged vendor driver never loads").
 
 ## Known gaps

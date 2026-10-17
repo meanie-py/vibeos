@@ -1,4 +1,6 @@
 use crate::ntwrapper::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::windows::window::HeapAlloc;
 use win32k_sys::win32k::*;
 use crate::internal::*;
 use crate::winbase::*;
@@ -11,7 +13,6 @@ extern "C" {
 }
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: SIZE_T) -> LPVOID;
     fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID) -> BOOL;
     fn MultiByteToWideChar( CodePage: UINT, dwFlags: DWORD, lpMultiByteStr: LPCSTR, cbMultiByte: core::ffi::c_int, lpWideCharStr: LPWSTR, cchWideChar: core::ffi::c_int, ) -> core::ffi::c_int;
     fn WideCharToMultiByte( CodePage: UINT, dwFlags: DWORD, lpWideCharStr: LPCWSTR, cchWideChar: core::ffi::c_int, lpMultiByteStr: LPSTR, cbMultiByte: core::ffi::c_int, lpDefaultChar: LPCSTR, lpUsedDefaultChar: *mut BOOL, ) -> core::ffi::c_int;
@@ -23,11 +24,11 @@ extern "system" {
 // wine/unicode.h static-inline helpers (inlined per-TU in C; no external symbol).
 #[inline]
 unsafe fn toupperW(ch: WCHAR) -> WCHAR {
-    towupper(ch as core::ffi::c_int) as WCHAR
+    towupper(ch as wint_t) as WCHAR
 }
 #[inline]
 unsafe fn tolowerW(ch: WCHAR) -> WCHAR {
-    towlower(ch as core::ffi::c_int) as WCHAR
+    towlower(ch as wint_t) as WCHAR
 }
 #[inline]
 unsafe fn struprW(str: *mut WCHAR) -> *mut WCHAR {
@@ -320,7 +321,7 @@ pub unsafe extern "system" fn CharUpperBuffW(mut str: LPWSTR, mut len: DWORD) ->
         return 0;
     }
     while len != 0 {
-        *str = towupper(*str as i32) as u16;
+        *str = towupper(*str as wint_t) as u16;
         len -= 1;
         str = str.add(1);
     }

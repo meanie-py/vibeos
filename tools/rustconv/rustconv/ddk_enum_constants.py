@@ -1,6 +1,6 @@
 """CamelCase DDK/PSDK enum-constant names — GENERATED, do not edit by hand.
 
-Regenerate with `python3 tools/rustconv/gen_enum_constants.py` (793 headers
+Regenerate with `python3 tools/rustconv/gen_enum_constants.py` (794 headers
 scanned).  See that script's docstring for why this exists: CamelCase enum
 constants are values the model must never be trusted to copy, and unlike
 ALL_CAPS #defines they do not match fact_seal's symbol pattern.
@@ -2352,6 +2352,17 @@ DDK_ENUM_CONSTANTS: frozenset[str] = frozenset(
         "MFVideoRotationFormat_90",
         "MFWaveFormatExConvertFlag_ForceExtensible",
         "MFWaveFormatExConvertFlag_Normal",
+        "MI_DestinationOptions_ImpersonationType_Default",
+        "MI_DestinationOptions_ImpersonationType_Delegate",
+        "MI_DestinationOptions_ImpersonationType_Identify",
+        "MI_DestinationOptions_ImpersonationType_Impersonate",
+        "MI_DestinationOptions_ImpersonationType_None",
+        "MI_OperationCallback_ResponseType_No",
+        "MI_OperationCallback_ResponseType_NoToAll",
+        "MI_OperationCallback_ResponseType_Yes",
+        "MI_OperationCallback_ResponseType_YesToAll",
+        "MI_SubscriptionDeliveryType_Pull",
+        "MI_SubscriptionDeliveryType_Push",
         "MP2_8mm",
         "MPIBus",
         "MPIConfiguration",

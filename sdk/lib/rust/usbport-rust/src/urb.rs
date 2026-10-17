@@ -1034,7 +1034,9 @@ pub unsafe extern "system" fn USBPORT_HandleSubmitURB(
 
         Transfer = (*Urb).__bindgen_anon_1.UrbControlTransfer.hca.Reserved8[0] as PUSBPORT_TRANSFER;
         (*Urb).__bindgen_anon_1.UrbControlTransfer.hca.Reserved8[0] = core::ptr::null_mut();
-        (*Urb).__bindgen_anon_1.UrbHeader.UsbdFlags |= !USBD_FLAG_ALLOCATED_TRANSFER;
+        // The C writes `|= ~FLAG`, which SETS every other flag (ALLOCATED_MDL among them,
+        // so a reused URB could IoFreeMdl a stale pointer) instead of clearing this one.
+        (*Urb).__bindgen_anon_1.UrbHeader.UsbdFlags &= !USBD_FLAG_ALLOCATED_TRANSFER;
         ExFreePoolWithTag(Transfer as *mut core::ffi::c_void, USB_PORT_TAG);
     }
 

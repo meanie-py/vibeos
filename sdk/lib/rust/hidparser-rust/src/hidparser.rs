@@ -116,6 +116,14 @@ pub unsafe extern "system" fn HidParser_GetCollectionDescription(
     let mut Index: ULONG;
     let mut ParserContext: PVOID = core::ptr::null_mut();
 
+    // Windows zeroes the description before parsing, so a failure leaves NULL pointers and
+    // zero lengths (HidPDescription.c:145-148). The C zeroed it only after a successful
+    // parse, leaving the caller's garbage on every failure path.
+    ZeroFunction(
+        DeviceDescription as PVOID,
+        core::mem::size_of::<HIDP_DEVICE_DESC>() as ULONG,
+    );
+
     //
     // first parse the report descriptor
     //
@@ -147,14 +155,6 @@ pub unsafe extern "system" fn HidParser_GetCollectionDescription(
     }
 
     //
-    // zero description
-    //
-    ZeroFunction(
-        DeviceDescription as PVOID,
-        core::mem::size_of::<HIDP_DEVICE_DESC>() as ULONG,
-    );
-
-    //
     // allocate collection
     //
     (*DeviceDescription).CollectionDesc = AllocFunction(
@@ -168,26 +168,31 @@ pub unsafe extern "system" fn HidParser_GetCollectionDescription(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    //
-    // allocate report description
-    //
-    (*DeviceDescription).ReportIDs = AllocFunction(
-        (core::mem::size_of::<HIDP_REPORT_IDS>() as usize)
-            .wrapping_mul(CollectionCount as usize) as ULONG,
-    ) as PHIDP_REPORT_IDS;
-    if (*DeviceDescription).ReportIDs.is_null() {
-        //
-        // no memory
-        //
+    // Undo a partial description: the first `built` collections own preparsed data. The C
+    // freed only the two arrays, leaking every context already built.
+    unsafe fn fail(DeviceDescription: PHIDP_DEVICE_DESC, built: ULONG, status: NTSTATUS) -> NTSTATUS {
+        let mut i: ULONG = 0;
+        while i < built {
+            FreeFunction((*(*DeviceDescription).CollectionDesc.add(i as usize)).PreparsedData as PVOID);
+            i += 1;
+        }
         FreeFunction((*DeviceDescription).CollectionDesc as PVOID);
-        return STATUS_INSUFFICIENT_RESOURCES;
+        if !(*DeviceDescription).ReportIDs.is_null() {
+            FreeFunction((*DeviceDescription).ReportIDs as PVOID);
+        }
+        ZeroFunction(
+            DeviceDescription as PVOID,
+            core::mem::size_of::<HIDP_DEVICE_DESC>() as ULONG,
+        );
+        status
     }
 
+    //
+    // build each collection's context; its stored reports bound the ReportIDs table
+    //
+    let mut ReportCount: ULONG = 0;
     Index = 0;
     while Index < CollectionCount {
-        //
-        // set preparsed data length
-        //
         let coll_desc: *mut HIDP_COLLECTION_DESC =
             (*DeviceDescription).CollectionDesc.offset(Index as isize);
         (*coll_desc).PreparsedDataLength =
@@ -200,62 +205,9 @@ pub unsafe extern "system" fn HidParser_GetCollectionDescription(
             core::ptr::addr_of_mut!((*coll_desc).PreparsedData) as *mut PVOID,
         );
         if ParserStatus != HIDP_STATUS_SUCCESS {
-            //
-            // no memory
-            //
-            FreeFunction((*DeviceDescription).CollectionDesc as PVOID);
-            FreeFunction((*DeviceDescription).ReportIDs as PVOID);
-            return ParserStatus;
+            return fail(DeviceDescription, Index, ParserStatus);
         }
 
-        //
-        // init report description
-        //
-        let rep_ids: *mut HIDP_REPORT_IDS =
-            (*DeviceDescription).ReportIDs.offset(Index as isize);
-        (*rep_ids).CollectionNumber = Index.wrapping_add(1) as UCHAR;
-        (*rep_ids).ReportID = Index as UCHAR;
-        (*rep_ids).InputLength = HidParser_GetReportLength(
-            (*coll_desc).PreparsedData as PVOID,
-            HID_REPORT_TYPE_INPUT,
-        ) as USHORT;
-        (*rep_ids).OutputLength = HidParser_GetReportLength(
-            (*coll_desc).PreparsedData as PVOID,
-            HID_REPORT_TYPE_OUTPUT,
-        ) as USHORT;
-        (*rep_ids).FeatureLength = HidParser_GetReportLength(
-            (*coll_desc).PreparsedData as PVOID,
-            HID_REPORT_TYPE_FEATURE,
-        ) as USHORT;
-
-        // Adjust lengths for report ID usage (ReportIDs)
-        let uses_input = HidParser_UsesReportId(
-            (*coll_desc).PreparsedData as PVOID,
-            HID_REPORT_TYPE_INPUT,
-        );
-        let input_len_ptr = core::ptr::addr_of_mut!((*rep_ids).InputLength);
-        *input_len_ptr = (*input_len_ptr as i32
-            + if uses_input != 0 { 1 } else { 0 }) as USHORT;
-
-        let uses_output = HidParser_UsesReportId(
-            (*coll_desc).PreparsedData as PVOID,
-            HID_REPORT_TYPE_OUTPUT,
-        );
-        let output_len_ptr = core::ptr::addr_of_mut!((*rep_ids).OutputLength);
-        *output_len_ptr = (*output_len_ptr as i32
-            + if uses_output != 0 { 1 } else { 0 }) as USHORT;
-
-        let uses_feature = HidParser_UsesReportId(
-            (*coll_desc).PreparsedData as PVOID,
-            HID_REPORT_TYPE_FEATURE,
-        );
-        let feature_len_ptr = core::ptr::addr_of_mut!((*rep_ids).FeatureLength);
-        *feature_len_ptr = (*feature_len_ptr as i32
-            + if uses_feature != 0 { 1 } else { 0 }) as USHORT;
-
-        //
-        // init collection description
-        //
         (*coll_desc).CollectionNumber = Index.wrapping_add(1) as UCHAR;
 
         //
@@ -268,43 +220,90 @@ pub unsafe extern "system" fn HidParser_GetCollectionDescription(
         );
         if ParserStatus != HIDP_STATUS_SUCCESS {
             // collection not found
-            FreeFunction((*DeviceDescription).CollectionDesc as PVOID);
-            FreeFunction((*DeviceDescription).ReportIDs as PVOID);
-            return ParserStatus;
+            return fail(DeviceDescription, Index + 1, ParserStatus);
+        }
+
+        crate::context::HidParser_VisitReports((*coll_desc).PreparsedData as PVOID, &mut |_| {
+            ReportCount += 1
+        });
+        Index = Index.wrapping_add(1);
+    }
+
+    // One ReportIDs entry per report ID a collection uses, in the order the descriptor
+    // declares them, each carrying that ID's own lengths: hidclass routes feature and
+    // output requests by looking the ID up here. The C made one entry per collection with
+    // `ReportID = Index` (its FIXME), so a device with report IDs 1, 2, 238 and 239 had
+    // one entry, ID 0 (HidPDescription.c:189-232). A collection with no reports still
+    // gets an all-zero entry, which hidclass's read path relies on finding.
+    (*DeviceDescription).ReportIDs = AllocFunction(
+        (core::mem::size_of::<HIDP_REPORT_IDS>() as usize)
+            .wrapping_mul(ReportCount.wrapping_add(CollectionCount) as usize) as ULONG,
+    ) as PHIDP_REPORT_IDS;
+    if (*DeviceDescription).ReportIDs.is_null() {
+        return fail(DeviceDescription, CollectionCount, STATUS_INSUFFICIENT_RESOURCES);
+    }
+
+    let ReportIDs = (*DeviceDescription).ReportIDs;
+    let mut Entries: ULONG = 0;
+    Index = 0;
+    while Index < CollectionCount {
+        let coll_desc: *mut HIDP_COLLECTION_DESC =
+            (*DeviceDescription).CollectionDesc.offset(Index as isize);
+        let CollectionNumber = (*coll_desc).CollectionNumber;
+        let first = Entries;
+        // Longest report of each type in this collection, in bytes without the ID byte.
+        let mut longest = [0u16; 3];
+
+        crate::context::HidParser_VisitReports((*coll_desc).PreparsedData as PVOID, &mut |report| {
+            let slot = match (*report).Type {
+                HID_REPORT_TYPE_INPUT => 0,
+                HID_REPORT_TYPE_OUTPUT => 1,
+                HID_REPORT_TYPE_FEATURE => 2,
+                _ => return,
+            };
+            // Report sizes are in bits; a report that is not whole bytes still occupies
+            // its last byte.
+            let bytes = (*report).ReportSize.div_ceil(8) as u16;
+            if bytes == 0 {
+                return;
+            }
+            let id = (*report).ReportID;
+            let mut entry = ReportIDs.add(first as usize);
+            let end = ReportIDs.add(Entries as usize);
+            while entry < end && (*entry).ReportID != id {
+                entry = entry.add(1);
+            }
+            if entry == end {
+                (*entry).ReportID = id;
+                (*entry).CollectionNumber = CollectionNumber;
+                Entries += 1;
+            }
+            // A report that has an ID carries it as its first byte.
+            let length = bytes + (id != 0) as u16;
+            match slot {
+                0 => (*entry).InputLength = length,
+                1 => (*entry).OutputLength = length,
+                _ => (*entry).FeatureLength = length,
+            }
+            longest[slot] = longest[slot].max(bytes);
+        });
+
+        if Entries == first {
+            (*ReportIDs.add(Entries as usize)).CollectionNumber = CollectionNumber;
+            Entries += 1;
         }
 
         //
         // windows seems to prepend the report id, regardless if it is required
         //
-        (*coll_desc).CollectionNumber = Index.wrapping_add(1) as UCHAR;
-        (*coll_desc).InputLength = (*rep_ids).InputLength;
-        (*coll_desc).OutputLength = (*rep_ids).OutputLength;
-        (*coll_desc).FeatureLength = (*rep_ids).FeatureLength;
-
-        // Adjust lengths for collection descriptor (inverse logic)
-        let uses_input_coll = HidParser_UsesReportId(
-            (*coll_desc).PreparsedData as PVOID,
-            HID_REPORT_TYPE_INPUT,
-        );
-        let input_len_coll_ptr = core::ptr::addr_of_mut!((*coll_desc).InputLength);
-        *input_len_coll_ptr = (*input_len_coll_ptr as i32
-            + if uses_input_coll == 0 { 1 } else { 0 }) as USHORT;
-
-        let uses_output_coll = HidParser_UsesReportId(
-            (*coll_desc).PreparsedData as PVOID,
-            HID_REPORT_TYPE_OUTPUT,
-        );
-        let output_len_coll_ptr = core::ptr::addr_of_mut!((*coll_desc).OutputLength);
-        *output_len_coll_ptr = (*output_len_coll_ptr as i32
-            + if uses_output_coll == 0 { 1 } else { 0 }) as USHORT;
-
-        let uses_feature_coll = HidParser_UsesReportId(
-            (*coll_desc).PreparsedData as PVOID,
-            HID_REPORT_TYPE_FEATURE,
-        );
-        let feature_len_coll_ptr = core::ptr::addr_of_mut!((*coll_desc).FeatureLength);
-        *feature_len_coll_ptr = (*feature_len_coll_ptr as i32
-            + if uses_feature_coll == 0 { 1 } else { 0 }) as USHORT;
+        // Only a report type the collection HAS gets the prepended ID byte: Windows reports
+        // FeatureLength 0 for a keyboard with no feature report, where the C said 1
+        // (HidPDescription.c:168). With several IDs the collection's length is its longest
+        // report's, so a read buffer sized from it fits every input report.
+        let with_id = |bytes: u16| if bytes != 0 { bytes + 1 } else { 0 };
+        (*coll_desc).InputLength = with_id(longest[0]);
+        (*coll_desc).OutputLength = with_id(longest[1]);
+        (*coll_desc).FeatureLength = with_id(longest[2]);
 
         Index = Index.wrapping_add(1);
     }
@@ -313,7 +312,7 @@ pub unsafe extern "system" fn HidParser_GetCollectionDescription(
     // store collection & report count
     //
     (*DeviceDescription).CollectionDescLength = CollectionCount;
-    (*DeviceDescription).ReportIDsLength = CollectionCount;
+    (*DeviceDescription).ReportIDsLength = Entries;
 
     //
     // done

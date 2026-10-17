@@ -1,9 +1,6 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
-use ntkrnl_sys::ddk::{LCID, LPCWSTR, NtQueryDefaultLocale, PCSTR, PCUNICODE_STRING, PLCID, PUNICODE_STRING, RtlAllocateHeap, RtlFreeHeap, RtlInitUnicodeString, _UNICODE_STRING};
-use crate::shared::RtlGetProcessHeap;
-use core::ffi::c_void;
+use ntkrnl_sys::ddk::{LCID, LPCWSTR, NtQueryDefaultLocale, PCSTR, PCUNICODE_STRING, PLCID, PUNICODE_STRING, RtlInitUnicodeString, RtlIntegerToUnicodeString, _UNICODE_STRING};
 
 type INT = i32;
 
@@ -560,6 +557,16 @@ unsafe fn FindIndexByLcid(Lcid: LCID) -> ULONG {
     MAXULONG
 }
 
+/// Windows treats `_` and `-` as the same separator when it looks a locale name up
+/// ("en_US" -> 0x409, "ja-JP-radstr" -> 0x40411; measured with RtlLocaleNameToLcid and
+/// RtlIsValidLocaleName on Windows 10.0.26300). The table spells sort suffixes with
+/// `_`, so both sides fold to `-`; the table stays sorted under the fold (a host test
+/// checks every adjacent pair), so the binary search is unaffected.
+#[inline]
+fn SeparatorFold(c: u16) -> u16 {
+    if c == b'_' as u16 { b'-' as u16 } else { c }
+}
+
 unsafe fn CompareLocaleNames(
     AsciiLocaleName: PCSTR,
     UnicodeLocaleName: PCUNICODE_STRING,
@@ -567,14 +574,14 @@ unsafe fn CompareLocaleNames(
     let mut i: ULONG = 0;
 
     while i < (*UnicodeLocaleName).Length as ULONG / core::mem::size_of::<u16>() as ULONG {
-        let RawChar1 = *AsciiLocaleName.offset(i as isize) as u8;
+        let RawChar1 = SeparatorFold(*AsciiLocaleName.offset(i as isize) as u8 as u16) as u8;
         let Char1: u8 = if RawChar1 >= b'A' && RawChar1 <= b'Z' {
             RawChar1 + (b'a' - b'A')
         } else {
             RawChar1
         };
 
-        let RawChar2 = *(*UnicodeLocaleName).Buffer.offset(i as isize);
+        let RawChar2 = SeparatorFold(*(*UnicodeLocaleName).Buffer.offset(i as isize));
         let Char2: u16 = if RawChar2 >= b'A' as u16 && RawChar2 <= b'Z' as u16 {
             RawChar2 + (b'a' - b'A') as u16
         } else {
@@ -810,7 +817,15 @@ pub unsafe extern "system" fn RtlIsValidLocaleName(
     LocaleName: LPCWSTR,
     Flags: ULONG,
 ) -> BOOLEAN {
-    1u8
+    // Windows (measured): any flag other than RTL_LOCALE_ALLOW_NEUTRAL_NAMES makes the
+    // answer FALSE — even 1, which RtlLocaleNameToLcid itself accepts. Otherwise a name is
+    // valid exactly when RtlLocaleNameToLcid would resolve it with the same flags: so ""
+    // (the invariant locale) is valid, and a neutral name ("en") only with flag 2.
+    if (Flags & !RTL_LOCALE_ALLOW_NEUTRAL_NAMES) != 0 || LocaleName.is_null() {
+        return 0u8;
+    }
+    let mut Lcid: LCID = 0;
+    NT_SUCCESS(RtlLocaleNameToLcid(LocaleName, &mut Lcid, Flags)) as BOOLEAN
 }
 
 #[no_mangle]
@@ -821,5 +836,51 @@ pub unsafe extern "system" fn RtlConvertLCIDToString(
     pResultBuf: PWSTR,
     Size: ULONG,
 ) -> NTSTATUS {
-    STATUS_NOT_IMPLEMENTED
+    // The contract, measured black-box on Windows 10.0.26300 (Size is in WCHARs):
+    //  1. RtlIntegerToUnicodeString(Lcid, Base) into a string whose capacity is Size WCHARs.
+    //     Its failures come back unchanged and NOTHING is written: a bad Base is
+    //     STATUS_INVALID_PARAMETER, too small a Size (digits + NUL) STATUS_BUFFER_OVERFLOW.
+    //  2. Left-pad with '0' up to Padding digits — written straight into pResultBuf and
+    //     clipped at Size, so a pad wider than the buffer fills it with '0' and no NUL.
+    //  3. Copy the digits after the pad StringCchCopyW-style: truncate to the room left,
+    //     NUL-terminate when there is any room at all. Any truncation, or no room, is
+    //     STATUS_UNSUCCESSFUL — with the partial text left in the buffer.
+    // The digits are formed in a local buffer: 32 binary digits + NUL is the most any
+    // Base can produce, so capping the capacity there changes no outcome.
+    const MAX_DIGITS_WITH_NUL: ULONG = 33;
+    let mut Digits = [0u16; MAX_DIGITS_WITH_NUL as usize];
+    let Capacity = if Size < MAX_DIGITS_WITH_NUL { Size } else { MAX_DIGITS_WITH_NUL };
+    let mut DigitString = _UNICODE_STRING {
+        Length: 0,
+        MaximumLength: (Capacity * core::mem::size_of::<u16>() as ULONG) as USHORT,
+        Buffer: Digits.as_mut_ptr(),
+    };
+    let Status = RtlIntegerToUnicodeString(LcidValue, Base, &mut DigitString);
+    if !NT_SUCCESS(Status) {
+        return Status;
+    }
+    let DigitCount = DigitString.Length as ULONG / core::mem::size_of::<u16>() as ULONG;
+
+    let mut Written: ULONG = 0;
+    if Padding > DigitCount {
+        let Zeros = Padding - DigitCount;
+        Written = if Zeros < Size { Zeros } else { Size };
+        let mut k: ULONG = 0;
+        while k < Written {
+            *pResultBuf.add(k as usize) = b'0' as u16;
+            k += 1;
+        }
+    }
+
+    let Room = Size - Written;
+    if Room == 0 {
+        return STATUS_UNSUCCESSFUL;
+    }
+    let Copied = if DigitCount < Room { DigitCount } else { Room - 1 };
+    core::ptr::copy_nonoverlapping(Digits.as_ptr(), pResultBuf.add(Written as usize), Copied as usize);
+    *pResultBuf.add((Written + Copied) as usize) = 0;
+    if Copied < DigitCount {
+        return STATUS_UNSUCCESSFUL;
+    }
+    STATUS_SUCCESS
 }

@@ -1304,6 +1304,33 @@ unsafe fn halp_release_spin_lock_dbg(spin_lock: ddk::PKSPIN_LOCK) {
     }
 }
 
+// The in-stack queued lock is ntkrnl-sys's MCS lock, the same one ntoskrnl's
+// KeAcquireInStackQueuedSpinLockAtDpcLevel / ...FromDpcLevel use: a caller may acquire
+// through hal.dll and release through ntoskrnl. A null lock is skipped, as
+// halp_acquire_spin_lock_dbg always has.
+#[inline]
+unsafe fn hal_inst_acquire(h: ddk::PKLOCK_QUEUE_HANDLE) {
+    unsafe {
+        if !(*h).LockQueue.Lock.is_null() {
+            ntkrnl_sys::inline::ke::KxAcquireInStackQueuedSpinLock(
+                core::ptr::addr_of_mut!((*h).LockQueue) as *mut ntkrnl_sys::ddk::KSPIN_LOCK_QUEUE,
+            );
+        }
+    }
+}
+
+#[inline]
+unsafe fn hal_inst_release(h: ddk::PKLOCK_QUEUE_HANDLE) {
+    unsafe {
+        let queue = core::ptr::addr_of_mut!((*h).LockQueue);
+        if ((*queue).Lock as usize) & !(ntkrnl_sys::inline::ke::LQ_WAIT | ntkrnl_sys::inline::ke::LQ_OWN) != 0 {
+            ntkrnl_sys::inline::ke::KxReleaseInStackQueuedSpinLock(
+                queue as *mut ntkrnl_sys::ddk::KSPIN_LOCK_QUEUE,
+            );
+        }
+    }
+}
+
 /// Pull `KPRCB.LockQueue[N].Lock` for the by-number queued-spinlock functions.
 /// The HACK is upstream's — a real queued lock walks a per-CPU queue — and this
 /// mirrors `hal-rust/src/x86/spinlock.rs::queue_lock` so the two arches resolve
@@ -1369,7 +1396,7 @@ pub unsafe extern "system" fn KeAcquireInStackQueuedSpinLock(
         (*LockHandle).LockQueue.Next = core::ptr::null_mut();
         (*LockHandle).OldIrql = KfRaiseIrql(DISPATCH_LEVEL);
         (*LockHandle).LockQueue.Lock = SpinLock;
-        halp_acquire_spin_lock_dbg(SpinLock);
+        hal_inst_acquire(LockHandle);
     }
 }
 
@@ -1382,14 +1409,14 @@ pub unsafe extern "system" fn KeAcquireInStackQueuedSpinLockRaiseToSynch(
         (*LockHandle).LockQueue.Next = core::ptr::null_mut();
         (*LockHandle).OldIrql = KfRaiseIrql(SYNCH_LEVEL);
         (*LockHandle).LockQueue.Lock = SpinLock;
-        halp_acquire_spin_lock_dbg(SpinLock);
+        hal_inst_acquire(LockHandle);
     }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn KeReleaseInStackQueuedSpinLock(LockHandle: ddk::PKLOCK_QUEUE_HANDLE) {
     unsafe {
-        halp_release_spin_lock_dbg((*LockHandle).LockQueue.Lock);
+        hal_inst_release(LockHandle);
         KfLowerIrql((*LockHandle).OldIrql);
     }
 }

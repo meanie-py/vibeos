@@ -4,7 +4,7 @@ use core::ffi::c_void;
 pub unsafe extern "C" fn _cicRegKey_Open(this_: *mut CicRegKey, hKey: HKEY, lpSubKey: LPCTSTR, samDesired: REGSAM) -> LSTATUS {
     let mut hNewKey: HKEY = core::mem::zeroed();
     let mut error: LSTATUS = RegOpenKeyEx(hKey, lpSubKey, 0, samDesired, core::ptr::addr_of_mut!(hNewKey));
-    if (error) as u32 != ERROR_SUCCESS {
+    if error != (ERROR_SUCCESS as i32) {
         return error;
     }
 
@@ -17,7 +17,7 @@ pub unsafe extern "C" fn _cicRegKey_Create(this_: *mut CicRegKey, hKey: HKEY, lp
     let mut hNewKey: HKEY = core::mem::zeroed();
     let mut error: LSTATUS = RegCreateKeyEx(hKey, lpSubKey, 0, core::ptr::null_mut(), REG_OPTION_NON_VOLATILE,
                                      KEY_ALL_ACCESS, core::ptr::null_mut(), core::ptr::addr_of_mut!(hNewKey), core::ptr::null_mut());
-    if (error) as u32 != ERROR_SUCCESS {
+    if error != (ERROR_SUCCESS as i32) {
         return error;
     }
 
@@ -31,7 +31,7 @@ pub unsafe extern "C" fn _cicRegKey_EnumValue(this_: *mut CicRegKey, dwIndex: DW
     let mut error: LSTATUS = RegEnumValue((*this_).m_hKey, dwIndex, lpValueName, core::ptr::addr_of_mut!(cchValueName),
                                    core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut());
     if dwSaveLen != 0 {
-        *lpValueName.add((if (error) as u32 == ERROR_SUCCESS { dwSaveLen - 1 } else { 0 }) as usize) = 0;
+        *lpValueName.add((if error == (ERROR_SUCCESS as i32) { dwSaveLen - 1 } else { 0 }) as usize) = 0;
     }
     return error;
 }
@@ -40,7 +40,7 @@ pub unsafe extern "C" fn _cicRegKey_QuerySz(self_: &mut CicRegKey, pszValueName:
     let mut cbValueMax: DWORD = cchValueMax * (core::mem::size_of::<TCHAR>() as DWORD);
     let mut error: LSTATUS = RegQueryValueEx(self_.m_hKey, pszValueName, core::ptr::null_mut(), core::ptr::null_mut(), pszValue as LPBYTE, core::ptr::addr_of_mut!(cbValueMax));
     if cchValueMax > 0 {
-        *pszValue.offset(((if (error) as u32 == ERROR_SUCCESS { cchValueMax - 1 } else { 0 }) as isize)) = UNICODE_NULL;
+        *pszValue.offset(((if error == (ERROR_SUCCESS as i32) { cchValueMax - 1 } else { 0 }) as isize)) = UNICODE_NULL;
     }
     return error;
 }
@@ -48,7 +48,7 @@ pub unsafe extern "C" fn _cicRegKey_QuerySz(self_: &mut CicRegKey, pszValueName:
 pub unsafe extern "C" fn _cicRegKey_RecurseDeleteKey(this_: *mut CicRegKey, lpSubKey: LPCTSTR) -> LSTATUS {
     let mut regKey: CicRegKey = CicRegKey__make_0();
     let mut error: LSTATUS = regKey.Open((*this_).m_hKey, lpSubKey, KEY_READ | KEY_WRITE);
-    if (error) as u32 != ERROR_SUCCESS {
+    if error != (ERROR_SUCCESS as i32) {
         return error;
     }
 
@@ -57,13 +57,13 @@ pub unsafe extern "C" fn _cicRegKey_RecurseDeleteKey(this_: *mut CicRegKey, lpSu
     loop {
         cchName = _countof!(szName);
         error = RegEnumKeyEx((regKey).op_to_HKEY(), 0, szName.as_mut_ptr(), core::ptr::addr_of_mut!(cchName), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut());
-        if (error) as u32 != ERROR_SUCCESS {
+        if error != (ERROR_SUCCESS as i32) {
             break;
         }
 
         szName[(_countof!(szName) - 1) as usize] = UNICODE_NULL;
         error = regKey.RecurseDeleteKey(szName.as_ptr());
-        if !((error) as u32 == ERROR_SUCCESS) {
+        if !(error == (ERROR_SUCCESS as i32)) {
             break;
         }
     }

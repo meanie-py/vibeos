@@ -145,9 +145,9 @@ pub unsafe fn CicArrayBase__zeroed() -> CicArrayBase { core::mem::zeroed() }
 pub unsafe fn CicArrayBase__make_0(cbItem: size_t) -> CicArrayBase { let mut __obj = CicArrayBase__zeroed(); __obj.__ctor_0(cbItem); __obj }
 pub unsafe fn CicArrayBase__new_in_0(__p: *mut CicArrayBase, cbItem: size_t) -> *mut CicArrayBase { if __p.is_null() { return __p; } (*__p).__ctor_0(cbItem); __p }
 pub unsafe fn CicArrayBase__new_0(cbItem: size_t) -> *mut CicArrayBase { CicArrayBase__new_in_0(cpp_alloc::<CicArrayBase>(), cbItem) }
-pub unsafe fn CicArrayBase__delete(p: *mut CicArrayBase) { if p.is_null() { return; } let sub = p as *mut CicArrayBase; ((*((*sub).__vtbl as *const CicArrayBase__vtbl)).__delete)(sub); }
+pub unsafe fn CicArrayBase__delete(p: *mut CicArrayBase) { if p.is_null() { return; } let sub = p as *mut CicArrayBase; ((*(*sub).__vtbl).__delete)(sub); }
 impl Drop for CicArrayBase {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- CicCaret (base/ctf/cicero/ciccaret.h)
@@ -184,9 +184,9 @@ pub unsafe fn CicCaret__zeroed() -> CicCaret { core::mem::zeroed() }
 pub unsafe fn CicCaret__make_0() -> CicCaret { let mut __obj = CicCaret__zeroed(); __obj.__ctor_0(); __obj }
 pub unsafe fn CicCaret__new_in_0(__p: *mut CicCaret) -> *mut CicCaret { if __p.is_null() { return __p; } (*__p).__ctor_0(); __p }
 pub unsafe fn CicCaret__new_0() -> *mut CicCaret { CicCaret__new_in_0(cpp_alloc::<CicCaret>()) }
-pub unsafe fn CicCaret__delete(p: *mut CicCaret) { if p.is_null() { return; } let sub = p as *mut CicCaret; ((*((*sub).__vtbl as *const CicCaret__vtbl)).__delete)(sub); }
+pub unsafe fn CicCaret__delete(p: *mut CicCaret) { if p.is_null() { return; } let sub = p as *mut CicCaret; ((*(*sub).__vtbl).__delete)(sub); }
 impl Drop for CicCaret {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- CicMutex (base/ctf/cicero/cicmutex.h)
@@ -233,7 +233,6 @@ impl CicFileMappingStatic {
         let this: *mut Self = self;
         let _ = this;
     }
-    pub unsafe fn __ctor_0(&mut self) {}
 }
 
 pub unsafe fn CicFileMappingStatic__zeroed() -> CicFileMappingStatic { core::mem::zeroed() }
@@ -273,9 +272,9 @@ pub unsafe fn CicFileMapping__zeroed() -> CicFileMapping { core::mem::zeroed() }
 pub unsafe fn CicFileMapping__make_0(pszName: LPCTSTR, pMutex: *mut CicMutex) -> CicFileMapping { let mut __obj = CicFileMapping__zeroed(); __obj.__ctor_0(pszName, pMutex); __obj }
 pub unsafe fn CicFileMapping__new_in_0(__p: *mut CicFileMapping, pszName: LPCTSTR, pMutex: *mut CicMutex) -> *mut CicFileMapping { if __p.is_null() { return __p; } (*__p).__ctor_0(pszName, pMutex); __p }
 pub unsafe fn CicFileMapping__new_0(pszName: LPCTSTR, pMutex: *mut CicMutex) -> *mut CicFileMapping { CicFileMapping__new_in_0(cpp_alloc::<CicFileMapping>(), pszName, pMutex) }
-pub unsafe fn CicFileMapping__delete(p: *mut CicFileMapping) { if p.is_null() { return; } let sub = p as *mut CicFileMapping; ((*((*sub).__vtbl as *const CicFileMapping__vtbl)).__delete)(sub); }
+pub unsafe fn CicFileMapping__delete(p: *mut CicFileMapping) { if p.is_null() { return; } let sub = p as *mut CicFileMapping; ((*(*sub).__vtbl).__delete)(sub); }
 impl Drop for CicFileMapping {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- tagCTFIMECONTEXT: laid out by the bindgen island (types_<arch>.rs)
@@ -379,6 +378,7 @@ pub struct CUIFSystemInfo {
     pub m_bHighContrast2: BOOL,
 }
 
+pub static mut CUIFSystemInfo__s_pSystemInfo: *mut CUIFSystemInfo = unsafe { core::mem::zeroed() };
 impl CUIFSystemInfo {
     /// Point every vtable this object contains at this class's tables: what a C++
     /// constructor does after its bases are built and before its members are.
@@ -386,7 +386,6 @@ impl CUIFSystemInfo {
         let this: *mut Self = self;
         let _ = this;
     }
-    pub unsafe fn __ctor_0(&mut self) {}
 }
 
 impl core::ops::Deref for CUIFSystemInfo { type Target = OSVERSIONINFO; fn deref(&self) -> &OSVERSIONINFO { &self.__base0 } }
@@ -429,6 +428,23 @@ pub struct CUIFTheme__vtbl {
     pub SetActiveTheme: unsafe fn(*mut CUIFTheme, LPCWSTR, INT, INT),
 }
 
+pub static mut CUIFTheme__s_hUXTHEME: HINSTANCE = unsafe { core::mem::zeroed() };
+pub static mut CUIFTheme__s_fnOpenThemeData: FN_OpenThemeData = unsafe { core::mem::zeroed() };
+pub static mut CUIFTheme__s_fnCloseThemeData: FN_CloseThemeData = unsafe { core::mem::zeroed() };
+pub static mut CUIFTheme__s_fnDrawThemeBackground: FN_DrawThemeBackground = unsafe { core::mem::zeroed() };
+pub static mut CUIFTheme__s_fnDrawThemeParentBackground: FN_DrawThemeParentBackground = unsafe { core::mem::zeroed() };
+pub static mut CUIFTheme__s_fnDrawThemeText: FN_DrawThemeText = unsafe { core::mem::zeroed() };
+pub static mut CUIFTheme__s_fnDrawThemeIcon: FN_DrawThemeIcon = unsafe { core::mem::zeroed() };
+pub static mut CUIFTheme__s_fnGetThemeBackgroundExtent: FN_GetThemeBackgroundExtent = unsafe { core::mem::zeroed() };
+pub static mut CUIFTheme__s_fnGetThemeBackgroundContentRect: FN_GetThemeBackgroundContentRect = unsafe { core::mem::zeroed() };
+pub static mut CUIFTheme__s_fnGetThemeTextExtent: FN_GetThemeTextExtent = unsafe { core::mem::zeroed() };
+pub static mut CUIFTheme__s_fnGetThemePartSize: FN_GetThemePartSize = unsafe { core::mem::zeroed() };
+pub static mut CUIFTheme__s_fnDrawThemeEdge: FN_DrawThemeEdge = unsafe { core::mem::zeroed() };
+pub static mut CUIFTheme__s_fnGetThemeColor: FN_GetThemeColor = unsafe { core::mem::zeroed() };
+pub static mut CUIFTheme__s_fnGetThemeMargins: FN_GetThemeMargins = unsafe { core::mem::zeroed() };
+pub static mut CUIFTheme__s_fnGetThemeFont: FN_GetThemeFont = unsafe { core::mem::zeroed() };
+pub static mut CUIFTheme__s_fnGetThemeSysColor: FN_GetThemeSysColor = unsafe { core::mem::zeroed() };
+pub static mut CUIFTheme__s_fnGetThemeSysSize: FN_GetThemeSysSize = unsafe { core::mem::zeroed() };
 unsafe fn CUIFTheme__vt_delete_own(p: *mut CUIFTheme) { let d = (p as *mut CUIFTheme); core::ptr::drop_in_place(d); cpp_free(d as *mut core::ffi::c_void); }
 unsafe fn CUIFTheme__vt_drop_own(p: *mut CUIFTheme) { core::ptr::drop_in_place((p as *mut CUIFTheme)); }
 unsafe fn CUIFTheme__vt_own_DrawThemeBackground(p: *mut CUIFTheme, a0: HDC, a1: i32, a2: LPCRECT, a3: LPCRECT) -> HRESULT { (*(p as *mut CUIFTheme)).DrawThemeBackground__body(a0, a1, a2, a3) }
@@ -962,9 +978,9 @@ pub unsafe fn CUIFObject__zeroed() -> CUIFObject { core::mem::zeroed() }
 pub unsafe fn CUIFObject__make_0(pParent: *mut CUIFObject, nObjectID: DWORD, prc: LPCRECT, style: DWORD) -> CUIFObject { let mut __obj = CUIFObject__zeroed(); __obj.__ctor_0(pParent, nObjectID, prc, style); __obj }
 pub unsafe fn CUIFObject__new_in_0(__p: *mut CUIFObject, pParent: *mut CUIFObject, nObjectID: DWORD, prc: LPCRECT, style: DWORD) -> *mut CUIFObject { if __p.is_null() { return __p; } (*__p).__ctor_0(pParent, nObjectID, prc, style); __p }
 pub unsafe fn CUIFObject__new_0(pParent: *mut CUIFObject, nObjectID: DWORD, prc: LPCRECT, style: DWORD) -> *mut CUIFObject { CUIFObject__new_in_0(cpp_alloc::<CUIFObject>(), pParent, nObjectID, prc, style) }
-pub unsafe fn CUIFObject__delete(p: *mut CUIFObject) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0) as *mut CUIFTheme; ((*((*sub).__vtbl as *const CUIFTheme__vtbl)).__delete)(sub); }
+pub unsafe fn CUIFObject__delete(p: *mut CUIFObject) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0) as *mut CUIFTheme; ((*(*sub).__vtbl).__delete)(sub); }
 impl Drop for CUIFObject {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- CUIFColorTable (base/ctf/cicero/cicuif.h)
@@ -1032,10 +1048,9 @@ pub unsafe fn CUIFColorTable__zeroed() -> CUIFColorTable { core::mem::zeroed() }
 pub unsafe fn CUIFColorTable__make_0() -> CUIFColorTable { let mut __obj = CUIFColorTable__zeroed(); __obj.__ctor_0(); __obj }
 pub unsafe fn CUIFColorTable__new_in_0(__p: *mut CUIFColorTable) -> *mut CUIFColorTable { if __p.is_null() { return __p; } (*__p).__ctor_0(); __p }
 pub unsafe fn CUIFColorTable__new_0() -> *mut CUIFColorTable { CUIFColorTable__new_in_0(cpp_alloc::<CUIFColorTable>()) }
-pub unsafe fn CUIFColorTable__delete(p: *mut CUIFColorTable) { if p.is_null() { return; } let sub = p as *mut CUIFColorTable; ((*((*sub).__vtbl as *const CUIFColorTable__vtbl)).__delete)(sub); }
+pub unsafe fn CUIFColorTable__delete(p: *mut CUIFColorTable) { if p.is_null() { return; } let sub = p as *mut CUIFColorTable; ((*(*sub).__vtbl).__delete)(sub); }
 
 // ---- CUIFColorTableSys (base/ctf/cicero/cicuif.h)
-#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct CUIFColorTableSys {
     pub __base0: CUIFColorTable,
@@ -1086,10 +1101,9 @@ pub unsafe fn CUIFColorTableSys__zeroed() -> CUIFColorTableSys { core::mem::zero
 pub unsafe fn CUIFColorTableSys__make_0() -> CUIFColorTableSys { let mut __obj = CUIFColorTableSys__zeroed(); __obj.__ctor_0(); __obj }
 pub unsafe fn CUIFColorTableSys__new_in_0(__p: *mut CUIFColorTableSys) -> *mut CUIFColorTableSys { if __p.is_null() { return __p; } (*__p).__ctor_0(); __p }
 pub unsafe fn CUIFColorTableSys__new_0() -> *mut CUIFColorTableSys { CUIFColorTableSys__new_in_0(cpp_alloc::<CUIFColorTableSys>()) }
-pub unsafe fn CUIFColorTableSys__delete(p: *mut CUIFColorTableSys) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0) as *mut CUIFColorTable; ((*((*sub).__vtbl as *const CUIFColorTable__vtbl)).__delete)(sub); }
+pub unsafe fn CUIFColorTableSys__delete(p: *mut CUIFColorTableSys) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0) as *mut CUIFColorTable; ((*(*sub).__vtbl).__delete)(sub); }
 
 // ---- CUIFColorTableOff10 (base/ctf/cicero/cicuif.h)
-#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct CUIFColorTableOff10 {
     pub __base0: CUIFColorTable,
@@ -1140,7 +1154,7 @@ pub unsafe fn CUIFColorTableOff10__zeroed() -> CUIFColorTableOff10 { core::mem::
 pub unsafe fn CUIFColorTableOff10__make_0() -> CUIFColorTableOff10 { let mut __obj = CUIFColorTableOff10__zeroed(); __obj.__ctor_0(); __obj }
 pub unsafe fn CUIFColorTableOff10__new_in_0(__p: *mut CUIFColorTableOff10) -> *mut CUIFColorTableOff10 { if __p.is_null() { return __p; } (*__p).__ctor_0(); __p }
 pub unsafe fn CUIFColorTableOff10__new_0() -> *mut CUIFColorTableOff10 { CUIFColorTableOff10__new_in_0(cpp_alloc::<CUIFColorTableOff10>()) }
-pub unsafe fn CUIFColorTableOff10__delete(p: *mut CUIFColorTableOff10) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0) as *mut CUIFColorTable; ((*((*sub).__vtbl as *const CUIFColorTable__vtbl)).__delete)(sub); }
+pub unsafe fn CUIFColorTableOff10__delete(p: *mut CUIFColorTableOff10) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0) as *mut CUIFColorTable; ((*(*sub).__vtbl).__delete)(sub); }
 
 // ---- CUIFSolidBrush (base/ctf/cicero/cicuif.h)
 #[repr(C)]
@@ -1198,6 +1212,10 @@ pub struct CUIFBitmapDC {
     pub m_hDC: HDC,
 }
 
+pub static mut CUIFBitmapDC__s_fInitBitmapDCs: BOOL = unsafe { core::mem::zeroed() };
+pub static mut CUIFBitmapDC__s_phdcSrc: *mut CUIFBitmapDC = unsafe { core::mem::zeroed() };
+pub static mut CUIFBitmapDC__s_phdcMask: *mut CUIFBitmapDC = unsafe { core::mem::zeroed() };
+pub static mut CUIFBitmapDC__s_phdcDst: *mut CUIFBitmapDC = unsafe { core::mem::zeroed() };
 impl CUIFBitmapDC {
     /// Point every vtable this object contains at this class's tables: what a C++
     /// constructor does after its bases are built and before its members are.
@@ -1256,6 +1274,8 @@ pub struct CUIFScheme__vtbl {
     pub DrawSeparator: unsafe fn(*mut CUIFScheme, HDC, LPCRECT, BOOL),
 }
 
+pub static mut CUIFScheme__s_pColorTableSys: *mut CUIFColorTableSys = unsafe { core::mem::zeroed() };
+pub static mut CUIFScheme__s_pColorTableOff10: *mut CUIFColorTableOff10 = unsafe { core::mem::zeroed() };
 unsafe fn CUIFScheme__vt_delete_own(p: *mut CUIFScheme) { let d = (p as *mut CUIFScheme); core::ptr::drop_in_place(d); cpp_free(d as *mut core::ffi::c_void); }
 unsafe fn CUIFScheme__vt_drop_own(p: *mut CUIFScheme) { core::ptr::drop_in_place((p as *mut CUIFScheme)); }
 unsafe fn CUIFScheme__vt_own_GetType(p: *mut CUIFScheme) -> DWORD { cpp_pure_virtual_call("CUIFScheme::GetType") }
@@ -1480,10 +1500,9 @@ pub unsafe fn CUIFScheme__zeroed() -> CUIFScheme { core::mem::zeroed() }
 pub unsafe fn CUIFScheme__make_0() -> CUIFScheme { let mut __obj = CUIFScheme__zeroed(); __obj.__ctor_0(); __obj }
 pub unsafe fn CUIFScheme__new_in_0(__p: *mut CUIFScheme) -> *mut CUIFScheme { if __p.is_null() { return __p; } (*__p).__ctor_0(); __p }
 pub unsafe fn CUIFScheme__new_0() -> *mut CUIFScheme { CUIFScheme__new_in_0(cpp_alloc::<CUIFScheme>()) }
-pub unsafe fn CUIFScheme__delete(p: *mut CUIFScheme) { if p.is_null() { return; } let sub = p as *mut CUIFScheme; ((*((*sub).__vtbl as *const CUIFScheme__vtbl)).__delete)(sub); }
+pub unsafe fn CUIFScheme__delete(p: *mut CUIFScheme) { if p.is_null() { return; } let sub = p as *mut CUIFScheme; ((*(*sub).__vtbl).__delete)(sub); }
 
 // ---- CUIFSchemeDef (base/ctf/cicero/cicuif.h)
-#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct CUIFSchemeDef {
     pub __base0: CUIFScheme,
@@ -1702,7 +1721,7 @@ pub unsafe fn CUIFSchemeDef__zeroed() -> CUIFSchemeDef { core::mem::zeroed() }
 pub unsafe fn CUIFSchemeDef__make_0(dwType: DWORD) -> CUIFSchemeDef { let mut __obj = CUIFSchemeDef__zeroed(); __obj.__ctor_0(dwType); __obj }
 pub unsafe fn CUIFSchemeDef__new_in_0(__p: *mut CUIFSchemeDef, dwType: DWORD) -> *mut CUIFSchemeDef { if __p.is_null() { return __p; } (*__p).__ctor_0(dwType); __p }
 pub unsafe fn CUIFSchemeDef__new_0(dwType: DWORD) -> *mut CUIFSchemeDef { CUIFSchemeDef__new_in_0(cpp_alloc::<CUIFSchemeDef>(), dwType) }
-pub unsafe fn CUIFSchemeDef__delete(p: *mut CUIFSchemeDef) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0) as *mut CUIFScheme; ((*((*sub).__vtbl as *const CUIFScheme__vtbl)).__delete)(sub); }
+pub unsafe fn CUIFSchemeDef__delete(p: *mut CUIFSchemeDef) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0) as *mut CUIFScheme; ((*(*sub).__vtbl).__delete)(sub); }
 
 // ---- CUIFWindow (base/ctf/cicero/cicuif.h)
 #[repr(C)]
@@ -2192,9 +2211,9 @@ pub unsafe fn CUIFWindow__zeroed() -> CUIFWindow { core::mem::zeroed() }
 pub unsafe fn CUIFWindow__make_0(hInst: HINSTANCE, style: DWORD) -> CUIFWindow { let mut __obj = CUIFWindow__zeroed(); __obj.__ctor_0(hInst, style); __obj }
 pub unsafe fn CUIFWindow__new_in_0(__p: *mut CUIFWindow, hInst: HINSTANCE, style: DWORD) -> *mut CUIFWindow { if __p.is_null() { return __p; } (*__p).__ctor_0(hInst, style); __p }
 pub unsafe fn CUIFWindow__new_0(hInst: HINSTANCE, style: DWORD) -> *mut CUIFWindow { CUIFWindow__new_in_0(cpp_alloc::<CUIFWindow>(), hInst, style) }
-pub unsafe fn CUIFWindow__delete(p: *mut CUIFWindow) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0) as *mut CUIFTheme; ((*((*sub).__vtbl as *const CUIFTheme__vtbl)).__delete)(sub); }
+pub unsafe fn CUIFWindow__delete(p: *mut CUIFWindow) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0) as *mut CUIFTheme; ((*(*sub).__vtbl).__delete)(sub); }
 impl Drop for CUIFWindow {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- CUIFToolTip (base/ctf/cicero/cicuif.h)
@@ -2346,9 +2365,9 @@ pub unsafe fn CUIFToolTip__zeroed() -> CUIFToolTip { core::mem::zeroed() }
 pub unsafe fn CUIFToolTip__make_0(hInst: HINSTANCE, style: DWORD, pToolTipOwner: *mut CUIFWindow) -> CUIFToolTip { let mut __obj = CUIFToolTip__zeroed(); __obj.__ctor_0(hInst, style, pToolTipOwner); __obj }
 pub unsafe fn CUIFToolTip__new_in_0(__p: *mut CUIFToolTip, hInst: HINSTANCE, style: DWORD, pToolTipOwner: *mut CUIFWindow) -> *mut CUIFToolTip { if __p.is_null() { return __p; } (*__p).__ctor_0(hInst, style, pToolTipOwner); __p }
 pub unsafe fn CUIFToolTip__new_0(hInst: HINSTANCE, style: DWORD, pToolTipOwner: *mut CUIFWindow) -> *mut CUIFToolTip { CUIFToolTip__new_in_0(cpp_alloc::<CUIFToolTip>(), hInst, style, pToolTipOwner) }
-pub unsafe fn CUIFToolTip__delete(p: *mut CUIFToolTip) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0.__base0) as *mut CUIFTheme; ((*((*sub).__vtbl as *const CUIFTheme__vtbl)).__delete)(sub); }
+pub unsafe fn CUIFToolTip__delete(p: *mut CUIFToolTip) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0.__base0) as *mut CUIFTheme; ((*(*sub).__vtbl).__delete)(sub); }
 impl Drop for CUIFToolTip {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- CUIFShadow (base/ctf/cicero/cicuif.h)
@@ -2513,9 +2532,9 @@ pub unsafe fn CUIFShadow__zeroed() -> CUIFShadow { core::mem::zeroed() }
 pub unsafe fn CUIFShadow__make_0(hInst: HINSTANCE, style: DWORD, pShadowOwner: *mut CUIFWindow) -> CUIFShadow { let mut __obj = CUIFShadow__zeroed(); __obj.__ctor_0(hInst, style, pShadowOwner); __obj }
 pub unsafe fn CUIFShadow__new_in_0(__p: *mut CUIFShadow, hInst: HINSTANCE, style: DWORD, pShadowOwner: *mut CUIFWindow) -> *mut CUIFShadow { if __p.is_null() { return __p; } (*__p).__ctor_0(hInst, style, pShadowOwner); __p }
 pub unsafe fn CUIFShadow__new_0(hInst: HINSTANCE, style: DWORD, pShadowOwner: *mut CUIFWindow) -> *mut CUIFShadow { CUIFShadow__new_in_0(cpp_alloc::<CUIFShadow>(), hInst, style, pShadowOwner) }
-pub unsafe fn CUIFShadow__delete(p: *mut CUIFShadow) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0.__base0) as *mut CUIFTheme; ((*((*sub).__vtbl as *const CUIFTheme__vtbl)).__delete)(sub); }
+pub unsafe fn CUIFShadow__delete(p: *mut CUIFShadow) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0.__base0) as *mut CUIFTheme; ((*(*sub).__vtbl).__delete)(sub); }
 impl Drop for CUIFShadow {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- CUIFMenu (base/ctf/cicero/cicuif.h)
@@ -2696,9 +2715,9 @@ pub unsafe fn CUIFMenu__zeroed() -> CUIFMenu { core::mem::zeroed() }
 pub unsafe fn CUIFMenu__make_0(hInst: HINSTANCE, style: DWORD, dwUnknown14: DWORD) -> CUIFMenu { let mut __obj = CUIFMenu__zeroed(); __obj.__ctor_0(hInst, style, dwUnknown14); __obj }
 pub unsafe fn CUIFMenu__new_in_0(__p: *mut CUIFMenu, hInst: HINSTANCE, style: DWORD, dwUnknown14: DWORD) -> *mut CUIFMenu { if __p.is_null() { return __p; } (*__p).__ctor_0(hInst, style, dwUnknown14); __p }
 pub unsafe fn CUIFMenu__new_0(hInst: HINSTANCE, style: DWORD, dwUnknown14: DWORD) -> *mut CUIFMenu { CUIFMenu__new_in_0(cpp_alloc::<CUIFMenu>(), hInst, style, dwUnknown14) }
-pub unsafe fn CUIFMenu__delete(p: *mut CUIFMenu) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0.__base0) as *mut CUIFTheme; ((*((*sub).__vtbl as *const CUIFTheme__vtbl)).__delete)(sub); }
+pub unsafe fn CUIFMenu__delete(p: *mut CUIFMenu) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0.__base0) as *mut CUIFTheme; ((*(*sub).__vtbl).__delete)(sub); }
 impl Drop for CUIFMenu {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- CUIFMenuItem (base/ctf/cicero/cicuif.h)
@@ -2861,9 +2880,9 @@ pub unsafe fn CUIFMenuItem__zeroed() -> CUIFMenuItem { core::mem::zeroed() }
 pub unsafe fn CUIFMenuItem__make_0(pMenu: *mut CUIFMenu, bDisabled: BOOL) -> CUIFMenuItem { let mut __obj = CUIFMenuItem__zeroed(); __obj.__ctor_0(pMenu, bDisabled); __obj }
 pub unsafe fn CUIFMenuItem__new_in_0(__p: *mut CUIFMenuItem, pMenu: *mut CUIFMenu, bDisabled: BOOL) -> *mut CUIFMenuItem { if __p.is_null() { return __p; } (*__p).__ctor_0(pMenu, bDisabled); __p }
 pub unsafe fn CUIFMenuItem__new_0(pMenu: *mut CUIFMenu, bDisabled: BOOL) -> *mut CUIFMenuItem { CUIFMenuItem__new_in_0(cpp_alloc::<CUIFMenuItem>(), pMenu, bDisabled) }
-pub unsafe fn CUIFMenuItem__delete(p: *mut CUIFMenuItem) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0) as *mut CUIFTheme; ((*((*sub).__vtbl as *const CUIFTheme__vtbl)).__delete)(sub); }
+pub unsafe fn CUIFMenuItem__delete(p: *mut CUIFMenuItem) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0) as *mut CUIFTheme; ((*(*sub).__vtbl).__delete)(sub); }
 impl Drop for CUIFMenuItem {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- CUIFMenuItemSeparator (base/ctf/cicero/cicuif.h)
@@ -2965,7 +2984,7 @@ pub unsafe fn CUIFMenuItemSeparator__zeroed() -> CUIFMenuItemSeparator { core::m
 pub unsafe fn CUIFMenuItemSeparator__make_0(pMenu: *mut CUIFMenu) -> CUIFMenuItemSeparator { let mut __obj = CUIFMenuItemSeparator__zeroed(); __obj.__ctor_0(pMenu); __obj }
 pub unsafe fn CUIFMenuItemSeparator__new_in_0(__p: *mut CUIFMenuItemSeparator, pMenu: *mut CUIFMenu) -> *mut CUIFMenuItemSeparator { if __p.is_null() { return __p; } (*__p).__ctor_0(pMenu); __p }
 pub unsafe fn CUIFMenuItemSeparator__new_0(pMenu: *mut CUIFMenu) -> *mut CUIFMenuItemSeparator { CUIFMenuItemSeparator__new_in_0(cpp_alloc::<CUIFMenuItemSeparator>(), pMenu) }
-pub unsafe fn CUIFMenuItemSeparator__delete(p: *mut CUIFMenuItemSeparator) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0.__base0) as *mut CUIFTheme; ((*((*sub).__vtbl as *const CUIFTheme__vtbl)).__delete)(sub); }
+pub unsafe fn CUIFMenuItemSeparator__delete(p: *mut CUIFMenuItemSeparator) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0.__base0) as *mut CUIFTheme; ((*(*sub).__vtbl).__delete)(sub); }
 
 // ---- CUIFButton (base/ctf/cicero/cicuif.h)
 #[repr(C)]
@@ -3106,9 +3125,9 @@ pub unsafe fn CUIFButton__zeroed() -> CUIFButton { core::mem::zeroed() }
 pub unsafe fn CUIFButton__make_0(pParent: *mut CUIFObject, nObjectID: DWORD, prc: LPCRECT, style: DWORD) -> CUIFButton { let mut __obj = CUIFButton__zeroed(); __obj.__ctor_0(pParent, nObjectID, prc, style); __obj }
 pub unsafe fn CUIFButton__new_in_0(__p: *mut CUIFButton, pParent: *mut CUIFObject, nObjectID: DWORD, prc: LPCRECT, style: DWORD) -> *mut CUIFButton { if __p.is_null() { return __p; } (*__p).__ctor_0(pParent, nObjectID, prc, style); __p }
 pub unsafe fn CUIFButton__new_0(pParent: *mut CUIFObject, nObjectID: DWORD, prc: LPCRECT, style: DWORD) -> *mut CUIFButton { CUIFButton__new_in_0(cpp_alloc::<CUIFButton>(), pParent, nObjectID, prc, style) }
-pub unsafe fn CUIFButton__delete(p: *mut CUIFButton) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0) as *mut CUIFTheme; ((*((*sub).__vtbl as *const CUIFTheme__vtbl)).__delete)(sub); }
+pub unsafe fn CUIFButton__delete(p: *mut CUIFButton) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0) as *mut CUIFTheme; ((*(*sub).__vtbl).__delete)(sub); }
 impl Drop for CUIFButton {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- CUIFButton2 (base/ctf/cicero/cicuif.h)
@@ -3201,9 +3220,9 @@ pub unsafe fn CUIFButton2__zeroed() -> CUIFButton2 { core::mem::zeroed() }
 pub unsafe fn CUIFButton2__make_0(pParent: *mut CUIFObject, nObjectID: DWORD, prc: LPCRECT, style: DWORD) -> CUIFButton2 { let mut __obj = CUIFButton2__zeroed(); __obj.__ctor_0(pParent, nObjectID, prc, style); __obj }
 pub unsafe fn CUIFButton2__new_in_0(__p: *mut CUIFButton2, pParent: *mut CUIFObject, nObjectID: DWORD, prc: LPCRECT, style: DWORD) -> *mut CUIFButton2 { if __p.is_null() { return __p; } (*__p).__ctor_0(pParent, nObjectID, prc, style); __p }
 pub unsafe fn CUIFButton2__new_0(pParent: *mut CUIFObject, nObjectID: DWORD, prc: LPCRECT, style: DWORD) -> *mut CUIFButton2 { CUIFButton2__new_in_0(cpp_alloc::<CUIFButton2>(), pParent, nObjectID, prc, style) }
-pub unsafe fn CUIFButton2__delete(p: *mut CUIFButton2) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0.__base0) as *mut CUIFTheme; ((*((*sub).__vtbl as *const CUIFTheme__vtbl)).__delete)(sub); }
+pub unsafe fn CUIFButton2__delete(p: *mut CUIFButton2) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0.__base0) as *mut CUIFTheme; ((*(*sub).__vtbl).__delete)(sub); }
 impl Drop for CUIFButton2 {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- CUIFToolbarMenuButton (base/ctf/cicero/cicuif.h)
@@ -3296,9 +3315,9 @@ pub unsafe fn CUIFToolbarMenuButton__zeroed() -> CUIFToolbarMenuButton { core::m
 pub unsafe fn CUIFToolbarMenuButton__make_0(pParent: *mut CUIFToolbarButton, nObjectID: DWORD, prc: LPCRECT, style: DWORD) -> CUIFToolbarMenuButton { let mut __obj = CUIFToolbarMenuButton__zeroed(); __obj.__ctor_0(pParent, nObjectID, prc, style); __obj }
 pub unsafe fn CUIFToolbarMenuButton__new_in_0(__p: *mut CUIFToolbarMenuButton, pParent: *mut CUIFToolbarButton, nObjectID: DWORD, prc: LPCRECT, style: DWORD) -> *mut CUIFToolbarMenuButton { if __p.is_null() { return __p; } (*__p).__ctor_0(pParent, nObjectID, prc, style); __p }
 pub unsafe fn CUIFToolbarMenuButton__new_0(pParent: *mut CUIFToolbarButton, nObjectID: DWORD, prc: LPCRECT, style: DWORD) -> *mut CUIFToolbarMenuButton { CUIFToolbarMenuButton__new_in_0(cpp_alloc::<CUIFToolbarMenuButton>(), pParent, nObjectID, prc, style) }
-pub unsafe fn CUIFToolbarMenuButton__delete(p: *mut CUIFToolbarMenuButton) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0.__base0.__base0) as *mut CUIFTheme; ((*((*sub).__vtbl as *const CUIFTheme__vtbl)).__delete)(sub); }
+pub unsafe fn CUIFToolbarMenuButton__delete(p: *mut CUIFToolbarMenuButton) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0.__base0.__base0) as *mut CUIFTheme; ((*(*sub).__vtbl).__delete)(sub); }
 impl Drop for CUIFToolbarMenuButton {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- CUIFToolbarButtonElement (base/ctf/cicero/cicuif.h)
@@ -3398,7 +3417,7 @@ pub unsafe fn CUIFToolbarButtonElement__zeroed() -> CUIFToolbarButtonElement { c
 pub unsafe fn CUIFToolbarButtonElement__make_0(pParent: *mut CUIFToolbarButton, nObjectID: DWORD, prc: LPCRECT, style: DWORD) -> CUIFToolbarButtonElement { let mut __obj = CUIFToolbarButtonElement__zeroed(); __obj.__ctor_0(pParent, nObjectID, prc, style); __obj }
 pub unsafe fn CUIFToolbarButtonElement__new_in_0(__p: *mut CUIFToolbarButtonElement, pParent: *mut CUIFToolbarButton, nObjectID: DWORD, prc: LPCRECT, style: DWORD) -> *mut CUIFToolbarButtonElement { if __p.is_null() { return __p; } (*__p).__ctor_0(pParent, nObjectID, prc, style); __p }
 pub unsafe fn CUIFToolbarButtonElement__new_0(pParent: *mut CUIFToolbarButton, nObjectID: DWORD, prc: LPCRECT, style: DWORD) -> *mut CUIFToolbarButtonElement { CUIFToolbarButtonElement__new_in_0(cpp_alloc::<CUIFToolbarButtonElement>(), pParent, nObjectID, prc, style) }
-pub unsafe fn CUIFToolbarButtonElement__delete(p: *mut CUIFToolbarButtonElement) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0.__base0.__base0) as *mut CUIFTheme; ((*((*sub).__vtbl as *const CUIFTheme__vtbl)).__delete)(sub); }
+pub unsafe fn CUIFToolbarButtonElement__delete(p: *mut CUIFToolbarButtonElement) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0.__base0.__base0) as *mut CUIFTheme; ((*(*sub).__vtbl).__delete)(sub); }
 
 // ---- CUIFToolbarButton (base/ctf/cicero/cicuif.h)
 #[repr(C)]
@@ -3566,7 +3585,7 @@ pub unsafe fn CUIFToolbarButton__zeroed() -> CUIFToolbarButton { core::mem::zero
 pub unsafe fn CUIFToolbarButton__make_0(pParent: *mut CUIFObject, nObjectID: DWORD, prc: LPCRECT, style: DWORD, dwToolbarButtonFlags: DWORD, pszUnknownText: LPCWSTR) -> CUIFToolbarButton { let mut __obj = CUIFToolbarButton__zeroed(); __obj.__ctor_0(pParent, nObjectID, prc, style, dwToolbarButtonFlags, pszUnknownText); __obj }
 pub unsafe fn CUIFToolbarButton__new_in_0(__p: *mut CUIFToolbarButton, pParent: *mut CUIFObject, nObjectID: DWORD, prc: LPCRECT, style: DWORD, dwToolbarButtonFlags: DWORD, pszUnknownText: LPCWSTR) -> *mut CUIFToolbarButton { if __p.is_null() { return __p; } (*__p).__ctor_0(pParent, nObjectID, prc, style, dwToolbarButtonFlags, pszUnknownText); __p }
 pub unsafe fn CUIFToolbarButton__new_0(pParent: *mut CUIFObject, nObjectID: DWORD, prc: LPCRECT, style: DWORD, dwToolbarButtonFlags: DWORD, pszUnknownText: LPCWSTR) -> *mut CUIFToolbarButton { CUIFToolbarButton__new_in_0(cpp_alloc::<CUIFToolbarButton>(), pParent, nObjectID, prc, style, dwToolbarButtonFlags, pszUnknownText) }
-pub unsafe fn CUIFToolbarButton__delete(p: *mut CUIFToolbarButton) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0) as *mut CUIFTheme; ((*((*sub).__vtbl as *const CUIFTheme__vtbl)).__delete)(sub); }
+pub unsafe fn CUIFToolbarButton__delete(p: *mut CUIFToolbarButton) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0) as *mut CUIFTheme; ((*(*sub).__vtbl).__delete)(sub); }
 
 // ---- CUIFGripper (base/ctf/cicero/cicuif.h)
 #[repr(C)]
@@ -3692,7 +3711,7 @@ pub unsafe fn CUIFGripper__zeroed() -> CUIFGripper { core::mem::zeroed() }
 pub unsafe fn CUIFGripper__make_0(pParent: *mut CUIFObject, prc: LPCRECT, style: DWORD) -> CUIFGripper { let mut __obj = CUIFGripper__zeroed(); __obj.__ctor_0(pParent, prc, style); __obj }
 pub unsafe fn CUIFGripper__new_in_0(__p: *mut CUIFGripper, pParent: *mut CUIFObject, prc: LPCRECT, style: DWORD) -> *mut CUIFGripper { if __p.is_null() { return __p; } (*__p).__ctor_0(pParent, prc, style); __p }
 pub unsafe fn CUIFGripper__new_0(pParent: *mut CUIFObject, prc: LPCRECT, style: DWORD) -> *mut CUIFGripper { CUIFGripper__new_in_0(cpp_alloc::<CUIFGripper>(), pParent, prc, style) }
-pub unsafe fn CUIFGripper__delete(p: *mut CUIFGripper) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0) as *mut CUIFTheme; ((*((*sub).__vtbl as *const CUIFTheme__vtbl)).__delete)(sub); }
+pub unsafe fn CUIFGripper__delete(p: *mut CUIFGripper) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0) as *mut CUIFTheme; ((*(*sub).__vtbl).__delete)(sub); }
 
 // ---- CUIFWndFrame (base/ctf/cicero/cicuif.h)
 #[repr(C)]
@@ -3817,7 +3836,7 @@ pub unsafe fn CUIFWndFrame__zeroed() -> CUIFWndFrame { core::mem::zeroed() }
 pub unsafe fn CUIFWndFrame__make_0(pParent: *mut CUIFObject, prc: LPCRECT, style: DWORD) -> CUIFWndFrame { let mut __obj = CUIFWndFrame__zeroed(); __obj.__ctor_0(pParent, prc, style); __obj }
 pub unsafe fn CUIFWndFrame__new_in_0(__p: *mut CUIFWndFrame, pParent: *mut CUIFObject, prc: LPCRECT, style: DWORD) -> *mut CUIFWndFrame { if __p.is_null() { return __p; } (*__p).__ctor_0(pParent, prc, style); __p }
 pub unsafe fn CUIFWndFrame__new_0(pParent: *mut CUIFObject, prc: LPCRECT, style: DWORD) -> *mut CUIFWndFrame { CUIFWndFrame__new_in_0(cpp_alloc::<CUIFWndFrame>(), pParent, prc, style) }
-pub unsafe fn CUIFWndFrame__delete(p: *mut CUIFWndFrame) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0) as *mut CUIFTheme; ((*((*sub).__vtbl as *const CUIFTheme__vtbl)).__delete)(sub); }
+pub unsafe fn CUIFWndFrame__delete(p: *mut CUIFWndFrame) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0) as *mut CUIFTheme; ((*(*sub).__vtbl).__delete)(sub); }
 
 // ---- CUIFBalloonButton (base/ctf/cicero/cicuif.h)
 #[repr(C)]
@@ -3902,7 +3921,7 @@ pub unsafe fn CUIFBalloonButton__zeroed() -> CUIFBalloonButton { core::mem::zero
 pub unsafe fn CUIFBalloonButton__make_0(pParent: *mut CUIFObject, nObjectID: DWORD, prc: LPCRECT, style: DWORD) -> CUIFBalloonButton { let mut __obj = CUIFBalloonButton__zeroed(); __obj.__ctor_0(pParent, nObjectID, prc, style); __obj }
 pub unsafe fn CUIFBalloonButton__new_in_0(__p: *mut CUIFBalloonButton, pParent: *mut CUIFObject, nObjectID: DWORD, prc: LPCRECT, style: DWORD) -> *mut CUIFBalloonButton { if __p.is_null() { return __p; } (*__p).__ctor_0(pParent, nObjectID, prc, style); __p }
 pub unsafe fn CUIFBalloonButton__new_0(pParent: *mut CUIFObject, nObjectID: DWORD, prc: LPCRECT, style: DWORD) -> *mut CUIFBalloonButton { CUIFBalloonButton__new_in_0(cpp_alloc::<CUIFBalloonButton>(), pParent, nObjectID, prc, style) }
-pub unsafe fn CUIFBalloonButton__delete(p: *mut CUIFBalloonButton) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0.__base0) as *mut CUIFTheme; ((*((*sub).__vtbl as *const CUIFTheme__vtbl)).__delete)(sub); }
+pub unsafe fn CUIFBalloonButton__delete(p: *mut CUIFBalloonButton) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0.__base0) as *mut CUIFTheme; ((*(*sub).__vtbl).__delete)(sub); }
 
 // ---- CUIFBalloonWindow (base/ctf/cicero/cicuif.h)
 #[repr(C)]
@@ -4092,10 +4111,12 @@ pub unsafe fn CUIFBalloonWindow__zeroed() -> CUIFBalloonWindow { core::mem::zero
 pub unsafe fn CUIFBalloonWindow__make_0(hInst: HINSTANCE, style: DWORD) -> CUIFBalloonWindow { let mut __obj = CUIFBalloonWindow__zeroed(); __obj.__ctor_0(hInst, style); __obj }
 pub unsafe fn CUIFBalloonWindow__new_in_0(__p: *mut CUIFBalloonWindow, hInst: HINSTANCE, style: DWORD) -> *mut CUIFBalloonWindow { if __p.is_null() { return __p; } (*__p).__ctor_0(hInst, style); __p }
 pub unsafe fn CUIFBalloonWindow__new_0(hInst: HINSTANCE, style: DWORD) -> *mut CUIFBalloonWindow { CUIFBalloonWindow__new_in_0(cpp_alloc::<CUIFBalloonWindow>(), hInst, style) }
-pub unsafe fn CUIFBalloonWindow__delete(p: *mut CUIFBalloonWindow) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0.__base0) as *mut CUIFTheme; ((*((*sub).__vtbl as *const CUIFTheme__vtbl)).__delete)(sub); }
+pub unsafe fn CUIFBalloonWindow__delete(p: *mut CUIFBalloonWindow) { if p.is_null() { return; } let sub = core::ptr::addr_of_mut!((*p).__base0.__base0.__base0) as *mut CUIFTheme; ((*(*sub).__vtbl).__delete)(sub); }
 impl Drop for CUIFBalloonWindow {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
+
+
 
 pub const POINTING_TIMER_ID: CUIFWindow__bindgen_ty_1 = CUIFWindow_POINTING_TIMER_ID;
 pub const TIMER_ID: CicCaret__bindgen_ty_1 = CicCaret_TIMER_ID;
@@ -4105,132 +4126,3 @@ impl core::ops::Deref for INPUTCONTEXTDX { type Target = INPUTCONTEXT; fn deref(
 impl core::ops::DerefMut for INPUTCONTEXTDX { fn deref_mut(&mut self) -> &mut INPUTCONTEXT { &mut self._base } }
 impl core::ops::Deref for IQueryAssociations { type Target = IUnknown; fn deref(&self) -> &IUnknown { &self._base } }
 impl core::ops::DerefMut for IQueryAssociations { fn deref_mut(&mut self) -> &mut IUnknown { &mut self._base } }
-impl IBindCtx {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
-    pub unsafe fn RegisterObjectBound(&mut self, punk: *mut IUnknown) -> HRESULT { ((*self.lpVtbl).RegisterObjectBound.unwrap_unchecked())(self, punk) }
-    pub unsafe fn RevokeObjectBound(&mut self, punk: *mut IUnknown) -> HRESULT { ((*self.lpVtbl).RevokeObjectBound.unwrap_unchecked())(self, punk) }
-    pub unsafe fn ReleaseBoundObjects(&mut self) -> HRESULT { ((*self.lpVtbl).ReleaseBoundObjects.unwrap_unchecked())(self) }
-    pub unsafe fn SetBindOptions(&mut self, pbindopts: *mut BIND_OPTS) -> HRESULT { ((*self.lpVtbl).SetBindOptions.unwrap_unchecked())(self, pbindopts) }
-    pub unsafe fn GetBindOptions(&mut self, pbindopts: *mut BIND_OPTS) -> HRESULT { ((*self.lpVtbl).GetBindOptions.unwrap_unchecked())(self, pbindopts) }
-    pub unsafe fn GetRunningObjectTable(&mut self, pprot: *mut *mut IRunningObjectTable) -> HRESULT { ((*self.lpVtbl).GetRunningObjectTable.unwrap_unchecked())(self, pprot) }
-    pub unsafe fn RegisterObjectParam(&mut self, pszKey: LPOLESTR, punk: *mut IUnknown) -> HRESULT { ((*self.lpVtbl).RegisterObjectParam.unwrap_unchecked())(self, pszKey, punk) }
-    pub unsafe fn GetObjectParam(&mut self, pszKey: LPOLESTR, ppunk: *mut *mut IUnknown) -> HRESULT { ((*self.lpVtbl).GetObjectParam.unwrap_unchecked())(self, pszKey, ppunk) }
-    pub unsafe fn EnumObjectParam(&mut self, ppenum: *mut *mut IEnumString) -> HRESULT { ((*self.lpVtbl).EnumObjectParam.unwrap_unchecked())(self, ppenum) }
-    pub unsafe fn RevokeObjectParam(&mut self, pszKey: LPOLESTR) -> HRESULT { ((*self.lpVtbl).RevokeObjectParam.unwrap_unchecked())(self, pszKey) }
-}
-impl IClassFactory {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
-    pub unsafe fn CreateInstance(&mut self, pUnkOuter: *mut IUnknown, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).CreateInstance.unwrap_unchecked())(self, pUnkOuter, riid, ppvObject) }
-    pub unsafe fn LockServer(&mut self, fLock: BOOL) -> HRESULT { ((*self.lpVtbl).LockServer.unwrap_unchecked())(self, fLock) }
-}
-impl IEnumMoniker {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
-    pub unsafe fn Next(&mut self, celt: ULONG, rgelt: *mut *mut IMoniker, pceltFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap_unchecked())(self, celt, rgelt, pceltFetched) }
-    pub unsafe fn Skip(&mut self, celt: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap_unchecked())(self, celt) }
-    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap_unchecked())(self) }
-    pub unsafe fn Clone(&mut self, ppenum: *mut *mut IEnumMoniker) -> HRESULT { ((*self.lpVtbl).Clone.unwrap_unchecked())(self, ppenum) }
-}
-impl IEnumString {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
-    pub unsafe fn Next(&mut self, celt: ULONG, rgelt: *mut LPOLESTR, pceltFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap_unchecked())(self, celt, rgelt, pceltFetched) }
-    pub unsafe fn Skip(&mut self, celt: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap_unchecked())(self, celt) }
-    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap_unchecked())(self) }
-    pub unsafe fn Clone(&mut self, ppenum: *mut *mut IEnumString) -> HRESULT { ((*self.lpVtbl).Clone.unwrap_unchecked())(self, ppenum) }
-}
-impl IMoniker {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
-    pub unsafe fn GetClassID(&mut self, pClassID: *mut CLSID) -> HRESULT { ((*self.lpVtbl).GetClassID.unwrap_unchecked())(self, pClassID) }
-    pub unsafe fn IsDirty(&mut self) -> HRESULT { ((*self.lpVtbl).IsDirty.unwrap_unchecked())(self) }
-    pub unsafe fn Load(&mut self, pStm: *mut IStream) -> HRESULT { ((*self.lpVtbl).Load.unwrap_unchecked())(self, pStm) }
-    pub unsafe fn Save(&mut self, pStm: *mut IStream, fClearDirty: BOOL) -> HRESULT { ((*self.lpVtbl).Save.unwrap_unchecked())(self, pStm, fClearDirty) }
-    pub unsafe fn GetSizeMax(&mut self, pcbSize: *mut ULARGE_INTEGER) -> HRESULT { ((*self.lpVtbl).GetSizeMax.unwrap_unchecked())(self, pcbSize) }
-    pub unsafe fn BindToObject(&mut self, pbc: *mut IBindCtx, pmkToLeft: *mut IMoniker, riidResult: *const IID, ppvResult: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).BindToObject.unwrap_unchecked())(self, pbc, pmkToLeft, riidResult, ppvResult) }
-    pub unsafe fn BindToStorage(&mut self, pbc: *mut IBindCtx, pmkToLeft: *mut IMoniker, riid: *const IID, ppvObj: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).BindToStorage.unwrap_unchecked())(self, pbc, pmkToLeft, riid, ppvObj) }
-    pub unsafe fn Reduce(&mut self, pbc: *mut IBindCtx, dwReduceHowFar: DWORD, ppmkToLeft: *mut *mut IMoniker, ppmkReduced: *mut *mut IMoniker) -> HRESULT { ((*self.lpVtbl).Reduce.unwrap_unchecked())(self, pbc, dwReduceHowFar, ppmkToLeft, ppmkReduced) }
-    pub unsafe fn ComposeWith(&mut self, pmkRight: *mut IMoniker, fOnlyIfNotGeneric: BOOL, ppmkComposite: *mut *mut IMoniker) -> HRESULT { ((*self.lpVtbl).ComposeWith.unwrap_unchecked())(self, pmkRight, fOnlyIfNotGeneric, ppmkComposite) }
-    pub unsafe fn Enum(&mut self, fForward: BOOL, ppenumMoniker: *mut *mut IEnumMoniker) -> HRESULT { ((*self.lpVtbl).Enum.unwrap_unchecked())(self, fForward, ppenumMoniker) }
-    pub unsafe fn IsEqual(&mut self, pmkOtherMoniker: *mut IMoniker) -> HRESULT { ((*self.lpVtbl).IsEqual.unwrap_unchecked())(self, pmkOtherMoniker) }
-    pub unsafe fn Hash(&mut self, pdwHash: *mut DWORD) -> HRESULT { ((*self.lpVtbl).Hash.unwrap_unchecked())(self, pdwHash) }
-    pub unsafe fn IsRunning(&mut self, pbc: *mut IBindCtx, pmkToLeft: *mut IMoniker, pmkNewlyRunning: *mut IMoniker) -> HRESULT { ((*self.lpVtbl).IsRunning.unwrap_unchecked())(self, pbc, pmkToLeft, pmkNewlyRunning) }
-    pub unsafe fn GetTimeOfLastChange(&mut self, pbc: *mut IBindCtx, pmkToLeft: *mut IMoniker, pFileTime: *mut FILETIME) -> HRESULT { ((*self.lpVtbl).GetTimeOfLastChange.unwrap_unchecked())(self, pbc, pmkToLeft, pFileTime) }
-    pub unsafe fn Inverse(&mut self, ppmk: *mut *mut IMoniker) -> HRESULT { ((*self.lpVtbl).Inverse.unwrap_unchecked())(self, ppmk) }
-    pub unsafe fn CommonPrefixWith(&mut self, pmkOther: *mut IMoniker, ppmkPrefix: *mut *mut IMoniker) -> HRESULT { ((*self.lpVtbl).CommonPrefixWith.unwrap_unchecked())(self, pmkOther, ppmkPrefix) }
-    pub unsafe fn RelativePathTo(&mut self, pmkOther: *mut IMoniker, ppmkRelPath: *mut *mut IMoniker) -> HRESULT { ((*self.lpVtbl).RelativePathTo.unwrap_unchecked())(self, pmkOther, ppmkRelPath) }
-    pub unsafe fn GetDisplayName(&mut self, pbc: *mut IBindCtx, pmkToLeft: *mut IMoniker, ppszDisplayName: *mut LPOLESTR) -> HRESULT { ((*self.lpVtbl).GetDisplayName.unwrap_unchecked())(self, pbc, pmkToLeft, ppszDisplayName) }
-    pub unsafe fn ParseDisplayName(&mut self, pbc: *mut IBindCtx, pmkToLeft: *mut IMoniker, pszDisplayName: LPOLESTR, pchEaten: *mut ULONG, ppmkOut: *mut *mut IMoniker) -> HRESULT { ((*self.lpVtbl).ParseDisplayName.unwrap_unchecked())(self, pbc, pmkToLeft, pszDisplayName, pchEaten, ppmkOut) }
-    pub unsafe fn IsSystemMoniker(&mut self, pdwMksys: *mut DWORD) -> HRESULT { ((*self.lpVtbl).IsSystemMoniker.unwrap_unchecked())(self, pdwMksys) }
-}
-impl IPersist {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
-    pub unsafe fn GetClassID(&mut self, pClassID: *mut CLSID) -> HRESULT { ((*self.lpVtbl).GetClassID.unwrap_unchecked())(self, pClassID) }
-}
-impl IPersistStream {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
-    pub unsafe fn GetClassID(&mut self, pClassID: *mut CLSID) -> HRESULT { ((*self.lpVtbl).GetClassID.unwrap_unchecked())(self, pClassID) }
-    pub unsafe fn IsDirty(&mut self) -> HRESULT { ((*self.lpVtbl).IsDirty.unwrap_unchecked())(self) }
-    pub unsafe fn Load(&mut self, pStm: *mut IStream) -> HRESULT { ((*self.lpVtbl).Load.unwrap_unchecked())(self, pStm) }
-    pub unsafe fn Save(&mut self, pStm: *mut IStream, fClearDirty: BOOL) -> HRESULT { ((*self.lpVtbl).Save.unwrap_unchecked())(self, pStm, fClearDirty) }
-    pub unsafe fn GetSizeMax(&mut self, pcbSize: *mut ULARGE_INTEGER) -> HRESULT { ((*self.lpVtbl).GetSizeMax.unwrap_unchecked())(self, pcbSize) }
-}
-impl IRpcChannelBuffer {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
-    pub unsafe fn GetBuffer(&mut self, pMessage: *mut RPCOLEMESSAGE, riid: *const IID) -> HRESULT { ((*self.lpVtbl).GetBuffer.unwrap_unchecked())(self, pMessage, riid) }
-    pub unsafe fn SendReceive(&mut self, pMessage: *mut RPCOLEMESSAGE, pStatus: *mut ULONG) -> HRESULT { ((*self.lpVtbl).SendReceive.unwrap_unchecked())(self, pMessage, pStatus) }
-    pub unsafe fn FreeBuffer(&mut self, pMessage: *mut RPCOLEMESSAGE) -> HRESULT { ((*self.lpVtbl).FreeBuffer.unwrap_unchecked())(self, pMessage) }
-    pub unsafe fn GetDestCtx(&mut self, pdwDestContext: *mut DWORD, ppvDestContext: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).GetDestCtx.unwrap_unchecked())(self, pdwDestContext, ppvDestContext) }
-    pub unsafe fn IsConnected(&mut self) -> HRESULT { ((*self.lpVtbl).IsConnected.unwrap_unchecked())(self) }
-}
-impl IRpcStubBuffer {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
-    pub unsafe fn Connect(&mut self, pUnkServer: *mut IUnknown) -> HRESULT { ((*self.lpVtbl).Connect.unwrap_unchecked())(self, pUnkServer) }
-    pub unsafe fn Disconnect(&mut self) { ((*self.lpVtbl).Disconnect.unwrap_unchecked())(self) }
-    pub unsafe fn Invoke(&mut self, _prpcmsg: *mut RPCOLEMESSAGE, _pRpcChannelBuffer: *mut IRpcChannelBuffer) -> HRESULT { ((*self.lpVtbl).Invoke.unwrap_unchecked())(self, _prpcmsg, _pRpcChannelBuffer) }
-    pub unsafe fn IsIIDSupported(&mut self, riid: *const IID) -> *mut IRpcStubBuffer { ((*self.lpVtbl).IsIIDSupported.unwrap_unchecked())(self, riid) }
-    pub unsafe fn CountRefs(&mut self) -> ULONG { ((*self.lpVtbl).CountRefs.unwrap_unchecked())(self) }
-    pub unsafe fn DebugServerQueryInterface(&mut self, ppv: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).DebugServerQueryInterface.unwrap_unchecked())(self, ppv) }
-    pub unsafe fn DebugServerRelease(&mut self, pv: *mut ::core::ffi::c_void) { ((*self.lpVtbl).DebugServerRelease.unwrap_unchecked())(self, pv) }
-}
-impl IRunningObjectTable {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
-    pub unsafe fn Register(&mut self, grfFlags: DWORD, punkObject: *mut IUnknown, pmkObjectName: *mut IMoniker, pdwRegister: *mut DWORD) -> HRESULT { ((*self.lpVtbl).Register.unwrap_unchecked())(self, grfFlags, punkObject, pmkObjectName, pdwRegister) }
-    pub unsafe fn Revoke(&mut self, dwRegister: DWORD) -> HRESULT { ((*self.lpVtbl).Revoke.unwrap_unchecked())(self, dwRegister) }
-    pub unsafe fn IsRunning(&mut self, pmkObjectName: *mut IMoniker) -> HRESULT { ((*self.lpVtbl).IsRunning.unwrap_unchecked())(self, pmkObjectName) }
-    pub unsafe fn GetObjectW(&mut self, pmkObjectName: *mut IMoniker, ppunkObject: *mut *mut IUnknown) -> HRESULT { ((*self.lpVtbl).GetObjectW.unwrap_unchecked())(self, pmkObjectName, ppunkObject) }
-    pub unsafe fn NoteChangeTime(&mut self, dwRegister: DWORD, pfiletime: *mut FILETIME) -> HRESULT { ((*self.lpVtbl).NoteChangeTime.unwrap_unchecked())(self, dwRegister, pfiletime) }
-    pub unsafe fn GetTimeOfLastChange(&mut self, pmkObjectName: *mut IMoniker, pfiletime: *mut FILETIME) -> HRESULT { ((*self.lpVtbl).GetTimeOfLastChange.unwrap_unchecked())(self, pmkObjectName, pfiletime) }
-    pub unsafe fn EnumRunning(&mut self, ppenumMoniker: *mut *mut IEnumMoniker) -> HRESULT { ((*self.lpVtbl).EnumRunning.unwrap_unchecked())(self, ppenumMoniker) }
-}
-impl ISequentialStream {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
-    pub unsafe fn Read(&mut self, pv: *mut ::core::ffi::c_void, cb: ULONG, pcbRead: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Read.unwrap_unchecked())(self, pv, cb, pcbRead) }
-    pub unsafe fn Write(&mut self, pv: *const ::core::ffi::c_void, cb: ULONG, pcbWritten: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Write.unwrap_unchecked())(self, pv, cb, pcbWritten) }
-}
-impl IUnknown {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
-}
-
-

@@ -23,6 +23,8 @@ macro_rules! FIELD_OFFSET {
 pub fn NT_SUCCESS(status: i32) -> bool { status >= 0 }
 
 use crate::types::*;
+// One declaration per external symbol: the variant matching the C prototype.
+pub use crate::misc::helpers::HeapFree;
 use core::ffi::c_void;
 
 // --- winsock cast-macros bindgen can't emit (they use casts, not plain #define) --------
@@ -184,7 +186,6 @@ pub struct AFD_SUPER_ACCEPT_INFO {
 // --- Win32/CRT/Rtl APIs referenced across modules (linked from kernel32/ntdll at DLL link) -
 extern "system" {
     pub fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: usize) -> PVOID;
-    pub fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID) -> DWORD;
     pub fn GetProcessHeap() -> HANDLE;
     pub fn SetLastError(dwErrCode: DWORD);
     pub fn SleepEx(dwMilliseconds: DWORD, bAlertable: BOOL) -> DWORD;

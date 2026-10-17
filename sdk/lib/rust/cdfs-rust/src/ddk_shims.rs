@@ -337,7 +337,7 @@ pub unsafe fn RtlInsertAsRightChild(ParentLinks: PRTL_SPLAY_LINKS, ChildLinks: P
 // but leaves them undefined at link. #[no_mangle] provides BOTH the path import
 // (modules that call bare) AND the link symbol (modules with their own extern decl).
 // ===========================================================================
-use crate::types::{VCB, IRP_CONTEXT};
+use crate::types::IRP_CONTEXT;
 
 // MUST return a full-width zero-extended 0/1 (u32), NOT a u8 BOOLEAN. The grind
 // declares these per-module with inconsistent return types — some `-> BOOLEAN`
@@ -358,11 +358,6 @@ const DO_VERIFY_VOLUME: u32 = 0x00000002;
     (*DevObj).Flags &= !DO_VERIFY_VOLUME;
 }
 
-// Debug ASSERT macros — no-ops at retail (DBG=0). #[no_mangle] for the per-module externs.
-#[no_mangle] pub extern "C" fn ASSERT_IRP(_Irp: PIRP) {}
-#[no_mangle] pub extern "C" fn ASSERT_EXCLUSIVE_CDDATA() {}
-#[no_mangle] pub unsafe extern "C" fn ASSERT_EXCLUSIVE_VCB(_Vcb: *mut VCB) {}
-#[no_mangle] pub unsafe extern "C" fn ASSERT_OPTIONAL_IRP_CONTEXT(_IrpContext: *mut IRP_CONTEXT) {}
 
 // cd.h: CdRaiseStatus(IC,S) = CdRaiseStatusEx(IC,S,FALSE,BugCheckFileId,__LINE__).
 // CdRaiseStatusEx raises via the SEH path and does not return -> `!`. Centralized here
@@ -469,9 +464,6 @@ use crate::types::{FCB, TYPE_OF_ACQUIRE, _TYPE_OF_ACQUIRE_AcquireShared, PIRP_CO
 
 // ntddk.h: UNREFERENCED_PARAMETER(P) — retail no-op (grind lowered to stdcall fn).
 
-// cdfs debug ASSERT macros — retail no-ops.
-#[no_mangle] pub extern "C" fn ASSERT_IRP_CONTEXT(_Irp: *mut IRP_CONTEXT) {}
-#[no_mangle] pub extern "C" fn ASSERT_FILE_OBJECT(_FileObject: PFILE_OBJECT) {}
 
 // wdm.h FORCEINLINE IoGetCurrentIrpStackLocation: Irp->Tail.Overlay.CurrentStackLocation.
 // IoGetCurrentIrpStackLocation is a C FORCEINLINE (no real ntoskrnl export), so we

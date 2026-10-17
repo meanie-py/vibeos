@@ -1,4 +1,6 @@
 use crate::ntwrapper::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::windows::window::HeapAlloc;
 use win32k_sys::win32k::*;
 use crate::internal::*;
 use crate::winbase::*;
@@ -8,7 +10,6 @@ use core::ffi::c_void;
 extern "system" {
     fn NtUserEnumDisplayDevices( Device: PUNICODE_STRING, iDevNum: u32, lpDisplayDevice: *mut core::ffi::c_void, dwFlags: u32, ) -> i32;
     fn GetProcessHeap() -> *mut core::ffi::c_void;
-    fn HeapAlloc( hHeap: *mut core::ffi::c_void, dwFlags: u32, dwBytes: usize, ) -> *mut core::ffi::c_void;
     fn HeapFree( hHeap: *mut core::ffi::c_void, dwFlags: u32, lpMem: *mut core::ffi::c_void, ) -> i32;
     fn NtUserEnumDisplayMonitors( hdc: HDC, lprcClip: LPCRECT, hMonitorList: *mut HMONITOR, pRectList: LPRECT, listSize: i32, ) -> i32;
     fn SetLastError(dwErrCode: u32);
@@ -149,7 +150,7 @@ pub unsafe extern "system" fn EnumDisplayMonitors(
     hMonitorList = HeapAlloc(
         hHeap,
         0,
-        core::mem::size_of::<HMONITOR>() * iCount as usize,
+        (core::mem::size_of::<HMONITOR>() * (iCount) as usize) as SIZE_T,
     ) as *mut HMONITOR;
     if hMonitorList.is_null() {
         SetLastError(ERROR_NOT_ENOUGH_MEMORY);
@@ -158,7 +159,7 @@ pub unsafe extern "system" fn EnumDisplayMonitors(
     pRectList = HeapAlloc(
         hHeap,
         0,
-        core::mem::size_of::<RECT>() * iCount as usize,
+        (core::mem::size_of::<RECT>() * (iCount) as usize) as SIZE_T,
     ) as LPRECT;
     if pRectList.is_null() {
         SetLastError(ERROR_NOT_ENOUGH_MEMORY);

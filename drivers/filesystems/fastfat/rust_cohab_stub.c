@@ -501,14 +501,9 @@ BOOLEAN CanFsdWait(PIRP Irp)
  * 6. Debug / trace stubs
  * ====================================================================== */
 
-VOID DebugTrace(LONG a, ULONG b, PCHAR c, ...) { (void)a;(void)b;(void)c; }
-VOID DebugDump(PCHAR a, ULONG b, PVOID c)               { (void)a;(void)b;(void)c; }
-VOID DebugUnwind(PCHAR a)                               { (void)a; }
-VOID DebugDoit(PVOID a)                                 { (void)a; }
-VOID DbgDoit(PVOID a)                                   { (void)a; }
+/* DebugTrace/DebugDump/DebugUnwind/DebugDoit/DbgDoit/TimerStart/TimerStop are crate macros in fastfat-rust (the
+ * fatdata.h `{NOTHING;}` and empty forms); nothing links against a stub of them. */
 ULONG Dbg = 0;  /* DebugTrace component id; read as data, no-op when not tracing */
-VOID TimerStart(ULONG a)                                { (void)a; }
-VOID TimerStop(ULONG a, PCHAR b)                        { (void)a;(void)b; }
 
 /* ======================================================================
  * 7. SEH2 stubs (dead with USE_DUMMY_PSEH)

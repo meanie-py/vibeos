@@ -184,6 +184,7 @@ static mut TuiVtbl: FRONTEND_VTBL = FRONTEND_VTBL {
     SetMouseCursor: None,
     MenuControl: None,
     SetMenuClose: None,
+    GetFontSize: None,
 };
 
 pub(crate) unsafe fn InitTuiVtblIfNeeded() {
@@ -216,6 +217,7 @@ pub(crate) unsafe fn InitTuiVtblIfNeeded() {
         SetMouseCursor: Some(core::mem::transmute(TuiSetMouseCursor as *const ())),
         MenuControl: Some(core::mem::transmute(TuiMenuControl as *const ())),
         SetMenuClose: Some(core::mem::transmute(TuiSetMenuClose as *const ())),
+        GetFontSize: Some(core::mem::transmute(TuiGetFontSize as *const ())),
     };
 }
 
@@ -1265,6 +1267,17 @@ pub(crate) unsafe extern "system" fn TuiSetMenuClose(
     _Enable: BOOL,
 ) -> BOOL {
     1
+}
+
+/// Full-screen text mode draws with the VGA ROM font, 8x16.
+pub(crate) unsafe extern "system" fn TuiGetFontSize(
+    _This: PFRONTEND,
+    pSize: PCOORD,
+) {
+    if pSize.is_null() {
+        return;
+    }
+    *pSize = COORD { X: 8, Y: 16 };
 }
 
 pub(crate) unsafe fn IsConsoleMode() -> BOOLEAN {

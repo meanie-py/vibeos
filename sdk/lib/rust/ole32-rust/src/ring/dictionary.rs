@@ -61,7 +61,7 @@ pub unsafe extern "C" fn dictionary_create(c: comparefunc, d: destroyfunc, extra
         return core::ptr::null_mut();
     }
 
-    let ret = HeapAlloc(GetProcessHeap(), 0, core::mem::size_of::<dictionary>() as SIZE_T) as *mut dictionary;
+    let ret = HeapAlloc(GetProcessHeap(), 0, core::mem::size_of::<dictionary>() as usize) as *mut dictionary;
 
     if !ret.is_null() {
         (*ret).comp = c;
@@ -113,7 +113,7 @@ pub unsafe extern "C" fn dictionary_insert(d: *mut dictionary, k: *const core::f
         (**prior).key = k as *mut core::ffi::c_void;
         (**prior).value = v as *mut core::ffi::c_void;
     } else {
-        let elem = HeapAlloc(GetProcessHeap(), 0, core::mem::size_of::<dictionary_entry>() as SIZE_T) as *mut dictionary_entry;
+        let elem = HeapAlloc(GetProcessHeap(), 0, core::mem::size_of::<dictionary_entry>() as usize) as *mut dictionary_entry;
 
         if elem.is_null() {
             return;

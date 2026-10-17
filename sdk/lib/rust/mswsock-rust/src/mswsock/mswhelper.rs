@@ -2,12 +2,12 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 extern "C" {
-    fn strlen(s: *const core::ffi::c_char) -> usize;
+    pub fn strlen(s: *const core::ffi::c_char) -> usize;
     fn wcslen(s: *const WCHAR) -> usize;
 }
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: SIZE_T) -> PVOID;
+    pub fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: SIZE_T) -> PVOID;
     fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: PVOID) -> BOOL;
     fn MultiByteToWideChar( CodePage: UINT, dwFlags: DWORD, lpMultiByteStr: LPCSTR, cbMultiByte: ::core::ffi::c_int, lpWideCharStr: LPWSTR, cchWideChar: ::core::ffi::c_int, ) -> ::core::ffi::c_int;
     fn WideCharToMultiByte( CodePage: UINT, dwFlags: DWORD, lpWideCharStr: LPCWSTR, cchWideChar: i32, lpMultiByteStr: LPSTR, cbMultiByte: i32, lpDefaultChar: LPCSTR, lpUsedDefaultChar: LPBOOL, ) -> i32;

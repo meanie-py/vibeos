@@ -132,9 +132,7 @@ pub unsafe extern "system" fn AddPrinterW(
     'cleanup: {
         while pEntry != core::ptr::addr_of_mut!(PrintProviderList) {
             pPrintProvider = ((pEntry as ULONG_PTR).wrapping_sub(
-                core::ptr::addr_of_mut!(
-                    (*core::ptr::null_mut::<SPOOLSS_PRINT_PROVIDER>()).Entry
-                ) as ULONG_PTR,
+                core::mem::offset_of!(SPOOLSS_PRINT_PROVIDER, Entry) as ULONG_PTR,
             ) as *mut SPOOLSS_PRINT_PROVIDER) as PSPOOLSS_PRINT_PROVIDER;
 
             hPrinter = (*pPrintProvider)

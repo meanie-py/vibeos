@@ -1776,7 +1776,7 @@ unsafe extern "system" fn sample_allocator_AllocateSample(
         let mut head: *mut list = list_head(&raw mut (*allocator).free_samples);
 
         sample = (head as *mut ::core::ffi::c_char).offset(
-            -(&raw mut (*::core::ptr::null_mut::<queued_sample>()).entry as ::core::ffi::c_ulonglong
+            -(core::mem::offset_of!(queued_sample, entry) as ::core::ffi::c_ulonglong
                 as isize),
         ) as *mut queued_sample;
 

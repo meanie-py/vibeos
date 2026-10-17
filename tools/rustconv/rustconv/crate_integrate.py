@@ -1182,7 +1182,7 @@ def integrate(
     src, report.fn_ptr_calls = unchecked_fn_pointer_calls(src)
 
     out, pos = [], 0
-    for start, end, body, abi in extern_block_spans(src):
+    for start, end, body, _abi in extern_block_spans(src):
         keep = []
         for d in split_decls(body):
             # split_decls hands a decl its preceding blank/comment lines. Blank ones are
@@ -1212,8 +1212,16 @@ def integrate(
                 keep.append(d)
 
         out.append(src[pos:start])
-        if keep:
-            out.append(f"extern {abi} {{\n" + "\n".join(keep) + "\n}")
+        if keep and len(keep) == len([d for d in split_decls(body) if d.strip()]):
+            out.append(src[start:end])  # nothing dropped: the block is left as written
+        elif keep:
+            # Rebuilt in its own spelling: `unsafe extern "C" {` and a nested block's
+            # indented `}` were rewritten as `extern "C" {` and a column-0 `}`, which
+            # changed hand-banked text (rapps' misc/settings/loaddlg) on every integrate.
+            head = src[start : src.index("{", start) + 1]
+            close = src[src.rfind("\n", 0, end - 1) + 1 : end - 1]
+            close = close if not close.strip() else ""
+            out.append(head + "\n" + "\n".join(keep) + "\n" + close + "}")
         else:
             report.blocks_removed += 1
             # Eat the newline the now-deleted block would have left behind.

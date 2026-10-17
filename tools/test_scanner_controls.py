@@ -134,6 +134,49 @@ class Control:
 
 # ── fixtures, each seeded from a real incident ───────────────────────────────
 
+# scan_override_self_dispatch. Seeded from mspaint 2026-10-16: SmoothDrawTool::OnEndDraw's
+# `ToolBase::OnEndDraw(bCancel)` dispatched back into itself. GOOD: the base's own body, and
+# the same virtual called on ANOTHER object (a member), which is an ordinary virtual call.
+_OVERRIDE_SELF_DISPATCH_BAD = """
+impl SmoothDrawTool {
+    pub unsafe fn OnEndDraw__body(&mut self, bCancel: BOOL) {
+        let this_: *mut Self = self;
+        (*this_).m_bDrawing = 0;
+        (*this_).__base0.OnEndDraw(bCancel);
+    }
+}
+"""
+_OVERRIDE_SELF_DISPATCH_GOOD = """
+impl SmoothDrawTool {
+    pub unsafe fn OnEndDraw__body(&mut self, bCancel: BOOL) {
+        let this_: *mut Self = self;
+        (*this_).__base0.OnEndDraw__body(bCancel);
+        (*(*this_).m_pChild).__base0.OnEndDraw(bCancel);
+    }
+}
+"""
+
+# mmc_new 2026-10-17: atl_rust's CAtlList::GetNext returns the element's SLOT; the cast read
+# list-node memory as the window (WM_CLOSE to a bogus HWND, then a use-after-free).
+_ATL_SLOT_CAST_BAD = """
+unsafe fn close_all(this_: *mut CMainWnd) {
+    let mut pos: POSITION = (*this_).m_ViewList.GetHeadPosition();
+    while !pos.is_null() {
+        let console: *mut CConsoleWnd = (*this_).m_ViewList.GetNext(&mut pos) as *mut CConsoleWnd;
+        (*console).__base0.SendMessageW__0(WM_CLOSE, 0, 0);
+    }
+}
+"""
+_ATL_SLOT_CAST_GOOD = """
+unsafe fn close_all(this_: *mut CMainWnd) {
+    let mut pos: POSITION = (*this_).m_ViewList.GetHeadPosition();
+    while !pos.is_null() {
+        let console: *mut CConsoleWnd = *(*this_).m_ViewList.GetNext(&mut pos);
+        (*console).__base0.SendMessageW__0(WM_CLOSE, 0, 0);
+    }
+}
+"""
+
 # scan_bugcheck_stubs. Seeded from fastfat 2026-07-26: three boots, three stubs
 # (FatGenerateFileIdFromFcb -> FatOpenVolume -> ...), each a full build+boot to
 # discover something the tree already knew. The GOOD case pins the two ways this
@@ -497,6 +540,60 @@ pub unsafe extern "fastcall" fn RtlPrefetchMemoryNonTemporal(_Source: PVOID, _Le
 pub fn allowed() {}
 """
 
+# scan_fnclass_cc. cdrom.h declares `EVT_WDF_WORKITEM DeviceRestoreDefaultSpeed;`, a WDF
+# work item the framework calls stdcall on i386; the Rust defined it cdecl (2026-10-17).
+_FNCLASS_BAD = """\
+#[no_mangle]
+pub unsafe extern "C" fn DeviceRestoreDefaultSpeed(WorkItem: WDFWORKITEM) {}
+"""
+_FNCLASS_GOOD = """\
+#[no_mangle]
+pub unsafe extern "system" fn DeviceRestoreDefaultSpeed(WorkItem: WDFWORKITEM) {}
+#[no_mangle]
+pub unsafe extern "C" fn StringsAreMatched(a: *const i8, b: *const i8) -> u8 { 0 }
+"""
+
+# scan_version_vs_c. fastfat lockctrl.c gates the "only when it interferes with oplocks"
+# filter on NTDDI_WIN8; the WS03 build checks the oplock for every lock request and never
+# asks FsRtlAreThereWaitingFileLocks. The Rust asked it eagerly, ahead of the cfg! test.
+_VERSION_BAD = """\
+pub unsafe extern "C" fn FatCommonLockControl(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS {
+    let has_waiting_locks = !is_lock && FsRtlAreThereWaitingFileLocks(lock) != 0;
+    if !cfg!(ntddi_ge_ntddi_win8) || is_lock_within_size || has_waiting_locks {
+        FsRtlCheckOplock(oplock, Irp);
+    }
+    0
+}
+"""
+_VERSION_GOOD = """\
+pub unsafe extern "C" fn FatCommonLockControl(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS {
+    if !cfg!(ntddi_ge_ntddi_win8)
+        || is_lock_within_size
+        || (!is_lock && FsRtlAreThereWaitingFileLocks(lock) != 0)
+    {
+        FsRtlCheckOplock(oplock, Irp);
+    }
+    0
+}
+"""
+
+# null_offset_to_offset_of --lint. Seeded from eventlog file.rs and Wine's LIST_ENTRY: a
+# field projection through null is UB even under &raw / addr_of!, offset_of! is the same
+# number defined.
+_NULL_PLACE_BAD = """\
+unsafe fn f(e: PLIST_ENTRY) -> PLOGFILE {
+    let off = &raw mut (*::core::ptr::null_mut::<LOGFILE>()).ListEntry as ULONG_PTR;
+    (e as ULONG_PTR).wrapping_sub(off) as PLOGFILE
+}
+"""
+_NULL_PLACE_GOOD = """\
+unsafe fn f(e: PLIST_ENTRY) -> PLOGFILE {
+    // was &raw mut (*core::ptr::null_mut::<LOGFILE>()).ListEntry
+    let off = core::mem::offset_of!(LOGFILE, ListEntry) as ULONG_PTR;
+    (e as ULONG_PTR).wrapping_sub(off) as PLOGFILE
+}
+"""
+
 _BITWISE_NOT_BAD = """\
 pub unsafe fn adjust_fua(flags: u32, special: u32) -> bool {
     // C: DEV_WRITE_CACHE && !DEV_POWER_PROTECTED && !CLASS_SPECIAL_FUA_NOT_SUPPORTED.
@@ -510,17 +607,6 @@ pub unsafe fn prepare_copy(Success: u8) -> u32 {
         return 29;
     }
     24
-}
-"""
-
-# A KEYWORD before the `!` once read as a macro bang (`if!`), hiding every `if !x != 0`:
-# usetup's PrepareCopyPage always quit and powercfg's Pos_InitData always failed.
-_BITWISE_NOT_KEYWORD_BAD = """\
-pub unsafe fn prepare(success: u8) -> u32 {
-    if !success != 0 {
-        return 1;
-    }
-    0
 }
 """
 
@@ -2857,6 +2943,27 @@ CONTROLS: list[Control] = [
         good=_EXPORT_SHADOW_GOOD,
     ),
     Control(
+        name="null_offset_to_offset_of",
+        script="tools/null_offset_to_offset_of.py",
+        argv=["--lint"],
+        bad={"rust/eventlog-rust/src/file.rs": _NULL_PLACE_BAD},
+        good={"rust/eventlog-rust/src/file.rs": _NULL_PLACE_GOOD},
+    ),
+    Control(
+        name="scan_fnclass_cc",
+        script="tools/scan_fnclass_cc.py",
+        argv=["--lint"],
+        bad={"rust/cdrom-rust/src/common.rs": _FNCLASS_BAD},
+        good={"rust/cdrom-rust/src/common.rs": _FNCLASS_GOOD},
+    ),
+    Control(
+        name="scan_version_vs_c",
+        script="tools/scan_version_vs_c.py",
+        argv=["--lint"],
+        bad={"rust/fastfat-rust/src/lockctrl.rs": _VERSION_BAD},
+        good={"rust/fastfat-rust/src/lockctrl.rs": _VERSION_GOOD},
+    ),
+    Control(
         name="scan_cfg_vs_c",
         script="tools/scan_cfg_vs_c.py",
         argv=["--lint"],
@@ -2872,11 +2979,24 @@ CONTROLS: list[Control] = [
         },
     ),
     Control(
+        name="scan_atl_slot_cast",
+        script="tools/scan_atl_slot_cast.py",
+        bad={"mmc.rs": _ATL_SLOT_CAST_BAD},
+        good={"mmc.rs": _ATL_SLOT_CAST_GOOD},
+    ),
+    Control(
         name="scan_bitwise_not_bool",
         script="tools/scan_bitwise_not_bool.py",
         argv=["--lint"],
         bad={"bad.rs": _BITWISE_NOT_BAD},
         good={"good.rs": _BITWISE_NOT_GOOD},
+    ),
+    Control(
+        name="scan_override_self_dispatch",
+        script="tools/scan_override_self_dispatch.py",
+        argv=["--lint"],
+        bad={"bad.rs": _OVERRIDE_SELF_DISPATCH_BAD},
+        good={"good.rs": _OVERRIDE_SELF_DISPATCH_GOOD},
     ),
     Control(
         name="scan_info_class_literals",
@@ -3117,6 +3237,12 @@ CONTROLS: list[Control] = [
 # Lints deliberately NOT fixture-driven, each with the reason. Anything absent
 # from both this set and CONTROLS fails test_every_lint_is_accounted_for.
 UNCOVERED: dict[str, str] = {
+    "scan_cmake_linked_rust": (
+        "it models modules from build-amd64/build.ninja and the tree's own CMakeLists through "
+        "cargo_cell_gen.survey, so a fixture directory has nothing to survey. The labelling is "
+        "driven directly in tools/test_cargo_cell_gen.py: a module the generator accepts must "
+        "read `(convertible)` and a refused one `(refused)`, with a nonzero exit while any remain."
+    ),
     "scan_pack_drift": (
         "it maps every flipped module to its crate through the tree's own CMakeLists flip "
         "comments, so a fixture directory has no module to resolve. Driven directly in "
@@ -3136,7 +3262,8 @@ UNCOVERED: dict[str, str] = {
         "its oracle is the C module scan_invented_constants.c_dirs_for() finds for a crate in "
         "the real tree, so a fixture directory has no crate to map. The decision is "
         "scan_files(rs_files, c_dirs, names), driven directly in "
-        "tools/test_scan_hresult_literals.py with an explicit C dir: it must flag ole32's "
+        "tools/vibeos-lint/src/rules/hresult_literals.rs with an explicit C fixture: it must flag "
+        "ole32's "
         "STG_E_TOOMANYOPENFILES-for-READFAULT shape and must not flag a value the C function "
         "returns, a named const, a nolint line, an extern declaration, or an NTSTATUS function."
     ),
@@ -3213,35 +3340,40 @@ UNCOVERED: dict[str, str] = {
     ),
     "scan_raw_uart_writes": (
         "main() walks the real tree, but the decision is scan_text(), a pure function "
-        "over a string, driven directly in tools/test_scan_raw_uart_writes.py. Its fire "
+        "over a string, driven directly in tools/vibeos-lint/src/rules/raw_uart_writes.rs. "
+        "Its fire "
         "cases are the three shapes the 87 real stores took when it landed; its must-not "
         "cases pin the nearest-binding rule that keeps an unrelated `u` from being "
         "reported, plus comments, strings and comparisons."
     ),
     "scan_ptr_highword_mask": (
         "main() walks the real tree, but the decision is scan_text(), a pure function over a "
-        "string, driven directly in tools/test_scan_ptr_highword_mask.py. Its fire cases are "
+        "string, driven directly in tools/vibeos-lint/src/rules/ptr_highword_mask.rs. Its "
+        "fire cases are "
         "the two shapes that shipped (a declared-usize identifier, an `as usize` cast); its "
         "must-not cases pin the u32 rop, the version DWORD, the call-proc `== 0xFFFF0000` "
         "form, the fixed `& !0xFFFF` form and C quoted in a comment."
     ),
     "scan_fourcc_literals": (
         "main() walks the real tree, but the decision is scan_text(), a pure function over a "
-        "string, driven directly in tools/test_scan_fourcc_literals.py. Its fire case is the "
+        "string, driven directly in tools/vibeos-lint/src/rules/fourcc_literals.rs. Its fire "
+        "case is the "
         "shape that shipped (evr's IMC1/NV11 folds); its must-not cases pin correct folds in "
         "decimal, hex with underscores and a suffix, mmioFOURCC, and a literal with no macro "
         "comment beside it."
     ),
     "scan_match_arm_break": (
         "main() walks the real tree, but the decision is scan_text(), a pure function over a "
-        "string, driven directly in tools/test_scan_match_arm_break.py. Its fire case is mf's "
+        "string, driven directly in tools/vibeos-lint/src/rules/match_arm_break.rs. Its fire "
+        "case is mf's "
         "session_check_topology shape (a while loop opening with a match); its must-not cases "
         "pin the once-through `loop { match }` switch idiom, an expression arm, a break of a "
         "loop nested in the arm, and `break;` inside a string."
     ),
     "scan_calloc_elem_type": (
         "main() walks the real tree, but the decision is scan_text(), a pure function over a "
-        "string, driven directly in tools/test_scan_calloc_elem_type.py. Its fire cases are "
+        "string, driven directly in tools/vibeos-lint/src/rules/calloc_elem_type.rs. Its fire "
+        "cases are "
         "the shape that shipped (wscript's BSTR array sized in OLECHARs) and a byte array of "
         "pointers; its must-not cases pin matching elements, a pointer-sized table, a void "
         "buffer, a flexible-array tail and C quoted in a comment."
@@ -3290,9 +3422,11 @@ UNCOVERED: dict[str, str] = {
     ),
     "scan_bindgen_padding_index": (
         "a regex over single source lines with no tree model, so a fixture dir would only "
-        "restate its unit tests. tools/test_scan_bindgen_padding_index.py drives scan_text "
+        "restate its unit tests. tools/vibeos-lint/src/rules/bindgen_padding_index.rs drives "
+        "scan_text "
         "with the user32 wnd_pti read as the positive control and address-of/offset_of "
-        "uses (layout-stable) as negatives, and asserts the real tree is clean."
+        "uses (layout-stable) as negatives, and the full source check asserts the real tree "
+        "is clean."
     ),
     "scan_extern_static_width": (
         "pairs the whole tree's C __asm__ definitions with its Rust extern statics, so a "
@@ -3326,6 +3460,16 @@ UNCOVERED: dict[str, str] = {
 
 
 def _run(ctl: Control, root: Path) -> tuple[int, str]:
+    # Ported controls exercise the shipping Rust plugin, including its shared
+    # corpus and cross-file collection, rather than a retained Python oracle.
+    from tests.qemu.cli import rustlints
+
+    if ctl.name in rustlints.PORTED:
+        runner = rustlints.ensure(REPO)
+        cmd = [str(runner), "--root", str(REPO), "--path", str(root), "--rules", ctl.name]
+        p = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True)
+        result = rustlints.split_output(p, [ctl.name])[ctl.name]
+        return result.returncode, result.stdout + result.stderr
     if ctl.pass_files:
         targets = [str(p) for p in sorted(root.rglob(f"*{ctl.file_suffix}"))]
         assert targets, f"{ctl.name}: fixture produced no {ctl.file_suffix} files"
@@ -3373,6 +3517,25 @@ def test_irql_fixture_summary_resolves_cross_file_wrapper(tmp_path):
     )
     rc, out = _run(ctl, root)
     assert rc == 0 and out == ""
+
+
+def test_irql_std_path_does_not_inherit_a_workspace_name(tmp_path):
+    # Summaries are keyed by bare name: a sleeping workspace `fn read` must not
+    # make `core::ptr::read` under a spinlock look like a sleep.
+    ctl = next(c for c in CONTROLS if c.name == "scan_irql_balance")
+    sleeper = "unsafe fn read() {\nKeWaitForSingleObject(e, 0, 0, 0, t);\n}\n"
+    held = (
+        "unsafe fn caller(p: *const u32) -> u32 {{\nKeAcquireSpinLock(&mut l, &mut old);\n"
+        "let v = {call}(p);\nKeReleaseSpinLock(&mut l, old);\nv\n}}\n"
+    )
+    root = _materialize(
+        tmp_path, {"sleeper.rs": sleeper, "caller.rs": held.format(call="core::ptr::read")}
+    )
+    rc, out = _run(ctl, root)
+    assert rc == 0 and out == "", out
+    (root / "caller.rs").write_text(held.format(call="read"))
+    rc, out = _run(ctl, root)
+    assert rc == 1 and "IRQL_SLEEP_WHILE_HELD" in out, out
 
 
 def test_irql_cli_default_still_builds_whole_workspace_summaries(tmp_path, monkeypatch):
@@ -3905,17 +4068,6 @@ def test_path_attr_and_dir_modules_are_not_phantoms(tmp_path: Path):
     assert "[PHANTOM]" not in out, f"false positive on a legitimate module shape:\n{out}"
 
 
-def test_bitwise_not_after_a_keyword_is_flagged():
-    """`if !x != 0` once read as the macro `if!` and was never flagged (usetup, powercfg)."""
-    from tools.scan_bitwise_not_bool import scan_line
-
-    for line in _BITWISE_NOT_KEYWORD_BAD.splitlines():
-        if "!success" in line:
-            assert scan_line(line)
-    assert not scan_line("    if success == 0 {")
-    assert not scan_line("    assert!(x != 0);")
-
-
 def test_type_alias_tchar_family_is_compared_within_a_crate_only(tmp_path):
     """BCHAR is WCHAR in a -DUNICODE module's island and BYTE in an ANSI one's (the
     appcompat shims): two right answers to two compiles, not a contradiction. Inside ONE
@@ -3968,12 +4120,6 @@ def test_formatless_printf_name_needs_a_real_printf(tmp_path):
     """apphelp's `SeiPrintFunctionName(lpProcName, szOrdProcFmt)` ends in a `...Fmt`
     parameter and its name contains Print+F(unctionName); it is not a printf, and the old
     case-insensitive `printf` match flagged it. A real one must still flag."""
-    spec = importlib.util.spec_from_file_location(
-        "formatless_name_control", REPO / "tools/scan_formatless_printf.py"
-    )
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
     rs = tmp_path / "x.rs"
     rs.write_text(
         "#[no_mangle]\n"
@@ -3982,4 +4128,11 @@ def test_formatless_printf_name_needs_a_real_printf(tmp_path):
         "#[no_mangle]\n"
         'pub unsafe extern "C" fn DbgPrintfEx(Format: PCSTR) -> u32 { 0 }\n'
     )
-    assert [f[2] for f in module.scan([rs])] == ["DbgPrintfEx"]
+    rc, output = _run(
+        Control(name="scan_formatless_printf", script="tools/scan_formatless_printf.py"),
+        tmp_path,
+    )
+    assert rc == 0, output
+    assert [
+        line.rsplit(" ", 1)[-1] for line in output.splitlines() if "formatless-printf" in line
+    ] == ["DbgPrintfEx"]

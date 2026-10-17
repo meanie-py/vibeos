@@ -12,6 +12,8 @@
 #![allow(non_snake_case, dead_code)]
 
 use core::ffi::c_void;
+// One declaration per external symbol: ddk_shims.rs.
+use crate::ddk_shims::CdFreePool;
 use core::ptr::null_mut;
 
 use ntkrnl_sys::ddk::{
@@ -48,7 +50,6 @@ extern "C" {
     fn CdGetFcbOplock(Fcb: *mut FCB) -> POPLOCK;
 }
 extern "C" {
-    fn CdFreePool(Pool: *mut *mut c_void);
 }
 
 // FsRtlPrivateLock is a real ntoskrnl export. ntoskrnl.spec:
@@ -906,10 +907,6 @@ pub static mut CdXaId: [i8; 8] = [
     b'0' as i8, b'0' as i8, b'1' as i8,
 ];
 
-// cddata.h: #define ASSERT_VCB(V)  ASSERT_STRUCT((V), CDFS_NTC_VCB)
-// NT_ASSERT-only -> no-op in the cohab build. cdecl (_ASSERT_VCB, no @N).
-#[no_mangle]
-pub unsafe extern "C" fn ASSERT_VCB(_Vcb: *mut VCB) {}
 
 // cdprocs.h:
 //   #define CdAcquireCdData(IC)  ExAcquireResourceExclusiveLite(&CdData.DataResource, TRUE)
@@ -1450,9 +1447,6 @@ use ntkrnl_sys::ddk::PIO_STACK_LOCATION;
 #[no_mangle]
 pub unsafe extern "C" fn _SEH2_TRY() {}
 
-// cddata.h: #define ASSERT_FCB(F) NT_ASSERT(...)  — assert-only no-op. stdcall (@4).
-#[no_mangle]
-pub unsafe extern "C" fn ASSERT_FCB(_Fcb: *mut FCB) {}
 
 // cdprocs.h:
 //   #define BlockOffset(V,L)  ((ULONG)(L) & (V)->BlockMask)

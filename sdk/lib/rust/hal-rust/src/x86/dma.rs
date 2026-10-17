@@ -1629,7 +1629,16 @@ pub unsafe extern "system" fn IoFreeAdapterChannel(mut AdapterObject: PADAPTER_O
             (*AdapterObject).NumberOfMapRegisters = (*wcb).NumberOfMapRegisters;
 
             let mut index: ULONG = MAXULONG;
-            if (*wcb).NumberOfMapRegisters != 0 && !(*AdapterObject).MasterAdapter.is_null() {
+            // NeedsMapRegisters, as HalAllocateAdapterChannel asks; the C checks only the
+            // count here. A bus-master scatter/gather adapter (usbport's) still passes a count,
+            // so whenever its channel was busy and a request queued, this path gave it map
+            // registers it never asked for, IoMapTransfer took the copy path into entries
+            // with no buffer behind them, and memcpy wrote to NULL: BUGCHECK 0xA under
+            // Wi-Fi load on the OptiPlex, minutes into a boot.
+            if (*wcb).NumberOfMapRegisters != 0
+                && (*AdapterObject).NeedsMapRegisters != 0
+                && !(*AdapterObject).MasterAdapter.is_null()
+            {
                 ke_acquire_spinlock(&raw mut (*master).SpinLock, &mut old_irql);
 
                 if is_list_empty(&raw const (*master).AdapterQueue) {

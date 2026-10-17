@@ -1,0 +1,20 @@
+# piwifi — the Raspberry Pis' Wi-Fi firmware (CYW43455), which VibeOS does not ship. A build
+# that wants Pi Wi-Fi fetches it from Raspberry Pi's firmware-nonfree at a pinned commit,
+# checks the pinned SHA-256s (tools/fetch_pi_wifi_firmware.py) and stages it where bwfm.sys
+# loads it, \SystemRoot\System32\drivers\cyw43455\:
+#   VIBEOS_PAYLOAD=piwifi ./vibeos-cli build --arch arm64
+# The download lands in $VIBEOS_PI_WIFI_FIRMWARE, else ~/.cache/vibeos/cyw43455, and is
+# reused while its hashes still match. Images built without this payload, the published
+# ones included, carry no Cypress file: bwfm.sys then logs that the firmware is missing.
+# VIBEOS_WIFI_CONFIG names the network file (ssid=, psk=), staged as \SystemRoot\bin\wifi.txt.
+name: piwifi
+description: fetch the Pis' CYW43455 Wi-Fi firmware (not shipped) and stage it for bwfm.sys
+arches: [arm64]
+
+binaries: []
+binaries_from: tools/payloads/piwifi/stage.py
+
+test:
+  launch_marker: "[BWFM] firmware"
+  pass_marker: "[BWFM] firmware running"
+  launch_drain_secs: 300

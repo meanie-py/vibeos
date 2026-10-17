@@ -83,19 +83,19 @@ unsafe extern "C" fn pre_cpp_init() {
     STARTINFO.newmode = _newmode;
     if WIDE {
         __wgetmainargs(
-            &mut ARGC,
-            &mut ARGV as *mut _ as *mut *mut *mut u16,
-            &mut ENVP as *mut _ as *mut *mut *mut u16,
+            &raw mut ARGC,
+            &raw mut ARGV as *mut _ as *mut *mut *mut u16,
+            &raw mut ENVP as *mut _ as *mut *mut *mut u16,
             _dowildcard,
-            &mut STARTINFO,
+            &raw mut STARTINFO,
         );
     } else {
         __getmainargs(
-            &mut ARGC,
-            &mut ARGV as *mut _ as *mut *mut *mut u8,
-            &mut ENVP as *mut _ as *mut *mut *mut u8,
+            &raw mut ARGC,
+            &raw mut ARGV as *mut _ as *mut *mut *mut u8,
+            &raw mut ENVP as *mut _ as *mut *mut *mut u8,
             _dowildcard,
-            &mut STARTINFO,
+            &raw mut STARTINFO,
         );
     }
 }
@@ -207,7 +207,7 @@ unsafe fn __tmainCRTStartup() -> i32 {
         };
     }
 
-    duplicate_ppstrings(ARGC, &mut ARGV);
+    duplicate_ppstrings(ARGC, &raw mut ARGV);
     crate::gccmain::__main();
 
     // __initenv / __winitenv aren't present on arm/arm64.

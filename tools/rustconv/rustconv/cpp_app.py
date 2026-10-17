@@ -189,6 +189,7 @@ class Hierarchy:
         # Every type name the island defines (render_classes sets it): _nested_names.
         self.island_names: frozenset[str] = frozenset()
         self.dep_classes: frozenset[str] = frozenset()
+        self.hand_methods: dict[str, set[str]] = {}
 
     def com_bases(self, cls: ClassModel) -> list[tuple[int, str]]:
         return [
@@ -222,6 +223,21 @@ class Hierarchy:
             return False
         if cls.bases and short(cls.bases[0].name) in self.by_short:
             return not self.by_short[short(cls.bases[0].name)].polymorphic
+        if cls.bases:
+            tb = cpp_templates.template_base(cls.bases[0].name, lambda a: a)
+            if tb is not None and tb.polymorphic:
+                # The vptr lives inside the template base (CUIFObjectArray : CicArray<T>), so
+                # a second one here would shift the whole layout by a pointer. Sharing it
+                # with the base's table is only right while the class adds nothing that table
+                # would have to describe: no slots of its own and no fields to destroy.
+                # (Dropped by the per-instantiation rework and restored: cicero's
+                # regeneration gave CUIFObjectArray its own `__vtbl`.)
+                if self.new_slots(cls) or any(not f.static for f in cls.fields):
+                    raise CppAppError(
+                        f"{cls.name} extends polymorphic template {cls.bases[0].name} with "
+                        "virtuals or fields; its vtable would need the template's slots"
+                    )
+                return False
         return not cls.bases or short(cls.bases[0].name) not in self.by_short
 
     def vtbl_root(self, cls: ClassModel) -> ClassModel:
@@ -394,14 +410,25 @@ def drop_generated_statics(text: str, generated: set[str]) -> str:
 
 
 def render_classes(
-    model: ModuleModel, island_structs: frozenset[str] = frozenset(), island: str = ""
+    model: ModuleModel,
+    island_structs: frozenset[str] = frozenset(),
+    island: str = "",
+    hand_methods: dict[str, set[str]] | None = None,
+    hand_names: frozenset[str] = frozenset(),
 ) -> str:
     """`island_structs`: names the crate's bindgen island already lays out. A plain struct
     (no methods, no bases, no vtable) the island has is the island's -- its C layout is the
     authority, and a second definition makes every use of the name ambiguous (E0659).
-    `island`: its text, for the COM interfaces a class implements (their IFooVtbl)."""
+    `island`: its text, for the COM interfaces a class implements (their IFooVtbl).
+    `hand_methods` / `hand_names`: what the crate's hand-written modules already define --
+    methods per class, and the names its prelude re-exports from them. The hand version wins:
+    mmc_new's MDI frame needs ATL's `m_pfnSuperWindowProc` honoured (DefFrameProc /
+    DefMDIChildProc), which the generic glue's DefWindowProc does not do, and its
+    `CWndProcThunk` is a `{ proc, this }` pair, not the island's instruction bytes. Rendering
+    both is E0592/E0252, and dropping the hand one silently loses the MDI behaviour."""
     h = Hierarchy(model, parse_com_vtbls(island))
     h.island_names = island_type_names(island)
+    h.hand_methods = hand_methods or {}
     # Classes a path dependency owns (`pub use cicero_rust::cicero::cpp_classes::X;`, from
     # port's _dep_classes). Whether one drops is not knowable from here.
     h.dep_classes = frozenset(
@@ -434,7 +461,7 @@ def render_classes(
         out.append(_START_WINDOW_PROC)
     out.append(_render_globals(model, h))
     out.append(_render_global_init(model, h))
-    out.append(_render_island_glue(model, island))
+    out.append(_render_island_glue(model, island, hand_names))
     return "\n".join(out) + "\n"
 
 
@@ -484,7 +511,9 @@ def _model_words(model: ModuleModel) -> frozenset[str]:
     return frozenset(re.findall(r"[A-Za-z_]\w*", "\n".join(texts)))
 
 
-def _render_island_glue(model: ModuleModel, island: str) -> str:
+def _render_island_glue(
+    model: ModuleModel, island: str, hand_names: frozenset[str] = frozenset()
+) -> str:
     """Two C++ spellings bindgen's island has no name for.
 
     A class-scoped anonymous enum (`class CUIFWindow { enum { USER_TIMER_ID = 0x5461 }; }`)
@@ -535,6 +564,7 @@ def _render_island_glue(model: ModuleModel, island: str) -> str:
                 and name not in island_names
                 and name not in rendered
                 and name not in _ATL_RUST_PROVIDED
+                and name not in hand_names
                 and name not in aliased
             ):
                 aliased.add(name)
@@ -640,9 +670,9 @@ def _render_class(
     # static members
     for f in cls.fields:
         if f.static:
+            ty = rust_type(f.c_type, model, field=True)
             lines.append(
-                f"pub static mut {n}__{f.name}: {rust_type(f.c_type, model, field=True)} = "
-                "unsafe { core::mem::zeroed() };"
+                f"pub static mut {n}__{f.name}: {ty} = {_static_member_init(cls, f, ty, model)};"
             )
     # vtable instances, one per vtable-bearing subobject (every class: abstract ones are never
     # built, but their constructors install their own table, as C++ does mid-construction)
@@ -682,10 +712,14 @@ def _render_class(
                     opath = h_path(h, cls, owner)
                     via = "." + opath.rstrip(".") if opath else ""
                     body = f"(*{_down(n, rp, 'p')}){via}.{om.rust_name}__body({args})"
-                thunks.append(
-                    f"unsafe fn {n}__vt_{tag}_{m.rust_name}({sig}){_ret(m, model)} {{ {body} }}"
-                )
-                out.append(f"{m.rust_name}: {n}__vt_{tag}_{m.rust_name}")
+                thunk = f"{n}__vt_{tag}_{m.rust_name}"
+                if any(t.startswith(f"unsafe fn {thunk}(") for t in thunks):
+                    # A new slot that HIDES an inherited one of the same name: cicero's
+                    # CUIFWindow adds `OnTimer(WPARAM)` over CUIFObject's `OnTimer()`. Each
+                    # vtable struct holds its own field, but both thunks were one fn (E0428).
+                    thunk += f"__{x.name}"
+                thunks.append(f"unsafe fn {thunk}({sig}){_ret(m, model)} {{ {body} }}")
+                out.append(f"{m.rust_name}: {thunk}")
             return out
 
         def literal(x: ClassModel, tag: str = tag) -> str:
@@ -858,6 +892,11 @@ def has_drop(cls: ClassModel, h: Hierarchy) -> bool:
     if any(_ATL_OWNING.match(b.name) for b in cls.bases):  # rapps' CLocalPtr<T> : CHeapPtr
         return True
     if any(has_drop(b, h) for _, b in h.module_bases(cls)):
+        return True
+    # A hand-written generic that frees what it owns (cicero's CicArray<T>): not Copy.
+    if any(cpp_templates.drops(b.name) for b in cls.bases):
+        return True
+    if any(not f.static and cpp_templates.drops(f.c_type) for f in cls.fields):
         return True
     return any(
         has_drop(h.by_short[t], h)
@@ -1698,6 +1737,7 @@ def _render_atl_glue(cls: ClassModel, h: Hierarchy, model: ModuleModel, win: Atl
     # C++ name hiding: a class that declares its own `Create(HWND)` (CTextEditWindow) hides
     # every inherited Create, so the glue of that name is not rendered (E0592 otherwise).
     own = {m.rust_name for m in cls.methods if m.kind == "method"}
+    own |= h.hand_methods.get(n, set())
     lines[glue_start:] = _drop_hidden_glue(lines[glue_start:], own)
     lines.append("}")
     if t == "CWindowImpl" and not cls.method("GetWndClassInfo"):
@@ -1728,6 +1768,36 @@ def _is_reference(c_type: str) -> bool:
     """`T &` / `const T &`, or the SDK's reference typedefs (REFGUID, REFIID, REFCLSID, ...)."""
     t = c_type.strip()
     return t.endswith("&") or re.fullmatch(r"(?:const\s+)?REF[A-Z]+", t) is not None
+
+
+_ZERO_INIT = re.compile(
+    r"(?:NULL|nullptr|FALSE|false|0+[uUlL]*|0[xX]0+[uUlL]*|\{\s*(?:NULL|nullptr|0)?\s*\})"
+)
+
+
+def _static_member_init(cls, f, ty: str, model: ModuleModel) -> str:
+    """A static data member's value before any code runs: its definition's initializer
+    (`DWORD TLS::s_dwTlsIndex = (DWORD)-1;`), rendered as a Rust constant. Zero-like and
+    absent initializers are the zeroed storage C++ also starts from. Anything else this
+    cannot render is refused: a static silently left at zero is a wrong value nobody sees."""
+    v = (f.default_init or "").strip()
+    if not v or _ZERO_INIT.fullmatch(v):
+        return "unsafe { core::mem::zeroed() }"
+    if v in ("TRUE", "true"):
+        return "true" if ty == "bool" else "1"
+    m = re.fullmatch(
+        r"(?:\(\s*([A-Za-z_][\w ]*?)\s*\))?\s*\(?\s*(-?)\s*(0[xX][0-9A-Fa-f]+|\d+)[uUlL]*\s*\)?", v
+    )
+    if m is not None:
+        cast, neg, num = m.groups()
+        lit = f"({neg}{num}i64)"
+        if cast is not None and " ".join(cast.split()) != " ".join(f.c_type.split()):
+            lit = f"({lit} as {rust_type(cast, model)})"  # `(BYTE)-1` is 0xFF in any field
+        return f"{lit} as {ty}"
+    raise CppAppError(
+        f"{cls.qualified}::{f.name} = {v}: a static member initializer this cannot render "
+        "(cpp_app._static_member_init); extend it rather than leave the static zeroed"
+    )
 
 
 def aggregate_static(g, h: Hierarchy, model: ModuleModel) -> str | None:
@@ -2240,7 +2310,7 @@ def _global_init_calls(model: ModuleModel, h: Hierarchy) -> list[tuple[str, int,
             g.init is None
             and not ctors
             and not cls.polymorphic
-            and not any(f.default_init for f in cls.fields)
+            and not any(f.default_init for f in cls.fields if not f.static)
         ):
             continue  # zeroed storage IS its value-initialized state
         arg = g.init if g.init and g.init.startswith("(") else "()"
@@ -2427,7 +2497,13 @@ def _synthetic_method(cls: ClassModel, m: Method, h: Hierarchy, model: ModuleMod
     body = _qualified_base_calls(ty(m.lowered or "{}"), h)
     if m.kind == "ctor":
         pro = _ctor_prologue(cls, m, h, model)
-        body = "{\n" + "\n".join(pro) + "\n    " + body + "\n}"
+        if not pro and re.fullmatch(r"\{\s*\}", body.strip()):
+            # `CUIFSystemInfo() { }` wrapped as `{ { } }` reads to tree-sitter-cpp as a
+            # declaration with a brace initializer: the scanner dropped the definition, and
+            # every `CUIFSystemInfo__make_0` called a `__ctor_0` that was never translated.
+            body = "{\n}"
+        else:
+            body = "{\n" + "\n".join(pro) + "\n    " + body + "\n}"
     head = f"// {cls.qualified}::{m.name} -- {m.body[0] if m.body else ''}"
     return _strip_ns(f"{head}\n{ret} {n}__{m.rust_name}{suffix}({params})\n{body}\n", model)
 

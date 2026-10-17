@@ -1,5 +1,15 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::base::*;
+// One declaration per external symbol: ddk_shims.rs.
+use crate::ddk_shims::FlagOn;
+use crate::ddk_shims::CdFreePool;
+// The crate's own functions: the definition is the declaration.
+use crate::cdmacros::CdAcquireVcbExclusive;
+use crate::cdmacros::CdAcquireVcbShared;
+use crate::cddata::CdCompleteRequest;
+use crate::cddata::CdExceptionFilter;
+use crate::cachesup::CdPurgeVolume;
+use crate::ddk_shims::CdRaiseStatus;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ddk::{_IO_STATUS_BLOCK, IoAcquireVpbSpinLock, IoReleaseVpbSpinLock, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, VPB};
 // resolve_imports.py: explicit kernel/private-type imports
@@ -20,16 +30,12 @@ const IRP_MN_VERIFY_VOLUME: u8 = 0x02;
 const IOCTL_CDROM_CHECK_VERIFY: u32 = (2u32 << 16) | (1u32 << 14) | (0x200u32 << 2) | 0u32;
 
 extern "C" {
-    fn ASSERT_IRP_CONTEXT(arg: *mut IRP_CONTEXT);
 }
 extern "C" {
-    fn ASSERT_VCB(arg: *mut VCB);
 }
 extern "C" {
-    fn ASSERT_EXCLUSIVE_CDDATA();
 }
 extern "C" {
-    fn CdAcquireVcbExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, arg2: u8) -> u32;
 }
 extern "C" {
     fn CdFspClose(Vcb: *mut VCB);
@@ -52,24 +58,19 @@ extern "C" {
     fn CdMarkRealDevForVerify(Device: *mut DEVICE_OBJECT);
 }
 extern "C" {
-    fn ASSERT_EXCLUSIVE_VCB(Vcb: *mut VCB);
 }
 extern "C" {
 }
 extern "C" {
-    fn CdFreePool(Ptr: *mut *mut core::ffi::c_void);
 }
 extern "C" {
-    fn CdPurgeVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, flag: u8) -> u32;
 }
 extern "C" {
     fn ClearFlag(Flags: *mut u32, Flag: u32);
 }
 extern "C" {
-    fn FlagOn(Flags: u32, Flag: u32) -> u32;
 }
 extern "C" {
-    fn CdRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: i32);
 }
 extern "C" {
     fn CdRealDevNeedsVerify(DeviceObject: PDEVICE_OBJECT) -> u8;
@@ -103,7 +104,6 @@ extern "C" {
     fn _SEH2_GetExceptionCode() -> i32;
 }
 extern "C" {
-    fn CdExceptionFilter( _: PIRP_CONTEXT, _: *mut core::ffi::c_void, ) -> i32;
 }
 extern "C" {
     fn CdProcessException( IrpContext: PIRP_CONTEXT, Irp: PIRP, ExceptionCode: i32, ) -> NTSTATUS;
@@ -112,7 +112,6 @@ extern "C" {
     fn CdOperationIsDasdOpen(IrpContext: PIRP_CONTEXT) -> i32;
 }
 extern "C" {
-    fn CdAcquireVcbShared(IrpContext: PIRP_CONTEXT, Vcb: *mut VCB, Force: u8) -> u8;
 }
 extern "C" {
     fn CdAcquireCdData(IrpContext: PIRP_CONTEXT);
@@ -121,7 +120,6 @@ extern "C" {
     fn CdReleaseCdData(IrpContext: PIRP_CONTEXT);
 }
 extern "C" {
-    fn CdCompleteRequest( IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS, );
 }
 extern "C" {
     fn CdFsdPostRequest( IrpContext: PIRP_CONTEXT, Irp: PIRP, ) -> NTSTATUS;
@@ -130,7 +128,6 @@ extern "C" {
     fn CdNormalizeAndRaiseStatus( IrpContext: PIRP_CONTEXT, Status: NTSTATUS, );
 }
 extern "C" {
-    fn ASSERT_IRP(_: PIRP);
 }
 extern "system" {
     fn IoVerifyVolume( DeviceToVerify: PDEVICE_OBJECT, AllowRawMount: i32, ) -> NTSTATUS;
@@ -158,8 +155,8 @@ pub unsafe extern "C" fn CdPerformVerify(
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let IrpSp: *mut IO_STACK_LOCATION;
 
-    ASSERT_IRP_CONTEXT(IrpContext);
-    ASSERT_IRP(Irp);
+    ASSERT_IRP_CONTEXT!(IrpContext);
+    ASSERT_IRP!(Irp);
 
     // Early return if this is a mount/verify FSCTL
     if ((*IrpContext).MajorFunction == IRP_MJ_FILE_SYSTEM_CONTROL)
@@ -219,7 +216,7 @@ pub unsafe extern "C" fn CdPerformVerify(
                 && (st.2 == STATUS_SUCCESS || st.2 == STATUS_WRONG_VOLUME)
             {
                 (*st.1).IoStatus.Information = IO_REMOUNT as _;
-                CdCompleteRequest(st.0, st.1, STATUS_REPARSE);
+                CdCompleteRequest((st.0).cast(), st.1, STATUS_REPARSE);
                 st.2 = STATUS_REPARSE;
                 st.1 = core::ptr::null_mut();
                 st.0 = core::ptr::null_mut();
@@ -257,9 +254,9 @@ pub unsafe extern "C" fn CdCheckForDismount(
         let mut VcbPresent: i32 = 1;
         let mut SavedIrql: KIRQL = 0;
 
-        ASSERT_IRP_CONTEXT(IrpContext);
-        ASSERT_VCB(Vcb);
-        ASSERT_EXCLUSIVE_CDDATA();
+        ASSERT_IRP_CONTEXT!(IrpContext);
+        ASSERT_VCB!(Vcb);
+        ASSERT_EXCLUSIVE_CDDATA!();
 
         CdAcquireVcbExclusive(IrpContext, Vcb, 0); // FALSE
 
@@ -524,8 +521,8 @@ pub unsafe extern "C" fn CdVerifyFcbOperation(
     let mut SavedIrql: KIRQL = 0;
     let FinalReference: u8;
 
-    ASSERT_EXCLUSIVE_CDDATA();
-    ASSERT_EXCLUSIVE_VCB(Vcb);
+    ASSERT_EXCLUSIVE_CDDATA!();
+    ASSERT_EXCLUSIVE_VCB!(Vcb);
 
     CdLockVcb(IrpContext, Vcb);
 

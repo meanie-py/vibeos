@@ -10,6 +10,49 @@
 #   flip they take the test's Vista column instead, which still differs from Windows 11 in thread
 #   GenericExecute (+THREAD_RESUME 0x1000) and job (+JOB_OBJECT_IMPERSONATE 0x20); give the test
 #   a Windows 10 column then.
+# 2026-10-16b (x2 byte-identical sweeps, all three arches): FsRtlExpression 258/8 -> 266/0
+#   (FsRtlIsDbcsInExpression broke out of its name loop before taking the match count, so a
+#   trailing `*`/DOS_STAR/DOS_DOT match on the end-of-name pass was dropped); KeDeviceQueue
+#   44/1 -> 45/0 (Type was the literal 7, GateObject; DeviceQueueObject is 20); SeInheritance
+#   704433/14 -> 704447/0 (SeAssignSecurityEx no longer writes its output before the faults the
+#   test provokes; mandatory label ACEs inherit by the ordinary rules); HidPDescription 28/9 ->
+#   33/4 (the description is zeroed before parsing; no ID byte on a report type that is absent;
+#   LEFT: one ReportIDs entry per collection with ReportID = Index, the C's FIXME, and
+#   PreparsedDataLength in our layout, not Windows'); ObTypes 763/19 -> 768/14 is upstream-sync's
+#   test column (32c69eb0b10), not this lane; 7 new tests banked (EtwActivity, EtwProvider,
+#   ExPool2, FeatureConfig, MmMapIoSpaceEx, RtlUtf8, and MmReservedMappingFixed, below).
+#   ZwMapViewOfSection: ROS views honour ZeroBits with no base, refuse a commit larger than the
+#   view and a reservation of a read-only section; ARM3 says INVALID_PARAMETER_9 for a reserve
+#   of a section with no file. LEFT (owed): 211, a reserved view past the end of the file.
+#   (CORRECTED 2026-10-17: the BUGCHECK 0x1E and wrong reads this note blamed on that view came
+#   from the first version's blanket CommitSize rule; an isolated sweep put the reserve back with
+#   no crash. See the 2026-10-17 note.)
+#   EXPECTED, re-checked against the win11-amd64 column (Windows passes them by another branch,
+#   not by being right where we are wrong): ExDoubleList, NpfsFileInfo (both pick their
+#   expectation by PRCB_BUILD_DEBUG; we are checked, Windows 11 is free) and MmSection 14 (its
+#   WS03 column; we report 5.2).
+#   arm64: IoInterrupt 1093/2 -> 1095/0 (KeConnectInterrupt refuses the SGIs, INTID 0-15).
+#   ZwMapViewOfSection 128/6 -> 133/1. RtlMemory/RtlMemoryKM 3 owed: NOT memcpy (the export
+#   is overlap-safe and the driver calls it), each failure is the first check after a
+#   `_SEH2_TRY { (NULL, NULL, 0) }` block; suspect the driver's codegen there.
+# 2026-10-17 (x2 byte-identical sweeps): ZwMapViewOfSection 133/1 -> 135/0: a file view's
+#   reservation may run past the end of the file (211), bounded by the user address space so a
+#   ViewSize of -1 is INVALID_VIEW_SIZE rather than a page-rounded empty view (295).
+# 2026-10-17b (x2 byte-identical sweeps): in-stack queued spinlocks moved onto the MCS lock
+#   (hal.dll's exports and ntoskrnl's AtDpcLevel pair; no row moves).
+#   HidPDescription 33/4 (3 skipped) -> 50/2: one ReportIDs entry per report ID a collection uses,
+#   each with that ID's own lengths, where the C made one per collection with ReportID = Index
+#   (its FIXME); hidclass routes feature/output requests by looking the ID up there, and now
+#   sizes its read buffer from the collection's longest input report. EXPECTED, left: 169/200,
+#   PreparsedDataLength 476/1388, the size of Windows' own HIDP_PREPARSED_DATA layout (INFERRED,
+#   unverified: both fit a 44-byte header + 104-byte caps + 16-byte link nodes). Ours is the
+#   parser's own context, which every HidP_* routine reads, so matching it is a rewrite of the
+#   preparsed data, not a length fix.
+#   RtlMemory and RtlMemoryKM 3 (235/254/277) are EXPECTED, a TEST-side compiler artifact: each
+#   is an overlapping RtlCopyMemory (= memcpy, Buffer+13 <- Buffer+62, 95 bytes) that clang
+#   inlines on arm64 as interleaved 16-byte loads and stores (Test_RtlMemory+0x82c), which
+#   overlap breaks. Overlapping memcpy is undefined and RtlCopyMemory's contract forbids it;
+#   the test leans on MSVC's memcpy being memmove. The kernel's memcpy export is not reached.
 # 2026-10-15: RtlRangeList pass 538 -> 537: upstream 09a03ec307d deleted one RtlFindRange check.
 #   ZwAllocateVirtualMemory pass 1003/4 -> 581/3: upstream's StressTesting rewrite (4096 x 64 GB
 #   chunks, element counts) replaced our 4096-chunk cap; fewer chunks, fewer every-tenth checks. The
@@ -123,6 +166,9 @@ ExDoubleList OK pass=138 fail=8 skip=0 exit=0
 ExFastMutex OK pass=219 fail=0 skip=2 exit=0
 ExHardError OK pass=30 fail=0 skip=0 exit=0
 ExInterlocked OK pass=180 fail=0 skip=0 exit=0
+EtwActivity OK pass=5 fail=0 skip=0 exit=0
+EtwProvider OK pass=7 fail=0 skip=0 exit=0
+ExPool2 OK pass=42 fail=0 skip=0 exit=0
 ExPools OK pass=17 fail=1 skip=0 exit=0
     assert ExPools.c:210
     assert? ExPools.c:176
@@ -152,9 +198,9 @@ Example OK pass=31 fail=15 skip=0 exit=0
     assert Example.c:32
     assert Example.c:33
     assert Example.c:34
+FeatureConfig OK pass=2 fail=0 skip=0 exit=0
 FsRtlDissect OK pass=288 fail=0 skip=0 exit=0
-FsRtlExpression OK pass=258 fail=8 skip=0 exit=0
-    assert FsRtlExpression.c:233
+FsRtlExpression OK pass=266 fail=0 skip=0 exit=0
 FsRtlLegal OK pass=2528 fail=0 skip=0 exit=0
 FsRtlMcb OK pass=36213 fail=0 skip=0 exit=0
 FsRtlRemoveDotsFromPath OK pass=7 fail=0 skip=0 exit=0
@@ -176,16 +222,13 @@ IoFilesystem OK pass=358 fail=3 skip=0 exit=0
     assert IoFilesystem.c:198
     assert IoFilesystem.c:242
     assert IoFilesystem.c:251
-IoInterrupt OK pass=1093 fail=2 skip=0 exit=0
-    assert IoInterrupt.c:129
-    assert IoInterrupt.c:130
+IoInterrupt OK pass=1095 fail=0 skip=0 exit=0
 IoIrp OK pass=22 fail=0 skip=0 exit=0
 IoMdl OK pass=11 fail=0 skip=0 exit=0
 IoVolume OK pass=7 fail=0 skip=0 exit=0
 KdSystemDebugControl OK pass=42 fail=0 skip=0 exit=0
 KeApc OK pass=200 fail=0 skip=0 exit=0
-KeDeviceQueue OK pass=44 fail=1 skip=0 exit=0
-    assert KeDevQueue.c:51
+KeDeviceQueue OK pass=45 fail=0 skip=0 exit=0
 KeDpc OK pass=316 fail=0 skip=0 exit=0
 KeEvent OK pass=42601 fail=0 skip=0 exit=0
 KeFloatPointState OK pass=6 fail=0 skip=0 exit=0
@@ -194,9 +237,11 @@ KeIrql OK pass=128 fail=0 skip=0 exit=0
 KeMutex OK pass=1122 fail=0 skip=0 exit=0
 KeSpinLock OK pass=323 fail=0 skip=0 exit=0
 KeTimer OK pass=54 fail=0 skip=0 exit=0
+MmMapIoSpaceEx OK pass=10 fail=0 skip=0 exit=0
 MmMapLockedPagesSpecifyCache OK pass=16743 fail=0 skip=0 exit=0
 MmMdl OK pass=569 fail=0 skip=0 exit=0
 MmReservedMapping OK pass=84 fail=0 skip=0 exit=0
+MmReservedMappingFixed OK pass=84 fail=0 skip=0 exit=0
 MmSection OK pass=353 fail=14 skip=0 exit=0
     assert MmSection.c:371
     assert MmSection.c:380
@@ -243,7 +288,7 @@ ObSecurity OK pass=695 fail=14 skip=0 exit=0
     assert ObSecurity.c:153
 ObSymbolicLink OK pass=154 fail=0 skip=0 exit=0
 ObType OK pass=96 fail=0 skip=0 exit=0
-ObTypes OK pass=763 fail=19 skip=4 exit=0
+ObTypes OK pass=768 fail=14 skip=4 exit=0
     assert ObTypes.cpp:266
     assert ObTypes.cpp:267
     assert ObTypes.cpp:268
@@ -281,12 +326,8 @@ RtlStackKM OK pass=29 fail=11 skip=0 exit=0
     assert RtlStack.c:99
 RtlStrSafeKM OK pass=33 fail=0 skip=0 exit=0
 RtlUnicodeStringKM OK pass=16 fail=0 skip=0 exit=0
-SeInheritance OK pass=704433 fail=14 skip=0 exit=0
-    assert SeInheritance.c:532
-    assert SeInheritance.c:556
-    assert SeInheritance.c:801
-    assert SeInheritance.c:802
-    assert SeInheritance.c:838
+RtlUtf8 OK pass=16 fail=0 skip=0 exit=0
+SeInheritance OK pass=704447 fail=0 skip=0 exit=0
 SeLogonSession OK pass=4 fail=0 skip=0 exit=0
 SeQueryInfoToken OK pass=76 fail=0 skip=0 exit=0
 TcpIpConnect OK pass=27 fail=7 skip=0 exit=0
@@ -305,26 +346,13 @@ ZwCreateSection OK pass=284 fail=3 skip=1 exit=0
     assert ZwCreateSection.c:354
     assert ZwCreateSection.c:378
     assert ZwCreateSection.c:448
-ZwMapViewOfSection OK pass=128 fail=6 skip=1 exit=0
-    assert ZwMapViewOfSection.c:180
-    assert ZwMapViewOfSection.c:181
-    assert ZwMapViewOfSection.c:189
-    assert ZwMapViewOfSection.c:211
-    assert ZwMapViewOfSection.c:221
-    assert ZwMapViewOfSection.c:236
+ZwMapViewOfSection OK pass=135 fail=0 skip=1 exit=0
 ZwWaitForMultipleObjects OK pass=4 fail=0 skip=0 exit=0
 FileAttributes OK pass=84 fail=0 skip=0 exit=0
 FindFile OK pass=253 fail=0 skip=0 exit=0
-HidPDescription OK pass=28 fail=9 skip=3 exit=0
-    assert HidPDescription.c:145
-    assert HidPDescription.c:146
-    assert HidPDescription.c:147
-    assert HidPDescription.c:148
-    assert HidPDescription.c:168
+HidPDescription OK pass=50 fail=2 skip=0 exit=0
     assert HidPDescription.c:169
-    assert HidPDescription.c:189
     assert HidPDescription.c:200
-    assert HidPDescription.c:204
 IoDeviceObject OK pass=185 fail=4 skip=0 exit=0
     assert IoDeviceObject_drv.c:188
     assert IoDeviceObject_drv.c:189

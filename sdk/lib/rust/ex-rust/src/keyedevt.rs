@@ -240,6 +240,14 @@ pub unsafe extern "system" fn ExpReleaseOrWaitForKeyedEvent(
         if !IsListEmpty(core::ptr::addr_of_mut!((*CurrentThread).__bindgen_anon_1.KeyedWaitChain)) {
             RemoveEntryList(core::ptr::addr_of_mut!((*CurrentThread).__bindgen_anon_1.KeyedWaitChain));
             InitializeListHead(core::ptr::addr_of_mut!((*CurrentThread).__bindgen_anon_1.KeyedWaitChain));
+        } else {
+            // DIVERGES from keyedevt.c, which returns the timeout here. An empty chain
+            // means our counterpart dequeued us and released our semaphore while the
+            // wait was timing out: the pairing HAPPENED, and that side was told
+            // STATUS_SUCCESS. Reporting a timeout loses the release -- a condition
+            // variable that then waits again for the wake it already got (rtl-sync
+            // InternalSleep) blocks forever; mf's 10 ms periodic clock stopped dead.
+            Status = STATUS_SUCCESS;
         }
 
         ExReleasePushLockExclusive(core::ptr::addr_of_mut!((*KeyedEvent).HashTable[HashIndex].Lock));

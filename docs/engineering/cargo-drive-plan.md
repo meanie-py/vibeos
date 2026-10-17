@@ -303,9 +303,23 @@ extends it from the boot spine to every fully-Rust module.
        empties it too; a target in an `elseif`/`else` branch is refused. `--check`
        accepts a `cab:` placement dropped for a file txtsetup.sif installs, which
        add_cargo_module keeps out of the cabinet on purpose.
-   - **Still refused** (`--survey`): mstsc (vendored rdesktop C, rung 6); psapi_static
-     and the other C_STATIC_LIBRARY targets (their consumers link them; each needs an
-     `engine:` entry when a consumer moves).
+   - **Wave 13, 2026-10-17: 16 modules, then the audio stack through `--convert`.** dcomp,
+     devmgmt, icuuc, mfplat, mstsc, ndfapi, qwave, setup16, storport (KernelDll),
+     stortest, tbs, testchild, testgui, virtdisk, wer, wevtapi: 48/48 EQUIVALENT. Most were
+     translated after wave 11 and had arrived as cmake-linked placeholder modules; mstsc,
+     refused before for its vendored C, is accepted now. Then the first `--convert` run:
+     beepmidi, kmixer, mmdrv, sndblst, sysaudio, wdmaud, 18/18 EQUIVALENT in 5 minutes.
+     (The wave-2 refusals listed above, bmfd through winprint, were all moved in later
+     waves.)
+   - **Still refused:** whatever `scan_cmake_linked_rust` lists as `(refused)`, with
+     `--survey` for the reason. On 2026-10-17: the C_STATIC_LIBRARY placeholder libraries
+     (apisets, arbiter, csq, mmebuddy, mment4, mmixer, ntlsalib, ntoskrnl_vista, sptilib,
+     usbdex, user32_optional_vista, vfatlib, vfatxlib, winegdi; their consumers should
+     link the Rust crate directly), static variants with no `rust_staticlib_variant`
+     (conutils, cportlib, gdi32_vista_static, setuplib_static, skiplist16,
+     user32_vista_static), `add_idl_reg_scripts` (evr, mf, mfreadwrite), psapi (its i386
+     link has no `libpsapi_rust.a`), psapi_static's shared `SOURCE`, and user32_vista
+     (its Rust has never been linked: cmake binds its exports to user32's import thunks).
 3. **Give the C static libraries a cargo home.** `uuid` becomes a GUID crate generated
    from the same IDL/headers; `wine` (vendored libwine) and `conutils` are small. Until
    then cells link the cmake-built `.a` (`static_libs`), which keeps them cmake-bound.
@@ -342,6 +356,20 @@ extends it from the boot spine to every fully-Rust module.
      **No user-mode cell links a cmake-built static library any more.** What is left
      is the kernel and loader cells' `libcntpr` / `mini_hal` / `freeldr_bios_asm`,
      which belong to the driver rung.
+   - **Done 2026-10-17: every archive is generic.** `cargo_cell_gen.engine_lib` maps any
+     cmake static library to `engine:c:<target>` (ordered after its own
+     `add_dependencies`) and any `rust_staticlib_variant` archive without ENV to
+     `engine:crate:<crate>:<features>:<defaults>`, which reactos-link's `engine_lib` builds
+     with `engine_crate`; ENGINE_LIBS is only for the shapes those cannot express. A
+     `.a` is found by name through an index of every `add_library`/`rust_staticlib_variant`
+     (libsamplerate's binary dir is not its source dir). `--remap` moved the seven cells
+     still on cmake archives (autochk, dcomp, kmixer, mfplat, ndfapi, sndblst, wdmaud):
+     all 21 PEs **byte-identical** after the rebuild. `scan_cmake_linked_rust` reports any
+     cell that names a cmake-built archive (in code, not in comments). One is left in all
+     273 cells: freeldr-cargo's `libfreeldr_bios_asm.a` (pcat.cmake), the BIOS loader's
+     entry/int386/pnpbios asm, which needs freeldr's own include set; reactos-link's
+     `asm_archive` knows only the kernel chain. rosload and uefildr already build
+     `mini_hal`, `libcntpr` and `chkstk` themselves.
 4. **Resources without cmake.** Cells replay cmake's `windres` command today
    (`resource_from_rc`), so they still need cmake configured. The June fallback was a
    committed `.res` per arch; for 189 modules that is a lot of binary in git. Better: the
@@ -352,13 +380,26 @@ extends it from the boot spine to every fully-Rust module.
 6. **Modules that still have C** compile it from cargo (`c_shims` / `c_from_compile_db`
    with committed flags), so cmake's last job is the C-only tail, then nothing.
 
-## How a wave goes
+## How a wave goes (the default for every new module)
 
-1. Build ×3 first so the baseline is current, then `python3 tools/cargo_cell_gen.py
-   --survey` and pick modules marked OK.
-2. `--save-baseline DIR <modules>` while cmake still links them.
-3. `--apply <modules>`; then build ×3 (`vibeos-cli build`).
-4. `--check DIR <modules>`, then smoke ×3, then land.
+**A fully-Rust module is a cargo cell.** After `rustconv port flip` and the build that
+follows it, run
+
+    python3 tools/cargo_cell_gen.py --convert <target> [<target> ...]
+
+It baselines the cmake-built PEs that build left in `build-<arch>`, models every target
+before writing anything (one refusal writes nothing), applies, regenerates each arch's
+graph, builds only the new cells (`ninja <targets>` under the canonical mount) and runs
+`--check`: minutes, not the three extra full builds the manual wave cost. `port flip`
+prints the command. `vibeos-cli check` enforces it: `scan_cmake_linked_rust` (deferred,
+it reads `build-amd64/build.ninja`) lists every module still linked by cmake around a
+placeholder stub, as `(convertible)` or `(refused)`; the baseline holds only refused ones,
+so a newly flipped module or a refusal the generator has learned to handle is a NEW
+finding until it is converted. Teaching the generator a refused shape shrinks the
+baseline.
+
+The manual steps, still there for a wave: build ×3, `--survey`, `--save-baseline DIR`,
+`--apply`, build ×3, `--check DIR`.
 
 A change that should not move a single mapped byte (a library now built by another
 tool from the same source) gets the stricter proof: snapshot every cargo PE first, then

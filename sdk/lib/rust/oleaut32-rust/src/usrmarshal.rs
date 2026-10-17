@@ -423,37 +423,6 @@ unsafe fn interface_user_marshal(
     }
 }
 
-#[cfg(not(feature = "__REACTOS__"))]
-unsafe fn interface_variant_marshal(
-    pFlags: *mut ULONG,
-    Buffer: *mut u8,
-    riid: *const GUID,
-    punk: *mut IUnknown,
-) -> *mut u8 {
-
-    TRACE!(
-        b"pFlags=%d, Buffer=%p, pUnk=%p\n\0".as_ptr() as *const i8,
-        *pFlags,
-        Buffer,
-        punk,
-    );
-
-    if punk.is_null() {
-        core::ptr::write_bytes(Buffer, 0, core::mem::size_of::<ULONG>()); // nolint: silent-failure (Buffer is *mut u8; zeroes sizeof(ULONG)=4 bytes, matches C memset(Buffer,0,sizeof(ULONG)))
-        return Buffer.add(core::mem::size_of::<ULONG>());
-    } else {
-        *(Buffer as *mut DWORD) = punk as DWORD_PTR as DWORD;
-        let Buffer = Buffer.add(core::mem::size_of::<DWORD>());
-        return WdtpInterfacePointer_UserMarshal(
-            pFlags,
-            LOWORD(*pFlags) as ULONG,
-            Buffer,
-            punk,
-            riid,
-        );
-    }
-}
-
 unsafe fn interface_user_unmarshal(
     pFlags: *mut ULONG,
     mut Buffer: *mut u8,
@@ -604,64 +573,26 @@ pub unsafe extern "system" fn VARIANT_UserMarshal(
                 Pos = VARIANT_UserMarshal(pFlags, Pos, *V_VARIANTREF_ref(pvar) );
             }
             x if x == VT_UNKNOWN as USHORT => {
-                #[cfg(feature = "__REACTOS__")]
-                {
-                    Pos = interface_user_marshal(pFlags, Pos, &IID_IUnknown, (*V_UNKNOWN_ref(pvar)));
-                }
-                #[cfg(not(feature = "__REACTOS__"))]
-                {
-                    Pos = interface_variant_marshal(pFlags, Pos, &IID_IUnknown, *V_UNKNOWN_ref(pvar) );
-                }
+                Pos = interface_user_marshal(pFlags, Pos, &IID_IUnknown, (*V_UNKNOWN_ref(pvar)));
             }
             x if x == (VT_UNKNOWN | VT_BYREF) as USHORT => {
-                #[cfg(feature = "__REACTOS__")]
-                {
-                    Pos = interface_user_marshal(pFlags, Pos, &IID_IUnknown, *(*V_UNKNOWNREF_ref(pvar)));
-                }
-                #[cfg(not(feature = "__REACTOS__"))]
-                {
-                    Pos = interface_variant_marshal(pFlags, Pos, &IID_IUnknown, *(*V_UNKNOWNREF_ref(pvar)));
-                }
+                Pos = interface_user_marshal(pFlags, Pos, &IID_IUnknown, *(*V_UNKNOWNREF_ref(pvar)));
             }
             x if x == VT_DISPATCH as USHORT => {
-                #[cfg(feature = "__REACTOS__")]
-                {
-                    Pos = interface_user_marshal(
-                        pFlags,
-                        Pos,
-                        &IID_IDispatch,
-                        (*V_DISPATCH_ref(pvar)) as *mut IUnknown,
-                    );
-                }
-                #[cfg(not(feature = "__REACTOS__"))]
-                {
-                    Pos = interface_variant_marshal(
-                        pFlags,
-                        Pos,
-                        &IID_IDispatch,
-                        (*V_DISPATCH_ref(pvar)) as *mut IUnknown,
-                    );
-                }
+                Pos = interface_user_marshal(
+                    pFlags,
+                    Pos,
+                    &IID_IDispatch,
+                    (*V_DISPATCH_ref(pvar)) as *mut IUnknown,
+                );
             }
             x if x == (VT_DISPATCH | VT_BYREF) as USHORT => {
-                #[cfg(feature = "__REACTOS__")]
-                {
-                    Pos = interface_user_marshal(
-                        pFlags,
-                        Pos,
-                        &IID_IDispatch,
-                        *(*V_DISPATCHREF_ref(pvar)) as *mut IUnknown,
-                    );
-                }
-                #[cfg(not(feature = "__REACTOS__"))]
-                {
-                    Pos = interface_variant_marshal(
-                        pFlags,
-                        Pos,
-                        &IID_IDispatch,
-                        *(*V_DISPATCHREF_ref(pvar)) as *mut IUnknown,
-                    );
-                }
+                Pos = interface_user_marshal(
+                    pFlags,
+                    Pos,
+                    &IID_IDispatch,
+                    *(*V_DISPATCHREF_ref(pvar)) as *mut IUnknown,
+                );
             }
             x if x == VT_RECORD as USHORT => {
                 FIXME!(b"handle BRECORD by val\n\0".as_ptr() as *const i8);

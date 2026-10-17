@@ -45,6 +45,10 @@ macro_rules! DebugTrace { ($($t:tt)*) => {}; }
 macro_rules! DebugUnwind { ($($t:tt)*) => {}; }
 macro_rules! DebugDump { ($($t:tt)*) => {}; }
 macro_rules! DbgDoit { ($($t:tt)*) => {}; }
+// fatdata.h's other spelling, `DebugDoit(X) {NOTHING;}` off FASTFATDBG: the counter bumps
+// it wraps are not evaluated in a free build. It was an empty generic fn, an extern bound
+// to a `VOID DebugDoit(PVOID)` cohab stub, and two unconditional increments until 2026-10-16.
+macro_rules! DebugDoit { ($($t:tt)*) => {}; }
 
 // nodetype.h `NodeType(Ptr)`: `*((PNODE_TYPE_CODE)(Ptr))`, the USHORT every FAT structure
 // starts with. A macro, not a call into rust_cohab_stub.c.

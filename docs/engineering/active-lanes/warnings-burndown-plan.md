@@ -9,46 +9,48 @@ the genuine-signal warnings are audited and fixed, and — critically — the fi
 **stay** fixed (no blanket re-suppression). Incremental, per-crate, each cluster gated ×3
 and landed on its own so conflicts stay localized and every step is revertible.
 
-## RESUME HERE (parked 2026-10-12, next session the following weekend)
+## RESUME HERE (updated 2026-10-17)
 
-**State at park.** Last landing: master `20b8abeb1468` (lane tip `410f354cf48c`). The lane is
-clean at master. The census on that tree (`python3 tools/rust_warning_census.py build-i386
-build-amd64 build-arm64`) read **7,517 sites: 55 UB, 1,440 LOGIC, 6,002 NOISE**. That count
-left 12 stale crates out, so rebuild all three arches before trusting a new total.
-fastfat-rust has **0** warnings on all three arches.
+**State.** The 2026-10-17 census read **2,349 sites (48 UB, 1,072 LOGIC, 1,229 NOISE)**,
+down from 7,215. It covered 695 fresh units; the only stale one was reactos-link, a host tool
+whose mtime the merge bumped. `static_mut_refs` and `improper_ctypes_definitions` read 0 and are
+now in `rust_ub_deny` next to `invalid_value` and `deref_nullptr`. Re-run the census with
+`python3 tools/rust_warning_census.py build-i386 build-amd64 build-arm64`. Details are under
+"2026-10-17" below.
 
-**First moves next session:**
-1. `git fetch && git merge origin/master`, then build all three arches and re-run the census.
-2. Check `land-status --mine` and the roadmap registry entry "apc32.exe rung 7". The kernel
-   APC flake that bounced b8eac0dccad2 is not ours, but note whether anyone has fixed it.
+**Later on 2026-10-17** (after that census; landed as b8f5a91889d, dd8d8701261 and the
+`unexpected_cfgs` batch):
+- **`improper_ctypes` 48 -> 0, now denied.** All of the UB tier is denied in `rust_ub_deny`.
+- **More `clashing_extern` cleared.**
+  - cdrom 72 -> 0, plus about 75 external-API clashes in 12 crates.
+  - Remaining outside shell32: menuband's 4 come from the `SIZE_T = usize` in shell32's
+    shellcom.rs, and the i386-only pairs are the same width (benign).
+  - shell32's 880 stay with the shell32-com lane.
+- **New gate `scan_fnclass_cc`:** a callback declared through an NTAPI function class and defined
+  cdecl. It found 4 real i386 bugs.
+- **`unexpected_cfgs` is LOGIC now.** It found desk's `unicode` bug. The remaining 4 are
+  crt-shared (msvcrt-homebrew's) and wdmaud_drv (the audio lane).
 
-**Owed, roughly in priority order** (each is detailed in the dated sections below):
-- **UB tier.**
-  - `invalid_value`: deny it tree-wide once the census reads 0. shell32-com fixed attrib,
-    setuplib and winspool (c06ca3ba658). cpp-cluster owns msctf. The shell32 session agreed
-    the deny comes after a fresh zero.
-  - `deref_nullptr` (7): eventlog, localspl, ndis, rpcss and one more. These are newer crates
-    from other lanes; grade them.
-  - `improper_ctypes` (48): mspaint and msctfime. **The user said leave mspaint for now
-    (2026-10-11).**
-- **NTDDI version-branch scanner.** `scan_cfg_vs_c` only judges arch conditionals. Every
-  MS-architecture driver with `#if NTDDI_VERSION` blocks (cdfs, classpnp, disk, cdrom) can run
-  code its WS03 build compiles out, as fastfat did (~100 sites). Method: evaluate each C `#if`
-  at the module's real `_WIN32_WINNT`, then diff against the same-stem Rust fn. Field manual,
-  "The version block translated UNGATED".
-- **The rest of `clashing_extern` (1,392).** fastfat's recipe generalises:
-  `tools/extern_to_use.py`, then a build, `rustconv crate-repair`, and graded residue applied
-  with `tools/apply_agent_edits.py`. Next candidates are the biggest per-crate counts in the
-  census.
-- **`scan_macro_fn_shadow` missed fastfat's fatdata.h trace macros.** Find out why the harvest
-  skips a driver-private header.
-- **crate-repair's `width_alias_cast`** cast to a type alias local to the callee's module
-  (`as FAT_FLUSH_TYPE`), a name the call site cannot see. Three sites, fixed by hand. Make it
-  qualify the name or use the definition's real type.
-- **Noise.**
-  - Regenerate the bindgen islands (about 4,590 of the 4,610 `unnecessary_transmutes`).
-  - `unused_imports`, held back by imports used only under cfg(test).
-  - `stdmethod!` unused-variable noise.
+**Owed, roughly in priority order:**
+- **The rest of `clashing_extern`:** shell32 (880, the shell32-com lane's), and menuband's
+  shellcom pair. `extern_to_use` gaps:
+  - it does not collapse two declarations in the SAME file under different inline mods
+    (rtl-strings' `cabi/mod.rs` was done by hand);
+  - it does not see that a definition is cfg-gated (cdrom's i386-only `KeQueryTickCount`
+    extern).
+- **LOGIC smalls:** `unused_assignments` (29), `unreachable_code` (6), `useless_ptr_null_checks`,
+  `unused_comparisons`, `unused_must_use`, and the obname/psnotify fn-pointer comparison.
+- **Noise:**
+  - `non_snake_case` (334), `unused_labels` (172), `unused_unsafe` (142), `unused_imports` (97),
+    `dead_code` (90).
+  - `tools/apply_rustc_suggestions.py --skip-crate` keeps a sweep off hot crates. Rustc offers
+    no machine fix for most of what is left.
+  - The 12 float `unnecessary_transmutes` are msvcrt-homebrew's.
+- **Islands:**
+  - the committed mspaint and msctfime islands have drifted far from what the generator now
+    writes (thousands of lines). A real regen is its own job.
+  - bindgen declares a function-class declaration `extern "C"` on i386, which is wrong for
+    NTAPI classes. `scan_fnclass_cc` covers the Rust side.
 - **Upstream drift:** explorer #9332, oleaut32 VarMod and serializeBMP.
 - **pcix arbiters**, and the preserved upstream-C bugs under "Owed follow-ups".
 
@@ -60,10 +62,74 @@ fastfat-rust has **0** warnings on all three arches.
   external-symbol grader's 14 "UB" calls were all benign or latent once checked: it missed a
   `cfg` split, a trampoline, and a C-side truncation. By contrast the FlagOn-truncation and
   constant audits were right, and found live bugs.
-- Before `land`: build all three arches on the exact tree you commit, then run `check-tooling`
-  and `check --strict --scope source-early` and `--scope source-deferred`. `land` refuses a tree
-  no build has seen, and its strict preflight lints run partitions plain `check` skips.
-  Don't touch the tree while a smoke is running; its staleness check runs late.
+- Landing (since 2026-10-16): commit, run `./vibeos-cli check` and the tests for what you
+  touched, then message the `vibeos-integration-f2` session with
+  `merge warnings-burndown @ <sha> — <one line>`. Keep working; it merges, gates and reports
+  back (docs/engineering/active-lanes/integration.md). No `land`, and no warm builds ×3 just
+  to submit. Don't touch the tree while a smoke you started is running.
+
+## 2026-10-17 — UB tier closed except mspaint; clashing_extern 1,325 -> 1,031
+
+- **UB:**
+  - crt-startup-rust's `static mut` refs became `&raw mut`.
+  - rapps and drwtsn32 had Rust-only helpers declared `extern "C"` with Rust types. They are
+    plain `unsafe fn` now.
+  - Both lints are denied now.
+- **`clashing_extern`.** `tools/extern_to_use.py` grew several things:
+  - a real mod-tree walk (`#[path]`, inline `mod x {}`);
+  - `pub use` for a pub declaration;
+  - generated-island and bindgen-declaration skips;
+  - `--canonical` for externals.
+
+  It also learned that a declaration's attributes travel with it. menuband's orphaned
+  `link_name` would have rebound an i386 import. 83 external APIs (254 declarations) were
+  graded by two Haiku agents and checked against the headers; none passed a wrong width. Real
+  bugs fixed:
+  - kernel32's `ExitThread`/`ExitProcess` declared as returning;
+  - cdfs's FSP dispatcher discarding a status;
+  - private struct copies: user32 DDE, acpi `POWER_STATE`, menuband `IUnknown`, ole32
+    `GUID`/`BITMAP`.
+- **`crate-repair` `c_integer_widen`:** under an arithmetic, bitwise or shift operator, `as _`
+  cannot be inferred, so the rule traded an E0308 for an E0282 that its pass guard kept. It now
+  names the other operand's declared type, or declines with `uninferable_operand`. Comparisons
+  infer, and keep `as _`.
+- **`scan_version_vs_c`** now also reads ALL_CAPS constants in a dead branch, counted only where
+  the Rust decides on them. This was the "flag test is invisible" follow-up. It found:
+  - cdfs refusing `FILE_OPEN_REQUIRING_OPLOCK` (WIN7-only);
+  - classpnp parsing the WINBLUE LBP parameter block on a WIN8 build;
+  - pnpmgr answering `PNP_PROPERTY_CONTAINERID` (WIN7) on a WS03 kernel;
+  - cdfs's `cfg!(not(reactos))`.
+
+  Field names were tried and dropped, because every hit was an eager pure read. classpnp's
+  `#[cfg(any())]` stays: a named cfg would need check-cfg plumbing to say what the
+  `// dead: C is #if ...` comment already says.
+- **Noise:** the bindgen generator now writes `allow(unnecessary_transmutes)` into its islands
+  (4,590 sites; all 915 islands updated). `apply_rustc_suggestions` applied about 120 fixes in
+  cold crates, and gained `--skip-crate` plus the census's renamed-lib dep-info lookup.
+
+## 2026-10-16 — four owed items closed, and the version/null classes gated
+
+- **crate-repair `width_alias_cast`** no longer writes a crate-private alias into a module that
+  cannot see it (`harvest_alias_scope`, decline `alias_not_in_scope`). Measured over the tree,
+  it agrees with all 181 compiling uses of such aliases.
+- **`scan_macro_fn_shadow` and fatdata.h:** its discard harvest did not know `{NOTHING;}`. Now it
+  does, and that found cdfs's 28 `ASSERT_*` shadows and fastfat's `DebugDoit`. Those are crate
+  macros now, and fastfat's dead C debug stubs (`DebugTrace` … `TimerStop`) are gone.
+- **`tools/scan_version_vs_c.py`** (new lint, empty baseline, control). Its first run found 7
+  real sites beyond fastfat: classpnp `ClasspDeleteTimer` (zeroed a live KTIMER header) and its
+  power callback, comctl32 syslink (deleted the parent's brush) and tooltips, cmd's Win7
+  variable, threadpool's thread naming, and shell32's open-verb spelling. It also found fastfat's
+  four disk-accounting calls and `FsRtlAreThereWaitingFileLocks`, which the 2026-10-11 pass had
+  left ungated. Lesson: classpnp builds at WIN8, not WS03; the cutover erased that from its
+  CMakeLists, so the scanner reads build.ninja first and the CMakeLists history second.
+- **`deref_nullptr`:** 78 offsetof-through-null sites became `core::mem::offset_of!`
+  (`tools/null_offset_to_offset_of.py`; `--lint` gates the class at 0).
+- **`invalid_value` deny:** the fresh census reads 0, so `build` now has a `rust_ub_deny` stage
+  (`rust_warning_census.py --deny invalid_value,deref_nullptr` over that arch's cargo cache).
+  The census also learned to find a renamed lib's dep-info (atlclasses-rust builds `atl_rust`),
+  which had made it refuse the whole total as stale.
+- `c_twin.rust_functions` counted lines quadratically. Fixing that took the version scanner
+  from 218 s to 71 s and sped up `scan_cfg_vs_c` too.
 
 ## The census finding that reframes everything (2026-07-16)
 

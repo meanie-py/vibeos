@@ -1,9 +1,14 @@
 use ntkrnl_sys::base::*;
+// One declaration per external symbol: ddk_shims.rs.
+use crate::ddk_shims::FlagOn;
+// The crate's own functions: the definition is the declaration.
+use crate::strucsup::CdCleanupIrpContext;
+use crate::cddata::CdCompleteRequest;
+use crate::cdmacros::CdReleaseFcb;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ddk::{ExQueueWorkItem, IoGetCurrentIrpStackLocation, IoMarkIrpPending, PIO_STACK_LOCATION, PIRP, WORK_QUEUE_TYPE};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{IRP_CONTEXT, PIRP_CONTEXT, PFCB, VOLUME_DEVICE_OBJECT, CdFspDispatch};
-use ntkrnl_sys::ddk::{IRP};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{CDFS_BUG_CHECK_WORKQUE};
 use ntkrnl_sys::constants::{STATUS_PENDING, IRP_MJ_CREATE, IRP_MJ_READ, IRP_MJ_WRITE};
@@ -18,33 +23,27 @@ const IoWriteAccess: u32 = 1;
 const CriticalWorkQueue: WORK_QUEUE_TYPE = 0;
 
 extern "C" {
-    fn ASSERT_IRP_CONTEXT(IrpContext: *mut IRP_CONTEXT);
 }
 extern "C" {
-    fn ASSERT_IRP(Irp: *mut IRP);
 }
 extern "C" {
     pub fn CdTeardownStructures( IrpContext: PIRP_CONTEXT, StartingFcb: PFCB, RemovedStartingFcb: PBOOLEAN, );
 }
 extern "C" {
-    fn CdReleaseFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut core::ffi::c_void);
 }
 extern "C" {
 }
 extern "C" {
-    fn FlagOn(Flags: u32, Flag: u32) -> u32;
 }
 extern "C" {
     fn SetFlag(Flags: *mut u32, Flag: u32);
 }
 extern "C" {
-    fn CdCleanupIrpContext(IrpContext: *mut IRP_CONTEXT, b: u32);
 }
 extern "C" {
     fn CdLockUserBuffer(IrpContext: *mut IRP_CONTEXT, Length: u32, DesiredAccess: u32);
 }
 extern "C" {
-    fn CdCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
 }
 
 // ---- file-scope preamble (translated) ----
@@ -137,8 +136,8 @@ pub unsafe extern "C" fn CdFsdPostRequest(
     Irp: PIRP,
 ) -> NTSTATUS {
     PAGED_CODE!();
-    ASSERT_IRP_CONTEXT(IrpContext);
-    ASSERT_IRP(Irp);
+    ASSERT_IRP_CONTEXT!(IrpContext);
+    ASSERT_IRP!(Irp);
     CdPrePostIrp(IrpContext, Irp);
     CdAddToWorkque(IrpContext, Irp);
     STATUS_PENDING
@@ -154,8 +153,8 @@ pub unsafe extern "system" fn CdPrePostIrp(
 
     PAGED_CODE!();
 
-    ASSERT_IRP_CONTEXT(IrpContext);
-    ASSERT_IRP(Irp);
+    ASSERT_IRP_CONTEXT!(IrpContext);
+    ASSERT_IRP!(Irp);
 
     match (*IrpContext).MajorFunction {
         IRP_MJ_CREATE => {
@@ -173,7 +172,7 @@ pub unsafe extern "system" fn CdPrePostIrp(
                     // _Analysis_assume_ removed: SAL no-op annotation; argument must never be evaluated (0xB8 class)
                     CdReleaseFcb(
                         IrpContext,
-                        fcb as *mut core::ffi::c_void,
+                        (fcb as *mut core::ffi::c_void).cast(),
                     );
                 }
                 *(*IrpContext).__bindgen_anon_1.TeardownFcb = core::ptr::null_mut();
@@ -244,7 +243,7 @@ pub unsafe extern "system" fn CdOplockComplete(
                         let fcb_nonpaged = (*fcb).FcbNonpaged;
                         let _resource = core::ptr::addr_of_mut!((*fcb_nonpaged).FcbResource);
                         // _Analysis_assume_ removed: SAL no-op annotation; argument must never be evaluated (0xB8 class)
-                        CdReleaseFcb(IrpContext, fcb as *mut core::ffi::c_void);
+                        CdReleaseFcb(IrpContext, (fcb as *mut core::ffi::c_void).cast());
                     }
                     *((*IrpContext).__bindgen_anon_1.TeardownFcb) = core::ptr::null_mut();
                     (*IrpContext).__bindgen_anon_1.TeardownFcb = core::ptr::null_mut();
@@ -254,7 +253,7 @@ pub unsafe extern "system" fn CdOplockComplete(
         }
         CdAddToWorkque(IrpContext, Irp);
     } else {
-        CdCompleteRequest(IrpContext, Irp, (*Irp).IoStatus.__bindgen_anon_1.Status);
+        CdCompleteRequest((IrpContext).cast(), Irp, (*Irp).IoStatus.__bindgen_anon_1.Status);
     }
 }
 

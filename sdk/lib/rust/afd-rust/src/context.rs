@@ -1,4 +1,6 @@
 use crate::types::*;
+// The crate's own functions: the definition is the declaration.
+use crate::lock::LockRequest;
 use crate::glue::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -8,7 +10,6 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP};
 
 extern "C" {
-    fn LockRequest(Irp: PIRP, IrpSp: PIO_STACK_LOCATION, Force: BOOLEAN, Size: PULONG) -> PVOID;
     fn LostSocket(Irp: PIRP) -> NTSTATUS;
     fn SocketAcquireStateLock(FCB: PAFD_FCB) -> BOOLEAN;
 }

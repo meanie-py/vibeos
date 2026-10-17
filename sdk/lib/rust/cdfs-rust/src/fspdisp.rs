@@ -1,5 +1,19 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::base::*;
+// The crate's own functions: the definition is the declaration.
+use crate::strucsup::CdCleanupIrpContext;
+use crate::cleanup::CdCommonCleanup;
+use crate::create::CdCommonCreate;
+use crate::devctrl::CdCommonDevControl;
+use crate::dirctrl::CdCommonDirControl;
+use crate::fsctrl::CdCommonFsControl;
+use crate::lockctrl::CdCommonLockControl;
+use crate::pnp::CdCommonPnp;
+use crate::fileinfo::CdCommonQueryInfo;
+use crate::volinfo::CdCommonQueryVolInfo;
+use crate::read::CdCommonRead;
+use crate::fileinfo::CdCommonSetInfo;
+use crate::cddata::CdCompleteRequest;
 use ntkrnl_sys::constants::*;
  // imports STATUS_SUCCESS, etc. use ntkrnl_sys::driver_ddk::*; // imports IRP_MJ_* // Local variables, matching the C let mut thread_context: THREAD_CONTEXT = core::mem::zeroed();
 use ntkrnl_sys::driver_ddk::*;
@@ -13,40 +27,28 @@ use crate::glue::{CDFS_BUG_CHECK_FSPDISP};
 use crate::cddata::{CdExceptionFilter, CdProcessException};
 
 extern "C" {
-    fn CdCommonCreate(IrpContext: *mut IRP_CONTEXT, Irp: PIRP);
 }
 extern "C" {
-    fn CdCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: PIRP);
 }
 extern "C" {
-    fn CdCommonQueryInfo(IrpContext: *mut IRP_CONTEXT, Irp: PIRP);
 }
 extern "C" {
-    fn CdCommonSetInfo(IrpContext: *mut IRP_CONTEXT, Irp: PIRP);
 }
 extern "C" {
-    fn CdCommonQueryVolInfo(IrpContext: *mut IRP_CONTEXT, Irp: PIRP);
 }
 extern "C" {
-    fn CdCommonDirControl(IrpContext: *mut IRP_CONTEXT, Irp: PIRP);
 }
 extern "C" {
-    fn CdCommonFsControl(IrpContext: *mut IRP_CONTEXT, Irp: PIRP);
 }
 extern "C" {
-    fn CdCommonDevControl(IrpContext: *mut IRP_CONTEXT, Irp: PIRP);
 }
 extern "C" {
-    fn CdCommonLockControl(IrpContext: *mut IRP_CONTEXT, Irp: PIRP);
 }
 extern "C" {
-    fn CdCommonCleanup(IrpContext: *mut IRP_CONTEXT, Irp: PIRP);
 }
 extern "C" {
-    fn CdCommonPnp(IrpContext: *mut IRP_CONTEXT, Irp: PIRP);
 }
 extern "C" {
-    fn CdCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
 }
 extern "C" {
     fn CdSetThreadContext(IrpContext: *mut IRP_CONTEXT, ThreadContext: *mut THREAD_CONTEXT);
@@ -57,7 +59,6 @@ extern "C" {
     fn SetFlag(Flags: *mut u32, Mask: u32);
 }
 extern "C" {
-    fn CdCleanupIrpContext(IrpContext: *mut IRP_CONTEXT, b: BOOLEAN);
 }
 extern "C" {
 }
@@ -119,27 +120,27 @@ pub unsafe extern "system" fn CdFspDispatch(
                 &mut status,
                 |status| {
                     match (*irp_context).MajorFunction {
-                        IRP_MJ_CREATE => CdCommonCreate(irp_context, irp),
+                        IRP_MJ_CREATE => { CdCommonCreate(irp_context, irp); }
 
-                        IRP_MJ_CLOSE => NT_ASSERT!(0 /* FALSE */),
+                        IRP_MJ_CLOSE => { NT_ASSERT!(0 /* FALSE */); }
 
-                        IRP_MJ_READ => CdCommonRead(irp_context, irp),
+                        IRP_MJ_READ => { CdCommonRead(irp_context, irp); }
 
-                        IRP_MJ_QUERY_INFORMATION => CdCommonQueryInfo(irp_context, irp),
+                        IRP_MJ_QUERY_INFORMATION => { CdCommonQueryInfo(irp_context, irp); }
 
-                        IRP_MJ_SET_INFORMATION => CdCommonSetInfo(irp_context, irp),
+                        IRP_MJ_SET_INFORMATION => { CdCommonSetInfo(irp_context, irp); }
 
-                        IRP_MJ_QUERY_VOLUME_INFORMATION => CdCommonQueryVolInfo(irp_context, irp),
+                        IRP_MJ_QUERY_VOLUME_INFORMATION => { CdCommonQueryVolInfo(irp_context, irp); }
 
-                        IRP_MJ_DIRECTORY_CONTROL => CdCommonDirControl(irp_context, irp),
+                        IRP_MJ_DIRECTORY_CONTROL => { CdCommonDirControl(irp_context, irp); }
 
-                        IRP_MJ_FILE_SYSTEM_CONTROL => CdCommonFsControl(irp_context, irp),
+                        IRP_MJ_FILE_SYSTEM_CONTROL => { CdCommonFsControl(irp_context, irp); }
 
-                        IRP_MJ_DEVICE_CONTROL => CdCommonDevControl(irp_context, irp),
+                        IRP_MJ_DEVICE_CONTROL => { CdCommonDevControl(irp_context, irp); }
 
-                        IRP_MJ_LOCK_CONTROL => CdCommonLockControl(irp_context, irp),
+                        IRP_MJ_LOCK_CONTROL => { CdCommonLockControl(irp_context, irp); }
 
-                        IRP_MJ_CLEANUP => CdCommonCleanup(irp_context, irp),
+                        IRP_MJ_CLEANUP => { CdCommonCleanup(irp_context, irp); }
 
                         IRP_MJ_PNP => {
                             NT_ASSERT!(0 /* FALSE */);
@@ -148,7 +149,7 @@ pub unsafe extern "system" fn CdFspDispatch(
 
                         _ => {
                             *status = STATUS_INVALID_DEVICE_REQUEST;
-                            CdCompleteRequest(irp_context, irp, *status);
+                            CdCompleteRequest((irp_context).cast(), irp, *status);
                         }
                     }
                 },

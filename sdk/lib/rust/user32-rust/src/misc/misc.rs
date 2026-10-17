@@ -1,4 +1,6 @@
 use win32k_sys::win32k::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::internal::RtlUnicodeToMultiByteN;
 #[allow(unused_imports)]
 use core::ffi::c_void;
 
@@ -24,13 +26,6 @@ extern "system" {
         BytesInUnicodeString: PULONG,
         MultiByteString: *const core::ffi::c_char,
         BytesInMultiByteString: ULONG,
-    ) -> NTSTATUS;
-    fn RtlUnicodeToMultiByteN(
-        MultiByteString: *mut core::ffi::c_char,
-        MaxBytesInMultiByteString: ULONG,
-        BytesInMultiByteString: PULONG,
-        UnicodeString: PCWCH,
-        BytesInUnicodeString: ULONG,
     ) -> NTSTATUS;
     fn NtQuerySecurityObject(
         Handle: HANDLE,

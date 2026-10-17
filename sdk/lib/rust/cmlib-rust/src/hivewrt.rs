@@ -56,6 +56,8 @@
 //! kernel-only hard-error and timestamp calls.
 
 use ntkrnl_sys::mm::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::hiveinit::DbgPrint;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{HBASE_BLOCK, HHIVE, PHBASE_BLOCK, PHHIVE, RtlFindSetBits, HSTORAGE_TYPE_Stable as Stable};
 #[cfg(not(feature = "bldr"))]
@@ -68,7 +70,6 @@ extern "system" {
     fn HvpHiveHeaderChecksum(BaseBlock: PHBASE_BLOCK) -> u32;
 }
 unsafe extern "C" {
-    fn DbgPrint(format: *const i8, ...);
 }
 unsafe extern "system" {
     // KeQuerySystemTime is NTAPI (stdcall on i386 → _KeQuerySystemTime@4).

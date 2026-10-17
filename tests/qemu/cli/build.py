@@ -478,7 +478,10 @@ def _inputs_moved(repo: Path, start_tree: str | None) -> list[str]:
         )
     except (OSError, RuntimeError, subprocess.SubprocessError):
         return []
-    return [line for line in cp.stdout.splitlines() if line]
+    # Cargo rewrites a `Cargo.lock` itself when a build adds a crate (a new cargo cell,
+    # a new dependency): derived from the manifests, which this check still covers, and
+    # the build's own write rather than an edit under it. Wave 13 tripped on exactly that.
+    return [line for line in cp.stdout.splitlines() if line and not line.endswith("Cargo.lock")]
 
 
 def _scheduled_store_gc(args) -> None:
