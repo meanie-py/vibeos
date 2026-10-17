@@ -2277,9 +2277,10 @@ impl Linker {
             // found, so its `[target.i686-pc-windows-gnu] -sse,-sse2` rustflags
             // don't apply — cnt-rust's `float` feature needs SSE, and cmake
             // builds it with SSE for this exact reason.
-            // With no cmake build dir, the repo root: the same ancestors, so the same
-            // (absent) .cargo/config.toml discovery.
-            cmd.current_dir(if self.build_dir.is_dir() { &self.build_dir } else { &self.repo_root });
+            // With no cmake build, an empty build-<arch> (gitignored) is the same place for
+            // config discovery, and it is the cwd the artifact store audits.
+            std::fs::create_dir_all(&self.build_dir).expect("mkdir build-<arch> for nested cargo");
+            cmd.current_dir(&self.build_dir);
             // cnt-rust REQUIRES `-C no-prepopulate-passes` on EVERY arch: its
             // per-fn cgu-split CRT shims miscompile under LLVM's default
             // pre-passes (corrupted printf/streamout + mem/string ops). On
