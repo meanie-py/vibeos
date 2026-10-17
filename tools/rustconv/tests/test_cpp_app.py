@@ -1254,3 +1254,23 @@ def test_a_qualified_base_call_is_non_virtual():
     assert "this_->__base0.ComputeMinimalSize__body(size)" in out
     assert "this_->__base0.Plain()" in out and "CUiBox::" not in out
     assert "CListView::this_->Create(p)" in out  # no base path: left alone
+
+
+def test_an_empty_constructor_is_a_definition_the_scanner_sees(tmp_path):
+    # cicero's `CUIFSystemInfo() { }`: wrapped as `{ { } }` it parses as a declaration with
+    # a brace initializer, the scanner dropped it, and `__make_0` called a missing `__ctor_0`.
+    from pathlib import Path
+
+    from rustconv.cpp_app import Hierarchy, _synthetic_method
+    from rustconv.scanner import scan_file
+
+    m = _model()
+    info = ClassModel("SysInfo", "SysInfo", "class", "s.h")
+    info.fields = [Field("n", "unsigned int")]
+    info.methods = [_m("SysInfo", "ctor", body=("s.h", 0, 1), lowered="{ }")]
+    _assign_names(info)
+    m.classes[info.qualified] = info
+    unit = _synthetic_method(info, info.methods[0], Hierarchy(m), m)
+    p = Path(tmp_path) / "s_h.hpp"
+    p.write_text(unit)
+    assert [f.name for f in scan_file(p).functions] == ["SysInfo____ctor_0"]

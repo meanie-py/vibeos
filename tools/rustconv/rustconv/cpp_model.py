@@ -668,6 +668,14 @@ def _ctor_args(text: str | None, names: tuple[str, ...]) -> str | None:
             return None
         if t.startswith(n) and t[len(n) :].lstrip().startswith(("(", "{")):
             return t[len(n) :].strip()
+        # A templated base, named with the PATTERN's arguments in the source and the
+        # instance's in clang's type: `CIC_IMCC_LOCK<T_DATA>(hIMCC)` for base
+        # `CIC_IMCC_LOCK<tagCOMPOSITIONSTRING>`. Unstripped, the prologue took the first and
+        # last characters for the parentheses: `__ctor_0(IC_IMCC_LOCK<T_DATA>(hIMCC)`.
+        head = n.split("<", 1)[0].strip()
+        m = re.match(rf"{re.escape(head)}\s*<[^(){{}};]*>\s*(?=[({{])", t) if "<" in n else None
+        if m is not None and head:
+            return t[m.end() :].strip()
     return t
 
 
@@ -775,6 +783,21 @@ class _Extractor:
                     self.model.typedefs.append(entry)
             elif kind == "EnumDecl" and self.mine(_file_of(n)) and n.get("name"):
                 self.enum(n)
+            elif kind == "VarDecl" and n.get("previousDecl") in self.decls:
+                # `CUIFBitmapDC *CUIFBitmapDC::s_phdcDst = NULL;`, a static member's
+                # out-of-line definition: every use after it refers to THIS decl's id, and
+                # unregistered it left cicero's `CUIFBitmapDC::s_phdcDst` qualified (116
+                # unresolved paths on regeneration).
+                info = self.decls[n["id"]] = self.decls[n["previousDecl"]]
+                # Its initializer is the member's value before any code runs: msctfime's
+                # `DWORD TLS::s_dwTlsIndex = (DWORD)-1;` shipped as a static of 0, a TLS
+                # index that is valid and somebody else's.
+                owner = self.model.classes.get(info.owner)
+                field = (
+                    next((f for f in owner.fields if f.name == info.name), None) if owner else None
+                )
+                if field is not None and n.get("init") and n.get("inner"):
+                    field.default_init = self.src.node_text(n["inner"][0])
             elif kind == "VarDecl" and record is None and self.mine(_file_of(n)):
                 self.global_var(n)
 
@@ -784,7 +807,14 @@ class _Extractor:
         The pattern itself is never a class -- its layout depends on its arguments
         (`CUiWindow<T> : .., public T`). An instantiation has the arguments substituted in its
         bases, fields and signatures, and carries the bodies this TU USES (another TU may
-        instantiate more of them: _register attaches those)."""
+        instantiate more of them: _register attaches those).
+
+        Not a template cpp_templates.REGISTRY gives a hand-written generic: cicero's
+        `CicArray<T>` is one Rust struct every CTF crate builds against, and instantiating
+        it here as `CicArray_CUIFObject` re-ported its methods per argument and broke
+        msutb/msctfime's API on cicero's first regeneration."""
+        if n.get("name") in cpp_templates.REGISTRY:
+            return
         pattern = next((c for c in n.get("inner", []) if c.get("kind") == "CXXRecordDecl"), None)
         if pattern is None or not (self.mine(_file_of(pattern)) or self.external_class(pattern)):
             return
@@ -909,6 +939,10 @@ class _Extractor:
                     p.c_type = rw(p.c_type)
                 m.inits = [(rw(a), rw(b)) for a, b in m.inits]
                 m.lowered_inits = [(rw(a), rw(b)) for a, b in m.lowered_inits]
+                if cls.template:
+                    # The init list is the pattern's text too: cicero's CicArray<T_ITEM>
+                    # constructs its base with `sizeof(T_ITEM)`.
+                    m.lowered_inits = [(a, self._bind_template(cls, b)) for a, b in m.lowered_inits]
                 if m.lowered:
                     m.lowered = rw(m.lowered)
                     if cls.template:
@@ -998,7 +1032,12 @@ class _Extractor:
                     if v is not None:
                         cls.constants.append((e["name"], v))
             elif k == "VarDecl":  # a static data member
-                cls.fields.append(Field(c["name"], c["type"]["qualType"], access, True, None))
+                # An in-class initializer (`static const int N = 5;`); an out-of-line
+                # definition's is attached when walk reaches it.
+                init = (
+                    self.src.node_text(c["inner"][-1]) if c.get("init") and c.get("inner") else None
+                )
+                cls.fields.append(Field(c["name"], c["type"]["qualType"], access, True, init))
             elif k in _METHOD_KINDS and not c.get("isImplicit"):
                 m = self.method(c, access, external=cls.external)
                 if m is not None:

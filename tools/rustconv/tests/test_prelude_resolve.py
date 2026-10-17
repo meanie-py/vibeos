@@ -115,6 +115,8 @@ def test_shared_macro_list_is_refreshed_in_place(tmp_path):
     src.mkdir()
     (src / "lib.rs").write_text(
         "#[macro_export]\nmacro_rules! LOWORD {}\n#[macro_export]\nmacro_rules! NEWONE {}\n"
+        # A function-local helper (wine_dbgstr_variant's `at!`) is not the crate's to export.
+        "fn f() { macro_rules! at { () => {} } }\n"
     )
     p = tmp_path / "prelude.rs"
     p.write_text("// x\npub use win32macros_rust::{LOWORD};\n// y\n")

@@ -134,6 +134,28 @@ class Control:
 
 # ── fixtures, each seeded from a real incident ───────────────────────────────
 
+# scan_override_self_dispatch. Seeded from mspaint 2026-10-16: SmoothDrawTool::OnEndDraw's
+# `ToolBase::OnEndDraw(bCancel)` dispatched back into itself. GOOD: the base's own body, and
+# the same virtual called on ANOTHER object (a member), which is an ordinary virtual call.
+_OVERRIDE_SELF_DISPATCH_BAD = """
+impl SmoothDrawTool {
+    pub unsafe fn OnEndDraw__body(&mut self, bCancel: BOOL) {
+        let this_: *mut Self = self;
+        (*this_).m_bDrawing = 0;
+        (*this_).__base0.OnEndDraw(bCancel);
+    }
+}
+"""
+_OVERRIDE_SELF_DISPATCH_GOOD = """
+impl SmoothDrawTool {
+    pub unsafe fn OnEndDraw__body(&mut self, bCancel: BOOL) {
+        let this_: *mut Self = self;
+        (*this_).__base0.OnEndDraw__body(bCancel);
+        (*(*this_).m_pChild).__base0.OnEndDraw(bCancel);
+    }
+}
+"""
+
 # scan_bugcheck_stubs. Seeded from fastfat 2026-07-26: three boots, three stubs
 # (FatGenerateFileIdFromFcb -> FatOpenVolume -> ...), each a full build+boot to
 # discover something the tree already knew. The GOOD case pins the two ways this
@@ -2932,6 +2954,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"bad.rs": _BITWISE_NOT_BAD},
         good={"good.rs": _BITWISE_NOT_GOOD},
+    ),
+    Control(
+        name="scan_override_self_dispatch",
+        script="tools/scan_override_self_dispatch.py",
+        argv=["--lint"],
+        bad={"bad.rs": _OVERRIDE_SELF_DISPATCH_BAD},
+        good={"good.rs": _OVERRIDE_SELF_DISPATCH_GOOD},
     ),
     Control(
         name="scan_info_class_literals",

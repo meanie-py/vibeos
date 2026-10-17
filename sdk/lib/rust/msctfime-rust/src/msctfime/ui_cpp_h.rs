@@ -256,20 +256,20 @@ impl CCompButtonFrameWindow {
         if !(*this_).m_pFinalizeButton.is_null() {
             return;
         }
-    
+
         let mut rc: RECT = RECT { left: 0, top: 0, right: 0, bottom: 0 };
         (*this_).m_pFinalizeButton = CCompFinalizeButton__new_in_0(cpp_alloc_CicNoThrow::<CCompFinalizeButton>(), (this_).cast(), 0, core::ptr::addr_of!(rc), 0, 0x10000, core::ptr::null_mut()) as *mut CCompFinalizeButton;
-    
+
         (*(*this_).m_pFinalizeButton).Initialize();
         (*(*this_).m_pFinalizeButton).Init();
-    
+
         let hIcon: HICON = LoadImageW(g_hInst, MAKEINTRESOURCEW!(IDI_DOWN), IMAGE_ICON, 16, 16, 0) as HICON;
         (*(*this_).m_pFinalizeButton).SetIcon(hIcon);
-    
+
         let mut szText: [u16; 256] = [0; 256];
         LoadStringW(g_hInst, IDS_FINALIZE_STRING, szText.as_mut_ptr(), (_countof!(szText)) as i32);
         (*(*this_).m_pFinalizeButton).SetToolTip(szText.as_mut_ptr());
-    
+
         (*this_).AddUIObj((core::ptr::addr_of_mut!((*(*this_).m_pFinalizeButton).__base0)).cast());
     }
     pub unsafe fn MoveShow(&mut self, x: LONG, y: LONG, bShow: BOOL) {
@@ -277,7 +277,7 @@ impl CCompButtonFrameWindow {
         let mut nWidth: INT = (*this_).m_Margins.cxRightWidth + (*this_).m_Margins.cxLeftWidth + 18;
         let mut nHeight: INT = (*this_).m_Margins.cyBottomHeight + (*this_).m_Margins.cyTopHeight + 18;
         (*this_).Move(x, y, nWidth + 4, nHeight + 4);
-    
+
         if !(*this_).m_pFinalizeButton.is_null() {
             let mut rc: RECT = RECT {
                 left: 1,
@@ -287,15 +287,15 @@ impl CCompButtonFrameWindow {
             };
             (*(*this_).m_pFinalizeButton).SetRect(core::ptr::addr_of_mut!(rc));
         }
-    
+
         (*this_).Show(bShow);
     }
     pub unsafe fn OnCreate__body(&mut self, hWnd: HWND) {
         let this_: *mut Self = self;
         SetWindowTheme(hWnd, CPP_COM_WSTR_91CDBB74B095.as_ptr(), core::ptr::null_mut());
-    
+
         ZeroMemory!(core::ptr::addr_of_mut!((*this_).m_Margins) as *mut core::ffi::c_void, core::mem::size_of::<MARGINS>());
-    
+
         let mut theme: CUIFTheme = CUIFTheme__zeroed();
         theme.m_hTheme = core::ptr::null_mut();
         theme.m_iPartId = 1;
@@ -332,27 +332,27 @@ impl CDefCompFrameWindow {
     pub unsafe fn Init(&mut self) {
         let this_: *mut Self = self;
         let mut rc: RECT = core::mem::zeroed();
-    
+
         if (*this_).m_pGripper.is_null() {
             ZeroMemory!(core::ptr::addr_of_mut!(rc) as *mut _, core::mem::size_of::<RECT>());
             (*this_).m_pGripper = CDefCompFrameGripper__new_in_0(cpp_alloc_CicNoThrow::<CDefCompFrameGripper>(), this_, core::ptr::addr_of_mut!(rc), 0);
             (*(*this_).m_pGripper).Initialize();
             (*this_).AddUIObj((core::ptr::addr_of_mut!((*(*this_).m_pGripper).__base0)).cast());
         }
-    
+
         if (*this_).m_pFinalizeButton.is_null() {
             ZeroMemory!(core::ptr::addr_of_mut!(rc) as *mut _, core::mem::size_of::<RECT>());
             (*this_).m_pFinalizeButton = CCompFinalizeButton__new_in_0(cpp_alloc_CicNoThrow::<CCompFinalizeButton>(), this_ as *mut CCompFrameWindow, 0, core::ptr::addr_of_mut!(rc), 0, 0x10000, core::ptr::null_mut());
             (*(*this_).m_pFinalizeButton).Initialize();
             (*(*this_).m_pFinalizeButton).Init();
-    
+
             let hIcon: HICON = LoadImageW(g_hInst, MAKEINTRESOURCEW!(IDI_DOWN), IMAGE_ICON, 16, 16, 0) as HICON;
             (*(*this_).m_pFinalizeButton).SetIcon(hIcon);
-    
+
             let mut szText: [u16; 256] = [0u16; 256];
             LoadStringW(g_hInst, IDS_FINALIZE_STRING, szText.as_mut_ptr(), (_countof!(szText)) as i32);
             (*this_).SetToolTip(szText.as_ptr());
-    
+
             (*this_).AddUIObj((core::ptr::addr_of_mut!((*(*this_).m_pFinalizeButton).__base0)).cast());
         }
     }
@@ -361,16 +361,16 @@ impl CDefCompFrameWindow {
         if (*this_).m_pGripper.is_null() || (((*(*this_).m_pGripper).EnsureThemeData((*this_).m_hWnd)) < 0) {
             return 5;
         }
-    
+
         let mut ret: INT = -1;
         let hDC: HDC = GetDC((*this_).m_hWnd);
         let mut partSize: SIZE = core::mem::zeroed();
         if ((*(*this_).m_pGripper).GetThemePartSize(hDC, 1, core::ptr::null_mut(), TS_TRUE, core::ptr::addr_of_mut!(partSize)) >= 0) {
             ret = partSize.cx + 4;
         }
-    
+
         ReleaseDC((*this_).m_hWnd, hDC);
-    
+
         return if ret < 0 { 5 } else { ret };
     }
     pub unsafe fn MyScreenToClient(&mut self, ppt: LPPOINT, prc: LPRECT) {
@@ -378,7 +378,7 @@ impl CDefCompFrameWindow {
         if !ppt.is_null() {
             ScreenToClient((*this_).__base0.m_hWnd, ppt);
         }
-    
+
         if !prc.is_null() {
             ScreenToClient((*this_).__base0.m_hWnd, prc as LPPOINT);
             ScreenToClient((*this_).__base0.m_hWnd, core::ptr::addr_of_mut!((*prc).right) as LPPOINT);
@@ -387,12 +387,12 @@ impl CDefCompFrameWindow {
     pub unsafe fn SetCompStrRect(&mut self, nWidth: INT, nHeight: INT, bShow: BOOL) {
         let this_: *mut Self = self;
         let GripperWidth: INT = (*this_).GetGripperWidth();
-    
+
         let mut rc: RECT = core::mem::zeroed();
         GetWindowRect((*this_).__base0.m_hWnd, core::ptr::addr_of_mut!(rc));
-    
+
         (*this_).Move(rc.left, rc.top, GripperWidth + nWidth + 24, nHeight + 10);
-    
+
         if !(*this_).m_pGripper.is_null() {
             rc = RECT {
                 left: 2,
@@ -402,7 +402,7 @@ impl CDefCompFrameWindow {
             };
             (*(*this_).m_pGripper).SetRect(core::ptr::addr_of_mut!(rc));
         }
-    
+
         if !(*this_).m_pFinalizeButton.is_null() {
             rc = RECT {
                 left: GripperWidth + nWidth + 4,
@@ -412,9 +412,9 @@ impl CDefCompFrameWindow {
             };
             (*(*this_).m_pFinalizeButton).SetRect(core::ptr::addr_of_mut!(rc));
         }
-    
+
         (*this_).Show(bShow);
-    
+
         MoveWindow((*this_).m_hwndCompStr, GripperWidth + 2, 7, nWidth, nHeight, (TRUE) as BOOL);
         ShowWindow((*this_).m_hwndCompStr, if bShow != 0 { (SW_SHOWNOACTIVATE as i32) } else { (SW_HIDE as i32) });
     }
@@ -422,7 +422,7 @@ impl CDefCompFrameWindow {
         let this_: *mut Self = self;
         let mut x: DWORD = 0;
         let mut y: DWORD = 0;
-    
+
         let error: LSTATUS;
         let mut regKey: CicRegKey = CicRegKey__zeroed();
         error = regKey.Open(HKEY_CURRENT_USER,
@@ -432,7 +432,7 @@ impl CDefCompFrameWindow {
             regKey.QueryDword((&[0x004c, 0x0065, 0x0066, 0x0074, 0x0000u16]).as_ptr() /* TEXT "Left" */, core::ptr::addr_of_mut!(x));
             regKey.QueryDword((&[0x0054, 0x006f, 0x0070, 0x0000u16]).as_ptr() /* TEXT "Top" */, core::ptr::addr_of_mut!(y));
         }
-    
+
         (*this_).Move((x) as i32, (y) as i32, 0, 0);
     }
     pub unsafe fn SavePosition(&mut self) {
@@ -448,12 +448,12 @@ impl CDefCompFrameWindow {
     pub unsafe fn OnCreate__body(&mut self, hWnd: HWND) {
         let this_: *mut Self = self;
         SetWindowTheme(hWnd, CPP_COM_WSTR_D3128F43EECC.as_ptr(), core::ptr::null_mut());
-    
+
         ZeroMemory!(
             core::ptr::addr_of_mut!((*this_).m_Margins) as *mut core::ffi::c_void,
             core::mem::size_of::<MARGINS>(),
         );
-    
+
         let mut theme: CUIFTheme = CUIFTheme__zeroed();
         theme.m_hTheme = core::ptr::null_mut();
         theme.m_iPartId = 1;
@@ -474,7 +474,7 @@ impl CDefCompFrameWindow {
         if IsWindow((*this_).m_hwndCompStr) == 0 {
             return (FALSE) as BOOL;
         }
-    
+
         let mut rc: RECT = core::mem::zeroed();
         GetWindowRect((*this_).m_hwndCompStr, core::ptr::addr_of_mut!(rc));
         (*this_).MyScreenToClient(core::ptr::null_mut(), core::ptr::addr_of_mut!(rc));
@@ -496,15 +496,15 @@ impl CDefCompFrameWindow {
             let mut rc: RECT = core::mem::zeroed();
             GetWindowRect((*this_).m_hwndCompStr, core::ptr::addr_of_mut!(rc));
             (*this_).MyScreenToClient(core::ptr::null_mut(), core::ptr::addr_of_mut!(rc));
-    
+
             let pt: POINT = POINT { x: x, y: y };
             if PtInRect(core::ptr::addr_of!(rc), pt) != 0 {
                 SendMessage((*this_).m_hwndCompStr, 0x7E8, 0, 0);
             }
         }
-    
+
         // C: CUIFWindow::this_->HandleMouseMsg(uMsg, x, y) — explicit base-class call, non-virtual
-        (*this_).__base0.__base0.HandleMouseMsg(uMsg, x, y);
+        (*this_).__base0.__base0.HandleMouseMsg__body(uMsg, x, y);
     }
 }
 
@@ -532,9 +532,9 @@ impl CPolyText {
         if cItems == 0 {
             return E_FAIL;
         }
-    
+
         let pData1: *mut POLYTEXTW = core::ptr::addr_of_mut!((*this_).m_PolyTextArray[cItems - 1]);
-    
+
         iItem = 0;
         while iItem < cItems {
             let pData2: *mut POLYTEXTW = core::ptr::addr_of_mut!((*this_).m_PolyTextArray[iItem]);
@@ -549,11 +549,11 @@ impl CPolyText {
             }
             iItem += 1;
         }
-    
+
         if iItem >= cItems {
             return E_FAIL;
         }
-    
+
         (*this_).m_PolyTextArray.Remove(iItem, cItems - iItem);
         (*this_).m_ValueArray.Remove(iItem, cItems - iItem);
         return S_OK;
@@ -583,22 +583,22 @@ impl UIComposition {
     pub unsafe fn __dtor__body(&mut self) {
         let this_: *mut Self = self;
         (*this_).DestroyCompositionWindow();
-    
+
         if !(*this_).m_hFont1.is_null() {
             DeleteObject((*this_).m_hFont1 as _);
             (*this_).m_hFont1 = core::ptr::null_mut();
         }
-    
+
         if !(*this_).m_hFont2.is_null() {
             DeleteObject((*this_).m_hFont2 as _);
             (*this_).m_hFont2 = core::ptr::null_mut();
         }
-    
+
         if !(*this_).m_strCompStr.is_null() {
             cicMemFree((*this_).m_strCompStr as _);
             (*this_).m_strCompStr = core::ptr::null_mut();
         }
-    
+
         (*this_).m_cchCompStr = 0;
     }
     pub unsafe fn CreateDefFrameWnd(&mut self, hwndParent: HWND, hIMC: HIMC) -> HRESULT {
@@ -613,10 +613,10 @@ impl UIComposition {
                 (*this_).m_pDefCompFrameWindow = core::ptr::null_mut();
                 return E_FAIL;
             }
-    
+
             (*(*this_).m_pDefCompFrameWindow).Init();
         }
-    
+
         (*(*this_).m_pDefCompFrameWindow).CreateWnd(hwndParent);
         return S_OK;
     }
@@ -626,7 +626,7 @@ impl UIComposition {
         if pTLS.is_null() || (*pTLS).NonEACompositionEnabled() == 0 {
             return S_OK;
         }
-    
+
         if IsEALang(0) != 0 {
             if !(*this_).m_pCompButtonFrameWindow.is_null() {
                 CCompButtonFrameWindow__delete((*this_).m_pCompButtonFrameWindow);
@@ -634,7 +634,7 @@ impl UIComposition {
             }
             return S_OK;
         }
-    
+
         if (*this_).m_pCompButtonFrameWindow.is_null() {
             (*this_).m_pCompButtonFrameWindow = CCompButtonFrameWindow__new_in_0(
                 cpp_alloc_CicNoThrow::<CCompButtonFrameWindow>(),
@@ -644,7 +644,7 @@ impl UIComposition {
             if (*this_).m_pCompButtonFrameWindow.is_null() {
                 return E_OUTOFMEMORY;
             }
-    
+
             if (*(*this_).m_pCompButtonFrameWindow).Initialize() == 0 {
                 if !(*this_).m_pCompButtonFrameWindow.is_null() {
                     CCompButtonFrameWindow__delete((*this_).m_pCompButtonFrameWindow);
@@ -652,10 +652,10 @@ impl UIComposition {
                 }
                 return E_FAIL;
             }
-    
+
             (*(*this_).m_pCompButtonFrameWindow).Init();
         }
-    
+
         (*(*this_).m_pCompButtonFrameWindow).CreateWnd(hwndParent);
         return S_OK;
     }
@@ -664,11 +664,11 @@ impl UIComposition {
         if (imcLock.m_hr) < 0 {
             return imcLock.m_hr;
         }
-    
+
         if (IsWindow(hwndParent) == 0) || (*this_).m_bHasCompWnd != 0 {
             return E_FAIL;
         }
-    
+
         let mut iCompStr: INT = 0;
         while iCompStr < 3 {
             let style: DWORD = WS_POPUP | WS_DISABLED;
@@ -680,19 +680,19 @@ impl UIComposition {
             (*this_).m_CompStrs[iCompStr as usize].m_Caret.CreateCaret(hwndCompStr, (*this_).m_CaretSize);
             iCompStr += 1;
         }
-    
+
         let mut hr: HRESULT = (*this_).CreateCompButtonWnd(hwndParent, (imcLock.m_hIMC).cast());
         if hr < 0 {
             (*this_).DestroyCompositionWindow();
             return E_OUTOFMEMORY;
         }
-    
+
         hr = (*this_).CreateDefFrameWnd(hwndParent, (imcLock.m_hIMC).cast());
         if hr < 0 {
             (*this_).DestroyCompositionWindow();
             return E_OUTOFMEMORY;
         }
-    
+
         let style: DWORD = WS_CHILD | WS_DISABLED;
         let hwndCompStr: HWND = CreateWindowExW(WS_EX_CLIENTEDGE, CPP_COM_WSTR_62586A0891BF.as_ptr(), core::ptr::null_mut(), style,
             0, 0, 0, 0, (*(*this_).m_pDefCompFrameWindow).m_hWnd, core::ptr::null_mut(), g_hInst, core::ptr::null_mut());
@@ -700,14 +700,14 @@ impl UIComposition {
             (*this_).DestroyCompositionWindow();
             return E_OUTOFMEMORY;
         }
-    
+
         (*this_).m_CompStrs[3 as usize].m_hWnd = hwndCompStr;
         (*(*this_).m_pDefCompFrameWindow).m_hwndCompStr = hwndCompStr;
         SetWindowLongPtrW(hwndCompStr, GWLP_USERDATA, this_ as LONG_PTR);
         SetWindowLongPtrW(hwndCompStr, UICOMP_GWLP_INDEX, -1);
         (*this_).m_CompStrs[3 as usize].m_Caret.CreateCaret(hwndCompStr, (*this_).m_CaretSize);
         (*this_).m_bHasCompWnd = (TRUE) as i32;
-    
+
         S_OK
     }
     pub unsafe fn DestroyCompositionWindow(&mut self) -> HRESULT {
@@ -723,19 +723,19 @@ impl UIComposition {
             (*pCompStr).m_hWnd = core::ptr::null_mut();
             i += 1;
         }
-    
+
         if !(*this_).m_pCompButtonFrameWindow.is_null() {
             DestroyWindow((*(*this_).m_pCompButtonFrameWindow).m_hWnd);
             CCompButtonFrameWindow__delete((*this_).m_pCompButtonFrameWindow);
             (*this_).m_pCompButtonFrameWindow = core::ptr::null_mut();
         }
-    
+
         if !(*this_).m_pDefCompFrameWindow.is_null() {
             DestroyWindow((*(*this_).m_pDefCompFrameWindow).m_hWnd);
             CDefCompFrameWindow__delete((*this_).m_pDefCompFrameWindow);
             (*this_).m_pDefCompFrameWindow = core::ptr::null_mut();
         }
-    
+
         return 0;
     }
     pub unsafe fn UpdateShowCompWndFlag(&mut self, imcLock: &mut CicIMCLock, pdwCompStrLen: *mut DWORD) -> HRESULT {
@@ -746,23 +746,23 @@ impl UIComposition {
         if IsWindow(imcLock.get().hWnd) == 0 {
             return E_FAIL;
         }
-    
+
         let mut compStr = CicIMCCLock__zeroed::<COMPOSITIONSTRING>();
         compStr.__ctor_0(imcLock.get().hCompStr);
         if compStr.m_hr < 0 {
             return compStr.m_hr;
         }
-    
+
         if ((*this_).m_dwUnknown56[0 as usize] & 0x80000000) != 0 && compStr.get().dwCompStrLen != 0 {
             (*this_).m_bHasCompStr = (TRUE) as i32;
         } else {
             (*this_).m_bHasCompStr = (FALSE) as i32;
         }
-    
+
         if !pdwCompStrLen.is_null() {
             *pdwCompStrLen = compStr.get().dwCompStrLen;
         }
-    
+
         return S_OK;
     }
     pub unsafe fn UpdateFont(&mut self, imcLock: &mut CicIMCLock) -> HRESULT {
@@ -770,18 +770,18 @@ impl UIComposition {
         if ((imcLock.m_hr) < 0) {
             return imcLock.m_hr;
         }
-    
+
         if (*this_).m_hFont1 != core::ptr::null_mut() {
             DeleteObject(((*this_).m_hFont1).cast());
         }
         if (*this_).m_hFont2 != core::ptr::null_mut() {
             DeleteObject(((*this_).m_hFont2).cast());
         }
-    
+
         // cicero's island and this one both lay out LOGFONTW; the C++ is a plain struct copy.
         let mut lf: LOGFONTW = core::ptr::read(core::ptr::addr_of!(imcLock.get().lfFont.W) as *const LOGFONTW);
         (*this_).m_hFont2 = CreateFontIndirectW(core::ptr::addr_of!(lf));
-    
+
         lf.lfEscapement = 0;
         lf.lfOrientation = 0;
         let bVertical: BOOL = (lf.lfFaceName[0] == 0x0040u16) as BOOL;
@@ -794,7 +794,7 @@ impl UIComposition {
             lf.lfFaceName[(_countof!(lf.lfFaceName) - 1) as usize] = UNICODE_NULL;
         }
         (*this_).m_hFont1 = CreateFontIndirectW(core::ptr::addr_of!(lf));
-    
+
         return S_OK;
     }
     pub unsafe fn UpdateCompositionRect(&mut self, imcLock: &mut CicIMCLock) -> HRESULT {
@@ -822,13 +822,13 @@ impl UIComposition {
         if (dwStyle & (CFS_FORCE_POSITION | CFS_POINT | CFS_RECT)) == 0 {
             return 0;
         }
-    
+
         let mut rc: RECT = core::mem::zeroed();
         GetClientRect((*imcLock.get()).hWnd, core::ptr::addr_of_mut!(rc));
         if PtInRect(core::ptr::addr_of_mut!(rc), (*imcLock.get()).cfCompForm.ptCurrentPos) == 0 {
             return 1;
         }
-    
+
         let pIC: *mut INPUTCONTEXT = core::ptr::addr_of_mut!(*imcLock.get()) as *mut INPUTCONTEXT; // INPUTCONTEXTDX : INPUTCONTEXT
         if ((*pIC).cfCompForm.dwStyle & CFS_RECT) != 0 &&
             ((*pIC).cfCompForm.rcArea.top == (*pIC).cfCompForm.rcArea.bottom) &&
@@ -836,7 +836,7 @@ impl UIComposition {
         {
             return 1;
         }
-    
+
         return 2;
     }
     pub unsafe fn OnImeStartComposition(&mut self, imcLock: &mut CicIMCLock, hUIWnd: HWND) {
@@ -867,11 +867,11 @@ impl UIComposition {
             (*this_).m_dwUnknown56[0 as usize] &= !0x8000;
             return S_OK;
         }
-    
+
         if imcLock.m_hr < 0 {
             return imcLock.m_hr;
         }
-    
+
         let mut Level: INT = (*this_).GetLevelFromIMC(imcLock);
         if (Level == 1 || Level == 2)
             && ((*this_).m_dwUnknown56[0 as usize] & 0x80000000) != 0
@@ -879,7 +879,7 @@ impl UIComposition {
         {
             let mut dwCompStrLen: DWORD = 0;
             (*this_).UpdateShowCompWndFlag(imcLock, core::ptr::addr_of_mut!(dwCompStrLen));
-    
+
             if Level == 1 {
                 ShowWindow(
                     (*(*this_).m_pDefCompFrameWindow).m_hWnd,
@@ -895,7 +895,7 @@ impl UIComposition {
             }
         } else {
             ShowWindow((*(*this_).m_pDefCompFrameWindow).m_hWnd, (SW_HIDE as i32));
-    
+
             let mut iCompStr: INT = 0;
             while iCompStr < 3 {
                 (*this_).m_CompStrs[iCompStr as usize].m_Caret.HideCaret();
@@ -903,7 +903,7 @@ impl UIComposition {
                 iCompStr += 1;
             }
         }
-    
+
         return S_OK;
     }
     pub unsafe fn OnImeSetContext(&mut self, imcLock: &mut CicIMCLock, hUIWnd: HWND, wParam: WPARAM, lParam: LPARAM) {
@@ -973,7 +973,7 @@ impl UI {
         if (*this_).m_pComp.is_null() {
             return E_OUTOFMEMORY;
         }
-    
+
         SetWindowLongPtrW((*this_).m_hWnd, UI_GWLP_UI, (this_) as LONG_PTR);
         return S_OK;
     }
@@ -997,7 +997,7 @@ impl UI {
         if pUI.is_null() {
             return;
         }
-    
+
         (*pUI)._Destroy();
         UI__delete(pUI);
     }
@@ -1035,17 +1035,17 @@ impl CIMEUIWindowHandler {
         if (wParam as BYTE) == 0xFF {
             return (TRUE) as HRESULT;
         }
-    
+
         let mut imcLock: CicIMCLock = CicIMCLock__make_0((lParam as HIMC).cast());
         if imcLock.m_hr < 0 {
             return imcLock.m_hr;
         }
-    
+
         let mut imeContext: CicIMCCLock<CTFIMECONTEXT> = CicIMCCLock__make_0::<CTFIMECONTEXT>(imcLock.get().hCtfImeContext);
         if imeContext.m_hr < 0 {
             return (FALSE) as HRESULT;
         }
-    
+
         let mut hr: HRESULT = E_FAIL;
         let mut pCicIC: *mut CicInputContext = imeContext.get().m_pCicIC;
         if !pCicIC.is_null() {
@@ -1071,34 +1071,34 @@ impl CIMEUIWindowHandler {
                 &mut imcLock,
             );
         }
-    
+
         return hr;
     }
     pub unsafe extern "system" fn ImeUIMsImeModeBiasHandler(hWnd: HWND, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
         if wParam == 0 {
             return (TRUE) as LRESULT;
         }
-    
+
         let mut imcLock: CicIMCLock = CicIMCLock__make_0((lParam as HIMC).cast());
         if imcLock.m_hr < 0 {
             return imcLock.m_hr as LRESULT;
         }
-    
+
         let mut imeContext: CicIMCCLock<CTFIMECONTEXT> = CicIMCCLock__make_0::<CTFIMECONTEXT>(imcLock.get().hCtfImeContext);
         if imeContext.m_hr < 0 {
             return (FALSE) as LRESULT;
         }
-    
+
         let pCicIC: *mut CicInputContext = imeContext.get().m_pCicIC;
         if pCicIC.is_null() {
             return (FALSE) as LRESULT;
         }
-    
+
         if wParam == 1 {
             if lParam == 0 || lParam == 1 || lParam == 4 || lParam == 0x10000 {
                 let guid: GUID = (*pCicIC).m_ModeBias.ConvertModeBias__0((lParam as DWORD) as LONG);
                 (*pCicIC).m_ModeBias.SetModeBias(&guid);
-    
+
                 (*pCicIC).m_dwUnknown7[2 as usize] |= 1;
                 (*(*pCicIC).m_pContextOwnerServices).AddRef();
                 (*(*pCicIC).m_pContextOwnerServices).OnAttributeChange(&GUID_PROP_MODEBIAS);
@@ -1108,39 +1108,39 @@ impl CIMEUIWindowHandler {
         } else if wParam == 2 {
             return ((*pCicIC).m_ModeBias.ConvertModeBias__1(&(*pCicIC).m_ModeBias.m_guid)) as LRESULT;
         }
-    
+
         return (FALSE) as LRESULT;
     }
     pub unsafe extern "system" fn ImeUIMsImeReconvertRequest(hWnd: HWND, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
         if wParam == 0x10000000 {
             return (TRUE) as LRESULT;
         }
-    
+
         let hIMC: HIMC = GetWindowLongPtrW(hWnd, UI_GWLP_HIMC) as HIMC;
         let mut imcLock = CicIMCLock__zeroed();
         imcLock.__ctor_0((hIMC).cast());
         if imcLock.m_hr < 0 {
             return (FALSE) as LRESULT;
         }
-    
+
         let mut imeContext = CicIMCCLock__zeroed::<CTFIMECONTEXT>();
         imeContext.__ctor_0(imcLock.get().hCtfImeContext);
         if imeContext.m_hr < 0 {
             return (FALSE) as LRESULT;
         }
-    
+
         let pCicIC: *mut CicInputContext = imeContext.get().m_pCicIC;
         let pTLS: *mut TLS = TLS::GetTLS();
         if pCicIC.is_null() || pTLS.is_null() {
             return (FALSE) as LRESULT;
         }
-    
+
         let pThreadMgr = (*pTLS).m_pThreadMgr;
         let pProfile = (*pTLS).m_pProfile;
         if pThreadMgr.is_null() || pProfile.is_null() {
             return (FALSE) as LRESULT;
         }
-    
+
         let mut uCodePage: UINT = 0;
         (*pProfile).GetCodePageA(core::ptr::addr_of_mut!(uCodePage));
         (*pCicIC).SetupReconvertString(&mut imcLock, pThreadMgr, uCodePage, WM_MSIME_RECONVERT, (FALSE) as BOOL);
@@ -1155,7 +1155,7 @@ impl CIMEUIWindowHandler {
             }
             return DefWindowProcW(hWnd, uMsg, wParam, lParam);
         }
-    
+
         match uMsg {
             WM_CREATE => {
                 UI::OnCreate(hWnd);
@@ -1218,7 +1218,7 @@ impl CIMEUIWindowHandler {
                 return DefWindowProcW(hWnd, uMsg, wParam, lParam);
             }
         }
-    
+
         return 0;
     }
     pub unsafe extern "system" fn ImeUIDelayedReconvertFuncCall(hWnd: HWND) -> HRESULT {
@@ -1245,13 +1245,13 @@ impl CIMEUIWindowHandler {
         if (imcLock.m_hr < 0) {
             return S_OK;
         }
-    
+
         let mut imeContext: CicIMCCLock<CTFIMECONTEXT> = CicIMCCLock__zeroed();
         imeContext.__ctor_0(imcLock.get().hCtfImeContext);
         if (imeContext.m_hr < 0) {
             return S_OK;
         }
-    
+
         let mut pCicIC: *mut CicInputContext = imeContext.get().m_pCicIC;
         if !pCicIC.is_null() {
             let mut pContextOwnerServices: *mut ITfContextOwnerServices = (*pCicIC).m_pContextOwnerServices;
@@ -1259,7 +1259,7 @@ impl CIMEUIWindowHandler {
             (*pContextOwnerServices).OnLayoutChange();
             (*pContextOwnerServices).Release();
         }
-    
+
         return S_OK;
     }
     pub unsafe extern "system" fn ImeUIPrivateHandler(uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> HRESULT {
@@ -1268,17 +1268,17 @@ impl CIMEUIWindowHandler {
         if imcLock.m_hr < 0 {
             return imcLock.m_hr;
         }
-    
+
         let mut imeContext = CicIMCCLock__make_0::<CTFIMECONTEXT>(imcLock.get().hCtfImeContext);
         if imeContext.m_hr < 0 {
             return imeContext.m_hr;
         }
-    
+
         let mut pCicIC: *mut CicInputContext = imeContext.get().m_pCicIC;
         if !pCicIC.is_null() && wParam == 0x10 {
             (*pCicIC).EscbClearDocFeedBuffer(&mut imcLock, (TRUE) as BOOL);
         }
-    
+
         return S_OK;
     }
     pub unsafe extern "system" fn ImeUINotifyHandler(hWnd: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
@@ -1293,7 +1293,7 @@ impl CIMEUIWindowHandler {
         if imeContext.m_hr < 0 {
             return imeContext.m_hr as LRESULT;
         }
-    
+
         let pCicIC: *mut CicInputContext = imeContext.get().m_pCicIC;
         if !pCicIC.is_null() {
             // C's switch compares the whole WPARAM; the IMN_* constants widen to it.
@@ -1350,7 +1350,7 @@ impl CIMEUIWindowHandler {
                 _ => {}
             }
         }
-    
+
         return 0 as LRESULT;
     }
     pub unsafe fn __ctor_0(&mut self) {

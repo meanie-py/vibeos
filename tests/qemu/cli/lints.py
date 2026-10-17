@@ -648,6 +648,18 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A C++ qualified base call (`ToolBase::OnEndDraw(b)`, non-virtual) translated as the
+    # base's VIRTUAL dispatcher from inside the override itself: infinite recursion. 36 sites
+    # shipped in cicero/mspaint/msutb/msctfime (2026-10-16), every mspaint stroke among them,
+    # and smoke reached none. Baseline is EMPTY.
+    sod = repo / "tools" / "scan_override_self_dispatch.py"
+    specs.append(
+        (
+            "scan_override_self_dispatch",
+            [py, str(sod), "--lint"] if sod.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # An array FIELD passed by value to a C variadic (`note("%s", (*ip).name)`): C decays
     # it to a pointer, Rust passes the array, and only i386 copies the bytes onto the stack,
     # so `%s` reads the string's first four bytes as a pointer. The i386 DHCP client died on

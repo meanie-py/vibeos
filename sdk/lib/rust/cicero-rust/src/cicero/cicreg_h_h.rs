@@ -41,7 +41,7 @@ impl CicRegKey {
         if (*this_).m_hKey.is_null() {
             return;
         }
-    
+
         RegCloseKey((*this_).m_hKey);
         (*this_).m_hKey = core::ptr::null_mut();
     }
