@@ -3184,7 +3184,7 @@ unsafe extern "C" fn mft_enum(
         EnterCriticalSection(&raw mut local_mfts_section);
 
         local = (local_mfts.next as *mut ::core::ffi::c_char).offset(
-            -(&raw mut (*::core::ptr::null_mut::<mft_registration>()).entry
+            -(core::mem::offset_of!(mft_registration, entry)
                 as ::core::ffi::c_ulonglong as isize),
         ) as *mut mft_registration;
         while &raw mut (*local).entry != &raw mut local_mfts {
@@ -3213,7 +3213,7 @@ unsafe extern "C" fn mft_enum(
                 list_add_tail(&raw mut mfts, &raw mut (*mft).entry);
             }
             local = ((*local).entry.next as *mut ::core::ffi::c_char).offset(
-                -(&raw mut (*::core::ptr::null_mut::<mft_registration>()).entry
+                -(core::mem::offset_of!(mft_registration, entry)
                     as ::core::ffi::c_ulonglong as isize),
             ) as *mut mft_registration;
         }
@@ -3226,11 +3226,11 @@ unsafe extern "C" fn mft_enum(
     if flags & MFT_ENUM_FLAG_SORTANDFILTER as UINT32 != 0 {
         /* Local registrations. */
         mft = (mfts.next as *mut ::core::ffi::c_char).offset(
-            -(&raw mut (*::core::ptr::null_mut::<mft_registration>()).entry
+            -(core::mem::offset_of!(mft_registration, entry)
                 as ::core::ffi::c_ulonglong as isize),
         ) as *mut mft_registration;
         mft2 = ((*mft).entry.next as *mut ::core::ffi::c_char).offset(
-            -(&raw mut (*::core::ptr::null_mut::<mft_registration>()).entry
+            -(core::mem::offset_of!(mft_registration, entry)
                 as ::core::ffi::c_ulonglong as isize),
         ) as *mut mft_registration;
         while &raw mut (*mft).entry != &raw mut mfts {
@@ -3240,7 +3240,7 @@ unsafe extern "C" fn mft_enum(
             }
             mft = mft2;
             mft2 = ((*mft).entry.next as *mut ::core::ffi::c_char).offset(
-                -(&raw mut (*::core::ptr::null_mut::<mft_registration>()).entry
+                -(core::mem::offset_of!(mft_registration, entry)
                     as ::core::ffi::c_ulonglong as isize),
             ) as *mut mft_registration;
         }
@@ -3249,11 +3249,11 @@ unsafe extern "C" fn mft_enum(
 
         /* Preferred transforms. */
         mft = (mfts.next as *mut ::core::ffi::c_char).offset(
-            -(&raw mut (*::core::ptr::null_mut::<mft_registration>()).entry
+            -(core::mem::offset_of!(mft_registration, entry)
                 as ::core::ffi::c_ulonglong as isize),
         ) as *mut mft_registration;
         mft2 = ((*mft).entry.next as *mut ::core::ffi::c_char).offset(
-            -(&raw mut (*::core::ptr::null_mut::<mft_registration>()).entry
+            -(core::mem::offset_of!(mft_registration, entry)
                 as ::core::ffi::c_ulonglong as isize),
         ) as *mut mft_registration;
         while &raw mut (*mft).entry != &raw mut mfts {
@@ -3265,18 +3265,18 @@ unsafe extern "C" fn mft_enum(
             }
             mft = mft2;
             mft2 = ((*mft).entry.next as *mut ::core::ffi::c_char).offset(
-                -(&raw mut (*::core::ptr::null_mut::<mft_registration>()).entry
+                -(core::mem::offset_of!(mft_registration, entry)
                     as ::core::ffi::c_ulonglong as isize),
             ) as *mut mft_registration;
         }
 
         /* Append the rest. */
         mft = (mfts.next as *mut ::core::ffi::c_char).offset(
-            -(&raw mut (*::core::ptr::null_mut::<mft_registration>()).entry
+            -(core::mem::offset_of!(mft_registration, entry)
                 as ::core::ffi::c_ulonglong as isize),
         ) as *mut mft_registration;
         mft2 = ((*mft).entry.next as *mut ::core::ffi::c_char).offset(
-            -(&raw mut (*::core::ptr::null_mut::<mft_registration>()).entry
+            -(core::mem::offset_of!(mft_registration, entry)
                 as ::core::ffi::c_ulonglong as isize),
         ) as *mut mft_registration;
         while &raw mut (*mft).entry != &raw mut mfts {
@@ -3284,7 +3284,7 @@ unsafe extern "C" fn mft_enum(
             list_add_tail(&raw mut mfts_sorted, &raw mut (*mft).entry);
             mft = mft2;
             mft2 = ((*mft).entry.next as *mut ::core::ffi::c_char).offset(
-                -(&raw mut (*::core::ptr::null_mut::<mft_registration>()).entry
+                -(core::mem::offset_of!(mft_registration, entry)
                     as ::core::ffi::c_ulonglong as isize),
             ) as *mut mft_registration;
         }
@@ -3310,11 +3310,11 @@ unsafe extern "C" fn mft_enum(
         obj_count = 0 as ::core::ffi::c_uint;
 
         mft = ((*result).next as *mut ::core::ffi::c_char).offset(
-            -(&raw mut (*::core::ptr::null_mut::<mft_registration>()).entry
+            -(core::mem::offset_of!(mft_registration, entry)
                 as ::core::ffi::c_ulonglong as isize),
         ) as *mut mft_registration;
         mft2 = ((*mft).entry.next as *mut ::core::ffi::c_char).offset(
-            -(&raw mut (*::core::ptr::null_mut::<mft_registration>()).entry
+            -(core::mem::offset_of!(mft_registration, entry)
                 as ::core::ffi::c_ulonglong as isize),
         ) as *mut mft_registration;
         while &raw mut (*mft).entry != result {
@@ -3389,7 +3389,7 @@ unsafe extern "C" fn mft_enum(
             release_mft_registration(mft);
             mft = mft2;
             mft2 = ((*mft).entry.next as *mut ::core::ffi::c_char).offset(
-                -(&raw mut (*::core::ptr::null_mut::<mft_registration>()).entry
+                -(core::mem::offset_of!(mft_registration, entry)
                     as ::core::ffi::c_ulonglong as isize),
             ) as *mut mft_registration;
         }
@@ -9302,7 +9302,7 @@ unsafe extern "C" fn resolver_end_create_object(
     }
     EnterCriticalSection(&raw mut (*resolver).cs);
     iter = ((*resolver).pending.next as *mut ::core::ffi::c_char).offset(
-        -(&raw mut (*::core::ptr::null_mut::<resolver_queued_result>()).entry
+        -(core::mem::offset_of!(resolver_queued_result, entry)
             as ::core::ffi::c_ulonglong as isize),
     ) as *mut resolver_queued_result;
     while &raw mut (*iter).entry != &raw mut (*resolver).pending {
@@ -9315,7 +9315,7 @@ unsafe extern "C" fn resolver_end_create_object(
             break;
         } else {
             iter = ((*iter).entry.next as *mut ::core::ffi::c_char).offset(
-                -(&raw mut (*::core::ptr::null_mut::<resolver_queued_result>()).entry
+                -(core::mem::offset_of!(resolver_queued_result, entry)
                     as ::core::ffi::c_ulonglong as isize),
             ) as *mut resolver_queued_result;
         }
@@ -10588,7 +10588,7 @@ unsafe extern "C" fn queue_pop_event(queue: *mut event_queue) -> *mut IMFMediaEv
         return core::ptr::null_mut::<IMFMediaEvent>();
     }
     queued_event = (head as *mut core::ffi::c_char).offset(
-        -(core::ptr::addr_of_mut!((*core::ptr::null_mut::<queued_event>()).entry) as core::ffi::c_ulonglong
+        -(core::mem::offset_of!(queued_event, entry) as core::ffi::c_ulonglong
             as isize),
     ) as *mut queued_event;
     event = (*queued_event).event;
@@ -11926,7 +11926,7 @@ unsafe extern "C" fn async_create_file_pull_result(
     }
     EnterCriticalSection(&raw mut async_create_file_cs);
     item = (async_create_file_results.next as *mut ::core::ffi::c_char).offset(
-        -(&raw mut (*::core::ptr::null_mut::<async_create_file_result>()).entry
+        -(core::mem::offset_of!(async_create_file_result, entry)
             as ::core::ffi::c_ulonglong as isize),
     ) as *mut async_create_file_result;
     while &raw mut (*item).entry != &raw mut async_create_file_results {
@@ -11938,7 +11938,7 @@ unsafe extern "C" fn async_create_file_pull_result(
             break;
         } else {
             item = ((*item).entry.next as *mut ::core::ffi::c_char).offset(
-                -(&raw mut (*::core::ptr::null_mut::<async_create_file_result>()).entry
+                -(core::mem::offset_of!(async_create_file_result, entry)
                     as ::core::ffi::c_ulonglong as isize),
             ) as *mut async_create_file_result;
         }
@@ -12306,7 +12306,7 @@ unsafe extern "C" fn d3d12_sync_object_from_IRtwqAsyncCallback(
     iface: *mut IRtwqAsyncCallback,
 ) -> *mut d3d12_sync_object {
     return (iface as ULONG_PTR).wrapping_sub(
-        &raw mut (*::core::ptr::null_mut::<d3d12_sync_object>()).async_release_iface as ULONG_PTR,
+        core::mem::offset_of!(d3d12_sync_object, async_release_iface) as ULONG_PTR,
     ) as *mut d3d12_sync_object;
 }
 
@@ -12502,7 +12502,7 @@ unsafe extern "C" fn d3d12_sync_object_create_release(
     );
     if !next.is_null() {
         relobj = (next as *mut ::core::ffi::c_char).offset(
-            -(&raw mut (*::core::ptr::null_mut::<d3d12_sync_object_release>()).entry
+            -(core::mem::offset_of!(d3d12_sync_object_release, entry)
                 as ::core::ffi::c_ulonglong as isize),
         ) as *mut d3d12_sync_object_release;
     } else {

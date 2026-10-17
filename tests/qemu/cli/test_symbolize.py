@@ -94,6 +94,21 @@ def test_module_override_takes_the_bugcheck_offset_form(tmp_path):
     )
 
 
+def test_the_offset_form_is_an_offset_even_above_a_low_link_base(tmp_path):
+    # The HALs link at 0x10000, so the bugcheck's `hal.dll+0x25B1F` is ABOVE the base. Read
+    # as an address it named a float parser at 0x25B1F; the crash was memcpy at 0x35B1F.
+    repo = _index(
+        tmp_path,
+        [_mod(0x10000, 0xD3000, "hal.dll")],
+        [
+            "hal.dll\t0000000000025b00\tfrom_str\tdec2flt.rs:1",
+            "hal.dll\t0000000000035b10\tmem_copy_forward\tmemops.rs:148",
+        ],
+    )
+    out = symbolize.resolve(repo, "amd64", 0x25B1F, want_module="hal.dll", offset=True)
+    assert "hal.dll!mem_copy_forward+0xf" in out
+
+
 def test_declines_when_the_nearest_symbol_is_implausibly_far(tmp_path):
     # A PE symbol table omits statics, thunks and data regions, so SOME symbol
     # always sorts below any address. Past MAX_SANE_OFFSET that is not evidence.

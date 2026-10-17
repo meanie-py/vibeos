@@ -134,6 +134,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_apply_dead_assignments.py"),
     (".", ".", "tools/test_apply_rustc_suggestions.py"),
     (".", ".", "tools/test_extern_to_use.py"),
+    (".", ".", "tools/test_scan_version_vs_c.py"),
     (".", ".", "tools/test_scan_winerror_consts.py"),
     (".", ".", "tools/test_scan_export_shadows.py"),
     (".", ".", "tools/test_scan_res_named_types.py"),

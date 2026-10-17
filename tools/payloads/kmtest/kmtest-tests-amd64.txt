@@ -50,6 +50,7 @@ HalSystemInfo
 # agreed (row banked in kmtest.txt). The history above is the audit trail.
 IoCreateFile
 IoDeviceInterface
+IoDeviceProperty
 IoEvent
 # QUARANTINED 2026-07-10 (amd64 sweep 2): BUGCHECK 0x1E — AV in
 # MiFindEmptyAddressRangeInTree+0x173 (Rust, ARM3/vadnode.rs:370). Triage owed — real
@@ -102,6 +103,7 @@ MmSection
 # KUSER_SHARED_DATA from its start, so PF_PAE_ENABLED read InterruptTime noise. Probe OK on
 # all arches, then two full sweeps agreed (row banked in kmtest.txt).
 MmReservedMapping
+MmReservedMappingFixed
 NpfsConnect
 NpfsCreate
 # QUARANTINED 2026-07-10 (amd64 sweep 5): BUGCHECK 0x19 BAD_POOL_HEADER subcode 5

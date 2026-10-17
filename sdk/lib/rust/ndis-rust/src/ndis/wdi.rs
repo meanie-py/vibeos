@@ -37,7 +37,7 @@ use crate::ndis::ndis6::{
 use crate::ndis::wpa;
 use ntkrnl_sys::ddk::{ExFreePool, IoAllocateMdl, IoFreeMdl, KeInitializeEvent, KeWaitForSingleObject, MmBuildMdlForNonPagedPool};
 use core::ptr::{null_mut, addr_of_mut};
-use core::sync::atomic::{AtomicPtr, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, Ordering};
 
 macro_rules! logw {
     ($fmt:literal $(, $a:expr)* $(,)?) => {
@@ -205,6 +205,7 @@ const NDIS_OBJECT_TYPE_WDI_INIT_PARAMETERS: u8 = 0xC3;
 // From the vendor driver's command table (name, OID, completion status).
 const OID_WDI_TASK_SCAN: u32 = 0xE440_0004;
 const OID_WDI_TASK_CONNECT: u32 = 0xE440_0006;
+const OID_WDI_TASK_DISCONNECT: u32 = 0xE440_0008;
 const OID_WDI_TASK_SET_RADIO_STATE: u32 = 0xE440_000B;
 const OID_WDI_TASK_CREATE_PORT: u32 = 0xE440_000C;
 const OID_WDI_SET_ADD_CIPHER_KEYS: u32 = 0xE440_001D;
@@ -213,6 +214,7 @@ const OID_WDI_SET_RECEIVE_PACKET_FILTER: u32 = 0xE440_0024;
 
 const DONE_SCAN: NDIS_STATUS = 0x4005_003C;
 const DONE_CONNECT: NDIS_STATUS = 0x4005_0040;
+const DONE_DISCONNECT: NDIS_STATUS = 0x4005_0015;
 const DONE_SET_RADIO_STATE: NDIS_STATUS = 0x4005_0016;
 const DONE_CREATE_PORT: NDIS_STATUS = 0x4005_0044;
 
@@ -236,6 +238,7 @@ const TLV_PACKET_FILTER_PARAMETERS: u16 = 0x47;
 const TLV_ASSOCIATION_RESULT_PARAMETERS: u16 = 0x2D;
 const TLV_ASSOCIATION_REQUEST_FRAME: u16 = 0x2E;
 const TLV_CONNECT_PARAMETERS: u16 = 0x33;
+const TLV_DISCONNECT_PARAMETERS: u16 = 0x36;
 const TLV_CONNECT_BSS_ENTRY: u16 = 0x34;
 const TLV_ASSOCIATION_RESULT: u16 = 0x35;
 const TLV_AUTH_ALGO_LIST: u16 = 0x3C;
@@ -453,6 +456,12 @@ pub struct WdiAdapter {
     peer_id: u16,
     /// Keys are installed and the link is up to the protocols.
     connected: bool,
+
+    /// Halt is under way: the worker leaves at its next wait, and sets `worker_done` as it
+    /// goes. Halt waits for that before tearing down what the worker uses.
+    stopping: AtomicBool,
+    stop_event: KEVENT,
+    worker_done: KEVENT,
 
     /// EAPOL frames from the receive path, for the worker's supplicant.
     eapol_lock: KSPIN_LOCK,
@@ -1197,6 +1206,8 @@ unsafe extern "system" fn ue_initialize(handle: NDIS_HANDLE, driver_context: NDI
     KeInitializeEvent(addr_of_mut!((*a).cmd_lock), _EVENT_TYPE_SynchronizationEvent, TRUE as BOOLEAN);
     KeInitializeEvent(addr_of_mut!((*a).eapol_event), _EVENT_TYPE_SynchronizationEvent, FALSE as BOOLEAN);
     KeInitializeEvent(addr_of_mut!((*a).eapol_sent), _EVENT_TYPE_NotificationEvent, TRUE as BOOLEAN);
+    KeInitializeEvent(addr_of_mut!((*a).stop_event), _EVENT_TYPE_NotificationEvent, FALSE as BOOLEAN);
+    KeInitializeEvent(addr_of_mut!((*a).worker_done), _EVENT_TYPE_NotificationEvent, FALSE as BOOLEAN);
     KeInitializeSpinLock(addr_of_mut!((*a).bss_lock));
     KeInitializeSpinLock(addr_of_mut!((*a).eapol_lock));
     KeInitializeSpinLock(addr_of_mut!((*a).tx_lock));
@@ -1217,6 +1228,7 @@ unsafe extern "system" fn ue_initialize(handle: NDIS_HANDLE, driver_context: NDI
         ntkrnl_sys::ddk::ZwClose(thread as _);
     } else {
         logw!("no worker thread: %x\n", s);
+        KeSetEvent(addr_of_mut!((*a).worker_done), 0, FALSE as BOOLEAN);
     }
     NDIS_STATUS_SUCCESS
 }
@@ -1441,21 +1453,18 @@ unsafe fn read_config() -> Option<WifiConfig> {
     Some(cfg)
 }
 
-unsafe extern "system" fn worker(context: PVOID) {
-    let a = context as *mut WdiAdapter;
-    sleep_ms(2000);
-    let cfg = read_config();
-    let ssid: &[u8] = match &cfg {
-        Some(c) => &c.ssid[..c.ssid_len],
-        None => &[],
-    };
-    (&mut (*a).want_ssid)[..ssid.len()].copy_from_slice(ssid);
-    (*a).want_ssid_len = ssid.len();
-    let mut found = false;
+/// Wait `ms`, or less if halt begins. True when halt has begun.
+unsafe fn stop_wait(a: *mut WdiAdapter, ms: u32) -> bool {
+    ms_wait(addr_of_mut!((*a).stop_event), ms) || (*a).stopping.load(Ordering::Acquire)
+}
+
+/// Scan for the configured network, up to three times. True when it was found.
+unsafe fn find_network(a: *mut WdiAdapter, ssid: &[u8]) -> bool {
     for round in 1..=3u32 {
         let mut irql: KIRQL = 0;
         KeAcquireSpinLock(addr_of_mut!((*a).bss_lock), &mut irql);
         (*a).bss_count = 0;
+        (*a).target_len = 0;
         KeReleaseSpinLock(addr_of_mut!((*a).bss_lock), irql);
         logw!("scan %u\n", round);
         let s = scan(a, ssid);
@@ -1472,18 +1481,111 @@ unsafe extern "system" fn worker(context: PVOID) {
         }
         if (*a).target_len != 0 {
             logw!("found the configured network\n");
-            found = true;
-            break;
+            return true;
         }
-        sleep_ms(3000);
+        if stop_wait(a, 3000) {
+            return false;
+        }
     }
-    match cfg {
-        Some(c) if found && c.pass_len >= 8 => join(a, &c),
-        Some(_) if found => logw!("wifi.txt has no WPA2 passphrase (psk=, 8 to 63 characters): not joining\n"),
-        _ => {}
+    false
+}
+
+/// Join the configured network and keep it joined: after a lost link or a failed attempt,
+/// reset the LE's connection state and try again, backing off from 5 s to a minute while
+/// attempts keep failing. Leaves when halt begins.
+unsafe extern "system" fn worker(context: PVOID) {
+    let a = context as *mut WdiAdapter;
+    if !stop_wait(a, 2000) {
+        match read_config() {
+            Some(c) if c.pass_len >= 8 => {
+                (&mut (*a).want_ssid)[..c.ssid_len].copy_from_slice(&c.ssid[..c.ssid_len]);
+                (*a).want_ssid_len = c.ssid_len;
+                stay_joined(a, &c);
+            }
+            Some(c) => {
+                // Scan once anyway: the networks in range are worth a line in the log.
+                (&mut (*a).want_ssid)[..c.ssid_len].copy_from_slice(&c.ssid[..c.ssid_len]);
+                (*a).want_ssid_len = c.ssid_len;
+                find_network(a, &c.ssid[..c.ssid_len]);
+                logw!("wifi.txt has no WPA2 passphrase (psk=, 8 to 63 characters): not joining\n");
+            }
+            None => {
+                find_network(a, &[]);
+            }
+        }
     }
     logw!("worker done\n");
+    KeSetEvent(addr_of_mut!((*a).worker_done), 0, FALSE as BOOLEAN);
     ntkrnl_sys::ddk::PsTerminateSystemThread(STATUS_SUCCESS);
+}
+
+unsafe fn stay_joined(a: *mut WdiAdapter, cfg: &WifiConfig) {
+    // Test hook: `/WIFIDROP=<s>` drops the link once, s seconds after it first comes up.
+    let drop_after = ntkrnl_sys::bootopt::boot_option_u32(b"WIFIDROP", 30);
+    let mut backoff_s = 5u32;
+    let mut attempt = 0u32;
+    loop {
+        attempt += 1;
+        let end = if find_network(a, &cfg.ssid[..cfg.ssid_len]) {
+            join(a, cfg, if attempt == 1 { drop_after } else { None })
+        } else {
+            JoinEnd::Failed
+        };
+        if (*a).stopping.load(Ordering::Acquire) || end == JoinEnd::Stopped {
+            return;
+        }
+        // Whatever the LE still holds of the old connection goes before the next connect.
+        disconnect(a);
+        if end == JoinEnd::Lost {
+            backoff_s = 5;
+        }
+        logw!("joining again in %u s (attempt %u %s)\n", backoff_s, attempt,
+            if end == JoinEnd::Lost { b"lost the link\0".as_ptr() } else { b"failed\0".as_ptr() });
+        if stop_wait(a, backoff_s * 1000) {
+            return;
+        }
+        if end == JoinEnd::Failed {
+            backoff_s = (backoff_s * 2).min(60);
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum JoinEnd {
+    /// Never got the link up.
+    Failed,
+    /// Had the link, and lost it.
+    Lost,
+    /// Halt began.
+    Stopped,
+}
+
+/// The link is down to the protocols, if it was up. True when it was.
+unsafe fn link_down(a: *mut WdiAdapter) -> bool {
+    if !core::mem::replace(&mut (*a).connected, false) {
+        return false;
+    }
+    let mut ls: LinkState = core::mem::zeroed();
+    ls.Header = NdisObjectHeader { Type: NDIS_OBJECT_TYPE_DEFAULT, Revision: 1, Size: core::mem::size_of::<LinkState>() as u16 };
+    ls.MediaConnectState = 2; // MediaConnectStateDisconnected
+    indicate_link_state((*a).adapter, &ls);
+    true
+}
+
+/// End the LE's association, if it has one. Its failure is only logged: the LE refuses a
+/// disconnect with nothing to disconnect, and a connect follows either way.
+unsafe fn disconnect(a: *mut WdiAdapter) {
+    let mut b = [0u8; 16];
+    let mut w = TlvWriter::new(&mut b);
+    // the peer's address, then the 802.11 reason code (3: the station is leaving).
+    let mut p = [0u8; 8];
+    p[..6].copy_from_slice(&(*a).bssid);
+    p[6..8].copy_from_slice(&3u16.to_le_bytes());
+    w.tlv(TLV_DISCONNECT_PARAMETERS, &p);
+    let n = w.len;
+    let s = wdi_command(a, OID_WDI_TASK_DISCONNECT, (*a).port_id, &b[..n], DONE_DISCONNECT, 5_000).0;
+    logw!("disconnect: %x\n", s);
+    link_down(a);
 }
 
 /// Fresh randomness for the SNonce. The kernel offers no RNG to a driver here, so it is a
@@ -1501,8 +1603,9 @@ impl NonceSource {
 }
 
 /// Associate, run the 4-way handshake, install the keys, and bring the link up. Then stay to
-/// answer group rekeys for as long as the association lasts.
-unsafe fn join(a: *mut WdiAdapter, cfg: &WifiConfig) {
+/// answer group rekeys for as long as the association lasts. `drop_after`: the test hook's
+/// seconds of link before the worker disconnects on purpose.
+unsafe fn join(a: *mut WdiAdapter, cfg: &WifiConfig, drop_after: Option<u32>) -> JoinEnd {
     let mut nonce = NonceSource { h: wpa::Sha1::new() };
     nonce.stir();
     let pmk = wpa::psk(&cfg.pass[..cfg.pass_len], &cfg.ssid[..cfg.ssid_len]);
@@ -1511,16 +1614,16 @@ unsafe fn join(a: *mut WdiAdapter, cfg: &WifiConfig) {
     nonce.stir();
     if s != NDIS_STATUS_SUCCESS {
         logw!("connect failed: %x\n", s);
-        return;
+        return JoinEnd::Failed;
     }
     if !(*a).assoc_seen || (*a).assoc_status != 0 {
         logw!("connect completed without a successful association (seen %u, status %u)\n",
             (*a).assoc_seen as u32, (*a).assoc_status);
-        return;
+        return JoinEnd::Failed;
     }
     if (*a).rsn_len == 0 {
         logw!("the association request carried no RSN element: cannot run the handshake\n");
-        return;
+        return JoinEnd::Failed;
     }
     if let Some(cfg_peer) = (*a).data.TalTxRxPeerConfig {
         let mut qos = WDI_TXRX_PEER_CFG_QOS_CAPABLE;
@@ -1535,13 +1638,27 @@ unsafe fn join(a: *mut WdiAdapter, cfg: &WifiConfig) {
     let mut snonce = [0u8; 32];
     snonce[..20].copy_from_slice(&d1);
     snonce[20..].copy_from_slice(&d2[..12]);
+    // Frames left over from an earlier association belong to its handshake.
+    let mut irql: KIRQL = 0;
+    KeAcquireSpinLock(addr_of_mut!((*a).eapol_lock), &mut irql);
+    (*a).eapol_count = 0;
+    KeReleaseSpinLock(addr_of_mut!((*a).eapol_lock), irql);
     let mut sup = wpa::Supplicant::new(&pmk, &(*a).bssid, &(*a).port_mac, &(&(*a).rsn)[..(*a).rsn_len], &snonce);
     logw!("associated; waiting for the 4-way handshake\n");
 
     let mut reply = wpa::Reply { frame: [0; wpa::MAX_REPLY], len: 0, install_ptk: false, gtk: None, complete: false };
     let mut frame = [0u8; EAPOL_MAX];
     let mut idle_s = 0u32;
+    let mut up_s = 0u32;
+    let mut was_up = false;
     loop {
+        if (*a).stopping.load(Ordering::Acquire) {
+            return JoinEnd::Stopped;
+        }
+        if was_up && !(*a).connected {
+            // peer_delete: the LE ended the association (deauthentication, lost beacons).
+            return JoinEnd::Lost;
+        }
         let len = match pop_eapol(a, &mut frame) {
             Some(n) => n,
             None => {
@@ -1549,7 +1666,15 @@ unsafe fn join(a: *mut WdiAdapter, cfg: &WifiConfig) {
                     idle_s += 1;
                     if !(*a).connected && idle_s == 15 {
                         logw!("no handshake from the access point in 15 s\n");
-                        return;
+                        return JoinEnd::Failed;
+                    }
+                    if (*a).connected {
+                        up_s += 1;
+                        if drop_after == Some(up_s) {
+                            logw!("WIFIDROP: dropping the link after %u s\n", up_s);
+                            disconnect(a);
+                            return JoinEnd::Lost;
+                        }
                     }
                 }
                 continue;
@@ -1584,6 +1709,7 @@ unsafe fn join(a: *mut WdiAdapter, cfg: &WifiConfig) {
         }
         if reply.complete && !(*a).connected {
             (*a).connected = true;
+            was_up = true;
             logw!("4-way handshake complete: link up\n");
             let mut ls: LinkState = core::mem::zeroed();
             ls.Header = NdisObjectHeader { Type: NDIS_OBJECT_TYPE_DEFAULT, Revision: 1, Size: core::mem::size_of::<LinkState>() as u16 };
@@ -1637,6 +1763,14 @@ unsafe extern "system" fn ue_halt(ctx: NDIS_HANDLE, _action: u32) {
     let a = ctx as *mut WdiAdapter;
     let drv = (*a).drv;
     let w = &(*drv).wdi;
+    // The worker first: it issues commands and reads the adapter. Its longest wait is one
+    // command's completion (20 s for a scan or a connect).
+    (*a).stopping.store(true, Ordering::Release);
+    KeSetEvent(addr_of_mut!((*a).stop_event), 0, FALSE as BOOLEAN);
+    KeSetEvent(addr_of_mut!((*a).eapol_event), 0, FALSE as BOOLEAN);
+    if !ms_wait(addr_of_mut!((*a).worker_done), 60_000) {
+        logw!("halt: the worker did not stop in 60 s\n");
+    }
     if let Some(stop) = w.StopOperation {
         stop((*a).ihv_ctx);
     }
@@ -2149,13 +2283,10 @@ unsafe extern "system" fn peer_create(h: PVOID, port: u16, peer: u16, mac: WdiMa
 unsafe extern "system" fn peer_delete(h: PVOID, port: u16, peer: u16, status: *mut NDIS_STATUS) {
     let a = h as *mut WdiAdapter;
     logw!("peer %u on port %u deleted\n", peer as u32, port as u32);
-    if peer == (*a).peer_id && (*a).connected {
-        (*a).connected = false;
-        let mut ls: LinkState = core::mem::zeroed();
-        ls.Header = NdisObjectHeader { Type: NDIS_OBJECT_TYPE_DEFAULT, Revision: 1, Size: core::mem::size_of::<LinkState>() as u16 };
-        ls.MediaConnectState = 2; // MediaConnectStateDisconnected
-        indicate_link_state((*a).adapter, &ls);
+    if peer == (*a).peer_id && link_down(a) {
         logw!("the access point is gone: link down\n");
+        // The worker notices at its next wait, and joins again.
+        KeSetEvent(addr_of_mut!((*a).eapol_event), 0, FALSE as BOOLEAN);
     }
     *status = NDIS_STATUS_SUCCESS;
 }

@@ -349,7 +349,14 @@ extern "system" {
 pub unsafe extern "system" fn KeConnectInterrupt(Interrupt: PKINTERRUPT) -> BOOLEAN {
     use core::sync::atomic::Ordering;
     let Interrupt = opaque_ptr(Interrupt);
-    // Reject the special INTIDs and anything past the table.
+    // Reject the special INTIDs and anything past the table, and the SGIs (INTID 0-15): those
+    // are the HAL's own IPIs, never a device line, as x86 refuses a vector below
+    // PRIMARY_VECTOR_BASE (IoInterrupt.c:129 connects vector 0 and expects
+    // STATUS_INVALID_PARAMETER). PPIs stay connectable: the timer is one.
+    const GIC_SGI_COUNT: ULONG = 16;
+    if (*Interrupt).Vector < GIC_SGI_COUNT {
+        return 0u8;
+    }
     let Some(vector) = slot((*Interrupt).Vector) else {
         return 0u8;
     };

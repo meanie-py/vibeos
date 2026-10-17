@@ -69,6 +69,11 @@ def vibeos_root(repo: Path) -> Path:
     parts = resolved.parts
     if ".claude" in parts:
         resolved = Path(*parts[: parts.index(".claude")])
+    elif ".git" in parts:
+        # `land`'s premerge worktrees live under the shared git dir
+        # (`<main>/.git/vibeos-premerge/<lane>-<pid>`); their runs belong in the fleet
+        # ledger, not in a stray one beside them.
+        resolved = Path(*parts[: parts.index(".git")])
     return resolved.parent
 
 

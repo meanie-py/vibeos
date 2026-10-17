@@ -1058,7 +1058,7 @@ unsafe extern "system" fn present_clock_timer_CancelTimer(iface: *mut IMFTimer, 
     EnterCriticalSection(&raw mut (*clock).cs);
 
     timer = ((*clock).timers.next as *mut u8).offset(
-        -(&raw mut (*core::ptr::null_mut::<clock_timer>()).entry as usize as isize),
+        -(core::mem::offset_of!(clock_timer, entry) as usize as isize),
     ) as *mut clock_timer;
     while &raw mut (*timer).entry != &raw mut (*clock).timers {
         if &raw mut (*timer).IUnknown_iface == cancel_key {
@@ -1067,7 +1067,7 @@ unsafe extern "system" fn present_clock_timer_CancelTimer(iface: *mut IMFTimer, 
             break;
         } else {
             timer = ((*timer).entry.next as *mut u8).offset(
-                -(&raw mut (*core::ptr::null_mut::<clock_timer>()).entry as usize as isize),
+                -(core::mem::offset_of!(clock_timer, entry) as usize as isize),
             ) as *mut clock_timer;
         }
     }

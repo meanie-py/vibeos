@@ -68,7 +68,6 @@ extern "C" {
     fn CdReleaseFile(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
 }
 extern "C" {
-    fn ASSERT_FILE_OBJECT(obj: PFILE_OBJECT);
 }
 extern "C" {
     fn FlagOn(Flags: u32, Bit: u32) -> u32;
@@ -446,7 +445,7 @@ pub unsafe extern "system" fn CdFastQueryBasicInfo(
     let mut Fcb: PFCB = core::ptr::null_mut();
 
     UNREFERENCED_PARAMETER!(DeviceObject as *mut core::ffi::c_void);
-    ASSERT_FILE_OBJECT(FileObject);
+    ASSERT_FILE_OBJECT!(FileObject);
     FsRtlEnterFileSystem();
 
     TypeOfOpen = CdFastDecodeFileObject(FileObject, core::ptr::addr_of_mut!(Fcb));
@@ -500,7 +499,7 @@ pub unsafe extern "system" fn CdFastQueryStdInfo(
     // PAGED_CODE();
     // UNREFERENCED_PARAMETER( device_object );
 
-    ASSERT_FILE_OBJECT(file_object);
+    ASSERT_FILE_OBJECT!(file_object);
 
     FsRtlEnterFileSystem();
 
@@ -568,7 +567,7 @@ pub unsafe extern "system" fn CdFastQueryNetworkInfo(
 
     let _ = DeviceObject;
 
-    ASSERT_FILE_OBJECT(FileObject);
+    ASSERT_FILE_OBJECT!(FileObject);
 
     FsRtlEnterFileSystem();
 

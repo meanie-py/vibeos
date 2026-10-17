@@ -170,44 +170,65 @@ pub unsafe extern "system" fn MmFindGap(
     TopDown: BOOLEAN,
 ) -> PVOID {
     let Process = MmGetAddressSpaceOwner(AddressSpace) as *mut _EPROCESS;
-    let VadRoot: PMM_AVL_TABLE = if !Process.is_null() {
-        core::ptr::addr_of_mut!((*Process).VadRoot)
-    } else {
-        core::ptr::addr_of_mut!(MiRosKernelVadRoot)
-    };
-    
-    let mut Parent: PMMADDRESS_NODE = core::ptr::null_mut();
-    let mut StartingAddress: ULONG_PTR = 0;
-    
-    let Result = if TopDown != 0 {
+    if TopDown != 0 {
         let HighestAddress: ULONG_PTR = if !Process.is_null() {
             MM_HIGHEST_VAD_ADDRESS as ULONG_PTR
         } else {
             ULONG_PTR::MAX
         };
-        MiFindEmptyAddressRangeDownTree(
-            Length as _,
-            HighestAddress as _,
-            Granularity as _,
-            VadRoot,
-            core::ptr::addr_of_mut!(StartingAddress) as ntkrnl_sys::ddk::PULONG_PTR,
-            core::ptr::addr_of_mut!(Parent),
-        )
+        return MmFindGapBelow(AddressSpace, Length, Granularity, HighestAddress);
+    }
+
+    let mut Parent: PMMADDRESS_NODE = core::ptr::null_mut();
+    let mut StartingAddress: ULONG_PTR = 0;
+    let Result = MiFindEmptyAddressRangeInTree(
+        Length as _,
+        Granularity as _,
+        mm_vad_root(Process),
+        core::ptr::addr_of_mut!(Parent),
+        core::ptr::addr_of_mut!(StartingAddress) as ntkrnl_sys::ddk::PULONG_PTR,
+    );
+    mm_gap_result(Result as u32, StartingAddress)
+}
+
+unsafe fn mm_vad_root(Process: *mut _EPROCESS) -> PMM_AVL_TABLE {
+    if !Process.is_null() {
+        core::ptr::addr_of_mut!((*Process).VadRoot)
     } else {
-        MiFindEmptyAddressRangeInTree(
-            Length as _,
-            Granularity as _,
-            VadRoot,
-            core::ptr::addr_of_mut!(Parent),
-            core::ptr::addr_of_mut!(StartingAddress) as ntkrnl_sys::ddk::PULONG_PTR,
-        )
-    };
-    
-    if Result == 0 {
+        core::ptr::addr_of_mut!(MiRosKernelVadRoot)
+    }
+}
+
+/// The C returns NULL only for TableFoundNode (1), the searches' "no room" answer. The port
+/// tested `== 0`, which is TableEmptyTree: an empty tree's valid address became NULL.
+fn mm_gap_result(Result: u32, StartingAddress: ULONG_PTR) -> PVOID {
+    if Result == ntkrnl_sys::ddk::_TABLE_SEARCH_RESULT_TableFoundNode as u32 {
         core::ptr::null_mut()
     } else {
         StartingAddress as PVOID
     }
+}
+
+/// A top-down gap whose last byte is at or below `HighestAddress`; NULL if none. The ROS
+/// section views use it for ZeroBits, which MmFindGap has no way to express.
+pub unsafe fn MmFindGapBelow(
+    AddressSpace: PMMSUPPORT,
+    Length: ULONG_PTR,
+    Granularity: ULONG_PTR,
+    HighestAddress: ULONG_PTR,
+) -> PVOID {
+    let Process = MmGetAddressSpaceOwner(AddressSpace) as *mut _EPROCESS;
+    let mut Parent: PMMADDRESS_NODE = core::ptr::null_mut();
+    let mut StartingAddress: ULONG_PTR = 0;
+    let Result = MiFindEmptyAddressRangeDownTree(
+        Length as _,
+        HighestAddress as _,
+        Granularity as _,
+        mm_vad_root(Process),
+        core::ptr::addr_of_mut!(StartingAddress) as ntkrnl_sys::ddk::PULONG_PTR,
+        core::ptr::addr_of_mut!(Parent),
+    );
+    mm_gap_result(Result as u32, StartingAddress)
 }
 
 #[no_mangle]

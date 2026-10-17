@@ -59,18 +59,10 @@ pub unsafe extern "system" fn IoQueueWorkItemEx(
 
 // IoSet/GetDevicePropertyData are ntoskrnl exports now (pnpmgr-rust).
 
-#[no_mangle]
-pub unsafe extern "C" fn IoSetDeviceInterfacePropertyData(
-    SymbolicLinkName: PUNICODE_STRING,
-    PropertyKey: *const DEVPROPKEY,
-    Lcid: LCID,
-    Flags: ULONG,
-    Type: DEVPROPTYPE,
-    Size: ULONG,
-    Data: PVOID,
-) -> NTSTATUS {
-    STATUS_NOT_IMPLEMENTED
-}
+// IoSet/GetDeviceInterfacePropertyData are ntoskrnl exports too (pnpprop.rs). Upstream's
+// io.c forwards to the kernel export through MmGetSystemRoutineAddress because it may be
+// absent (it is NT 6.2+); this kernel always has it, so a copy here would only shadow the
+// import (scan_export_shadows), as the IoSet/GetDevicePropertyData ones did.
 #[no_mangle]
 pub unsafe extern "system" fn IoGetIoPriorityHint(Irp: PIRP) -> IO_PRIORITY_HINT {
     let _ = Irp;

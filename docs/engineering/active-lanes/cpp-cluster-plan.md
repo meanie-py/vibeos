@@ -114,33 +114,27 @@ Rust — don't requeue it.)
   `this` as its control ID the way ATL's `CWindowImplBaseT::Create` does;
   `create_window_info` (a module's own GetWndClassInfo) does. Unify them, and check the
   shipped window modules when doing so.
-- rapps integrators' local workarounds that want an atl_rust/prelude home: `CAtlList::FindPos`
-  (returns POSITION; `Find` returns bool), `CStringW::{Replace(str,str), FindOneOf,
+- rapps integrators' local workarounds that want an atl_rust/prelude home (`CAtlList::FindPos`
+  / `FindPosAfter` landed 2026-10-16, mmc_new's private copy dropped): `CStringW::{Replace(str,str), FindOneOf,
   CopyChars, GetEnvironmentVariable}`, `CStringA::Append`, `InterlockedIncrement64` in
   win32macros-rust, and an `atl_rust::win::unsubclass_window` (loaddlg declares GetPropW /
   RemovePropW locally and hard-codes atl_rust's prop names). The island's
   `ATL__ATL_WNDCLASSINFOW::m_wc` is `WNDCLASSEXA`, and prelude `DLGPROC`/`WNDPROC` are spelled
   over `ntdll_sys::HWND__` rather than the island's; both are transmuted at the call site.
   The model also wrote `new_0::<T>()` on non-generic fns and called `__ctor_0CUiWindow`.
-- A `port integrate` pass rewrites extern blocks after the hand bank is applied: a nested
-  block's closing brace is dedented to column 0 and `unsafe extern` loses `unsafe` (rapps'
-  misc/settings/loaddlg). Harmless on edition 2021, but hand text should be final; find the
-  pass and run it before `apply_hand`, or make it preserve the block's own text.
-- **Re-run `port cppapp` + `port replay` for the shipped C++ apps** after the member
-  default-construction fix (`_ctor_prologue`, 2026-10-15; rapps crashed on it). Audit of the
-  saved models: mspaint 10 members (CStyledCursor's `-1`/`CLR_INVALID` cache keys and
-  VirtualBrush's `PAL_MODERN` start zeroed -- first comparison differs, looks benign), certmgr 5
-  (CSortableHeader, CSplitter: read their ctors), cleanmgr 1 and mmc_new 21 (all CWindow,
-  harmless), certutil/drwtsn32/sndrec32 0. cicero/msctf/msutb/msctfime/ctfmon's saved models
-  predate a `Method` field rename (`callconv`) and could not be read; regenerate to audit.
-  The changed ctors lowered at $0 for rapps. The same re-run picks up three more fixes from
-  rapps bring-up: a polymorphic Drop resetting its own vtables, `return this;` as a secondary
-  base (a probe of the saved units found 0 such returns in the shipped apps; `this` PASSED as
-  a base argument is not yet audited), and `delete member;` (cosmetic once the model repairs it).
-- cpp_lower should spell a C++ implicit converting-constructor TEMPORARY (clang's
-  `ConstructorConversion` into a `const CStringA&` / `const CStringW&` parameter) as an
-  explicit `CStringA(p)`, the way `_temporary` does for written ones. rapps' three FDI
-  sites were hand-fixed and banked; the model's guess was a pointer cast.
+- **Shipped C++ apps vs this session's generator fixes (2026-10-16).** cicero was
+  regenerated (`port cppapp` + `port replay`, $0.18 of re-buys; bodies imported from
+  vibeos-msvcrt-homebrew with `port bank-import`) and the whole CTF cluster checks clean x3;
+  it fixed 17 override self-dispatch recursions. The 19 in mspaint/msutb/msctfime were
+  rewritten in place and banked instead (`tools/scan_override_self_dispatch.py` now gates the
+  shape). Member default-construction audit: certmgr's CSplitter members are CWindows (a
+  zeroed `m_hWnd` is what their constructor writes) and CSortableHeader has none, mspaint's
+  are benign (plan, 2026-10-15) -- so no other regeneration is owed for correctness. Still
+  owed: a regeneration of mspaint/msutb/msctfime/msctf/ctfmon to drop their hand-banked
+  workarounds, and `this` PASSED as a base argument is not audited.
+- Two port passes still walk `state["tus"]` over OUTPUTS (`_wine_channel_macro_calls`,
+  `_resolve_anonymous_types`), which for a cppapp module skips every synthetic unit -- the
+  same miss that left cicero's `static cicGetFN__T5: () = ();` placeholder in place.
 - ~290 bare fn aliases in already-shipped crates have the shape `_option_fn_aliases` fixes
   (non-`Option` fn pointer); UB only if the value can be zero. Audit with that pass.
 - certutil: a SHA1/`hashfile` case on a system with a CSP registered (the live CD has none;

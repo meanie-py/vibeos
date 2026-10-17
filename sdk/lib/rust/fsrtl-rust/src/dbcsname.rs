@@ -153,7 +153,8 @@ pub unsafe extern "system" fn FsRtlIsDbcsInExpression(
     let mut name_char: USHORT = 0;
     let mut expression_char: USHORT;
     let mut end_of_name: BOOLEAN = 0u8;
-    let mut result: BOOLEAN;
+    let result: BOOLEAN;
+    let mut alloc_failed = false;
     let mut dont_skip_dot: BOOLEAN;
 
     if (*Name).Length == 0 || (*Expression).Length == 0 {
@@ -219,7 +220,7 @@ pub unsafe extern "system" fn FsRtlIsDbcsInExpression(
         } else {
             if FsRtlIsLeadDbcsCharacter(*(*Name).Buffer.add(name_position as usize) as u8) {
                 name_char = (*(*Name).Buffer.add(name_position as usize) as u8 as USHORT) +
-                    (0x100 * (*(*Name).Buffer.add((name_position + 1) as u8 as usize) as USHORT));
+                    (0x100 * (*(*Name).Buffer.add((name_position + 1) as usize) as USHORT));
                 name_position += core::mem::size_of::<USHORT>() as USHORT;
             } else {
                 name_char = *(*Name).Buffer.add(name_position as usize) as u8 as USHORT;
@@ -250,7 +251,7 @@ pub unsafe extern "system" fn FsRtlIsDbcsInExpression(
                         u32::from_ne_bytes(*b"nrSF"),
                     );
                     if allocated_buffer.is_null() {
-                        result = 0u8;
+                        alloc_failed = true;
                         break 'outer;
                     }
 
@@ -273,7 +274,7 @@ pub unsafe extern "system" fn FsRtlIsDbcsInExpression(
 
                 if FsRtlIsLeadDbcsCharacter(*(*Expression).Buffer.add(expression_position as usize) as u8) {
                     expression_char = (*(*Expression).Buffer.add(expression_position as usize) as u8 as USHORT) +
-                        (0x100 * (*(*Expression).Buffer.add((expression_position + 1) as u8 as usize) as USHORT));
+                        (0x100 * (*(*Expression).Buffer.add((expression_position + 1) as usize) as USHORT));
                     offset = core::mem::size_of::<USHORT>() as USHORT;
                 } else {
                     expression_char = *(*Expression).Buffer.add(expression_position as usize) as u8 as USHORT;
@@ -354,14 +355,19 @@ pub unsafe extern "system" fn FsRtlIsDbcsInExpression(
         backtracking = old_backtracking;
         old_backtracking = backtracking_swap;
 
+        // The C's `for (; !EndOfName; MatchingChars = BackTrackingPosition)` takes the count
+        // BEFORE testing EndOfName, so the end-of-name pass (a trailing `*`, DOS_STAR or
+        // DOS_DOT reaching the end of the expression) counts. Breaking first dropped those
+        // matches: `F0_*.*` did not match `F0_.` (FsRtlExpression.c:233).
+        matching_chars = backtracking_position;
+
         if end_of_name != 0 {
             break;
         }
-
-        matching_chars = backtracking_position;
     }
 
-    result = if matching_chars != 0 && *old_backtracking.add((matching_chars - 1) as usize) == (*Expression).Length * 2 {
+    // The C jumps past this to Exit on an allocation failure.
+    result = if !alloc_failed && matching_chars != 0 && *old_backtracking.add((matching_chars - 1) as usize) == (*Expression).Length * 2 {
         1u8
     } else {
         0u8
@@ -482,7 +488,7 @@ pub unsafe extern "system" fn FsRtlIsFatDbcsLegal(
                 return 0u8;
             }
 
-            if i > 0 && *dbcs_name.Buffer.add((i - 1) as u8 as usize) == b' ' as i8 {
+            if i > 0 && *dbcs_name.Buffer.add((i - 1) as usize) == b' ' as i8 {
                 return 0u8;
             }
         } else if *dbcs_name.Buffer.add(i as usize) as u8 == b' ' && i == (dbcs_name.Length - 1) {

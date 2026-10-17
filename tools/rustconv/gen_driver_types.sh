@@ -6718,7 +6718,7 @@ case "$DRIVER" in
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -D__WINESRC__ -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
   wscript)
-    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-11 from base/applications/cmdutils/wscript/CMakeLists.txt
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-16 from base/applications/cmdutils/wscript/CMakeLists.txt
     # (3 compiled TU(s), 153 headers in the include closure, 5 switch constant(s)).
     # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
     # that exact sequence is bindgen-able). Review the WHY notes in the report.
@@ -6728,7 +6728,7 @@ case "$DRIVER" in
     # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
     BLOCKLIST_FUNCS=1
     DRIVER_DIR="${SRC}/base/applications/cmdutils/wscript"
-    WRAPPER_INC=$'#include "precomp.h"\n#include <stdarg.h>\n#define COBJMACROS\n#define CONST_VTABLE\n#include <windef.h>\n#include <winbase.h>\n#include <winreg.h>\n#include <ole2.h>\n#include <shellapi.h>\n#include <activscp.h>\n#include <initguid.h>\n#include "wscript.h"\n#include "resource.h"\n#include <wine/debug.h>'
+    WRAPPER_INC=$'#include <stdarg.h>\n#define COBJMACROS\n#define CONST_VTABLE\n#include <windef.h>\n#include <winbase.h>\n#include <winreg.h>\n#include <ole2.h>\n#include <shellapi.h>\n#include <activscp.h>\n#include <initguid.h>\n#include "wscript.h"\n#include "resource.h"\n#include <wine/debug.h>\n#include <commctrl.h>\n#include <msxml2.h>\n#include <shlwapi.h>'
     ALLOW_FILES=( --allowlist-file '.*[/\\]activscp\.h' --allowlist-file '.*[/\\]commctrl\.h'
                   --allowlist-file '.*[/\\]ihost\.h'
                   --allowlist-file '.*[/\\]initguid\.h'
@@ -6746,8 +6746,8 @@ case "$DRIVER" in
     EXTRA_INC=( -I"${SRC}/base/applications/cmdutils/wscript" -I"${SRC}/build-i386/base/applications/cmdutils/wscript" -I"${SRC}/sdk/include/wine" )
     # LOWER priority than the standard SDK dirs -- the real compile lists these
     # after them, and hoisting one ahead swaps which header an include resolves to.
-    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
-    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -D__WINESRC__ -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/vendor/symcrypt/inc" -I"${SRC}/vendor/symcrypt/lib" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DUNICODE -D_UNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D__USE_CRTIMP -D__WINESRC__ -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
   netsh)
     # AUTO-DERIVED by rustconv.profile_derive on 2026-10-11 from base/applications/network/netsh/CMakeLists.txt

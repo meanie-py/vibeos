@@ -5,7 +5,7 @@ branch `lint-rs`. Read `AGENTS.md` first: every rule there applies to this lane.
 
 ## The problem, measured
 
-`./vibeos-cli check` currently registers **113 source checks**; the historical logs
+`./vibeos-cli check` currently registers **116 source checks**; the historical logs
 contain 117 scanner names. Almost all began as separate Python scripts
 (`tools/scan_*.py`: 102 files, ~27K lines; plus `tools/verify_*.py`, `tools/rustconv/...`).
 Each one is its own process, and almost each one walks, reads and re-tokenises the same
@@ -228,7 +228,9 @@ TSV was produced from `/tmp/vibeos-cli/*-check-*/commands.jsonl` (`stage` = `lin
 | `scan_unpruned_walk` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_extern_decl_drift` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_dropped_asserts` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-
+| `scan_override_self_dispatch` | No | — | Owed: added on master; remains in Python until parity-proven. |
+| `scan_version_vs_c` | No | — | Owed: added on master; remains in Python until parity-proven. |
+| `null_offset_to_offset_of` | No | — | Owed: added on master; remains in Python until parity-proven. |
 
 ## Batch 1 — host runner and twelve rules (2026-10-16)
 
@@ -300,7 +302,7 @@ with 2.58 GiB peak RSS. This includes the shared source snapshot.
 Twenty independent Python scanners and ten pytest files are removed; their fixtures
 run in Rust. `scan_wide_byte_copy.py` remains a helper library for unported rules.
 
-The full rewrite remains owed: 75 registry entries still need ports, and five
+The full rewrite remains owed: 78 registry entries still need ports, and five
 external/binary checks remain excluded. C-twin/function indexing and CMake pairing
 are still needed by the remaining cross-language rules.
 
@@ -312,3 +314,15 @@ concurrently, versus batch 1's 103.84-second run under different load; this is n
 a controlled before/after suite timing. Both final parity reports cover all 33
 plugins and yield the same 81 findings: the prior 58 plus this batch's 23.
 No baseline or OS source changed; no OS build or smoke was needed for this batch.
+
+Syncing current master adds `scan_override_self_dispatch`, `scan_version_vs_c` and
+`null_offset_to_offset_of`, bringing the registry to 116 checks. All three remain
+Python entries tracked in the inventory; 33 Rust plugins and five exclusions leave
+78 source checks owed. The tooling merge preserves the new version-scanner tests
+and keeps the retired scanner tests removed.
+
+Post-merge validation: all **116 source stages** pass in 256.12 seconds
+(`20261016-233006-xh6a60u7-check-all`), while full tooling ran concurrently.
+All **141 tooling checks** pass (`.cache/vibeos-lint/check-tooling-batch02-merged.log`).
+A subsequent warm run of all 33 Rust rules over the merged tree yields 81 findings
+in **7.61 seconds wall / 46.11 seconds user CPU**, with 2.58 GiB peak RSS.

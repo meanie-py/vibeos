@@ -981,7 +981,7 @@ unsafe extern "C" fn source_reader_pull_transform_samples(
     ptr = list_next(&raw mut (*stream).transforms, &raw mut (*entry).entry);
     if !ptr.is_null() {
         next = (ptr as *mut ::core::ffi::c_char).offset(
-            -(&raw mut (*::core::ptr::null_mut::<transform_entry>()).entry
+            -(core::mem::offset_of!(transform_entry, entry)
                 as ::core::ffi::c_ulonglong as isize),
         ) as *mut transform_entry;
     }
@@ -1123,7 +1123,7 @@ unsafe extern "C" fn source_reader_drain_transform_samples(
     ptr = list_next(&raw mut (*stream).transforms, &raw mut (*entry).entry);
     if !ptr.is_null() {
         next = (ptr as *mut u8).offset(
-            -(&raw mut (*core::ptr::null_mut::<transform_entry>()).entry as usize as isize),
+            -(core::mem::offset_of!(transform_entry, entry) as usize as isize),
         ) as *mut transform_entry;
     }
     hr = IMFTransform_ProcessMessage(
@@ -1158,7 +1158,7 @@ unsafe extern "C" fn source_reader_flush_transform_samples(
     ptr = list_next(&raw mut (*stream).transforms, &raw mut (*entry).entry);
     if !ptr.is_null() {
         next = (ptr as *mut core::ffi::c_char).offset(
-            -(&raw mut (*core::ptr::null_mut::<transform_entry>()).entry
+            -(core::mem::offset_of!(transform_entry, entry)
                 as core::ffi::c_ulonglong as isize),
         ) as *mut transform_entry;
     }
@@ -1213,7 +1213,7 @@ unsafe extern "C" fn source_reader_process_sample(
         return source_reader_queue_sample(reader, stream, 0 as UINT, sample);
     }
     entry = (ptr as *mut core::ffi::c_char).offset(
-        -(core::ptr::addr_of_mut!((*core::ptr::null_mut::<transform_entry>()).entry)
+        -(core::mem::offset_of!(transform_entry, entry)
             as core::ffi::c_ulonglong as isize),
     ) as *mut transform_entry;
 
@@ -1482,13 +1482,13 @@ unsafe extern "C" fn media_stream_pop_response(
     let mut sample: *mut IMFSample = ::core::ptr::null_mut::<IMFSample>();
     let mut hr: HRESULT = 0;
     response = ((*reader).responses.next as *mut ::core::ffi::c_char).offset(
-        -(&raw mut (*::core::ptr::null_mut::<stream_response>()).entry as ::core::ffi::c_ulonglong
+        -(core::mem::offset_of!(stream_response, entry) as ::core::ffi::c_ulonglong
             as isize),
     ) as *mut stream_response;
     while &raw mut (*response).entry != &raw mut (*reader).responses {
         if !stream.is_null() && (*response).stream_index != (*stream).index as DWORD {
             response = ((*response).entry.next as *mut ::core::ffi::c_char).offset(
-                -(&raw mut (*::core::ptr::null_mut::<stream_response>()).entry
+                -(core::mem::offset_of!(stream_response, entry)
                     as ::core::ffi::c_ulonglong as isize),
             ) as *mut stream_response;
         } else {

@@ -15,10 +15,8 @@ extern "C" {
 }
 
 extern "C" {
-    fn ASSERT_IRP_CONTEXT(p: PIRP_CONTEXT);
 }
 extern "C" {
-    fn ASSERT_FCB(p: PFCB);
 }
 extern "C" {
     fn CdCreateIrpContextLite(IrpContext: PIRP_CONTEXT) -> *mut IRP_CONTEXT_LITE;
@@ -42,7 +40,6 @@ extern "system" {
     fn IoQueueWorkItem( IoObject: *mut IO_WORKITEM, WorkerRoutine: unsafe extern "system" fn(PDEVICE_OBJECT, *mut core::ffi::c_void), QueueType: WORK_QUEUE_TYPE, Context: *mut core::ffi::c_void, );
 }
 extern "system" {
-    fn ASSERT_OPTIONAL_VCB(Vcb: PVCB);
 }
 extern "C" {
     fn CdAcquireCdData(IrpContext: PIRP_CONTEXT);

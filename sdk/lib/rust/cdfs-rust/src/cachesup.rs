@@ -78,10 +78,8 @@ unsafe fn CdConvertCdTimeToNtTime(
 }
 
 extern "C" {
-    fn ASSERT_IRP_CONTEXT(IrpContext: *mut IRP_CONTEXT);
 }
 extern "C" {
-    fn ASSERT_FCB(Fcb: *mut FCB);
 }
 extern "C" {
     fn CdLockFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
@@ -173,7 +171,6 @@ extern "C" {
     fn CdCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
 }
 extern "C" {
-    fn ASSERT_EXCLUSIVE_VCB(Vcb: *mut VCB);
 }
 extern "C" {
     fn CdFspClose(Vcb: *mut VCB);
@@ -216,8 +213,8 @@ pub unsafe extern "C" fn CdCreateInternalStream(
 
     // PAGED_CODE(); - ignored
 
-    ASSERT_IRP_CONTEXT(IrpContext);
-    ASSERT_FCB(Fcb);
+    ASSERT_IRP_CONTEXT!(IrpContext);
+    ASSERT_FCB!(Fcb);
 
     CdLockFcb(IrpContext, Fcb);
 
@@ -415,9 +412,9 @@ pub unsafe extern "C" fn CdDeleteInternalStream(
     // UNREFERENCED_PARAMETER( IrpContext );
     let _ = IrpContext;
 
-    ASSERT_IRP_CONTEXT(IrpContext);
+    ASSERT_IRP_CONTEXT!(IrpContext);
 
-    ASSERT_FCB(Fcb);
+    ASSERT_FCB!(Fcb);
 
     CdLockFcb(IrpContext, Fcb);
 
@@ -466,7 +463,7 @@ pub unsafe extern "C" fn CdPurgeVolume(
 
     unsafe {
         PAGED_CODE!();
-        ASSERT_EXCLUSIVE_VCB(Vcb);
+        ASSERT_EXCLUSIVE_VCB!(Vcb);
         CdFspClose(Vcb);
         CdAcquireAllFiles(IrpContext, Vcb);
 

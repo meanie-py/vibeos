@@ -134,6 +134,28 @@ class Control:
 
 # ── fixtures, each seeded from a real incident ───────────────────────────────
 
+# scan_override_self_dispatch. Seeded from mspaint 2026-10-16: SmoothDrawTool::OnEndDraw's
+# `ToolBase::OnEndDraw(bCancel)` dispatched back into itself. GOOD: the base's own body, and
+# the same virtual called on ANOTHER object (a member), which is an ordinary virtual call.
+_OVERRIDE_SELF_DISPATCH_BAD = """
+impl SmoothDrawTool {
+    pub unsafe fn OnEndDraw__body(&mut self, bCancel: BOOL) {
+        let this_: *mut Self = self;
+        (*this_).m_bDrawing = 0;
+        (*this_).__base0.OnEndDraw(bCancel);
+    }
+}
+"""
+_OVERRIDE_SELF_DISPATCH_GOOD = """
+impl SmoothDrawTool {
+    pub unsafe fn OnEndDraw__body(&mut self, bCancel: BOOL) {
+        let this_: *mut Self = self;
+        (*this_).__base0.OnEndDraw__body(bCancel);
+        (*(*this_).m_pChild).__base0.OnEndDraw(bCancel);
+    }
+}
+"""
+
 # scan_bugcheck_stubs. Seeded from fastfat 2026-07-26: three boots, three stubs
 # (FatGenerateFileIdFromFcb -> FatOpenVolume -> ...), each a full build+boot to
 # discover something the tree already knew. The GOOD case pins the two ways this
@@ -495,6 +517,47 @@ _DEAD_CFG_GOOD = """\
 pub unsafe extern "fastcall" fn RtlPrefetchMemoryNonTemporal(_Source: PVOID, _Length: SIZE_T) {}
 #[cfg(all(target_arch = "x86_64", target_os = "windows"))]
 pub fn allowed() {}
+"""
+
+# scan_version_vs_c. fastfat lockctrl.c gates the "only when it interferes with oplocks"
+# filter on NTDDI_WIN8; the WS03 build checks the oplock for every lock request and never
+# asks FsRtlAreThereWaitingFileLocks. The Rust asked it eagerly, ahead of the cfg! test.
+_VERSION_BAD = """\
+pub unsafe extern "C" fn FatCommonLockControl(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS {
+    let has_waiting_locks = !is_lock && FsRtlAreThereWaitingFileLocks(lock) != 0;
+    if !cfg!(ntddi_ge_ntddi_win8) || is_lock_within_size || has_waiting_locks {
+        FsRtlCheckOplock(oplock, Irp);
+    }
+    0
+}
+"""
+_VERSION_GOOD = """\
+pub unsafe extern "C" fn FatCommonLockControl(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS {
+    if !cfg!(ntddi_ge_ntddi_win8)
+        || is_lock_within_size
+        || (!is_lock && FsRtlAreThereWaitingFileLocks(lock) != 0)
+    {
+        FsRtlCheckOplock(oplock, Irp);
+    }
+    0
+}
+"""
+
+# null_offset_to_offset_of --lint. Seeded from eventlog file.rs and Wine's LIST_ENTRY: a
+# field projection through null is UB even under &raw / addr_of!, offset_of! is the same
+# number defined.
+_NULL_PLACE_BAD = """\
+unsafe fn f(e: PLIST_ENTRY) -> PLOGFILE {
+    let off = &raw mut (*::core::ptr::null_mut::<LOGFILE>()).ListEntry as ULONG_PTR;
+    (e as ULONG_PTR).wrapping_sub(off) as PLOGFILE
+}
+"""
+_NULL_PLACE_GOOD = """\
+unsafe fn f(e: PLIST_ENTRY) -> PLOGFILE {
+    // was &raw mut (*core::ptr::null_mut::<LOGFILE>()).ListEntry
+    let off = core::mem::offset_of!(LOGFILE, ListEntry) as ULONG_PTR;
+    (e as ULONG_PTR).wrapping_sub(off) as PLOGFILE
+}
 """
 
 _BITWISE_NOT_BAD = """\
@@ -2846,6 +2909,20 @@ CONTROLS: list[Control] = [
         good=_EXPORT_SHADOW_GOOD,
     ),
     Control(
+        name="null_offset_to_offset_of",
+        script="tools/null_offset_to_offset_of.py",
+        argv=["--lint"],
+        bad={"rust/eventlog-rust/src/file.rs": _NULL_PLACE_BAD},
+        good={"rust/eventlog-rust/src/file.rs": _NULL_PLACE_GOOD},
+    ),
+    Control(
+        name="scan_version_vs_c",
+        script="tools/scan_version_vs_c.py",
+        argv=["--lint"],
+        bad={"rust/fastfat-rust/src/lockctrl.rs": _VERSION_BAD},
+        good={"rust/fastfat-rust/src/lockctrl.rs": _VERSION_GOOD},
+    ),
+    Control(
         name="scan_cfg_vs_c",
         script="tools/scan_cfg_vs_c.py",
         argv=["--lint"],
@@ -2866,6 +2943,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"bad.rs": _BITWISE_NOT_BAD},
         good={"good.rs": _BITWISE_NOT_GOOD},
+    ),
+    Control(
+        name="scan_override_self_dispatch",
+        script="tools/scan_override_self_dispatch.py",
+        argv=["--lint"],
+        bad={"bad.rs": _OVERRIDE_SELF_DISPATCH_BAD},
+        good={"good.rs": _OVERRIDE_SELF_DISPATCH_GOOD},
     ),
     Control(
         name="scan_info_class_literals",

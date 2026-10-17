@@ -18,6 +18,9 @@ pub mod prelude; // the ONE import surface: types glob + debug macros + CRT exte
 #[allow(clippy::module_inception)]
 pub mod psapi {
     pub mod psapi;
+    // main.c's DllMain: psapi.dll only (see the module doc).
+    #[cfg(feature = "dllmain")]
+    pub mod main;
 }
 
 // staticlib needs a panic handler + eh personality (no_std cohab); std supplies them under test.

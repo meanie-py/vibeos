@@ -456,7 +456,8 @@ unsafe extern "C" fn TOOLTIPS_GetDispInfoW(infoPtr: *const TOOLTIPS_INFO, toolPt
 
     /* no text available - try calling parent instead as per native */
     /* FIXME: Unsure if SETITEM should save the value or not        */
-    if *buffer.add((0) as usize) == (0x00) as WCHAR {
+    // tooltips.c: `#ifndef __REACTOS__` -- ReactOS does not ask the parent again.
+    if cfg!(not_reactos) && *buffer.add((0) as usize) == (0x00) as WCHAR {
 
         SendMessageW(GetParent((*toolPtr).hwnd), (WM_NOTIFY) as UINT, (*toolPtr).uId as WPARAM, core::ptr::addr_of_mut!(ttnmdi) as LPARAM);
 

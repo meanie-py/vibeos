@@ -103,7 +103,10 @@ _DISCARDS_RE = re.compile(
     # `VOID` as well as `void`: ReactOS's own debug.h spells it `((VOID) 0)`.
     r"__noop|\(\s*\(\s*(?:void|VOID)\s*\)\s*0\s*\)|\(\s*(?:void|VOID)\s*\)\s*0|"
     r"do\s*\{\s*\}\s*while\s*\(\s*0\s*\)|"
-    r"do\s*\{\s*if\s*\(\s*0\s*\)\s*\{.*\}\s*;?\s*\}\s*while\s*\(\s*0\s*\)|",
+    r"do\s*\{\s*if\s*\(\s*0\s*\)\s*\{.*\}\s*;?\s*\}\s*while\s*\(\s*0\s*\)|"
+    # A bare block: fastfat's fatdata.h `#define DebugTrace(I,L,X,Y) {NOTHING;}`, once the
+    # empty object-like `NOTHING` is expanded away (dead_c_macros does that first).
+    r"\{\s*;?\s*\}|",
     re.S,
 )
 
@@ -125,8 +128,14 @@ def _c_headers(root: Path) -> list[Path]:
 
 
 def dead_c_macros(root: Path) -> frozenset[str]:
-    """Every macro some C header defines as argument-discarding (see _DISCARDS_RE)."""
+    """Every macro some C header defines as argument-discarding (see _DISCARDS_RE).
+
+    An object-like macro with an empty expansion (`#define NOTHING`, and every include
+    guard) is expanded away in the bodies first: fatdata.h's `{NOTHING;}` hid fastfat's
+    DebugTrace/DebugDump/DebugUnwind/DbgDoit from this harvest until 2026-10-16."""
     names: set[str] = set()
+    empty: set[str] = set()
+    bodies: list[tuple[str, str]] = []
     for path in _c_headers(root):
         try:
             lines = path.read_text("utf8", "replace").splitlines()
@@ -146,9 +155,15 @@ def dead_c_macros(root: Path) -> frozenset[str]:
             # An EMPTY expansion only discards arguments when there are arguments: an
             # object-like `#define FOO` is a flag or an include guard, not a callable.
             if not body and m.group(2) is None:
+                empty.add(m.group(1))
                 continue
-            if _DISCARDS_RE.fullmatch(body):
-                names.add(m.group(1))
+            bodies.append((m.group(1), body))
+    for name, body in bodies:
+        expanded = re.sub(
+            r"[A-Za-z_]\w*", lambda t: "" if t.group(0) in empty else t.group(0), body
+        )
+        if _DISCARDS_RE.fullmatch(expanded.strip()):
+            names.add(name)
     return frozenset(names)
 
 
@@ -579,6 +594,24 @@ SELF_TEST: list[tuple[str, dict[str, str], list[str]]] = [
             "lib.rs": "pub fn assert(_c: bool) {}\n",
         },
         ["lib.rs"],
+    ),
+    (
+        "a `{NOTHING;}` body discards too, once NOTHING expands away (fastfat's fatdata.h)",
+        {
+            "ntdef.h": "#define NOTHING\n",
+            "fatdata.h": "#define DebugTrace(INDENT,LEVEL,X,Y)     {NOTHING;}\n",
+            "strucsup.rs": 'extern "C" {\n    fn DebugTrace(i: i32, l: u32, x: *const u8, y: usize);\n}\n',  # noqa: E501
+        },
+        ["strucsup.rs"],
+    ),
+    (
+        "...but a block that DOES something is not a discard (DbgDoit's checked form)",
+        {
+            "ntdef.h": "#define NOTHING\n",
+            "fatdata.h": "#define DbgDoit(X)                       {X;}\n",
+            "strucsup.rs": 'extern "C" {\n    fn DbgDoit(x: u32);\n}\n',
+        },
+        [],
     ),
     (
         "an extern DECLARATION of a harvested discarding macro (Wine TRACE in mlang)",

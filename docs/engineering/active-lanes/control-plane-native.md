@@ -48,15 +48,13 @@ Haiku spend on this lane's current $10 allowance: about $6.13.
 
 ## Open threads (2026-10-16)
 
-**Store and lint follow-ups (next, in this order).**
-- `immutable-build-artifacts.md` rollout section: 375 of 391 bodies eligible; the
-  hal/ntdll/fastfat changes and the `data_inputs` mechanism.
-- Store GC on a schedule (the dry run found 1,342 collectable actions; never applied).
-- Store refs leak when a lane is pruned or its worktree removed.
-- About 0.8 s of store latency per request.
-- gicv3's ~8 G of orphaned body-shard content.
-- The premerge preflight's runs land in `.git/vibeos-premerge/vibeos-ledger.jsonl`, not
-  the fleet ledger.
+**Store follow-ups.** Done 2026-10-16: the rollout doc (375/391), daily GC with dead-ref
+retirement, GC no longer hashing kept blobs, request revalidation by stat stamps, idle
+body-shard retirement, premerge runs in the fleet ledger, and BUILD_INPUTS_MOVED (a build refuses to stamp a tree edited
+under it; reported by the CRT lane). Still owed:
+- The supervisor preflight re-hashes every blob the lane references on every build
+  (13-53 s), the store's largest fixed cost.
+- Discovery itself, ~0.4 s per request.
 
 **Store-ineligible bodies (16).** Registry crates: atan2 (libm), cabinet (libz-rs-sys),
 netstack (smoltcp), vioblk (virtio-drivers). cnt-rust's target-specific dependency tables,

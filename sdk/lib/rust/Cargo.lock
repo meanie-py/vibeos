@@ -705,6 +705,7 @@ name = "cicero-rust"
 version = "0.1.0"
 dependencies = [
  "atlclasses-rust",
+ "conutils-h",
  "ntdll-sys",
  "panic-common",
  "strsafe-rust",

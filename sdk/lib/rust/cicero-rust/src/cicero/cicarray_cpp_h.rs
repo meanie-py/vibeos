@@ -28,16 +28,16 @@ impl CicArrayBase {
             if cNewCapacity <= (*this_).m_cItems + (*this_).m_cItems / 2 {
                 cNewCapacity = (*this_).m_cItems + (*this_).m_cItems / 2;
             }
-    
+
             let pbNew: LPBYTE = cicMemReAlloc((*this_).m_pb as LPVOID, cNewCapacity * (*this_).m_cbItem) as LPBYTE;
             if pbNew.is_null() {
                 return (FALSE) as BOOL;
             }
-    
+
             (*this_).m_pb = pbNew;
             (*this_).m_cCapacity = cNewCapacity;
         }
-    
+
         if iItem < (*this_).m_cItems {
             MoveMemory!(
                 (*this_).m_pb.add((cGrow + iItem) * (*this_).m_cbItem) as LPVOID,
@@ -45,7 +45,7 @@ impl CicArrayBase {
                 ((*this_).m_cItems - iItem) * (*this_).m_cbItem,
             );
         }
-    
+
         (*this_).m_cItems += cGrow;
         return (TRUE) as BOOL;
     }
@@ -65,14 +65,14 @@ impl CicArrayBase {
                 ((*this_).m_cItems - iItem - cRemove) * (*this_).m_cbItem,
             );
         }
-    
+
         (*this_).m_cItems -= cRemove;
-    
+
         let cHalfCapacity: size_t = (*this_).m_cCapacity / 2;
         if cHalfCapacity <= (*this_).m_cItems {
             return;
         }
-    
+
         let pb: LPBYTE = cicMemReAlloc((*this_).m_pb as LPVOID, cHalfCapacity * (*this_).m_cbItem) as LPBYTE;
         if !pb.is_null() {
             (*this_).m_pb = pb;

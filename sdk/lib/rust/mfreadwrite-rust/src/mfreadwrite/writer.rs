@@ -983,7 +983,7 @@ unsafe extern "C" fn sink_writer_process_sample(
         return S_OK;
     }
     item = (list_head(&raw mut (*stream).queue) as *mut core::ffi::c_char).offset(
-        -(&raw mut (*core::ptr::null_mut::<pending_item>()).entry as core::ffi::c_ulonglong
+        -(core::mem::offset_of!(pending_item, entry) as core::ffi::c_ulonglong
             as isize),
     ) as *mut pending_item;
     if (*item).sample.is_null() {
@@ -1020,11 +1020,11 @@ unsafe extern "C" fn sink_writer_process_sample(
     }
 
     item = ((*stream).queue.next as *mut core::ffi::c_char).offset(
-        -(&raw mut (*core::ptr::null_mut::<pending_item>()).entry as core::ffi::c_ulonglong
+        -(core::mem::offset_of!(pending_item, entry) as core::ffi::c_ulonglong
             as isize),
     ) as *mut pending_item;
     next = ((*item).entry.next as *mut core::ffi::c_char).offset(
-        -(&raw mut (*core::ptr::null_mut::<pending_item>()).entry as core::ffi::c_ulonglong
+        -(core::mem::offset_of!(pending_item, entry) as core::ffi::c_ulonglong
             as isize),
     ) as *mut pending_item;
     while &raw mut (*item).entry != &raw mut (*stream).queue {
@@ -1041,7 +1041,7 @@ unsafe extern "C" fn sink_writer_process_sample(
         sink_writer_release_pending_item(item);
         item = next;
         next = ((*item).entry.next as *mut core::ffi::c_char).offset(
-            -(&raw mut (*core::ptr::null_mut::<pending_item>()).entry as core::ffi::c_ulonglong
+            -(core::mem::offset_of!(pending_item, entry) as core::ffi::c_ulonglong
                 as isize),
         ) as *mut pending_item;
     }

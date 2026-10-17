@@ -1297,7 +1297,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
                 size_of::<_CLASS_PRIVATE_FDO_DATA>(),
             );
 
-            #[cfg(feature = "winthreshold")]
+            #[cfg(ntddi_ge_ntddi_winthreshold)]
             {
                 if (*fdo_extension).AdditionalFdoData == core::ptr::null_mut() {
                     (*fdo_extension).AdditionalFdoData = ExAllocatePoolWithTag(
@@ -1320,7 +1320,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
             status = ClasspInitializeTimer(fdo_extension);
             if !NT_SUCCESS(status) {
                 FREE_POOL((*fdo_extension).PrivateFdoData as *mut c_void);
-                #[cfg(feature = "winthreshold")]
+                #[cfg(ntddi_ge_ntddi_winthreshold)]
                 FREE_POOL((*fdo_extension).AdditionalFdoData as *mut c_void);
                 TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_PNP, b"ClassPnpStartDevice: Failed to initialize tick timer\n\0".as_ptr() as PCHAR);
                 return STATUS_INSUFFICIENT_RESOURCES;
@@ -1336,7 +1336,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
             if (*fdo_extension).FunctionSupportInfo == core::ptr::null_mut() {
                 ClasspDeleteTimer(fdo_extension);
                 FREE_POOL((*fdo_extension).PrivateFdoData as *mut c_void);
-                #[cfg(feature = "winthreshold")]
+                #[cfg(ntddi_ge_ntddi_winthreshold)]
                 FREE_POOL((*fdo_extension).AdditionalFdoData as *mut c_void);
                 TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_PNP, b"ClassPnpStartDevice: Cannot allocate for FunctionSupportInfo\n\0".as_ptr() as PCHAR);
                 return STATUS_INSUFFICIENT_RESOURCES;
@@ -1558,7 +1558,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
                     (*(*fdo_extension).FunctionSupportInfo).RegAccessAlignmentQueryNotSupported = TRUE;
                 }
 
-                #[cfg(feature = "winblue")]
+                #[cfg(ntddi_ge_ntddi_winblue)]
                 {
                     ClassGetDeviceParameter(fdo_extension, CLASSP_REG_SUBKEY_NAME, CLASSP_REG_LEGACY_ERROR_HANDLING, &raw mut legacy_error_handling);
                     if legacy_error_handling != 0 {

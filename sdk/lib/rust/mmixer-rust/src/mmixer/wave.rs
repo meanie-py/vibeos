@@ -185,7 +185,7 @@ pub unsafe extern "C" fn MMixerGetWaveInfoByIndexAndType(
     Entry = (*ListHead).Flink as PLIST_ENTRY;
     while Entry != ListHead {
         WaveInfo = (Entry as ULONG_PTR)
-            .wrapping_sub(&raw mut (*::core::ptr::null_mut::<WAVE_INFO>()).Entry as ULONG_PTR)
+            .wrapping_sub(core::mem::offset_of!(WAVE_INFO, Entry) as ULONG_PTR)
             as *mut WAVE_INFO as LPWAVE_INFO;
         if Index == DeviceIndex {
             *OutWaveInfo = WaveInfo;

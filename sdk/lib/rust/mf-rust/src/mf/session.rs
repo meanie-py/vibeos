@@ -1377,7 +1377,7 @@ unsafe extern "C" fn session_flush_transforms(session: *mut media_session) {
 unsafe extern "C" fn session_flush_sinks(mut session: *mut media_session) {
     let mut node: *mut topo_node = ::core::ptr::null_mut::<topo_node>();
     node = ((*session).presentation.nodes.next as *mut ::core::ffi::c_char).offset(
-        -(core::ptr::addr_of_mut!((*::core::ptr::null_mut::<topo_node>()).entry)
+        -(core::mem::offset_of!(topo_node, entry)
             as ::core::ffi::c_ulonglong as isize),
     ) as *mut topo_node;
     while core::ptr::addr_of_mut!((*node).entry)
@@ -1393,7 +1393,7 @@ unsafe extern "C" fn session_flush_sinks(mut session: *mut media_session) {
             IMFStreamSink_Flush((*node).object.sink_stream);
         }
         node = ((*node).entry.next as *mut ::core::ffi::c_char).offset(
-            -(core::ptr::addr_of_mut!((*::core::ptr::null_mut::<topo_node>()).entry)
+            -(core::mem::offset_of!(topo_node, entry)
                 as ::core::ffi::c_ulonglong as isize),
         ) as *mut topo_node;
     }
@@ -1626,7 +1626,7 @@ unsafe extern "C" fn session_set_started(mut session: *mut media_session) {
     (*session).state = SESSION_STATE_STARTED;
     caps = ((*session).caps | (MFSESSIONCAP_PAUSE as DWORD)) as ::core::ffi::c_uint;
     source = ((*session).presentation.sources.next as *mut ::core::ffi::c_char).offset(
-        -(&raw mut (*::core::ptr::null_mut::<media_source>()).entry as ::core::ffi::c_ulonglong
+        -(core::mem::offset_of!(media_source, entry) as ::core::ffi::c_ulonglong
             as isize),
     ) as *mut media_source;
     while &raw mut (*source).entry != &raw mut (*session).presentation.sources {
@@ -1639,7 +1639,7 @@ unsafe extern "C" fn session_set_started(mut session: *mut media_session) {
             }
         }
         source = ((*source).entry.next as *mut ::core::ffi::c_char).offset(
-            -(&raw mut (*::core::ptr::null_mut::<media_source>()).entry as ::core::ffi::c_ulonglong
+            -(core::mem::offset_of!(media_source, entry) as ::core::ffi::c_ulonglong
                 as isize),
         ) as *mut media_source;
     }
@@ -3424,7 +3424,7 @@ unsafe extern "system" fn mfsession_GetFullTopology(
             }
         } else {
             queued = ((*session).topologies.next as *mut ::core::ffi::c_char).offset(
-                -(&raw mut (*::core::ptr::null_mut::<queued_topology>()).entry
+                -(core::mem::offset_of!(queued_topology, entry)
                     as ::core::ffi::c_ulonglong as isize),
             ) as *mut queued_topology;
             while &raw mut (*queued).entry != &raw mut (*session).topologies {
@@ -3435,7 +3435,7 @@ unsafe extern "system" fn mfsession_GetFullTopology(
                     break;
                 } else {
                     queued = ((*queued).entry.next as *mut ::core::ffi::c_char).offset(
-                        -(&raw mut (*::core::ptr::null_mut::<queued_topology>()).entry
+                        -(core::mem::offset_of!(queued_topology, entry)
                             as ::core::ffi::c_ulonglong as isize),
                     ) as *mut queued_topology;
                 }
@@ -4119,7 +4119,7 @@ unsafe extern "C" fn session_set_source_object_state(
     match event_type {
         203 | 201 | 209 | 207 => {
             src = ((*session).presentation.sources.next as *mut ::core::ffi::c_char).offset(
-                -(&raw mut (*::core::ptr::null_mut::<media_source>()).entry
+                -(core::mem::offset_of!(media_source, entry)
                     as ::core::ffi::c_ulonglong as isize),
             ) as *mut media_source;
             while &raw mut (*src).entry != &raw mut (*session).presentation.sources {
@@ -4130,7 +4130,7 @@ unsafe extern "C" fn session_set_source_object_state(
                     break;
                 } else {
                     src = ((*src).entry.next as *mut ::core::ffi::c_char).offset(
-                        -(&raw mut (*::core::ptr::null_mut::<media_source>()).entry
+                        -(core::mem::offset_of!(media_source, entry)
                             as ::core::ffi::c_ulonglong as isize),
                     ) as *mut media_source;
                 }
@@ -4164,7 +4164,7 @@ unsafe extern "C" fn session_set_source_object_state(
                     || event_type == MEStreamStarted as ::core::ffi::c_int as MediaEventType
                 {
                     node = ((*session).presentation.nodes.next as *mut ::core::ffi::c_char).offset(
-                        -(&raw mut (*::core::ptr::null_mut::<topo_node>()).entry
+                        -(core::mem::offset_of!(topo_node, entry)
                             as ::core::ffi::c_ulonglong as isize),
                     ) as *mut topo_node;
                     while &raw mut (*node).entry != &raw mut (*session).presentation.nodes {
@@ -4188,7 +4188,7 @@ unsafe extern "C" fn session_set_source_object_state(
                             );
                         }
                         node = ((*node).entry.next as *mut ::core::ffi::c_char).offset(
-                            -(&raw mut (*::core::ptr::null_mut::<topo_node>()).entry
+                            -(core::mem::offset_of!(topo_node, entry)
                                 as ::core::ffi::c_ulonglong as isize),
                         ) as *mut topo_node;
                     }
@@ -4215,7 +4215,7 @@ unsafe extern "C" fn session_set_source_object_state(
                     }
 
                     sink = ((*session).presentation.sinks.next as *mut ::core::ffi::c_char).offset(
-                        -(&raw mut (*::core::ptr::null_mut::<media_sink>()).entry
+                        -(core::mem::offset_of!(media_sink, entry)
                             as ::core::ffi::c_ulonglong as isize),
                     ) as *mut media_sink;
                     while &raw mut (*sink).entry != &raw mut (*session).presentation.sinks {
@@ -4249,7 +4249,7 @@ unsafe extern "C" fn session_set_source_object_state(
                             }
                         }
                         sink = ((*sink).entry.next as *mut ::core::ffi::c_char).offset(
-                            -(&raw mut (*::core::ptr::null_mut::<media_sink>()).entry
+                            -(core::mem::offset_of!(media_sink, entry)
                                 as ::core::ffi::c_ulonglong as isize),
                         ) as *mut media_sink;
                     }
@@ -4294,7 +4294,7 @@ unsafe extern "C" fn session_set_source_object_state(
 
                 /* Start sources */
                 source = ((*session).presentation.sources.next as *mut ::core::ffi::c_char).offset(
-                    -(&raw mut (*::core::ptr::null_mut::<media_source>()).entry
+                    -(core::mem::offset_of!(media_source, entry)
                         as ::core::ffi::c_ulonglong as isize),
                 ) as *mut media_source;
                 while &raw mut (*source).entry != &raw mut (*session).presentation.sources {
@@ -4321,7 +4321,7 @@ unsafe extern "C" fn session_set_source_object_state(
                         );
                     }
                     source = ((*source).entry.next as *mut ::core::ffi::c_char).offset(
-                        -(&raw mut (*::core::ptr::null_mut::<media_source>()).entry
+                        -(core::mem::offset_of!(media_source, entry)
                             as ::core::ffi::c_ulonglong as isize),
                     ) as *mut media_source;
                 }
@@ -5545,7 +5545,7 @@ unsafe extern "C" fn session_sink_invalidated(
     let mut sink_node: *mut topo_node = ::core::ptr::null_mut::<topo_node>();
     let mut hr: HRESULT = 0;
     node = ((*session).presentation.nodes.next as *mut ::core::ffi::c_char).offset(
-        -(&raw mut (*::core::ptr::null_mut::<topo_node>()).entry as ::core::ffi::c_ulonglong
+        -(core::mem::offset_of!(topo_node, entry) as ::core::ffi::c_ulonglong
             as isize),
     ) as *mut topo_node;
     while &raw mut (*node).entry != &raw mut (*session).presentation.nodes {
@@ -5557,7 +5557,7 @@ unsafe extern "C" fn session_sink_invalidated(
             break;
         } else {
             node = ((*node).entry.next as *mut ::core::ffi::c_char).offset(
-                -(&raw mut (*::core::ptr::null_mut::<topo_node>()).entry as ::core::ffi::c_ulonglong
+                -(core::mem::offset_of!(topo_node, entry) as ::core::ffi::c_ulonglong
                     as isize),
             ) as *mut topo_node;
         }
@@ -5602,7 +5602,7 @@ unsafe extern "C" fn session_nodes_is_mask_set(
     let mut node: *mut topo_node = ::core::ptr::null_mut::<topo_node>();
     if node_type as ::core::ffi::c_uint == MF_TOPOLOGY_MAX as ::core::ffi::c_uint {
         source = ((*session).presentation.sources.next as *mut ::core::ffi::c_char).offset(
-            -(&raw mut (*::core::ptr::null_mut::<media_source>()).entry as ::core::ffi::c_ulonglong
+            -(core::mem::offset_of!(media_source, entry) as ::core::ffi::c_ulonglong
                 as isize),
         ) as *mut media_source;
         while &raw mut (*source).entry != &raw mut (*session).presentation.sources {
@@ -5610,13 +5610,13 @@ unsafe extern "C" fn session_nodes_is_mask_set(
                 return (FALSE) as BOOL;
             }
             source = ((*source).entry.next as *mut ::core::ffi::c_char).offset(
-                -(&raw mut (*::core::ptr::null_mut::<media_source>()).entry
+                -(core::mem::offset_of!(media_source, entry)
                     as ::core::ffi::c_ulonglong as isize),
             ) as *mut media_source;
         }
     } else {
         node = ((*session).presentation.nodes.next as *mut ::core::ffi::c_char).offset(
-            -(&raw mut (*::core::ptr::null_mut::<topo_node>()).entry as ::core::ffi::c_ulonglong
+            -(core::mem::offset_of!(topo_node, entry) as ::core::ffi::c_ulonglong
                 as isize),
         ) as *mut topo_node;
         while &raw mut (*node).entry != &raw mut (*session).presentation.nodes {
@@ -5626,7 +5626,7 @@ unsafe extern "C" fn session_nodes_is_mask_set(
                 return (FALSE) as BOOL;
             }
             node = ((*node).entry.next as *mut ::core::ffi::c_char).offset(
-                -(&raw mut (*::core::ptr::null_mut::<topo_node>()).entry as ::core::ffi::c_ulonglong
+                -(core::mem::offset_of!(topo_node, entry) as ::core::ffi::c_ulonglong
                     as isize),
             ) as *mut topo_node;
         }
