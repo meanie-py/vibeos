@@ -1421,6 +1421,31 @@ for _name, _dir in AUDIO_KERNEL_DIRS.items():
     )
 
 
+# Batch H (2026-10-17): plain-C NT drivers whose crate is just `<name>-rust` on the bindgen
+# island, like the audio stack above. (name, directory, export spec or None)
+NATIVE_KERNEL_H = (
+    ("blue", REACTOS_ROOT / "drivers/setup/blue", None),
+    ("ndisuio", REACTOS_ROOT / "drivers/network/ndisuio", None),
+    ("netio", REACTOS_ROOT / "drivers/network/netio", "netio.spec"),
+    ("rtl8139", REACTOS_ROOT / "drivers/network/dd/rtl8139", None),
+    ("tdi", REACTOS_ROOT / "drivers/network/tdi", "misc/tdi.spec"),
+)
+for _name, _dir, _spec in NATIVE_KERNEL_H:
+    TARGETS[_name] = Target(
+        name=_name,
+        source_dir=_dir,
+        output_crate=RUST_DIR / f"{_name}-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=_dir / _spec if _spec else None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    )
+
+
 def detect_target(
     c_path: Path, output_crate: str | None = None, sys_crate: str | None = None
 ) -> Target:

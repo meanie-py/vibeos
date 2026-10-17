@@ -164,7 +164,11 @@ every repo. The link stays joined: when the LE drops the AP (it deletes the peer
 resets the connection and joins again, backing off from 5 s to a minute while attempts fail
 (2026-10-16: the link came back with a fresh 4-way handshake, and the host pinged the board
 again on its unchanged lease). `/WIFIDROP=<s>` drops the link on purpose once, s seconds after it
-first comes up, to exercise that without touching the router. Its bugs are in the field manual
+first comes up, to exercise that without touching the router. Overnight soak, 2026-10-16 20:26 to
+2026-10-17 08:08 (serial `serial-20261014-203830`, host ping log one ping a minute): one
+4-way handshake at boot, then 12 group rekeys, each answered and its key installed (status 0),
+no rejection, no drop; 699 of the 702 pings after the boot answered, the three misses single
+and separate (02:06, 04:37, 07:16). Its bugs are in the field manual
 under "A vendor Wi-Fi driver starts only when tracing slows it down". Where an inbox INF also claims the device, build with
 `VIBEOS_VENDOR_PREFER=1` ("A staged vendor driver never loads").
 

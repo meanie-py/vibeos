@@ -124,3 +124,28 @@ def test_a_lost_image_server_is_the_verdict_not_a_stortest_hang(tmp_path: Path) 
     assert run.classification == "BENCH_UNHEALTHY"
     assert run.stages[-1].name == "serve-image"
     assert "image server exited 1" in run.stages[-1].detail
+
+
+def test_until_reads_on_past_the_desktop_and_says_when_the_line_never_comes(tmp_path: Path) -> None:
+    class FakeRun:
+        def __init__(self) -> None:
+            self.dir = tmp_path
+            self.extra: dict = {}
+            self.stages: list = []
+            self.classification = ""
+
+        def add(self, stage) -> None:
+            self.stages.append(stage)
+
+    serial = tmp_path / "live.log"
+    serial.write_text("[WIN32K] shell ready\n[BWFM] joining 'x'\n[BWFM] 4-way handshake complete\n")
+    run = FakeRun()
+    pi5._await_until(run, serial, 0, "[BWFM] 4-way", 5)  # type: ignore[arg-type]
+    assert (run.classification, run.stages[-1].status) == ("", "ok")
+    assert run.stages[-1].detail == "[BWFM] 4-way handshake complete"
+    run = FakeRun()
+    pi5._await_until(run, serial, 0, "[BWFM] link up", 0)  # type: ignore[arg-type]
+    assert run.classification == "HANG_TIMEOUT"
+    assert "not seen" in run.stages[-1].detail and run.stages[-1].salient[-1].startswith(
+        "[BWFM] 4-way"
+    )

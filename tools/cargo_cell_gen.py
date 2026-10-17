@@ -1020,6 +1020,7 @@ ENGINE_LIBS = {
     "sdk/lib/dmilib/libdmilib.a": "engine:c:dmilib",
     "sdk/lib/dxguid/libdxguid.a": "engine:c:dxguid",
     "sdk/lib/tzlib/libtzlib.a": "engine:c:tzlib",
+    "sdk/lib/tzlib/libtzlib_rust.a": "engine:tzlib_rust",
     "sdk/lib/scrnsave/libscrnsave.a": "engine:c:scrnsave",
     "dll/appcompat/shims/shimlib/libshimlib.a": "engine:c:shimlib",
     "win32ss/user/winsrv/concfg/libconcfg.a": "engine:c:concfg",

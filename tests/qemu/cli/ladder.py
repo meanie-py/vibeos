@@ -630,6 +630,28 @@ def media_has_guests(repo: Path, arch: str) -> bool:
     return bool(_read_media(repo, arch, STAGED_DIR, _guest_names()))
 
 
+def media_missing_runtime(repo: Path, arch: str) -> list[str]:
+    """The guest runtime a staged ladder needs and this media does not carry.
+
+    The guests come from build-fex-hello, but the ntdll they load comes from build-i386
+    (`syswow64`) and, for the x86-64 set under FEX, build-amd64 (`sysamd64`). A
+    `VIBEOS_FEX=1` arm64 build in a worktree without those stages the guests anyway and
+    says so only in `[!]` warnings, and the boot then reads as every 32-bit guest failing
+    (NtOpenFile c0000034 on syswow64\\ntdll.dll), which looks like a regression: the
+    integrator's first ladder on a fresh worktree went red exactly that way. Empty when
+    nothing is staged or the media cannot be read; the other checks report those."""
+    missing = []
+    guests32 = _read_media(repo, arch, STAGED_DIR, _guest_names())
+    if guests32 and not _read_media(repo, arch, STAGED_DIR, {"ntdll.dll"}):
+        missing.append(f"{STAGED_DIR}\\ntdll.dll (build-i386)")
+    guests64 = uses_ramdisk(arch) and _read_media(
+        repo, arch, X64_STAGED_DIR, {f"{g}.exe" for g in STAGED_LADDER}
+    )
+    if guests64 and not _read_media(repo, arch, "sysamd64", {"ntdll.dll"}):
+        missing.append("sysamd64\\ntdll.dll (build-amd64)")
+    return missing
+
+
 def media_optional_staged(repo: Path, arch: str) -> list[str]:
     """Which OPTIONAL guests this arch's media actually carries.
 
