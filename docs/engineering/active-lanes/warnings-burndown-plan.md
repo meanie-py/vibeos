@@ -12,21 +12,21 @@ and landed on its own so conflicts stay localized and every step is revertible.
 ## RESUME HERE (updated 2026-10-16)
 
 **State.** The 2026-10-16 session closed four owed items and part of the UB tier, all in one
-landing (see "2026-10-16" below). The census on the 2026-10-12 tree read 7,517 sites
-(55 UB, 1,440 LOGIC, 6,002 NOISE), with 12 stale crates left out. Rebuild all three arches and
-re-run it (`python3 tools/rust_warning_census.py build-i386 build-amd64 build-arm64`) before
-quoting a new total. fastfat-rust is still at 0 warnings. The apc32 rung-7 flake that bounced
+landing (see "2026-10-16" below). The census on that tree read **7,215 sites (66 UB,
+1,362 LOGIC, 5,787 NOISE)**, with 668 units read and none stale, against 7,517 on 2026-10-12.
+`invalid_value` and `deref_nullptr` read 0, and the build now denies both (`rust_ub_deny`, a
+post-build stage that reads the census, so no rustflag changed). Re-run it with
+`python3 tools/rust_warning_census.py build-i386 build-amd64 build-arm64`. fastfat-rust is still at 0 warnings. The apc32 rung-7 flake that bounced
 b8eac0dccad2 was fixed by 61998182a8f (roadmap registry).
 
 **Owed, roughly in priority order:**
 - **UB tier.**
-  - `invalid_value`: deny it tree-wide once a fresh census reads 0. shell32-com fixed attrib,
-    setuplib and winspool (c06ca3ba658); cpp-cluster owns msctf.
+  - New since 2026-10-12: `static_mut_refs` (9, crt-startup-rust) and
+    `improper_ctypes_definitions` (9, drwtsn32-rust and rapps-rust). Grade them, and add each to
+    `rust_ub_deny` once it reads 0.
   - `improper_ctypes` (48): mspaint and msctfime. **The user said leave mspaint for now
     (2026-10-11).**
-  - `deref_nullptr`: done, and wider than the census said (78 sites, not 7). Re-read the
-    census for any form `null_offset_to_offset_of --lint` does not match.
-- **The rest of `clashing_extern` (1,392).** fastfat's recipe generalises:
+- **The rest of `clashing_extern` (1,325).** fastfat's recipe generalises:
   `tools/extern_to_use.py`, then a build, `rustconv crate-repair`, and graded residue applied
   with `tools/apply_agent_edits.py`. Next candidates are the biggest per-crate counts in the
   census.
@@ -71,6 +71,10 @@ b8eac0dccad2 was fixed by 61998182a8f (roadmap registry).
   CMakeLists, so the scanner reads build.ninja first and the CMakeLists history second.
 - **`deref_nullptr`:** 78 offsetof-through-null sites became `core::mem::offset_of!`
   (`tools/null_offset_to_offset_of.py`; `--lint` gates the class at 0).
+- **`invalid_value` deny:** the fresh census reads 0, so `build` now has a `rust_ub_deny` stage
+  (`rust_warning_census.py --deny invalid_value,deref_nullptr` over that arch's cargo cache).
+  The census also learned to find a renamed lib's dep-info (atlclasses-rust builds `atl_rust`),
+  which had made it refuse the whole total as stale.
 - `c_twin.rust_functions` counted lines quadratically. Fixing that took the version scanner
   from 218 s to 71 s and sped up `scan_cfg_vs_c` too.
 

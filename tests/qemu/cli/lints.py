@@ -1991,6 +1991,7 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         run.add(Stage("scan_xchg_ebx_deref", status="skip", detail="no binary"))
         run.add(Stage("scan_unresolved_imports", status="skip", detail="no binary"))
         run.add(Stage("freeldr_size", status="skip", detail="no binary"))
+        run.add(Stage("rust_ub_deny", status="skip", detail="no binary"))
         return
     # The BIOS loader runs in real-mode memory and bug-checks itself at boot when its PE
     # outgrows MAX_FREELDR_PE_SIZE. Restoring freeldr's debug prints did exactly that and
@@ -2027,6 +2028,22 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         strict=strict,
         by_exit_code=True,
         cp=_sacred_analysis(run, repo, arch, sp) if sp.is_file() else None,
+    )
+    # rustc lints this tree burned to zero and must stay there: `invalid_value`
+    # (mem::zeroed/uninit of a type with no all-zero value) and `deref_nullptr` (a place
+    # through null, most often CONTAINING_RECORD's offsetof; 78 sites became
+    # core::mem::offset_of! 2026-10-16). Read from this build's own cargo cache, so it costs
+    # no rebuild and changes no rustflag (which would re-key every artifact-store action).
+    census = repo / "tools" / "rust_warning_census.py"
+    _lint_stage(
+        run,
+        repo,
+        "rust_ub_deny",
+        [py, str(census), str(build_dir), "--allow-stale", "--deny", "invalid_value,deref_nullptr"]
+        if census.is_file()
+        else ["MISSING"],
+        strict=strict,
+        by_exit_code=True,
     )
     # A function whose first instruction jumps to itself = a silent infinite hang.
     # Caught bootvid's self-recursive Rust memcpy/memset (stable-toolchain Axis B);
