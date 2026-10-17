@@ -1904,8 +1904,8 @@ drivers/ksfilter/ks/CMakeLists.txt	2	# event.c filter.c filterfactory.c image.c 
 drivers/ksfilter/ks/CMakeLists.txt	1	# topology.c unknown.c worker.c kcom.c swenum.c
 drivers/ksfilter/ks/CMakeLists.txt	1	# topology.c unknown.c worker.c kcom.c swenum.c precomp.h)
 drivers/ksfilter/swenum/CMakeLists.txt	1	# swenum.c (the KS software bus enumerator) is translated to Rust
+drivers/network/afd/CMakeLists.txt	1	# (../tdihelpers), which netio.sys links too, and resolve as extern "C". event.c is NOT in this build (dead in upstream: its
 drivers/network/afd/CMakeLists.txt	1	# afd/lock.c afd/main.c afd/read.c afd/select.c afd/write.c)
-drivers/network/afd/CMakeLists.txt	1	# and resolve as extern "C". event.c is NOT in this build (dead in upstream: its
 drivers/network/afd/CMakeLists.txt	1	# list(APPEND SOURCE afd/bind.c afd/connect.c afd/context.c afd/info.c afd/listen.c
 drivers/network/dd/e1000/CMakeLists.txt	1	# debug.c # replaced by Rust (sdk/lib/rust/e1000-rust/src/e1000/debug.rs)
 drivers/network/dd/e1000/CMakeLists.txt	1	# hardware.c # replaced by Rust (sdk/lib/rust/e1000-rust/src/e1000/hardware.rs)
@@ -1943,7 +1943,6 @@ drivers/network/ndisuio/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/ru
 drivers/network/ndisuio/CMakeLists.txt	1	# misc.c # replaced by Rust (sdk/lib/rust/ndisuio-rust/src/ndisuio/misc.rs)
 drivers/network/ndisuio/CMakeLists.txt	1	# protocol.c # replaced by Rust (sdk/lib/rust/ndisuio-rust/src/ndisuio/protocol.rs)
 drivers/network/ndisuio/CMakeLists.txt	1	# readwrite.c # replaced by Rust (sdk/lib/rust/ndisuio-rust/src/ndisuio/readwrite.rs)
-drivers/network/netio/CMakeLists.txt	1	# Every translation unit is Rust now (netio-rust, `rustconv port`) except tdi.c, tdiconn.c,
 drivers/network/netio/CMakeLists.txt	1	# netio.c # replaced by Rust (sdk/lib/rust/netio-rust/src/netio/netio.rs)
 drivers/network/tdi/CMakeLists.txt	1	# cte/events.c # replaced by Rust (sdk/lib/rust/tdi-rust/src/tdi/events.rs)
 drivers/network/tdi/CMakeLists.txt	1	# cte/string.c # replaced by Rust (sdk/lib/rust/tdi-rust/src/tdi/string.rs)
@@ -1953,6 +1952,8 @@ drivers/network/tdi/CMakeLists.txt	1	# tdi/dereg.c # replaced by Rust (sdk/lib/r
 drivers/network/tdi/CMakeLists.txt	1	# tdi/handler.c # replaced by Rust (sdk/lib/rust/tdi-rust/src/tdi/handler.rs)
 drivers/network/tdi/CMakeLists.txt	1	# tdi/obsolete.c # replaced by Rust (sdk/lib/rust/tdi-rust/src/tdi/obsolete.rs)
 drivers/network/tdi/CMakeLists.txt	1	# tdi/stubs.c # replaced by Rust (sdk/lib/rust/tdi-rust/src/tdi/stubs.rs)
+drivers/network/tdihelpers/CMakeLists.txt	1	# tdi.c # replaced by Rust (sdk/lib/rust/tdihelpers-rust/src/tdihelpers/tdi.rs)
+drivers/network/tdihelpers/CMakeLists.txt	1	# tdiconn.c # replaced by Rust (sdk/lib/rust/tdihelpers-rust/src/tdihelpers/tdiconn.rs)
 drivers/processor/processr/CMakeLists.txt	1	# processr.c/misc.c/pnp.c are translated to Rust (sdk/lib/rust/processr-rust,
 drivers/serial/pl011/CMakeLists.txt	1	# add_library(pl011 MODULE pl011.c) # body replaced by Rust; kept on disk
 drivers/serial/pl011/CMakeLists.txt	1	# pl011.c (the minimal ARM64 PL011 UART driver) is translated to Rust

@@ -897,6 +897,7 @@ members = [
     "tdi-rust",
     "tzlib-rust",
     "mmcshext-rust",
+    "tdihelpers-rust",
 ]
 resolver = "2"
 

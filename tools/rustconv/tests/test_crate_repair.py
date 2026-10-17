@@ -710,6 +710,15 @@ def test_flex_array_borrowed_mut_uses_as_mut_ptr():
     assert [edit.replacement for edit in edits] == ["(*(*t).routes.as_mut_ptr().add(i))"]
 
 
+def test_flex_array_under_addr_of_mut_uses_as_mut_ptr():
+    # tdihelpers: `addr_of_mut!((*Addr).Address[0 as usize])` came back with as_ptr(), E0596
+    decls = flex_array_decls(_TYPES)
+    for place in (b"core::ptr::addr_of_mut!((*t).routes[i])", b"&raw mut (*t).routes[i]"):
+        source = b"pub unsafe fn f(t: *mut T, i: usize) {\n    g(" + place + b");\n}\n"
+        edits, _ = propose_flex_array_edits("src/f.rs", source, decls)
+        assert [edit.replacement for edit in edits] == ["(*(*t).routes.as_mut_ptr().add(i))"]
+
+
 def test_flex_array_index_zero_is_left_alone():
     decls = flex_array_decls(_TYPES)
     source = b"pub unsafe fn f(t: *mut T) -> u32 {\n    (*t).routes[0].dest\n}\n"

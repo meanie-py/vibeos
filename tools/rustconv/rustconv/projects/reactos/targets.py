@@ -1429,6 +1429,8 @@ NATIVE_KERNEL_H = (
     ("netio", REACTOS_ROOT / "drivers/network/netio", "netio.spec"),
     ("rtl8139", REACTOS_ROOT / "drivers/network/dd/rtl8139", None),
     ("tdi", REACTOS_ROOT / "drivers/network/tdi", "misc/tdi.spec"),
+    # A static library afd.sys and netio.sys both link.
+    ("tdihelpers", REACTOS_ROOT / "drivers/network/tdihelpers", None),
 )
 for _name, _dir, _spec in NATIVE_KERNEL_H:
     TARGETS[_name] = Target(
