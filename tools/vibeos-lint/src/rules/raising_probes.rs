@@ -262,7 +262,14 @@ pub unsafe extern "C" fn HackSecureVirtualMemory(pmdl: PMDL) -> NTSTATUS {
     fn a_probe_named_in_a_string_is_not_a_call() {
         let s = "DPRINT!(\"MmProbeAndLockPages() failed.\\n\");\nlet m = \"a \\\" ProbeForWrite(x)\";\n";
         assert!(scan_file("sdk/lib/rust/a/src/x.rs", s).is_empty());
-        assert_eq!(scan_file("sdk/lib/rust/a/src/x.rs", "g(\"x\"); MmProbeAndLockPages(m, 0, 1);\n").len(), 1);
+        assert_eq!(
+            scan_file(
+                "sdk/lib/rust/a/src/x.rs",
+                "g(\"x\"); MmProbeAndLockPages(m, 0, 1);\n"
+            )
+            .len(),
+            1
+        );
     }
     #[test]
     fn scanner_control_mdl_any_path_and_seh_guard() {
