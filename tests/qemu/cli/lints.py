@@ -370,6 +370,10 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     specs.append(
         ("scan_cmake_linked_rust", [py, str(ccl)] if ccl.is_file() else ["MISSING"], "stdout")
     )
+    # The manifests a build with no cmake reads (sdk/lib/rust/cells, boot/media) match the
+    # build graph: a converted, removed or moved module is a finding until they are
+    # regenerated. Rust only (tools/vibeos-lint); reads build-<arch>/, so it is deferred.
+    specs.append(("scan_cargo_manifests", ["MISSING"], "stdout"))
     # atl_rust's CAtlList::GetNext returns the element's SLOT; casting it instead of
     # dereferencing compiles for a list of pointers and reads list-node memory as the object
     # (mmc_new, 2026-10-17). Baseline is EMPTY.

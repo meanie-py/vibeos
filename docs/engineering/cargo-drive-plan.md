@@ -412,8 +412,7 @@ extends it from the boot spine to every fully-Rust module.
      relinked by the i386 build twelve minutes after cmake mastered its ISO).
    - About 365 entries per CD are cells; the rest are the C tail's modules, configure
      products and source files, still made by cmake.
-   - **Owed:** `--check` as a Rust rule in tools/vibeos-lint (for cell_manifest too);
-     self-hosting mkisofs/isohybrid/cabman (`--assemble` uses build-<arch>/host-tools and
+   - **Owed:** self-hosting mkisofs/isohybrid/cabman (`--assemble` uses build-<arch>/host-tools and
      fails without them); re-cabbing reactos.cab from `--cells` for bootcd; and a smoke
      that boots media mastered outside build-<arch> (`smoke` reads only
      build-<arch>/livecd.iso, with its staleness checks).
@@ -503,6 +502,12 @@ placeholder stub, as `(convertible)` or `(refused)`; the baseline holds only ref
 so a newly flipped module or a refusal the generator has learned to handle is a NEW
 finding until it is converted. Teaching the generator a refused shape shrinks the
 baseline.
+
+`--convert` ends by regenerating what a build with no cmake reads: the cell and media
+manifests and the shared C libraries' recipes. `vibeos-cli check` holds them to the build
+graph: `scan_cargo_manifests` (Rust, tools/vibeos-lint; deferred, it reads build-<arch>/)
+fails while `sdk/lib/rust/cells/<arch>.jsonl` or `boot/media/<arch>.json` disagrees with
+the graph. Its first run found arm64's livecd list a module behind master (netbwfm.inf).
 
 The manual steps, still there for a wave: build ×3, `--survey`, `--save-baseline DIR`,
 `--apply`, build ×3, `--check DIR`.

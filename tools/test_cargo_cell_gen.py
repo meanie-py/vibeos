@@ -570,6 +570,7 @@ def test_convert_runs_the_wave_in_order(tmp_path, monkeypatch):
     monkeypatch.setattr(g, "apply", lambda c, repo: steps.append(("apply", c)) or [])
     monkeypatch.setattr(g, "_ninja", lambda a, ts, repo: steps.append(("ninja", a)))
     monkeypatch.setattr(g, "check", lambda ts, b, repo: steps.append(("check", b)) or 0)
+    monkeypatch.setattr(g, "refresh_manifests", lambda repo: steps.append(("manifests", repo)))
     assert g.convert(["m"], tmp_path / "b", tmp_path) == 0
     assert steps == [
         ("baseline", tmp_path / "b"),
@@ -578,6 +579,8 @@ def test_convert_runs_the_wave_in_order(tmp_path, monkeypatch):
         ("ninja", "amd64"),
         ("ninja", "arm64"),
         ("check", tmp_path / "b"),
+        # What a build with no cmake reads follows the graphs the wave configured.
+        ("manifests", tmp_path),
     ]
 
 

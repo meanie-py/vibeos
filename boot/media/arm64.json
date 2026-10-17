@@ -1618,6 +1618,7 @@
    ["reactos/inf/nete1000.inf", "build:drivers/network/dd/e1000/nete1000.inf"],
    ["reactos/system32/drivers/e1000.sys", "cell:drivers/network/dd/e1000/e1000.sys"],
    ["reactos/system32/drivers/bwfm.sys", "cell:drivers/network/dd/bwfm/bwfm.sys"],
+   ["reactos/inf/netbwfm.inf", "build:drivers/network/dd/bwfm/netbwfm.inf"],
    ["reactos/system32/drivers/netkvm.sys", "build:drivers/network/dd/netkvm/netkvm.sys"],
    ["reactos/inf/netrtl.inf", "build:drivers/network/dd/rtl8139/netrtl.inf"],
    ["reactos/system32/drivers/rtl8139.sys", "cell:drivers/network/dd/rtl8139/rtl8139.sys"],

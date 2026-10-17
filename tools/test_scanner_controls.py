@@ -3274,6 +3274,14 @@ CONTROLS: list[Control] = [
 # Lints deliberately NOT fixture-driven, each with the reason. Anything absent
 # from both this set and CONTROLS fails test_every_lint_is_accounted_for.
 UNCOVERED: dict[str, str] = {
+    "scan_cargo_manifests": (
+        "it compares sdk/lib/rust/cells/<arch>.jsonl and boot/media/<arch>.json with a "
+        "configured build-<arch>/ (build.ninja's Cargo-linking edges, boot/<cd>.<config>.lst), "
+        "which a fixture directory does not have. Its unit tests in "
+        "tools/vibeos-lint/src/rules/scan_cargo_manifests.rs build those inputs in a temp tree: "
+        "a current pair is clean, a cell missing from the manifest and a moved CD placement "
+        "are each reported, and an arch with no configured build is skipped."
+    ),
     "scan_cmake_linked_rust": (
         "it models modules from build-amd64/build.ninja and the tree's own CMakeLists through "
         "cargo_cell_gen.survey, so a fixture directory has nothing to survey. The labelling is "
