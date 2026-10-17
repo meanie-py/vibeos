@@ -459,12 +459,20 @@ extends it from the boot spine to every fully-Rust module.
      Compiles, archives, import libraries and cmake's ExternalProject bookkeeping are not
      in the recipe: the engine owns those. geninc and gendib are left out too, since the
      engine already self-hosts both.
-   - **The measurement that sizes it (2026-10-17):** with the engine forced cmake-off,
-     every cell whose only cmake input was its resources builds byte-identical to cmake's
-     link (beep, cacls, winmine, checked); every failure was a `c_from_compile_db` with no
-     committed flags (now `c_compiled`, which still needs 6b's SDK cmake-off) or an mc
-     `.rc`. `cargo_orchestrate.py --manifest --jobs N` builds the cells in parallel
-     through the artifact store, so a full sweep is one command.
+   - **No cmake at all, measured 2026-10-17.** A fresh worktree that never ran cmake (no
+     build-* directory; only the pinned toolchain) builds all 274 amd64 cells with
+     `cargo_orchestrate.py --arch amd64 --manifest --cmake-off`: the configure step
+     replays the generated SDK into `build-amd64` (where a generated header's path is part
+     of the image: wdm.h's inline ASSERTs name it), and every cell's resources, C, asm and
+     shared C libraries come from build.rs, the templates and the recipes. Against cmake's
+     links: 366 of 369 outputs byte-identical, the other 3 (services, win32k, winlogon)
+     `pe_equiv --code` equivalent. An amd64 livecd mastered from those cells
+     (`media_manifest.py --assemble --cells`) holds the same 1364 files as cmake's, 1361
+     byte-identical and the same three code-equivalent.
+   - **What still needs cmake for a whole image:** the C tail's own modules (about 1000 of
+     livecd's 1364 entries are not cells), the host tools that master the media
+     (mkisofs/isohybrid/cabman), bootcd's reactos.cab, and a smoke that boots media
+     mastered outside build-<arch>. i386 and arm64 runs of the no-cmake build are owed.
 
 ## How a wave goes (the default for every new module)
 
