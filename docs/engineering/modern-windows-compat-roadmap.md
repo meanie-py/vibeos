@@ -441,8 +441,9 @@ at every DLL_EXPORT_VERSION, and rtworkq is synced to 11.19 to match mfplat.
 (new: StandardCimv2, Storage and SecurityCenter2 namespaces, sysrestore, WbemContext), plus
 a `Win32_OptionalFeature` class with Windows 11's schema and no instances, which Docker
 queries. In the guest the query suite runs 1369 tests and services 70; every failure is a
-todo_wine except 13 × query.c:169, the image name `EXPLORER.EXE` that the LiveCD reports in
-capitals (owed: the CDFS name reaches SeLocateProcessImageName as stored). What it needed
+todo_wine (13 × query.c:169, the image name `EXPLORER.EXE` in capitals, was CDFS copying the
+UPCASED match name into the file object on a case-insensitive open; Windows 11's cdfs.sys reports
+the stored case, measured on a mounted ISO, and so does ours since 2026-10-17). What it needed
 from us: tlhelp32.h's 64-bit layouts (field manual, "The SDK header can be the wrong side"),
 `GetAdaptersAddresses` returning the LH struct (wbemprox reads its gateway and LUID fields),
 `ConvertLengthToIpv4Mask`, and the LiveCD's `ProgramFilesDir`. `tools/payloads/wmiwinetest`
@@ -457,11 +458,20 @@ runs it.
   runs Wine's d3d11 and dxgi suites (imported at the DLLs' own sync point, wine-10.1-dev
   b00c7619f1b) plus d2d1 and dwrite. `D3D11CreateDevice` fails cleanly here (d3d11: 213
   skipped, 0 failures; d2d1: 166 tests, 0 failures), so a program still takes its fallback.
-  dwrite never used combase (declined in this tree), so it no longer imports it. Owed:
-  wined3d cannot initialise `\\.\DISPLAY1` (E_INVALIDARG), so dxgi enumerates no output
-  and its suite crashes on the test's own DEADBEEF pointer; `NtGdiGetFontRealizationInfo`
-  is unimplemented, so dwrite's GDI-interop font face fails and the font suite crashes;
-  dwrite analyzer 45 and layout 30 failures.
+  dwrite never used combase (declined in this tree), so it no longer imports it.
+  Done 2026-10-17: dxgi's suite runs clean (83 tests, 0 failures). Its "cannot initialise
+  `\\.\DISPLAY1`" was wined3d leaking a D3DKMT adapter on every failed GL init until
+  gdi32_vista's 16 emulated slots ran out, and its crash was `CreateDXGIFactory` failing
+  outright with no GL adapter; the factory now falls back to the no-3D adapter, as ddraw does,
+  since Windows always has the Basic Display Adapter. `NtGdiGetFontRealizationInfo`,
+  `NtGdiGetFontFileInfo` and `NtGdiGetFontFileData` are real (Wine win32u semantics; a
+  loaded face's id is `FONTGDI.iUnique`). dwrite and its tests are at Wine 11.19: on the
+  Windows host our dwrite.dll passes Wine's own analyzer suite with 0 failures and layout
+  with 7, under `WINETEST_PLATFORM=wine` (`classify_failures.py` makes the same todo_wine
+  split for a guest log). Owed: in the guest, analyzer has 31 and layout 9 failures beyond
+  todo_wine, all where the result depends on which fonts are installed (Arabic shaping,
+  justification, combining marks); the font suite outruns the sweep's fixed 120 s per
+  subtest (`PER_SUBTEST_TIMEOUT_MS` in apitest-sweep.c wants a per-suite override).
 - **mf.c:4553, the presentation clock's callback interval,** reads 27-188 ms instead of a
   tick, with or without the condition-variable fix; the 10 ms periodic pool timer alone runs
   at 64 Hz in wakeprobe. Repro (2026-10-17): `gen_suites.py ... --repeat mf:mf=3` then
@@ -517,8 +527,11 @@ runs it.
   `RtlIsNameInExpression` (written fresh: a port of upstream name.c disagreed with Windows
   on 2,881 of 308,320 cases), plus real `RtlIsValidLocaleName`/`RtlConvertLCIDToString`.
   `tools/ntdll-gated-oracle/run.sh` diffs the shipping files against the real ntdll on the
-  Windows host, x64 and x86. Still owed there: `prs` resolves to 0x8C (Windows 0x29), and
-  i386 Windows never bumps the SList sequence counter where ours does. Left: ntoskrnl's PoFx
+  Windows host, x64 and x86. The locale table now agrees with Windows 11 in both directions
+  (Dari folded into Persian: `prs` -> 0x29, 0x48C prints `fa-AF`, 0x8C prints `fa`; 0x476
+  prints `la-VA`), and the oracle asserts zero mismatches. i386 SList is a kept divergence:
+  Windows 8+ x86 renamed the header's Sequence to CpuId and stopped bumping it, but our pop's
+  cmpxchg8b relies on that counter against ABA, and the field is reserved for callers. Left: ntoskrnl's PoFx
   runtime power (10; ntoskrnl_vista, which the kernel does not link, has NOT_IMPLEMENTED
   bodies), the gdi32 D3DKMT scheduling/adapter calls (7), kernel32's console `*Ex` calls
   (6), shell32's SHCreateItemInKnownFolder and SHEvaluateSystemCommandTemplate (2) and

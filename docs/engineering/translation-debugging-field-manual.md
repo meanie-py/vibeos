@@ -5240,6 +5240,13 @@ resources.
 `.rc` entry. `tools/payloads/regcapture` shows what each registration writes in the guest:
 `lines=0` beside `hr=0` is this bug.
 
+The same class from the other side: a sync can bring in a NEW configure guard our CMake never
+defines. Wine 11 wrapped every FreeType body in dwrite's `freetype.c` in `#ifdef
+SONAME_LIBFREETYPE`; `sdk/include/wine/config.h` leaves it undefined, so the file compiled to
+its `STATUS_NOT_IMPLEMENTED` fallbacks without a warning, and every glyph advance and bbox came
+back zero (layout widths 0, dwrite.dll 5.3 MB -> 2.3 MB). After a sync, grep the new files for
+`#if.*\(HAVE_\|SONAME_\)` and compare the DLL's size with the one before.
+
 ### Re-translating an integrated module silently reverts every post-integration repair
 
 **Symptom.** A module that has been flipped, ground green and booted for weeks is
@@ -14199,6 +14206,19 @@ made the native CONTROL of the A/B the one arch that could not see it.
 `[KI-EXC] ... second chance` line (both x86 arches now print it before the exception port
 gets a chance to swallow it). The scroll instance was `uxtheme!ThemeGetWndData` returning
 another process's heap pointer for a window that process owned.
+
+### A failure path that skips cleanup fills a fixed table, and every later open fails
+**Symptom.** A suite passes its first few dozen device creations, then every one fails with
+the same error (`Failed to initialise output L"\\\\.\\DISPLAY1", hr 0x80070057` from wined3d), as
+if something had broken mid-run.
+**Cause.** `wined3d_adapter_gl_init` opened a D3DKMT adapter and a device per output, then
+returned FALSE on a missing GL extension without `wined3d_adapter_cleanup` (upstream Wine too).
+gdi32_vista's emulated D3DKMT has 16 adapter slots, so after 16 failures
+`D3DKMTOpenAdapterFromGdiDisplayName` had nowhere to go. A real dxgkrnl has no small table, so
+Windows never shows the leak.
+**Fix.** Release the adapter on that path (`wined3d_adapter_gl_create`). The tell is a
+per-process count of successes before a uniform failure: look for a fixed-size table on the
+other side of the call.
 
 ### A loud refusal that returns non-zero reads as SUCCESS to a handle-returning caller
 **Symptom.** A guest logs `NEEDS MANUAL MARSHALLER — failing loud` and then carries on as if
