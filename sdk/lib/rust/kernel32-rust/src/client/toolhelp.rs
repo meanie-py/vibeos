@@ -30,9 +30,9 @@ static SYSTEM_PROCESS: [u16; 17] = [
 // tlhelp32.h structures (PE-COFF layout; faithful to sdk/include/psdk/tlhelp32.h)
 #[repr(C)]
 pub struct tagHEAPLIST32 {
-    pub dwSize: DWORD,
+    pub dwSize: SIZE_T,
     pub th32ProcessID: DWORD,
-    pub th32HeapID: DWORD,
+    pub th32HeapID: ULONG_PTR,
     pub dwFlags: DWORD,
 }
 pub type HEAPLIST32 = tagHEAPLIST32;
@@ -41,15 +41,15 @@ pub type LPHEAPLIST32 = *mut tagHEAPLIST32;
 
 #[repr(C)]
 pub struct tagHEAPENTRY32 {
-    pub dwSize: DWORD,
+    pub dwSize: SIZE_T,
     pub hHandle: HANDLE,
-    pub dwAddress: DWORD,
-    pub dwBlockSize: DWORD,
+    pub dwAddress: ULONG_PTR,
+    pub dwBlockSize: SIZE_T,
     pub dwFlags: DWORD,
     pub dwLockCount: DWORD,
     pub dwResvd: DWORD,
     pub th32ProcessID: DWORD,
-    pub th32HeapID: DWORD,
+    pub th32HeapID: ULONG_PTR,
 }
 pub type HEAPENTRY32 = tagHEAPENTRY32;
 pub type PHEAPENTRY32 = *mut tagHEAPENTRY32;
@@ -446,13 +446,13 @@ unsafe fn TH32CreateSnapshotSectionInitialize(
         HeapListEntry = OffsetToPtr(Snapshot, DataOffset) as LPHEAPLIST32;
         i = 0;
         while i < nHeaps {
-            (*HeapListEntry).dwSize = core::mem::size_of::<HEAPLIST32>() as DWORD;
+            (*HeapListEntry).dwSize = core::mem::size_of::<HEAPLIST32>() as SIZE_T;
             (*HeapListEntry).th32ProcessID = th32ProcessID;
             // RTL_PROCESS_MODULES.Modules is `Modules[1]  /* FIXME: should be
             // Modules[0] */` and RTL_HEAP_INFORMATION_LIST.Heaps is the same shape:
             // flexible arrays bounded by ModulesCount / NumberOfHeaps. `[0]` keeps the
             // element type derived rather than named.
-            (*HeapListEntry).th32HeapID = (*(&raw mut (*hi).Heaps[0]).add(i as usize)).BaseAddress as ULONG_PTR as DWORD;
+            (*HeapListEntry).th32HeapID = (*(&raw mut (*hi).Heaps[0]).add(i as usize)).BaseAddress as ULONG_PTR;
             (*HeapListEntry).dwFlags = (*(&raw mut (*hi).Heaps[0]).add(i as usize)).Flags;
 
             HeapListEntry = HeapListEntry.offset(1);
@@ -610,7 +610,7 @@ unsafe fn TH32CreateSnapshotSectionInitialize(
 pub unsafe extern "system" fn Heap32First(
     lphe: LPHEAPENTRY32,
     th32ProcessID: DWORD,
-    th32HeapID: DWORD,
+    th32HeapID: ULONG_PTR,
 ) -> BOOL {
     let mut DebugInfo: PRTL_DEBUG_INFORMATION = core::ptr::null_mut();
     let mut Heap: PRTL_HEAP_INFORMATION = core::ptr::null_mut();
@@ -651,7 +651,7 @@ pub unsafe extern "system" fn Heap32First(
                 (*lphe).dwLockCount = 0;
                 (*lphe).dwResvd = 0;
                 (*lphe).th32ProcessID = th32ProcessID;
-                (*lphe).th32HeapID = (*Heap).BaseAddress as ULONG_PTR as DWORD;
+                (*lphe).th32HeapID = (*Heap).BaseAddress as ULONG_PTR;
 
                 Block = (*Heap).Entries as PRTLP_HEAP_ENTRY;
                 LastBlock = Block.offset((*Heap).NumberOfEntries as isize);
@@ -659,12 +659,12 @@ pub unsafe extern "system" fn Heap32First(
                 while Block != LastBlock && ((*Block).Flags as ULONG & PROCESS_HEAP_UNCOMMITTED_RANGE) != 0 {
                     (*lphe).dwResvd = (*lphe).dwResvd.wrapping_add(1);
                     (*lphe).dwAddress = ((*Block).Address as ULONG_PTR)
-                        .wrapping_add((*Heap).EntryOverhead as ULONG_PTR) as DWORD;
+                        .wrapping_add((*Heap).EntryOverhead as ULONG_PTR);
                     Block = Block.offset(1);
                 }
 
                 if Block != LastBlock && (*lphe).dwResvd != 0 {
-                    (*lphe).dwBlockSize = (*Block).Size as DWORD;
+                    (*lphe).dwBlockSize = (*Block).Size as SIZE_T;
 
                     if ((*Block).Flags & 0x2F1) != 0 {
                         (*lphe).dwFlags = LF32_FIXED as DWORD;
@@ -738,7 +738,7 @@ pub unsafe extern "system" fn Heap32Next(lphe: LPHEAPENTRY32) -> BOOL {
                     while Block < LastBlock && ((*Block).Flags as ULONG & PROCESS_HEAP_UNCOMMITTED_RANGE) != 0 {
                         (*lphe).dwResvd = (*lphe).dwResvd.wrapping_add(1);
                         (*lphe).dwAddress = ((*Block).Address as ULONG_PTR)
-                            .wrapping_add((*Heap).EntryOverhead as ULONG_PTR) as DWORD;
+                            .wrapping_add((*Heap).EntryOverhead as ULONG_PTR);
                         FoundUncommitted = 1;
                         Block = Block.offset(1);
                     }
@@ -746,10 +746,10 @@ pub unsafe extern "system" fn Heap32Next(lphe: LPHEAPENTRY32) -> BOOL {
                     if Block < LastBlock {
                         if FoundUncommitted == 0 {
                             (*lphe).dwAddress = ((*lphe).dwAddress as ULONG_PTR)
-                                .wrapping_add((*lphe).dwBlockSize as ULONG_PTR) as DWORD;
+                                .wrapping_add((*lphe).dwBlockSize as ULONG_PTR);
                         }
 
-                        (*lphe).dwBlockSize = (*Block).Size as DWORD;
+                        (*lphe).dwBlockSize = (*Block).Size as SIZE_T;
 
                         if ((*Block).Flags as i32 & 0x2F1) != 0 {
                             (*lphe).dwFlags = LF32_FIXED as DWORD;

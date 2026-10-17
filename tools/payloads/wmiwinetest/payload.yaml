@@ -1,0 +1,32 @@
+# Wine's wbemprox conformance suite (WMI's provider, synced to Wine 11.19), run by the apitest
+# sweep runner. wbemprox is a Wine import, so Wine's suite is its spec; mi.dll (Management
+# Infrastructure, built on wbemprox) adds its own suite here when it lands.
+#
+# The list is olewinetest's gen_suites.py pointed at these suites; see that payload for why
+# the list registers DLLs first and why children start on C:.
+name: wmiwinetest
+description: Wine wbemprox conformance suite under the apitest sweep runner
+
+build_hint: "tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites wbemprox --register X:\\reactos\\system32\\wbem\\wbemprox --out-dir tools/payloads/wmiwinetest"
+
+binaries:
+  - src: tools/payloads/apitest/apitest-sweep-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/apitest-sweep.exe
+  - src: tools/payloads/wmiwinetest/winetest-suites-{arch}.txt
+    dest: bin/apitest-suites.txt
+  - src: tools/payloads/wmiwinetest/winetest-skip-{arch}.txt
+    dest: bin/apitest-skip.txt
+  - src: tools/payloads/wmiwinetest/cwd.txt
+    dest: bin/apitest-cwd.txt
+  - src: build-{arch}/modules/rostests/winetests/wbemprox/wbemprox_winetest.exe
+    dest: bin/wbemprox_winetest.exe
+  - src: build-{arch}/base/system/regsvr32/regsvr32.exe
+    dest: bin/regsvr32.exe
+  - src: build-{arch}/base/applications/cmdutils/reg/reg.exe
+    dest: bin/reg.exe
+
+test:
+  launch_marker: "[APITEST-SWEEP] done"
+  launch_drain_secs: 3600
+  launch_idle_secs: 600

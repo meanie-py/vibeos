@@ -1883,6 +1883,26 @@ at zero.
 Bugs that compile and link clean but corrupt memory or strings at runtime, because the Rust
 mirror, literal width, or field offset silently disagrees with C.
 
+### The SDK header can be the wrong side: a `dwSize` struct that disagrees with Windows
+**Symptom:** on 64-bit only, a C or bindgen-islanded caller's `Process32FirstW` fails (wbemprox's
+`Win32_Process` returned WBEM_E_FAILED for every query; our wbemprox.dll fails the same way on
+Windows 11 itself), while the Rust kernel32 that implements it is fine.
+**Cause:** `sdk/include/psdk/tlhelp32.h` declared `th32DefaultHeapID` and the HEAPLIST32 /
+HEAPENTRY32 pointer-width fields as DWORD. kernel32-rust had the Windows layout (ULONG_PTR,
+SIZE_T), so a caller built from the header passed `dwSize` 556 where the callee expects 568,
+and the size check refused it. Every island generated from that header inherited the error
+(drwtsn32, taskkill, taskmgr, umandlg).
+**Fix:** correct the header to the Windows layout, then regenerate the islands built from it
+(`gen_driver_types.sh <module>`; a C++ module's island carries post-generation fixes, so edit
+those fields by hand instead). Running OUR DLL on Windows (load it, `DllGetClassObject`) splits
+"our code" from "our OS" in one step.
+The same class runs the other way when a callee adopts the LARGER version of a versioned
+struct: every pointer step over it must move too. iphlpapi's `GetAdaptersAddresses` was
+switched to report `Length` = the LH size, but still started its packed strings at
+`current_aa.add(1)` on the XP-typed pointer, so AdapterName landed on `FirstGatewayAddress`
+and wbemprox walked string bytes as a list (`0x4000000000000000`). Grep the pointer's type,
+not just the size constant.
+
 ### Never hand-roll a shadow struct for a type bindgen already emits
 The single highest-yield rule in this section. Hand-rolled mirrors drift; bindgen's are
 size-verified. Real damage:
