@@ -435,9 +435,21 @@ at every DLL_EXPORT_VERSION, and rtworkq is synced to 11.19 to match mfplat.
   standard-queue check was catching. `tools/payloads/wakeprobe` measures it. The kernel's
   keyed event now reports a wait that was paired while timing out as satisfied.
 
+**Done 2026-10-17: wbemprox at Wine 11.19.** The WMI provider and its suites are Wine 11.19's
+(new: StandardCimv2, Storage and SecurityCenter2 namespaces, sysrestore, WbemContext), plus
+a `Win32_OptionalFeature` class with Windows 11's schema and no instances, which Docker
+queries. In the guest the query suite runs 1369 tests and services 70; every failure is a
+todo_wine except 13 × query.c:169, the image name `EXPLORER.EXE` that the LiveCD reports in
+capitals (owed: the CDFS name reaches SeLocateProcessImageName as stored). What it needed
+from us: tlhelp32.h's 64-bit layouts (field manual, "The SDK header can be the wrong side"),
+`GetAdaptersAddresses` returning the LH struct (wbemprox reads its gateway and LUID fields),
+`ConvertLengthToIpv4Mask`, and the LiveCD's `ProgramFilesDir`. `tools/payloads/wmiwinetest`
+runs it.
+
 **Owed on the export surface:**
 - **Modules other apps still need:** `mi` (Docker; WMI's Management Infrastructure, which
-  Wine does not have). Office: bring it in when the rest is green, it is its own campaign.
+  Wine does not have): in progress as a Rust mi.dll over wbemprox; `sdk/include/psdk/mi.h`
+  is OMI's header, and the function tables were measured on Windows 11. Office: bring it in when the rest is green, it is its own campaign.
 - **d3d11.dll is built only at DLL_EXPORT_VERSION >= 0x600**, so a default build has no
   D3D11CreateDevice at all; Wine's mfplat suite ends on that NULL pointer, and Chrome and
   Office import d3d11. Decide whether to build the d3d family at every version (rtworkq and
@@ -464,7 +476,10 @@ at every DLL_EXPORT_VERSION, and rtworkq is synced to 11.19 to match mfplat.
   apply Windows' manifest rule in `GetVersionEx` (6.2 unless the manifest declares the
   Windows 10 `supportedOS`; `RtlGetVersion` is never lied to), and audit the ~88 sources
   that branch on the version. Last, because a program that sees 10.0 stops taking its
-  XP fallback.
+  XP fallback. The audit is done (`version-flip-audit.md`, 2026-10-17): we report 5.2 build
+  3790 today; 11 checks break at 10.0, starting with three `& 0x3FFF` build masks that turn
+  22000 into 5616, and ntdll records the LOWEST supportedOS GUID, which cannot answer the
+  manifest rule.
 - **Seed the stub-hit report with real programs.** Its first reading (607 boots: smoke,
   kmtest on all arches, and one amd64 appstorm sweep, which opens every stock app and
   applet): exactly one stub is reached, the SEH smoke probe's deliberate
