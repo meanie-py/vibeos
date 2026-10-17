@@ -456,9 +456,12 @@ runs it.
   D3D11CreateDevice at all; Wine's mfplat suite ends on that NULL pointer, and Chrome and
   Office import d3d11. Decide whether to build the d3d family at every version (rtworkq and
   dxva2 already are).
-- **mf.c:4553, the presentation clock's callback interval,** reads ~188 ms instead of a tick
-  in the second or third mf run of a boot (the first passes), with or without the
-  condition-variable fix; the 10 ms periodic pool timer alone runs at 64 Hz in wakeprobe.
+- **mf.c:4553, the presentation clock's callback interval,** reads 27-188 ms instead of a
+  tick, with or without the condition-variable fix; the 10 ms periodic pool timer alone runs
+  at 64 Hz in wakeprobe. Repro (2026-10-17): `gen_suites.py ... --repeat mf:mf=3` then
+  `smoke --arch amd64 --payload mfwinetest --repeat 6` failed 7 of 18 mf runs, in 5 of 6
+  boots and in any run (first, second or third), so "the first run passes" was wrong.
+  mfplat.c:3308 (`0x102`) showed once in the same 6 boots.
   Seen once beside it: mf.c:4493 "got count 0, state 0".
 - **mf's converter scenario:** both builds fail mf.c's "SetTopology ... requiring a
   converter" checks (no converter MFT is registered: the codec gap below).
