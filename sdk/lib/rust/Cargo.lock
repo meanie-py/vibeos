@@ -3223,6 +3223,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "mmcshext-rust"
+version = "0.1.0"
+dependencies = [
+ "atlclasses-rust",
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "mmdrv-rust"
 version = "0.1.0"
 dependencies = [

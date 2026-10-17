@@ -544,26 +544,7 @@ impl CDownloadManager {
 
                     // In the future a package might need to specify dependency version or WoW64
                     // information ("vcredist*x64" etc), for now, just remove possible modifiers.
-                    // CStringW::FindOneOf (wcspbrk): atl_rust has none, so scan for the first
-                    // character of pkg that is in the set.
-                    let suffix: i32 = {
-                        let set: *const WCHAR = CPP_COM_WSTR_3A7F15C7DA56.as_ptr();
-                        let mut found: i32 = -1;
-                        let mut k: i32 = 0;
-                        while k < pkg.GetLength() && found < 0 {
-                            let ch: WCHAR = pkg.GetAt(k);
-                            let mut q: *const WCHAR = set;
-                            while *q != 0 {
-                                if *q == ch {
-                                    found = k;
-                                    break;
-                                }
-                                q = q.add(1);
-                            }
-                            k += 1;
-                        }
-                        found
-                    };
+                    let suffix: i32 = pkg.FindOneOf(CPP_COM_WSTR_3A7F15C7DA56.as_ptr());
                     if suffix > 0 {
                         pkg = pkg.Left(suffix);
                     }
@@ -660,33 +641,7 @@ impl CDownloadManager {
                 GetWindowTextW(hDlg, (*this_).m_szCaptionFmt.as_mut_ptr(), (_countof!((*this_).m_szCaptionFmt)) as i32);
                 let mut buf: CStringW = CStringW::new();
                 buf = CStringW::from_ptr((*this_).m_szCaptionFmt.as_ptr());
-                // buf.Replace(L"%ls", L""): atl_rust's CStringW only has the one-character
-                // Replace, so rebuild the string with every occurrence of the pattern replaced.
-                {
-                    let pszOld: *const WCHAR = CPP_COM_WSTR_D217C45C6798.as_ptr();
-                    let pszNew: *const WCHAR = CPP_COM_WSTR_96A296D224F2.as_ptr();
-                    let mut nOld: usize = 0;
-                    while *pszOld.add(nOld) != 0 {
-                        nOld += 1;
-                    }
-                    let mut out = CStringW::new();
-                    let nLen: usize = buf.GetLength() as usize;
-                    let mut i: usize = 0;
-                    while i < nLen {
-                        let mut m: usize = 0;
-                        while m < nOld && i + m < nLen && buf.GetAt((i + m) as i32) == *pszOld.add(m) {
-                            m += 1;
-                        }
-                        if nOld != 0 && m == nOld {
-                            out += pszNew;
-                            i += nOld;
-                        } else {
-                            out.AppendChar(buf.GetAt(i as i32));
-                            i += 1;
-                        }
-                    }
-                    buf = out;
-                }
+                buf.ReplaceStr(CPP_COM_WSTR_D217C45C6798.as_ptr(), CPP_COM_WSTR_96A296D224F2.as_ptr());
                 SetWindowTextW(hDlg, buf.GetString()); // "Downloading..."
 
                 let hItem: HWND = GetDlgItem(hDlg, (IDC_DOWNLOAD_PROGRESS as i32));
@@ -722,22 +677,7 @@ impl CDownloadManager {
             WM_CLOSE => {
                 (*this_).m_bCancelled = (TRUE as i32);
                 if !(*this_).m_ProgressBar.op_to_HWND().is_null() {
-                    // UnsubclassWindow(TRUE): atl_rust's win module has no unsubclass, so undo
-                    // subclass_window by hand (restore the saved wndproc, drop its two props).
-                    extern "system" {
-                        fn GetPropW(hWnd: HWND, lpString: LPCWSTR) -> HANDLE;
-                        fn RemovePropW(hWnd: HWND, lpString: LPCWSTR) -> HANDLE;
-                    }
-                    let prop_this: [WCHAR; 12] = [0x41, 0x74, 0x6C, 0x52, 0x75, 0x73, 0x74, 0x54, 0x68, 0x69, 0x73, 0];
-                    let prop_super: [WCHAR; 13] = [0x41, 0x74, 0x6C, 0x52, 0x75, 0x73, 0x74, 0x53, 0x75, 0x70, 0x65, 0x72, 0];
-                    let hwndOld: HWND = (*this_).m_ProgressBar.__base0.m_hWnd;
-                    let sup: HANDLE = GetPropW(hwndOld, prop_super.as_ptr());
-                    if !sup.is_null() {
-                        SetWindowLongPtrW(hwndOld, GWLP_WNDPROC, sup as usize as _);
-                    }
-                    RemovePropW(hwndOld, prop_super.as_ptr());
-                    RemovePropW(hwndOld, prop_this.as_ptr());
-                    (*this_).m_ProgressBar.__base0.m_hWnd = core::ptr::null_mut();
+                    atl_rust::win::unsubclass_window(core::ptr::addr_of_mut!((*this_).m_ProgressBar), true);
                 }
                 return if (*this_).m_bModal != 0 && (*this_).IsSilentDialog() == 0 {
                     (EndDialog(hDlg, 0)) as _

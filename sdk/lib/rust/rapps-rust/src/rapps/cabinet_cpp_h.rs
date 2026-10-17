@@ -285,13 +285,9 @@ pub unsafe extern "C" fn ExtractFilesFromCab__0(szCabName: &CStringW, szCabDir: 
     // Perform extraction
     if bResult != 0 {
         // Add a slash to cab name as required by the api
-        // szCabNameUTF8 = "\\" + szCabNameUTF8;  (atl_rust's CStringA has no operator+)
-        let mut tmp = CStringA::new();
-        let cablen: i32 = szCabNameUTF8.GetLength();
-        let dst = tmp.GetBuffer(1 + cablen) as *mut u8;
-        *dst = b'\\';
-        core::ptr::copy_nonoverlapping(szCabNameUTF8.GetString(), dst.add(1), cablen as usize);
-        tmp.ReleaseBufferSetLength(1 + cablen);
+        // szCabNameUTF8 = "\\" + szCabNameUTF8;
+        let mut tmp = CStringA::from_ptr(b"\\\0".as_ptr() as *const c_char);
+        tmp.Append(szCabNameUTF8.GetString() as *const c_char);
         szCabNameUTF8 = tmp;
 
         nd.OutputDir = (szOutputDirUTF8.GetString()).cast();

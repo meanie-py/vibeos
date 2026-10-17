@@ -359,7 +359,9 @@ impl CThreadMgr {
             return E_OUTOFMEMORY;
         }
     
-        let hr: HRESULT = DocumentMgr_Constructor((this_).cast(), ppdim);
+        // `this` as the ITfThreadMgrEventSink BASE, which sits at __base7: passing the object
+        // itself made CDocumentMgr call OnPushContext etc. through ITfThreadMgrEx's vtable.
+        let hr: HRESULT = DocumentMgr_Constructor(core::ptr::addr_of_mut!((*this_).__base7), ppdim);
         if hr >= 0 {
             (*mgrentry).docmgr = *ppdim;
             list_add_head(

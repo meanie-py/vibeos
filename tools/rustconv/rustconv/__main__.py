@@ -31,6 +31,7 @@ from . import (
     difftest_gen,
     dup_census,
     file_splitter,
+    fn_alias_audit,
     gdi_lock_inventory,
     hybrid_closure,
     profile_derive,
@@ -6372,6 +6373,7 @@ def main():
     p.add_argument("--arch", default="i386", choices=["i386", "amd64", "arm64"])
 
     port_mod.add_parser(sub)
+    fn_alias_audit.add_parser(sub)
 
     args = parser.parse_args()
 
@@ -6416,6 +6418,7 @@ def main():
         "pp": cmd_postprocess,
         "trace-catalog": cmd_trace_catalog,
         "port": lambda a: sys.exit(port_mod.main(a)),
+        "fn-alias-audit": lambda a: sys.exit(fn_alias_audit.main(a)),
     }
 
     try:

@@ -26,16 +26,18 @@
 //!
 //! # Resource strings
 //!
-//! ATL loads `CString` resources from `_AtlBaseModule`'s resource instance, which for an EXE is
-//! the process image. [`resource_instance`] answers the same: whatever a DLL consumer set with
-//! [`set_resource_instance`] (its own `hInstance`, as shell32 needs), else
-//! `GetModuleHandleW(NULL)`.
+//! ATL loads `CString` resources from `_AtlBaseModule`'s resource instance: the image ATL is
+//! linked into (`&__ImageBase`), the EXE or the DLL. [`resource_instance`] answers the same:
+//! whatever a consumer set with [`set_resource_instance`], else [`module_instance`].
 
 #![cfg_attr(not(test), no_std)]
 #![allow(non_snake_case, non_camel_case_types, clippy::missing_safety_doc)]
 
 pub mod com;
+#[cfg(feature = "dll")]
+pub mod dll;
 pub mod exe;
+pub mod registrar;
 pub mod stl;
 pub mod win;
 
@@ -56,6 +58,7 @@ type SIZE_T = usize;
 const CP_THREAD_ACP: u32 = 3;
 
 extern "system" {
+    fn GetEnvironmentVariableW(lpName: LPCWSTR, lpBuffer: *mut WCHAR, nSize: u32) -> u32;
     fn LocalAlloc(uFlags: u32, uBytes: SIZE_T) -> HLOCAL;
     fn LocalReAlloc(hMem: HLOCAL, uBytes: SIZE_T, uFlags: u32) -> HLOCAL;
     fn LocalFree(hMem: HLOCAL) -> HLOCAL;
@@ -73,7 +76,6 @@ extern "system" {
         lpBuffer: *mut WCHAR,
         cchBufferMax: INT,
     ) -> INT;
-    fn GetModuleHandleW(lpModuleName: LPCWSTR) -> *mut c_void;
     fn WideCharToMultiByte(
         CodePage: u32,
         dwFlags: u32,
@@ -139,11 +141,14 @@ impl CAtlBaseModule {
     }
 }
 
-/// `_AtlBaseModule.GetResourceInstance()`: the instance set above, else the process image.
+/// `_AtlBaseModule.GetResourceInstance()`: the instance set above, else this image.
 pub fn resource_instance() -> *mut c_void {
     let h = RESOURCE_INSTANCE.load(Ordering::Relaxed);
     if h.is_null() {
-        unsafe { GetModuleHandleW(core::ptr::null()) }
+        // CAtlBaseModule's `m_hInstResource = &__ImageBase`: the image this code is linked
+        // into. `GetModuleHandleW(NULL)` was the same for an EXE but the HOST process for a
+        // DLL, whose CString::LoadString would then read Explorer's string table.
+        module_instance()
     } else {
         h
     }
@@ -1877,6 +1882,104 @@ impl CStringW {
         }
         -1
     }
+
+    /// `FindOneOf(PCXSTR pszCharSet)` — cstringt.h (`wcspbrk`): the index of the first
+    /// character that is in the set, or -1.
+    pub unsafe fn FindOneOf(&self, pszCharSet: *const WCHAR) -> i32 {
+        let p = self.as_ptr();
+        let mut i = 0usize;
+        while *p.add(i) != 0 {
+            let mut q = pszCharSet;
+            while *q != 0 {
+                if *q == *p.add(i) {
+                    return i as i32;
+                }
+                q = q.add(1);
+            }
+            i += 1;
+        }
+        -1
+    }
+
+    /// `Replace(PCXSTR pszOld, PCXSTR pszNew)` — cstringt.h:886: every non-overlapping
+    /// occurrence, left to right, replaced text never rescanned; the count. (Rust has no
+    /// overloads: [`CStringW::Replace`] is the one-character form.) An EMPTY `pszOld`
+    /// returns 0 as MS ATL does; ReactOS's loop finds `L""` at the same place forever.
+    pub unsafe fn ReplaceStr(&mut self, pszOld: *const WCHAR, pszNew: *const WCHAR) -> i32 {
+        let nOld = wide_len(pszOld);
+        if nOld == 0 || self.m_nLength == 0 {
+            return 0;
+        }
+        let nNew = wide_len(pszNew);
+        let src = self.as_ptr();
+        let n = self.m_nLength as usize;
+        let hit = |i: usize| (0..nOld).all(|k| *src.add(i + k) == *pszOld.add(k));
+        let mut out = CStringW::new();
+        let (mut i, mut start, mut count) = (0usize, 0usize, 0);
+        while i + nOld <= n {
+            if hit(i) {
+                out.append_n(src.add(start), (i - start) as i32);
+                out.append_n(pszNew, nNew as i32);
+                i += nOld;
+                start = i;
+                count += 1;
+            } else {
+                i += 1;
+            }
+        }
+        if count == 0 {
+            return 0;
+        }
+        out.append_n(src.add(start), (n - start) as i32);
+        *self = out;
+        count
+    }
+
+    /// `n` characters of `p` (not necessarily terminated) onto the end.
+    unsafe fn append_n(&mut self, p: *const WCHAR, n: i32) {
+        if n <= 0 {
+            return;
+        }
+        let newLen = self.m_nLength + n;
+        self.Reserve(newLen);
+        if self.m_pszData.is_null() {
+            return;
+        }
+        core::ptr::copy_nonoverlapping(p, self.m_pszData.add(self.m_nLength as usize), n as usize);
+        *self.m_pszData.add(newLen as usize) = 0;
+        self.m_nLength = newLen;
+    }
+
+    /// `GetEnvironmentVariable(PCXSTR pszVar)` — cstringt.h:658: the variable's value, TRUE;
+    /// unset (or empty), the string emptied and FALSE.
+    pub unsafe fn GetEnvironmentVariable(&mut self, pszVar: *const WCHAR) -> BOOL {
+        let nLength = GetEnvironmentVariableW(pszVar, core::ptr::null_mut(), 0) as i32;
+        if nLength > 0 {
+            let pszBuffer = self.GetBuffer(nLength);
+            GetEnvironmentVariableW(pszVar, pszBuffer, nLength as u32);
+            self.ReleaseBuffer();
+            return 1;
+        }
+        self.Empty();
+        0
+    }
+
+    /// `CSimpleStringT::CopyChars(pchDest, nDestLen, pchSrc, nChars)` — atlsimpstr.h. ReactOS
+    /// copies `nChars` and ignores `nDestLen`; MS ATL's is `memcpy_s`, which refuses an
+    /// oversized copy and zeroes the destination. This takes the bounded form: a copy that
+    /// would overrun leaves `pchDest` an empty string instead of writing past it.
+    pub unsafe fn CopyChars(pchDest: *mut WCHAR, nDestLen: usize, pchSrc: *const WCHAR, nChars: i32) {
+        if nChars <= 0 {
+            return;
+        }
+        if nChars as usize > nDestLen {
+            if nDestLen > 0 {
+                *pchDest = 0;
+            }
+            return;
+        }
+        core::ptr::copy_nonoverlapping(pchSrc, pchDest, nChars as usize);
+    }
 }
 
 impl core::ops::AddAssign<*mut WCHAR> for CStringW {
@@ -2020,6 +2123,33 @@ impl CStringA {
         core::ptr::copy_nonoverlapping(pszSrc as *const u8, self.m_pszData, nLength as usize);
         *self.m_pszData.add(nLength as usize) = 0;
         self.m_nLength = nLength;
+    }
+
+    /// `Append(PCXSTR)` / `operator+=` — atlsimpstr.h. Appending to self is not supported
+    /// (the realloc would invalidate `pszSrc`), as for CStringW.
+    pub unsafe fn Append(&mut self, pszSrc: *const c_char) {
+        if pszSrc.is_null() {
+            return;
+        }
+        let mut add = 0usize;
+        while *pszSrc.add(add) != 0 {
+            add += 1;
+        }
+        if add == 0 {
+            return;
+        }
+        let newLen = self.m_nLength + add as i32;
+        self.Reserve(newLen);
+        if self.m_pszData.is_null() {
+            return;
+        }
+        core::ptr::copy_nonoverlapping(
+            pszSrc as *const u8,
+            self.m_pszData.add(self.m_nLength as usize),
+            add,
+        );
+        *self.m_pszData.add(newLen as usize) = 0;
+        self.m_nLength = newLen;
     }
 
     /// `GetBuffer(int nMinBufferLength)` — atlsimpstr.h: writable, at least that many chars.
@@ -2351,6 +2481,117 @@ mod collection_tests {
             assert!(l.FindPosAfter(&5, p3).is_null());
             assert!(l.Find(&6) && !l.Find(&7));
             l.RemoveAll();
+        }
+    }
+}
+
+#[cfg(test)]
+mod cstring_tests {
+    //! CStringW/CStringA on the host: kernel32's LocalAlloc family (CLocalAllocator) and
+    //! GetEnvironmentVariableW, shimmed over libc for the test binary only.
+    use super::*;
+
+    #[no_mangle]
+    static __ImageBase: u8 = 0;
+    #[no_mangle]
+    extern "system" fn LoadStringW(_h: *mut c_void, _id: u32, _buf: *mut WCHAR, _n: INT) -> INT {
+        0 // no string table on the host: the resource paths are not what these tests reach
+    }
+    #[no_mangle]
+    extern "system" fn LocalAlloc(_f: u32, n: usize) -> HLOCAL {
+        unsafe { malloc(n) as HLOCAL }
+    }
+    #[no_mangle]
+    extern "system" fn LocalReAlloc(p: HLOCAL, n: usize, _f: u32) -> HLOCAL {
+        unsafe { realloc(p as *mut c_void, n) as HLOCAL }
+    }
+    #[no_mangle]
+    extern "system" fn LocalFree(p: HLOCAL) -> HLOCAL {
+        unsafe { free(p as *mut c_void) };
+        core::ptr::null_mut()
+    }
+    #[no_mangle]
+    extern "system" fn GetEnvironmentVariableW(name: LPCWSTR, buf: *mut WCHAR, size: u32) -> u32 {
+        // One variable, SystemDrive=C:, with Win32's sizing contract: too small -> the
+        // size needed INCLUDING the NUL; else the length copied, excluding it.
+        let want: Vec<u16> = "SystemDrive\0".encode_utf16().collect();
+        unsafe {
+            if core::slice::from_raw_parts(name, want.len()) != want.as_slice() {
+                return 0;
+            }
+            let v: Vec<u16> = "C:\0".encode_utf16().collect();
+            if (size as usize) < v.len() {
+                return v.len() as u32;
+            }
+            core::ptr::copy_nonoverlapping(v.as_ptr(), buf, v.len());
+            (v.len() - 1) as u32
+        }
+    }
+
+    fn w(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain([0]).collect()
+    }
+    fn text(s: &CStringW) -> String {
+        unsafe { String::from_utf16(core::slice::from_raw_parts(s.as_ptr(), s.GetLength() as usize)).unwrap() }
+    }
+
+    #[test]
+    fn replace_str_counts_and_never_rescans_its_own_output() {
+        unsafe {
+            let mut s = CStringW::from_ptr(w("Downloading %ls...").as_ptr());
+            assert_eq!(s.ReplaceStr(w("%ls").as_ptr(), w("").as_ptr()), 1);
+            assert_eq!(text(&s), "Downloading ...");
+            let mut s = CStringW::from_ptr(w("aaaa").as_ptr());
+            assert_eq!(s.ReplaceStr(w("aa").as_ptr(), w("aaa").as_ptr()), 2);
+            assert_eq!(text(&s), "aaaaaa");
+            assert_eq!(s.ReplaceStr(w("x").as_ptr(), w("y").as_ptr()), 0);
+            // ReactOS loops forever here; MS ATL (and this) answer 0.
+            assert_eq!(s.ReplaceStr(w("").as_ptr(), w("y").as_ptr()), 0);
+            assert_eq!(text(&s), "aaaaaa");
+        }
+    }
+
+    #[test]
+    fn find_one_of_is_wcspbrk() {
+        unsafe {
+            let s = CStringW::from_ptr(w("vcredist*x64").as_ptr());
+            assert_eq!(s.FindOneOf(w("*<=>:/\\?").as_ptr()), 8);
+            assert_eq!(s.FindOneOf(w("#").as_ptr()), -1);
+            assert_eq!(CStringW::new().FindOneOf(w("a").as_ptr()), -1);
+        }
+    }
+
+    #[test]
+    fn copy_chars_never_writes_past_the_destination() {
+        unsafe {
+            let src = w("C:\\RAPPS");
+            let mut dst = [0x7777u16; 4];
+            CStringW::CopyChars(dst.as_mut_ptr(), dst.len(), src.as_ptr(), src.len() as i32);
+            assert_eq!(dst, [0, 0x7777, 0x7777, 0x7777]); // refused: emptied, not overrun
+            let mut big = [0u16; 16];
+            CStringW::CopyChars(big.as_mut_ptr(), big.len(), src.as_ptr(), src.len() as i32);
+            assert_eq!(&big[..src.len()], src.as_slice());
+        }
+    }
+
+    #[test]
+    fn get_environment_variable_sets_or_empties() {
+        unsafe {
+            let mut s = CStringW::from_ptr(w("old").as_ptr());
+            assert_eq!(s.GetEnvironmentVariable(w("SystemDrive").as_ptr()), 1);
+            assert_eq!(text(&s), "C:");
+            assert_eq!(s.GetEnvironmentVariable(w("Nope").as_ptr()), 0);
+            assert_eq!(s.GetLength(), 0);
+        }
+    }
+
+    #[test]
+    fn cstringa_append() {
+        unsafe {
+            let mut a = CStringA::from_ptr(b"\\\0".as_ptr() as *const c_char);
+            a.Append(b"cab.cab\0".as_ptr() as *const c_char);
+            a.Append(core::ptr::null());
+            assert_eq!(core::slice::from_raw_parts(a.GetString(), a.GetLength() as usize), b"\\cab.cab");
         }
     }
 }

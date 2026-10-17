@@ -851,6 +851,7 @@ members = [
     "mmdrv-rust",
     "beepmidi-rust",
     "sndblst-rust",
+    "mmcshext-rust",
 ]
 resolver = "2"
 

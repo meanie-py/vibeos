@@ -2504,6 +2504,38 @@ def uses_std_headers(m) -> bool:
     return any(_STD_HEADER_RE.search(f.read_text(errors="replace")) for f in sorted(files))
 
 
+# `class CMscExtractIcon : public CComCoClass<..>, public IExtractIconW, public IPersistFile {`
+_CLASS_HEAD_RE = re.compile(r"\b(?:class|struct)\s+\w+\s*(?:final\s*)?:([^{;]*)\{")
+_COM_BASE_RE = re.compile(
+    r"(?:public|protected|private|virtual|^|,)\s*(?:\w+::)*(I[A-Z]\w*)\s*(?=,|$)"
+)
+
+
+def cpp_interface_bases(m) -> list[str]:
+    """The COM interfaces the module's own C++ classes derive from.
+
+    The island must lay them out: cpp_app embeds each as a base (`__base3: IPersistFile`) and
+    fills its `IPersistFileVtbl`. But a base is named only by the class head, never by an
+    item of an allowlisted header, so bindgen (which follows references from allowlisted
+    items) does not emit it -- mmcshext's IPersistFile lives in objidl.h, which nothing
+    allowlisted. Allowlisting objidl.h whole would triple the island; the names suffice."""
+    files = {f for tu in m.compiled_tus for f in [tu, *tu.parent.glob("*.h*")] if f.is_file()}
+    names: set[str] = set()
+    for f in sorted(files):
+        text = re.sub(r"//[^\n]*|/\*.*?\*/", "", f.read_text(errors="replace"), flags=re.S)
+        for head in _CLASS_HEAD_RE.finditer(text):
+            # Template bases (CComCoClass<..>, ATL's IDispatchImpl<IFoo>) are ATL's classes,
+            # not interfaces; masking their arguments keeps their commas from splitting.
+            bases = head.group(1)
+            for _ in range(3):
+                bases = re.sub(r"<[^<>]*>", "<>", bases)
+            for part in bases.split(","):
+                b = _COM_BASE_RE.search(part.strip())
+                if b and "<" not in part:
+                    names.add(b.group(1))
+    return sorted(names)
+
+
 def _cxx_consts(text: str, alt: str) -> dict[str, tuple[str, str]]:
     out = {
         m.group(1): ("cxx-const", m.group(2).strip())
@@ -3991,7 +4023,9 @@ def emit_profile(dp: DerivedProfile) -> str:
         else:
             out.append("    BLOCKLIST_FUNCS=1")
     out.append(f'    DRIVER_DIR="${{SRC}}/{rel}"')
-    if any(str(tu).lower().endswith(CPP_SUFFIXES) for tu in m.compiled_tus):
+    cpp = any(str(tu).lower().endswith(CPP_SUFFIXES) for tu in m.compiled_tus)
+    com_bases = cpp_interface_bases(m) if cpp else []
+    if cpp:
         # A C++ TU's include closure declares classes (`class CCanvasWindow : public
         # CWindowImpl<...>`), which a C parse rejects as an unknown type name: the island
         # must be parsed the way the TU is compiled.
@@ -4001,7 +4035,7 @@ def emit_profile(dp: DerivedProfile) -> str:
             out.append("    ISLAND_STL=1")
     if not multi:
         out.append(f"    WRAPPER_INC=$'{wrapper}'")
-        out.extend(_allow_files_lines(dp.allow_files))
+        out.extend(_allow_files_lines(dp.allow_files, com_bases))
     else:
         out.append('    case "$DRIVER" in')
         for isl in dp.islands:
@@ -4016,7 +4050,7 @@ def emit_profile(dp: DerivedProfile) -> str:
             out.append(line)
             out.append(f"      {isl.label})")
             out.append("        WRAPPER_INC=$'" + "\\n".join(isl.wrapper_inc) + "'")
-            out.extend("    " + line for line in _allow_files_lines(isl.allow_files))
+            out.extend("    " + line for line in _allow_files_lines(isl.allow_files, com_bases))
             out.append("        ;;")
         out.append("    esac")
     unblock = opaque_types_to_unblock(dp) if not m.is_usermode else []
@@ -4073,10 +4107,14 @@ def emit_profile(dp: DerivedProfile) -> str:
     return "\n".join(out) + "\n"
 
 
-def _allow_files_lines(allow_files: list[str]) -> list[str]:
+def _allow_files_lines(allow_files: list[str], allow_types: list[str] | None = None) -> list[str]:
     """``ALLOW_FILES=( --allowlist-file '…' … )`` in the shape the script's profiles use."""
-    lines = ["    ALLOW_FILES=( " + " ".join(f"--allowlist-file '{a}'" for a in allow_files[:2])]
-    lines += [f"                  --allowlist-file '{a}'" for a in allow_files[2:]]
+    args = [f"--allowlist-file '{a}'" for a in allow_files]
+    if allow_types:
+        # The C++ classes' interface bases (cpp_interface_bases), and their vtables.
+        args.append(f"--allowlist-type '({'|'.join(allow_types)})(Vtbl)?'")
+    lines = ["    ALLOW_FILES=( " + " ".join(args[:2])]
+    lines += [f"                  {a}" for a in args[2:]]
     lines[-1] = lines[-1] + " )"
     return lines
 
@@ -4581,9 +4619,12 @@ def scaffold_crate(
             re.search(r"\bstd::(?:w?string|vector|map)\b", t)
             for t in texts + [h.read_text(errors="replace") for h in sorted(own_headers)]
         )
+        # An in-process COM server (BEGIN_OBJECT_MAP): atl_rust::dll's CComModule and the
+        # .rgs registrar, which import advapi32.
+        dll = any(re.search(r"\bBEGIN_OBJECT_MAP\b", t) for t in texts)
         # CComHeapPtr is the COM task allocator (ole32), CPath is shlwapi's
         # PathCompactPathExW: only a module that uses one imports its DLL.
-        feats = [f for f, on in (("com", com), ("path", path)) if on]
+        feats = [f for f, on in (("com", com), ("dll", dll), ("path", path)) if on]
         deps += (
             'atlclasses-rust = { path = "../atlclasses-rust", features = ['
             + ", ".join(f'"{f}"' for f in feats)
