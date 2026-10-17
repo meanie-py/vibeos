@@ -1440,6 +1440,30 @@ def _has_body(path: Path) -> bool:
     return bool(re.search(r"\b(?:fn|static|const)\s+\w+", text))
 
 
+def _goto_macro_calls(state: dict, tus: list[str]) -> dict[str, list[str]]:
+    """{TU file name: the module's goto-carrying macros (`local_macros.leaves_caller`) it uses}."""
+    if not tus:
+        return {}
+    files = _module_sources(REPO / state["module_dir"])
+    defs, _ = local_macros.module_macros(files, REPO)
+    leaving = sorted(n for n, m in defs.items() if local_macros.leaves_caller(m))
+    if not leaving:
+        return {}
+    use = re.compile(r"\b(" + "|".join(map(re.escape, leaving)) + r")\b")
+    out: dict[str, list[str]] = {}
+    for tu in tus:
+        path = REPO / tu
+        if not path.is_file():
+            continue
+        # Uses, not the definition: cmd.c defines APPEND and calls it in the same file.
+        text = local_macros.strip_literals(path.read_text(errors="replace"))
+        text = re.sub(r"^[ \t]*#[ \t]*define\b(?:.*\\\n)*.*$", "", text, flags=re.M)
+        names = sorted(set(use.findall(text)))
+        if names:
+            out[Path(tu).name] = names
+    return out
+
+
 def set_expand_macros(stem: str, tus: list[str]) -> list[str]:
     """Record that these TUs translate with the module's own macros expanded in the C."""
     state = load_state(stem)
@@ -1788,6 +1812,26 @@ def stage_translate(
             or _unit_stale(state, t)
         ]
     )
+    # A TU bought FRESH that calls a macro jumping to the caller's label (mmc_new's CHK_HR)
+    # is bought with those macros expanded: no macro_rules! can reach the caller's label, and
+    # every such body came back naming a `'CleanUp` that does not exist. Only fresh ones --
+    # a TU with output keeps the question its bank was bought with (cmd, imm32, opengl32 and
+    # mmc_new shipped before this, and turning it on there would re-buy them).
+    fresh = [t for t in todo if not _has_body(_tu_output(state, t))]
+    found = _goto_macro_calls(state, fresh)
+    if found and not dry_run:
+        state["expand_goto_macros"] = sorted(set(state.get("expand_goto_macros", [])) | set(found))
+        _record(state, "expand-goto-macros", time.time(), tus=state["expand_goto_macros"])
+    for tu, names in sorted(found.items()):
+        print(f"translate: {tu}: expanding goto-carrying macro(s) in the C: {', '.join(names)}")
+    goto_tus = set(state.get("expand_goto_macros", [])) | set(found)
+    stale_goto = _goto_macro_calls(state, [t for t in todo if t not in fresh])
+    for tu, names in sorted(stale_goto.items()):
+        if tu not in goto_tus:
+            print(
+                f"translate: {tu}: re-bought bodies keep {', '.join(names)} unexpanded (its bank "
+                f"was bought that way); a body that names the caller's label needs a hand port"
+            )
     spent = 0.0
     done: list[dict] = []
     arch_only = _arch_only_tus(state, [*todo, *(vias[t] for t in todo if t in vias)])
@@ -1850,6 +1894,8 @@ def stage_translate(
             # text, and c2rust has no C++), with the generated class context per worker.
             cmd += ["--cpp-app-model", cppapp["model"], "--no-c2rust"]
         # Per TU, recorded in the state so `port replay` asks the bank the same question.
+        if Path(tu).name in goto_tus:
+            cmd += ["--expand-goto-macros", state["module_dir"]]
         if Path(tu).name in state.get("expand_macros", []):
             cmd += ["--expand-local-macros", state["module_dir"]]
         if dry_run:
@@ -2344,6 +2390,26 @@ def _stub_name(state: dict) -> str:
     return "rust_cohab_stub.cpp" if state.get("cpp_tus") else "rust_cohab_stub.c"
 
 
+def _repoint_cargo_cells(target: str, crate: str) -> list[Path]:
+    """Point every cargo cell that replays `target`'s C at its Rust archive instead.
+
+    A cell takes a cmake static library as `engine:c:<target>`, which replays that target's
+    compiles; after the flip those are only the stub, so the cell links nothing in their
+    place. timedate.cpl's cell did that with tzlib and failed every arch's link. The archive
+    the flip just declared (`rust_staticlib_variant(... <crate> "" TRUE)`) is spelled
+    `engine:crate:<crate>::TRUE`, as tools/cargo_cell_gen.py writes it. Returns the cells
+    rewritten.
+    """
+    old, new = f'"engine:c:{target}"', f'"engine:crate:{crate}::TRUE"'
+    changed = []
+    for build_rs in sorted((REPO / "sdk" / "lib" / "rust").glob("*-cargo/build.rs")):
+        text = build_rs.read_text()
+        if old in text:
+            build_rs.write_text(text.replace(old, new))
+            changed.append(build_rs)
+    return changed
+
+
 def stage_flip(stem: str) -> None:
     started = time.time()
     state = load_state(stem)
@@ -2384,6 +2450,8 @@ def stage_flip(stem: str) -> None:
         )
     _record(state, "flip", started, changed=changed)
     print(f"flip: {cml.relative_to(REPO)} {'rewritten' if changed else 'already flipped'}")
+    for cell in _repoint_cargo_cells(state["target"], state["crate"]):
+        print(f"flip: {cell.relative_to(REPO)} now links {state['crate']}")
     # A flip leaves the module linked by cmake around the stub; the cargo cell is the next
     # step, and `vibeos-cli check` (scan_cmake_linked_rust) fails until it is taken.
     print(
@@ -6450,6 +6518,17 @@ def stage_macros(
     # `pub use _wcsdup as str_clone` is not a macro to port too (where: E0252).
     hand |= set(re.findall(r"^pub use [\w:]+ as (\w+);", prelude.read_text(), re.M))
     macros = {n: m for n, m in local_macros.closure(wanted, defs).items() if n not in hand}
+    # mmc_new's CHK_HR came back as a macro_rules! naming the caller's `hr` and `'CleanUp`:
+    # E0425 + E0426 at every use, reported at the PRELUDE line. A label cannot be a parameter.
+    leaving = sorted(n for n, m in macros.items() if local_macros.leaves_caller(m))
+    for n in leaving:
+        del macros[n]
+    if leaving:
+        print(
+            f"macros: jump to the caller's label, never a macro_rules! (`port translate` expands "
+            f"them in a fresh TU's C; a body bought before that is hand-ported): "
+            f"{', '.join(leaving)}"
+        )
     skipped = sorted(names & ambiguous)
     if skipped:
         print(f"macros: defined differently in two places, hand-port: {', '.join(skipped)}")
@@ -6474,6 +6553,8 @@ def stage_macros(
     usd = 0.0
     if not todo:
         print(f"macros: {len(macros)} item(s) replayed from the bank ($0)")
+        if dry_run:  # a dry run that buys nothing must not write the prelude either
+            return
     else:
         text = local_macros.prompt(todo, local_macros.in_scope_macros(prelude) | set(ported))
         print(f"macros: {len(todo)} to port ({len(ported)} banked): {', '.join(sorted(todo))}")

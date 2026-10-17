@@ -11,16 +11,23 @@
 //! is dropped (no observable behavior).
 
 use crate::types::*;
+// One declaration per external symbol: island.rs.
+use crate::island::FindResourceW;
+use crate::island::FreeLibrary;
+use crate::island::HeapAlloc;
+use crate::island::LoadLibraryExW;
+use crate::island::LoadResource;
+use crate::island::RegQueryValueExW;
 use core::mem::size_of;
 use core::ptr;
 
 // ── file-local types (candidates for hoisting into types.rs) ──────────────────────────
 type USHORT = u16;
-type HMODULE = HANDLE;
-type HINSTANCE = HANDLE;
+use crate::island::HMODULE;
+use crate::island::HINSTANCE;
 type HRSRC = HANDLE;
 type HGLOBAL = HANDLE;
-type SIZE_T = usize;
+use ntdll_sys::nt::SIZE_T;
 type PCSZ = LPCSTR;
 
 /// UNICODE_STRING (ndk/rtlfuncs.h): { USHORT Length; USHORT MaximumLength; PWSTR Buffer; }.
@@ -46,24 +53,17 @@ const RT_STRING: usize = 6; // winuser.h: RT_STRING = MAKEINTRESOURCE(6)
 // ── imports (resolved via shell32's existing import libs at link) ──────────────────────
 extern "system" {
     // advapi32
-    fn RegQueryValueExW(
-        hKey: HKEY,
-        lpValueName: LPCWSTR,
-        lpReserved: LPDWORD,
-        lpType: LPDWORD,
-        lpData: LPBYTE,
-        lpcbData: LPDWORD,
-    ) -> LONG; // _RegQueryValueExW@24
+// _RegQueryValueExW@24
     // kernel32
     fn GetProcessHeap() -> HANDLE; // _GetProcessHeap@0
-    fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: SIZE_T) -> LPVOID; // _HeapAlloc@12
+// _HeapAlloc@12
     fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID) -> BOOL; // _HeapFree@12
     fn ExpandEnvironmentStringsW(lpSrc: LPCWSTR, lpDst: LPWSTR, nSize: DWORD) -> DWORD; // _ExpandEnvironmentStringsW@12
-    fn FindResourceW(hModule: HMODULE, lpName: LPCWSTR, lpType: LPCWSTR) -> HRSRC; // _FindResourceW@12
-    fn LoadResource(hModule: HMODULE, hResInfo: HRSRC) -> HGLOBAL; // _LoadResource@8
+// _FindResourceW@12
+// _LoadResource@8
     fn LockResource(hResData: HGLOBAL) -> LPVOID; // _LockResource@4
-    fn LoadLibraryExW(lpLibFileName: LPCWSTR, hFile: HANDLE, dwFlags: DWORD) -> HMODULE; // _LoadLibraryExW@12
-    fn FreeLibrary(hLibModule: HMODULE) -> BOOL; // _FreeLibrary@4
+// _LoadLibraryExW@12
+// _FreeLibrary@4
     fn lstrcpynW(lpString1: LPWSTR, lpString2: LPCWSTR, iMaxLength: INT) -> LPWSTR; // _lstrcpynW@12
     fn WideCharToMultiByte(
         CodePage: UINT,
@@ -99,11 +99,11 @@ unsafe fn load_string(hModule: HINSTANCE, mut resId: UINT, pwszBuffer: LPWSTR, c
 
     // Load the resource into memory and get a pointer to it.
     let name = ((((resId >> 4) & 0xffff) + 1) as usize) as LPCWSTR; // MAKEINTRESOURCEW(LOWORD(resId >> 4) + 1)
-    let hResource = FindResourceW(hModule, name, RT_STRING as LPCWSTR);
+    let hResource = FindResourceW((hModule).cast(), name, RT_STRING as LPCWSTR);
     if hResource.is_null() {
         return 0;
     }
-    let hMemory = LoadResource(hModule, hResource);
+    let hMemory = LoadResource((hModule).cast(), hResource);
     if hMemory.is_null() {
         return 0;
     }
@@ -174,7 +174,7 @@ pub unsafe extern "system" fn RegLoadMUIStringW(
         if !(dwValueType == REG_SZ || dwValueType == REG_EXPAND_SZ) || cbData == 0 {
             break 'cleanup ERROR_FILE_NOT_FOUND;
         }
-        pwszTempBuffer = HeapAlloc(GetProcessHeap(), 0, cbData as SIZE_T) as LPWSTR;
+        pwszTempBuffer = HeapAlloc(GetProcessHeap(), 0, (cbData as SIZE_T) as _) as LPWSTR;
         if pwszTempBuffer.is_null() {
             break 'cleanup ERROR_NOT_ENOUGH_MEMORY;
         }
@@ -197,13 +197,13 @@ pub unsafe extern "system" fn RegLoadMUIStringW(
             if cbData == 0 {
                 break 'cleanup result;
             }
-            pwszExpandedBuffer = HeapAlloc(GetProcessHeap(), 0, cbData as SIZE_T) as LPWSTR;
+            pwszExpandedBuffer = HeapAlloc(GetProcessHeap(), 0, (cbData as SIZE_T) as _) as LPWSTR;
             if pwszExpandedBuffer.is_null() {
                 break 'cleanup ERROR_NOT_ENOUGH_MEMORY;
             }
             ExpandEnvironmentStringsW(pwszTempBuffer, pwszExpandedBuffer, cbData);
         } else {
-            pwszExpandedBuffer = HeapAlloc(GetProcessHeap(), 0, cbData as SIZE_T) as LPWSTR;
+            pwszExpandedBuffer = HeapAlloc(GetProcessHeap(), 0, (cbData as SIZE_T) as _) as LPWSTR;
             ptr::copy(pwszTempBuffer as *const u8, pwszExpandedBuffer as *mut u8, cbData as usize);
         }
 
@@ -227,7 +227,7 @@ pub unsafe extern "system" fn RegLoadMUIStringW(
             let hModule =
                 LoadLibraryExW(pwszExpandedBuffer.add(1), ptr::null_mut(), LOAD_LIBRARY_AS_DATAFILE);
             if hModule.is_null()
-                || load_string(hModule, uiStringId, pszOutBuf, (cbOutBuf / size_of::<WCHAR>() as DWORD) as INT) == 0
+                || load_string((hModule).cast(), uiStringId, pszOutBuf, (cbOutBuf / size_of::<WCHAR>() as DWORD) as INT) == 0
             {
                 result = ERROR_BADKEY;
             }
@@ -263,7 +263,7 @@ pub unsafe extern "system" fn RegLoadMUIStringA(
         if RtlCreateUnicodeStringFromAsciiz(&mut valueW, pszValue) == 0
             || RtlCreateUnicodeStringFromAsciiz(&mut baseDirW, pszDirectory) == 0
             || {
-                pwszBuffer = HeapAlloc(GetProcessHeap(), 0, cbData as SIZE_T) as LPWSTR;
+                pwszBuffer = HeapAlloc(GetProcessHeap(), 0, (cbData as SIZE_T) as _) as LPWSTR;
                 pwszBuffer.is_null()
             }
         {

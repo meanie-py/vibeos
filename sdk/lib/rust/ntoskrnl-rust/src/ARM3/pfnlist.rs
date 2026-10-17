@@ -149,7 +149,7 @@ pub static mut MI_PFN_CURRENT_PROCESS_NAME: [i8; 16] = [
     b'y' as i8, b'e' as i8, b't' as i8, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
-unsafe fn MiIncrementAvailablePages() {
+pub(crate) unsafe fn MiIncrementAvailablePages() {
     MmAvailablePages += 1;
 
     if MmAvailablePages == MmLowMemoryThreshold {
@@ -159,7 +159,7 @@ unsafe fn MiIncrementAvailablePages() {
     }
 }
 
-unsafe fn MiDecrementAvailablePages() {
+pub(crate) unsafe fn MiDecrementAvailablePages() {
     if MmAvailablePages == MmHighMemoryThreshold {
         KeClearEvent(MiHighMemoryEvent);
     } else if MmAvailablePages == MmLowMemoryThreshold {
@@ -460,6 +460,28 @@ pub unsafe extern "system" fn MiRemovePageByColor(
     PageIndex
 }
 
+/// Take the oldest page off the ROS standby list (mm/standby.rs) and leave its PFN as
+/// `MiRemovePageByColor` leaves a free one: unlinked, flags clear but colour and cache
+/// attribute, no reference. PFN lock held. 0 when the list is empty.
+unsafe fn MiRemoveRosStandbyPage() -> PFN_NUMBER {
+    let page_index = crate::mm::standby::MiRosStandbyTakeForRepurpose();
+    if page_index == 0 {
+        return 0;
+    }
+    let pfn1 = MI_PFN_ELEMENT(page_index);
+    let old_color = (mmpfn_page_color(pfn1)) as u16;
+    let old_cache = (*pfn1).cache_attribute();
+    (*pfn1).set_flink(0);
+    (*pfn1).set_share_count((0) as ULONG_PTR);
+    (*pfn1).set_reference_count(0);
+    mmpfn_set_mmpfnentry_raw(pfn1, (0) as u16);
+    mmpfn_set_page_color(pfn1, ((old_color) as u16) as u32);
+    (*pfn1).set_cache_attribute((old_cache) as u16);
+    mmpfn_set_original_pte_long(pfn1, (0) as usize);
+    MiDecrementAvailablePages();
+    page_index
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn MiRemoveAnyPage(Color: ULONG) -> PFN_NUMBER {
     let mut page_index: PFN_NUMBER;
@@ -480,6 +502,12 @@ pub unsafe extern "system" fn MiRemoveAnyPage(Color: ULONG) -> PFN_NUMBER {
                 page_index = MmZeroedPageListHead.Flink;
                 color = (page_index & MmSecondaryColorMask as usize) as ULONG;
                 if page_index == LIST_HEAD {
+                    // Free and zeroed are empty: repurpose a cached section page, as
+                    // Windows takes from standby (upstream left this branch empty).
+                    let page = MiRemoveRosStandbyPage();
+                    if page != 0 {
+                        return page;
+                    }
                 }
             }
         }
@@ -514,6 +542,12 @@ pub unsafe extern "system" fn MiRemoveZeroPage(Color: ULONG) -> PFN_NUMBER {
                 page_index = MmFreePageListHead.Flink;
                 color = (page_index & MmSecondaryColorMask as usize) as ULONG;
                 if page_index == LIST_HEAD {
+                    // As in MiRemoveAnyPage; a repurposed page holds its old contents.
+                    let page = MiRemoveRosStandbyPage();
+                    if page != 0 {
+                        MiZeroPhysicalPage(page);
+                        return page;
+                    }
                 }
             }
         } else {

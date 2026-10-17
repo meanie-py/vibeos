@@ -570,6 +570,14 @@ static HRESULT dxgi_factory_init(struct dxgi_factory *factory, BOOL extended)
 
     wined3d_mutex_lock();
     factory->wined3d = wined3d_create(0);
+#ifdef __REACTOS__
+    /* No usable GL (the software Mesa here lacks ARB_fragment_shader): Windows still has
+     * an adapter and outputs to enumerate (the Basic Display Adapter), so a factory must
+     * not fail. Fall back to the no-3D adapter, as ddraw already does; device creation
+     * on it fails cleanly for want of a feature level. */
+    if (!factory->wined3d)
+        factory->wined3d = wined3d_create(WINED3D_NO3D);
+#endif
     wined3d_mutex_unlock();
     if (!factory->wined3d)
     {

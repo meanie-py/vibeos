@@ -61,11 +61,10 @@ import json
 import os
 import re
 import subprocess
-import sys
 import time
 from pathlib import Path
 
-from . import archcfg, canon, hostdisk, hostlock, lints
+from . import archcfg, canon, hostdisk, hostlock, lints, rustlints
 from . import ladder as ladder_mod
 from .artifacts import Run, Stage, is_incomplete
 
@@ -569,7 +568,7 @@ def _lint_once(repo: Path, arch: str, root: Path) -> dict:
 
 
 def _cohab_once(repo: Path, arch: str, root: Path) -> dict:
-    """Run `tools/verify_cohab_coverage.py` for one built arch.
+    """Run the native cohab coverage plugin for one built arch.
 
     This lives here rather than in `check --strict` for one reason: it reads OBJECT FILES.
     ordinary `check` can run without a build, and the whole point of
@@ -587,10 +586,13 @@ def _cohab_once(repo: Path, arch: str, root: Path) -> dict:
     stayed live, and the "flip" was a no-op nothing could see.
     """
     root.mkdir(parents=True, exist_ok=True)
-    script = repo / "tools" / "verify_cohab_coverage.py"
-    cmd = [sys.executable, str(script), "--arch", arch, "--check"]
     t0 = time.monotonic()
-    proc = subprocess.run(cmd, cwd=str(repo), capture_output=True, text=True)
+    proc = rustlints.run_binary(
+        repo,
+        arch,
+        ["verify_cohab_coverage"],
+        lambda cmd: subprocess.run(cmd, cwd=repo, capture_output=True, text=True),
+    )["verify_cohab_coverage"]
     dt = time.monotonic() - t0
     console = (proc.stdout or "") + (("\n--- stderr ---\n" + proc.stderr) if proc.stderr else "")
     try:

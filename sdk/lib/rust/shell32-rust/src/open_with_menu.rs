@@ -674,41 +674,15 @@ pub static mut g_VerbMap: [CMVERBMAP; 2] = [
 ];
 
 extern "system" {
-    fn DestroyIcon(icon: HICON) -> BOOL;
-    fn DrawIconEx(dc: HDC, x: INT, y: INT, icon: HICON, width: INT, height: INT, step: UINT, brush: HANDLE, flags: UINT) -> BOOL;
-    fn ExtractIconExW(file: LPCWSTR, index: INT, large: *mut HICON, small: *mut HICON, icons: UINT) -> UINT;
-    fn GetMenuItemInfoW(menu: HMENU, item: UINT, by_position: BOOL, info: *mut MENUITEMINFOW) -> BOOL;
-    fn GetMenuItemCount(menu: HMENU) -> INT;
-    fn GetMenuDefaultItem(menu: HMENU, by_position: UINT, flags: UINT) -> UINT;
-    fn CreatePopupMenu() -> HMENU;
-    fn GetDC(window: HWND) -> HDC;
-    fn ReleaseDC(window: HWND, dc: HDC) -> INT;
-    fn CreateCompatibleDC(dc: HDC) -> HDC;
-    fn CreateCompatibleBitmap(dc: HDC, width: INT, height: INT) -> HBITMAP;
-    fn SelectObject(dc: HDC, object: HANDLE) -> HANDLE;
     fn DeleteObject(object: HANDLE) -> BOOL;
-    fn DeleteDC(dc: HDC) -> BOOL;
-    fn FillRect(dc: HDC, rect: *const RECT, brush: HANDLE) -> INT;
     fn SetRect(rect: *mut RECT, left: INT, top: INT, right: INT, bottom: INT) -> BOOL;
-    fn GetSystemMetrics(index: INT) -> INT;
     #[link_name = "LoadImageW"] fn LoadImage(instance: HINSTANCE, name: LPCWSTR, kind: UINT, width: INT, height: INT, flags: UINT) -> HANDLE;
-    fn RegCloseKey(key: HKEY) -> LONG;
     #[link_name = "RegCreateKeyExW"] fn RegCreateKeyEx(key: HKEY, subkey: LPCWSTR, reserved: DWORD, class: LPWSTR, options: DWORD, access: REGSAM, security: LPVOID, result: PHKEY, disposition: LPDWORD) -> LONG;
-    fn RegGetValueW(key: HKEY, subkey: LPCWSTR, value: LPCWSTR, flags: DWORD, kind: LPDWORD, data: LPVOID, bytes: LPDWORD) -> LONG;
-    fn RegOpenKeyExW(key: HKEY, subkey: LPCWSTR, options: DWORD, access: REGSAM, result: PHKEY) -> LONG;
-    fn RegQueryValueExW(key: HKEY, value: LPCWSTR, reserved: LPDWORD, kind: LPDWORD, data: PBYTE, bytes: LPDWORD) -> LONG;
-    fn RegSetValueExW(key: HKEY, value: LPCWSTR, reserved: DWORD, kind: DWORD, data: *const BYTE, bytes: DWORD) -> LONG;
     fn SHChangeNotify(event: LONG, flags: UINT, item1: LPCVOID, item2: LPCVOID);
-    fn SHGetFileInfoW(path: LPCWSTR, attributes: DWORD, info: *mut SHFILEINFOW, bytes: UINT, flags: UINT) -> DWORD_PTR;
-    fn SHGetPathFromIDListW(pidl: LPCITEMIDLIST, path: LPWSTR) -> BOOL;
     fn PathFindExtensionW(path: LPCWSTR) -> LPWSTR;
-    fn ILCombine(parent: PCIDLIST_ABSOLUTE, child: PCUITEMID_CHILD) -> PIDLIST_ABSOLUTE;
     fn GetLastError() -> DWORD;
     fn lstrlenW(text: LPCWSTR) -> INT;
-    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
     fn CoTaskMemFree(memory: LPVOID);
-    fn ShellExecuteExW(info: *mut SHELLEXECUTEINFOW) -> BOOL;
-    fn InsertMenuItemW(menu: HMENU, item: UINT, by_position: BOOL, info: *const MENUITEMINFOW) -> BOOL;
     #[link_name = "Shell32RustMapContextMenuVerbToCmdId"] fn SHELL_MapContextMenuVerbToCmdId(info: LPCMINVOKECOMMANDINFO, map: *const CMVERBMAP) -> INT;
     #[link_name = "Shell32RustGetCommandStringImpl"] fn SHELL_GetCommandStringImpl(command: SIZE_T, flags: UINT, buffer: LPSTR, capacity: UINT, map: *const CMVERBMAP) -> HRESULT;
     fn COpenWithList_Create_RustBridge() -> *mut core::ffi::c_void;
@@ -839,6 +813,34 @@ extern "C" {
 pub static CPP_COM_WSTR_FE706C396A0C: [WCHAR; 5] = [0x002E, 0x006C, 0x006E, 0x006B, 0x0000];
 
 use core::ffi::c_void;
+// The crate's own functions: the definition is the declaration.
+use crate::shell32::iconcache::ExtractIconExW;
+use crate::wine::pidl::ILCombine;
+use crate::wine::shell32_main::SHGetFileInfoW;
+use crate::wine::pidl::SHGetPathFromIDListW;
+use crate::shell32::shlexec::ShellExecuteExW;
+// One declaration per external symbol: island.rs.
+use crate::island::CreateCompatibleBitmap;
+use crate::island::CreateCompatibleDC;
+use crate::island::CreatePopupMenu;
+use crate::island::DeleteDC;
+use crate::island::DestroyIcon;
+use crate::island::DrawIconEx;
+use crate::island::FillRect;
+use crate::island::GetDC;
+use crate::island::GetMenuDefaultItem;
+use crate::island::GetMenuItemCount;
+use crate::island::GetMenuItemInfoW;
+use crate::island::GetSystemMetrics;
+use crate::island::InsertMenuItemW;
+use crate::island::LoadStringW;
+use crate::island::RegCloseKey;
+use crate::island::RegGetValueW;
+use crate::island::RegOpenKeyExW;
+use crate::island::RegQueryValueExW;
+use crate::island::RegSetValueExW;
+use crate::island::ReleaseDC;
+use crate::island::SelectObject;
 use crate::shellcom::*;
 use crate::types::*;
 
@@ -867,7 +869,7 @@ pub unsafe fn COpenWithMenu_dtor_body(this: *mut COpenWithMenu) -> () {
         while index < count {
             if GetMenuItemInfoW((*this).m_hSubMenu, index as UINT, TRUE, &mut mii as *mut _) != 0 {
                 if !mii.hbmpChecked.is_null() {
-                    DeleteObject(mii.hbmpChecked);
+                    DeleteObject((mii.hbmpChecked).cast());
                 }
             }
             index += 1;
@@ -886,8 +888,8 @@ pub unsafe fn COpenWithMenu_IconToBitmap_body(this: *mut COpenWithMenu, hIcon: H
     let hbmOld: HBITMAP;
     let mut rc: RECT = core::mem::zeroed();
 
-    hdcScr = GetDC(core::ptr::null_mut());
-    hdc = CreateCompatibleDC(hdcScr);
+    hdcScr = (GetDC(core::ptr::null_mut())).cast();
+    hdc = (CreateCompatibleDC((hdcScr).cast())).cast();
     SetRect(
         &raw mut rc,
         0,
@@ -895,20 +897,20 @@ pub unsafe fn COpenWithMenu_IconToBitmap_body(this: *mut COpenWithMenu, hIcon: H
         GetSystemMetrics((SM_CXMENUCHECK) as i32),
         GetSystemMetrics((SM_CYMENUCHECK) as i32),
     );
-    hbm = CreateCompatibleBitmap(hdcScr, rc.right, rc.bottom);
-    ReleaseDC(core::ptr::null_mut(), hdcScr);
+    hbm = CreateCompatibleBitmap((hdcScr).cast(), rc.right, rc.bottom);
+    ReleaseDC(core::ptr::null_mut(), (hdcScr).cast());
 
-    hbmOld = SelectObject(hdc, hbm) as HBITMAP;
+    hbmOld = SelectObject((hdc).cast(), (hbm).cast()) as HBITMAP;
     FillRect(
-        hdc,
+        (hdc).cast(),
         &raw mut rc,
-        (COLOR_MENU + 1) as usize as HANDLE,
+        ((COLOR_MENU + 1) as usize as HANDLE).cast(),
     );
     if DrawIconEx(
-        hdc,
+        (hdc).cast(),
         0,
         0,
-        hIcon,
+        (hIcon).cast(),
         rc.right,
         rc.bottom,
         0,
@@ -918,8 +920,8 @@ pub unsafe fn COpenWithMenu_IconToBitmap_body(this: *mut COpenWithMenu, hIcon: H
     {
         ERR!("DrawIcon failed: %x\n", GetLastError());
     }
-    SelectObject(hdc, hbmOld);
-    DeleteDC(hdc);
+    SelectObject((hdc).cast(), (hbmOld).cast());
+    DeleteDC((hdc).cast());
 
     hbm
 }
@@ -980,7 +982,7 @@ pub unsafe fn COpenWithMenu_AddApp_body(this: *mut COpenWithMenu, pApp: PVOID) -
     mii.fState = MFS_ENABLED;
     mii.wID = (*this).m_idCmdLast;
     mii.dwTypeData = pwszName as LPWSTR;
-    mii.dwItemData = pApp as usize;
+    mii.dwItemData = (pApp as usize) as _;
     let hIcon = COpenWithList_GetIcon_RustBridge(pApp);
     if !hIcon.is_null() {
         mii.fMask |= MIIM_CHECKMARKS;

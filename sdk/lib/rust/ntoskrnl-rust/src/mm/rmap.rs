@@ -669,6 +669,12 @@ pub unsafe extern "system" fn MmGetSegmentRmap(Page: PFN_NUMBER, RawOffset: *mut
     core::ptr::null_mut()
 }
 
+/// Free an rmap entry already detached from its page (mm/standby.rs repurposes a page
+/// under the PFN lock and frees its segment entry later, at passive level).
+pub(crate) unsafe fn MiFreeRmapEntry(Entry: PMM_RMAP_ENTRY) {
+    ExFreeToNPagedLookasideList(core::ptr::addr_of_mut!(RmapLookasideList), Entry as PVOID);
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn MmDeleteSectionAssociation(Page: PFN_NUMBER) {
     let mut current_entry: PMM_RMAP_ENTRY;

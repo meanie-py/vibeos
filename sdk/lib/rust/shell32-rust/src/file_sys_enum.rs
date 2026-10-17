@@ -50,11 +50,7 @@ extern "C" {
 
 // The `CEnumIDListBase` list node (wine/enumidlist.h). Flattened in here for the same reason
 // the base's methods are: it is a concrete C++ class, so each derived enumerator owns a copy.
-#[repr(C)]
-pub struct ENUMLIST {
-    pub pNext: *mut ENUMLIST,
-    pub pidl: LPITEMIDLIST,
-}
+pub use crate::island::ENUMLIST;
 
 #[repr(C)]
 pub struct CFileSysEnum {
@@ -347,32 +343,13 @@ pub struct DEFCONTEXTMENU {
     pub aKeys: *const HKEY,
 }
 
-#[repr(C)]
-pub struct QCMINFO {
-    pub hmenu: HMENU,
-    pub indexMenu: UINT,
-    pub idCmdFirst: UINT,
-    pub idCmdLast: UINT,
-    pub pIdMap: *const QCMINFO_IDMAP,
-}
+pub use crate::island::QCMINFO;
 
-#[repr(C)]
-pub struct QCMINFO_IDMAP {
-    pub nMaxIds: UINT,
-    pub pIdList: [QCMINFO_IDMAP_PLACEMENT; 1],
-}
+pub use crate::island::QCMINFO_IDMAP;
 
-#[repr(C)]
-pub struct QCMINFO_IDMAP_PLACEMENT {
-    pub id: UINT,
-    pub fFlags: UINT,
-}
+pub use crate::island::QCMINFO_IDMAP_PLACEMENT;
 
-#[repr(C)]
-pub struct SHDESCRIPTIONID {
-    pub dwDescriptionId: DWORD,
-    pub clsid: CLSID,
-}
+pub use crate::island::SHDESCRIPTIONID;
 
 // WIN32_FIND_DATAW is NOT redefined here: this module is the same translation unit as
 // `cfs_folder.rs` (see the `use crate::cfs_folder::*;` glob below), which already defines it
@@ -541,11 +518,7 @@ macro_rules! LOWORD { ($value:expr) => { (($value as usize) & 0xffff) as UINT };
 
 pub type LPFNSVADDPROPSHEETPAGE = Option<unsafe extern "system" fn(HPROPSHEETPAGE, LPARAM) -> BOOL>;
 
-#[repr(C)]
-pub struct shvheader {
-    pub colnameid: WORD, pub colstate: WORD,
-    pub fmt: WORD, pub cxChar: WORD,
-}
+pub use crate::island::shvheader;
 pub static GenericSFHeader: [shvheader; 6] = [
     shvheader { colnameid: (IDS_SHV_COLUMN_NAME) as WORD, colstate: (SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT) as WORD, fmt: (LVCFMT_LEFT) as WORD, cxChar: (18) as WORD },
     shvheader { colnameid: (IDS_SHV_COLUMN_SIZE) as WORD, colstate: (SHCOLSTATE_TYPE_INT | SHCOLSTATE_ONBYDEFAULT) as WORD, fmt: (LVCFMT_RIGHT) as WORD, cxChar: (10) as WORD },
@@ -556,39 +529,22 @@ pub static GenericSFHeader: [shvheader; 6] = [
 ];
 
 extern "system" {
-    fn DestroyMenu(menu: HMENU) -> BOOL;
     fn ExpandEnvironmentStringsW(source: LPCWSTR, dest: LPWSTR, size: DWORD) -> DWORD;
-    fn RegCloseKey(key: HKEY) -> LONG;
-    fn RegGetValueW(key: HKEY, subkey: LPCWSTR, value: LPCWSTR, flags: DWORD, kind: LPDWORD, data: LPVOID, bytes: LPDWORD) -> LONG;
-    fn RegOpenKeyExW(key: HKEY, subkey: LPCWSTR, options: DWORD, access: REGSAM, result: PHKEY) -> LONG;
-    fn RegQueryValueExW(key: HKEY, value: LPCWSTR, reserved: LPDWORD, kind: LPDWORD, data: PBYTE, bytes: LPDWORD) -> LONG;
-    fn SHGetFileInfoW(path: LPCWSTR, attributes: DWORD, info: *mut SHFILEINFOW, bytes: UINT, flags: UINT) -> DWORD_PTR;
-    fn SHGetPathFromIDListW(pidl: LPCITEMIDLIST, path: LPWSTR) -> BOOL;
-    fn StrRetToStrW(value: *mut STRRET, pidl: PCUITEMID_CHILD, out: *mut LPWSTR) -> HRESULT;
     // shlobj.h: REFGUID guid, LPCWSTR pszValueName, BOOL bUseHKCU, BOOL bCreate, PHKEY phkey.
     // `GUID` here is `crate::shellcom::GUID` (glob-imported below), not `ntdll_sys::nt::GUID`
     // as the bindgen island's own copy of this symbol uses — both are repr(C) with identical
     // field layout, so the FFI call is sound either way; only the Rust nominal type differs,
     // and this file's other CLSID plumbing (GetCLSIDForFileTypeFromExtension_body etc.) is
     // already typed against the shellcom one.
-    fn SHRegGetCLSIDKeyW(guid: *const GUID, pszValueName: LPCWSTR, bUseHKCU: BOOL, bCreate: BOOL, phkey: PHKEY) -> HRESULT;
-    fn FindNextFileW(find: HANDLE, data: *mut WIN32_FIND_DATAW) -> BOOL;
     fn GetLastError() -> DWORD;
     fn lstrlenW(text: LPCWSTR) -> INT;
-    fn CoTaskMemAlloc(bytes: SIZE_T) -> LPVOID;
-    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
     fn CoTaskMemFree(memory: LPVOID);
     fn SHStrDupW(source: LPCWSTR, out: *mut LPWSTR) -> HRESULT;
-    fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
     fn ILFindLastID(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
-    fn ILFree(pidl: LPITEMIDLIST);
-    fn SHCreateShellFolderView(create: *const SFV_CREATE, view: *mut *mut IShellView) -> HRESULT;
     fn ILGetNext(pidl: PCUIDLIST_RELATIVE) -> LPITEMIDLIST;
 }
 
 extern "C" {
-    fn HLM_GetIconW(index: UINT, destination: LPWSTR, length: DWORD, icon_index: *mut INT) -> BOOL;
-    fn _ILGetDataPointer(pidl: LPCITEMIDLIST) -> *mut PIDLDATA;
     #[link_name = "CPrinterFolder_CompareDetails_RustBridge"] fn SHELL32_CompareDetails(folder: *mut IShellFolder2, lparam: LPARAM, left: PCUIDLIST_RELATIVE, right: PCUIDLIST_RELATIVE) -> HRESULT;
     #[link_name = "memcpy"] fn cpp_com_memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, bytes: usize) -> *mut core::ffi::c_void;
     // wsprintfW is variadic, so it must be declared `extern "C"` (Rust variadics only support
@@ -669,7 +625,7 @@ unsafe fn StringCchCopyW(dst: LPWSTR, capacity: usize, src: LPCWSTR) -> HRESULT 
 unsafe fn cpp_com_SHSetStrRetW(out: *mut STRRET, value: LPCWSTR) -> HRESULT {
     let len = lstrlenW(value) as usize;
     let bytes = (len + 1) * core::mem::size_of::<WCHAR>();
-    let buffer = CoTaskMemAlloc(bytes) as LPWSTR;
+    let buffer = CoTaskMemAlloc((bytes) as SIZE_T) as LPWSTR;
     if buffer.is_null() { return E_OUTOFMEMORY; }
     let _ = memcpy(buffer, value, bytes);
     (*out).uType = STRRET_WSTR; (*out).u.pOleStr = buffer; S_OK
@@ -715,6 +671,25 @@ pub static CPP_COM_WSTR_C14D9C3E5FFD: [WCHAR; 67] = [0x0053, 0x006F, 0x0066, 0x0
 pub static CPP_COM_WSTR_C245AFF91259: [WCHAR; 2] = [0x002E, 0x0000];
 
 use core::ffi::c_void;
+// The crate's own functions: the definition is the declaration.
+use crate::wine::classes::HLM_GetIconW;
+use crate::wine::pidl::ILClone;
+use crate::wine::pidl::ILFree;
+use crate::def_view::SHCreateShellFolderView;
+use crate::wine::shell32_main::SHGetFileInfoW;
+use crate::wine::pidl::SHGetPathFromIDListW;
+use crate::wine::pidl::_ILGetDataPointer;
+// One declaration per external symbol: island.rs.
+use crate::island::CoTaskMemAlloc;
+use crate::island::DestroyMenu;
+use crate::island::FindNextFileW;
+use crate::island::LoadStringW;
+use crate::island::RegCloseKey;
+use crate::island::RegGetValueW;
+use crate::island::RegOpenKeyExW;
+use crate::island::RegQueryValueExW;
+use crate::island::SHRegGetCLSIDKeyW;
+use crate::island::StrRetToStrW;
 use crate::shellcom::*;
 use crate::types::*;
 // This module is the same translation unit as `cfs_folder.rs`, so it takes its substrate from
@@ -742,7 +717,7 @@ pub unsafe fn CFileSysEnum_AddToEnumList_body(this: *mut CFileSysEnum, pidl: LPI
         return FALSE;
     }
 
-    pNew = SHAlloc(core::mem::size_of::<ENUMLIST>()) as *mut ENUMLIST;
+    pNew = SHAlloc((core::mem::size_of::<ENUMLIST>()) as SIZE_T) as *mut ENUMLIST;
     if !pNew.is_null() {
         (*pNew).pNext = core::ptr::null_mut();
         (*pNew).pidl = pidl;

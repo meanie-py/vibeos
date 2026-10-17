@@ -14,6 +14,22 @@
 #![allow(non_camel_case_types)]
 
 use crate::types::*;
+// One declaration per external symbol: island.rs.
+use crate::island::CLSIDFromString;
+use crate::island::CoCreateInstance;
+use crate::island::CoGetMalloc;
+use crate::island::CoTaskMemAlloc;
+use crate::island::CreateClassMoniker;
+use crate::island::FreeLibrary;
+use crate::island::GetProcAddress;
+use crate::island::GetWindowLongA;
+use crate::island::HeapAlloc;
+use crate::island::IsWindow;
+use crate::island::LoadLibraryExW;
+use crate::island::RegCloseKey;
+use crate::island::RegOpenKeyExW;
+use crate::island::SHQueryValueExW;
+use crate::island::SetWindowLongA;
 use core::ffi::c_void;
 use core::mem::{size_of, transmute, zeroed};
 use core::ptr::{null, null_mut, write_volatile};
@@ -49,24 +65,17 @@ const PID_CODEPAGE: PROPID = 1; // msidefs.h / propidl
 const VT_I2: VARTYPE = 2; // wtypes.idl
 
 // ── file-local types not yet in types.rs ───────────────────────────────────────────────
-pub type SIZE_T = usize; // basetsd.h
+pub use ntdll_sys::nt::SIZE_T; // basetsd.h
 pub type ULONG = u32; // winnt.h
 pub type PROPID = ULONG; // wtypes.h
 pub type VARTYPE = u16; // wtypes.h
 pub type HGLOBAL = HANDLE; // winnt.h
 pub type HDROP = HANDLE; // shellapi.h
-pub type HMODULE = HANDLE; // minwindef.h
+pub use crate::island::HMODULE; // minwindef.h
 pub type LPUNKNOWN = *mut c_void; // unknwn.h (IUnknown opaque here)
 
 /// GUID / CLSID / IID / FMTID — { Data1: u32; Data2: u16; Data3: u16; Data4: [u8;8] } (guiddef.h)
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct GUID {
-    pub Data1: u32,
-    pub Data2: u16,
-    pub Data3: u16,
-    pub Data4: [u8; 8],
-}
+pub use crate::island::GUID;
 pub type CLSID = GUID;
 pub type IID = GUID;
 pub type FMTID = GUID;
@@ -75,21 +84,10 @@ pub type REFCLSID = *const CLSID;
 pub type REFFMTID = *const FMTID;
 
 /// POINT (windef.h): { LONG x; LONG y; }
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct POINT {
-    pub x: LONG,
-    pub y: LONG,
-}
+pub use crate::island::POINT;
 
 /// DROPFILES (shlobj.h): { DWORD pFiles; POINT pt; BOOL fNC; BOOL fWide; }
-#[repr(C)]
-pub struct DROPFILES {
-    pub pFiles: DWORD,
-    pub pt: POINT,
-    pub fNC: BOOL,
-    pub fWide: BOOL,
-}
+pub use crate::island::DROPFILES;
 
 /// IMalloc — only ever handed back through SHGetMalloc, never dereferenced here. Opaque.
 #[repr(C)]
@@ -145,12 +143,7 @@ pub struct PROPVARIANT {
 }
 
 /// FILETIME (minwinbase.h): { DWORD dwLowDateTime; DWORD dwHighDateTime; }
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct FILETIME {
-    pub dwLowDateTime: DWORD,
-    pub dwHighDateTime: DWORD,
-}
+pub use crate::island::FILETIME;
 /// STATPROPSETSTG (propidl.idl) — only used as an out buffer for IPropertyStorage::Stat.
 #[repr(C)]
 pub struct STATPROPSETSTG {
@@ -256,31 +249,25 @@ static STR_LOADWITHOUTCOM: [WCHAR; 15] = [
 // ── imports (resolved from shell32's import libs at link) ───────────────────────────────
 extern "system" {
     // ole32
-    fn CLSIDFromString(lpsz: LPCWSTR, pclsid: *mut CLSID) -> DWORD; // @8
-    fn CoCreateInstance(
-        rclsid: REFCLSID,
-        pUnkOuter: LPUNKNOWN,
-        dwClsContext: DWORD,
-        riid: REFIID,
-        ppv: *mut LPVOID,
-    ) -> HRESULT; // @20
-    fn CoGetMalloc(dwMemContext: DWORD, ppMalloc: *mut LPMALLOC) -> HRESULT; // @8
-    fn CoTaskMemAlloc(cb: SIZE_T) -> LPVOID; // @4
+// @8
+// @20
+// @8
+// @4
     fn CoTaskMemFree(pv: LPVOID); // @4
-    fn CreateClassMoniker(rclsid: REFCLSID, ppmk: *mut *mut c_void) -> HRESULT; // @8
+// @8
     // shell32 itself (defined on the C++ side under __REACTOS__)
     fn DllGetClassObject(rclsid: REFCLSID, riid: REFIID, ppv: *mut LPVOID) -> HRESULT; // @12
     // kernel32
-    fn FreeLibrary(hLibModule: HMODULE) -> BOOL; // @4
-    fn GetProcAddress(hModule: HMODULE, lpProcName: LPCSTR) -> *mut c_void; // @8
+// @4
+// @8
     fn GetProcessHeap() -> HANDLE; // @0
     fn GetVersion() -> DWORD; // @0
     fn GlobalFree(hMem: HGLOBAL) -> HGLOBAL; // @4
     fn GlobalLock(hMem: HGLOBAL) -> LPVOID; // @4
     fn GlobalUnlock(hMem: HGLOBAL) -> BOOL; // @4
-    fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: SIZE_T) -> LPVOID; // @12
+// @12
     fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID) -> BOOL; // @12
-    fn LoadLibraryExW(lpLibFileName: LPCWSTR, hFile: HANDLE, dwFlags: DWORD) -> HMODULE; // @12
+// @12
     fn MultiByteToWideChar(
         CodePage: UINT,
         dwFlags: DWORD,
@@ -302,23 +289,10 @@ extern "system" {
     fn lstrcpynA(lpString1: LPSTR, lpString2: LPCSTR, iMaxLength: INT) -> LPSTR; // @12
     fn lstrcpynW(lpString1: LPWSTR, lpString2: LPCWSTR, iMaxLength: INT) -> LPWSTR; // @12
     // advapi32
-    fn RegCloseKey(hKey: HKEY) -> LONG; // @4
-    fn RegOpenKeyExW(
-        hKey: HKEY,
-        lpSubKey: LPCWSTR,
-        ulOptions: DWORD,
-        samDesired: REGSAM,
-        phkResult: PHKEY,
-    ) -> LONG; // @20
+// @4
+// @20
     // shlwapi
-    fn SHQueryValueExW(
-        hKey: HKEY,
-        pszValue: LPCWSTR,
-        pdwReserved: LPDWORD,
-        pdwType: LPDWORD,
-        pvData: LPVOID,
-        pcbData: LPDWORD,
-    ) -> LONG; // @24 (registry status; matches shellreg.rs + the real shlwapi signature)
+// @24 (registry status; matches shellreg.rs + the real shlwapi signature)
     fn SHStringFromGUIDW(guid: REFGUID, lpszDest: LPWSTR, cchMax: INT) -> INT; // @12
 }
 
@@ -328,13 +302,12 @@ pub type REFGUID = *const GUID;
 // *Long* (32-bit) entry points (confirmed: _GetWindowLongA@8 / _SetWindowLongA@12).
 #[cfg(target_arch = "x86")]
 extern "system" {
-    fn IsWindow(hWnd: HWND) -> BOOL; // @4
-    fn GetWindowLongA(hWnd: HWND, nIndex: INT) -> LONG; // @8
-    fn SetWindowLongA(hWnd: HWND, nIndex: INT, dwNewLong: LONG) -> LONG; // @12
+// @4
+// @8
+// @12
 }
 #[cfg(not(target_arch = "x86"))]
 extern "system" {
-    fn IsWindow(hWnd: HWND) -> BOOL;
     fn GetWindowLongPtrA(hWnd: HWND, nIndex: INT) -> LONG_PTR;
     fn SetWindowLongPtrA(hWnd: HWND, nIndex: INT, dwNewLong: LONG_PTR) -> LONG_PTR;
 }
@@ -397,7 +370,7 @@ unsafe fn shell_os_is_unicode() -> bool {
 /// HKEY_CLASSES_ROOT = ((HKEY)(LONG_PTR)(LONG)0x80000000) — sign-extended on 64-bit.
 #[inline]
 fn hkey_classes_root() -> HKEY {
-    0x80000000u32 as i32 as isize as usize as *mut c_void
+    (0x80000000u32 as i32 as isize as usize as *mut c_void).cast()
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════════
@@ -491,7 +464,7 @@ pub unsafe extern "system" fn SH32_CoCreateInstance(
                 break E_ACCESSDENIED;
             }
             let proc = GetProcAddress(hLibrary, b"DllGetClassObject\0".as_ptr() as LPCSTR);
-            if proc.is_null() {
+            if proc.is_none() {
                 FreeLibrary(hLibrary);
                 break E_ACCESSDENIED;
             }
@@ -510,7 +483,7 @@ pub unsafe extern "system" fn SH32_CoCreateInstance(
             break h2;
         } else {
             // load an external dll in the usual way
-            break CoCreateInstance(myclsid, pUnkOuter, dwClsCtx, refiid, ppv);
+            break CoCreateInstance(myclsid, (pUnkOuter).cast(), dwClsCtx, refiid, ppv);
         }
     };
 
@@ -565,12 +538,12 @@ pub unsafe extern "system" fn SHCLSIDFromStringA(clsid: LPCSTR, id: *mut CLSID) 
     if MultiByteToWideChar(CP_ACP, 0, clsid, -1, buffer.as_mut_ptr(), 40) == 0 {
         return CO_E_CLASSSTRING;
     }
-    CLSIDFromString(buffer.as_ptr(), id)
+    (CLSIDFromString(buffer.as_ptr(), id)) as u32
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn SHCLSIDFromStringW(clsid: LPCWSTR, id: *mut CLSID) -> DWORD {
-    CLSIDFromString(clsid, id)
+    (CLSIDFromString(clsid, id)) as u32
 }
 
 #[no_mangle]
@@ -587,12 +560,12 @@ pub unsafe extern "system" fn SHCLSIDFromStringAW(clsid: LPCVOID, id: *mut CLSID
 // ════════════════════════════════════════════════════════════════════════════════════════
 #[no_mangle]
 pub unsafe extern "system" fn SHGetMalloc(lpmal: *mut LPMALLOC) -> HRESULT {
-    CoGetMalloc(MEMCTX_TASK, lpmal)
+    CoGetMalloc(MEMCTX_TASK, (lpmal).cast())
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn SHAlloc(len: SIZE_T) -> LPVOID {
-    CoTaskMemAlloc(len)
+    CoTaskMemAlloc((len) as SIZE_T)
 }
 
 #[no_mangle]
@@ -664,7 +637,7 @@ pub unsafe extern "system" fn DragQueryFileA(
 
         if !lpszFile.is_null() && lFile != 0xFFFFFFFF {
             lpszFileW =
-                HeapAlloc(GetProcessHeap(), 0, lLength as usize * size_of::<WCHAR>()) as LPWSTR;
+                HeapAlloc(GetProcessHeap(), 0, (lLength as usize * size_of::<WCHAR>()) as _) as LPWSTR;
             if lpszFileW.is_null() {
                 GlobalUnlock(hDrop);
                 return i;
@@ -743,7 +716,7 @@ pub unsafe extern "system" fn DragQueryFileW(
         let mut lpszFileA: LPSTR = null_mut();
 
         if !lpszwFile.is_null() && lFile != 0xFFFFFFFF {
-            lpszFileA = HeapAlloc(GetProcessHeap(), 0, lLength as usize) as LPSTR;
+            lpszFileA = HeapAlloc(GetProcessHeap(), 0, (lLength as usize) as _) as LPSTR;
             if lpszFileA.is_null() {
                 GlobalUnlock(hDrop);
                 return i;
@@ -960,7 +933,7 @@ pub unsafe extern "system" fn SHCreateQueryCancelAutoPlayMoniker(
     if moniker.is_null() {
         return E_INVALIDARG;
     }
-    CreateClassMoniker(&CLSID_QueryCancelAutoPlay, moniker as *mut *mut c_void)
+    CreateClassMoniker(&CLSID_QueryCancelAutoPlay, (moniker as *mut *mut c_void).cast())
 }
 
 // ADDED-TO-TYPES?: GUID/CLSID/IID/FMTID + REFIID/REFCLSID/REFFMTID/REFGUID, POINT, DROPFILES,

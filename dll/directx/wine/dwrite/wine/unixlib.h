@@ -36,6 +36,7 @@
 #define pFT_Outline_Copy FT_Outline_Copy
 #define pFT_Outline_Decompose FT_Outline_Decompose
 #define pFT_Outline_Done FT_Outline_Done
+#define pFT_Outline_EmboldenXY FT_Outline_EmboldenXY
 #define pFT_Outline_Embolden FT_Outline_Embolden
 #define pFT_Outline_Get_Bitmap FT_Outline_Get_Bitmap
 #define pFT_Outline_New FT_Outline_New

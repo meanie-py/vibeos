@@ -7,29 +7,6 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
-
-    // The C left, and its part of cmake's C rule; reactos-link adds what every C
-    // compile shares from reactos-link/cflags/c.<arch>.flags (Linker::c_compiled).
-    let c_sources: &[&str] = &["drivers/network/tdihelpers/tdi.c", "drivers/network/tdihelpers/tdiconn.c"];
-    let c_includes: &[&str] = &[
-        "@build/drivers/network/netio",
-        "drivers/network/netio",
-        "sdk/include/reactos/drivers",
-        "drivers/network/netio/../tdihelpers/include",
-        "drivers/network/netio/../afd/include",
-        "drivers/network/netio/include",
-        "@std",
-        "sdk/lib/pseh/include",
-        "vendor/opengl-headers/include",
-        "vendor/libdxg/include",
-    ];
-    let c_flags: &[&str] = match arch.as_str() {
-        "x86" => &["-std=gnu99", "@core"],
-        "x86_64" => &["-std=gnu99", "-U_X86_", "-UWIN32", "@core"],
-        "aarch64" => &["-std=gnu99", "@core"],
-        _ => unreachable!(),
-    };
-    let c_defines: &[&str] = &["WINVER=0x502", "_WIN32_WINNT=0x600"];
     let (target_json, entry, image_base) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_DriverEntry@8", 0x10000u64),
         "x86_64" => ("x86_64-pc-windows-gnu", "DriverEntry", 0x10000u64),
@@ -38,16 +15,15 @@ fn main() {
     };
 
     let link_order: &[&str] = match arch.as_str() {
-        "x86" => &["body", "engine:pseh", "import:ntoskrnl", "import:hal", "engine:chkstk", "engine:c:memcmp"],
-        "x86_64" => &["body", "engine:pseh", "import:ntoskrnl", "import:hal", "engine:c:memcmp"],
-        "aarch64" => &["body", "engine:pseh", "import:ntoskrnl", "import:hal", "engine:chkstk", "engine:c:memcmp"],
+        "x86" => &["body", "engine:crate:tdihelpers-rust::TRUE", "engine:pseh", "import:ntoskrnl", "import:hal", "engine:chkstk", "engine:c:memcmp"],
+        "x86_64" => &["body", "engine:crate:tdihelpers-rust::TRUE", "engine:pseh", "import:ntoskrnl", "import:hal", "engine:c:memcmp"],
+        "aarch64" => &["body", "engine:crate:tdihelpers-rust::TRUE", "engine:pseh", "import:ntoskrnl", "import:hal", "engine:chkstk", "engine:c:memcmp"],
         _ => unreachable!(),
     };
 
     Linker::new(target_json)
         .rust_staticlib("netio-rust")
         .rust_user_target()
-        .c_compiled("netio_shims", c_sources, c_includes, c_flags, c_defines)
         .spec2def("drivers/network/netio/netio.spec", "netio.sys")
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .import_lib("hal/hal.spec", "hal.dll", "hal")

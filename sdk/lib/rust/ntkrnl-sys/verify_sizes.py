@@ -8,7 +8,7 @@ Covers both bindgen-generated types (ddk module) and hand-written FFI types
 
 Usage:
     python3 verify_sizes.py          # Generate assertion files in src/
-    python3 verify_sizes.py --check  # Verify assertions are up to date
+    ./vibeos-cli lint --arch amd64 --rules verify_layout  # Verify assertions
 """
 
 import re
@@ -337,7 +337,15 @@ def generate_rust_assertions(
 
 
 def main():
-    check_mode = '--check' in sys.argv
+    if "--check" in sys.argv:
+        sys.exit("--check moved to Rust: ./vibeos-cli lint --arch <arch> --rules verify_layout")
+    output_dir = None
+    if "--output-dir" in sys.argv:
+        index = sys.argv.index("--output-dir")
+        if index + 1 >= len(sys.argv):
+            sys.exit("--output-dir requires a path")
+        output_dir = Path(sys.argv[index + 1])
+        output_dir.mkdir(parents=True, exist_ok=True)
 
     print("=== ntkrnl-sys struct size verification ===")
     print(f"ReactOS root: {REACTOS}")
@@ -385,16 +393,9 @@ def main():
                 types, sizes, arch, hand_written_offset, hw_types
             )
 
-            out_path = SRC_DIR / arch["out_file"]
-            if check_mode:
-                if out_path.exists() and out_path.read_text() == rust_code:
-                    print(f"  OK — {count} assertions verified")
-                else:
-                    print(f"  MISMATCH — run verify_sizes.py to regenerate")
-                    all_ok = False
-            else:
-                out_path.write_text(rust_code)
-                print(f"  Wrote {out_path.name}: {count} size assertions")
+            out_path = (output_dir or SRC_DIR) / arch["out_file"]
+            out_path.write_text(rust_code)
+            print(f"  Wrote {out_path.name}: {count} size assertions")
 
     print()
     # all_ok must be honoured in BOTH modes. It used to be consulted only under
@@ -402,14 +403,10 @@ def main():
     # unmeasurable for six days — printed "Done." and exited 0. A codegen tool that
     # drops an arch has to fail the build, not narrate it.
     if not all_ok:
-        if check_mode:
-            print("FAILED — some assertions need regeneration")
-        else:
-            print("FAILED — at least one arch produced NO assertions (see errors above).")
-            print("The other arches' files were still written; this tree is now INCONSISTENT.")
+        print("FAILED — at least one arch produced NO assertions (see errors above).")
+        print("The other arches' files were still written; this tree is now INCONSISTENT.")
         sys.exit(1)
-    if not check_mode:
-        print("Done. Add size_check modules to lib.rs and run cargo check.")
+    print("Done. Add size_check modules to lib.rs and run cargo check.")
 
 
 if __name__ == "__main__":

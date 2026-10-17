@@ -1,5 +1,20 @@
 // rustconv-assembly: class:CRegFolder
 use crate::prelude::*;
+// The crate's own functions: the definition is the declaration.
+use crate::shell32::shlfolder::SH32_GetDetailsOfPKeyAsVariant;
+use crate::wine::shellole::SHAlloc;
+use crate::shell32::shlfolder::SHELL32_BindToSF;
+use crate::shell32::shlfolder::SHELL32_CompareChildren;
+use crate::shell32::shlfolder::SHELL32_CompareDetails;
+use crate::shell32::shlfolder::SHELL32_GetDisplayNameOfChild;
+use crate::desktop_folder_tu::SHGetDesktopFolder;
+// One declaration per external symbol: island.rs.
+use crate::island::CLSIDFromString;
+use crate::island::CoTaskMemAlloc;
+use crate::island::LoadStringW;
+use crate::island::RegCloseKey;
+use crate::island::RegEnumKeyW;
+use crate::island::RegGetValueW;
 use crate::shell32::shlfolder::AddClassKeyToArray;
 use crate::shell32::shlfolder::AddClsidKeyToArray;
 use crate::wine::shellord::GUIDFromStringW;
@@ -381,29 +396,16 @@ pub const SHGDN_INFOLDER: DWORD = 1;
 
 pub const STGM_CREATE: DWORD = 0x00001000;
 
-#[repr(C)]
-pub struct EXTRASEARCH {
-    pub guidSearch: GUID,
-    pub wszFriendlyName: [WCHAR; 80],
-    pub wszUrl: [WCHAR; 2084],
-}
+pub use crate::island::EXTRASEARCH;
 
 #[repr(C, packed)]
 pub struct ITEMIDLIST {
     pub mkid: SHITEMID,
 }
 
-#[repr(C)]
-pub struct SHCOLUMNID {
-    pub fmtid: GUID,
-    pub pid: DWORD,
-}
+pub use crate::island::SHCOLUMNID;
 
-#[repr(C, packed)]
-pub struct SHITEMID {
-    pub cb: WORD,
-    pub abID: [BYTE; 1],
-}
+pub use crate::island::SHITEMID;
 
 // Deterministic from shobjidl.h
 #[repr(C)]
@@ -427,17 +429,9 @@ extern "C" {
 }
 
 extern "system" {
-    fn RegCloseKey(key: HKEY) -> LONG;
-    fn RegEnumKeyW(key: HKEY, index: DWORD, name: LPWSTR, capacity: DWORD) -> LONG;
-    fn RegGetValueW(key: HKEY, subkey: LPCWSTR, value: LPCWSTR, flags: DWORD, kind: LPDWORD, data: LPVOID, bytes: LPDWORD) -> LONG;
     fn SHChangeNotify(event: LONG, flags: UINT, item1: LPCVOID, item2: LPCVOID);
     fn lstrlenW(text: LPCWSTR) -> INT;
-    fn CoTaskMemAlloc(bytes: SIZE_T) -> LPVOID;
-    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
     fn CoTaskMemFree(memory: LPVOID);
-    fn SHGetDesktopFolder(folder: *mut *mut IShellFolder) -> HRESULT;
-    fn SHAlloc(bytes: SIZE_T) -> LPVOID;
-    fn CLSIDFromString(text: LPCOLESTR, clsid: *mut CLSID) -> HRESULT;
 }
 
 // `SHELL32_CompareDetails` is `#[no_mangle] pub unsafe extern "system"` in
@@ -450,7 +444,6 @@ extern "system" {
 // inside the block below would be cdecl-vs-stdcall on i386 (scan_import_cc's class), so it
 // gets its own `extern "system"` block.
 extern "system" {
-    fn SHELL32_CompareDetails(folder: *mut IShellFolder2, lparam: LPARAM, left: PCUIDLIST_RELATIVE, right: PCUIDLIST_RELATIVE) -> HRESULT;
 }
 
 extern "C" {
@@ -462,10 +455,6 @@ extern "C" {
     // Redeclared here against THIS file's local `IShellFolder2`/`SHCOLUMNID` (same layout,
     // different nominal type -- see cfs_folder.rs's identical redeclaration of these five).
     fn SHELL32_ParseNextElement(psf: *mut IShellFolder2, hwndOwner: HWND, pbc: LPBC, pidlInOut: *mut PIDLIST_RELATIVE, szNext: LPOLESTR, pEaten: *mut ULONG, pdwAttributes: *mut ULONG) -> HRESULT;
-    fn SH32_GetDetailsOfPKeyAsVariant(psf: *mut IShellFolder2, pidl: PCUITEMID_CHILD, pscid: *const SHCOLUMNID, pVar: *mut VARIANT, UseFsColMap: BOOL) -> HRESULT;
-    fn SHELL32_BindToSF(pidlRoot: LPCITEMIDLIST, ppfti: *mut core::ffi::c_void, pidl: LPCITEMIDLIST, clsid: *const crate::island::GUID, riid: REFIID, ppvOut: *mut *mut core::ffi::c_void) -> HRESULT;
-    fn SHELL32_CompareChildren(psf: *mut IShellFolder2, lParam: LPARAM, pidl1: LPCITEMIDLIST, pidl2: LPCITEMIDLIST) -> HRESULT;
-    fn SHELL32_GetDisplayNameOfChild(psf: *mut IShellFolder2, pidl: LPCITEMIDLIST, dwFlags: DWORD, strRet: *mut STRRET) -> HRESULT;
 }
 
 #[inline]
@@ -1092,7 +1081,7 @@ pub unsafe fn CRegFolder_CompareRegItemsSortOrder_body(this: *mut CRegFolder, pi
     if cmp != 0 {
         return MAKE_COMPARE_HRESULT!(cmp);
     }
-    return SHELL32_CompareDetails(core::ptr::addr_of_mut!((*this).IShellFolder2_iface), COL_NAME as LPARAM, pidl1, pidl2);
+    return SHELL32_CompareDetails((core::ptr::addr_of_mut!((*this).IShellFolder2_iface)).cast(), COL_NAME as LPARAM, pidl1, pidl2);
 }
 
 pub unsafe fn CRegFolder_CompareIDs_body(this: *mut CRegFolder, lParam: LPARAM, pidl1: PCUIDLIST_RELATIVE, pidl2: PCUIDLIST_RELATIVE) -> HRESULT {
@@ -1114,10 +1103,10 @@ pub unsafe fn CRegFolder_CompareIDs_body(this: *mut CRegFolder, lParam: LPARAM, 
         }
 
         if memcmp(clsid1.cast(), clsid2.cast(), core::mem::size_of::<GUID>()) == 0 {
-            return SHELL32_CompareChildren(core::ptr::addr_of_mut!((*this).IShellFolder2_iface), lParam, pidl1, pidl2);
+            return SHELL32_CompareChildren((core::ptr::addr_of_mut!((*this).IShellFolder2_iface)).cast(), lParam, pidl1, pidl2);
         }
 
-        return SHELL32_CompareDetails(core::ptr::addr_of_mut!((*this).IShellFolder2_iface), lParam, pidl1, pidl2);
+        return SHELL32_CompareDetails((core::ptr::addr_of_mut!((*this).IShellFolder2_iface)).cast(), lParam, pidl1, pidl2);
     }
 
     if u32::from(CRegFolder_GetPidlType_body(this)) == PT_COMPUTER_REGITEM {
@@ -1191,7 +1180,7 @@ pub unsafe fn CRegFolder_GetUIObjectOf_body(this: *mut CRegFolder, hwndOwner: HW
             apidl,
             cidl,
             TRUE,
-            ((&mut pObj) as *mut *mut core::ffi::c_void) as *mut *mut com_sys::IDataObject,
+            (((&mut pObj) as *mut *mut core::ffi::c_void) as *mut *mut com_sys::IDataObject).cast(),
         );
     } else {
         hr = E_NOINTERFACE;
@@ -1252,7 +1241,7 @@ pub unsafe fn CRegFolder_GetDisplayNameOf_body(this: *mut CRegFolder, pidl: PCUI
             // nominally from THIS file's own `HKEY` (via `use crate::prelude::*` ->
             // `crate::island::*` -> the opaque `*mut HKEY__`) that SHGetValueW/RegCloseKey want.
             let mut hkeyClass: *mut core::ffi::c_void = core::ptr::null_mut();
-            if HCR_RegOpenClassIDKey(clsid.cast(), &mut hkeyClass) != 0 {
+            if HCR_RegOpenClassIDKey(clsid.cast(), (&raw mut hkeyClass).cast()) != 0 {
                 let res = SHGetValueW(hkeyClass.cast(), CPP_COM_WSTR_F5442F3DFBF4.as_ptr(), CPP_COM_WSTR_3CD38CF47D6F.as_ptr(), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut());
                 bWantsForParsing = if res == ERROR_SUCCESS { TRUE } else { FALSE };
                 RegCloseKey(hkeyClass.cast());
@@ -1260,7 +1249,7 @@ pub unsafe fn CRegFolder_GetDisplayNameOf_body(this: *mut CRegFolder, pidl: PCUI
         }
 
         if bWantsForParsing != 0 {
-            return SHELL32_GetDisplayNameOfChild(core::ptr::addr_of_mut!((*this).IShellFolder2_iface), pidl, dwFlags, strRet);
+            return SHELL32_GetDisplayNameOfChild((core::ptr::addr_of_mut!((*this).IShellFolder2_iface)).cast(), pidl, dwFlags, strRet);
         }
     }
 
@@ -1417,7 +1406,7 @@ pub unsafe fn CRegFolder_GetDetailsEx_body(this: *mut CRegFolder, pidl: PCUITEMI
                 _ => {}
             }
         }
-        return SH32_GetDetailsOfPKeyAsVariant(core::ptr::addr_of_mut!((*this).IShellFolder2_iface), pidl, pscid, pv, TRUE);
+        return SH32_GetDetailsOfPKeyAsVariant((core::ptr::addr_of_mut!((*this).IShellFolder2_iface)).cast(), pidl, pscid, pv, TRUE);
     }
 }
 
@@ -1461,7 +1450,7 @@ pub unsafe fn CRegFolder_GetDetailsOf_body(this: *mut CRegFolder, pidl: PCUITEMI
                 // Same HKEY nominal split as CRegFolder_GetDetailsOf_body/GetDisplayNameOf_body:
                 // HCR_RegOpenClassIDKey wants wine::classes's own `*mut c_void`-flavoured HKEY.
                 let mut hKey: *mut core::ffi::c_void = core::ptr::null_mut();
-                if HCR_RegOpenClassIDKey(clsid.cast(), &mut hKey) == 0 {
+                if HCR_RegOpenClassIDKey(clsid.cast(), (&raw mut hKey).cast()) == 0 {
                     return SHSetStrRetEmpty(core::ptr::addr_of_mut!((*psd).str_));
                 }
 
@@ -1469,7 +1458,7 @@ pub unsafe fn CRegFolder_GetDetailsOf_body(this: *mut CRegFolder, pidl: PCUITEMI
                 (*(*psd).str_.__bindgen_anon_1.cStr.as_mut())[0] = 0x00;
                 (*psd).str_.uType = STRRET_CSTR;
                 RegLoadMUIStringA(
-                    hKey,
+                    (hKey).cast(),
                     b"InfoTip\0".as_ptr() as *const _,
                     (*psd).str_.__bindgen_anon_1.cStr.as_mut().as_mut_ptr() as *mut _,
                     MAX_PATH,

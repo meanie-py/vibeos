@@ -23,6 +23,17 @@
 #![allow(non_upper_case_globals)]
 
 use crate::types::*;
+// The crate's own functions: the definition is the declaration.
+use crate::wine::shellole::SHAlloc;
+use crate::desktop_folder_tu::SHGetDesktopFolder;
+use crate::wine::shellpath::SHGetSpecialFolderLocation;
+use crate::wine::shellstring::StrRetToStrNW;
+// One declaration per external symbol: island.rs.
+use crate::island::CoTaskMemAlloc;
+use crate::island::FindFirstFileW;
+use crate::island::HeapAlloc;
+use crate::island::StrRetToBufW;
+use crate::island::StrRetToStrW;
 use core::ffi::c_void;
 use core::mem::{size_of, zeroed};
 use core::ptr::{addr_of, addr_of_mut, null, null_mut, read_unaligned, write_unaligned, write_volatile};
@@ -151,16 +162,16 @@ pub struct CIDA {
 // ── imports (resolved from shell32's import libs + its own exports at link) ──────────────
 extern "system" {
     // ole32
-    fn CoTaskMemAlloc(cb: SIZE_T) -> LPVOID; // @4
+// @4
     fn CoTaskMemFree(pv: LPVOID); // @4
     // kernel32
     fn DosDateTimeToFileTime(fatdate: WORD, fattime: WORD, lpft: *mut FILETIME) -> BOOL; // @12
     fn FileTimeToDosDateTime(lpft: *const FILETIME, lpfat: *mut WORD, lpft2: *mut WORD) -> BOOL; // @12
     fn FindClose(hFindFile: HANDLE) -> BOOL; // @4
-    fn FindFirstFileW(lpFileName: LPCWSTR, lpFindFileData: *mut WIN32_FIND_DATAW) -> HANDLE; // @8
+// @8
     fn GetProcessHeap() -> HANDLE; // @0
     fn GetVersion() -> DWORD; // @0
-    fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: SIZE_T) -> LPVOID; // @12
+// @12
     fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID) -> BOOL; // @12
     fn LocalFree(hMem: HANDLE) -> HANDLE; // @4
     fn MultiByteToWideChar(
@@ -188,18 +199,18 @@ extern "system" {
     fn PathFindExtensionW(pszPath: LPCWSTR) -> LPWSTR; // @4
     fn StrDupW(lpsz: LPCWSTR) -> LPWSTR; // @4
     fn StrFormatKBSizeW(qdw: i64, pszBuf: LPWSTR, cchBuf: UINT) -> LPWSTR; // @16
-    fn StrRetToBufW(psr: *mut STRRET, pidl: LPCITEMIDLIST, pszBuf: LPWSTR, cchBuf: UINT) -> HRESULT; // @16
-    fn StrRetToStrNW(pszOut: LPWSTR, cchOut: UINT, psr: *mut STRRET, pidl: LPCITEMIDLIST) -> BOOL; // @16
-    fn StrRetToStrW(psr: *mut STRRET, pidl: LPCITEMIDLIST, ppsz: *mut LPWSTR) -> HRESULT; // @12
+// @16
+// @16
+// @12
     // oleaut32
     fn SafeArrayGetLBound(psa: *mut SAFEARRAY, nDim: UINT, plLbound: *mut LONG) -> HRESULT; // @12
     fn SafeArrayGetUBound(psa: *mut SAFEARRAY, nDim: UINT, plUbound: *mut LONG) -> HRESULT; // @12
     fn VariantClear(pvarg: *mut VARIANT) -> HRESULT; // @4
     // shell32 itself (defined in the still-Rust/C siblings)
-    fn SHAlloc(len: SIZE_T) -> LPVOID; // @4
+// @4
     fn SHFree(pv: LPVOID); // @4
-    fn SHGetDesktopFolder(ppshf: *mut LPSHELLFOLDER) -> HRESULT; // @4
-    fn SHGetSpecialFolderLocation(hwndOwner: HWND, nFolder: INT, ppidl: *mut LPITEMIDLIST) -> HRESULT; // @12
+// @4
+// @12
     fn IFileSystemBindData_Constructor(pfd: *const WIN32_FIND_DATAW, ppV: *mut LPBC) -> HRESULT; // @8
     // comctl32
     fn Alloc(cb: INT) -> LPVOID; // @4
@@ -433,7 +444,7 @@ pub unsafe extern "C" fn ILGetDisplayNameExW(
 
     if il_cb(pidl) == 0 || typ == ILGDN_FORPARSING {
         ret = ((*(*lsf).lpVtbl).GetDisplayNameOf)(lsf, pidl, flag, &mut strret);
-        if SUCCEEDED(ret) && StrRetToStrNW(path, MAX_PATH as UINT, &mut strret, pidl) == FALSE {
+        if SUCCEEDED(ret) && StrRetToStrNW(path, MAX_PATH as UINT, &mut strret, (pidl).cast()) == FALSE {
             ret = E_FAIL;
         }
     } else {
@@ -447,7 +458,7 @@ pub unsafe extern "C" fn ILGetDisplayNameExW(
         );
         if SUCCEEDED(ret) {
             ret = ((*(*psfParent).lpVtbl).GetDisplayNameOf)(psfParent, pidllast, flag, &mut strret);
-            if SUCCEEDED(ret) && StrRetToStrNW(path, MAX_PATH as UINT, &mut strret, pidllast) == FALSE {
+            if SUCCEEDED(ret) && StrRetToStrNW(path, MAX_PATH as UINT, &mut strret, (pidllast).cast()) == FALSE {
                 ret = E_FAIL;
             }
             ((*(*psfParent).lpVtbl).Release)(psfParent);
@@ -803,10 +814,10 @@ pub unsafe extern "C" fn _ILIsParentEx(
         return p_result; // Same as parent or a deeper grandchild
     }
 
-    let pidl = SHAlloc(cb + size_of::<WORD>()) as LPITEMIDLIST;
+    let pidl = SHAlloc(cb + (size_of::<WORD>()) as SIZE_T) as LPITEMIDLIST;
     if !pidl.is_null() {
-        r_memcpy(pidl as *mut u8, p_child_root as *const u8, cb);
-        r_memset((pidl as *mut u8).add(cb), 0, size_of::<WORD>());
+        r_memcpy(pidl as *mut u8, p_child_root as *const u8, (cb) as _);
+        r_memset((pidl as *mut u8).add((cb) as _), 0, size_of::<WORD>());
         if ILIsEqual(p_parent_root, pidl) != FALSE {
             p_result = pidl_child;
         }
@@ -1029,7 +1040,7 @@ pub unsafe extern "system" fn SHSimpleIDListFromPathA(lpszPath: LPCSTR) -> LPITE
 
     if !lpszPath.is_null() {
         let len = MultiByteToWideChar(CP_ACP, 0, lpszPath, -1, null_mut(), 0);
-        w_path = HeapAlloc(GetProcessHeap(), 0, len as SIZE_T * size_of::<WCHAR>()) as LPWSTR;
+        w_path = HeapAlloc(GetProcessHeap(), 0, (len as SIZE_T * size_of::<WCHAR>() as SIZE_T) as _) as LPWSTR;
         MultiByteToWideChar(CP_ACP, 0, lpszPath, -1, w_path, len);
     }
 
@@ -1081,7 +1092,7 @@ unsafe fn shell_variant_to_buffer(p_var: *mut VARIANT, p_data: *mut c_void, cb: 
     if p_arr_data.is_null() || cb_arr < cb {
         return E_FAIL;
     }
-    r_memcpy(p_data as *mut u8, p_arr_data as *const u8, cb);
+    r_memcpy(p_data as *mut u8, p_arr_data as *const u8, (cb) as _);
     if cb_arr > cb {
         S_FALSE
     } else {
@@ -1304,13 +1315,13 @@ pub unsafe extern "system" fn SHGetPathCchFromIDListW(
         return hr;
     }
 
-    StrRetToBufW(&mut strret, pidl_last, pszPath, cchPathMax as UINT)
+    StrRetToBufW((&raw mut strret).cast(), pidl_last, pszPath, cchPathMax as UINT)
 }
 
 /// SHGetPathFromIDListW [SHELL32.@] (pidl.c:1496).
 #[no_mangle]
 pub unsafe extern "system" fn SHGetPathFromIDListW(pidl: LPCITEMIDLIST, pszPath: LPWSTR) -> BOOL {
-    if SUCCEEDED(SHGetPathCchFromIDListW(pidl, pszPath, MAX_PATH)) {
+    if SUCCEEDED(SHGetPathCchFromIDListW(pidl, pszPath, (MAX_PATH) as SIZE_T)) {
         TRUE
     } else {
         FALSE
@@ -1460,11 +1471,11 @@ pub unsafe extern "system" fn SHGetNameFromIDList(
                     &mut disp_name,
                 );
                 if SUCCEEDED(ret) {
-                    ret = StrRetToStrW(&mut disp_name, pidl, ppszName);
+                    ret = StrRetToStrW((&raw mut disp_name).cast(), pidl, ppszName);
                 }
             }
             SIGDN_FILESYSPATH => {
-                let buf = CoTaskMemAlloc(size_of::<WCHAR>() * MAX_PATH) as LPWSTR;
+                let buf = CoTaskMemAlloc((size_of::<WCHAR>() * MAX_PATH) as SIZE_T) as LPWSTR;
                 write_volatile(ppszName, buf);
                 if SHGetPathFromIDListW(pidl, buf) != FALSE {
                     ret = S_OK;
@@ -1925,7 +1936,7 @@ pub unsafe extern "C" fn _ILCreateFromPathW(szPath: LPCWSTR, ppidl: *mut LPITEMI
     }
 
     let mut stffile: WIN32_FIND_DATAW = zeroed();
-    let h_file = FindFirstFileW(szPath, &mut stffile);
+    let h_file = FindFirstFileW(szPath, (&raw mut stffile).cast());
     let invalid = usize::MAX as HANDLE; // INVALID_HANDLE_VALUE
     if h_file == invalid {
         return HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
@@ -2425,7 +2436,7 @@ pub unsafe extern "C" fn _ILCopyaPidl(apidlsrc: *const LPCITEMIDLIST, cidl: UINT
         return null_mut();
     }
 
-    let apidldest = SHAlloc(cidl as SIZE_T * size_of::<LPITEMIDLIST>()) as *mut LPITEMIDLIST;
+    let apidldest = SHAlloc(cidl as SIZE_T * size_of::<LPITEMIDLIST>() as SIZE_T) as *mut LPITEMIDLIST;
     if apidldest.is_null() {
         return null_mut(); // C deref's unconditionally; guard to avoid UB on OOM
     }
@@ -2447,7 +2458,7 @@ pub unsafe extern "C" fn _ILCopyaPidl(apidlsrc: *const LPCITEMIDLIST, cidl: UINT
 #[no_mangle]
 pub unsafe extern "C" fn _ILCopyCidaToaPidl(pidl: *mut LPITEMIDLIST, cida: *const CIDA) -> *mut LPITEMIDLIST {
     let cidl = rd_u32(cida as *const u8); // cida->cidl
-    let dst = SHAlloc(cidl as SIZE_T * size_of::<LPITEMIDLIST>()) as *mut LPITEMIDLIST;
+    let dst = SHAlloc(cidl as SIZE_T * size_of::<LPITEMIDLIST>() as SIZE_T) as *mut LPITEMIDLIST;
     if dst.is_null() {
         return null_mut();
     }

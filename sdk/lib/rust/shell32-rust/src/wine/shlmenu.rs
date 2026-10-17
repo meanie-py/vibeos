@@ -20,6 +20,35 @@
 #![allow(non_upper_case_globals)]
 
 use crate::types::*;
+use ntdll_sys::nt::SIZE_T;
+// The crate's own functions: the definition is the declaration.
+use crate::wine::pidl::ILClone;
+use crate::wine::pidl::ILCombine;
+use crate::wine::pidl::ILGetDisplayNameExW;
+use crate::shell32::iconcache::PidlToSicIndex;
+use crate::wine::shellole::SHAlloc;
+use crate::desktop_folder_tu::SHGetDesktopFolder;
+// One declaration per external symbol: island.rs.
+use crate::island::CreatePopupMenu;
+use crate::island::DeleteMenu;
+use crate::island::DestroyMenu;
+use crate::island::ExtTextOutW;
+use crate::island::GetDC;
+use crate::island::GetMenuInfo;
+use crate::island::GetMenuItemCount;
+use crate::island::GetMenuItemInfoW;
+use crate::island::GetMenuItemRect;
+use crate::island::GetTextExtentPoint32W;
+use crate::island::HeapAlloc;
+use crate::island::ImageList_Draw;
+use crate::island::InsertMenuA;
+use crate::island::InsertMenuItemW;
+use crate::island::InsertMenuW;
+use crate::island::ReleaseDC;
+use crate::island::SetBkColor;
+use crate::island::SetMenuInfo;
+use crate::island::SetTextColor;
+use crate::island::TrackPopupMenuEx;
 use core::ffi::c_void;
 use core::mem::{size_of, zeroed};
 use core::ptr::{null, null_mut};
@@ -27,11 +56,11 @@ use core::ptr::{null, null_mut};
 // ── file-local types not yet in types.rs ───────────────────────────────────────────────
 pub type ULONG = u32; // winnt.h
 pub type COLORREF = DWORD; // windef.h
-pub type HMENU = HANDLE; // windef.h
-pub type HDC = HANDLE; // windef.h
-pub type HBITMAP = HANDLE; // windef.h
-pub type HBRUSH = HANDLE; // windef.h
-pub type HIMAGELIST = HANDLE; // commctrl.h
+pub use crate::island::HMENU; // windef.h
+pub use crate::island::HDC; // windef.h
+pub use crate::island::HBITMAP; // windef.h
+pub use crate::island::HBRUSH; // windef.h
+pub use crate::island::HIMAGELIST; // commctrl.h
 pub type WPARAM = UINT_PTR; // minwindef.h
 pub type LRESULT = LONG_PTR; // minwindef.h
 
@@ -44,99 +73,32 @@ pub type LPITEMIDLIST = *mut ITEMIDLIST;
 pub type LPCITEMIDLIST = *const ITEMIDLIST;
 
 /// GUID / IID (guiddef.h): { u32; u16; u16; [u8;8] }
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct GUID {
-    pub Data1: u32,
-    pub Data2: u16,
-    pub Data3: u16,
-    pub Data4: [u8; 8],
-}
+pub use crate::island::GUID;
 pub type IID = GUID;
 pub type REFIID = *const IID;
 
 /// RECT (windef.h): { LONG left, top, right, bottom; }
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct RECT {
-    pub left: LONG,
-    pub top: LONG,
-    pub right: LONG,
-    pub bottom: LONG,
-}
+pub use crate::island::RECT;
 
 /// SIZE (windef.h): { LONG cx; LONG cy; }
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct SIZE {
-    pub cx: LONG,
-    pub cy: LONG,
-}
+pub use crate::island::SIZE;
 
 /// MENUINFO (winuser.h)
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct MENUINFO {
-    pub cbSize: DWORD,
-    pub fMask: DWORD,
-    pub dwStyle: DWORD,
-    pub cyMax: UINT,
-    pub hbrBack: HBRUSH,
-    pub dwContextHelpID: DWORD,
-    pub dwMenuData: ULONG_PTR,
-}
+pub use crate::island::MENUINFO;
 
 /// MENUITEMINFOW (winuser.h) — `hbmpItem` present because `_WIN32_WINNT >= 0x0500`.
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct MENUITEMINFOW {
-    pub cbSize: UINT,
-    pub fMask: UINT,
-    pub fType: UINT,
-    pub fState: UINT,
-    pub wID: UINT,
-    pub hSubMenu: HMENU,
-    pub hbmpChecked: HBITMAP,
-    pub hbmpUnchecked: HBITMAP,
-    pub dwItemData: ULONG_PTR,
-    pub dwTypeData: LPWSTR,
-    pub cch: UINT,
-    pub hbmpItem: HBITMAP,
-}
+pub use crate::island::MENUITEMINFOW;
 
 /// MEASUREITEMSTRUCT (winuser.h)
-#[repr(C)]
-pub struct MEASUREITEMSTRUCT {
-    pub CtlType: UINT,
-    pub CtlID: UINT,
-    pub itemID: UINT,
-    pub itemWidth: UINT,
-    pub itemHeight: UINT,
-    pub itemData: ULONG_PTR,
-}
+pub use crate::island::MEASUREITEMSTRUCT;
 pub type LPMEASUREITEMSTRUCT = *mut MEASUREITEMSTRUCT;
 
 /// DRAWITEMSTRUCT (winuser.h)
-#[repr(C)]
-pub struct DRAWITEMSTRUCT {
-    pub CtlType: UINT,
-    pub CtlID: UINT,
-    pub itemID: UINT,
-    pub itemAction: UINT,
-    pub itemState: UINT,
-    pub hwndItem: HWND,
-    pub hDC: HDC,
-    pub rcItem: RECT,
-    pub itemData: ULONG_PTR,
-}
+pub use crate::island::DRAWITEMSTRUCT;
 pub type LPDRAWITEMSTRUCT = *mut DRAWITEMSTRUCT;
 
 /// TPMPARAMS (winuser.h)
-#[repr(C)]
-pub struct TPMPARAMS {
-    pub cbSize: UINT,
-    pub rcExclude: RECT,
-}
+pub use crate::island::TPMPARAMS;
 pub type LPTPMPARAMS = *mut TPMPARAMS;
 
 /// LPFNFMCALLBACK (undocshell.h): `void (CALLBACK *)(LPCITEMIDLIST, LPCITEMIDLIST)`.
@@ -294,41 +256,32 @@ static EMPTY_W: [WCHAR; 8] = [0x28, 0x65, 0x6d, 0x70, 0x74, 0x79, 0x29, 0x00];
 // ── imports ─────────────────────────────────────────────────────────────────────────────
 extern "system" {
     // user32
-    fn CreatePopupMenu() -> HMENU; // @0
-    fn DeleteMenu(hMenu: HMENU, uPosition: UINT, uFlags: UINT) -> BOOL; // @12
-    fn DestroyMenu(hMenu: HMENU) -> BOOL; // @4
-    fn GetDC(hWnd: HWND) -> HDC; // @4
-    fn ReleaseDC(hWnd: HWND, hDC: HDC) -> INT; // @8
-    fn GetMenuInfo(hMenu: HMENU, lpcmi: *mut MENUINFO) -> BOOL; // @8
-    fn SetMenuInfo(hMenu: HMENU, lpcmi: *const MENUINFO) -> BOOL; // @8
-    fn GetMenuItemCount(hMenu: HMENU) -> INT; // @4
-    fn GetMenuItemInfoW(hMenu: HMENU, item: UINT, fByPosition: BOOL, lpmii: *mut MENUITEMINFOW) -> BOOL; // @16
-    fn GetMenuItemRect(hWnd: HWND, hMenu: HMENU, uItem: UINT, lprcItem: *mut RECT) -> BOOL; // @16
-    fn InsertMenuA(hMenu: HMENU, uPosition: UINT, uFlags: UINT, uIDNewItem: UINT_PTR, lpNewItem: LPCSTR) -> BOOL; // @20
-    fn InsertMenuW(hMenu: HMENU, uPosition: UINT, uFlags: UINT, uIDNewItem: UINT_PTR, lpNewItem: LPCWSTR) -> BOOL; // @20
-    fn InsertMenuItemW(hMenu: HMENU, item: UINT, fByPosition: BOOL, lpmii: *const MENUITEMINFOW) -> BOOL; // @16
+// @0
+// @12
+// @4
+// @4
+// @8
+// @8
+// @8
+// @4
+// @16
+// @16
+// @20
+// @20
+// @16
     fn GetSysColor(nIndex: INT) -> DWORD; // @4
-    fn TrackPopupMenuEx(hMenu: HMENU, uFlags: UINT, x: INT, y: INT, hwnd: HWND, lptpm: LPTPMPARAMS) -> BOOL; // @24
+// @24
     // gdi32
-    fn ExtTextOutW(
-        hdc: HDC,
-        x: INT,
-        y: INT,
-        options: UINT,
-        lprect: *const RECT,
-        lpString: LPCWSTR,
-        c: UINT,
-        lpDx: *const INT,
-    ) -> BOOL; // @32
-    fn GetTextExtentPoint32W(hdc: HDC, lpString: LPCWSTR, c: INT, psizl: *mut SIZE) -> BOOL; // @16
-    fn SetBkColor(hdc: HDC, color: COLORREF) -> COLORREF; // @8
-    fn SetTextColor(hdc: HDC, color: COLORREF) -> COLORREF; // @8
+// @32
+// @16
+// @8
+// @8
     // comctl32 (imported through the IAT thunk `__imp__ImageList_Draw@24`)
-    fn ImageList_Draw(himl: HIMAGELIST, i: INT, hdcDst: HDC, x: INT, y: INT, fStyle: UINT) -> BOOL; // @24
+// @24
     // kernel32
     fn GetProcessHeap() -> HANDLE; // @0
     fn GetVersion() -> DWORD; // @0
-    fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: usize) -> LPVOID; // @12
+// @12
     fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID) -> BOOL; // @12
     fn MultiByteToWideChar(
         CodePage: UINT,
@@ -341,30 +294,17 @@ extern "system" {
     // shlwapi
     fn PathFindExtensionW(pszPath: LPCWSTR) -> LPWSTR; // @4
     // shell32 itself
-    fn SHAlloc(len: usize) -> LPVOID; // @4
+// @4
     fn SHFree(pv: LPVOID); // @4
-    fn SHGetDesktopFolder(ppshf: *mut *mut IShellFolder) -> HRESULT; // @4
+// @4
     fn Shell_GetImageLists(lpBigList: *mut HIMAGELIST, lpSmallList: *mut HIMAGELIST) -> BOOL; // @8
     // pidl.c (still-C) WINAPI helpers
-    fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST; // @4
-    fn ILCombine(pidl1: LPCITEMIDLIST, pidl2: LPCITEMIDLIST) -> LPITEMIDLIST; // @8
+// @4
+// @8
 }
 
 // pidl.c / shell32_main.c (still-C) cdecl helpers — no `@N` decoration.
 extern "C" {
-    fn ILGetDisplayNameExW(
-        psf: *mut IShellFolder,
-        pidl: LPCITEMIDLIST,
-        path: LPWSTR,
-        type_: DWORD,
-    ) -> BOOL;
-    fn PidlToSicIndex(
-        sh: *mut IShellFolder,
-        pidl: LPCITEMIDLIST,
-        bBigIcon: BOOL,
-        uFlags: UINT,
-        pIndex: *mut INT,
-    ) -> BOOL;
 }
 
 // data import: `_IID_IShellFolder` (cdecl DATA export of shell32)
@@ -425,7 +365,7 @@ unsafe fn FM_GetMenuInfo(hmenu: HMENU) -> LPFMINFO {
     MenuInfo.cbSize = size_of::<MENUINFO>() as DWORD;
     MenuInfo.fMask = MIM_MENUDATA;
 
-    if GetMenuInfo(hmenu, &mut MenuInfo) == FALSE {
+    if GetMenuInfo((hmenu).cast(), &mut MenuInfo) == FALSE {
         return null_mut();
     }
 
@@ -452,7 +392,7 @@ unsafe fn FM_SetMenuParameter(
     SHFree((*menudata).pidl as LPVOID);
 
     (*menudata).uID = uID;
-    (*menudata).pidl = ILClone(pidl);
+    (*menudata).pidl = (ILClone((pidl).cast())).cast();
     (*menudata).uFlags = uFlags;
     (*menudata).uEnumFlags = uEnumFlags;
     (*menudata).lpfnCallback = lpfnCallback;
@@ -476,7 +416,7 @@ unsafe fn FM_InitMenuPopup(hmenu: HMENU, pAlternatePidl: LPCITEMIDLIST) -> INT {
     MenuInfo.cbSize = size_of::<MENUINFO>() as DWORD;
     MenuInfo.fMask = MIM_MENUDATA;
 
-    if GetMenuInfo(hmenu, &mut MenuInfo) == FALSE {
+    if GetMenuInfo((hmenu).cast(), &mut MenuInfo) == FALSE {
         return FALSE;
     }
 
@@ -504,9 +444,9 @@ unsafe fn FM_InitMenuPopup(hmenu: HMENU, pAlternatePidl: LPCITEMIDLIST) -> INT {
     lpfnCallback = (*menudata).lpfnCallback;
     (*menudata).bInitialized = FALSE;
 
-    SetMenuInfo(hmenu, &MenuInfo);
+    SetMenuInfo((hmenu).cast(), &MenuInfo);
 
-    if SUCCEEDED(SHGetDesktopFolder(&mut lpsf)) {
+    if SUCCEEDED(SHGetDesktopFolder((&raw mut lpsf).cast())) {
         let mut lpsf2: *mut IShellFolder = null_mut();
         if SUCCEEDED(((*(*lpsf).lpVtbl).BindToObject)(
             lpsf,
@@ -533,11 +473,11 @@ unsafe fn FM_InitMenuPopup(hmenu: HMENU, pAlternatePidl: LPCITEMIDLIST) -> INT {
                     )) {
                         ILGetDisplayNameExW(
                             null_mut(),
-                            pidlTemp,
+                            (pidlTemp).cast(),
                             sTemp.as_mut_ptr(),
                             ILGDN_FORPARSING,
                         );
-                        if PidlToSicIndex(lpsf, pidlTemp, FALSE, 0, &mut iIcon) == FALSE {
+                        if PidlToSicIndex((lpsf).cast(), (pidlTemp).cast(), FALSE, 0, &mut iIcon) == FALSE {
                             iIcon = FM_BLANK_ICON;
                         }
                         if (SFGAO_FOLDER & ulItemAttr) != 0 {
@@ -546,10 +486,10 @@ unsafe fn FM_InitMenuPopup(hmenu: HMENU, pAlternatePidl: LPCITEMIDLIST) -> INT {
                             let lpFmMi = HeapAlloc(
                                 GetProcessHeap(),
                                 HEAP_ZERO_MEMORY,
-                                size_of::<FMINFO>(),
+                                (size_of::<FMINFO>()) as _,
                             ) as LPFMINFO;
 
-                            (*lpFmMi).pidl = ILCombine(pidl, pidlTemp as LPCITEMIDLIST);
+                            (*lpFmMi).pidl = (ILCombine((pidl).cast(), (pidlTemp as LPCITEMIDLIST).cast())).cast();
                             (*lpFmMi).uEnumFlags = SHCONTF_FOLDERS | SHCONTF_NONFOLDERS;
 
                             let mut MenuInfo2: MENUINFO = zeroed();
@@ -563,7 +503,7 @@ unsafe fn FM_InitMenuPopup(hmenu: HMENU, pAlternatePidl: LPCITEMIDLIST) -> INT {
                                 sTemp.as_ptr(),
                                 uID,
                                 iIcon,
-                                hMenuPopup,
+                                (hMenuPopup).cast(),
                                 FM_DEFAULT_HEIGHT,
                             );
                         } else {
@@ -595,7 +535,7 @@ unsafe fn FM_InitMenuPopup(hmenu: HMENU, pAlternatePidl: LPCITEMIDLIST) -> INT {
         ((*(*lpsf).lpVtbl).Release)(lpsf);
     }
 
-    if GetMenuItemCount(hmenu) == 0 {
+    if GetMenuItemCount((hmenu).cast()) == 0 {
         FileMenu_AppendItemW(
             hmenu,
             EMPTY_W.as_ptr(),
@@ -608,7 +548,7 @@ unsafe fn FM_InitMenuPopup(hmenu: HMENU, pAlternatePidl: LPCITEMIDLIST) -> INT {
     }
 
     (*menudata).bInitialized = TRUE;
-    SetMenuInfo(hmenu, &MenuInfo);
+    SetMenuInfo((hmenu).cast(), &MenuInfo);
 
     NumberOfItems
 }
@@ -629,7 +569,7 @@ unsafe fn FileMenu_AppendItemW(
 
     if lpText != FM_SEPARATOR {
         let len = strlenW(lpText);
-        let myItem = SHAlloc(size_of::<FMITEM>() + len as usize * size_of::<WCHAR>()) as LPFMITEM;
+        let myItem = SHAlloc((size_of::<FMITEM>() + len as usize * size_of::<WCHAR>()) as SIZE_T) as LPFMITEM;
         strcpyW((*myItem).szItemText.as_mut_ptr(), lpText);
         (*myItem).cchItemText = len;
         (*myItem).iIconIndex = icon;
@@ -642,7 +582,7 @@ unsafe fn FileMenu_AppendItemW(
         // sub menu
         mii.fMask |= MIIM_TYPE | MIIM_SUBMENU;
         mii.fType = MFT_OWNERDRAW;
-        mii.hSubMenu = hMenuPopup;
+        mii.hSubMenu = (hMenuPopup).cast();
     } else if lpText == FM_SEPARATOR {
         mii.fMask |= MIIM_ID | MIIM_TYPE;
         mii.fType = MFT_SEPARATOR;
@@ -654,13 +594,13 @@ unsafe fn FileMenu_AppendItemW(
     }
     mii.wID = uID;
 
-    InsertMenuItemW(hMenu, !0u32, TRUE, &mii); // (UINT)-1
+    InsertMenuItemW((hMenu).cast(), !0u32, TRUE, &mii); // (UINT)-1
 
     // set bFixedItems to true
     MenuInfo.cbSize = size_of::<MENUINFO>() as DWORD;
     MenuInfo.fMask = MIM_MENUDATA;
 
-    if GetMenuInfo(hMenu, &mut MenuInfo) == FALSE {
+    if GetMenuInfo((hMenu).cast(), &mut MenuInfo) == FALSE {
         return FALSE;
     }
 
@@ -670,7 +610,7 @@ unsafe fn FileMenu_AppendItemW(
     }
 
     (*menudata).bFixedItems = TRUE;
-    SetMenuInfo(hMenu, &MenuInfo);
+    SetMenuInfo((hMenu).cast(), &MenuInfo);
 
     TRUE
 }
@@ -683,7 +623,7 @@ unsafe fn _SHIsMenuSeparator(hm: HMENU, i: INT) -> BOOL {
     mii.fMask = MIIM_TYPE;
     mii.cch = 0; // WARNING: We MUST initialize it to 0
 
-    if GetMenuItemInfoW(hm, i as UINT, TRUE, &mut mii) == FALSE {
+    if GetMenuItemInfoW((hm).cast(), i as UINT, TRUE, &mut mii) == FALSE {
         return FALSE;
     }
 
@@ -711,7 +651,7 @@ pub unsafe extern "system" fn FileMenu_Create(
 
     let hMenu = CreatePopupMenu();
 
-    let menudata = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, size_of::<FMINFO>()) as LPFMINFO;
+    let menudata = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (size_of::<FMINFO>()) as _) as LPFMINFO;
     (*menudata).crBorderColor = crBorderColor;
     (*menudata).nBorderWidth = nBorderWidth;
     (*menudata).hBorderBmp = hBorderBmp;
@@ -721,7 +661,7 @@ pub unsafe extern "system" fn FileMenu_Create(
     MenuInfo.dwMenuData = menudata as ULONG_PTR;
     SetMenuInfo(hMenu, &MenuInfo);
 
-    hMenu
+    (hMenu).cast()
 }
 
 /// FileMenu_Destroy [SHELL32.118]
@@ -734,7 +674,7 @@ pub unsafe extern "system" fn FileMenu_Destroy(hmenu: HMENU) {
     SHFree((*menudata).pidl as LPVOID);
     HeapFree(GetProcessHeap(), 0, menudata as LPVOID);
 
-    DestroyMenu(hmenu);
+    DestroyMenu((hmenu).cast());
 }
 
 /// FileMenu_AppendItemAW
@@ -757,7 +697,7 @@ pub unsafe extern "system" fn FileMenu_AppendItemAW(
         ret = FileMenu_AppendItemW(hMenu, lpText as LPCWSTR, uID, icon, hMenuPopup, nItemHeight);
     } else {
         let len = MultiByteToWideChar(CP_ACP, 0, lpText as LPCSTR, -1, null_mut(), 0);
-        let lpszText = HeapAlloc(GetProcessHeap(), 0, len as usize * size_of::<WCHAR>()) as LPWSTR;
+        let lpszText = HeapAlloc(GetProcessHeap(), 0, (len as usize * size_of::<WCHAR>()) as _) as LPWSTR;
         if lpszText.is_null() {
             return FALSE;
         }
@@ -859,7 +799,7 @@ pub unsafe extern "system" fn FileMenu_TrackPopupMenuEx(
     hWnd: HWND,
     lptpm: LPTPMPARAMS,
 ) -> BOOL {
-    TrackPopupMenuEx(hMenu, uFlags, x, y, hWnd, lptpm)
+    TrackPopupMenuEx((hMenu).cast(), uFlags, x, y, hWnd, lptpm)
 }
 
 /// FileMenu_GetLastSelectedItemPidls [SHELL32.107]
@@ -964,7 +904,7 @@ pub unsafe extern "system" fn FileMenu_DrawItem(hWnd: HWND, lpdis: LPDRAWITEMSTR
 
     Shell_GetImageLists(null_mut(), &mut hImageList);
     ImageList_Draw(
-        hImageList,
+        (hImageList).cast(),
         (*pMyItem).iIconIndex,
         (*lpdis).hDC,
         xi,
@@ -1000,18 +940,18 @@ pub unsafe extern "system" fn FileMenu_DeleteAllItems(hmenu: HMENU) -> BOOL {
     mii.fMask = MIIM_SUBMENU | MIIM_DATA;
 
     let mut i: INT = 0;
-    while i < GetMenuItemCount(hmenu) {
-        GetMenuItemInfoW(hmenu, i as UINT, TRUE, &mut mii);
+    while i < GetMenuItemCount((hmenu).cast()) {
+        GetMenuItemInfoW((hmenu).cast(), i as UINT, TRUE, &mut mii);
 
         SHFree(mii.dwItemData as LPVOID);
 
         if !mii.hSubMenu.is_null() {
-            FileMenu_Destroy(mii.hSubMenu);
+            FileMenu_Destroy((mii.hSubMenu).cast());
         }
         i += 1;
     }
 
-    while DeleteMenu(hmenu, 0, MF_BYPOSITION) != FALSE {}
+    while DeleteMenu((hmenu).cast(), 0, MF_BYPOSITION) != FALSE {}
 
     let menudata = FM_GetMenuInfo(hmenu);
 
@@ -1028,12 +968,12 @@ pub unsafe extern "system" fn FileMenu_DeleteItemByCmd(hMenu: HMENU, uID: UINT) 
     mii.cbSize = size_of::<MENUITEMINFOW>() as UINT;
     mii.fMask = MIIM_SUBMENU;
 
-    GetMenuItemInfoW(hMenu, uID, FALSE, &mut mii);
+    GetMenuItemInfoW((hMenu).cast(), uID, FALSE, &mut mii);
     if !mii.hSubMenu.is_null() {
         // FIXME: Do what?
     }
 
-    DeleteMenu(hMenu, MF_BYCOMMAND, uID);
+    DeleteMenu((hMenu).cast(), MF_BYCOMMAND, uID);
     TRUE
 }
 
@@ -1045,12 +985,12 @@ pub unsafe extern "system" fn FileMenu_DeleteItemByIndex(hMenu: HMENU, uPos: UIN
     mii.cbSize = size_of::<MENUITEMINFOW>() as UINT;
     mii.fMask = MIIM_SUBMENU;
 
-    GetMenuItemInfoW(hMenu, uPos, TRUE, &mut mii);
+    GetMenuItemInfoW((hMenu).cast(), uPos, TRUE, &mut mii);
     if !mii.hSubMenu.is_null() {
         // FIXME: Do what?
     }
 
-    DeleteMenu(hMenu, MF_BYPOSITION, uPos);
+    DeleteMenu((hMenu).cast(), MF_BYPOSITION, uPos);
     TRUE
 }
 
@@ -1081,7 +1021,7 @@ pub unsafe extern "system" fn FileMenu_EnableItemByCmd(
 pub unsafe extern "system" fn FileMenu_GetItemExtent(hMenu: HMENU, uPos: UINT) -> DWORD {
     let mut rect: RECT = zeroed();
 
-    if GetMenuItemRect(null_mut(), hMenu, uPos, &mut rect) != FALSE {
+    if GetMenuItemRect(null_mut(), (hMenu).cast(), uPos, &mut rect) != FALSE {
         // ((rect.right-rect.left)<<16) + (rect.top-rect.bottom) — wrapping to mirror C.
         return (rect.right.wrapping_sub(rect.left).wrapping_shl(16))
             .wrapping_add(rect.top.wrapping_sub(rect.bottom)) as DWORD;
@@ -1128,7 +1068,7 @@ pub unsafe extern "system" fn Shell_MergeMenus(
         return uIDMax;
     }
 
-    nItem = GetMenuItemCount(hmDst);
+    nItem = GetMenuItemCount((hmDst).cast());
     if nItem == -1 {
         return uIDMax;
     }
@@ -1143,12 +1083,12 @@ pub unsafe extern "system" fn Shell_MergeMenus(
 
     if (uFlags & MM_ADDSEPARATOR) != 0 && bAlreadySeparated == FALSE {
         // Add a separator between the menus
-        InsertMenuA(hmDst, uInsert, MF_BYPOSITION | MF_SEPARATOR, 0, null());
+        InsertMenuA((hmDst).cast(), uInsert, MF_BYPOSITION | MF_SEPARATOR, 0, null());
         bAlreadySeparated = TRUE;
     }
 
     // Go through the menu items and clone them
-    nItem = GetMenuItemCount(hmSrc) - 1;
+    nItem = GetMenuItemCount((hmSrc).cast()) - 1;
     while nItem >= 0 {
         miiSrc.cbSize = size_of::<MENUITEMINFOW>() as UINT;
         miiSrc.fMask =
@@ -1160,7 +1100,7 @@ pub unsafe extern "system" fn Shell_MergeMenus(
         miiSrc.dwItemData = 0;
         miiSrc.cch = (szName.len()) as UINT; // sizeof(szName)/sizeof(WCHAR)
 
-        if GetMenuItemInfoW(hmSrc, nItem as UINT, TRUE, &mut miiSrc) == FALSE {
+        if GetMenuItemInfoW((hmSrc).cast(), nItem as UINT, TRUE, &mut miiSrc) == FALSE {
             nItem -= 1;
             continue;
         }
@@ -1190,7 +1130,7 @@ pub unsafe extern "system" fn Shell_MergeMenus(
             } else {
                 miiSrc.fMask &= !MIIM_ID; // Don't set IDs for submenus that didn't have them already
             }
-            hmSubMenu = miiSrc.hSubMenu;
+            hmSubMenu = (miiSrc.hSubMenu).cast();
 
             miiSrc.hSubMenu = CreatePopupMenu();
 
@@ -1199,7 +1139,7 @@ pub unsafe extern "system" fn Shell_MergeMenus(
             }
 
             uTemp = Shell_MergeMenus(
-                miiSrc.hSubMenu,
+                (miiSrc.hSubMenu).cast(),
                 hmSubMenu,
                 0,
                 uIDAdjust,
@@ -1230,7 +1170,7 @@ pub unsafe extern "system" fn Shell_MergeMenus(
             bAlreadySeparated = FALSE;
         }
 
-        if InsertMenuItemW(hmDst, uInsert, TRUE, &miiSrc) == FALSE {
+        if InsertMenuItemW((hmDst).cast(), uInsert, TRUE, &miiSrc) == FALSE {
             return uIDMax;
         }
 
@@ -1240,15 +1180,15 @@ pub unsafe extern "system" fn Shell_MergeMenus(
     // Ensure the correct number of separators at the beginning of the inserted menu items
     if uInsert == 0 {
         if bAlreadySeparated != FALSE {
-            DeleteMenu(hmDst, uInsert, MF_BYPOSITION);
+            DeleteMenu((hmDst).cast(), uInsert, MF_BYPOSITION);
         }
     } else if _SHIsMenuSeparator(hmDst, (uInsert - 1) as INT) != FALSE {
         if bAlreadySeparated != FALSE {
-            DeleteMenu(hmDst, uInsert, MF_BYPOSITION);
+            DeleteMenu((hmDst).cast(), uInsert, MF_BYPOSITION);
         }
     } else if (uFlags & MM_ADDSEPARATOR) != 0 && bAlreadySeparated == FALSE {
         // Add a separator between the menus
-        InsertMenuW(hmDst, uInsert, MF_BYPOSITION | MF_SEPARATOR, 0, null());
+        InsertMenuW((hmDst).cast(), uInsert, MF_BYPOSITION | MF_SEPARATOR, 0, null());
     }
 
     uIDMax

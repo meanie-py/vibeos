@@ -916,15 +916,12 @@ UINT WINAPI MsiFormatRecordW( MSIHANDLE hInstall, MSIHANDLE hRecord, WCHAR *szRe
 
         if ((remote = msi_get_remote(hInstall)))
         {
-            __TRY
             {
-                r = remote_FormatRecord(remote, (struct wire_record *)&record->count, &value);
+                DWORD code;
+
+                if (!remote_FormatRecord_guarded(rpc_filter, &code, &r, remote, (struct wire_record *)&record->count, &value))
+                    r = code;
             }
-            __EXCEPT(rpc_filter)
-            {
-                r = GetExceptionCode();
-            }
-            __ENDTRY
 
             if (!r)
                 r = msi_strncpyW(value, -1, szResult, sz);
@@ -973,15 +970,12 @@ UINT WINAPI MsiFormatRecordA(MSIHANDLE hinst, MSIHANDLE hrec, char *buf, DWORD *
 
         if ((remote = msi_get_remote(hinst)))
         {
-            __TRY
             {
-                r = remote_FormatRecord(remote, (struct wire_record *)&rec->count, &value);
+                DWORD code;
+
+                if (!remote_FormatRecord_guarded(rpc_filter, &code, &r, remote, (struct wire_record *)&rec->count, &value))
+                    r = code;
             }
-            __EXCEPT(rpc_filter)
-            {
-                r = GetExceptionCode();
-            }
-            __ENDTRY
 
             if (!r)
                 r = msi_strncpyWtoA(value, -1, buf, sz, TRUE);

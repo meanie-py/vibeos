@@ -3309,8 +3309,8 @@ UNCOVERED: dict[str, str] = {
     # Already have dedicated suites (the prototypes this harness generalizes).
     "scan_wide_literals": "covered by Rust wide_literals fixtures, including all 20 Python cases",
     "verify_c_signatures": "covered by tools/vibeos-lint/src/rules/verify_c_signatures.rs",
-    "marshalgen_audit": "covered by tools/wow64gen/test_wow64gen.py",
-    "verify_svc_numbering": "covered by tools/wow64gen/test_wow64gen.py",
+    "marshalgen_audit": "covered by native layout/prototype controls and test_rustlints.py",
+    "verify_svc_numbering": "covered by native verify_svc_numbering.rs parser controls",
     # Both compare a translated Rust module against the C it came FROM, so neither walks a
     # tree the fixture-dir driver above can substitute — they need a .c/.rs PAIR (or, for
     # the ctype tables, ctype.c plus the compiled object as the oracle). Same shape as the
@@ -3364,7 +3364,7 @@ UNCOVERED: dict[str, str] = {
     "verify_constants_enums": "same catalog dependency as verify_constants",
     "verify_tables": "source pairing fixtures: tools/vibeos-lint/src/rules/verify_tables.rs",
     "verify_match_consts": "needs the C header catalog",
-    "verify_signatures": "needs build-<arch> generated headers",
+    "verify_signatures": "native parser/AST/Unicode controls; real parity needs generated headers",
     "scan_cc_mismatch": (
         "main() scans a fixed workspace root, so the subprocess harness cannot drive it — "
         "but scan_crate()/fix_crate() take a crate dir, and are covered by direct import at "
@@ -3524,6 +3524,7 @@ def _run(ctl: Control, root: Path) -> tuple[int, str]:
                 "scan_duplicate_symbols",
                 "scan_export_shadows",
                 "strip_msvc_cmake",
+                "vendored_registry",
             }
             else REPO
         )

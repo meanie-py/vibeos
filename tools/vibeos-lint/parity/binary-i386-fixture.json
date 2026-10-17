@@ -1,0 +1,48 @@
+{
+  "root": "/home/curi/Projects/os-playground/vibeos-lint/.cache/vibeos-lint/binary-fixture",
+  "oracle_revision": "e7d43269260efd6e05654d503223d531b0ac3d7b",
+  "arch": "i386",
+  "artifact_basis": "same existing build tree; freshness not asserted",
+  "rust_binary_sha256": "a29513a09b9ffcd71730537adda7f47fc2ae84d4eb5f8b4f83fdf78e5f38aee8",
+  "rust_seconds": 0.15127134101931006,
+  "rules": {
+    "scan_xchg_ebx_deref": {
+      "python": 9,
+      "rust": 9,
+      "python_exit": 1,
+      "rust_exit": 1,
+      "python_seconds": 0.21420841699000448,
+      "python_only": [],
+      "rust_only": [],
+      "python_sha256": "a0e96df6e20fdc87b162986f799cb133acaea30c400f827a6f3c943f80a98651",
+      "rust_sha256": "a0e96df6e20fdc87b162986f799cb133acaea30c400f827a6f3c943f80a98651",
+      "exact": true
+    },
+    "scan_captures": {
+      "python": 5,
+      "rust": 5,
+      "python_exit": 1,
+      "rust_exit": 1,
+      "python_seconds": 0.1060414910025429,
+      "python_only": [],
+      "rust_only": [],
+      "python_sha256": "43473b14da61a6f7431f193674676caab8ef84c9b4481b05cec9d6461d0e2cb5",
+      "rust_sha256": "43473b14da61a6f7431f193674676caab8ef84c9b4481b05cec9d6461d0e2cb5",
+      "exact": true
+    },
+    "scan_ir_mismatch": {
+      "python": 6,
+      "rust": 6,
+      "python_exit": 1,
+      "rust_exit": 1,
+      "python_seconds": 0.12765547400340438,
+      "python_only": [],
+      "rust_only": [],
+      "python_sha256": "b95415a6eed4d8094358008ec1c8f2a37601a02867af4c8cd7d699aa7de83f20",
+      "rust_sha256": "e570f2e4cf7f70ee109adafe5adceae245015ac7d7c3d33bc9c86db260424026",
+      "exact": false,
+      "comparison": "line multiset and exit code; oracle signature-set order is unspecified",
+      "equivalent": true
+    }
+  }
+}

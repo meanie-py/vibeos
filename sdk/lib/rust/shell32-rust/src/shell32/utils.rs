@@ -741,7 +741,7 @@ pub unsafe extern "C" fn SHELL_GetUIObjectOfAbsoluteItem(
 
     let mut hr = SHBindToParent(
         pidl,
-        core::ptr::addr_of!(IID_IShellFolder) as REFIID,
+        (core::ptr::addr_of!(IID_IShellFolder) as REFIID).cast(),
         core::ptr::addr_of_mut!(psf) as *mut *mut core::ffi::c_void,
         core::ptr::addr_of_mut!(pidlChild) as *mut PCUITEMID_CHILD,
     );
@@ -825,7 +825,7 @@ pub unsafe extern "C" fn SHGetAttributes(
     if psf.is_null() {
         SHBindToParent(
             pidl,
-            core::ptr::addr_of!(IID_IShellFolder) as REFIID,
+            (core::ptr::addr_of!(IID_IShellFolder) as REFIID).cast(),
             core::ptr::addr_of_mut!(psf) as *mut *mut core::ffi::c_void,
             core::ptr::addr_of_mut!(pidlLast)
         );
@@ -2097,7 +2097,7 @@ unsafe extern "C" fn DynamicSHGetPathFromIDListW(
             return E_OUTOFMEMORY;
         }
 
-        hr = SHGetPathCchFromIDListW(((pidl) as _), lpszPath, cchPath as usize);
+        hr = SHGetPathCchFromIDListW(((pidl) as _), lpszPath, (cchPath) as SIZE_T);
         strPath.ReleaseBuffer();
 
         if hr != E_NOT_SUFFICIENT_BUFFER {
@@ -2355,7 +2355,7 @@ unsafe extern "C" fn GetCommandStringA(
 ) -> i32 {
     let mut hr = ((*(*pCM).lpVtbl).GetCommandString)(
         pCM,
-        Id,
+        (Id) as _,
         GCS & !GCS_UNICODE,
         core::ptr::null_mut::<u32>(),
         Buf,
@@ -2365,7 +2365,7 @@ unsafe extern "C" fn GetCommandStringA(
         let mut buf = [0u16; ((MAX_PATH) as usize)];
         hr = ((*(*pCM).lpVtbl).GetCommandString)(
             pCM,
-            Id,
+            (Id) as _,
             GCS | GCS_UNICODE,
             core::ptr::null_mut::<u32>(),
             buf.as_mut_ptr() as *mut i8,

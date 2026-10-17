@@ -317,30 +317,6 @@ pub use crate::{ListView_GetSelectedCount, MAKEINTRESOURCE, MAKELPARAM, MAKEWPAR
 // ==== end SDK header macros ====
 
 // ==== port macros: the module's own C macros (generated -- `rustconv port macros`) ====
-// base/applications/mmc_new/mscfile.h:12: #define CHK_ALLOC(p) do { if (!(p)) { hr = E_OUTOFMEMORY; goto CleanUp; } } while(0)
-#[allow(unused_macros)]
-macro_rules! CHK_ALLOC {
-    ($p:expr $(,)?) => {{
-        if !($p) {
-            hr = E_OUTOFMEMORY;
-            break 'CleanUp;
-        }
-    }};
-}
-#[allow(unused_imports)]
-pub(crate) use CHK_ALLOC;
-// base/applications/mmc_new/mscfile.h:9: #define CHK_HR(stmt) do { hr=(stmt); if (FAILED(hr)) goto CleanUp; } while(0)
-#[allow(unused_macros)]
-macro_rules! CHK_HR {
-    ($stmt:expr $(,)?) => {{
-        hr = $stmt;
-        if FAILED(hr) {
-            break 'CleanUp;
-        }
-    }};
-}
-#[allow(unused_imports)]
-pub(crate) use CHK_HR;
 // base/applications/mmc_new/mscfile.h:15: #define SAFE_RELEASE(p) do { if ((p)) { (p)->Release(); (p) = NULL; } } while(0)
 #[allow(unused_macros)]
 macro_rules! SAFE_RELEASE {

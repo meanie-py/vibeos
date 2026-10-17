@@ -12,6 +12,10 @@
 //! C++ has (two threads may both call RegisterClipboardFormatW, which returns the same atom).
 
 use core::ffi::c_void;
+// The crate's own functions: the definition is the declaration.
+pub use crate::wine::shellole::SHAlloc;
+// One declaration per external symbol: island.rs.
+use crate::island::IUnknown_SetSite;
 
 use core::ffi::c_char;
 
@@ -38,8 +42,6 @@ pub const STG_E_INVALIDHANDLE: HRESULT = 0x8003_0006u32 as HRESULT;
 extern "system" {
     /// ole32. Not in the island's closure because shell32's TUs reach it through ole2.h.
     pub fn ReleaseStgMedium(pmedium: *mut STGMEDIUM);
-    /// shell32's own COM task allocator (`wine/shellole.rs`).
-    pub fn SHAlloc(cb: SIZE_T) -> *mut c_void;
 }
 
 /// `CFSTR_SHELLIDLISTW` = "Shell IDList Array" (shlobj.h CF_IDLIST).
@@ -498,12 +500,6 @@ pub unsafe fn __SHCloneStrW(target: *mut *mut u16, source: *const u16) {
     lstrcpyW(*target, source);
 }
 
-extern "system" {
-    /// shlwapi ordinal 175. Declared here rather than pulled from the island because
-    /// shellutils.h reaches it through shlwapi.h, which is outside the island's closure.
-    fn IUnknown_SetSite(object: *mut crate::shellcom::IUnknown, site: *mut crate::shellcom::IUnknown) -> HRESULT;
-}
-
 /// `CScopedSetObjectWithSite` — shellutils.h:657.
 ///
 /// Sets a site on an object for a scope and clears it on the way out. The C++ is a
@@ -528,7 +524,7 @@ impl CScopedSetObjectWithSite {
         if pSite.is_null() {
             return Self { m_pObj: core::ptr::null_mut() };
         }
-        IUnknown_SetSite(pObj, pSite);
+        IUnknown_SetSite((pObj).cast(), (pSite).cast());
         Self { m_pObj: pObj }
     }
 }
@@ -536,7 +532,7 @@ impl CScopedSetObjectWithSite {
 impl Drop for CScopedSetObjectWithSite {
     fn drop(&mut self) {
         unsafe {
-            IUnknown_SetSite(self.m_pObj, core::ptr::null_mut());
+            IUnknown_SetSite((self.m_pObj).cast(), core::ptr::null_mut());
         }
     }
 }

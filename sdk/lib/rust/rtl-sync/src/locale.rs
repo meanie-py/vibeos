@@ -33,6 +33,11 @@ pub const MAX_BASIC_LCID: ULONG = 0x5FFF;
 
 pub const LCID_ALT_NAME: ULONG = 0x00100000;
 
+/// LCIDs that print a name the table maps to a different LCID, so they cannot be table rows
+/// (the name search would find either). Measured on Windows 11 26200: 0x8C -> "fa", while
+/// "fa" -> 0x29.
+const LCID_ONLY_NAMES: [(LCID, &[u8]); 1] = [(0x0008C, b"fa\0")];
+
 pub static mut RtlpUserDefaultLcid: LCID = 0;
 pub static mut RtlpSystemDefaultLcid: LCID = 0;
 
@@ -57,7 +62,7 @@ const fn locale_bits(lcid: u32, flags: u32) -> u32 {
     (lcid & 0x00FF_FFFF) | ((flags & 0xFF) << 24)
 }
 
-pub static RtlpLocaleTable: [LOCALE_ENTRY; 448] = [
+pub static RtlpLocaleTable: [LOCALE_ENTRY; 450] = [
     _LOCALE_ENTRY { Locale: locale_str(b""),               _bitfield: locale_bits(0x0007F, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"af"),             _bitfield: locale_bits(0x00036, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"af-ZA"),          _bitfield: locale_bits(0x00436, 0) },
@@ -186,6 +191,7 @@ pub static RtlpLocaleTable: [LOCALE_ENTRY; 448] = [
     _LOCALE_ENTRY { Locale: locale_str(b"eu"),             _bitfield: locale_bits(0x0002D, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"eu-ES"),          _bitfield: locale_bits(0x0042D, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"fa"),             _bitfield: locale_bits(0x00029, 0) },
+    _LOCALE_ENTRY { Locale: locale_str(b"fa-AF"),          _bitfield: locale_bits(0x0048C, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"fa-IR"),          _bitfield: locale_bits(0x00429, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"ff"),             _bitfield: locale_bits(0x00067, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"ff-Latn"),        _bitfield: locale_bits(0x07C67, 0) },
@@ -295,7 +301,8 @@ pub static RtlpLocaleTable: [LOCALE_ENTRY; 448] = [
     _LOCALE_ENTRY { Locale: locale_str(b"ky"),             _bitfield: locale_bits(0x00040, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"ky-KG"),          _bitfield: locale_bits(0x00440, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"la"),             _bitfield: locale_bits(0x00076, 0) },
-    _LOCALE_ENTRY { Locale: locale_str(b"la-001"),         _bitfield: locale_bits(0x00476, 0) },
+    _LOCALE_ENTRY { Locale: locale_str(b"la-001"),         _bitfield: locale_bits(0x00476 | LCID_ALT_NAME, 0) },
+    _LOCALE_ENTRY { Locale: locale_str(b"la-VA"),          _bitfield: locale_bits(0x00476, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"lb"),             _bitfield: locale_bits(0x0006E, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"lb-LU"),          _bitfield: locale_bits(0x0046E, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"lo"),             _bitfield: locale_bits(0x00054, 0) },
@@ -356,8 +363,10 @@ pub static RtlpLocaleTable: [LOCALE_ENTRY; 448] = [
     _LOCALE_ENTRY { Locale: locale_str(b"pap-029"),        _bitfield: locale_bits(0x00479, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"pl"),             _bitfield: locale_bits(0x00015, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"pl-PL"),          _bitfield: locale_bits(0x00415, 0) },
-    _LOCALE_ENTRY { Locale: locale_str(b"prs"),            _bitfield: locale_bits(0x0008C, 0) },
-    _LOCALE_ENTRY { Locale: locale_str(b"prs-AF"),         _bitfield: locale_bits(0x0048C, 0) },
+    // Windows 11 folded Dari into Persian: "prs" names fa's 0x29, 0x48C prints "fa-AF", and
+    // the neutral 0x8C prints "fa" (LCID_ONLY_NAMES). Likewise 0x476 prints "la-VA".
+    _LOCALE_ENTRY { Locale: locale_str(b"prs"),            _bitfield: locale_bits(0x00029 | LCID_ALT_NAME, 0) },
+    _LOCALE_ENTRY { Locale: locale_str(b"prs-AF"),         _bitfield: locale_bits(0x0048C | LCID_ALT_NAME, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"ps"),             _bitfield: locale_bits(0x00063, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"ps-AF"),          _bitfield: locale_bits(0x00463, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"pt"),             _bitfield: locale_bits(0x00016, 0) },
@@ -508,7 +517,7 @@ pub static RtlpLocaleTable: [LOCALE_ENTRY; 448] = [
     _LOCALE_ENTRY { Locale: locale_str(b"zu-ZA"),          _bitfield: locale_bits(0x00435, 0) },
 ];
 
-pub static mut RtlpLocaleIndexTable: [USHORT; 448] = [0; 448];
+pub static mut RtlpLocaleIndexTable: [USHORT; 450] = [0; 450];
 
 
 #[no_mangle]
@@ -713,6 +722,15 @@ pub unsafe extern "system" fn RtlLcidToLocaleName(
     /* Try to find the locale by LCID */
     LocaleIndex = FindIndexByLcid(Lcid);
     if LocaleIndex == MAXULONG {
+        // An LCID whose printed name already names another LCID in the table.
+        for &(OnlyLcid, Name) in LCID_ONLY_NAMES.iter() {
+            if OnlyLcid == Lcid {
+                if CopyAsciizToUnicodeString(LocaleName, Name.as_ptr() as PCSTR) == 0 {
+                    return STATUS_BUFFER_TOO_SMALL;
+                }
+                return STATUS_SUCCESS;
+            }
+        }
         return STATUS_INVALID_PARAMETER_1;
     }
 

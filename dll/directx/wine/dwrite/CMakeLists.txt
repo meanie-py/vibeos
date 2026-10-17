@@ -2,6 +2,12 @@
 remove_definitions(-D_WIN32_WINNT=0x502)
 add_definitions(-D_WIN32_WINNT=0x600)
 include_directories(BEFORE ${REACTOS_SOURCE_DIR}/sdk/include/wine)
+# Wine guards every FreeType backend body in freetype.c with SONAME_LIBFREETYPE (configure
+# defines it when it finds libfreetype). FreeType is linked here, not dlopen'ed, but without
+# the define the file compiles to its STATUS_NOT_IMPLEMENTED fallbacks: every glyph advance,
+# bbox and outline comes back zero (Wine 11 added the guard; a sync that missed this halved
+# dwrite.dll and zeroed every layout width).
+add_definitions(-DSONAME_LIBFREETYPE="libfreetype")
 
 spec2def(dwrite.dll dwrite.spec ADD_IMPORTLIB)
 

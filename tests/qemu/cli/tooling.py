@@ -95,6 +95,8 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_wine_registry_resources.py"),
     (".", ".", "tools/test_gen_delaylib.py"),
     (".", ".", "tools/test_gen_apisets_table.py"),
+    (".", ".", "tools/test_gen_rpc_guards.py"),
+    (".", ".", "tools/test_rpc_try_wrap.py"),
     # The characterisation driver's accusation rule. Its failure mode is to
     # quarantine INNOCENT tests -- it blamed seven for a drain bug, and four more
     # for the VM watchdog on the very next run after that was fixed. Raising
@@ -117,14 +119,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_spec2def_stub_value.py"),
     # The UP and MP kernel cells name their Rust libraries by hand; keep them equal.
     (".", ".", "tools/test_kernel_cells_parity.py"),
-    # Same reason, one layer out: verify_cohab_coverage gates the merge train but reads
-    # OBJECT FILES, so it cannot join test_scanner_controls (which drives source-only
-    # `check` lints from fixture dirs) and would otherwise have no oracle at all.
-    (".", ".", "tools/test_verify_cohab_coverage.py"),
-    # The i386 no-SSE ABI time bomb: -sse,-sse2 on the builtin i686 triple is a
-    # phase-out warning today and a hard error after a toolchain bump. Fires loudly
-    # here, with the migration, the moment the pinned rustc turns it into an error.
-    (".", ".", "tools/test_scan_i386_sse_abi.py"),
+    # Cohab coverage and the i386 ABI tripwire fixtures now run in rust:vibeos-lint.
     (".", ".", "tools/test_loop_patterns.py"),
     (".", ".", "tools/test_rank_unused_assignments.py"),
     (".", ".", "tools/test_apply_dead_assignments.py"),
@@ -157,9 +152,6 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_artifact_repair.py"),
     (".", ".", "tools/test_artifact_config.py"),
     (".", ".", "tools/test_host_jobs.py"),
-    (".", ".", "tools/test_binary_facts.py"),
-    (".", ".", "tools/test_binary_scanner_cache.py"),
-    (".", ".", "tools/test_binary_corpus.py"),
     (".", ".", "tools/test_tooling_receipts.py"),
     (".", ".", "tools/test_registry_security_persistence.py"),
     (".", ".", "tools/test_nested_cargo_deps.py"),
@@ -194,15 +186,12 @@ _PYTEST_SUITES = [
     # called 31 of 65 commits oracle hits by counting winetests sources the build does not
     # compile by configuration; the wrong number reads exactly like the right one.
     (".", ".", "tools/test_upstream_triage.py"),
-    (".", ".", "tools/test_verify_signatures.py"),
     # The vendored-code move plan is a reference list: a missed spelling (relative
     # add_subdirectory, a .cmake fragment, a ${VAR}-built path, an include root) is a
     # build that breaks after the move. Hermetic fixtures, no build dirs needed.
     (".", ".", "tools/test_vendor_move_plan.py"),
     (".", ".", "tools/test_hostdisk.py"),
-    (".", ".", "tools/test_scan_flex_array_panic.py"),
     (".", ".", "tools/test_fn_call_to_macro.py"),
-    (".", ".", "tools/test_check_freeldr_size.py"),
     (".", ".", "tools/test_rust_warning_census.py"),
     (".", ".", "tools/test_kernel_probe.py"),
     (".", ".", "tools/test_link_guard.py"),
@@ -214,10 +203,6 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_cargo_depgraph.py"),
     (".", ".", "tools/test_retarget_cargo_depfile.py"),
     (".", ".", "tools/test_rust_module_tree.py"),
-    (".", ".", "tools/test_scan_self_recursive.py"),
-    (".", ".", "tools/test_scan_export_thunks.py"),
-    (".", ".", "tools/test_scan_xchg_ebx_deref.py"),
-    (".", ".", "tools/test_scan_unresolved_imports.py"),
     (".", ".", "tools/test_strip_msvc_cmake.py"),
     # The substrate half of scan_extern_decl_drift has no other oracle: its
     # findings are about declarations of symbols NOTHING in the tree defines, so

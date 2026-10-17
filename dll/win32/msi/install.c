@@ -79,15 +79,12 @@ UINT WINAPI MsiDoActionW( MSIHANDLE hInstall, LPCWSTR szAction )
         if (!(remote = msi_get_remote(hInstall)))
             return ERROR_INVALID_HANDLE;
 
-        __TRY
         {
-            ret = remote_DoAction(remote, szAction);
+            DWORD code;
+
+            if (!remote_DoAction_guarded(rpc_filter, &code, &ret, remote, szAction))
+                ret = code;
         }
-        __EXCEPT(rpc_filter)
-        {
-            ret = GetExceptionCode();
-        }
-        __ENDTRY
 
         return ret;
     }
@@ -138,15 +135,12 @@ UINT WINAPI MsiSequenceW( MSIHANDLE hInstall, LPCWSTR szTable, INT iSequenceMode
         if (!(remote = msi_get_remote(hInstall)))
             return ERROR_INVALID_HANDLE;
 
-        __TRY
         {
-            ret = remote_Sequence(remote, szTable, iSequenceMode);
+            DWORD code;
+
+            if (!remote_Sequence_guarded(rpc_filter, &code, &ret, remote, szTable, iSequenceMode))
+                ret = code;
         }
-        __EXCEPT(rpc_filter)
-        {
-            ret = GetExceptionCode();
-        }
-        __ENDTRY
 
         return ret;
     }
@@ -276,15 +270,12 @@ UINT WINAPI MsiGetTargetPathA(MSIHANDLE hinst, const char *folder, char *buf, DW
             return ERROR_INVALID_HANDLE;
         }
 
-        __TRY
         {
-            r = remote_GetTargetPath(remote, folderW, &path);
+            DWORD code;
+
+            if (!remote_GetTargetPath_guarded(rpc_filter, &code, &r, remote, folderW, &path))
+                r = code;
         }
-        __EXCEPT(rpc_filter)
-        {
-            r = GetExceptionCode();
-        }
-        __ENDTRY
 
         if (!r)
             r = msi_strncpyWtoA(path, -1, buf, sz, TRUE);
@@ -328,15 +319,12 @@ UINT WINAPI MsiGetTargetPathW(MSIHANDLE hinst, const WCHAR *folder, WCHAR *buf, 
         if (!(remote = msi_get_remote(hinst)))
             return ERROR_INVALID_HANDLE;
 
-        __TRY
         {
-            r = remote_GetTargetPath(remote, folder, &path);
+            DWORD code;
+
+            if (!remote_GetTargetPath_guarded(rpc_filter, &code, &r, remote, folder, &path))
+                r = code;
         }
-        __EXCEPT(rpc_filter)
-        {
-            r = GetExceptionCode();
-        }
-        __ENDTRY
 
         if (!r)
             r = msi_strncpyW(path, -1, buf, sz);
@@ -432,15 +420,12 @@ UINT WINAPI MsiGetSourcePathA(MSIHANDLE hinst, const char *folder, char *buf, DW
             return ERROR_INVALID_HANDLE;
         }
 
-        __TRY
         {
-            r = remote_GetSourcePath(remote, folderW, &path);
+            DWORD code;
+
+            if (!remote_GetSourcePath_guarded(rpc_filter, &code, &r, remote, folderW, &path))
+                r = code;
         }
-        __EXCEPT(rpc_filter)
-        {
-            r = GetExceptionCode();
-        }
-        __ENDTRY
 
         if (!r)
             r = msi_strncpyWtoA(path, -1, buf, sz, TRUE);
@@ -485,15 +470,12 @@ UINT WINAPI MsiGetSourcePathW(MSIHANDLE hinst, const WCHAR *folder, WCHAR *buf, 
         if (!(remote = msi_get_remote(hinst)))
             return ERROR_INVALID_HANDLE;
 
-        __TRY
         {
-            r = remote_GetSourcePath(remote, folder, &path);
+            DWORD code;
+
+            if (!remote_GetSourcePath_guarded(rpc_filter, &code, &r, remote, folder, &path))
+                r = code;
         }
-        __EXCEPT(rpc_filter)
-        {
-            r = GetExceptionCode();
-        }
-        __ENDTRY
 
         if (!r)
             r = msi_strncpyW(path, -1, buf, sz);
@@ -616,15 +598,12 @@ UINT WINAPI MsiSetTargetPathW(MSIHANDLE hInstall, LPCWSTR szFolder,
         if (!(remote = msi_get_remote(hInstall)))
             return ERROR_INVALID_HANDLE;
 
-        __TRY
         {
-            ret = remote_SetTargetPath(remote, szFolder, szFolderPath);
+            DWORD code;
+
+            if (!remote_SetTargetPath_guarded(rpc_filter, &code, &ret, remote, szFolder, szFolderPath))
+                ret = code;
         }
-        __EXCEPT(rpc_filter)
-        {
-            ret = GetExceptionCode();
-        }
-        __ENDTRY
 
         return ret;
     }
@@ -682,15 +661,8 @@ BOOL WINAPI MsiGetMode(MSIHANDLE hInstall, MSIRUNMODE iRunMode)
         if (!(remote = msi_get_remote(hInstall)))
             return FALSE;
 
-        __TRY
-        {
-            r = remote_GetMode(remote, iRunMode);
-        }
-        __EXCEPT(rpc_filter)
-        {
+        if (!remote_GetMode_guarded(rpc_filter, NULL, &r, remote, iRunMode))
             r = FALSE;
-        }
-        __ENDTRY
 
         return r;
     }
@@ -775,15 +747,12 @@ UINT WINAPI MsiSetMode(MSIHANDLE hInstall, MSIRUNMODE iRunMode, BOOL fState)
         if (!(remote = msi_get_remote(hInstall)))
             return FALSE;
 
-        __TRY
         {
-            r = remote_SetMode(remote, iRunMode, fState);
+            DWORD code;
+
+            if (!remote_SetMode_guarded(rpc_filter, &code, &r, remote, iRunMode, fState))
+                r = code;
         }
-        __EXCEPT(rpc_filter)
-        {
-            r = GetExceptionCode();
-        }
-        __ENDTRY
 
         return r;
     }
@@ -966,15 +935,12 @@ UINT WINAPI MsiSetFeatureStateW(MSIHANDLE hInstall, LPCWSTR szFeature,
         if (!(remote = msi_get_remote(hInstall)))
             return ERROR_INVALID_HANDLE;
 
-        __TRY
         {
-            rc = remote_SetFeatureState(remote, szFeature, iState);
+            DWORD code;
+
+            if (!remote_SetFeatureState_guarded(rpc_filter, &code, &rc, remote, szFeature, iState))
+                rc = code;
         }
-        __EXCEPT(rpc_filter)
-        {
-            rc = GetExceptionCode();
-        }
-        __ENDTRY
 
         return rc;
     }
@@ -1107,15 +1073,12 @@ UINT WINAPI MsiGetFeatureStateW( MSIHANDLE hInstall, const WCHAR *szFeature, INS
         if (!(remote = msi_get_remote(hInstall)))
             return ERROR_INVALID_HANDLE;
 
-        __TRY
         {
-            ret = remote_GetFeatureState(remote, szFeature, piInstalled, piAction);
+            DWORD code;
+
+            if (!remote_GetFeatureState_guarded(rpc_filter, &code, &ret, remote, szFeature, piInstalled, piAction))
+                ret = code;
         }
-        __EXCEPT(rpc_filter)
-        {
-            ret = GetExceptionCode();
-        }
-        __ENDTRY
 
         return ret;
     }
@@ -1226,15 +1189,12 @@ UINT WINAPI MsiGetFeatureCostW( MSIHANDLE hInstall, const WCHAR *szFeature, MSIC
         if (!(remote = msi_get_remote(hInstall)))
             return ERROR_INVALID_HANDLE;
 
-        __TRY
         {
-            ret = remote_GetFeatureCost(remote, szFeature, iCostTree, iState, piCost);
+            DWORD code;
+
+            if (!remote_GetFeatureCost_guarded(rpc_filter, &code, &ret, remote, szFeature, iCostTree, iState, piCost))
+                ret = code;
         }
-        __EXCEPT(rpc_filter)
-        {
-            ret = GetExceptionCode();
-        }
-        __ENDTRY
 
         return ret;
     }
@@ -1479,15 +1439,12 @@ UINT WINAPI MsiSetComponentStateW(MSIHANDLE hInstall, LPCWSTR szComponent,
         if (!(remote = msi_get_remote(hInstall)))
             return ERROR_INVALID_HANDLE;
 
-        __TRY
         {
-            ret = remote_SetComponentState(remote, szComponent, iState);
+            DWORD code;
+
+            if (!remote_SetComponentState_guarded(rpc_filter, &code, &ret, remote, szComponent, iState))
+                ret = code;
         }
-        __EXCEPT(rpc_filter)
-        {
-            ret = GetExceptionCode();
-        }
-        __ENDTRY
 
         return ret;
     }
@@ -1519,15 +1476,12 @@ UINT WINAPI MsiGetComponentStateW( MSIHANDLE hInstall, const WCHAR *szComponent,
         if (!(remote = msi_get_remote(hInstall)))
             return ERROR_INVALID_HANDLE;
 
-        __TRY
         {
-            ret = remote_GetComponentState(remote, szComponent, piInstalled, piAction);
+            DWORD code;
+
+            if (!remote_GetComponentState_guarded(rpc_filter, &code, &ret, remote, szComponent, piInstalled, piAction))
+                ret = code;
         }
-        __EXCEPT(rpc_filter)
-        {
-            ret = GetExceptionCode();
-        }
-        __ENDTRY
 
         return ret;
     }
@@ -1553,15 +1507,8 @@ LANGID WINAPI MsiGetLanguage(MSIHANDLE hInstall)
         if (!(remote = msi_get_remote(hInstall)))
             return ERROR_INVALID_HANDLE;
 
-        __TRY
-        {
-            langid = remote_GetLanguage(remote);
-        }
-        __EXCEPT(rpc_filter)
-        {
+        if (!remote_GetLanguage_guarded(rpc_filter, NULL, &langid, remote))
             langid = 0;
-        }
-        __ENDTRY
 
         return langid;
     }
@@ -1611,15 +1558,12 @@ UINT WINAPI MsiSetInstallLevel(MSIHANDLE hInstall, int iInstallLevel)
         if (!(remote = msi_get_remote(hInstall)))
             return ERROR_INVALID_HANDLE;
 
-        __TRY
         {
-            r = remote_SetInstallLevel(remote, iInstallLevel);
+            DWORD code;
+
+            if (!remote_SetInstallLevel_guarded(rpc_filter, &code, &r, remote, iInstallLevel))
+                r = code;
         }
-        __EXCEPT(rpc_filter)
-        {
-            r = GetExceptionCode();
-        }
-        __ENDTRY
 
         return r;
     }

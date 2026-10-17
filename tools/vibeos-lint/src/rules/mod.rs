@@ -122,11 +122,32 @@ pub mod scan_boot_media_drift;
 pub mod verify_ffi;
 pub mod verify_lost_exports;
 
+pub mod atl_slot_cast;
+pub mod external_tools;
+pub mod fnclass_cc;
+pub mod gen_ctype_tables;
+pub mod list_walk_cursor_after_loop;
+pub mod marshalgen_audit;
+pub mod scan_cmake_linked_rust;
+pub mod vendored_registry;
 pub mod verify_match_consts;
+pub mod verify_svc_numbering;
 pub mod verify_tables;
+pub mod verify_ucrtbase_cohab;
 
 pub fn registry() -> Vec<Box<dyn Rule>> {
     vec![
+        Box::new(scan_cmake_linked_rust::ScanCmakeLinkedRust),
+        Box::new(verify_ucrtbase_cohab::VerifyUcrtbaseCohab),
+        Box::new(marshalgen_audit::MarshalgenAudit),
+        Box::new(atl_slot_cast::AtlSlotCast),
+        Box::new(fnclass_cc::FnclassCc),
+        Box::new(list_walk_cursor_after_loop::ListWalkCursorAfterLoop),
+        Box::new(gen_ctype_tables::GenCtypeTables),
+        Box::new(verify_svc_numbering::VerifySvcNumbering),
+        Box::new(vendored_registry::VendoredRegistry),
+        Box::new(external_tools::Shellcheck),
+        Box::new(external_tools::PythonSyntax),
         Box::new(verify_tables::VerifyTables),
         Box::new(verify_match_consts::VerifyMatchConsts),
         Box::new(lint_kernel::LintKernel),

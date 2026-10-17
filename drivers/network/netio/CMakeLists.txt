@@ -20,10 +20,11 @@ add_registry_inf(netio_reg.inf)
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # netio.c  # replaced by Rust (sdk/lib/rust/netio-rust/src/netio/netio.rs)
-# Every translation unit is Rust now (netio-rust, `rustconv port`) except tdi.c, tdiconn.c,
-# kept C by `port derive --keep-c`; the C stays on disk. The target keeps a stub TU and links the Rust archive.
+# Every translation unit is Rust now (netio-rust, `rustconv port`); the C stays on disk.
+# The TDI helpers come from the shared `tdihelpers` library (../tdihelpers), which afd.sys
+# links too; the cargo link takes its Rust archive as `engine:crate:tdihelpers-rust`.
 add_cargo_module(netio netio-cargo netio.sys
     KIND kernelmodedriver
     BODY_CRATE netio-rust
     DESTINATION reactos/system32/drivers
-    EXTRA_DEPENDS psdk libntoskrnl libhal)
+    EXTRA_DEPENDS tdihelpers psdk)

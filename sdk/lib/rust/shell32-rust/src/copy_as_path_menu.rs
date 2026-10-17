@@ -35,7 +35,6 @@ extern "C" {
 // Deterministic COM scaffold for CCopyAsPathMenu; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    fn HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
     fn HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
@@ -176,7 +175,7 @@ unsafe fn cpp_com_iid_equal(left: REFIID, right: REFIID) -> bool {
     if ppv.is_null() { return E_POINTER; }
     *ppv = core::ptr::null_mut();
     if !outer.is_null() { return CLASS_E_NOAGGREGATION; }
-    let this = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, core::mem::size_of::<CCopyAsPathMenu>()) as *mut CCopyAsPathMenu;
+    let this = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (core::mem::size_of::<CCopyAsPathMenu>()) as _) as *mut CCopyAsPathMenu;
     if this.is_null() { return E_OUTOFMEMORY; }
     core::ptr::write(this, CCopyAsPathMenu {
         IContextMenu_iface: IContextMenu { lpVtbl: core::ptr::addr_of!(CCOPYASPATHMENU_ICONTEXTMENU_VTBL) },
@@ -205,11 +204,9 @@ pub static mut g_VerbMap: [CMVERBMAP; 2] = [
 ];
 
 extern "system" {
-    fn GlobalAlloc(flags: UINT, bytes: SIZE_T) -> HGLOBAL;
     fn GlobalLock(memory: HGLOBAL) -> LPVOID;
     fn GlobalUnlock(memory: HGLOBAL) -> BOOL;
     fn GlobalFree(memory: HGLOBAL) -> HGLOBAL;
-    fn OpenClipboard(owner: HWND) -> BOOL;
     fn EmptyClipboard() -> BOOL;
     fn SetClipboardData(format: UINT, memory: HANDLE) -> HANDLE;
     fn CloseClipboard() -> BOOL;
@@ -217,7 +214,6 @@ extern "system" {
     fn lstrlenW(text: LPCWSTR) -> INT;
     fn StrChrW(text: LPCWSTR, ch: WCHAR) -> LPWSTR;
     fn CoTaskMemFree(memory: LPVOID);
-    fn InsertMenuItemW(menu: HMENU, item: UINT, by_position: BOOL, info: *const MENUITEMINFOW) -> BOOL;
     fn SHCreateShellItemArrayFromDataObject(data: *mut IDataObject, riid: REFIID, out: *mut *mut core::ffi::c_void) -> HRESULT;
     #[link_name = "Shell32RustMapContextMenuVerbToCmdId"] fn SHELL_MapContextMenuVerbToCmdId(info: LPCMINVOKECOMMANDINFO, map: *const CMVERBMAP) -> INT;
     #[link_name = "Shell32RustGetCommandStringImpl"] fn SHELL_GetCommandStringImpl(command: SIZE_T, flags: UINT, buffer: LPSTR, capacity: UINT, map: *const CMVERBMAP) -> HRESULT;
@@ -237,9 +233,6 @@ unsafe fn ZeroMemory(dst: LPVOID, bytes: usize) {
 }
 
 extern "system" {
-    fn HeapReAlloc(heap: HANDLE, flags: DWORD, memory: LPVOID, bytes: usize) -> LPVOID;
-    fn GetModuleHandleW(name: LPCWSTR) -> HINSTANCE;
-    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
 }
 
 pub struct CStringW { buffer: LPWSTR, len: usize, capacity: usize }
@@ -263,9 +256,9 @@ impl CStringW {
         let capacity = needed.next_power_of_two().max(16);
         let bytes = capacity * core::mem::size_of::<WCHAR>();
         let next = if self.buffer.is_null() {
-            HeapAlloc(GetProcessHeap(), 0, bytes)
+            HeapAlloc(GetProcessHeap(), 0, (bytes) as _)
         } else {
-            HeapReAlloc(GetProcessHeap(), 0, self.buffer.cast(), bytes)
+            HeapReAlloc(GetProcessHeap(), 0, self.buffer.cast(), (bytes) as SIZE_T)
         } as LPWSTR;
         if next.is_null() { return false; }
         self.buffer = next; self.capacity = capacity; true
@@ -302,6 +295,14 @@ static CPP_COM_EMPTY_WSTR: [WCHAR; 1] = [0];
 pub static CPP_COM_WSTR_80E09B2F645F: [WCHAR; 3] = [0x000D, 0x000A, 0x0000];
 
 use core::ffi::c_void;
+// One declaration per external symbol: island.rs.
+use crate::island::GetModuleHandleW;
+use crate::island::GlobalAlloc;
+use crate::island::HeapAlloc;
+use crate::island::HeapReAlloc;
+use crate::island::InsertMenuItemW;
+use crate::island::LoadStringW;
+use crate::island::OpenClipboard;
 use crate::shellcom::*;
 use crate::types::*;
 
@@ -311,11 +312,11 @@ pub unsafe fn CCopyAsPathMenu_dtor_body(this: *mut CCopyAsPathMenu) -> () {}
 
 pub unsafe fn SetClipboard_body(cf: UINT, data: *const core::ffi::c_void, size: SIZE_T) -> DWORD {
     let mut succ: i32 = FALSE;
-    let handle = GlobalAlloc(GMEM_MOVEABLE | GMEM_SHARE, size);
+    let handle = GlobalAlloc(GMEM_MOVEABLE | GMEM_SHARE, (size) as SIZE_T);
     if !handle.is_null() {
         let clipdata = GlobalLock(handle);
         if !clipdata.is_null() {
-            CopyMemory(clipdata, data, size);
+            CopyMemory(clipdata, data, (size) as _);
             GlobalUnlock(handle);
             let opened = OpenClipboard(core::ptr::null_mut());
             if opened != 0 {
@@ -333,7 +334,7 @@ pub unsafe fn SetClipboard_body(cf: UINT, data: *const core::ffi::c_void, size: 
 
 pub unsafe fn SetClipboardFromString_body(str: LPCWSTR) -> DWORD {
     let cch: SIZE_T = lstrlenW(str) as SIZE_T + 1;
-    let size = cch.wrapping_mul(core::mem::size_of::<u16>());
+    let size = cch.wrapping_mul((core::mem::size_of::<u16>()) as _);
     if size > cch {
         SetClipboard_body(CF_UNICODETEXT, str as *const core::ffi::c_void, size)
     } else {
@@ -443,7 +444,7 @@ pub unsafe fn CCopyAsPathMenu_InvokeCommand_body(this: *mut CCopyAsPathMenu, lpc
 
 pub unsafe fn CCopyAsPathMenu_GetCommandString_body(this: *mut CCopyAsPathMenu, idCommand: UINT_PTR, uFlags: UINT, lpReserved: *mut UINT, lpszName: LPSTR, uMaxNameLen: UINT) -> HRESULT {
     SHELL_GetCommandStringImpl(
-        idCommand,
+        (idCommand) as _,
         uFlags,
         lpszName,
         uMaxNameLen,

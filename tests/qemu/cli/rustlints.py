@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import fcntl
 import hashlib
+import json
 import os
 import subprocess
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -14,6 +16,18 @@ from tools.source_walk import source_files
 # Only parity-proven plugins belong here. The original registry owns stage ordering.
 PORTED = frozenset(
     {
+        "shellcheck",
+        "py-syntax",
+        "scan_cmake_linked_rust",
+        "scan_atl_slot_cast",
+        "scan_fnclass_cc",
+        "scan_list_walk_cursor_after_loop",
+        "vendored_registry",
+        "verify_signatures",
+        "verify_ucrtbase_cohab",
+        "gen_ctype_tables",
+        "verify_svc_numbering",
+        "marshalgen_audit",
         "verify_match_consts",
         "verify_tables",
         "scan_export_shadows",
@@ -138,6 +152,8 @@ def ensure(repo: Path) -> Path:
             source / "Cargo.lock",
             repo / "rust-toolchain.toml",
             repo / "tools/rustconv/rustconv/conventions.py",
+            repo / "tools/vendor-grants.json",
+            repo / "tools/cargo_cell_gen.py",
             *sorted(source_files(source / "src")),
         ]
         digest = hashlib.sha256()
@@ -230,7 +246,147 @@ def run_many(
 ) -> dict[str, subprocess.CompletedProcess]:
     try:
         runner = ensure(repo)
-        cp = invoke([str(runner), "--root", str(repo), "--rules", ",".join(names)])
+        command = [str(runner), "--root", str(repo), "--rules", ",".join(names)]
+        if "py-syntax" in names:
+            command.extend(["--python", sys.executable])
+        if "shellcheck" in names:
+            from .lints import _shellcheck_bin
+
+            shellcheck = _shellcheck_bin()
+            if shellcheck is None:
+                raise RuntimeError("shellcheck is unavailable")
+            command.extend(["--shellcheck", shellcheck])
+        cp = invoke(command)
     except (OSError, RuntimeError, subprocess.SubprocessError) as error:
         cp = subprocess.CompletedProcess([], 2, "", f"FATAL: {error}")
     return split_output(cp, names)
+
+
+BINARY_RULES = (
+    "freeldr_size",
+    "scan_ud2",
+    "sacred_primitives",
+    "rust_ub_deny",
+    "scan_self_recursive",
+    "scan_flex_array_panic",
+    "scan_export_thunks",
+    "scan_xchg_ebx_deref",
+    "scan_unresolved_imports",
+)
+
+
+def binary_names(arch: str) -> list[str]:
+    return [
+        name
+        for name in BINARY_RULES
+        if (name != "scan_export_thunks" or arch == "amd64")
+        and (name != "scan_xchg_ebx_deref" or arch == "i386")
+    ]
+
+
+def run_binary(
+    repo: Path,
+    arch: str,
+    names: list[str],
+    invoke: Callable[[list[str]], subprocess.CompletedProcess],
+) -> dict[str, subprocess.CompletedProcess]:
+    """Validate the complete native response before publishing any stage coverage."""
+    try:
+        runner = ensure(repo)
+        cmd = [
+            str(runner),
+            "--root",
+            str(repo),
+            "--binary-rules",
+            ",".join(names),
+            "--arch",
+            arch,
+            "--python",
+            sys.executable,
+        ]
+        cp = invoke(cmd)
+        return split_binary_output(cp, names)
+    except (OSError, RuntimeError, subprocess.SubprocessError, ValueError, TypeError) as error:
+        return {
+            name: subprocess.CompletedProcess(
+                [SENTINEL, name], 2, "", f"FATAL: vibeos-lint: {error}"
+            )
+            for name in names
+        }
+
+
+def split_binary_output(
+    cp: subprocess.CompletedProcess, names: list[str]
+) -> dict[str, subprocess.CompletedProcess]:
+    """Reject malformed or partial envelopes before publishing any coverage."""
+    if cp.returncode:
+        raise RuntimeError(cp.stderr or cp.stdout or f"shared scanner exited {cp.returncode}")
+    records = json.loads(cp.stdout)
+    if not isinstance(records, dict) or set(records) != set(names):
+        raise ValueError("binary scanner returned incomplete or unexpected coverage")
+    result = {}
+    for name in names:
+        record = records[name]
+        if (
+            not isinstance(record, dict)
+            or set(record) != {"stdout", "stderr", "returncode"}
+            or not isinstance(record["stdout"], str)
+            or not isinstance(record["stderr"], str)
+            or type(record["returncode"]) is not int
+            or record["returncode"] not in {0, 1, 2, 3}
+        ):
+            raise ValueError(f"invalid binary scanner record for {name}")
+        result[name] = subprocess.CompletedProcess(
+            [SENTINEL, name], record["returncode"], record["stdout"], record["stderr"]
+        )
+    return result
+
+
+def standalone(args, repo: Path) -> int:
+    """Bootstrap and display native diagnostics without duplicating check logic."""
+    if not args.list_rules and (not args.rules or not args.arch):
+        print("lint requires --rules and --arch, or --list-rules", file=sys.stderr)
+        return 2
+    try:
+        runner = ensure(repo)
+        if args.list_rules:
+            return subprocess.run([str(runner), "--list-binary-rules"], check=False).returncode
+        from .archcfg import base_arch
+
+        names = args.rules.split(",")
+        cmd = [
+            str(runner),
+            "--root",
+            str(repo),
+            "--binary-rules",
+            args.rules,
+            "--arch",
+            base_arch(args.arch),
+            "--python",
+            sys.executable,
+        ]
+        for path in args.path:
+            cmd += ["--path", path]
+        if args.build_dir:
+            cmd += ["--build-dir", str(Path(args.build_dir).absolute())]
+        if args.crates:
+            cmd += ["--crates", args.crates]
+        if args.target:
+            cmd += ["--target", args.target]
+        for package in args.package:
+            cmd += ["--package", package]
+        if args.include_declarations:
+            cmd += ["--include-declarations"]
+        if args.explain is not None:
+            cmd += ["--explain", args.explain]
+            return subprocess.run(cmd, cwd=repo, check=False).returncode
+        results = split_binary_output(
+            subprocess.run(cmd, cwd=repo, capture_output=True, text=True), names
+        )
+        for result in results.values():
+            print(result.stdout, end="")
+            print(result.stderr, end="", file=sys.stderr)
+        return max((r.returncode for r in results.values()), default=2)
+    except (OSError, RuntimeError, subprocess.SubprocessError, ValueError, TypeError) as error:
+        print(f"FATAL: native lint: {error}", file=sys.stderr)
+        return 2

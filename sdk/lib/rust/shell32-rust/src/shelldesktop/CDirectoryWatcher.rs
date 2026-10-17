@@ -1,5 +1,8 @@
 // rustconv-assembly: class:CDirectoryWatcher
 use crate::prelude::*;
+// One declaration per external symbol: island.rs.
+use crate::island::CloseHandle;
+use crate::island::CreateFileW;
 use crate::shelldesktop::CDirectoryList::CDirectoryList_AddPath_body;
 use crate::shelldesktop::CDirectoryList::CDirectoryList_ContainsPath_body;
 use crate::shelldesktop::CDirectoryList::CDirectoryList_DeletePath_body;
@@ -147,8 +150,6 @@ pub const SHCNF_FLUSH: DWORD = 0x1000;
 pub const SHCNF_PATHW: DWORD = 0x0005;
 
 extern "system" {
-    fn CloseHandle(handle: HANDLE) -> BOOL;
-    fn CreateFileW(name: LPCWSTR, access: DWORD, share: DWORD, security: LPVOID, creation: DWORD, flags: DWORD, template: HANDLE) -> HANDLE;
     fn SHChangeNotify(event: LONG, flags: UINT, item1: LPCVOID, item2: LPCVOID);
     fn GetLastError() -> DWORD;
     fn StrChrW(text: LPCWSTR, ch: WCHAR) -> LPWSTR;

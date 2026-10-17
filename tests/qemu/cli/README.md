@@ -691,6 +691,14 @@ zero — the tree carries known pre-existing findings. Advisory by default;
 accepted (review the diff before committing — you're declaring them OK).
 Baselines are stored repo-relative so they match across worktrees.
 
+The source registry runs through the single host Rust executable in
+`tools/vibeos-lint/`, built automatically and cached by source digest. Use
+`./vibeos-cli check`; new lint rules belong in its Rust plugin registry. To run a
+selected rule directly, use `.cache/vibeos-lint/vibeos-lint --root . --rules NAME`
+after the CLI has provisioned it. Python orchestration and generator/report APIs
+remain supported. External-tool plugins still require their compiler/binutils;
+`py-syntax` uses the same Python interpreter as the CLI.
+
 Covers: `shellcheck`, `py-syntax`, `verify_ffi` (the ABI checker — `verify_abi`
 was folded into it, T1, and no longer runs as a separate lint), `verify_constants`,
 `lint_kernel` (source); `scan_ud2`, `sacred_primitives` (binary, needs a build —

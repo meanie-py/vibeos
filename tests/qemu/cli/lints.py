@@ -1763,6 +1763,7 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     return [
         (name, [rustlints.SENTINEL, name], "stdout")
         if name in rustlints.PORTED
+        and (name != "shellcheck" or cmd[0] not in {"MISSING", "NOCHECK"})
         else (name, cmd, src)
         for name, cmd, src in specs
     ]
@@ -1958,18 +1959,21 @@ def run_committed_drift_guard(run: Run, repo: Path, arch: str | None = None) -> 
     NOT regenerated on a normal build — so an upstream change (a `.template.h`,
     `.rc`, `.spec`/`.idl`, or cmake flags) silently staleens the committed copy
     while the configured cmake build stays green (it uses the fresh copy). Only a
-    cmake-off build would then diverge. `tools/check_committed_drift.py`
+    cmake-off build would then diverge. The native `committed_drift` plugin
     regenerates each from the configured `build-<arch>/` and byte-compares; this
     stage surfaces a DRIFT as a gate failure. Self-skips per artifact when the
     build dir / inputs are absent (so it never blocks a tree without builds)."""
-    checker = repo / "tools" / "check_committed_drift.py"
-    if not checker.is_file():
-        run.add(Stage("committed_drift", status="skip", detail="checker absent"))
-        return
-    cmd = [sys.executable, str(checker)]
-    if arch:
-        cmd += ["--arch", arch]
-    cp = subprocess.run(cmd, cwd=repo, capture_output=True, text=True)
+    # Generator implementations remain their authorities; Rust owns comparisons.
+    cp = rustlints.run_binary(
+        repo,
+        arch or "all",
+        ["committed_drift"],
+        lambda cmd: run.run(cmd, cwd=repo, stage="lint:committed_drift:shared"),
+    )["committed_drift"]
+    _record_committed_drift(run, cp)
+
+
+def _record_committed_drift(run: Run, cp: subprocess.CompletedProcess) -> None:
     tail = (cp.stdout or "").strip().splitlines()
     summary = next((ln.strip() for ln in reversed(tail) if " OK," in ln), "")
     if cp.returncode == 0:
@@ -2001,213 +2005,31 @@ def run_committed_drift_guard(run: Run, repo: Path, arch: str | None = None) -> 
     run.add(Stage("committed_drift", exit=cp.returncode, status="fail", detail=summary or "DRIFT"))
 
 
-def _sacred_analysis(run: Run, repo: Path, arch: str, script: Path):
-    """Reuse successful primitive analysis of the same kernel and tool inputs."""
-    from tools.binary_facts import BinaryFacts
-
-    build = repo / f"build-{arch}"
-    cmd = ["bash", str(script), str(build)]
-    triple = {"arm64": "aarch64", "amd64": "x86_64", "i386": "i686"}[arch]
-    names = [f"{triple}-w64-mingw32-objdump", "llvm-objdump"]
-    candidates = names + [str(repo / ".build-tools/llvm-mingw/bin" / n) for n in names]
-    tools = ["bash", "grep", "dirname", *[p for p in candidates if shutil.which(p)]]
-    computed = False
-
-    def extract():
-        nonlocal computed
-        computed = True
-        cp = run.run(cmd, cwd=repo, stage="lint:sacred_primitives")
-        if cp.returncode:
-            raise subprocess.CalledProcessError(cp.returncode, cmd, cp.stdout, cp.stderr)
-        return {"stdout": cp.stdout, "stderr": cp.stderr}
-
-    try:
-        facts = BinaryFacts(
-            repo,
-            namespace="sacred-primitives",
-            implementation=[script, Path(__file__)],
-            tools=tools,
-            options={"arch": arch},
-        )
-        result = facts.get(build / "ntoskrnl/ntoskrnl.exe", extract)
-        if not computed:
-            run.log(result["stdout"], header="sacred_primitives: matching binary analysis reused")
-        return subprocess.CompletedProcess(cmd, 0, result["stdout"], result["stderr"])
-    except subprocess.CalledProcessError as error:
-        return subprocess.CompletedProcess(cmd, error.returncode, error.stdout, error.stderr)
-    except (OSError, RuntimeError) as error:
-        return subprocess.CompletedProcess(cmd, 1, "", f"SCANNER_ERROR: {error}")
-
-
 def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
-    """Need a built binary (run after `build`).
+    """Run post-link plugins in one native invocation with shared binary facts.
 
-    scan_ud2 + sacred primitives + scan_self_recursive + scan_flex_array_panic +
-    scan_export_thunks + scan_xchg_ebx_deref + scan_unresolved_imports. All are
-    POST-LINK detectors:
-    they read the emitted code, because the defects they catch are invisible in
-    the source (an ABI mismatch that LLVM turned into a `ud2`; a Rust `memcpy`
-    that LLVM lowered into a call to itself; a bindgen `[T; 1]` whose bounds
-    check panics on element 2 of a C flexible array; an export that became a
-    jump into the DLL that forwards it back; inline asm whose pointer operand
-    LLVM put in the very register the asm swaps out). In each case the Rust or C
-    reads as correct and only the emitted code says otherwise.
-
-    Two of the six are graded on ONE arch each, for reasons of encoding rather
-    than of scope -- the defect class is arch-independent, but only one arch
-    emits the evidence the reader needs. Those say so as a SKIP WITH A REASON on
-    the others; a reader that cannot see is never silently a pass. Before you add
-    a third, check that the other arches really cannot answer:
-    scan_flex_array_panic was i386-only on exactly that reasoning, and the 64-bit
-    arches turned out to load the same length as an immediate into a register --
-    and to carry code the i386 binary does not contain at all.
+    Preserve architecture exclusions and the existing per-stage exit-code policy.
+    Missing kernel images remain explicitly unverified, as before.
     """
-    py = sys.executable
-    build_dir = repo / f"build-{arch}"
-    ntos = build_dir / "ntoskrnl" / "ntoskrnl.exe"
+    ntos = repo / f"build-{arch}" / "ntoskrnl/ntoskrnl.exe"
     if not ntos.is_file():
-        run.add(Stage("scan_ud2", status="skip", detail="no binary"))
-        run.add(Stage("sacred_primitives", status="skip", detail="no binary"))
-        run.add(Stage("scan_self_recursive", status="skip", detail="no binary"))
-        run.add(Stage("scan_flex_array_panic", status="skip", detail="no binary"))
-        run.add(Stage("scan_export_thunks", status="skip", detail="no binary"))
-        run.add(Stage("scan_xchg_ebx_deref", status="skip", detail="no binary"))
-        run.add(Stage("scan_unresolved_imports", status="skip", detail="no binary"))
-        run.add(Stage("freeldr_size", status="skip", detail="no binary"))
-        run.add(Stage("rust_ub_deny", status="skip", detail="no binary"))
+        for name in rustlints.BINARY_RULES:
+            run.add(Stage(name, status="skip", detail="no binary"))
         return
-    # The BIOS loader runs in real-mode memory and bug-checks itself at boot when its PE
-    # outgrows MAX_FREELDR_PE_SIZE. Restoring freeldr's debug prints did exactly that and
-    # the first symptom was every amd64-bios boot hanging in the gate; read it post-link.
-    # Only the arches that build freeldr_pe say anything; the others print SKIP and pass.
-    fls = repo / "tools" / "check_freeldr_size.py"
-    _lint_stage(
-        run,
+    names = rustlints.binary_names(arch)
+    results = rustlints.run_binary(
         repo,
-        "freeldr_size",
-        [py, str(fls), "--check", str(build_dir)] if fls.is_file() else ["MISSING"],
-        strict=strict,
-        by_exit_code=True,
+        arch,
+        names,
+        lambda cmd: run.run(cmd, cwd=repo, stage="lint:binary:shared"),
     )
-    # Binary lints are judged by exit code (by_exit_code=True), not baseline-diff:
-    # their output is arch-specific so a single baseline can't match across arches
-    # (scan_ud2 emits ud2 on x86 vs branch-to-self spins on arm64). The tools'
-    # --check exit already encodes the correct per-arch verdict.
-    ud2 = repo / "tools" / "scan_ud2.py"
-    _lint_stage(
-        run,
-        repo,
-        "scan_ud2",
-        [py, str(ud2), "--check", str(build_dir)] if ud2.is_file() else ["MISSING"],
-        strict=strict,
-        by_exit_code=True,
-    )
-    sp = repo / "tools" / "verify_sacred_primitives.sh"
-    _lint_stage(
-        run,
-        repo,
-        "sacred_primitives",
-        ["bash", str(sp), str(build_dir)] if sp.is_file() else ["MISSING"],
-        strict=strict,
-        by_exit_code=True,
-        cp=_sacred_analysis(run, repo, arch, sp) if sp.is_file() else None,
-    )
-    # rustc lints this tree burned to zero and must stay there: `invalid_value`
-    # (mem::zeroed/uninit of a type with no all-zero value) and `deref_nullptr` (a place
-    # through null, most often CONTAINING_RECORD's offsetof; 78 sites became
-    # core::mem::offset_of! 2026-10-16). Read from this build's own cargo cache, so it costs
-    # no rebuild and changes no rustflag (which would re-key every artifact-store action).
-    census = repo / "tools" / "rust_warning_census.py"
-    _lint_stage(
-        run,
-        repo,
-        "rust_ub_deny",
-        [
-            py,
-            str(census),
-            str(build_dir),
-            "--allow-stale",
-            "--deny",
-            "invalid_value,deref_nullptr,static_mut_refs,improper_ctypes_definitions,improper_ctypes",
-        ]
-        if census.is_file()
-        else ["MISSING"],
-        strict=strict,
-        by_exit_code=True,
-    )
-    # A function whose first instruction jumps to itself = a silent infinite hang.
-    # Caught bootvid's self-recursive Rust memcpy/memset (stable-toolchain Axis B);
-    # see tools/scan_self_recursive.py for the full story.
-    selfrec = repo / "tools" / "scan_self_recursive.py"
-    _lint_stage(
-        run,
-        repo,
-        "scan_self_recursive",
-        [py, str(selfrec), "--check", str(build_dir)] if selfrec.is_file() else ["MISSING"],
-        strict=strict,
-        by_exit_code=True,
-    )
-    # A bounds check against a length of 1 on a bindgen flexible array: the C
-    # over-allocates past a trailing `T x[1]`, bindgen believes the 1, and every
-    # element after the first panics. Graded on EVERY arch: the length is a push on
-    # i386 and an immediate into a register elsewhere, and the 64-bit corpus is not the
-    # i386 one (other crates, `#[cfg(target_arch)]` bodies) -- reading i386 alone is how
-    # a whole crate's worth of sites went unseen. Sites graded as genuine 1-element
-    # arrays live in tools/flex_array_allowlist.txt, scoped per arch; a stale entry
-    # fails this stage too, because it means the site was fixed or the reader went blind.
-    flexarr = repo / "tools" / "scan_flex_array_panic.py"
-    _lint_stage(
-        run,
-        repo,
-        "scan_flex_array_panic",
-        [py, str(flexarr), "--lint", "--arch", arch] if flexarr.is_file() else ["MISSING"],
-        strict=strict,
-        by_exit_code=True,
-    )
-    # An export that is a jump to another DLL's same-named import: a local body lost the
-    # link to an import library. ole32's GetErrorInfo/SetErrorInfo/CreateErrorInfo went
-    # to oleaut32, which forwards them back: an endless loop for every caller. amd64 only
-    # (the scan reads llvm-objdump's IAT-name annotation); the defect is link-order, not
-    # arch, so one graded arch catches the class.
-    if arch == "amd64":
-        sxt = repo / "tools" / "scan_export_thunks.py"
+    for name in rustlints.BINARY_RULES:
+        if name not in results:
+            reason = "amd64-only scan" if name == "scan_export_thunks" else "i386-only scan"
+            run.add(Stage(name, status="skip", detail=reason))
+            continue
+        cp = results[name]
+        run.log(cp.stdout + cp.stderr, header=f"native binary lint: {name}")
         _lint_stage(
-            run,
-            repo,
-            "scan_export_thunks",
-            [py, str(sxt), "--check", str(build_dir)] if sxt.is_file() else ["MISSING"],
-            strict=strict,
-            by_exit_code=True,
+            run, repo, name, [rustlints.SENTINEL, name], strict=strict, by_exit_code=True, cp=cp
         )
-    else:
-        run.add(Stage("scan_export_thunks", status="skip", detail="amd64-only scan"))
-    # i386 inline asm that swaps ebx out for cmpxchg8b and then dereferences ebx: LLVM
-    # put the pointer operand IN ebx. slist's try_store shipped that in ntdll.dll and
-    # ks.sys, and InterlockedPushEntrySList spun forever. i386 only -- ebx is allocatable
-    # there and nowhere else; see tools/scan_xchg_ebx_deref.py.
-    if arch == "i386":
-        sxe = repo / "tools" / "scan_xchg_ebx_deref.py"
-        _lint_stage(
-            run,
-            repo,
-            "scan_xchg_ebx_deref",
-            [py, str(sxe), "--check", str(build_dir)] if sxe.is_file() else ["MISSING"],
-            strict=strict,
-            by_exit_code=True,
-        )
-    else:
-        run.add(Stage("scan_xchg_ebx_deref", status="skip", detail="i386-only scan"))
-    # A shipped image importing a name its exporter does not export. The loader drops a
-    # boot driver that does this and keeps booting, so smoke stays green unless the boot
-    # needed that driver: pcix.sys's raw-dylib RtlAssert imported `RtlAssert@16` on i386
-    # and was never loaded. Graded on every arch -- decoration is i386's, but a missing
-    # export is not. See tools/scan_unresolved_imports.py.
-    sui = repo / "tools" / "scan_unresolved_imports.py"
-    _lint_stage(
-        run,
-        repo,
-        "scan_unresolved_imports",
-        [py, str(sui), "--check", str(build_dir)] if sui.is_file() else ["MISSING"],
-        strict=strict,
-        by_exit_code=True,
-    )
