@@ -1,7 +1,8 @@
 # Raspberry Pi Wi-Fi: our own CYW43455 driver
 
-Status (2026-10-17): protocol, SDIO and chip-id layers written and host-tested against a
-simulated controller; bwfm.sys built for the Pi 5, first board run pending.
+Status (2026-10-17): protocol, SDIO and chip layers host-tested against a simulated
+controller; on the Pi 5, bwfm.sys reads the chip id and its cores (run
+`20261017-012021-t5v81pv4`). Next: the firmware download.
 
 ## Why our own
 
@@ -96,8 +97,21 @@ only when asked to (`VIBEOS_PI_WIFI_FIRMWARE`), so an image built without it is 
 2. On the Pi 5 stager's Linux: confirm the WL_REG_ON line and the `sdio2` registers, and copy
    the firmware files (done, above); SDC1's resources match `0x1001100000` (done).
 3. SDIO host: CMD5 and CMD52 against the chip, read its CIS and chip id. First board milestone.
-   Written and host-tested; bwfm.sys logs `[BWFM]` lines for each step (the WL_ON state the
-   firmware left, the card's ids, the chip id) and leaves the line low-then-high so the
-   chip starts from its power-on reset.
+   Done on the Pi 5 (run `20261017-012021-t5v81pv4`), first try:
+
+       [BWFM] SDIO host 0x1001100000+0x260: version 0x1002, caps 0x55eec832, ...
+       [BWFM] WL_ON (GPIO 28) as the firmware left it: output high (DATA 0x9f100002 IODIR 0xefffffff)
+       [BWFM] SDIO card 02d0:4345, RCA 0x0001, 3 functions, OCR 0xffff00, CCCR rev 0x43, 25000 kHz 4-bit
+       [BWFM] chip 0x4345 rev 6 package 2 cores 5 (chip id 0x15264345, CYW43455)
+       [BWFM]   core 0x800 rev 51 base 0x18000000 wrap 0x18100000    chip-common
+       [BWFM]   core 0x812 rev 54 base 0x18001000 wrap 0x18101000    802.11
+       [BWFM]   core 0x83e rev  9 base 0x18002000 wrap 0x18102000    ARM CR4
+       [BWFM]   core 0x83c rev 14 base 0x18003000 wrap 0x18103000    PCIe2
+       [BWFM]   core 0x829 rev 21 base 0x18004000 wrap 0x18104000    SDIO device
+
+   So the UEFI firmware leaves WL_ON high and the SDIO pins muxed: the driver still drops
+   the line for 20 ms and raises it, so the chip starts from its power-on reset. Two more
+   components (0x135, 0x240) have no register base; they are the interconnect's own.
+   SDHCI version 0x1002 is spec 3.00, vendor 0x10.
 4. Firmware download and the ready mailbox; `ver` over BCDC.
 5. Scan, join, WPA2, link up, netstack traffic. Then the Pi 4 (host and power differ).

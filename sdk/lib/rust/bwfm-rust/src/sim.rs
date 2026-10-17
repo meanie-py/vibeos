@@ -307,7 +307,7 @@ impl St {
     /// The buffer port moved `n` bytes: on a block boundary, ready the next
     /// block or complete the transfer.
     fn advance(&mut self) {
-        let x = self.xfer.as_ref().unwrap();
+        let Some(x) = self.xfer.as_ref() else { return };
         if x.pos % x.bs != 0 {
             return;
         }
@@ -316,7 +316,7 @@ impl St {
             self.raise(bit);
             return;
         }
-        let x = self.xfer.take().unwrap();
+        let Some(x) = self.xfer.take() else { return };
         if !x.read {
             self.card.write53(x.func, x.addr, x.block_mode, &x.buf);
         }

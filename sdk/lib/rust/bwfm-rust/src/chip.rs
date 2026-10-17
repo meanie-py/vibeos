@@ -233,29 +233,36 @@ impl<P: Platform> Chip<P> {
             let a = self.read_4(erom)?;
             desc = a & DESC_MASK;
             erom += 4;
-            if desc != DESC_COMPONENT {
-                continue;
+            if desc == DESC_COMPONENT {
+                if let Some(core) = self.component(a, &mut erom, &mut reads)? {
+                    if self.ncores == MAX_CORES {
+                        return Err(Error::Card("more cores than MAX_CORES", core.id as u32));
+                    }
+                    self.cores[self.ncores] = core;
+                    self.ncores += 1;
+                }
             }
-            let id = ((a & COMP_PARTNUM) >> 8) as u16;
-            let b = self.read_4(erom)?;
-            erom += 4;
-            if b & DESC_MASK != DESC_COMPONENT {
-                return Err(Error::Card("component descriptor without its second word", b));
-            }
-            let nmw = (b & COMP_NUM_MWRAP) >> 14;
-            let nsw = (b & COMP_NUM_SWRAP) >> 19;
-            let rev = ((b & COMP_REVISION) >> 24) as u8;
-            if nmw + nsw == 0 && id != CORE_PMU && id != CORE_GCI {
-                continue;
-            }
-            let Some((base, wrap)) = self.region(&mut erom, &mut reads)? else { continue };
-            if self.ncores == MAX_CORES {
-                return Err(Error::Card("more cores than MAX_CORES", id as u32));
-            }
-            self.cores[self.ncores] = Core { id, rev, base, wrap };
-            self.ncores += 1;
         }
         Ok(())
+    }
+
+    /// The component whose first descriptor is `a` (`erom` just past it), or
+    /// None when it has no wrappers (other than the PMU and GCI, which have
+    /// none) or no register region.
+    fn component(&mut self, a: u32, erom: &mut u32, reads: &mut usize) -> Result<Option<Core>, Error> {
+        let id = ((a & COMP_PARTNUM) >> 8) as u16;
+        let b = self.read_4(*erom)?;
+        *erom += 4;
+        if b & DESC_MASK != DESC_COMPONENT {
+            return Err(Error::Card("component descriptor without its second word", b));
+        }
+        let nmw = (b & COMP_NUM_MWRAP) >> 14;
+        let nsw = (b & COMP_NUM_SWRAP) >> 19;
+        let rev = ((b & COMP_REVISION) >> 24) as u8;
+        if nmw + nsw == 0 && id != CORE_PMU && id != CORE_GCI {
+            return Ok(None);
+        }
+        Ok(self.region(erom, reads)?.map(|(base, wrap)| Core { id, rev, base, wrap }))
     }
 
     /// The register base and wrapper base following a component, or None when
