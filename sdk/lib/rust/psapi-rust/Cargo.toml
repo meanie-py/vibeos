@@ -16,3 +16,7 @@ strsafe-rust = { path = "../strsafe-rust" }
 panic-common = { path = "../panic-common", features = ["user"] }
 ntdll-sys = { path = "../ntdll-sys" }
 win32macros-rust = { path = "../win32macros-rust" }
+
+[features]
+# psapi.dll's entry point (main.c). Off for psapi_static, which kernel32/kernelbase link.
+dllmain = []
