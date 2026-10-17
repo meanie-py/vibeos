@@ -594,7 +594,7 @@ unsafe fn TryStartFexProbe() {
             b"[WINLOGON] fexprobe.exe created (PID %lu) - waiting\n\0".as_ptr() as *const i8,
             Pi.dwProcessId,
         );
-        WaitForSingleObject(Pi.hProcess, 30_000);
+        WaitGuestOrEnd(Pi.hProcess, 30_000, b"fexprobe.exe\0".as_ptr() as *const i8);
         let mut ExitCode: DWORD = 0xDEAD;
         GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
         DbgPrint(
@@ -647,7 +647,7 @@ unsafe fn TryStartWow64Probe() {
             b"[WINLOGON] wow64probe.exe created (PID %lu) - waiting\n\0".as_ptr() as *const i8,
             Pi.dwProcessId,
         );
-        WaitForSingleObject(Pi.hProcess, 30_000);
+        WaitGuestOrEnd(Pi.hProcess, 30_000, b"wow64probe.exe\0".as_ptr() as *const i8);
         let mut ExitCode: DWORD = 0xDEAD;
         GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
         DbgPrint(
@@ -730,7 +730,7 @@ unsafe fn TryStartWow64Hello() {
                 as *const i8,
             Pi.dwProcessId,
         );
-        WaitForSingleObject(Pi.hProcess, 30_000);
+        WaitGuestOrEnd(Pi.hProcess, 30_000, b"hello32.exe\0".as_ptr() as *const i8);
         let mut ExitCode: DWORD = 0xDEAD;
         GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
         DbgPrint(
@@ -795,6 +795,24 @@ unsafe fn TryStartWow64Guest(Name: &[u16], Ascii: &[u8]) {
     }
 }
 
+/* Wait for a ladder guest; on timeout say so and END it. A guest left running
+ * keeps its window and its CPU through every later rung: fault32 once kept
+ * faulting after its 60 s wait gave up, and apc32, fault64, spawn64 and apc64
+ * each then hit their own deadline behind it. Every launcher goes through
+ * here so a new one cannot leave that out. */
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+unsafe fn WaitGuestOrEnd(Process: HANDLE, TimeoutMs: DWORD, Ascii: *const i8) {
+    if WaitForSingleObject(Process, TimeoutMs) != 0 {
+        DbgPrint(
+            b"[WINLOGON] %s TIMED OUT after %lus - terminating\n\0".as_ptr() as *const i8,
+            Ascii,
+            TimeoutMs / 1000,
+        );
+        TerminateProcess(Process, 0xDEAD_0030);
+        WaitForSingleObject(Process, 5_000);
+    }
+}
+
 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 unsafe fn TryStartGuestIn(Dir: *const u16, Name: &[u16], Ascii: &[u8], Kind: &[u8]) {
     let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
@@ -839,13 +857,7 @@ unsafe fn TryStartGuestIn(Dir: *const u16, Name: &[u16], Ascii: &[u8], Kind: &[u
             Kind.as_ptr(),
             Pi.dwProcessId,
         );
-        if WaitForSingleObject(Pi.hProcess, 30_000) != 0 {
-            // Say so, and end it: a hung guest left running would keep its
-            // window and its CPU through every later rung.
-            DbgPrint(b"[WINLOGON] %s TIMED OUT after 30s - terminating\n\0".as_ptr() as *const i8, Ascii.as_ptr());
-            TerminateProcess(Pi.hProcess, 0xDEAD_0030);
-            WaitForSingleObject(Pi.hProcess, 5_000);
-        }
+        WaitGuestOrEnd(Pi.hProcess, 30_000, Ascii.as_ptr() as *const i8);
         let mut ExitCode: DWORD = 0xDEAD;
         GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
         DbgPrint(
@@ -932,7 +944,7 @@ unsafe fn TryStartWow64File() {
                 as *const i8,
             Pi.dwProcessId,
         );
-        WaitForSingleObject(Pi.hProcess, 60_000);
+        WaitGuestOrEnd(Pi.hProcess, 60_000, b"file32.exe\0".as_ptr() as *const i8);
         let mut ExitCode: DWORD = 0xDEAD;
         GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
         DbgPrint(
@@ -990,7 +1002,7 @@ unsafe fn TryStartWow64Async() {
                 .as_ptr() as *const i8,
             Pi.dwProcessId,
         );
-        WaitForSingleObject(Pi.hProcess, 60_000);
+        WaitGuestOrEnd(Pi.hProcess, 60_000, b"async32.exe\0".as_ptr() as *const i8);
         let mut ExitCode: DWORD = 0xDEAD;
         GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
         DbgPrint(
@@ -1052,7 +1064,7 @@ unsafe fn TryStartWow64Win32() {
                 as *const i8,
             Pi.dwProcessId,
         );
-        WaitForSingleObject(Pi.hProcess, 60_000);
+        WaitGuestOrEnd(Pi.hProcess, 60_000, b"win32.exe\0".as_ptr() as *const i8);
         let mut ExitCode: DWORD = 0xDEAD;
         GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
         DbgPrint(
@@ -1127,7 +1139,7 @@ unsafe fn TryStartWow64Marshal() {
                 .as_ptr() as *const i8,
             Pi.dwProcessId,
         );
-        WaitForSingleObject(Pi.hProcess, 60_000);
+        WaitGuestOrEnd(Pi.hProcess, 60_000, b"marshal32.exe\0".as_ptr() as *const i8);
         let mut ExitCode: DWORD = 0xDEAD;
         GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
         DbgPrint(
@@ -1194,7 +1206,7 @@ unsafe fn TryStartWow64Fault() {
                 .as_ptr() as *const i8,
             Pi.dwProcessId,
         );
-        WaitForSingleObject(Pi.hProcess, 60_000);
+        WaitGuestOrEnd(Pi.hProcess, 60_000, b"fault32.exe\0".as_ptr() as *const i8);
         let mut ExitCode: DWORD = 0xDEAD;
         GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
         DbgPrint(
@@ -1265,7 +1277,7 @@ unsafe fn TryStartWow64Thread() {
                 .as_ptr() as *const i8,
             Pi.dwProcessId,
         );
-        WaitForSingleObject(Pi.hProcess, 90_000);
+        WaitGuestOrEnd(Pi.hProcess, 90_000, b"thread32.exe\0".as_ptr() as *const i8);
         let mut ExitCode: DWORD = 0xDEAD;
         GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
         DbgPrint(
@@ -1334,7 +1346,7 @@ unsafe fn TryStartWow64Selfmod() {
                 .as_ptr() as *const i8,
             Pi.dwProcessId,
         );
-        WaitForSingleObject(Pi.hProcess, 90_000);
+        WaitGuestOrEnd(Pi.hProcess, 90_000, b"selfmod32.exe\0".as_ptr() as *const i8);
         let mut ExitCode: DWORD = 0xDEAD;
         GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
         DbgPrint(
@@ -1407,7 +1419,7 @@ unsafe fn TryStartWow64Reg() {
                 .as_ptr() as *const i8,
             Pi.dwProcessId,
         );
-        WaitForSingleObject(Pi.hProcess, 90_000);
+        WaitGuestOrEnd(Pi.hProcess, 90_000, b"reg32.exe\0".as_ptr() as *const i8);
         let mut ExitCode: DWORD = 0xDEAD;
         GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
         DbgPrint(
@@ -1474,7 +1486,7 @@ unsafe fn TryStartWow64Spawn() {
                 .as_ptr() as *const i8,
             Pi.dwProcessId,
         );
-        WaitForSingleObject(Pi.hProcess, 60_000);
+        WaitGuestOrEnd(Pi.hProcess, 60_000, b"spawn32.exe\0".as_ptr() as *const i8);
         let mut ExitCode: DWORD = 0xDEAD;
         GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
         DbgPrint(
@@ -1545,7 +1557,7 @@ unsafe fn TryStartWow64Sqlite() {
         /* Longer than the probe guests: this one does real work, and it runs as
          * x86 under FEX under TCG. A timeout here reads as a red rung, so give
          * it room rather than manufacturing a flake. */
-        WaitForSingleObject(Pi.hProcess, 300_000);
+        WaitGuestOrEnd(Pi.hProcess, 300_000, b"sqlite32.exe\0".as_ptr() as *const i8);
         let mut ExitCode: DWORD = 0xDEAD;
         GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
         DbgPrint(
@@ -1614,7 +1626,7 @@ unsafe fn TryStartWow64Lua() {
         /* Same budget as sqlite32 and for the same reason: real third-party work
          * running as x86 under FEX under TCG. A timeout here reads as a red rung,
          * so give it room rather than manufacturing a flake. */
-        WaitForSingleObject(Pi.hProcess, 300_000);
+        WaitGuestOrEnd(Pi.hProcess, 300_000, b"lua32.exe\0".as_ptr() as *const i8);
         let mut ExitCode: DWORD = 0xDEAD;
         GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
         DbgPrint(
@@ -2839,7 +2851,7 @@ unsafe fn TryStartWow64Gui() {
                 as *const i8,
             Pi.dwProcessId,
         );
-        WaitForSingleObject(Pi.hProcess, 60_000);
+        WaitGuestOrEnd(Pi.hProcess, 60_000, b"gui32.exe\0".as_ptr() as *const i8);
         let mut ExitCode: DWORD = 0xDEAD;
         GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
         DbgPrint(
