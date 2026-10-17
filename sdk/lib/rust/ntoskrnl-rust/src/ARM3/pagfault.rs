@@ -357,10 +357,12 @@ unsafe fn MiCheckVirtualAddress(
             return core::ptr::null_mut();
         }
 
-        ASSERT!((*Vad).u.VadFlags.VadType() != 2);
+        // The C names these; the translation had invented 2 and 0 for
+        // VadDevicePhysicalMemory (1) and VadImageMap (2).
+        ASSERT!((*Vad).u.VadFlags.VadType() != ntkrnl_sys::ddk::_MI_VAD_TYPE_VadDevicePhysicalMemory as _);
 
         if (*Vad).u.VadFlags.PrivateMemory() != 0 {
-            ASSERT!((*Vad).u.VadFlags.VadType() != 3);
+            ASSERT!((*Vad).u.VadFlags.VadType() != ntkrnl_sys::ddk::_MI_VAD_TYPE_VadAwe as _);
 
             if (*Vad).u.VadFlags.MemCommit() != 0 {
                 *ProtectCode = (*Vad).u.VadFlags.Protection() as ULONG;
@@ -369,7 +371,7 @@ unsafe fn MiCheckVirtualAddress(
             }
             return core::ptr::null_mut();
         } else {
-            ASSERT!((*Vad).u.VadFlags.VadType() != 0);
+            ASSERT!((*Vad).u.VadFlags.VadType() != ntkrnl_sys::ddk::_MI_VAD_TYPE_VadImageMap as _);
             ASSERT!((*Vad).u2.VadFlags2.ExtendableFile() == 0);
 
             *ProtoVad = Vad;
@@ -733,7 +735,10 @@ unsafe fn MiResolveDemandZeroFault(
     if HaveLock {
         Pfn1 = MI_PFN_ELEMENT(PageFrameNumber);
         ASSERT!((*Pfn1).flink() == 0);
-        ASSERT!(((*Pfn1).prototype_pte() as u16) != 0);
+        // C: ASSERT(Pfn1->u3.e1.PrototypePte == 0) -- a demand-zero page is
+        // private. The translation had the polarity flipped, unseen while
+        // ntoskrnl-rust built with debug-assertions off.
+        ASSERT!(((*Pfn1).prototype_pte() as u16) == 0);
     }
 
     STATUS_PAGE_FAULT_DEMAND_ZERO
@@ -1291,7 +1296,7 @@ unsafe fn MiDispatchFault(
             ASSERT!((*PointerPte).soft_page_file_high() == MI_PTE_LOOKUP_NEEDED as ULONG_PTR);
 
             if (!Vad.is_null())
-                && ((*Vad).u.VadFlags.VadType() != 0)
+                && ((*Vad).u.VadFlags.VadType() != ntkrnl_sys::ddk::_MI_VAD_TYPE_VadImageMap as _)
                 && ((*Vad).u2.VadFlags2.ExtendableFile() == 0)
             {
                 ASSERT!(Address <= MM_HIGHEST_USER_ADDRESS as PVOID);

@@ -6640,7 +6640,17 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   passing rungs keep reporting. Note the smoke gate stays GREEN through this: the boot
   marker fires long before the ladder runs.
 - **All 1962 Rust-kernel `debug_assert!` are compiled OUT, while the C `ASSERT` they were
-  translated from is LIVE — OPEN** (2026-07-25, task #72, §9.135). `debug_assert!` is gated on
+  translated from is LIVE — IN PROGRESS: `ntoskrnl-rust` ARMED 2026-10-16** (2026-07-25, task
+  #72, §9.135). The arm64 blocker (`ke/time.rs` KSYSTEM_TIME store) is fixed, see below. On the
+  first armed boot two translation bugs fired at once on all three arches, both invisible
+  while the checks compiled to nothing: `MiResolveDemandZeroFault` asserted `PrototypePte != 0`
+  where the C says `== 0`, and `MiCheckVirtualAddress` compared `VadType` against invented
+  numbers (2 for VadDevicePhysicalMemory, 0 for VadImageMap). The same invention was LIVE in
+  `NtQueryVirtualMemory`, which reported every image view as `MEM_PRIVATE` and device-physical
+  memory as `MEM_IMAGE`; all now use the `_MI_VAD_TYPE_*` names. Armed, all three arches then
+  booted green UP and `-smp 2` (amd64 with the ladder), and kmtest conformance held on all
+  three. **Next:** ex-rust, hal-rust, then the ob/ps/se/mm crates, one crate and one boot
+  each; then restore the 89 asserts `scan_dropped_asserts` baselines. `debug_assert!` is gated on
   `cfg(debug_assertions)`; `sdk/lib/rust/Cargo.toml`'s `[profile.release]` never sets it, so
   cargo's release default (off) applies and every kernel crate builds `--release`. Meanwhile
   `CMakeLists.txt:233` sets `-DDBG=1`, so the C original calls `RtlAssert`. **The mirror of
