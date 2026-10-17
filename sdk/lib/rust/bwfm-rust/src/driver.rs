@@ -27,6 +27,8 @@ use sdhci_rust::Platform;
 
 use crate::bus::{Buffers, Bus};
 use crate::chip::Chip;
+use crate::join::{JoinEnd, JoinLog, WifiConfig};
+use crate::scan::Bss;
 use crate::nvram;
 use crate::print::bwprint;
 use crate::sdio::Sdio;
@@ -69,9 +71,11 @@ const NON_PAGED_POOL: i32 = 0;
 const THREAD_ALL_ACCESS: ULONG = 0x001F_03FF;
 /// The files, under \SystemRoot\System32\drivers\cyw43455\, as
 /// tools/fetch_pi_wifi_firmware.py names them.
-const FIRMWARE: &str = "cyw43455\\cyfmac43455-sdio.bin";
-const NVRAM: &str = "cyw43455\\brcmfmac43455-sdio.txt";
-const CLM: &str = "cyw43455\\cyfmac43455-sdio.clm_blob";
+const FIRMWARE: &str = "\\SystemRoot\\System32\\drivers\\cyw43455\\cyfmac43455-sdio.bin";
+const NVRAM: &str = "\\SystemRoot\\System32\\drivers\\cyw43455\\brcmfmac43455-sdio.txt";
+const CLM: &str = "\\SystemRoot\\System32\\drivers\\cyw43455\\cyfmac43455-sdio.clm_blob";
+/// The network to join, staged by VIBEOS_WIFI_CONFIG (the WDI path reads the same file).
+const WIFI_CONFIG: &str = "\\SystemRoot\\bin\\wifi.txt";
 /// The firmware is ~600 KiB and the NVRAM ~2 KiB; anything far past that is not them.
 const FILE_MAX: usize = 1 << 20;
 /// How long the worker waits for the system volume to answer for the files.
@@ -207,12 +211,12 @@ unsafe fn power_on(host: u64) -> bool {
     true
 }
 
-/// A file under \SystemRoot\System32\drivers\ read whole into pool, or the
-/// status that stopped it. The caller frees it with BWFM_POOL_TAG.
-unsafe fn read_driver_file(rel: &str) -> Result<(*mut u8, usize), NTSTATUS> {
+/// A file read whole into pool (`path` from `\SystemRoot`), or the status that
+/// stopped it. The caller frees it with BWFM_POOL_TAG.
+unsafe fn read_driver_file(path: &str) -> Result<(*mut u8, usize), NTSTATUS> {
     let mut name = [0u16; 96];
     let mut len = 0;
-    for c in "\\SystemRoot\\System32\\drivers\\".encode_utf16().chain(rel.encode_utf16()) {
+    for c in path.encode_utf16() {
         if len == name.len() - 1 {
             return Err(STATUS_INSUFFICIENT_RESOURCES);
         }
@@ -376,9 +380,8 @@ unsafe fn talk(chip: Chip<Kernel>) {
             return;
         }
     }
-    let mut mac = [0u8; 6];
-    match bus.get_var(b"cur_etheraddr", &mut mac, |_| events += 1) {
-        Ok(_) => bwprint!(
+    match bus.read_mac(|_| events += 1) {
+        Ok(mac) => bwprint!(
             "MAC {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}\n",
             mac[0],
             mac[1],
@@ -415,12 +418,25 @@ unsafe fn talk(chip: Chip<Kernel>) {
         bwprint!("could not bring the interface up: {:?}\n", e);
         return;
     }
+    // The network to join, if this image carries one (VIBEOS_WIFI_CONFIG).
+    let cfg = read_driver_file(WIFI_CONFIG).ok().and_then(|(p, n)| {
+        let c = WifiConfig::parse(core::slice::from_raw_parts(p, n));
+        core::ptr::write_bytes(p, 0, n); // the passphrase does not linger in pool
+        ExFreePoolWithTag(p.cast(), BWFM_POOL_TAG);
+        c
+    });
+    let mut best: Option<Bss> = None;
     // Each network once, however many times the scan reports it.
     let mut seen = [[0u8; 6]; 32];
     let (mut n, mut reports) = (0usize, 0u32);
     let t0 = Kernel::now_us_static();
     let end = bus.scan(|b| {
         reports += 1;
+        if let Some(c) = &cfg {
+            if b.ssid() == c.ssid() && best.is_none_or(|x| b.rssi > x.rssi) {
+                best = Some(*b);
+            }
+        }
         if seen[..n].contains(&b.bssid) || n == seen.len() {
             return;
         }
@@ -454,6 +470,82 @@ unsafe fn talk(chip: Chip<Kernel>) {
             reports
         ),
         Err(e) => bwprint!("scan failed after {} networks: {:?}\n", n, e),
+    }
+    let Some(cfg) = cfg else {
+        bwprint!("no \\SystemRoot\\bin\\wifi.txt (ssid=, psk=): no network to join\n");
+        bwprint!("{} frames other than replies so far\n", events);
+        return;
+    };
+    let ssid = core::str::from_utf8(cfg.ssid()).unwrap_or("?");
+    if best.is_none() {
+        // A hidden network answers only a scan that names it.
+        bwprint!("'{}' not heard{}: asking for it by name\n", ssid, if cfg.hidden { " (hidden=1)" } else { "" });
+        let r = bus.scan_for(Some(cfg.ssid()), |b| {
+            if b.ssid() == cfg.ssid() && best.is_none_or(|x| b.rssi > x.rssi) {
+                best = Some(*b);
+            }
+        });
+        if let Err(e) = r {
+            bwprint!("directed scan failed: {:?}\n", e);
+        }
+    }
+    let Some(target) = best else {
+        bwprint!("'{}' is not in the scan: nothing to join\n", ssid);
+        return;
+    };
+    bwprint!(
+        "joining '{}' at {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} (ch {}, {} dBm)\n",
+        ssid,
+        target.bssid[0],
+        target.bssid[1],
+        target.bssid[2],
+        target.bssid[3],
+        target.bssid[4],
+        target.bssid[5],
+        target.channel,
+        target.rssi
+    );
+    let mut log = JoinLog::default();
+    let t0 = Kernel::now_us_static();
+    let end = bus.join(&cfg, &target, &mut log, |_| events += 1);
+    let ms = Kernel::now_us_static().wrapping_sub(t0) / 1000;
+    if log.optional_refused != 0 {
+        bwprint!(
+            "firmware refused optional settings (bit 0 sup_wpa, bit 1 mfp): {:#x}, last {:?}\n",
+            log.optional_refused,
+            log.optional_error
+        );
+    }
+    if log.assoc_rsn_len > 0 {
+        let mut hex = [0u8; 128];
+        for (i, b) in log.assoc_rsn[..log.assoc_rsn_len].iter().enumerate() {
+            hex[2 * i] = b"0123456789abcdef"[(b >> 4) as usize];
+            hex[2 * i + 1] = b"0123456789abcdef"[(b & 15) as usize];
+        }
+        bwprint!(
+            "association request RSN {} ({})\n",
+            core::str::from_utf8(&hex[..2 * log.assoc_rsn_len]).unwrap_or("?"),
+            if log.assoc_rsn_differs { "not ours: message 2 used it" } else { "ours" }
+        );
+    }
+    match end {
+        Ok(JoinEnd::Up) => bwprint!(
+            "4-way handshake complete in {} ms: link up, keys installed ({} EAPOL in, {} out)\n",
+            ms,
+            log.eapol_in,
+            log.eapol_out
+        ),
+        Ok(e) => bwprint!(
+            "join ended {:?} after {} ms (associated {}, {} EAPOL in, {} out, {} rejected, last {:?})\n",
+            e,
+            ms,
+            log.associated,
+            log.eapol_in,
+            log.eapol_out,
+            log.rejected,
+            log.last_reject
+        ),
+        Err(e) => bwprint!("join failed: {:?}\n", e),
     }
     bwprint!("{} frames other than replies so far\n", events);
 }

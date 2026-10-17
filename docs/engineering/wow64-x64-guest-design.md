@@ -55,8 +55,16 @@ media (and `--arch amd64 --ladder` for wow64.dll). Owed, most valuable first:
    pressure; field manual, "The LLM invents plausible values"). appstorm64 now passes 54/54 at
    1088M (wedged before) and 1152M; 1024M still runs out. Next is step 2 of the design doc: a
    real standby state, so cached pages count as available.
-2. Commit not yet charged: copy-on-write pages of image and file views, PEB/TEB pages, kernel
-   pool (`ARM3/commit.rs` header).
+2. Commit not yet charged: copy-on-write pages of image and file views, and kernel pool
+   (`ARM3/commit.rs` header). PEB/TEB pages are charged since 2026-10-17. Owed with it: FEX's
+   CPU layer faults when a commit is refused while setting up a new guest thread
+   (`20261017-062113-2pae52ry`): rpmalloc's `span_allocate_page` calls the `memory_commit` hook
+   (a VIBEOS patch; FEXCore `AllocatorHooks.cpp` `FEX_rp_memory_commit`), which returns `void`,
+   and then writes the page header into memory that was never committed. The fix is in
+   `vendor/fex`, whose CLAUDE.md forbids AI-written code, so it is for a human or upstream. Seen as an
+   apc32 AV when a ladder ran on 1G appstorm64 media, whose ramdisk leaves a 137 MB commit
+   limit with appstorm running beside the guests. On plain `VIBEOS_FEX=1` media the ladder is
+   green with the charging.
 3. The cnt CRT's NUL scans (`cstr_slice`/`wcstr_slice`, under strlen, wcslen and every string
    function that measures its argument) are asm now (`memops.rs`, 2026-10-17). Owed: the
    compare/search loops (`strcmp`, `wcschr`, ...), which are still unoptimised Rust; measure

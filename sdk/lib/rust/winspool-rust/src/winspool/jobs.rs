@@ -1,4 +1,5 @@
 use crate::winspool::marshalling::MarshallUpStructure;
+use ntdll_sys::seh::rpc_try;
 use crate::winspool::marshalling::MarshallUpStructuresArray;
 use crate::winspool::devmode::RosConvertUnicodeDevModeToAnsiDevmode;
 use crate::winspool::utils::UnicodeToAnsiInPlace;
@@ -50,13 +51,10 @@ pub unsafe extern "system" fn AddJobW(hPrinter: HANDLE, Level: DWORD, pData: PBY
         // Do the RPC call
         // RpcTryExcept
         {
-            dwErrorCode = _RpcAddJob((*pHandle).hPrinter, Level, pData, cbBuf, pcbNeeded);
+            dwErrorCode = rpc_try(|| _RpcAddJob((*pHandle).hPrinter, Level, pData, cbBuf, pcbNeeded)).unwrap_or_else(|code| code as _);
         }
         // RpcExcept(EXCEPTION_EXECUTE_HANDLER)
         // Reached only when the RPC call raises an exception (SEH path).
-        if false {
-            dwErrorCode = RpcExceptionCode!() as DWORD;
-        }
         // RpcEndExcept;
 
         if dwErrorCode == ERROR_SUCCESS {
@@ -181,12 +179,9 @@ pub unsafe extern "system" fn EnumJobsW(hPrinter: HANDLE, FirstJob: DWORD, NoJob
 
         // Do the RPC call
         // RpcTryExcept
-        dwErrorCode = _RpcEnumJobs((*pHandle).hPrinter, FirstJob, NoJobs, Level, pJob, cbBuf, pcbNeeded, pcReturned);
+        dwErrorCode = rpc_try(|| _RpcEnumJobs((*pHandle).hPrinter, FirstJob, NoJobs, Level, pJob, cbBuf, pcbNeeded, pcReturned)).unwrap_or_else(|code| code as _);
         // RpcExcept(EXCEPTION_EXECUTE_HANDLER): handler is reached only via SEH unwind,
         // which the integration layer owns; kept here verbatim as a dead branch.
-        if false {
-            dwErrorCode = RpcExceptionCode!() as DWORD;
-        }
         // RpcEndExcept;
 
         if dwErrorCode == ERROR_SUCCESS {
@@ -308,7 +303,7 @@ pub unsafe extern "system" fn GetJobW(hPrinter: HANDLE, JobId: DWORD, Level: DWO
         // Do the RPC call
         // RpcTryExcept
         {
-            dwErrorCode = _RpcGetJob((*pHandle).hPrinter, JobId, Level, pJob, cbBuf, pcbNeeded);
+            dwErrorCode = rpc_try(|| _RpcGetJob((*pHandle).hPrinter, JobId, Level, pJob, cbBuf, pcbNeeded)).unwrap_or_else(|code| code as _);
         }
         // RpcExcept(EXCEPTION_EXECUTE_HANDLER): structured exception handling has no Rust
         // equivalent; the handler is kept, guarded so it is never entered.
@@ -343,7 +338,7 @@ pub unsafe extern "system" fn ScheduleJob(hPrinter: HANDLE, dwJobID: DWORD) -> W
         // Do the RPC call
         // RpcTryExcept
         {
-            dwErrorCode = _RpcScheduleJob((*pHandle).hPrinter, dwJobID);
+            dwErrorCode = rpc_try(|| _RpcScheduleJob((*pHandle).hPrinter, dwJobID)).unwrap_or_else(|code| code as _);
         }
         // RpcExcept(EXCEPTION_EXECUTE_HANDLER)
         let rpc_exception_raised: bool = false;
@@ -498,7 +493,7 @@ pub unsafe extern "system" fn SetJobW(hPrinter: HANDLE, JobId: DWORD, Level: DWO
         // exception mechanism, which is owned by the integration layer)
         let rpc_faulted: bool = false;
         if !rpc_faulted {
-            dwErrorCode = _RpcSetJob((*pHandle).hPrinter, JobId, core::ptr::addr_of_mut!(JobContainer), Command);
+            dwErrorCode = rpc_try(|| _RpcSetJob((*pHandle).hPrinter, JobId, core::ptr::addr_of_mut!(JobContainer), Command)).unwrap_or_else(|code| code as _);
         } else {
             // RpcExcept(EXCEPTION_EXECUTE_HANDLER)
             dwErrorCode = RpcExceptionCode!() as DWORD;

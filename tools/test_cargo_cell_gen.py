@@ -572,6 +572,9 @@ def test_convert_runs_the_wave_in_order(tmp_path, monkeypatch):
 
 
 def test_ratchet_labels_follow_the_generator(monkeypatch, capsys, tmp_path):
+    for t in ("a", "b"):
+        (tmp_path / t).mkdir()
+        (tmp_path / t / "CMakeLists.txt").write_text(f"add_library({t} MODULE rust_cohab_stub.c)\n")
     """A refused module the generator learns to handle flips to `convertible`, which the
     baseline has never seen: that is how the ratchet forces the conversion."""
     import scan_cmake_linked_rust as ratchet
@@ -682,7 +685,14 @@ def test_ratchet_trusts_the_source_tree_over_a_stale_graph(monkeypatch, capsys, 
     (tmp_path / "dll/m").mkdir(parents=True)
     (tmp_path / "dll/m/CMakeLists.txt").write_text("add_cargo_module(m m-cargo m.dll\n)\n")
     monkeypatch.setattr(g, "REPO", tmp_path)
-    monkeypatch.setattr(g, "survey", lambda: [("m", "OK Win32Dll"), ("n", "OK Win32Dll")])
+    (tmp_path / "dll/n").mkdir(parents=True)
+    (tmp_path / "dll/n/CMakeLists.txt").write_text("add_library(n MODULE rust_cohab_stub.c)\n")
+    # o's flip is not in this tree: its CMakeLists compiles its C again.
+    (tmp_path / "dll/o").mkdir(parents=True)
+    (tmp_path / "dll/o/CMakeLists.txt").write_text("add_library(o MODULE o.c font.c)\n")
+    monkeypatch.setattr(
+        g, "survey", lambda: [("m", "OK Win32Dll"), ("n", "OK Win32Dll"), ("o", "OK Win32Dll")]
+    )
     ratchet.main()
     out = capsys.readouterr().out.splitlines()
     assert out == ["n: fully-Rust module still linked by cmake (convertible)"]

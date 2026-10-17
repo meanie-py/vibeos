@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use ntdll_sys::seh::rpc_try;
 use core::ffi::c_void;
 
 extern "C" {
@@ -45,16 +46,13 @@ pub unsafe extern "system" fn AddPrintProcessorW(
     let mut dwErrorCode: DWORD = 0;
 
     // RpcTryExcept
-    dwErrorCode = _RpcAddPrintProcessor(
+    dwErrorCode = rpc_try(|| _RpcAddPrintProcessor(
         pName as WINSPOOL_HANDLE,
         pEnvironment as *mut WCHAR,
         pPathName as *mut WCHAR,
         pPrintProcessorName as *mut WCHAR,
-    );
+    )).unwrap_or_else(|code| code as _);
     // RpcExcept(EXCEPTION_EXECUTE_HANDLER)
-    if _SEH2_Volatile0 != 0 {
-        dwErrorCode = RpcExceptionCode!() as DWORD;
-    }
     // RpcEndExcept
 
     SetLastError(dwErrorCode);
@@ -124,11 +122,11 @@ pub unsafe extern "system" fn DeletePrintProcessorW(mut pName: PWSTR, mut pEnvir
             pPrintProcessorName,
         );
     }
-    dwErrorCode = _RpcDeletePrintProcessor(
+    dwErrorCode = rpc_try(|| _RpcDeletePrintProcessor(
         pName as WINSPOOL_HANDLE,
         pEnvironment as *mut WCHAR,
         pPrintProcessorName as *mut WCHAR,
-    );
+    )).unwrap_or_else(|code| code as _);
     if _SEH2_Volatile0 != 0 || 0 as ::core::ffi::c_int != 0 && 1 as ::core::ffi::c_int != 0 {
         dwErrorCode = _SEH2_VolatileExceptionCode as DWORD;
         if (*__wine_dbch___default).flags as ::core::ffi::c_int
@@ -181,7 +179,7 @@ pub unsafe extern "system" fn EnumPrintProcessorDatatypesW(pName: PWSTR, pPrintP
         }
 
         // Do the RPC call
-        dwErrorCode = _RpcEnumPrintProcessorDatatypes(pName, pPrintProcessorName, Level, pDatatypes, cbBuf, pcbNeeded, pcReturned);
+        dwErrorCode = rpc_try(|| _RpcEnumPrintProcessorDatatypes(pName, pPrintProcessorName, Level, pDatatypes, cbBuf, pcbNeeded, pcReturned)).unwrap_or_else(|code| code as _);
         if _SEH2_Volatile0 != 0 {
             dwErrorCode = RpcExceptionCode!() as DWORD;
         }
@@ -452,7 +450,7 @@ pub unsafe extern "system" fn EnumPrintProcessorsW(mut pName: PWSTR, mut pEnviro
     if pEnvironment.is_null() {
         pEnvironment = core::ptr::addr_of!(wszCurrentEnvironment) as *const WCHAR as PWSTR;
     }
-    dwErrorCode = _RpcEnumPrintProcessors(
+    dwErrorCode = rpc_try(|| _RpcEnumPrintProcessors(
         pName as WINSPOOL_HANDLE,
         pEnvironment as *mut WCHAR,
         Level,
@@ -460,10 +458,7 @@ pub unsafe extern "system" fn EnumPrintProcessorsW(mut pName: PWSTR, mut pEnviro
         cbBuf,
         pcbNeeded as *mut DWORD,
         pcReturned as *mut DWORD,
-    );
-    if _SEH2_Volatile0 != 0 {
-        dwErrorCode = RpcExceptionCode!() as DWORD;
-    }
+    )).unwrap_or_else(|code| code as _);
     if dwErrorCode == ERROR_SUCCESS {
         MarshallUpStructuresArray(
             cbBuf,
@@ -623,14 +618,14 @@ pub unsafe extern "system" fn GetPrintProcessorDirectoryW(
         // Do the RPC call
         // RpcTryExcept
         {
-            dwErrorCode = _RpcGetPrintProcessorDirectory(
+            dwErrorCode = rpc_try(|| _RpcGetPrintProcessorDirectory(
                 pName as WINSPOOL_HANDLE,
                 pEnvironment as *mut WCHAR,
                 Level,
                 pPrintProcessorInfo as *mut BYTE,
                 cbBuf,
                 pcbNeeded as *mut DWORD,
-            );
+            )).unwrap_or_else(|code| code as _);
         }
         // RpcExcept(EXCEPTION_EXECUTE_HANDLER)
         if _SEH2_Volatile0 != 0 {

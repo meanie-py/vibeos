@@ -17,8 +17,13 @@ rustflags = ["-C", "target-feature=-sse,-sse2"]
 # installed somewhere else.
 [target.i686-kernel]
 linker = "/home/curi/Projects/os-playground/vibeos/.build-tools/llvm-mingw/bin/i686-w64-mingw32-clang"
+# -Zub-checks=no: i386 kernel code keeps debug_assert! but not rustc's UB checks.
+# Their entry, core's check_language_ub, is a leaf with a 1-byte local that LLVM
+# runs at an odd ESP; an interrupt there builds an odd KTRAP_FRAME and the next
+# checked deref of it panics (reactos-link sets the same for nested bodies).
 rustflags = [
     "-C", "target-feature=-sse,-sse2",
+    "-Zub-checks=no",
 ]
 
 # amd64 / arm64: the `*-cargo` cells link the BUILTIN triples on pinned STABLE —

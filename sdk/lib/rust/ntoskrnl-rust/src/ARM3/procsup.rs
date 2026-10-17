@@ -140,6 +140,15 @@ unsafe fn MiCreatePebOrTebCapped(
         HighestAddress = MM_HIGHEST_VAD_ADDRESS as ULONG_PTR;
     }
 
+    // The PEB/TEB pages are committed private memory: charge them (commit.rs). A TEB's comes
+    // back in MmDeleteTeb, a PEB's with the rest of the process's ledger at teardown.
+    let CommitPages = BYTES_TO_PAGES(Size as usize) as usize;
+    if !crate::ARM3::commit::MiChargeCommitment(CommitPages, Process as _) {
+        ExFreePoolWithTag(Vad as PVOID, u32::from_le_bytes(*b"Vadl"));
+        PsReturnProcessNonPagedPoolQuota(Process as *mut c_void, core::mem::size_of::<_MMVAD_LONG>());
+        return crate::ARM3::commit::STATUS_COMMITMENT_LIMIT;
+    }
+
     *BaseAddress = 0;
     Status = MiInsertVadEx(
         Vad as PMMVAD,
@@ -150,6 +159,7 @@ unsafe fn MiCreatePebOrTebCapped(
         MEM_TOP_DOWN as u32,
     );
     if Status < 0 {
+        crate::ARM3::commit::MiReturnCommitment(CommitPages, Process as _);
         ExFreePoolWithTag(Vad as PVOID, u32::from_le_bytes(*b"Vadl"));
         Status = STATUS_NO_MEMORY;
         PsReturnProcessNonPagedPoolQuota(Process as *mut c_void, core::mem::size_of::<_MMVAD_LONG>());
@@ -209,6 +219,9 @@ pub unsafe extern "system" fn MmDeleteTeb(Process: PEPROCESS, Teb: PTEB) {
             MiDeleteVirtualAddresses((Teb as ULONG_PTR) as _, TebEnd as _, core::ptr::null_mut());
 
             MiUnlockProcessWorkingSetUnsafe(Process, Thread);
+
+            // The charge MiCreatePebOrTebCapped took for these pages.
+            crate::ARM3::commit::MiReturnCommitment((*Vad).u.VadFlags.CommitCharge() as usize, Process as _);
 
             ExFreePool(Vad as PVOID);
 
