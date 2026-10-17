@@ -16,6 +16,10 @@ pub struct Card {
     pub present: bool,
     /// The chip never reports its ALP clock.
     pub alp_never: bool,
+    /// Function 2 never becomes ready, as if the firmware did not boot.
+    pub fw_never_ready: bool,
+    /// One RAM bit reads back as 1 whatever was written (at this address).
+    pub stuck_bit_at: Option<u32>,
     pub rca: u16,
     pub selected: bool,
     ocr_polls: u32,
@@ -26,6 +30,8 @@ pub struct Card {
     pub clkcsr: u8,
     alp_polls: u32,
     sbaddr: [u8; 3],
+    /// Function 1's Broadcom registers 0x10000-0x1001F not modelled otherwise.
+    pub f1_regs: [u8; 0x20],
     pub window: u32,
     pub window_writes: u32,
     backplane: HashMap<u32, u32>,
@@ -36,6 +42,10 @@ pub struct Card {
 
 const CIS_AT: u32 = 0x1000;
 const EROM: u32 = 0x1800_F000;
+pub const CR4: u32 = 0x1800_2000;
+pub const CR4_WRAP: u32 = 0x1810_2000;
+/// Each of the CR4's two banks: 16 blocks of 8 KiB, so 256 KiB of RAM.
+const BANKINFO: u32 = 0x0F;
 
 /// A small enumeration ROM in the AI layout (bwfmreg.h `BWFM_DMP_*`).
 fn erom() -> Vec<u32> {
@@ -53,6 +63,10 @@ fn erom() -> Vec<u32> {
         0x0000_0013, // master port 1
         addr(0x1800_2000, 0),
         addr(0x1810_2000, 3), // master wrapper
+        comp_a(0x829),
+        comp_b(21, 1, 0),
+        addr(0x1800_4000, 0),
+        addr(0x1810_4000, 2),
         comp_a(0x135),
         comp_b(0, 0, 0), // no wrappers: skipped
         comp_a(0x827),
@@ -72,13 +86,18 @@ impl Card {
         cccr[0x09..0x0C].copy_from_slice(&CIS_AT.to_le_bytes()[..3]);
         let mut backplane = HashMap::new();
         backplane.insert(0x1800_0000, 0x1526_4345);
+        backplane.insert(0x1800_0004, 0x1000_0000); // chip-common caps: has a PMU
+        backplane.insert(0x1800_0604, 24); // PMU rev 24 (save/restore asks the chip)
         backplane.insert(0x1800_00FC, EROM);
+        backplane.insert(CR4 + 0x04, 0x11); // one A bank, one B bank
         for (i, w) in erom().iter().enumerate() {
             backplane.insert(EROM + 4 * i as u32, *w);
         }
         Self {
             present: true,
             alp_never: false,
+            fw_never_ready: false,
+            stuck_bit_at: None,
             rca: 1,
             selected: false,
             ocr_polls: 0,
@@ -90,6 +109,7 @@ impl Card {
             clkcsr: 0,
             alp_polls: 0,
             sbaddr: [0; 3],
+            f1_regs: [0; 0x20],
             window: 0,
             window_writes: 0,
             backplane,
@@ -118,7 +138,8 @@ impl Card {
     fn f0(&mut self, write: bool, addr: u32, data: u8) -> u8 {
         let fbr = (addr >> 8) as usize;
         match (write, addr) {
-            (false, 0x03) => self.io_enable, // ready as soon as enabled
+            (false, 0x02) => self.io_enable,
+            (false, 0x03) => self.io_enable & (0b11 | if self.firmware_running() { 0b100 } else { 0 }),
             (false, a) if a < 0x100 => self.cccr[a as usize],
             (true, 0x02) => {
                 self.io_enable = data;
@@ -153,19 +174,42 @@ impl Card {
                 self.sbaddr[(addr - 0x1000A) as usize]
             }
             0x1000E => {
-                let up = self.clkcsr & 0x40;
                 if write {
+                    // A request keeps what is up; dropping every request drops it.
+                    let up = if data & 0x1F != 0 { self.clkcsr & 0xC0 } else { 0 };
                     self.clkcsr = (data & 0x3F) | up;
-                } else if self.clkcsr & 0x08 != 0 && !self.alp_never {
+                    self.alp_polls = 0;
+                } else if self.clkcsr & 0x18 != 0 && !self.alp_never {
                     self.alp_polls += 1;
                     if self.alp_polls > 2 {
-                        self.clkcsr |= 0x40;
+                        self.clkcsr |= if self.clkcsr & 0x10 != 0 { 0xC0 } else { 0x40 };
                     }
                 }
                 self.clkcsr
             }
+            0x10000..=0x1001F => {
+                let r = &mut self.f1_regs[(addr - 0x10000) as usize];
+                if write {
+                    *r = data;
+                }
+                *r
+            }
             _ => 0,
         }
+    }
+
+    pub fn word(&self, addr: u32) -> u32 {
+        self.backplane.get(&addr).copied().unwrap_or(0)
+    }
+
+    /// The CR4 out of reset and not halted, with a reset vector planted: what
+    /// "the firmware runs" means here.
+    pub fn firmware_running(&self) -> bool {
+        !self.fw_never_ready
+            && self.word(CR4_WRAP + 0x800) & 1 == 0
+            && self.word(CR4_WRAP + 0x408) & 0x20 == 0
+            && self.word(CR4_WRAP + 0x408) & 1 != 0
+            && self.word(0) != 0
     }
 
     fn bp_addr(&self, addr: u32) -> u32 {
@@ -177,7 +221,18 @@ impl Card {
         assert_eq!(func, 1, "only the backplane is readable here");
         assert_eq!(len % 4, 0);
         let a = self.bp_addr(addr);
-        (0..len / 4).flat_map(|i| self.backplane.get(&(a + 4 * i as u32)).copied().unwrap_or(0).to_le_bytes()).collect()
+        (0..len / 4)
+            .flat_map(|i| {
+                let at = a + 4 * i as u32;
+                let v = match at {
+                    // The bank BANKIDX selects.
+                    _ if at == CR4 + 0x44 => BANKINFO,
+                    _ if Some(at) == self.stuck_bit_at => self.word(at) | 1,
+                    _ => self.word(at),
+                };
+                v.to_le_bytes()
+            })
+            .collect()
     }
 
     fn write53(&mut self, func: u8, addr: u32, block_mode: bool, data: &[u8]) {

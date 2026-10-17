@@ -4,10 +4,15 @@
 //! three address registers; an access with bit 15 set in its SDIO address is a
 //! 4-byte backplane access. Before anything but those registers answers, the
 //! host must ask for the ALP (always-on) clock. Then the chip-common core at
-//! 0x1800_0000 gives the chip id, and its enumeration ROM the cores. After
-//! OpenBSD's `if_bwfm_sdio.c` (`bwfm_sdio_attach`, `bwfm_sdio_backplane`,
-//! `bwfm_sdio_read_4`), `bwfm.c` (`bwfm_chip_dmp_erom_scan`,
-//! `bwfm_chip_dmp_get_regaddr`) and their register names (`if_bwfm_sdio.h`,
+//! 0x1800_0000 gives the chip id, and its enumeration ROM the cores. Then the
+//! firmware goes in: halt the ARM CR4, write the program at the bottom of its
+//! RAM and the NVRAM at the top, point the reset vector at it, release the core,
+//! and enable function 2, whose I/O-ready bit is the firmware saying it runs.
+//! After OpenBSD's `if_bwfm_sdio.c` (`bwfm_sdio_attach`, `bwfm_sdio_preinit`,
+//! `bwfm_sdio_load_microcode`, `bwfm_sdio_htclk`, `bwfm_sdio_ram_read_write`,
+//! `bwfm_sdio_buscore_*`), `bwfm.c` (`bwfm_chip_attach`, `bwfm_chip_ai_*`,
+//! `bwfm_chip_dmp_*`, `bwfm_chip_cr4_*`, `bwfm_chip_tcm_*`,
+//! `bwfm_chip_sr_capable`) and their register names (`if_bwfm_sdio.h`,
 //! `bwfmreg.h`), ISC licensed:
 //!
 //! Copyright (c) 2010-2016 Broadcom Corporation
@@ -34,8 +39,21 @@ pub const F1_SBADDR_MID: u32 = 0x1000B;
 pub const F1_SBADDR_HIGH: u32 = 0x1000C;
 pub const F1_CHIPCLKCSR: u32 = 0x1000E;
 pub const F1_SDIOPULLUP: u32 = 0x1000F;
+pub const F1_WATERMARK: u32 = 0x10008;
+pub const F1_WAKEUPCTRL: u32 = 0x1001E;
+const WAKEUPCTRL_HTWAIT: u8 = 1 << 1;
+pub const F1_SLEEPCSR: u32 = 0x1001F;
+const SLEEPCSR_KSO: u8 = 1 << 0;
+/// Broadcom's own CCCR bytes (function 0).
+pub const CCCR_BRCM_CARDCAP: u32 = 0xF0;
+const CARDCAP_CMD14_SUPPORT: u8 = 1 << 1;
+const CARDCAP_CMD14_EXT: u8 = 1 << 2;
+pub const CCCR_BRCM_CARDCTRL: u32 = 0xF1;
+const CARDCTRL_WLANRESET: u8 = 1 << 1;
 
 pub const CLK_FORCE_ALP: u8 = 0x01;
+pub const CLK_FORCE_HT: u8 = 0x02;
+pub const CLK_HT_AVAIL_REQ: u8 = 0x10;
 pub const CLK_ALP_AVAIL_REQ: u8 = 0x08;
 pub const CLK_FORCE_HW_CLKREQ_OFF: u8 = 0x20;
 pub const CLK_ALP_AVAIL: u8 = 0x40;
@@ -51,6 +69,42 @@ pub const CHIPCOMMON_BASE: u32 = 0x1800_0000;
 
 /// Chip-common's pointer to the enumeration ROM.
 pub const CHIPCOMMON_EROMPTR: u32 = 0xFC;
+const CC_CAPABILITIES: u32 = 0x004;
+const CC_CAPABILITIES_PMU: u32 = 0x1000_0000;
+const CC_CAPABILITIES_EXT: u32 = 0x0AC;
+const CC_CAPABILITIES_EXT_AOB: u32 = 0x40;
+const PMU_CONTROL: u32 = 0x600;
+const PMU_CONTROL_RES_RELOAD: u32 = 0x2 << 13;
+const PMU_CAPABILITIES: u32 = 0x604;
+const PMU_CHIPCONTROL_ADDR: u32 = 0x650;
+const PMU_CHIPCONTROL_DATA: u32 = 0x654;
+
+// A core's wrapper (agent) registers.
+const AGENT_IOCTL: u32 = 0x408;
+const IOCTL_CLK: u32 = 0x0001;
+const IOCTL_FGC: u32 = 0x0002;
+const IOCTL_ARMCR4_CPUHALT: u32 = 0x0020;
+const IOCTL_D11_PHYCLOCKEN: u32 = 0x0004;
+const IOCTL_D11_PHYRESET: u32 = 0x0008;
+const AGENT_RESET_CTL: u32 = 0x800;
+const RESET_CTL_RESET: u32 = 0x1;
+
+// The ARM CR4's own registers: its tightly coupled memory banks.
+const ARMCR4_CAP: u32 = 0x04;
+const ARMCR4_BANKIDX: u32 = 0x40;
+const ARMCR4_BANKINFO: u32 = 0x44;
+const BANKINFO_BSZ_MASK: u32 = 0x7F;
+const BANKINFO_BLK_1K: u32 = 0x200;
+/// Where the CR4 sees its RAM on a 4345 (`bwfm_chip_tcm_rambase`).
+pub const RAMBASE_4345: u32 = 0x19_8000;
+
+// The SDIO device core: the mailbox between host and firmware.
+pub const SDPCMD_INTSTATUS: u32 = 0x020;
+pub const SDPCMD_HOSTINTMASK: u32 = 0x024;
+pub const SDPCMD_TOSBMAILBOXDATA: u32 = 0x048;
+const INTSTATUS_HMB_SW_MASK: u32 = 0xF0;
+const INTSTATUS_CHIPACTIVE: u32 = 1 << 29;
+const SDPCM_PROT_VERSION: u32 = 4;
 
 // Core ids (a component descriptor's part number).
 pub const CORE_CHIPCOMMON: u16 = 0x800;
@@ -138,6 +192,21 @@ pub struct Chip<P: Platform> {
     /// In enumeration ROM order.
     pub cores: [Core; MAX_CORES],
     pub ncores: usize,
+    /// The CR4's RAM, as the CR4 addresses it.
+    pub rambase: u32,
+    pub ramsize: u32,
+    pub cc_caps: u32,
+    pub cc_caps_ext: u32,
+    pub pmurev: u32,
+}
+
+/// What `load_firmware` did, for the log.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Loaded {
+    pub firmware: usize,
+    pub nvram: usize,
+    pub nvram_at: u32,
+    pub reset_vector: u32,
 }
 
 impl<P: Platform> Chip<P> {
@@ -147,8 +216,18 @@ impl<P: Platform> Chip<P> {
         if let Err(e) = Self::prepare(&mut sdio) {
             return Err((sdio, e));
         }
-        let mut chip =
-            Self { sdio, window: u32::MAX, id: ChipId::default(), cores: [Core::default(); MAX_CORES], ncores: 0 };
+        let mut chip = Self {
+            sdio,
+            window: u32::MAX,
+            id: ChipId::default(),
+            cores: [Core::default(); MAX_CORES],
+            ncores: 0,
+            rambase: 0,
+            ramsize: 0,
+            cc_caps: 0,
+            cc_caps_ext: 0,
+            pmurev: 0,
+        };
         match chip.read_4(CHIPCOMMON_BASE) {
             Ok(raw) => chip.id = ChipId::decode(raw),
             Err(e) => return Err((chip.sdio, e)),
@@ -157,10 +236,279 @@ impl<P: Platform> Chip<P> {
         if chip.id.socitype != 1 {
             return Err((chip.sdio, Error::Card("not an AXI (AI) interconnect", chip.id.raw)));
         }
-        if let Err(e) = chip.scan_cores() {
+        if let Err(e) = chip.scan_cores().and_then(|_| chip.settle()) {
             return Err((chip.sdio, e));
         }
         Ok(chip)
+    }
+
+    /// With the cores known: hold the CR4 halted, size its RAM, read the
+    /// capabilities, and leave the chip as `bwfm_sdio_attach` does: kept awake
+    /// (KSO), the WLAN side reset, the PMU's resources reloaded, function 2 off
+    /// and no clock request.
+    fn settle(&mut self) -> Result<(), Error> {
+        let cr4 = self.need(CORE_ARM_CR4, "no ARM CR4 core: not a chip this driver loads")?;
+        self.set_passive()?;
+        self.ramsize = self.tcm_ramsize(cr4)?;
+        self.rambase = match self.id.chip {
+            0x4345 => RAMBASE_4345,
+            c => return Err(Error::Card("RAM base unknown for this chip", c as u32)),
+        };
+        let cc = self.need(CORE_CHIPCOMMON, "no chip-common core")?;
+        self.cc_caps = self.read_4(cc.base + CC_CAPABILITIES)?;
+        self.cc_caps_ext = self.read_4(cc.base + CC_CAPABILITIES_EXT)?;
+        if self.cc_caps & CC_CAPABILITIES_PMU != 0 {
+            self.pmurev = self.read_4(self.pmu().base + PMU_CAPABILITIES)? & 0xFF;
+        }
+        let sdio = self.need(CORE_SDIO_DEV, "no SDIO device core")?;
+        if sdio.rev >= 12 {
+            let s = self.sdio.read_1(1, F1_SLEEPCSR)?;
+            if s & SLEEPCSR_KSO == 0 {
+                self.sdio.write_1(1, F1_SLEEPCSR, s | SLEEPCSR_KSO)?;
+            }
+        }
+        let c = self.sdio.read_1(0, CCCR_BRCM_CARDCTRL)?;
+        self.sdio.write_1(0, CCCR_BRCM_CARDCTRL, c | CARDCTRL_WLANRESET)?;
+        let pmu = self.pmu().base + PMU_CONTROL;
+        let v = self.read_4(pmu)?;
+        self.write_4(pmu, v | PMU_CONTROL_RES_RELOAD)?;
+        self.sdio.disable_function(2)?;
+        self.sdio.write_1(1, F1_CHIPCLKCSR, 0)
+    }
+
+    fn need(&self, id: u16, what: &'static str) -> Result<Core, Error> {
+        self.core(id).ok_or(Error::Card(what, id as u32))
+    }
+
+    /// The PMU's registers: its own core on newer chip-commons, else chip-common's.
+    fn pmu(&self) -> Core {
+        let cc = self.core(CORE_CHIPCOMMON).unwrap_or_default();
+        if cc.rev >= 35 && self.cc_caps_ext & CC_CAPABILITIES_EXT_AOB != 0 {
+            if let Some(p) = self.core(CORE_PMU) {
+                return p;
+            }
+        }
+        cc
+    }
+
+    // ---- AI core control (`bwfm_chip_ai_*`) --------------------------------
+
+    fn ai_disable(&mut self, core: Core, prereset: u32, reset: u32) -> Result<(), Error> {
+        if self.read_4(core.wrap + AGENT_RESET_CTL)? & RESET_CTL_RESET == 0 {
+            self.write_4(core.wrap + AGENT_IOCTL, prereset | IOCTL_FGC | IOCTL_CLK)?;
+            self.read_4(core.wrap + AGENT_IOCTL)?;
+            self.write_4(core.wrap + AGENT_RESET_CTL, RESET_CTL_RESET)?;
+            self.sdio.hc.p.stall_us(20);
+            let mut held = false;
+            for _ in 0..300 {
+                if self.read_4(core.wrap + AGENT_RESET_CTL)? == RESET_CTL_RESET {
+                    held = true;
+                    break;
+                }
+            }
+            if !held {
+                return Err(Error::Card("core never entered reset", core.id as u32));
+            }
+        }
+        self.write_4(core.wrap + AGENT_IOCTL, reset | IOCTL_FGC | IOCTL_CLK)?;
+        self.read_4(core.wrap + AGENT_IOCTL).map(|_| ())
+    }
+
+    fn ai_reset(&mut self, core: Core, prereset: u32, reset: u32, postreset: u32) -> Result<(), Error> {
+        self.ai_disable(core, prereset, reset)?;
+        let mut out = false;
+        for _ in 0..50 {
+            if self.read_4(core.wrap + AGENT_RESET_CTL)? & RESET_CTL_RESET == 0 {
+                out = true;
+                break;
+            }
+            self.write_4(core.wrap + AGENT_RESET_CTL, 0)?;
+            self.sdio.hc.p.stall_us(60);
+        }
+        if !out {
+            return Err(Error::Card("core never left reset", core.id as u32));
+        }
+        self.write_4(core.wrap + AGENT_IOCTL, postreset | IOCTL_CLK)?;
+        self.read_4(core.wrap + AGENT_IOCTL).map(|_| ())
+    }
+
+    /// Halt the CR4 and hold the radio's cores in reset (`bwfm_chip_cr4_set_passive`).
+    fn set_passive(&mut self) -> Result<(), Error> {
+        let cr4 = self.need(CORE_ARM_CR4, "no ARM CR4 core")?;
+        let v = self.read_4(cr4.wrap + AGENT_IOCTL)?;
+        self.ai_reset(cr4, v & IOCTL_ARMCR4_CPUHALT, IOCTL_ARMCR4_CPUHALT, IOCTL_ARMCR4_CPUHALT)?;
+        for i in 0..self.ncores {
+            let c = self.cores[i];
+            if c.id == CORE_80211 {
+                self.ai_disable(c, IOCTL_D11_PHYRESET | IOCTL_D11_PHYCLOCKEN, IOCTL_D11_PHYCLOCKEN)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Clear the mailbox, plant the reset vector at address 0 and let the CR4
+    /// run (`bwfm_sdio_buscore_activate`, `bwfm_chip_cr4_set_active`).
+    fn set_active(&mut self, rstvec: u32) -> Result<(), Error> {
+        let sdio = self.need(CORE_SDIO_DEV, "no SDIO device core")?;
+        self.write_4(sdio.base + SDPCMD_INTSTATUS, 0xFFFF_FFFF)?;
+        if rstvec != 0 {
+            self.write_4(0, rstvec)?;
+        }
+        let cr4 = self.need(CORE_ARM_CR4, "no ARM CR4 core")?;
+        self.ai_reset(cr4, IOCTL_ARMCR4_CPUHALT, 0, 0)
+    }
+
+    /// The CR4's RAM: the sum of its TCM banks (`bwfm_chip_tcm_ramsize`).
+    fn tcm_ramsize(&mut self, cr4: Core) -> Result<u32, Error> {
+        let cap = self.read_4(cr4.base + ARMCR4_CAP)?;
+        let banks = (cap & 0xF) + ((cap >> 4) & 0xF);
+        let mut size = 0;
+        for i in 0..banks {
+            self.write_4(cr4.base + ARMCR4_BANKIDX, i)?;
+            let info = self.read_4(cr4.base + ARMCR4_BANKINFO)?;
+            let blk = if info & BANKINFO_BLK_1K != 0 { 1024 } else { 8192 };
+            size += ((info & BANKINFO_BSZ_MASK) + 1) * blk;
+        }
+        Ok(size)
+    }
+
+    /// Save/restore: the firmware may power the chip down between frames
+    /// (`bwfm_chip_sr_capable`, the 4345 case).
+    fn sr_capable(&mut self) -> Result<bool, Error> {
+        if self.pmurev < 17 || self.id.chip != 0x4345 {
+            return Ok(false);
+        }
+        let pmu = self.pmu().base;
+        self.write_4(pmu + PMU_CHIPCONTROL_ADDR, 3)?;
+        Ok(self.read_4(pmu + PMU_CHIPCONTROL_DATA)? & (1 << 2) != 0)
+    }
+
+    // ---- clocks (`bwfm_sdio_htclk`) ----------------------------------------
+
+    /// Request a clock and wait for it: ALP alone, or HT (which brings ALP).
+    fn clock_on(&mut self, ht: bool) -> Result<(), Error> {
+        let (req, want) =
+            if ht { (CLK_HT_AVAIL_REQ, CLK_ALP_AVAIL | CLK_HT_AVAIL) } else { (CLK_ALP_AVAIL_REQ, CLK_ALP_AVAIL) };
+        self.sdio.write_1(1, F1_CHIPCLKCSR, req)?;
+        let start = self.sdio.hc.p.now_us();
+        loop {
+            let c = self.sdio.read_1(1, F1_CHIPCLKCSR)?;
+            if c & want == want {
+                return Ok(());
+            }
+            if self.sdio.hc.p.now_us().wrapping_sub(start) > 5_000_000 {
+                return Err(Error::Card(if ht { "HT clock never came up" } else { "ALP clock never came up" }, c as u32));
+            }
+            self.sdio.hc.p.stall_us(1000);
+        }
+    }
+
+    // ---- RAM (`bwfm_sdio_ram_read_write`) ----------------------------------
+
+    /// Move `len` bytes at backplane `addr` window by window, 4-byte accesses
+    /// only: a tail shorter than a word goes through `word`, zero-padded.
+    fn ram(&mut self, addr: u32, len: usize, mut each: impl FnMut(&mut Self, u32, usize, usize) -> Result<(), Error>) -> Result<(), Error> {
+        let mut off = 0;
+        while off < len {
+            let sb = addr + off as u32;
+            self.place_window(sb)?;
+            let sd = sb & SB_OFT_ADDR_MASK;
+            let size = (len - off).min((SB_OFT_ADDR_MASK + 1 - sd) as usize);
+            each(self, sd | SB_ACCESS_2_4B, off, size)?;
+            off += size;
+        }
+        Ok(())
+    }
+
+    pub fn ram_write(&mut self, addr: u32, data: &[u8]) -> Result<(), Error> {
+        self.ram(addr, data.len(), |c, sd, off, size| {
+            let whole = size & !3;
+            c.sdio.write(1, sd, true, &data[off..off + whole])?;
+            if whole < size {
+                let mut w = [0u8; 4];
+                w[..size - whole].copy_from_slice(&data[off + whole..off + size]);
+                c.sdio.write(1, sd + whole as u32, true, &w)?;
+            }
+            Ok(())
+        })
+    }
+
+    pub fn ram_read(&mut self, addr: u32, out: &mut [u8]) -> Result<(), Error> {
+        let len = out.len();
+        self.ram(addr, len, |c, sd, off, size| {
+            let whole = size & !3;
+            c.sdio.read(1, sd, true, &mut out[off..off + whole])?;
+            if whole < size {
+                let mut w = [0u8; 4];
+                c.sdio.read(1, sd + whole as u32, true, &mut w)?;
+                out[off + whole..off + size].copy_from_slice(&w[..size - whole]);
+            }
+            Ok(())
+        })
+    }
+
+    /// Read `data.len()` bytes back from `addr` and compare, a chunk at a time.
+    fn verify(&mut self, addr: u32, data: &[u8], what: &'static str) -> Result<(), Error> {
+        let mut buf = [0u8; 2048];
+        for (i, want) in data.chunks(buf.len()).enumerate() {
+            let at = addr + (i * buf.len()) as u32;
+            let got = &mut buf[..want.len()];
+            self.ram_read(at, got)?;
+            if let Some(k) = got.iter().zip(want).position(|(a, b)| a != b) {
+                return Err(Error::Card(what, at + k as u32));
+            }
+        }
+        Ok(())
+    }
+
+    // ---- the firmware ------------------------------------------------------
+
+    /// Write the firmware at the bottom of the CR4's RAM and the converted
+    /// NVRAM (`nvram::convert`) at the top, verify both, and start the CR4 at
+    /// the firmware's first word (`bwfm_sdio_load_microcode`), all under the
+    /// ALP clock.
+    pub fn load_firmware(&mut self, firmware: &[u8], nvram: &[u8]) -> Result<Loaded, Error> {
+        if firmware.len() < 4 || nvram.len() % 4 != 0 || firmware.len() + nvram.len() > self.ramsize as usize {
+            return Err(Error::Card("firmware and NVRAM do not fit the chip's RAM", self.ramsize));
+        }
+        self.clock_on(false)?;
+        let result = self.load(firmware, nvram);
+        self.sdio.write_1(1, F1_CHIPCLKCSR, 0)?;
+        result
+    }
+
+    fn load(&mut self, firmware: &[u8], nvram: &[u8]) -> Result<Loaded, Error> {
+        self.ram_write(self.rambase, firmware)?;
+        self.verify(self.rambase, firmware, "firmware read back differently")?;
+        let nvram_at = self.rambase + self.ramsize - nvram.len() as u32;
+        self.ram_write(nvram_at, nvram)?;
+        self.verify(nvram_at, nvram, "NVRAM read back differently")?;
+        let reset_vector = u32::from_le_bytes([firmware[0], firmware[1], firmware[2], firmware[3]]);
+        self.set_active(reset_vector)?;
+        Ok(Loaded { firmware: firmware.len(), nvram: nvram.len(), nvram_at, reset_vector })
+    }
+
+    /// After `load_firmware`: run on HT, tell the firmware our mailbox version,
+    /// and enable function 2. The firmware sets its I/O-ready once it is up, so
+    /// that is the wait for it (`bwfm_sdio_preinit`). Then unmask the mailbox
+    /// interrupts and, on a save/restore chip, let it wake for HT on its own.
+    pub fn start(&mut self) -> Result<(), Error> {
+        self.clock_on(true)?;
+        let clk = self.sdio.read_1(1, F1_CHIPCLKCSR)?;
+        self.sdio.write_1(1, F1_CHIPCLKCSR, clk | CLK_FORCE_HT)?;
+        let sdio = self.need(CORE_SDIO_DEV, "no SDIO device core")?;
+        self.write_4(sdio.base + SDPCMD_TOSBMAILBOXDATA, SDPCM_PROT_VERSION << 16)?;
+        self.sdio.enable_function(2)?;
+        self.write_4(sdio.base + SDPCMD_HOSTINTMASK, INTSTATUS_HMB_SW_MASK | INTSTATUS_CHIPACTIVE)?;
+        self.sdio.write_1(1, F1_WATERMARK, 8)?;
+        if self.sr_capable()? {
+            let w = self.sdio.read_1(1, F1_WAKEUPCTRL)?;
+            self.sdio.write_1(1, F1_WAKEUPCTRL, w | WAKEUPCTRL_HTWAIT)?;
+            self.sdio.write_1(0, CCCR_BRCM_CARDCAP, CARDCAP_CMD14_SUPPORT | CARDCAP_CMD14_EXT)?;
+            self.sdio.write_1(1, F1_CHIPCLKCSR, CLK_FORCE_HT)
+        } else {
+            self.sdio.write_1(1, F1_CHIPCLKCSR, clk)
+        }
     }
 
     fn prepare(sdio: &mut Sdio<P>) -> Result<(), Error> {
@@ -185,6 +533,7 @@ impl<P: Platform> Chip<P> {
             sdio.hc.p.stall_us(100);
         }
         sdio.write_1(1, F1_CHIPCLKCSR, CLK_FORCE_HW_CLKREQ_OFF | CLK_FORCE_ALP)?;
+        sdio.hc.p.stall_us(65);
         sdio.write_1(1, F1_SDIOPULLUP, 0)
     }
 
@@ -324,12 +673,30 @@ impl<P: Platform> Chip<P> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim::{Card, Sim};
+    use crate::sim::{Card, Sim, CR4_WRAP};
 
-    fn attached() -> Chip<Sim> {
-        let mut s = Sdio::new(Sim::new(Card::cyw43455()));
+    fn attached_with(card: Card) -> Chip<Sim> {
+        let mut s = Sdio::new(Sim::new(card));
         s.init().unwrap();
         Chip::attach(s).map_err(|(_, e)| e).unwrap()
+    }
+
+    fn attached() -> Chip<Sim> {
+        attached_with(Card::cyw43455())
+    }
+
+    /// A firmware image whose length is not a whole word and which crosses a
+    /// 32 KiB window, with its reset vector first.
+    fn firmware() -> Vec<u8> {
+        let mut fw: Vec<u8> = (0..40_001u32).map(|i| (i * 7 + 3) as u8).collect();
+        fw[..4].copy_from_slice(&0xB800_0EA0u32.to_le_bytes());
+        fw
+    }
+
+    fn nvram() -> Vec<u8> {
+        let mut out = [0u8; 64];
+        let n = crate::nvram::convert(b"boardflags=0x00480201\nccode=X2\n", &mut out).unwrap();
+        out[..n].to_vec()
     }
 
     #[test]
@@ -339,17 +706,92 @@ mod tests {
         assert_eq!(chip.id.raw, 0x1526_4345);
         assert_eq!((chip.id.chip, chip.id.rev, chip.id.socitype), (0x4345, 6, 1));
         let card = chip.sdio.hc.p.card();
-        assert_eq!(card.io_enable & 0b10, 0b10);
-        assert_eq!(card.clkcsr, CLK_FORCE_HW_CLKREQ_OFF | CLK_FORCE_ALP | CLK_ALP_AVAIL);
+        assert_eq!(card.io_enable, 0b10, "function 1 on, function 2 off");
+        assert_eq!(card.clkcsr, 0, "attach leaves no clock request");
         assert_eq!((card.fbr_block[1], card.fbr_block[2]), (64, 512));
+    }
+
+    #[test]
+    fn attach_halts_the_cr4_and_sizes_its_ram() {
+        let chip = attached();
+        assert_eq!((chip.rambase, chip.ramsize), (0x19_8000, 256 * 1024));
+        assert_eq!(chip.pmurev, 24);
+        let card = chip.sdio.hc.p.card();
+        assert_eq!(card.word(CR4_WRAP + 0x408), IOCTL_ARMCR4_CPUHALT | IOCTL_CLK, "halted, clocked");
+        assert_eq!(card.word(CR4_WRAP + 0x800), 0, "out of reset");
+        assert!(!card.firmware_running());
+        assert_eq!(card.f1_regs[(F1_SLEEPCSR - 0x10000) as usize] & SLEEPCSR_KSO, SLEEPCSR_KSO);
+        assert_eq!(card.cccr[CCCR_BRCM_CARDCTRL as usize] & CARDCTRL_WLANRESET, CARDCTRL_WLANRESET);
+    }
+
+    #[test]
+    fn the_firmware_goes_in_verified_and_function_2_says_it_runs() {
+        let mut chip = attached();
+        let (fw, nv) = (firmware(), nvram());
+        let loaded = chip.load_firmware(&fw, &nv).unwrap();
+        assert_eq!(loaded.reset_vector, 0xB800_0EA0);
+        assert_eq!(loaded.nvram_at, 0x19_8000 + 256 * 1024 - nv.len() as u32);
+        {
+            let card = chip.sdio.hc.p.card();
+            assert_eq!(card.word(0), 0xB800_0EA0, "reset vector planted at 0");
+            assert!(card.firmware_running());
+            // The last, partial word went in zero-padded.
+            let last = 0x19_8000 + 40_000;
+            assert_eq!(card.word(last), fw[40_000] as u32);
+            assert_eq!(card.clkcsr, 0, "ALP dropped after the load");
+        }
+        let mut back = vec![0u8; fw.len()];
+        chip.ram_read(chip.rambase, &mut back).unwrap();
+        assert_eq!(back, fw);
+        chip.start().unwrap();
+        let card = chip.sdio.hc.p.card();
+        assert_eq!(card.io_enable, 0b110);
+        assert_eq!(card.word(0x1800_4000 + SDPCMD_TOSBMAILBOXDATA), 4 << 16);
+        assert_eq!(card.word(0x1800_4000 + SDPCMD_HOSTINTMASK), 0xF0 | 1 << 29);
+        assert_eq!(card.f1_regs[(F1_WATERMARK - 0x10000) as usize], 8);
+        assert_eq!(card.clkcsr & CLK_FORCE_HT, 0, "no save/restore: HT not forced at the end");
+        assert_eq!(card.clkcsr & CLK_HT_AVAIL_REQ, CLK_HT_AVAIL_REQ);
+    }
+
+    #[test]
+    fn ram_that_reads_back_wrong_is_caught_where_it_differs() {
+        let mut card = Card::cyw43455();
+        card.stuck_bit_at = Some(0x19_8000 + 0x9000);
+        let mut chip = attached_with(card);
+        let fw = vec![0u8; 0xA000];
+        match chip.load_firmware(&fw, &nvram()) {
+            Err(Error::Card(what, at)) => assert_eq!((what, at), ("firmware read back differently", 0x19_8000 + 0x9000)),
+            r => panic!("expected a verify failure, got {r:?}"),
+        }
+        assert!(!chip.sdio.hc.p.card().firmware_running(), "never started");
+    }
+
+    #[test]
+    fn firmware_that_never_comes_up_is_a_timeout_on_function_2() {
+        let mut card = Card::cyw43455();
+        card.fw_never_ready = true;
+        let mut chip = attached_with(card);
+        chip.load_firmware(&firmware(), &nvram()).unwrap();
+        match chip.start() {
+            Err(Error::Card(what, _)) => assert!(what.contains("ready"), "{what}"),
+            r => panic!("expected a function 2 timeout, got {r:?}"),
+        }
+    }
+
+    #[test]
+    fn firmware_too_big_for_the_ram_is_refused_before_any_write() {
+        let mut chip = attached();
+        let fw = vec![1u8; 256 * 1024];
+        assert!(chip.load_firmware(&fw, &nvram()).is_err());
+        assert_eq!(chip.sdio.hc.p.card().word(0x19_8000), 0);
     }
 
     #[test]
     fn the_enumeration_rom_gives_each_core_its_bases() {
         let chip = attached();
-        // sim.rs's ROM: chip-common, the CR4 (through a master port), a component
-        // with no wrappers (skipped), the PMU, then EOT.
-        assert_eq!(chip.ncores, 3);
+        // sim.rs's ROM: chip-common, the CR4 (through a master port), the SDIO
+        // device, a component with no wrappers (skipped), the PMU, then EOT.
+        assert_eq!(chip.ncores, 4);
         assert_eq!(
             chip.core(CORE_CHIPCOMMON),
             Some(Core { id: CORE_CHIPCOMMON, rev: 0x2B, base: 0x1800_0000, wrap: 0x1810_0000 })

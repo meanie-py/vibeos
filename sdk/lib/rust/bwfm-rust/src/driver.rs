@@ -2,25 +2,31 @@
 //! 5's SDC1, hal-rust/src/arm64/pnpdd.rs), bound through the critical device
 //! database.
 //!
-//! So far START powers the chip, brings the SDIO bus up, and reads the chip id
-//! and its cores:
-//! the first board milestone in docs/engineering/pi-wifi-design.md. The chip
-//! stays attached in `CHIP` for the firmware download that comes next. Every
-//! other IRP passes down untouched.
+//! START powers the chip, brings the SDIO bus up, and reads the chip id and its
+//! cores. A worker thread then loads the firmware from
+//! `\SystemRoot\System32\drivers\cyw43455\` (staged only by a build with
+//! `VIBEOS_PAYLOAD=piwifi`: VibeOS does not ship it) and starts it; function 2
+//! coming ready is the firmware running. docs/engineering/pi-wifi-design.md.
+//! Every other IRP passes down untouched.
 
 use core::ptr::null_mut;
 use core::sync::atomic::{AtomicPtr, Ordering};
 
 use ntkrnl_sys::ddk::{
-    IoAttachDeviceToDeviceStack, IoCreateDevice, IoDeleteDevice, IoForwardIrpSynchronously, KeDelayExecutionThread,
-    KeQueryPerformanceCounter, KeStallExecutionProcessor, MmMapIoSpace, _MEMORY_CACHING_TYPE_MmNonCached, DEVICE_OBJECT,
-    LARGE_INTEGER, NTSTATUS, PDEVICE_OBJECT, PDRIVER_OBJECT, PHYSICAL_ADDRESS, PIO_STACK_LOCATION, PIRP, ULONG,
+    ExAllocatePoolWithTag, ExFreePoolWithTag, IoAttachDeviceToDeviceStack, IoCreateDevice, IoDeleteDevice,
+    IoForwardIrpSynchronously, KeDelayExecutionThread, KeQueryPerformanceCounter, KeStallExecutionProcessor,
+    MmMapIoSpace, PsCreateSystemThread, ZwClose, ZwCreateFile, ZwQueryInformationFile, ZwReadFile,
+    _FILE_INFORMATION_CLASS_FileStandardInformation, _MEMORY_CACHING_TYPE_MmNonCached, DEVICE_OBJECT,
+    FILE_STANDARD_INFORMATION, HANDLE, IO_STATUS_BLOCK, LARGE_INTEGER,
+    NTSTATUS, OBJECT_ATTRIBUTES, PDEVICE_OBJECT, PDRIVER_OBJECT, PHYSICAL_ADDRESS, PIO_STACK_LOCATION, PIRP, PVOID,
+    ULONG, UNICODE_STRING,
 };
 use ntkrnl_sys::driver_ddk::{IoCallDriver, IoCompleteRequest, PoCallDriver, PoStartNextPowerIrp};
 use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoSkipCurrentIrpStackLocation};
 use sdhci_rust::Platform;
 
 use crate::chip::Chip;
+use crate::nvram;
 use crate::print::bwprint;
 use crate::sdio::Sdio;
 
@@ -51,13 +57,34 @@ const WL_ON_MS: i64 = 150;
 
 static FDO: AtomicPtr<DEVICE_OBJECT> = AtomicPtr::new(null_mut());
 static LOWER: AtomicPtr<DEVICE_OBJECT> = AtomicPtr::new(null_mut());
-/// Written once in START.
+/// Written once in START, then owned by the firmware worker.
 static mut CHIP: Option<Chip<Kernel>> = None;
+
+const BWFM_POOL_TAG: ULONG = u32::from_le_bytes(*b"Bwfm");
+const NON_PAGED_POOL: i32 = 0;
+const THREAD_ALL_ACCESS: ULONG = 0x001F_03FF;
+/// The files, under \SystemRoot\System32\drivers\cyw43455\, as
+/// tools/fetch_pi_wifi_firmware.py names them.
+const FIRMWARE: &str = "cyw43455\\cyfmac43455-sdio.bin";
+const NVRAM: &str = "cyw43455\\brcmfmac43455-sdio.txt";
+/// The firmware is ~600 KiB and the NVRAM ~2 KiB; anything far past that is not them.
+const FILE_MAX: usize = 1 << 20;
+/// How long the worker waits for the system volume to answer for the files.
+const FILE_WAIT_S: u32 = 120;
 
 /// The mapped SDHCI window and the ARM generic timer. No interrupt yet: the
 /// bring-up polls.
 pub struct Kernel {
     regs: *mut u32,
+}
+
+impl Kernel {
+    fn now_us_static() -> u64 {
+        let mut freq: LARGE_INTEGER = unsafe { core::mem::zeroed() };
+        let count = unsafe { KeQueryPerformanceCounter(&mut freq) };
+        let f = unsafe { freq.QuadPart }.max(1) as u128;
+        (unsafe { count.QuadPart } as u128 * 1_000_000 / f) as u64
+    }
 }
 
 impl Platform for Kernel {
@@ -68,10 +95,7 @@ impl Platform for Kernel {
         unsafe { core::ptr::write_volatile(self.regs.add(off / 4), v) }
     }
     fn now_us(&self) -> u64 {
-        let mut freq: LARGE_INTEGER = unsafe { core::mem::zeroed() };
-        let count = unsafe { KeQueryPerformanceCounter(&mut freq) };
-        let f = unsafe { freq.QuadPart }.max(1) as u128;
-        (unsafe { count.QuadPart } as u128 * 1_000_000 / f) as u64
+        Kernel::now_us_static()
     }
     fn stall_us(&self, us: u32) {
         unsafe { KeStallExecutionProcessor(us) }
@@ -178,6 +202,140 @@ unsafe fn power_on(host: u64) -> bool {
     true
 }
 
+/// A file under \SystemRoot\System32\drivers\ read whole into pool, or the
+/// status that stopped it. The caller frees it with BWFM_POOL_TAG.
+unsafe fn read_driver_file(rel: &str) -> Result<(*mut u8, usize), NTSTATUS> {
+    let mut name = [0u16; 96];
+    let mut len = 0;
+    for c in "\\SystemRoot\\System32\\drivers\\".encode_utf16().chain(rel.encode_utf16()) {
+        if len == name.len() - 1 {
+            return Err(STATUS_INSUFFICIENT_RESOURCES);
+        }
+        name[len] = c;
+        len += 1;
+    }
+    let mut us: UNICODE_STRING = core::mem::zeroed();
+    us.Length = (len * 2) as u16;
+    us.MaximumLength = (len * 2 + 2) as u16;
+    us.Buffer = name.as_mut_ptr();
+    let mut oa: OBJECT_ATTRIBUTES = core::mem::zeroed();
+    oa.Length = core::mem::size_of::<OBJECT_ATTRIBUTES>() as u32;
+    oa.ObjectName = &mut us;
+    oa.Attributes = 0x40 | 0x200; // OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE
+    let mut iosb: IO_STATUS_BLOCK = core::mem::zeroed();
+    let mut h: HANDLE = null_mut();
+    let s = ZwCreateFile(
+        &mut h,
+        0x8012_0089, // GENERIC_READ | SYNCHRONIZE
+        &mut oa,
+        &mut iosb,
+        null_mut(),
+        0x80, // FILE_ATTRIBUTE_NORMAL
+        0x1,  // FILE_SHARE_READ
+        0x1,  // FILE_OPEN
+        0x20 | 0x40, // FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE
+        null_mut(),
+        0,
+    );
+    if s < 0 {
+        return Err(s);
+    }
+    let mut info: FILE_STANDARD_INFORMATION = core::mem::zeroed();
+    let s = ZwQueryInformationFile(
+        h,
+        &mut iosb,
+        (&raw mut info).cast(),
+        core::mem::size_of::<FILE_STANDARD_INFORMATION>() as ULONG,
+        _FILE_INFORMATION_CLASS_FileStandardInformation,
+    );
+    let size = info.EndOfFile.QuadPart as usize;
+    if s < 0 || size == 0 || size > FILE_MAX {
+        ZwClose(h);
+        return Err(if s < 0 { s } else { STATUS_DEVICE_CONFIGURATION_ERROR });
+    }
+    // Room for nvram::convert's padding and token after the text.
+    let buf = ExAllocatePoolWithTag(NON_PAGED_POOL as _, (size + nvram::SLACK) as _, BWFM_POOL_TAG) as *mut u8;
+    if buf.is_null() {
+        ZwClose(h);
+        return Err(STATUS_INSUFFICIENT_RESOURCES);
+    }
+    let s = ZwReadFile(h, null_mut(), None, null_mut(), &mut iosb, buf as PVOID, size as u32, null_mut(), null_mut());
+    ZwClose(h);
+    if s < 0 || iosb.Information as usize != size {
+        ExFreePoolWithTag(buf.cast(), BWFM_POOL_TAG);
+        return Err(if s < 0 { s } else { STATUS_DEVICE_CONFIGURATION_ERROR });
+    }
+    Ok((buf, size))
+}
+
+/// Wait for the files, convert the NVRAM, load the firmware and start it.
+unsafe extern "system" fn firmware_worker(_context: PVOID) {
+    let Some(chip) = (*(&raw mut CHIP)).as_mut() else { return };
+    let mut waited = 0;
+    let (fw, nv) = loop {
+        match (read_driver_file(FIRMWARE), read_driver_file(NVRAM)) {
+            (Ok(f), Ok(n)) => break (f, n),
+            (f, n) => {
+                // One may be readable before the other: free it, retry both.
+                for r in [f, n] {
+                    if let Ok((p, _)) = r {
+                        ExFreePoolWithTag(p.cast(), BWFM_POOL_TAG);
+                    }
+                }
+                if waited >= FILE_WAIT_S {
+                    bwprint!(
+                        "no firmware in \\SystemRoot\\System32\\drivers\\cyw43455 after {} s: VibeOS does not ship it; \
+                         build with VIBEOS_PAYLOAD=piwifi to fetch and stage it\n",
+                        FILE_WAIT_S
+                    );
+                    return;
+                }
+                sleep_ms(1000);
+                waited += 1;
+            }
+        }
+    };
+    let firmware = core::slice::from_raw_parts(fw.0, fw.1);
+    let text = core::slice::from_raw_parts(nv.0, nv.1);
+    let mut blob = [0u8; 4096];
+    let loaded = match nvram::convert(text, &mut blob) {
+        None => {
+            bwprint!("NVRAM file is {} bytes: too big to convert\n", nv.1);
+            None
+        }
+        Some(n) => {
+            let t0 = Kernel::now_us_static();
+            let r = chip.load_firmware(firmware, &blob[..n]);
+            Some((r, Kernel::now_us_static().wrapping_sub(t0)))
+        }
+    };
+    ExFreePoolWithTag(fw.0.cast(), BWFM_POOL_TAG);
+    ExFreePoolWithTag(nv.0.cast(), BWFM_POOL_TAG);
+    match loaded {
+        None => {}
+        Some((Err(e), _)) => bwprint!("firmware load failed: {:?}\n", e),
+        Some((Ok(l), us)) => {
+            bwprint!(
+                "firmware loaded and verified: {} bytes at {:#x}, NVRAM {} bytes at {:#x}, reset vector {:#010x}, {} ms\n",
+                l.firmware,
+                chip.rambase,
+                l.nvram,
+                l.nvram_at,
+                l.reset_vector,
+                us / 1000
+            );
+            let t0 = Kernel::now_us_static();
+            match chip.start() {
+                Ok(()) => bwprint!(
+                    "firmware running: function 2 ready after {} ms\n",
+                    Kernel::now_us_static().wrapping_sub(t0) / 1000
+                ),
+                Err(e) => bwprint!("firmware did not come up: {:?}\n", e),
+            }
+        }
+    }
+}
+
 unsafe fn start(io: PIO_STACK_LOCATION) -> NTSTATUS {
     let list = (*io).Parameters.StartDevice.AllocatedResourcesTranslated;
     if list.is_null() || (*list).Count == 0 {
@@ -247,7 +405,29 @@ unsafe fn start(io: PIO_STACK_LOCATION) -> NTSTATUS {
             for c in &chip.cores[..chip.ncores] {
                 bwprint!("  core {:#05x} rev {:2} base {:#010x} wrap {:#010x}\n", c.id, c.rev, c.base, c.wrap);
             }
+            bwprint!(
+                "CR4 halted; RAM {} KiB at {:#x}; chip-common caps {:#010x}, PMU rev {}\n",
+                chip.ramsize / 1024,
+                chip.rambase,
+                chip.cc_caps,
+                chip.pmurev
+            );
             CHIP = Some(chip);
+            let mut thread: HANDLE = null_mut();
+            let s = PsCreateSystemThread(
+                &mut thread,
+                THREAD_ALL_ACCESS,
+                null_mut(),
+                null_mut(),
+                null_mut(),
+                Some(firmware_worker),
+                null_mut(),
+            );
+            if s < 0 {
+                bwprint!("PsCreateSystemThread failed {:#010x}: no firmware\n", s as u32);
+            } else {
+                ZwClose(thread);
+            }
         }
         Err((_, e)) => bwprint!("chip did not attach: {:?}\n", e),
     }

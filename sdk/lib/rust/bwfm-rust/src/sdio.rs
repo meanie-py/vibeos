@@ -32,6 +32,9 @@ const CISTPL_END: u8 = 0xFF;
 /// A CIS is a few dozen bytes; stop well short of walking the whole card.
 const CIS_MAX: u32 = 512;
 
+/// The most blocks one CMD53 can carry.
+const MAX_BLOCKS: usize = 511;
+
 /// R4: card ready, number of I/O functions, the OCR.
 const R4_READY: u32 = 1 << 31;
 /// CMD5's voltage window: 3.2-3.4 V, as ACMD41 asks of a memory card.
@@ -160,6 +163,11 @@ impl<P: Platform> Sdio<P> {
         }
     }
 
+    pub fn disable_function(&self, func: u8) -> Result<(), Error> {
+        let e = self.read_1(0, CCCR_IO_ENABLE)?;
+        self.write_1(0, CCCR_IO_ENABLE, e & !(1u8 << func))
+    }
+
     /// CMD53's commands for `len` bytes at `addr`: whole blocks in one block-mode
     /// command, the rest in byte mode. `incr` advances the card address with each
     /// byte (memory); a fixed address is a FIFO (function 2's frames). Yields
@@ -168,7 +176,16 @@ impl<P: Platform> Sdio<P> {
         // A function whose block size was never set gets byte mode only.
         let bs = self.block[func as usize & 7] as usize;
         let whole = if bs > 0 { len / bs * bs } else { 0 };
-        let blocks = (whole > 0).then_some(Op { addr, block_mode: true, bs, at: 0, len: whole });
+        // CMD53's count is 9 bits: at most 511 blocks per command (0 means "until
+        // aborted", which we never ask for). A 32 KiB window at 64-byte blocks is 512.
+        let run = MAX_BLOCKS * bs.max(1);
+        let blocks = (0..whole).step_by(run.max(1)).map(move |at| Op {
+            addr: if incr { addr + at as u32 } else { addr },
+            block_mode: true,
+            bs,
+            at,
+            len: run.min(whole - at),
+        });
         let tail = if bs > 0 { bs.min(512) } else { 512 };
         let bytes = (whole..len).step_by(tail).map(move |at| Op {
             addr: if incr { addr + at as u32 } else { addr },
@@ -177,7 +194,7 @@ impl<P: Platform> Sdio<P> {
             at,
             len: tail.min(len - at),
         });
-        blocks.into_iter().chain(bytes)
+        blocks.chain(bytes)
     }
 
     fn one_extended(&self, func: u8, incr: bool, op: &Op, mut data: Data) -> Result<(), Error> {
@@ -309,5 +326,17 @@ mod tests {
         // all at the FIFO's one address.
         assert_eq!(card.f2_writes, vec![(0x8000, true, 128), (0x8000, false, 22)]);
         assert_eq!(card.f2_fifo, frame);
+    }
+
+    #[test]
+    fn a_32k_run_is_two_block_commands_because_the_count_is_9_bits() {
+        let mut s = Sdio::new(Sim::new(Card::cyw43455()));
+        s.init().unwrap();
+        s.set_block_size(2, 64).unwrap();
+        let frame = vec![0x5Au8; 32 * 1024];
+        s.write(2, 0x8000, false, &frame).unwrap();
+        let card = s.hc.p.card();
+        assert_eq!(card.f2_writes, vec![(0x8000, true, 511 * 64), (0x8000, true, 64)]);
+        assert_eq!(card.f2_fifo.len(), frame.len());
     }
 }
