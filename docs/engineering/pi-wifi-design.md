@@ -4,7 +4,8 @@ Status (2026-10-17): protocol, SDIO, chip, firmware-load and frame layers host-t
 against a simulated controller and firmware; on the Pi 5, bwfm.sys loads the firmware and
 the firmware answers `ver`, takes the CLM blob, scans, and joins the bench's hidden
 WPA2-PSK network with the host's own 4-way handshake (run `20261017-074933-gupdzsjz`, see 6).
-bwfm.sys is now an NDIS 6 miniport (step 7, host-tested; not yet run on the board).
+bwfm.sys is an NDIS 6 miniport and carries netstack's traffic: DHCP lease, gateway ping
+and DNS over Wi-Fi, and the host pings the board back (run `20261017-105240-4fzlm0y6`, see 7).
 
 ## Why our own
 
@@ -195,4 +196,17 @@ only when asked to (`VIBEOS_PI_WIFI_FIRMWARE`), so an image built without it is 
    4 ms when idle: the card interrupt is still owed. The join hands back its `Station`,
    whose supplicant answers the AP's group rekeys for as long as the link lasts. The NDIS 6
    layouts are one crate, `ndis6-sys`, shared with ndis.sys's NDIS 6 shim.
-   Then: DHCP over it on the board, and the Pi 4 (host and power differ).
+   On the Pi 5 (`pi5 boot --options /NETSTACK=NDIS`, run `20261017-105240-4fzlm0y6`), PnP
+   installed it about 1.5 minutes into boot and netstack bound it before the join finished:
+
+       [BWFM] NDIS adapter ready
+        [NETSTACK] NDIS: bound adapter MAC b8:27:eb:74:f2:6c
+       [BWFM] 4-way handshake complete in 2788 ms: link up, keys installed (2 EAPOL in, 2 out)
+       [BWFM] link up at 72 Mb/s: carrying traffic
+        [NETSTACK] dhcp lease 192.168.1.150
+        [NETSTACK] ping gateway OK
+        [NETSTACK] dns OK (example.com resolved)
+
+   The host pinged 192.168.1.150 back, 5 of 5. Still owed: a soak through the AP's group
+   rekeys on the board (host-tested only), the card interrupt in place of the 4 ms poll,
+   high-speed SDIO, and the Pi 4 (host and power differ).
