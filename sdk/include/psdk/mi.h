@@ -6733,7 +6733,13 @@ typedef struct _MI_ClientFT_V1
     const MI_UtilitiesFT *utilitiesFT;
 } MI_ClientFT_V1;
 
+/* VIBEOS: a data export of mi.dll, so a client imports it as one (the tree links with
+ * --disable-auto-import, which leaves a plain extern unresolved). */
+#if defined(_WIN32) && !defined(MI_BUILDING_MI_DLL)
+extern __declspec(dllimport) const MI_ClientFT_V1 *mi_clientFT_V1;
+#else
 extern const MI_ClientFT_V1 *mi_clientFT_V1;
+#endif
 
 #if (MI_API_VERSION == 1)
 #define mi_clientFT mi_clientFT_V1

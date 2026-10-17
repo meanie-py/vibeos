@@ -113,23 +113,33 @@ fn RtlpVerGetCondition(condition_mask: u64, type_mask: u32) -> u8 {
 }
 
 /// `NTSTATUS NTAPI RtlVerifyVersionInfo(PRTL_OSVERSIONINFOEXW, ULONG, ULONGLONG)`.
-#[no_mangle]
+#[cfg_attr(feature = "exports", no_mangle)]
 pub unsafe extern "system" fn RtlVerifyVersionInfo(
     VersionInfo: *mut OSVERSIONINFOEXW,
     TypeMask: u32,
     ConditionMask: u64,
 ) -> NTSTATUS {
     let mut Version: OSVERSIONINFOEXW = core::mem::zeroed();
-    let mut Comparison: bool;
-    let mut DoNextCheck: bool;
-    let mut Condition: u8;
-
     Version.dwOSVersionInfoSize = core::mem::size_of::<OSVERSIONINFOEXW>() as u32;
 
     let Status = RtlGetVersion(core::ptr::addr_of_mut!(Version) as *mut OSVERSIONINFOW);
     if Status != STATUS_SUCCESS {
         return Status;
     }
+    verify_against(&Version, VersionInfo, TypeMask, ConditionMask)
+}
+
+/// RtlVerifyVersionInfo's comparison against a given current version (`Version`), so a
+/// caller that reports a different version (kernel32's manifest rule) checks against that.
+pub unsafe fn verify_against(
+    Version: &OSVERSIONINFOEXW,
+    VersionInfo: *mut OSVERSIONINFOEXW,
+    TypeMask: u32,
+    ConditionMask: u64,
+) -> NTSTATUS {
+    let mut Comparison: bool;
+    let mut DoNextCheck: bool;
+    let mut Condition: u8;
 
     if TypeMask == 0 || ConditionMask == 0 {
         return STATUS_INVALID_PARAMETER;
@@ -261,7 +271,7 @@ pub unsafe extern "system" fn RtlVerifyVersionInfo(
 }
 
 /// `ULONGLONG NTAPI VerSetConditionMask(ULONGLONG, ULONG, UCHAR)`.
-#[no_mangle]
+#[cfg_attr(feature = "exports", no_mangle)]
 pub unsafe extern "system" fn VerSetConditionMask(
     mut ConditionMask: u64,
     TypeMask: u32,

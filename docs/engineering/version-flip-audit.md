@@ -9,6 +9,16 @@ cohab-flipped `.c` that is commented out of its CMakeLists (the Rust twin is wha
 `NtMinorVersion = 2`, `NtBuildNumber = 3790` (`sdk/lib/rust/ex-rust/src/init.rs:168-176`),
 registry `CurrentVersion = "5.2"`, `CSDVersion = 0x200`.
 
+**Status 2026-10-17, phases 1-2 landed:** BREAKS #1-#3 (the `& 0x3FFF` masks are `0xFFFF`),
+#4 (uxtheme always uses the 2003 form our user32 implements), #5 (ntoskrnl exports
+KeQueryMaximumProcessorCount/Ex at every version, so KMDF never reaches its version test),
+#6-#7 (IsOS "5.1 or later"), #8 (cicero XPPLUS), #9 (oleaut32 table), #10 (ntdll records the
+HIGHEST declared supportedOS) and #11 (setupapi reads RtlGetVersion) are fixed. D13, the manifest
+rule, is in kernel32-rust `client/version.rs`. Also fixed on the way: ntdll-rust's and
+shell32-rust's `ReactOS_ShimData` lacked compat_undoc.h's amd64-only trailing pointer, so on
+amd64 ntdll rejected every apphelp-filled block on its `dwSize` check. Left: phase 3, the
+D-rows.
+
 ## Summary
 
 | Class | Rows | Meaning |

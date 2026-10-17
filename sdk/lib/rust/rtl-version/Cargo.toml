@@ -12,3 +12,10 @@ edition = "2021"
 
 [lib]
 crate-type = ["rlib"]
+
+[features]
+# The two #[no_mangle] exports. kernel32 turns this off and uses `verify_against` to apply
+# GetVersionEx's manifest rule to VerifyVersionInfo without a second RtlVerifyVersionInfo
+# symbol beside ntdll's import.
+default = ["exports"]
+exports = []

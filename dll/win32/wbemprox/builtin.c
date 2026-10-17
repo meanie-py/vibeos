@@ -316,6 +316,9 @@ static const struct column col_operatingsystem[] =
     { L"Locale",                  CIM_STRING|COL_FLAG_DYNAMIC },
     { L"Manufacturer",            CIM_STRING },
     { L"Name",                    CIM_STRING|COL_FLAG_DYNAMIC },
+#ifdef __REACTOS__
+    { L"NumberOfProcesses",       CIM_UINT32 },
+#endif
     { L"OperatingSystemSKU",      CIM_UINT32 },
     { L"Organization",            CIM_STRING|COL_FLAG_DYNAMIC },
     { L"OSArchitecture",          CIM_STRING },
@@ -913,6 +916,9 @@ struct record_operatingsystem
     const WCHAR *locale;
     const WCHAR *manufacturer;
     const WCHAR *name;
+#ifdef __REACTOS__
+    UINT32       numberofprocesses;
+#endif
     UINT32       operatingsystemsku;
     const WCHAR *organization;
     const WCHAR *osarchitecture;
@@ -4269,6 +4275,24 @@ static WCHAR *get_osinstalldate(void)
     return wcsdup( L"20230101000000.000000+000" );
 }
 
+#ifdef __REACTOS__
+/* Win32_OperatingSystem.NumberOfProcesses (not in Wine; the CIM .NET layer and Get-CimInstance
+   callers read it). */
+static UINT32 get_process_count(void)
+{
+    PROCESSENTRY32W entry;
+    HANDLE snap;
+    UINT32 count = 0;
+
+    if ((snap = CreateToolhelp32Snapshot( TH32CS_SNAPPROCESS, 0 )) == INVALID_HANDLE_VALUE) return 0;
+    entry.dwSize = sizeof(entry);
+    if (Process32FirstW( snap, &entry ))
+        do count++; while (Process32NextW( snap, &entry ));
+    CloseHandle( snap );
+    return count;
+}
+#endif
+
 static enum fill_status fill_operatingsystem( struct table *table, const struct expr *cond )
 {
     struct record_operatingsystem *rec;
@@ -4299,6 +4323,9 @@ static enum fill_status fill_operatingsystem( struct table *table, const struct 
     rec->locale                 = get_locale();
     rec->manufacturer           = L"The Wine Project";
     rec->name                   = get_osname( rec->caption );
+#ifdef __REACTOS__
+    rec->numberofprocesses      = get_process_count();
+#endif
     rec->operatingsystemsku     = get_operatingsystemsku();
     rec->organization           = get_organization();
     rec->osarchitecture         = get_osarchitecture();

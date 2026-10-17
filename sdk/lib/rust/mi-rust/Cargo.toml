@@ -1,0 +1,15 @@
+# mi-rust — mi.dll, the Management Infrastructure client over wbemprox. See src/lib.rs.
+[package]
+name = "mi-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+
+[lib]
+name = "mi_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
+ntdll-sys = { path = "../ntdll-sys" }
