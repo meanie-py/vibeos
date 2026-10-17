@@ -20,14 +20,15 @@ now in `rust_ub_deny` next to `invalid_value` and `deref_nullptr`. Re-run the ce
 
 **Final census, 2026-10-17 morning** (3-arch build of d7f6514670b): **2,014 sites, 0 UB,
 913 LOGIC, 1,101 NOISE.** `clashing_extern` is 889, of which 880 are shell32's.
-**Open, for the control-plane lane:** a unit the artifact store restores can carry diagnostics
-older than its own metadata. conutils' fingerprint JSON has `declared_features: ["USE_CRT"]`,
-yet its `output-lib` replays "no expected values for `feature`". Every file in the unit is
-hardlinked (links=2) and carries the 06:35 restore time, against a Cargo.toml edited at 05:56.
-That is why the census still shows conutils' 14 and ws2_32's 1 `unexpected_cfgs`, which a
-plain `cargo check` reports as 0. The census now treats a manifest newer than the build as
-stale, but that cannot catch this case, because the restore stamped the unit newer than the
-edit.
+**A census artifact, not a store bug** (corrected after control-plane checked it):
+conutils' unit in `build-amd64/rust-shared-0-target` replays an `unexpected_cfgs` for
+`USE_CRT` that a fresh compile of the current crate does not produce. Its fingerprint JSON
+already lists `declared_features: ["USE_CRT"]`, but cargo kept the old rustc output. That is
+plain cargo's shared target dir; the artifact store never stores diagnostics, and the
+links=2 I read as a store hardlink is cargo's own deps/final pair. Control-plane's
+unconfirmed reading is that a declared-only feature change does not make cargo recompile.
+The code is unaffected. To clear the 15 phantom sites (conutils 14, ws2_32 1), delete those
+units and rebuild.
 
 **Later on 2026-10-17** (after that census; landed as b8f5a91889d, dd8d8701261 and the
 `unexpected_cfgs` batch):
