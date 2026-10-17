@@ -2152,7 +2152,8 @@ body) reached from csrss. The sweep after it was clean and identical to the firs
 1. ~~The csrss F4 flake~~ (fixed): winsrv `UserServerHardError` -> `ReportEventW` ->
    `ElfrReportEventW_seh`, a native-SEH thunk that is a plain call on i386, so the RPC raise
    killed csrss while eventlog.exe was exiting. advapi32 now uses `rpc_try` for those three calls.
-   Same i386 hole, still OPEN: ole32's rpcss_seh.c and stubmanager_seh.c (ole32-rust has no
-   ntdll-sys; give the thunks' i386 branch ntdll's RtlSehTryExcept trampoline).
+   ole32's rpcss_seh.c and stubmanager_seh.c had the same i386 hole; their i386 branch now
+   calls ntdll's RtlSehTryExcept. Smoke-verified only: olewinetest's marshal case (an object
+   whose Release faults) has not been run on i386 since (it needs a `--rostests` build).
 2. HidPDescription's preparsed-data layout, only if something needs Windows' bytes.
 3. The WS03-column rows that move at the version flip (above).
