@@ -16,7 +16,7 @@ use crate::chip::{Chip, CHIPCOMMON_BASE, SB_ACCESS_2_4B, SB_OFT_ADDR_MASK};
 use crate::proto::{self, Credit, RxHeader, HEADER};
 
 /// The largest frame we read: an Ethernet frame with its headers fits well under.
-pub const FRAME_MAX: usize = 2048;
+pub const SDPCM_FRAME_MAX: usize = 2048;
 /// How long a command waits for its reply.
 const DCMD_WAIT_US: u64 = 1_000_000;
 /// How long the bus waits for the firmware's first credit.
@@ -33,8 +33,8 @@ pub struct Bus<P: Platform> {
     pub credit: Credit,
     /// The next frame's length, when the last header announced it.
     next_len: usize,
-    rx: [u8; FRAME_MAX],
-    tx: [u8; FRAME_MAX],
+    rx: [u8; SDPCM_FRAME_MAX],
+    tx: [u8; SDPCM_FRAME_MAX],
     dcmd_id: u16,
     /// Frames polled, and those that were not ours to keep (bad header, unknown
     /// channel, too big), for the log.
@@ -57,8 +57,8 @@ impl<P: Platform> Bus<P> {
             chip,
             credit: Credit::default(),
             next_len: 0,
-            rx: [0; FRAME_MAX],
-            tx: [0; FRAME_MAX],
+            rx: [0; SDPCM_FRAME_MAX],
+            tx: [0; SDPCM_FRAME_MAX],
             dcmd_id: 0,
             frames: 0,
             dropped: 0,
@@ -79,7 +79,7 @@ impl<P: Platform> Bus<P> {
         let addr = self.frame_addr()?;
         let mut out = Polled::default();
         loop {
-            let first = if self.next_len >= HEADER { self.next_len.min(FRAME_MAX) } else { HEADER };
+            let first = if self.next_len >= HEADER { self.next_len.min(SDPCM_FRAME_MAX) } else { HEADER };
             self.chip.sdio.read(2, addr, false, &mut self.rx[..first])?;
             let mut h = [0u8; HEADER];
             h.copy_from_slice(&self.rx[..HEADER]);
@@ -97,7 +97,7 @@ impl<P: Platform> Bus<P> {
                 }
             };
             let len = header.len as usize;
-            if len > FRAME_MAX || (self.next_len >= HEADER && len > first) {
+            if len > SDPCM_FRAME_MAX || (self.next_len >= HEADER && len > first) {
                 self.dropped += 1;
                 self.next_len = 0;
                 out.broken = true;
