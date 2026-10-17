@@ -322,6 +322,8 @@ class Lowerer:
                 self._local(n, f, lo, hi, edits)
             elif k in ("CXXTemporaryObjectExpr", "CXXFunctionalCastExpr"):
                 self._temporary(n, f, lo, hi, edits)
+            elif k == "MaterializeTemporaryExpr":
+                self._implicit_construct(n, f, lo, hi, edits, late)
             for key in ("inner",):
                 walk(n.get(key, []), n)
 
@@ -782,6 +784,40 @@ class Lowerer:
             else next((x for x in n.get("inner", []) if x.get("kind") == "CXXConstructExpr"), None)
         )
         edits.append((span[0], m.end(), f"{cls.name}__make_{self._ctor_n(cls, construct)}"))
+
+    def _implicit_construct(self, n: dict, f: str, lo: int, hi: int, edits, late) -> None:
+        """An implicit converting-constructor temporary, written out: rapps' `fnFileOpen`
+        passes a `char *` to `const CStringA &`, and with no `CStringA(` in the text the
+        model cast the pointer. Spelled `Cls__make_N(p)` for a modeled class and `Type(p)`
+        for an external one, the way `_temporary` leaves a written one. A string literal
+        stays as written: no body has been seen to need it, and spelling one would move the
+        lowered text (the purchase cache key) of every literal passed to a CString."""
+        c = n.get("inner", [{}])[0]
+        while c.get("kind") == "ImplicitCastExpr" and c.get("castKind") in (
+            "ConstructorConversion",
+            "NoOp",
+        ):
+            c = (c.get("inner") or [{}])[0]
+        args = c.get("inner") or []
+        if c.get("kind") != "CXXConstructExpr" or len(args) != 1:
+            return
+        arg = _unwrap_casts(args[0])
+        if arg.get("kind") == "StringLiteral":
+            return
+        cls_ty = self._ty(c.get("type", {}).get("qualType", ""))
+        if self._ty(args[0].get("type", {}).get("qualType", "")) == cls_ty:
+            return  # a copy or move, not a conversion
+        span, arg_span = _node_span(c, f, lo, hi), _node_span(args[0], f, lo, hi)
+        if span is None or span != arg_span:
+            return  # written (`CStringA(p)`): its own text already says so
+        cls = self._class(cls_ty)
+        if cls is not None:
+            head = f"{cls.name}__make_{self._ctor_n(cls, c)}("
+        else:
+            head = re.sub(r"\b(const|volatile|struct|class)\b|&", "", c["type"]["qualType"])
+            head = " ".join(head.split()) + "("
+        edits.append((span[0], 0, head))
+        late.append((span[1], 0, ")"))
 
     # -- helpers -----------------------------------------------------------------------
 

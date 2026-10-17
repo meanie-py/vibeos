@@ -426,6 +426,7 @@
 @ stdcall IoGetCurrentProcess()
 @ stdcall IoGetDeviceAttachmentBaseRef(ptr)
 @ stdcall IoGetDeviceInterfaceAlias(ptr ptr ptr)
+@ stdcall IoGetDeviceInterfacePropertyData(ptr ptr long long long ptr ptr ptr)
 @ stdcall IoGetDeviceInterfaces(ptr ptr long ptr)
 @ stdcall IoGetDeviceObjectPointer(ptr long ptr ptr)
 @ stdcall IoGetDeviceProperty(ptr long long ptr ptr)
@@ -495,6 +496,7 @@
 @ stdcall IoRequestDeviceEject(ptr)
 @ stdcall IoReuseIrp(ptr long)
 @ stdcall IoSetCompletionRoutineEx(ptr ptr ptr ptr long long long)
+@ stdcall IoSetDeviceInterfacePropertyData(ptr ptr long long long long ptr)
 @ stdcall IoSetDeviceInterfaceState(ptr long)
 @ stdcall IoSetDevicePropertyData(ptr ptr long long long long ptr)
 @ stdcall IoSetDeviceToVerify(ptr ptr)
@@ -2233,9 +2235,7 @@
 @ stub -version=0xA00+ IoGetContainerInformation
 @ stub -version=0xA00+ IoGetCopyInformationExtension
 @ stub -version=0xA00+ IoGetDeviceDirectory
-@ stub -version=0xA00+ IoGetDeviceInterfacePropertyData
 @ stub -version=0xA00+ IoGetDeviceNumaNode
-@ stub -version=0xA00+ IoGetDevicePropertyData
 @ stub -version=0xA00+ IoGetDriverDirectory
 @ stub -version=0xA00+ IoGetDriverProxyEndpointWrapper
 @ stub -version=0xA00+ IoGetDriverProxyFeatures
@@ -2307,8 +2307,6 @@
 @ stub -version=0xA00+ IoSetActivityIdThread
 @ stub -version=0xA00+ IoSetAdapterCryptoEngineExtension
 @ stub -version=0xA00+ IoSetDependency
-@ stub -version=0xA00+ IoSetDeviceInterfacePropertyData
-@ stub -version=0xA00+ IoSetDevicePropertyData
 @ stub -version=0xA00+ IoSetFileObjectIgnoreSharing
 @ stub -version=0xA00+ IoSetFsTrackOffsetState
 @ stub -version=0xA00+ IoSetFsZeroingOffset

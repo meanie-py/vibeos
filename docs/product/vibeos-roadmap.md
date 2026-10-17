@@ -602,22 +602,28 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
-- **cicero: CUIFWindow::Initialize and CUIFShadow::Initialize recurse forever (open, found
-  2026-10-15, latent).** `cicero-rust/src/cicero/cicuif_cpp_h.rs` (lines ~1942, ~3051 at
-  c94cd0f6a11's tree): each override's `return CUIFObject::Initialize();` became
-  `(*this_).__base0.Initialize()` -- the VIRTUAL dispatcher, i.e. itself -- so anything that
-  initializes a cicero UI window overflows the stack. Boot never reaches it. The generator
-  is fixed (`cpp_app._qualified_base_calls`, from rapps' identical ComputeMinimalSize hang);
-  re-run `port cppapp` + `port replay` for cicero, msutb (18 qualified base calls) and
-  msctfime (4), or hand-fix the two sites to `Initialize__body()` and bank them.
+- **C++ apps: an override calling `Base::M()` recursed into itself, 36 sites (FIXED
+  2026-10-16, cpp-cluster; latent).** A qualified base call is non-virtual in C++, but the
+  generated Rust called the base's VIRTUAL dispatcher (`(*this_).__base0.M(..)`) from inside
+  the override, so it landed back on the override: cicero 17 (CUIFWindow/CUIFShadow/CUIFMenu
+  `Initialize`, `SetRect`, `PaintObject`, ...), mspaint 9 (every drawing tool's `OnEndDraw` and
+  `OnDrawOverlayOnImage`: ending a stroke overflowed the stack), msutb 9, msctfime 1. Boot,
+  smoke and appstorm reached none of them. cicero was regenerated with the fixed generator
+  (`cpp_app._qualified_base_calls`); the other 19 sites were rewritten to `M__body` and banked.
+  `tools/scan_override_self_dispatch.py` gates the shape (baseline empty). Same session:
+  msctfime's `TLS::s_dwTlsIndex` shipped as 0 instead of `(DWORD)-1` (a valid TLS index that
+  `Uninitialize` would free); fixed and banked, and static member initializers are now
+  carried by the generator.
 
-- **amd64 ladder: fault64 rung 1 "AV params" (exit 0xBAF2) (FLAKE, open, found 2026-10-14).**
-  The merge-queue gate's amd64 smoke (`-smp 2`) saw fault64.exe's access-violation reach the
-  guest with wrong ExceptionInformation and rejected shell32-com a6e93b659ef8
-  (`/tmp/vibeos-cli/queue-batch-01792023758967068309/20261014-202239-ktj8bpu7-gate-i386+amd64+arm64/smoke-amd64-a1`).
-  The same tree then passed 6/6 (`./vibeos-cli smoke --arch amd64 --ladder --repeat 3`, with and
-  without `--smp 2`), and the change (ftp, Python tooling) is nowhere near exception dispatch.
-  One failure seen; frequency unknown -- a `farm` soak on the ladder would size it.
+- **amd64 ladder: fault64 rung 1 "AV params" (exit 0xBAF2) (FIXED 2026-10-16).** The merge-queue
+  gate's amd64 smoke (`-smp 2`) saw fault64.exe's access violation reach the guest with the wrong
+  ExceptionInformation and rejected shell32-com a6e93b659ef8
+  (`fails/auto/20261014-203148-y9_m109l-smoke-amd64-LADDER_FAIL`). Cause: amd64 `KiPageFault`
+  re-read cr2 for the AV's address AFTER `sti` and `MmAccessFault`, so a preemption, migration or
+  nested fault substituted another fault's address (upstream code). Now read from the trap frame.
+  The new rung 3b (5000 AVs under fault churn) failed 3/4 `-smp 2` guest runs on the old kernel
+  and passed 6/6 on the fixed one. Field manual: "A per-CPU register read after `sti` belongs to
+  whoever faulted last".
 
 - **ws2_32: `getservbyname("ftp", "tcp")` fails INTERMITTENTLY on amd64 (FLAKE, open, found
   2026-10-14).** In one of two identical amd64 modrun runs, both the C ftp (`ftp_c`) and the Rust
@@ -1884,7 +1890,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the balancer wait under AddressCreationLock, syssetup's unattended display settings for
   inactive adapters, serial's PnP queries, comctl32 TB_SETMETRICS, dhcpcsvc RegCloseKey,
   kbd103 generated. Already ours: TrimWsList's flush, NtRemoveIoCompletion's zeroed status,
-  AmILastThread on ActiveThreads, the fiber checks. Then translated sealed on Haiku and integrated ($0.10): DeviceProperty (`pnpprop.c` -> ntoskrnl-rust pnpmgr/pnpprop.rs, plus its hooks: the property-change event, interface keys, release on IopDeleteDevice, kernel-mode Rtl locale table) and x86/x64 cache enumeration (`cacheinfo.c` -> ke/x86x64, with both KiGetCacheInformation rewritten onto it; amd64 cpu.rs had Intel/AMD swapped against ketypes.h since 0e95a343b33). Storport re-ported over its old crate with `rustconv port` (owner's call, 2026-10-16; all 8 TUs incl. upstream's new `ioctl.c`/`srb.c`, plus inline.h; $0.25 Haiku, 0/0/0 from a $0 `port replay`). Owed from it: IoGet/SetDeviceInterfacePropertyData still exported as Win10 stubs, shell32's RegenerateUserEnvironment (shell32-com) and mmc_new's views (cpp-cluster). Owed, by cluster (upstream-sync): pciidex rewrite
+  AmILastThread on ActiveThreads, the fiber checks. Then translated sealed on Haiku and integrated ($0.10): DeviceProperty (`pnpprop.c` -> ntoskrnl-rust pnpmgr/pnpprop.rs, plus its hooks: the property-change event, interface keys, release on IopDeleteDevice, kernel-mode Rtl locale table) and x86/x64 cache enumeration (`cacheinfo.c` -> ke/x86x64, with both KiGetCacheInformation rewritten onto it; amd64 cpu.rs had Intel/AMD swapped against ketypes.h since 0e95a343b33). Storport re-ported over its old crate with `rustconv port` (owner's call, 2026-10-16; all 8 TUs incl. upstream's new `ioctl.c`/`srb.c`, plus inline.h; $0.25 Haiku, 0/0/0 from a $0 `port replay`). Done since (2026-10-16): IoGet/SetDeviceInterfacePropertyData exported from pnpprop.rs, and ntoskrnl_vista's NOT_IMPLEMENTED copies removed so drivers import them (upstream's copies forward through MmGetSystemRoutineAddress for kernels without them, 3cc9aa99292; ours always has them; cdrom's extern was cdecl), with upstream's `IoDeviceProperty` kmtest added to the sweep (653/0 on all three arches); shell32's RegenerateUserEnvironment ported (c25e4fd7dec; its apitest 8/0 on amd64). Owed from it: mmc_new's views (c0f01460800, 857f521a704) and CActionWnd.cpp (88da81d9b8b) -- re-rendering the C++ model misses every banked unit (257 functions), so it waits on the owner's re-buy call. Owed, by cluster (upstream-sync): pciidex rewrite
   (~15K lines), PCIX arbiters/ECAM, netcfgx and dhcpcsvc alternate configuration, freeldr
   disk registration and boot menu, the Wine 10 ole32/oleaut32/mlang/crypt syncs, msgina and
   syssetup branding. **The msgina branding commit (6ae2d5ab43f) deleted IDI_ROSLOGO/IDI_BAR,

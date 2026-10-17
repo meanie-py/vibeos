@@ -827,7 +827,11 @@ unsafe extern "C" fn SYSLINK_Draw(infoPtr: *const SYSLINK_INFO, hdc: HDC) -> LRE
         SetBkMode(hdc, (TRANSPARENT as i32));
     }
 
-    DeleteObject((hBrush).cast());
+    // syslink.c: `#ifndef __REACTOS__`. The brush is the parent's WM_CTLCOLORSTATIC answer,
+    // which the parent owns; ReactOS does not delete it.
+    if cfg!(not_reactos) {
+        DeleteObject((hBrush).cast());
+    }
 
     // LIST_FOR_EACH_ENTRY(Current, &infoPtr->Items, DOC_ITEM, entry)
     Current = ((*infoPtr).Items.Flink as *mut u8)

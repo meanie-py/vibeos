@@ -11,11 +11,11 @@ registry), never left to rot in an archived doc.
 
 | Lane (worktree/branch) | Doc |
 |---|---|
-| `native-batch` (control-plane) | [control-plane-native.md](control-plane-native.md) — plain-C base tools/apps on Haiku *(paused 2026-10-12 for the work week; next is Wave J, `base/setup/reactos`)* |
+| `native-batch` (control-plane) | [control-plane-native.md](control-plane-native.md) — plain-C base tools/apps on Haiku *(cargo-drive waves 1–12 and the artifact store since 10-12; owed list in the doc; translation Wave J awaits approval)* |
 | `fex-arm` | [fex-bringup-plan.md](fex-bringup-plan.md), [wow64-plan.md](wow64-plan.md) |
 | `conformance-ratchet` | [../conformance-ratchet-quest.md](../conformance-ratchet-quest.md) *(paused 2026-10-12; resume from its last progress-log entry)* |
 | `smp-bringup` | [smp-bringup-quest.md](smp-bringup-quest.md) |
-| `msvcrt-homebrew` | [native-base-translation.md](native-base-translation.md) — native ReactOS base not covered by other lanes *(paused 2026-10-12 until the weekend; next is the A′ audio stack)* · CRT: [msvcrt-from-pieces-plan.md](msvcrt-from-pieces-plan.md) |
+| `msvcrt-homebrew` | [native-base-translation.md](native-base-translation.md) — native ReactOS base not covered by other lanes *(A′ audio stack flipped 2026-10-16; next: RDBSS/copysup)* · CRT: [msvcrt-from-pieces-plan.md](msvcrt-from-pieces-plan.md) |
 | `shell32-com` | [shell32-com-plan.md](shell32-com-plan.md) *(translation driven by Codex, not rustconv)* |
 | `warnings-burndown` | [warnings-burndown-plan.md](warnings-burndown-plan.md) *(follow-on from the closed `rust-warnings` lane)* |
 | `qemu-perf` | [qemu-perf-plan.md](qemu-perf-plan.md) *(QEMU execution layer: windows-host backend, TCG-vs-WHPX, boot concurrency)* |

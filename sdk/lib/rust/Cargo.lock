@@ -285,6 +285,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "audio-convert-difftest"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "audiosrv-cargo"
 version = "0.1.0"
 dependencies = [
@@ -376,6 +385,18 @@ version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
  "panic-common",
+]
+
+[[package]]
+name = "beepmidi-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -472,6 +493,10 @@ dependencies = [
  "ntkrnl-sys",
  "panic-common",
 ]
+
+[[package]]
+name = "bwfm-rust"
+version = "0.1.0"
 
 [[package]]
 name = "byteorder"
@@ -693,6 +718,7 @@ name = "cicero-rust"
 version = "0.1.0"
 dependencies = [
  "atlclasses-rust",
+ "conutils-h",
  "ntdll-sys",
  "panic-common",
  "strsafe-rust",
@@ -2747,6 +2773,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "kmixer-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntkrnl-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "ks-cargo"
 version = "0.1.0"
 dependencies = [
@@ -3193,6 +3230,56 @@ dependencies = [
  "atlclasses-rust",
  "conutils-h",
  "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "mmdrv-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "mmebuddy-macros-rust"
+version = "0.1.0"
+
+[[package]]
+name = "mmebuddy-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "mmebuddy-macros-rust",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "mment4-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "mmebuddy-macros-rust",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "mmixer-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntkrnl-sys",
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
@@ -5414,6 +5501,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sndblst-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "mmebuddy-macros-rust",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "sndrec32-rust"
 version = "0.1.0"
 dependencies = [
@@ -5717,8 +5816,11 @@ dependencies = [
 name = "sysaudio-rust"
 version = "0.1.0"
 dependencies = [
+ "conutils-h",
  "ntkrnl-sys",
  "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -6579,6 +6681,29 @@ name = "wdfldr-rust"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "wdmaud-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntkrnl-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "wdmaud_drv-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "mmebuddy-macros-rust",
+ "ntdll-sys",
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",

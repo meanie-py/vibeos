@@ -2196,6 +2196,13 @@ def test_vibeos_root_env_wins(tmp_path, monkeypatch):
     assert cachecfg.vibeos_root(tmp_path / "repo") == (tmp_path / "custom").resolve()
 
 
+def test_vibeos_root_climbs_out_of_a_premerge_worktree(monkeypatch):
+    monkeypatch.delenv("VIBEOS_ROOT", raising=False)
+    parent = Path("/home/u/Projects/os-playground")
+    premerge = parent / "vibeos/.git/vibeos-premerge/vibeos-gicv3-1234"
+    assert cachecfg.vibeos_root(premerge) == parent
+
+
 def test_vibeos_root_defaults_to_repo_parent(monkeypatch):
     monkeypatch.delenv("VIBEOS_ROOT", raising=False)
     # main checkout and a sibling worktree must resolve to the SAME root → shared
@@ -5466,6 +5473,27 @@ def test_conformance_asks_the_build_for_the_kmtest_corpus(monkeypatch, tmp_path)
         assert conformance_mod._conformance_once(args, tmp_path) == 1  # bailed on our stub
         assert seen and "--kmtests" in seen[0], seen
         assert "--up-kernel" not in seen[0], f"{arch}: conformance must not test the UP kernel"
+
+
+def test_conformance_only_without_write_baseline_refuses_before_building(monkeypatch, tmp_path):
+    """A mistyped `--only` used to be refused AFTER a full kmtest build and sweep (exit 2,
+    no verdict); it must cost nothing."""
+    from types import SimpleNamespace
+
+    seen: list[list[str]] = []
+    monkeypatch.setattr(conformance_mod, "_worktree_provisioning_gaps", lambda *_a: [])
+    monkeypatch.setattr(conformance_mod, "_load_parser", lambda _r: object())
+    monkeypatch.setattr(conformance_mod, "_run_dir", lambda _a: tmp_path)
+    monkeypatch.setattr(
+        conformance_mod.subprocess,
+        "run",
+        lambda cmd, **kw: (seen.append(cmd), SimpleNamespace(returncode=0))[1],
+    )
+    args = SimpleNamespace(
+        arch="i386", smp=0, no_build=False, write_baseline=False, only=["X"], timeout=None
+    )
+    assert conformance_mod._conformance_once(args, tmp_path) == 2
+    assert seen == []
 
 
 def test_worktree_provisioning_preflight(tmp_path):
@@ -10997,6 +11025,20 @@ def test_docs_only_predicate_ignores_what_master_did_meanwhile(tiny_repo: Path):
     assert land_mod._docs_only_vs_master(tiny_repo) is True
 
 
+def test_direct_land_skips_the_gate_for_a_docs_only_delta(tiny_repo: Path, monkeypatch):
+    """The pre-push hook passes a docs-only delta vs master with no stamp, so `land
+    --direct` gating one (21 minutes for a single `.md`) bought nothing."""
+    monkeypatch.setattr(land_mod, "fresh_full_stamp", lambda repo, tree: None)
+    _with_origin_master(tiny_repo, "docs/engineering/plan.md")
+    assert "docs-only" in (land_mod._direct_gate_skip(tiny_repo, "t" * 40) or "")
+
+
+def test_direct_land_still_gates_when_source_rides_along(tiny_repo: Path, monkeypatch):
+    monkeypatch.setattr(land_mod, "fresh_full_stamp", lambda repo, tree: None)
+    _with_origin_master(tiny_repo, "docs/engineering/plan.md", "tools/thing.py")
+    assert land_mod._direct_gate_skip(tiny_repo, "t" * 40) is None
+
+
 # --- launch retry (host-side socket flake, 2026-09-20) ----------------------
 
 
@@ -12163,3 +12205,20 @@ def test_scan_const_contradictions_keys_associated_consts_by_their_type(tmp_path
         "CFontsDialog::IDD": [710],
         "IDD": [5],
     }
+
+
+def test_a_build_input_edited_mid_build_is_named_and_a_doc_is_not(tiny_repo: Path):
+    """The stamp and warm receipt fingerprint the tree when the build ENDS, so an edit
+    made after ninja compiled the file read as built. `_inputs_moved` compares the tree
+    the build started from with the one it would stamp, scoped like the stamp."""
+    from . import warmth
+
+    start = warmth.worktree_tree(tiny_repo)
+    assert build_mod._inputs_moved(tiny_repo, start) == []
+    (tiny_repo / "docs").mkdir()
+    (tiny_repo / "docs" / "note.md").write_text("mid-build doc edit\n")
+    assert build_mod._inputs_moved(tiny_repo, start) == []
+    (tiny_repo / "a.txt").write_text("edited after ninja compiled it\n")
+    (tiny_repo / "new.c").write_text("int x;\n")
+    assert build_mod._inputs_moved(tiny_repo, start) == ["a.txt", "new.c"]
+    assert build_mod._inputs_moved(tiny_repo, None) == []

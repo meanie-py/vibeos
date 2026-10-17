@@ -237,6 +237,7 @@ pub unsafe extern "system" fn FatCommonFlushBuffers(
         &mut (),
         |_| {
             // Disk accounting (NTDDI_VERSION >= NTDDI_WIN8)
+            #[cfg(ntddi_ge_ntddi_win8)] // FatDiskAccountingEnabled is only ever set under WIN8 (fatinit.c:428)
             if FatDiskAccountingEnabled != 0 {
                 let OriginatingThread: PETHREAD;
                 if !(*Irp).Tail.Overlay.Thread.is_null() &&

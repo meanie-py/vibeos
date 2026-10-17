@@ -779,6 +779,14 @@ def island_enum_aliases(
     return out
 
 
+#: A macro another crate can import from a shared crate's root: only a `#[macro_export]` one (other
+#: attributes and comments may sit between). A bare `macro_rules!` is local -- win32macros-rust's
+#: `wine_dbgstr_variant` defines a function-scoped `at!`, which listed by name was E0432 in
+#: every prelude that refreshed (wscript, 2026-10-16).
+_EXPORTED_MACRO = (
+    r"#\[macro_export\]\s*(?:#\[[^\]]*\]\s*|//[^\n]*\n\s*)*macro_rules!\s+([A-Za-z_]\w*)"
+)
+
 _WIN32MACROS_USE = re.compile(r"^pub use win32macros_rust::\{[^}]*\};$", re.M)
 
 
@@ -802,7 +810,9 @@ def refresh_shared_macros(prelude: Path, macro_src: Path) -> bool:
             n
             for f in (macro_src.glob("*.rs") if macro_src.is_dir() else [])
             for n in re.findall(
-                r"macro_rules!\s+([A-Za-z_]\w*)|^pub const ([A-Za-z_]\w*)", f.read_text(), re.M
+                _EXPORTED_MACRO + r"|^pub const (?!fn\b)([A-Za-z_]\w*)",
+                f.read_text(),
+                re.M,
             )
             for n in n
             if n
@@ -828,8 +838,9 @@ SHARED_CRATES: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
         (
             (
                 "",
-                r"macro_rules!\s+([A-Za-z_]\w*)|^pub const ([A-Za-z_]\w*)"
-                r"|^pub (?:unsafe )?fn ([A-Za-z_]\w*)",
+                # `pub const fn` is a function (kmixer's `_byteswap_ulong`), not a const named `fn`.
+                _EXPORTED_MACRO + r"|^pub const (?!fn\b)([A-Za-z_]\w*)"
+                r"|^pub (?:const )?(?:unsafe )?fn ([A-Za-z_]\w*)",
             ),
         ),
     ),
@@ -839,8 +850,7 @@ SHARED_CRATES: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
         (
             (
                 "",
-                r"macro_rules!\s+([A-Za-z_]\w*)"
-                r'|^pub unsafe (?:extern "\w+" )?fn (String[A-Za-z]+)\b',
+                _EXPORTED_MACRO + r'|^pub unsafe (?:extern "\w+" )?fn (String[A-Za-z]+)\b',
             ),
             ("ntstrsafe", r"^pub unsafe fn (RtlString[A-Za-z]+)\b"),
         ),

@@ -10,6 +10,9 @@
 
 static BOOLEAN g_IsPae;
 static BOOLEAN g_IsReactOS;
+/* vibeos: set by the MmReservedMappingFixed duplicate, which corrects the test's own
+ * expectation below. MmReservedMapping keeps the original, failing as expected. */
+static BOOLEAN g_FixedExpectations;
 
 #ifdef _M_IX86
 
@@ -147,6 +150,16 @@ ValidateMapping(
         /* On ReactOS and on Vista+ the size is stored in
          * the NextEntry field of a MMPTE_LIST structure */
         ExpectedValue = ((ULONG64)TotalPtes + 2) << 32;
+        /* vibeos: TEST BUG. `<< 32` is NextEntry's position in a 64-bit (PAE) PTE. A
+         * non-PAE PTE is 32 bits and its MMPTE_LIST NextEntry starts at bit 12, so the
+         * original can never pass there: on our non-PAE i386 kernel the PTE holds
+         * (TotalPtes + 2) << 12, and every ValidateMapping after it fails with it.
+         * MmReservedMapping keeps this expected failure; MmReservedMappingFixed checks
+         * the non-PAE layout. */
+#ifdef _M_IX86
+        if (g_FixedExpectations && !IS_PAE())
+            ExpectedValue = ((ULONG64)TotalPtes + 2) << 12;
+#endif
     }
     else
     {
@@ -328,9 +341,14 @@ TestMap(
     ExFreePool(Mdl);
 }
 
-START_TEST(MmReservedMapping)
+static
+VOID
+TestReservedMapping(
+    _In_ BOOLEAN FixedExpectations)
 {
     PVOID Mapping;
+
+    g_FixedExpectations = FixedExpectations;
 
     g_IsPae = ExIsProcessorFeaturePresent(PF_PAE_ENABLED);
     g_IsReactOS = *(PULONG)(KI_USER_SHARED_DATA + PAGE_SIZE - sizeof(ULONG)) == 0x8eac705;
@@ -402,4 +420,14 @@ START_TEST(MmReservedMapping)
 
         MmFreeMappingAddress((PUCHAR)Mapping + sizeof(ULONG), 'MRmK');
     }
+}
+
+START_TEST(MmReservedMapping)
+{
+    TestReservedMapping(FALSE);
+}
+
+START_TEST(MmReservedMappingFixed)
+{
+    TestReservedMapping(TRUE);
 }

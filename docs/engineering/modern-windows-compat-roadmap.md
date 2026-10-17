@@ -331,7 +331,9 @@ kernel32 apitest `Win10Surface`, Windows 11 95/0 first, guest 96/0 on amd64 and 
 - `GetProductInfo` forwarded to `ntdll.RtlGetProductInfo`, which no target compiled
   (`sdk/lib/rtl/product.c`): ported into ntdll-rust `rtl/version.rs`. `NtOpenKeyEx` lived
   in the arm64/amd64-only WOW64 shim; now every arch. `RtlUTF8ToUnicodeN` and its pair had
-  bodies (`utf8` crate) and no rows. `NtGetNextThread` over a process snapshot; the KTM
+  bodies (`utf8` crate) and no rows. `NtGetNextThread`/`NtGetNextProcess` are real
+  syscalls (ps-rust, from the 2026-10-15 upstream sync; ntdll's snapshot emulation is gone,
+  and Win10Surface's walk passes 145/0 on amd64 through them); the KTM
   calls fail STATUS_NOT_IMPLEMENTED (Wine fakes success) and the TEB's current
   transaction is real.
 - api-ms-win-security-base-* now resolves to advapi32 (kernel32 has none of AccessCheck,

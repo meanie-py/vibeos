@@ -36,16 +36,18 @@ is a lead.
 
 ---
 
-## RESUME HERE (2026-10-16: the 2026-10-15 sync is submitted to the merge queue)
+## RESUME HERE (2026-10-16: the 2026-10-15 sync LANDED, `7509c4dc796`)
 
-Branch `upstream-sync-2` in worktree `vibeos-upstream-sync`: the 2026-10-15 upstream merge (64
-commits to upstream c25e4fd7dec), its hand ports, the kernel/HAL island regen, the Haiku
-translations (pnpprop, cacheinfo, $0.10; storport re-ported over its old crate, $0.25), the
-conformance re-baselines for upstream's own kmtest changes, and origin/master merged on
-2026-10-16 (the immutable artifact store). Green before submitting: build x3, smoke x3,
-`check --strict`, `check-tooling`. Check `./vibeos-cli land-status --mine` for the verdict.
-Still owed (roadmap "2026-10-15 sync"): IoGet/SetDeviceInterfacePropertyData (Win10 stubs);
-shell32's RegenerateUserEnvironment (shell32-com) and mmc_new's views (cpp-cluster).
+The 2026-10-15 upstream merge (64 commits to upstream c25e4fd7dec) is on master with its hand
+ports, island regen, Haiku translations (pnpprop, cacheinfo $0.10; storport re-ported $0.25)
+and conformance re-baselines. Branch `upstream-sync-2` in worktree `vibeos-upstream-sync`
+carries the follow-ups: the interface DeviceProperty exports (ntoskrnl, upstream 3cc9aa99292;
+ntoskrnl_vista's copies removed, and its `IoDeviceProperty` kmtest in the sweep lists) and
+shell32's RegenerateUserEnvironment (c25e4fd7dec). Still owed: mmc_new's views (c0f01460800,
+857f521a704) and `CActionWnd.cpp` (88da81d9b8b) -- re-rendering the C++ model misses every
+banked unit (257 functions to re-buy), so it waits on the owner's call; the re-render is
+parked in the stash `upstream-sync: mmc_new cppapp re-render against upstream's views
+(pending re-buy decision)`.
 
 ## Measured, 2026-09-20 (re-derive before trusting — these will drift)
 

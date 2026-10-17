@@ -61,259 +61,11 @@ pub fn NT_SUCCESS(s: NTSTATUS) -> bool {
 }
 pub use crate::{CONTAINING_RECORD, NT_SUCCESS};
 // The Win32 header macros, ported once in win32macros-rust, not per module.
-pub use win32macros_rust::{ALIGN_UP, ARRAYSIZE, ARRAY_SIZE, ASSERT, C_ASSERT, CopyMemory, DBG_UNREFERENCED_LOCAL_VARIABLE, DPRINT1, DWLP_DLGPROC, DWLP_MSGRESULT, DWLP_USER, ERR_ON, FAILED_UNEXPECTEDLY, FIELD_OFFSET, FIXME_ON, GET_WHEEL_DELTA_WPARAM, GET_X_LPARAM, GET_Y_LPARAM, GetAValue, GetBValue, GetGValue, GetRValue, HIBYTE, HIWORD, HRESULT_FROM_WIN32, HandleToUlong, IDE_SET_ADVANCE_PIO_MODE, IDE_SET_DEFAULT_PIO_MODE, IDE_SET_MWDMA_MODE, IDE_SET_SWDMA_MODE, IDE_SET_UDMA_MODE, INVALID_HANDLE_VALUE, IS_INTRESOURCE, InitializeObjectAttributes, IntToPtr, InterlockedCompareExchange, InterlockedDecrement, InterlockedExchange, InterlockedIncrement, IsContainerPartition, IsEqualGUID, IsFTPartition, IsRecognizedPartition, LANGIDFROMLCID, LOBYTE, LOWORD, LongToHandle, LongToPtr, MAKEINTATOM, MAKEINTRESOURCEA, MAKEINTRESOURCEW, MAKELANGID, MAKELCID, MAKELONG, MAKEWORD, MoveMemory, PAGE_ROUND_UP, PRIMARYLANGID, PtrToInt, PtrToLong, PtrToUint, PtrToUlong, RGB, RGBA, RTL_CONSTANT_STRING, RTL_CONTAINS_FIELD, RTL_FIELD_SIZE, RTL_NUMBER_OF, RTL_NUMBER_OF_FIELD, RTL_SIZEOF_THROUGH_FIELD, RtlCopyMemory, RtlFillMemory, RtlGetProcessHeap, RtlMoveMemory, RtlZeroMemory, SORTIDFROMLCID, SRB_STATUS, SUBLANGID, TRACE_ON, UIntToPtr, ULongToHandle, ULongToPtr, UNICODE_NULL, UNIMPLEMENTED_DBGBREAK, UNREACHABLE, UNREFERENCED_PARAMETER, UintToPtr, UlongToHandle, UlongToPtr, WARN_ON, WINE_ERR, WINE_FIXME, WINE_TRACE, WINE_WARN, ZeroMemory, __HRESULT_FROM_WIN32, __p___argc, __p___argv, __p___wargv, __p__environ, __p__pgmptr, __p__wenviron, __p__wpgmptr, __wine_dprintf, __wine_is_debug_on, _countof, debugstr_a, debugstr_an, debugstr_guid, debugstr_w, debugstr_wn, heap_alloc, heap_alloc_zero, heap_calloc, heap_free, heap_realloc, iswalnum, iswalpha, iswcntrl, iswdigit, iswgraph, iswlower, iswprint, iswpunct, iswspace, iswupper, iswxdigit, wide_bytes, wine_dbgstr_a, wine_dbgstr_guid, wine_dbgstr_w};
+pub use win32macros_rust::{ALIGN_UP, ARRAYSIZE, ARRAY_SIZE, ASSERT, C_ASSERT, CopyMemory, DBG_UNREFERENCED_LOCAL_VARIABLE, DPRINT1, DWLP_DLGPROC, DWLP_MSGRESULT, DWLP_USER, ERR_ON, FAILED_UNEXPECTEDLY, FD_SET, FD_ZERO, FIELD_OFFSET, FIXME_ON, GET_WHEEL_DELTA_WPARAM, GET_X_LPARAM, GET_Y_LPARAM, GetAValue, GetBValue, GetGValue, GetRValue, HIBYTE, HIWORD, HRESULT_FROM_WIN32, HandleToUlong, IDE_SET_ADVANCE_PIO_MODE, IDE_SET_DEFAULT_PIO_MODE, IDE_SET_MWDMA_MODE, IDE_SET_SWDMA_MODE, IDE_SET_UDMA_MODE, INVALID_HANDLE_VALUE, IS_INTRESOURCE, InitializeObjectAttributes, IntToPtr, InterlockedCompareExchange, InterlockedDecrement, InterlockedExchange, InterlockedIncrement, IsContainerPartition, IsEqualGUID, IsFTPartition, IsRecognizedPartition, LANGIDFROMLCID, LOBYTE, LOWORD, LongToHandle, LongToPtr, MAKEINTATOM, MAKEINTRESOURCEA, MAKEINTRESOURCEW, MAKELANGID, MAKELCID, MAKELONG, MAKEWORD, MoveMemory, PAGE_ROUND_UP, PRIMARYLANGID, PtrToInt, PtrToLong, PtrToUint, PtrToUlong, RGB, RGBA, RTL_CONSTANT_STRING, RTL_CONTAINS_FIELD, RTL_FIELD_SIZE, RTL_NUMBER_OF, RTL_NUMBER_OF_FIELD, RTL_SIZEOF_THROUGH_FIELD, RtlCopyMemory, RtlFillMemory, RtlGetProcessHeap, RtlMoveMemory, RtlZeroMemory, SORTIDFROMLCID, SRB_STATUS, SUBLANGID, TRACE_ON, UIntToPtr, ULongToHandle, ULongToPtr, UNICODE_NULL, UNIMPLEMENTED_DBGBREAK, UNREACHABLE, UNREFERENCED_PARAMETER, UintToPtr, UlongToHandle, UlongToPtr, WARN_ON, WINE_ERR, WINE_FIXME, WINE_TRACE, WINE_WARN, ZeroMemory, __HRESULT_FROM_WIN32, __debugbreak, __p___argc, __p___argv, __p___wargv, __p__environ, __p__pgmptr, __p__wenviron, __p__wpgmptr, __wine_dprintf, __wine_is_debug_on, _countof, debugstr_a, debugstr_an, debugstr_guid, debugstr_variant, debugstr_vt, debugstr_w, debugstr_wn, heap_alloc, heap_alloc_zero, heap_calloc, heap_free, heap_realloc, iswalnum, iswalpha, iswcntrl, iswdigit, iswgraph, iswlower, iswprint, iswpunct, iswspace, iswupper, iswxdigit, wide_bytes, wine_dbgstr_a, wine_dbgstr_guid, wine_dbgstr_longlong, wine_dbgstr_variant, wine_dbgstr_vt, wine_dbgstr_w};
 
 // The island re-exports the base NT identity: pub use ntdll_sys::nt::*;
 
 // ================= hand ports (above the generated blocks: they survive replays) ==============
-// ---- msxml2.h vtables (the C reaches these through COBJMACROS, `->lpVtbl->slot`). The island does not
-// carry them, so the layout is transcribed from the build's generated msxml2.h in slot order. Only the
-// slots this module calls are typed; the others are placeholders of the same width (every slot is a
-// function pointer), so the used slots sit at the right offsets.
-// IXMLDOMNodeVtbl: 43 slots, layout from msxml2.h (generated build header)
-#[allow(non_snake_case)]
-#[repr(C)]
-pub struct IXMLDOMNodeVtbl {
-    pub QueryInterface: *const c_void, // not called by this module
-    pub AddRef: *const c_void, // not called by this module
-    pub Release: Option<unsafe extern "system" fn(This: *mut IXMLDOMNode) -> ULONG>,
-    pub GetTypeInfoCount: *const c_void, // not called by this module
-    pub GetTypeInfo: *const c_void, // not called by this module
-    pub GetIDsOfNames: *const c_void, // not called by this module
-    pub Invoke: *const c_void, // not called by this module
-    pub get_nodeName: *const c_void, // not called by this module
-    pub get_nodeValue: *const c_void, // not called by this module
-    pub put_nodeValue: *const c_void, // not called by this module
-    pub get_nodeType: *const c_void, // not called by this module
-    pub get_parentNode: *const c_void, // not called by this module
-    pub get_childNodes: *const c_void, // not called by this module
-    pub get_firstChild: *const c_void, // not called by this module
-    pub get_lastChild: *const c_void, // not called by this module
-    pub get_previousSibling: *const c_void, // not called by this module
-    pub get_nextSibling: *const c_void, // not called by this module
-    pub get_attributes: Option<unsafe extern "system" fn(This: *mut IXMLDOMNode, attributeMap: *mut *mut IXMLDOMNamedNodeMap) -> HRESULT>,
-    pub insertBefore: *const c_void, // not called by this module
-    pub replaceChild: *const c_void, // not called by this module
-    pub removeChild: *const c_void, // not called by this module
-    pub appendChild: *const c_void, // not called by this module
-    pub hasChildNodes: *const c_void, // not called by this module
-    pub get_ownerDocument: *const c_void, // not called by this module
-    pub cloneNode: *const c_void, // not called by this module
-    pub get_nodeTypeString: *const c_void, // not called by this module
-    pub get_text: Option<unsafe extern "system" fn(This: *mut IXMLDOMNode, p: *mut BSTR) -> HRESULT>,
-    pub put_text: *const c_void, // not called by this module
-    pub get_specified: *const c_void, // not called by this module
-    pub get_definition: *const c_void, // not called by this module
-    pub get_nodeTypedValue: *const c_void, // not called by this module
-    pub put_nodeTypedValue: *const c_void, // not called by this module
-    pub get_dataType: *const c_void, // not called by this module
-    pub put_dataType: *const c_void, // not called by this module
-    pub get_xml: *const c_void, // not called by this module
-    pub transformNode: *const c_void, // not called by this module
-    pub selectNodes: *const c_void, // not called by this module
-    pub selectSingleNode: *const c_void, // not called by this module
-    pub get_parsed: *const c_void, // not called by this module
-    pub get_namespaceURI: *const c_void, // not called by this module
-    pub get_prefix: *const c_void, // not called by this module
-    pub get_baseName: *const c_void, // not called by this module
-    pub transformNodeToObject: *const c_void, // not called by this module
-}
-
-// IXMLDOMDocumentVtbl: 76 slots, layout from msxml2.h (generated build header)
-#[allow(non_snake_case)]
-#[repr(C)]
-pub struct IXMLDOMDocumentVtbl {
-    pub QueryInterface: *const c_void, // not called by this module
-    pub AddRef: *const c_void, // not called by this module
-    pub Release: Option<unsafe extern "system" fn(This: *mut IXMLDOMDocument) -> ULONG>,
-    pub GetTypeInfoCount: *const c_void, // not called by this module
-    pub GetTypeInfo: *const c_void, // not called by this module
-    pub GetIDsOfNames: *const c_void, // not called by this module
-    pub Invoke: *const c_void, // not called by this module
-    pub get_nodeName: *const c_void, // not called by this module
-    pub get_nodeValue: *const c_void, // not called by this module
-    pub put_nodeValue: *const c_void, // not called by this module
-    pub get_nodeType: *const c_void, // not called by this module
-    pub get_parentNode: *const c_void, // not called by this module
-    pub get_childNodes: *const c_void, // not called by this module
-    pub get_firstChild: *const c_void, // not called by this module
-    pub get_lastChild: *const c_void, // not called by this module
-    pub get_previousSibling: *const c_void, // not called by this module
-    pub get_nextSibling: *const c_void, // not called by this module
-    pub get_attributes: *const c_void, // not called by this module
-    pub insertBefore: *const c_void, // not called by this module
-    pub replaceChild: *const c_void, // not called by this module
-    pub removeChild: *const c_void, // not called by this module
-    pub appendChild: *const c_void, // not called by this module
-    pub hasChildNodes: *const c_void, // not called by this module
-    pub get_ownerDocument: *const c_void, // not called by this module
-    pub cloneNode: *const c_void, // not called by this module
-    pub get_nodeTypeString: *const c_void, // not called by this module
-    pub get_text: *const c_void, // not called by this module
-    pub put_text: *const c_void, // not called by this module
-    pub get_specified: *const c_void, // not called by this module
-    pub get_definition: *const c_void, // not called by this module
-    pub get_nodeTypedValue: *const c_void, // not called by this module
-    pub put_nodeTypedValue: *const c_void, // not called by this module
-    pub get_dataType: *const c_void, // not called by this module
-    pub put_dataType: *const c_void, // not called by this module
-    pub get_xml: *const c_void, // not called by this module
-    pub transformNode: *const c_void, // not called by this module
-    pub selectNodes: *const c_void, // not called by this module
-    pub selectSingleNode: *const c_void, // not called by this module
-    pub get_parsed: *const c_void, // not called by this module
-    pub get_namespaceURI: *const c_void, // not called by this module
-    pub get_prefix: *const c_void, // not called by this module
-    pub get_baseName: *const c_void, // not called by this module
-    pub transformNodeToObject: *const c_void, // not called by this module
-    pub get_doctype: *const c_void, // not called by this module
-    pub get_implementation: *const c_void, // not called by this module
-    pub get_documentElement: Option<unsafe extern "system" fn(This: *mut IXMLDOMDocument, domElement: *mut *mut IXMLDOMElement) -> HRESULT>,
-    pub putref_documentElement: *const c_void, // not called by this module
-    pub createElement: *const c_void, // not called by this module
-    pub createDocumentFragment: *const c_void, // not called by this module
-    pub createTextNode: *const c_void, // not called by this module
-    pub createComment: *const c_void, // not called by this module
-    pub createCDATASection: *const c_void, // not called by this module
-    pub createProcessingInstruction: *const c_void, // not called by this module
-    pub createAttribute: *const c_void, // not called by this module
-    pub createEntityReference: *const c_void, // not called by this module
-    pub getElementsByTagName: *const c_void, // not called by this module
-    pub createNode: *const c_void, // not called by this module
-    pub nodeFromID: *const c_void, // not called by this module
-    pub load: Option<unsafe extern "system" fn(This: *mut IXMLDOMDocument, var1: VARIANT, pbool: *mut VARIANT_BOOL) -> HRESULT>,
-    pub get_readyState: *const c_void, // not called by this module
-    pub get_parseError: *const c_void, // not called by this module
-    pub get_url: *const c_void, // not called by this module
-    pub get_async: *const c_void, // not called by this module
-    pub put_async: *const c_void, // not called by this module
-    pub abort: *const c_void, // not called by this module
-    pub loadXML: *const c_void, // not called by this module
-    pub save: *const c_void, // not called by this module
-    pub get_validateOnParse: *const c_void, // not called by this module
-    pub put_validateOnParse: *const c_void, // not called by this module
-    pub get_resolveExternals: *const c_void, // not called by this module
-    pub put_resolveExternals: *const c_void, // not called by this module
-    pub get_preserveWhiteSpace: *const c_void, // not called by this module
-    pub put_preserveWhiteSpace: *const c_void, // not called by this module
-    pub put_onreadystatechange: *const c_void, // not called by this module
-    pub put_ondataavailable: *const c_void, // not called by this module
-    pub put_ontransformnode: *const c_void, // not called by this module
-}
-
-// IXMLDOMElementVtbl: 52 slots, layout from msxml2.h (generated build header)
-#[allow(non_snake_case)]
-#[repr(C)]
-pub struct IXMLDOMElementVtbl {
-    pub QueryInterface: *const c_void, // not called by this module
-    pub AddRef: *const c_void, // not called by this module
-    pub Release: Option<unsafe extern "system" fn(This: *mut IXMLDOMElement) -> ULONG>,
-    pub GetTypeInfoCount: *const c_void, // not called by this module
-    pub GetTypeInfo: *const c_void, // not called by this module
-    pub GetIDsOfNames: *const c_void, // not called by this module
-    pub Invoke: *const c_void, // not called by this module
-    pub get_nodeName: *const c_void, // not called by this module
-    pub get_nodeValue: *const c_void, // not called by this module
-    pub put_nodeValue: *const c_void, // not called by this module
-    pub get_nodeType: *const c_void, // not called by this module
-    pub get_parentNode: *const c_void, // not called by this module
-    pub get_childNodes: *const c_void, // not called by this module
-    pub get_firstChild: *const c_void, // not called by this module
-    pub get_lastChild: *const c_void, // not called by this module
-    pub get_previousSibling: *const c_void, // not called by this module
-    pub get_nextSibling: *const c_void, // not called by this module
-    pub get_attributes: *const c_void, // not called by this module
-    pub insertBefore: *const c_void, // not called by this module
-    pub replaceChild: *const c_void, // not called by this module
-    pub removeChild: *const c_void, // not called by this module
-    pub appendChild: *const c_void, // not called by this module
-    pub hasChildNodes: *const c_void, // not called by this module
-    pub get_ownerDocument: *const c_void, // not called by this module
-    pub cloneNode: *const c_void, // not called by this module
-    pub get_nodeTypeString: *const c_void, // not called by this module
-    pub get_text: *const c_void, // not called by this module
-    pub put_text: *const c_void, // not called by this module
-    pub get_specified: *const c_void, // not called by this module
-    pub get_definition: *const c_void, // not called by this module
-    pub get_nodeTypedValue: *const c_void, // not called by this module
-    pub put_nodeTypedValue: *const c_void, // not called by this module
-    pub get_dataType: *const c_void, // not called by this module
-    pub put_dataType: *const c_void, // not called by this module
-    pub get_xml: *const c_void, // not called by this module
-    pub transformNode: *const c_void, // not called by this module
-    pub selectNodes: *const c_void, // not called by this module
-    pub selectSingleNode: *const c_void, // not called by this module
-    pub get_parsed: *const c_void, // not called by this module
-    pub get_namespaceURI: *const c_void, // not called by this module
-    pub get_prefix: *const c_void, // not called by this module
-    pub get_baseName: *const c_void, // not called by this module
-    pub transformNodeToObject: *const c_void, // not called by this module
-    pub get_tagName: Option<unsafe extern "system" fn(This: *mut IXMLDOMElement, p: *mut BSTR) -> HRESULT>,
-    pub getAttribute: *const c_void, // not called by this module
-    pub setAttribute: *const c_void, // not called by this module
-    pub removeAttribute: *const c_void, // not called by this module
-    pub getAttributeNode: *const c_void, // not called by this module
-    pub setAttributeNode: *const c_void, // not called by this module
-    pub removeAttributeNode: *const c_void, // not called by this module
-    pub getElementsByTagName: Option<unsafe extern "system" fn(This: *mut IXMLDOMElement, p: BSTR, resultList: *mut *mut IXMLDOMNodeList) -> HRESULT>,
-    pub normalize: *const c_void, // not called by this module
-}
-
-// IXMLDOMNamedNodeMapVtbl: 17 slots, layout from msxml2.h (generated build header)
-#[allow(non_snake_case)]
-#[repr(C)]
-pub struct IXMLDOMNamedNodeMapVtbl {
-    pub QueryInterface: *const c_void, // not called by this module
-    pub AddRef: *const c_void, // not called by this module
-    pub Release: Option<unsafe extern "system" fn(This: *mut IXMLDOMNamedNodeMap) -> ULONG>,
-    pub GetTypeInfoCount: *const c_void, // not called by this module
-    pub GetTypeInfo: *const c_void, // not called by this module
-    pub GetIDsOfNames: *const c_void, // not called by this module
-    pub Invoke: *const c_void, // not called by this module
-    pub getNamedItem: Option<unsafe extern "system" fn(This: *mut IXMLDOMNamedNodeMap, p: BSTR, outNode: *mut *mut IXMLDOMNode) -> HRESULT>,
-    pub setNamedItem: *const c_void, // not called by this module
-    pub removeNamedItem: *const c_void, // not called by this module
-    pub get_item: *const c_void, // not called by this module
-    pub get_length: *const c_void, // not called by this module
-    pub getQualifiedItem: *const c_void, // not called by this module
-    pub removeQualifiedItem: *const c_void, // not called by this module
-    pub nextNode: *const c_void, // not called by this module
-    pub reset: *const c_void, // not called by this module
-    pub get__newEnum: *const c_void, // not called by this module
-}
-
-// IXMLDOMNodeListVtbl: 12 slots, layout from msxml2.h (generated build header)
-#[allow(non_snake_case)]
-#[repr(C)]
-pub struct IXMLDOMNodeListVtbl {
-    pub QueryInterface: *const c_void, // not called by this module
-    pub AddRef: *const c_void, // not called by this module
-    pub Release: Option<unsafe extern "system" fn(This: *mut IXMLDOMNodeList) -> ULONG>,
-    pub GetTypeInfoCount: *const c_void, // not called by this module
-    pub GetTypeInfo: *const c_void, // not called by this module
-    pub GetIDsOfNames: *const c_void, // not called by this module
-    pub Invoke: *const c_void, // not called by this module
-    pub get_item: Option<unsafe extern "system" fn(This: *mut IXMLDOMNodeList, lIndex: LONG, outNode: *mut *mut IXMLDOMNode) -> HRESULT>,
-    pub get_length: *const c_void, // not called by this module
-    pub nextNode: *const c_void, // not called by this module
-    pub reset: *const c_void, // not called by this module
-    pub get__newEnum: *const c_void, // not called by this module
-}
-
-
-// ---- COBJMACROS shims: `IXMLDOMNode_get_text(This,p)` == `(This)->lpVtbl->get_text(This,p)`. Each
-// dispatches through the slot above; a null slot is the same crash the C would take.
-pub unsafe fn IXMLDOMNode_Release(This: *mut IXMLDOMNode) -> ULONG { ((*(*This).lpVtbl).Release.unwrap_unchecked())(This) }
-pub unsafe fn IXMLDOMNode_get_attributes(This: *mut IXMLDOMNode, attributeMap: *mut *mut IXMLDOMNamedNodeMap) -> HRESULT { ((*(*This).lpVtbl).get_attributes.unwrap_unchecked())(This, attributeMap) }
-pub unsafe fn IXMLDOMNode_get_text(This: *mut IXMLDOMNode, p: *mut BSTR) -> HRESULT { ((*(*This).lpVtbl).get_text.unwrap_unchecked())(This, p) }
-pub unsafe fn IXMLDOMNamedNodeMap_Release(This: *mut IXMLDOMNamedNodeMap) -> ULONG { ((*(*This).lpVtbl).Release.unwrap_unchecked())(This) }
-pub unsafe fn IXMLDOMNamedNodeMap_getNamedItem(This: *mut IXMLDOMNamedNodeMap, p: BSTR, outNode: *mut *mut IXMLDOMNode) -> HRESULT { ((*(*This).lpVtbl).getNamedItem.unwrap_unchecked())(This, p, outNode) }
-pub unsafe fn IXMLDOMNodeList_get_item(This: *mut IXMLDOMNodeList, lIndex: LONG, outNode: *mut *mut IXMLDOMNode) -> HRESULT { ((*(*This).lpVtbl).get_item.unwrap_unchecked())(This, lIndex, outNode) }
-pub unsafe fn IXMLDOMDocument_load(This: *mut IXMLDOMDocument, var1: VARIANT, pbool: *mut VARIANT_BOOL) -> HRESULT { ((*(*This).lpVtbl).load.unwrap_unchecked())(This, var1, pbool) }
-pub unsafe fn IXMLDOMDocument_get_documentElement(This: *mut IXMLDOMDocument, domElement: *mut *mut IXMLDOMElement) -> HRESULT { ((*(*This).lpVtbl).get_documentElement.unwrap_unchecked())(This, domElement) }
-pub unsafe fn IXMLDOMElement_get_tagName(This: *mut IXMLDOMElement, p: *mut BSTR) -> HRESULT { ((*(*This).lpVtbl).get_tagName.unwrap_unchecked())(This, p) }
-pub unsafe fn IXMLDOMElement_getElementsByTagName(This: *mut IXMLDOMElement, p: BSTR, resultList: *mut *mut IXMLDOMNodeList) -> HRESULT { ((*(*This).lpVtbl).getElementsByTagName.unwrap_unchecked())(This, p, resultList) }
-
 // C: activscp.h `#define IActiveScriptParse IActiveScriptParse64` (or 32) on _WIN64 / otherwise.
 #[cfg(target_pointer_width = "64")]
 pub type IActiveScriptParse = IActiveScriptParse64;
@@ -351,13 +103,11 @@ extern "system" {
     pub fn UrlCreateFromPathW(pszPath: LPCWSTR, pszUrl: LPWSTR, pcchUrl: LPDWORD, dwReserved: DWORD) -> HRESULT; // shlwapi.h
 }
 
-// ---- wine/debug.h `debugstr_variant`: a static inline, ported once in win32macros-rust.
-pub use win32macros_rust::debugstr_variant;
 
 // ==== port resolve: tree consensus (generated -- re-run `rustconv port resolve`) ====
 pub const CLSCTX_INPROC_HANDLER: DWORD = 0x2; // ole32-rust/src/compobj/com.rs
 pub const CLSCTX_INPROC_SERVER: DWORD = 0x1; // cleanmgr-rust/src/prelude.rs
-pub const CLSCTX_LOCAL_SERVER: DWORD = 0x4; // ole32-rust/src/compobj/com.rs
+pub const CLSCTX_LOCAL_SERVER: DWORD = 0x4; // mmc_new-rust/src/prelude.rs
 pub const CLSCTX_REMOTE_SERVER: DWORD = 0x10; // ole32-rust/src/compobj/com.rs
 pub const CP_ACP: u32 = 0; // advapi32-sys/src/bindgen_amd64.rs
 pub const SCRIPTSTATE_INITIALIZED: tagSCRIPTSTATE = tagSCRIPTSTATE_SCRIPTSTATE_INITIALIZED; // island enum
@@ -365,16 +115,15 @@ pub const SCRIPTSTATE_STARTED: tagSCRIPTSTATE = tagSCRIPTSTATE_SCRIPTSTATE_START
 pub const STD_ERROR_HANDLE: u32 = 4294967284; // cmd-rust/src/prelude.rs
 pub const STD_OUTPUT_HANDLE: u32 = 4294967285; // cmd-rust/src/prelude.rs
 pub const VT_BSTR: DWORD = 8; // cleanmgr-rust/src/prelude.rs
-pub const VT_EMPTY: u16 = 0; // msctf-rust/src/prelude.rs
-pub const VT_NULL: u16 = 1; // oleaut32-rust/src/consts.rs
+pub const VT_EMPTY: u16 = 0; // mf-rust/src/prelude.rs
+pub const VT_NULL: u16 = 1; // mmc_new-rust/src/prelude.rs
 extern "C" {
     pub fn calloc(arg1: ::core::ffi::c_uint, arg2: ::core::ffi::c_uint) -> *mut ::core::ffi::c_void; // msvcrt-sys/src/bindgen_i386.rs
     pub fn free(p: *mut c_void); // atlclasses-rust/src/lib.rs
     pub fn malloc(size: usize) -> *mut c_void; // atlclasses-rust/src/lib.rs
     pub fn ros_dbg_log( cls: ::core::ffi::c_uint, ch: *mut __wine_debug_channel, file: *const ::core::ffi::c_char, func: *const ::core::ffi::c_char, line: ::core::ffi::c_int, format: *const ::core::ffi::c_char, ... ) -> ::core::ffi::c_int; // winegdi-rust/src/types_i386.rs
     #[link_name = "_snwprintf"]
-    pub fn swprintf(s: *mut u16, n: usize, fmt: *const u16, ...) -> c_int; // msiexec-rust/src/prelude.rs
-    pub fn wcsrchr(s: *const u16, c: u16) -> *mut u16; // advapi32-rust/src/prelude.rs
+    pub fn swprintf(s: *mut u16, n: usize, fmt: *const u16, ...) -> c_int; // mfplat-rust/src/prelude.rs
     pub fn wcstol(s: *const u16, endptr: *mut *mut u16, base: i32) -> i32; // cleanmgr-rust/src/prelude.rs
     pub static IID_IUnknown: GUID; // cicero-rust/src/types_amd64.rs
     pub static IID_IXMLDOMDocument: IID; // mmc-rust/src/prelude.rs
@@ -457,7 +206,7 @@ pub use crate::wscript::main::scriptFullName;
 pub use crate::wscript::host::wshInteractive;
 pub use crate::wscript::host::wshTimeout;
 // ==== end cross-TU definitions ====
-pub use strsafe_rust::{RtlStringCbPrintfA, RtlStringCbPrintfW, RtlStringCchPrintfA, RtlStringCchPrintfExA, RtlStringCchPrintfExW, RtlStringCchPrintfW, StringCbCatNW, StringCbCatW, StringCbCopyExW, StringCbCopyNExW, StringCbCopyNW, StringCbCopyW, StringCbPrintfExW, StringCbPrintfW, StringCbVPrintfW, StringCchCatNW, StringCchCatW, StringCchCopyA, StringCchCopyExW, StringCchCopyNExW, StringCchCopyNW, StringCchCopyW, StringCchLengthA, StringCchLengthW, StringCchPrintfA, StringCchPrintfExA, StringCchPrintfExW, StringCchPrintfW, StringCchVPrintfA, StringCchVPrintfExA, StringCchVPrintfW};
+pub use strsafe_rust::{RtlStringCbPrintfA, RtlStringCbPrintfW, RtlStringCchPrintfA, RtlStringCchPrintfExA, RtlStringCchPrintfExW, RtlStringCchPrintfW, RtlUnicodeStringPrintf, StringCbCatNW, StringCbCatW, StringCbCopyExW, StringCbCopyNExW, StringCbCopyNW, StringCbCopyW, StringCbPrintfExW, StringCbPrintfW, StringCbVPrintfW, StringCchCatNW, StringCchCatW, StringCchCopyA, StringCchCopyExW, StringCchCopyNExW, StringCchCopyNW, StringCchCopyW, StringCchLengthA, StringCchLengthW, StringCchPrintfA, StringCchPrintfExA, StringCchPrintfExW, StringCchPrintfW, StringCchVPrintfA, StringCchVPrintfExA, StringCchVPrintfW};
 pub use strsafe_rust::ntstrsafe::{RtlStringCatNWorkerW, RtlStringCatWorkerW, RtlStringCbCatNW, RtlStringCbCatW, RtlStringCbCopyNA, RtlStringCbCopyNW, RtlStringCbCopyW, RtlStringCchCatNW, RtlStringCchCatW, RtlStringCchCopyA, RtlStringCchCopyNW, RtlStringCchCopyW, RtlStringCopyNWorkerW, RtlStringCopyWorkerA, RtlStringCopyWorkerW, RtlStringLengthWorkerW};
 pub use conutils_h::{AnsiText, Binary, CON_STREAM, CON_STREAM_MODE, CON_WRITE_FUNC, ConInitStdStreams, ConInitStdStreamsAndMode, ConMsgPrintf, ConMsgPuts, ConPrintf, ConPrintfV, ConPuts, ConResMsgPrintf, ConResMsgPrintfEx, ConResPrintf, ConResPrintfEx, ConResPrintfV, ConResPuts, ConResPutsEx, ConSetThreadUILanguage, ConStdStreamsSetCacheCodePage, ConStreamGetOSHandle, ConStreamInit, ConStreamInitEx, ConStreamSetCacheCodePage, ConStreamSetMode, ConStreamSetOSHandle, ConStreamWrite, ConWrite, INVALID_CP, K32LoadStringW, PCON_STREAM, StdErr, StdIn, StdOut, UTF16Text, UTF8Text, WideText, csStdErr, csStdIn, csStdOut};
 
@@ -465,41 +214,14 @@ pub use conutils_h::{AnsiText, Binary, CON_STREAM, CON_STREAM_MODE, CON_WRITE_FU
 // ==== end port facts ====
 
 // ==== port local types: types the module's .c files define, laid out by c2rust (generated -- `rustconv port resolve`) ====
-// IXMLDOMDocument: c2rust, main.c
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct IXMLDOMDocument {
-    pub lpVtbl: *const IXMLDOMDocumentVtbl,
-}
-// IXMLDOMElement: c2rust, main.c
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct IXMLDOMElement {
-    pub lpVtbl: *const IXMLDOMElementVtbl,
-}
-// IXMLDOMNamedNodeMap: c2rust, main.c
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct IXMLDOMNamedNodeMap {
-    pub lpVtbl: *const IXMLDOMNamedNodeMapVtbl,
-}
-// IXMLDOMNode: c2rust, main.c
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct IXMLDOMNode {
-    pub lpVtbl: *const IXMLDOMNodeVtbl,
-}
-// IXMLDOMNodeList: c2rust, main.c
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct IXMLDOMNodeList {
-    pub lpVtbl: *const IXMLDOMNodeListVtbl,
-}
 // SCRIPTSTATE: c2rust, main.c
 pub type SCRIPTSTATE = tagSCRIPTSTATE;
 // ==== end port local types ====
 
 // ==== port externs: C functions declared outside the island -- c2rust signature, clang calling convention (generated -- `rustconv port resolve`) ====
+extern "C" {
+    pub fn wcsrchr(_Str: *const wchar_t, _Ch: wchar_t) -> *mut wchar_t; // host.c
+}
 // ==== end port externs ====
 
 // ==== port resolve: wine debug channels (generated) ====
@@ -577,6 +299,26 @@ pub unsafe fn IUnknown_AddRef(This: *mut IUnknown) -> ULONG { ((*(*This).lpVtbl)
 pub unsafe fn IUnknown_QueryInterface(This: *mut IUnknown, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*(*This).lpVtbl).QueryInterface.unwrap_unchecked())(This, riid, ppvObject) } // widl C wrapper
 #[inline]
 pub unsafe fn IUnknown_Release(This: *mut IUnknown) -> ULONG { ((*(*This).lpVtbl).Release.unwrap_unchecked())(This) } // widl C wrapper
+#[inline]
+pub unsafe fn IXMLDOMDocument_get_documentElement(This: *mut IXMLDOMDocument, DOMElement: *mut *mut IXMLDOMElement) -> HRESULT { ((*(*This).lpVtbl).get_documentElement.unwrap_unchecked())(This, DOMElement) } // widl C wrapper
+#[inline]
+pub unsafe fn IXMLDOMDocument_load(This: *mut IXMLDOMDocument, xmlSource: VARIANT, isSuccessful: *mut VARIANT_BOOL) -> HRESULT { ((*(*This).lpVtbl).load.unwrap_unchecked())(This, xmlSource, isSuccessful) } // widl C wrapper
+#[inline]
+pub unsafe fn IXMLDOMElement_getElementsByTagName(This: *mut IXMLDOMElement, tagName: BSTR, resultList: *mut *mut IXMLDOMNodeList) -> HRESULT { ((*(*This).lpVtbl).getElementsByTagName.unwrap_unchecked())(This, tagName, resultList) } // widl C wrapper
+#[inline]
+pub unsafe fn IXMLDOMElement_get_tagName(This: *mut IXMLDOMElement, tagName: *mut BSTR) -> HRESULT { ((*(*This).lpVtbl).get_tagName.unwrap_unchecked())(This, tagName) } // widl C wrapper
+#[inline]
+pub unsafe fn IXMLDOMNamedNodeMap_Release(This: *mut IXMLDOMNamedNodeMap) -> ULONG { ((*(*This).lpVtbl).Release.unwrap_unchecked())(This) } // widl C wrapper
+#[inline]
+pub unsafe fn IXMLDOMNamedNodeMap_getNamedItem(This: *mut IXMLDOMNamedNodeMap, name: BSTR, namedItem: *mut *mut IXMLDOMNode) -> HRESULT { ((*(*This).lpVtbl).getNamedItem.unwrap_unchecked())(This, name, namedItem) } // widl C wrapper
+#[inline]
+pub unsafe fn IXMLDOMNodeList_get_item(This: *mut IXMLDOMNodeList, index: LONG, listItem: *mut *mut IXMLDOMNode) -> HRESULT { ((*(*This).lpVtbl).get_item.unwrap_unchecked())(This, index, listItem) } // widl C wrapper
+#[inline]
+pub unsafe fn IXMLDOMNode_Release(This: *mut IXMLDOMNode) -> ULONG { ((*(*This).lpVtbl).Release.unwrap_unchecked())(This) } // widl C wrapper
+#[inline]
+pub unsafe fn IXMLDOMNode_get_attributes(This: *mut IXMLDOMNode, attributeMap: *mut *mut IXMLDOMNamedNodeMap) -> HRESULT { ((*(*This).lpVtbl).get_attributes.unwrap_unchecked())(This, attributeMap) } // widl C wrapper
+#[inline]
+pub unsafe fn IXMLDOMNode_get_text(This: *mut IXMLDOMNode, text: *mut BSTR) -> HRESULT { ((*(*This).lpVtbl).get_text.unwrap_unchecked())(This, text) } // widl C wrapper
 pub type REFIID = *const IID;
 pub const S_FALSE: HRESULT = ((1) as HRESULT);
 pub const S_OK: HRESULT = ((0) as HRESULT);

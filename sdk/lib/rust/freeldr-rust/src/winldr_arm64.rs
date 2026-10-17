@@ -201,12 +201,68 @@ pub unsafe fn Arm64DropToEl1() {
         "msr spsr_el2, {t}",
         "adr {t}, 99f",
         "msr elr_el2, {t}",
+        // Clean and invalidate every data cache to the point of coherency, by set/way,
+        // here and not in a function call: nothing may dirty a line between this and
+        // the eret. EL1 arrives with SCTLR_EL1.M/C/I clear, so until the MMU is on every
+        // fetch and load reads DRAM, which still holds whatever the firmware's EL2 caches
+        // have not written back. The Pi 5 executed zeros (`udf`, ESR EC 0) in the
+        // loader's printf, its code page never having left the cache since UEFI loaded
+        // the image; what had run there before was a few lines that happened to be in
+        // DRAM. Then, once the MMU is on, stale lines would shadow what the window wrote.
+        "mrs {clidr}, clidr_el1",
+        "ubfx {loc}, {clidr}, #24, #3",
+        "lsl {loc}, {loc}, #1",          // LoC * 2, compared against level * 2
+        "mov {lvl}, xzr",
+        "cbz {loc}, 5f",
+        "1:",
+        "add {t}, {lvl}, {lvl}, lsr #1", // level * 3: this level's Ctype field
+        "lsr {t}, {clidr}, {t}",
+        "and {t}, {t}, #7",
+        "cmp {t}, #2",
+        "b.lt 4f",                        // no data or unified cache at this level
+        "msr csselr_el1, {lvl}",
+        "isb",
+        "mrs {ccs}, ccsidr_el1",
+        "and {lsh}, {ccs}, #7",
+        "add {lsh}, {lsh}, #4",          // log2(line bytes)
+        "ubfx {ways}, {ccs}, #3, #10",   // ways - 1
+        "clz {wsh:w}, {ways:w}",         // way field shift (32-bit clz)
+        "ubfx {set}, {ccs}, #13, #15",   // sets - 1
+        "2:",
+        "mov {way}, {ways}",
+        "3:",
+        "lsl {t}, {way}, {wsh}",
+        "orr {t}, {t}, {lvl}",
+        "lsl {sw}, {set}, {lsh}",
+        "orr {t}, {t}, {sw}",
+        "dc cisw, {t}",
+        "subs {way}, {way}, #1",
+        "b.ge 3b",
+        "subs {set}, {set}, #1",
+        "b.ge 2b",
+        "4:",
+        "add {lvl}, {lvl}, #2",
+        "cmp {loc}, {lvl}",
+        "b.gt 1b",
+        "5:",
+        "msr csselr_el1, xzr",
+        "ic iallu",
         "dsb sy",
         "isb",
         "eret",
         "99:",
         sp = in(reg) sp,
         t = out(reg) _,
+        clidr = out(reg) _,
+        loc = out(reg) _,
+        lvl = out(reg) _,
+        ccs = out(reg) _,
+        lsh = out(reg) _,
+        ways = out(reg) _,
+        wsh = out(reg) _,
+        set = out(reg) _,
+        way = out(reg) _,
+        sw = out(reg) _,
         options(nostack)
     );
 }
@@ -534,7 +590,6 @@ pub unsafe extern "C" fn WinLdrSetProcessorContext(
         options(nostack)
     );
 
-    ERR!("<<< WinLdrSetProcessorContext done: TTBR0=TTBR1=%p TCR=0x%llx MAIR=0x%llx\n", Arm64Pgd, tcr, mair);
     // EL1 arrives from an EL2 handoff with the MMU off, so the tables above are
     // configured but not yet in use. (When firmware handed off at EL1 the MMU is
     // already on with firmware's tables and this is a no-op - the TTBR swap
@@ -558,6 +613,9 @@ pub unsafe extern "C" fn WinLdrSetProcessorContext(
             crate::frldr::dbgcon_str(b"[FLDR] el1 mmu enabled\r\n");
         }
     }
+    // After the MMU is on, not in the flat window above: that window is kept to the
+    // few instructions it needs.
+    ERR!("<<< WinLdrSetProcessorContext done: TTBR0=TTBR1=%p TCR=0x%llx MAIR=0x%llx\n", Arm64Pgd, tcr, mair);
 
     Arm64ReportExceptionLevel(b"[FLDR] ctx-post");
     // Read TTBR1_EL1 back: at EL2 without VHE the register still holds what we

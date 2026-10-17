@@ -16,8 +16,8 @@ impl CicCaret {
         let this_: *mut Self = self;
         (*this_).__init_vtables();
         {
-            (*this_).m_bCaretBlinking = (FALSE) as i32;
-            (*this_).m_bCaretVisible = (FALSE) as i32;
+            (*this_).m_bCaretBlinking = (FALSE as i32);
+            (*this_).m_bCaretVisible = (FALSE as i32);
             (*this_).m_uCaretBlinkTimerID = 0;
             (*this_).m_pt.y = 0;
             (*this_).m_pt.x = 0;
@@ -48,10 +48,10 @@ impl CicCaret {
     pub unsafe fn HideCaret(&mut self) {
         let this_: *mut Self = self;
         if (*this_).m_bCaretVisible != 0 {
-            (*this_).m_bCaretVisible = (FALSE) as i32;
+            (*this_).m_bCaretVisible = (FALSE as i32);
             (*this_).InvertCaret();
         }
-        (*this_).m_bCaretBlinking = (FALSE) as i32;
+        (*this_).m_bCaretBlinking = (FALSE as i32);
     }
     pub unsafe fn InvertCaret(&mut self) {
         let this_: *mut Self = self;
@@ -72,9 +72,9 @@ impl CicCaret {
         if bCaretVisible != 0 {
             (*this_).InvertCaret();
         }
-    
+
         (*this_).m_pt = pt;
-    
+
         if bCaretVisible != 0 {
             (*this_).InvertCaret();
         }

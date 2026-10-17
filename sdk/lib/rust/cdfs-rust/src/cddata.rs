@@ -6,7 +6,7 @@ use ntkrnl_sys::ps::*;
 use ntkrnl_sys::ddk::{FAST_IO_DISPATCH, IoGetCurrentIrpStackLocation, IoGetDeviceToVerify, IoGetStackLimits, IoGetTopLevelIrp, IoMarkIrpPending, IoRaiseHardError, IoSetDeviceToVerify, IoSetTopLevelIrp, KeAreAllApcsDisabled, LARGE_INTEGER, PDEVICE_OBJECT, PEXCEPTION_POINTERS, PFILE_OBJECT, PIO_STATUS_BLOCK, PLARGE_INTEGER, PsGetCurrentThread, IRP, _UNICODE_STRING};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CD_DATA, CdFsdPostRequest, CdPerformVerify, FCB, IRP_CONTEXT, IRP_CONTEXT_FLAG_DISABLE_POPUPS, IRP_CONTEXT_FLAG_FORCE_POST, IRP_CONTEXT_FLAG_MORE_PROCESSING, IRP_CONTEXT_FLAG_TOP_LEVEL, THREAD_CONTEXT, TYPE_OF_OPEN, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen, RAW_DIRENT, SECTOR_SIZE, SYSTEM_USE_XA};
-use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem, FsRtlFastCheckLockForRead, FsRtlIsNtstatusExpected, FsRtlNormalizeNtstatus, IoCompleteRequest, IoIsErrorUserInduced, ASSERT_IRP, ASSERT_OPTIONAL_IRP_CONTEXT, ClearFlag};
+use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem, FsRtlFastCheckLockForRead, FsRtlIsNtstatusExpected, FsRtlNormalizeNtstatus, IoCompleteRequest, IoIsErrorUserInduced, ClearFlag};
 use crate::glue::{CDFS_BUG_CHECK_CDDATA, IRP_MN_COMPLETE, STATUS_CANT_WAIT, STATUS_DISK_CORRUPT_ERROR, STATUS_DRIVER_INTERNAL_ERROR, STATUS_FILE_CORRUPT_ERROR, STATUS_VERIFY_REQUIRED};
 
 // cdecl cdfs-internal routines (C defs in filobsup.c are plain cdecl, no NTAPI).
@@ -27,7 +27,6 @@ extern "C" {
     fn CdCleanupIrpContext(IrpContext: *mut core::ffi::c_void, Flag: i32);
 }
 extern "C" {
-    fn ASSERT_IRP_CONTEXT(irp: *mut IRP_CONTEXT);
 }
 extern "C" {
     fn FlagOn(flags: u32, flag: u32) -> i32;
@@ -426,8 +425,8 @@ pub unsafe extern "C" fn CdProcessException(
     let Vpb: ntkrnl_sys::ddk::PVPB;
     let mut Thread: ntkrnl_sys::ddk::PETHREAD;
 
-    ASSERT_OPTIONAL_IRP_CONTEXT(IrpContext);
-    ASSERT_IRP(Irp);
+    ASSERT_OPTIONAL_IRP_CONTEXT!(IrpContext);
+    ASSERT_IRP!(Irp);
 
     if IrpContext.is_null() {
         CdCompleteRequest(core::ptr::null_mut(), Irp, ExceptionCode);
@@ -569,7 +568,7 @@ pub unsafe extern "C" fn CdSetThreadContext(
     ThreadContext: *mut THREAD_CONTEXT,
 ) {
     PAGED_CODE!();
-    ASSERT_IRP_CONTEXT(IrpContext);
+    ASSERT_IRP_CONTEXT!(IrpContext);
 
     let CurrentThreadContext = IoGetTopLevelIrp() as *mut THREAD_CONTEXT;
 

@@ -13,316 +13,11 @@ pub static CPP_COM_WSTR_96A296D224F2: [WCHAR; 1] = [0x0000];
 pub static CPP_COM_WSTR_A944EB43577D: [WCHAR; 4] = [0x0026, 0x004E, 0x006F, 0x0000];
 pub static CPP_COM_WSTR_B728528EE8A8: [WCHAR; 8] = [0x004D, 0x0061, 0x0072, 0x006C, 0x0065, 0x0074, 0x0074, 0x0000];
 pub static CPP_COM_WSTR_DDBF4DF411E1: [WCHAR; 7] = [0x0057, 0x0049, 0x004E, 0x0044, 0x004F, 0x0057, 0x0000];
+pub static CPP_COM_WSTR_F28AD8C4C16D: [WCHAR; 8] = [0x0044, 0x0049, 0x0053, 0x0050, 0x004C, 0x0041, 0x0059, 0x0000];
+pub static CPP_COM_WSTR_FC7CAE4C93A6: [WCHAR; 12] = [0x0075, 0x0078, 0x0074, 0x0068, 0x0065, 0x006D, 0x0065, 0x002E, 0x0064, 0x006C, 0x006C, 0x0000];
 pub static CPP_COM_WSTR_FD9E5FF53298: [WCHAR; 7] = [0x0026, 0x0041, 0x0062, 0x006F, 0x0072, 0x0074, 0x0000];
 
 use core::ffi::c_void;
-
-// ---- file-scope preamble (translated) ----
-pub static mut CUIFTheme__s_hUXTHEME: HINSTANCE = core::ptr::null_mut();
-pub static mut CUIFTheme__s_fnOpenThemeData: FN_OpenThemeData = None;
-pub static mut CUIFTheme__s_fnCloseThemeData: FN_CloseThemeData = None;
-pub static mut CUIFTheme__s_fnDrawThemeBackground: FN_DrawThemeBackground = None;
-pub static mut CUIFTheme__s_fnDrawThemeParentBackground: FN_DrawThemeParentBackground = None;
-pub static mut CUIFTheme__s_fnDrawThemeText: FN_DrawThemeText = None;
-pub static mut CUIFTheme__s_fnDrawThemeIcon: FN_DrawThemeIcon = None;
-pub static mut CUIFTheme__s_fnGetThemeBackgroundExtent: FN_GetThemeBackgroundExtent = None;
-pub static mut CUIFTheme__s_fnGetThemeBackgroundContentRect: FN_GetThemeBackgroundContentRect = None;
-pub static mut CUIFTheme__s_fnGetThemeTextExtent: FN_GetThemeTextExtent = None;
-pub static mut CUIFTheme__s_fnGetThemePartSize: FN_GetThemePartSize = None;
-pub static mut CUIFTheme__s_fnDrawThemeEdge: FN_DrawThemeEdge = None;
-pub static mut CUIFTheme__s_fnGetThemeColor: FN_GetThemeColor = None;
-pub static mut CUIFTheme__s_fnGetThemeMargins: FN_GetThemeMargins = None;
-pub static mut CUIFTheme__s_fnGetThemeFont: FN_GetThemeFont = None;
-pub static mut CUIFTheme__s_fnGetThemeSysColor: FN_GetThemeSysColor = None;
-pub static mut CUIFTheme__s_fnGetThemeSysSize: FN_GetThemeSysSize = None;
-pub static mut CUIFSystemInfo__s_pSystemInfo: *mut CUIFSystemInfo = core::ptr::null_mut();
-pub static mut CUIFScheme__s_pColorTableSys: *mut CUIFColorTableSys = core::ptr::null_mut();
-pub static mut CUIFScheme__s_pColorTableOff10: *mut CUIFColorTableOff10 = core::ptr::null_mut();
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 #[no_mangle]
 pub unsafe extern "C" fn cicCreateUIFScheme(type_: DWORD) -> *mut CUIFScheme {
@@ -343,7 +38,7 @@ pub unsafe extern "C" fn cicInitUIFUtil() {
     }
 
     if !CUIFBitmapDC__s_phdcSrc.is_null() && !CUIFBitmapDC__s_phdcMask.is_null() && !CUIFBitmapDC__s_phdcDst.is_null() {
-        CUIFBitmapDC__s_fInitBitmapDCs = (TRUE) as i32;
+        CUIFBitmapDC__s_fInitBitmapDCs = (TRUE as i32);
     }
 }
 #[no_mangle]
@@ -363,14 +58,12 @@ pub unsafe extern "C" fn cicDoneUIFUtil() {
         CUIFBitmapDC__s_phdcDst = core::ptr::null_mut();
     }
 
-    CUIFBitmapDC__s_fInitBitmapDCs = (FALSE) as i32;
+    CUIFBitmapDC__s_fInitBitmapDCs = (FALSE as i32);
 }
 #[no_mangle]
 pub unsafe extern "C" fn cicMirrorBitmap(hBitmap: HBITMAP, hbrBack: HBRUSH) -> HBITMAP {
     let mut bm: BITMAP = core::mem::zeroed();
-    if (CUIFBitmapDC__s_fInitBitmapDCs == 0)
-        || (GetObject(hBitmap as HGDIOBJ, core::mem::size_of::<BITMAP>() as i32, core::ptr::addr_of_mut!(bm) as LPVOID) == 0)
-    {
+    if CUIFBitmapDC__s_fInitBitmapDCs == 0 || GetObject(hBitmap as HGDIOBJ, core::mem::size_of::<BITMAP>() as i32, core::ptr::addr_of_mut!(bm) as *mut core::ffi::c_void) == 0 {
         return core::ptr::null_mut();
     }
 
@@ -394,9 +87,9 @@ pub unsafe extern "C" fn cicMirrorBitmap(hBitmap: HBITMAP, hbrBack: HBRUSH) -> H
 
     BitBlt((*CUIFBitmapDC__s_phdcDst).op_to_HDC(), 0, 0, bm.bmWidth, bm.bmHeight, (*CUIFBitmapDC__s_phdcMask).op_to_HDC(), 1, 0, SRCCOPY);
 
-    (*CUIFBitmapDC__s_phdcSrc).Uninit((FALSE) as i32);
-    (*CUIFBitmapDC__s_phdcMask).Uninit((FALSE) as i32);
-    (*CUIFBitmapDC__s_phdcDst).Uninit((TRUE) as i32);
+    (*CUIFBitmapDC__s_phdcSrc).Uninit((FALSE as i32));
+    (*CUIFBitmapDC__s_phdcMask).Uninit((FALSE as i32));
+    (*CUIFBitmapDC__s_phdcDst).Uninit((TRUE as i32));
     return (*CUIFBitmapDC__s_phdcDst).DetachBitmap();
 }
 #[no_mangle]
@@ -437,10 +130,10 @@ pub unsafe extern "C" fn cicCreateDisabledBitmap(prc: LPCRECT, hbmMask: HBITMAP,
     (*CUIFBitmapDC__s_phdcSrc).SetDIB(width, height, 1, 32);
 
     let mut rc: RECT = RECT { left: 0, top: 0, right: width, bottom: height };
-    FillRect((*CUIFBitmapDC__s_phdcDst).op_to_HDC(), &mut rc as *mut RECT as *const RECT, hbr1);
+    FillRect((*CUIFBitmapDC__s_phdcDst).op_to_HDC(), core::ptr::addr_of!(rc), hbr1);
 
     let hbrWhite: HBRUSH = GetStockObject((WHITE_BRUSH as i32)) as HBRUSH;
-    FillRect((*CUIFBitmapDC__s_phdcSrc).op_to_HDC(), &mut rc as *mut RECT as *const RECT, hbrWhite);
+    FillRect((*CUIFBitmapDC__s_phdcSrc).op_to_HDC(), core::ptr::addr_of!(rc), hbrWhite);
 
     BitBlt((*CUIFBitmapDC__s_phdcSrc).op_to_HDC(), 0, 0, width, height, (*CUIFBitmapDC__s_phdcMask).op_to_HDC(), 0, 0, SRCINVERT);
     if bPressed != 0 {
@@ -451,14 +144,14 @@ pub unsafe extern "C" fn cicCreateDisabledBitmap(prc: LPCRECT, hbmMask: HBITMAP,
                  (*CUIFBitmapDC__s_phdcSrc).op_to_HDC(), 0, 0, SRCPAINT);
     }
 
-    FillRect((*CUIFBitmapDC__s_phdcSrc).op_to_HDC(), &mut rc as *mut RECT as *const RECT, hbr2);
+    FillRect((*CUIFBitmapDC__s_phdcSrc).op_to_HDC(), core::ptr::addr_of!(rc), hbr2);
 
     BitBlt((*CUIFBitmapDC__s_phdcSrc).op_to_HDC(), 0, 0, width, height, (*CUIFBitmapDC__s_phdcMask).op_to_HDC(), 0, 0, SRCPAINT);
     BitBlt((*CUIFBitmapDC__s_phdcDst).op_to_HDC(), 0, 0, width, height, (*CUIFBitmapDC__s_phdcSrc).op_to_HDC(), 0, 0, SRCAND);
 
-    (*CUIFBitmapDC__s_phdcSrc).Uninit((FALSE) as i32);
-    (*CUIFBitmapDC__s_phdcMask).Uninit((FALSE) as i32);
-    (*CUIFBitmapDC__s_phdcDst).Uninit((TRUE) as i32);
+    (*CUIFBitmapDC__s_phdcSrc).Uninit((FALSE as i32));
+    (*CUIFBitmapDC__s_phdcMask).Uninit((FALSE as i32));
+    (*CUIFBitmapDC__s_phdcDst).Uninit((TRUE as i32));
     return (*CUIFBitmapDC__s_phdcDst).DetachBitmap();
 }
 #[no_mangle]
@@ -490,19 +183,19 @@ pub unsafe extern "C" fn cicCreateShadowMaskBmp(prc: LPRECT, hbm1: HBITMAP, hbm2
     BitBlt((*CUIFBitmapDC__s_phdcDst).op_to_HDC(), 0, 0, width, height, (*CUIFBitmapDC__s_phdcMask).op_to_HDC(), 0, 0, SRCAND);
     BitBlt((*CUIFBitmapDC__s_phdcDst).op_to_HDC(), 0, 0, width, height, (*CUIFBitmapDC__s_phdcSrc).op_to_HDC(), 0, 0, SRCINVERT);
 
-    (*CUIFBitmapDC__s_phdcSrc).Uninit((FALSE) as i32);
-    (*CUIFBitmapDC__s_phdcMask).Uninit((FALSE) as i32);
-    (*CUIFBitmapDC__s_phdcDst).Uninit((TRUE) as i32);
+    (*CUIFBitmapDC__s_phdcSrc).Uninit((FALSE as i32));
+    (*CUIFBitmapDC__s_phdcMask).Uninit((FALSE as i32));
+    (*CUIFBitmapDC__s_phdcDst).Uninit((TRUE as i32));
     return (*CUIFBitmapDC__s_phdcDst).DetachBitmap();
 }
 #[no_mangle]
 pub unsafe extern "C" fn cicChangeBitmapColor(prc: LPCRECT, hbm: HBITMAP, rgbBack: COLORREF, rgbFore: COLORREF) -> HBITMAP {
-    if CUIFBitmapDC__s_fInitBitmapDCs == 0 {
+    if ((CUIFBitmapDC__s_fInitBitmapDCs) == 0) {
         return core::ptr::null_mut();
     }
 
-    let width: INT = (*prc).right - (*prc).left;
-    let height: INT = (*prc).bottom - (*prc).top;
+    let width: i32 = (*prc).right - (*prc).left;
+    let height: i32 = (*prc).bottom - (*prc).top;
 
     let mut brush: CUIFSolidBrush = CUIFSolidBrush__make_0(rgbFore);
 
@@ -511,7 +204,7 @@ pub unsafe extern "C" fn cicChangeBitmapColor(prc: LPCRECT, hbm: HBITMAP, rgbBac
     (*CUIFBitmapDC__s_phdcMask).SetBitmap__1(width, height, 1, 1);
 
     BitBlt((*CUIFBitmapDC__s_phdcDst).op_to_HDC(), 0, 0, width, height, (*CUIFBitmapDC__s_phdcSrc).op_to_HDC(), 0, 0, SRCCOPY);
-    SelectObject((*CUIFBitmapDC__s_phdcDst).op_to_HDC(), (brush).op_to_HBRUSH() as HGDIOBJ);
+    SelectObject((*CUIFBitmapDC__s_phdcDst).op_to_HDC(), (brush.op_to_HBRUSH()).cast());
     SetBkColor((*CUIFBitmapDC__s_phdcDst).op_to_HDC(), rgbBack);
 
     BitBlt((*CUIFBitmapDC__s_phdcMask).op_to_HDC(), 0, 0, width, height, (*CUIFBitmapDC__s_phdcDst).op_to_HDC(), 0, 0, MERGECOPY);
@@ -519,9 +212,9 @@ pub unsafe extern "C" fn cicChangeBitmapColor(prc: LPCRECT, hbm: HBITMAP, rgbBac
     SetTextColor((*CUIFBitmapDC__s_phdcDst).op_to_HDC(), RGB!(0, 0, 0));
     BitBlt((*CUIFBitmapDC__s_phdcDst).op_to_HDC(), 0, 0, width, height, (*CUIFBitmapDC__s_phdcMask).op_to_HDC(), 0, 0, 0xE20746);
 
-    (*CUIFBitmapDC__s_phdcSrc).Uninit((FALSE) as i32);
-    (*CUIFBitmapDC__s_phdcMask).Uninit((FALSE) as i32);
-    (*CUIFBitmapDC__s_phdcDst).Uninit((TRUE) as i32);
+    (*CUIFBitmapDC__s_phdcSrc).Uninit((FALSE as i32));
+    (*CUIFBitmapDC__s_phdcMask).Uninit((FALSE as i32));
+    (*CUIFBitmapDC__s_phdcDst).Uninit((TRUE as i32));
     return (*CUIFBitmapDC__s_phdcDst).DetachBitmap();
 }
 #[no_mangle]
@@ -587,15 +280,15 @@ pub unsafe extern "C" fn cicCreateMaskBmp(prc: LPCRECT, hbm1: HBITMAP, hbm2: HBI
 
     let OldTextColor: COLORREF = SetTextColor((*CUIFBitmapDC__s_phdcDst).op_to_HDC(), rgbColor);
     let OldBkColor: COLORREF = SetBkColor((*CUIFBitmapDC__s_phdcDst).op_to_HDC(), rgbBack);
-    FillRect((*CUIFBitmapDC__s_phdcDst).op_to_HDC(), core::ptr::addr_of!(rc), hbr);
+    FillRect((*CUIFBitmapDC__s_phdcDst).op_to_HDC(), core::ptr::addr_of_mut!(rc), hbr);
     SetTextColor((*CUIFBitmapDC__s_phdcDst).op_to_HDC(), OldTextColor);
     SetBkColor((*CUIFBitmapDC__s_phdcDst).op_to_HDC(), OldBkColor);
 
     BitBlt((*CUIFBitmapDC__s_phdcDst).op_to_HDC(), 0, 0, width, height, (*CUIFBitmapDC__s_phdcMask).op_to_HDC(), 0, 0, SRCAND);
     BitBlt((*CUIFBitmapDC__s_phdcDst).op_to_HDC(), 0, 0, width, height, (*CUIFBitmapDC__s_phdcSrc).op_to_HDC(), 0, 0, SRCINVERT);
-    (*CUIFBitmapDC__s_phdcSrc).Uninit((FALSE) as i32);
-    (*CUIFBitmapDC__s_phdcMask).Uninit((FALSE) as i32);
-    (*CUIFBitmapDC__s_phdcDst).Uninit((TRUE) as i32);
+    (*CUIFBitmapDC__s_phdcSrc).Uninit((FALSE as i32));
+    (*CUIFBitmapDC__s_phdcMask).Uninit((FALSE as i32));
+    (*CUIFBitmapDC__s_phdcDst).Uninit((TRUE as i32));
 
     return (*CUIFBitmapDC__s_phdcDst).DetachBitmap();
 }
@@ -623,37 +316,13 @@ pub unsafe extern "C" fn cicGetIconBitmaps(hIcon: HICON, hbm1: *mut HBITMAP, hbm
         right: size.cx,
         bottom: size.cy,
     };
-    FillRect(
-        (*CUIFBitmapDC__s_phdcSrc).op_to_HDC(),
-        core::ptr::addr_of_mut!(rc),
-        GetStockObject((BLACK_BRUSH as i32)) as HBRUSH,
-    );
+    FillRect((*CUIFBitmapDC__s_phdcSrc).op_to_HDC(), core::ptr::addr_of_mut!(rc), GetStockObject((BLACK_BRUSH as i32)) as HBRUSH);
 
-    DrawIconEx(
-        (*CUIFBitmapDC__s_phdcSrc).op_to_HDC(),
-        0,
-        0,
-        hIcon,
-        size.cx,
-        size.cy,
-        0,
-        0 as HBRUSH,
-        DI_NORMAL,
-    );
-    DrawIconEx(
-        (*CUIFBitmapDC__s_phdcMask).op_to_HDC(),
-        0,
-        0,
-        hIcon,
-        size.cx,
-        size.cy,
-        0,
-        0 as HBRUSH,
-        DI_MASK,
-    );
+    DrawIconEx((*CUIFBitmapDC__s_phdcSrc).op_to_HDC(), 0, 0, hIcon, size.cx, size.cy, 0, core::ptr::null_mut(), DI_NORMAL);
+    DrawIconEx((*CUIFBitmapDC__s_phdcMask).op_to_HDC(), 0, 0, hIcon, size.cx, size.cy, 0, core::ptr::null_mut(), DI_MASK);
 
-    (*CUIFBitmapDC__s_phdcSrc).Uninit((TRUE) as i32);
-    (*CUIFBitmapDC__s_phdcMask).Uninit((TRUE) as i32);
+    (*CUIFBitmapDC__s_phdcSrc).Uninit((TRUE as i32));
+    (*CUIFBitmapDC__s_phdcMask).Uninit((TRUE as i32));
     *hbm1 = (*CUIFBitmapDC__s_phdcSrc).DetachBitmap();
     *hbm2 = (*CUIFBitmapDC__s_phdcMask).DetachBitmap();
     return (TRUE) as BOOL;
@@ -673,9 +342,9 @@ pub unsafe extern "C" fn cicDrawMaskBmpOnDC(hDC: HDC, prc: LPCRECT, hbmp: HBITMA
     BitBlt((*CUIFBitmapDC__s_phdcDst).op_to_HDC(), 0, 0, cx, cy, (*CUIFBitmapDC__s_phdcMask).op_to_HDC(), 0, 0, SRCAND);
     BitBlt((*CUIFBitmapDC__s_phdcDst).op_to_HDC(), 0, 0, cx, cy, (*CUIFBitmapDC__s_phdcSrc).op_to_HDC(), 0, 0, SRCINVERT);
     BitBlt(hDC, (*prc).left, (*prc).top, cx, cy, (*CUIFBitmapDC__s_phdcDst).op_to_HDC(), 0, 0, SRCCOPY);
-    (*CUIFBitmapDC__s_phdcSrc).Uninit((FALSE) as i32);
-    (*CUIFBitmapDC__s_phdcMask).Uninit((FALSE) as i32);
-    (*CUIFBitmapDC__s_phdcDst).Uninit((FALSE) as i32);
+    (*CUIFBitmapDC__s_phdcSrc).Uninit((FALSE as i32));
+    (*CUIFBitmapDC__s_phdcMask).Uninit((FALSE as i32));
+    (*CUIFBitmapDC__s_phdcDst).Uninit((FALSE as i32));
 }
 #[no_mangle]
 pub unsafe extern "C" fn cicGetWorkAreaRect(pt: POINT, prc: LPRECT) {
@@ -744,6 +413,7 @@ pub unsafe extern "C" fn cicDoneUIFSys() {
         CUIFSystemInfo__s_pSystemInfo = core::ptr::null_mut();
     }
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn cicUpdateUIFSys() {
     if !CUIFSystemInfo__s_pSystemInfo.is_null() {
@@ -807,7 +477,7 @@ impl CUIFSystemInfo {
         let hDC: HDC = GetDC(core::ptr::null_mut());
         (*this_).m_cBitsPixels = (GetDeviceCaps(hDC, (BITSPIXEL as i32))) as u32;
         ReleaseDC(core::ptr::null_mut(), hDC);
-    
+
         let mut HighContrast: HIGHCONTRAST = core::mem::zeroed();
         HighContrast.cbSize = core::mem::size_of::<HIGHCONTRAST>() as u32;
         SystemParametersInfo(
@@ -827,8 +497,8 @@ impl CUIFSystemInfo {
     }
     pub unsafe fn Initialize(&mut self) {
         let this_: *mut Self = self;
-        (*this_).__base0.dwOSVersionInfoSize = (core::mem::size_of::<OSVERSIONINFO>()) as DWORD;
-        GetVersionEx(this_ as *mut OSVERSIONINFO);
+        (*this_).__base0.dwOSVersionInfoSize = core::mem::size_of::<OSVERSIONINFO>() as DWORD;
+        GetVersionEx(core::ptr::addr_of_mut!((*this_).__base0));
         (*this_).GetSystemMetrics();
     }
 }
@@ -839,7 +509,7 @@ impl CUIFTheme {
         if hWnd.is_null() || (*this_).m_pszClassList.is_null() {
             return E_FAIL;
         }
-    
+
         if cicGetFN(core::ptr::addr_of_mut!(CUIFTheme__s_hUXTHEME), core::ptr::addr_of_mut!(CUIFTheme__s_fnOpenThemeData), (&[0x0075, 0x0078, 0x0074, 0x0068, 0x0065, 0x006d, 0x0065, 0x002e, 0x0064, 0x006c, 0x006c, 0x0000u16]).as_ptr() /* TEXT "uxtheme.dll" */, b"OpenThemeData\0".as_ptr() as *const i8) == 0 {
             return E_FAIL;
         }
@@ -858,11 +528,11 @@ impl CUIFTheme {
         if (*this_).m_hTheme.is_null() {
             return S_OK;
         }
-    
+
         if cicGetFN(core::ptr::addr_of_mut!(CUIFTheme__s_hUXTHEME), core::ptr::addr_of_mut!(CUIFTheme__s_fnCloseThemeData), (&[0x0075, 0x0078, 0x0074, 0x0068, 0x0065, 0x006d, 0x0065, 0x002e, 0x0064, 0x006c, 0x006c, 0x0000u16]).as_ptr() /* TEXT "uxtheme.dll" */, b"CloseThemeData\0".as_ptr() as *const i8) == 0 {
             return E_FAIL;
         }
-    
+
         let hr: HRESULT = (CUIFTheme__s_fnCloseThemeData.unwrap_unchecked())((*this_).m_hTheme);
         (*this_).m_hTheme = core::ptr::null_mut();
         return hr;
@@ -983,37 +653,38 @@ impl CUIFObject {
         let this_: *mut Self = self;
         (*this_).__base0.__ctor_0();
         (*this_).__init_vtables();
+        (*this_).m_ObjectArray.__ctor_0();
         {
-        (*this_).__base0.m_pszClassList = core::ptr::null_mut();
-        (*this_).__base0.m_hTheme = core::ptr::null_mut();
-        (*this_).m_pParent = pParent;
-        (*this_).m_nObjectID = nObjectID;
-        (*this_).m_style = style;
-    
-        if !prc.is_null() {
-            (*this_).m_rc = *prc;
-        } else {
-            (*this_).m_rc = RECT { left: 0, top: 0, right: 0, bottom: 0 };
-        }
-    
-        if !(*this_).m_pParent.is_null() {
-            (*this_).m_pWindow = (*(*this_).m_pParent).m_pWindow;
-            (*this_).m_pScheme = (*(*this_).m_pParent).m_pScheme;
-        } else {
-            (*this_).m_pWindow = core::ptr::null_mut();
-            (*this_).m_pScheme = core::ptr::null_mut();
-        }
-    
-        (*this_).m_bVisible = (TRUE) as i32;
-        (*this_).m_bEnable = (*this_).m_bVisible;
-    
-        (*this_).m_hFont = GetStockObject((DEFAULT_GUI_FONT as i32)) as HFONT;
-        (*this_).m_bHasCustomFont = (FALSE) as i32;
-    
-        (*this_).m_pszToolTip = core::ptr::null_mut();
-    
-        (*this_).m_dwUnknown4[0 as usize] = (1 as DWORD).wrapping_neg(); //FIXME: name
-        (*this_).m_dwUnknown4[1 as usize] = (1 as DWORD).wrapping_neg(); //FIXME: name
+            (*this_).__base0.m_pszClassList = core::ptr::null_mut();
+            (*this_).__base0.m_hTheme = core::ptr::null_mut();
+            (*this_).m_pParent = pParent;
+            (*this_).m_nObjectID = nObjectID;
+            (*this_).m_style = style;
+
+            if !prc.is_null() {
+                (*this_).m_rc = *prc;
+            } else {
+                (*this_).m_rc = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+            }
+
+            if !(*this_).m_pParent.is_null() {
+                (*this_).m_pWindow = (*(*this_).m_pParent).m_pWindow;
+                (*this_).m_pScheme = (*(*this_).m_pParent).m_pScheme;
+            } else {
+                (*this_).m_pWindow = core::ptr::null_mut();
+                (*this_).m_pScheme = core::ptr::null_mut();
+            }
+
+            (*this_).m_bVisible = (TRUE as i32);
+            (*this_).m_bEnable = (TRUE as i32);
+
+            (*this_).m_hFont = GetStockObject((DEFAULT_GUI_FONT as i32)) as HFONT;
+            (*this_).m_bHasCustomFont = (FALSE as i32);
+
+            (*this_).m_pszToolTip = core::ptr::null_mut();
+
+            (*this_).m_dwUnknown4[0 as usize] = (0 as DWORD).wrapping_sub(1 as DWORD); //FIXME: name
+            (*this_).m_dwUnknown4[1 as usize] = (0 as DWORD).wrapping_sub(1 as DWORD); //FIXME: name
         }
     }
     pub unsafe fn __dtor__body(&mut self) {
@@ -1024,23 +695,23 @@ impl CUIFObject {
                 (*pToolTip).m_pToolTipTarget = core::ptr::null_mut();
             }
         }
-    
+
         if !(*this_).m_pszToolTip.is_null() {
             cpp_delete_array((*this_).m_pszToolTip);
             (*this_).m_pszToolTip = core::ptr::null_mut();
         }
-    
-        let mut iObj: usize = (*this_).m_ObjectArray.size();
+
+        let mut iObj: usize = (*this_).m_ObjectArray.__base0.size();
         while iObj > 0 {
             iObj -= 1;
-            CUIFObject__delete((*this_).m_ObjectArray[iObj]);
+            CUIFObject__delete((*this_).m_ObjectArray.__base0[iObj]);
         }
-        (*this_).m_ObjectArray.clear();
-    
+        (*this_).m_ObjectArray.__base0.clear();
+
         if !(*this_).m_pWindow.is_null() {
             (*(*this_).m_pWindow).RemoveUIObj(this_);
         }
-    
+
         (*this_).__base0.CloseThemeData();
     }
     pub unsafe fn StartCapture(&mut self) {
@@ -1078,14 +749,12 @@ impl CUIFObject {
         if (*this_).PtInObject(pt) == 0 {
             return core::ptr::null_mut();
         }
-    
+
         let mut pFound: *mut CUIFObject = this_;
         let mut i: usize = 0;
-        while i < (*this_).m_ObjectArray.size() {
-            let base: *mut *mut CUIFObject =
-                core::ptr::addr_of_mut!((*this_).m_ObjectArray.__base0) as *mut *mut CUIFObject;
-            let elem: *mut CUIFObject = *base.add(i);
-            let pObject: *mut CUIFObject = (*elem).ObjectFromPoint(pt);
+        while i < (*this_).m_ObjectArray.__base0.size() {
+            let pObject: *mut CUIFObject = (*this_).m_ObjectArray.__base0[i];
+            let pObject: *mut CUIFObject = (*pObject).ObjectFromPoint(pt);
             if !pObject.is_null() {
                 pFound = pObject;
             }
@@ -1125,7 +794,7 @@ impl CUIFObject {
         y: LONG,
     ) -> BOOL {
         let this_: *mut Self = self;
-        (FALSE) as i32
+        (FALSE as i32)
     }
     pub unsafe fn GetRect__body(&mut self, prc: LPRECT) {
         let this_: *mut Self = self;
@@ -1148,17 +817,16 @@ impl CUIFObject {
         if (*this_).m_bVisible == 0 {
             return;
         }
-    
+
         if prc.is_null() {
             prc = core::ptr::addr_of!((*this_).m_rc);
         }
-    
+
         (*this_).OnPaint(hDC);
-    
+
         let mut iItem: usize = 0;
-        while iItem < (*this_).m_ObjectArray.size() {
-            let pObject: *mut CUIFObject =
-                *(core::ptr::addr_of_mut!((*this_).m_ObjectArray.__base0) as *mut *mut CUIFObject).add(iItem);
+        while iItem < (*this_).m_ObjectArray.__base0.size() as usize {
+            let mut pObject: *mut CUIFObject = (*this_).m_ObjectArray.__base0[iItem];
             let mut rc: RECT = core::mem::zeroed();
             if IntersectRect(
                 core::ptr::addr_of_mut!(rc),
@@ -1182,17 +850,16 @@ impl CUIFObject {
         if (*this_).m_bEnable == bEnable {
             return;
         }
-    
+
         (*this_).m_bEnable = bEnable;
         let mut iItem: usize = 0;
-        while iItem < (*this_).m_ObjectArray.size() {
-            let p: *mut *mut CUIFObject =
+        while iItem < (*this_).m_ObjectArray.__base0.size() {
+            let base: *mut *mut CUIFObject =
                 core::ptr::addr_of_mut!((*this_).m_ObjectArray.__base0) as *mut *mut CUIFObject;
-            let pItem: *mut CUIFObject = *p.add(iItem);
-            (*pItem).Enable(bEnable);
+            (*(*base.add(iItem))).Enable(bEnable);
             iItem += 1;
         }
-    
+
         (*this_).CallOnPaint();
     }
     pub unsafe fn Show__body(&mut self, bVisible: BOOL) {
@@ -1200,16 +867,15 @@ impl CUIFObject {
         if (*this_).m_bVisible == bVisible {
             return;
         }
-    
+
         (*this_).m_bVisible = bVisible;
         let mut iItem: usize = 0;
-        while iItem < (*this_).m_ObjectArray.size() {
-            let pItem: *mut *mut CUIFObject =
-                core::ptr::addr_of_mut!((*this_).m_ObjectArray.__base0) as *mut *mut CUIFObject;
-            (**pItem.add(iItem)).Show(bVisible);
+        while iItem < (*this_).m_ObjectArray.__base0.size() {
+            let pItem: *mut CUIFObject = *(core::ptr::addr_of_mut!((*this_).m_ObjectArray.__base0) as *mut *mut CUIFObject).add(iItem);
+            (*pItem).Show(bVisible);
             iItem += 1;
         }
-    
+
         if (*this_).m_bVisible != 0 || !(*this_).m_pParent.is_null() {
             (*(*this_).m_pParent).CallOnPaint();
         }
@@ -1225,15 +891,16 @@ impl CUIFObject {
     pub unsafe fn SetFont__body(&mut self, hFont: HFONT) {
         let this_: *mut Self = self;
         (*this_).SetFontToThis(hFont);
-    
+
         let mut iItem: usize = 0;
-        while iItem < (*this_).m_ObjectArray.size() {
-            let base: *mut *mut CUIFObject =
+        while iItem < (*this_).m_ObjectArray.__base0.size() {
+            let pItems: *mut *mut CUIFObject =
                 core::ptr::addr_of_mut!((*this_).m_ObjectArray.__base0) as *mut *mut CUIFObject;
-            (*(*base.add(iItem))).SetFont(hFont);
+            let pItem: *mut CUIFObject = *pItems.add(iItem);
+            (*pItem).SetFont(hFont);
             iItem += 1;
         }
-    
+
         (*this_).CallOnPaint();
     }
     pub unsafe fn SetStyle__body(&mut self, style: DWORD) {
@@ -1264,7 +931,7 @@ impl CUIFObject {
             cpp_delete_array((*this_).m_pszToolTip);
             (*this_).m_pszToolTip = core::ptr::null_mut();
         }
-    
+
         if !pszToolTip.is_null() {
             let cch: usize = wcslen(pszToolTip);
             (*this_).m_pszToolTip = cpp_new_array_CicNoThrow::<WCHAR>(cch + 1);
@@ -1280,7 +947,7 @@ impl CUIFObject {
             if !pToolTip.is_null() && (*pToolTip).m_pToolTipTarget == this_ {
                 (*pToolTip).m_pToolTipTarget = core::ptr::null_mut();
             }
-    
+
             (*(*this_).m_pWindow).RemoveUIObj(this_);
             (*this_).m_pWindow = core::ptr::null_mut();
         }
@@ -1298,10 +965,8 @@ impl CUIFObject {
         let this_: *mut Self = self;
         (*this_).__base0.CloseThemeData();
         let mut iItem: usize = 0;
-        while iItem < (*this_).m_ObjectArray.size() {
-            let pItems: *mut *mut CUIFObject =
-                core::ptr::addr_of_mut!((*this_).m_ObjectArray.__base0) as *mut *mut CUIFObject;
-            (*(*pItems.add(iItem))).ClearTheme();
+        while iItem < (*this_).m_ObjectArray.__base0.size() {
+            (*(&mut (*this_).m_ObjectArray.__base0)[iItem]).ClearTheme();
             iItem += 1;
         }
     }
@@ -1417,24 +1082,24 @@ impl CUIFIcon {
         if (*this_).m_hImageList.is_null() {
             return core::ptr::null_mut();
         }
-    
+
         if !(*this_).m_hIcon.is_null() {
             let mut iconSize: SIZE = core::mem::zeroed();
             cicGetIconSize((*this_).m_hIcon, core::ptr::addr_of_mut!(iconSize));
-    
+
             let mut uFlags: UINT = ILC_COLOR32 | ILC_MASK;
             if bMirror != 0 {
                 uFlags |= ILC_MIRROR;
             }
-    
+
             (*this_).m_hImageList = ImageList_Create(iconSize.cx, iconSize.cy, uFlags, 1, 0);
             if !(*this_).m_hImageList.is_null() {
                 ImageList_ReplaceIcon((*this_).m_hImageList, -1, (*this_).m_hIcon);
             }
-    
+
             return (*this_).m_hImageList;
         }
-    
+
         core::ptr::null_mut()
     }
 }
@@ -1442,19 +1107,20 @@ impl CUIFIcon {
 impl CUIFBitmapDC {
     pub unsafe fn __ctor_0(&mut self, bMemory: BOOL) {
         let this_: *mut Self = self;
-        (*this_).m_hBitmap = core::ptr::null_mut();
-        (*this_).m_hOldBitmap = core::ptr::null_mut();
-        (*this_).m_hOldObject = core::ptr::null_mut();
-        if bMemory != 0 {
-            (*this_).m_hDC = CreateCompatibleDC(core::ptr::null_mut());
-        } else {
-            let display: [u16; 8] = ['D' as u16, 'I' as u16, 'S' as u16, 'P' as u16, 'L' as u16, 'A' as u16, 'Y' as u16, 0];
-            (*this_).m_hDC = CreateDC(display.as_ptr(), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut());
+        {
+            (*this_).m_hBitmap = core::ptr::null_mut();
+            (*this_).m_hOldBitmap = core::ptr::null_mut();
+            (*this_).m_hOldObject = core::ptr::null_mut();
+            if bMemory != 0 {
+                (*this_).m_hDC = CreateCompatibleDC(core::ptr::null_mut());
+            } else {
+                (*this_).m_hDC = CreateDC(CPP_COM_WSTR_F28AD8C4C16D.as_ptr(), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut());
+            }
         }
     }
     pub unsafe fn __dtor__body(&mut self) {
         let this_: *mut Self = self;
-        (*this_).Uninit((FALSE) as i32);
+        (*this_).Uninit((FALSE as i32));
         DeleteDC((*this_).m_hDC);
     }
     pub unsafe fn Uninit(&mut self, bKeep: BOOL) {
@@ -1463,12 +1129,12 @@ impl CUIFBitmapDC {
             SelectObject((*this_).m_hDC, (*this_).m_hOldBitmap);
             (*this_).m_hOldBitmap = core::ptr::null_mut();
         }
-    
+
         if !(*this_).m_hOldObject.is_null() {
             SelectObject((*this_).m_hDC, (*this_).m_hOldObject);
             (*this_).m_hOldObject = core::ptr::null_mut();
         }
-    
+
         if bKeep == 0 {
             if !(*this_).m_hBitmap.is_null() {
                 DeleteObject(((*this_).m_hBitmap).cast());
@@ -1572,32 +1238,32 @@ impl CUIFSchemeDef {
             }
             return;
         }
-    
+
         if (dwUnknownFlags & 0x40) == 0 {
             (*pSize).cx = (((dwUnknownFlags & 0x80) != 0) as i32);
             (*pSize).cy = (*pSize).cx;
             return;
         }
-    
+
         (*pSize).cx = -1;
         (*pSize).cy = (*pSize).cx;
     }
     pub unsafe fn DrawCtrlBkgd__body(&mut self, hDC: HDC, prc: LPCRECT, dwUnknownFlags: DWORD, dwDrawFlags: DWORD) {
         let this_: *mut Self = self;
         FillRect(hDC, prc, (*this_).GetBrush(9));
-    
+
         if (dwDrawFlags & UIF_DRAW_PRESSED) == 0 && (dwDrawFlags & 0x2) != 0 {
             return;
         }
-    
+
         let hbrDither: HBRUSH = cicCreateDitherBrush();
         if hbrDither.is_null() {
             return;
         }
-    
+
         let rgbOldText: COLORREF = SetTextColor(hDC, GetSysColor((COLOR_BTNFACE as i32)));
         let rgbOldBack: COLORREF = SetBkColor(hDC, GetSysColor((COLOR_BTNHIGHLIGHT as i32)));
-    
+
         let mut rc: RECT = *prc;
         InflateRect(core::ptr::addr_of_mut!(rc), -2, -2);
         FillRect(hDC, core::ptr::addr_of_mut!(rc), hbrDither);
@@ -1608,7 +1274,7 @@ impl CUIFSchemeDef {
     pub unsafe fn DrawCtrlEdge__body(&mut self, hDC: HDC, prc: LPCRECT, dwUnknownFlags: DWORD, dwDrawFlags: DWORD) {
         let this_: *mut Self = self;
         let mut uEdge: UINT = BDR_RAISEDINNER;
-    
+
         if dwDrawFlags & 0x10 != 0 {
             if !(dwUnknownFlags & 0x40 != 0) {
                 if dwUnknownFlags & 0x80 != 0 {
@@ -1636,7 +1302,7 @@ impl CUIFSchemeDef {
         } else if !(dwUnknownFlags & 0x1 != 0) {
             return;
         }
-    
+
         let mut rc: RECT = *prc;
         DrawEdge(hDC, core::ptr::addr_of_mut!(rc), uEdge, BF_RECT);
     }
@@ -1644,11 +1310,11 @@ impl CUIFSchemeDef {
         let this_: *mut Self = self;
         let rgbOldText: COLORREF = GetTextColor(hDC);
         let OldBkMode: INT = SetBkMode(hDC, (TRANSPARENT as i32));
-    
+
         if cchText == -1 {
             cchText = lstrlenW(pszText);
         }
-    
+
         let mut rc: RECT = *prc;
         if dwDrawFlags & UIF_DRAW_DISABLED != 0 {
             OffsetRect(core::ptr::addr_of_mut!(rc), 1, 1);
@@ -1665,7 +1331,7 @@ impl CUIFSchemeDef {
             );
             OffsetRect(core::ptr::addr_of_mut!(rc), -1, -1);
         }
-    
+
         SetTextColor(hDC, GetSysColor((COLOR_BTNTEXT as i32)));
         ExtTextOutW(
             hDC,
@@ -1677,7 +1343,7 @@ impl CUIFSchemeDef {
             (cchText) as UINT,
             core::ptr::null_mut(),
         );
-    
+
         SetTextColor(hDC, rgbOldText);
         SetBkMode(hDC, OldBkMode);
     }
@@ -1705,7 +1371,7 @@ impl CUIFSchemeDef {
             hbm1 = cicMirrorBitmap(hbm1, (*this_).GetBrush(9));
             hbm2 = cicMirrorBitmap(hbm2, GetStockObject((BLACK_BRUSH as i32)) as HBRUSH);
         }
-    
+
         let mut hBrush: HBRUSH = UlongToHandle!(COLOR_BTNFACE + 1) as HBRUSH;
         let mut bBrushCreated: BOOL = (FALSE) as i32;
         if !hbm2.is_null() {
@@ -1717,12 +1383,12 @@ impl CUIFSchemeDef {
                     hBrush = cicCreateDitherBrush();
                     bBrushCreated = (TRUE) as i32;
                 }
-    
+
                 let rgbFace: COLORREF = GetSysColor((COLOR_BTNFACE as i32));
                 let rgbHighlight: COLORREF = GetSysColor((COLOR_BTNHIGHLIGHT as i32));
                 hBitmap = cicCreateMaskBmp(prc, hbm1, hbm2, hBrush, rgbFace, rgbHighlight);
             }
-    
+
             if !hBitmap.is_null() {
                 DrawState(hDC, core::ptr::null_mut(), None, hBitmap as LPARAM, 0,
                             (*prc).left, (*prc).top,
@@ -1735,17 +1401,17 @@ impl CUIFSchemeDef {
             if (dwDrawFlags & UIF_DRAW_DISABLED) != 0 {
                 uFlags |= DSS_MONO | DSS_DISABLED;
             }
-    
+
             DrawState(hDC, core::ptr::null_mut(), None, hbm1 as LPARAM, 0,
                         (*prc).left, (*prc).top,
                         (*prc).right - (*prc).left, (*prc).bottom - (*prc).top,
                         uFlags);
         }
-    
+
         if bBrushCreated != 0 {
             DeleteObject((hBrush).cast());
         }
-    
+
         if (*this_).__base0.m_bMirroring != 0 {
             DeleteObject((hbm1).cast());
             DeleteObject((hbm2).cast());
@@ -1760,7 +1426,7 @@ impl CUIFSchemeDef {
         let mut rc: RECT = *prc;
         rc.bottom = rc.top + (rc.bottom - rc.top) / 2;
         FillRect(hDC, core::ptr::addr_of_mut!(rc), UlongToHandle!(COLOR_BTNSHADOW + 1) as HBRUSH);
-    
+
         rc = *prc;
         rc.top += (rc.bottom - rc.top) / 2;
         FillRect(hDC, core::ptr::addr_of_mut!(rc), UlongToHandle!(COLOR_BTNHIGHLIGHT + 1) as HBRUSH);
@@ -1806,13 +1472,13 @@ impl CUIFSchemeDef {
         if hLightPen.is_null() {
             return;
         }
-    
+
         let hShadowPen: HPEN = CreatePen((PS_SOLID as i32), 0, GetSysColor((COLOR_BTNSHADOW as i32)));
         if hShadowPen.is_null() {
             DeleteObject((hLightPen).cast());
             return;
         }
-    
+
         let hPenOld: HGDIOBJ = SelectObject(hDC, (hShadowPen).cast());
         if bVertical != 0 {
             MoveToEx(hDC, (*prc).left, (*prc).top + 1, core::ptr::null_mut());
@@ -1828,7 +1494,7 @@ impl CUIFSchemeDef {
             LineTo(hDC, (*prc).left + 2, (*prc).bottom);
         }
         SelectObject(hDC, hPenOld);
-    
+
         DeleteObject((hShadowPen).cast());
         DeleteObject((hLightPen).cast());
     }
@@ -1850,10 +1516,10 @@ impl CUIFWindow {
             (*this_).m_pCaptured = core::ptr::null_mut();
             (*this_).m_pTimerObject = core::ptr::null_mut();
             (*this_).m_pPointed = core::ptr::null_mut();
-            (*this_).m_bPointing = (FALSE) as i32;
+            (*this_).m_bPointing = (FALSE as i32);
             (*this_).m_pToolTip = core::ptr::null_mut();
             (*this_).m_pShadow = core::ptr::null_mut();
-            (*this_).m_bShowShadow = (TRUE) as i32;
+            (*this_).m_bShowShadow = (TRUE as i32);
             (*this_).m_pBehindModal = core::ptr::null_mut();
             (*this_).CreateScheme();
         }
@@ -1868,11 +1534,13 @@ impl CUIFWindow {
             CUIFShadow__delete((*this_).m_pShadow);
             (*this_).m_pShadow = core::ptr::null_mut();
         }
-        let mut i: usize = (*this_).__base0.m_ObjectArray.size();
+        let mut i: usize = (*this_).__base0.m_ObjectArray.__base0.size();
         while i > 0 {
             i -= 1;
-            let pObject: *mut CUIFObject = *(core::ptr::addr_of_mut!((*this_).__base0.m_ObjectArray) as *mut *mut CUIFObject).add(i);
-            *(core::ptr::addr_of_mut!((*this_).__base0.m_ObjectArray) as *mut *mut CUIFObject).add(i) = core::ptr::null_mut();
+            let arr: *mut *mut CUIFObject =
+                core::ptr::addr_of_mut!((*this_).__base0.m_ObjectArray.__base0) as *mut *mut CUIFObject;
+            let pObject: *mut CUIFObject = *arr.add(i);
+            *arr.add(i) = core::ptr::null_mut();
             (*this_).__base0.m_ObjectArray.Remove(pObject);
             CUIFObject__delete(pObject);
         }
@@ -1890,119 +1558,105 @@ impl CUIFWindow {
     pub unsafe fn Initialize__body(&mut self) -> BOOL {
         let this_: *mut Self = self;
         let pszClass: LPCTSTR = (*this_).GetClassNameW();
-    
+
         let mut wcx: WNDCLASSEX = core::mem::zeroed();
         ZeroMemory!(core::ptr::addr_of_mut!(wcx) as *mut _, core::mem::size_of::<WNDCLASSEX>());
         wcx.cbSize = core::mem::size_of::<WNDCLASSEXW>() as UINT;
         if GetClassInfoEx((*this_).m_hInst, pszClass, core::ptr::addr_of_mut!(wcx)) == 0 {
             ZeroMemory!(core::ptr::addr_of_mut!(wcx) as *mut _, core::mem::size_of::<WNDCLASSEX>());
             wcx.cbSize = core::mem::size_of::<WNDCLASSEX>() as UINT;
-            wcx.style = (CS_HREDRAW as UINT) | (CS_VREDRAW as UINT) | (CS_DBLCLKS as UINT);
+            wcx.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
             wcx.lpfnWndProc = Some(CUIFWindow::WindowProcedure);
-            wcx.cbClsExtra = 0 as INT;
+            wcx.cbClsExtra = 0;
             wcx.cbWndExtra = (core::mem::size_of::<LONG_PTR>() as INT) * (2 as INT);
             wcx.hInstance = (*this_).m_hInst;
             wcx.hIcon = core::ptr::null_mut();
-            wcx.hCursor = LoadCursor(core::ptr::null_mut(), IDC_ARROW as usize as LPCWSTR);
+            wcx.hCursor = LoadCursor(core::ptr::null_mut(), IDC_ARROW);
             wcx.lpszClassName = pszClass;
             wcx.hbrBackground = core::ptr::null_mut();
-            wcx.lpszMenuName = core::ptr::null();
+            wcx.lpszMenuName = core::ptr::null_mut();
             wcx.hIconSm = core::ptr::null_mut();
             RegisterClassEx(core::ptr::addr_of_mut!(wcx));
         }
-    
+
         cicUpdateUIFSys();
         cicUpdateUIFScheme();
-    
-        if (*this_).__base0.m_style & (UIF_WINDOW_TOOLTIP as DWORD) != 0 {
-            let style: DWORD = ((*this_).__base0.m_style & (UIF_WINDOW_LAYOUTRTL as DWORD)) | (UIF_WINDOW_TOPMOST as DWORD) | (0x10 as DWORD);
-            (*this_).m_pToolTip = CUIFToolTip__new_in_0(
-                cpp_alloc_CicNoThrow::<CUIFToolTip>(),
-                (*this_).m_hInst,
-                style,
-                this_,
-            );
+
+        if ((*this_).__base0.m_style & UIF_WINDOW_TOOLTIP) != 0 {
+            let style: DWORD = ((*this_).__base0.m_style & UIF_WINDOW_LAYOUTRTL) | UIF_WINDOW_TOPMOST | 0x10;
+            (*this_).m_pToolTip = CUIFToolTip__new_in_0(cpp_alloc_CicNoThrow::<CUIFToolTip>(), (*this_).m_hInst, style, this_);
             if !(*this_).m_pToolTip.is_null() {
                 (*(*this_).m_pToolTip).__base0.Initialize();
             }
         }
-    
-        if (*this_).__base0.m_style & (UIF_WINDOW_SHADOW as DWORD) != 0 {
-            (*this_).m_pShadow = CUIFShadow__new_in_0(
-                cpp_alloc_CicNoThrow::<CUIFShadow>(),
-                (*this_).m_hInst,
-                UIF_WINDOW_TOPMOST as DWORD,
-                this_,
-            );
+
+        if ((*this_).__base0.m_style & UIF_WINDOW_SHADOW) != 0 {
+            (*this_).m_pShadow = CUIFShadow__new_in_0(cpp_alloc_CicNoThrow::<CUIFShadow>(), (*this_).m_hInst, UIF_WINDOW_TOPMOST, this_);
             if !(*this_).m_pShadow.is_null() {
                 (*(*this_).m_pShadow).Initialize();
             }
         }
-    
-        return (*this_).__base0.Initialize();
+
+        return (*this_).__base0.Initialize__body();
     }
     pub unsafe fn Show__body(&mut self, bVisible: BOOL) {
         let this_: *mut Self = self;
         if IsWindow((*this_).m_hWnd) == 0 {
             return;
         }
-    
+
         if bVisible != 0 && (((*this_).__base0.m_style & UIF_WINDOW_TOPMOST) != 0) {
             SetWindowPos((*this_).m_hWnd, core::ptr::null_mut(), 0, 0, 0, 0, SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE);
         }
-    
+
         (*this_).__base0.m_bVisible = bVisible;
         ShowWindow((*this_).m_hWnd, if bVisible != 0 { (SW_SHOWNOACTIVATE as i32) } else { 0 });
     }
     pub unsafe fn SetRect__body(&mut self, prc: LPCRECT) {
         let this_: *mut Self = self;
-        let mut Rect: RECT = RECT {
-            left: 0,
-            top: 0,
-            right: 0,
-            bottom: 0,
-        };
-    
+        let mut Rect: RECT = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+
         if IsWindow((*this_).m_hWnd) != 0 {
             GetClientRect((*this_).m_hWnd, core::ptr::addr_of_mut!(Rect));
         }
-    
-        (*this_).__base0.SetRect(core::ptr::addr_of!(Rect));
+
+        (*this_).__base0.SetRect__body(core::ptr::addr_of!(Rect));
     }
     pub unsafe fn PaintObject__body(&mut self, mut hDC: HDC, mut prc: LPCRECT) {
         let this_: *mut Self = self;
-        let mut bGotDC: BOOL = (FALSE) as i32;
+        let mut bGotDC: BOOL = (FALSE as i32);
         if hDC.is_null() {
             hDC = GetDC((*this_).m_hWnd);
-            bGotDC = (TRUE) as i32;
+            bGotDC = (TRUE as i32);
         }
-    
+
         if prc.is_null() {
             prc = core::ptr::addr_of!((*this_).__base0.m_rc);
         }
-    
+
         let hMemDC: HDC = CreateCompatibleDC(hDC);
         let hbmMem: HBITMAP = CreateCompatibleBitmap(hDC, (*prc).right - (*prc).left, (*prc).bottom - (*prc).top);
-    
-        let hbmOld: HGDIOBJ = SelectObject(hMemDC, hbmMem as HGDIOBJ);
+
+        let hbmOld: HGDIOBJ = SelectObject(hMemDC, (hbmMem).cast());
         SetViewportOrgEx(hMemDC, -(*prc).left, -(*prc).top, core::ptr::null_mut());
-        if (((*this_).__base0.__base0.EnsureThemeData((*this_).m_hWnd)) < 0) ||
-            (((((*this_).__base0.m_style & UIF_WINDOW_CHILD) == 0) || (((*this_).__base0.__base0.DrawThemeParentBackground((*this_).m_hWnd, hMemDC, core::ptr::addr_of_mut!((*this_).__base0.m_rc))) < 0)) &&
-             (((*this_).__base0.__base0.DrawThemeBackground(hMemDC, (*this_).__base0.__base0.m_iStateId, core::ptr::addr_of!((*this_).__base0.m_rc), core::ptr::null_mut())) < 0))
+        if ((*this_).__base0.__base0.EnsureThemeData((*this_).m_hWnd) < 0)
+            || ((((*this_).__base0.m_style & UIF_WINDOW_CHILD) == 0)
+                || ((*this_).__base0.__base0.DrawThemeParentBackground((*this_).m_hWnd, hMemDC, core::ptr::addr_of_mut!((*this_).__base0.m_rc)) < 0))
+                && ((*this_).__base0.__base0.DrawThemeBackground(hMemDC, (*this_).__base0.__base0.m_iStateId, core::ptr::addr_of!((*this_).__base0.m_rc), core::ptr::null_mut()) < 0)
         {
             if !(*this_).__base0.m_pScheme.is_null() {
                 (*(*this_).__base0.m_pScheme).FillRect(hMemDC, prc, 22);
             }
         }
-    
-        (*this_).__base0.PaintObject(hMemDC, prc);
+
+        (*this_).__base0.PaintObject__body(hMemDC, prc);
         BitBlt(hDC, (*prc).left, (*prc).top,
                       (*prc).right - (*prc).left, (*prc).bottom - (*prc).top,
                  hMemDC, (*prc).left, (*prc).top, SRCCOPY);
         SelectObject(hMemDC, hbmOld);
-        DeleteObject(hbmMem as HGDIOBJ);
+        DeleteObject((hbmMem).cast());
         DeleteDC(hMemDC);
-    
+
         if bGotDC != 0 {
             ReleaseDC((*this_).m_hWnd, hDC);
         }
@@ -2012,26 +1666,26 @@ impl CUIFWindow {
         if pRemove == (*this_).m_pCaptured {
             (*this_).SetCaptureObject(core::ptr::null_mut());
         }
-    
+
         if pRemove == (*this_).m_pTimerObject {
             (*this_).m_pTimerObject = core::ptr::null_mut();
             KillTimer((*this_).m_hWnd, (USER_TIMER_ID) as UINT_PTR);
         }
-    
+
         if pRemove == (*this_).m_pPointed {
             (*this_).m_pPointed = core::ptr::null_mut();
         }
-    
-        (*this_).__base0.RemoveUIObj(pRemove);
+
+        (*this_).__base0.RemoveUIObj__body(pRemove);
     }
     pub unsafe fn SetCaptureObject(&mut self, pCaptured: *mut CUIFObject) {
         let this_: *mut Self = self;
         if !pCaptured.is_null() {
             (*this_).m_pCaptured = pCaptured;
-            (*this_).SetCapture((TRUE) as i32);
+            (*this_).SetCapture((TRUE as i32));
         } else {
             (*this_).m_pCaptured = core::ptr::null_mut();
-            (*this_).SetCapture((FALSE) as i32);
+            (*this_).SetCapture((FALSE as i32));
         }
     }
     pub unsafe fn SetObjectPointed(&mut self, pPointed: *mut CUIFObject, pt: POINT) {
@@ -2039,7 +1693,7 @@ impl CUIFWindow {
         if pPointed == (*this_).m_pPointed {
             return;
         }
-    
+
         if !(*this_).m_pCaptured.is_null() {
             if (*this_).m_pCaptured == (*this_).m_pPointed && (*(*this_).m_pPointed).m_bEnable != 0 {
                 (*(*this_).m_pPointed).OnMouseOut(pt.x, pt.y);
@@ -2047,9 +1701,9 @@ impl CUIFWindow {
         } else if !(*this_).m_pPointed.is_null() && (*(*this_).m_pPointed).m_bEnable != 0 {
             (*(*this_).m_pPointed).OnMouseOut(pt.x, pt.y);
         }
-    
+
         (*this_).m_pPointed = pPointed;
-    
+
         if !(*this_).m_pCaptured.is_null() {
             if (*this_).m_pCaptured == (*this_).m_pPointed && (*(*this_).m_pPointed).m_bEnable != 0 {
                 (*(*this_).m_pPointed).OnMouseIn(pt.x, pt.y);
@@ -2064,7 +1718,7 @@ impl CUIFWindow {
             CUIFScheme__delete((*this_).__base0.m_pScheme);
             (*this_).__base0.m_pScheme = core::ptr::null_mut();
         }
-    
+
         let mut iScheme: INT = 0;
         if ((*this_).__base0.m_style & UIF_WINDOW_USESCHEME1) != 0 {
             iScheme = 1;
@@ -2073,8 +1727,8 @@ impl CUIFWindow {
         } else if ((*this_).__base0.m_style & UIF_WINDOW_USESCHEME3) != 0 {
             iScheme = 3;
         }
-    
-        (*this_).__base0.m_pScheme = cicCreateUIFScheme(iScheme as DWORD);
+
+        (*this_).__base0.m_pScheme = cicCreateUIFScheme((iScheme) as DWORD);
         (*this_).__base0.SetScheme((*this_).__base0.m_pScheme);
     }
     pub unsafe fn GetWorkArea(&mut self, prcWnd: LPCRECT, prcWorkArea: LPRECT) -> BOOL {
@@ -2082,7 +1736,7 @@ impl CUIFWindow {
         if ((*this_).__base0.m_style & (UIF_WINDOW_WORKAREA | UIF_WINDOW_MONITOR)) == 0 {
             return (FALSE) as BOOL;
         }
-    
+
         let hMon: HMONITOR = MonitorFromRect(prcWnd, MONITOR_DEFAULTTONEAREST);
         let mut mi: MONITORINFO = core::mem::zeroed();
         mi.cbSize = core::mem::size_of::<MONITORINFO>() as DWORD;
@@ -2090,19 +1744,19 @@ impl CUIFWindow {
             if ((*this_).__base0.m_style & UIF_WINDOW_WORKAREA) != 0 {
                 return SystemParametersInfo(SPI_GETWORKAREA, 0, prcWorkArea as *mut core::ffi::c_void, 0);
             }
-    
+
             (*prcWorkArea).top = 0;
             (*prcWorkArea).left = (*prcWorkArea).top;
             (*prcWorkArea).right = GetSystemMetrics((SM_CXSCREEN as i32));
             (*prcWorkArea).bottom = GetSystemMetrics((SM_CYSCREEN as i32));
             return (TRUE) as BOOL;
         }
-    
+
         if ((*this_).__base0.m_style & UIF_WINDOW_WORKAREA) != 0 {
             *prcWorkArea = mi.rcWork;
             return (TRUE) as BOOL;
         }
-    
+
         *prcWorkArea = mi.rcMonitor;
         return (TRUE) as BOOL;
     }
@@ -2113,12 +1767,12 @@ impl CUIFWindow {
         rc.right = (*this_).m_nLeft + (*this_).m_nWidth;
         rc.top = (*this_).m_nTop;
         rc.bottom = (*this_).m_nTop + (*this_).m_nHeight;
-    
+
         let mut rcWorkArea: RECT = core::mem::zeroed();
         if (*this_).GetWorkArea(&mut rc, &mut rcWorkArea) == 0 {
             return;
         }
-    
+
         if (*this_).m_nLeft < rcWorkArea.left {
             (*this_).m_nLeft = rcWorkArea.left;
         }
@@ -2149,7 +1803,7 @@ impl CUIFWindow {
     }
     pub unsafe extern "system" fn WindowProcedure(hWnd: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
         let mut This: *mut CUIFWindow;
-    
+
         if uMsg == WM_NCCREATE {
             This = (*(lParam as *mut CREATESTRUCT)).lpCreateParams as *mut CUIFWindow;
             CUIFWindow::SetThis(hWnd, (This) as LONG_PTR);
@@ -2157,7 +1811,7 @@ impl CUIFWindow {
         } else {
             This = CUIFWindow::GetThis(hWnd);
         }
-    
+
         if uMsg == WM_GETMINMAXINFO {
             if !This.is_null() {
                 return (*This).WindowProc(hWnd, uMsg, wParam, lParam);
@@ -2165,28 +1819,28 @@ impl CUIFWindow {
                 return DefWindowProc(hWnd, uMsg, wParam, lParam);
             }
         }
-    
+
         if This.is_null() {
             return 0;
         }
-    
+
         if uMsg == WM_NCDESTROY {
             (*This).m_hWnd = core::ptr::null_mut();
             SetWindowLongPtr(hWnd, GWLP_USERDATA, 0);
         }
-    
+
         return (*This).WindowProc(hWnd, uMsg, wParam, lParam);
     }
     pub unsafe fn GetWndStyle__body(&mut self) -> DWORD {
         let this_: *mut Self = self;
         let mut ret: DWORD;
-    
+
         if (*this_).__base0.m_style & UIF_WINDOW_CHILD != 0 {
             ret = WS_CHILD | WS_CLIPSIBLINGS;
         } else {
             ret = WS_POPUP | WS_DISABLED;
         }
-    
+
         if (*this_).__base0.m_style & UIF_WINDOW_USESCHEME1 != 0 {
             ret |= WS_BORDER;
         } else if (*this_).__base0.m_style & UIF_WINDOW_DLGFRAME != 0 {
@@ -2194,7 +1848,7 @@ impl CUIFWindow {
         } else if ((*this_).__base0.m_style & UIF_WINDOW_USESCHEME2 != 0) || ((*this_).__base0.m_style & 0x10 != 0) {
             ret |= WS_BORDER;
         }
-    
+
         return ret;
     }
     pub unsafe fn GetWndStyleEx__body(&mut self) -> DWORD {
@@ -2244,7 +1898,7 @@ impl CUIFWindow {
         if IsWindow((*this_).m_hWnd) == 0 {
             return (FALSE) as BOOL;
         }
-    
+
         let bVisible: BOOL = ((dwFlags & 0x10000) == 0) as BOOL;
         (*this_).OnAnimationStart();
         let ret: BOOL = AnimateWindow((*this_).m_hWnd, dwTime, dwFlags);
@@ -2259,7 +1913,7 @@ impl CUIFWindow {
         if IsWindow((*this_).m_hWnd) == 0 {
             return;
         }
-    
+
         let mut pt: POINT = core::mem::zeroed();
         GetCursorPos(core::ptr::addr_of_mut!(pt));
         ScreenToClient((*this_).m_hWnd, core::ptr::addr_of_mut!(pt));
@@ -2279,25 +1933,25 @@ impl CUIFWindow {
                 WM_GETOBJECT => {
                     return (*this_).OnGetObject(hWnd, WM_GETOBJECT, wParam, lParam) as LRESULT;
                 }
-    
+
                 WM_SYSCOLORCHANGE => {
                     cicUpdateUIFScheme();
                     (*this_).OnSysColorChange();
                     return 0;
                 }
-    
+
                 WM_ENDSESSION => {
                     (*this_).OnEndSession(hWnd, wParam, lParam);
                     return 0;
                 }
-    
+
                 WM_SHOWWINDOW => {
                     if !(*this_).m_pShadow.is_null() && (*this_).m_bShowShadow != 0 {
                         (*(*this_).m_pShadow).Show(wParam as BOOL);
                     }
                     return (*this_).OnShowWindow(hWnd, WM_SHOWWINDOW, wParam, lParam);
                 }
-    
+
                 WM_SETTINGCHANGE => {
                     cicUpdateUIFSys();
                     cicUpdateUIFScheme();
@@ -2307,17 +1961,17 @@ impl CUIFWindow {
                     let mut Point: POINT = core::mem::zeroed();
                     GetCursorPos(core::ptr::addr_of_mut!(Point));
                     ScreenToClient((*this_).m_hWnd, core::ptr::addr_of_mut!(Point));
-    
+
                     if !(*this_).m_pBehindModal.is_null() {
                         (*(*this_).m_pBehindModal).ModalMouseNotify(HIWORD!(lParam) as UINT, Point.x, Point.y);
                         return (TRUE) as LRESULT;
                     }
-    
+
                     if (*this_).m_bPointing == 0 {
                         SetTimer((*this_).m_hWnd, (POINTING_TIMER_ID) as UINT_PTR, 1000, None);
                         (*this_).m_bPointing = (TRUE) as i32;
                     }
-    
+
                     if !(*this_).m_pToolTip.is_null() {
                         let mut msg: MSG = MSG {
                             hwnd: (*this_).m_hWnd,
@@ -2328,11 +1982,11 @@ impl CUIFWindow {
                         };
                         (*(*this_).m_pToolTip).RelayEvent(core::ptr::addr_of_mut!(msg));
                     }
-    
+
                     if ((*this_).__base0.m_style & UIF_WINDOW_NOMOUSEMSG) == 0 {
                         (*this_).HandleMouseMsg(HIWORD!(lParam) as UINT, Point.x, Point.y);
                     }
-    
+
                     return (TRUE) as LRESULT;
                 }
                 WM_MOUSEACTIVATE => {
@@ -2401,13 +2055,13 @@ impl CUIFWindow {
                             _ if wParam == POINTING_TIMER_ID as WPARAM => {
                                 let mut pt: POINT = core::mem::zeroed();
                                 GetCursorPos(core::ptr::addr_of_mut!(pt));
-    
+
                                 let mut pt2: POINT = pt;
                                 ScreenToClient((*this_).m_hWnd, core::ptr::addr_of_mut!(pt2));
-    
+
                                 let mut rc: RECT = core::mem::zeroed();
                                 GetWindowRect((*this_).m_hWnd, core::ptr::addr_of_mut!(rc));
-    
+
                                 if PtInRect(core::ptr::addr_of_mut!(rc), pt) != 0
                                     && WindowFromPoint(pt) == (*this_).m_hWnd
                                 {
@@ -2418,7 +2072,7 @@ impl CUIFWindow {
                                     (*this_).SetObjectPointed(core::ptr::null_mut(), pt2);
                                     (*this_).OnMouseOutFromWindow(pt2.x, pt2.y);
                                 }
-    
+
                                 if !(*this_).m_pToolTip.is_null() {
                                     let mut msg: MSG = MSG {
                                         hwnd: (*this_).m_hWnd,
@@ -2510,7 +2164,7 @@ impl CUIFWindow {
                 }
             }
         }
-    
+
         return 0;
     }
     pub unsafe fn OnThemeChanged__body(&mut self, hWnd: HWND, wParam: WPARAM, lParam: LPARAM) {
@@ -2540,21 +2194,21 @@ impl CUIFWindow {
     pub unsafe fn HandleMouseMsg__body(&mut self, uMsg: UINT, x: LONG, y: LONG) {
         let this_: *mut Self = self;
         let mut pt: POINT = POINT { x: x, y: y };
-    
+
         let mut pFound: *mut CUIFObject = (*this_).__base0.ObjectFromPoint(pt);
         let _ = &mut pFound;
-    
+
         (*this_).SetObjectPointed(pFound, pt);
-    
+
         if !(*this_).m_pCaptured.is_null() {
             pFound = (*this_).m_pCaptured;
         }
-    
+
         if pFound.is_null() || (*this_).__base0.OnSetCursor(uMsg, pt.x, pt.y) != 0 {
             let hCursor: HCURSOR = LoadCursor(core::ptr::null_mut(), IDC_ARROW);
             SetCursor(hCursor);
         }
-    
+
         if !pFound.is_null() && (*pFound).m_bEnable != 0 {
             match uMsg {
                 WM_MOUSEMOVE => {
@@ -2598,7 +2252,7 @@ impl CUIFWindow {
     pub unsafe fn GetWindowFrameSize__body(&mut self, pSize: LPSIZE) {
         let this_: *mut Self = self;
         let mut rc: RECT = RECT { left: 0, top: 0, right: 0, bottom: 0 };
-    
+
         (*this_).ClientRectToWindowRect(core::ptr::addr_of_mut!(rc));
         (*pSize).cx = (rc.right - rc.left) / 2;
         (*pSize).cy = (rc.bottom - rc.top) / 2;
@@ -2698,48 +2352,48 @@ impl CUIFToolTip {
     pub unsafe fn ShowTip(&mut self) {
         let this_: *mut Self = self;
         KillTimer((*this_).__base0.m_hWnd, (TOOLTIP_TIMER_ID) as UINT_PTR);
-    
+
         if (*this_).m_pToolTipTarget.is_null() {
             return;
         }
-    
+
         let pszText: LPCWSTR = (*(*this_).m_pToolTipTarget).GetToolTip();
         if pszText.is_null() {
             return;
         }
-    
+
         if (*this_).m_pToolTipTarget.is_null() || (*(*this_).m_pToolTipTarget).OnShowToolTip() != 0 {
             return;
         }
-    
+
         let mut Point: POINT = core::mem::zeroed();
         GetCursorPos(core::ptr::addr_of_mut!(Point));
         ScreenToClient(
             (*(*(*this_).m_pToolTipTarget).m_pWindow).op_to_HWND(),
             core::ptr::addr_of_mut!(Point),
         );
-    
+
         let mut rc: RECT = core::mem::zeroed();
         (*(*this_).m_pToolTipTarget).GetRect(core::ptr::addr_of_mut!(rc));
         if PtInRect(core::ptr::addr_of_mut!(rc), Point) == 0 {
             return;
         }
-    
+
         let cchText: usize = wcslen(pszText);
         (*this_).m_pszToolTipText = cpp_new_array_CicNoThrow::<WCHAR>(cchText + 1);
         if (*this_).m_pszToolTipText.is_null() {
             return;
         }
-    
+
         lstrcpynW(
             (*this_).m_pszToolTipText,
             pszText,
             (cchText + 1) as i32,
         );
-    
+
         let mut size: SIZE = core::mem::zeroed();
         (*this_).GetTipWindowSize(core::ptr::addr_of_mut!(size));
-    
+
         let mut rc2: RECT = rc;
         ClientToScreen(
             (*(*(*this_).m_pToolTipTarget).m_pWindow).op_to_HWND(),
@@ -2750,20 +2404,20 @@ impl CUIFToolTip {
             core::ptr::addr_of_mut!(rc.right) as LPPOINT,
         );
         (*this_).GetTipWindowRect(core::ptr::addr_of_mut!(rc2), size, core::ptr::addr_of_mut!(rc));
-    
-        (*this_).m_bShowToolTip = (TRUE) as i32;
+
+        (*this_).m_bShowToolTip = (TRUE as i32);
         (*this_).__base0.Move(rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top);
         (*this_).__base0.Show((TRUE) as BOOL);
     }
     pub unsafe fn HideTip(&mut self) {
         let this_: *mut Self = self;
         KillTimer((*this_).__base0.m_hWnd, (TOOLTIP_TIMER_ID) as UINT_PTR);
-        (*this_).m_bShowToolTip = (FALSE) as i32;
-    
+        (*this_).m_bShowToolTip = (FALSE as i32);
+
         if !(*this_).m_pToolTipTarget.is_null() {
             (*(*this_).m_pToolTipTarget).OnHideToolTip();
         }
-    
+
         if (*this_).__base0.__base0.m_bVisible != 0 {
             if !(*this_).m_pszToolTipText.is_null() {
                 cpp_delete_array((*this_).m_pszToolTipText);
@@ -2777,10 +2431,10 @@ impl CUIFToolTip {
         if (*this_).m_pszToolTipText.is_null() {
             return;
         }
-    
+
         let hDC: HDC = GetDC((*this_).__base0.m_hWnd);
         let hFontOld: HGDIOBJ = SelectObject(hDC, ((*this_).__base0.__base0.m_hFont).cast());
-    
+
         let mut rcText: RECT = RECT {
             left: 0,
             top: 0,
@@ -2806,20 +2460,20 @@ impl CUIFToolTip {
                 (DT_CALCRECT | DT_WORDBREAK),
             );
         }
-    
+
         let mut rcMargin: RECT = core::mem::zeroed();
         (*this_).GetMargin(core::ptr::addr_of_mut!(rcMargin));
-    
+
         let mut rc: RECT = core::mem::zeroed();
         rc.left = rcText.left - rcMargin.left;
         rc.top = rcText.top - rcMargin.top;
         rc.right = rcText.right + rcMargin.right;
         rc.bottom = rcText.top + cyText + rcMargin.bottom;
         (*this_).__base0.ClientRectToWindowRect(core::ptr::addr_of_mut!(rc));
-    
+
         (*pSize).cx = rc.right - rc.left;
         (*pSize).cy = rc.bottom - rc.top;
-    
+
         SelectObject(hDC, hFontOld);
         ReleaseDC((*this_).__base0.m_hWnd, hDC);
     }
@@ -2827,7 +2481,7 @@ impl CUIFToolTip {
         let this_: *mut Self = self;
         let mut Point: POINT = core::mem::zeroed();
         GetCursorPos(core::ptr::addr_of_mut!(Point));
-    
+
         let hCursor: HCURSOR = GetCursor();
         let mut IconInfo: ICONINFO = core::mem::zeroed();
         let mut yHotspot: INT = 0;
@@ -2849,13 +2503,13 @@ impl CUIFToolTip {
                 DeleteObject((IconInfo.hbmMask).cast());
             }
         }
-    
+
         let mut rcMonitor: RECT = core::mem::zeroed();
         rcMonitor.left = 0;
         rcMonitor.top = 0;
         rcMonitor.right = GetSystemMetrics((SM_CXSCREEN as i32));
         rcMonitor.bottom = GetSystemMetrics((SM_CYSCREEN as i32));
-    
+
         let hMon: HMONITOR = MonitorFromPoint(Point, MONITOR_DEFAULTTONEAREST);
         let mut mi: MONITORINFO = core::mem::zeroed();
         if !hMon.is_null() {
@@ -2864,12 +2518,12 @@ impl CUIFToolTip {
                 rcMonitor = mi.rcMonitor;
             }
         }
-    
+
         (*pRect).left = Point.x;
         (*pRect).right = (*pRect).left + toolTipSize.cx;
         (*pRect).top = Point.y + cyCursor - yHotspot;
         (*pRect).bottom = (*pRect).top + toolTipSize.cy;
-    
+
         if rcMonitor.right < (*pRect).right {
             (*pRect).left = rcMonitor.right - toolTipSize.cx;
             (*pRect).right = rcMonitor.right;
@@ -2892,7 +2546,7 @@ impl CUIFToolTip {
         if pMsg.is_null() {
             return;
         }
-    
+
         match (*pMsg).message {
             WM_MOUSEMOVE => {
                 if (*this_).__base0.__base0.m_bEnable != 0
@@ -2908,7 +2562,7 @@ impl CUIFToolTip {
                     if !pFound.is_null() {
                         if (*this_).m_pToolTipTarget != pFound {
                             (*this_).HideTip();
-    
+
                             let DelayTime: LONG;
                             if (*this_).__base0.__base0.m_bVisible == 0 {
                                 DelayTime = (*this_).GetDelayTime(3);
@@ -2938,10 +2592,10 @@ impl CUIFToolTip {
         let this_: *mut Self = self;
         let hFontOld: HGDIOBJ = SelectObject(hDC, ((*this_).__base0.__base0.m_hFont).cast());
         let iBkModeOld: INT = SetBkMode(hDC, (TRANSPARENT as i32));
-    
+
         let rgbTextColor: COLORREF = (*this_).GetTipTextColor();
         let rgbOldTextColor: COLORREF = SetTextColor(hDC, rgbTextColor);
-    
+
         let rgbBkColor: COLORREF = (*this_).GetTipBkColor();
         let hbrBack: HBRUSH = CreateSolidBrush(rgbBkColor);
         let mut rc: RECT = (*this_).__base0.__base0.m_rc;
@@ -2949,21 +2603,21 @@ impl CUIFToolTip {
             FillRect(hDC, core::ptr::addr_of_mut!(rc), hbrBack);
             DeleteObject((hbrBack).cast());
         }
-    
+
         let mut rcMargin: RECT = core::mem::zeroed();
         (*this_).GetMargin(core::ptr::addr_of_mut!(rcMargin));
-    
+
         rc.left += rcMargin.left;
         rc.top += rcMargin.top;
         rc.right -= rcMargin.right;
         rc.bottom -= rcMargin.bottom;
-    
+
         if (*this_).m_cxToolTipWidth <= 0 {
             DrawTextW(hDC, (*this_).m_pszToolTipText, -1, core::ptr::addr_of_mut!(rc), DT_SINGLELINE);
         } else {
             DrawTextW(hDC, (*this_).m_pszToolTipText, -1, core::ptr::addr_of_mut!(rc), DT_WORDBREAK);
         }
-    
+
         SetTextColor(hDC, rgbOldTextColor);
         SetBkMode(hDC, iBkModeOld);
         SelectObject(hDC, hFontOld);
@@ -2973,7 +2627,7 @@ impl CUIFToolTip {
         if !(bEnable != 0) {
             (*this_).HideTip();
         }
-        (*this_).__base0.__base0.Enable(bEnable);
+        (*this_).__base0.__base0.Enable__body(bEnable);
     }
     pub unsafe fn OnTimer__body(&mut self, wParam: WPARAM) {
         let this_: *mut Self = self;
@@ -2995,7 +2649,7 @@ impl CUIFShadow {
         (*this_).m_dwUnknown11[1 as usize] = 0;
         (*this_).m_yShadowDelta = 0;
         (*this_).m_xShadowDelta = 0;
-        (*this_).m_bLayerAvailable = (FALSE) as i32;
+        (*this_).m_bLayerAvailable = (FALSE as i32);
     }
     }
     pub unsafe fn __dtor__body(&mut self) {
@@ -3006,7 +2660,7 @@ impl CUIFShadow {
     }
     pub unsafe fn InitSettings(&mut self) {
         let this_: *mut Self = self;
-        (*this_).m_bLayerAvailable = (FALSE) as i32;
+        (*this_).m_bLayerAvailable = (FALSE as i32);
         (*this_).m_rgbShadowColor = RGB!(128, 128, 128);
         (*this_).m_yShadowDelta = 2;
         (*this_).m_xShadowDelta = (*this_).m_yShadowDelta;
@@ -3023,7 +2677,7 @@ impl CUIFShadow {
         if IsWindow((*this_).__base0.m_hWnd) == 0 {
             return;
         }
-    
+
         let mut rc: RECT = core::mem::zeroed();
         GetWindowRect(hwndOwner, core::ptr::addr_of_mut!(rc));
         SetWindowPos(
@@ -3048,11 +2702,11 @@ impl CUIFShadow {
     pub unsafe fn Initialize__body(&mut self) -> BOOL {
         let this_: *mut Self = self;
         (*this_).InitSettings();
-        return (*this_).__base0.Initialize();
+        return (*this_).__base0.Initialize__body();
     }
     pub unsafe fn GetWndStyleEx__body(&mut self) -> DWORD {
         let this_: *mut Self = self;
-        let mut exstyle: DWORD = (*this_).__base0.GetWndStyleEx();
+        let mut exstyle: DWORD = (*this_).__base0.GetWndStyleEx__body();
         if (*this_).m_bLayerAvailable != 0 {
             exstyle |= WS_EX_LAYERED;
         }
@@ -3074,19 +2728,19 @@ impl CUIFShadow {
     pub unsafe fn OnSettingChange__body(&mut self, hWnd: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
         let this_: *mut Self = self;
         (*this_).InitSettings();
-    
+
         let mut exstyle: DWORD;
         if (*this_).m_bLayerAvailable != 0 {
             exstyle = GetWindowLongPtr((*this_).__base0.m_hWnd, GWL_EXSTYLE) as DWORD | WS_EX_LAYERED;
         } else {
             exstyle = GetWindowLongPtr((*this_).__base0.m_hWnd, GWL_EXSTYLE) as DWORD & !WS_EX_LAYERED;
         }
-    
+
         SetWindowLongPtr((*this_).__base0.m_hWnd, GWL_EXSTYLE, (exstyle) as _);
-    
+
         (*this_).AdjustWindowPos();
         (*this_).InitShadow();
-    
+
         return DefWindowProc(hWnd, uMsg, wParam, lParam);
     }
     pub unsafe fn Show__body(&mut self, bVisible: BOOL) {
@@ -3095,7 +2749,7 @@ impl CUIFShadow {
             (*this_).AdjustWindowPos();
             (*this_).InitShadow();
         }
-    
+
         if IsWindow((*this_).__base0.m_hWnd) != 0 {
             (*this_).__base0.__base0.m_bVisible = bVisible;
             ShowWindow((*this_).__base0.m_hWnd, if bVisible != 0 { (SW_SHOWNOACTIVATE as i32) } else { (SW_HIDE as i32) });
@@ -3121,7 +2775,7 @@ impl CUIFMenu {
             CUIFMenuItem__delete((*this_).m_MenuItems[iItem]);
             iItem += 1;
         }
-    
+
         DeleteObject(((*this_).m_hMenuFont).cast());
         (*this_).ClearMenuFont();
     }
@@ -3143,15 +2797,15 @@ impl CUIFMenu {
         let this_: *mut Self = self;
         let mut iItem: usize;
         let cItems: usize = (*this_).m_MenuItems.size();
-    
+
         if cItems == 0 {
             return core::ptr::null_mut();
         }
-    
+
         if (*this_).m_pSelectedItem.is_null() {
             return (*this_).m_MenuItems[0];
         }
-    
+
         iItem = 0;
         while iItem < cItems {
             let cur: usize = iItem;
@@ -3160,7 +2814,7 @@ impl CUIFMenu {
                 break;
             }
         }
-    
+
         loop {
             if iItem == cItems {
                 iItem = 0;
@@ -3170,22 +2824,22 @@ impl CUIFMenu {
             }
             iItem += 1;
         }
-    
+
         return (*this_).m_MenuItems[iItem];
     }
     pub unsafe fn GetPrevItem(&mut self, pItem: *mut CUIFMenuItem) -> *mut CUIFMenuItem {
         let this_: *mut Self = self;
         let mut iItem: isize;
         let cItems: isize = (*this_).m_MenuItems.size() as isize;
-    
+
         if cItems == 0 {
             return core::ptr::null_mut();
         }
-    
+
         if (*this_).m_pSelectedItem.is_null() {
             return (*this_).m_MenuItems[(cItems - 1) as usize];
         }
-    
+
         iItem = cItems - 1;
         while iItem >= 0 {
             let cur: isize = iItem;
@@ -3194,7 +2848,7 @@ impl CUIFMenu {
                 break;
             }
         }
-    
+
         loop {
             if iItem < 0 {
                 iItem = cItems - 1;
@@ -3205,7 +2859,7 @@ impl CUIFMenu {
             }
             iItem -= 1;
         }
-    
+
         (*this_).m_MenuItems[iItem as usize]
     }
     pub unsafe fn GetTopSubMenu(&mut self) -> *mut CUIFMenu {
@@ -3222,7 +2876,7 @@ impl CUIFMenu {
         if (*this_).m_MenuItems.Add(pItem) == 0 {
             return (FALSE) as BOOL;
         }
-    
+
         (*pItem).__base0.SetFont((*this_).__base0.__base0.m_hFont);
         return (TRUE) as BOOL;
     }
@@ -3232,12 +2886,12 @@ impl CUIFMenu {
         if pSep.is_null() {
             return (FALSE) as BOOL;
         }
-    
+
         if (*this_).m_MenuItems.Add(core::ptr::addr_of_mut!((*pSep).__base0)) == 0 {
             CUIFMenuItemSeparator__delete(pSep);
             return (FALSE) as BOOL;
         }
-    
+
         (*pSep).__base0.__base0.Initialize();
         return (TRUE) as BOOL;
     }
@@ -3255,21 +2909,21 @@ impl CUIFMenu {
     pub unsafe fn SetMenuFont(&mut self) {
         let this_: *mut Self = self;
         let mut height: LONG = 14;
-    
+
         let mut ncm: NONCLIENTMETRICS = core::mem::zeroed();
         ncm.cbSize = core::mem::size_of::<NONCLIENTMETRICS>() as UINT;
         if SystemParametersInfo(SPI_GETNONCLIENTMETRICS, 0, core::ptr::addr_of_mut!(ncm) as LPVOID, 0) != 0
         {
             let hFont: HFONT = CreateFontIndirect(core::ptr::addr_of!(ncm.lfMenuFont));
             (*this_).__base0.__base0.SetFont(hFont);
-    
+
             let mut lfHeight: LONG = ncm.lfMenuFont.lfHeight;
             if lfHeight < 0 {
                 lfHeight = -lfHeight;
             }
             height = (ncm.iMenuHeight + lfHeight) / 2;
         }
-    
+
         (*this_).m_hMenuFont = CreateFontW(height, 0, 0, 0, (FW_NORMAL as i32), 0, 0, 0, SYMBOL_CHARSET,
                                     0, 0, 0, 0, CPP_COM_WSTR_B728528EE8A8.as_ptr());
         let cxSmallIcon: INT = GetSystemMetrics((SM_CXSMICON as i32));
@@ -3278,11 +2932,11 @@ impl CUIFMenu {
     pub unsafe fn SetSelectedId(&mut self, nSelectID: UINT) {
         let this_: *mut Self = self;
         let mut pMenu: *mut CUIFMenu = this_;
-    
+
         while !(*pMenu).m_pVisibleSubMenu.is_null() {
             pMenu = (*pMenu).m_pVisibleSubMenu;
         }
-    
+
         (*pMenu).m_nSelectedID = nSelectID;
     }
     pub unsafe fn SetSelectedItem(&mut self, pItem: *mut CUIFMenuItem) {
@@ -3291,7 +2945,7 @@ impl CUIFMenu {
         if pOldItem == pItem {
             return;
         }
-    
+
         (*this_).m_pSelectedItem = pItem;
         if !pOldItem.is_null() {
             (*pOldItem).__base0.CallOnPaint();
@@ -3307,23 +2961,23 @@ impl CUIFMenu {
             pCaptured = (*pWindow).m_pCaptured;
             (*this_).__base0.SetCaptureObject(core::ptr::null_mut());
         }
-    
-        let mut nSelectedID: UINT = (1 as UINT).wrapping_neg();
-        if (*this_).InitShow(pWindow, prc, bFlag, (TRUE) as BOOL) != 0 {
-            (*this_).m_bModal = (TRUE) as i32;
+
+        let mut nSelectedID: UINT = (0 as UINT).wrapping_sub(1 as UINT);
+        if (*this_).InitShow(pWindow, prc, bFlag, TRUE as BOOL) != 0 {
+            (*this_).m_bModal = TRUE as BOOL;
             (*pWindow).SetBehindModal(core::ptr::addr_of_mut!((*this_).__base0));
             (*this_).ModalMessageLoop();
             nSelectedID = (*this_).m_nSelectedID;
             (*pWindow).SetBehindModal(core::ptr::null_mut());
-            (*this_).m_bModal = (FALSE) as i32;
+            (*this_).m_bModal = FALSE as BOOL;
         }
-    
+
         (*this_).UninitShow();
-    
+
         if !pWindow.is_null() {
             (*pWindow).SetCaptureObject(pCaptured);
         }
-    
+
         return nSelectedID;
     }
     pub unsafe fn ShowSubPopup(&mut self, pSubMenu: *mut CUIFMenu, prc: LPCRECT, bFlag: BOOL) {
@@ -3334,24 +2988,24 @@ impl CUIFMenu {
     pub unsafe fn OnKeyDown__body(&mut self, hWnd: HWND, wParam: WPARAM, lParam: LPARAM) {
         let this_: *mut Self = self;
         let mut pTargetItem: *mut CUIFMenuItem = core::ptr::null_mut();
-    
+
         let vKey: BYTE = wParam as BYTE;
-    
+
         match (vKey) as u32 {
             VK_ESCAPE => {
                 (*this_).CancelMenu();
                 return;
             }
-    
+
             VK_LEFT => {
                 if (*this_).m_pVisibleSubMenu.is_null() {
                     return;
                 }
-    
+
                 (*this_).CancelMenu();
                 return;
             }
-    
+
             VK_RIGHT => {
                 if !(*this_).m_pSelectedItem.is_null() && !(*(*this_).m_pSelectedItem).m_pSubMenu.is_null() {
                     (*(*this_).m_pSelectedItem).ShowSubPopup();
@@ -3361,28 +3015,28 @@ impl CUIFMenu {
                 }
                 return;
             }
-    
+
             VK_UP => {
                 pTargetItem = (*this_).GetPrevItem((*this_).m_pSelectedItem);
                 (*this_).SetSelectedItem(pTargetItem);
                 return;
             }
-    
+
             VK_DOWN => {
                 pTargetItem = (*this_).GetNextItem((*this_).m_pSelectedItem);
                 (*this_).SetSelectedItem(pTargetItem);
                 return;
             }
-    
+
             VK_RETURN => {
                 // break
             }
-    
+
             _ => {
                 if !((b'A' <= vKey && vKey <= b'Z') || (b'0' <= vKey && vKey <= b'9')) {
                     return;
                 }
-    
+
                 let mut iItem: usize = 0;
                 while iItem < (*this_).m_MenuItems.size() {
                     let pItem: *mut CUIFMenuItem = (*this_).m_MenuItems[iItem];
@@ -3392,13 +3046,13 @@ impl CUIFMenu {
                     }
                     iItem += 1;
                 }
-    
+
                 if iItem == (*this_).m_MenuItems.size() {
                     return;
                 }
             }
         }
-    
+
         if !(*this_).m_pSelectedItem.is_null() && (*(*this_).m_pSelectedItem).m_bMenuItemGrayed == 0 {
             let pSubMenu: *mut CUIFMenu = (*(*this_).m_pSelectedItem).m_pSubMenu;
             if !pSubMenu.is_null() {
@@ -3413,17 +3067,14 @@ impl CUIFMenu {
     }
     pub unsafe fn HandleMouseMsg__body(&mut self, uMsg: UINT, x: LONG, y: LONG) {
         let this_: *mut Self = self;
-        let mut pt = POINT { x: x, y: y };
-        if PtInRect(core::ptr::addr_of_mut!((*this_).__base0.__base0.m_rc), pt) == 0
-            && (uMsg == WM_LBUTTONDOWN
-                || uMsg == WM_RBUTTONDOWN
-                || uMsg == WM_LBUTTONUP
-                || uMsg == WM_RBUTTONUP)
+        let mut pt: POINT = POINT { x: x, y: y };
+        if PtInRect(core::ptr::addr_of!((*this_).__base0.__base0.m_rc), pt) == 0
+            && (uMsg == WM_LBUTTONDOWN || uMsg == WM_RBUTTONDOWN || uMsg == WM_LBUTTONUP || uMsg == WM_RBUTTONUP)
         {
-            (*this_).SetSelectedId((1 as u32).wrapping_neg());
+            (*this_).SetSelectedId((-(1 as i32)) as UINT);
             PostMessage((*this_).__base0.m_hWnd, WM_NULL, 0, 0);
         }
-        (*this_).__base0.HandleMouseMsg(uMsg, x, y);
+        (*this_).__base0.HandleMouseMsg__body(uMsg, x, y);
     }
     pub unsafe fn ModalMouseNotify__body(&mut self, uMsg: UINT, x: LONG, y: LONG) {
         let this_: *mut Self = self;
@@ -3450,42 +3101,46 @@ impl CUIFMenu {
         if !pWindow.is_null() {
             hWnd = (*pWindow).op_to_HWND();
         }
-    
+
         (*this_).__base0.CreateWnd(hWnd);
-    
-        (*this_).m_bHasMargin = (FALSE) as i32;
-    
+
+        (*this_).m_bHasMargin = (FALSE as i32);
+
         let mut iItem: usize = 0;
         while iItem < (*this_).m_MenuItems.size() {
-            if !(*this_).m_MenuItems[iItem].is_null() {
-                (*(*this_).m_MenuItems[iItem]).InitMenuExtent();
+            'body: {
+                if !(*this_).m_MenuItems[iItem].is_null() {
+                    (*(*this_).m_MenuItems[iItem]).InitMenuExtent();
+                }
+                break 'body;
             }
             iItem += 1;
         }
-    
+
         let mut cxMax: INT = 0;
-    
+
         (*this_).m_cxMenuExtent = 0;
         iItem = 0;
         while iItem < (*this_).m_MenuItems.size() {
             'body: {
-                let mut pItem: *mut CUIFMenuItem = (*this_).m_MenuItems[iItem];
+                let pItem: *mut CUIFMenuItem = (*this_).m_MenuItems[iItem];
                 if pItem.is_null() {
                     break 'body;
                 }
-    
+
                 let cxItem: INT = (*this_).m_cxyMargin + (*pItem).m_MenuLeftExtent.cx;
                 if cxMax < cxItem {
                     cxMax = cxItem;
                 }
                 (*this_).m_cxMenuExtent = max!((*this_).m_cxMenuExtent, (*pItem).m_MenuRightExtent.cx);
                 if (*this_).m_bHasMargin == 0 && !(*pItem).m_hbmColor.is_null() && (*pItem).IsCheck() != 0 {
-                    (*this_).m_bHasMargin = (TRUE) as i32;
+                    (*this_).m_bHasMargin = (TRUE as i32);
                 }
+                break 'body;
             }
             iItem += 1;
         }
-    
+
         let mut rcItem: RECT = RECT {
             left: 0,
             top: 0,
@@ -3495,23 +3150,24 @@ impl CUIFMenu {
         iItem = 0;
         while iItem < (*this_).m_MenuItems.size() {
             'body: {
-                let mut pItem: *mut CUIFMenuItem = (*this_).m_MenuItems[iItem];
+                let pItem: *mut CUIFMenuItem = (*this_).m_MenuItems[iItem];
                 if pItem.is_null() {
                     break 'body;
                 }
-    
+
                 let cyItem: INT = (*pItem).m_MenuLeftExtent.cy;
                 rcItem.right = rcItem.left + cxMax + (*this_).m_cxMenuExtent;
                 rcItem.bottom = rcItem.top + cyItem;
-                (*pItem).__base0.SetRect(core::ptr::addr_of_mut!(rcItem));
+                (*pItem).__base0.SetRect(core::ptr::addr_of!(rcItem));
                 rcItem.top += cyItem;
                 (*this_).__base0.__base0.AddUIObj(core::ptr::addr_of_mut!((*pItem).__base0));
+                break 'body;
             }
             iItem += 1;
         }
-    
+
         rcItem.top = 0;
-        let style: DWORD = GetWindowLongPtr(hWnd, GWL_STYLE) as DWORD;
+        let mut style: DWORD = GetWindowLongPtr(hWnd, GWL_STYLE) as DWORD;
         cxMax = rcItem.right;
         let mut cyMax: INT = rcItem.bottom;
         if (style & WS_DLGFRAME) != 0 {
@@ -3521,16 +3177,16 @@ impl CUIFMenu {
             cxMax = rcItem.right + 2 * GetSystemMetrics((SM_CXBORDER as i32));
             cyMax += 2 * GetSystemMetrics((SM_CYBORDER as i32));
         }
-    
+
         let mut rc: RECT = RECT {
             left: 0,
             top: 0,
             right: GetSystemMetrics((SM_CXSCREEN as i32)),
             bottom: GetSystemMetrics((SM_CYSCREEN as i32)),
         };
-    
+
         let mut rc3: RECT = *prc;
-        let hMon: HMONITOR = MonitorFromRect(core::ptr::addr_of_mut!(rc3), MONITOR_DEFAULTTONEAREST);
+        let hMon: HMONITOR = MonitorFromRect(core::ptr::addr_of!(rc3), MONITOR_DEFAULTTONEAREST);
         if !hMon.is_null() {
             let mut mi: MONITORINFO = core::mem::zeroed();
             mi.cbSize = core::mem::size_of::<MONITORINFO>() as DWORD;
@@ -3538,17 +3194,17 @@ impl CUIFMenu {
                 rc = mi.rcMonitor;
             }
         }
-    
+
         if ((*this_).__base0.__base0.m_style & 0x200) != 0 {
             rcItem.left -= cxMax;
         }
-    
+
         let mut x: INT = 0;
         let mut y: INT = 0;
         let mut dwFlags2: DWORD = 0;
-    
+
         if bFlag != 0 {
-            let mut bottom: INT = (*prc).bottom;
+            let mut bottom: LONG = (*prc).bottom;
             x = rcItem.left + (*prc).left;
             if rcItem.top + bottom + cyMax > rc.bottom {
                 bottom = (*prc).top - cyMax;
@@ -3556,9 +3212,9 @@ impl CUIFMenu {
             } else {
                 dwFlags2 = 4;
             }
-    
+
             y = rcItem.top + bottom;
-    
+
             if rcItem.left + cxMax + (*prc).right > rc.right {
                 x = rc.right - cxMax;
             }
@@ -3575,7 +3231,7 @@ impl CUIFMenu {
                 y = rc.bottom - cyMax;
             }
         }
-    
+
         if x > rc.right - cxMax {
             x = rc.right - cxMax;
         }
@@ -3588,21 +3244,32 @@ impl CUIFMenu {
         if y < rc.top {
             y = rc.top;
         }
-    
+
         (*this_).__base0.Move(x, y, cxMax, -1);
-    
-        (*this_).__base0.SetRect(core::ptr::null());
-    
-        let mut bAnimation: BOOL = (FALSE) as i32;
+
+        (*this_).__base0.SetRect(core::ptr::null_mut());
+
+        let mut bAnimation: BOOL = (FALSE as i32);
         if bDoAnimation != 0
-            && SystemParametersInfo(SPI_GETMENUANIMATION, 0, (core::ptr::addr_of_mut!(bAnimation)).cast(), 0) != 0
+            && SystemParametersInfo(
+                SPI_GETMENUANIMATION,
+                0,
+                core::ptr::addr_of_mut!(bAnimation) as *mut core::ffi::c_void,
+                0,
+            ) != 0
             && bAnimation != 0
         {
-            let mut bMenuFade: BOOL = (FALSE) as i32;
-            if SystemParametersInfoA(SPI_GETMENUFADE, 0, (core::ptr::addr_of_mut!(bMenuFade)).cast(), 0) == 0 {
-                bMenuFade = (FALSE) as i32;
+            let mut bMenuFade: BOOL = (FALSE as i32);
+            if SystemParametersInfoA(
+                SPI_GETMENUFADE,
+                0,
+                core::ptr::addr_of_mut!(bMenuFade) as *mut core::ffi::c_void,
+                0,
+            ) == 0
+            {
+                bMenuFade = (FALSE as i32);
             }
-    
+
             let dwFlags: DWORD = (if bMenuFade != 0 { 0x80000 } else { dwFlags2 }) | 0x40000;
             if (*this_).__base0.AnimateWnd(200, dwFlags) == 0 {
                 (*this_).__base0.Show((TRUE) as BOOL);
@@ -3610,11 +3277,11 @@ impl CUIFMenu {
         } else {
             (*this_).__base0.Show((TRUE) as BOOL);
         }
-    
+
         if !(*this_).m_pVisibleSubMenu.is_null() {
             (*(*this_).m_pVisibleSubMenu).m_pParentMenu = this_;
         }
-    
+
         return (TRUE) as BOOL;
     }
     pub unsafe fn UninitShow__body(&mut self) -> BOOL {
@@ -3622,19 +3289,19 @@ impl CUIFMenu {
         if !(*this_).m_pParentMenu.is_null() {
             (*(*this_).m_pParentMenu).UninitShow();
         }
-    
+
         (*this_).__base0.Show((FALSE) as BOOL);
-    
+
         if !(*this_).m_pVisibleSubMenu.is_null() {
             (*(*this_).m_pVisibleSubMenu).m_pParentMenu = core::ptr::null_mut();
         }
-    
+
         let mut iItem: usize = 0;
         while iItem < (*this_).m_MenuItems.size() {
             (*this_).__base0.RemoveUIObj(core::ptr::addr_of_mut!((*(*this_).m_MenuItems[iItem]).__base0));
             iItem += 1;
         }
-    
+
         DestroyWindow((*this_).__base0.m_hWnd);
         return (TRUE) as BOOL;
     }
@@ -3646,7 +3313,7 @@ impl CUIFMenuItem {
         if (*this_).m_pSubMenu.is_null() {
             return;
         }
-    
+
         let hFontOld: HGDIOBJ = SelectObject(hDC, ((*(*this_).m_pMenu).m_hMenuFont).cast());
         TextOutW(hDC, xLeft, yTop, CPP_COM_WSTR_77F906B94309.as_ptr(), 1); // rightward triangle
         SelectObject(hDC, hFontOld);
@@ -3656,10 +3323,10 @@ impl CUIFMenuItem {
         if (*this_).__base0.m_pScheme.is_null() || (*this_).m_hbmColor.is_null() {
             return;
         }
-    
+
         let mut bm: BITMAP = core::mem::zeroed();
         GetObject(((*this_).m_hbmColor).cast(), core::mem::size_of::<BITMAP>() as INT, core::ptr::addr_of_mut!(bm) as *mut core::ffi::c_void);
-    
+
         let mut xLeft: INT = xLeft;
         let mut yTop: INT = yTop;
         let mut width: INT = (*(*this_).m_pMenu).m_cxyMargin as INT;
@@ -3672,26 +3339,26 @@ impl CUIFMenuItem {
             height = bm.bmHeight;
             yTop += (height - bm.bmHeight) / 2;
         }
-    
+
         let mut rc: RECT = RECT {
             left: xLeft,
             top: yTop,
             right: xLeft + width,
             bottom: yTop + height,
         };
-    
+
         if (*this_).__base0.IsRTL() != 0 {
-            (*(*this_).__base0.m_pScheme).m_bMirroring = (TRUE) as i32;
+            (*(*this_).__base0.m_pScheme).m_bMirroring = (TRUE as i32);
         }
-    
+
         if (*(*this_).m_pMenu).m_pSelectedItem != this_ || (*this_).m_bMenuItemDisabled != 0 {
             (*(*this_).__base0.m_pScheme).DrawFrameCtrlBitmap(hDC, core::ptr::addr_of_mut!(rc), (*this_).m_hbmColor, (*this_).m_hbmMask, 0);
         } else {
             (*(*this_).__base0.m_pScheme).DrawFrameCtrlBitmap(hDC, core::ptr::addr_of_mut!(rc), (*this_).m_hbmColor, (*this_).m_hbmMask, UIF_DRAW_PRESSED);
         }
-    
+
         if (*this_).__base0.IsRTL() != 0 {
-            (*(*this_).__base0.m_pScheme).m_bMirroring = (FALSE) as i32;
+            (*(*this_).__base0.m_pScheme).m_bMirroring = (FALSE as i32);
         }
     }
     pub unsafe fn DrawCheck(&mut self, hDC: HDC, xLeft: INT, yTop: INT) {
@@ -3699,7 +3366,7 @@ impl CUIFMenuItem {
         if (*this_).IsCheck() == 0 {
             return;
         }
-    
+
         let hFontOld: HGDIOBJ = SelectObject(hDC, ((*(*this_).m_pMenu).m_hMenuFont).cast());
         let mut wch: WCHAR = if (*this_).m_bMenuItemChecked != 0 { 0x0061u16 } else { 0x0068u16 }; // checkmark or bullet
         TextOutW(hDC, xLeft, yTop, core::ptr::addr_of!(wch), 1);
@@ -3710,14 +3377,14 @@ impl CUIFMenuItem {
         if (*this_).m_ichMenuItemPrefix > (*this_).m_cchMenuItemLeft {
             return;
         }
-    
+
         let mut PrePrefixSize: SIZE = core::mem::zeroed();
         let mut PostPrefixSize: SIZE = core::mem::zeroed();
         GetTextExtentPoint32W(hDC, (*this_).m_pszMenuItemLeft, (*this_).m_ichMenuItemPrefix as INT, core::ptr::addr_of_mut!(PrePrefixSize));
         GetTextExtentPoint32W(hDC, (*this_).m_pszMenuItemLeft, ((*this_).m_ichMenuItemPrefix as INT) + 1, core::ptr::addr_of_mut!(PostPrefixSize));
-    
+
         let bHeadPrefix: BOOL = ((*this_).m_ichMenuItemPrefix == 0 as UINT) as BOOL;
-    
+
         let mut rc: RECT = core::mem::zeroed();
         rc.left = xText + PrePrefixSize.cx + ((bHeadPrefix == 0) as INT);
         rc.right = xText + PostPrefixSize.cx;
@@ -3739,8 +3406,8 @@ impl CUIFMenuItem {
             (*this_).m_nMenuItemVKey = 0;
             (*this_).m_hbmColor = core::ptr::null_mut();
             (*this_).m_hbmMask = core::ptr::null_mut();
-            (*this_).m_bMenuItemChecked = (FALSE) as i32;
-            (*this_).m_bMenuItemGrayed = (FALSE) as i32;
+            (*this_).m_bMenuItemChecked = (FALSE as i32);
+            (*this_).m_bMenuItemGrayed = (FALSE as i32);
             (*this_).m_bMenuItemDisabled = bDisabled;
             (*this_).m_pMenu = pMenu;
         }
@@ -3751,12 +3418,12 @@ impl CUIFMenuItem {
             cpp_delete_array((*this_).m_pszMenuItemLeft);
             (*this_).m_pszMenuItemLeft = core::ptr::null_mut();
         }
-    
+
         if !(*this_).m_pszMenuItemRight.is_null() {
             cpp_delete_array((*this_).m_pszMenuItemRight);
             (*this_).m_pszMenuItemRight = core::ptr::null_mut();
         }
-    
+
         if !(*this_).m_pSubMenu.is_null() {
             CUIFMenu__delete((*this_).m_pSubMenu);
             (*this_).m_pSubMenu = core::ptr::null_mut();
@@ -3765,19 +3432,19 @@ impl CUIFMenuItem {
     pub unsafe fn Init(&mut self, nMenuItemID: UINT, pszText: LPCWSTR) -> BOOL {
         let this_: *mut Self = self;
         (*this_).m_nMenuItemID = nMenuItemID;
-    
+
         if pszText.is_null() {
             (*this_).m_pszMenuItemLeft = core::ptr::null_mut();
             (*this_).m_cchMenuItemLeft = 0;
             return (TRUE) as BOOL;
         }
-    
+
         let cch: INT = lstrlenW(pszText);
         (*this_).m_pszMenuItemLeft = cpp_new_array_CicNoThrow::<WCHAR>(cch + 1);
         if (*this_).m_pszMenuItemLeft.is_null() {
             return (FALSE) as BOOL;
         }
-    
+
         let mut pch0: *const WCHAR = pszText;
         let mut ich1: INT;
         let mut ich2: INT;
@@ -3800,7 +3467,7 @@ impl CUIFMenuItem {
         }
         *(*this_).m_pszMenuItemLeft.offset(ich1 as isize) = 0;
         (*this_).m_cchMenuItemLeft = lstrlenW((*this_).m_pszMenuItemLeft) as UINT;
-    
+
         if *pch0 == 0x0009 {
             (*this_).m_cchMenuItemRight = 0;
             (*this_).m_pszMenuItemRight = cpp_new_array_CicNoThrow::<WCHAR>(cch + 1);
@@ -3818,7 +3485,7 @@ impl CUIFMenuItem {
                 (*this_).m_cchMenuItemRight = lstrlenW((*this_).m_pszMenuItemRight) as UINT;
             }
         }
-    
+
         return (TRUE) as BOOL;
     }
     pub unsafe fn IsCheck(&mut self) -> BOOL {
@@ -3835,7 +3502,7 @@ impl CUIFMenuItem {
         let mut rc: RECT = (*this_).__base0.m_rc;
         ClientToScreen((*(*this_).__base0.m_pWindow).op_to_HWND(), core::ptr::addr_of_mut!(rc) as LPPOINT);
         ClientToScreen((*(*this_).__base0.m_pWindow).op_to_HWND(), core::ptr::addr_of_mut!(rc.right) as LPPOINT);
-        (*(*this_).m_pSubMenu).ShowSubPopup((*this_).m_pMenu, core::ptr::addr_of_mut!(rc), (FALSE) as i32);
+        (*(*this_).m_pSubMenu).ShowSubPopup((*this_).m_pMenu, core::ptr::addr_of_mut!(rc), (FALSE as i32));
     }
     pub unsafe fn OnLButtonUp__body(&mut self, x: LONG, y: LONG) {
         let this_: *mut Self = self;
@@ -3849,16 +3516,16 @@ impl CUIFMenuItem {
         if !(*(*this_).m_pMenu).m_pParentMenu.is_null() {
             (*(*(*this_).m_pMenu).m_pParentMenu).CancelMenu();
         }
-    
+
         if !(*this_).m_pSubMenu.is_null() {
             let mut Delay: DWORD = 0;
-            if SystemParametersInfo(SPI_GETMENUSHOWDELAY, 0, core::ptr::addr_of_mut!(Delay) as *mut core::ffi::c_void, 0) == 0 {
+            if SystemParametersInfo(SPI_GETMENUSHOWDELAY, 0, core::ptr::addr_of_mut!(Delay) as LPVOID, 0) == 0 {
                 Delay = 300;
             }
-    
+
             (*this_).__base0.StartTimer((Delay) as WPARAM);
         }
-    
+
         (*(*this_).m_pMenu).SetSelectedItem(this_);
     }
     pub unsafe fn OnPaint__body(&mut self, hDC: HDC) {
@@ -3872,7 +3539,7 @@ impl CUIFMenuItem {
     pub unsafe fn OnTimer__body(&mut self) {
         let this_: *mut Self = self;
         (*this_).__base0.EndTimer();
-        if (*(*this_).m_pMenu).__base0.m_pPointed == this_ as *mut CUIFObject {
+        if (*(*this_).m_pMenu).__base0.m_pPointed == (&raw mut (*this_).__base0) {
             (*this_).ShowSubPopup();
         }
     }
@@ -3890,9 +3557,9 @@ impl CUIFMenuItem {
             }
             return;
         }
-    
+
         let hDC: HDC = GetDC((*(*this_).__base0.m_pWindow).op_to_HWND());
-    
+
         let hFontOld: HGDIOBJ = SelectObject(hDC, ((*this_).__base0.m_hFont).cast());
         GetTextExtentPoint32W(hDC, (*this_).m_pszMenuItemLeft, ((*this_).m_cchMenuItemLeft) as i32, core::ptr::addr_of_mut!((*this_).m_MenuLeftExtent));
         (*this_).m_MenuLeftExtent.cx += 16;
@@ -3902,25 +3569,25 @@ impl CUIFMenuItem {
             (*this_).m_MenuRightExtent.cy += 8;
         }
         SelectObject(hDC, hFontOld);
-    
+
         if !(*this_).m_pSubMenu.is_null() {
             (*this_).m_MenuLeftExtent.cx += (*this_).m_MenuLeftExtent.cy + 2;
         }
         if (*(*this_).m_pMenu).__base0.__base0.m_style & UIF_MENU_USE_OFF10 != 0 {
             (*this_).m_MenuLeftExtent.cx += 24;
         }
-    
+
         ReleaseDC((*(*this_).__base0.m_pWindow).op_to_HWND(), hDC);
     }
     pub unsafe fn OnPaintDef__body(&mut self, hDC: HDC) {
         let this_: *mut Self = self;
         let hFontOld: HGDIOBJ = SelectObject(hDC, ((*this_).__base0.m_hFont).cast());
-    
+
         let mut textSize: SIZE = core::mem::zeroed();
         GetTextExtentPoint32W(hDC, (*this_).m_pszMenuItemLeft, ((*this_).m_cchMenuItemLeft) as i32, core::ptr::addr_of_mut!(textSize));
-    
+
         let cxyMargin: LONG = if (*(*this_).m_pMenu).m_bHasMargin != 0 { (*(*this_).m_pMenu).m_cxyMargin } else { 0 };
-    
+
         let cySpace: LONG = (*this_).__base0.m_rc.bottom - (*this_).__base0.m_rc.top - textSize.cy;
         let xCheck: LONG = (*this_).__base0.m_rc.left;
         let yCheck: LONG = (*this_).__base0.m_rc.top + cySpace / 2;
@@ -3928,11 +3595,11 @@ impl CUIFMenuItem {
         let yBitmap: LONG = (*this_).__base0.m_rc.top;
         let xText: LONG = (*this_).__base0.m_rc.left + cxyMargin + (*(*this_).m_pMenu).m_cxyMargin + 2;
         let yText: LONG = (*this_).__base0.m_rc.top + cySpace / 2;
-    
+
         let xArrow: LONG = (*this_).__base0.m_rc.right + (*this_).__base0.m_rc.left - 10;
-    
+
         SetBkMode(hDC, (TRANSPARENT as i32));
-    
+
         if (*this_).m_bMenuItemGrayed != 0
         {
             let mut uOptions: UINT = ETO_CLIPPED;
@@ -3970,11 +3637,11 @@ impl CUIFMenuItem {
                           (*this_).m_pszMenuItemLeft, (*this_).m_cchMenuItemLeft, core::ptr::null_mut());
             (*this_).DrawUnderline(hDC, xText, yText, UlongToHandle!(COLOR_HIGHLIGHTTEXT + 1) as HBRUSH);
         }
-    
+
         (*this_).DrawCheck(hDC, xCheck, yCheck);
         (*this_).DrawBitmapProc(hDC, xBitmap, yBitmap);
         (*this_).DrawArrow(hDC, xArrow, yText);
-    
+
         SelectObject(hDC, hFontOld);
     }
     pub unsafe fn OnPaintO10__body(&mut self, hDC: HDC) {
@@ -3982,12 +3649,12 @@ impl CUIFMenuItem {
         if (*this_).__base0.m_pScheme.is_null() {
             return;
         }
-    
+
         let hFontOld: HGDIOBJ = SelectObject(hDC, ((*this_).__base0.m_hFont).cast());
-    
+
         let mut textSize: SIZE = core::mem::zeroed();
         GetTextExtentPoint32W(hDC, (*this_).m_pszMenuItemLeft, ((*this_).m_cchMenuItemLeft) as i32, core::ptr::addr_of_mut!(textSize));
-    
+
         let cySpace: LONG = (*this_).__base0.m_rc.bottom - (*this_).__base0.m_rc.top - textSize.cy;
         let xCheck: LONG = (*this_).__base0.m_rc.left;
         let yCheck: LONG = (*this_).__base0.m_rc.top + cySpace / 2;
@@ -3996,23 +3663,23 @@ impl CUIFMenuItem {
         } else {
             0
         };
-    
+
         let xBitmap: LONG = (*this_).__base0.m_rc.left + cxyMargin;
         let yBitmap: LONG = (*this_).__base0.m_rc.top;
         let xText: LONG = (*this_).__base0.m_rc.left + (*(*this_).m_pMenu).m_cxyMargin + cxyMargin + 8;
         let yText: LONG = (*this_).__base0.m_rc.top + cySpace / 2;
         let xArrow: LONG = (*this_).__base0.m_rc.left - textSize.cy + (*this_).__base0.m_rc.right - 2;
         let xRightText: LONG = (*this_).__base0.m_rc.right - (*(*this_).m_pMenu).m_cxMenuExtent - 8;
-    
+
         let mut rc: RECT = core::mem::zeroed();
         (*this_).__base0.GetRect(core::ptr::addr_of_mut!(rc));
-    
+
         if (*this_).m_bMenuItemDisabled != 0 || (*(*this_).m_pMenu).m_pSelectedItem != this_ {
             rc.right = (*(*this_).m_pMenu).m_cxyMargin + rc.left + 2;
             if (*(*this_).m_pMenu).m_bHasMargin != 0 {
                 rc.right += (*(*this_).m_pMenu).m_cxyMargin;
             }
-    
+
             FillRect(
                 hDC,
                 core::ptr::addr_of_mut!(rc),
@@ -4022,9 +3689,9 @@ impl CUIFMenuItem {
             (*(*this_).__base0.m_pScheme).DrawCtrlBkgd(hDC, core::ptr::addr_of_mut!(rc), 0, UIF_DRAW_PRESSED);
             (*(*this_).__base0.m_pScheme).DrawCtrlEdge(hDC, core::ptr::addr_of_mut!(rc), 0, UIF_DRAW_PRESSED);
         }
-    
+
         SetBkMode(hDC, (TRANSPARENT as i32));
-    
+
         if (*this_).m_bMenuItemGrayed != 0 {
             SetTextColor(hDC, (*(*this_).__base0.m_pScheme).GetColor(11));
             ExtTextOutW(
@@ -4062,9 +3729,9 @@ impl CUIFMenuItem {
                 core::ptr::null_mut(),
             );
         }
-    
+
         (*this_).DrawUnderline(hDC, xText, yText, (*(*this_).__base0.m_pScheme).GetBrush(5));
-    
+
         if !(*this_).m_pszMenuItemRight.is_null() {
             ExtTextOutW(
                 hDC,
@@ -4077,11 +3744,11 @@ impl CUIFMenuItem {
                 core::ptr::null_mut(),
             );
         }
-    
+
         (*this_).DrawCheck(hDC, xCheck, yCheck);
         (*this_).DrawBitmapProc(hDC, xBitmap, yBitmap);
         (*this_).DrawArrow(hDC, xArrow, yText);
-    
+
         SelectObject(hDC, hFontOld);
     }
 }
@@ -4089,7 +3756,7 @@ impl CUIFMenuItem {
 impl CUIFMenuItemSeparator {
     pub unsafe fn __ctor_0(&mut self, pMenu: *mut CUIFMenu) {
         let this_: *mut Self = self;
-        (*this_).__base0.__ctor_0(pMenu, (TRUE) as i32);
+        (*this_).__base0.__ctor_0(pMenu, (TRUE as i32));
         (*this_).__init_vtables();
         {
             (*this_).__base0.m_nMenuItemID = (1 as u32).wrapping_neg();
@@ -4105,7 +3772,7 @@ impl CUIFMenuItemSeparator {
         if (*this_).__base0.__base0.m_pScheme.is_null() {
             return;
         }
-    
+
         let mut rc: RECT = core::mem::zeroed();
         rc.left = (*this_).__base0.__base0.m_rc.left + 2;
         rc.top = (*this_).__base0.__base0.m_rc.top + ((*this_).__base0.__base0.m_rc.bottom - (*this_).__base0.__base0.m_rc.top - 2) / 2;
@@ -4118,18 +3785,18 @@ impl CUIFMenuItemSeparator {
         if (*this_).__base0.__base0.m_pScheme.is_null() {
             return;
         }
-    
+
         let cx: LONG = (*this_).__base0.__base0.m_rc.right - (*this_).__base0.__base0.m_rc.left - 4;
         let cy: LONG = ((*this_).__base0.__base0.m_rc.bottom - (*this_).__base0.__base0.m_rc.top - 2) / 2;
-    
+
         let mut rc: RECT = core::mem::zeroed();
         (*this_).__base0.__base0.GetRect(&mut rc);
-    
+
         rc.right = rc.left + (*(*this_).__base0.m_pMenu).m_cxyMargin + 2;
         if (*(*this_).__base0.m_pMenu).m_bHasMargin != 0 {
             rc.right += (*(*this_).__base0.m_pMenu).m_cxyMargin;
         }
-    
+
         let hBrush: HBRUSH = (*(*this_).__base0.__base0.m_pScheme).GetBrush(9);
         FillRect(hDC, &mut rc, hBrush);
         rc = RECT {
@@ -4208,18 +3875,18 @@ impl CUIFButton {
         let width: INT = (*prc).right - (*prc).left;
         let height: INT = (*prc).bottom - (*prc).top;
         let mut rc: RECT = RECT { left: 0, top: 0, right: width, bottom: height };
-    
+
         let hMemDC: HDC = CreateCompatibleDC(hDC);
         if hMemDC.is_null() {
             return;
         }
-    
+
         let hbmMem: HBITMAP = CreateCompatibleBitmap(hDC, width, height);
         if hbmMem.is_null() {
             DeleteDC(hMemDC);
             return;
         }
-    
+
         let hbmOld: HGDIOBJ = SelectObject(hMemDC, hbmMem as HGDIOBJ);
         if (*this_).__base0.m_bEnable != 0 {
             BitBlt(hMemDC, rc.left, rc.top, width, height, hDC, (*prc).left, (*prc).top, SRCCOPY);
@@ -4227,7 +3894,7 @@ impl CUIFButton {
             let hbrWhite: HBRUSH = GetStockObject((WHITE_BRUSH as i32)) as HBRUSH;
             FillRect(hMemDC, core::ptr::addr_of_mut!(rc), hbrWhite);
         }
-    
+
         if (*this_).__base0.m_style & UIF_BUTTON_LARGE_ICON != 0 {
             DrawIconEx(
                 hMemDC,
@@ -4253,7 +3920,7 @@ impl CUIFButton {
                 DI_NORMAL,
             );
         }
-    
+
         SelectObject(hMemDC, hbmOld);
         DrawState(
             hDC,
@@ -4280,12 +3947,12 @@ impl CUIFButton {
         if (*this_).m_pszButtonText.is_null() {
             return;
         }
-    
+
         let hFontOld: HGDIOBJ = SelectObject(hDC, ((*this_).__base0.m_hFont).cast());
         let cchText: INT = lstrlenW((*this_).m_pszButtonText);
         let mut textSize: SIZE = core::mem::zeroed();
         GetTextExtentPoint32W(hDC, (*this_).m_pszButtonText, cchText, core::ptr::addr_of_mut!(textSize));
-    
+
         let mut xText: INT;
         let mut yText: INT;
         if ((*this_).__base0.m_style & UIF_BUTTON_H_ALIGN_MASK) == UIF_BUTTON_H_ALIGN_CENTER {
@@ -4295,7 +3962,7 @@ impl CUIFButton {
         } else {
             xText = 0;
         }
-    
+
         if ((*this_).__base0.m_style & UIF_BUTTON_V_ALIGN_MASK) == UIF_BUTTON_V_ALIGN_MIDDLE {
             yText = ((*this_).__base0.m_rc.bottom - (*this_).__base0.m_rc.top - textSize.cy) / 2;
         } else if ((*this_).__base0.m_style & UIF_BUTTON_V_ALIGN_MASK) == UIF_BUTTON_V_ALIGN_BOTTOM {
@@ -4303,9 +3970,9 @@ impl CUIFButton {
         } else {
             yText = 0;
         }
-    
+
         SetBkMode(hDC, (TRANSPARENT as i32));
-    
+
         if (*this_).__base0.m_bEnable != 0 {
             SetTextColor(hDC, GetSysColor((COLOR_BTNTEXT as i32)));
             ExtTextOutW(
@@ -4330,7 +3997,7 @@ impl CUIFButton {
                 (cchText) as UINT,
                 core::ptr::null_mut(),
             );
-    
+
             SetTextColor(hDC, GetSysColor((COLOR_BTNSHADOW as i32)));
             ExtTextOutW(
                 hDC,
@@ -4343,7 +4010,7 @@ impl CUIFButton {
                 core::ptr::null_mut(),
             );
         }
-    
+
         SelectObject(hDC, hFontOld);
     }
     pub unsafe fn __ctor_0(&mut self, pParent: *mut CUIFObject, nObjectID: DWORD, prc: LPCRECT, style: DWORD) {
@@ -4355,7 +4022,7 @@ impl CUIFButton {
             (*this_).m_ButtonIcon.m_hImageList = core::ptr::null_mut();
             (*this_).m_dwUnknown9 = 0;
             (*this_).m_uButtonStatus = 0;
-            (*this_).m_bPressed = (FALSE) as i32;
+            (*this_).m_bPressed = (FALSE as i32);
             (*this_).m_hbmButton1 = core::ptr::null_mut();
             (*this_).m_hbmButton2 = core::ptr::null_mut();
             (*this_).m_pszButtonText = core::ptr::null_mut();
@@ -4367,7 +4034,7 @@ impl CUIFButton {
             cpp_delete_array((*this_).m_pszButtonText);
             (*this_).m_pszButtonText = core::ptr::null_mut();
         }
-    
+
         if !(*this_).m_ButtonIcon.m_hImageList.is_null() {
             ImageList_Destroy((*this_).m_ButtonIcon.m_hImageList);
         }
@@ -4375,14 +4042,14 @@ impl CUIFButton {
     pub unsafe fn SetIcon(&mut self, hIcon: HICON) {
         let this_: *mut Self = self;
         (*this_).m_ButtonIcon.op_assign(hIcon);
-    
+
         if !(*this_).m_ButtonIcon.m_hIcon.is_null() {
             (*this_).GetIconSize((*this_).m_ButtonIcon.m_hIcon, core::ptr::addr_of_mut!((*this_).m_IconSize));
         } else {
             (*this_).m_IconSize.cy = 0;
             (*this_).m_IconSize.cx = 0;
         }
-    
+
         (*this_).__base0.CallOnPaint();
     }
     pub unsafe fn SetText(&mut self, pszText: LPCWSTR) {
@@ -4391,21 +4058,21 @@ impl CUIFButton {
             cpp_delete_array((*this_).m_pszButtonText);
             (*this_).m_pszButtonText = core::ptr::null_mut();
         }
-    
-        (*this_).m_TextSize.cx = 0;
+
         (*this_).m_TextSize.cy = 0;
-    
+        (*this_).m_TextSize.cx = (*this_).m_TextSize.cy;
+
         if !pszText.is_null() {
             let cch: INT = lstrlenW(pszText);
             (*this_).m_pszButtonText = cpp_new_array_CicNoThrow::<WCHAR>(cch + 1);
             if (*this_).m_pszButtonText.is_null() {
                 return;
             }
-    
+
             lstrcpynW((*this_).m_pszButtonText, pszText, cch + 1);
             (*this_).GetTextSize((*this_).m_pszButtonText, core::ptr::addr_of_mut!((*this_).m_TextSize));
         }
-    
+
         (*this_).__base0.CallOnPaint();
     }
     pub unsafe fn GetIconSize(&mut self, hIcon: HICON, pSize: LPSIZE) {
@@ -4432,7 +4099,7 @@ impl CUIFButton {
         let hDC: HDC = GetDC(core::ptr::null_mut());
         let cchText: INT = lstrlenW(pszText);
         let hFontOld: HGDIOBJ = SelectObject(hDC, ((*this_).__base0.m_hFont).cast());
-    
+
         if (*this_).__base0.m_bHasCustomFont == 0
             && ((*this_).__base0.__base0.EnsureThemeData((*(*this_).__base0.m_pWindow).op_to_HWND()) >= 0)
         {
@@ -4451,20 +4118,20 @@ impl CUIFButton {
         } else {
             GetTextExtentPoint32W(hDC, pszText, cchText, pSize);
         }
-    
+
         if ((*this_).__base0.m_style & UIF_BUTTON_VERTICAL) != 0 {
             let tmp: INT = (*pSize).cx;
             (*pSize).cx = (*pSize).cy;
             (*pSize).cy = tmp;
         }
-    
+
         SelectObject(hDC, hFontOld);
         ReleaseDC(core::ptr::null_mut(), hDC);
     }
     pub unsafe fn Enable__body(&mut self, bEnable: BOOL) {
         let this_: *mut Self = self;
-        (*this_).__base0.Enable(bEnable);
-        if !((*this_).__base0.m_bEnable != 0) {
+        (*this_).__base0.Enable__body(bEnable);
+        if (*this_).__base0.m_bEnable == 0 {
             (*this_).SetStatus(0);
             if (*this_).__base0.IsCapture() != 0 {
                 (*this_).__base0.EndCapture();
@@ -4513,7 +4180,7 @@ impl CUIFButton {
         if bCapture != 0 {
             (*this_).__base0.EndCapture();
         }
-    
+
         let mut bNotInObject: BOOL = (((*this_).__base0.m_style & 0x30) == 0x20) as BOOL;
         if ((*this_).__base0.m_style & 0x30) != 0x10 {
             bNotInObject = ((*this_).__base0.PtInObject(pt) == 0) as BOOL;
@@ -4533,9 +4200,9 @@ impl CUIFButton {
             (*this_).SetStatus(0);
             return;
         }
-    
+
         (*this_).SetStatus(2);
-    
+
         if bCapture != 0 {
             (*this_).m_bPressed = ((*this_).m_bPressed == 0) as BOOL;
             (*this_).__base0.NotifyCommand(1, 0);
@@ -4544,7 +4211,7 @@ impl CUIFButton {
     pub unsafe fn OnPaintNoTheme__body(&mut self, hDC: HDC) {
         let this_: *mut Self = self;
         FillRect(hDC, core::ptr::addr_of_mut!((*this_).__base0.m_rc), UlongToHandle!(COLOR_BTNFACE + 1) as HBRUSH);
-    
+
         if ((*this_).m_bPressed != 0) && (((*this_).m_uButtonStatus == 0) || ((*this_).m_uButtonStatus == 3)) {
             let hbr: HBRUSH = cicCreateDitherBrush();
             if !hbr.is_null() {
@@ -4558,7 +4225,7 @@ impl CUIFButton {
                 DeleteObject((hbr).cast());
             }
         }
-    
+
         let bPressed: BOOL = (((*this_).m_bPressed != 0) || ((*this_).m_uButtonStatus == 1)) as BOOL;
         if !(*this_).m_hbmButton1.is_null() {
             (*this_).DrawBitmapProc(hDC, core::ptr::addr_of_mut!((*this_).__base0.m_rc), bPressed);
@@ -4567,7 +4234,7 @@ impl CUIFButton {
         } else {
             (*this_).DrawTextProc(hDC, core::ptr::addr_of_mut!((*this_).__base0.m_rc), bPressed);
         }
-    
+
         if ((*this_).m_bPressed != 0) || ((*this_).m_uButtonStatus == 1) {
             (*this_).DrawEdgeProc(hDC, core::ptr::addr_of_mut!((*this_).__base0.m_rc), (TRUE) as BOOL);
         } else if 2 <= (*this_).m_uButtonStatus && (*this_).m_uButtonStatus <= 3 {
@@ -4617,27 +4284,27 @@ impl CUIFButton2 {
     pub unsafe fn OnPaintTheme__body(&mut self, hDC: HDC,
     ) -> BOOL {
         let this_: *mut Self = self;
-        (FALSE) as i32
+        (FALSE as i32)
     }
     pub unsafe fn OnPaintNoTheme__body(&mut self, hDC: HDC) {
         let this_: *mut Self = self;
         if (*this_).__base0.__base0.m_pScheme.is_null() {
             return;
         }
-    
+
         let width: INT = (*this_).__base0.__base0.m_rc.right - (*this_).__base0.__base0.m_rc.left;
         let height: INT = (*this_).__base0.__base0.m_rc.bottom - (*this_).__base0.__base0.m_rc.top;
         let hdcMem: HDC = CreateCompatibleDC(hDC);
         if hdcMem.is_null() {
             return;
         }
-    
+
         let hbmMem: HBITMAP = CreateCompatibleBitmap(hDC, width, height);
         if hbmMem.is_null() {
             DeleteDC(hdcMem);
             return;
         }
-    
+
         let hbmOld: HGDIOBJ = SelectObject(hdcMem, (hbmMem).cast());
         let hFontOld: HGDIOBJ = SelectObject(hdcMem, ((*this_).__base0.__base0.m_hFont).cast());
         let mut rcBack: RECT = RECT {
@@ -4646,7 +4313,7 @@ impl CUIFButton2 {
             right: width,
             bottom: height,
         };
-    
+
         let mut cxText: INT = 0;
         let mut cyText: INT = 0;
         let mut cxContent: INT = 0;
@@ -4658,7 +4325,7 @@ impl CUIFButton2 {
             cxText = (*this_).__base0.m_TextSize.cx;
             cyText = (*this_).__base0.m_TextSize.cy;
         }
-    
+
         if !(*this_).__base0.m_ButtonIcon.m_hIcon.is_null() {
             cxContent = (*this_).__base0.m_IconSize.cx;
             cyContent = (*this_).__base0.m_IconSize.cy;
@@ -4666,14 +4333,14 @@ impl CUIFButton2 {
             cxContent = (*this_).m_BitmapSize.cx;
             cyContent = (*this_).m_BitmapSize.cy;
         }
-    
+
         if ((*this_).__base0.__base0.m_style & UIF_BUTTON_VERTICAL) != 0 {
             cxyBorders = if cyText != 0 && cyContent != 0 {
                 2
             } else {
                 0
             };
-    
+
             cxButton = cxContent;
             cyButton = cyText + cyContent + cxyBorders;
             if cxText > cxContent {
@@ -4685,14 +4352,14 @@ impl CUIFButton2 {
             } else {
                 0
             };
-    
+
             cxButton = cxText + cxContent + cxyBorders;
             cyButton = cyContent;
             if cyText > cyButton {
                 cyButton = cyText;
             }
         }
-    
+
         let mut xOffset: INT;
         let mut yOffset: INT;
         if ((*this_).__base0.__base0.m_style & UIF_BUTTON_H_ALIGN_MASK) == UIF_BUTTON_H_ALIGN_CENTER {
@@ -4702,7 +4369,7 @@ impl CUIFButton2 {
         } else {
             xOffset = rcBack.left + 2;
         }
-    
+
         if ((*this_).__base0.__base0.m_style & UIF_BUTTON_V_ALIGN_MASK) == UIF_BUTTON_V_ALIGN_MIDDLE {
             yOffset = (rcBack.top + rcBack.bottom - cyButton) / 2;
         } else if ((*this_).__base0.__base0.m_style & UIF_BUTTON_V_ALIGN_MASK) == UIF_BUTTON_V_ALIGN_BOTTOM {
@@ -4710,7 +4377,7 @@ impl CUIFButton2 {
         } else {
             yOffset = rcBack.top + 2;
         }
-    
+
         let mut rc: RECT = RECT {
             left: xOffset,
             top: yOffset,
@@ -4732,7 +4399,7 @@ impl CUIFButton2 {
             core::ptr::addr_of_mut!(offsetSize),
         );
         OffsetRect(core::ptr::addr_of_mut!(rc), offsetSize.cx, offsetSize.cy);
-    
+
         let mut rcImage: RECT = core::mem::zeroed();
         let mut rcText: RECT = core::mem::zeroed();
         if ((*this_).__base0.__base0.m_style & UIF_BUTTON_VERTICAL) != 0 {
@@ -4754,11 +4421,11 @@ impl CUIFButton2 {
             rcText.right = rc.right;
             rcText.bottom = rcText.top + cyText;
         }
-    
+
         if (((*this_).__base0.__base0.IsRTL()) != 0) {
-            (*(*this_).__base0.__base0.m_pScheme).m_bMirroring = (TRUE) as i32;
+            (*(*this_).__base0.__base0.m_pScheme).m_bMirroring = (TRUE as i32);
         }
-    
+
         (*(*this_).__base0.__base0.m_pScheme).DrawCtrlBkgd(
             hdcMem,
             core::ptr::addr_of_mut!(rcBack),
@@ -4779,7 +4446,7 @@ impl CUIFButton2 {
                 (((*this_).__base0.__base0.m_style & UIF_BUTTON_VERTICAL) != 0) as BOOL,
             );
         }
-    
+
         if !(*this_).__base0.m_ButtonIcon.m_hIcon.is_null() {
             (*(*this_).__base0.__base0.m_pScheme).DrawCtrlIcon(
                 hdcMem,
@@ -4797,11 +4464,11 @@ impl CUIFButton2 {
                 dwDrawFlags,
             );
         }
-    
+
         if (((*this_).__base0.__base0.IsRTL()) != 0) {
-            (*(*this_).__base0.__base0.m_pScheme).m_bMirroring = (FALSE) as i32;
+            (*(*this_).__base0.__base0.m_pScheme).m_bMirroring = (FALSE as i32);
         }
-    
+
         (*(*this_).__base0.__base0.m_pScheme).DrawCtrlEdge(
             hdcMem,
             core::ptr::addr_of_mut!(rcBack),
@@ -4812,7 +4479,7 @@ impl CUIFButton2 {
             },
             dwDrawFlags,
         );
-    
+
         BitBlt(
             hDC,
             (*this_).__base0.__base0.m_rc.left,
@@ -4837,7 +4504,7 @@ impl CUIFToolbarMenuButton {
         (*this_).__init_vtables();
         {
             (*this_).m_pToolbarButton = pParent;
-    
+
             let hFont: HFONT = CreateFontW(8, 8, 0, 0, (FW_NORMAL as i32), 0, 0, 0, SYMBOL_CHARSET,
                 0, 0, 0, 0, CPP_COM_WSTR_B728528EE8A8.as_ptr());
             (*this_).__base0.__base0.__base0.SetFont(hFont);
@@ -4879,7 +4546,7 @@ impl CUIFToolbarButtonElement {
     }
     pub unsafe fn OnLButtonUp__body(&mut self, x: LONG, y: LONG) {
         let this_: *mut Self = self;
-        (*this_).__base0.__base0.OnLButtonUp(x, y);
+        (*this_).__base0.__base0.OnLButtonUp__body(x, y);
         if ((*(*this_).m_pToolbarButton).m_dwToolbarButtonFlags & 0x30000) == 0x20000 {
             (*(*this_).m_pToolbarButton).OnUnknownMouse0();
         } else {
@@ -4910,13 +4577,13 @@ impl CUIFToolbarButton {
         let mut rc2: RECT;
         rc2 = (*this_).__base0.m_rc;
         rc1 = rc2;
-    
+
         if ((*this_).m_dwToolbarButtonFlags & 0x30000) == 0x30000
         {
             rc1.right -= 12;
             rc2.left = rc1.right + 1;
         }
-    
+
         let mut style: DWORD = UIF_BUTTON_LARGE_ICON | UIF_BUTTON_V_ALIGN_MIDDLE | UIF_BUTTON_H_ALIGN_CENTER;
         if (*this_).m_dwToolbarButtonFlags & 0x2000 != 0 {
             style |= 0x10;
@@ -4934,23 +4601,23 @@ impl CUIFToolbarButton {
         if (*this_).m_pToolbarButtonElement.is_null() {
             return (FALSE) as BOOL;
         }
-    
+
         (*(*this_).m_pToolbarButtonElement).__base0.__base0.__base0.Initialize();
         (*this_).__base0.AddUIObj(core::ptr::addr_of_mut!(
             (*(*this_).m_pToolbarButtonElement).__base0.__base0.__base0
         ));
-    
+
         if (*this_).__base0.m_bEnable == 0 {
             (*(*this_).m_pToolbarButtonElement).__base0.__base0.Enable((FALSE) as BOOL);
         }
-    
+
         if ((*this_).m_dwToolbarButtonFlags & 0x30000) == 0x30000
         {
             style = UIF_BUTTON_LARGE_ICON | UIF_BUTTON_H_ALIGN_CENTER;
             if (*this_).m_dwToolbarButtonFlags & 0x80000 != 0 {
                 style |= UIF_BUTTON_VERTICAL;
             }
-    
+
             (*this_).m_pToolbarMenuButton = CUIFToolbarMenuButton__new_in_0(
                 cpp_alloc_CicNoThrow::<CUIFToolbarMenuButton>(),
                 this_,
@@ -4961,17 +4628,17 @@ impl CUIFToolbarButton {
             if (*this_).m_pToolbarMenuButton.is_null() {
                 return (FALSE) as BOOL;
             }
-    
+
             (*(*this_).m_pToolbarMenuButton).__base0.__base0.__base0.Initialize();
             (*this_).__base0.AddUIObj(core::ptr::addr_of_mut!(
                 (*(*this_).m_pToolbarMenuButton).__base0.__base0.__base0
             ));
-    
+
             if (*this_).__base0.m_bEnable == 0 {
                 (*(*this_).m_pToolbarMenuButton).__base0.__base0.Enable((FALSE) as BOOL);
             }
         }
-    
+
         return (TRUE) as BOOL;
     }
     pub unsafe fn GetIcon(&mut self) -> HICON {
@@ -4990,8 +4657,8 @@ impl CUIFToolbarButton {
         if !(*this_).m_pToolbarMenuButton.is_null() {
             (*(*this_).m_pToolbarMenuButton).__base0.__base0.__base0.ClearWndObj();
         }
-    
-        (*this_).__base0.ClearWndObj();
+
+        (*this_).__base0.ClearWndObj__body();
     }
     pub unsafe fn DetachWndObj__body(&mut self) {
         let this_: *mut Self = self;
@@ -5001,12 +4668,12 @@ impl CUIFToolbarButton {
         if !(*this_).m_pToolbarMenuButton.is_null() {
             (*(*this_).m_pToolbarMenuButton).__base0.__base0.__base0.DetachWndObj();
         }
-    
-        (*this_).__base0.DetachWndObj();
+
+        (*this_).__base0.DetachWndObj__body();
     }
     pub unsafe fn Enable__body(&mut self, bEnable: BOOL) {
         let this_: *mut Self = self;
-        (*this_).__base0.Enable(bEnable);
+        (*this_).__base0.Enable__body(bEnable);
         if !(*this_).m_pToolbarButtonElement.is_null() {
             (*(*this_).m_pToolbarButtonElement).__base0.__base0.Enable(bEnable);
         }
@@ -5016,7 +4683,7 @@ impl CUIFToolbarButton {
     }
     pub unsafe fn GetToolTip__body(&mut self) -> LPCWSTR {
         let this_: *mut Self = self;
-        return (*this_).__base0.GetToolTip();
+        return (*this_).__base0.GetToolTip__body();
     }
     pub unsafe fn SetActiveTheme__body(&mut self, pszClassList: LPCWSTR, iPartId: INT, iStateId: INT) {
         let this_: *mut Self = self;
@@ -5026,7 +4693,7 @@ impl CUIFToolbarButton {
         if !(*this_).m_pToolbarMenuButton.is_null() {
             (*(*this_).m_pToolbarMenuButton).__base0.__base0.__base0.__base0.SetActiveTheme(pszClassList, iPartId, iStateId);
         }
-    
+
         (*this_).__base0.__base0.m_pszClassList = pszClassList;
         (*this_).__base0.__base0.m_iPartId = iPartId;
         (*this_).__base0.__base0.m_iStateId = iStateId;
@@ -5037,29 +4704,27 @@ impl CUIFToolbarButton {
     }
     pub unsafe fn SetRect__body(&mut self, prc: LPCRECT) {
         let this_: *mut Self = self;
-        (*this_).__base0.SetRect(prc);
-    
-        let mut rc1: RECT;
-        let mut rc2: RECT;
-        rc2 = (*this_).__base0.m_rc;
-        rc1 = rc2;
-    
+        (*this_).__base0.SetRect__body(prc);
+
+        let mut rc2: RECT = (*this_).__base0.m_rc;
+        let mut rc1: RECT = rc2;
+
         if ((*this_).m_dwToolbarButtonFlags & 0x30000) == 0x30000
         {
             rc1.right -= 12;
             rc2.left = rc1.right + 1;
         }
-    
+
         if !(*this_).m_pToolbarButtonElement.is_null() {
-            (*(*this_).m_pToolbarButtonElement).__base0.__base0.__base0.SetRect(core::ptr::addr_of!(rc1));
+            (*(*this_).m_pToolbarButtonElement).__base0.__base0.__base0.SetRect(core::ptr::addr_of_mut!(rc1));
         }
         if !(*this_).m_pToolbarMenuButton.is_null() {
-            (*(*this_).m_pToolbarMenuButton).__base0.__base0.__base0.SetRect(core::ptr::addr_of!(rc2));
+            (*(*this_).m_pToolbarMenuButton).__base0.__base0.__base0.SetRect(core::ptr::addr_of_mut!(rc2));
         }
     }
     pub unsafe fn SetToolTip__body(&mut self, pszToolTip: LPCWSTR) {
         let this_: *mut Self = self;
-        (*this_).__base0.SetToolTip(pszToolTip);
+        (*this_).__base0.SetToolTip__body(pszToolTip);
         if !(*this_).m_pToolbarButtonElement.is_null() {
             (*(*this_).m_pToolbarButtonElement).__base0.__base0.__base0.SetToolTip(pszToolTip);
         }
@@ -5114,7 +4779,7 @@ impl CUIFGripper {
         if (((*this_).__base0.__base0.EnsureThemeData((*(*this_).__base0.m_pWindow).op_to_HWND())) < 0) {
             return (FALSE) as BOOL;
         }
-    
+
         if ((*this_).__base0.m_style & UIF_GRIPPER_VERTICAL) != 0 {
             (*this_).__base0.m_rc.top += 2;
             (*this_).__base0.m_rc.bottom -= 2;
@@ -5122,11 +4787,11 @@ impl CUIFGripper {
             (*this_).__base0.m_rc.left += 2;
             (*this_).__base0.m_rc.right -= 2;
         }
-    
+
         if (((*this_).__base0.__base0.DrawThemeBackground(hDC, 1, core::ptr::addr_of_mut!((*this_).__base0.m_rc), core::ptr::null())) < 0) {
             return (FALSE) as BOOL;
         }
-    
+
         return (TRUE) as BOOL;
     }
     pub unsafe fn OnPaintNoTheme__body(&mut self, hDC: HDC) {
@@ -5139,7 +4804,7 @@ impl CUIFGripper {
             );
             return;
         }
-    
+
         let mut rc: RECT;
         if ((*this_).__base0.m_style & UIF_GRIPPER_VERTICAL) != 0 {
             rc = RECT {
@@ -5156,7 +4821,7 @@ impl CUIFGripper {
                 bottom: (*this_).__base0.m_rc.bottom,
             };
         }
-    
+
         DrawEdge(
             hDC,
             core::ptr::addr_of_mut!(rc),
@@ -5193,7 +4858,7 @@ impl CUIFWndFrame {
             (*this_).m_dwHitTest = 0;
             (*this_).m_cyFrame = 0;
             (*this_).m_cxFrame = 0;
-    
+
             if !(*this_).__base0.m_pScheme.is_null() {
                 if ((*this_).__base0.m_style & 0xF) != 0
                     && ((*this_).__base0.m_style & 0xF) <= 2
@@ -5205,7 +4870,7 @@ impl CUIFWndFrame {
                     (*this_).m_cyFrame = (*(*this_).__base0.m_pScheme).CyWndBorder();
                 }
             }
-    
+
             (*this_).m_cxMin = GetSystemMetrics((SM_CXMIN as i32));
             (*this_).m_cyMin = GetSystemMetrics((SM_CYMIN as i32));
         }
@@ -5237,34 +4902,34 @@ impl CUIFWndFrame {
         if (*this_).__base0.IsCapture() == 0 {
             return;
         }
-    
+
         let mut Point: POINT = core::mem::zeroed();
         ClientToScreen((*(*this_).__base0.m_pWindow).op_to_HWND(), core::ptr::addr_of_mut!(Point));
-    
+
         let mut rc: RECT = (*this_).m_rcWnd;
-    
+
         if ((*this_).m_dwHitTest & 0x10) != 0 {
             rc.left = Point.x + (*this_).m_rcWnd.left - (*this_).m_ptHit.x;
         }
-    
+
         if ((*this_).m_dwHitTest & 0x20) != 0 {
             rc.top = Point.y + (*this_).m_rcWnd.top - (*this_).m_ptHit.y;
         }
-    
+
         if ((*this_).m_dwHitTest & 0x40) != 0 {
             rc.right = Point.x + (*this_).m_rcWnd.right - (*this_).m_ptHit.x;
             if rc.right <= rc.left + (*this_).m_cxMin {
                 rc.right = rc.left + (*this_).m_cxMin;
             }
         }
-    
+
         if ((*this_).m_dwHitTest & 0x80) != 0 {
             rc.bottom = Point.y + (*this_).m_rcWnd.bottom - (*this_).m_ptHit.y;
             if rc.bottom <= rc.top + (*this_).m_cyMin {
                 rc.bottom = rc.top + (*this_).m_cyMin;
             }
         }
-    
+
         (*(*this_).__base0.m_pWindow).Move(rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top);
     }
     pub unsafe fn OnLButtonDown__body(&mut self, x: LONG, y: LONG) {
@@ -5274,7 +4939,7 @@ impl CUIFWndFrame {
         if !(hitTest != 0) {
             return;
         }
-    
+
         ClientToScreen((*(*this_).__base0.m_pWindow).op_to_HWND(), core::ptr::addr_of_mut!(Point));
         (*this_).m_ptHit = Point;
         (*this_).__base0.m_pWindow = (*this_).__base0.m_pWindow;
@@ -5293,31 +4958,31 @@ impl CUIFWndFrame {
         if ((*this_).__base0.__base0.EnsureThemeData((*(*this_).__base0.m_pWindow).op_to_HWND()) < 0) {
             return (FALSE) as BOOL;
         }
-    
+
         let mut rc: RECT = (*this_).__base0.m_rc;
         rc.right = (*this_).m_cxFrame;
         if ((*this_).__base0.__base0.DrawThemeEdge(hDC, 0, core::ptr::addr_of_mut!(rc), 5, 1, core::ptr::null_mut()) < 0) {
             return (FALSE) as BOOL;
         }
-    
+
         rc = (*this_).__base0.m_rc;
         rc.left = rc.right - (*this_).m_cxFrame;
         if ((*this_).__base0.__base0.DrawThemeEdge(hDC, 0, core::ptr::addr_of_mut!(rc), 10, 4, core::ptr::null_mut()) < 0) {
             return (FALSE) as BOOL;
         }
-    
+
         rc = (*this_).__base0.m_rc;
         rc.bottom = (*this_).m_cyFrame;
         if ((*this_).__base0.__base0.DrawThemeEdge(hDC, 0, core::ptr::addr_of_mut!(rc), 5, 2, core::ptr::null_mut()) < 0) {
             return (FALSE) as BOOL;
         }
-    
+
         rc = (*this_).__base0.m_rc;
         rc.top = rc.bottom - (*this_).m_cyFrame;
         if ((*this_).__base0.__base0.DrawThemeEdge(hDC, 0, core::ptr::addr_of_mut!(rc), 10, 8, core::ptr::null_mut()) < 0) {
             return (FALSE) as BOOL;
         }
-    
+
         return (TRUE) as BOOL;
     }
     pub unsafe fn OnPaintNoTheme__body(&mut self, hDC: HDC) {
@@ -5325,14 +4990,14 @@ impl CUIFWndFrame {
         if (*this_).__base0.m_pScheme.is_null() {
             return;
         }
-    
+
         let mut type_: DWORD = 0;
         if ((*this_).__base0.m_style & 0xF) == 1 {
             type_ = 1;
         } else if ((*this_).__base0.m_style & 0xF) == 2 {
             type_ = 2;
         }
-    
+
         (*(*this_).__base0.m_pScheme).DrawWndFrame(
             hDC,
             core::ptr::addr_of_mut!((*this_).__base0.m_rc),
@@ -5347,7 +5012,7 @@ impl CUIFWndFrame {
         if (*this_).__base0.IsCapture() == 0 {
             dwHitTest = (*this_).__base0.m_style & (*this_).HitTest(x, y);
         }
-    
+
         let mut pszCursor: LPTSTR = core::ptr::null_mut();
         match dwHitTest {
             0x30 | 0xC0 => {
@@ -5366,7 +5031,7 @@ impl CUIFWndFrame {
                 return (FALSE) as BOOL;
             }
         }
-    
+
         let hCursor: HCURSOR = LoadCursor(core::ptr::null_mut(), pszCursor);
         SetCursor(hCursor);
         return (TRUE) as BOOL;
@@ -5386,23 +5051,23 @@ impl CUIFBalloonButton {
         let this_: *mut Self = self;
         let mut rc: RECT = (*this_).__base0.__base0.m_rc;
         OffsetRect(core::ptr::addr_of_mut!(rc), -rc.left, -rc.top);
-    
+
         let hMemDC: HDC = CreateCompatibleDC(hDC);
         let hbmMem: HBITMAP = CreateCompatibleBitmap(hDC, rc.right, rc.bottom);
         let hbmOld: HGDIOBJ = SelectObject(hMemDC, (hbmMem).cast());
-    
+
         let bPressed: BOOL;
         let rgbShadow: COLORREF;
         let rgbBorder: COLORREF;
         if (*this_).__base0.m_uButtonStatus == 1
         {
-            bPressed = (TRUE) as i32;
+            bPressed = (TRUE as i32);
             rgbShadow = GetSysColor((COLOR_BTNSHADOW as i32));
             rgbBorder = GetSysColor((COLOR_BTNHIGHLIGHT as i32));
         }
         else
         {
-            bPressed = (FALSE) as i32;
+            bPressed = (FALSE as i32);
             if (*this_).__base0.m_uButtonStatus < 4
             {
                 rgbShadow = GetSysColor((COLOR_BTNHIGHLIGHT as i32));
@@ -5414,35 +5079,35 @@ impl CUIFBalloonButton {
                 rgbBorder = GetSysColor((COLOR_INFOBK as i32));
             }
         }
-    
+
         let rgbInfoBk: COLORREF = GetSysColor((COLOR_INFOBK as i32));
         let hbrBack: HBRUSH = CreateSolidBrush(rgbInfoBk);
         FillRect(hMemDC, core::ptr::addr_of_mut!(rc), hbrBack);
         DeleteObject((hbrBack).cast());
-    
+
         (*this_).DrawTextProc(hMemDC, core::ptr::addr_of_mut!(rc), bPressed);
-    
+
         let hNullBrush: HBRUSH = GetStockObject((NULL_BRUSH as i32)) as HBRUSH;
         let hbrOld: HGDIOBJ = SelectObject(hMemDC, (hNullBrush).cast());
-    
+
         let mut hPen: HPEN = CreatePen((PS_SOLID as i32), 0, rgbShadow);
         let mut hPenOld: HGDIOBJ = SelectObject(hMemDC, (hPen).cast());
         RoundRect(hMemDC, rc.left, rc.top, rc.right - 1, rc.bottom - 1, 6, 6);
         SelectObject(hMemDC, hPenOld);
         DeleteObject((hPen).cast());
-    
+
         hPen = CreatePen((PS_SOLID as i32), 0, rgbBorder);
         hPenOld = SelectObject(hMemDC, (hPen).cast());
         RoundRect(hMemDC, rc.left + 1, rc.top + 1, rc.right, rc.bottom, 6, 6);
         SelectObject(hMemDC, hPenOld);
         DeleteObject((hPen).cast());
-    
+
         hPen = CreatePen((PS_SOLID as i32), 0, GetSysColor((COLOR_BTNFACE as i32)));
         hPenOld = SelectObject(hMemDC, (hPen).cast());
         RoundRect(hMemDC, rc.left + 1, rc.top + 1, rc.right - 1, rc.bottom - 1, 6, 6);
         SelectObject(hMemDC, hPenOld);
         DeleteObject((hPen).cast());
-    
+
         SelectObject(hMemDC, hbrOld);
         BitBlt(hDC, (*this_).__base0.__base0.m_rc.left, (*this_).__base0.__base0.m_rc.top, (*this_).__base0.__base0.m_rc.right - (*this_).__base0.__base0.m_rc.left, (*this_).__base0.__base0.m_rc.bottom - (*this_).__base0.__base0.m_rc.top,
                  hMemDC, rc.left, rc.top, SRCCOPY);
@@ -5455,33 +5120,33 @@ impl CUIFBalloonButton {
         if (*this_).__base0.m_pszButtonText.is_null() {
             return;
         }
-    
+
         let mut uFlags: UINT = DT_SINGLELINE;
-    
+
         if ((*this_).__base0.__base0.m_style & UIF_BUTTON_H_ALIGN_MASK) == UIF_BUTTON_H_ALIGN_CENTER {
             uFlags |= DT_CENTER;
         } else if ((*this_).__base0.__base0.m_style & UIF_BUTTON_H_ALIGN_MASK) == UIF_BUTTON_H_ALIGN_RIGHT {
             uFlags |= DT_RIGHT;
         }
-    
+
         if ((*this_).__base0.__base0.m_style & UIF_BUTTON_V_ALIGN_MASK) == UIF_BUTTON_V_ALIGN_MIDDLE {
             uFlags |= DT_VCENTER;
         } else if ((*this_).__base0.__base0.m_style & UIF_BUTTON_V_ALIGN_MASK) == UIF_BUTTON_V_ALIGN_BOTTOM {
             uFlags |= DT_BOTTOM;
         }
-    
+
         let rgbOldColor: COLORREF = SetTextColor(hDC, GetSysColor((COLOR_BTNTEXT as i32)));
         let nOldBkMode: INT = SetBkMode(hDC, (TRANSPARENT as i32));
-    
+
         let mut rc: RECT = *prc;
         if bPressed != 0 {
             OffsetRect(core::ptr::addr_of_mut!(rc), 1, 1);
         }
-    
+
         let hFontOld: HGDIOBJ = SelectObject(hDC, ((*this_).__base0.__base0.m_hFont).cast());
         DrawTextW(hDC, (*this_).__base0.m_pszButtonText, -1, core::ptr::addr_of_mut!(rc), uFlags);
         SelectObject(hDC, hFontOld);
-    
+
         SetBkMode(hDC, nOldBkMode);
         SetTextColor(hDC, rgbOldColor);
     }
@@ -5531,15 +5196,18 @@ impl CUIFBalloonWindow {
     }
     pub unsafe fn Initialize__body(&mut self) -> BOOL {
         let this_: *mut Self = self;
-        (*this_).__base0.Initialize();
-    
-        if ((*this_).__base0.__base0.m_style & UIF_BALLOON_WINDOW_TYPE_MASK) == UIF_BALLOON_WINDOW_OK {
+        (*this_).__base0.Initialize__body();
+
+        if ((*this_).__base0.__base0.m_style & UIF_BALLOON_WINDOW_TYPE_MASK) == UIF_BALLOON_WINDOW_OK
+        {
             (*this_).AddButton(IDOK);
-        } else if ((*this_).__base0.__base0.m_style & UIF_BALLOON_WINDOW_TYPE_MASK) == UIF_BALLOON_WINDOW_YESNO {
+        }
+        else if ((*this_).__base0.__base0.m_style & UIF_BALLOON_WINDOW_TYPE_MASK) == UIF_BALLOON_WINDOW_YESNO
+        {
             (*this_).AddButton(IDYES);
             (*this_).AddButton(IDNO);
         }
-    
+
         return (TRUE) as BOOL;
     }
     pub unsafe fn OnCreate__body(&mut self, hWnd: HWND) {
@@ -5556,7 +5224,7 @@ impl CUIFBalloonWindow {
     pub unsafe fn OnKeyDown__body(&mut self, hWnd: HWND, wParam: WPARAM, lParam: LPARAM) {
         let this_: *mut Self = self;
         let mut pButton: *mut CUIFBalloonButton = core::ptr::null_mut();
-    
+
         match wParam {
             _ if wParam == VK_RETURN as WPARAM => {
                 pButton = (*this_).FindUIObject(0) as *mut CUIFBalloonButton;
@@ -5574,11 +5242,11 @@ impl CUIFBalloonWindow {
             }
             _ => {}
         }
-    
+
         if pButton.is_null() {
             return;
         }
-    
+
         (*this_).m_nActionID = (*pButton).m_nCommandID as WPARAM;
         DestroyWindow((*this_).__base0.m_hWnd);
     }
@@ -5594,7 +5262,7 @@ impl CUIFBalloonWindow {
         let mut rc: RECT = core::mem::zeroed();
         (*this_).__base0.__base0.GetRect(core::ptr::addr_of_mut!(rc));
         (*this_).PaintFrameProc(hDC, core::ptr::addr_of!(rc));
-    
+
         match (*this_).m_nBalloonType {
             1 => {
                 rc.top += 16;
@@ -5609,15 +5277,15 @@ impl CUIFBalloonWindow {
                 rc.bottom -= 16;
             }
         }
-    
+
         let mut rcMargin: RECT = core::mem::zeroed();
         (*this_).GetMargin(core::ptr::addr_of_mut!(rcMargin));
-    
+
         rc.left += rcMargin.left;
         rc.top += rcMargin.top;
         rc.right -= rcMargin.right;
         rc.bottom -= rcMargin.bottom;
-    
+
         (*this_).PaintMessageProc(hDC, core::ptr::addr_of_mut!(rc), (*this_).m_pszBalloonText);
     }
     pub unsafe fn AddButton(&mut self, nCommandId: UINT) {
@@ -5626,43 +5294,44 @@ impl CUIFBalloonWindow {
         if !((IDOK <= nCommandId) && (nCommandId <= IDNO)) {
             return;
         }
-    
+
         let pButton: *mut CUIFBalloonButton = CUIFBalloonButton__new_in_0(cpp_alloc_CicNoThrow::<CUIFBalloonButton>(), (this_).cast(), (*this_).m_cButtons, core::ptr::addr_of_mut!(rc), 5);
-        let _ = (core::ptr::addr_of_mut!(rc), 5);
+        let _ = 0;
+        let _ = 5;
         if pButton.is_null() {
             return;
         }
-    
+
         (*pButton).__base0.__base0.Initialize();
         (*pButton).m_nCommandID = nCommandId;
-    
-        let mut pszText: LPCWSTR;
+
+        let pszText: LPCWSTR;
         match nCommandId {
-            IDOK => {
+            x if x == IDOK => {
                 pszText = CPP_COM_WSTR_09C0D8FDD014.as_ptr();
             }
-            IDCANCEL => {
+            x if x == IDCANCEL => {
                 pszText = CPP_COM_WSTR_4CA0338A5BD8.as_ptr();
             }
-            IDABORT => {
+            x if x == IDABORT => {
                 pszText = CPP_COM_WSTR_FD9E5FF53298.as_ptr();
             }
-            IDRETRY => {
+            x if x == IDRETRY => {
                 pszText = CPP_COM_WSTR_61F3B37003C0.as_ptr();
             }
-            IDIGNORE => {
+            x if x == IDIGNORE => {
                 pszText = CPP_COM_WSTR_1F367FB724B3.as_ptr();
             }
-            IDYES => {
+            x if x == IDYES => {
                 pszText = CPP_COM_WSTR_893EDE57DDD9.as_ptr();
             }
             _ => {
                 pszText = CPP_COM_WSTR_A944EB43577D.as_ptr();
             }
         }
-    
+
         (*pButton).__base0.SetText(pszText);
-    
+
         (*this_).__base0.__base0.AddUIObj(core::ptr::addr_of_mut!((*pButton).__base0.__base0));
         (*this_).m_cButtons += 1;
     }
@@ -5672,34 +5341,34 @@ impl CUIFBalloonWindow {
         let this_: *mut Self = self;
         let mut Points: [POINT; 4] = core::mem::zeroed();
         let mut hRgn: HRGN = core::mem::zeroed();
-        let mut bFlag: BOOL = (FALSE) as i32;
+        let mut bFlag: BOOL = (FALSE as i32);
         let mut x: LONG = 0;
         let mut y: LONG = 0;
-    
+
         match (*this_).m_nBalloonType {
             1 => {
                 hRgn = CreateRoundRectRgn((*prc).left, (*prc).top + 16, (*prc).right, (*prc).bottom, 16, 16);
                 y = (*prc).top + 16;
-                bFlag = (TRUE) as i32;
+                bFlag = (TRUE as i32);
             }
-    
+
             2 => {
                 hRgn = CreateRoundRectRgn((*prc).left, (*prc).top, (*prc).right - 16, (*prc).bottom, 16, 16);
                 x = (*prc).right - 17;
             }
-    
+
             3 => {
                 hRgn = CreateRoundRectRgn((*prc).left + 16, (*prc).top, (*prc).right, (*prc).bottom, 16, 16);
                 x = (*prc).left + 16;
             }
-    
+
             _ => {
                 hRgn = CreateRoundRectRgn((*prc).left, (*prc).top, (*prc).right, (*prc).bottom - 16, 16, 16);
                 y = (*prc).bottom - 17;
-                bFlag = (TRUE) as i32;
+                bFlag = (TRUE as i32);
             }
         }
-    
+
         if bFlag != 0 {
             x = (*this_).m_ptBalloon.x;
             Points[1].x = x;
@@ -5723,10 +5392,10 @@ impl CUIFBalloonWindow {
             Points[1].x = (*this_).m_ptBalloon.x;
             Points[2].y = y + 10 * (2 * (if (*this_).m_dwUnknown8[0] == 2 { 1 } else { 0 }) - 1);
         }
-    
+
         Points[3].x = x;
         Points[0].x = x;
-    
+
         let hPolygonRgn: HRGN = CreatePolygonRgn(Points.as_ptr(), (_countof!(Points)) as i32, (WINDING as i32));
         CombineRgn(hRgn, hRgn, hPolygonRgn, (RGN_OR as i32));
         DeleteObject((hPolygonRgn).cast());
@@ -5755,7 +5424,7 @@ impl CUIFBalloonWindow {
     pub unsafe fn FindUIObject(&mut self, nObjectID: UINT) -> *mut CUIFObject {
         let this_: *mut Self = self;
         let mut iItem: usize = 0;
-        while iItem < (*this_).__base0.__base0.m_ObjectArray.size() {
+        while iItem < (*this_).__base0.__base0.m_ObjectArray.__base0.size() {
             let pObject: *mut CUIFObject = *(core::ptr::addr_of_mut!((*this_).__base0.__base0.m_ObjectArray.__base0) as *mut *mut CUIFObject).add(iItem);
             if (*pObject).m_nObjectID == nObjectID {
                 return pObject;
@@ -5782,15 +5451,14 @@ impl CUIFBalloonWindow {
     }
     pub unsafe fn GetButtonSize(&mut self, pSize: LPSIZE) {
         let this_: *mut Self = self;
-        static DISPLAY_TEXT: [u16; 8] = ['D' as u16, 'I' as u16, 'S' as u16, 'P' as u16, 'L' as u16, 'A' as u16, 'Y' as u16, 0];
-        let hDisplayDC: HDC = CreateDC((DISPLAY_TEXT.as_ptr()), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut());
-    
+        let hDisplayDC: HDC = CreateDC(CPP_COM_WSTR_F28AD8C4C16D.as_ptr(), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut());
+
         let mut tm: TEXTMETRIC = core::mem::zeroed();
         let hFontOld: HGDIOBJ = SelectObject(hDisplayDC, ((*this_).__base0.__base0.m_hFont).cast());
-        GetTextMetrics(hDisplayDC, core::ptr::addr_of_mut!(tm));
+        GetTextMetrics(hDisplayDC, &mut tm);
         SelectObject(hDisplayDC, hFontOld);
         DeleteDC(hDisplayDC);
-    
+
         (*pSize).cx = 16 * tm.tmAveCharWidth;
         (*pSize).cy = tm.tmHeight + 10;
     }
@@ -5816,17 +5484,17 @@ impl CUIFBalloonWindow {
             cpp_delete_array((*this_).m_pszBalloonText);
             (*this_).m_pszBalloonText = core::ptr::null_mut();
         }
-    
+
         if pszText.is_null() {
             pszText = CPP_COM_WSTR_96A296D224F2.as_ptr();
         }
-    
+
         let cch: usize = wcslen(pszText);
         (*this_).m_pszBalloonText = cpp_new_array_CicNoThrow::<WCHAR>(cch + 1);
         if !(*this_).m_pszBalloonText.is_null() {
             lstrcpynW((*this_).m_pszBalloonText, pszText, (cch + 1) as i32);
         }
-    
+
         (*this_).AdjustPos();
     }
     pub unsafe fn InitWindowRegion(&mut self) {
@@ -5842,10 +5510,10 @@ impl CUIFBalloonWindow {
         let this_: *mut Self = self;
         let mut size: SIZE = core::mem::zeroed();
         (*this_).GetButtonSize(core::ptr::addr_of_mut!(size));
-    
+
         let mut rc: RECT = core::mem::zeroed();
         (*this_).__base0.__base0.GetRect(core::ptr::addr_of_mut!(rc));
-    
+
         match (*this_).m_nBalloonType {
             1 => {
                 rc.top += 16;
@@ -5860,21 +5528,21 @@ impl CUIFBalloonWindow {
                 rc.bottom -= 16;
             }
         }
-    
+
         let mut rcMargin: RECT = core::mem::zeroed();
         (*this_).GetMargin(core::ptr::addr_of_mut!(rcMargin));
         rc.left += rcMargin.left;
         rc.top += rcMargin.top;
         rc.right -= rcMargin.right;
         rc.bottom -= rcMargin.bottom;
-    
+
         let xLeft: LONG = ((rc.left.wrapping_add(rc.right) as UINT).wrapping_sub(
             (size.cx as UINT).wrapping_mul(
                 (((*this_).m_cButtons.wrapping_sub(1) / 2)
                     .wrapping_sub((*this_).m_cButtons)),
             ),
         ) / 2) as LONG;
-    
+
         let mut iButton: UINT = 0;
         while iButton < (*this_).m_cButtons {
             'body: {
@@ -5882,14 +5550,14 @@ impl CUIFBalloonWindow {
                 if UIObject.is_null() {
                     break 'body;
                 }
-    
+
                 rcMargin.left = (xLeft as UINT).wrapping_add(
                     iButton.wrapping_mul(((size.cx * 3 / 2) as UINT)),
                 ) as LONG;
                 rcMargin.top = rc.bottom - size.cy;
                 rcMargin.right = rcMargin.left + size.cx;
                 rcMargin.bottom = rc.bottom;
-    
+
                 (*UIObject).SetRect(core::ptr::addr_of!(rcMargin));
                 (*UIObject).Show((TRUE) as BOOL);
             }

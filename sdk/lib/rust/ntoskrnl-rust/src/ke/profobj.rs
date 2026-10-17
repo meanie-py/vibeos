@@ -73,7 +73,8 @@ pub unsafe extern "system" fn KeInitializeProfile(
 ) {
     let Process = opaque_ptr(Process);
     let ImageBase = opaque_ptr(ImageBase);
-    (*Profile).Type = 24i16;
+    // ProfileObject is 23; the old literal 24 was ThreadedDpcObject.
+    (*Profile).Type = ntkrnl_sys::ddk::_KOBJECTS_ProfileObject as i16;
     (*Profile).Size = core::mem::size_of::<KPROFILE>() as i16;
 
     (*Profile).Process = Process;

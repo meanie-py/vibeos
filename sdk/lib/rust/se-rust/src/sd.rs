@@ -1009,9 +1009,12 @@ pub unsafe extern "system" fn SeAssignSecurityEx(
     let mut SaclPresent: BOOLEAN = 0;
     let mut Status: NTSTATUS;
 
-    *NewDescriptor = core::ptr::null_mut();
+    // Windows writes the output only when it returns: a fault inside (a NULL token, a NULL
+    // owner SID) leaves the caller's value untouched (SeInheritance.c:532/556). The C
+    // NULLed it first; each early return below NULLs it instead.
 
     if SubjectContext.is_null() {
+        core::ptr::write_volatile(NewDescriptor, core::ptr::null_mut());
         return STATUS_NO_TOKEN;
     }
 
@@ -1030,12 +1033,14 @@ pub unsafe extern "system" fn SeAssignSecurityEx(
         if AutoInheritFlags & SEF_DEFAULT_OWNER_FROM_PARENT != 0 {
             if ParentDescriptor.is_null() {
                 SeUnlockSubjectContext(SubjectContext);
+                core::ptr::write_volatile(NewDescriptor, core::ptr::null_mut());
                 return STATUS_INVALID_OWNER;
             }
 
             Owner = SepGetOwnerFromDescriptor(ParentDescriptor);
             if Owner.is_null() {
                 SeUnlockSubjectContext(SubjectContext);
+                core::ptr::write_volatile(NewDescriptor, core::ptr::null_mut());
                 return STATUS_INVALID_OWNER;
             }
         } else {
@@ -1068,12 +1073,14 @@ pub unsafe extern "system" fn SeAssignSecurityEx(
         if AutoInheritFlags & SEF_DEFAULT_GROUP_FROM_PARENT != 0 {
             if ParentDescriptor.is_null() {
                 SeUnlockSubjectContext(SubjectContext);
+                core::ptr::write_volatile(NewDescriptor, core::ptr::null_mut());
                 return STATUS_INVALID_PRIMARY_GROUP;
             }
 
             Group = SepGetGroupFromDescriptor(ParentDescriptor);
             if Group.is_null() {
                 SeUnlockSubjectContext(SubjectContext);
+                core::ptr::write_volatile(NewDescriptor, core::ptr::null_mut());
                 return STATUS_INVALID_PRIMARY_GROUP;
             }
         } else {
@@ -1082,6 +1089,7 @@ pub unsafe extern "system" fn SeAssignSecurityEx(
     }
     if Group.is_null() {
         SeUnlockSubjectContext(SubjectContext);
+        core::ptr::write_volatile(NewDescriptor, core::ptr::null_mut());
         return STATUS_INVALID_PRIMARY_GROUP;
     }
     GroupLength = RtlLengthSid(Group);
@@ -1166,6 +1174,7 @@ pub unsafe extern "system" fn SeAssignSecurityEx(
     Descriptor = ExAllocatePoolWithTag(PagedPool, Length as SIZE_T, TAG_SD) as PISECURITY_DESCRIPTOR_RELATIVE;
     if Descriptor.is_null() {
         SeUnlockSubjectContext(SubjectContext);
+        core::ptr::write_volatile(NewDescriptor, core::ptr::null_mut());
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 

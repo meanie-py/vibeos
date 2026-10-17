@@ -383,14 +383,17 @@ unsafe fn array_reserve(elements: *mut *mut core::ffi::c_void, capacity: *mut co
 }
 
 unsafe fn set_thread_name(name: *const WCHAR) {
-    let mut info: THREAD_NAME_INFORMATION = core::mem::zeroed();
-    RtlInitUnicodeString(core::ptr::addr_of_mut!(info.ThreadName), name);
-    NtSetInformationThread(
-        GetCurrentThread(),
-        ThreadNameInformation,
-        core::ptr::addr_of_mut!(info) as PVOID,
-        core::mem::size_of::<THREAD_NAME_INFORMATION>() as ULONG,
-    );
+    // threadpool.c: `#ifndef __REACTOS__ // This is impossible on non vista+`.
+    if cfg!(not_reactos) {
+        let mut info: THREAD_NAME_INFORMATION = core::mem::zeroed();
+        RtlInitUnicodeString(core::ptr::addr_of_mut!(info.ThreadName), name);
+        NtSetInformationThread(
+            GetCurrentThread(),
+            ThreadNameInformation,
+            core::ptr::addr_of_mut!(info) as PVOID,
+            core::mem::size_of::<THREAD_NAME_INFORMATION>() as ULONG,
+        );
+    }
 }
 unsafe extern "system" fn timerqueue_thread_proc(param: PVOID) -> ULONG {
     let _ = param;

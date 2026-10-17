@@ -908,6 +908,10 @@ class _Ctx:
     #: The repaired crate's directory as diagnostics spell it (`atapi-rust/`). A span outside
     #: it -- a SHARED crate's macro body -- is never edited; its call site is. Empty: all own.
     own_prefix: str = ""
+    #: ``alias -> {crate-relative file that can name it}`` for every alias THIS crate declares,
+    #: from ``harvest_alias_scope``. A declared alias missing from a file's set is not in scope
+    #: there. Names the crate never declares (glob-reachable from a -sys island) are absent.
+    alias_scope: Mapping[str, frozenset[str]] = field(default_factory=dict)
 
 
 def _is_own(ctx: _Ctx, file_name: str) -> bool:
@@ -1211,6 +1215,15 @@ def _width_alias_rule(
                 f"`{target}` is not a type this crate declares, so its meaning in the caller's "
                 "scope is not proven",
             )
+            continue
+        scope = ctx.alias_scope.get(target)
+        here = file_name[len(ctx.own_prefix) :] if _is_own(ctx, file_name) else file_name
+        if scope is not None and here not in scope:
+            # The alias is real but private to another module: fastfat's flush.rs declares
+            # `type FAT_FLUSH_TYPE = i32;` without `pub`, and three callers in other modules
+            # got `as FAT_FLUSH_TYPE` (E0412). The pass loop kept them because the same pass
+            # fixed more than it broke, so this has to be a guard, not a revert.
+            decline("alias_not_in_scope", f"`{target}` is declared in {sorted(scope)[0]} only")
             continue
         if re.search(r"\bas\s+" + re.escape(target) + r"\s*$", text):
             # An existing cast to this spelling still errors: caller and callee resolve
@@ -2991,6 +3004,17 @@ def _c2rust_anon_rule(
     )
 
 
+def _similar_field_suggestions(diagnostic: Mapping[str, Any]) -> set[str]:
+    """The replacements rustc offers under "a field with a similar name exists"."""
+    return {
+        str(span.get("suggested_replacement"))
+        for child in diagnostic.get("children") or []
+        if "similar name" in str(child.get("message") or "")
+        for span in child.get("spans") or []
+        if span.get("suggested_replacement")
+    }
+
+
 def _keyword_field_rule(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -3011,8 +3035,17 @@ def _keyword_field_rule(
         return [], [], False
     field_name = m.group("field")
     base = field_name[:-2] if field_name.endswith("_0") else field_name
+    replacement, authority = (
+        f"{base}_",
+        "bindgen renames a keyword-named C field with a trailing underscore",
+    )
     if base not in _BINDGEN_KEYWORDS:
-        return [], [], False
+        # c2rust also suffixes `_0` onto a field named like a prelude item (mmixer's
+        # MIXER_CONTEXT `Copy` became `Copy_0`), which bindgen leaves alone. Taken only when
+        # rustc itself names the C spelling as the existing field.
+        if base == field_name or base not in _similar_field_suggestions(diagnostic):
+            return [], [], False
+        replacement, authority = base, "rustc names the C field spelling c2rust suffixed with `_0`"
     span = next((s for s in diagnostic.get("spans") or [] if s.get("is_primary")), None)
     if span is None:
         return [], [], False
@@ -3027,9 +3060,9 @@ def _keyword_field_rule(
                 file_name=file_name,
                 byte_start=start,
                 byte_end=end,
-                replacement=f"{base}_",
+                replacement=replacement,
                 rule=RULE_KEYWORD_FIELD,
-                authority="bindgen renames a keyword-named C field with a trailing underscore",
+                authority=authority,
                 original=field_name,
                 line=int(span.get("line_start") or 0),
                 column=int(span.get("column_start") or 0),
@@ -3691,6 +3724,19 @@ _RE_NO_LITERAL_FIELD = re.compile(
 _AUTOREF_LINT = "implicit autoref creates a reference to the dereference of a raw pointer"
 
 
+#: The lint's secondary label on the pointer: ``this raw pointer has type `*mut KSDATAFORMAT` ``.
+_RE_AUTOREF_POINTEE = re.compile(r"raw pointer has type `\*(?:mut|const) (?P<ty>[\w:]+)`")
+
+
+def _autoref_pointee(diagnostic: Mapping[str, Any]) -> str | None:
+    """The bare type name the autoref lint's raw pointer points at, from its span label."""
+    for item in diagnostic.get("spans") or []:
+        m = _RE_AUTOREF_POINTEE.search(str(item.get("label") or ""))
+        if m is not None:
+            return m.group("ty").split("::")[-1]
+    return None
+
+
 def _anon_union_autoref(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -3719,10 +3765,18 @@ def _anon_union_autoref(
     prefix = data[int(span.get("byte_start") or 0) : cut].decode("utf-8", "replace")
     rest = re.match(rb"\.\s*(\w+)", data[cut:])
     owner = re.search(r"\.\s*(\w+)\s*$", prefix)
-    if rest is None or owner is None:
+    if rest is None or (owner is None and not re.fullmatch(r"\(\s*\*\s*\w+\s*\)", prefix.strip())):
         return [], [], False
     field_name = rest.group(1).decode()
-    types = ctx.field_types.get(owner.group(1), frozenset())
+    if owner is not None:
+        what = f"`.{owner.group(1)}`"
+        types = ctx.field_types.get(owner.group(1), frozenset())
+    else:
+        # `(*p).Field` with `p: *mut _U` itself (mmixer's `(*DataRange).MajorFormat`): no
+        # owner field to look up, but rustc's secondary label names the pointer's type.
+        pointee = _autoref_pointee(diagnostic)
+        what = f"`*mut {pointee}`"
+        types = frozenset({pointee}) if pointee else frozenset()
     paths = {ctx.anon_unions.get((t, field_name)) for t in types}
     if len(types) != 1 or len(paths) != 1 or None in paths:
         return (
@@ -3733,7 +3787,7 @@ def _anon_union_autoref(
                     "autoref_owner_ambiguous",
                     file_name,
                     int(span.get("line_start") or 0),
-                    f"`.{owner.group(1)}` has types {sorted(types) or '?'}; no single anonymous "
+                    f"{what} has types {sorted(types) or '?'}; no single anonymous "
                     f"member reaches `{field_name}`",
                 )
             ],
@@ -4053,6 +4107,41 @@ def _macro_place_deref_rule(
     return [edit], [], True
 
 
+def _packed_union_member_edit(
+    span: Mapping[str, Any], data: bytes, place: str, ctx: _Ctx
+) -> Edit | None:
+    """E0793's place is a `.Owner` union whose next `.Field` only its anonymous member has."""
+    end = int(span.get("byte_end") or 0)
+    nxt = re.match(rb"\s*\.\s*(\w+)", data[end : end + 64])
+    owner = re.search(r"\.\s*(\w+)\s*$", place)
+    if not ctx.anon_unions or nxt is None or owner is None:
+        return None
+    name = nxt.group(1).decode()
+    types = ctx.field_types.get(owner.group(1), frozenset())
+    paths = {ctx.anon_unions.get((t, name)) for t in types}
+    if len(types) != 1 or len(paths) != 1 or None in paths:
+        return None
+    path = next(iter(paths))
+    assert path is not None
+    at = end + nxt.start(1)
+    return Edit(
+        file_name=str(span.get("file_name") or ""),
+        byte_start=at,
+        byte_end=at + len(name),
+        replacement=path,
+        rule=RULE_PACKED_FIELD_PTR,
+        authority=(
+            f"rustc E0793: `{place[:40]}` is a union in a #[repr(packed)] struct and reaches "
+            f"`{name}` only through its Deref; `{path.rsplit('.', 1)[0]}` names the same place "
+            "without forming a reference"
+        ),
+        original=name,
+        line=int(span.get("line_start") or 0),
+        column=int(span.get("column_start") or 0),
+        targets=(ctx.target,),
+    )
+
+
 def _packed_field_ptr_rule(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -4084,6 +4173,12 @@ def _packed_field_ptr_rule(
     # The span covers the PLACE expression; the offending `.as_ptr()` follows it.
     tail = _RE_AS_PTR.match(data[end : end + 16].decode("utf-8", "replace"))
     place = data[start:end].decode("utf-8", "replace")
+    # `(*w).DataFormat.FormatSize` with `DataFormat` a union inside a packed struct: the field
+    # is reached through the island's `Deref`, whose `&self` is the unaligned reference. The
+    # anonymous member names the same place without one (sysaudio/mmixer's KSDATAFORMAT).
+    union_member = _packed_union_member_edit(span, data, place, ctx) if tail is None else None
+    if union_member is not None:
+        return [union_member], [], True
     # C's `sizeof(p->Field)` came across as `size_of_val(&p.Field)`: the size of the field's
     # TYPE, read off a raw place pointer, never a reference.
     wrap = re.search(
@@ -5530,6 +5625,7 @@ def propose_edits(
     constants: Mapping[str, int] | None = None,
     own_prefix: str = "",
     field_types: Mapping[str, frozenset[str]] | None = None,
+    alias_scope: Mapping[str, frozenset[str]] | None = None,
 ) -> RepairPlan:
     """PURE: parsed rustc diagnostics -> proposed edits, declined sites, and residual RED.
 
@@ -5550,6 +5646,7 @@ def propose_edits(
         constants=constants or {},
         own_prefix=own_prefix,
         field_types=field_types or {},
+        alias_scope=alias_scope or {},
     )
     cache: dict[str, bytes | None] = {}
 
@@ -6482,6 +6579,175 @@ def _local_anon_unions(crate_dir: Path) -> dict[tuple[str, str], str]:
 
 _RE_PLAIN_ALIAS = re.compile(r"^pub type (\w+) = (\w+);", re.M)
 
+#: ``[pub[(..)]] type NAME[<..>] =`` at line start: an alias declaration of any visibility.
+_RE_ANY_ALIAS = re.compile(r"^[ \t]*(pub\b(?:\([^)]*\))?\s+)?type\s+(\w+)\b[^=;]*=", re.M)
+#: ``[pub] use PATH;`` with PATH possibly a one-level ``{a, b::*}`` group.
+_RE_USE = re.compile(r"^[ \t]*(pub\b(?:\([^)]*\))?\s+)?use\s+([^;]+);", re.M)
+
+
+#: ``[#[path = "P"]] [pub] mod NAME;`` — an out-of-line module, possibly at a #[path].
+_RE_MOD = re.compile(
+    r"^[ \t]*((?:#\[[^\]]*\][ \t]*)*)(?:pub\b(?:\([^)]*\))?\s+)?mod\s+(\w+)\s*;", re.M
+)
+_RE_PATH_ATTR = re.compile(r'#\[path\s*=\s*"([^"]+)"\]')
+
+
+def _module_of(rel: str) -> tuple[str, ...]:
+    """``src/a/b.rs`` / ``src/a/b/mod.rs`` -> ``("a", "b")``; ``src/lib.rs`` -> ``()``."""
+    parts = rel.removeprefix("src/").removesuffix(".rs").split("/")
+    if parts[-1] in ("mod", "lib", "main"):
+        parts = parts[:-1]
+    return tuple(p for p in parts if p)
+
+
+def _use_targets(
+    path: str, here: tuple[str, ...], children: set[str]
+) -> list[tuple[tuple[str, ...] | None, str]]:
+    """``use`` PATH -> ``[(module, leaf)]``; leaf is ``*`` or the name it binds (the ``as``
+    rename when there is one). ``children`` are the modules ``here`` declares, which a bare
+    first segment names. A path outside the crate (``ntdll_sys::..``) has module ``None``:
+    its glob is unknowable here, but a name it imports is still bound."""
+    path = re.sub(r"\s+", " ", path).strip()
+    m = re.fullmatch(r"(.*?)::\s*\{(.*)\}", path)
+    leaves = (
+        [f"{m.group(1)}::{x.strip()}" for x in m.group(2).split(",") if x.strip()] if m else [path]
+    )
+    out = []
+    for leaf in leaves:
+        path_part, _, rename = leaf.partition(" as ")
+        segs = [x.strip() for x in path_part.split("::")]
+        bound = rename.strip() or segs[-1]
+        if segs[0] == "crate":
+            base, rest = (), segs[1:]
+        elif segs[0] in ("self", "super"):
+            base = here
+            while segs and segs[0] in ("self", "super"):
+                base = base[:-1] if segs.pop(0) == "super" else base
+            rest = segs
+        elif segs[0] in children:
+            base, rest = here, segs
+        else:
+            if bound != "*":
+                out.append((None, bound))
+            continue
+        if rest:
+            out.append(((*base, *rest[:-1]), bound if rest[-1] != "*" else "*"))
+    return out
+
+
+def harvest_alias_scope(sources: Mapping[str, bytes]) -> dict[str, frozenset[str]]:
+    """``alias -> {crate-relative file that can name it}`` for every alias the crate declares
+    only privately (``type X = ..;`` without ``pub`` in every declaration).
+
+    ``sources`` is keyed ``src/<path>.rs``. A file sees an alias it declares, names in a
+    ``use``, or reaches by a glob over a module that declares it (any glob for ``pub`` /
+    ``pub(..)``; ``super::*`` also for private) or re-exports it with ``pub use``. Modules
+    mounted at a ``#[path]`` (the per-arch ``types_arch`` islands) count as that module.
+    That is the subset of Rust's resolution translated crates use; an alias reached some
+    other way reads as out of scope, so the rule declines rather than writing a name that
+    does not resolve.
+    """
+    texts = {rel: data.decode("utf-8", "replace") for rel, data in sources.items()}
+    module = {rel: _module_of(rel) for rel in texts}
+    children: dict[tuple[str, ...], set[str]] = {}
+    for rel, text in texts.items():
+        for m in _RE_MOD.finditer(text):
+            children.setdefault(module[rel], set()).add(m.group(2))
+    # A #[path] is relative to the declaring file's directory (all our uses are outside
+    # inline `mod {}` blocks). Applied after the scan: the mounted file's own children are
+    # keyed by the module it was first given, so remap those too.
+    for rel, text in list(texts.items()):
+        for m in _RE_MOD.finditer(text):
+            if attr := _RE_PATH_ATTR.search(m.group(1)):
+                target = str(Path(rel).parent / attr.group(1)).replace("\\", "/")
+                if target in module:
+                    module[target] = (*module[rel], m.group(2))
+    declared: dict[tuple[str, ...], dict[str, bool]] = {}
+    uses: dict[tuple[str, ...], list[tuple[bool, tuple[str, ...] | None, str]]] = {}
+    for rel, text in texts.items():
+        mod = module[rel]
+        for m in _RE_ANY_ALIAS.finditer(text):
+            d = declared.setdefault(mod, {})
+            d[m.group(2)] = d.get(m.group(2), False) or bool(m.group(1))
+        uses.setdefault(mod, []).extend(
+            (bool(m.group(1)), target, leaf)
+            for m in _RE_USE.finditer(text)
+            for target, leaf in _use_targets(m.group(2), mod, children.get(mod, set()))
+        )
+
+    def exported(mod: tuple[str, ...], seen: frozenset = frozenset()) -> set[str]:
+        """Names a glob over ``mod`` brings in: its non-private aliases and its ``pub use``s."""
+        if mod in seen:
+            return set()
+        names = {n for n, public in declared.get(mod, {}).items() if public}
+        for public, target, leaf in uses.get(mod, []):
+            if public:
+                names |= (
+                    {leaf} if leaf != "*" else exported(target, seen | {mod}) if target else set()
+                )
+        return names
+
+    # Only aliases the crate declares PRIVATELY everywhere. A name with any `pub` declaration
+    # is usually also the -sys island's (`BOOLEAN`, `WPARAM`), reaching files through
+    # external globs this harvest cannot follow: measured over the tree, scoping those
+    # wrongly refused 7,950 of 72,926 uses that compile.
+    all_declared = {n for d in declared.values() for n in d} - {
+        n for d in declared.values() for n, public in d.items() if public
+    }
+    scope: dict[str, set[str]] = {n: set() for n in all_declared}
+    for rel in texts:
+        mod = module[rel]
+        visible = set(declared.get(mod, {}))
+        for _, target, leaf in uses.get(mod, []):
+            if leaf != "*":
+                visible.add(leaf)
+            elif target is None:
+                continue
+            elif mod and target == mod[:-1]:  # `use super::*` also reaches private items
+                visible |= set(declared.get(target, {})) | exported(target)
+            else:
+                visible |= exported(target)
+        for n in visible & all_declared:
+            scope[n].add(rel)
+    return {n: frozenset(v) for n, v in scope.items()}
+
+
+#: A type a -sys crate declares, or re-exports under a name (bindgen's
+#: ``pub use self::_NOTIFICATION_TYPE as NOTIFICATION_TYPE;`` for an enum typedef).
+_RE_SYS_TYPE = re.compile(
+    rb"^\s*pub\s+(?:(?:type|struct|union|enum)\s+(\w+)|use\s+[\w:]+\s+as\s+(\w+)\s*;)", re.M
+)
+
+
+@functools.lru_cache(maxsize=4)
+def _sys_type_names(rust_root: Path) -> frozenset[str]:
+    """Every type name a ``*-sys`` crate declares: names a file may reach by an external glob."""
+    names: set[str] = set()
+    for path in sorted(rust_root.glob("*-sys/src/**/*.rs")):
+        for m in _RE_SYS_TYPE.finditer(path.read_bytes()):
+            names.add((m.group(1) or m.group(2)).decode("utf-8", "replace"))
+    return frozenset(names)
+
+
+def _local_alias_scope(crate_dir: Path) -> dict[str, frozenset[str]]:
+    """``harvest_alias_scope`` over the crate, less the SDK names a ``-sys`` crate also
+    declares: a module's private ``type BOOLEAN = u8;`` says nothing about where else
+    ``BOOLEAN`` resolves (790 compiling uses in the tree reach those through globs)."""
+    try:
+        from tools.source_walk import source_files
+    except ModuleNotFoundError:
+        import sys
+
+        sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+        from tools.source_walk import source_files
+
+    src = crate_dir / "src"
+    scope = harvest_alias_scope(
+        {f"src/{p.relative_to(src).as_posix()}": p.read_bytes() for p in sorted(source_files(src))}
+    )
+    sdk = _sys_type_names(crate_dir.resolve().parent)
+    return {n: v for n, v in scope.items() if n not in sdk}
+
 
 def harvest_field_types(sources: Mapping[str, bytes]) -> dict[str, frozenset[str]]:
     """``field name -> {canonical type of every field so named}`` across the sources.
@@ -6742,6 +7008,7 @@ def repair_crate(
         local_sigs, local_aliases = (
             _local_authorities(resolved_dir) if RULE_WIDTH_ALIAS in rules else ({}, frozenset())
         )
+        alias_scope = _local_alias_scope(resolved_dir) if RULE_WIDTH_ALIAS in rules else {}
         anon_unions = _local_anon_unions(resolved_dir) if RULE_ANON_UNION in rules else {}
         field_types = _local_field_types(resolved_dir) if RULE_ANON_UNION in rules else {}
         constants = local_constants(resolved_dir) if RULE_CONST_OPERAND in rules else {}
@@ -6757,6 +7024,7 @@ def repair_crate(
                 rules=diagnostic_rules,
                 signatures=local_sigs,
                 local_aliases=local_aliases,
+                alias_scope=alias_scope,
                 anon_unions=anon_unions,
                 constants=constants,
                 own_prefix=own_prefix,

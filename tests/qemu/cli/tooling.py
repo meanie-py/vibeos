@@ -58,6 +58,9 @@ _PYTEST_SUITES = [
     # The Wi-Fi supplicant (ndis-rust's wpa.rs): a wrong MIC or key looks on the bench like
     # an access point silently dropping the handshake.
     (".", ".", "tools/test_wpa_supplicant.py"),
+    # The Pi Wi-Fi driver's SDPCM/BCDC layouts (bwfm-rust's proto.rs): a wrong one looks on
+    # the board like a chip that never answers.
+    (".", ".", "tools/test_bwfm_proto.py"),
     # An oracle needs an oracle. verify_c_signatures reports its own type-resolution gaps as
     # defects in the code when it is wrong, and reports "verified" over types it never
     # resolved when it is blind — neither shows up in review or in its own output.
@@ -117,42 +120,30 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_spec2def_stub_value.py"),
     # The UP and MP kernel cells name their Rust libraries by hand; keep them equal.
     (".", ".", "tools/test_kernel_cells_parity.py"),
-    (".", ".", "tools/test_scan_init_then_move.py"),
     # Same reason, one layer out: verify_cohab_coverage gates the merge train but reads
     # OBJECT FILES, so it cannot join test_scanner_controls (which drives source-only
     # `check` lints from fixture dirs) and would otherwise have no oracle at all.
     (".", ".", "tools/test_verify_cohab_coverage.py"),
     (".", ".", "tools/test_scan_import_cc.py"),
     (".", ".", "tools/test_scan_octal_literals.py"),
-    (".", ".", "tools/test_scan_fourcc_literals.py"),
-    (".", ".", "tools/test_scan_match_arm_break.py"),
-    (".", ".", "tools/test_scan_calloc_elem_type.py"),
     (".", ".", "tools/test_scan_varargs_spec_arity.py"),
     # The i386 no-SSE ABI time bomb: -sse,-sse2 on the builtin i686 triple is a
     # phase-out warning today and a hard error after a toolchain bump. Fires loudly
     # here, with the migration, the moment the pinned rustc turns it into an error.
     (".", ".", "tools/test_scan_i386_sse_abi.py"),
-    (".", ".", "tools/test_scan_ptr_highword_mask.py"),
-    (".", ".", "tools/test_scan_hresult_literals.py"),
     (".", ".", "tools/test_scan_dowhile_continue.py"),
-    (".", ".", "tools/test_scan_list_walk_from_head.py"),
     (".", ".", "tools/test_scan_case_bitor_pattern.py"),
     (".", ".", "tools/test_rank_unused_assignments.py"),
     (".", ".", "tools/test_apply_dead_assignments.py"),
     (".", ".", "tools/test_apply_rustc_suggestions.py"),
     (".", ".", "tools/test_extern_to_use.py"),
-    (".", ".", "tools/test_scan_byteptr_stride.py"),
-    (".", ".", "tools/test_scan_gmem_flags.py"),
-    (".", ".", "tools/test_scan_let_shadow.py"),
-    (".", ".", "tools/test_scan_raw_bitfield.py"),
+    (".", ".", "tools/test_scan_version_vs_c.py"),
     (".", ".", "tools/test_scan_winerror_consts.py"),
     (".", ".", "tools/test_scan_export_shadows.py"),
     (".", ".", "tools/test_scan_res_named_types.py"),
-    (".", ".", "tools/test_scan_bindgen_padding_index.py"),
     (".", ".", "tools/test_scan_extern_static_width.py"),
     (".", ".", "tools/test_ramdisk_tree.py"),
     (".", ".", "tools/test_scan_const_vs_island.py"),
-    (".", ".", "tools/test_scan_raw_uart_writes.py"),
     # The callee pass of the user-pointer lint: its quieting rules (kernel arm,
     # early return, scoped rebind, null guard) each hid or invented rows once.
     (".", ".", "tools/test_scan_raw_user_access.py"),
@@ -247,7 +238,6 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_scan_unresolved_imports.py"),
     (".", ".", "tools/test_scan_assert_polarity.py"),
     (".", ".", "tools/test_scan_dropped_asserts.py"),
-    (".", ".", "tools/test_scan_byte_step_one.py"),
     (".", ".", "tools/test_scan_call_literal_vs_c.py"),
     (".", ".", "tools/test_scan_formatless_printf.py"),
     (".", ".", "tools/test_scan_ptr_typedef_cast_read.py"),
@@ -270,6 +260,9 @@ _PYTEST_SUITES = [
     # (§9.120). Also fails on any gate lint that is in neither the control table
     # nor the documented-exemption list, so coverage gaps stay loud.
     (".", ".", "tools/test_scanner_controls.py"),
+    # The structural merge drivers for gen_driver_types.sh and the cohab census, including
+    # one real `git merge` through the configured driver (tools/merge_drivers.py).
+    (".", ".", "tools/test_merge_drivers.py"),
     # Unit tests for scan_com_double_release's matcher. The CONTROL in
     # test_scanner_controls proves the scanner is not blind; these pin the four
     # CORRECT spellings it must stay quiet about (release-then-null,
@@ -328,6 +321,22 @@ def check_tooling(args, repo: Path) -> int:
     )
     # 4. pytest
     if not args.no_tests:
+        checks.append(
+            (
+                "rust:vibeos-lint",
+                [
+                    "cargo",
+                    "test",
+                    "--offline",
+                    "--locked",
+                    "--manifest-path",
+                    "tools/vibeos-lint/Cargo.toml",
+                    "--target-dir",
+                    ".cache/vibeos-lint/test-target",
+                ],
+                {},
+            )
+        )
         for pkg, pp, target in _PYTEST_SUITES:
             # Label by the TARGET, not the package: twenty root-dir suites all
             # rendered as `pytest:.`, so a failure line named nothing runnable.

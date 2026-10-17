@@ -116,6 +116,14 @@ pub unsafe extern "system" fn HidParser_GetCollectionDescription(
     let mut Index: ULONG;
     let mut ParserContext: PVOID = core::ptr::null_mut();
 
+    // Windows zeroes the description before parsing, so a failure leaves NULL pointers and
+    // zero lengths (HidPDescription.c:145-148). The C zeroed it only after a successful
+    // parse, leaving the caller's garbage on every failure path.
+    ZeroFunction(
+        DeviceDescription as PVOID,
+        core::mem::size_of::<HIDP_DEVICE_DESC>() as ULONG,
+    );
+
     //
     // first parse the report descriptor
     //
@@ -281,14 +289,16 @@ pub unsafe extern "system" fn HidParser_GetCollectionDescription(
         (*coll_desc).OutputLength = (*rep_ids).OutputLength;
         (*coll_desc).FeatureLength = (*rep_ids).FeatureLength;
 
-        // Adjust lengths for collection descriptor (inverse logic)
+        // Adjust lengths for collection descriptor (inverse logic). Only a report type the
+        // collection HAS gets the prepended ID byte: Windows reports FeatureLength 0 for a
+        // keyboard with no feature report, where the C said 1 (HidPDescription.c:168).
         let uses_input_coll = HidParser_UsesReportId(
             (*coll_desc).PreparsedData as PVOID,
             HID_REPORT_TYPE_INPUT,
         );
         let input_len_coll_ptr = core::ptr::addr_of_mut!((*coll_desc).InputLength);
         *input_len_coll_ptr = (*input_len_coll_ptr as i32
-            + if uses_input_coll == 0 { 1 } else { 0 }) as USHORT;
+            + if uses_input_coll == 0 && (*rep_ids).InputLength != 0 { 1 } else { 0 }) as USHORT;
 
         let uses_output_coll = HidParser_UsesReportId(
             (*coll_desc).PreparsedData as PVOID,
@@ -296,7 +306,7 @@ pub unsafe extern "system" fn HidParser_GetCollectionDescription(
         );
         let output_len_coll_ptr = core::ptr::addr_of_mut!((*coll_desc).OutputLength);
         *output_len_coll_ptr = (*output_len_coll_ptr as i32
-            + if uses_output_coll == 0 { 1 } else { 0 }) as USHORT;
+            + if uses_output_coll == 0 && (*rep_ids).OutputLength != 0 { 1 } else { 0 }) as USHORT;
 
         let uses_feature_coll = HidParser_UsesReportId(
             (*coll_desc).PreparsedData as PVOID,
@@ -304,7 +314,7 @@ pub unsafe extern "system" fn HidParser_GetCollectionDescription(
         );
         let feature_len_coll_ptr = core::ptr::addr_of_mut!((*coll_desc).FeatureLength);
         *feature_len_coll_ptr = (*feature_len_coll_ptr as i32
-            + if uses_feature_coll == 0 { 1 } else { 0 }) as USHORT;
+            + if uses_feature_coll == 0 && (*rep_ids).FeatureLength != 0 { 1 } else { 0 }) as USHORT;
 
         Index = Index.wrapping_add(1);
     }

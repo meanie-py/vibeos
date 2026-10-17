@@ -1,0 +1,12 @@
+# bwfm-rust — the Raspberry Pis' CYW43455 Wi-Fi (docs/engineering/pi-wifi-design.md). So far
+# only the host protocol (src/proto.rs), host-tested by tools/test_bwfm_proto.py; the SDIO
+# host, chip bring-up and the NDIS miniport follow.
+[package]
+name = "bwfm-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+
+[lib]
+name = "bwfm_rust"
+path = "src/lib.rs"

@@ -233,6 +233,9 @@ class Discovery:
         self.workspace = workspace.resolve()
         self.context = context
         self.reads: dict[str, dict] = {}
+        # Absolute path -> stat stamp of every file read and directory walked; see
+        # `unchanged`. Not part of the action key.
+        self.stamps: dict[str, list[int]] = {}
         self.manifests: dict[str, dict] = {}
         self.roots: dict[str, Path] = {}
         self.raw_manifests: dict[str, str] = {}
@@ -266,6 +269,7 @@ class Discovery:
             after.st_ctime_ns,
         ):
             raise Ineligible(f"input changed while reading: {logical}")
+        self.stamps[str(path.resolve())] = list(stamp)
         record = {"sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data)}
         if logical in self.reads and self.reads[logical] != record:
             raise Ineligible(f"input changed during discovery: {logical}")
@@ -511,6 +515,7 @@ class Discovery:
             if current_path == root:
                 dirnames[:] = [name for name in dirnames if name not in {"target", ".git"}]
             directories.append(current_path.relative_to(root).as_posix())
+            self.stamps[str(current_path.resolve()) + "/"] = _stamp(current_path.stat())
             for name in sorted(dirnames + filenames):
                 path = current_path / name
                 if path.is_symlink():
@@ -625,6 +630,33 @@ class Discovery:
             name = literal.group(1)
             if name not in PACKAGE_ENV and name not in self.context.get("environment", {}):
                 raise Ineligible(f"{key}: environment observation not declared: {name}")
+
+
+def _stamp(info: os.stat_result) -> list[int]:
+    return [info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns]
+
+
+def unchanged(discovery: dict) -> bool:
+    """Would `discover` see exactly what this discovery saw?
+
+    True only when every file it read and every directory it walked still has the same
+    (dev, inode, size, mtime_ns, ctime_ns). Any write moves ctime, and adding or removing
+    an entry moves its directory's, so an equal stamp set means the same inputs and the
+    same result. Anything else (a changed stamp, a vanished path, no stamps recorded)
+    answers False and the caller re-runs discovery in full: this is a fast path for the
+    common case, never a weaker check. It is what request revalidation spends: a second
+    full discovery cost as much as the first (~0.4 s, about half of every store hit).
+    """
+    stamps = discovery.get("provenance", {}).get("stamps")
+    if not stamps or not discovery.get("eligible"):
+        return False
+    for path, expected in stamps.items():
+        try:
+            if _stamp(os.stat(path.rstrip("/") or "/")) != expected:
+                return False
+        except OSError:
+            return False
+    return True
 
 
 def discover(
@@ -809,6 +841,7 @@ def discover(
         result["reasons"].append(str(error))
     result["provenance"] = {
         "reads": state.reads,
+        "stamps": state.stamps,
         "resolution": state.evidence,
         "elapsed_seconds": time.monotonic() - started,
         "identity_status": "projected live inputs; no immutable snapshot or executor authorization",

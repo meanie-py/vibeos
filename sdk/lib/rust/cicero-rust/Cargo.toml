@@ -11,6 +11,7 @@ path = "src/lib.rs"
 crate-type = ["rlib"]  # linked into each CTF module's staticlib, never on its own
 
 [dependencies]
+conutils-h = { path = "../conutils-h" }
 strsafe-rust = { path = "../strsafe-rust" }
 panic-common = { path = "../panic-common", features = ["user"] }
 ntdll-sys = { path = "../ntdll-sys" }

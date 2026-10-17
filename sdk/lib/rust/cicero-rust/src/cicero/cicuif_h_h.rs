@@ -1,137 +1,14 @@
 use crate::prelude::*;
+// Deterministic UTF-16 literals from the selected C++ helper closure.
+pub static CPP_COM_WSTR_26A6FBF4F41B: [WCHAR; 17] = [0x0043, 0x0069, 0x0063, 0x0065, 0x0072, 0x006F, 0x0055, 0x0049, 0x0057, 0x006E, 0x0064, 0x0046, 0x0072, 0x0061, 0x006D, 0x0065, 0x0000];
+pub static CPP_COM_WSTR_64D45D11D517: [WCHAR; 19] = [0x004D, 0x0053, 0x0049, 0x004D, 0x0045, 0x005F, 0x0050, 0x006F, 0x0070, 0x0075, 0x0070, 0x004D, 0x0065, 0x0073, 0x0073, 0x0061, 0x0067, 0x0065, 0x0000];
+
 use core::ffi::c_void;
 
-// ---- file-scope preamble (translated) ----
-pub static mut CUIFBitmapDC__s_fInitBitmapDCs: BOOL = (FALSE) as i32;
-pub static mut CUIFBitmapDC__s_phdcSrc: *mut CUIFBitmapDC = core::ptr::null_mut();
-pub static mut CUIFBitmapDC__s_phdcMask: *mut CUIFBitmapDC = core::ptr::null_mut();
-pub static mut CUIFBitmapDC__s_phdcDst: *mut CUIFBitmapDC = core::ptr::null_mut();
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+impl CUIFSystemInfo {
+    pub unsafe fn __ctor_0(&mut self) {
+        let this_: *mut Self = self;}
+}
 
 impl CUIFTheme {
     pub unsafe fn __ctor_0(&mut self) {
@@ -144,19 +21,19 @@ impl CUIFObjectArray {
     pub unsafe fn __ctor_0(&mut self) {
         let this_: *mut Self = self;
         (*this_).__init_vtables();
-        { }
+        {}
     }
     pub unsafe fn Add(&mut self, pObject: *mut CUIFObject) -> BOOL {
         let this_: *mut Self = self;
         if pObject.is_null() || (*this_).__base0.Find(pObject) >= 0 {
             return (FALSE) as BOOL;
         }
-    
+
         let ppNew: *mut *mut CUIFObject = (*this_).__base0.Append(1);
         if ppNew.is_null() {
             return (FALSE) as BOOL;
         }
-    
+
         *ppNew = pObject;
         return (TRUE) as BOOL;
     }
@@ -165,12 +42,12 @@ impl CUIFObjectArray {
             if pObject.is_null() {
                 return (FALSE) as BOOL;
             }
-    
+
             let iItem: isize = (*this_).__base0.Find(pObject);
             if iItem < 0 {
                 return (FALSE) as BOOL;
             }
-    
+
             if (iItem as size_t) + 1 < (*this_).__base0.size() {
                 MoveMemory!(
                     (*this_).__base0.data().offset(iItem) as *mut core::ffi::c_void,
@@ -179,7 +56,7 @@ impl CUIFObjectArray {
                         * core::mem::size_of::<*mut CUIFObject>(),
                 );
             }
-    
+
             (*this_).m_cItems -= 1;
             return (TRUE) as BOOL;
         }
@@ -195,7 +72,7 @@ impl CUIFObjectArray {
 impl CUIFObject {
     pub unsafe fn Initialize__body(&mut self) -> BOOL {
         let this_: *mut Self = self;
-        (TRUE) as i32
+        (TRUE as i32)
     }
     pub unsafe fn OnTimer__body(&mut self) {
         let this_: *mut Self = self;}
@@ -248,7 +125,7 @@ impl CUIFObject {
     pub unsafe fn OnPaintTheme__body(&mut self, hDC: HDC,
     ) -> BOOL {
         let this_: *mut Self = self;
-        (FALSE) as i32
+        (FALSE as i32)
     }
     pub unsafe fn OnPaintNoTheme__body(&mut self, hDC: HDC) {
         let this_: *mut Self = self;}
@@ -348,7 +225,7 @@ impl CUIFScheme {
     pub unsafe fn __ctor_0(&mut self) {
         let this_: *mut Self = self;
         (*this_).__init_vtables();
-        (*this_).m_bMirroring = (FALSE) as i32;
+        (*this_).m_bMirroring = (FALSE as i32);
         {}
     }
 }
@@ -378,26 +255,11 @@ impl CUIFWindow {
     }
     pub unsafe fn GetClassNameW__body(&mut self) -> LPCTSTR {
         let this_: *mut Self = self;
-        let _ = this_;
-        static CLASS_NAME: [u16; 17] = [
-            'C' as u16, 'i' as u16, 'c' as u16, 'e' as u16, 'r' as u16, 'o' as u16,
-            'U' as u16, 'I' as u16,
-            'W' as u16, 'n' as u16, 'd' as u16,
-            'F' as u16, 'r' as u16, 'a' as u16, 'm' as u16, 'e' as u16,
-            0,
-        ];
-        return core::ptr::addr_of!(CLASS_NAME) as LPCTSTR;
+        return CPP_COM_WSTR_26A6FBF4F41B.as_ptr();
     }
     pub unsafe fn GetWndTitle__body(&mut self) -> LPCTSTR {
         let this_: *mut Self = self;
-        static CiceroUIWndFrame: [u16; 17] = [
-            'C' as u16, 'i' as u16, 'c' as u16, 'e' as u16, 'r' as u16, 'o' as u16,
-            'U' as u16, 'I' as u16,
-            'W' as u16, 'n' as u16, 'd' as u16,
-            'F' as u16, 'r' as u16, 'a' as u16, 'm' as u16, 'e' as u16,
-            0,
-        ];
-        return CiceroUIWndFrame.as_ptr();
+        return CPP_COM_WSTR_26A6FBF4F41B.as_ptr();
     }
     pub unsafe fn OnMouseOutFromWindow__body(&mut self, x: LONG,
         y: LONG,
@@ -504,7 +366,7 @@ impl CUIFWindow {
         lParam: LPARAM,
     ) -> BOOL {
         let this_: *mut Self = self;
-        (FALSE) as i32
+        (FALSE as i32)
     }
     pub unsafe fn ModalMouseNotify__body(&mut self, uMsg: UINT,
         x: LONG,
@@ -549,22 +411,10 @@ impl CUIFToolbarButton {
 impl CUIFBalloonWindow {
     pub unsafe fn GetClassNameW__body(&mut self) -> LPCTSTR {
         let this_: *mut Self = self;
-        static CLASS_NAME: [u16; 19] = [
-            'M' as u16, 'S' as u16, 'I' as u16, 'M' as u16, 'E' as u16, '_' as u16,
-            'P' as u16, 'o' as u16, 'p' as u16, 'u' as u16, 'p' as u16, 'M' as u16,
-            'e' as u16, 's' as u16, 's' as u16, 'a' as u16, 'g' as u16, 'e' as u16,
-            0,
-        ];
-        return CLASS_NAME.as_ptr();
+        return CPP_COM_WSTR_64D45D11D517.as_ptr();
     }
     pub unsafe fn GetWndTitle__body(&mut self) -> LPCTSTR {
         let this_: *mut Self = self;
-        static MSIME_POPUPMESSAGE: [u16; 19] = [
-            'M' as u16, 'S' as u16, 'I' as u16, 'M' as u16, 'E' as u16, '_' as u16,
-            'P' as u16, 'o' as u16, 'p' as u16, 'u' as u16, 'p' as u16,
-            'M' as u16, 'e' as u16, 's' as u16, 's' as u16, 'a' as u16, 'g' as u16, 'e' as u16,
-            0,
-        ];
-        return MSIME_POPUPMESSAGE.as_ptr();
+        return CPP_COM_WSTR_64D45D11D517.as_ptr();
     }
 }

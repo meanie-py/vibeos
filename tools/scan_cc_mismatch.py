@@ -253,7 +253,7 @@ def convention_facts(src: str):
 SYS_USE_RE = re.compile(
     r"\buse\s+(?P<crate>\w+_sys)(?P<path>(?:::\w+)*)::(?P<tail>\{[^;]*\}|\w+)\s*;"
 )
-SYS_PATH_CALL_RE = re.compile(r"\b(?P<crate>\w+_sys)(?:::\w+)*::(?P<name>\w+)\s*\(")
+SYS_PATH_CALL_RE = re.compile(r"\b(?P<crate>\w+_sys)(?P<path>(?:::\w+)*)::(?P<name>\w+)\s*\(")
 
 
 def sys_crate_decls(crate_ident: str) -> dict[str, str]:
@@ -272,6 +272,26 @@ def sys_crate_decls(crate_ident: str) -> dict[str, str]:
 _SYS_CACHE: dict[str, dict[str, str]] = {}
 
 
+def sys_module_defines_rust_fn(crate_ident: str, path: str, name: str) -> bool:
+    """Whether `crate::path` is a module whose own source defines a Rust `fn name` with a body.
+
+    `ntkrnl_sys::inline::ke::KeInitializeSpinLock(..)` calls ke.h's FORCEINLINE ported to
+    Rust, not the bindgen extern of the same name elsewhere in the crate. Attributing that
+    call to the extern's convention made every kernel prelude that wraps the inline read as
+    a DECL_CC_SPLIT against the island's (correct) extern "system" declaration."""
+    segs = [seg for seg in path.split("::") if seg]
+    if not segs:
+        return False
+    src_dir = os.path.join(BASE, crate_ident.replace("_", "-"), "src")
+    for cand in (os.path.join(src_dir, *segs) + ".rs", os.path.join(src_dir, *segs, "mod.rs")):
+        if os.path.isfile(cand):
+            with open(cand, encoding="utf-8", errors="replace") as f:
+                text = f.read()
+            body = rf"^\s*pub\s+(?:unsafe\s+)?fn\s+{re.escape(name)}\s*\([^;{{]*\)[^;{{]*\{{"
+            return re.search(body, text, re.M) is not None
+    return False
+
+
 def sys_imports(src: str) -> list[tuple[str, str, int]]:
     """(symbol, convention, line) for each extern fn this file pulls in from a `-sys` crate,
     by a named `use` or a qualified call. Glob imports are not followed: a local declaration
@@ -282,10 +302,14 @@ def sys_imports(src: str) -> list[tuple[str, str, int]]:
         tail = m.group("tail")
         names = re.findall(r"\b(\w+)\b(?:\s+as\s+\w+)?", tail.strip("{}"))
         for name in names:
+            if sys_module_defines_rust_fn(m.group("crate"), m.group("path"), name):
+                continue
             cc = sys_crate_decls(m.group("crate")).get(name)
             if cc:
                 out.append((name, cc, src.count("\n", 0, m.start()) + 1))
     for m in SYS_PATH_CALL_RE.finditer(src):
+        if sys_module_defines_rust_fn(m.group("crate"), m.group("path"), m.group("name")):
+            continue
         cc = sys_crate_decls(m.group("crate")).get(m.group("name"))
         if cc:
             out.append((m.group("name"), cc, src.count("\n", 0, m.start()) + 1))

@@ -15,6 +15,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+from . import rustlints
 from .artifacts import Run, Stage
 
 BASELINE_DIR = "tools/lint-baseline"
@@ -648,6 +649,18 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A C++ qualified base call (`ToolBase::OnEndDraw(b)`, non-virtual) translated as the
+    # base's VIRTUAL dispatcher from inside the override itself: infinite recursion. 36 sites
+    # shipped in cicero/mspaint/msutb/msctfime (2026-10-16), every mspaint stroke among them,
+    # and smoke reached none. Baseline is EMPTY.
+    sod = repo / "tools" / "scan_override_self_dispatch.py"
+    specs.append(
+        (
+            "scan_override_self_dispatch",
+            [py, str(sod), "--lint"] if sod.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # An array FIELD passed by value to a C variadic (`note("%s", (*ip).name)`): C decays
     # it to a pointer, Rust passes the array, and only i386 copies the bytes onto the stack,
     # so `%s` reads the string's first four bytes as a pointer. The i386 DHCP client died on
@@ -687,6 +700,8 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         "scan_store_on_failure",
         "scan_bool_width",
         "scan_cfg_vs_c",
+        "scan_version_vs_c",
+        "null_offset_to_offset_of",
         "scan_constant_placement",
     ):
         script = repo / "tools" / f"{lint_name}.py"
@@ -1720,7 +1735,12 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # no-op under a check-only scan — then wire it here as a strict 0-baseline.
     # The bind-all *fixes* themselves are already in the tree and compile-verified.
 
-    return specs
+    return [
+        (name, [rustlints.SENTINEL, name], "stdout")
+        if name in rustlints.PORTED
+        else (name, cmd, src)
+        for name, cmd, src in specs
+    ]
 
 
 # Audited CLI paths read Rust sources only and prune Cargo output before traversal.
@@ -1790,22 +1810,43 @@ def run_source_lints(
             raise ValueError(f"empty or unknown scanner selection: {sorted(unknown)}")
     todo = [(n, c, s) for n, c, s in specs if only is None or n in only]
     # NOCHECK/MISSING never spawn anything; they are classified in phase 2 alone.
-    runnable = [(n, c) for n, c, _ in todo if c[0] not in ("NOCHECK", "MISSING")]
+    ported = [n for n, c, _ in todo if c[0] == rustlints.SENTINEL]
+    runnable = [
+        (n, c) for n, c, _ in todo if c[0] not in ("NOCHECK", "MISSING", rustlints.SENTINEL)
+    ]
     done: dict[str, subprocess.CompletedProcess] = {}
-    workers = min(lint_jobs(), len(runnable))
+    workers = min(lint_jobs(), len(runnable) + bool(ported))
     if workers > 1:
         from concurrent.futures import ThreadPoolExecutor
 
         # Threads, not processes: each worker blocks in subprocess.run, which holds
         # no GIL, and `Run.run` already serialises its own log writes under a lock.
         with ThreadPoolExecutor(max_workers=workers) as pool:
+            shared = (
+                pool.submit(
+                    rustlints.run_many,
+                    repo,
+                    ported,
+                    lambda cmd: run.run(cmd, cwd=repo, stage="lint:vibeos-lint"),
+                )
+                if ported
+                else None
+            )
             futures = {
                 name: pool.submit(run.run, cmd, cwd=repo, stage=f"lint:{name}")
                 for name, cmd in runnable
             }
             for name, fut in futures.items():
                 done[name] = fut.result()
+            if shared is not None:
+                done.update(shared.result())
     else:
+        if ported:
+            done.update(
+                rustlints.run_many(
+                    repo, ported, lambda cmd: run.run(cmd, cwd=repo, stage="lint:vibeos-lint")
+                )
+            )
         for name, cmd in runnable:
             done[name] = run.run(cmd, cwd=repo, stage=f"lint:{name}")
     for name, cmd, src in todo:
@@ -1841,13 +1882,32 @@ def write_baselines(repo: Path, only: set[str] | None = None) -> dict:
     out: dict = {}
     bdir = repo / BASELINE_DIR
     bdir.mkdir(parents=True, exist_ok=True)
-    for name, cmd, src in source_lint_specs(repo):
+    specs = source_lint_specs(repo)
+    ported = [n for n, c, _ in specs if c[0] == rustlints.SENTINEL and (only is None or n in only)]
+    shared = (
+        rustlints.run_many(
+            repo,
+            ported,
+            lambda cmd: subprocess.run(cmd, cwd=repo, capture_output=True, text=True, timeout=600),
+        )
+        if ported
+        else {}
+    )
+    # Refuse the whole update before touching any baseline if the shared scan failed.
+    for name, cp in shared.items():
+        if _scanner_error(cp, "stdout"):
+            raise RuntimeError(f"SCANNER_ERROR: {name} did not complete; refusing baseline update")
+    for name, cmd, src in specs:
         if only is not None and name not in only:
             continue
         if cmd[0] == "MISSING":
             continue
         try:
-            cp = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, timeout=600)
+            cp = (
+                shared[name]
+                if name in shared
+                else subprocess.run(cmd, cwd=repo, capture_output=True, text=True, timeout=600)
+            )
         except (OSError, subprocess.SubprocessError):
             continue
         if _scanner_error(cp, src):
@@ -1989,6 +2049,7 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         run.add(Stage("scan_xchg_ebx_deref", status="skip", detail="no binary"))
         run.add(Stage("scan_unresolved_imports", status="skip", detail="no binary"))
         run.add(Stage("freeldr_size", status="skip", detail="no binary"))
+        run.add(Stage("rust_ub_deny", status="skip", detail="no binary"))
         return
     # The BIOS loader runs in real-mode memory and bug-checks itself at boot when its PE
     # outgrows MAX_FREELDR_PE_SIZE. Restoring freeldr's debug prints did exactly that and
@@ -2025,6 +2086,22 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         strict=strict,
         by_exit_code=True,
         cp=_sacred_analysis(run, repo, arch, sp) if sp.is_file() else None,
+    )
+    # rustc lints this tree burned to zero and must stay there: `invalid_value`
+    # (mem::zeroed/uninit of a type with no all-zero value) and `deref_nullptr` (a place
+    # through null, most often CONTAINING_RECORD's offsetof; 78 sites became
+    # core::mem::offset_of! 2026-10-16). Read from this build's own cargo cache, so it costs
+    # no rebuild and changes no rustflag (which would re-key every artifact-store action).
+    census = repo / "tools" / "rust_warning_census.py"
+    _lint_stage(
+        run,
+        repo,
+        "rust_ub_deny",
+        [py, str(census), str(build_dir), "--allow-stale", "--deny", "invalid_value,deref_nullptr"]
+        if census.is_file()
+        else ["MISSING"],
+        strict=strict,
+        by_exit_code=True,
     )
     # A function whose first instruction jumps to itself = a silent infinite hang.
     # Caught bootvid's self-recursive Rust memcpy/memset (stable-toolchain Axis B);

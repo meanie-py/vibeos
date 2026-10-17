@@ -1,2 +1,3 @@
 boot/freeldr/freeldr/machpc.c: pack-drift PNP_DOCK_INFO is pshpack1 in the C, #[repr(C)] in the Rust
 boot/freeldr/freeldr/uefildr.h: pack-drift ACPI_BIOS_DATA is pshpack1 in the C, #[repr(C)] in the Rust
+dll/win32/mmdrv/mmddk.h: pack-drift joyrange_tag is pshpack1 in the C, #[repr(C)] in the Rust
