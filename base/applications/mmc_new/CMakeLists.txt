@@ -6,7 +6,7 @@ add_definitions(-D_ATL_NO_EXCEPTIONS)
 
 list(APPEND CPP_SOURCE
     # CAboutSnapinDialog.cpp  # replaced by Rust (sdk/lib/rust/mmc_new-rust/src/mmc_new/CAboutSnapinDialog_cpp_h.rs)
-    # CActionWnd.cpp  # upstream 88da81d9b8b's action pane: not translated yet (the Rust is from before it); owed to mmc_new-rust
+    # CActionWnd.cpp  # replaced by Rust (sdk/lib/rust/mmc_new-rust/src/mmc_new/CActionWnd_cpp_h.rs)
     # CAddAdvancedDialog.cpp  # replaced by Rust (sdk/lib/rust/mmc_new-rust/src/mmc_new/CAddAdvancedDialog_cpp_h.rs)
     # CAddDialog.cpp  # replaced by Rust (sdk/lib/rust/mmc_new-rust/src/mmc_new/CAddDialog_cpp_h.rs)
     # CConsoleWnd.cpp  # replaced by Rust (sdk/lib/rust/mmc_new-rust/src/mmc_new/CConsoleWnd_cpp_h.rs)

@@ -1340,11 +1340,12 @@ class TestFlippedModule:
             "rust_strsafe_shim.c",
             "rust_cohab_fat.c",
             "rust_layout_assert.c",
+            "rust_cohab_stub.cpp",
         ):
             assert is_shim_tu(Path("dll/cpl/sysdm") / name), name
 
     def test_a_real_tu_is_not_mistaken_for_scaffolding(self):
-        for name in ("sysdm.c", "environment.c", "rustle.c", "trust.c"):
+        for name in ("sysdm.c", "environment.c", "rustle.c", "trust.c", "rustle.cpp"):
             assert not is_shim_tu(Path("dll/cpl/sysdm") / name), name
 
     def test_a_commented_out_source_list_is_restored(self):
@@ -1854,3 +1855,22 @@ def test_late_includes_are_file_scope_and_live_only():
     live, undecided = late_includes(src)
     assert live == [(4, "#include <msxml2.h>"), (20, '#include "after.h"')]
     assert undecided == [(10, "#include <maybe.h>")]
+
+
+def test_a_cpp_cohab_stub_is_a_shim_not_a_translation_unit():
+    """A flipped C++ app keeps rust_cohab_stub.cpp; rapps recorded it as a TU."""
+    assert is_shim_tu(Path("base/applications/rapps/rust_cohab_stub.cpp"))
+    assert is_shim_tu(Path("dll/win32/x/rust_varargs_shim.c"))
+    assert not is_shim_tu(Path("base/applications/rapps/appview.cpp"))
+    assert not is_shim_tu(Path("base/applications/rapps/rust_notes.h"))
+
+
+def test_only_exported_macros_are_reexported(tmp_path):
+    (tmp_path / "lib.rs").write_text(
+        "#[macro_export]\nmacro_rules! ZeroMemory { () => {} }\n"
+        "#[macro_export]\n#[doc(hidden)]\nmacro_rules! HIWORD { () => {} }\n"
+        "pub fn f() {\n    macro_rules! at { () => {} }\n}\n"
+    )
+    from rustconv.profile_derive import exported_macro_names
+
+    assert exported_macro_names(tmp_path) == ["HIWORD", "ZeroMemory"]

@@ -4,6 +4,7 @@ pub static CPP_COM_WSTR_00E356A89DA4: [WCHAR; 14] = [0x0043, 0x006F, 0x006D, 0x0
 pub static CPP_COM_WSTR_34582C35F59D: [WCHAR; 9] = [0x0049, 0x006D, 0x0061, 0x0067, 0x0065, 0x0049, 0x0064, 0x0078, 0x0000];
 pub static CPP_COM_WSTR_4F8320D91E97: [WCHAR; 2] = [0x0030, 0x0000];
 pub static CPP_COM_WSTR_578E89C9480F: [WCHAR; 3] = [0x0049, 0x0044, 0x0000];
+pub static CPP_COM_WSTR_69A283E639E4: [WCHAR; 3] = [0x0025, 0x0075, 0x0000];
 pub static CPP_COM_WSTR_733FB8CD60A4: [WCHAR; 6] = [0x004E, 0x006F, 0x0064, 0x0065, 0x0073, 0x0000];
 pub static CPP_COM_WSTR_76E480513E2C: [WCHAR; 5] = [0x004E, 0x0061, 0x006D, 0x0065, 0x0000];
 pub static CPP_COM_WSTR_9FF502938D7D: [WCHAR; 7] = [0x0053, 0x0074, 0x0072, 0x0069, 0x006E, 0x0067, 0x0000];
@@ -16,6 +17,10 @@ pub static CPP_COM_WSTR_CA7636CE488C: [WCHAR; 5] = [0x004E, 0x006F, 0x0064, 0x00
 pub static CPP_COM_WSTR_CD28B1A69262: [WCHAR; 5] = [0x0074, 0x0072, 0x0075, 0x0065, 0x0000];
 
 use core::ffi::c_void;
+
+
+
+
 
 
 
@@ -49,10 +54,11 @@ impl CSnapin {
         }
         (*this_).m_SubNodes.RemoveAll();
     }
-    pub unsafe fn __ctor_0(&mut self, CacheEntry: *mut CSnapinCacheEntry, displayName: PWSTR) {
+    pub unsafe fn __ctor_0(&mut self, CacheEntry: *mut CSnapinCacheEntry, NodeId: UINT, displayName: PWSTR) {
         let this_: *mut Self = self;
         (*this_).m_CacheEntry = CacheEntry;
         {
+            (*this_).m_NodeId = NodeId;
             if !displayName.is_null() {
                 (*this_).m_DisplayName = CAtlString::from_ptr(displayName);
             } else {
@@ -88,6 +94,10 @@ impl CSnapin {
         let this_: *mut Self = self;
         (*this_).m_DisplayName = CAtlString::from_ptr(pszName);
     }
+    pub unsafe fn GetNodeId(&mut self) -> UINT {
+        let this_: *mut Self = self;
+        (*this_).m_NodeId
+    }
     pub unsafe fn CacheEntry(&mut self) -> *mut CSnapinCacheEntry {
         let this_: *mut Self = self;
         (*this_).m_CacheEntry
@@ -106,35 +116,37 @@ impl CSnapin {
         let mut pComponentDataElement: *mut IXMLDOMElement = core::ptr::null_mut();
         let mut pComponentsElement: *mut IXMLDOMElement = core::ptr::null_mut();
         let mut pos: POSITION;
-        let mut SubNode: *mut CSnapin;
+        let mut SubNode: *mut CSnapin = core::ptr::null_mut();
+        let mut szBuffer: [u16; 32] = [0; 32];
         let mut hr: HRESULT = S_OK;
-    
-        /* <Node ID="3" ImageIdx="0" CLSID="{C96401CC-0E17-11D3-885B-00C04F72C717}" Preload="true"> */
+
         'CleanUp: {
+            /* <Node ID="3" ImageIdx="0" CLSID="{C96401CC-0E17-11D3-885B-00C04F72C717}" Preload="true"> */
             hr = (*mscFile).CreateAndAddElementNode(CPP_COM_WSTR_CA7636CE488C.as_ptr(), (pParentNode).cast(), core::ptr::addr_of_mut!(pNodeElement));
-            if hr < 0 {
+            if hr < 0 { // FAILED(hr)
                 break 'CleanUp;
             }
-            hr = (*mscFile).CreateAndAddAttributeNode(CPP_COM_WSTR_578E89C9480F.as_ptr(), CPP_COM_WSTR_4F8320D91E97.as_ptr(), pNodeElement);
-            if hr < 0 {
+            _swprintf(szBuffer.as_mut_ptr(), CPP_COM_WSTR_69A283E639E4.as_ptr(), (*this_).m_NodeId);
+            hr = (*mscFile).CreateAndAddAttributeNode(CPP_COM_WSTR_578E89C9480F.as_ptr(), szBuffer.as_ptr(), pNodeElement);
+            if hr < 0 { // FAILED(hr)
                 break 'CleanUp;
-            } /* FIXME */
-            hr = (*mscFile).CreateAndAddAttributeNode(CPP_COM_WSTR_34582C35F59D.as_ptr(), CPP_COM_WSTR_4F8320D91E97.as_ptr(), pNodeElement);
-            if hr < 0 {
+            }
+            hr = (*mscFile).CreateAndAddAttributeNode(CPP_COM_WSTR_34582C35F59D.as_ptr(), CPP_COM_WSTR_4F8320D91E97.as_ptr(), pNodeElement); /* FIXME */
+            if hr < 0 { // FAILED(hr)
                 break 'CleanUp;
-            } /* FIXME */
+            }
             hr = (*mscFile).CreateAndAddAttributeNode(CPP_COM_WSTR_AFF3436D7481.as_ptr(), (*(*this_).CacheEntry()).GuidString().GetString(), pNodeElement);
-            if hr < 0 {
+            if hr < 0 { // FAILED(hr)
                 break 'CleanUp;
             }
-            hr = (*mscFile).CreateAndAddAttributeNode(CPP_COM_WSTR_B1C7484FA096.as_ptr(), CPP_COM_WSTR_CD28B1A69262.as_ptr(), pNodeElement);
-            if hr < 0 {
+            hr = (*mscFile).CreateAndAddAttributeNode(CPP_COM_WSTR_B1C7484FA096.as_ptr(), CPP_COM_WSTR_CD28B1A69262.as_ptr(), pNodeElement); /* FIXME */
+            if hr < 0 { // FAILED(hr)
                 break 'CleanUp;
-            } /* FIXME */
-    
+            }
+
             /* <Nodes> */
             hr = (*mscFile).CreateAndAddElementNode(CPP_COM_WSTR_733FB8CD60A4.as_ptr(), (pNodeElement).cast(), core::ptr::addr_of_mut!(pNodesElement));
-            if hr < 0 {
+            if hr < 0 { // FAILED(hr)
                 break 'CleanUp;
             }
             pos = (*this_).m_SubNodes.GetHeadPosition();
@@ -145,21 +157,21 @@ impl CSnapin {
                 }
             }
             SAFE_RELEASE!(pNodesElement); /* </Nodes> */
-    
+
             /* <String Name="Name" ID="2"/> */
             hr = (*mscFile).CreateAndAddElementNode(CPP_COM_WSTR_9FF502938D7D.as_ptr(), (pNodeElement).cast(), core::ptr::addr_of_mut!(pStringElement));
-            if hr < 0 {
+            if hr < 0 { // FAILED(hr)
                 break 'CleanUp;
             }
-            hr = (*mscFile).CreateAndAddAttributeNode(CPP_COM_WSTR_76E480513E2C.as_ptr(), (*this_).m_DisplayName.GetString(), pStringElement);
-            if hr < 0 {
+            hr = (*mscFile).CreateAndAddAttributeNode(CPP_COM_WSTR_76E480513E2C.as_ptr(), (*this_).m_DisplayName.GetString(), pStringElement); /* FIXME */
+            if hr < 0 { // FAILED(hr)
                 break 'CleanUp;
-            } /* FIXME */
+            }
             SAFE_RELEASE!(pStringElement); /* </String> */
-    
+
             /* <Bitmaps> */
             hr = (*mscFile).CreateAndAddElementNode(CPP_COM_WSTR_C1B1DB869951.as_ptr(), (pNodeElement).cast(), core::ptr::addr_of_mut!(pBitmapsElement));
-            if hr < 0 {
+            if hr < 0 { // FAILED(hr)
                 break 'CleanUp;
             }
             /*
@@ -167,15 +179,15 @@ impl CSnapin {
                     <BinaryData Name="Large" BinaryRefIndex="4"/>
             */
             SAFE_RELEASE!(pBitmapsElement); /* </Bitmaps> */
-    
+
             /* <ComponentDatas> */
             hr = (*mscFile).CreateAndAddElementNode(CPP_COM_WSTR_B520369E2316.as_ptr(), (pNodeElement).cast(), core::ptr::addr_of_mut!(pComponentDatasElement));
-            if hr < 0 {
+            if hr < 0 { // FAILED(hr)
                 break 'CleanUp;
             }
             /* <ComponentData> */
             hr = (*mscFile).CreateAndAddElementNode(CPP_COM_WSTR_00E356A89DA4.as_ptr(), (pComponentDatasElement).cast(), core::ptr::addr_of_mut!(pComponentDataElement));
-            if hr < 0 {
+            if hr < 0 { // FAILED(hr)
                 break 'CleanUp;
             }
             /*
@@ -184,16 +196,161 @@ impl CSnapin {
             */
             SAFE_RELEASE!(pComponentDataElement); /* </ComponentData> */
             SAFE_RELEASE!(pComponentDatasElement); /* </ComponentDatas> */
-    
+
             /* <Components /> */
             hr = (*mscFile).CreateAndAddElementNode(CPP_COM_WSTR_BCC77CD05CF3.as_ptr(), (pNodeElement).cast(), core::ptr::addr_of_mut!(pComponentsElement));
-            if hr < 0 {
+            if hr < 0 { // FAILED(hr)
                 break 'CleanUp;
             }
             SAFE_RELEASE!(pComponentsElement); /* </Components> */
         }
-    
-        /* CleanUp: */
+
+        // CleanUp:
         SAFE_RELEASE!(pNodeElement); /* </Node> */
+    }
+    pub unsafe fn ParseSnapin(pMainWnd: *mut CMainWnd, mscFile: *mut MscFile, pSnapinNode: *mut IXMLDOMElement, ppSnapin: *mut *mut CSnapin) -> HRESULT {
+        let mut SnapinID: VARIANT = core::mem::zeroed();
+        let mut SnapinCLSID: VARIANT = core::mem::zeroed();
+        let mut SnapinDisplayName: VARIANT = core::mem::zeroed();
+        let mut pStringElement: *mut IXMLDOMElement = core::ptr::null_mut();
+        let mut pNodesElement: *mut IXMLDOMElement = core::ptr::null_mut();
+        let mut pChildList: *mut IXMLDOMNodeList = core::ptr::null_mut();
+        let mut pwstr: PWSTR = core::ptr::null_mut();
+        let mut pCacheEntry: *mut CSnapinCacheEntry = core::ptr::null_mut();
+        let mut pSnapin: *mut CSnapin = core::ptr::null_mut();
+        let mut uSnapinId: UINT = 0;
+        let mut hr: HRESULT = S_OK;
+
+        VariantInit(core::ptr::addr_of_mut!(SnapinID));
+        VariantInit(core::ptr::addr_of_mut!(SnapinCLSID));
+        VariantInit(core::ptr::addr_of_mut!(SnapinDisplayName));
+
+        'done: {
+            /* Read the ID attribute */
+            hr = (*mscFile).GetAttribute(pSnapinNode, CPP_COM_WSTR_578E89C9480F.as_ptr() as LPWSTR, core::ptr::addr_of_mut!(SnapinID));
+            if hr != S_OK {
+                break 'done;
+            }
+
+            /* Read the CLSID attribute */
+            hr = (*mscFile).GetAttribute(pSnapinNode, CPP_COM_WSTR_AFF3436D7481.as_ptr() as LPWSTR, core::ptr::addr_of_mut!(SnapinCLSID));
+            if hr != S_OK {
+                break 'done;
+            }
+
+            /* FIXME: Read the ImageIdx attribute */
+            /* FIXME: Read the Preload attribute */
+
+            /* Open the String Element */
+            hr = (*mscFile).GetElement(pSnapinNode, CPP_COM_WSTR_9FF502938D7D.as_ptr() as LPWSTR, core::ptr::addr_of_mut!(pStringElement));
+            if hr != S_OK {
+                break 'done;
+            }
+
+            /* Read the Name attribute */
+            hr = (*mscFile).GetAttribute(pStringElement, CPP_COM_WSTR_76E480513E2C.as_ptr() as LPWSTR, core::ptr::addr_of_mut!(SnapinDisplayName));
+            if hr != S_OK {
+                break 'done;
+            }
+
+            /* FIXME: Use a string cache and the ID attribute instead of Name later */
+
+            /* Create the Snap-in */
+            pCacheEntry = (*pMainWnd).GetSnapinCacheEntryByGuid(V_BSTR!(core::ptr::addr_of_mut!(SnapinCLSID)));
+            if pCacheEntry.is_null() {
+                hr = E_FAIL;
+                break 'done;
+            }
+
+            uSnapinId = wcstoul(V_BSTR!(core::ptr::addr_of_mut!(SnapinID)), core::ptr::addr_of_mut!(pwstr), 10) as UINT;
+            (*pMainWnd).UpdateNextNodeId(uSnapinId);
+
+            pSnapin = CSnapin__new_0(pCacheEntry,
+                                  uSnapinId,
+                                  V_BSTR!(core::ptr::addr_of_mut!(SnapinDisplayName)));
+            if pSnapin.is_null() {
+                hr = E_FAIL;
+                break 'done;
+            }
+
+            /* Add the Snap-in to the temporary node map */
+            (*(*pMainWnd).m_TempNodeMap).Add(uSnapinId, pSnapin);
+
+            /* FIXME: Read the Bitmaps element */
+            /* FIXME: Read the ComponentDatas element */
+            /* FIXME: Read the Component element */
+
+            /* Get the Nodes element */
+            hr = (*mscFile).GetElement(pSnapinNode, CPP_COM_WSTR_733FB8CD60A4.as_ptr() as LPWSTR, core::ptr::addr_of_mut!(pNodesElement));
+            if hr != S_OK {
+                break 'done;
+            }
+
+            hr = (*pNodesElement).get_childNodes(core::ptr::addr_of_mut!(pChildList));
+            if hr < 0 {
+                break 'done;
+            }
+        }
+
+        // done:
+        if !pStringElement.is_null() {
+            (*pStringElement).Release();
+        }
+
+        // Divergence: the C re-runs VariantInit here, on VARIANTs GetAttribute filled with
+        // BSTRs, which leaks all three strings for every node parsed; clear them instead.
+        VariantClear(core::ptr::addr_of_mut!(SnapinDisplayName));
+        VariantClear(core::ptr::addr_of_mut!(SnapinCLSID));
+        VariantClear(core::ptr::addr_of_mut!(SnapinID));
+
+        /* Parse Nodes Element and create Sub-Snapins */
+        if !pChildList.is_null() {
+            let mut nextItem: *mut IXMLDOMNode = core::ptr::null_mut();
+            let mut NodeType: DOMNodeType = core::mem::zeroed();
+            let mut NodeName: BSTR = core::ptr::null_mut();
+
+            loop {
+                hr = (*pChildList).nextNode(core::ptr::addr_of_mut!(nextItem));
+                if hr == S_FALSE {
+                    hr = S_OK;
+                    break;
+                }
+
+                hr = (*nextItem).get_nodeType(core::ptr::addr_of_mut!(NodeType));
+                if hr == S_OK {
+                    if NodeType == NODE_ELEMENT {
+                        NodeName = core::ptr::null_mut();
+                        hr = (*nextItem).get_baseName(core::ptr::addr_of_mut!(NodeName));
+                        if hr == S_OK {
+                            if _wcsicmp(NodeName, CPP_COM_WSTR_CA7636CE488C.as_ptr()) == 0 {
+                                let mut pSubSnapin: *mut CSnapin = core::ptr::null_mut();
+                                hr = CSnapin::ParseSnapin(pMainWnd, mscFile, nextItem as *mut IXMLDOMElement, core::ptr::addr_of_mut!(pSubSnapin));
+                                if hr == S_OK {
+                                    (*pSnapin).m_SubNodes.AddTail(pSubSnapin);
+                                }
+                            }
+                            SysFreeString(NodeName);
+                            NodeName = core::ptr::null_mut();
+                        }
+                    }
+                }
+
+                (*nextItem).Release();
+            }
+
+            (*pChildList).Release();
+
+            if !NodeName.is_null() {
+                SysFreeString(NodeName);
+            }
+        }
+
+        if !pNodesElement.is_null() {
+            (*pNodesElement).Release();
+        }
+
+        *ppSnapin = pSnapin;
+
+        hr
     }
 }

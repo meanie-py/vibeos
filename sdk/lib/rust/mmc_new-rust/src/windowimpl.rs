@@ -28,7 +28,7 @@ use atl_rust::win::MessageMap;
 use core::ffi::c_void;
 
 extern "system" {
-    pub fn CreateWindowExW(
+    fn CreateWindowExW(
         dwExStyle: DWORD,
         lpClassName: LPCWSTR,
         lpWindowName: LPCWSTR,
@@ -50,6 +50,13 @@ extern "system" {
     fn GetPropW(hWnd: HWND, lpString: LPCWSTR) -> HANDLE;
     fn RemovePropW(hWnd: HWND, lpString: LPCWSTR) -> HANDLE;
     fn GetCurrentThreadId() -> DWORD;
+    // `GetWindowLongPtrW` is a macro over `GetWindowLongW` on i386, an export elsewhere.
+    #[cfg_attr(target_arch = "x86", link_name = "GetWindowLongW")]
+    #[cfg_attr(not(target_arch = "x86"), link_name = "GetWindowLongPtrW")]
+    pub fn GetWindowLongPtr(hwnd: HWND, index: c_int) -> LONG_PTR;
+    #[cfg_attr(target_arch = "x86", link_name = "SetWindowLongW")]
+    #[cfg_attr(not(target_arch = "x86"), link_name = "SetWindowLongPtrW")]
+    pub fn SetWindowLongPtr(hwnd: HWND, index: c_int, value: LONG_PTR) -> LONG_PTR;
 }
 
 /// `typedef _ATL_WNDCLASSINFOW CWndClassInfo;`
@@ -216,7 +223,7 @@ pub unsafe extern "system" fn StartWindowProc(hWnd: HWND, uMsg: UINT, wParam: WP
 unsafe fn bind_and_dispatch<T: AtlWindowImpl>(pThis: *mut c_void, hWnd: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
     let this = pThis as *mut T;
     SetPropW(hWnd, PROP_THIS.as_ptr(), pThis);
-    SetWindowLongPtr(hWnd, GWLP_WNDPROC, window_proc::<T> as unsafe extern "system" fn(HWND, UINT, WPARAM, LPARAM) -> LRESULT as usize as isize);
+    SetWindowLongPtr(hWnd, GWLP_WNDPROC, window_proc::<T> as unsafe extern "system" fn(HWND, UINT, WPARAM, LPARAM) -> LRESULT as usize as LONG_PTR);
     *(*this).hwnd_slot() = hWnd as _;
     window_proc::<T>(hWnd, uMsg, wParam, lParam)
 }
@@ -244,7 +251,7 @@ unsafe extern "system" fn window_proc<T: AtlWindowImpl>(hWnd: HWND, uMsg: UINT, 
             lResult = (*this).atl_def_window_proc(uMsg, wParam, lParam);
             let sup = *(*this).atl_super();
             if sup.map(|f| f as usize) != Some(DefWindowProcW as usize) && sup.is_some() && saveWindowProc == GetWindowLongPtr(hWnd, GWLP_WNDPROC) {
-                SetWindowLongPtr(hWnd, GWLP_WNDPROC, sup.map_or(0, |f| f as usize) as isize);
+                SetWindowLongPtr(hWnd, GWLP_WNDPROC, sup.map_or(0, |f| f as usize) as LONG_PTR);
             }
             *(*this).atl_state() |= WINSTATE_DESTROYED;
         } else {
@@ -373,20 +380,29 @@ macro_rules! atl_window_impl {
                 t(self)
             }
         }
-        impl $cls {
-            /// ATL `DefWindowProc(uMsg, wParam, lParam)`: the superclass procedure.
-            pub unsafe fn DefWindowProc(&mut self, msg: UINT, w: WPARAM, l: LPARAM) -> LRESULT {
-                self.atl_def_window_proc(msg, w, l)
-            }
-        }
     };
 }
 pub(crate) use atl_window_impl;
 
 atl_window_impl!(CMainWnd, |s| core::ptr::addr_of!(s.m_FrameThunk));
 atl_window_impl!(CConsoleWnd, |_s| core::ptr::null());
+atl_window_impl!(CActionWnd, |_s| core::ptr::null());
+
+// Written out per class, not by the macro: `port cppapp` reads these `impl` blocks to know
+// the generic atl_rust glue (whose DefWindowProc ignores m_pfnSuperWindowProc) is not wanted.
+impl CConsoleWnd {
+    /// ATL `DefWindowProc(uMsg, wParam, lParam)`: the superclass procedure (DefMDIChildProc).
+    pub unsafe fn DefWindowProc(&mut self, msg: UINT, w: WPARAM, l: LPARAM) -> LRESULT {
+        self.atl_def_window_proc(msg, w, l)
+    }
+}
 
 impl CMainWnd {
+    /// ATL `DefWindowProc(uMsg, wParam, lParam)`: the superclass procedure (m_FrameThunk's
+    /// XDefFrameProc).
+    pub unsafe fn DefWindowProc(&mut self, msg: UINT, w: WPARAM, l: LPARAM) -> LRESULT {
+        self.atl_def_window_proc(msg, w, l)
+    }
     /// `CWindowImpl<CMainWnd>::Create(hWndParent, rect, szWindowName, dwStyle, dwExStyle,
     /// MenuOrID, lpCreateParam)`.
     #[allow(clippy::too_many_arguments)]
@@ -404,6 +420,45 @@ impl CMainWnd {
         window_impl_create(
             this,
             CMainWnd::GetWndClassInfo(),
+            core::ptr::addr_of_mut!((*this).m_thunk),
+            hWndParent,
+            rect,
+            szWindowName,
+            dwStyle,
+            dwExStyle,
+            MenuOrID,
+            lpCreateParam,
+        )
+    }
+}
+
+/// The action pane (upstream 88da81d9b8b) is a plain `CWindowImpl<CActionWnd>` child, but its
+/// class is registered up front by `CMMCModule::PreMessageLoop` through
+/// `GetWndClassInfo().Register()` with `StartWindowProc`, exactly like CConsoleWnd's -- so it
+/// is bound by the same `AddCreateWndData` queue, not by atl_rust's per-class procedure (a
+/// class already registered with this module's `StartWindowProc` would never see that one).
+impl CActionWnd {
+    /// ATL `DefWindowProc(uMsg, wParam, lParam)`: `m_pfnSuperWindowProc`, i.e. ::DefWindowProc.
+    pub unsafe fn DefWindowProc(&mut self, msg: UINT, w: WPARAM, l: LPARAM) -> LRESULT {
+        self.atl_def_window_proc(msg, w, l)
+    }
+    /// `CWindowImpl<CActionWnd>::Create(hWndParent, rect, szWindowName, dwStyle, dwExStyle,
+    /// MenuOrID, lpCreateParam)`.
+    #[allow(clippy::too_many_arguments)]
+    pub unsafe fn Create(
+        &mut self,
+        hWndParent: HWND,
+        rect: *mut RECT,
+        szWindowName: LPCWSTR,
+        dwStyle: DWORD,
+        dwExStyle: DWORD,
+        MenuOrID: UINT,
+        lpCreateParam: LPVOID,
+    ) -> HWND {
+        let this: *mut CActionWnd = self;
+        window_impl_create(
+            this,
+            CActionWnd::GetWndClassInfo(),
             core::ptr::addr_of_mut!((*this).m_thunk),
             hWndParent,
             rect,

@@ -137,7 +137,12 @@ pub unsafe extern "system" fn GetAdaptersAddresses(
                 (*previous_aa).Next = ptr as PIP_ADAPTER_ADDRESSES;
             }
 
-            let mut current_aa_size: u32 = core::mem::size_of::<IP_ADAPTER_ADDRESSES>() as u32;
+            // DIVERGES from address.c, which lays out the XP-sized IP_ADAPTER_ADDRESSES. Vista+
+            // callers (Wine's wbemprox among them) read the LH fields past it -- the gateway
+            // list at FirstGatewayAddress was another entry's bytes and crashed the walk. Each
+            // entry is the LH struct, its new fields zero (the buffer is cleared above) except
+            // Luid; Length says LH, as Windows does.
+            let mut current_aa_size: u32 = core::mem::size_of::<IP_ADAPTER_ADDRESSES_LH>() as u32;
             let mut friendly_size: u32 = 0;
             let mut description_size: u32 = 0;
             let mut dhcp_domain_size: u32 = 0;
@@ -390,8 +395,10 @@ pub unsafe extern "system" fn GetAdaptersAddresses(
             if !ptr.is_null() && remaining_size >= current_aa_size {
                 let current_aa: PIP_ADAPTER_ADDRESSES = ptr as PIP_ADAPTER_ADDRESSES;
                 (*current_aa).__bindgen_anon_1.__bindgen_anon_1.as_mut().Length =
-                    core::mem::size_of::<IP_ADAPTER_ADDRESSES>() as u32;
+                    core::mem::size_of::<IP_ADAPTER_ADDRESSES_LH>() as u32;
                 (*current_aa).__bindgen_anon_1.__bindgen_anon_1.as_mut().IfIndex = (*entry).if_index;
+                *(core::ptr::addr_of_mut!((*(current_aa as PIP_ADAPTER_ADDRESSES_LH)).Luid) as *mut u64) =
+                    crate::iphlpapi::luid::make_luid((*entry).if_type, (*entry).if_index);
                 core::ptr::copy_nonoverlapping(
                     (*entry).if_physaddr.as_ptr(),
                     (*current_aa).PhysicalAddress.as_mut_ptr(),
@@ -411,7 +418,7 @@ pub unsafe extern "system" fn GetAdaptersAddresses(
                     (*current_aa).OperStatus = IfOperStatusDown;
                 }
 
-                ptr = current_aa.add(1) as *mut u8;
+                ptr = (current_aa as PIP_ADAPTER_ADDRESSES_LH).add(1) as *mut u8; // past the LH fields, not the XP struct
                 core::ptr::copy_nonoverlapping(
                     (*entry).if_descr.as_ptr(),
                     ptr,

@@ -571,6 +571,16 @@ unsafe extern "system" fn SerialSetMenuClose(This: *mut FRONTEND, Enable: i32) -
     1
 }
 
+/// A serial terminal has no font of ours; report the 8x16 text cell that its
+/// 80x25 window size assumes, so a caller dividing by it gets a sane answer.
+unsafe extern "system" fn SerialGetFontSize(This: *mut FRONTEND, pSize: PCOORD) {
+    let _ = This;
+    if !pSize.is_null() {
+        (*pSize).X = 8;
+        (*pSize).Y = 16;
+    }
+}
+
 // `FRONTEND_VTBL` field types use `extern "stdcall"` on i386 and
 // `extern "C"` on amd64/arm64 (per bindgen translating __stdcall).
 // Our Serial* impls are `extern "system"` (same ABI per arch, distinct
@@ -601,6 +611,7 @@ static mut SerialVtbl: FRONTEND_VTBL = FRONTEND_VTBL {
     SetMouseCursor: None,
     MenuControl: None,
     SetMenuClose: None,
+    GetFontSize: None,
 };
 
 pub(crate) unsafe fn InitSerialVtblIfNeeded() {
@@ -633,6 +644,7 @@ pub(crate) unsafe fn InitSerialVtblIfNeeded() {
         SetMouseCursor: Some(core::mem::transmute(SerialSetMouseCursor as *const ())),
         MenuControl: Some(core::mem::transmute(SerialMenuControl as *const ())),
         SetMenuClose: Some(core::mem::transmute(SerialSetMenuClose as *const ())),
+        GetFontSize: Some(core::mem::transmute(SerialGetFontSize as *const ())),
     };
 }
 

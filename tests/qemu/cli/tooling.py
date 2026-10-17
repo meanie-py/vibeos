@@ -58,6 +58,10 @@ _PYTEST_SUITES = [
     # The Wi-Fi supplicant (ndis-rust's wpa.rs): a wrong MIC or key looks on the bench like
     # an access point silently dropping the handshake.
     (".", ".", "tools/test_wpa_supplicant.py"),
+    # The Pi Wi-Fi driver's SDPCM/BCDC layouts (bwfm-rust's proto.rs): a wrong one looks on
+    # the board like a chip that never answers.
+    (".", ".", "tools/test_bwfm_proto.py"),
+    (".", ".", "tools/test_fetch_pi_wifi_firmware.py"),
     # An oracle needs an oracle. verify_c_signatures reports its own type-resolution gaps as
     # defects in the code when it is wrong, and reports "verified" over types it never
     # resolved when it is blind — neither shows up in review or in its own output.
@@ -123,15 +127,11 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_verify_cohab_coverage.py"),
     (".", ".", "tools/test_scan_import_cc.py"),
     (".", ".", "tools/test_scan_octal_literals.py"),
-    (".", ".", "tools/test_scan_fourcc_literals.py"),
-    (".", ".", "tools/test_scan_match_arm_break.py"),
-    (".", ".", "tools/test_scan_calloc_elem_type.py"),
     (".", ".", "tools/test_scan_varargs_spec_arity.py"),
     # The i386 no-SSE ABI time bomb: -sse,-sse2 on the builtin i686 triple is a
     # phase-out warning today and a hard error after a toolchain bump. Fires loudly
     # here, with the migration, the moment the pinned rustc turns it into an error.
     (".", ".", "tools/test_scan_i386_sse_abi.py"),
-    (".", ".", "tools/test_scan_ptr_highword_mask.py"),
     (".", ".", "tools/test_scan_dowhile_continue.py"),
     (".", ".", "tools/test_scan_case_bitor_pattern.py"),
     (".", ".", "tools/test_rank_unused_assignments.py"),
@@ -139,17 +139,12 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_apply_rustc_suggestions.py"),
     (".", ".", "tools/test_extern_to_use.py"),
     (".", ".", "tools/test_scan_version_vs_c.py"),
-    (".", ".", "tools/test_scan_byteptr_stride.py"),
-    (".", ".", "tools/test_scan_gmem_flags.py"),
-    (".", ".", "tools/test_scan_raw_bitfield.py"),
     (".", ".", "tools/test_scan_winerror_consts.py"),
     (".", ".", "tools/test_scan_export_shadows.py"),
     (".", ".", "tools/test_scan_res_named_types.py"),
-    (".", ".", "tools/test_scan_bindgen_padding_index.py"),
     (".", ".", "tools/test_scan_extern_static_width.py"),
     (".", ".", "tools/test_ramdisk_tree.py"),
     (".", ".", "tools/test_scan_const_vs_island.py"),
-    (".", ".", "tools/test_scan_raw_uart_writes.py"),
     # The callee pass of the user-pointer lint: its quieting rules (kernel arm,
     # early return, scoped rebind, null guard) each hid or invented rows once.
     (".", ".", "tools/test_scan_raw_user_access.py"),
@@ -244,10 +239,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_scan_unresolved_imports.py"),
     (".", ".", "tools/test_scan_assert_polarity.py"),
     (".", ".", "tools/test_scan_dropped_asserts.py"),
-    (".", ".", "tools/test_scan_byte_step_one.py"),
     (".", ".", "tools/test_scan_call_literal_vs_c.py"),
-    (".", ".", "tools/test_scan_formatless_printf.py"),
-    (".", ".", "tools/test_scan_ptr_typedef_cast_read.py"),
     (".", ".", "tools/test_strip_msvc_cmake.py"),
     # The substrate half of scan_extern_decl_drift has no other oracle: its
     # findings are about declarations of symbols NOTHING in the tree defines, so

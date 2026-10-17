@@ -3778,6 +3778,7 @@ pub const MAXBYTE: u32 = 255;
 pub const MAXWORD: u32 = 65535;
 pub const MAXDWORD: u32 = 4294967295;
 pub const MAXLONGLONG: u64 = 9223372036854775807;
+pub const MINLONGLONG: i64 = -9223372036854775808;
 pub const VER_WORKSTATION_NT: u32 = 1073741824;
 pub const VER_SERVER_NT: u32 = 2147483648;
 pub const VER_SUITE_SMALLBUSINESS: u32 = 1;
@@ -11897,6 +11898,7 @@ pub const SBRG_BOTTOMLEFTBTN: u32 = 5;
 pub const KL_UNLOAD: u32 = 536870912;
 pub const UKL_NOACTIVATENEXT: u32 = 2147483648;
 pub const UAHOWP_MAX_SIZE: u32 = 128;
+pub const PROCESS_GET_NEXT_FLAGS_PREVIOUS_PROCESS: u32 = 1;
 pub const FIRST_USER_HANDLE: u32 = 32;
 pub const LAST_USER_HANDLE: u32 = 65519;
 pub const HANDLEENTRY_DESTROY: u32 = 1;
@@ -12382,6 +12384,8 @@ pub const SHGNLI_PIDL: u32 = 1;
 pub const SHGNLI_PREFIXNAME: u32 = 2;
 pub const SHGNLI_NOUNIQUE: u32 = 4;
 pub const SHGNLI_NOLNK: u32 = 8;
+pub const SHGNLI_NOLOCNAME: u32 = 16;
+pub const SHGNLI_USEURLEXT: u32 = 32;
 pub const SHGSI_ICONLOCATION: u32 = 0;
 pub type __gnuc_va_list = __builtin_va_list;
 pub type ULONG = ::core::ffi::c_ulong;
@@ -28926,6 +28930,20 @@ unsafe extern "system" {
     pub fn GetUserGeoID(arg1: GEOCLASS) -> GEOID;
 }
 unsafe extern "system" {
+    pub fn GetSystemDefaultLocaleName(
+        lpLocaleName: LPWSTR,
+        cchLocaleName: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn EnumDateFormatsExEx(
+        lpDateFmtEnumProcExEx: DATEFMT_ENUMPROCEXEX,
+        lpLocaleName: LPCWSTR,
+        dwFlags: DWORD,
+        lParam: LPARAM,
+    ) -> BOOL;
+}
+unsafe extern "system" {
     pub fn IsDBCSLeadByte(arg1: BYTE) -> BOOL;
 }
 unsafe extern "system" {
@@ -34107,10 +34125,12 @@ pub const _PLUGPLAY_EVENT_CATEGORY_DeviceClassChangeEvent: _PLUGPLAY_EVENT_CATEG
 pub const _PLUGPLAY_EVENT_CATEGORY_CustomDeviceEvent: _PLUGPLAY_EVENT_CATEGORY = 3;
 pub const _PLUGPLAY_EVENT_CATEGORY_DeviceInstallEvent: _PLUGPLAY_EVENT_CATEGORY = 4;
 pub const _PLUGPLAY_EVENT_CATEGORY_DeviceArrivalEvent: _PLUGPLAY_EVENT_CATEGORY = 5;
-pub const _PLUGPLAY_EVENT_CATEGORY_PowerEvent: _PLUGPLAY_EVENT_CATEGORY = 6;
-pub const _PLUGPLAY_EVENT_CATEGORY_VetoEvent: _PLUGPLAY_EVENT_CATEGORY = 7;
-pub const _PLUGPLAY_EVENT_CATEGORY_BlockedDriverEvent: _PLUGPLAY_EVENT_CATEGORY = 8;
-pub const _PLUGPLAY_EVENT_CATEGORY_MaxPlugEventCategory: _PLUGPLAY_EVENT_CATEGORY = 9;
+pub const _PLUGPLAY_EVENT_CATEGORY_VetoEvent: _PLUGPLAY_EVENT_CATEGORY = 6;
+pub const _PLUGPLAY_EVENT_CATEGORY_BlockedDriverEvent: _PLUGPLAY_EVENT_CATEGORY = 7;
+pub const _PLUGPLAY_EVENT_CATEGORY_InvalidIDEvent: _PLUGPLAY_EVENT_CATEGORY = 8;
+pub const _PLUGPLAY_EVENT_CATEGORY_DevicePropertyChangeEvent: _PLUGPLAY_EVENT_CATEGORY = 9;
+pub const _PLUGPLAY_EVENT_CATEGORY_DeviceInstanceRemovalEvent: _PLUGPLAY_EVENT_CATEGORY = 10;
+pub const _PLUGPLAY_EVENT_CATEGORY_MaxPlugEventCategory: _PLUGPLAY_EVENT_CATEGORY = 11;
 pub type _PLUGPLAY_EVENT_CATEGORY = ::core::ffi::c_uint;
 pub use self::_PLUGPLAY_EVENT_CATEGORY as PLUGPLAY_EVENT_CATEGORY;
 #[repr(C)]
@@ -41996,12 +42016,224 @@ pub struct _THREAD_BASIC_INFORMATION {
 pub type THREAD_BASIC_INFORMATION = _THREAD_BASIC_INFORMATION;
 pub type PTHREAD_BASIC_INFORMATION = *mut _THREAD_BASIC_INFORMATION;
 #[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _THREAD_DESCRIPTOR_INFORMATION {
+    pub Selector: ULONG,
+    pub Entry: LDT_ENTRY,
+}
+pub type THREAD_DESCRIPTOR_INFORMATION = _THREAD_DESCRIPTOR_INFORMATION;
+pub type PTHREAD_DESCRIPTOR_INFORMATION = *mut _THREAD_DESCRIPTOR_INFORMATION;
+#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _THREAD_NAME_INFORMATION {
     pub ThreadName: UNICODE_STRING,
 }
 pub type THREAD_NAME_INFORMATION = _THREAD_NAME_INFORMATION;
 pub type PTHREAD_NAME_INFORMATION = *mut _THREAD_NAME_INFORMATION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _THREAD_LAST_SYSCALL_INFORMATION {
+    pub FirstArgument: PVOID,
+    pub SystemCallNumber: USHORT,
+    pub WaitTime: ULONG64,
+}
+pub type THREAD_LAST_SYSCALL_INFORMATION = _THREAD_LAST_SYSCALL_INFORMATION;
+pub type PTHREAD_LAST_SYSCALL_INFORMATION = *mut _THREAD_LAST_SYSCALL_INFORMATION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _THREAD_CYCLE_TIME_INFORMATION {
+    pub AccumulatedCycles: ULONG64,
+    pub CurrentCycleCount: ULONG64,
+}
+pub type THREAD_CYCLE_TIME_INFORMATION = _THREAD_CYCLE_TIME_INFORMATION;
+pub type PTHREAD_CYCLE_TIME_INFORMATION = *mut _THREAD_CYCLE_TIME_INFORMATION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _THREAD_TEB_INFORMATION {
+    pub TebInformation: PVOID,
+    pub TebOffset: ULONG,
+    pub BytesToRead: ULONG,
+}
+pub type THREAD_TEB_INFORMATION = _THREAD_TEB_INFORMATION;
+pub type PTHREAD_TEB_INFORMATION = *mut _THREAD_TEB_INFORMATION;
+pub const _THREAD_UMS_INFORMATION_COMMAND_UmsInformationCommandInvalid:
+    _THREAD_UMS_INFORMATION_COMMAND = 0;
+pub const _THREAD_UMS_INFORMATION_COMMAND_UmsInformationCommandAttach:
+    _THREAD_UMS_INFORMATION_COMMAND = 1;
+pub const _THREAD_UMS_INFORMATION_COMMAND_UmsInformationCommandDetach:
+    _THREAD_UMS_INFORMATION_COMMAND = 2;
+pub const _THREAD_UMS_INFORMATION_COMMAND_UmsInformationCommandQuery:
+    _THREAD_UMS_INFORMATION_COMMAND = 3;
+pub type _THREAD_UMS_INFORMATION_COMMAND = ::core::ffi::c_uint;
+pub use self::_THREAD_UMS_INFORMATION_COMMAND as THREAD_UMS_INFORMATION_COMMAND;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _THREAD_UMS_INFORMATION {
+    pub Command: THREAD_UMS_INFORMATION_COMMAND,
+    pub CompletionList: *mut _RTL_UMS_COMPLETION_LIST,
+    pub UmsContext: *mut _RTL_UMS_CONTEXT,
+    pub __bindgen_anon_1: _THREAD_UMS_INFORMATION__bindgen_ty_1,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union _THREAD_UMS_INFORMATION__bindgen_ty_1 {
+    pub Flags: ULONG,
+    pub __bindgen_anon_1: _THREAD_UMS_INFORMATION__bindgen_ty_1__bindgen_ty_1,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _THREAD_UMS_INFORMATION__bindgen_ty_1__bindgen_ty_1 {
+    pub _bindgen_align: [u32; 0],
+    pub _bitfield_1: __BindgenBitfieldUnit<[u8; 4usize]>,
+}
+impl _THREAD_UMS_INFORMATION__bindgen_ty_1__bindgen_ty_1 {
+    #[inline]
+    #[allow(unnecessary_transmutes)]
+    pub fn IsUmsSchedulerThread(&self) -> ULONG {
+        unsafe { (self._bitfield_1.get_const::<0usize, 1u8>() as u32) }
+    }
+    #[inline]
+    #[allow(unnecessary_transmutes)]
+    pub fn set_IsUmsSchedulerThread(&mut self, val: ULONG) {
+        unsafe {
+            let val: u32 = val as u32;
+            self._bitfield_1.set_const::<0usize, 1u8>(val as u64)
+        }
+    }
+    #[inline]
+    #[allow(unnecessary_transmutes)]
+    pub unsafe fn IsUmsSchedulerThread_raw(this: *const Self) -> ULONG {
+        unsafe {
+            (
+                <__BindgenBitfieldUnit<[u8; 4usize]>>::raw_get_const::<0usize, 1u8>(
+                    ::core::ptr::addr_of!((*this)._bitfield_1),
+                ) as u32)
+        }
+    }
+    #[inline]
+    #[allow(unnecessary_transmutes)]
+    pub unsafe fn set_IsUmsSchedulerThread_raw(this: *mut Self, val: ULONG) {
+        unsafe {
+            let val: u32 = val as u32;
+            <__BindgenBitfieldUnit<[u8; 4usize]>>::raw_set_const::<0usize, 1u8>(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    #[allow(unnecessary_transmutes)]
+    pub fn IsUmsWorkerThread(&self) -> ULONG {
+        unsafe { (self._bitfield_1.get_const::<1usize, 1u8>() as u32) }
+    }
+    #[inline]
+    #[allow(unnecessary_transmutes)]
+    pub fn set_IsUmsWorkerThread(&mut self, val: ULONG) {
+        unsafe {
+            let val: u32 = val as u32;
+            self._bitfield_1.set_const::<1usize, 1u8>(val as u64)
+        }
+    }
+    #[inline]
+    #[allow(unnecessary_transmutes)]
+    pub unsafe fn IsUmsWorkerThread_raw(this: *const Self) -> ULONG {
+        unsafe {
+            (
+                <__BindgenBitfieldUnit<[u8; 4usize]>>::raw_get_const::<1usize, 1u8>(
+                    ::core::ptr::addr_of!((*this)._bitfield_1),
+                ) as u32)
+        }
+    }
+    #[inline]
+    #[allow(unnecessary_transmutes)]
+    pub unsafe fn set_IsUmsWorkerThread_raw(this: *mut Self, val: ULONG) {
+        unsafe {
+            let val: u32 = val as u32;
+            <__BindgenBitfieldUnit<[u8; 4usize]>>::raw_set_const::<1usize, 1u8>(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    #[allow(unnecessary_transmutes)]
+    pub fn SpareBits(&self) -> ULONG {
+        unsafe { (self._bitfield_1.get_const::<2usize, 30u8>() as u32) }
+    }
+    #[inline]
+    #[allow(unnecessary_transmutes)]
+    pub fn set_SpareBits(&mut self, val: ULONG) {
+        unsafe {
+            let val: u32 = val as u32;
+            self._bitfield_1.set_const::<2usize, 30u8>(val as u64)
+        }
+    }
+    #[inline]
+    #[allow(unnecessary_transmutes)]
+    pub unsafe fn SpareBits_raw(this: *const Self) -> ULONG {
+        unsafe {
+            (<__BindgenBitfieldUnit<[u8; 4usize]>>::raw_get_const::<
+                2usize,
+                30u8,
+            >(::core::ptr::addr_of!((*this)._bitfield_1))
+                as u32)
+        }
+    }
+    #[inline]
+    #[allow(unnecessary_transmutes)]
+    pub unsafe fn set_SpareBits_raw(this: *mut Self, val: ULONG) {
+        unsafe {
+            let val: u32 = val as u32;
+            <__BindgenBitfieldUnit<[u8; 4usize]>>::raw_set_const::<2usize, 30u8>(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    #[allow(unnecessary_transmutes)]
+    pub fn new_bitfield_1(
+        IsUmsSchedulerThread: ULONG,
+        IsUmsWorkerThread: ULONG,
+        SpareBits: ULONG,
+    ) -> __BindgenBitfieldUnit<[u8; 4usize]> {
+        let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 4usize]> = Default::default();
+        __bindgen_bitfield_unit.set_const::<0usize, 1u8>({
+            let IsUmsSchedulerThread: u32 = IsUmsSchedulerThread as u32;
+            IsUmsSchedulerThread as u64
+        });
+        __bindgen_bitfield_unit.set_const::<1usize, 1u8>({
+            let IsUmsWorkerThread: u32 = IsUmsWorkerThread as u32;
+            IsUmsWorkerThread as u64
+        });
+        __bindgen_bitfield_unit.set_const::<2usize, 30u8>({
+            let SpareBits: u32 = SpareBits as u32;
+            SpareBits as u64
+        });
+        __bindgen_bitfield_unit
+    }
+}
+pub type THREAD_UMS_INFORMATION = _THREAD_UMS_INFORMATION;
+pub type PTHREAD_UMS_INFORMATION = *mut _THREAD_UMS_INFORMATION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _THREAD_PROFILING_INFORMATION {
+    pub HardwareCounters: ULONG64,
+    pub Flags: ULONG,
+    pub Enable: ULONG,
+    pub PerformanceData: *mut _THREAD_PERFORMANCE_DATA,
+}
+pub type THREAD_PROFILING_INFORMATION = _THREAD_PROFILING_INFORMATION;
+pub type PTHREAD_PROFILING_INFORMATION = *mut _THREAD_PROFILING_INFORMATION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _POWER_THROTTLING_THREAD_STATE {
+    pub Version: ULONG,
+    pub ControlMask: ULONG,
+    pub StateMask: ULONG,
+}
+pub type POWER_THROTTLING_THREAD_STATE = _POWER_THROTTLING_THREAD_STATE;
+pub type PPOWER_THROTTLING_THREAD_STATE = *mut _POWER_THROTTLING_THREAD_STATE;
 unsafe extern "system" {
     pub fn NtClose(Handle: HANDLE) -> NTSTATUS;
 }
@@ -44897,12 +45129,6 @@ unsafe extern "system" {
     ) -> NTSTATUS;
 }
 unsafe extern "system" {
-    pub fn RtlCultureNameToLCID(String: PCUNICODE_STRING, Lcid: PLCID) -> BOOLEAN;
-}
-unsafe extern "system" {
-    pub fn RtlLCIDToCultureName(Lcid: LCID, String: PUNICODE_STRING) -> BOOLEAN;
-}
-unsafe extern "system" {
     pub fn RtlLcidToLocaleName(
         Lcid: LCID,
         LocaleName: PUNICODE_STRING,
@@ -44915,6 +45141,12 @@ unsafe extern "system" {
 }
 unsafe extern "system" {
     pub fn RtlIsValidLocaleName(LocaleName: LPCWSTR, Flags: ULONG) -> BOOLEAN;
+}
+unsafe extern "system" {
+    pub fn RtlCultureNameToLCID(String: PCUNICODE_STRING, Lcid: PLCID) -> BOOLEAN;
+}
+unsafe extern "system" {
+    pub fn RtlLCIDToCultureName(Lcid: LCID, String: PUNICODE_STRING) -> BOOLEAN;
 }
 unsafe extern "system" {
     pub fn RtlFindActivationContextSectionGuid(
@@ -50920,6 +51152,25 @@ unsafe extern "system" {
         ThreadContext: PCONTEXT,
         UserStack: PINITIAL_TEB,
         CreateSuspended: BOOLEAN,
+    ) -> NTSTATUS;
+}
+unsafe extern "system" {
+    pub fn NtGetNextProcess(
+        ProcessHandle: HANDLE,
+        DesiredAccess: ACCESS_MASK,
+        HandleAttributes: ULONG,
+        Flags: ULONG,
+        NewProcessHandle: PHANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "system" {
+    pub fn NtGetNextThread(
+        ProcessHandle: HANDLE,
+        ThreadHandle: HANDLE,
+        DesiredAccess: ACCESS_MASK,
+        HandleAttributes: ULONG,
+        Flags: ULONG,
+        NewThreadHandle: PHANDLE,
     ) -> NTSTATUS;
 }
 unsafe extern "system" {
@@ -58092,6 +58343,8 @@ pub struct _FRONTEND_VTBL {
     >,
     pub SetMenuClose:
         ::core::option::Option<unsafe extern "system" fn(This: PFRONTEND, Enable: BOOL) -> BOOL>,
+    pub GetFontSize:
+        ::core::option::Option<unsafe extern "system" fn(This: PFRONTEND, pSize: PCOORD)>,
 }
 pub type FRONTEND_VTBL = _FRONTEND_VTBL;
 pub type PFRONTEND_VTBL = *mut _FRONTEND_VTBL;
@@ -60016,6 +60269,21 @@ pub struct _ASSEMBLY_STORAGE_MAP {
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
+pub struct _RTL_UMS_COMPLETION_LIST {
+    pub _address: u8,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _RTL_UMS_CONTEXT {
+    pub _address: u8,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _THREAD_PERFORMANCE_DATA {
+    pub _address: u8,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct _CURICON_OBJECT {
     pub _address: u8,
 }
@@ -60814,9 +61082,11 @@ pub const DeviceClassChangeEvent: _PLUGPLAY_EVENT_CATEGORY = _PLUGPLAY_EVENT_CAT
 pub const CustomDeviceEvent: _PLUGPLAY_EVENT_CATEGORY = _PLUGPLAY_EVENT_CATEGORY_CustomDeviceEvent;
 pub const DeviceInstallEvent: _PLUGPLAY_EVENT_CATEGORY = _PLUGPLAY_EVENT_CATEGORY_DeviceInstallEvent;
 pub const DeviceArrivalEvent: _PLUGPLAY_EVENT_CATEGORY = _PLUGPLAY_EVENT_CATEGORY_DeviceArrivalEvent;
-pub const PowerEvent: _PLUGPLAY_EVENT_CATEGORY = _PLUGPLAY_EVENT_CATEGORY_PowerEvent;
 pub const VetoEvent: _PLUGPLAY_EVENT_CATEGORY = _PLUGPLAY_EVENT_CATEGORY_VetoEvent;
 pub const BlockedDriverEvent: _PLUGPLAY_EVENT_CATEGORY = _PLUGPLAY_EVENT_CATEGORY_BlockedDriverEvent;
+pub const InvalidIDEvent: _PLUGPLAY_EVENT_CATEGORY = _PLUGPLAY_EVENT_CATEGORY_InvalidIDEvent;
+pub const DevicePropertyChangeEvent: _PLUGPLAY_EVENT_CATEGORY = _PLUGPLAY_EVENT_CATEGORY_DevicePropertyChangeEvent;
+pub const DeviceInstanceRemovalEvent: _PLUGPLAY_EVENT_CATEGORY = _PLUGPLAY_EVENT_CATEGORY_DeviceInstanceRemovalEvent;
 pub const MaxPlugEventCategory: _PLUGPLAY_EVENT_CATEGORY = _PLUGPLAY_EVENT_CATEGORY_MaxPlugEventCategory;
 pub const NotificationEvent: _EVENT_TYPE = _EVENT_TYPE_NotificationEvent;
 pub const SynchronizationEvent: _EVENT_TYPE = _EVENT_TYPE_SynchronizationEvent;
@@ -61427,6 +61697,10 @@ pub const ApphelpCacheServiceFlush: _APPHELPCACHESERVICECLASS = _APPHELPCACHESER
 pub const ApphelpCacheServiceDump: _APPHELPCACHESERVICECLASS = _APPHELPCACHESERVICECLASS_ApphelpCacheServiceDump;
 pub const ApphelpDBGReadRegistry: _APPHELPCACHESERVICECLASS = _APPHELPCACHESERVICECLASS_ApphelpDBGReadRegistry;
 pub const ApphelpDBGWriteRegistry: _APPHELPCACHESERVICECLASS = _APPHELPCACHESERVICECLASS_ApphelpDBGWriteRegistry;
+pub const UmsInformationCommandInvalid: _THREAD_UMS_INFORMATION_COMMAND = _THREAD_UMS_INFORMATION_COMMAND_UmsInformationCommandInvalid;
+pub const UmsInformationCommandAttach: _THREAD_UMS_INFORMATION_COMMAND = _THREAD_UMS_INFORMATION_COMMAND_UmsInformationCommandAttach;
+pub const UmsInformationCommandDetach: _THREAD_UMS_INFORMATION_COMMAND = _THREAD_UMS_INFORMATION_COMMAND_UmsInformationCommandDetach;
+pub const UmsInformationCommandQuery: _THREAD_UMS_INFORMATION_COMMAND = _THREAD_UMS_INFORMATION_COMMAND_UmsInformationCommandQuery;
 pub const AR_ENABLED: tagAR_STATE = tagAR_STATE_AR_ENABLED;
 pub const AR_DISABLED: tagAR_STATE = tagAR_STATE_AR_DISABLED;
 pub const AR_SUPPRESSED: tagAR_STATE = tagAR_STATE_AR_SUPPRESSED;

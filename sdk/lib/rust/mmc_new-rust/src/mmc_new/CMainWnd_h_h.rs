@@ -11,7 +11,6 @@ use core::ffi::c_void;
 
 
 
-
 impl CMainWnd {
     pub unsafe fn GetWndClassInfo() -> &'static mut CWndClassInfo {
         static mut wc: core::mem::MaybeUninit<CWndClassInfo> = core::mem::MaybeUninit::uninit();
@@ -53,40 +52,34 @@ impl CMainWnd {
         let pThis: *mut CMainWnd = hWnd as *mut CMainWnd;
         return DefFrameProc((*pThis).__base0.m_hWnd, (*pThis).m_MDIClient.m_hWnd, uMsg, wParam, lParam);
     }
-    pub unsafe fn UpdateMenu(&mut self) {
+    pub unsafe fn InitMain(&mut self) {
         let this_: *mut Self = self;
-        if (*this_).m_ViewList.IsEmpty() {
-            (*this_).__base0.SetMenu((*this_).m_hMenuConsoleSmall);
-        } else {
-            (*this_).__base0.SetMenu((*this_).m_hMenuConsoleLarge);
-        }
-        (*this_).UpdateRecentFilesMenu();
-    }
-    pub unsafe fn UpdateTitle(&mut self) {
-        let this_: *mut Self = self;
-        if (*this_).m_ViewList.IsEmpty() {
-            (*this_).m_ConsoleTitle.LoadStringW(IDS_APPTITLE);
-        } else {
-            (*this_).CreateNewConsoleTitle(&mut (*this_).m_ConsoleTitle);
-        }
-        (*this_).__base0.SetWindowTextW((*this_).m_ConsoleTitle.GetString());
+        CSnapin__delete((*this_).m_RootNode);
+        (*this_).m_RootNode = core::ptr::null_mut();
+
+        (*this_).m_DocumentMode = DocumentMode_Author;
+        (*this_).m_LogicalReadOnly = (FALSE as i32);
+        (*this_).m_PreventViewCustomization = (FALSE as i32);
+        (*this_).m_bToolBarVisible = (TRUE as i32);
+        (*this_).m_NextViewId = 1;
+        (*this_).m_NextNodeId = 1;
     }
     pub unsafe fn GetActiveChildInfo(&mut self) -> *mut CConsoleWnd {
         let this_: *mut Self = self;
         let mut hWndMDIChild: HWND;
-    
+
         hWndMDIChild = (*this_).m_MDIClient.SendMessageW__0(WM_MDIGETACTIVE, 0, 0) as HWND;
         if hWndMDIChild.is_null() {
             return core::ptr::null_mut();
         }
-    
+
         return GetWindowLongPtr(hWndMDIChild, 0) as *mut CConsoleWnd;
     }
     pub unsafe fn CreateNewConsoleTitle(&mut self, str: &mut CAtlString) {
         let this_: *mut Self = self;
         let mut args: [DWORD_PTR; 1] = [(*this_).m_ConsoleNumber as DWORD_PTR];
         str.LoadStringW(IDS_CONSOLETITLE);
-    
+
         let mut lpTarget: LPTSTR = core::ptr::null_mut();
         let Ret: DWORD = FormatMessage(
             FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_STRING | FORMAT_MESSAGE_ARGUMENT_ARRAY,
@@ -97,7 +90,7 @@ impl CMainWnd {
             0,
             args.as_mut_ptr() as *mut va_list,
         );
-    
+
         if Ret != 0 {
             *str = CAtlString::from_ptr(lpTarget as *const WCHAR);
             LocalFree(lpTarget as HLOCAL);

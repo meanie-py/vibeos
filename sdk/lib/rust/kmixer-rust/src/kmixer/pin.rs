@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use ntkrnl_sys::constants::STATUS_INVALID_PARAMETER;
 use ntkrnl_sys::ddk::{ExAllocatePool, ExFreePool, GUID, KFLOATING_SAVE, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP, PLARGE_INTEGER, RtlAssert};
 // ke.h: an import on x86, a FORCEINLINE no-op on amd64/arm64.
 use ntkrnl_sys::inline::ke::{KeRestoreFloatingPointState, KeSaveFloatingPointState};
@@ -239,6 +240,19 @@ pub unsafe extern "C" fn PerformSampleRateConversion(
     KeRestoreFloatingPointState(core::ptr::addr_of_mut!(FloatSave));
     return STATUS_SUCCESS;
 }
+/// Divergence from pin.c, which is wrong for every width but 8 bits: it allocates
+/// `Samples * NewChannels` BYTES whatever the sample width, indexes the input as bytes
+/// (`Buffer[OldIndex]` is a PUCHAR) while the output is USHORT/ULONG-indexed, and its
+/// `do { } while (SubIndex++ < NewChannels - OldChannels)` writes one channel more than
+/// it fills -- the first slot of the next frame, which on the last frame is past the end.
+/// So a 16-bit mono stream reaching Pin_fnFastWrite overran the pool and produced
+/// garbage. Its down-mix writes `NewChannels * BitsPerSample/8` bytes at a USHORT stride
+/// from an unscaled byte offset, and it reported `*ResultLength` in samples, not bytes.
+/// An unhandled width returned STATUS_SUCCESS with `*Result` never written.
+///
+/// Here every width is one frame copy: output channel `c` takes input channel
+/// `c % OldChannels`, which is what the C does for 8-bit (2 channels stretched to 4 look
+/// like LRLR), and down-mixing keeps the first `NewChannels` (the C's TODO: no mixing).
 #[no_mangle]
 pub unsafe extern "C" fn PerformChannelConversion(
     Buffer: PUCHAR,
@@ -249,200 +263,50 @@ pub unsafe extern "C" fn PerformChannelConversion(
     Result: *mut PVOID,
     ResultLength: PULONG,
 ) -> NTSTATUS {
-    let mut Samples: ULONG;
-    let mut NewIndex: ULONG;
-    let mut OldIndex: ULONG;
-
-    Samples = BufferLength / (BitsPerSample / 8) / OldChannels;
-
-    if NewChannels > OldChannels {
-        if BitsPerSample == 8 {
-            let BufferOut: PUCHAR = ExAllocatePool(
-                NonPagedPool,
-                Samples.wrapping_mul(NewChannels) as SIZE_T,
-            ) as PUCHAR;
-            if BufferOut.is_null() {
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-
-            NewIndex = 0;
-            OldIndex = 0;
-            while OldIndex < Samples.wrapping_mul(OldChannels) {
-                let mut SubIndex: ULONG = 0;
-
-                core::ptr::copy(
-                    Buffer.offset(OldIndex as isize) as *const u8,
-                    BufferOut.offset(NewIndex as isize) as *mut u8,
-                    (OldChannels as usize).wrapping_mul(core::mem::size_of::<UCHAR>()),
-                );
-
-                loop {
-                    *BufferOut.offset(
-                        NewIndex.wrapping_add(OldChannels).wrapping_add(SubIndex) as isize,
-                    ) = *Buffer.offset(
-                        OldIndex.wrapping_add(SubIndex % OldChannels) as isize,
-                    );
-                    let fresh0 = SubIndex;
-                    SubIndex = SubIndex.wrapping_add(1);
-                    if !(fresh0 < NewChannels.wrapping_sub(OldChannels)) {
-                        break;
-                    }
-                }
-                NewIndex = NewIndex.wrapping_add(NewChannels);
-                OldIndex = OldIndex.wrapping_add(OldChannels);
-            }
-            *Result = BufferOut as PVOID;
-            *ResultLength = Samples.wrapping_mul(NewChannels);
-        } else if BitsPerSample == 16 {
-            let BufferOut: PUSHORT = ExAllocatePool(
-                NonPagedPool,
-                Samples.wrapping_mul(NewChannels) as SIZE_T,
-            ) as PUSHORT;
-            if BufferOut.is_null() {
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-
-            NewIndex = 0;
-            OldIndex = 0;
-            while OldIndex < Samples.wrapping_mul(OldChannels) {
-                let mut SubIndex: ULONG = 0;
-
-                core::ptr::copy(
-                    Buffer.offset(OldIndex as isize) as *const u8,
-                    BufferOut.offset(NewIndex as isize) as *mut u8,
-                    (OldChannels as usize).wrapping_mul(core::mem::size_of::<USHORT>()),
-                );
-
-                loop {
-                    *BufferOut.offset(
-                        NewIndex.wrapping_add(OldChannels).wrapping_add(SubIndex) as isize,
-                    ) = *Buffer.offset(
-                        OldIndex.wrapping_add(SubIndex % OldChannels) as isize,
-                    ) as USHORT;
-                    let fresh1 = SubIndex;
-                    SubIndex = SubIndex.wrapping_add(1);
-                    if !(fresh1 < NewChannels.wrapping_sub(OldChannels)) {
-                        break;
-                    }
-                }
-                NewIndex = NewIndex.wrapping_add(NewChannels);
-                OldIndex = OldIndex.wrapping_add(OldChannels);
-            }
-            *Result = BufferOut as PVOID;
-            *ResultLength = Samples.wrapping_mul(NewChannels);
-        } else if BitsPerSample == 24 {
-            let BufferOut: PUCHAR = ExAllocatePool(
-                NonPagedPool,
-                Samples.wrapping_mul(NewChannels) as SIZE_T,
-            ) as PUCHAR;
-            if BufferOut.is_null() {
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-
-            NewIndex = 0;
-            OldIndex = 0;
-            while OldIndex < Samples.wrapping_mul(OldChannels) {
-                let mut SubIndex: ULONG = 0;
-
-                core::ptr::copy(
-                    Buffer.offset(OldIndex as isize) as *const u8,
-                    BufferOut.offset(NewIndex as isize) as *mut u8,
-                    OldChannels.wrapping_mul(3) as usize,
-                );
-
-                loop {
-                    core::ptr::copy(
-                        Buffer.offset(
-                            OldIndex
-                                .wrapping_add(SubIndex % OldChannels)
-                                .wrapping_mul(3) as isize,
-                        ) as *const u8,
-                        BufferOut.offset(
-                            NewIndex
-                                .wrapping_add(OldChannels)
-                                .wrapping_add(SubIndex)
-                                .wrapping_mul(3) as isize,
-                        ) as *mut u8,
-                        3 as usize,
-                    );
-                    let fresh2 = SubIndex;
-                    SubIndex = SubIndex.wrapping_add(1);
-                    if !(fresh2 < NewChannels.wrapping_sub(OldChannels)) {
-                        break;
-                    }
-                }
-                NewIndex = NewIndex.wrapping_add(NewChannels);
-                OldIndex = OldIndex.wrapping_add(OldChannels);
-            }
-            *Result = BufferOut as PVOID;
-            *ResultLength = Samples.wrapping_mul(NewChannels);
-        } else if BitsPerSample == 32 {
-            let BufferOut: PULONG = ExAllocatePool(
-                NonPagedPool,
-                Samples.wrapping_mul(NewChannels) as SIZE_T,
-            ) as PULONG;
-            if BufferOut.is_null() {
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-
-            NewIndex = 0;
-            OldIndex = 0;
-            while OldIndex < Samples.wrapping_mul(OldChannels) {
-                let mut SubIndex: ULONG = 0;
-
-                core::ptr::copy(
-                    Buffer.offset(OldIndex as isize) as *const u8,
-                    BufferOut.offset(NewIndex as isize) as *mut u8,
-                    (OldChannels as usize).wrapping_mul(core::mem::size_of::<ULONG>()),
-                );
-
-                loop {
-                    *BufferOut.offset(
-                        NewIndex.wrapping_add(OldChannels).wrapping_add(SubIndex) as isize,
-                    ) = *Buffer.offset(
-                        OldIndex.wrapping_add(SubIndex % OldChannels) as isize,
-                    ) as ULONG;
-                    let fresh3 = SubIndex;
-                    SubIndex = SubIndex.wrapping_add(1);
-                    if !(fresh3 < NewChannels.wrapping_sub(OldChannels)) {
-                        break;
-                    }
-                }
-                NewIndex = NewIndex.wrapping_add(NewChannels);
-                OldIndex = OldIndex.wrapping_add(OldChannels);
-            }
-            *Result = BufferOut as PVOID;
-            *ResultLength = Samples.wrapping_mul(NewChannels);
+    let Width = match BitsPerSample {
+        8 | 16 | 24 | 32 => (BitsPerSample / 8) as usize,
+        _ => {
+            DPRINT1!("Not implemented channel conversion BitsPerSample %u\n", BitsPerSample);
+            return STATUS_NOT_IMPLEMENTED;
         }
-    } else {
-        let BufferOut: PUSHORT = ExAllocatePool(
-            NonPagedPool,
-            Samples.wrapping_mul(NewChannels) as SIZE_T,
-        ) as PUSHORT;
-        if BufferOut.is_null() {
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-
-        NewIndex = 0;
-        OldIndex = 0;
-        while OldIndex < Samples.wrapping_mul(OldChannels) {
-            /* TODO
-             * mix stream instead of just dumping part of it ;)
-             */
-            core::ptr::copy(
-                Buffer.offset(OldIndex as isize) as *const u8,
-                BufferOut.offset(NewIndex as isize) as *mut u8,
-                NewChannels.wrapping_mul(BitsPerSample / 8) as usize,
-            );
-            NewIndex = NewIndex.wrapping_add(NewChannels);
-            OldIndex = OldIndex.wrapping_add(OldChannels);
-        }
-
-        *Result = BufferOut as PVOID;
-        *ResultLength = Samples.wrapping_mul(NewChannels);
+    };
+    if OldChannels == 0 || NewChannels == 0 {
+        return STATUS_INVALID_PARAMETER;
     }
+    let Samples = (BufferLength as usize) / Width / (OldChannels as usize);
+    let OldFrame = (OldChannels as usize) * Width;
+    let NewFrame = (NewChannels as usize) * Width;
+    let Size = match Samples.checked_mul(NewFrame) {
+        Some(Size) if Size <= ULONG::MAX as usize => Size,
+        _ => return STATUS_INSUFFICIENT_RESOURCES,
+    };
+
+    let BufferOut: PUCHAR = ExAllocatePool(NonPagedPool, Size as SIZE_T) as PUCHAR;
+    if BufferOut.is_null() {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    for Frame in 0..Samples {
+        let In = Buffer.add(Frame * OldFrame);
+        let Out = BufferOut.add(Frame * NewFrame);
+        for Channel in 0..NewChannels as usize {
+            let Source = Channel % OldChannels as usize;
+            core::ptr::copy_nonoverlapping(In.add(Source * Width), Out.add(Channel * Width), Width);
+        }
+    }
+    *Result = BufferOut as PVOID;
+    *ResultLength = Size as ULONG;
     return STATUS_SUCCESS;
 }
+/// Divergence from pin.c on every pair but 16 -> 32. 8-bit PCM is unsigned with silence
+/// at 0x80 while 16/32-bit are signed, and the C never re-centres: its 8 -> 32 maps
+/// silence to 0x80000000, full-scale negative, and 8 -> 16 multiplies by 2 where its own
+/// siblings scale by the width difference (8 -> 32 is `<< 24`, 16 -> 32 is `<< 16`).
+/// Its 32 -> 16 stores the sample in a USHORT before dividing by 65536, so it is always
+/// silence. And under `_X86_` it byte-swaps every sample, so the same little-endian
+/// stream came out different on i386 than on amd64 from the identical source.
+///
+/// Here each sample is widened to a full-scale signed 32-bit value and narrowed by
+/// truncation (no dither, as the C), with 8-bit samples' sign bit flipped both ways.
 #[no_mangle]
 pub unsafe extern "C" fn PerformQualityConversion(
     Buffer: PUCHAR,
@@ -452,165 +316,45 @@ pub unsafe extern "C" fn PerformQualityConversion(
     Result: *mut PVOID,
     ResultLength: PULONG,
 ) -> NTSTATUS {
-    let mut Samples: ULONG;
-    let mut Index: ULONG;
-
     ASSERT!(OldWidth != NewWidth);
 
-    Samples = BufferLength.wrapping_div(OldWidth.wrapping_div(8 as ULONG));
-    //DPRINT("Samples %u BufferLength %u\n", Samples, BufferLength);
+    let (InBytes, OutBytes) = match (OldWidth, NewWidth) {
+        (8, 16) | (8, 32) | (16, 8) | (16, 32) | (32, 8) | (32, 16) => {
+            ((OldWidth / 8) as usize, (NewWidth / 8) as usize)
+        }
+        _ => {
+            DPRINT1!(
+                "Not implemented conversion OldWidth %u NewWidth %u\n",
+                OldWidth,
+                NewWidth
+            );
+            return STATUS_NOT_IMPLEMENTED;
+        }
+    };
+    let Samples = (BufferLength as usize) / InBytes;
+    let Size = match Samples.checked_mul(OutBytes) {
+        Some(Size) if Size <= ULONG::MAX as usize => Size,
+        _ => return STATUS_INSUFFICIENT_RESOURCES,
+    };
 
-    if OldWidth == 8 as ULONG && NewWidth == 16 as ULONG {
-        let mut Sample: USHORT = 0;
-        let mut BufferOut: PUSHORT = ExAllocatePool(
-            NonPagedPool,
-            ((Samples as usize).wrapping_mul(core::mem::size_of::<USHORT>() as usize)) as SIZE_T,
-        ) as PUSHORT;
-        if BufferOut.is_null() {
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-
-        Index = 0 as ULONG;
-        while Index < Samples {
-            Sample = *Buffer.offset(Index as isize) as USHORT;
-            Sample = (Sample as ULONG).wrapping_mul(2 as ULONG) as USHORT;
-            if cfg!(target_arch = "x86") {
-                Sample = _byteswap_ushort(Sample);
-            }
-            *BufferOut.offset(Index as isize) = Sample;
-            Index = Index.wrapping_add(1);
-        }
-        *Result = BufferOut as PVOID;
-        *ResultLength = (Samples as usize).wrapping_mul(core::mem::size_of::<USHORT>() as usize) as ULONG;
-    } else if OldWidth == 8 as ULONG && NewWidth == 32 as ULONG {
-        let mut Sample: ULONG = 0;
-        let mut BufferOut: PULONG = ExAllocatePool(
-            NonPagedPool,
-            ((Samples as usize).wrapping_mul(::core::mem::size_of::<ULONG>())) as SIZE_T,
-        ) as PULONG;
-        if BufferOut.is_null() {
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-
-        Index = 0 as ULONG;
-        while Index < Samples {
-            Sample = *Buffer.offset(Index as isize) as ULONG;
-            Sample = Sample.wrapping_mul(16777216 as ULONG);
-            if cfg!(target_arch = "x86") {
-                Sample = _byteswap_ulong(Sample);
-            }
-            *BufferOut.offset(Index as isize) = Sample;
-            Index = Index.wrapping_add(1);
-        }
-        *Result = BufferOut as PVOID;
-        *ResultLength = (Samples as usize).wrapping_mul(::core::mem::size_of::<ULONG>()) as ULONG;
-    } else if OldWidth == 16 as ULONG && NewWidth == 32 as ULONG {
-        let mut Sample: ULONG = 0;
-        let mut BufferIn: PUSHORT = Buffer as PUSHORT;
-        let mut BufferOut: PULONG = ExAllocatePool(
-            NonPagedPool,
-            ((Samples as usize).wrapping_mul(::core::mem::size_of::<ULONG>())) as SIZE_T,
-        ) as PULONG;
-        if BufferOut.is_null() {
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-
-        Index = 0 as ULONG;
-        while Index < Samples {
-            Sample = *BufferIn.offset(Index as isize) as ULONG;
-            Sample = Sample.wrapping_mul(65536 as ULONG);
-            if cfg!(target_arch = "x86") {
-                Sample = _byteswap_ulong(Sample);
-            }
-            *BufferOut.offset(Index as isize) = Sample;
-            Index = Index.wrapping_add(1);
-        }
-        *Result = BufferOut as PVOID;
-        *ResultLength = (Samples as usize).wrapping_mul(::core::mem::size_of::<ULONG>()) as ULONG;
+    let BufferOut: PUCHAR = ExAllocatePool(NonPagedPool, Size as SIZE_T) as PUCHAR;
+    if BufferOut.is_null() {
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
-
-    else if OldWidth == 16 as ULONG && NewWidth == 8 as ULONG {
-        let mut Sample: USHORT = 0;
-        let mut BufferIn: PUSHORT = Buffer as PUSHORT;
-        let mut BufferOut: PUCHAR = ExAllocatePool(
-            NonPagedPool,
-            ((Samples as usize).wrapping_mul(core::mem::size_of::<UCHAR>() as usize)) as SIZE_T,
-        ) as PUCHAR;
-        if BufferOut.is_null() {
-            return STATUS_INSUFFICIENT_RESOURCES;
+    for Index in 0..Samples {
+        let Full: ULONG = match InBytes {
+            1 => ((*Buffer.add(Index) ^ 0x80) as ULONG) << 24,
+            2 => (core::ptr::read_unaligned(Buffer.add(Index * 2) as *const USHORT) as ULONG) << 16,
+            _ => core::ptr::read_unaligned(Buffer.add(Index * 4) as *const ULONG),
+        };
+        match OutBytes {
+            1 => *BufferOut.add(Index) = ((Full >> 24) as UCHAR) ^ 0x80,
+            2 => core::ptr::write_unaligned(BufferOut.add(Index * 2) as *mut USHORT, (Full >> 16) as USHORT),
+            _ => core::ptr::write_unaligned(BufferOut.add(Index * 4) as *mut ULONG, Full),
         }
-
-        Index = 0 as ULONG;
-        while Index < Samples {
-            Sample = *BufferIn.offset(Index as isize) as USHORT;
-            if cfg!(target_arch = "x86") {
-                Sample = _byteswap_ushort(Sample);
-            }
-            Sample = Sample / (256 as USHORT);
-            *BufferOut.offset(Index as isize) = (Sample & (0xFF as USHORT)) as UCHAR;
-            Index = Index.wrapping_add(1);
-        }
-        *Result = BufferOut as PVOID;
-        *ResultLength = (Samples as usize).wrapping_mul(core::mem::size_of::<UCHAR>() as usize) as ULONG;
-    } else if OldWidth == 32 as ULONG && NewWidth == 8 as ULONG {
-        let mut Sample: ULONG = 0;
-        let mut BufferIn: PULONG = Buffer as PULONG;
-        let mut BufferOut: PUCHAR = ExAllocatePool(
-            NonPagedPool,
-            ((Samples as usize).wrapping_mul(core::mem::size_of::<UCHAR>() as usize)) as SIZE_T,
-        ) as PUCHAR;
-        if BufferOut.is_null() {
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-
-        Index = 0 as ULONG;
-        while Index < Samples {
-            Sample = *BufferIn.offset(Index as isize) as ULONG;
-            if cfg!(target_arch = "x86") {
-                Sample = _byteswap_ulong(Sample);
-            }
-            Sample = Sample / (16777216 as ULONG);
-            *BufferOut.offset(Index as isize) = (Sample & (0xFF as ULONG)) as UCHAR;
-            Index = Index.wrapping_add(1);
-        }
-        *Result = BufferOut as PVOID;
-        *ResultLength = (Samples as usize).wrapping_mul(core::mem::size_of::<UCHAR>() as usize) as ULONG;
-    } else if OldWidth == 32 as ULONG && NewWidth == 16 as ULONG {
-        let mut Sample: USHORT = 0;
-        let mut BufferIn: PULONG = Buffer as PULONG;
-        let mut BufferOut: PUSHORT = ExAllocatePool(
-            NonPagedPool,
-            ((Samples as usize).wrapping_mul(core::mem::size_of::<USHORT>() as usize)) as SIZE_T,
-        ) as PUSHORT;
-        if BufferOut.is_null() {
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-
-        Index = 0 as ULONG;
-        while Index < Samples {
-            // Divergence from pin.c: it stores the 32-bit sample in its USHORT `Sample`
-            // first, so `Sample /= 65536` is always 0 and this branch emits silence. Keep the
-            // full ULONG and take its high half, as the scaling in the other branches intends.
-            let mut Wide: ULONG = *BufferIn.offset(Index as isize);
-            if cfg!(target_arch = "x86") {
-                Wide = _byteswap_ulong(Wide);
-            }
-            Wide /= 65536 as ULONG;
-            Sample = (Wide & (0xFFFF as ULONG)) as USHORT;
-            *BufferOut.offset(Index as isize) = Sample;
-            Index = Index.wrapping_add(1);
-        }
-        *Result = BufferOut as PVOID;
-        *ResultLength = (Samples as usize).wrapping_mul(core::mem::size_of::<USHORT>() as usize) as ULONG;
-    } else {
-        DPRINT1!(
-            "Not implemented conversion OldWidth %u NewWidth %u\n",
-            OldWidth,
-            NewWidth
-        );
-        return STATUS_NOT_IMPLEMENTED;
     }
-
+    *Result = BufferOut as PVOID;
+    *ResultLength = Size as ULONG;
     return STATUS_SUCCESS;
 }
 
