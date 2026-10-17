@@ -1,4 +1,5 @@
 use crate::winspool::utils::DllAllocSplMem;
+use ntdll_sys::seh::rpc_try;
 use crate::winspool::utils::DllFreeSplMem;
 use crate::winspool::marshalling::MarshallUpStructuresArray;
 // Deterministic UTF-16 literals, generated from the C by rustconv (--seal-wide); the model never saw the bytes.
@@ -52,10 +53,16 @@ pub type PPORTTHREADINFO = *mut PORTTHREADINFO;
 pub unsafe extern "system" fn IntPortThread(pPortThreadInfo: PPORTTHREADINFO) {
     // RpcTryExcept
     {
-        (*pPortThreadInfo).dwErrorCode = ((*pPortThreadInfo).fpFunction.unwrap_unchecked())((*pPortThreadInfo).pName, (*pPortThreadInfo).hWnd, (*pPortThreadInfo).pPortName);
+        (*pPortThreadInfo).dwErrorCode = rpc_try(|| {
+            ((*pPortThreadInfo).fpFunction.unwrap_unchecked())(
+                (*pPortThreadInfo).pName,
+                (*pPortThreadInfo).hWnd,
+                (*pPortThreadInfo).pPortName,
+            )
+        })
+        .unwrap_or_else(|code| code as _);
     }
     // RpcExcept(EXCEPTION_EXECUTE_HANDLER): handler runs only when the try body raises
-    // a structured exception; no Rust equivalent in this lowering, so it is not reached here.
     // (*pPortThreadInfo).dwErrorCode = RpcExceptionCode();
     // RpcEndExcept;
 
@@ -323,7 +330,7 @@ pub unsafe extern "system" fn GetMonitorUI(pName: PWSTR, pMonitorPortName: PWSTR
 
         // RpcTryExcept
         {
-            dwErrorCode = _RpcXcvData(
+            dwErrorCode = rpc_try(|| _RpcXcvData(
                 (*pHandle).hPrinter,
                 RUSTCONV_WSTR_657B9E92C1BA.as_ptr(),
                 core::ptr::addr_of_mut!(InputData) as PBYTE,
@@ -332,7 +339,7 @@ pub unsafe extern "system" fn GetMonitorUI(pName: PWSTR, pMonitorPortName: PWSTR
                 1024,
                 core::ptr::addr_of_mut!(cbOutputNeeded),
                 core::ptr::addr_of_mut!(dwStatus),
-            );
+            )).unwrap_or_else(|code| code as _);
         }
         // RpcExcept(EXCEPTION_EXECUTE_HANDLER): handler is
         //     dwErrorCode = RpcExceptionCode();
@@ -344,7 +351,7 @@ pub unsafe extern "system" fn GetMonitorUI(pName: PWSTR, pMonitorPortName: PWSTR
 
             // RpcTryExcept
             {
-                dwErrorCode = _RpcXcvData(
+                dwErrorCode = rpc_try(|| _RpcXcvData(
                     (*pHandle).hPrinter,
                     RUSTCONV_WSTR_657B9E92C1BA.as_ptr(),
                     core::ptr::addr_of_mut!(InputData) as PBYTE,
@@ -353,7 +360,7 @@ pub unsafe extern "system" fn GetMonitorUI(pName: PWSTR, pMonitorPortName: PWSTR
                     cbOutputNeeded,
                     core::ptr::addr_of_mut!(cbOutputNeeded),
                     core::ptr::addr_of_mut!(dwStatus),
-                );
+                )).unwrap_or_else(|code| code as _);
             }
             // RpcExcept(EXCEPTION_EXECUTE_HANDLER): handler is
             //     dwErrorCode = RpcExceptionCode();
@@ -426,12 +433,12 @@ pub unsafe extern "system" fn AddPortExW(pName: PWSTR, Level: DWORD, lpBuffer: P
 
     // Do the RPC call
     // RpcTryExcept
-    dwErrorCode = _RpcAddPortEx(
+    dwErrorCode = rpc_try(|| _RpcAddPortEx(
         pName,
         core::ptr::addr_of_mut!(PortInfoContainer),
         core::ptr::addr_of_mut!(PortVarContainer),
         lpMonitorName,
-    );
+    )).unwrap_or_else(|code| code as _);
     // RpcExcept(EXCEPTION_EXECUTE_HANDLER) { dwErrorCode = RpcExceptionCode(); }
     // (SEH exception path: RpcExceptionCode() supplies the code on an RPC fault; not reachable without SEH support)
     // RpcEndExcept;
@@ -883,11 +890,8 @@ pub unsafe extern "system" fn EnumPortsW(pName: PWSTR, Level: DWORD, pPorts: PBY
 
     // Do the RPC call
     // RpcTryExcept
-    dwErrorCode = _RpcEnumPorts(pName, Level, pPorts, cbBuf, pcbNeeded, pcReturned);
+    dwErrorCode = rpc_try(|| _RpcEnumPorts(pName, Level, pPorts, cbBuf, pcbNeeded, pcReturned)).unwrap_or_else(|code| code as _);
     // RpcExcept(EXCEPTION_EXECUTE_HANDLER) -- handler reached only on an SEH exception
-    if false {
-        dwErrorCode = RpcExceptionCode!() as DWORD;
-    }
     // RpcEndExcept;
 
     if dwErrorCode == ERROR_SUCCESS {
@@ -965,7 +969,7 @@ pub unsafe extern "system" fn SetPortW(pName: PWSTR, pPortName: PWSTR, dwLevel: 
     PortInfoContainer.Level = dwLevel;
 
     // RpcTryExcept
-    let dwErrorCode: DWORD = _RpcSetPort(pName, pPortName, core::ptr::addr_of_mut!(PortInfoContainer));
+    let dwErrorCode: DWORD = rpc_try(|| _RpcSetPort(pName, pPortName, core::ptr::addr_of_mut!(PortInfoContainer))).unwrap_or_else(|code| code as _);
     // RpcExcept handler: dead under this tree's USE_DUMMY_PSEH build, and stable Rust has no SEH.
     // Original: dwErrorCode = RpcExceptionCode();
     // RpcEndExcept;

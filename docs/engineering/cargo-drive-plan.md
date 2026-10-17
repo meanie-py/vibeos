@@ -375,6 +375,16 @@ extends it from the boot spine to every fully-Rust module.
    committed `.res` per arch; for 189 modules that is a lot of binary in git. Better: the
    engine runs llvm-windres itself from a committed flag template (the
    `compile_c_db_committed` approach the loaders already use for C).
+   - **Measured 2026-10-17, before any of it is built.** cmake's windres commands (310 per
+     arch) take ~199 distinct `-D` sets and three generated headers: `psdk/winnt.h` (the
+     engine already regenerates it with native-hpp), `reactos/version.h` and
+     `reactos/buildno.h`. The last two come from `sdk/include/reactos/version.cmake` at
+     CONFIGURE time: the UTC date, `git describe --abbrev=7 --long --always`,
+     `rev-parse HEAD`, WINARCH and the C compiler's id/version. A cmake-free build must
+     reproduce exactly that (including the configure-time date, or no `.res` is
+     byte-identical to cmake's), plus a per-cell `-D`/`-I` set the generator can record.
+     It only pays off together with rungs 5 and 6: nothing builds without cmake until
+     all three exist.
 5. **Assemble the ISO from a manifest** instead of 200 `add_cd_file` calls. After this the
    fully-Rust part of the tree needs no cmake at all.
 6. **Modules that still have C** compile it from cargo (`c_shims` / `c_from_compile_db`

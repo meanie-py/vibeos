@@ -33,11 +33,28 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import cargo_cell_gen
 
 
+def _cargo_module_targets(repo: Path) -> set[str]:
+    """Every target some CMakeLists in the tree hands to add_cargo_module."""
+    out: set[str] = set()
+    for cm in repo.glob("**/CMakeLists.txt"):
+        if cm.parts[len(repo.parts)].startswith(("build-", ".")):
+            continue
+        text = cm.read_text(errors="replace")
+        if "add_cargo_module" in text:
+            out.update(re.findall(r"add_cargo_module\(\s*([\w.+-]+)", text))
+    return out
+
+
 def main() -> int:
     if not (cargo_cell_gen.REPO / "build-amd64/build.ninja").is_file():
         print("FATAL: no build-amd64/build.ninja; fix: ./vibeos-cli build --arch amd64")
         return 2
-    rows = cargo_cell_gen.survey()
+    # The survey reads build.ninja, which only a configure refreshes: a module converted
+    # since the last build still has its cmake link edge there. The source tree is the
+    # truth for "converted": a module its CMakeLists hands to add_cargo_module is done,
+    # whatever a stale graph says (the integrator's pre-check saw 7 false NEW this way).
+    cells = _cargo_module_targets(cargo_cell_gen.REPO)
+    rows = [(t, v) for t, v in cargo_cell_gen.survey() if t not in cells]
     for target, verdict in rows:
         label = "convertible" if verdict.startswith("OK") else "refused"
         print(f"{target}: fully-Rust module still linked by cmake ({label})")

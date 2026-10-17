@@ -2155,5 +2155,18 @@ body) reached from csrss. The sweep after it was clean and identical to the firs
    ole32's rpcss_seh.c and stubmanager_seh.c had the same i386 hole; their i386 branch now
    calls ntdll's RtlSehTryExcept. Smoke-verified only: olewinetest's marshal case (an object
    whose Release faults) has not been run on i386 since (it needs a `--rostests` build).
-2. HidPDescription's preparsed-data layout, only if something needs Windows' bytes.
-3. The WS03-column rows that move at the version flip (above).
+   ole32-rust's Running Object Table (ring/moniker.rs) called all seven Irot RPC stubs
+   unguarded on EVERY arch, which also made its start_rpcss() retry loops dead code. They now
+   run under the C's rpc_filter through ntdll_sys::seh::try_except (ole32-rust gains ntdll-sys).
+   A sweep with `tools/rpc_try_wrap.py` over every C file holding RpcTryExcept found
+   winspool-rust with NONE of its ~50 RPC calls guarded (the tool wrapped 47; SpoolerInit
+   and the port thread by hand) and advapi32's SeclCreateProcessWithLogonW. Not converted:
+   winspool utils.rs's `_SEH2_TRY` over a handle deref (a hardware-fault guard, not RPC),
+   and the cosmetic dead `if <never> { RpcExceptionCode!() }` branches the tool's neighbours
+   left in jobs/monitors/spoolfile/forms.
+2. C RPC clients that are still C (setupapi's cfgmgr.c among them; the sweep only covered
+   files with a Rust twin) build under DUMMY_PSEH on every arch (sdk/cmake/gcc.cmake), so
+   their RpcTryExcept is the same no-op. A fix belongs in pseh2.h's RpcTryExcept, or in an
+   inventory of the C callers; it needs a decision, not a drive-by.
+3. HidPDescription's preparsed-data layout, only if something needs Windows' bytes.
+4. The WS03-column rows that move at the version flip (above).

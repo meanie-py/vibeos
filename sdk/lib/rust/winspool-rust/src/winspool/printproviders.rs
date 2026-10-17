@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use ntdll_sys::seh::rpc_try;
 use core::ffi::c_void;
 
 #[no_mangle]
@@ -111,10 +112,10 @@ pub unsafe extern "system" fn AddPrintProvidorW(pName: PWSTR, Level: DWORD, pPro
     }
     ProvidorContainer.ProvidorInfo.pProvidorInfo1 = pProviderInfo as *mut WINSPOOL_PROVIDOR_INFO_1;
     ProvidorContainer.Level = Level;
-    dwErrorCode = _RpcAddPrintProvidor(
+    dwErrorCode = rpc_try(|| _RpcAddPrintProvidor(
         pName as WINSPOOL_HANDLE,
         core::ptr::addr_of_mut!(ProvidorContainer),
-    );
+    )).unwrap_or_else(|code| code as _);
     if _SEH2_Volatile0 != 0 {
         dwErrorCode = RpcExceptionCode!() as DWORD;
         if (*__wine_dbch___default).flags as i32
@@ -214,11 +215,11 @@ pub unsafe extern "system" fn DeletePrintProvidorW(mut pName: PWSTR, mut pEnviro
             pPrintProviderName,
         );
     }
-    dwErrorCode = _RpcDeletePrintProvidor(
+    dwErrorCode = rpc_try(|| _RpcDeletePrintProvidor(
         pName as WINSPOOL_HANDLE,
         pEnvironment as *mut WCHAR,
         pPrintProviderName as *mut WCHAR,
-    );
+    )).unwrap_or_else(|code| code as _);
     if _SEH2_Volatile0 != 0 || 0 as ::core::ffi::c_int != 0 && 1 as ::core::ffi::c_int != 0 {
         dwErrorCode = RpcExceptionCode!() as DWORD;
         if (*__wine_dbch___default).flags as ::core::ffi::c_int
