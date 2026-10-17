@@ -851,7 +851,6 @@ pub unsafe extern "system" fn GetMappedFileNameW(
     let mut Len: DWORD = 0;
     let mut OutSize: SIZE_T = 0;
     let mut Status: NTSTATUS = 0;
-    core::mem::size_of::<MEMORY_SECTION_NAME>();
     // The C's local `struct { MEMORY_SECTION_NAME; WCHAR CharBuffer[MAX_PATH]; } SectionName`.
     // The MS anonymous member puts MEMORY_SECTION_NAME's one field (ndk/mmtypes.h) directly in
     // the struct, ahead of the buffer the name's string points into.
