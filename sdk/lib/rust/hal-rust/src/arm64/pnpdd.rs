@@ -301,7 +301,7 @@ unsafe extern "system" fn BusTranslate(
     out: ddk::PPHYSICAL_ADDRESS,
 ) -> BOOLEAN {
     // _DMA/_TRA on the Pi: no translation between bus and CPU addresses.
-    *out = bus_address;
+    core::ptr::write_unaligned(out, bus_address);
     1
 }
 unsafe extern "system" fn BusGetDmaAdapter(
