@@ -430,6 +430,10 @@ unsafe fn MiBalancerThreadInner() {
         if status == STATUS_WAIT_0 || status == STATUS_WAIT_1 {
             let mut initial_target: ULONG = 0;
 
+            // Pages the allocator repurposed from standby left their segment slots
+            // marked; clear them while nothing else holds this thread up.
+            crate::mm::standby::MiRosStandbyDrainRepurposed();
+
             loop {
                 let old_target = initial_target;
 
