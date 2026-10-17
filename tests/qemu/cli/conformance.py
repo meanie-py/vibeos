@@ -578,6 +578,20 @@ def _conformance_once(args, repo: Path) -> int:
     # become the default, so the UP baseline is deliberately the right oracle here.
     baseline_name = f"{SUITE}-smp{smp}.txt" if smp > 1 else f"{SUITE}.txt"
     baseline_path = repo / "tools" / "conformance-baseline" / base / baseline_name
+    # Refused BEFORE the build and the sweep, not after them: checked at the end, a
+    # mistyped `--only` cost a full kmtest build and a 5-minute boot per arch, then
+    # exited 2 with no verdict (the run dir read RUN_INTERRUPTED).
+    only = getattr(args, "only", None)
+    if only and not getattr(args, "write_baseline", False):
+        print("[conformance] --only has no meaning without --write-baseline", file=sys.stderr)
+        return 2
+    if only and not baseline_path.is_file():
+        print(
+            f"[conformance] --only needs an existing baseline at {baseline_path};"
+            " seed the file first with a plain --write-baseline",
+            file=sys.stderr,
+        )
+        return 2
 
     # --- 1. build (default on) with the kmtest payload -----------------------
     if args.no_build:
@@ -785,17 +799,6 @@ def _conformance_once(args, repo: Path) -> int:
                 new_passes.append(r["name"])
 
     # --- 5. write baseline if asked ------------------------------------------
-    only = getattr(args, "only", None)
-    if only and not args.write_baseline:
-        print("[conformance] --only has no meaning without --write-baseline", file=sys.stderr)
-        return 2
-    if only and not have_baseline:
-        print(
-            f"[conformance] --only needs an existing baseline at {baseline_path};"
-            " seed the file first with a plain --write-baseline",
-            file=sys.stderr,
-        )
-        return 2
 
     if args.write_baseline and only:
         # Targeted re-seed: the coverage refusal below does not apply (nothing is

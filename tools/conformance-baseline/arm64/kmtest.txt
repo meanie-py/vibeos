@@ -364,3 +364,4 @@ TcpIpTdi OK pass=31 fail=4 skip=0 exit=0
     assert tdi.c:170
     assert tdi.c:246
 ExPushLock OK pass=1134 fail=0 skip=0 exit=0
+IoDeviceProperty OK pass=653 fail=0 skip=0 exit=0
