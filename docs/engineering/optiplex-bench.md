@@ -10,7 +10,7 @@ machinery at this board (its own lease, `VIBEOS_BENCH_BOARD=optiplex`).
 | Power | The Pi 4's Shelly plug | `tools/optiplex/power.sh status / cycle` |
 | Keyboard, mouse, disk | Pico `picousb5` | `tools/optiplex/pico.sh ...` |
 | Screen | Capture card `vid_345f` behind a VGA-to-HDMI converter (the 9020 has VGA and DisplayPort, no HDMI; the converter needs its USB power lead) | `tools/optiplex/hdmi.sh out.png` |
-| Serial | The 9020's COM1, RS-232 to a Prolific PL2303GT on the host: Windows **COM7**, 115200 8N1. coreboot logs every boot here (`debug_level = Debug`), and VibeOS's loader and kernel debug output follow (`/DEBUGPORT=COM1 /BAUDRATE=115200`) | `tools/optiplex/serial.sh up / status`; the live capture is named in `<bench>/serial-current.json`. `python3 tools/pi4/serial_times.py <capture dir> --gaps 10` (or `--lines`) puts arrival times on the latest boot |
+| Serial | The 9020's COM1, RS-232 to a Prolific PL2303GT on the host: Windows **COM7**, 115200 8N1. coreboot logs every boot here (`debug_level = Debug`), and VibeOS's loader and kernel debug output follow (`/DEBUGPORT=COM1 /BAUDRATE=115200`) | `tools/optiplex/serial.sh up / status`; the live capture is named in `<bench>/serial-current.json`. `python3 tools/pi4/serial_times.py <capture dir> --gaps 10` (or `--lines`) puts arrival times on the latest boot. The board boots the MP pair (`ntkrnlmp.exe`, `halmp.dll`), which a bugcheck still prints as `ntoskrnl.exe+` and `hal.dll+`: symbolicate those frames as `./vibeos-cli sym --arch amd64 halmp.dll+0x...` |
 
 The Pi 5 keeps the other card (`vid_534d`, `tools/pi5/env.sh`).
 

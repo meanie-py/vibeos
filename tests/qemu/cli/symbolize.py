@@ -160,7 +160,9 @@ def _all_identical(repo: Path, mods: list[Module]) -> bool:
     return len(digests) == 1
 
 
-def resolve(repo: Path, arch: str, addr: int, want_module: str | None = None) -> str:
+def resolve(
+    repo: Path, arch: str, addr: int, want_module: str | None = None, offset: bool = False
+) -> str:
     mods = load_modules(repo, arch)
     if not mods:
         return f"{addr:#x} -> (no index; run qemu/build-user-index.sh {arch})"
@@ -194,9 +196,11 @@ def resolve(repo: Path, arch: str, addr: int, want_module: str | None = None) ->
         return f"{addr:#x} -> (overlapping modules: {names}; pass --module)"
 
     m = uniq[0]
-    if want_module and addr < m.base:
-        # A bugcheck prints `ndis.sys+0x12D10` for a relocated driver: with the module named,
-        # an address below its link-time base is that offset, not an address outside it.
+    if offset or (want_module and addr < m.base):
+        # A bugcheck prints `ndis.sys+0x12D10` for a relocated driver: that is an offset from
+        # the module's base. Said with `+`, it is one whatever its size: the HALs link at
+        # 0x10000, so `hal.dll+0x25B1F` is ABOVE the base and used to be read as an address,
+        # naming a float parser for a crash in memcpy.
         addr += m.base
     hit = lookup_symbol(repo, arch, m.name, addr)
     if hit is None and (want_module or identical):
@@ -226,7 +230,8 @@ def run(args, repo: Path) -> int:
     rc = 0
     for raw in args.addr:
         module = args.module
-        if "+" in raw:  # `ndis.sys+0x12D10`, as a bugcheck prints a relocated module's PC
+        offset = "+" in raw
+        if offset:  # `ndis.sys+0x12D10`, as a bugcheck prints a relocated module's PC
             module, raw = raw.rsplit("+", 1)
         try:
             addr = int(raw, 16)  # int(x, 16) already accepts a 0x prefix
@@ -234,5 +239,5 @@ def run(args, repo: Path) -> int:
             print(f"{raw} -> (not a hex address)")
             rc = 1
             continue
-        print(resolve(repo, arch, addr, module))
+        print(resolve(repo, arch, addr, module, offset))
     return rc
