@@ -41,7 +41,7 @@ from . import (
     seh_rewrite,
     semantic_skeleton,
     semdiff,
-    shell32_tail_inventory,
+    shell32_inventory,
     substrate_closure,
     switch_extract,
     trivial_c,
@@ -517,13 +517,11 @@ def cmd_hybrid_closure(args):
 
 def cmd_shell32_tail_inventory(args):
     """Ratchet the planned shell32 tail against the literal live CMake source lists."""
-    ledger = (
-        Path(args.ledger) if args.ledger else REACTOS_ROOT / shell32_tail_inventory.DEFAULT_LEDGER
-    )
+    ledger = Path(args.ledger) if args.ledger else REACTOS_ROOT / shell32_inventory.DEFAULT_LEDGER
     if not ledger.is_absolute():
         ledger = (Path.cwd() / ledger).resolve()
-    report = shell32_tail_inventory.check_inventory(REACTOS_ROOT, ledger)
-    shell32_tail_inventory.print_report(report, as_json=args.json)
+    report = shell32_inventory.check_inventory(REACTOS_ROOT, ledger)
+    shell32_inventory.print_report(report, as_json=args.json)
     if not report.ok:
         sys.exit(1)
 
@@ -617,6 +615,15 @@ def _preamble_has_translatable_content(preamble_src: str, tu_text: str | None = 
         if re.match(r"^#\s*include\b", stripped):
             continue
         if re.match(r"^#\s*pragma\s+once\b", stripped):
+            continue
+        # A bare conditional only gates the lines between it and its #endif, and each of
+        # those is judged here on its own. tdihelpers' tdi.c guards an #undef with one:
+        # `#ifdef UNIMPLEMENTED` / `#undef UNIMPLEMENTED` / `#endif`.
+        if re.match(r"^#\s*(?:if|ifdef|ifndef|elif|else|endif)\b", stripped):
+            continue
+        # An #undef alone introduces nothing: a later use of the name would not compile in
+        # the C unless the TU defines it again, and that #define is judged on its own line.
+        if re.match(r"^#\s*undef\s+[A-Za-z_]\w*\s*$", stripped):
             continue
         # A wine debug-channel declaration is owned by the CRATE PRELUDE in this project, not
         # by the per-file translation (the lsasrv/netapi32 pattern: wine/debug.h is parsed but
@@ -1318,6 +1325,7 @@ def cmd_crate_repair(args):
         max_passes=args.max_passes,
         allow_single_target_width=args.allow_single_target_width,
         dry_run=args.dry_run,
+        features=args.features.split(",") if args.features else (),
     )
     crate_repair.print_session(session, as_json=args.json)
     if session.status in ("regressed", "max_passes"):
@@ -3111,6 +3119,28 @@ def cmd_translate(args):
 
         fact_seal_enabled = bool(getattr(args, "seal_facts", False))
         call_seal_enabled = bool(getattr(args, "seal_calls", False))
+        goto_dir = getattr(args, "expand_goto_macros", None)
+        if goto_dir:
+            # The module's macros that `goto` a label of the CALLER (mmc_new's CHK_HR): no
+            # macro_rules! can name the caller's label, so they are only ever lowered here.
+            gdir = Path(goto_dir)
+            gdir = gdir if gdir.is_absolute() else REACTOS_ROOT / gdir
+            gdefs, _ = module_macros(
+                sorted(p for ext in ("*.h", "*.hpp", "*.c", "*.cpp") for p in gdir.rglob(ext)),
+                REACTOS_ROOT,
+            )
+            goto_names: set[str] = set()
+            new_deps = []
+            for dep in sorted_deps:
+                text, used = expand_macros(dep.body_text, gdefs, control_flow=True)
+                goto_names |= used
+                new_deps.append(replace(dep, body_text=text) if used else dep)
+            sorted_deps = new_deps
+            if goto_names:
+                print(
+                    f"  [macros] goto-carrying, expanded in the C: {', '.join(sorted(goto_names))}",
+                    file=sys.stderr,
+                )
         expand_dir = getattr(args, "expand_local_macros", None)
         if expand_dir:
             # BEFORE everything else reads the body: the seals, the audits and the response
@@ -5610,6 +5640,9 @@ def main():
         action="store_true",
         help="LOUD override: bake a pointer-width cast proven on ONE target only",
     )
+    p.add_argument(
+        "--features", help="cargo features to check with (comma-separated), as the build does"
+    )
     p.add_argument("--json", action="store_true", help="Machine-readable ledger")
 
     p = sub.add_parser(
@@ -6116,6 +6149,16 @@ def main():
         "FIXME and MESSAGE are still stripped). Stripping them is how atapi and pciidex lost "
         "90%% of their error output. Banks bought before this are namespaced without it, so "
         "they refuse rather than re-buy; pass --no-keep-diagnostics to replay one.",
+    )
+    p.add_argument(
+        "--expand-goto-macros",
+        dest="expand_goto_macros",
+        metavar="MODULE_DIR",
+        default=None,
+        help="Expand only the module's macros that `goto` a label of the calling function "
+        "(mmc_new's CHK_HR), with C's stringizing, before the body is sealed and sent. Rust "
+        "labels are hygienic, so no macro_rules! port can reach the caller's label. `port "
+        "translate` turns this on by itself for a TU that is bought fresh and calls one.",
     )
     p.add_argument(
         "--expand-local-macros",

@@ -20,24 +20,71 @@
 #![allow(non_upper_case_globals)]
 
 use crate::types::*;
+// The crate's own functions: the definition is the declaration.
+use crate::wine::classes::HCR_GetProgIdKeyOfExtension;
+use crate::shell32::iconcache::PidlToSicIndex;
+use crate::wine::pidl::SHBindToParent;
+use crate::wine::pidl::SHGetPathFromIDListW;
+use crate::wine::pidl::SHILCreateFromPathW;
+use crate::wine::shellstring::StrRetToStrNW;
+use crate::wine::pidl::_ILIsDrive;
+// One declaration per external symbol: island.rs.
+use crate::island::BeginPaint;
+use crate::island::BitBlt;
+use crate::island::CloseHandle;
+use crate::island::CoCreateInstance;
+use crate::island::CreateCompatibleDC;
+use crate::island::CreateDialogParamW;
+use crate::island::CreateFileW;
+use crate::island::CreateIconIndirect;
+use crate::island::DeleteDC;
+use crate::island::DialogBoxIndirectParamW;
+use crate::island::EndDialog;
+use crate::island::EndPaint;
+use crate::island::FindResourceW;
+use crate::island::GetDlgItem;
+use crate::island::GetIconInfo;
+use crate::island::GetModuleFileNameW;
+use crate::island::GetSystemMetrics;
+use crate::island::GetWindowLongW;
+use crate::island::GetWindowTextLengthW;
+use crate::island::GetWindowTextW;
+use crate::island::HeapAlloc;
+use crate::island::ImageList_GetIcon;
+use crate::island::LoadIconW;
+use crate::island::LoadImageW;
+use crate::island::LoadLibraryExW;
+use crate::island::LoadResource;
+use crate::island::LoadStringW;
+use crate::island::LocalAlloc;
+use crate::island::PrivateExtractIconsW;
+use crate::island::ReadFile;
+use crate::island::RegCloseKey;
+use crate::island::RegOpenKeyExW;
+use crate::island::RegQueryValueExW;
+use crate::island::SelectObject;
+use crate::island::SendDlgItemMessageW;
+use crate::island::SetDlgItemTextW;
+use crate::island::SetWindowTextW;
+use crate::island::ShowWindow;
 use core::ffi::c_void;
 use core::mem::size_of;
 use core::ptr::{null, null_mut, write_volatile};
 
 // ── extra type aliases (hoist candidates) ───────────────────────────────────────────────
 pub type ULONG = u32; // winnt.h
-pub type SIZE_T = usize; // basetsd.h
+pub use ntdll_sys::nt::SIZE_T; // basetsd.h
 pub type DWORDLONG = u64; // winnt.h
 pub type SFGAOF = DWORD; // shtypes.h
 pub type SHGDNF = DWORD; // shobjidl
-pub type HICON = HANDLE; // windef.h
-pub type HBITMAP = HANDLE; // windef.h
-pub type HDC = HANDLE; // windef.h
-pub type HGDIOBJ = HANDLE; // windef.h
+pub use crate::island::HICON; // windef.h
+pub use crate::island::HBITMAP; // windef.h
+pub use crate::island::HDC; // windef.h
+pub use crate::island::HGDIOBJ; // windef.h
 pub type HRSRC = HANDLE; // minwindef.h
 pub type HGLOBAL = HANDLE; // minwindef.h
-pub type HMODULE = HANDLE; // minwindef.h
-pub type HIMAGELIST = HANDLE; // commctrl.h
+pub use crate::island::HMODULE; // minwindef.h
+pub use crate::island::HIMAGELIST; // commctrl.h
 pub type HLOCAL = HANDLE; // minwindef.h
 pub type WPARAM = UINT_PTR; // minwindef.h
 pub type LPARAM = LONG_PTR; // minwindef.h
@@ -55,14 +102,7 @@ pub type LPCITEMIDLIST = *const ITEMIDLIST;
 pub type DLGPROC = unsafe extern "system" fn(HWND, UINT, WPARAM, LPARAM) -> INT_PTR;
 
 // ── GUID / IID (guiddef.h) ──────────────────────────────────────────────────────────────
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct GUID {
-    pub Data1: u32,
-    pub Data2: u16,
-    pub Data3: u16,
-    pub Data4: [u8; 8],
-}
+pub use crate::island::GUID;
 pub type IID = GUID;
 pub type CLSID = GUID;
 pub type REFIID = *const IID;
@@ -229,7 +269,7 @@ const GWLP_HINSTANCE: INT = -6; // winuser.h
 // HKEY_LOCAL_MACHINE = (HKEY)(ULONG_PTR)(LONG)0x80000002
 #[inline]
 fn hkey_local_machine() -> HKEY {
-    0x80000002u32 as i32 as isize as usize as *mut c_void
+    (0x80000002u32 as i32 as isize as usize as *mut c_void).cast()
 }
 
 // build-version literals baked at compile time, exactly like the C `#include`s
@@ -261,36 +301,13 @@ static SHELL_Authors: AuthorsTable =
 
 // ── structs (faithful SDK layouts) ──────────────────────────────────────────────────────
 /// SHFILEINFOA (shellapi.h)
-#[repr(C)]
-pub struct SHFILEINFOA {
-    pub hIcon: HICON,
-    pub iIcon: INT,
-    pub dwAttributes: DWORD,
-    pub szDisplayName: [CHAR; MAX_PATH],
-    pub szTypeName: [CHAR; 80],
-}
+pub use crate::island::SHFILEINFOA;
 /// SHFILEINFOW (shellapi.h)
-#[repr(C)]
-pub struct SHFILEINFOW {
-    pub hIcon: HICON,
-    pub iIcon: INT,
-    pub dwAttributes: DWORD,
-    pub szDisplayName: [WCHAR; MAX_PATH],
-    pub szTypeName: [WCHAR; 80],
-}
+pub use crate::island::SHFILEINFOW;
 
 /// STRRET (shtypes.idl, pshpack8 — repr(C) gives identical offsets since 8 is a multiple of 4).
-#[repr(C)]
-pub union STRRET_u {
-    pub pOleStr: LPWSTR,        // STRRET_WSTR
-    pub uOffset: UINT,          // STRRET_OFFSET
-    pub cStr: [CHAR; MAX_PATH], // STRRET_CSTR
-}
-#[repr(C)]
-pub struct STRRET {
-    pub uType: UINT,
-    pub u: STRRET_u,
-}
+
+pub use crate::shellcom::{STRRET, STRRET_u};
 
 /// SHELLDETAILS (shtypes.idl, pshpack1 — `str` lands at offset 8 under plain repr(C) too).
 #[repr(C)]
@@ -311,50 +328,15 @@ pub struct ICONINFO {
 }
 
 /// BITMAP (wingdi.h)
-#[repr(C)]
-pub struct BITMAP {
-    pub bmType: LONG,
-    pub bmWidth: LONG,
-    pub bmHeight: LONG,
-    pub bmWidthBytes: LONG,
-    pub bmPlanes: WORD,
-    pub bmBitsPixel: WORD,
-    pub bmBits: LPVOID,
-}
+pub use crate::island::BITMAP;
 
 /// MEMORYSTATUSEX (winbase.h)
-#[repr(C)]
-pub struct MEMORYSTATUSEX {
-    pub dwLength: DWORD,
-    pub dwMemoryLoad: DWORD,
-    pub ullTotalPhys: DWORDLONG,
-    pub ullAvailPhys: DWORDLONG,
-    pub ullTotalPageFile: DWORDLONG,
-    pub ullAvailPageFile: DWORDLONG,
-    pub ullTotalVirtual: DWORDLONG,
-    pub ullAvailVirtual: DWORDLONG,
-    pub ullAvailExtendedVirtual: DWORDLONG,
-}
+pub use crate::island::MEMORYSTATUSEX;
 
 /// RECT (windef.h)
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct RECT {
-    pub left: LONG,
-    pub top: LONG,
-    pub right: LONG,
-    pub bottom: LONG,
-}
+pub use crate::island::RECT;
 /// PAINTSTRUCT (winuser.h)
-#[repr(C)]
-pub struct PAINTSTRUCT {
-    pub hdc: HDC,
-    pub fErase: BOOL,
-    pub rcPaint: RECT,
-    pub fRestore: BOOL,
-    pub fIncUpdate: BOOL,
-    pub rgbReserved: [BYTE; 32],
-}
+pub use crate::island::PAINTSTRUCT;
 
 /// ABOUT_INFO (file-private; __REACTOS__ variant with szOSVersion).
 #[repr(C)]
@@ -642,26 +624,18 @@ pub struct IExtractIconWVtbl {
 // ── imports (WINAPI → extern "system", @N) ──────────────────────────────────────────────
 extern "system" {
     // kernel32
-    fn CloseHandle(hObject: HANDLE) -> BOOL; // @4
-    fn CreateFileW(
-        lpFileName: LPCWSTR,
-        dwDesiredAccess: DWORD,
-        dwShareMode: DWORD,
-        lpSecurityAttributes: LPVOID,
-        dwCreationDisposition: DWORD,
-        dwFlagsAndAttributes: DWORD,
-        hTemplateFile: HANDLE,
-    ) -> HANDLE; // @28
+// @4
+// @28
     fn GetBinaryTypeW(lpApplicationName: LPCWSTR, lpBinaryType: LPDWORD) -> BOOL; // @8
     fn GetCurrentDirectoryW(nBufferLength: DWORD, lpBuffer: LPWSTR) -> DWORD; // @8
     fn GetFileAttributesW(lpFileName: LPCWSTR) -> DWORD; // @4
     fn GetLocaleInfoW(Locale: DWORD, LCType: DWORD, lpLCData: LPWSTR, cchData: INT) -> INT; // @16
-    fn GetModuleFileNameW(hModule: HMODULE, lpFilename: LPWSTR, nSize: DWORD) -> DWORD; // @12
+// @12
     fn GetProcessHeap() -> HANDLE; // @0
     fn GlobalMemoryStatusEx(lpBuffer: *mut MEMORYSTATUSEX) -> BOOL; // @4
-    fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: SIZE_T) -> LPVOID; // @12
+// @12
     fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID) -> BOOL; // @12
-    fn LocalAlloc(uFlags: UINT, uBytes: SIZE_T) -> HLOCAL; // @8
+// @8
     fn LocalFree(hMem: HLOCAL) -> HLOCAL; // @4
     fn MultiByteToWideChar(
         CodePage: UINT,
@@ -671,13 +645,7 @@ extern "system" {
         lpWideCharStr: LPWSTR,
         cchWideChar: INT,
     ) -> INT; // @24
-    fn ReadFile(
-        hFile: HANDLE,
-        lpBuffer: LPVOID,
-        nNumberOfBytesToRead: DWORD,
-        lpNumberOfBytesRead: LPDWORD,
-        lpOverlapped: LPVOID,
-    ) -> BOOL; // @20
+// @20
     fn SetFilePointer(
         hFile: HANDLE,
         lDistanceToMove: LONG,
@@ -700,129 +668,63 @@ extern "system" {
     fn lstrcmpW(lpString1: LPCWSTR, lpString2: LPCWSTR) -> INT; // @8
 
     // ole32
-    fn CoCreateInstance(
-        rclsid: REFCLSID,
-        pUnkOuter: *mut c_void,
-        dwClsContext: DWORD,
-        riid: REFIID,
-        ppv: *mut LPVOID,
-    ) -> HRESULT; // @20
+// @20
 
     // advapi32
-    fn RegCloseKey(hKey: HKEY) -> LONG; // @4
-    fn RegOpenKeyExW(
-        hKey: HKEY,
-        lpSubKey: LPCWSTR,
-        ulOptions: DWORD,
-        samDesired: REGSAM,
-        phkResult: PHKEY,
-    ) -> LONG; // @20
-    fn RegQueryValueExW(
-        hKey: HKEY,
-        lpValueName: LPCWSTR,
-        lpReserved: LPDWORD,
-        lpType: LPDWORD,
-        lpData: LPBYTE,
-        lpcbData: LPDWORD,
-    ) -> LONG; // @24
+// @4
+// @20
+// @24
 
     // shlwapi
     fn PathCombineW(lpszDest: LPWSTR, lpszDir: LPCWSTR, lpszFile: LPCWSTR) -> LPWSTR; // @12
     fn PathFindExtensionW(pszPath: LPCWSTR) -> LPWSTR; // @4
     fn PathIsRelativeW(pszPath: LPCWSTR) -> BOOL; // @4
     fn PathIsRootW(pPath: LPCWSTR) -> BOOL; // @4
-    fn StrRetToStrNW(pszBuf: LPWSTR, cchBuf: UINT, pstr: *mut STRRET, pidl: LPCITEMIDLIST)
-        -> BOOL; // @16 (shell32 shellstring.rs reimpl returns BOOL)
+// @16 (shell32 shellstring.rs reimpl returns BOOL)
 
     // user32
-    fn BeginPaint(hWnd: HWND, lpPaint: *mut PAINTSTRUCT) -> HDC; // @8
-    fn CreateDialogParamW(
-        hInstance: HINSTANCE,
-        lpTemplateName: LPCWSTR,
-        hWndParent: HWND,
-        lpDialogFunc: Option<DLGPROC>,
-        dwInitParam: LPARAM,
-    ) -> HWND; // @20
-    fn CreateIconIndirect(piconinfo: *mut ICONINFO) -> HICON; // @4
-    fn DialogBoxIndirectParamW(
-        hInstance: HINSTANCE,
-        hDialogTemplate: LPVOID,
-        hWndParent: HWND,
-        lpDialogFunc: Option<DLGPROC>,
-        dwInitParam: LPARAM,
-    ) -> INT_PTR; // @20
-    fn EndDialog(hDlg: HWND, nResult: INT_PTR) -> BOOL; // @8
-    fn EndPaint(hWnd: HWND, lpPaint: *const PAINTSTRUCT) -> BOOL; // @8
-    fn FindResourceW(hModule: HMODULE, lpName: LPCWSTR, lpType: LPCWSTR) -> HRSRC; // @12
-    fn GetDlgItem(hDlg: HWND, nIDDlgItem: INT) -> HWND; // @8
-    fn GetIconInfo(hIcon: HICON, piconinfo: *mut ICONINFO) -> BOOL; // @8
-    fn GetSystemMetrics(nIndex: INT) -> INT; // @4
-    fn GetWindowTextLengthW(hWnd: HWND) -> INT; // @4
-    fn GetWindowTextW(hWnd: HWND, lpString: LPWSTR, nMaxCount: INT) -> INT; // @12
-    fn LoadIconW(hInstance: HINSTANCE, lpIconName: LPCWSTR) -> HICON; // @8
-    fn LoadImageW(
-        hInst: HINSTANCE,
-        name: LPCWSTR,
-        type_: UINT,
-        cx: INT,
-        cy: INT,
-        fuLoad: UINT,
-    ) -> HANDLE; // @24
-    fn LoadStringW(hInstance: HINSTANCE, uID: UINT, lpBuffer: LPWSTR, cchBufferMax: INT) -> INT; // @16
-    fn LoadLibraryExW(lpLibFileName: LPCWSTR, hFile: HANDLE, dwFlags: DWORD) -> HINSTANCE; // @12
-    fn PrivateExtractIconsW(
-        szFileName: LPCWSTR,
-        nIconIndex: INT,
-        cxIcon: INT,
-        cyIcon: INT,
-        phicon: *mut HICON,
-        piconid: *mut UINT,
-        nIcons: UINT,
-        flags: UINT,
-    ) -> UINT; // @32
-    fn SendDlgItemMessageW(
-        hDlg: HWND,
-        nIDDlgItem: INT,
-        Msg: UINT,
-        wParam: WPARAM,
-        lParam: LPARAM,
-    ) -> LRESULT; // @20
-    fn SetDlgItemTextW(hDlg: HWND, nIDDlgItem: INT, lpString: LPCWSTR) -> BOOL; // @12
-    fn SetWindowTextW(hWnd: HWND, lpString: LPCWSTR) -> BOOL; // @8
-    fn ShowWindow(hWnd: HWND, nCmdShow: INT) -> BOOL; // @8
+// @8
+// @20
+// @4
+// @20
+// @8
+// @8
+// @12
+// @8
+// @8
+// @4
+// @4
+// @12
+// @8
+// @24
+// @16
+// @12
+// @32
+// @20
+// @12
+// @8
+// @8
 
     // gdi32
-    fn BitBlt(
-        hdc: HDC,
-        x: INT,
-        y: INT,
-        cx: INT,
-        cy: INT,
-        hdcSrc: HDC,
-        x1: INT,
-        y1: INT,
-        rop: DWORD,
-    ) -> BOOL; // @36
-    fn CreateCompatibleDC(hdc: HDC) -> HDC; // @4
-    fn DeleteDC(hdc: HDC) -> BOOL; // @4
+// @36
+// @4
+// @4
     fn DeleteObject(ho: HGDIOBJ) -> BOOL; // @4
     fn GetObjectW(h: HGDIOBJ, c: INT, pv: LPVOID) -> INT; // @12
-    fn SelectObject(hdc: HDC, h: HGDIOBJ) -> HGDIOBJ; // @8
+// @8
 
     // comctl32
-    fn ImageList_GetIcon(himl: HIMAGELIST, i: INT, flags: UINT) -> HICON; // @12
+// @12
 
     // kernel32 resource
-    fn LoadResource(hModule: HMODULE, hResInfo: HRSRC) -> HGLOBAL; // @8
-    fn GetWindowLongW(hWnd: HWND, nIndex: INT) -> LONG; // @8 (i386 GWLP_*→GWL_*)
+// @8
+// @8 (i386 GWLP_*→GWL_*)
 }
 
 // shell32 internal helpers (cdecl, from C pidl.c / shell32 .cpp side — no @N)
 extern "C" {
     fn _ILGetExtension(pidl: LPCITEMIDLIST, pOut: LPWSTR, uOutSize: UINT) -> BOOL; // _ILGetExtension
-    fn _ILIsDrive(pidl: LPCITEMIDLIST) -> BOOL; // _ILIsDrive
-    fn HCR_GetProgIdKeyOfExtension(szExtension: LPCWSTR, phKey: PHKEY, AllowFallback: BOOL)
-        -> HRESULT;
+// _ILIsDrive
     fn HCR_MapTypeToValueW(
         szExtension: LPCWSTR,
         szFileType: LPWSTR,
@@ -839,30 +741,14 @@ extern "C" {
     fn SHELL32_AssocGetFSDirectoryDescription(Buf: LPWSTR, cchBuf: UINT) -> HRESULT;
     fn SHELL32_AssocGetFileDescription(Name: LPCWSTR, Buf: LPWSTR, cchBuf: UINT) -> HRESULT;
     fn SHELL32_CreateSimpleIDListFromPath(pszPath: LPCWSTR, dwAttributes: DWORD) -> LPITEMIDLIST;
-    fn PidlToSicIndex(
-        sh: *mut IShellFolder,
-        pidl: LPCITEMIDLIST,
-        bBigIcon: BOOL,
-        uFlags: UINT,
-        pIndex: *mut INT,
-    ) -> BOOL;
     fn SIC_GetIconIndex(sSourceFile: LPCWSTR, dwSourceIndex: INT, dwFlags: DWORD) -> INT;
 }
 
 // shell32 exported WINAPI helpers used here (@N)
 extern "system" {
-    fn SHGetPathFromIDListW(pidl: LPCITEMIDLIST, pszPath: LPWSTR) -> BOOL; // @8
-    fn SHILCreateFromPathW(
-        path: LPCWSTR,
-        ppidl: *mut LPITEMIDLIST,
-        prgfInOut: LPDWORD,
-    ) -> HRESULT; // @12
-    fn SHBindToParent(
-        pidl: LPCITEMIDLIST,
-        riid: REFIID,
-        ppv: *mut LPVOID,
-        ppidlLast: *mut LPCITEMIDLIST,
-    ) -> HRESULT; // @16
+// @8
+// @12
+// @16
     fn SHFree(pv: LPVOID); // @4
     fn Shell_GetImageLists(lpBigList: *mut HIMAGELIST, lpSmallList: *mut HIMAGELIST) -> BOOL; // @8
 }
@@ -954,9 +840,9 @@ pub unsafe extern "system" fn CommandLineToArgvW(lpCmdline: LPCWSTR, numargs: *m
     if *lpCmdline == 0 {
         // Return the path to the executable
         let mut deslen: DWORD = MAX_PATH as DWORD;
-        let mut size: SIZE_T = size_of::<LPWSTR>() * 2 + deslen as usize * size_of::<WCHAR>();
+        let mut size: SIZE_T = (size_of::<LPWSTR>() * 2 + deslen as usize * size_of::<WCHAR>()) as _;
         loop {
-            let p = LocalAlloc(LMEM_FIXED, size) as *mut LPWSTR;
+            let p = LocalAlloc(LMEM_FIXED, (size) as SIZE_T) as *mut LPWSTR;
             if p.is_null() {
                 return null_mut();
             }
@@ -972,7 +858,7 @@ pub unsafe extern "system" fn CommandLineToArgvW(lpCmdline: LPCWSTR, numargs: *m
                 return p;
             }
             deslen *= 2;
-            size = size_of::<LPWSTR>() * 2 + deslen as usize * size_of::<WCHAR>();
+            size = (size_of::<LPWSTR>() * 2 + deslen as usize * size_of::<WCHAR>()) as _;
             LocalFree(p as HLOCAL);
         }
     }
@@ -1041,7 +927,7 @@ pub unsafe extern "system" fn CommandLineToArgvW(lpCmdline: LPCWSTR, numargs: *m
     // Allocate in a single lump.
     argv = LocalAlloc(
         LMEM_FIXED,
-        (argc as usize + 1) * size_of::<LPWSTR>() + (r_wcslen(lpCmdline) + 1) * size_of::<WCHAR>(),
+        ((argc as usize + 1) * size_of::<LPWSTR>() + (r_wcslen(lpCmdline) + 1) * size_of::<WCHAR>()) as SIZE_T,
     ) as *mut LPWSTR;
     if argv.is_null() {
         return null_mut();
@@ -1189,7 +1075,7 @@ unsafe fn SHELL_GetDetailsOfToBuffer(
         }
     }
     if SUCCEEDED(hr) {
-        hr = if StrRetToStrNW(Buf, cchBuf, &mut details.str_, pidl) != 0 {
+        hr = if StrRetToStrNW(Buf, cchBuf, &mut details.str_, (pidl).cast()) != 0 {
             S_OK_
         } else {
             E_FAIL
@@ -1347,9 +1233,9 @@ pub unsafe extern "system" fn SHGetFileInfoW(
 
     // windows initializes these values regardless of the flags
     if !psfi.is_null() {
-        write_volatile((*psfi).szDisplayName.as_mut_ptr(), 0);
-        write_volatile((*psfi).szTypeName.as_mut_ptr(), 0);
-        write_volatile(&mut (*psfi).hIcon, null_mut());
+        write_volatile(core::ptr::addr_of_mut!((*psfi).szDisplayName).cast(), 0);
+        write_volatile(core::ptr::addr_of_mut!((*psfi).szTypeName).cast(), 0);
+        core::ptr::addr_of_mut!((*psfi).hIcon).write_unaligned(null_mut());
     }
 
     if (flags & SHGFI_PIDL) == 0 {
@@ -1370,14 +1256,14 @@ pub unsafe extern "system" fn SHGetFileInfoW(
             }
             let hr2: HRESULT = if (dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0 {
                 SHELL32_AssocGetFSDirectoryDescription(
-                    (*psfi).szTypeName.as_mut_ptr(),
-                    (*psfi).szTypeName.len() as UINT,
+                    core::ptr::addr_of_mut!((*psfi).szTypeName).cast(),
+                    (core::ptr::addr_of!((*psfi).szTypeName) as *const [WCHAR]).len() as UINT,
                 )
             } else {
                 SHELL32_AssocGetFileDescription(
                     path,
-                    (*psfi).szTypeName.as_mut_ptr(),
-                    (*psfi).szTypeName.len() as UINT,
+                    core::ptr::addr_of_mut!((*psfi).szTypeName).cast(),
+                    (core::ptr::addr_of!((*psfi).szTypeName) as *const [WCHAR]).len() as UINT,
                 )
             };
             if SUCCEEDED(hr2) {
@@ -1388,7 +1274,7 @@ pub unsafe extern "system" fn SHGetFileInfoW(
             }
         }
     } else {
-        SHGetPathFromIDListW(path as LPCITEMIDLIST, szFullPath.as_mut_ptr());
+        SHGetPathFromIDListW((path as LPCITEMIDLIST).cast(), szFullPath.as_mut_ptr());
     }
 
     if (flags & SHGFI_EXETYPE) != 0 && (flags & SHGFI_SYSICONINDEX) == 0 {
@@ -1412,41 +1298,41 @@ pub unsafe extern "system" fn SHGetFileInfoW(
             pidl = SHELL32_CreateSimpleIDListFromPath(szFullPath.as_ptr(), dwFileAttributes);
             hr = if !pidl.is_null() { S_OK_ } else { E_FAIL };
         } else {
-            hr = SHILCreateFromPathW(szFullPath.as_ptr(), &mut pidl, &mut dwAttributes);
+            hr = SHILCreateFromPathW(szFullPath.as_ptr(), (&raw mut pidl).cast(), &mut dwAttributes);
         }
         pidlFree = pidl;
     }
 
     if SUCCEEDED(hr) {
         hr = SHBindToParent(
-            pidl,
+            (pidl).cast(),
             &IID_IShellFolder,
             &mut psfParent as *mut *mut IShellFolder as *mut LPVOID,
-            &mut pidlLast,
+            (&raw mut pidlLast).cast(),
         );
     }
 
     // attributes of the child
     if SUCCEEDED(hr) && (flags & SHGFI_ATTRIBUTES) != 0 {
         if (flags & SHGFI_ATTR_SPECIFIED) == 0 {
-            write_volatile(&mut (*psfi).dwAttributes, 0xffffffff);
+            core::ptr::addr_of_mut!((*psfi).dwAttributes).write_unaligned(0xffffffff);
         }
         hr = ((*(*psfParent).lpVtbl).GetAttributesOf)(
             psfParent,
             1,
             &pidlLast as *const LPCITEMIDLIST,
-            &mut (*psfi).dwAttributes,
+            core::ptr::addr_of_mut!((*psfi).dwAttributes),
         );
     }
 
     if (flags & SHGFI_USEFILEATTRIBUTES) != 0 && (flags & SHGFI_ICON) != 0 {
-        write_volatile(&mut (*psfi).dwAttributes, 0);
+        core::ptr::addr_of_mut!((*psfi).dwAttributes).write_unaligned(0);
     }
 
     // displayname
     if SUCCEEDED(hr) && (flags & SHGFI_DISPLAYNAME) != 0 {
         let mut str_: STRRET = core::mem::zeroed();
-        write_volatile((*psfi).szDisplayName.as_mut_ptr(), UNICODE_NULL);
+        write_volatile(core::ptr::addr_of_mut!((*psfi).szDisplayName).cast(), UNICODE_NULL);
         hr = ((*(*psfParent).lpVtbl).GetDisplayNameOf)(
             psfParent,
             pidlLast,
@@ -1455,24 +1341,24 @@ pub unsafe extern "system" fn SHGetFileInfoW(
         );
         if SUCCEEDED(hr) {
             StrRetToStrNW(
-                (*psfi).szDisplayName.as_mut_ptr(),
-                (*psfi).szDisplayName.len() as UINT,
+                core::ptr::addr_of_mut!((*psfi).szDisplayName).cast(),
+                (core::ptr::addr_of!((*psfi).szDisplayName) as *const [WCHAR]).len() as UINT,
                 &mut str_,
-                pidlLast,
+                (pidlLast).cast(),
             );
         }
     }
 
     // type name
     if SUCCEEDED(hr) && (flags & SHGFI_TYPENAME) != 0 {
-        let col: UINT = if _ILIsDrive(pidlLast) != FALSE { 1 } else { 2 }; // SHFSF_COL_TYPE
-        write_volatile((*psfi).szTypeName.as_mut_ptr(), UNICODE_NULL);
+        let col: UINT = if _ILIsDrive((pidlLast).cast()) != FALSE { 1 } else { 2 }; // SHFSF_COL_TYPE
+        write_volatile(core::ptr::addr_of_mut!((*psfi).szTypeName).cast(), UNICODE_NULL);
         hr = SHELL_GetDetailsOfToBuffer(
             psfParent,
             pidlLast,
             col,
-            (*psfi).szTypeName.as_mut_ptr(),
-            (*psfi).szTypeName.len() as UINT,
+            core::ptr::addr_of_mut!((*psfi).szTypeName).cast(),
+            (core::ptr::addr_of!((*psfi).szTypeName) as *const [WCHAR]).len() as UINT,
         );
     }
 
@@ -1502,8 +1388,8 @@ pub unsafe extern "system" fn SHGetFileInfoW(
 
         if (flags & SHGFI_USEFILEATTRIBUTES) != 0 && (flags & SHGFI_PIDL) == 0 {
             if (dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0 {
-                lstrcpyW((*psfi).szDisplayName.as_mut_ptr(), swshell32name_ptr());
-                write_volatile(&mut (*psfi).iIcon, -IDI_SHELL_FOLDER);
+                lstrcpyW(core::ptr::addr_of_mut!((*psfi).szDisplayName).cast(), swshell32name_ptr());
+                core::ptr::addr_of_mut!((*psfi).iIcon).write_unaligned(-IDI_SHELL_FOLDER);
             } else {
                 let mut sTemp: [WCHAR; MAX_PATH] = [0; MAX_PATH];
                 let szExt = PathFindExtensionW(szFullPath.as_ptr());
@@ -1515,14 +1401,14 @@ pub unsafe extern "system" fn SHGetFileInfoW(
                         sTemp.as_mut_ptr(),
                         null(),
                         MAX_PATH as DWORD,
-                        &mut (*psfi).iIcon,
+                        core::ptr::addr_of_mut!((*psfi).iIcon),
                     ) != FALSE
                 {
                     if lstrcmpW(W_PERCENT_1.as_ptr(), sTemp.as_ptr()) != 0 {
-                        r_wcscpy((*psfi).szDisplayName.as_mut_ptr(), sTemp.as_ptr());
+                        r_wcscpy(core::ptr::addr_of_mut!((*psfi).szDisplayName).cast(), sTemp.as_ptr());
                     } else {
                         // the icon is in the file
-                        r_wcscpy((*psfi).szDisplayName.as_mut_ptr(), szFullPath.as_ptr());
+                        r_wcscpy(core::ptr::addr_of_mut!((*psfi).szDisplayName).cast(), szFullPath.as_ptr());
                     }
                 } else {
                     ret = FALSE as DWORD_PTR;
@@ -1550,8 +1436,8 @@ pub unsafe extern "system" fn SHGetFileInfoW(
                 if (uFlags & GIL_NOTFILENAME) != 0 {
                     ret = FALSE as DWORD_PTR;
                 } else {
-                    lstrcpyW((*psfi).szDisplayName.as_mut_ptr(), szLocation.as_ptr());
-                    write_volatile(&mut (*psfi).iIcon, iIndex);
+                    lstrcpyW(core::ptr::addr_of_mut!((*psfi).szDisplayName).cast(), szLocation.as_ptr());
+                    core::ptr::addr_of_mut!((*psfi).iIcon).write_unaligned(iIndex);
                 }
                 ((*(*pei).lpVtbl).Release)(pei);
             }
@@ -1568,11 +1454,11 @@ pub unsafe extern "system" fn SHGetFileInfoW(
 
             if (dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0 {
                 write_volatile(
-                    &mut (*psfi).iIcon,
+                    core::ptr::addr_of_mut!((*psfi).iIcon),
                     SIC_GetIconIndex(swshell32name_ptr(), -IDI_SHELL_FOLDER, 0),
                 );
             } else {
-                write_volatile(&mut (*psfi).iIcon, 0);
+                core::ptr::addr_of_mut!((*psfi).iIcon).write_unaligned(0);
                 let szExt = PathFindExtensionW(sTemp.as_ptr());
                 if !szExt.is_null()
                     && HCR_MapTypeToValueW(szExt, sTemp.as_mut_ptr(), MAX_PATH as LONG, TRUE)
@@ -1592,9 +1478,9 @@ pub unsafe extern "system" fn SHGetFileInfoW(
 
                     if (flags & SHGFI_SYSICONINDEX) != 0 {
                         let v = SIC_GetIconIndex(sTemp.as_ptr(), icon_idx, 0);
-                        write_volatile(&mut (*psfi).iIcon, v);
+                        core::ptr::addr_of_mut!((*psfi).iIcon).write_unaligned(v);
                         if (*psfi).iIcon == -1 {
-                            write_volatile(&mut (*psfi).iIcon, 0);
+                            core::ptr::addr_of_mut!((*psfi).iIcon).write_unaligned(0);
                         }
                     } else {
                         let cxIcon: INT;
@@ -1620,25 +1506,25 @@ pub unsafe extern "system" fn SHGetFileInfoW(
                             icon_idx,
                             cxIcon,
                             cyIcon,
-                            &mut (*psfi).hIcon,
+                            core::ptr::addr_of_mut!((*psfi).hIcon),
                             null_mut(),
                             1,
                             0,
                         );
                         if r != 0 && r != u32::MAX {
                             IconNotYetLoaded = FALSE;
-                            write_volatile(&mut (*psfi).iIcon, icon_idx);
+                            core::ptr::addr_of_mut!((*psfi).iIcon).write_unaligned(icon_idx);
                         }
                     }
                 }
             }
         } else if !psfParent.is_null() {
             if PidlToSicIndex(
-                psfParent,
-                pidlLast,
+                (psfParent).cast(),
+                (pidlLast).cast(),
                 ((flags & SHGFI_SMALLICON) == 0) as BOOL,
                 uGilFlags,
-                &mut (*psfi).iIcon,
+                core::ptr::addr_of_mut!((*psfi).iIcon),
             ) == FALSE
             {
                 ret = FALSE as DWORD_PTR;
@@ -1656,11 +1542,11 @@ pub unsafe extern "system" fn SHGetFileInfoW(
     // icon handle
     if SUCCEEDED(hr) && (flags & SHGFI_ICON) != 0 && IconNotYetLoaded != FALSE {
         let h = if (flags & SHGFI_SMALLICON) != 0 {
-            ImageList_GetIcon(small_icons, (*psfi).iIcon, ILD_NORMAL)
+            ImageList_GetIcon((small_icons).cast(), (*psfi).iIcon, ILD_NORMAL)
         } else {
-            ImageList_GetIcon(big_icons, (*psfi).iIcon, ILD_NORMAL)
+            ImageList_GetIcon((big_icons).cast(), (*psfi).iIcon, ILD_NORMAL)
         };
-        write_volatile(&mut (*psfi).hIcon, h);
+        core::ptr::addr_of_mut!((*psfi).hIcon).write_unaligned(h);
     }
 
     // (flags & ~SHGFI_KNOWN_FLAGS) — FIXME no-op in the C
@@ -1699,7 +1585,7 @@ pub unsafe extern "system" fn SHGetFileInfoA(
         pathW = path as LPCWSTR;
     } else {
         let len = MultiByteToWideChar(CP_ACP, 0, path, -1, null_mut(), 0);
-        temppath = HeapAlloc(GetProcessHeap(), 0, len as usize * size_of::<WCHAR>()) as LPWSTR;
+        temppath = HeapAlloc(GetProcessHeap(), 0, (len as usize * size_of::<WCHAR>()) as _) as LPWSTR;
         MultiByteToWideChar(CP_ACP, 0, path, -1, temppath, len);
         pathW = temppath;
     }
@@ -1716,14 +1602,14 @@ pub unsafe extern "system" fn SHGetFileInfoA(
             size_of::<SHFILEINFOW>() as UINT,
             flags,
         );
-        write_volatile(&mut (*psfi).hIcon, temppsfi.hIcon);
-        write_volatile(&mut (*psfi).iIcon, temppsfi.iIcon);
-        write_volatile(&mut (*psfi).dwAttributes, temppsfi.dwAttributes);
+        core::ptr::addr_of_mut!((*psfi).hIcon).write_unaligned(temppsfi.hIcon);
+        core::ptr::addr_of_mut!((*psfi).iIcon).write_unaligned(temppsfi.iIcon);
+        core::ptr::addr_of_mut!((*psfi).dwAttributes).write_unaligned(temppsfi.dwAttributes);
 
         WideCharToMultiByte(
             CP_ACP,
             0,
-            temppsfi.szDisplayName.as_ptr(),
+            core::ptr::addr_of!(temppsfi.szDisplayName).cast(),
             -1,
             (*psfi).szDisplayName.as_mut_ptr(),
             size_of::<[CHAR; MAX_PATH]>() as INT,
@@ -1733,7 +1619,7 @@ pub unsafe extern "system" fn SHGetFileInfoA(
         WideCharToMultiByte(
             CP_ACP,
             0,
-            temppsfi.szTypeName.as_ptr(),
+            core::ptr::addr_of!(temppsfi.szTypeName).cast(),
             -1,
             (*psfi).szTypeName.as_mut_ptr(),
             size_of::<[CHAR; 80]>() as INT,
@@ -1756,10 +1642,10 @@ pub unsafe extern "system" fn DuplicateIcon(_hInstance: HINSTANCE, hIcon: HICON)
     let mut IconInfo: ICONINFO = core::mem::zeroed();
     let mut hDupIcon: HICON = null_mut();
 
-    if GetIconInfo(hIcon, &mut IconInfo) != FALSE {
-        hDupIcon = CreateIconIndirect(&mut IconInfo);
-        DeleteObject(IconInfo.hbmMask);
-        DeleteObject(IconInfo.hbmColor);
+    if GetIconInfo((hIcon).cast(), (&raw mut IconInfo).cast()) != FALSE {
+        hDupIcon = (CreateIconIndirect((&raw mut IconInfo).cast())).cast();
+        DeleteObject((IconInfo.hbmMask).cast());
+        DeleteObject((IconInfo.hbmColor).cast());
     }
     hDupIcon
 }
@@ -1774,7 +1660,7 @@ pub unsafe extern "system" fn ExtractIconA(
     nIconIndex: UINT,
 ) -> HICON {
     let len = MultiByteToWideChar(CP_ACP, 0, lpszFile, -1, null_mut(), 0);
-    let lpwstrFile = HeapAlloc(GetProcessHeap(), 0, len as usize * size_of::<WCHAR>()) as LPWSTR;
+    let lpwstrFile = HeapAlloc(GetProcessHeap(), 0, (len as usize * size_of::<WCHAR>()) as _) as LPWSTR;
 
     MultiByteToWideChar(CP_ACP, 0, lpszFile, -1, lpwstrFile, len);
     let ret = ExtractIconW(hInstance, lpwstrFile, nIconIndex);
@@ -1804,7 +1690,7 @@ pub unsafe extern "system" fn ExtractIconW(
             nIconIndex as INT,
             cx,
             cy,
-            &mut hIcon,
+            (&raw mut hIcon).cast(),
             null_mut(),
             1,
             LR_DEFAULTCOLOR,
@@ -1931,7 +1817,7 @@ unsafe fn SetRegTextData(hWnd: HWND, hKey: HKEY, Value: LPCWSTR, uID: INT) {
         == ERROR_SUCCESS
         && dwType == REG_SZ
     {
-        let lpBuffer = HeapAlloc(GetProcessHeap(), 0, dwBufferSize as usize) as LPWSTR;
+        let lpBuffer = HeapAlloc(GetProcessHeap(), 0, (dwBufferSize as usize) as _) as LPWSTR;
         if !lpBuffer.is_null() {
             if RegQueryValueExW(
                 hKey,
@@ -1972,7 +1858,7 @@ pub unsafe extern "system" fn AboutAuthorsDlgProc(
                 hWnd,
                 IDC_ABOUT_AUTHORS_LISTBOX,
                 LB_ADDSTRING,
-                usize::MAX, // (WPARAM)-1
+                (usize::MAX) as WPARAM, // (WPARAM)-1
                 name.as_ptr() as LPARAM,
             );
             pstr = pstr.add(1);
@@ -2042,7 +1928,7 @@ unsafe extern "system" fn AboutDlgProc(
                     let mut bmpLogo: BITMAP = core::mem::zeroed();
 
                     GetObjectW(
-                        ABOUT_hLogoBmp,
+                        (ABOUT_hLogoBmp).cast(),
                         size_of::<BITMAP>() as INT,
                         &mut bmpLogo as *mut BITMAP as LPVOID,
                     );
@@ -2050,7 +1936,7 @@ unsafe extern "system" fn AboutDlgProc(
                     ABOUT_cyLogoBmp = bmpLogo.bmHeight as DWORD;
 
                     GetObjectW(
-                        ABOUT_hLineBmp,
+                        (ABOUT_hLineBmp).cast(),
                         size_of::<BITMAP>() as INT,
                         &mut bmpLogo as *mut BITMAP as LPVOID,
                     );
@@ -2183,7 +2069,7 @@ unsafe extern "system" fn AboutDlgProc(
                 let hdcMem = CreateCompatibleDC(hdc);
 
                 if !hdcMem.is_null() {
-                    let hOldObj = SelectObject(hdcMem, ABOUT_hLogoBmp);
+                    let hOldObj = SelectObject(hdcMem, (ABOUT_hLogoBmp).cast());
                     BitBlt(
                         hdc,
                         0,
@@ -2196,7 +2082,7 @@ unsafe extern "system" fn AboutDlgProc(
                         SRCCOPY,
                     );
 
-                    SelectObject(hdcMem, ABOUT_hLineBmp);
+                    SelectObject(hdcMem, (ABOUT_hLineBmp).cast());
                     BitBlt(
                         hdc,
                         0,
@@ -2272,12 +2158,12 @@ pub unsafe extern "system" fn ShellAboutA(
 
     if !szApp.is_null() {
         let len = MultiByteToWideChar(CP_ACP, 0, szApp, -1, null_mut(), 0);
-        appW = HeapAlloc(GetProcessHeap(), 0, len as usize * size_of::<WCHAR>()) as LPWSTR;
+        appW = HeapAlloc(GetProcessHeap(), 0, (len as usize * size_of::<WCHAR>()) as _) as LPWSTR;
         MultiByteToWideChar(CP_ACP, 0, szApp, -1, appW, len);
     }
     if !szOtherStuff.is_null() {
         let len = MultiByteToWideChar(CP_ACP, 0, szOtherStuff, -1, null_mut(), 0);
-        otherW = HeapAlloc(GetProcessHeap(), 0, len as usize * size_of::<WCHAR>()) as LPWSTR;
+        otherW = HeapAlloc(GetProcessHeap(), 0, (len as usize * size_of::<WCHAR>()) as _) as LPWSTR;
         MultiByteToWideChar(CP_ACP, 0, szOtherStuff, -1, otherW, len);
     }
 
@@ -2339,7 +2225,7 @@ pub unsafe extern "system" fn ShellAboutW(
     info.hIcon = if !hIcon.is_null() {
         hIcon
     } else {
-        LoadIconW(null_mut(), IDI_WINLOGO as usize as LPCWSTR)
+        (LoadIconW(null_mut(), IDI_WINLOGO as usize as LPCWSTR)).cast()
     };
 
     #[cfg(target_arch = "x86")]
@@ -2354,7 +2240,7 @@ pub unsafe extern "system" fn ShellAboutW(
 
     DialogBoxIndirectParamW(
         hinst,
-        DlgTemplate,
+        DlgTemplate.cast_const().cast(),
         hWnd,
         Some(AboutDlgProc as DLGPROC),
         &mut info as *mut ABOUT_INFO as LPARAM,

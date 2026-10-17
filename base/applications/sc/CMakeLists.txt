@@ -20,13 +20,10 @@ add_definitions(-DDEFINE_GUID)
 # sdshow.c  # replaced by Rust (sdk/lib/rust/sc-rust/src/sc/sdshow.rs)
 # start.c  # replaced by Rust (sdk/lib/rust/sc-rust/src/sc/start.rs)
 # usage.c  # replaced by Rust (sdk/lib/rust/sc-rust/src/sc/usage.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(sc_res OBJECT sc.rc)
-target_compile_definitions(sc_res PRIVATE UNICODE _UNICODE)
-target_include_directories(sc_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(sc sc-cargo sc.exe
     KIND win32exe
     BODY_CRATE sc-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS sc_res)
+    EXTRA_DEPENDS psdk)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

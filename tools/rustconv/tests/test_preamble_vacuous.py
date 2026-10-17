@@ -39,3 +39,14 @@ def test_a_tu_local_ifdef_switch_is_vacuous():
     assert not has(pre, tu)
     assert has(pre, tu + "int x = HIDE_FAT32_CHOICE;\n"), "a value read in code is content"
     assert has(pre), "without the TU text the switch is not provably vacuous"
+
+
+def test_a_guarded_undef_is_vacuous():
+    # tdihelpers tdi.c: the model answered in prose that there was nothing to translate
+    pre = (
+        "#include <afd.h>\n#ifdef UNIMPLEMENTED\n#undef UNIMPLEMENTED\n#endif\n"
+        "#include <tdikrnl.h>\n#define NDEBUG\n#include <reactos/debug.h>\n"
+    )
+    assert not real(pre)
+    assert real("#ifdef X\nstatic int y = 1;\n#endif\n"), "a conditional's body still counts"
+    assert real("#undef X\n#define X 3\n")

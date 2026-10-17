@@ -17,6 +17,8 @@
 //! `g_hRestGlobalCounter`, `g_nRestCountValue`, `g_RestValues`.
 
 use crate::types::*;
+// One declaration per external symbol: island.rs.
+use crate::island::CloseHandle;
 use core::sync::atomic::{AtomicPtr, Ordering};
 
 // ── file-local types not (yet) in crate::types — see ADDED-TO-TYPES note at EOF ──────────
@@ -24,14 +26,7 @@ use core::sync::atomic::{AtomicPtr, Ordering};
 pub type PCWSTR = *const WCHAR;
 
 /// GUID (guiddef.h) — { Data1: DWORD, Data2: WORD, Data3: WORD, Data4: [BYTE;8] }.
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct GUID {
-    pub Data1: DWORD,
-    pub Data2: WORD,
-    pub Data3: WORD,
-    pub Data4: [BYTE; 8],
-}
+pub use crate::island::GUID;
 /// REFGUID (guiddef.h) — `const GUID *`.
 pub type REFGUID = *const GUID;
 
@@ -86,7 +81,7 @@ extern "system" {
     fn StrCmpLogicalW(s1: PCWSTR, s2: PCWSTR) -> INT; // StrCmpLogicalW@8
     // kernel32
     fn lstrcmpiW(s1: LPCWSTR, s2: LPCWSTR) -> INT; // lstrcmpiW@8
-    fn CloseHandle(hObject: HANDLE) -> BOOL; // CloseHandle@4
+// CloseHandle@4
 }
 
 // ---- wide-string statics (UTF-16, NUL-terminated) — dedup of PolicyData.h app/key strings ----

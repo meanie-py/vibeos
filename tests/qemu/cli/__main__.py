@@ -24,6 +24,7 @@ from . import (
     maintenance,
     pi4,
     pi5,
+    rustlints,
     symbolize,
     tooling,
     winref,
@@ -316,6 +317,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     c.set_defaults(fn=debugcmd.check)
 
+    native = sub.add_parser("lint", help="run a native artifact or standalone diagnostic check")
+    native.add_argument("--arch", choices=ACCEPTED_ARCHES)
+    native.add_argument(
+        "--rules", help="comma-separated check names; use check for source baselines"
+    )
+    native.add_argument("--list-rules", action="store_true")
+    native.add_argument("--path", action="append", default=[], help="input file or directory")
+    native.add_argument("--build-dir", help="override this worktree's build directory or image")
+    native.add_argument("--explain", help="show flexible-array panic location and disassembly")
+    native.add_argument("--target", help="bind-all cargo target triple")
+    native.add_argument("--package", action="append", default=[])
+    native.add_argument("--include-declarations", action="store_true")
+    native.add_argument("--crates", help="comma-separated IR crate filter")
+    native.add_argument("--lint", action="store_true", help=argparse.SUPPRESS)
+    native.set_defaults(fn=rustlints.standalone)
+
     s = sub.add_parser("smoke", help="staleness-gated boot verdict (front door)")
     arch_arg(s)
     s.add_argument("--allow-stale", action="store_true")
@@ -467,6 +484,14 @@ def build_parser() -> argparse.ArgumentParser:
         "payload names; launch + render + input gates from each payload's YAML. "
         "Media must be built with VIBEOS_PAYLOAD=<names>. "
         "See docs/engineering/payload-harness-design.md",
+    )
+    s.add_argument(
+        "--vm-memory",
+        default="",
+        metavar="SIZE",
+        help="guest RAM as a qemu -m size (768M, 2G) for every boot of this run, overriding "
+        "the arch default AND a payload's declared test.vm_memory: a low-memory sweep "
+        "(appstorm64 at 768M) is a deliberate departure from what the payload asks for",
     )
     s.add_argument(
         "--doom",

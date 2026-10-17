@@ -65,7 +65,9 @@ class Resolution:
 
 #: rustc found a VALUE where the code names a type: setuplib's `FILE_SYSTEM` typedef, after
 #: tree consensus had copied bugcodes.h's `FILE_SYSTEM: ULONG = 0x22` for the missing name.
-_VALUE_FOR_TYPE = re.compile(r"^expected type, found (?:constant|static|function) `(\w+)`")
+#: And a MACRO: setupapi parser.c's `struct line` is named like core's `line!`, so a missing
+#: `line` type reads "expected type, found macro" and was never requested (E0573).
+_VALUE_FOR_TYPE = re.compile(r"^expected type, found (?:constant|static|function|macro) `(\w+)`")
 _TYPE_WORDS = ("cannot find type ", "cannot find struct, variant or union type ")
 
 
@@ -876,6 +878,11 @@ SHARED_CRATES: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
         "winelist-rust",
         (("", r"^pub unsafe fn (list_\w+)\b"),),
     ),
+    (
+        "ddk_macros_rust",
+        "ddk-macros-rust",
+        (("", _EXPORTED_MACRO + r"|^pub const ([A-Za-z_]\w*)"),),
+    ),
 )
 
 #: Shared crates a prelude takes only when the crate CALLS one of their names (or already
@@ -884,12 +891,16 @@ SHARED_CRATES: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
 #: `winelist_rust::*` (profile_derive emits both when wine/list.h is in the include closure).
 #: Without the entry every wine-derived crate re-ported the header -- six copies -- and rpcss
 #: got cabinet-rust's crate-internal #[no_mangle] copies as externs, which do not link.
-OPT_IN_SHARED = frozenset({"winelist_rust"})
+OPT_IN_SHARED = frozenset({"winelist_rust", "ddk_macros_rust"})
 
 #: Shared crates that are user mode by nature: a kernel crate (one on ntkrnl-sys) never takes
 #: them. storport-rust's first resolve re-exported all of conutils-h -- console streams in a
 #: storage driver -- and made it a dependency, from names it never used.
 USERMODE_SHARED = frozenset({"conutils_h"})
+
+#: ...and the converse: kernel by nature, so a user-mode crate never takes them. ddk-macros-rust
+#: expands to ntkrnl-sys calls (the NDIS spin locks, MmGetSystemAddressForMdl).
+KERNEL_SHARED = frozenset({"ddk_macros_rust"})
 
 
 def _crate_calls(crate_dir: Path, names: set[str]) -> set[str]:
@@ -951,6 +962,8 @@ def refresh_shared_crates(crate_dir: Path, workspace: Path) -> list[str]:
     kernel = bool(re.search(r"^ntkrnl-sys\s*=", manifest, re.M))
     for (ident, module), names in shared_provides(workspace).items():
         if kernel and ident in USERMODE_SHARED:
+            continue
+        if not kernel and ident in KERNEL_SHARED:
             continue
         if (
             ident in OPT_IN_SHARED
@@ -1396,8 +1409,8 @@ _EXPLICIT_DDK = re.compile(r"^\s*use\s+\w+::ddk::\{([^}]*)\}", re.M)
 _DECLARED = r"^\s*pub\s+(?:fn|static(?:\s+mut)?)\s+([A-Za-z_]\w*)\b[^{;=]*;"
 
 
-# add_delay_importlibs too: a delay-loaded DLL (the shell extensions' ole32) is still an
-# import library the module links, so its exports are externs like any other.
+# Delay imports count: reactos.exe takes setuplib with `add_delay_importlibs`, and resolve
+# refused SelectPartition & co. as "no import library this module links exports it".
 _IMPORTLIBS = re.compile(r"add_(?:delay_)?importlibs\(\s*\S+\s+([^)]*)\)")
 
 

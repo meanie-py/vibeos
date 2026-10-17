@@ -615,7 +615,7 @@ pub unsafe extern "system" fn FlushInstructionCache(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn ExitProcess(uExitCode: UINT) {
+pub unsafe extern "system" fn ExitProcess(uExitCode: UINT) -> ! {
     let mut ApiMessage: BASE_API_MESSAGE = core::mem::zeroed();
     let ExitProcessRequest = &mut ApiMessage.Data.ExitProcessRequest;
 

@@ -614,6 +614,41 @@ def test_bare_void_pointer_converts_at_any_depth():
         assert [edit.replacement for edit in plan.edits] == ["(ctx).cast()"]
 
 
+def test_two_distinct_named_pointees_stay_red():
+    # shell32's hand-written MENUITEMINFOW beside the island's tagMENUITEMINFOW: `.cast()` would
+    # bless a second copy of the layout without checking it. Two handles are a wrong argument.
+    source = b"unsafe { Foo(p); }\n"
+    for expected, found, why in (
+        ("*mut tagMENUITEMINFOW", "*mut MENUITEMINFOW", "distinct_pointee_types"),
+        ("*mut HWND__", "*mut HMENU__", "distinct_pointee_types"),
+        ("*const u16", "*const u8", "integer_pointee_width"),
+    ):
+        plan = propose_edits(
+            [_pointer_diag(expected, found, source, b"p")],
+            _reader({"src/c.rs": source}),
+            target="amd64",
+            rules=[RULE_POINTER_CAST],
+        )
+        assert plan.edits == (), (expected, found)
+        assert [item.reason for item in plan.skipped] == [why]
+
+
+def test_char_signedness_and_com_upcast_still_cast():
+    source = b"unsafe { Foo(p); }\n"
+    for expected, found in (
+        ("*const i8", "*const u8"),
+        ("*mut IShellFolder", "*mut shellcom::IShellFolder2"),
+        ("*mut ntdll_sys::nt::HDC__", "*mut com_sys::HDC__"),
+    ):
+        plan = propose_edits(
+            [_pointer_diag(expected, found, source, b"p")],
+            _reader({"src/c.rs": source}),
+            target="amd64",
+            rules=[RULE_POINTER_CAST],
+        )
+        assert [edit.replacement for edit in plan.edits] == ["(p).cast()"], (expected, found)
+
+
 # --- rule 2: bindgen flexible-array members ---------------------------------------------------
 
 _TYPES = """
@@ -673,6 +708,15 @@ def test_flex_array_borrowed_mut_uses_as_mut_ptr():
     source = b"pub unsafe fn f(t: *mut T, i: usize) {\n    g(&mut (*t).routes[i]);\n}\n"
     edits, _ = propose_flex_array_edits("src/f.rs", source, decls)
     assert [edit.replacement for edit in edits] == ["(*(*t).routes.as_mut_ptr().add(i))"]
+
+
+def test_flex_array_under_addr_of_mut_uses_as_mut_ptr():
+    # tdihelpers: `addr_of_mut!((*Addr).Address[0 as usize])` came back with as_ptr(), E0596
+    decls = flex_array_decls(_TYPES)
+    for place in (b"core::ptr::addr_of_mut!((*t).routes[i])", b"&raw mut (*t).routes[i]"):
+        source = b"pub unsafe fn f(t: *mut T, i: usize) {\n    g(" + place + b");\n}\n"
+        edits, _ = propose_flex_array_edits("src/f.rs", source, decls)
+        assert [edit.replacement for edit in edits] == ["(*(*t).routes.as_mut_ptr().add(i))"]
 
 
 def test_flex_array_index_zero_is_left_alone():
@@ -1822,6 +1866,27 @@ def test_widening_never_casts_a_match_arm_pattern():
     assert not plan.edits, at
 
 
+def test_widening_under_an_arithmetic_operator_names_the_sibling_or_declines():
+    # `a + (n) as _` is E0282 (`u64: Add<u64>` and `Add<&u64>`), so the pass guard would
+    # keep a swap of one error for another. A comparison infers, and keeps `as _`.
+    from rustconv.crate_repair import RULE_INFER_WIDEN
+
+    src = (
+        b"fn f(w: WPARAM, n: u32, m: u32) -> bool {\n"
+        b"    let a = w & nn;\n    let b = mm << 2;\n    w == kk\n}\n"
+    )
+    diags = [
+        _mismatch(src, b"nn", "u64", "u32"),
+        _mismatch(src, b"mm", "u64", "u32"),
+        _mismatch(src, b"kk", "u64", "u32"),
+    ]
+    plan = propose_edits(
+        diags, _reader({"src/a.rs": src}), target="amd64", rules=[RULE_INFER_WIDEN]
+    )
+    assert sorted(e.replacement for e in plan.edits) == ["(kk) as _", "(nn) as WPARAM"]
+    assert [s.reason for s in plan.skipped] == ["uninferable_operand"]
+
+
 def test_keyword_named_fields_take_bindgens_spelling():
     from rustconv.crate_repair import RULE_KEYWORD_FIELD
 
@@ -2503,6 +2568,71 @@ def test_a_c_literal_into_a_mut_pointer_parameter_casts_mut():
     edits, _, handled = _literal_mut_rule(diag, lambda f: src, _Ctx(target="i386", width=32))
     assert handled and edits[0].rule == RULE_LITERAL_MUT
     assert edits[0].replacement == "RUSTCONV_WSTR_AB12.as_ptr().cast_mut()"
+
+
+def test_a_handle_out_parameter_takes_the_address_raw_and_casts():
+    """menuband: `IUnknown_GetWindow(p, &mut parent)` with `parent: *mut c_void` against the
+    header's `*mut *mut HWND__`. A pointer to a pointer is the same layout whatever the
+    inner pointee; a reference to a STRUCT of another name is not this rule's."""
+    from rustconv.crate_repair import _Ctx, _ref_to_void_pointer
+
+    src = b"F(&mut parent, &mut ps);\n"
+    span = {"file_name": "m.rs", "byte_start": 2, "byte_end": 13, "line_start": 1}
+    edit = _ref_to_void_pointer(
+        span, "*mut *mut HWND__", "&mut *mut c_void", lambda f: src, _Ctx(target="i386", width=32)
+    )
+    assert edit is not None and edit.replacement == "(&raw mut parent).cast()"
+    span2 = {"file_name": "m.rs", "byte_start": 15, "byte_end": 22, "line_start": 1}
+    assert (
+        _ref_to_void_pointer(
+            span2,
+            "*mut tagPAINTSTRUCT",
+            "&mut PAINTSTRUCT",
+            lambda f: src,
+            _Ctx(target="i386", width=32),
+        )
+        is None
+    )
+
+
+def test_a_const_cast_into_a_mut_pointer_parameter_is_respelled_mut():
+    """cdrom: `StringsAreMatched(v as *const i8, ..)` against `PCHAR`; a C cast to the
+    parameter's type. A cast inside a macro body is left alone."""
+    from rustconv.crate_repair import _Ctx, _literal_mut_rule
+
+    src = b"F(v as *const i8, &raw const cdb as *const core::ffi::c_void, &c as *const CDB);\n"
+    out = []
+    for piece in (
+        b"v as *const i8",
+        b"&raw const cdb as *const core::ffi::c_void",
+        b"&c as *const CDB",
+    ):
+        lo = src.index(piece)
+        diag = {
+            "code": {"code": "E0308"},
+            "spans": [
+                {
+                    "file_name": "m.rs",
+                    "byte_start": lo,
+                    "byte_end": lo + len(piece),
+                    "line_start": 1,
+                    "column_start": lo + 1,
+                    "label": "types differ in mutability",
+                }
+            ],
+            "children": [
+                {"message": "expected raw pointer `*mut i8`\nfound raw pointer `*const i8`"}
+            ],
+        }
+        edits, _, handled = _literal_mut_rule(diag, lambda f: src, _Ctx(target="i386", width=32))
+        assert handled
+        out.append(edits[0].replacement)
+    # `&c as *mut CDB` would be E0606: a shared reference goes through its `*const`.
+    assert out == [
+        "v as *mut i8",
+        "&raw const cdb as *mut core::ffi::c_void",
+        "(&c as *const CDB).cast_mut()",
+    ]
 
 
 def test_a_shared_address_of_into_a_mut_pointer_parameter_is_raw_mut():
@@ -3393,6 +3523,40 @@ def test_a_guid_comparison_is_is_equal_guid():
     assert sorted(e.replacement for e in plan.edits) == [
         "!IsEqualGUID!(&(*riid), &(IID_X))",
         "IsEqualGUID!(&(*riid), &(IID_IUnknown))",
+    ]
+
+
+def test_c_pointer_arithmetic_is_a_scaled_wrapping_add():
+    """rtl8139: `(*Adapter).IoBase + R_CMD` -- C scales by the pointee, as wrapping_add does;
+    a signed offset subtracted stays negative through wrapping_offset."""
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    src = b"f((*a).IoBase + R_CMD); g(p - delta);\n"
+    diags = []
+    for lhs, op, rhs, msg in (
+        (b"(*a).IoBase", b"+", b"R_CMD", "cannot add `u32` to `*mut u8`"),
+        (b"p", b"-", b"delta", "cannot subtract `i32` from `*const u16`"),
+    ):
+        a = src.index(lhs)
+        o = src.index(op, a + len(lhs))
+        r = src.index(rhs, o)
+        diags.append(
+            _diag(
+                msg,
+                code="E0369",
+                spans=[
+                    _span("src/a.rs", a, a + len(lhs), label="ptr"),
+                    _span("src/a.rs", r, r + len(rhs), label="int"),
+                    _span("src/a.rs", o, o + 1, is_primary=True),
+                ],
+            )
+        )
+    plan = propose_edits(
+        diags, _reader({"src/a.rs": src}), target="amd64", rules=[RULE_OBJECT_DEREF]
+    )
+    assert sorted(e.replacement for e in plan.edits) == [
+        "((*a).IoBase).wrapping_add((R_CMD) as usize)",
+        "(p).wrapping_offset(-((delta) as isize))",
     ]
 
 

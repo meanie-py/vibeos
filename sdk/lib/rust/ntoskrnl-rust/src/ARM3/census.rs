@@ -11,7 +11,9 @@
 //!   pagetbl   page-table pages (the PTE self-map)
 //!   proto     pages behind a prototype PTE (ARM3 pagefile-backed sections)
 //!   ros       pages the ReactOS Mm allocated (image and data-file sections, the cache); the
-//!             MC_USER / MC_SYSTEM consumer counts are its own split
+//!             MC_USER / MC_SYSTEM consumer counts are its own split. `rosstandby` of them
+//!             are on the ROS standby list (mm/standby.rs): cached, and counted in avail;
+//!             `rosidle` are unmapped but not on it (never mapped, dirty, or not eligible)
 //!   npool ppool   nonpaged and paged pool
 //!   sys       any other active system page (stacks, drivers, system PTE mappings)
 //!   other     transition, bad and unclassified pages
@@ -35,6 +37,7 @@ struct Census {
     pagetbl: usize,
     proto: usize,
     ros: usize,
+    rosidle: usize,
     npool: usize,
     ppool: usize,
     sys: usize,
@@ -55,6 +58,18 @@ unsafe fn take() -> Census {
             continue;
         }
         let e = &*entry;
+        // A ROS page whose last mapping went is left in TransitionPage by the ROS
+        // MmDeleteVirtualMapping (arm64/i386 page.rs), not ActiveAndValid; it is still the
+        // segment's. Counting it under `other` made it look like a leak.
+        if (e.page_location() == ActiveAndValid || e.page_location() == TransitionPage)
+            && super::helpers::MI_IS_ROS_PFN(entry)
+        {
+            c.ros += 1;
+            if e.page_location() == TransitionPage && e.pte_address().is_null() {
+                c.rosidle += 1;
+            }
+            continue;
+        }
         match e.page_location() {
             ZeroedPageList => c.zero += 1,
             FreePageList => c.free += 1,
@@ -95,7 +110,7 @@ pub unsafe fn MiMemoryCensusAtExit(Process: PEPROCESS) {
     let p = Process as *mut _EPROCESS;
     let consumers = &*core::ptr::addr_of!(crate::mm::balance::MiMemoryConsumers);
     ntkrnl_sys::driver_ddk::DbgPrint(
-        b"[MEMCENSUS] exit %.15s pid=%Iu avail=%Iu commit=%Iu | zero=%Iu free=%Iu standby=%Iu modified=%Iu private=%Iu pagetbl=%Iu proto=%Iu ros=%Iu (user=%lu system=%lu) npool=%Iu ppool=%Iu sys=%Iu other=%Iu\n\0"
+        b"[MEMCENSUS] exit %.15s pid=%Iu avail=%Iu commit=%Iu | zero=%Iu free=%Iu standby=%Iu modified=%Iu private=%Iu pagetbl=%Iu proto=%Iu ros=%Iu (rosstandby=%Iu rosidle=%Iu user=%lu system=%lu) npool=%Iu ppool=%Iu sys=%Iu other=%Iu\n\0"
             .as_ptr() as _,
         (*p).ImageFileName.as_ptr(),
         (*p).UniqueProcessId as usize,
@@ -109,6 +124,8 @@ pub unsafe fn MiMemoryCensusAtExit(Process: PEPROCESS) {
         c.pagetbl,
         c.proto,
         c.ros,
+        crate::mm::standby::MiRosStandbyPages.load(Ordering::Relaxed),
+        c.rosidle,
         consumers[MC_USER as usize].PagesUsed,
         consumers[MC_SYSTEM as usize].PagesUsed,
         c.npool,

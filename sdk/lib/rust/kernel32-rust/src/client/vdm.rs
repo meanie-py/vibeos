@@ -1,4 +1,8 @@
 use ntdll_sys::nt::*;
+// The crate's own functions: the definition is the declaration.
+use crate::client::handle::CloseHandle;
+use crate::file::create::CreateFileW;
+use crate::file::rw::ReadFile;
 use crate::prelude::*;
 use core::ffi::c_void;
 
@@ -27,9 +31,6 @@ extern "system" {
     // SetFilePointer is WINAPI SetFilePointer(HANDLE, LONG, PLONG, DWORD) -> DWORD
     // (kernel32.spec: stdcall, @16). The distance args are 32-bit LONG, not i64.
     fn SetFilePointer( hFile: HANDLE, lDistanceToMove: LONG, lpDistanceToMoveHigh: *mut LONG, dwMoveMethod: u32, ) -> u32;
-    fn ReadFile( hFile: HANDLE, lpBuffer: *mut core::ffi::c_void, nNumberOfBytesToRead: u32, lpNumberOfBytesRead: *mut u32, lpOverlapped: *mut core::ffi::c_void, ) -> u32;
-    fn CreateFileW( lpFileName: LPCWSTR, dwDesiredAccess: DWORD, dwShareMode: DWORD, lpSecurityAttributes: *mut core::ffi::c_void, dwCreationDisposition: DWORD, dwFlagsAndAttributes: DWORD, hTemplateFile: HANDLE, ) -> HANDLE;
-    fn CloseHandle(hObject: HANDLE) -> BOOL;
     fn GetSystemDirectoryW(lpBuffer: LPWSTR, uSize: UINT) -> UINT;
     fn GetShortPathNameW(lpszLongPath: LPCWSTR, lpszShortPath: LPWSTR, cchBuffer: DWORD) -> DWORD;
     fn lstrcmpiW(lpString1: LPCWSTR, lpString2: LPCWSTR) -> i32;

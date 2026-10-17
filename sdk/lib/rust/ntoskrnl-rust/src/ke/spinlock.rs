@@ -11,6 +11,7 @@ use ntkrnl_sys::ddk::{
     PKSPIN_LOCK_QUEUE,
 };
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
+use ntkrnl_sys::inline::ke::{set_spin_lock_word, spin_lock_word};
 
 // FASTCALL on i386 (matching Windows API / bindgen), "system" on others
 #[cfg(target_arch = "x86")]
@@ -111,7 +112,8 @@ pub unsafe extern "system" fn KeReleaseInterruptSpinLock(
 
 #[no_mangle]
 pub unsafe extern "system" fn _KeInitializeSpinLock(SpinLock: PKSPIN_LOCK) {
-    *SpinLock = 0;
+    // Any alignment, as Windows takes it: see ntkrnl_sys::inline::ke::spin_lock_word.
+    set_spin_lock_word(SpinLock as _, 0);
 }
 
 #[no_mangle]
@@ -263,13 +265,13 @@ pub unsafe extern "fastcall" fn KeTryToAcquireSpinLockAtDpcLevel(
     // deadlock. On UP the acquire below is compiled out, so a recursive try is
     // harmless and bugchecking on it would invent a failure the UP boot lacks.
     #[cfg(all(feature = "smp", feature = "dbg"))]
-    if ((PsGetCurrentThread() as KSPIN_LOCK) | 1) == *SpinLock {
+    if ((PsGetCurrentThread() as KSPIN_LOCK) | 1) == spin_lock_word(SpinLock as _) as KSPIN_LOCK {
         KeBugCheckEx(SPIN_LOCK_ALREADY_OWNED, SpinLock as ULONG_PTR, 0, 0, 0);
     }
 
     #[cfg(feature = "smp")]
     {
-        if *SpinLock == 0 {
+        if spin_lock_word(SpinLock as _) == 0 {
             if InterlockedBitTestAndSet(SpinLock as *mut LONG, 0) != 0 {
                 return 0u8;
             }
@@ -281,7 +283,7 @@ pub unsafe extern "fastcall" fn KeTryToAcquireSpinLockAtDpcLevel(
     // KI_TRACK_SPINLOCK_OWNER. Observable behaviour, not a diagnostic.
     #[cfg(feature = "dbg")]
     {
-        *SpinLock = (PsGetCurrentThread() as ULONG_PTR) | 1;
+        set_spin_lock_word(SpinLock as _, (PsGetCurrentThread() as ULONG_PTR) | 1);
     }
 
     // cswitchdep P2: the UP try-acquire success path never touches Kx, so it
@@ -311,13 +313,13 @@ pub unsafe extern "C" fn KeTryToAcquireSpinLockAtDpcLevel(SpinLock: PKSPIN_LOCK)
     }
 
     #[cfg(all(feature = "smp", feature = "dbg"))]
-    if ((PsGetCurrentThread() as KSPIN_LOCK) | 1) == *SpinLock {
+    if ((PsGetCurrentThread() as KSPIN_LOCK) | 1) == spin_lock_word(SpinLock as _) as KSPIN_LOCK {
         KeBugCheckEx(SPIN_LOCK_ALREADY_OWNED, SpinLock as ULONG_PTR, 0, 0, 0);
     }
 
     #[cfg(feature = "smp")]
     {
-        if *SpinLock == 0 {
+        if spin_lock_word(SpinLock as _) == 0 {
             if InterlockedBitTestAndSet(SpinLock as *mut LONG, 0) != 0 {
                 return 0u8;
             }
@@ -329,7 +331,7 @@ pub unsafe extern "C" fn KeTryToAcquireSpinLockAtDpcLevel(SpinLock: PKSPIN_LOCK)
     // KI_TRACK_SPINLOCK_OWNER. Observable behaviour, not a diagnostic.
     #[cfg(feature = "dbg")]
     {
-        *SpinLock = (PsGetCurrentThread() as ULONG_PTR) | 1;
+        set_spin_lock_word(SpinLock as _, (PsGetCurrentThread() as ULONG_PTR) | 1);
     }
 
     // cswitchdep P2: the UP try-acquire success path never touches Kx, so it
@@ -362,7 +364,7 @@ pub unsafe extern "fastcall" fn KeAcquireInStackQueuedSpinLockAtDpcLevel(
         }
     }
 
-    KxAcquireSpinLock((*LockHandle).LockQueue.Lock as *mut _);
+    ntkrnl_sys::inline::ke::KxAcquireInStackQueuedSpinLock(core::ptr::addr_of_mut!((*LockHandle).LockQueue) as *mut ntkrnl_sys::ddk::KSPIN_LOCK_QUEUE);
 }
 
 #[cfg(not(target_arch = "x86"))]
@@ -386,7 +388,7 @@ pub unsafe extern "C" fn KeAcquireInStackQueuedSpinLockAtDpcLevel(
         }
     }
 
-    KxAcquireSpinLock((*LockHandle).LockQueue.Lock as *mut _);
+    ntkrnl_sys::inline::ke::KxAcquireInStackQueuedSpinLock(core::ptr::addr_of_mut!((*LockHandle).LockQueue) as *mut ntkrnl_sys::ddk::KSPIN_LOCK_QUEUE);
 }
 
 #[cfg(target_arch = "x86")]
@@ -407,7 +409,7 @@ pub unsafe extern "fastcall" fn KeReleaseInStackQueuedSpinLockFromDpcLevel(
         }
     }
 
-    KxReleaseSpinLock((*LockHandle).LockQueue.Lock as *mut _);
+    ntkrnl_sys::inline::ke::KxReleaseInStackQueuedSpinLock(core::ptr::addr_of_mut!((*LockHandle).LockQueue) as *mut ntkrnl_sys::ddk::KSPIN_LOCK_QUEUE);
 }
 
 #[cfg(not(target_arch = "x86"))]
@@ -428,7 +430,7 @@ pub unsafe extern "C" fn KeReleaseInStackQueuedSpinLockFromDpcLevel(
         }
     }
 
-    KxReleaseSpinLock((*LockHandle).LockQueue.Lock as *mut _);
+    ntkrnl_sys::inline::ke::KxReleaseInStackQueuedSpinLock(core::ptr::addr_of_mut!((*LockHandle).LockQueue) as *mut ntkrnl_sys::ddk::KSPIN_LOCK_QUEUE);
 }
 
 #[cfg(target_arch = "x86")]
@@ -506,7 +508,7 @@ pub unsafe extern "C" fn KeReleaseInStackQueuedSpinLockForDpc(LockHandle: PKLOCK
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "fastcall" fn KeTestSpinLock(SpinLock: PKSPIN_LOCK) -> BOOLEAN {
-    if *SpinLock != 0 {
+    if spin_lock_word(SpinLock as _) != 0 {
         YieldProcessor();
         return 0u8;
     }
@@ -517,7 +519,7 @@ pub unsafe extern "fastcall" fn KeTestSpinLock(SpinLock: PKSPIN_LOCK) -> BOOLEAN
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn KeTestSpinLock(SpinLock: PKSPIN_LOCK) -> BOOLEAN {
-    if *SpinLock != 0 {
+    if spin_lock_word(SpinLock as _) != 0 {
         YieldProcessor();
         return 0u8;
     }

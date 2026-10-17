@@ -3,6 +3,8 @@
 //! Cohabitation Rust replacement for the user32 dde.c translation unit.
 
 use win32k_sys::win32k::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::windows::message::GlobalAlloc;
 #[allow(unused_imports)]
 use core::ffi::c_void;
 
@@ -22,7 +24,6 @@ extern "system" {
     fn GlobalSize(hMem: HGLOBAL) -> SIZE_T;
     fn GlobalLock(hMem: HGLOBAL) -> *mut c_void;
     fn GlobalUnlock(hMem: HGLOBAL) -> BOOL;
-    fn GlobalAlloc(uFlags: UINT, dwBytes: SIZE_T) -> HGLOBAL;
     fn GlobalFree(hMem: HGLOBAL) -> HGLOBAL;
 }
 

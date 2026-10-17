@@ -7,6 +7,25 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The C left, and its part of cmake's C rule; reactos-link adds what every C
+    // compile shares from reactos-link/cflags/c.<arch>.flags (Linker::c_compiled).
+    let c_sources: &[&str] = &["win32ss/drivers/font/bmfd/rust_varargs_shim.c"];
+    let c_includes: &[&str] = &[
+        "@build/win32ss/drivers/font/bmfd",
+        "win32ss/drivers/font/bmfd",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+    ];
+    let c_flags: &[&str] = match arch.as_str() {
+        "x86" => &["-std=gnu99", "@core"],
+        "x86_64" => &["-std=gnu99", "-U_X86_", "-UWIN32", "@core"],
+        "aarch64" => &["-std=gnu99", "@core"],
+        _ => unreachable!(),
+    };
+    let c_defines: &[&str] = &["WINVER=0x502", "_WIN32_WINNT=0x502"];
     let (target_json, entry, image_base) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_BmfdEnableDriver@12", 0x10000u64),
         "x86_64" => ("x86_64-pc-windows-gnu", "BmfdEnableDriver", 0x10000u64),
@@ -24,7 +43,7 @@ fn main() {
     Linker::new(target_json)
         .rust_staticlib("bmfd-rust")
         .rust_user_target()
-        .c_from_compile_db("bmfd_shims", &["win32ss/drivers/font/bmfd/rust_varargs_shim.c"])
+        .c_compiled("bmfd_shims", c_sources, c_includes, c_flags, c_defines)
         .import_lib("win32ss/win32k.spec", "win32k.sys", "win32k")
         // The body, import libs and static libs in cmake's link order: the first
         // to define a symbol wins. cmake-built ones are reused until each has a

@@ -36,43 +36,53 @@ raise, debug print, Get/SetThreadContext), threads (TLS, per-thread SEH, 4 concu
 code generation incl. kernel-side writes into code, and process creation incl.
 CreateRemoteThread into a running x86-64 child.
 
-**Resume here (2026-10-15).** The full FEX ladder is green at 1 GB on master: 27 guests at
+**Resume here (2026-10-17).** The full FEX ladder is green at 1 GB on master: 27 guests at
 `0x600D`, i386 included once wow64 completed the loader's `int 0x2d` debug services (field
 manual, "Every i386 guest under FEX dies at `_DebugService+0x17`"). The land gate does NOT boot
 these guests, and that has already cost one red: `ac29134e356` (ProbeForWrite touches pages)
 turned selfmod rung 7 red on master from its landing (2026-10-12), because the guest's acceptance test knew only
 `STATUS_PARTIAL_COPY` and nobody ran the ladder after the merge. Before landing anything that
 touches wow64, wowx64, FEX or Mm, run `./vibeos-cli smoke --arch arm64 --ladder` on `VIBEOS_FEX=1`
-media. Owed, most valuable first:
-1. Free-RAM drift, now located. `--tripwire MEMCENSUS=1` prints a `[MEMCENSUS]` line at every
-   process teardown (`ARM3/census.rs`). On a 2 GB appstorm64 sweep (`20261015-160239-v2cpm7j0`)
-   available memory fell 99 MB from notepad to the end while commit stayed at 22-36 MB:
-   - +68 MB ReactOS-Mm pages (the MC_USER consumer, +83 MB);
-   - +15 MB transition pages ("other");
-   - +11 MB private memory;
-   - page tables and paged pool +4 MB together;
-   - nonpaged pool flat.
-   The growth comes in steps at apps that load images nothing has loaded before (rapps +18 MB,
-   control +11 MB, the first applet +10 MB, the ladder guests at boot), then about 1 MB per new
-   `.cpl`. So this is a per-file image/section cache that is never released, not a per-launch
-   leak. Windows keeps those pages too, but on the standby list, where they count as available
-   and are reclaimed under pressure. Here they count against available, and the 768 MB run that
-   died at ~18 MB free says they are not trimmed. Next: confirm with a low-memory sweep (does
-   `ros` shrink when free gets low?), then make cached section pages reclaimable.
-   Census caveat: `private` includes ~780 MB that is present from the first line on (the
-   loader-mapped ramdisk, by its size), so read it as a delta.
-2. Commit not yet charged: copy-on-write pages of image and file views, PEB/TEB pages, kernel
-   pool (`ARM3/commit.rs` header).
-3. The rest of the cnt CRT (`wcslen`, `strlen`, ...) is still unoptimised byte loops
-   ("Per-syscall cost" below).
+media (and `--arch amd64 --ladder` for wow64.dll). Owed, most valuable first:
+1. Free-RAM drift: located, and mostly fixed (`docs/engineering/mm-section-cache-standby-design.md`).
+   `--tripwire MEMCENSUS=1` (`ARM3/census.rs`) put it in the `ros` column: section pages held by
+   their segment after the last view went, 4.4k -> 30.9k pages over a 2G appstorm64 sweep. arm64
+   could not free them at all (a bring-up `#ifdef` in `MmPageOutPhysicalAddress`), and the
+   balancer trimmed only at 256 free pages. Now: the segment path on every arch, trimming below
+   `MmLowMemoryThreshold`, and a starving user fault retries while the balancer makes progress.
+   `smoke --vm-memory 1024M` overrides a payload's declared RAM for exactly this sweep. Reclaim
+   exposed `MmCheckDirtySegment`'s invented `IoSetTopLevelIrp(0x80000000)` (fastfat 0x23 under
+   pressure; field manual, "The LLM invents plausible values"). appstorm64 now passes 54/54 at
+   1088M (wedged before) and 1152M. Step 2 (`mm/standby.rs`, 2026-10-17) put unmapped clean
+   section pages on a standby list that counts as available and that the allocator repurposes
+   synchronously: 54/54 at 1024M too, and the 2G drift fell from 41k to 25k pages. What is
+   left is in the design doc ("Left of the 2G drift").
+2. Commit not yet charged: copy-on-write pages of image and file views, and kernel pool
+   (`ARM3/commit.rs` header). PEB/TEB pages are charged since 2026-10-17. Owed with it: FEX's
+   CPU layer faults when a commit is refused while setting up a new guest thread
+   (`20261017-062113-2pae52ry`): rpmalloc's `span_allocate_page` calls the `memory_commit` hook
+   (a VIBEOS patch; FEXCore `AllocatorHooks.cpp` `FEX_rp_memory_commit`), which returns `void`,
+   and then writes the page header into memory that was never committed. The fix is in
+   `vendor/fex`, whose CLAUDE.md forbids AI-written code, so it is for a human or upstream. Seen as an
+   apc32 AV when a ladder ran on 1G appstorm64 media, whose ramdisk leaves a 137 MB commit
+   limit with appstorm running beside the guests. On plain `VIBEOS_FEX=1` media the ladder is
+   green with the charging.
+3. The cnt CRT's NUL scans (`cstr_slice`/`wcstr_slice`, under strlen, wcslen and every string
+   function that measures its argument) are asm now (`memops.rs`, 2026-10-17). Owed: the
+   compare/search loops (`strcmp`, `wcschr`, ...), which are still unoptimised Rust; measure
+   first.
 4. win32k callbacks cost ~2x native under FEX.
 5. An appstorm64 sweep on a quiet host, re-timed against the per-syscall numbers.
-6. Two appstorm64 failures in that sweep, not yet looked at and with no earlier x86-64 result
-   to compare: `notepad-save` (the saved file is empty) and `cpl-console` (exit 1 after 203 s).
-   The sweep's other three failures were certmgr, mmc_new and drwtsn32, which appstorm gained
-   without appstorm64 staging them, so they ran native. They are staged now, and
-   `tools/payloads/appstorm/test_appstorm64_roots.py` (check-tooling) keeps the two lists in
-   step.
+6. Fixed 2026-10-17: `notepad-save` (appstorm read the size before notepad had written the
+   file; it now waits for EM_GETMODIFY to clear) and `cpl-console` (86 s and PASS after
+   `MiFlushTbAndCapture` stopped flushing the whole TLB once per re-protected page on arm64:
+   `NtProtectVirtualMemory` cost ~12 ms a call under FEX). Also fixed: wow64's LOADMENU and LPK
+   callbacks had no 64->32 marshaller, so no x86 WoW64 window had a system menu
+   ("No Menu!!"). Open: iexplore at 1152M once failed to close (a thread that never finished
+   exiting after a live HTTPS connection; netstack's IRPs are cancellable, so not that); an
+   arm64 BUGCHECK 0xA at high IRQL in a timer DPC, with the fault one page above SP
+   (`20261016-233339-xs4f9y8m`), not seen again in 8,000+ reclaims since. Item 4's callback cost
+   looks structural: one GetContext, two SetContext and a nested Simulate per callback.
 
 They are graded where the media carries them (`tests/qemu/cli/ladder.py` `STAGED_LADDER`): they
 need build-amd64 to exist at all, so an arm64-only tree does not owe them. `hello64` (no
@@ -316,8 +326,8 @@ A plain guest syscall now costs what a native one does, within the noise: FEX's 
 CPU layer's Notify brackets on memory calls. Native got faster too: win32k was bound on
 byte-at-a-time copies. An empty `PeekMessage` takes ~50 ms on both sides; that is upstream's
 `ZwYieldExecution` without `PM_NOYIELD`, giving a quantum to any ready thread, not a defect.
-Owed: the rest of the cnt CRT (`wcslen`, `strlen`, ...) is still unoptimised byte loops; the
-applet sweep on a quiet host, re-timed against these numbers.
+Owed: the CRT compare/search loops (the NUL scans are asm since 2026-10-17); the applet
+sweep on a quiet host, re-timed against these numbers.
 
 **Then (2026-10-08, evening): taskmgr.** Two bugs in taskmgr itself, both upstream, both visible
 only when the guest is slow:

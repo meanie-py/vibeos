@@ -160,14 +160,25 @@ pub const MAX_COMPARISON_DATA: ULONG = 2048;
 /// The RPC exception filter the C installs around every Irot call
 /// (`__TRY { IrotXxx(..) } __EXCEPT(rpc_filter) { hr = HRESULT_FROM_WIN32(GetExceptionCode()); }`).
 ///
-/// We have no SEH in this crate, so the Irot calls below are UNGUARDED: an RPC
-/// exception (e.g. rpcss not reachable) propagates instead of being converted to an
-/// HRESULT. That is a known faithfulness gap, kept visible here rather than papered
-/// over — the filter itself is translated and ready for the day the ring gets a
-/// try/except facility.
-#[allow(dead_code)]
+/// [`irot_guarded`] installs it through ntdll's trampoline (ntdll_sys::seh), so an RPC
+/// raise (rpcss not reachable) becomes the HRESULT the retry loops below test for. Until
+/// 2026-10-17 the calls were unguarded on every arch: the raise killed the caller, and
+/// every `RPC_S_SERVER_UNAVAILABLE -> start_rpcss()` retry was dead code.
 unsafe fn rpc_filter(eptr: *mut EXCEPTION_POINTERS) -> LONG {
     I_RpcExceptionFilter((*(*eptr).ExceptionRecord).ExceptionCode) as LONG
+}
+
+/// `__TRY { hr = call(); } __EXCEPT(rpc_filter) { hr = HRESULT_FROM_WIN32(GetExceptionCode()); }`
+unsafe fn irot_guarded(call: impl FnOnce() -> HRESULT) -> HRESULT {
+    let mut hr: HRESULT = S_OK;
+    match ntdll_sys::seh::try_except(
+        &mut hr,
+        |hr| *hr = call(),
+        |_, pointers| rpc_filter(pointers as *mut EXCEPTION_POINTERS) as i32,
+    ) {
+        Ok(()) => hr,
+        Err(code) => HRESULT_FROM_WIN32(code as u32),
+    }
 }
 
 /* define the structure of the running object table elements */
@@ -355,20 +366,23 @@ unsafe fn rot_entry_delete(rot_entry: *mut rot_entry) {
         let mut moniker: *mut InterfaceData = core::ptr::null_mut();
 
         // C: __TRY { .. } __EXCEPT(rpc_filter) { } — see the note on rpc_filter.
-        IrotRevoke(
+        irot_guarded(|| {
+            IrotRevoke(
             get_irot_handle(),
             (*rot_entry).cookie,
             core::ptr::addr_of_mut!((*rot_entry).ctxt_handle),
             &mut object,
             &mut moniker,
         );
+            S_OK
+        });
 
         MIDL_user_free(object as LPVOID);
         if !moniker.is_null() {
             let mut stream: *mut IStream = core::ptr::null_mut();
             let hr = create_stream_on_mip_ro(moniker, &mut stream);
             if hr == S_OK {
-                CoReleaseMarshalData(stream);
+                CoReleaseMarshalData((stream).cast());
                 IStream_Release(stream);
             }
         }
@@ -378,7 +392,7 @@ unsafe fn rot_entry_delete(rot_entry: *mut rot_entry) {
         let mut stream: *mut IStream = core::ptr::null_mut();
         let hr = create_stream_on_mip_ro((*rot_entry).object, &mut stream);
         if hr == S_OK {
-            CoReleaseMarshalData(stream);
+            CoReleaseMarshalData((stream).cast());
             IStream_Release(stream);
         }
     }
@@ -404,7 +418,7 @@ unsafe fn get_moniker_comparison_data(
         *moniker_data = HeapAlloc(
             GetProcessHeap(),
             0,
-            (core::mem::offset_of!(MonikerComparisonData, abData) + size as usize) as SIZE_T,
+            (core::mem::offset_of!(MonikerComparisonData, abData) + size as usize) as usize,
         ) as *mut MonikerComparisonData;
         if (*moniker_data).is_null() {
             IROTData_Release(pROTData);
@@ -457,7 +471,7 @@ unsafe fn get_moniker_comparison_data(
         *moniker_data = HeapAlloc(
             GetProcessHeap(),
             0,
-            (core::mem::offset_of!(MonikerComparisonData, abData) + cb_data) as SIZE_T,
+            (core::mem::offset_of!(MonikerComparisonData, abData) + cb_data) as usize,
         ) as *mut MonikerComparisonData;
         if (*moniker_data).is_null() {
             CoTaskMemFree(pszDisplayName as LPVOID);
@@ -685,7 +699,7 @@ fn RunningObjectTableImpl_Register(
     rot_entry = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        core::mem::size_of::<rot_entry>() as SIZE_T,
+        core::mem::size_of::<rot_entry>() as usize,
     ) as *mut rot_entry;
     if rot_entry.is_null() {
         return E_OUTOFMEMORY;
@@ -703,9 +717,9 @@ fn RunningObjectTableImpl_Register(
         MSHLFLAGS_TABLEWEAK
     };
     hr = CoMarshalInterface(
-        pStream,
-        core::ptr::addr_of!(IID_IUnknown),
-        punkObject,
+        (pStream).cast(),
+        (core::ptr::addr_of!(IID_IUnknown)).cast(),
+        (punkObject).cast(),
         MSHCTX_LOCAL | MSHCTX_NOSHAREDMEM,
         core::ptr::null_mut(),
         mshlflags,
@@ -721,7 +735,7 @@ fn RunningObjectTableImpl_Register(
             (*rot_entry).object = HeapAlloc(
                 GetProcessHeap(),
                 0,
-                core::mem::offset_of!(InterfaceData, abData) as SIZE_T + size,
+                (core::mem::offset_of!(InterfaceData, abData) as SIZE_T + size) as usize,
             ) as *mut InterfaceData;
             (*(*rot_entry).object).ulCntData = size as ULONG;
             memcpy(
@@ -780,9 +794,9 @@ fn RunningObjectTableImpl_Register(
     }
     /* marshal moniker */
     hr = CoMarshalInterface(
-        pStream,
-        core::ptr::addr_of!(IID_IMoniker),
-        pmkObjectName as *mut IUnknown,
+        (pStream).cast(),
+        (core::ptr::addr_of!(IID_IMoniker)).cast(),
+        (pmkObjectName as *mut IUnknown).cast(),
         MSHCTX_LOCAL | MSHCTX_NOSHAREDMEM,
         core::ptr::null_mut(),
         MSHLFLAGS_TABLESTRONG,
@@ -798,7 +812,7 @@ fn RunningObjectTableImpl_Register(
             moniker = HeapAlloc(
                 GetProcessHeap(),
                 0,
-                core::mem::offset_of!(InterfaceData, abData) as SIZE_T + size,
+                (core::mem::offset_of!(InterfaceData, abData) as SIZE_T + size) as usize,
             ) as *mut InterfaceData;
             (*moniker).ulCntData = size as ULONG;
             memcpy((*moniker).abData.as_mut_ptr() as *mut c_void, pv, size as usize);
@@ -815,7 +829,7 @@ fn RunningObjectTableImpl_Register(
 
     loop {
         // C: __TRY { .. } __EXCEPT(rpc_filter) { hr = HRESULT_FROM_WIN32(GetExceptionCode()); }
-        hr = IrotRegister(
+        hr = irot_guarded(|| IrotRegister(
             get_irot_handle(),
             (*rot_entry).moniker_data,
             (*rot_entry).object,
@@ -824,7 +838,7 @@ fn RunningObjectTableImpl_Register(
             grfFlags,
             core::ptr::addr_of_mut!((*rot_entry).cookie),
             core::ptr::addr_of_mut!((*rot_entry).ctxt_handle),
-        );
+        ));
         if hr == HRESULT_FROM_WIN32(RPC_S_SERVER_UNAVAILABLE) && start_rpcss() != 0 {
             continue;
         }
@@ -940,7 +954,7 @@ fn RunningObjectTableImpl_IsRunning(
     if hr == S_FALSE {
         loop {
             // C: __TRY/__EXCEPT(rpc_filter) — see the note on rpc_filter.
-            hr = IrotIsRunning(get_irot_handle(), moniker_data);
+            hr = irot_guarded(|| IrotIsRunning(get_irot_handle(), moniker_data));
             if hr == HRESULT_FROM_WIN32(RPC_S_SERVER_UNAVAILABLE) && start_rpcss() != 0 {
                 continue;
             }
@@ -1015,8 +1029,8 @@ fn RunningObjectTableImpl_GetObject(
 
                 if hr == S_OK {
                     hr = CoUnmarshalInterface(
-                        pStream,
-                        core::ptr::addr_of!(IID_IUnknown),
+                        (pStream).cast(),
+                        (core::ptr::addr_of!(IID_IUnknown)).cast(),
                         ppunkObject as *mut LPVOID,
                     );
                     IStream_Release(pStream);
@@ -1034,7 +1048,7 @@ fn RunningObjectTableImpl_GetObject(
 
     loop {
         // C: __TRY/__EXCEPT(rpc_filter) — see the note on rpc_filter.
-        hr = IrotGetObject(get_irot_handle(), moniker_data, &mut object, &mut cookie);
+        hr = irot_guarded(|| IrotGetObject(get_irot_handle(), moniker_data, &mut object, &mut cookie));
         if hr == HRESULT_FROM_WIN32(RPC_S_SERVER_UNAVAILABLE) && start_rpcss() != 0 {
             continue;
         }
@@ -1046,8 +1060,8 @@ fn RunningObjectTableImpl_GetObject(
         hr = create_stream_on_mip_ro(object, &mut pStream);
         if hr == S_OK {
             hr = CoUnmarshalInterface(
-                pStream,
-                core::ptr::addr_of!(IID_IUnknown),
+                (pStream).cast(),
+                (core::ptr::addr_of!(IID_IUnknown)).cast(),
                 ppunkObject as *mut LPVOID,
             );
             IStream_Release(pStream);
@@ -1096,7 +1110,7 @@ fn RunningObjectTableImpl_NoteChangeTime(
 
                 loop {
                     // C: __TRY/__EXCEPT(rpc_filter) — see the note on rpc_filter.
-                    hr = IrotNoteChangeTime(get_irot_handle(), dwRegister, pfiletime);
+                    hr = irot_guarded(|| IrotNoteChangeTime(get_irot_handle(), dwRegister, pfiletime));
                     if hr == HRESULT_FROM_WIN32(RPC_S_SERVER_UNAVAILABLE) && start_rpcss() != 0 {
                         continue;
                     }
@@ -1177,7 +1191,7 @@ fn RunningObjectTableImpl_GetTimeOfLastChange(
     if hr != S_OK {
         loop {
             // C: __TRY/__EXCEPT(rpc_filter) — see the note on rpc_filter.
-            hr = IrotGetTimeOfLastChange(get_irot_handle(), moniker_data, pfiletime);
+            hr = irot_guarded(|| IrotGetTimeOfLastChange(get_irot_handle(), moniker_data, pfiletime));
             if hr == HRESULT_FROM_WIN32(RPC_S_SERVER_UNAVAILABLE) && start_rpcss() != 0 {
                 continue;
             }
@@ -1213,7 +1227,7 @@ fn RunningObjectTableImpl_EnumRunning(
 
     loop {
         // C: __TRY/__EXCEPT(rpc_filter) — see the note on rpc_filter.
-        hr = IrotEnumRunning(get_irot_handle(), &mut interface_list);
+        hr = irot_guarded(|| IrotEnumRunning(get_irot_handle(), &mut interface_list));
         if hr == HRESULT_FROM_WIN32(RPC_S_SERVER_UNAVAILABLE) && start_rpcss() != 0 {
             continue;
         }
@@ -1253,7 +1267,7 @@ pub unsafe extern "system" fn RunningObjectTableImpl_Initialize() -> HRESULT {
     runningObjectTableInstance = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<RunningObjectTableImpl>() as SIZE_T,
+        core::mem::size_of::<RunningObjectTableImpl>() as usize,
     ) as *mut RunningObjectTableImpl;
 
     if runningObjectTableInstance.is_null() {
@@ -1371,7 +1385,7 @@ unsafe fn get_moniker_for_progid_display_name(
     progid = HeapAlloc(
         GetProcessHeap(),
         0,
-        ((len as usize + 1) * core::mem::size_of::<u16>()) as SIZE_T,
+        ((len as usize + 1) * core::mem::size_of::<u16>()) as usize,
     ) as LPWSTR;
     if !progid.is_null() {
         memcpy(
@@ -1758,8 +1772,8 @@ fn EnumMonikerImpl_Next(
             break;
         }
         hr = CoUnmarshalInterface(
-            stream,
-            core::ptr::addr_of!(IID_IMoniker),
+            (stream).cast(),
+            (core::ptr::addr_of!(IID_IMoniker)).cast(),
             rgelt.add(i as usize) as *mut LPVOID,
         );
         IStream_Release(stream);
@@ -1837,7 +1851,7 @@ fn EnumMonikerImpl_Clone(iface: *mut IEnumMoniker, ppenum: *mut *mut IEnumMonike
         0,
         (core::mem::offset_of!(InterfaceList, interfaces)
             + (*(*This).moniker_list).size as usize * core::mem::size_of::<PInterfaceData>())
-            as SIZE_T,
+            as usize,
     ) as *mut InterfaceList;
     if moniker_list.is_null() {
         return E_OUTOFMEMORY;
@@ -1849,7 +1863,7 @@ fn EnumMonikerImpl_Clone(iface: *mut IEnumMoniker, ppenum: *mut *mut IEnumMonike
         let src = *(*(*This).moniker_list).interfaces.as_ptr().add(i as usize);
         let size: usize =
             core::mem::offset_of!(InterfaceData, abData) + (*src).ulCntData as usize;
-        let dst = HeapAlloc(GetProcessHeap(), 0, size as SIZE_T) as *mut InterfaceData;
+        let dst = HeapAlloc(GetProcessHeap(), 0, size as usize) as *mut InterfaceData;
         *(*moniker_list).interfaces.as_mut_ptr().add(i as usize) = dst;
         if dst.is_null() {
             let end = i;
@@ -1904,7 +1918,7 @@ unsafe fn EnumMonikerImpl_CreateEnumROTMoniker(
     This = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<EnumMonikerImpl>() as SIZE_T,
+        core::mem::size_of::<EnumMonikerImpl>() as usize,
     ) as *mut EnumMonikerImpl;
     if This.is_null() {
         return E_OUTOFMEMORY;
@@ -2161,7 +2175,7 @@ pub unsafe extern "C" fn MonikerMarshal_Create(
     let This = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<MonikerMarshal>() as SIZE_T,
+        core::mem::size_of::<MonikerMarshal>() as usize,
     ) as *mut MonikerMarshal;
     if This.is_null() {
         return E_OUTOFMEMORY;
@@ -2183,7 +2197,7 @@ pub unsafe extern "C" fn MonikerMarshal_Create(
 /// amd64/arm64 and corrupts the stack on i386.
 #[no_mangle]
 pub unsafe extern "system" fn MIDL_user_allocate(size: SIZE_T) -> LPVOID {
-    HeapAlloc(GetProcessHeap(), 0, size)
+    HeapAlloc(GetProcessHeap(), 0, (size) as usize)
 }
 
 /// rpcndr.h: `void __RPC_USER MIDL_user_free(void *)` — see MIDL_user_allocate.

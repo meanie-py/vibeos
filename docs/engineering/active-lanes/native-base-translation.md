@@ -44,6 +44,23 @@ Lessons a resume or the next batch should know:
   belongs in `ntkrnl_sys::inline`, per arch. The island's extern links on x86 and
   fails on arm64.
 
+**Graded 2026-10-16 (`audio-convert-difftest`, $0).** kmixer's `pin.c` and wdmaud.drv's
+`mixer.c` carry the same PCM converters, and their C is right in only two cases: 8-bit
+channel up-mixing and 16→32-bit. Everywhere else it is wrong:
+- The channel converter sizes its buffer in samples, not bytes. It reads the input at
+  byte offsets, fills one channel too many on the last frame, and reports a sample count
+  as the length. So every 16-bit mono↔stereo stream overran the pool (kmixer) or the
+  heap (wdmaud.drv).
+- The quality converter never re-centres unsigned 8-bit samples. 8→32 maps silence to full
+  scale.
+- Under `_X86_` it byte-swaps every sample, so i386 produced different audio from amd64 for
+  the same stream.
+
+The Rust in both crates now does the right thing, with divergence comments. The harness
+grades it against the C where the C is defined, and against an independent PCM model
+everywhere else. It also pins each C defect, so a later fix to the C shows up as a test
+change.
+
 What the batch added to the shared crates and tools:
 - **mmebuddy-macros-rust** (new): `mmebuddy_debug.h` / `mmebuddy.h` / `sndtypes.h` statement
   macros, in a quiet `_NDEBUG` and a printing `_DBG` flavour (mmebuddy and wdmaud.drv define
@@ -64,7 +81,71 @@ What the batch added to the shared crates and tools:
    which this tree does not carry), and nothing links sound's `shared` (`audio`) or
    `uartmidi`. Their `add_subdirectory` lines are commented out with the reason; the C stays
    on disk, so re-enabling one is a one-line change if a consumer ever arrives.
-2. Pick the next native area from `rust-port-status.md` (what is still C and not on the
+2. **The static `crt` library is pruned too** (`#include(crt.cmake)`, 2026-10-16). Nothing
+   linked it and no target pulled it in, so its ~720 TUs only appeared in
+   compile_commands.json.
+3. **Audio difftests, round two (2026-10-17, `mmixer-difftest`, $0).** Both mmixer findings
+   from the survey were real and are fixed:
+   - `MMixerSetGetVolumeControlDetails` reported full volume as 0x10000, one past the
+     control's 0xFFFF maximum, and wrapped a driver value outside its range. The Rust
+     clamps; the C formula is kept.
+   - The topology walkers: `MMixerAddPinIndexToArray` had no equality case, so a pin or node
+     reached along two paths was listed twice. With the array full that pushed the count
+     past MaxPins. Neither walker skipped a visited node; they only ASSERTed, and ASSERT!
+     compiles out in the Rust, so a cycle would recurse without end. `GetUpOrDownstreamNodes`
+     also marked the parent where it meant the child. The harness grades trees exactly
+     against the C and diamonds and cycles against a reachability model.
+   - mmebuddy's looped playback (`mmebuddy-difftest`, 2026-10-17) was wrong four ways,
+     all now fixed in `streaming.rs`:
+     - `DoWaveStreaming` reloaded `LoopsRemaining = dwLoops` on every call, so a finite
+       loop never ended.
+     - The repeat was rewound from `CompleteIO`, after the commit side had already moved
+       on to the next header, so the repeat played after it.
+     - `CompleteIO` dropped the completion that triggered a rewind while counting partials
+       across passes, so a header could be returned with chunks still in flight.
+     - A completion spilling into the next header freed one buffer per header.
+
+     The loop counts now live per header in `WAVEHDR_EXTENSION` (`LoopsToCommit`/
+     `LoopsToComplete`, set once per write). `dwLoops` is honoured as "times to play",
+     so 0 and 1 both mean once. The harness grades plain streaming against the C and a
+     client-side model, grades loops against the model, and pins the C's defects. Five
+     mutants are killed.
+4. **Batch H flipped (2026-10-17):** reactos.exe, blue, ndisuio, netio, rtl8139, tdi and
+   tzlib. The row in rust-port-status.md has the details. After it, the ReactOS-native
+   plain-C tail is small: tdihelpers (done, item 5), sdk/lib/crt's `strtol` lib (done,
+   item 5), normaliz (Wine-derived after all, item 5), the boot loader's `blcmlib`/`blrtl`, and cdrom's data TUs (data.c done, item 5). The rest is Wine
+   (needs the owner's call) or other lanes'. Measured from build-amd64/compile_commands.json,
+   filtering any TU with a Wine debug channel or `wine/` include.
+5. **tdihelpers is one shared Rust library (2026-10-17, $0.06).** `tdi.c`/`tdiconn.c` are
+   the `tdihelpers` STATIC target now. afd.sys links it, and netio's cell takes
+   `engine:crate:tdihelpers-rust`. Their objects were byte-identical under afd's and netio's
+   `_WIN32_WINNT` on all three arches, so one build serves both. The six `_SEH2_TRY` sites are
+   hand-ported to `ntkrnl_sys::seh::try_except`. The C's except arms are dead under
+   DUMMY_PSEH, so the Rust now really catches a failed `MmProbeAndLockPages`. tdikrnl.h's
+   `TdiBuild*` request builders went into `ddk-macros-rust`. Tool fixes:
+   - The `c` fact-seal no longer seals PSEH's statement macros.
+   - A preamble of bare conditionals and `#undef`s is $0.
+   - crate-repair's flex-array rule sees `addr_of_mut!`/`&raw mut` borrows.
+   - `port flip` rewrites cargo cells' `engine:c:<target>` to the crate archive.
+   - vibeos-lint's `scan_raising_probes` no longer reads a probe's name inside a string.
+   **The `strtol` library is pruned ($0).** acpi.sys used only isprint/isspace/isxdigit/
+   toupper from it, which cnt-difftest grades against the C. It now links them from
+   libcntpr_rust.a, as hal.dll does. Linked on all three arches; smoke boots on all three,
+   and amd64 smoke:net passed 16/16. `acpi_new`, which is not built, still names the library.
+   **cdrom's `data.c` is Rust ($0, `rustconv.c_data_port`).** Its two hack tables went
+   into cdrom-rust's `src/data`. The tool runs directly because cdrom-rust predates `port`.
+   `guid.c` stays C, since its GUIDs are header DEFINE_GUIDs the data port does not emit.
+   - **Header tables are left to C.** `cdrom.h`'s WDF context-type infos are selectany in
+     every C includer, and the shim still includes them. Rust copies would be strong
+     definitions, and the link guard refused them; the port takes only data.c's own
+     tables (`headers=("…/data.c",), scope_tables=False`).
+   - **Tool fixes.** An unevaluated enum constant fails only where a table uses it. An
+     island's `[T; 0]` is an incomplete declaration, not a length mismatch.
+   - **Smoke** passes on all three arches.
+   - **normaliz is not native:** IdnToAscii/IdnToUnicode say "Taken from Wine
+     kernel32/locale.c", and nameprep.c is their table. It waits for the owner's call on
+     Wine.
+6. Pick the next native area from `rust-port-status.md` (what is still C and not on the
    skip list below).
 
 ## Not ours: skip these
@@ -87,6 +168,33 @@ driver (`tools/merge_drivers.py`, which also merges the cohab census), and psapi
 2026-10-16. The first run per stem compiles ntkrnl-sys cold in its private
 `target-<arch>`, which is the likely source of the earlier figure.
 
+- **`port macros` loses two things a hand fix then has to restore** (reactos.exe): it does
+  not widen integer operands (`GetDiskSizeInBytes` needed `as ULONGLONG`) and it drops the
+  `!` when one lowered macro calls another (`SetDlgItemFont` -> `SetWindowFont!`). The three
+  hand edits live inside reactos-rust's generated prelude block, so a `port macros` re-run
+  reverts them.
+- **usetup's cabinet/file-queue code exists twice** (usetup-rust, and reactos-rust's
+  `fileqsup.rs`, because the C `#include`s the .c files). One shared crate, as tdihelpers
+  got (item 5 above).
+- **The call seal leaves a live `#ifdef` arm's calls optional** (from control-plane's owed
+  list, 2026-10-17; the original report, "it demands calls in dead arms", no longer
+  reproduces). `dead_regions.preprocessor_conditional_spans` marks EVERY arm of any `#if`
+  in a body dead. So on rundll32's `#ifdef UNICODE WideCharToMultiByte #else strncpy`, both
+  calls are optional, and a model that drops the live call passes the seal. The fix:
+  - Decide arms with `dead_regions.cond_truth`, given the TU's own defines. That means
+    `pinned_int_macros(module.definitions)`, plus the bare `-DNAME`s as `local` (UNICODE is
+    one); `pinned_int_macros` drops them. Plumb these through `seal_calls` into
+    `dead_region_spans`.
+  - Live arm required, dead arm optional, an undecidable chain optional as today.
+  - The prompt and cache are untouched: `call_contract` never reads `.dead`.
+
+  It TIGHTENS an audit, though, so measure it first. Re-check every banked body against
+  its C function's live-arm callees under its TU's defines. Then fix (re-buy) or allowlist
+  each body that dropped one, before the change can turn a `port replay` red.
+- **The live cost counter skips failed attempts.** Every attempt's `result.json` has
+  `cost_usd: null`, and a body that ends in `max_tokens` is never added to the running total
+  (DriveDlgProc's two 32K-token failures printed `$0.0000`). Batch H's real spend was summed
+  from the attempts' token counts. The counter should bill every attempt it sent.
 - The three tech-debt items are in the roadmap's "Known bugs & flakes" registry, so they
   are not repeated here:
   - the i386-uefi install's fastfat flush fault;

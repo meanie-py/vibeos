@@ -444,42 +444,15 @@ pub const SHCOLSTATE_TYPE_STR: DWORD = 1;
 
 pub const SHCONTF_FOLDERS: DWORD = 32;
 
-#[repr(C)]
-pub struct EXTRASEARCH {
-    pub guidSearch: GUID,
-    pub wszFriendlyName: [WCHAR; 80],
-    pub wszUrl: [WCHAR; 2084],
-}
+pub use crate::island::EXTRASEARCH;
 
-#[repr(C)]
-pub struct PERSIST_FOLDER_TARGET_INFO {
-    pub pidlTargetFolder: PIDLIST_ABSOLUTE,
-    pub szTargetParsingName: [WCHAR; 260],
-    pub szNetworkProvider: [WCHAR; 260],
-    pub dwAttributes: DWORD,
-    pub csidl: i32,
-}
+pub use crate::island::PERSIST_FOLDER_TARGET_INFO;
 
-#[repr(C)]
-pub struct QCMINFO {
-    pub hmenu: HMENU,
-    pub indexMenu: UINT,
-    pub idCmdFirst: UINT,
-    pub idCmdLast: UINT,
-    pub pIdMap: *const QCMINFO_IDMAP,
-}
+pub use crate::island::QCMINFO;
 
-#[repr(C)]
-pub struct QCMINFO_IDMAP {
-    pub nMaxIds: UINT,
-    pub pIdList: [QCMINFO_IDMAP_PLACEMENT; 1],
-}
+pub use crate::island::QCMINFO_IDMAP;
 
-#[repr(C)]
-pub struct QCMINFO_IDMAP_PLACEMENT {
-    pub id: UINT,
-    pub fFlags: UINT,
-}
+pub use crate::island::QCMINFO_IDMAP_PLACEMENT;
 
 // Deterministic from shobjidl.h
 #[repr(C)]
@@ -611,11 +584,7 @@ pub type LPTBBUTTONSB = *mut core::ffi::c_void;
 
 pub type LPFNSVADDPROPSHEETPAGE = Option<unsafe extern "system" fn(HPROPSHEETPAGE, LPARAM) -> BOOL>;
 
-#[repr(C)]
-pub struct shvheader {
-    pub colnameid: WORD, pub colstate: WORD,
-    pub fmt: WORD, pub cxChar: WORD,
-}
+pub use crate::island::shvheader;
 pub static NetworkPlacesSFHeader: [shvheader; 4] = [
     shvheader { colnameid: (IDS_SHV_COLUMN_NAME) as WORD, colstate: (SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT) as WORD, fmt: (LVCFMT_RIGHT) as WORD, cxChar: (15) as WORD },
     shvheader { colnameid: (IDS_SHV_COLUMN_CATEGORY) as WORD, colstate: (SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT) as WORD, fmt: (LVCFMT_RIGHT) as WORD, cxChar: (10) as WORD },
@@ -624,15 +593,10 @@ pub static NetworkPlacesSFHeader: [shvheader; 4] = [
 ];
 
 extern "system" {
-    fn DestroyMenu(menu: HMENU) -> BOOL;
     #[link_name = "GetFileAttributesW"]
     fn GetFileAttributes(path: LPCWSTR) -> DWORD;
     fn lstrlenW(text: LPCWSTR) -> INT;
-    fn CoTaskMemAlloc(bytes: SIZE_T) -> LPVOID;
-    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
     fn CoTaskMemFree(memory: LPVOID);
-    fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
-    fn SHCreateShellFolderView(create: *const SFV_CREATE, view: *mut *mut IShellView) -> HRESULT;
     fn CNetFolder_ILCreateFromNetworkPlaceW_RustBridge(path: LPCWSTR) -> LPITEMIDLIST;
     fn CNetFolderEnum_CreateInstance_RustBridge(owner: HWND, flags: DWORD, out: *mut *mut IEnumIDList) -> HRESULT;
     fn CNetFolder_CreateBackgroundMenu_RustBridge(root: LPCITEMIDLIST, owner: HWND, folder: *mut IShellFolder, out: *mut *mut IContextMenu) -> HRESULT;
@@ -678,7 +642,7 @@ unsafe fn StringCchCopyW(dst: LPWSTR, capacity: usize, src: LPCWSTR) -> HRESULT 
 unsafe fn cpp_com_SHSetStrRetW(out: *mut STRRET, value: LPCWSTR) -> HRESULT {
     let len = lstrlenW(value) as usize;
     let bytes = (len + 1) * core::mem::size_of::<WCHAR>();
-    let buffer = CoTaskMemAlloc(bytes) as LPWSTR;
+    let buffer = CoTaskMemAlloc((bytes) as SIZE_T) as LPWSTR;
     if buffer.is_null() { return E_OUTOFMEMORY; }
     let _ = memcpy(buffer, value, bytes);
     (*out).uType = STRRET_WSTR; (*out).u.pOleStr = buffer; S_OK
@@ -714,6 +678,13 @@ extern "C" {
 pub static CPP_COM_WSTR_EB4CE2024A43: [WCHAR; 7] = [0x0046, 0x006F, 0x006C, 0x0064, 0x0065, 0x0072, 0x0000];
 
 use core::ffi::c_void;
+// The crate's own functions: the definition is the declaration.
+use crate::wine::pidl::ILClone;
+use crate::def_view::SHCreateShellFolderView;
+// One declaration per external symbol: island.rs.
+use crate::island::CoTaskMemAlloc;
+use crate::island::DestroyMenu;
+use crate::island::LoadStringW;
 use crate::shellcom::*;
 use crate::types::*;
 
@@ -820,8 +791,8 @@ pub unsafe fn CNetFolder_CreateViewObject_body(this: *mut CNetFolder, hwndOwner:
         psfvcb: core::ptr::null_mut(),
     };
         hr = SHCreateShellFolderView(
-            &mut sfvparams as *mut SFV_CREATE,
-            ppvOut as *mut *mut IShellView,
+            (&mut sfvparams as *mut SFV_CREATE).cast(),
+            (ppvOut as *mut *mut IShellView).cast(),
         );
     }
 

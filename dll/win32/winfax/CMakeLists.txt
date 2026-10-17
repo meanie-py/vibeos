@@ -5,12 +5,8 @@ spec2def(winfax.dll winfax.spec)
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # winfax.c  # replaced by Rust (sdk/lib/rust/winfax-rust/src/winfax/winfax.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(winfax_res OBJECT winfax.rc)
-target_include_directories(winfax_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(winfax winfax-cargo winfax.dll
     KIND win32dll
     BODY_CRATE winfax-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS winfax_res)
+    EXTRA_DEPENDS psdk)

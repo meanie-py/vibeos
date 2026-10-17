@@ -1,5 +1,7 @@
 // Deterministic from oaidl.h
 use crate::prelude::*;
+// One declaration per external symbol: island.rs.
+use crate::island::OutputDebugStringA;
 #[repr(C)]
 pub struct IDispatch {
     pub lpVtbl: *const IDispatchVtbl,
@@ -529,7 +531,6 @@ extern "C" {
 }
 
 extern "system" {
-    fn OutputDebugStringA(text: *const u8);
     fn LoadRegTypeLib(
         libid: REFGUID,
         major: WORD,
@@ -556,7 +557,7 @@ pub unsafe fn CDefViewDual_EnsureTILoaded_body(this: *mut CDefViewDual, lcid: LC
         core::ptr::addr_of!(CLSID_NULL),
         core::ptr::addr_of!(LIBID_Shell32),
     ) {
-        OutputDebugStringA(b"IDispatchImpl: plibid is CLSID_NULL!\r\n\0".as_ptr() as *const u8);
+        OutputDebugStringA((b"IDispatchImpl: plibid is CLSID_NULL!\r\n\0".as_ptr() as *const u8).cast());
     }
 
     let mut spTypeLib: *mut ITypeLib = core::ptr::null_mut();

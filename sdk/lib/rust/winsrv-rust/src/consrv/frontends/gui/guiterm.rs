@@ -112,6 +112,7 @@ pub static mut GuiVtbl: FRONTEND_VTBL = unsafe { FRONTEND_VTBL {
     SetMouseCursor: Some(GuiSetMouseCursor),
     MenuControl: Some(GuiMenuControl),
     SetMenuClose: Some(GuiSetMenuClose),
+    GetFontSize: Some(GuiGetFontSize),
 } };
 
 pub unsafe fn GuiConsoleMoveWindow(GuiData: PGUI_CONSOLE_DATA) {
@@ -1110,6 +1111,19 @@ pub unsafe extern "system" fn GuiSetMenuClose(
     );
 
     1
+}
+
+/// The font's size as created, not the measured cell: for a TrueType face that
+/// is {0, height}, and Windows 11 reports exactly that (Consolas 16 reads 0x16).
+pub unsafe extern "system" fn GuiGetFontSize(
+    This: PFRONTEND,
+    pSize: PCOORD,
+) {
+    let GuiData = (*This).Context as PGUI_CONSOLE_DATA;
+    if pSize.is_null() {
+        return;
+    }
+    *pSize = (*GuiData).GuiInfo.FontSize;
 }
 
 #[no_mangle]

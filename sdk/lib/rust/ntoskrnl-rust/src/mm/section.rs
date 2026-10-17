@@ -869,17 +869,22 @@ pub unsafe extern "system" fn MmUnsharePageEntrySectionSegment(
         MmSetPageEntrySectionSegment(Segment, Offset, Entry);
         return 0u8;
     }
+    // From here the last view of the page is gone. Where the C keeps it cached, a clean
+    // page goes to standby: still the segment's, but available (mm/standby.rs).
     if IsDataMap {
         MmSetPageEntrySectionSegment(Segment, Offset, Entry);
+        crate::mm::standby::MiRosStandbyInsert(Segment, Offset, Entry);
         return 0u8;
     }
     if (*Segment).Image.Characteristics & IMAGE_SCN_MEM_SHARED == 0 {
         MmSetPageEntrySectionSegment(Segment, Offset, Entry);
+        crate::mm::standby::MiRosStandbyInsert(Segment, Offset, Entry);
         return 0u8;
     }
     let SwapEntry = MmGetSavedSwapEntryPage(Page);
     if SwapEntry == 0 && !IS_DIRTY_SSE(Entry) {
         MmSetPageEntrySectionSegment(Segment, Offset, Entry);
+        crate::mm::standby::MiRosStandbyInsert(Segment, Offset, Entry);
         return 0u8;
     }
     if SwapEntry != 0 {
@@ -934,7 +939,15 @@ unsafe fn MmMakeSegmentResident(
         let mut ChunkOffset = RangeStart;
         while ChunkOffset < ChunkEnd {
             let mut CurrentOffset = LARGE_INTEGER { QuadPart: ChunkOffset };
-            let mut Entry = MmGetPageEntrySectionSegment(Segment as PVOID, core::ptr::addr_of!(CurrentOffset.QuadPart));
+            // A readahead neighbour is only checked for residency: peek, so a page on
+            // standby stays there. The requested range is claimed, since it is about to
+            // be mapped and must not be repurposed in between.
+            let Peek = SetDirty == 0 && (ChunkOffset < Offset || ChunkOffset >= Offset + Length as i64);
+            let mut Entry = if Peek {
+                crate::mm::section_table::MiPeekPageEntrySectionSegment(Segment, core::ptr::addr_of_mut!(CurrentOffset))
+            } else {
+                MmGetPageEntrySectionSegment(Segment as PVOID, core::ptr::addr_of!(CurrentOffset.QuadPart))
+            };
             while MM_IS_WAIT_PTE(Entry) {
                 MmUnlockSectionSegment(Segment as PVOID);
                 KeDelayExecutionThread(0i8, 0u8, core::ptr::addr_of!(TinyTime) as *mut _);
@@ -1093,6 +1106,12 @@ unsafe fn MmMakeSegmentResident(
                     Entry = DIRTY_SSE(Entry);
                 }
                 MmSetPageEntrySectionSegment(Segment, core::ptr::addr_of_mut!(CurrentOffset), Entry);
+                // A page read only as readahead goes straight to standby, as Windows'
+                // prefetch does: cached, but available until someone faults it in. Not
+                // the requested range, whose caller is about to map it.
+                if CurrentOffset.QuadPart < Offset || CurrentOffset.QuadPart >= Offset + Length as i64 {
+                    crate::mm::standby::MiRosStandbyInsert(Segment, core::ptr::addr_of_mut!(CurrentOffset), Entry);
+                }
             }
             MmUnlockSectionSegment(Segment as PVOID);
             IoFreeMdl(Mdl);
@@ -1936,7 +1955,12 @@ pub unsafe extern "system" fn MmCheckDirtySegment(
                     &mut resource_to_release,
                 );
                 if status >= 0 {
-                    IoSetTopLevelIrp(0x80000000usize as PIRP);
+                    // The C's FSRTL_MOD_WRITE_TOP_LEVEL_IRP. This was a literal 0x80000000,
+                    // above FSRTL_MAX_TOP_LEVEL_IRP_FLAG, so the filesystem took it for a real
+                    // IRP: fastfat's FatCommonWrite read its NodeType and bugchecked 0x23. Only
+                    // a page-out of a dirty data-file page gets here, which arm64 first did once
+                    // cached section pages became reclaimable (rmap.rs).
+                    IoSetTopLevelIrp(FSRTL_MOD_WRITE_TOP_LEVEL_IRP as PIRP);
                 } else {
                     resource_to_release = core::ptr::null_mut();
                 }
@@ -2008,6 +2032,12 @@ pub unsafe extern "system" fn MmCheckDirtySegment(
         MmSetPageEntrySectionSegment(Segment, Offset, new_entry);
         MmReleasePageMemoryConsumer(MC_USER, page);
         return 1u8;
+    }
+
+    // A flush keeps the page. If it is clean and unmapped it belongs on standby, both when
+    // the write just cleaned it and when the Get above took it off the list to look.
+    if PageOut == 0 {
+        crate::mm::standby::MiRosStandbyInsert(Segment, Offset, entry);
     }
 
     0u8
@@ -3811,11 +3841,8 @@ pub unsafe extern "system" fn MmMapViewOfSection(
         }
 
         // Windows refuses a reservation of a section that cannot be written
-        // (ZwMapViewOfSection.c:236; the C had no such check). A reserved view reaching past
-        // the end of the file (211) is NOT supported: the segment has no pages there, and
-        // unmapping such a view corrupted the file's cached pages for every later test
-        // (wrong data, then a BUGCHECK 0x1E on x86, 2026-10-16), so it stays refused below.
-        // \Device\PhysicalMemory is not a file.
+        // (ZwMapViewOfSection.c:236; the C had no such check). \Device\PhysicalMemory is not
+        // a file.
         let Reserve = (AllocationType & MEM_RESERVE) != 0;
         let IsFile = (*Section).u.Flags.PhysicalMemory() == 0;
         if IsFile && Reserve && (Initial & WRITE) == 0 {
@@ -3838,7 +3865,8 @@ pub unsafe extern "system" fn MmMapViewOfSection(
             let rem = (*SectionOffset).QuadPart & (PAGE_SIZE as i64 - 1);
             (*SectionOffset).QuadPart -= rem;
             if core::ptr::read_volatile(ViewSize) != 0 {
-                core::ptr::write_volatile(ViewSize, core::ptr::read_volatile(ViewSize) + rem as SIZE_T);
+                // Saturate: a ViewSize near the top wrapped to a small size and mapped it.
+                core::ptr::write_volatile(ViewSize, core::ptr::read_volatile(ViewSize).saturating_add(rem as SIZE_T));
             }
             (*SectionOffset).QuadPart
         };
@@ -3854,7 +3882,19 @@ pub unsafe extern "system" fn MmMapViewOfSection(
         }
 
         // Check if the offset and size are bigger than the section itself
-        if (ViewOffset as u64).wrapping_add(current_view_size as u64) > (*Section).SizeOfSection.QuadPart as u64 {
+        // A reservation of a file view may reach past the end of the file, which can grow into
+        // it (ZwMapViewOfSection.c:211). It may not exceed the user address space: a ViewSize of
+        // -1 would otherwise page-round to 0 and "succeed" with an empty view (:295).
+        if IsFile && Reserve && current_view_size > MM_HIGHEST_VAD_ADDRESS as SIZE_T {
+            MmUnlockAddressSpace(AddressSpace);
+            if IsAttached != 0 {
+                KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
+            }
+            return STATUS_INVALID_VIEW_SIZE;
+        }
+        if !(IsFile && Reserve)
+            && (ViewOffset as u64).wrapping_add(current_view_size as u64) > (*Section).SizeOfSection.QuadPart as u64
+        {
             if (*Section).u.Flags.PhysicalMemory() == 0 || ExGetPreviousMode() != 0i8 {
                 MmUnlockAddressSpace(AddressSpace);
                 if IsAttached != 0 {

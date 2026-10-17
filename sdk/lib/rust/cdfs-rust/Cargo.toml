@@ -9,6 +9,11 @@ name = "cdfs_rust"
 path = "src/lib.rs"
 crate-type = ["staticlib"]
 [features]
+# Declared so a misspelled gate warns; never enabled, as in the C build: cddata.h's
+# `#ifdef CDFS_TELEMETRY_DATA` (no ReactOS build defines it), and the NTDDI_WIN8 blocks
+# (cdfs builds at WS03).
+CDFS_TELEMETRY_DATA = []
+ntddi_win8 = []
 # This is a ReactOS build: the C source's `#ifdef __REACTOS__` paths (e.g. using
 # IoGetStackLimits instead of the unexported IoWithinStackLimits, and creating the
 # \CdfsHdd device) are the correct ones, so `reactos` is on by default. Unify all

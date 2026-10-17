@@ -86,7 +86,7 @@ unsafe fn impl_from_IEnumMoniker(iface: *mut IEnumMoniker) -> *mut EnumMonikerIm
 }
 
 unsafe fn heap_calloc(n: usize, size: usize) -> *mut c_void {
-    HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (n.max(1) * size) as SIZE_T) as *mut c_void
+    HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (n.max(1) * size) as usize) as *mut c_void
 }
 
 unsafe fn heap_free(p: *mut c_void) {
@@ -1421,16 +1421,16 @@ fn CompositeMonikerMarshalImpl_MarshalInterface(
         return E_UNEXPECTED;
     }
 
-    let mut hr = CoMarshalInterface(stream, core::ptr::addr_of!(IID_IMoniker),
-                                    (*moniker).left as *mut IUnknown, dwDestContext,
+    let mut hr = CoMarshalInterface((stream).cast(), (core::ptr::addr_of!(IID_IMoniker)).cast(),
+                                    ((*moniker).left as *mut IUnknown).cast(), dwDestContext,
                                     pvDestContext, flags);
     if FAILED(hr) {
         WARN!(b"Failed to marshal left component, hr %#x.\n\0".as_ptr() as *const c_char, hr);
         return hr;
     }
 
-    hr = CoMarshalInterface(stream, core::ptr::addr_of!(IID_IMoniker),
-                            (*moniker).right as *mut IUnknown, dwDestContext, pvDestContext,
+    hr = CoMarshalInterface((stream).cast(), (core::ptr::addr_of!(IID_IMoniker)).cast(),
+                            ((*moniker).right as *mut IUnknown).cast(), dwDestContext, pvDestContext,
                             flags);
     if FAILED(hr) {
         WARN!(b"Failed to marshal right component, hr %#x.\n\0".as_ptr() as *const c_char, hr);
@@ -1462,14 +1462,14 @@ fn CompositeMonikerMarshalImpl_UnmarshalInterface(
         (*moniker).right = core::ptr::null_mut();
     }
 
-    let mut hr = CoUnmarshalInterface(stream, core::ptr::addr_of!(IID_IMoniker),
+    let mut hr = CoUnmarshalInterface((stream).cast(), (core::ptr::addr_of!(IID_IMoniker)).cast(),
                                       core::ptr::addr_of_mut!((*moniker).left) as *mut LPVOID);
     if FAILED(hr) {
         WARN!(b"Failed to unmarshal left moniker, hr %#x.\n\0".as_ptr() as *const c_char, hr);
         return hr;
     }
 
-    hr = CoUnmarshalInterface(stream, core::ptr::addr_of!(IID_IMoniker),
+    hr = CoUnmarshalInterface((stream).cast(), (core::ptr::addr_of!(IID_IMoniker)).cast(),
                               core::ptr::addr_of_mut!((*moniker).right) as *mut LPVOID);
     if FAILED(hr) {
         WARN!(b"Failed to unmarshal right moniker, hr %#x.\n\0".as_ptr() as *const c_char, hr);

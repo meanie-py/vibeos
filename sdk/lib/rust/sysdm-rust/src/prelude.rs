@@ -405,8 +405,8 @@ extern "C" {
     pub fn wcsstr(h: *const WCHAR, n: *const WCHAR) -> *mut WCHAR;
     pub fn wcschr(s: *const WCHAR, c: WCHAR) -> *mut WCHAR;
     pub fn wcscat(d: *mut WCHAR, s: *const WCHAR) -> *mut WCHAR;
-    pub fn towlower(c: c_int) -> c_int;
-    pub fn towupper(c: c_int) -> c_int;
+    pub fn towlower(c: wint_t) -> wint_t;
+    pub fn towupper(c: wint_t) -> wint_t;
 }
 // The TCHAR spellings, resolved by the module's -DUNICODE exactly as tchar.h resolves them.
 pub use self::{wcscat as _tcscat, wcschr as _tcschr, wcsstr as _tcsstr};

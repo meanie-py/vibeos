@@ -5,6 +5,8 @@
 use crate::glue::{IRP_MN_QUERY_INTERFACE, IRP_MN_QUERY_CAPABILITIES}; // explicit: disambiguate vs ntkrnl_sys::driver_ddk glob
 #[allow(unused_imports)] use crate::guids::*;
 use ntkrnl_sys::globals::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::fdo::DbgPrint;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
@@ -39,7 +41,6 @@ use crate::glue::{PCI_HACK_NEVER_DISCONNECT, PCI_HACK_DONT_DISABLE, PCI_HACK_NEV
 use ntkrnl_sys::ddk::{DEVICE_POWER_STATE, IO_RESOURCE_DESCRIPTOR, PCSTR, PRKEVENT, PSTR, RtlAssert, SYSTEM_POWER_STATE, _LIST_ENTRY, _PNP_BUS_INFORMATION, _UNICODE_STRING, wchar_t};
 
 extern "C" {
-    fn DbgPrint(format: *const u8, ...) -> i32;
 }
 
 // PCI_COMMON_HDR_LENGTH = FIELD_OFFSET(PCI_COMMON_CONFIG, DeviceSpecific) = 0x40

@@ -24,10 +24,10 @@ Rust-translated subsystem is a **pre-packaged mistranslation repro** with a name
 an assertion message — no crash forensics needed. And it executes translated code the
 boot path never touches (see `tools/coverage/` — the never-executed-rust registry).
 
-## Resume here (2026-10-16)
+## Resume here (2026-10-17)
 
 The survey below is history. The current state and the ordered owed queue are the LAST
-progress-log entry, "2026-10-16 — the Windows 11 column's queue". Re-derive every number in
+progress-log entry, "2026-10-17b — the overnight queue". Re-derive every number in
 it from `tools/conformance-baseline/<arch>/kmtest.txt` and a fresh sweep before trusting it.
 Windows 11's own results for these suites are `tools/conformance-baseline/win11-amd64/kmtest.txt`.
 
@@ -2042,10 +2042,8 @@ fxsave), i386 ExInterlocked 296/297 (the test's own SaveState TODO; the export p
 RtlStack/RtlStackKM fail identically on Windows.
 
 **Owed, in order:**
-1. ZwMapViewOfSection:211, a reserved view past the end of the file. Needs real reservation
-   in the ROS segment code. Simply dropping the size check let a view outrun the segment, and
-   unmapping it corrupted the file's cached pages (wrong data, then BUGCHECK 0x1E on x86).
-2. i386 KeSpinLock 30: every arch's queued spinlocks are the C's plain-lock HACK; only i386's
+1. ~~ZwMapViewOfSection:211~~ (done 2026-10-17; the cause given here was WRONG, see below).
+2. ~~i386 KeSpinLock 30~~ (done 2026-10-17): every arch's queued spinlocks are the C's plain-lock HACK; only i386's
    test checks. A real MCS lock is boot-risky if anything takes one lock both ways.
 3. HidPDescription 4: a ReportIDs entry per report ID (hidclass routes on it, so test against
    a HID device), and PreparsedDataLength in Windows' layout.
@@ -2064,3 +2062,123 @@ corpus. Pruning recreates build dirs, a fresh configure defaults it OFF, and the
 only failed minutes into the boot. Mistakes: I edited source during my own builds twice more
 (stopped and rebuilt both times), and first guessed RtlMemory was inlined memcpy without
 looking at the disassembly.
+
+### 2026-10-17 — two owed items, and a cause I got wrong
+
+Banked from two byte-identical sweeps per arch (baselines' `2026-10-17` notes).
+
+**ZwMapViewOfSection:211 done** on all three arches. A file view's reservation may run past
+the end of the file, bounded by the user address space (a ViewSize of -1 page-rounded to an
+empty "successful" view, :295). The offset rounding's `ViewSize + rem` now saturates instead
+of wrapping. amd64/arm64 135/0. i386 trades 211 for 292, LOWERED BY DESIGN: the WS03 column
+wants a 4 GB reservation to succeed, and it only ever "passed" through that wrap.
+
+**The cause I gave yesterday was wrong.** The 2026-10-16 entry, the baselines' 16b note and
+commit `4f8fc0a3e27` say a reserved view past the end of the file corrupted cached pages and
+bugchecked x86. One isolated sweep each on i386 and arm64 (reserve allowance back, nothing
+else changed) showed no crash and no corruption. The damage came from the other change in
+that same build, the blanket "no CommitSize on a file view" rule. I attributed a two-change
+fix to the change I suspected without isolating it. The notes are corrected; the commit
+message cannot be.
+
+**i386 KeSpinLock 30 -> 0.** The in-stack queued spinlocks are a real MCS lock
+(`ntkrnl-sys` `KxAcquire/ReleaseInStackQueuedSpinLock`) for ntoskrnl's exports, hal's, and the
+AtDpcLevel pair, replacing the C's plain-lock HACK (its MCS is `#if 0`, "broken": it exchanges
+on `LockHandle->Next`). The audit that made it safe is in the helper's doc comment: no lock is
+reached by both the in-stack and a plain API, and the numbered `KeAcquireQueuedSpinLock*`
+family (still plain) only takes PRCB LockQueue[] entries.
+
+**Owed, in order:**
+1. amd64/arm64 in-stack queued spinlocks are still the HACK. Their kmtest cannot see it (the
+   checks are `_M_IX86` only), so this is for correctness under the SMP lane: move them onto
+   the same helper (it is `cfg(target_arch = "x86")` today) and sweep `--smp 2`.
+2. HidPDescription 4: a ReportIDs entry per report ID (hidclass routes on it, so test against
+   a HID device), and PreparsedDataLength in Windows' layout.
+3. arm64 RtlMemory 3: NOT memcpy (the export is overlap-safe; disassembled). Each failure is
+   the first check after a `_SEH2_TRY { (NULL, NULL, 0) }` block.
+4. i386 ZwMapViewOfSection:181 (ZeroBits 21: we say INVALID_PARAMETER_4, Windows NO_MEMORY),
+   SMP baselines, the scanner item from the 2026-10-12 queue.
+
+### 2026-10-17b — the overnight queue
+
+Banked from two byte-identical sweeps per arch (baselines' `2026-10-17b` notes).
+
+**In-stack queued spinlocks are the MCS lock on every arch.** The ntkrnl-sys helper lost its
+`cfg(x86)`; amd64's ntoskrnl exports, arm64's hal.dll exports and both arches' AtDpcLevel pair
+use it. The audit carries over because every in-stack caller is shared code; only where the
+exports live differed. No row moves (the kmtest checks are `_M_IX86` only).
+
+**HidPDescription 4 -> 2 (3 skips -> 0).** One ReportIDs entry per report ID with its own
+lengths, in declaration order; hidclass picks the collection's longest input report to size
+reads, since the first entry can now be a feature-only ID. The C also leaked every built
+preparsed context on a failure path; the Rust frees them. Left, EXPECTED: PreparsedDataLength
+476/1388 is Windows' own preparsed-data layout, which our HidP_* routines do not read.
+
+**i386 ZwMapViewOfSection:181 done.** `MI_MAX_ZERO_BITS()` was a hand translation: 20 on
+32-bit, where the C's i386 header says 21.
+
+**arm64 RtlMemory 3 is EXPECTED, and yesterday's note was wrong.** I said the driver calls the
+overlap-safe export. At these three sites it does not: clang inlines the overlapping
+`RtlCopyMemory(Buffer + 13, Buffer + 62, 95)` as interleaved 16-byte loads and stores
+(`Test_RtlMemory+0x82c`), and an overlap forward-copy through them reads bytes it has
+already overwritten (offset 13 reads 0x34, src[111]'s value). "First check after the SEH
+block" was a coincidence of layout: each section's first check is its forward-overlap case.
+Overlapping memcpy is undefined; RtlCopyMemory's contract forbids overlap.
+
+**Tooling.**
+- `scan_dropped_probes` pairs functions with no commented C to their same-module C twin
+  (`c_twin`) for the WEAK kind; on the tree it pairs 72 of 80 range-only functions and finds
+  nothing, as it should after 2026-10-12. Its baseline lost the 5 stale PARTIAL lines.
+- artifact-check: a cohab staticlib that sits beside ANOTHER same-stem binary belongs to that
+  binary. `wdmaud.drv` was reported "never relinked" on every arm64 build once the kernel's
+  wdmaud-rust rebuilt.
+- `--smp N` boots the writable-root ISO, which carries freeldr.ini twice; identical copies
+  are now both patched instead of refused.
+
+**SMP baselines rebanked** (`kmtest-smp2.txt`, two identical `--smp 2` sweeps per arch, both
+CPUs live on the MP pair). Every row now equals the arch's UP baseline (amd64 MmMdl aside, a
+machine-dependent pass count). IoInterrupt's banked MP failures (156 on 64-bit, 306 on i386)
+are gone: its CheckSpinLock takes the checked-build branch first, which only wants non-zero,
+and the kernel reported a free build when they were banked. Rows for tests an arch does not
+build were dropped.
+
+**Seen once, not mine:** i386 `--smp 2` sweep 2 died BUGCHECK 0xF4. csrss took an unhandled
+RPC exception (`6be`, then `6ba` on second chance) at 7c505de7. flake-report already holds the
+same signature from a UP boot on 2026-10-16 (graded FLAKY, 2 commits), on a tree before this
+work. It looks like the field manual's `rpc_try` class (a Rust RPC client that kept only the try
+body) reached from csrss. The sweep after it was clean and identical to the first.
+
+**Owed, in order:**
+1. ~~The csrss F4 flake~~ (fixed): winsrv `UserServerHardError` -> `ReportEventW` ->
+   `ElfrReportEventW_seh`, a native-SEH thunk that is a plain call on i386, so the RPC raise
+   killed csrss while eventlog.exe was exiting. advapi32 now uses `rpc_try` for those three calls.
+   ole32's rpcss_seh.c and stubmanager_seh.c had the same i386 hole; their i386 branch now
+   calls ntdll's RtlSehTryExcept. Smoke-verified only: olewinetest's marshal case (an object
+   whose Release faults) has not been run on i386 since (it needs a `--rostests` build).
+   ole32-rust's Running Object Table (ring/moniker.rs) called all seven Irot RPC stubs
+   unguarded on EVERY arch, which also made its start_rpcss() retry loops dead code. They now
+   run under the C's rpc_filter through ntdll_sys::seh::try_except (ole32-rust gains ntdll-sys).
+   A sweep with `tools/rpc_try_wrap.py` over every C file holding RpcTryExcept found
+   winspool-rust with NONE of its ~50 RPC calls guarded (the tool wrapped 47; SpoolerInit
+   and the port thread by hand) and advapi32's SeclCreateProcessWithLogonW. Not converted:
+   winspool utils.rs's `_SEH2_TRY` over a handle deref (a hardware-fault guard, not RPC),
+   and the cosmetic dead `if <never> { RpcExceptionCode!() }` branches the tool's neighbours
+   left in jobs/monitors/spoolfile/forms.
+2. DONE 2026-10-17: C RPC clients under DUMMY_PSEH. `tools/gen_rpc_guards.py` (CMake
+   `add_rpc_guards`) generates `<fn>_guarded` wrappers over ntdll's RtlSehTryExcept from the
+   widl client header: msi's 37 `remote_*` sites and its custom-action page-fault guard, and
+   rpcrt4 rpc_epmap.c's endpoint-mapper calls (i386 had no guard). setupapi's cfgmgr.c (64
+   sites) was ported to Rust instead (setupapi-rust, rpc_try). Graded in the guest (amd64):
+   Wine's setupapi suite gives byte-identical output on the Rust and on the pre-flip C
+   (payloads `setupapiwinetest` / `setupapiwinetestc`; 461 lines, devinst 481/197 on both).
+   The C payload has to import the C as setupapc.dll, because setupapi is a KnownDLL; its
+   build.sh says why. STILL OWED from that work: (a) the same before/after on i386, where
+   rpc_try takes the fs:[0] path. (b) The scanner bug the port found (field manual,
+   "an SEH block under another name"): the old scanner gives different bodies for 248 functions
+   in 31 files. Settle which SHIPPED ports were bought truncated, by diffing each one's banked
+   C input (`.responses`) against the new scanner's body. A naive call-coverage audit was all
+   noise (crypt.rs inlines its handle helpers). (c) rpc_epmap.c's RpcEpUnregister calls
+   `ept_insert(.., TRUE, ..)`, where Wine calls `ept_delete`. Upstream ReactOS has the same
+   line; left as is.
+3. HidPDescription's preparsed-data layout, only if something needs Windows' bytes.
+4. The WS03-column rows that move at the version flip (above).

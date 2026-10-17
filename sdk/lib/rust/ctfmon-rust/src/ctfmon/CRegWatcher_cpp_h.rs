@@ -1,8 +1,9 @@
 use crate::prelude::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::prelude::EnumWindows;
 use core::ffi::c_void;
 
 extern "system" {
-    fn EnumWindows(lpEnumFunc: unsafe extern "system" fn(HWND, LPARAM) -> i32, lParam: LPARAM) -> i32;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -169,7 +170,7 @@ impl CRegWatcher {
     }
     pub unsafe fn UpdateSpTip() {
         // Post message 0x8002 to "SapiTipWorkerClass" windows
-        EnumWindows(CRegWatcher::EnumWndProc, 0);
+        EnumWindows(Some(CRegWatcher::EnumWndProc), 0);
     
         // Clear "ProfileInitialized" value
         let mut hKey: HKEY = core::ptr::null_mut();

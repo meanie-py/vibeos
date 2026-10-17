@@ -4,6 +4,16 @@
 // `crate::prelude::*`. They are DROPPED, not joined: carrying both makes every shared
 // name ambiguous (E0659). The island via `prelude` is the only substrate source.
 use crate::prelude::*;
+// The crate's own functions: the definition is the declaration.
+use crate::def_view::SHCreateShellFolderView;
+use crate::recycle_bin_tu::SHEmptyRecycleBinW;
+use crate::desktop_folder_tu::SHGetDesktopFolder;
+// One declaration per external symbol: island.rs.
+use crate::island::CoTaskMemAlloc;
+use crate::island::LoadStringW;
+use crate::island::RegCloseKey;
+use crate::island::RegQueryValueExW;
+use crate::island::RegSetValueExW;
 use crate::recycle_bin::{IDS_PROPERTIES};
 
 // ── PIDL static-inline helpers (wine/pidl.h) ──
@@ -385,19 +395,7 @@ pub struct ULARGE_INTEGER {
     pub QuadPart: ULONGLONG,
 }
 
-#[repr(C)]
-pub struct WIN32_FIND_DATAW {
-    pub dwFileAttributes: DWORD,
-    pub ftCreationTime: FILETIME,
-    pub ftLastAccessTime: FILETIME,
-    pub ftLastWriteTime: FILETIME,
-    pub nFileSizeHigh: DWORD,
-    pub nFileSizeLow: DWORD,
-    pub dwReserved0: DWORD,
-    pub dwReserved1: DWORD,
-    pub cFileName: [WCHAR; 260],
-    pub cAlternateFileName: [WCHAR; 14],
-}
+pub use crate::island::WIN32_FIND_DATAW;
 
 // Deterministic from shobjidl.h
 #[repr(C)]
@@ -494,12 +492,7 @@ pub type EXPPS = UINT;
 
 pub type LPFNSVADDPROPSHEETPAGE = Option<unsafe extern "system" fn(HPROPSHEETPAGE, LPARAM) -> BOOL>;
 
-#[repr(C)]
-pub struct SHQUERYRBINFO {
-    pub cbSize: DWORD,
-    pub i64Size: i64,
-    pub i64NumItems: i64,
-}
+pub use crate::island::SHQUERYRBINFO;
 
 // CMVERBMAP comes from the island (utils.h:87-90). The assembler re-declared it;
 // a second nominal copy of a layout is a bug waiting to diverge.
@@ -514,20 +507,12 @@ pub static mut g_BBItemVerbMap: [CMVERBMAP; 5] = [
 extern "system" {
     fn PlaySoundW(sound: LPCWSTR, module: HANDLE, flags: DWORD) -> BOOL;
     fn ExpandEnvironmentStringsW(source: LPCWSTR, dest: LPWSTR, size: DWORD) -> DWORD;
-    fn RegCloseKey(key: HKEY) -> LONG;
-    fn RegQueryValueExW(key: HKEY, value: LPCWSTR, reserved: LPDWORD, kind: LPDWORD, data: PBYTE, bytes: LPDWORD) -> LONG;
-    fn RegSetValueExW(key: HKEY, value: LPCWSTR, reserved: DWORD, kind: DWORD, data: *const BYTE, bytes: DWORD) -> LONG;
     fn SHChangeNotify(event: LONG, flags: UINT, item1: LPCVOID, item2: LPCVOID);
     fn GetLastError() -> DWORD;
     fn lstrlenW(text: LPCWSTR) -> INT;
-    fn CoTaskMemAlloc(bytes: SIZE_T) -> LPVOID;
-    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
     fn CoTaskMemFree(memory: LPVOID);
     fn SHStrDupW(source: LPCWSTR, out: *mut LPWSTR) -> HRESULT;
-    fn SHGetDesktopFolder(folder: *mut *mut IShellFolder) -> HRESULT;
-    fn SHCreateShellFolderView(create: *const SFV_CREATE, view: *mut *mut IShellView) -> HRESULT;
     fn SHQueryRecycleBinW(root: LPCWSTR, info: *mut SHQUERYRBINFO) -> HRESULT;
-    fn SHEmptyRecycleBinW(owner: HWND, root: LPCWSTR, flags: DWORD) -> HRESULT;
     #[link_name = "Shell32RustMapContextMenuVerbToCmdId"] fn SHELL_MapContextMenuVerbToCmdId(info: LPCMINVOKECOMMANDINFO, map: *const CMVERBMAP) -> INT;
     #[link_name = "Shell32RustGetCommandStringImpl"] fn SHELL_GetCommandStringImpl(command: SIZE_T, flags: UINT, buffer: LPSTR, capacity: UINT, map: *const CMVERBMAP) -> HRESULT;
 }

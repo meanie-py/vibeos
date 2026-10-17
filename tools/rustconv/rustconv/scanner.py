@@ -1637,7 +1637,10 @@ def _resolve_pp_conditionals(path: Path, text: str) -> str:
     return "\n".join(out)
 
 
-_SEH_BLANK = re.compile(rb"\b(?:_SEH2_END|_SEH2_LEAVE|_SEH2_VOLATILE|_SEH2_Volatile)\b")
+_SEH_BLANK = re.compile(
+    rb"\b(?:_SEH2_END|_SEH2_LEAVE|_SEH2_VOLATILE|_SEH2_Volatile|RpcEndExcept|RpcEndFinally"
+    rb"|__ENDTRY)\b"
+)
 _SEH_YIELD = re.compile(rb"\b_SEH2_YIELD\s*\(")
 
 
@@ -1652,15 +1655,32 @@ def mask_seh_for_parse(source: bytes) -> bytes:
     file-scope "preamble" (setuplib SetupMoveFile lost its `NtClose` and `return Status`).
     Masked: TRY -> `if(1)`, FINALLY -> `else`, EXCEPT(f) -> `else if(f)`, YIELD(s) ->
     `s` (`#define _SEH2_YIELD(STMT_) STMT_`; the `;` follows the `)`), END/LEAVE -> blanks.
-    Same length, so every byte and line offset is unchanged.
+    Same length, so every byte and line offset is unchanged. rpc.h's RpcTryExcept/
+    RpcExcept/RpcEndExcept and Wine's __TRY/__EXCEPT/__ENDTRY are the same blocks under
+    other names and cut functions the same way: setupapi's GetDeviceInstanceKeyPath lost
+    everything after its second, nested RpcTryExcept (2026-10-17).
     """
 
     def pad(word: bytes, n: int) -> bytes:
         return word + b" " * (n - len(word))
 
-    out = re.sub(rb"\b_SEH2_TRY\b", lambda m: pad(b"if(1)", len(m.group())), source)
-    out = re.sub(rb"\b_SEH2_FINALLY\b", lambda m: pad(b"else", len(m.group())), out)
-    out = re.sub(rb"\b_SEH2_EXCEPT\b", lambda m: pad(b"else if", len(m.group())), out)
+    out = re.sub(
+        rb"\b(?:_SEH2_TRY|RpcTryExcept|RpcTryFinally|__TRY)\b",
+        lambda m: pad(b"if(1)", len(m.group())),
+        source,
+    )
+    # Wine's __EXCEPT_PAGE_FAULT / __EXCEPT_ALL take no filter; RpcFinally none either.
+    out = re.sub(
+        rb"\b(?:_SEH2_FINALLY|RpcFinally|__EXCEPT_PAGE_FAULT|__EXCEPT_ALL)\b",
+        lambda m: pad(b"else", len(m.group())),
+        out,
+    )
+    # Wine's __FINALLY(func) names its handler, so it parses like EXCEPT(filter).
+    out = re.sub(
+        rb"\b(?:_SEH2_EXCEPT|RpcExcept|__EXCEPT|__FINALLY)\b",
+        lambda m: pad(b"else if", len(m.group())),
+        out,
+    )
     out = _SEH_BLANK.sub(lambda m: b" " * len(m.group()), out)
     buf = bytearray(out)
     for m in _SEH_YIELD.finditer(out):

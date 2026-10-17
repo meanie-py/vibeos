@@ -10,13 +10,8 @@ spec2def(wlnotify.dll wlnotify.spec ADD_IMPORTLIB)
 # termserv.c  # replaced by Rust (sdk/lib/rust/wlnotify-rust/src/wlnotify/termserv.rs)
 # wlballoon.c  # replaced by Rust (sdk/lib/rust/wlnotify-rust/src/wlnotify/wlballoon.rs)
 # wlnotify.c  # replaced by Rust (sdk/lib/rust/wlnotify-rust/src/wlnotify/wlnotify.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(wlnotify_res OBJECT wlnotify.rc)
-target_compile_definitions(wlnotify_res PRIVATE UNICODE _UNICODE)
-target_include_directories(wlnotify_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(wlnotify wlnotify-cargo wlnotify.dll
     KIND win32dll
     BODY_CRATE wlnotify-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS wlnotify_res psdk)
+    EXTRA_DEPENDS psdk)

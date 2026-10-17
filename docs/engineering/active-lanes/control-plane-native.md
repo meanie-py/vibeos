@@ -24,7 +24,7 @@ Haiku spend on this lane's current $10 allowance: about $6.13.
 
 ## Next
 
-1. **Wave J: `base/setup/reactos`** (the text-mode/GUI setup front end, ~6.5K lines).
+1. **Wave J: `base/setup/reactos`** — **taken by the CRT lane, 2026-10-17** (the text-mode/GUI setup front end, ~6.5K lines).
    `treelist.c` is vendored and stays C. Same shape as Wave I: `port derive` → island →
    scaffold → `translate -m haiku --escalate --cost-cap 2` → resolve → macros → integrate →
    resolve → macros (again: integrate surfaces new callees) → headers → crate-repair ×3
@@ -33,18 +33,19 @@ Haiku spend on this lane's current $10 allowance: about $6.13.
 
 ## Owed (small)
 
-- **The call seal counts calls in dead `#ifdef` arms.** rundll32 had to keep the dead
-  non-UNICODE `strncpy` arm as `if false { .. }` to satisfy it. The seal should only count
-  the arm the compile takes.
-- **`_countof!` returns `u32` where callers compare with `usize`.** It recurred across Wave I
-  (kbswitch, others) and was cast by hand each time; settle the macro's type once.
-- **A merge driver for `gen_driver_types.sh`** (shared with CRT's owed list). Wave I
-  conflicted on it three times in one night against lanes landing just ahead; each time the
-  fix was the union of `case` arms, rebuilt from master's copy plus ours. A git
-  `merge=union`-style driver that understands arms would remove the whole class.
-  `sdk/lib/rust/Cargo.toml` members and `tools/cohab-census.txt` conflict the same way (the
-  census is regenerated with `python3 tools/cohab_census.py --write`; `Cargo.lock` is
-  master's plus `cargo metadata --offline`).
+Re-checked by the CRT lane on 2026-10-17, and verified against the tree:
+
+- **The call seal treats calls in the LIVE `#ifdef` arm as optional**, not (as first
+  written here) dead-arm calls as required: `dead_regions.preprocessor_conditional_spans`
+  makes every arm of a body's `#if` one dead span, so a model that drops a compiled call
+  passes the seal. Fix: decide arms with `dead_regions.cond_truth` plus the TU's own `-D`
+  set (UNICODE is per module) plumbed into `seal_calls`. Making live-arm calls required
+  will fail the replay audit of any banked body that dropped one, so it wants a bank-wide
+  re-audit before it lands. Translation tooling: the CRT lane's to schedule.
+- ~~`_countof!` returns `u32`~~: deliberate (win32macros-rust, lib.rs `_countof`), not owed.
+- ~~A merge driver for `gen_driver_types.sh`~~: done, `tools/merge_drivers.py` (case arms and
+  the census, via `.gitattributes`), 2026-10-16. `sdk/lib/rust/Cargo.toml` members are not
+  covered yet; the integrator resolves those.
 
 ## Open threads (2026-10-16)
 
@@ -63,22 +64,18 @@ which also make rtl-rust ineligible. icuuc, lsa, sam, svcctl and winreg stubs
 a `#[path]` into cnt-rust). menuband (`#[path]` into shell32-rust). wowx64 (build script
 generating `OUT_DIR` services.rs). i386 kernel cells on the json target are never offered.
 
-**Cargo-drive leftovers** (details in the plan):
-- Rung 1: run `cargo_orchestrate --all --verify` somewhere automatic (it rotted once).
-- Wave-2 refusals: kernel-mode `native:` DLLs (bmfd, ftfd, ndis, watchdog); per-arch link
-  inputs (acgenral, opengl32); `rust_staticlib_variant` extras (calc, taskmgr, wordpad);
-  per-arch CD destination (winprint); a shared `SOURCE` list (gdi32_vista_static).
-- Still refused: user32_vista (exports what it imports; cell parked in stash "wave11
-  user32_vista cell"), mstsc (vendored rdesktop C), psapi_static and the other
-  C_STATIC_LIBRARY targets.
-- bootvid's version resource (`.rc` is a configured `#cmakedefine` template).
-- Kernel and loader cells still link cmake's `libcntpr` / `mini_hal` / `freeldr_bios_asm`.
-- Rungs 4–6 not started: resources without cmake, the ISO from a manifest, cargo compiling
-  the remaining C.
+**Cargo-drive.** Wave 13 and the first `--convert` batch on 2026-10-17; new modules
+convert by default (`cargo_cell_gen --convert`, enforced by `scan_cmake_linked_rust`).
+Still owed, in the plan's "Still refused" list: the C_STATIC_LIBRARY placeholder libraries,
+static variants with no `rust_staticlib_variant`, `add_idl_reg_scripts` (evr, mf,
+mfreadwrite), psapi's i386 link, user32_vista's never-linked Rust; the kernel and loader
+cells' `libcntpr` / `mini_hal` / `freeldr_bios_asm`; bootvid's resource; rung 1's
+automatic `--verify`; rungs 4-6. (The wave-2 refusals bmfd through winprint were moved in
+later waves.)
 - i386 PIC HAL (no `apic`, no minihal) fails E0308, before and after the build.rs removal.
 
-**Translation (paused since 10-12).** Wave J, `base/setup/reactos`, is next and needs the
-user's go-ahead before paying. Its small owed items are under "Owed (small)" above.
+**Translation.** Wave J (`base/setup/reactos`) moved to the CRT lane on 2026-10-17 (its
+batch H, already translating). The small owed items under "Owed (small)" stay open.
 
 **Registry items this lane touches:** install-smoke amd64-uefi takes 44–50 min (older
 than wave 11).

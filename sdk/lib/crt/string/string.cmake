@@ -123,14 +123,17 @@ list(APPEND LIBCNTPR_STRING_SOURCE
     string/wcstombs_nt.c
 )
 
-# Used by acpi.sys
-add_library(strtol
-    string/ctype.c
-    string/iswctype.c
-    string/strtoi64.c
-    string/strtol.c
-    string/strtoul.c
-    string/strtoull.c
-    string/wctype.c)
-target_compile_definitions(strtol PRIVATE _LIBCNT_)
-add_dependencies(strtol psdk)
+# `strtol` was acpi.sys's CRT. All acpi took from it was isprint/isspace/isxdigit/toupper,
+# and it now links them from the Rust kernel CRT (libcntpr_rust.a) instead (2026-10-17).
+# Nothing built links it any more: drivers/bus/acpi_new names it but is not
+# add_subdirectory'd. The TUs stay on disk; restore this block if acpi_new is enabled.
+# add_library(strtol
+#     string/ctype.c
+#     string/iswctype.c
+#     string/strtoi64.c
+#     string/strtol.c
+#     string/strtoul.c
+#     string/strtoull.c
+#     string/wctype.c)
+# target_compile_definitions(strtol PRIVATE _LIBCNT_)
+# add_dependencies(strtol psdk)

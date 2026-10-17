@@ -102,7 +102,7 @@ fn NT_VERIFY(cond: bool) -> bool { cond }
 // wcschr / towupper — CRT (libcntpr).
 extern "C" {
     fn wcschr(s: *const u16, c: core::ffi::c_int) -> *mut u16;
-    fn towupper(c: core::ffi::c_int) -> core::ffi::c_int;
+    fn towupper(c: wint_t) -> wint_t;
 }
 
 // UpdateMenuItemState!(state, change) — menu.c macro. Updates state bits per change.
@@ -2289,7 +2289,7 @@ unsafe fn MENU_FindItemByKey(WndOwner: PWND, mut menu: PMENU, Key: WCHAR, ForceM
                             break;
                         }
                     }
-                    if !p.is_null() && towupper(*p.offset(1) as core::ffi::c_int) == towupper(Key as core::ffi::c_int) {
+                    if !p.is_null() && towupper(*p.offset(1) as wint_t) == towupper(Key as wint_t) {
                         return i;
                     }
                 }

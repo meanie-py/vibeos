@@ -76,7 +76,7 @@ extern "C" {
     pub fn __wine_dbg_get_channel_flags(channel: *mut __wine_debug_channel) -> core::ffi::c_uchar; // rtl-diag/src/shim.rs
     pub fn iswctype(c: u16, mask: u16) -> c_int; // ucrt-rust/src/ctype.rs
     pub fn ros_dbg_log( cls: __wine_debug_class, ch: *mut __wine_debug_channel, file: *const c_char, func: *const c_char, line: c_int, msg: *const c_char, ... ) -> c_int; // iphlpapi-rust/src/prelude.rs
-    pub fn towupper(c: c_int) -> c_int; // dnsapi-rust/src/prelude.rs
+    pub fn towupper(c: wint_t) -> wint_t; // dnsapi-rust/src/prelude.rs
     pub fn wcscpy(dst: *mut u16, src: *const u16) -> *mut u16; // advapi32-rust/src/prelude.rs
     pub fn wcslen(s: *const u16) -> usize; // access-rust/src/prelude.rs
     pub fn wsprintfA(arg1: LPSTR, arg2: LPCSTR, ...) -> ::core::ffi::c_int; // aclui-rust/src/types_amd64.rs

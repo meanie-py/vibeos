@@ -1,4 +1,7 @@
 use ntdll_sys::nt::*;
+// The crate's own functions: the definition is the declaration.
+use crate::client::utils::Basep8BitStringToDynamicUnicodeString;
+use crate::file::deviceio::DeviceIoControl;
 use crate::prelude::*;
 use core::ffi::c_void;
 
@@ -9,18 +12,7 @@ use crate::k32_externs::{
 
 extern "system" {
     fn Basep8BitStringToStaticUnicodeString(LpStr: LPCSTR) -> PUNICODE_STRING;
-    fn Basep8BitStringToDynamicUnicodeString(DestinationString: &mut _UNICODE_STRING, LpStr: LPCSTR) -> u8;
     fn GetProcessHeap() -> HANDLE;
-    fn DeviceIoControl(
-        hDevice: HANDLE,
-        dwIoControlCode: DWORD,
-        lpInBuffer: LPVOID,
-        nInBufferSize: DWORD,
-        lpOutBuffer: LPVOID,
-        nOutBufferSize: DWORD,
-        lpBytesReturned: LPDWORD,
-        lpOverlapped: LPOVERLAPPED,
-    ) -> BOOL;
     fn SetVolumeMountPointW(lpszVolumeMountPoint: LPCWSTR, lpszVolumeName: LPCWSTR) -> BOOL;
     fn DeleteVolumeMountPointW(lpszVolumeMountPoint: LPCWSTR) -> BOOL;
     fn BaseMarkFileForDelete(FileHandle: HANDLE, FileAttributes: ULONG);

@@ -22,6 +22,21 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The module's part of cmake's windres command; reactos-link adds what every
+    // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
+    let rc_includes: &[&str] = &[
+        "@build/subsystems/win/basesrv",
+        "subsystems/win/basesrv",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+        "sdk/include/reactos/subsys",
+    ];
+    let rc_flags: &[&str] = &[];
+    let rc_defines: &[&str] = &["UNICODE", "WINVER=0x502", "_UNICODE", "_WIN32_WINNT=0x502"];
+
     let (target_json, entry, image_base): (&str, &str, u64) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_DllMain@12", 0x7896_0000),
         "x86_64" => ("x86_64-pc-windows-gnu", "DllMain", 0x7ff_8700_0000),
@@ -45,7 +60,7 @@ fn main() {
         // is vestigial and dropped — the basesrv link now compiles ZERO C.
         // basesrv.rc compiled IN-cargo by replaying the basesrv_res windres
         // command (drops the cmake-built .res reuse).
-        .resource_from_rc("subsystems/win/basesrv/basesrv.rc", "basesrv_res")
+        .rc("subsystems/win/basesrv/basesrv.rc", rc_includes, rc_flags, rc_defines)
         // csrsrv + ntdll import libs self-hosted from each .spec.
         .import_lib("subsystems/csr/csrsrv/csrsrv.spec", "csrsrv.dll", "csrsrv")
         .import_lib("dll/ntdll/def/ntdll.spec", "ntdll.dll", "ntdll")

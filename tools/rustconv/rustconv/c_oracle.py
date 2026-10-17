@@ -38,7 +38,12 @@ ORACLE_FILE = "c_oracle.cmake"
 INCLUDE_LINE = (
     f"include({ORACLE_FILE})  # the pre-flip C as <target>_c: python -m rustconv.c_oracle"
 )
-_FLIPPED = re.compile(r"^\s*#\s*(\S+\.(?:c|cc|cpp|cxx|S|s))\s+#\s*replaced by Rust\b")
+# Both spellings the tree uses: `# x.c  # replaced by Rust` and `# x.c — replaced by Rust`
+# (advapi32, setupapi and ~450 other lines; the em-dash form read as "nothing flipped").
+# A Rust piece names "rust" as a whole component (`rust_x`, `${X_RUST_LIB}`, `x-rust`). A
+# bare substring test also dropped setupapi's `wintrust` delay import.
+_RUST_WORD = re.compile(r"(?i)(?:^|[_${}-])rust(?:[_${}-]|$)")
+_FLIPPED = re.compile(r"^\s*#\s*(\S+\.(?:c|cc|cpp|cxx|S|s))\s+(?:#|—)\s*replaced by Rust\b")
 _CONTROL = ("if", "elseif", "else", "endif")
 # Commands that only ship, package or precompile; an oracle needs none of them.
 _SKIP = {"add_cd_file", "add_rostests_file", "add_pch", "add_registry_inf", "set_cpp"}
@@ -171,7 +176,7 @@ def generate(cml: str) -> str:
                 grew = True
 
     def rewrite(word: str) -> str | None:
-        if "rust" in word.lower():
+        if _RUST_WORD.search(word):
             return None
         for v in lists:
             word = word.replace(f"${{{v}}}", f"${{{v}_C_ORACLE}}")

@@ -1,5 +1,6 @@
 // Deterministic UTF-16 literals, generated from the C by rustconv (--seal-wide); the model never saw the bytes.
 use crate::prelude::*;
+use ntdll_sys::seh::rpc_try;
 pub static RUSTCONV_WSTR_05CF8A9FE74B: [u16; 18] = [
     0x0050u16, 0x0072, 0x0069, 0x006E, 0x0074, 0x0065, 0x0072, 0x0044, 0x0072, 0x0069,
     0x0076, 0x0065, 0x0072, 0x0044, 0x0061, 0x0074, 0x0061, 0x0000,
@@ -1034,7 +1035,7 @@ pub unsafe extern "system" fn GetPrinterDataExW(mut hPrinter: HANDLE, mut pKeyNa
     }
 
     // Do the RPC call
-    dwErrorCode = _RpcGetPrinterDataEx(
+    dwErrorCode = rpc_try(|| _RpcGetPrinterDataEx(
         (*pHandle).hPrinter as WINSPOOL_PRINTER_HANDLE,
         pKeyName as *const WCHAR,
         pValueName as *const WCHAR,
@@ -1042,10 +1043,7 @@ pub unsafe extern "system" fn GetPrinterDataExW(mut hPrinter: HANDLE, mut pKeyNa
         pData as *mut BYTE,
         nSize,
         pcbNeeded as *mut DWORD,
-    );
-    if _SEH2_Volatile0 != 0 || 0 as ::core::ffi::c_int != 0 && 1 as ::core::ffi::c_int != 0 {
-        dwErrorCode = RpcExceptionCode!() as DWORD;
-    }
+    )).unwrap_or_else(|code| code as _);
 
     return dwErrorCode;
 }
@@ -1217,14 +1215,14 @@ pub unsafe extern "system" fn SetPrinterDataExW(mut hPrinter: HANDLE, mut pKeyNa
 
     // Do the RPC call
     // RpcTryExcept
-    dwErrorCode = _RpcSetPrinterDataEx(
+    dwErrorCode = rpc_try(|| _RpcSetPrinterDataEx(
         (*pHandle).hPrinter as WINSPOOL_PRINTER_HANDLE,
         pKeyName as *const WCHAR,
         pValueName as *const WCHAR,
         Type,
         pData as *mut BYTE,
         cbData,
-    );
+    )).unwrap_or_else(|code| code as _);
     // RpcExcept(EXCEPTION_EXECUTE_HANDLER)
     if _SEH2_Volatile0 != 0 || 0 as ::core::ffi::c_int != 0 && 1 as ::core::ffi::c_int != 0 {
         dwErrorCode = RpcExceptionCode!() as DWORD;

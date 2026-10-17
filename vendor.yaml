@@ -2138,10 +2138,9 @@ ours:
       ADDED 2026-09-30 by the 97-commit upstream merge (upstream's Wine-10.0 DirectX
       sync), flagged UNCLASSIFIED by `--suspects`. Same decision as the 24-path
       "Wine-derived shipped modules" entry, owner-confirmed 2026-09-19: forked Wine code
-      this project ships is ours and on the translation path. d3d10, d3d11, d3dx10_43,
-      dmusic and dxgi build; d2d1 and dwrite are on disk but not wired into
-      dll/directx/wine/CMakeLists.txt, and stay in the denominator for the same reason
-      the unbuilt combase/coml2/shcore did.
+      this project ships is ours and on the translation path. All seven build at every
+      DLL_EXPORT_VERSION since 2026-10-17. dwrite (and its winetests) were then synced to
+      Wine 11.19; the rest are still at Wine 10.0.
 
   - paths:
       - modules/rostests/winetests/comctl32
@@ -2232,11 +2231,13 @@ ours:
   # ── our PSDK, with a few SDK headers inside it ──────────────────────────
   - path: sdk/include/psdk
     name: PSDK (ReactOS's Win32 SDK headers)
-    origin: ReactOS-authored, with five verbatim SDK headers inside it
+    origin: ReactOS-authored, with six vendored SDK headers inside it
     reason: >
       Not a foreign tree at all — this is ReactOS's own PSDK. It appears on the scan
       because five of its ~700 headers carry a Microsoft copyright and are carried
-      verbatim (d3dkmdt.h, d3dukmdt.h, no_sal2.h, specstrings.h, specstrings_strict.h).
+      verbatim (d3dkmdt.h, d3dukmdt.h, no_sal2.h, specstrings.h, specstrings_strict.h),
+      and mi.h is OMI's MI.h (github.com/microsoft/omi, commit edbe231, MIT) with the
+      Windows calling-convention defaults marked VIBEOS in the file.
 
       Registered as ours rather than split into a five-file vendored entry, because the
       unit of vendoring in this registry is a TREE with an upstream you can re-vendor

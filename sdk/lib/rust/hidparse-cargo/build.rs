@@ -21,6 +21,20 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The module's part of cmake's windres command; reactos-link adds what every
+    // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
+    let rc_includes: &[&str] = &[
+        "@build/drivers/hid/hidparse",
+        "drivers/hid/hidparse",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+    ];
+    let rc_flags: &[&str] = &[];
+    let rc_defines: &[&str] = &["WINVER=0x502", "_WIN32_WINNT=0x502"];
+
     let (target_json, entry, image_base): (&str, &str, u64) = match arch.as_str() {
         "x86" => ("i686-kernel.json", "_DriverEntry@8", 0x0001_0000),
         "x86_64" => ("x86_64-pc-windows-gnu", "DriverEntry", 0x0001_0000),
@@ -41,7 +55,7 @@ fn main() {
         .spec2def("drivers/hid/hidparse/hidparse.spec", "hidparse.sys")
         // memcmp comes from compiler-builtins-mem (build-std); libmemcmp.a dropped.
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
-        .resource_from_rc("drivers/hid/hidparse/hidparse.rc", "hidparse_res")
+        .rc("drivers/hid/hidparse/hidparse.rc", rc_includes, rc_flags, rc_defines)
         // cmake's kernel-mode links keep every section.
         .keep_all_sections()
         .link(ModuleKind::KernelDll {

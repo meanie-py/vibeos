@@ -70,7 +70,6 @@ _AUDITED_PYTEST = {
     "pytest:tools/test_scan_formatless_printf.py",
     "pytest:tools/test_scan_fourcc_literals.py",
     "pytest:tools/test_scan_match_arm_break.py",
-    "pytest:tools/test_scan_flex_array_panic.py",
     "pytest:tools/test_scan_import_cc.py",
     "pytest:tools/test_scan_invented_constants.py",
     "pytest:tools/test_scan_octal_literals.py",
@@ -84,18 +83,13 @@ _AUDITED_PYTEST = {
     "pytest:tools/test_scan_const_vs_island.py",
     "pytest:tools/test_cohab_census.py",
     "pytest:tools/test_scan_orphan_modules.py",
-    "pytest:tools/test_scan_self_recursive.py",
-    "pytest:tools/test_scan_export_thunks.py",
     "pytest:tools/test_scan_varargs_spec_arity.py",
-    "pytest:tools/test_scan_xchg_ebx_deref.py",
-    "pytest:tools/test_scan_unresolved_imports.py",
     "pytest:tools/test_scan_assert_polarity.py",
     "pytest:tools/test_scan_wide_literals.py",
     "pytest:tools/test_scanner_controls.py",
     "pytest:tools/test_source_walk.py",
     "pytest:tools/test_vendored.py",
     "pytest:tools/test_verify_c_signatures.py",
-    "pytest:tools/test_verify_cohab_coverage.py",
     "pytest:tools/test_verify_lost_exports.py",
     "pytest:tools/test_verify_translation_literals.py",
     "pytest:tools/wow64gen/test_wow64gen.py",
@@ -291,6 +285,7 @@ class ReceiptSession:
         self.root.mkdir(parents=True, exist_ok=True)
         self.before = self._identity()
         self.generated_before = generated_identity(self.repo)
+        self.generated_checked: str | None = None
         self.key = _digest([_VERSION, self.before])
         self.lock = (self.root / f"{self.key}.lock").open("a")
         fcntl.flock(self.lock, fcntl.LOCK_EX)
@@ -368,7 +363,8 @@ class ReceiptSession:
         rejected a lane resubmitted unchanged after a halted train (shell32-com
         b20d7379364c) while its base-only regate, with no receipt, passed."""
         generated = self.hits & GENERATED_INPUT_CHECKS
-        if generated and generated_identity(self.repo) != self.generated_before:
+        self.generated_checked = generated_identity(self.repo)
+        if generated and self.generated_checked != self.generated_before:
             return generated
         return set()
 
@@ -393,7 +389,14 @@ class ReceiptSession:
                     "in the foreground and make no edits until it returns."
                 )
             generated_changed = generated_identity(self.repo) != self.generated_before
-            if generated_changed and "pytest:tools/rustconv/tests" in self.hits:
+            # A hit that `stale_generated_hits` re-validated after every check had
+            # finished is as current as a live run finishing then: headers the gate's
+            # builds rewrite AFTER that moment are newer than any live result too.
+            # Raising here anyway failed a green 62-minute gate between the two
+            # hashes (integration batch 4+5, 2026-10-17). Its receipt is still not
+            # published (generated_keys below), so the cache stays strict.
+            validated = self.generated_checked == self.generated_before
+            if generated_changed and not validated and "pytest:tools/rustconv/tests" in self.hits:
                 raise RuntimeError(
                     "Generated tooling inputs changed after receipt reuse; rerun check-tooling."
                 )

@@ -483,6 +483,7 @@ def stage_derive(
     block: list[str] | None = None,
     stem: str | None = None,
     replace_crate: bool = False,
+    keep_c: list[str] | None = None,
 ) -> pd.DerivedProfile:
     started = time.time()
     dp = derive(module_dir, target, usermode=usermode, stem=stem)
@@ -578,6 +579,22 @@ def stage_derive(
             f"derive: {stem}: {len(own) - len(kept)} vendored TU(s) stay C: "
             + ", ".join(p.name for p in own if p not in kept)
         )
+    # A TU the module compiles but this port must not buy, remembered like --block: netio
+    # and afd both compile ../tdihelpers/tdi.c, which translate refuses for having two CMake
+    # owners. It stays C, in the CMake list, until its own crate exists -- never silently.
+    if keep_c:
+        prior["keep_c"] = sorted(set(prior.get("keep_c", [])) | set(keep_c))
+    held = set(prior.get("keep_c", []))
+    if held:
+        unknown = held - {p.name for p in kept} - {str(p.relative_to(REPO)) for p in kept}
+        if unknown:
+            raise PortError(f"derive: {stem}: --keep-c names no compiled TU: {sorted(unknown)}")
+        stay = [p for p in kept if p.name in held or str(p.relative_to(REPO)) in held]
+        kept = [p for p in kept if p not in stay]
+        print(
+            f"derive: {stem}: {len(stay)} TU(s) kept C by --keep-c: "
+            + ", ".join(p.name for p in stay)
+        )
     state.update(
         module_dir=str(module_dir.resolve().relative_to(REPO)),
         target=dp.module.name,
@@ -596,6 +613,7 @@ def stage_derive(
         real_unions=prior["real_unions"],
         **({"functions": prior["functions"]} if "functions" in prior else {}),
         **({"island_block": prior["island_block"]} if "island_block" in prior else {}),
+        **({"keep_c": prior["keep_c"]} if "keep_c" in prior else {}),
         **({"renamed": True} if renamed else {}),
     )
     if usermode is not None:
@@ -1120,7 +1138,15 @@ CPPAPP_SEAL_REVISION = 2
 
 
 def _unit_hash(tu: str) -> str:
-    data = (REPO / tu).read_bytes() + f"\0seal-rev={CPPAPP_SEAL_REVISION}".encode()
+    # The class model is hashed in too: a unit's banked bodies are keyed on the context the
+    # prompt carries, not only on the unit's own text. mmc_new's re-render (upstream's
+    # views) left nine units byte-identical, so translate skipped them as current, and
+    # `port replay` then found no banked body for any of them.
+    unit = REPO / tu
+    model = unit.parent / "cpp_model.json"
+    data = unit.read_bytes() + f"\0seal-rev={CPPAPP_SEAL_REVISION}".encode()
+    if model.is_file():
+        data += b"\0model=" + hashlib.sha256(model.read_bytes()).digest()
     return hashlib.sha256(data).hexdigest()[:16]
 
 
@@ -1209,7 +1235,14 @@ def stage_cppapp(stem: str) -> None:
     state = load_state(stem)
     started = time.time()
     module_dir = REPO / state["module_dir"]
-    cpp_tus = state.get("cpp_tus") or [t for t in state["tus"] if t.lower().endswith(CPP_SUFFIXES)]
+    # The stored list keeps its order (unit names and banks are keyed by it), but a C++ TU
+    # the module gained since joins it: mmc_new's CActionWnd.cpp (upstream 88da81d9b8b)
+    # reached `tus` on re-derive and was never modelled, because the first run's list won.
+    fresh = [
+        t for t in state["tus"] if t.lower().endswith(CPP_SUFFIXES) and not pd.is_shim_tu(Path(t))
+    ]
+    cpp_tus = [t for t in state.get("cpp_tus") or [] if not pd.is_shim_tu(Path(t))]
+    cpp_tus += [t for t in fresh if t not in cpp_tus]
     if not cpp_tus:
         raise PortError(f"{stem}: no C++ TU to model")
     out = _cppapp_dir(stem)
@@ -1234,7 +1267,10 @@ def stage_cppapp(stem: str) -> None:
     island_structs = frozenset(re.findall(r"^pub (?:struct|union) (\w+)", island, re.M))
     island_i386 = _crate_dir(state) / "src" / "types_i386.rs"
     island_text = island_i386.read_text(errors="replace") if island_i386.is_file() else ""
-    generated = cpp_app.render_classes(model, island_structs, island_text)
+    hand_methods, hand_names = _hand_definitions(_crate_dir(state) / "src", stem)
+    generated = cpp_app.render_classes(
+        model, island_structs, island_text, hand_methods=hand_methods, hand_names=hand_names
+    )
     (crate_src / "cpp_classes.rs").write_text(generated)
     deferred = _defer_island_classes(_crate_dir(state) / "src", stem, generated)
     if deferred:
@@ -1302,6 +1338,33 @@ def _including_tu(header: Path, tus: list[str]) -> str:
     return tus[0]  # reached through a precompiled header that names it transitively
 
 
+# The crate's own generated files; everything else directly under src/ is hand-written.
+_GENERATED_SRC = re.compile(r"^(?:lib|prelude|types(?:_\w+)?)\.rs$")
+
+
+def _hand_definitions(src: Path, stem: str) -> tuple[dict[str, set[str]], frozenset[str]]:
+    """What the crate's hand-written modules (src/*.rs beside the generated ones) define:
+    each `impl Class { pub fn .. }` method by class, and every name the prelude re-exports
+    from them (`pub use crate::windowimpl::{..}`). cppapp renders neither again."""
+    methods: dict[str, set[str]] = {}
+    for f in sorted(src.glob("*.rs")):
+        if _GENERATED_SRC.match(f.name):
+            continue
+        text = f.read_text(errors="replace")
+        for m in re.finditer(r"(?m)^impl (\w+) \{\n(.*?)^\}", text, re.S):
+            found = re.findall(r"(?m)^    pub (?:unsafe )?fn (\w+)", m.group(2))
+            methods.setdefault(m.group(1), set()).update(found)
+    names: set[str] = set()
+    prelude = src / "prelude.rs"
+    if prelude.is_file():
+        for mod, body in re.findall(
+            r"(?m)^pub use crate::(\w+)::(\{[^}]*\}|\w+);", prelude.read_text(errors="replace")
+        ):
+            if mod != stem and (src / f"{mod}.rs").is_file():
+                names.update(re.findall(r"\w+", body))
+    return methods, frozenset(names)
+
+
 def _cppapp_wire_crate(state: dict) -> None:
     """lib.rs: drop the .cpp module declarations (they are no longer units) and declare
     cpp_classes; the prelude re-exports it so every translated unit sees the classes."""
@@ -1327,12 +1390,14 @@ def _cppapp_wire_crate(state: dict) -> None:
     # and declares its globals `extern` (mspaint's CCanvasWindow, toolsModel), so two globs
     # made every one of them E0659-ambiguous -- 600 errors. An explicit `use` outranks a glob.
     generated = (crate / "src" / stem / "cpp_classes.rs").read_text(errors="replace")
+    _, hand_names = _hand_definitions(crate / "src", stem)
     names = sorted(
         set(
             re.findall(
                 r"^pub (?:unsafe fn|fn|struct|static mut|static|type|const) (\w+)", generated, re.M
             )
         )
+        - hand_names
     )
     block = (
         f"{_CPPAPP_BEGIN}\npub use crate::{stem}::cpp_classes::*;\n"
@@ -1390,6 +1455,30 @@ def _has_body(path: Path) -> bool:
         return False
     text = path.read_text(errors="replace")
     return bool(re.search(r"\b(?:fn|static|const)\s+\w+", text))
+
+
+def _goto_macro_calls(state: dict, tus: list[str]) -> dict[str, list[str]]:
+    """{TU file name: the module's goto-carrying macros (`local_macros.leaves_caller`) it uses}."""
+    if not tus:
+        return {}
+    files = _module_sources(REPO / state["module_dir"])
+    defs, _ = local_macros.module_macros(files, REPO)
+    leaving = sorted(n for n, m in defs.items() if local_macros.leaves_caller(m))
+    if not leaving:
+        return {}
+    use = re.compile(r"\b(" + "|".join(map(re.escape, leaving)) + r")\b")
+    out: dict[str, list[str]] = {}
+    for tu in tus:
+        path = REPO / tu
+        if not path.is_file():
+            continue
+        # Uses, not the definition: cmd.c defines APPEND and calls it in the same file.
+        text = local_macros.strip_literals(path.read_text(errors="replace"))
+        text = re.sub(r"^[ \t]*#[ \t]*define\b(?:.*\\\n)*.*$", "", text, flags=re.M)
+        names = sorted(set(use.findall(text)))
+        if names:
+            out[Path(tu).name] = names
+    return out
 
 
 def set_expand_macros(stem: str, tus: list[str]) -> list[str]:
@@ -1740,6 +1829,26 @@ def stage_translate(
             or _unit_stale(state, t)
         ]
     )
+    # A TU bought FRESH that calls a macro jumping to the caller's label (mmc_new's CHK_HR)
+    # is bought with those macros expanded: no macro_rules! can reach the caller's label, and
+    # every such body came back naming a `'CleanUp` that does not exist. Only fresh ones --
+    # a TU with output keeps the question its bank was bought with (cmd, imm32, opengl32 and
+    # mmc_new shipped before this, and turning it on there would re-buy them).
+    fresh = [t for t in todo if not _has_body(_tu_output(state, t))]
+    found = _goto_macro_calls(state, fresh)
+    if found and not dry_run:
+        state["expand_goto_macros"] = sorted(set(state.get("expand_goto_macros", [])) | set(found))
+        _record(state, "expand-goto-macros", time.time(), tus=state["expand_goto_macros"])
+    for tu, names in sorted(found.items()):
+        print(f"translate: {tu}: expanding goto-carrying macro(s) in the C: {', '.join(names)}")
+    goto_tus = set(state.get("expand_goto_macros", [])) | set(found)
+    stale_goto = _goto_macro_calls(state, [t for t in todo if t not in fresh])
+    for tu, names in sorted(stale_goto.items()):
+        if tu not in goto_tus:
+            print(
+                f"translate: {tu}: re-bought bodies keep {', '.join(names)} unexpanded (its bank "
+                f"was bought that way); a body that names the caller's label needs a hand port"
+            )
     spent = 0.0
     done: list[dict] = []
     arch_only = _arch_only_tus(state, [*todo, *(vias[t] for t in todo if t in vias)])
@@ -1803,6 +1912,8 @@ def stage_translate(
             # text, and c2rust has no C++), with the generated class context per worker.
             cmd += ["--cpp-app-model", cppapp["model"], "--no-c2rust"]
         # Per TU, recorded in the state so `port replay` asks the bank the same question.
+        if Path(tu).name in goto_tus:
+            cmd += ["--expand-goto-macros", state["module_dir"]]
         if Path(tu).name in state.get("expand_macros", []):
             cmd += ["--expand-local-macros", state["module_dir"]]
         if dry_run:
@@ -2219,9 +2330,16 @@ def flip_cmake(cml: str, state: dict) -> str:
                 break
             i += 1
         end = text.index("\n", i) + 1 if "\n" in text[i:] else len(text)
+        held = state.get("keep_c") or []
+        what = (
+            f"# Every translation unit is Rust now ({crate}, `rustconv port`) except "
+            f"{', '.join(held)},\n# kept C by `port derive --keep-c`; the C stays on disk."
+            if held
+            else f"# Every translation unit is Rust now ({crate}, `rustconv port`); the C "
+            f"stays on\n# disk."
+        )
         head = (
-            f"# Every translation unit is Rust now ({crate}, `rustconv port`); the C stays on\n"
-            f"# disk. The target keeps a stub TU and links the Rust archive.\n"
+            f"{what} The target keeps a stub TU and links the Rust archive.\n"
             f'rust_staticlib_variant({variant} {crate} "" TRUE)\n'
         )
         # CMake refuses to mix target_link_libraries' plain and keyword signatures on one
@@ -2290,6 +2408,26 @@ def _stub_name(state: dict) -> str:
     return "rust_cohab_stub.cpp" if state.get("cpp_tus") else "rust_cohab_stub.c"
 
 
+def _repoint_cargo_cells(target: str, crate: str) -> list[Path]:
+    """Point every cargo cell that replays `target`'s C at its Rust archive instead.
+
+    A cell takes a cmake static library as `engine:c:<target>`, which replays that target's
+    compiles; after the flip those are only the stub, so the cell links nothing in their
+    place. timedate.cpl's cell did that with tzlib and failed every arch's link. The archive
+    the flip just declared (`rust_staticlib_variant(... <crate> "" TRUE)`) is spelled
+    `engine:crate:<crate>::TRUE`, as tools/cargo_cell_gen.py writes it. Returns the cells
+    rewritten.
+    """
+    old, new = f'"engine:c:{target}"', f'"engine:crate:{crate}::TRUE"'
+    changed = []
+    for build_rs in sorted((REPO / "sdk" / "lib" / "rust").glob("*-cargo/build.rs")):
+        text = build_rs.read_text()
+        if old in text:
+            build_rs.write_text(text.replace(old, new))
+            changed.append(build_rs)
+    return changed
+
+
 def stage_flip(stem: str) -> None:
     started = time.time()
     state = load_state(stem)
@@ -2330,6 +2468,14 @@ def stage_flip(stem: str) -> None:
         )
     _record(state, "flip", started, changed=changed)
     print(f"flip: {cml.relative_to(REPO)} {'rewritten' if changed else 'already flipped'}")
+    for cell in _repoint_cargo_cells(state["target"], state["crate"]):
+        print(f"flip: {cell.relative_to(REPO)} now links {state['crate']}")
+    # A flip leaves the module linked by cmake around the stub; the cargo cell is the next
+    # step, and `vibeos-cli check` (scan_cmake_linked_rust) fails until it is taken.
+    print(
+        f"next: ./vibeos-cli build on each arch, then "
+        f"python3 tools/cargo_cell_gen.py --convert {state['target']}"
+    )
 
 
 # --------------------------------------------------------------------------------------
@@ -6390,6 +6536,17 @@ def stage_macros(
     # `pub use _wcsdup as str_clone` is not a macro to port too (where: E0252).
     hand |= set(re.findall(r"^pub use [\w:]+ as (\w+);", prelude.read_text(), re.M))
     macros = {n: m for n, m in local_macros.closure(wanted, defs).items() if n not in hand}
+    # mmc_new's CHK_HR came back as a macro_rules! naming the caller's `hr` and `'CleanUp`:
+    # E0425 + E0426 at every use, reported at the PRELUDE line. A label cannot be a parameter.
+    leaving = sorted(n for n, m in macros.items() if local_macros.leaves_caller(m))
+    for n in leaving:
+        del macros[n]
+    if leaving:
+        print(
+            f"macros: jump to the caller's label, never a macro_rules! (`port translate` expands "
+            f"them in a fresh TU's C; a body bought before that is hand-ported): "
+            f"{', '.join(leaving)}"
+        )
     skipped = sorted(names & ambiguous)
     if skipped:
         print(f"macros: defined differently in two places, hand-port: {', '.join(skipped)}")
@@ -6414,6 +6571,8 @@ def stage_macros(
     usd = 0.0
     if not todo:
         print(f"macros: {len(macros)} item(s) replayed from the bank ($0)")
+        if dry_run:  # a dry run that buys nothing must not write the prelude either
+            return
     else:
         text = local_macros.prompt(todo, local_macros.in_scope_macros(prelude) | set(ported))
         print(f"macros: {len(todo)} to port ({len(ported)} banked): {', '.join(sorted(todo))}")
@@ -6715,11 +6874,64 @@ def stage_hand(stem: str, specs: list[str], drop: bool = False) -> None:
         else:
             lo, hi = hand_span(text, name, where=f"hand: {spec}")
             body = text[lo:hi]
-        entry.write_text(
-            json.dumps({"file": fname, "name": replaces, "text": body, "added": added}, indent=1)
-        )
+        bank = {"file": fname, "name": replaces, "text": body, "added": added}
+        origin = None if added or name == "*" else _c_origin(state, fname, replaces)
+        if origin is not None:
+            bank["c_sha"] = origin
+        entry.write_text(json.dumps(bank, indent=1))
         print(f"hand: banked {spec} ({len(body.splitlines())} lines)")
     _record(state, "hand", started, specs=specs, drop=drop)
+
+
+def _c_definition_span(text: str, name: str) -> tuple[int, int] | None:
+    """The definition of C function `name` in `text`, from its line to its closing brace (a
+    prototype or a call is skipped: what follows the parameter list must be a body)."""
+    from .lex_mask import mask_code
+
+    masked = mask_code(text)
+    for m in re.finditer(rf"\b{re.escape(name)}\s*\(", masked):
+        depth, i = 0, m.end() - 1
+        while i < len(masked):
+            depth += {"(": 1, ")": -1}.get(masked[i], 0)
+            if depth == 0:
+                break
+            i += 1
+        j = i + 1
+        while j < len(masked) and masked[j] in " \t\r\n":
+            j += 1
+        if j >= len(masked) or masked[j] != "{":
+            continue
+        depth, k = 0, j
+        while k < len(masked):
+            depth += {"{": 1, "}": -1}.get(masked[k], 0)
+            if depth == 0:
+                return text.rfind("\n", 0, m.start()) + 1, k + 1
+            k += 1
+    return None
+
+
+_C_COMMENTS = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
+
+
+def _c_origin(state: dict, fname: str, name: str) -> str | None:
+    """sha256 of the C a hand bank of `fname:name` was written against: the definition of
+    `name` in the unit `fname` translates (a cppapp module's synthetic unit names a method
+    `Class__Method` exactly as the bank does). Comments and whitespace do not count. None
+    when there is no such definition (a class layout, a preamble constant)."""
+    if "tus" not in state:
+        return None
+    unit = next((u for u in _units(state) if _module_name(u) == Path(fname).stem), None)
+    if unit is None:
+        return None
+    path = Path(unit) if Path(unit).is_absolute() else REPO / unit
+    if not path.is_file():
+        return None
+    text = path.read_text(errors="replace")
+    span = _c_definition_span(text, name)
+    if span is None:
+        return None
+    code = " ".join(_C_COMMENTS.sub(" ", text[span[0] : span[1]]).split())
+    return hashlib.sha256(code.encode()).hexdigest()
 
 
 _ITEM_HEAD = (
@@ -6884,6 +7096,21 @@ def apply_hand(stem: str, early_only: bool = False) -> int:
     modules = _crate_dir(state) / "src" / stem
     applied = 0
     skipped = set(state.get("skip_fn", []))
+    # A bank is applied by NAME, so one whose C changed upstream would put its old body back
+    # silently: mmc_new's CAddDialog::OnCommand kept `new CSnapin(CacheEntry)` through the
+    # 2026-10-15 sync that added the node id. Refused, all at once, before anything is written.
+    stale = []
+    for entry in sorted(_hand_dir(stem).glob("*.json")):
+        h = json.loads(entry.read_text())
+        if h.get("c_sha") and _c_origin(state, h["file"], h["name"]) not in (h["c_sha"], None):
+            stale.append(f"{h['file']}:{h['name']}")
+    if stale:
+        raise PortError(
+            f"hand: {len(stale)} bank(s) were written against C that has since changed: "
+            + ", ".join(stale)
+            + f"\nfix: port the C change into each function, then re-capture it with "
+            f"`port hand {stem} <file.rs:Name>` (or `port hand --drop {stem} ..` to re-buy it)"
+        )
     for entry in sorted(_hand_dir(stem).glob("*.json")):
         h = json.loads(entry.read_text())
         # A hand item over a body the translate SKIPPED (`skip_fn`) has nothing in the file to
@@ -7579,6 +7806,7 @@ def _main(args) -> int:
                 args.block,
                 args.stem,
                 args.replace_crate,
+                args.keep_c,
             )
         elif args.port_stage == "island":
             stage_island(args.stem)
@@ -7723,6 +7951,15 @@ def add_parser(sub) -> None:
         default=None,
         help="name the port (state, crate <stem>-rust, gen arm) other than the CMake target, "
         "when that crate already belongs to another module; remembered",
+    )
+    stages.choices["derive"].add_argument(
+        "--keep-c",
+        action="extend",
+        nargs="*",
+        default=[],
+        metavar="TU",
+        help="compiled TUs this port leaves C (stay in the CMake list, never bought), by file "
+        "name or repo path; remembered",
     )
     stages.choices["derive"].add_argument(
         "--replace-crate",

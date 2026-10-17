@@ -111,6 +111,9 @@ pub unsafe extern "system" fn MmInitializeRmapList() {
     );
 }
 
+/// Pages the no-mapping (segment-only) path released; said every 1024th.
+static SEGMENT_RECLAIMS: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+
 #[no_mangle]
 pub unsafe extern "system" fn MmPageOutPhysicalAddress(Page: PFN_NUMBER) -> NTSTATUS {
     let mut entry: PMM_RMAP_ENTRY;
@@ -133,15 +136,13 @@ pub unsafe extern "system" fn MmPageOutPhysicalAddress(Page: PFN_NUMBER) -> NTST
         }
 
         if entry.is_null() {
+            // No process maps the page: it is a section segment's cached copy, which the
+            // segment releases below if it is clean. arm64 returned UNSUCCESSFUL here from
+            // its bring-up (411417cc538, "cannot page out"), so it could never reclaim an
+            // image or data-file page once the last view went: a 1024M appstorm64 sweep
+            // starved at 7 MB free with 55 MB of such pages held (MEMCENSUS `ros`).
             MiReleasePfnLock(OldIrql);
-            #[cfg(target_arch = "aarch64")]
-            {
-                return STATUS_UNSUCCESSFUL;
-            }
-            #[cfg(not(target_arch = "aarch64"))]
-            {
-                break 'GetEntry;
-            }
+            break 'GetEntry;
         }
 
         Process = (*entry).Process;
@@ -403,7 +404,7 @@ pub unsafe extern "system" fn MmPageOutPhysicalAddress(Page: PFN_NUMBER) -> NTST
         break;
     }
 
-    #[cfg(not(target_arch = "aarch64"))]
+    // WriteSegment: on every arch (see the no-rmap case above).
     {
         Segment = MmGetSectionAssociation(Page as _, core::ptr::addr_of_mut!(SegmentOffset));
         if !Segment.is_null() {
@@ -411,12 +412,41 @@ pub unsafe extern "system" fn MmPageOutPhysicalAddress(Page: PFN_NUMBER) -> NTST
 
             MmLockSectionSegment(Segment);
 
+            // The page must still be a ReactOS-Mm page that this segment entry names: a
+            // stale association would free a frame something else now owns. arm64 never
+            // ran this path before, so check rather than trust its bookkeeping.
+            let Entry = MmGetPageEntrySectionSegment(Segment, core::ptr::addr_of_mut!(SegmentOffset));
+            let Pfn = MiGetPfnEntry(Page);
+            if Entry == 0
+                || IS_SWAP_FROM_SSE(Entry)
+                || PFN_FROM_SSE(Entry) != Page as _
+                || Pfn.is_null()
+                || !crate::ARM3::helpers::MI_IS_ROS_PFN(Pfn)
+            {
+                MmUnlockSectionSegment(Segment);
+                MmDereferenceSegment(Segment);
+                mm_guard_trip!(
+                    "rmap.MmPageOutPhysicalAddress stale-segment-association", 8,
+                    "Page" => Page, "Entry" => Entry, "Segment" => Segment as ULONG_PTR,
+                );
+                return STATUS_UNSUCCESSFUL;
+            }
+
             Released = MmCheckDirtySegment(Segment, core::ptr::addr_of_mut!(SegmentOffset), 0u8, 1u8);
 
             MmUnlockSectionSegment(Segment);
             MmDereferenceSegment(Segment);
 
             if Released != 0 {
+                let N = SEGMENT_RECLAIMS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                if N % 1024 == 0 {
+                    ntkrnl_sys::driver_ddk::DbgPrint(
+                        c"[MM] reclaimed cached section page #%lu (pfn %Iu, avail %Iu)\n".as_ptr(),
+                        N + 1,
+                        Page,
+                        MmAvailablePages as usize,
+                    );
+                }
                 return STATUS_SUCCESS;
             }
         }
@@ -637,6 +667,12 @@ pub unsafe extern "system" fn MmGetSegmentRmap(Page: PFN_NUMBER, RawOffset: *mut
     }
 
     core::ptr::null_mut()
+}
+
+/// Free an rmap entry already detached from its page (mm/standby.rs repurposes a page
+/// under the PFN lock and frees its segment entry later, at passive level).
+pub(crate) unsafe fn MiFreeRmapEntry(Entry: PMM_RMAP_ENTRY) {
+    ExFreeToNPagedLookasideList(core::ptr::addr_of_mut!(RmapLookasideList), Entry as PVOID);
 }
 
 #[no_mangle]

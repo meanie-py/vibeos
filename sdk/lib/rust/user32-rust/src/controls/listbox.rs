@@ -1,4 +1,11 @@
 use win32k_sys::win32k::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::winbase::ExtTextOutW;
+use crate::windows::window::HeapAlloc;
+use crate::windows::message::HeapReAlloc;
+// The crate's own functions: the definition is the declaration.
+use crate::windows::class::GetWindowLongPtrW;
+use crate::controls::scrollbar::SetScrollInfo;
 use core::ffi::c_void;
 
 // Cross-control shared surface (HEADCOMBO, CBF_* flags, the undocumented
@@ -59,7 +66,6 @@ pub struct WIN32_FIND_DATAW {
 // ─── Win32 / gdi32 / kernel32 / user32 public exports + a couple of unresolved
 //     win32k internals. stdcall → extern "system" on i386 (`_Name@N`). ─────────
 extern "system" {
-    fn SetScrollInfo(hwnd: HWND, fnBar: INT, lpsi: *mut SCROLLINFO, redraw: INT) -> INT;
 
     fn SetLastError(dwErrCode: DWORD);
     fn GetProcessHeap() -> HANDLE;
@@ -98,7 +104,6 @@ extern "system" {
     fn SendMessageA(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     fn SendMessageW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
 
-    fn GetWindowLongPtrW(hWnd: HWND, nIndex: core::ffi::c_int) -> LONG_PTR;
     fn GetClientRect(hWnd: HWND, lpRect: *mut RECT) -> BOOL;
     fn GetWindowRect(hWnd: HWND, lpRect: *mut RECT) -> BOOL;
     fn ClientToScreen(hWnd: HWND, lpPoint: *mut POINT) -> BOOL;
@@ -119,8 +124,6 @@ extern "system" {
     fn KillSystemTimer(hWnd: HWND, uIDEvent: UINT_PTR) -> BOOL;
 
     fn GetLastError() -> DWORD;
-    fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: usize) -> LPVOID;
-    fn HeapReAlloc(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID, dwBytes: usize) -> LPVOID;
     fn HeapSize(hHeap: HANDLE, dwFlags: DWORD, lpMem: *const c_void) -> usize;
     fn GetParent(hWnd: HWND) -> HWND;
     fn IsWindow(hWnd: HWND) -> BOOL;
@@ -149,16 +152,6 @@ extern "system" {
     fn SetBkColor(hdc: HDC, color: COLORREF) -> COLORREF;
     fn SetWindowOrgEx(hdc: HDC, x: core::ffi::c_int, y: core::ffi::c_int, lppt: *mut POINT) -> BOOL;
     fn FillRect(hDC: HDC, lprc: *const RECT, hbr: HBRUSH) -> core::ffi::c_int;
-    fn ExtTextOutW(
-        hdc: HDC,
-        x: core::ffi::c_int,
-        y: core::ffi::c_int,
-        options: UINT,
-        lprect: *const RECT,
-        lpString: LPCWSTR,
-        c: UINT,
-        lpDx: *const core::ffi::c_int,
-    ) -> BOOL;
     fn GetTextExtentPointA(hdc: HDC, lpString: LPCSTR, c: core::ffi::c_int, psizl: *mut SIZE) -> BOOL;
     fn GetTextExtentPoint32W(hdc: HDC, lpString: LPCWSTR, c: core::ffi::c_int, psizl: *mut SIZE) -> BOOL;
     fn GetCurrentObject(hdc: HDC, type_: UINT) -> *mut c_void;
@@ -1024,13 +1017,13 @@ unsafe fn LISTBOX_InitStorage(descr: *mut LB_DESCR, mut nb_items: INT) -> LRESUL
             GetProcessHeap(),
             0,
             (*descr).items as *mut _,
-            nb_items as usize * core::mem::size_of::<LB_ITEMDATA>(),
+            (nb_items as usize * core::mem::size_of::<LB_ITEMDATA>()) as SIZE_T,
         ) as *mut LB_ITEMDATA;
     } else {
         item = HeapAlloc(
             GetProcessHeap(),
             0,
-            nb_items as usize * core::mem::size_of::<LB_ITEMDATA>(),
+            (nb_items as usize * core::mem::size_of::<LB_ITEMDATA>()) as SIZE_T,
         ) as *mut LB_ITEMDATA;
     }
 
@@ -1884,13 +1877,13 @@ unsafe fn LISTBOX_InsertItem(descr: *mut LB_DESCR, mut index: INT, str: LPWSTR, 
                 GetProcessHeap(),
                 0,
                 (*descr).items as *mut _,
-                max_items as usize * core::mem::size_of::<LB_ITEMDATA>(),
+                (max_items as usize * core::mem::size_of::<LB_ITEMDATA>()) as SIZE_T,
             ) as *mut LB_ITEMDATA;
         } else {
             item = HeapAlloc(
                 GetProcessHeap(),
                 0,
-                max_items as usize * core::mem::size_of::<LB_ITEMDATA>(),
+                (max_items as usize * core::mem::size_of::<LB_ITEMDATA>()) as SIZE_T,
             ) as *mut LB_ITEMDATA;
         }
         if item.is_null() {
@@ -1961,7 +1954,7 @@ unsafe fn LISTBOX_InsertString(descr: *mut LB_DESCR, mut index: INT, mut str: LP
         if str.is_null() {
             str = empty_stringW.as_ptr();
         }
-        new_str = HeapAlloc(GetProcessHeap(), 0, (strlenW(str) as usize + 1) * core::mem::size_of::<u16>()) as LPWSTR;
+        new_str = HeapAlloc(GetProcessHeap(), 0, ((strlenW(str) as usize + 1) * core::mem::size_of::<u16>()) as SIZE_T) as LPWSTR;
         if new_str.is_null() {
             SEND_NOTIFICATION(descr, LBN_ERRSPACE);
             return LB_ERRSPACE as LRESULT;
@@ -2047,7 +2040,7 @@ unsafe fn LISTBOX_RemoveItem(descr: *mut LB_DESCR, index: INT) -> LRESULT {
             GetProcessHeap(),
             0,
             (*descr).items as *mut _,
-            (max_items as usize) * core::mem::size_of::<LB_ITEMDATA>(),
+            ((max_items as usize) * core::mem::size_of::<LB_ITEMDATA>()) as SIZE_T,
         ) as *mut LB_ITEMDATA;
         if !item.is_null() {
             (*descr).items = item;
@@ -2864,7 +2857,7 @@ unsafe fn LISTBOX_Create(hwnd: HWND, lphc: LPHEADCOMBO) -> BOOL {
     let mut mis: MEASUREITEMSTRUCT = core::mem::zeroed();
     let mut rect: RECT = core::mem::zeroed();
 
-    descr = HeapAlloc(GetProcessHeap(), 0, core::mem::size_of::<LB_DESCR>()) as *mut LB_DESCR;
+    descr = HeapAlloc(GetProcessHeap(), 0, (core::mem::size_of::<LB_DESCR>()) as SIZE_T) as *mut LB_DESCR;
     if descr.is_null() {
         return 0u8 as BOOL;
     }
@@ -3035,7 +3028,7 @@ pub unsafe extern "system" fn ListBoxWndProc_common(
             } else {
                 let textA = lParam as LPSTR;
                 let countW = MultiByteToWideChar(CP_ACP, 0, textA, -1, core::ptr::null_mut(), 0);
-                textW = HeapAlloc(GetProcessHeap(), 0, (countW as usize) * core::mem::size_of::<WCHAR>()) as LPWSTR;
+                textW = HeapAlloc(GetProcessHeap(), 0, ((countW as usize) * core::mem::size_of::<WCHAR>()) as SIZE_T) as LPWSTR;
                 if !textW.is_null() {
                     MultiByteToWideChar(CP_ACP, 0, textA, -1, textW, countW);
                 } else {
@@ -3063,7 +3056,7 @@ pub unsafe extern "system" fn ListBoxWndProc_common(
             } else {
                 let textA = lParam as LPSTR;
                 let countW = MultiByteToWideChar(CP_ACP, 0, textA, -1, core::ptr::null_mut(), 0);
-                textW = HeapAlloc(GetProcessHeap(), 0, (countW as usize) * core::mem::size_of::<WCHAR>()) as LPWSTR;
+                textW = HeapAlloc(GetProcessHeap(), 0, ((countW as usize) * core::mem::size_of::<WCHAR>()) as SIZE_T) as LPWSTR;
                 if !textW.is_null() {
                     MultiByteToWideChar(CP_ACP, 0, textA, -1, textW, countW);
                 } else {
@@ -3090,7 +3083,7 @@ pub unsafe extern "system" fn ListBoxWndProc_common(
             } else {
                 let textA = lParam as LPSTR;
                 let countW = MultiByteToWideChar(CP_ACP, 0, textA, -1, core::ptr::null_mut(), 0);
-                textW = HeapAlloc(GetProcessHeap(), 0, (countW as usize) * core::mem::size_of::<WCHAR>()) as LPWSTR;
+                textW = HeapAlloc(GetProcessHeap(), 0, ((countW as usize) * core::mem::size_of::<WCHAR>()) as SIZE_T) as LPWSTR;
                 if !textW.is_null() {
                     MultiByteToWideChar(CP_ACP, 0, textA, -1, textW, countW);
                 } else {
@@ -3253,7 +3246,7 @@ pub unsafe extern "system" fn ListBoxWndProc_common(
             } else {
                 let textA = lParam as LPSTR;
                 let countW = MultiByteToWideChar(CP_ACP, 0, textA, -1, core::ptr::null_mut(), 0);
-                textW = HeapAlloc(GetProcessHeap(), 0, (countW as usize) * core::mem::size_of::<WCHAR>()) as LPWSTR;
+                textW = HeapAlloc(GetProcessHeap(), 0, ((countW as usize) * core::mem::size_of::<WCHAR>()) as SIZE_T) as LPWSTR;
                 if !textW.is_null() {
                     MultiByteToWideChar(CP_ACP, 0, textA, -1, textW, countW);
                 }
@@ -3273,7 +3266,7 @@ pub unsafe extern "system" fn ListBoxWndProc_common(
             } else {
                 let textA = lParam as LPSTR;
                 let countW = MultiByteToWideChar(CP_ACP, 0, textA, -1, core::ptr::null_mut(), 0);
-                textW = HeapAlloc(GetProcessHeap(), 0, (countW as usize) * core::mem::size_of::<WCHAR>()) as LPWSTR;
+                textW = HeapAlloc(GetProcessHeap(), 0, ((countW as usize) * core::mem::size_of::<WCHAR>()) as SIZE_T) as LPWSTR;
                 if !textW.is_null() {
                     MultiByteToWideChar(CP_ACP, 0, textA, -1, textW, countW);
                 }
@@ -3293,7 +3286,7 @@ pub unsafe extern "system" fn ListBoxWndProc_common(
             } else {
                 let textA = lParam as LPSTR;
                 let countW = MultiByteToWideChar(CP_ACP, 0, textA, -1, core::ptr::null_mut(), 0);
-                textW = HeapAlloc(GetProcessHeap(), 0, (countW as usize) * core::mem::size_of::<WCHAR>()) as LPWSTR;
+                textW = HeapAlloc(GetProcessHeap(), 0, ((countW as usize) * core::mem::size_of::<WCHAR>()) as SIZE_T) as LPWSTR;
                 if !textW.is_null() {
                     MultiByteToWideChar(CP_ACP, 0, textA, -1, textW, countW);
                 }
@@ -3385,7 +3378,7 @@ pub unsafe extern "system" fn ListBoxWndProc_common(
             } else {
                 let textA = lParam as LPSTR;
                 let countW = MultiByteToWideChar(CP_ACP, 0, textA, -1, core::ptr::null_mut(), 0);
-                textW = HeapAlloc(GetProcessHeap(), 0, (countW as usize) * core::mem::size_of::<WCHAR>()) as LPWSTR;
+                textW = HeapAlloc(GetProcessHeap(), 0, ((countW as usize) * core::mem::size_of::<WCHAR>()) as SIZE_T) as LPWSTR;
                 if !textW.is_null() {
                     MultiByteToWideChar(CP_ACP, 0, textA, -1, textW, countW);
                 }

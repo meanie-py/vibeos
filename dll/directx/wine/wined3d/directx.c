@@ -3452,6 +3452,10 @@ done:
         free(adapter->outputs);
         close_adapter_desc.hAdapter = adapter->kmt_adapter;
         D3DKMTCloseAdapter(&close_adapter_desc);
+        /* Leave nothing for wined3d_adapter_gl_create()'s cleanup to release twice. */
+        adapter->outputs = NULL;
+        adapter->output_count = 0;
+        adapter->kmt_adapter = 0;
     }
     return ret;
 }

@@ -1468,9 +1468,17 @@ unsafe extern "C" fn BuildFileFilterAndDeviceMenu() {
                     }
 
                     /* Remove the last separator */
-                    d = d.offset(-1);
-                    uSizeRemain = uSizeRemain.wrapping_add(core::mem::size_of::<TCHAR>() as size_t);
-                    *d = '\0' as TCHAR;
+                    // Two divergences from the C here and below. It backed up unconditionally,
+                    // so a device with no registered extension wrote szExtensionList[-1] (d had
+                    // not moved; the default list is still in the buffer). And it credited the
+                    // freed WCHAR to uSizeRemain -- the FILTER buffer's remaining space -- where
+                    // d is in szExtensionList, whose counter is uMaskRemain: every device
+                    // inflated the filter's room by one WCHAR for the bounded writes below.
+                    if d != szExtensionList {
+                        d = d.offset(-1);
+                        uMaskRemain = uMaskRemain.wrapping_add(core::mem::size_of::<TCHAR>() as size_t);
+                        *d = '\0' as TCHAR;
+                    }
 
                     /* Add the description */
                     StringCbPrintfEx!(c, uSizeRemain, core::ptr::addr_of_mut!(c), core::ptr::addr_of_mut!(uSizeRemain), 0, (&[0x0025, 0x0073, 0x0020, 0x0028, 0x0025, 0x0073, 0x0029, 0x0000u16]).as_ptr() /* _T "%s (%s)" */, core::ptr::addr_of_mut!(szFriendlyName) as LPTSTR, szExtensionList);
@@ -1505,9 +1513,12 @@ unsafe extern "C" fn BuildFileFilterAndDeviceMenu() {
             }
 
             /* Remove the last separator */
-            d = d.offset(-1);
-            uSizeRemain = uSizeRemain.wrapping_add(core::mem::size_of::<TCHAR>() as size_t);
-            *d = '\0' as TCHAR;
+            // Same two fixes as the per-device list above.
+            if d != szExtensionList {
+                d = d.offset(-1);
+                uMaskRemain = uMaskRemain.wrapping_add(core::mem::size_of::<TCHAR>() as size_t);
+                *d = '\0' as TCHAR;
+            }
 
             /* Add the default (all files) description */
             StringCbPrintfEx!(c, uSizeRemain, core::ptr::addr_of_mut!(c), core::ptr::addr_of_mut!(uSizeRemain), 0, (&[0x0025, 0x0073, 0x0020, 0x0028, 0x0025, 0x0073, 0x0029, 0x0000u16]).as_ptr() /* _T "%s (%s)" */, core::ptr::addr_of_mut!(szDefaultFilter) as LPTSTR, szExtensionList);

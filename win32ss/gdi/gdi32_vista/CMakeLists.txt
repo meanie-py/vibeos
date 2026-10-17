@@ -14,15 +14,8 @@ add_dependencies(gdi32_vista_static psdk)
 # The translated C, kept on disk:
 # dc.c  # replaced by Rust (sdk/lib/rust/gdi32_vista-rust/src/gdi32_vista/dc.rs)
 # d3dkmt.c  # replaced by Rust (sdk/lib/rust/gdi32_vista-rust/src/gdi32_vista/d3dkmt.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(gdi32_vista_res OBJECT gdi32_vista.rc)
-target_compile_definitions(gdi32_vista_res PRIVATE UNICODE _UNICODE)
-target_include_directories(gdi32_vista_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-# Generated inputs those compiles read, ordered before them.
-add_dependencies(gdi32_vista_res psdk)
 add_cargo_module(gdi32_vista gdi32_vista-cargo gdi32_vista.dll
     KIND win32dll
     BODY_CRATE gdi32_vista-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS gdi32_vista_res asm)
+    EXTRA_DEPENDS asm psdk)

@@ -1,0 +1,13 @@
+# Differential harness: mmebuddy's wave streaming engine (DoWaveStreaming + CompleteIO),
+# as shipped in mmebuddy-rust vs the genuine wave/streaming.c, both compiled for the host
+# and driven by one scripted committer. Host crate (std, `cargo test`, no QEMU).
+[package]
+name = "mmebuddy-difftest"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[build-dependencies]
+cc = "1"
+syn = { version = "2", features = ["full"] }
+quote = "1"

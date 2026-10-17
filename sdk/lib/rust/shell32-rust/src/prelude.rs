@@ -40,6 +40,26 @@
 //! types in its signature, or is re-declared here against island types instead.
 
 // The header-derived authority: struct layouts, constants, and the Win32/shell fn surface.
+// The crate's own functions: the definition is the declaration.
+pub use crate::cfs_folder_tu::CFSFolder_CompareUiStrings_RustBridge;
+pub use crate::wine::pidl::ILClone;
+pub use crate::wine::pidl::ILCombine;
+pub use crate::wine::pidl::ILFree;
+pub use crate::shell32::utils::SHBindToObject;
+pub use crate::wine::pidl::SHBindToParent;
+pub use crate::wine::pidl::SHCloneSpecialIDList;
+pub use crate::wine::shellole::SHCoCreateInstance;
+pub use crate::wine::shell32_main::SHGetFileInfoW;
+pub use crate::wine::shellpath::SHGetFolderLocation;
+pub use crate::wine::pidl::SHGetPathFromIDListW;
+pub use crate::wine::shellord::SHGetSetSettings;
+pub use crate::propsheet::SH_CreatePropertySheetPage;
+pub use crate::shell32::shlexec::ShellExecuteExW;
+pub use crate::wine::shellstring::StrRetToStrNW;
+pub use crate::wine::pidl::_ILIsDesktop;
+pub use crate::wine::pidl::_ILIsDrive;
+pub use crate::wine::pidl::_ILIsPidlSimple;
+pub use crate::default_context_menu_tu::_InsertMenuItemW;
 pub use crate::island::*;
 // Functions the crate defines itself are blocklisted out of the island; this is where callers
 // in other modules get their declaration. A defining module that globs the prelude still sees
@@ -57,12 +77,6 @@ pub use crate::own_exports_decls::*;
 // two Rust names. This declaration states the DEFINITION's contract — cdecl, 4 args — which is
 // also what the pre-sync header (`EXTERN_C HRESULT SHBindToObject(psf, pidl, riid, ppv)`) said.
 extern "C" {
-    pub fn SHBindToObject(
-        psf: *mut crate::island::IShellFolder,
-        pidl: crate::island::LPCITEMIDLIST,
-        riid: *const crate::island::IID,
-        ppvObj: *mut *mut core::ffi::c_void,
-    ) -> crate::island::HRESULT;
 }
 
 // NOTHING scalar or PIDL-shaped is re-exported from `shellcom` here, and that is deliberate.
@@ -128,20 +142,6 @@ pub use crate::dialogs_view::PostCabinetMessage;
 pub use crate::wine::shpolicy::SHRestricted;
 
 extern "C" {
-    /// precomp.h `HPROPSHEETPAGE SH_CreatePropertySheetPage(WORD, DLGPROC, LPARAM, LPCWSTR)`.
-    ///
-    /// Declared, not imported, for the same reason as the block below: `propsheet.rs` types it
-    /// against `crate::types`, whose `DLGPROC` is `extern "system" fn(*mut c_void, ..)` while a
-    /// dialog proc written against the island is `extern "stdcall" fn(*mut HWND__, ..)` on i386.
-    /// Those are the same ABI and the same machine code, but two different Rust types, so the
-    /// call cannot type-check across the boundary. Declaring against the island's `DLGPROC`
-    /// puts both sides on one spelling.
-    pub fn SH_CreatePropertySheetPage(
-        wDialogId: crate::island::WORD,
-        pfnDlgProc: DLGPROC,
-        lParam: crate::island::LPARAM,
-        pwszTitle: crate::island::LPCWSTR,
-    ) -> crate::island::HPROPSHEETPAGE;
 }
 
 /// guiddef.h `REFGUID` — C++ spells it `const GUID &`. A reference IS a pointer at the ABI,
@@ -226,12 +226,6 @@ pub type DLGPROC = ::core::option::Option<
 // Layout equivalence is not assumed: both structs were compared field-by-field against the
 // island before this was written.
 extern "system" {
-    /// shlobj.h:1583 `VOID WINAPI SHGetSetSettings(LPSHELLSTATE lpss, DWORD dwMask, BOOL bSet);`
-    pub fn SHGetSetSettings(
-        lpss: *mut crate::island::SHELLSTATE,
-        dwMask: crate::island::DWORD,
-        bSet: crate::island::BOOL,
-    );
     /// shlobj.h:2411 `BOOL WINAPI ReadCabinetState(CABINETSTATE *, int cLength);`
     pub fn ReadCabinetState(
         cs: *mut crate::island::CABINETSTATE,
@@ -840,16 +834,6 @@ pub use crate::shell_link::__SHCloneStrAtoW;
 pub use crate::wine::pidl::{_ILCreateDesktop, _ILGetDataPointer, _ILIsMyComputer};
 
 extern "system" {
-    /// `wine/shell32_main.h:190` — shell32's own menu-item helper.
-    pub fn _InsertMenuItemW(
-        hmenu: crate::island::HMENU,
-        indexMenu: crate::island::UINT,
-        fByPosition: crate::island::BOOL,
-        wID: crate::island::UINT,
-        fType: crate::island::UINT,
-        dwTypeData: crate::island::LPCWSTR,
-        fState: crate::island::UINT,
-    ) -> crate::island::BOOL;
     /// C++ linkage in `utils.cpp`; reached through the WINAPI shim like its neighbours.
     #[link_name = "SHILAppend_RustBridge"]
     pub fn SHILAppend(
@@ -887,13 +871,6 @@ pub use crate::shellutils::{
 // SHGetSetSettings block: the Rust modules that define them are typed against
 // `crate::types`, and mixing those aliases with the island's splits every call site.
 extern "system" {
-    /// shlobj.h — the PIDL allocator family, implemented in `wine/pidl.rs`.
-    pub fn ILFree(pidl: crate::island::LPITEMIDLIST);
-    pub fn ILClone(pidl: crate::island::LPCITEMIDLIST) -> crate::island::LPITEMIDLIST;
-    pub fn ILCombine(
-        p1: crate::island::LPCITEMIDLIST,
-        p2: crate::island::LPCITEMIDLIST,
-    ) -> crate::island::LPITEMIDLIST;
     pub fn ILGetNext(pidl: crate::island::LPCITEMIDLIST) -> crate::island::LPITEMIDLIST;
     pub fn ILFindLastID(pidl: crate::island::LPCITEMIDLIST) -> crate::island::LPITEMIDLIST;
     pub fn ILIsEqual(
@@ -920,35 +897,6 @@ extern "system" {
         hToken: crate::island::HANDLE,
         dwFlags: crate::island::DWORD,
         pszPath: crate::island::LPWSTR,
-    ) -> crate::island::HRESULT;
-    pub fn SHGetFolderLocation(
-        hwnd: crate::island::HWND,
-        csidl: crate::island::INT,
-        hToken: crate::island::HANDLE,
-        dwReserved: crate::island::DWORD,
-        ppidl: *mut crate::island::LPITEMIDLIST,
-    ) -> crate::island::HRESULT;
-    pub fn SHGetPathFromIDListW(
-        pidl: crate::island::LPCITEMIDLIST,
-        pszPath: crate::island::LPWSTR,
-    ) -> crate::island::BOOL;
-    pub fn SHGetFileInfoW(
-        pszPath: crate::island::LPCWSTR,
-        dwFileAttributes: crate::island::DWORD,
-        psfi: *mut crate::island::SHFILEINFOW,
-        cbFileInfo: crate::island::UINT,
-        uFlags: crate::island::UINT,
-    ) -> crate::island::DWORD_PTR;
-    pub fn SHCloneSpecialIDList(
-        hwnd: crate::island::HWND,
-        csidl: crate::island::INT,
-        bCreate: crate::island::BOOL,
-    ) -> crate::island::LPITEMIDLIST;
-    pub fn StrRetToStrNW(
-        dest: crate::island::LPWSTR,
-        len: crate::island::DWORD,
-        pstr: *mut crate::island::STRRET,
-        pidl: crate::island::LPCITEMIDLIST,
     ) -> crate::island::HRESULT;
     pub fn PathYetAnotherMakeUniqueName(
         pszUniqueName: crate::island::LPWSTR,
@@ -1033,11 +981,8 @@ pub type NMTVDISPINFO = crate::island::NMTVDISPINFOW;
 // than imported. They are `extern "C"` (cdecl) there, not `extern "system"`; declaring the
 // wrong one links to a differently-decorated symbol on i386 and fails loudly.
 extern "C" {
-    pub fn _ILIsDesktop(pidl: crate::island::LPCITEMIDLIST) -> crate::island::BOOL;
-    pub fn _ILIsPidlSimple(pidl: crate::island::LPCITEMIDLIST) -> crate::island::BOOL;
     pub fn _ILIsValue(pidl: crate::island::LPCITEMIDLIST) -> crate::island::BOOL;
     pub fn _ILIsFolder(pidl: crate::island::LPCITEMIDLIST) -> crate::island::BOOL;
-    pub fn _ILIsDrive(pidl: crate::island::LPCITEMIDLIST) -> crate::island::BOOL;
     pub fn _ILGetDepth(pidl: crate::island::LPCITEMIDLIST) -> crate::island::UINT;
     pub fn _ILGetFileStructW(
         pidl: crate::island::LPCITEMIDLIST,
@@ -1081,37 +1026,17 @@ pub unsafe fn _ILIsEmpty(pidl: crate::island::LPCITEMIDLIST) -> crate::island::B
 // ---------------------------------------------------------------------------------------------
 
 extern "system" {
-    /// shlwapi/ole32/shell32 imports the island's include closure did not reach.
-    pub fn SHCoCreateInstance(
-        aclsid: crate::island::LPCWSTR,
-        clsid: *const com_sys::IID,
-        pUnkOuter: *mut crate::shellcom::IUnknown,
-        riid: REFIID,
-        ppv: *mut *mut ::core::ffi::c_void,
-    ) -> crate::island::HRESULT;
     pub fn VariantChangeType(
         dst: *mut crate::island::VARIANT,
         src: *const crate::island::VARIANT,
         flags: crate::island::USHORT,
         vt: crate::island::VARTYPE,
     ) -> crate::island::HRESULT;
-    pub fn ShellExecuteExW(info: *mut crate::island::SHELLEXECUTEINFOW) -> crate::island::BOOL;
     /// shell32's own, implemented in `wine/pidl.rs`.
     pub fn SHGetIDListFromObject(
         punk: *mut crate::shellcom::IUnknown,
         ppidl: *mut crate::island::LPITEMIDLIST,
     ) -> crate::island::HRESULT;
-    /// `CFSFolder::CompareUiStrings` is a C++ STATIC MEMBER, so it has no callable name from
-    /// Rust; CFSFolder.cpp exports this bridge for exactly that reason, and `recycle_bin.rs`
-    /// already goes through it. It is `extern "C" INT WINAPI` — the `extern "C"` is linkage,
-    /// the WINAPI is the CALLING CONVENTION, so this belongs in the `extern "system"` block.
-    /// Declaring it `extern "C"` cost an i386 link failure on `_CFSFolder_..._RustBridge`
-    /// against the defined `_CFSFolder_..._RustBridge@12`.
-    pub fn CFSFolder_CompareUiStrings_RustBridge(
-        a: crate::island::LPCWSTR,
-        b: crate::island::LPCWSTR,
-        lParam: crate::island::LPARAM,
-    ) -> ::core::ffi::c_int;
 }
 
 extern "C" {
@@ -1311,12 +1236,6 @@ extern "system" {
         pvData: crate::island::LPVOID,
         pcbData: crate::island::LPDWORD,
     ) -> crate::island::LONG;
-    pub fn SHBindToParent(
-        pidl: crate::island::PCIDLIST_ABSOLUTE,
-        riid: REFIID,
-        ppv: *mut *mut core::ffi::c_void,
-        ppidlLast: *mut crate::island::PCUITEMID_CHILD,
-    ) -> crate::island::HRESULT;
     pub fn SHExtCoCreateInstance(
         aclsid: crate::island::LPCWSTR,
         clsid: *const crate::island::CLSID,

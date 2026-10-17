@@ -36,18 +36,21 @@ is a lead.
 
 ---
 
-## RESUME HERE (2026-10-16: the 2026-10-15 sync LANDED, `7509c4dc796`)
+## RESUME HERE (2026-10-17: the 2026-10-15 sync LANDED, `7509c4dc796`; follow-ups done)
 
 The 2026-10-15 upstream merge (64 commits to upstream c25e4fd7dec) is on master with its hand
 ports, island regen, Haiku translations (pnpprop, cacheinfo $0.10; storport re-ported $0.25)
 and conformance re-baselines. Branch `upstream-sync-2` in worktree `vibeos-upstream-sync`
 carries the follow-ups: the interface DeviceProperty exports (ntoskrnl, upstream 3cc9aa99292;
 ntoskrnl_vista's copies removed, and its `IoDeviceProperty` kmtest in the sweep lists) and
-shell32's RegenerateUserEnvironment (c25e4fd7dec). Still owed: mmc_new's views (c0f01460800,
-857f521a704) and `CActionWnd.cpp` (88da81d9b8b) -- re-rendering the C++ model misses every
-banked unit (257 functions to re-buy), so it waits on the owner's call; the re-render is
-parked in the stash `upstream-sync: mmc_new cppapp re-render against upstream's views
-(pending re-buy decision)`.
+shell32's RegenerateUserEnvironment (c25e4fd7dec), and (2026-10-17) mmc_new's views
+(c0f01460800, 857f521a704) plus `CActionWnd.cpp` (88da81d9b8b), re-bought with the owner's
+approval ($0.34 Haiku) and flipped. Nothing from the 2026-10-15 sync is owed, tooling
+included: a goto-carrying macro (CHK_HR) is now expanded in a fresh TU's C by `port translate`
+and never ported as a `macro_rules!` (owner chose not to re-buy mmc_new's 14 hand-banked
+bodies; the first real test is the next fresh module that uses one). (`port replay` now refuses a
+hand bank whose C changed since it was captured; banks from before 2026-10-17 carry no C
+hash until re-captured -- mmc_new's are stamped.)
 
 ## Measured, 2026-09-20 (re-derive before trusting — these will drift)
 

@@ -1,5 +1,15 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::base::*;
+// One declaration per external symbol: ddk_shims.rs.
+use crate::ddk_shims::FlagOn;
+use crate::ddk_shims::CdFreePool;
+// The crate's own functions: the definition is the declaration.
+use crate::cdmacros::CdAcquireVcbExclusive;
+use crate::cdmacros::CdAcquireVcbShared;
+use crate::cddata::CdCompleteRequest;
+use crate::cddata::CdExceptionFilter;
+use crate::cachesup::CdPurgeVolume;
+use crate::ddk_shims::CdRaiseStatus;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ddk::{_IO_STATUS_BLOCK, IoAcquireVpbSpinLock, IoReleaseVpbSpinLock, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, VPB};
 // resolve_imports.py: explicit kernel/private-type imports
@@ -26,7 +36,6 @@ extern "C" {
 extern "C" {
 }
 extern "C" {
-    fn CdAcquireVcbExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, arg2: u8) -> u32;
 }
 extern "C" {
     fn CdFspClose(Vcb: *mut VCB);
@@ -53,19 +62,15 @@ extern "C" {
 extern "C" {
 }
 extern "C" {
-    fn CdFreePool(Ptr: *mut *mut core::ffi::c_void);
 }
 extern "C" {
-    fn CdPurgeVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, flag: u8) -> u32;
 }
 extern "C" {
     fn ClearFlag(Flags: *mut u32, Flag: u32);
 }
 extern "C" {
-    fn FlagOn(Flags: u32, Flag: u32) -> u32;
 }
 extern "C" {
-    fn CdRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: i32);
 }
 extern "C" {
     fn CdRealDevNeedsVerify(DeviceObject: PDEVICE_OBJECT) -> u8;
@@ -99,7 +104,6 @@ extern "C" {
     fn _SEH2_GetExceptionCode() -> i32;
 }
 extern "C" {
-    fn CdExceptionFilter( _: PIRP_CONTEXT, _: *mut core::ffi::c_void, ) -> i32;
 }
 extern "C" {
     fn CdProcessException( IrpContext: PIRP_CONTEXT, Irp: PIRP, ExceptionCode: i32, ) -> NTSTATUS;
@@ -108,7 +112,6 @@ extern "C" {
     fn CdOperationIsDasdOpen(IrpContext: PIRP_CONTEXT) -> i32;
 }
 extern "C" {
-    fn CdAcquireVcbShared(IrpContext: PIRP_CONTEXT, Vcb: *mut VCB, Force: u8) -> u8;
 }
 extern "C" {
     fn CdAcquireCdData(IrpContext: PIRP_CONTEXT);
@@ -117,7 +120,6 @@ extern "C" {
     fn CdReleaseCdData(IrpContext: PIRP_CONTEXT);
 }
 extern "C" {
-    fn CdCompleteRequest( IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS, );
 }
 extern "C" {
     fn CdFsdPostRequest( IrpContext: PIRP_CONTEXT, Irp: PIRP, ) -> NTSTATUS;
@@ -214,7 +216,7 @@ pub unsafe extern "C" fn CdPerformVerify(
                 && (st.2 == STATUS_SUCCESS || st.2 == STATUS_WRONG_VOLUME)
             {
                 (*st.1).IoStatus.Information = IO_REMOUNT as _;
-                CdCompleteRequest(st.0, st.1, STATUS_REPARSE);
+                CdCompleteRequest((st.0).cast(), st.1, STATUS_REPARSE);
                 st.2 = STATUS_REPARSE;
                 st.1 = core::ptr::null_mut();
                 st.0 = core::ptr::null_mut();

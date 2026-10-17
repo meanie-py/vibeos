@@ -1,4 +1,3 @@
-
 include_directories(
     ${REACTOS_SOURCE_DIR}/sdk/include/reactos/subsys
     ${REACTOS_SOURCE_DIR}/sdk/include/reactos/idl
@@ -36,9 +35,6 @@ set_source_files_properties(services_rust_stub.c PROPERTIES SKIP_PRECOMPILE_HEAD
 # cmake compiling it via a resource-only OBJECT library; the cargo link reuses
 # the .res through reactos-link .resource_built() (the userinit/winlogon .res
 # pattern). services is win32gui UNICODE, so — like userinit_res — UNICODE.
-add_library(services_res OBJECT services.rc)
-target_compile_definitions(services_res PRIVATE UNICODE _UNICODE)
-target_include_directories(services_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 # --- Rust cohabitation (services-rust) ------------------------------------
 # The 8 flipped SCM .c (config/controlset/database/driver/groupdb/lock/
@@ -56,4 +52,4 @@ add_cargo_module(services services-cargo services.exe
     KIND win32exe
     BODY_CRATE services-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS services_c services_res)
+    EXTRA_DEPENDS services_c psdk)

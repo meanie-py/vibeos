@@ -5,13 +5,8 @@ include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_or
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # where.c  # replaced by Rust (sdk/lib/rust/where-rust/src/where/where.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(where_res OBJECT where.rc)
-target_compile_definitions(where_res PRIVATE UNICODE _UNICODE)
-target_include_directories(where_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(where where-cargo where.exe
     KIND win32exe
     BODY_CRATE where-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS where_res xdk)
+    EXTRA_DEPENDS xdk psdk)

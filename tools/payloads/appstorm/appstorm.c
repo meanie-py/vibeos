@@ -696,8 +696,13 @@ static int scn_notepad_save(const char *name)
     SAY("  %s: file name %s, pressing OK\n", name, target);
     PostMessageW(dlg, WM_COMMAND, MAKEWPARAM(IDOK, BN_CLICKED), (LPARAM)ok);
     t0 = GetTickCount();
+    /* Done is notepad clearing its modified flag, which it does only after the write and the
+     * CloseHandle. The file merely existing is not done: notepad creates it, then writes it,
+     * and FAT records the size in the directory entry at close, so a check in between read
+     * 0 bytes -- every x86-64 run under FEX, where that window is wide. */
     while (GetTickCount() - t0 < 30000 * slow && WaitForSingleObject(pi.hProcess, 0) == WAIT_TIMEOUT) {
-        if (!IsWindow(dlg) && GetFileAttributesExA(target, GetFileExInfoStandard, &fa)) {
+        if (!IsWindow(dlg) && !SendMessageW(edit, EM_GETMODIFY, 0, 0) &&
+            GetFileAttributesExA(target, GetFileExInfoStandard, &fa)) {
             saved = 1;
             break;
         }
@@ -708,7 +713,9 @@ static int scn_notepad_save(const char *name)
     if (WaitForSingleObject(pi.hProcess, 0) == WAIT_OBJECT_0)
         why = "notepad died saving";
     else if (!saved)
-        why = IsWindow(dlg) ? "Save As never closed" : "file not on disk";
+        why = IsWindow(dlg) ? "Save As never closed"
+            : SendMessageW(edit, EM_GETMODIFY, 0, 0) ? "save never finished (still modified)"
+            : "file not on disk";
     else if (!fa.nFileSizeLow)
         why = "saved file is empty";
     else

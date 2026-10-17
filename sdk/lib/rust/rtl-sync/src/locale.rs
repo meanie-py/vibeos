@@ -1,9 +1,6 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
-use ntkrnl_sys::ddk::{LCID, LPCWSTR, NtQueryDefaultLocale, PCSTR, PCUNICODE_STRING, PLCID, PUNICODE_STRING, RtlAllocateHeap, RtlFreeHeap, RtlInitUnicodeString, _UNICODE_STRING};
-use crate::shared::RtlGetProcessHeap;
-use core::ffi::c_void;
+use ntkrnl_sys::ddk::{LCID, LPCWSTR, NtQueryDefaultLocale, PCSTR, PCUNICODE_STRING, PLCID, PUNICODE_STRING, RtlInitUnicodeString, RtlIntegerToUnicodeString, _UNICODE_STRING};
 
 type INT = i32;
 
@@ -36,6 +33,11 @@ pub const MAX_BASIC_LCID: ULONG = 0x5FFF;
 
 pub const LCID_ALT_NAME: ULONG = 0x00100000;
 
+/// LCIDs that print a name the table maps to a different LCID, so they cannot be table rows
+/// (the name search would find either). Measured on Windows 11 26200: 0x8C -> "fa", while
+/// "fa" -> 0x29.
+const LCID_ONLY_NAMES: [(LCID, &[u8]); 1] = [(0x0008C, b"fa\0")];
+
 pub static mut RtlpUserDefaultLcid: LCID = 0;
 pub static mut RtlpSystemDefaultLcid: LCID = 0;
 
@@ -60,7 +62,7 @@ const fn locale_bits(lcid: u32, flags: u32) -> u32 {
     (lcid & 0x00FF_FFFF) | ((flags & 0xFF) << 24)
 }
 
-pub static RtlpLocaleTable: [LOCALE_ENTRY; 448] = [
+pub static RtlpLocaleTable: [LOCALE_ENTRY; 450] = [
     _LOCALE_ENTRY { Locale: locale_str(b""),               _bitfield: locale_bits(0x0007F, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"af"),             _bitfield: locale_bits(0x00036, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"af-ZA"),          _bitfield: locale_bits(0x00436, 0) },
@@ -189,6 +191,7 @@ pub static RtlpLocaleTable: [LOCALE_ENTRY; 448] = [
     _LOCALE_ENTRY { Locale: locale_str(b"eu"),             _bitfield: locale_bits(0x0002D, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"eu-ES"),          _bitfield: locale_bits(0x0042D, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"fa"),             _bitfield: locale_bits(0x00029, 0) },
+    _LOCALE_ENTRY { Locale: locale_str(b"fa-AF"),          _bitfield: locale_bits(0x0048C, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"fa-IR"),          _bitfield: locale_bits(0x00429, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"ff"),             _bitfield: locale_bits(0x00067, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"ff-Latn"),        _bitfield: locale_bits(0x07C67, 0) },
@@ -298,7 +301,8 @@ pub static RtlpLocaleTable: [LOCALE_ENTRY; 448] = [
     _LOCALE_ENTRY { Locale: locale_str(b"ky"),             _bitfield: locale_bits(0x00040, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"ky-KG"),          _bitfield: locale_bits(0x00440, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"la"),             _bitfield: locale_bits(0x00076, 0) },
-    _LOCALE_ENTRY { Locale: locale_str(b"la-001"),         _bitfield: locale_bits(0x00476, 0) },
+    _LOCALE_ENTRY { Locale: locale_str(b"la-001"),         _bitfield: locale_bits(0x00476 | LCID_ALT_NAME, 0) },
+    _LOCALE_ENTRY { Locale: locale_str(b"la-VA"),          _bitfield: locale_bits(0x00476, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"lb"),             _bitfield: locale_bits(0x0006E, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"lb-LU"),          _bitfield: locale_bits(0x0046E, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"lo"),             _bitfield: locale_bits(0x00054, 0) },
@@ -359,8 +363,10 @@ pub static RtlpLocaleTable: [LOCALE_ENTRY; 448] = [
     _LOCALE_ENTRY { Locale: locale_str(b"pap-029"),        _bitfield: locale_bits(0x00479, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"pl"),             _bitfield: locale_bits(0x00015, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"pl-PL"),          _bitfield: locale_bits(0x00415, 0) },
-    _LOCALE_ENTRY { Locale: locale_str(b"prs"),            _bitfield: locale_bits(0x0008C, 0) },
-    _LOCALE_ENTRY { Locale: locale_str(b"prs-AF"),         _bitfield: locale_bits(0x0048C, 0) },
+    // Windows 11 folded Dari into Persian: "prs" names fa's 0x29, 0x48C prints "fa-AF", and
+    // the neutral 0x8C prints "fa" (LCID_ONLY_NAMES). Likewise 0x476 prints "la-VA".
+    _LOCALE_ENTRY { Locale: locale_str(b"prs"),            _bitfield: locale_bits(0x00029 | LCID_ALT_NAME, 0) },
+    _LOCALE_ENTRY { Locale: locale_str(b"prs-AF"),         _bitfield: locale_bits(0x0048C | LCID_ALT_NAME, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"ps"),             _bitfield: locale_bits(0x00063, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"ps-AF"),          _bitfield: locale_bits(0x00463, 0) },
     _LOCALE_ENTRY { Locale: locale_str(b"pt"),             _bitfield: locale_bits(0x00016, 0) },
@@ -511,7 +517,7 @@ pub static RtlpLocaleTable: [LOCALE_ENTRY; 448] = [
     _LOCALE_ENTRY { Locale: locale_str(b"zu-ZA"),          _bitfield: locale_bits(0x00435, 0) },
 ];
 
-pub static mut RtlpLocaleIndexTable: [USHORT; 448] = [0; 448];
+pub static mut RtlpLocaleIndexTable: [USHORT; 450] = [0; 450];
 
 
 #[no_mangle]
@@ -560,6 +566,16 @@ unsafe fn FindIndexByLcid(Lcid: LCID) -> ULONG {
     MAXULONG
 }
 
+/// Windows treats `_` and `-` as the same separator when it looks a locale name up
+/// ("en_US" -> 0x409, "ja-JP-radstr" -> 0x40411; measured with RtlLocaleNameToLcid and
+/// RtlIsValidLocaleName on Windows 10.0.26300). The table spells sort suffixes with
+/// `_`, so both sides fold to `-`; the table stays sorted under the fold (a host test
+/// checks every adjacent pair), so the binary search is unaffected.
+#[inline]
+fn SeparatorFold(c: u16) -> u16 {
+    if c == b'_' as u16 { b'-' as u16 } else { c }
+}
+
 unsafe fn CompareLocaleNames(
     AsciiLocaleName: PCSTR,
     UnicodeLocaleName: PCUNICODE_STRING,
@@ -567,14 +583,14 @@ unsafe fn CompareLocaleNames(
     let mut i: ULONG = 0;
 
     while i < (*UnicodeLocaleName).Length as ULONG / core::mem::size_of::<u16>() as ULONG {
-        let RawChar1 = *AsciiLocaleName.offset(i as isize) as u8;
+        let RawChar1 = SeparatorFold(*AsciiLocaleName.offset(i as isize) as u8 as u16) as u8;
         let Char1: u8 = if RawChar1 >= b'A' && RawChar1 <= b'Z' {
             RawChar1 + (b'a' - b'A')
         } else {
             RawChar1
         };
 
-        let RawChar2 = *(*UnicodeLocaleName).Buffer.offset(i as isize);
+        let RawChar2 = SeparatorFold(*(*UnicodeLocaleName).Buffer.offset(i as isize));
         let Char2: u16 = if RawChar2 >= b'A' as u16 && RawChar2 <= b'Z' as u16 {
             RawChar2 + (b'a' - b'A') as u16
         } else {
@@ -706,6 +722,15 @@ pub unsafe extern "system" fn RtlLcidToLocaleName(
     /* Try to find the locale by LCID */
     LocaleIndex = FindIndexByLcid(Lcid);
     if LocaleIndex == MAXULONG {
+        // An LCID whose printed name already names another LCID in the table.
+        for &(OnlyLcid, Name) in LCID_ONLY_NAMES.iter() {
+            if OnlyLcid == Lcid {
+                if CopyAsciizToUnicodeString(LocaleName, Name.as_ptr() as PCSTR) == 0 {
+                    return STATUS_BUFFER_TOO_SMALL;
+                }
+                return STATUS_SUCCESS;
+            }
+        }
         return STATUS_INVALID_PARAMETER_1;
     }
 
@@ -810,7 +835,15 @@ pub unsafe extern "system" fn RtlIsValidLocaleName(
     LocaleName: LPCWSTR,
     Flags: ULONG,
 ) -> BOOLEAN {
-    1u8
+    // Windows (measured): any flag other than RTL_LOCALE_ALLOW_NEUTRAL_NAMES makes the
+    // answer FALSE — even 1, which RtlLocaleNameToLcid itself accepts. Otherwise a name is
+    // valid exactly when RtlLocaleNameToLcid would resolve it with the same flags: so ""
+    // (the invariant locale) is valid, and a neutral name ("en") only with flag 2.
+    if (Flags & !RTL_LOCALE_ALLOW_NEUTRAL_NAMES) != 0 || LocaleName.is_null() {
+        return 0u8;
+    }
+    let mut Lcid: LCID = 0;
+    NT_SUCCESS(RtlLocaleNameToLcid(LocaleName, &mut Lcid, Flags)) as BOOLEAN
 }
 
 #[no_mangle]
@@ -821,5 +854,51 @@ pub unsafe extern "system" fn RtlConvertLCIDToString(
     pResultBuf: PWSTR,
     Size: ULONG,
 ) -> NTSTATUS {
-    STATUS_NOT_IMPLEMENTED
+    // The contract, measured black-box on Windows 10.0.26300 (Size is in WCHARs):
+    //  1. RtlIntegerToUnicodeString(Lcid, Base) into a string whose capacity is Size WCHARs.
+    //     Its failures come back unchanged and NOTHING is written: a bad Base is
+    //     STATUS_INVALID_PARAMETER, too small a Size (digits + NUL) STATUS_BUFFER_OVERFLOW.
+    //  2. Left-pad with '0' up to Padding digits — written straight into pResultBuf and
+    //     clipped at Size, so a pad wider than the buffer fills it with '0' and no NUL.
+    //  3. Copy the digits after the pad StringCchCopyW-style: truncate to the room left,
+    //     NUL-terminate when there is any room at all. Any truncation, or no room, is
+    //     STATUS_UNSUCCESSFUL — with the partial text left in the buffer.
+    // The digits are formed in a local buffer: 32 binary digits + NUL is the most any
+    // Base can produce, so capping the capacity there changes no outcome.
+    const MAX_DIGITS_WITH_NUL: ULONG = 33;
+    let mut Digits = [0u16; MAX_DIGITS_WITH_NUL as usize];
+    let Capacity = if Size < MAX_DIGITS_WITH_NUL { Size } else { MAX_DIGITS_WITH_NUL };
+    let mut DigitString = _UNICODE_STRING {
+        Length: 0,
+        MaximumLength: (Capacity * core::mem::size_of::<u16>() as ULONG) as USHORT,
+        Buffer: Digits.as_mut_ptr(),
+    };
+    let Status = RtlIntegerToUnicodeString(LcidValue, Base, &mut DigitString);
+    if !NT_SUCCESS(Status) {
+        return Status;
+    }
+    let DigitCount = DigitString.Length as ULONG / core::mem::size_of::<u16>() as ULONG;
+
+    let mut Written: ULONG = 0;
+    if Padding > DigitCount {
+        let Zeros = Padding - DigitCount;
+        Written = if Zeros < Size { Zeros } else { Size };
+        let mut k: ULONG = 0;
+        while k < Written {
+            *pResultBuf.add(k as usize) = b'0' as u16;
+            k += 1;
+        }
+    }
+
+    let Room = Size - Written;
+    if Room == 0 {
+        return STATUS_UNSUCCESSFUL;
+    }
+    let Copied = if DigitCount < Room { DigitCount } else { Room - 1 };
+    core::ptr::copy_nonoverlapping(Digits.as_ptr(), pResultBuf.add(Written as usize), Copied as usize);
+    *pResultBuf.add((Written + Copied) as usize) = 0;
+    if Copied < DigitCount {
+        return STATUS_UNSUCCESSFUL;
+    }
+    STATUS_SUCCESS
 }

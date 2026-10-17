@@ -746,7 +746,13 @@ def _guest_reached_desktop(results: list[dict]) -> bool:
 
 
 def _payload_stage(
-    run: Run, repo: Path, arch: str, payloads: str, idx: int = 0, total: int = 1
+    run: Run,
+    repo: Path,
+    arch: str,
+    payloads: str,
+    idx: int = 0,
+    total: int = 1,
+    vm_memory_override: str = "",
 ) -> None:
     """Opt-in payload gate (--payload <names> / legacy --doom): run
     tests/qemu/test_payload.py (launch marker + frame-delta render gate +
@@ -785,6 +791,8 @@ def _payload_stage(
                     pytest_arch += "-net"
     except ImportError:
         pass  # no pyyaml -> test_payload itself will fail loud on the guard
+    # smoke --vm-memory beats the declaration, smaller or larger: it is the operator's choice.
+    vm_memory = vm_memory_override or vm_memory
     cmd = [
         sys.executable,
         "-m",
@@ -1650,6 +1658,24 @@ def smoke(args, repo: Path) -> int:
     if getattr(args, "timing", False):
         os.environ["VIBEOS_SERIAL_TIMESTAMPS"] = "1"
 
+    # --vm-memory: the operator's guest RAM for every boot (vm.py get_arch_config reads the
+    # env), and the payload stage keeps it over the payload's own declaration.
+    vm_memory = getattr(args, "vm_memory", "") or ""
+    if vm_memory:
+        if not re.fullmatch(r"[1-9][0-9]*[MG]", vm_memory):
+            run.classification = "BAD_ARGS"
+            run.add(
+                Stage(
+                    "args",
+                    status="fail",
+                    detail=f"--vm-memory {vm_memory!r}",
+                    salient=["give a qemu -m size such as 768M or 2G"],
+                )
+            )
+            return run.finalize(repo)
+        os.environ["VIBEOS_QEMU_MEMORY"] = vm_memory
+        run.extra["vm_memory"] = vm_memory
+
     # --- staleness preflight (hard boundary) ---
     st = provenance.check_staleness(repo, arch)
     if st.stale and not args.allow_stale:
@@ -1673,6 +1699,32 @@ def smoke(args, repo: Path) -> int:
         )
     else:
         run.add(Stage("staleness", status="ok", detail="current"))
+
+    # --- ladder media preflight (hard boundary) ---
+    # Guests staged without the ntdll they load fail every rung for a reason that is not
+    # in the OS (ladder.media_missing_runtime). Refuse before booting, naming the build.
+    if getattr(args, "ladder", False):
+        absent = ladder_mod.media_missing_runtime(repo, arch)
+        if absent:
+            run.classification = "LADDER_MEDIA_INCOMPLETE"
+            run.add(
+                Stage(
+                    "ladder-media",
+                    status="fail",
+                    detail=f"{len(absent)} guest runtime file(s) not on the media",
+                    salient=[
+                        *absent,
+                        "build i386 and amd64 first, then the arch: "
+                        "./vibeos-cli build --arch i386 && ./vibeos-cli build --arch amd64"
+                        + (
+                            " && VIBEOS_FEX=1 ./vibeos-cli build --arch arm64"
+                            if arch == "arm64"
+                            else ""
+                        ),
+                    ],
+                )
+            )
+            return run.finalize(repo)
 
     # --- probe preflight (hard boundary) ---
     # An instrumented run whose probe is not in the media is worse than no run:
@@ -1951,7 +2003,9 @@ def smoke(args, repo: Path) -> int:
     # exactly what N runs are for, and one payload boot after N plain boots cannot see it.
     if payloads and _guest_reached_desktop(results):
         for i in range(total):
-            _payload_stage(run, repo, arch, payloads, idx=i, total=total)
+            _payload_stage(
+                run, repo, arch, payloads, idx=i, total=total, vm_memory_override=vm_memory
+            )
 
     if total > 1:
         run.extra["flake_rate"] = f"{npass}/{total}"

@@ -1,4 +1,9 @@
 use crate::types::*;
+// The crate's own functions: the definition is the declaration.
+use crate::circularbuffer::IsCircularBufferEmpty;
+use crate::circularbuffer::PopCircularBufferEntry;
+use crate::circularbuffer::PushCircularBufferEntry;
+use crate::misc::SerialSendByte;
 use crate::glue::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
@@ -14,12 +19,8 @@ use core::ffi::c_void;
 
 extern "C" {
     fn DbgPrintEx( ComponentId: ULONG, Level: ULONG, Format: PCSTR, ... ) -> ULONG;
-    fn IsCircularBufferEmpty(CircularBuffer: PVOID) -> u8;
-    fn PopCircularBufferEntry(CircularBuffer: PVOID, Byte: *mut UCHAR) -> u32;
-    fn PushCircularBufferEntry(Buffer: PVOID, Entry: UCHAR) -> NTSTATUS;
 }
 unsafe extern "system" {
-    fn SerialSendByte(Dpc: PVOID, Context: PVOID, Arg1: PVOID, Arg2: PVOID);
 }
 
 // ---- file-scope preamble (translated) ----
@@ -131,11 +132,11 @@ unsafe fn ReadBytes(
 
     loop {
         Irql = KeAcquireSpinLockRaiseToDpc(core::ptr::addr_of_mut!((*DeviceExtension).InputBufferLock) as PKSPIN_LOCK as PVOID);
-        while IsCircularBufferEmpty(core::ptr::addr_of_mut!((*DeviceExtension).InputBuffer) as PVOID) == 0
+        while IsCircularBufferEmpty((core::ptr::addr_of_mut!((*DeviceExtension).InputBuffer) as PVOID).cast()) == 0
             && Length > 0 as core::ffi::c_ulong
         {
             PopCircularBufferEntry(
-                core::ptr::addr_of_mut!((*DeviceExtension).InputBuffer) as PVOID,
+                (core::ptr::addr_of_mut!((*DeviceExtension).InputBuffer) as PVOID).cast(),
                 core::ptr::addr_of_mut!(ReceivedByte),
             );
             DbgPrintEx(
@@ -440,7 +441,7 @@ pub unsafe extern "system" fn SerialWrite(
         );
         while Information < Length as ULONG_PTR {
             Status = PushCircularBufferEntry(
-                core::ptr::addr_of_mut!((*DeviceExtension).OutputBuffer) as PVOID,
+                (core::ptr::addr_of_mut!((*DeviceExtension).OutputBuffer) as PVOID).cast(),
                 *Buffer.offset(Information as isize),
             );
             if !NT_SUCCESS(Status) {

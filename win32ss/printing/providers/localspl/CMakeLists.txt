@@ -20,13 +20,8 @@ spec2def(localspl.dll localspl.spec ADD_IMPORTLIB)
 # spoolfile.c  # replaced by Rust (sdk/lib/rust/localspl-rust/src/localspl/spoolfile.rs)
 # tools.c  # replaced by Rust (sdk/lib/rust/localspl-rust/src/localspl/tools.rs)
 # xcv.c  # replaced by Rust (sdk/lib/rust/localspl-rust/src/localspl/xcv.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(localspl_res OBJECT localspl.rc)
-target_compile_definitions(localspl_res PRIVATE UNICODE _UNICODE)
-target_include_directories(localspl_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(localspl localspl-cargo localspl.dll
     KIND win32dll
     BODY_CRATE localspl-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS localspl_res psdk)
+    EXTRA_DEPENDS psdk)

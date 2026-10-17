@@ -203,7 +203,11 @@ unsafe fn MI_IS_MAPPED_PTE(pte: *const MMPTE) -> bool {
 
 #[inline]
 unsafe fn MI_GET_PROTOTYPE_PTE_FOR_VPN(Vad: PMMVAD, Vpn: ULONG_PTR) -> PMMPTE {
-    (*Vad).FirstPrototypePte.add(Vpn.wrapping_sub((*Vad).StartingVpn as usize)) as PMMPTE
+    let ProtoPte =
+        (*Vad).FirstPrototypePte.add(Vpn.wrapping_sub((*Vad).StartingVpn as usize)) as PMMPTE;
+    // miarm.h's ASSERT, restored; ntkrnl_sys::ASSERT! prints and continues as the C does.
+    ntkrnl_sys::ASSERT!(ProtoPte as usize <= (*Vad).LastContiguousPte as usize);
+    ProtoPte
 }
 
 #[no_mangle]
@@ -1356,12 +1360,17 @@ pub unsafe extern "system" fn MiQueryMemoryBasicInformation(
         return Status;
     }
 
-    if ((*Vad).u.VadFlags.PrivateMemory() != 0) || ((*Vad).u.VadFlags.VadType() == 2) {
+    // The C names VadRotatePhysical and VadImageMap here; the translation had
+    // invented 2 and 1, so every image view reported MEM_PRIVATE and a
+    // device-physical view MEM_IMAGE.
+    if ((*Vad).u.VadFlags.PrivateMemory() != 0)
+        || ((*Vad).u.VadFlags.VadType() == ntkrnl_sys::ddk::_MI_VAD_TYPE_VadRotatePhysical as _)
+    {
         MemoryInfo.Type = MEM_PRIVATE;
-    } else if (*Vad).u.VadFlags.VadType() == 1 {
-        MemoryInfo.Type = 0x1000000;
+    } else if (*Vad).u.VadFlags.VadType() == ntkrnl_sys::ddk::_MI_VAD_TYPE_VadImageMap as _ {
+        MemoryInfo.Type = 0x1000000; // MEM_IMAGE
     } else {
-        MemoryInfo.Type = 0x40000;
+        MemoryInfo.Type = 0x40000; // MEM_MAPPED
     }
 
     if MI_IS_ROSMM_VAD(Vad as PVOID) {

@@ -162,6 +162,35 @@ def test_a_banked_hand_function_survives_a_replay(tmp_path, monkeypatch):
     assert "args: ..." not in (mods / "f.rs").read_text()
 
 
+def test_a_hand_bank_over_changed_c_is_refused(tmp_path, monkeypatch):
+    """mmc_new's CAddDialog::OnCommand bank kept `new CSnapin(CacheEntry)` through the sync
+    that added the node id: a bank replays by NAME, so its C is pinned at capture."""
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    monkeypatch.setattr(port, "STATE_ROOT", tmp_path / "state")
+    state = {"stem": "m", "crate": "m-rust", "stages": [], "tus": ["m/f.c"]}
+    (tmp_path / "state" / "m").mkdir(parents=True)
+    (tmp_path / "state" / "m" / "state.json").write_text(json.dumps(state))
+    (tmp_path / "m").mkdir()
+    c = tmp_path / "m" / "f.c"
+    c.write_text(
+        "int A(int x);\nint\nA(int x)\n{\n    return x; /* why */\n}\nint B(void) { return A(1); }\n"
+    )
+    mods = tmp_path / "sdk" / "lib" / "rust" / "m-rust" / "src" / "m"
+    mods.mkdir(parents=True)
+    (mods / "f.rs").write_text("fn A(x: i32) -> i32 {\n    x\n}\n")
+    port.stage_hand("m", ["f.rs:A"])
+    bank = json.loads((tmp_path / "state" / "m" / "hand" / "f.A.json").read_text())
+    assert bank["c_sha"]
+    # A comment or whitespace change is not a change of the C.
+    c.write_text(c.read_text().replace("/* why */", "").replace("    return", "  return"))
+    assert port.apply_hand("m") == 1
+    c.write_text(c.read_text().replace("return x;", "return x + 1;"))
+    with pytest.raises(port.PortError, match=r"changed: f\.rs:A"):
+        port.apply_hand("m")
+    port.stage_hand("m", ["f.rs:A"])  # re-captured after porting the change by hand
+    assert port.apply_hand("m") == 1
+
+
 def test_a_c_variadic_hand_port_is_banked_as_one_piece(tmp_path, monkeypatch):
     # The extern decl, the va_entry! mod and the comments above each are one hand item: a
     # replay must put all three back over the one bought `args: ...` function.
@@ -1386,8 +1415,15 @@ def test_split_island_groups_names_each_ignored_group_and_its_tus():
     assert port.split_island_groups(script, "mf") == []
 
 
-def test_guid_libraries_are_every_sdk_lib_the_target_links():
-    libs = port.guid_libraries(port.REPO / "dll" / "win32" / "mfplat" / "CMakeLists.txt")
+def test_guid_libraries_are_every_sdk_lib_the_target_links(tmp_path):
+    # mfplat's link line as it stood before cargo-drive wave 13 made it a cargo cell
+    # (which left the live CMakeLists with no target_link_libraries to read).
+    cm = tmp_path / "CMakeLists.txt"
+    cm.write_text(
+        "target_link_libraries(mfplat ${mfplat_rust_LIB})\n"
+        "target_link_libraries(mfplat wine uuid dmoguids mfuuid strmiids dxguid oldnames)\n"
+    )
+    libs = port.guid_libraries(cm)
     assert {"uuid", "dmoguids", "mfuuid", "strmiids", "dxguid"} <= set(libs)
     assert "wine" not in libs and "oldnames" not in libs  # sdk/lib/<name> must exist
 
@@ -1521,3 +1557,21 @@ def test_a_replay_names_the_unbanked_functions_it_changed():
     banked = {("host.rs", "banked"), ("main.rs", "*")}
     assert unbanked_changes(before, after, banked) == ["host.rs:Host_Echo", "host.rs:lost"]
     assert unbanked_changes(before, before, set()) == []
+
+
+def test_flipping_a_static_library_repoints_the_cargo_cells_that_replay_it(tmp_path, monkeypatch):
+    # timedate.cpl's cell linked `engine:c:tzlib` after tzlib's flip left only a stub in it,
+    # and every arch's link failed until it was pointed at the Rust archive by hand.
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    cells = tmp_path / "sdk" / "lib" / "rust"
+    for name, body in {
+        "a-cargo": '&["body", "engine:c:tzlib", "engine:c:tzlibx"],',
+        "b-cargo": '&["body", "engine:pseh"],',
+    }.items():
+        (cells / name).mkdir(parents=True)
+        (cells / name / "build.rs").write_text(f"let x = {body}\n")
+    changed = port._repoint_cargo_cells("tzlib", "tzlib-rust")
+    assert changed == [cells / "a-cargo" / "build.rs"]
+    text = (cells / "a-cargo" / "build.rs").read_text()
+    assert '"engine:crate:tzlib-rust::TRUE"' in text and '"engine:c:tzlibx"' in text
+    assert port._repoint_cargo_cells("tzlib", "tzlib-rust") == [], "idempotent"

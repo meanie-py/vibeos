@@ -158,7 +158,7 @@ extern "C" {
 // Deterministic COM scaffold for CMenuDeskBar; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    #[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
+    #[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: SIZE_T) -> *mut core::ffi::c_void;
     #[link_name = "HeapFree"] fn cpp_com_HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn MenuBandRustModuleLock();
     fn MenuBandRustModuleUnlock();
@@ -168,7 +168,7 @@ impl CppComSize for usize { fn cpp_com_size(self) -> usize { self } }
 impl CppComSize for u32 { fn cpp_com_size(self) -> usize { self as usize } }
 #[inline]
 unsafe fn HeapAlloc<N: CppComSize>(heap: HANDLE, flags: DWORD, bytes: N) -> *mut core::ffi::c_void {
-    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size())
+    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size() as SIZE_T)
 }
 #[inline]
 unsafe fn HeapFree<T>(heap: HANDLE, flags: DWORD, memory: *mut T) -> BOOL {
@@ -866,28 +866,23 @@ extern "C" {
 
 macro_rules! LOWORD { ($value:expr) => { (($value as usize) & 0xffff) as UINT }; }
 
+#[cfg(not(target_pointer_width = "32"))]
+pub use crate::island::{GetWindowLongPtrW, SetWindowLongPtrW};
 extern "system" {
-    fn DestroyWindow(window: HWND) -> BOOL;
-    fn DefWindowProcW(window: HWND, message: UINT, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
-    fn GetModuleHandleExW(flags: DWORD, name: LPCWSTR, module: *mut HINSTANCE) -> BOOL;
-    fn RegisterClassW(class: *const WNDCLASSW) -> WORD;
-    fn CreateWindowExW(ex_style: DWORD, class_name: LPCWSTR, window_name: LPCWSTR,
-        style: DWORD, x: INT, y: INT, width: INT, height: INT, parent: HWND,
-        menu: HMENU, instance: HINSTANCE, param: LPVOID) -> HWND;
-    #[cfg_attr(target_pointer_width = "32", link_name = "GetWindowLongW")]
-    fn GetWindowLongPtrW(window: HWND, index: INT) -> LONG_PTR;
-    #[cfg_attr(target_pointer_width = "32", link_name = "SetWindowLongW")]
-    fn SetWindowLongPtrW(window: HWND, index: INT, value: LONG_PTR) -> LONG_PTR;
+    // 32-bit only: there `GetWindowLongPtrW` is a winuser.h macro for `GetWindowLongW` and the island has
+    // no declaration of it. On 64-bit the island's header-exact one is used.
+    #[cfg(target_pointer_width = "32")]
+    #[link_name = "GetWindowLongW"]
+    pub fn GetWindowLongPtrW(window: HWND, index: INT) -> LONG_PTR;
+    // 32-bit only: there `SetWindowLongPtrW` is a winuser.h macro for `SetWindowLongW` and the island has
+    // no declaration of it. On 64-bit the island's header-exact one is used.
+    #[cfg(target_pointer_width = "32")]
+    #[link_name = "SetWindowLongW"]
+    pub fn SetWindowLongPtrW(window: HWND, index: INT, value: LONG_PTR) -> LONG_PTR;
     fn AdjustWindowRect(rect: *mut RECT, style: DWORD, menu: BOOL) -> BOOL;
     fn OffsetRect(rect: *mut RECT, dx: INT, dy: INT) -> BOOL;
     #[link_name = "GetObjectW"] fn cpp_com_GetObject(object: HANDLE, bytes: INT, out: LPVOID) -> INT;
-    fn GetDesktopWindow() -> HWND;
-    fn GetWindowRect(window: HWND, rect: *mut RECT) -> BOOL;
-    fn GetClientRect(window: HWND, rect: *mut RECT) -> BOOL;
-    fn SetWindowPos(window: HWND, insert_after: HWND, x: INT, y: INT, cx: INT, cy: INT, flags: UINT) -> BOOL;
     fn DeleteObject(object: HANDLE) -> BOOL;
-    fn BeginPaint(window: HWND, paint: *mut PAINTSTRUCT) -> HDC;
-    fn EndPaint(window: HWND, paint: *const PAINTSTRUCT) -> BOOL;
     fn CreateCompatibleDC(dc: HDC) -> HDC;
     fn SelectObject(dc: HDC, object: HGDIOBJ) -> HGDIOBJ;
     fn DeleteDC(dc: HDC) -> BOOL;
@@ -895,21 +890,6 @@ extern "system" {
         sx: INT, sy: INT, scx: INT, scy: INT, rop: DWORD) -> BOOL;
     fn BitBlt(dest: HDC, x: INT, y: INT, cx: INT, cy: INT, src: HDC,
         sx: INT, sy: INT, rop: DWORD) -> BOOL;
-    fn GetWindowDC(window: HWND) -> HDC;
-    fn ReleaseDC(window: HWND, dc: HDC) -> INT;
-    fn GetSysColorBrush(index: INT) -> HANDLE;
-    fn FrameRect(dc: HDC, rect: *const RECT, brush: HANDLE) -> INT;
-    fn SHSetWindowBits(window: HWND, index: INT, mask: DWORD, flags: DWORD) -> DWORD;
-    fn IUnknown_GetWindow(object: *mut IUnknown, out: *mut HWND) -> HRESULT;
-    fn IUnknown_GetSite(object: *mut IUnknown, riid: REFIID, out: *mut *mut core::ffi::c_void) -> HRESULT;
-    fn IUnknown_OnFocusChangeIS(object: *mut IUnknown, changed: *mut IUnknown, focus: BOOL) -> HRESULT;
-    fn IUnknown_UIActivateIO(object: *mut IUnknown, activate: BOOL, message: LPMSG) -> HRESULT;
-    fn IUnknown_HasFocusIO(object: *mut IUnknown) -> HRESULT;
-    fn IUnknown_TranslateAcceleratorIO(object: *mut IUnknown, message: LPMSG) -> HRESULT;
-    fn IUnknown_QueryService(object: *mut IUnknown, service: REFGUID, riid: REFIID, out: *mut *mut core::ffi::c_void) -> HRESULT;
-    fn IUnknown_QueryServiceExec(object: *mut IUnknown, service: REFGUID,
-        command_group: *const GUID, command: DWORD, options: DWORD,
-        input: *mut VARIANT, output: *mut VARIANT) -> HRESULT;
 }
 
 #[inline]
@@ -964,6 +944,32 @@ impl<T> Drop for CppComPtrGuard<T> {
 }
 
 use core::ffi::c_void;
+// One declaration per external symbol: island.rs.
+use crate::island::BeginPaint;
+pub use crate::island::CreateWindowExW;
+pub use crate::island::DefWindowProcW;
+pub use crate::island::DestroyWindow;
+use crate::island::EndPaint;
+use crate::island::FrameRect;
+pub use crate::island::GetClientRect;
+use crate::island::GetDesktopWindow;
+pub use crate::island::GetModuleHandleExW;
+use crate::island::GetSysColorBrush;
+use crate::island::GetWindowDC;
+use crate::island::GetWindowRect;
+use crate::island::IUnknown_GetSite;
+pub use crate::island::IUnknown_GetWindow;
+use crate::island::IUnknown_HasFocusIO;
+use crate::island::IUnknown_OnFocusChangeIS;
+use crate::island::IUnknown_TranslateAcceleratorIO;
+pub use crate::island::IUnknown_UIActivateIO;
+pub use crate::island::RegisterClassW;
+use crate::island::ReleaseDC;
+use crate::island::SHSetWindowBits;
+use crate::island::SetWindowPos;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::menu_band::IUnknown_QueryService;
+use crate::menu_band::IUnknown_QueryServiceExec;
 use crate::shellcom::*;
 use crate::types::*;
 
@@ -972,18 +978,18 @@ static CMENUDESKBAR_CLASS: [WCHAR; 8] = [0x42, 0x61, 0x73, 0x65, 0x42, 0x61, 0x7
 unsafe extern "system" fn CMenuDeskBar_WindowProc(
     hWnd: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM,
 ) -> LRESULT {
-    let mut this = GetWindowLongPtrW(hWnd, GWLP_USERDATA) as *mut CMenuDeskBar;
+    let mut this = GetWindowLongPtrW((hWnd).cast(), GWLP_USERDATA) as *mut CMenuDeskBar;
     if uMsg == WM_NCCREATE {
         let create = lParam as *const CREATESTRUCTW;
         if !create.is_null() {
             this = (*create).lpCreateParams as *mut CMenuDeskBar;
-            SetWindowLongPtrW(hWnd, GWLP_USERDATA, this as LONG_PTR);
+            SetWindowLongPtrW((hWnd).cast(), GWLP_USERDATA, this as _);
             if !this.is_null() { (*this).m_hWnd = hWnd; }
         }
     }
 
     let result = if this.is_null() {
-        DefWindowProcW(hWnd, uMsg, wParam, lParam)
+        DefWindowProcW((hWnd).cast(), uMsg, wParam, (lParam) as _)
     } else {
         let mut handled = TRUE;
         let value = match uMsg {
@@ -999,11 +1005,11 @@ unsafe extern "system" fn CMenuDeskBar_WindowProc(
             WM_CLOSE => CMenuDeskBar__OnClose_body(this, uMsg, wParam, lParam, &mut handled),
             _ => { handled = FALSE; 0 }
         };
-        if handled != FALSE { value } else { DefWindowProcW(hWnd, uMsg, wParam, lParam) }
+        if handled != FALSE { value } else { DefWindowProcW((hWnd).cast(), uMsg, wParam, (lParam) as _) }
     };
 
     if uMsg == WM_NCDESTROY && !this.is_null() {
-        SetWindowLongPtrW(hWnd, GWLP_USERDATA, 0);
+        SetWindowLongPtrW((hWnd).cast(), GWLP_USERDATA, 0);
         (*this).m_hWnd = core::ptr::null_mut();
         CMenuDeskBar_OnFinalMessage_body(this, hWnd);
     }
@@ -1015,7 +1021,7 @@ unsafe fn CMenuDeskBar_CreateWindow(this: *mut CMenuDeskBar) -> HWND {
     GetModuleHandleExW(
         GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
         CMenuDeskBar_WindowProc as usize as LPCWSTR,
-        &mut instance,
+        (&raw mut instance).cast(),
     );
     let class = WNDCLASSW {
         style: CS_SAVEBITS | CS_DROPSHADOW,
@@ -1025,15 +1031,15 @@ unsafe fn CMenuDeskBar_CreateWindow(this: *mut CMenuDeskBar) -> HWND {
         hbrBackground: (COLOR_3DFACE + 1) as usize as HANDLE,
         lpszMenuName: core::ptr::null(), lpszClassName: CMENUDESKBAR_CLASS.as_ptr(),
     };
-    RegisterClassW(&class);
+    RegisterClassW((&raw const class).cast());
     let window = CreateWindowExW(
         WS_EX_LEFT | WS_EX_LTRREADING | WS_EX_RIGHTSCROLLBAR | WS_EX_PALETTEWINDOW,
         CMENUDESKBAR_CLASS.as_ptr(), core::ptr::null(),
         WS_POPUP | WS_DLGFRAME | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
-        0, 0, 0, 0, core::ptr::null_mut(), core::ptr::null_mut(), instance, this.cast(),
+        0, 0, 0, 0, core::ptr::null_mut(), core::ptr::null_mut(), (instance).cast(), this.cast(),
     );
-    (*this).m_hWnd = window;
-    window
+    (*this).m_hWnd = (window).cast();
+    (window).cast()
 }
 
 pub unsafe fn CMenuDeskBar_ctor_body(this: *mut CMenuDeskBar) -> () {
@@ -1078,7 +1084,7 @@ pub unsafe fn CMenuDeskBar_GetWindow_body(this: *mut CMenuDeskBar, lphwnd: *mut 
 pub unsafe fn CMenuDeskBar_ContextSensitiveHelp_body(this: *mut CMenuDeskBar, fEnterMode: BOOL) -> HRESULT { E_NOTIMPL }
 
 pub unsafe fn CMenuDeskBar_OnFocusChangeIS_body(this: *mut CMenuDeskBar, punkObj: LPUNKNOWN, fSetFocus: BOOL) -> HRESULT {
-    IUnknown_OnFocusChangeIS((*this).m_Client, punkObj, fSetFocus)
+    IUnknown_OnFocusChangeIS(((*this).m_Client).cast(), (punkObj).cast(), fSetFocus)
 }
 
 pub unsafe fn CMenuDeskBar_QueryStatus_body(this: *mut CMenuDeskBar, pguidCmdGroup: *const GUID, cCmds: ULONG, prgCmds: *mut OLECMD, pCmdText: *mut OLECMDTEXT) -> HRESULT { E_NOTIMPL }
@@ -1125,7 +1131,7 @@ pub unsafe fn CMenuDeskBar_QueryService_body(this: *mut CMenuDeskBar, guidServic
         if (*this).m_Client.is_null() {
             return E_NOINTERFACE;
         }
-        hr = IUnknown_QueryService((*this).m_Client, guidService, riid, ppvObject);
+        hr = IUnknown_QueryService((*this).m_Client.cast(), guidService, riid, ppvObject);
         if hr >= 0 {
             return hr;
         }
@@ -1135,19 +1141,19 @@ pub unsafe fn CMenuDeskBar_QueryService_body(this: *mut CMenuDeskBar, guidServic
         return E_NOINTERFACE;
     }
 
-    IUnknown_QueryService((*this).m_Site, guidService, riid, ppvObject)
+    IUnknown_QueryService((*this).m_Site.cast(), guidService, riid, ppvObject)
 }
 
 pub unsafe fn CMenuDeskBar_UIActivateIO_body(this: *mut CMenuDeskBar, fActivate: BOOL, lpMsg: LPMSG) -> HRESULT {
-    IUnknown_UIActivateIO((*this).m_Client, fActivate, lpMsg)
+    IUnknown_UIActivateIO(((*this).m_Client).cast(), fActivate, lpMsg)
 }
 
 pub unsafe fn CMenuDeskBar_HasFocusIO_body(this: *mut CMenuDeskBar) -> HRESULT {
-    IUnknown_HasFocusIO((*this).m_Client)
+    IUnknown_HasFocusIO(((*this).m_Client).cast())
 }
 
 pub unsafe fn CMenuDeskBar_TranslateAcceleratorIO_body(this: *mut CMenuDeskBar, lpMsg: LPMSG) -> HRESULT {
-    IUnknown_TranslateAcceleratorIO((*this).m_Client, lpMsg)
+    IUnknown_TranslateAcceleratorIO(((*this).m_Client).cast(), lpMsg)
 }
 
 pub unsafe fn CMenuDeskBar_SetClient_body(this: *mut CMenuDeskBar, punkClient: *mut IUnknown) -> HRESULT {
@@ -1194,7 +1200,7 @@ pub unsafe fn CMenuDeskBar_SetClient_body(this: *mut CMenuDeskBar, punkClient: *
     hr = ((*(*pDeskBandClient).lpVtbl).SetDeskBarSite)(pDeskBandClient, desk_bar);
     if hr < 0 { return hr; }
 
-    IUnknown_GetWindow((*this).m_Client, &mut (*this).m_ClientWindow)
+    IUnknown_GetWindow(((*this).m_Client).cast(), (&raw mut (*this).m_ClientWindow).cast())
 }
 
 pub unsafe fn CMenuDeskBar_GetClient_body(this: *mut CMenuDeskBar, ppunkClient: *mut *mut IUnknown) -> HRESULT {
@@ -1223,14 +1229,14 @@ pub unsafe fn CMenuDeskBar_SetSite_body(this: *mut CMenuDeskBar, pUnkSite: *mut 
     CMenuDeskBar_cpp_com_assign_m_Site(this, pUnkSite);
     if !((*this).m_Site).is_null() {
         IUnknown_QueryService(
-            (*this).m_Site,
+            ((*this).m_Site).cast(),
             core::ptr::addr_of!(SID_SMenuPopup),
             core::ptr::addr_of!(IID_IMenuPopup),
             core::ptr::addr_of_mut!((*this).m_SubMenuParent).cast(),
         );
     } else {
         CMenuDeskBar_SetClient_body(this, core::ptr::null_mut());
-        DestroyWindow((*this).m_hWnd);
+        DestroyWindow(((*this).m_hWnd).cast());
     }
     S_OK
 }
@@ -1291,7 +1297,7 @@ pub unsafe fn CMenuDeskBar_Popup_body(this: *mut CMenuDeskBar, ppt: *mut POINTL,
     let _dbc_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(dbc));
 
     let mut hr: HRESULT = IUnknown_QueryService(
-        (*this).m_Client,
+        ((*this).m_Client).cast(),
         core::ptr::addr_of!(SID_SMenuBandChild),
         core::ptr::addr_of!(IID_IOleCommandTarget), core::ptr::addr_of_mut!(oct).cast(),
     );
@@ -1338,7 +1344,7 @@ pub unsafe fn CMenuDeskBar_Popup_body(this: *mut CMenuDeskBar, ppt: *mut POINTL,
     const CMD_EXEC_OPT: DWORD = 0;
 
     hr = IUnknown_QueryServiceExec(
-        (*this).m_Client,
+        ((*this).m_Client).cast(),
         core::ptr::addr_of!(SID_SMenuBandChild),
         core::ptr::addr_of!(CLSID_MenuBand),
         CMD_POPUP,
@@ -1352,7 +1358,7 @@ pub unsafe fn CMenuDeskBar_Popup_body(this: *mut CMenuDeskBar, ppt: *mut POINTL,
 
     AdjustWindowRect(
         &mut rc,
-        GetWindowLongPtrW((*this).m_hWnd, GWL_STYLE) as DWORD,
+        GetWindowLongPtrW(((*this).m_hWnd).cast(), GWL_STYLE) as DWORD,
         FALSE,
     );
     let (offset_x, offset_y) = (-rc.left, -rc.top);
@@ -1361,7 +1367,7 @@ pub unsafe fn CMenuDeskBar_Popup_body(this: *mut CMenuDeskBar, ppt: *mut POINTL,
     if !(*this).m_Banner.is_null() {
         let mut bm: BITMAP = core::mem::zeroed();
         GetObject(
-            (*this).m_Banner,
+            ((*this).m_Banner).cast(),
             core::mem::size_of::<BITMAP>() as i32,
             &mut bm,
         );
@@ -1490,7 +1496,7 @@ pub unsafe fn CMenuDeskBar_Popup_body(this: *mut CMenuDeskBar, ppt: *mut POINTL,
     }
 
     let flags: UINT = SWP_SHOWWINDOW | SWP_NOACTIVATE;
-    SetWindowPos((*this).m_hWnd, HWND_TOPMOST, x, y, cx, cy, flags);
+    SetWindowPos(((*this).m_hWnd).cast(), (HWND_TOPMOST).cast(), x, y, cx, cy, flags);
 
     if flipV != 0 {
         if dwFlags & MPPF_INITIALSELECT != 0 {
@@ -1528,7 +1534,7 @@ pub unsafe fn CMenuDeskBar_Popup_body(this: *mut CMenuDeskBar, ppt: *mut POINTL,
             (-2i32) as DWORD
         };
         IUnknown_QueryServiceExec(
-            (*this).m_Client,
+            ((*this).m_Client).cast(),
             core::ptr::addr_of!(SID_SMenuBandChild),
             core::ptr::addr_of!(CLSID_MenuBand),
             CMD_SELECT,
@@ -1546,7 +1552,7 @@ pub unsafe fn CMenuDeskBar_SetIconSize_body(this: *mut CMenuDeskBar, iIcon: DWOR
     // See CMD_POPUP above: C++ names both function-local constants `CMD`.
     const CMD_SETICONSIZE: DWORD = 16;
     let CMD_EXEC_OPT: DWORD = if iIcon != 0 { 0 } else { 2 };
-    let hr = IUnknown_QueryServiceExec((*this).m_Client, core::ptr::addr_of!(SID_SMenuBandChild), core::ptr::addr_of!(CLSID_MenuBand), CMD_SETICONSIZE, CMD_EXEC_OPT, core::ptr::null_mut(), core::ptr::null_mut());
+    let hr = IUnknown_QueryServiceExec(((*this).m_Client).cast(), core::ptr::addr_of!(SID_SMenuBandChild), core::ptr::addr_of!(CLSID_MenuBand), CMD_SETICONSIZE, CMD_EXEC_OPT, core::ptr::null_mut(), core::ptr::null_mut());
     if ((hr) < 0) {
         return hr;
     }
@@ -1564,7 +1570,7 @@ pub unsafe fn CMenuDeskBar_GetIconSize_body(this: *mut CMenuDeskBar, piIcon: *mu
 
 pub unsafe fn CMenuDeskBar_SetBitmap_body(this: *mut CMenuDeskBar, hBitmap: HBITMAP) -> HRESULT {
     if !(*this).m_Banner.is_null() && (*this).m_Banner != hBitmap {
-        DeleteObject((*this).m_Banner);
+        DeleteObject(((*this).m_Banner).cast());
     }
 
     (*this).m_Banner = hBitmap;
@@ -1679,7 +1685,7 @@ pub unsafe fn CMenuDeskBar__CloseBar_body(this: *mut CMenuDeskBar) -> HRESULT {
 
     if !(*this).m_hWnd.is_null() {
         SetWindowPos(
-            (*this).m_hWnd,
+            ((*this).m_hWnd).cast(),
             core::ptr::null_mut(),
             0,
             0,
@@ -1701,7 +1707,7 @@ pub unsafe fn CMenuDeskBar__IsSubMenuParent_body(this: *mut CMenuDeskBar, hwnd: 
 
     while !popup.is_null() {
         let mut parent: HWND = core::ptr::null_mut();
-        let hr = IUnknown_GetWindow(popup.cast(), &mut parent);
+        let hr = IUnknown_GetWindow(popup.cast(), (&raw mut parent).cast());
         if hr < 0 { return FALSE; }
         if hwnd == parent { return TRUE; }
 
@@ -1722,18 +1728,18 @@ pub unsafe fn CMenuDeskBar__IsSubMenuParent_body(this: *mut CMenuDeskBar, hwnd: 
 pub unsafe fn CMenuDeskBar__OnSize_body(this: *mut CMenuDeskBar, uMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
     if !(*this).m_Client.is_null() {
         let mut rc: RECT = core::mem::zeroed();
-        GetClientRect((*this).m_hWnd, &mut rc);
+        GetClientRect(((*this).m_hWnd).cast(), &mut rc);
         if !(*this).m_Banner.is_null() && (*this).m_IconSize != BMICON_SMALL {
             let mut bm: BITMAP = core::mem::zeroed();
             GetObject(
-                (*this).m_Banner,
+                ((*this).m_Banner).cast(),
                 core::mem::size_of::<BITMAP>() as i32,
                 (&mut bm) as *mut BITMAP,
             );
             rc.left += bm.bmWidth;
         }
         SetWindowPos(
-            (*this).m_ClientWindow,
+            ((*this).m_ClientWindow).cast(),
             core::ptr::null_mut(),
             rc.left,
             rc.top,
@@ -1791,15 +1797,15 @@ pub unsafe fn CMenuDeskBar__OnPaint_body(this: *mut CMenuDeskBar, uMsg: UINT, wP
     if !(*this).m_Banner.is_null() && (*this).m_IconSize == 0 {
         let mut bm: BITMAP = core::mem::zeroed();
         let mut ps: PAINTSTRUCT = core::mem::zeroed();
-        let hdc = BeginPaint((*this).m_hWnd, &mut ps);
+        let hdc = BeginPaint(((*this).m_hWnd).cast(), (&raw mut ps).cast());
 
-        let hdcMem = CreateCompatibleDC(hdc);
-        let hbmOld = SelectObject(hdcMem, (*this).m_Banner);
+        let hdcMem = CreateCompatibleDC((hdc).cast());
+        let hbmOld = SelectObject(hdcMem, ((*this).m_Banner).cast());
 
-        GetObject((*this).m_Banner, core::mem::size_of::<BITMAP>() as i32, &mut bm);
+        GetObject(((*this).m_Banner).cast(), core::mem::size_of::<BITMAP>() as i32, &mut bm);
 
         let mut rc: RECT = core::mem::zeroed();
-        if GetClientRect((*this).m_hWnd, &mut rc) == 0 {
+        if GetClientRect(((*this).m_hWnd).cast(), &mut rc) == 0 {
             WARN!("GetClientRect failed\n");
         }
 
@@ -1807,18 +1813,18 @@ pub unsafe fn CMenuDeskBar__OnPaint_body(this: *mut CMenuDeskBar, uMsg: UINT, wP
         let by = bm.bmHeight;
         let cy = rc.bottom;
 
-        if StretchBlt(hdc, 0, 0, bx, cy - by, hdcMem, 0, 0, bx, 1, SRCCOPY) == 0 {
+        if StretchBlt((hdc).cast(), 0, 0, bx, cy - by, hdcMem, 0, 0, bx, 1, SRCCOPY) == 0 {
             WARN!("StretchBlt failed\n");
         }
 
-        if BitBlt(hdc, 0, cy - by, bx, by, hdcMem, 0, 0, SRCCOPY) == 0 {
+        if BitBlt((hdc).cast(), 0, cy - by, bx, by, hdcMem, 0, 0, SRCCOPY) == 0 {
             WARN!("BitBlt failed\n");
         }
 
         SelectObject(hdcMem, hbmOld);
         DeleteDC(hdcMem);
 
-        EndPaint((*this).m_hWnd, &ps);
+        EndPaint(((*this).m_hWnd).cast(), (&raw const ps).cast());
     }
 
     return TRUE as LRESULT;
@@ -1834,7 +1840,7 @@ pub unsafe fn CMenuDeskBar__OnActivate_body(this: *mut CMenuDeskBar, uMsg: UINT,
     let mut db: *mut IDeskBar = core::ptr::null_mut();
     let _db_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(db));
     let hr = IUnknown_QueryService(
-        (*this).m_Client,
+        ((*this).m_Client).cast(),
         core::ptr::addr_of!(SID_SMenuBandChild),
         core::ptr::addr_of!(IID_IDeskBar), core::ptr::addr_of_mut!(db).cast(),
     );
@@ -1872,17 +1878,17 @@ pub unsafe fn CMenuDeskBar__OnWinIniChange_body(this: *mut CMenuDeskBar, uMsg: U
 }
 
 pub unsafe fn CMenuDeskBar__OnNcPaint_body(this: *mut CMenuDeskBar, uMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
-    if (GetWindowLongPtrW((*this).m_hWnd, GWL_STYLE) as DWORD & WS_BORDER) == 0 {
+    if (GetWindowLongPtrW(((*this).m_hWnd).cast(), GWL_STYLE) as DWORD & WS_BORDER) == 0 {
         *bHandled = FALSE;
         return 0;
     }
-    let hdc = GetWindowDC((*this).m_hWnd);
+    let hdc = GetWindowDC(((*this).m_hWnd).cast());
     let mut rcWindow: RECT = core::mem::zeroed();
-    GetWindowRect((*this).m_hWnd, &mut rcWindow);
+    GetWindowRect(((*this).m_hWnd).cast(), &mut rcWindow);
     let (offset_x, offset_y) = (-rcWindow.left, -rcWindow.top);
     OffsetRect(&mut rcWindow, offset_x, offset_y);
     FrameRect(hdc, &rcWindow, GetSysColorBrush(COLOR_BTNSHADOW as INT));
-    ReleaseDC((*this).m_hWnd, hdc);
+    ReleaseDC(((*this).m_hWnd).cast(), hdc);
     0
 }
 
@@ -1898,6 +1904,6 @@ pub unsafe fn CMenuDeskBar__AdjustForTheme_body(this: *mut CMenuDeskBar, bFlatSt
         WS_CLIPCHILDREN | WS_DLGFRAME
     };
     let mask: u32 = WS_BORDER | WS_CLIPCHILDREN | WS_DLGFRAME;
-    SHSetWindowBits((*this).m_hWnd, GWL_STYLE, mask, style);
+    SHSetWindowBits(((*this).m_hWnd).cast(), GWL_STYLE, mask, style);
     S_OK
 }

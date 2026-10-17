@@ -6,13 +6,8 @@ spec2def(netplwiz.dll netplwiz.spec)
 # The translated C, kept on disk:
 # netplwiz.c  # replaced by Rust (sdk/lib/rust/netplwiz-rust/src/netplwiz/netplwiz.rs)
 # SHDisconnectNetDrives.c  # replaced by Rust (sdk/lib/rust/netplwiz-rust/src/netplwiz/SHDisconnectNetDrives.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(netplwiz_res OBJECT netplwiz.rc)
-target_compile_definitions(netplwiz_res PRIVATE UNICODE _UNICODE)
-target_include_directories(netplwiz_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(netplwiz netplwiz-cargo netplwiz.dll
     KIND win32dll
     BODY_CRATE netplwiz-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS netplwiz_res psdk)
+    EXTRA_DEPENDS psdk)

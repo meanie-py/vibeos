@@ -27,7 +27,7 @@ Mechanism (identical recipe to verify_sizes / verify_inline_offsets):
 
 Usage:
     python3 tools/verify_offsets.py            # Generate src/offset_check_<arch>.rs
-    python3 tools/verify_offsets.py --check     # Regenerate to temp, diff vs committed
+    ./vibeos-cli lint --arch amd64 --rules verify_layout  # compare generated assertions
 """
 
 import re
@@ -574,7 +574,15 @@ def build_for_arch(arch: dict, tmpdir: Path) -> tuple[str, int, int] | None:
 
 
 def main():
-    check_mode = "--check" in sys.argv
+    if "--check" in sys.argv:
+        sys.exit("--check moved to Rust: ./vibeos-cli lint --arch <arch> --rules verify_layout")
+    output_dir = None
+    if "--output-dir" in sys.argv:
+        index = sys.argv.index("--output-dir")
+        if index + 1 >= len(sys.argv):
+            sys.exit("--output-dir requires a path")
+        output_dir = Path(sys.argv[index + 1])
+        output_dir.mkdir(parents=True, exist_ok=True)
     print("=== ntkrnl-sys struct field-OFFSET verification ===")
     print(f"ReactOS root: {REACTOS}")
     print(f"Build repo:   {BUILD_REPO}")
@@ -592,26 +600,18 @@ def main():
                 continue
             rust_src, nstructs, nfields = res
             print(f"  {nstructs} structs, {nfields} field-offset asserts")
-            out_path = SRC_DIR / arch["out_file"]
-            if check_mode:
-                if out_path.exists() and out_path.read_text() == rust_src:
-                    print(f"  OK — {out_path.name} up to date")
-                else:
-                    print(f"  MISMATCH — run verify_offsets.py to regenerate {out_path.name}")
-                    all_ok = False
-            else:
-                out_path.write_text(rust_src)
-                print(f"  Wrote {out_path.name}")
+            out_path = (output_dir or SRC_DIR) / arch["out_file"]
+            out_path.write_text(rust_src)
+            print(f"  Wrote {out_path.name}")
 
     print()
-    if check_mode and not all_ok:
+    if not all_ok:
         print("FAILED — offset assertions need regeneration")
         sys.exit(1)
-    if not check_mode:
-        print(
-            "Done. Ensure offset_check_<arch> modules are declared in lib.rs, "
-            "then cargo check -p ntkrnl-sys."
-        )
+    print(
+        "Done. Ensure offset_check_<arch> modules are declared in lib.rs, "
+        "then cargo check -p ntkrnl-sys."
+    )
 
 
 if __name__ == "__main__":

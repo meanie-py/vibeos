@@ -1,0 +1,33 @@
+# Wine's setupapi conformance suite, run by the apitest sweep runner.
+#
+# setupapi is being ported TU by TU (cfgmgr.c first, 2026-10-17), and smoke never reaches
+# the CM_* or SetupDi* surface. Wine's own suite is the oracle: devinst and misc call the
+# CM_* functions cfgmgr.c implements. The list is olewinetest's gen_suites.py pointed at
+# setupapi (see build_hint); see olewinetest/payload.yaml for why children start on C:.
+#
+# Before/after: payload `setupapiwinetestc` runs this same list against the pre-flip C.
+# Measured 2026-10-17 on amd64 with cfgmgr.c ported: the two runs' 461 output lines are
+# identical (devinst 481/197, diskspace 380/147, install 86/11, ...). Every failure is the
+# C's own, so the residue is the environment and the C, not the translation.
+name: setupapiwinetest
+description: Wine setupapi conformance suite under the apitest sweep runner
+
+build_hint: "tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites setupapi --register '' --out-dir tools/payloads/setupapiwinetest"
+
+binaries:
+  - src: tools/payloads/apitest/apitest-sweep-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/apitest-sweep.exe
+  - src: tools/payloads/setupapiwinetest/winetest-suites-{arch}.txt
+    dest: bin/apitest-suites.txt
+  - src: tools/payloads/setupapiwinetest/winetest-skip-{arch}.txt
+    dest: bin/apitest-skip.txt
+  - src: tools/payloads/setupapiwinetest/cwd.txt
+    dest: bin/apitest-cwd.txt
+  - src: build-{arch}/modules/rostests/winetests/setupapi/setupapi_winetest.exe
+    dest: bin/setupapi_winetest.exe
+
+test:
+  launch_marker: "[APITEST-SWEEP] done"
+  launch_drain_secs: 3600
+  launch_idle_secs: 600

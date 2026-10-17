@@ -37,6 +37,11 @@ extern "system" {
 
 
 
+
+
+
+
+
 impl CWindow {
     pub unsafe fn __ctor_0(&mut self, hWnd: HWND) {
         let this_: *mut Self = self;
@@ -49,6 +54,11 @@ impl CWindow {
     pub unsafe fn Attach(&mut self, hWndNew: HWND) {
         let this_: *mut Self = self;
         (*this_).m_hWnd = hWndNew;
+    }
+    pub unsafe fn BeginPaint(&mut self, lpPaint: LPPAINTSTRUCT) -> HDC {
+        let this_: *mut Self = self;
+        ASSERT!(IsWindow((*this_).m_hWnd) != 0);
+        return BeginPaint((*this_).m_hWnd, lpPaint);
     }
     pub unsafe fn CenterWindow(&mut self, mut hWndCenter: HWND) -> BOOL {
         let this_: *mut Self = self;
@@ -74,19 +84,19 @@ impl CWindow {
             + ((wndCenterWidth - wndWidth + 1) >> 1);
         let mut yPos: i32 = wndCenterRect.top
             + ((wndCenterHeight - wndHeight + 1) >> 1);
-    
+
         if (GetWindowLong(hWndCenter, GWL_STYLE) & (WS_CHILD as i32)) == 0 {
             let mut mi: MONITORINFO = core::mem::zeroed();
             mi.cbSize = core::mem::size_of::<MONITORINFO>() as _;
             let hMonitor: HMONITOR = MonitorFromWindow(hWndCenter, MONITOR_DEFAULTTOPRIMARY);
             GetMonitorInfo(hMonitor, core::ptr::addr_of_mut!(mi));
-    
+
             if xPos + wndWidth > mi.rcWork.right {
                 xPos = mi.rcWork.right - wndWidth;
             } else if xPos < mi.rcWork.left {
                 xPos = mi.rcWork.left;
             }
-    
+
             if yPos + wndHeight > mi.rcWork.bottom {
                 yPos = mi.rcWork.bottom - wndHeight;
             }
@@ -116,11 +126,11 @@ impl CWindow {
     pub unsafe fn DestroyWindow(&mut self) -> BOOL {
         let this_: *mut Self = self;
         ATLASSERT!(IsWindow((*this_).m_hWnd) != 0);
-    
+
         if DestroyWindow((*this_).m_hWnd) == 0 {
             return (FALSE) as BOOL;
         }
-    
+
         (*this_).m_hWnd = core::ptr::null_mut();
         return (TRUE) as BOOL;
     }
@@ -129,6 +139,11 @@ impl CWindow {
         ATLASSERT!(IsWindow((*this_).m_hWnd));
         return EnableWindow((*this_).m_hWnd, bEnable);
     }
+    pub unsafe fn EndPaint(&mut self, lpPaint: LPPAINTSTRUCT) {
+        let this_: *mut Self = self;
+            ATLASSERT!(IsWindow((*this_).m_hWnd));
+            EndPaint((*this_).m_hWnd, lpPaint);
+        }
     pub unsafe fn GetClientRect(&mut self, lpRect: LPRECT) -> BOOL {
         let this_: *mut Self = self;
         ATLASSERT!(IsWindow((*this_).m_hWnd));
@@ -148,6 +163,11 @@ impl CWindow {
         let this_: *mut Self = self;
         ATLASSERT!(IsWindow((*this_).m_hWnd));
         return GetWindowPlacement((*this_).m_hWnd, lpwndpl);
+    }
+    pub unsafe fn GetWindowRect(&mut self, lpRect: LPRECT) -> BOOL {
+        let this_: *mut Self = self;
+        ATLASSERT!(IsWindow((*this_).m_hWnd));
+        return GetWindowRect((*this_).m_hWnd, lpRect);
     }
     pub unsafe fn GetWindowTextW__0(&mut self, lpszStringBuf: LPTSTR, nMaxCount: i32) -> i32 {
         let this_: *mut Self = self;
@@ -194,6 +214,11 @@ impl CWindow {
     pub unsafe fn SendMessageW__1(hWnd: HWND, message: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
         ATLASSERT!(IsWindow(hWnd));
         return SendMessage(hWnd, message, wParam, lParam);
+    }
+    pub unsafe fn SetCapture(&mut self) -> HWND {
+        let this_: *mut Self = self;
+        ATLASSERT!(IsWindow((*this_).m_hWnd) != 0);
+        return SetCapture((*this_).m_hWnd);
     }
     pub unsafe fn SetMenu(&mut self, hMenu: HMENU) -> BOOL {
         let this_: *mut Self = self;

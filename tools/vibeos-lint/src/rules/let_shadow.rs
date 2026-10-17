@@ -176,13 +176,13 @@ mod tests {
     }
     #[test]
     fn lint_output_and_rule_identity() {
-        let corpus = Corpus {
-            root: std::path::PathBuf::new(),
-            files: vec![crate::SourceFile::new(
+        let corpus = Corpus::new(
+            std::path::PathBuf::new(),
+            vec![crate::SourceFile::new(
                 "sdk/lib/rust/example.rs".into(),
                 SRC.into(),
             )],
-        };
+        );
         assert_eq!(LetShadow.name(), "scan_let_shadow");
         assert_eq!(LetShadow.run(&corpus).unwrap(), vec![
             "sdk/lib/rust/example.rs:7: `let _DiskCount` shadows `DiskCount` in scope: a C assignment that is lost?",

@@ -73,6 +73,20 @@ const TICKSPERMINUTE: i64 = 600000000;
 pub static mut ExpTimeZoneInfo: RTL_TIME_ZONE_INFORMATION = unsafe { core::mem::zeroed() };
 // pub: Phase1InitializationDiscard (ex/init.rs) reads/writes these while
 // seeding the boot time from the RTC.
+/// KSYSTEM_TIME's update protocol (ndk/kefuncs.h `KiWriteSystemTime`): High2Time,
+/// LowPart, High1Time, so a reader comparing High1Time against High2Time never
+/// accepts a torn value. Volatile, because plain stores to disjoint fields may be
+/// reordered and the order IS the guard; these run while other CPUs read the time.
+unsafe fn write_ksystem_time(t: *mut ntkrnl_sys::ddk::_KSYSTEM_TIME, v: LARGE_INTEGER) {
+    core::ptr::write_volatile(core::ptr::addr_of_mut!((*t).High2Time), v.u.HighPart);
+    #[cfg(target_arch = "aarch64")]
+    core::arch::asm!("dmb ishst", options(nostack, preserves_flags));
+    core::ptr::write_volatile(core::ptr::addr_of_mut!((*t).LowPart), v.u.LowPart);
+    #[cfg(target_arch = "aarch64")]
+    core::arch::asm!("dmb ishst", options(nostack, preserves_flags));
+    core::ptr::write_volatile(core::ptr::addr_of_mut!((*t).High1Time), v.u.HighPart);
+}
+
 pub static mut ExpLastTimeZoneBias: ULONG = 0xFFFFFFFF;
 #[no_mangle]
 pub static mut ExpTimeZoneBias: LARGE_INTEGER = unsafe { core::mem::zeroed() };
@@ -248,9 +262,7 @@ pub unsafe extern "system" fn ExRefreshTimeZoneInformation(
 
     ExpTimeZoneBias = NewTimeZoneBias;
 
-    (*SharedUserData).TimeZoneBias.High2Time = ExpTimeZoneBias.u.HighPart;
-    (*SharedUserData).TimeZoneBias.LowPart = ExpTimeZoneBias.u.LowPart;
-    (*SharedUserData).TimeZoneBias.High1Time = ExpTimeZoneBias.u.HighPart;
+    write_ksystem_time(core::ptr::addr_of_mut!((*SharedUserData).TimeZoneBias), ExpTimeZoneBias);
     (*SharedUserData).TimeZoneId = ExpTimeZoneId;
 
     KeBootTime.QuadPart += ExpTimeZoneBias.QuadPart;
@@ -258,9 +270,7 @@ pub unsafe extern "system" fn ExRefreshTimeZoneInformation(
     KeQuerySystemTime(core::ptr::addr_of_mut!(CurrentTime));
 
     CurrentTime.QuadPart += ExpTimeZoneBias.QuadPart;
-    (*SharedUserData).SystemTime.High2Time = CurrentTime.u.HighPart;
-    (*SharedUserData).SystemTime.LowPart = CurrentTime.u.LowPart;
-    (*SharedUserData).SystemTime.High1Time = CurrentTime.u.HighPart;
+    write_ksystem_time(core::ptr::addr_of_mut!((*SharedUserData).SystemTime), CurrentTime);
 
     1u8
 }

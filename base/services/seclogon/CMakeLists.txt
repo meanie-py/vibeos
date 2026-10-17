@@ -8,17 +8,8 @@ spec2def(seclogon.dll seclogon.spec ADD_IMPORTLIB)
 # The translated C, kept on disk:
 # rpcserver.c  # replaced by Rust (sdk/lib/rust/seclogon-rust/src/seclogon/rpcserver.rs)
 # seclogon.c  # replaced by Rust (sdk/lib/rust/seclogon-rust/src/seclogon/seclogon.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(seclogon_shims OBJECT ${CMAKE_CURRENT_BINARY_DIR}/seclogon_s.c)
-target_link_libraries(seclogon_shims PRIVATE wine libuserenv libadvapi32 librpcrt4 libmsvcrt libkernel32 libntdll)
-target_compile_definitions(seclogon_shims PRIVATE UNICODE _UNICODE)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(seclogon_res OBJECT seclogon.rc)
-target_compile_definitions(seclogon_res PRIVATE UNICODE _UNICODE)
-target_include_directories(seclogon_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(seclogon seclogon-cargo seclogon.dll
     KIND win32dll
     BODY_CRATE seclogon-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS seclogon_shims seclogon_res psdk)
+    EXTRA_DEPENDS psdk wine libuserenv libadvapi32 librpcrt4 libmsvcrt libkernel32 libntdll ${REACTOS_BINARY_DIR}/base/services/seclogon/seclogon_s.c)

@@ -74,7 +74,15 @@ pub unsafe extern "system" fn RtlIoDecodeMemIoResource(
 }
 
 /// RtlpEncodeLargeAlignment: scale the alignment up until it is a multiple of
-/// the large form's granularity; FALSE if that overflows 64 bits.
+/// the large form's granularity; FALSE if that overflows 64 bits, or if the scaled
+/// alignment no longer fits the tier's 32-bit field.
+///
+/// Divergence from memres.c, which checks only the 64-bit overflow and then truncates
+/// `Alignment >> Shift` to 32 bits. Windows rejects the call (measured differentially by
+/// the ntdll-gated-oracle harness: length 0, alignment 0xB9CCEBDB4 is STATUS_UNSUCCESSFUL there;
+/// memres.c "succeeds" with a truncated alignment). The tier check before the call bounds
+/// only the UNSCALED alignment, and doubling it to clear the low bits can carry it past
+/// `MAXULONG << Shift`.
 fn RtlpEncodeLargeAlignment(mut Alignment: u64, Shift: u32, Encoded: &mut u32) -> bool {
     let LowMask: u64 = (1u64 << Shift) - 1;
     while Alignment & LowMask != 0 {
@@ -83,6 +91,9 @@ fn RtlpEncodeLargeAlignment(mut Alignment: u64, Shift: u32, Encoded: &mut u32) -
             return false;
         }
         Alignment = Doubled;
+    }
+    if Alignment >> Shift > MAXULONG {
+        return false;
     }
     *Encoded = (Alignment >> Shift) as u32;
     true

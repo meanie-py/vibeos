@@ -1,0 +1,2 @@
+# dmoguids (arm64), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+c	sdk/lib/dmoguids/dmoguids.c	@build/sdk/lib/dmoguids sdk/lib/dmoguids @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 @core	WINVER=0x502 _WIN32_WINNT=0x502

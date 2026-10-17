@@ -13,7 +13,7 @@ import pytest
 from .cli import config as cli_config
 from .vm import PROJECT_DIR, QemuVM, get_arch_config, launch_with_retry, reap_orphan_qemus
 
-# Add tools/ to path for scan_ud2, lint_kernel
+# Add tools/ to path for shared tooling helpers
 sys.path.insert(0, str(PROJECT_DIR / "tools"))
 
 
@@ -150,23 +150,17 @@ def _run_post_build_checks(arch: str) -> list[str]:
     if not ntoskrnl.exists():
         return warnings
 
-    # ud2 scan
-    try:
-        from scan_ud2 import find_objdump, scan_ud2
+    from tests.qemu.cli import rustlints
 
-        objdump = find_objdump(arch)
-        if objdump:
-            findings = scan_ud2(ntoskrnl, objdump)
-            unexpected = [f for f in findings if not f["expected"]]
-            if unexpected:
-                funcs = ", ".join(f["function"] for f in unexpected[:5])
-                more = f" (+{len(unexpected) - 5} more)" if len(unexpected) > 5 else ""
-                warnings.append(
-                    f"ud2 scanner: {len(unexpected)} LLVM miscompilations detected: {funcs}{more}"
-                )
-                print(f"\n[pytest] WARNING: {warnings[-1]}")
-    except Exception as e:
-        warnings.append(f"ud2 scan failed: {e}")
+    result = rustlints.run_binary(
+        PROJECT_DIR,
+        _base_arch(arch),
+        ["scan_ud2"],
+        lambda cmd: subprocess.run(cmd, cwd=PROJECT_DIR, capture_output=True, text=True),
+    )["scan_ud2"]
+    if result.returncode:
+        warnings.append(f"ud2 scan failed: {result.stdout}{result.stderr}")
+        print(f"\n[pytest] WARNING: {warnings[-1]}")
 
     return warnings
 

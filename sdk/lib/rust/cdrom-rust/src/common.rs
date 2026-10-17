@@ -1,5 +1,19 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use crate::types::*;
+// The crate's own functions: the definition is the declaration.
+use crate::autorun::DeviceSetMediaChangeStateEx;
+use crate::ioctl::DvdSendKey;
+use crate::ioctl::DvdStartSessionReadKey;
+use crate::ddk_shims::EXCLUSIVE_MODE;
+use crate::ddk_shims::EXCLUSIVE_OWNER;
+use crate::ddk_shims::IsVolumeMounted;
+use crate::ddk_shims::KeQueryTickCount;
+use crate::ddk_shims::REVERSE_BYTES_SHORT;
+use crate::ioctl::ReadDvdStructure;
+use crate::ddk_shims::RequestGetContext;
+use crate::sense::RequestSenseInfoInterpret;
+use crate::ddk_shims::ScratchBuffer_ExecuteCdb;
+use crate::ddk_shims::WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE;
 use kmdf_sys::*;
 use ntkrnl_sys::ddk::{IRP, PIRP, IO_STACK_LOCATION, PIO_STACK_LOCATION, GUID, LPGUID, LPCGUID, DEVICE_OBJECT, PDEVICE_OBJECT, MDL, PMDL};
 use ntkrnl_sys::globals::*;
@@ -98,7 +112,6 @@ fn SRB_STATUS(status: u8) -> u32 {
 const SRB_STATUS_STATUS_MASK: u32 = 0x3f;
 
 extern "C" {
-    fn RequestSenseInfoInterpret( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: *mut core::ffi::c_void, Srb: *mut SCSI_REQUEST_BLOCK, RetryAttempt: ULONG, Status: *mut NTSTATUS, RetryInterval: *mut LARGE_INTEGER, ) -> BOOLEAN;
     fn FREE_POOL(ptr: *mut core::ffi::c_void);
     fn DeviceMarkActive(DeviceExtension: PCDROM_DEVICE_EXTENSION, IsActive: BOOLEAN, SetIdleTimeout: BOOLEAN,);
     fn FREE_PORT_ALLOCATED_SENSE_BUFFER(deviceExtension: *mut CDROM_DEVICE_EXTENSION, Srb: *mut SCSI_REQUEST_BLOCK);
@@ -106,16 +119,13 @@ extern "C" {
 }
 extern "system" {
     fn PoQueryWatchdogTime(DeviceObject: *mut core::ffi::c_void, SecondsRemaining: *mut ULONG) -> u8;
-    fn ScratchBuffer_ExecuteCdb(DeviceExtension: PCDROM_DEVICE_EXTENSION, OriginalRequest: *mut core::ffi::c_void, TransferSize: u32, GetDataFromDevice: u8, Cdb: PCDB, OprationLength: u8) -> NTSTATUS;
 }
 unsafe extern "C" {
     fn PowerContextReuseRequest(DeviceExtension: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
 }
 unsafe extern "system" {
-    fn KeQueryTickCount(CurrentCount: *mut LARGE_INTEGER);
 }
 extern "system" {
-    fn RequestGetContext(Request: WDFREQUEST) -> *mut CDROM_REQUEST_CONTEXT;
     fn DeviceGetExtension(Device: WDFDEVICE) -> *mut CDROM_DEVICE_EXTENSION;
     fn KeGetCurrentIrql() -> KIRQL;
     static GUID_DEVINTERFACE_CDROM: GUID;
@@ -127,7 +137,6 @@ unsafe extern "C" {
     fn WHICH_BIT(bps: u32, shift: *mut u8);
 }
 unsafe extern "C" {
-    fn DvdSendKey( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, param2: *mut core::ffi::c_void, CopyProtectKey: *mut DVD_COPY_PROTECT_KEY, KeyLength: usize, BytesReturned: *mut usize, ) -> NTSTATUS;
 }
 unsafe extern "C" {
     fn DeviceRetrieveDescriptor( Device: WDFDEVICE, PropertyId: *mut STORAGE_PROPERTY_ID, Descriptor: *mut PSTORAGE_DESCRIPTOR_HEADER, ) -> NTSTATUS;
@@ -144,7 +153,6 @@ extern "system" {
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
     static GUID_IO_CDROM_EXCLUSIVE_UNLOCK: GUID;
     static CDROM_REQUEST_CONTEXT_TYPE_INFO: WDF_OBJECT_CONTEXT_TYPE_INFO;
-    fn WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(attributes: *mut WDF_OBJECT_ATTRIBUTES, context_type: *const core::ffi::c_void);
     fn WDF_REQUEST_REUSE_PARAMS_INIT(params: *mut WDF_REQUEST_REUSE_PARAMS, flags: u32, status: i32);
     fn PagedCode();
     fn __SEH2_ProbeAndLockPages(mdl: *mut MDL, mode: u32, access: u32) -> i32;
@@ -153,26 +161,19 @@ extern "system" {
 unsafe extern "C" {
     fn IoIsErrorUserInduced(Status: NTSTATUS) -> BOOLEAN;
     fn InterlockedCompareExchange(Destination: *mut i32, Exchange: i32, Comperand: i32) -> i32;
-    fn REVERSE_BYTES_SHORT(dest: *mut u16, src: *const u32);
 }
 unsafe extern "C" {
-    fn EXCLUSIVE_MODE(cdData: *mut CDROM_DATA) -> i32;
 }
 unsafe extern "C" {
-    fn EXCLUSIVE_OWNER(cdData: *mut CDROM_DATA, FileObject: *mut core::ffi::c_void) -> u8;
 }
 unsafe extern "C" {
-    fn DeviceSetMediaChangeStateEx(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, newState: i32, previousState: *mut i32);
 }
 unsafe extern "C" {
-    fn IsVolumeMounted(DeviceObject: *mut DEVICE_OBJECT) -> u8;
 }
 unsafe extern "C" {
     fn RequestSetupMcnSyncIrp(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
 }
 extern "C" {
-    fn DvdStartSessionReadKey( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, IoControlCode: u32, param3: *mut core::ffi::c_void, CopyProtectKey: *mut DVD_COPY_PROTECT_KEY, InKeyLength: usize, OutCopyProtectKey: *mut DVD_COPY_PROTECT_KEY, OutKeyLength: usize, BytesReturned: *mut usize, ) -> NTSTATUS;
-    fn ReadDvdStructure( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, param2: *mut core::ffi::c_void, ReadStructure: *mut DVD_READ_STRUCTURE, ReadLength: usize, ReadStructureOut: *mut DVD_READ_STRUCTURE, DescriptorLength: usize, BytesReturned: *mut usize, ) -> NTSTATUS;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -209,7 +210,7 @@ const MountedDeviceInterface: i32 = 1;
 // Forward declaration: opaque structs used by this function (caller provides definitions)
 
 unsafe extern "C" {
-    fn strlen(s: *const i8) -> usize;
+    pub fn strlen(s: *const i8) -> usize;
     fn strncmp(s1: *const i8, s2: *const i8, n: usize) -> i32;
 }
 
@@ -474,8 +475,9 @@ pub unsafe extern "system" fn DeviceGetParameter(
 #[no_mangle]
 pub unsafe extern "system" fn DeviceSetParameter(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
-    SubkeyName: *mut u16,
-    ParameterName: *mut u16,
+    // `_In_opt_z_ PWSTR` / `_In_ PWSTR`: only read, and every caller passes a literal.
+    SubkeyName: *const u16,
+    ParameterName: *const u16,
     ParameterValue: u32,
 ) -> i32 {
     let mut status: i32;
@@ -661,7 +663,7 @@ pub unsafe extern "system" fn DeviceSendSrbSynchronously(
 
         // 2. Create Request object
         WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&mut attributes,
-                                                core::ptr::addr_of!(crate::ddk_shims::CDROM_REQUEST_CONTEXT) as *const core::ffi::c_void); // CDROM_REQUEST_CONTEXT type-info (null → NULL deref 0x1E)
+                                                (core::ptr::addr_of!(crate::ddk_shims::CDROM_REQUEST_CONTEXT) as *const core::ffi::c_void).cast()); // CDROM_REQUEST_CONTEXT type-info (null → NULL deref 0x1E)
         status = WdfRequestCreate(&mut attributes,
                                   (*deviceExtension).IoTarget,
                                   &mut request);
@@ -806,12 +808,12 @@ pub unsafe extern "system" fn DeviceSendSrbSynchronously(
                 if (srb_status & 0x3f) != SRB_STATUS_SUCCESS {
                     let mut retryIntervalIn100ns: i64 = 0;
 
-                    retry = RequestSenseInfoInterpret(deviceExtension,
+                    retry = (RequestSenseInfoInterpret(deviceExtension,
                                                       request as *mut core::ffi::c_void,
                                                       Srb,
                                                       retryCount,
                                                       &mut status,
-                                                      &mut retryIntervalIn100ns as *mut i64 as *mut ntkrnl_sys::ddk::LARGE_INTEGER);
+                                                      (&mut retryIntervalIn100ns as *mut i64 as *mut ntkrnl_sys::ddk::LARGE_INTEGER).cast())) as u8;
                     if retry != 0 {
                         let mut t = LARGE_INTEGER { QuadPart: -retryIntervalIn100ns };
                         retryCount += 1;
@@ -2304,9 +2306,9 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
     let status = ReadDvdStructure(
         device_extension,
         core::ptr::null_mut(),
-        dvd_read_structure,
+        (dvd_read_structure).cast(),
         core::mem::size_of::<DVD_READ_STRUCTURE>(),
-        dvd_read_structure,
+        (dvd_read_structure).cast(),
         core::mem::size_of::<DVD_DESCRIPTOR_HEADER>() + core::mem::size_of::<DVD_COPYRIGHT_DESCRIPTOR>(),
         &mut bytes_returned,
     );
@@ -2357,9 +2359,9 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
         device_extension,
         IOCTL_DVD_READ_KEY,
         core::ptr::null_mut(),
-        copy_protect_key,
+        (copy_protect_key).cast(),
         DVD_RPC_KEY_LENGTH,
-        copy_protect_key,
+        (copy_protect_key).cast(),
         DVD_RPC_KEY_LENGTH,
         &mut bytes_returned,
     );
@@ -2504,7 +2506,7 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
     status = DvdSendKey(
         device_extension,
         core::ptr::null_mut(),
-        copy_protect_key,
+        (copy_protect_key).cast(),
         DVD_SET_RPC_KEY_LENGTH,
         &mut bytes_returned,
     );
@@ -2642,7 +2644,8 @@ pub unsafe extern "C" fn DeviceRegisterInterface(
     status
 }
 #[no_mangle]
-pub unsafe extern "C" fn DeviceRestoreDefaultSpeed(WorkItem: WDFWORKITEM) {
+// cdrom.h: `EVT_WDF_WORKITEM DeviceRestoreDefaultSpeed;` -- a WDF callback, stdcall on i386.
+pub unsafe extern "system" fn DeviceRestoreDefaultSpeed(WorkItem: WDFWORKITEM) {
     let mut status: i32;
     let device: WDFDEVICE = WdfWorkItemGetParentObject(WorkItem) as WDFDEVICE;
     let deviceExtension: *mut CDROM_DEVICE_EXTENSION = DeviceGetExtension(device);
@@ -2678,8 +2681,8 @@ pub unsafe extern "C" fn DeviceRestoreDefaultSpeed(WorkItem: WDFWORKITEM) {
     srb.CdbLength = 12;
     (*cdb).SET_STREAMING.as_mut().OperationCode = SCSIOP_SET_STREAMING;
     REVERSE_BYTES_SHORT(
-        core::ptr::addr_of_mut!((*cdb).SET_STREAMING.as_mut().ParameterListLength) as *mut u16,
-        core::ptr::addr_of!(transferLength) as *const u32,
+        (core::ptr::addr_of_mut!((*cdb).SET_STREAMING.as_mut().ParameterListLength) as *mut u16).cast(),
+        (core::ptr::addr_of!(transferLength) as *const u32).cast(),
     );
 
     status = DeviceSendSrbSynchronously(
@@ -2701,7 +2704,10 @@ pub unsafe extern "C" fn DeviceRestoreDefaultSpeed(WorkItem: WDFWORKITEM) {
     WdfObjectDelete(WorkItem as WDFOBJECT);
 }
 #[no_mangle]
-pub unsafe extern "C" fn StringsAreMatched(StringToMatch: *mut i8, TargetString: *mut i8) -> i32 {
+// cdrom.h: `BOOLEAN StringsAreMatched(_In_opt_z_ PCHAR, _In_z_ PCHAR)`, a default-convention
+// (cdecl) function returning BOOLEAN. Both strings are only read, so they are `*const` here,
+// which every caller passes; the ABI is the same.
+pub unsafe extern "C" fn StringsAreMatched(StringToMatch: *const i8, TargetString: *const i8) -> BOOLEAN {
     let length: usize;
     PAGED_CODE!();
     NT_ASSERT!((!TargetString.is_null()) as i32);
@@ -2710,9 +2716,9 @@ pub unsafe extern "C" fn StringsAreMatched(StringToMatch: *mut i8, TargetString:
     }
     length = strlen(StringToMatch);
     if length == 0 {
-        return (strlen(TargetString) == 0) as i32;
+        return (strlen(TargetString) == 0) as BOOLEAN;
     }
-    (strncmp(StringToMatch, TargetString, length) == 0) as i32
+    (strncmp(StringToMatch, TargetString, length) == 0) as BOOLEAN
 }
 #[no_mangle]
 pub unsafe extern "system" fn RequestSetContextFields(
@@ -3174,14 +3180,14 @@ pub unsafe extern "C" fn DeviceUnlockExclusive(
     if status >= 0 {
         if IgnorePreviousMediaChanges == 0 {
             let mut previousMediaState: i32 = MediaUnknown;
-            DeviceSetMediaChangeStateEx(DeviceExtension, MediaUnavailable, &raw mut previousMediaState);
+            DeviceSetMediaChangeStateEx(DeviceExtension, (MediaUnavailable) as MEDIA_CHANGE_DETECTION_STATE, (&raw mut previousMediaState).cast());
             TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"DeviceUnlockExclusive: Changing the media state to MediaUnavailable\n\0"
                     .as_ptr() as *const i8,
             );
-            DeviceSetMediaChangeStateEx(DeviceExtension, previousMediaState, core::ptr::null_mut());
+            DeviceSetMediaChangeStateEx(DeviceExtension, (previousMediaState) as MEDIA_CHANGE_DETECTION_STATE, core::ptr::null_mut());
         }
 
         if IsVolumeMounted((*DeviceExtension).DeviceObject) != 0 {
@@ -3414,14 +3420,14 @@ pub unsafe extern "C" fn DeviceSendPowerDownProcessRequest(
                         == 0) as i32);
 
                 let retry_remaining = retryCount - (*DeviceExtension).PowerContext.RetryCount;
-                shouldRetry = RequestSenseInfoInterpret(
+                shouldRetry = (RequestSenseInfoInterpret(
                     DeviceExtension,
                     (*DeviceExtension).PowerContext.PowerRequest as *mut core::ffi::c_void,
                     &raw mut (*DeviceExtension).PowerContext.Srb,
                     retry_remaining,
                     &mut status,
-                    &raw mut (*DeviceExtension).PowerContext.RetryIntervalIn100ns as *mut LARGE_INTEGER,
-                );
+                    (&raw mut (*DeviceExtension).PowerContext.RetryIntervalIn100ns as *mut LARGE_INTEGER).cast(),
+                )) as u8;
 
                 if shouldRetry != 0 {
                     let current = (*DeviceExtension).PowerContext.RetryCount;

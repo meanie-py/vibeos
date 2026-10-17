@@ -1,5 +1,3 @@
-add_rc_deps(kbswitch.rc ${CMAKE_CURRENT_SOURCE_DIR}/res/kbswitch.ico)
-
 add_subdirectory(indicdll)
 
 # kbswitch.exe is all Rust (kbswitch-rust) and cargo links it:
@@ -8,15 +6,8 @@ add_subdirectory(indicdll)
 # The translated C, kept on disk:
 # kbswitch.c  # replaced by Rust (sdk/lib/rust/kbswitch-rust/src/kbswitch/kbswitch.rs)
 # imemenu.c  # replaced by Rust (sdk/lib/rust/kbswitch-rust/src/kbswitch/imemenu.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(kbswitch_res OBJECT kbswitch.rc)
-target_compile_definitions(kbswitch_res PRIVATE UNICODE _UNICODE)
-target_include_directories(kbswitch_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-# Generated inputs those compiles read, ordered before them.
-add_dependencies(kbswitch_res indicdll)
 add_cargo_module(kbswitch kbswitch-cargo kbswitch.exe
     KIND win32exe
     BODY_CRATE kbswitch-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS kbswitch_res psdk)
+    EXTRA_DEPENDS psdk indicdll)

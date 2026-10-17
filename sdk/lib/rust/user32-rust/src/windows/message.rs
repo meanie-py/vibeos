@@ -17,6 +17,8 @@
 //!    via the `wnd_pti()` helper.
 
 use crate::internal::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::windows::window::HeapAlloc;
 use crate::ntwrapper::*;
 use win32k_sys::win32k::*;
 use core::ffi::{c_int, c_void};
@@ -59,12 +61,11 @@ unsafe fn CALL_EXTERN_WNDPROC(
 // kernel32 (winbase.h) public exports.
 extern "system" {
     fn GetProcessHeap() -> *mut c_void;
-    fn HeapAlloc(hHeap: *mut c_void, dwFlags: DWORD, dwBytes: SIZE_T) -> LPVOID;
-    fn HeapReAlloc(hHeap: *mut c_void, dwFlags: DWORD, lpMem: LPVOID, dwBytes: SIZE_T) -> LPVOID;
+    pub fn HeapReAlloc(hHeap: *mut c_void, dwFlags: DWORD, lpMem: LPVOID, dwBytes: SIZE_T) -> LPVOID;
     fn HeapFree(hHeap: *mut c_void, dwFlags: DWORD, lpMem: LPVOID) -> BOOL;
     fn SetLastError(dwErrCode: DWORD);
     fn GetTickCount() -> DWORD;
-    fn GlobalAlloc(uFlags: UINT, dwBytes: SIZE_T) -> HGLOBAL;
+    pub fn GlobalAlloc(uFlags: UINT, dwBytes: SIZE_T) -> HGLOBAL;
     fn GlobalLock(hMem: HGLOBAL) -> LPVOID;
     fn GlobalUnlock(hMem: HGLOBAL) -> BOOL;
     fn GlobalFree(hMem: HGLOBAL) -> HGLOBAL;
@@ -87,10 +88,10 @@ extern "system" {
         dwMilliseconds: DWORD,
         bAlertable: BOOL,
     ) -> DWORD;
-    fn InitializeCriticalSection(lpCriticalSection: *mut CRITICAL_SECTION);
-    fn DeleteCriticalSection(lpCriticalSection: *mut CRITICAL_SECTION);
-    fn EnterCriticalSection(lpCriticalSection: *mut CRITICAL_SECTION);
-    fn LeaveCriticalSection(lpCriticalSection: *mut CRITICAL_SECTION);
+    pub fn InitializeCriticalSection(lpCriticalSection: *mut CRITICAL_SECTION);
+    pub fn DeleteCriticalSection(lpCriticalSection: *mut CRITICAL_SECTION);
+    pub fn EnterCriticalSection(lpCriticalSection: *mut CRITICAL_SECTION);
+    pub fn LeaveCriticalSection(lpCriticalSection: *mut CRITICAL_SECTION);
 }
 
 // user32 public exports living in still-C TUs (resolve within user32.dll).

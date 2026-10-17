@@ -3,8 +3,8 @@ set(wscript_folder ${REACTOS_SOURCE_DIR}/base/applications/cmdutils/wscript)
 include_directories(${wscript_folder})
 
 add_idl_headers(cscript_idlheader ihost.idl)
+# rsrc.rc embeds the typelib (Linker::rc compiles it): the cell depends on it below.
 add_typelib(ihost.idl)
-set_source_files_properties(rsrc.rc PROPERTIES OBJECT_DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/ihost.tlb)
  # CORE-5743: No ARRAY_SIZE macro
 
 include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle
@@ -16,24 +16,9 @@ include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_or
 # ${wscript_folder}/arguments.c  # replaced by Rust (sdk/lib/rust/wscript-rust/src/wscript/arguments.rs, feature cscript)
 # ${wscript_folder}/host.c  # replaced by Rust (sdk/lib/rust/wscript-rust/src/wscript/host.rs, feature cscript)
 # ${wscript_folder}/main.c  # replaced by Rust (sdk/lib/rust/wscript-rust/src/wscript/main.rs, feature cscript)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(cscript_shims OBJECT ${REACTOS_SOURCE_DIR}/base/applications/cmdutils/wscript/rust_varargs_shim.c)
-target_link_libraries(cscript_shims PRIVATE uuid wine oldnames libshell32 liboleaut32 libole32 libadvapi32 libuser32 libmsvcrt libkernel32 libntdll)
-target_compile_definitions(cscript_shims PRIVATE UNICODE _UNICODE)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(cscript_res OBJECT rsrc.rc)
-target_compile_definitions(cscript_res PRIVATE UNICODE _UNICODE)
-target_include_directories(cscript_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-# How cmake compiled the target's sources, now on the OBJECT libraries.
-set_wine_module_fixme(cscript_shims)
-set_wine_module_fixme(cscript_res)
-# Generated inputs those compiles read, ordered before them.
-add_dependencies(cscript_shims stdole2 cscript_idlheader)
-add_dependencies(cscript_res stdole2 cscript_idlheader)
 add_cargo_module(cscript cscript-cargo cscript.exe
     KIND win32exe
     BODY_CRATE wscript-rust
     DESTINATION reactos/system32
     DELAY_IMPORTS
-    EXTRA_DEPENDS cscript_shims cscript_res psdk uuid_sources)
+    EXTRA_DEPENDS psdk uuid_sources stdole2 cscript_idlheader ${CMAKE_CURRENT_BINARY_DIR}/ihost.tlb uuid wine oldnames libshell32 liboleaut32 libole32 libadvapi32 libuser32 libmsvcrt libkernel32 libntdll)

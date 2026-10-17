@@ -672,7 +672,7 @@ pub unsafe fn TLB_copy_all_custdata(
     let ct = list_count(custdata_list);
 
     (*pCustData).prgCustData =
-        CoTaskMemAlloc(ct as usize * size_of::<CUSTDATAITEM>()) as *mut CUSTDATAITEM;
+        CoTaskMemAlloc((ct as usize * size_of::<CUSTDATAITEM>()) as _) as *mut CUSTDATAITEM;
     if (*pCustData).prgCustData.is_null() {
         return E_OUTOFMEMORY;
     }

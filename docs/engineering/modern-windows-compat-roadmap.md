@@ -425,20 +425,62 @@ at every DLL_EXPORT_VERSION, and rtworkq is synced to 11.19 to match mfplat.
   except Docker's `mi` and three AMD GPU-driver runtimes a vendor driver installs
   (`amdhip64_6` for Blender, `mantle32`/`mantle64` for Steam).
 
+**Done 2026-10-16: console fonts and condition-variable wakes.**
+- GetCurrentConsoleFont, GetCurrentConsoleFontEx and GetConsoleFontSize report the font
+  (consrv's frontend vtable gained GetFontSize). As measured on Windows 11: the size is the
+  font's unscaled one (Consolas 16 reads 0x16), index 1 fails ERROR_INVALID_PARAMETER, and
+  `bMaximumWindow` answers the maximum window size in characters, not a font size.
+- A condition-variable wake no longer costs clock ticks on one CPU: the waker released the
+  keyed event while holding the CV's lock bit, and the boosted waiter spun on it until its
+  quantum ended (field manual, "On ONE CPU, a woken waiter that spins"). A pool work item
+  went from 36 ms median / 470 ms worst to ~95 us, which is what mfplat.c:3308's 100 ms
+  standard-queue check was catching. `tools/payloads/wakeprobe` measures it. The kernel's
+  keyed event now reports a wait that was paired while timing out as satisfied.
+
+**Done 2026-10-17: wbemprox at Wine 11.19.** The WMI provider and its suites are Wine 11.19's
+(new: StandardCimv2, Storage and SecurityCenter2 namespaces, sysrestore, WbemContext), plus
+a `Win32_OptionalFeature` class with Windows 11's schema and no instances, which Docker
+queries. In the guest the query suite runs 1369 tests and services 70; every failure is a
+todo_wine (13 × query.c:169, the image name `EXPLORER.EXE` in capitals, was CDFS copying the
+UPCASED match name into the file object on a case-insensitive open; Windows 11's cdfs.sys reports
+the stored case, measured on a mounted ISO, and so does ours since 2026-10-17). What it needed
+from us: tlhelp32.h's 64-bit layouts (field manual, "The SDK header can be the wrong side"),
+`GetAdaptersAddresses` returning the LH struct (wbemprox reads its gateway and LUID fields),
+`ConvertLengthToIpv4Mask`, and the LiveCD's `ProgramFilesDir`. `tools/payloads/wmiwinetest`
+runs it.
+
 **Owed on the export surface:**
 - **Modules other apps still need:** `mi` (Docker; WMI's Management Infrastructure, which
-  Wine does not have). Office: bring it in when the rest is green, it is its own campaign.
-- **d3d11.dll is built only at DLL_EXPORT_VERSION >= 0x600**, so a default build has no
-  D3D11CreateDevice at all; Wine's mfplat suite ends on that NULL pointer, and Chrome and
-  Office import d3d11. Decide whether to build the d3d family at every version (rtworkq and
-  dxva2 already are).
-- **mfplat.c:3308, "MFASYNC_CALLBACK_QUEUE_STANDARD is not blocked"**, now failing in the
-  C and the Rust alike (the Rust passed it once): with an IO-queue read blocked, a
-  standard-queue work item does not run within 100 ms, and the test then releases the
-  NULL result and dies. rtworkq gives each system queue its own pool (standard max 1, IO
-  max 4) and our Tp* honour `env->Pool`; next is the same wait lengthened, then KVM, to split
-  TCG latency from a real stall. The three child-process "wait failed" lines are the same
-  suite's children; run directly they pass.
+  Wine does not have): in progress as a Rust mi.dll over wbemprox; `sdk/include/psdk/mi.h`
+  is OMI's header, and the function tables were measured on Windows 11. Office: bring it in when the rest is green, it is its own campaign.
+- **The d3d10/11 family (d2d1, dwrite, dxgi, d3dx10/11) is built at every version**
+  (2026-10-17); before, a default build had no d3d11.dll at all. `tools/payloads/d3dwinetest`
+  runs Wine's d3d11 and dxgi suites (imported at the DLLs' own sync point, wine-10.1-dev
+  b00c7619f1b) plus d2d1 and dwrite. `D3D11CreateDevice` fails cleanly here (d3d11: 213
+  skipped, 0 failures; d2d1: 166 tests, 0 failures), so a program still takes its fallback.
+  dwrite never used combase (declined in this tree), so it no longer imports it.
+  Done 2026-10-17: dxgi's suite runs clean (83 tests, 0 failures). Its "cannot initialise
+  `\\.\DISPLAY1`" was wined3d leaking a D3DKMT adapter on every failed GL init until
+  gdi32_vista's 16 emulated slots ran out, and its crash was `CreateDXGIFactory` failing
+  outright with no GL adapter; the factory now falls back to the no-3D adapter, as ddraw does,
+  since Windows always has the Basic Display Adapter. `NtGdiGetFontRealizationInfo`,
+  `NtGdiGetFontFileInfo` and `NtGdiGetFontFileData` are real (Wine win32u semantics; a
+  loaded face's id is `FONTGDI.iUnique`). dwrite and its tests are at Wine 11.19: on the
+  Windows host our dwrite.dll passes Wine's own analyzer suite with 0 failures and layout
+  with 7, under `WINETEST_PLATFORM=wine` (`classify_failures.py` makes the same todo_wine
+  split for a guest log). Owed: in the guest, analyzer has 31 and layout 9 failures beyond
+  todo_wine, all where the result depends on which fonts are installed (Arabic shaping,
+  justification, combining marks); the font suite outruns the sweep's fixed 120 s per
+  subtest (`PER_SUBTEST_TIMEOUT_MS` in apitest-sweep.c wants a per-suite override).
+- **mf.c:4553, the presentation clock's callback interval,** reads 27-188 ms instead of a
+  tick, with or without the condition-variable fix; the 10 ms periodic pool timer alone runs
+  at 64 Hz in wakeprobe. Repro (2026-10-17): `gen_suites.py ... --repeat mf:mf=3` then
+  `smoke --arch amd64 --payload mfwinetest --repeat 6` failed 7 of 18 mf runs, in 5 of 6
+  boots and in any run (first, second or third), so "the first run passes" was wrong.
+  mfplat.c:3308 (`0x102`) showed once in the same 6 boots. NOT the timer queue's order:
+  its periodic re-arm did insert one place early (fixed, a real divergence from Wine's
+  C), but with that fix on the media the same soak still failed 8 of 18.
+  Seen once beside it: mf.c:4493 "got count 0, state 0".
 - **mf's converter scenario:** both builds fail mf.c's "SetTopology ... requiring a
   converter" checks (no converter MFT is registered: the codec gap below).
 - **Codecs for Media Foundation** (above): native Rust demuxers/decoders, or ports of
@@ -449,9 +491,7 @@ at every DLL_EXPORT_VERSION, and rtworkq is synced to 11.19 to match mfplat.
   single "re-island and reassemble from banks" command. Split island groups are now
   reported by `port island` but still not generated.
 - **New partials from the third batch:** iphlpapi change notifications after the
-  initial one, IPv6 tables; IDN nameprep without NFKC; consrv's
-  SrvGetConsoleCurrentFont leaves the font size zero (frontendctl.c FIXME), so
-  GetCurrentConsoleFont(Ex) under-report.
+  initial one, IPv6 tables; IDN nameprep without NFKC.
 - **Bodies that answer honestly but not fully:** `GetNamedPipeServerProcessId` (npfs has
   no attribute FSCTL); `GetProcessInformation(ProcessMachineTypeInfo)` (no
   NtQuerySystemInformationEx); Get/SetRestrictedErrorInfo stay E_NOTIMPL as in Wine.
@@ -459,7 +499,10 @@ at every DLL_EXPORT_VERSION, and rtworkq is synced to 11.19 to match mfplat.
   apply Windows' manifest rule in `GetVersionEx` (6.2 unless the manifest declares the
   Windows 10 `supportedOS`; `RtlGetVersion` is never lied to), and audit the ~88 sources
   that branch on the version. Last, because a program that sees 10.0 stops taking its
-  XP fallback.
+  XP fallback. The audit is done (`version-flip-audit.md`, 2026-10-17): we report 5.2 build
+  3790 today; 11 checks break at 10.0, starting with three `& 0x3FFF` build masks that turn
+  22000 into 5616, and ntdll records the LOWEST supportedOS GUID, which cannot answer the
+  manifest rule.
 - **Seed the stub-hit report with real programs.** Its first reading (607 boots: smoke,
   kmtest on all arches, and one amd64 appstorm sweep, which opens every stock app and
   applet): exactly one stub is reached, the SEH smoke probe's deliberate
@@ -478,8 +521,17 @@ at every DLL_EXPORT_VERSION, and rtworkq is synced to 11.19 to match mfplat.
   did), so exporting them as they stand would turn a load failure into a start failure. The Po pair want a success that never calls back
   (or calls back once with the current value, as Windows does: grade it there first).
   The NDIS 6 NetBufferList/miniport surface is the big one after that.
-- **The gated rows left** (`gated build-amd64`, 2026-10-15: 36 absent, 10 excluded): ntdll's
-  hash helpers (`MD5*`, `A_SHA*`) and memory/IO resource codecs (20), ntoskrnl's PoFx
+- **The gated rows left** (`gated build-amd64`, 2026-10-15: 36 absent, 10 excluded). ntdll's
+  20 are done (2026-10-17): MD4/MD5/A_SHA, the memory/IO resource codecs,
+  `Nt/ZwGetCurrentProcessorNumberEx`, `RtlInterlockedPushListSListEx`,
+  `RtlIsNameInExpression` (written fresh: a port of upstream name.c disagreed with Windows
+  on 2,881 of 308,320 cases), plus real `RtlIsValidLocaleName`/`RtlConvertLCIDToString`.
+  `tools/ntdll-gated-oracle/run.sh` diffs the shipping files against the real ntdll on the
+  Windows host, x64 and x86. The locale table now agrees with Windows 11 in both directions
+  (Dari folded into Persian: `prs` -> 0x29, 0x48C prints `fa-AF`, 0x8C prints `fa`; 0x476
+  prints `la-VA`), and the oracle asserts zero mismatches. i386 SList is a kept divergence:
+  Windows 8+ x86 renamed the header's Sequence to CpuId and stopped bumping it, but our pop's
+  cmpxchg8b relies on that counter against ABA, and the field is reserved for callers. Left: ntoskrnl's PoFx
   runtime power (10; ntoskrnl_vista, which the kernel does not link, has NOT_IMPLEMENTED
   bodies), the gdi32 D3DKMT scheduling/adapter calls (7), kernel32's console `*Ex` calls
   (6), shell32's SHCreateItemInKnownFolder and SHEvaluateSystemCommandTemplate (2) and

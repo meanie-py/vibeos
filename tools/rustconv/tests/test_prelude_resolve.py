@@ -611,3 +611,49 @@ def test_a_kernel_crate_never_takes_the_console_crate(tmp_path):
     assert "conutils" not in (ws / "kern" / "Cargo.toml").read_text()
     pr.refresh_shared_crates(ws / "user", ws)
     assert "pub use conutils_h::{ConPuts};" in (ws / "user" / "src" / "prelude.rs").read_text()
+
+
+def test_the_ddk_macros_go_to_a_kernel_crate_that_calls_them_and_nowhere_else(tmp_path):
+    # ddk-macros-rust expands to ntkrnl-sys calls: a user-mode crate must never take it, and a
+    # kernel crate takes it only when it calls one of its names (it is opt-in).
+    ws = tmp_path / "ws"
+    (ws / "ddk-macros-rust" / "src").mkdir(parents=True)
+    (ws / "ddk-macros-rust" / "src" / "lib.rs").write_text(
+        "#[macro_export]\nmacro_rules! NdisAcquireSpinLock { ($l:expr) => {} }\n"
+    )
+    for name, dep, body in (
+        ("caller", "ntkrnl-sys", "fn f() { NdisAcquireSpinLock(l); }\n"),
+        ("idle", "ntkrnl-sys", "fn f() {}\n"),
+        ("user", "ntdll-sys", "fn f() { NdisAcquireSpinLock(l); }\n"),
+    ):
+        crate = ws / name
+        (crate / "src").mkdir(parents=True)
+        (crate / "src" / "prelude.rs").write_text("// x\n")
+        (crate / "src" / "m.rs").write_text(body)
+        (crate / "Cargo.toml").write_text(f'[dependencies]\n{dep} = {{ path = "../{dep}" }}\n')
+    for name in ("caller", "idle", "user"):
+        pr.refresh_shared_crates(ws / name, ws)
+    assert "ddk_macros_rust::{NdisAcquireSpinLock}" in (ws / "caller/src/prelude.rs").read_text()
+    assert "ddk_macros" not in (ws / "idle/src/prelude.rs").read_text()
+    assert "ddk_macros" not in (ws / "user/src/prelude.rs").read_text()
+
+
+def test_a_delay_imported_library_is_an_export_authority(tmp_path):
+    # reactos.exe took setuplib with add_delay_importlibs, and resolve refused SelectPartition
+    # & co. as "no import library this module links exports it". A fixture, not the real
+    # tree: that CMakeLists became a cargo cell and no longer names its import libraries.
+    import subprocess
+
+    repo = tmp_path / "repo"
+    (repo / "app").mkdir(parents=True)
+    (repo / "lib").mkdir()
+    (repo / "app" / "CMakeLists.txt").write_text(
+        "add_executable(app app.c)\nset_module_type(app win32gui UNICODE)\n"
+        "add_importlibs(app kernel32)\nadd_delay_importlibs(app setupx)\n"
+    )
+    (repo / "lib" / "kernel32.spec").write_text("@ stdcall Sleep(long)\n")
+    (repo / "lib" / "setupx.spec").write_text("@ stdcall SelectPartition(ptr long)\n")
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    names = pr.module_exports(repo / "app", repo)
+    assert names is not None and {"Sleep", "SelectPartition"} <= names

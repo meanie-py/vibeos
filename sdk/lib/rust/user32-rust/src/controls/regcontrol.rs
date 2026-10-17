@@ -1,4 +1,6 @@
 use win32k_sys::win32k::*;
+// The crate's own functions: the definition is the declaration.
+use crate::windows::cursoricon::LoadCursorW;
 #[allow(unused_imports)]
 use core::ffi::c_void;
 
@@ -39,7 +41,6 @@ extern "system" {
     fn IntersectClipRect(hdc: HDC, left: INT, top: INT, right: INT, bottom: INT) -> INT;
 
     // user32 own-exports (resolve within this DLL).
-    fn LoadCursorW(hInstance: HINSTANCE, lpCursorName: LPCWSTR) -> HCURSOR;
     fn RegisterClassExWOWW(
         lpwcx: *mut WNDCLASSEXW,
         pdwWowData: LPDWORD,

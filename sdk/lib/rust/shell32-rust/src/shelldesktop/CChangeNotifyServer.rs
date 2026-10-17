@@ -1,4 +1,8 @@
 use crate::prelude::*;
+// The crate's own functions: the definition is the declaration.
+use crate::wine::pidl::SHGetPathFromIDListW;
+// One declaration per external symbol: island.rs.
+use crate::island::DestroyWindow;
 use crate::shelldesktop::CChangeNotifyServer_window::{
     CChangeNotifyServer_SubclassWindow, SHCreateDefaultWorkerWindow,
 };
@@ -176,8 +180,6 @@ pub const SHCNRF_ShellLevel: DWORD = 0x0002;
 pub const WM_DESTROY: DWORD = 2;
 
 extern "system" {
-    fn DestroyWindow(window: HWND) -> BOOL;
-    fn SHGetPathFromIDListW(pidl: LPCITEMIDLIST, path: LPWSTR) -> BOOL;
     fn GetLastError() -> DWORD;
 }
 

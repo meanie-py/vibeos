@@ -125,9 +125,10 @@ vendor-patches/*.patch -text
 vendor/edk2/License.txt -text
 COPYING.DJ -text
 
-# Every translation lane appends to these two files, so git's line merge conflicts on
+# Every translation lane appends to these three files, so git's line merge conflicts on
 # nearly every lane merge. tools/merge_drivers.py merges them by structure: the driver
-# table arm by arm, the census row by row. A real both-sides edit still conflicts.
+# table arm by arm, the census row by row, the workspace members crate by crate. A real both-sides edit still conflicts.
 # Configured per clone by tools/install-git-hooks.sh; without that, git merges as before.
 tools/rustconv/gen_driver_types.sh merge=vibeos-case-arms
 tools/cohab-census.txt merge=vibeos-census
+sdk/lib/rust/Cargo.toml merge=vibeos-cargo-members

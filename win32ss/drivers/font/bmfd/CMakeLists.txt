@@ -8,12 +8,8 @@
 # font.c  # replaced by Rust (sdk/lib/rust/bmfd-rust/src/bmfd/font.rs)
 # glyph.c  # replaced by Rust (sdk/lib/rust/bmfd-rust/src/bmfd/glyph.rs)
 # The C still compiled, in an OBJECT library whose compile the cargo link replays.
-# Generated inputs those compiles read, ordered before them.
-add_library(bmfd_shims OBJECT rust_varargs_shim.c)
-target_link_libraries(bmfd_shims PRIVATE libcntpr libwin32k)
-add_dependencies(bmfd_shims psdk)
 add_cargo_module(bmfd bmfd-cargo bmfd.dll
     KIND kerneldll
     BODY_CRATE bmfd-rust
     NO_CD
-    EXTRA_DEPENDS bmfd_shims asm psdk)
+    EXTRA_DEPENDS asm psdk libcntpr libwin32k)

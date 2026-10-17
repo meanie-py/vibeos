@@ -1,4 +1,10 @@
 use win32k_sys::win32k::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::windows::cursoricon::FindResourceW;
+use crate::windows::window::HeapAlloc;
+use crate::windows::cursoricon::LoadResource;
+// The crate's own functions: the definition is the declaration.
+use crate::misc::display::MonitorFromRect;
 
 use core::ffi::c_void;
 
@@ -56,14 +62,11 @@ extern "C" {
 // kernel32 imports (extern "system").
 extern "system" {
     fn GetProcessHeap() -> *mut core::ffi::c_void;
-    fn HeapAlloc(hHeap: *mut core::ffi::c_void, dwFlags: u32, dwBytes: usize) -> *mut core::ffi::c_void;
     fn HeapFree(hHeap: *mut core::ffi::c_void, dwFlags: u32, lpMem: LPVOID) -> i32;
     fn SetLastError(dwErrCode: DWORD);
     fn MultiByteToWideChar(CodePage: u32, dwFlags: u32, lpMultiByteStr: LPCSTR, cbMultiByte: i32, lpWideCharStr: LPWSTR, cchWideChar: i32) -> i32;
     fn WideCharToMultiByte(CodePage: u32, dwFlags: u32, lpWideCharStr: LPCWSTR, cchWideChar: i32, lpMultiByteStr: LPSTR, cbMultiByte: i32, lpDefaultChar: LPCSTR, lpUsedDefaultChar: *mut i32) -> i32;
-    fn FindResourceA(hModule: HINSTANCE, lpName: LPCSTR, lpType: LPCSTR) -> HRSRC;
-    fn FindResourceW(hModule: HINSTANCE, lpName: LPCWSTR, lpType: LPCWSTR) -> HRSRC;
-    fn LoadResource(hModule: HINSTANCE, hResInfo: HRSRC) -> *mut core::ffi::c_void;
+    pub fn FindResourceA(hModule: HINSTANCE, lpName: LPCSTR, lpType: LPCSTR) -> HRSRC;
     fn SetCurrentDirectoryW(lpPathName: LPCWSTR) -> BOOL;
     fn GetCurrentDirectoryW(nBufferLength: DWORD, lpBuffer: LPWSTR) -> DWORD;
 }
@@ -72,7 +75,7 @@ extern "system" {
 extern "system" {
     fn ReleaseDC(hWnd: HWND, hDC: HDC) -> i32;
     fn GetDeviceCaps(hdc: HDC, index: core::ffi::c_int) -> core::ffi::c_int;
-    fn CreateFontIndirectW(lplf: *const LOGFONTW) -> HFONT;
+    pub fn CreateFontIndirectW(lplf: *const LOGFONTW) -> HFONT;
     fn CreateFontW(cHeight: INT, cWidth: INT, cEscapement: INT, cOrientation: INT, cWeight: INT, bItalic: DWORD, bUnderline: DWORD, bStrikeOut: DWORD, iCharSet: DWORD, iOutPrecision: DWORD, iClipPrecision: DWORD, iQuality: DWORD, iPitchAndFamily: DWORD, pszFaceName: LPCWSTR) -> HFONT;
     fn SelectObject(hdc: HDC, h: LPVOID) -> LPVOID;
     fn DeleteObject(ho: LPVOID) -> BOOL;
@@ -128,7 +131,6 @@ extern "system" {
     fn SystemParametersInfoW(uiAction: UINT, uiParam: UINT, pvParam: PVOID, fWinIni: UINT) -> BOOL;
     fn MonitorFromWindow(hwnd: HWND, dwFlags: DWORD) -> HMONITOR;
     fn MonitorFromPoint(pt: POINT, dwFlags: DWORD) -> HMONITOR;
-    fn MonitorFromRect(lprc: LPRECT, dwFlags: DWORD) -> HMONITOR;
     fn GetMonitorInfoW(hMonitor: HMONITOR, lpmi: LPMONITORINFO) -> BOOL;
     fn LoadMenuW(hInstance: HINSTANCE, lpMenuName: LPCWSTR) -> HMENU;
     fn UpdateWindow(hWnd: HWND) -> BOOL;
@@ -317,7 +319,7 @@ unsafe extern "system" fn DIALOG_get_info(hWnd: HWND, create: BOOL) -> *mut DIAL
             dlgInfo = HeapAlloc(
                 GetProcessHeap(),
                 HEAP_ZERO_MEMORY,
-                core::mem::size_of::<DIALOGINFO>(),
+                (core::mem::size_of::<DIALOGINFO>()) as SIZE_T,
             ) as *mut DIALOGINFO;
             if dlgInfo.is_null() {
                 return core::ptr::null_mut();
@@ -380,7 +382,7 @@ unsafe fn DIALOG_GetControl32(mut p: *const u16, info: *mut DLG_CONTROL_INFO, di
     }
 
     if *p == 0xffff {
-        (*info).windowName = HeapAlloc(GetProcessHeap(), 0, core::mem::size_of::<[u16; 7]>()) as LPCWSTR;
+        (*info).windowName = HeapAlloc(GetProcessHeap(), 0, (core::mem::size_of::<[u16; 7]>()) as SIZE_T) as LPCWSTR;
         if !(*info).windowName.is_null() {
             wsprintfW((*info).windowName as LPWSTR, {
                 static FMT: [u16; 4] = [b'#' as u16, b'%' as u16, b'u' as u16, 0];
@@ -461,14 +463,14 @@ unsafe fn DIALOG_CreateControls32(hwnd: HWND, mut template: LPCSTR, dlgTemplate:
 
             if !IS_INTRESOURCE(class as LPCVOID) {
                 let len: DWORD = WideCharToMultiByte(CP_ACP, 0, info.className, -1, core::ptr::null_mut(), 0, core::ptr::null_mut(), core::ptr::null_mut()) as DWORD;
-                class = HeapAlloc(GetProcessHeap(), 0, len as usize) as LPSTR;
+                class = HeapAlloc(GetProcessHeap(), 0, (len) as SIZE_T) as LPSTR;
                 if !class.is_null() {
                     WideCharToMultiByte(CP_ACP, 0, info.className, -1, class, len as i32, core::ptr::null_mut(), core::ptr::null_mut());
                 }
             }
             if !IS_INTRESOURCE(caption as LPCVOID) {
                 let len: DWORD = WideCharToMultiByte(CP_ACP, 0, info.windowName, -1, core::ptr::null_mut(), 0, core::ptr::null_mut(), core::ptr::null_mut()) as DWORD;
-                caption = HeapAlloc(GetProcessHeap(), 0, len as usize) as LPSTR;
+                caption = HeapAlloc(GetProcessHeap(), 0, (len) as SIZE_T) as LPSTR;
                 if !caption.is_null() {
                     WideCharToMultiByte(CP_ACP, 0, info.windowName, -1, caption, len as i32, core::ptr::null_mut(), core::ptr::null_mut());
                 }
@@ -1055,7 +1057,7 @@ unsafe fn DIALOG_CreateIndirect(
                 core::ptr::null_mut(),
                 core::ptr::null_mut(),
             ) as DWORD;
-            class_tmp = HeapAlloc(GetProcessHeap(), 0, len as usize) as LPSTR;
+            class_tmp = HeapAlloc(GetProcessHeap(), 0, (len) as SIZE_T) as LPSTR;
             WideCharToMultiByte(
                 CP_ACP,
                 0,
@@ -1079,7 +1081,7 @@ unsafe fn DIALOG_CreateIndirect(
                 core::ptr::null_mut(),
                 core::ptr::null_mut(),
             ) as DWORD;
-            caption_tmp = HeapAlloc(GetProcessHeap(), 0, len as usize) as LPSTR;
+            caption_tmp = HeapAlloc(GetProcessHeap(), 0, (len) as SIZE_T) as LPSTR;
             WideCharToMultiByte(
                 CP_ACP,
                 0,
@@ -1723,7 +1725,7 @@ unsafe fn DIALOG_DlgDirListA(
         let specW = HeapAlloc(
             GetProcessHeap(),
             0,
-            (len as usize) * core::mem::size_of::<u16>(),
+            ((len as usize) * core::mem::size_of::<u16>()) as SIZE_T,
         ) as LPWSTR;
         if specW.is_null() {
             return 0;
@@ -2662,7 +2664,7 @@ pub unsafe extern "system" fn IsDialogMessageW(mut hDlg: HWND, lpMsg: LPMSG) -> 
                                     if dlgCode & DLGC_HASSETSEL as INT != 0 {
                                         let maxlen: INT = 1 + SendMessageW(hwndNext, WM_GETTEXTLENGTH, 0, 0) as INT;
                                         let buffer = HeapAlloc(GetProcessHeap(), 0,
-                                            (maxlen as usize) * core::mem::size_of::<u16>()) as *mut u16;
+                                            ((maxlen as usize) * core::mem::size_of::<u16>()) as SIZE_T) as *mut u16;
                                         if !buffer.is_null() {
                                             SendMessageW(hwndNext, WM_GETTEXT, maxlen as WPARAM, buffer as LPARAM);
                                             let length = strlenW(buffer);

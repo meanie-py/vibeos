@@ -1,15 +1,16 @@
 use crate::prelude::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::userenv::directory::CreateDirectoryW;
+use crate::prelude::RegOpenKeyExW;
+use crate::prelude::RegCloseKey;
 use core::ffi::c_void;
 
 
 extern "system" {
     // ARRAYSIZE removed: a MACRO, not a linkable fn (no live call sites in this module).
-    fn CreateDirectoryW(lpPathName: LPCWSTR, lpSecurityAttributes: *mut core::ffi::c_void) -> BOOL;
     fn ExpandEnvironmentStringsW(lpSrc: LPCWSTR, lpDst: *mut WCHAR, cchDst: DWORD) -> DWORD;
     fn GetLastError() -> DWORD;
     fn LoadStringW(hInstance: *mut core::ffi::c_void, uID: UINT, lpBuffer: *mut WCHAR, cchBufferMax: core::ffi::c_int) -> core::ffi::c_int;
-    fn RegCloseKey(hKey: HKEY) -> LONG;
-    fn RegOpenKeyExW(hKey: HKEY, lpSubKey: LPCWSTR, ulOptions: DWORD, samDesired: DWORD, phkResult: *mut HKEY) -> LONG;
     fn RegSetValueExW(hKey: HKEY, lpValueName: LPCWSTR, Reserved: DWORD, dwType: DWORD, lpData: *const BYTE, cbData: DWORD) -> LONG;
     fn SetLastError(dwErrCode: DWORD);
     // hInstance removed: it is the DLL's HINSTANCE data global (userenv.c), NOT a function —

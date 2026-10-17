@@ -16,17 +16,15 @@
 //! definition lives OUTSIDE this crate's ring belong in this file.
 #![allow(clippy::all)]
 use crate::prelude::*;
+// The crate's own functions: the definition is the declaration.
+pub use crate::compobj::compobj::CoCreateInstance;
+pub use crate::marshal::marshal::CoMarshalInterface;
+pub use crate::marshal::marshal::CoReleaseMarshalData;
+pub use crate::marshal::marshal::CoUnmarshalInterface;
 use core::ffi::c_void;
 
 extern "system" {
     // --- compobj.c (Rust, but #[no_mangle] exports — reachable as link symbols) ---
-    pub fn CoCreateInstance(
-        rclsid: REFCLSID,
-        pUnkOuter: *mut IUnknown,
-        dwClsContext: DWORD,
-        riid: REFIID,
-        ppv: *mut LPVOID,
-    ) -> HRESULT;
     pub fn CoInitializeEx(pvReserved: LPVOID, dwCoInit: DWORD) -> HRESULT;
     pub fn CoUninitialize();
     pub fn CoFileTimeNow(lpFileTime: *mut FILETIME) -> HRESULT;
@@ -36,16 +34,6 @@ extern "system" {
     pub fn CoLockObjectExternal(pUnk: *mut IUnknown, fLock: BOOL, fLastUnlockReleases: BOOL) -> HRESULT;
 
     // --- marshal.c / stubmanager.c (Rust) ---
-    pub fn CoMarshalInterface(
-        pStm: *mut IStream,
-        riid: REFIID,
-        pUnk: *mut IUnknown,
-        dwDestContext: DWORD,
-        pvDestContext: LPVOID,
-        mshlflags: DWORD,
-    ) -> HRESULT;
-    pub fn CoUnmarshalInterface(pStm: *mut IStream, riid: REFIID, ppv: *mut LPVOID) -> HRESULT;
-    pub fn CoReleaseMarshalData(pStm: *mut IStream) -> HRESULT;
     pub fn CoGetMarshalSizeMax(
         pulSize: *mut ULONG,
         riid: REFIID,

@@ -12,7 +12,9 @@ assignment `lhs = Stub(args);` to
 using ntdll_sys::seh::rpc_try. Only that shape is rewritten. Every stub call it cannot
 match (used inside an expression, a handler that is more than one mapped assignment, two
 C sites disagreeing on the handler) is listed for a hand conversion, and the exit status
-is 1 while any remain, so a partial run cannot pass for a complete one.
+is 1 while any remain, so a partial run cannot pass for a complete one. It then drops
+the dead `if _SEH2_Volatile0 != 0 { .. RpcExceptionCode() .. }` arms the translation
+kept, and the `_SEH2_Volatile*` locals once nothing reads them.
 
     tools/rpc_try_wrap.py --c dll/win32/advapi32/service/scm.c \
         --rs sdk/lib/rust/advapi32-rust/src/service/scm.rs [--dry-run]
@@ -119,6 +121,52 @@ def balanced_end(text: str, open_idx: int) -> int:
     return -1
 
 
+def brace_end(text: str, open_idx: int) -> int:
+    """Index just past the '}' matching the '{' at open_idx; -1 if unbalanced."""
+    swapped = text.translate(str.maketrans("{}()", "()  "))
+    return balanced_end(swapped, open_idx)
+
+
+# The translations kept DUMMY_PSEH's except arm as dead code guarded by a flag nothing
+# sets: `if _SEH2_Volatile0 != 0 { ret = Map(RpcExceptionCode()); }`. Once the call is
+# wrapped, rpc_try owns that mapping; the arm is dead, and RpcExceptionCode does not
+# exist in Rust, so it also keeps the crate from compiling.
+# The flag is spelled however the model chose (`_SEH2_Volatile0`, `__seh_raised`) and may
+# carry the filter's folded remains (`|| 0 != 0 && 1 != 0`); the arm reads the code as
+# RpcExceptionCode() or as the `_SEH2_VolatileExceptionCode` local.
+_FLAG = r"(?:_SEH2_Volatile\w*|__seh_raised|__rpc_raised)"
+DEAD_ARM_RE = re.compile(r"^[ \t]*if\s+(?:" + _FLAG + r"\s*!=\s*0\b[^{\n]*|false\s*)\{", re.M)
+_CODE_READ = re.compile(r"\bRpcExceptionCode\b|\b_SEH2_VolatileExceptionCode\b")
+SEH_LOCAL_RE = re.compile(
+    r"^[ \t]*(?:let\s+(?:mut\s+)?" + _FLAG + r"\b[^;\n]*"
+    r"|let\s+_\s*=\s*" + _FLAG + r"|" + _FLAG + r"\s*=[^;\n]*);[ \t]*\n",
+    re.M,
+)
+
+
+def drop_dead_arms(text: str) -> tuple[str, int]:
+    """Remove the dead except arms whose body reads RpcExceptionCode, then the
+    `_SEH2_Volatile*` locals once nothing reads them."""
+    out, pos, dropped = [], 0, 0
+    for m in DEAD_ARM_RE.finditer(text):
+        if m.start() < pos:
+            continue
+        end = brace_end(text, m.end() - 1)
+        if end < 0 or not _CODE_READ.search(text[m.end() : end]):
+            continue
+        if text[end:].startswith("\n"):
+            end += 1
+        out.append(text[pos : m.start()])
+        pos = end
+        dropped += 1
+    out.append(text[pos:])
+    new = "".join(out)
+    stripped = SEH_LOCAL_RE.sub("", new)
+    if not re.search(r"\b" + _FLAG + r"\b", stripped):
+        new = stripped
+    return new, dropped
+
+
 def on_err(mapper: tuple) -> str:
     kind, fn, val = mapper
     if kind == "setlast":
@@ -203,7 +251,8 @@ def main() -> int:
     for rs in args.rs:
         text = rs.read_text()
         new, done, leftovers = rewrite(text, handlers, unhandled)
-        print(f"{rs}: wrapped {done} call(s)")
+        new, dropped = drop_dead_arms(new)
+        print(f"{rs}: wrapped {done} call(s), dropped {dropped} dead except arm(s)")
         for left in leftovers:
             print(f"  NOT WRAPPED {rs.name}:{left}")
             status = 1

@@ -1,10 +1,8 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::mm::*;
-use ntkrnl_sys::ddk::{DWORD_PTR, FILE_COMPLETION_INFORMATION, _FILE_INFORMATION_CLASS_FileCompletionInformation as FileCompletionInformation, IMAGE_NT_HEADERS, _IO_STATUS_BLOCK, LARGE_INTEGER, LIST_ENTRY, NtClose, NtCreateEvent, NtDuplicateObject, NtCreateIoCompletion, NtQueryPerformanceCounter, NtQuerySystemTime, NtReleaseMutant, NtReleaseSemaphore, NtRemoveIoCompletion, NtSetEvent, NtSetInformationFile, NtSetInformationThread, NtSetIoCompletion, NtWaitForMultipleObjects, NtWaitForSingleObject, PHANDLE, PLARGE_INTEGER, PTHREAD_START_ROUTINE, RTL_CONDITION_VARIABLE, RTL_CRITICAL_SECTION, RtlAllocateHeap, RtlCreateUserThread, RtlDeleteCriticalSection, RtlEnterCriticalSection, RtlExitUserThread, RtlFreeHeap, RtlImageNtHeader, RtlInitUnicodeString, RtlInitializeConditionVariable, RtlInitializeCriticalSection, RtlLeaveCriticalSection, RtlNtStatusToDosError, RtlSleepConditionVariableCS, RtlWakeAllConditionVariable, RtlWakeConditionVariable, _EVENT_TYPE_SynchronizationEvent, THREAD_NAME_INFORMATION, _THREADINFOCLASS_ThreadNameInformation as ThreadNameInformation};
-use core::ffi::c_void;
+use ntkrnl_sys::ddk::{FILE_COMPLETION_INFORMATION, _FILE_INFORMATION_CLASS_FileCompletionInformation as FileCompletionInformation, IMAGE_NT_HEADERS, _IO_STATUS_BLOCK, LARGE_INTEGER, NtClose, NtCreateEvent, NtDuplicateObject, NtCreateIoCompletion, NtQuerySystemTime, NtReleaseMutant, NtReleaseSemaphore, NtRemoveIoCompletion, NtSetEvent, NtSetInformationFile, NtSetInformationThread, NtSetIoCompletion, NtWaitForMultipleObjects, PTHREAD_START_ROUTINE, RTL_CONDITION_VARIABLE, RTL_CRITICAL_SECTION, RtlAllocateHeap, RtlCreateUserThread, RtlDeleteCriticalSection, RtlEnterCriticalSection, RtlExitUserThread, RtlFreeHeap, RtlImageNtHeader, RtlInitUnicodeString, RtlInitializeConditionVariable, RtlInitializeCriticalSection, RtlLeaveCriticalSection, RtlSleepConditionVariableCS, RtlWakeAllConditionVariable, RtlWakeConditionVariable, _EVENT_TYPE_SynchronizationEvent, THREAD_NAME_INFORMATION, _THREADINFOCLASS_ThreadNameInformation as ThreadNameInformation};
 // crate substrate: win32 aliases, public TP_* types, WT_* flags,
 // RtlGetProcessHeap / GetCurrent* helpers (NtCurrentTeb impl), and the
 // wine intrusive-list port + LIST_ENTRY! macro.
@@ -436,11 +434,14 @@ unsafe extern "system" fn timerqueue_thread_proc(param: PVOID) -> ULONG {
                     (*timer).u.timer.timeout = now.QuadPart as ULONGLONG + 1;
                 }
 
-                other_timer = (core::ptr::addr_of_mut!(timerqueue.pending_timers) as usize
-                    - core::mem::offset_of!(threadpool_object, u.timer.timer_entry))
-                    as *mut threadpool_object;
-                let mut entry = (*core::ptr::addr_of_mut!(timerqueue.pending_timers)).next;
-                while entry != core::ptr::addr_of_mut!(timerqueue.pending_timers) {
+                // LIST_FOR_EACH_ENTRY + list_add_before: insert before the first timer due
+                // later, or before the HEAD (= at the tail) when none is. The loop cursor
+                // must be the list entry, not the last element visited: a walk that ran off
+                // the end used to insert before the LAST timer, out of order, and the timer
+                // thread only sleeps on the head, so the timer it displaced fired late.
+                let head = core::ptr::addr_of_mut!(timerqueue.pending_timers);
+                let mut entry = (*head).next;
+                while entry != head {
                     other_timer = (entry as usize
                         - core::mem::offset_of!(threadpool_object, u.timer.timer_entry))
                         as *mut threadpool_object;
@@ -449,10 +450,7 @@ unsafe extern "system" fn timerqueue_thread_proc(param: PVOID) -> ULONG {
                     }
                     entry = (*entry).next;
                 }
-                list_add_before(
-                    core::ptr::addr_of_mut!((*other_timer).u.timer.timer_entry),
-                    core::ptr::addr_of_mut!((*timer).u.timer.timer_entry),
-                );
+                list_add_before(entry, core::ptr::addr_of_mut!((*timer).u.timer.timer_entry));
                 (*timer).u.timer.timer_pending = 1;
             }
         }

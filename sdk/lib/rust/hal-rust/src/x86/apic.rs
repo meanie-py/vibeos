@@ -920,7 +920,7 @@ pub unsafe extern "system" fn HalpGetRootInterruptVector(
             BusInterruptLevel,
             HalpMaxGsi,
         );
-        core::ptr::write_volatile(OutAffinity, 0);
+        core::ptr::write_unaligned(OutAffinity, 0);
         core::ptr::write_volatile(OutIrql, 0);
         return 0;
     }
@@ -947,13 +947,13 @@ pub unsafe extern "system" fn HalpGetRootInterruptVector(
             }
         }
         if !found {
-            core::ptr::write_volatile(OutAffinity, 0);
+            core::ptr::write_unaligned(OutAffinity, 0);
             core::ptr::write_volatile(OutIrql, 0);
             return 0;
         }
     }
 
-    core::ptr::write_volatile(OutAffinity, HalpDefaultInterruptAffinity);
+    core::ptr::write_unaligned(OutAffinity, HalpDefaultInterruptAffinity);
     vector as ULONG
 }
 

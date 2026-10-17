@@ -1538,6 +1538,13 @@ unsafe extern "C" fn InstallLiveCD() -> u32 {
     }
 
     DPRINT1!("[SYSSETUP] InstallLiveCD: CommonInstall done\n");
+    // DIVERGES from install.c, which sets ProgramFilesDir/CommonFilesDir only on a full
+    // install, so a LiveCD had neither value (nor %ProgramFiles%, which userenv derives
+    // from it) though Windows always has both. Not fatal here: the values are written
+    // before the directories are created, and a read-only medium may refuse the latter.
+    if InitializeProgramFilesDir() == 0 {
+        DPRINT1!("[SYSSETUP] InstallLiveCD: InitializeProgramFilesDir failed\n");
+    }
     let mut bRes = InstallNetworkComponent(w!("MS_TCPIP") as PWSTR);
     if bRes == 0 && GetLastError() != ERROR_FILE_NOT_FOUND {
         // DPRINT removed

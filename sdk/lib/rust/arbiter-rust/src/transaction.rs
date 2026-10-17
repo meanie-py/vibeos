@@ -2,8 +2,7 @@
 use crate::prelude::*;
 // rustconv-assembly: whole-tu
 use crate::entry::ArbiterLibSortArbitrationList;
-use ntkrnl_sys::ddk::{ARBITER_ALLOCATION_STATE, ARBITER_ALTERNATIVE, ARBITER_CONFLICT_INFO, ARBITER_LIST_ENTRY, INT32, IoGetDeviceProperty, PARBITER_ALLOCATION_STATE, PARBITER_ALTERNATIVE, PARBITER_BOOT_ALLOCATION_PARAMETERS, PARBITER_CONFLICT_INFO, PARBITER_INSTANCE, PARBITER_LIST_ENTRY, PARBITER_QUERY_CONFLICT_PARAMETERS, PARBITER_RETEST_ALLOCATION_PARAMETERS, PARBITER_TEST_ALLOCATION_PARAMETERS, PDEVICE_OBJECT, PIO_RESOURCE_DESCRIPTOR, PRTL_CONFLICT_RANGE_CALLBACK, PRTL_RANGE, PRTL_RANGE_LIST, RtlCopyRangeList, RtlDeleteOwnersRanges, RtlFreeRangeList, RtlInitializeRangeList, UINT32, UINT64};
-use core::ffi::c_void;
+use ntkrnl_sys::ddk::{ARBITER_ALLOCATION_STATE, ARBITER_ALTERNATIVE, ARBITER_CONFLICT_INFO, ARBITER_LIST_ENTRY, INT32, IoGetDeviceProperty, PARBITER_ALLOCATION_STATE, PARBITER_ALTERNATIVE, PARBITER_CONFLICT_INFO, PARBITER_INSTANCE, PARBITER_LIST_ENTRY, PDEVICE_OBJECT, PIO_RESOURCE_DESCRIPTOR, PRTL_CONFLICT_RANGE_CALLBACK, PRTL_RANGE, PRTL_RANGE_LIST, RtlCopyRangeList, RtlDeleteOwnersRanges, RtlFreeRangeList, RtlInitializeRangeList, UINT64};
 
 // ---- file-scope preamble (translated) ----
 // No file-scope declarations: the preamble contains only function definitions and `#define NDEBUG` (valueless, so no constant is emitted).
@@ -14,7 +13,7 @@ unsafe extern "C" fn ArbpBuildAlternative(
 ) -> NTSTATUS {
     let mut Length: UINT64 = 0;
     let mut Alignment: UINT64 = 0;
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     (*Alternative).Descriptor = Descriptor;
     Status = ((*Arbiter).UnpackRequirement.unwrap_unchecked())(
@@ -40,7 +39,7 @@ unsafe extern "C" fn ArbpBuildAlternative(
     }
 
     (*Alternative).Flags = 0;
-    (*Alternative).Priority = (ARBITER_PRIORITY_NULL as i32);
+    (*Alternative).Priority = ARBITER_PRIORITY_NULL as i32;
 
     if (*Descriptor).ShareDisposition as ::core::ffi::c_int
         == CmResourceShareShared as ::core::ffi::c_int
@@ -78,7 +77,7 @@ unsafe extern "C" fn ArbpBuildAllocationStack(
     let mut ListEntry: PLIST_ENTRY;
     let mut StateCount: ULONG = EntryCount.wrapping_add(1);
     let mut AlternativeCount: ULONG = 0;
-    let mut Size: ULONG;
+    let Size: ULONG;
 
     PAGED_CODE!();
 
@@ -103,7 +102,7 @@ unsafe extern "C" fn ArbpBuildAllocationStack(
         ) as ULONG;
 
     if (*Arbiter).AllocationStackMaxSize < Size {
-        let mut NewStack: PARBITER_ALLOCATION_STATE;
+        let NewStack: PARBITER_ALLOCATION_STATE;
 
         NewStack = ExAllocatePoolWithTag(
             PagedPool,
@@ -169,10 +168,10 @@ unsafe extern "C" fn ArbpTestAllocation(
     Arbiter: PARBITER_INSTANCE,
     ArbitrationList: PLIST_ENTRY,
 ) -> NTSTATUS {
-    let mut ListEntry: PLIST_ENTRY = core::ptr::null_mut();
+    let mut ListEntry: PLIST_ENTRY;
     let mut PreviousOwner: PVOID = core::ptr::null_mut();
     let mut EntryCount: ULONG = 0;
-    let mut Status: NTSTATUS = 0;
+    let mut Status: NTSTATUS;
 
     PAGED_CODE!();
 
@@ -344,8 +343,12 @@ unsafe extern "C" fn ArbpRetestAllocation(
     // Failure:
     if (State.Flags as ::core::ffi::c_int) & (ARBITER_STATE_FLAG_WORKSPACE as i32) != 0 {
         ExFreePoolWithTag(State.WorkSpace as PVOID, TAG_ARBITER);
-        State.WorkSpace = 0;
-        State.Flags = ((State.Flags as ::core::ffi::c_int) & (!ARBITER_STATE_FLAG_WORKSPACE) as i32) as UINT16;
+        // As the C does; State is a local never read again, so rustc calls these dead.
+        #[allow(unused_assignments)]
+        {
+            State.WorkSpace = 0;
+            State.Flags = ((State.Flags as ::core::ffi::c_int) & (!ARBITER_STATE_FLAG_WORKSPACE) as i32) as UINT16;
+        }
     }
     RtlFreeRangeList((*Arbiter).PossibleAllocation);
     RtlInitializeRangeList((*Arbiter).PossibleAllocation);
@@ -379,8 +382,8 @@ unsafe extern "C" fn ArbpBootAllocation(
     let mut ListEntry: PLIST_ENTRY;
     let mut State: ARBITER_ALLOCATION_STATE = core::mem::zeroed();
     let mut Alternative: ARBITER_ALTERNATIVE = core::mem::zeroed();
-    let mut Old: PRTL_RANGE_LIST;
-    let mut Status: NTSTATUS;
+    let Old: PRTL_RANGE_LIST;
+    let Status: NTSTATUS;
 
     PAGED_CODE!();
 
@@ -429,8 +432,8 @@ unsafe extern "C" fn ArbpBootAllocation(
             State.AlternativeCount = 1;
             State.Alternatives = core::ptr::addr_of_mut!(Alternative);
             State.CurrentAlternative = core::ptr::addr_of_mut!(Alternative);
-            State.Flags = (ARBITER_STATE_FLAG_BOOT as u16);
-            State.RangeAttributes = (ARBITER_RANGE_BOOT_ALLOCATED as u8);
+            State.Flags = ARBITER_STATE_FLAG_BOOT as u16;
+            State.RangeAttributes = ARBITER_RANGE_BOOT_ALLOCATED as u8;
             State.Start = Alternative.Minimum;
             State.CurrentMinimum = State.Start;
             State.End = Alternative.Maximum;
@@ -484,11 +487,11 @@ unsafe extern "C" fn ArbpQueryConflict(
     let mut State: ARBITER_ALLOCATION_STATE = core::mem::zeroed();
     let mut Entry: ARBITER_LIST_ENTRY = core::mem::zeroed();
     let mut Alternative: ARBITER_ALTERNATIVE = core::mem::zeroed();
-    let mut List: PARBITER_CONFLICT_INFO = core::ptr::null_mut();
+    let mut List: PARBITER_CONFLICT_INFO;
     let mut Count: ULONG = 0;
     let mut Capacity: ULONG = 10;
     let mut ResultLength: ULONG = 0;
-    let mut Status: NTSTATUS = 0;
+    let mut Status: NTSTATUS;
 
     *ConflictCount = 0;
     *Conflicts = core::ptr::null_mut();
@@ -525,7 +528,6 @@ unsafe extern "C" fn ArbpQueryConflict(
         State.Alternatives = core::ptr::addr_of_mut!(Alternative) as PARBITER_ALTERNATIVE;
         State.CurrentAlternative = State.Alternatives;
         State.AlternativeCount = 1;
-        State.Entry = core::ptr::addr_of_mut!(Entry) as PARBITER_LIST_ENTRY;
         Entry.RequestSource = ArbiterRequestPnpEnumerated;
         Entry.PhysicalDeviceObject = PhysicalDeviceObject;
 
@@ -558,6 +560,11 @@ unsafe extern "C" fn ArbpQueryConflict(
             break 'body;
         }
 
+        // The C sets `State.Entry = &Entry` before filling Entry in. Here the pointer is taken
+        // once Entry is complete: writing the local directly after its raw address is out
+        // would invalidate that pointer under Stacked Borrows, and the writes looked dead to
+        // rustc. Nothing reads State.Entry before this call.
+        State.Entry = core::ptr::addr_of_mut!(Entry) as PARBITER_LIST_ENTRY;
         Status = (*Arbiter)
             .PreprocessEntry
             .unwrap_unchecked()(
@@ -643,8 +650,12 @@ unsafe extern "C" fn ArbpQueryConflict(
     /* Cleanup */
     if (State.Flags & (ARBITER_STATE_FLAG_WORKSPACE as UINT16)) != 0 {
         ExFreePoolWithTag(State.WorkSpace as PVOID, TAG_ARBITER);
-        State.WorkSpace = 0;
-        State.Flags &= !(ARBITER_STATE_FLAG_WORKSPACE as UINT16);
+        // As the C does; State is a local never read again, so rustc calls these dead.
+        #[allow(unused_assignments)]
+        {
+            State.WorkSpace = 0;
+            State.Flags &= !(ARBITER_STATE_FLAG_WORKSPACE as UINT16);
+        }
     }
     RtlFreeRangeList((*Arbiter).PossibleAllocation);
     RtlInitializeRangeList((*Arbiter).PossibleAllocation);
