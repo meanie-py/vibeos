@@ -50,13 +50,11 @@ Haiku spend on this lane's current $10 allowance: about $6.13.
 
 **Store follow-ups.** Done 2026-10-16: the rollout doc (375/391), daily GC with dead-ref
 retirement, GC no longer hashing kept blobs, request revalidation by stat stamps, idle
-body-shard retirement, and BUILD_INPUTS_MOVED (a build refuses to stamp a tree edited
+body-shard retirement, premerge runs in the fleet ledger, and BUILD_INPUTS_MOVED (a build refuses to stamp a tree edited
 under it; reported by the CRT lane). Still owed:
 - The supervisor preflight re-hashes every blob the lane references on every build
   (13-53 s), the store's largest fixed cost.
 - Discovery itself, ~0.4 s per request.
-- The premerge preflight's runs land in `.git/vibeos-premerge/vibeos-ledger.jsonl`, not
-  the fleet ledger.
 
 **Store-ineligible bodies (16).** Registry crates: atan2 (libm), cabinet (libz-rs-sys),
 netstack (smoltcp), vioblk (virtio-drivers). cnt-rust's target-specific dependency tables,
