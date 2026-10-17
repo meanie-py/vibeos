@@ -2,8 +2,9 @@
 
 Status (2026-10-17): protocol, SDIO, chip, firmware-load and frame layers host-tested
 against a simulated controller and firmware; on the Pi 5, bwfm.sys loads the firmware and
-the firmware answers `ver`, takes the CLM blob and scans (run
-`20261017-050605-mg4n2t32`: 12 networks on 2.4 and 5 GHz in 4 s). Next: join and WPA2.
+the firmware answers `ver`, takes the CLM blob, scans, and joins the bench's hidden
+WPA2-PSK network with the host's own 4-way handshake (run `20261017-074933-gupdzsjz`, see 6).
+Next: the data path into netstack.
 
 ## Why our own
 
@@ -155,4 +156,29 @@ only when asked to (`VIBEOS_PI_WIFI_FIRMWARE`), so an image built without it is 
    8 KiB, and a frame bigger still is read out and dropped rather than left half-read in
    the FIFO. The bus's buffers live in a static (`bus::Buffers`), not in `Bus`: built on
    the worker thread's stack, 18 KiB of them would be a stack overflow waiting to happen.
-6. Join, WPA2, link up, netstack traffic. Then the Pi 4 (host and power differ).
+6. Join and WPA2 (done on the Pi 5, `join.rs`). The network comes from
+   `\SystemRoot\bin\wifi.txt` (`VIBEOS_WIFI_CONFIG`, staged by the piwifi payload; the
+   passphrase never reaches a log). The bench network is hidden, so a passive scan does not
+   name it: a directed escan (active, one SSID) does. Then `wpaie` (our RSN element),
+   `wpa_auth` WPA2-PSK, `wsec` AES, `auth` open, and the `join` iovar. The firmware
+   associates; EAPOL arrives as data frames and wpa-rust's `Supplicant` (ndis-rust's, moved
+   to its own crate) answers; the pairwise key goes down (`wsec_key`) only after message 4
+   has gone, then the group key. Three things the board taught:
+   - `sup_wpa` is unknown to this firmware (BCME_UNSUPPORTED): it has no supplicant of
+     its own, so the handshake is ours either way. Refused, logged, not fatal.
+   - The firmware writes its own RSN element into the association request: capabilities
+     0x000C where we gave 0x0000. The AP drops a message 2 that does not repeat the
+     request's element byte for byte (it resent message 1 three times, run
+     `20261017-070017-_740qopb`). So before answering message 1 the driver reads what was
+     sent (`assoc_info`, then `assoc_req_ies`) and the supplicant repeats that.
+   - `assoc_info` answers BCME_BUFTOOSHORT unless the query buffer holds its whole
+     structure (8 bytes is not enough; 480 is).
+
+       [BWFM] 'Piconet' not heard (hidden=1): asking for it by name
+       [BWFM] joining 'Piconet' at 10:7c:61:a7:7b:21 (ch 11, -35 dBm)
+       [BWFM] association request RSN 30140100000fac040100000fac040100000fac020c00 (not ours: message 2 used it)
+       [BWFM] 4-way handshake complete in 2789 ms: link up, keys installed (2 EAPOL in, 2 out)
+
+   `pi5 boot --until TEXT` keeps reading serial past the desktop: the join finishes after it.
+7. Data path: frames to and from netstack (NDIS miniport or a netstack backend), DHCP,
+   group rekeys. Then the Pi 4 (host and power differ).

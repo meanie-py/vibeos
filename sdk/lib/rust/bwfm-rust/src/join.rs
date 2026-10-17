@@ -261,9 +261,12 @@ impl<P: Platform> Bus<P> {
     /// gives the request's IE length, `assoc_req_ies` the IEs. Some((offset, len))
     /// into `out`, or None when the request carried none.
     fn assoc_req_rsn(&mut self, out: &mut [u8; 480], mut each: impl FnMut(Frame)) -> Result<Option<(usize, usize)>, Error> {
-        let mut info = [0u8; 8];
-        self.get_var(b"assoc_info", &mut info, &mut each)?;
+        // The query must hold the firmware's whole assoc_info structure, or it answers
+        // BCME_BUFTOOSHORT (-14, seen on the Pi 5); the lengths are its first 8 bytes.
+        let info = &mut out[..];
+        self.get_var(b"assoc_info", info, &mut each)?;
         let req_len = (u32::from_le_bytes([info[0], info[1], info[2], info[3]]) as usize).min(out.len());
+        out.fill(0);
         if req_len == 0 {
             return Ok(None);
         }

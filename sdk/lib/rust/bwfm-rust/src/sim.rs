@@ -599,6 +599,7 @@ impl Card {
                 (0, Vec::new())
             }
             (262, b"wsec") => (0, self.wsec.to_le_bytes().to_vec()),
+            (262, b"assoc_info") if len < 64 => (-14, Vec::new()), // BCME_BUFTOOSHORT, as the Pi 5's
             (262, b"assoc_info") => {
                 // req_len, resp_len: the request's IEs are its SSID and its RSN element.
                 let req = 2 + AP_SSID.len() + self.assoc_rsn.len();
