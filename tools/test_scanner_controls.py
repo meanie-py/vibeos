@@ -156,6 +156,27 @@ impl SmoothDrawTool {
 }
 """
 
+# mmc_new 2026-10-17: atl_rust's CAtlList::GetNext returns the element's SLOT; the cast read
+# list-node memory as the window (WM_CLOSE to a bogus HWND, then a use-after-free).
+_ATL_SLOT_CAST_BAD = """
+unsafe fn close_all(this_: *mut CMainWnd) {
+    let mut pos: POSITION = (*this_).m_ViewList.GetHeadPosition();
+    while !pos.is_null() {
+        let console: *mut CConsoleWnd = (*this_).m_ViewList.GetNext(&mut pos) as *mut CConsoleWnd;
+        (*console).__base0.SendMessageW__0(WM_CLOSE, 0, 0);
+    }
+}
+"""
+_ATL_SLOT_CAST_GOOD = """
+unsafe fn close_all(this_: *mut CMainWnd) {
+    let mut pos: POSITION = (*this_).m_ViewList.GetHeadPosition();
+    while !pos.is_null() {
+        let console: *mut CConsoleWnd = *(*this_).m_ViewList.GetNext(&mut pos);
+        (*console).__base0.SendMessageW__0(WM_CLOSE, 0, 0);
+    }
+}
+"""
+
 # scan_bugcheck_stubs. Seeded from fastfat 2026-07-26: three boots, three stubs
 # (FatGenerateFileIdFromFcb -> FatOpenVolume -> ...), each a full build+boot to
 # discover something the tree already knew. The GOOD case pins the two ways this
@@ -2938,6 +2959,12 @@ CONTROLS: list[Control] = [
         },
     ),
     Control(
+        name="scan_atl_slot_cast",
+        script="tools/scan_atl_slot_cast.py",
+        bad={"mmc.rs": _ATL_SLOT_CAST_BAD},
+        good={"mmc.rs": _ATL_SLOT_CAST_GOOD},
+    ),
+    Control(
         name="scan_bitwise_not_bool",
         script="tools/scan_bitwise_not_bool.py",
         argv=["--lint"],
@@ -3464,6 +3491,25 @@ def test_irql_fixture_summary_resolves_cross_file_wrapper(tmp_path):
     )
     rc, out = _run(ctl, root)
     assert rc == 0 and out == ""
+
+
+def test_irql_std_path_does_not_inherit_a_workspace_name(tmp_path):
+    # Summaries are keyed by bare name: a sleeping workspace `fn read` must not
+    # make `core::ptr::read` under a spinlock look like a sleep.
+    ctl = next(c for c in CONTROLS if c.name == "scan_irql_balance")
+    sleeper = "unsafe fn read() {\nKeWaitForSingleObject(e, 0, 0, 0, t);\n}\n"
+    held = (
+        "unsafe fn caller(p: *const u32) -> u32 {{\nKeAcquireSpinLock(&mut l, &mut old);\n"
+        "let v = {call}(p);\nKeReleaseSpinLock(&mut l, old);\nv\n}}\n"
+    )
+    root = _materialize(
+        tmp_path, {"sleeper.rs": sleeper, "caller.rs": held.format(call="core::ptr::read")}
+    )
+    rc, out = _run(ctl, root)
+    assert rc == 0 and out == "", out
+    (root / "caller.rs").write_text(held.format(call="read"))
+    rc, out = _run(ctl, root)
+    assert rc == 1 and "IRQL_SLEEP_WHILE_HELD" in out, out
 
 
 def test_irql_cli_default_still_builds_whole_workspace_summaries(tmp_path, monkeypatch):
@@ -4048,12 +4094,6 @@ def test_formatless_printf_name_needs_a_real_printf(tmp_path):
     """apphelp's `SeiPrintFunctionName(lpProcName, szOrdProcFmt)` ends in a `...Fmt`
     parameter and its name contains Print+F(unctionName); it is not a printf, and the old
     case-insensitive `printf` match flagged it. A real one must still flag."""
-    spec = importlib.util.spec_from_file_location(
-        "formatless_name_control", REPO / "tools/scan_formatless_printf.py"
-    )
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
     rs = tmp_path / "x.rs"
     rs.write_text(
         "#[no_mangle]\n"
@@ -4062,4 +4102,11 @@ def test_formatless_printf_name_needs_a_real_printf(tmp_path):
         "#[no_mangle]\n"
         'pub unsafe extern "C" fn DbgPrintfEx(Format: PCSTR) -> u32 { 0 }\n'
     )
-    assert [f[2] for f in module.scan([rs])] == ["DbgPrintfEx"]
+    rc, output = _run(
+        Control(name="scan_formatless_printf", script="tools/scan_formatless_printf.py"),
+        tmp_path,
+    )
+    assert rc == 0, output
+    assert [
+        line.rsplit(" ", 1)[-1] for line in output.splitlines() if "formatless-printf" in line
+    ] == ["DbgPrintfEx"]

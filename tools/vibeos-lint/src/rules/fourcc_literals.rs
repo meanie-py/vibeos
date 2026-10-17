@@ -107,13 +107,13 @@ mod tests {
         assert!(parse_int("00123").is_err());
         assert_eq!(parse_int("００٠").unwrap(), "0");
         assert_eq!(parse_int("١٢٤").unwrap(), "124");
-        let corpus = Corpus {
-            root: "/fixture".into(),
-            files: vec![crate::SourceFile::new(
+        let corpus = Corpus::new(
+            "/fixture".into(),
+            vec![crate::SourceFile::new(
                 "x.rs".into(),
                 format!("{huge} // MAKEFOURCC('A','B','C','D')"),
             )],
-        };
+        );
         assert_eq!(
             FourccLiterals.run(&corpus).unwrap(),
             vec![format!(

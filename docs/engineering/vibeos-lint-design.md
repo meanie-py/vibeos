@@ -135,7 +135,7 @@ TSV was produced from `/tmp/vibeos-cli/*-check-*/commands.jsonl` (`stage` = `lin
 | `verify_lost_exports` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `verify_c_signatures` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_inline_flag_literals` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_extern_arity` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_extern_arity` | Yes | 13 / 13 | Exact on both source revisions; batch 3. |
 | `scan_orphan_modules` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `cohab_census` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_bugcheck_stubs` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
@@ -148,13 +148,13 @@ TSV was produced from `/tmp/vibeos-cli/*-check-*/commands.jsonl` (`stage` = `lin
 | `scan_assert_to_ub` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
 | `scan_bitwise_not_bool` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
 | `scan_variadic_array_arg` | Yes | 0 / 0 on both revisions | Rust plugin; positive/negative controls exercise the shipping binary. |
-| `scan_ptr_byte_diff` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_ptr_byte_diff` | Yes | 0 / 0 | Exact on both source revisions; batch 3. |
 | `scan_misaligned_cast` | Yes | 0 / 0 on both revisions | Rust plugin; positive/negative controls exercise the shipping binary. |
-| `scan_dropped_null_guard` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_store_on_failure` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_dropped_null_guard` | Yes | 0 / 0 | Exact on both source revisions; batch 3. |
+| `scan_store_on_failure` | Yes | 0 / 0 | Exact on both source revisions; batch 3. |
 | `scan_bool_width` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_cfg_vs_c` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_constant_placement` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_constant_placement` | Yes | 0 / 0 | Exact on both source revisions; batch 3. |
 | `scan_const_contradictions` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_const_vs_island` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_const_vs_own_island` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
@@ -174,7 +174,7 @@ TSV was produced from `/tmp/vibeos-cli/*-check-*/commands.jsonl` (`stage` = `lin
 | `scan_dropped_probes` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_ptr_typedef_indirection` | No | — | Owed: shared CMake compiled-TU/module pairing and tree-sitter definition equivalence. |
 | `scan_dropped_seh_pairs` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_raising_probes` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_raising_probes` | Yes | 0 / 0 | Exact on both source revisions; batch 3. |
 | `scan_raw_user_access` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_double_fetch` | Yes | 3 / 3 on both revisions | Rust plugin; Python helper retained for scan_safe_probe_deref. |
 | `scan_safe_probe_deref` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
@@ -189,15 +189,15 @@ TSV was produced from `/tmp/vibeos-cli/*-check-*/commands.jsonl` (`stage` = `lin
 | `scan_wide_byte_copy` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
 | `scan_typed_byte_copy` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
 | `scan_noop_goto` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
-| `scan_formatless_printf` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_formatless_printf` | Yes | 0 / 0 | Exact on both source revisions; batch 3. |
 | `scan_byte_step_one` | Yes | 4 / 4 | Exact on both source revisions; batch 2. |
-| `scan_ptr_typedef_cast_read` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_ptr_typedef_cast_read` | Yes | 0 / 0 | Exact on both source revisions; batch 3. |
 | `scan_info_class_literals` | Yes | 0 / 0 on both revisions | Rust plugin; positive/negative controls exercise the shipping binary. |
 | `scan_const_narrowing_cast` | Yes | 0 / 0 on both revisions | Rust plugin; positive/negative controls exercise the shipping binary. |
-| `scan_comment_swallowed_code` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_call_arg_swap` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_comment_swallowed_code` | Yes | 0 / 0 | Exact on both source revisions; batch 3. |
+| `scan_call_arg_swap` | Yes | 3 / 3 | Exact on both source revisions; batch 3. |
 | `scan_narrow_vs_wide_literal` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
-| `scan_sse_helpers` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_sse_helpers` | Yes | 0 / 0 | Exact on both source revisions; batch 3. |
 | `scan_read_after_clear` | Yes | 0 / 0 on both revisions | Rust plugin; positive/negative controls exercise the shipping binary. |
 | `scan_init_then_move` | Yes | 0 / 0 on both revisions | Rust plugin; positive/negative controls exercise the shipping binary. |
 | `scan_containing_record_null` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
@@ -326,3 +326,49 @@ Post-merge validation: all **116 source stages** pass in 256.12 seconds
 All **141 tooling checks** pass (`.cache/vibeos-lint/check-tooling-batch02-merged.log`).
 A subsequent warm run of all 33 Rust rules over the merged tree yields 81 findings
 in **7.61 seconds wall / 46.11 seconds user CPU**, with 2.58 GiB peak RSS.
+
+
+## Batch 3 — shared C twins and module reachability (2026-10-17)
+
+Eleven more plugins bring the binary to **44 rules**: constant placement, dropped
+null guards, stores on failure, pointer byte differences, extern arity, raising
+probes, swapped call arguments, SSE helpers, swallowed comment code, formatless
+printfs, and pointer typedef reads. They replace **374.6 seconds** of summed
+historical scanner medians; the 44-rule total is 1,491.1 seconds. **67 source
+checks remain owed**, alongside the five explicit exclusions.
+
+The shared snapshot now includes tracked C/C++ sources, Cargo manifests and
+rule-declared auxiliary headers. C definitions, local callee lookups, Rust
+function bodies and crate reachability are shared across plugins. Cross-file
+indexes initialize before rule fan-out to avoid worker-pool deadlock; a shipping
+binary fixture exercises one, two and four workers. Dynamic regex compilation
+is bounded and cached, and suppression comments are indexed once per file.
+
+`parity/batch-03.json` compares the original Python rules at `c442ed9fc6db`
+against both that source revision and `cc53d01b091`: **16 findings on each**,
+with identical hashes and no differences. Thirteen are extern-arity findings
+and three are swapped-call-argument findings. The complete 44-rule run yields
+97 findings. No baseline changed. The original eleven scanner scripts and two
+dedicated pytest files are retired; the shared Python C/module/placement helpers
+remain for their other callers and the translation pipeline.
+
+The module walker was also checked independently on the full current tree:
+for each Cargo manifest under `sdk/lib/rust`, compare the crate directory plus
+every resolved reachable file from Python `crate_live_files` and Rust
+`ModuleTree::live_files`, as sorted sets of repository-relative paths (absolute
+for targets outside the repository). Both produced **7,362 entries**, with zero
+differences. Rust fixtures retain nested modules, path attributes, includes,
+opaque generated includes and symlink identities.
+
+A warm 44-rule run under concurrent Python parity load took **18.04 seconds
+wall / 108.39 seconds user CPU**, peaking at **3.95 GiB RSS**. This is an expanded
+corpus and rule set, not a controlled comparison against batch 2's 7.61-second
+33-rule run. The new cross-file roots remain candidates for further tuning.
+The Rust suite passes **197 tests**, and all **186 scanner-control/runner tests**
+pass. The full **116-stage source check passes in 103.65 seconds**
+(`20261017-003306-ledhjs7v-check-all`); its shared 44-rule invocation took 33.47
+seconds under concurrent scanner load. The preceding merged batch's full source
+check took 256.12 seconds under concurrent tooling load; these are observed runs
+under different load, not a controlled speedup. Full tooling validation is
+recorded with the batch commit. No OS source changed, so this batch needs no OS
+build or smoke run.

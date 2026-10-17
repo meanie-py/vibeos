@@ -29,7 +29,7 @@ impl CAddAdvancedDialog {
             }
             _ => {}
         }
-    
+
         return 0;
     }
 }

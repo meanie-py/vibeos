@@ -35,8 +35,33 @@ pub mod raw_uart_writes;
 pub mod typed_byte_copy;
 pub mod wide_byte_copy;
 
+pub mod call_arg_swap;
+pub mod comment_swallowed_code;
+pub mod extern_arity;
+pub mod formatless_printf;
+pub mod ptr_typedef_cast_read;
+pub mod sse_helpers;
+
+pub mod constant_placement;
+pub mod dropped_null_guard;
+pub mod ptr_byte_diff;
+pub mod raising_probes;
+
+pub mod store_on_failure;
+
 pub fn registry() -> Vec<Box<dyn Rule>> {
     vec![
+        Box::new(store_on_failure::StoreOnFailure),
+        Box::new(dropped_null_guard::DroppedNullGuard),
+        Box::new(ptr_byte_diff::PtrByteDiff),
+        Box::new(constant_placement::ConstantPlacement),
+        Box::new(raising_probes::RaisingProbes),
+        Box::new(comment_swallowed_code::CommentSwallowedCode),
+        Box::new(formatless_printf::FormatlessPrintf),
+        Box::new(ptr_typedef_cast_read::PtrTypedefCastRead),
+        Box::new(call_arg_swap::CallArgSwap),
+        Box::new(sse_helpers::SseHelpers),
+        Box::new(extern_arity::ExternArity),
         Box::new(byte_step_one::ByteStepOne),
         Box::new(wide_byte_copy::WideByteCopy),
         Box::new(typed_byte_copy::TypedByteCopy),

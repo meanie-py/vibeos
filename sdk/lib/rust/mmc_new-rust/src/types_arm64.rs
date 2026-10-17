@@ -3969,6 +3969,8 @@ pub const SHGNLI_PIDL: u32 = 1;
 pub const SHGNLI_PREFIXNAME: u32 = 2;
 pub const SHGNLI_NOUNIQUE: u32 = 4;
 pub const SHGNLI_NOLNK: u32 = 8;
+pub const SHGNLI_NOLOCNAME: u32 = 16;
+pub const SHGNLI_USEURLEXT: u32 = 32;
 pub const E_XML_NOTWF: u32 = 3222069795;
 pub const E_XML_NODTD: u32 = 3222069796;
 pub const E_XML_INVALID: u32 = 3222069797;
@@ -12118,6 +12120,11 @@ pub struct ATL_CSimpleArrayEqualHelper {
     pub _address: u8,
 }
 #[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ATL_CSimpleArrayEqualHelperFalse {
+    pub _address: u8,
+}
+#[repr(C)]
 #[derive(Debug)]
 pub struct ATL_CSimpleArray<T> {
     pub _phantom_0: ::core::marker::PhantomData<::core::cell::UnsafeCell<T>>,
@@ -12134,34 +12141,36 @@ pub struct ATL_CSimpleArray_ConstructImpl<T> {
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
+pub struct ATL_CSimpleMapEqualHelper {
+    pub _address: u8,
+}
+#[repr(C)]
+#[derive(Debug)]
+pub struct ATL_CSimpleMap<TKey, TVal> {
+    pub _phantom_0: ::core::marker::PhantomData<::core::cell::UnsafeCell<TKey>>,
+    pub _phantom_1: ::core::marker::PhantomData<::core::cell::UnsafeCell<TVal>>,
+    pub m_Pairs: ATL_CSimpleArray<ATL_CSimpleMap_Pair<TKey, TVal>>,
+}
+pub type ATL_CSimpleMap__ArrayKeyType<TKey> = TKey;
+pub type ATL_CSimpleMap__ArrayElementType<TVal> = TVal;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ATL_CSimpleMap_Pair<TKey, TVal> {
+    pub _phantom_0: ::core::marker::PhantomData<::core::cell::UnsafeCell<TKey>>,
+    pub _phantom_1: ::core::marker::PhantomData<::core::cell::UnsafeCell<TVal>>,
+    pub key: TKey,
+    pub val: TVal,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct __POSITION {
     pub _address: u8,
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct CListView {
-    pub _base: ATL_CWindow,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct CToolbar {
-    pub _base: ATL_CWindow,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct CStatusBar {
-    pub _base: ATL_CWindow,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct CTreeView {
-    pub _base: ATL_CWindow,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct CTooltips {
-    pub _base: ATL_CWindow,
-}
+pub use crate::mmc_new::cpp_classes::CListView; // port cppapp owns it
+pub use crate::mmc_new::cpp_classes::CToolbar; // port cppapp owns it
+pub use crate::mmc_new::cpp_classes::CStatusBar; // port cppapp owns it
+pub use crate::mmc_new::cpp_classes::CTreeView; // port cppapp owns it
+pub use crate::mmc_new::cpp_classes::CTooltips; // port cppapp owns it
 #[derive(Copy, Clone)]
 #[repr(C, packed)]
 pub struct __WIDL_shtypes_generated_name_0000000A {
@@ -19291,6 +19300,11 @@ pub use crate::mmc_new::cpp_classes::CRecentFileEntry; // port cppapp owns it
 pub use crate::mmc_new::cpp_classes::CSnapinCacheEntry; // port cppapp owns it
 pub use crate::mmc_new::cpp_classes::CSnapin; // port cppapp owns it
 pub use crate::mmc_new::cpp_classes::CSnapinAlias; // port cppapp owns it
+pub use crate::mmc_new::cpp_classes::CActionWnd; // port cppapp owns it
+pub const SPLITTER_SIDE_SPLITTER_NONE: SPLITTER_SIDE = 0;
+pub const SPLITTER_SIDE_SPLITTER_LEFT: SPLITTER_SIDE = 1;
+pub const SPLITTER_SIDE_SPLITTER_RIGHT: SPLITTER_SIDE = 2;
+pub type SPLITTER_SIDE = ::core::ffi::c_uint;
 pub use crate::mmc_new::cpp_classes::CConsoleWnd; // port cppapp owns it
 pub use crate::mmc_new::cpp_classes::CMainWnd; // port cppapp owns it
 pub use crate::mmc_new::cpp_classes::CAboutSnapinDialog; // port cppapp owns it
@@ -23684,9 +23698,9 @@ impl IXMLDOMNode {
             None => panic!("IXMLDOMNode::hasChildNodes: null vtable slot"),
         }
     }
-    pub unsafe fn get_ownerDocument(&mut self, DOMDocument: *mut *mut IXMLDOMDocument) -> HRESULT {
+    pub unsafe fn get_ownerDocument(&mut self, DOMDocument_: *mut *mut IXMLDOMDocument) -> HRESULT {
         match (*self.lpVtbl).get_ownerDocument {
-            Some(f) => f(self, DOMDocument),
+            Some(f) => f(self, DOMDocument_),
             None => panic!("IXMLDOMNode::get_ownerDocument: null vtable slot"),
         }
     }
@@ -23944,9 +23958,9 @@ impl IXMLDOMDocument {
             None => panic!("IXMLDOMDocument::hasChildNodes: null vtable slot"),
         }
     }
-    pub unsafe fn get_ownerDocument(&mut self, DOMDocument: *mut *mut IXMLDOMDocument) -> HRESULT {
+    pub unsafe fn get_ownerDocument(&mut self, DOMDocument_: *mut *mut IXMLDOMDocument) -> HRESULT {
         match (*self.lpVtbl).get_ownerDocument {
-            Some(f) => f(self, DOMDocument),
+            Some(f) => f(self, DOMDocument_),
             None => panic!("IXMLDOMDocument::get_ownerDocument: null vtable slot"),
         }
     }
@@ -24076,15 +24090,15 @@ impl IXMLDOMDocument {
             None => panic!("IXMLDOMDocument::get_implementation: null vtable slot"),
         }
     }
-    pub unsafe fn get_documentElement(&mut self, DOMElement: *mut *mut IXMLDOMElement) -> HRESULT {
+    pub unsafe fn get_documentElement(&mut self, DOMElement_: *mut *mut IXMLDOMElement) -> HRESULT {
         match (*self.lpVtbl).get_documentElement {
-            Some(f) => f(self, DOMElement),
+            Some(f) => f(self, DOMElement_),
             None => panic!("IXMLDOMDocument::get_documentElement: null vtable slot"),
         }
     }
-    pub unsafe fn putref_documentElement(&mut self, DOMElement: *mut IXMLDOMElement) -> HRESULT {
+    pub unsafe fn putref_documentElement(&mut self, DOMElement_: *mut IXMLDOMElement) -> HRESULT {
         match (*self.lpVtbl).putref_documentElement {
-            Some(f) => f(self, DOMElement),
+            Some(f) => f(self, DOMElement_),
             None => panic!("IXMLDOMDocument::putref_documentElement: null vtable slot"),
         }
     }
@@ -24142,9 +24156,9 @@ impl IXMLDOMDocument {
             None => panic!("IXMLDOMDocument::getElementsByTagName: null vtable slot"),
         }
     }
-    pub unsafe fn createNode(&mut self, Type: VARIANT, name: BSTR, namespaceURI: BSTR, node: *mut *mut IXMLDOMNode) -> HRESULT {
+    pub unsafe fn createNode(&mut self, Type_: VARIANT, name: BSTR, namespaceURI: BSTR, node: *mut *mut IXMLDOMNode) -> HRESULT {
         match (*self.lpVtbl).createNode {
-            Some(f) => f(self, Type, name, namespaceURI, node),
+            Some(f) => f(self, Type_, name, namespaceURI, node),
             None => panic!("IXMLDOMDocument::createNode: null vtable slot"),
         }
     }
@@ -24580,9 +24594,9 @@ impl IXMLDOMDocumentFragment {
             None => panic!("IXMLDOMDocumentFragment::hasChildNodes: null vtable slot"),
         }
     }
-    pub unsafe fn get_ownerDocument(&mut self, DOMDocument: *mut *mut IXMLDOMDocument) -> HRESULT {
+    pub unsafe fn get_ownerDocument(&mut self, DOMDocument_: *mut *mut IXMLDOMDocument) -> HRESULT {
         match (*self.lpVtbl).get_ownerDocument {
-            Some(f) => f(self, DOMDocument),
+            Some(f) => f(self, DOMDocument_),
             None => panic!("IXMLDOMDocumentFragment::get_ownerDocument: null vtable slot"),
         }
     }
@@ -24840,9 +24854,9 @@ impl IXMLDOMCharacterData {
             None => panic!("IXMLDOMCharacterData::hasChildNodes: null vtable slot"),
         }
     }
-    pub unsafe fn get_ownerDocument(&mut self, DOMDocument: *mut *mut IXMLDOMDocument) -> HRESULT {
+    pub unsafe fn get_ownerDocument(&mut self, DOMDocument_: *mut *mut IXMLDOMDocument) -> HRESULT {
         match (*self.lpVtbl).get_ownerDocument {
-            Some(f) => f(self, DOMDocument),
+            Some(f) => f(self, DOMDocument_),
             None => panic!("IXMLDOMCharacterData::get_ownerDocument: null vtable slot"),
         }
     }
@@ -25148,9 +25162,9 @@ impl IXMLDOMAttribute {
             None => panic!("IXMLDOMAttribute::hasChildNodes: null vtable slot"),
         }
     }
-    pub unsafe fn get_ownerDocument(&mut self, DOMDocument: *mut *mut IXMLDOMDocument) -> HRESULT {
+    pub unsafe fn get_ownerDocument(&mut self, DOMDocument_: *mut *mut IXMLDOMDocument) -> HRESULT {
         match (*self.lpVtbl).get_ownerDocument {
-            Some(f) => f(self, DOMDocument),
+            Some(f) => f(self, DOMDocument_),
             None => panic!("IXMLDOMAttribute::get_ownerDocument: null vtable slot"),
         }
     }
@@ -25426,9 +25440,9 @@ impl IXMLDOMElement {
             None => panic!("IXMLDOMElement::hasChildNodes: null vtable slot"),
         }
     }
-    pub unsafe fn get_ownerDocument(&mut self, DOMDocument: *mut *mut IXMLDOMDocument) -> HRESULT {
+    pub unsafe fn get_ownerDocument(&mut self, DOMDocument_: *mut *mut IXMLDOMDocument) -> HRESULT {
         match (*self.lpVtbl).get_ownerDocument {
-            Some(f) => f(self, DOMDocument),
+            Some(f) => f(self, DOMDocument_),
             None => panic!("IXMLDOMElement::get_ownerDocument: null vtable slot"),
         }
     }
@@ -25576,15 +25590,15 @@ impl IXMLDOMElement {
             None => panic!("IXMLDOMElement::getAttributeNode: null vtable slot"),
         }
     }
-    pub unsafe fn setAttributeNode(&mut self, DOMAttribute: *mut IXMLDOMAttribute, attributeNode: *mut *mut IXMLDOMAttribute) -> HRESULT {
+    pub unsafe fn setAttributeNode(&mut self, DOMAttribute_: *mut IXMLDOMAttribute, attributeNode: *mut *mut IXMLDOMAttribute) -> HRESULT {
         match (*self.lpVtbl).setAttributeNode {
-            Some(f) => f(self, DOMAttribute, attributeNode),
+            Some(f) => f(self, DOMAttribute_, attributeNode),
             None => panic!("IXMLDOMElement::setAttributeNode: null vtable slot"),
         }
     }
-    pub unsafe fn removeAttributeNode(&mut self, DOMAttribute: *mut IXMLDOMAttribute, attributeNode: *mut *mut IXMLDOMAttribute) -> HRESULT {
+    pub unsafe fn removeAttributeNode(&mut self, DOMAttribute_: *mut IXMLDOMAttribute, attributeNode: *mut *mut IXMLDOMAttribute) -> HRESULT {
         match (*self.lpVtbl).removeAttributeNode {
-            Some(f) => f(self, DOMAttribute, attributeNode),
+            Some(f) => f(self, DOMAttribute_, attributeNode),
             None => panic!("IXMLDOMElement::removeAttributeNode: null vtable slot"),
         }
     }
@@ -25740,9 +25754,9 @@ impl IXMLDOMText {
             None => panic!("IXMLDOMText::hasChildNodes: null vtable slot"),
         }
     }
-    pub unsafe fn get_ownerDocument(&mut self, DOMDocument: *mut *mut IXMLDOMDocument) -> HRESULT {
+    pub unsafe fn get_ownerDocument(&mut self, DOMDocument_: *mut *mut IXMLDOMDocument) -> HRESULT {
         match (*self.lpVtbl).get_ownerDocument {
-            Some(f) => f(self, DOMDocument),
+            Some(f) => f(self, DOMDocument_),
             None => panic!("IXMLDOMText::get_ownerDocument: null vtable slot"),
         }
     }
@@ -26054,9 +26068,9 @@ impl IXMLDOMComment {
             None => panic!("IXMLDOMComment::hasChildNodes: null vtable slot"),
         }
     }
-    pub unsafe fn get_ownerDocument(&mut self, DOMDocument: *mut *mut IXMLDOMDocument) -> HRESULT {
+    pub unsafe fn get_ownerDocument(&mut self, DOMDocument_: *mut *mut IXMLDOMDocument) -> HRESULT {
         match (*self.lpVtbl).get_ownerDocument {
-            Some(f) => f(self, DOMDocument),
+            Some(f) => f(self, DOMDocument_),
             None => panic!("IXMLDOMComment::get_ownerDocument: null vtable slot"),
         }
     }
@@ -26362,9 +26376,9 @@ impl IXMLDOMProcessingInstruction {
             None => panic!("IXMLDOMProcessingInstruction::hasChildNodes: null vtable slot"),
         }
     }
-    pub unsafe fn get_ownerDocument(&mut self, DOMDocument: *mut *mut IXMLDOMDocument) -> HRESULT {
+    pub unsafe fn get_ownerDocument(&mut self, DOMDocument_: *mut *mut IXMLDOMDocument) -> HRESULT {
         match (*self.lpVtbl).get_ownerDocument {
-            Some(f) => f(self, DOMDocument),
+            Some(f) => f(self, DOMDocument_),
             None => panic!("IXMLDOMProcessingInstruction::get_ownerDocument: null vtable slot"),
         }
     }
@@ -26640,9 +26654,9 @@ impl IXMLDOMCDATASection {
             None => panic!("IXMLDOMCDATASection::hasChildNodes: null vtable slot"),
         }
     }
-    pub unsafe fn get_ownerDocument(&mut self, DOMDocument: *mut *mut IXMLDOMDocument) -> HRESULT {
+    pub unsafe fn get_ownerDocument(&mut self, DOMDocument_: *mut *mut IXMLDOMDocument) -> HRESULT {
         match (*self.lpVtbl).get_ownerDocument {
-            Some(f) => f(self, DOMDocument),
+            Some(f) => f(self, DOMDocument_),
             None => panic!("IXMLDOMCDATASection::get_ownerDocument: null vtable slot"),
         }
     }
@@ -26954,9 +26968,9 @@ impl IXMLDOMDocumentType {
             None => panic!("IXMLDOMDocumentType::hasChildNodes: null vtable slot"),
         }
     }
-    pub unsafe fn get_ownerDocument(&mut self, DOMDocument: *mut *mut IXMLDOMDocument) -> HRESULT {
+    pub unsafe fn get_ownerDocument(&mut self, DOMDocument_: *mut *mut IXMLDOMDocument) -> HRESULT {
         match (*self.lpVtbl).get_ownerDocument {
-            Some(f) => f(self, DOMDocument),
+            Some(f) => f(self, DOMDocument_),
             None => panic!("IXMLDOMDocumentType::get_ownerDocument: null vtable slot"),
         }
     }
@@ -27232,9 +27246,9 @@ impl IXMLDOMEntityReference {
             None => panic!("IXMLDOMEntityReference::hasChildNodes: null vtable slot"),
         }
     }
-    pub unsafe fn get_ownerDocument(&mut self, DOMDocument: *mut *mut IXMLDOMDocument) -> HRESULT {
+    pub unsafe fn get_ownerDocument(&mut self, DOMDocument_: *mut *mut IXMLDOMDocument) -> HRESULT {
         match (*self.lpVtbl).get_ownerDocument {
-            Some(f) => f(self, DOMDocument),
+            Some(f) => f(self, DOMDocument_),
             None => panic!("IXMLDOMEntityReference::get_ownerDocument: null vtable slot"),
         }
     }
@@ -32056,9 +32070,9 @@ impl IVBSAXAttributes {
             None => panic!("IVBSAXAttributes::getLocalName: null vtable slot"),
         }
     }
-    pub unsafe fn getQName(&mut self, nIndex: ::core::ffi::c_int, QName: *mut BSTR) -> HRESULT {
+    pub unsafe fn getQName(&mut self, nIndex: ::core::ffi::c_int, QName_: *mut BSTR) -> HRESULT {
         match (*self.lpVtbl).getQName {
-            Some(f) => f(self, nIndex, QName),
+            Some(f) => f(self, nIndex, QName_),
             None => panic!("IVBSAXAttributes::getQName: null vtable slot"),
         }
     }
@@ -32068,9 +32082,9 @@ impl IVBSAXAttributes {
             None => panic!("IVBSAXAttributes::getIndexFromName: null vtable slot"),
         }
     }
-    pub unsafe fn getIndexFromQName(&mut self, QName: BSTR, nIndex: *mut ::core::ffi::c_int) -> HRESULT {
+    pub unsafe fn getIndexFromQName(&mut self, QName_: BSTR, nIndex: *mut ::core::ffi::c_int) -> HRESULT {
         match (*self.lpVtbl).getIndexFromQName {
-            Some(f) => f(self, QName, nIndex),
+            Some(f) => f(self, QName_, nIndex),
             None => panic!("IVBSAXAttributes::getIndexFromQName: null vtable slot"),
         }
     }
@@ -32086,9 +32100,9 @@ impl IVBSAXAttributes {
             None => panic!("IVBSAXAttributes::getTypeFromName: null vtable slot"),
         }
     }
-    pub unsafe fn getTypeFromQName(&mut self, QName: BSTR, type_: *mut BSTR) -> HRESULT {
+    pub unsafe fn getTypeFromQName(&mut self, QName_: BSTR, type_: *mut BSTR) -> HRESULT {
         match (*self.lpVtbl).getTypeFromQName {
-            Some(f) => f(self, QName, type_),
+            Some(f) => f(self, QName_, type_),
             None => panic!("IVBSAXAttributes::getTypeFromQName: null vtable slot"),
         }
     }
@@ -32104,9 +32118,9 @@ impl IVBSAXAttributes {
             None => panic!("IVBSAXAttributes::getValueFromName: null vtable slot"),
         }
     }
-    pub unsafe fn getValueFromQName(&mut self, QName: BSTR, value: *mut BSTR) -> HRESULT {
+    pub unsafe fn getValueFromQName(&mut self, QName_: BSTR, value: *mut BSTR) -> HRESULT {
         match (*self.lpVtbl).getValueFromQName {
-            Some(f) => f(self, QName, value),
+            Some(f) => f(self, QName_, value),
             None => panic!("IVBSAXAttributes::getValueFromQName: null vtable slot"),
         }
     }
@@ -32184,9 +32198,9 @@ impl IVBSAXContentHandler {
             None => panic!("IVBSAXContentHandler::endPrefixMapping: null vtable slot"),
         }
     }
-    pub unsafe fn startElement(&mut self, namespaceURI: *mut BSTR, localName: *mut BSTR, QName: *mut BSTR, oAttributes: *mut IVBSAXAttributes) -> HRESULT {
+    pub unsafe fn startElement(&mut self, namespaceURI: *mut BSTR, localName: *mut BSTR, QName_: *mut BSTR, oAttributes: *mut IVBSAXAttributes) -> HRESULT {
         match (*self.lpVtbl).startElement {
-            Some(f) => f(self, namespaceURI, localName, QName, oAttributes),
+            Some(f) => f(self, namespaceURI, localName, QName_, oAttributes),
             None => panic!("IVBSAXContentHandler::startElement: null vtable slot"),
         }
     }
@@ -32862,9 +32876,9 @@ impl IMXAttributes {
             None => panic!("IMXAttributes::Invoke: null vtable slot"),
         }
     }
-    pub unsafe fn addAttribute(&mut self, uri: BSTR, localName: BSTR, QName: BSTR, type_: BSTR, value: BSTR) -> HRESULT {
+    pub unsafe fn addAttribute(&mut self, uri: BSTR, localName: BSTR, QName_: BSTR, type_: BSTR, value: BSTR) -> HRESULT {
         match (*self.lpVtbl).addAttribute {
-            Some(f) => f(self, uri, localName, QName, type_, value),
+            Some(f) => f(self, uri, localName, QName_, type_, value),
             None => panic!("IMXAttributes::addAttribute: null vtable slot"),
         }
     }
@@ -32886,9 +32900,9 @@ impl IMXAttributes {
             None => panic!("IMXAttributes::removeAttribute: null vtable slot"),
         }
     }
-    pub unsafe fn setAttribute(&mut self, index: ::core::ffi::c_int, uri: BSTR, localName: BSTR, QName: BSTR, type_: BSTR, value: BSTR) -> HRESULT {
+    pub unsafe fn setAttribute(&mut self, index: ::core::ffi::c_int, uri: BSTR, localName: BSTR, QName_: BSTR, type_: BSTR, value: BSTR) -> HRESULT {
         match (*self.lpVtbl).setAttribute {
-            Some(f) => f(self, index, uri, localName, QName, type_, value),
+            Some(f) => f(self, index, uri, localName, QName_, type_, value),
             None => panic!("IMXAttributes::setAttribute: null vtable slot"),
         }
     }
@@ -32904,9 +32918,9 @@ impl IMXAttributes {
             None => panic!("IMXAttributes::setLocalName: null vtable slot"),
         }
     }
-    pub unsafe fn setQName(&mut self, index: ::core::ffi::c_int, QName: BSTR) -> HRESULT {
+    pub unsafe fn setQName(&mut self, index: ::core::ffi::c_int, QName_: BSTR) -> HRESULT {
         match (*self.lpVtbl).setQName {
-            Some(f) => f(self, index, QName),
+            Some(f) => f(self, index, QName_),
             None => panic!("IMXAttributes::setQName: null vtable slot"),
         }
     }
@@ -33084,15 +33098,15 @@ impl IMXWriter {
             None => panic!("IMXWriter::Invoke: null vtable slot"),
         }
     }
-    pub unsafe fn put_output(&mut self, Destination: VARIANT) -> HRESULT {
+    pub unsafe fn put_output(&mut self, Destination_: VARIANT) -> HRESULT {
         match (*self.lpVtbl).put_output {
-            Some(f) => f(self, Destination),
+            Some(f) => f(self, Destination_),
             None => panic!("IMXWriter::put_output: null vtable slot"),
         }
     }
-    pub unsafe fn get_output(&mut self, Destination: *mut VARIANT) -> HRESULT {
+    pub unsafe fn get_output(&mut self, Destination_: *mut VARIANT) -> HRESULT {
         match (*self.lpVtbl).get_output {
-            Some(f) => f(self, Destination),
+            Some(f) => f(self, Destination_),
             None => panic!("IMXWriter::get_output: null vtable slot"),
         }
     }
@@ -35960,15 +35974,15 @@ impl IImageList {
             None => panic!("IImageList::Release: null vtable slot"),
         }
     }
-    pub unsafe fn ImageListSetIcon(&mut self, Icon: *mut LONG_PTR, nLoc: LONG) -> HRESULT {
+    pub unsafe fn ImageListSetIcon(&mut self, Icon_: *mut LONG_PTR, nLoc: LONG) -> HRESULT {
         match (*self.lpVtbl).ImageListSetIcon {
-            Some(f) => f(self, Icon, nLoc),
+            Some(f) => f(self, Icon_, nLoc),
             None => panic!("IImageList::ImageListSetIcon: null vtable slot"),
         }
     }
-    pub unsafe fn ImageListSetStrip(&mut self, BMapSm: *mut LONG_PTR, BMapLg: *mut LONG_PTR, nStartLoc: LONG, cMask: COLORREF) -> HRESULT {
+    pub unsafe fn ImageListSetStrip(&mut self, BMapSm_: *mut LONG_PTR, BMapLg_: *mut LONG_PTR, nStartLoc: LONG, cMask: COLORREF) -> HRESULT {
         match (*self.lpVtbl).ImageListSetStrip {
-            Some(f) => f(self, BMapSm, BMapLg, nStartLoc, cMask),
+            Some(f) => f(self, BMapSm_, BMapLg_, nStartLoc, cMask),
             None => panic!("IImageList::ImageListSetStrip: null vtable slot"),
         }
     }

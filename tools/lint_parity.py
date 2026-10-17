@@ -54,6 +54,18 @@ def oracle_specs(root: Path, revision: str) -> dict[str, tuple[list[str], str]]:
         "__file__": str(root / "tests/qemu/cli/lints.py"),
     }
     exec(compile(registry, namespace["__file__"], "exec"), namespace)
+    helper = "tests/qemu/cli/rustlints.py"
+    if helper in tracked and "rustlints" in namespace:
+        # The registry's ported set must also belong to its historical revision.
+        # Otherwise retiring a plugin today rewrites yesterday's oracle command.
+        from types import ModuleType
+
+        original_runner = ModuleType("cli.parity_rustlints")
+        original_runner.__file__ = str(root / helper)
+        original_runner.__package__ = "cli"
+        helper_source = subprocess.check_output(["git", "show", f"{revision}:{helper}"], cwd=REPO)
+        exec(compile(helper_source, original_runner.__file__, "exec"), original_runner.__dict__)
+        namespace["rustlints"] = original_runner
     return {
         name: (cmd, stream)
         for name, cmd, stream in namespace["source_lint_specs"](OraclePath(root))
@@ -119,6 +131,8 @@ class OriginalTools(importlib.abc.MetaPathFinder, importlib.abc.Loader):
     def find_spec(self, fullname, path=None, target=None):
         if fullname.startswith("tools."):
             stem = fullname.replace(".", "/")
+        elif fullname == "rustconv" or fullname.startswith("rustconv."):
+            stem = "tools/rustconv/" + fullname.replace(".", "/")
         elif "." not in fullname:
             stem = "tools/" + fullname
         else:

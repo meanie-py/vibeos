@@ -360,13 +360,13 @@ mod tests {
 
     #[test]
     fn paid_artifact_directories_are_not_part_of_the_index() {
-        let corpus = Corpus {
-            root: PathBuf::from("/fixture"),
-            files: vec![SourceFile::new(
+        let corpus = Corpus::new(
+            PathBuf::from("/fixture"),
+            vec![SourceFile::new(
                 "sdk/lib/rust/.responses/bad.rs".into(),
                 format!("{DEF}\nfn f(ip: PInfo) {{ note(0, (*ip).name); }}"),
             )],
-        };
+        );
         assert!(VariadicArrayArg.run(&corpus).unwrap().is_empty());
     }
 

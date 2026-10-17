@@ -23,9 +23,10 @@
 #   ExPool2, FeatureConfig, MmMapIoSpaceEx, RtlUtf8, and MmReservedMappingFixed, below).
 #   ZwMapViewOfSection: ROS views honour ZeroBits with no base, refuse a commit larger than the
 #   view and a reservation of a read-only section; ARM3 says INVALID_PARAMETER_9 for a reserve
-#   of a section with no file. LEFT (owed): 211, a reserved view past the end of the file. Do
-#   NOT just drop the size check for it: that let a view outrun the segment, and unmapping it
-#   corrupted the file's cached pages (later reads wrong, BUGCHECK 0x1E on x86).
+#   of a section with no file. LEFT (owed): 211, a reserved view past the end of the file.
+#   (CORRECTED 2026-10-17: the BUGCHECK 0x1E and wrong reads this note blamed on that view came
+#   from the first version's blanket CommitSize rule; an isolated sweep put the reserve back with
+#   no crash. See the 2026-10-17 note.)
 #   EXPECTED, re-checked against the win11-amd64 column (Windows passes them by another branch,
 #   not by being right where we are wrong): ExDoubleList, NpfsFileInfo (both pick their
 #   expectation by PRCB_BUILD_DEBUG; we are checked, Windows 11 is free) and MmSection 14 (its
@@ -37,6 +38,13 @@
 #   non-PAE (<<12); MmReservedMappingFixed (same source, corrected) is 231/0. ExInterlocked
 #   296/297 is the test's own SaveState (its TODO: inline asm around a C call); the export
 #   preserves edi. KeSpinLock 30 is owed: the queued spinlocks are the C's plain-lock HACK.
+# 2026-10-17 (x2 byte-identical sweeps): KeSpinLock 755/30 -> 785/0. The in-stack queued
+#   spinlocks are a real MCS lock (ntkrnl-sys KxAcquire/ReleaseInStackQueuedSpinLock, used by
+#   ntoskrnl, hal and the AtDpcLevel pair) instead of the C's plain-lock HACK. ZwMapViewOfSection
+#   132/2 -> 133/2: 211 fixed (a file view's reservation may run past the end of the file); 292
+#   is NEW and LOWERED BY DESIGN: the test's WS03 column wants a 4 GB reservation (ViewSize -1)
+#   to succeed, and it "passed" before only because ViewSize + the offset remainder wrapped to a
+#   small view. It now saturates and is refused INVALID_VIEW_SIZE, the Windows 8 answer.
 # 2026-10-15: RtlRangeList pass 521 -> 520: upstream 09a03ec307d deleted one RtlFindRange check.
 #   ZwAllocateVirtualMemory unchanged (269/2): upstream's StressTesting rewrite keeps 1024 x 5 MB here.
 # 2026-10-12: ZwAllocateVirtualMemory pass 258 -> 269, fail 2 (same assertion, now line 145). Upstream's test sync renumbered it (147->145,
@@ -198,11 +206,7 @@ KeFloatPointState OK pass=6 fail=0 skip=0 exit=0
 KeGuardedMutex OK pass=1653 fail=0 skip=0 exit=0
 KeIrql OK pass=215 fail=0 skip=0 exit=0
 KeMutex OK pass=1122 fail=0 skip=0 exit=0
-KeSpinLock OK pass=755 fail=30 skip=0 exit=0
-    assert KeSpinLock.c:278
-    assert KeSpinLock.c:323
-    assert KeSpinLock.c:333
-    assert KeSpinLock.c:343
+KeSpinLock OK pass=785 fail=0 skip=0 exit=0
 KeTimer OK pass=54 fail=0 skip=0 exit=0
 MmMapIoSpaceEx OK pass=10 fail=0 skip=0 exit=0
 MmMapLockedPagesSpecifyCache OK pass=16743 fail=0 skip=0 exit=0
@@ -310,9 +314,9 @@ ZwCreateSection OK pass=284 fail=3 skip=1 exit=0
     assert ZwCreateSection.c:354
     assert ZwCreateSection.c:378
     assert ZwCreateSection.c:448
-ZwMapViewOfSection OK pass=132 fail=2 skip=1 exit=0
+ZwMapViewOfSection OK pass=133 fail=2 skip=1 exit=0
     assert ZwMapViewOfSection.c:181
-    assert ZwMapViewOfSection.c:211
+    assert ZwMapViewOfSection.c:292
 ZwWaitForMultipleObjects OK pass=4 fail=0 skip=0 exit=0
 FileAttributes OK pass=84 fail=0 skip=0 exit=0
 FindFile OK pass=253 fail=0 skip=0 exit=0

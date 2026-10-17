@@ -165,3 +165,40 @@ def test_a_return_wider_than_the_rust_definition_is_reported(tmp_path):
     findings = scan(tmp_path, crates)
     assert len(findings) == 1, findings
     assert "Hit: RETURN WIDTH decl `-> ULONG` (4) wider than def `-> u8`" in findings[0][2]
+
+
+def _crt_tree(root: Path, *, kernel: bool, ret: str) -> list[Path]:
+    """ucrt-rust defines towupper; a user (or kernel) crate declares and calls it."""
+    crt = root / "ucrt-rust"
+    (crt / "src").mkdir(parents=True)
+    (crt / "Cargo.toml").write_text('[package]\nname = "ucrt-rust"\n')
+    (crt / "src" / "lib.rs").write_text(
+        '#[no_mangle]\npub unsafe extern "C" fn towupper(c: u16) -> u16 { c }\n'
+    )
+    user = root / "find-rust"
+    (user / "src").mkdir(parents=True)
+    (user / "Cargo.toml").write_text(
+        '[package]\nname = "find-rust"\n\n[dependencies]\n'
+        + ('ntkrnl-sys = { path = "../ntkrnl-sys" }\n' if kernel else "")
+    )
+    (user / "src" / "lib.rs").write_text(
+        "pub type c_int = i32;\n"
+        f'extern "C" {{ fn towupper(c: c_int) -> {ret}; }}\n'
+        "pub unsafe fn go() { towupper(97); }\n"
+    )
+    return [crt / "src", user / "src"]
+
+
+def test_a_crt_import_declared_wider_than_the_crt_definition_is_reported(tmp_path):
+    # 23 crates declared towupper `-> c_int` over ucrt-rust's `-> u16` (a wint_t),
+    # and compared two such returns: the in-crate pairing has no definition to read.
+    findings = scan(tmp_path, _crt_tree(tmp_path, kernel=False, ret="c_int"))
+    assert len(findings) == 1, findings
+    assert (
+        "towupper: RETURN WIDTH decl `-> c_int` (4) wider than CRT def `-> u16`" in (findings[0][2])
+    )
+
+
+def test_the_crt_authority_judges_neither_kernel_crates_nor_correct_declarations(tmp_path):
+    assert scan(tmp_path / "k", _crt_tree(tmp_path / "k", kernel=True, ret="c_int")) == []
+    assert scan(tmp_path / "u", _crt_tree(tmp_path / "u", kernel=False, ret="u16")) == []

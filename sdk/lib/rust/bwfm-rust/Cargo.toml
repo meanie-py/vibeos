@@ -1,6 +1,7 @@
-# bwfm-rust — the Raspberry Pis' CYW43455 Wi-Fi (docs/engineering/pi-wifi-design.md). So far
-# only the host protocol (src/proto.rs), host-tested by tools/test_bwfm_proto.py; the SDIO
-# host, chip bring-up and the NDIS miniport follow.
+# bwfm-rust: bwfm.sys, the Raspberry Pis' CYW43455 Wi-Fi (docs/engineering/pi-wifi-design.md).
+# crate-type=staticlib -> libbwfm_rust.a, linked into bwfm.sys by bwfm-cargo. The protocol,
+# SDIO and chip modules are plain code, host-tested by tools/test_bwfm_proto.py against a
+# simulated controller; the kernel side (driver.rs) is compiled out of those tests.
 [package]
 name = "bwfm-rust"
 version = "0.1.0"
@@ -10,3 +11,9 @@ autobins = false
 [lib]
 name = "bwfm_rust"
 path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["kernel"] }
+ntkrnl-sys = { path = "../ntkrnl-sys" }
+sdhci-rust = { path = "../sdhci-rust" }

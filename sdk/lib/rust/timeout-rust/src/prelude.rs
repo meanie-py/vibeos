@@ -73,7 +73,7 @@ pub const EXIT_SUCCESS: u32 = 0; // shutdown-rust/src/prelude.rs
 pub const LANG_USER_DEFAULT: u32 = 1024; // cacls-rust/src/prelude.rs
 extern "C" {
     pub fn _wcsicmp(s1: *const u16, s2: *const u16) -> i32; // apphelp-rust/src/prelude.rs
-    pub fn towupper(c: c_int) -> c_int; // comctl32-rust/src/prelude.rs
+    pub fn towupper(c: wint_t) -> wint_t; // comctl32-rust/src/prelude.rs
     pub fn wcstol(s: *const u16, endptr: *mut *mut u16, base: i32) -> i32; // comctl32-rust/src/prelude.rs
 }
 extern "stdcall" {

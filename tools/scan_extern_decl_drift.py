@@ -880,7 +880,7 @@ def _narrows_meaning(decl_w, def_w, def_ty: str) -> bool:
     return _bytes(decl_w) == 1 and norm(def_ty) not in _BOOLEAN_NAMES
 
 
-def _compare_returns(crate_returns, c_rets, types, called):
+def _compare_returns(crate_returns, c_rets, types, called, crt_rdefs=None):
     """A declared RETURN wider than the definition's: the caller reads bits the
     callee never wrote. Neither x64 nor AAPCS64 defines the upper bits of a
     register holding a narrower return value.
@@ -905,6 +905,12 @@ def _compare_returns(crate_returns, c_rets, types, called):
                 continue
             dw = _c_width(dty, types)
             authority = f"C `{dty}` ({cf.name}:{cl})"
+        elif crt_rdefs and sym in crt_rdefs:
+            shapes = {_c_width(t, types) if t else None for _f, t in crt_rdefs[sym]}
+            if len(shapes) != 1:
+                continue  # the two CRTs disagree: no authority, not a guess
+            dw, (dfile, dty) = next(iter(shapes)), crt_rdefs[sym][0]
+            authority = f"CRT def `-> {dty}` ({dfile.name})"
         else:
             continue
         if dw is None:
@@ -935,13 +941,56 @@ def _compare_returns(crate_returns, c_rets, types, called):
                 )
 
 
+#: The crates that implement msvcrt.dll's exports. A user-mode module imports its CRT
+#: from msvcrt, so these definitions are what its `extern` CRT declarations call --
+#: an authority the in-crate pairing cannot see, because the definition is in
+#: another crate joined only by the import library. 23 crates declared
+#: `towupper(c_int) -> c_int` over ucrt-rust's `-> u16` (a wint_t), comparing
+#: `towupper(a) == towupper(b)` on two registers whose upper halves nobody set
+#: (win32k's menu mnemonics, sysdm's SMBIOS strings, dnsapi's names; 2026-10-17).
+#: Kernel crates are excluded: their CRT is ntoskrnl's own exports.
+CRT_CRATES = ("ucrt-rust", "msvcrt-crt-rust")
+
+
+def _crt_dirs(crate_dirs: list[Path]) -> set[Path]:
+    return {d for d in crate_dirs if d.parent.name in CRT_CRATES}
+
+
+def _crt_return_defs(crate_dirs: list[Path], returns) -> dict:
+    out: dict = defaultdict(list)
+    for d in _crt_dirs(crate_dirs):
+        for sym, sites in returns[d][0].items():
+            out[sym].extend(sites)
+    return out
+
+
+def _is_kernel_crate(src_dir: Path) -> bool:
+    toml = src_dir.parent / "Cargo.toml"
+    try:
+        text = toml.read_text(errors="replace")
+    except OSError:
+        return False
+    return any(k == "ntkrnl-sys" for k in _TOML_KEY.findall(text))
+
+
 def scan(root_dir: Path, crate_dirs: list[Path]) -> list[tuple[Path, int, str]]:
     types, per, islands, statics, returns = sweep(root_dir, crate_dirs)
     findings: list[tuple[Path, int, str]] = []
     c_rets = _c_return_oracle(root_dir)
+    crt_rdefs = _crt_return_defs(crate_dirs, returns)
     for src_dir in crate_dirs:
         findings.extend(_compare_statics(statics[src_dir], types))
-        findings.extend(_compare_returns(returns[src_dir], c_rets, types, per[src_dir][2]))
+        findings.extend(
+            _compare_returns(
+                returns[src_dir],
+                c_rets,
+                types,
+                per[src_dir][2],
+                None
+                if _is_kernel_crate(src_dir) or src_dir in _crt_dirs(crate_dirs)
+                else crt_rdefs,
+            )
+        )
     for src_dir in crate_dirs:
         defs, decls, called = per[src_dir]
         # A declaration of a symbol the SUBSTRATE declares has an authority that

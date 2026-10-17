@@ -24,10 +24,10 @@ Rust-translated subsystem is a **pre-packaged mistranslation repro** with a name
 an assertion message — no crash forensics needed. And it executes translated code the
 boot path never touches (see `tools/coverage/` — the never-executed-rust registry).
 
-## Resume here (2026-10-16)
+## Resume here (2026-10-17)
 
 The survey below is history. The current state and the ordered owed queue are the LAST
-progress-log entry, "2026-10-16 — the Windows 11 column's queue". Re-derive every number in
+progress-log entry, "2026-10-17 — two owed items, and a cause I got wrong". Re-derive every number in
 it from `tools/conformance-baseline/<arch>/kmtest.txt` and a fresh sweep before trusting it.
 Windows 11's own results for these suites are `tools/conformance-baseline/win11-amd64/kmtest.txt`.
 
@@ -2042,10 +2042,8 @@ fxsave), i386 ExInterlocked 296/297 (the test's own SaveState TODO; the export p
 RtlStack/RtlStackKM fail identically on Windows.
 
 **Owed, in order:**
-1. ZwMapViewOfSection:211, a reserved view past the end of the file. Needs real reservation
-   in the ROS segment code. Simply dropping the size check let a view outrun the segment, and
-   unmapping it corrupted the file's cached pages (wrong data, then BUGCHECK 0x1E on x86).
-2. i386 KeSpinLock 30: every arch's queued spinlocks are the C's plain-lock HACK; only i386's
+1. ~~ZwMapViewOfSection:211~~ (done 2026-10-17; the cause given here was WRONG, see below).
+2. ~~i386 KeSpinLock 30~~ (done 2026-10-17): every arch's queued spinlocks are the C's plain-lock HACK; only i386's
    test checks. A real MCS lock is boot-risky if anything takes one lock both ways.
 3. HidPDescription 4: a ReportIDs entry per report ID (hidclass routes on it, so test against
    a HID device), and PreparsedDataLength in Windows' layout.
@@ -2064,3 +2062,39 @@ corpus. Pruning recreates build dirs, a fresh configure defaults it OFF, and the
 only failed minutes into the boot. Mistakes: I edited source during my own builds twice more
 (stopped and rebuilt both times), and first guessed RtlMemory was inlined memcpy without
 looking at the disassembly.
+
+### 2026-10-17 — two owed items, and a cause I got wrong
+
+Banked from two byte-identical sweeps per arch (baselines' `2026-10-17` notes).
+
+**ZwMapViewOfSection:211 done** on all three arches. A file view's reservation may run past
+the end of the file, bounded by the user address space (a ViewSize of -1 page-rounded to an
+empty "successful" view, :295). The offset rounding's `ViewSize + rem` now saturates instead
+of wrapping. amd64/arm64 135/0. i386 trades 211 for 292, LOWERED BY DESIGN: the WS03 column
+wants a 4 GB reservation to succeed, and it only ever "passed" through that wrap.
+
+**The cause I gave yesterday was wrong.** The 2026-10-16 entry, the baselines' 16b note and
+commit `4f8fc0a3e27` say a reserved view past the end of the file corrupted cached pages and
+bugchecked x86. One isolated sweep each on i386 and arm64 (reserve allowance back, nothing
+else changed) showed no crash and no corruption. The damage came from the other change in
+that same build, the blanket "no CommitSize on a file view" rule. I attributed a two-change
+fix to the change I suspected without isolating it. The notes are corrected; the commit
+message cannot be.
+
+**i386 KeSpinLock 30 -> 0.** The in-stack queued spinlocks are a real MCS lock
+(`ntkrnl-sys` `KxAcquire/ReleaseInStackQueuedSpinLock`) for ntoskrnl's exports, hal's, and the
+AtDpcLevel pair, replacing the C's plain-lock HACK (its MCS is `#if 0`, "broken": it exchanges
+on `LockHandle->Next`). The audit that made it safe is in the helper's doc comment: no lock is
+reached by both the in-stack and a plain API, and the numbered `KeAcquireQueuedSpinLock*`
+family (still plain) only takes PRCB LockQueue[] entries.
+
+**Owed, in order:**
+1. amd64/arm64 in-stack queued spinlocks are still the HACK. Their kmtest cannot see it (the
+   checks are `_M_IX86` only), so this is for correctness under the SMP lane: move them onto
+   the same helper (it is `cfg(target_arch = "x86")` today) and sweep `--smp 2`.
+2. HidPDescription 4: a ReportIDs entry per report ID (hidclass routes on it, so test against
+   a HID device), and PreparsedDataLength in Windows' layout.
+3. arm64 RtlMemory 3: NOT memcpy (the export is overlap-safe; disassembled). Each failure is
+   the first check after a `_SEH2_TRY { (NULL, NULL, 0) }` block.
+4. i386 ZwMapViewOfSection:181 (ZeroBits 21: we say INVALID_PARAMETER_4, Windows NO_MEMORY),
+   SMP baselines, the scanner item from the 2026-10-12 queue.

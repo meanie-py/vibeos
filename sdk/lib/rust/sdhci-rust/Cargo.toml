@@ -1,0 +1,12 @@
+# sdhci-rust: the SD host controller (SDHCI 3.0) below any card protocol, shared by
+# sdhc.sys (sdhc-rust, SD memory) and bwfm.sys (bwfm-rust, the Pis' SDIO Wi-Fi). No
+# dependencies: the kernel comes in through its Platform trait, so the Wi-Fi driver's
+# host tests run it against a simulated controller.
+[package]
+name = "sdhci-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "sdhci_rust"
+path = "src/lib.rs"

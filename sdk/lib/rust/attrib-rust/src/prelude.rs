@@ -69,7 +69,7 @@ pub const LANG_USER_DEFAULT: u32 = 1024; // cacls-rust/src/prelude.rs
 extern "C" {
     pub fn ConMsgPrintfV(Stream: *mut CON_STREAM, dwFlags: u32, lpSource: *const c_void, dwMessageId: u32, dwLanguageId: u32, Arguments: *mut va_list,) -> i32; // cmd-rust/src/prelude.rs
     pub fn _wcsicmp(s1: *const u16, s2: *const u16) -> i32; // apphelp-rust/src/prelude.rs
-    pub fn towupper(c: c_int) -> c_int; // comctl32-rust/src/prelude.rs
+    pub fn towupper(c: wint_t) -> wint_t; // comctl32-rust/src/prelude.rs
     pub fn wcscmp(a: *const u16, b: *const u16) -> c_int; // apphelp-rust/src/prelude.rs
     pub fn wcslen(s: *const u16) -> usize; // access-rust/src/prelude.rs
 }

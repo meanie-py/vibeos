@@ -179,7 +179,7 @@ extern "C" {
     pub fn strtoul(s: PCSTR, endptr: *mut PCSTR, base: i32) -> u32; // freeldr-rust/src/drivemap.rs
     pub fn tolower(c: i32) -> i32; // freeldr-rust/src/pxe.rs
     pub fn towlower(c: u16) -> u16; // msvcrt-difftest/tests/classify.rs
-    pub fn towupper(c: c_int) -> c_int; // dnsapi-rust/src/prelude.rs
+    pub fn towupper(c: wint_t) -> wint_t; // dnsapi-rust/src/prelude.rs
     pub fn wcschr(s: *const u16, c: u16) -> *mut u16; // advapi32-rust/src/wine/cred.rs
     pub fn wcscmp(a: *const u16, b: *const u16) -> c_int; // browser-rust/src/prelude.rs
     pub fn wcscpy(dst: *mut u16, src: *const u16) -> *mut u16; // advapi32-rust/src/prelude.rs

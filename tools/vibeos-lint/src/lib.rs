@@ -1,7 +1,10 @@
 //! Statically linked lint plugins over an immutable, shared source snapshot.
 mod integers;
 pub mod lexical;
+pub mod modules;
+pub mod regexes;
 pub mod rules;
+pub mod twins;
 
 use rayon::prelude::*;
 use regex::Regex;
@@ -13,6 +16,15 @@ use std::sync::{Arc, Mutex, OnceLock};
 pub trait Rule: Sync {
     fn name(&self) -> &'static str;
     fn run(&self, corpus: &Corpus) -> Result<Vec<String>, String>;
+    fn needs_c_twins(&self) -> bool {
+        false
+    }
+    fn needs_module_tree(&self) -> bool {
+        false
+    }
+    fn extra_files(&self) -> &'static [&'static str] {
+        &[]
+    }
     fn needs_c_sources(&self) -> bool {
         false
     }
@@ -28,6 +40,8 @@ pub struct SourceFile {
     pub path: PathBuf,
     pub text: String,
     resolved: Option<PathBuf>,
+    raw: Option<Arc<[u8]>>,
+    twin_functions: OnceLock<Vec<twins::Function>>,
     scopes: u8,
     noise: OnceLock<Arc<str>>,
     lines: Vec<usize>,
@@ -42,11 +56,22 @@ impl SourceFile {
             path,
             text,
             resolved: None,
+            raw: None,
+            twin_functions: OnceLock::new(),
             scopes: u8::MAX,
             noise: OnceLock::new(),
             lines,
             views: Mutex::new(HashMap::new()),
         }
+    }
+
+    pub fn bytes(&self) -> &[u8] {
+        self.raw.as_deref().unwrap_or(self.text.as_bytes())
+    }
+    pub fn twin_functions(&self, root: &Path) -> &[twins::Function] {
+        self.twin_functions.get_or_init(|| {
+            twins::rust_functions(&twins::blank_rust(&self.text), &root.join(&self.path))
+        })
     }
 
     /// Some legacy scanners resolve symlinked file names for diagnostics while
@@ -111,12 +136,16 @@ impl SourceFile {
 pub struct Corpus {
     pub root: PathBuf,
     pub files: Vec<SourceFile>,
+    twins: OnceLock<twins::CIndex>,
+    modules: OnceLock<modules::ModuleTree>,
 }
 
 const RUST: u8 = 1;
 const SDK_RUST: u8 = 2;
 const MODULE_C: u8 = 4;
 const CDECL: u8 = 8;
+const TRACKED_C: u8 = 16;
+const MANIFEST: u8 = 32;
 
 #[derive(Clone, Copy)]
 pub struct SourceNeeds {
@@ -124,6 +153,8 @@ pub struct SourceNeeds {
     pub module_c: bool,
     pub sdk_rust: bool,
     pub cdecl_sources: bool,
+    pub tracked_c: bool,
+    pub cargo_manifests: bool,
 }
 impl Default for SourceNeeds {
     fn default() -> Self {
@@ -132,11 +163,31 @@ impl Default for SourceNeeds {
             module_c: false,
             sdk_rust: false,
             cdecl_sources: false,
+            tracked_c: false,
+            cargo_manifests: false,
         }
     }
 }
 
 impl Corpus {
+    pub fn new(root: PathBuf, files: Vec<SourceFile>) -> Self {
+        Self {
+            root,
+            files,
+            twins: OnceLock::new(),
+            modules: OnceLock::new(),
+        }
+    }
+    pub fn module_tree(&self) -> &modules::ModuleTree {
+        self.modules
+            .get_or_init(|| modules::ModuleTree::from_files(&self.files))
+    }
+    pub fn c_twins(&self) -> &twins::CIndex {
+        self.twins.get_or_init(|| {
+            twins::CIndex::from_files(self.files.iter().filter(|f| f.scopes & TRACKED_C != 0))
+        })
+    }
+
     pub fn load(root: &Path) -> Result<Self, String> {
         Self::load_with_c(root, false)
     }
@@ -157,6 +208,14 @@ impl Corpus {
         root: &Path,
         inputs: &[PathBuf],
         needs: SourceNeeds,
+    ) -> Result<Self, String> {
+        Self::load_scopes_with_extra(root, inputs, needs, &[])
+    }
+    pub fn load_scopes_with_extra(
+        root: &Path,
+        inputs: &[PathBuf],
+        needs: SourceNeeds,
+        extras: &[PathBuf],
     ) -> Result<Self, String> {
         let root = root
             .canonicalize()
@@ -213,6 +272,45 @@ impl Corpus {
                 .entry(root.join("sdk/include/psdk/winerror.h"))
                 .or_default() |= MODULE_C;
         }
+        for path in extras {
+            *paths.entry(root.join(path)).or_default() |= 0;
+        }
+        if needs.tracked_c {
+            let output = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(["ls-files", "-z", "--", "*.c", "*.cpp", ":!sdk/lib/rust"])
+                .output()
+                .map_err(|e| format!("tracked C inventory: {e}"))?;
+            if !output.status.success() {
+                return Err(format!(
+                    "tracked C inventory: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                ));
+            }
+            #[cfg(unix)]
+            use std::os::unix::ffi::OsStrExt;
+            for raw in output
+                .stdout
+                .split(|&b| b == 0)
+                .filter(|raw| !raw.is_empty())
+            {
+                #[cfg(unix)]
+                let relative = Path::new(std::ffi::OsStr::from_bytes(raw));
+                #[cfg(not(unix))]
+                let relative = Path::new(
+                    std::str::from_utf8(raw).map_err(|e| format!("tracked C path: {e}"))?,
+                );
+                let path = root.join(relative);
+                match fs::metadata(&path) {
+                    Ok(_) => {
+                        *paths.entry(path).or_default() |= TRACKED_C;
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {} // staged/unstaged deletion, as in Python
+                    Err(e) => return Err(format!("{}: {e}", path.display())),
+                }
+            }
+        }
         let entries: Vec<_> = paths.into_iter().collect();
         let files: Result<Vec<_>, String> = entries
             .par_iter()
@@ -230,15 +328,15 @@ impl Corpus {
                 let resolved = path
                     .canonicalize()
                     .map_err(|e| format!("{}: {e}", path.display()))?;
-                file.resolved = Some(resolved.strip_prefix(&root).unwrap_or(path).to_owned());
+                file.resolved = Some(resolved.strip_prefix(&root).unwrap_or(&resolved).to_owned());
+                if needs.cargo_manifests && path.extension().is_some_and(|ext| ext == "rs") {
+                    file.raw = Some(bytes.into());
+                }
                 file.scopes = *scopes;
                 Ok(file)
             })
             .collect();
-        Ok(Self {
-            root,
-            files: files?,
-        })
+        Ok(Self::new(root, files?))
     }
     pub fn rust_files(&self) -> impl Iterator<Item = &SourceFile> {
         self.files
@@ -274,7 +372,7 @@ fn directory_scopes(relative: &Path, needs: SourceNeeds, explicit: bool) -> u8 {
     }
     let rust = Path::new("sdk/lib/rust");
     let mut scopes = 0;
-    if needs.workspace_rust
+    if (needs.workspace_rust || needs.cargo_manifests)
         && (explicit || relative.starts_with(rust) || rust.starts_with(relative))
     {
         scopes |= RUST;
@@ -334,6 +432,12 @@ fn collect_scopes(
         let ext = path.extension().unwrap_or_default().to_string_lossy();
         let file_relative = path.strip_prefix(base).unwrap();
         let mut selected = 0;
+        if needs.cargo_manifests
+            && path.file_name().is_some_and(|n| n == "Cargo.toml")
+            && scopes & RUST != 0
+        {
+            selected |= MANIFEST;
+        }
         if ext == "rs" {
             if scopes & RUST != 0 && (explicit || file_relative.starts_with("sdk/lib/rust")) {
                 selected |= RUST;
@@ -368,6 +472,14 @@ pub fn execute(
     corpus: &Corpus,
     selected: &[&dyn Rule],
 ) -> Result<Vec<(&'static str, Vec<String>)>, String> {
+    // Build cross-file indexes before rules fan out. Initializing a OnceLock
+    // from nested Rayon jobs can exhaust the pool with workers waiting on it.
+    if selected.iter().any(|rule| rule.needs_c_twins()) {
+        corpus.c_twins();
+    }
+    if selected.iter().any(|rule| rule.needs_module_tree()) {
+        corpus.module_tree();
+    }
     let results: Vec<_> = selected
         .par_iter()
         .map(|rule| {
@@ -480,6 +592,15 @@ mod tests {
             .unwrap()
             .files
             .is_empty());
+        #[cfg(unix)]
+        {
+            let nested = temp.join("nested");
+            fs::create_dir_all(nested.join("sdk/lib/rust")).unwrap();
+            let target = rust.join("crate/src/lib.rs");
+            std::os::unix::fs::symlink(&target, nested.join("sdk/lib/rust/external.rs")).unwrap();
+            let outside = Corpus::load(&nested).unwrap();
+            assert_eq!(outside.files[0].resolved_path(), target);
+        }
     }
 
     #[test]
@@ -559,5 +680,81 @@ mod tests {
         )
         .unwrap();
         assert_eq!(newlines.files[0].text, "first\nsecond\nthird\n");
+    }
+
+    #[test]
+    fn tracked_c_oracle_excludes_untracked_sources_and_keeps_raw_rust_bytes() {
+        let temp = std::env::temp_dir().join(format!("vibeos-lint-tracked-{}", std::process::id()));
+        struct Cleanup(PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = fs::remove_dir_all(&self.0);
+            }
+        }
+        let _cleanup = Cleanup(temp.clone());
+        for (name, text) in [
+            ("sdk/lib/rust/x/Cargo.toml", "[package]\nname=\"x\"\n"),
+            ("sdk/lib/rust/x/src/lib.rs", "pub fn Caller() {}\r\n"),
+            ("source/oracle.c", "int Oracle(void) { return 1; }"),
+            ("source/cpp.cpp", "int Cpp(void) { return 2; }"),
+            ("source/untracked.c", "int Wrong(void) { return 0; }"),
+            ("sdk/lib/rust/x/cohab.c", "int Hidden(void) { return 0; }"),
+            (
+                "ntoskrnl/include/internal/mm.h",
+                "#define IS_DIRTY_SSE(E) ((E)&2)",
+            ),
+        ] {
+            let path = temp.join(name);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, text).unwrap();
+        }
+        assert!(std::process::Command::new("git")
+            .args(["init", "--quiet"])
+            .arg(&temp)
+            .status()
+            .unwrap()
+            .success());
+        assert!(std::process::Command::new("git")
+            .arg("-C")
+            .arg(&temp)
+            .args([
+                "add",
+                "source/oracle.c",
+                "source/cpp.cpp",
+                "sdk/lib/rust/x/cohab.c"
+            ])
+            .status()
+            .unwrap()
+            .success());
+        let needs = SourceNeeds {
+            tracked_c: true,
+            cargo_manifests: true,
+            ..SourceNeeds::default()
+        };
+        let corpus = Corpus::load_scopes_with_extra(
+            &temp,
+            &[],
+            needs,
+            &[PathBuf::from("ntoskrnl/include/internal/mm.h")],
+        )
+        .unwrap();
+        assert_eq!(corpus.files.len(), 5);
+        assert_eq!(corpus.rust_files().count(), 1);
+        let rust = corpus.rust_files().next().unwrap();
+        assert_eq!(rust.text, "pub fn Caller() {}\n");
+        assert_eq!(rust.bytes(), b"pub fn Caller() {}\r\n");
+        assert!(corpus.c_twins().get("Wrong").is_empty());
+        assert!(corpus.c_twins().get("Hidden").is_empty());
+        assert_eq!(
+            corpus.c_twins().get("Oracle")[0].path,
+            Path::new("source/oracle.c")
+        );
+        assert_eq!(corpus.c_twins().get("Cpp").len(), 1);
+        fs::remove_file(temp.join("source/cpp.cpp")).unwrap();
+        assert!(Corpus::load_scopes(&temp, &[], needs)
+            .unwrap()
+            .c_twins()
+            .get("Cpp")
+            .is_empty());
     }
 }
