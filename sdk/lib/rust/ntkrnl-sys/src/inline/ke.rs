@@ -516,6 +516,29 @@ pub(crate) unsafe fn cswdep_spin_release(lock: *mut ULONG_PTR) {
 #[inline(always)]
 pub(crate) unsafe fn cswdep_spin_release(_lock: *mut ULONG_PTR) {}
 
+
+/// A spin lock's word, read without assuming its alignment. Windows' x64 kernel takes
+/// a lock with `lock bts` and checks nothing, and vendor drivers rely on it: Realtek's
+/// rtwlanu.sys hands `KeAcquireSpinLockRaiseToDpc` a lock that is not 8-byte aligned
+/// (OptiPlex, 2026-10-17). A `read_volatile` of the word, or a plain store to it,
+/// demands alignment, and with debug assertions armed that is a panic
+/// (`ptr::read_volatile requires that the pointer argument is aligned`) where Windows
+/// runs on. The byte-array view has alignment 1; x86 loads it whole. The atomics on the
+/// word stay as they are: on x86 they are `lock`-prefixed instructions, which take any
+/// alignment.
+#[inline(always)]
+pub unsafe fn spin_lock_word(spin_lock: *const ULONG_PTR) -> ULONG_PTR {
+    ULONG_PTR::from_ne_bytes(core::ptr::read_volatile(
+        spin_lock as *const [u8; core::mem::size_of::<ULONG_PTR>()],
+    ))
+}
+
+/// Store a spin lock's word without assuming its alignment; see `spin_lock_word`.
+#[inline(always)]
+pub unsafe fn set_spin_lock_word(spin_lock: *mut ULONG_PTR, value: ULONG_PTR) {
+    core::ptr::write_volatile(spin_lock as *mut [u8; core::mem::size_of::<ULONG_PTR>()], value.to_ne_bytes());
+}
+
 /// KxAcquireSpinLock — UP kernel: compiler barrier only. SMP kernel
 /// (feature = "smp"): the spinlock.h CONFIG_SMP body — try-acquire via
 /// InterlockedBitTestAndSet(bit 0), on contention spin-read until free.
@@ -562,13 +585,13 @@ pub unsafe fn KxAcquireSpinLock(spin_lock: *mut ULONG_PTR) {
     // the release profile leaves off, so it had never executed. Both are now on
     // `feature = "dbg"` and genuinely share the rationale above.
     #[cfg(all(feature = "smp", feature = "dbg"))]
-    if core::ptr::read_volatile(spin_lock) == (current_thread() as ULONG_PTR | 1) {
+    if spin_lock_word(spin_lock) == (current_thread() as ULONG_PTR | 1) {
         ddk::KeBugCheckEx(SPIN_LOCK_ALREADY_OWNED, spin_lock as ULONG_PTR as _, 0, 0, 0);
     }
     #[cfg(feature = "smp")]
     while InterlockedBitTestAndSet(spin_lock as *mut i32, 0) != 0 {
         // Locked — spin read-only (cache-friendly) until it's released.
-        while core::ptr::read_volatile(spin_lock) & 1 != 0 {
+        while spin_lock_word(spin_lock) & 1 != 0 {
             core::hint::spin_loop();
         }
     }
@@ -577,7 +600,7 @@ pub unsafe fn KxAcquireSpinLock(spin_lock: *mut ULONG_PTR) {
     core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
     #[cfg(feature = "dbg")]
     {
-        *spin_lock = current_thread() as ULONG_PTR | 1;
+        set_spin_lock_word(spin_lock, current_thread() as ULONG_PTR | 1);
     }
 }
 
@@ -596,7 +619,7 @@ pub unsafe fn KxReleaseSpinLock(spin_lock: *mut ULONG_PTR) {
     core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
 }
 
-/// In-stack queued spinlocks as NT has them (an MCS lock), i386 only: `*SpinLock` holds
+/// In-stack queued spinlocks as NT has them (an MCS lock), on every arch: `*SpinLock` holds
 /// the TAIL of the waiter queue, and each `KSPIN_LOCK_QUEUE.Lock` carries LQ_WAIT (bit 0)
 /// while its owner waits and LQ_OWN (bit 1) while it holds the lock. The C's queued
 /// routines are `#if 0` ("broken": they exchange on `LockHandle->Next`, not the lock) and
@@ -611,12 +634,13 @@ pub unsafe fn KxReleaseSpinLock(spin_lock: *mut ULONG_PTR) {
 /// `KeAcquireQueuedSpinLock*` family stays plain because it only ever takes the PRCB's
 /// LockQueue[] entries. A plain acquire on a queued lock would see a pointer (bit 0
 /// clear) and "take" it beside the owner.
-#[cfg(target_arch = "x86")]
+///
+/// amd64 and arm64 moved onto it 2026-10-17. Their in-stack callers are the same shared
+/// code (ke-inlines, ntkrnl-sys inlines, ex, storport, classpnp), so the audit above holds;
+/// what differed was only where the exports live (ntoskrnl on amd64, hal.dll on arm64).
 pub const LQ_WAIT: usize = 1;
-#[cfg(target_arch = "x86")]
 pub const LQ_OWN: usize = 2;
 
-#[cfg(target_arch = "x86")]
 #[inline]
 pub unsafe fn KxAcquireInStackQueuedSpinLock(queue: *mut ddk::KSPIN_LOCK_QUEUE) {
     use core::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
@@ -639,7 +663,6 @@ pub unsafe fn KxAcquireInStackQueuedSpinLock(queue: *mut ddk::KSPIN_LOCK_QUEUE) 
     }
 }
 
-#[cfg(target_arch = "x86")]
 #[inline]
 pub unsafe fn KxReleaseInStackQueuedSpinLock(queue: *mut ddk::KSPIN_LOCK_QUEUE) {
     use core::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
@@ -765,7 +788,7 @@ pub unsafe fn KeLeaveGuardedRegion() {
 /// KeInitializeSpinLock — set spin lock to zero.
 #[inline]
 pub unsafe fn KeInitializeSpinLock(spin_lock: *mut ULONG_PTR) {
-    *spin_lock = 0;
+    set_spin_lock_word(spin_lock, 0);
 }
 
 // ============================================================================
@@ -3129,4 +3152,30 @@ pub unsafe fn KeSaveFloatingPointState(_FloatSave: ddk::PKFLOATING_SAVE) -> NTST
 #[cfg(not(target_arch = "x86"))]
 pub unsafe fn KeRestoreFloatingPointState(_FloatSave: ddk::PKFLOATING_SAVE) -> NTSTATUS {
     0 // STATUS_SUCCESS
+}
+
+// ============================================================================
+// _disable / _enable (intrin.h): compiler intrinsics, never exports
+// ============================================================================
+// A driver's C calls them and the compiler emits the instruction in place. blue.sys's
+// translation declared them `extern` (copied from kernel-rust's declaration), which linked
+// on amd64 only by accident -- ke_amd64.rs's global_asm happens to define the symbols -- and
+// failed i386 (`__disable`) and arm64. Inline here, as MSVC emits them: cli/sti on x86, and
+// on arm64 the IRQ mask bit (DAIF.I), `msr daifset/daifclr, #2`. No `nomem`: each is a compiler barrier, so no load or store
+// of the critical section moves across it.
+
+#[inline(always)]
+pub unsafe fn _disable() {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    core::arch::asm!("cli", options(nostack));
+    #[cfg(target_arch = "aarch64")]
+    core::arch::asm!("msr daifset, #2", options(nostack));
+}
+
+#[inline(always)]
+pub unsafe fn _enable() {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    core::arch::asm!("sti", options(nostack));
+    #[cfg(target_arch = "aarch64")]
+    core::arch::asm!("msr daifclr, #2", options(nostack));
 }

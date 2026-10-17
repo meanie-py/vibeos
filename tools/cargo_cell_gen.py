@@ -29,7 +29,9 @@ import functools
 import json
 import os
 import re
+import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -68,6 +70,15 @@ DEAD_IMPORTS = {
     # calls it: its C callers are in the uncompiled misc.c and an exe exports nothing.
     # The engine archives the shim objects, so whether lld keeps it varies by arch.
     "sndvol32": {"kernel32.dll!FormatMessageW"},
+}
+# Modules whose cmake link bound an EXPORT to an import thunk of the same name, which the
+# cell fixes by linking the body first. user32_vista (2026-10-17): its `dpi.c` was an object
+# in the C link, so it won; the cohab flip moved it into an archive that loses to user32's
+# import library, so user32_vista.dll exported user32!GetDpiFor* while user32.dll (export
+# version 0x502) forwards those names to user32_vista: a forwarding cycle on every arch, and
+# dpi.rs was never linked. The cell's only accepted difference is losing those imports.
+REBOUND_EXPORTS = {
+    "user32_vista": {"GetDpiForSystem", "GetDpiForWindow"},
 }
 # The engine builds a body with `-C force-frame-pointers=yes` (stack walks need them) where
 # cmake's rust_staticlib_variant did not; a frame pointer can push a big frame over the
@@ -873,7 +884,12 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
             )
         extra.append(shims)
     if cell.rc:
-        rc_name = Path(cell.rc).name
+        # The path cmake's own source list spells, not the bare name: tdi's is
+        # misc/tdi.rc, and `add_library(tdi_res OBJECT tdi.rc)` names a file that does
+        # not exist ("No SOURCES given to target: tdi_res").
+        name = Path(cell.rc).name
+        spelled = re.findall(rf"(?<![\w/.${{}}-])([\w./-]*{re.escape(name)})(?![\w.])", text)
+        rc_name = spelled[0] if spelled else name
         block.append(
             "# The resources are the one thing cmake still compiles, in this OBJECT library"
         )
@@ -927,9 +943,7 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
                 block.append("endif()")
         extra.append(f"${{{var}}}")
     named = {lib for libs in cell.static_libs.values() for lib in libs}
-    extra += sorted(
-        {d for lib in named if lib in ENGINE_LIB_DEPS for d in ENGINE_LIB_DEPS[lib].split()}
-    )
+    extra += sorted({d for lib in named for d in _engine_deps(lib)})
     kind = cell.kernel_kind or ("win32exe" if cell.module_kind == "Win32Exe" else "win32dll")
     call = [f"add_cargo_module({cell.target} {cell.crate} {cell.output_name}"]
     call.append(f"    KIND {kind}")
@@ -1006,6 +1020,7 @@ ENGINE_LIBS = {
     "sdk/lib/dmilib/libdmilib.a": "engine:c:dmilib",
     "sdk/lib/dxguid/libdxguid.a": "engine:c:dxguid",
     "sdk/lib/tzlib/libtzlib.a": "engine:c:tzlib",
+    "sdk/lib/tzlib/libtzlib_rust.a": "engine:tzlib_rust",
     "sdk/lib/scrnsave/libscrnsave.a": "engine:c:scrnsave",
     "dll/appcompat/shims/shimlib/libshimlib.a": "engine:c:shimlib",
     "win32ss/user/winsrv/concfg/libconcfg.a": "engine:c:concfg",
@@ -1027,6 +1042,68 @@ ENGINE_LIBS = {
     "sdk/lib/vcruntime/libsetjmp.a": "engine:c:setjmp",
     "sdk/lib/drivers/aux_klib/libaux_klib.a": "engine:c:aux_klib",
 }
+
+
+@functools.lru_cache(maxsize=1)
+def _library_index(repo: Path = REPO) -> dict[str, tuple[str, list[str], list[str]]]:
+    """name -> (kind, args, add_dependencies) for every `add_library` and
+    `rust_staticlib_variant` in the tree's CMakeLists. A static library's archive is
+    `lib<name>.a` wherever cmake puts it (libsamplerate's binary dir is not its source dir),
+    so the name is the key. A name defined twice maps to nothing: never guess."""
+    found: dict[str, list[tuple[str, list[str]]]] = {}
+    deps: dict[str, list[str]] = {}
+    for cm in repo.glob("**/CMakeLists.txt"):
+        if cm.parts[len(repo.parts)].startswith(("build-", ".")):
+            continue
+        text = cm.read_text(errors="replace")
+        if "add_library" not in text and "rust_staticlib_variant" not in text:
+            continue
+        for _s, _e, cmd, raw in _statements(text):
+            a = _args(raw)
+            if not a:
+                continue
+            if cmd in ("add_library", "rust_staticlib_variant"):
+                found.setdefault(a[0], []).append((cmd, a))
+            elif cmd == "add_dependencies":
+                deps.setdefault(a[0], []).extend(a[1:])
+    return {
+        name: (defs[0][0], defs[0][1], deps.get(name, []))
+        for name, defs in found.items()
+        if len(defs) == 1
+    }
+
+
+_NOT_STATIC = {"SHARED", "MODULE", "OBJECT", "INTERFACE", "IMPORTED", "ALIAS"}
+
+
+def engine_lib(lib: str, repo: Path = REPO) -> tuple[str, list[str]] | None:
+    """The `engine:` entry that builds cmake's `lib`, and the cmake targets its compile
+    must order after; None when the engine cannot build it.
+
+    The hand-kept ENGINE_LIBS table first; then any `rust_staticlib_variant` archive
+    becomes `engine:crate:<crate>:<features>:<defaults>` (what that function's
+    `cargo build` does, which `engine_crate` repeats; a variant passing ENV is not
+    modelled), and any other cmake static library `engine:c:<target>` (its compile
+    replayed from compile_commands.json), after the targets its `add_dependencies` names.
+    """
+    if lib in ENGINE_LIBS:
+        name = ENGINE_LIBS[lib]
+        return name, ENGINE_LIB_DEPS.get(name, "").split()
+    m = re.fullmatch(r"(?:.*/)?lib([\w.+-]+)\.a", lib)
+    entry = _library_index(repo).get(m.group(1)) if m else None
+    if entry is None:
+        return None
+    kind, a, deps = entry
+    if kind == "rust_staticlib_variant":
+        if len(a) < 4 or "ENV" in a[4:]:
+            return None
+        feats = ",".join(f for f in re.split(r"[ ,;]+", a[2].strip('"')) if f)
+        return f"engine:crate:{a[1]}:{feats}:{a[3].upper()}", []
+    if any(x in _NOT_STATIC for x in a[1:2]):
+        return None
+    return f"engine:c:{a[0]}", [d for d in deps if not d.startswith("rust_")] or ["psdk"]
+
+
 # The engine replays cmake's compile of these, which reads what cmake generates (psdk
 # and xdk headers, uuid's widl output): the cell builds after the targets that make it.
 ENGINE_LIB_DEPS = {
@@ -1052,6 +1129,17 @@ ENGINE_LIB_DEPS = {
     "engine:c:setjmp": "psdk asm",
     "engine:c:aux_klib": "xdk",
 }
+
+
+# Deps of the engine libraries `engine_lib` resolved while modelling (the generic ones
+# have no ENGINE_LIB_DEPS row).
+_ENGINE_DEPS_SEEN: dict[str, list[str]] = {}
+
+
+def _engine_deps(name: str) -> list[str]:
+    if name in ENGINE_LIB_DEPS:
+        return ENGINE_LIB_DEPS[name].split()
+    return _ENGINE_DEPS_SEEN.get(name, [])
 
 
 # ---------------------------------------------------------------- the model
@@ -1188,7 +1276,10 @@ def model(target: str, repo: Path = REPO) -> Cell:
                 # else (the body it carries is linked as the body), inflib one empty
                 # inflib_rust_stub.c beside libinflib_rust.a: they add no code.
                 continue
-            lib = ENGINE_LIBS.get(lib, lib)
+            mapped = engine_lib(lib, repo)
+            if mapped:
+                lib = mapped[0]
+                _ENGINE_DEPS_SEEN[lib] = mapped[1]
             if lib not in static:
                 static.append(lib)
                 seq.append(lib)
@@ -1312,7 +1403,8 @@ def model(target: str, repo: Path = REPO) -> Cell:
         raise GenError(f"{target}: subsystem set on some arches only {subs}")
     panics = {a: carries_panic_handler(repo / f"build-{a}" / links[a].output) for a in ARCHES}
     for a in ARCHES:
-        if bound := _exports_bound_to_imports(repo / f"build-{a}" / links[a].output):
+        bound = _exports_bound_to_imports(repo / f"build-{a}" / links[a].output)
+        if bound and not bound <= REBOUND_EXPORTS.get(target, set()):
             # user32_vista: cmake's link resolved its exports to user32's import thunks
             # before it reached the body, so the Rust is never linked and the DLL only
             # forwards. A cell links the body first, which is a different module.
@@ -1361,7 +1453,13 @@ def model(target: str, repo: Path = REPO) -> Cell:
         panics=panics,
         body_var=facts["body_var"],
         late_libs=late,
-        link_order=orders,
+        # REBOUND_EXPORTS: the body ahead of the import libs, so a name both exported
+        # and imported binds to the body's definition, not the import thunk.
+        link_order=(
+            {a: ["body"] + [x for x in o if x != "body"] for a, o in orders.items()}
+            if target in REBOUND_EXPORTS
+            else orders
+        ),
         no_cab=facts["no_cab"],
         kernel_kind=facts.get("module_type", "") if module_kind == "KernelDll" else "",
         custom_body=custom or {},
@@ -1822,6 +1920,12 @@ def check(targets: list[str], baseline: Path, repo: Path = REPO) -> int:
                 and not _cell_uses_panic_common(t, a, repo)
             }
             dead = {d for d in diffs if d.removeprefix("imports: - ") in DEAD_IMPORTS.get(t, ())}
+            rebound = {
+                d
+                for d in diffs
+                if d.startswith("imports: - ") and d.split("!")[-1] in REBOUND_EXPORTS.get(t, set())
+            }
+            dead |= rebound
             # A panic-lean cell links only what its body, CRT and exports reach; cmake's
             # link also kept whatever shared an archive member with the body's panic
             # path. An import can only vanish when no linked code references it, so the
@@ -1841,6 +1945,18 @@ def check(targets: list[str], baseline: Path, repo: Path = REPO) -> int:
                 diffs.append(
                     f"size: mapped image grew {grew // 1024} KB (slack {SIZE_SLACK // 1024})"
                 )
+            # REBOUND_EXPORTS: cmake's module never linked the body, so the cell is a
+            # different (fixed) module. What linking the body brings is accepted and
+            # reported: imports it calls, sections it has, the size it adds. Losing an
+            # export, a resource or a CD placement still fails.
+            rebound_diffs = set()
+            if t in REBOUND_EXPORTS:
+                rebound_diffs = {
+                    d
+                    for d in diffs
+                    if d.startswith(("imports: + ", "sections: + ", "size: mapped image grew"))
+                }
+                diffs = [d for d in diffs if d not in rebound_diffs]
             # Where the CDs put it. cmake's `FOR all` is the live CD plus reactos.cab; the
             # cell's add_cargo_module also lays the file loose on the boot CD, which is the
             # one accepted addition. Anything removed is a file some CD or install lost.
@@ -1860,6 +1976,13 @@ def check(targets: list[str], baseline: Path, repo: Path = REPO) -> int:
                 diffs += [f"cd: - {x}" for x in sorted(gone)]
                 diffs += [f"cd: + {x}" for x in sorted(added - loose)]
             note = " (+ panic_common imports)" if extra else ""
+            note += (
+                f" (rebound exports: linked the body; {len(rebound_diffs)} expected differences: "
+                + "; ".join(sorted(rebound_diffs))
+                + ")"
+                if rebound_diffs
+                else ""
+            )
             note += " (+ loose on the boot CD)" if loose else ""
             note += " (- cab: txtsetup.sif installs it)" if note_txtsetup else ""
             note += " (+ rsbegin .ctors/.dtors)" if rsbegin else ""
@@ -1873,6 +1996,140 @@ def check(targets: list[str], baseline: Path, repo: Path = REPO) -> int:
             bad += bool(diffs)
     print(f"\n{bad} problem(s)")
     return 1 if bad else 0
+
+
+def remap(crates: list[str] | None = None, repo: Path = REPO) -> list[str]:
+    """Move existing cells off cmake-built archives the engine can now build itself.
+
+    A cell's `static_libs` may still name a raw `<dir>/lib<x>.a` that cmake builds (the
+    generator only knew ENGINE_LIBS when it ran). For each one `engine_lib` resolves, this
+    rewrites the build.rs entry to the engine name, drops the archive from the cell's
+    `<T>_REUSED` list in its CMakeLists (and the variable, once empty) and adds the engine
+    library's order-only targets to EXTRA_DEPENDS. Returns the crates it changed.
+    """
+    changed = []
+    for build_rs_path in sorted((repo / "sdk/lib/rust").glob("*-cargo/build.rs")):
+        crate = build_rs_path.parent.name
+        if crates and crate not in crates:
+            continue
+        text = build_rs_path.read_text()
+        raw = sorted(set(re.findall(r'"([^"]+\.a)"', re.sub(r"//[^\n]*", "", text))))
+        mapping = {lib: engine_lib(lib, repo) for lib in raw}
+        mapping = {lib: m for lib, m in mapping.items() if m}
+        if not mapping:
+            continue
+        cm = next(
+            (
+                c
+                for c in repo.glob("**/CMakeLists.txt")
+                if not c.parts[len(repo.parts)].startswith(("build-", "."))
+                and re.search(
+                    rf"add_cargo_module\(\S+ {re.escape(crate)}\b", c.read_text(errors="replace")
+                )
+            ),
+            None,
+        )
+        if cm is None:
+            # The loader cells (freeldr, rosload, uefildr) are hand-made recipes, not
+            # add_cargo_module cells; their archives are the loader rung's.
+            print(f"skipped {crate}: not an add_cargo_module cell")
+            continue
+        for lib, (name, _deps) in mapping.items():
+            text = text.replace(f'"{lib}"', f'"{name}"')
+        cml = cm.read_text()
+        for lib in mapping:
+            cml = re.sub(
+                rf"(?m)^[ \t]*(?:list\(APPEND \w+ )?\$\{{CMAKE_BINARY_DIR\}}/{re.escape(lib)}\)?\n",
+                lambda m: (
+                    ")\n"
+                    if m.group(0).rstrip().endswith(")") and "list(APPEND" not in m.group(0)
+                    else ""
+                ),
+                cml,
+            )
+        # An emptied `set(X_REUSED\n)` and the list(APPEND) guards left with nothing in them.
+        for var in re.findall(r"set\((\w+_REUSED)\s*\)", cml):
+            cml = re.sub(rf"set\({var}\s*\)\n", "", cml)
+            cml = cml.replace(f" ${{{var}}}", "")
+        cml = re.sub(r'(?m)^if\(ARCH STREQUAL "\w+"\)\nendif\(\)\n', "", cml)
+        deps = sorted({d for _n, ds in mapping.values() for d in ds})
+        m = re.search(r"(?m)^(\s*EXTRA_DEPENDS)([^)\n]*)\)", cml)
+        if deps:
+            if m:
+                have = m.group(2).split()
+                new = have + [d for d in deps if d not in have]
+                cml = cml[: m.start()] + f"{m.group(1)} {' '.join(new)})" + cml[m.end() :]
+            else:
+                raise GenError(f"{crate}: no EXTRA_DEPENDS to add {deps} to")
+        build_rs_path.write_text(text)
+        cm.write_text(cml)
+        changed.append(crate)
+    return changed
+
+
+def save_baseline(targets: list[str], baseline: Path, repo: Path = REPO) -> None:
+    """Copy each target's cmake-built PE, per arch, into `baseline`, with the index
+    `--check` reads (output name and CD placement per arch)."""
+    index_path = baseline / "targets.json"
+    index = json.loads(index_path.read_text()) if index_path.exists() else {}
+    for t in targets:
+        for a in ARCHES:
+            out = link_edge(a, t, repo).output
+            src = repo / f"build-{a}" / out
+            if not src.is_file():
+                raise GenError(f"{t}: no cmake-built {out} in build-{a}; build every arch first")
+            dst = baseline / a / out
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.write_bytes(src.read_bytes())
+            index.setdefault(t, {})[a] = out
+            index[t][f"cd:{a}"] = cd_placement(a, out, repo)
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    index_path.write_text(json.dumps(index, indent=1, sort_keys=True))
+
+
+def _ninja(arch: str, targets: list[str], repo: Path) -> None:
+    """Regenerate the graph from the rewritten CMakeLists, then build only the cells."""
+    build = repo / f"build-{arch}"
+    for step in (["ninja", "build.ninja"], ["ninja", *targets]):
+        cp = subprocess.run(
+            ["bash", str(repo / "tools/canon-run.sh"), *step],
+            cwd=build,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if cp.returncode:
+            tail = "\n".join((cp.stdout + cp.stderr).splitlines()[-15:])
+            raise GenError(f"build-{arch}: `{' '.join(step)}` failed:\n{tail}")
+
+
+def convert(targets: list[str], baseline: Path | None = None, repo: Path = REPO) -> int:
+    """Move freshly flipped modules from cmake's link to cargo cells in one command.
+
+    The wave procedure, minus the three full builds it used to cost: the cmake-built PEs
+    the lane's own build left in `build-<arch>` are the baseline, every target is modelled
+    before anything is written (one refusal writes nothing), and after `--apply` only the
+    new cells are rebuilt (`ninja <targets>` under the canonical mount) before `--check`
+    compares them. Run it after the build that follows `rustconv port flip`; the next full
+    build and the gate's smoke then cover the boot.
+    """
+    if not targets:
+        raise GenError("--convert needs at least one target")
+    cells = []
+    for t in targets:
+        cells.append(model(t, repo))
+    baseline = baseline or (
+        Path.home() / "vibeos-cargo-baselines" / time.strftime("convert-%Y%m%d-%H%M%S")
+    )
+    save_baseline(targets, baseline, repo)
+    print(f"baseline: {baseline}")
+    for cell in cells:
+        for p in apply(cell, repo):
+            print(f"wrote {p.relative_to(repo)}")
+    for arch in ARCHES:
+        _ninja(arch, targets, repo)
+        print(f"built {len(targets)} cell(s) on {arch}")
+    return check(targets, baseline, repo)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1893,6 +2150,25 @@ def main(argv: list[str] | None = None) -> int:
         help="pe_equiv each target's current PE against DIR, on every arch",
     )
     ap.add_argument(
+        "--convert",
+        action="store_true",
+        help="the whole wave for TARGETS in one command: baseline from the current build, "
+        "apply, build just the new cells on every arch, check equivalence",
+    )
+    ap.add_argument(
+        "--remap",
+        action="store_true",
+        help="move existing cells (all, or the named *-cargo crates) off cmake-built "
+        "archives the engine can build itself",
+    )
+    ap.add_argument(
+        "--baseline",
+        metavar="DIR",
+        type=Path,
+        help="with --convert: where to keep the baselines "
+        "(default ~/vibeos-cargo-baselines/convert-<time>)",
+    )
+    ap.add_argument(
         "--reshell",
         type=Path,
         metavar="DIR",
@@ -1900,20 +2176,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = ap.parse_args(argv)
     if args.save_baseline:
-        index_path = args.save_baseline / "targets.json"
-        index = json.loads(index_path.read_text()) if index_path.exists() else {}
-        for t in args.targets:
-            for a in ARCHES:
-                out = link_edge(a, t).output
-                dst = args.save_baseline / a / out
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                dst.write_bytes((REPO / f"build-{a}" / out).read_bytes())
-                index.setdefault(t, {})[a] = out
-                index[t][f"cd:{a}"] = cd_placement(a, out)
-        index_path.parent.mkdir(parents=True, exist_ok=True)
-        index_path.write_text(json.dumps(index, indent=1, sort_keys=True))
+        save_baseline(args.targets, args.save_baseline)
         print(f"saved {len(args.targets)} modules x {len(ARCHES)} arches")
         return 0
+    if args.remap:
+        for crate in remap(args.targets or None):
+            print(f"remapped {crate}")
+        return 0
+    if args.convert:
+        return convert(args.targets, args.baseline)
     if args.check:
         return check(args.targets, args.check)
     if args.reshell:

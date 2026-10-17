@@ -1976,6 +1976,24 @@ pub unsafe fn InterlockedDecrement(addend: *mut i32) -> i32 {
         - 1
 }
 
+/// `winnt.h` `InterlockedIncrement64` / `InterlockedDecrement64` over a `LONGLONG` (`i64` on
+/// all three targets; `lock cmpxchg8b` on i386). The NEW value, wrapping as the hardware does.
+/// rapps' `CAppInfoDisplay::ContentID` counter carried a private copy before this one.
+#[inline(always)]
+pub unsafe fn InterlockedIncrement64(addend: *mut i64) -> i64 {
+    (*(addend as *const core::sync::atomic::AtomicI64))
+        .fetch_add(1, core::sync::atomic::Ordering::SeqCst)
+        .wrapping_add(1)
+}
+
+/// See [`InterlockedIncrement64`].
+#[inline(always)]
+pub unsafe fn InterlockedDecrement64(addend: *mut i64) -> i64 {
+    (*(addend as *const core::sync::atomic::AtomicI64))
+        .fetch_sub(1, core::sync::atomic::Ordering::SeqCst)
+        .wrapping_sub(1)
+}
+
 // ================= wine/debug.h: WINE_TRACE / WINE_ERR / ..._ON(ch) =================
 // `__WINE_DPRINTF`: a flag test on the channel, then `ros_dbg_log`. MACROS (never out-of-line
 // fns, field manual §9.65), expanded in the CONSUMER, so `__wine_dbch___default`,

@@ -194,7 +194,7 @@ pub unsafe extern "C" fn CreateDefaultSecurityDescriptor() -> PSECURITY_DESCRIPT
 
         if pSD.is_null() {
             let _ = 0; // error path
-        } else if InitializeSecurityDescriptor(pSD, SECURITY_DESCRIPTOR_REVISION as u32) == 0 {
+        } else if InitializeSecurityDescriptor((pSD).cast(), SECURITY_DESCRIPTOR_REVISION as u32) == 0 {
             let _ = 0; // error path
         } else {
             Dacl = ((pSD as usize).wrapping_add(core::mem::size_of::<_SECURITY_DESCRIPTOR>())) as PACL;
@@ -224,7 +224,7 @@ pub unsafe extern "C" fn CreateDefaultSecurityDescriptor() -> PSECURITY_DESCRIPT
             ) == 0
             {
                 let _ = 0; // error path
-            } else if SetSecurityDescriptorDacl(pSD, 1, Dacl, 0) == 0 {
+            } else if SetSecurityDescriptorDacl((pSD).cast(), 1, Dacl, 0) == 0 {
                 let _ = 0; // error path
             } else {
                 // success path, skip cleanup

@@ -6,7 +6,6 @@
 // → ntkrnl_sys::inline::tier1. Dispatch routines are NTAPI (extern "system");
 // assigned into MajorFunction via the transmute-to-PDRIVER_DISPATCH bridge
 // (i386 nominal extern "system" ≠ extern "stdcall" fn-pointer type).
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;

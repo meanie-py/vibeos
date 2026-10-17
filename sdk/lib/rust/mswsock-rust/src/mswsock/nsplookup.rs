@@ -1,4 +1,7 @@
 use crate::prelude::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::mswsock::mswhelper::strlen;
+use crate::mswsock::mswhelper::HeapAlloc;
 use core::ffi::c_void;
 
 // Win32 API + DNS API: stdcall on i386 (extern "system" → `_Name@N`).
@@ -6,7 +9,6 @@ extern "system" {
     fn WSASetLastError(iError: INT);
     fn GetProcessHeap() -> HANDLE;
     fn HeapFree(hHeap: HANDLE, dwFlags: u32, lpMem: LPVOID) -> i32;
-    fn HeapAlloc(hHeap: *mut core::ffi::c_void, dwFlags: u32, dwBytes: usize) -> *mut core::ffi::c_void;
     fn GetComputerNameExW(NameType: u32, lpBuffer: PWSTR, nSize: LPDWORD) -> i32;
     fn DnsQuery_W( pszName: PCWSTR, wType: WORD, Options: DWORD, pExtra: PVOID, ppQueryResults: *mut PDNS_RECORDW, pReserved: *mut PVOID, ) -> DNS_STATUS;
     fn DnsRecordListFree(pRecordList: PDNS_RECORDW, FreeType: ::core::ffi::c_int);
@@ -207,7 +209,7 @@ pub unsafe extern "system" fn mwsNSPLookupServiceBegin(
     pLook = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<WSHANDLEINTERN>(),
+        (core::mem::size_of::<WSHANDLEINTERN>()) as SIZE_T,
     ) as PWSHANDLEINTERN;
     if pLook.is_null() {
         WSASetLastError(WSAEFAULT as i32);
@@ -403,7 +405,7 @@ pub unsafe extern "C" fn NSP_GetHostNameHeapAllocW(hostname: *mut PWSTR) -> i32 
     let mut bufCharLen: u32 = (MAX_COMPUTERNAME_LENGTH + 1) as u32;
     let bufByteLen: u32 = bufCharLen * core::mem::size_of::<u16>() as u32;
 
-    let name = HeapAlloc(hHeap, 0, bufByteLen as usize) as PWSTR;
+    let name = HeapAlloc(hHeap, 0, (bufByteLen) as SIZE_T) as PWSTR;
 
     if GetComputerNameExW(ComputerNameDnsHostname, name, &mut bufCharLen) == 0 {
         HeapFree(hHeap, 0, name as *mut core::ffi::c_void);
@@ -583,7 +585,7 @@ pub unsafe extern "system" fn OpenNetworkDatabase(Name: LPCWSTR) -> HANDLE {
     ExpandedPath = HeapAlloc(
         GetProcessHeap(),
         0,
-        (MAX_PATH as usize) * core::mem::size_of::<u16>(),
+        ((MAX_PATH as usize) * core::mem::size_of::<u16>()) as SIZE_T,
     ) as PWSTR;
     if ExpandedPath.is_null() {
         return INVALID_HANDLE_VALUE;
@@ -607,7 +609,7 @@ pub unsafe extern "system" fn OpenNetworkDatabase(Name: LPCWSTR) -> HANDLE {
             &mut RegSize,
         ) as i32;
 
-        DatabasePath = HeapAlloc(GetProcessHeap(), 0, RegSize as usize) as PWSTR;
+        DatabasePath = HeapAlloc(GetProcessHeap(), 0, (RegSize) as SIZE_T) as PWSTR;
         if DatabasePath.is_null() {
             HeapFree(GetProcessHeap(), 0, ExpandedPath as LPVOID);
             return INVALID_HANDLE_VALUE;
@@ -718,7 +720,7 @@ pub unsafe extern "C" fn NSP_GetServiceByNameHeapAllocW(
 
     nameProtoA = nameProtoA.offset(1);
     i = (nameProtoA.offset_from(nameA) as isize - 1) as u32;
-    nameServiceA = HeapAlloc(hHeap, 0, (i + 1) as usize) as PCHAR;
+    nameServiceA = HeapAlloc(hHeap, 0, (i + 1) as SIZE_T) as PCHAR;
     StringCbCopyA(nameServiceA, (i + 1) as usize, nameA);
     *nameServiceA.offset(i as isize) = 0;
 
@@ -1044,7 +1046,6 @@ extern "C" {
     fn memmove(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void;
     fn strchr(s: PCHAR, c: i32) -> PCHAR;
     fn strcmp(s1: PCHAR, s2: PCHAR) -> i32;
-    fn strlen(s: PCHAR) -> usize;
 }
 
 

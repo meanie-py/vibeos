@@ -31,6 +31,7 @@ from . import (
     difftest_gen,
     dup_census,
     file_splitter,
+    fn_alias_audit,
     gdi_lock_inventory,
     hybrid_closure,
     profile_derive,
@@ -40,7 +41,7 @@ from . import (
     seh_rewrite,
     semantic_skeleton,
     semdiff,
-    shell32_tail_inventory,
+    shell32_inventory,
     substrate_closure,
     switch_extract,
     trivial_c,
@@ -512,13 +513,11 @@ def cmd_hybrid_closure(args):
 
 def cmd_shell32_tail_inventory(args):
     """Ratchet the planned shell32 tail against the literal live CMake source lists."""
-    ledger = (
-        Path(args.ledger) if args.ledger else REACTOS_ROOT / shell32_tail_inventory.DEFAULT_LEDGER
-    )
+    ledger = Path(args.ledger) if args.ledger else REACTOS_ROOT / shell32_inventory.DEFAULT_LEDGER
     if not ledger.is_absolute():
         ledger = (Path.cwd() / ledger).resolve()
-    report = shell32_tail_inventory.check_inventory(REACTOS_ROOT, ledger)
-    shell32_tail_inventory.print_report(report, as_json=args.json)
+    report = shell32_inventory.check_inventory(REACTOS_ROOT, ledger)
+    shell32_inventory.print_report(report, as_json=args.json)
     if not report.ok:
         sys.exit(1)
 
@@ -1313,6 +1312,7 @@ def cmd_crate_repair(args):
         max_passes=args.max_passes,
         allow_single_target_width=args.allow_single_target_width,
         dry_run=args.dry_run,
+        features=args.features.split(",") if args.features else (),
     )
     crate_repair.print_session(session, as_json=args.json)
     if session.status in ("regressed", "max_passes"):
@@ -5627,6 +5627,9 @@ def main():
         action="store_true",
         help="LOUD override: bake a pointer-width cast proven on ONE target only",
     )
+    p.add_argument(
+        "--features", help="cargo features to check with (comma-separated), as the build does"
+    )
     p.add_argument("--json", action="store_true", help="Machine-readable ledger")
 
     p = sub.add_parser(
@@ -6404,6 +6407,7 @@ def main():
     p.add_argument("--arch", default="i386", choices=["i386", "amd64", "arm64"])
 
     port_mod.add_parser(sub)
+    fn_alias_audit.add_parser(sub)
 
     args = parser.parse_args()
 
@@ -6448,6 +6452,7 @@ def main():
         "pp": cmd_postprocess,
         "trace-catalog": cmd_trace_catalog,
         "port": lambda a: sys.exit(port_mod.main(a)),
+        "fn-alias-audit": lambda a: sys.exit(fn_alias_audit.main(a)),
     }
 
     try:

@@ -74,6 +74,12 @@ def oracle_specs(root: Path, revision: str) -> dict[str, tuple[list[str], str]]:
 
 def compare(root: Path, revision: str, names: list[str]) -> dict:
     specs = oracle_specs(root, revision)
+    for name in names:
+        if name not in specs:
+            raise RuntimeError(f"{name}: absent from the historical registry")
+        cmd, _stream = specs[name]
+        if len(cmd) < 2 or not cmd[1].endswith(".py"):
+            raise RuntimeError(f"{name}: oracle is not a standalone Python source command: {cmd}")
     runner = rustlints.ensure(REPO)
     started = time.monotonic()
     cp = subprocess.run(
@@ -119,9 +125,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-__file__, revision = sys.argv[1:3]
-sys.argv = sys.argv[1:2] + sys.argv[3:]
-repo = Path(__file__).parent.parent
+__file__, revision, repo_arg = sys.argv[1:4]
+sys.argv = sys.argv[1:2] + sys.argv[4:]
+repo = Path(repo_arg)
 sys.path.insert(0, str(repo / "tools"))
 tracked = set(subprocess.check_output(
     ["git", "ls-tree", "-r", "--name-only", revision, "--", "tools"], cwd=repo
@@ -159,7 +165,7 @@ sys.meta_path.insert(0, OriginalTools())
 exec(compile(sys.stdin.read(), __file__, "exec"))
 """
         python = subprocess.run(
-            [sys.executable, "-c", replay, cmd[1], revision, *cmd[2:]],
+            [sys.executable, "-c", replay, cmd[1], revision, str(root), *cmd[2:]],
             cwd=root,
             input=source.decode(),
             env={**os.environ, "VIBEOS_LINT_CACHE": "0"},

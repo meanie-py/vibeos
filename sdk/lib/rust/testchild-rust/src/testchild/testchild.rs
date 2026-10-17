@@ -14,5 +14,4 @@ pub unsafe extern "C" fn main() -> i32 {
     Sleep(3000);
 
     ExitProcess(42);
-    return 0;
 }

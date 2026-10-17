@@ -12,6 +12,11 @@
     census     tools/cohab-census.txt: `file<TAB>count<TAB>line`, one row per (file, line),
                sorted as tools/cohab_census.py writes it. Merged 3-way as that map;
                a row both sides changed differently is a conflict.
+    cargo-members  sdk/lib/rust/Cargo.toml: the workspace `members = [ ... ]` list, one
+               quoted crate per line, which every lane adding a crate appends to. Merged
+               3-way by crate name exactly like the case arms (a comment block above an
+               entry travels with it); everything outside the list is the ordinary text
+               merge.
 
 Usage (git config merge.<name>.driver): merge_drivers.py MODE %O %A %B
 Writes the result to %A. Exit 0 = clean, 1 = conflicts left in %A. A file whose shape
@@ -94,11 +99,61 @@ def split_arms(text: str) -> tuple[str, list[tuple[str, str]], str]:
     return text[:start], arms, text[close.start() :]
 
 
+_MEMBERS_OPEN = re.compile(r"^members = \[\n", re.M)
+_LIST_CLOSE = re.compile(r"^\]", re.M)
+#: A members entry: indented, one quoted crate name, optional comma and trailing comment.
+_MEMBER = re.compile(r'^[ \t]+"([^"\n]+)",?[ \t]*(?:#[^\n]*)?$', re.M)
+
+
+def split_members(text: str) -> tuple[str, list[tuple[str, str]], str]:
+    """(head through `members = [`, [(crate, entry text)], tail from `]`), the shape
+    split_arms returns. Comment and blank lines directly above an entry belong to it."""
+    opens = list(_MEMBERS_OPEN.finditer(text))
+    if len(opens) != 1:
+        raise Unrecognised(f"{len(opens)} `members = [` lines")
+    start = opens[0].end()
+    close = _LIST_CLOSE.search(text, start)
+    if close is None:
+        raise Unrecognised("no closing `]` for members")
+    body = text[start : close.start()]
+    lines = body.splitlines(keepends=True)
+    items: list[tuple[str, str]] = []
+    pending = ""
+    for line in lines:
+        stripped = line.strip()
+        if stripped == "" or stripped.startswith("#"):
+            pending += line
+            continue
+        m = _MEMBER.match(line.rstrip("\n"))
+        if m is None:
+            raise Unrecognised(f"not a members entry: {line[:80]!r}")
+        # A crate listed twice (cargo tolerates it; aclui-rust was, for weeks) is keyed by
+        # occurrence, so the copies merge as separate entries instead of refusing the file:
+        # refusing sent 23 of 174 historical merges back to the plain text merge.
+        seen = sum(1 for k, _ in items if k.split("\0")[0] == m.group(1))
+        key = m.group(1) if seen == 0 else f"{m.group(1)}\0{seen}"
+        items.append((key, pending + line))
+        pending = ""
+    if not items:
+        raise Unrecognised("no members")
+    # Comments after the last entry stay with the tail.
+    return text[:start], items, pending + text[close.start() :]
+
+
 def merge_case_arms(base: str, ours: str, theirs: str) -> tuple[str, bool]:
+    return _merge_keyed(split_arms, base, ours, theirs)
+
+
+def merge_cargo_members(base: str, ours: str, theirs: str) -> tuple[str, bool]:
+    return _merge_keyed(split_members, base, ours, theirs)
+
+
+def _merge_keyed(split, base: str, ours: str, theirs: str) -> tuple[str, bool]:
+    """3-way merge of a list of keyed items between a head and a tail (see split_arms)."""
     try:
-        b_head, b_arms, b_tail = split_arms(base)
-        o_head, o_arms, o_tail = split_arms(ours)
-        t_head, t_arms, t_tail = split_arms(theirs)
+        b_head, b_arms, b_tail = split(base)
+        o_head, o_arms, o_tail = split(ours)
+        t_head, t_arms, t_tail = split(theirs)
     except Unrecognised:
         return text_merge(base, ours, theirs)
     head, clean_head = text_merge(b_head, o_head, t_head, " (head)")
@@ -179,7 +234,11 @@ def merge_census(base: str, ours: str, theirs: str) -> tuple[str, bool]:
     return text, not conflicts
 
 
-MODES = {"case-arms": merge_case_arms, "census": merge_census}
+MODES = {
+    "case-arms": merge_case_arms,
+    "census": merge_census,
+    "cargo-members": merge_cargo_members,
+}
 
 
 def main(argv: list[str]) -> int:

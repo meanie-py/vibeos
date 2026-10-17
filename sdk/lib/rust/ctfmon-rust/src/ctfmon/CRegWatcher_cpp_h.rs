@@ -1,13 +1,14 @@
 use crate::prelude::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::prelude::EnumWindows;
 use core::ffi::c_void;
 
 extern "system" {
-    fn EnumWindows(lpEnumFunc: unsafe extern "system" fn(HWND, LPARAM) -> i32, lParam: LPARAM) -> i32;
 }
 
 // ---- file-scope preamble (translated) ----
-pub type FN_TF_CreateLangProfileUtil = unsafe extern "system" fn(*mut *mut ITfFnLangProfileUtil) -> HRESULT;
-pub type FN_RegNotifyChangeKeyValue = unsafe extern "system" fn(HKEY, BOOL, DWORD, HANDLE, BOOL) -> LONG;
+pub type FN_TF_CreateLangProfileUtil = Option<unsafe extern "system" fn(*mut *mut ITfFnLangProfileUtil) -> HRESULT>;
+pub type FN_RegNotifyChangeKeyValue = Option<unsafe extern "system" fn(HKEY, BOOL, DWORD, HANDLE, BOOL) -> LONG>;
 
 pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001usize as HKEY;
 pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002usize as HKEY;
@@ -60,7 +61,7 @@ pub static mut CRegWatcher__s_nRegImxTimerId: UINT = 0;
 
 #[no_mangle]
 pub unsafe extern "system" fn DelayedRegNotifyChangeKeyValue(hKey: HKEY, bWatchSubtree: BOOL, dwNotifyFilter: DWORD, hEvent: HANDLE, fAsynchronous: BOOL) -> LONG {
-    static mut s_fnRegNotifyChangeKeyValue: Option<FN_RegNotifyChangeKeyValue> = None;
+    static mut s_fnRegNotifyChangeKeyValue: FN_RegNotifyChangeKeyValue = None;
 
     if s_fnRegNotifyChangeKeyValue.is_none() {
         let hAdvApi32: HINSTANCE = cicGetSystemModuleHandle((&[0x0061, 0x0064, 0x0076, 0x0061, 0x0070, 0x0069, 0x0033, 0x0032, 0x002e, 0x0064, 0x006c, 0x006c, 0x0000u16]).as_ptr() /* TEXT "advapi32.dll" */, (FALSE) as BOOL);
@@ -169,7 +170,7 @@ impl CRegWatcher {
     }
     pub unsafe fn UpdateSpTip() {
         // Post message 0x8002 to "SapiTipWorkerClass" windows
-        EnumWindows(CRegWatcher::EnumWndProc, 0);
+        EnumWindows(Some(CRegWatcher::EnumWndProc), 0);
     
         // Clear "ProfileInitialized" value
         let mut hKey: HKEY = core::ptr::null_mut();
@@ -205,7 +206,7 @@ impl CRegWatcher {
         if !FpRaw.is_null() {
             // Call it
             let mut pProfileUtil: *mut ITfFnLangProfileUtil = core::ptr::null_mut();
-            let mut hr: HRESULT = fnTF_CreateLangProfileUtil(core::ptr::addr_of_mut!(pProfileUtil));
+            let mut hr: HRESULT = (fnTF_CreateLangProfileUtil.unwrap_unchecked())(core::ptr::addr_of_mut!(pProfileUtil));
             if (hr == S_OK) && !pProfileUtil.is_null() {
                 // Success!
                 // Register profile

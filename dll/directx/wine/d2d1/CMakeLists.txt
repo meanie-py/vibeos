@@ -34,5 +34,13 @@ add_delay_importlibs(d2d1 dwrite xmllite ole32)
 target_link_libraries(d2d1 wine dxguid dx10guid uuid oldnames chkstk)
 add_importlibs(d2d1 d3d10_1 d3dcompiler_47 gdi32 advapi32 advapi32_vista user32 ucrtbase kernel32 kernel32_vista ntdll)
 add_dependencies(d2d1 wineheaders d3d_idl_headers)
+if(ARCH STREQUAL "i386")
+    # i386 ucrtbase exports no ceilf or sqrtf; math.h makes both inlines over the double
+    # functions, and clang emits the float libcall anyway. sqrtf is a builtin it calls as
+    # such (math-errno), so -fno-builtin-sqrtf lets the inline body stand; ceil() becomes
+    # llvm.ceil, which shrinks (float)ceil((double)x) to llvm.ceil.f32 and, without
+    # SSE4.1, lowers to ceilf, so -fno-builtin-ceil keeps a real call to ceil().
+    target_compile_options(d2d1 PRIVATE -fno-builtin-ceil -fno-builtin-sqrtf)
+endif()
 add_cd_file(TARGET d2d1 DESTINATION reactos/system32 FOR all)
 set_wine_module_FIXME(d2d1)

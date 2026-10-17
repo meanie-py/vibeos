@@ -5,7 +5,6 @@ use crate::prelude::*;
 pub static RUSTCONV_WSTR_AEEE8D02E860: [u16; 10] = [0x0028u16, 0x0075, 0x006E, 0x006E, 0x0061, 0x006D, 0x0065, 0x0064, 0x0029, 0x0000];
 
 use ntkrnl_sys::ddk::{ARBITER_LIST_ENTRY, LIST_ENTRY, PARBITER_ALLOCATION_STATE, PARBITER_ALTERNATIVE, PARBITER_INSTANCE, PARBITER_LIST_ENTRY, PRTL_RANGE, RTL_RANGE_LIST_ITERATOR, RtlGetFirstRange, RtlGetNextRange};
-use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 pub const ARBITER_ALLOCATE_DEADLINE: u64 = 10_000_000;
@@ -133,8 +132,8 @@ pub unsafe extern "system" fn ArbiterLibAllocateEntry(
     let mut Backtracking: BOOLEAN = FALSE;
     let mut McfgConflict: BOOLEAN = FALSE;
     let mut DeadlineReported: BOOLEAN = FALSE;
-    let mut Deadline: ULONGLONG;
-    let mut HardDeadline: ULONGLONG;
+    let Deadline: ULONGLONG;
+    let HardDeadline: ULONGLONG;
     let mut Status: NTSTATUS;
 
     Deadline = KeQueryInterruptTime().wrapping_add(ARBITER_ALLOCATE_DEADLINE);

@@ -39,7 +39,7 @@ _STL = {
 @cache
 def _api() -> dict[str, list[str]]:
     """atl_rust type -> its public method signatures, bodies and docs stripped."""
-    text = "\n".join((ATL_RUST / "src" / f).read_text() for f in ("lib.rs", "stl.rs"))
+    text = "\n".join((ATL_RUST / "src" / f).read_text() for f in ("lib.rs", "stl.rs", "dll.rs"))
     out: dict[str, list[str]] = {}
     for m in re.finditer(r"^impl(?:<[^>]*>)?\s+(\w+)(?:<[^>]*>)?\s*\{", text, re.M):
         depth, i = 1, m.end()
@@ -133,4 +133,23 @@ def contract(body: str, *, unicode: bool = True, com_methods: bool = False) -> s
             "- `CComPtr<I> p;` → `let mut p: CComPtr<I> = CComPtr::new();`; `&p` as an out "
             f"parameter → `p.GetAddressOf()`; `p->Method(..)` → {call}.\n"
         )
+    return "".join(lines)
+
+
+def com_module_contract(module_globals: list[str], object_maps: list[str]) -> str:
+    """The `CComModule` global a DLL's exports and DllMain call (atl_rust::dll), and its
+    object map, both rendered in cpp_classes.rs."""
+    api = _api().get("CComModule", [])
+    lines = [
+        "\n## ATL module (deterministic — `atl_rust::dll::CComModule`, in scope)\n",
+        f"`{', '.join(module_globals)}` is a `static mut` of this type; call its methods "
+        "directly. Do NOT define it, the object map, or any CLSID it names.\n",
+        "```rust\n" + "\n".join(s for s in api if "fn new" not in s) + "\n```\n",
+        "\nMapping (mandatory):\n",
+        "- The pointer parameters are generic: pass the C arguments as they are "
+        "(`rclsid`, `riid`, `ppv`, `hInstance`), `NULL` → `core::ptr::null::<c_void>()` / "
+        "`core::ptr::null_mut::<c_void>()`.\n",
+    ]
+    for m in object_maps:
+        lines.append(f"- The object map `{m}` → `{m}.as_ptr()`.\n")
     return "".join(lines)

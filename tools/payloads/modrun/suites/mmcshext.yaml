@@ -1,0 +1,28 @@
+# mmcshext (dll/shellext/mmcshext -> mmcshext-rust, `port cppapp`): the .msc icon handler,
+# and the first module on atl_rust::dll (ATL's CComModule, object map, class factory and .rgs
+# registrar). Setup registers it; the live CD never loads it, so smoke reaches none of this.
+# One probe (probes/mmcshext.c), staged twice: as mmcshext_c.exe it loads the pre-flip C
+# (mmcshext_c.dll, from c_oracle.cmake) beside it, under any other name the system
+# mmcshext.dll. Both print only values, so the outputs must match byte for byte.
+module: mmcshext
+variants:
+  c: '%SystemRoot%\bin\modrun\mmcshext_c.exe'
+  rust: '%SystemRoot%\bin\modrun\mmcshext_probe.exe'
+ninja: [mmcshext_c]
+stage:
+  - {src: 'tools/payloads/modrun/probes/mmcshext-{arch}.exe', dest: bin/modrun/mmcshext_c.exe}
+  - {src: 'tools/payloads/modrun/probes/mmcshext-{arch}.exe', dest: bin/modrun/mmcshext_probe.exe}
+  - {src: 'build-{arch}/dll/shellext/mmcshext/mmcshext_c.dll', dest: bin/modrun/mmcshext_c.dll}
+cases:
+  - id: com
+    expect: ['unload at start 00000000', 'class object 00000000', 'create 00000000',
+             'qi persistfile 00000000', "default: hr=00000000 out=2 index=0 file='mmc.exe'",
+             'unload at end 00000000', 'register 00000000', 'unregister 00000000', 'probe done']
+    timeout: 120
+    diverge:
+      # The Rust is ATL's DLL class factory (CComObjectCached): a held factory locks the
+      # module. ReactOS compiles DLLs without _WINDLL, so atlcom.h hands the C the EXE's
+      # CComObjectNoLock and it reports it can unload under a client's factory reference.
+      - why: 'class factory holds the module (ATL DLL semantics)'
+        c: '^unload with factory 00000000$'
+        rust: '^unload with factory 00000001$'

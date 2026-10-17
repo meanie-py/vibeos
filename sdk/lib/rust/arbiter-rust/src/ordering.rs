@@ -20,7 +20,6 @@ pub static RUSTCONV_WSTR_FC252766FB17: [u16; 16] = [
 ];
 
 use ntkrnl_sys::ddk::{ARBITER_ORDERING, ARBITER_ORDERING_LIST, IO_RESOURCE_DESCRIPTOR, IO_RESOURCE_REQUIREMENTS_LIST, _OBJECT_ATTRIBUTES, PARBITER_INSTANCE, PARBITER_ORDERING, PARBITER_ORDERING_LIST, PARB_TRANSLATE_ORDERING, PHANDLE, PIO_RESOURCE_DESCRIPTOR, PIO_RESOURCE_LIST, PIO_RESOURCE_REQUIREMENTS_LIST, PKEY_VALUE_FULL_INFORMATION, PRTL_RANGE_LIST, RtlAddRange, RtlAppendUnicodeToString, RtlInitUnicodeString, UINT16, UINT64, ZwClose, ZwOpenKey, ZwQueryValueKey};
-use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
@@ -109,8 +108,8 @@ pub unsafe extern "system" fn ArbiterLibAddOrdering(
     }
 
     if (*OrderingList).Count == (*OrderingList).Maximum {
-        let mut NewMaximum: ULONG;
-        let mut NewArray: PARBITER_ORDERING;
+        let NewMaximum: ULONG;
+        let NewArray: PARBITER_ORDERING;
 
         NewMaximum = if (*OrderingList).Maximum != 0 {
             ((*OrderingList).Maximum as ULONG).wrapping_mul(2 as ULONG)
@@ -207,7 +206,7 @@ unsafe extern "C" fn ArbpOpenPolicySubkey(SubkeyName: PCWSTR, KeyHandle: PHANDLE
         [0; ARBP_POLICY_ROOT.len() + ARBP_LONGEST_SUBKEY.len() - 1];
     let mut KeyPath: _UNICODE_STRING = core::mem::zeroed();
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
-    let mut Status: NTSTATUS = 0;
+    let mut Status: NTSTATUS;
 
     RtlInitEmptyUnicodeString(
         &raw mut KeyPath,
@@ -237,7 +236,7 @@ unsafe extern "C" fn ArbpReadPolicyValue(
     Value: *mut PKEY_VALUE_FULL_INFORMATION,
 ) -> NTSTATUS {
     let mut NameString: _UNICODE_STRING = core::mem::zeroed();
-    let mut Buffer: PKEY_VALUE_FULL_INFORMATION = core::ptr::null_mut();
+    let mut Buffer: PKEY_VALUE_FULL_INFORMATION;
     let mut Size: ULONG = 0;
     let mut ResultLength: ULONG = 0;
     let mut Status: NTSTATUS;
@@ -469,7 +468,7 @@ unsafe extern "system" fn ArbpMmConfigCallback(
         Context as PRTL_RANGE_LIST,
         Start,
         End,
-        (ARBITER_RANGE_BOOT_ALLOCATED as u8),
+        ARBITER_RANGE_BOOT_ALLOCATED as u8,
         RTL_RANGE_LIST_ADD_IF_CONFLICT,
         core::ptr::null_mut(),
         core::ptr::null_mut(),

@@ -1,0 +1,11 @@
+# wpa-rust: WPA2-Personal (the 4-way and group-key handshakes, PBKDF2/PRF/HMAC-SHA1,
+# AES key unwrap), pure core, shared by ndis-rust (WDI) and bwfm-rust. Host-tested by
+# tools/test_wpa_supplicant.py.
+[package]
+name = "wpa-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "wpa_rust"
+path = "src/lib.rs"

@@ -15,9 +15,9 @@ fn main() {
     };
 
     let late_libs: &[&str] = match arch.as_str() {
-        "x86" => &["sdk/lib/nt/libnt.a", "sdk/lib/fslib/vfatlib/libvfatlib.a", "sdk/lib/fslib/vfatxlib/libvfatxlib.a", "sdk/lib/fslib/cdfslib/libcdfslib.a", "sdk/lib/fslib/vfatlib/libvfatlib_rust.a", "sdk/lib/fslib/vfatxlib/libvfatxlib_rust.a", "engine:chkstk"],
-        "x86_64" => &["sdk/lib/nt/libnt.a", "sdk/lib/fslib/vfatlib/libvfatlib.a", "sdk/lib/fslib/vfatxlib/libvfatxlib.a", "sdk/lib/fslib/cdfslib/libcdfslib.a", "sdk/lib/fslib/vfatlib/libvfatlib_rust.a", "sdk/lib/fslib/vfatxlib/libvfatxlib_rust.a", "engine:chkstk"],
-        "aarch64" => &["sdk/lib/nt/libnt.a", "sdk/lib/fslib/vfatlib/libvfatlib.a", "sdk/lib/fslib/vfatxlib/libvfatxlib.a", "sdk/lib/fslib/cdfslib/libcdfslib.a", "sdk/lib/fslib/vfatlib/libvfatlib_rust.a", "sdk/lib/fslib/vfatxlib/libvfatxlib_rust.a", "engine:chkstk"],
+        "x86" => &["engine:c:nt", "engine:c:vfatlib", "engine:c:vfatxlib", "engine:c:cdfslib", "engine:crate:vfatlib-rust::TRUE", "engine:crate:vfatxlib-rust::TRUE", "engine:chkstk"],
+        "x86_64" => &["engine:c:nt", "engine:c:vfatlib", "engine:c:vfatxlib", "engine:c:cdfslib", "engine:crate:vfatlib-rust::TRUE", "engine:crate:vfatxlib-rust::TRUE", "engine:chkstk"],
+        "aarch64" => &["engine:c:nt", "engine:c:vfatlib", "engine:c:vfatxlib", "engine:c:cdfslib", "engine:crate:vfatlib-rust::TRUE", "engine:crate:vfatxlib-rust::TRUE", "engine:chkstk"],
         _ => unreachable!(),
     };
 

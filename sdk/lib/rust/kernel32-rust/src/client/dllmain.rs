@@ -1,4 +1,6 @@
 use ntdll_sys::nt::*;
+// The crate's own functions: the definition is the declaration.
+use crate::client::thread::ExitThread;
 use crate::prelude::*;
 use core::ffi::c_void;
 
@@ -17,7 +19,6 @@ use crate::ntstrsafe::rtl_strcbprintf_w_status;
 
 extern "system" {
     fn CreateRemoteThread( hProcess: HANDLE, lpThreadAttributes: *mut _SECURITY_ATTRIBUTES, dwStackSize: u32, lpStartAddress: PTHREAD_START_ROUTINE, lpParameter: PVOID, dwCreationFlags: u32, lpThreadId: *mut u32, ) -> HANDLE;
-    fn ExitThread(dwExitCode: u32);
 }
 
 extern "C" {
@@ -151,8 +152,8 @@ pub unsafe extern "system" fn BaseCreateThreadPoolThread(
 }
 #[no_mangle]
 pub unsafe extern "system" fn BaseExitThreadPoolThread(ExitStatus: NTSTATUS) -> NTSTATUS {
+    // ExitThread does not return (`-> !`); the C's trailing `return 0` is unreachable.
     ExitThread(ExitStatus as u32);
-    return 0i32;
 }
 
 /// Toggle for the [K32DBG] PROCESS_ATTACH step markers below. Off by default;

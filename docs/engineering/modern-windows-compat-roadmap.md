@@ -452,13 +452,24 @@ runs it.
 - **Modules other apps still need:** `mi` (Docker; WMI's Management Infrastructure, which
   Wine does not have): in progress as a Rust mi.dll over wbemprox; `sdk/include/psdk/mi.h`
   is OMI's header, and the function tables were measured on Windows 11. Office: bring it in when the rest is green, it is its own campaign.
-- **d3d11.dll is built only at DLL_EXPORT_VERSION >= 0x600**, so a default build has no
-  D3D11CreateDevice at all; Wine's mfplat suite ends on that NULL pointer, and Chrome and
-  Office import d3d11. Decide whether to build the d3d family at every version (rtworkq and
-  dxva2 already are).
-- **mf.c:4553, the presentation clock's callback interval,** reads ~188 ms instead of a tick
-  in the second or third mf run of a boot (the first passes), with or without the
-  condition-variable fix; the 10 ms periodic pool timer alone runs at 64 Hz in wakeprobe.
+- **The d3d10/11 family (d2d1, dwrite, dxgi, d3dx10/11) is built at every version**
+  (2026-10-17); before, a default build had no d3d11.dll at all. `tools/payloads/d3dwinetest`
+  runs Wine's d3d11 and dxgi suites (imported at the DLLs' own sync point, wine-10.1-dev
+  b00c7619f1b) plus d2d1 and dwrite. `D3D11CreateDevice` fails cleanly here (d3d11: 213
+  skipped, 0 failures; d2d1: 166 tests, 0 failures), so a program still takes its fallback.
+  dwrite never used combase (declined in this tree), so it no longer imports it. Owed:
+  wined3d cannot initialise `\\.\DISPLAY1` (E_INVALIDARG), so dxgi enumerates no output
+  and its suite crashes on the test's own DEADBEEF pointer; `NtGdiGetFontRealizationInfo`
+  is unimplemented, so dwrite's GDI-interop font face fails and the font suite crashes;
+  dwrite analyzer 45 and layout 30 failures.
+- **mf.c:4553, the presentation clock's callback interval,** reads 27-188 ms instead of a
+  tick, with or without the condition-variable fix; the 10 ms periodic pool timer alone runs
+  at 64 Hz in wakeprobe. Repro (2026-10-17): `gen_suites.py ... --repeat mf:mf=3` then
+  `smoke --arch amd64 --payload mfwinetest --repeat 6` failed 7 of 18 mf runs, in 5 of 6
+  boots and in any run (first, second or third), so "the first run passes" was wrong.
+  mfplat.c:3308 (`0x102`) showed once in the same 6 boots. NOT the timer queue's order:
+  its periodic re-arm did insert one place early (fixed, a real divergence from Wine's
+  C), but with that fix on the media the same soak still failed 8 of 18.
   Seen once beside it: mf.c:4493 "got count 0, state 0".
 - **mf's converter scenario:** both builds fail mf.c's "SetTopology ... requiring a
   converter" checks (no converter MFT is registered: the codec gap below).
@@ -500,8 +511,14 @@ runs it.
   did), so exporting them as they stand would turn a load failure into a start failure. The Po pair want a success that never calls back
   (or calls back once with the current value, as Windows does: grade it there first).
   The NDIS 6 NetBufferList/miniport surface is the big one after that.
-- **The gated rows left** (`gated build-amd64`, 2026-10-15: 36 absent, 10 excluded): ntdll's
-  hash helpers (`MD5*`, `A_SHA*`) and memory/IO resource codecs (20), ntoskrnl's PoFx
+- **The gated rows left** (`gated build-amd64`, 2026-10-15: 36 absent, 10 excluded). ntdll's
+  20 are done (2026-10-17): MD4/MD5/A_SHA, the memory/IO resource codecs,
+  `Nt/ZwGetCurrentProcessorNumberEx`, `RtlInterlockedPushListSListEx`,
+  `RtlIsNameInExpression` (written fresh: a port of upstream name.c disagreed with Windows
+  on 2,881 of 308,320 cases), plus real `RtlIsValidLocaleName`/`RtlConvertLCIDToString`.
+  `tools/ntdll-gated-oracle/run.sh` diffs the shipping files against the real ntdll on the
+  Windows host, x64 and x86. Still owed there: `prs` resolves to 0x8C (Windows 0x29), and
+  i386 Windows never bumps the SList sequence counter where ours does. Left: ntoskrnl's PoFx
   runtime power (10; ntoskrnl_vista, which the kernel does not link, has NOT_IMPLEMENTED
   bodies), the gdi32 D3DKMT scheduling/adapter calls (7), kernel32's console `*Ex` calls
   (6), shell32's SHCreateItemInKnownFolder and SHEvaluateSystemCommandTemplate (2) and

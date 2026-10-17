@@ -22,3 +22,5 @@ panic-common = { path = "../panic-common", features = ["user"] }
 # FFI surface — collapsing those onto com-sys is the queued mechanical cleanup.
 com-sys = { path = "../com-sys" }
 winelist-rust = { path = "../winelist-rust" }
+# ntdll_sys::seh: real __try/__except (the Irot calls' rpc_filter guard in ring/moniker.rs).
+ntdll-sys = { path = "../ntdll-sys" }

@@ -1,4 +1,6 @@
 use win32k_sys::win32k::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::windows::window::HeapAlloc;
 #[allow(unused_imports)]
 use core::ffi::c_void;
 
@@ -12,7 +14,6 @@ use crate::ntwrapper::GetUserObjectInformationW;
 // kernel32 heap + error glue (extern "system" = stdcall on i386).
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: usize) -> PVOID;
     fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: PVOID) -> BOOL;
     fn SetLastError(dwErrCode: DWORD);
 }
@@ -44,7 +45,7 @@ pub unsafe extern "system" fn GetUserObjectInformationA(
         return GetUserObjectInformationW(hObj, nIndex, pvInfo, nLength, lpnLengthNeeded);
     }
 
-    let buffer = HeapAlloc(GetProcessHeap(), 0, (nLength * 2) as usize) as LPWSTR;
+    let buffer = HeapAlloc(GetProcessHeap(), 0, (nLength * 2) as SIZE_T) as LPWSTR;
     if buffer.is_null() {
         SetLastError(ERROR_NOT_ENOUGH_MEMORY);
         return 0;

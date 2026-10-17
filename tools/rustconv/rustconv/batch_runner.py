@@ -211,7 +211,8 @@ def _submit_claude(
                 success=False,
                 error=(
                     f"truncated output at {output_tokens} tokens "
-                    f"(stop_reason=max_tokens) — incomplete, not cached. Raise CLAUDE_MAX_TOKENS."
+                    f"(stop_reason=max_tokens) — incomplete, not cached. "
+                    f"Raise RUSTCONV_CLAUDE_MAX_TOKENS."
                 ),
             )
 

@@ -483,6 +483,7 @@ def stage_derive(
     block: list[str] | None = None,
     stem: str | None = None,
     replace_crate: bool = False,
+    keep_c: list[str] | None = None,
 ) -> pd.DerivedProfile:
     started = time.time()
     dp = derive(module_dir, target, usermode=usermode, stem=stem)
@@ -578,6 +579,22 @@ def stage_derive(
             f"derive: {stem}: {len(own) - len(kept)} vendored TU(s) stay C: "
             + ", ".join(p.name for p in own if p not in kept)
         )
+    # A TU the module compiles but this port must not buy, remembered like --block: netio
+    # and afd both compile ../tdihelpers/tdi.c, which translate refuses for having two CMake
+    # owners. It stays C, in the CMake list, until its own crate exists -- never silently.
+    if keep_c:
+        prior["keep_c"] = sorted(set(prior.get("keep_c", [])) | set(keep_c))
+    held = set(prior.get("keep_c", []))
+    if held:
+        unknown = held - {p.name for p in kept} - {str(p.relative_to(REPO)) for p in kept}
+        if unknown:
+            raise PortError(f"derive: {stem}: --keep-c names no compiled TU: {sorted(unknown)}")
+        stay = [p for p in kept if p.name in held or str(p.relative_to(REPO)) in held]
+        kept = [p for p in kept if p not in stay]
+        print(
+            f"derive: {stem}: {len(stay)} TU(s) kept C by --keep-c: "
+            + ", ".join(p.name for p in stay)
+        )
     state.update(
         module_dir=str(module_dir.resolve().relative_to(REPO)),
         target=dp.module.name,
@@ -596,6 +613,7 @@ def stage_derive(
         real_unions=prior["real_unions"],
         **({"functions": prior["functions"]} if "functions" in prior else {}),
         **({"island_block": prior["island_block"]} if "island_block" in prior else {}),
+        **({"keep_c": prior["keep_c"]} if "keep_c" in prior else {}),
         **({"renamed": True} if renamed else {}),
     )
     if usermode is not None:
@@ -1221,6 +1239,9 @@ def stage_cppapp(stem: str) -> None:
     ] + [f"{f.name}: {u}" for f in model.functions for u in f.unplaced]
     for u in unplaced:
         print(f"cppapp: UNLOWERED (inside a macro expansion): {u}")
+    dropped = cpp_app.prune_unused_external(model)
+    if dropped:
+        print(f"cppapp: external class(es) nothing names, not rendered: {', '.join(dropped)}")
     crate_src = _crate_dir(state) / "src" / stem
     crate_src.mkdir(parents=True, exist_ok=True)
     island = "\n".join(
@@ -1554,7 +1575,13 @@ def initguid_storage(state: dict, crate: Path, modules_dir: Path) -> tuple[str, 
     Returns (block, refused names).
     """
     module_dir = REPO / state["module_dir"]
-    c_texts = [p.read_text(errors="replace") for p in module_dir.glob("*.[ch]")]
+    # C++ sources too: mmcshext.cpp includes <initguid.h> before <msxml2.h>, so the C++ TU
+    # defined CLSID_DOMDocument30, and the cppapp crate failed to link without it.
+    c_texts = [
+        p.read_text(errors="replace")
+        for p in sorted(module_dir.iterdir())
+        if p.suffix.lower() in (".c", ".h", ".hpp", *CPP_SUFFIXES)
+    ]
     if not any(
         re.search(r"#\s*include\s*<initguid\.h>|#\s*define\s+INITGUID\b", t) for t in c_texts
     ):
@@ -2285,9 +2312,16 @@ def flip_cmake(cml: str, state: dict) -> str:
                 break
             i += 1
         end = text.index("\n", i) + 1 if "\n" in text[i:] else len(text)
+        held = state.get("keep_c") or []
+        what = (
+            f"# Every translation unit is Rust now ({crate}, `rustconv port`) except "
+            f"{', '.join(held)},\n# kept C by `port derive --keep-c`; the C stays on disk."
+            if held
+            else f"# Every translation unit is Rust now ({crate}, `rustconv port`); the C "
+            f"stays on\n# disk."
+        )
         head = (
-            f"# Every translation unit is Rust now ({crate}, `rustconv port`); the C stays on\n"
-            f"# disk. The target keeps a stub TU and links the Rust archive.\n"
+            f"{what} The target keeps a stub TU and links the Rust archive.\n"
             f'rust_staticlib_variant({variant} {crate} "" TRUE)\n'
         )
         # CMake refuses to mix target_link_libraries' plain and keyword signatures on one
@@ -2396,6 +2430,12 @@ def stage_flip(stem: str) -> None:
         )
     _record(state, "flip", started, changed=changed)
     print(f"flip: {cml.relative_to(REPO)} {'rewritten' if changed else 'already flipped'}")
+    # A flip leaves the module linked by cmake around the stub; the cargo cell is the next
+    # step, and `vibeos-cli check` (scan_cmake_linked_rust) fails until it is taken.
+    print(
+        f"next: ./vibeos-cli build on each arch, then "
+        f"python3 tools/cargo_cell_gen.py --convert {state['target']}"
+    )
 
 
 # --------------------------------------------------------------------------------------
@@ -7726,6 +7766,7 @@ def _main(args) -> int:
                 args.block,
                 args.stem,
                 args.replace_crate,
+                args.keep_c,
             )
         elif args.port_stage == "island":
             stage_island(args.stem)
@@ -7870,6 +7911,15 @@ def add_parser(sub) -> None:
         default=None,
         help="name the port (state, crate <stem>-rust, gen arm) other than the CMake target, "
         "when that crate already belongs to another module; remembered",
+    )
+    stages.choices["derive"].add_argument(
+        "--keep-c",
+        action="extend",
+        nargs="*",
+        default=[],
+        metavar="TU",
+        help="compiled TUs this port leaves C (stay in the CMake list, never bought), by file "
+        "name or repo path; remembered",
     )
     stages.choices["derive"].add_argument(
         "--replace-crate",

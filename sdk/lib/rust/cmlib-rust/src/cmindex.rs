@@ -47,6 +47,8 @@
 //! STILL OPEN: CmpDoFindSubKeyByNumber is extern and not translated here.
 
 use ntkrnl_sys::constants::*;
+// The crate's own functions: the definition is the declaration.
+use crate::hivecell::HvGetCellSize;
 use ntkrnl_sys::ddk::{CM_KEY_NODE, CM_INDEX, CM_KEY_FAST_INDEX, CM_KEY_INDEX, CmpCompareCompressedName, CmpCompressedNameSize, CmpCopyCompressedName, HBIN, HCELL, HCELL_INDEX, HHIVE, HSTORAGE_TYPE, PCM_KEY_FAST_INDEX, PCM_KEY_INDEX, PCM_KEY_NODE, PCUNICODE_STRING, PHCELL_INDEX, PHHIVE, RtlCompareUnicodeString, HSTORAGE_TYPE_Stable as Stable, HSTORAGE_TYPE_Volatile as Volatile, _HHIVE, _UNICODE_STRING};
 use crate::glue::{HvGetCell, HvReleaseCell, HvGetCellType, HCELL_NIL, HBLOCK_SIZE, CM_KEY_INDEX_ROOT, CM_KEY_INDEX_LEAF, CM_KEY_FAST_LEAF, CM_KEY_HASH_LEAF, INVALID_INDEX, CmpMaxIndexPerHblock, TAG_CM, KEY_COMP_NAME};
 use core::ffi::c_void;
@@ -55,7 +57,6 @@ extern "system" {
     fn HvAllocateCell(Hive: PHHIVE, Size: u32, Type: HSTORAGE_TYPE, SourceCell: HCELL_INDEX) -> HCELL_INDEX;
     fn HvFreeCell(Hive: PHHIVE, Cell: HCELL_INDEX);
     fn HvMarkCellDirty(Hive: PHHIVE, Cell: HCELL_INDEX, Unk: u8) -> u8;
-    fn HvGetCellSize(Hive: PHHIVE, Cell: *mut CM_KEY_INDEX) -> u32;
     fn HvReallocateCell(Hive: PHHIVE, Cell: HCELL_INDEX, NewSize: u32) -> HCELL_INDEX;
     fn RtlUpcaseUnicodeChar(ch: u16) -> u16;
 }
@@ -791,14 +792,14 @@ pub unsafe extern "system" fn CmpSplitLeaf(
     }
 
     /* Calculate the size of the free entries in the root key */
-    TotalSize = HvGetCellSize(Hive, IndexKey)
-        - ((*IndexKey).Count as u32 * core::mem::size_of::<HCELL_INDEX>() as u32)
-        - list_off;
+    TotalSize = (HvGetCellSize(Hive, (IndexKey).cast())
+        - (((*IndexKey).Count as u32 * core::mem::size_of::<HCELL_INDEX>() as u32)) as i32
+        - (list_off) as i32) as u32;
 
     /* Check if we're out of space */
     if TotalSize / (core::mem::size_of::<HCELL_INDEX>() as u32) < 1 {
         /* Grow the leaf by one more entry */
-        TotalSize = HvGetCellSize(Hive, IndexKey) + core::mem::size_of::<HCELL_INDEX>() as u32;
+        TotalSize = (HvGetCellSize(Hive, (IndexKey).cast()) + (core::mem::size_of::<HCELL_INDEX>() as u32) as i32) as u32;
 
         /* Re-allocate the root */
         RootCell = HvReallocateCell(Hive, RootCell, TotalSize);
@@ -1309,7 +1310,7 @@ pub unsafe extern "system" fn CmpAddToLeaf(
     }
 
     /* Get the current size of the leaf */
-    OldSize = HvGetCellSize(Hive, Leaf as *mut CM_KEY_INDEX);
+    OldSize = (HvGetCellSize(Hive, (Leaf as *mut CM_KEY_INDEX).cast())) as u32;
 
     /* Calculate the size of the free entries */
     Size = OldSize;

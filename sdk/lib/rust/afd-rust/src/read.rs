@@ -1,4 +1,6 @@
 use crate::types::*;
+// The crate's own functions: the definition is the declaration.
+use crate::lock::UnlockBuffers;
 use crate::glue::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -18,7 +20,6 @@ extern "C" {
     fn SocketAcquireStateLock(FCB: PAFD_FCB) -> BOOLEAN;
     fn SocketStateUnlock(FCB: PAFD_FCB);
     pub fn TaCopyTransportAddress(OtherAddress: PTRANSPORT_ADDRESS) -> PTRANSPORT_ADDRESS;
-    fn UnlockBuffers(BufferArray: PVOID, BufferCount: ULONG, UnlockExtra: u32);
     fn UnlockRequest(Irp: PIRP, IrpSp: PIO_STACK_LOCATION);
 }
 
@@ -204,7 +205,7 @@ unsafe fn ReceiveActivity(FCB: PAFD_FCB, Irp: PIRP) -> NTSTATUS {
                 NextIrp,
                 TotalBytesCopied,
             );
-            UnlockBuffers((*RecvReq).BufferArray as PVOID, (*RecvReq).BufferCount, (0u8) as _);
+            UnlockBuffers(((*RecvReq).BufferArray as PVOID).cast(), (*RecvReq).BufferCount, (0u8) as _);
 
             Status = (*FCB).LastReceiveStatus;
 
@@ -256,7 +257,7 @@ unsafe fn ReceiveActivity(FCB: PAFD_FCB, Irp: PIRP) -> NTSTATUS {
                     NextIrp,
                     TotalBytesCopied,
                 );
-                UnlockBuffers((*RecvReq).BufferArray as PVOID, (*RecvReq).BufferCount, (0u8) as _);
+                UnlockBuffers(((*RecvReq).BufferArray as PVOID).cast(), (*RecvReq).BufferCount, (0u8) as _);
                 (*NextIrp).IoStatus.__bindgen_anon_1.Status = Status;
                 (*NextIrp).IoStatus.Information = TotalBytesCopied as _;
                 if NextIrp == Irp {
@@ -382,7 +383,7 @@ unsafe fn receive_complete_impl(
             RecvReq = (GetLockedData(NextIrp, NextIrpSp)) as _;
             (*NextIrp).IoStatus.__bindgen_anon_1.Status = STATUS_FILE_CLOSED;
             (*NextIrp).IoStatus.Information = 0;
-            UnlockBuffers((*RecvReq).BufferArray as PVOID, (*RecvReq).BufferCount, (0u8) as _);
+            UnlockBuffers(((*RecvReq).BufferArray as PVOID).cast(), (*RecvReq).BufferCount, (0u8) as _);
             if !(*NextIrp).MdlAddress.is_null() {
                 UnlockRequest(NextIrp, IoGetCurrentIrpStackLocation(NextIrp));
             }
@@ -611,7 +612,7 @@ pub unsafe extern "system" fn AfdConnectedSocketReadData(
                 (*FCB).PollState &= !AFD_EVENT_RECEIVE;
             }
 
-            UnlockBuffers((*RecvReq).BufferArray as PVOID, (*RecvReq).BufferCount, (0u8) as _);
+            UnlockBuffers(((*RecvReq).BufferArray as PVOID).cast(), (*RecvReq).BufferCount, (0u8) as _);
 
             return UnlockAndMaybeComplete(FCB, Status, Irp, (*Irp).IoStatus.Information as u32);
         } else if ((*RecvReq).AfdFlags & AFD_OVERLAPPED) == 0
@@ -620,7 +621,7 @@ pub unsafe extern "system" fn AfdConnectedSocketReadData(
             AFD_DbgPrint!(MID_TRACE, b"Nonblocking\n\0".as_ptr() as PCHAR);
             Status = STATUS_CANT_WAIT;
             (*FCB).PollState &= !AFD_EVENT_RECEIVE;
-            UnlockBuffers((*RecvReq).BufferArray as PVOID, (*RecvReq).BufferCount, (0u8) as _);
+            UnlockBuffers(((*RecvReq).BufferArray as PVOID).cast(), (*RecvReq).BufferCount, (0u8) as _);
             return UnlockAndMaybeComplete(FCB, Status, Irp, 0);
         } else {
             (*FCB).PollState &= !AFD_EVENT_RECEIVE;
@@ -648,7 +649,7 @@ pub unsafe extern "system" fn AfdConnectedSocketReadData(
         RemoveEntryList(
             &mut (*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry
         );
-        UnlockBuffers((*RecvReq).BufferArray as PVOID, (*RecvReq).BufferCount, (0u8) as _);
+        UnlockBuffers(((*RecvReq).BufferArray as PVOID).cast(), (*RecvReq).BufferCount, (0u8) as _);
         return UnlockAndMaybeComplete(FCB, Status, Irp, TotalBytesCopied);
     } else if Status == STATUS_PENDING {
         AFD_DbgPrint!(MID_TRACE, b"Leaving read irp\n\0".as_ptr() as PCHAR);
@@ -717,7 +718,7 @@ unsafe fn packet_socket_recv_complete_impl(
             RecvReq = (GetLockedData(NextIrp, NextIrpSp)) as _;
             (*NextIrp).IoStatus.__bindgen_anon_1.Status = STATUS_FILE_CLOSED;
             (*NextIrp).IoStatus.Information = 0;
-            UnlockBuffers((*RecvReq).BufferArray as PVOID, (*RecvReq).BufferCount, (CheckUnlockExtraBuffers(FCB, NextIrpSp)) as _);
+            UnlockBuffers(((*RecvReq).BufferArray as PVOID).cast(), (*RecvReq).BufferCount, (CheckUnlockExtraBuffers(FCB, NextIrpSp)) as _);
             if (*NextIrp).MdlAddress != core::ptr::null_mut() {
                 UnlockRequest(NextIrp, IoGetCurrentIrpStackLocation(NextIrp));
             }
@@ -822,7 +823,7 @@ unsafe fn packet_socket_recv_complete_impl(
         }
 
         AFD_DbgPrint!(MID_TRACE, b"Unlocking\n\0".as_ptr() as *const i8);
-        UnlockBuffers((*RecvReq).BufferArray as PVOID, (*RecvReq).BufferCount, (CheckUnlockExtraBuffers(FCB, NextIrpSp)) as _);
+        UnlockBuffers(((*RecvReq).BufferArray as PVOID).cast(), (*RecvReq).BufferCount, (CheckUnlockExtraBuffers(FCB, NextIrpSp)) as _);
         if (*NextIrp).MdlAddress != core::ptr::null_mut() {
             UnlockRequest(NextIrp, IoGetCurrentIrpStackLocation(NextIrp));
         }
@@ -954,7 +955,7 @@ pub unsafe extern "system" fn AfdPacketSocketReadData(
             (*FCB).PollState &= !AFD_EVENT_RECEIVE;
         }
 
-        UnlockBuffers((*RecvReq).BufferArray as PVOID, (*RecvReq).BufferCount, (1u8) as _);
+        UnlockBuffers(((*RecvReq).BufferArray as PVOID).cast(), (*RecvReq).BufferCount, (1u8) as _);
 
         return UnlockAndMaybeComplete(FCB, Status, Irp, (*Irp).IoStatus.Information as u32);
     } else if ((*RecvReq).AfdFlags & AFD_OVERLAPPED) == 0
@@ -966,7 +967,7 @@ pub unsafe extern "system" fn AfdPacketSocketReadData(
         );
         Status = STATUS_CANT_WAIT;
         (*FCB).PollState &= !AFD_EVENT_RECEIVE;
-        UnlockBuffers((*RecvReq).BufferArray as PVOID, (*RecvReq).BufferCount, (1u8) as _);
+        UnlockBuffers(((*RecvReq).BufferArray as PVOID).cast(), (*RecvReq).BufferCount, (1u8) as _);
         return UnlockAndMaybeComplete(FCB, Status, Irp, 0);
     } else {
         (*FCB).PollState &= !AFD_EVENT_RECEIVE;

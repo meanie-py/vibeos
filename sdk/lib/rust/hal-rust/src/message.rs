@@ -108,7 +108,7 @@ unsafe fn allocate_block(count: u32, requested: KAFFINITY, irql: PKIRQL, affinit
                     *irql = level;
                 }
                 if !affinity.is_null() {
-                    *affinity = mask;
+                    core::ptr::write_unaligned(affinity, mask);
                 }
             }
             vector
@@ -229,7 +229,7 @@ pub unsafe extern "system" fn HalVibeosMessageTarget(
     match unsafe { imp::message_target(Vector, RequesterId) } {
         Some((address, data)) => {
             unsafe {
-                *Address = address;
+                core::ptr::write_unaligned(Address, address);
                 *Data = data;
             }
             1

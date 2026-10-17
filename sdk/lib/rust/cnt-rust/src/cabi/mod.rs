@@ -18,21 +18,10 @@ pub(crate) unsafe fn cstr_slice<'a>(p: *const u8) -> &'a [u8] {
     if p.is_null() {
         return &[];
     }
-    let mut n = 0usize;
-    while *p.add(n) != 0 {
-        n += 1;
-        // rustc-1.92 host (linux) loop-idiom recognizes this NUL-scan as
-        // `strlen`; inlined into the #[no_mangle] `strlen` shim it rewrites
-        // to a self-call that folds to `return 0` (cnt-difftest diff_strlen
-        // under --release). black_box breaks the match. cfg'd to the host so
-        // the windows-gnu KERNEL codegen (idiom never fires there) is
-        // byte-for-byte unchanged.
-        #[cfg(target_os = "linux")]
-        {
-            n = core::hint::black_box(n);
-        }
-    }
-    core::slice::from_raw_parts(p, n)
+    // The scan is asm (memops.rs `str_len8`): this crate gets no LLVM optimisation, so a
+    // Rust loop costs ~10 instructions a byte, and asm is also opaque to the host
+    // loop-idiom pass that once rewrote the loop into a call to strlen itself.
+    core::slice::from_raw_parts(p, str_len8(p))
 }
 
 /// `strnlen`-style bounded C-string → content slice: walk to NUL but
@@ -62,11 +51,8 @@ pub(crate) unsafe fn wcstr_slice<'a>(p: *const u16) -> &'a [u16] {
     if p.is_null() {
         return &[];
     }
-    let mut n = 0usize;
-    while *p.add(n) != 0 {
-        n += 1;
-    }
-    core::slice::from_raw_parts(p, n)
+    // asm, as cstr_slice's (memops.rs `str_len16`).
+    core::slice::from_raw_parts(p, str_len16(p))
 }
 
 /// Wide twin of `cstr_slice_bounded` (wcsnlen): NUL or `cap`, NULL→[].

@@ -1,4 +1,6 @@
 use crate::types::*;
+// The crate's own functions: the definition is the declaration.
+use crate::lock::LockRequest;
 use crate::glue::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -10,7 +12,6 @@ use ntkrnl_sys::ddk::{IRP, KPROCESSOR_MODE, PDEVICE_OBJECT, PFILE_OBJECT, PIO_ST
 use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoSetCancelRoutine};
 
 extern "C" {
-    fn LockRequest(Irp: PIRP, IrpSp: PIO_STACK_LOCATION, Write: u8, SizeOut: *mut KPROCESSOR_MODE) -> *mut core::ffi::c_void;
     fn LostSocket(Irp: PIRP) -> i32;
     fn SocketAcquireStateLock(FCB: PAFD_FCB) -> u8;
     fn TdiAssociateAddressFile(Handle: HANDLE, Object: PFILE_OBJECT) -> NTSTATUS;

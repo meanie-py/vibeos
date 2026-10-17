@@ -41,7 +41,10 @@ def test_plugin_inventory_matches_gate():
         [str(binary), "--list-rules"], capture_output=True, text=True, check=True
     )
     names = result.stdout.splitlines()
-    assert set(names) == rustlints.PORTED
+    assert set(names) >= rustlints.PORTED
+    # Candidates remain callable for parity before being routed into the gate.
+    registry = {name for name, _cmd, _stream in lints.source_lint_specs(repo)}
+    assert set(names) <= registry
     assert len(names) == len(set(names))
 
 
@@ -126,3 +129,44 @@ def test_bootstrap_failure_is_scanner_error(tmp_path, monkeypatch):
     result = rustlints.run_many(tmp_path, ["a"], lambda cmd: pytest.fail("must not invoke"))
     assert lints._scanner_error(result["a"], "stdout")
     assert "compiler unavailable" in result["a"].stderr
+
+
+@pytest.mark.parametrize("changed_input", ["rust", "conventions"])
+def test_bootstrap_rejects_sources_changed_during_build(tmp_path, monkeypatch, changed_input):
+    source = tmp_path / "tools/vibeos-lint"
+    (source / "src").mkdir(parents=True)
+    (source / "Cargo.toml").write_text("[package]\nname='test'\nversion='0.1.0'\n")
+    (source / "Cargo.lock").write_text("")
+    (tmp_path / "rust-toolchain.toml").write_text("[toolchain]\nchannel='stable'\n")
+    conventions = tmp_path / "tools/rustconv/rustconv/conventions.py"
+    conventions.parent.mkdir(parents=True)
+    conventions.write_text('KW_TO_CONV = {"A": "system"}\n')
+    rust = source / "src/main.rs"
+    rust.write_text("fn main() {}")
+    builds = []
+
+    def build(command, **kwargs):
+        builds.append(command)
+        artifact = tmp_path / ".cache/vibeos-lint/target/release/vibeos-lint"
+        artifact.parent.mkdir(parents=True, exist_ok=True)
+        artifact.write_bytes(b"compiled")
+        if len(builds) == 1:
+            # A new source file must invalidate the build too, not only edits.
+            if changed_input == "rust":
+                (source / "src/new.rs").write_text("fn newly_added() {}")
+            else:
+                conventions.write_text('KW_TO_CONV = {"B": "cdecl"}\n')
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(rustlints.subprocess, "run", build)
+    with pytest.raises(RuntimeError, match="sources changed during bootstrap"):
+        rustlints.ensure(tmp_path)
+    target = tmp_path / ".cache/vibeos-lint/vibeos-lint"
+    assert not target.exists()
+    assert not target.with_suffix(".sha256").exists()
+    assert rustlints.ensure(tmp_path).read_bytes() == b"compiled"
+    assert rustlints.ensure(tmp_path) == target
+    assert len(builds) == 2
+    conventions.write_text('KW_TO_CONV = {"C": "fastcall"}\n')
+    assert rustlints.ensure(tmp_path) == target
+    assert len(builds) == 3

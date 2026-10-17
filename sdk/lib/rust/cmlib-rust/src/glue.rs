@@ -8,6 +8,8 @@
 //! HvpHiveHeaderChecksum lives in our hivesum.rs (call it directly, not here).
 
 use ntkrnl_sys::ddk::{HCELL_INDEX, PHHIVE, HBIN, HCELL, CM_KEY_INDEX};
+// The crate's own functions: the definition is the declaration.
+pub use crate::hivecell::HvGetCellSize;
 
 // cmlib.h constants.
 pub const HCELL_NIL: HCELL_INDEX = 0xFFFF_FFFF; // MAXULONG
@@ -141,6 +143,5 @@ extern "system" {
     ) -> HCELL_INDEX;
     pub fn HvFreeCell(Hive: PHHIVE, Cell: HCELL_INDEX);
     pub fn HvMarkCellDirty(Hive: PHHIVE, Cell: HCELL_INDEX, HoldBufferLock: u8) -> u8;
-    pub fn HvGetCellSize(Hive: PHHIVE, Address: *mut core::ffi::c_void) -> i32;
     pub fn HvpGetCellData(Hive: PHHIVE, Cell: HCELL_INDEX) -> *mut core::ffi::c_void;
 }

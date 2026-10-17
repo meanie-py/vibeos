@@ -245,7 +245,7 @@ pub unsafe extern "C" fn EnumSTATDATA_Construct(
     let This = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<EnumSTATDATA>() as SIZE_T,
+        core::mem::size_of::<EnumSTATDATA>() as usize,
     ) as *mut EnumSTATDATA;
     let mut i: DWORD;
     let count: DWORD;
@@ -263,7 +263,7 @@ pub unsafe extern "C" fn EnumSTATDATA_Construct(
         (*This).statdata = HeapAlloc(
             GetProcessHeap(),
             0,
-            (array_len as usize * core::mem::size_of::<STATDATA>()) as SIZE_T,
+            (array_len as usize * core::mem::size_of::<STATDATA>()) as usize,
         ) as *mut STATDATA;
         if (*This).statdata.is_null() {
             HeapFree(GetProcessHeap(), 0, This as LPVOID);
@@ -598,7 +598,7 @@ unsafe fn OleAdviseHolderImpl_Constructor() -> *mut IOleAdviseHolder {
     lpoah = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<OleAdviseHolderImpl>() as SIZE_T,
+        core::mem::size_of::<OleAdviseHolderImpl>() as usize,
     ) as *mut OleAdviseHolderImpl;
 
     (*lpoah).IOleAdviseHolder_iface.lpVtbl =
@@ -608,7 +608,7 @@ unsafe fn OleAdviseHolderImpl_Constructor() -> *mut IOleAdviseHolder {
     (*lpoah).connections = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        ((*lpoah).max_cons as usize * core::mem::size_of::<STATDATA>()) as SIZE_T,
+        ((*lpoah).max_cons as usize * core::mem::size_of::<STATDATA>()) as usize,
     ) as *mut STATDATA;
 
     TRACE!(
@@ -998,7 +998,7 @@ unsafe fn DataAdviseHolder_Constructor() -> *mut IDataAdviseHolder {
     let newHolder: *mut DataAdviseHolder = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<DataAdviseHolder>() as SIZE_T,
+        core::mem::size_of::<DataAdviseHolder>() as usize,
     ) as *mut DataAdviseHolder;
 
     (*newHolder).IDataAdviseHolder_iface.lpVtbl =
@@ -1008,12 +1008,12 @@ unsafe fn DataAdviseHolder_Constructor() -> *mut IDataAdviseHolder {
     (*newHolder).connections = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        ((*newHolder).maxCons as usize * core::mem::size_of::<STATDATA>()) as SIZE_T,
+        ((*newHolder).maxCons as usize * core::mem::size_of::<STATDATA>()) as usize,
     ) as *mut STATDATA;
     (*newHolder).remote_connections = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        ((*newHolder).maxCons as usize * core::mem::size_of::<DWORD>()) as SIZE_T,
+        ((*newHolder).maxCons as usize * core::mem::size_of::<DWORD>()) as usize,
     ) as *mut DWORD;
     (*newHolder).delegate = core::ptr::null_mut();
 

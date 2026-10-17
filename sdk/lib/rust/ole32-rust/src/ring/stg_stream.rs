@@ -598,7 +598,7 @@ pub unsafe extern "C" fn StgStreamImpl_Construct(
     let newStream = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<StgStreamImpl>() as SIZE_T,
+        core::mem::size_of::<StgStreamImpl>() as usize,
     ) as *mut StgStreamImpl;
 
     if !newStream.is_null() {

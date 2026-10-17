@@ -99,21 +99,12 @@ unsafe extern "C" fn pCDevSettings_AllocAndCopyString(pszSrc: LPCTSTR) -> PWSTR 
     c = _tcslen(pszSrc) + 1;
     str = LocalAlloc(LMEM_FIXED, (c * core::mem::size_of::<u16>()) as SIZE_T) as PWSTR;
     if !str.is_null() {
-        #[cfg(feature = "unicode")]
-        {
-            StringCbCopyW(str, c * core::mem::size_of::<u16>(), pszSrc);
-        }
-        #[cfg(not(feature = "unicode"))]
-        {
-            MultiByteToWideChar(
-                CP_ACP,
-                0,
-                (pszSrc).cast(),
-                -1,
-                str,
-                (c) as i32,
-            );
-        }
+        // desk is built UNICODE (`set_module_type(desk cpl UNICODE)`), so the C takes its
+        // `#ifdef UNICODE` branch. This was gated on an undeclared `feature = "unicode"`, which
+        // is never on, so it ran the ANSI branch on a wide string: MultiByteToWideChar stopped
+        // at the first UTF-16 high byte and every device name, description and key came out
+        // one character long.
+        StringCbCopyW(str, c * core::mem::size_of::<u16>(), pszSrc);
     }
 
     str

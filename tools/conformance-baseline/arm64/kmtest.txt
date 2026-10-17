@@ -38,6 +38,21 @@
 # 2026-10-17 (x2 byte-identical sweeps): ZwMapViewOfSection 133/1 -> 135/0: a file view's
 #   reservation may run past the end of the file (211), bounded by the user address space so a
 #   ViewSize of -1 is INVALID_VIEW_SIZE rather than a page-rounded empty view (295).
+# 2026-10-17b (x2 byte-identical sweeps): in-stack queued spinlocks moved onto the MCS lock
+#   (hal.dll's exports and ntoskrnl's AtDpcLevel pair; no row moves).
+#   HidPDescription 33/4 (3 skipped) -> 50/2: one ReportIDs entry per report ID a collection uses,
+#   each with that ID's own lengths, where the C made one per collection with ReportID = Index
+#   (its FIXME); hidclass routes feature/output requests by looking the ID up there, and now
+#   sizes its read buffer from the collection's longest input report. EXPECTED, left: 169/200,
+#   PreparsedDataLength 476/1388, the size of Windows' own HIDP_PREPARSED_DATA layout (INFERRED,
+#   unverified: both fit a 44-byte header + 104-byte caps + 16-byte link nodes). Ours is the
+#   parser's own context, which every HidP_* routine reads, so matching it is a rewrite of the
+#   preparsed data, not a length fix.
+#   RtlMemory and RtlMemoryKM 3 (235/254/277) are EXPECTED, a TEST-side compiler artifact: each
+#   is an overlapping RtlCopyMemory (= memcpy, Buffer+13 <- Buffer+62, 95 bytes) that clang
+#   inlines on arm64 as interleaved 16-byte loads and stores (Test_RtlMemory+0x82c), which
+#   overlap breaks. Overlapping memcpy is undefined and RtlCopyMemory's contract forbids it;
+#   the test leans on MSVC's memcpy being memmove. The kernel's memcpy export is not reached.
 # 2026-10-15: RtlRangeList pass 538 -> 537: upstream 09a03ec307d deleted one RtlFindRange check.
 #   ZwAllocateVirtualMemory pass 1003/4 -> 581/3: upstream's StressTesting rewrite (4096 x 64 GB
 #   chunks, element counts) replaced our 4096-chunk cap; fewer chunks, fewer every-tenth checks. The
@@ -335,11 +350,9 @@ ZwMapViewOfSection OK pass=135 fail=0 skip=1 exit=0
 ZwWaitForMultipleObjects OK pass=4 fail=0 skip=0 exit=0
 FileAttributes OK pass=84 fail=0 skip=0 exit=0
 FindFile OK pass=253 fail=0 skip=0 exit=0
-HidPDescription OK pass=33 fail=4 skip=3 exit=0
+HidPDescription OK pass=50 fail=2 skip=0 exit=0
     assert HidPDescription.c:169
-    assert HidPDescription.c:189
     assert HidPDescription.c:200
-    assert HidPDescription.c:204
 IoDeviceObject OK pass=185 fail=4 skip=0 exit=0
     assert IoDeviceObject_drv.c:188
     assert IoDeviceObject_drv.c:189

@@ -13,6 +13,10 @@
     {
       "source": "../../../../sdk/lib/rust/cnt-rust/src/cabi/mod.rs",
       "items": ["wcstr_slice", "wraw_mut_slice"]
+    },
+    {
+      "source": "../../../../sdk/lib/rust/cnt-rust/src/cabi/memops.rs",
+      "items": ["str_len16"]
     }
   ],
   "rust_support": {"core_rs": "casemap_core.rs"},

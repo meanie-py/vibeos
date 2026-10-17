@@ -1,4 +1,10 @@
 use win32k_sys::win32k::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::windows::dialog::FindResourceA;
+use crate::windows::cursoricon::FindResourceW;
+use crate::windows::cursoricon::LoadResource;
+// The crate's own functions: the definition is the declaration.
+use crate::windows::class::GetWindowLongPtrW;
 // ntdll Rtl* string helpers live in crate::internal (NOT the kernel ntkrnl_sys crate).
 use crate::internal::{
     RtlCreateUnicodeStringFromAsciiz, RtlFreeUnicodeString, RtlInitUnicodeString, ValidateHwnd,
@@ -52,13 +58,9 @@ extern "system" {
     fn GetSystemMetrics(nIndex: core::ffi::c_int) -> core::ffi::c_int;
     fn OutputDebugStringA(lpOutputString: LPCSTR);
     fn lstrcpynW(lpString1: LPWSTR, lpString2: LPCWSTR, iMaxLength: core::ffi::c_int) -> LPWSTR;
-    fn FindResourceW(hModule: HINSTANCE, lpName: LPCWSTR, lpType: LPCWSTR) -> HANDLE;
-    fn LoadResource(hModule: HINSTANCE, hResInfo: HANDLE) -> *mut core::ffi::c_void;
-    fn FindResourceA(hModule: HINSTANCE, lpName: LPCSTR, lpType: LPCSTR) -> *mut core::ffi::c_void;
     // user32 own-exports from windows/defwnd.rs + windows/class.rs (link within DLL).
     fn DefWindowProcW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     fn DefWindowProcA(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
-    fn GetWindowLongPtrW(hWnd: HWND, nIndex: core::ffi::c_int) -> LONG_PTR;
 }
 extern "C" {
     fn strlen(s: LPCSTR) -> usize; // CRT

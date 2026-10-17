@@ -154,14 +154,9 @@ const Z_DEFLATED: i32 = 8;
 const Z_DEFAULT_STRATEGY: i32 = 0;
 const Z_FINISH: i32 = 4;
 const Z_OK: i32 = 0;
-// Declarations for unknown external symbols used in this function
-// Declare callback type for status (best-effort signature matching the call)
-type PFNFCISTATUS = unsafe extern "system" fn(
-    status_type: u32,
-    copied: u32,
-    total: u32,
-    pv: *mut core::ffi::c_void,
-) -> i32;
+// PFNFCISTATUS is fci.h's `LONG (__cdecl *)(..)`, from types.rs. A file-local guess at it
+// here said `extern "system"`: stdcall on i386, so every status callback left the stack 16
+// bytes off.
 // Constants not provided in context
 const SEEK_SET: i32 = 0;
 const SEEK_CUR: i32 = 1;
@@ -249,12 +244,12 @@ unsafe fn get_header_size(fci: *mut FCI_Int) -> u32 {
 
 unsafe fn free_file(fci: *mut FCI_Int, file: *mut file) {
     list_remove(core::ptr::addr_of_mut!((*file).entry));
-    ((*fci).free)(file as *mut core::ffi::c_void);
+    (((*fci).free).unwrap_unchecked())(file as *mut core::ffi::c_void);
 }
 
 unsafe fn free_data_block(fci: *mut FCI_Int, block: *mut data_block) {
     list_remove(core::ptr::addr_of_mut!((*block).entry));
-    ((*fci).free)(block as *mut core::ffi::c_void);
+    (((*fci).free).unwrap_unchecked())(block as *mut core::ffi::c_void);
 }
 
 unsafe fn fci_get_checksum(pv: *const core::ffi::c_void, cb: u32, seed: u32) -> u32 {
@@ -318,12 +313,12 @@ unsafe extern "C" fn compress_NONE(fci: *mut FCI_Int) -> cab_UWORD {
 
 unsafe extern "C" fn zalloc(opaque: *mut core::ffi::c_void, items: u32, size: u32) -> *mut core::ffi::c_void {
     let fci = opaque as *mut FCI_Int;
-    ((*fci).alloc)(items.wrapping_mul(size) as u32)
+    (((*fci).alloc).unwrap_unchecked())(items.wrapping_mul(size) as u32)
 }
 
 unsafe extern "C" fn zfree(opaque: *mut core::ffi::c_void, ptr: *mut core::ffi::c_void) {
     let fci = opaque as *mut FCI_Int;
-    ((*fci).free)(ptr);
+    (((*fci).free).unwrap_unchecked())(ptr);
 }
 
 #[no_mangle]
@@ -348,15 +343,15 @@ pub unsafe extern "C" fn FCICreate(
         SetLastError(ERROR_BAD_ARGUMENTS as u32);
         return core::ptr::null_mut();
     }
-    if (pfnalloc as *const core::ffi::c_void).is_null()
-        || (pfnfree as *const core::ffi::c_void).is_null()
-        || (pfnopen as *const core::ffi::c_void).is_null()
-        || (pfnread as *const core::ffi::c_void).is_null()
-        || (pfnwrite as *const core::ffi::c_void).is_null()
-        || (pfnclose as *const core::ffi::c_void).is_null()
-        || (pfnseek as *const core::ffi::c_void).is_null()
-        || (pfndelete as *const core::ffi::c_void).is_null()
-        || (pfnfcigtf as *const core::ffi::c_void).is_null()
+    if pfnalloc.is_none()
+        || pfnfree.is_none()
+        || pfnopen.is_none()
+        || pfnread.is_none()
+        || pfnwrite.is_none()
+        || pfnclose.is_none()
+        || pfnseek.is_none()
+        || pfndelete.is_none()
+        || pfnfcigtf.is_none()
         || pccab.is_null()
     {
         (*perf).erfOper = FCIERR_NONE;
@@ -366,7 +361,7 @@ pub unsafe extern "C" fn FCICreate(
         return core::ptr::null_mut();
     }
 
-    p_fci_internal = pfnalloc(core::mem::size_of::<FCI_Int>() as u32) as *mut FCI_Int;
+    p_fci_internal = (pfnalloc.unwrap_unchecked())(core::mem::size_of::<FCI_Int>() as u32) as *mut FCI_Int;
     if p_fci_internal.is_null() {
         (*perf).erfOper = FCIERR_ALLOC_FAIL;
         (*perf).erfType = ERROR_NOT_ENOUGH_MEMORY as i32;
@@ -414,11 +409,11 @@ pub unsafe extern "C" fn FCICreate(
 
 unsafe extern "C" fn create_temp_file(fci: *mut FCI_Int, file: *mut temp_file) -> i32 {
     let mut err: i32 = 0;
-    if ((*fci).gettemp)((*file).name.as_mut_ptr(), CB_MAX_FILENAME, (*fci).pv) == 0 {
+    if (((*fci).gettemp).unwrap_unchecked())((*file).name.as_mut_ptr(), CB_MAX_FILENAME, (*fci).pv) == 0 {
         set_error(fci, FCIERR_TEMP_FILE, ERROR_FUNCTION_FAILED as i32);
         return 0;
     }
-    let handle = ((*fci).open)(
+    let handle = (((*fci).open).unwrap_unchecked())(
         (*file).name.as_mut_ptr(),
         0x8502, // _O_RDWR | _O_CREAT | _O_EXCL | _O_BINARY
         0x0180, // _S_IREAD | _S_IWRITE
@@ -439,12 +434,12 @@ unsafe fn close_temp_file(fci: *mut FCI_Int, file: *mut temp_file) -> i32 {
     if (*file).handle == -1 {
         return 1;
     }
-    if ((*fci).close)((*file).handle as isize, &raw mut err, (*fci).pv) == -1 {
+    if (((*fci).close).unwrap_unchecked())((*file).handle as isize, &raw mut err, (*fci).pv) == -1 {
         set_error(fci, FCIERR_TEMP_FILE, err);
         return 0;
     }
     (*file).handle = -1;
-    if ((*fci).delete)((*file).name.as_mut_ptr(), &raw mut err, (*fci).pv) == -1 {
+    if (((*fci).delete).unwrap_unchecked())((*file).name.as_mut_ptr(), &raw mut err, (*fci).pv) == -1 {
         set_error(fci, FCIERR_TEMP_FILE, err);
         return 0;
     }
@@ -463,7 +458,7 @@ unsafe fn add_file(fci: *mut FCI_Int, filename: *const i8) -> *mut file {
 
     let size = core::mem::offset_of!(file, name) + (strlen(filename) as usize) + 1;
     let alloc_fn = (*fci).alloc;
-    let file_ptr: *mut file = alloc_fn(size as u32) as *mut file;
+    let file_ptr: *mut file = (alloc_fn.unwrap_unchecked())(size as u32) as *mut file;
 
     if file_ptr.is_null() {
         set_error(fci, FCIERR_ALLOC_FAIL as i32, ERROR_NOT_ENOUGH_MEMORY as i32);
@@ -490,7 +485,7 @@ unsafe fn copy_file(fci: *mut FCI_Int, orig: *const file) -> *mut file
     let name_offset = core::mem::offset_of!(file, name);
     let len = strlen((*orig).name.as_ptr());
     let size = name_offset + len + 1;
-    let file = ((*fci).alloc)(size as u32) as *mut file;
+    let file = (((*fci).alloc).unwrap_unchecked())(size as u32) as *mut file;
     if file.is_null()
     {
         set_error(fci, FCIERR_ALLOC_FAIL, ERROR_NOT_ENOUGH_MEMORY as i32);
@@ -501,7 +496,7 @@ unsafe fn copy_file(fci: *mut FCI_Int, orig: *const file) -> *mut file
 }
 
 unsafe fn add_folder(fci: *mut FCI_Int) -> *mut folder {
-    let folder: *mut folder = ((*fci).alloc)(core::mem::size_of::<folder>() as u32) as *mut folder;
+    let folder: *mut folder = (((*fci).alloc).unwrap_unchecked())(core::mem::size_of::<folder>() as u32) as *mut folder;
 
     if folder.is_null() {
         set_error(fci, FCIERR_ALLOC_FAIL as i32, ERROR_NOT_ENOUGH_MEMORY as i32);
@@ -551,7 +546,7 @@ unsafe fn write_folders(
         (*cffolder).typeCompress = fci_endian_uword((*folder_ptr).compression as cab_UWORD);
 
         let mut err: i32 = 0;
-        let written = ((*fci).write)(
+        let written = (((*fci).write).unwrap_unchecked())(
             handle as isize,
             cffolder as *const core::ffi::c_void,
             folder_size as u32,
@@ -597,7 +592,7 @@ unsafe fn write_files(
             let name_len = strlen(cffile.add(1) as *const i8) as u32;
             let file_size = core::mem::size_of::<CFFILE>() as u32 + name_len + 1;
             let mut err: i32 = 0;
-            let bytes_written = ((*fci).write)(
+            let bytes_written = (((*fci).write).unwrap_unchecked())(
                 handle as isize,
                 cffile as *mut core::ffi::c_void,
                 file_size,
@@ -614,7 +609,7 @@ unsafe fn write_files(
                     (*fci).folders_data_size + (*fci).placed_files_size;
             }
             (*fci).statusFolderCopied += file_size;
-            let cb_status = (status_callback)(
+            let cb_status = ((status_callback).unwrap_unchecked())(
                 statusFolder,
                 (*fci).statusFolderCopied,
                 (*fci).statusFolderTotal,
@@ -673,7 +668,7 @@ unsafe fn write_data_blocks(
         let folder = (current as *const u8).sub(core::mem::offset_of!(folder, entry)) as *mut folder;
 
         // Seek in folder's temp data file
-        if ((*fci).seek)((*folder).data.handle as isize, 0, SEEK_SET, &mut cb_err, (*fci).pv) != 0 {
+        if (((*fci).seek).unwrap_unchecked())((*folder).data.handle as isize, 0, SEEK_SET, &mut cb_err, (*fci).pv) != 0 {
             set_error(fci, FCIERR_CAB_FILE as i32, (*fci).pv as i32); // FCIERR_CAB_FILE usage; assume value exists
             return 0;
         }
@@ -683,7 +678,7 @@ unsafe fn write_data_blocks(
         while inner_current != core::ptr::addr_of!((*folder).blocks_list) as *mut list {
             let block = (inner_current as *const u8).sub(core::mem::offset_of!(data_block, entry)) as *mut data_block;
 
-            let len: i32 = ((*fci).read)(
+            let len: i32 = (((*fci).read).unwrap_unchecked())(
                 (*folder).data.handle as isize,
                 data,
                 (*block).compressed as u32,
@@ -706,7 +701,7 @@ unsafe fn write_data_blocks(
 
             (*fci).statusFolderCopied += len as u32;
             let len_plus_header = len + header_size as i32;
-            if ((*fci).write)(
+            if (((*fci).write).unwrap_unchecked())(
                 handle as isize,
                 (*fci).data_out.as_ptr() as *mut core::ffi::c_void,
                 len_plus_header as u32,
@@ -719,7 +714,7 @@ unsafe fn write_data_blocks(
             }
 
             // Callback statusFolder (assumed value 0)
-            if status_callback(
+            if (status_callback.unwrap_unchecked())(
                 0, // statusFolder
                 (*fci).statusFolderCopied,
                 (*fci).statusFolderTotal,
@@ -752,7 +747,7 @@ unsafe fn add_data_block(fci: *mut FCI_Int, status_callback: PFNFCISTATUS) -> i3
     }
 
     let alloc_size = core::mem::size_of::<data_block>();
-    block = ((*fci).alloc)(alloc_size as u32) as *mut data_block;
+    block = (((*fci).alloc).unwrap_unchecked())(alloc_size as u32) as *mut data_block;
     if block.is_null() {
         set_error(fci, FCIERR_ALLOC_FAIL, ERROR_NOT_ENOUGH_MEMORY as i32);
         return 0;
@@ -761,10 +756,10 @@ unsafe fn add_data_block(fci: *mut FCI_Int, status_callback: PFNFCISTATUS) -> i3
     (*block).uncompressed = (*fci).cdata_in;
     (*block).compressed = ((*fci).compress.unwrap())(fci);
 
-    let write_result = ((*fci).write)((*fci).data.handle as isize, ((*fci).data_out).as_mut_ptr() as *const core::ffi::c_void, (*block).compressed as u32, core::ptr::addr_of_mut!(err), (*fci).pv);
+    let write_result = (((*fci).write).unwrap_unchecked())((*fci).data.handle as isize, ((*fci).data_out).as_mut_ptr() as *const core::ffi::c_void, (*block).compressed as u32, core::ptr::addr_of_mut!(err), (*fci).pv);
     if write_result != (*block).compressed as u32 {
         set_error(fci, FCIERR_TEMP_FILE, err);
-        ((*fci).free)(block as *mut core::ffi::c_void);
+        (((*fci).free).unwrap_unchecked())(block as *mut core::ffi::c_void);
         return 0;
     }
 
@@ -774,7 +769,7 @@ unsafe fn add_data_block(fci: *mut FCI_Int, status_callback: PFNFCISTATUS) -> i3
     (*fci).cDataBlocks += 1;
     list_add_tail(core::ptr::addr_of_mut!((*fci).blocks_list), core::ptr::addr_of_mut!((*block).entry));
 
-    let callback_result = status_callback(statusFile as u32, (*block).compressed as u32, (*block).uncompressed as u32, (*fci).pv);
+    let callback_result = (status_callback.unwrap_unchecked())(statusFile as u32, (*block).compressed as u32, (*block).uncompressed as u32, (*fci).pv);
     if callback_result == -1 {
         set_error(fci, FCIERR_USER_ABORT, 0);
         return 0;
@@ -807,7 +802,7 @@ unsafe fn free_folder(fci: *mut FCI_Int, folder: *mut folder) {
 
     close_temp_file(fci, core::ptr::addr_of_mut!((*folder).data));
     list_remove(core::ptr::addr_of_mut!((*folder).entry));
-    ((*fci).free)(folder as *mut core::ffi::c_void);
+    (((*fci).free).unwrap_unchecked())(folder as *mut core::ffi::c_void);
 }
 
 unsafe extern "C" fn copy_data_blocks(
@@ -815,12 +810,12 @@ unsafe extern "C" fn copy_data_blocks(
     handle: INT_PTR,
     start_pos: cab_ULONG,
     temp: *mut temp_file,
-    status_callback: unsafe extern "system" fn(u32, cab_ULONG, cab_ULONG, *mut core::ffi::c_void) -> i32,
+    status_callback: PFNFCISTATUS,
 ) -> i32 {
     let mut err: i32 = 0;
     const statusFolder: u32 = 1;
 
-    if ((*fci).seek)(handle as isize, start_pos as i32, SEEK_SET, core::ptr::addr_of_mut!(err), (*fci).pv) as isize
+    if (((*fci).seek).unwrap_unchecked())(handle as isize, start_pos as i32, SEEK_SET, core::ptr::addr_of_mut!(err), (*fci).pv) as isize
         != start_pos as isize
     {
         set_error(fci, FCIERR_TEMP_FILE, err);
@@ -837,7 +832,7 @@ unsafe extern "C" fn copy_data_blocks(
             .sub(core::mem::offset_of!(data_block, entry))
             as *mut data_block;
 
-        if ((*fci).read)(
+        if (((*fci).read).unwrap_unchecked())(
             handle as isize,
             &raw mut (*fci).data_out as *mut u8 as *mut core::ffi::c_void,
             (*block).compressed as u32,
@@ -850,7 +845,7 @@ unsafe extern "C" fn copy_data_blocks(
             set_error(fci, FCIERR_TEMP_FILE, err);
             return 0;
         }
-        if ((*fci).write)(
+        if (((*fci).write).unwrap_unchecked())(
             (*temp).handle as isize,
             &raw mut (*fci).data_out as *mut u8 as *const core::ffi::c_void,
             (*block).compressed as u32,
@@ -868,7 +863,7 @@ unsafe extern "C" fn copy_data_blocks(
             + (*block).compressed as cab_ULONG;
         (*fci).statusFolderCopied += (*block).compressed as cab_ULONG;
 
-        let ret = status_callback(
+        let ret = (status_callback.unwrap_unchecked())(
             statusFolder,
             (*fci).statusFolderCopied,
             (*fci).statusFolderTotal,
@@ -909,7 +904,7 @@ unsafe fn add_files_to_folder(
             + 1;
 
         // fnfilfnfildest: placed file on cabinet
-        ((*fci).fileplaced)(
+        (((*fci).fileplaced).unwrap_unchecked())(
             core::ptr::addr_of_mut!((*fci).ccab),
             (*file).name.as_mut_ptr(),
             (*file).size as i32,
@@ -1001,7 +996,7 @@ unsafe fn add_file_data(
         return 0;
     }
 
-    handle = get_open_info(
+    handle = (get_open_info.unwrap_unchecked())(
         sourcefile,
         core::ptr::addr_of_mut!((*file).date),
         core::ptr::addr_of_mut!((*file).time),
@@ -1023,7 +1018,7 @@ unsafe fn add_file_data(
     const CAB_BLOCKMAX: usize = 32768;
 
     loop {
-        len = ((*fci).read)(
+        len = (((*fci).read).unwrap_unchecked())(
             handle as isize,
             (*fci).data_in.as_mut_ptr().add((*fci).cdata_in as usize) as *mut core::ffi::c_void,
             (CAB_BLOCKMAX - (*fci).cdata_in as usize) as u32,
@@ -1043,7 +1038,7 @@ unsafe fn add_file_data(
             return 0;
         }
     }
-    ((*fci).close)(handle, &mut err, (*fci).pv);
+    (((*fci).close).unwrap_unchecked())(handle, &mut err, (*fci).pv);
     return 1;
 }
 
@@ -1109,7 +1104,7 @@ pub unsafe extern "C" fn FCIDestroy(hfci: HFCI) -> i32 {
 
     close_temp_file(p_fci_internal, &raw mut (*p_fci_internal).data);
 
-    ((*p_fci_internal).free)(hfci);
+    (((*p_fci_internal).free).unwrap_unchecked())(hfci);
 
     1
 }
@@ -1160,7 +1155,7 @@ unsafe fn add_data_to_folder(
             break;
         }
 
-        let new = ((*fci).alloc)(core::mem::size_of::<data_block>() as u32) as *mut data_block;
+        let new = (((*fci).alloc).unwrap_unchecked())(core::mem::size_of::<data_block>() as u32) as *mut data_block;
         if new.is_null() {
             set_error(fci, FCIERR_ALLOC_FAIL, ERROR_NOT_ENOUGH_MEMORY as i32);
             return 0;
@@ -1207,7 +1202,7 @@ unsafe fn add_data_to_folder(
         (*folder).data_count += 1;
 
         /* report status with pfnfcis about copied size of folder */
-        let ret = status_callback(
+        let ret = (status_callback.unwrap_unchecked())(
             statusFolder,
             (*fci).statusFolderCopied,
             (*fci).statusFolderTotal,
@@ -1305,7 +1300,7 @@ unsafe fn write_cabinet(fci: *mut FCI_Int, status_callback: PFNFCISTATUS) -> i32
     strcpy(filename.as_mut_ptr(), (*fci).ccab.szCabPath.as_ptr() as *const i8);
     strcat(filename.as_mut_ptr(), (*fci).ccab.szCab.as_ptr() as *const i8);
 
-    handle = ((*fci).open)(
+    handle = (((*fci).open).unwrap_unchecked())(
         filename.as_mut_ptr(),
         _O_RDWR | _O_CREAT | _O_TRUNC | _O_BINARY,
         _S_IREAD | _S_IWRITE,
@@ -1318,7 +1313,7 @@ unsafe fn write_cabinet(fci: *mut FCI_Int, status_callback: PFNFCISTATUS) -> i32
     }
 
     let result: i32 = 'failed: {
-        if ((*fci).write)(handle, cfheader as *const core::ffi::c_void, header_size, core::ptr::addr_of_mut!(err), (*fci).pv) != header_size {
+        if (((*fci).write).unwrap_unchecked())(handle, cfheader as *const core::ffi::c_void, header_size, core::ptr::addr_of_mut!(err), (*fci).pv) != header_size {
             set_error(fci, FCIERR_CAB_FILE as i32, err);
             break 'failed 0;
         }
@@ -1328,7 +1323,7 @@ unsafe fn write_cabinet(fci: *mut FCI_Int, status_callback: PFNFCISTATUS) -> i32
         if write_files(fci, handle as INT_PTR, status_callback) == 0 { break 'failed 0; }
         if write_data_blocks(fci, handle as INT_PTR, status_callback) == 0 { break 'failed 0; }
 
-        if ((*fci).seek)(handle, 0, SEEK_SET, core::ptr::addr_of_mut!(err), (*fci).pv) != 0 {
+        if (((*fci).seek).unwrap_unchecked())(handle, 0, SEEK_SET, core::ptr::addr_of_mut!(err), (*fci).pv) != 0 {
             set_error(fci, FCIERR_CAB_FILE as i32, err);
             break 'failed 0;
         }
@@ -1337,7 +1332,7 @@ unsafe fn write_cabinet(fci: *mut FCI_Int, status_callback: PFNFCISTATUS) -> i32
             "MSCF\0".as_ptr() as *const core::ffi::c_void,
             4,
         );
-        if ((*fci).write)(handle, (*cfheader).signature.as_ptr() as *const core::ffi::c_void, 4, core::ptr::addr_of_mut!(err), (*fci).pv) != 4
+        if (((*fci).write).unwrap_unchecked())(handle, (*cfheader).signature.as_ptr() as *const core::ffi::c_void, 4, core::ptr::addr_of_mut!(err), (*fci).pv) != 4
         {
             set_error(fci, FCIERR_CAB_FILE as i32, err);
             break 'failed 0;
@@ -1346,12 +1341,12 @@ unsafe fn write_cabinet(fci: *mut FCI_Int, status_callback: PFNFCISTATUS) -> i32
         // success path
         break 'failed 1;
     };
-    ((*fci).close)(handle, core::ptr::addr_of_mut!(err), (*fci).pv);
+    (((*fci).close).unwrap_unchecked())(handle, core::ptr::addr_of_mut!(err), (*fci).pv);
     if result != 0 {
         reset_cabinet(fci);
-        status_callback(statusCabinet, (*fci).estimatedCabinetSize, total_size, (*fci).pv);
+        (status_callback.unwrap_unchecked())(statusCabinet, (*fci).estimatedCabinetSize, total_size, (*fci).pv);
     } else {
-        ((*fci).delete)(filename.as_mut_ptr(), core::ptr::addr_of_mut!(err), (*fci).pv);
+        (((*fci).delete).unwrap_unchecked())(filename.as_mut_ptr(), core::ptr::addr_of_mut!(err), (*fci).pv);
     }
     result
 }
@@ -1366,8 +1361,10 @@ unsafe fn fci_flush_folder(
     let mut read_result: u32;
     let folder: *mut folder;
 
-    // pfnfcignc/pfnfcis are non-nullable fn pointers (canonical FCI callback
-    // typedefs); the C null-check is statically impossible here.
+    if pfnfcignc.is_none() || pfnfcis.is_none() {
+        set_error(p_fci_internal, 0 /* FCIERR_NONE */, ERROR_BAD_ARGUMENTS as i32);
+        return 0;
+    }
 
     if (*p_fci_internal).fGetNextCabInVain != 0 && (*p_fci_internal).fNextCab != 0 {
         set_error(p_fci_internal, 0 /* FCIERR_NONE */, ERROR_GEN_FAILURE as i32);
@@ -1405,7 +1402,7 @@ unsafe fn fci_flush_folder(
     (*p_fci_internal).statusFolderCopied = 0;
 
     let callback = pfnfcis;
-    if callback(
+    if (callback.unwrap_unchecked())(
         0x00000002, /* statusFolder */
         (*p_fci_internal).statusFolderCopied,
         (*p_fci_internal).statusFolderTotal,
@@ -1438,7 +1435,7 @@ unsafe fn fci_flush_folder(
     {
         (*((*p_fci_internal).pccab as *mut CCAB)).iCab += 1;
         (*p_fci_internal).estimatedCabinetSize = (*p_fci_internal).statusFolderTotal;
-        if (pfnfcignc)(
+        if ((pfnfcignc).unwrap_unchecked())(
             (*p_fci_internal).pccab,
             (*p_fci_internal).estimatedCabinetSize,
             (*p_fci_internal).pv,
@@ -1602,7 +1599,7 @@ unsafe fn fci_flush_cabinet(
             (*((*p_fci_internal).pccab as *mut CCAB)).iCab += 1;
             /* get name of next cabinet */
             (*p_fci_internal).estimatedCabinetSize = (*p_fci_internal).statusFolderTotal;
-            if pfnfcignc(
+            if (pfnfcignc.unwrap_unchecked())(
                 (*p_fci_internal).pccab,
                 (*p_fci_internal).estimatedCabinetSize, /* estimated size of cab */
                 (*p_fci_internal).pv,
@@ -1712,9 +1709,9 @@ pub unsafe extern "C" fn FCIAddFile(
 
     if pszSourceFile.is_null()
         || pszFileName.is_null()
-        || (pfnfcignc as *const ()).is_null()
-        || (pfnfcis as *const ()).is_null()
-        || (pfnfcigoi as *const ()).is_null()
+        || pfnfcignc.is_none()
+        || pfnfcis.is_none()
+        || pfnfcigoi.is_none()
         || strlen(pszFileName) >= CB_MAX_FILENAME as usize
     {
         set_error(
@@ -1792,7 +1789,7 @@ pub unsafe extern "C" fn FCIAddFile(
         (*((*p_fci_internal).pccab as *mut CCAB)).iCab += 1;
         /* get name of next cabinet */
         (*p_fci_internal).estimatedCabinetSize = (*p_fci_internal).statusFolderTotal;
-        if pfnfcignc(
+        if (pfnfcignc.unwrap_unchecked())(
             (*p_fci_internal).pccab,
             (*p_fci_internal).estimatedCabinetSize, /* estimated size of cab */
             (*p_fci_internal).pv,
@@ -1878,7 +1875,7 @@ pub unsafe extern "C" fn FCIAddFile(
         (*((*p_fci_internal).pccab as *mut CCAB)).iCab += 1;
         /* get name of next cabinet */
         (*p_fci_internal).estimatedCabinetSize = (*p_fci_internal).statusFolderTotal;
-        if pfnfcignc(
+        if (pfnfcignc.unwrap_unchecked())(
             (*p_fci_internal).pccab,
             (*p_fci_internal).estimatedCabinetSize, /* estimated size of cab */
             (*p_fci_internal).pv,

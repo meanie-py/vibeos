@@ -6,6 +6,8 @@
 //! 'Ole Private Data' clipboard format and the CF_* <-> FORMATETC/STGMEDIUM
 //! conversions.
 use crate::prelude::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::compobj::ffi::DefWindowProcW;
 use core::ffi::{c_char, c_int, c_void};
 
 // Both of these are DEFINED by a sibling ring module AND (stale) re-declared as an
@@ -44,8 +46,7 @@ extern "system" {
     ) -> HRESULT;
     /// compobj.c (WINAPI) — not in crate::ole32_exports yet.
     fn ProgIDFromCLSID(clsid: REFCLSID, lplpszProgID: *mut LPOLESTR) -> HRESULT;
-    /// user32 (WINAPI) — not in crate::user32 yet.
-    fn DefWindowProcW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
+    // user32 (WINAPI) — not in crate::user32 yet.
 }
 
 extern "C" {
@@ -493,7 +494,7 @@ fn OLEClipbrd_IEnumFORMATETC_Clone(
     *obj = core::ptr::null_mut();
 
     let size = (*(*This).data).size;
-    let new_data = HeapAlloc(GetProcessHeap(), 0, size as SIZE_T) as *mut ole_priv_data;
+    let new_data = HeapAlloc(GetProcessHeap(), 0, size as usize) as *mut ole_priv_data;
     if new_data.is_null() {
         return E_OUTOFMEMORY;
     }
@@ -525,7 +526,7 @@ unsafe fn enum_fmtetc_construct(
     let ef = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<enum_fmtetc>() as SIZE_T,
+        core::mem::size_of::<enum_fmtetc>() as usize,
     ) as *mut enum_fmtetc;
     if ef.is_null() {
         return E_OUTOFMEMORY;
@@ -744,7 +745,7 @@ unsafe fn render_embed_source_hack(data: *mut IDataObject, fmt: LPFORMATETC) -> 
                 core::ptr::null_mut(),
             );
 
-            let mfBits: LPVOID = HeapAlloc(GetProcessHeap(), 0, nSize as SIZE_T);
+            let mfBits: LPVOID = HeapAlloc(GetProcessHeap(), 0, nSize as usize);
             nSize = GetMetaFileBitsEx((*mfp).hMF as HANDLE, nSize as UINT, mfBits) as c_int;
 
             hr = IStream_Write(
@@ -1312,7 +1313,7 @@ unsafe fn get_current_dataobject(data: *mut *mut IDataObject) -> HRESULT {
     if SUCCEEDED(hr) {
         pos.QuadPart = 0;
         IStream_Seek(stm, pos, STREAM_SEEK_SET, core::ptr::null_mut());
-        hr = CoUnmarshalInterface(stm, &IID_IDataObject, data as *mut LPVOID);
+        hr = CoUnmarshalInterface((stm).cast(), (&raw const IID_IDataObject).cast(), data as *mut LPVOID);
     }
     IStream_Release(stm);
 
@@ -1351,7 +1352,7 @@ unsafe fn get_priv_data(data: *mut *mut ole_priv_data) -> HRESULT {
         let src = GlobalLock(handle) as *mut ole_priv_data;
         if !src.is_null() {
             /* FIXME: sanity check on size */
-            ret = HeapAlloc(GetProcessHeap(), 0, (*src).size as SIZE_T) as *mut ole_priv_data;
+            ret = HeapAlloc(GetProcessHeap(), 0, (*src).size as usize) as *mut ole_priv_data;
             if ret.is_null() {
                 GlobalUnlock(handle);
                 return E_OUTOFMEMORY;
@@ -1397,7 +1398,7 @@ unsafe fn get_priv_data(data: *mut *mut ole_priv_data) -> HRESULT {
         size += count * core::mem::size_of::<ole_priv_data_entry>() as DWORD;
 
         /* There are holes in fmtetc so zero init */
-        ret = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, size as SIZE_T) as *mut ole_priv_data;
+        ret = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, size as usize) as *mut ole_priv_data;
         if ret.is_null() {
             return E_OUTOFMEMORY;
         }
@@ -1998,7 +1999,7 @@ unsafe fn snapshot_construct(seq_no: DWORD) -> *mut snapshot {
     let This: *mut snapshot = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<snapshot>() as SIZE_T,
+        core::mem::size_of::<snapshot>() as usize,
     ) as *mut snapshot;
 
     if This.is_null() {
@@ -2103,7 +2104,7 @@ unsafe extern "system" fn clipbrd_create(
         let clipbrd = HeapAlloc(
             GetProcessHeap(),
             0,
-            core::mem::size_of::<ole_clipbrd>() as SIZE_T,
+            core::mem::size_of::<ole_clipbrd>() as usize,
         ) as *mut ole_clipbrd;
         if clipbrd.is_null() {
             ERR!(b"No memory.\n\0".as_ptr());
@@ -2231,7 +2232,7 @@ unsafe fn set_clipboard_formats(clipbrd: *mut ole_clipbrd, data: *mut IDataObjec
 
     /* Cache the list and fixup any target device offsets to ptrs */
     (*clipbrd).cached_enum =
-        HeapAlloc(GetProcessHeap(), 0, needed as SIZE_T) as *mut ole_priv_data;
+        HeapAlloc(GetProcessHeap(), 0, needed as usize) as *mut ole_priv_data;
     memcpy(
         (*clipbrd).cached_enum as *mut c_void,
         priv_data as *const c_void,
@@ -2281,7 +2282,7 @@ unsafe fn release_marshal_data(stm: *mut IStream) {
     size.QuadPart = 0;
 
     IStream_Seek(stm, pos, STREAM_SEEK_SET, core::ptr::null_mut());
-    CoReleaseMarshalData(stm);
+    CoReleaseMarshalData((stm).cast());
     IStream_Seek(stm, pos, STREAM_SEEK_SET, core::ptr::null_mut());
     IStream_SetSize(stm, size);
 }
@@ -2349,9 +2350,9 @@ unsafe fn set_src_dataobject(clipbrd: *mut ole_clipbrd, data: *mut IDataObject) 
             &mut unk as *mut *mut IUnknown as *mut *mut c_void,
         );
         hr = CoMarshalInterface(
-            (*clipbrd).marshal_data,
-            &IID_IDataObject,
-            unk,
+            ((*clipbrd).marshal_data).cast(),
+            (&raw const IID_IDataObject).cast(),
+            (unk).cast(),
             MSHCTX_LOCAL,
             core::ptr::null_mut(),
             MSHLFLAGS_TABLESTRONG,
@@ -2389,7 +2390,7 @@ pub unsafe fn clipbrd_uninitialize() {
         }
 
         if !(*clipbrd).window.is_null() {
-            DestroyWindow((*clipbrd).window);
+            DestroyWindow(((*clipbrd).window).cast());
             UnregisterClassW(clipbrd_wndclass.as_ptr(), hinst);
             (*clipbrd).window = core::ptr::null_mut();
         }
@@ -2422,7 +2423,7 @@ unsafe extern "system" fn clipbrd_wndproc(
     get_ole_clipbrd(&mut clipbrd);
     /* __REACTOS__ */
     if clipbrd.is_null() {
-        return DefWindowProcW(hwnd, message, wparam, lparam);
+        return (DefWindowProcW((hwnd).cast(), message, (wparam) as usize, (lparam) as isize)) as LRESULT;
     }
 
     match message {
@@ -2468,7 +2469,7 @@ unsafe extern "system" fn clipbrd_wndproc(
         }
 
         _ => {
-            return DefWindowProcW(hwnd, message, wparam, lparam);
+            return (DefWindowProcW((hwnd).cast(), message, (wparam) as usize, (lparam) as isize)) as LRESULT;
         }
     }
 
@@ -2504,7 +2505,7 @@ unsafe fn create_clipbrd_window() -> HWND {
     RegisterClassExW(&class as *const WNDCLASSEXW as *const c_void);
 
     /* winuser.h: CreateWindowW(...) is CreateWindowExW(0, ...) */
-    CreateWindowExW(
+    (CreateWindowExW(
         0,
         clipbrd_wndclass.as_ptr(),
         title.as_ptr(),
@@ -2513,11 +2514,11 @@ unsafe fn create_clipbrd_window() -> HWND {
         0,
         0,
         0,
-        HWND_MESSAGE,
+        (HWND_MESSAGE).cast(),
         core::ptr::null_mut(),
         hinst,
         core::ptr::null_mut(),
-    )
+    )).cast()
 }
 
 /// Windows creates a 'DataObject' clipboard format that contains the clipboard
@@ -2685,7 +2686,7 @@ pub unsafe extern "system" fn OleFlushClipboard() -> HRESULT {
         return CLIPBRD_E_CANT_OPEN;
     }
 
-    SendMessageW(wnd, WM_RENDERALLFORMATS, 0, 0);
+    SendMessageW((wnd).cast(), WM_RENDERALLFORMATS, 0, 0);
 
     hr = set_dataobject_format(core::ptr::null_mut());
 

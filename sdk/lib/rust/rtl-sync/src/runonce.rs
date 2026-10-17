@@ -1,8 +1,6 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ddk::{NtReleaseKeyedEvent, NtWaitForKeyedEvent, PRTL_RUN_ONCE, PRTL_RUN_ONCE_INIT_FN};
-use core::ffi::c_void;
 use crate::shared::{DWORD, interlocked_cmpxchg_ptr};
 
 // ---- file-scope preamble (translated) ----

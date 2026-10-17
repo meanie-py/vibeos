@@ -573,6 +573,7 @@ def cohab_staleness_reasons(repo: Path, arch: str) -> list[str]:
     amd64 with a rebuild genuinely pending. Do not route this check through it."""
     build_dir = repo / f"build-{archcfg.base_arch(arch)}"
     reasons = []
+    index = None  # built on the first crate that needs it, then shared by all of them
     for rel in boot_set_cohab_rels(repo, arch):
         crate = _crate_for_rel(repo, rel)
         assert crate is not None  # boot_set_cohab_rels only returns mapped rels
@@ -583,7 +584,9 @@ def cohab_staleness_reasons(repo: Path, arch: str) -> list[str]:
             )
             continue
         newest_rs = _newest_rs_mtime(crate)
-        cargo_out, copied = _crate_staticlibs(repo, build_dir, crate)
+        if index is None:
+            index = _StaticlibIndex(repo, build_dir)
+        cargo_out, copied = _crate_staticlibs(repo, build_dir, crate, index)
 
         if cargo_out is None and copied is None:
             # No staticlib anywhere in this crate's chain => it is not a
@@ -621,6 +624,8 @@ def cohab_staleness_reasons(repo: Path, arch: str) -> list[str]:
                 )
                 continue
         # B. did the link consume the current staticlib?
+        if copied is not None and _belongs_to_sibling(copied, artifact):
+            continue
         if copied is not None and artifact.stat().st_mtime < copied.stat().st_mtime:
             reasons.append(
                 f"{rel}: stale — {copied.name} is newer than the built binary; the "
@@ -628,6 +633,21 @@ def cohab_staleness_reasons(repo: Path, arch: str) -> list[str]:
                 f"(not in ninja_targets?)" + _lag(artifact, copied)
             )
     return reasons
+
+
+def _belongs_to_sibling(copied: Path, artifact: Path) -> bool:
+    """The copied staticlib sits beside ANOTHER binary of the same stem, so that binary links
+    it and this one does not. The stem convention pairs both `wdmaud.drv` (user mode, links
+    libwdmaud_drv_rust.a) and the kernel's `wdmaud.sys` with wdmaud-rust; when the kernel
+    crate rebuilt, rule B reported wdmaud.drv "never relinked" on every arm64 build, a false
+    RED no rebuild could clear (2026-10-17)."""
+    if copied.parent == artifact.parent:
+        return False
+    stem = artifact.stem.lower()
+    return any(
+        p.is_file() and p.stem.lower() == stem and p.suffix.lower() in _PE_SUFFIXES
+        for p in copied.parent.iterdir()
+    )
 
 
 def _lag(older: Path, newer: Path) -> str:
@@ -665,7 +685,27 @@ def _lag(older: Path, newer: Path) -> str:
     return f" [input {d / 60:.0f}min newer — a genuinely missed rebuild]"
 
 
-def _crate_staticlibs(repo: Path, build_dir: Path, crate: Path) -> tuple[Path | None, Path | None]:
+class _StaticlibIndex:
+    """Every `lib*.a` under the build dir and the shared cargo target, and this lane's newest
+    artifact-store reference per (arch, body), each read ONCE per staleness check.
+
+    `_crate_staticlibs` used to walk the whole build dir and parse every store reference in
+    the fleet for each of ~330 crates: 5-8 minutes of `check_staleness` on a loaded host, the
+    window in which a source edit made a queued smoke refuse media that was already built."""
+
+    def __init__(self, repo: Path, build_dir: Path):
+        self.libs: dict[str, list[Path]] = {}
+        roots = [build_dir, repo / "sdk" / "lib" / "rust" / "target"]
+        for root in roots:
+            if root.is_dir():
+                for p in rglob_stable(root, "lib*.a"):
+                    self.libs.setdefault(p.name, []).append(p)
+        self.refs = _store_refs(repo, build_dir.name.removeprefix("build-"))
+
+
+def _crate_staticlibs(
+    repo: Path, build_dir: Path, crate: Path, index: _StaticlibIndex | None = None
+) -> tuple[Path | None, Path | None]:
     """(cargo's own output, the copied staticlib) for a cohab crate, newest of each.
 
     They are DIFFERENT FILES with deliberately different mtime behaviour and the
@@ -675,10 +715,9 @@ def _crate_staticlibs(repo: Path, build_dir: Path, crate: Path) -> tuple[Path | 
     custom command) or the shared `sdk/lib/rust/target/<stem>/` (add_cargo_module);
     the copy sits in the module's build dir. Returns None for either if absent."""
     lib = "lib" + crate.name.replace("-", "_") + ".a"
-    cands = rglob_stable(build_dir, lib)
-    ws = repo / "sdk" / "lib" / "rust" / "target"
-    if ws.is_dir():
-        cands += rglob_stable(ws, lib)
+    if index is None:
+        index = _StaticlibIndex(repo, build_dir)
+    cands = list(index.libs.get(lib, []))
 
     def _in_cargo_target(p: Path) -> bool:
         return any(part == "target" or part.endswith("-target") for part in p.parts)
@@ -693,7 +732,7 @@ def _crate_staticlibs(repo: Path, build_dir: Path, crate: Path) -> tuple[Path | 
     # "cargo ran" clock is the lane's store reference for it, rewritten on every
     # request, hit or miss: a blob's own mtime is not, since an edit that rebuilds to
     # the same bytes reuses it.
-    ref = _store_ref(repo, build_dir.name.removeprefix("build-"), crate.name)
+    ref = index.refs.get(crate.name)
     if ref is not None and (cargo_out is None or ref.stat().st_mtime > cargo_out.stat().st_mtime):
         cargo_out = ref
     return cargo_out, _newest([p for p in cands if not _in_cargo_target(p)])
@@ -701,15 +740,20 @@ def _crate_staticlibs(repo: Path, build_dir: Path, crate: Path) -> tuple[Path | 
 
 def _store_ref(repo: Path, arch: str, body: str) -> Path | None:
     """This lane's newest artifact-store reference for `body` built for `arch`."""
+    return _store_refs(repo, arch).get(body)
+
+
+def _store_refs(repo: Path, arch: str) -> dict[str, Path]:
+    """This lane's newest artifact-store reference per body built for `arch`, in one pass."""
     root = os.environ.get("VIBEOS_ARTIFACT_STORE_ROOT") or str(
         Path.home() / "vibeos-artifact-store"
     )
     refs = Path(root) / "v1" / "refs"
     if not refs.is_dir():
-        return None
+        return {}
     lane = str(repo.resolve())
     markers = (f"-{arch}-cargo-link/", f"/cell-link-v1-{arch}-")
-    newest = None
+    newest: dict[str, tuple[float, Path]] = {}
     for path in refs.glob("*.json"):
         try:
             record = json.loads(path.read_text())
@@ -721,12 +765,15 @@ def _store_ref(repo: Path, arch: str, body: str) -> Path | None:
             record.get("lane") == lane
             and consumer.startswith("cargo:")
             and len(fields) > 2
-            and fields[2] == body
             and any(m in fields[1] for m in markers)
-            and (newest is None or path.stat().st_mtime > newest.stat().st_mtime)
         ):
-            newest = path
-    return newest
+            try:
+                mtime = path.stat().st_mtime
+            except OSError:
+                continue
+            if fields[2] not in newest or mtime > newest[fields[2]][0]:
+                newest[fields[2]] = (mtime, path)
+    return {body: path for body, (_, path) in newest.items()}
 
 
 _CARGO_CALL_RE = re.compile(

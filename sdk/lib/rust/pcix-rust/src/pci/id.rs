@@ -3,6 +3,8 @@
 #[allow(unused_imports)] use crate::glue::*;
 #[allow(unused_imports)] use crate::guids::*;
 use ntkrnl_sys::globals::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::pci::config::RtlAssert;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ex::*;
@@ -29,7 +31,6 @@ type PCSTR = *const i8;
 type c_char = i8;
 
 extern "system" {
-    fn RtlAssert(pvFailedAssertion: PVOID, pvFileName: PVOID, ulLineNumber: ULONG, pszMessage: *mut ::core::ffi::c_char);
 }
 extern "C" {
     fn sprintf(buffer: *mut ::core::ffi::c_char, format: *const ::core::ffi::c_char, ...) -> i32;
@@ -128,7 +129,7 @@ pub unsafe extern "system" fn PciGetDescriptionMessage(
                 b"TextLength > sizeof(WCHAR)\0" as *const u8 as PVOID,
                 b"drivers/bus/pcix/pci/id.c\0" as *const u8 as PVOID,
                 52u32,
-                core::ptr::null_mut::<i8>(),
+                (core::ptr::null_mut::<i8>()).cast(),
             );
         }
         if !(*(Description.add(
@@ -139,7 +140,7 @@ pub unsafe extern "system" fn PciGetDescriptionMessage(
                 b"Description[(TextLength / sizeof(WCHAR)) - 1] == L'\\n'\0" as *const u8 as PVOID,
                 b"drivers/bus/pcix/pci/id.c\0" as *const u8 as PVOID,
                 53u32,
-                core::ptr::null_mut::<i8>(),
+                (core::ptr::null_mut::<i8>()).cast(),
             );
         }
 
@@ -263,7 +264,7 @@ pub unsafe extern "C" fn PciIdPrintf_v(mut IdBuffer: PPCI_ID_BUFFER, Format: PCC
             b"IdBuffer->Count < MAX_ANSI_STRINGS\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
             b"drivers/bus/pcix/pci/id.c\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
             130u32,
-            ::core::ptr::null_mut::<::core::ffi::c_char>(),
+            (::core::ptr::null_mut::<::core::ffi::c_char>()).cast(),
         );
     }
 
@@ -317,7 +318,7 @@ pub unsafe extern "C" fn PciIdPrintfAppend_v(
             b"drivers/bus/pcix/pci/id.c\0".as_ptr()
                 as *const i8 as PVOID,
             167,
-            core::ptr::null_mut::<i8>(),
+            (core::ptr::null_mut::<i8>()).cast(),
         );
     }
 
@@ -336,7 +337,7 @@ pub unsafe extern "C" fn PciIdPrintfAppend_v(
             b"drivers/bus/pcix/pci/id.c\0".as_ptr()
                 as *const i8 as PVOID,
             179,
-            core::ptr::null_mut::<i8>(),
+            (core::ptr::null_mut::<i8>()).cast(),
         );
     }
 
@@ -441,7 +442,7 @@ pub unsafe extern "system" fn PciQueryId(
                 b"0\0".as_ptr() as *const i8 as PVOID,
                 b"drivers/bus/pcix/pci/id.c\0".as_ptr() as *const i8 as PVOID,
                 214 as ULONG,
-                core::ptr::null_mut::<CHAR>(),
+                (core::ptr::null_mut::<CHAR>()).cast(),
             );
         }
     }
@@ -587,7 +588,7 @@ pub unsafe extern "system" fn PciQueryId(
             b"IdBuffer.Count > 0\0".as_ptr() as *const i8 as PVOID,
             b"drivers/bus/pcix/pci/id.c\0".as_ptr() as *const i8 as PVOID,
             359 as ULONG,
-            core::ptr::null_mut::<CHAR>(),
+            (core::ptr::null_mut::<CHAR>()).cast(),
         );
     }
 
@@ -614,7 +615,7 @@ pub unsafe extern "system" fn PciQueryId(
                 b"NT_SUCCESS(Status)\0".as_ptr() as *const i8 as PVOID,
                 b"drivers/bus/pcix/pci/id.c\0".as_ptr() as *const i8 as PVOID,
                 379 as ULONG,
-                core::ptr::null_mut::<CHAR>(),
+                (core::ptr::null_mut::<CHAR>()).cast(),
             );
         }
         Size = IdBuffer.StringSize[i as usize];

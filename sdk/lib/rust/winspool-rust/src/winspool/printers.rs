@@ -1,4 +1,5 @@
 use crate::winspool::jobs::AddJobW;
+use ntdll_sys::seh::rpc_try;
 use crate::winspool::utils::AllocSplStr;
 use crate::winspool::utils::DllAllocSplMem;
 use crate::winspool::utils::DllFreeSplMem;
@@ -159,11 +160,11 @@ unsafe extern "C" fn _StartDocPrinterWithRPC(pHandle: PSPOOLER_HANDLE, pDocInfo1
     DocInfoContainer.DocInfo.pDocInfo1 = pDocInfo1 as *mut WINSPOOL_DOC_INFO_1;
 
     // RpcTryExcept { ... }
-    dwErrorCode = _RpcStartDocPrinter(
+    dwErrorCode = rpc_try(|| _RpcStartDocPrinter(
         (*pHandle).hPrinter,
         core::ptr::addr_of_mut!(DocInfoContainer),
         core::ptr::addr_of_mut!((*pHandle).dwJobID),
-    );
+    )).unwrap_or_else(|code| code as _);
     // RpcExcept(EXCEPTION_EXECUTE_HANDLER) { dwErrorCode = RpcExceptionCode(); }
     // The handler runs only if the RPC call above raised an exception; that
     // SEH path is owned by the RPC runtime and has no direct Rust lowering here.
@@ -207,7 +208,7 @@ pub unsafe extern "system" fn AbortPrinter(hPrinter: HANDLE) -> BOOL {
         // RpcTryExcept / RpcExcept: exception path is never taken on the normal flow.
         let __rpc_exc: bool = false;
         if !__rpc_exc {
-            dwErrorCode = _RpcAbortPrinter(core::ptr::addr_of_mut!((*pHandle).hPrinter) as WINSPOOL_PRINTER_HANDLE);
+            dwErrorCode = rpc_try(|| _RpcAbortPrinter(core::ptr::addr_of_mut!((*pHandle).hPrinter) as WINSPOOL_PRINTER_HANDLE)).unwrap_or_else(|code| code as _);
         } else {
             dwErrorCode = RpcExceptionCode!() as DWORD;
         }
@@ -395,13 +396,13 @@ pub unsafe extern "system" fn AddPrinterW(pName: PWSTR, Level: DWORD, pPrinter: 
 
     // RpcTryExcept body (SEH frame not representable in Rust; exception path elided)
     {
-        dwErrorCode = _RpcAddPrinter(
+        dwErrorCode = rpc_try(|| _RpcAddPrinter(
             pName,
             core::ptr::addr_of_mut!(PrinterContainer),
             core::ptr::addr_of_mut!(DevModeContainer),
             core::ptr::addr_of_mut!(SecurityContainer),
             core::ptr::addr_of_mut!(hPrinter),
-        );
+        )).unwrap_or_else(|code| code as _);
     }
 
     'cleanup: {
@@ -450,7 +451,7 @@ pub unsafe extern "system" fn ClosePrinter(hPrinter: HANDLE) -> BOOL {
 
         // Do the RPC call.
         // RpcTryExcept body
-        dwErrorCode = _RpcClosePrinter(core::ptr::addr_of_mut!((*pHandle).hPrinter) as HANDLE);
+        dwErrorCode = rpc_try(|| _RpcClosePrinter(core::ptr::addr_of_mut!((*pHandle).hPrinter) as HANDLE)).unwrap_or_else(|code| code as _);
         // RpcExcept(EXCEPTION_EXECUTE_HANDLER) body
         if rpc_exc {
             dwErrorCode = RpcExceptionCode!() as DWORD;
@@ -487,13 +488,8 @@ pub unsafe extern "system" fn DeletePrinter(hPrinter: HANDLE) -> BOOL {
 
         // Do the RPC call.
         // RpcTryExcept body
-        dwErrorCode = _RpcDeletePrinter(core::ptr::addr_of_mut!((*pHandle).hPrinter) as HANDLE);
+        dwErrorCode = rpc_try(|| _RpcDeletePrinter(core::ptr::addr_of_mut!((*pHandle).hPrinter) as HANDLE)).unwrap_or_else(|code| code as _);
 
-        // RpcExcept(EXCEPTION_EXECUTE_HANDLER) body: SEH has no Rust equivalent,
-        // so the handler is kept as a statically unreachable branch.
-        if false {
-            dwErrorCode = RpcExceptionCode!() as DWORD;
-        }
         // RpcEndExcept;
     }
 
@@ -1402,7 +1398,7 @@ pub unsafe extern "system" fn EndDocPrinter(hPrinter: HANDLE) -> BOOL {
             // For spooled jobs, the document is finished by calling _RpcScheduleJob.
             let mut rpc_raised: bool = false;
             // RpcTryExcept
-            dwErrorCode = _RpcScheduleJob((*pHandle).hPrinter, (*pHandle).dwJobID);
+            dwErrorCode = rpc_try(|| _RpcScheduleJob((*pHandle).hPrinter, (*pHandle).dwJobID)).unwrap_or_else(|code| code as _);
             // RpcExcept(EXCEPTION_EXECUTE_HANDLER)
             if rpc_raised {
                 dwErrorCode = RpcExceptionCode!() as DWORD;
@@ -1415,11 +1411,8 @@ pub unsafe extern "system" fn EndDocPrinter(hPrinter: HANDLE) -> BOOL {
             // In all other cases, just call _RpcEndDocPrinter.
             let mut rpc_raised: bool = false;
             // RpcTryExcept
-            dwErrorCode = _RpcEndDocPrinter((*pHandle).hPrinter);
+            dwErrorCode = rpc_try(|| _RpcEndDocPrinter((*pHandle).hPrinter)).unwrap_or_else(|code| code as _);
             // RpcExcept(EXCEPTION_EXECUTE_HANDLER)
-            if rpc_raised {
-                dwErrorCode = RpcExceptionCode!() as DWORD;
-            }
             // RpcEndExcept;
         }
 
@@ -1454,7 +1447,7 @@ pub unsafe extern "system" fn EndPagePrinter(hPrinter: HANDLE) -> BOOL {
             // RpcTryExcept / RpcExcept(EXCEPTION_EXECUTE_HANDLER) block:
             // the RPC call is kept on the normal path; the RpcExceptionCode()
             // handler path is the SEH-only fallback for this call.
-            dwErrorCode = _RpcEndPagePrinter((*pHandle).hPrinter);
+            dwErrorCode = rpc_try(|| _RpcEndPagePrinter((*pHandle).hPrinter)).unwrap_or_else(|code| code as _);
         }
     }
 
@@ -1911,7 +1904,7 @@ pub unsafe extern "system" fn EnumPrintersW(Flags: DWORD, Name: PWSTR, Level: DW
         // RpcTryExcept body (SEH is not representable here; the try body runs directly,
         // and the RpcExcept handler, which calls RpcExceptionCode, is only reached on an exception).
         {
-            dwErrorCode = _RpcEnumPrinters(Flags, Name, Level, pPrinterEnum, cbBuf, pcbNeeded, pcReturned);
+            dwErrorCode = rpc_try(|| _RpcEnumPrinters(Flags, Name, Level, pPrinterEnum, cbBuf, pcbNeeded, pcReturned)).unwrap_or_else(|code| code as _);
         }
 
         if dwErrorCode == ERROR_SUCCESS {
@@ -2520,7 +2513,7 @@ pub unsafe extern "system" fn GetPrinterW(hPrinter: HANDLE, Level: DWORD, pPrint
 
         // Do the RPC call
         // RpcTryExcept
-        dwErrorCode = _RpcGetPrinter((*pHandle).hPrinter, Level, pPrinter, cbBuf, pcbNeeded);
+        dwErrorCode = rpc_try(|| _RpcGetPrinter((*pHandle).hPrinter, Level, pPrinter, cbBuf, pcbNeeded)).unwrap_or_else(|code| code as _);
         // RpcExcept(EXCEPTION_EXECUTE_HANDLER): structured exception handling has no
         // Rust equivalent; the handler is kept as a branch that is never taken.
         let _rpc_exception_raised: bool = false;
@@ -2639,13 +2632,13 @@ pub unsafe extern "system" fn OpenPrinterW(pPrinterName: LPWSTR, phPrinter: LPHA
         }
 
         // Do the RPC call
-        dwErrorCode = _RpcOpenPrinter(
+        dwErrorCode = rpc_try(|| _RpcOpenPrinter(
             pPrinterName,
             core::ptr::addr_of_mut!(hPrinter),
             pDatatype,
             core::ptr::addr_of_mut!(DevModeContainer),
             AccessRequired,
-        );
+        )).unwrap_or_else(|code| code as _);
 
         if dwErrorCode == ERROR_SUCCESS {
             // Create a new SPOOLER_HANDLE structure.
@@ -2806,13 +2799,10 @@ pub unsafe extern "system" fn ReadPrinter(hPrinter: HANDLE, pBuf: PVOID, cbBuf: 
         }
 
         // Do the RPC call (RpcTryExcept)
-        dwErrorCode = _RpcReadPrinter((*pHandle).hPrinter, pBuf as *mut BYTE, cbBuf, pNoBytesRead);
+        dwErrorCode = rpc_try(|| _RpcReadPrinter((*pHandle).hPrinter, pBuf as *mut BYTE, cbBuf, pNoBytesRead)).unwrap_or_else(|code| code as _);
 
         // RpcExcept(EXCEPTION_EXECUTE_HANDLER) handler: SEH is not catchable in Rust,
         // so this handler body is kept but never entered.
-        if false {
-            dwErrorCode = RpcExceptionCode!() as DWORD;
-        }
         // RpcEndExcept;
     }
 
@@ -2874,13 +2864,8 @@ pub unsafe extern "system" fn SeekPrinter(hPrinter: HANDLE, liDistanceToMove: LA
         // goto Cleanup;
     } else {
         // RpcTryExcept
-        // Structured exception handling has no Rust equivalent; the try body runs unguarded.
-        let rpc_raised: BOOL = 0;
-        dwErrorCode = _RpcSeekPrinter((*pHandle).hPrinter, liDistanceToMove, pliNewPointer, dwMoveMethod, bWrite);
+        dwErrorCode = rpc_try(|| _RpcSeekPrinter((*pHandle).hPrinter, liDistanceToMove, pliNewPointer, dwMoveMethod, bWrite)).unwrap_or_else(|code| code as _);
         // RpcExcept(EXCEPTION_EXECUTE_HANDLER)
-        if rpc_raised != 0 {
-            dwErrorCode = RpcExceptionCode!() as DWORD;
-        }
         // RpcEndExcept;
     }
 
@@ -3329,13 +3314,13 @@ pub unsafe extern "system" fn SetPrinterW(hPrinter: HANDLE, mut Level: DWORD, mu
 
     // Do the RPC call
     {
-        dwErrorCode = _RpcSetPrinter(
+        dwErrorCode = rpc_try(|| _RpcSetPrinter(
             (*pHandle).hPrinter,
             core::ptr::addr_of_mut!(PrinterContainer),
             core::ptr::addr_of_mut!(DevModeContainer),
             core::ptr::addr_of_mut!(SecurityContainer),
             Command,
-        );
+        )).unwrap_or_else(|code| code as _);
     }
     // RpcExcept(EXCEPTION_EXECUTE_HANDLER)
     // RpcExcept handler: dead under this tree's USE_DUMMY_PSEH build (the C handler never runs either), and stable Rust has no SEH. Original: dwErrorCode = RpcExceptionCode();
@@ -3823,11 +3808,8 @@ pub unsafe extern "system" fn StartPagePrinter(hPrinter: HANDLE) -> BOOL {
 
         // Do the RPC call
         // RpcTryExcept
-        dwErrorCode = _RpcStartPagePrinter((*pHandle).hPrinter);
+        dwErrorCode = rpc_try(|| _RpcStartPagePrinter((*pHandle).hPrinter)).unwrap_or_else(|code| code as _);
         // RpcExcept(EXCEPTION_EXECUTE_HANDLER)
-        if false {
-            dwErrorCode = RpcExceptionCode!() as DWORD;
-        }
         // RpcEndExcept;
     }
 
@@ -3867,7 +3849,7 @@ pub unsafe extern "system" fn WritePrinter(hPrinter: HANDLE, pBuf: PVOID, cbBuf:
 
             // Do the RPC call (RpcTryExcept region; SEH is not expressible in Rust,
             // so the protected call is performed directly).
-            dwErrorCode = _RpcWritePrinter((*pHandle).hPrinter, pBuf as *mut BYTE, cbBuf, pcWritten);
+            dwErrorCode = rpc_try(|| _RpcWritePrinter((*pHandle).hPrinter, pBuf as *mut BYTE, cbBuf, pcWritten)).unwrap_or_else(|code| code as _);
             // RpcExcept(EXCEPTION_EXECUTE_HANDLER) handler would set:
             //     dwErrorCode = RpcExceptionCode();
         }
@@ -3913,18 +3895,15 @@ pub unsafe extern "system" fn XcvDataW(hXcv: HANDLE, pszDataName: PCWSTR, mut pI
 
         // Do the RPC call
         // RpcTryExcept: the try body is executed unconditionally here.
-        dwErrorCode = _RpcXcvData((*pHandle).hPrinter,
+        dwErrorCode = rpc_try(|| _RpcXcvData((*pHandle).hPrinter,
                                    pszDataName,
                                    pInputData,
                                    cbInputData,
                                    pOutputData,
                                    cbOutputData,
                                    pcbOutputNeeded,
-                                   pdwStatus);
+                                   pdwStatus)).unwrap_or_else(|code| code as _);
         // RpcExcept(EXCEPTION_EXECUTE_HANDLER): handler is unreachable in this lowering.
-        if false {
-            dwErrorCode = RpcExceptionCode!() as DWORD;
-        }
         // RpcEndExcept;
 
         //IntUnprotectHandle( hXcv );

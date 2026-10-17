@@ -101,16 +101,13 @@ pub unsafe extern "system" fn DllMain(hinstDLL: HINSTANCE, fdwReason: DWORD, lpv
 #[no_mangle]
 pub unsafe extern "system" fn SpoolerInit() -> BOOL {
     let mut bReturnValue: BOOL = FALSE as BOOL;
-    let mut dwErrorCode: DWORD;
 
-    // RpcTryExcept
-    {
-        dwErrorCode = _RpcSpoolerInit();
+    // RpcTryExcept { .. } RpcExcept(EXCEPTION_EXECUTE_HANDLER) { ERR(..) }: a raise leaves
+    // bReturnValue FALSE and the last error untouched.
+    if let Ok(dwErrorCode) = ntdll_sys::seh::rpc_try(|| _RpcSpoolerInit()) {
         SetLastError(dwErrorCode);
         bReturnValue = (dwErrorCode == ERROR_SUCCESS) as BOOL;
     }
-    // RpcExcept(EXCEPTION_EXECUTE_HANDLER): handler body is intentionally empty.
-    // RpcEndExcept
 
     return bReturnValue;
 }

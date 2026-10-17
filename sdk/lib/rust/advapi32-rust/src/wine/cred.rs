@@ -1,8 +1,16 @@
 use crate::prelude::*;
+// The crate's own functions: the definition is the declaration.
+use crate::reg_reg::RegCloseKey;
+use crate::reg_reg::RegCreateKeyExW;
+use crate::reg_reg::RegDeleteKeyW;
+use crate::reg_reg::RegEnumKeyW;
+use crate::reg_reg::RegOpenKeyExW;
+use crate::reg_reg::RegQueryInfoKeyW;
+use crate::reg_reg::RegQueryValueExW;
+use crate::reg_reg::RegSetValueExW;
 use core::ffi::c_void;
 
 extern "system" {
-    fn RegQueryValueExW(hkey: HKEY, lpValueName: LPCWSTR, lpReserved: LPDWORD, lpType: LPDWORD, lpData: LPBYTE, lpcbData: LPDWORD) -> u32;
     fn SystemFunction032(data: *mut ustring, key: *mut ustring) -> i32;
 }
 
@@ -10,13 +18,6 @@ extern "system" {
 // local decls shadow the prelude's LONG ones (link to the same advapi32 reg
 // exports — ABI-identical, the return register width is unchanged).
 extern "system" {
-    fn RegCloseKey(hKey: HKEY) -> DWORD;
-    fn RegOpenKeyExW(hKey: HKEY, lpSubKey: *const u16, ulOptions: DWORD, samDesired: DWORD, phkResult: *mut HKEY) -> DWORD;
-    fn RegSetValueExW(hKey: HKEY, lpValueName: *const u16, Reserved: DWORD, dwType: DWORD, lpData: *const u8, cbData: DWORD) -> DWORD;
-    fn RegCreateKeyExW(hKey: HKEY, lpSubKey: *const u16, Reserved: DWORD, lpClass: *mut u16, dwOptions: DWORD, samDesired: REGSAM, lpSecurityAttributes: *mut _SECURITY_ATTRIBUTES, phkResult: *mut HKEY, lpdwDisposition: *mut DWORD) -> DWORD;
-    fn RegDeleteKeyW(hKey: HKEY, lpSubKey: *const u16) -> DWORD;
-    fn RegEnumKeyW(hKey: HKEY, dwIndex: DWORD, lpName: LPWSTR, cchName: DWORD) -> DWORD;
-    fn RegQueryInfoKeyW(hKey: HKEY, lpClass: *mut u16, lpcchClass: *mut DWORD, lpReserved: *mut DWORD, lpcSubKeys: *mut DWORD, lpcbMaxSubKeyLen: *mut DWORD, lpcbMaxClassLen: *mut DWORD, lpcValues: *mut DWORD, lpcbMaxValueNameLen: *mut DWORD, lpcbMaxValueLen: *mut DWORD, lpcbSecurityDescriptor: *mut DWORD, lpftLastWriteTime: *mut FILETIME) -> DWORD;
 }
 
 // wine/unicode.h string macros (cred.c) → CRT wide funcs (cdecl).
@@ -95,7 +96,7 @@ unsafe fn read_credential_blob(hkey: HKEY, key_data: *const u8, credential_blob:
     let mut r#type: u32 = 0;
 
     *credential_blob_size = 0;
-    ret = RegQueryValueExW(hkey, wszPasswordValue.as_ptr(), 0 as LPDWORD, &mut r#type, core::ptr::null_mut(), credential_blob_size);
+    ret = (RegQueryValueExW(hkey, wszPasswordValue.as_ptr(), 0 as LPDWORD, &mut r#type, core::ptr::null_mut(), credential_blob_size)) as u32;
     if ret != ERROR_SUCCESS {
         return ret;
     } else if r#type != REG_BINARY {
@@ -105,7 +106,7 @@ unsafe fn read_credential_blob(hkey: HKEY, key_data: *const u8, credential_blob:
         let mut data: ustring = core::mem::zeroed();
         let mut key: ustring = core::mem::zeroed();
 
-        ret = RegQueryValueExW(hkey, wszPasswordValue.as_ptr(), 0 as LPDWORD, &mut r#type, credential_blob, credential_blob_size);
+        ret = (RegQueryValueExW(hkey, wszPasswordValue.as_ptr(), 0 as LPDWORD, &mut r#type, credential_blob, credential_blob_size)) as u32;
         if ret != ERROR_SUCCESS {
             return ret;
         } else if r#type != REG_BINARY {
@@ -129,7 +130,7 @@ unsafe fn registry_read_credential(hkey: HKEY, credential: PCREDENTIALW, key_dat
     let mut ret: u32;
     let mut count: u32 = 0;
 
-    ret = RegQueryValueExW(hkey, core::ptr::null(), core::ptr::null_mut(), &mut type_, core::ptr::null_mut(), &mut count);
+    ret = (RegQueryValueExW(hkey, core::ptr::null(), core::ptr::null_mut(), &mut type_, core::ptr::null_mut(), &mut count)) as u32;
     if ret != ERROR_SUCCESS {
         return ret;
     } else if type_ != REG_SZ {
@@ -138,7 +139,7 @@ unsafe fn registry_read_credential(hkey: HKEY, credential: PCREDENTIALW, key_dat
     *len += count;
     if !credential.is_null() {
         (*credential).TargetName = buffer as LPWSTR;
-        ret = RegQueryValueExW(hkey, core::ptr::null(), core::ptr::null_mut(), &mut type_, (*credential).TargetName as LPBYTE, &mut count);
+        ret = (RegQueryValueExW(hkey, core::ptr::null(), core::ptr::null_mut(), &mut type_, (*credential).TargetName as LPBYTE, &mut count)) as u32;
         if ret != ERROR_SUCCESS {
             return ret;
         } else if type_ != REG_SZ {
@@ -147,7 +148,7 @@ unsafe fn registry_read_credential(hkey: HKEY, credential: PCREDENTIALW, key_dat
         buffer = buffer.add(count as usize);
     }
 
-    ret = RegQueryValueExW(hkey, wszCommentValue.as_ptr(), core::ptr::null_mut(), &mut type_, core::ptr::null_mut(), &mut count);
+    ret = (RegQueryValueExW(hkey, wszCommentValue.as_ptr(), core::ptr::null_mut(), &mut type_, core::ptr::null_mut(), &mut count)) as u32;
     if ret != ERROR_FILE_NOT_FOUND {
         if ret != ERROR_SUCCESS {
             return ret;
@@ -158,7 +159,7 @@ unsafe fn registry_read_credential(hkey: HKEY, credential: PCREDENTIALW, key_dat
     }
     if !credential.is_null() {
         (*credential).Comment = buffer as LPWSTR;
-        ret = RegQueryValueExW(hkey, wszCommentValue.as_ptr(), core::ptr::null_mut(), &mut type_, (*credential).Comment as LPBYTE, &mut count);
+        ret = (RegQueryValueExW(hkey, wszCommentValue.as_ptr(), core::ptr::null_mut(), &mut type_, (*credential).Comment as LPBYTE, &mut count)) as u32;
         if ret == ERROR_FILE_NOT_FOUND {
             (*credential).Comment = core::ptr::null_mut();
         } else if ret != ERROR_SUCCESS {
@@ -170,7 +171,7 @@ unsafe fn registry_read_credential(hkey: HKEY, credential: PCREDENTIALW, key_dat
         }
     }
 
-    ret = RegQueryValueExW(hkey, wszTargetAliasValue.as_ptr(), core::ptr::null_mut(), &mut type_, core::ptr::null_mut(), &mut count);
+    ret = (RegQueryValueExW(hkey, wszTargetAliasValue.as_ptr(), core::ptr::null_mut(), &mut type_, core::ptr::null_mut(), &mut count)) as u32;
     if ret != ERROR_FILE_NOT_FOUND {
         if ret != ERROR_SUCCESS {
             return ret;
@@ -181,7 +182,7 @@ unsafe fn registry_read_credential(hkey: HKEY, credential: PCREDENTIALW, key_dat
     }
     if !credential.is_null() {
         (*credential).TargetAlias = buffer as LPWSTR;
-        ret = RegQueryValueExW(hkey, wszTargetAliasValue.as_ptr(), core::ptr::null_mut(), &mut type_, (*credential).TargetAlias as LPBYTE, &mut count);
+        ret = (RegQueryValueExW(hkey, wszTargetAliasValue.as_ptr(), core::ptr::null_mut(), &mut type_, (*credential).TargetAlias as LPBYTE, &mut count)) as u32;
         if ret == ERROR_FILE_NOT_FOUND {
             (*credential).TargetAlias = core::ptr::null_mut();
         } else if ret != ERROR_SUCCESS {
@@ -193,7 +194,7 @@ unsafe fn registry_read_credential(hkey: HKEY, credential: PCREDENTIALW, key_dat
         }
     }
 
-    ret = RegQueryValueExW(hkey, wszUserNameValue.as_ptr(), core::ptr::null_mut(), &mut type_, core::ptr::null_mut(), &mut count);
+    ret = (RegQueryValueExW(hkey, wszUserNameValue.as_ptr(), core::ptr::null_mut(), &mut type_, core::ptr::null_mut(), &mut count)) as u32;
     if ret != ERROR_FILE_NOT_FOUND {
         if ret != ERROR_SUCCESS {
             return ret;
@@ -204,7 +205,7 @@ unsafe fn registry_read_credential(hkey: HKEY, credential: PCREDENTIALW, key_dat
     }
     if !credential.is_null() {
         (*credential).UserName = buffer as LPWSTR;
-        ret = RegQueryValueExW(hkey, wszUserNameValue.as_ptr(), core::ptr::null_mut(), &mut type_, (*credential).UserName as LPBYTE, &mut count);
+        ret = (RegQueryValueExW(hkey, wszUserNameValue.as_ptr(), core::ptr::null_mut(), &mut type_, (*credential).UserName as LPBYTE, &mut count)) as u32;
         if ret == ERROR_FILE_NOT_FOUND {
             (*credential).UserName = core::ptr::null_mut();
         } else if ret != ERROR_SUCCESS {
@@ -244,14 +245,14 @@ unsafe fn registry_read_credential(hkey: HKEY, credential: PCREDENTIALW, key_dat
     }
 
     count = core::mem::size_of_val(&(*credential).Flags) as u32;
-    ret = RegQueryValueExW(hkey, wszFlagsValue.as_ptr(), core::ptr::null_mut(), &mut type_, core::ptr::addr_of_mut!((*credential).Flags) as LPBYTE, &mut count);
+    ret = (RegQueryValueExW(hkey, wszFlagsValue.as_ptr(), core::ptr::null_mut(), &mut type_, core::ptr::addr_of_mut!((*credential).Flags) as LPBYTE, &mut count)) as u32;
     if ret != ERROR_SUCCESS {
         return ret;
     } else if type_ != REG_DWORD {
         return ERROR_REGISTRY_CORRUPT;
     }
     count = core::mem::size_of_val(&(*credential).Type) as u32;
-    ret = RegQueryValueExW(hkey, wszTypeValue.as_ptr(), core::ptr::null_mut(), &mut type_, core::ptr::addr_of_mut!((*credential).Type) as LPBYTE, &mut count);
+    ret = (RegQueryValueExW(hkey, wszTypeValue.as_ptr(), core::ptr::null_mut(), &mut type_, core::ptr::addr_of_mut!((*credential).Type) as LPBYTE, &mut count)) as u32;
     if ret != ERROR_SUCCESS {
         return ret;
     } else if type_ != REG_DWORD {
@@ -259,14 +260,14 @@ unsafe fn registry_read_credential(hkey: HKEY, credential: PCREDENTIALW, key_dat
     }
 
     count = core::mem::size_of_val(&(*credential).LastWritten) as u32;
-    ret = RegQueryValueExW(hkey, wszLastWrittenValue.as_ptr(), core::ptr::null_mut(), &mut type_, core::ptr::addr_of_mut!((*credential).LastWritten) as LPBYTE, &mut count);
+    ret = (RegQueryValueExW(hkey, wszLastWrittenValue.as_ptr(), core::ptr::null_mut(), &mut type_, core::ptr::addr_of_mut!((*credential).LastWritten) as LPBYTE, &mut count)) as u32;
     if ret != ERROR_SUCCESS {
         return ret;
     } else if type_ != REG_BINARY {
         return ERROR_REGISTRY_CORRUPT;
     }
     count = core::mem::size_of_val(&(*credential).Persist) as u32;
-    ret = RegQueryValueExW(hkey, wszPersistValue.as_ptr(), core::ptr::null_mut(), &mut type_, core::ptr::addr_of_mut!((*credential).Persist) as LPBYTE, &mut count);
+    ret = (RegQueryValueExW(hkey, wszPersistValue.as_ptr(), core::ptr::null_mut(), &mut type_, core::ptr::addr_of_mut!((*credential).Persist) as LPBYTE, &mut count)) as u32;
     if ret == ERROR_SUCCESS && type_ != REG_DWORD {
         return ERROR_REGISTRY_CORRUPT;
     }
@@ -580,7 +581,7 @@ unsafe fn write_credential_blob(
     );
     heap_free(encrypted_credential_blob as *mut core::ffi::c_void);
 
-    ret
+    (ret) as u32
 }
 
 unsafe fn registry_write_credential(
@@ -594,96 +595,96 @@ unsafe fn registry_write_credential(
 
     GetSystemTimeAsFileTime(&mut LastWritten);
 
-    ret = RegSetValueExW(
+    ret = (RegSetValueExW(
         hkey,
         wszFlagsValue.as_ptr(),
         0,
         REG_DWORD,
         core::ptr::addr_of!((*credential).Flags) as *const BYTE,
         core::mem::size_of_val(&(*credential).Flags) as DWORD,
-    );
+    )) as u32;
     if ret != ERROR_SUCCESS {
         return ret;
     }
-    ret = RegSetValueExW(
+    ret = (RegSetValueExW(
         hkey,
         wszTypeValue.as_ptr(),
         0,
         REG_DWORD,
         core::ptr::addr_of!((*credential).Type) as *const BYTE,
         core::mem::size_of_val(&(*credential).Type) as DWORD,
-    );
+    )) as u32;
     if ret != ERROR_SUCCESS {
         return ret;
     }
-    ret = RegSetValueExW(
+    ret = (RegSetValueExW(
         hkey,
         core::ptr::null(),
         0,
         REG_SZ,
         (*credential).TargetName as LPVOID as *const BYTE,
         (core::mem::size_of::<WCHAR>() as DWORD) * ((strlenW((*credential).TargetName) + 1) as DWORD),
-    );
+    )) as u32;
     if ret != ERROR_SUCCESS {
         return ret;
     }
     if !(*credential).Comment.is_null() {
-        ret = RegSetValueExW(
+        ret = (RegSetValueExW(
             hkey,
             wszCommentValue.as_ptr(),
             0,
             REG_SZ,
             (*credential).Comment as LPVOID as *const BYTE,
             (core::mem::size_of::<WCHAR>() as DWORD) * ((strlenW((*credential).Comment) + 1) as DWORD),
-        );
+        )) as u32;
         if ret != ERROR_SUCCESS {
             return ret;
         }
     }
-    ret = RegSetValueExW(
+    ret = (RegSetValueExW(
         hkey,
         wszLastWrittenValue.as_ptr(),
         0,
         REG_BINARY,
         core::ptr::addr_of!(LastWritten) as LPVOID as *const BYTE,
         core::mem::size_of_val(&LastWritten) as DWORD,
-    );
+    )) as u32;
     if ret != ERROR_SUCCESS {
         return ret;
     }
-    ret = RegSetValueExW(
+    ret = (RegSetValueExW(
         hkey,
         wszPersistValue.as_ptr(),
         0,
         REG_DWORD,
         core::ptr::addr_of!((*credential).Persist) as *const BYTE,
         core::mem::size_of_val(&(*credential).Persist) as DWORD,
-    );
+    )) as u32;
     if ret != ERROR_SUCCESS {
         return ret;
     }
     if !(*credential).TargetAlias.is_null() {
-        ret = RegSetValueExW(
+        ret = (RegSetValueExW(
             hkey,
             wszTargetAliasValue.as_ptr(),
             0,
             REG_SZ,
             (*credential).TargetAlias as LPVOID as *const BYTE,
             (core::mem::size_of::<WCHAR>() as DWORD) * ((strlenW((*credential).TargetAlias) + 1) as DWORD),
-        );
+        )) as u32;
         if ret != ERROR_SUCCESS {
             return ret;
         }
     }
     if !(*credential).UserName.is_null() {
-        ret = RegSetValueExW(
+        ret = (RegSetValueExW(
             hkey,
             wszUserNameValue.as_ptr(),
             0,
             REG_SZ,
             (*credential).UserName as LPVOID as *const BYTE,
             (core::mem::size_of::<WCHAR>() as DWORD) * ((strlenW((*credential).UserName) + 1) as DWORD),
-        );
+        )) as u32;
         if ret != ERROR_SUCCESS {
             return ret;
         }
@@ -792,7 +793,7 @@ unsafe fn mac_write_credential(credential: *const CREDENTIALW, preserve_blob: BO
 }
 
 unsafe fn open_cred_mgr_key(hkey: *mut HKEY, open_for_write: BOOL) -> DWORD {
-    RegCreateKeyExW(
+    (RegCreateKeyExW(
         HKEY_CURRENT_USER,
         wszCredentialManagerKey.as_ptr(),
         0,
@@ -802,7 +803,7 @@ unsafe fn open_cred_mgr_key(hkey: *mut HKEY, open_for_write: BOOL) -> DWORD {
         core::ptr::null_mut(),
         hkey,
         core::ptr::null_mut(),
-    )
+    )) as u32
 }
 
 unsafe fn get_cred_mgr_encryption_key(mut hkeyMgr: HKEY, key_data: *mut u8) -> DWORD {
@@ -817,8 +818,8 @@ unsafe fn get_cred_mgr_encryption_key(mut hkeyMgr: HKEY, key_data: *mut u8) -> D
     memcpy(key_data as *mut _, my_key_data.as_ptr() as *const _, 8);
 
     count = 8;
-    ret = RegQueryValueExW(hkeyMgr, wszEncryptionKeyValue.as_ptr(), core::ptr::null_mut(),
-                           &mut r#type, key_data, &mut count);
+    ret = (RegQueryValueExW(hkeyMgr, wszEncryptionKeyValue.as_ptr(), core::ptr::null_mut(),
+                           &mut r#type, key_data, &mut count)) as u32;
     if ret == ERROR_SUCCESS {
         if r#type != REG_BINARY {
             return ERROR_REGISTRY_CORRUPT;
@@ -838,13 +839,13 @@ unsafe fn get_cred_mgr_encryption_key(mut hkeyMgr: HKEY, key_data: *mut u8) -> D
     value = RtlUniform(&mut seed);
     *(key_data.add(4) as *mut DWORD) = value;
 
-    ret = RegSetValueExW(hkeyMgr, wszEncryptionKeyValue.as_ptr(), 0, REG_BINARY,
-                         key_data, 8);
+    ret = (RegSetValueExW(hkeyMgr, wszEncryptionKeyValue.as_ptr(), 0, REG_BINARY,
+                         key_data, 8)) as u32;
     if ret == ERROR_ACCESS_DENIED {
         ret = open_cred_mgr_key(&mut hkeyMgr, 1);
         if ret == ERROR_SUCCESS {
-            ret = RegSetValueExW(hkeyMgr, wszEncryptionKeyValue.as_ptr(), 0, REG_BINARY,
-                                 key_data, 8);
+            ret = (RegSetValueExW(hkeyMgr, wszEncryptionKeyValue.as_ptr(), 0, REG_BINARY,
+                                 key_data, 8)) as u32;
             RegCloseKey(hkeyMgr);
         }
     }
@@ -952,7 +953,7 @@ unsafe fn registry_enumerate_credentials(
     let mut ret: u32;
     loop {
         let mut hkeyCred: HKEY = core::ptr::null_mut();
-        ret = RegEnumKeyW(hkeyMgr, i, target_name, target_name_len + 1);
+        ret = (RegEnumKeyW(hkeyMgr, i, target_name, target_name_len + 1)) as u32;
         if ret == ERROR_NO_MORE_ITEMS {
             ret = ERROR_SUCCESS;
             break;
@@ -961,13 +962,13 @@ unsafe fn registry_enumerate_credentials(
             continue;
         }
         TRACE!(b"target_name = %s\n\0".as_ptr() as *const i8, debugstr_w(target_name));
-        ret = RegOpenKeyExW(
+        ret = (RegOpenKeyExW(
             hkeyMgr,
             target_name,
             0,
             KEY_QUERY_VALUE,
             &mut hkeyCred,
-        );
+        )) as u32;
         if ret != ERROR_SUCCESS {
             i = i.wrapping_add(1);
             continue;
@@ -1425,7 +1426,7 @@ pub unsafe extern "system" fn CredDeleteW(TargetName: LPCWSTR, Type: DWORD, Flag
     }
 
     key_name = get_key_name_for_target(TargetName, Type);
-    ret = RegDeleteKeyW(hkeyMgr, key_name);
+    ret = (RegDeleteKeyW(hkeyMgr, key_name)) as u32;
     heap_free(key_name as *mut _);
     RegCloseKey(hkeyMgr);
     if ret != ERROR_SUCCESS {
@@ -1538,7 +1539,7 @@ pub unsafe extern "system" fn CredEnumerateW(
         return 0;
     }
 
-    ret = RegQueryInfoKeyW(
+    ret = (RegQueryInfoKeyW(
         hkeyMgr,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
@@ -1551,7 +1552,7 @@ pub unsafe extern "system" fn CredEnumerateW(
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         core::ptr::null_mut(),
-    );
+    )) as u32;
     if ret != ERROR_SUCCESS {
         RegCloseKey(hkeyMgr);
         SetLastError(ret);
@@ -1712,7 +1713,7 @@ pub unsafe extern "system" fn CredReadW(
     }
 
     key_name = get_key_name_for_target(TargetName, Type);
-    ret = RegOpenKeyExW(hkeyMgr, key_name, 0, KEY_QUERY_VALUE, &mut hkeyCred);
+    ret = (RegOpenKeyExW(hkeyMgr, key_name, 0, KEY_QUERY_VALUE, &mut hkeyCred)) as u32;
     heap_free(key_name as LPVOID);
     if ret != ERROR_SUCCESS {
         SetLastError(ERROR_NOT_FOUND);
@@ -2016,7 +2017,7 @@ pub unsafe extern "system" fn CredWriteW(Credential: PCREDENTIALW, Flags: DWORD)
     }
 
     key_name = get_key_name_for_target((*Credential).TargetName, (*Credential).Type);
-    ret = RegCreateKeyExW(
+    ret = (RegCreateKeyExW(
         hkeyMgr,
         key_name,
         0,
@@ -2026,7 +2027,7 @@ pub unsafe extern "system" fn CredWriteW(Credential: PCREDENTIALW, Flags: DWORD)
         core::ptr::null_mut(),
         &mut hkeyCred,
         core::ptr::null_mut(),
-    );
+    )) as u32;
     heap_free(key_name as LPVOID);
     if ret != ERROR_SUCCESS {
         TRACE!(b"credentials for target name %s not found\n\0".as_ptr() as *const i8, debugstr_w((*Credential).TargetName));

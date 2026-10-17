@@ -7,11 +7,9 @@ spec2def(dcomp.dll dcomp.spec ADD_IMPORTLIB)
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # device.c  # replaced by Rust (sdk/lib/rust/dcomp-rust/src/dcomp/device.rs)
-set(DCOMP_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine_dll_canunload.a)
 add_cargo_module(dcomp dcomp-cargo dcomp.dll
     KIND win32dll
     BODY_CRATE dcomp-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS ${DCOMP_REUSED} psdk)
+    EXTRA_DEPENDS psdk)
 add_dependencies(dcomp psdk)

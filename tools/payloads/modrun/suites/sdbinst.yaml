@@ -1,0 +1,29 @@
+# sdbinst (base/applications/sdbinst -> sdbinst-rust, batch A). The shipped Rust diffed against
+# the pre-flip C. Without a database path the C went on with sdbPath NULL: `-u` alone reached
+# SdbUninstall's wcslen(NULL), and no arguments at all handed NULL to SdbOpenDatabase after the
+# help. The Rust refuses (ERROR_INVALID_PARAMETER), so those cases run it alone.
+module: sdbinst
+variants:
+  c: '%SystemRoot%\bin\modrun\sdbinst_c.exe'
+  rust: '%SystemRoot%\system32\sdbinst.exe'
+ninja:
+- sdbinst_c
+stage:
+- src: build-{arch}/base/applications/sdbinst/sdbinst_c.exe
+  dest: bin/modrun/sdbinst_c.exe
+cases:
+- id: help
+  args: '-?'
+  expect: ['Using: sdbinst']
+- id: missing_database
+  args: 'X:\nosuch.sdb'
+  expect: ["Can't open database"]
+- id: uninstall_without_path
+  variants:
+    rust: '%SystemRoot%\system32\sdbinst.exe'
+  args: '-u'
+  expect: ['Using: sdbinst']
+- id: no_arguments
+  variants:
+    rust: '%SystemRoot%\system32\sdbinst.exe'
+  expect: ['Using: sdbinst']

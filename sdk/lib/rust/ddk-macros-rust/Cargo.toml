@@ -1,0 +1,18 @@
+# ddk-macros-rust -- the DDK header macros (ndis.h, wdm.h, mmfuncs.h, ntdef.h) that
+# `rustconv port macros` cannot lower: per-arch expansions and statement blocks.
+# See src/lib.rs.
+[package]
+name = "ddk-macros-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+
+[lib]
+# rlib of macros only: they expand in the consumer, against ITS island's types, and call
+# ntkrnl-sys, which every kernel crate already depends on.
+crate-type = ["rlib"]
+
+[dependencies]

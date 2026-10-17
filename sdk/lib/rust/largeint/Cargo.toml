@@ -5,3 +5,7 @@ edition = "2021"
 
 [lib]
 crate-type = ["rlib"]
+
+[lints.rust]
+# `kani` is the Kani model checker's cfg (`cargo kani` sets it); declared so it is expected.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
