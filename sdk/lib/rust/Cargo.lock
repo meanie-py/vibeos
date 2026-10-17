@@ -6564,6 +6564,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "user32_vista-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "user32_vista-rust"
 version = "0.1.0"
 dependencies = [

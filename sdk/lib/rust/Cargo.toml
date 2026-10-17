@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "user32_vista-cargo",
     "wdmaud-cargo",
     "sysaudio-cargo",
     "sndblst-cargo",
