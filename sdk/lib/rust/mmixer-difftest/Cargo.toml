@@ -1,0 +1,13 @@
+# Differential harness: mmixer's shipping Rust (mmixer-rust) against the genuine
+# sdk/lib/drivers/sound/mmixer C, both compiled for the host. Host crate (std, `cargo test`,
+# no QEMU).
+[package]
+name = "mmixer-difftest"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[build-dependencies]
+cc = "1"
+syn = { version = "2", features = ["full"] }
+quote = "1"

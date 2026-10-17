@@ -582,6 +582,13 @@ pub unsafe extern "C" fn MMixerAddPinIndexToArray(
 ) {
     let mut Index: ULONG = 0 as ULONG;
     while Index < MaxPins {
+        // Divergence from topology.c: an id already in the sorted set is not inserted again.
+        // The C has no equality case, so a pin or node reached along two paths was listed
+        // twice and counted twice; with the array full the count then passed MaxPins and
+        // callers read OutPins past its end.
+        if *OutPins.offset(Index as isize) == PinId {
+            return;
+        }
         if *OutPins.offset(Index as isize) != MAXULONG as ULONG {
             if *OutPins.offset(Index as isize) > PinId {
                 /* shift entries up */
@@ -696,15 +703,15 @@ pub unsafe extern "C" fn MMixerGetUpOrDownStreamPins(
     /* now visit all connected nodes */
     Index = 0;
     while Index < TopologyNodesCount {
-        /* recursively visit them */
-        MMixerGetUpOrDownStreamPins(
-            MixerContext,
-            Topology,
-            *TopologyNodes.offset(Index as isize),
-            bUpStream,
-            OutPinCount,
-            OutPins,
-        );
+        // Divergence from topology.c: a node already walked is not walked again. The C
+        // recurses into every connected node and only ASSERTs it is unvisited, so two paths
+        // converging on a node re-walked it (and its pins); ASSERT! compiles out here, and a
+        // cycle would have recursed until the stack overflowed.
+        let Next = *TopologyNodes.offset(Index as isize);
+        if (*Next).Visited == (FALSE as u32) {
+            /* recursively visit them */
+            MMixerGetUpOrDownStreamPins(MixerContext, Topology, Next, bUpStream, OutPinCount, OutPins);
+        }
 
         Index += 1;
     }
@@ -786,11 +793,15 @@ pub unsafe extern "C" fn MMixerGetUpOrDownstreamNodes(
         /* get node */
         Node = *TopologyNodes.offset(Index as isize);
 
-        /* node should not have been visited */
-        ASSERT!((*Node).Visited == (FALSE as u32));
-
-        /* mark node as visited */
+        // Divergence from topology.c: it marks the PARENT (`TopologyNode->Visited`) here, so
+        // the guard it ASSERTs on each child was never set, and a node reached along two
+        // paths was listed and walked twice. Mark the child, and skip one already walked.
+        if (*Node).Visited != (FALSE as u32) {
+            Index += 1;
+            continue;
+        }
         (*TopologyNode).Visited = (TRUE as u32);
+        (*Node).Visited = (TRUE as u32);
 
         /* add them to node array */
         MMixerAddPinIndexToArray(

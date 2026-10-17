@@ -595,3 +595,37 @@ def test_a_kernel_crate_never_takes_the_console_crate(tmp_path):
     assert "conutils" not in (ws / "kern" / "Cargo.toml").read_text()
     pr.refresh_shared_crates(ws / "user", ws)
     assert "pub use conutils_h::{ConPuts};" in (ws / "user" / "src" / "prelude.rs").read_text()
+
+
+def test_the_ddk_macros_go_to_a_kernel_crate_that_calls_them_and_nowhere_else(tmp_path):
+    # ddk-macros-rust expands to ntkrnl-sys calls: a user-mode crate must never take it, and a
+    # kernel crate takes it only when it calls one of its names (it is opt-in).
+    ws = tmp_path / "ws"
+    (ws / "ddk-macros-rust" / "src").mkdir(parents=True)
+    (ws / "ddk-macros-rust" / "src" / "lib.rs").write_text(
+        "#[macro_export]\nmacro_rules! NdisAcquireSpinLock { ($l:expr) => {} }\n"
+    )
+    for name, dep, body in (
+        ("caller", "ntkrnl-sys", "fn f() { NdisAcquireSpinLock(l); }\n"),
+        ("idle", "ntkrnl-sys", "fn f() {}\n"),
+        ("user", "ntdll-sys", "fn f() { NdisAcquireSpinLock(l); }\n"),
+    ):
+        crate = ws / name
+        (crate / "src").mkdir(parents=True)
+        (crate / "src" / "prelude.rs").write_text("// x\n")
+        (crate / "src" / "m.rs").write_text(body)
+        (crate / "Cargo.toml").write_text(f'[dependencies]\n{dep} = {{ path = "../{dep}" }}\n')
+    for name in ("caller", "idle", "user"):
+        pr.refresh_shared_crates(ws / name, ws)
+    assert "ddk_macros_rust::{NdisAcquireSpinLock}" in (ws / "caller/src/prelude.rs").read_text()
+    assert "ddk_macros" not in (ws / "idle/src/prelude.rs").read_text()
+    assert "ddk_macros" not in (ws / "user/src/prelude.rs").read_text()
+
+
+def test_a_delay_imported_library_is_an_export_authority():
+    # reactos.exe takes setuplib with add_delay_importlibs; SelectPartition is its export.
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[3]
+    names = pr.module_exports(repo / "base/setup/reactos", repo)
+    assert names is not None and "SelectPartition" in names
