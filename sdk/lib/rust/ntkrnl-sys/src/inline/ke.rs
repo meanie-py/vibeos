@@ -788,7 +788,7 @@ pub unsafe fn KeLeaveGuardedRegion() {
 /// KeInitializeSpinLock — set spin lock to zero.
 #[inline]
 pub unsafe fn KeInitializeSpinLock(spin_lock: *mut ULONG_PTR) {
-    *spin_lock = 0;
+    set_spin_lock_word(spin_lock, 0);
 }
 
 // ============================================================================
