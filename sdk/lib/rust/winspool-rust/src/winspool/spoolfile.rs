@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use ntdll_sys::seh::rpc_try;
 use core::ffi::c_void;
 
 #[no_mangle]
@@ -46,12 +47,12 @@ pub unsafe extern "system" fn GetSpoolFileHandle(mut hPrinter: HANDLE) -> HANDLE
             FileInfoContainer.Level = 1 as DWORD;
             FileInfoContainer.FileInfo.pFileInfo1 = &raw mut wsplfi;
             // Do the RPC call (RpcTryExcept body).
-            dwErrorCode = _RpcGetSpoolFileInfo2(
+            dwErrorCode = rpc_try(|| _RpcGetSpoolFileInfo2(
                 &raw mut (*pHandle).hPrinter as WINSPOOL_PRINTER_HANDLE,
                 cpid,
                 1 as DWORD,
                 &raw mut FileInfoContainer,
-            );
+            )).unwrap_or_else(|code| code as _);
             // RpcExcept(EXCEPTION_EXECUTE_HANDLER) body.
             if _SEH2_Volatile0 != 0 || 0 as ::core::ffi::c_int != 0 && 1 as ::core::ffi::c_int != 0
             {
@@ -112,13 +113,13 @@ pub unsafe extern "system" fn CommitSpoolData(hPrinter: HANDLE, hSpoolFile: HAND
 
         // Do the RPC call.
         // RpcTryExcept
-        dwErrorCode = _RpcCommitSpoolData2(
+        dwErrorCode = rpc_try(|| _RpcCommitSpoolData2(
             core::ptr::addr_of_mut!((*pHandle).hPrinter) as WINSPOOL_PRINTER_HANDLE,
             cpid,
             cbCommit,
             1 as DWORD,
             core::ptr::addr_of_mut!(FileInfoContainer),
-        );
+        )).unwrap_or_else(|code| code as _);
         // RpcExcept(EXCEPTION_EXECUTE_HANDLER)
         if _SEH2_Volatile0 != 0 {
             dwErrorCode = RpcExceptionCode!() as DWORD;
@@ -169,9 +170,9 @@ pub unsafe extern "system" fn CloseSpoolFileHandle(hPrinter: HANDLE, hSpoolFile:
         (*pHandle).hSpoolFileHandle = INVALID_HANDLE_VALUE;
 
         // Do the RPC call.
-        dwErrorCode = _RpcCloseSpoolFileHandle(
+        dwErrorCode = rpc_try(|| _RpcCloseSpoolFileHandle(
             core::ptr::addr_of_mut!((*pHandle).hPrinter) as WINSPOOL_PRINTER_HANDLE,
-        );
+        )).unwrap_or_else(|code| code as _);
         if _SEH2_Volatile0 != 0 {
             dwErrorCode = RpcExceptionCode!() as DWORD;
             if (*__wine_dbch___default).flags as ::core::ffi::c_int

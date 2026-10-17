@@ -2158,5 +2158,11 @@ body) reached from csrss. The sweep after it was clean and identical to the firs
    ole32-rust's Running Object Table (ring/moniker.rs) called all seven Irot RPC stubs
    unguarded on EVERY arch, which also made its start_rpcss() retry loops dead code. They now
    run under the C's rpc_filter through ntdll_sys::seh::try_except (ole32-rust gains ntdll-sys).
+   A sweep with `tools/rpc_try_wrap.py` over every C file holding RpcTryExcept found
+   winspool-rust with NONE of its ~50 RPC calls guarded (the tool wrapped 47; SpoolerInit
+   and the port thread by hand) and advapi32's SeclCreateProcessWithLogonW. Not converted:
+   winspool utils.rs's `_SEH2_TRY` over a handle deref (a hardware-fault guard, not RPC),
+   and the cosmetic dead `if <never> { RpcExceptionCode!() }` branches the tool's neighbours
+   left in jobs/monitors/spoolfile/forms.
 2. HidPDescription's preparsed-data layout, only if something needs Windows' bytes.
 3. The WS03-column rows that move at the version flip (above).
