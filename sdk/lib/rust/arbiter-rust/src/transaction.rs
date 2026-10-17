@@ -168,10 +168,10 @@ unsafe extern "C" fn ArbpTestAllocation(
     Arbiter: PARBITER_INSTANCE,
     ArbitrationList: PLIST_ENTRY,
 ) -> NTSTATUS {
-    let mut ListEntry: PLIST_ENTRY = core::ptr::null_mut();
+    let mut ListEntry: PLIST_ENTRY;
     let mut PreviousOwner: PVOID = core::ptr::null_mut();
     let mut EntryCount: ULONG = 0;
-    let mut Status: NTSTATUS = 0;
+    let mut Status: NTSTATUS;
 
     PAGED_CODE!();
 
@@ -343,8 +343,8 @@ unsafe extern "C" fn ArbpRetestAllocation(
     // Failure:
     if (State.Flags as ::core::ffi::c_int) & (ARBITER_STATE_FLAG_WORKSPACE as i32) != 0 {
         ExFreePoolWithTag(State.WorkSpace as PVOID, TAG_ARBITER);
-        State.WorkSpace = 0;
-        State.Flags = ((State.Flags as ::core::ffi::c_int) & (!ARBITER_STATE_FLAG_WORKSPACE) as i32) as UINT16;
+        // The C also clears WorkSpace and the flag here; State is a local that is never read
+        // again, so those resets are dropped.
     }
     RtlFreeRangeList((*Arbiter).PossibleAllocation);
     RtlInitializeRangeList((*Arbiter).PossibleAllocation);
@@ -483,11 +483,11 @@ unsafe extern "C" fn ArbpQueryConflict(
     let mut State: ARBITER_ALLOCATION_STATE = core::mem::zeroed();
     let mut Entry: ARBITER_LIST_ENTRY = core::mem::zeroed();
     let mut Alternative: ARBITER_ALTERNATIVE = core::mem::zeroed();
-    let mut List: PARBITER_CONFLICT_INFO = core::ptr::null_mut();
+    let mut List: PARBITER_CONFLICT_INFO;
     let mut Count: ULONG = 0;
     let mut Capacity: ULONG = 10;
     let mut ResultLength: ULONG = 0;
-    let mut Status: NTSTATUS = 0;
+    let mut Status: NTSTATUS;
 
     *ConflictCount = 0;
     *Conflicts = core::ptr::null_mut();
@@ -524,7 +524,6 @@ unsafe extern "C" fn ArbpQueryConflict(
         State.Alternatives = core::ptr::addr_of_mut!(Alternative) as PARBITER_ALTERNATIVE;
         State.CurrentAlternative = State.Alternatives;
         State.AlternativeCount = 1;
-        State.Entry = core::ptr::addr_of_mut!(Entry) as PARBITER_LIST_ENTRY;
         Entry.RequestSource = ArbiterRequestPnpEnumerated;
         Entry.PhysicalDeviceObject = PhysicalDeviceObject;
 
@@ -557,6 +556,11 @@ unsafe extern "C" fn ArbpQueryConflict(
             break 'body;
         }
 
+        // The C sets `State.Entry = &Entry` before filling Entry in. Here the pointer is taken
+        // once Entry is complete: writing the local directly after its raw address is out
+        // would invalidate that pointer under Stacked Borrows, and the writes looked dead to
+        // rustc. Nothing reads State.Entry before this call.
+        State.Entry = core::ptr::addr_of_mut!(Entry) as PARBITER_LIST_ENTRY;
         Status = (*Arbiter)
             .PreprocessEntry
             .unwrap_unchecked()(
@@ -642,8 +646,8 @@ unsafe extern "C" fn ArbpQueryConflict(
     /* Cleanup */
     if (State.Flags & (ARBITER_STATE_FLAG_WORKSPACE as UINT16)) != 0 {
         ExFreePoolWithTag(State.WorkSpace as PVOID, TAG_ARBITER);
-        State.WorkSpace = 0;
-        State.Flags &= !(ARBITER_STATE_FLAG_WORKSPACE as UINT16);
+        // The C also clears WorkSpace and the flag here; State is a local that is never read
+        // again, so those resets are dropped.
     }
     RtlFreeRangeList((*Arbiter).PossibleAllocation);
     RtlInitializeRangeList((*Arbiter).PossibleAllocation);

@@ -126,7 +126,6 @@ pub unsafe extern "C" fn ViewModeToStyle(ListViewMode: LISTVIEW_MODE) -> DWORD {
         // default: and case ListView_Detail: share this return
         return LVS_REPORT;
     }
-    return 0;
 }
 #[no_mangle]
 pub unsafe extern "C" fn ShowCmdToString(nShowCmd: i32) -> LPWSTR {

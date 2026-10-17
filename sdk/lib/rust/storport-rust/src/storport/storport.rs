@@ -412,8 +412,6 @@ unsafe extern "system" fn PortDispatchScsi(mut DeviceObject: PDEVICE_OBJECT, mut
             return STATUS_UNSUCCESSFUL;
         }
     }
-
-    return STATUS_SUCCESS;
 }
 
 unsafe extern "system" fn PortDispatchSystemControl(

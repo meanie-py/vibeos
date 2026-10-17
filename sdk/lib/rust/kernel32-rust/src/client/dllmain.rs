@@ -152,8 +152,8 @@ pub unsafe extern "system" fn BaseCreateThreadPoolThread(
 }
 #[no_mangle]
 pub unsafe extern "system" fn BaseExitThreadPoolThread(ExitStatus: NTSTATUS) -> NTSTATUS {
+    // ExitThread does not return (`-> !`); the C's trailing `return 0` is unreachable.
     ExitThread(ExitStatus as u32);
-    return 0i32;
 }
 
 /// Toggle for the [K32DBG] PROCESS_ATTACH step markers below. Off by default;
