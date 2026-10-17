@@ -14,6 +14,7 @@ use ntkrnl_sys::hal_ddk::{
 
 const STATUS_SUCCESS: NTSTATUS = 0;
 const STATUS_NOT_IMPLEMENTED: NTSTATUS = 0xC0000002u32 as i32;
+const STATUS_UNSUCCESSFUL: NTSTATUS = 0xC0000001u32 as i32;
 const STATUS_INFO_LENGTH_MISMATCH: NTSTATUS = 0xC0000004u32 as i32;
 
 /// AMLI bad-I/O-port table entry.  Mirrors the C `HAL_AMLI_BAD_IO_-
@@ -64,10 +65,17 @@ static HAL_AMLI_BAD_IO_ADDRESS_LIST: [HalAmliBadIoAddress; 19] = [
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HaliHandlePCIConfigSpaceAccess(
     _IsRead: BOOLEAN,
-    _Port: ULONG,
+    Port: ULONG,
     _Length: ULONG,
     _Buffer: PULONG,
 ) -> NTSTATUS {
+    // A port outside the range this handler claims (0xCF8, 8 ports) is refused with
+    // STATUS_UNSUCCESSFUL and the buffer left alone, as Windows does (HalSystemInfo.c:143
+    // calls it one below the range). Emulating AML's own config-space cycles inside the
+    // range is still not implemented, as in the C.
+    if !(0x0CF8..0x0CF8 + 8).contains(&Port) {
+        return STATUS_UNSUCCESSFUL;
+    }
     STATUS_NOT_IMPLEMENTED
 }
 

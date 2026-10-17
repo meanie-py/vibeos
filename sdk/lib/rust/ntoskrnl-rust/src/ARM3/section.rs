@@ -1876,8 +1876,13 @@ pub unsafe extern "system" fn MmMapViewOfArm3Section(
     let section = section_object as *mut _SECTION;
     let control_area = (*(*section).Segment).ControlArea;
 
-    // FIXME
+    // FIXME: reserved views are not implemented. A section with no file cannot be reserved
+    // at all, which MiMapViewOfDataSection says (INVALID_PARAMETER_9) but this check, first
+    // in the C, hid behind NOT_IMPLEMENTED (ZwMapViewOfSection.c:221).
     if (allocation_type & MEM_RESERVE) != 0 {
+        if (*control_area).FilePointer.is_null() {
+            return STATUS_INVALID_PARAMETER_9;
+        }
         return STATUS_NOT_IMPLEMENTED;
     }
 

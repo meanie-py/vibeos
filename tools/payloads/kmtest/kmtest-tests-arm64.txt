@@ -130,6 +130,7 @@ MmSection
 # KUSER_SHARED_DATA from its start, so PF_PAE_ENABLED read InterruptTime noise. Probe OK on
 # all arches, then two full sweeps agreed (row banked in kmtest.txt).
 MmReservedMapping
+MmReservedMappingFixed
 NpfsConnect
 NpfsCreate
 # QUARANTINED 2026-07-10 (amd64 sweep 5): BUGCHECK 0x19 BAD_POOL_HEADER subcode 5
