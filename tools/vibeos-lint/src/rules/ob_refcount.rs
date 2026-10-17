@@ -69,13 +69,17 @@ fn walk<'a>(n: Node<'a>, v: &mut Vec<Node<'a>>) {
     }
 }
 fn functions<'a>(t: &'a Tree) -> Vec<Node<'a>> {
-    let mut v = Vec::new();
-    walk(t.root_node(), &mut v);
-    let mut out: Vec<_> = v
-        .into_iter()
-        .filter(|n| n.kind() == "function_item" && n.child_by_field_name("body").is_some())
-        .collect();
-    out.sort_by_key(|n| n.start_byte());
+    fn visit<'a>(n: Node<'a>, out: &mut Vec<Node<'a>>) {
+        if n.kind() == "function_item" && n.child_by_field_name("body").is_some() {
+            out.push(n);
+        }
+        let mut cursor = n.walk();
+        for child in n.children(&mut cursor) {
+            visit(child, out);
+        }
+    }
+    let mut out = Vec::new();
+    visit(t.root_node(), &mut out);
     out
 }
 fn text<'a>(n: Node<'_>, s: &'a str) -> &'a str {
@@ -113,8 +117,7 @@ fn identifiers(s: &str) -> HashSet<String> {
         .map(str::to_owned)
         .collect()
 }
-fn arg_ids(a: Option<Node<'_>>, s: &str, idx: usize) -> HashSet<String> {
-    let a = args(a);
+fn arg_ids_from(a: &[Node<'_>], s: &str, idx: usize) -> HashSet<String> {
     if idx >= a.len() {
         return HashSet::new();
     }
@@ -220,11 +223,9 @@ fn enclosing_guard<'a>(n: Node<'a>, body: Node<'a>) -> Option<Node<'a>> {
 fn within(n: Node<'_>, c: Option<Node<'_>>) -> bool {
     c.is_some_and(|x| x.start_byte() <= n.start_byte() && n.end_byte() <= x.end_byte())
 }
-fn scan_body(body: Node<'_>, s: &str) -> Vec<(usize, String, String)> {
-    let lines: Vec<_> = s.split('\n').collect();
+fn scan_body(body: Node<'_>, s: &str, lines: &[&str]) -> Vec<(usize, String, String)> {
     let mut all = Vec::new();
     walk(body, &mut all);
-    all.sort_by_key(|x| (x.start_byte(), usize::MAX - x.end_byte()));
     let mut held = HashMap::<String, (Option<String>, Option<Node<'_>>)>::new();
     let mut alias = HashMap::<String, String>::new();
     let mut findings = Vec::new();
@@ -232,6 +233,7 @@ fn scan_body(body: Node<'_>, s: &str) -> Vec<(usize, String, String)> {
     let canon = |v: &str, alias: &HashMap<String, String>| {
         alias.get(v).cloned().unwrap_or_else(|| v.into())
     };
+    // AST preorder is exactly (start_byte asc, end_byte desc), so no per-body sort.
     for n in all {
         let row = n.start_position().row;
         let suppressed = lines.get(row).is_some_and(|x| line_suppressed(x));
@@ -260,15 +262,16 @@ fn scan_body(body: Node<'_>, s: &str) -> Vec<(usize, String, String)> {
             continue;
         }
         if let Some((name, a)) = call(n, s) {
+            let call_args = args(a);
             if let Some((_, idx)) = OUT.iter().find(|(x, _)| *x == name) {
-                let found = arg_ids(a, s, *idx);
+                let found = arg_ids_from(&call_args, s, *idx);
                 let status = bound(n, s);
                 let guard = enclosing_guard(n, body);
                 if found.len() == 1 {
                     held.insert(found.into_iter().next().unwrap(), (status, guard));
                 }
             } else if ACQ.contains(&name.as_str()) {
-                let found = arg_ids(a, s, 0);
+                let found = arg_ids_from(&call_args, s, 0);
                 let status = if matches!(
                     name.as_str(),
                     "ObReferenceObjectByPointer" | "ObReferenceObjectSafe"
@@ -286,7 +289,7 @@ fn scan_body(body: Node<'_>, s: &str) -> Vec<(usize, String, String)> {
                     held.insert(found.into_iter().next().unwrap(), (status, guard));
                 }
             } else if DEREF.contains(&name.as_str()) {
-                for id in arg_ids(a, s, 0) {
+                for id in arg_ids_from(&call_args, s, 0) {
                     let c = canon(&id, &alias);
                     held.remove(&id);
                     held.remove(&c);
@@ -295,8 +298,8 @@ fn scan_body(body: Node<'_>, s: &str) -> Vec<(usize, String, String)> {
                 }
                 did_deref = true;
             } else if !held.is_empty() {
-                for i in 0..args(a).len() {
-                    for id in arg_ids(a, s, i) {
+                for i in 0..call_args.len() {
+                    for id in arg_ids_from(&call_args, s, i) {
                         let c = canon(&id, &alias);
                         if held.contains_key(&c) {
                             held.remove(&c);
@@ -367,9 +370,14 @@ fn scan_file(f: &SourceFile) -> Result<Vec<(usize, String, String)>, String> {
         return Ok(vec![]);
     }
     let t = f.rust_tree()?;
+    let lines: Vec<_> = f.text.split('\n').collect();
     let mut out = Vec::new();
-    for fnn in functions(t) {
-        out.extend(scan_body(fnn.child_by_field_name("body").unwrap(), &f.text));
+    for fnn in functions(&t) {
+        out.extend(scan_body(
+            fnn.child_by_field_name("body").unwrap(),
+            &f.text,
+            &lines,
+        ));
     }
     out.sort();
     Ok(out)
@@ -382,6 +390,22 @@ mod tests {
         SourceFile::new(PathBuf::from("sdk/lib/rust/test.rs"), s.into())
     }
     #[test]
+    fn preorder_is_the_legacy_node_sort_order() {
+        let source = "fn outer(){ if cond { inner(); } fn nested(){ leaf(); } }";
+        let tree = crate::syntax::parse(source).unwrap();
+        let mut preorder = Vec::new();
+        walk(tree.root_node(), &mut preorder);
+        let mut sorted = preorder.clone();
+        sorted.sort_by_key(|n| (n.start_byte(), usize::MAX - n.end_byte()));
+        let key = |nodes: &[Node<'_>]| {
+            nodes
+                .iter()
+                .map(|n| (n.start_byte(), n.end_byte(), n.kind()))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(key(&preorder), key(&sorted));
+    }
+    #[test]
     fn control_leak_and_balanced() {
         let bad=f("pub unsafe fn leaky(cond:bool){ObReferenceObject(obj);if cond{return;}ObDereferenceObject(obj);}");
         let good = f("pub unsafe fn good(){ObReferenceObject(obj);ObDereferenceObject(obj);}");
@@ -392,6 +416,13 @@ mod tests {
     fn fixed_argument_inline_comment_is_not_misread() {
         let src="pub unsafe fn good(h:HANDLE){let mut fo=ptr::null_mut();let status=ObReferenceObjectByHandle(h,0,IoFileObjectType as *mut _,1,/* UserMode */ &mut fo as *mut *mut FILE_OBJECT as *mut PVOID,null_mut());if !NT_SUCCESS(status){return;}ObDereferenceObject(fo as *mut _);}";
         assert!(scan_file(&f(src)).unwrap().is_empty());
+    }
+    #[test]
+    fn preorder_walk_preserves_nested_leak_paths_across_many_functions() {
+        let f=f("fn a(){ObReferenceObject(x);if cond{return;}ObDereferenceObject(x); }\nfn b(){ObReferenceObject(y);ObDereferenceObject(y);}");
+        let found = scan_file(&f).unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].1, "OBREF_LEAK_RETURN");
     }
     #[test]
     fn control_output() {

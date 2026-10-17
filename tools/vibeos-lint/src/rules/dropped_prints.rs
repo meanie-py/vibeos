@@ -345,7 +345,7 @@ fn print_facts(f: &SourceFile) -> Result<Vec<(String, String, String, String)>, 
         return Ok(vec![]);
     }
     let tree = f.rust_tree()?;
-    let (src, c) = regions(&f.text, tree);
+    let (src, c) = regions(&f.text, &tree);
     let nodes = {
         let mut v = Vec::new();
         walk(tree.root_node(), &mut v);

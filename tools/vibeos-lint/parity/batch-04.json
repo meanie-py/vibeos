@@ -1,0 +1,527 @@
+{
+  "method": "Exact sorted unique finding-line counts and SHA256, no final LF; original registry argv/streams and imported helpers replayed from oracle revision; persistent fact caches disabled. Current report combines full run with targeted reruns after fixes; older report combines 26-rule run and inline-constant rerun. Component wall times are separate, under concurrent workload, not a combined performance benchmark.",
+  "reports": [
+    {
+      "oracle_revision": "e5ffbfc1e578b0ce342a64a12a8bfbb6817a64f1",
+      "source_revision": "8a84e1c6d1679591868f0f1bd0c4b2b8ea0fe22a",
+      "rules": {
+        "scan_arg_side_effects": {
+          "python": 5,
+          "rust": 5,
+          "python_seconds": 21.39172667899402,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "85cce9aec78d6e634b78eda6c356c434a2c8543a44f395a29eaf6f581835f977",
+          "rust_sha256": "85cce9aec78d6e634b78eda6c356c434a2c8543a44f395a29eaf6f581835f977"
+        },
+        "scan_assert_polarity": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 7.06012084899703,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_case_bitor_pattern": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 33.22358474301291,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_octal_literals": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 83.98990770700038,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_raw_user_access": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 43.032453163992614,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_safe_probe_deref": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 7.54651096498128,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_doc_sections": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 0.2236544449988287,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_orphan_modules": {
+          "python": 6,
+          "rust": 6,
+          "python_seconds": 84.55699148299755,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "d815854c583e5e9c0f56ba62888ed4a257c889653db85c3bd37d159b26ba6642",
+          "rust_sha256": "d815854c583e5e9c0f56ba62888ed4a257c889653db85c3bd37d159b26ba6642"
+        },
+        "scan_pack_drift": {
+          "python": 3,
+          "rust": 3,
+          "python_seconds": 4.739976920973277,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "4b1ad18f085e776756b1ceb73537f9cddc02f202cf013e427b2da567c15c7b2c",
+          "rust_sha256": "4b1ad18f085e776756b1ceb73537f9cddc02f202cf013e427b2da567c15c7b2c"
+        },
+        "scan_bool_width": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 26.71046935999766,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_bugcheck_stubs": {
+          "python": 3,
+          "rust": 3,
+          "python_seconds": 5.0842969360237475,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "6ef91b90ba6cd2a40f666836fa1b9b315f7ca8adcdcc4792aeeeec0989d12118",
+          "rust_sha256": "6ef91b90ba6cd2a40f666836fa1b9b315f7ca8adcdcc4792aeeeec0989d12118"
+        },
+        "scan_cc_mismatch": {
+          "python": 14,
+          "rust": 14,
+          "python_seconds": 214.05121699601295,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "898462f3af98eff402f1cb9785a608fb214e6e7b4acde1c9dcd0e2f6e99cd98b",
+          "rust_sha256": "898462f3af98eff402f1cb9785a608fb214e6e7b4acde1c9dcd0e2f6e99cd98b"
+        },
+        "scan_dropped_asserts": {
+          "python": 89,
+          "rust": 89,
+          "python_seconds": 31.888677098002518,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "bd058c2cc33569aec75739cedc7c3f30f838331cec680f59aa8960c81b8a7964",
+          "rust_sha256": "bd058c2cc33569aec75739cedc7c3f30f838331cec680f59aa8960c81b8a7964"
+        },
+        "scan_dropped_prints": {
+          "python": 1427,
+          "rust": 1427,
+          "python_seconds": 114.08185609499924,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "6a89ba211eb4406c947629bb4a9fee88cb9cfe0fa7b594c33bdd9159865ad1a3",
+          "rust_sha256": "6a89ba211eb4406c947629bb4a9fee88cb9cfe0fa7b594c33bdd9159865ad1a3"
+        },
+        "scan_dropped_probes": {
+          "python": 2,
+          "rust": 2,
+          "python_seconds": 23.1797443839896,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "283e9b1fa65c7035fc83d496032fb3012e4375d444dd1d514eb761b5097edf7a",
+          "rust_sha256": "283e9b1fa65c7035fc83d496032fb3012e4375d444dd1d514eb761b5097edf7a"
+        },
+        "scan_dropped_seh_pairs": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 9.362476686015725,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_extern_static_width": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 17.2440818589821,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_import_cc": {
+          "python": 6,
+          "rust": 6,
+          "python_seconds": 242.68729133199668,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "353860f8b19d93a68e15e5c57983ee3f8f95cb218dec834e50dc7a2413ba2184",
+          "rust_sha256": "353860f8b19d93a68e15e5c57983ee3f8f95cb218dec834e50dc7a2413ba2184"
+        },
+        "scan_macro_fn_shadow": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 119.59532686101738,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_nightly_surface": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 12.355988370982232,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_rawdylib_linkname": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 5.852920714998618,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_res_named_types": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 0.19827750697731972,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_type_alias_contradictions": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 62.505140502995346,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_varargs_spec_arity": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 50.93396283700713,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_wide_literals": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 270.96448662600596,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_winerror_consts": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 32.926880868995795,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_inline_flag_literals": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 2.260852381994482,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "component_runs": [
+        {
+          "source_revision": "8a84e1c6d1679591868f0f1bd0c4b2b8ea0fe22a",
+          "rust_seconds": 238.8184584720002
+        },
+        {
+          "source_revision": "8a84e1c6d1679591868f0f1bd0c4b2b8ea0fe22a",
+          "rust_seconds": 153.15740274998825
+        },
+        {
+          "source_revision": "501a59b6c4c5de28a87d52bea6d561076223c149",
+          "rust_seconds": 12.627285173017299
+        }
+      ]
+    },
+    {
+      "oracle_revision": "e5ffbfc1e578b0ce342a64a12a8bfbb6817a64f1",
+      "source_revision": "cc53d01b091e365cccbc7e56f7a929963331d379",
+      "rules": {
+        "scan_arg_side_effects": {
+          "python": 5,
+          "rust": 5,
+          "python_seconds": 39.00088337302441,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "85cce9aec78d6e634b78eda6c356c434a2c8543a44f395a29eaf6f581835f977",
+          "rust_sha256": "85cce9aec78d6e634b78eda6c356c434a2c8543a44f395a29eaf6f581835f977"
+        },
+        "scan_assert_polarity": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 10.382495658006519,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_case_bitor_pattern": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 53.438452514004894,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_octal_literals": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 105.83626932799234,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_raw_user_access": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 48.14137112398748,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_safe_probe_deref": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 15.0062672230124,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_doc_sections": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 0.23724300501635298,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_orphan_modules": {
+          "python": 6,
+          "rust": 6,
+          "python_seconds": 109.47949209797662,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "d815854c583e5e9c0f56ba62888ed4a257c889653db85c3bd37d159b26ba6642",
+          "rust_sha256": "d815854c583e5e9c0f56ba62888ed4a257c889653db85c3bd37d159b26ba6642"
+        },
+        "scan_pack_drift": {
+          "python": 2,
+          "rust": 2,
+          "python_seconds": 5.917655403987737,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "95ecde509308d4d0b3d3dbdf29f1f4ebd33abac0dba5465eff5f8b52c24ee58d",
+          "rust_sha256": "95ecde509308d4d0b3d3dbdf29f1f4ebd33abac0dba5465eff5f8b52c24ee58d"
+        },
+        "scan_bool_width": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 75.88186167398817,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_bugcheck_stubs": {
+          "python": 3,
+          "rust": 3,
+          "python_seconds": 3.9085753170074895,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "6ef91b90ba6cd2a40f666836fa1b9b315f7ca8adcdcc4792aeeeec0989d12118",
+          "rust_sha256": "6ef91b90ba6cd2a40f666836fa1b9b315f7ca8adcdcc4792aeeeec0989d12118"
+        },
+        "scan_cc_mismatch": {
+          "python": 14,
+          "rust": 14,
+          "python_seconds": 176.3243852450105,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "898462f3af98eff402f1cb9785a608fb214e6e7b4acde1c9dcd0e2f6e99cd98b",
+          "rust_sha256": "898462f3af98eff402f1cb9785a608fb214e6e7b4acde1c9dcd0e2f6e99cd98b"
+        },
+        "scan_dropped_asserts": {
+          "python": 89,
+          "rust": 89,
+          "python_seconds": 58.78581388198654,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e07e2368575e8d2fab31914ad53d92f0169ea4c65738dcd6e362e004335865bf",
+          "rust_sha256": "e07e2368575e8d2fab31914ad53d92f0169ea4c65738dcd6e362e004335865bf"
+        },
+        "scan_dropped_prints": {
+          "python": 1442,
+          "rust": 1442,
+          "python_seconds": 158.31249192898395,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "4a96baf9fa5d4819a00823f4872c080e50ee9fe46eb80d2fe2ae4543ad0b3986",
+          "rust_sha256": "4a96baf9fa5d4819a00823f4872c080e50ee9fe46eb80d2fe2ae4543ad0b3986"
+        },
+        "scan_dropped_probes": {
+          "python": 2,
+          "rust": 2,
+          "python_seconds": 31.475835299002938,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "283e9b1fa65c7035fc83d496032fb3012e4375d444dd1d514eb761b5097edf7a",
+          "rust_sha256": "283e9b1fa65c7035fc83d496032fb3012e4375d444dd1d514eb761b5097edf7a"
+        },
+        "scan_dropped_seh_pairs": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 8.48292319799657,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_extern_static_width": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 19.435485205001896,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_import_cc": {
+          "python": 4,
+          "rust": 4,
+          "python_seconds": 232.01754246398923,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "92aadf0100ace6a4c8c39376265531089e2db5ad70421aec9bcbbe58995cd654",
+          "rust_sha256": "92aadf0100ace6a4c8c39376265531089e2db5ad70421aec9bcbbe58995cd654"
+        },
+        "scan_macro_fn_shadow": {
+          "python": 30,
+          "rust": 30,
+          "python_seconds": 166.80051593098324,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "d00cf02a6708ba80cc08bbc700096bfb0cfa2a594c5509b7e27c628c2fa1dceb",
+          "rust_sha256": "d00cf02a6708ba80cc08bbc700096bfb0cfa2a594c5509b7e27c628c2fa1dceb"
+        },
+        "scan_nightly_surface": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 23.909777672000928,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_rawdylib_linkname": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 7.344380387978163,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_res_named_types": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 0.2713830140128266,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_type_alias_contradictions": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 81.63709906599252,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_varargs_spec_arity": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 66.68720856599975,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_wide_literals": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 319.5877016049926,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_winerror_consts": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 44.649639138020575,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_inline_flag_literals": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 422.9457825660065,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "component_runs": [
+        {
+          "source_revision": "cc53d01b091e365cccbc7e56f7a929963331d379",
+          "rust_seconds": 235.8601976710197
+        },
+        {
+          "source_revision": "cc53d01b091e365cccbc7e56f7a929963331d379",
+          "rust_seconds": 19.697508609009674
+        }
+      ]
+    }
+  ]
+}

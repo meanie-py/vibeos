@@ -41,7 +41,10 @@ def test_plugin_inventory_matches_gate():
         [str(binary), "--list-rules"], capture_output=True, text=True, check=True
     )
     names = result.stdout.splitlines()
-    assert set(names) == rustlints.PORTED
+    assert set(names) >= rustlints.PORTED
+    # Candidates remain callable for parity before being routed into the gate.
+    registry = {name for name, _cmd, _stream in lints.source_lint_specs(repo)}
+    assert set(names) <= registry
     assert len(names) == len(set(names))
 
 

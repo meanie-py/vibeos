@@ -833,10 +833,20 @@ impl Scanner<'_> {
     }
 }
 pub fn crate_defs(c: &Corpus, kr: &Crate) -> Vec<Def> {
-    scan_crate(c, kr).0
+    cached_scan(c, kr).0.clone()
 }
 pub fn crate_files(c: &Corpus, kr: &Crate) -> BTreeSet<PathBuf> {
-    scan_crate(c, kr).1
+    cached_scan(c, kr).1.clone()
+}
+fn cached_scan(c: &Corpus, kr: &Crate) -> std::sync::Arc<(Vec<Def>, BTreeSet<PathBuf>)> {
+    // Definitions carry cfg predicates, so all architectures and link units can
+    // share this source scan. Only the name and roots affect Scanner's result.
+    let key = (kr.name.clone(), kr.roots.clone());
+    let mut scans = c.link_scans.lock().expect("link scan cache poisoned");
+    scans
+        .entry(key)
+        .or_insert_with(|| std::sync::Arc::new(scan_crate(c, kr)))
+        .clone()
 }
 fn scan_crate(c: &Corpus, kr: &Crate) -> (Vec<Def>, BTreeSet<PathBuf>) {
     let files = c.files.iter().map(|f| (normalize(&f.path), f)).collect();

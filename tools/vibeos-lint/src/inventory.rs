@@ -10,6 +10,7 @@ pub struct SourceSet {
     pub tracked: bool,
     pub pruning: &'static [&'static str],
     pub inputs: bool,
+    pub directories: bool,
 }
 
 impl SourceSet {
@@ -27,6 +28,7 @@ impl SourceSet {
             tracked: false,
             pruning: &["target"],
             inputs: false,
+            directories: false,
         }
     }
     pub const fn tracked(
@@ -42,10 +44,15 @@ impl SourceSet {
             tracked: true,
             pruning: &[],
             inputs: false,
+            directories: false,
         }
     }
     pub const fn with_pruning(mut self, pruning: &'static [&'static str]) -> Self {
         self.pruning = pruning;
+        self
+    }
+    pub const fn with_directories(mut self) -> Self {
+        self.directories = true;
         self
     }
     pub const fn with_inputs(mut self) -> Self {

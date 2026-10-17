@@ -82,14 +82,18 @@ fn walk<'a>(n: Node<'a>, v: &mut Vec<Node<'a>>) {
     }
 }
 fn functions<'a>(t: &'a Tree) -> Vec<Node<'a>> {
-    let mut all = Vec::new();
-    walk(t.root_node(), &mut all);
-    let mut fs: Vec<_> = all
-        .into_iter()
-        .filter(|n| n.kind() == "function_item" && n.child_by_field_name("body").is_some())
-        .collect();
-    fs.sort_by_key(|n| n.start_byte());
-    fs
+    fn visit<'a>(n: Node<'a>, out: &mut Vec<Node<'a>>) {
+        if n.kind() == "function_item" && n.child_by_field_name("body").is_some() {
+            out.push(n);
+        }
+        let mut cursor = n.walk();
+        for child in n.children(&mut cursor) {
+            visit(child, out);
+        }
+    }
+    let mut out = Vec::new();
+    visit(t.root_node(), &mut out);
+    out
 }
 fn txt<'a>(n: Node<'_>, s: &'a str) -> &'a str {
     &s[n.start_byte()..n.end_byte()]
@@ -129,8 +133,7 @@ fn ids(s: &str) -> HashSet<String> {
 fn all_ids(s: &str) -> HashSet<String> {
     IDENT.find_iter(s).map(|m| m.as_str().to_owned()).collect()
 }
-fn arg_ids(a: Option<Node<'_>>, s: &str, idx: usize) -> HashSet<String> {
-    let a = real_args(a);
+fn arg_ids_from(a: &[Node<'_>], s: &str, idx: usize) -> HashSet<String> {
     if idx >= a.len() {
         return HashSet::new();
     }
@@ -217,7 +220,6 @@ fn summarize(file: &SourceFile, t: &Tree) -> HashMap<String, Summary> {
         let params = f.child_by_field_name("parameters");
         let mut nodes = Vec::new();
         walk(body, &mut nodes);
-        nodes.sort_by_key(|n| (n.start_byte(), usize::MAX - n.end_byte()));
         let mut sm = Summary::default();
         let mut held = HashSet::new();
         let mut lowered = HashSet::new();
@@ -236,20 +238,20 @@ fn summarize(file: &SourceFile, t: &Tree) -> HashMap<String, Summary> {
                         true
                     };
                     if acquire && !real.is_empty() {
-                        held.extend(arg_ids(a, s, real.len() - 1));
+                        held.extend(arg_ids_from(&real, s, real.len() - 1));
                     }
                 } else if RAISE.contains(&cn.as_str()) {
                     if let Some(v) = bound_var(n, s) {
                         held.insert(v);
                     }
                 } else if LOWER.contains(&cn.as_str()) {
-                    let x = arg_ids(a, s, 0);
+                    let x = arg_ids_from(&real, s, 0);
                     for i in &x {
                         held.remove(i);
                     }
                     lowered.extend(x);
                 } else if RELEASE.contains(&cn.as_str()) {
-                    let x = arg_ids(a, s, 1);
+                    let x = arg_ids_from(&real, s, 1);
                     for i in &x {
                         held.remove(i);
                     }
@@ -291,7 +293,7 @@ fn build_summaries(files: &[&SourceFile]) -> Result<Sums, String> {
     let mut byname = HashMap::<String, Summary>::new();
     for f in files {
         let t = f.rust_tree()?;
-        for (name, sm) in summarize(f, t) {
+        for (name, sm) in summarize(f, &t) {
             byname
                 .entry(name)
                 .and_modify(|x| {
@@ -341,16 +343,15 @@ fn build_summaries(files: &[&SourceFile]) -> Result<Sums, String> {
     }
     Ok(sums)
 }
-fn scan_body(body: Node<'_>, s: &str, sums: &Sums) -> Vec<(usize, String, String)> {
+fn scan_body(body: Node<'_>, s: &str, lines: &[&str], sums: &Sums) -> Vec<(usize, String, String)> {
     let mut findings = Vec::new();
     let mut held = HashMap::<String, bool>::new();
     let mut lowered = false;
-    let lines: Vec<_> = s.split('\n').collect();
     let mut lets: Option<Vec<(String, String, usize, usize)>> = None;
     let mut nodes = Vec::new();
     walk(body, &mut nodes);
-    nodes.sort_by_key(|n| (n.start_byte(), usize::MAX - n.end_byte()));
-    for n in nodes {
+    // AST preorder has the same ordering as the prior explicit sort.
+    for n in nodes.iter().copied() {
         let line = n.start_position().row;
         let sup = lines.get(line).is_some_and(|x| nolint(x));
         if matches!(n.kind(), "return_expression" | "try_expression") {
@@ -386,7 +387,7 @@ fn scan_body(body: Node<'_>, s: &str, sums: &Sums) -> Vec<(usize, String, String
                 if acquire && !real.is_empty() {
                     let level = if real.is_empty() { "" } else { txt(real[0], s) };
                     let illegal = name != "KeRaiseIrql" || !level.contains("APC_LEVEL");
-                    for v in arg_ids(args, s, real.len() - 1) {
+                    for v in arg_ids_from(&real, s, real.len() - 1) {
                         held.insert(v, illegal);
                     }
                 }
@@ -395,18 +396,18 @@ fn scan_body(body: Node<'_>, s: &str, sums: &Sums) -> Vec<(usize, String, String
                     held.insert(v, true);
                 }
             } else if LOWER.contains(&name.as_str()) {
-                for v in arg_ids(args, s, 0) {
+                for v in arg_ids_from(&real, s, 0) {
                     held.remove(&v);
                 }
                 lowered = true;
             } else if RELEASE.contains(&name.as_str()) {
-                for v in arg_ids(args, s, 1) {
+                for v in arg_ids_from(&real, s, 1) {
                     held.remove(&v);
                 }
                 lowered = true;
             } else if let Some(ix) = sums.lower.get(&name) {
                 for i in ix {
-                    for v in arg_ids(args, s, *i) {
+                    for v in arg_ids_from(&real, s, *i) {
                         held.remove(&v);
                     }
                 }
@@ -431,9 +432,9 @@ fn scan_body(body: Node<'_>, s: &str, sums: &Sums) -> Vec<(usize, String, String
                     let closure_ids = all_ids(txt(cl, s));
                     if lets.is_none() {
                         let mut vals = Vec::new();
-                        let mut all = Vec::new();
-                        walk(body, &mut all);
-                        for x in all {
+                        // `nodes` is the already collected body walk. Reuse it instead
+                        // of walking the whole body again on the first continuation.
+                        for &x in &nodes {
                             if x.kind() == "let_declaration" {
                                 if let (Some(pat), Some(val)) = (
                                     x.child_by_field_name("pattern"),
@@ -475,11 +476,13 @@ fn scan_file(f: &SourceFile, sums: &Sums) -> Result<Vec<(usize, String, String)>
         return Ok(vec![]);
     }
     let tree = f.rust_tree()?;
+    let lines: Vec<_> = f.text.split('\n').collect();
     let mut out = Vec::new();
-    for fun in functions(tree) {
+    for fun in functions(&tree) {
         out.extend(scan_body(
             fun.child_by_field_name("body").unwrap(),
             &f.text,
+            &lines,
             sums,
         ));
     }
@@ -492,6 +495,22 @@ mod tests {
     use std::path::PathBuf;
     fn file(path: &str, s: &str) -> SourceFile {
         SourceFile::new(PathBuf::from(path), s.into())
+    }
+    #[test]
+    fn preorder_is_the_legacy_node_sort_order() {
+        let source = "fn outer(){ if cond { inner(); } fn nested(){ leaf(); } }";
+        let tree = crate::syntax::parse(source).unwrap();
+        let mut preorder = Vec::new();
+        walk(tree.root_node(), &mut preorder);
+        let mut sorted = preorder.clone();
+        sorted.sort_by_key(|n| (n.start_byte(), usize::MAX - n.end_byte()));
+        let key = |nodes: &[Node<'_>]| {
+            nodes
+                .iter()
+                .map(|n| (n.start_byte(), n.end_byte(), n.kind()))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(key(&preorder), key(&sorted));
     }
     #[test]
     fn controls_leak_and_balance() {
@@ -513,6 +532,14 @@ mod tests {
             .unwrap()
             .iter()
             .any(|x| x.1 == "IRQL_LEAK_RETURN"));
+    }
+    #[test]
+    fn preorder_walk_preserves_nested_exit_and_capture_findings() {
+        let f=file("sdk/lib/rust/many.rs", "fn f(){ let p=KeGetPcr(); wait_for(|| use_it(p)); }\nfn g(){let mut old=0;KeRaiseIrql(DISPATCH_LEVEL,&mut old);if c{return;}KeLowerIrql(old);}");
+        let sums = build_summaries(&[&f]).unwrap();
+        let found = scan_file(&f, &sums).unwrap();
+        assert!(found.iter().any(|x| x.1 == "CTX_CAPTURE_ACROSS_WAIT"));
+        assert!(found.iter().any(|x| x.1 == "IRQL_LEAK_RETURN"));
     }
     #[test]
     fn passive_only_wait_is_not_propagated() {

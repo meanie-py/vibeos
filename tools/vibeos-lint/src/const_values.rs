@@ -36,6 +36,13 @@ impl Big {
             magnitude: "0".into(),
         }
     }
+    pub fn decimal(&self) -> String {
+        if self.negative {
+            format!("-{}", self.magnitude)
+        } else {
+            self.magnitude.clone()
+        }
+    }
     pub fn is_negative(&self) -> bool {
         self.negative
     }
@@ -126,7 +133,7 @@ impl Big {
             }
         }
     }
-    fn rem_bits(&self, bits: u32) -> u64 {
+    pub fn rem_bits(&self, bits: u32) -> u64 {
         let modulus = 1u128 << bits;
         let mut rem = 0u128;
         for b in self.magnitude.bytes() {

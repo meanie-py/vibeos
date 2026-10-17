@@ -169,7 +169,7 @@ impl Rule for InlineFlagLiterals {
                     rowl.sort_by_key(|n| n.start_byte());
                     if rowl.len() == 1 && names.iter().all(|n| catalog.contains_key(n)) {
                         let total = names.iter().fold(0i128, |v, n| v | catalog[n]);
-                        if !values(rowl[0], &f.text).iter().any(|v| *v as i128 == total) {
+                        if !values(rowl[0], &f.text).iter().any(|v| *v == total) {
                             for (n, name) in rowl.into_iter().zip(names) {
                                 pairs.push((n, name));
                             }
@@ -201,7 +201,7 @@ impl Rule for InlineFlagLiterals {
                     if let Some(want) = catalog.get(name) {
                         if side
                             .iter()
-                            .any(|n| values(*n, &f.text).iter().any(|v| *v as i128 == *want))
+                            .any(|n| values(*n, &f.text).iter().any(|v| *v == *want))
                         {
                             continue;
                         }
@@ -220,7 +220,7 @@ impl Rule for InlineFlagLiterals {
                         continue;
                     }
                     let vals = values(lit, &f.text);
-                    if vals.iter().any(|v| *v as i128 == want) {
+                    if vals.iter().any(|v| *v == want) {
                         continue;
                     }
                     let value = literal(lit, &f.text);
@@ -239,7 +239,12 @@ impl Rule for InlineFlagLiterals {
                     }
                     let v = value.unwrap_or(0);
                     let line = lit.start_position().row + 1;
-                    out.push(format!("{}:{line}: literal {v:#x} tagged /* {name} */ but {name} = {want:#x} ({want})",f.path.display()));
+                    let want_hex = if want < 0 {
+                        format!("-{:#x}", want.unsigned_abs())
+                    } else {
+                        format!("{want:#x}")
+                    };
+                    out.push(format!("{}:{line}: literal {v:#x} tagged /* {name} */ but {name} = {want_hex} ({want})",f.path.display()));
                 }
             }
         }
@@ -340,19 +345,23 @@ fn litval(s: &str) -> Option<u64> {
 fn literal(n: tree_sitter::Node<'_>, s: &str) -> Option<u64> {
     litval(&s[n.start_byte()..n.end_byte()])
 }
-fn values(n: tree_sitter::Node<'_>, s: &str) -> BTreeSet<u64> {
+fn values(n: tree_sitter::Node<'_>, s: &str) -> BTreeSet<i128> {
     let Some(v) = literal(n, s) else {
         return BTreeSet::new();
     };
-    let mut x = BTreeSet::from([v]);
+    let mut x = BTreeSet::from([v as i128]);
     if n.parent().is_some_and(|p| {
         p.kind() == "unary_expression"
             && s[p.start_byte()..p.end_byte()]
                 .trim_start()
                 .starts_with('-')
     }) {
-        x.insert(v.wrapping_neg() & 0xffff_ffff);
-        x.insert(v.wrapping_neg());
+        // The source scanner models Rust's negative literal at both C-width and host-width,
+        // then compares negative C catalog values against those unsigned two's-complement
+        // representations as well.
+        x.insert((v.wrapping_neg() & 0xffff_ffff) as i128);
+        x.insert(v.wrapping_neg() as i128);
+        x.insert(-(v as i128));
     }
     x
 }
@@ -937,7 +946,12 @@ mod tests {
             "fn f(){ let x = 0x4 /* METHOD_BUFFERED */; }\n".into(),
         );
         let bad = Corpus::new(".".into(), vec![file]);
-        assert_eq!(InlineFlagLiterals.run(&bad).unwrap(),vec!["sdk/lib/rust/a.rs:1: literal 0x4 tagged /* METHOD_BUFFERED */ but METHOD_BUFFERED = 0x0 (0)"]);
+        assert_eq!(
+            InlineFlagLiterals.run(&bad).unwrap(),
+            vec![
+                "sdk/lib/rust/a.rs:1: literal 0x4 tagged /* METHOD_BUFFERED */ but METHOD_BUFFERED = 0x0 (0)"
+            ]
+        );
         assert!(comment_names("/* FLAG */") == vec!["FLAG"]);
         assert!(comment_names("// FLAG (reason)") == vec!["FLAG"]);
         assert!(comment_names("// A || B") == vec!["A", "B"]);
@@ -969,5 +983,37 @@ mod tests {
             InlineFlagLiterals.run(&corpus).unwrap(),
             vec!["sdk/lib/rust/t.rs:5: literal 0x25 tagged /* VK_HOME */ but VK_HOME = 0x24 (36)"]
         );
+    }
+
+    #[test]
+    fn negative_catalog_values_match_rust_unary_minus_twos_complement() {
+        let header = crate::SourceFile::new(
+            "sdk/include/psdk/windef.h".into(),
+            "#define HFILE_ERROR -1\n#define INVALID_HANDLE_VALUE -1\n".into(),
+        );
+        let rust = crate::SourceFile::new(
+            "sdk/lib/rust/a.rs".into(),
+            "fn a() { return -1; // HFILE_ERROR\n}\nfn b() { let h = (-1isize) as HANDLE; // INVALID_HANDLE_VALUE\n}\n".into(),
+        );
+        let corpus = Corpus::new(".".into(), vec![header, rust]);
+        assert!(InlineFlagLiterals.run(&corpus).unwrap().is_empty());
+        assert_eq!(c_header_value("-1"), Some(-1));
+    }
+    #[test]
+    fn signed_catalog_mismatch_uses_python_hex_display() {
+        let c = Corpus::new(
+            ".".into(),
+            vec![
+                crate::SourceFile::new(
+                    "sdk/include/xdk/fixture.h".into(),
+                    "#define HFILE_ERROR -1\n".into(),
+                ),
+                crate::SourceFile::new(
+                    "sdk/lib/rust/a.rs".into(),
+                    "fn f(){ let x = 0; // HFILE_ERROR\n}\n".into(),
+                ),
+            ],
+        );
+        assert_eq!(InlineFlagLiterals.run(&c).unwrap(),vec!["sdk/lib/rust/a.rs:1: literal 0x0 tagged /* HFILE_ERROR */ but HFILE_ERROR = -0x1 (-1)"]);
     }
 }

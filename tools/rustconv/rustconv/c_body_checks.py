@@ -123,7 +123,7 @@ def _bitor_case_patterns(c_body: str, rust: str) -> list[str]:
     repo = str(Path(__file__).resolve().parents[3])
     if repo not in sys.path:
         sys.path.insert(0, repo)
-    from tools.scan_case_bitor_pattern import c_bitor_labels, scan_text
+    from tools.case_patterns import c_bitor_labels, scan_text
 
     return [
         f"`{alts}` is an or-pattern matching EITHER constant, but the C `case` is their "

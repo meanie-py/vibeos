@@ -1,4 +1,6 @@
 //! Statically linked lint plugins over an immutable, shared source snapshot.
+mod ast_facts;
+pub mod catalog;
 pub mod const_shared;
 pub mod const_values;
 mod crate_cfg;
@@ -22,12 +24,15 @@ use regex::Regex;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 pub trait Rule: Sync {
     fn name(&self) -> &'static str;
     fn run(&self, corpus: &Corpus) -> Result<Vec<String>, String>;
     fn source_sets(&self) -> &'static [SourceSet] {
+        &[]
+    }
+    fn needs_c_signature_asts(&self) -> &'static [&'static str] {
         &[]
     }
     fn needs_module_inputs(&self) -> bool {
@@ -64,7 +69,8 @@ pub struct SourceFile {
     groups: Vec<&'static str>,
     directory: bool,
     inventory_order: usize,
-    rust_tree: OnceLock<Result<tree_sitter::Tree, String>>,
+    rust_tree: OnceLock<Result<Arc<tree_sitter::Tree>, String>>,
+    large_rust_tree: Mutex<Weak<tree_sitter::Tree>>,
     twin_functions: OnceLock<Vec<twins::Function>>,
     scopes: u8,
     noise: OnceLock<Arc<str>>,
@@ -85,6 +91,7 @@ impl SourceFile {
             directory: false,
             inventory_order: 0,
             rust_tree: OnceLock::new(),
+            large_rust_tree: Mutex::new(Weak::new()),
             twin_functions: OnceLock::new(),
             scopes: u8::MAX,
             noise: OnceLock::new(),
@@ -99,11 +106,23 @@ impl SourceFile {
     pub fn is_directory(&self) -> bool {
         self.directory
     }
-    pub fn rust_tree(&self) -> Result<&tree_sitter::Tree, String> {
-        self.rust_tree
-            .get_or_init(|| syntax::parse(&self.text))
-            .as_ref()
-            .map_err(Clone::clone)
+    pub fn rust_tree(&self) -> Result<Arc<tree_sitter::Tree>, String> {
+        // Retaining every bindgen AST costs many times the source bytes. Large
+        // parses are shared while consumers hold them, then released; ordinary
+        // source parses stay cached for the whole run.
+        if self.text.len() <= 256 * 1024 {
+            return self
+                .rust_tree
+                .get_or_init(|| syntax::parse(&self.text).map(Arc::new))
+                .clone();
+        }
+        let mut cached = self.large_rust_tree.lock().expect("syntax cache poisoned");
+        if let Some(tree) = cached.upgrade() {
+            return Ok(tree);
+        }
+        let tree = Arc::new(syntax::parse(&self.text)?);
+        *cached = Arc::downgrade(&tree);
+        Ok(tree)
     }
     pub fn twin_functions(&self, root: &Path) -> &[twins::Function] {
         self.twin_functions.get_or_init(|| {
@@ -173,11 +192,19 @@ impl SourceFile {
 pub struct Corpus {
     pub root: PathBuf,
     pub files: Vec<SourceFile>,
+    explicit_paths: Vec<PathBuf>,
+    c_signature_asts: OnceLock<BTreeMap<String, Result<serde_json::Value, String>>>,
     twins: OnceLock<twins::CIndex>,
     modules: OnceLock<modules::ModuleTree>,
     version_history: OnceLock<Result<VersionHistory, String>>,
     module_inputs: OnceLock<module_inputs::ModuleModel>,
     crate_configs: OnceLock<BTreeMap<PathBuf, CrateCfg>>,
+    link_scans: Mutex<
+        BTreeMap<
+            (String, Vec<PathBuf>),
+            Arc<(Vec<link_model::Def>, std::collections::BTreeSet<PathBuf>)>,
+        >,
+    >,
 }
 
 const RUST: u8 = 1;
@@ -214,12 +241,30 @@ impl Corpus {
         Self {
             root,
             files,
+            explicit_paths: Vec::new(),
+            c_signature_asts: OnceLock::new(),
             twins: OnceLock::new(),
             modules: OnceLock::new(),
             version_history: OnceLock::new(),
             module_inputs: OnceLock::new(),
             crate_configs: OnceLock::new(),
+            link_scans: Mutex::new(BTreeMap::new()),
         }
+    }
+    pub fn c_signature_ast(&self, arch: &str) -> Result<&serde_json::Value, String> {
+        self.c_signature_asts
+            .get()
+            .and_then(|all| all.get(arch))
+            .ok_or_else(|| format!("C signature AST {arch} was not requested"))?
+            .as_ref()
+            .map_err(Clone::clone)
+    }
+    pub fn explicit_paths(&self) -> &[PathBuf] {
+        &self.explicit_paths
+    }
+    pub fn with_explicit_paths(mut self, paths: Vec<PathBuf>) -> Self {
+        self.explicit_paths = paths;
+        self
     }
     pub fn crate_cfg(&self, path: &Path) -> &CrateCfg {
         static EMPTY: std::sync::LazyLock<CrateCfg> = std::sync::LazyLock::new(CrateCfg::default);
@@ -505,7 +550,21 @@ impl Corpus {
                 Ok(file)
             })
             .collect();
-        Ok(Self::new(root, files?))
+        let explicit_paths = inputs
+            .iter()
+            .map(|p| {
+                let path = if p.is_absolute() {
+                    p.clone()
+                } else {
+                    root.join(p)
+                };
+                let resolved = path
+                    .canonicalize()
+                    .map_err(|e| format!("{}: {e}", path.display()))?;
+                Ok(resolved.strip_prefix(&root).unwrap_or(&resolved).to_owned())
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        Ok(Self::new(root, files?).with_explicit_paths(explicit_paths))
     }
     pub fn rust_files(&self) -> impl Iterator<Item = &SourceFile> {
         self.files
@@ -630,11 +689,13 @@ fn collect_scopes_with_sets(
         }
         let file_relative = path.strip_prefix(base).unwrap();
         let mut grouped = false;
-        for set in sets
-            .iter()
-            .filter(|set| !set.tracked && set.accepts(file_relative, explicit))
-        {
+        for set in sets.iter().filter(|set| {
+            !set.tracked
+                && (set.accepts(file_relative, explicit)
+                    || kind.is_dir() && set.directories && set.visits(file_relative, explicit))
+        }) {
             if !kind.is_dir()
+                || set.directories
                 || set
                     .filenames
                     .iter()
@@ -702,6 +763,21 @@ pub fn execute(
 ) -> Result<Vec<(&'static str, Vec<String>)>, String> {
     // Build cross-file indexes before rules fan out. Initializing a OnceLock
     // from nested Rayon jobs can exhaust the pool with workers waiting on it.
+    let ast_arches: std::collections::BTreeSet<_> = selected
+        .iter()
+        .flat_map(|r| r.needs_c_signature_asts().iter().copied())
+        .collect();
+    if !ast_arches.is_empty() {
+        corpus.c_signature_asts.get_or_init(|| {
+            ast_arches
+                .iter()
+                .map(|a| (a.to_string(), ast_facts::c_signature_ast(&corpus.root, a)))
+                .collect()
+        });
+        for arch in ast_arches {
+            corpus.c_signature_ast(arch)?;
+        }
+    }
     if selected.iter().any(|rule| rule.needs_module_inputs()) {
         corpus.module_inputs();
     }
@@ -811,9 +887,9 @@ mod tests {
             2
         );
         let file = corpus.rust_files().next().unwrap();
-        assert!(std::ptr::eq(
-            file.rust_tree().unwrap(),
-            file.rust_tree().unwrap()
+        assert!(Arc::ptr_eq(
+            &file.rust_tree().unwrap(),
+            &file.rust_tree().unwrap()
         ));
         fs::create_dir_all(temp.join("fixture")).unwrap();
         fs::write(temp.join("fixture/local.h"), "#define LOCAL 2").unwrap();
@@ -833,6 +909,22 @@ mod tests {
             narrowed.sources("fixture-c").next().unwrap().path,
             Path::new("fixture/local.h")
         );
+    }
+
+    #[test]
+    fn large_syntax_is_shared_only_while_consumers_hold_it() {
+        let file = SourceFile::new(
+            "large.rs".into(),
+            format!("{}fn live() {{}}", " ".repeat(256 * 1024)),
+        );
+        let first = file.rust_tree().unwrap();
+        let second = file.rust_tree().unwrap();
+        assert!(Arc::ptr_eq(&first, &second));
+        let weak = Arc::downgrade(&first);
+        drop(first);
+        drop(second);
+        assert!(weak.upgrade().is_none());
+        assert_eq!(file.rust_tree().unwrap().root_node().kind(), "source_file");
     }
 
     #[test]

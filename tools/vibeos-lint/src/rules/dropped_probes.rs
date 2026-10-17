@@ -160,7 +160,7 @@ fn scan_file(f: &SourceFile) -> Result<Vec<(String, String, String, String)>, St
         return Ok(vec![]);
     }
     let tree = f.rust_tree()?;
-    let (live, craw) = crate::rules::dropped_prints::regions(&f.text, tree);
+    let (live, craw) = crate::rules::dropped_prints::regions(&f.text, &tree);
     let cfuncs = crate::rules::dropped_prints::c_function_bodies(&craw);
     let mut cf = HashMap::<String, usize>::new();
     let mut cw = HashMap::<String, std::collections::HashSet<String>>::new();

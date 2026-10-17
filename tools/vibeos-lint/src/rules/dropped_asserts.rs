@@ -8,7 +8,8 @@ static INPUTS: &[SourceSet] = &[SourceSet::tree(
     &["ntoskrnl/include/internal", "ntoskrnl/mm/ARM3"],
     &["h"],
     &[],
-)];
+)
+.with_inputs()];
 impl Rule for DroppedAsserts {
     fn name(&self) -> &'static str {
         "scan_dropped_asserts"
@@ -19,13 +20,24 @@ impl Rule for DroppedAsserts {
     fn run(&self, corpus: &Corpus) -> Result<Vec<String>, String> {
         let mut cs: HashMap<String, (String, usize, usize)> = HashMap::new();
         for f in corpus.sources("dropped_assert_headers") {
+            if !corpus.explicit_paths().is_empty()
+                && !corpus
+                    .explicit_paths()
+                    .iter()
+                    .any(|root| f.path.starts_with(root))
+            {
+                continue;
+            }
             let p = f.path.to_string_lossy();
-            if !(p.starts_with("ntoskrnl/include/internal/") || p.starts_with("ntoskrnl/mm/ARM3/"))
+            if (corpus.explicit_paths().is_empty()
+                && !(p.starts_with("ntoskrnl/include/internal/")
+                    || p.starts_with("ntoskrnl/mm/ARM3/")))
                 || !p.ends_with(".h")
             {
                 continue;
             }
             let code = crate::lexical::strip_noise(&f.text);
+            let lines = masked_lines(&code);
             let re =
                 crate::regexes::cached(r"\bFORCEINLINE\b[^;{()]*?\b([A-Za-z_]\w*)\s*\(").unwrap();
             let ar = crate::regexes::cached(
@@ -42,7 +54,7 @@ impl Rule for DroppedAsserts {
                 if let Some(end) = brace_end(&code, open) {
                     let n = ar.find_iter(&code[open..end]).count();
                     if n > 0 {
-                        let line = masked_line(&code, m.start());
+                        let line = masked_line(&lines, m.start());
                         let e = cs
                             .entry(c[1].to_owned())
                             .or_insert((p.to_string(), line, n));
@@ -63,7 +75,11 @@ impl Rule for DroppedAsserts {
                 continue;
             }
             let code = f.rust_noise();
+            let lines = masked_lines(code);
             for c in rf.captures_iter(code) {
+                if !cs.contains_key(&c[1]) {
+                    continue;
+                }
                 let m = c.get(0).unwrap();
                 let op = code[m.end() - 1..].find('{').map(|x| m.end() - 1 + x);
                 let Some(op) = op else { continue };
@@ -74,7 +90,7 @@ impl Rule for DroppedAsserts {
                     let n = ar.find_iter(&code[op..end]).count();
                     rs.entry(c[1].into()).or_default().push((
                         f.path.to_string_lossy().into_owned(),
-                        masked_line(code, m.start()),
+                        masked_line(&lines, m.start()),
                         n,
                     ));
                 }
@@ -107,12 +123,13 @@ impl Rule for DroppedAsserts {
 // with one ASCII space. A byte offset in that masked string differs from the same
 // character's byte offset in the original whenever a removed comment/literal contains
 // non-ASCII text, so compute its line in the exact text the regex searched.
-fn masked_line(text: &str, byte: usize) -> usize {
-    text.as_bytes()[..byte]
-        .iter()
-        .filter(|&&b| b == b'\n')
-        .count()
-        + 1
+fn masked_lines(text: &str) -> Vec<usize> {
+    std::iter::once(0)
+        .chain(text.match_indices('\n').map(|(at, _)| at + 1))
+        .collect()
+}
+fn masked_line(lines: &[usize], byte: usize) -> usize {
+    lines.partition_point(|at| *at <= byte)
 }
 fn brace_end(s: &str, open: usize) -> Option<usize> {
     let mut d = 0;

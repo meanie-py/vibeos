@@ -94,8 +94,59 @@ pub mod const_vs_island;
 pub mod const_vs_own_island;
 pub mod const_within_crate;
 
+pub mod call_literal_vs_c;
+pub mod cfg_vs_c;
+pub mod mask_drift;
+pub mod override_self_dispatch;
+pub mod ptr_typedef_indirection;
+pub mod version_vs_c;
+
+pub mod invented_constants;
+pub mod magic_offsets;
+pub mod shell32_tail_inventory;
+pub mod silent_failures;
+pub mod strip_msvc_cmake;
+pub mod verify_c_signatures;
+pub mod verify_conv_macros;
+pub mod verify_signatures;
+pub mod verify_translation_literals;
+
+pub mod verify_constants;
+pub mod verify_constants_enums;
+pub mod verify_constants_shared;
+
+pub mod cohab_census;
+pub mod lint_kernel;
+pub mod null_offset_to_offset_of;
+pub mod scan_boot_media_drift;
+pub mod verify_ffi;
+pub mod verify_lost_exports;
+
 pub fn registry() -> Vec<Box<dyn Rule>> {
     vec![
+        Box::new(lint_kernel::LintKernel),
+        Box::new(cohab_census::CohabCensus),
+        Box::new(scan_boot_media_drift::ScanBootMediaDrift),
+        Box::new(null_offset_to_offset_of::NullOffsetToOffsetOf),
+        Box::new(verify_ffi::VerifyFfi),
+        Box::new(verify_lost_exports::VerifyLostExports),
+        Box::new(verify_constants::VerifyConstants),
+        Box::new(verify_constants_enums::VerifyConstantsEnums),
+        Box::new(magic_offsets::MagicOffsets),
+        Box::new(silent_failures::SilentFailures),
+        Box::new(strip_msvc_cmake::StripMsvcCmake),
+        Box::new(shell32_tail_inventory::Shell32TailInventory),
+        Box::new(invented_constants::InventedConstants),
+        Box::new(verify_c_signatures::VerifyCSignatures),
+        Box::new(verify_signatures::VerifySignatures),
+        Box::new(verify_conv_macros::VerifyConvMacros),
+        Box::new(verify_translation_literals::VerifyTranslationLiterals),
+        Box::new(cfg_vs_c::CfgVsC),
+        Box::new(call_literal_vs_c::CallLiteralVsC),
+        Box::new(override_self_dispatch::OverrideSelfDispatch),
+        Box::new(mask_drift::MaskDrift),
+        Box::new(ptr_typedef_indirection::PtrTypedefIndirection),
+        Box::new(version_vs_c::VersionVsC),
         Box::new(const_contradictions::ConstContradictions),
         Box::new(const_vs_island::ConstVsIsland),
         Box::new(const_vs_own_island::ConstVsOwnIsland),
