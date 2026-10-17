@@ -304,8 +304,20 @@ static void SayHex(const char *Label, ULONG V)
 }
 
 /* Rung 3b's churn: demand-zero faults on fresh pages, so cr2 keeps moving on
- * whichever CPU this runs on, at addresses far above rung 3b's < 64 KiB. */
+ * whichever CPU this runs on, at addresses far above rung 3b's < 64 KiB.
+ *
+ * The storm is bounded by time as well as count. Under FEX on arm64 every
+ * guest AV is a host fault, a JIT exit and a guest-SEH redirect, about ten a
+ * second under TCG -- 5000 would take eight minutes, and winlogon waits 60 s
+ * for fault32 and 30 s for fault64. The budget leaves the earlier and later
+ * rungs room inside those waits; the count reached goes to serial either way,
+ * so a run that stopped on time is visible as such. */
 #define FAULT32_STORM 5000
+#ifdef _WIN64
+#define FAULT32_STORM_MS 10000
+#else
+#define FAULT32_STORM_MS 15000
+#endif
 static volatile LONG g_StopChurn;
 static DWORD WINAPI Churn(LPVOID Param)
 {
@@ -377,11 +389,12 @@ int start(void) /* i386 symbol _start (-e _start); x64 symbol start (-e start) *
     /* -- Rung 3b: AV parameters under fault churn ------------------------- */
     {
         HANDLE Churner = CreateThread(NULL, 0, Churn, NULL, 0, NULL);
+        DWORD Start = GetTickCount();
         ULONG k;
         if (!Churner)
             { PopFrame(&Reg); Say("[FAULT32] rung3b FAIL: CreateThread\n"); ExitProcess(0xBAF9); }
         g_Recover = (void *)FaultAtRecover;
-        for (k = 0; k < FAULT32_STORM; k++)
+        for (k = 0; k < FAULT32_STORM && GetTickCount() - Start < FAULT32_STORM_MS; k++)
         {
             /* Inside the never-mapped first 64 KiB; the churn faults far
              * above it, so a borrowed cr2 cannot match by accident. */
@@ -403,8 +416,9 @@ int start(void) /* i386 symbol _start (-e _start); x64 symbol start (-e start) *
         WaitForSingleObject(Churner, 30000);
         CloseHandle(Churner);
         g_Recover = (void *)FaultRecover;
+        SayHex("[FAULT32] rung3b AVs checked under churn", k);
     }
-    Say("[FAULT32] rung3b PASS: AV parameters exact across 5000 faults under churn\n");
+    Say("[FAULT32] rung3b PASS: AV parameters exact across the storm\n");
 
     /* Rungs 4-5 need no handler, and rung 5 never returns here to pop it. */
     PopFrame(&Reg);

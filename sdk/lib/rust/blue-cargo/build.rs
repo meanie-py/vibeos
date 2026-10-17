@@ -7,6 +7,21 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The module's part of cmake's windres command; reactos-link adds what every
+    // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
+    let rc_includes: &[&str] = &[
+        "@build/drivers/setup/blue",
+        "drivers/setup/blue",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+        "sdk/include/reactos/drivers",
+    ];
+    let rc_flags: &[&str] = &[];
+    let rc_defines: &[&str] = &["WINVER=0x502", "_WIN32_WINNT=0x502"];
+
     let (target_json, entry, image_base) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_DriverEntry@8", 0x10000u64),
         "x86_64" => ("x86_64-pc-windows-gnu", "DriverEntry", 0x10000u64),
@@ -24,7 +39,7 @@ fn main() {
     Linker::new(target_json)
         .rust_staticlib("blue-rust")
         .rust_user_target()
-        .resource_from_rc("drivers/setup/blue/blue.rc", "blue_res")
+        .rc("drivers/setup/blue/blue.rc", rc_includes, rc_flags, rc_defines)
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .import_lib("hal/hal.spec", "hal.dll", "hal")
         // The body, import libs and static libs in cmake's link order: the first

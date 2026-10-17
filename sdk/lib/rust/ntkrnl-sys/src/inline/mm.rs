@@ -556,10 +556,25 @@ pub unsafe fn MiDetermineUserGlobalPteMask(pointer_pte: ddk::PMMPTE) -> ULONG_PT
 #[inline]
 pub unsafe fn MI_MAKE_HARDWARE_PTE_KERNEL(
     new_pte: ddk::PMMPTE,
-    _mapping_pte: ddk::PMMPTE,
+    mapping_pte: ddk::PMMPTE,
     protection_mask: ULONG_PTR,
     page_frame_number: ULONG_PTR,
 ) {
+    // Only valid for kernel, non-session PTEs.
+    crate::ASSERT!(mapping_pte as usize > MiHighestUserPte as usize);
+    crate::ASSERT!(!crate::mm::MI_IS_SESSION_PTE(mapping_pte as crate::mm::PMMPTE));
+    #[cfg(not(target_arch = "x86"))]
+    crate::ASSERT!(
+        (mapping_pte as usize) < crate::mm::PDE_BASE
+            || mapping_pte as usize > 0xFFFF_F6FB_7FFF_FFFF /* PDE_TOP */
+    );
+    // miarm.h: "check that we are not setting valid a page that should not be".
+    crate::ASSERT!(protection_mask as ULONG & crate::mm::MM_PROTECT_ACCESS != 0);
+    crate::ASSERT!((protection_mask as ULONG & crate::mm::MM_PROTECT_SPECIAL) != crate::mm::MM_GUARDPAGE);
+    crate::ASSERT!(
+        protection_mask as ULONG != crate::mm::MM_OUTSWAPPED_KSTACK
+            && (protection_mask as ULONG & !crate::mm::MM_OUTSWAPPED_KSTACK) == 0
+    );
     // Access PTE as native-width word (ULONG on i386, ULONG_PTR on 64-bit)
     let pte_word = new_pte as *mut ULONG_PTR;
     *pte_word = 0;
@@ -577,8 +592,16 @@ pub unsafe fn MI_MAKE_HARDWARE_PTE_USER(
     protection_mask: ULONG_PTR,
     page_frame_number: ULONG_PTR,
 ) {
+    crate::ASSERT!(_mapping_pte as usize <= MiHighestUserPte as usize);
     let pte_word = new_pte as *mut ULONG_PTR;
     *pte_word = 0;
+    // miarm.h: "check that we are not setting valid a page that should not be".
+    crate::ASSERT!(protection_mask as ULONG & crate::mm::MM_PROTECT_ACCESS != 0);
+    crate::ASSERT!((protection_mask as ULONG & crate::mm::MM_PROTECT_SPECIAL) != crate::mm::MM_GUARDPAGE);
+    crate::ASSERT!(
+        protection_mask as ULONG != crate::mm::MM_OUTSWAPPED_KSTACK
+            && (protection_mask as ULONG & !crate::mm::MM_OUTSWAPPED_KSTACK) == 0
+    );
     // The C original's three ASSERTs, restored: a mask granting no access must
     // never be made valid. See mi_user_pte_may_be_valid.
     if !crate::mm::mi_user_pte_may_be_valid(protection_mask as usize) {
@@ -598,6 +621,13 @@ pub unsafe fn MI_MAKE_HARDWARE_PTE(
     protection_mask: ULONG_PTR,
     page_frame_number: ULONG_PTR,
 ) {
+    // miarm.h: "check that we are not setting valid a page that should not be".
+    crate::ASSERT!(protection_mask as ULONG & crate::mm::MM_PROTECT_ACCESS != 0);
+    crate::ASSERT!((protection_mask as ULONG & crate::mm::MM_PROTECT_SPECIAL) != crate::mm::MM_GUARDPAGE);
+    crate::ASSERT!(
+        protection_mask as ULONG != crate::mm::MM_OUTSWAPPED_KSTACK
+            && (protection_mask as ULONG & !crate::mm::MM_OUTSWAPPED_KSTACK) == 0
+    );
     let pte_word = new_pte as *mut ULONG_PTR;
     *pte_word = MiDetermineUserGlobalPteMask(mapping_pte);
     *pte_word |= MmProtectToPteMask[protection_mask as usize];
@@ -607,6 +637,9 @@ pub unsafe fn MI_MAKE_HARDWARE_PTE(
 /// MI_UPDATE_VALID_PTE — update an already-valid PTE (volatile write).
 #[inline]
 pub unsafe fn MI_UPDATE_VALID_PTE(pte: ddk::PMMPTE, temp_pte: ddk::MMPTE) {
+    crate::ASSERT!((*pte).u.Hard.Valid() == 1);
+    crate::ASSERT!(temp_pte.u.Hard.Valid() == 1);
+    crate::ASSERT!((*pte).u.Hard.PageFrameNumber() == temp_pte.u.Hard.PageFrameNumber());
     core::ptr::write_volatile(pte, temp_pte);
 }
 
@@ -645,13 +678,44 @@ extern "C" {
 const OP_WS_LOCK_EXCL: u32 = 16;
 const OP_WS_UNLOCK_EXCL: u32 = 17;
 
+// miarm.h's working-set lock ASSERTs, restored (scan_dropped_asserts): RtlAssert
+// prints and continues. These predicates are the C's MM_ANY_WS_LOCK_HELD,
+// MI_IS_WS_UNSAFE and MI_WS_OWNER.
+#[inline(always)]
+unsafe fn mm_any_ws_lock_held(thread: ddk::PETHREAD) -> bool {
+    (*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetExclusive() != 0
+        || (*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetShared() != 0
+        || (*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsSystemWorkingSetExclusive() != 0
+        || (*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsSystemWorkingSetShared() != 0
+        || (*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsSessionWorkingSetExclusive() != 0
+        || (*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsSessionWorkingSetShared() != 0
+}
+
+#[inline(always)]
+unsafe fn mi_is_ws_unsafe(process: ddk::PEPROCESS) -> bool {
+    (*process).Vm.Flags.AcquiredUnsafe() != 0
+}
+
+#[inline(always)]
+unsafe fn mi_ws_owner(process: ddk::PEPROCESS) -> bool {
+    let thread = super::common::PsGetCurrentThread();
+    let kthread = thread as ddk::PKTHREAD;
+    (*kthread).__bindgen_anon_1.ApcState.Process == core::ptr::addr_of_mut!((*process).Pcb)
+        && ((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetExclusive() != 0 || (*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetShared() != 0)
+}
+
 /// MiLockProcessWorkingSet — acquire exclusive working set lock.
 #[inline]
 pub unsafe fn MiLockProcessWorkingSet(process: ddk::PEPROCESS, thread: ddk::PETHREAD) {
+    crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetShared() == 0);
+    crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetExclusive() == 0);
     super::ke::KeEnterGuardedRegion();
+    crate::ASSERT!(!mm_any_ws_lock_held(thread));
     ddk::ExAcquirePushLockExclusive(
         core::ptr::addr_of_mut!((*process).Vm.WorkingSetMutex),
     );
+    crate::ASSERT!(!mi_is_ws_unsafe(process));
+    crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetExclusive() == 0);
     (*thread).__bindgen_anon_9.__bindgen_anon_1.set_OwnsProcessWorkingSetExclusive(1);
     VibeosFlightrecLog(
         OP_WS_LOCK_EXCL,
@@ -664,6 +728,9 @@ pub unsafe fn MiLockProcessWorkingSet(process: ddk::PEPROCESS, thread: ddk::PETH
 /// MiUnlockProcessWorkingSet — release exclusive working set lock.
 #[inline]
 pub unsafe fn MiUnlockProcessWorkingSet(process: ddk::PEPROCESS, thread: ddk::PETHREAD) {
+    crate::ASSERT!(mi_ws_owner(process));
+    crate::ASSERT!(!mi_is_ws_unsafe(process));
+    crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetExclusive() != 0);
     VibeosFlightrecLog(
         OP_WS_UNLOCK_EXCL,
         core::ptr::addr_of_mut!((*process).Vm.WorkingSetMutex) as usize,
@@ -680,16 +747,26 @@ pub unsafe fn MiUnlockProcessWorkingSet(process: ddk::PEPROCESS, thread: ddk::PE
 /// MiLockProcessWorkingSetShared — acquire shared working set lock.
 #[inline]
 pub unsafe fn MiLockProcessWorkingSetShared(process: ddk::PEPROCESS, thread: ddk::PETHREAD) {
+    crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetShared() == 0);
+    crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetExclusive() == 0);
     super::ke::KeEnterGuardedRegion();
+    crate::ASSERT!(!mm_any_ws_lock_held(thread));
     ddk::ExAcquirePushLockShared(
         core::ptr::addr_of_mut!((*process).Vm.WorkingSetMutex),
     );
+    crate::ASSERT!(!mi_is_ws_unsafe(process));
+    crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetShared() == 0);
+    crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetExclusive() == 0);
     (*thread).__bindgen_anon_9.__bindgen_anon_1.set_OwnsProcessWorkingSetShared(1);
 }
 
 /// MiUnlockProcessWorkingSetShared — release shared working set lock.
 #[inline]
 pub unsafe fn MiUnlockProcessWorkingSetShared(process: ddk::PEPROCESS, thread: ddk::PETHREAD) {
+    crate::ASSERT!(mi_ws_owner(process));
+    crate::ASSERT!(!mi_is_ws_unsafe(process));
+    crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetShared() != 0);
+    crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetExclusive() == 0);
     (*thread).__bindgen_anon_9.__bindgen_anon_1.set_OwnsProcessWorkingSetShared(0);
     ddk::ExReleasePushLockShared(
         core::ptr::addr_of_mut!((*process).Vm.WorkingSetMutex),
@@ -701,10 +778,15 @@ pub unsafe fn MiUnlockProcessWorkingSetShared(process: ddk::PEPROCESS, thread: d
 /// Matches C miarm.h:1219 — caller must already have APCs disabled.
 #[inline]
 pub unsafe fn MiLockProcessWorkingSetUnsafe(process: ddk::PEPROCESS, thread: ddk::PETHREAD) {
+    crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetExclusive() == 0);
+    crate::ASSERT!(ddk::KeAreAllApcsDisabled() != 0);
+    crate::ASSERT!(!mm_any_ws_lock_held(thread));
     ddk::ExAcquirePushLockExclusive(
         core::ptr::addr_of_mut!((*process).Vm.WorkingSetMutex),
     );
+    crate::ASSERT!(!mi_is_ws_unsafe(process));
     (*process).Vm.Flags.set_AcquiredUnsafe(1);
+    crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetExclusive() == 0);
     (*thread).__bindgen_anon_9.__bindgen_anon_1.set_OwnsProcessWorkingSetExclusive(1);
     VibeosFlightrecLog(
         OP_WS_LOCK_EXCL,
@@ -718,6 +800,11 @@ pub unsafe fn MiLockProcessWorkingSetUnsafe(process: ddk::PEPROCESS, thread: ddk
 /// Matches C miarm.h:1289 — does NOT touch APC state (caller manages it).
 #[inline]
 pub unsafe fn MiUnlockProcessWorkingSetUnsafe(process: ddk::PEPROCESS, thread: ddk::PETHREAD) {
+    crate::ASSERT!(crate::ke::KeGetCurrentIrql() <= crate::base::APC_LEVEL);
+    crate::ASSERT!(ddk::KeAreAllApcsDisabled() != 0);
+    crate::ASSERT!(mi_ws_owner(process));
+    crate::ASSERT!(mi_is_ws_unsafe(process));
+    crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetExclusive() != 0);
     VibeosFlightrecLog(
         OP_WS_UNLOCK_EXCL,
         core::ptr::addr_of_mut!((*process).Vm.WorkingSetMutex) as usize,
@@ -729,6 +816,7 @@ pub unsafe fn MiUnlockProcessWorkingSetUnsafe(process: ddk::PEPROCESS, thread: d
     ddk::ExReleasePushLockExclusive(
         core::ptr::addr_of_mut!((*process).Vm.WorkingSetMutex),
     );
+    crate::ASSERT!(crate::ke::KeGetCurrentIrql() <= crate::base::APC_LEVEL);
 }
 
 extern "C" {
@@ -785,7 +873,16 @@ unsafe fn _ws_clear_owns(thread: ddk::PETHREAD, ws: ddk::PMMSUPPORT, exclusive: 
 #[inline]
 pub unsafe fn MiLockWorkingSet(thread: ddk::PETHREAD, ws: ddk::PMMSUPPORT) {
     super::ke::KeEnterGuardedRegion();
+    crate::ASSERT!(!crate::mm::MI_IS_SESSION_ADDRESS(ws as PVOID));
+    crate::ASSERT!(!mm_any_ws_lock_held(thread));
     ddk::ExAcquirePushLockExclusive(core::ptr::addr_of_mut!((*ws).WorkingSetMutex));
+    if ws == core::ptr::addr_of_mut!(MmSystemCacheWs) {
+        crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsSystemWorkingSetExclusive() == 0 && (*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsSystemWorkingSetShared() == 0);
+    } else if (*ws).Flags.SessionSpace() != 0 {
+        crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsSessionWorkingSetExclusive() == 0 && (*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsSessionWorkingSetShared() == 0);
+    } else {
+        crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetExclusive() == 0 && (*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetShared() == 0);
+    }
     _ws_set_owns(thread, ws, true);
     VibeosFlightrecLog(
         OP_WS_LOCK_EXCL,
@@ -804,6 +901,14 @@ pub unsafe fn MiUnlockWorkingSet(thread: ddk::PETHREAD, ws: ddk::PMMSUPPORT) {
         thread as usize,
         2,
     );
+    crate::ASSERT!(!crate::mm::MI_IS_SESSION_ADDRESS(ws as PVOID));
+    if ws == core::ptr::addr_of_mut!(MmSystemCacheWs) {
+        crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsSystemWorkingSetExclusive() != 0 && (*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsSystemWorkingSetShared() == 0);
+    } else if (*ws).Flags.SessionSpace() != 0 {
+        crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsSessionWorkingSetExclusive() != 0 && (*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsSessionWorkingSetShared() == 0);
+    } else {
+        crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetExclusive() != 0 && (*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetShared() == 0);
+    }
     _ws_clear_owns(thread, ws, true);
     ddk::ExReleasePushLockExclusive(core::ptr::addr_of_mut!((*ws).WorkingSetMutex));
     super::ke::KeLeaveGuardedRegion();
@@ -813,13 +918,30 @@ pub unsafe fn MiUnlockWorkingSet(thread: ddk::PETHREAD, ws: ddk::PMMSUPPORT) {
 #[inline]
 pub unsafe fn MiLockWorkingSetShared(thread: ddk::PETHREAD, ws: ddk::PMMSUPPORT) {
     super::ke::KeEnterGuardedRegion();
+    crate::ASSERT!(!crate::mm::MI_IS_SESSION_ADDRESS(ws as PVOID));
+    crate::ASSERT!(!mm_any_ws_lock_held(thread));
     ddk::ExAcquirePushLockShared(core::ptr::addr_of_mut!((*ws).WorkingSetMutex));
+    if ws == core::ptr::addr_of_mut!(MmSystemCacheWs) {
+        crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsSystemWorkingSetExclusive() == 0 && (*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsSystemWorkingSetShared() == 0);
+    } else if (*ws).Flags.SessionSpace() != 0 {
+        crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsSessionWorkingSetExclusive() == 0 && (*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsSessionWorkingSetShared() == 0);
+    } else {
+        crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetExclusive() == 0 && (*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetShared() == 0);
+    }
     _ws_set_owns(thread, ws, false);
 }
 
 /// MiUnlockWorkingSetShared — release shared working set lock on MMSUPPORT.
 #[inline]
 pub unsafe fn MiUnlockWorkingSetShared(thread: ddk::PETHREAD, ws: ddk::PMMSUPPORT) {
+    crate::ASSERT!(!crate::mm::MI_IS_SESSION_ADDRESS(ws as PVOID));
+    if ws == core::ptr::addr_of_mut!(MmSystemCacheWs) {
+        crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsSystemWorkingSetExclusive() == 0 && (*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsSystemWorkingSetShared() != 0);
+    } else if (*ws).Flags.SessionSpace() != 0 {
+        crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsSessionWorkingSetExclusive() == 0 && (*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsSessionWorkingSetShared() != 0);
+    } else {
+        crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetExclusive() == 0 && (*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetShared() != 0);
+    }
     _ws_clear_owns(thread, ws, false);
     ddk::ExReleasePushLockShared(core::ptr::addr_of_mut!((*ws).WorkingSetMutex));
     super::ke::KeLeaveGuardedRegion();
@@ -845,7 +967,8 @@ pub unsafe fn MiLockProcessWorkingSetForFault(
             MiLockProcessWorkingSet(process, thread);
         }
     } else {
-        // Unsafe lock cannot be shared (C asserts this).
+        // Unsafe lock cannot be shared.
+        crate::ASSERT!(shared == 0);
         MiLockProcessWorkingSetUnsafe(process, thread);
     }
 }
@@ -860,6 +983,7 @@ pub unsafe fn MiUnlockProcessWorkingSetForFault(
     safe: *mut BOOLEAN,
     shared: *mut BOOLEAN,
 ) {
+    crate::ASSERT!(mi_ws_owner(process));
     if (*process).Vm.Flags.AcquiredUnsafe() != 0 {
         // Was an unsafe acquisition — release unsafely (no GuardedRegion leave).
         MiUnlockProcessWorkingSetUnsafe(process, thread);
@@ -888,19 +1012,41 @@ pub unsafe fn MiConvertSharedWorkingSetLockToExclusive(
     thread: ddk::PETHREAD,
     vm: ddk::PMMSUPPORT,
 ) -> BOOLEAN {
-    // Try to convert the push lock
-    let result = super::ex::ExConvertPushLockSharedToExclusive(
-        core::ptr::addr_of_mut!((*vm).WorkingSetMutex),
+    // No exclusive lock, and exactly one shared one.
+    crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetExclusive() == 0);
+    crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsSessionWorkingSetExclusive() == 0);
+    crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsSystemWorkingSetExclusive() == 0);
+    crate::ASSERT!(
+        (*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetShared()
+            + (*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsSessionWorkingSetShared()
+            + (*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsSystemWorkingSetShared()
+            == 1
     );
 
-    if result != 0 {
-        // Successfully converted
+    if super::ex::ExConvertPushLockSharedToExclusive(
+        core::ptr::addr_of_mut!((*vm).WorkingSetMutex),
+    ) == 0
+    {
+        return 0;
+    }
+
+    // The C moves the flag pair of the KIND of working set converted. This used
+    // to flip the process pair whatever `vm` was, so converting the system-cache
+    // or a session working set left the thread claiming the wrong lock.
+    if vm == core::ptr::addr_of_mut!(MmSystemCacheWs) {
+        crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsSystemWorkingSetShared() != 0);
+        (*thread).__bindgen_anon_9.__bindgen_anon_1.set_OwnsSystemWorkingSetShared(0);
+        (*thread).__bindgen_anon_9.__bindgen_anon_1.set_OwnsSystemWorkingSetExclusive(1);
+    } else if (*vm).Flags.SessionSpace() != 0 {
+        crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsSessionWorkingSetShared() != 0);
+        (*thread).__bindgen_anon_9.__bindgen_anon_1.set_OwnsSessionWorkingSetShared(0);
+        (*thread).__bindgen_anon_9.__bindgen_anon_1.set_OwnsSessionWorkingSetExclusive(1);
+    } else {
+        crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetShared() != 0);
         (*thread).__bindgen_anon_9.__bindgen_anon_1.set_OwnsProcessWorkingSetShared(0);
         (*thread).__bindgen_anon_9.__bindgen_anon_1.set_OwnsProcessWorkingSetExclusive(1);
-        1
-    } else {
-        0
     }
+    1
 }
 
 // ============================================================================
@@ -909,20 +1055,27 @@ pub unsafe fn MiConvertSharedWorkingSetLockToExclusive(
 
 extern "C" {
     static mut MmExpansionLock: crate::ke::KSPIN_LOCK;
+    static mut MiExpansionLockOwner: ddk::PETHREAD;
 }
 
 /// MiAcquireExpansionLock — acquire MmExpansionLock at DISPATCH_LEVEL.
 #[inline]
 pub unsafe fn MiAcquireExpansionLock() -> KIRQL {
+    crate::ASSERT!(crate::ke::KeGetCurrentIrql() <= crate::base::APC_LEVEL);
     let mut old_irql: KIRQL = 0;
     crate::ke::KeAcquireSpinLock(core::ptr::addr_of_mut!(MmExpansionLock), &mut old_irql);
+    crate::ASSERT!(MiExpansionLockOwner.is_null());
+    MiExpansionLockOwner = super::common::PsGetCurrentThread();
     old_irql
 }
 
 /// MiReleaseExpansionLock — release MmExpansionLock.
 #[inline]
 pub unsafe fn MiReleaseExpansionLock(old_irql: KIRQL) {
+    crate::ASSERT!(MiExpansionLockOwner == super::common::PsGetCurrentThread());
+    MiExpansionLockOwner = core::ptr::null_mut();
     crate::ke::KeReleaseSpinLock(core::ptr::addr_of_mut!(MmExpansionLock), old_irql);
+    crate::ASSERT!(crate::ke::KeGetCurrentIrql() <= crate::base::APC_LEVEL);
 }
 
 // ============================================================================
@@ -1109,6 +1262,13 @@ pub unsafe fn MmGetKernelAddressSpace() -> ddk::PMMSUPPORT {
 /// MmLockAddressSpace — acquire the guarded mutex for address creation.
 #[inline]
 pub unsafe fn MmLockAddressSpace(address_space: ddk::PMMSUPPORT) {
+    let thread = super::common::PsGetCurrentThread();
+    crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetExclusive() == 0);
+    crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetShared() == 0);
+    crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsSystemWorkingSetExclusive() == 0);
+    crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsSystemWorkingSetShared() == 0);
+    crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsSessionWorkingSetExclusive() == 0);
+    crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsSessionWorkingSetShared() == 0);
     let vm_offset = core::mem::offset_of!(ddk::_EPROCESS, Vm);
     let process = ((address_space as *mut u8).sub(vm_offset)) as ddk::PEPROCESS;
     ddk::KeAcquireGuardedMutex(core::ptr::addr_of_mut!((*process).AddressCreationLock));
@@ -1179,15 +1339,21 @@ pub unsafe fn MiIncrementPageTableReferences(address: PVOID) -> u16 {
         let pde_offset = (address as usize) / 0x400000;
         let ref_count = (*MmWorkingSetList).UsedPageTableEntries.as_mut_ptr().add(pde_offset);
         *ref_count += 1;
+        crate::ASSERT!(*ref_count as usize <= crate::mm::PTE_PER_PAGE);
         *ref_count
     }
     #[cfg(not(target_arch = "x86"))]
     {
         // 64-bit (3+ level paging): PFN from PDE
         let pde = crate::mm::MiAddressToPde(address) as ddk::PMMPTE;
+        crate::ASSERT!(pde as usize != 0xFFFF_F6FB_7DBE_DF68 /* PXE_SELFMAP */);
+        let thread = super::common::PsGetCurrentThread();
+        crate::ASSERT!((*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetExclusive() != 0);
+        crate::ASSERT!((*pde).u.Hard.Valid() == 1);
         let pfn = &mut *(crate::mm::MiGetPfnEntry((*pde).u.Hard.PageFrameNumber() as _) as ddk::PMMPFN);
         let count = pfn.__bindgen_anon_1.OriginalPte.u.Soft.UsedPageTableEntries() + 1;
         pfn.__bindgen_anon_1.OriginalPte.u.Soft.set_UsedPageTableEntries(count);
+        crate::ASSERT!(count as usize <= crate::mm::PTE_PER_PAGE);
         count as u16
     }
 }
@@ -1229,8 +1395,11 @@ unsafe fn InterlockedCompareExchange16(dest: *mut i16, exchange: i16, comperand:
 /// MiDropLockCount — drop a locked page without dereferencing it.
 #[inline]
 pub unsafe fn MiDropLockCount(pfn: ddk::PMMPFN) {
+    crate::ASSERT!((*pfn).u3.e2.ReferenceCount != 0);
+    crate::ASSERT!((*pfn).u2.ShareCount == 0);
     // If last reference, update MmSystemLockPagesCount
     if (*pfn).u3.e2.ReferenceCount == 1 {
+        crate::ASSERT!((*pfn).u3.__bindgen_anon_1.e1.PageLocation() != crate::mm::ActiveAndValid);
         InterlockedDecrementSizeT(core::ptr::addr_of_mut!(MmSystemLockPagesCount));
     }
 }
@@ -1240,9 +1409,13 @@ pub unsafe fn MiDropLockCount(pfn: ddk::PMMPFN) {
 pub unsafe fn MiDereferencePfnAndDropLockCount(pfn: ddk::PMMPFN) {
     loop {
         let old_ref_count = (*pfn).u3.e2.ReferenceCount;
+        crate::ASSERT!(old_ref_count != 0);
 
         // Are we the last one?
         if old_ref_count == 1 {
+            crate::ASSERT!((*pfn).u3.e2.ReferenceCount == 1);
+            crate::ASSERT!((*pfn).u3.__bindgen_anon_1.e1.PageLocation() != crate::mm::ActiveAndValid);
+            crate::ASSERT!((*pfn).u2.ShareCount == 0);
             InterlockedDecrementSizeT(core::ptr::addr_of_mut!(MmSystemLockPagesCount));
             let page_frame_index = crate::mm::MiGetPfnEntryIndex(pfn as crate::mm::PMMPFN) as ULONG_PTR;
             MiDecrementReferenceCount(pfn, page_frame_index);
@@ -1255,10 +1428,18 @@ pub unsafe fn MiDereferencePfnAndDropLockCount(pfn: ddk::PMMPFN) {
             (old_ref_count - 1) as i16,
             old_ref_count as i16,
         ) as u16;
+        crate::ASSERT!(ref_count != 0);
 
         if old_ref_count == ref_count {
+            crate::ASSERT!(ref_count > 1);
             // Success — check if we went from 2 to 1 with shares
             if ref_count == 2 && (*pfn).u2.ShareCount >= 1 {
+                crate::ASSERT!((*pfn).u3.__bindgen_anon_1.e1.PageLocation() == crate::mm::ActiveAndValid);
+                // C: a prototype page here would need its commit returned -- ASSERT(FALSE).
+                crate::ASSERT!(
+                    !((*pfn).u3.__bindgen_anon_1.e1.PrototypePte() == 1
+                        && (*pfn).__bindgen_anon_1.OriginalPte.u.Soft.Prototype() == 1)
+                );
                 InterlockedDecrementSizeT(core::ptr::addr_of_mut!(MmSystemLockPagesCount));
             }
             return;
@@ -1269,16 +1450,26 @@ pub unsafe fn MiDereferencePfnAndDropLockCount(pfn: ddk::PMMPFN) {
 /// MiReferenceProbedPageAndBumpLockCount — reference a probed page via CAS loop.
 #[inline]
 pub unsafe fn MiReferenceProbedPageAndBumpLockCount(pfn: ddk::PMMPFN) {
+    crate::ASSERT!((*pfn).u3.e2.ReferenceCount != 0);
+    if (*pfn).u4.__bindgen_anon_1.AweAllocation() != 0 {
+        // MI_IS_ROS_PFN
+        crate::ASSERT!((*pfn).u3.__bindgen_anon_1.e1.PageLocation() == crate::mm::ActiveAndValid);
+    } else {
+        crate::ASSERT!((*pfn).u2.ShareCount != 0 && (*pfn).u3.__bindgen_anon_1.e1.PageLocation() == crate::mm::ActiveAndValid);
+    }
     InterlockedIncrementSizeT(core::ptr::addr_of_mut!(MmSystemLockPagesCount));
 
     let old_ref_count;
     loop {
         let old = (*pfn).u3.e2.ReferenceCount;
+        crate::ASSERT!(old != 0);
+        crate::ASSERT!(old < 2500);
         let actual = InterlockedCompareExchange16(
             &mut (*pfn).u3.e2.ReferenceCount as *mut u16 as *mut i16,
             (old + 1) as i16,
             old as i16,
         ) as u16;
+        crate::ASSERT!(actual != 0);
         if old == actual {
             old_ref_count = old;
             break;
@@ -1294,6 +1485,8 @@ pub unsafe fn MiReferenceProbedPageAndBumpLockCount(pfn: ddk::PMMPFN) {
 /// MiReferenceUnusedPageAndBumpLockCount — reference an unused page.
 #[inline]
 pub unsafe fn MiReferenceUnusedPageAndBumpLockCount(pfn: ddk::PMMPFN) {
+    crate::ASSERT!((*pfn).u2.ShareCount == 0);
+    crate::ASSERT!((*pfn).u3.__bindgen_anon_1.e1.PageLocation() != crate::mm::ActiveAndValid);
     InterlockedIncrementSizeT(core::ptr::addr_of_mut!(MmSystemLockPagesCount));
 
     // InterlockedIncrement16
@@ -1305,6 +1498,7 @@ pub unsafe fn MiReferenceUnusedPageAndBumpLockCount(pfn: ddk::PMMPFN) {
 
     // If someone had already locked the page, undo our bump
     if new_ref_count != 1 {
+        crate::ASSERT!(new_ref_count < 2500);
         InterlockedDecrementSizeT(core::ptr::addr_of_mut!(MmSystemLockPagesCount));
     }
 }
@@ -1326,8 +1520,11 @@ pub unsafe fn MiReferenceUsedPageAndBumpLockCount(pfn: ddk::PMMPFN) {
         if (*pfn).u2.ShareCount == 0 {
             // Locked, so undo
             InterlockedDecrementSizeT(core::ptr::addr_of_mut!(MmSystemLockPagesCount));
+        } else {
+            crate::ASSERT!((*pfn).u3.__bindgen_anon_1.e1.PageLocation() == crate::mm::ActiveAndValid);
         }
     } else {
+        crate::ASSERT!(new_ref_count < 2500);
         // Someone had already locked the page, undo our bump
         InterlockedDecrementSizeT(core::ptr::addr_of_mut!(MmSystemLockPagesCount));
     }
@@ -1375,6 +1572,7 @@ pub unsafe fn MiSynchronizeSystemPde(pde: ddk::PMMPDE) -> BOOLEAN {
 
     // MI_WRITE_VALID_PDE — volatile write
     core::ptr::write_volatile(pde, source_pde);
+    crate::ASSERT!((*pde).u.Long == (*(crate::mm::MmSystemPagePtes.add(index) as ddk::PMMPTE)).u.Long);
     // KeMemoryBarrierWithoutFence — compiler barrier
     core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
     1

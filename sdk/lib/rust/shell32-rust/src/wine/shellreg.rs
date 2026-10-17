@@ -5,57 +5,28 @@
 //! (stdcall on i386 → `_SHRegOpenKeyA@12` etc., matched by `#[no_mangle] extern "system"`).
 
 use crate::types::*;
+// One declaration per external symbol: island.rs.
+use crate::island::CloseHandle;
+use crate::island::GetCurrentProcess;
+use crate::island::GetTokenInformation;
+use crate::island::OpenProcessToken;
+use crate::island::RegCloseKey;
+use crate::island::RegCreateKeyExW;
+use crate::island::RegOpenKeyA;
+use crate::island::RegOpenKeyW;
+use crate::island::RegQueryValueA;
+use crate::island::RegQueryValueW;
+use crate::island::SHQueryValueExA;
+use crate::island::SHQueryValueExW;
 use core::mem::size_of;
 use core::ptr;
 
 // ── imports (resolved via shell32's existing import libs at link) ──────────────────────
 extern "system" {
     // advapi32
-    fn RegOpenKeyA(hKey: HKEY, lpSubKey: LPCSTR, phkResult: PHKEY) -> LONG;
-    fn RegOpenKeyW(hKey: HKEY, lpSubKey: LPCWSTR, phkResult: PHKEY) -> LONG;
-    fn RegQueryValueA(hKey: HKEY, lpSubKey: LPCSTR, lpData: LPSTR, lpcbData: *mut LONG) -> LONG;
-    fn RegQueryValueW(hKey: HKEY, lpSubKey: LPCWSTR, lpData: LPWSTR, lpcbData: *mut LONG) -> LONG;
-    fn RegCloseKey(hKey: HKEY) -> LONG;
-    fn RegCreateKeyExW(
-        hKey: HKEY,
-        lpSubKey: LPCWSTR,
-        Reserved: DWORD,
-        lpClass: LPWSTR,
-        dwOptions: DWORD,
-        samDesired: REGSAM,
-        lpSecurityAttributes: LPVOID,
-        phkResult: PHKEY,
-        lpdwDisposition: LPDWORD,
-    ) -> LONG;
-    fn OpenProcessToken(ProcessHandle: HANDLE, DesiredAccess: DWORD, TokenHandle: *mut HANDLE) -> BOOL;
-    fn GetTokenInformation(
-        TokenHandle: HANDLE,
-        TokenInformationClass: DWORD,
-        TokenInformation: LPVOID,
-        TokenInformationLength: DWORD,
-        ReturnLength: LPDWORD,
-    ) -> BOOL;
     // kernel32
-    fn GetCurrentProcess() -> HANDLE;
     fn GetLastError() -> DWORD;
-    fn CloseHandle(hObject: HANDLE) -> BOOL;
     // shlwapi
-    fn SHQueryValueExA(
-        hKey: HKEY,
-        lpValueName: LPCSTR,
-        lpReserved: LPDWORD,
-        lpType: LPDWORD,
-        lpData: LPBYTE,
-        lpcbData: LPDWORD,
-    ) -> LONG;
-    fn SHQueryValueExW(
-        hKey: HKEY,
-        lpValueName: LPCWSTR,
-        lpReserved: LPDWORD,
-        lpType: LPDWORD,
-        lpData: LPVOID,
-        lpcbData: LPDWORD,
-    ) -> LONG;
 }
 
 const TOKEN_READ: DWORD = 0x00020008; // STANDARD_RIGHTS_READ(0x20000) | TOKEN_QUERY(0x8)
@@ -99,7 +70,7 @@ pub unsafe extern "system" fn SHRegQueryValueExA(
     lpData: LPBYTE,
     lpcbData: LPDWORD,
 ) -> LONG {
-    SHQueryValueExA(hkey, lpValueName, lpReserved, lpType, lpData, lpcbData)
+    (SHQueryValueExA(hkey, lpValueName, lpReserved, lpType, (lpData).cast(), lpcbData)) as i32
 }
 
 /// *************************************************************************
@@ -125,7 +96,7 @@ pub unsafe extern "system" fn SHRegQueryValueExW(
     pvData: LPVOID,
     pcbData: LPDWORD,
 ) -> LONG {
-    SHQueryValueExW(hkey, pszValue, pdwReserved, pdwType, pvData, pcbData)
+    (SHQueryValueExW(hkey, pszValue, pdwReserved, pdwType, pvData, pcbData)) as i32
 }
 
 /// *************************************************************************

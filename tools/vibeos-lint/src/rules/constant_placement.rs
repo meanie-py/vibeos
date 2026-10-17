@@ -154,6 +154,7 @@ fn patterns() -> &'static Patterns {
         endif_directive: crate::regexes::cached(r"(?m)^[ \t]*#[ \t]*endif\b").unwrap(),
     })
 }
+static SYMBOL_TOKEN: OnceLock<Regex> = OnceLock::new();
 fn parse_ddk_names(text: &str) -> HashSet<String> {
     patterns()
         .ddk_name
@@ -668,6 +669,44 @@ fn is_keyword(s: &str) -> bool {
             | "dyn"
     )
 }
+fn identifier_symbol(s: &str) -> bool {
+    let mut bytes = s.bytes();
+    bytes
+        .next()
+        .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
+        && bytes.all(|b| b.is_ascii_alphanumeric() || b == b'_')
+}
+fn symbol_occurrences(rust: &str, symbols: &[String]) -> Vec<(String, usize, usize)> {
+    if symbols.is_empty() {
+        return Vec::new();
+    }
+    let names: HashSet<_> = symbols
+        .iter()
+        .filter(|s| identifier_symbol(s))
+        .map(String::as_str)
+        .collect();
+    let mut found: Vec<_> = SYMBOL_TOKEN
+        .get_or_init(|| crate::regexes::cached(r"\b([A-Za-z_][A-Za-z0-9_]*)\b").unwrap())
+        .captures_iter(rust)
+        .filter(|capture| names.contains(&capture[1]))
+        .map(|capture| {
+            let whole = capture.get(0).unwrap();
+            (capture[1].to_owned(), whole.start(), whole.end())
+        })
+        .collect();
+    // Invalid C octal spellings such as 09 also take the legacy symbolic path.
+    // Keep exact searches for these uncommon non-identifier facts.
+    for spelling in symbols.iter().filter(|s| !identifier_symbol(s)) {
+        let pattern = crate::regexes::cached(&format!(r"\b{}\b", regex::escape(spelling))).unwrap();
+        found.extend(
+            pattern
+                .find_iter(rust)
+                .map(|m| (spelling.clone(), m.start(), m.end())),
+        );
+    }
+    found
+}
+
 fn guard(text: &str, stmt_start: usize, head: &str) -> String {
     if let Some(m) = patterns().guard_if.captures(head) {
         return first_ident(m.get(1).unwrap().as_str());
@@ -829,9 +868,12 @@ fn placement_findings(c_body: &str, rust_body: &str, ddk: &HashSet<String>) -> V
     let rust = twins::blank_rust(rust_body);
     let spans = statements(&rust);
     let mut values: HashMap<String, Vec<String>> = HashMap::new();
+    let mut symbols = Vec::new();
     for sp in c_slots.keys() {
         if let Some(v) = c_int_value(sp) {
             values.entry(v).or_default().push(sp.clone());
+        } else {
+            symbols.push(sp.clone());
         }
     }
     let mut occ: Vec<(String, usize, usize)> = Vec::new();
@@ -856,14 +898,14 @@ fn placement_findings(c_body: &str, rust_body: &str, ddk: &HashSet<String>) -> V
             }
         }
     }
-    for sp in c_slots.keys() {
-        if c_int_value(sp).is_some() {
-            continue;
-        }
-        let re = crate::regexes::cached(&format!(r"\b{}\b", regex::escape(sp))).unwrap();
-        for m in re.find_iter(&rust) {
-            if !rust_syntax(&rust, m.start(), m.end(), None) {
-                occ.push((sp.clone(), m.start(), m.end()));
+    if !symbols.is_empty() {
+        // A separate whole-body search for every C name made this O(symbols ×
+        // Rust-body-bytes). Scan the normal ASCII identifier spellings as
+        // identifier tokens once with the same Unicode `\b` guards and filter
+        // by the candidate set; byte offsets and spelling remain unchanged.
+        for (name, start, end) in symbol_occurrences(&rust, &symbols) {
+            if !rust_syntax(&rust, start, end, None) {
+                occ.push((name, start, end));
             }
         }
     }
@@ -1142,6 +1184,25 @@ mod tests {
         );
         assert!(names.contains("KernelMode"));
         assert!(names.contains("NonPagedPool"));
+    }
+    #[test]
+    fn symbolic_path_keeps_invalid_octal_spellings() {
+        assert!(c_int_value("09").is_none());
+        assert_eq!(
+            symbol_occurrences("09 x09 09x", &["09".into()]),
+            vec![("09".into(), 0, 2)]
+        );
+    }
+    #[test]
+    fn combined_symbol_search_keeps_unicode_word_boundaries() {
+        let found = symbol_occurrences(
+            "FLAG FLAG_LONG xFLAG FLAGx éFLAG FLAGé",
+            &["FLAG".into(), "FLAG_LONG".into()],
+        );
+        assert_eq!(
+            found.iter().map(|x| x.0.as_str()).collect::<Vec<_>>(),
+            vec!["FLAG", "FLAG_LONG"]
+        );
     }
 }
 

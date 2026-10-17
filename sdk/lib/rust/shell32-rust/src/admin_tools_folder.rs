@@ -283,7 +283,6 @@ extern "C" {
 // Deterministic COM scaffold for CAdminToolsFolder; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    fn HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
     fn HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
@@ -989,7 +988,7 @@ pub unsafe extern "system" fn CAdminToolsFolder_CreateInstance(
     let this = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        core::mem::size_of::<CAdminToolsFolder>(),
+        (core::mem::size_of::<CAdminToolsFolder>()) as _,
     ) as *mut CAdminToolsFolder;
     if this.is_null() {
         return E_OUTOFMEMORY;
@@ -1027,7 +1026,6 @@ pub unsafe extern "system" fn CAdminToolsFolder_CreateInstance(
 // Deterministic C++ support closure selected from source identifiers.
 
 extern "system" {
-    fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
     fn SHFree(memory: LPVOID);
     fn ILGetNext(pidl: PCUIDLIST_RELATIVE) -> LPITEMIDLIST;
     #[link_name = "Shell32RustCoCreateInitSF"]
@@ -1055,6 +1053,10 @@ extern "C" {
 }
 
 use crate::shellcom::*;
+// The crate's own functions: the definition is the declaration.
+use crate::wine::pidl::ILClone;
+// One declaration per external symbol: island.rs.
+use crate::island::HeapAlloc;
 use crate::types::*;
 use core::ffi::c_void;
 

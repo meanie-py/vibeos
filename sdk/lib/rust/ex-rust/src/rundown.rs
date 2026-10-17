@@ -55,6 +55,14 @@ unsafe fn _ExAcquireRundownProtection(RunRef: PEX_RUNDOWN_REF) -> BOOLEAN {
 
 #[inline(always)]
 unsafe fn _ExReleaseRundownProtection(RunRef: PEX_RUNDOWN_REF) {
+    // ex.h's fast-path sanity check, restored (print-and-continue, as the C):
+    // releasing a reference nobody holds. On MP another CPU can race the read.
+    let value = (*RunRef).__bindgen_anon_1.Count as usize;
+    if value & EX_RUNDOWN_ACTIVE == 0 {
+        ntkrnl_sys::ASSERT!(
+            value >= EX_RUNDOWN_COUNT_INC || ntkrnl_sys::globals::KeNumberProcessors > 1
+        );
+    }
     ExfReleaseRundownProtection_impl(RunRef);
 }
 

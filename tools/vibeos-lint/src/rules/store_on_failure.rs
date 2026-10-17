@@ -5,8 +5,9 @@ use crate::{
 };
 use rayon::prelude::*;
 use regex::Regex;
+use std::collections::HashMap;
 use std::path::Path;
-use std::sync::LazyLock;
+use std::sync::{LazyLock, Mutex};
 
 pub struct StoreOnFailure;
 const SUCCESS: &[&str] = &[
@@ -53,6 +54,25 @@ static IDENT_EXPR: LazyLock<Regex> =
 static FAIL_IDENT: LazyLock<Regex> = LazyLock::new(|| {
     crate::regexes::cached(r"^[A-Z][A-Z0-9_]*$|^(?:\w+::)+[A-Z][A-Z0-9_]*$").unwrap()
 });
+static INTO_SUFFIX: LazyLock<Regex> = LazyLock::new(|| {
+    crate::regexes::cached(r"\.\s*(?:try_)?into\s*\(\s*\)(?:\s*\.\s*unwrap\s*\(\s*\))?$").unwrap()
+});
+static AS_TYPE_SUFFIX: LazyLock<Regex> =
+    LazyLock::new(|| crate::regexes::cached(r"\s+as\s+[\w:]+$").unwrap());
+static LITERAL: LazyLock<Regex> = LazyLock::new(|| {
+    crate::regexes::cached(r"^(-?)(0x[0-9a-fA-F]+|[0-9]+)(?:_?[iu](?:8|16|32|64|size))?$").unwrap()
+});
+static ELSE_START: LazyLock<Regex> =
+    LazyLock::new(|| crate::regexes::cached(r"(?s)^\s*else\b").unwrap());
+static ERR_EXPR: LazyLock<Regex> =
+    LazyLock::new(|| crate::regexes::cached(r"(?s)^Err\s*\(.*\)$").unwrap());
+static UNIT_OR_NEVER: LazyLock<Regex> =
+    LazyLock::new(|| crate::regexes::cached(r"->\s*(?:\(\s*\)|!)").unwrap());
+static INC_POST: LazyLock<Regex> =
+    LazyLock::new(|| crate::regexes::cached(r"(?:\+\+|--)").unwrap());
+static STORE_NOLINT: LazyLock<Regex> = LazyLock::new(|| {
+    crate::regexes::cached(r"//\s*nolint(?::\s*store-on-failure\b|\s*$)").unwrap()
+});
 static CALL_SKIP: &[&str] = &[
     "if",
     "while",
@@ -76,12 +96,8 @@ fn strip(e: &str) -> String {
     while s.starts_with('(') && s.ends_with(')') {
         s = s[1..s.len() - 1].trim().to_owned()
     }
-    let into =
-        crate::regexes::cached(r"\.\s*(?:try_)?into\s*\(\s*\)(?:\s*\.\s*unwrap\s*\(\s*\))?$")
-            .unwrap();
-    s = into.replace(&s, "").to_string();
-    let as_type = crate::regexes::cached(r"\s+as\s+[\w:]+$").unwrap();
-    as_type.replace(&s, "").trim().to_string()
+    s = INTO_SUFFIX.replace(&s, "").to_string();
+    AS_TYPE_SUFFIX.replace(&s, "").trim().to_string()
 }
 fn last(e: &str) -> &str {
     e.rsplit("::").next().unwrap_or(e)
@@ -103,9 +119,7 @@ fn literal_value(e: &str) -> Option<i64> {
     if SUCCESS.contains(&l) || l.ends_with("_SUCCESS") {
         return Some(0);
     }
-    let re = crate::regexes::cached(r"^(-?)(0x[0-9a-fA-F]+|[0-9]+)(?:_?[iu](?:8|16|32|64|size))?$")
-        .unwrap();
-    let c = re.captures(&s)?;
+    let c = LITERAL.captures(&s)?;
     let mut n = if c[2].starts_with("0x") {
         i64::from_str_radix(&c[2][2..], 16).ok()?
     } else {
@@ -191,8 +205,7 @@ fn skip_unreachable(body: &str, close: usize) -> usize {
     }
     let mut j = close;
     loop {
-        let re = crate::regexes::cached(r"(?s)^\s*else\b").unwrap();
-        let Some(m) = re.find(&body[j + 1..]) else {
+        let Some(m) = ELSE_START.find(&body[j + 1..]) else {
             return j;
         };
         let k = body[j + 1 + m.end()..]
@@ -267,10 +280,7 @@ fn may_fail(v: &str, body: &str, store_at: usize) -> bool {
     if is_success(v) {
         return false;
     }
-    if crate::regexes::cached(r"(?s)^Err\s*\(.*\)$")
-        .unwrap()
-        .is_match(v)
-    {
+    if ERR_EXPR.is_match(v) {
         return true;
     }
     if FAIL_IDENT.is_match(v) {
@@ -296,10 +306,7 @@ fn returns_value(text: &str, f: &Function) -> bool {
         return false;
     };
     let sig = &text[close..f.body_start];
-    sig.contains("->")
-        && !crate::regexes::cached(r"->\s*(?:\(\s*\)|!)")
-            .unwrap()
-            .is_match(sig)
+    sig.contains("->") && !UNIT_OR_NEVER.is_match(sig)
 }
 fn null_store(body: &str, start: usize, end: usize) -> bool {
     NULL_STORE.is_match(&body[start..end])
@@ -319,7 +326,6 @@ fn c_stores(p: &str, body: &str) -> Vec<usize> {
         r"(?:\*\s*\(?\s*{v}\s*\)?|{v}\s*(?:->\s*\w+(?:\s*(?:\.|->)\s*\w+)*|\[[^\]]*\]))"
     ))
     .unwrap();
-    let inc_post = crate::regexes::cached(r"(?:\+\+|--)").unwrap();
     let mut out = vec![];
     for m in lhs.find_iter(body) {
         let at = m.start();
@@ -347,7 +353,7 @@ fn c_stores(p: &str, body: &str) -> Vec<usize> {
             out.push(at);
             continue;
         }
-        if inc_post.find(trimmed).is_some_and(|x| x.start() == 0) {
+        if INC_POST.find(trimmed).is_some_and(|x| x.start() == 0) {
             out.push(at);
             continue;
         }
@@ -408,11 +414,48 @@ fn c_next_return(body: &str, at: usize) -> Option<String> {
     let m = RET_EXPR.captures_at(body, at)?;
     Some(m[1].to_string())
 }
+type SuccessKey = (std::path::PathBuf, usize, String, String, u8);
+#[derive(Default)]
+struct SuccessCache(Mutex<HashMap<SuccessKey, Option<(String, String)>>>);
+
 fn c_success_only(
     p: &str,
     twin: &Function,
     index: &crate::twins::CIndex,
     depth: u8,
+    cache: &SuccessCache,
+) -> Option<(String, String)> {
+    let key = (
+        twin.path.clone(),
+        twin.body_start,
+        twin.name.clone(),
+        p.to_owned(),
+        depth,
+    );
+    let cached = cache
+        .0
+        .lock()
+        .expect("store-on-failure cache poisoned")
+        .get(&key)
+        .cloned();
+    if let Some(result) = cached {
+        return result.clone();
+    }
+    let result = c_success_only_uncached(p, twin, index, depth, cache);
+    cache
+        .0
+        .lock()
+        .expect("store-on-failure cache poisoned")
+        .insert(key, result.clone());
+    result
+}
+
+fn c_success_only_uncached(
+    p: &str,
+    twin: &Function,
+    index: &crate::twins::CIndex,
+    depth: u8,
+    cache: &SuccessCache,
 ) -> Option<(String, String)> {
     let body = &twin.body;
     let stores = c_stores(p, body);
@@ -435,7 +478,7 @@ fn c_success_only(
             .all(|&at| rets.iter().any(|(_, _, r)| r.start <= at && at < r.end))
     {
         return if depth > 0 {
-            through_callee(p, twin, index, depth)
+            through_callee(p, twin, index, depth, cache)
         } else {
             None
         };
@@ -462,9 +505,10 @@ fn c_success_only(
         }
         succ.push(strip(&r));
     }
-    for m in C_MACRO.find_iter(body).filter(|m| m.start() >= stores[0]) {
-        let c = C_MACRO.captures(&body[m.start()..])?;
-        if !HARMLESS.is_match(&c[1]) {
+    // Iterate captures once. Searching again from each match's start rescanned
+    // the remainder of large bodies and kept the same first capture each time.
+    for c in C_MACRO.captures_iter(body) {
+        if c.get(0).unwrap().start() >= stores[0] && !HARMLESS.is_match(&c[1]) {
             return None;
         }
     }
@@ -491,6 +535,7 @@ fn through_callee(
     twin: &Function,
     index: &crate::twins::CIndex,
     depth: u8,
+    cache: &SuccessCache,
 ) -> Option<(String, String)> {
     for m in RET_CALL.captures_iter(&twin.body) {
         let whole = m.get(0).unwrap();
@@ -508,6 +553,7 @@ fn through_callee(
                     &sub,
                     index,
                     depth - 1,
+                    cache,
                 ) {
                     return Some((format!("{}(): {}", &m[1], ev), succ));
                 }
@@ -564,10 +610,7 @@ fn candidates(file: &crate::SourceFile, root: &Path) -> Vec<Site> {
                 continue;
             }
             let line = file.line(f.body_start + at);
-            if crate::regexes::cached(r"//\s*nolint(?::\s*store-on-failure\b|\s*$)")
-                .unwrap()
-                .is_match(file.line_text(line))
-            {
+            if STORE_NOLINT.is_match(file.line_text(line)) {
                 continue;
             }
             out.push(Site {
@@ -592,6 +635,7 @@ impl Rule for StoreOnFailure {
     }
     fn run(&self, c: &Corpus) -> Result<Vec<String>, String> {
         let index = c.c_twins();
+        let success_cache = SuccessCache::default();
         let out = c
             .rust_files()
             .par_bridge()
@@ -607,7 +651,8 @@ impl Rule for StoreOnFailure {
                     let cname =
                         nulls::c_name_for(&s.params, s.idx, &nulls::c_param_names(&twin.params));
                     let Some(cname) = cname else { continue };
-                    let Some((_, succ)) = c_success_only(&cname, twin, index, 1) else {
+                    let Some((_, succ)) = c_success_only(&cname, twin, index, 1, &success_cache)
+                    else {
                         continue;
                     };
                     if is_success(&s.value)
@@ -668,7 +713,10 @@ mod tests {
             ret: "int".into(),
         };
         let c = crate::twins::CIndex::from_files(Vec::<&crate::SourceFile>::new());
-        assert!(c_success_only("out", &f, &c, 0).is_some());
+        let cache = SuccessCache::default();
+        let first = c_success_only("out", &f, &c, 0, &cache);
+        assert!(first.is_some());
+        assert_eq!(c_success_only("out", &f, &c, 0, &cache), first);
     }
     #[test]
     fn candidate_next_failure_guarded_success_and_nolint() {
@@ -676,15 +724,15 @@ mod tests {
         let src = "pub unsafe fn F(out: *mut u32) -> u32 { *out = 1; STATUS_BAD }";
         let file = crate::SourceFile::new("x.rs".into(), src.into());
         assert_eq!(candidates(&file, root).len(), 1);
-        let good="pub unsafe fn F(out: *mut u32, status:u32) -> u32 { if status == STATUS_SUCCESS { *out=1; } status }";
+        let good = "pub unsafe fn F(out: *mut u32, status:u32) -> u32 { if status == STATUS_SUCCESS { *out=1; } status }";
         assert!(candidates(&crate::SourceFile::new("x.rs".into(), good.into()), root).is_empty());
-        let waived="pub unsafe fn F(out: *mut u32) -> u32 { *out = 1; // nolint: store-on-failure\n STATUS_BAD }";
+        let waived = "pub unsafe fn F(out: *mut u32) -> u32 { *out = 1; // nolint: store-on-failure\n STATUS_BAD }";
         assert!(candidates(&crate::SourceFile::new("x.rs".into(), waived.into()), root).is_empty());
     }
     #[test]
     fn rule_matches_full_control_fixture_and_suppresses_good_fixture() {
         let bad = r#"pub unsafe extern "system" fn RtlDecompressFragment(format:u16, uncompressed:*mut u8, uncompressed_size:u32, compressed:*const u8, compressed_size:u32, offset:u32, final_size:*mut u32, workspace:*mut u8) -> u32 { let result=decompress(uncompressed,compressed,offset); if !final_size.is_null() { *final_size=result.bytes_written as u32; } result.status }"#;
-        let c="unsigned RtlDecompressFragment(unsigned format, unsigned char *uncompressed, unsigned n, const unsigned char *compressed, unsigned cs, unsigned off, unsigned *final_size, unsigned char *workspace) { if (!compressed) return STATUS_BAD_COMPRESSION_BUFFER; *final_size = n; return STATUS_SUCCESS; }";
+        let c = "unsigned RtlDecompressFragment(unsigned format, unsigned char *uncompressed, unsigned n, const unsigned char *compressed, unsigned cs, unsigned off, unsigned *final_size, unsigned char *workspace) { if (!compressed) return STATUS_BAD_COMPRESSION_BUFFER; *final_size = n; return STATUS_SUCCESS; }";
         let corpus = Corpus::new(
             Path::new("/").to_path_buf(),
             vec![
@@ -692,7 +740,12 @@ mod tests {
                 crate::SourceFile::new("sdk/lib/rtl/compress.c".into(), c.into()),
             ],
         );
-        assert_eq!(StoreOnFailure.run(&corpus).unwrap(),vec!["sdk/lib/rust/compress/src/lib.rs:1: store-on-failure RtlDecompressFragment(final_size)"]);
+        assert_eq!(
+            StoreOnFailure.run(&corpus).unwrap(),
+            vec![
+                "sdk/lib/rust/compress/src/lib.rs:1: store-on-failure RtlDecompressFragment(final_size)"
+            ]
+        );
         let good = r#"pub unsafe extern "system" fn RtlDecompressFragment(format:u16, uncompressed:*mut u8, uncompressed_size:u32, compressed:*const u8, compressed_size:u32, offset:u32, final_size:*mut u32, workspace:*mut u8) -> u32 { let result=decompress(uncompressed,compressed,offset); if result.status == STATUS_SUCCESS && !final_size.is_null() { *final_size=result.bytes_written as u32; } result.status }"#;
         let corpus = Corpus::new(
             Path::new("/").to_path_buf(),

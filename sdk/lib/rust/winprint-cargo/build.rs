@@ -7,6 +7,21 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The module's part of cmake's windres command; reactos-link adds what every
+    // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
+    let rc_includes: &[&str] = &[
+        "@build/win32ss/printing/processors/winprint",
+        "win32ss/printing/processors/winprint",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+        "win32ss/printing/include",
+    ];
+    let rc_flags: &[&str] = &[];
+    let rc_defines: &[&str] = &["UNICODE", "WINVER=0x502", "_UNICODE", "_WIN32_WINNT=0x502"];
+
     let (target_json, entry, image_base) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_DllMainCRTStartup@12", Some(0x6cad0000u64)),
         "x86_64" => ("x86_64-pc-windows-gnu", "DllMainCRTStartup", Some(0x7fe4a000000u64)),
@@ -23,7 +38,7 @@ fn main() {
 
     Linker::new(target_json)
         .rust_staticlib("winprint-rust")
-        .resource_from_rc("win32ss/printing/processors/winprint/winprint.rc", "winprint_res")
+        .rc("win32ss/printing/processors/winprint/winprint.rc", rc_includes, rc_flags, rc_defines)
         .spec2def("win32ss/printing/processors/winprint/winprint.spec", "winprint.dll")
         .import_lib("win32ss/printing/base/spoolss/spoolss.spec", "spoolss.dll", "spoolss")
         .import_lib("dll/win32/msvcrt/msvcrt.spec", "msvcrt.dll", "msvcrt")

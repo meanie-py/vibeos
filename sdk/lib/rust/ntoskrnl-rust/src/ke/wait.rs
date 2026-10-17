@@ -406,8 +406,7 @@ unsafe fn KiExitDispatcherImpl(OldIrql: KIRQL) {
                 out = inout(reg) HighBit,
             );
             if (HighBit as i8) > (*NextThread).Priority {
-                (*NextThread).Preempted = 0u8;
-                KxQueueReadyThread(NextThread, Prcb);
+                ntkrnl_sys::inline::ke::KiRequeueStandbyThreadLocked(NextThread, Prcb);
                 NextThread = KiSelectReadyThread(0, Prcb);
             }
         }

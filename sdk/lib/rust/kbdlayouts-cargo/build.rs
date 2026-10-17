@@ -1,6 +1,6 @@
 //! Cargo-driven link of every keyboard layout DLL (dll/keyboard), one bin each.
 //! Each link is cmake's: the layout's .spec exports `<layout>_KbdLayerDescriptor` from
-//! the shared body under its real name, its .rc is replayed from cmake's windres, and
+//! the shared body under its real name, its .rc is compiled with cmake's windres rule (Linker::rc), and
 //! the sections merge into one executable `.data` (a layout has no code section).
 
 use reactos_link::{Linker, ModuleKind};
@@ -22,11 +22,29 @@ fn main() {
         .filter(|n| !n.contains('-'))
         .collect();
     assert!(!layouts.is_empty(), "kbdlayouts-cargo: no [[bin]] layouts in Cargo.toml");
+    // The layouts' part of cmake's windres command, the same for every layout (they were
+    // one OBJECT library in dll/keyboard); reactos-link adds what every module shares
+    // from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
+    let rc_includes: &[&str] = &[
+        "@build/dll/keyboard",
+        "dll/keyboard",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+    ];
+    let rc_flags: &[&str] = &[];
+    let rc_defines: &[&str] = &["WINVER=0x502", "_WIN32_WINNT=0x502"];
     for layout in layouts {
         Linker::new(target_json)
             .for_bin(layout)
             .rust_staticlib("kbdlayouts-rust")
-            .resource_from_rc(&format!("dll/keyboard/{layout}/{layout}.rc"), "kbdlayouts_res")
+            .rc(
+                &format!("dll/keyboard/{layout}/{layout}.rc"),
+                rc_includes,
+                rc_flags,
+                rc_defines,
+            )
             .spec2def(&format!("dll/keyboard/{layout}/{layout}.spec"), &format!("{layout}.dll"))
             // Each directive is its own -Xlinker pair: `-Wl,` would split /SECTION's comma.
             // .pdata is the one addition to cmake's list: the bin's panic handler is a

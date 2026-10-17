@@ -29,7 +29,7 @@ use core::ffi::c_void;
 use core::mem::{size_of, zeroed};
 use core::ptr::null_mut;
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{CCB, CD_NAME, COMPOUND_PATH_ENTRY, FCB, FCB_INDEX, FILE_ENUM_CONTEXT, FILE_ID, IRP_CONTEXT, PATH_ENTRY, PATH_ENUM_CONTEXT, TYPE_OF_OPEN, VCB};
+use crate::types::{CCB, CD_NAME, COMPOUND_PATH_ENTRY, DIRENT, FCB, FCB_INDEX, FILE_ENUM_CONTEXT, FILE_ID, IRP_CONTEXT, PATH_ENTRY, PATH_ENUM_CONTEXT, TYPE_OF_OPEN, VCB};
 use ntkrnl_sys::ddk::{FILE_OBJECT, IO_STACK_LOCATION};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlCheckOplock, FsRtlCurrentBatchOplock};
@@ -1871,11 +1871,30 @@ pub unsafe extern "C" fn CdCommonCreate(
                 //  If this is an ignore case open then copy the exact case in the
                 //  file object name.
                 //
+                //  Divergence from the C, which copies MatchingName itself: for a long-name
+                //  match that is the dirent's CdCaseFileName, the UPCASED copy, so the file
+                //  object (and every name query, down to the process image name) read
+                //  "EXPLORER.EXE" for "explorer.exe" on the disc. The comment above says exact
+                //  case, the prefix-hit path (CdFindPrefix) copies the exact case, and Windows
+                //  11's cdfs.sys reports the stored case however the file was opened
+                //  (measured 2026-10-17: opening F:\SLEEPY.EXE on a mounted ISO gives
+                //  Win32_Process.Caption "sleepy.exe"). The upcased name is still what goes
+                //  into the ignore-case prefix tree: CdOpenFileFromFileContext inserts the
+                //  dirent's own two names, not this buffer. A short-name match stays upcased.
                 if IgnoreCase != 0 {
+                    let mut ExactName: *const CD_NAME = MatchingName;
+                    if MatchingName != core::ptr::addr_of_mut!(FileContext.ShortName) {
+                        let Dirent = (MatchingName as *const u8)
+                            .sub(core::mem::offset_of!(DIRENT, CdCaseFileName))
+                            as *const DIRENT;
+                        if (*Dirent).CdFileName.FileName.Length == (*MatchingName).FileName.Length {
+                            ExactName = core::ptr::addr_of!((*Dirent).CdFileName);
+                        }
+                    }
                     RtlCopyMemory(
                         FinalName.FileName.Buffer as *mut core::ffi::c_void,
-                        (*MatchingName).FileName.Buffer as *const core::ffi::c_void,
-                        (*MatchingName).FileName.Length as usize,
+                        (*ExactName).FileName.Buffer as *const core::ffi::c_void,
+                        (*ExactName).FileName.Length as usize,
                     );
                 }
 

@@ -8,6 +8,14 @@
 #![allow(non_snake_case)]
 
 use crate::types::*;
+// The crate's own functions: the definition is the declaration.
+use crate::wine::pidl::ILCombine;
+use crate::wine::pidl::ILFree;
+use crate::wine::pidl::ILGetSize;
+use crate::wine::pidl::SHGetPathFromIDListW;
+// One declaration per external symbol: island.rs.
+use crate::island::GlobalAlloc;
+use crate::island::HeapAlloc;
 use core::mem::size_of;
 use core::ptr;
 
@@ -15,7 +23,7 @@ use core::ptr;
 // ADDED-TO-TYPES?: SIZE_T, HGLOBAL, ITEMIDLIST/LPITEMIDLIST, DROPFILES, POINT are all
 // common shell/win32 types — candidates to hoist into types.rs later.
 
-pub type SIZE_T = usize; // ULONG_PTR (basetsd.h): 4 bytes on i386, 8 on amd64/arm64
+pub use ntdll_sys::nt::SIZE_T; // ULONG_PTR (basetsd.h): 4 bytes on i386, 8 on amd64/arm64
 pub type HGLOBAL = HANDLE; // winnt.h
 
 /// ITEMIDLIST (shtypes.idl) — only ever used through a pointer here, so kept opaque.
@@ -27,21 +35,10 @@ pub type LPITEMIDLIST = *mut ITEMIDLIST;
 pub type LPCITEMIDLIST = *const ITEMIDLIST;
 
 /// POINT (windef.h): { LONG x; LONG y; }
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct POINT {
-    pub x: LONG,
-    pub y: LONG,
-}
+pub use crate::island::POINT;
 
 /// DROPFILES (shlobj.h) for CF_HDROP: { DWORD pFiles; POINT pt; BOOL fNC; BOOL fWide; }
-#[repr(C)]
-pub struct DROPFILES {
-    pub pFiles: DWORD,
-    pub pt: POINT,
-    pub fNC: BOOL,
-    pub fWide: BOOL,
-}
+pub use crate::island::DROPFILES;
 
 /// CIDA / *LPIDA (shlobj.h): { UINT cidl; UINT aoffset[1]; } — header + offset table.
 /// Accessed via raw pointer arithmetic because of the flexible `aoffset[]` array.
@@ -60,18 +57,18 @@ const GHND_SHARE: UINT = GHND | GMEM_SHARE; // 0x2042
 // ── imports (resolved via shell32's own exports + kernel32 import lib at link) ──────────
 extern "system" {
     // PIDL helpers — exported by shell32 itself (WINAPI on i386 → `_ILCombine@8` etc.)
-    fn ILCombine(pidl1: LPCITEMIDLIST, pidl2: LPCITEMIDLIST) -> LPITEMIDLIST; // @8
-    fn ILFree(pidl: LPITEMIDLIST); // @4
-    fn ILGetSize(pidl: LPCITEMIDLIST) -> UINT; // @4
+// @8
+// @4
+// @4
     fn SHFree(pv: LPVOID); // @4
     fn SHGetPathFromIDListA(pidl: LPCITEMIDLIST, pszPath: LPSTR) -> BOOL; // @8
-    fn SHGetPathFromIDListW(pidl: LPCITEMIDLIST, pszPath: LPWSTR) -> BOOL; // @8
+// @8
     // kernel32
-    fn GlobalAlloc(uFlags: UINT, dwBytes: SIZE_T) -> HGLOBAL; // @8
+// @8
     fn GlobalLock(hMem: HGLOBAL) -> LPVOID; // @4
     fn GlobalUnlock(hMem: HGLOBAL) -> BOOL; // @4
     fn GetProcessHeap() -> HANDLE; // @0
-    fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: SIZE_T) -> LPVOID; // @12
+// @12
     fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID) -> BOOL; // @12
 }
 
@@ -135,7 +132,7 @@ pub unsafe extern "C" fn RenderHDROP(
     let pidls = HeapAlloc(
         GetProcessHeap(),
         0,
-        cidl as usize * size_of::<LPITEMIDLIST>(),
+        (cidl as usize * size_of::<LPITEMIDLIST>()) as _,
     ) as *mut LPITEMIDLIST;
     if !pidls.is_null() {
         // get the size needed
@@ -143,9 +140,9 @@ pub unsafe extern "C" fn RenderHDROP(
 
         let mut i: UINT = 0;
         while i < cidl {
-            let combined = ILCombine(pidlRoot as LPCITEMIDLIST, *apidl.add(i as usize) as LPCITEMIDLIST);
-            *pidls.add(i as usize) = combined;
-            SHGetPathFromIDListW(combined as LPCITEMIDLIST, wszFileName.as_mut_ptr());
+            let combined = ILCombine((pidlRoot as LPCITEMIDLIST).cast(), (*apidl.add(i as usize) as LPCITEMIDLIST).cast());
+            *pidls.add(i as usize) = (combined).cast();
+            SHGetPathFromIDListW((combined as LPCITEMIDLIST).cast(), wszFileName.as_mut_ptr());
             size += (r_wcslen(wszFileName.as_ptr()) as i32 + 1) * size_of::<WCHAR>() as i32;
             i += 1;
         }
@@ -165,10 +162,10 @@ pub unsafe extern "C" fn RenderHDROP(
             let mut j: UINT = 0;
             while j < cidl {
                 let p = *pidls.add(j as usize);
-                SHGetPathFromIDListW(p as LPCITEMIDLIST, wszFileName.as_mut_ptr());
+                SHGetPathFromIDListW((p as LPCITEMIDLIST).cast(), wszFileName.as_mut_ptr());
                 r_wcscpy(base.add(offset as usize), wszFileName.as_ptr());
                 offset += r_wcslen(wszFileName.as_ptr()) as i32 + 1;
-                ILFree(p);
+                ILFree((p).cast());
                 j += 1;
             }
 
@@ -194,10 +191,10 @@ pub unsafe extern "C" fn RenderSHELLIDLIST(
     // get the size needed
     // size = sizeof(CIDA) + sizeof(UINT)*cidl   (header)
     let mut size: i32 = size_of::<CIDA>() as i32 + size_of::<UINT>() as i32 * cidl as i32;
-    size += ILGetSize(pidlRoot as LPCITEMIDLIST) as i32; // root pidl
+    size += ILGetSize((pidlRoot as LPCITEMIDLIST).cast()) as i32; // root pidl
     let mut i: UINT = 0;
     while i < cidl {
-        size += ILGetSize(*apidl.add(i as usize) as LPCITEMIDLIST) as i32; // child pidls
+        size += ILGetSize((*apidl.add(i as usize) as LPCITEMIDLIST).cast()) as i32; // child pidls
         i += 1;
     }
 
@@ -216,7 +213,7 @@ pub unsafe extern "C" fn RenderSHELLIDLIST(
     // root pidl
     let mut offset: i32 = size_of::<CIDA>() as i32 + size_of::<UINT>() as i32 * cidl as i32;
     *aoffset.add(0) = offset as UINT; // first element
-    let mut sizePidl: i32 = ILGetSize(pidlRoot as LPCITEMIDLIST) as i32;
+    let mut sizePidl: i32 = ILGetSize((pidlRoot as LPCITEMIDLIST).cast()) as i32;
     r_memcpy(
         base.add(offset as usize),
         pidlRoot as *const u8,
@@ -229,7 +226,7 @@ pub unsafe extern "C" fn RenderSHELLIDLIST(
         // child pidls
         *aoffset.add((k + 1) as usize) = offset as UINT;
         let child = *apidl.add(k as usize);
-        sizePidl = ILGetSize(child as LPCITEMIDLIST) as i32;
+        sizePidl = ILGetSize((child as LPCITEMIDLIST).cast()) as i32;
         r_memcpy(base.add(offset as usize), child as *const u8, sizePidl as usize);
         offset += sizePidl;
         k += 1;
@@ -250,7 +247,7 @@ pub unsafe extern "C" fn RenderFILENAMEA(
     let mut szTemp: [CHAR; MAX_PATH] = [0; MAX_PATH];
 
     // get path of combined pidl
-    let pidl = ILCombine(pidlRoot as LPCITEMIDLIST, *apidl as LPCITEMIDLIST);
+    let pidl = ILCombine((pidlRoot as LPCITEMIDLIST).cast(), (*apidl as LPCITEMIDLIST).cast());
     if pidl.is_null() {
         return ptr::null_mut();
     }
@@ -286,12 +283,12 @@ pub unsafe extern "C" fn RenderFILENAMEW(
     let mut szTemp: [WCHAR; MAX_PATH] = [0; MAX_PATH];
 
     // get path of combined pidl
-    let pidl = ILCombine(pidlRoot as LPCITEMIDLIST, *apidl as LPCITEMIDLIST);
+    let pidl = ILCombine((pidlRoot as LPCITEMIDLIST).cast(), (*apidl as LPCITEMIDLIST).cast());
     if pidl.is_null() {
         return ptr::null_mut();
     }
 
-    let bSuccess = SHGetPathFromIDListW(pidl as LPCITEMIDLIST, szTemp.as_mut_ptr());
+    let bSuccess = SHGetPathFromIDListW((pidl as LPCITEMIDLIST).cast(), szTemp.as_mut_ptr());
     SHFree(pidl as LPVOID);
     if bSuccess == FALSE {
         return ptr::null_mut();

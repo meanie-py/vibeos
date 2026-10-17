@@ -1,0 +1,57 @@
+{
+  "method": "Exact sorted unique finding-line counts and SHA256 (LF join, no final LF); historical registry/helpers at e5ffbfc1e578, caches disabled. Component reports combine table and match-constant reruns; times are not a combined benchmark.",
+  "reports": [
+    {
+      "oracle_revision": "e5ffbfc1e578b0ce342a64a12a8bfbb6817a64f1",
+      "source_revision": "495acb63d4702e6d5ffe17cd204bed9e48504083",
+      "rust_seconds": 51.71592898099334,
+      "rules": {
+        "verify_tables": {
+          "python": 3,
+          "rust": 3,
+          "python_seconds": 5.164193968026666,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "f240c2403de3f04c51c03f52c57091ddb600088a14351fd9c6ce7e995f43bfac",
+          "rust_sha256": "f240c2403de3f04c51c03f52c57091ddb600088a14351fd9c6ce7e995f43bfac"
+        },
+        "verify_match_consts": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 55.13651074000518,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "match_and_source_inputs_seconds": 115.97850641899277
+    },
+    {
+      "oracle_revision": "e5ffbfc1e578b0ce342a64a12a8bfbb6817a64f1",
+      "source_revision": "cc53d01b091e365cccbc7e56f7a929963331d379",
+      "rust_seconds": 47.57492269598879,
+      "rules": {
+        "verify_tables": {
+          "python": 3,
+          "rust": 3,
+          "python_seconds": 6.987648984999396,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "f240c2403de3f04c51c03f52c57091ddb600088a14351fd9c6ce7e995f43bfac",
+          "rust_sha256": "f240c2403de3f04c51c03f52c57091ddb600088a14351fd9c6ce7e995f43bfac"
+        },
+        "verify_match_consts": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 50.965012752014445,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "match_and_source_inputs_seconds": 120.003114489984
+    }
+  ]
+}

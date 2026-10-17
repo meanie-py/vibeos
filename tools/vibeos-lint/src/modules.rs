@@ -152,6 +152,7 @@ fn facts(raw: &str) -> Facts {
 pub struct ModuleTree {
     owners: HashMap<PathBuf, PathBuf>,
     live: HashMap<PathBuf, HashSet<PathBuf>>,
+    lexical_live: HashMap<PathBuf, HashSet<PathBuf>>,
     opaque: HashSet<PathBuf>,
     empty: HashSet<PathBuf>,
 }
@@ -176,6 +177,7 @@ impl ModuleTree {
             }
         }
         let mut live = HashMap::new();
+        let mut lexical_live = HashMap::new();
         let mut opaque = HashSet::new();
         for (directory, manifest) in &manifests {
             let mut queue = Vec::new();
@@ -273,11 +275,13 @@ impl ModuleTree {
                     }
                 }
             }
+            lexical_live.insert(directory.clone(), reached);
             live.insert(directory.clone(), real);
         }
         Self {
             owners,
             live,
+            lexical_live,
             opaque,
             empty: HashSet::new(),
         }
@@ -290,6 +294,50 @@ impl ModuleTree {
     }
     pub fn crate_is_opaque(&self, directory: &Path) -> bool {
         self.opaque.contains(&normalize(directory))
+    }
+    pub fn phantom_modules(
+        &self,
+        directory: &Path,
+        files: &[SourceFile],
+    ) -> Vec<(PathBuf, String, Vec<PathBuf>)> {
+        let by_path: HashMap<_, _> = files.iter().map(|f| (normalize(&f.path), f)).collect();
+        let mut out = Vec::new();
+        let Some(reached) = self.lexical_live.get(&normalize(directory)) else {
+            return out;
+        };
+        let mut reached: Vec<_> = reached.iter().collect();
+        reached.sort();
+        for path in reached {
+            let Some(file) = by_path.get(path) else {
+                continue;
+            };
+            let facts = facts(&file.text);
+            let explicit: HashSet<_> = facts.paths.into_iter().map(|(name, _)| name).collect();
+            let parent = path.parent().unwrap_or(Path::new(""));
+            let stem = path.file_stem().unwrap_or_default();
+            let base = if ["lib", "main", "mod"].iter().any(|n| stem == *n) {
+                parent.to_owned()
+            } else {
+                parent.join(stem)
+            };
+            for (name, enclosing) in facts.declarations {
+                if explicit.contains(&name) {
+                    continue;
+                }
+                let mut dir = base.clone();
+                for part in enclosing {
+                    dir.push(part);
+                }
+                let candidates = vec![
+                    normalize(&dir.join(format!("{name}.rs"))),
+                    normalize(&dir.join(&name).join("mod.rs")),
+                ];
+                if !candidates.iter().any(|p| by_path.contains_key(p)) {
+                    out.push((path.clone(), name, candidates));
+                }
+            }
+        }
+        out
     }
 }
 

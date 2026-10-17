@@ -13,10 +13,8 @@ spec2def(aclayers.dll layer.spec)
 # versionlie.c  # replaced by Rust (sdk/lib/rust/aclayers-rust/src/aclayers/versionlie.rs)
 # vmhorizon.c  # replaced by Rust (sdk/lib/rust/aclayers-rust/src/aclayers/vmhorizon.rs)
 # main.c  # replaced by Rust (sdk/lib/rust/aclayers-rust/src/aclayers/main.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(aclayers_shims OBJECT rust_cohab_stub.c)
 add_cargo_module(aclayers aclayers-cargo aclayers.dll
     KIND win32dll
     BODY_CRATE aclayers-rust
     DESTINATION reactos/AppPatch
-    EXTRA_DEPENDS aclayers_shims xdk)
+    EXTRA_DEPENDS xdk)

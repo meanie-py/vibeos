@@ -601,7 +601,7 @@ fn locale_names_vs_windows() {
         "", "en-US", "EN-us", "en", "de-DE", "zh-Hant", "zh-HK_radstr", "x-IV", "en-XX", "qps-ploc",
         "sr-Latn-RS", "en-US-", "en_US", "iv", "invariant", "de", "zh", "zh-CHS", "fr-FR",
         "ja-JP_radstr", "ja-JP-radstr", "_", "-", "en-US_", "zh_Hant", "sr_Latn_RS", "de-DE_phoneb",
-        "de-de-PHONEB", "e", "enx", "en-U", "en-USA",
+        "de-de-PHONEB", "e", "enx", "en-U", "en-USA", "fa-AF", "la-VA", "la-001", "prs-AF", "fa", "prs",
     ]
     .into_iter()
     .map(String::from)
@@ -638,6 +638,8 @@ fn locale_names_vs_windows() {
         eprintln!("{m}");
     }
     eprintln!("locale: {} probes, {} mismatches", probes.len(), mismatches.len());
+    // Zero since the Windows 11 renames (prs -> fa, fa-AF, la-VA) went in, 2026-10-17.
+    assert!(mismatches.is_empty(), "{mismatches:#?}");
     let staged: Vec<_> = mismatches.iter().filter(|m| m.starts_with("RtlIsValidLocaleName")).collect();
     let n2l: Vec<_> = mismatches.iter().filter(|m| m.starts_with("RtlLocaleNameToLcid")).collect();
     // Every IsValid mismatch must be explained by a lookup mismatch on the same name.
@@ -648,6 +650,44 @@ fn locale_names_vs_windows() {
             "RtlIsValidLocaleName disagrees where the lookup agrees: {m}"
         );
     }
+}
+
+#[test]
+fn lcid_to_locale_name_vs_windows() {
+    // The reverse of locale_names_vs_windows, over every LCID the table carries: a name
+    // remapped to another LCID (Windows 11 resolves the neutral "prs" to fa's 0x29) must not
+    // change what that LCID, or the one it left, prints.
+    locale_init();
+    type L2NFn = unsafe extern "system" fn(u32, *mut _UNICODE_STRING, u32, u8) -> i32;
+    let w = win!("RtlLcidToLocaleName" as L2NFn);
+    let mut lcids: Vec<u32> = crate::locale::RtlpLocaleTable.iter().map(|e| e._bitfield & 0xFFFFF).collect();
+    lcids.push(0x8C); // printed through LCID_ONLY_NAMES, not a table row
+    lcids.sort();
+    lcids.dedup();
+    let mut mismatches = Vec::new();
+    for &lcid in &lcids {
+        for flags in [0u32, 2] {
+            let call = |f: &dyn Fn(*mut _UNICODE_STRING) -> i32| {
+                let mut buf = [0u16; 86];
+                let mut us: _UNICODE_STRING = unsafe { core::mem::zeroed() };
+                us.Buffer = buf.as_mut_ptr();
+                us.MaximumLength = (buf.len() * 2) as u16;
+                let st = f(&mut us);
+                let name = String::from_utf16_lossy(&buf[..(us.Length / 2) as usize]);
+                (st, if st >= 0 { name } else { String::new() })
+            };
+            let a = call(&|u| unsafe { crate::locale::RtlLcidToLocaleName(lcid, u as _, flags, 0) });
+            let b = call(&|u| unsafe { w(lcid, u, flags, 0) });
+            if (a.0 >= 0) != (b.0 >= 0) || a.1 != b.1 {
+                mismatches.push(format!("RtlLcidToLocaleName({lcid:#x}, {flags}) ours {:#x} {:?} windows {:#x} {:?}", a.0, a.1, b.0, b.1));
+            }
+        }
+    }
+    for m in &mismatches {
+        eprintln!("{m}");
+    }
+    eprintln!("lcid->name: {} lcids, {} mismatches", lcids.len(), mismatches.len());
+    assert!(mismatches.is_empty(), "{mismatches:#?}");
 }
 
 #[test]

@@ -148,19 +148,7 @@ pub struct BIND_OPTS {
     pub dwTickCountDeadline: DWORD,
 }
 
-#[repr(C)]
-pub struct WIN32_FIND_DATAW {
-    pub dwFileAttributes: DWORD,
-    pub ftCreationTime: FILETIME,
-    pub ftLastAccessTime: FILETIME,
-    pub ftLastWriteTime: FILETIME,
-    pub nFileSizeHigh: DWORD,
-    pub nFileSizeLow: DWORD,
-    pub dwReserved0: DWORD,
-    pub dwReserved1: DWORD,
-    pub cFileName: [WCHAR; 260],
-    pub cAlternateFileName: [WCHAR; 14],
-}
+pub use crate::island::WIN32_FIND_DATAW;
 
 extern "C" {
     #[link_name = "memcpy"] fn cpp_com_memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, bytes: usize) -> *mut core::ffi::c_void;

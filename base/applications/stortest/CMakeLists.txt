@@ -5,11 +5,8 @@ include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_or
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # stortest.c  # replaced by Rust (sdk/lib/rust/stortest-rust/src/stortest/stortest.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(stortest_shims OBJECT rust_varargs_shim.c)
-target_link_libraries(stortest_shims PRIVATE libmsvcrt libkernel32 libntdll)
 add_cargo_module(stortest stortest-cargo stortest.exe
     KIND win32exe
     BODY_CRATE stortest-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS stortest_shims)
+    EXTRA_DEPENDS libmsvcrt libkernel32 libntdll)

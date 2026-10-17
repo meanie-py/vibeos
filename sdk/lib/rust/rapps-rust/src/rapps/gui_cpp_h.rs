@@ -897,16 +897,7 @@ impl CMainWindow {
         if bChecked != 0 {
             (*this_).m_Selected.AddTail(Info);
         } else {
-            // CAtlList::Find(Info) returns the element's POSITION; atl_rust's Find only answers bool, so walk the list
-            let mut SelPos: POSITION = core::ptr::null_mut();
-            let mut Walk: POSITION = (*this_).m_Selected.GetHeadPosition();
-            while !Walk.is_null() {
-                let PosCur: POSITION = Walk;
-                if *(*this_).m_Selected.GetNext(&mut Walk) == Info {
-                    SelPos = PosCur;
-                    break;
-                }
-            }
+            let SelPos: POSITION = (*this_).m_Selected.FindPos(&Info);
             ATLASSERT!(!SelPos.is_null());
 
             if !SelPos.is_null() {

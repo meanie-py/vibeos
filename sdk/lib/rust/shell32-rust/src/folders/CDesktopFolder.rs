@@ -1,5 +1,10 @@
 // rustconv-assembly: free-functions
 use crate::prelude::*;
+// The crate's own functions: the definition is the declaration.
+use crate::reg_folder::CRegFolder_CreateInstance;
+use crate::wine::shellpath::SHGetSpecialFolderPathW;
+// One declaration per external symbol: island.rs.
+use crate::island::HeapAlloc;
 use core::ffi::c_void;
 // Substrate comes from the bindgen island via `prelude`, and from nowhere else.
 // Re-importing the same names through shellcom/types/win32 does not add anything the
@@ -144,7 +149,6 @@ pub unsafe extern "system" fn SHGetDesktopFolder(psf: *mut *mut IShellFolder) ->
 // REFIID riid, void **ppv);` -- no WINAPI, so cdecl like every other un-annotated shfldr.h/
 // shellutils.h helper this crate calls directly (e.g. `IDataObject_Constructor`).
 extern "C" {
-    fn CRegFolder_CreateInstance(pInit: PREGFOLDERINITDATA, pidlRoot: LPCITEMIDLIST, riid: REFIID, ppv: *mut *mut core::ffi::c_void) -> HRESULT;
 }
 
 #[no_mangle]
@@ -233,7 +237,6 @@ extern "C" {
 
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    fn HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
     fn HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
@@ -335,7 +338,7 @@ unsafe fn CDesktopFolderViewCB_Release(this: *mut CDesktopFolderViewCB) -> ULONG
 unsafe fn ShellObjectCreator(ppv: *mut *mut CDesktopFolderViewCB) -> HRESULT {
     if ppv.is_null() { return E_POINTER; }
     *ppv = core::ptr::null_mut();
-    let this = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, core::mem::size_of::<CDesktopFolderViewCB>()) as *mut CDesktopFolderViewCB;
+    let this = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (core::mem::size_of::<CDesktopFolderViewCB>()) as _) as *mut CDesktopFolderViewCB;
     if this.is_null() { return E_OUTOFMEMORY; }
     core::ptr::write(this, CDesktopFolderViewCB {
         IShellFolderViewCB_iface: IShellFolderViewCB { lpVtbl: core::ptr::addr_of!(CDESKTOPFOLDERVIEWCB_ISHELLFOLDERVIEWCB_VTBL) },
@@ -433,7 +436,6 @@ pub unsafe fn CDesktopFolderViewCB_GetEnumFlags_body(this: *mut CDesktopFolderVi
 
 // Not in the island/prelude; desktop_folder.rs declares this same import locally too.
 extern "system" {
-    fn SHGetSpecialFolderPathW(hwnd: HWND, pszPath: LPWSTR, csidl: INT, fCreate: BOOL) -> BOOL;
 }
 
 #[inline]

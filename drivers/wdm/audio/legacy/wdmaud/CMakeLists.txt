@@ -12,12 +12,8 @@ include_directories(
 # entry.c  # replaced by Rust (sdk/lib/rust/wdmaud-rust/src/wdmaud/entry.rs)
 # mmixer.c  # replaced by Rust (sdk/lib/rust/wdmaud-rust/src/wdmaud/mmixer.rs)
 # sup.c  # replaced by Rust (sdk/lib/rust/wdmaud-rust/src/wdmaud/sup.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(wdmaud_res OBJECT wdmaud.rc)
-target_include_directories(wdmaud_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(wdmaud wdmaud-cargo wdmaud.sys
     KIND kernelmodedriver
     BODY_CRATE wdmaud-rust
     DESTINATION reactos/system32/drivers
-    EXTRA_DEPENDS wdmaud_res asm psdk)
+    EXTRA_DEPENDS asm psdk)

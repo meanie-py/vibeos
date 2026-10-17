@@ -44,7 +44,7 @@ turned selfmod rung 7 red on master from its landing (2026-10-12), because the g
 `STATUS_PARTIAL_COPY` and nobody ran the ladder after the merge. Before landing anything that
 touches wow64, wowx64, FEX or Mm, run `./vibeos-cli smoke --arch arm64 --ladder` on `VIBEOS_FEX=1`
 media (and `--arch amd64 --ladder` for wow64.dll). Owed, most valuable first:
-1. Free-RAM drift: located, and the first half fixed (`docs/engineering/mm-section-cache-standby-design.md`).
+1. Free-RAM drift: located, and mostly fixed (`docs/engineering/mm-section-cache-standby-design.md`).
    `--tripwire MEMCENSUS=1` (`ARM3/census.rs`) put it in the `ros` column: section pages held by
    their segment after the last view went, 4.4k -> 30.9k pages over a 2G appstorm64 sweep. arm64
    could not free them at all (a bring-up `#ifdef` in `MmPageOutPhysicalAddress`), and the
@@ -53,8 +53,10 @@ media (and `--arch amd64 --ladder` for wow64.dll). Owed, most valuable first:
    `smoke --vm-memory 1024M` overrides a payload's declared RAM for exactly this sweep. Reclaim
    exposed `MmCheckDirtySegment`'s invented `IoSetTopLevelIrp(0x80000000)` (fastfat 0x23 under
    pressure; field manual, "The LLM invents plausible values"). appstorm64 now passes 54/54 at
-   1088M (wedged before) and 1152M; 1024M still runs out. Next is step 2 of the design doc: a
-   real standby state, so cached pages count as available.
+   1088M (wedged before) and 1152M. Step 2 (`mm/standby.rs`, 2026-10-17) put unmapped clean
+   section pages on a standby list that counts as available and that the allocator repurposes
+   synchronously: 54/54 at 1024M too, and the 2G drift fell from 41k to 25k pages. What is
+   left is in the design doc ("Left of the 2G drift").
 2. Commit not yet charged: copy-on-write pages of image and file views, and kernel pool
    (`ARM3/commit.rs` header). PEB/TEB pages are charged since 2026-10-17. Owed with it: FEX's
    CPU layer faults when a commit is refused while setting up a new guest thread

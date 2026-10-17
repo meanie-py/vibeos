@@ -1,5 +1,19 @@
 // rustconv-assembly: class:CDefaultContextMenu
 use crate::atl;
+// The crate's own functions: the definition is the declaration.
+use crate::shell32::shlfileop::SHCreateDirectory;
+use crate::wine::pidl::SHILCreateFromPathW;
+// One declaration per external symbol: island.rs.
+use crate::island::DestroyMenu;
+use crate::island::GetModuleHandleW;
+use crate::island::GlobalAlloc;
+use crate::island::HeapReAlloc;
+use crate::island::IUnknown_QueryService;
+use crate::island::InsertMenuItemW;
+use crate::island::LoadStringW;
+use crate::island::RegCloseKey;
+use crate::island::RegGetValueW;
+use crate::island::RegOpenKeyExW;
 use crate::shellcom::REFGUID;
 use crate::prelude::*;
 use crate::default_context_menu_support::*;
@@ -701,36 +715,13 @@ pub struct DVTARGETDEVICE {
     pub tdData: [BYTE; 1],
 }
 
-#[repr(C)]
-pub struct MEASUREITEMSTRUCT {
-    pub CtlType: UINT,
-    pub CtlID: UINT,
-    pub itemID: UINT,
-    pub itemWidth: UINT,
-    pub itemHeight: UINT,
-    pub itemData: ULONG_PTR,
-}
+pub use crate::island::MEASUREITEMSTRUCT;
 
-#[repr(C)]
-pub struct QCMINFO {
-    pub hmenu: HMENU,
-    pub indexMenu: UINT,
-    pub idCmdFirst: UINT,
-    pub idCmdLast: UINT,
-    pub pIdMap: *const QCMINFO_IDMAP,
-}
+pub use crate::island::QCMINFO;
 
-#[repr(C)]
-pub struct QCMINFO_IDMAP {
-    pub nMaxIds: UINT,
-    pub pIdList: [QCMINFO_IDMAP_PLACEMENT; 1],
-}
+pub use crate::island::QCMINFO_IDMAP;
 
-#[repr(C)]
-pub struct QCMINFO_IDMAP_PLACEMENT {
-    pub id: UINT,
-    pub fFlags: UINT,
-}
+pub use crate::island::QCMINFO_IDMAP_PLACEMENT;
 
 // Deterministic from shobjidl.h
 #[repr(C)]
@@ -900,23 +891,13 @@ pub const DROPEFFECT_COPY: DWORD = 1;
 pub const DROPEFFECT_MOVE: DWORD = 2;
 
 extern "system" {
-    fn DestroyMenu(menu: HMENU) -> BOOL;
-    fn IUnknown_QueryService(object: *mut IUnknown, service: REFIID, riid: REFIID, out: *mut *mut core::ffi::c_void) -> HRESULT;
-    fn RegCloseKey(key: HKEY) -> LONG;
-    fn RegGetValueW(key: HKEY, subkey: LPCWSTR, value: LPCWSTR, flags: DWORD, kind: LPDWORD, data: LPVOID, bytes: LPDWORD) -> LONG;
-    fn RegOpenKeyExW(key: HKEY, subkey: LPCWSTR, options: DWORD, access: REGSAM, result: PHKEY) -> LONG;
     fn SHChangeNotify(event: LONG, flags: UINT, item1: LPCVOID, item2: LPCVOID);
-    fn SHCreateDirectory(owner: HWND, path: LPCWSTR) -> INT;
-    fn SHILCreateFromPathW(path: LPCWSTR, pidl: *mut LPITEMIDLIST, attributes: LPDWORD) -> HRESULT;
-    fn GlobalAlloc(flags: UINT, bytes: SIZE_T) -> HGLOBAL;
     fn GlobalLock(memory: HGLOBAL) -> LPVOID;
     fn GlobalUnlock(memory: HGLOBAL) -> BOOL;
     fn GetLastError() -> DWORD;
     fn lstrlenW(text: LPCWSTR) -> INT;
-    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
     fn StrChrW(text: LPCWSTR, ch: WCHAR) -> LPWSTR;
     fn CoTaskMemFree(memory: LPVOID);
-    fn InsertMenuItemW(menu: HMENU, item: UINT, by_position: BOOL, info: *const MENUITEMINFOW) -> BOOL;
 }
 
 extern "C" {
@@ -1011,8 +992,6 @@ unsafe fn StringCchCopyW(dst: LPWSTR, capacity: usize, src: LPCWSTR) -> HRESULT 
 }
 
 extern "system" {
-    fn HeapReAlloc(heap: HANDLE, flags: DWORD, memory: LPVOID, bytes: usize) -> LPVOID;
-    fn GetModuleHandleW(name: LPCWSTR) -> HINSTANCE;
 }
 
 static CPP_COM_EMPTY_WSTR: [WCHAR; 1] = [0];
@@ -1189,7 +1168,7 @@ pub unsafe fn GetFriendlyVerb_body(pszVerb: PCWSTR, pszBuf: PWSTR, cchMax: SIZE_
 }
 
 pub unsafe fn CDefaultContextMenu_QueryService_body(this: *mut CDefaultContextMenu, svc: REFIID, riid: REFIID, ppv: *mut *mut core::ffi::c_void) -> HRESULT {
-    return IUnknown_QueryService((*this).m_site, svc, riid, ppv);
+    return IUnknown_QueryService(((*this).m_site).cast(), (svc).cast(), (riid).cast(), ppv);
 }
 
 pub unsafe fn CDefaultContextMenu_ctor_body(this: *mut CDefaultContextMenu) -> () {
@@ -1414,9 +1393,9 @@ pub unsafe fn CDefaultContextMenu_LoadDynamicContextMenuHandler_body(this: *mut 
     let mut pcm_refcount = 0u32;
     hr = SHCoCreateInstance(
         core::ptr::null_mut(),
-        clsid,
+        (clsid).cast(),
         core::ptr::null_mut(),
-        core::ptr::addr_of!(IID_IContextMenu), core::ptr::addr_of_mut!(pcm).cast(),
+        (core::ptr::addr_of!(IID_IContextMenu)).cast(), core::ptr::addr_of_mut!(pcm).cast(),
     );
     if hr < 0 {
         return hr;
@@ -2102,9 +2081,9 @@ pub unsafe fn CDefaultContextMenu_DoCopyOrCut_body(this: *mut CDefaultContextMen
     let mut psfv: *mut IShellFolderView = core::ptr::null_mut();
     let _psfv_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(psfv));
     if IUnknown_QueryService(
-        (*this).m_site,
+        ((*this).m_site).cast(),
         core::ptr::addr_of!(IID_IFolderView).cast(),
-        core::ptr::addr_of!(IID_IShellFolderView), core::ptr::addr_of_mut!(psfv).cast(),
+        (core::ptr::addr_of!(IID_IShellFolderView)).cast(), core::ptr::addr_of_mut!(psfv).cast(),
     ) >= 0
     {
         ((*(*psfv).lpVtbl).SetPoints)(psfv, (*this).m_pDataObj);
@@ -2137,7 +2116,7 @@ pub unsafe fn CDefaultContextMenu_DoRename_body(this: *mut CDefaultContextMenu, 
 
     // shlguid_undoc.h:215: `SID_IShellBrowser` IS `IID_IShellBrowser` (a #define, not
     // its own symbol) — the generator's `extern static SID_IShellBrowser` was a phantom.
-    hr = IUnknown_QueryService((*this).m_site, &IID_IShellBrowser, &IID_IShellBrowser, &mut psb as *mut *mut IShellBrowser as *mut *mut core::ffi::c_void);
+    hr = IUnknown_QueryService(((*this).m_site).cast(), core::ptr::from_ref(&IID_IShellBrowser).cast(), core::ptr::from_ref(&IID_IShellBrowser).cast(), &mut psb as *mut *mut IShellBrowser as *mut *mut core::ffi::c_void);
     if ((hr) < 0) {
         if !psb.is_null() {
             ((*(*psb).lpVtbl).Release)(psb);
@@ -2210,16 +2189,16 @@ pub unsafe fn CDefaultContextMenu_DoCopyToMoveToFolder_body(this: *mut CDefaultC
     if bCopy != 0 {
         hr = SHCoCreateInstance(
             core::ptr::null_mut(),
-            &CLSID_CopyToMenu,
+            core::ptr::from_ref(&CLSID_CopyToMenu).cast(),
             core::ptr::null_mut(),
-            core::ptr::addr_of!(IID_IContextMenu), core::ptr::addr_of_mut!(pContextMenu).cast(),
+            (core::ptr::addr_of!(IID_IContextMenu)).cast(), core::ptr::addr_of_mut!(pContextMenu).cast(),
         );
     } else {
         hr = SHCoCreateInstance(
             core::ptr::null_mut(),
-            &CLSID_MoveToMenu,
+            core::ptr::from_ref(&CLSID_MoveToMenu).cast(),
             core::ptr::null_mut(),
-            core::ptr::addr_of!(IID_IContextMenu), core::ptr::addr_of_mut!(pContextMenu).cast(),
+            (core::ptr::addr_of!(IID_IContextMenu)).cast(), core::ptr::addr_of_mut!(pContextMenu).cast(),
         );
     }
     if ((hr) < 0) {
@@ -2350,10 +2329,10 @@ pub unsafe fn CDefaultContextMenu_DoCreateNewFolder_body(this: *mut CDefaultCont
 
     /* Get a pointer to the shell view */
     hr = IUnknown_QueryService(
-        (*this).m_site,
+        ((*this).m_site).cast(),
         // shobjidl.idl:904: `SID_SFolderView` IS `IID_IFolderView` (a #define).
-        core::ptr::addr_of!(IID_IFolderView),
-        core::ptr::addr_of!(IID_IShellView),
+        (core::ptr::addr_of!(IID_IFolderView)).cast(),
+        (core::ptr::addr_of!(IID_IShellView)).cast(),
         core::ptr::addr_of_mut!(psv).cast(),
     );
     if ((hr) < 0) {
@@ -2507,7 +2486,7 @@ pub unsafe fn CDefaultContextMenu_BrowserFlagsFromVerb_body(this: *mut CDefaultC
         return 0;
     }
 
-    hr = IUnknown_QueryService((*this).m_site, core::ptr::addr_of!(IID_IShellBrowser).cast(), core::ptr::addr_of!(IID_IShellBrowser), core::ptr::addr_of_mut!(psb).cast());
+    hr = IUnknown_QueryService(((*this).m_site).cast(), core::ptr::addr_of!(IID_IShellBrowser).cast(), (core::ptr::addr_of!(IID_IShellBrowser)).cast(), core::ptr::addr_of_mut!(psb).cast());
     if ((hr) < 0) {
         return 0;
     }
@@ -2548,9 +2527,9 @@ pub unsafe fn CDefaultContextMenu_TryToBrowse_body(this: *mut CDefaultContextMen
     }
 
     hr = IUnknown_QueryService(
-        (*this).m_site,
+        ((*this).m_site).cast(),
         core::ptr::addr_of!(IID_IShellBrowser).cast(),
-        core::ptr::addr_of!(IID_IShellBrowser), core::ptr::addr_of_mut!(psb).cast(),
+        (core::ptr::addr_of!(IID_IShellBrowser)).cast(), core::ptr::addr_of_mut!(psb).cast(),
     );
     if hr < 0 {
         if !psb.is_null() {

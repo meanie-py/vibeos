@@ -18,16 +18,9 @@ add_definitions(-D_WIN32_WINNT=0x600)
 # The translated C, kept on disk:
 # C bodies replaced by Rust (usbaudio/pool/filter/pin.c) — kept on disk per the never-delete rule.
 # guid.c stays as the data-only TU (DEFINE_GUID).
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(usbaudio_res OBJECT usbaudio.rc)
-target_include_directories(usbaudio_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-add_library(usbaudio_shims OBJECT guid.c)
-target_link_libraries(usbaudio_shims PRIVATE libcntpr libntoskrnl libhal libusbd libks)
 add_cargo_module(usbaudio usbaudio-cargo usbaudio.sys
     KIND kernelmodedriver
     BODY_CRATE usbaudio-rust
     DESTINATION reactos/system32/drivers
     NO_CAB
-    EXTRA_DEPENDS usbaudio_shims usbaudio_res asm psdk)
+    EXTRA_DEPENDS asm psdk libcntpr libntoskrnl libhal libusbd libks)

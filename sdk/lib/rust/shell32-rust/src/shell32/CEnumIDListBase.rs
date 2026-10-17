@@ -1,4 +1,6 @@
 use crate::prelude::*;
+// The crate's own functions: the definition is the declaration.
+use crate::wine::pidl::ILClone;
 use crate::drv_def_ext::ShellObjectCreator;
 // Deterministic from shobjidl.h
 #[repr(C)]
@@ -19,11 +21,7 @@ extern "C" {
     pub static IID_IEnumIDList: IID;
 }
 
-#[repr(C)]
-pub struct ENUMLIST {
-    pub pNext: *mut ENUMLIST,
-    pub pidl: LPITEMIDLIST,
-}
+pub use crate::island::ENUMLIST;
 
 // Deterministic COM scaffold for CEnumIDListBase; method bodies are generated separately.
 extern "system" {
@@ -161,7 +159,6 @@ pub unsafe fn CEnumIDListBase_CreateInstance(
 // Deterministic C++ support closure selected from source identifiers.
 
 extern "system" {
-    fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
 }
 
 extern "system" {

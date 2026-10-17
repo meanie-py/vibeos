@@ -29,6 +29,20 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The module's part of cmake's windres command; reactos-link adds what every
+    // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
+    let rc_includes: &[&str] = &[
+        "@build/win32ss/drivers/displays/framebuf",
+        "win32ss/drivers/displays/framebuf",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+    ];
+    let rc_flags: &[&str] = &[];
+    let rc_defines: &[&str] = &["WINVER=0x502", "_WIN32_WINNT=0x502"];
+
     let (target_json, entry, image_base): (&str, &str, u64) = match arch.as_str() {
         "x86" => ("i686-kernel.json", "_DrvEnableDriver@12", 0x0001_0000),
         "x86_64" => ("x86_64-pc-windows-gnu", "DrvEnableDriver", 0x0001_0000),
@@ -47,7 +61,7 @@ fn main() {
         // cold-link confirms framebuf needs no C residue (no c_from_compile_db).
         .rust_lib("cnt-rust-lib", cnt_feats, true)
         .import_lib("win32ss/win32k.spec", "win32k.sys", "win32k")
-        .resource_from_rc("win32ss/drivers/displays/framebuf/framebuf.rc", "framebuf_res")
+        .rc("win32ss/drivers/displays/framebuf/framebuf.rc", rc_includes, rc_flags, rc_defines)
         // cmake's kernel-mode links keep every section.
         .keep_all_sections()
         .link(ModuleKind::KernelDll {

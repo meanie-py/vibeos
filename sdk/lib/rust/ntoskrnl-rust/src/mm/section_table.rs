@@ -203,6 +203,9 @@ pub unsafe extern "system" fn _MmSetPageEntrySectionSegment(
     (*PageTable).Segment = Segment;
     let page_index = (((*Offset).QuadPart - (*PageTable).FileOffset.QuadPart) as ULONG_PTR)
         / PAGE_SIZE;
+    // Never rewrite the slot of a page that is still on the standby list: take it back
+    // first, so a repurpose cannot race this write (mm/standby.rs).
+    crate::mm::standby::MiRosStandbyClaim(core::ptr::addr_of_mut!((*PageTable).PageEntries[page_index]));
     let OldEntry: ULONG_PTR = (*PageTable).PageEntries[page_index];
 
     // Maintain segment refcount: gain a reference on a 0→nonzero transition,
@@ -251,12 +254,10 @@ pub unsafe extern "system" fn _MmSetPageEntrySectionSegment(
                 let mut check_offset: LARGE_INTEGER = core::mem::zeroed();
                 check_offset.QuadPart =
                     (((*Segment).LastPage as i64) - 1) << PAGE_SHIFT as i64;
-                let entry = _MmGetPageEntrySectionSegment(
-                    Segment,
-                    core::ptr::addr_of_mut!(check_offset),
-                    core::ptr::null(),
-                    0,
-                );
+                // Raw read: this only asks whether a page is there, and must not pull a
+                // trailing page off the standby list to find out.
+                let slot = MiSectionPageEntrySlot(Segment, core::ptr::addr_of_mut!(check_offset));
+                let entry = if slot.is_null() { 0 } else { core::ptr::read_volatile(slot) };
                 if entry != 0 && !IS_SWAP_FROM_SSE(entry) {
                     break;
                 }
@@ -291,7 +292,53 @@ pub unsafe extern "system" fn _MmGetPageEntrySectionSegment(
     }
     let page_index = (((*Offset).QuadPart - (*PageTable).FileOffset.QuadPart) as ULONG_PTR)
         / PAGE_SIZE;
-    (*PageTable).PageEntries[page_index]
+    // A page on the ROS standby list is taken back before anyone sees its entry, and a
+    // slot whose page was repurposed reads as not resident (mm/standby.rs).
+    let entry = crate::mm::standby::MiRosStandbyClaim(
+        core::ptr::addr_of_mut!((*PageTable).PageEntries[page_index]),
+    );
+    if entry == crate::mm::standby::MM_REPURPOSED_SSE { 0 } else { entry }
+}
+
+/// `Offset`'s entry without claiming a standby page: for a caller that only asks whether
+/// a page is resident and will not use it. Segment lock held. The answer can go stale as
+/// soon as it is given (a repurpose may take the page), so never act on the page itself.
+pub(crate) unsafe fn MiPeekPageEntrySectionSegment(
+    Segment: PMM_SECTION_SEGMENT,
+    Offset: PLARGE_INTEGER,
+) -> ULONG_PTR {
+    let slot = MiSectionPageEntrySlot(Segment, Offset);
+    let entry = if slot.is_null() { 0 } else { core::ptr::read_volatile(slot) };
+    if entry == crate::mm::standby::MM_REPURPOSED_SSE { 0 } else { entry }
+}
+
+/// The address of `Offset`'s entry, or null if its table was never allocated. The
+/// tables are nonpaged and live until `MmFreePageTablesSectionSegment`, which is what
+/// lets the standby list point at a slot from the PFN database.
+pub(crate) unsafe fn MiSectionPageEntrySlot(
+    Segment: PMM_SECTION_SEGMENT,
+    Offset: PLARGE_INTEGER,
+) -> *mut ULONG_PTR {
+    let table_ptr = core::ptr::addr_of_mut!((*Segment).PageTable) as PRTL_GENERIC_TABLE;
+    let PageTable = MiSectionPageTableGet(table_ptr, Offset);
+    if PageTable.is_null() {
+        return core::ptr::null_mut();
+    }
+    let page_index = (((*Offset).QuadPart - (*PageTable).FileOffset.QuadPart) as ULONG_PTR)
+        / PAGE_SIZE;
+    core::ptr::addr_of_mut!((*PageTable).PageEntries[page_index])
+}
+
+/// What a segment association rmap entry names: its table (the entry's `Process`) and
+/// the index in it (the low byte of its `Address`), as the segment, file offset and slot.
+pub(crate) unsafe fn MiSectionPageTableResolve(
+    Table: PVOID,
+    Index: usize,
+    Offset: *mut i64,
+) -> (PMM_SECTION_SEGMENT, *mut ULONG_PTR) {
+    let table = Table as PCACHE_SECTION_PAGE_TABLE;
+    *Offset = (*table).FileOffset.QuadPart + (Index as i64) * (PAGE_SIZE as i64);
+    ((*table).Segment, core::ptr::addr_of_mut!((*table).PageEntries[Index]))
 }
 
 /// `FREE_SECTION_PAGE_FUN` — called for each non-zero, non-swap entry as the

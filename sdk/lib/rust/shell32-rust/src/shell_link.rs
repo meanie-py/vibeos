@@ -505,23 +505,7 @@ extern "C" {
     pub static IID_IRunningObjectTable: IID;
 }
 
-#[repr(C, packed)]
-pub struct SHELL_LINK_HEADER {
-    pub dwSize: DWORD,
-    pub clsid: CLSID,
-    pub dwFlags: DWORD,
-    pub dwFileAttributes: DWORD,
-    pub ftCreationTime: FILETIME,
-    pub ftLastAccessTime: FILETIME,
-    pub ftLastWriteTime: FILETIME,
-    pub nFileSizeLow: DWORD,
-    pub nIconIndex: DWORD,
-    pub nShowCommand: DWORD,
-    pub wHotKey: WORD,
-    pub wReserved1: WORD,
-    pub dwReserved2: DWORD,
-    pub dwReserved3: DWORD,
-}
+pub use crate::island::SHELL_LINK_HEADER;
 
 #[repr(C, packed)]
 pub struct volume_info {
@@ -1571,121 +1555,33 @@ pub const SLDF_ALLOW_LINK_TO_LINK: DWORD = 0x00800000;
 // had been translated as live code on that basis. Every Logo3 path below is therefore absent
 // on purpose — each site says so where it would have been.
 
-#[repr(C)]
-pub struct BITMAPINFO {
-    pub bmiHeader: BITMAPINFOHEADER,
-    pub bmiColors: [RGBQUAD; 1],
-}
+pub use crate::island::BITMAPINFO;
 
-#[repr(C)]
-pub struct BITMAPINFOHEADER {
-    pub biSize: DWORD,
-    pub biWidth: LONG,
-    pub biHeight: LONG,
-    pub biPlanes: WORD,
-    pub biBitCount: WORD,
-    pub biCompression: DWORD,
-    pub biSizeImage: DWORD,
-    pub biXPelsPerMeter: LONG,
-    pub biYPelsPerMeter: LONG,
-    pub biClrUsed: DWORD,
-    pub biClrImportant: DWORD,
-}
+pub use crate::island::BITMAPINFOHEADER;
 
-#[repr(C)]
-pub struct DATABLOCK_HEADER {
-    pub cbSize: DWORD,
-    pub dwSignature: DWORD,
-}
+pub use crate::island::DATABLOCK_HEADER;
 pub type LPDBLIST = *mut DATABLOCK_HEADER;
 
-#[repr(C)]
-pub struct EXP_DARWIN_LINK {
-    pub dbh: DATABLOCK_HEADER,
-    pub szDarwinID: [CHAR; 260],
-    pub szwDarwinID: [WCHAR; 260],
-}
+pub use crate::island::EXP_DARWIN_LINK;
 pub type LPEXP_DARWIN_LINK = *mut EXP_DARWIN_LINK;
 
-#[repr(C)]
-pub struct EXP_SPECIAL_FOLDER {
-    pub cbSize: DWORD,
-    pub dwSignature: DWORD,
-    pub idSpecialFolder: DWORD,
-    pub cbOffset: DWORD,
-}
+pub use crate::island::EXP_SPECIAL_FOLDER;
 pub type LPEXP_SPECIAL_FOLDER = *mut EXP_SPECIAL_FOLDER;
 
-#[repr(C)]
-pub struct EXP_SZ_LINK {
-    pub cbSize: DWORD,
-    pub dwSignature: DWORD,
-    pub szTarget: [CHAR; 260],
-    pub szwTarget: [WCHAR; 260],
-}
+pub use crate::island::EXP_SZ_LINK;
 pub type LPEXP_SZ_LINK = *mut EXP_SZ_LINK;
 
-#[repr(C)]
-pub struct POINTL {
-    pub x: LONG,
-    pub y: LONG,
-}
+pub use crate::island::POINTL;
 
-#[repr(C)]
-pub struct RECT {
-    pub left: LONG,
-    pub top: LONG,
-    pub right: LONG,
-    pub bottom: LONG,
-}
+pub use crate::island::RECT;
 
-#[repr(C)]
-pub struct RGBQUAD {
-    pub rgbBlue: BYTE,
-    pub rgbGreen: BYTE,
-    pub rgbRed: BYTE,
-    pub rgbReserved: BYTE,
-}
+pub use crate::island::RGBQUAD;
 
-#[repr(C)]
-pub struct SYSTEMTIME {
-    pub wYear: WORD,
-    pub wMonth: WORD,
-    pub wDayOfWeek: WORD,
-    pub wDay: WORD,
-    pub wHour: WORD,
-    pub wMinute: WORD,
-    pub wSecond: WORD,
-    pub wMilliseconds: WORD,
-}
+pub use crate::island::SYSTEMTIME;
 
-#[repr(C)]
-pub struct WIN32_FIND_DATAA {
-    pub dwFileAttributes: DWORD,
-    pub ftCreationTime: FILETIME,
-    pub ftLastAccessTime: FILETIME,
-    pub ftLastWriteTime: FILETIME,
-    pub nFileSizeHigh: DWORD,
-    pub nFileSizeLow: DWORD,
-    pub dwReserved0: DWORD,
-    pub dwReserved1: DWORD,
-    pub cFileName: [CHAR; 260],
-    pub cAlternateFileName: [CHAR; 14],
-}
+pub use crate::island::WIN32_FIND_DATAA;
 
-#[repr(C)]
-pub struct WIN32_FIND_DATAW {
-    pub dwFileAttributes: DWORD,
-    pub ftCreationTime: FILETIME,
-    pub ftLastAccessTime: FILETIME,
-    pub ftLastWriteTime: FILETIME,
-    pub nFileSizeHigh: DWORD,
-    pub nFileSizeLow: DWORD,
-    pub dwReserved0: DWORD,
-    pub dwReserved1: DWORD,
-    pub cFileName: [WCHAR; 260],
-    pub cAlternateFileName: [WCHAR; 14],
-}
+pub use crate::island::WIN32_FIND_DATAW;
 
 pub type EXPPS = UINT;
 
@@ -1704,12 +1600,8 @@ extern "system" {
     fn GetLastError() -> DWORD;
     fn lstrlenW(text: LPCWSTR) -> INT;
     fn CoTaskMemFree(memory: LPVOID);
-    fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
-    fn ILFree(pidl: LPITEMIDLIST);
     fn ILRemoveLastID(pidl: LPITEMIDLIST) -> BOOL;
     fn SHFree(memory: LPVOID);
-    fn ShellExecuteExW(info: *mut SHELLEXECUTEINFOW) -> BOOL;
-    fn InsertMenuItemW(menu: HMENU, item: UINT, by_position: BOOL, info: *const MENUITEMINFOW) -> BOOL;
 }
 
 extern "C" {
@@ -1747,9 +1639,6 @@ unsafe fn StringCchCopyW<N: CppComSize>(dst: LPWSTR, capacity: N, src: LPCWSTR) 
 }
 
 extern "system" {
-    fn HeapReAlloc(heap: HANDLE, flags: DWORD, memory: LPVOID, bytes: usize) -> LPVOID;
-    fn GetModuleHandleW(name: LPCWSTR) -> HINSTANCE;
-    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
 }
 
 pub struct CStringW { buffer: LPWSTR, len: usize, capacity: usize }
@@ -1775,7 +1664,7 @@ impl CStringW {
         let next = if self.buffer.is_null() {
             HeapAlloc(GetProcessHeap(), 0, bytes)
         } else {
-            HeapReAlloc(GetProcessHeap(), 0, self.buffer.cast(), bytes)
+            HeapReAlloc(GetProcessHeap(), 0, self.buffer.cast(), (bytes) as SIZE_T)
         } as LPWSTR;
         if next.is_null() { return false; }
         self.buffer = next; self.capacity = capacity; true
@@ -1840,6 +1729,68 @@ pub static CPP_COM_WSTR_FB47CCC40FE6: [WCHAR; 3] = [0x0025, 0x0073, 0x0000];
 pub static CPP_COM_WSTR_FE706C396A0C: [WCHAR; 5] = [0x002E, 0x006C, 0x006E, 0x006B, 0x0000];
 
 use core::ffi::c_void;
+// The crate's own functions: the definition is the declaration.
+use crate::shell32::iconcache::ExtractIconExW;
+use crate::wine::classes::HLM_GetIconW;
+use crate::wine::pidl::ILClone;
+use crate::wine::pidl::ILCombine;
+use crate::wine::pidl::ILFree;
+use crate::wine::pidl::ILGetDisplayNameExW;
+use crate::wine::pidl::ILGetSize;
+use crate::dialogs_dialogs::PickIconDlg;
+use crate::wine::shellole::SHAlloc;
+use crate::wine::pidl::SHCloneSpecialIDList;
+use crate::shell32::utils::SHELL_GetUIObjectOfAbsoluteItem;
+use crate::wine::shell32_main::SHGetFileInfoW;
+use crate::wine::pidl::SHGetPathFromIDListW;
+use crate::wine::pidl::SHILCreateFromPathW;
+use crate::propsheet::SH_CreatePropertySheetPageEx;
+use crate::shell32::shlexec::ShellExecuteExW;
+use crate::shell32::shlexec::ShellExecuteW;
+// One declaration per external symbol: island.rs.
+use crate::island::CLSIDFromString;
+use crate::island::CoTaskMemAlloc;
+use crate::island::CreateCompatibleDC;
+use crate::island::CreateDIBSection;
+use crate::island::CreateSolidBrush;
+use crate::island::DeleteDC;
+use crate::island::DestroyIcon;
+use crate::island::DestroyPropertySheetPage;
+use crate::island::DialogBoxParamW;
+use crate::island::DrawIconEx;
+use crate::island::EnableWindow;
+use crate::island::EndDialog;
+use crate::island::FillRect;
+use crate::island::FindFirstFileW;
+use crate::island::GetDlgItem;
+use crate::island::GetDlgItemTextW;
+use crate::island::GetModuleHandleW;
+use crate::island::GetParent;
+use crate::island::GetSystemMetrics;
+use crate::island::GetWindowTextW;
+use crate::island::HeapReAlloc;
+use crate::island::ImageList_AddMasked;
+use crate::island::ImageList_Create;
+use crate::island::ImageList_Destroy;
+use crate::island::ImageList_GetIcon;
+use crate::island::InsertMenuItemW;
+use crate::island::IsWindowEnabled;
+use crate::island::LoadImageW;
+use crate::island::LoadStringW;
+use crate::island::LocalAlloc;
+use crate::island::MessageBoxW;
+use crate::island::SHAddDataBlock;
+use crate::island::SHAutoComplete;
+use crate::island::SHCreateStreamOnFileW;
+use crate::island::SHFindDataBlock;
+use crate::island::SHFreeDataBlockList;
+use crate::island::SHReadDataBlockList;
+use crate::island::SHRemoveDataBlock;
+use crate::island::SHWriteDataBlockList;
+use crate::island::SelectObject;
+use crate::island::SendDlgItemMessageW;
+use crate::island::SendMessageW;
+use crate::island::SetDlgItemTextW;
 use core::mem::size_of;
 use crate::shellcom::*;
 use crate::types::*;
@@ -2026,7 +1977,7 @@ pub unsafe fn CShellLink_Load_v1_body(this: *mut CShellLink, pszFileName: LPCOLE
     }
     let mut stm: *mut IStream = core::ptr::null_mut();
     let _stm_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(stm));
-    let mut hr = SHCreateStreamOnFileW(pszFileName, dwMode, &mut stm as *mut *mut IStream);
+    let mut hr = SHCreateStreamOnFileW(pszFileName, dwMode, (&mut stm as *mut *mut IStream).cast());
     if hr >= 0 {
         HeapFree(GetProcessHeap(), 0, (*this).m_sLinkPath);
         (*this).m_sLinkPath = strdupW_body(pszFileName);
@@ -2056,7 +2007,7 @@ pub unsafe fn CShellLink_Save_v1_body(this: *mut CShellLink, pszFileName: LPCOLE
     let mut hr = SHCreateStreamOnFileW(
         pszFileName,
         STGM_READWRITE | STGM_CREATE | STGM_SHARE_EXCLUSIVE,
-        &mut stm,
+        (&raw mut stm).cast(),
     );
 
     if hr >= 0 {
@@ -2116,7 +2067,7 @@ pub unsafe fn CShellLink_GetCurFile_body(this: *mut CShellLink, ppszFileName: *m
     }
     let len = wcslen((*this).m_sLinkPath);
     let alloc_size = (len + 1) * 2; // sizeof(WCHAR)
-    let ptr = CoTaskMemAlloc(alloc_size) as LPOLESTR;
+    let ptr = CoTaskMemAlloc((alloc_size) as SIZE_T) as LPOLESTR;
     *ppszFileName = ptr;
     if ptr.is_null() {
         return E_OUTOFMEMORY;
@@ -2525,7 +2476,7 @@ pub unsafe fn CShellLink_Load_v2_body(this: *mut CShellLink, stm: *mut IStream) 
     }
 
     // Load optional data block list
-    hr = SHReadDataBlockList(stm, &mut (*this).m_pDBList);
+    hr = SHReadDataBlockList((stm).cast(), &mut (*this).m_pDBList);
     if hr < 0 {
         return hr;
     }
@@ -2798,7 +2749,7 @@ pub unsafe fn CShellLink_Save_v2_body(this: *mut CShellLink, stm: *mut IStream, 
         }
     }
 
-    hr = SHWriteDataBlockList(stm, (*this).m_pDBList);
+    hr = SHWriteDataBlockList((stm).cast(), (*this).m_pDBList);
     if hr < 0 {
         return hr;
     }
@@ -3340,7 +3291,7 @@ pub unsafe fn CShellLink_GetPath_v2_body(this: *mut CShellLink, pszFile: LPWSTR,
     if ((fFlags & SLGP_RAWPATH) != 0) && (((*this).m_Header.dwFlags & SLDF_HAS_EXP_SZ) != 0) {
         let pInfo: LPEXP_SZ_LINK = SHFindDataBlock((*this).m_pDBList, EXP_SZ_LINK_SIG) as LPEXP_SZ_LINK;
         if !pInfo.is_null() && (*pInfo).cbSize == core::mem::size_of::<EXP_SZ_LINK>() as DWORD {
-            lstrcpynW(buffer.as_mut_ptr(), (*pInfo).szwTarget.as_ptr(), cchMaxPath);
+            lstrcpynW(buffer.as_mut_ptr(), core::ptr::addr_of!((*pInfo).szwTarget).cast(), cchMaxPath);
         }
     }
 
@@ -3450,7 +3401,7 @@ pub unsafe fn CShellLink_GetIconLocation_v2_body(this: *mut CShellLink, pszIconP
         let pInfo = SHFindDataBlock((*this).m_pDBList, EXP_SZ_ICON_SIG) as LPEXP_SZ_LINK;
         if !pInfo.is_null() && ((*pInfo).cbSize == core::mem::size_of::<EXP_SZ_LINK>() as u32) {
             SHExpandEnvironmentStringsW(
-                (*pInfo).szwTarget.as_ptr(),
+                core::ptr::addr_of!((*pInfo).szwTarget).cast(),
                 szPath.as_mut_ptr(),
                 szPath.len(),
             );
@@ -3485,7 +3436,7 @@ pub unsafe fn SHELL_PidlGetIconLocationW_body(pidl: PCIDLIST_ABSOLUTE, uFlags: U
     let hr: HRESULT = SHELL_GetUIObjectOfAbsoluteItem(
         core::ptr::null_mut(),
         pidl,
-        core::ptr::addr_of!(IID_IExtractIconW), core::ptr::addr_of_mut!(pei).cast(),
+        (core::ptr::addr_of!(IID_IExtractIconW)).cast(), core::ptr::addr_of_mut!(pei).cast(),
     );
     if ((hr) < 0) {
         if !pei.is_null() {
@@ -3554,11 +3505,11 @@ pub unsafe fn CShellLink_Extract_v2_body(this: *mut CShellLink, pszFile: LPCWSTR
 
     if hr == S_FALSE {
         if !phiconLarge.is_null() && (*phiconLarge) != null_hicon {
-            DestroyIcon(*phiconLarge);
+            DestroyIcon((*phiconLarge).cast());
             *phiconLarge = null_hicon;
         }
         if !phiconSmall.is_null() && (*phiconSmall) != null_hicon {
-            DestroyIcon(*phiconSmall);
+            DestroyIcon((*phiconSmall).cast());
             *phiconSmall = null_hicon;
         }
     }
@@ -3594,9 +3545,9 @@ pub unsafe fn CShellLink_SetIconLocation_v2_body(this: *mut CShellLink, pszIconP
             }
 
             lstrcpynW(
-                (*pInfo).szwTarget.as_mut_ptr(),
+                core::ptr::addr_of_mut!((*pInfo).szwTarget).cast(),
                 pszIconPath,
-                ((*pInfo).szwTarget).len(),
+                (core::ptr::addr_of!((*pInfo).szwTarget) as *const [WCHAR]).len(),
             );
             WideCharToMultiByte(
                 CP_ACP,
@@ -3639,7 +3590,7 @@ pub unsafe fn CShellLink_SetIconLocation_v2_body(this: *mut CShellLink, pszIconP
     }
 
     hr = S_OK;
-    (*this).m_Header.nIconIndex = iIcon as DWORD;
+    (*this).m_Header.nIconIndex = (iIcon as DWORD) as i32;
     (*this).m_bDirty = TRUE;
     hr
 }
@@ -3719,7 +3670,7 @@ pub unsafe fn CShellLink_WriteAdvertiseInfo_body(this: *mut CShellLink, string: 
         pInfo = &raw mut buffer;
     }
 
-    lstrcpynW((*pInfo).szwDarwinID.as_mut_ptr(), string, ((*pInfo).szwDarwinID).len());
+    lstrcpynW(core::ptr::addr_of_mut!((*pInfo).szwDarwinID).cast(), string, (core::ptr::addr_of!((*pInfo).szwDarwinID) as *const [WCHAR]).len());
     WideCharToMultiByte(CP_ACP, 0, string, -(1 as i32),
                             (*pInfo).szDarwinID.as_mut_ptr(), ((*pInfo).szDarwinID).len(),
                             core::ptr::null_mut(), core::ptr::null_mut());
@@ -3950,9 +3901,9 @@ pub unsafe fn CShellLink_SetPath_v2_body(this: *mut CShellLink, pszFile: LPCWSTR
                 }
 
                 lstrcpynW(
-                    (*pInfo).szwTarget.as_mut_ptr(),
+                    core::ptr::addr_of_mut!((*pInfo).szwTarget).cast(),
                     pszFile_mut,
-                    ((*pInfo).szwTarget).len() as usize,
+                    (core::ptr::addr_of!((*pInfo).szwTarget) as *const [WCHAR]).len() as usize,
                 );
                 WideCharToMultiByte(
                     CP_ACP,
@@ -4275,7 +4226,7 @@ pub unsafe fn CShellLink_DoOpen_body(this: *mut CShellLink, lpici: LPCMINVOKECOM
         sei.fMask |= SEE_MASK_HOTKEY;
     }
 
-    let result = ShellExecuteExW(&mut sei as *mut _);
+    let result = ShellExecuteExW((&raw mut sei).cast());
     if result != 0 {
         S_OK
     } else {
@@ -4327,7 +4278,7 @@ pub unsafe fn GetTypeDescriptionByPath_body(pszFullPath: PCWSTR, fAttributes: DW
                     szBuf,
                     cchBuf as usize,
                     CPP_COM_WSTR_AF854C3D2274.as_ptr(),
-                    &[fi.szTypeName.as_ptr(), pwszExt],
+                    &[core::ptr::addr_of!(fi.szTypeName).cast(), pwszExt],
                 );
             }
         }
@@ -4337,7 +4288,7 @@ pub unsafe fn GetTypeDescriptionByPath_body(pszFullPath: PCWSTR, fAttributes: DW
                 szBuf,
                 cchBuf as usize,
                 CPP_COM_WSTR_FB47CCC40FE6.as_ptr(),
-                &[fi.szTypeName.as_ptr()],
+                &[core::ptr::addr_of!(fi.szTypeName).cast()],
             );
         }
     }
@@ -4359,7 +4310,7 @@ pub unsafe fn CShellLink_OnInitDialog_body(this: *mut CShellLink, hwndDlg: HWND,
 
     if !fi.hIcon.is_null() {
         if !(*this).m_hIcon.is_null() {
-            DestroyIcon((*this).m_hIcon);
+            DestroyIcon(((*this).m_hIcon).cast());
         }
         (*this).m_hIcon = fi.hIcon as HICON;
         SendDlgItemMessageW(hwndDlg, IDC_SHORTCUT_ICON, STM_SETICON, (*this).m_hIcon as WPARAM, 0);
@@ -4371,7 +4322,7 @@ pub unsafe fn CShellLink_OnInitDialog_body(this: *mut CShellLink, hwndDlg: HWND,
     if SHGetFileInfoW((*this).m_sLinkPath as *const u16, 0, &mut fi as *mut SHFILEINFOW, core::mem::size_of::<SHFILEINFOW>() as u32, SHGFI_DISPLAYNAME) == 0 {
         fi.szDisplayName[0] = UNICODE_NULL;
     }
-    SetDlgItemTextW(hwndDlg, IDC_SHORTCUT_TEXT, fi.szDisplayName.as_ptr());
+    SetDlgItemTextW(hwndDlg, IDC_SHORTCUT_TEXT, core::ptr::addr_of!(fi.szDisplayName).cast());
 
     // Target type
     if !(*this).m_sPath.is_null() {
@@ -4509,7 +4460,7 @@ pub unsafe fn CShellLink_OnCommand_body(this: *mut CShellLink, hwndDlg: HWND, id
                     if (cpp_com_string_cch_printf_w(wszPath.as_mut_ptr(), wszPath.len(), CPP_COM_WSTR_AAA8350805D2.as_ptr(), &[(*this).m_sIcoPath as LPCWSTR]) >= 0)
                         && SHGetFileInfoW(wszPath.as_mut_ptr(), 0, &mut fi, core::mem::size_of::<SHFILEINFOW>() as UINT, SHGFI_ICONLOCATION | SHGFI_USEFILEATTRIBUTES) != 0
                     {
-                        pszPath = fi.szDisplayName.as_mut_ptr();
+                        pszPath = core::ptr::addr_of_mut!(fi.szDisplayName).cast();
                         IconIndex = fi.iIcon;
                     }
                 }
@@ -4522,7 +4473,7 @@ pub unsafe fn CShellLink_OnCommand_body(this: *mut CShellLink, hwndDlg: HWND, id
 
             if wszPath[0] == 0 && !(*this).m_pPidl.is_null() {
                 if SHGetFileInfoW((*this).m_pPidl as PWSTR, 0, &mut fi, core::mem::size_of::<SHFILEINFOW>() as UINT, SHGFI_ICONLOCATION | SHGFI_PIDL) != 0
-                    && StringCchCopyW(wszPath.as_mut_ptr(), wszPath.len() as UINT, fi.szDisplayName.as_ptr()) >= 0
+                    && StringCchCopyW(wszPath.as_mut_ptr(), wszPath.len() as UINT, core::ptr::addr_of!(fi.szDisplayName).cast()) >= 0
                 {
                     IconIndex = fi.iIcon;
                 }
@@ -4535,7 +4486,7 @@ pub unsafe fn CShellLink_OnCommand_body(this: *mut CShellLink, hwndDlg: HWND, id
                 let hIconLarge = CShellLink_CreateShortcutIcon_body(this, wszPath.as_ptr() as LPCWSTR, IconIndex);
                 if !hIconLarge.is_null() {
                     if !(*this).m_hIcon.is_null() {
-                        DestroyIcon((*this).m_hIcon);
+                        DestroyIcon(((*this).m_hIcon).cast());
                     }
                     (*this).m_hIcon = hIconLarge;
                     SendDlgItemMessageW(hwndDlg, IDC_SHORTCUT_ICON, STM_SETICON, (*this).m_hIcon as WPARAM, 0);
@@ -4544,9 +4495,9 @@ pub unsafe fn CShellLink_OnCommand_body(this: *mut CShellLink, hwndDlg: HWND, id
             return;
         }
         IDC_SHORTCUT_ADVANCED => {
-            let result = DialogBoxParamW(shell32_hInstance, MAKEINTRESOURCEW(IDD_SHORTCUT_EXTENDED_PROPERTIES), hwndDlg, ExtendedShortcutProc, (*this).m_bRunAs as LPARAM);
+            let result = DialogBoxParamW(shell32_hInstance, MAKEINTRESOURCEW(IDD_SHORTCUT_EXTENDED_PROPERTIES), hwndDlg, Some(ExtendedShortcutProc), (*this).m_bRunAs as LPARAM);
             if result == 1 || result == 0 {
-                if (*this).m_bRunAs as isize != result {
+                if (*this).m_bRunAs as isize != (result) as _ {
                     PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
                 }
                 (*this).m_bRunAs = result as i32;
@@ -4622,7 +4573,7 @@ pub unsafe fn CShellLink_OnNotify_body(this: *mut CShellLink, hwndDlg: HWND, idF
 
 pub unsafe fn CShellLink_OnDestroy_body(this: *mut CShellLink, hwndDlg: HWND) -> () {
     if !(*this).m_hIcon.is_null() {
-        DestroyIcon((*this).m_hIcon);
+        DestroyIcon(((*this).m_hIcon).cast());
         (*this).m_hIcon = core::ptr::null_mut();
     }
 }
@@ -4635,7 +4586,7 @@ pub unsafe fn CShellLink_SH_ShellLinkDlgProc_body(this: *mut CShellLink, hwndDlg
             let ppsp = lParam as *mut PROPSHEETPAGEW;
             if !ppsp.is_null() {
                 pThis = (*ppsp).lParam as *mut CShellLink;
-                SetWindowLongPtr(hwndDlg, DWLP_USER, pThis as isize);
+                SetWindowLongPtr(hwndDlg, DWLP_USER, (pThis as isize) as _);
                 return CShellLink_OnInitDialog_body(pThis, hwndDlg, wParam as HWND, lParam) as INT_PTR;
             }
         },
@@ -4643,7 +4594,7 @@ pub unsafe fn CShellLink_SH_ShellLinkDlgProc_body(this: *mut CShellLink, hwndDlg
             return CShellLink_OnNotify_body(pThis, hwndDlg, wParam as i32, lParam as *mut NMHDR);
         },
         WM_COMMAND => {
-            CShellLink_OnCommand_body(pThis, hwndDlg, LOWORD(wParam) as i32, lParam as HWND, HIWORD(wParam) as UINT);
+            CShellLink_OnCommand_body(pThis, hwndDlg, LOWORD((wParam) as _) as i32, lParam as HWND, HIWORD((wParam) as _) as UINT);
         },
         WM_DESTROY => {
             CShellLink_OnDestroy_body(pThis, hwndDlg);
@@ -4655,7 +4606,7 @@ pub unsafe fn CShellLink_SH_ShellLinkDlgProc_body(this: *mut CShellLink, hwndDlg
 }
 
 pub unsafe fn CShellLink_AddPages_body(this: *mut CShellLink, pfnAddPage: LPFNSVADDPROPSHEETPAGE, lParam: LPARAM) -> HRESULT {
-    let hPage = SH_CreatePropertySheetPageEx(IDD_SHORTCUT_PROPERTIES as WORD, SH_ShellLinkDlgProc, this as *mut _ as LPARAM, core::ptr::null(), Some(PropSheetPageLifetimeCallback_CShellLink));
+    let hPage = SH_CreatePropertySheetPageEx(IDD_SHORTCUT_PROPERTIES as WORD, Some(SH_ShellLinkDlgProc), this as *mut _ as LPARAM, core::ptr::null(), Some(PropSheetPageLifetimeCallback_CShellLink));
     let hr = AddPropSheetPage(hPage, pfnAddPage, lParam);
     if hr < 0 {
         return hr;
@@ -4690,7 +4641,7 @@ pub unsafe fn CShellLink_DragEnter_body(this: *mut CShellLink, pDataObject: *mut
     let mut hr = SHELL_GetUIObjectOfAbsoluteItem(
         core::ptr::null_mut(),
         (*this).m_pPidl,
-        core::ptr::addr_of!(IID_IDropTarget), core::ptr::addr_of_mut!((*this).m_DropTarget).cast(),
+        (core::ptr::addr_of!(IID_IDropTarget)).cast(), core::ptr::addr_of_mut!((*this).m_DropTarget).cast(),
     );
 
     if hr >= 0 {
@@ -4748,13 +4699,13 @@ pub unsafe fn CShellLink_CreateShortcutIcon_body(this: *mut CShellLink, wszIconP
     let crMask = GetSysColor(COLOR_3DFACE);
     let mut wszLnkIcon: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
     let mut lnk_idx: i32 = 0;
-    let himl: HIMAGELIST = ImageList_Create(
+    let himl: HIMAGELIST = (ImageList_Create(
         cx,
         cy,
         ILC_COLOR32 | ILC_MASK,
         1,
         1,
-    );
+    )).cast();
     let mut hIcon: HICON = core::ptr::null_mut();
     let mut hNewIcon: HICON = core::ptr::null_mut();
     let mut hShortcut: HICON = core::ptr::null_mut();
@@ -4795,7 +4746,7 @@ pub unsafe fn CShellLink_CreateShortcutIcon_body(this: *mut CShellLink, wszIconP
     if hIcon.is_null() || hShortcut.is_null() || himl.is_null() {
         // fall through to cleanup
     } else {
-        let hDC: HDC = CreateCompatibleDC(core::ptr::null_mut());
+        let hDC: HDC = (CreateCompatibleDC(core::ptr::null_mut())).cast();
         if !hDC.is_null() {
             // Local definitions to match the Windows structures
 
@@ -4811,7 +4762,7 @@ pub unsafe fn CShellLink_CreateShortcutIcon_body(this: *mut CShellLink, wszIconP
 
             let mut pvBits: *mut core::ffi::c_void = core::ptr::null_mut();
             let hbm: HBITMAP = CreateDIBSection(
-                hDC,
+                (hDC).cast(),
                 &bi,
                 DIB_RGB_COLORS,
                 &mut pvBits,
@@ -4820,23 +4771,23 @@ pub unsafe fn CShellLink_CreateShortcutIcon_body(this: *mut CShellLink, wszIconP
             );
 
             if !hbm.is_null() {
-                let hbmOld: HGDIOBJ = SelectObject(hDC, hbm);
+                let hbmOld: HGDIOBJ = SelectObject(hDC, (hbm).cast());
                 {
-                    let hbr: HBRUSH = CreateSolidBrush(crMask);
+                    let hbr: HBRUSH = (CreateSolidBrush(crMask)).cast();
                     let rc = RECT {
                         left: 0,
                         top: 0,
                         right: cx,
                         bottom: cy,
                     };
-                    FillRect(hDC, &rc, hbr);
-                    DeleteObject(hbr);
+                    FillRect((hDC).cast(), &rc, (hbr).cast());
+                    DeleteObject((hbr).cast());
 
                     DrawIconEx(
-                        hDC,
+                        (hDC).cast(),
                         0,
                         0,
-                        hIcon,
+                        (hIcon).cast(),
                         cx,
                         cy,
                         0,
@@ -4844,10 +4795,10 @@ pub unsafe fn CShellLink_CreateShortcutIcon_body(this: *mut CShellLink, wszIconP
                         DI_NORMAL,
                     );
                     DrawIconEx(
-                        hDC,
+                        (hDC).cast(),
                         0,
                         0,
-                        hShortcut,
+                        (hShortcut).cast(),
                         cx,
                         cy,
                         0,
@@ -4855,26 +4806,26 @@ pub unsafe fn CShellLink_CreateShortcutIcon_body(this: *mut CShellLink, wszIconP
                         DI_NORMAL,
                     );
                 }
-                SelectObject(hDC, hbmOld);
+                SelectObject((hDC).cast(), hbmOld);
 
-                let iAdded: i32 = ImageList_AddMasked(himl, hbm, crMask);
-                hNewIcon = ImageList_GetIcon(himl, iAdded, ILD_NORMAL | ILD_TRANSPARENT);
+                let iAdded: i32 = ImageList_AddMasked((himl).cast(), hbm, crMask);
+                hNewIcon = (ImageList_GetIcon((himl).cast(), iAdded, ILD_NORMAL | ILD_TRANSPARENT)).cast();
 
-                DeleteObject(hbm);
+                DeleteObject((hbm).cast());
             }
-            DeleteDC(hDC);
+            DeleteDC((hDC).cast());
         }
     }
 
     // cleanup
     if !hIcon.is_null() {
-        DestroyIcon(hIcon);
+        DestroyIcon((hIcon).cast());
     }
     if !hShortcut.is_null() {
-        DestroyIcon(hShortcut);
+        DestroyIcon((hShortcut).cast());
     }
     if !himl.is_null() {
-        ImageList_Destroy(himl);
+        ImageList_Destroy((himl).cast());
     }
 
     hNewIcon
@@ -4891,11 +4842,11 @@ pub unsafe fn CShellLink_CreateShortcutIcon_body(this: *mut CShellLink, wszIconP
 // --- windef.h/winnt.h/wtypes.h base typedefs absent from types.rs/shellcom.rs ---
 pub type WPARAM = UINT_PTR;
 pub type LRESULT = LONG_PTR;
-pub type HICON = HANDLE;
-pub type HDC = HANDLE;
-pub type HBRUSH = HANDLE;
-pub type HGDIOBJ = HANDLE;
-pub type HIMAGELIST = HANDLE; // commctrl.h
+pub use crate::island::HICON;
+pub use crate::island::HDC;
+pub use crate::island::HBRUSH;
+pub use crate::island::HGDIOBJ;
+pub use crate::island::HIMAGELIST; // commctrl.h
 pub type HDROP = HANDLE;      // shellapi.h
 pub type HLOCAL = HANDLE;     // winbase.h
 pub type LCID = DWORD;        // winnt.h
@@ -4908,22 +4859,7 @@ pub type LPFNPSPCALLBACKW = unsafe extern "system" fn(HWND, UINT, *mut PROPSHEET
 // prsht.h _PROPSHEETPAGEW. Only the fields up to lParam are dereferenced by
 // this module (WM_INITDIALOG page recovery + lifetime callback); the fields
 // after lParam keep the prefix layout faithful and are never read here.
-#[repr(C)]
-pub struct PROPSHEETPAGEW {
-    pub dwSize: DWORD,
-    pub dwFlags: DWORD,
-    pub hInstance: HINSTANCE,
-    pub pszTemplate: LPCWSTR,      // union { pszTemplate, pResource }
-    pub hIcon: HICON,              // union { hIcon, pszIcon }
-    pub pszTitle: LPCWSTR,
-    pub pfnDlgProc: Option<DLGPROC>,
-    pub lParam: LPARAM,
-    pub pfnCallback: Option<LPFNPSPCALLBACKW>,
-    pub pcRefParent: *mut UINT,
-    pub pszHeaderTitle: LPCWSTR,
-    pub pszHeaderSubTitle: LPCWSTR,
-    pub hActCtx: HANDLE,
-}
+pub use crate::island::PROPSHEETPAGEW;
 
 // shellapi.h _CMINVOKECOMMANDINFOEX (ANSI base + Unicode tail + ptInvoke)
 #[repr(C)]
@@ -4998,7 +4934,7 @@ pub unsafe fn IsUnicode(ici: *const CMINVOKECOMMANDINFO) -> bool {
 // callers free with CoTaskMemFree — SHAlloc is CoTaskMemAlloc in ReactOS)
 pub unsafe fn __SHCloneStrAtoW(target: *mut LPWSTR, source: LPCSTR) -> LPWSTR {
     let len = MultiByteToWideChar(CP_ACP, 0, source, -1, core::ptr::null_mut(), 0);
-    *target = SHAlloc((len as usize) * core::mem::size_of::<WCHAR>()) as LPWSTR;
+    *target = SHAlloc(((len as usize) * core::mem::size_of::<WCHAR>()) as SIZE_T) as LPWSTR;
     if !(*target).is_null() {
         MultiByteToWideChar(CP_ACP, 0, source, -1, *target, len);
     }
@@ -5015,7 +4951,7 @@ pub unsafe fn AddPropSheetPage(
     if let Some(add) = pfnAddPage {
         if add(hPage, lParam) != 0 { return S_OK; }
     }
-    DestroyPropertySheetPage(hPage);
+    DestroyPropertySheetPage((hPage).cast());
     E_FAIL
 }
 
@@ -5058,15 +4994,15 @@ pub unsafe extern "system" fn ExtendedShortcutProc(
         }
         WM_COMMAND => {
             let hDlgCtrl = GetDlgItem(hwndDlg, IDC_SHORTEX_RUN_DIFFERENT);
-            if LOWORD(wParam) as UINT == IDOK {
+            if LOWORD((wParam) as _) as UINT == IDOK {
                 if SendMessageW(hDlgCtrl, BM_GETCHECK, 0, 0) == BST_CHECKED {
                     EndDialog(hwndDlg, 1);
                 } else {
                     EndDialog(hwndDlg, 0);
                 }
-            } else if LOWORD(wParam) as UINT == IDCANCEL {
+            } else if LOWORD((wParam) as _) as UINT == IDCANCEL {
                 EndDialog(hwndDlg, -1);
-            } else if LOWORD(wParam) as INT == IDC_SHORTEX_RUN_DIFFERENT {
+            } else if LOWORD((wParam) as _) as INT == IDC_SHORTEX_RUN_DIFFERENT {
                 if SendMessageW(hDlgCtrl, BM_GETCHECK, 0, 0) == BST_CHECKED {
                     SendMessageW(hDlgCtrl, BM_SETCHECK, BST_UNCHECKED as WPARAM, 0);
                 } else {
@@ -5134,7 +5070,6 @@ extern "system" {
     // kernel32 (winbase.h/fileapi.h/winnls.h/datetimeapi.h)
     fn ExpandEnvironmentStringsW(src: LPCWSTR, dst: LPWSTR, size: DWORD) -> DWORD;
     fn GetFileAttributesW(path: LPCWSTR) -> DWORD;
-    fn FindFirstFileW(path: LPCWSTR, data: *mut WIN32_FIND_DATAW) -> HANDLE;
     fn FindClose(handle: HANDLE) -> BOOL;
     fn DeleteFileW(path: LPCWSTR) -> BOOL;
     #[link_name = "GetFullPathNameW"]
@@ -5156,88 +5091,36 @@ extern "system" {
     #[link_name = "GetDateFormatW"]
     fn Win32GetDateFormatW(locale: LCID, flags: DWORD, date: *const SYSTEMTIME, format: LPCWSTR,
                       buffer: LPWSTR, cch: INT) -> INT;
-    fn LocalAlloc(flags: UINT, bytes: SIZE_T) -> HLOCAL;
     // user32 (winuser.h)
-    fn GetDlgItem(dlg: HWND, id: INT) -> HWND;
-    fn SendMessageW(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
-    fn SendDlgItemMessageW(dlg: HWND, id: INT, msg: UINT, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
-    fn SetDlgItemTextW(dlg: HWND, id: INT, text: LPCWSTR) -> BOOL;
-    fn GetDlgItemTextW(dlg: HWND, id: INT, buffer: LPWSTR, cch: INT) -> UINT;
-    fn GetWindowTextW(hwnd: HWND, buffer: LPWSTR, cch: INT) -> INT;
-    fn EnableWindow(hwnd: HWND, enable: BOOL) -> BOOL;
-    fn IsWindowEnabled(hwnd: HWND) -> BOOL;
-    fn GetParent(hwnd: HWND) -> HWND;
     #[link_name = "PostMessageW"] // UNICODE build: PostMessage => PostMessageW
     fn PostMessage(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM) -> BOOL;
-    fn MessageBoxW(hwnd: HWND, text: LPCWSTR, caption: LPCWSTR, flags: UINT) -> INT;
-    fn DialogBoxParamW(instance: HINSTANCE, template: LPCWSTR, parent: HWND,
-                       dlgproc: DLGPROC, lparam: LPARAM) -> INT_PTR;
-    fn EndDialog(dlg: HWND, result: INT_PTR) -> BOOL;
     fn GetKeyState(key: INT) -> SHORT;
-    fn GetSystemMetrics(index: INT) -> INT;
     fn GetSysColor(index: INT) -> COLORREF;
-    fn LoadImageW(instance: HINSTANCE, name: LPCWSTR, image_type: UINT, cx: INT, cy: INT, flags: UINT) -> HANDLE;
-    fn DestroyIcon(icon: HICON) -> BOOL;
-    fn DrawIconEx(dc: HDC, x: INT, y: INT, icon: HICON, cx: INT, cy: INT, step: UINT,
-                  flicker_brush: HBRUSH, flags: UINT) -> BOOL;
-    fn FillRect(dc: HDC, rect: *const RECT, brush: HBRUSH) -> INT;
-    fn ExtractIconExW(file: LPCWSTR, icon_index: INT, large: *mut HICON, small: *mut HICON, count: UINT) -> UINT;
     #[link_name = "PrivateExtractIconsW"]
     fn Win32PrivateExtractIconsW(path: LPCWSTR, index: INT, cx: INT, cy: INT, icons: *mut HICON,
                             ids: *mut UINT, count: UINT, flags: UINT) -> UINT;
     // gdi32 (wingdi.h)
-    fn CreateCompatibleDC(dc: HDC) -> HDC;
-    fn DeleteDC(dc: HDC) -> BOOL;
-    fn CreateSolidBrush(color: COLORREF) -> HBRUSH;
     fn DeleteObject(object: HGDIOBJ) -> BOOL;
-    fn SelectObject(dc: HDC, object: HGDIOBJ) -> HGDIOBJ;
-    fn CreateDIBSection(dc: HDC, info: *const BITMAPINFO, usage: UINT, bits: *mut LPVOID,
-                        section: HANDLE, offset: DWORD) -> HBITMAP;
     // comctl32 (commctrl.h/prsht.h)
-    fn ImageList_Create(cx: INT, cy: INT, flags: UINT, initial: INT, grow: INT) -> HIMAGELIST;
-    fn ImageList_Destroy(himl: HIMAGELIST) -> BOOL;
-    fn ImageList_AddMasked(himl: HIMAGELIST, bitmap: HBITMAP, mask: COLORREF) -> INT;
-    fn ImageList_GetIcon(himl: HIMAGELIST, index: INT, flags: UINT) -> HICON;
-    fn DestroyPropertySheetPage(page: HPROPSHEETPAGE) -> BOOL;
     // ole32 (objbase.h/combaseapi.h)
-    fn CoTaskMemAlloc(bytes: SIZE_T) -> LPVOID;
-    fn CLSIDFromString(text: LPCOLESTR, clsid: *mut CLSID) -> HRESULT;
     fn ReleaseStgMedium(medium: *mut STGMEDIUM);
     // advapi32 (appmgmt.h:46)
     fn CommandLineFromMsiDescriptor(descriptor: LPWSTR, command_line: LPWSTR, cch: *mut DWORD) -> DWORD;
     // shell32 public exports (shellapi.h/shlobj.h)
-    fn SHGetPathFromIDListW(pidl: LPCITEMIDLIST, path: LPWSTR) -> BOOL;
-    fn SHGetFileInfoW(path: LPCWSTR, attributes: DWORD, info: *mut SHFILEINFOW, bytes: UINT, flags: UINT) -> DWORD_PTR;
     #[link_name = "SHChangeNotify"]
     fn Win32SHChangeNotify(event: LONG, flags: UINT, item1: LPCVOID, item2: LPCVOID);
-    fn ILCombine(first: LPCITEMIDLIST, second: LPCITEMIDLIST) -> LPITEMIDLIST;
-    fn ILGetSize(pidl: LPCITEMIDLIST) -> UINT;
     fn ILLoadFromStream(stream: *mut IStream, pidl: *mut LPITEMIDLIST) -> HRESULT;
     fn ILSaveToStream(stream: *mut IStream, pidl: LPCITEMIDLIST) -> HRESULT;
     fn SHOpenFolderAndSelectItems(folder: PCIDLIST_ABSOLUTE, cidl: UINT,
                                   apidl: PCUITEMID_CHILD_ARRAY, flags: DWORD) -> HRESULT;
-    fn PickIconDlg(owner: HWND, path: LPWSTR, cch: UINT, index: *mut INT) -> INT;
-    fn ShellExecuteW(hwnd: HWND, verb: LPCWSTR, file: LPCWSTR, parameters: LPCWSTR,
-                     directory: LPCWSTR, show: INT) -> HINSTANCE;
     fn FindExecutableW(file: LPCWSTR, directory: LPCWSTR, result: LPWSTR) -> HINSTANCE;
     fn DragQueryFileW(drop: HDROP, index: UINT, path: LPWSTR, cch: UINT) -> UINT;
-    fn SHCloneSpecialIDList(hwnd: HWND, csidl: INT, create: BOOL) -> PIDLIST_ABSOLUTE;
-    fn SHILCreateFromPathW(path: LPCWSTR, pidl: *mut LPITEMIDLIST, attributes: *mut DWORD) -> HRESULT;
     fn SHSimpleIDListFromPathW(path: LPCWSTR) -> LPITEMIDLIST;
-    fn SHAlloc(bytes: SIZE_T) -> LPVOID;
     fn PathResolveW(path: LPWSTR, dirs: *mut LPCWSTR, flags: DWORD) -> BOOL;
     // shlwapi (shlwapi.h; SHExpand/SHAnsi/datablocks: reactos/shlwapi_undoc.h:140-164)
-    fn SHCreateStreamOnFileW(file: LPCWSTR, mode: DWORD, stream: *mut *mut IStream) -> HRESULT;
-    fn SHAutoComplete(edit: HWND, flags: DWORD) -> HRESULT;
     #[link_name = "SHExpandEnvironmentStringsW"]
     fn Win32SHExpandEnvironmentStringsW(src: LPCWSTR, dst: LPWSTR, cch: DWORD) -> DWORD;
     fn SHAnsiToUnicode(src: LPCSTR, dst: LPWSTR, cch: INT) -> DWORD;
-    fn SHAddDataBlock(list: *mut LPDBLIST, item: *const DATABLOCK_HEADER) -> BOOL;
-    fn SHRemoveDataBlock(list: *mut LPDBLIST, signature: DWORD) -> BOOL;
-    fn SHFindDataBlock(list: LPDBLIST, signature: DWORD) -> *mut DATABLOCK_HEADER;
-    fn SHWriteDataBlockList(stream: *mut IStream, list: LPDBLIST) -> HRESULT;
-    fn SHReadDataBlockList(stream: *mut IStream, list: *mut LPDBLIST) -> HRESULT;
-    fn SHFreeDataBlockList(list: LPDBLIST);
     fn PathFileExistsW(path: LPCWSTR) -> BOOL;
     fn PathFileExistsAndAttributesW(path: LPCWSTR, attributes: *mut DWORD) -> BOOL;
     fn PathIsDirectoryW(path: LPCWSTR) -> BOOL;
@@ -5276,14 +5159,9 @@ extern "C" {
     fn _wcsicmp(left: LPCWSTR, right: LPCWSTR) -> INT;
     // shell32 internals with C linkage:
     // precomp.h:275-279 (EXTERN_C)
-    fn SHELL_GetUIObjectOfAbsoluteItem(owner: HWND, pidl: PCIDLIST_ABSOLUTE, riid: REFIID, out: *mut LPVOID) -> HRESULT;
     // wine/shell32_main.h:79 (extern "C" block)
-    fn HLM_GetIconW(reg_idx: INT, dest: LPWSTR, cch: DWORD, icon_idx: *mut INT) -> BOOL;
     // wine/shell32_main.h:250-251 (extern "C" block; defined in propsheet.cpp)
-    fn SH_CreatePropertySheetPageEx(dialog_id: WORD, dlgproc: DLGPROC, lparam: LPARAM,
-                                    title: LPCWSTR, callback: Option<LPFNPSPCALLBACKW>) -> HPROPSHEETPAGE;
     // wine/pidl.h (extern "C"; cdecl internal, pidl.rs:406 precedent)
-    fn ILGetDisplayNameExW(psf: *mut c_void, pidl: LPCITEMIDLIST, path: LPWSTR, name_type: DWORD) -> BOOL;
     // wine/shell32_main.h:867 precedent (module instance for resource loads)
     static shell32_hInstance: HINSTANCE;
 }
@@ -5386,7 +5264,7 @@ pub unsafe extern "system" fn IShellLink_ConstructFromFile(
     psf: *mut c_void, pidl: LPCITEMIDLIST, riid: REFIID, ppv: *mut LPVOID,
 ) -> HRESULT {
     let mut path = [0u16; MAX_PATH];
-    if ILGetDisplayNameExW(psf, pidl, path.as_mut_ptr(), 0) == 0 {
+    if ILGetDisplayNameExW((psf).cast(), pidl, path.as_mut_ptr(), 0) == 0 {
         return E_FAIL;
     }
     IShellLink_ConstructFromPath(path.as_mut_ptr(), riid, ppv)

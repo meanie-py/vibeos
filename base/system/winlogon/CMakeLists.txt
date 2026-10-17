@@ -42,9 +42,6 @@ set_source_files_properties(winlogon_rust_stub.c PROPERTIES SKIP_PRECOMPILE_HEAD
 # .res pattern userinit uses). winlogon is set_module_type win32gui WITHOUT
 # UNICODE, so — unlike userinit_res — no UNICODE define here (matches the old
 # winlogon.exe rc compile byte-for-byte).
-add_rc_deps(winlogon.rc ${CMAKE_CURRENT_SOURCE_DIR}/res/winlogon.ico)
-add_library(winlogon_res OBJECT winlogon.rc)
-target_include_directories(winlogon_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 # --- Rust cohabitation (winlogon-rust) ------------------------------------
 # The Rust leaf functions (GetSetupType/RunSetup/environment/shutdown/
@@ -63,4 +60,4 @@ add_cargo_module(winlogon winlogon-cargo winlogon.exe
     KIND win32exe
     BODY_CRATE winlogon-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS winlogon_c winlogon_res)
+    EXTRA_DEPENDS winlogon_c psdk)

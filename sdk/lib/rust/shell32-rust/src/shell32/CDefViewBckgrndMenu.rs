@@ -1,6 +1,11 @@
 // rustconv-assembly: class:CDefViewBckgrndMenu
 // Deterministic from shobjidl.h
 use crate::prelude::*;
+// The crate's own functions: the definition is the declaration.
+use crate::wine::shlmenu::Shell_MergeMenus;
+// One declaration per external symbol: island.rs.
+use crate::island::DestroyMenu;
+use crate::island::IUnknown_QueryService;
 #[repr(C)]
 pub struct IContextMenu {
     pub lpVtbl: *const IContextMenuVtbl,
@@ -443,8 +448,6 @@ macro_rules! LOWORD { ($value:expr) => { (($value as usize) & 0xffff) as UINT };
 pub type LPFNSVADDPROPSHEETPAGE = Option<unsafe extern "system" fn(HPROPSHEETPAGE, LPARAM) -> BOOL>;
 
 extern "system" {
-    fn DestroyMenu(menu: HMENU) -> BOOL;
-    fn IUnknown_QueryService(object: *mut IUnknown, service: REFGUID, riid: REFIID, out: *mut *mut core::ffi::c_void) -> HRESULT;
 }
 
 extern "C" {
@@ -480,7 +483,6 @@ fn MAKEWPARAM(lo: UINT, hi: UINT) -> WPARAM {
 
 extern "system" {
     fn OleGetClipboard(ppDataObj: *mut *mut IDataObject) -> HRESULT;
-    fn Shell_MergeMenus(hmDst: HMENU, hmSrc: HMENU, uInsert: UINT, uIDAdjust: UINT, uIDAdjustMax: UINT, uFlags: ULONG) -> UINT;
 }
 
 extern "C" {
@@ -531,7 +533,7 @@ pub unsafe fn CDefViewBckgrndMenu__bIsDesktopBrowserMenu_body(this: *mut CDefVie
 
     let mut psv: *mut IShellView = core::ptr::null_mut();
     let _psv_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(psv));
-    let hr = IUnknown_QueryService((*this).m_site, core::ptr::addr_of!(IID_IFolderView), core::ptr::addr_of!(IID_IShellView), core::ptr::addr_of_mut!(psv).cast());
+    let hr = IUnknown_QueryService(((*this).m_site).cast(), core::ptr::addr_of!(IID_IFolderView), core::ptr::addr_of!(IID_IShellView), core::ptr::addr_of_mut!(psv).cast());
     if ((hr) < 0) {
         return FALSE;
     }
@@ -740,7 +742,7 @@ pub unsafe fn CDefViewBckgrndMenu_InvokeCommand_body(this: *mut CDefViewBckgrndM
 
             let mut psv: *mut IShellView = core::ptr::null_mut();
             let _psv_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(psv));
-            let hr = IUnknown_QueryService((*this).m_site, core::ptr::addr_of!(IID_IFolderView), core::ptr::addr_of!(IID_IShellView), core::ptr::addr_of_mut!(psv).cast());
+            let hr = IUnknown_QueryService(((*this).m_site).cast(), core::ptr::addr_of!(IID_IFolderView), core::ptr::addr_of!(IID_IShellView), core::ptr::addr_of_mut!(psv).cast());
             if ((hr) < 0) {
                 return hr;
             }

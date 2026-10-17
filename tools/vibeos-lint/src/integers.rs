@@ -2,7 +2,7 @@ use regex::Regex;
 use std::sync::OnceLock;
 
 // Python accepts unbounded decimal integers, including Unicode decimal digits.
-pub(crate) fn decimal(raw: &str) -> Result<String, String> {
+pub fn decimal(raw: &str) -> Result<String, String> {
     static DIGIT: OnceLock<Regex> = OnceLock::new();
     let digit = DIGIT.get_or_init(|| Regex::new(r"^\p{Nd}$").unwrap());
     let mut result = String::new();
@@ -36,7 +36,7 @@ pub(crate) fn decimal(raw: &str) -> Result<String, String> {
 }
 
 /// Python int(raw, 0) for unsigned literal captures, rendered without a width limit.
-pub(crate) fn unsigned_base0(raw: &str) -> Result<String, String> {
+pub fn unsigned_base0(raw: &str) -> Result<String, String> {
     let clean = raw.replace('_', "");
     if let Some(hex) = clean
         .strip_prefix("0x")

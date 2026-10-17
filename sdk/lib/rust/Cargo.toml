@@ -235,6 +235,7 @@ members = [
     "sysaudio-difftest",
     "audio-convert-difftest",
     "mmixer-difftest",
+    "mmebuddy-difftest",
     "ddk-macros-rust",
     "portcls-difftest",
     "varargs-rust",
@@ -680,6 +681,7 @@ members = [
     "comctl32-rust",
     "inetcpl-rust",
     "wpa-rust",
+    "ndis6-sys",
     "ndis-rust",
     "bwfm-rust",
     "bwfm-cargo",
@@ -894,6 +896,9 @@ members = [
     "rtl8139-rust",
     "tdi-rust",
     "tzlib-rust",
+    "mmcshext-rust",
+    "tdihelpers-rust",
+    "setupapi-rust",
 ]
 resolver = "2"
 

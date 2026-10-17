@@ -13,12 +13,8 @@ add_driver_inf(rtl8139 netrtl.inf)
 # hardware.c  # replaced by Rust (sdk/lib/rust/rtl8139-rust/src/rtl8139/hardware.rs)
 # info.c  # replaced by Rust (sdk/lib/rust/rtl8139-rust/src/rtl8139/info.rs)
 # interrupt.c  # replaced by Rust (sdk/lib/rust/rtl8139-rust/src/rtl8139/interrupt.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(rtl8139_res OBJECT rtl8139.rc)
-target_include_directories(rtl8139_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(rtl8139 rtl8139-cargo rtl8139.sys
     KIND kernelmodedriver
     BODY_CRATE rtl8139-rust
     DESTINATION reactos/system32/drivers
-    EXTRA_DEPENDS rtl8139_res psdk)
+    EXTRA_DEPENDS psdk)

@@ -4,9 +4,6 @@ include_directories(
 
 spec2def(imm32.dll imm32.spec ADD_IMPORTLIB)
 
-file(GLOB imm32_rc_deps ${CMAKE_CURRENT_SOURCE_DIR}/res/*.*)
-add_rc_deps(imm32.rc ${imm32_rc_deps})
-
 option(IMM_WIN3_SUPPORT "IMM Win 3.x support" ON)
 if(IMM_WIN3_SUPPORT)
 endif()
@@ -30,15 +27,8 @@ endif()
 # utils.c  # replaced by Rust (sdk/lib/rust/imm32-rust/src/imm32/utils.rs)
 # win3.c  # replaced by Rust (sdk/lib/rust/imm32-rust/src/imm32/win3.rs)
 # win3send.c  # replaced by Rust (sdk/lib/rust/imm32-rust/src/imm32/win3send.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(imm32_res OBJECT imm32.rc)
-target_compile_definitions(imm32_res PRIVATE UNICODE _UNICODE)
-target_include_directories(imm32_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-# How cmake compiled the target's sources, now on the OBJECT libraries.
-target_compile_definitions(imm32_res PRIVATE IMM_WIN3_SUPPORT)
 add_cargo_module(imm32 imm32-cargo imm32.dll
     KIND win32dll
     BODY_CRATE imm32-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS imm32_res asm psdk uuid_sources)
+    EXTRA_DEPENDS asm psdk uuid_sources)

@@ -14,6 +14,12 @@
 //! A PAID artifact — do not delete it to tidy up.
 
 use crate::atl_stub_windows::{CMSGlobalFolderOptionsStub_Create_RustBridge, CMSGlobalFolderOptionsStub_Destroy_RustBridge};
+// The crate's own functions: the definition is the declaration.
+use crate::dialogs_filetypes_tu::FolderOptionsFileTypesDlg;
+use crate::dialogs_general::FolderOptionsGeneralDlg;
+use crate::dialogs_view::FolderOptionsViewDlg;
+// One declaration per external symbol: island.rs.
+use crate::island::SHCreateThread;
 use crate::prelude::*;
 use core::ffi::c_void;
 
@@ -62,25 +68,6 @@ pub const PAGE_VIEW: UINT = 1;
 pub const PAGE_FILETYPES: UINT = 2;
 
 extern "system" {
-    /// The three property-page dialog procs, all `EXTERN_C INT_PTR CALLBACK`
-    /// (`dialogs/folder_options.h:22-45`) — C linkage, stdcall convention. General and View are
-    /// Rust (`dialogs/general.rs`, `dialogs/view.rs`); FileTypes is still C++ in
-    /// `dialogs/filetypes.cpp`. Declared rather than imported so all three arrive with one
-    /// signature, typed against the island.
-    fn FolderOptionsGeneralDlg(hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> INT_PTR;
-    fn FolderOptionsViewDlg(hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> INT_PTR;
-    fn FolderOptionsFileTypesDlg(hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> INT_PTR;
-
-    /// Re-declared here, shadowing the island's, so the thread procedure can be spelled
-    /// `extern "system"` once rather than `#[cfg]`-duplicated per arch — the island types this
-    /// `LPTHREAD_START_ROUTINE`, which is `ntdll-sys`'s and so carries bindgen's literal
-    /// convention. Same reasoning as `prelude::DLGPROC` and `dialogs/drive.rs`.
-    fn SHCreateThread(
-        pfnThreadProc: Option<unsafe extern "system" fn(pData: *mut c_void) -> DWORD>,
-        pData: *mut c_void,
-        flags: DWORD,
-        pfnCallback: Option<unsafe extern "system" fn(pData: *mut c_void) -> DWORD>,
-    ) -> BOOL;
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -173,34 +160,34 @@ unsafe extern "system" fn ShowFolderOptionsDialogThreadProc(param: *mut c_void) 
     let mut hpage: HPROPSHEETPAGE;
     let mut num_pages: UINT = 0;
 
-    hpage = SH_CreatePropertySheetPage(
+    hpage = (SH_CreatePropertySheetPage(
         IDD_FOLDER_OPTIONS_GENERAL as WORD,
         Some(FolderOptionsGeneralDlg),
         0,
         core::ptr::null(),
-    );
+    )).cast();
     if !hpage.is_null() {
         hppages[num_pages as usize] = hpage;
         num_pages += 1;
     }
 
-    hpage = SH_CreatePropertySheetPage(
+    hpage = (SH_CreatePropertySheetPage(
         IDD_FOLDER_OPTIONS_VIEW as WORD,
         Some(FolderOptionsViewDlg),
         0,
         core::ptr::null(),
-    );
+    )).cast();
     if !hpage.is_null() {
         hppages[num_pages as usize] = hpage;
         num_pages += 1;
     }
 
-    hpage = SH_CreatePropertySheetPage(
+    hpage = (SH_CreatePropertySheetPage(
         IDD_FOLDER_OPTIONS_FILETYPES as WORD,
         Some(FolderOptionsFileTypesDlg),
         0,
         core::ptr::null(),
-    );
+    )).cast();
     if !hpage.is_null() {
         hppages[num_pages as usize] = hpage;
         num_pages += 1;

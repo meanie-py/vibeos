@@ -1,4 +1,3 @@
-
 spec2def(kdvbox.dll kdvm.spec)
 
 # ============================================================================
@@ -17,8 +16,6 @@ spec2def(kdvbox.dll kdvm.spec)
 # DESTINATION: txtsetup.sif copies kdvbox.dll, so setup needs it on the CD.
 # The version resource: cmake compiles it in this OBJECT library, whose windres
 # command the cargo link replays.
-add_library(kdvbox_res OBJECT kdvm.rc)
-target_include_directories(kdvbox_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_kernel_dll(kdvbox kdvm-cargo kdvbox.dll BODY_CRATE kdvm-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS kdvbox_res psdk libcntpr memcmp)
+    EXTRA_DEPENDS psdk libcntpr memcmp)

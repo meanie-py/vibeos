@@ -1,0 +1,99 @@
+{
+  "root": "/home/curi/Projects/os-playground/vibeos-lint-final-parity",
+  "oracle_revision": "996c6ff8957615baccfd3a51286b1f8d7ec27c9d",
+  "source_revision": "cc53d01b091e365cccbc7e56f7a929963331d379",
+  "rust_seconds": 71.92453706401284,
+  "rust_binary_sha256": "2090631f268747f8a8a98aff25325f37bad7f85dd17e15a3d2a0947e0d093813",
+  "rules": {
+    "scan_atl_slot_cast": {
+      "python": 0,
+      "rust": 0,
+      "python_seconds": 8.68379447501502,
+      "python_only": [],
+      "rust_only": [],
+      "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "scan_fnclass_cc": {
+      "python": 4,
+      "rust": 4,
+      "python_seconds": 11.143044338008622,
+      "python_only": [],
+      "rust_only": [],
+      "python_sha256": "3c5adb006aca0979081e04a297921759a6327e8aa406de88b2877318ba1afd5b",
+      "rust_sha256": "3c5adb006aca0979081e04a297921759a6327e8aa406de88b2877318ba1afd5b"
+    },
+    "scan_list_walk_cursor_after_loop": {
+      "python": 1,
+      "rust": 1,
+      "python_seconds": 12.658630503021413,
+      "python_only": [],
+      "rust_only": [],
+      "python_sha256": "11f4c93992a7efbee36a7aa21c6cb2d07b5dc538d5c849e89794234a4bf681b0",
+      "rust_sha256": "11f4c93992a7efbee36a7aa21c6cb2d07b5dc538d5c849e89794234a4bf681b0"
+    },
+    "vendored_registry": {
+      "python": 0,
+      "rust": 0,
+      "python_seconds": 16.52165694901487,
+      "python_only": [],
+      "rust_only": [],
+      "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "gen_ctype_tables": {
+      "python": 0,
+      "rust": 0,
+      "python_seconds": 0.07932525099022314,
+      "python_only": [],
+      "rust_only": [],
+      "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "verify_svc_numbering": {
+      "python": 0,
+      "rust": 0,
+      "python_seconds": 0.07601521100150421,
+      "python_only": [],
+      "rust_only": [],
+      "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "shellcheck": {
+      "python": 8,
+      "rust": 8,
+      "python_seconds": 2.2746861769992393,
+      "python_only": [],
+      "rust_only": [],
+      "python_sha256": "e4f0c5c90d82ed19afefed858ed83dabc673557655033444ae243d7fd5f392b4",
+      "rust_sha256": "e4f0c5c90d82ed19afefed858ed83dabc673557655033444ae243d7fd5f392b4"
+    },
+    "py-syntax": {
+      "python": 0,
+      "rust": 0,
+      "python_seconds": 0.5733693639922421,
+      "python_only": [],
+      "rust_only": [],
+      "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "verify_ucrtbase_cohab": {
+      "python": 0,
+      "rust": 0,
+      "python_seconds": 0.4971487050061114,
+      "python_only": [],
+      "rust_only": [],
+      "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "marshalgen_audit": {
+      "python": 0,
+      "rust": 0,
+      "python_seconds": 0.11407156198401935,
+      "python_only": [],
+      "rust_only": [],
+      "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  }
+}

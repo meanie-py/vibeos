@@ -8,19 +8,8 @@ include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_or
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # eventcreate.c  # replaced by Rust (sdk/lib/rust/eventcreate-rust/src/eventcreate/eventcreate.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(eventcreate_shims OBJECT rust_varargs_shim.c)
-target_compile_definitions(eventcreate_shims PRIVATE UNICODE _UNICODE)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(eventcreate_res OBJECT eventcreate.rc)
-target_compile_definitions(eventcreate_res PRIVATE UNICODE _UNICODE)
-target_include_directories(eventcreate_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-# Generated inputs those compiles read, ordered before them.
-add_dependencies(eventcreate_shims evtmsgstr)
-add_dependencies(eventcreate_res evtmsgstr)
 add_cargo_module(eventcreate eventcreate-cargo eventcreate.exe
     KIND win32exe
     BODY_CRATE eventcreate-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS eventcreate_shims eventcreate_res xdk)
+    EXTRA_DEPENDS xdk evtmsgstr psdk)

@@ -912,7 +912,11 @@ unsafe fn SharedFace_Release(Ptr: PSHARED_FACE, bDoLock: BOOL) {
         IntLockFreeType();
     }
 
+    // The C returns here with the FreeType lock still held when bDoLock; release it.
     if (*Ptr).RefCount <= 0 {
+        if bDoLock != 0 {
+            IntUnLockFreeType();
+        }
         return;
     }
 
@@ -2139,6 +2143,7 @@ unsafe fn IntGdiLoadFontsFromMemory_impl(
         EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
         return 0;
     }
+    (*FontGDI).iUnique = NextFontInstanceId();
 
     if !pFileName.is_null() {
         (*FontGDI).Filename = ExAllocatePoolWithTag(
@@ -9135,4 +9140,102 @@ unsafe fn ntgdi_get_char_abc_widths_w_impl(
     }
 
     1 // TRUE
+}
+
+// ---- the realized font as a file: dwrite's GDI interop ----------------------------------
+//
+// dwrite's IDWriteGdiInterop::CreateFontFaceFromHdc asks gdi32 for the selected font's
+// instance id (GetFontRealizationInfo), then the file behind it (GetFontFileInfo: write time,
+// size, a DOS path) or, with no path, its bytes (GetFontFileData). Wine's win32u is the
+// reference for all three. The instance id here names a loaded face (FONTGDI.iUnique, set at
+// load), not a size: dwrite only needs the file, the face index and the simulations.
+
+static FONT_INSTANCE_ID: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+
+pub(crate) fn NextFontInstanceId() -> ULONG {
+    // Never 0: a zeroed FONTGDI must not match a caller's 0.
+    FONT_INSTANCE_ID.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1
+}
+
+/// The fields of FONT_REALIZATION_INFO the selected font determines.
+pub(crate) unsafe fn IntFontRealization(FontGDI: PFONTGDI, plf: *const LOGFONTW) -> (DWORD, ULONG, WORD, WORD) {
+    let Face = (*(*FontGDI).SharedFace).Face;
+    let mut flags: DWORD = 1;
+    if FT_IS_SCALABLE(Face) != 0 {
+        flags |= 2;
+    }
+    let mut simulations: WORD = 0;
+    if EMUBOLD_NEEDED((*FontGDI).OriginalWeight, (*plf).lfWeight) {
+        simulations |= 1;
+    }
+    if (*plf).lfItalic != 0 && (*FontGDI).OriginalItalic == 0 {
+        simulations |= 2;
+    }
+    (flags, (*FontGDI).iUnique, ((*Face).face_index & 0xFFFF) as WORD, simulations)
+}
+
+/// A loaded face by instance id, with a reference on its SharedFace (so its memory stays
+/// mapped) and a pool copy of its NT file name (NULL for a memory font). The caller releases
+/// both with IntReleaseFontInstance. Lock order as everywhere here: FreeType, then the
+/// process's private fonts.
+pub(crate) unsafe fn IntFindFontInstance(Id: ULONG) -> Option<(PSHARED_FACE, *mut u16)> {
+    if Id == 0 {
+        return None;
+    }
+    unsafe fn walk(Head: PLIST_ENTRY, Id: ULONG) -> PFONTGDI {
+        let mut Entry = (*Head).Flink;
+        while Entry != Head {
+            let FontEntry = CONTAINING_RECORD!(Entry, _FONT_ENTRY, ListEntry);
+            let FontGDI = (*FontEntry).Font;
+            if !FontGDI.is_null() && (*FontGDI).iUnique == Id {
+                return FontGDI;
+            }
+            Entry = (*Entry).Flink;
+        }
+        core::ptr::null_mut()
+    }
+    let mut Found: Option<(PSHARED_FACE, *mut u16)> = None;
+    IntLockFreeType();
+    let Win32Process: PPROCESSINFO = PsGetCurrentProcessWin32Process() as _;
+    let mut FontGDI: PFONTGDI = core::ptr::null_mut();
+    if !Win32Process.is_null() {
+        IntLockProcessPrivateFonts(Win32Process as _);
+        FontGDI = walk(core::ptr::addr_of_mut!((*Win32Process).PrivateFontListHead), Id);
+        IntUnLockProcessPrivateFonts(Win32Process as _);
+    }
+    if FontGDI.is_null() {
+        FontGDI = walk(core::ptr::addr_of_mut!(g_FontListHead), Id);
+    }
+    if !FontGDI.is_null() {
+        let mut Name: *mut u16 = core::ptr::null_mut();
+        if !(*FontGDI).Filename.is_null() {
+            let Bytes = (wcslen((*FontGDI).Filename) + 1) * core::mem::size_of::<u16>();
+            Name = ExAllocatePoolWithTag(PagedPool, Bytes as _, GDITAG_PFF) as *mut u16;
+            if !Name.is_null() {
+                core::ptr::copy_nonoverlapping((*FontGDI).Filename as *const u8, Name as *mut u8, Bytes);
+            }
+        }
+        if (*FontGDI).Filename.is_null() || !Name.is_null() {
+            SharedFace_AddRef((*FontGDI).SharedFace);
+            Found = Some(((*FontGDI).SharedFace, Name));
+        }
+    }
+    IntUnLockFreeType();
+    Found
+}
+
+pub(crate) unsafe fn IntReleaseFontInstance(SharedFace: PSHARED_FACE, Name: *mut u16) {
+    if !Name.is_null() {
+        ExFreePoolWithTag(Name as _, GDITAG_PFF);
+    }
+    SharedFace_Release(SharedFace, 1);
+}
+
+/// The bytes of a face's file: (buffer, size). Valid while the SharedFace reference is held.
+pub(crate) unsafe fn IntFontInstanceMemory(SharedFace: PSHARED_FACE) -> (*const u8, ULONG) {
+    let Memory = (*SharedFace).Memory;
+    if Memory.is_null() {
+        return (core::ptr::null(), 0);
+    }
+    ((*Memory).Buffer as *const u8, (*Memory).BufferSize)
 }

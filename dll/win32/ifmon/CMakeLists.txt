@@ -9,13 +9,8 @@ spec2def(ifmon.dll ifmon.spec)
 # interface.c  # replaced by Rust (sdk/lib/rust/ifmon-rust/src/ifmon/interface.rs)
 # ip.c  # replaced by Rust (sdk/lib/rust/ifmon-rust/src/ifmon/ip.rs)
 # winsock.c  # replaced by Rust (sdk/lib/rust/ifmon-rust/src/ifmon/winsock.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(ifmon_res OBJECT ifmon.rc)
-target_compile_definitions(ifmon_res PRIVATE UNICODE _UNICODE)
-target_include_directories(ifmon_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(ifmon ifmon-cargo ifmon.dll
     KIND win32dll
     BODY_CRATE ifmon-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS ifmon_res uuid_sources)
+    EXTRA_DEPENDS uuid_sources psdk)

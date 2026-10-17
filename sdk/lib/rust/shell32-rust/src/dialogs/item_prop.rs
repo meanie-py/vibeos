@@ -13,6 +13,11 @@
 //! agrees with `crate::shfldr::CRegKeyHandleArray` and with `propsheet.rs`'s `SHOpenPropSheetW`.
 
 use crate::atl::{CComHeapPtr, CComPtr};
+// The crate's own functions: the definition is the declaration.
+use crate::shell32::shldataobject::SHELL_DataObject_ILCloneFullItem;
+use crate::wine::shellpath::SHGetSpecialFolderLocation;
+// One declaration per external symbol: island.rs.
+use crate::island::SHCreateThread;
 use crate::prelude::*;
 use crate::shfldr::CRegKeyHandleArray;
 use crate::types::HKEY;
@@ -164,26 +169,13 @@ extern "system" {
     /// ntdll-sys, which has NOT been through `normalize_island_abi.py` — three spellings of one
     /// ABI but three distinct Rust fn-pointer types. Redeclared against `extern "system"` for
     /// the same reason `dialogs/drive.rs` does; the ABI is unchanged, only how it is written.
-    fn SHCreateThread(
-        pfnThreadProc: Option<unsafe extern "system" fn(pData: *mut c_void) -> DWORD>,
-        pData: *mut c_void,
-        flags: DWORD,
-        pfnCallback: Option<unsafe extern "system" fn(pData: *mut c_void) -> DWORD>,
-    ) -> BOOL;
 
-    /// shell32's own exports; neither is in the island's include closure.
-    fn SHGetSpecialFolderLocation(
-        hwndOwner: HWND,
-        nFolder: INT,
-        ppidl: *mut LPITEMIDLIST,
-    ) -> HRESULT;
     fn ShellExecuteExA(sei: *mut SHELLEXECUTEINFOA) -> BOOL;
 }
 
 extern "C" {
     /// `precomp.h:326-329` — `EXTERN_C`, so cdecl. Implemented in `shell32/shldataobject.rs`.
     fn DataObject_GetHIDACount(pdo: *mut IDataObject) -> HRESULT;
-    fn SHELL_DataObject_ILCloneFullItem(pDO: *mut IDataObject, Index: UINT) -> PIDLIST_ABSOLUTE;
     fn SHELL_CloneDataObject(pDO: *mut IDataObject, ppDO: *mut *mut IDataObject) -> HRESULT;
 
     /// `shfldr.h:185/187` — `EXTERN_C`, so cdecl. Implemented in `shell32/shlfolder.rs`.

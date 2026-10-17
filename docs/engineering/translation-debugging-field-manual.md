@@ -910,6 +910,19 @@ kind of residue (2026-10-17, about 30 crates):
   `IUnknown`s in menuband, and `GUID`/`BITMAP`/`IStream` in ole32. Once one declaration survives,
   a caller that passes its own copy fails with E0308. Fix: dedupe to one definition with
   `pub use`, or `.cast()` at the pointer argument. Never use `as _` on a struct by value.
+  At crate scale, `tools/rustconv/struct_to_island.py <crate>/src` makes every hand copy whose
+  field names match the island's on all three arches a `pub use crate::island::NAME;`. It keeps
+  a copy that derives more, that the crate `impl`s (`unsafe impl Sync` included), or whose island
+  fields are bindgen anonymous records or types the crate keeps its own copy of. shell32: 161 of
+  280. crate-repair's `raw_pointer_cast` no longer bridges two DIFFERENT named pointees: `.cast()`
+  from `MENUITEMINFOW` to `tagMENUITEMINFOW` would bless a second layout without checking it
+  (void, `char` signedness, COM upcasts and one name under two paths still cast).
+- **A crate's own export, declared `extern` by its callers, is collapsed onto the definition**
+  (`extern_to_use.py --census <json> --crate X sdk/lib/rust` -- `src` is the rust root there,
+  and an empty crate is now a hard error, not 0 found). The errors that follow are calls that
+  disagreed with their OWN crate's definition: shell32's `SHGetSetSettings` took shellord's
+  bit-exact SHELLSTATE while every caller held the island's, and `SH_CreatePropertySheetPageEx`
+  took a bare fn where the header says `DLGPROC`. Retype the definition to the header's types.
 - **ntdll-sys aliases are not the canonical spelling.** On 64-bit, `SIZE_T`/`WPARAM`/`LPARAM` are
   `u64`/`i64`, while most canonical declarations spell them `usize`/`isize`. They have the same
   width on every arch but are different Rust types. Rewrite each call site from rustc's own span
@@ -2018,6 +2031,13 @@ why the bug only surfaced on amd64/arm64 -- rapps crashed extracting its databas
 module-local audit misses this; measure the header with the module's real flags (borrow its
 line from `compile_commands.json`, add `-fsyntax-only` and a `char (*x)[offsetof(T,f)+1000] = 1;`
 probe, read the numbers off the diagnostics) and pin the result with `offset_of!` asserts.
+**A hand copy beside an island is the cheapest audit there is.** Emit `size_of`/`align_of`/
+`offset_of!` asserts comparing each copy with the island's struct of the same name and compile
+all three targets. shell32 (2026-10-17): `SHQUERYRBINFO` and `SHFILEOPSTRUCTW` unpacked where
+shellapi.h is `pshpack1` on 32-bit ONLY (`#if !defined(_WIN64)`), so on i386 the exported
+`SHQueryRecycleBinW` was 24 bytes against every caller's 20 and refused them all with
+E_INVALIDARG; `SFVM_CUSTOMVIEWINFO_DATA` (undocshell.h's pshpack1 block) had `hbmBack` at 8,
+not 4, on 64-bit. 26 more differed only in alignment. Taking the island's struct fixes them.
 **The other direction, at island scale: a pack PUSH copied into a bindgen wrapper.**
 profile_derive mirrors each TU's include prologue into the module's merged `WRAPPER_INC`, and
 partlist.c's prologue ENDS with `#include <pshpack1.h>` -- its `poppack.h` comes after two
@@ -2093,8 +2113,11 @@ The goto form is worse, because no parameter can carry it: mmc_new's `CHK_HR(stm
 names both the caller's `hr` and the caller's `'CleanUp` label, so every use is E0425 + E0426,
 reported at the PRELUDE line rather than the call site. Expand it in the body
 (`hr = ..; if hr < 0 { break 'CleanUp; }` inside a `'CleanUp: { .. }` block, as mscfile's
-bodies already were) and bank the function. Owed in `port macros`: lower a goto-carrying
-macro by inlining it at the call sites, not as a `macro_rules!`.
+bodies already were) and bank the function. Mechanized: `port translate` now buys any FRESH
+TU that calls such a macro with it expanded in the C (`--expand-goto-macros`, with C's `#x`
+stringizing — imm32's `CHECK_IME_FN`, opengl32's `DRV_LOAD`), and `port macros` never ports
+one. A TU that already has output keeps its banked question, so cmd/imm32/opengl32/mmc_new
+re-buys still see the macro and need the hand port.
 
 ### A UNICODE module inherits the ANSI TCHAR family from the `-sys` glob
 `ntdll-sys` is generated WITHOUT `-DUNICODE`, so its bindgen carries `pub type LPTSTR = LPSTR;`.
@@ -5217,6 +5240,13 @@ resources.
 `.rc` entry. `tools/payloads/regcapture` shows what each registration writes in the guest:
 `lines=0` beside `hr=0` is this bug.
 
+The same class from the other side: a sync can bring in a NEW configure guard our CMake never
+defines. Wine 11 wrapped every FreeType body in dwrite's `freetype.c` in `#ifdef
+SONAME_LIBFREETYPE`; `sdk/include/wine/config.h` leaves it undefined, so the file compiled to
+its `STATUS_NOT_IMPLEMENTED` fallbacks without a warning, and every glyph advance and bbox came
+back zero (layout widths 0, dwrite.dll 5.3 MB -> 2.3 MB). After a sync, grep the new files for
+`#if.*\(HAVE_\|SONAME_\)` and compare the DLL's size with the one before.
+
 ### Re-translating an integrated module silently reverts every post-integration repair
 
 **Symptom.** A module that has been flipped, ground green and booted for weeks is
@@ -5579,6 +5609,23 @@ Each was one fix in the tool; listed so the next module's symptom can be matched
   the CUiPrimitive vtable at offset 0, and rapps' teardown read `RichEdit` from an HWND.
   Found with `atl_rust::win::trace` probes: the window glue saw the object at +16, its
   destructor at +0. An explicit `this` converted to a base is now `(&(this_)->__baseK)`.
+  The same class as an ARGUMENT, in a crate generated before that fix: msctf's
+  `DocumentMgr_Constructor(this, ppdim)` hands CThreadMgr to a parameter typed
+  `ITfThreadMgrEventSink*`, its EIGHTH base, and the shipped Rust passed `this_.cast()`.
+  CDocumentMgr's `OnPushContext`/`OnPopContext` calls then ran ITfThreadMgrEx's slots 6 and 7
+  (EnumDocumentMgrs, GetFocus), writing out-pointers into the context. Audit (2026-10-17): of
+  28 explicit-`this` upcasts to a non-primary base in the 13 shipped C++ crates, that was the
+  only wrong one; fixed and banked.
+- **A COM interface base missing from the island** (mmcshext's `IPersistFile`): bindgen emits
+  what allowlisted headers REFERENCE, and nothing but the C++ class head names the base, so
+  objidl.h's interface never arrived. cpp_app skipped the base in `__init_vtables` -- the
+  field was embedded with a null vptr, and the first call through it would jump to 0.
+  `profile_derive` now allowlists every interface a module class derives from
+  (`--allowlist-type '(IExtractIconW|IPersistFile)(Vtbl)?'`), and `Hierarchy.com_bases` fails
+  loud on an `I*` base with no `IFooVtbl`.
+- **A DLL's resource strings read from the host EXE**: atl_rust's `resource_instance()` fell
+  back to `GetModuleHandleW(NULL)` -- right for an EXE, explorer.exe for a shell extension.
+  ATL's `m_hInstResource` is `&__ImageBase`, the image ATL is linked into; so is the fallback.
 - **`delete member;` through an implicit `this`** lowered to `X__delete(m_Foo)Foo;`: the rule
   replaced the whole expression with the operand's source text, so the operand's own
   `this_->` edit fell inside the replaced span. The model repaired every site, which hid it.
@@ -6087,6 +6134,17 @@ spells it `Option<fn>`, which is pointer-sized with None at 0.
 **Fix:** `port integrate` wraps a module-level `pub type` in `Option<..>` when the module's C
 typedefs that name as a POINTER to function. A typedef of a function type (`typedef R X(..)`,
 used as `X *`) is left alone.
+When it COMPILES it is worse, because the NULL test is then something the optimizer may
+delete. Shipped crates held 119 such aliases (2026-10-17), and the dangerous ones look like
+working code: cabinet's `FDICreate`/`FCICreate`/`FCIAddFile` tested
+`(pfnalloc as *const ()).is_null()` on bare-fn parameters (the C returns
+ERROR_BAD_ARGUMENTS there; the Rust was UB for a C caller passing NULL), cmd transmuted
+`GetProcAddress`'s result into `MYEX` and then tested `as usize == 0`. `rustconv
+fn-alias-audit <crate> [--apply]` lists them and rewrites a shipped crate the way integrate
+does, then crate-repair fixes the calls. The same cabinet file also carried a file-local
+`type PFNFCISTATUS = unsafe extern "system" fn(..)` -- the C's is `__cdecl` -- shadowing the
+right one: on i386 every FCI status callback left the stack 16 bytes off. A local re-declaration
+of a C callback type is worth diffing against the header's calling convention.
 
 ### A lowered SDK macro lost its `volatile`, its `Option<fn>`, or a field it never had
 
@@ -6142,6 +6200,20 @@ lose the function while one, or four, or a semicolon-terminated `ERR_MAPS` among
 a fixture that "looks worse" can test nothing — and a name can be **redefined** with a different
 body in one TU (dinput's `FE(x)` is `type = #x` then `wave = #x`), so expansion must track the
 definition in force by POSITION, not keep a name→body map.
+
+**Variant: an SEH block under another name cuts the function at its first nested `}`.**
+`mask_seh_for_parse` rewrote only the `_SEH2_*` spellings to same-length C, so rpc.h's
+`RpcTryExcept`/`RpcExcept`/`RpcEndExcept` and Wine's `__TRY`/`__EXCEPT`/`__ENDTRY` reached
+tree-sitter raw. A second, nested RpcTryExcept ended setupapi's `GetDeviceInstanceKeyPath`
+there. The tail went to the model as "file-scope preamble", the body was bought truncated, and
+the run died only because the preamble's wide-literal seal noticed 21 literals that the real
+preamble does not have. Both spellings are masked now, and `preamble_audit` masks too. It ran
+its own parse without the mask or `_strip_sal`, so it called the same file "does not parse at
+top level" and skipped every file-scope check. **The scanner and every audit that re-parses
+the C must apply the same normalizers, or they disagree about what the file contains.** The
+old scanner gives different bodies for 248 functions in 31 files, including shipped ports
+(advapi32 scm.c/lsa.c/crypt.c, samlib, netapi32, winspool, kernel32 res.c). Which of those
+were bought truncated is owed (conformance-ratchet-quest.md).
 
 The two fixes compose, and the order matters: expanding is what lets `--seal-facts` see the arms
 at all. Sealed, `msvcrt_set_errno`'s 60 constants go to the model as `__RUSTCONV_FACT_00NN__` and
@@ -10282,6 +10354,16 @@ code that has always worked. On stable the UB checks share `cfg(debug_assertions
   HAL's checked `KTRAP_FRAME` deref panics. Fix: `-Zub-checks=no` for i386 kernel code (it is
   already the build-std nightly cell), set in both `reactos-link`'s nested RUSTFLAGS and
   `.cargo/config.toml`'s `[target.i686-kernel]`; `debug_assert!` stays live.
+- **A DRIVER's misaligned object, on real hardware only.** The OptiPlex's `rtwlanu.sys` hands
+  `KeAcquireSpinLockRaiseToDpc` a spinlock that is not 8-aligned, which Windows' `lock bts`
+  tolerates; `ntkrnl-sys`'s `#[inline]` `KxAcquireSpinLock` is compiled inside armed
+  `ntoskrnl-rust`, so its `read_volatile` alignment check panicked (2026-10-17, rpi-bringup).
+  QEMU smoke never sees it: every in-tree driver aligns its locks. Read any driver-supplied lock
+  word or structure through a byte view or `read_unaligned`, never a typed deref
+  (`ntkrnl_sys::inline::ke::spin_lock_word` / `set_spin_lock_word`). The atomic RMWs on the
+  same word (`AtomicUsize::from_ptr(..).swap`, `&*(p as *const AtomicI32)`) did NOT panic and
+  need no change on x86: they lower to `lock`-prefixed instructions, which take any alignment,
+  and rustc's misaligned-deref check skips borrows. Only plain loads and stores trip it.
 Triage tip: the i386 HAL loads as `halmp.dll` under the harness label `hal.dll`, and its panic
 text can print garbled; P4 of the `0xE0525354` bugcheck is still the source line.
 
@@ -14135,6 +14217,19 @@ made the native CONTROL of the A/B the one arch that could not see it.
 gets a chance to swallow it). The scroll instance was `uxtheme!ThemeGetWndData` returning
 another process's heap pointer for a window that process owned.
 
+### A failure path that skips cleanup fills a fixed table, and every later open fails
+**Symptom.** A suite passes its first few dozen device creations, then every one fails with
+the same error (`Failed to initialise output L"\\\\.\\DISPLAY1", hr 0x80070057` from wined3d), as
+if something had broken mid-run.
+**Cause.** `wined3d_adapter_gl_init` opened a D3DKMT adapter and a device per output, then
+returned FALSE on a missing GL extension without `wined3d_adapter_cleanup` (upstream Wine too).
+gdi32_vista's emulated D3DKMT has 16 adapter slots, so after 16 failures
+`D3DKMTOpenAdapterFromGdiDisplayName` had nowhere to go. A real dxgkrnl has no small table, so
+Windows never shows the leak.
+**Fix.** Release the adapter on that path (`wined3d_adapter_gl_create`). The tell is a
+per-process count of successes before a uniform failure: look for a fixed-size table on the
+other side of the call.
+
 ### A loud refusal that returns non-zero reads as SUCCESS to a handle-returning caller
 **Symptom.** A guest logs `NEEDS MANUAL MARSHALLER — failing loud` and then carries on as if
 the call succeeded, dying several calls later somewhere unrelated.
@@ -14176,6 +14271,22 @@ sit out the whole 420s ceiling waiting for WoW64 guests that do not exist there.
 **Also the general rule for fixtures:** when the environment cannot support a rung's *fixture*
 (not its subject), skip it loudly with the errno and keep the remaining rungs running, rather
 than failing the whole guest. The arch where the fixture works keeps full coverage of that rung.
+
+### Every guest after one slow guest exits `0xdead0030`: the slow one was never ended
+**Symptom.** One guest records an odd exit, typically `0x103` (STILL_ACTIVE), and then several
+unrelated later guests each print `[WINLOGON] <x>.exe TIMED OUT after 30s - terminating` and
+exit `0xdead0030`. Their own rungs pass, just too slowly. On 2026-10-17 it read as a kernel
+regression in thread creation and cost a bisect.
+**Cause.** `0xDEAD0030` is winlogon's `TerminateProcess` code, not a guest failure. The guest
+that ran first outlived its wait, but its launcher only waited and then moved on without ending
+it, so it kept running through every later rung and took their CPU. The trigger was
+`Fault32.c` rung 3b, 5000 AVs: under FEX each AV is a host fault, a JIT exit and a guest-SEH
+redirect, plus two serial lines (~10/s under TCG). fault32 got 577 iterations into its 60 s wait
+and was still faulting 900 AVs later.
+**Fix.** Every launcher goes through `WaitGuestOrEnd` (winlogon-rust), which ends a guest on
+timeout. A rung whose cost scales with emulation speed is bounded by time as well as count, and
+it reports how far it got. When this signature appears, grep for the eip of the AV storm and
+find out which image it belongs to before suspecting the guests that timed out.
 
 ### On a JIT host a `[UEXC]` record is not a crash — FEX takes access violations BY DESIGN
 

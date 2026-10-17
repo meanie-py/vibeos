@@ -24,6 +24,30 @@
 #![allow(dead_code)]
 
 use crate::shellcom::*;
+// The crate's own functions: the definition is the declaration.
+use crate::wine::pidl::ILCombine;
+use crate::wine::pidl::ILFree;
+use crate::wine::shellole::SHAlloc;
+use crate::shell32::utils::SHBindToObject;
+use crate::wine::pidl::SHILCreateFromPathW;
+// One declaration per external symbol: island.rs.
+use crate::island::CloseHandle;
+use crate::island::GetCurrentProcess;
+use crate::island::GetTokenInformation;
+use crate::island::TOKEN_INFORMATION_CLASS;
+use crate::island::HeapAlloc;
+use crate::island::LoadStringW;
+use crate::island::OpenProcessToken;
+use crate::island::PathFindOnPathExW;
+use crate::island::PathFindOnPathW;
+use crate::island::PathRemoveExtensionW;
+use crate::island::RegCloseKey;
+use crate::island::RegCreateKeyW;
+use crate::island::RegGetValueW;
+use crate::island::RegOpenKeyExW;
+use crate::island::RegQueryValueExW;
+use crate::island::RegSetValueExW;
+use crate::island::SHExpandEnvironmentStringsForUserW;
 use crate::types::*;
 use core::ffi::c_void;
 use core::ptr::{addr_of, addr_of_mut, null, null_mut, write_volatile};
@@ -223,11 +247,11 @@ unsafe fn csidl(i: DWORD) -> &'static CsidlData {
 extern "system" {
     // user32
     fn CharPrevW(lpszStart: LPCWSTR, lpszCurrent: LPCWSTR) -> LPWSTR; // @8
-    fn LoadStringW(hInstance: HINSTANCE, uID: UINT, lpBuffer: LPWSTR, cchBufferMax: INT) -> INT; // @16
+// @16
     // kernel32
-    fn CloseHandle(hObject: HANDLE) -> BOOL; // @4
+// @4
     fn GetCurrentDirectoryW(nBufferLength: DWORD, lpBuffer: LPWSTR) -> DWORD; // @8
-    fn GetCurrentProcess() -> HANDLE; // @0
+// @0
     fn GetDriveTypeW(lpRootPathName: LPCWSTR) -> UINT; // @4
     fn GetFileAttributesW(lpFileName: LPCWSTR) -> DWORD; // @4
     fn GetLastError() -> DWORD; // @0
@@ -248,7 +272,7 @@ extern "system" {
         nFileSystemNameSize: DWORD,
     ) -> BOOL; // @32
     fn GetWindowsDirectoryW(lpBuffer: LPWSTR, uSize: UINT) -> UINT; // @8
-    fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: SIZE_T) -> LPVOID; // @12
+// @12
     fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID) -> BOOL; // @12
     fn IsWow64Process(hProcess: HANDLE, Wow64Process: *mut BOOL) -> BOOL; // @8
     fn LocalFree(hMem: HANDLE) -> HANDLE; // @4
@@ -287,48 +311,14 @@ extern "system" {
     fn lstrlenW(s: LPCWSTR) -> INT; // @4
     // advapi32
     fn ConvertSidToStringSidW(Sid: PVOID, StringSid: *mut LPWSTR) -> BOOL; // @8
-    fn GetTokenInformation(
-        TokenHandle: HANDLE,
-        TokenInformationClass: INT,
-        TokenInformation: LPVOID,
-        TokenInformationLength: DWORD,
-        ReturnLength: LPDWORD,
-    ) -> BOOL; // @20
-    fn OpenProcessToken(ProcessHandle: HANDLE, DesiredAccess: DWORD, TokenHandle: *mut HANDLE) -> BOOL; // @12
-    fn RegCloseKey(hKey: HKEY) -> LONG; // @4
-    fn RegCreateKeyW(hKey: HKEY, lpSubKey: LPCWSTR, phkResult: PHKEY) -> LONG; // @12
-    fn RegGetValueW(
-        hkey: HKEY,
-        lpSubKey: LPCWSTR,
-        lpValue: LPCWSTR,
-        dwFlags: DWORD,
-        pdwType: LPDWORD,
-        pvData: PVOID,
-        pcbData: LPDWORD,
-    ) -> LONG; // @28
-    fn RegOpenKeyExW(
-        hKey: HKEY,
-        lpSubKey: LPCWSTR,
-        ulOptions: DWORD,
-        samDesired: REGSAM,
-        phkResult: PHKEY,
-    ) -> LONG; // @20
-    fn RegQueryValueExW(
-        hKey: HKEY,
-        lpValueName: LPCWSTR,
-        lpReserved: LPDWORD,
-        lpType: LPDWORD,
-        lpData: LPBYTE,
-        lpcbData: LPDWORD,
-    ) -> LONG; // @24
-    fn RegSetValueExW(
-        hKey: HKEY,
-        lpValueName: LPCWSTR,
-        Reserved: DWORD,
-        dwType: DWORD,
-        lpData: *const BYTE,
-        cbData: DWORD,
-    ) -> LONG; // @24
+// @20
+// @12
+// @4
+// @12
+// @28
+// @20
+// @24
+// @24
     // userenv
     fn GetAllUsersProfileDirectoryW(lpProfileDir: LPWSTR, lpcchSize: LPDWORD) -> BOOL; // @8
     fn GetDefaultUserProfileDirectoryW(lpProfileDir: LPWSTR, lpcchSize: LPDWORD) -> BOOL; // @8
@@ -345,8 +335,8 @@ extern "system" {
     fn PathFileExistsDefExtW(pszPath: LPWSTR, dwWhich: DWORD) -> BOOL; // @8
     fn PathFindExtensionA(pszPath: LPCSTR) -> LPSTR; // @4
     fn PathFindExtensionW(pszPath: LPCWSTR) -> LPWSTR; // @4
-    fn PathFindOnPathExW(pszPath: LPWSTR, ppszOtherDirs: *const LPCWSTR, dwWhich: DWORD) -> BOOL; // @12
-    fn PathFindOnPathW(pszPath: LPWSTR, ppszOtherDirs: *const LPCWSTR) -> BOOL; // @8
+// @12
+// @8
     fn PathGetCharTypeA(ch: u8) -> UINT; // @4
     fn PathGetCharTypeW(ch: WCHAR) -> UINT; // @4
     fn PathGetDriveNumberW(lpsz: LPCWSTR) -> INT; // @4
@@ -357,7 +347,7 @@ extern "system" {
     fn PathIsURLW(pszPath: LPCWSTR) -> BOOL; // @4
     fn PathIsValidCharW(ch: WCHAR, dwClass: DWORD) -> BOOL; // @8
     fn PathRemoveBackslashW(pszPath: LPWSTR) -> LPWSTR; // @4
-    fn PathRemoveExtensionW(pszPath: LPWSTR); // @4
+// @4
     fn PathRemoveFileSpecA(pszPath: LPSTR) -> BOOL; // @4
     fn PathRemoveFileSpecW(pszPath: LPWSTR) -> BOOL; // @4
     fn PathStripToRootW(pszPath: LPWSTR) -> BOOL; // @4
@@ -372,20 +362,15 @@ extern "system" {
     // bug was latent, but a future caller would have read garbage in the high half.
     fn SHAnsiToUnicode(pszSrc: LPCSTR, pwszDst: LPWSTR, cwchBuf: INT) -> DWORD; // @12
     fn SHUnicodeToAnsi(pwszSrc: LPCWSTR, pszDst: LPSTR, cchBuf: INT) -> INT; // @12
-    fn SHExpandEnvironmentStringsForUserW(
-        hToken: HANDLE,
-        lpSrc: LPCWSTR,
-        lpDest: LPWSTR,
-        dwSize: DWORD,
-    ) -> DWORD; // @16
+// @16
     // shell32 itself (siblings — already Rust or still C)
-    fn SHAlloc(cb: SIZE_T) -> LPVOID; // @4
+// @4
     fn SHFree(pv: LPVOID); // @4
     fn SHCreateDirectoryExW(hwnd: HWND, pszPath: LPCWSTR, psa: PVOID) -> INT; // @12
-    fn SHILCreateFromPathW(pszPath: LPCWSTR, ppidl: *mut LPITEMIDLIST, prgfInOut: *mut DWORD) -> HRESULT; // @12
-    fn ILCombine(pidl1: LPCITEMIDLIST, pidl2: LPCITEMIDLIST) -> LPITEMIDLIST; // @8
+// @12
+// @8
     fn ILCreateFromPathW(pszPath: LPCWSTR) -> LPITEMIDLIST; // @4
-    fn ILFree(pidl: LPITEMIDLIST); // @4
+// @4
     // shell util (reactos/shellutils.h) — WINAPI
     fn FixSlashesAndColonW(s: LPWSTR); // @4
 }
@@ -393,12 +378,6 @@ extern "system" {
 // cdecl (EXTERN_C, no WINAPI) — `_Name` imports.
 extern "C" {
     fn PathProcessCommandW(lpszPath: LPCWSTR, lpszBuff: LPWSTR, dwBuffSize: DWORD, dwFlags: DWORD) -> LONG;
-    fn SHBindToObject(
-        psf: *mut IShellFolder,
-        pidl: LPCITEMIDLIST,
-        riid: REFIID,
-        ppvObj: *mut *mut c_void,
-    ) -> HRESULT;
     // PIDL helpers (now Rust in pidl.rs; source name `_ILName` → obj `__ILName`).
     fn _ILCreateBitBucket() -> LPITEMIDLIST;
     fn _ILCreateControlPanel() -> LPITEMIDLIST;
@@ -913,7 +892,7 @@ static W_FMT_S_PAREN_D_S: [WCHAR; 10] = [0x0025, 0x0073, 0x0020, 0x0028, 0x0025,
 // ════════════════════════════════════════════════════════════════════════════════════════
 unsafe fn SHCloneStrAtoW(target: *mut LPWSTR, source: LPCSTR) -> LPWSTR {
     let len = MultiByteToWideChar(CP_ACP, 0, source, -1, null_mut(), 0);
-    *target = SHAlloc((len as usize) * 2) as LPWSTR;
+    *target = SHAlloc(((len as usize) * 2) as SIZE_T) as LPWSTR;
     MultiByteToWideChar(CP_ACP, 0, source, -1, *target, len);
     *target
 }
@@ -981,7 +960,7 @@ unsafe fn PathSearchOnExtensionsW(
         return FALSE;
     }
     if bDoSearch != FALSE {
-        PathFindOnPathExW(pszPath, ppszDirs, dwWhich)
+        PathFindOnPathExW(pszPath, ppszDirs.cast_mut(), dwWhich)
     } else {
         PathFileExistsDefExtW(pszPath, dwWhich)
     }
@@ -1732,7 +1711,7 @@ pub unsafe extern "system" fn PathResolveA(path: LPSTR, dirs: *mut LPCSTR, flags
         }
 
         let cb_dirs = (c_dirs as usize + 1) * core::mem::size_of::<LPWSTR>();
-        dirs_w = SHAlloc(cb_dirs) as *mut LPWSTR;
+        dirs_w = SHAlloc((cb_dirs) as SIZE_T) as *mut LPWSTR;
         if dirs_w.is_null() {
             // Cleanup (dirs_w is null → nothing to free)
             return ret;
@@ -1986,7 +1965,7 @@ unsafe fn SHExpandEnvironmentStrings_(
 
         if do_fallback {
             let ret = SHExpandEnvironmentStringsForUserW(hToken, sz_temp.as_ptr(), szDest, cchDest);
-            if ret > cchDest {
+            if (ret) as u32 > cchDest {
                 hr = E_NOT_SUFFICIENT_BUFFER;
             } else if ret == 0 {
                 hr = HRESULT_FROM_WIN32(GetLastError() as LONG);
@@ -2282,7 +2261,7 @@ unsafe fn _GetUserSidStringFromToken(token: HANDLE) -> LPWSTR {
 
     if GetTokenInformation(
         token,
-        TokenUser,
+        (TokenUser) as TOKEN_INFORMATION_CLASS,
         info_buffer.as_mut_ptr() as LPVOID,
         64,
         &mut info_size,
@@ -2291,11 +2270,11 @@ unsafe fn _GetUserSidStringFromToken(token: HANDLE) -> LPWSTR {
         if GetLastError() != ERROR_INSUFFICIENT_BUFFER {
             return null_mut();
         }
-        user_info = HeapAlloc(GetProcessHeap(), 0, info_size as SIZE_T);
+        user_info = HeapAlloc(GetProcessHeap(), 0, (info_size as SIZE_T) as _);
         if user_info.is_null() {
             return null_mut();
         }
-        if GetTokenInformation(token, TokenUser, user_info as LPVOID, info_size, &mut info_size) == FALSE {
+        if GetTokenInformation(token, (TokenUser) as TOKEN_INFORMATION_CLASS, user_info as LPVOID, info_size, &mut info_size) == FALSE {
             HeapFree(GetProcessHeap(), 0, user_info);
             return null_mut();
         }
@@ -2436,7 +2415,7 @@ pub unsafe extern "system" fn SHGetFolderPathAndSubDirA(
     let mut psz_path_w: LPWSTR = null_mut();
 
     if !pszPath.is_null() {
-        psz_path_w = HeapAlloc(GetProcessHeap(), 0, MAX_PATH * 2) as LPWSTR;
+        psz_path_w = HeapAlloc(GetProcessHeap(), 0, (MAX_PATH * 2) as _) as LPWSTR;
         if psz_path_w.is_null() {
             hr = HRESULT_FROM_WIN32(ERROR_NOT_ENOUGH_MEMORY);
             // cleanup
@@ -2448,7 +2427,7 @@ pub unsafe extern "system" fn SHGetFolderPathAndSubDirA(
 
     if !pszSubPath.is_null() && *pszSubPath != 0 {
         length = MultiByteToWideChar(CP_ACP, 0, pszSubPath, -1, null_mut(), 0);
-        psz_sub_path_w = HeapAlloc(GetProcessHeap(), 0, (length as usize) * 2) as LPWSTR;
+        psz_sub_path_w = HeapAlloc(GetProcessHeap(), 0, ((length as usize) * 2) as _) as LPWSTR;
         if psz_sub_path_w.is_null() {
             hr = HRESULT_FROM_WIN32(ERROR_NOT_ENOUGH_MEMORY);
             HeapFree(GetProcessHeap(), 0, psz_path_w as LPVOID);
@@ -2911,7 +2890,7 @@ pub unsafe extern "C" fn SHGetFolderLocationHelper(
     hr = SHBindToObject(
         null_mut(),
         parent,
-        addr_of!(IID_IShellFolder),
+        (addr_of!(IID_IShellFolder)).cast(),
         &mut psf as *mut *mut IShellFolder as *mut *mut c_void,
     );
     if SUCCEEDED(hr) {
