@@ -180,21 +180,19 @@ driver (`tools/merge_drivers.py`, which also merges the cohab census), and psapi
   entry in gen_driver_types.sh). usetup.exe and reactos.exe link on all three arches.
   **Owed: user approval to delete reactos-rust's superseded `fileqsup.rs`**, parked with an
   `ORPHAN-BY-DESIGN` banner, and the reactos prelude's spapisup section it alone used.
-- **The call seal leaves a live `#ifdef` arm's calls optional** (from control-plane's owed
-  list, 2026-10-17; the original report, "it demands calls in dead arms", no longer
-  reproduces). `dead_regions.preprocessor_conditional_spans` marks EVERY arm of any `#if`
-  in a body dead. So on rundll32's `#ifdef UNICODE WideCharToMultiByte #else strncpy`, both
-  calls are optional, and a model that drops the live call passes the seal. The fix:
-  - Decide arms with `dead_regions.cond_truth`, given the TU's own defines. That means
-    `pinned_int_macros(module.definitions)`, plus the bare `-DNAME`s as `local` (UNICODE is
-    one); `pinned_int_macros` drops them. Plumb these through `seal_calls` into
-    `dead_region_spans`.
-  - Live arm required, dead arm optional, an undecidable chain optional as today.
-  - The prompt and cache are untouched: `call_contract` never reads `.dead`.
-
-  It TIGHTENS an audit, though, so measure it first. Re-check every banked body against
-  its C function's live-arm callees under its TU's defines. Then fix (re-buy) or allowlist
-  each body that dropped one, before the change can turn a `port replay` red.
+- **The call seal requires a live `#ifdef` arm's calls** (2026-10-17). `seal_calls` takes
+  the TU's defines (`_module_pinned_macros(.., bare_as_one=True)`: a bare `-DNAME` and a
+  UNICODE module's UNICODE count as 1) and `dead_regions.decided_live_lines` decides arms:
+  live required, dead and undecidable and `#elif` optional. Prompt and cache untouched.
+  Measured first with `python -m rustconv.live_arm_audit` over the 986 flipped TUs the
+  census resolves: 445 live-arm calls in 208 functions, and every shipped body names its
+  callee except freeldr's `WinLdrSetupMemoryLayout`, which drops a `#if DBG` `MempDump()`
+  (the rest of its 8 leads are macros the seal never tokenizes). Caveats: that audits the
+  INTEGRATED Rust, not the bank -- a replay could not check the bank, because a flipped TU
+  has no compile command and translate refuses it (`MacroAuthorityError`); 119 census rows
+  do not resolve to a file pair, and 162 TUs whose CMakeLists profile_derive refuses were
+  decided on tree-wide defines only. Still owed: the seal sees only the body, so a
+  file-scope `#define` (beepmidi's `CONTINUOUS_NOTES`) still leaves its arms optional.
 - **The cost counter now bills failed attempts** (2026-10-17). Three causes: the Claude
   backend never set `usage_known`, so all 6,637 attempt `result.json`s said
   `cost_usd: null`; FAIL lines did not print the running figure `port translate` bills a

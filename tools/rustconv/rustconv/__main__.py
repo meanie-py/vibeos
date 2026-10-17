@@ -2279,7 +2279,7 @@ def cmd_probe_migrate(args):
         print("\nRun `python -m rustconv check` to verify compilation.", file=sys.stderr)
 
 
-def _module_pinned_macros(c_file: Path, args) -> dict[str, int]:
+def _module_pinned_macros(c_file: Path, args, *, bare_as_one: bool = False) -> dict[str, int]:
     """`-DNAME=<int>` the build puts on EVERY compile of `c_file`, from its CMakeLists.
 
     Feeds `never_compiled_lines`, so it decides what is on the bill: msvcrt pins
@@ -2292,6 +2292,10 @@ def _module_pinned_macros(c_file: Path, args) -> dict[str, int]:
 
     Best-effort by design — an unparseable or absent CMakeLists yields `{}`, which is
     exactly the pre-existing behaviour (more paid calls, never a dropped body).
+
+    `bare_as_one` also counts a bare `-DNAME` (and a UNICODE module's UNICODE/_UNICODE) as
+    `NAME=1`, as C does -- the call seal's view, where deciding an arm LIVE only makes its
+    calls required. Off for the bill: deciding a body dead on it would drop the body.
     """
     cmake = c_file.resolve().parent / "CMakeLists.txt"
     # A TU can live one directory down from the CMakeLists that lists it
@@ -2320,7 +2324,12 @@ def _module_pinned_macros(c_file: Path, args) -> dict[str, int]:
                 continue
             if wanted not in {p.resolve() for p in module.compiled_tus}:
                 continue
-            here = pinned_int_macros(module.definitions)
+            defs = list(module.definitions)
+            if bare_as_one:
+                defs = [d if "=" in d else f"{d}=1" for d in defs]
+                if module.unicode:
+                    defs += ["-DUNICODE=1", "-D_UNICODE=1"]
+            here = pinned_int_macros(defs)
             if agreed is None:
                 agreed = here
             else:
@@ -3299,6 +3308,13 @@ def cmd_translate(args):
             for dep in sorted_deps
         }
 
+        # The TU's own defines settle some `#if` arms LIVE, and those arms' calls are then
+        # required (rundll32's `#ifdef UNICODE WideCharToMultiByte`). Measured before it was
+        # turned on: `python -m rustconv.live_arm_audit` over every flipped TU found no
+        # shipped body that drops a live-arm call the seal would require.
+        seal_pinned = (
+            _module_pinned_macros(c_file, args, bare_as_one=True) if call_seal_enabled else None
+        )
         call_seals = (
             {
                 dep.name: seal_calls(
@@ -3309,6 +3325,7 @@ def cmd_translate(args):
                     receiver_callees=receivers_by_dep[dep.name],
                     callee_cpp_names=callee_cpp_names,
                     hwnd_receiver_callees=hwnd_by_dep[dep.name],
+                    pinned=seal_pinned,
                 )
                 for dep in sorted_deps
             }
