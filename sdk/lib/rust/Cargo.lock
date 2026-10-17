@@ -3341,6 +3341,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "mmebuddy-difftest"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "mmebuddy-macros-rust"
 version = "0.1.0"
 
