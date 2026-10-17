@@ -6663,7 +6663,16 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   `MiSynchronizeSystemPde` stub; and on arm64 `-smp 2` the preemption-bypass blocks (KiSwapThread,
   NtYieldExecution, KiExitDispatcher) requeued the Standby NextThread through KxQueueReadyThread,
   which releases the PRCB lock, then switched unlocked: the ready-list tear behind a 0x96 at site
-  0x22 (`KiRequeueStandbyThreadLocked`). **Next:** the loader/FS/driver tail. `debug_assert!` is gated on
+  0x22 (`KiRequeueStandbyThreadLocked`). Two restored asserts fire under kmtest only (both print
+  and continue; conformance stays 107/104/104), OWED: (a) i386 `MI_WRITE_VALID_PTE` over a valid
+  PDE ×4 at `i386/init.rs:394` (PDEs c0300fbc/fe8/fec/ff0, loader-mapped, old PFNs 0x4176-9),
+  2 GiB guest: the Rust `MiInitMachineDependent` still walks one `[MmNonPagedSystemStart,
+  MmNonPagedPoolEnd)` loop from before upstream #8613 (4cba65d760a) moved System PTE space into the
+  loader gap and split it into three loops; re-port from the current C. (b) `KiComputeNewPriority`
+  sees a realtime thread still carrying a decrement (i386 pri=23 base=15 dec=8, reached from
+  `dpc.rs:474` quantum end; amd64 nondeterministic); every decrement writer and priority setter
+  read so far matches the C, so the writer wants a tripwire. **Next:** those two, then the
+  loader/FS/driver tail. `debug_assert!` is gated on
   `cfg(debug_assertions)`; `sdk/lib/rust/Cargo.toml`'s `[profile.release]` never sets it, so
   cargo's release default (off) applies and every kernel crate builds `--release`. Meanwhile
   `CMakeLists.txt:233` sets `-DDBG=1`, so the C original calls `RtlAssert`. **The mirror of
