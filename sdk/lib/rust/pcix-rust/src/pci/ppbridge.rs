@@ -3,6 +3,8 @@
 #[allow(unused_imports)] use crate::glue::*;
 #[allow(unused_imports)] use crate::guids::*;
 use ntkrnl_sys::globals::*;
+// The crate's own functions: the definition is the declaration.
+use crate::utils::PciIsSlotPresentInParentMethod;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ex::*;
@@ -11,7 +13,6 @@ use ntkrnl_sys::ddk::{LARGE_INTEGER, PCI_COMMON_HEADER, PCM_PARTIAL_RESOURCE_DES
 use core::ffi::c_void;
 
 extern "system" {
-    fn PciIsSlotPresentInParentMethod(PdoExtension: *mut core::ffi::c_void, Method: u32) -> u8;
 }
 
 const PCI_HACK_SUBTRACTIVE_DECODE: u64 = 0x0000000000040000;
@@ -99,7 +100,7 @@ pub unsafe extern "system" fn PciBridgeMemoryWorstCaseAlignment(Length: u32) -> 
 
 #[no_mangle]
 pub unsafe extern "system" fn PciBridgeIsPositiveDecode(PdoExtension: *mut core::ffi::c_void) -> u8 {
-    PciIsSlotPresentInParentMethod(PdoExtension, 0x50444543u32)
+    PciIsSlotPresentInParentMethod((PdoExtension).cast(), 0x50444543u32)
 }
 #[no_mangle]
 pub unsafe extern "system" fn PciBridgeIsSubtractiveDecode(Context: PPCI_CONFIGURATOR_CONTEXT) -> BOOLEAN {

@@ -4,6 +4,8 @@
 //! so a glob of this module alongside `use ntdll_sys::nt::*` is unambiguous.
 #![allow(unused_imports)]
 use ntdll_sys::nt::*;
+// The crate's own functions: the definition is the declaration.
+pub use crate::client::thread::ExitThread;
 pub use winsrv_sys::winsrv::{
     CHAR_INFO,
     CODE_ASCII,
@@ -268,7 +270,6 @@ pub use super::alias::ALIAS_ENTRY;
 
 // kernel32 exports used by console (resolve to sibling #[no_mangle] at link)
 extern "system" {
-    pub fn ExitThread(uExitCode: DWORD) -> !;
     pub fn ExitProcess(uExitCode: UINT) -> !;
 }
 

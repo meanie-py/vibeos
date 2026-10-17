@@ -64,7 +64,7 @@ list(APPEND SOURCE
     )
 
 # The stub manager's guarded object release and the guarded irpcss calls (see each
-# file's header): a real __try on amd64/arm64; i386 keeps the DUMMY pass-through.
+# file's header): a real __try on amd64/arm64; i386 uses ntdll's RtlSehTryExcept trampoline.
 if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "arm64")
     set_source_files_properties(stubmanager_seh.c PROPERTIES COMPILE_DEFINITIONS _USE_NATIVE_SEH)
     set_source_files_properties(rpcss_seh.c PROPERTIES COMPILE_DEFINITIONS _USE_NATIVE_SEH)

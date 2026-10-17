@@ -541,7 +541,7 @@ pub unsafe extern "C" fn CreateDirectoryTree(Dir: LPCWSTR) -> UINT {
     return if err == ERROR_ALREADY_EXISTS { 0 } else { err };
 }
 #[no_mangle]
-pub unsafe extern "C" fn SplitFileAndDirectory(FullPath: LPCWSTR, pDir: *mut CStringW) -> CStringW {
+pub unsafe fn SplitFileAndDirectory(FullPath: LPCWSTR, pDir: *mut CStringW) -> CStringW {
     let mut dir = CPathW::from_ptr(FullPath);
     //int win = dir.ReverseFind(L'\\'), nix = dir.ReverseFind(L'/'), sep = max(win, nix);
     let sep = dir.FindFileName();

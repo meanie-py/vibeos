@@ -4,6 +4,8 @@
 #[allow(unused_imports)] use crate::glue::*;
 #[allow(unused_imports)] use crate::guids::*;
 use ntkrnl_sys::globals::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::fdo::DbgPrint;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
@@ -25,7 +27,6 @@ extern "system" {
     fn DbgBreakPoint();
 }
 extern "C" {
-    fn DbgPrint(format: *const i8, ...) -> NTSTATUS;
 }
 
 extern "system" {
@@ -196,12 +197,12 @@ pub unsafe extern "system" fn PciPdoWaitWake(
     let _ = IoStackLocation;
     let _ = DeviceExtension;
     DbgPrint(
-        b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
+        b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const u8,
         b"PciPdoWaitWake\0".as_ptr() as *const i8,
         b"drivers/bus/pcix/pdo.c\0".as_ptr() as *const i8,
         87i32,
     );
-    DbgPrint(b"\0".as_ptr() as *const i8);
+    DbgPrint(b"\0".as_ptr() as *const u8);
     DbgBreakPoint();
     STATUS_NOT_SUPPORTED
 }
@@ -216,7 +217,7 @@ pub unsafe extern "system" fn PciPdoSetPowerState(
     let _ = DeviceExtension;
 
     DbgPrint(
-        b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const core::ffi::c_char,
+        b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const u8,
         b"PciPdoSetPowerState\0".as_ptr() as *const core::ffi::c_char,
         b"drivers/bus/pcix/pdo.c\0".as_ptr() as *const core::ffi::c_char,
         101 as core::ffi::c_int,
@@ -231,13 +232,13 @@ pub unsafe extern "system" fn PciPdoIrpQueryPower(
     DeviceExtension: PPCI_PDO_EXTENSION,
 ) -> NTSTATUS {
     DbgPrint(
-        b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
+        b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const u8,
         b"PciPdoIrpQueryPower\0".as_ptr() as *const ::core::ffi::c_char,
         b"drivers/bus/pcix/pdo.c\0".as_ptr()
             as *const ::core::ffi::c_char,
         115 as ::core::ffi::c_int,
     );
-    DbgPrint(b"\0".as_ptr() as PCSTR);
+    DbgPrint(b"\0".as_ptr() as *const u8);
     DbgBreakPoint();
     STATUS_NOT_SUPPORTED
 }
@@ -249,7 +250,7 @@ pub unsafe extern "system" fn PciPdoIrpStartDevice(
 ) -> NTSTATUS {
     if KeGetCurrentIrql() > APC_LEVEL {
         DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as PCSTR,
+            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const u8,
             KeGetCurrentIrql() as c_uint,
         );
         if false {
@@ -300,14 +301,14 @@ pub unsafe extern "system" fn PciPdoIrpStartDevice(
     if Changed != 0 {
         (*DeviceExtension).MovedDevice = 1u8;
     } else if DbgPrint(
-        b"(%s:%d) PCI - START not changing resource settings.\n\0".as_ptr() as PCSTR,
+        b"(%s:%d) PCI - START not changing resource settings.\n\0".as_ptr() as *const u8,
         b"drivers/bus/pcix/pdo.c\0".as_ptr()
             as *const i8,
         171i32,
     ) != 0
     {
         DbgPrint(
-            b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
+            b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const u8,
             b"drivers/bus/pcix/pdo.c\0".as_ptr()
                 as *const i8,
             171i32,
@@ -365,7 +366,7 @@ pub unsafe extern "system" fn PciPdoIrpQueryRemoveDevice(
     DeviceExtension: PPCI_PDO_EXTENSION,
 ) -> NTSTATUS {
     DbgPrint(
-        b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
+        b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const u8,
         b"PciPdoIrpQueryRemoveDevice\0".as_ptr() as *const i8,
         b"drivers/bus/pcix/pdo.c\0".as_ptr()
             as *const i8,
@@ -383,13 +384,13 @@ pub unsafe extern "system" fn PciPdoIrpRemoveDevice(
     // still present after its START fails; succeed and keep it, as a device that is
     // still on the bus must keep its PDO. Deleting one that is gone is still owed.
     DbgPrint(
-        b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as PCSTR,
+        b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const u8,
         b"PciPdoIrpRemoveDevice\0" as *const u8 as *const core::ffi::c_char,
         b"drivers/bus/pcix/pdo.c\0" as *const u8
             as *const core::ffi::c_char,
         242 as core::ffi::c_int,
     );
-    DbgPrint(b"\0" as *const u8 as PCSTR);
+    DbgPrint(b"\0" as *const u8 as *const u8);
     STATUS_SUCCESS
 }
 
@@ -405,7 +406,7 @@ pub unsafe extern "system" fn PciPdoIrpCancelRemoveDevice(
 
     // Query-remove did nothing, so there is nothing to undo; upstream breakpoints.
     DbgPrint(
-        b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
+        b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const u8,
         b"PciPdoIrpCancelRemoveDevice\0".as_ptr() as *const ::core::ffi::c_char,
         b"drivers/bus/pcix/pdo.c\0".as_ptr()
             as *const ::core::ffi::c_char,
@@ -424,7 +425,7 @@ pub unsafe extern "system" fn PciPdoIrpStopDevice(
     let _ = DeviceExtension;
 
     DbgPrint(
-        b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
+        b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const u8,
         b"PciPdoIrpStopDevice\0".as_ptr() as *const ::core::ffi::c_char,
         b"drivers/bus/pcix/pdo.c\0".as_ptr()
             as *const ::core::ffi::c_char,
@@ -439,12 +440,12 @@ pub unsafe extern "system" fn PciPdoIrpQueryStopDevice(
     DeviceExtension: PPCI_PDO_EXTENSION,
 ) -> NTSTATUS {
     DbgPrint(
-        b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
+        b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const u8,
         b"PciPdoIrpQueryStopDevice\0".as_ptr() as *const ::core::ffi::c_char,
         b"drivers/bus/pcix/pdo.c\0".as_ptr() as *const ::core::ffi::c_char,
         284 as ::core::ffi::c_int,
     );
-    DbgPrint(b"\0".as_ptr() as PCSTR);
+    DbgPrint(b"\0".as_ptr() as *const u8);
     STATUS_NOT_SUPPORTED
 }
 #[no_mangle]
@@ -454,12 +455,12 @@ pub unsafe extern "system" fn PciPdoIrpCancelStopDevice(
     DeviceExtension: PPCI_PDO_EXTENSION,
 ) -> NTSTATUS {
     DbgPrint(
-        b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
+        b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const u8,
         b"PciPdoIrpCancelStopDevice\0".as_ptr() as *const ::core::ffi::c_char,
         b"drivers/bus/pcix/pdo.c\0".as_ptr() as *const ::core::ffi::c_char,
         298 as ::core::ffi::c_int,
     );
-    DbgPrint(b"\0".as_ptr() as PCSTR);
+    DbgPrint(b"\0".as_ptr() as *const u8);
     STATUS_SUCCESS
 }
 
@@ -497,7 +498,7 @@ pub unsafe extern "system" fn PciPdoIrpQueryDeviceRelations(
     let irql = KeGetCurrentIrql();
     if irql > APC_LEVEL as u8 {
         DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as PCSTR,
+            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const u8,
             irql as i32,
         );
         RtlAssert(
@@ -536,7 +537,7 @@ pub unsafe extern "system" fn PciPdoIrpQueryCapabilities(
 ) -> NTSTATUS {
     if KeGetCurrentIrql() as i32 > APC_LEVEL as i32 {
         let _ = DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const i8,
+            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const u8,
             KeGetCurrentIrql() as i32,
         );
         if 0i32 == 0 {
@@ -563,7 +564,7 @@ pub unsafe extern "system" fn PciPdoIrpQueryResources(
     // PAGED_CODE()
     if (KeGetCurrentIrql() as i32) > APC_LEVEL as i32 {
         DbgPrint(
-            c"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n".as_ptr() as PCSTR,
+            c"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n".as_ptr() as *const u8,
             KeGetCurrentIrql() as i32,
         );
         if true {
@@ -588,7 +589,7 @@ pub unsafe extern "system" fn PciPdoIrpQueryResourceRequirements(
 ) -> NTSTATUS {
     if KeGetCurrentIrql() as i32 > APC_LEVEL as i32 {
         DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8 as PCSTR,
+            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8 as *const u8,
             KeGetCurrentIrql() as i32,
         );
         if 0i32 == 0 {
@@ -616,7 +617,7 @@ pub unsafe extern "system" fn PciPdoIrpQueryDeviceText(
 ) -> NTSTATUS {
     if KeGetCurrentIrql() as i32 > APC_LEVEL as i32 {
         DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as PCSTR,
+            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const u8,
             KeGetCurrentIrql() as i32,
         );
         if 0 == 0 {
@@ -643,7 +644,7 @@ pub unsafe extern "system" fn PciPdoIrpQueryId(
 ) -> NTSTATUS {
     if (KeGetCurrentIrql() as i32) > (APC_LEVEL as i32) {
         DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8 as *const i8,
+            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8 as *const u8,
             KeGetCurrentIrql() as i32,
         );
         if 0 == 0 {
@@ -671,7 +672,7 @@ pub unsafe extern "system" fn PciPdoIrpQueryBusInformation(
 ) -> NTSTATUS {
     if (KeGetCurrentIrql() as i32) > APC_LEVEL as i32 {
         DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8 as PCSTR,
+            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8 as *const u8,
             KeGetCurrentIrql() as i32,
         );
         if (0 as i32) == 0 {
@@ -698,12 +699,12 @@ pub unsafe extern "system" fn PciPdoIrpReadConfig(
     DeviceExtension: PPCI_PDO_EXTENSION,
 ) -> NTSTATUS {
     DbgPrint(
-        b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
+        b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const u8,
         b"PciPdoIrpReadConfig\0".as_ptr() as *const ::core::ffi::c_char,
         b"drivers/bus/pcix/pdo.c\0".as_ptr() as *const ::core::ffi::c_char,
         454 as ::core::ffi::c_int,
     );
-    DbgPrint(b"\0".as_ptr() as PCSTR);
+    DbgPrint(b"\0".as_ptr() as *const u8);
     DbgBreakPoint();
     STATUS_NOT_SUPPORTED
 }
@@ -714,12 +715,12 @@ pub unsafe extern "system" fn PciPdoIrpWriteConfig(
     DeviceExtension: PPCI_PDO_EXTENSION,
 ) -> NTSTATUS {
     DbgPrint(
-        b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
+        b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const u8,
         b"PciPdoIrpWriteConfig\0".as_ptr() as PCSTR,
         b"drivers/bus/pcix/pdo.c\0".as_ptr() as PCSTR,
         468i32,
     );
-    DbgPrint(b"\0".as_ptr() as PCSTR);
+    DbgPrint(b"\0".as_ptr() as *const u8);
     DbgBreakPoint();
     STATUS_NOT_SUPPORTED
 }
@@ -752,12 +753,12 @@ pub unsafe extern "system" fn PciPdoIrpDeviceUsageNotification(
     DeviceExtension: PPCI_PDO_EXTENSION,
 ) -> NTSTATUS {
     DbgPrint(
-        b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as PCSTR,
+        b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const u8,
         b"PciPdoIrpDeviceUsageNotification\0" as *const u8 as PCSTR,
         b"drivers/bus/pcix/pdo.c\0" as *const u8 as PCSTR,
         496i32,
     );
-    DbgPrint(b"\0" as *const u8 as PCSTR);
+    DbgPrint(b"\0" as *const u8 as *const u8);
     DbgBreakPoint();
     STATUS_NOT_SUPPORTED
 }
@@ -811,7 +812,7 @@ pub unsafe extern "system" fn PciPdoCreate(
 
     if KeGetCurrentIrql() as u32 > APC_LEVEL as u32 {
         DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8 as PCSTR,
+            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8 as *const u8,
             KeGetCurrentIrql() as i32,
         );
         if 0 == 0 {
@@ -861,7 +862,7 @@ pub unsafe extern "system" fn PciPdoCreate(
     PdoExtension = (*DeviceObject).DeviceExtension as PPCI_PDO_EXTENSION;
 
     if DbgPrint(
-        b"(%s:%d) PCI: New PDO (b=0x%x, d=0x%x, f=0x%x) @ %p, ext @ %p\n\0" as *const u8 as PCSTR,
+        b"(%s:%d) PCI: New PDO (b=0x%x, d=0x%x, f=0x%x) @ %p, ext @ %p\n\0" as *const u8 as *const u8,
         b"drivers/bus/pcix/pdo.c\0" as *const u8 as *const i8,
         566 as i32,
         (*DeviceExtension).BaseBus as i32,
@@ -872,7 +873,7 @@ pub unsafe extern "system" fn PciPdoCreate(
     ) != 0
     {
         DbgPrint(
-            b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as PCSTR,
+            b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const u8,
             b"drivers/bus/pcix/pdo.c\0" as *const u8 as *const i8,
             566 as i32,
         );

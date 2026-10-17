@@ -3,6 +3,8 @@
 #[allow(unused_imports)] use crate::glue::*;
 #[allow(unused_imports)] use crate::guids::*;
 use ntkrnl_sys::base::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::pci::config::RtlAssert;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ke::*;
@@ -73,7 +75,6 @@ pub static mut PnpStateTransitionArray: [NTSTATUS; 36] = [
 pub const NDEBUG: bool = true;
 
 extern "system" {
-    fn RtlAssert(pvFailedAssertion: PVOID, pvFileName: PVOID, ulLineNumber: ULONG, pszMessage: *mut ::core::ffi::c_char);
 }
 #[no_mangle]
 pub unsafe extern "system" fn PciInitializeState(DeviceExtension: *mut _PCI_FDO_EXTENSION) {
@@ -115,7 +116,7 @@ pub unsafe extern "system" fn PciBeginStateTransition(
             b"drivers/bus/pcix/pci/state.c\0".as_ptr()
                 as *const ::core::ffi::c_char as PVOID,
             107 as ULONG,
-            core::ptr::null_mut::<CHAR>(),
+            (core::ptr::null_mut::<CHAR>()).cast(),
         );
     }
 
@@ -128,7 +129,7 @@ pub unsafe extern "system" fn PciBeginStateTransition(
             b"drivers/bus/pcix/pci/state.c\0".as_ptr()
                 as *const ::core::ffi::c_char as PVOID,
             111 as ULONG,
-            core::ptr::null_mut::<CHAR>(),
+            (core::ptr::null_mut::<CHAR>()).cast(),
         );
     }
 
@@ -139,7 +140,7 @@ pub unsafe extern "system" fn PciBeginStateTransition(
             b"drivers/bus/pcix/pci/state.c\0".as_ptr()
                 as *const ::core::ffi::c_char as PVOID,
             112 as ULONG,
-            core::ptr::null_mut::<CHAR>(),
+            (core::ptr::null_mut::<CHAR>()).cast(),
         );
     }
 
@@ -198,7 +199,7 @@ pub unsafe extern "system" fn PciBeginStateTransition(
             b"drivers/bus/pcix/pci/state.c\0".as_ptr()
                 as *const ::core::ffi::c_char as PVOID,
             135 as ULONG,
-            core::ptr::null_mut::<CHAR>(),
+            (core::ptr::null_mut::<CHAR>()).cast(),
         );
     }
 
@@ -242,7 +243,7 @@ pub unsafe extern "system" fn PciCancelStateTransition(
                 b"drivers/bus/pcix/pci/state.c\0"
                     as *const u8 as *const i8 as *mut core::ffi::c_void,
                 157u32,
-                core::ptr::null_mut::<i8>(),
+                (core::ptr::null_mut::<i8>()).cast(),
             );
         }
         if !(PnpStateCancelArray[StateNotEntered as usize] != 0xc0000229u32 as NTSTATUS) {
@@ -252,7 +253,7 @@ pub unsafe extern "system" fn PciCancelStateTransition(
                 b"drivers/bus/pcix/pci/state.c\0"
                     as *const u8 as *const i8 as *mut core::ffi::c_void,
                 158u32,
-                core::ptr::null_mut::<i8>(),
+                (core::ptr::null_mut::<i8>()).cast(),
             );
         }
         Status = STATUS_INVALID_DEVICE_STATE;
@@ -265,7 +266,7 @@ pub unsafe extern "system" fn PciCancelStateTransition(
                 b"drivers/bus/pcix/pci/state.c\0"
                     as *const u8 as *const i8 as *mut core::ffi::c_void,
                 167u32,
-                core::ptr::null_mut::<i8>(),
+                (core::ptr::null_mut::<i8>()).cast(),
             );
         }
         (*DeviceExtension).TentativeNextState = (*DeviceExtension).DeviceState;
@@ -302,7 +303,7 @@ pub unsafe extern "system" fn PciCommitStateTransition(
             b"drivers/bus/pcix/pci/state.c\0" as *const u8
                 as *const core::ffi::c_char as PVOID,
             188 as ULONG,
-            core::ptr::null_mut::<core::ffi::c_char>(),
+            (core::ptr::null_mut::<core::ffi::c_char>()).cast(),
         );
     }
     if !((*DeviceExtension).TentativeNextState as u32 == NewState as u32) {
@@ -312,7 +313,7 @@ pub unsafe extern "system" fn PciCommitStateTransition(
             b"drivers/bus/pcix/pci/state.c\0" as *const u8
                 as *const core::ffi::c_char as PVOID,
             189 as ULONG,
-            core::ptr::null_mut::<core::ffi::c_char>(),
+            (core::ptr::null_mut::<core::ffi::c_char>()).cast(),
         );
     }
     (*DeviceExtension).DeviceState = NewState as u8;

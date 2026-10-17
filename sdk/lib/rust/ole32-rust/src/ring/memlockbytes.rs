@@ -45,7 +45,7 @@ pub unsafe extern "system" fn CreateILockBytesOnHGlobal(
     let lockbytes = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<HGLOBALLockBytesImpl>() as SIZE_T,
+        core::mem::size_of::<HGLOBALLockBytesImpl>() as usize,
     ) as *mut HGLOBALLockBytesImpl;
 
     if lockbytes.is_null() {

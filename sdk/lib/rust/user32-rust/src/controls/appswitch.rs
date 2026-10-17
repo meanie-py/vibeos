@@ -1,4 +1,10 @@
 use win32k_sys::win32k::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::windows::window::HeapAlloc;
+// The crate's own functions: the definition is the declaration.
+use crate::windows::font::DrawTextW;
+use crate::windows::class::GetWindowLongPtrW;
+use crate::windows::rect::IsRectEmpty;
 #[allow(unused_imports)]
 use core::ffi::c_void;
 
@@ -69,7 +75,6 @@ extern "system" {
     fn CreateWindowExW(dwExStyle: DWORD, lpClassName: LPCWSTR, lpWindowName: LPCWSTR, dwStyle: DWORD, x: INT, y: INT, nWidth: INT, nHeight: INT, hWndParent: HWND, hMenu: HMENU, hInstance: HINSTANCE, lpParam: LPVOID) -> HWND;
     fn DefWindowProcW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     fn SetWindowLongPtrW(hWnd: HWND, nIndex: INT, dwNewLong: LONG_PTR) -> LONG_PTR;
-    fn GetWindowLongPtrW(hWnd: HWND, nIndex: INT) -> LONG_PTR;
     fn GetWindowLongW(hWnd: HWND, nIndex: INT) -> LONG;
     fn SendMessageTimeoutW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM, fuFlags: UINT, uTimeout: UINT, lpdwResult: PDWORD_PTR) -> LRESULT;
     fn GetClassLongPtrW(hWnd: HWND, nIndex: INT) -> ULONG_PTR;
@@ -77,7 +82,6 @@ extern "system" {
     fn GetWindow(hWnd: HWND, uCmd: UINT) -> HWND;
     fn IsWindowVisible(hWnd: HWND) -> BOOL;
     fn GetWindowRect(hWnd: HWND, lpRect: LPRECT) -> BOOL;
-    fn IsRectEmpty(lprc: *const RECT) -> BOOL;
     fn GetClassNameW(hWnd: HWND, lpClassName: LPWSTR, nMaxCount: INT) -> INT;
     fn GetLastActivePopup(hWnd: HWND) -> HWND;
     fn EnumWindows(lpEnumFunc: WNDENUMPROC, lParam: LPARAM) -> BOOL;
@@ -101,7 +105,6 @@ extern "system" {
     fn DrawIconEx(hdc: HDC, xLeft: INT, yTop: INT, hIcon: HICON, cxWidth: INT, cyWidth: INT, istepIfAniCur: UINT, hbrFlickerFreeDraw: HBRUSH, diFlags: UINT) -> BOOL;
     fn DrawFrameControl(hdc: HDC, lprc: LPRECT, uType: UINT, uState: UINT) -> BOOL;
     fn FillRect(hDC: HDC, lprc: *const RECT, hbr: HBRUSH) -> INT;
-    fn DrawTextW(hdc: HDC, lpchText: LPCWSTR, cchText: INT, lprc: LPRECT, format: UINT) -> INT;
     fn SetTextColor(hdc: HDC, color: COLORREF) -> COLORREF;
     fn SetBkMode(hdc: HDC, mode: INT) -> INT;
 
@@ -114,7 +117,6 @@ extern "system" {
 // kernel32 heap + memory glue.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: usize) -> PVOID;
     fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: PVOID) -> BOOL;
     fn RtlMoveMemory(Destination: PVOID, Source: *const core::ffi::c_void, Length: usize);
 }
@@ -930,7 +932,7 @@ pub unsafe extern "system" fn SwitchWndProc_common(
             let ati = HeapAlloc(
                 GetProcessHeap(),
                 HEAP_ZERO_MEMORY,
-                core::mem::size_of::<ALTTABINFO>(),
+                (core::mem::size_of::<ALTTABINFO>()) as SIZE_T,
             ) as PALTTABINFO;
             if ati.is_null() {
                 return 0;

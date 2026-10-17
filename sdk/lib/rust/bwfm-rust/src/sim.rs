@@ -38,7 +38,30 @@ pub struct Card {
     /// (address, block mode, bytes) of each function 2 CMD53 write.
     pub f2_writes: Vec<(u32, bool, usize)>,
     pub f2_fifo: Vec<u8>,
+    /// The firmware's side of function 2: frames queued for the host, the one
+    /// being read and how far, and whether its replies carry credit.
+    rx_queue: std::collections::VecDeque<Vec<u8>>,
+    rx_cur: Vec<u8>,
+    rx_pos: usize,
+    announced: bool,
+    pub credit_frames: bool,
+    rx_seq: u8,
+    pub desynced: bool,
+    /// The CLM as clmload reassembled it, and each chunk's flag.
+    pub clm: Vec<u8>,
+    pub clm_flags: Vec<u16>,
+    pub up: bool,
+    pub infra: bool,
+    pub event_mask: Vec<u8>,
 }
+
+/// The simulated chip's address.
+pub const MAC: [u8; 6] = [0xD8, 0x3A, 0xDD, 0x01, 0x02, 0x03];
+
+/// What the simulated firmware answers `ver` with.
+pub const FW_VERSION: &[u8] = b"wl0: Mar 28 2025 version 7.45.265 (28bca26 CY) FWID 01-b677b91b";
+/// BCME_UNSUPPORTED: the firmware's answer to an iovar it does not know.
+const BCME_UNSUPPORTED: i32 = -23;
 
 const CIS_AT: u32 = 0x1000;
 const EROM: u32 = 0x1800_F000;
@@ -115,6 +138,18 @@ impl Card {
             backplane,
             f2_writes: Vec::new(),
             f2_fifo: Vec::new(),
+            rx_queue: Default::default(),
+            rx_cur: Vec::new(),
+            rx_pos: 0,
+            announced: false,
+            credit_frames: true,
+            rx_seq: 0,
+            desynced: false,
+            clm: Vec::new(),
+            clm_flags: Vec::new(),
+            up: false,
+            infra: false,
+            event_mask: Vec::new(),
         }
     }
 
@@ -217,8 +252,187 @@ impl Card {
         self.window | (addr & 0x7FFF)
     }
 
+    /// A frame from the firmware: SDPCM headers (credit up to four past the
+    /// host's last sequence), `payload`, padded to a word.
+    fn queue(&mut self, channel: u8, payload: &[u8]) {
+        let len = 12 + payload.len();
+        let max = if self.credit_frames { self.rx_seq.wrapping_add(4) } else { 0 };
+        let mut f = Vec::with_capacity(len.div_ceil(4) * 4);
+        f.extend_from_slice(&(len as u16).to_le_bytes());
+        f.extend_from_slice(&(!(len as u16)).to_le_bytes());
+        f.extend_from_slice(&[0, channel, 0, 12, 0, max, 0, 0]);
+        f.extend_from_slice(payload);
+        f.resize(len.div_ceil(4) * 4, 0);
+        self.rx_queue.push_back(f);
+    }
+
+    /// A reply to an earlier `command` with request id `id`, as a late answer to
+    /// one the host gave up on would arrive.
+    pub fn queue_stale_reply(&mut self, command: u32, id: u16, value: &[u8]) {
+        let mut r = Vec::new();
+        r.extend_from_slice(&command.to_le_bytes());
+        r.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        r.extend_from_slice(&((id as u32) << 16).to_le_bytes());
+        r.extend_from_slice(&0u32.to_le_bytes());
+        r.extend_from_slice(value);
+        self.queue(0, &r);
+    }
+
+    /// An event as the firmware sends it: the BCDC data header, an Ethernet
+    /// frame of type 0x886C, Broadcom's header, the big-endian event message.
+    fn queue_bcm_event(&mut self, event_type: u32, status: u32, data: &[u8]) {
+        let mut f = vec![0x20, 0, 0, 0];
+        f.extend_from_slice(&MAC);
+        f.extend_from_slice(&MAC);
+        f.extend_from_slice(&0x886Cu16.to_be_bytes());
+        f.extend_from_slice(&[0x80, 0x01, 0, 0, 0, 0x00, 0x10, 0x18, 0x00, 0x01]);
+        f.extend_from_slice(&2u16.to_be_bytes()); // version
+        f.extend_from_slice(&0u16.to_be_bytes()); // flags
+        for v in [event_type, status, 0, 0, data.len() as u32] {
+            f.extend_from_slice(&v.to_be_bytes());
+        }
+        f.extend_from_slice(&[0; 6 + 16 + 2]); // addr, ifname, ifidx, bsscfgidx
+        f.extend_from_slice(data);
+        self.queue(1, &f);
+    }
+
+    /// One `bwfm_bss_info` (124 bytes, no IEs).
+    fn bss(bssid: [u8; 6], ssid: &[u8], channel: u8, rssi: i16) -> Vec<u8> {
+        let mut r = vec![0u8; 124];
+        r[0..4].copy_from_slice(&109u32.to_le_bytes()); // version
+        r[4..8].copy_from_slice(&124u32.to_le_bytes());
+        r[8..14].copy_from_slice(&bssid);
+        r[16..18].copy_from_slice(&0x0411u16.to_le_bytes()); // ESS | privacy | short slot
+        r[18] = ssid.len() as u8;
+        r[19..19 + ssid.len()].copy_from_slice(ssid);
+        r[72..74].copy_from_slice(&(0x1000u16 | channel as u16).to_le_bytes());
+        r[78..80].copy_from_slice(&rssi.to_le_bytes());
+        r[88] = channel;
+        r
+    }
+
+    /// What a passive escan hears here: two networks, then the end.
+    fn escan_results(&mut self) {
+        for (bssid, ssid, ch, rssi) in [
+            ([0x02, 0x11, 0x22, 0x33, 0x44, 0x55], &b"piconet"[..], 6, -42),
+            ([0x02, 0x66, 0x77, 0x88, 0x99, 0xAA], &b""[..], 36, -71),
+        ] {
+            let rec = Self::bss(bssid, ssid, ch, rssi);
+            let mut res = Vec::new();
+            res.extend_from_slice(&(12 + rec.len() as u32).to_le_bytes()); // buflen
+            res.extend_from_slice(&109u32.to_le_bytes()); // version
+            res.extend_from_slice(&0x1234u16.to_le_bytes()); // sync id
+            res.extend_from_slice(&1u16.to_le_bytes()); // one BSS
+            res.extend_from_slice(&rec);
+            self.queue_bcm_event(69, 8, &res);
+        }
+        self.queue_bcm_event(69, 0, &[]);
+    }
+
+    pub fn queue_event(&mut self, payload: &[u8]) {
+        self.queue(1, payload);
+    }
+
+    pub fn drop_pending_rx(&mut self) {
+        self.rx_queue.clear();
+        self.rx_cur.clear();
+        self.announced = true;
+    }
+
+    /// The host reads the FIFO: the frame in progress, else the next one, else
+    /// zeros. The firmware's first act once running is a credit-only frame.
+    fn read_fifo(&mut self, len: usize) -> Vec<u8> {
+        if self.firmware_running() && self.io_enable & 0b100 != 0 && !self.announced {
+            self.announced = true;
+            self.queue(0, &[]);
+        }
+        let mut out = Vec::with_capacity(len);
+        while out.len() < len {
+            if self.rx_pos >= self.rx_cur.len() {
+                match self.rx_queue.pop_front() {
+                    Some(f) => (self.rx_cur, self.rx_pos) = (f, 0),
+                    None => break,
+                }
+            }
+            let n = (len - out.len()).min(self.rx_cur.len() - self.rx_pos);
+            out.extend_from_slice(&self.rx_cur[self.rx_pos..self.rx_pos + n]);
+            self.rx_pos += n;
+        }
+        out.resize(len, 0);
+        out
+    }
+
+    /// The host sent a frame: answer a BCDC GET_VAR the way the firmware would.
+    fn answer(&mut self, frame: &[u8]) {
+        if frame.len() < 12 + 16 || frame[5] & 0xF != 0 {
+            return;
+        }
+        // A write shorter than its header's length, or not a whole word, leaves
+        // the chip's FIFO out of step: it answers nothing.
+        let declared = u16::from_le_bytes([frame[0], frame[1]]) as usize;
+        if frame.len() < declared || frame.len() % 4 != 0 {
+            self.desynced = true;
+            return;
+        }
+        self.rx_seq = frame[4].wrapping_add(1);
+        let dcmd = &frame[frame[7] as usize..];
+        let u = |i: usize| u32::from_le_bytes([dcmd[i], dcmd[i + 1], dcmd[i + 2], dcmd[i + 3]]);
+        let (command, len, flags) = (u(0), u(4) as usize, u(8));
+        let data = &dcmd[16..16 + len.min(dcmd.len() - 16)];
+        let name = &data[..data.iter().position(|&c| c == 0).unwrap_or(data.len())];
+        let rest = &data[(name.len() + 1).min(data.len())..];
+        let (status, mut value) = match (command, name) {
+            (262, b"ver") => (0, [FW_VERSION, b"\0"].concat()),
+            (262, b"cur_etheraddr") => (0, MAC.to_vec()),
+            (262, b"clmload_status") => (0, 0u32.to_le_bytes().to_vec()),
+            (263, b"clmload") if rest.len() >= 12 => {
+                let flag = u16::from_le_bytes([rest[0], rest[1]]);
+                let n = u32::from_le_bytes([rest[4], rest[5], rest[6], rest[7]]) as usize;
+                assert_eq!(u16::from_le_bytes([rest[2], rest[3]]), 2, "dload type CLM");
+                assert_eq!(n, rest.len() - 12, "chunk length");
+                self.clm_flags.push(flag);
+                self.clm.extend_from_slice(&rest[12..]);
+                (0, Vec::new())
+            }
+            (263, b"mpc") => (0, Vec::new()),
+            (263, b"event_msgs") => {
+                self.event_mask = rest.to_vec();
+                (0, Vec::new())
+            }
+            (263, b"escan") => {
+                assert_eq!(rest.len(), 72, "escan v0 parameters");
+                self.escan_results();
+                (0, Vec::new())
+            }
+            (2, _) => {
+                self.up = true;
+                (0, Vec::new())
+            }
+            (20, _) => {
+                self.infra = data.first() == Some(&1);
+                (0, Vec::new())
+            }
+            _ => (BCME_UNSUPPORTED, Vec::new()),
+        };
+        // A GET's reply fills the query's length; a SET's carries nothing back.
+        if command == 262 {
+            value.resize(len.max(value.len()), 0);
+        }
+        let error = if status != 0 { 1 } else { 0 };
+        let mut reply = Vec::new();
+        reply.extend_from_slice(&command.to_le_bytes());
+        reply.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        reply.extend_from_slice(&((flags & 0xFFFF_0000) | error).to_le_bytes());
+        reply.extend_from_slice(&(status as u32).to_le_bytes());
+        reply.extend_from_slice(&value);
+        self.queue(0, &reply);
+    }
+
     fn read53(&mut self, func: u8, addr: u32, len: usize) -> Vec<u8> {
-        assert_eq!(func, 1, "only the backplane is readable here");
+        if func == 2 {
+            return self.read_fifo(len);
+        }
+        assert_eq!(func, 1, "only the backplane and the FIFO are readable here");
         assert_eq!(len % 4, 0);
         let a = self.bp_addr(addr);
         (0..len / 4)
@@ -248,6 +462,7 @@ impl Card {
             2 => {
                 self.f2_writes.push((addr, block_mode, data.len()));
                 self.f2_fifo.extend_from_slice(data);
+                self.answer(data);
             }
             _ => panic!("CMD53 to function {func}"),
         }
@@ -312,6 +527,10 @@ impl Sim {
 
     pub fn card(&self) -> Ref<'_, Card> {
         Ref::map(self.st.borrow(), |s| &s.card)
+    }
+
+    pub fn card_mut(&self) -> std::cell::RefMut<'_, Card> {
+        std::cell::RefMut::map(self.st.borrow_mut(), |s| &mut s.card)
     }
 }
 

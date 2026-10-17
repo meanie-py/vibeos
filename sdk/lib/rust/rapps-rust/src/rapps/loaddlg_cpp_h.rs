@@ -67,7 +67,7 @@ unsafe extern "C" fn IsTrustedPinnedCert(Subject: LPCSTR, Issuer: LPCSTR) -> boo
         || Issuer == StrStrA(Issuer, b"US\r\nLet's Encrypt\r\nYR\0".as_ptr() as LPCSTR) as LPCSTR;
 }
 #[no_mangle]
-pub unsafe extern "C" fn LoadStatusString(StatusParam: DownloadStatus) -> CStringW {
+pub unsafe fn LoadStatusString(StatusParam: DownloadStatus) -> CStringW {
     let mut szString = CStringW::new();
     szString.LoadStringW(StatusParam as UINT);
     return szString;

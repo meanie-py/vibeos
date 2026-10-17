@@ -1,11 +1,9 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::macros::*;
 use ntkrnl_sys::ddk::{FILE_COMPLETION_INFORMATION, _FILE_INFORMATION_CLASS_FileCompletionInformation as FileCompletionInformation, _IO_STATUS_BLOCK, LARGE_INTEGER, LIST_ENTRY, NtClose, NtCreateIoCompletion, NtDelayExecution, NtDuplicateObject, NtOpenThreadToken, NtQueryInformationThread, NtQueueApcThread, NtRemoveIoCompletion, NtResumeThread, NtSetInformationFile, NtSetInformationThread, NtSetIoCompletion, NtTerminateThread, PHANDLE, PIO_APC_ROUTINE, PKNORMAL_ROUTINE,  PTHREAD_START_ROUTINE, RTL_CRITICAL_SECTION, RtlAllocateHeap, RtlCreateUserThread, RtlDeleteCriticalSection, RtlEnterCriticalSection, RtlFreeHeap, RtlInitializeCriticalSection, RtlLeaveCriticalSection, _THREADINFOCLASS_ThreadImpersonationToken as ThreadImpersonationToken, _THREADINFOCLASS_ThreadIsIoPending as ThreadIsIoPending};
-use core::ffi::c_void;
 use crate::types::*;
 // TimerThreadHandle + RtlpInitializeTimerThread live in the timerqueue
 // module (same C cohab set: workitem queues persistent items onto it).

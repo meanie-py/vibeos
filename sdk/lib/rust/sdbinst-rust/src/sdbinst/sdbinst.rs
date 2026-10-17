@@ -781,14 +781,14 @@ pub unsafe extern "C" fn SdbInstall(sdbPath: LPCWSTR) -> BOOL {
         // Process exe tags
         hres = ProcessExe(pdb, tagDb, guidDbStr.as_mut_ptr(), currentTime.QuadPart, (TRUE) as BOOL);
         if hres < 0 {
-            wprintf(RUSTCONV_WSTR_CBB505B9B1BA.as_ptr(), res);
+            wprintf(RUSTCONV_WSTR_CBB505B9B1BA.as_ptr(), hres);
             break 'end;
         }
 
         // Proess layer tags
         hres = ProcessLayers(pdb, tagDb, guidDbStr.as_mut_ptr(), currentTime.QuadPart, (TRUE) as BOOL);
         if hres < 0 {
-            wprintf(RUSTCONV_WSTR_9773E0E4F755.as_ptr(), res);
+            wprintf(RUSTCONV_WSTR_9773E0E4F755.as_ptr(), hres);
             break 'end;
         }
 
@@ -801,9 +801,12 @@ pub unsafe extern "C" fn SdbInstall(sdbPath: LPCWSTR) -> BOOL {
 
         wprintf(RUSTCONV_WSTR_7DF9AD16FAD2.as_ptr(), sysdirPatchPath.as_mut_ptr());
 
-        res = CopySdbToAppPatch(sdbPath, sysdirPatchPath.as_mut_ptr());
-        if res < 0 {
-            wprintf(RUSTCONV_WSTR_D2462099E24D.as_ptr(), res);
+        // The C stores this HRESULT in its BOOL result, so a failed copy left res negative --
+        // nonzero, i.e. TRUE -- and SdbInstall reported success. The status prints below and
+        // above printed res (FALSE) where they meant hres.
+        hres = CopySdbToAppPatch(sdbPath, sysdirPatchPath.as_mut_ptr());
+        if hres < 0 {
+            wprintf(RUSTCONV_WSTR_D2462099E24D.as_ptr(), hres);
             break 'end;
         }
 
@@ -1228,6 +1231,16 @@ pub unsafe extern "C" fn _tmain(argc: i32, argv: *mut LPWSTR) -> i32 {
         }
 
         i += 1;
+    }
+
+    // Install and path-based uninstall need a path. The C went on with sdbPath NULL --
+    // `sdbinst -u` alone, or no arguments at all after the help -- and SdbUninstall's
+    // wcslen(NULL) faulted (SdbInstall handed NULL to SdbOpenDatabase).
+    if sdbPath.is_null() && isUninstByGuid == 0 && isUninstByName == 0 {
+        if argc >= 2 {
+            ShowHelp();
+        }
+        return ERROR_INVALID_PARAMETER as i32;
     }
 
     if isInstall != 0 {

@@ -11,14 +11,10 @@ spec2def(mfplat.dll mfplat.spec ADD_IMPORTLIB)
 # mediatype.c  # replaced by Rust (sdk/lib/rust/mfplat-rust/src/mfplat/mediatype.rs)
 # queue.c  # replaced by Rust (sdk/lib/rust/mfplat-rust/src/mfplat/queue.rs)
 # sample.c  # replaced by Rust (sdk/lib/rust/mfplat-rust/src/mfplat/sample.rs)
-set(MFPLAT_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/dmoguids/libdmoguids.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/mfuuid/libmfuuid.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/strmiids/libstrmiids.a)
 add_cargo_module(mfplat mfplat-cargo mfplat.dll
     KIND win32dll
     BODY_CRATE mfplat-rust
     DESTINATION reactos/system32
     DELAY_IMPORTS
-    EXTRA_DEPENDS ${MFPLAT_REUSED} psdk uuid_sources)
+    EXTRA_DEPENDS psdk uuid_sources wineheaders)
 add_dependencies(mfplat psdk wineheaders)

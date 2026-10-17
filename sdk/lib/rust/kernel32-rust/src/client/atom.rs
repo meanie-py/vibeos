@@ -2,12 +2,13 @@
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 
 use ntdll_sys::nt::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::k32_externs::BaseSetLastNTError;
 use core::ffi::c_void;
 
 // ---- cohab import surface (atom.c calls these from other TUs) ----
 extern "system" {
     // kernel32 Base* helper (kernel32.h)
-    fn BaseSetLastNTError(Status: NTSTATUS) -> DWORD;
 }
 
 // RtlGetProcessHeap() is a macro `(NtCurrentPeb()->ProcessHeap)`, not an export.

@@ -1,4 +1,7 @@
 use win32k_sys::win32k::*;
+// The crate's own functions: the definition is the declaration.
+use crate::windows::class::GetWindowLongPtrW;
+use crate::windows::rect::IsRectEmpty;
 use core::ffi::c_void;
 
 // FASTCALL ValidateHwnd + UserApiHook family + the guah/gfServerProcess globals and
@@ -75,7 +78,6 @@ extern "system" {
     fn GetSystemMetrics(nIndex: i32) -> i32;
     fn GetParent(hWnd: HWND) -> HWND;
     fn GetWindowLongW(hWnd: HWND, nIndex: core::ffi::c_int) -> i32;
-    fn GetWindowLongPtrW(hWnd: HWND, nIndex: core::ffi::c_int) -> isize;
     fn SendMessageW(hWnd: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     fn PtInRect(lprc: *const RECT, pt: POINT) -> BOOL;
     fn ReleaseDC(hwnd: HWND, hdc: HDC) -> INT;
@@ -94,7 +96,6 @@ extern "system" {
     fn DefWindowProcW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     fn SetLastError(dwErrCode: DWORD);
     fn OffsetRect(lprc: *mut RECT, dx: INT, dy: INT) -> BOOL;
-    fn IsRectEmpty(lprc: *const RECT) -> BOOL;
     fn SelectObject(hdc: HDC, h: *mut c_void) -> *mut c_void;
     fn PatBlt(hdc: HDC, x: INT, y: INT, w: INT, h: INT, rop: DWORD) -> BOOL;
     fn DrawEdge(hdc: HDC, qrc: LPRECT, edge: UINT, grfFlags: UINT) -> BOOL;
@@ -486,7 +487,7 @@ unsafe fn IntDrawScrollBar(Wnd: HWND, DC: HDC, Bar: INT) {
             Vertical = 1;
         }
         SB_CTL => {
-            Vertical = ((GetWindowLongPtrW(Wnd, GWL_STYLE) & SBS_VERT as isize) != 0) as BOOL;
+            Vertical = ((GetWindowLongPtrW(Wnd, GWL_STYLE) & (SBS_VERT as LONG_PTR)) != 0) as BOOL;
         }
         _ => {
             return;
@@ -883,7 +884,7 @@ unsafe fn IntScrollHandleKbdEventImpl(Wnd: HWND, mut wParam: WPARAM, lParam: LPA
 
     SendMessageW(
         GetParent(Wnd),
-        if 0 != (GetWindowLongPtrW(Wnd, GWL_STYLE as core::ffi::c_int) & SBS_VERT as isize) {
+        if 0 != (GetWindowLongPtrW(Wnd, GWL_STYLE as core::ffi::c_int) & (SBS_VERT as LONG_PTR)) {
             WM_VSCROLL
         } else {
             WM_HSCROLL
@@ -927,7 +928,7 @@ unsafe fn IntScrollHandleScrollEvent(Wnd: HWND, SBType: INT, Msg: UINT, mut Pt: 
     );
 
     if SBType == SB_CTL as INT
-        && (GetWindowLongPtrW(Wnd, GWL_STYLE) & ((SBS_SIZEGRIP | SBS_SIZEBOX) as isize)) != 0
+        && (GetWindowLongPtrW(Wnd, GWL_STYLE) & (((SBS_SIZEGRIP | SBS_SIZEBOX) as LONG_PTR))) != 0
     {
         match Msg {
             WM_LBUTTONDOWN => {
@@ -965,7 +966,7 @@ unsafe fn IntScrollHandleScrollEvent(Wnd: HWND, SBType: INT, Msg: UINT, mut Pt: 
     } else if SB_HORZ as INT == SBType {
         Vertical = 0;
     } else {
-        Vertical = (0 != (GetWindowLongPtrW(Wnd, GWL_STYLE) & (SBS_VERT as isize))) as BOOL;
+        Vertical = (0 != (GetWindowLongPtrW(Wnd, GWL_STYLE) & ((SBS_VERT as LONG_PTR)))) as BOOL;
     }
     WndOwner = if SB_CTL as INT == SBType { GetParent(Wnd) } else { Wnd };
     WndCtl = if SB_CTL as INT == SBType { Wnd } else { core::ptr::null_mut() };
@@ -985,7 +986,7 @@ unsafe fn IntScrollHandleScrollEvent(Wnd: HWND, SBType: INT, Msg: UINT, mut Pt: 
             TrackThumbPos = ScrollBarInfo.xyThumbTop as UINT;
             PrevPt = Pt;
             if SBType == SB_CTL as INT
-                && (GetWindowLongPtrW(Wnd, GWL_STYLE) & (WS_TABSTOP as isize)) != 0
+                && (GetWindowLongPtrW(Wnd, GWL_STYLE) & ((WS_TABSTOP as LONG_PTR))) != 0
             {
                 SetFocus(Wnd);
             }
@@ -1524,9 +1525,9 @@ pub unsafe extern "system" fn ScrollBarWndProc_common(
 
             Dc = if wParam != 0 { wParam as HDC } else { BeginPaint(Wnd, &mut Ps) };
 
-            if GetWindowLongPtrW(Wnd, GWL_STYLE) & SBS_SIZEGRIP as isize != 0 {
+            if GetWindowLongPtrW(Wnd, GWL_STYLE) & (SBS_SIZEGRIP as LONG_PTR) != 0 {
                 IntScrollDrawSizeGrip(Wnd, Dc);
-            } else if GetWindowLongPtrW(Wnd, GWL_STYLE) & SBS_SIZEBOX as isize != 0 {
+            } else if GetWindowLongPtrW(Wnd, GWL_STYLE) & (SBS_SIZEBOX as LONG_PTR) != 0 {
                 let mut Rect: RECT = core::mem::zeroed();
                 GetClientRect(Wnd, &mut Rect);
                 FillRect(Dc, &mut Rect, GetSysColorBrush(COLOR_SCROLLBAR as i32));

@@ -27,7 +27,7 @@ type c_char = i8;
 // stdcall function: on i386 raw-dylib imports the decorated name `RtlAssert@16`, the kernel
 // exports `RtlAssert`, and freeldr refuses to load the driver.
 extern "system" {
-    fn RtlAssert(FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: PVOID);
+    pub fn RtlAssert(FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: PVOID);
 }
 // HalDispatchTable is an ntoskrnl data export (cross-DLL data → raw-dylib).
 #[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]

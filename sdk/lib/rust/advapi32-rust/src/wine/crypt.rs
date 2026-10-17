@@ -1,4 +1,14 @@
 use crate::prelude::*;
+// The crate's own functions: the definition is the declaration.
+use crate::reg_reg::RegCloseKey;
+use crate::reg_reg::RegDeleteValueW;
+use crate::reg_reg::RegEnumKeyExW;
+use crate::reg_reg::RegEnumKeyW;
+use crate::reg_reg::RegOpenKeyExW;
+use crate::reg_reg::RegOpenKeyW;
+use crate::reg_reg::RegQueryInfoKeyW;
+use crate::reg_reg::RegQueryValueExW;
+use crate::reg_reg::RegSetValueExW;
 use core::ffi::c_void;
 
 extern "C" {
@@ -22,15 +32,6 @@ unsafe fn strlenW(s: PCWSTR) -> usize { wcslen(s) }
 // Reg* error-code returns used as DWORD here; DWORD-returning local decls shadow
 // the prelude's LONG ones (same advapi32 reg exports — ABI-identical).
 extern "system" {
-    fn RegCloseKey(hKey: HKEY) -> DWORD;
-    fn RegOpenKeyW(hKey: HKEY, lpSubKey: LPCWSTR, phkResult: *mut HKEY) -> DWORD;
-    fn RegOpenKeyExW(hKey: HKEY, lpSubKey: *const u16, ulOptions: DWORD, samDesired: DWORD, phkResult: *mut HKEY) -> DWORD;
-    fn RegQueryValueExW(hKey: HKEY, lpValueName: *const u16, lpReserved: *mut DWORD, lpType: *mut DWORD, lpData: LPBYTE, lpcbData: *mut DWORD) -> DWORD;
-    fn RegSetValueExW(hKey: HKEY, lpValueName: *const u16, Reserved: DWORD, dwType: DWORD, lpData: *const u8, cbData: DWORD) -> DWORD;
-    fn RegDeleteValueW(hKey: HKEY, lpValueName: LPCWSTR) -> DWORD;
-    fn RegEnumKeyW(hKey: HKEY, dwIndex: DWORD, lpName: LPWSTR, cchName: DWORD) -> DWORD;
-    fn RegEnumKeyExW(hKey: HKEY, dwIndex: DWORD, lpName: *mut u16, lpcchName: *mut DWORD, lpReserved: *mut DWORD, lpClass: *mut u16, lpcchClass: *mut DWORD, lpftLastWriteTime: *mut FILETIME) -> DWORD;
-    fn RegQueryInfoKeyW(hKey: HKEY, lpClass: *mut u16, lpcchClass: *mut DWORD, lpReserved: *mut DWORD, lpcSubKeys: *mut DWORD, lpcbMaxSubKeyLen: *mut DWORD, lpcbMaxClassLen: *mut DWORD, lpcValues: *mut DWORD, lpcbMaxValueNameLen: *mut DWORD, lpcbMaxValueLen: *mut DWORD, lpcbSecurityDescriptor: *mut DWORD, lpftLastWriteTime: *mut FILETIME) -> DWORD;
 }
 
 // wine/crypt.c: #define CRYPT_Alloc(size) (LocalAlloc(LMEM_ZEROINIT, size)).
@@ -300,7 +301,7 @@ unsafe fn CRYPT_CreateMachineGuid() {
             core::ptr::null_mut(),
             &mut size,
         );
-        if r == ERROR_FILE_NOT_FOUND {
+        if (r) as u32 == ERROR_FILE_NOT_FOUND {
             let mut uuid: UUID = core::mem::zeroed();
             let mut buf: [u16; 37] = [0; 37];
             // L"%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x" (48 wide chars + NUL).
@@ -443,7 +444,7 @@ pub unsafe extern "system" fn CryptAcquireContextW(
                 }
             }
             CRYPT_Free(keyname as _);
-            r = RegQueryValueExW(key, nameW.as_ptr(), core::ptr::null_mut(), &mut keytype, core::ptr::null_mut(), &mut len);
+            r = (RegQueryValueExW(key, nameW.as_ptr(), core::ptr::null_mut(), &mut keytype, core::ptr::null_mut(), &mut len)) as u32;
             if r != ERROR_SUCCESS || len == 0 || keytype != REG_SZ {
                 RegCloseKey(key);
                 SetLastError(NTE_PROV_TYPE_ENTRY_BAD as DWORD);
@@ -455,7 +456,7 @@ pub unsafe extern "system" fn CryptAcquireContextW(
                 SetLastError(ERROR_NOT_ENOUGH_MEMORY);
                 break 'error;
             }
-            r = RegQueryValueExW(key, nameW.as_ptr(), core::ptr::null_mut(), core::ptr::null_mut(), provname as LPBYTE, &mut len);
+            r = (RegQueryValueExW(key, nameW.as_ptr(), core::ptr::null_mut(), core::ptr::null_mut(), provname as LPBYTE, &mut len)) as u32;
             if r != ERROR_SUCCESS {
                 RegCloseKey(key);
                 SetLastError(NTE_PROV_TYPE_ENTRY_BAD as DWORD);
@@ -472,14 +473,14 @@ pub unsafe extern "system" fn CryptAcquireContextW(
         }
 
         keyname = CRYPT_GetProvKeyName(provname);
-        r = RegOpenKeyW(HKEY_LOCAL_MACHINE, keyname, &mut key);
+        r = (RegOpenKeyW(HKEY_LOCAL_MACHINE, keyname, &mut key)) as u32;
         CRYPT_Free(keyname as _);
         if r != ERROR_SUCCESS {
             SetLastError(NTE_KEYSET_NOT_DEF as DWORD);
             break 'error;
         }
         len = core::mem::size_of::<DWORD>() as DWORD;
-        r = RegQueryValueExW(key, typeW.as_ptr(), core::ptr::null_mut(), core::ptr::null_mut(), &mut type_ as *mut DWORD as LPBYTE, &mut len);
+        r = (RegQueryValueExW(key, typeW.as_ptr(), core::ptr::null_mut(), core::ptr::null_mut(), &mut type_ as *mut DWORD as LPBYTE, &mut len)) as u32;
         if r != ERROR_SUCCESS {
             SetLastError(NTE_PROV_TYPE_ENTRY_BAD as DWORD);
             break 'error;
@@ -489,7 +490,7 @@ pub unsafe extern "system" fn CryptAcquireContextW(
             break 'error;
         }
 
-        r = RegQueryValueExW(key, imagepathW.as_ptr(), core::ptr::null_mut(), &mut keytype, core::ptr::null_mut(), &mut len);
+        r = (RegQueryValueExW(key, imagepathW.as_ptr(), core::ptr::null_mut(), &mut keytype, core::ptr::null_mut(), &mut len)) as u32;
         if r != ERROR_SUCCESS || keytype != REG_SZ {
             RegCloseKey(key);
             SetLastError(NTE_PROV_TYPE_ENTRY_BAD as DWORD);
@@ -501,7 +502,7 @@ pub unsafe extern "system" fn CryptAcquireContextW(
             SetLastError(ERROR_NOT_ENOUGH_MEMORY);
             break 'error;
         }
-        r = RegQueryValueExW(key, imagepathW.as_ptr(), core::ptr::null_mut(), core::ptr::null_mut(), temp as LPBYTE, &mut len);
+        r = (RegQueryValueExW(key, imagepathW.as_ptr(), core::ptr::null_mut(), core::ptr::null_mut(), temp as LPBYTE, &mut len)) as u32;
         if r != ERROR_SUCCESS {
             RegCloseKey(key);
             SetLastError(NTE_PROV_TYPE_ENTRY_BAD as DWORD);
@@ -1144,12 +1145,12 @@ pub unsafe extern "system" fn CryptEnumProvidersW(
         let result: DWORD;
         let mut subkey: HKEY = core::ptr::null_mut();
 
-        result = RegEnumKeyW(
+        result = (RegEnumKeyW(
             hKey,
             dwIndex,
             pszProvName,
             *pcbProvName / core::mem::size_of::<WCHAR>() as DWORD,
-        );
+        )) as u32;
         if result != 0 {
             SetLastError(result);
             RegCloseKey(hKey);
@@ -1331,14 +1332,14 @@ pub unsafe extern "system" fn CryptEnumProviderTypesW(
     *pdwProvType = (*pdwProvType).wrapping_add((*ch as DWORD).wrapping_sub(b'0' as DWORD) * 100);
     CRYPT_Free(keyname as *mut _);
 
-    result = RegQueryValueExW(
+    result = (RegQueryValueExW(
         hSubkey,
         typenameW.as_ptr(),
         core::ptr::null_mut(),
         &mut dwType,
         pszTypeName as LPBYTE,
         pcbTypeName,
-    );
+    )) as u32;
     if result != 0 {
         SetLastError(result);
         RegCloseKey(hSubkey);
@@ -1557,14 +1558,14 @@ pub unsafe extern "system" fn CryptGetDefaultProviderW(
     }
     CRYPT_Free(keyname as LPVOID);
 
-    result = RegQueryValueExW(
+    result = (RegQueryValueExW(
         hKey,
         nameW.as_ptr(),
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         pszProvName as LPBYTE,
         pcbProvName,
-    );
+    )) as u32;
     RegCloseKey(hKey);
 
     if result != 0 {

@@ -1,11 +1,12 @@
 use winedebug_rust::{TRACE};
+// The crate's own functions: the definition is the declaration.
+use crate::client::utils::Basep8BitStringToDynamicUnicodeString;
 use ntdll_sys::nt::*;
 use crate::prelude::*;
 use core::ffi::c_void;
 use crate::k32_externs::{InitializeObjectAttributes, RtlCopyMemory, CloseHandle};
 
 extern "system" {
-    fn Basep8BitStringToDynamicUnicodeString( DestinationString: *mut _UNICODE_STRING, Source: LPCSTR, ) -> BOOLEAN;
     // sibling kernel32 modules (cohab-resolved at link)
     fn QueryDosDeviceW(lpDeviceName: LPCWSTR, lpTargetPath: LPWSTR, ucchMax: DWORD) -> DWORD;
     fn GetComputerNameW(lpBuffer: LPWSTR, lpnSize: LPDWORD) -> BOOL;

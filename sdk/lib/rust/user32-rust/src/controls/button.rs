@@ -1,4 +1,10 @@
 use win32k_sys::win32k::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::windows::window::HeapAlloc;
+// The crate's own functions: the definition is the declaration.
+use crate::windows::draw::DrawStateW;
+use crate::windows::font::DrawTextW;
+use crate::windows::class::GetWindowLongPtrW;
 use core::ffi::c_void;
 
 use crate::internal::{LOWORD, HIWORD, MAKEWPARAM, ValidateHwnd};
@@ -26,13 +32,10 @@ const TRUE: BOOL = 1;
 extern "system" {
     fn DefWindowProcW(hwnd: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     fn DefWindowProcA(hwnd: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
-    fn GetWindowLongPtrW(hWnd: HWND, nIndex: i32) -> isize;
     fn GetWindowLongW(hwnd: HWND, index: i32) -> LONG;
     fn HeapFree(hHeap: *mut core::ffi::c_void, dwFlags: u32, lpMem: *mut core::ffi::c_void) -> i32;
-    fn HeapAlloc(hHeap: *mut core::ffi::c_void, dwFlags: u32, dwBytes: usize) -> *mut core::ffi::c_void;
     fn GetProcessHeap() -> *mut core::ffi::c_void;
     fn SelectObject(hdc: HDC, h: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
-    fn DrawTextW(hdc: HDC, lpchText: LPCWSTR, cchText: i32, lprc: *mut RECT, format: u32) -> i32;
     fn GetIconInfo(hIcon: HICON, piconinfo: *mut ICONINFO) -> i32;
     fn GetObjectW(h: *mut core::ffi::c_void, c: i32, pv: *mut core::ffi::c_void) -> i32;
     fn DeleteObject(ho: *mut core::ffi::c_void) -> i32;
@@ -53,18 +56,6 @@ extern "system" {
     fn DrawFocusRect(hDC: HDC, lprc: *const RECT) -> BOOL;
     fn DrawFrameControl(hdc: HDC, lprc: *mut RECT, uType: UINT, uState: UINT) -> BOOL;
     fn DrawEdge(hdc: HDC, qrc: *mut RECT, edge: UINT, grfFlags: UINT) -> BOOL;
-    fn DrawStateW(
-        hdc: HDC,
-        hbrFore: HBRUSH,
-        qfnCallBack: DRAWSTATEPROC,
-        lData: LPARAM,
-        wData: WPARAM,
-        x: i32,
-        y: i32,
-        cx: i32,
-        cy: i32,
-        uFlags: UINT,
-    ) -> BOOL;
     fn FillRect(hDC: HDC, lprc: *const RECT, hbr: HBRUSH) -> i32;
     fn SetRect(lprc: *mut RECT, xLeft: i32, yTop: i32, xRight: i32, yBottom: i32) -> BOOL;
     fn InflateRect(lprc: *mut RECT, dx: i32, dy: i32) -> BOOL;

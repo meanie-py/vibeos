@@ -128,7 +128,7 @@ unsafe extern "system" fn StdGlobalInterfaceTable_RegisterInterfaceInGlobal(
     /* marshal the interface */
     TRACE!("About to marshal the interface\n");
 
-    let mut hres = CreateStreamOnHGlobal(core::ptr::null_mut(), TRUE, &mut stream);
+    let mut hres = CreateStreamOnHGlobal(core::ptr::null_mut(), TRUE, (&raw mut stream).cast());
     if hres != S_OK {
         return hres;
     }

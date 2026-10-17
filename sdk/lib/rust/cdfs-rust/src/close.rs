@@ -1,8 +1,20 @@
 use ntkrnl_sys::base::*;
+// One declaration per external symbol: ddk_shims.rs.
+use crate::ddk_shims::FlagOn;
+// One declaration per external symbol: types.rs.
+use crate::types::CdDecodeFileObject;
+// The crate's own functions: the definition is the declaration.
+use crate::cdmacros::CdAcquireFcbExclusive;
+use crate::cdmacros::CdAcquireVcbShared;
+use crate::verfysup::CdCheckForDismount;
+use crate::strucsup::CdCleanupIrpContext;
+use crate::cddata::CdCompleteRequest;
+use crate::cdmacros::CdReleaseFcb;
+use crate::cdmacros::SafeNodeType;
 use ntkrnl_sys::ddk::{IoGetCurrentIrpStackLocation, PDEVICE_OBJECT, PIRP};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{FCB, IRP_CONTEXT, IRP_CONTEXT_FLAG_TOP_LEVEL_CDFS, IRP_CONTEXT_LITE, PCCB, PFCB, PIRP_CONTEXT, PIRP_CONTEXT_LITE, PVCB, THREAD_CONTEXT, TYPE_OF_OPEN, VCB, _TYPE_OF_OPEN_UnopenedFileObject as UnopenedFileObject, _TYPE_OF_OPEN_UserDirectoryOpen as UserDirectoryOpen, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen, _VCB_CONDITION_VcbMountInProgress as VcbMountInProgress, _VCB_CONDITION_VcbMounted as VcbMounted};
-use ntkrnl_sys::ddk::{IO_WORKITEM, PFILE_OBJECT, WORK_QUEUE_ITEM, WORK_QUEUE_TYPE};
+use ntkrnl_sys::ddk::{IO_WORKITEM, WORK_QUEUE_ITEM, WORK_QUEUE_TYPE};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem};
 use crate::glue::{CDFS_BUG_CHECK_CLOSE};
@@ -11,7 +23,6 @@ use crate::cddata::{CdData};
 
 // cdecl cdfs-internal routines (C defs in filobsup.c are plain cdecl, no NTAPI).
 extern "C" {
-    fn CdDecodeFileObject( IrpContext: PIRP_CONTEXT, FileObject: PFILE_OBJECT, Fcb: *mut PFCB, Ccb: *mut PCCB, ) -> TYPE_OF_OPEN;
 }
 
 extern "C" {
@@ -28,10 +39,8 @@ extern "C" {
     fn CdUnlockCdData();
 }
 extern "C" {
-    fn CdCleanupIrpContext(IrpContext: PIRP_CONTEXT, arg1: u32);
 }
 extern "C" {
-    fn CdCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
 }
 extern "C" {
     fn InsertTailList(ListHead: *mut LIST_ENTRY, Entry: *mut LIST_ENTRY);
@@ -51,13 +60,10 @@ extern "C" {
     fn CdDeleteCcb(IrpContext: PIRP_CONTEXT, Ccb: PCCB);
 }
 extern "C" {
-    fn CdCheckForDismount(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Param: i32) -> u32;
 }
 extern "C" {
-    fn FlagOn(Flags: u32, Flag: u32) -> i32;
 }
 extern "C" {
-    fn CdAcquireVcbShared(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Wait: u8) -> BOOLEAN;
 }
 extern "C" {
     fn CdFreeIrpContextLite(Ptr: *mut core::ffi::c_void);
@@ -72,7 +78,6 @@ extern "C" {
     fn CdSetThreadContext(IrpContext: *mut IRP_CONTEXT, ThreadContext: *mut THREAD_CONTEXT);
 }
 extern "C" {
-    fn SafeNodeType(Node: *mut IRP_CONTEXT) -> u32;
 }
 extern "C" {
     fn SetFlag(Flags: *mut u32, Mask: u32);
@@ -82,7 +87,6 @@ extern "C" {
 }
 extern "C" {
     // Additional cdfs-internal NTAPI routines used by the (re-)translated bodies below.
-    fn CdAcquireFcbExclusive(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Wait: BOOLEAN) -> u32;
 }
 extern "C" {
     fn CdLockVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
@@ -97,7 +101,6 @@ extern "C" {
     fn CdTeardownStructures(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, RemovedFcb: *mut BOOLEAN);
 }
 extern "C" {
-    fn CdReleaseFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
 }
 
 // ---- file-scope preamble (translated) ----
@@ -290,7 +293,7 @@ pub unsafe extern "C" fn CdQueueClose(
         //
         //  Cleanup the IrpContext.
         //
-        CdCompleteRequest(IrpContext, core::ptr::null_mut(), STATUS_SUCCESS);
+        CdCompleteRequest((IrpContext).cast(), core::ptr::null_mut(), STATUS_SUCCESS);
 
     //
     //  Otherwise drop into the async case below.
@@ -476,7 +479,7 @@ pub unsafe extern "C" fn CdFspClose(Vcb: *mut VCB) {
         }
 
         // Check node type
-        if SafeNodeType(IrpContext) != /* CDFS_NTC_IRP_CONTEXT (grind had 0x0) */ 0x0308 {
+        if SafeNodeType((IrpContext).cast()) != /* CDFS_NTC_IRP_CONTEXT (grind had 0x0) */ 0x0308 {
             // IrpContext is PIRP_CONTEXT_LITE
             let lite = IrpContext as *mut IRP_CONTEXT_LITE;
             Fcb = (*lite).Fcb;
@@ -578,7 +581,7 @@ pub unsafe extern "C" fn CdFspClose(Vcb: *mut VCB) {
         }
 
         // Complete request to cleanup IrpContext
-        CdCompleteRequest(IrpContext, core::ptr::null_mut(), STATUS_SUCCESS);
+        CdCompleteRequest((IrpContext).cast(), core::ptr::null_mut(), STATUS_SUCCESS);
     }
 
     // Release any remaining Vcb hold
@@ -609,7 +612,7 @@ pub unsafe extern "C" fn CdCommonClose(
     // ASSERT_IRP( Irp );
 
     if (*IrpContext).Vcb.is_null() {
-        CdCompleteRequest(IrpContext, Irp, STATUS_SUCCESS);
+        CdCompleteRequest((IrpContext).cast(), Irp, STATUS_SUCCESS);
         return STATUS_SUCCESS;
     }
 
@@ -622,7 +625,7 @@ pub unsafe extern "C" fn CdCommonClose(
     );
 
     if TypeOfOpen == UnopenedFileObject {
-        CdCompleteRequest(IrpContext, Irp, STATUS_SUCCESS);
+        CdCompleteRequest((IrpContext).cast(), Irp, STATUS_SUCCESS);
         return STATUS_SUCCESS;
     }
 
@@ -663,7 +666,7 @@ pub unsafe extern "C" fn CdCommonClose(
         }
     }
 
-    CdCompleteRequest(IrpContext, Irp, STATUS_SUCCESS);
+    CdCompleteRequest((IrpContext).cast(), Irp, STATUS_SUCCESS);
 
     if PotentialVcbTeardown != 0 {
         CdReleaseCdData(IrpContext);

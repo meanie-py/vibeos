@@ -9,6 +9,10 @@
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals, dead_code)]
 
 use core::ffi::c_void;
+// One declaration per external symbol: the variant matching the C prototype.
+pub use crate::prelude::CoTaskMemAlloc;
+pub use crate::prelude::HeapAlloc;
+pub use crate::prelude::HeapReAlloc;
 
 // ---------------------------------------------------------------------------
 // Base typedefs
@@ -1140,13 +1144,10 @@ pub struct ICreateTypeLib2 {
 
 extern "system" {
     // ole32
-    pub fn CoTaskMemAlloc(size: SIZE_T) -> PVOID;
     pub fn CoTaskMemFree(pv: PVOID);
     // kernel32
     pub fn GetProcessHeap() -> HANDLE;
-    pub fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: SIZE_T) -> PVOID;
     pub fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: PVOID) -> BOOL;
-    pub fn HeapReAlloc(hHeap: HANDLE, dwFlags: DWORD, lpMem: PVOID, dwBytes: SIZE_T) -> PVOID;
     pub fn OutputDebugStringA(lpOutputString: LPCSTR);
 }
 
@@ -1155,15 +1156,15 @@ pub const HEAP_ZERO_MEMORY: DWORD = 0x8;
 /// wine/heap.h helpers.
 #[inline]
 pub unsafe fn heap_alloc(len: usize) -> PVOID {
-    HeapAlloc(GetProcessHeap(), 0, len)
+    HeapAlloc(GetProcessHeap(), 0, (len) as _)
 }
 #[inline]
 pub unsafe fn heap_alloc_zero(len: usize) -> PVOID {
-    HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, len)
+    HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (len) as _)
 }
 #[inline]
 pub unsafe fn heap_realloc(mem: PVOID, len: usize) -> PVOID {
-    HeapReAlloc(GetProcessHeap(), 0, mem, len)
+    HeapReAlloc(GetProcessHeap(), 0, mem, (len) as _)
 }
 #[inline]
 pub unsafe fn heap_free(mem: PVOID) -> BOOL {

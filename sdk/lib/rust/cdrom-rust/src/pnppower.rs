@@ -1,5 +1,11 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use crate::types::*;
+// The crate's own functions: the definition is the declaration.
+use crate::ddk_shims::KeQueryTickCount;
+pub use crate::common::RequestClearSendTime;
+use crate::sense::RequestSenseInfoInterpretForScratchBuffer;
+use crate::ddk_shims::ScratchBuffer_ExecuteCdb;
+use crate::scratch::ScratchBuffer_ExecuteCdbEx;
 use kmdf_sys::*;
 use ntkrnl_sys::ddk::{IRP, PIRP, IO_STACK_LOCATION, PIO_STACK_LOCATION, GUID, LPGUID, LPCGUID, DEVICE_OBJECT, PDEVICE_OBJECT, MDL, PMDL, PIO_COMPLETION_ROUTINE};
 use ntkrnl_sys::globals::*;
@@ -16,8 +22,6 @@ use core::ffi::c_void;
 extern "system" {
     fn ScratchBuffer_BeginUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_EndUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
-    fn ScratchBuffer_ExecuteCdbEx(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, OriginalRequest: *mut core::ffi::c_void, TransferSize: u32, GetDataFromDevice: u8, Cdb: *mut CDB, OprationLength: u8, TimeoutValue: u32,) -> i32;
-    fn ScratchBuffer_ExecuteCdb(DeviceExtension: PCDROM_DEVICE_EXTENSION, OriginalRequest: *mut core::ffi::c_void, TransferSize: u32, GetDataFromDevice: u8, Cdb: PCDB, OprationLength: u8) -> NTSTATUS;
     fn DeviceGetExtension(Device: WDFDEVICE) -> *mut CDROM_DEVICE_EXTENSION;
     // DeviceSendPowerDownProcessRequest resolves from crate::types (canonical
     // signature: (PCDROM_DEVICE_EXTENSION, PFN_WDF_REQUEST_COMPLETION_ROUTINE, WDFCONTEXT) -> NTSTATUS).
@@ -26,15 +30,12 @@ unsafe extern "C" {
     fn TimeOutValueGetCapValue(timeOutValue: u32, value: u32) -> u32;
 }
 unsafe extern "system" {
-    fn KeQueryTickCount(TickCount: *mut ntkrnl_sys::ddk::LARGE_INTEGER);
 }
 unsafe extern "C" {
-    pub fn RequestClearSendTime(Request: WDFREQUEST);
 }
 extern "C" {
     fn ScratchBuffer_SetupSrb(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, OriginalRequest: *mut core::ffi::c_void, MaximumTransferLength: u32, GetDataFromDevice: u8);
     fn ScratchBuffer_SendSrb(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, SynchronousSrb: u8, SrbHistoryItem: *mut *mut SRB_HISTORY_ITEM,) -> i32;
-    fn RequestSenseInfoInterpretForScratchBuffer( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, TimesRetried: u32, Status: *mut NTSTATUS, RetryIn100nsUnits: *mut i64, ) -> i32;
     fn DeviceMarkActive(DeviceExtension: PCDROM_DEVICE_EXTENSION, IsActive: BOOLEAN, SetIdleTimeout: BOOLEAN,);
 }
 unsafe extern "system" {
@@ -422,7 +423,9 @@ pub unsafe extern "C" fn PowerContextEndUse(
     STATUS_SUCCESS
 }
 #[no_mangle]
-pub unsafe extern "C" fn DevicePowerSettingCallback(
+// cdrom.h: `POWER_SETTING_CALLBACK DevicePowerSettingCallback;` -- NTAPI, stdcall on i386,
+// and PoRegisterPowerSettingCallback calls it so.
+pub unsafe extern "system" fn DevicePowerSettingCallback(
     SettingGuid: *const GUID,
     Value: *mut core::ffi::c_void,
     ValueLength: u32,

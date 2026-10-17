@@ -1,4 +1,27 @@
 use ntkrnl_sys::base::*;
+// One declaration per external symbol: ddk_shims.rs.
+use crate::ddk_shims::FlagOn;
+// One declaration per external symbol: types.rs.
+use crate::types::CdDecodeFileObject;
+use crate::types::CdSetFileObject;
+// The crate's own functions: the definition is the declaration.
+use crate::cdmacros::CdAcquireFcbExclusive;
+use crate::cdmacros::CdAcquireVcbExclusive;
+use crate::cdmacros::CdAcquireVcbShared;
+use crate::cddata::CdCompleteRequest;
+use crate::strucsup::CdCreateCcb;
+use crate::dirsup::CdFindFile;
+use crate::prefxsup::CdFindPrefix;
+use crate::cdmacros::CdIncrementReferenceCounts;
+use crate::prefxsup::CdInsertPrefix;
+use crate::cdmacros::CdIsFastIoPossible;
+use crate::workque::CdOplockComplete;
+use crate::workque::CdPrePostIrp;
+use crate::cachesup::CdPurgeVolume;
+use crate::ddk_shims::CdRaiseStatus;
+use crate::cdmacros::CdReleaseFcb;
+use crate::namesup::CdUpcaseName;
+use crate::cdmacros::SafeNodeType;
 use crate::strucsup::CdCreateFcb; // the definition is the declaration
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ddk::{_FAST_IO_POSSIBLE_FastIoIsNotPossible, IoCheckShareAccess, IoGetCurrentIrpStackLocation, IoSetShareAccess, IoUpdateShareAccess, POPLOCK, POPLOCK_WAIT_COMPLETE_ROUTINE, POPLOCK_FS_PREPOST_IRP, PIRP, _UNICODE_STRING};
@@ -13,7 +36,6 @@ use crate::ddk_shims::{FsRtlCheckOplock, FsRtlCurrentBatchOplock};
 use crate::glue::{CDFS_BUG_CHECK_CREATE, Ccb, FILE_NO_INTERMEDIATE_BUFFERING, FILE_OPENED, Fcb, STATUS_CANT_WAIT, Vcb};
 
 extern "C" {
-    fn CdCreateCcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, UserCcbFlags: u32) -> *mut core::ffi::c_void;
 }
 extern "C" {
     fn CdFspClose(Vcb: *mut VCB);
@@ -25,10 +47,8 @@ extern "C" {
     fn CdIncrementCleanupCounts(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
 }
 extern "C" {
-    fn CdIncrementReferenceCounts(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, RefCount: u32, CleanupCount: u32);
 }
 extern "C" {
-    fn CdIsFastIoPossible(Fcb: *mut FCB) -> u32;
 }
 extern "C" {
     fn CdLockFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
@@ -37,13 +57,10 @@ extern "C" {
     fn CdLockVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
 }
 extern "C" {
-    fn CdPurgeVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, IgnoreReferences: u8) -> NTSTATUS;
 }
 extern "C" {
-    fn CdRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
 }
 extern "C" {
-    fn CdSetFileObject(IrpContext: *mut IRP_CONTEXT, FileObject: *mut FILE_OBJECT, TypeOfOpen: u32, Fcb: *mut FCB, Ccb: *mut core::ffi::c_void);
 }
 extern "C" {
     fn CdUnlockFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
@@ -52,16 +69,13 @@ extern "C" {
     fn CdUnlockVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
 }
 extern "C" {
-    fn FlagOn(Flags: u32, Flag: u32) -> u32;
 }
 extern "C" {
     fn SetFlag(Flags: *mut u32, Flag: u32);
 }
 extern "system" {
-    fn CdOplockComplete(Context: *mut core::ffi::c_void, Irp: PIRP) -> NTSTATUS;
 }
 extern "system" {
-    fn CdPrePostIrp(Context: *mut core::ffi::c_void, Irp: PIRP);
 }
 extern "C" {
     fn CdFidIsDirectory(fid: FILE_ID) -> u8;
@@ -82,7 +96,6 @@ extern "C" {
     fn CdSetFidPathTableOffset(fid: *mut FILE_ID, offset: i64); // def takes i64, not u32 (arg-width)
 }
 extern "C" {
-    fn CdAcquireFcbExclusive(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, SpinLock: u8) -> u8;
 }
 extern "C" {
     fn CdCleanupCompoundPathEntry(IrpContext: *mut IRP_CONTEXT, Entry: *mut COMPOUND_PATH_ENTRY);
@@ -126,7 +139,6 @@ extern "C" {
     fn CdLookupPathEntry(IrpContext: *mut IRP_CONTEXT, StreamOffset: u32, Index: u32, CaseInsensitive: u8, Entry: *mut COMPOUND_PATH_ENTRY);
 }
 extern "C" {
-    fn CdReleaseFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
 }
 extern "C" {
     fn CdVerifyOrCreateDirStreamFile(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
@@ -135,17 +147,13 @@ extern "system" {
     fn RtlCopyMemory(Destination: *mut core::ffi::c_void, Source: *const core::ffi::c_void, Length: usize);
 }
 extern "C" {
-    fn CdInsertPrefix( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Name: *const CD_NAME, IgnoreCase: u8, ReplaceParent: u8, ParentFcb: *mut FCB, );
 }
 extern "C" {
     // ---- callees for CdCommonCreate / CdNormalizeFileNames (added by hand-translation) ----
-    fn CdCompleteRequest(IrpContext: *mut core::ffi::c_void, Irp: PIRP, Status: NTSTATUS);
 }
 extern "C" {
-    fn CdAcquireVcbExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Wait: u8);
 }
 extern "C" {
-    fn CdAcquireVcbShared(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Wait: u8);
 }
 extern "C" {
     fn CdReleaseVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
@@ -154,16 +162,13 @@ extern "C" {
     fn CdVerifyVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
 }
 extern "C" {
-    fn CdDecodeFileObject(IrpContext: *mut IRP_CONTEXT, FileObject: *mut FILE_OBJECT, Fcb: *mut *mut FCB, Ccb: *mut *mut CCB) -> TYPE_OF_OPEN;
 }
 extern "C" {
     fn CdTeardownStructures(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, RemovedFcb: *mut u8);
 }
 extern "C" {
-    fn SafeNodeType(Fcb: *mut FCB) -> u32;
 }
 extern "C" {
-    fn CdFindPrefix(IrpContext: *mut IRP_CONTEXT, CurrentFcb: *mut *mut FCB, RemainingName: *mut _UNICODE_STRING, IgnoreCase: i32);
 }
 extern "C" {
     fn CdDissectName(IrpContext: *mut IRP_CONTEXT, RemainingName: *mut _UNICODE_STRING, FinalName: *mut _UNICODE_STRING);
@@ -178,16 +183,13 @@ extern "C" {
     fn CdFindFileByShortName(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Name: *mut CD_NAME, IgnoreCase: u8, ShortNameDirentOffset: u32, FileContext: *mut FILE_ENUM_CONTEXT) -> u8;
 }
 extern "C" {
-    fn CdUpcaseName(IrpContext: *mut core::ffi::c_void, Name: *mut CD_NAME, UpcaseName: *mut CD_NAME);
 }
 extern "C" {
     fn CdConvertNameToCdName(IrpContext: *mut IRP_CONTEXT, CdName: *mut CD_NAME);
 }
 extern "C" {
-    fn CdFindFile(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Name: *mut CD_NAME, IgnoreCase: i32, FileContext: *mut FILE_ENUM_CONTEXT, MatchingName: *mut *mut CD_NAME) -> i32;
 }
 extern "C" {
-    fn _SEH2_AbnormalTermination() -> i32;
 }
 extern "system" {
     fn RtlMoveMemory(Destination: *mut core::ffi::c_void, Source: *const core::ffi::c_void, Length: usize);
@@ -815,7 +817,7 @@ pub unsafe extern "C" fn CdOpenDirectoryFromPathEntry(
                         CdInsertPrefix(
                             IrpContext,
                             NextFcb,
-                            &(*PathEntry).CdDirName,
+                            &raw mut (*PathEntry).CdDirName,
                             0u8,
                             0u8,
                             ParentFcb,
@@ -824,7 +826,7 @@ pub unsafe extern "C" fn CdOpenDirectoryFromPathEntry(
                             CdInsertPrefix(
                                 IrpContext,
                                 NextFcb,
-                                &(*PathEntry).CdCaseDirName,
+                                &raw mut (*PathEntry).CdCaseDirName,
                                 1u8,
                                 0u8,
                                 ParentFcb,
@@ -1169,7 +1171,7 @@ pub unsafe extern "C" fn CdCompleteFcbOpen(
     }
 
     // Create the Ccb now.
-    Ccb = CdCreateCcb(IrpContext, Fcb, UserCcbFlags);
+    Ccb = (CdCreateCcb(IrpContext, Fcb, UserCcbFlags)).cast();
 
     // Update the share access.
     if (*Fcb).FcbCleanup == 0 {
@@ -1184,7 +1186,7 @@ pub unsafe extern "C" fn CdCompleteFcbOpen(
     }
 
     // Set the file object type.
-    CdSetFileObject(IrpContext, (*IrpSp).FileObject, TypeOfOpen, Fcb, Ccb);
+    CdSetFileObject(IrpContext, (*IrpSp).FileObject, TypeOfOpen, Fcb, (Ccb).cast());
 
     // Set the appropriate cache flags for a user file object.
     if TypeOfOpen == UserFileOpen {
@@ -1327,6 +1329,9 @@ pub unsafe extern "C" fn CdCommonCreate(
     //
     //  CDFS does not support FILE_OPEN_REQUIRING_OPLOCK
     //
+    // dead: C is #if (NTDDI_VERSION >= NTDDI_WIN7), cdfs builds at WS03, where the option is
+    // ignored rather than refused.
+    #[cfg(any())]
     if FlagOn((*IrpSp).Parameters.Create.Options, FILE_OPEN_REQUIRING_OPLOCK) != 0 {
         CdCompleteRequest(IrpContext as *mut core::ffi::c_void, Irp, STATUS_INVALID_PARAMETER);
         return STATUS_INVALID_PARAMETER;
@@ -1529,7 +1534,7 @@ pub unsafe extern "C" fn CdCommonCreate(
                     //
                     //  If this is a file verify the user didn't want to open a directory.
                     //
-                    if SafeNodeType(CurrentFcb) == CDFS_NTC_FCB_DATA {
+                    if SafeNodeType((CurrentFcb).cast()) == CDFS_NTC_FCB_DATA {
                         if FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_TRAIL_BACKSLASH) != 0
                             || FlagOn((*IrpSp).Parameters.Create.Options, FILE_DIRECTORY_FILE) != 0
                         {

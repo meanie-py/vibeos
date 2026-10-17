@@ -1,7 +1,8 @@
 use crate::prelude::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::olepropframe::CreateFontIndirectW;
 
 extern "system" {
-    fn CreateFontIndirectW(lplf: *mut LOGFONTW) -> HFONT;
     fn EnumFontFamiliesExW( hdc: HDC, lpLogfont: *mut LOGFONTW, lpProc: Option<unsafe extern "system" fn(*const LOGFONTW, *const TEXTMETRICW, DWORD, LPARAM) -> i32>, lParam: LPARAM, dwFlags: DWORD, ) -> i32;
     fn GetTextFaceW(hdc: HDC, c: i32, lpName: LPWSTR) -> i32;
     fn GetTextMetricsW(hdc: HDC, lptm: *mut TEXTMETRICW) -> BOOL;

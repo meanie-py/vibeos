@@ -1,4 +1,8 @@
 use win32k_sys::win32k::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::windows::window::HeapAlloc;
+// The crate's own functions: the definition is the declaration.
+use crate::windows::class::GetWindowLongPtrW;
 use core::ffi::c_void;
 
 // ── No-op debug macros (the C ERR/WARN/TRACE/FIXME compile to nothing under the
@@ -57,7 +61,6 @@ extern "system" {
     fn IsWindow(hwnd: HWND) -> BOOL;
     fn DefWindowProcW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     fn DefWindowProcA(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
-    fn GetWindowLongPtrW(hWnd: HWND, nIndex: core::ffi::c_int) -> LONG_PTR;
     fn SetWindowLongPtrW(hWnd: HWND, nIndex: core::ffi::c_int, dwNewLong: LONG_PTR) -> LONG_PTR;
     fn GetParent(hWnd: HWND) -> HWND;
     fn GetWindow(hWnd: HWND, uCmd: UINT) -> HWND;
@@ -67,11 +70,10 @@ extern "system" {
     // kernel32 imports.
     fn GetModuleHandleW(lpModuleName: PCWSTR) -> HMODULE;
     fn LoadLibraryW(lpLibFileName: PCWSTR) -> HMODULE;
-    fn GetProcAddress(hModule: HMODULE, lpProcName: LPCSTR) -> FARPROC;
+    pub fn GetProcAddress(hModule: HMODULE, lpProcName: LPCSTR) -> FARPROC;
     fn GetSystemDirectoryW(lpBuffer: LPWSTR, uSize: UINT) -> UINT;
     fn GetLastError() -> DWORD;
     fn GetProcessHeap() -> HANDLE;
-    fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: SIZE_T) -> LPVOID;
     fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID) -> BOOL;
     fn WinHelpW(hWndMain: HWND, lpszHelp: LPCWSTR, uCommand: UINT, dwData: ULONG_PTR) -> BOOL;
 }

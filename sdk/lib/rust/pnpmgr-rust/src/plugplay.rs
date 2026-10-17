@@ -1025,6 +1025,8 @@ unsafe fn IopGetDeviceProperty(
             PNP_PROPERTY_ADDRESS => DeviceProperty = DevicePropertyAddress,
             PNP_PROPERTY_ENUMERATOR_NAME => DeviceProperty = DevicePropertyEnumeratorName,
             PNP_PROPERTY_INSTALL_STATE => DeviceProperty = DevicePropertyInstallState,
+            // dead: C is #if (WINVER >= _WIN32_WINNT_WIN7), ntoskrnl builds at WS03
+            #[cfg(any())]
             PNP_PROPERTY_CONTAINERID => DeviceProperty = DevicePropertyContainerID,
             _ => {
                 BufferSize = 0;

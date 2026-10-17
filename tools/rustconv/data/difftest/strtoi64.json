@@ -13,6 +13,10 @@
     {
       "source": "../../../../sdk/lib/rust/cnt-rust/src/cabi/mod.rs",
       "items": ["cstr_slice"]
+    },
+    {
+      "source": "../../../../sdk/lib/rust/cnt-rust/src/cabi/memops.rs",
+      "items": ["str_len8"]
     }
   ],
   "rust_support": {"core_rs": "radix_core.rs"},

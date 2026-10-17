@@ -172,7 +172,10 @@ extern "system" {
     pub fn EnumFontsW( arg1: HDC, arg2: LPCWSTR, arg3: FONTENUMPROCW, arg4: LPARAM, ) -> ::core::ffi::c_int; // aclui-rust/src/types_i386.rs
     pub fn FindWindowW(arg1: LPCWSTR, arg2: LPCWSTR) -> HWND; // aclui-rust/src/types_i386.rs
     pub fn GetClassNameW( hWnd: HWND, lpClassName: LPWSTR, nMaxCount: ::core::ffi::c_int, ) -> ::core::ffi::c_int; // aclui-rust/src/types_i386.rs
-    #[cfg_attr(target_arch = "x86", link_name = "GetWindowLongW")]
+    // i386 only: there `GetWindowLongPtrW` is a winuser.h macro for `GetWindowLongW`, so the island has no
+    // declaration of it. On 64-bit the island's header-exact one is used.
+    #[cfg(target_arch = "x86")]
+    #[link_name = "GetWindowLongW"]
     pub fn GetWindowLongPtrW(hWnd: HWND, nIndex: INT) -> LONG_PTR; // shell32-rust/src/copy_to_menu.rs
     pub fn LoadCursorW(arg1: HINSTANCE, arg2: LPCWSTR) -> HCURSOR; // aclui-rust/src/types_i386.rs
     pub fn PostMessageW(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> BOOL; // aclui-rust/src/types_i386.rs
@@ -181,7 +184,10 @@ extern "system" {
     pub fn RegOpenKeyExW( arg1: HKEY, arg2: LPCWSTR, arg3: DWORD, arg4: REGSAM, arg5: PHKEY, ) -> LSTATUS; // desk-rust/src/types_i386.rs
     pub fn RegisterClassExW(arg1: *const WNDCLASSEXW) -> ATOM; // aclui-rust/src/types_i386.rs
     pub fn SendMessageTimeoutW( arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM, arg5: UINT, arg6: UINT, arg7: PDWORD_PTR, ) -> LRESULT; // aclui-rust/src/types_i386.rs
-    #[cfg_attr(target_arch = "x86", link_name = "SetWindowLongW")]
+    // i386 only: there `SetWindowLongPtrW` is a winuser.h macro for `SetWindowLongW`, so the island has no
+    // declaration of it. On 64-bit the island's header-exact one is used.
+    #[cfg(target_arch = "x86")]
+    #[link_name = "SetWindowLongW"]
     pub fn SetWindowLongPtrW(hWnd: HWND, nIndex: INT, dwNewLong: LONG_PTR) -> LONG_PTR; // shell32-rust/src/copy_to_menu.rs
     pub fn SetWindowTextW(arg1: HWND, arg2: LPCWSTR) -> BOOL; // aclui-rust/src/types_i386.rs
     pub fn SystemParametersInfoW( uiAction: UINT, uiParam: UINT, pvParam: PVOID, fWinIni: UINT, ) -> BOOL; // aclui-rust/src/types_i386.rs

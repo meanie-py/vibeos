@@ -444,6 +444,22 @@ pub use winelist_rust::{
 // Semantics match the C: return values follow the Win32 contracts.
 // ---------------------------------------------------------------------------
 use core::sync::atomic::{AtomicI32, AtomicPtr, Ordering};
+// One declaration per external symbol: the variant matching the C prototype.
+pub use crate::compobj::ffi::HeapAlloc;
+// The crate's own functions: the definition is the declaration.
+pub use crate::compobj::compobj::CoCreateInstance;
+pub use crate::marshal::marshal::CoMarshalInterface;
+pub use crate::marshal::marshal::CoReleaseMarshalData;
+pub use crate::marshal::marshal::CoUnmarshalInterface;
+pub use crate::ring::hglobalstream::CreateStreamOnHGlobal;
+pub use crate::marshal::rpc::RPC_ExecuteCall;
+pub use crate::marshal::marshal::apartment_disconnectproxies;
+pub use crate::marshal::git::get_std_git;
+pub use crate::marshal::stubmanager::get_stub_manager_from_object;
+pub use crate::marshal::stubmanager::stub_manager_disconnect;
+pub use crate::marshal::stubmanager::stub_manager_ext_addref;
+pub use crate::marshal::stubmanager::stub_manager_ext_release;
+pub use crate::marshal::stubmanager::stub_manager_int_release;
 
 #[inline]
 pub unsafe fn InterlockedIncrement(addend: *mut LONG) -> LONG {
@@ -1638,7 +1654,6 @@ pub type LPTHREAD_START_ROUTINE = unsafe extern "system" fn(LPVOID) -> DWORD;
 // ---------------------------------------------------------------------------
 extern "system" {
     pub fn GetProcessHeap() -> HANDLE;
-    pub fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: SIZE_T) -> PVOID;
     pub fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: PVOID) -> BOOL;
     pub fn GetCurrentProcessId() -> DWORD;
     pub fn GetCurrentThreadId() -> DWORD;
@@ -1843,13 +1858,6 @@ extern "system" {
         riid: REFIID,
         ppv: *mut *mut c_void,
     ) -> HRESULT;
-    pub fn CoCreateInstance(
-        rclsid: REFCLSID,
-        pUnkOuter: *mut IUnknown,
-        dwClsContext: DWORD,
-        riid: REFIID,
-        ppv: *mut *mut c_void,
-    ) -> HRESULT;
     pub fn CoCreateGuid(pguid: *mut GUID) -> HRESULT;
     pub fn StringFromGUID2(rguid: REFGUID, lpsz: LPWSTR, cchMax: c_int) -> c_int;
     pub fn CoWaitForMultipleHandles(
@@ -1863,11 +1871,6 @@ extern "system" {
     pub fn CoTaskMemAlloc(size: SIZE_T) -> PVOID;
     pub fn CoTaskMemFree(ptr: PVOID);
     // hglobalstream.c (still C, Tier M)
-    pub fn CreateStreamOnHGlobal(
-        hGlobal: *mut c_void,
-        fDeleteOnRelease: BOOL,
-        ppstm: *mut *mut IStream,
-    ) -> HRESULT;
 }
 
 // ---------------------------------------------------------------------------
@@ -1913,16 +1916,7 @@ extern "C" {
         dest_context_data: *mut c_void,
         mshlflags: MSHLFLAGS,
     ) -> HRESULT;
-    pub fn apartment_disconnectproxies(apt: *mut apartment) -> HRESULT;
     // stubmanager.rs
-    pub fn stub_manager_int_release(This: *mut stub_manager) -> ULONG;
-    pub fn stub_manager_ext_addref(m: *mut stub_manager, refs: ULONG, tableweak: BOOL) -> ULONG;
-    pub fn stub_manager_ext_release(
-        m: *mut stub_manager,
-        refs: ULONG,
-        tableweak: BOOL,
-        last_unlock_releases: BOOL,
-    ) -> ULONG;
     pub fn stub_manager_new_ifstub(
         m: *mut stub_manager,
         sb: *mut IRpcStubBuffer,
@@ -1937,11 +1931,6 @@ extern "C" {
         flags: MSHLFLAGS,
     ) -> *mut ifstub;
     pub fn get_stub_manager(apt: *mut apartment, oid: OID) -> *mut stub_manager;
-    pub fn get_stub_manager_from_object(
-        apt: *mut apartment,
-        object: *mut IUnknown,
-        alloc: BOOL,
-    ) -> *mut stub_manager;
     pub fn stub_manager_notify_unmarshal(m: *mut stub_manager, ipid: *const IPID) -> BOOL;
     pub fn stub_manager_is_table_marshaled(m: *mut stub_manager, ipid: *const IPID) -> BOOL;
     pub fn stub_manager_release_marshal_data(
@@ -1950,7 +1939,6 @@ extern "C" {
         ipid: *const IPID,
         tableweak: BOOL,
     );
-    pub fn stub_manager_disconnect(m: *mut stub_manager);
     pub fn ipid_get_dispatch_params(
         ipid: *const IPID,
         stub_apt: *mut *mut apartment,
@@ -1978,12 +1966,10 @@ extern "C" {
         dest_context_data: *mut c_void,
         chan: *mut *mut IRpcChannelBuffer,
     ) -> HRESULT;
-    pub fn RPC_ExecuteCall(params: *mut dispatch_params);
     pub fn RPC_RegisterInterface(riid: REFIID) -> HRESULT;
     pub fn RPC_UnregisterInterface(riid: REFIID, wait: BOOL);
     pub fn RPC_ResolveOxid(oxid: OXID, oxid_info: *mut OXID_INFO) -> HRESULT;
     // git.rs
-    pub fn get_std_git() -> *mut IGlobalInterfaceTable;
 }
 
 // Exported (OLE32.@) functions owned by this lane's marshal.rs, called
@@ -1991,16 +1977,6 @@ extern "C" {
 // CoUnmarshalInterface, CoReleaseMarshalData; ftmarshal.c →
 // CoGetStandardMarshal). WINAPI → extern "system".
 extern "system" {
-    pub fn CoMarshalInterface(
-        pStream: *mut IStream,
-        riid: REFIID,
-        pUnk: *mut IUnknown,
-        dwDestContext: DWORD,
-        pvDestContext: *mut c_void,
-        mshlFlags: DWORD,
-    ) -> HRESULT;
-    pub fn CoUnmarshalInterface(pStream: *mut IStream, riid: REFIID, ppv: *mut LPVOID) -> HRESULT;
-    pub fn CoReleaseMarshalData(pStream: *mut IStream) -> HRESULT;
     pub fn CoGetStandardMarshal(
         riid: REFIID,
         pUnk: *mut IUnknown,

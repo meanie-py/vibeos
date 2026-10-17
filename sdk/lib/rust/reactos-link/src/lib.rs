@@ -2504,6 +2504,19 @@ impl Linker {
             }
             // Any other cmake C target, by name: `engine:c:<target>`.
             o if o.starts_with("c:") => self.replay_target(&o[2..], ar),
+            // Any `rust_staticlib_variant(<name> <crate> "<features>" <defaults>)` archive,
+            // spelled `engine:crate:<crate>:<features,...>:<TRUE|FALSE>` by
+            // tools/cargo_cell_gen.py: that function's `cargo build -p <crate>` on the
+            // builtin triple, which `engine_crate` repeats. (A variant that passes ENV keeps
+            // a named arm above.)
+            o if o.starts_with("crate:") => {
+                let mut parts = o["crate:".len()..].splitn(3, ':');
+                let krate = parts.next().unwrap_or_default();
+                let features: Vec<&str> =
+                    parts.next().unwrap_or_default().split(',').filter(|f| !f.is_empty()).collect();
+                let defaults = matches!(parts.next(), Some("TRUE" | "ON" | "1" | "YES"));
+                self.engine_crate(krate, &features, defaults)
+            }
             "oldnames" => {
                 let def = self.repo_root.join("sdk/lib/crt/moldname-msvcrt.def");
                 println!("cargo:rerun-if-changed={}", def.display());

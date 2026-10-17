@@ -239,7 +239,7 @@ fn ClassMoniker_Load(iface: *mut IMoniker, stream: *mut IStream) -> HRESULT {
             HeapFree(GetProcessHeap(), 0, (*moniker).data as LPVOID);
         }
         (*moniker).data =
-            HeapAlloc(GetProcessHeap(), 0, (*moniker).header.data_len as SIZE_T) as *mut WCHAR;
+            HeapAlloc(GetProcessHeap(), 0, (*moniker).header.data_len as usize) as *mut WCHAR;
         if (*moniker).data.is_null() {
             WARN!(
                 b"Failed to allocate moniker data of size %u.\n\0".as_ptr(),
@@ -779,7 +779,7 @@ unsafe fn create_class_moniker(
     let object = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        core::mem::size_of::<ClassMoniker>() as SIZE_T,
+        core::mem::size_of::<ClassMoniker>() as usize,
     ) as *mut ClassMoniker;
 
     if object.is_null() {
@@ -795,7 +795,7 @@ unsafe fn create_class_moniker(
         (*object).header.data_len = ((data_len + 1) * core::mem::size_of::<WCHAR>()) as DWORD;
 
         (*object).data =
-            HeapAlloc(GetProcessHeap(), 0, (*object).header.data_len as SIZE_T) as *mut WCHAR;
+            HeapAlloc(GetProcessHeap(), 0, (*object).header.data_len as usize) as *mut WCHAR;
         if (*object).data.is_null() {
             IMoniker_Release(core::ptr::addr_of_mut!((*object).IMoniker_iface));
             return E_OUTOFMEMORY;

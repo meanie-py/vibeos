@@ -1,5 +1,20 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::base::*;
+// One declaration per external symbol: ddk_shims.rs.
+use crate::ddk_shims::FlagOn;
+// The crate's own functions: the definition is the declaration.
+use crate::strucsup::CdCleanupIrpContext;
+use crate::cleanup::CdCommonCleanup;
+use crate::create::CdCommonCreate;
+use crate::devctrl::CdCommonDevControl;
+use crate::dirctrl::CdCommonDirControl;
+use crate::fsctrl::CdCommonFsControl;
+use crate::lockctrl::CdCommonLockControl;
+use crate::pnp::CdCommonPnp;
+use crate::fileinfo::CdCommonQueryInfo;
+use crate::volinfo::CdCommonQueryVolInfo;
+use crate::read::CdCommonRead;
+use crate::fileinfo::CdCommonSetInfo;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ps::*;
@@ -24,12 +39,10 @@ extern "C" {
 extern "C" {
 }
 extern "C" {
-    fn CdCleanupIrpContext(IrpContext: *mut core::ffi::c_void, Flag: i32);
 }
 extern "C" {
 }
 extern "C" {
-    fn FlagOn(flags: u32, flag: u32) -> i32;
 }
 extern "C" {
     fn SetFlag(flags: *mut u32, flag: u32);
@@ -43,40 +56,29 @@ extern "C" {
     fn CanFsdWait(Irp: ntkrnl_sys::ddk::PIRP) -> u8;
 }
 extern "C" {
-    fn CdCommonCleanup(IrpContext: crate::types::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
 }
 extern "C" {
     fn CdCommonClose(IrpContext: crate::types::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
 }
 extern "C" {
-    fn CdCommonCreate(IrpContext: crate::types::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
 }
 extern "C" {
-    fn CdCommonDevControl(IrpContext: crate::types::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
 }
 extern "C" {
-    fn CdCommonDirControl(IrpContext: crate::types::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
 }
 extern "C" {
-    fn CdCommonFsControl(IrpContext: crate::types::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
 }
 extern "C" {
-    fn CdCommonLockControl(IrpContext: crate::types::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
 }
 extern "C" {
-    fn CdCommonPnp(IrpContext: crate::types::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
 }
 extern "C" {
-    fn CdCommonQueryInfo(IrpContext: crate::types::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
 }
 extern "C" {
-    fn CdCommonQueryVolInfo(IrpContext: crate::types::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
 }
 extern "C" {
-    fn CdCommonRead(IrpContext: crate::types::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
 }
 extern "C" {
-    fn CdCommonSetInfo(IrpContext: crate::types::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
 }
 extern "C" {
     fn CdCommonShutdown(IrpContext: crate::types::PIRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP) -> i32;
@@ -91,7 +93,6 @@ extern "C" {
     fn CdCreateIrpContext(Irp: ntkrnl_sys::ddk::PIRP, Wait: u8) -> crate::types::PIRP_CONTEXT;
 }
 extern "C" {
-    fn SafeNodeType(Node: *mut IRP_CONTEXT) -> u32;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -192,7 +193,7 @@ pub static mut CdXAFileHeader: [i32; 11] = [
 // C source: `CDFS_TELEMETRY_DATA_CONTEXT CdTelemetryData;` is guarded by
 // `#ifdef CDFS_TELEMETRY_DATA`, which is NOT defined in the ReactOS build, so
 // the symbol is compiled out. Gated identically here.
-#[cfg(feature = "cdfs_telemetry_data")]
+#[cfg(feature = "CDFS_TELEMETRY_DATA")]
 pub static mut CdTelemetryData: CDFS_TELEMETRY_DATA_CONTEXT = unsafe { core::mem::zeroed() };
 
 const IRP_INPUT_OPERATION: u32 = 0x40;
@@ -263,7 +264,7 @@ pub unsafe extern "system" fn CdFsdDispatch(
                     CdSetThreadContext(st.0, &mut thread_context as *mut THREAD_CONTEXT);
                 } else {
                     SetFlag(core::ptr::addr_of_mut!((*st.0).Flags), IRP_CONTEXT_FLAG_MORE_PROCESSING);
-                    CdCleanupIrpContext(st.0 as *mut core::ffi::c_void, 0);
+                    CdCleanupIrpContext((st.0 as *mut core::ffi::c_void).cast(), 0);
                 }
                 let irp_context = st.0;
 
@@ -547,7 +548,7 @@ pub unsafe extern "C" fn CdCompleteRequest(
     // ASSERT_OPTIONAL_IRP(Irp);
 
     if !IrpContext.is_null() {
-        CdCleanupIrpContext(IrpContext, 0);
+        CdCleanupIrpContext((IrpContext).cast(), 0);
     }
 
     if !Irp.is_null() {

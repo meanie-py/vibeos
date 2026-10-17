@@ -1,10 +1,11 @@
 use ntdll_sys::nt::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::prelude::memmove;
 use core::ffi::c_void;
 use crate::string::nls_subst::*;
 use crate::string::locale::CompareStringW;
 
 extern "C" {
-    fn memmove(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize);
     fn strlen(s: LPCSTR) -> usize;
     fn wcslen(s: *const WCHAR) -> usize;
     // CRT, cdecl — on i386 this is `_wcscat` (undecorated), NOT the stdcall

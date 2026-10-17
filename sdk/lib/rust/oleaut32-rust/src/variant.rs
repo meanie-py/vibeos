@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use core::ffi::c_void;
 
 // Genuine CRT imports (cdecl). Everything else (SysFreeString, SafeArray*,
 // Var* conversions, IRecordInfo_*/IUnknown_* wrappers, HeapAlloc, memcpy, ...)
@@ -8,8 +7,8 @@ extern "C" {
     fn floor(x: f64) -> f64;
     fn ceil(x: f64) -> f64;
     fn fabs(x: f64) -> f64;
-    fn iswdigit(c: OLECHAR) -> i32;
-    fn iswspace(c: OLECHAR) -> i32;
+    pub fn iswdigit(c: OLECHAR) -> i32;
+    pub fn iswspace(c: OLECHAR) -> i32;
 }
 
 // Precomputed case labels (C: `case VT_X | VT_BYREF:`; VT_BYREF = 0x4000).

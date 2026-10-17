@@ -30,3 +30,5 @@ add_cargo_module(sc sc-cargo sc.exe
     BODY_CRATE sc-rust
     DESTINATION reactos/system32
     EXTRA_DEPENDS sc_res)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

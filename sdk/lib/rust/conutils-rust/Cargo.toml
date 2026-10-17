@@ -10,6 +10,11 @@ name = "conutils_rust"
 path = "src/lib.rs"
 crate-type = ["staticlib"]
 
+[features]
+# Declared so a misspelled gate warns; never enabled: stream.h/instream.h keep
+# `// #define USE_CRT` commented out ("Experimental! Don't use USE_CRT yet").
+USE_CRT = []
+
 [dependencies]
 panic-common = { path = "../panic-common", features = ["user"] }
 ntdll-sys = { path = "../ntdll-sys" }

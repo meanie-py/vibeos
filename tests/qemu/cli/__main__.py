@@ -469,6 +469,14 @@ def build_parser() -> argparse.ArgumentParser:
         "See docs/engineering/payload-harness-design.md",
     )
     s.add_argument(
+        "--vm-memory",
+        default="",
+        metavar="SIZE",
+        help="guest RAM as a qemu -m size (768M, 2G) for every boot of this run, overriding "
+        "the arch default AND a payload's declared test.vm_memory: a low-memory sweep "
+        "(appstorm64 at 768M) is a deliberate departure from what the payload asks for",
+    )
+    s.add_argument(
         "--doom",
         action="store_true",
         help="legacy alias for --payload doom",
