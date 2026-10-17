@@ -2164,9 +2164,21 @@ body) reached from csrss. The sweep after it was clean and identical to the firs
    winspool utils.rs's `_SEH2_TRY` over a handle deref (a hardware-fault guard, not RPC),
    and the cosmetic dead `if <never> { RpcExceptionCode!() }` branches the tool's neighbours
    left in jobs/monitors/spoolfile/forms.
-2. C RPC clients that are still C (setupapi's cfgmgr.c among them; the sweep only covered
-   files with a Rust twin) build under DUMMY_PSEH on every arch (sdk/cmake/gcc.cmake), so
-   their RpcTryExcept is the same no-op. A fix belongs in pseh2.h's RpcTryExcept, or in an
-   inventory of the C callers; it needs a decision, not a drive-by.
+2. DONE 2026-10-17: C RPC clients under DUMMY_PSEH. `tools/gen_rpc_guards.py` (CMake
+   `add_rpc_guards`) generates `<fn>_guarded` wrappers over ntdll's RtlSehTryExcept from the
+   widl client header: msi's 37 `remote_*` sites and its custom-action page-fault guard, and
+   rpcrt4 rpc_epmap.c's endpoint-mapper calls (i386 had no guard). setupapi's cfgmgr.c (64
+   sites) was ported to Rust instead (setupapi-rust, rpc_try). Graded in the guest (amd64):
+   Wine's setupapi suite gives byte-identical output on the Rust and on the pre-flip C
+   (payloads `setupapiwinetest` / `setupapiwinetestc`; 461 lines, devinst 481/197 on both).
+   The C payload has to import the C as setupapc.dll, because setupapi is a KnownDLL; its
+   build.sh says why. STILL OWED from that work: (a) the same before/after on i386, where
+   rpc_try takes the fs:[0] path. (b) The scanner bug the port found (field manual,
+   "an SEH block under another name"): the old scanner gives different bodies for 248 functions
+   in 31 files. Settle which SHIPPED ports were bought truncated, by diffing each one's banked
+   C input (`.responses`) against the new scanner's body. A naive call-coverage audit was all
+   noise (crypt.rs inlines its handle helpers). (c) rpc_epmap.c's RpcEpUnregister calls
+   `ept_insert(.., TRUE, ..)`, where Wine calls `ept_delete`. Upstream ReactOS has the same
+   line; left as is.
 3. HidPDescription's preparsed-data layout, only if something needs Windows' bytes.
 4. The WS03-column rows that move at the version flip (above).

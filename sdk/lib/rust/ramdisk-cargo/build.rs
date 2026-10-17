@@ -7,6 +7,21 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The module's part of cmake's windres command; reactos-link adds what every
+    // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
+    let rc_includes: &[&str] = &[
+        "@build/drivers/storage/class/ramdisk",
+        "drivers/storage/class/ramdisk",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+        "drivers/storage/class/ramdisk/..",
+    ];
+    let rc_flags: &[&str] = &[];
+    let rc_defines: &[&str] = &["WINVER=0x502", "_WIN32_WINNT=0x502"];
+
     let (target_json, entry, image_base) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_DriverEntry@8", 0x10000u64),
         "x86_64" => ("x86_64-pc-windows-gnu", "DriverEntry", 0x10000u64),
@@ -33,7 +48,7 @@ fn main() {
     link
         .rust_staticlib("ramdisk-rust")
         .rust_user_target()
-        .resource_from_rc("drivers/storage/class/ramdisk/ramdisk.rc", "ramdisk_res")
+        .rc("drivers/storage/class/ramdisk/ramdisk.rc", rc_includes, rc_flags, rc_defines)
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .import_lib("hal/hal.spec", "hal.dll", "hal")
         // The body, import libs and static libs in cmake's link order: the first

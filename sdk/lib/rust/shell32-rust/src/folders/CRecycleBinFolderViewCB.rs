@@ -184,17 +184,9 @@ pub struct ITEMIDLIST {
     pub mkid: SHITEMID,
 }
 
-#[repr(C)]
-pub struct SHChangeNotifyEntry {
-    pub pidl: PCIDLIST_ABSOLUTE,
-    pub fRecursive: BOOL,
-}
+pub use crate::island::SHChangeNotifyEntry;
 
-#[repr(C, packed)]
-pub struct SHITEMID {
-    pub cb: WORD,
-    pub abID: [BYTE; 1],
-}
+pub use crate::island::SHITEMID;
 
 // Deterministic from shobjidl.h
 #[repr(C)]

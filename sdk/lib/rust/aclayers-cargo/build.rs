@@ -7,6 +7,26 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The C left, and its part of cmake's C rule; reactos-link adds what every C
+    // compile shares from reactos-link/cflags/c.<arch>.flags (Linker::c_compiled).
+    let c_sources: &[&str] = &["dll/appcompat/shims/layer/rust_cohab_stub.c"];
+    let c_includes: &[&str] = &[
+        "@build/dll/appcompat/shims/layer",
+        "dll/appcompat/shims/layer",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+        "dll/appcompat/shims/shimlib",
+    ];
+    let c_flags: &[&str] = match arch.as_str() {
+        "x86" => &["-std=gnu99", "@core"],
+        "x86_64" => &["-std=gnu99", "-U_X86_", "-UWIN32", "@core"],
+        "aarch64" => &["-std=gnu99", "@core"],
+        _ => unreachable!(),
+    };
+    let c_defines: &[&str] = &["WINVER=0x502", "_WIN32_WINNT=0x502"];
     let (target_json, entry, image_base) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_DllMain@12", Some(0x780e0000u64)),
         "x86_64" => ("x86_64-pc-windows-gnu", "DllMain", Some(0x7ff76000000u64)),
@@ -23,7 +43,7 @@ fn main() {
 
     Linker::new(target_json)
         .rust_staticlib("aclayers-rust")
-        .c_from_compile_db("aclayers_shims", &["dll/appcompat/shims/layer/rust_cohab_stub.c"])
+        .c_compiled("aclayers_shims", c_sources, c_includes, c_flags, c_defines)
         .spec2def("dll/appcompat/shims/layer/layer.spec", "aclayers.dll")
         .import_lib("win32ss/user/user32/user32.spec", "user32.dll", "user32")
         .import_lib("dll/win32/kernel32/kernel32.spec", "kernel32.dll", "kernel32")

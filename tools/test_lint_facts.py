@@ -1,9 +1,12 @@
 """Incremental checks must notice edits outside the file reporting a defect."""
 
 import os
+import subprocess
+from pathlib import Path
 
 import pytest
 
+from tests.qemu.cli import rustlints
 from tools import lint_facts
 
 
@@ -72,41 +75,48 @@ def test_failed_scan_is_not_cached(tmp_path, monkeypatch):
     assert len(attempts) == 2
 
 
-def test_changed_definition_rechecks_unchanged_caller(tmp_path):
-    from tools.scan_extern_decl_drift import scan
+def _native(root, rule):
+    repo = Path(__file__).resolve().parents[1]
+    command = [str(rustlints.ensure(repo)), "--root", str(root), "--rules", rule]
+    cp = subprocess.run(command, capture_output=True, text=True)
+    assert cp.returncode == 0, cp.stderr
+    return rustlints.split_output(cp, [rule])[rule].stdout
 
-    crate = tmp_path / "probe-rust"
-    crate.mkdir()
-    caller = crate / "caller.rs"
+
+def test_changed_definition_rechecks_unchanged_caller(tmp_path):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    crate = tmp_path / "sdk/lib/rust/probe-rust"
+    crate.mkdir(parents=True)
+    (crate / "Cargo.toml").write_text('[package]\nname = "probe-rust"\n')
+    (crate / "src").mkdir()
+    caller = crate / "src/caller.rs"
     caller.write_text(
         'extern "system" { fn Probe(x: *mut u32); }\nunsafe fn caller(x: *mut u32) { Probe(x); }\n'
     )
-    definition = crate / "definition.rs"
+    definition = crate / "src/definition.rs"
     definition.write_text('#[no_mangle] pub extern "system" fn Probe(x: *mut u32) {}')
-    assert scan(tmp_path, [crate]) == []
+    assert _native(tmp_path, "scan_extern_decl_drift") == ""
     definition.write_text('#[no_mangle] pub extern "system" fn Probe(x: *mut u64) {}')
-    findings = scan(tmp_path, [crate])
-    assert any(path == caller and "WIDTH" in message for path, _, message in findings)
+    findings = _native(tmp_path, "scan_extern_decl_drift")
+    assert "caller.rs" in findings and "WIDTH" in findings
     definition.unlink()
-    assert scan(tmp_path, [crate]) == []
+    assert _native(tmp_path, "scan_extern_decl_drift") == ""
 
 
-def test_irql_wrapper_edit_invalidates_caller(tmp_path, capsys):
-    from tools.scan_irql_balance import main
-
-    wrapper = tmp_path / "wrapper.rs"
+def test_irql_wrapper_edit_invalidates_caller(tmp_path):
+    sources = tmp_path / "sdk/lib/rust/probe-rust/src"
+    sources.mkdir(parents=True)
+    wrapper = sources / "wrapper.rs"
     wrapper.write_text("unsafe fn wrapper() -> u8 { 0 }")
-    (tmp_path / "caller.rs").write_text(
+    (sources / "caller.rs").write_text(
         "unsafe fn caller(cond: bool) { let saved = wrapper(); "
         "if cond { return; } KeLowerIrql(saved); }"
     )
-    assert main(["--lint"], summary_root=tmp_path) == 0
-    capsys.readouterr()
+    assert _native(tmp_path, "scan_irql_balance") == ""
     wrapper.write_text(
         "unsafe fn wrapper() -> u8 { let saved = KeRaiseIrqlToDpcLevel(); return saved; }"
     )
-    assert main(["--lint"], summary_root=tmp_path) == 1
-    assert "IRQL_LEAK_RETURN" in capsys.readouterr().out
+    assert "IRQL_LEAK_RETURN" in _native(tmp_path, "scan_irql_balance")
 
 
 def test_lint_workers_use_host_affinity(monkeypatch):

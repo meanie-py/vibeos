@@ -199,3 +199,14 @@ def test_a_cfg_gated_definition_is_refused():
         assert "cfg-gated" in str(err)
     else:
         raise AssertionError("a cfg-gated definition was accepted")
+
+
+def test_doc_comment_leaves_with_its_declaration():
+    # shell32: a `///` left behind before `}` is a parse error ("expected item after doc comment").
+    files = {
+        "a": "pub fn X() {}\n",
+        "b": 'extern "C" {\n    fn Y();\n    /// why X is declared here\n    fn X();\n}\n',
+    }
+    changed, _ = e2u.convert(files, {"X": "a"}, e2u.MARK_OWN)
+    assert "///" not in changed["b"]
+    assert "fn Y();" in changed["b"]

@@ -1,5 +1,13 @@
 // Deterministic UTF-16 literals from the selected C++ helper closure.
 use crate::prelude::*;
+// One declaration per external symbol: island.rs.
+use crate::island::AdjustTokenPrivileges;
+use crate::island::CloseHandle;
+use crate::island::GetCurrentProcess;
+use crate::island::GetSystemMetrics;
+use crate::island::GetWindowLongW;
+use crate::island::OpenProcessToken;
+use crate::island::SetWindowLongW;
 pub static CPP_COM_WSTR_1D125463AF58: [WCHAR; 11] = [0x006D, 0x0073, 0x0067, 0x0069, 0x006E, 0x0061, 0x002E, 0x0064, 0x006C, 0x006C, 0x0000];
 pub static CPP_COM_WSTR_24B5C33A15AA: [WCHAR; 11] = [0x0043, 0x0053, 0x0044, 0x0056, 0x0065, 0x0072, 0x0073, 0x0069, 0x006F, 0x006E, 0x0000];
 pub static CPP_COM_WSTR_28276425D458: [WCHAR; 2] = [0x002D, 0x0000];
@@ -30,11 +38,7 @@ use core::ffi::c_void;
 // ambiguous at the use site. See prelude.rs for why this is "instead of", not "as well as".
 
 extern "system" {
-    fn GetCurrentProcess() -> isize;
-    fn OpenProcessToken(ProcessHandle: isize, DesiredAccess: u32, TokenHandle: *mut isize) -> i32;
     fn LookupPrivilegeValueW(lpSystemName: *const u16, lpName: *const u16, lpLuid: *mut LUID) -> i32;
-    fn AdjustTokenPrivileges(TokenHandle: isize, DisableAllPrivileges: i32, NewState: *const TOKEN_PRIVILEGES, BufferLength: u32, PreviousState: *mut TOKEN_PRIVILEGES, ReturnLength: *mut u32) -> i32;
-    fn CloseHandle(hObject: isize) -> i32;
 }
 
 // `ExtractIconExW` is shell32's own export, already translated -- import the Rust definition
@@ -42,9 +46,6 @@ extern "system" {
 use crate::shell32::iconcache::ExtractIconExW;
 
 extern "system" {
-    fn GetSystemMetrics(nIndex: INT) -> INT;
-    fn GetWindowLongW(hWnd: HWND, nIndex: INT) -> LONG;
-    fn SetWindowLongW(hWnd: HWND, nIndex: INT, dwNewLong: LONG) -> LONG;
     fn GetWindowLongPtrW(hWnd: HWND, nIndex: INT) -> LONG_PTR;
     fn SetWindowLongPtrW(hWnd: HWND, nIndex: INT, dwNewLong: LONG_PTR) -> LONG_PTR;
 }
@@ -720,7 +721,7 @@ pub unsafe extern "C" fn CallShellDimScreen(pUnknown: *mut *mut IUnknown, hWindo
 }
 unsafe extern "C" fn EnablePrivilege(lpszPrivilegeName: *const u16, bEnablePrivilege: i32) -> i32 {
     let mut Success: i32;
-    let mut hToken: isize = 0;
+    let mut hToken: HANDLE = core::ptr::null_mut();
     let mut tp: TOKEN_PRIVILEGES = core::mem::zeroed();
 
     Success = OpenProcessToken(
@@ -752,7 +753,7 @@ unsafe extern "C" fn EnablePrivilege(lpszPrivilegeName: *const u16, bEnablePrivi
         Success = AdjustTokenPrivileges(
             hToken,
             FALSE,
-            core::ptr::addr_of!(tp),
+            core::ptr::addr_of_mut!(tp),
             0,
             core::ptr::null_mut(),
             core::ptr::null_mut(),

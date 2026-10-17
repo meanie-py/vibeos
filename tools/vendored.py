@@ -46,7 +46,7 @@ version is worse than reporting nothing.
 
 USAGE
 -----
-    vendored.py                  # --check: registry agrees with the tree (exit 1 if not)
+    ./vibeos-cli check           # registry audit through the Rust plugin
     vendored.py --emit           # the table: path, version, licence, LOC — both halves
     vendored.py --write-stamps   # (re)generate the VENDORED marker in each tree
     vendored.py --suspects       # foreign-copyright dirs in NEITHER half (i.e. undecided)
@@ -1037,16 +1037,7 @@ def grant_gaps(reg: Registry, min_files: int = 3) -> tuple[list[tuple[str, int, 
 #: pointed at but not shipped. Both of these want a DECISION about licensing,
 #: not a change to the scanner -- which is exactly why they are written down
 #: here instead of being tuned out of `grant_gaps`.
-_GRANTS_ACCEPTED = {
-    "ptr:copying.bsd": (
-        "sdk/tools/kbdtool, 5 files: `LICENSE: BSD - See COPYING.BSD in the top "
-        "level directory`. ReactOS has never shipped a COPYING.BSD -- it is absent "
-        "from our history and from upstream master -- and no file in this tree "
-        "carries a ReactOS-authored BSD grant to copy the wording from, so the "
-        "variant is unknown. Writing one on the ReactOS Foundation's behalf would "
-        "be inventing a grant, which is the thing this scan exists to catch."
-    ),
-}
+_GRANTS_ACCEPTED = json.loads((REPO / "tools/vendor-grants.json").read_text())
 
 #: The generated notices document, at the repo root where a distributor looks for it.
 NOTICES_PATH = "THIRD-PARTY-NOTICES.md"
@@ -1834,28 +1825,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    problems = check(reg)
-    if problems:
-        # The registry is named ABSOLUTELY here: with --repo in play there can be more
-        # than one, and "vendor.yaml disagrees" is useless if you cannot tell which.
-        print(
-            f"[vendored] {args.repo / 'vendor.yaml'} disagrees with the tree "
-            f"({len(problems)} problem(s)):\n"
-        )
-        for p in problems:
-            print(f"  - {p}")
-        print("\n  vendor.yaml is the source of truth for which C is NOT ours to translate.")
-        return 1
-    # STDOUT IS THE FINDINGS CHANNEL for `vibeos-cli check` (lints.py `findings_from`),
-    # and every non-empty stdout line that is not a recognised tally counts as one. A
-    # chatty success line here would read as a permanent new finding and hold the stage
-    # red. The status belongs on stderr; silence on stdout is the pass.
-    print(
-        f"[vendored] OK — {len(reg.trees)} vendored trees + {len(reg.ours)} classified ours, "
-        f"registry agrees with the tree",
-        file=sys.stderr,
-    )
-    return 0
+    ap.error("registry audit moved to ./vibeos-cli check (Rust rule: vendored_registry)")
 
 
 if __name__ == "__main__":

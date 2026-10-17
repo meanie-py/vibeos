@@ -60,6 +60,10 @@ pub mod cargo_deps;
 pub mod compiler_env;
 mod storage;
 mod body_storage;
+mod rc;
+use rc::RcSpec;
+mod c_rule;
+use c_rule::CSpec;
 mod artifact_store;
 
 // ---- cmake-off `--trace` (ninja-`-v`-style command list) ------------------
@@ -553,6 +557,13 @@ pub struct Linker {
     /// reuses a cmake-built `.res`). (rc-rel-path, cmake `_res` target name).
     /// Drops the `ninja <m>_res` prereq — see `resource_from_rc`.
     resource_from_rc: Option<(String, String)>,
+    /// The `.rc` compiled by the engine from cmake's rule rebuilt out of the committed
+    /// per-arch template (`cflags/rc.<arch>.flags`) and the module's own includes,
+    /// extra flags and defines (see `rc`). No cmake target behind it.
+    rc: Option<RcSpec>,
+    /// C libraries the engine compiles with cmake's C rule rebuilt from the committed
+    /// `cflags/c.<arch>.flags` and their own part (see `c_compiled`).
+    c_compiled: Vec<CSpec>,
     spec: Option<(String, String)>,
     link_stubs: bool,
     static_libs: Vec<String>,
@@ -616,13 +627,9 @@ impl Linker {
             .nth(4)
             .expect("repo root")
             .to_path_buf();
+        // Absent is a cmake-off build: every path that reads the build dir has its own
+        // cmake-off branch, or fails naming what it needs.
         let build_dir = repo_root.join(format!("build-{}", arch.name));
-        if !build_dir.exists() {
-            panic!(
-                "cmake build dir {} does not exist — run `ninja` there first",
-                build_dir.display()
-            );
-        }
         let pkg_name = env::var("CARGO_PKG_NAME").expect("CARGO_PKG_NAME");
         let target = RustTarget::new(&manifest_dir, target_spec);
         println!("cargo:rerun-if-changed=build.rs");
@@ -651,6 +658,8 @@ impl Linker {
             resource: None,
             resource_built: None,
             resource_from_rc: None,
+            rc: None,
+            c_compiled: Vec::new(),
             spec: None,
             link_stubs: false,
             static_libs: Vec::new(),
@@ -748,6 +757,10 @@ impl Linker {
                 link_arg!(self, "{}", lib_a.display());
             }
             } // end else (cmake build configured → compile_commands.json replay)
+        }
+        for spec in &self.c_compiled {
+            let lib_a = self.compile_c_spec(spec, ar);
+            link_arg!(self, "{}", lib_a.display());
         }
         // Pre-expanded asm assembled into on-demand archives, IN the group
         // alongside the cmake C archives (same archive semantics + layout
@@ -1006,6 +1019,55 @@ impl Linker {
         self
     }
 
+    /// Compile the `.rc` with cmake's windres rule (`CMAKE_RC_COMPILE_OBJECT` in
+    /// gcc.cmake), rebuilt from the committed `cflags/rc.<arch>.flags` and this
+    /// module's part of it, which tools/cargo_cell_gen.py read from cmake's own command:
+    ///
+    ///   windres -O coff --codepage=65001 <includes> <template flags> <flags>
+    ///           <template defs: RC_INVOKED, the LANGUAGE_* set> <sorted defines> rc out
+    ///
+    /// `includes` are repo-relative, `@build/<rel>` for the build tree, or `@std` for
+    /// the template's standard run; `defines` are the module's own (`NAME[=VALUE]`), which
+    /// join the template's global ones, sorted as cmake sorts them. With a configured
+    /// build `@build` is `build-<arch>`; without one it is a tree the engine fills itself
+    /// (the xdk headers, and `version.h`/`buildno.h` from `$VIBEOS_GEN_DIR`).
+    pub fn rc(mut self, rc_rel: &str, includes: &[&str], flags: &[&str], defines: &[&str]) -> Self {
+        let own = |v: &[&str]| v.iter().map(|x| x.to_string()).collect();
+        self.rc = Some(RcSpec {
+            rc_rel: rc_rel.to_string(),
+            includes: own(includes),
+            flags: own(flags),
+            defines: own(defines),
+        });
+        self
+    }
+
+    /// `lib<name>.a` from `sources`, compiled with cmake's C rule:
+    /// `<CC> --target <sorted defines> <includes> <flags> -o obj -c src`, where the
+    /// compiler, the standard include run (`@std`), the core flags (`@core`) and the
+    /// global defines come from `cflags/c.<arch>.flags` and the rest is this library's,
+    /// as tools/cargo_cell_gen.py read it from cmake's own commands. Linked where
+    /// `c_from_compile_db` archives go. `@build/<rel>` names a generated source or a
+    /// build-tree include; `{REPO}`/`{BUILD}` in a flag are the roots.
+    pub fn c_compiled(
+        mut self,
+        name: &str,
+        sources: &[&str],
+        includes: &[&str],
+        flags: &[&str],
+        defines: &[&str],
+    ) -> Self {
+        let own = |v: &[&str]| v.iter().map(|x| x.to_string()).collect();
+        self.c_compiled.push(CSpec {
+            name: name.to_string(),
+            sources: own(sources),
+            includes: own(includes),
+            flags: own(flags),
+            defines: own(defines),
+        });
+        self
+    }
+
     /// `.spec` (repo-relative) → `.def` via self-hosted spec2def.
     /// `dll_name` is the `-n=` arg (e.g. `hal.dll`, `ntoskrnl.exe`).
     pub fn spec2def(mut self, spec_rel: &str, dll_name: &str) -> Self {
@@ -1240,7 +1302,7 @@ impl Linker {
     /// The per-arch generated kernel-offset include filename (geninc output):
     /// `ks386.inc` (i386), `ksamd64.inc` (amd64), `ksarm64.h` (arm64). Matches
     /// `sdk/include/asm/CMakeLists.txt`'s `_filename`.
-    fn ks_inc_name(&self) -> &'static str {
+    pub(crate) fn ks_inc_name(&self) -> &'static str {
         match self.arch.name {
             "i386" => "ks386.inc",
             "amd64" => "ksamd64.inc",
@@ -1456,6 +1518,11 @@ impl Linker {
             link_arg!(self, "{}", dst.display());
         }
 
+        if let Some(spec) = &self.rc {
+            let res = self.compile_rc(spec);
+            link_arg!(self, "{}", res.display());
+        }
+
         // ---- Resource (.res) — checked-in or cmake-built -------------
         let res_src: Option<PathBuf> = self
             .resource
@@ -1601,7 +1668,11 @@ impl Linker {
         // in ntoskrnl, win32k's Rust memcmp, amd64's ntoskrnl import) keeps its own
         // and this contributes nothing. Only a cell with a genuine gap pulls it.
         if !self.target.is_json() {
-            let memcmp_a = self.build_dir.join("sdk/lib/crt/libmemcmp.a");
+            let mut memcmp_a = self.build_dir.join("sdk/lib/crt/libmemcmp.a");
+            if cmake_off_forced() || !memcmp_a.exists() {
+                // No cmake build: compile it from its recipe, as `engine:c:memcmp` does.
+                memcmp_a = self.compile_recipe("memcmp", &ar);
+            }
             if !memcmp_a.exists() {
                 panic!(
                     "missing {} — run ninja memcmp first (needed by the precompiled \
@@ -2206,6 +2277,9 @@ impl Linker {
             // found, so its `[target.i686-pc-windows-gnu] -sse,-sse2` rustflags
             // don't apply — cnt-rust's `float` feature needs SSE, and cmake
             // builds it with SSE for this exact reason.
+            // With no cmake build, an empty build-<arch> (gitignored) is the same place for
+            // config discovery, and it is the cwd the artifact store audits.
+            std::fs::create_dir_all(&self.build_dir).expect("mkdir build-<arch> for nested cargo");
             cmd.current_dir(&self.build_dir);
             // cnt-rust REQUIRES `-C no-prepopulate-passes` on EVERY arch: its
             // per-fn cgu-split CRT shims miscompile under LLVM's default
@@ -2324,6 +2398,11 @@ impl Linker {
     /// a symbol two members define (libuuid has 397) resolves to the first.
     fn replay_target(&self, target: &str, ar: &Path) -> PathBuf {
         let db_path = self.build_dir.join("compile_commands.json");
+        if cmake_off_forced() || !db_path.exists() {
+            // No cmake build: the committed recipe of that compile (cargo_cell_gen
+            // --clib-recipes), with cmake's C and ASM rules rebuilt from their templates.
+            return self.compile_recipe(target, ar);
+        }
         if !db_path.exists() {
             panic!(
                 "engine:{target} replays cmake's compile of it and needs {} — \
@@ -2820,9 +2899,15 @@ impl Linker {
     /// to add as `-I` (appended AFTER the source-tree `-I`, matching cmake's
     /// build-dir-after-source-dir order). Output proven byte-identical to cmake's.
     fn generate_xdk_headers(&self) -> PathBuf {
+        let out = PathBuf::from(env::var("OUT_DIR").unwrap()).join("xdk-gen");
+        self.generate_xdk_headers_into(&out);
+        out
+    }
+
+    /// `generate_xdk_headers` into `out` (which gets `psdk/` and `ddk/`).
+    fn generate_xdk_headers_into(&self, out: &Path) {
         let hpp = self.compile_host_tool("sdk/tools/hpp/hpp.c", "native-hpp");
         let xdk_src = self.repo_root.join("sdk/include/xdk");
-        let out = PathBuf::from(env::var("OUT_DIR").unwrap()).join("xdk-gen");
         // (template, out-relative) — mirrors sdk/include/xdk/CMakeLists.txt.
         const HEADERS: &[(&str, &str)] = &[
             ("winnt.template.h", "psdk/winnt.h"),
@@ -2858,7 +2943,6 @@ impl Linker {
                 .unwrap_or_else(|e| panic!("rename {} -> {}: {e}", tmp.display(), dst.display()));
             println!("cargo:rerun-if-changed={}", xdk_src.join(tmpl).display());
         }
-        out
     }
 
     /// cmake-off (WS1 DEEP): compile every `c_from_compile_db` lib from its
@@ -2978,7 +3062,7 @@ impl Linker {
     /// `OUT_DIR/asm/`. Returns that dir for the kernel asm `#include` path. The
     /// `.asmdef` table is pure compile-time constants, so the `.obj` section bytes
     /// (and hence the emitted text) are byte-identical to cmake's `native-geninc`.
-    fn generate_ks_inc(&self) -> PathBuf {
+    pub(crate) fn generate_ks_inc(&self) -> PathBuf {
         self.ks_includes.get_or_generate(|| self.generate_ks_inc_uncached())
     }
 

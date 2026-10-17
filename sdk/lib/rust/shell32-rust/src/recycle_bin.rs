@@ -983,21 +983,9 @@ pub struct DVTARGETDEVICE {
     pub tdData: [BYTE; 1],
 }
 
-#[repr(C)]
-pub struct EXTRASEARCH {
-    pub guidSearch: GUID,
-    pub wszFriendlyName: [WCHAR; 80],
-    pub wszUrl: [WCHAR; 2084],
-}
+pub use crate::island::EXTRASEARCH;
 
-#[repr(C)]
-pub struct PERSIST_FOLDER_TARGET_INFO {
-    pub pidlTargetFolder: PIDLIST_ABSOLUTE,
-    pub szTargetParsingName: [WCHAR; 260],
-    pub szNetworkProvider: [WCHAR; 260],
-    pub dwAttributes: DWORD,
-    pub csidl: i32,
-}
+pub use crate::island::PERSIST_FOLDER_TARGET_INFO;
 
 #[repr(C)]
 pub struct STATDATA {
@@ -1027,19 +1015,7 @@ pub struct ULARGE_INTEGER {
     pub QuadPart: ULONGLONG,
 }
 
-#[repr(C)]
-pub struct WIN32_FIND_DATAW {
-    pub dwFileAttributes: DWORD,
-    pub ftCreationTime: FILETIME,
-    pub ftLastAccessTime: FILETIME,
-    pub ftLastWriteTime: FILETIME,
-    pub nFileSizeHigh: DWORD,
-    pub nFileSizeLow: DWORD,
-    pub dwReserved0: DWORD,
-    pub dwReserved1: DWORD,
-    pub cFileName: [WCHAR; 260],
-    pub cAlternateFileName: [WCHAR; 14],
-}
+pub use crate::island::WIN32_FIND_DATAW;
 
 // Deterministic from shobjidl.h
 #[repr(C)]
@@ -1136,12 +1112,7 @@ pub type EXPPS = UINT;
 
 pub type LPFNSVADDPROPSHEETPAGE = Option<unsafe extern "system" fn(HPROPSHEETPAGE, LPARAM) -> BOOL>;
 
-#[repr(C)]
-pub struct SHQUERYRBINFO {
-    pub cbSize: DWORD,
-    pub i64Size: i64,
-    pub i64NumItems: i64,
-}
+pub use crate::island::SHQUERYRBINFO;
 
 #[repr(C)]
 pub struct CMVERBMAP { pub Verb: LPCSTR, pub CmdId: WORD }
@@ -1156,23 +1127,11 @@ pub static mut g_BBItemVerbMap: [CMVERBMAP; 5] = [
 extern "system" {
     fn PlaySoundW(sound: LPCWSTR, module: HANDLE, flags: DWORD) -> BOOL;
     fn ExpandEnvironmentStringsW(source: LPCWSTR, dest: LPWSTR, size: DWORD) -> DWORD;
-    fn RegCloseKey(key: HKEY) -> LONG;
-    fn RegQueryValueExW(key: HKEY, value: LPCWSTR, reserved: LPDWORD, kind: LPDWORD, data: PBYTE, bytes: LPDWORD) -> LONG;
-    fn RegSetValueExW(key: HKEY, value: LPCWSTR, reserved: DWORD, kind: DWORD, data: *const BYTE, bytes: DWORD) -> LONG;
     fn SHChangeNotify(event: LONG, flags: UINT, item1: LPCVOID, item2: LPCVOID);
-    fn SHGetFileInfoW(path: LPCWSTR, attributes: DWORD, info: *mut SHFILEINFOW, bytes: UINT, flags: UINT) -> DWORD_PTR;
-    fn ILCombine(parent: PCIDLIST_ABSOLUTE, child: PCUITEMID_CHILD) -> PIDLIST_ABSOLUTE;
     fn GetLastError() -> DWORD;
     fn lstrlenW(text: LPCWSTR) -> INT;
-    fn CoTaskMemAlloc(bytes: SIZE_T) -> LPVOID;
-    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
     fn CoTaskMemFree(memory: LPVOID);
-    fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
-    fn ILFree(pidl: LPITEMIDLIST);
-    fn SHGetDesktopFolder(folder: *mut *mut IShellFolder) -> HRESULT;
-    fn SHCreateShellFolderView(create: *const SFV_CREATE, view: *mut *mut IShellView) -> HRESULT;
     fn SHQueryRecycleBinW(root: LPCWSTR, info: *mut SHQUERYRBINFO) -> HRESULT;
-    fn SHEmptyRecycleBinW(owner: HWND, root: LPCWSTR, flags: DWORD) -> HRESULT;
     fn ILGetNext(pidl: PCUIDLIST_RELATIVE) -> LPITEMIDLIST;
     #[link_name = "Shell32RustCoCreateInitSF"] fn SHELL32_CoCreateInitSF(root: LPCITEMIDLIST, clsid: *const GUID, csidl: INT, riid: REFIID, out: *mut *mut core::ffi::c_void) -> HRESULT;
     #[link_name = "Shell32RustMapContextMenuVerbToCmdId"] fn SHELL_MapContextMenuVerbToCmdId(info: LPCMINVOKECOMMANDINFO, map: *const CMVERBMAP) -> INT;
@@ -1285,7 +1244,7 @@ unsafe fn ZeroMemory<T, N: CppComSize>(dst: *mut T, bytes: N) {
 unsafe fn cpp_com_SHSetStrRetW(out: *mut STRRET, value: LPCWSTR) -> HRESULT {
     let len = lstrlenW(value) as usize;
     let bytes = (len + 1) * core::mem::size_of::<WCHAR>();
-    let buffer = CoTaskMemAlloc(bytes) as LPWSTR;
+    let buffer = CoTaskMemAlloc((bytes) as SIZE_T) as LPWSTR;
     if buffer.is_null() { return E_OUTOFMEMORY; }
     let _ = memcpy(buffer, value, bytes);
     (*out).uType = STRRET_WSTR; (*out).u.pOleStr = buffer; S_OK
@@ -1322,6 +1281,22 @@ pub static CPP_COM_WSTR_9855CDA098DC: [WCHAR; 2] = [0x0058, 0x0000];
 pub static CPP_COM_WSTR_F51AA22D711D: [WCHAR; 5] = [0x0043, 0x003A, 0x005C, 0x0058, 0x0000];
 
 use crate::island::{GetVersion, CLSID_ShellSearchExt};
+// The crate's own functions: the definition is the declaration.
+use crate::cfs_folder_tu::CFSFolder_CompareUiStrings_RustBridge;
+use crate::wine::pidl::ILClone;
+use crate::wine::pidl::ILCombine;
+use crate::wine::pidl::ILFree;
+use crate::def_view::SHCreateShellFolderView;
+use crate::recycle_bin_tu::SHEmptyRecycleBinW;
+use crate::desktop_folder_tu::SHGetDesktopFolder;
+use crate::wine::shell32_main::SHGetFileInfoW;
+use crate::default_context_menu_tu::_InsertMenuItemW;
+// One declaration per external symbol: island.rs.
+use crate::island::CoTaskMemAlloc;
+use crate::island::LoadStringW;
+use crate::island::RegCloseKey;
+use crate::island::RegQueryValueExW;
+use crate::island::RegSetValueExW;
 use crate::prelude::LOBYTE;
 use core::ffi::c_void;
 use crate::shellcom::*;
@@ -1485,7 +1460,6 @@ extern "system" {
     // Rust #[no_mangle] def wine/shpolicy.rs
     fn SHRestricted(rest: DWORD) -> DWORD;
     // EXTERN_C (wine/shell32_main.h) + WINAPI; def CDefaultContextMenu.cpp
-    fn _InsertMenuItemW(hmenu: HMENU, indexMenu: UINT, fByPosition: BOOL, wID: UINT, fType: UINT, dwTypeData: LPCWSTR, fState: UINT) -> BOOL;
     // Rust #[no_mangle] extern "C" defs in wine/pidl.rs
     #[link_name = "SHStrDupW"] fn SHStrDupW_ex(source: LPCWSTR, out: *mut LPWSTR) -> HRESULT;
 }
@@ -1520,7 +1494,6 @@ extern "system" {
     fn CRecycleBin_CoCreateInitSF_RustBridge(pidlRoot: LPCITEMIDLIST, ppfti: *mut PERSIST_FOLDER_TARGET_INFO, pidlChild: LPCITEMIDLIST, clsid: *const GUID, riid: REFIID, ppvOut: *mut *mut core::ffi::c_void) -> HRESULT;
     // CFSFolder static helpers (folders/CFSFolder.h:129-132)
     fn CFSFolder_CompareSortFoldersFirst_RustBridge(pidl1: LPCITEMIDLIST, pidl2: LPCITEMIDLIST) -> HRESULT;
-    fn CFSFolder_CompareUiStrings_RustBridge(a: LPCWSTR, b: LPCWSTR, lParam: LPARAM) -> INT;
     fn CFSFolder_FormatDateTime_RustBridge(ft: *const FILETIME, buf: LPWSTR, cchBuf: UINT) -> HRESULT;
     fn CFSFolder_FormatSize_RustBridge(size: u64, buf: LPWSTR, cchBuf: UINT) -> HRESULT;
     // utils.h:106 SHELL_CreateShell32DefaultExtractIcon(int, REFIID, LPVOID*)
@@ -1746,13 +1719,13 @@ pub unsafe fn CRecycleBin_GetFSFolderForItem_body(this: *mut CRecycleBin, pidl: 
     if (*this).m_pFSFolders[drive as usize].is_null() {
         let hr: HRESULT;
         let mut pfti: PERSIST_FOLDER_TARGET_INFO = core::mem::zeroed();
-        hr = GetRecycleBinPathFromDriveNumber(drive as UINT, pfti.szTargetParsingName.as_mut_ptr());
+        hr = GetRecycleBinPathFromDriveNumber(drive as UINT, core::ptr::addr_of_mut!(pfti.szTargetParsingName).cast());
         if ((hr) < 0) {
             return core::ptr::null_mut();
         }
         pfti.dwAttributes = FILE_ATTRIBUTE_DIRECTORY;
         pfti.csidl = -(1 as i32);
-        let pidlRoot: *mut ITEMIDLIST = SHELL32_CreateSimpleIDListFromPath_RustBridge(pfti.szTargetParsingName.as_ptr(), pfti.dwAttributes);
+        let pidlRoot: *mut ITEMIDLIST = SHELL32_CreateSimpleIDListFromPath_RustBridge(core::ptr::addr_of!(pfti.szTargetParsingName).cast(), pfti.dwAttributes);
         if pidlRoot.is_null() && ((E_FAIL) < 0) {
             return core::ptr::null_mut();
         }
@@ -1900,7 +1873,7 @@ pub unsafe fn CRecycleBin_CompareIDs_body(this: *mut CRecycleBin, lParam: LPARAM
         COLUMN_TYPE => {
             GetItemTypeName_body(pidl1, &*pData1, &mut shfi1);
             GetItemTypeName_body(pidl2, &*pData2, &mut shfi2);
-            result = CFSFolder_CompareUiStrings_RustBridge(shfi1.szTypeName.as_ptr(), shfi2.szTypeName.as_ptr(), lParam);
+            result = CFSFolder_CompareUiStrings_RustBridge(core::ptr::addr_of!(shfi1.szTypeName).cast(), core::ptr::addr_of!(shfi2.szTypeName).cast(), lParam);
         }
         COLUMN_MTIME => {
             _ILGetFileDateTime(pidl1, &mut ft1);
@@ -1943,7 +1916,7 @@ pub unsafe fn CRecycleBin_CreateViewObject_body(this: *mut CRecycleBin, hwndOwne
                 psvOuter: core::ptr::null_mut(),
                 psfvcb: sfviewcb as *mut core::ffi::c_void,
             };
-            hr = SHCreateShellFolderView(&create, ppv as *mut *mut IShellView);
+            hr = SHCreateShellFolderView((&raw const create).cast(), (ppv as *mut *mut IShellView).cast());
             if hr >= 0 {
                 CRecycleBinFolderViewCB_Initialize_RustBridge(
                     sfviewcb,
@@ -2191,7 +2164,7 @@ pub unsafe fn CRecycleBin_GetDetailsOf_body(this: *mut CRecycleBin, pidl: PCUITE
             GetItemTypeName_body(pidl, &*pData, &mut shfi);
             return cpp_com_SHSetStrRetW(
                 &mut (*pDetails).str_,
-                shfi.szTypeName.as_ptr(),
+                core::ptr::addr_of!(shfi.szTypeName).cast(),
             );
         }
         _ => return E_FAIL,
@@ -2299,7 +2272,7 @@ pub unsafe fn CRecycleBin_InvokeCommand_body(this: *mut CRecycleBin, lpcmi: LPCM
 }
 
 pub unsafe fn CRecycleBin_GetCommandString_body(this: *mut CRecycleBin, idCommand: UINT_PTR, uFlags: UINT, lpReserved: *mut UINT, lpszName: LPSTR, uMaxNameLen: UINT) -> HRESULT {
-    SHELL_GetCommandStringImpl(idCommand, uFlags, lpszName, uMaxNameLen, g_BBFolderVerbMap.as_ptr())
+    SHELL_GetCommandStringImpl((idCommand) as _, uFlags, lpszName, uMaxNameLen, g_BBFolderVerbMap.as_ptr())
 }
 
 pub unsafe fn CRecycleBin_AddPages_body(this: *mut CRecycleBin, pfnAddPage: LPFNSVADDPROPSHEETPAGE, lParam: LPARAM) -> HRESULT {

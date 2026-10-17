@@ -4,17 +4,16 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import subprocess
-import sys
 import time
 from pathlib import Path
 
 import pytest
 
+from tests.qemu.cli import rustlints
+from tests.qemu.cli.archcfg import base_arch
 from tests.qemu.vm import PROJECT_DIR, QemuVM, process_cpu_pct
-
-# Add tools/ to path for scan_ud2
-sys.path.insert(0, str(PROJECT_DIR / "tools"))
 
 
 def _qcode_key_event(k, d):
@@ -89,9 +88,12 @@ def _symbolicate_bugcheck(serial_output: str, arch: str) -> str:
             ntoskrnl = PROJECT_DIR / f"build-{arch}" / "ntoskrnl" / "ntoskrnl.exe"
             if ntoskrnl.exists():
                 try:
-                    from scan_ud2 import find_objdump
-
-                    objdump = find_objdump(arch)
+                    triple = {"i386": "i686", "amd64": "x86_64", "arm64": "aarch64"}
+                    names = [f"{triple[base_arch(arch)]}-w64-mingw32-objdump", "llvm-objdump"]
+                    candidates = names + [
+                        str(PROJECT_DIR / ".build-tools/llvm-mingw/bin" / name) for name in names
+                    ]
+                    objdump = next((path for path in candidates if shutil.which(path)), None)
                     if objdump:
                         result = subprocess.run(
                             [objdump, "-d", str(ntoskrnl)],
@@ -761,28 +763,18 @@ def test_no_unexpected_ud2(arch: str) -> None:
 
     Expected ud2 in core::option::unwrap_unchecked etc. are excluded.
     """
-    build_dir = PROJECT_DIR / f"build-{arch}"
+    build_dir = PROJECT_DIR / f"build-{base_arch(arch)}"
     ntoskrnl = build_dir / "ntoskrnl" / "ntoskrnl.exe"
     if not ntoskrnl.exists():
         pytest.skip(f"ntoskrnl.exe not found at {ntoskrnl}")
 
-    try:
-        from scan_ud2 import find_objdump, scan_ud2
-    except ImportError:
-        pytest.skip("scan_ud2.py not found in tools/")
-
-    objdump = find_objdump(arch)
-    if objdump is None:
-        pytest.skip("No objdump available")
-
-    findings = scan_ud2(ntoskrnl, objdump)
-    unexpected = [f for f in findings if not f["expected"] and not f.get("known_cgu")]
-
-    if unexpected:
-        lines = [f"Found {len(unexpected)} unexpected ud2 (LLVM miscompilation):"]
-        for f in unexpected:
-            lines.append(f"  0x{f['address']}: {f['function']}")
-        raise AssertionError("\n".join(lines))
+    result = rustlints.run_binary(
+        PROJECT_DIR,
+        base_arch(arch),
+        ["scan_ud2"],
+        lambda cmd: subprocess.run(cmd, cwd=PROJECT_DIR, capture_output=True, text=True),
+    )["scan_ud2"]
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_sacred_primitives(arch: str) -> None:
@@ -792,49 +784,18 @@ def test_sacred_primitives(arch: str) -> None:
     KfLowerIrql, KeAcquireSpinLock, etc. survive optimization in the
     final ntoskrnl binary.
     """
-    build_dir = PROJECT_DIR / f"build-{arch}"
+    build_dir = PROJECT_DIR / f"build-{base_arch(arch)}"
     ntoskrnl = build_dir / "ntoskrnl" / "ntoskrnl.exe"
     if not ntoskrnl.exists():
         pytest.skip(f"ntoskrnl.exe not found at {ntoskrnl}")
 
-    # Find a working objdump
-    objdump_candidates = {
-        "arm64": ["aarch64-w64-mingw32-objdump", "llvm-objdump"],
-        "amd64": ["x86_64-w64-mingw32-objdump", "llvm-objdump"],
-        "i386": ["i686-w64-mingw32-objdump", "llvm-objdump"],
-    }
-    objdump = None
-    for candidate in objdump_candidates.get(arch, ["llvm-objdump"]):
-        try:
-            subprocess.run([candidate, "--version"], capture_output=True, check=True)
-            objdump = candidate
-            break
-        except (FileNotFoundError, subprocess.CalledProcessError, PermissionError):
-            continue
-    if objdump is None:
-        pytest.skip("No objdump available")
-
-    result = subprocess.run(
-        [objdump, "-d", str(ntoskrnl)],
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
-    disasm = result.stdout
-
-    # amd64 uses direct CR8 access for IRQL, not KfRaiseIrql/KfLowerIrql
-    if arch == "amd64":
-        assert disasm.count("cr8") > 0, (
-            "No CR8 accesses in ntoskrnl — IRQL primitives may be eliminated"
-        )
-        assert "KeAcquireSpinLock" in disasm, (
-            "KeAcquireSpinLock not found in ntoskrnl — spinlock primitive eliminated"
-        )
-    else:
-        for prim in ["KfRaiseIrql", "KfLowerIrql", "KeAcquireSpinLock"]:
-            assert prim in disasm, (
-                f"{prim} not found in ntoskrnl — sacred primitive eliminated by LLVM"
-            )
+    result = rustlints.run_binary(
+        PROJECT_DIR,
+        base_arch(arch),
+        ["sacred_primitives"],
+        lambda cmd: subprocess.run(cmd, cwd=PROJECT_DIR, capture_output=True, text=True),
+    )["sacred_primitives"]
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_idle_cpu_not_spinning(vm: QemuVM, arch: str) -> None:

@@ -74,7 +74,6 @@ extern "C" {
 // Deterministic COM scaffold for CRecycleBinCleaner; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    fn HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
     fn HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
@@ -251,7 +250,7 @@ unsafe fn cpp_com_iid_equal(left: REFIID, right: REFIID) -> bool {
     if ppv.is_null() { return E_POINTER; }
     *ppv = core::ptr::null_mut();
     if !outer.is_null() { return CLASS_E_NOAGGREGATION; }
-    let this = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, core::mem::size_of::<CRecycleBinCleaner>()) as *mut CRecycleBinCleaner;
+    let this = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (core::mem::size_of::<CRecycleBinCleaner>()) as _) as *mut CRecycleBinCleaner;
     if this.is_null() { return E_OUTOFMEMORY; }
     core::ptr::write(this, CRecycleBinCleaner {
         IEmptyVolumeCache2_iface: IEmptyVolumeCache2 { lpVtbl: core::ptr::addr_of!(CRECYCLEBINCLEANER_IEMPTYVOLUMECACHE2_VTBL) },
@@ -303,12 +302,7 @@ pub const SW_SHOWNORMAL: INT = 1;
 
 pub type DWORDLONG = u64;
 
-#[repr(C)]
-pub struct SHQUERYRBINFO {
-    pub cbSize: DWORD,
-    pub i64Size: i64,
-    pub i64NumItems: i64,
-}
+pub use crate::island::SHQUERYRBINFO;
 
 #[repr(C)]
 pub struct SHELLEXECUTEINFOW {
@@ -324,9 +318,6 @@ extern "system" {
     fn CoTaskMemFree(memory: LPVOID);
     fn SHStrDupW(source: LPCWSTR, out: *mut LPWSTR) -> HRESULT;
     fn SHQueryRecycleBinW(root: LPCWSTR, info: *mut SHQUERYRBINFO) -> HRESULT;
-    fn SHEmptyRecycleBinW(owner: HWND, root: LPCWSTR, flags: DWORD) -> HRESULT;
-    fn SHGetSpecialFolderLocation(owner: HWND, csidl: INT, pidl: *mut LPITEMIDLIST) -> HRESULT;
-    fn ShellExecuteExW(info: *mut SHELLEXECUTEINFOW) -> BOOL;
 }
 
 extern "C" {
@@ -344,9 +335,6 @@ unsafe fn StringCchCopyW(dst: LPWSTR, capacity: usize, src: LPCWSTR) -> HRESULT 
 }
 
 extern "system" {
-    fn HeapReAlloc(heap: HANDLE, flags: DWORD, memory: LPVOID, bytes: usize) -> LPVOID;
-    fn GetModuleHandleW(name: LPCWSTR) -> HINSTANCE;
-    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
 }
 
 pub struct CStringW { buffer: LPWSTR, len: usize, capacity: usize }
@@ -383,9 +371,9 @@ impl CStringW {
         let capacity = needed.next_power_of_two().max(16);
         let bytes = capacity * core::mem::size_of::<WCHAR>();
         let next = if self.buffer.is_null() {
-            HeapAlloc(GetProcessHeap(), 0, bytes)
+            HeapAlloc(GetProcessHeap(), 0, (bytes) as _)
         } else {
-            HeapReAlloc(GetProcessHeap(), 0, self.buffer.cast(), bytes)
+            HeapReAlloc(GetProcessHeap(), 0, self.buffer.cast(), (bytes) as SIZE_T)
         } as LPWSTR;
         if next.is_null() { return false; }
         self.buffer = next; self.capacity = capacity; true
@@ -422,6 +410,15 @@ static CPP_COM_EMPTY_WSTR: [WCHAR; 1] = [0];
 pub static CPP_COM_WSTR_82DB442E7A60: [WCHAR; 5] = [0x006F, 0x0070, 0x0065, 0x006E, 0x0000];
 
 use core::ffi::c_void;
+// The crate's own functions: the definition is the declaration.
+use crate::recycle_bin_tu::SHEmptyRecycleBinW;
+use crate::wine::shellpath::SHGetSpecialFolderLocation;
+use crate::shell32::shlexec::ShellExecuteExW;
+// One declaration per external symbol: island.rs.
+use crate::island::GetModuleHandleW;
+use crate::island::HeapAlloc;
+use crate::island::HeapReAlloc;
+use crate::island::LoadStringW;
 use crate::shellcom::*;
 use crate::types::*;
 
@@ -501,7 +498,7 @@ pub unsafe fn CRecycleBinCleaner_ShowProperties_body(this: *mut CRecycleBinClean
     seei.fMask = SEE_MASK_IDLIST;
     seei.lpIDList = pidl as *mut _;
 
-    ShellExecuteExW(&mut seei);
+    ShellExecuteExW((&raw mut seei).cast());
 
     // RAII cleanup: CComHeapPtr destructor calls CoTaskMemFree
     CoTaskMemFree(pidl as *mut core::ffi::c_void);

@@ -1714,16 +1714,10 @@ MSIHANDLE WINAPI MsiGetActiveDatabase( MSIHANDLE hInstall )
     }
     else if ((remote = msi_get_remote(hInstall)))
     {
-        __TRY
-        {
-            handle = remote_GetActiveDatabase(remote);
+        if (remote_GetActiveDatabase_guarded(rpc_filter, NULL, &handle, remote))
             handle = alloc_msi_remote_handle(handle);
-        }
-        __EXCEPT(rpc_filter)
-        {
+        else
             handle = 0;
-        }
-        __ENDTRY
     }
 
     return handle;
@@ -2073,15 +2067,15 @@ INT WINAPI MsiProcessMessage( MSIHANDLE hInstall, INSTALLMESSAGE eMessageType,
         if (!(remote = msi_get_remote(hInstall)))
             return ERROR_INVALID_HANDLE;
 
-        __TRY
         {
-            ret = remote_ProcessMessage(remote, eMessageType, (struct wire_record *)&record->count);
+            DWORD code;
+            int result;
+
+            if (remote_ProcessMessage_guarded(rpc_filter, &code, &result, remote, eMessageType, (struct wire_record *)&record->count))
+                ret = result;
+            else
+                ret = code;
         }
-        __EXCEPT(rpc_filter)
-        {
-            ret = GetExceptionCode();
-        }
-        __ENDTRY
 
         msiobj_release(&record->hdr);
         return ret;
@@ -2191,15 +2185,12 @@ UINT WINAPI MsiSetPropertyW( MSIHANDLE hInstall, LPCWSTR szName, LPCWSTR szValue
         if (!(remote = msi_get_remote(hInstall)))
             return ERROR_INVALID_HANDLE;
 
-        __TRY
         {
-            ret = remote_SetProperty(remote, szName, szValue);
+            DWORD code;
+
+            if (!remote_SetProperty_guarded(rpc_filter, &code, &ret, remote, szName, szValue))
+                ret = code;
         }
-        __EXCEPT(rpc_filter)
-        {
-            ret = GetExceptionCode();
-        }
-        __ENDTRY
 
         return ret;
     }
@@ -2370,15 +2361,12 @@ UINT WINAPI MsiGetPropertyA(MSIHANDLE hinst, const char *name, char *buf, DWORD 
             return ERROR_INVALID_HANDLE;
         }
 
-        __TRY
         {
-            r = remote_GetProperty(remote, nameW, &value, &len);
+            DWORD code;
+
+            if (!remote_GetProperty_guarded(rpc_filter, &code, &r, remote, nameW, &value, &len))
+                r = code;
         }
-        __EXCEPT(rpc_filter)
-        {
-            r = GetExceptionCode();
-        }
-        __ENDTRY
 
         free(nameW);
 
@@ -2435,15 +2423,12 @@ UINT WINAPI MsiGetPropertyW(MSIHANDLE hinst, const WCHAR *name, WCHAR *buf, DWOR
         if (!(remote = msi_get_remote(hinst)))
             return ERROR_INVALID_HANDLE;
 
-        __TRY
         {
-            r = remote_GetProperty(remote, name, &value, &len);
+            DWORD code;
+
+            if (!remote_GetProperty_guarded(rpc_filter, &code, &r, remote, name, &value, &len))
+                r = code;
         }
-        __EXCEPT(rpc_filter)
-        {
-            r = GetExceptionCode();
-        }
-        __ENDTRY
 
         if (!r)
         {

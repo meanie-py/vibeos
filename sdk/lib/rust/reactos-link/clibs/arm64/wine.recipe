@@ -1,0 +1,10 @@
+# wine (arm64), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+c	sdk/lib/libwine/config.c	@build/sdk/lib/libwine sdk/lib/libwine sdk/include/wine @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 @core	WINVER=0x502 _WIN32_WINNT=0x502 _WINE __WINESRC__
+c	sdk/lib/libwine/debug_ros.c	@build/sdk/lib/libwine sdk/lib/libwine sdk/include/wine @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 @core	WINVER=0x502 _WIN32_WINNT=0x502 _WINE __WINESRC__
+c	sdk/lib/libwine/isinf.c	@build/sdk/lib/libwine sdk/lib/libwine sdk/include/wine @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 @core	WINVER=0x502 _WIN32_WINNT=0x502 _WINE __WINESRC__
+c	sdk/lib/libwine/isfinite.c	@build/sdk/lib/libwine sdk/lib/libwine sdk/include/wine @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 @core	WINVER=0x502 _WIN32_WINNT=0x502 _WINE __WINESRC__
+c	sdk/lib/libwine/isnan.c	@build/sdk/lib/libwine sdk/lib/libwine sdk/include/wine @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 @core	WINVER=0x502 _WIN32_WINNT=0x502 _WINE __WINESRC__
+c	sdk/lib/libwine/loader.c	@build/sdk/lib/libwine sdk/lib/libwine sdk/include/wine @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 @core	WINVER=0x502 _WIN32_WINNT=0x502 _WINE __WINESRC__
+c	sdk/lib/crt/string/wctype.c	@build/sdk/lib/libwine sdk/lib/libwine sdk/include/wine @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 @core	WINVER=0x502 _WIN32_WINNT=0x502 _WINE __WINESRC__
+c	sdk/lib/libwine/path.c	@build/sdk/lib/libwine sdk/lib/libwine sdk/include/wine @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 @core	WINVER=0x502 _WIN32_WINNT=0x502 _WINE __WINESRC__
+c	sdk/lib/libwine/register.c	@build/sdk/lib/libwine sdk/lib/libwine sdk/include/wine @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 @core	WINVER=0x502 _WIN32_WINNT=0x502 _WINE __WINESRC__

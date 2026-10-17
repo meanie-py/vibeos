@@ -7,6 +7,39 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The C left, and its part of cmake's C rule; reactos-link adds what every C
+    // compile shares from reactos-link/cflags/c.<arch>.flags (Linker::c_compiled).
+    let c_sources: &[&str] = &["drivers/storage/ide/pciidex/rust_varargs_shim.c"];
+    let c_includes: &[&str] = &[
+        "@build/drivers/storage/ide/pciidex",
+        "drivers/storage/ide/pciidex",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+    ];
+    let c_flags: &[&str] = match arch.as_str() {
+        "x86" => &["-std=gnu99", "@core"],
+        "x86_64" => &["-std=gnu99", "-U_X86_", "-UWIN32", "@core"],
+        "aarch64" => &["-std=gnu99", "@core"],
+        _ => unreachable!(),
+    };
+    let c_defines: &[&str] = &["WINVER=0x502", "_WIN32_WINNT=0x502"];
+
+    // The module's part of cmake's windres command; reactos-link adds what every
+    // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
+    let rc_includes: &[&str] = &[
+        "@build/drivers/storage/ide/pciidex",
+        "drivers/storage/ide/pciidex",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+    ];
+    let rc_flags: &[&str] = &[];
+    let rc_defines: &[&str] = &["WINVER=0x502", "_WIN32_WINNT=0x502"];
+
     let (target_json, entry, image_base) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_DriverEntry@8", 0x10000u64),
         "x86_64" => ("x86_64-pc-windows-gnu", "DriverEntry", 0x10000u64),
@@ -33,8 +66,8 @@ fn main() {
     link
         .rust_staticlib("pciidex-rust")
         .rust_user_target()
-        .c_from_compile_db("pciidex_shims", &["drivers/storage/ide/pciidex/rust_varargs_shim.c"])
-        .resource_from_rc("drivers/storage/ide/pciidex/pciidex.rc", "pciidex_res")
+        .c_compiled("pciidex_shims", c_sources, c_includes, c_flags, c_defines)
+        .rc("drivers/storage/ide/pciidex/pciidex.rc", rc_includes, rc_flags, rc_defines)
         .spec2def("drivers/storage/ide/pciidex/pciidex.spec", "pciidex.sys")
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .import_lib("hal/hal.spec", "hal.dll", "hal")

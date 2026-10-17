@@ -6,12 +6,8 @@ include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_or
 # The translated C, kept on disk:
 # nslookup.c  # replaced by Rust (sdk/lib/rust/nslookup-rust/src/nslookup/nslookup.rs)
 # utility.c  # replaced by Rust (sdk/lib/rust/nslookup-rust/src/nslookup/utility.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(nslookup_res OBJECT nslookup.rc)
-target_include_directories(nslookup_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(nslookup nslookup-cargo nslookup.exe
     KIND win32exe
     BODY_CRATE nslookup-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS nslookup_res)
+    EXTRA_DEPENDS psdk)

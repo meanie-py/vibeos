@@ -368,7 +368,7 @@ static HRESULT WINAPI rendertarget_DrawGlyphRun(IDWriteBitmapRenderTarget1 *ifac
         return E_INVALIDARG;
 
     if (FAILED(hr = IDWriteFontFace_QueryInterface(run->fontFace, &IID_IDWriteFontFace3, (void **)&fontface))) {
-        WARN("Failed to get IDWriteFontFace2 interface, hr %#lx.\n", hr);
+        WARN("Failed to get IDWriteFontFace3 interface, hr %#lx.\n", hr);
         return hr;
     }
 
@@ -697,8 +697,8 @@ static HRESULT WINAPI gdiinterop_CreateFontFromLOGFONT(IDWriteGdiInterop1 *iface
 static HRESULT WINAPI gdiinterop_ConvertFontToLOGFONT(IDWriteGdiInterop1 *iface,
     IDWriteFont *font, LOGFONTW *logfont, BOOL *is_systemfont)
 {
-    IDWriteFontCollection *collection;
-    IDWriteFontFamily *family;
+    IDWriteFontFileLoader *loader;
+    IDWriteFontFile *file;
     HRESULT hr;
 
     TRACE("%p, %p, %p, %p.\n", iface, font, logfont, is_systemfont);
@@ -707,20 +707,16 @@ static HRESULT WINAPI gdiinterop_ConvertFontToLOGFONT(IDWriteGdiInterop1 *iface,
 
     memset(logfont, 0, sizeof(*logfont));
 
-    if (!font)
+    file = get_fontfile_from_font(font);
+
+    if (!font || !file)
         return E_INVALIDARG;
 
-    hr = IDWriteFont_GetFontFamily(font, &family);
-    if (FAILED(hr))
+    if (FAILED(hr = IDWriteFontFile_GetLoader(file, &loader)))
         return hr;
 
-    hr = IDWriteFontFamily_GetFontCollection(family, &collection);
-    IDWriteFontFamily_Release(family);
-    if (FAILED(hr))
-        return hr;
-
-    *is_systemfont = is_system_collection(collection);
-    IDWriteFontCollection_Release(collection);
+    *is_systemfont = loader == get_local_fontfile_loader();
+    IDWriteFontFileLoader_Release(loader);
 
     get_logfont_from_font(font, logfont);
     logfont->lfCharSet = DEFAULT_CHARSET;
@@ -1008,7 +1004,10 @@ static HRESULT WINAPI memresourcestream_ReadFileFragment(IDWriteFontFileStream *
         return E_OUTOFMEMORY;
 
     if (!GetFontFileData(stream->key, 0, offset, fragment, fragment_size))
+    {
+        free(fragment);
         return E_FAIL;
+    }
 
     *fragment_start = *fragment_context = fragment;
     return S_OK;

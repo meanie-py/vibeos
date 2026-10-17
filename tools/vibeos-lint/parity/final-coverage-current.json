@@ -1,0 +1,117 @@
+{
+  "root": "/home/curi/Projects/os-playground/vibeos-lint",
+  "oracle_revision": "996c6ff8957615baccfd3a51286b1f8d7ec27c9d",
+  "source_revision": "1c3e4943280f3400d64b818515714a0e4c22086f",
+  "rust_seconds": 92.69260162301362,
+  "rust_binary_sha256": "2090631f268747f8a8a98aff25325f37bad7f85dd17e15a3d2a0947e0d093813",
+  "rules": {
+    "scan_atl_slot_cast": {
+      "python": 0,
+      "rust": 0,
+      "python_seconds": 6.450383602001239,
+      "python_only": [],
+      "rust_only": [],
+      "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "scan_fnclass_cc": {
+      "python": 0,
+      "rust": 0,
+      "python_seconds": 8.546999926009448,
+      "python_only": [],
+      "rust_only": [],
+      "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "scan_list_walk_cursor_after_loop": {
+      "python": 0,
+      "rust": 0,
+      "python_seconds": 9.65612716099713,
+      "python_only": [],
+      "rust_only": [],
+      "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "vendored_registry": {
+      "python": 0,
+      "rust": 0,
+      "python_seconds": 10.513638464995893,
+      "python_only": [],
+      "rust_only": [],
+      "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "verify_signatures": {
+      "python": 15,
+      "rust": 15,
+      "python_seconds": 4.891330726008164,
+      "python_only": [],
+      "rust_only": [],
+      "python_sha256": "af26e12cd4b6786f806ab5751d323c4785d0f8532ba0937cc98b149e99851d5f",
+      "rust_sha256": "af26e12cd4b6786f806ab5751d323c4785d0f8532ba0937cc98b149e99851d5f"
+    },
+    "gen_ctype_tables": {
+      "python": 0,
+      "rust": 0,
+      "python_seconds": 0.07950151001568884,
+      "python_only": [],
+      "rust_only": [],
+      "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "verify_svc_numbering": {
+      "python": 0,
+      "rust": 0,
+      "python_seconds": 0.06329915701644495,
+      "python_only": [],
+      "rust_only": [],
+      "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "shellcheck": {
+      "python": 8,
+      "rust": 8,
+      "python_seconds": 2.167351990006864,
+      "python_only": [],
+      "rust_only": [],
+      "python_sha256": "e4f0c5c90d82ed19afefed858ed83dabc673557655033444ae243d7fd5f392b4",
+      "rust_sha256": "e4f0c5c90d82ed19afefed858ed83dabc673557655033444ae243d7fd5f392b4"
+    },
+    "py-syntax": {
+      "python": 0,
+      "rust": 0,
+      "python_seconds": 1.270644614007324,
+      "python_only": [],
+      "rust_only": [],
+      "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "verify_ucrtbase_cohab": {
+      "python": 0,
+      "rust": 0,
+      "python_seconds": 0.7313574849977158,
+      "python_only": [],
+      "rust_only": [],
+      "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "marshalgen_audit": {
+      "python": 0,
+      "rust": 0,
+      "python_seconds": 0.08149313399917446,
+      "python_only": [],
+      "rust_only": [],
+      "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "scan_cmake_linked_rust": {
+      "python": 25,
+      "rust": 25,
+      "python_seconds": 5.393330713995965,
+      "python_only": [],
+      "rust_only": [],
+      "python_sha256": "53c4941f1cbae940b8f384731c7e4e799465fc18c72960bb47dc0170e31d4b99",
+      "rust_sha256": "53c4941f1cbae940b8f384731c7e4e799465fc18c72960bb47dc0170e31d4b99"
+    }
+  }
+}

@@ -722,11 +722,7 @@ pub type LPFNSVADDPROPSHEETPAGE = Option<unsafe extern "system" fn(HPROPSHEETPAG
 pub type ITEMIDLIST_ABSOLUTE = ITEMIDLIST;
 
 extern "system" {
-    fn CloseHandle(handle: HANDLE) -> BOOL;
-    fn CreateFileW(name: LPCWSTR, access: DWORD, share: DWORD, security: LPVOID, creation: DWORD, flags: DWORD, template: HANDLE) -> HANDLE;
     #[link_name = "LoadImageW"] fn LoadImage(instance: HINSTANCE, name: LPCWSTR, kind: UINT, width: INT, height: INT, flags: UINT) -> HANDLE;
-    fn RegGetValueW(key: HKEY, subkey: LPCWSTR, value: LPCWSTR, flags: DWORD, kind: LPDWORD, data: LPVOID, bytes: LPDWORD) -> LONG;
-    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
     fn CoTaskMemFree(memory: LPVOID);
 }
 
@@ -737,9 +733,9 @@ pub type CLIPFORMAT = WORD; // wtypes.h
 pub type LONGLONG = i64; // winnt.h
 pub type size_t = usize;
 pub type HDROP = HANDLE;
-pub type HBRUSH = HANDLE;
-pub type HPEN = HANDLE;
-pub type HGDIOBJ = HANDLE;
+pub use crate::island::HBRUSH;
+pub use crate::island::HPEN;
+pub use crate::island::HGDIOBJ;
 pub type LPDRAWITEMSTRUCT = *mut DRAWITEMSTRUCT;
 pub type LPFNADDPROPSHEETPAGE = LPFNSVADDPROPSHEETPAGE; // prsht.h (same shape)
 // winuser.h DLGPROC; prsht.h LPFNPSPCALLBACKW (donor shell_link.rs:4899-4900)
@@ -747,22 +743,7 @@ pub type DLGPROC = unsafe extern "system" fn(HWND, UINT, WPARAM, LPARAM) -> INT_
 pub type LPFNPSPCALLBACKW = unsafe extern "system" fn(HWND, UINT, *mut PROPSHEETPAGEW) -> UINT;
 
 // prsht.h _PROPSHEETPAGEW (donor shell_link.rs:4906 — faithful prefix layout).
-#[repr(C)]
-pub struct PROPSHEETPAGEW {
-    pub dwSize: DWORD,
-    pub dwFlags: DWORD,
-    pub hInstance: HINSTANCE,
-    pub pszTemplate: LPCWSTR,      // union { pszTemplate, pResource }
-    pub hIcon: HICON,              // union { hIcon, pszIcon }
-    pub pszTitle: LPCWSTR,
-    pub pfnDlgProc: Option<DLGPROC>,
-    pub lParam: LPARAM,
-    pub pfnCallback: Option<LPFNPSPCALLBACKW>,
-    pub pcRefParent: *mut UINT,
-    pub pszHeaderTitle: LPCWSTR,
-    pub pszHeaderSubTitle: LPCWSTR,
-    pub hActCtx: HANDLE,
-}
+pub use crate::island::PROPSHEETPAGEW;
 
 // winuser.h / prsht.h / winreg.h constants missing from the generated closure.
 pub const WM_NOTIFY: UINT = 0x004E;
@@ -807,7 +788,7 @@ pub unsafe fn AddPropSheetPage(
     if let Some(add) = pfnAddPage {
         if add(hPage, lParam) != 0 { return S_OK; }
     }
-    DestroyPropertySheetPage(hPage);
+    DestroyPropertySheetPage((hPage).cast());
     E_FAIL
 }
 
@@ -879,27 +860,11 @@ extern "system" {
     fn GetDriveTypeW(root: LPCWSTR) -> UINT;
     fn GetVolumeInformationW(root: LPCWSTR, name: LPWSTR, name_cch: DWORD, serial: LPDWORD,
                              max_len: LPDWORD, flags: LPDWORD, fs_name: LPWSTR, fs_cch: DWORD) -> BOOL;
-    fn GetDiskFreeSpaceExW(dir: LPCWSTR, avail: *mut ULARGE_INTEGER, total: *mut ULARGE_INTEGER,
-                           free: *mut ULARGE_INTEGER) -> BOOL;
     // user32
-    fn GetDlgItem(dlg: HWND, id: INT) -> HWND;
     #[link_name = "SendMessageW"] // UNICODE build: SendMessage => SendMessageW
     fn SendMessage(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
-    fn SendDlgItemMessageW(dlg: HWND, id: INT, msg: UINT, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
-    fn SetDlgItemTextW(dlg: HWND, id: INT, text: LPCWSTR) -> BOOL;
-    fn GetDlgItemTextW(dlg: HWND, id: INT, buffer: LPWSTR, cch: INT) -> UINT;
-    fn GetWindowTextW(hwnd: HWND, buffer: LPWSTR, cch: INT) -> INT;
-    fn GetWindowTextLengthW(hwnd: HWND) -> INT;
-    fn GetParent(hwnd: HWND) -> HWND;
-    fn ShowWindow(hwnd: HWND, cmd_show: INT) -> BOOL;
-    fn DialogBoxParamW(instance: HINSTANCE, template: LPCWSTR, parent: HWND,
-                       dlgproc: DLGPROC, lparam: LPARAM) -> INT_PTR;
-    fn FillRect(dc: HDC, rect: *const RECT, brush: HBRUSH) -> INT;
     // gdi32
-    fn CreateSolidBrush(color: COLORREF) -> HBRUSH;
-    fn CreatePen(style: INT, width: INT, color: COLORREF) -> HPEN;
     fn GetStockObject(object: INT) -> HGDIOBJ;
-    fn SelectObject(dc: HDC, object: HGDIOBJ) -> HGDIOBJ;
     fn DeleteObject(object: HGDIOBJ) -> BOOL;
     fn MoveToEx(dc: HDC, x: INT, y: INT, point: *mut POINT) -> BOOL;
     fn LineTo(dc: HDC, x: INT, y: INT) -> BOOL;
@@ -908,12 +873,9 @@ extern "system" {
     fn Pie(dc: HDC, left: INT, top: INT, right: INT, bottom: INT,
            xr1: INT, yr1: INT, xr2: INT, yr2: INT) -> BOOL;
     // comctl32
-    fn DestroyPropertySheetPage(page: HPROPSHEETPAGE) -> BOOL;
     // ole32
     fn ReleaseStgMedium(medium: *mut STGMEDIUM);
     // shell32 public exports
-    fn ShellExecuteW(hwnd: HWND, verb: LPCWSTR, file: LPCWSTR, parameters: LPCWSTR,
-                     directory: LPCWSTR, show: INT) -> HINSTANCE;
     fn DragQueryFileW(drop: HDROP, index: UINT, path: LPWSTR, cch: UINT) -> UINT;
     fn SHSimpleIDListFromPathW(path: LPCWSTR) -> LPITEMIDLIST;
     // shlwapi
@@ -974,10 +936,6 @@ extern "C" {
     fn swprintf(buffer: *mut WCHAR, format: *const WCHAR, ...) -> INT;
     // wine/shell32_main.h:250-251 (extern "C" block; defined in propsheet.cpp —
     // donor shell_link.rs:5288)
-    fn SH_CreatePropertySheetPageEx(dialog_id: WORD, dlgproc: DLGPROC, lparam: LPARAM,
-                                    title: LPCWSTR, callback: Option<LPFNPSPCALLBACKW>) -> HPROPSHEETPAGE;
-    fn SH_CreatePropertySheetPage(dialog_id: WORD, dlgproc: DLGPROC, lparam: LPARAM,
-                                  title: LPCWSTR) -> HPROPSHEETPAGE;
 }
 
 // Both StringCbPrintfW call sites in this file format a registry-sourced command
@@ -1119,6 +1077,30 @@ impl Drop for CDrop {
 }
 
 use core::ffi::c_void;
+// The crate's own functions: the definition is the declaration.
+use crate::propsheet::SH_CreatePropertySheetPage;
+use crate::propsheet::SH_CreatePropertySheetPageEx;
+use crate::shell32::shlexec::ShellExecuteW;
+// One declaration per external symbol: island.rs.
+use crate::island::CloseHandle;
+use crate::island::CreateFileW;
+use crate::island::CreatePen;
+use crate::island::CreateSolidBrush;
+use crate::island::DestroyPropertySheetPage;
+use crate::island::DialogBoxParamW;
+use crate::island::FillRect;
+use crate::island::GetDiskFreeSpaceExW;
+use crate::island::GetDlgItem;
+use crate::island::GetDlgItemTextW;
+use crate::island::GetParent;
+use crate::island::GetWindowTextLengthW;
+use crate::island::GetWindowTextW;
+use crate::island::LoadStringW;
+use crate::island::RegGetValueW;
+use crate::island::SelectObject;
+use crate::island::SendDlgItemMessageW;
+use crate::island::SetDlgItemTextW;
+use crate::island::ShowWindow;
 use crate::shellcom::*;
 use crate::types::*;
 // A no-op debug macro must stay a macro: an out-of-line no-op `fn` is an optimization barrier
@@ -1146,7 +1128,7 @@ pub unsafe fn CDrvDefExt_PaintStaticControls_body(this: *mut CDrvDefExt, hwndDlg
         let hBlackPen = GetStockObject(BLACK_PEN as INT) as HPEN;
         let hDarkBluePen = CreatePen(PS_SOLID as INT, 1, RGB(0, 0, 128));
         let hDarkMagPen = CreatePen(PS_SOLID as INT, 1, RGB(128, 0, 128));
-        let hOldPen = SelectObject((*pDrawItem).hDC, hDarkMagPen) as HPEN;
+        let hOldPen = SelectObject((*pDrawItem).hDC, (hDarkMagPen).cast()) as HPEN;
 
         let xCenter = ((*pDrawItem).rcItem.left + (*pDrawItem).rcItem.right) / 2;
         let yCenter = ((*pDrawItem).rcItem.top + (*pDrawItem).rcItem.bottom - 10) / 2;
@@ -1162,54 +1144,54 @@ pub unsafe fn CDrvDefExt_PaintStaticControls_body(this: *mut CDrvDefExt, hwndDlg
             let mut hCenterPen: HPEN = 0 as HPEN;
 
             if (*this).m_FreeSpacePerc < 50 && x == xRadial {
-                SelectObject((*pDrawItem).hDC, hDarkBluePen);
+                SelectObject((*pDrawItem).hDC, (hDarkBluePen).cast());
             }
 
             if x == (*pDrawItem).rcItem.left {
-                hCenterPen = SelectObject((*pDrawItem).hDC, hBlackPen) as HPEN;
+                hCenterPen = SelectObject((*pDrawItem).hDC, (hBlackPen).cast()) as HPEN;
             } else if x == (*pDrawItem).rcItem.right - 1 {
-                SelectObject((*pDrawItem).hDC, hBlackPen);
+                SelectObject((*pDrawItem).hDC, (hBlackPen).cast());
             }
 
-            MoveToEx((*pDrawItem).hDC, x, y, core::ptr::null_mut());
-            LineTo((*pDrawItem).hDC, x, y + 10);
-            SetPixel((*pDrawItem).hDC, x, y + 10, RGB(0, 0, 0));
+            MoveToEx(((*pDrawItem).hDC).cast(), x, y, core::ptr::null_mut());
+            LineTo(((*pDrawItem).hDC).cast(), x, y + 10);
+            SetPixel(((*pDrawItem).hDC).cast(), x, y + 10, RGB(0, 0, 0));
 
             if x == (*pDrawItem).rcItem.left {
-                SelectObject((*pDrawItem).hDC, hCenterPen);
+                SelectObject((*pDrawItem).hDC, (hCenterPen).cast());
             }
         }
 
-        SelectObject((*pDrawItem).hDC, hBlackPen);
+        SelectObject((*pDrawItem).hDC, (hBlackPen).cast());
 
         let hbrOld: HBRUSH;
         if (*this).m_FreeSpacePerc > 50 {
-            hbrOld = SelectObject((*pDrawItem).hDC, hMagBrush) as HBRUSH;
-            Ellipse((*pDrawItem).hDC, (*pDrawItem).rcItem.left, (*pDrawItem).rcItem.top, (*pDrawItem).rcItem.right, (*pDrawItem).rcItem.bottom - 10);
-            SelectObject((*pDrawItem).hDC, hBlueBrush);
+            hbrOld = SelectObject((*pDrawItem).hDC, (hMagBrush).cast()) as HBRUSH;
+            Ellipse(((*pDrawItem).hDC).cast(), (*pDrawItem).rcItem.left, (*pDrawItem).rcItem.top, (*pDrawItem).rcItem.right, (*pDrawItem).rcItem.bottom - 10);
+            SelectObject((*pDrawItem).hDC, (hBlueBrush).cast());
 
             if (*this).m_FreeSpacePerc < 100 {
-                Pie((*pDrawItem).hDC, (*pDrawItem).rcItem.left, (*pDrawItem).rcItem.top, (*pDrawItem).rcItem.right,
+                Pie(((*pDrawItem).hDC).cast(), (*pDrawItem).rcItem.left, (*pDrawItem).rcItem.top, (*pDrawItem).rcItem.right,
                     (*pDrawItem).rcItem.bottom - 10, xRadial, yRadial, (*pDrawItem).rcItem.left, yCenter);
             }
         } else {
-            hbrOld = SelectObject((*pDrawItem).hDC, hBlueBrush) as HBRUSH;
-            Ellipse((*pDrawItem).hDC, (*pDrawItem).rcItem.left, (*pDrawItem).rcItem.top, (*pDrawItem).rcItem.right, (*pDrawItem).rcItem.bottom - 10);
-            SelectObject((*pDrawItem).hDC, hMagBrush);
+            hbrOld = SelectObject((*pDrawItem).hDC, (hBlueBrush).cast()) as HBRUSH;
+            Ellipse(((*pDrawItem).hDC).cast(), (*pDrawItem).rcItem.left, (*pDrawItem).rcItem.top, (*pDrawItem).rcItem.right, (*pDrawItem).rcItem.bottom - 10);
+            SelectObject((*pDrawItem).hDC, (hMagBrush).cast());
 
             if (*this).m_FreeSpacePerc > 0 {
-                Pie((*pDrawItem).hDC, (*pDrawItem).rcItem.left, (*pDrawItem).rcItem.top, (*pDrawItem).rcItem.right,
+                Pie(((*pDrawItem).hDC).cast(), (*pDrawItem).rcItem.left, (*pDrawItem).rcItem.top, (*pDrawItem).rcItem.right,
                     (*pDrawItem).rcItem.bottom - 10, (*pDrawItem).rcItem.left, yCenter, xRadial, yRadial);
             }
         }
 
-        SelectObject((*pDrawItem).hDC, hbrOld);
-        SelectObject((*pDrawItem).hDC, hOldPen);
+        SelectObject((*pDrawItem).hDC, (hbrOld).cast());
+        SelectObject((*pDrawItem).hDC, (hOldPen).cast());
 
-        DeleteObject(hBlueBrush);
-        DeleteObject(hMagBrush);
-        DeleteObject(hDarkBluePen);
-        DeleteObject(hDarkMagPen);
+        DeleteObject((hBlueBrush).cast());
+        DeleteObject((hMagBrush).cast());
+        DeleteObject((hDarkBluePen).cast());
+        DeleteObject((hDarkMagPen).cast());
     }
 }
 
@@ -1338,8 +1320,8 @@ pub unsafe fn CDrvDefExt_InitGeneralPage_body(this: *mut CDrvDefExt, hwndDlg: HW
 
     if GetDiskFreeSpaceExW(
         (*this).m_wszDrive.as_ptr(),
-        &mut FreeBytesAvailable,
-        &mut TotalNumberOfBytes,
+        (&raw mut FreeBytesAvailable).cast(),
+        (&raw mut TotalNumberOfBytes).cast(),
         core::ptr::null_mut(),
     ) != 0
     {
@@ -1556,7 +1538,7 @@ pub unsafe fn CDrvDefExt_ExtraPageProc_body(this: *mut CDrvDefExt, hwndDlg: HWND
     match uMsg {
         WM_INITDIALOG => {
             let ppsp = lParam as *const PROPSHEETPAGEW;
-            SetWindowLongPtr(hwndDlg, DWLP_USER, (*ppsp).lParam as isize);
+            SetWindowLongPtr(hwndDlg, DWLP_USER, ((*ppsp).lParam as isize) as _);
             return TRUE as INT_PTR;
         }
         WM_COMMAND => {
@@ -1573,7 +1555,7 @@ pub unsafe fn CDrvDefExt_ExtraPageProc_body(this: *mut CDrvDefExt, hwndDlg: HWND
                         shell32_hInstance,
                         MAKEINTRESOURCEW(IDD_CHECK_DISK),
                         hwndDlg,
-                        ChkDskDlg,
+                        Some(ChkDskDlg),
                         lpDrive,
                     );
                 }
@@ -1732,7 +1714,7 @@ pub unsafe fn CDrvDefExt_AddMainPage_body(this: *mut CDrvDefExt, pfnAddPage: LPF
     }
     let hPage = SH_CreatePropertySheetPageEx(
         IDD_DRIVE_PROPERTIES as WORD,
-        GeneralPageProc,
+        Some(GeneralPageProc),
         this as LPARAM,
         pszTitle,
         Some(PropSheetPageLifetimeCallback_CDrvDefExt),
@@ -1797,7 +1779,7 @@ pub unsafe fn CDrvDefExt_AddPages_body(this: *mut CDrvDefExt, pfnAddPage: LPFNSV
         if GetDriveTypeW((*this).m_wszDrive.as_ptr()) == DRIVE_FIXED {
             hPage = SH_CreatePropertySheetPage(
                 IDD_DRIVE_TOOLS as WORD,
-                ExtraPageProc,
+                Some(ExtraPageProc),
                 this as LPARAM,
                 core::ptr::null(),
             );
@@ -1811,7 +1793,7 @@ pub unsafe fn CDrvDefExt_AddPages_body(this: *mut CDrvDefExt, pfnAddPage: LPFNSV
         if GetDriveTypeW((*this).m_wszDrive.as_ptr()) != DRIVE_REMOTE {
             hPage = SH_CreatePropertySheetPage(
                 IDD_DRIVE_HARDWARE as WORD,
-                HardwarePageProc,
+                Some(HardwarePageProc),
                 this as LPARAM,
                 core::ptr::null(),
             );

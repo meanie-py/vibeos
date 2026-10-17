@@ -1,0 +1,163 @@
+{
+  "method": "Exact sorted unique finding-line counts and SHA256 (LF join, no final LF). Original registry/argv/streams/helpers at each oracle_revision, Python fact caches disabled. Components are separate runs, not a combined benchmark. indexed components prove performance checkpoint 2; placement components prove checkpoint 3.",
+  "reports": [
+    {
+      "oracle_revision": "e5ffbfc1e578b0ce342a64a12a8bfbb6817a64f1",
+      "source_revision": "865a9ae3af8f64b87b9a03ce3c402ddc69641479",
+      "rust_seconds": 381.72884030800196,
+      "rules": {
+        "scan_extern_decl_drift": {
+          "python": 31,
+          "rust": 31,
+          "python_seconds": 129.92381393097457,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "70ef14953b00e352219b3014fe98e37c7e54f59ffcfef8a81602c7f57ca6fa22",
+          "rust_sha256": "70ef14953b00e352219b3014fe98e37c7e54f59ffcfef8a81602c7f57ca6fa22"
+        },
+        "scan_version_vs_c": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 60.01914442499401,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_invented_constants": {
+          "python": 8,
+          "rust": 8,
+          "python_seconds": 62.50826059700921,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "9b65c130a785d8d053202b1b9cbb7179ab9ec598205a427703d4b281866e75a6",
+          "rust_sha256": "9b65c130a785d8d053202b1b9cbb7179ab9ec598205a427703d4b281866e75a6"
+        },
+        "verify_match_consts": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 60.33089692299836,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "verify_constants": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 9.221915758011164,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "verify_constants_enums": {
+          "python": 3,
+          "rust": 3,
+          "python_seconds": 9.229805105016567,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "cbf416dd568cb270b78dee98b0a86392a9ac80fda6c6612191aa2919e538b725",
+          "rust_sha256": "cbf416dd568cb270b78dee98b0a86392a9ac80fda6c6612191aa2919e538b725"
+        }
+      },
+      "component": "indexed-current"
+    },
+    {
+      "oracle_revision": "e5ffbfc1e578b0ce342a64a12a8bfbb6817a64f1",
+      "source_revision": "cc53d01b091e365cccbc7e56f7a929963331d379",
+      "rust_seconds": 367.40963723298046,
+      "rules": {
+        "scan_extern_decl_drift": {
+          "python": 31,
+          "rust": 31,
+          "python_seconds": 134.04620689398143,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "645f7047f44b1bfe703a63386655cec1c26030d9cbbfdf2408ce866ec932511d",
+          "rust_sha256": "645f7047f44b1bfe703a63386655cec1c26030d9cbbfdf2408ce866ec932511d"
+        },
+        "scan_version_vs_c": {
+          "python": 12,
+          "rust": 12,
+          "python_seconds": 56.32330359501066,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "08ba45e694cb8d92f3605eb967711ab78a05be15202e2a85fbe835392ec1346e",
+          "rust_sha256": "08ba45e694cb8d92f3605eb967711ab78a05be15202e2a85fbe835392ec1346e"
+        },
+        "scan_invented_constants": {
+          "python": 8,
+          "rust": 8,
+          "python_seconds": 64.34009899100056,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "9b65c130a785d8d053202b1b9cbb7179ab9ec598205a427703d4b281866e75a6",
+          "rust_sha256": "9b65c130a785d8d053202b1b9cbb7179ab9ec598205a427703d4b281866e75a6"
+        },
+        "verify_match_consts": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 58.23559081798885,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "verify_constants": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 9.376435892976588,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "verify_constants_enums": {
+          "python": 3,
+          "rust": 3,
+          "python_seconds": 9.186798920010915,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "cbf416dd568cb270b78dee98b0a86392a9ac80fda6c6612191aa2919e538b725",
+          "rust_sha256": "cbf416dd568cb270b78dee98b0a86392a9ac80fda6c6612191aa2919e538b725"
+        }
+      },
+      "component": "indexed-older"
+    },
+    {
+      "oracle_revision": "c442ed9fc6db6168a228333423be3a177415c22e",
+      "source_revision": "15eb05f49626885da3b177569a8b6c23d2016016",
+      "rust_seconds": 14.437730461009778,
+      "rules": {
+        "scan_constant_placement": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 103.27068610300194,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "component": "placement-current"
+    },
+    {
+      "oracle_revision": "c442ed9fc6db6168a228333423be3a177415c22e",
+      "source_revision": "cc53d01b091e365cccbc7e56f7a929963331d379",
+      "rust_seconds": 16.921068982977886,
+      "rules": {
+        "scan_constant_placement": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 114.61680277399137,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "component": "placement-older"
+    }
+  ]
+}

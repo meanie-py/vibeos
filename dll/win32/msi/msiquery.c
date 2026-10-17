@@ -256,15 +256,12 @@ UINT WINAPI MsiDatabaseOpenViewW(MSIHANDLE hdb,
         if (!(remote = msi_get_remote(hdb)))
             return ERROR_INVALID_HANDLE;
 
-        __TRY
         {
-            ret = remote_DatabaseOpenView(remote, szQuery, &remote_view);
+            DWORD code;
+
+            if (!remote_DatabaseOpenView_guarded(rpc_filter, &code, &ret, remote, szQuery, &remote_view))
+                ret = code;
         }
-        __EXCEPT(rpc_filter)
-        {
-            ret = GetExceptionCode();
-        }
-        __ENDTRY
 
         if (!ret)
             *phView = alloc_msi_remote_handle(remote_view);
@@ -418,15 +415,12 @@ UINT WINAPI MsiViewFetch( MSIHANDLE hView, MSIHANDLE *record )
         if (!(remote = msi_get_remote(hView)))
             return ERROR_INVALID_HANDLE;
 
-        __TRY
         {
-            ret = remote_ViewFetch(remote, &wire_rec);
+            DWORD code;
+
+            if (!remote_ViewFetch_guarded(rpc_filter, &code, &ret, remote, &wire_rec))
+                ret = code;
         }
-        __EXCEPT(rpc_filter)
-        {
-            ret = GetExceptionCode();
-        }
-        __ENDTRY
 
         if (!ret)
         {
@@ -477,15 +471,12 @@ UINT WINAPI MsiViewClose( MSIHANDLE hView )
         if (!(remote = msi_get_remote(hView)))
             return ERROR_INVALID_HANDLE;
 
-        __TRY
         {
-            ret = remote_ViewClose(remote);
+            DWORD code;
+
+            if (!remote_ViewClose_guarded(rpc_filter, &code, &ret, remote))
+                ret = code;
         }
-        __EXCEPT(rpc_filter)
-        {
-            ret = GetExceptionCode();
-        }
-        __ENDTRY
 
         return ret;
     }
@@ -534,15 +525,12 @@ UINT WINAPI MsiViewExecute( MSIHANDLE hView, MSIHANDLE hRec )
         if (!(remote = msi_get_remote(hView)))
             return ERROR_INVALID_HANDLE;
 
-        __TRY
         {
-            ret = remote_ViewExecute(remote, rec ? (struct wire_record *)&rec->count : NULL);
+            DWORD code;
+
+            if (!remote_ViewExecute_guarded(rpc_filter, &code, &ret, remote, rec ? (struct wire_record *)&rec->count : NULL))
+                ret = code;
         }
-        __EXCEPT(rpc_filter)
-        {
-            ret = GetExceptionCode();
-        }
-        __ENDTRY
 
         if (rec)
             msiobj_release(&rec->hdr);
@@ -657,15 +645,12 @@ UINT WINAPI MsiViewGetColumnInfo( MSIHANDLE hView, MSICOLINFO info, MSIHANDLE *h
         if (!(remote = msi_get_remote(hView)))
             return ERROR_INVALID_HANDLE;
 
-        __TRY
         {
-            r = remote_ViewGetColumnInfo(remote, info, &wire_rec);
+            DWORD code;
+
+            if (!remote_ViewGetColumnInfo_guarded(rpc_filter, &code, &r, remote, info, &wire_rec))
+                r = code;
         }
-        __EXCEPT(rpc_filter)
-        {
-            r = GetExceptionCode();
-        }
-        __ENDTRY
 
         if (!r)
         {
@@ -734,16 +719,12 @@ UINT WINAPI MsiViewModify( MSIHANDLE hView, MSIMODIFY eModifyMode, MSIHANDLE hRe
         if (!(remote = msi_get_remote(hView)))
             return ERROR_INVALID_HANDLE;
 
-        __TRY
         {
-            r = remote_ViewModify(remote, eModifyMode,
-                (struct wire_record *)&rec->count, &wire_refreshed);
+            DWORD code;
+
+            if (!remote_ViewModify_guarded(rpc_filter, &code, &r, remote, eModifyMode, (struct wire_record *)&rec->count, &wire_refreshed))
+                r = code;
         }
-        __EXCEPT(rpc_filter)
-        {
-            r = GetExceptionCode();
-        }
-        __ENDTRY
 
         if (!r && (eModifyMode == MSIMODIFY_REFRESH || eModifyMode == MSIMODIFY_SEEK))
         {
@@ -784,15 +765,12 @@ MSIDBERROR WINAPI MsiViewGetErrorW( MSIHANDLE handle, WCHAR *buffer, DWORD *bufl
         if (!*buflen)
             return MSIDBERROR_FUNCTIONERROR;
 
-        __TRY
         {
-            r = remote_ViewGetError(remote, &remote_column);
+            DWORD code;
+
+            if (!remote_ViewGetError_guarded(rpc_filter, &code, &r, remote, &remote_column))
+                r = code;
         }
-        __EXCEPT(rpc_filter)
-        {
-            r = GetExceptionCode();
-        }
-        __ENDTRY;
 
         if (msi_strncpyW(remote_column ? remote_column : L"", -1, buffer, buflen) == ERROR_MORE_DATA)
             r = MSIDBERROR_MOREDATA;
@@ -835,15 +813,12 @@ MSIDBERROR WINAPI MsiViewGetErrorA( MSIHANDLE handle, char *buffer, DWORD *bufle
         if (!*buflen)
             return MSIDBERROR_FUNCTIONERROR;
 
-        __TRY
         {
-            r = remote_ViewGetError(remote, &remote_column);
+            DWORD code;
+
+            if (!remote_ViewGetError_guarded(rpc_filter, &code, &r, remote, &remote_column))
+                r = code;
         }
-        __EXCEPT(rpc_filter)
-        {
-            r = GetExceptionCode();
-        }
-        __ENDTRY;
 
         if (msi_strncpyWtoA(remote_column ? remote_column : L"", -1, buffer, buflen, FALSE) == ERROR_MORE_DATA)
             r = MSIDBERROR_MOREDATA;
@@ -1088,15 +1063,12 @@ UINT WINAPI MsiDatabaseGetPrimaryKeysW( MSIHANDLE hdb, const WCHAR *table, MSIHA
         if (!(remote = msi_get_remote(hdb)))
             return ERROR_INVALID_HANDLE;
 
-        __TRY
         {
-            r = remote_DatabaseGetPrimaryKeys(remote, table, &wire_rec);
+            DWORD code;
+
+            if (!remote_DatabaseGetPrimaryKeys_guarded(rpc_filter, &code, &r, remote, table, &wire_rec))
+                r = code;
         }
-        __EXCEPT(rpc_filter)
-        {
-            r = GetExceptionCode();
-        }
-        __ENDTRY
 
         if (!r)
         {
@@ -1173,15 +1145,8 @@ MSICONDITION WINAPI MsiDatabaseIsTablePersistentW( MSIHANDLE hDatabase, const WC
         if (!(remote = msi_get_remote(hDatabase)))
             return MSICONDITION_ERROR;
 
-        __TRY
-        {
-            r = remote_DatabaseIsTablePersistent(remote, szTableName);
-        }
-        __EXCEPT(rpc_filter)
-        {
+        if (!remote_DatabaseIsTablePersistent_guarded(rpc_filter, NULL, &r, remote, szTableName))
             r = MSICONDITION_ERROR;
-        }
-        __ENDTRY
 
         return r;
     }

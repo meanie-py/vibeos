@@ -1,5 +1,13 @@
 // rustconv-assembly: class:CDesktopBrowser
 use crate::prelude::*;
+// The crate's own functions: the definition is the declaration.
+use crate::desktop_folder_tu::SHGetDesktopFolder;
+// One declaration per external symbol: island.rs.
+use crate::island::DestroyWindow;
+use crate::island::DispatchMessageW;
+use crate::island::GetMessageW;
+use crate::island::GetSystemMetrics;
+use crate::island::TranslateMessage;
 use crate::atlwin::AtlWindowState;
 use crate::shelldesktop::CChangeNotifyServer::CChangeNotifyServer;
 use crate::shelldesktop::CDesktopBrowser_window::CDesktopBrowser_Create;
@@ -596,11 +604,7 @@ pub struct LARGE_INTEGER {
     pub QuadPart: LONGLONG,
 }
 
-#[repr(C, packed)]
-pub struct SHITEMID {
-    pub cb: WORD,
-    pub abID: [BYTE; 1],
-}
+pub use crate::island::SHITEMID;
 
 #[repr(C)]
 pub struct STATSTG {
@@ -656,14 +660,8 @@ macro_rules! LOWORD { ($value:expr) => { (($value as usize) & 0xffff) as UINT };
 pub type LPFNSVADDPROPSHEETPAGE = Option<unsafe extern "system" fn(HPROPSHEETPAGE, LPARAM) -> BOOL>;
 
 extern "system" {
-    fn DestroyWindow(window: HWND) -> BOOL;
-    fn DispatchMessageW(message: *const MSG) -> LRESULT;
-    fn GetMessageW(message: *mut MSG, window: HWND, first: UINT, last: UINT) -> BOOL;
-    fn TranslateMessage(message: *const MSG) -> BOOL;
-    fn GetSystemMetrics(index: UINT) -> INT;
     fn SHChangeNotify(event: LONG, flags: UINT, item1: LPCVOID, item2: LPCVOID);
     fn EnumDisplaySettingsW(device: LPCWSTR, mode: DWORD, devmode: *mut DEVMODEW) -> BOOL;
-    fn SHGetDesktopFolder(folder: *mut *mut IShellFolder) -> HRESULT;
 }
 
 extern "C" {

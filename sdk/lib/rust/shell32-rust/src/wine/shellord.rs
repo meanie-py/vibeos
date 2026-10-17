@@ -23,16 +23,68 @@
 #![allow(dead_code, unused_assignments, unused_variables, unused_mut, unused_parens)]
 
 use crate::island::{SFGAO_LINK, SHGFI_ATTRIBUTES, SHGFI_ATTR_SPECIFIED, SHGFI_DISPLAYNAME, SHGFI_PIDL, SHGNLI_NOLNK, SHGNLI_NOUNIQUE, tagSHGDN_SHGDN_INFOLDER};
+// The crate's own functions: the definition is the declaration.
+use crate::shell32::cidldataobj_free::IDataObject_Constructor;
+use crate::shell32::cidldataobj_free::IEnumFORMATETC_Constructor;
+use crate::wine::pidl::ILFree;
+use crate::wine::pidl::SHGetPathFromIDListW;
+use crate::wine::shellpath::SHGetSpecialFolderPathW;
+use crate::shell32::shlexec::ShellExecuteExW;
+use crate::shell32::shlexec::ShellExecuteW;
+// One declaration per external symbol: island.rs.
+use crate::island::CallWindowProcW;
+use crate::island::CloseHandle;
+use crate::island::CoCreateInstance;
+use crate::island::CreateFileW;
+use crate::island::CreateMRUListW;
+use crate::island::DefWindowProcW;
+use crate::island::DeregisterShellHookWindow;
+use crate::island::FindFirstFileW;
+use crate::island::FindNextFileW;
+use crate::island::FormatMessageA;
+use crate::island::FreeLibrary;
+use crate::island::GetProcAddress;
+use crate::island::GetPropW;
+use crate::island::GetTopWindow;
+use crate::island::GetWindowLongW;
+use crate::island::GlobalAlloc;
+use crate::island::HeapAlloc;
+use crate::island::IsWindowUnicode;
+use crate::island::LoadLibraryW;
+use crate::island::LoadStringA;
+use crate::island::LoadStringW;
+use crate::island::LocalAlloc;
+use crate::island::MessageBoxA;
+use crate::island::OpenClipboard;
+use crate::island::PathRemoveExtensionW;
+use crate::island::RegCloseKey;
+use crate::island::RegCreateKeyExW;
+use crate::island::RegEnumKeyExW;
+use crate::island::RegOpenKeyExW;
+use crate::island::RegOpenKeyW;
+use crate::island::RegQueryValueExW;
+use crate::island::RegSetValueExW;
+use crate::island::RegisterShellHookWindow;
+use crate::island::RemovePropW;
+use crate::island::SHDeleteKeyW;
+use crate::island::SHGetShellKey;
+use crate::island::SHGetValueW;
+use crate::island::SHQueryValueExW;
+use crate::island::SHSendMessageBroadcastW;
+use crate::island::SHSetValueW;
+use crate::island::SetPropW;
+use crate::island::SetWindowLongW;
+use crate::island::WinHelpW;
 use crate::shellcom::*;
 use crate::types::*;
 use core::ffi::{c_int, c_void};
 
 // ── scalar aliases / message types not in crate::types/shellcom ──────────────────────────
-type WPARAM = usize; // winnt.h (UINT_PTR)
+use ntdll_sys::nt::WPARAM; // winnt.h (UINT_PTR)
 type LRESULT = LONG_PTR; // winnt.h
 type SHORT = i16; // winnt.h
 type LPCOLESTR = LPCWSTR; // wtypes.h
-type HIMAGELIST = HANDLE; // commoncontrols.h
+use crate::island::HIMAGELIST; // commoncontrols.h
 type HPSXA = HANDLE; // undocshell.h
 type HPROPSHEETPAGE = HANDLE; // prsht.h
 type LPGUID = *mut GUID; // guiddef.h
@@ -248,7 +300,9 @@ struct AUTO_SCROLL_DATA {
 
 /// SHELLSTATE (shlobj.h) — modeled as its exact 32-byte gcc bitfield layout: two 32-bit
 /// flag words (offset 0 and 28) bracketing the scalar members. Bit indices = SS_* above.
-#[repr(C)]
+/// `packed` because shlobj.h declares it under `pshpack1`: 32 bytes with alignment 1, so a
+/// caller's SHELLSTATE need not be 4-aligned (the island renders it the same way).
+#[repr(C, packed)]
 #[derive(Copy, Clone)]
 pub struct SHELLSTATE {
     w0: u32,             // 17 :1 flags + :15 pad
@@ -606,7 +660,7 @@ fn IS_INTRESOURCE(i: usize) -> bool {
 #[inline]
 unsafe fn hkey(v: u32) -> HKEY {
     // Predefined HKEYs are (HKEY)(LONG)0x8000000x -> sign-extend on 64-bit.
-    v as i32 as isize as *mut c_void
+    (v as i32 as isize as *mut c_void).cast()
 }
 #[inline]
 unsafe fn invalid_handle() -> HANDLE {
@@ -691,34 +745,13 @@ extern "system" {
         nSubAuthority7: DWORD,
         pSid: *mut PVOID,
     ) -> BOOL;
-    fn CallWindowProcW(p: WNDPROC, h: HWND, m: UINT, w: WPARAM, l: LPARAM) -> LRESULT;
     fn CheckTokenMembership(TokenHandle: HANDLE, SidToCheck: PVOID, IsMember: *mut BOOL) -> BOOL;
     fn CloseClipboard() -> BOOL;
-    fn CloseHandle(h: HANDLE) -> BOOL;
-    fn CoCreateInstance(
-        rclsid: REFCLSID,
-        pUnkOuter: LPUNKNOWN,
-        dwClsContext: DWORD,
-        riid: REFIID,
-        ppv: *mut LPVOID,
-    ) -> HRESULT;
     fn CoFreeUnusedLibraries();
     fn CoInitialize(pvReserved: LPVOID) -> HRESULT;
     fn CoTaskMemFree(pv: LPVOID);
     fn CoUninitialize();
-    fn CreateFileW(
-        name: LPCWSTR,
-        access: DWORD,
-        share: DWORD,
-        sa: *mut c_void,
-        disp: DWORD,
-        flags: DWORD,
-        templ: HANDLE,
-    ) -> HANDLE;
-    fn CreateMRUListW(info: *mut MRUINFOW) -> HANDLE;
-    fn DefWindowProcW(h: HWND, m: UINT, w: WPARAM, l: LPARAM) -> LRESULT;
     fn DeleteFileW(name: LPCWSTR) -> BOOL;
-    fn DeregisterShellHookWindow(hwnd: HWND) -> BOOL;
     pub fn DoDragDrop(
         pDataObj: *mut c_void,
         pDropSource: *mut c_void,
@@ -728,19 +761,7 @@ extern "system" {
     fn ExpandEnvironmentStringsA(src: LPCSTR, dst: LPSTR, count: DWORD) -> DWORD;
     fn ExpandEnvironmentStringsW(src: LPCWSTR, dst: LPWSTR, count: DWORD) -> DWORD;
     fn FindClose(h: HANDLE) -> BOOL;
-    fn FindFirstFileW(name: LPCWSTR, data: *mut WIN32_FIND_DATAW) -> HANDLE;
     fn FindMRUData(hList: HANDLE, lpData: LPCVOID, cbData: DWORD, lpRegNum: *mut INT) -> INT;
-    fn FindNextFileW(h: HANDLE, data: *mut WIN32_FIND_DATAW) -> BOOL;
-    fn FormatMessageA(
-        flags: DWORD,
-        src: LPCVOID,
-        msgid: DWORD,
-        langid: DWORD,
-        buffer: LPSTR,
-        size: DWORD,
-        args: *mut c_void,
-    ) -> DWORD;
-    fn FreeLibrary(h: HINSTANCE) -> BOOL;
     fn FreeMRUList(hList: HANDLE);
     fn FreeSid(pSid: PVOID) -> PVOID;
     fn GetClipboardData(fmt: UINT) -> HANDLE;
@@ -749,28 +770,16 @@ extern "system" {
     fn GetFullPathNameW(name: LPCWSTR, len: DWORD, buf: LPWSTR, part: *mut LPWSTR) -> DWORD;
     fn GetKeyState(vk: c_int) -> SHORT;
     fn GetLongPathNameW(short_path: LPCWSTR, long_path: LPWSTR, len: DWORD) -> DWORD;
-    fn GetProcAddress(h: HINSTANCE, name: LPCSTR) -> *mut c_void;
     fn GetProcessHeap() -> HANDLE;
-    fn GetPropW(h: HWND, name: LPCWSTR) -> HANDLE;
     fn GetTempPathW(len: DWORD, buf: LPWSTR) -> DWORD;
-    fn GetTopWindow(h: HWND) -> HWND;
     fn GetVersion() -> DWORD;
-    fn GlobalAlloc(flags: UINT, bytes: SIZE_T) -> HANDLE;
     fn GlobalLock(h: HANDLE) -> LPVOID;
     fn GlobalUnlock(h: HANDLE) -> BOOL;
-    fn HeapAlloc(h: HANDLE, flags: DWORD, bytes: SIZE_T) -> LPVOID;
     fn HeapFree(h: HANDLE, flags: DWORD, mem: LPVOID) -> BOOL;
     fn ILCreateFromPathW(path: LPCWSTR) -> LPITEMIDLIST;
-    fn ILFree(pidl: LPITEMIDLIST);
     fn IShellLink_ConstructFromPath(path: LPCWSTR, riid: REFIID, ppv: *mut LPVOID) -> HRESULT;
-    fn IsWindowUnicode(h: HWND) -> BOOL;
-    fn LoadLibraryW(name: LPCWSTR) -> HINSTANCE;
-    fn LoadStringA(inst: HINSTANCE, id: UINT, buf: LPSTR, len: c_int) -> c_int;
-    fn LoadStringW(inst: HINSTANCE, id: UINT, buf: LPWSTR, len: c_int) -> c_int;
-    fn LocalAlloc(flags: UINT, bytes: SIZE_T) -> HANDLE;
     fn LocalFree(h: HANDLE) -> HANDLE;
     fn MessageBeep(t: UINT) -> BOOL;
-    fn MessageBoxA(h: HWND, text: LPCSTR, caption: LPCSTR, t: UINT) -> c_int;
     fn MultiByteToWideChar(
         cp: UINT,
         flags: DWORD,
@@ -781,108 +790,25 @@ extern "system" {
     ) -> c_int;
     fn OleFlushClipboard() -> HRESULT;
     fn OleInitialize(pvReserved: LPVOID) -> HRESULT;
-    fn OpenClipboard(h: HWND) -> BOOL;
     fn PathAddBackslashW(path: LPWSTR) -> LPWSTR;
     fn PathAppendW(path: LPWSTR, more: LPCWSTR) -> BOOL;
     fn PathFileExistsW(path: LPCWSTR) -> BOOL;
     fn PathFindExtensionW(path: LPCWSTR) -> LPWSTR;
     fn PathFindFileNameW(path: LPCWSTR) -> LPWSTR;
-    fn PathRemoveExtensionW(path: LPWSTR);
     fn PathIsDirectoryW(path: LPCWSTR) -> BOOL;
     fn PathIsEqualOrSubFolder(a: LPCWSTR, b: LPCWSTR) -> BOOL;
-    fn RegCloseKey(k: HKEY) -> LONG;
-    fn RegCreateKeyExW(
-        key: HKEY,
-        sub: LPCWSTR,
-        reserved: DWORD,
-        class: LPWSTR,
-        opts: DWORD,
-        sam: REGSAM,
-        sa: *mut c_void,
-        out: PHKEY,
-        disp: LPDWORD,
-    ) -> LONG;
-    fn RegEnumKeyExW(
-        key: HKEY,
-        index: DWORD,
-        name: LPWSTR,
-        cch_name: LPDWORD,
-        reserved: LPDWORD,
-        class: LPWSTR,
-        cch_class: LPDWORD,
-        last: PFILETIME,
-    ) -> LONG;
-    fn RegOpenKeyExW(key: HKEY, sub: LPCWSTR, opts: DWORD, sam: REGSAM, out: PHKEY) -> LONG;
-    fn RegOpenKeyW(key: HKEY, sub: LPCWSTR, out: PHKEY) -> LONG;
-    fn RegQueryValueExW(
-        key: HKEY,
-        name: LPCWSTR,
-        reserved: LPDWORD,
-        ty: LPDWORD,
-        data: LPBYTE,
-        cb: LPDWORD,
-    ) -> LONG;
-    fn RegSetValueExW(
-        key: HKEY,
-        name: LPCWSTR,
-        reserved: DWORD,
-        ty: DWORD,
-        data: *const BYTE,
-        cb: DWORD,
-    ) -> LONG;
     pub fn RegisterDragDrop(h: HWND, pDropTarget: *mut c_void) -> HRESULT;
-    fn RegisterShellHookWindow(h: HWND) -> BOOL;
-    fn RemovePropW(h: HWND, name: LPCWSTR) -> HANDLE;
     pub fn RevokeDragDrop(h: HWND) -> HRESULT;
     fn SHAnsiToUnicode(src: LPCSTR, dst: LPWSTR, cch: c_int) -> DWORD;
     fn SHCLSIDFromStringW(s: LPCWSTR, clsid: *mut CLSID) -> HRESULT;
-    fn SHDeleteKeyW(key: HKEY, sub: LPCWSTR) -> DWORD;
-    fn SHGetPathFromIDListW(pidl: LPCITEMIDLIST, path: LPWSTR) -> BOOL;
-    fn SHGetShellKey(flags: DWORD, sub_key: LPCWSTR, create: BOOL) -> HKEY;
-    fn SHGetSpecialFolderPathW(h: HWND, path: LPWSTR, csidl: c_int, create: BOOL) -> BOOL;
-    fn SHGetValueW(
-        key: HKEY,
-        sub: LPCWSTR,
-        value: LPCWSTR,
-        ty: LPDWORD,
-        data: LPVOID,
-        cb: LPDWORD,
-    ) -> DWORD;
     fn SHGlobalCounterGetValue(h: HANDLE) -> LONG;
     fn SHGlobalCounterIncrement(h: HANDLE) -> LONG;
-    fn SHQueryValueExW(
-        key: HKEY,
-        name: LPCWSTR,
-        reserved: LPDWORD,
-        ty: LPDWORD,
-        data: LPVOID,
-        cb: LPDWORD,
-    ) -> LONG;
     fn SHRestricted(policy: DWORD) -> DWORD;
-    fn SHSendMessageBroadcastW(msg: UINT, w: WPARAM, l: LPARAM) -> DWORD;
-    fn SHSetValueW(
-        key: HKEY,
-        sub: LPCWSTR,
-        value: LPCWSTR,
-        ty: DWORD,
-        data: LPVOID,
-        cb: DWORD,
-    ) -> DWORD;
     fn SHStartNetConnectionDialogA(h: HWND, name: LPCSTR, ty: DWORD) -> HRESULT;
     fn SHStartNetConnectionDialogW(h: HWND, name: LPCWSTR, ty: DWORD) -> HRESULT;
     fn SHStrDupW(src: LPCWSTR, dst: *mut LPWSTR) -> HRESULT;
     fn SetClipboardData(fmt: UINT, h: HANDLE) -> HANDLE;
-    fn SetPropW(h: HWND, name: LPCWSTR, data: HANDLE) -> BOOL;
     fn SetTaskmanWindow(h: HWND) -> BOOL;
-    fn ShellExecuteExW(sei: *mut SHELLEXECUTEINFOW) -> BOOL;
-    fn ShellExecuteW(
-        h: HWND,
-        verb: LPCWSTR,
-        file: LPCWSTR,
-        params: LPCWSTR,
-        dir: LPCWSTR,
-        show: c_int,
-    ) -> HINSTANCE;
     fn Shell_GetImageLists(large: *mut HIMAGELIST, small: *mut HIMAGELIST) -> BOOL;
     fn StrCatBuffW(dst: LPWSTR, src: LPCWSTR, cch: c_int) -> LPWSTR;
     fn WideCharToMultiByte(
@@ -895,7 +821,6 @@ extern "system" {
         defchar: LPCSTR,
         used: *mut BOOL,
     ) -> c_int;
-    fn WinHelpW(h: HWND, help: LPCWSTR, cmd: UINT, data: ULONG_PTR) -> BOOL;
     fn lstrcmpiW(a: LPCWSTR, b: LPCWSTR) -> c_int;
     fn lstrcpyW(dst: LPWSTR, src: LPCWSTR) -> LPWSTR;
     fn lstrcpynW(dst: LPWSTR, src: LPCWSTR, n: c_int) -> LPWSTR;
@@ -914,8 +839,6 @@ extern "system" {
 // GetWindowLongPtr/SetWindowLongPtr: real exports differ per pointer width.
 #[cfg(target_pointer_width = "32")]
 extern "system" {
-    fn GetWindowLongW(h: HWND, idx: c_int) -> LONG;
-    fn SetWindowLongW(h: HWND, idx: c_int, val: LONG) -> LONG;
 }
 #[cfg(target_pointer_width = "64")]
 extern "system" {
@@ -945,19 +868,6 @@ unsafe fn set_window_long_ptr(h: HWND, idx: c_int, v: LONG_PTR) -> LONG_PTR {
 
 // ── imports (cdecl -> extern "C"): internal shell32 helpers + COM ctors + msvcrt + data ──
 extern "C" {
-    fn IDataObject_Constructor(
-        hwnd: HWND,
-        pidlFolder: PCIDLIST_ABSOLUTE,
-        apidl: PCUIDLIST_RELATIVE_ARRAY,
-        cidl: UINT,
-        bExtended: BOOL,
-        ppdataObject: *mut LPDATAOBJECT,
-    ) -> HRESULT;
-    fn IEnumFORMATETC_Constructor(
-        cfmt: UINT,
-        afmt: *const c_void,
-        ppenumFormatEtc: *mut *mut IUnk,
-    ) -> HRESULT;
     fn SHELL32_GetDefaultShellState(pss: LPSHELLSTATE);
     fn SHELL32_ReadRegShellState(prss: PREGSHELLSTATE) -> BOOL;
     fn SHELL32_WriteRegShellState(prss: PREGSHELLSTATE) -> LONG;
@@ -1124,7 +1034,7 @@ pub unsafe extern "system" fn GetFileNameFromBrowse(
         return FALSE;
     }
     let proc = GetProcAddress(hmodule, A_GETOPENFILENAMEW.as_ptr() as LPCSTR);
-    if proc.is_null() {
+    if proc.is_none() {
         FreeLibrary(hmodule);
         return FALSE;
     }
@@ -1158,9 +1068,21 @@ pub unsafe extern "C" fn SHELL_GlobalCounterChanged(pCounter: *mut LONG, handle:
     TRUE
 }
 
+// The export takes the header's SHELLSTATE (the island's bindgen bitfields), which is what every
+// caller holds; the body works on this file's bit-exact model of the same 32 bytes.
+const _: () = assert!(
+    core::mem::size_of::<SHELLSTATE>() == core::mem::size_of::<crate::island::SHELLSTATE>()
+        && core::mem::align_of::<SHELLSTATE>() == core::mem::align_of::<crate::island::SHELLSTATE>()
+);
+
 /// SHGetSetSettings [SHELL32.68]
 #[no_mangle]
-pub unsafe extern "system" fn SHGetSetSettings(lpss: LPSHELLSTATE, dwMask: DWORD, bSet: BOOL) {
+pub unsafe extern "system" fn SHGetSetSettings(
+    lpss: *mut crate::island::SHELLSTATE,
+    dwMask: DWORD,
+    bSet: BOOL,
+) {
+    let lpss: LPSHELLSTATE = lpss.cast();
     let inverted: DWORD = SSF_SHOWEXTENSIONS;
     let gpss: LPSHELLSTATE = &mut g_ShellState.ss;
 
@@ -1227,7 +1149,7 @@ pub unsafe extern "system" fn SHGetSetSettings(lpss: LPSHELLSTATE, dwMask: DWORD
         let notcached: DWORD = !g_CachedSSF & SSF_IMPLEMENTED;
         if (notcached & !dwMask) != 0 {
             let mut tempstate: SHELLSTATE = core::mem::zeroed();
-            SHGetSetSettings(&mut tempstate, notcached & !dwMask, FALSE); // read entries not in gpss/g_CachedSSF
+            SHGetSetSettings((&raw mut tempstate).cast(), notcached & !dwMask, FALSE); // read entries not in gpss/g_CachedSSF
         }
 
         // SHGSS_WriteAdv helper
@@ -1457,7 +1379,7 @@ pub unsafe extern "system" fn SHGetSetSettings(lpss: LPSHELLSTATE, dwMask: DWORD
 #[no_mangle]
 pub unsafe extern "system" fn SHGetSettings(lpsfs: LPSHELLFLAGSTATE, dwMask: DWORD) {
     let mut ss: SHELLSTATE = core::mem::zeroed();
-    SHGetSetSettings(&mut ss, dwMask & !(SSF_SORTCOLUMNS | SSF_FILTER), FALSE);
+    SHGetSetSettings((&raw mut ss).cast(), dwMask & !(SSF_SORTCOLUMNS | SSF_FILTER), FALSE);
     // *lpsfs = *(LPSHELLFLAGSTATE)&ss;  (raw copy of the first 32-bit flag word)
     (*lpsfs).flags = ss.w0;
     if (dwMask & SSF_HIDEICONS) != 0 {
@@ -1571,7 +1493,7 @@ pub unsafe extern "C" fn ShellMessageBoxA_v(
             szText = HeapAlloc(
                 GetProcessHeap(),
                 0,
-                ((len + 1) as SIZE_T) * core::mem::size_of::<CHAR>(),
+                (((len + 1) as SIZE_T) * core::mem::size_of::<CHAR>() as SIZE_T) as _,
             ) as *mut CHAR;
             if !szText.is_null() {
                 LoadStringA(hInstance, LOWORD(lpText as usize), szText, (len + 1) as c_int);
@@ -1594,7 +1516,7 @@ pub unsafe extern "C" fn ShellMessageBoxA_v(
         0,
         &mut pszTemp as *mut LPSTR as LPSTR,
         0,
-        ap,
+        (ap).cast(),
     );
 
     ret = MessageBoxA(hWnd, pszTemp, pszTitle, uType | MB_SETFOREGROUND);
@@ -1824,13 +1746,13 @@ pub unsafe extern "system" fn SHAddToRecentDocs(uFlags: UINT, pv: LPCVOID) {
         lstrcpynW(szLinkFile.as_mut_ptr(), szLinkDir.as_ptr(), MAX_PATH as c_int);
         PathAppendW(szLinkFile.as_mut_ptr(), W_STAR_LNK.as_ptr());
 
-        let hFind = FindFirstFileW(szLinkFile.as_ptr(), &mut find);
+        let hFind = FindFirstFileW(szLinkFile.as_ptr(), (&raw mut find).cast());
         if hFind != invalid_handle() {
             loop {
                 lstrcpynW(szLinkFile.as_mut_ptr(), szLinkDir.as_ptr(), MAX_PATH as c_int);
                 PathAppendW(szLinkFile.as_mut_ptr(), find.cFileName.as_ptr());
                 DeleteFileW(szLinkFile.as_ptr());
-                if FindNextFileW(hFind, &mut find) == 0 {
+                if FindNextFileW(hFind, (&raw mut find).cast()) == 0 {
                     break;
                 }
             }
@@ -1928,7 +1850,7 @@ pub unsafe extern "system" fn SHAddToRecentDocs(uFlags: UINT, pv: LPCVOID) {
     mru.hKey = hExplorerKey;
     mru.lpszSubKey = W_RECENTDOCS.as_ptr();
     mru.lpfnCompare = Some(SHADD_compare_mru);
-    hMRUList = CreateMRUListW(&mut mru);
+    hMRUList = CreateMRUListW((&raw mut mru).cast());
     if hMRUList.is_null() {
         SHAddToRecentDocs_quit(hMRUList, pPf, psl, hExplorerKey);
         return;
@@ -2159,7 +2081,7 @@ pub unsafe extern "system" fn ReadCabinetState(cs: *mut CABINETSTATE, mut length
     {
         let mut shellstate: SHELLSTATE = core::mem::zeroed();
         shellstate.s0(SS_WIN95CLASSIC, FALSE);
-        SHGetSetSettings(&mut shellstate, SSF_WIN95CLASSIC, FALSE);
+        SHGetSetSettings((&raw mut shellstate).cast(), SSF_WIN95CLASSIC, FALSE);
 
         core::ptr::write_bytes(cs as *mut u8, 0, core::mem::size_of::<CABINETSTATE>());
         (*cs).cLength = core::mem::size_of::<CABINETSTATE>() as WORD;
@@ -2302,7 +2224,7 @@ pub unsafe extern "system" fn DoEnvironmentSubstA(pszString: LPSTR, cchString: U
     let dst = HeapAlloc(
         GetProcessHeap(),
         0,
-        (cchString as SIZE_T) * core::mem::size_of::<CHAR>(),
+        ((cchString as SIZE_T) * core::mem::size_of::<CHAR>() as SIZE_T) as _,
     ) as LPSTR;
     if !dst.is_null() {
         len = ExpandEnvironmentStringsA(pszString, dst, cchString);
@@ -2327,7 +2249,7 @@ pub unsafe extern "system" fn DoEnvironmentSubstW(pszString: LPWSTR, cchString: 
         let dst = HeapAlloc(
             GetProcessHeap(),
             0,
-            (cchString as SIZE_T) * core::mem::size_of::<WCHAR>(),
+            ((cchString as SIZE_T) * core::mem::size_of::<WCHAR>() as SIZE_T) as _,
         ) as LPWSTR;
         if !dst.is_null() {
             len = ExpandEnvironmentStringsW(pszString, dst, cchString);
@@ -2517,7 +2439,7 @@ pub unsafe extern "system" fn SHCreatePropSheetExtArrayEx(
         // FIELD_OFFSET(PSXA, pspsx[max_iface])
         let alloc_size = core::mem::size_of::<UINT>() * 2
             + max_iface as usize * core::mem::size_of::<*mut IShellPropSheetExt>();
-        psxa = LocalAlloc(LMEM_FIXED, alloc_size) as PPSXA;
+        psxa = LocalAlloc(LMEM_FIXED, (alloc_size) as SIZE_T) as PPSXA;
         if !psxa.is_null() {
             core::ptr::write_bytes(psxa as *mut u8, 0, alloc_size);
             (*psxa).uiAllocated = max_iface;
@@ -2687,7 +2609,7 @@ pub unsafe extern "system" fn SHCreateStdEnumFmtEtc(
     ppenumFormatetc: *mut LPENUMFORMATETC,
 ) -> HRESULT {
     let mut pef: *mut IUnk = core::ptr::null_mut();
-    let mut hRes = IEnumFORMATETC_Constructor(cFormats, lpFormats, &mut pef);
+    let mut hRes = IEnumFORMATETC_Constructor(cFormats, (lpFormats).cast(), (&raw mut pef).cast());
     if FAILED(hRes) {
         return hRes;
     }
@@ -2847,7 +2769,7 @@ pub unsafe extern "system" fn SHObjectProperties(
         sei.nShow = SW_SHOWNORMAL;
         sei.hInstApp = core::ptr::null_mut();
         sei.lpIDList = pidl as PVOID;
-        let result = ShellExecuteExW(&mut sei);
+        let result = ShellExecuteExW((&raw mut sei).cast());
         ILFree(pidl);
         return result;
     }
@@ -2933,7 +2855,7 @@ pub unsafe extern "system" fn SHGetNewLinkInfoW(
             return FALSE;
         }
 
-        pszLinkTo = fi.szDisplayName.as_ptr();
+        pszLinkTo = core::ptr::addr_of!(fi.szDisplayName).cast();
         let shgdn: u32 = if (uFlags & SHGNLI_NOLOCNAME) != 0 { SHGDN_FORPARSING as u32 } else { SHGDN_NORMAL as u32 };
         if (fi.dwAttributes & SFGAO_LINK as DWORD) != 0
             && crate::shell32::utils::SHGetNameAndFlagsW(
@@ -2945,7 +2867,7 @@ pub unsafe extern "system" fn SHGetNewLinkInfoW(
             ) >= 0
         {
             // Including possible .lnk extension
-            strsafe_rust::StringCchCopyW(fi.szDisplayName.as_mut_ptr(), fi.szDisplayName.len(), szTarget.as_ptr());
+            strsafe_rust::StringCchCopyW(core::ptr::addr_of_mut!(fi.szDisplayName).cast(), (core::ptr::addr_of!(fi.szDisplayName) as *const [WCHAR]).len(), szTarget.as_ptr());
         }
 
         if crate::shell32::utils::SHGetNameAndFlagsW(
@@ -2977,14 +2899,14 @@ pub unsafe extern "system" fn SHGetNewLinkInfoW(
         pszExt = PathFindExtensionW(pszLinkTo);
         pszDotForExt = W_EMPTY.as_ptr();
         UseDisplayName = true;
-        if pszLinkTo != fi.szDisplayName.as_ptr() {
-            strsafe_rust::StringCchCopyW(fi.szDisplayName.as_mut_ptr(), fi.szDisplayName.len(), pszLinkTo);
+        if pszLinkTo != core::ptr::addr_of!(fi.szDisplayName).cast() {
+            strsafe_rust::StringCchCopyW(core::ptr::addr_of_mut!(fi.szDisplayName).cast(), (core::ptr::addr_of!(fi.szDisplayName) as *const [WCHAR]).len(), pszLinkTo);
         }
         if *pszExt != 0 {
             // pszExt points into pszLinkTo. When that is fi.szDisplayName itself (a PIDL whose
             // parsing name could not be read), this NUL lands on the dot and pszExt reads as
             // empty, so the name gets no extension -- the C aliases the same way.
-            PathRemoveExtensionW(fi.szDisplayName.as_mut_ptr());
+            PathRemoveExtensionW(core::ptr::addr_of_mut!(fi.szDisplayName).cast());
         }
     }
 
@@ -2994,7 +2916,7 @@ pub unsafe extern "system" fn SHGetNewLinkInfoW(
         pszDotForExt = W_EMPTY.as_ptr();
     }
 
-    let basename: LPCWSTR = PathFindFileNameW(if UseDisplayName { fi.szDisplayName.as_ptr() } else { pszLinkTo });
+    let basename: LPCWSTR = PathFindFileNameW(if UseDisplayName { core::ptr::addr_of!(fi.szDisplayName).cast() } else { pszLinkTo });
     *pszName = 0;
     if (uFlags & SHGNLI_NOUNIQUE) == 0 {
         // SHGNLI_NOUNIQUE does not prefix the directory
@@ -3252,7 +3174,7 @@ unsafe extern "system" fn LimitEditWindowProc(
 ) -> LRESULT {
     let pInfo = GetPropW(hwnd, W_UXSUBCLASSINFO.as_ptr()) as *mut UxSubclassInfo;
     if pInfo.is_null() {
-        return DefWindowProcW(hwnd, uMsg, wParam, lParam);
+        return DefWindowProcW(hwnd, uMsg, (wParam) as WPARAM, lParam);
     }
     let fnWndProc = (*pInfo).fnWndProc;
 
@@ -3262,10 +3184,10 @@ unsafe extern "system" fn LimitEditWindowProc(
         } else if GetKeyState(VK_CONTROL) < 0 && wParam == b'V' as WPARAM {
             DoSanitizeClipboard(hwnd, pInfo);
         }
-        return CallWindowProcW(fnWndProc, hwnd, uMsg, wParam, lParam);
+        return CallWindowProcW((fnWndProc) as WNDPROC, hwnd, uMsg, (wParam) as WPARAM, lParam);
     } else if uMsg == WM_PASTE {
         DoSanitizeClipboard(hwnd, pInfo);
-        return CallWindowProcW(fnWndProc, hwnd, uMsg, wParam, lParam);
+        return CallWindowProcW((fnWndProc) as WNDPROC, hwnd, uMsg, (wParam) as WPARAM, lParam);
     } else if uMsg == WM_CHAR {
         if GetKeyState(VK_CONTROL) < 0 && wParam == b'V' as WPARAM {
             return 0; // break -> return 0
@@ -3281,7 +3203,7 @@ unsafe extern "system" fn LimitEditWindowProc(
                 return 0;
             }
         }
-        return CallWindowProcW(fnWndProc, hwnd, uMsg, wParam, lParam);
+        return CallWindowProcW((fnWndProc) as WNDPROC, hwnd, uMsg, (wParam) as WPARAM, lParam);
     } else if uMsg == WM_UNICHAR || uMsg == WM_IME_CHAR {
         if uMsg == WM_UNICHAR && wParam == UNICODE_NOCHAR {
             return TRUE as LRESULT;
@@ -3306,12 +3228,12 @@ unsafe extern "system" fn LimitEditWindowProc(
                 return 0;
             }
         }
-        return CallWindowProcW(fnWndProc, hwnd, uMsg, wParam, lParam);
+        return CallWindowProcW((fnWndProc) as WNDPROC, hwnd, uMsg, (wParam) as WPARAM, lParam);
     } else if uMsg == WM_NCDESTROY {
         UxSubclassInfo_Destroy(pInfo);
-        return CallWindowProcW(fnWndProc, hwnd, uMsg, wParam, lParam);
+        return CallWindowProcW((fnWndProc) as WNDPROC, hwnd, uMsg, (wParam) as WPARAM, lParam);
     } else {
-        return CallWindowProcW(fnWndProc, hwnd, uMsg, wParam, lParam);
+        return CallWindowProcW((fnWndProc) as WNDPROC, hwnd, uMsg, (wParam) as WPARAM, lParam);
     }
 }
 
@@ -3323,7 +3245,7 @@ unsafe fn UxSubclassInfo_Create(
     let pInfo = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        core::mem::size_of::<UxSubclassInfo>(),
+        (core::mem::size_of::<UxSubclassInfo>()) as _,
     ) as *mut UxSubclassInfo;
     if pInfo.is_null() {
         CoTaskMemFree(valid as LPVOID);

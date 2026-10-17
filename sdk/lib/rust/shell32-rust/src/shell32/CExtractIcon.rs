@@ -1,5 +1,7 @@
 // rustconv-assembly: class:CExtractIcon
 use crate::prelude::*;
+// One declaration per external symbol: island.rs.
+use crate::island::CoTaskMemAlloc;
 use crate::drv_def_ext::ShellObjectCreator;
 use crate::atl::wide_len;
 // Deterministic from shobjidl.h
@@ -388,7 +390,6 @@ extern "system" {
     fn WideCharToMultiByte(page: UINT, flags: DWORD, wide: LPCWSTR, wide_len: INT, multi: LPSTR, multi_len: INT, default_char: LPCSTR, used_default: *mut BOOL) -> INT;
     #[link_name = "GUID_NULL"]
     static GUID_NULL: GUID;
-    fn CoTaskMemAlloc(bytes: SIZE_T) -> LPVOID;
     fn CoTaskMemFree(memory: LPVOID);
 }
 

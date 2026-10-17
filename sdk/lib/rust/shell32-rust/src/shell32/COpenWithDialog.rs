@@ -1,4 +1,22 @@
 use crate::prelude::*;
+// The crate's own functions: the definition is the declaration.
+use crate::shell32::iconcache::ExtractIconExW;
+use crate::wine::pidl::ILCombine;
+use crate::wine::shell32_main::SHGetFileInfoW;
+use crate::wine::pidl::SHGetPathFromIDListW;
+use crate::shell32::shlexec::ShellExecuteExW;
+// One declaration per external symbol: island.rs.
+use crate::island::DestroyIcon;
+use crate::island::DrawIconEx;
+use crate::island::GetMenuItemInfoW;
+use crate::island::GetSystemMetrics;
+use crate::island::InsertMenuItemW;
+use crate::island::LoadStringW;
+use crate::island::RegCloseKey;
+use crate::island::RegGetValueW;
+use crate::island::RegOpenKeyExW;
+use crate::island::RegQueryValueExW;
+use crate::island::RegSetValueExW;
 use crate::shell32::sdk_consts::*;
 // `SApp` is a POD nested inside class COpenWithList; the generator only emits nested
 // types reached by VALUE, and this one is reached through `SApp *m_pApp`.
@@ -243,28 +261,12 @@ pub static mut g_VerbMap: [CMVERBMAP; 2] = [
 ];
 
 extern "system" {
-    fn DestroyIcon(icon: HICON) -> BOOL;
-    fn DrawIconEx(dc: HDC, x: INT, y: INT, icon: HICON, width: INT, height: INT, step: UINT, brush: HANDLE, flags: UINT) -> BOOL;
-    fn ExtractIconExW(file: LPCWSTR, index: INT, large: *mut HICON, small: *mut HICON, icons: UINT) -> UINT;
-    fn GetMenuItemInfoW(menu: HMENU, item: UINT, by_position: BOOL, info: *mut MENUITEMINFOW) -> BOOL;
-    fn GetSystemMetrics(index: UINT) -> INT;
     #[link_name = "LoadImageW"] fn LoadImage(instance: HINSTANCE, name: LPCWSTR, kind: UINT, width: INT, height: INT, flags: UINT) -> HANDLE;
-    fn RegCloseKey(key: HKEY) -> LONG;
     #[link_name = "RegCreateKeyExW"] fn RegCreateKeyExW(key: HKEY, subkey: LPCWSTR, reserved: DWORD, class: LPWSTR, options: DWORD, access: REGSAM, security: LPVOID, result: PHKEY, disposition: LPDWORD) -> LONG;
-    fn RegGetValueW(key: HKEY, subkey: LPCWSTR, value: LPCWSTR, flags: DWORD, kind: LPDWORD, data: LPVOID, bytes: LPDWORD) -> LONG;
-    fn RegOpenKeyExW(key: HKEY, subkey: LPCWSTR, options: DWORD, access: REGSAM, result: PHKEY) -> LONG;
-    fn RegQueryValueExW(key: HKEY, value: LPCWSTR, reserved: LPDWORD, kind: LPDWORD, data: PBYTE, bytes: LPDWORD) -> LONG;
-    fn RegSetValueExW(key: HKEY, value: LPCWSTR, reserved: DWORD, kind: DWORD, data: *const BYTE, bytes: DWORD) -> LONG;
     fn SHChangeNotify(event: LONG, flags: UINT, item1: LPCVOID, item2: LPCVOID);
-    fn SHGetFileInfoW(path: LPCWSTR, attributes: DWORD, info: *mut SHFILEINFOW, bytes: UINT, flags: UINT) -> DWORD_PTR;
-    fn SHGetPathFromIDListW(pidl: LPCITEMIDLIST, path: LPWSTR) -> BOOL;
-    fn ILCombine(parent: PCIDLIST_ABSOLUTE, child: PCUITEMID_CHILD) -> PIDLIST_ABSOLUTE;
     fn GetLastError() -> DWORD;
     fn lstrlenW(text: LPCWSTR) -> INT;
-    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
     fn CoTaskMemFree(memory: LPVOID);
-    fn ShellExecuteExW(info: *mut SHELLEXECUTEINFOW) -> BOOL;
-    fn InsertMenuItemW(menu: HMENU, item: UINT, by_position: BOOL, info: *const MENUITEMINFOW) -> BOOL;
     #[link_name = "Shell32RustMapContextMenuVerbToCmdId"] fn SHELL_MapContextMenuVerbToCmdId(info: LPCMINVOKECOMMANDINFO, map: *const CMVERBMAP) -> INT;
     #[link_name = "Shell32RustGetCommandStringImpl"] fn SHELL_GetCommandStringImpl(command: SIZE_T, flags: UINT, buffer: LPSTR, capacity: UINT, map: *const CMVERBMAP) -> HRESULT;
 }

@@ -7,6 +7,39 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The C left, and its part of cmake's C rule; reactos-link adds what every C
+    // compile shares from reactos-link/cflags/c.<arch>.flags (Linker::c_compiled).
+    let c_sources: &[&str] = &["base/applications/fontview/rust_varargs_shim.c"];
+    let c_includes: &[&str] = &[
+        "@build/base/applications/fontview",
+        "base/applications/fontview",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+    ];
+    let c_flags: &[&str] = match arch.as_str() {
+        "x86" => &["-std=gnu99", "@core"],
+        "x86_64" => &["-std=gnu99", "-U_X86_", "-UWIN32", "@core"],
+        "aarch64" => &["-std=gnu99", "@core"],
+        _ => unreachable!(),
+    };
+    let c_defines: &[&str] = &["UNICODE", "WINVER=0x502", "_UNICODE", "_WIN32_WINNT=0x502"];
+
+    // The module's part of cmake's windres command; reactos-link adds what every
+    // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
+    let rc_includes: &[&str] = &[
+        "@build/base/applications/fontview",
+        "base/applications/fontview",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+    ];
+    let rc_flags: &[&str] = &[];
+    let rc_defines: &[&str] = &["UNICODE", "WINVER=0x502", "_UNICODE", "_WIN32_WINNT=0x502"];
+
     let (target_json, entry) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_wWinMainCRTStartup"),
         "x86_64" => ("x86_64-pc-windows-gnu", "wWinMainCRTStartup"),
@@ -23,8 +56,8 @@ fn main() {
 
     Linker::new(target_json)
         .rust_staticlib("fontview-rust")
-        .c_from_compile_db("fontview_shims", &["base/applications/fontview/rust_varargs_shim.c"])
-        .resource_from_rc("base/applications/fontview/fontview.rc", "fontview_res")
+        .c_compiled("fontview_shims", c_sources, c_includes, c_flags, c_defines)
+        .rc("base/applications/fontview/fontview.rc", rc_includes, rc_flags, rc_defines)
         .import_lib("dll/win32/comdlg32/comdlg32.spec", "comdlg32.dll", "comdlg32")
         .import_lib("win32ss/gdi/gdi32/gdi32.spec", "gdi32.dll", "gdi32")
         .import_lib("dll/win32/shell32/shell32.spec", "shell32.dll", "shell32")

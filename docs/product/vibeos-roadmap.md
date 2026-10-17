@@ -6657,8 +6657,26 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   `-Zub-checks=no`. Field manual: "Arming `debug-assertions` also arms rustc's UB checks".
   **ob-rust, ps-rust, se-rust, iomgr-rust, config-rust and cc-rust ARMED 2026-10-17** (their 28
   never-compiled `cfg(debug_assertions)` blocks included): green first boot, UP and `-smp 2`, and
-  kmtest conformance on all three arches. **Next:** restore the 89 asserts `scan_dropped_asserts`
-  baselines, now that the kernel core actually checks them; then the loader/FS/driver tail. `debug_assert!` is gated on
+  kmtest conformance on all three arches. **The 89 asserts `scan_dropped_asserts` baselined are
+  RESTORED 2026-10-17** (baseline empty), finding: `MiConvertSharedWorkingSetLockToExclusive`
+  used one flag for every working-set kind; i386 page faults called an empty
+  `MiSynchronizeSystemPde` stub; and on arm64 `-smp 2` the preemption-bypass blocks (KiSwapThread,
+  NtYieldExecution, KiExitDispatcher) requeued the Standby NextThread through KxQueueReadyThread,
+  which releases the PRCB lock, then switched unlocked: the ready-list tear behind a 0x96 at site
+  0x22 (`KiRequeueStandbyThreadLocked`). Two restored asserts fire under kmtest only (both print
+  and continue; conformance stays 107/104/104). (b) FIXED same day: `KiComputeNewPriority` saw
+  realtime threads carrying a decrement because balmgr's `THREAD_BOOST_PRIORITY` was an invented
+  23 (C: `LOW_REALTIME_PRIORITY - 1`), so the starvation scan boosted dynamic threads INTO the
+  realtime range, where they never decay; a per-writer tripwire named it (pri=23 base=8 dec=15).
+  (a) OWED: i386 `MI_WRITE_VALID_PTE` over a valid PDE ×4 at `i386/init.rs:394` (PDEs
+  c0300fbc/fe8/fec/ff0 = VA 0xEF000000, 0xFE800000-0xFF000000; old PFNs 0x4176-9), 2 GiB UEFI
+  guest only. Inferred, not yet confirmed against the descriptor list: freeldr maps every region
+  below `LoaderPagesSpanned` at `KSEG0|PA` (`MempSetupPagingForRegion`), and OVMF's permanent
+  regions near the top of 2 GiB land inside the nonpaged-system VA that the single
+  `[MmNonPagedSystemStart, MmNonPagedPoolEnd)` loop re-maps. The Rust predates upstream #8613
+  (4cba65d760a, System PTEs moved to `KSEG0 + MmBootImageSize`), but that placement would not
+  survive this layout either, so this is a design fix, not a port. **Next:** (a), then the
+  loader/FS/driver tail. `debug_assert!` is gated on
   `cfg(debug_assertions)`; `sdk/lib/rust/Cargo.toml`'s `[profile.release]` never sets it, so
   cargo's release default (off) applies and every kernel crate builds `--release`. Meanwhile
   `CMakeLists.txt:233` sets `-DDBG=1`, so the C original calls `RtlAssert`. **The mirror of

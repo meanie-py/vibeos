@@ -13,8 +13,8 @@ include_directories(
 # (Start=auto), so the bar is cohab link-clean x3 + a winsock round-trip, not a boot
 # marker. Driver-private structs (AFD_FCB/ENDPOINT/DEVICE_EXTENSION + the TDI/shared
 # IOCTL structs) come from the gen_driver_types.sh bindgen substrate
-# (afd-rust/src/types.rs). The TDI helper TUs (../tdihelpers/{tdi,tdiconn}.c) stay C
-# and resolve as extern "C". event.c is NOT in this build (dead in upstream: its
+# (afd-rust/src/types.rs). The TDI helpers come from the shared `tdihelpers` library
+# (../tdihelpers), which netio.sys links too, and resolve as extern "C". event.c is NOT in this build (dead in upstream: its
 # AfdRegisterEventHandlers is called nowhere) — event.rs is kept but not a module.
 set(AFD_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
 rust_storage_target(AFD_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-afd-target" afd-rust)
@@ -53,12 +53,10 @@ add_custom_target(rust_afd DEPENDS ${AFD_RUST_LIB})
 # list(APPEND SOURCE afd/bind.c afd/connect.c afd/context.c afd/info.c afd/listen.c
 #   afd/lock.c afd/main.c afd/read.c afd/select.c afd/write.c)
 list(APPEND SOURCE
-    ../tdihelpers/tdi.c
-    ../tdihelpers/tdiconn.c
     include/afd.h)
 
 add_library(afd MODULE ${SOURCE} afd.rc)
-target_link_libraries(afd ${PSEH_LIB} memcmp)
+target_link_libraries(afd tdihelpers ${PSEH_LIB} memcmp)
 set_module_type(afd kernelmodedriver)
 add_importlibs(afd ntoskrnl hal)
 add_pch(afd include/afd.h SOURCE)

@@ -657,17 +657,13 @@ pub struct ULARGE_INTEGER {
 macro_rules! LOWORD { ($value:expr) => { (($value as usize) & 0xffff) as UINT }; }
 
 extern "system" {
-    fn GetMenuItemInfoW(menu: HMENU, item: UINT, by_position: BOOL, info: *mut MENUITEMINFOW) -> BOOL;
-    fn SHGetPathFromIDListW(pidl: LPCITEMIDLIST, path: LPWSTR) -> BOOL;
     fn GetLastError() -> DWORD;
     fn lstrlenW(text: LPCWSTR) -> INT;
     fn CoTaskMemFree(memory: LPVOID);
     fn ILRemoveLastID(pidl: LPITEMIDLIST) -> BOOL;
-    fn InsertMenuItemW(menu: HMENU, item: UINT, by_position: BOOL, info: *const MENUITEMINFOW) -> BOOL;
 }
 
 extern "C" {
-    fn _ILIsDesktop(pidl: LPCITEMIDLIST) -> BOOL;
     #[link_name = "memcpy"] fn cpp_com_memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, bytes: usize) -> *mut core::ffi::c_void;
 }
 
@@ -753,9 +749,6 @@ extern "C" {
 }
 
 extern "system" {
-    fn HeapReAlloc(heap: HANDLE, flags: DWORD, memory: LPVOID, bytes: usize) -> LPVOID;
-    fn GetModuleHandleW(name: LPCWSTR) -> HINSTANCE;
-    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
 }
 
 pub struct CStringW { buffer: LPWSTR, len: usize, capacity: usize }
@@ -805,7 +798,7 @@ impl CStringW {
         let next = if self.buffer.is_null() {
             HeapAlloc(GetProcessHeap(), 0, bytes)
         } else {
-            HeapReAlloc(GetProcessHeap(), 0, self.buffer.cast(), bytes)
+            HeapReAlloc(GetProcessHeap(), 0, self.buffer.cast(), (bytes) as SIZE_T)
         } as LPWSTR;
         if next.is_null() { return false; }
         self.buffer = next; self.capacity = capacity; true
@@ -886,6 +879,25 @@ pub static CPP_COM_WSTR_75DC0A9E9650: [WCHAR; 5] = [0x0020, 0x002E, 0x002E, 0x00
 pub static CPP_COM_WSTR_96A296D224F2: [WCHAR; 1] = [0x0000];
 
 use core::ffi::c_void;
+// The crate's own functions: the definition is the declaration.
+use crate::wine::pidl::ILClone;
+use crate::wine::pidl::SHGetPathFromIDListW;
+use crate::wine::shellpath::SHGetSpecialFolderPathW;
+use crate::wine::pidl::_ILIsDesktop;
+// One declaration per external symbol: island.rs.
+use crate::island::CallWindowProcW;
+use crate::island::GetDlgItemTextW;
+use crate::island::GetMenuItemInfoW;
+use crate::island::GetModuleHandleW;
+use crate::island::GetWindowLongW;
+use crate::island::HeapReAlloc;
+use crate::island::InsertMenuItemW;
+use crate::island::LoadStringW;
+use crate::island::PostMessageW;
+use crate::island::SendMessageW;
+use crate::island::SetDlgItemTextW;
+use crate::island::SetWindowLongW;
+use crate::island::SetWindowTextW;
 use crate::shellcom::*;
 use crate::types::*;
 
@@ -1258,47 +1270,27 @@ fn IS_INTRESOURCE(value: LPCSTR) -> bool {
 }
 
 // shlobj.h BROWSEINFOW
-#[repr(C)]
-pub struct BROWSEINFOW {
-    pub hwndOwner: HWND,
-    pub pidlRoot: PCIDLIST_ABSOLUTE,
-    pub pszDisplayName: LPWSTR,
-    pub lpszTitle: LPCWSTR,
-    pub ulFlags: UINT,
-    pub lpfn: BFFCALLBACK,
-    pub lParam: LPARAM,
-    pub iImage: INT,
-}
+pub use crate::island::BROWSEINFOW;
 
 // shellapi.h SHFILEOPSTRUCTW (fFlags is FILEOP_FLAGS = WORD)
-#[repr(C)]
-pub struct SHFILEOPSTRUCTW {
-    pub hwnd: HWND,
-    pub wFunc: UINT,
-    pub pFrom: LPCWSTR,
-    pub pTo: LPCWSTR,
-    pub fFlags: WORD,
-    pub fAnyOperationsAborted: BOOL,
-    pub hNameMappings: LPVOID,
-    pub lpszProgressTitle: LPCWSTR,
-}
+pub use crate::island::SHFILEOPSTRUCTW;
 
 // -- real DLL exports (WINAPI/stdcall -> extern "system"; i386 decoration) --
 extern "system" {
-    fn SHGetSpecialFolderPathW(hwnd: HWND, pszPath: LPWSTR, csidl: core::ffi::c_int, fCreate: BOOL) -> BOOL; // shell32.spec:320
+// shell32.spec:320
     fn SHFileOperationW(lpFileOp: *mut SHFILEOPSTRUCTW) -> core::ffi::c_int; // shell32.spec:291
     #[link_name = "SHBrowseForFolderW"] // UNICODE TCHAR macro resolves to the W export
     fn SHBrowseForFolder(lpbi: *mut BROWSEINFOW) -> PIDLIST_ABSOLUTE; // shell32.spec:274
-    fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST; // shell32.spec:17
+// shell32.spec:17
     fn ILIsEqual(pidl1: LPCITEMIDLIST, pidl2: LPCITEMIDLIST) -> BOOL; // shell32.spec:20
     fn SHAnsiToUnicode(src: LPCSTR, dst: LPWSTR, cch: INT) -> DWORD; // shlwapi (shell_link.rs:5228 spelling)
     fn lstrcmpiA(lpString1: LPCSTR, lpString2: LPCSTR) -> INT; // kernel32
-    fn SendMessageW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT; // user32
-    fn PostMessageW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> BOOL; // user32
-    fn SetWindowTextW(hWnd: HWND, lpString: LPCWSTR) -> BOOL; // user32
-    fn SetDlgItemTextW(hDlg: HWND, nIDDlgItem: INT, lpString: LPCWSTR) -> BOOL; // user32
-    fn GetDlgItemTextW(hDlg: HWND, nIDDlgItem: INT, lpString: LPWSTR, cchMax: INT) -> UINT; // user32
-    fn CallWindowProcW(lpPrevWndFunc: WNDPROC, hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT; // user32
+// user32
+// user32
+// user32
+// user32
+// user32
+// user32
     fn StrTrimW(psz: LPWSTR, pszTrimChars: LPCWSTR) -> BOOL; // shlwapi (cfs_folder.rs:3112 spelling)
     fn PathIsRelativeW(pszPath: LPCWSTR) -> BOOL; // shlwapi
     fn PathIsDirectoryW(pszPath: LPCWSTR) -> BOOL; // shlwapi
@@ -1310,8 +1302,6 @@ extern "system" {
 // (user32.spec:400-401,704-705).
 #[cfg(target_arch = "x86")]
 extern "system" {
-    fn GetWindowLongW(hWnd: HWND, nIndex: INT) -> LONG;
-    fn SetWindowLongW(hWnd: HWND, nIndex: INT, dwNewLong: LONG) -> LONG;
 }
 #[cfg(not(target_arch = "x86"))]
 extern "system" {

@@ -1,0 +1,18 @@
+{
+  "root": "/home/curi/Projects/os-playground/vibeos-lint",
+  "oracle_revision": "996c6ff8957615baccfd3a51286b1f8d7ec27c9d",
+  "source_revision": "1c3e4943280f3400d64b818515714a0e4c22086f",
+  "rust_seconds": 117.03277493998758,
+  "rust_binary_sha256": "0b15290dad812812a0d5b55e7a92065c8df4a61116b772e8d0b794a44de7148f",
+  "rules": {
+    "vendored_registry": {
+      "python": 0,
+      "rust": 0,
+      "python_seconds": 14.140190209989669,
+      "python_only": [],
+      "rust_only": [],
+      "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  }
+}

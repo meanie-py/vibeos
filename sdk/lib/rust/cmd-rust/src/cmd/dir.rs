@@ -95,12 +95,12 @@ pub struct _DIRFINDLISTNODE {
 pub type DIRFINDLISTNODE = _DIRFINDLISTNODE;
 pub type PDIRFINDLISTNODE = *mut DIRFINDLISTNODE;
 
-pub type PGETFREEDISKSPACEEX = unsafe extern "system" fn(
+pub type PGETFREEDISKSPACEEX = Option<unsafe extern "system" fn(
     LPCTSTR,
     PULARGE_INTEGER,
     PULARGE_INTEGER,
     PULARGE_INTEGER,
-) -> BOOL;
+) -> BOOL>;
 unsafe extern "C" fn DirHelp() {
     ConOutResPaging((TRUE) as BOOL, STRING_DIR_HELP1);
 }
@@ -599,7 +599,7 @@ pub unsafe extern "C" fn FormatTime(lpTime: *mut TCHAR, dt: LPSYSTEMTIME) -> INT
 }
 
 unsafe extern "C" fn GetUserDiskFreeSpace(mut lpRoot: LPCTSTR, mut lpFreeSpace: PULARGE_INTEGER) {
-    let mut pGetFreeDiskSpaceEx: Option<PGETFREEDISKSPACEEX> = None;
+    let mut pGetFreeDiskSpaceEx: PGETFREEDISKSPACEEX = None;
     let mut hInstance: HINSTANCE = core::ptr::null_mut();
     let mut dwSecPerCl: DWORD = 0;
     let mut dwBytPerSec: DWORD = 0;
@@ -613,7 +613,7 @@ unsafe extern "C" fn GetUserDiskFreeSpace(mut lpRoot: LPCTSTR, mut lpFreeSpace: 
     let mut KERNEL32: [u16; 9] = ['K' as u16, 'E' as u16, 'R' as u16, 'N' as u16, 'E' as u16, 'L' as u16, '3' as u16, '2' as u16, 0];
     hInstance = GetModuleHandle(KERNEL32.as_ptr()) as HINSTANCE;
     if !hInstance.is_null() {
-        pGetFreeDiskSpaceEx = core::mem::transmute::<FARPROC, Option<PGETFREEDISKSPACEEX>>(
+        pGetFreeDiskSpaceEx = core::mem::transmute::<FARPROC, PGETFREEDISKSPACEEX>(
             GetProcAddress(hInstance, b"GetDiskFreeSpaceExW\0".as_ptr() as LPCSTR),
         );
         if pGetFreeDiskSpaceEx.is_some() {

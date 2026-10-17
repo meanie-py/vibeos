@@ -869,17 +869,22 @@ pub unsafe extern "system" fn MmUnsharePageEntrySectionSegment(
         MmSetPageEntrySectionSegment(Segment, Offset, Entry);
         return 0u8;
     }
+    // From here the last view of the page is gone. Where the C keeps it cached, a clean
+    // page goes to standby: still the segment's, but available (mm/standby.rs).
     if IsDataMap {
         MmSetPageEntrySectionSegment(Segment, Offset, Entry);
+        crate::mm::standby::MiRosStandbyInsert(Segment, Offset, Entry);
         return 0u8;
     }
     if (*Segment).Image.Characteristics & IMAGE_SCN_MEM_SHARED == 0 {
         MmSetPageEntrySectionSegment(Segment, Offset, Entry);
+        crate::mm::standby::MiRosStandbyInsert(Segment, Offset, Entry);
         return 0u8;
     }
     let SwapEntry = MmGetSavedSwapEntryPage(Page);
     if SwapEntry == 0 && !IS_DIRTY_SSE(Entry) {
         MmSetPageEntrySectionSegment(Segment, Offset, Entry);
+        crate::mm::standby::MiRosStandbyInsert(Segment, Offset, Entry);
         return 0u8;
     }
     if SwapEntry != 0 {
@@ -934,7 +939,15 @@ unsafe fn MmMakeSegmentResident(
         let mut ChunkOffset = RangeStart;
         while ChunkOffset < ChunkEnd {
             let mut CurrentOffset = LARGE_INTEGER { QuadPart: ChunkOffset };
-            let mut Entry = MmGetPageEntrySectionSegment(Segment as PVOID, core::ptr::addr_of!(CurrentOffset.QuadPart));
+            // A readahead neighbour is only checked for residency: peek, so a page on
+            // standby stays there. The requested range is claimed, since it is about to
+            // be mapped and must not be repurposed in between.
+            let Peek = SetDirty == 0 && (ChunkOffset < Offset || ChunkOffset >= Offset + Length as i64);
+            let mut Entry = if Peek {
+                crate::mm::section_table::MiPeekPageEntrySectionSegment(Segment, core::ptr::addr_of_mut!(CurrentOffset))
+            } else {
+                MmGetPageEntrySectionSegment(Segment as PVOID, core::ptr::addr_of!(CurrentOffset.QuadPart))
+            };
             while MM_IS_WAIT_PTE(Entry) {
                 MmUnlockSectionSegment(Segment as PVOID);
                 KeDelayExecutionThread(0i8, 0u8, core::ptr::addr_of!(TinyTime) as *mut _);
@@ -1093,6 +1106,12 @@ unsafe fn MmMakeSegmentResident(
                     Entry = DIRTY_SSE(Entry);
                 }
                 MmSetPageEntrySectionSegment(Segment, core::ptr::addr_of_mut!(CurrentOffset), Entry);
+                // A page read only as readahead goes straight to standby, as Windows'
+                // prefetch does: cached, but available until someone faults it in. Not
+                // the requested range, whose caller is about to map it.
+                if CurrentOffset.QuadPart < Offset || CurrentOffset.QuadPart >= Offset + Length as i64 {
+                    crate::mm::standby::MiRosStandbyInsert(Segment, core::ptr::addr_of_mut!(CurrentOffset), Entry);
+                }
             }
             MmUnlockSectionSegment(Segment as PVOID);
             IoFreeMdl(Mdl);
@@ -2013,6 +2032,12 @@ pub unsafe extern "system" fn MmCheckDirtySegment(
         MmSetPageEntrySectionSegment(Segment, Offset, new_entry);
         MmReleasePageMemoryConsumer(MC_USER, page);
         return 1u8;
+    }
+
+    // A flush keeps the page. If it is clean and unmapped it belongs on standby, both when
+    // the write just cleaned it and when the Get above took it off the list to look.
+    if PageOut == 0 {
+        crate::mm::standby::MiRosStandbyInsert(Segment, Offset, entry);
     }
 
     0u8

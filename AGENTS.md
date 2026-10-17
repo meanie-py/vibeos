@@ -268,7 +268,8 @@ substance, don't pad with filler sections, redundant summaries, or boilerplate.
   rare real signal: resolve it and move on. If it didn't conflict, there was nothing to look at;
   stop narrating it. (The rewind incident was a `reset --hard` to a stale ref, **not** a merge.)
 - **Land by messaging the integrator, not with `./vibeos-cli land`** (since 2026-10-16). One
-  session, `vibeos-integration-f2` in `vibeos-integration`, is the only thing that merges to
+  session, the `vibeos-integration-*` one in `ListAgents` (worktree `vibeos-integration`; its
+  suffix changes when the session restarts, so look it up), is the only thing that merges to
   `master`. Commit, run `./vibeos-cli check` and the tests for what you touched, then send it
   `merge <branch> @ <sha> — <what it is, what it touches>` and keep working: no warm builds
   just to submit, no waiting for the verdict. It does an ordinary merge, resolves conflicts
@@ -397,6 +398,14 @@ guide: `tests/qemu/cli/README.md`.
 ./vibeos-cli smoke  --arch amd64 --tripwire "SPECIALPOOL=Gla5"
 ./vibeos-cli farm   --arches amd64 --minutes 480   # overnight flake soak
 ```
+
+**Source lints live in `tools/vibeos-lint/src/rules/` as Rust plugins.** Use
+`./vibeos-cli check`, which builds and runs the shared binary automatically. Add
+new source rules there and artifact checks in `tools/vibeos-lint/src/binary/`.
+`./vibeos-cli lint --list-rules` lists native artifact/diagnostic checks; use
+`lint --arch <arch> --rules <name>` for an individual check. Gate, smoke static
+checks, and cohab coverage use that same binary. Do not add Python lint checkers.
+Python CLI, generator, and reporting helpers remain supported.
 
 **No default arch** — always pass `--arch`. Why it matters:
 

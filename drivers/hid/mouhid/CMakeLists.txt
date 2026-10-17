@@ -10,12 +10,8 @@
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # replaced by Rust (sdk/lib/rust/mouhid-rust): mouhid.c
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(mouhid_res OBJECT mouhid.rc)
-target_include_directories(mouhid_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(mouhid mouhid-cargo mouhid.sys
     KIND kernelmodedriver
     BODY_CRATE mouhid-rust
     DESTINATION reactos/system32/drivers
-    EXTRA_DEPENDS mouhid_res psdk)
+    EXTRA_DEPENDS psdk)

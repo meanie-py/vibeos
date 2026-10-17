@@ -115,6 +115,16 @@ _NON_FACT_WORDS = {
 }
 
 
+# PSEH's statement macros. They are syntax, not values, and the C symbol pattern's leading
+# underscores admit them: tdihelpers' `_SEH2_TRY { ... } _SEH2_EXCEPT(...) { ... } _SEH2_END;`
+# came back sealed as `__RUSTCONV_FACT_0001__ { ... } _SEH2_EXCEPT(...) { ... }
+# __RUSTCONV_FACT_0002__;`, which hid the construct the prompt's SEH section teaches, and the
+# model echoed the C shape, which does not parse. (_SEH2_EXCEPT, _SEH2_YIELD and
+# _SEH2_GetExceptionCode are call-shaped and were never sealed.) The cache key is the
+# unsealed C body, so narrowing the seal re-bills nothing.
+_C_STATEMENT_MACROS = frozenset({"_SEH2_TRY", "_SEH2_END", "_SEH2_FINALLY", "_SEH2_LEAVE"})
+
+
 _BLOCK_SCOPE_PROTOTYPE_RE = re.compile(r"\bextern\s+[^;{}=]*?\([^;{}]*\)\s*;")
 # A C++ NAMED cast's template argument is a type, exactly like the `(TYPE *)value`
 # C-style cast the symbol scanner already skips — the C-style form just happens to
@@ -368,6 +378,8 @@ def seal_facts(
     for match in (_C_SYMBOL_RE if dialect == "c" else _SYMBOL_RE).finditer(masked):
         word = match.group(0)
         if word in _NON_FACT_WORDS or word.startswith("__RUSTCONV_"):
+            continue
+        if dialect == "c" and word in _C_STATEMENT_MACROS:
             continue
         tail = masked[match.end() :]
         if tail.lstrip().startswith("("):

@@ -5,17 +5,8 @@ add_message_headers(UNICODE arp_msg.mc)
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # arp.c  # replaced by Rust (sdk/lib/rust/arp-rust/src/arp/arp.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(arp_shims OBJECT rust_varargs_shim.c)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(arp_res OBJECT arp.rc)
-target_include_directories(arp_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-# Generated inputs those compiles read, ordered before them.
-add_dependencies(arp_shims arp_msg)
-add_dependencies(arp_res arp_msg)
 add_cargo_module(arp arp-cargo arp.exe
     KIND win32exe
     BODY_CRATE arp-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS arp_shims arp_res)
+    EXTRA_DEPENDS arp_msg psdk)

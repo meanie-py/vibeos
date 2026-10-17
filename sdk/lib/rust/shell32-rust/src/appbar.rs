@@ -7,6 +7,9 @@
 //! out-of-band output buffer. TRACE/WARN/ERR are dropped (no observable behavior).
 
 use crate::types::*;
+// One declaration per external symbol: island.rs.
+use crate::island::FindWindowW;
+use crate::island::SendMessageW;
 use core::mem::size_of;
 use core::ptr;
 
@@ -99,8 +102,6 @@ extern "system" {
     fn SHUnlockShared(pvData: PVOID) -> BOOL;
     fn SHFreeShared(hData: HANDLE, dwProcessId: DWORD) -> BOOL;
     // user32
-    fn FindWindowW(lpClassName: LPCWSTR, lpWindowName: LPCWSTR) -> HWND;
-    fn SendMessageW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     // kernel32
     fn GetCurrentProcessId() -> DWORD;
 }
@@ -231,7 +232,7 @@ pub unsafe extern "system" fn SHAppBarMessage(dwMessage: DWORD, pData: PAPPBARDA
 
     let mut cmd: APPBAR_COMMAND = core::mem::zeroed();
     cmd.abd.cbSize = size_of::<APPBARDATAINTEROP>() as DWORD;
-    cmd.abd.hWnd32 = handle_to_ulong(ptr::read(ptr::addr_of!((*pData).hWnd))); // Truncated on x64, as on Windows!
+    cmd.abd.hWnd32 = handle_to_ulong(ptr::read((ptr::addr_of!((*pData).hWnd)).cast())); // Truncated on x64, as on Windows!
     cmd.abd.uCallbackMessage = ptr::read(ptr::addr_of!((*pData).uCallbackMessage));
     cmd.abd.uEdge = ptr::read(ptr::addr_of!((*pData).uEdge));
     cmd.abd.rc = ptr::read(ptr::addr_of!((*pData).rc));
@@ -281,7 +282,7 @@ pub unsafe extern "system" fn SHAppBarMessage(dwMessage: DWORD, pData: PAPPBARDA
         {
             return FALSE as UINT_PTR;
         }
-        ptr::write_volatile(ptr::addr_of_mut!((*pData).hWnd), ulong_to_handle(cmd.abd.hWnd32));
+        ptr::write_volatile(ptr::addr_of_mut!((*pData).hWnd), (ulong_to_handle(cmd.abd.hWnd32)).cast());
         ptr::write_volatile(
             ptr::addr_of_mut!((*pData).uCallbackMessage),
             cmd.abd.uCallbackMessage,

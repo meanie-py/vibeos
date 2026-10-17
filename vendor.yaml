@@ -2138,10 +2138,9 @@ ours:
       ADDED 2026-09-30 by the 97-commit upstream merge (upstream's Wine-10.0 DirectX
       sync), flagged UNCLASSIFIED by `--suspects`. Same decision as the 24-path
       "Wine-derived shipped modules" entry, owner-confirmed 2026-09-19: forked Wine code
-      this project ships is ours and on the translation path. d3d10, d3d11, d3dx10_43,
-      dmusic and dxgi build; d2d1 and dwrite are on disk but not wired into
-      dll/directx/wine/CMakeLists.txt, and stay in the denominator for the same reason
-      the unbuilt combase/coml2/shcore did.
+      this project ships is ours and on the translation path. All seven build at every
+      DLL_EXPORT_VERSION since 2026-10-17. dwrite (and its winetests) were then synced to
+      Wine 11.19; the rest are still at Wine 10.0.
 
   - paths:
       - modules/rostests/winetests/comctl32

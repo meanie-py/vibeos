@@ -5,13 +5,8 @@ spec2def(wmisvc.dll wmisvc.spec ADD_IMPORTLIB)
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # wmisvc.c  # replaced by Rust (sdk/lib/rust/wmisvc-rust/src/wmisvc/wmisvc.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(wmisvc_res OBJECT wmisvc.rc)
-target_compile_definitions(wmisvc_res PRIVATE UNICODE _UNICODE)
-target_include_directories(wmisvc_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(wmisvc wmisvc-cargo wmisvc.dll
     KIND win32dll
     BODY_CRATE wmisvc-rust
     DESTINATION reactos/system32/wbem
-    EXTRA_DEPENDS wmisvc_res)
+    EXTRA_DEPENDS psdk)

@@ -490,6 +490,8 @@ def main(argv: list[str]) -> int:
         "(the post-build gate for lints burned to zero, e.g. invalid_value,deref_nullptr)",
     )
     args = ap.parse_args(argv)
+    if args.deny:
+        ap.error("--deny moved to Rust: ./vibeos-cli lint --arch <arch> --rules rust_ub_deny")
 
     per_arch: dict[str, list[Site]] = defaultdict(list)
     claimed_all: dict[str, int] = {}
@@ -541,18 +543,6 @@ def main(argv: list[str]) -> int:
 
     def label(s: Site) -> str:
         return s.lint or "UNATTRIBUTED"
-
-    if args.deny:
-        denied = {x.strip() for x in args.deny.split(",") if x.strip()}
-        hits = [s for s in sites if s.lint in denied]
-        for s in hits:
-            print(f"{s.path}:{s.line}:{s.col}: {s.lint}: {s.msg} [{','.join(sorted(s.arches))}]")
-        print(
-            f"{len(hits)} site(s) of a denied lint ({', '.join(sorted(denied))}); "
-            f"{len(fresh_all)} fresh unit(s) read",
-            file=sys.stderr,
-        )
-        return 1 if hits else 0
 
     if args.json:
         json.dump(

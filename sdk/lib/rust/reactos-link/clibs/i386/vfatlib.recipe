@@ -1,0 +1,10 @@
+# vfatlib (i386), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+c	vendor/dosfstools/boot.c	@build/sdk/lib/fslib/vfatlib sdk/lib/fslib/vfatlib @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include vendor	-std=gnu99 @core	WINVER=0x502 _WIN32_WINNT=0x502
+c	vendor/dosfstools/check.c	@build/sdk/lib/fslib/vfatlib sdk/lib/fslib/vfatlib @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include vendor	-std=gnu99 @core	WINVER=0x502 _WIN32_WINNT=0x502
+c	vendor/dosfstools/common.c	@build/sdk/lib/fslib/vfatlib sdk/lib/fslib/vfatlib @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include vendor	-std=gnu99 @core	WINVER=0x502 _WIN32_WINNT=0x502
+c	vendor/dosfstools/fat.c	@build/sdk/lib/fslib/vfatlib sdk/lib/fslib/vfatlib @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include vendor	-std=gnu99 @core	WINVER=0x502 _WIN32_WINNT=0x502
+c	vendor/dosfstools/file.c	@build/sdk/lib/fslib/vfatlib sdk/lib/fslib/vfatlib @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include vendor	-std=gnu99 @core	WINVER=0x502 _WIN32_WINNT=0x502
+c	vendor/dosfstools/io.c	@build/sdk/lib/fslib/vfatlib sdk/lib/fslib/vfatlib @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include vendor	-std=gnu99 @core	WINVER=0x502 _WIN32_WINNT=0x502
+c	vendor/dosfstools/lfn.c	@build/sdk/lib/fslib/vfatlib sdk/lib/fslib/vfatlib @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include vendor	-std=gnu99 @core	WINVER=0x502 _WIN32_WINNT=0x502
+c	sdk/lib/fslib/vfatlib/rust_cohab_stub.c	@build/sdk/lib/fslib/vfatlib sdk/lib/fslib/vfatlib @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include vendor	-std=gnu99 @core	WINVER=0x502 _WIN32_WINNT=0x502
+c	sdk/lib/fslib/vfatlib/rust_varargs_shim.c	@build/sdk/lib/fslib/vfatlib sdk/lib/fslib/vfatlib @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include vendor	-std=gnu99 @core	WINVER=0x502 _WIN32_WINNT=0x502

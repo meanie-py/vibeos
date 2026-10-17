@@ -7,13 +7,8 @@ include_directories(
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # wlanconf.c  # replaced by Rust (sdk/lib/rust/wlanconf-rust/src/wlanconf/wlanconf.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(wlanconf_res OBJECT wlanconf.rc)
-target_compile_definitions(wlanconf_res PRIVATE UNICODE _UNICODE)
-target_include_directories(wlanconf_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(wlanconf wlanconf-cargo wlanconf.exe
     KIND win32exe
     BODY_CRATE wlanconf-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS wlanconf_res xdk)
+    EXTRA_DEPENDS xdk psdk)
