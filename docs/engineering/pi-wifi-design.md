@@ -1,6 +1,7 @@
 # Raspberry Pi Wi-Fi: our own CYW43455 driver
 
-Status: design, plus the host-tested protocol layer (2026-10-16). No board run yet.
+Status (2026-10-17): protocol, SDIO and chip-id layers written and host-tested against a
+simulated controller; bwfm.sys built for the Pi 5, first board run pending.
 
 ## Why our own
 
@@ -14,13 +15,17 @@ carries no Realtek Wi-Fi driver at all; its only USB network drivers are ASIX Et
 | | Pi 4 | Pi 5 |
 |---|---|---|
 | Chip | Cypress/Infineon CYW43455 (BCM4345/6), SDIO, FullMAC | same |
-| SDIO host | Arasan SDHCI, ACPI `SDC1` `_HID BCM2847` | BCM2712 `sdio2`, ACPI `SDC0` `_HID 80860F16` (generic SDHCI) |
-| SD card slot (not this) | EMMC2 `BRCME88C`, sdhc.sys | `SDC1` `BRCM5D12`, sdhc.sys |
+| SDIO host | Arasan SDHCI, ACPI `SDC1` `_HID BCM2847` | BCM2712 `sdio2`, ACPI `SDC1` `_HID BRCM5D12` (child `WLAN`, `_CID 80860F16`: generic SDHCI) |
+| SD card slot (not this) | EMMC2 `BRCME88C`, sdhc.sys | `SDC0`, also BRCM5D12 (child `SDMM`), sdhc.sys |
 | Power (WL_REG_ON) | firmware GPIO expander, via the mailbox (`RPIQ`) | a GPIO line |
 | NVRAM file | `brcmfmac43455-sdio.txt` (the `raspberrypi,*` names link to it) | same |
 
-The `_HID`s are read from our own boots' `[ACPI] DSDT` lines (Pi 5: run
-`20261016-210210-5ptzil5g`; Pi 4: `serial-20261008-194631`).
+The Pi 4's `_HID`s are from a boot's `[ACPI] DSDT` lines (`serial-20261008-194631`). The
+Pi 5's are from its DSDT (`docs/engineering/pi5-acpi/dsdt.dsl`): SDC1 is at 0x10_0110_0000
+(0x260 bytes), INTID 306, level, with no power method. Its boot log line reads
+`SDC0 _HID 80860F16` because SDC0's `_HID` is a method whose first string is that one; it
+returns BRCM5D12 by default (`SDCM`). The HAL publishes SDC1 as `VIBEOS\CYW43455`, so
+sdhc.sys, which takes BRCM5D12, does not bind it.
 
 **Pi 5, checked on the board's Linux (2026-10-17):** the chip is `mmc1`, an SDHCI at
 `0x1001100000` (DDR50, 4-bit), SDIO vendor `0x02d0` device `0x4345`, three functions, chip id
@@ -37,11 +42,12 @@ Everything above the SDIO host is shared: same chip, same firmware image, same p
 
 ## Layers
 
-1. **SDIO host** (per board, small): SDHCI registers as `sdhc-rust/src/host.rs` drives them,
-   plus SDIO: CMD5 (I/O OCR), CMD3/CMD7, CMD52 (one register), CMD53 (byte and block mode),
-   4-bit bus, card interrupt. `host.rs` is SD-memory only; its register layer should become a
-   shared module rather than a second copy.
-2. **Chip bring-up**: the SDIO backplane window (function 1, `SBADDR`), chip and core ids,
+1. **SDIO host**: `sdhci-rust`, the SDHCI controller layer that sdhc.sys also runs on now
+   (taken out of `sdhc-rust/src/host.rs`), and `bwfm-rust/src/sdio.rs`: CMD5 (I/O OCR),
+   CMD3/CMD7, CMD52, CMD53 (whole blocks in block mode, the tail in byte mode), CCCR/FBR,
+   the CIS's MANFID, 4-bit bus. Still to come: high speed and the card interrupt.
+2. **Chip bring-up** (`chip.rs`, so far up to the chip id): the SDIO backplane window
+   (function 1, `SBADDR`), chip and core ids,
    ALP/HT clock requests, halt the ARM core, write firmware and NVRAM into RAM, release the
    core, wait for the firmware's ready mailbox; then load the CLM blob (`clmload`).
    `if_bwfm_sdio.c` `bwfm_sdio_preinit` / `load_microcode` / `clkctl` / `htclk`.
@@ -88,7 +94,10 @@ only when asked to (`VIBEOS_PI_WIFI_FIRMWARE`), so an image built without it is 
 
 1. Protocol layer, host-tested (done: `proto.rs`, `tools/test_bwfm_proto.py`).
 2. On the Pi 5 stager's Linux: confirm the WL_REG_ON line and the `sdio2` registers, and copy
-   the firmware files (done, above). Left: the ACPI `SDC0` resources against `0x1001100000`.
+   the firmware files (done, above); SDC1's resources match `0x1001100000` (done).
 3. SDIO host: CMD5 and CMD52 against the chip, read its CIS and chip id. First board milestone.
+   Written and host-tested; bwfm.sys logs `[BWFM]` lines for each step (the WL_ON state the
+   firmware left, the card's ids, the chip id) and leaves the line low-then-high so the
+   chip starts from its power-on reset.
 4. Firmware download and the ready mailbox; `ver` over BCDC.
 5. Scan, join, WPA2, link up, netstack traffic. Then the Pi 4 (host and power differ).
