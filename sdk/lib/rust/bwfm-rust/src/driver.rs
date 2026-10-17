@@ -25,7 +25,7 @@ use ntkrnl_sys::driver_ddk::{IoCallDriver, IoCompleteRequest, PoCallDriver, PoSt
 use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoSkipCurrentIrpStackLocation};
 use sdhci_rust::Platform;
 
-use crate::bus::Bus;
+use crate::bus::{Buffers, Bus};
 use crate::chip::Chip;
 use crate::nvram;
 use crate::print::bwprint;
@@ -62,6 +62,7 @@ static LOWER: AtomicPtr<DEVICE_OBJECT> = AtomicPtr::new(null_mut());
 /// BUS once the firmware runs.
 static mut CHIP: Option<Chip<Kernel>> = None;
 static mut BUS: Option<Bus<Kernel>> = None;
+static mut BUFFERS: Buffers = Buffers::new();
 
 const BWFM_POOL_TAG: ULONG = u32::from_le_bytes(*b"Bwfm");
 const NON_PAGED_POOL: i32 = 0;
@@ -70,6 +71,7 @@ const THREAD_ALL_ACCESS: ULONG = 0x001F_03FF;
 /// tools/fetch_pi_wifi_firmware.py names them.
 const FIRMWARE: &str = "cyw43455\\cyfmac43455-sdio.bin";
 const NVRAM: &str = "cyw43455\\brcmfmac43455-sdio.txt";
+const CLM: &str = "cyw43455\\cyfmac43455-sdio.clm_blob";
 /// The firmware is ~600 KiB and the NVRAM ~2 KiB; anything far past that is not them.
 const FILE_MAX: usize = 1 << 20;
 /// How long the worker waits for the system volume to answer for the files.
@@ -346,7 +348,7 @@ unsafe extern "system" fn firmware_worker(_context: PVOID) {
 
 /// The first exchange with the running firmware: its version string over BCDC.
 unsafe fn talk(chip: Chip<Kernel>) {
-    let bus = (*(&raw mut BUS)).insert(Bus::new(chip));
+    let bus = (*(&raw mut BUS)).insert(Bus::new(chip, &mut *(&raw mut BUFFERS)));
     let mut events = 0u32;
     let mut out = [0u8; 256];
     match bus.get_var(b"ver", &mut out, |_| events += 1) {
@@ -362,15 +364,98 @@ unsafe fn talk(chip: Chip<Kernel>) {
                 bus.credit.window()
             );
         }
-        Err(e) => bwprint!(
-            "no answer to `ver`: {:?} ({} frames read, {} dropped, credit seq {} max {})\n",
-            e,
-            bus.frames,
-            bus.dropped,
-            bus.credit.seq,
-            bus.credit.max_seq
-        ),
+        Err(e) => {
+            bwprint!(
+                "no answer to `ver`: {:?} ({} frames read, {} dropped, credit seq {} max {})\n",
+                e,
+                bus.frames,
+                bus.dropped,
+                bus.credit.seq,
+                bus.credit.max_seq
+            );
+            return;
+        }
     }
+    let mut mac = [0u8; 6];
+    match bus.get_var(b"cur_etheraddr", &mut mac, |_| events += 1) {
+        Ok(_) => bwprint!(
+            "MAC {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}\n",
+            mac[0],
+            mac[1],
+            mac[2],
+            mac[3],
+            mac[4],
+            mac[5]
+        ),
+        Err(e) => bwprint!("no MAC address: {:?}\n", e),
+    }
+    // The regulatory table: without it the firmware will not scan.
+    match read_driver_file(CLM) {
+        Err(s) => bwprint!("no CLM blob ({:#010x}): the firmware cannot scan\n", s as u32),
+        Ok((p, n)) => {
+            let r = bus.load_clm(core::slice::from_raw_parts(p, n), |_| events += 1);
+            ExFreePoolWithTag(p.cast(), BWFM_POOL_TAG);
+            let mut status = [0u8; 4];
+            let st = bus.get_var(b"clmload_status", &mut status, |_| events += 1);
+            match (r, st) {
+                (Ok(chunks), Ok(_)) => bwprint!(
+                    "CLM loaded: {} bytes in {} chunks, clmload_status {}\n",
+                    n,
+                    chunks,
+                    u32::from_le_bytes(status)
+                ),
+                (Ok(chunks), Err(e)) => {
+                    bwprint!("CLM sent ({} bytes, {} chunks), status unreadable: {:?}\n", n, chunks, e)
+                }
+                (Err(e), _) => bwprint!("CLM load failed: {:?}\n", e),
+            }
+        }
+    }
+    if let Err(e) = bus.bring_up(|_| events += 1) {
+        bwprint!("could not bring the interface up: {:?}\n", e);
+        return;
+    }
+    // Each network once, however many times the scan reports it.
+    let mut seen = [[0u8; 6]; 32];
+    let (mut n, mut reports) = (0usize, 0u32);
+    let t0 = Kernel::now_us_static();
+    let end = bus.scan(|b| {
+        reports += 1;
+        if seen[..n].contains(&b.bssid) || n == seen.len() {
+            return;
+        }
+        seen[n] = b.bssid;
+        n += 1;
+        let mut name = [0u8; 32];
+        let ssid = b.ssid();
+        for (d, &c) in name.iter_mut().zip(ssid) {
+            *d = if (0x20..0x7F).contains(&c) { c } else { b'?' };
+        }
+        let name = core::str::from_utf8(&name[..ssid.len()]).unwrap_or("");
+        bwprint!(
+            "  {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} ch {:3} {:4} dBm  {}\n",
+            b.bssid[0],
+            b.bssid[1],
+            b.bssid[2],
+            b.bssid[3],
+            b.bssid[4],
+            b.bssid[5],
+            b.channel,
+            b.rssi,
+            if ssid.is_empty() { "<hidden>" } else { name }
+        );
+    });
+    match end {
+        Ok(e) => bwprint!(
+            "scan {:?} in {} ms: {} networks, {} reports\n",
+            e,
+            Kernel::now_us_static().wrapping_sub(t0) / 1000,
+            n,
+            reports
+        ),
+        Err(e) => bwprint!("scan failed after {} networks: {:?}\n", n, e),
+    }
+    bwprint!("{} frames other than replies so far\n", events);
 }
 
 unsafe fn start(io: PIO_STACK_LOCATION) -> NTSTATUS {

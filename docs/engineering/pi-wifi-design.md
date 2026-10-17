@@ -2,8 +2,8 @@
 
 Status (2026-10-17): protocol, SDIO, chip, firmware-load and frame layers host-tested
 against a simulated controller and firmware; on the Pi 5, bwfm.sys loads the firmware and
-the firmware answers `ver` over BCDC (run `20261017-035410-ouzyie33`). Next: the CLM
-blob, then scan.
+the firmware answers `ver`, takes the CLM blob and scans (run
+`20261017-050605-mg4n2t32`: 12 networks on 2.4 and 5 GHz in 4 s). Next: join and WPA2.
 
 ## Why our own
 
@@ -135,5 +135,24 @@ only when asked to (`VIBEOS_PI_WIFI_FIRMWARE`), so an image built without it is 
        [BWFM] firmware says: wl0: Aug 29 2023 01:47:08 version 7.45.265 (28bca26 CY) FWID 01-b677b91b (2 frames, 0 other frames before the reply, credit window 20)
 
    The firmware's first frame is a credit-only one; the host sends nothing until it has
-   read it. Still owed before a scan: the CLM blob (`clmload`).
-5. Scan, join, WPA2, link up, netstack traffic. Then the Pi 4 (host and power differ).
+   read it. Then the MAC (`cur_etheraddr`) and the CLM blob, in `clmload` chunks of at
+   most 1400 bytes behind a download header (BEGIN on the first, END on the last), checked
+   with `clmload_status` (done, run `20261017-043257-y_61cdjm`):
+
+       [BWFM] MAC b8:27:eb:74:f2:6c
+       [BWFM] CLM loaded: 2676 bytes in 2 chunks, clmload_status 0
+
+5. Scan (done, run `20261017-050605-mg4n2t32`, first try): `mpc`, the station event
+   mask (`event_msgs`), `C_UP`, `C_SET_INFRA`, then a passive `escan` of every channel
+   (version 1 parameters, `scan.rs`). Each network arrives as an `E_ESCAN_RESULT` PARTIAL
+   event holding `bwfm_bss_info` records; SUCCESS ends it:
+
+       [BWFM]   10:7c:61:a7:7b:20 ch  11  -38 dBm  Rokkenjima
+       [BWFM]   10:7c:61:a7:7b:24 ch  52  -50 dBm  Rokkenjima_5G
+       [BWFM] scan Complete in 4045 ms: 12 networks, 15 reports
+
+   A result frame carries each network's IEs and can pass 2 KiB, so the frame buffer is
+   8 KiB, and a frame bigger still is read out and dropped rather than left half-read in
+   the FIFO. The bus's buffers live in a static (`bus::Buffers`), not in `Bus`: built on
+   the worker thread's stack, 18 KiB of them would be a stack overflow waiting to happen.
+6. Join, WPA2, link up, netstack traffic. Then the Pi 4 (host and power differ).
