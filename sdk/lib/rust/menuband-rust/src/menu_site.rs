@@ -182,7 +182,7 @@ extern "C" {
 // Deterministic COM scaffold for CMenuSite; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    #[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
+    #[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: SIZE_T) -> *mut core::ffi::c_void;
     #[link_name = "HeapFree"] fn cpp_com_HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn MenuBandRustModuleLock();
     fn MenuBandRustModuleUnlock();
@@ -192,7 +192,7 @@ impl CppComSize for usize { fn cpp_com_size(self) -> usize { self } }
 impl CppComSize for u32 { fn cpp_com_size(self) -> usize { self as usize } }
 #[inline]
 unsafe fn HeapAlloc<N: CppComSize>(heap: HANDLE, flags: DWORD, bytes: N) -> *mut core::ffi::c_void {
-    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size())
+    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size() as SIZE_T)
 }
 #[inline]
 unsafe fn HeapFree<T>(heap: HANDLE, flags: DWORD, memory: *mut T) -> BOOL {
@@ -771,10 +771,6 @@ extern "C" {
 }
 
 extern "system" {
-    fn IUnknown_Exec(object: *mut IUnknown, command_group: REFGUID, command: DWORD,
-        options: DWORD, input: *mut VARIANT, output: *mut VARIANT) -> HRESULT;
-    fn IUnknown_QueryStatus(object: *mut IUnknown, command_group: REFGUID, count: ULONG,
-        commands: *mut OLECMD, text: *mut OLECMDTEXT) -> HRESULT;
 }
 
 pub type WNDPROC = Option<unsafe extern "system" fn(HWND, UINT, WPARAM, LPARAM) -> LRESULT>;
@@ -837,6 +833,9 @@ impl<T> Drop for CppComPtrGuard<T> {
 pub static CPP_COM_WSTR_0542E293B3EE: [WCHAR; 9] = [0x004D, 0x0065, 0x006E, 0x0075, 0x0053, 0x0069, 0x0074, 0x0065, 0x0000];
 
 use core::ffi::c_void;
+// One declaration per external symbol: island.rs.
+use crate::island::IUnknown_Exec;
+use crate::island::IUnknown_QueryStatus;
 // One declaration per external symbol: the variant matching the C prototype.
 use crate::menu_desk_bar::CreateWindowExW;
 use crate::menu_desk_bar::DefWindowProcW;
@@ -860,12 +859,12 @@ unsafe extern "system" fn CMenuSite_WindowProc(
     wParam: WPARAM,
     lParam: LPARAM,
 ) -> LRESULT {
-    let mut this = GetWindowLongPtrW(hWnd, GWLP_USERDATA) as *mut CMenuSite;
+    let mut this = GetWindowLongPtrW((hWnd).cast(), GWLP_USERDATA) as *mut CMenuSite;
     if uMsg == WM_NCCREATE {
         let create = lParam as *const CREATESTRUCTW;
         if !create.is_null() {
             this = (*create).lpCreateParams as *mut CMenuSite;
-            SetWindowLongPtrW(hWnd, GWLP_USERDATA, this as LONG_PTR);
+            SetWindowLongPtrW((hWnd).cast(), GWLP_USERDATA, this as _);
             if !this.is_null() {
                 (*this).m_hWnd = hWnd;
             }
@@ -873,18 +872,18 @@ unsafe extern "system" fn CMenuSite_WindowProc(
     }
 
     let result = if this.is_null() {
-        DefWindowProcW(hWnd, uMsg, wParam, lParam)
+        DefWindowProcW((hWnd).cast(), uMsg, wParam, (lParam) as _)
     } else {
         let mut lResult: LRESULT = 0;
         if CMenuSite_ProcessWindowMessage_body(this, hWnd, uMsg, wParam, lParam, &mut lResult, 0) != FALSE {
             lResult
         } else {
-            DefWindowProcW(hWnd, uMsg, wParam, lParam)
+            DefWindowProcW((hWnd).cast(), uMsg, wParam, (lParam) as _)
         }
     };
 
     if uMsg == WM_NCDESTROY && !this.is_null() {
-        SetWindowLongPtrW(hWnd, GWLP_USERDATA, 0);
+        SetWindowLongPtrW((hWnd).cast(), GWLP_USERDATA, 0);
         (*this).m_hWnd = core::ptr::null_mut();
     }
     result
@@ -895,7 +894,7 @@ unsafe fn CMenuSite_CreateWindow(this: *mut CMenuSite, parent: HWND) -> HWND {
     GetModuleHandleExW(
         GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
         CMenuSite_WindowProc as usize as LPCWSTR,
-        &mut instance,
+        (&raw mut instance).cast(),
     );
     let class = WNDCLASSW {
         style: 0,
@@ -919,13 +918,13 @@ unsafe fn CMenuSite_CreateWindow(this: *mut CMenuSite, parent: HWND) -> HWND {
         0,
         0,
         0,
-        parent,
-        this as HMENU,
-        instance,
+        (parent).cast(),
+        (this as HMENU).cast(),
+        (instance).cast(),
         this.cast(),
     );
-    (*this).m_hWnd = window;
-    window
+    (*this).m_hWnd = (window).cast();
+    (window).cast()
 }
 
 pub unsafe fn CMenuSite_ctor_body(this: *mut CMenuSite) -> () {
@@ -991,7 +990,7 @@ pub unsafe fn CMenuSite_AddBand_body(this: *mut CMenuSite, punk: *mut IUnknown) 
         return hr;
     }
 
-    hr = IUnknown_GetWindow((pUnknown).cast(), &mut (*this).m_hWndBand);
+    hr = IUnknown_GetWindow((pUnknown).cast(), (&raw mut (*this).m_hWndBand).cast());
     if hr < 0 {
         return hr;
     }
@@ -1090,7 +1089,7 @@ pub unsafe fn CMenuSite_GetSize_body(this: *mut CMenuSite, dwWhich: DWORD, prc: 
 }
 
 pub unsafe fn CMenuSite_GetWindow_body(this: *mut CMenuSite, phwnd: *mut HWND) -> HRESULT {
-    if IsWindow((*this).m_hWnd) == 0 {
+    if IsWindow(((*this).m_hWnd).cast()) == 0 {
         return E_FAIL;
     }
     *phwnd = (*this).m_hWnd;
@@ -1144,11 +1143,11 @@ pub unsafe fn CMenuSite_QueryService_body(this: *mut CMenuSite, guidService: REF
 }
 
 pub unsafe fn CMenuSite_Exec_body(this: *mut CMenuSite, pguidCmdGroup: *const GUID, nCmdID: DWORD, nCmdexecopt: DWORD, pvaIn: *mut VARIANT, pvaOut: *mut VARIANT) -> HRESULT {
-    IUnknown_Exec((*this).m_DeskBarSite, pguidCmdGroup, nCmdID, nCmdexecopt, pvaIn, pvaOut)
+    IUnknown_Exec(((*this).m_DeskBarSite).cast(), pguidCmdGroup, nCmdID, nCmdexecopt, pvaIn, pvaOut)
 }
 
 pub unsafe fn CMenuSite_QueryStatus_body(this: *mut CMenuSite, pguidCmdGroup: *const GUID, cCmds: ULONG, prgCmds: *mut OLECMD, pCmdText: *mut OLECMDTEXT) -> HRESULT {
-    IUnknown_QueryStatus((*this).m_DeskBarSite, pguidCmdGroup, cCmds, prgCmds, pCmdText)
+    IUnknown_QueryStatus(((*this).m_DeskBarSite).cast(), pguidCmdGroup, cCmds, (prgCmds).cast(), (pCmdText).cast())
 }
 
 pub unsafe fn CMenuSite_SetDeskBarSite_body(this: *mut CMenuSite, punkSite: *mut IUnknown) -> HRESULT {
@@ -1161,7 +1160,7 @@ pub unsafe fn CMenuSite_SetDeskBarSite_body(this: *mut CMenuSite, punkSite: *mut
 
         CMenuSite_cpp_com_assign_m_DeskBarSite(this, core::ptr::null_mut());
 
-        let hr: HRESULT = IUnknown_GetWindow((punkSite).cast(), &mut hWndSite);
+        let hr: HRESULT = IUnknown_GetWindow((punkSite).cast(), (&raw mut hWndSite).cast());
         if hr < 0 || hWndSite.is_null() {
             return E_FAIL;
         }
@@ -1186,7 +1185,7 @@ pub unsafe fn CMenuSite_SetDeskBarSite_body(this: *mut CMenuSite, punkSite: *mut
         (*this).m_hWndBand = core::ptr::null_mut();
 
         if !(*this).m_hWnd.is_null() {
-            DestroyWindow((*this).m_hWnd);
+            DestroyWindow(((*this).m_hWnd).cast());
         }
 
         CMenuSite_cpp_com_assign_m_DeskBarSite(this, core::ptr::null_mut());
@@ -1231,7 +1230,7 @@ pub unsafe fn CMenuSite_ProcessWindowMessage_body(this: *mut CMenuSite, hWnd: HW
                 );
                 if hr >= 0 {
                     let mut Rect: RECT = core::mem::zeroed();
-                    GetClientRect((*this).m_hWnd, &mut Rect);
+                    GetClientRect(((*this).m_hWnd).cast(), &mut Rect);
                     ((*(*pMenuPopup).lpVtbl).OnPosRectChangeDB)(pMenuPopup, &mut Rect);
                 }
             }

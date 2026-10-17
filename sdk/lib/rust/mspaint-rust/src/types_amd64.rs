@@ -15731,9 +15731,7 @@ pub struct ToolsModel_VirtualBrush {
     pub m_palette: PAL_TYPE,
     pub m_hBrush: HBRUSH,
 }
-unsafe extern "C" {
-    pub static mut toolsModel: ToolsModel;
-}
+pub use crate::mspaint::cpp_classes::toolsModel;
 pub use crate::mspaint::cpp_classes::CMainWindow; // port cppapp owns it
 pub use crate::mspaint::cpp_classes::CMirrorRotateDialog; // port cppapp owns it
 pub const CMirrorRotateDialog_IDD: CMirrorRotateDialog__bindgen_ty_1 = 700;
@@ -16270,42 +16268,18 @@ unsafe extern "C" {
     #[link_name = "\u{1}ImageFormatMemoryBMP"]
     pub static Gdiplus_ImageFormatMemoryBMP: GUID;
 }
-unsafe extern "C" {
-    #[link_name = "\u{1}ImageFormatBMP"]
-    pub static Gdiplus_ImageFormatBMP: GUID;
-}
-unsafe extern "C" {
-    #[link_name = "\u{1}ImageFormatEMF"]
-    pub static Gdiplus_ImageFormatEMF: GUID;
-}
-unsafe extern "C" {
-    #[link_name = "\u{1}ImageFormatWMF"]
-    pub static Gdiplus_ImageFormatWMF: GUID;
-}
-unsafe extern "C" {
-    #[link_name = "\u{1}ImageFormatJPEG"]
-    pub static Gdiplus_ImageFormatJPEG: GUID;
-}
-unsafe extern "C" {
-    #[link_name = "\u{1}ImageFormatPNG"]
-    pub static Gdiplus_ImageFormatPNG: GUID;
-}
-unsafe extern "C" {
-    #[link_name = "\u{1}ImageFormatGIF"]
-    pub static Gdiplus_ImageFormatGIF: GUID;
-}
-unsafe extern "C" {
-    #[link_name = "\u{1}ImageFormatTIFF"]
-    pub static Gdiplus_ImageFormatTIFF: GUID;
-}
+pub use crate::prelude::Gdiplus_ImageFormatBMP;
+pub use crate::prelude::Gdiplus_ImageFormatEMF;
+pub use crate::prelude::Gdiplus_ImageFormatWMF;
+pub use crate::prelude::Gdiplus_ImageFormatJPEG;
+pub use crate::prelude::Gdiplus_ImageFormatPNG;
+pub use crate::prelude::Gdiplus_ImageFormatGIF;
+pub use crate::prelude::Gdiplus_ImageFormatTIFF;
 unsafe extern "C" {
     #[link_name = "\u{1}ImageFormatEXIF"]
     pub static Gdiplus_ImageFormatEXIF: GUID;
 }
-unsafe extern "C" {
-    #[link_name = "\u{1}ImageFormatIcon"]
-    pub static Gdiplus_ImageFormatIcon: GUID;
-}
+pub use crate::prelude::Gdiplus_ImageFormatIcon;
 unsafe extern "C" {
     #[link_name = "\u{1}FrameDimensionTime"]
     pub static Gdiplus_FrameDimensionTime: GUID;
@@ -16743,87 +16717,33 @@ pub struct CImageDx_SHARED {
     pub m_GetImageEncodersSize: CImageDx_FN_GetImageEncodersSize,
     pub m_GetImageEncoders: CImageDx_FN_GetImageEncoders,
 }
-unsafe extern "C" {
-    pub static mut g_hinstExe: HINSTANCE;
-}
-unsafe extern "C" {
-    pub static mut g_szFileName: [WCHAR; 512usize];
-}
-unsafe extern "C" {
-    pub static mut g_isAFile: BOOL;
-}
-unsafe extern "C" {
-    pub static mut g_imageSaved: BOOL;
-}
-unsafe extern "C" {
-    pub static mut g_showGrid: BOOL;
-}
-unsafe extern "C" {
-    pub static mut g_askBeforeEnlarging: BOOL;
-}
-unsafe extern "C" {
-    pub static mut mainWindow: CMainWindow;
-}
-unsafe extern "C" {
-    pub static mut mirrorRotateDialog: CMirrorRotateDialog;
-}
-unsafe extern "C" {
-    pub static mut attributesDialog: CAttributesDialog;
-}
-unsafe extern "C" {
-    pub static mut stretchSkewDialog: CStretchSkewDialog;
-}
-unsafe extern "C" {
-    pub static mut fontsDialog: CFontsDialog;
-}
-unsafe extern "C" {
-    pub static mut registrySettings: RegistrySettings;
-}
-unsafe extern "C" {
-    pub static mut imageModel: ImageModel;
-}
-unsafe extern "C" {
-    pub static mut selectionModel: SelectionModel;
-}
-unsafe extern "C" {
-    pub static mut paletteModel: PaletteModel;
-}
-unsafe extern "C" {
-    pub static mut g_hStatusBar: HWND;
-}
-unsafe extern "C" {
-    pub static mut g_xDpi: f32;
-}
-unsafe extern "C" {
-    pub static mut g_yDpi: f32;
-}
-unsafe extern "C" {
-    pub static mut g_fileSize: INT;
-}
-unsafe extern "C" {
-    pub static mut g_fileTime: SYSTEMTIME;
-}
-unsafe extern "C" {
-    pub static mut fullscreenWindow: CFullscreenWindow;
-}
-unsafe extern "C" {
-    pub static mut miniature: CMiniatureWindow;
-}
-unsafe extern "C" {
-    pub static mut toolBoxContainer: CToolBox;
-}
-unsafe extern "C" {
-    pub static mut toolSettingsWindow: CToolSettingsWindow;
-}
-unsafe extern "C" {
-    pub static mut paletteWindow: CPaletteWindow;
-}
-unsafe extern "C" {
-    pub static mut canvasWindow: CCanvasWindow;
-}
-unsafe extern "C" {
-    pub static mut textEditWindow: CTextEditWindow;
-}
+pub use crate::mspaint::main_cpp_h::g_hinstExe;
+pub use crate::mspaint::main_cpp_h::g_szFileName;
+pub use crate::mspaint::main_cpp_h::g_isAFile;
+pub use crate::mspaint::main_cpp_h::g_imageSaved;
+pub use crate::mspaint::main_cpp_h::g_showGrid;
+pub use crate::mspaint::main_cpp_h::g_askBeforeEnlarging;
+pub use crate::mspaint::cpp_classes::mainWindow;
+pub use crate::mspaint::cpp_classes::mirrorRotateDialog;
+pub use crate::mspaint::cpp_classes::attributesDialog;
+pub use crate::mspaint::cpp_classes::stretchSkewDialog;
+pub use crate::mspaint::cpp_classes::fontsDialog;
+pub use crate::mspaint::cpp_classes::registrySettings;
+pub use crate::mspaint::cpp_classes::imageModel;
+pub use crate::mspaint::cpp_classes::selectionModel;
+pub use crate::mspaint::cpp_classes::paletteModel;
+pub use crate::mspaint::main_cpp_h::g_hStatusBar;
+pub use crate::mspaint::dib_cpp_h::g_xDpi;
+pub use crate::mspaint::dib_cpp_h::g_yDpi;
+pub use crate::mspaint::dib_cpp_h::g_fileSize;
+pub use crate::mspaint::dib_cpp_h::g_fileTime;
+pub use crate::mspaint::cpp_classes::fullscreenWindow;
+pub use crate::mspaint::cpp_classes::miniature;
+pub use crate::mspaint::cpp_classes::toolBoxContainer;
+pub use crate::mspaint::cpp_classes::toolSettingsWindow;
+pub use crate::mspaint::cpp_classes::paletteWindow;
+pub use crate::mspaint::cpp_classes::canvasWindow;
+pub use crate::mspaint::cpp_classes::textEditWindow;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct tagCRGB {

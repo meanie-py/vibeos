@@ -2526,6 +2526,71 @@ def test_a_c_literal_into_a_mut_pointer_parameter_casts_mut():
     assert edits[0].replacement == "RUSTCONV_WSTR_AB12.as_ptr().cast_mut()"
 
 
+def test_a_handle_out_parameter_takes_the_address_raw_and_casts():
+    """menuband: `IUnknown_GetWindow(p, &mut parent)` with `parent: *mut c_void` against the
+    header's `*mut *mut HWND__`. A pointer to a pointer is the same layout whatever the
+    inner pointee; a reference to a STRUCT of another name is not this rule's."""
+    from rustconv.crate_repair import _Ctx, _ref_to_void_pointer
+
+    src = b"F(&mut parent, &mut ps);\n"
+    span = {"file_name": "m.rs", "byte_start": 2, "byte_end": 13, "line_start": 1}
+    edit = _ref_to_void_pointer(
+        span, "*mut *mut HWND__", "&mut *mut c_void", lambda f: src, _Ctx(target="i386", width=32)
+    )
+    assert edit is not None and edit.replacement == "(&raw mut parent).cast()"
+    span2 = {"file_name": "m.rs", "byte_start": 15, "byte_end": 22, "line_start": 1}
+    assert (
+        _ref_to_void_pointer(
+            span2,
+            "*mut tagPAINTSTRUCT",
+            "&mut PAINTSTRUCT",
+            lambda f: src,
+            _Ctx(target="i386", width=32),
+        )
+        is None
+    )
+
+
+def test_a_const_cast_into_a_mut_pointer_parameter_is_respelled_mut():
+    """cdrom: `StringsAreMatched(v as *const i8, ..)` against `PCHAR`; a C cast to the
+    parameter's type. A cast inside a macro body is left alone."""
+    from rustconv.crate_repair import _Ctx, _literal_mut_rule
+
+    src = b"F(v as *const i8, &raw const cdb as *const core::ffi::c_void, &c as *const CDB);\n"
+    out = []
+    for piece in (
+        b"v as *const i8",
+        b"&raw const cdb as *const core::ffi::c_void",
+        b"&c as *const CDB",
+    ):
+        lo = src.index(piece)
+        diag = {
+            "code": {"code": "E0308"},
+            "spans": [
+                {
+                    "file_name": "m.rs",
+                    "byte_start": lo,
+                    "byte_end": lo + len(piece),
+                    "line_start": 1,
+                    "column_start": lo + 1,
+                    "label": "types differ in mutability",
+                }
+            ],
+            "children": [
+                {"message": "expected raw pointer `*mut i8`\nfound raw pointer `*const i8`"}
+            ],
+        }
+        edits, _, handled = _literal_mut_rule(diag, lambda f: src, _Ctx(target="i386", width=32))
+        assert handled
+        out.append(edits[0].replacement)
+    # `&c as *mut CDB` would be E0606: a shared reference goes through its `*const`.
+    assert out == [
+        "v as *mut i8",
+        "&raw const cdb as *mut core::ffi::c_void",
+        "(&c as *const CDB).cast_mut()",
+    ]
+
+
 def test_a_shared_address_of_into_a_mut_pointer_parameter_is_raw_mut():
     """atapi: `AtaDevHasFlushCache(&(*DevExt).IdentifyDeviceData)` against a `*mut` param."""
     from rustconv.crate_repair import _Ctx, _literal_mut_rule

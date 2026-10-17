@@ -51,6 +51,8 @@
 #![allow(non_snake_case)]
 
 use crate::prelude::*;
+// One declaration per external symbol: island.rs.
+pub use crate::island::StrRetToStrW;
 // One declaration per external symbol: the variant matching the C prototype.
 use crate::menu_desk_bar::GetWindowLongPtrW;
 use crate::menu_desk_bar::SetWindowLongPtrW;
@@ -147,7 +149,6 @@ extern "system" {
 extern "system" {
     fn SHGetImageList(iImageList: INT, riid: REFIID, ppv: *mut *mut core::ffi::c_void) -> HRESULT;
     fn SHGetPathFromIDListW(pidl: LPCITEMIDLIST, pszPath: LPWSTR) -> BOOL;
-    pub fn StrRetToStrW(value: *mut STRRET, pidl: LPCITEMIDLIST, out: *mut LPWSTR) -> HRESULT;
 }
 extern "C" {
     static IID_IImageList: IID;
@@ -1882,7 +1883,7 @@ unsafe fn CMenuSFToolbar_FillToolbar(this: *mut CMenuSFToolbar, _clearFirst: BOO
         }
 
         let mut MenuString: LPWSTR = core::ptr::null_mut();
-        StrRetToStrW(&mut sr, item, &mut MenuString);
+        StrRetToStrW((&raw mut sr).cast(), item, &mut MenuString);
 
         if bMustHideAdminTools && lstrcmpiW(MenuString, szAdminTools.as_ptr()) == 0 {
             i += 1;

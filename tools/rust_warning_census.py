@@ -80,6 +80,11 @@ LOGIC = {
     "unreachable_code",
     "unreachable_patterns",
     "clashing_extern_declarations",
+    # A cfg rustc has never heard of is always false, so the gated branch silently never
+    # compiles: cdfs's `cfg!(not(reactos))` (a feature spelled as a cfg) shipped the
+    # non-ReactOS answer, and desk's `feature = "unicode"` ran the ANSI branch in a UNICODE
+    # module (2026-10-17). An intentionally-off gate is declared in the crate's Cargo.toml.
+    "unexpected_cfgs",
     "unpredictable_function_pointer_comparisons",
     "ambiguous_wide_pointer_comparisons",
     "overflowing_literals",
@@ -119,7 +124,6 @@ NOISE = {
     "non_camel_case_types",
     "non_upper_case_globals",
     "bad_asm_style",
-    "unexpected_cfgs",
     "unnecessary_transmutes",
     "private_interfaces",
     "private_bounds",

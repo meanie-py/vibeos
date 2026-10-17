@@ -173,3 +173,13 @@ def test_a_declaration_inside_an_inline_module_gets_its_use_there():
     out = changed["winrt"]
     assert "mod k32 {\n    pub use crate::seh::FatRaiseStatus;" in out
     assert out.count("use crate::seh::FatRaiseStatus;") == 1
+
+
+def test_module_walk_follows_an_inline_mod(tmp_path):
+    # mspaint's lib.rs: `pub mod mspaint { pub mod cpp_classes; }` is mspaint/cpp_classes.rs.
+    src = tmp_path / "src"
+    (src / "mspaint").mkdir(parents=True)
+    (src / "lib.rs").write_text("pub mod types;\npub mod mspaint {\n    pub mod cpp_classes;\n}\n")
+    (src / "types.rs").write_text("")
+    (src / "mspaint" / "cpp_classes.rs").write_text("pub static mut X: u32 = 0;\n")
+    assert sorted(e2u.module_files(src)) == ["", "mspaint::cpp_classes", "types"]

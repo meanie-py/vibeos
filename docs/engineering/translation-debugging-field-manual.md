@@ -984,6 +984,21 @@ after a header change, compare parameter TYPES, not just how many there are** �
 passes clean on exactly this bug, and `ULONG_PTR == ULONG` on i386 makes a plain ABI mismatch
 read as an arch-specific mystery.
 
+### A callback declared through a FUNCTION CLASS loses its convention in translation
+Symptom: none on amd64 or arm64. On i386, a stdcall caller invokes a cdecl callee, which leaves
+its arguments on the stack, so the caller's `esp` is off by their size after every call.
+Cause: the C spells the convention once, in the typedef. `typedef NTSTATUS (NTAPI
+POWER_SETTING_CALLBACK)(..)` is followed by `POWER_SETTING_CALLBACK DevicePowerSettingCallback;`,
+and the definition below it carries no NTAPI. A translation reading the definition writes
+`extern "C"`. bindgen does the same: cdrom's i386 island declares these functions `extern "C"`,
+so `scan_cc_mismatch`, which treats the island as evidence, sees agreement. Per-module
+redeclarations hid the rest: each caller's local `extern` typed the callback the way the
+definition did, until `extern_to_use` gave every call site the definition (2026-10-17).
+Fix: define it `extern "system"` (cdrom's two `EVT_WDF_WORKITEM`s and its power-setting
+callback, classpnp's `EXT_CALLBACK`). `tools/scan_fnclass_cc.py` gates the class: every
+NTAPI-family function-class typedef, plus kmdf's `EVT_*`, against the Rust definition of each
+function declared through one.
+
 ### Per-arch `#[cfg]` twins: the OTHER nominal-ABI workaround, and what it hides
 Same root cause as the transmute above — `extern "system" fn` unifies with neither
 `extern "stdcall"` (i386) nor `extern "C"` (64-bit) in a fn-POINTER type — but the workaround is
@@ -6798,6 +6813,20 @@ SMSS's process creation once (`ps_globals.rs`).
 implied LIMITED grants a full right carries), and grade with a test that runs on Windows
 11 as well (`Win10Surface`'s Test_LimitedAccess). A `*_ALL_ACCESS` in a kernel crate is a
 version-dependent constant: write the value the KERNEL means, not what `0x502` expands to.
+
+### An undeclared cfg is a branch that never compiles, and the warning is the only trace
+Symptom: the Rust always takes one side of a translated `#ifdef`, whatever the C build defines.
+rustc says so once, as `unexpected_cfgs`, and the census filed that lint under NOISE until
+2026-10-17. Cause: the translation renamed a C define into a cfg or feature that nothing
+declares and nothing sets. cdfs wrote `cfg!(not(reactos))` where `reactos` is a Cargo feature,
+not a cfg, so `CdQueryFsDeviceInfo` always returned the non-ReactOS `FILE_DEVICE_CD_ROM`. desk
+gated `pCDevSettings_AllocAndCopyString` on `feature = "unicode"`, and desk is built UNICODE, so
+it ran the ANSI branch on a wide string: every display device name came out one character
+long. oleaut32 hung a `feature = "__REACTOS__"` choice on a split the C does not make.
+Fix: decide each site against what the C build defines, never against what the name suggests.
+Fix a misspelling. Declare a gate that is off on purpose in the crate's `[features]` (or in
+`check-cfg` for a tool cfg like `kani`), with a comment naming the C define, so that the next
+misspelling still warns. The census now counts `unexpected_cfgs` as LOGIC.
 
 ### A `#if` on a WINDOWS VERSION comes back as `#[cfg(target_arch)]`
 

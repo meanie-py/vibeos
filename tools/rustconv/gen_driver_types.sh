@@ -9185,6 +9185,15 @@ PYEOF
     # translation). Leaves the surrounding `extern "C" { ... }` block valid even if emptied.
     sed -i -E '/^[[:space:]]*pub static (mut )?[A-Za-z_][A-Za-z0-9_]*:/d' "$FINAL"
   fi
+  if [ "${BLOCKLIST_FUNCS_FROM_CRATE:-0}" = 1 ] && [ "${KEEP_CRATE_FUNCS:-0}" != 1 ]; then
+    # The same rule for GLOBALS: the island must not declare a variable the crate defines.
+    # mspaint's translation defines `pub static mut toolsModel: ToolsModel` in Rust, and the
+    # island re-declared it as an `extern` static that nothing ever linked. Worse, its type
+    # reaches cppapp's Rust-ABI vtables (`__delete: unsafe fn(*mut T)`), which is all 48 of
+    # the tree's `improper_ctypes` warnings on 2026-10-17. Unlike BLOCKLIST_VARS, a global
+    # the module IMPORTS (`ATL::_pobjMapEntryFirst`) stays.
+    python3 "${SCRIPT_DIR}/drop_crate_globals.py" "$FINAL" "$CRATE_SRC"
+  fi
   if [ "${CALLBACK_SYSTEM:-0}" = 1 ]; then
     # Normalize fn-POINTER-TYPE calling conventions to the portable `extern "system"`.
     # bindgen spells WINAPI/stdcall callbacks (LPWSP*, upcall-table members, ...) as

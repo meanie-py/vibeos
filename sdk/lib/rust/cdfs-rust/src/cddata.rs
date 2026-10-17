@@ -193,7 +193,7 @@ pub static mut CdXAFileHeader: [i32; 11] = [
 // C source: `CDFS_TELEMETRY_DATA_CONTEXT CdTelemetryData;` is guarded by
 // `#ifdef CDFS_TELEMETRY_DATA`, which is NOT defined in the ReactOS build, so
 // the symbol is compiled out. Gated identically here.
-#[cfg(feature = "cdfs_telemetry_data")]
+#[cfg(feature = "CDFS_TELEMETRY_DATA")]
 pub static mut CdTelemetryData: CDFS_TELEMETRY_DATA_CONTEXT = unsafe { core::mem::zeroed() };
 
 const IRP_INPUT_OPERATION: u32 = 0x40;

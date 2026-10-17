@@ -1558,7 +1558,15 @@ def _ref_to_void_pointer(
     is made, and the pointee type comes from the parameter. A shared `&X` goes only to
     `*const c_void`; to `*mut` it is a mutability question, not this one."""
     want = re.fullmatch(r"\*(mut|const) (?:core::ffi::|std::ffi::|libc::)?c_void", expected)
-    if want is None or not found.startswith("&"):
+    # A HANDLE out-parameter: `&mut hwnd` (a `*mut c_void` local) where the header wants
+    # `*mut *mut HWND__` (menuband's `IUnknown_GetWindow(.., &mut parent)`). Both pointees are
+    # thin raw pointers, so the layout is identical whatever they point at; this is C's
+    # `HWND *` from a `void *` variable's address.
+    if want is None:
+        want = re.fullmatch(r"\*(mut|const) \*(?:mut|const) [\w:]+", expected)
+        if want is None or not re.fullmatch(r"&(?:mut )?\*(?:mut|const) [\w:]+", found):
+            return None
+    if not found.startswith("&"):
         return None
     mutable = found.startswith("&mut ")
     if want.group(1) == "mut" and not mutable:
@@ -5362,9 +5370,39 @@ def _literal_mut_rule(
                 )
             )
             continue
+        # `x as *const T` into a `*mut T` parameter: the translation picked the const spelling
+        # of what in C is one cast to the parameter's type (cdrom's `vendorId as *const i8`
+        # into `StringsAreMatched(PCHAR, PCHAR)`, `&raw const cdb as *const c_void` into
+        # `PCDB`). Respelling the cast is that C cast; the pointee is untouched.
+        cast = re.fullmatch(r"(.+?)\s+as\s+\*const\s+([\w:]+(?:<[^<>]*>)?)", inner.strip(), re.S)
+        masked = _mask_lexical(data)
+        if (
+            cast is not None
+            and not _in_macro_definition(masked, lo)
+            and _balanced(cast.group(1).encode())
+            and not re.search(r"\bas\s*$", cast.group(1))
+        ):
+            edits.append(
+                _simple_edit(
+                    RULE_LITERAL_MUT,
+                    file_name,
+                    data,
+                    lo,
+                    hi,
+                    # A shared reference cannot be cast to `*mut` directly (E0606), only
+                    # through the `*const` it already is.
+                    f"({inner.strip()}).cast_mut()"
+                    if re.match(r"&(?!\s*raw\b)", cast.group(1).lstrip())
+                    else f"{cast.group(1)} as *mut {cast.group(2)}",
+                    "rustc E0308 (mutability): the C cast is to the parameter's (non-const) type",
+                    span,
+                    ctx,
+                )
+            )
+            continue
         if not _C_LITERAL_PTR.fullmatch(inner.strip()):
             continue
-        if _in_macro_definition(_mask_lexical(data), lo):
+        if _in_macro_definition(masked, lo):
             continue
         edits.append(
             _simple_edit(
@@ -6903,6 +6941,7 @@ def repair_crate(
     timeout: int = 1800,
     check_runner: Callable[[str], CargoCheckRun] | None = None,
     target_dirs: Mapping[str, Path] | None = None,
+    features: Sequence[str] = (),
 ) -> RepairSession:
     """Iterate propose/apply to a fixpoint, never leaving the tree worse than we found it.
 
@@ -6989,6 +7028,9 @@ def repair_crate(
             target,
             root=root,
             timeout=timeout,
+            # A feature-gated module (rtl-strings' `cabi`, which the kernel build turns on)
+            # is invisible to a default-features check, so its errors were never repaired.
+            extra_args=("--features", ",".join(features)) if features else (),
             target_dir=(target_dirs or {}).get(target),
         )
     )
