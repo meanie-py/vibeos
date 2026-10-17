@@ -6657,8 +6657,13 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   `-Zub-checks=no`. Field manual: "Arming `debug-assertions` also arms rustc's UB checks".
   **ob-rust, ps-rust, se-rust, iomgr-rust, config-rust and cc-rust ARMED 2026-10-17** (their 28
   never-compiled `cfg(debug_assertions)` blocks included): green first boot, UP and `-smp 2`, and
-  kmtest conformance on all three arches. **Next:** restore the 89 asserts `scan_dropped_asserts`
-  baselines, now that the kernel core actually checks them; then the loader/FS/driver tail. `debug_assert!` is gated on
+  kmtest conformance on all three arches. **The 89 asserts `scan_dropped_asserts` baselined are
+  RESTORED 2026-10-17** (baseline empty), finding: `MiConvertSharedWorkingSetLockToExclusive`
+  used one flag for every working-set kind; i386 page faults called an empty
+  `MiSynchronizeSystemPde` stub; and on arm64 `-smp 2` the preemption-bypass blocks (KiSwapThread,
+  NtYieldExecution, KiExitDispatcher) requeued the Standby NextThread through KxQueueReadyThread,
+  which releases the PRCB lock, then switched unlocked: the ready-list tear behind a 0x96 at site
+  0x22 (`KiRequeueStandbyThreadLocked`). **Next:** the loader/FS/driver tail. `debug_assert!` is gated on
   `cfg(debug_assertions)`; `sdk/lib/rust/Cargo.toml`'s `[profile.release]` never sets it, so
   cargo's release default (off) applies and every kernel crate builds `--release`. Meanwhile
   `CMakeLists.txt:233` sets `-DDBG=1`, so the C original calls `RtlAssert`. **The mirror of

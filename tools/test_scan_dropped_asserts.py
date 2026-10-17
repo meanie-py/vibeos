@@ -215,4 +215,3 @@ FORCEINLINE VOID MiFoo(VOID)
            pub unsafe fn MiFooSited(site: usize) { crate::ASSERT!(locked()); }""",
     )
     assert findings == []
-

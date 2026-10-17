@@ -10287,7 +10287,11 @@ code that has always worked. On stable the UB checks share `cfg(debug_assertions
   tolerates; `ntkrnl-sys`'s `#[inline]` `KxAcquireSpinLock` is compiled inside armed
   `ntoskrnl-rust`, so its `read_volatile` alignment check panicked (2026-10-17, rpi-bringup).
   QEMU smoke never sees it: every in-tree driver aligns its locks. Read any driver-supplied lock
-  word or structure through a byte view or `read_unaligned`, never a typed deref.
+  word or structure through a byte view or `read_unaligned`, never a typed deref
+  (`ntkrnl_sys::inline::ke::spin_lock_word` / `set_spin_lock_word`). The atomic RMWs on the
+  same word (`AtomicUsize::from_ptr(..).swap`, `&*(p as *const AtomicI32)`) did NOT panic and
+  need no change on x86: they lower to `lock`-prefixed instructions, which take any alignment,
+  and rustc's misaligned-deref check skips borrows. Only plain loads and stores trip it.
 Triage tip: the i386 HAL loads as `halmp.dll` under the harness label `hal.dll`, and its panic
 text can print garbled; P4 of the `0xE0525354` bugcheck is still the source line.
 
