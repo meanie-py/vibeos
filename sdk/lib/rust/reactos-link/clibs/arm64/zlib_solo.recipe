@@ -1,0 +1,9 @@
+# zlib_solo (arm64), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+c	vendor/zlib/adler32.c	@build/sdk/lib/3rdparty/zlib vendor/zlib @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include vendor/zlib/include	-std=gnu99 @core	NO_VIZ WINVER=0x502 Z_SOLO _WIN32_WINNT=0x502
+c	vendor/zlib/crc32.c	@build/sdk/lib/3rdparty/zlib vendor/zlib @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include vendor/zlib/include	-std=gnu99 @core	NO_VIZ WINVER=0x502 Z_SOLO _WIN32_WINNT=0x502
+c	vendor/zlib/deflate.c	@build/sdk/lib/3rdparty/zlib vendor/zlib @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include vendor/zlib/include	-std=gnu99 @core	NO_VIZ WINVER=0x502 Z_SOLO _WIN32_WINNT=0x502
+c	vendor/zlib/inffast.c	@build/sdk/lib/3rdparty/zlib vendor/zlib @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include vendor/zlib/include	-std=gnu99 @core	NO_VIZ WINVER=0x502 Z_SOLO _WIN32_WINNT=0x502
+c	vendor/zlib/inflate.c	@build/sdk/lib/3rdparty/zlib vendor/zlib @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include vendor/zlib/include	-std=gnu99 @core	NO_VIZ WINVER=0x502 Z_SOLO _WIN32_WINNT=0x502
+c	vendor/zlib/inftrees.c	@build/sdk/lib/3rdparty/zlib vendor/zlib @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include vendor/zlib/include	-std=gnu99 @core	NO_VIZ WINVER=0x502 Z_SOLO _WIN32_WINNT=0x502
+c	vendor/zlib/trees.c	@build/sdk/lib/3rdparty/zlib vendor/zlib @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include vendor/zlib/include	-std=gnu99 @core	NO_VIZ WINVER=0x502 Z_SOLO _WIN32_WINNT=0x502
+c	vendor/zlib/zutil.c	@build/sdk/lib/3rdparty/zlib vendor/zlib @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include vendor/zlib/include	-std=gnu99 @core	NO_VIZ WINVER=0x502 Z_SOLO _WIN32_WINNT=0x502

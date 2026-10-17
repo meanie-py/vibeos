@@ -2605,6 +2605,179 @@ def own_rc(crates: list[str] | None = None, repo: Path = REPO) -> list[str]:
     return moved
 
 
+# ---------------------------------------------------------------- asm, and shared C libraries
+
+# cmake's ASM rule: <CC> -x assembler-with-cpp -o <OBJECT> <INCLUDES> <FLAGS> <DEFINES> -c <SOURCE>.
+ASM_HEAD = ["-x", "assembler-with-cpp"]
+ASM_TAIL = "-D__ASM__"
+
+
+def asm_template_path(arch: str, repo: Path = REPO) -> Path:
+    return repo / f"sdk/lib/rust/reactos-link/cflags/asm.{arch}.flags"
+
+
+def _asm_parts(cmd: str) -> CParts:
+    import shlex
+
+    t = shlex.split(cmd)
+    if t[1:3] != ASM_HEAD or t[3] != "-o":
+        raise GenError(f"not cmake's ASM rule: {' '.join(t[:4])}")
+    obj, i, includes = t[4], 5, []
+    while t[i].startswith("-I"):
+        includes.append(t[i][2:])
+        i += 1
+    if t[-2] != "-c":
+        raise GenError(f"ASM command does not end -c <src>: {t[-1]}")
+    # CMAKE_ASM_COMPILE_OBJECT ends `<DEFINES> -D__ASM__ -c <SOURCE>`.
+    end = len(t) - 3 if t[-3] == ASM_TAIL else len(t) - 2
+    j = end
+    while t[j - 1].startswith("-D"):
+        j -= 1
+    run = t[j:end]
+    # <DEFINES> is the sorted run; -D's a source adds after it (libcntpr's asm: CRTDLL,
+    # __CRT__NO_INLINE) keep their place, after the `@defines` marker in the flags.
+    k = next((n for n in range(len(run) - 1) if run[n] > run[n + 1]), len(run) - 1) + 1
+    defines, post = run[:k], run[k:]
+    flags = t[i:j] + (["@defines", *post] if post else [])
+    return CParts(t[0], "", defines, includes, flags, obj, t[-1])
+
+
+def _asm_commands(arch: str, repo: Path = REPO) -> list[dict]:
+    db = _ccdb(repo / f"build-{arch}/compile_commands.json")
+    return [
+        e
+        for e in db
+        if re.search(r"\.(s|S)$", e["file"]) and " -x assembler-with-cpp " in e.get("command", "")
+    ]
+
+
+def derive_asm_template(arch: str, repo: Path = REPO) -> CTemplate:
+    parts = []
+    for e in _asm_commands(arch, repo):
+        try:
+            parts.append(_asm_parts(e["command"]))
+        except GenError:
+            continue
+    if not parts:
+        raise GenError(f"build-{arch}: no ASM commands")
+    common = set(parts[0].defines).intersection(*(set(p.defines) for p in parts[1:]))
+    return CTemplate(
+        cc=parts[0].cc.replace(CANON, "{REPO}"),
+        target="",
+        std=[_rc_enc(x, arch) for x in _majority_run([p.includes for p in parts], 0.6)],
+        core=[_flag_enc(x, arch) for x in _majority_run([p.flags for p in parts], 0.6)],
+        defines=sorted(common),
+    )
+
+
+def read_asm_template(arch: str, repo: Path = REPO) -> CTemplate:
+    path = asm_template_path(arch, repo)
+    if not path.exists():
+        raise GenError(f"{path}: missing (python3 tools/cargo_cell_gen.py --c-template)")
+    sec: dict[str, list[str]] = {}
+    cur = None
+    for line in path.read_text().splitlines():
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            cur = sec.setdefault(line[1:-1], [])
+        elif cur is not None:
+            cur.append(line)
+    return CTemplate(
+        sec["cc"][0], "", sec.get("std", []), sec.get("core", []), sec.get("defines", [])
+    )
+
+
+def asm_decode(f: CFlags, tmpl: CTemplate, arch: str, obj: str) -> list[str]:
+    """The command Linker builds for an asm source, up to `-c`."""
+    out = [_flag_dec(tmpl.cc, arch), *ASM_HEAD, "-o", obj]
+    for inc in f.includes:
+        out += [f"-I{_rc_dec(d, arch)}" for d in (tmpl.std if inc == "@std" else [inc])]
+    defines = sorted(tmpl.defines + [f"-D{d}" for d in f.defines])
+    flags = list(f.flags) if "@defines" in f.flags else [*f.flags, "@defines"]
+    for fl in flags:
+        if fl == "@core":
+            out += [_flag_dec(x, arch) for x in tmpl.core]
+        elif fl == "@defines":
+            out += defines
+        else:
+            out.append(_flag_dec(fl, arch))
+    return [*out, ASM_TAIL]
+
+
+def asm_encode(cmd: str, tmpl: CTemplate, arch: str) -> CFlags:
+    import shlex
+
+    p = _asm_parts(cmd)
+    inc = [_rc_enc(x, arch) for x in p.includes]
+    inc = (_with_marker(inc, tmpl.std, "@std") or inc) if tmpl.std else inc
+    flags = [_flag_enc(x, arch) for x in p.flags]
+    flags = (_with_marker(flags, tmpl.core, "@core") or flags) if tmpl.core else flags
+    left = list(p.defines)
+    for d in tmpl.defines:
+        if d not in left:
+            raise GenError(f"{p.src}: lacks the global ASM define {d}")
+        left.remove(d)
+    f = CFlags(tuple(inc), tuple(flags), tuple(d[2:] for d in left))
+    if asm_decode(f, tmpl, arch, p.obj) != shlex.split(cmd)[:-2]:
+        raise GenError(f"{p.src}: the ASM command does not rebuild from the template")
+    return f
+
+
+def clib_recipe_path(arch: str, target: str, repo: Path = REPO) -> Path:
+    return repo / f"sdk/lib/rust/reactos-link/clibs/{arch}/{target}.recipe"
+
+
+def clib_recipe(arch: str, target: str, repo: Path = REPO) -> str:
+    """A shared C library the engine builds (`engine:c:<t>`, wine, uuid, ...) as a recipe:
+    one line per source in cmake's archive order, `<c|asm>\t<src>\t<includes>\t<flags>\t
+    <defines>`, the part of that source's command the template does not hold. Generated
+    sources are `@build/<rel>`, which a cmake-off build's generated SDK provides."""
+    ctmpl, atmpl = read_c_template(arch, repo), read_asm_template(arch, repo)
+    db = _ccdb(repo / f"build-{arch}/compile_commands.json")
+    marker = f"/CMakeFiles/{target}.dir/"
+    lines = [
+        f"# {target} ({arch}), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes"
+    ]
+    seen = set()
+    for e in db:
+        cmd = e.get("command", "")
+        if marker not in cmd or e["file"] in seen:
+            continue
+        seen.add(e["file"])
+        if e["file"].endswith(".c"):
+            kind, f = "c", c_encode(cmd, ctmpl, arch)
+        elif re.search(r"\.(s|S)$", e["file"]):
+            kind, f = "asm", asm_encode(cmd, atmpl, arch)
+        else:
+            raise GenError(f"{target}: unmodelled source {e['file']}")
+        toks = [*f.includes, *f.flags, *f.defines]
+        if any(" " in x or "\t" in x for x in toks):
+            raise GenError(f"{target}: a token with whitespace in {e['file']}")
+        lines.append(
+            "\t".join(
+                [
+                    kind,
+                    _rc_enc(e["file"], arch),
+                    " ".join(f.includes),
+                    " ".join(f.flags),
+                    " ".join(f.defines),
+                ]
+            )
+        )
+    if len(lines) == 1:
+        raise GenError(f"{target}: no sources on {arch}")
+    return "\n".join(lines) + "\n"
+
+
+def engine_c_targets(repo: Path = REPO) -> list[str]:
+    """Every cmake C library the engine compiles for a cell: `engine:c:<t>` and the named
+    replays (wine, uuid, conutils)."""
+    text = "".join(f.read_text() for f in (repo / "sdk/lib/rust").glob("*-cargo/build.rs"))
+    names = set(re.findall(r'"engine:c:(\w+)"', text)) | {"wine", "uuid", "conutils"}
+    return sorted(names)
+
+
 SHIMS_CALL = re.compile(r'\.c_from_compile_db\(\s*"(\w+)"')
 # c_from_compile_db libraries several cells share, which are cmake libraries of their own.
 SHARED_C_LIBS = {"rtl", "blrtl", "libcntpr", "win32k_residue"}
@@ -2943,6 +3116,12 @@ def main(argv: list[str] | None = None) -> int:
         "libraries: the engine compiles the C (Linker::c_compiled)",
     )
     ap.add_argument(
+        "--clib-recipes",
+        action="store_true",
+        help="regenerate reactos-link/clibs/<arch>/<t>.recipe for every C library the engine "
+        "compiles for a cell (engine:c:<t>, wine, uuid, conutils)",
+    )
+    ap.add_argument(
         "--c-template",
         action="store_true",
         help="regenerate reactos-link/cflags/c.<arch>.flags from each build's C commands",
@@ -2984,7 +3163,20 @@ def main(argv: list[str] | None = None) -> int:
     if args.c_template:
         for a in ARCHES:
             c_template_path(a).write_text(derive_c_template(a).text(a))
-            print(f"wrote {c_template_path(a).relative_to(REPO)}")
+            asm_template_path(a).write_text(derive_asm_template(a).text(a))
+            print(f"wrote {c_template_path(a).relative_to(REPO)} and asm.{a}.flags")
+        return 0
+    if args.clib_recipes:
+        for a in ARCHES:
+            for t in engine_c_targets():
+                try:
+                    text = clib_recipe(a, t)
+                except GenError as e:
+                    print(f"{a} {t}: {e}")
+                    continue
+                path = clib_recipe_path(a, t)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(text)
         return 0
     if args.own_c:
         for crate in own_c(args.targets or None):

@@ -1,0 +1,2 @@
+# shimlib (arm64), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+c	dll/appcompat/shims/shimlib/shimlib.c	@build/dll/appcompat/shims/shimlib dll/appcompat/shims/shimlib @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 @core	WINVER=0x502 _WIN32_WINNT=0x502

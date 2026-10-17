@@ -1302,7 +1302,7 @@ impl Linker {
     /// The per-arch generated kernel-offset include filename (geninc output):
     /// `ks386.inc` (i386), `ksamd64.inc` (amd64), `ksarm64.h` (arm64). Matches
     /// `sdk/include/asm/CMakeLists.txt`'s `_filename`.
-    fn ks_inc_name(&self) -> &'static str {
+    pub(crate) fn ks_inc_name(&self) -> &'static str {
         match self.arch.name {
             "i386" => "ks386.inc",
             "amd64" => "ksamd64.inc",
@@ -1668,7 +1668,11 @@ impl Linker {
         // in ntoskrnl, win32k's Rust memcmp, amd64's ntoskrnl import) keeps its own
         // and this contributes nothing. Only a cell with a genuine gap pulls it.
         if !self.target.is_json() {
-            let memcmp_a = self.build_dir.join("sdk/lib/crt/libmemcmp.a");
+            let mut memcmp_a = self.build_dir.join("sdk/lib/crt/libmemcmp.a");
+            if cmake_off_forced() || !memcmp_a.exists() {
+                // No cmake build: compile it from its recipe, as `engine:c:memcmp` does.
+                memcmp_a = self.compile_recipe("memcmp", &ar);
+            }
             if !memcmp_a.exists() {
                 panic!(
                     "missing {} — run ninja memcmp first (needed by the precompiled \
@@ -2273,7 +2277,9 @@ impl Linker {
             // found, so its `[target.i686-pc-windows-gnu] -sse,-sse2` rustflags
             // don't apply — cnt-rust's `float` feature needs SSE, and cmake
             // builds it with SSE for this exact reason.
-            cmd.current_dir(&self.build_dir);
+            // With no cmake build dir, the repo root: the same ancestors, so the same
+            // (absent) .cargo/config.toml discovery.
+            cmd.current_dir(if self.build_dir.is_dir() { &self.build_dir } else { &self.repo_root });
             // cnt-rust REQUIRES `-C no-prepopulate-passes` on EVERY arch: its
             // per-fn cgu-split CRT shims miscompile under LLVM's default
             // pre-passes (corrupted printf/streamout + mem/string ops). On
@@ -2391,6 +2397,11 @@ impl Linker {
     /// a symbol two members define (libuuid has 397) resolves to the first.
     fn replay_target(&self, target: &str, ar: &Path) -> PathBuf {
         let db_path = self.build_dir.join("compile_commands.json");
+        if cmake_off_forced() || !db_path.exists() {
+            // No cmake build: the committed recipe of that compile (cargo_cell_gen
+            // --clib-recipes), with cmake's C and ASM rules rebuilt from their templates.
+            return self.compile_recipe(target, ar);
+        }
         if !db_path.exists() {
             panic!(
                 "engine:{target} replays cmake's compile of it and needs {} — \
@@ -3050,7 +3061,7 @@ impl Linker {
     /// `OUT_DIR/asm/`. Returns that dir for the kernel asm `#include` path. The
     /// `.asmdef` table is pure compile-time constants, so the `.obj` section bytes
     /// (and hence the emitted text) are byte-identical to cmake's `native-geninc`.
-    fn generate_ks_inc(&self) -> PathBuf {
+    pub(crate) fn generate_ks_inc(&self) -> PathBuf {
         self.ks_includes.get_or_generate(|| self.generate_ks_inc_uncached())
     }
 

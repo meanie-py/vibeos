@@ -1,0 +1,5 @@
+# libsamplerate (arm64), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+c	vendor/libsamplerate/samplerate.c	@build/sdk/lib/3rdparty/libsamplerate vendor/libsamplerate @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 @core	HAVE_CONFIG_H WINVER=0x502 _WIN32_WINNT=0x502
+c	vendor/libsamplerate/src_linear.c	@build/sdk/lib/3rdparty/libsamplerate vendor/libsamplerate @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 @core	HAVE_CONFIG_H WINVER=0x502 _WIN32_WINNT=0x502
+c	vendor/libsamplerate/src_sinc.c	@build/sdk/lib/3rdparty/libsamplerate vendor/libsamplerate @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 @core	HAVE_CONFIG_H WINVER=0x502 _WIN32_WINNT=0x502
+c	vendor/libsamplerate/src_zoh.c	@build/sdk/lib/3rdparty/libsamplerate vendor/libsamplerate @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 @core	HAVE_CONFIG_H WINVER=0x502 _WIN32_WINNT=0x502
