@@ -450,9 +450,27 @@ from us: tlhelp32.h's 64-bit layouts (field manual, "The SDK header can be the w
 runs it.
 
 **Owed on the export surface:**
-- **Modules other apps still need:** `mi` (Docker; WMI's Management Infrastructure, which
-  Wine does not have): in progress as a Rust mi.dll over wbemprox; `sdk/include/psdk/mi.h`
-  is OMI's header, and the function tables were measured on Windows 11. Office: bring it in when the rest is green, it is its own campaign.
+- **Done 2026-10-17: mi.dll**, WMI's Management Infrastructure client (Docker reaches it
+  through the CIM .NET layer, whose native half imports only `mi_clientFT_V1`; Wine has no
+  mi.dll). Written fresh in Rust (`sdk/lib/rust/mi-rust`) over WMI's COM interfaces, against
+  OMI's MI.h (`sdk/include/psdk/mi.h`, tables measured on Windows 11). Every operation runs on
+  its own MTA worker thread, so the client's apartment never matters; results arrive sync
+  (`MI_Operation_GetInstance`) or by callback, with manual acknowledgement.
+  `modules/rostests/apitests/mi` was written against Windows' own mi.dll first (x64 3953
+  checks, x86 3991, 0 failures). Ours passes it on the Windows host over Windows' WMI (x64
+  3984, x86 3999), and in the guest over wbemprox (216, 0 failures). A C# program
+  using `Microsoft.Management.Infrastructure` gives identical output through ours and
+  Windows' (OS query, 484 processes, Docker's `Win32_OptionalFeature` WSL query,
+  `InvalidClass`). What it needed from wbemprox: Win32_OperatingSystem.NumberOfProcesses,
+  and a query for an unknown class failing at the enumerator's first Next, as Windows does
+  (Wine's test had it todo_wine). Completes with MI_RESULT_NOT_SUPPORTED (owed): create/
+  modify/delete, Invoke, associations, subscriptions, GetClass/MI_Class, serializers,
+  hosted providers, remote destinations.
+- **Modules other apps still need:** Office: bring it in when the rest is green, it is its
+  own campaign.
+- **reactos-link puts cargo's hashed bin name in the export directory** of every
+  cargo-linked DLL (`dcomp-4d1aeb251b7d5eac.exe`, `mi-0eb7fbcab8fde2be.exe`): handed to the
+  upstream-sync lane 2026-10-17.
 - **The d3d10/11 family (d2d1, dwrite, dxgi, d3dx10/11) is built at every version**
   (2026-10-17); before, a default build had no d3d11.dll at all. `tools/payloads/d3dwinetest`
   runs Wine's d3d11 and dxgi suites (imported at the DLLs' own sync point, wine-10.1-dev
@@ -515,7 +533,11 @@ runs it.
   XP fallback. The audit is done (`version-flip-audit.md`, 2026-10-17): we report 5.2 build
   3790 today; 11 checks break at 10.0, starting with three `& 0x3FFF` build masks that turn
   22000 into 5616, and ntdll records the LOWEST supportedOS GUID, which cannot answer the
-  manifest rule.
+  manifest rule. **Phases 1-2 done 2026-10-17** (inert at 5.2): the version-independent
+  breaks are fixed (status in the audit doc's header), ntdll records the HIGHEST declared OS,
+  and kernel32's GetVersion/GetVersionEx/VerifyVersionInfo apply the manifest rule
+  (`min(real, max(6.2, declared))`, 6.2 reports build 9200, 6.3 build 9600; RtlGetVersion
+  stays truthful). Next: phase 3, the flip itself (the D-rows).
 - **Seed the stub-hit report with real programs.** Its first reading (607 boots: smoke,
   kmtest on all arches, and one amd64 appstorm sweep, which opens every stock app and
   applet): exactly one stub is reached, the SEH smoke probe's deliberate

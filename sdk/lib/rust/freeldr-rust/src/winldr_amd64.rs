@@ -472,7 +472,7 @@ pub unsafe extern "C" fn WinLdrSetupMachineDependent(LoaderBlock: PLOADER_PARAME
     WinLdrMapSpecialPages();
 }
 
-unsafe fn MempDump() {
+pub(crate) unsafe fn MempDump() {
 }
 
 

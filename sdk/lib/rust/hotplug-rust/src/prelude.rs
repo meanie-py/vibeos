@@ -65,7 +65,7 @@ pub use win32macros_rust::{ALIGN_UP, ARRAYSIZE, ASSERT, C_ASSERT, CopyMemory, DB
 // The island re-exports the base NT identity: pub use ntdll_sys::nt::*;
 
 // ==== port resolve: tree consensus (generated -- re-run `rustconv port resolve`) ====
-pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001usize as HKEY; // appwiz-rust/src/prelude.rs
+pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as i32 as isize as HKEY; // appwiz-rust/src/prelude.rs
 extern "system" {
     pub fn CM_Get_Child(pdnDevInst: PDEVINST, dnDevInst: DEVINST, ulFlags: ULONG) -> CONFIGRET; // desk-rust/src/types_amd64.rs
     pub fn CM_Get_DevNode_Registry_PropertyW( dnDevInst: DEVINST, ulProperty: ULONG, pulRegDataType: PULONG, Buffer: PVOID, pulLength: PULONG, ulFlags: ULONG, ) -> CONFIGRET; // desk-rust/src/types_amd64.rs

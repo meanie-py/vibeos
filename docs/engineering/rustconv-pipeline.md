@@ -990,7 +990,13 @@ Every fix below is a stage change, not a recipe.
 - **Stale sibling imports are dropped**, and a name that becomes hand-written leaves the
   substrate block (both were E0603/E0255 after a rename).
 - **Hand macro ports survive replays.** `port macros` skips an item defined in the prelude
-  OUTSIDE its generated block; that is where a fixed macro goes.
+  OUTSIDE its generated block, and it now finds a fix made INSIDE one by itself: each item
+  in both macro blocks carries a `// gen:<digest>` stamp of its own text, and an item that
+  no longer matches (or whose stamp was deleted, which is how to claim one unchanged) is
+  moved above the block before anything is bought for it (`generated_items.py`). An item
+  stamped before this existed is compared with today's output instead, so a mere
+  re-spelling moves too; delete the moved copy to regenerate it. Resolve's blocks (facts,
+  substrate, externs, cross-TU) still regenerate wholesale.
 - **The anon-union Deref autoref** (`dangerous_implicit_autorefs`, deny): `(*p).a.Field` read
   through the island's `impl Deref` is rewritten to name the member
   (`a.__bindgen_anon_1.Field`) by crate-repair's `anon_union_field` rule.
@@ -1226,6 +1232,18 @@ registration. A worker whose body names the module global gets CComModule's API 
 External classes nothing in the module names (CRegKey, merely defined by atlbase.h) are no
 longer rendered or bought. Runtime: `tools/payloads/modrun/suites/mmcshext.yaml` drives the
 factory, QueryInterface, the icon paths and register/unregister against the C.
+
+The drop handlers (sendmail, mydocs) added four things. A COM-map entry may name an ANCESTOR
+of a derived interface (`COM_INTERFACE_ENTRY_IID(IID_IPersist, IPersist)` on an IPersistFile
+class): it resolves to the derived base whose WIDL slots it prefixes, and two such bases is
+C++'s ambiguous cast, refused. `port translate` passes `--local-raii` for each canonical
+lowering in `tools/rustconv/data/local_raii/` that a C++ TU names (CDataObjectHIDA), and
+profile_derive blocklists that type from the island, so the lowering's struct (with its
+Drop) is the only one. shellutils.h's shared half (`hida_clipformat`, the HIDA accessors) is
+`atl_rust::shellutils`, re-exported by the prelude when the module names it; `port headers`
+over shellutils.h would buy 40 functions for those two. resolve counts
+`add_delay_importlibs` (ole32 is delay-loaded in every shell extension). Runtime:
+`probes/droptarget.c` serves both suites, dropping a real two-item HIDA on each handler.
 
 ## `body-audit`: did a pre-seal body keep its C's calls? (2026-09-26)
 
@@ -1613,6 +1631,10 @@ audit, and each flag contributes its own INDEPENDENT response-cache token (`fact
 free to add: turning one on misses the cache and pays for the bodies it covers, while every
 body already banked under the other tokens stays addressable and is never re-billed. Folding
 a new protection into an existing token's meaning would re-charge for work already owned.
+A call inside a `#if` arm is optional to the call seal unless the TU's own defines decide the
+arm live (`dead_regions.decided_live_lines`); then it is required like any other. That is a
+check on the reply, not the prompt, so it shares `callseal_v1`. `rustconv.live_arm_audit`
+reports shipped bodies that drop a live-arm callee, and it is how the tightening was measured.
 
 **`--seal-wide` (2026-08-07).** Rust has no UTF-16 literal, so a model asked to translate one
 has nothing correct to write: it invents an encoding, and every invention is a hand-count no

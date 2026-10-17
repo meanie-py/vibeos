@@ -101,7 +101,7 @@ unsafe fn ChooseGinaUI() {
     let mut rc: i32;
 
     rc = RegOpenKeyExW(
-        0x80000002u32 as HKEY, // HKEY_LOCAL_MACHINE
+        0x8000_0002u32 as i32 as isize as HKEY, // HKEY_LOCAL_MACHINE
         // was a phase-broken interleaved literal (`\\0C` = '\', '0', 'C') that
         // decoded as "SYSTE M" + CJK garbage — RegOpenKeyExW always failed
         w!("SYSTEM\\CurrentControlSet\\Control").as_ptr(),

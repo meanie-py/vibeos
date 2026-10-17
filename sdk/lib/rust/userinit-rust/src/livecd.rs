@@ -500,7 +500,7 @@ unsafe fn InitializeDefaultUserLocale(pNewLcid: PLCID) {
     let mut dwSize: u32;
     let lcid: LCID;
 
-    const HKEY_USERS: HKEY = 0x80000003u32 as usize as HKEY;
+    const HKEY_USERS: HKEY = 0x8000_0003u32 as i32 as isize as HKEY;
 
     let locale_data: [LocaleDataEntry; 37] = [
         LocaleDataEntry { LCType: LOCALE_SDECIMAL, pValue: w!("sDecimal").as_ptr() as PWSTR },

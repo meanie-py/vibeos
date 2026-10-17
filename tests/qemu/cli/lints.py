@@ -674,6 +674,18 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A predefined registry key cast through usize/u32 to HKEY: 0x0000000080000002 on 64-bit,
+    # where winreg.h's `(LONG)` sign-extends it to 0xFFFFFFFF80000002. advapi32 masks, so
+    # calls work, but it never compares equal to a HKEY C code made. 118 sites across the
+    # tree when the rule landed (2026-10-17), all rewritten. A vibeos-lint rule. Baseline is EMPTY.
+    shz = repo / "tools" / "scan_hkey_zero_extend.py"
+    specs.append(
+        (
+            "scan_hkey_zero_extend",
+            [py, str(shz), "--lint"] if shz.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # An array FIELD passed by value to a C variadic (`note("%s", (*ip).name)`): C decays
     # it to a pointer, Rust passes the array, and only i386 copies the bytes onto the stack,
     # so `%s` reads the string's first four bytes as a pointer. The i386 DHCP client died on
@@ -1447,6 +1459,15 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A Windows-called entry point (DllMain, the COM server exports, CPlApplet, DriverEntry)
+    # defined with a convention other than WINAPI. Neither cc scanner sees it: nothing in the
+    # crate declares DllMain, and nothing imports it by a decorated name. On i386 an
+    # `extern "C"` DllMain defines `_DllMain` while the CRT calls `_DllMain@12`, so the link
+    # silently binds crt-startup's default and the module's own DllMain never runs
+    # (wshtcpip shipped that way; sendmail/mydocs came back from translation with it).
+    # Baseline is EMPTY.
+    # A Rust rule (tools/vibeos-lint/src/rules/entry_point_cc.rs).
+    specs.append(("scan_entry_point_cc", [rustlints.SENTINEL, "scan_entry_point_cc"], "stdout"))
     # The OTHER half of that pair: a cross-MODULE extern declaration, checked against the
     # .spec of the DLL that exports it. `cargo check` never links, so nothing in `check`,
     # `check-tooling` or `difftest` can see a wrong-ABI import — it survives to the PE link,

@@ -233,8 +233,8 @@ pub use crate::types::{
 pub const UNICODE_NULL: WCHAR = 0; // ntdef.h — UNICODE_NULL = L'\0'
 pub const CP_ACP: UINT = 0; // winnls.h — ANSI code page
 pub const PF_INET: c_int = 2; // winsock2.h — PF_INET/AF_INET
-pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as HKEY; // winreg.h
-pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as HKEY; // winreg.h
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY; // winreg.h
+pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as i32 as isize as HKEY; // winreg.h
 pub const INVALID_HANDLE_VALUE: HANDLE = usize::MAX as HANDLE; // handleapi.h — (HANDLE)-1
 // tcpioctl.h — CTL_CODE(FILE_DEVICE_NETWORK=0x12, Function, Method, Access):
 //   ((0x12<<16) | (Access<<14) | (Function<<2) | Method)

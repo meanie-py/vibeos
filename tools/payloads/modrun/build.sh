@@ -14,14 +14,14 @@ declare -A CC=( [arm64]=aarch64-w64-mingw32-gcc [amd64]=x86_64-w64-mingw32-gcc [
 python3 "$HERE/modrun.py" gen --arch "$A"
 # GUI subsystem + classic msvcrt: the apitest sweep's recipe, for the same reasons.
 "$TC/${CC[$A]}" -O2 -o "$HERE/modrun-$A.exe" "$HERE/modrun.c" \
-    -lmsvcrt-os -lntdll -Wl,--subsystem,windows -Wl,-e,mainCRTStartup
+    -lmsvcrt-os -lntdll -ladvapi32 -Wl,--subsystem,windows -Wl,-e,mainCRTStartup
 python3 "$(dirname "$HERE")/pecheck.py" "$HERE/modrun-$A.exe" --tag modrun --gui --forbid-dll api-ms-win-crt
 # Plain-C probes (probes/<name>.c -> probes/<name>-<arch>.exe), for suites that test a module
 # through its public API and need nothing from the build tree.
 for SRC in "$HERE"/probes/*.c; do
     [ -e "$SRC" ] || continue
     OUT="${SRC%.c}-$A.exe"
-    "$TC/${CC[$A]}" -O1 -o "$OUT" "$SRC" -lmsvcrt-os -lnetapi32 -lole32 -luuid -ladvapi32 -luser32 -lgdi32 -lkernel32 \
+    "$TC/${CC[$A]}" -O1 -o "$OUT" "$SRC" -lmsvcrt-os -lnetapi32 -lshell32 -lshlwapi -lole32 -luuid -ladvapi32 -luser32 -lgdi32 -lkernel32 \
         -Wl,--subsystem,console
     python3 "$(dirname "$HERE")/pecheck.py" "$OUT" --tag modrun-probe --forbid-dll api-ms-win-crt
 done

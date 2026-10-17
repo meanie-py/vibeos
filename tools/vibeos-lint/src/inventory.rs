@@ -81,18 +81,8 @@ impl SourceSet {
         if explicit && !self.inputs {
             return false;
         }
-        let parent = path.parent().unwrap_or(Path::new(""));
-        if !self.tracked
-            && (!self.visits(parent, explicit)
-                || !(explicit && self.inputs)
-                    && !self
-                        .roots
-                        .iter()
-                        .any(|root| path.starts_with(if *root == "." { "" } else { root })))
-        {
-            return false;
-        }
-        path.extension()
+        let matches_name = path
+            .extension()
             .is_some_and(|ext| self.extensions.iter().any(|want| ext == *want))
             || path.file_name().is_some_and(|name| {
                 self.filenames.iter().any(|want| {
@@ -104,7 +94,37 @@ impl SourceSet {
                                 && name.ends_with(suffix)
                         })
                 })
-            })
+            });
+        if !matches_name {
+            return false;
+        }
+        let parent = path.parent().unwrap_or(Path::new(""));
+        if !self.tracked {
+            // `visits(parent)` and the path-root check are both required: the
+            // former keeps ancestor directories alive when a root is nested
+            // below them, while the latter rejects siblings of that root.
+            // Evaluate both predicates in one roots pass instead of walking
+            // the static root list twice for every candidate file.
+            if self.pruned(parent) {
+                return false;
+            }
+            if !(explicit && self.inputs) {
+                let mut parent_in_scope = false;
+                let mut path_in_scope = false;
+                for root in self.roots {
+                    let root = Path::new(if *root == "." { "" } else { root });
+                    parent_in_scope |= root.starts_with(parent) || parent.starts_with(root);
+                    path_in_scope |= path.starts_with(root);
+                    if parent_in_scope && path_in_scope {
+                        break;
+                    }
+                }
+                if !parent_in_scope || !path_in_scope {
+                    return false;
+                }
+            }
+        }
+        true
     }
 }
 
@@ -130,5 +150,19 @@ mod tests {
             .accepts(Path::new("drivers/a/rust_cohab_stub.c"), false));
         assert!(!SourceSet::tree("stub", &["."], &[], &["rust_cohab*.c"])
             .accepts(Path::new("drivers/a/rust_cohab_stub.h"), false));
+    }
+
+    #[test]
+    fn accepts_keeps_the_independent_parent_and_file_root_checks() {
+        let split_roots = SourceSet::tree(
+            "split",
+            &["sdk/include/foo", "sdk/include/bar"],
+            &["h"],
+            &[],
+        );
+        // The parent is retained because a configured root lies below it;
+        // the file itself belongs to the other configured root.
+        assert!(split_roots.accepts(Path::new("sdk/include/bar/a.h"), false));
+        assert!(!split_roots.accepts(Path::new("sdk/include/baz/a.h"), false));
     }
 }

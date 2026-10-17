@@ -65,7 +65,7 @@ pub use win32macros_rust::{ALIGN_UP, ARRAYSIZE, ARRAY_SIZE, ASSERT, C_ASSERT, Co
 // The island re-exports the base NT identity: pub use ntdll_sys::nt::*;
 
 // ==== port resolve: tree consensus (generated -- re-run `rustconv port resolve`) ====
-pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002usize as HKEY; // console-rust/src/prelude.rs
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY; // console-rust/src/prelude.rs
 pub const __WINE_DBCL_ERR: __wine_debug_class = 1; // appwiz-rust/src/prelude.rs
 extern "C" {
     pub fn wcslen(s: *const u16) -> usize; // access-rust/src/prelude.rs

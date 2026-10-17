@@ -353,81 +353,77 @@ extern "C" {
 }
 // ==== end port variadic ====
 
-// ==== port macros: SDK header macros, lowered from the preprocessor's own expansion (generated -- re-run `rustconv port macros`) ====
-#[macro_export] macro_rules! ComboBox_GetCurSel { ($p0:expr $(,)?) => { ((((SendMessageW((($p0) as _), ((327) as _), ((0) as _), ((0) as _))) as DWORD)) as c_int) }; }
-#[macro_export] macro_rules! ComboBox_GetItemData { ($p0:expr, $p1:expr $(,)?) => { ((((SendMessageW((($p0) as _), ((336) as _), (((($p1) as c_int)) as WPARAM), ((0) as _))) as UINT_PTR)) as LRESULT) }; }
-#[macro_export] macro_rules! DBG_UNREFERENCED_PARAMETER { ($p0:expr $(,)?) => { { let _ = $p0; } }; }
-#[macro_export] macro_rules! DeleteFont { ($p0:expr $(,)?) => { DeleteObject((((($p0) as HFONT)) as HGDIOBJ)) }; }
-#[macro_export] macro_rules! Edit_ShowBalloonTip { ($p0:expr, $p1:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1500 + 3)) as _), ((0) as _), (($p1) as LPARAM))) as BOOL) }; }
+// hand-edited, so kept out of the generated block below (generated_items.py); delete to regenerate
 #[macro_export] macro_rules! GetDiskSizeInBytes { ($p0:expr $(,)?) => { ((*$p0).SectorCount.QuadPart * ((*$p0).BytesPerSector as ULONGLONG)) }; }
+pub use crate::GetDiskSizeInBytes;
+// hand-edited, so kept out of the generated block below (generated_items.py); delete to regenerate
 #[macro_export] macro_rules! GetPartEntrySizeInBytes { ($p0:expr $(,)?) => { ((*$p0).SectorCount.QuadPart * ((*(*$p0).DiskEntry).BytesPerSector as ULONGLONG)) }; }
-#[macro_export] macro_rules! ImageList_AddIcon { ($p0:expr, $p1:expr $(,)?) => { ImageList_ReplaceIcon((($p0) as _), (((-(1 as c_int))) as _), (($p1) as _)) }; }
-#[macro_export] macro_rules! ListView_EnsureVisible { ($p0:expr, $p1:expr, $p2:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1000 + 19)) as _), (((($p1) as c_int)) as WPARAM), (((((((((((((($p2) as DWORD_PTR) & 0xffff)) as WORD)) as DWORD) | ((((((((0) as DWORD_PTR) & 0xffff)) as WORD)) as DWORD) << 16))) as LONG)) as DWORD)) as LPARAM))) as BOOL) }; }
-#[macro_export] macro_rules! ListView_GetImageList { ($p0:expr, $p1:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1000 + 2)) as _), (((($p1) as INT)) as WPARAM), ((0) as _))) as HIMAGELIST) }; }
-#[macro_export] macro_rules! ListView_GetItem { ($p0:expr, $p1:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1000 + 75)) as _), ((0) as _), (($p1) as LPARAM))) as BOOL) }; }
-#[macro_export] macro_rules! ListView_GetSelectionMark { ($p0:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1000 + 66)) as _), ((0) as _), ((0) as _))) as c_int) }; }
-#[macro_export] macro_rules! ListView_InsertColumn { ($p0:expr, $p1:expr, $p2:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1000 + 97)) as _), (((($p1) as c_int)) as WPARAM), (($p2) as LPARAM))) as c_int) }; }
-#[macro_export] macro_rules! ListView_SetExtendedListViewStyleEx { ($p0:expr, $p1:expr, $p2:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1000 + 54)) as _), (($p1) as _), (($p2) as _))) as DWORD) }; }
-#[macro_export] macro_rules! ListView_SetImageList { ($p0:expr, $p1:expr, $p2:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1000 + 3)) as _), (($p2) as WPARAM), (($p1) as LPARAM))) as HIMAGELIST) }; }
-#[macro_export] macro_rules! ListView_SetItemState { ($p0:expr, $p1:expr, $p2:expr, $p3:expr $(,)?) => { { let mut _ms_lvi: LVITEMW = core::mem::zeroed(); { _ms_lvi.stateMask = (($p3) as _); }; { _ms_lvi.state = (($p2) as _); }; SendMessageW((($p0) as _), (((0x1000 + 43)) as _), (($p1) as WPARAM), ((core::ptr::addr_of_mut!(_ms_lvi)) as LPARAM)); } }; }
-#[macro_export] macro_rules! MAKELPARAM { ($p0:expr, $p1:expr $(,)?) => { (((((((((((((($p0) as DWORD_PTR) & 0xffff)) as WORD)) as DWORD) | (((((((($p1) as DWORD_PTR) & 0xffff)) as WORD)) as DWORD) << 16))) as LONG)) as DWORD)) as LPARAM) }; }
-#[macro_export] macro_rules! MAKEWPARAM { ($p0:expr, $p1:expr $(,)?) => { (((((((((((((($p0) as DWORD_PTR) & 0xffff)) as WORD)) as DWORD) | (((((((($p1) as DWORD_PTR) & 0xffff)) as WORD)) as DWORD) << 16))) as LONG)) as DWORD)) as WPARAM) }; }
-#[macro_export] macro_rules! PropSheet_PressButton { ($p0:expr, $p1:expr $(,)?) => { SendMessageW((($p0) as _), ((1137) as _), (($p1) as _), ((0) as _)) }; }
-#[macro_export] macro_rules! PropSheet_SetCurSelByID { ($p0:expr, $p1:expr $(,)?) => { SendMessageW((($p0) as _), ((1138) as _), ((0) as _), (($p1) as _)) }; }
-#[macro_export] macro_rules! PropSheet_SetWizButtons { ($p0:expr, $p1:expr $(,)?) => { PostMessageW((($p0) as _), (((1024 + 112)) as _), ((0) as _), (($p1) as LPARAM)) }; }
-#[macro_export] macro_rules! TreeList_DeleteAllItems { ($p0:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1100 + 1)) as _), ((0) as _), (((((-(0x10000 as c_int))) as ULONG_PTR)) as LPARAM))) as BOOL) }; }
-#[macro_export] macro_rules! TreeList_DeleteItem { ($p0:expr, $p1:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1100 + 1)) as _), ((0) as _), (($p1) as LPARAM))) as BOOL) }; }
-#[macro_export] macro_rules! TreeList_Expand { ($p0:expr, $p1:expr, $p2:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1100 + 2)) as _), (($p2) as WPARAM), (($p1) as LPARAM))) as BOOL) }; }
-#[macro_export] macro_rules! TreeList_GetImageList { ($p0:expr, $p1:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1100 + 8)) as _), (($p1) as _), ((0) as _))) as HIMAGELIST) }; }
-#[macro_export] macro_rules! TreeList_GetItem { ($p0:expr, $p1:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1100 + 62)) as _), ((0) as _), (($p1) as LPARAM))) as BOOL) }; }
-#[macro_export] macro_rules! TreeList_GetNextItem { ($p0:expr, $p1:expr, $p2:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1100 + 10)) as _), (($p2) as WPARAM), (($p1) as LPARAM))) as HTREEITEM) }; }
-#[macro_export] macro_rules! TreeList_GetNextSibling { ($p0:expr, $p1:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1100 + 10)) as _), ((0x1) as WPARAM), (($p1) as LPARAM))) as HTREEITEM) }; }
-#[macro_export] macro_rules! TreeList_GetParent { ($p0:expr, $p1:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1100 + 10)) as _), ((0x3) as WPARAM), (($p1) as LPARAM))) as HTREEITEM) }; }
-#[macro_export] macro_rules! TreeList_GetPrevSibling { ($p0:expr, $p1:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1100 + 10)) as _), ((0x2) as WPARAM), (($p1) as LPARAM))) as HTREEITEM) }; }
-#[macro_export] macro_rules! TreeList_GetSelection { ($p0:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1100 + 10)) as _), ((0x9) as WPARAM), ((core::ptr::null_mut::<c_void>()) as LPARAM))) as HTREEITEM) }; }
-#[macro_export] macro_rules! TreeList_GetStyle { ($p0:expr $(,)?) => { ((GetWindowLongW((($p0) as _), (((-(16 as c_int))) as _))) as DWORD) }; }
-#[macro_export] macro_rules! TreeList_InsertColumn { ($p0:expr, $p1:expr, $p2:expr $(,)?) => { ((SendMessageW((($p0) as _), (((((0x1100 + 128) - 4) - 1)) as _), (((($p1) as c_int)) as WPARAM), (($p2) as LPARAM))) as INT) }; }
-#[macro_export] macro_rules! TreeList_InsertItem { ($p0:expr, $p1:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1100 + 50)) as _), ((0) as _), (($p1) as LPARAM))) as HTREEITEM) }; }
-#[macro_export] macro_rules! TreeList_SelectItem { ($p0:expr, $p1:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1100 + 11)) as _), ((0x9) as WPARAM), (($p1) as LPARAM))) as BOOL) }; }
-#[macro_export] macro_rules! TreeList_SetColor { ($p0:expr, $p1:expr, $p2:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1100 + 29)) as _), (($p1) as WPARAM), (($p2) as _))) as COLORREF) }; }
-#[macro_export] macro_rules! TreeList_SetExtendedStyle { ($p0:expr, $p1:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1100 + 44)) as _), ((0) as _), (($p1) as _))) as DWORD) }; }
-#[macro_export] macro_rules! TreeList_SetImageList { ($p0:expr, $p1:expr, $p2:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1100 + 9)) as _), (($p2) as _), (($p1) as LPARAM))) as HIMAGELIST) }; }
-#[macro_export] macro_rules! TreeList_SetItemState { ($p0:expr, $p1:expr, $p2:expr, $p3:expr $(,)?) => { { let mut _ms_TVi: TVITEMW = core::mem::zeroed(); { _ms_TVi.mask = ((0x8) as _); }; { _ms_TVi.hItem = (($p1) as _); }; { _ms_TVi.stateMask = (($p3) as _); }; { _ms_TVi.state = (($p2) as _); }; SendMessageW((($p0) as _), (((0x1100 + 63)) as _), ((0) as _), ((core::ptr::addr_of_mut!(_ms_TVi)) as LPARAM)); } }; }
-#[macro_export] macro_rules! TreeList_SetStyle { ($p0:expr, $p1:expr $(,)?) => { ((SetWindowLongW((($p0) as _), (((-(16 as c_int))) as _), (($p1) as _))) as DWORD) }; }
-#[macro_export] macro_rules! max { ($p0:expr, $p1:expr $(,)?) => { (if ((($p0 > $p1) as c_int)) as isize != 0 { $p0 } else { $p1 }) }; }
-#[macro_export] macro_rules! min { ($p0:expr, $p1:expr $(,)?) => { (if ((($p0 < $p1) as c_int)) as isize != 0 { $p0 } else { $p1 }) }; }
-#[macro_export] macro_rules! va_end { ($p0:expr $(,)?) => { __builtin_va_end((($p0) as _)) }; }
-#[macro_export] macro_rules! va_start { ($p0:expr, $p1:expr $(,)?) => { __builtin_va_start((($p0) as _), (($p1) as _)) }; }
-pub type HTLITEM = HTREEITEM;
-pub const HWND_TOP: HWND = 0x0usize as HWND;
-pub const IDC_WAIT: LPWSTR = 0x7f02usize as LPWSTR;
-pub const KB: ULONGLONG = ((1024) as ULONGLONG);
-pub type LPNMTREEVIEW = LPNMTREEVIEWW;
-pub type LVCOLUMN = LVCOLUMNW;
-pub type LVITEM = LVITEMW;
-pub const SE_SHUTDOWN_NAME: *const u16 = (&[0x0053, 0x0065, 0x0053, 0x0068, 0x0075, 0x0074, 0x0064, 0x006f, 0x0077, 0x006e, 0x0050, 0x0072, 0x0069, 0x0076, 0x0069, 0x006c, 0x0065, 0x0067, 0x0065, 0x0000u16]).as_ptr(); // L"SeShutdownPrivilege"
-pub const STATUS_DEVICE_NOT_READY: NTSTATUS = 0xc00000a3usize as NTSTATUS;
-pub const STATUS_DLL_NOT_FOUND: NTSTATUS = 0xc0000135usize as NTSTATUS;
-pub const STATUS_UNRECOGNIZED_VOLUME: NTSTATUS = 0xc000014fusize as NTSTATUS;
-pub type TLCOLUMN = LVCOLUMNW;
-pub type TLINSERTSTRUCTW = TVINSERTSTRUCTW;
-pub type TLITEMW = TVITEMW;
-pub const TVI_FIRST: HTREEITEM = (((((-(0xffff as c_int))) as ULONG_PTR)) as HTREEITEM);
-pub const TVI_LAST: HTREEITEM = (((((-(0xfffe as c_int))) as ULONG_PTR)) as HTREEITEM);
-pub const TVI_ROOT: HTREEITEM = (((((-(0x10000 as c_int))) as ULONG_PTR)) as HTREEITEM);
-pub use crate::{ComboBox_GetCurSel, ComboBox_GetItemData, DBG_UNREFERENCED_PARAMETER, DeleteFont, Edit_ShowBalloonTip, GetDiskSizeInBytes, GetPartEntrySizeInBytes, ImageList_AddIcon, ListView_EnsureVisible, ListView_GetImageList, ListView_GetItem, ListView_GetSelectionMark, ListView_InsertColumn, ListView_SetExtendedListViewStyleEx, ListView_SetImageList, ListView_SetItemState, MAKELPARAM, MAKEWPARAM, PropSheet_PressButton, PropSheet_SetCurSelByID, PropSheet_SetWizButtons, TreeList_DeleteAllItems, TreeList_DeleteItem, TreeList_Expand, TreeList_GetImageList, TreeList_GetItem, TreeList_GetNextItem, TreeList_GetNextSibling, TreeList_GetParent, TreeList_GetPrevSibling, TreeList_GetSelection, TreeList_GetStyle, TreeList_InsertColumn, TreeList_InsertItem, TreeList_SelectItem, TreeList_SetColor, TreeList_SetExtendedStyle, TreeList_SetImageList, TreeList_SetItemState, TreeList_SetStyle, max, min, va_end, va_start};
+pub use crate::GetPartEntrySizeInBytes;
+
+// ==== port macros: SDK header macros, lowered from the preprocessor's own expansion (generated -- re-run `rustconv port macros`) ====
+#[macro_export] macro_rules! ComboBox_GetCurSel { ($p0:expr $(,)?) => { ((((SendMessageW((($p0) as _), ((327) as _), ((0) as _), ((0) as _))) as DWORD)) as c_int) }; } // gen:f96004dbfabe
+#[macro_export] macro_rules! ComboBox_GetItemData { ($p0:expr, $p1:expr $(,)?) => { ((((SendMessageW((($p0) as _), ((336) as _), (((($p1) as c_int)) as WPARAM), ((0) as _))) as UINT_PTR)) as LRESULT) }; } // gen:77d9955236b6
+#[macro_export] macro_rules! DBG_UNREFERENCED_PARAMETER { ($p0:expr $(,)?) => { { let _ = $p0; } }; } // gen:c42c99736a12
+#[macro_export] macro_rules! DeleteFont { ($p0:expr $(,)?) => { DeleteObject((((($p0) as HFONT)) as HGDIOBJ)) }; } // gen:d3d3795a7d1a
+#[macro_export] macro_rules! Edit_ShowBalloonTip { ($p0:expr, $p1:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1500 + 3)) as _), ((0) as _), (($p1) as LPARAM))) as BOOL) }; } // gen:6209c2411da5
+#[macro_export] macro_rules! ImageList_AddIcon { ($p0:expr, $p1:expr $(,)?) => { ImageList_ReplaceIcon((($p0) as _), (((-(1 as c_int))) as _), (($p1) as _)) }; } // gen:7a52bda87b04
+#[macro_export] macro_rules! ListView_EnsureVisible { ($p0:expr, $p1:expr, $p2:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1000 + 19)) as _), (((($p1) as c_int)) as WPARAM), (((((((((((((($p2) as DWORD_PTR) & 0xffff)) as WORD)) as DWORD) | ((((((((0) as DWORD_PTR) & 0xffff)) as WORD)) as DWORD) << 16))) as LONG)) as DWORD)) as LPARAM))) as BOOL) }; } // gen:521e9e0b9e13
+#[macro_export] macro_rules! ListView_GetImageList { ($p0:expr, $p1:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1000 + 2)) as _), (((($p1) as INT)) as WPARAM), ((0) as _))) as HIMAGELIST) }; } // gen:093a2865d63d
+#[macro_export] macro_rules! ListView_GetItem { ($p0:expr, $p1:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1000 + 75)) as _), ((0) as _), (($p1) as LPARAM))) as BOOL) }; } // gen:c3e93244705d
+#[macro_export] macro_rules! ListView_GetSelectionMark { ($p0:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1000 + 66)) as _), ((0) as _), ((0) as _))) as c_int) }; } // gen:d97c9e89ea31
+#[macro_export] macro_rules! ListView_InsertColumn { ($p0:expr, $p1:expr, $p2:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1000 + 97)) as _), (((($p1) as c_int)) as WPARAM), (($p2) as LPARAM))) as c_int) }; } // gen:2edecb7dc554
+#[macro_export] macro_rules! ListView_SetExtendedListViewStyleEx { ($p0:expr, $p1:expr, $p2:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1000 + 54)) as _), (($p1) as _), (($p2) as _))) as DWORD) }; } // gen:7ccd5ba7d36c
+#[macro_export] macro_rules! ListView_SetImageList { ($p0:expr, $p1:expr, $p2:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1000 + 3)) as _), (($p2) as WPARAM), (($p1) as LPARAM))) as HIMAGELIST) }; } // gen:5e0bd3b75154
+#[macro_export] macro_rules! ListView_SetItemState { ($p0:expr, $p1:expr, $p2:expr, $p3:expr $(,)?) => { { let mut _ms_lvi: LVITEMW = core::mem::zeroed(); { _ms_lvi.stateMask = (($p3) as _); }; { _ms_lvi.state = (($p2) as _); }; SendMessageW((($p0) as _), (((0x1000 + 43)) as _), (($p1) as WPARAM), ((core::ptr::addr_of_mut!(_ms_lvi)) as LPARAM)); } }; } // gen:1b44f6ac3270
+#[macro_export] macro_rules! MAKELPARAM { ($p0:expr, $p1:expr $(,)?) => { (((((((((((((($p0) as DWORD_PTR) & 0xffff)) as WORD)) as DWORD) | (((((((($p1) as DWORD_PTR) & 0xffff)) as WORD)) as DWORD) << 16))) as LONG)) as DWORD)) as LPARAM) }; } // gen:b08956c0c0dd
+#[macro_export] macro_rules! MAKEWPARAM { ($p0:expr, $p1:expr $(,)?) => { (((((((((((((($p0) as DWORD_PTR) & 0xffff)) as WORD)) as DWORD) | (((((((($p1) as DWORD_PTR) & 0xffff)) as WORD)) as DWORD) << 16))) as LONG)) as DWORD)) as WPARAM) }; } // gen:979dbeb9a840
+#[macro_export] macro_rules! PropSheet_PressButton { ($p0:expr, $p1:expr $(,)?) => { SendMessageW((($p0) as _), ((1137) as _), (($p1) as _), ((0) as _)) }; } // gen:e59ece10eeeb
+#[macro_export] macro_rules! PropSheet_SetCurSelByID { ($p0:expr, $p1:expr $(,)?) => { SendMessageW((($p0) as _), ((1138) as _), ((0) as _), (($p1) as _)) }; } // gen:a35819f1a7bd
+#[macro_export] macro_rules! PropSheet_SetWizButtons { ($p0:expr, $p1:expr $(,)?) => { PostMessageW((($p0) as _), (((1024 + 112)) as _), ((0) as _), (($p1) as LPARAM)) }; } // gen:346c22101632
+#[macro_export] macro_rules! TreeList_DeleteAllItems { ($p0:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1100 + 1)) as _), ((0) as _), (((((-(0x10000 as c_int))) as ULONG_PTR)) as LPARAM))) as BOOL) }; } // gen:76d31f1fba15
+#[macro_export] macro_rules! TreeList_DeleteItem { ($p0:expr, $p1:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1100 + 1)) as _), ((0) as _), (($p1) as LPARAM))) as BOOL) }; } // gen:e3cbcaf4c865
+#[macro_export] macro_rules! TreeList_Expand { ($p0:expr, $p1:expr, $p2:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1100 + 2)) as _), (($p2) as WPARAM), (($p1) as LPARAM))) as BOOL) }; } // gen:852b813ab95c
+#[macro_export] macro_rules! TreeList_GetImageList { ($p0:expr, $p1:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1100 + 8)) as _), (($p1) as _), ((0) as _))) as HIMAGELIST) }; } // gen:9aab350cfdb6
+#[macro_export] macro_rules! TreeList_GetItem { ($p0:expr, $p1:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1100 + 62)) as _), ((0) as _), (($p1) as LPARAM))) as BOOL) }; } // gen:79772c9dae5a
+#[macro_export] macro_rules! TreeList_GetNextItem { ($p0:expr, $p1:expr, $p2:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1100 + 10)) as _), (($p2) as WPARAM), (($p1) as LPARAM))) as HTREEITEM) }; } // gen:34c296f51525
+#[macro_export] macro_rules! TreeList_GetNextSibling { ($p0:expr, $p1:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1100 + 10)) as _), ((0x1) as WPARAM), (($p1) as LPARAM))) as HTREEITEM) }; } // gen:02dfc5c2c053
+#[macro_export] macro_rules! TreeList_GetParent { ($p0:expr, $p1:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1100 + 10)) as _), ((0x3) as WPARAM), (($p1) as LPARAM))) as HTREEITEM) }; } // gen:f50e9d59162d
+#[macro_export] macro_rules! TreeList_GetPrevSibling { ($p0:expr, $p1:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1100 + 10)) as _), ((0x2) as WPARAM), (($p1) as LPARAM))) as HTREEITEM) }; } // gen:4ac9bdb95fa9
+#[macro_export] macro_rules! TreeList_GetSelection { ($p0:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1100 + 10)) as _), ((0x9) as WPARAM), ((core::ptr::null_mut::<c_void>()) as LPARAM))) as HTREEITEM) }; } // gen:9c423e3bcfc0
+#[macro_export] macro_rules! TreeList_GetStyle { ($p0:expr $(,)?) => { ((GetWindowLongW((($p0) as _), (((-(16 as c_int))) as _))) as DWORD) }; } // gen:b7303f7ece20
+#[macro_export] macro_rules! TreeList_InsertColumn { ($p0:expr, $p1:expr, $p2:expr $(,)?) => { ((SendMessageW((($p0) as _), (((((0x1100 + 128) - 4) - 1)) as _), (((($p1) as c_int)) as WPARAM), (($p2) as LPARAM))) as INT) }; } // gen:5c7b9745a3f3
+#[macro_export] macro_rules! TreeList_InsertItem { ($p0:expr, $p1:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1100 + 50)) as _), ((0) as _), (($p1) as LPARAM))) as HTREEITEM) }; } // gen:dcafff29d9f2
+#[macro_export] macro_rules! TreeList_SelectItem { ($p0:expr, $p1:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1100 + 11)) as _), ((0x9) as WPARAM), (($p1) as LPARAM))) as BOOL) }; } // gen:185eb6dc9f69
+#[macro_export] macro_rules! TreeList_SetColor { ($p0:expr, $p1:expr, $p2:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1100 + 29)) as _), (($p1) as WPARAM), (($p2) as _))) as COLORREF) }; } // gen:94d05cfa5e9b
+#[macro_export] macro_rules! TreeList_SetExtendedStyle { ($p0:expr, $p1:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1100 + 44)) as _), ((0) as _), (($p1) as _))) as DWORD) }; } // gen:f3ca99d922db
+#[macro_export] macro_rules! TreeList_SetImageList { ($p0:expr, $p1:expr, $p2:expr $(,)?) => { ((SendMessageW((($p0) as _), (((0x1100 + 9)) as _), (($p2) as _), (($p1) as LPARAM))) as HIMAGELIST) }; } // gen:a08a4b531731
+#[macro_export] macro_rules! TreeList_SetItemState { ($p0:expr, $p1:expr, $p2:expr, $p3:expr $(,)?) => { { let mut _ms_TVi: TVITEMW = core::mem::zeroed(); { _ms_TVi.mask = ((0x8) as _); }; { _ms_TVi.hItem = (($p1) as _); }; { _ms_TVi.stateMask = (($p3) as _); }; { _ms_TVi.state = (($p2) as _); }; SendMessageW((($p0) as _), (((0x1100 + 63)) as _), ((0) as _), ((core::ptr::addr_of_mut!(_ms_TVi)) as LPARAM)); } }; } // gen:5974f6a28b06
+#[macro_export] macro_rules! TreeList_SetStyle { ($p0:expr, $p1:expr $(,)?) => { ((SetWindowLongW((($p0) as _), (((-(16 as c_int))) as _), (($p1) as _))) as DWORD) }; } // gen:e25bf203155b
+#[macro_export] macro_rules! max { ($p0:expr, $p1:expr $(,)?) => { (if ((($p0 > $p1) as c_int)) as isize != 0 { $p0 } else { $p1 }) }; } // gen:29bb71d79dfd
+#[macro_export] macro_rules! min { ($p0:expr, $p1:expr $(,)?) => { (if ((($p0 < $p1) as c_int)) as isize != 0 { $p0 } else { $p1 }) }; } // gen:fb1d8a90940a
+#[macro_export] macro_rules! va_end { ($p0:expr $(,)?) => { __builtin_va_end((($p0) as _)) }; } // gen:70e72d575819
+#[macro_export] macro_rules! va_start { ($p0:expr, $p1:expr $(,)?) => { __builtin_va_start((($p0) as _), (($p1) as _)) }; } // gen:ce7a1aa01504
+pub type HTLITEM = HTREEITEM; // gen:860ff3d978b8
+pub const HWND_TOP: HWND = 0x0usize as HWND; // gen:1312707d72c6
+pub const IDC_WAIT: LPWSTR = 0x7f02usize as LPWSTR; // gen:35ed1c1106f6
+pub const KB: ULONGLONG = ((1024) as ULONGLONG); // gen:fecdbce13378
+pub type LPNMTREEVIEW = LPNMTREEVIEWW; // gen:1095fbc6aea9
+pub type LVCOLUMN = LVCOLUMNW; // gen:ce3235c06a76
+pub type LVITEM = LVITEMW; // gen:1cc8ee3b57d0
+pub const SE_SHUTDOWN_NAME: *const u16 = (&[0x0053, 0x0065, 0x0053, 0x0068, 0x0075, 0x0074, 0x0064, 0x006f, 0x0077, 0x006e, 0x0050, 0x0072, 0x0069, 0x0076, 0x0069, 0x006c, 0x0065, 0x0067, 0x0065, 0x0000u16]).as_ptr(); // L"SeShutdownPrivilege" // gen:cc2ff7714c0b
+pub const STATUS_DEVICE_NOT_READY: NTSTATUS = 0xc00000a3usize as NTSTATUS; // gen:d1c70c7e7e06
+pub const STATUS_DLL_NOT_FOUND: NTSTATUS = 0xc0000135usize as NTSTATUS; // gen:1bedfbc8dd8b
+pub const STATUS_UNRECOGNIZED_VOLUME: NTSTATUS = 0xc000014fusize as NTSTATUS; // gen:8cd5dc48a73a
+pub type TLCOLUMN = LVCOLUMNW; // gen:ea9587bc811b
+pub type TLINSERTSTRUCTW = TVINSERTSTRUCTW; // gen:d367a01f81a3
+pub type TLITEMW = TVITEMW; // gen:9ee2ff000e85
+pub const TVI_FIRST: HTREEITEM = (((((-(0xffff as c_int))) as ULONG_PTR)) as HTREEITEM); // gen:8ad9d6f2179e
+pub const TVI_LAST: HTREEITEM = (((((-(0xfffe as c_int))) as ULONG_PTR)) as HTREEITEM); // gen:67ea6250a108
+pub const TVI_ROOT: HTREEITEM = (((((-(0x10000 as c_int))) as ULONG_PTR)) as HTREEITEM); // gen:0427464169f3
+pub use crate::{ComboBox_GetCurSel, ComboBox_GetItemData, DBG_UNREFERENCED_PARAMETER, DeleteFont, Edit_ShowBalloonTip, ImageList_AddIcon, ListView_EnsureVisible, ListView_GetImageList, ListView_GetItem, ListView_GetSelectionMark, ListView_InsertColumn, ListView_SetExtendedListViewStyleEx, ListView_SetImageList, ListView_SetItemState, MAKELPARAM, MAKEWPARAM, PropSheet_PressButton, PropSheet_SetCurSelByID, PropSheet_SetWizButtons, TreeList_DeleteAllItems, TreeList_DeleteItem, TreeList_Expand, TreeList_GetImageList, TreeList_GetItem, TreeList_GetNextItem, TreeList_GetNextSibling, TreeList_GetParent, TreeList_GetPrevSibling, TreeList_GetSelection, TreeList_GetStyle, TreeList_InsertColumn, TreeList_InsertItem, TreeList_SelectItem, TreeList_SetColor, TreeList_SetExtendedStyle, TreeList_SetImageList, TreeList_SetItemState, TreeList_SetStyle, max, min, va_end, va_start};
 // ==== end SDK header macros ====
 
-// ==== port macros: the module's own C macros (generated -- `rustconv port macros`) ====
-// base/setup/reactos/reactos.h:31: #define EnableDlgItem(hDlg, nID, bEnable) EnableWindow(GetDlgItem((hDlg), (nID)), (bEnable))
-#[allow(unused_macros)]
-macro_rules! EnableDlgItem {
-    ($hDlg:expr, $nID:expr, $bEnable:expr $(,)?) => {
-        (EnableWindow(GetDlgItem(($hDlg), ($nID)), ($bEnable)))
-    };
-}
-#[allow(unused_imports)]
-pub(crate) use EnableDlgItem;
+// hand-edited, so kept out of the generated block below (generated_items.py); delete to regenerate
 // base/setup/reactos/reactos.h:118: #define InterlockedFlagsTestAndSet8(Target, Flags) !!(InterlockedOr8((PCHAR)(Target), (Flags)) & (Flags))
 #[allow(unused_macros)]
 macro_rules! InterlockedFlagsTestAndSet8 {
@@ -437,20 +433,31 @@ macro_rules! InterlockedFlagsTestAndSet8 {
 }
 #[allow(unused_imports)]
 pub(crate) use InterlockedFlagsTestAndSet8;
-// base/setup/reactos/reactos.h:37: #define SetDlgItemFont(hDlg, nID, hFont, bRedraw) SetWindowFont(GetDlgItem((hDlg), (nID)), (hFont), (bRedraw))
+
+// ==== port macros: the module's own C macros (generated -- `rustconv port macros`) ====
+// base/setup/reactos/reactos.h:31: #define EnableDlgItem(hDlg, nID, bEnable) EnableWindow(GetDlgItem((hDlg), (nID)), (bEnable)) // gen:fbb6cb34e5b7
+#[allow(unused_macros)]
+macro_rules! EnableDlgItem {
+    ($hDlg:expr, $nID:expr, $bEnable:expr $(,)?) => {
+        (EnableWindow(GetDlgItem($hDlg, $nID), $bEnable))
+    };
+}
+#[allow(unused_imports)]
+pub(crate) use EnableDlgItem;
+// base/setup/reactos/reactos.h:37: #define SetDlgItemFont(hDlg, nID, hFont, bRedraw) SetWindowFont(GetDlgItem((hDlg), (nID)), (hFont), (bRedraw)) // gen:c6553518662b
 #[allow(unused_macros)]
 macro_rules! SetDlgItemFont {
     ($hDlg:expr, $nID:expr, $hFont:expr, $bRedraw:expr $(,)?) => {
-        (SetWindowFont!(GetDlgItem(($hDlg), ($nID)), ($hFont), ($bRedraw)))
+        (SetWindowFont!(GetDlgItem($hDlg, $nID), $hFont, $bRedraw))
     };
 }
 #[allow(unused_imports)]
 pub(crate) use SetDlgItemFont;
-// base/setup/reactos/reactos.h:34: #define ShowDlgItem(hDlg, nID, nCmdShow) ShowWindow(GetDlgItem((hDlg), (nID)), (nCmdShow))
+// base/setup/reactos/reactos.h:34: #define ShowDlgItem(hDlg, nID, nCmdShow) ShowWindow(GetDlgItem((hDlg), (nID)), (nCmdShow)) // gen:ec29ad3e3f2a
 #[allow(unused_macros)]
 macro_rules! ShowDlgItem {
     ($hDlg:expr, $nID:expr, $nCmdShow:expr $(,)?) => {
-        (ShowWindow(GetDlgItem(($hDlg), ($nID)), ($nCmdShow)))
+        (ShowWindow(GetDlgItem($hDlg, $nID), $nCmdShow))
     };
 }
 #[allow(unused_imports)]

@@ -1067,9 +1067,9 @@ pub mod externs {
 
     // Predefined registry roots (winreg.h) — same shape as userinit's preamble.
     pub const HKEY_LOCAL_MACHINE: winsrv_sys::winsrv::HKEY =
-        0x8000_0002usize as winsrv_sys::winsrv::HKEY;
+        0x8000_0002u32 as i32 as isize as HKEY;
     pub const HKEY_CURRENT_USER: winsrv_sys::winsrv::HKEY =
-        0x8000_0001usize as winsrv_sys::winsrv::HKEY;
+        0x8000_0001u32 as i32 as isize as HKEY;
 
     // shlwapi.dll
     extern "system" {

@@ -1,0 +1,316 @@
+{
+  "method": "Each CLI run is a finalized 120-stage source gate. Finding lines are sorted unique physical lines with a registered source-stage TAB prefix, joined by LF with no final LF; no path/text normalization. Paired measurements run archived baseline then current native executable sequentially on the same checkout, with --all-ported and explicit project Python/shellcheck, cache statistics disabled, and job/node overrides unset. Those native executions measure scans, not Python baseline policy; their complete output matches the successful source gates. GNU time measures wall, user/system CPU and maximum RSS in KiB. Other host activity was not controlled; intermediate policies, cache states and linter source files differ. Component observations are not proof of a single-digit suite.",
+  "source_revision": "8436f9f6043",
+  "source_gates": [
+    {
+      "label": "legacy retention on reconciled master",
+      "run_id": "20261017-172731-si_1n27k-check-all",
+      "verdict": "OK",
+      "stages": 120,
+      "cli_seconds": 151.829,
+      "native_seconds_rounded": 125.4,
+      "finding_lines": 5550,
+      "finding_sha256": "b032243de5422b1c795ad43fde57159e55c68f1336630eba8c005a380ecc1105",
+      "timings": [
+        "TIMING\tsource_snapshot\t8.302\t33440 files\t945655363 bytes",
+        "TIMING\tversion_history\t1.757",
+        "TIMING\tscan_irql_balance\t53.959",
+        "TIMING\tscan_extern_decl_drift\t102.806",
+        "TIMING\tsource_rules\t115.078"
+      ],
+      "retained_payloads": {
+        "additional_raw_bytes": 528196031,
+        "c_ast_string_payload_bytes": 51174277,
+        "line_index_capacity_bytes": 299371696,
+        "masked_view_bytes": {
+          "(?s)//[^\\n]*|/\\*.*?\\*/; cutoff=None; characters=false": 519864039,
+          "(?s)//[^\\n]*|/\\*.*?\\*/; cutoff=Some(\"ORIGINAL C SOURCE\"); characters=true": 427698192
+        },
+        "noise_bytes": 519660830,
+        "retained_rust_tree_nodes": 45627031,
+        "retained_rust_trees": 6654,
+        "rust_twin_payload_bytes": 142122285,
+        "source_text_bytes": 946678213
+      }
+    },
+    {
+      "label": "first-use admission, four million nodes",
+      "run_id": "20261017-173234-xw9c8ts6-check-all",
+      "verdict": "OK",
+      "stages": 120,
+      "cli_seconds": 210.469,
+      "native_seconds_rounded": 171.8,
+      "finding_lines": 5550,
+      "finding_sha256": "b032243de5422b1c795ad43fde57159e55c68f1336630eba8c005a380ecc1105",
+      "timings": [
+        "TIMING\tsource_snapshot\t26.849\t33442 files\t945680974 bytes",
+        "TIMING\tversion_history\t0.021",
+        "TIMING\tscan_irql_balance\t60.349",
+        "TIMING\tscan_extern_decl_drift\t104.496",
+        "TIMING\tsource_rules\t143.123"
+      ],
+      "retained_payloads": {
+        "additional_raw_bytes": 1796277,
+        "c_ast_string_payload_bytes": 51174277,
+        "line_index_capacity_bytes": 299377840,
+        "masked_view_bytes": {
+          "(?s)//[^\\n]*|/\\*.*?\\*/; cutoff=None; characters=false": 519864039,
+          "(?s)//[^\\n]*|/\\*.*?\\*/; cutoff=Some(\"ORIGINAL C SOURCE\"); characters=true": 427698192
+        },
+        "noise_bytes": 519660830,
+        "retained_rust_tree_nodes": 3979357,
+        "retained_rust_trees": 83,
+        "rust_twin_payload_bytes": 142122285,
+        "source_text_bytes": 946703824,
+        "syntax_cache": {
+          "node_limit": 4000000,
+          "retained_nodes": 3979357,
+          "retained_trees": 83,
+          "shared_tree_hits": 2263,
+          "successful_parses": 22927
+        }
+      }
+    },
+    {
+      "label": "first-use admission, sixteen million nodes",
+      "run_id": "20261017-173755-zy3nd52a-check-all",
+      "verdict": "OK",
+      "stages": 120,
+      "cli_seconds": 199.348,
+      "native_seconds_rounded": 198.8,
+      "finding_lines": 5550,
+      "finding_sha256": "b032243de5422b1c795ad43fde57159e55c68f1336630eba8c005a380ecc1105",
+      "timings": [
+        "TIMING\tsource_snapshot\t18.318\t33442 files\t945680974 bytes",
+        "TIMING\tversion_history\t0.025",
+        "TIMING\tscan_irql_balance\t86.052",
+        "TIMING\tscan_extern_decl_drift\t117.999",
+        "TIMING\tsource_rules\t178.729"
+      ],
+      "retained_payloads": {
+        "additional_raw_bytes": 1796277,
+        "c_ast_string_payload_bytes": 51174277,
+        "line_index_capacity_bytes": 299377840,
+        "masked_view_bytes": {
+          "(?s)//[^\\n]*|/\\*.*?\\*/; cutoff=None; characters=false": 519864039,
+          "(?s)//[^\\n]*|/\\*.*?\\*/; cutoff=Some(\"ORIGINAL C SOURCE\"); characters=true": 427698192
+        },
+        "noise_bytes": 519660830,
+        "retained_rust_tree_nodes": 15939574,
+        "retained_rust_trees": 1852,
+        "rust_twin_payload_bytes": 142122285,
+        "source_text_bytes": 946703824,
+        "syntax_cache": {
+          "node_limit": 16000000,
+          "retained_nodes": 15939574,
+          "retained_trees": 1852,
+          "shared_tree_hits": 5742,
+          "successful_parses": 19448
+        }
+      }
+    },
+    {
+      "label": "second-use admission, sixteen million nodes",
+      "run_id": "20261017-174304-7_u2ne9_-check-all",
+      "verdict": "OK",
+      "stages": 120,
+      "cli_seconds": 192.693,
+      "native_seconds_rounded": 161.5,
+      "finding_lines": 5550,
+      "finding_sha256": "b032243de5422b1c795ad43fde57159e55c68f1336630eba8c005a380ecc1105",
+      "timings": [
+        "TIMING\tsource_inventory\t25.817",
+        "TIMING\tsource_materialize\t2.865",
+        "TIMING\tsource_snapshot\t28.712\t33442 files\t945683044 bytes",
+        "TIMING\tversion_history\t0.012",
+        "TIMING\tscan_irql_balance\t58.955",
+        "TIMING\tscan_extern_decl_drift\t105.797",
+        "TIMING\tsource_rules\t131.014"
+      ],
+      "retained_payloads": {
+        "additional_raw_bytes": 1796277,
+        "c_ast_string_payload_bytes": 51174277,
+        "line_index_capacity_bytes": 299377840,
+        "masked_view_bytes": {
+          "(?s)//[^\\n]*|/\\*.*?\\*/; cutoff=None; characters=false": 519864039,
+          "(?s)//[^\\n]*|/\\*.*?\\*/; cutoff=Some(\"ORIGINAL C SOURCE\"); characters=true": 427698192
+        },
+        "noise_bytes": 519660830,
+        "retained_rust_tree_nodes": 15805866,
+        "retained_rust_trees": 648,
+        "rust_twin_payload_bytes": 142122285,
+        "source_text_bytes": 946705894,
+        "syntax_cache": {
+          "node_limit": 16000000,
+          "retained_nodes": 15805866,
+          "retained_trees": 648,
+          "reused_tree_files": 6161,
+          "shared_tree_hits": 7280,
+          "successful_parses": 17910,
+          "unique_tree_files": 7058
+        }
+      }
+    },
+    {
+      "label": "second-use admission, small sources only, sixteen million nodes, traversal and indexed lines",
+      "run_id": "20261017-174851-6scjn4vb-check-all",
+      "verdict": "OK",
+      "stages": 120,
+      "cli_seconds": 267.833,
+      "native_seconds_rounded": 224.0,
+      "finding_lines": 5550,
+      "finding_sha256": "b032243de5422b1c795ad43fde57159e55c68f1336630eba8c005a380ecc1105",
+      "timings": [
+        "TIMING\tsource_inventory\t10.764",
+        "TIMING\tsource_materialize\t1.971",
+        "TIMING\tsource_snapshot\t12.761\t33442 files\t945686370 bytes",
+        "TIMING\tversion_history\t0.006",
+        "TIMING\tscan_irql_balance\t50.540",
+        "TIMING\tscan_extern_decl_drift\t130.360",
+        "TIMING\tsource_rules\t145.897"
+      ],
+      "retained_payloads": {
+        "additional_raw_bytes": 1796277,
+        "c_ast_string_payload_bytes": 51174087,
+        "line_index_capacity_bytes": 299377840,
+        "masked_view_bytes": {
+          "(?s)//[^\\n]*|/\\*.*?\\*/; cutoff=None; characters=false": 519864039,
+          "(?s)//[^\\n]*|/\\*.*?\\*/; cutoff=Some(\"ORIGINAL C SOURCE\"); characters=true": 427698192
+        },
+        "noise_bytes": 519660830,
+        "retained_rust_tree_nodes": 15997035,
+        "retained_rust_trees": 2501,
+        "rust_twin_payload_bytes": 142122285,
+        "source_text_bytes": 946709220,
+        "syntax_cache": {
+          "node_limit": 16000000,
+          "retained_nodes": 15997035,
+          "retained_trees": 2501,
+          "reused_tree_files": 6161,
+          "shared_tree_hits": 9132,
+          "successful_parses": 16058,
+          "unique_tree_files": 7058
+        }
+      }
+    },
+    {
+      "label": "final default: four million nodes, small sources only, eight-worker cap",
+      "run_id": "20261017-175640-jojs9966-check-all",
+      "verdict": "OK",
+      "stages": 120,
+      "cli_seconds": 152.185,
+      "native_seconds_rounded": 128.1,
+      "finding_lines": 5550,
+      "finding_sha256": "b032243de5422b1c795ad43fde57159e55c68f1336630eba8c005a380ecc1105",
+      "timings": [
+        "TIMING\tsource_inventory\t3.826",
+        "TIMING\tsource_materialize\t1.566",
+        "TIMING\tsource_snapshot\t5.408\t33442 files\t945686264 bytes",
+        "TIMING\tversion_history\t0.004",
+        "TIMING\tscan_irql_balance\t34.052",
+        "TIMING\tscan_extern_decl_drift\t65.207",
+        "TIMING\tsource_rules\t121.993",
+        "TIMING\tsource_cache_stats\t0.007"
+      ],
+      "retained_payloads": {
+        "additional_raw_bytes": 1796277,
+        "c_signature_arches": 1,
+        "line_index_capacity_bytes": 299379888,
+        "masked_view_bytes": {
+          "(?s)//[^\\n]*|/\\*.*?\\*/; cutoff=None; characters=false": 519864039,
+          "(?s)//[^\\n]*|/\\*.*?\\*/; cutoff=Some(\"ORIGINAL C SOURCE\"); characters=true": 427698192
+        },
+        "noise_bytes": 519660830,
+        "retained_rust_tree_nodes": 3989645,
+        "retained_rust_trees": 736,
+        "rust_twin_payload_bytes": 142122285,
+        "source_text_bytes": 946709114,
+        "syntax_cache": {
+          "node_limit": 4000000,
+          "retained_nodes": 3989645,
+          "retained_trees": 736,
+          "reused_tree_files": 6161,
+          "shared_tree_hits": 1479,
+          "successful_parses": 23711,
+          "unique_tree_files": 7058
+        }
+      }
+    },
+    {
+      "label": "final source validation with shared-stage timings",
+      "run_id": "20261017-180209-yywmpx9t-check-all",
+      "verdict": "OK",
+      "stages": 120,
+      "cli_seconds": 135.018,
+      "native_seconds_rounded": 109.6,
+      "finding_lines": 5550,
+      "finding_sha256": "b032243de5422b1c795ad43fde57159e55c68f1336630eba8c005a380ecc1105",
+      "timings": [
+        "TIMING\tsource_inventory\t2.193",
+        "TIMING\tsource_materialize\t1.746",
+        "TIMING\tsource_snapshot\t3.960\t33442 files\t945687078 bytes",
+        "TIMING\tc_signature_asts\t2.666",
+        "TIMING\tmodule_inputs\t3.570",
+        "TIMING\tversion_history\t0.006",
+        "TIMING\tc_twins\t1.380",
+        "TIMING\tmodule_tree\t0.217",
+        "TIMING\tscan_irql_balance\t25.538",
+        "TIMING\tscan_extern_decl_drift\t80.808",
+        "TIMING\tsource_rule_execution\t97.257",
+        "TIMING\tsource_rules\t105.096"
+      ]
+    }
+  ],
+  "paired_native_runs": [
+    {
+      "variant": "baseline",
+      "binary_sha256": "749c35fad3386da8428e34118b996eef43dc65b4fcaa91dfdf5cfb83d2162782",
+      "finding_lines": 5550,
+      "finding_sha256": "b032243de5422b1c795ad43fde57159e55c68f1336630eba8c005a380ecc1105",
+      "measurements": {
+        "WALL_SECONDS": 152.9,
+        "CPU_USER_SECONDS": 543.29,
+        "CPU_SYSTEM_SECONDS": 25.7,
+        "MAX_RSS_KIB": 15101144.0
+      }
+    },
+    {
+      "variant": "bounded",
+      "binary_sha256": "2946b483558b0c17b5fc263d23ff15e2df987c8bdea2908b9f8278782eeb37a3",
+      "finding_lines": 5550,
+      "finding_sha256": "b032243de5422b1c795ad43fde57159e55c68f1336630eba8c005a380ecc1105",
+      "measurements": {
+        "WALL_SECONDS": 149.13,
+        "CPU_USER_SECONDS": 538.96,
+        "CPU_SYSTEM_SECONDS": 17.96,
+        "MAX_RSS_KIB": 10235976.0
+      }
+    }
+  ],
+  "correctness": {
+    "native_unit_tests": 668,
+    "native_integration_tests": 7,
+    "lexer_differential_generated_cases": 20000,
+    "lexer_method": "Deterministic seeded combinations of comments, raw strings, escapes, Unicode, lifetimes and malformed literals; compare old and new functions byte for byte. Focused fixtures also pass."
+  },
+  "remaining_work": "Single-digit source latency remains owed. Extern fact extraction and scheduling of long rules remain CPU targets; the node budget excludes active consumers and other fact caches.",
+  "extern_python_parity": {
+    "root": "/home/curi/Projects/os-playground/vibeos-lint",
+    "oracle_revision": "996c6ff8957615baccfd3a51286b1f8d7ec27c9d",
+    "source_revision": "8436f9f6043029fb7c33ce134d2d0e4b81d67dd0",
+    "rust_seconds": 122.93026752903825,
+    "rust_binary_sha256": "2946b483558b0c17b5fc263d23ff15e2df987c8bdea2908b9f8278782eeb37a3",
+    "rules": {
+      "scan_extern_decl_drift": {
+        "python": 23,
+        "rust": 23,
+        "python_seconds": 164.91470644803485,
+        "python_only": [],
+        "rust_only": [],
+        "python_sha256": "a4ecc28f84f0c192bb1ae57aee5a164bf7977a6db4c8ddc37459b5f8c3d1b19c",
+        "rust_sha256": "a4ecc28f84f0c192bb1ae57aee5a164bf7977a6db4c8ddc37459b5f8c3d1b19c"
+      }
+    }
+  },
+  "tooling_checks_passed": 106
+}

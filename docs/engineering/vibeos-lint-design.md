@@ -697,3 +697,34 @@ caches differ and fleet activity was not controlled, so this is not a controlled
 `parity/performance-04.json` preserves the method, hashes, timings and Python replay.
 The single-digit target remains owed; retained source-view/AST memory and repeated fact
 extraction are the next performance work.
+
+
+## Performance checkpoint 6: bounded syntax and cheaper snapshots (2026-10-17)
+
+Master `91640c25fb1` is reconciled, including its linear vendor directory index and Rust
+scanner fixes. The source suite preserves all 5,550 finding lines byte for byte across
+the reconciled baseline and every cache experiment (`parity/performance-05.json`).
+
+The default source pool now caps workers at eight. A shared weighted LRU retains at most
+four million Rust syntax nodes, admits a file after its second request, and keeps sources
+over 256 KiB weakly cached as before. Active callers retain their Arcs through eviction;
+library ownership and cleanup remain normal. The small already-cached `lru-slab` dependency
+provides constant-time recency tracking. This bounds retention, not total process memory.
+Raw bytes share decoded text when identical (528.2 MB of extra raw storage becomes 1.8 MB);
+CRLF and invalid UTF-8 still preserve original bytes. The lexer masks its character buffer
+in place, matching the old implementation on 20,000 generated inputs.
+
+Traversal rejects irrelevant names before root checks and carries only eligible source sets
+into each subtree, preserving each set's pruning and explicit-input rules. Extern drift
+extracts island facts once, keeps only relevant AST nodes, and reads lines from the shared
+index with exactly `str::lines()` semantics. New timings separate inventory, materialization,
+shared indexes, parallel rule execution and optional cache statistics. Statistics inspect
+initialized metadata without parsing or walking the compiler's entire JSON AST.
+
+Sequential old/new native scans on the same checkout observed 152.90s / 149.13s wall,
+568.99s / 556.92s user+system CPU, and 14.40 / 9.76 GiB maximum RSS. The final normal source
+gate observed 109.6s in the native process: 2.19s inventory, 1.75s materialization, 7.84s
+shared initialization and 97.26s parallel rules. Host activity was not controlled, so the
+paired results establish a memory improvement and similar observed latency, not a universal
+speedup. Extern drift remains the largest rule (80.81s in that final gate). The single-digit
+whole-suite target remains owed; further CPU and scheduling work follows this checkpoint.

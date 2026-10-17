@@ -38,6 +38,7 @@ Relaxing the audit alone leaves the cache intact.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from pathlib import Path
 
 # `#if` family openers. `#else`/`#elif` do not open a region -- the whole conditional,
@@ -346,10 +347,71 @@ def dummy_pseh_except_spans(text: str, masked: str | None = None) -> list[tuple[
     return spans
 
 
-def dead_region_spans(text: str, masked: str | None = None) -> list[tuple[int, int]]:
-    """Every span of `text` the build compiles but does not execute."""
-    spans = preprocessor_conditional_spans(text) + dummy_pseh_except_spans(text, masked)
-    return sorted(spans)
+def decided_live_lines(text: str, pinned: Mapping[str, int]) -> dict[int, tuple[str, int]]:
+    """Line -> (innermost guard, the line it opened on) for each line of `text` inside a
+    conditional whose every enclosing arm is DECIDABLY live under `pinned` (a bare `-DNAME`
+    is `NAME=1` there, as C has it). An undecidable chain, a dead arm and every `#elif` arm
+    are left out: their lines stay optional. A `#define`/`#undef` on a line every build
+    compiles counts for the conditionals after it."""
+    out: dict[int, tuple[str, int]] = {}
+    # frames: (arm is live, chain is decidable, an arm was taken, guard text, opened on)
+    stack: list[tuple[bool, bool, bool, str, int]] = []
+    local: set[str] = set()
+    for n, line in enumerate(text.splitlines(), 1):
+        d = _LOCAL_DEFINE_RE.match(line)
+        if d and all(f[0] and f[1] for f in stack):
+            (local.add if d.group(1) == "define" else local.discard)(d.group(2))
+        m = _COND_ANY_RE.match(line)
+        if m is None:
+            if stack and all(f[0] and f[1] for f in stack):
+                out[n] = (stack[-1][3], stack[-1][4])
+            continue
+        kind = m.group(1)
+        if kind in ("if", "ifdef", "ifndef"):
+            truth = cond_truth(line, dict(pinned), frozenset(local))
+            stack.append((truth is True, truth is not None, truth is True, line.strip(), n))
+        elif kind == "else" and stack:
+            _, known, taken, guard, opened = stack[-1]
+            stack[-1] = (known and not taken, known, True, f"#else of {guard}", opened)
+        elif kind == "elif" and stack:
+            stack[-1] = (False, False, stack[-1][2], line.strip(), stack[-1][4])
+        elif kind == "endif" and stack:
+            stack.pop()
+    return out
+
+
+def _optional_conditional_spans(text: str, pinned: Mapping[str, int]) -> list[tuple[int, int]]:
+    """`preprocessor_conditional_spans`, less the lines `decided_live_lines` settles: one
+    span per line that is in a conditional and NOT decidably live."""
+    live = decided_live_lines(text, pinned)
+    starts = [0] + [i + 1 for i, c in enumerate(text) if c == "\n"]
+    spans: list[tuple[int, int]] = []
+    for a, b in preprocessor_conditional_spans(text):
+        first = text.count("\n", 0, a) + 1
+        last = text.count("\n", 0, b) + 1
+        for n in range(first, last + 1):
+            if n not in live and n - 1 < len(starts):
+                end = starts[n] - 1 if n < len(starts) else len(text)
+                spans.append((starts[n - 1], max(end, starts[n - 1])))
+    return spans
+
+
+def dead_region_spans(
+    text: str, masked: str | None = None, pinned: Mapping[str, int] | None = None
+) -> list[tuple[int, int]]:
+    """Every span of `text` the build compiles but does not execute.
+
+    Without `pinned`, every arm of every `#if` is such a span (it MIGHT be dead). With the
+    TU's own defines, an arm they decide is live is code like any other: the call seal then
+    requires its calls, so rundll32's `#ifdef UNICODE WideCharToMultiByte` can no longer be
+    dropped by a model that kept only the `#else` arm's `strncpy`.
+    """
+    conditional = (
+        preprocessor_conditional_spans(text)
+        if pinned is None
+        else _optional_conditional_spans(text, pinned)
+    )
+    return sorted(conditional + dummy_pseh_except_spans(text, masked))
 
 
 def in_dead_region(spans: list[tuple[int, int]], start: int, end: int) -> bool:

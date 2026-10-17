@@ -45,6 +45,7 @@ from . import (
     dead_regions,
     default_arm,
     flex_index,
+    generated_items,
     goto_arm,
     local_macros,
     logical_not,
@@ -1205,6 +1206,23 @@ def _cppapp_dir(stem: str) -> Path:
     return STATE_ROOT / stem / "cppapp"
 
 
+LOCAL_RAII = Path(__file__).resolve().parent.parent / "data" / "local_raii"
+
+
+def _local_raii_args(tu: Path) -> list[str]:
+    """`--local-raii` for each canonical lowering (data/local_raii/<Name>.rs) whose type the
+    C++ TU names. translate refuses a body-local RAII type it has no lowering for rather
+    than guess its drop; the lowering for a shared header's type (shellutils.h's
+    CDataObjectHIDA) is one file, so no module's run should have to be told where it is."""
+    text = tu.read_text(errors="replace")
+    return [
+        a
+        for f in sorted(LOCAL_RAII.glob("*.rs"))
+        if re.search(rf"\b{re.escape(f.stem)}\b", text)
+        for a in ("--local-raii", f"{f.stem}={f}")
+    ]
+
+
 def stage_cppapp(stem: str) -> None:
     """Render a C++ module's classes and lower every body into synthetic headers, $0.
 
@@ -1889,6 +1907,7 @@ def stage_translate(
             # translate refuses a C++ TU without a mode: the classless half is one run, and
             # each class defined in the TU is its own class-atomic run.
             cmd.append("--free-functions")
+            cmd += _local_raii_args(REPO / tu)
         if cppapp and tu in vias:
             # A synthetic unit: lowered C++ that c2rust cannot anchor (it is not the TU's
             # text, and c2rust has no C++), with the generated class context per worker.
@@ -6378,6 +6397,17 @@ def _sdk_macros(state: dict, crate: Path, prelude: Path, unresolved: set[str]) -
                 # `as _`; handed to a macro, those casts have nothing to infer from (E0282).
                 body = re.sub(r"\(\(\$p(\d+)\) as _\)", r"($p\1)", call.sub(r"\1!(", body))
             lowered[name] = head + sep + body if sep else text
+    fresh = sdk_macros.render_items(lowered, items)
+    kept = generated_items.preserve(
+        prelude,
+        sdk_macros.BEGIN,
+        sdk_macros.END,
+        sdk_macros.split_block,
+        fresh,
+        sdk_macros.reexport,
+    )
+    lowered = {n: t for n, t in lowered.items() if n in kept}
+    items = {n: t for n, t in items.items() if n in kept}
     if sdk_macros.write_block(prelude, sdk_macros.render_block(lowered, items)):
         print(
             f"macros: {len(lowered)} SDK header macro(s) and {len(items)} type/pointer "
@@ -6512,6 +6542,10 @@ def stage_macros(
     }
     called |= _drop_invented_macro_consts(crate / "src" / stem, defs)
     _sdk_macros(state, crate, prelude, names - set(defs))
+    # A STAMPED item edited by hand leaves the block before anything is bought for it.
+    generated_items.preserve(
+        prelude, local_macros.BEGIN, local_macros.END, local_macros.split_block, {}
+    )
     wanted = called | local_macros.existing(prelude)
     hand = local_macros.hand_ported(prelude)
     # An object-like `#define str_clone _wcsdup` that resolve already spells as
@@ -6604,7 +6638,14 @@ def stage_macros(
         n: fix_macro_calls(text, rust_macros, {n} if macros[n].kind == "fn" else set())[0]
         for n, text in ported.items()
     }
-    changed = local_macros.write_block(prelude, local_macros.render(ported, macros))
+    items = generated_items.preserve(
+        prelude,
+        local_macros.BEGIN,
+        local_macros.END,
+        local_macros.split_block,
+        local_macros.render_items(ported, macros),
+    )
+    changed = local_macros.write_block(prelude, local_macros.render_block(items))
     _record(state, "macros", started, ported=len(ported), usd=round(usd, 4), changed=changed)
     print(f"macros: {len(ported)} in the prelude; run `port integrate {stem}` to fix call sites")
 
