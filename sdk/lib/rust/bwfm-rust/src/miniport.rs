@@ -25,7 +25,7 @@ use ndis6_sys::{
     NDIS_STATUS_MEDIA_DISCONNECTED, NDIS_STATUS_PAUSED,
 };
 use ntkrnl_sys::ddk::{
-    ExAllocatePoolWithTag, ExFreePoolWithTag, IoAllocateMdl, IoFreeMdl, KeInitializeEvent, KeInitializeSpinLock,
+    ExAllocatePoolWithTag, ExFreePoolWithTag, IoAllocateMdl, IoFreeMdl, KeInitializeEvent,
     KeSetEvent, KeWaitForSingleObject, MmBuildMdlForNonPagedPool, PsCreateSystemThread, ZwClose,
     _EVENT_TYPE_NotificationEvent, _EVENT_TYPE_SynchronizationEvent, _KWAIT_REASON_Executive,
     _MM_PAGE_PRIORITY_NormalPagePriority, CM_PARTIAL_RESOURCE_LIST, HANDLE, KEVENT, LARGE_INTEGER, NTSTATUS,
@@ -196,6 +196,8 @@ unsafe extern "system" fn initialize(handle: NdisHandle, _driver_ctx: NdisHandle
         handle,
         bus: Some(bus),
         cfg: driver::read_config(),
+        // An unowned spin lock is a zero word (KeInitializeSpinLock is an inline on
+        // arm64; ntoskrnl does not export it).
         tx_lock: 0,
         tx: TxRing::new(),
         wake: core::mem::zeroed(),
@@ -209,7 +211,6 @@ unsafe extern "system" fn initialize(handle: NdisHandle, _driver_ctx: NdisHandle
         rx_mdl: null_mut(),
         rx_nbl: null_mut(),
     });
-    KeInitializeSpinLock(addr_of_mut!((*a).tx_lock).cast());
     KeInitializeEvent(addr_of_mut!((*a).wake), _EVENT_TYPE_SynchronizationEvent, 0);
     KeInitializeEvent(addr_of_mut!((*a).worker_done), _EVENT_TYPE_NotificationEvent, 0);
 
