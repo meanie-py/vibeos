@@ -847,9 +847,22 @@ def main(argv: list[str] | None = None) -> int:
     if args.manifest:
         out_dir = Path(args.out_dir) if args.out_dir else root / "cmake-off-out" / args.arch
         pefixup = build_pefixup(root, args.arch, out_dir)
-        gen = out_dir / "gen"
+        # With no cmake build here, the generated SDK goes where a build tree lives,
+        # build-<arch>: a generated header's path is part of the image (wdm.h's inline
+        # ASSERTs name it in __FILE__), so this is what makes the result byte-identical to
+        # cmake's. A tree that has a cmake build keeps it untouched and uses <out>/gen.
+        build = root / f"build-{args.arch}"
+        gen = out_dir / "gen" if (build / "build.ninja").exists() else build
         if args.reconfigure and gen.exists():
-            shutil.rmtree(gen)
+            if gen != build:
+                shutil.rmtree(gen)
+            else:
+                for f in (
+                    "sdk/include/reactos/version.h",
+                    "sdk/include/reactos/buildno.h",
+                    ".sdk-recipe",
+                ):
+                    (gen / f).unlink(missing_ok=True)
         seed = root / f"build-{args.arch}" if args.seed_from_build else None
         configure_gen(root, args.arch, gen, seed)
         if args.cmake_off:
