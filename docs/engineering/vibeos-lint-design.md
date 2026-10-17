@@ -5,8 +5,9 @@ branch `lint-rs`. Read `AGENTS.md` first: every rule there applies to this lane.
 
 ## The problem, measured
 
-`./vibeos-cli check` currently registers **116 source checks**; the historical logs
-contain 117 scanner names. Almost all began as separate Python scripts
+`./vibeos-cli check` currently registers **120 source checks**, including four added
+on master during this rewrite. The original suite registered 116 checks; its historical
+logs contain 117 scanner names. Almost all began as separate Python scripts
 (`tools/scan_*.py`: 102 files, ~27K lines; plus `tools/verify_*.py`, `tools/rustconv/...`).
 Each one is its own process, and almost each one walks, reads and re-tokenises the same
 Rust/C tree. From the command logs of 87 recent runs (`vibeos-lint-timings.tsv` beside
@@ -115,6 +116,10 @@ TSV was produced from `/tmp/vibeos-cli/*-check-*/commands.jsonl` (`stage` = `lin
 
 | Scanner | Ported? | Parity (py / rs findings) | Notes / reason left out |
 |---|---|---|---|
+| `scan_atl_slot_cast` | No | — | Owed: added on master; retained Python command and controls. |
+| `scan_fnclass_cc` | No | — | Owed: added on master; retained Python command and controls. |
+| `scan_cmake_linked_rust` | No | — | Added on master; excluded: reads build-amd64/build.ninja through cargo_cell_gen. |
+| `scan_list_walk_cursor_after_loop` | No | — | Owed: added on master; retained Python command and controls. |
 | `shellcheck` | No | — | Excluded: invokes shellcheck. |
 | `py-syntax` | No | — | Excluded: invokes Python compileall. |
 | `verify_ffi` | Yes | 157 / 157; older 157 / 157 | Batch 7: exact parity on both trees; Rust fixtures. |
@@ -556,3 +561,29 @@ The single-digit target remains owed. The warm run's largest rules were extern
 drift (72.44s), IRQL (38.39s), match constants (33.19s), and double fetch (32.14s).
 Vendor YAML decoding is the only remaining source port, pending its separate
 dependency decision; the seven external checks retain their documented exclusions.
+
+## Master reconciliation (2026-10-17)
+
+Merged `996c6ff8957615baccfd3a51286b1f8d7ec27c9d` from `origin/master`.
+The Rust plugins include master's standard-library IRQL call exclusion (`6cab479`),
+CRT return authority (`c56aab4`), dead-branch constant decisions (`55d5f39`), and
+same-module C-twin weak-write-probe pass (`b126827`). Their new regression fixtures
+are retained in native controls or ported to Rust, including the CRT kernel skip.
+Every master control-test function survives the union. All four new scanner
+commands remain registered in Python; the source registry now has 120 checks,
+108 routed to Rust. The four changed Python scanners were retired again only after exact replay against
+master `996c6ff` on both this merged tree and `cc53d01b091`: **34 / 58 findings**
+across the four rules. `parity/master-sync-996c6ff.json` preserves the counts and
+hashes. All 522 Rust unit tests and two integration tests passed; the focused
+IRQL/new-scanner controls passed eight tests. Full source/tooling gates follow
+the retirement.
+
+The first merged source gate exposed a fifth drift: `verify_conv_macros` had copied
+`KW_TO_CONV`, so it missed master's `MI_CALL` and `MI_MAIN_CALL`. The binary now
+embeds the canonical `rustconv/conventions.py` table, and bootstrap fingerprints
+that extra compile-time input. Unsupported table syntax fails loudly. Regression
+tests cover alias additions/changes and bootstrap invalidation both before and
+during a build. The original four-rule replay remains exact. Convention replay against the same
+master oracle also matches on both trees (zero findings); its reports are included
+in `parity/master-sync-996c6ff.json`. Three focused bootstrap regression tests
+passed. Both full gates are rerun on the retired implementations and corrected catalog.

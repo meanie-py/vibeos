@@ -1,0 +1,131 @@
+{
+  "method": "Exact sorted unique finding-line counts and SHA256 (LF join, no final LF). Original registry, argv, streams and imported Python helpers at master 996c6ff8957615baccfd3a51286b1f8d7ec27c9d, Python fact caches disabled. Replayed before deleting temporary master scanner copies. Runs are separate parity evidence, not a combined benchmark. Source tree has the updated Rust plugins atop source_revision.",
+  "master_control_test_functions_retained": 25,
+  "new_checks_retained_in_python": [
+    "scan_atl_slot_cast",
+    "scan_fnclass_cc",
+    "scan_cmake_linked_rust",
+    "scan_list_walk_cursor_after_loop"
+  ],
+  "reports": [
+    {
+      "oracle_revision": "996c6ff8957615baccfd3a51286b1f8d7ec27c9d",
+      "source_revision": "fb14fa51e0cd1c32f04c18a5a59702d37b59667a",
+      "rust_seconds": 86.57664639200084,
+      "rules": {
+        "scan_irql_balance": {
+          "python": 9,
+          "rust": 9,
+          "python_seconds": 79.87910860299598,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "3038aae3836de73f8d5fa019d861a53dbdc2a04a02db5bd56e3490e8cf4a2181",
+          "rust_sha256": "3038aae3836de73f8d5fa019d861a53dbdc2a04a02db5bd56e3490e8cf4a2181"
+        },
+        "scan_extern_decl_drift": {
+          "python": 23,
+          "rust": 23,
+          "python_seconds": 113.8935702519957,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "a4ecc28f84f0c192bb1ae57aee5a164bf7977a6db4c8ddc37459b5f8c3d1b19c",
+          "rust_sha256": "a4ecc28f84f0c192bb1ae57aee5a164bf7977a6db4c8ddc37459b5f8c3d1b19c"
+        },
+        "scan_version_vs_c": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 48.50987982400693,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_dropped_probes": {
+          "python": 2,
+          "rust": 2,
+          "python_seconds": 22.909161162009696,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "283e9b1fa65c7035fc83d496032fb3012e4375d444dd1d514eb761b5097edf7a",
+          "rust_sha256": "283e9b1fa65c7035fc83d496032fb3012e4375d444dd1d514eb761b5097edf7a"
+        }
+      }
+    },
+    {
+      "oracle_revision": "996c6ff8957615baccfd3a51286b1f8d7ec27c9d",
+      "source_revision": "cc53d01b091e365cccbc7e56f7a929963331d379",
+      "rust_seconds": 72.97014314500848,
+      "rules": {
+        "scan_irql_balance": {
+          "python": 9,
+          "rust": 9,
+          "python_seconds": 77.86913212400395,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "bc454f34ed0ab176573103e32f6e9c08cda2169021074721b5ff7106a1ba7c8d",
+          "rust_sha256": "bc454f34ed0ab176573103e32f6e9c08cda2169021074721b5ff7106a1ba7c8d"
+        },
+        "scan_extern_decl_drift": {
+          "python": 31,
+          "rust": 31,
+          "python_seconds": 114.48392876799335,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "645f7047f44b1bfe703a63386655cec1c26030d9cbbfdf2408ce866ec932511d",
+          "rust_sha256": "645f7047f44b1bfe703a63386655cec1c26030d9cbbfdf2408ce866ec932511d"
+        },
+        "scan_version_vs_c": {
+          "python": 16,
+          "rust": 16,
+          "python_seconds": 66.76966090299538,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "ddbd1af835aabf74b12fdf8333b6188c813f1952d806b61dd5f4fdc9180bddf3",
+          "rust_sha256": "ddbd1af835aabf74b12fdf8333b6188c813f1952d806b61dd5f4fdc9180bddf3"
+        },
+        "scan_dropped_probes": {
+          "python": 2,
+          "rust": 2,
+          "python_seconds": 41.494150234997505,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "283e9b1fa65c7035fc83d496032fb3012e4375d444dd1d514eb761b5097edf7a",
+          "rust_sha256": "283e9b1fa65c7035fc83d496032fb3012e4375d444dd1d514eb761b5097edf7a"
+        }
+      }
+    },
+    {
+      "oracle_revision": "996c6ff8957615baccfd3a51286b1f8d7ec27c9d",
+      "source_revision": "fb14fa51e0cd1c32f04c18a5a59702d37b59667a",
+      "rust_seconds": 0.9355117609957233,
+      "rules": {
+        "verify_conv_macros": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 0.5153083740151487,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    {
+      "oracle_revision": "996c6ff8957615baccfd3a51286b1f8d7ec27c9d",
+      "source_revision": "cc53d01b091e365cccbc7e56f7a929963331d379",
+      "rust_seconds": 1.2459400719963014,
+      "rules": {
+        "verify_conv_macros": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 0.4744001330109313,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    }
+  ],
+  "canonical_convention_table": "Binary embeds tools/rustconv/rustconv/conventions.py; bootstrap fingerprints it so changed aliases rebuild the checker."
+}

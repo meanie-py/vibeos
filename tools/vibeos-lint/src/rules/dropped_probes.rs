@@ -452,10 +452,12 @@ mod tests {
         );
         let rust = c.rust_files().next().unwrap();
         let (hits, names) = scan_file_paired(rust).unwrap();
-        assert!(hits.is_empty());
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].2, "WEAK");
         assert!(names.contains("NtReadFile"));
         let paired = HashSet::from([(rust.path.clone(), "NtReadFile".into())]);
         assert!(scan_twins(&c, &[rust], &paired).is_empty());
+        assert_eq!(DroppedProbes.run(&c).unwrap().len(), 1);
     }
 }
 

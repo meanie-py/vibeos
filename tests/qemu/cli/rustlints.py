@@ -137,6 +137,7 @@ def ensure(repo: Path) -> Path:
             source / "Cargo.toml",
             source / "Cargo.lock",
             repo / "rust-toolchain.toml",
+            repo / "tools/rustconv/rustconv/conventions.py",
             *sorted(source_files(source / "src")),
         ]
         digest = hashlib.sha256()

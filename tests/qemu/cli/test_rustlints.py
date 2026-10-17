@@ -131,12 +131,16 @@ def test_bootstrap_failure_is_scanner_error(tmp_path, monkeypatch):
     assert "compiler unavailable" in result["a"].stderr
 
 
-def test_bootstrap_rejects_sources_changed_during_build(tmp_path, monkeypatch):
+@pytest.mark.parametrize("changed_input", ["rust", "conventions"])
+def test_bootstrap_rejects_sources_changed_during_build(tmp_path, monkeypatch, changed_input):
     source = tmp_path / "tools/vibeos-lint"
     (source / "src").mkdir(parents=True)
     (source / "Cargo.toml").write_text("[package]\nname='test'\nversion='0.1.0'\n")
     (source / "Cargo.lock").write_text("")
     (tmp_path / "rust-toolchain.toml").write_text("[toolchain]\nchannel='stable'\n")
+    conventions = tmp_path / "tools/rustconv/rustconv/conventions.py"
+    conventions.parent.mkdir(parents=True)
+    conventions.write_text('KW_TO_CONV = {"A": "system"}\n')
     rust = source / "src/main.rs"
     rust.write_text("fn main() {}")
     builds = []
@@ -148,7 +152,10 @@ def test_bootstrap_rejects_sources_changed_during_build(tmp_path, monkeypatch):
         artifact.write_bytes(b"compiled")
         if len(builds) == 1:
             # A new source file must invalidate the build too, not only edits.
-            (source / "src/new.rs").write_text("fn newly_added() {}")
+            if changed_input == "rust":
+                (source / "src/new.rs").write_text("fn newly_added() {}")
+            else:
+                conventions.write_text('KW_TO_CONV = {"B": "cdecl"}\n')
         return subprocess.CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr(rustlints.subprocess, "run", build)
@@ -160,3 +167,6 @@ def test_bootstrap_rejects_sources_changed_during_build(tmp_path, monkeypatch):
     assert rustlints.ensure(tmp_path).read_bytes() == b"compiled"
     assert rustlints.ensure(tmp_path) == target
     assert len(builds) == 2
+    conventions.write_text('KW_TO_CONV = {"C": "fastcall"}\n')
+    assert rustlints.ensure(tmp_path) == target
+    assert len(builds) == 3

@@ -16,72 +16,42 @@ static NOISE: LazyLock<Regex> = LazyLock::new(|| {
 });
 static SPLIT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").unwrap());
 
-const KNOWN: &[(&str, &str)] = &[
-    ("__stdcall", "system"),
-    ("_stdcall", "system"),
-    ("__cdecl", "cdecl"),
-    ("_cdecl", "cdecl"),
-    ("__fastcall", "fastcall"),
-    ("_fastcall", "fastcall"),
-    ("__thiscall", "thiscall"),
-    ("_thiscall", "thiscall"),
-    ("NTAPI", "system"),
-    ("WINAPI", "system"),
-    ("APIENTRY", "system"),
-    ("STDCALL", "system"),
-    ("CALLBACK", "system"),
-    ("PASCAL", "system"),
-    ("pascal", "system"),
-    ("STDMETHODCALLTYPE", "system"),
-    ("STDAPICALLTYPE", "system"),
-    ("STDAPI", "system"),
-    ("STDMETHODIMP", "system"),
-    ("BOOLAPI", "system"),
-    ("WINOLEAPI", "system"),
-    ("WSAAPI", "system"),
-    ("WSPAPI", "system"),
-    ("SEC_ENTRY", "system"),
-    ("NET_API_FUNCTION", "system"),
-    ("WINGDIPAPI", "system"),
-    ("ACMAPI", "system"),
-    ("VFWAPI", "system"),
-    ("WMIAPI", "system"),
-    ("EVNTAPI", "system"),
-    ("IMAGEAPI", "system"),
-    ("DBHLPAPI", "system"),
-    ("INSTAPI", "system"),
-    ("SQL_API", "system"),
-    ("DWMAPI", "system"),
-    ("PSSTDAPI", "system"),
-    ("STRSAFEAPI", "system"),
-    ("STRSAFE_INLINE_API", "system"),
-    ("WINSNMPAPI", "system"),
-    ("NETIOAPI_API", "system"),
-    ("NETIOAPI_API_", "system"),
-    ("PFAPIENTRY", "system"),
-    ("NCB_POST", "system"),
-    ("EXPENTRY", "system"),
-    ("DDAPI", "system"),
-    ("APIPRIVATE", "system"),
-    ("CPSUICALLBACK", "system"),
-    ("DESK_EXT_CALLBACK", "system"),
-    ("MSGDUMP_API", "system"),
-    ("RPC_ENTRY", "system"),
-    ("__RPC_API", "system"),
-    ("__RPC_USER", "system"),
-    ("__RPC_STUB", "system"),
-    ("__RPC_CALLEE", "system"),
-    ("CDECL", "cdecl"),
-    ("WINAPIV", "cdecl"),
-    ("STDAPIV", "cdecl"),
-    ("STDAPIVCALLTYPE", "cdecl"),
-    ("STDMETHODIMPV", "cdecl"),
-    ("STDMETHODVCALLTYPE", "cdecl"),
-    ("VFWAPIV", "cdecl"),
-    ("RPC_VAR_ENTRY", "cdecl"),
-    ("EFIAPI", "cdecl"),
-    ("FASTCALL", "fastcall"),
-];
+// This is checker implementation data, just like Python's imported KW_TO_CONV.
+// Embed the canonical table so the executable remains standalone. The bootstrap
+// fingerprint includes this source dependency as well as the Rust sources.
+const CONVENTIONS: &str = include_str!("../../../rustconv/rustconv/conventions.py");
+fn known_table(source: &str) -> Result<Vec<(String, String)>, String> {
+    static START: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^KW_TO_CONV\s*(?::[^=]+)?=\s*\{\s*(?:#.*)?$").unwrap());
+    static ENTRY: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"^\s*(?:"([A-Za-z_][A-Za-z0-9_]*)"|'([A-Za-z_][A-Za-z0-9_]*)')\s*:\s*(?:"([A-Za-z_][A-Za-z0-9_]*)"|'([A-Za-z_][A-Za-z0-9_]*)')\s*,?\s*(?:#.*)?$"#).unwrap()
+    });
+    let mut lines = source.lines();
+    if !lines.by_ref().any(|line| START.is_match(line)) {
+        return Err("conventions.py: KW_TO_CONV must be a multiline literal dictionary".into());
+    }
+    let mut table = BTreeMap::new();
+    for line in lines {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if line == "}"
+            || line
+                .strip_prefix('}')
+                .is_some_and(|tail| tail.trim_start().starts_with('#'))
+        {
+            return Ok(table.into_iter().collect());
+        }
+        let row = ENTRY
+            .captures(line)
+            .ok_or_else(|| format!("conventions.py: unsupported KW_TO_CONV entry: {line}"))?;
+        let name = row.get(1).or_else(|| row.get(2)).unwrap().as_str();
+        let conv = row.get(3).or_else(|| row.get(4)).unwrap().as_str();
+        table.insert(name.to_owned(), conv.to_owned());
+    }
+    Err("conventions.py: unterminated KW_TO_CONV dictionary".into())
+}
 
 fn clean_yaml_scalar(s: &str) -> String {
     let s = s.split('#').next().unwrap_or("").trim();
@@ -217,7 +187,7 @@ fn findings(found: &BTreeMap<String, (String, String)>, known: &[(&str, &str)]) 
     }
     for (name, have, want, cite) in &wrong {
         out.push(format!(
-            "WRONG   {name}: table says {have:?}, headers say {want:?}  ({cite})"
+            "WRONG   {name}: table says '{have}', headers say '{want}'  ({cite})"
         ));
     }
     for (name, conv, cite) in &missing {
@@ -271,7 +241,12 @@ impl Rule for VerifyConvMacros {
             })
             .collect();
         let found = harvest(&headers, &prefixes);
-        Ok(findings(&found, KNOWN))
+        let known = known_table(CONVENTIONS)?;
+        let refs: Vec<_> = known
+            .iter()
+            .map(|(name, conv)| (name.as_str(), conv.as_str()))
+            .collect();
+        Ok(findings(&found, &refs))
     }
 }
 
@@ -283,6 +258,37 @@ mod tests {
         SourceFile::new(PathBuf::from(path), text.into())
     }
     const VENDOR: &str = "trees:\n  - path: vendor/foreign\n    headers:\n      - sdk/include/psdk/foreign\nours: []\n";
+    #[test]
+    fn canonical_convention_table_includes_master_mi_aliases() {
+        let table: BTreeMap<_, _> = known_table(CONVENTIONS).unwrap().into_iter().collect();
+        assert_eq!(table.get("MI_CALL").map(String::as_str), Some("system"));
+        assert_eq!(table.get("MI_MAIN_CALL").map(String::as_str), Some("cdecl"));
+    }
+    #[test]
+    fn literal_table_changes_drive_missing_and_wrong_alias_findings() {
+        let found = BTreeMap::from([("NEW_CALL".into(), ("system".into(), "alias.h:1".into()))]);
+        let parse = |source| known_table(source).unwrap();
+        let table = parse("KW_TO_CONV: dict[str, str] = {\n 'NEW_CALL': 'system', # citation\n}\n");
+        let refs: Vec<_> = table
+            .iter()
+            .map(|(n, c)| (n.as_str(), c.as_str()))
+            .collect();
+        assert_eq!(
+            findings(&found, &refs),
+            ["SUMMARY: 0 missing, 0 wrong (1 convention aliases, all known)"]
+        );
+        let table = parse("KW_TO_CONV = {\n 'NEW_CALL': 'cdecl',\n}\n");
+        let refs: Vec<_> = table
+            .iter()
+            .map(|(n, c)| (n.as_str(), c.as_str()))
+            .collect();
+        assert_eq!(
+            findings(&found, &refs)[0],
+            "WRONG   NEW_CALL: table says 'cdecl', headers say 'system'  (alias.h:1)"
+        );
+        assert!(findings(&found, &[])[0].starts_with("MISSING NEW_CALL"));
+        assert!(known_table("KW_TO_CONV = {\n **BASE,\n}\n").is_err());
+    }
     #[test]
     fn resolves_alias_chains_and_first_definition_wins() {
         let files = vec![file(
@@ -331,7 +337,7 @@ mod tests {
         let refs: Vec<_> = files.iter().collect();
         let found = harvest(&refs, &[]);
         assert!(findings(&found, &[("API", "cdecl")])[0]
-            .contains("WRONG   API: table says \"cdecl\", headers say \"system\""));
+            .contains("WRONG   API: table says 'cdecl', headers say 'system'"));
         assert!(!found.contains_key("CYCLE"));
     }
 }
