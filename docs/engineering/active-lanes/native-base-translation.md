@@ -186,8 +186,9 @@ driver (`tools/merge_drivers.py`, which also merges the cohab census), and psapi
   live required, dead and undecidable and `#elif` optional. Prompt and cache untouched.
   Measured first with `python -m rustconv.live_arm_audit` over the 986 flipped TUs the
   census resolves: 445 live-arm calls in 208 functions, and every shipped body names its
-  callee except freeldr's `WinLdrSetupMemoryLayout`, which drops a `#if DBG` `MempDump()`
-  (the rest of its 8 leads are macros the seal never tokenizes). Caveats: that audits the
+  callee except freeldr's `WinLdrSetupMemoryLayout`, which dropped a `#if DBG` `MempDump()`
+  (restored, under the crate's `debug_assertions` spelling of DBG; the rest of its 8 leads
+  are macros the seal never tokenizes). Caveats: that audits the
   INTEGRATED Rust, not the bank -- a replay could not check the bank, because a flipped TU
   has no compile command and translate refuses it (`MacroAuthorityError`); 119 census rows
   do not resolve to a file pair, and 162 TUs whose CMakeLists profile_derive refuses were
