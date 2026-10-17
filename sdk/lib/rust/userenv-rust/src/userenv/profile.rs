@@ -718,7 +718,7 @@ pub unsafe extern "system" fn CopySystemProfile(_Unused: u32) -> BOOL {
     RtlFreeUnicodeString(&mut SidString);
 
     dwError = RegCreateKeyExW(
-        0x8000_0002u32 as i32 as isize as HKEY,
+        HKEY_LOCAL_MACHINE,
         &szKeyName[0],
         0,
         core::ptr::null_mut(),
@@ -2323,7 +2323,7 @@ pub unsafe extern "system" fn LoadUserProfileW(
         }
 
         dwError = RegLoadKeyW(
-            0x8000_0003u32 as i32 as isize as HKEY,
+            HKEY_USERS,
             SidString.Buffer,
             szUserHivePath.as_mut_ptr() as LPCWSTR,
         ) as u32;
@@ -2343,7 +2343,7 @@ pub unsafe extern "system" fn LoadUserProfileW(
     }
 
     dwError = (RegOpenKeyExW(
-        0x8000_0003u32 as i32 as isize as HKEY,
+        HKEY_USERS,
         SidString.Buffer,
         0,
         MAXIMUM_ALLOWED,
