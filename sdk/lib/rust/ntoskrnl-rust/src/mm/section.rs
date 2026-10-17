@@ -2590,8 +2590,20 @@ pub unsafe extern "system" fn MmAccessFaultSectionView(
         return STATUS_SUCCESS;
     }
 
+    // The private copy is commit, charged to the process here and returned when
+    // MmFreeSectionPage frees it (or with the process's ledger at teardown). Windows reserves
+    // it when the view is mapped; charging the page that is actually made keeps one charge
+    // per private page however the region's protection changes after the map.
+    if !Process.is_null() && !crate::ARM3::commit::MiChargeCommitment(1, Process as _) {
+        MmUnlockSectionSegment(Segment as PVOID);
+        return crate::ARM3::commit::STATUS_COMMITMENT_LIMIT;
+    }
+
     Status = MmRequestPageMemoryConsumer(MC_USER, 1u8, &mut NewPage);
     if !NT_SUCCESS(Status) {
+        if !Process.is_null() {
+            crate::ARM3::commit::MiReturnCommitment(1, Process as _);
+        }
         MmUnlockSectionSegment(Segment as PVOID);
         return STATUS_NO_MEMORY;
     }
@@ -3403,6 +3415,10 @@ unsafe extern "C" fn MmFreeSectionPage(
             }
             MmDeleteRmap(Page, Process, Address);
             MmReleasePageMemoryConsumer(MC_USER, Page);
+            // The copy-on-write charge MmAccessFaultSectionView took for this page.
+            if !Process.is_null() {
+                crate::ARM3::commit::MiReturnCommitment(1, Process as _);
+            }
         } else {
             if !Process.is_null() {
                 MmDeleteRmap(Page, Process, Address);

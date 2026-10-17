@@ -57,8 +57,12 @@ media (and `--arch amd64 --ladder` for wow64.dll). Owed, most valuable first:
    section pages on a standby list that counts as available and that the allocator repurposes
    synchronously: 54/54 at 1024M too, and the 2G drift fell from 41k to 25k pages. What is
    left is in the design doc ("Left of the 2G drift").
-2. Commit not yet charged: copy-on-write pages of image and file views, and kernel pool
-   (`ARM3/commit.rs` header). PEB/TEB pages are charged since 2026-10-17. Owed with it: FEX's
+2. Commit is charged for PEB/TEB pages, copy-on-write pages of image and file views, and paged
+   pool since 2026-10-17 (`ARM3/commit.rs` header). The last two cost ~15 MB, a steady offset
+   (appstorm64 at 2G: 35 -> 50 MB per app), so 1G appstorm64 media, whose ramdisk leaves a
+   129 MB limit, now runs out there: at 1024M iexplore under FEX is refused and dies, and so
+   does a ladder run on that media (apc32). Plain `VIBEOS_FEX=1` media and 1088M+ are clean.
+   The crash on refusal is FEX's, owed: FEX's
    CPU layer faults when a commit is refused while setting up a new guest thread
    (`20261017-062113-2pae52ry`): rpmalloc's `span_allocate_page` calls the `memory_commit` hook
    (a VIBEOS patch; FEXCore `AllocatorHooks.cpp` `FEX_rp_memory_commit`), which returns `void`,
