@@ -15,9 +15,9 @@ fn main() {
     };
 
     let static_libs: &[&str] = match arch.as_str() {
-        "x86" => &["engine:c:tzlib", "engine:oldnames"],
-        "x86_64" => &["engine:c:tzlib", "engine:oldnames"],
-        "aarch64" => &["engine:c:tzlib", "engine:oldnames"],
+        "x86" => &["engine:tzlib_rust", "engine:oldnames"],
+        "x86_64" => &["engine:tzlib_rust", "engine:oldnames"],
+        "aarch64" => &["engine:tzlib_rust", "engine:oldnames"],
         _ => unreachable!(),
     };
 

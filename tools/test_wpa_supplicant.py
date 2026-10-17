@@ -1,4 +1,4 @@
-"""Host-run the Wi-Fi supplicant's own unit tests (ndis-rust's wpa.rs).
+"""Host-run the Wi-Fi supplicant's own unit tests (wpa-rust).
 
 The WDI layer's WPA2-Personal handshake is pure code over bytes: SHA-1, HMAC, the PSK and
 PTK derivations, AES key unwrap, and the EAPOL-Key state machine. On the bench a mistake in
@@ -12,7 +12,7 @@ import subprocess
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-MODULE = "sdk/lib/rust/ndis-rust/src/ndis/wpa.rs"
+MODULE = "sdk/lib/rust/wpa-rust/src/lib.rs"
 
 
 def test_wpa_supplicant(tmp_path: Path) -> None:

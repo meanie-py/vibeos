@@ -880,6 +880,26 @@ def test_crate_for_stem_separator_normalization(arm64_cohab_repo: Path):
     assert provenance._crate_for_stem(arm64_cohab_repo, "nonexistent") is None
 
 
+def test_a_binary_with_its_extension_in_its_name_maps_to_its_own_crate(monkeypatch):
+    """wdmaud.drv's Path.stem is `wdmaud` -- wdmaud.SYS's crate -- so a kernel-crate rebuild
+    reported wdmaud.drv "never relinked" against an archive it does not link (arm64,
+    2026-10-17). The crate port names it with the dot as `_` wins; the stem is the fallback."""
+    crates = {
+        "wdmaud": Path("wdmaud-rust"),
+        "wdmaud_drv": Path("wdmaud_drv-rust"),
+        "kernel32": Path("kernel32-rust"),
+    }
+    monkeypatch.setattr(provenance, "_crate_for_stem", lambda _repo, stem: crates.get(stem))
+    repo = Path("/r")
+    drv = "dll/win32/wdmaud.drv/wdmaud.drv"
+    sys_ = "drivers/wdm/audio/legacy/wdmaud/wdmaud.sys"
+    assert provenance._crate_for_rel(repo, drv) == Path("wdmaud_drv-rust")
+    assert provenance._crate_for_rel(repo, sys_) == Path("wdmaud-rust")
+    k32 = "dll/win32/kernel32/kernel32.dll"
+    assert provenance._crate_for_rel(repo, k32) == Path("kernel32-rust")
+    assert provenance._crate_for_rel(repo, "dll/win32/other/other.dll") is None
+
+
 def test_crate_for_stem_ignores_a_parked_non_member_crate(arm64_cohab_repo: Path):
     """A translated-but-NOT-YET-FLIPPED crate is not cohab, and treating it as one
     halted the merge train on 2026-08-04: msv1_0-rust was committed and parked out
@@ -11606,6 +11626,27 @@ def test_wowx64_cpu_layer_older_than_its_sources_is_stale(tmp_path):
     assert build_mod.wowx64_cpu_stale(tmp_path) == ["sdk/include/reactos/wowx64/btcpu64.h"]
 
 
+def test_a_payload_that_exits_with_a_message_says_why(tmp_path, monkeypatch):
+    """vendordrv's stager refuses with `sys.exit("vendordrv: no .inf in <dir>")`. A caught
+    SystemExit prints nothing, so the stage read FAIL with an empty reason (2026-10-17)."""
+    (tmp_path / "tools" / "payloads").mkdir(parents=True)
+    (tmp_path / "tools" / "payloads" / "compile.py").write_text(
+        "import os, sys\n"
+        "def resolve_env_payloads(environ=os.environ):\n"
+        "    return ['vendordrv']\n"
+        "def ensure_built(names, arch):\n"
+        "    sys.exit('vendordrv: no .inf in /somewhere')\n"
+        "def write_stamp(build_dir, environ=os.environ):\n"
+        "    return []\n"
+    )
+    build_dir = tmp_path / "build-amd64"
+    build_dir.mkdir()
+    monkeypatch.setenv("VIBEOS_PAYLOAD", "vendordrv")
+    run = Run("build", "amd64", ts=1700000000)
+    assert build_mod._stage_payloads(run, tmp_path, build_dir, "amd64") is None
+    assert run.stages[-1].salient == ["vendordrv: no .inf in /somewhere"]
+
+
 def test_a_failed_payload_build_leaves_the_old_stamp(tmp_path, monkeypatch):
     """The stamp is smoke's only evidence of what the media carries. Written ahead of a
     PAYLOAD_BUILD_FAIL, it claimed appstorm64 on media that never got it: the next smoke
@@ -12304,3 +12345,30 @@ def test_a_build_input_edited_mid_build_is_named_and_a_doc_is_not(tiny_repo: Pat
     (tiny_repo / "new.c").unlink()
     (tiny_repo / "Cargo.lock").write_text("version = 4\n")
     assert build_mod._inputs_moved(tiny_repo, start) == []
+
+
+def test_fex_build_prerequisites_are_named_up_front(tmp_path):
+    """VIBEOS_FEX=1 arm64 on a fresh worktree: every missing out-of-tree piece is named with
+    the command that provides it, before the build runs (it used to skip, warn, and die at
+    mkramdisk twelve minutes on, or finish green with media that fails every WoW64 guest)."""
+    missing = build_mod.fex_prerequisites_missing(tmp_path, environ={})
+    assert any("build-fex-arm64 not configured" in m for m in missing)
+    assert any("build-i386/dll/ntdll/ntdll.dll" in m and "--arch i386" in m for m in missing)
+    assert any("testgui.exe" in m and "--arch amd64" in m for m in missing)
+    for _stage, tree, _targets, _script in build_mod.FEX_OUT_OF_TREE:
+        (tmp_path / tree).mkdir(parents=True, exist_ok=True)
+        (tmp_path / tree / "build.ninja").write_text("")
+    for rel in (
+        "build-i386/dll/ntdll/ntdll.dll",
+        "build-amd64/base/applications/testgui/testgui.exe",
+    ):
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text("")
+    assert build_mod.fex_prerequisites_missing(tmp_path, environ={}) == []
+    # mkramdisk's overrides are honoured: an override pointing nowhere is still missing.
+    assert build_mod.fex_prerequisites_missing(
+        tmp_path, environ={"VIBEOS_NTDLL32": str(tmp_path / "nope.dll")}
+    ) == [
+        f"{tmp_path / 'nope.dll'} absent (the i386 guests' SysWOW64 set): "
+        "./vibeos-cli build --arch i386"
+    ]

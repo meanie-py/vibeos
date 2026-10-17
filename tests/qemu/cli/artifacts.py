@@ -425,6 +425,14 @@ class Run:
     def finalize(self, repo: Path | None = None) -> int:
         dur = time.monotonic() - self.start
         archive_serial(self.dir, self.extra.get("live_log"), self.extra)
+        # The summary and the stdout both name full.log; a run that failed before any
+        # stage ran a command never created it, and the path led nowhere.
+        if not self.full_log.exists():
+            try:
+                with self._log_lock, open(self.full_log, "a") as f:
+                    f.write("(no stage ran a command; see summary.json for the stages)\n")
+            except OSError:
+                pass
         summary = {
             "run_id": self.dir.name,
             "command": self.command,

@@ -2507,6 +2507,7 @@ impl Linker {
                 self.engine_crate("cnt-rust-lib", feats, true)
             }
             "skiplist_rust" => self.engine_crate("skiplist-rust", &[], true),
+            "tzlib_rust" => self.engine_crate("tzlib-rust", &[], true),
             // concfg-rust is an rlib (winsrv-rust's dependency); cmake builds the
             // console CPL's archive with `cargo rustc --crate-type staticlib
             // --features standalone`, and on i386 RUSTFLAGS `-sse,-sse2
