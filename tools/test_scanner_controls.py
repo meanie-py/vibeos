@@ -3220,7 +3220,8 @@ UNCOVERED: dict[str, str] = {
         "its oracle is the C module scan_invented_constants.c_dirs_for() finds for a crate in "
         "the real tree, so a fixture directory has no crate to map. The decision is "
         "scan_files(rs_files, c_dirs, names), driven directly in "
-        "tools/test_scan_hresult_literals.py with an explicit C dir: it must flag ole32's "
+        "tools/vibeos-lint/src/rules/hresult_literals.rs with an explicit C fixture: it must flag "
+        "ole32's "
         "STG_E_TOOMANYOPENFILES-for-READFAULT shape and must not flag a value the C function "
         "returns, a named const, a nolint line, an extern declaration, or an NTSTATUS function."
     ),
@@ -3410,6 +3411,16 @@ UNCOVERED: dict[str, str] = {
 
 
 def _run(ctl: Control, root: Path) -> tuple[int, str]:
+    # Ported controls exercise the shipping Rust plugin, including its shared
+    # corpus and cross-file collection, rather than a retained Python oracle.
+    from tests.qemu.cli import rustlints
+
+    if ctl.name in rustlints.PORTED:
+        runner = rustlints.ensure(REPO)
+        cmd = [str(runner), "--root", str(REPO), "--path", str(root), "--rules", ctl.name]
+        p = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True)
+        result = rustlints.split_output(p, [ctl.name])[ctl.name]
+        return result.returncode, result.stdout + result.stderr
     if ctl.pass_files:
         targets = [str(p) for p in sorted(root.rglob(f"*{ctl.file_suffix}"))]
         assert targets, f"{ctl.name}: fixture produced no {ctl.file_suffix} files"
