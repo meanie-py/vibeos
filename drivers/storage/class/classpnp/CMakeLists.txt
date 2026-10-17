@@ -1,4 +1,3 @@
-
 spec2def(classpnp.sys classpnp.spec ADD_IMPORTLIB)
 
 # ============================================================================
@@ -23,8 +22,6 @@ spec2def(classpnp.sys classpnp.spec ADD_IMPORTLIB)
 # dropped (cold-link confirms nothing referenced chkstk). EXTRA_DEPENDS is empty.
 # The version resource: cmake compiles it in this OBJECT library, whose windres
 # command the cargo link replays.
-add_library(classpnp_res OBJECT class.rc)
-target_include_directories(classpnp_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(classpnp classpnp-cargo classpnp.sys KIND kerneldll
     BODY_CRATE classpnp-rust DESTINATION reactos/system32/drivers
-    EXTRA_DEPENDS classpnp_res psdk)
+    EXTRA_DEPENDS psdk)

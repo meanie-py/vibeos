@@ -466,7 +466,7 @@ unsafe extern "system" fn RecycleBinDlg(
                         == BST_UNCHECKED as LRESULT) as BOOL,
                 );
                 SHGetSetSettings(
-                    &mut ss as *mut SHELLSTATE,
+                    (&mut ss as *mut SHELLSTATE).cast(),
                     SSF_NOCONFIRMRECYCLE,
                     TRUE,
                 );

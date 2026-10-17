@@ -5,13 +5,8 @@ include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_or
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # whoami.c  # replaced by Rust (sdk/lib/rust/whoami-rust/src/whoami/whoami.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(whoami_res OBJECT whoami.rc)
-target_compile_definitions(whoami_res PRIVATE UNICODE _UNICODE)
-target_include_directories(whoami_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(whoami whoami-cargo whoami.exe
     KIND win32exe
     BODY_CRATE whoami-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS whoami_res xdk)
+    EXTRA_DEPENDS xdk psdk)

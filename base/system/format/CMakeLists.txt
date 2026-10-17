@@ -5,13 +5,8 @@ include_directories(${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs/fmifs)
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # format.c  # replaced by Rust (sdk/lib/rust/format-rust/src/format/format.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(format_res OBJECT format.rc)
-target_compile_definitions(format_res PRIVATE UNICODE _UNICODE)
-target_include_directories(format_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(format format-cargo format.com
     KIND win32exe
     BODY_CRATE format-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS format_res xdk)
+    EXTRA_DEPENDS xdk psdk)

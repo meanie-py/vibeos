@@ -1,0 +1,2 @@
+# concfg (amd64), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+c	win32ss/user/winsrv/concfg/concfg_rust_stub.c	@build/win32ss/user/winsrv/concfg win32ss/user/winsrv/concfg @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 -U_X86_ -UWIN32 @core	WINVER=0x502 _WIN32_WINNT=0x502

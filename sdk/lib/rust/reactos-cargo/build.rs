@@ -7,6 +7,96 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The C left, and its part of cmake's C rule; reactos-link adds what every C
+    // compile shares from reactos-link/cflags/c.<arch>.flags (Linker::c_compiled).
+    let c_sources: &[&str] = &["base/setup/reactos/rust_varargs_shim.c", "vendor/treelist/treelist.c"];
+    let c_includes: &[&str] = &[
+        "@build/base/setup/reactos",
+        "base/setup/reactos",
+        "@std",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+        "vendor/treelist",
+    ];
+    let c_flags: &[&str] = match arch.as_str() {
+        "x86" => &[
+            "-isystem",
+            "{REPO}/sdk/lib/pseh/include",
+            "-isystem",
+            "{REPO}/vendor/zlib/include",
+            "-isystem",
+            "{REPO}/sdk/lib/tdilib",
+            "-isystem",
+            "{REPO}/vendor/libtiff/include",
+            "-isystem",
+            "{REPO}/vendor/symcrypt/inc",
+            "-isystem",
+            "{REPO}/vendor/symcrypt/lib",
+            "-std=gnu99",
+            "@core",
+        ],
+        "x86_64" => &[
+            "-isystem",
+            "{REPO}/sdk/lib/pseh/include",
+            "-isystem",
+            "{REPO}/vendor/zlib/include",
+            "-isystem",
+            "{REPO}/sdk/lib/tdilib",
+            "-isystem",
+            "{REPO}/vendor/libtiff/include",
+            "-isystem",
+            "{REPO}/vendor/symcrypt/inc",
+            "-isystem",
+            "{REPO}/vendor/symcrypt/lib",
+            "-std=gnu99",
+            "-U_X86_",
+            "-UWIN32",
+            "@core",
+        ],
+        "aarch64" => &[
+            "-isystem",
+            "{REPO}/sdk/lib/pseh/include",
+            "-isystem",
+            "{REPO}/vendor/zlib/include",
+            "-isystem",
+            "{REPO}/sdk/lib/tdilib",
+            "-isystem",
+            "{REPO}/vendor/libtiff/include",
+            "-isystem",
+            "{REPO}/vendor/symcrypt/inc",
+            "-isystem",
+            "{REPO}/vendor/symcrypt/lib",
+            "-std=gnu99",
+            "@core",
+        ],
+        _ => unreachable!(),
+    };
+    let c_defines: &[&str] = &[
+        "UNICODE",
+        "WINVER=0x502",
+        "_CRT_DECLARE_NONSTDC_NAMES=1",
+        "_CRT_NONSTDC_NO_DEPRECATE",
+        "_DLL",
+        "_UNICODE",
+        "_WIN32_WINNT=0x502",
+        "__USE_CRTIMP",
+    ];
+
+    // The module's part of cmake's windres command; reactos-link adds what every
+    // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
+    let rc_includes: &[&str] = &[
+        "@build/base/setup/reactos",
+        "base/setup/reactos",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+        "vendor/treelist",
+    ];
+    let rc_flags: &[&str] = &[];
+    let rc_defines: &[&str] = &["UNICODE", "WINVER=0x502", "_UNICODE", "_WIN32_WINNT=0x502"];
+
     let (target_json, entry) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_wWinMainCRTStartup"),
         "x86_64" => ("x86_64-pc-windows-gnu", "wWinMainCRTStartup"),
@@ -23,8 +113,8 @@ fn main() {
 
     Linker::new(target_json)
         .rust_staticlib("reactos-rust")
-        .c_from_compile_db("reactos_shims", &["base/setup/reactos/rust_varargs_shim.c", "vendor/treelist/treelist.c"])
-        .resource_from_rc("base/setup/reactos/reactos.rc", "reactos_res")
+        .c_compiled("reactos_shims", c_sources, c_includes, c_flags, c_defines)
+        .rc("base/setup/reactos/reactos.rc", rc_includes, rc_flags, rc_defines)
         .delay_import_lib("base/setup/lib/setuplib.spec", "setuplib.dll", "setuplib")
         .import_lib("dll/win32/advapi32/advapi32.spec", "advapi32.dll", "advapi32")
         .import_lib("win32ss/gdi/gdi32/gdi32.spec", "gdi32.dll", "gdi32")

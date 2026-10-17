@@ -441,7 +441,7 @@ pub unsafe extern "system" fn SH_CreatePropertySheetPage_RustBridge(
     param: LPARAM,
     title: LPCWSTR,
 ) -> HPROPSHEETPAGE {
-    SH_CreatePropertySheetPage(id, proc, param, title)
+    (SH_CreatePropertySheetPage(id, proc, param, title)).cast()
 }
 
 #[no_mangle]
@@ -460,7 +460,7 @@ pub unsafe extern "system" fn SH_CreatePropertySheetPageEx_RustBridge(
     SH_CreatePropertySheetPageEx(
         id,
         core::mem::transmute(proc),
-        param as isize,
+        (param) as LPARAM,
         title,
         core::mem::transmute(callback),
     ) as HPROPSHEETPAGE

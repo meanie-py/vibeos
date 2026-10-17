@@ -30,12 +30,8 @@ include_directories(
 # replaced" — import-vs-local, not covered by --allow-multiple-definition).
 # In the C build DriverEntry was an object (main.c.obj, linked before importlibs);
 # the cohab moved it into a .a, so we restore the ordering explicitly.
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(dxg_res OBJECT dxg.rc)
-target_include_directories(dxg_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(dxg dxg-cargo dxg.sys
     KIND kernelmodedriver
     BODY_CRATE dxg-rust
     DESTINATION reactos/system32/drivers
-    EXTRA_DEPENDS dxg_res psdk)
+    EXTRA_DEPENDS psdk)

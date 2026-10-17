@@ -1,0 +1,3 @@
+# mfuuid (arm64), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+c	sdk/lib/mfuuid/mfuuid.c	@build/sdk/lib/mfuuid sdk/lib/mfuuid @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 @core	WINVER=0x502 _WIN32_WINNT=0x502
+c	sdk/lib/mfuuid/mfplay.c	@build/sdk/lib/mfuuid sdk/lib/mfuuid @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 @core	WINVER=0x502 _WIN32_WINNT=0x502

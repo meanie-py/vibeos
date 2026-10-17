@@ -3,6 +3,13 @@
 // globs this file used to carry — those three together made every shared name ambiguous
 // (E0659) at 100+ sites, since the island already provides all of them.
 use crate::prelude::*;
+// The crate's own functions: the definition is the declaration.
+use crate::wine::pidl::ILClone;
+use crate::def_view::SHCreateShellFolderView;
+// One declaration per external symbol: island.rs.
+use crate::island::CoTaskMemAlloc;
+use crate::island::DestroyMenu;
+use crate::island::LoadStringW;
 // `STRRET` is a COM boundary type the island renders as a bindgen union workaround
 // (`__bindgen_anon_1` + `__BindgenUnionField<T>`, no direct field access) rather than a real
 // Rust `union`; `shellcom::STRRET` is the plain, directly-writable union every other flipped
@@ -223,26 +230,11 @@ pub const SHCOLSTATE_TYPE_STR: DWORD = 1;
 
 pub const SHCONTF_FOLDERS: DWORD = 32;
 
-#[repr(C)]
-pub struct QCMINFO {
-    pub hmenu: HMENU,
-    pub indexMenu: UINT,
-    pub idCmdFirst: UINT,
-    pub idCmdLast: UINT,
-    pub pIdMap: *const QCMINFO_IDMAP,
-}
+pub use crate::island::QCMINFO;
 
-#[repr(C)]
-pub struct QCMINFO_IDMAP {
-    pub nMaxIds: UINT,
-    pub pIdList: [QCMINFO_IDMAP_PLACEMENT; 1],
-}
+pub use crate::island::QCMINFO_IDMAP;
 
-#[repr(C)]
-pub struct QCMINFO_IDMAP_PLACEMENT {
-    pub id: UINT,
-    pub fFlags: UINT,
-}
+pub use crate::island::QCMINFO_IDMAP_PLACEMENT;
 
 // Deterministic from shobjidl.h
 #[repr(C)]
@@ -337,11 +329,7 @@ pub type LPTBBUTTONSB = *mut core::ffi::c_void;
 
 pub type LPFNSVADDPROPSHEETPAGE = Option<unsafe extern "system" fn(HPROPSHEETPAGE, LPARAM) -> BOOL>;
 
-#[repr(C)]
-pub struct shvheader {
-    pub colnameid: WORD, pub colstate: WORD,
-    pub fmt: WORD, pub cxChar: WORD,
-}
+pub use crate::island::shvheader;
 pub static NetworkPlacesSFHeader: [shvheader; 4] = [
     shvheader { colnameid: (IDS_SHV_COLUMN_NAME) as WORD, colstate: (SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT) as WORD, fmt: (LVCFMT_RIGHT) as WORD, cxChar: (15) as WORD },
     shvheader { colnameid: (IDS_SHV_COLUMN_CATEGORY) as WORD, colstate: (SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT) as WORD, fmt: (LVCFMT_RIGHT) as WORD, cxChar: (10) as WORD },
@@ -350,13 +338,8 @@ pub static NetworkPlacesSFHeader: [shvheader; 4] = [
 ];
 
 extern "system" {
-    fn DestroyMenu(menu: HMENU) -> BOOL;
     fn lstrlenW(text: LPCWSTR) -> INT;
-    fn CoTaskMemAlloc(bytes: SIZE_T) -> LPVOID;
-    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
     fn CoTaskMemFree(memory: LPVOID);
-    fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
-    fn SHCreateShellFolderView(create: *const SFV_CREATE, view: *mut *mut IShellView) -> HRESULT;
 }
 
 // `ILCreateFromNetworkPlaceW` is a real `#[no_mangle]` export of the sibling `CNetFolder.rs`

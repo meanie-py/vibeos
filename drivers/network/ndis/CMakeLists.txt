@@ -34,12 +34,8 @@ add_definitions(
 # ndis/protocol.c  # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/protocol.rs)
 # ndis/string.c  # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/string.rs)
 # ndis/time.c  # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/time.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(ndis_res OBJECT ndis.rc)
-target_include_directories(ndis_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(ndis ndis-cargo ndis.sys
     KIND kernelmodedriver
     BODY_CRATE ndis-rust
     DESTINATION reactos/system32/drivers
-    EXTRA_DEPENDS ndis_res psdk)
+    EXTRA_DEPENDS psdk)

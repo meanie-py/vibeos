@@ -950,6 +950,7 @@ dll/cpl/wined3dcfg/CMakeLists.txt	1	# wined3dcfg.c # replaced by Rust (sdk/lib/r
 dll/directx/wine/d3dx9_36/d3dx9.cmake	1	# math.c wants M_PI, which <math.h> only exposes on request here.
 dll/directx/wine/dmime/CMakeLists.txt	1	# performance.c drives its message pump with a CONDITION_VARIABLE.
 dll/directx/wine/dpnet/CMakeLists.txt	1	# dpnet_main.c guards its one-time init with InitOnceExecuteOnce.
+dll/directx/wine/dwrite/CMakeLists.txt	1	# Wine guards every FreeType backend body in freetype.c with SONAME_LIBFREETYPE (configure
 dll/ntdll/CMakeLists.txt	1	# asm = generates the asm includes (ks*.inc / syscalls.inc / sysfuncs.h) the
 dll/ntdll/CMakeLists.txt	1	# dbg/dbgui.c — replaced by Rust (ntdll-rust/src/dbg/dbgui.rs);
 dll/ntdll/CMakeLists.txt	1	# dispatch/dispatch.c — replaced by Rust (ntdll-rust/src/dispatch/mod.rs,
@@ -1280,6 +1281,7 @@ dll/win32/msgina/CMakeLists.txt	1	# shutdown.c — replaced by Rust (sdk/lib/rus
 dll/win32/msgina/CMakeLists.txt	1	# stubs.c — replaced by Rust (sdk/lib/rust/msgina-rust/src/stubs.rs)
 dll/win32/msgina/CMakeLists.txt	1	# tui.c — replaced by Rust (sdk/lib/rust/msgina-rust/src/tui.rs)
 dll/win32/msgina/CMakeLists.txt	1	# utils.c — replaced by Rust (sdk/lib/rust/msgina-rust/src/utils.rs)
+dll/win32/msi/CMakeLists.txt	1	# The guarded client stubs (remote_*_guarded, winemsi_guard.c) run under RtlSehTryExcept, since
 dll/win32/msports/CMakeLists.txt	1	# classinst.c # replaced by Rust (sdk/lib/rust/msports-rust/src/msports/classinst.rs)
 dll/win32/msports/CMakeLists.txt	1	# comdb.c # replaced by Rust (sdk/lib/rust/msports-rust/src/msports/comdb.rs)
 dll/win32/msports/CMakeLists.txt	1	# msports.c # replaced by Rust (sdk/lib/rust/msports-rust/src/msports/msports.rs)
@@ -1436,6 +1438,7 @@ dll/win32/rasdlg/CMakeLists.txt	1	# rasdlg.c)
 dll/win32/rasman/CMakeLists.txt	1	# functions lowered deterministically for $0. rasman.c is commented out below and kept
 dll/win32/rasman/CMakeLists.txt	1	# rasman.c → rasman-rust
 dll/win32/rasman/CMakeLists.txt	1	# rasman.c)
+dll/win32/rpcrt4/CMakeLists.txt	1	# The endpoint-mapper calls in rpc_epmap.c go through ept_*_guarded (epm_guard.c), which
 dll/win32/samlib/CMakeLists.txt	1	# The RpcExcept(EXCEPTION_EXECUTE_HANDLER) handlers throughout samlib.c are compiled but never
 dll/win32/samlib/CMakeLists.txt	1	# add_pch dropped with precomp.h: the only remaining C is generated (sam_c.c, samlib_stubs.c)
 dll/win32/samlib/CMakeLists.txt	1	# dllmain.c
@@ -1474,6 +1477,8 @@ dll/win32/secur32/CMakeLists.txt	1	# wine/ntlm.c — replaced by Rust (secur32-r
 dll/win32/secur32/CMakeLists.txt	1	# wine/util.c — replaced by Rust (secur32-rust)
 dll/win32/secur32/CMakeLists.txt	1	# wrapper.c — replaced by Rust (secur32-rust)
 dll/win32/serialui/CMakeLists.txt	1	# serialui.c # replaced by Rust (sdk/lib/rust/serialui-rust/src/serialui/serialui.rs)
+dll/win32/setupapi/CMakeLists.txt	1	# cfgmgr.c — replaced by Rust (setupapi-rust)
+dll/win32/setupapi/CMakeLists.txt	1	# libsetupapi_rust.a carries the TUs flipped so far (cfgmgr.c, whose RpcTryExcept guards
 dll/win32/shcore/CMakeLists.txt	1	# Windows; main.c's Wine versions of those are not exported.
 dll/win32/shcore/CMakeLists.txt	1	# combase is not built here (see dll/win32/CMakeLists.txt): what main.c takes from it
 dll/win32/shell32/CMakeLists.txt	1	# C++ CDefView.cpp and utils.cpp — both declarations are now EXTERN_C.
@@ -1902,8 +1907,8 @@ drivers/ksfilter/ks/CMakeLists.txt	2	# event.c filter.c filterfactory.c image.c 
 drivers/ksfilter/ks/CMakeLists.txt	1	# topology.c unknown.c worker.c kcom.c swenum.c
 drivers/ksfilter/ks/CMakeLists.txt	1	# topology.c unknown.c worker.c kcom.c swenum.c precomp.h)
 drivers/ksfilter/swenum/CMakeLists.txt	1	# swenum.c (the KS software bus enumerator) is translated to Rust
+drivers/network/afd/CMakeLists.txt	1	# (../tdihelpers), which netio.sys links too, and resolve as extern "C". event.c is NOT in this build (dead in upstream: its
 drivers/network/afd/CMakeLists.txt	1	# afd/lock.c afd/main.c afd/read.c afd/select.c afd/write.c)
-drivers/network/afd/CMakeLists.txt	1	# and resolve as extern "C". event.c is NOT in this build (dead in upstream: its
 drivers/network/afd/CMakeLists.txt	1	# list(APPEND SOURCE afd/bind.c afd/connect.c afd/context.c afd/info.c afd/listen.c
 drivers/network/dd/e1000/CMakeLists.txt	1	# debug.c # replaced by Rust (sdk/lib/rust/e1000-rust/src/e1000/debug.rs)
 drivers/network/dd/e1000/CMakeLists.txt	1	# hardware.c # replaced by Rust (sdk/lib/rust/e1000-rust/src/e1000/hardware.rs)
@@ -1941,7 +1946,6 @@ drivers/network/ndisuio/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/ru
 drivers/network/ndisuio/CMakeLists.txt	1	# misc.c # replaced by Rust (sdk/lib/rust/ndisuio-rust/src/ndisuio/misc.rs)
 drivers/network/ndisuio/CMakeLists.txt	1	# protocol.c # replaced by Rust (sdk/lib/rust/ndisuio-rust/src/ndisuio/protocol.rs)
 drivers/network/ndisuio/CMakeLists.txt	1	# readwrite.c # replaced by Rust (sdk/lib/rust/ndisuio-rust/src/ndisuio/readwrite.rs)
-drivers/network/netio/CMakeLists.txt	1	# Every translation unit is Rust now (netio-rust, `rustconv port`) except tdi.c, tdiconn.c,
 drivers/network/netio/CMakeLists.txt	1	# netio.c # replaced by Rust (sdk/lib/rust/netio-rust/src/netio/netio.rs)
 drivers/network/tdi/CMakeLists.txt	1	# cte/events.c # replaced by Rust (sdk/lib/rust/tdi-rust/src/tdi/events.rs)
 drivers/network/tdi/CMakeLists.txt	1	# cte/string.c # replaced by Rust (sdk/lib/rust/tdi-rust/src/tdi/string.rs)
@@ -1951,6 +1955,8 @@ drivers/network/tdi/CMakeLists.txt	1	# tdi/dereg.c # replaced by Rust (sdk/lib/r
 drivers/network/tdi/CMakeLists.txt	1	# tdi/handler.c # replaced by Rust (sdk/lib/rust/tdi-rust/src/tdi/handler.rs)
 drivers/network/tdi/CMakeLists.txt	1	# tdi/obsolete.c # replaced by Rust (sdk/lib/rust/tdi-rust/src/tdi/obsolete.rs)
 drivers/network/tdi/CMakeLists.txt	1	# tdi/stubs.c # replaced by Rust (sdk/lib/rust/tdi-rust/src/tdi/stubs.rs)
+drivers/network/tdihelpers/CMakeLists.txt	1	# tdi.c # replaced by Rust (sdk/lib/rust/tdihelpers-rust/src/tdihelpers/tdi.rs)
+drivers/network/tdihelpers/CMakeLists.txt	1	# tdiconn.c # replaced by Rust (sdk/lib/rust/tdihelpers-rust/src/tdihelpers/tdiconn.rs)
 drivers/processor/processr/CMakeLists.txt	1	# processr.c/misc.c/pnp.c are translated to Rust (sdk/lib/rust/processr-rust,
 drivers/serial/pl011/CMakeLists.txt	1	# add_library(pl011 MODULE pl011.c) # body replaced by Rust; kept on disk
 drivers/serial/pl011/CMakeLists.txt	1	# pl011.c (the minimal ARM64 PL011 UART driver) is translated to Rust
@@ -1960,8 +1966,10 @@ drivers/serial/serial/CMakeLists.txt	1	# replaced by Rust (serial-rust); guid.c 
 drivers/setup/blue/CMakeLists.txt	1	# blue.c # replaced by Rust (sdk/lib/rust/blue-rust/src/blue/blue.rs)
 drivers/setup/blue/CMakeLists.txt	1	# font.c # replaced by Rust (sdk/lib/rust/blue-rust/src/blue/font.rs)
 drivers/storage/class/cdrom/CMakeLists.txt	1	# aacs.c autorun.c cdrom.c common.c init.c ioctl.c mmc.c pnppower.c scratch.c sense.c zpodd.c
-drivers/storage/class/cdrom/CMakeLists.txt	1	# data.c (CDROM data tables) + guid.c (GUID data) stay C:
+drivers/storage/class/cdrom/CMakeLists.txt	1	# data.c # replaced by Rust (sdk/lib/rust/cdrom-rust/src/data/mod.rs)
 drivers/storage/class/cdrom/CMakeLists.txt	1	# data.c (the CDROM data tables the Rust modules reference) + guid.c (GUID data
+drivers/storage/class/cdrom/CMakeLists.txt	1	# data.c's tables are Rust too (cdrom-rust/src/data, generated by `rustconv data-port`).
+drivers/storage/class/cdrom/CMakeLists.txt	1	# guid.c stays C: its GUIDs are DEFINE_GUIDs in the headers it includes under INITGUID,
 drivers/storage/class/classpnp/CMakeLists.txt	1	# dummy.c + ntoskrnl-vista-rust + compiler-builtins-mem (memcmp) + clang_rt
 drivers/storage/class/disk/CMakeLists.txt	1	# data.c disk.c diskwmi.c geometry.c pnp.c # all replaced by Rust (disk-rust); kept on disk
 drivers/storage/class/ramdisk/CMakeLists.txt	1	# no ISR / no DPC / no HW register I/O. ramdisk.c kept on disk (never-delete). Bar: link-clean x3.
@@ -2592,6 +2600,13 @@ sdk/lib/crt/msvcrtex.cmake	1	# recalloc.c is NEW upstream (CORE-20596): it defin
 sdk/lib/crt/msvcrtex.cmake	1	# sec_mgr.c started calling it in this merge.
 sdk/lib/crt/printf/printf.cmake	1	# instead deleted swprintf.c and renamed vswprintf.c to _vswprintf.c; we keep ours,
 sdk/lib/crt/printf/printf.cmake	1	# swprintf. We took that change. But swprintf.c / vswprintf.c ARE the non-conforming
+sdk/lib/crt/string/string.cmake	1	# string/ctype.c
+sdk/lib/crt/string/string.cmake	1	# string/iswctype.c
+sdk/lib/crt/string/string.cmake	1	# string/strtoi64.c
+sdk/lib/crt/string/string.cmake	1	# string/strtol.c
+sdk/lib/crt/string/string.cmake	1	# string/strtoul.c
+sdk/lib/crt/string/string.cmake	1	# string/strtoull.c
+sdk/lib/crt/string/string.cmake	1	# string/wctype.c)
 sdk/lib/delayimp/CMakeLists.txt	1	# __pfnDliNotifyHook2/__pfnDliFailureHook2 hook variables, from delayimp.c,
 sdk/lib/delayimp/CMakeLists.txt	1	# pfnDliNotifyHook2.c and pfnDliFailureHook2.c (kept on disk as the record). `delayimp` stays
 sdk/lib/dnslib/CMakeLists.txt	1	# addr.c dnsaddr.c flatbuf.c hostent.c memory.c sablob.c straddr.c string.c

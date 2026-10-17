@@ -7,6 +7,31 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The module's part of cmake's windres command; reactos-link adds what every
+    // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
+    let rc_includes: &[&str] = &[
+        "@build/drivers/network/ndis",
+        "drivers/network/ndis",
+        "drivers/network/ndis/include",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+    ];
+    let rc_flags: &[&str] = &[];
+    let rc_defines: &[&str] = &[
+        "NDIS51",
+        "NDIS51_MINIPORT",
+        "NDIS_LEGACY_DRIVER=1",
+        "NDIS_LEGACY_MINIPORT=1",
+        "NDIS_LEGACY_PROTOCOL=1",
+        "NDIS_MINIPORT_DRIVER",
+        "NDIS_WRAPPER",
+        "WINVER=0x502",
+        "_WIN32_WINNT=0x502",
+    ];
+
     let (target_json, entry, image_base) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_DriverEntry@8", 0x10000u64),
         "x86_64" => ("x86_64-pc-windows-gnu", "DriverEntry", 0x10000u64),
@@ -24,7 +49,7 @@ fn main() {
     Linker::new(target_json)
         .rust_staticlib("ndis-rust")
         .rust_user_target()
-        .resource_from_rc("drivers/network/ndis/ndis.rc", "ndis_res")
+        .rc("drivers/network/ndis/ndis.rc", rc_includes, rc_flags, rc_defines)
         .spec2def("drivers/network/ndis/ndis.spec", "ndis.sys")
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .import_lib("hal/hal.spec", "hal.dll", "hal")

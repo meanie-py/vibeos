@@ -5,13 +5,8 @@ spec2def(clb.dll clb.spec)
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # clb.c  # replaced by Rust (sdk/lib/rust/clb-rust/src/clb/clb.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(clb_res OBJECT clb.rc)
-target_compile_definitions(clb_res PRIVATE UNICODE _UNICODE)
-target_include_directories(clb_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(clb clb-cargo clb.dll
     KIND win32dll
     BODY_CRATE clb-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS clb_res)
+    EXTRA_DEPENDS psdk)

@@ -5,12 +5,8 @@ spec2def(beepmidi.dll beepmidi.spec)
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # beepmidi.c  # replaced by Rust (sdk/lib/rust/beepmidi-rust/src/beepmidi/beepmidi.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(beepmidi_shims OBJECT rust_varargs_shim.c)
-target_link_libraries(beepmidi_shims PRIVATE libwinmm libmsvcrt libkernel32 libntdll)
-target_compile_definitions(beepmidi_shims PRIVATE UNICODE _UNICODE)
 add_cargo_module(beepmidi beepmidi-cargo beepmidi.dll
     KIND win32dll
     BODY_CRATE beepmidi-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS beepmidi_shims)
+    EXTRA_DEPENDS libwinmm libmsvcrt libkernel32 libntdll)

@@ -95,6 +95,8 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_wine_registry_resources.py"),
     (".", ".", "tools/test_gen_delaylib.py"),
     (".", ".", "tools/test_gen_apisets_table.py"),
+    (".", ".", "tools/test_gen_rpc_guards.py"),
+    (".", ".", "tools/test_rpc_try_wrap.py"),
     # The characterisation driver's accusation rule. Its failure mode is to
     # quarantine INNOCENT tests -- it blamed seven for a drain bug, and four more
     # for the VM watchdog on the very next run after that was fixed. Raising
@@ -177,6 +179,9 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_wine_gap.py"),
     (".", ".", "tools/test_pe_equiv.py"),
     (".", ".", "tools/test_cargo_cell_gen.py"),
+    (".", ".", "tools/test_cell_manifest.py"),
+    (".", ".", "tools/test_media_manifest.py"),
+    (".", ".", "tools/test_sdk_recipe.py"),
     # Upstream triage decides which unmerged commits are BUG ORACLES. Its first draft
     # called 31 of 65 commits oracle hits by counting winetests sources the build does not
     # compile by configuration; the wrong number reads exactly like the right one.

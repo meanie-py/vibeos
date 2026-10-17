@@ -1,7 +1,7 @@
 //! Cargo-driven `bwfm.sys` link (arm64 only: the Wi-Fi SDIO host is published by the
 //! arm64 HAL's ACPI PnP root). Manifest for the shared `reactos-link` engine,
 //! the same shape as beep-cargo: a kernel-mode driver, entry `DriverEntry`,
-//! ntoskrnl + hal import libs (KeStallExecutionProcessor and
+//! ndis (an NDIS 6 miniport) + ntoskrnl + hal import libs (KeStallExecutionProcessor and
 //! KeQueryPerformanceCounter are hal exports).
 
 use reactos_link::{Linker, ModuleKind};
@@ -16,6 +16,7 @@ fn main() {
 
     Linker::new(target_json)
         .rust_staticlib("bwfm-rust")
+        .import_lib("drivers/network/ndis/ndis.spec", "ndis.sys", "ndis")
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .import_lib("hal/hal.spec", "hal.dll", "hal")
         // cmake's kernel-mode links keep every section.

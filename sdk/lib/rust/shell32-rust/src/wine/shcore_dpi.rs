@@ -16,6 +16,11 @@
 #![allow(non_upper_case_globals)]
 
 use crate::types::*;
+// One declaration per external symbol: island.rs.
+use crate::island::FindWindowW;
+use crate::island::GetDC;
+use crate::island::GetWindowRect;
+use crate::island::ReleaseDC;
 use crate::wine::control::GUID;
 use core::mem::size_of;
 use core::ptr::null;
@@ -26,13 +31,7 @@ type PROCESS_DPI_AWARENESS = INT;
 type DEVICE_SCALE_FACTOR = INT;
 
 /// MONITORINFO (winuser.h). 40 bytes on every target.
-#[repr(C)]
-pub struct MONITORINFO {
-    pub cbSize: DWORD,
-    pub rcMonitor: RECT,
-    pub rcWork: RECT,
-    pub dwFlags: DWORD,
-}
+pub use crate::island::MONITORINFO;
 
 /// NOTIFYICONIDENTIFIER (shellapi.h): 28 bytes on 32-bit, 40 on 64-bit.
 #[repr(C)]
@@ -88,8 +87,6 @@ const CLASS_TRAY_NOTIFY: [u16; 14] = wide_nul::<14>("TrayNotifyWnd");
 // GetMonitorInfoW and FindWindowExW are called through crate::island, which already declares
 // them; a second declaration with a different ABI/type spelling trips clashing_extern_declarations.
 extern "system" {
-    fn GetDC(hWnd: HWND) -> HDC;
-    fn ReleaseDC(hWnd: HWND, hDC: HDC) -> INT;
     fn GetDeviceCaps(hdc: HDC, index: INT) -> INT;
     fn SetProcessDpiAwarenessContext(value: HANDLE) -> BOOL;
     fn GetThreadDpiAwarenessContext() -> HANDLE;
@@ -97,19 +94,17 @@ extern "system" {
     fn GetProcessId(process: HANDLE) -> DWORD;
     fn GetCurrentProcessId() -> DWORD;
     fn GetLastError() -> DWORD;
-    fn FindWindowW(lpClassName: LPCWSTR, lpWindowName: LPCWSTR) -> HWND;
-    fn GetWindowRect(hWnd: HWND, lpRect: *mut RECT) -> BOOL;
 }
 
 /// The system DPI from the screen DC, or None if no DC or the device reports no DPI.
 unsafe fn system_dpi() -> Option<(UINT, UINT)> {
-    let dc: HDC = GetDC(core::ptr::null_mut());
+    let dc: HDC = (GetDC(core::ptr::null_mut())).cast();
     if dc.is_null() {
         return None;
     }
     let x = GetDeviceCaps(dc, crate::island::LOGPIXELSX as INT);
     let y = GetDeviceCaps(dc, crate::island::LOGPIXELSY as INT);
-    ReleaseDC(core::ptr::null_mut(), dc);
+    ReleaseDC(core::ptr::null_mut(), (dc).cast());
     if x <= 0 || y <= 0 {
         return None;
     }

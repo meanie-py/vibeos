@@ -453,15 +453,44 @@ def _split_args(text: str, open_idx: int) -> tuple[list[str], int] | None:
     return None
 
 
-def expand(text: str, defs: dict[str, CMacro], depth: int = 16) -> tuple[str, set[str]]:
+_GOTO = re.compile(r"\bgoto\s+[A-Za-z_]\w*")
+
+
+def leaves_caller(m: CMacro) -> bool:
+    """A macro that jumps to a label of the function that USES it (mmc_new's
+    `CHK_HR(stmt) do { hr = (stmt); if (FAILED(hr)) goto CleanUp; } while (0)`).
+
+    No `macro_rules!` port can work: Rust labels are hygienic, so a `break 'CleanUp` written in
+    the macro never names the caller's block, and no parameter can carry a label. The only
+    faithful lowering is the C preprocessor's own -- substitute it into the body before the
+    model sees it, where the goto becomes the body's own control flow.
+    """
+    return m.kind == "macro" and bool(_GOTO.search(_C_LITERAL_OR_COMMENT.sub(" ", m.body)))
+
+
+def _c_string(arg: str) -> str:
+    return '"' + " ".join(arg.split()).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def expand(
+    text: str, defs: dict[str, CMacro], depth: int = 16, *, control_flow: bool = False
+) -> tuple[str, set[str]]:
     """`text` with the module's own expandable macros substituted, and the names expanded.
 
     C's rules where they matter here: arguments are expanded before substitution, a
     parameter is replaced as a whole token, and a macro's name is NOT re-expanded inside its
     own expansion -- `#define SpInfFindFirstLine (SpInfExports.SpInfFindFirstLine)` would
     otherwise nest forever. String literals and comments are never touched.
+
+    `control_flow` expands ONLY the macros that leave the caller (`leaves_caller`), and those
+    with C's whole rule set: a `#param` stringizes the unexpanded argument (imm32's
+    `CHECK_IME_FN(name)` logs `#name`), and a statement body (`do { .. } while (0)`) is not
+    wrapped in parentheses, which would make it an expression C cannot parse.
     """
-    usable = {n: m for n, m in defs.items() if _expandable(m)}
+    if control_flow:
+        usable = {n: m for n, m in defs.items() if leaves_caller(m) and "##" not in m.body}
+    else:
+        usable = {n: m for n, m in defs.items() if _expandable(m)}
     if not usable:
         return text, set()
     used: set[str] = set()
@@ -512,14 +541,44 @@ def expand(text: str, defs: dict[str, CMacro], depth: int = 16) -> tuple[str, se
                 continue
             expanded_args = [run(a, disabled, level + 1) for a in args]
             body = mac.body
+            if control_flow:
+                for p, a in zip(fixed, args, strict=False):
+                    body = re.sub(rf"#\s*{re.escape(p)}\b", lambda _m, a=a: _c_string(a), body)
             for p, a in zip(fixed, expanded_args, strict=False):
-                body = re.sub(rf"\b{re.escape(p)}\b", lambda _m, a=a: a, body)
+                # Outside literals only in the control-flow mode: the plain mode's output is
+                # a banked question, and changing what it substitutes would re-buy bodies.
+                body = (
+                    _substitute_param(body, p, a)
+                    if control_flow
+                    else re.sub(rf"\b{re.escape(p)}\b", lambda _m, a=a: a, body)
+                )
             if variadic:
                 body = body.replace("__VA_ARGS__", ", ".join(expanded_args[len(fixed) :]))
             body = run(body, inner, level + 1)
-            out.append(body if body.startswith("(") and body.endswith(")") else f"({body})")
+            statement = control_flow and (body.startswith(("do", "{")) or ";" in body)
+            out.append(
+                body if statement or (body.startswith("(") and body.endswith(")")) else f"({body})"
+            )
             used.add(mac.name)
             i = end
         return "".join(out)
 
     return run(text, frozenset(), 0), used
+
+
+def _substitute_param(body: str, param: str, arg: str) -> str:
+    """Replace `param` as a whole token, outside string literals: a stringized parameter is
+    already a literal by now, and `"%s lacks x"` must not become `"%s lacks glFinish"`."""
+    out, i = [], 0
+    tok = re.compile(rf"\b{re.escape(param)}\b")
+    for lit in _C_LITERAL_OR_COMMENT.finditer(body):
+        out.append(tok.sub(lambda _m: arg, body[i : lit.start()]))
+        out.append(lit.group(0))
+        i = lit.end()
+    out.append(tok.sub(lambda _m: arg, body[i:]))
+    return "".join(out)
+
+
+def strip_literals(text: str) -> str:
+    """`text` with C comments and string/char literals blanked, for name scans."""
+    return _C_LITERAL_OR_COMMENT.sub(" ", text)

@@ -1,8 +1,5 @@
 spec2def(inetcpl.cpl inetcpl.spec)
 
-file(GLOB inetcpl_rc_deps resources/*.*)
-add_rc_deps(inetcpl.rc ${inetcpl_rc_deps})
-
  # CORE-5743: No ARRAY_SIZE macro
 
 # inetcpl.cpl is all Rust (inetcpl-rust) and cargo links it:
@@ -14,16 +11,9 @@ add_rc_deps(inetcpl.rc ${inetcpl_rc_deps})
 # general.c  # replaced by Rust (sdk/lib/rust/inetcpl-rust/src/inetcpl/general.rs)
 # inetcpl.c  # replaced by Rust (sdk/lib/rust/inetcpl-rust/src/inetcpl/inetcpl.rs)
 # security.c  # replaced by Rust (sdk/lib/rust/inetcpl-rust/src/inetcpl/security.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(inetcpl_res OBJECT inetcpl.rc)
-target_compile_definitions(inetcpl_res PRIVATE UNICODE _UNICODE)
-target_include_directories(inetcpl_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-# How cmake compiled the target's sources, now on the OBJECT libraries.
-set_wine_module_fixme(inetcpl_res)
 add_cargo_module(inetcpl inetcpl-cargo inetcpl.cpl
     KIND win32dll
     BODY_CRATE inetcpl-rust
     DESTINATION reactos/system32
     DELAY_IMPORTS
-    EXTRA_DEPENDS inetcpl_res psdk)
+    EXTRA_DEPENDS psdk)

@@ -732,10 +732,18 @@ fn custom_body(text: &str) -> Option<(String, String)> {
     }
     let raw = re(r"(?m)#[^\n]*").replace_all(&cmds[0].2, "");
     let pat = re(
-        r##"(?s)^\s*OUTPUT \$\{(\w+)\}\s+COMMAND \$\{CMAKE_COMMAND\} -E env\s+CARGO_TARGET_DIR=\$\{(\w+)\}\s+RUSTFLAGS=\$\{(\w+)\}\s+cargo build --release --target \$\{(\w+)\}\s+-p ([\w-]+)\s+--manifest-path \$\{(\w+)\}/Cargo\.toml\s+COMMAND \$\{CMAKE_COMMAND\} -E copy\s+\$\{\2\}/\$\{\4\}/release/(lib\w+\.a)\s+\$\{\1\}\s+DEPENDS \$\{(\w+)\}\s+\$\{\6\}/\5/Cargo\.toml\s+WORKING_DIRECTORY \$\{\6\}\s+COMMENT "[^"]*"\s+VERBATIM\s*$"##,
+        r##"(?s)^\s*OUTPUT \$\{(\w+)\}\s+COMMAND \$\{CMAKE_COMMAND\} -E env\s+CARGO_TARGET_DIR=\$\{(\w+)\}\s+RUSTFLAGS=\$\{(\w+)\}\s+cargo build --release --target \$\{(\w+)\}\s+-p ([\w-]+)\s+--manifest-path \$\{(\w+)\}/Cargo\.toml\s+COMMAND \$\{CMAKE_COMMAND\} -E copy\s+\$\{(\w+)\}/\$\{(\w+)\}/release/(lib\w+\.a)\s+\$\{(\w+)\}\s+DEPENDS \$\{(\w+)\}\s+\$\{(\w+)\}/([\w-]+)/Cargo\.toml\s+WORKING_DIRECTORY \$\{(\w+)\}\s+COMMENT "[^"]*"\s+VERBATIM\s*$"##,
     );
     let c = pat.captures(&raw)?;
-    let archive = c[7].to_owned();
+    // The Python spells these as backreferences (\2 \4 \1 \6 \5 \6), which the
+    // regex crate does not support; compare the repeated groups here instead.
+    if [(7, 2), (8, 4), (10, 1), (12, 6), (13, 5), (14, 6)]
+        .iter()
+        .any(|&(again, first)| c[again] != c[first])
+    {
+        return None;
+    }
+    let archive = c[9].to_owned();
     let arch_values = |var: &str| -> Option<BTreeMap<String, String>> {
         let mut arch: Option<String> = None;
         let mut values = BTreeMap::new();
@@ -839,28 +847,54 @@ fn hand_engine_lib(lib: &str) -> bool {
         .expect("engine catalog parsed by model")
         .contains_key(lib)
 }
+/// `CMakeFiles/<target>.dir/` -> the files whose compile command names it, per
+/// compile database. The database is tens of MB and placeholder_archive asks once
+/// per archive per target per arch; re-parsing it each time made this rule take
+/// ~17 minutes where the Python took ~23 s.
+fn compile_db_index(
+    repo: &Path,
+    arch: &str,
+) -> Result<std::sync::Arc<BTreeMap<String, Vec<String>>>, String> {
+    static CACHE: LazyLock<
+        std::sync::Mutex<BTreeMap<PathBuf, std::sync::Arc<BTreeMap<String, Vec<String>>>>>,
+    > = LazyLock::new(Default::default);
+    let db = repo.join(format!("build-{arch}/compile_commands.json"));
+    if let Some(hit) = CACHE.lock().unwrap().get(&db) {
+        return Ok(hit.clone());
+    }
+    let value: serde_json::Value =
+        serde_json::from_str(&read(&db)?).map_err(|e| format!("{}: {e}", db.display()))?;
+    let dir = re(r"CMakeFiles/(\w+)\.dir/");
+    let mut index: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for row in value.as_array().into_iter().flatten() {
+        let cmd = row.get("command").and_then(|x| x.as_str()).unwrap_or("");
+        let Some(file) = row.get("file").and_then(|x| x.as_str()) else {
+            continue;
+        };
+        let names: BTreeSet<&str> = dir
+            .captures_iter(cmd)
+            .map(|m| m.get(1).unwrap().as_str())
+            .collect();
+        for name in names {
+            index
+                .entry(name.to_owned())
+                .or_default()
+                .push(file.to_owned());
+        }
+    }
+    let index = std::sync::Arc::new(index);
+    CACHE.lock().unwrap().insert(db, index.clone());
+    Ok(index)
+}
+
 fn placeholder_archive(repo: &Path, arch: &str, lib: &str) -> Result<bool, String> {
     let Some(c) = re(r"(?:.*/)?lib(\w+)\.a$").captures(lib) else {
         return Ok(false);
     };
-    let db = repo.join(format!("build-{arch}/compile_commands.json"));
-    let value: serde_json::Value =
-        serde_json::from_str(&read(&db)?).map_err(|e| format!("{}: {e}", db.display()))?;
-    let marker = format!("CMakeFiles/{}.dir/", &c[1]);
-    let mut files = Vec::new();
-    if let Some(rows) = value.as_array() {
-        for row in rows {
-            let cmd = row.get("command").and_then(|x| x.as_str()).unwrap_or("");
-            if cmd.contains(&marker) {
-                if let Some(file) = row.get("file").and_then(|x| x.as_str()) {
-                    files.push(file.to_owned())
-                }
-            }
-        }
-    }
-    if files.is_empty() {
+    let index = compile_db_index(repo, arch)?;
+    let Some(files) = index.get(&c[1]) else {
         return Ok(false);
-    }
+    };
     for f in files {
         if !f.ends_with(".c") {
             return Ok(false);
@@ -1109,7 +1143,9 @@ fn model_convertible(
                 });
                 continue;
             }
-            if let Some(m) = re(r"CMakeFiles/lib(\w+)_delayed\.dir/lib\1_delayed\.a$").captures(lib)
+            if let Some(m) = re(r"CMakeFiles/lib(\w+)_delayed\.dir/lib(\w+)_delayed\.a$")
+                .captures(lib)
+                .filter(|m| m[1] == m[2])
             {
                 let base = m[1].to_lowercase();
                 if !specs.get(&base).is_some_and(Option::is_some) {
@@ -1127,7 +1163,10 @@ fn model_convertible(
                 sequence.push(format!("import:{base}"));
                 continue;
             }
-            if let Some(m) = re(r"CMakeFiles/lib(\w+)\.dir/lib\1\.a$").captures(lib) {
+            if let Some(m) = re(r"CMakeFiles/lib(\w+)\.dir/lib(\w+)\.a$")
+                .captures(lib)
+                .filter(|m| m[1] == m[2])
+            {
                 let base = m[1].to_lowercase();
                 if !specs.get(&base).is_some_and(Option::is_some) {
                     return Err(format!(
@@ -1584,6 +1623,42 @@ fn pe_imports_exports(path: &Path) -> Result<(BTreeSet<String>, BTreeSet<String>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn custom_body_matches_without_backreferences() {
+        let body = |copy_dir: &str| {
+            format!(
+                r#"if(ARCH STREQUAL "i386")
+    set(T i686-pc-windows-gnu)
+    set(RF "-Ctarget-feature=+crt-static")
+elseif(ARCH STREQUAL "amd64")
+    set(T x86_64-pc-windows-gnu)
+    set(RF "")
+elseif(ARCH STREQUAL "arm64")
+    set(T aarch64-pc-windows-gnullvm)
+    set(RF "")
+endif()
+set(LIB "${{CMAKE_CURRENT_BINARY_DIR}}/libfoo_rust.a")
+add_custom_command(
+    OUTPUT ${{LIB}}
+    COMMAND ${{CMAKE_COMMAND}} -E env CARGO_TARGET_DIR=${{TD}} RUSTFLAGS=${{RF}}
+        cargo build --release --target ${{T}} -p foo-rust --manifest-path ${{WS}}/Cargo.toml
+    COMMAND ${{CMAKE_COMMAND}} -E copy ${{{copy_dir}}}/${{T}}/release/libfoo_rust.a ${{LIB}}
+    DEPENDS ${{SRCS}} ${{WS}}/foo-rust/Cargo.toml
+    WORKING_DIRECTORY ${{WS}}
+    COMMENT "Building foo-rust"
+    VERBATIM)
+add_custom_target(rust_foo DEPENDS ${{LIB}})
+"#
+            )
+        };
+        assert_eq!(
+            custom_body(&body("TD")),
+            Some(("foo-rust".to_owned(), "libfoo_rust.a".to_owned()))
+        );
+        // The copy must read the same CARGO_TARGET_DIR the build wrote.
+        assert_eq!(custom_body(&body("OTHER")), None);
+    }
     use std::time::{SystemTime, UNIX_EPOCH};
 
     struct Temp(PathBuf);

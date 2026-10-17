@@ -8,13 +8,8 @@ spec2def(storprop.dll storprop.spec)
 # dvd.c  # replaced by Rust (sdk/lib/rust/storprop-rust/src/storprop/dvd.rs)
 # ide.c  # replaced by Rust (sdk/lib/rust/storprop-rust/src/storprop/ide.rs)
 # storprop.c  # replaced by Rust (sdk/lib/rust/storprop-rust/src/storprop/storprop.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(storprop_res OBJECT storprop.rc)
-target_compile_definitions(storprop_res PRIVATE UNICODE _UNICODE)
-target_include_directories(storprop_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(storprop storprop-cargo storprop.dll
     KIND win32dll
     BODY_CRATE storprop-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS storprop_res)
+    EXTRA_DEPENDS psdk)

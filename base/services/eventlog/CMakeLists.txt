@@ -14,17 +14,8 @@ add_rpc_files(server ${REACTOS_SOURCE_DIR}/sdk/include/reactos/idl/eventlogrpc.i
 # logport.c  # replaced by Rust (sdk/lib/rust/eventlog-rust/src/eventlog/logport.rs)
 # rpc.c  # replaced by Rust (sdk/lib/rust/eventlog-rust/src/eventlog/rpc.rs)
 # file.c  # replaced by Rust (sdk/lib/rust/eventlog-rust/src/eventlog/file.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(eventlog_shims OBJECT ${CMAKE_CURRENT_BINARY_DIR}/eventlogrpc_s.c)
-target_link_libraries(eventlog_shims PRIVATE evtlib libadvapi32 librpcrt4 libmsvcrt libkernel32 libntdll)
-target_compile_definitions(eventlog_shims PRIVATE UNICODE _UNICODE)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(eventlog_res OBJECT eventlog.rc)
-target_compile_definitions(eventlog_res PRIVATE UNICODE _UNICODE)
-target_include_directories(eventlog_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(eventlog eventlog-cargo eventlog.exe
     KIND win32exe
     BODY_CRATE eventlog-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS eventlog_shims eventlog_res xdk)
+    EXTRA_DEPENDS xdk psdk evtlib libadvapi32 librpcrt4 libmsvcrt libkernel32 libntdll ${REACTOS_BINARY_DIR}/base/services/eventlog/eventlogrpc_s.c)

@@ -129,25 +129,29 @@ def _decl_file(decl: dict) -> str | None:
     return _loc(decl.get("loc", {})).get("_file")
 
 
-def enum_constants(ast: dict) -> dict[str, tuple[int, str]]:
+def enum_constants(ast: dict) -> dict[str, tuple[int | None, str]]:
     """EnumConstantDecl id -> (value, the enum's tag). An explicit initializer carries its
-    evaluated value; an implicit one is the previous constant + 1."""
-    out: dict[str, tuple[int, str]] = {}
+    evaluated value; an implicit one is the previous constant + 1.
+
+    A value clang did not evaluate is None, and so is every implicit successor of it. That is
+    an error only where a table USES the constant (`_int_value`). Failing on the whole include
+    closure refused cdrom's data.c and guid.c over iotypes.h's `ContinueCompletion =
+    STATUS_CONTINUE_COMPLETION`, a cast that clang leaves unevaluated and neither file reads.
+    """
+    out: dict[str, tuple[int | None, str]] = {}
     for d in ast.get("inner", []):
         if d.get("kind") != "EnumDecl":
             continue
-        nxt = 0
+        nxt: int | None = 0
         for c in d.get("inner", []):
             if c.get("kind") != "EnumConstantDecl":
                 continue
             exprs = [i for i in c.get("inner", []) if not i.get("kind", "").endswith("Comment")]
             vals = [i["value"] for i in exprs if "value" in i]
-            if exprs and not vals:
-                raise DataPortError(f"enum constant {c.get('name')}: no evaluated value in the AST")
-            v = int(vals[0]) if vals else nxt
+            v = int(vals[0]) if vals else (None if exprs else nxt)
             out[c["id"]] = (v, d.get("name", ""))
             out[c["name"]] = (v, d.get("name", ""))
-            nxt = v + 1
+            nxt = None if v is None else v + 1
     return out
 
 
@@ -483,7 +487,7 @@ def _strip(node: dict) -> tuple[dict, set[str]]:
     return node, kinds
 
 
-_ENUMS: dict[str, tuple[int, str]] = {}
+_ENUMS: dict[str, tuple[int | None, str]] = {}
 _TYPEDEFS: dict[str, str] = {}
 
 
@@ -691,7 +695,10 @@ def clang_int(node: dict, root: bool = True) -> int:
         ref = n["referencedDecl"]
         if ref["id"] not in _ENUMS:
             raise DataPortError(f"enum constant {ref.get('name')}: its EnumDecl is not top-level")
-        return _ENUMS[ref["id"]][0]
+        value = _ENUMS[ref["id"]][0]
+        if value is None:
+            raise DataPortError(f"enum constant {ref.get('name')}: no evaluated value in the AST")
+        return value
     raise DataPortError(f"{k} is not an integer constant")
 
 
@@ -1292,12 +1299,19 @@ def tables(
         )
     lengths = _island_lengths(crate_src, arch)
     for t in out:
-        if t.linkage == "extern" and t.name in lengths and lengths[t.name] != t.length:
+        if t.linkage == "extern" and _island_length_disagrees(lengths.get(t.name), t.length):
             raise DataPortError(
                 f"{t.name}: the C defines {t.length} elements but the crate island declares "
                 f"{lengths[t.name]} ({arch}) -- the island is stale or the TU's flags differ"
             )
     return out
+
+
+def _island_length_disagrees(island: int | None, defined: int | None) -> bool:
+    """Whether the island's array length contradicts the C definition's. A 0 is bindgen's
+    spelling of an incomplete declaration (`extern T x[];`, cdrom.h's CdromHackItems), which
+    any definition completes; only a nonzero length can disagree."""
+    return island not in (None, 0) and island != defined
 
 
 # Each helper is a macro (textual scope: emitted at the top of mod.rs, before every table
@@ -1512,7 +1526,9 @@ def render_module(tu: Path, tabs: list[Table], repo: Path, public: bool = False)
     if mods:
         top += "\n#[allow(unused_imports)]\n" + "".join(f"pub(super) use {m}::*;\n" for m in mods)
     files["mod.rs"] = top
-    return files
+    # One trailing newline: with no header modules, `top` ended in a blank line, which
+    # `git diff --check` refuses (cdrom's data.c).
+    return {name: text.rstrip("\n") + "\n" for name, text in files.items()}
 
 
 _CFG_ARCH = {"i386": "x86", "amd64": "x86_64", "arm64": "aarch64"}

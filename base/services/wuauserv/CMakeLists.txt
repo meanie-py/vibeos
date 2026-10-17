@@ -5,13 +5,8 @@ spec2def(wuauserv.dll wuauserv.spec ADD_IMPORTLIB)
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # wuauserv.c  # replaced by Rust (sdk/lib/rust/wuauserv-rust/src/wuauserv/wuauserv.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(wuauserv_res OBJECT wuauserv.rc)
-target_compile_definitions(wuauserv_res PRIVATE UNICODE _UNICODE)
-target_include_directories(wuauserv_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(wuauserv wuauserv-cargo wuauserv.dll
     KIND win32dll
     BODY_CRATE wuauserv-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS wuauserv_res)
+    EXTRA_DEPENDS psdk)

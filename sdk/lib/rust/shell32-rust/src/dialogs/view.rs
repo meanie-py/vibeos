@@ -82,8 +82,8 @@ unsafe extern "C" fn ViewDlg_OnTreeViewClick(hwndDlg: HWND) {
         core::mem::size_of::<TV_HITTESTINFO>(),
     );
     let dwPos: u32 = GetMessagePos();
-    HitTest.pt.x = GET_X_LPARAM((dwPos) as isize);
-    HitTest.pt.y = GET_Y_LPARAM((dwPos) as isize);
+    HitTest.pt.x = GET_X_LPARAM(((dwPos) as isize) as _);
+    HitTest.pt.y = GET_Y_LPARAM(((dwPos) as isize) as _);
     ScreenToClient(hwndTreeView, &mut HitTest.pt as *mut POINT);
     let hItem = TreeView_HitTest(hwndTreeView, &mut HitTest as *mut TV_HITTESTINFO);
     if ViewDlg_ToggleCheckItem(hwndDlg, hItem) != 0 {
@@ -165,9 +165,9 @@ pub unsafe extern "C" fn PostCabinetMessage(Msg: u32, wParam: usize, lParam: cra
     let mut data: MSG = core::mem::zeroed();
     data.message = Msg;
     data.wParam = wParam;
-    data.lParam = lParam;
+    data.lParam = (lParam) as _;
     let lparam_ptr = core::ptr::addr_of_mut!(data) as crate::shellcom::LPARAM;
-    EnumWindows(PostCabinetMessageCallback, lparam_ptr);
+    EnumWindows(Some(PostCabinetMessageCallback), lparam_ptr);
 }
 unsafe extern "C" fn ViewDlg_Apply(hwndDlg: HWND) {
     let pRTO = GetRegTreeOptions(hwndDlg);
@@ -200,7 +200,7 @@ pub unsafe extern "system" fn FolderOptionsViewDlg(
 ) -> INT_PTR {
     match uMsg {
         WM_INITDIALOG => {
-            return (ViewDlg_OnInitDialog(hwndDlg, lParam as *mut PROPSHEETPAGE)) as isize;
+            return ((ViewDlg_OnInitDialog(hwndDlg, lParam as *mut PROPSHEETPAGE))) as INT_PTR;
         }
         WM_DESTROY => {
             ViewDlg_OnDestroy(hwndDlg);
@@ -237,8 +237,8 @@ pub unsafe extern "system" fn FolderOptionsViewDlg(
                 }
                 NM_CUSTOMDRAW => {
                     let result = ViewDlg_OnTreeCustomDraw(hwndDlg, lParam as *mut NMTVCUSTOMDRAW);
-                    SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, result);
-                    return result;
+                    SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, (result) as _);
+                    return (result) as INT_PTR;
                 }
                 TVN_KEYDOWN => {
                     ViewDlg_OnTreeViewKeyDown(hwndDlg, lParam as *mut TV_KEYDOWN);
@@ -251,5 +251,5 @@ pub unsafe extern "system" fn FolderOptionsViewDlg(
         }
         _ => {}
     }
-    (FALSE) as isize
+    ((FALSE) as isize) as _
 }

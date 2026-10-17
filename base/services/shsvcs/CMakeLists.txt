@@ -7,13 +7,8 @@ spec2def(shsvcs.dll shsvcs.spec ADD_IMPORTLIB)
 # shsvcs.c  # replaced by Rust (sdk/lib/rust/shsvcs-rust/src/shsvcs/shsvcs.rs)
 # thmsvc.c  # replaced by Rust (sdk/lib/rust/shsvcs-rust/src/shsvcs/thmsvc.rs)
 # thmserver.c  # replaced by Rust (sdk/lib/rust/shsvcs-rust/src/shsvcs/thmserver.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(shsvcs_res OBJECT shsvcs.rc)
-target_compile_definitions(shsvcs_res PRIVATE UNICODE _UNICODE)
-target_include_directories(shsvcs_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(shsvcs shsvcs-cargo shsvcs.dll
     KIND win32dll
     BODY_CRATE shsvcs-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS shsvcs_res psdk)
+    EXTRA_DEPENDS psdk)

@@ -1,0 +1,2 @@
+# evtlib (i386), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+c	sdk/lib/evtlib/evtlib_rust_stub.c	@build/sdk/lib/evtlib sdk/lib/evtlib @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 @core	WINVER=0x502 _WIN32_WINNT=0x502

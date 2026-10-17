@@ -1,4 +1,3 @@
-
 # FULL flip + CARGO-DRIVEN LINK. Both userinit .c files are replaced by Rust
 # (userinit-rust), and the userinit.exe LINK is now driven by cargo
 # (userinit-cargo → reactos-link ModuleKind::Win32Exe) instead of cmake
@@ -12,9 +11,6 @@
 # it via a resource-only OBJECT library; the cargo link reuses the .res through
 # reactos-link .resource_built(). (This is the reusable .res pattern for the GUI
 # spine binaries.)
-add_library(userinit_res OBJECT userinit.rc)
-target_compile_definitions(userinit_res PRIVATE UNICODE _UNICODE)
-target_include_directories(userinit_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 # The CRT statics + libwine.a the cargo link reuses live in sdk/lib,
 # which configure after base/, so DEPENDS on their .a FILE paths for
@@ -27,4 +23,4 @@ add_cargo_module(userinit userinit-cargo userinit.exe
     KIND win32exe
     BODY_CRATE userinit-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS userinit_res)
+    EXTRA_DEPENDS psdk)

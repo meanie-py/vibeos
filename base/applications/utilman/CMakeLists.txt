@@ -1,4 +1,3 @@
-add_rc_deps(utilman.rc ${CMAKE_CURRENT_SOURCE_DIR}/res/utilman.ico)
 add_subdirectory(umandlg)
 
 # utilman.exe is all Rust (utilman-rust) and cargo links it:
@@ -6,13 +5,8 @@ add_subdirectory(umandlg)
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # utilman.c  # replaced by Rust (sdk/lib/rust/utilman-rust/src/utilman/utilman.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(utilman_res OBJECT utilman.rc)
-target_compile_definitions(utilman_res PRIVATE UNICODE _UNICODE)
-target_include_directories(utilman_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(utilman utilman-cargo utilman.exe
     KIND win32exe
     BODY_CRATE utilman-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS utilman_res)
+    EXTRA_DEPENDS psdk)

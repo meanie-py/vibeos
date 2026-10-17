@@ -82,7 +82,7 @@ unsafe extern "C" fn IntSetShellStateSettings(bDoubleClick: i32, bUseCommonTasks
     let mut shellstate: SHELLSTATE = core::mem::zeroed();
     shellstate.set_fDoubleClickInWebView(if bDoubleClick != 0 { 1 } else { 0 });
     shellstate.set_fWebView(if bUseCommonTasks != 0 { 1 } else { 0 });
-    SHGetSetSettings(core::ptr::addr_of_mut!(shellstate), SSF_DOUBLECLICKINWEBVIEW | SSF_WEBVIEW, (TRUE) as i32);
+    SHGetSetSettings((core::ptr::addr_of_mut!(shellstate)).cast(), SSF_DOUBLECLICKINWEBVIEW | SSF_WEBVIEW, (TRUE) as i32);
     (TRUE) as i32
 }
 #[no_mangle]
@@ -323,7 +323,7 @@ unsafe extern "C" fn GeneralDlg_StoreToUI(
 }
 unsafe extern "C" fn GeneralDlg_OnInitDialog(hwndDlg: HWND, pGeneral: PGENERAL_DIALOG) -> BOOL {
     let mut ss: SHELLSTATE = core::mem::zeroed();
-    SHGetSetSettings(core::ptr::addr_of_mut!(ss), SSF_DOUBLECLICKINWEBVIEW | SSF_WEBVIEW, (FALSE) as i32);
+    SHGetSetSettings((core::ptr::addr_of_mut!(ss)).cast(), SSF_DOUBLECLICKINWEBVIEW | SSF_WEBVIEW, (FALSE) as i32);
     let bDoubleClick = (ss.fDoubleClickInWebView() != 0) as u8;
     let bUseCommonTasks = (ss.fWebView() != 0) as u8;
     let bUnderlineHover = (IntGetRawIconUnderlineValue() == UNDERLINE_HOVER) as u8;

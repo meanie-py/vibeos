@@ -812,6 +812,11 @@ pub fn MI_IS_PAGE_TABLE_OR_HYPER_ADDRESS(address: PVOID) -> bool {
 
 #[inline]
 pub unsafe fn MI_WRITE_INVALID_PDE(pointer_pde: PMMPTE, invalid_pde: MMPTE) {
+    // miarm.h's ASSERTs, restored; ntkrnl_sys::ASSERT! prints and continues as the C does.
+    ntkrnl_sys::ASSERT!(!invalid_pde.valid());
+    ntkrnl_sys::ASSERT!(invalid_pde.Long != 0);
+    #[cfg(target_arch = "x86_64")]
+    ntkrnl_sys::ASSERT!(invalid_pde.soft_protection() == MM_EXECUTE_READWRITE as ULONG);
     *pointer_pde = invalid_pde;
 }
 
@@ -869,6 +874,7 @@ pub unsafe fn MI_MAKE_PROTOTYPE_PTE(new_pte: PMMPTE, pointer_pte: PMMPTE) {
         //    NewPte->u.Proto.Prototype = 1;  (bit 10)
         (*new_pte).Long = ((pointer_pte as u64) << 16) as ULONG_PTR;
         (*new_pte).Long |= (1 << 10); // Prototype bit
+        ntkrnl_sys::ASSERT!(MiProtoPteToPte(new_pte) == pointer_pte);
     }
     #[cfg(target_arch = "x86")]
     {
@@ -887,6 +893,18 @@ pub unsafe fn MI_MAKE_PROTOTYPE_PTE(new_pte: PMMPTE, pointer_pte: PMMPTE) {
     }
 }
 
+/// The real thing, not a stub: this was an empty function, and pagfault.rs's two
+/// i386 calls (a fault on a system page-table address) resolve here through
+/// `use super::helpers::*`, so the PDE copy from the system page directory the C
+/// does there never happened. The C result is unused at both sites.
+#[cfg(target_arch = "x86")]
+#[inline]
+pub unsafe fn MiSynchronizeSystemPde(pde: PMMPTE) {
+    let _ = ntkrnl_sys::inline::mm::MiSynchronizeSystemPde(pde as ntkrnl_sys::ddk::PMMPDE);
+}
+/// 3+-level paging shares the system PDEs; the C only calls this when
+/// `_MI_PAGING_LEVELS < 3`.
+#[cfg(not(target_arch = "x86"))]
 #[inline]
 pub unsafe fn MiSynchronizeSystemPde(_pde: PMMPTE) {}
 
@@ -1068,7 +1086,10 @@ pub unsafe extern "C" fn MiDereferencePfnAndDropLockCount(Pfn1: *mut _MMPFN) {
     if RefCount == 2 {
         if (*pfn).share_count() >= 1 {
             ASSERT!((*pfn).page_location() == ActiveAndValid);
-            // Prototype PTE check — ASSERT(FALSE) in C, skip for now
+            // C: a prototype page here would need its commit returned -- ASSERT(FALSE).
+            ntkrnl_sys::ASSERT!(
+                !((*pfn).prototype_pte() && (*pfn).original_pte().prototype())
+            );
             InterlockedDecrementSizeT(core::ptr::addr_of_mut!(MmSystemLockPagesCount));
         }
     }
@@ -1103,6 +1124,14 @@ pub unsafe extern "C" fn MiDecrementPageTableReferences(Address: PVOID) -> USHOR
 pub unsafe extern "C" fn MiDecrementPageTableReferences(Address: PVOID) -> USHORT {
     let Address = opaque_ptr(Address);
     let PointerPde = MiAddressToPde(Address);
+    ntkrnl_sys::ASSERT!(PointerPde as usize != 0xFFFF_F6FB_7DBE_DF68 /* PXE_SELFMAP */);
+    {
+        let thread = PsGetCurrentThread() as ntkrnl_sys::ddk::PETHREAD;
+        ntkrnl_sys::ASSERT!(
+            (*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetExclusive() != 0
+        );
+    }
+    ntkrnl_sys::ASSERT!((*PointerPde).valid());
     let Pfn = MiGetPfnEntry(PFN_FROM_PTE(PointerPde));
     ASSERT!(!Pfn.is_null());
     let val = mmpfn_used_page_table_entries(Pfn);

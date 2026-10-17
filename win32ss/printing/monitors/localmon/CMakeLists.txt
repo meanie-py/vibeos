@@ -10,13 +10,8 @@ spec2def(localmon.dll localmon.spec ADD_IMPORTLIB)
 # ports.c  # replaced by Rust (sdk/lib/rust/localmon-rust/src/localmon/ports.rs)
 # tools.c  # replaced by Rust (sdk/lib/rust/localmon-rust/src/localmon/tools.rs)
 # xcv.c  # replaced by Rust (sdk/lib/rust/localmon-rust/src/localmon/xcv.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(localmon_res OBJECT localmon.rc)
-target_compile_definitions(localmon_res PRIVATE UNICODE _UNICODE)
-target_include_directories(localmon_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(localmon localmon-cargo localmon.dll
     KIND win32dll
     BODY_CRATE localmon-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS localmon_res psdk)
+    EXTRA_DEPENDS psdk)

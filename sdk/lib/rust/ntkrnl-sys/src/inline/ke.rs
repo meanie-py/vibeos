@@ -389,6 +389,18 @@ unsafe fn kthread_kernel_apc_disable(thread: ddk::PKTHREAD) -> *mut i16 {
     { core::ptr::addr_of_mut!((*thread).__bindgen_anon_5.__bindgen_anon_8.__bindgen_anon_1.__bindgen_anon_1.KernelApcDisable) }
 }
 
+/// C `(KeGetCurrentIrql() == APC_LEVEL) || Thread->SpecialApcDisable < 0 ||
+/// Thread->Teb == NULL || Thread->Teb >= MM_SYSTEM_RANGE_START` (ke_x.h guarded
+/// mutex Unsafe variants).
+#[inline(always)]
+unsafe fn guarded_mutex_unsafe_ok(thread: ddk::PKTHREAD) -> bool {
+    let teb = (*thread).Teb as usize;
+    crate::ke::KeGetCurrentIrql() == crate::base::APC_LEVEL
+        || *kthread_special_apc_disable_ptr(thread) < 0
+        || teb == 0
+        || teb >= crate::mm::MmSystemRangeStart as usize
+}
+
 /// Get pointer to KTHREAD.SpecialApcDisable (SHORT).
 #[inline(always)]
 unsafe fn kthread_special_apc_disable_ptr(thread: ddk::PKTHREAD) -> *mut i16 {
@@ -1090,7 +1102,6 @@ unsafe fn dh_set_inserted(header: *mut ddk::_DISPATCHER_HEADER, val: u8) {
 }
 
 /// KTHREAD.State reader (mirror of kt_set_state).
-#[cfg(feature = "smp")]
 #[inline]
 pub unsafe fn kt_state_read(thread: ddk::PKTHREAD) -> u8 {
     #[cfg(target_arch = "x86")]
@@ -1250,6 +1261,7 @@ pub unsafe fn KiAcquireThreadLock(_thread: ddk::PKTHREAD) {}
 #[cfg(feature = "smp")]
 #[inline]
 pub unsafe fn KiAcquireThreadLock(thread: ddk::PKTHREAD) {
+    crate::ASSERT!(crate::ke::KeGetCurrentIrql() >= crate::base::DISPATCH_LEVEL);
     smp_simple_lock_acquire(core::ptr::addr_of_mut!((*thread).ThreadLock) as *mut i32);
 }
 
@@ -1262,6 +1274,7 @@ pub unsafe fn KiReleaseThreadLock(_thread: ddk::PKTHREAD) {}
 #[cfg(feature = "smp")]
 #[inline]
 pub unsafe fn KiReleaseThreadLock(thread: ddk::PKTHREAD) {
+    crate::ASSERT!(crate::ke::KeGetCurrentIrql() >= crate::base::DISPATCH_LEVEL);
     smp_simple_lock_release(core::ptr::addr_of_mut!((*thread).ThreadLock) as *mut i32);
 }
 
@@ -1275,6 +1288,7 @@ pub unsafe fn KiAcquireDispatcherObject(_object: *mut ddk::_DISPATCHER_HEADER) {
 #[inline]
 pub unsafe fn KiAcquireDispatcherObject(object: *mut ddk::_DISPATCHER_HEADER) {
     use core::sync::atomic::{AtomicI32, Ordering};
+    crate::ASSERT!(crate::ke::KeGetCurrentIrql() >= crate::base::DISPATCH_LEVEL);
     let lock = &*(core::ptr::addr_of_mut!((*object).__bindgen_anon_1.Lock) as *const AtomicI32);
     loop {
         let old = loop {
@@ -1303,6 +1317,7 @@ pub unsafe fn KiReleaseDispatcherObject(_object: *mut ddk::_DISPATCHER_HEADER) {
 #[inline]
 pub unsafe fn KiReleaseDispatcherObject(object: *mut ddk::_DISPATCHER_HEADER) {
     use core::sync::atomic::{AtomicI32, Ordering};
+    crate::ASSERT!(crate::ke::KeGetCurrentIrql() >= crate::base::DISPATCH_LEVEL);
     (&*(core::ptr::addr_of_mut!((*object).__bindgen_anon_1.Lock) as *const AtomicI32))
         .fetch_and(!KOBJECT_LOCK_BIT, Ordering::SeqCst);
 }
@@ -1310,12 +1325,15 @@ pub unsafe fn KiReleaseDispatcherObject(object: *mut ddk::_DISPATCHER_HEADER) {
 /// KiAcquireDispatcherLockAtSynchLevel — UP: no-op.
 #[cfg(not(feature = "smp"))]
 #[inline]
-pub unsafe fn KiAcquireDispatcherLockAtSynchLevel() {}
+pub unsafe fn KiAcquireDispatcherLockAtSynchLevel() {
+    crate::ASSERT!(crate::ke::KeGetCurrentIrql() >= SYNCH_LEVEL);
+}
 
 /// KiAcquireDispatcherLockAtSynchLevel — SMP: queued dispatcher lock at DPC level.
 #[cfg(feature = "smp")]
 #[inline]
 pub unsafe fn KiAcquireDispatcherLockAtSynchLevel() {
+    crate::ASSERT!(crate::ke::KeGetCurrentIrql() >= SYNCH_LEVEL);
     ddk::KeAcquireQueuedSpinLockAtDpcLevel(core::ptr::addr_of_mut!(
         (*KeGetCurrentPrcb()).LockQueue[LOCK_QUEUE_DISPATCHER_LOCK]
     ));
@@ -1358,6 +1376,7 @@ pub unsafe fn KiSetThreadSwapBusy(_thread: ddk::PKTHREAD) {}
 #[cfg(feature = "smp")]
 #[inline]
 pub unsafe fn KiSetThreadSwapBusy(thread: ddk::PKTHREAD) {
+    crate::ASSERT!((*thread).SwapBusy == 0);
     (*thread).SwapBusy = 1;
 }
 
@@ -1370,6 +1389,7 @@ pub unsafe fn KiAcquirePrcbLock(_prcb: ddk::PKPRCB) {}
 #[cfg(feature = "smp")]
 #[inline]
 pub unsafe fn KiAcquirePrcbLock(prcb: ddk::PKPRCB) {
+    crate::ASSERT!(crate::ke::KeGetCurrentIrql() >= crate::base::DISPATCH_LEVEL);
     smp_simple_lock_acquire(core::ptr::addr_of_mut!((*prcb).PrcbLock) as *mut i32);
 }
 
@@ -1382,6 +1402,8 @@ pub unsafe fn KiReleasePrcbLock(_prcb: ddk::PKPRCB) {}
 #[cfg(feature = "smp")]
 #[inline]
 pub unsafe fn KiReleasePrcbLock(prcb: ddk::PKPRCB) {
+    crate::ASSERT!(crate::ke::KeGetCurrentIrql() >= crate::base::DISPATCH_LEVEL);
+    crate::ASSERT!((*prcb).PrcbLock != 0);
     smp_simple_lock_release(core::ptr::addr_of_mut!((*prcb).PrcbLock) as *mut i32);
 }
 
@@ -1455,6 +1477,7 @@ pub unsafe fn KiRequestApcInterrupt(need_apc: BOOLEAN, processor: UCHAR) {
 #[cfg(not(feature = "smp"))]
 #[inline]
 pub unsafe fn KiAcquireTimerLock(_hand: ULONG) -> ddk::PKSPIN_LOCK_QUEUE {
+    crate::ASSERT!(crate::ke::KeGetCurrentIrql() >= crate::base::DISPATCH_LEVEL);
     core::ptr::null_mut()
 }
 
@@ -1462,6 +1485,7 @@ pub unsafe fn KiAcquireTimerLock(_hand: ULONG) -> ddk::PKSPIN_LOCK_QUEUE {
 #[cfg(feature = "smp")]
 #[inline]
 pub unsafe fn KiAcquireTimerLock(hand: ULONG) -> ddk::PKSPIN_LOCK_QUEUE {
+    crate::ASSERT!(crate::ke::KeGetCurrentIrql() >= crate::base::DISPATCH_LEVEL);
     let lock_index =
         ((hand >> LOCK_QUEUE_TIMER_LOCK_SHIFT) & (LOCK_QUEUE_TIMER_TABLE_LOCKS - 1)) as usize;
     let lock_queue = core::ptr::addr_of_mut!(
@@ -1474,12 +1498,15 @@ pub unsafe fn KiAcquireTimerLock(hand: ULONG) -> ddk::PKSPIN_LOCK_QUEUE {
 /// KiReleaseTimerLock — UP: no-op.
 #[cfg(not(feature = "smp"))]
 #[inline]
-pub unsafe fn KiReleaseTimerLock(_lock_queue: ddk::PKSPIN_LOCK_QUEUE) {}
+pub unsafe fn KiReleaseTimerLock(_lock_queue: ddk::PKSPIN_LOCK_QUEUE) {
+    crate::ASSERT!(crate::ke::KeGetCurrentIrql() >= crate::base::DISPATCH_LEVEL);
+}
 
 /// KiReleaseTimerLock — SMP: release the timer-table queued lock.
 #[cfg(feature = "smp")]
 #[inline]
 pub unsafe fn KiReleaseTimerLock(lock_queue: ddk::PKSPIN_LOCK_QUEUE) {
+    crate::ASSERT!(crate::ke::KeGetCurrentIrql() >= crate::base::DISPATCH_LEVEL);
     ddk::KeReleaseQueuedSpinLockFromDpcLevel(lock_queue);
 }
 
@@ -1811,6 +1838,7 @@ pub unsafe fn KiAcquireApcLockAtSynchLevel(
     thread: ddk::PKTHREAD,
     handle: ddk::PKLOCK_QUEUE_HANDLE,
 ) {
+    crate::ASSERT!(crate::ke::KeGetCurrentIrql() >= SYNCH_LEVEL);
     KeAcquireInStackQueuedSpinLockAtDpcLevel(
         core::ptr::addr_of_mut!((*thread).ApcQueueLock) as *mut ULONG_PTR,
         handle,
@@ -1868,6 +1896,7 @@ pub unsafe fn KiAcquireDeviceQueueLock(
             device_lock,
         );
     } else {
+        crate::ASSERT!(crate::ke::KeGetCurrentIrql() == crate::base::DISPATCH_LEVEL);
         KeAcquireInStackQueuedSpinLockAtDpcLevel(
             core::ptr::addr_of_mut!((*device_queue).Lock) as *mut ULONG_PTR,
             device_lock,
@@ -1882,6 +1911,7 @@ pub unsafe fn KiReleaseDeviceQueueLock(device_lock: ddk::PKLOCK_QUEUE_HANDLE) {
     if prcb_dpc_thread_active(prcb) {
         KeReleaseInStackQueuedSpinLock(device_lock);
     } else {
+        crate::ASSERT!(crate::ke::KeGetCurrentIrql() == crate::base::DISPATCH_LEVEL);
         KeReleaseInStackQueuedSpinLockFromDpcLevel(device_lock);
     }
 }
@@ -1995,6 +2025,7 @@ pub unsafe fn KiRemoveEntryTimer(timer: ddk::PKTIMER) {
 /// KxInsertTimer — insert timer into timer table (ke_x.h).
 #[inline]
 pub unsafe fn KxInsertTimer(timer: ddk::PKTIMER, hand: ULONG) {
+    crate::ASSERT!(crate::ke::KeGetCurrentIrql() >= SYNCH_LEVEL);
     let lock_queue = KiAcquireTimerLock(hand);
     KiReleaseDispatcherLockFromSynchLevel();
     if KiInsertTimerTable(timer, hand) != 0 {
@@ -2113,6 +2144,7 @@ pub unsafe fn KxUnwaitThread(
     increment: KPRIORITY,
 ) {
     let wait_list = core::ptr::addr_of_mut!((*object).WaitListHead);
+    crate::ASSERT!((*wait_list).Flink != wait_list as *mut ddk::_LIST_ENTRY);
     let mut wait_entry = (*wait_list).Flink;
     loop {
         if wait_entry == wait_list as *mut ddk::_LIST_ENTRY {
@@ -2156,6 +2188,7 @@ pub unsafe fn KxUnwaitThreadForEvent(
     increment: KPRIORITY,
 ) {
     let wait_list = core::ptr::addr_of_mut!((*event).Header.WaitListHead);
+    crate::ASSERT!((*wait_list).Flink != wait_list as *mut ddk::_LIST_ENTRY);
     let mut wait_entry = (*wait_list).Flink;
     loop {
         if wait_entry == wait_list as *mut ddk::_LIST_ENTRY {
@@ -2350,6 +2383,31 @@ pub unsafe fn ki_rq_integrity(prcb: ddk::PKPRCB, priority: u32, site: u64) {
 
 #[cfg_attr(feature = "smp", track_caller)]
 pub unsafe fn KxQueueReadyThread(thread: ddk::PKTHREAD, prcb: ddk::PKPRCB) {
+    crate::ASSERT!(prcb == KeGetCurrentPrcb());
+    #[cfg(feature = "smp")]
+    {
+        crate::ASSERT!((*prcb).PrcbLock != 0);
+        // Name the caller that queued without the PRCB lock (arm64 -smp 2 does,
+        // 2026-10-17); track_caller makes the location the queuer's.
+        if (*prcb).PrcbLock == 0 {
+            let loc = core::panic::Location::caller();
+            let f = loc.file().as_bytes();
+            let mut buf = [0u8; 48];
+            let take = f.len().min(47);
+            buf[..take].copy_from_slice(&f[f.len() - take..]);
+            crate::driver_ddk::DbgPrint(
+                b"[RQNOLOCK] KxQueueReadyThread without PrcbLock: caller=%s:%u thr=%p state=%u cpu=%u\n\0"
+                    .as_ptr() as *const i8,
+                buf.as_ptr() as *const i8,
+                loc.line(),
+                thread,
+                kt_state_read(thread) as u32,
+                (*prcb).Number as u32,
+            );
+        }
+    }
+    crate::ASSERT!(kt_state_read(thread) == ddk::_KTHREAD_STATE_Running as u8);
+    crate::ASSERT!((*thread).__bindgen_anon_1.__bindgen_anon_1.NextProcessor as u32 == (*prcb).Number as u32);
     // §9.56 hypothesis-B: catch the FIRST, illegal queue — a thread that is still
     // CurrentThread (running) somewhere. Legit callers dethrone first, so quiet.
     #[cfg(feature = "smp")]
@@ -2507,6 +2565,7 @@ pub unsafe fn KxQueueReadyThread(thread: ddk::PKTHREAD, prcb: ddk::PKPRCB) {
     let preempted = (*thread).Preempted != 0;
     (*thread).Preempted = 0;
     kt_set_wait_time(thread, KeTickCount.LowPart);
+    crate::ASSERT!(priority <= 31 /* HIGH_PRIORITY; KPRIORITY >= 0 by the cast */);
 
     let ready_list =
         core::ptr::addr_of_mut!((*prcb).DispatcherReadyListHead[priority]);
@@ -2516,9 +2575,39 @@ pub unsafe fn KxQueueReadyThread(thread: ddk::PKTHREAD, prcb: ddk::PKPRCB) {
         crate::base::InsertTailList(ready_list, kt_wait_list_entry(thread));
     }
     (*prcb).ReadySummary |= 1u32 << priority;
+    crate::ASSERT!(priority == (*thread).Priority as usize);
     #[cfg(feature = "smp")]
     ki_rq_integrity(prcb, priority as u32, 0x11); // site 0x11 = KxQueueReadyThread
     KiReleasePrcbLock(prcb);
+}
+
+/// Put a displaced Standby `Prcb->NextThread` back on this PRCB's ready list
+/// and KEEP the PRCB lock. The arm64 preemption-bypass blocks (KiSwapThread,
+/// NtYieldExecution, KiExitDispatcher) used KxQueueReadyThread here, which
+/// asserts a Running thread and releases the lock, so every one of them
+/// reselected and switched with the PRCB unlocked (arm64 -smp 2, 2026-10-17:
+/// `[RQNOLOCK] caller=ke/wait.rs:428`). The C carries the same defect in its
+/// vibeos-added `#ifdef _M_ARM64` blocks. Tail insert, as KxQueueReadyThread
+/// does once Preempted is cleared; NextThread was selected for this PRCB, so
+/// its affinity already admits it.
+pub unsafe fn KiRequeueStandbyThreadLocked(thread: ddk::PKTHREAD, prcb: ddk::PKPRCB) {
+    crate::ASSERT!(prcb == KeGetCurrentPrcb());
+    #[cfg(feature = "smp")]
+    crate::ASSERT!((*prcb).PrcbLock != 0);
+    crate::ASSERT!(kt_state_read(thread) == ddk::_KTHREAD_STATE_Standby as u8);
+    crate::ASSERT!((*thread).__bindgen_anon_1.__bindgen_anon_1.NextProcessor as u32 == (*prcb).Number as u32);
+    kt_set_state(thread, ddk::_KTHREAD_STATE_Ready as u8);
+    let priority = (*thread).Priority as usize;
+    crate::ASSERT!(priority <= 31 /* HIGH_PRIORITY */);
+    (*thread).Preempted = 0;
+    kt_set_wait_time(thread, KeTickCount.LowPart);
+    crate::base::InsertTailList(
+        core::ptr::addr_of_mut!((*prcb).DispatcherReadyListHead[priority]),
+        kt_wait_list_entry(thread),
+    );
+    (*prcb).ReadySummary |= 1u32 << priority;
+    #[cfg(feature = "smp")]
+    ki_rq_integrity(prcb, priority as u32, 0x12); // site 0x12 = standby requeue
 }
 
 /// KiSelectReadyThread — select highest priority ready thread (ke_x.h).
@@ -2530,6 +2619,7 @@ pub unsafe fn KiSelectReadyThread(priority: KPRIORITY, prcb: ddk::PKPRCB) -> ddk
     }
     let mut high_priority: ULONG = 0;
     BitScanReverse(&mut high_priority, priority_set);
+    crate::ASSERT!(priority_set & (1u32 << high_priority) != 0);
     high_priority += priority as ULONG;
 
     let list_head =
@@ -2562,8 +2652,12 @@ pub unsafe fn KiSelectReadyThread(priority: KPRIORITY, prcb: ddk::PKPRCB) -> ddk
         }
     }
 
+    crate::ASSERT!(list_entry != list_head as ddk::PLIST_ENTRY);
     let thread = (list_entry as usize
         - memoffset_of_wait_list_entry()) as ddk::PKTHREAD;
+    crate::ASSERT!(high_priority as i32 == (*thread).Priority as i32);
+    crate::ASSERT!((*thread).Affinity as usize & (1usize << (*prcb).Number as u32) != 0);
+    crate::ASSERT!((*thread).__bindgen_anon_1.__bindgen_anon_1.NextProcessor as u32 == (*prcb).Number as u32);
 
     if crate::base::RemoveEntryList(kt_wait_list_entry(thread)) {
         (*prcb).ReadySummary ^= 1u32 << high_priority;
@@ -2571,12 +2665,21 @@ pub unsafe fn KiSelectReadyThread(priority: KPRIORITY, prcb: ddk::PKPRCB) -> ddk
     #[cfg(feature = "smp")]
     ki_rq_integrity(prcb, high_priority, 0x33); // site 0x33 = KiSelectReadyThread post-remove
 
+    crate::ASSERT!((*thread).BasePriority == 0 || (*thread).Priority != 0);
     thread
 }
 
 /// KiComputeNewPriority — compute new priority after boost decay (ke_x.h).
 #[inline]
 pub unsafe fn KiComputeNewPriority(thread: ddk::PKTHREAD, adjustment: i8) -> i8 {
+    crate::ASSERT!(
+        (*thread).PriorityDecrement as i32 >= 0
+            && (*thread).PriorityDecrement as i32 <= (*thread).Priority as i32
+    );
+    crate::ASSERT!(
+        (*thread).Priority < crate::constants::LOW_REALTIME_PRIORITY as i8
+            || (*thread).PriorityDecrement == 0
+    );
     let mut priority = (*thread).Priority;
     if priority < crate::constants::LOW_REALTIME_PRIORITY as i8 {
         priority -= (*thread).PriorityDecrement as i8 + adjustment;
@@ -2585,6 +2688,7 @@ pub unsafe fn KiComputeNewPriority(thread: ddk::PKTHREAD, adjustment: i8) -> i8 
         }
         (*thread).PriorityDecrement = 0;
     }
+    crate::ASSERT!((*thread).BasePriority == 0 || priority != 0);
     priority
 }
 
@@ -2611,6 +2715,8 @@ pub unsafe fn _KeAcquireGuardedMutexUnsafe(guarded_mutex: ddk::PKGUARDED_MUTEX) 
 /// lockdep names the true acquiring caller (sync-instrumentation §4).
 #[inline]
 pub unsafe fn _KeAcquireGuardedMutexUnsafeSited(guarded_mutex: ddk::PKGUARDED_MUTEX, site: usize) {
+    crate::ASSERT!(guarded_mutex_unsafe_ok(current_thread()));
+    crate::ASSERT!((*guarded_mutex).Owner != current_thread());
     if _InterlockedBitTestAndReset(
         core::ptr::addr_of_mut!((*guarded_mutex).Count),
         GM_LOCK_BIT_V,
@@ -2625,6 +2731,8 @@ pub unsafe fn _KeAcquireGuardedMutexUnsafeSited(guarded_mutex: ddk::PKGUARDED_MU
 /// _KeReleaseGuardedMutexUnsafe — release guarded mutex (caller stays in guarded region).
 #[inline]
 pub unsafe fn _KeReleaseGuardedMutexUnsafe(guarded_mutex: ddk::PKGUARDED_MUTEX) {
+    crate::ASSERT!(guarded_mutex_unsafe_ok(current_thread()));
+    crate::ASSERT!((*guarded_mutex).Owner == current_thread());
     super::ex::lockdep_release(guarded_mutex as _); // pop before we drop it
     (*guarded_mutex).Owner = core::ptr::null_mut();
 
@@ -2632,6 +2740,7 @@ pub unsafe fn _KeReleaseGuardedMutexUnsafe(guarded_mutex: ddk::PKGUARDED_MUTEX) 
         core::ptr::addr_of_mut!((*guarded_mutex).Count),
         GM_LOCK_BIT,
     );
+    crate::ASSERT!(old_value & GM_LOCK_BIT == 0);
 
     if (old_value != 0) && (old_value & GM_LOCK_WAITER_WOKEN == 0) {
         let expected = old_value + GM_LOCK_BIT;
@@ -2657,6 +2766,8 @@ pub unsafe fn _KeAcquireGuardedMutex(guarded_mutex: ddk::PKGUARDED_MUTEX) {
 /// Sited variant — see _KeAcquireGuardedMutexUnsafeSited.
 #[inline]
 pub unsafe fn _KeAcquireGuardedMutexSited(guarded_mutex: ddk::PKGUARDED_MUTEX, site: usize) {
+    crate::ASSERT!(crate::ke::KeGetCurrentIrql() <= crate::base::APC_LEVEL);
+    crate::ASSERT!((*guarded_mutex).Owner != current_thread());
     KeEnterGuardedRegion();
     if _InterlockedBitTestAndReset(
         core::ptr::addr_of_mut!((*guarded_mutex).Count),
@@ -2680,6 +2791,12 @@ pub unsafe fn _KeAcquireGuardedMutexSited(guarded_mutex: ddk::PKGUARDED_MUTEX, s
 /// _KeReleaseGuardedMutex — release mutex and leave guarded region.
 #[inline]
 pub unsafe fn _KeReleaseGuardedMutex(guarded_mutex: ddk::PKGUARDED_MUTEX) {
+    crate::ASSERT!(crate::ke::KeGetCurrentIrql() <= crate::base::APC_LEVEL);
+    crate::ASSERT!((*guarded_mutex).Owner == current_thread());
+    crate::ASSERT!(
+        *kthread_special_apc_disable_ptr(current_thread())
+            == (*guarded_mutex).__bindgen_anon_1.__bindgen_anon_1.SpecialApcDisable
+    );
     super::ex::lockdep_release(guarded_mutex as _); // pop before we drop it
     (*guarded_mutex).Owner = core::ptr::null_mut();
 
@@ -2687,6 +2804,7 @@ pub unsafe fn _KeReleaseGuardedMutex(guarded_mutex: ddk::PKGUARDED_MUTEX) {
         core::ptr::addr_of_mut!((*guarded_mutex).Count),
         GM_LOCK_BIT,
     );
+    crate::ASSERT!(old_value & GM_LOCK_BIT == 0);
 
     if (old_value != 0) && (old_value & GM_LOCK_WAITER_WOKEN == 0) {
         let expected = old_value + GM_LOCK_BIT;

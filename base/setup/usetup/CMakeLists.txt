@@ -22,15 +22,9 @@ include_directories(${REACTOS_SOURCE_DIR}/sdk/include/reactos/drivers)
 # progress.c  # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/progress.rs)
 # usetup.c  # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/usetup.rs)
 # mui_tables.c  # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/mui_tables/mod.rs, generated: port data)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(usetup_res OBJECT usetup.rc)
-target_include_directories(usetup_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-# How cmake compiled the target's sources, now on the OBJECT libraries.
-target_compile_options(usetup_res PRIVATE "-Wno-invalid-source-encoding")
 add_cargo_module(usetup usetup-cargo usetup.exe
     KIND win32exe
     BODY_CRATE usetup-rust
     NO_CD
-    EXTRA_DEPENDS usetup_res)
+    EXTRA_DEPENDS psdk)
 add_cargo_cd_file(usetup DESTINATION reactos/system32 NO_CAB NAME_ON_CD smss.exe FOR bootcd regtest)

@@ -17,6 +17,10 @@
 //! "a sealed token the Rust translation has nowhere to put".
 
 use core::ffi::c_void;
+// The crate's own functions: the definition is the declaration.
+use crate::wine::pidl::ILClone;
+use crate::wine::pidl::ILGetSize;
+use crate::wine::shellpath::SHGetSpecialFolderLocation;
 use crate::prelude::*;
 use crate::shell32::sdk_consts::*;
 // ONLY what the island genuinely lacks. `win32.rs` also declares SHAllocShared, SHBindToObject,
@@ -28,22 +32,12 @@ use crate::win32::wine_dbg_sprintf;
 use crate::wine::pidl::SHSimpleIDListFromPathW;
 
 extern "system" {
-    /// The island has no `ILGetSize`/`ILClone`, so they are declared here in ISLAND types
-    /// rather than imported from `win32.rs` in types-world — that keeps every call site free of
-    /// casts that would otherwise paper over a genuine pointer-type question.
-    fn ILGetSize(pidl: LPCITEMIDLIST) -> UINT;
-    fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
 }
 
 // The ATL broker window is Rust now (crate::atl_stub_windows).
 use crate::atl_stub_windows::CreateNotificationBroker;
 
 extern "system" {
-    /// Neither the island nor `win32.rs` carries this one; three sibling modules
-    /// (`shell_dispatch.rs`, `control_panel_folder.rs`, `recycle_bin_cleaner.rs`) each declare
-    /// it locally with exactly this signature, which is the crate's normal FFI practice — an
-    /// `extern` declaration is cheap to repeat, unlike a `Drop`.
-    fn SHGetSpecialFolderLocation(owner: HWND, csidl: INT, pidl: *mut LPITEMIDLIST) -> HRESULT;
 }
 
 /// `CChangeNotifyServer.h:50` `#define DWORD_ALIGNMENT(offset)`. A macro, not a function, so
@@ -165,7 +159,7 @@ unsafe extern "C" fn Shell_ParsePrinterName(
     hr = SHBindToObject(
         core::ptr::null_mut(),
         pidlPrinters as *const ITEMIDLIST,
-        core::ptr::addr_of!(IID_IShellFolder), core::ptr::addr_of_mut!(pFolder).cast(),
+        (core::ptr::addr_of!(IID_IShellFolder)).cast(), core::ptr::addr_of_mut!(pFolder).cast(),
     );
     if FAILED_UNEXPECTEDLY!(hr) {
         CoTaskMemFree(pidlPrinters as *mut _);
