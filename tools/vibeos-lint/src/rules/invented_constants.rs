@@ -11,7 +11,7 @@ const INPUTS: &[SourceSet] = &[
         .with_pruning(&["target", ".responses"])
         .with_inputs(),
     SourceSet::tree("invented-corpus", &["."], &["h", "c"], &[])
-        .with_pruning(&["target", ".git"])
+        .with_pruning(&["target", ".git", "build-*"])
         .with_inputs(),
 ];
 fn re(p: &str) -> Regex {
@@ -201,7 +201,9 @@ fn module_file(p: &Path, s: &str) -> bool {
     p.ancestors().any(|a| a.file_name().is_some_and(|n| n == s))
 }
 fn strip_comments(s: &str) -> String {
-    let t = re(r"(?s)/\*.*?\*/").replace_all(s, |m: &regex::Captures<'_>| m[0].replace('\n', "\n"));
+    let t = re(r"(?s)/\*.*?\*/").replace_all(s, |m: &regex::Captures<'_>| {
+        m[0].chars().filter(|c| *c == '\n').collect::<String>()
+    });
     re(r"//[^\n]*").replace_all(&t, "").into_owned()
 }
 fn match_brace(s: &str, open: usize) -> Option<usize> {
@@ -589,6 +591,46 @@ mod tests {
         ]);
         assert_eq!(eval_c("OFFSET", &names, 0), Some(0x14));
         assert_eq!(eval_c("SOME_UNKNOWN_THING + 1", &empty, 0), None);
+    }
+
+    #[test]
+    fn same_name_macro_candidates_keep_all_distinct_values() {
+        // A later macro site remains a separate candidate even though `raw`
+        // keeps the first definition as the name-resolution value.
+        let got = harvest([
+            (
+                "sdk/include/psdk/sdkddkver.h".into(),
+                "#define NTDDI_VERSION 0x06000000\n".into(),
+            ),
+            (
+                "sdk/lib/cmlib/cmlib.h".into(),
+                "#define NTDDI_WS03SP4 0x05020400\n#define NTDDI_VERSION NTDDI_WS03SP4\n".into(),
+            ),
+        ]);
+        let actual = got["NTDDI_VERSION"]
+            .iter()
+            .map(|x| x.0)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(actual, BTreeSet::from([0x05020400, 0x06000000]));
+    }
+
+    #[test]
+    fn real_ntddi_header_pair_retains_both_scoped_candidates() {
+        let got = harvest([
+            (
+                "sdk/include/psdk/sdkddkver.h".into(),
+                include_str!("../../../../sdk/include/psdk/sdkddkver.h").into(),
+            ),
+            (
+                "sdk/lib/cmlib/cmlib.h".into(),
+                include_str!("../../../../sdk/lib/cmlib/cmlib.h").into(),
+            ),
+        ]);
+        let actual = got["NTDDI_VERSION"]
+            .iter()
+            .map(|x| x.0)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(actual, BTreeSet::from([0x05020400, 0x06000000]));
     }
 
     #[test]

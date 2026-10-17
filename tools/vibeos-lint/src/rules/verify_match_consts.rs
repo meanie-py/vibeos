@@ -1,9 +1,9 @@
 //! Port of tools/verify_match_consts.py (default CLI mode).
 use crate::{Corpus, Rule, SourceFile, SourceSet};
 use regex::Regex;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 pub struct VerifyMatchConsts;
 const INPUTS: &[SourceSet] = &[
@@ -42,6 +42,21 @@ impl Rule for VerifyMatchConsts {
             .filter(|f| f.path.file_name().is_some_and(|n| n == "Cargo.toml"))
             .map(|f| (f.path.clone(), f))
             .collect();
+        // Index descendant files once. The original per-file universe walk tested every
+        // corpus path with `starts_with` for every crate, then repeated that walk for
+        // every source file in the crate. Keep its src-preferred/fallback semantics but
+        // turn those repeated scans into a cached per-crate result.
+        let mut descendants: BTreeMap<PathBuf, Vec<&SourceFile>> = BTreeMap::new();
+        for f in &all {
+            for dir in f.path.ancestors().skip(1) {
+                descendants.entry(dir.to_owned()).or_default().push(*f);
+            }
+        }
+        let mut deps_by_dir = BTreeMap::new();
+        for dir in manifests.keys().filter_map(|p| p.parent()) {
+            deps_by_dir.insert(dir.to_owned(), crate_path_deps(dir, &manifests));
+        }
+        let mut universe_cache: HashMap<PathBuf, Arc<BTreeSet<String>>> = HashMap::new();
         let mut results = Vec::new();
         let mut counts = [0usize; 4]; // high, medium, orphan, low
         for f in default {
@@ -53,8 +68,20 @@ impl Rule for VerifyMatchConsts {
             let crate_dir = crate_dir(&f.path, &manifests);
             let closure = crate_dir
                 .as_ref()
-                .map(|dir| crate_universe(dir, &manifests, &by_path))
-                .unwrap_or_default();
+                .map(|dir| {
+                    universe_cache
+                        .entry(dir.clone())
+                        .or_insert_with(|| {
+                            Arc::new(crate_universe_index(
+                                dir,
+                                &manifests,
+                                &deps_by_dir,
+                                &descendants,
+                            ))
+                        })
+                        .clone()
+                })
+                .unwrap_or_else(|| Arc::new(BTreeSet::new()));
             let (glob, resolved) = crate_dir
                 .as_ref()
                 .map(|dir| glob_names(&f.text, dir, &manifests, &by_path))
@@ -140,19 +167,19 @@ fn regex(p: &'static str) -> &'static Regex {
         for p in [
             r"^_*[A-Z][A-Za-z0-9_]*$",
             r"\b(?:pub(?:\([^)]*\))?\s+)?(?:const|static)\s+(?:mut\s+)?(_*[A-Z][A-Za-z0-9_]*)\b",
-            r"enum\s+\w+[^\{]*\{(.*?)\}",
+            r"(?s)enum\s+\w+[^\{]*\{(.*?)\}",
             r"(?m)^[ \t]*(?:#\[[^\]]*\]\s*)*pub\s+use\s+([^;]+);",
             r"\blet\s+(?:mut\s+)?(_*[A-Z][A-Za-z0-9_]*)\b",
             r"\buse\s+([^;]+);",
             r"^\s*(?:#\[[^\]]*\]\s*)*(?:pub\s+)?use\s+([A-Za-z_][A-Za-z0-9_:]*)::\*\s*;",
             r"(?m)^\s*(?:#\[[^\]]*\]\s*)*(?:pub\s+)?use\s+([A-Za-z_][A-Za-z0-9_:]*)::\*\s*;",
             r"(?:#\[[^\]]*\]\s*)*pub\s+use\s+([A-Za-z_][A-Za-z0-9_:]*)::\*\s*;",
-            r"path\s*=\s*([^\s]+)",
+            r#"path\s*=\s*"([^"]+)""#,
             r"\bmod\s+([A-Za-z_]\w*)\s*;",
             r"(?m)^\s*(?:pub\s+)?const\s+",
             r"=>",
         ] {
-            m.insert(p, Regex::new(p).unwrap());
+            m.insert(p, crate::regexes::cached(p).unwrap());
         }
         m
     });
@@ -186,7 +213,7 @@ fn names_in_text(text: &str) -> BTreeSet<String> {
     {
         out.insert(c[1].to_owned());
     }
-    for c in regex(r"enum\s+\w+[^\{]*\{(.*?)\}").captures_iter(text) {
+    for c in regex(r"(?s)enum\s+\w+[^\{]*\{(.*?)\}").captures_iter(text) {
         variants(&c[1], &mut out);
     }
     pub_uses(text, &mut out);
@@ -343,7 +370,7 @@ fn crate_path_deps(dir: &Path, manifests: &BTreeMap<PathBuf, &SourceFile>) -> Ve
     let Some(m) = manifests.get(&dir.join("Cargo.toml")) else {
         return vec![];
     };
-    regex(r"path\s*=\s*([^\s]+)")
+    regex(r#"path\s*=\s*"([^"]+)""#)
         .captures_iter(&m.text)
         .map(|c| normalize(&dir.join(c[1].trim_matches('"'))))
         .filter(|p| manifests.contains_key(&p.join("Cargo.toml")))
@@ -362,10 +389,11 @@ fn normalize(p: &Path) -> PathBuf {
     }
     out
 }
-fn crate_universe(
+fn crate_universe_index(
     dir: &Path,
     manifests: &BTreeMap<PathBuf, &SourceFile>,
-    files: &BTreeMap<PathBuf, &SourceFile>,
+    deps_by_dir: &BTreeMap<PathBuf, Vec<PathBuf>>,
+    descendants: &BTreeMap<PathBuf, Vec<&SourceFile>>,
 ) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     let mut seen = HashSet::new();
@@ -374,17 +402,32 @@ fn crate_universe(
         if !seen.insert(d.clone()) {
             continue;
         }
-        for (p, f) in files {
-            if p.starts_with(d.join("src"))
-                || (!files.keys().any(|x| x.starts_with(d.join("src"))) && p.starts_with(&d))
-            {
+        // Match Python/Rust legacy behavior: use crate/src when it has any Rust
+        // inputs; otherwise include the whole crate subtree.
+        let src = d.join("src");
+        let files = descendants
+            .get(&src)
+            .filter(|files| !files.is_empty())
+            .or_else(|| descendants.get(&d));
+        if let Some(files) = files {
+            for f in files {
                 out.extend(names_in_text(&f.text));
             }
         }
-        todo.extend(crate_path_deps(&d, manifests));
+        if let Some(deps) = deps_by_dir.get(&d) {
+            // Preserve the old validation against known manifests. This is normally
+            // redundant because deps_by_dir was built from those manifests, but keeps
+            // the membership condition explicit if the snapshot has odd paths.
+            todo.extend(
+                deps.iter()
+                    .filter(|p| manifests.contains_key(&p.join("Cargo.toml")))
+                    .cloned(),
+            );
+        }
     }
     out
 }
+
 fn glob_names(
     text: &str,
     dir: &Path,
@@ -450,7 +493,7 @@ fn module_file(
     let parent_parts = &parts[..parts.len() - 1];
     let parent = module_file(dir, parent_parts, files)?;
     let text = &files.get(&parent)?.text;
-    let attr = Regex::new(
+    let attr = crate::regexes::cached(
         r#"(?m)#\[path\s*=\s*"([^"]+)"\]\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+([A-Za-z_]\w*)\s*;"#,
     )
     .unwrap();
@@ -503,14 +546,29 @@ fn exported_module_names(
     let Some(file) = module_file(&base, &parts, files) else {
         return (BTreeSet::new(), false);
     };
-    if !seen.insert(file.clone()) {
+    exported_file_names(&base, &child_module, &file, manifests, files, seen, depth)
+}
+
+fn exported_file_names(
+    base: &Path,
+    child_module: &[String],
+    file: &Path,
+    manifests: &BTreeMap<PathBuf, &SourceFile>,
+    files: &BTreeMap<PathBuf, &SourceFile>,
+    seen: &mut HashSet<PathBuf>,
+    depth: usize,
+) -> (BTreeSet<String>, bool) {
+    if depth > 6 {
+        return (BTreeSet::new(), false);
+    }
+    if !seen.insert(file.to_owned()) {
         return (BTreeSet::new(), true);
     }
-    let Some(source) = files.get(&file) else {
+    let Some(source) = files.get(file) else {
         return (BTreeSet::new(), false);
     };
     let mut names = names_in_text(&source.text);
-    let attrs = Regex::new(
+    let attrs = crate::regexes::cached(
         r#"(?m)#\[path\s*=\s*"([^"]+)"\]\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+([A-Za-z_]\w*)\s*;"#,
     )
     .unwrap();
@@ -523,9 +581,10 @@ fn exported_module_names(
                 &file.parent().unwrap_or(Path::new("")).join(&cap[1]),
             ));
     }
-    let glob =
-        Regex::new(r"(?m)^\s*(?:#\[[^\]]*\]\s*)*pub\s+use\s+([A-Za-z_][A-Za-z0-9_:]*)::\*\s*;")
-            .unwrap();
+    let glob = crate::regexes::cached(
+        r"(?m)^\s*(?:#\[[^\]]*\]\s*)*pub\s+use\s+([A-Za-z_][A-Za-z0-9_:]*)::\*\s*;",
+    )
+    .unwrap();
     let mut resolved = true;
     for cap in glob.captures_iter(&source.text) {
         let segs = cap[1].split("::").map(str::to_owned).collect::<Vec<_>>();
@@ -533,23 +592,26 @@ fn exported_module_names(
             let mut sub = BTreeSet::new();
             let mut all_ok = true;
             for path in &path_mods[&segs[0]] {
-                if let Some(src) = files.get(path) {
-                    sub.extend(names_in_text(&src.text));
-                } else {
-                    all_ok = false;
+                // Python's resolver follows each existing #[path] target, retaining
+                // the current module context. A missing target is ignored (legacy
+                // fail-open behavior), while nested unresolved globs still fail open.
+                if files.contains_key(path) {
+                    let (child, child_ok) = exported_file_names(
+                        base,
+                        child_module,
+                        path,
+                        manifests,
+                        files,
+                        seen,
+                        depth + 1,
+                    );
+                    sub.extend(child);
+                    all_ok &= child_ok;
                 }
             }
             (sub, all_ok)
         } else {
-            exported_module_names(
-                &base,
-                &child_module,
-                &segs,
-                manifests,
-                files,
-                seen,
-                depth + 1,
-            )
+            exported_module_names(base, child_module, &segs, manifests, files, seen, depth + 1)
         };
         names.extend(sub);
         resolved &= ok;
@@ -571,6 +633,14 @@ mod tests {
         );
     }
     #[test]
+    fn multiline_enum_variants_are_in_the_name_universe() {
+        let text = "pub enum I8042_DEVICE_TYPE {\n Unknown,\n Keyboard,\n Mouse,\n PhysicalDeviceObject,\n}";
+        let names = names_in_text(text);
+        assert!(names.contains("Keyboard"));
+        assert!(names.contains("Mouse"));
+        assert!(names.contains("Unknown"));
+    }
+    #[test]
     fn names_and_shadowing() {
         let exported = names_in_text("pub use dep::{_BIND as Bind, C};");
         assert!(exported.contains("Bind") && exported.contains("C"));
@@ -580,6 +650,29 @@ mod tests {
         assert!(n.contains("FOO") && n.contains("BAR") && n.contains("BAZ") && n.contains("QUUX"));
         assert!(g);
     }
+    #[test]
+    fn parses_quoted_path_dependencies_followed_by_manifest_punctuation() {
+        let owner = SourceFile::new(
+            "sdk/lib/rust/a/Cargo.toml".into(),
+            "[dependencies]\nb = { path = \"../b\", features = [\"x\"] }\nc = { path = \"../c\" }"
+                .into(),
+        );
+        let b = SourceFile::new("sdk/lib/rust/b/Cargo.toml".into(), String::new());
+        let c = SourceFile::new("sdk/lib/rust/c/Cargo.toml".into(), String::new());
+        let manifests = BTreeMap::from([
+            (owner.path.clone(), &owner),
+            (b.path.clone(), &b),
+            (c.path.clone(), &c),
+        ]);
+        assert_eq!(
+            crate_path_deps(Path::new("sdk/lib/rust/a"), &manifests),
+            vec![
+                PathBuf::from("sdk/lib/rust/b"),
+                PathBuf::from("sdk/lib/rust/c")
+            ]
+        );
+    }
+
     #[test]
     fn resolves_dependency_glob_reexports_from_snapshot() {
         let rows = vec![
@@ -615,6 +708,63 @@ mod tests {
         assert!(ok);
         assert!(names.contains("BAD"));
     }
+    #[test]
+    fn path_module_reexports_follow_nested_globs_and_fail_open_on_inline_modules() {
+        let rows = vec![
+            SourceFile::new(
+                "sdk/lib/rust/a/Cargo.toml".into(),
+                "[package]\nname='a'\n[dependencies]\nntdll_sys = { path='../ntdll-sys' }".into(),
+            ),
+            SourceFile::new(
+                "sdk/lib/rust/a/src/lib.rs".into(),
+                "pub mod prelude; pub mod types;".into(),
+            ),
+            SourceFile::new(
+                "sdk/lib/rust/a/src/prelude.rs".into(),
+                "pub use crate::types::*;".into(),
+            ),
+            SourceFile::new(
+                "sdk/lib/rust/a/src/types.rs".into(),
+                "#[path=\"types_arch.rs\"] mod types_arch;\npub use types_arch::*;".into(),
+            ),
+            SourceFile::new(
+                "sdk/lib/rust/a/src/types_arch.rs".into(),
+                "pub use ntdll_sys::nt::*;".into(),
+            ),
+            SourceFile::new(
+                "sdk/lib/rust/a/src/use.rs".into(),
+                "use crate::prelude::*;\nmatch x {\n  WM_INITDIALOG => {},\n  _ => {},\n}".into(),
+            ),
+            SourceFile::new(
+                "sdk/lib/rust/ntdll-sys/Cargo.toml".into(),
+                "[package]\nname='ntdll-sys'".into(),
+            ),
+            SourceFile::new(
+                "sdk/lib/rust/ntdll-sys/src/lib.rs".into(),
+                "pub mod nt { pub const WM_INITDIALOG: u32 = 272; }".into(),
+            ),
+        ];
+        let manifests = rows
+            .iter()
+            .filter(|f| f.path.file_name().is_some_and(|n| n == "Cargo.toml"))
+            .map(|f| (f.path.clone(), f))
+            .collect::<BTreeMap<_, _>>();
+        let files = rows
+            .iter()
+            .filter(|f| f.path.extension().is_some_and(|e| e == "rs"))
+            .map(|f| (f.path.clone(), f))
+            .collect::<BTreeMap<_, _>>();
+        let user = files.get(Path::new("sdk/lib/rust/a/src/use.rs")).unwrap();
+        let (names, resolved) =
+            glob_names(&user.text, Path::new("sdk/lib/rust/a"), &manifests, &files);
+        assert!(!names.contains("WM_INITDIALOG"));
+        assert!(
+            !resolved,
+            "inline dependency modules are unresolved by Python too: {:?}",
+            names
+        );
+    }
+
     #[test]
     fn live_binding_fixture_reports_only_unknown_bare_match_arms() {
         let root = "sdk/lib/rust/unit-rust";

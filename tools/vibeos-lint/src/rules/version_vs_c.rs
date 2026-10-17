@@ -19,10 +19,19 @@ const INPUTS: &[SourceSet] = &[
         &["build-amd64", "build-i386", "build-arm64"],
         &["ninja"],
         &[],
+    ),
+    SourceSet::tree("version-sdkddkver", &["sdk/include/psdk"], &["h"], &[]),
+    SourceSet::tree("version-root-cmake", &["."], &[], &["CMakeLists.txt"]),
+    // crate_cfg() derives active/default and emitted cfg facts from these files. Without
+    // manifests in a standalone run, feature-gated Rust items appear live even when Cargo
+    // compiles them out (or vice versa).
+    SourceSet::tree(
+        "version-cargo-features",
+        &["sdk/lib/rust"],
+        &[],
+        &["Cargo.toml", "build.rs"],
     )
     .with_inputs(),
-    SourceSet::tree("version-sdkddkver", &["sdk/include/psdk"], &["h"], &[]).with_inputs(),
-    SourceSet::tree("version-root-cmake", &["."], &[], &["CMakeLists.txt"]).with_inputs(),
 ];
 fn re(p: &str) -> Regex {
     cached(p).expect("version rule regex")
@@ -123,8 +132,8 @@ fn module_env(
     c: &Corpus,
     path: &Path,
     consts: &BTreeMap<String, i64>,
+    versions: &BTreeMap<PathBuf, BTreeSet<(i64, Option<i64>)>>,
 ) -> Option<(eval::Env, String)> {
-    let versions = ninja_versions(c);
     if let Some(set) = versions.get(path) {
         if set.len() != 1 {
             return None;
@@ -182,7 +191,7 @@ fn module_env(
     }
     let prefix = path.parent().unwrap_or(Path::new(""));
     let mut same = Vec::new();
-    for (p, vs) in &versions {
+    for (p, vs) in versions {
         if p.parent() == Some(prefix) {
             same.extend(vs.iter().copied())
         }
@@ -265,6 +274,7 @@ impl Rule for VersionVsC {
         let history = c.version_history()?;
         let _ = history;
         let constants = consts(c);
+        let versions = ninja_versions(c);
         let mut candidates: BTreeMap<
             String,
             Vec<(twins::Function, BTreeMap<String, String>, String)>,
@@ -278,7 +288,7 @@ impl Rule for VersionVsC {
             {
                 continue;
             }
-            let Some((e, src)) = module_env(c, &f.path, &constants) else {
+            let Some((e, src)) = module_env(c, &f.path, &constants, &versions) else {
                 continue;
             };
             let blank = twins::blank_c(&f.text);
@@ -381,5 +391,53 @@ impl Rule for VersionVsC {
         }
         out.sort();
         Ok(out)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn standalone_source_set_includes_cargo_cfg_inputs() {
+        assert!(INPUTS.iter().any(|s| s.name == "version-cargo-features"));
+        let manifest = crate::SourceFile::new(
+            "sdk/lib/rust/cdfs-rust/Cargo.toml".into(),
+            "[package]\nname=\"cdfs-rust\"\n[features]\ndefault = [\"reactos\"]\nreactos = []\n"
+                .into(),
+        );
+        let build = crate::SourceFile::new(
+            "sdk/lib/rust/cdfs-rust/build.rs".into(),
+            "fn main() { println!(\"cargo:rustc-cfg=generated_cfg\"); }\n".into(),
+        );
+        let corpus = Corpus::new(
+            PathBuf::from("."),
+            vec![
+                manifest,
+                build,
+                crate::SourceFile::new(
+                    "sdk/lib/rust/cdfs-rust/src/cddata.rs".into(),
+                    "#[cfg(not(feature = \"reactos\"))]\nfn feature_off() {}\n".into(),
+                ),
+            ],
+        );
+        let facts = corpus.crate_cfg(Path::new("sdk/lib/rust/cdfs-rust/src/cddata.rs"));
+        assert!(
+            facts.on.contains("reactos"),
+            "default Cargo feature must be loaded"
+        );
+        assert!(
+            facts.emitted.contains("generated_cfg"),
+            "build.rs cfg must be loaded"
+        );
+        let cfg = eval::CrateCfg {
+            on: facts.on.clone(),
+            declared: facts.declared.clone(),
+            emitted: facts.emitted.clone(),
+        };
+        assert!(eval::item_compiled_out(
+            &["#[cfg(not(feature = \"reactos\"))]", "fn feature_off() {}"],
+            2,
+            &cfg,
+        ));
     }
 }

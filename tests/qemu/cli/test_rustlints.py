@@ -129,3 +129,34 @@ def test_bootstrap_failure_is_scanner_error(tmp_path, monkeypatch):
     result = rustlints.run_many(tmp_path, ["a"], lambda cmd: pytest.fail("must not invoke"))
     assert lints._scanner_error(result["a"], "stdout")
     assert "compiler unavailable" in result["a"].stderr
+
+
+def test_bootstrap_rejects_sources_changed_during_build(tmp_path, monkeypatch):
+    source = tmp_path / "tools/vibeos-lint"
+    (source / "src").mkdir(parents=True)
+    (source / "Cargo.toml").write_text("[package]\nname='test'\nversion='0.1.0'\n")
+    (source / "Cargo.lock").write_text("")
+    (tmp_path / "rust-toolchain.toml").write_text("[toolchain]\nchannel='stable'\n")
+    rust = source / "src/main.rs"
+    rust.write_text("fn main() {}")
+    builds = []
+
+    def build(command, **kwargs):
+        builds.append(command)
+        artifact = tmp_path / ".cache/vibeos-lint/target/release/vibeos-lint"
+        artifact.parent.mkdir(parents=True, exist_ok=True)
+        artifact.write_bytes(b"compiled")
+        if len(builds) == 1:
+            # A new source file must invalidate the build too, not only edits.
+            (source / "src/new.rs").write_text("fn newly_added() {}")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(rustlints.subprocess, "run", build)
+    with pytest.raises(RuntimeError, match="sources changed during bootstrap"):
+        rustlints.ensure(tmp_path)
+    target = tmp_path / ".cache/vibeos-lint/vibeos-lint"
+    assert not target.exists()
+    assert not target.with_suffix(".sha256").exists()
+    assert rustlints.ensure(tmp_path).read_bytes() == b"compiled"
+    assert rustlints.ensure(tmp_path) == target
+    assert len(builds) == 2

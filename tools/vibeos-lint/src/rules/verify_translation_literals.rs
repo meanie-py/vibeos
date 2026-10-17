@@ -227,11 +227,27 @@ static ARRAY_ELEM_VALID: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 fn array_elems_only(body: &str) -> bool {
-    let body = body.trim();
-    if body.is_empty() {
-        return false;
+    // Commas inside character elements (for example `',' as TCHAR`) are data, not
+    // separators. Split only outside quoted char literals, matching Python's element regex.
+    let mut elems = Vec::new();
+    let (mut start, mut quote, mut escaped) = (0, false, false);
+    for (i, ch) in body.char_indices() {
+        if quote {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '\'' {
+                quote = false;
+            }
+        } else if ch == '\'' {
+            quote = true;
+        } else if ch == ',' {
+            elems.push(body[start..i].trim());
+            start = i + 1;
+        }
     }
-    let mut elems: Vec<_> = body.split(',').map(str::trim).collect();
+    elems.push(body[start..].trim());
     if elems.last() == Some(&"") {
         elems.pop();
     }
@@ -845,6 +861,9 @@ fn rust_literals(text: &str) -> Counts {
     let mut rust_dbg = names.iter().map(|x| format!("{x}!")).collect::<Vec<_>>();
     let refs = rust_dbg.iter().map(String::as_str).collect::<Vec<_>>();
     chars_s = strip_calls(&chars_s, &refs);
+    // DbgPrint calls emitted by translated DPRINT macros are ordinary calls, not macros.
+    // Python strips those too after the channel macro pass (notably __FILE! expansions).
+    chars_s = strip_calls(&chars_s, &["DbgPrint"]);
     let mut out = Counts::new();
     for cap in RUST_STRING.captures_iter(&chars_s) {
         let lit = dewiden(cap.get(1).unwrap().as_str());
@@ -862,11 +881,11 @@ fn rust_literals(text: &str) -> Counts {
     for arr in u16_array_literals(&arrays_text) {
         add_count(&mut out, arr, 1);
     }
-    let out = out
-        .into_iter()
-        .map(|(k, v)| (norm_escapes(&k), v))
-        .collect();
-    out
+    let mut normalized = Counts::new();
+    for (k, v) in out {
+        add_count(&mut normalized, norm_escapes(&k), v);
+    }
+    normalized
 }
 fn py_repr(s: &str) -> String {
     let quote = if s.contains('\'') && !s.contains('"') {
@@ -1135,6 +1154,26 @@ _snprintf(buf, 26, "%02d");
             r#"unsafe fn f() { g(w!("live")); }"#
         )
         .is_empty());
+    }
+    #[test]
+    fn comma_characters_are_array_data_and_dbgprint_calls_are_removed() {
+        assert_eq!(
+            u16_array_literals(
+                "static S: [TCHAR; 4] = ['A' as TCHAR, ',' as TCHAR, 'B' as TCHAR, 0];"
+            ),
+            vec!["A,B"]
+        );
+        assert!(pair(
+            r#"void f(void) { }"#,
+            r#"unsafe fn f() { DbgPrint("debug-only"); }"#
+        )
+        .is_empty());
+        let one = r#"unsafe fn f() { _stprintf(x, w!("%s  [%s]\t%s")); }"#;
+        let two = r#"unsafe fn f() { _stprintf(x, _T(w!("%s  [%s]\t%s"))); }"#;
+        assert_eq!(rust_literals(one).get(r"%s  [%s]\t%s"), Some(&1));
+        assert_eq!(rust_literals(two).get(r"%s  [%s]\t%s"), Some(&1));
+        let exact = r#"unsafe fn f() { _stprintf(x, w!("%s  [%s]\t%s")); _stprintf(x, _T(w!("%s  [%s]	%s"))); }"#;
+        assert_eq!(rust_literals(exact).get(r"%s  [%s]\t%s"), Some(&2));
     }
     #[test]
     fn hoisted_arrays_are_presence_compared_not_counted() {

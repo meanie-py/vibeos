@@ -1,68 +1,10 @@
-#!/usr/bin/env python3
-"""
-scan_dowhile_continue.py — a `continue` that skips a translated do-while condition.
-
-THE CLASS. C `do { ... continue; ... } while (cond);` jumps to the CONDITION on
-`continue`. The translator renders a do-while as
-
-    loop { ...; if !(cond) { break; } }
-
-where a `continue` jumps back to the TOP and never evaluates `cond`. The loop then
-spins forever, re-processes the same element, or runs past where the C stopped.
-Four shipped (2026-10): kernel32 GetTempFileNameW (a CSRSS ID of 0 looped
-forever), syssetup RegisterTypeLibraries (one bad INF line: endless FatalError
-dialogs), win32k co_IntGetPeekMessage (re-peeked a DDE message whose data was
-already freed: use-after-free + double free), user32 ScrollTrackScrollBar (a
-filtered button-up kept tracking). Thirteen more sites had been fixed by hand,
-one at a time, by re-running the advance + condition before each `continue`.
-
-WHAT IS FLAGGED: a Rust `loop` whose last statement is `if <cond> { break; }` and
-which holds a `continue` aimed at that loop (bare, or labelled with its label;
-`continue`s inside nested loops are theirs, not this one's). That is the shape of
-a do-while with a skippable condition. It is ALSO the shape of a faithful
-`for (;;) { ... if (x) break; }`, so a finding is a question, not a verdict: read
-the C. Faithful sites are baselined (tools/lint-baseline/scan_dowhile_continue.txt)
-or carry `// nolint: dowhile-continue (why)` on the `loop {` line.
-
-Findings are keyed by file and enclosing function, not line, so they survive edits.
-
-THE SIBLING IN A MACRO. A `for (init; cond; step)` lowered to `while cond { body; step }`
-has the same defect: C runs `step` on `continue`, Rust jumps past it. Written by hand that
-is ambiguous (a C `while` with a trailing update is faithful), but inside a `macro_rules!`
-it is not: a loop macro that splices its caller's `$body` and THEN advances is a lowered
-`for` by construction, and every caller that writes `continue` spins. kernel32's and
-ole32's wine `LIST_FOR_EACH_ENTRY!` were both this shape (2026-10-08) -- kernel32's
-UpdateResource hung on the second resource it added -- and ole32 had already hand-rolled
-one walk around the macro rather than fix it. So a macro whose `while`/`loop` has anything
-after a `$metavar` statement is flagged with no C reading needed; the fix is to advance at
-the TOP of the loop, behind a first-pass flag, or before the body when `next` is cached.
-
-THE SIBLING BY HAND. The same lowering written out: a `while` whose last statement updates
-a variable (`i += 1;`, `p = (*p).Next;`) and which holds a `continue` that no earlier
-update of that variable reaches -- an update counts only from a block still open at the
-`continue`, so one in a sibling `if` arm does not cover it. cmlib's HvValidateHive (2026-10)
-spun forever on a NULL bin this way, its C `for` header having run `BlockIndex++` on the
-`continue`. A C `while` with the same trailing update is faithful, so read the C; faithful
-sites are baselined like the do-while ones. A `for (;;)` whose `continue` legitimately
-re-runs the same element (a retry) is faithful too.
-
-Usage:
-    python3 tools/scan_dowhile_continue.py [--lint] [paths...]
-"""
+"""Pure loop checks used to audit candidate Rust translations before integration."""
 
 from __future__ import annotations
 
-import argparse
 import functools
 import re
-import sys
-from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO))
-from tools.source_walk import source_files  # noqa: E402
-
-RUST_ROOT = REPO / "sdk" / "lib" / "rust"
 COMMENT_RE = re.compile(r"//[^\n]*|/\*.*?\*/", re.S)
 STRING_RE = re.compile(r'b?"(?:\\.|[^"\\])*"')
 CHAR_RE = re.compile(r"b?'(?:\\.|[^'\\])'")
@@ -273,50 +215,3 @@ def scan_macros(raw: str) -> list[tuple[int, str]]:
                 break
     return out
 
-
-def main() -> int:
-    ap = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
-    ap.add_argument("paths", nargs="*", type=Path)
-    ap.add_argument(
-        "--lint", action="store_true", help="terse, line-free output; exit 1 on findings"
-    )
-    args = ap.parse_args()
-
-    files = []
-    for p in args.paths or [RUST_ROOT]:
-        files += [p] if p.is_file() else sorted(source_files(p))
-    findings, step_findings, macro_findings = [], [], []
-    for f in files:
-        raw = f.read_text(errors="replace")
-        rel = str(f.resolve().relative_to(REPO) if f.resolve().is_relative_to(REPO) else f)
-        findings += [(rel, line, fn, count) for line, fn, count in scan_text(raw)]
-        step_findings += [(rel, *hit) for hit in scan_while_steps(raw)]
-        macro_findings += [(rel, line, name) for line, name in scan_macros(raw)]
-    for rel, line, fn, var, count in step_findings:
-        if args.lint:
-            print(f"{rel}: fn {fn}: `continue` skips the while loop's trailing `{var}` update")
-        else:
-            print(f"{rel}:{line}: fn {fn}: {count} continue(s) skip the trailing `{var}` update")
-
-    for rel, line, name in macro_findings:
-        if args.lint:
-            print(f"{rel}: macro {name}: loop advances after the spliced body; `continue` skips it")
-        else:
-            print(
-                f"{rel}:{line}: macro {name}: a `continue` in the caller's body skips the advance"
-            )
-
-    for rel, line, fn, count in findings:
-        if args.lint:
-            print(f"{rel}: fn {fn}: loop ends in a do-while condition that `continue` skips")
-        else:
-            print(
-                f"{rel}:{line}: fn {fn}: {count} continue(s) skip the trailing `if .. {{ break; }}`"
-            )
-    return 1 if findings or macro_findings or step_findings else 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())

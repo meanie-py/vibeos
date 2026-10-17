@@ -8,9 +8,7 @@ is still live is a hard failure.
 
 from __future__ import annotations
 
-import argparse
 import json
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -196,43 +194,3 @@ def print_report(report: InventoryReport, *, as_json: bool = False) -> None:
     ):
         for path in paths:
             print(f"  {label}: {path}")
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repo", type=Path, default=Path(__file__).resolve().parents[3])
-    parser.add_argument("--ledger", type=Path)
-    parser.add_argument("--json", action="store_true")
-    parser.add_argument(
-        "--check",
-        action="store_true",
-        help="Lint mode: findings on stdout, summary on stderr, nonzero on mismatch",
-    )
-    args = parser.parse_args()
-    repo = args.repo.resolve()
-    ledger = args.ledger.resolve() if args.ledger else repo / DEFAULT_LEDGER
-    report = check_inventory(repo, ledger)
-    if args.check:
-        print(
-            f"shell32-tail-inventory: {'OK' if report.ok else 'FAIL'} — "
-            f"{report.cpp_files} cpp/{report.cpp_lines} lines, "
-            f"{report.c_files} c/{report.c_lines} lines",
-            file=sys.stderr,
-        )
-        if not report.ok:
-            for label, paths in (
-                ("UNCLASSIFIED", report.unclassified),
-                ("STILL_LIVE", report.unexpectedly_live),
-                ("ABSENT", report.expected_but_absent),
-                ("MISSING", report.missing_files),
-                ("DUPLICATE", report.duplicate_ledger_paths),
-            ):
-                for path in paths:
-                    print(f"{label}: {path}")
-    else:
-        print_report(report, as_json=args.json)
-    raise SystemExit(0 if report.ok else 1)
-
-
-if __name__ == "__main__":
-    main()

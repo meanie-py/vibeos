@@ -40,7 +40,7 @@ from . import (
     seh_rewrite,
     semantic_skeleton,
     semdiff,
-    shell32_tail_inventory,
+    shell32_inventory,
     substrate_closure,
     switch_extract,
     trivial_c,
@@ -512,13 +512,11 @@ def cmd_hybrid_closure(args):
 
 def cmd_shell32_tail_inventory(args):
     """Ratchet the planned shell32 tail against the literal live CMake source lists."""
-    ledger = (
-        Path(args.ledger) if args.ledger else REACTOS_ROOT / shell32_tail_inventory.DEFAULT_LEDGER
-    )
+    ledger = Path(args.ledger) if args.ledger else REACTOS_ROOT / shell32_inventory.DEFAULT_LEDGER
     if not ledger.is_absolute():
         ledger = (Path.cwd() / ledger).resolve()
-    report = shell32_tail_inventory.check_inventory(REACTOS_ROOT, ledger)
-    shell32_tail_inventory.print_report(report, as_json=args.json)
+    report = shell32_inventory.check_inventory(REACTOS_ROOT, ledger)
+    shell32_inventory.print_report(report, as_json=args.json)
     if not report.ok:
         sys.exit(1)
 

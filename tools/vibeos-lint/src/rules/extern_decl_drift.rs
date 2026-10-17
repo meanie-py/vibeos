@@ -8,8 +8,8 @@ use std::{
 
 pub struct ExternDeclDrift;
 static SOURCES: &[SourceSet] = &[
-    SourceSet::tree("drift_rust", &["sdk/lib/rust"], &["rs"], &[]),
-    SourceSet::tree("drift_manifests", &["sdk/lib/rust"], &[], &["Cargo.toml"]),
+    SourceSet::tree("drift_rust", &["sdk/lib/rust"], &["rs"], &[]).with_inputs(),
+    SourceSet::tree("drift_manifests", &["sdk/lib/rust"], &[], &["Cargo.toml"]).with_inputs(),
     SourceSet::tracked("drift_c", &["c"], &[]),
 ];
 const PTR: &str = "ptr";
@@ -1088,13 +1088,9 @@ mod tests {
 
     #[test]
     fn real_mlang_is_equal_guid_fixture() {
-        let rust = include_str!("/home/curi/Projects/os-playground/vibeos-lint/sdk/lib/rust/mlang-rust/src/mlang/mlang.rs");
-        let c = include_str!(
-            "/home/curi/Projects/os-playground/vibeos-lint/dll/win32/mlang/rust_cohab_stub.c"
-        );
-        let manifest = include_str!(
-            "/home/curi/Projects/os-playground/vibeos-lint/sdk/lib/rust/mlang-rust/Cargo.toml"
-        );
+        let rust = include_str!("../../../../sdk/lib/rust/mlang-rust/src/mlang/mlang.rs");
+        let c = include_str!("../../../../dll/win32/mlang/rust_cohab_stub.c");
+        let manifest = include_str!("../../../../sdk/lib/rust/mlang-rust/Cargo.toml");
         let got = run(&[
             ("sdk/lib/rust/mlang-rust/Cargo.toml", manifest),
             ("sdk/lib/rust/mlang-rust/src/mlang/mlang.rs", rust),

@@ -192,7 +192,9 @@ impl Rule for ExportShadows {
             }
         }
         let structural = crate::regexes::cached(STRUCTURAL).unwrap();
-        let mut rows: BTreeMap<(String, String, String, String), BTreeSet<String>> =
+        // Python keys findings by Def, then keeps the first matching spec description while
+        // accumulating arches. Keep the description as the value, not part of the row key.
+        let mut rows: BTreeMap<(String, String, String), (String, BTreeSet<String>)> =
             BTreeMap::new();
         for (unit, per) in &units {
             if EXPORTERS.contains(&unit.as_str()) || NOT_DRIVERS.contains(&unit.as_str()) {
@@ -218,17 +220,17 @@ impl Rule for ExportShadows {
                         let Some(what) = names.get(arch).and_then(|m| m.get(&d.base())) else {
                             continue;
                         };
-                        let e = rows
-                            .entry((d.loc(), d.name.clone(), d.krate.clone(), what.clone()))
-                            .or_default();
-                        e.insert(arch.clone());
+                        let (_, arches) = rows
+                            .entry((d.loc(), d.name.clone(), d.krate.clone()))
+                            .or_insert_with(|| (what.clone(), BTreeSet::new()));
+                        arches.insert(arch.to_string());
                     }
                 }
             }
         }
         Ok(rows
             .into_iter()
-            .map(|((loc, name, krate, what), arches)| {
+            .map(|((loc, name, krate), (what, arches))| {
                 let ar = ARCHES
                     .iter()
                     .filter(|a| arches.contains(**a))
@@ -246,6 +248,34 @@ impl Rule for ExportShadows {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn arch_rows_keep_first_spec_description_and_combine_arches() {
+        let mut rows: BTreeMap<(String, String, String), (String, BTreeSet<String>)> =
+            BTreeMap::new();
+        for (arch, what) in [
+            ("x86", "hal.spec: KeLowerIrql"),
+            ("x86_64", "ntoskrnl.spec: KeLowerIrql"),
+        ] {
+            let (_, arches) = rows
+                .entry((
+                    "file.rs:495".into(),
+                    "KeLowerIrql".into(),
+                    "classpnp-rust".into(),
+                ))
+                .or_insert_with(|| (what.to_string(), BTreeSet::new()));
+            arches.insert(arch.to_string());
+        }
+        let ((_, _, _), (what, arches)) = rows.into_iter().next().unwrap();
+        assert_eq!(what, "hal.spec: KeLowerIrql");
+        assert_eq!(
+            ARCHES
+                .iter()
+                .filter(|a| arches.contains(**a))
+                .copied()
+                .collect::<Vec<_>>(),
+            ["x86", "x86_64"]
+        );
+    }
     #[test]
     fn python_version_probe_fixtures() {
         assert!(version_included(&["-arch=x86_64"]).unwrap());

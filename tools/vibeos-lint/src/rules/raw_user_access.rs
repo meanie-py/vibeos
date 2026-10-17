@@ -161,6 +161,9 @@ pub(crate) fn parse_file(file: &SourceFile, root: &Path) -> Vec<FnDef> {
     let code = strip_lines(&file.text);
     let raw = Arc::new(raw);
     let code = Arc::new(code);
+    let path = file.resolved_path().to_path_buf();
+    let ps = path.to_string_lossy();
+    let crate_key = ps.split("/src/").next().unwrap_or(&ps).to_string();
     file.twin_functions(root)
         .iter()
         .filter_map(|f| {
@@ -174,13 +177,10 @@ pub(crate) fn parse_file(file: &SourceFile, root: &Path) -> Vec<FnDef> {
             if first >= raw.len() {
                 return None;
             }
-            let path = file.resolved_path().to_path_buf();
-            let ps = path.to_string_lossy();
-            let crate_key = ps.split("/src/").next().unwrap_or(&ps).to_string();
             Some(FnDef {
                 function: f.clone(),
-                path,
-                crate_key,
+                path: path.clone(),
+                crate_key: crate_key.clone(),
                 raw: raw.clone(),
                 code: code.clone(),
                 first,
@@ -514,6 +514,7 @@ fn walk(fn_def: &FnDef, seed: &HashSet<String>) -> Vec<WalkItem> {
     let last = fn_def.last;
     let mut body = fn_def.code[first..=last].join("\n");
     body = blank_addr(&body);
+    let line_offsets = line_offsets(&body);
     let names0 = seed.clone();
     let (captured, derived) = captures(&body, &names0);
     let derived_names = derived
@@ -527,7 +528,7 @@ fn walk(fn_def: &FnDef, seed: &HashSet<String>) -> Vec<WalkItem> {
     for (b, off) in &derived {
         dead.get_mut(b)
             .unwrap()
-            .push((0, body[..*off].bytes().filter(|&x| x == b'\n').count()))
+            .push((0, line_index(&line_offsets, *off)))
     }
     let patterns = names
         .iter()
@@ -564,7 +565,7 @@ fn walk(fn_def: &FnDef, seed: &HashSet<String>) -> Vec<WalkItem> {
                     ))
                     .is_match(rhs)
                 {
-                    let end = scope_end(&body, local, n);
+                    let end = scope_end(&body, &line_offsets, local, n);
                     dead.get_mut(n).unwrap().push((local, end));
                     continue;
                 }
@@ -620,7 +621,7 @@ fn walk(fn_def: &FnDef, seed: &HashSet<String>) -> Vec<WalkItem> {
     }
     for name in &names {
         for (callee, arg, off, nargs) in call_sites(&body, name, false) {
-            let line = first + body[..off].bytes().filter(|&x| x == b'\n').count() + 1;
+            let line = first + line_index(&line_offsets, off) + 1;
             let local = line - first - 1;
             if first + local >= fn_def.raw.len() {
                 continue;
@@ -655,7 +656,7 @@ fn walk(fn_def: &FnDef, seed: &HashSet<String>) -> Vec<WalkItem> {
     }
     for s in captured.keys() {
         for (callee, arg, off, nargs) in call_sites(&body, s, true) {
-            let line = first + body[..off].bytes().filter(|&x| x == b'\n').count() + 1;
+            let line = first + line_index(&line_offsets, off) + 1;
             let local = line - first - 1;
             if first + local >= fn_def.raw.len() || NOLINT.is_match(&fn_def.raw[first + local]) {
                 continue;
@@ -686,24 +687,20 @@ fn walk(fn_def: &FnDef, seed: &HashSet<String>) -> Vec<WalkItem> {
     let spans = kernel_spans(&body);
     out.retain(|w| {
         let offline = w.line - first - 1;
-        let off = body
-            .split('\n')
-            .take(offline)
-            .map(|s| s.len() + 1)
-            .sum::<usize>();
+        let off = line_offsets.get(offline).copied().unwrap_or(body.len());
         !spans.iter().any(|(a, b)| *a < off && off < *b)
     });
     out
 }
-fn scope_end(text: &str, line: usize, name: &str) -> usize {
-    let starts = text
-        .split('\n')
-        .scan(0usize, |p, s| {
-            let x = *p;
-            *p += s.len() + 1;
-            Some(x)
-        })
-        .collect::<Vec<_>>();
+fn line_offsets(text: &str) -> Vec<usize> {
+    let mut starts = vec![0];
+    starts.extend(text.match_indices('\n').map(|(i, _)| i + 1));
+    starts
+}
+fn line_index(starts: &[usize], byte: usize) -> usize {
+    starts.partition_point(|&at| at <= byte).saturating_sub(1)
+}
+fn scope_end(text: &str, starts: &[usize], line: usize, name: &str) -> usize {
     let pos = starts.get(line).copied().unwrap_or(0);
     let mut depth = 0i32;
     let mut open = None;
@@ -790,19 +787,43 @@ fn crate_of(path: &Path) -> String {
     let s = path.to_string_lossy();
     s.split("/src/").next().unwrap_or(&s).to_string()
 }
-fn resolve<'a>(caller: &FnDef, name: &str, all: &'a [FnDef]) -> Option<&'a FnDef> {
-    let local = all
-        .iter()
-        .filter(|f| f.function.name == name && f.crate_key == caller.crate_key)
-        .collect::<Vec<_>>();
-    if !local.is_empty() {
-        return (local.len() == 1).then(|| local[0]);
+struct FnIndex {
+    local: HashMap<String, HashMap<String, Vec<usize>>>,
+    global: HashMap<String, Vec<usize>>,
+}
+impl FnIndex {
+    fn new(all: &[FnDef]) -> Self {
+        let mut index = Self {
+            local: HashMap::new(),
+            global: HashMap::new(),
+        };
+        for (i, f) in all.iter().enumerate() {
+            index
+                .local
+                .entry(f.crate_key.clone())
+                .or_default()
+                .entry(f.function.name.clone())
+                .or_default()
+                .push(i);
+            index
+                .global
+                .entry(f.function.name.clone())
+                .or_default()
+                .push(i);
+        }
+        index
     }
-    let global = all
-        .iter()
-        .filter(|f| f.function.name == name)
-        .collect::<Vec<_>>();
-    (global.len() == 1).then(|| global[0])
+}
+fn resolve<'a>(caller: &FnDef, name: &str, all: &'a [FnDef], index: &FnIndex) -> Option<&'a FnDef> {
+    let local = index
+        .local
+        .get(&caller.crate_key)
+        .and_then(|by_name| by_name.get(name));
+    if let Some(local) = local.filter(|rows| !rows.is_empty()) {
+        return (local.len() == 1).then(|| &all[local[0]]);
+    }
+    let global = index.global.get(name)?;
+    (global.len() == 1).then(|| &all[global[0]])
 }
 pub(crate) fn walk_hits(f: &FnDef, names: &HashSet<String>) -> Vec<WalkItem> {
     walk(f, names)
@@ -819,7 +840,11 @@ pub(crate) fn raw_line(f: &FnDef, line: usize) -> &str {
 pub(crate) fn is_skipped(file: &SourceFile) -> bool {
     skip(file)
 }
-fn scan_syscall(f: &FnDef, all: &[FnDef]) -> Vec<(String, String, usize, String, String)> {
+fn scan_syscall(
+    f: &FnDef,
+    all: &[FnDef],
+    index: &FnIndex,
+) -> Vec<(String, String, usize, String, String)> {
     let params = ptr_params(f);
     let mut out = vec![];
     let mut seen = HashSet::new();
@@ -842,7 +867,7 @@ fn scan_syscall(f: &FnDef, all: &[FnDef]) -> Vec<(String, String, usize, String,
                     cur.path.display().to_string(),
                 ))
             } else if chain.matches("->").count() < 6 {
-                if let Some(callee) = resolve(cur, &w.callee, all) {
+                if let Some(callee) = resolve(cur, &w.callee, all, index) {
                     if callee.function.name == f.function.name
                         && callee.path == f.path
                         && callee.function.body_start == f.function.body_start
@@ -871,12 +896,13 @@ impl Rule for RawUserAccess {
             .iter()
             .flat_map(|f| parse_file(f, &c.root))
             .collect::<Vec<_>>();
+        let index = FnIndex::new(&all);
         let mut rows = std::collections::BTreeMap::<String, Vec<(usize, String)>>::new();
         for f in &all {
             if !syscall(f) {
                 continue;
             }
-            for (param, chain, line, text, path) in scan_syscall(f, &all) {
+            for (param, chain, line, text, path) in scan_syscall(f, &all, &index) {
                 let tail = if chain.is_empty() {
                     String::new()
                 } else {
@@ -893,6 +919,23 @@ impl Rule for RawUserAccess {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn indexed_offsets_match_prefix_and_line_joining_with_unicode() {
+        let text = "α\nsecond\nlast";
+        let starts = line_offsets(text);
+        for byte in (0..=text.len()).filter(|i| text.is_char_boundary(*i)) {
+            let old = text[..byte].bytes().filter(|b| *b == b'\n').count();
+            assert_eq!(line_index(&starts, byte), old);
+        }
+        for line in 0..3 {
+            let old = text
+                .split('\n')
+                .take(line)
+                .map(|s| s.len() + 1)
+                .sum::<usize>();
+            assert_eq!(starts[line], old);
+        }
+    }
     fn source(rel: &str, text: &str) -> SourceFile {
         SourceFile::new(rel.into(), text.into())
     }

@@ -117,32 +117,32 @@ TSV was produced from `/tmp/vibeos-cli/*-check-*/commands.jsonl` (`stage` = `lin
 |---|---|---|---|
 | `shellcheck` | No | — | Excluded: invokes shellcheck. |
 | `py-syntax` | No | — | Excluded: invokes Python compileall. |
-| `verify_ffi` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `verify_constants` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `verify_constants_enums` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `lint_kernel` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `verify_ffi` | Yes | 157 / 157; older 157 / 157 | Batch 7: exact parity on both trees; Rust fixtures. |
+| `verify_constants` | Yes | 0 / 0; older 0 / 0 | Batch 6: exact parity on both trees; Rust fixtures. |
+| `verify_constants_enums` | Yes | 3 / 3; older 3 / 3 | Batch 6: exact parity on both trees; Rust fixtures. |
+| `lint_kernel` | Yes | 1229 / 1229; older 1231 / 1231 | Batch 7: exact parity on both trees; Rust fixtures. |
 | `scan_nightly_surface` | Yes | 0 / 0 (current); 0 / 0 (older) | Batch 4; exact finding hashes on both trees. |
-| `strip_msvc_cmake` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `shell32_tail_inventory` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `verify_tables` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `verify_match_consts` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `strip_msvc_cmake` | Yes | 0 / 0; older 0 / 0 | Batch 6: exact parity on both trees; Rust fixtures. |
+| `shell32_tail_inventory` | Yes | 0 / 0; older 0 / 0 | Batch 6: exact parity on both trees; Rust fixtures. |
+| `verify_tables` | Yes | 3 / 3; older 3 / 3 | Batch 8: exact parity on both trees; Rust fixtures. |
+| `verify_match_consts` | Yes | 0 / 0; older 0 / 0 | Batch 8: exact parity on both trees; Rust fixtures. |
 | `verify_signatures` | No | — | Excluded: invokes clang against this checkout’s generated build headers. |
-| `verify_conv_macros` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `verify_conv_macros` | Yes | 0 / 0; older 0 / 0 | Batch 6: exact parity on both trees; Rust fixtures. |
 | `verify_ucrtbase_cohab` | No | — | Excluded: reads built archives/DLLs with nm/objdump. |
 | `vendored_registry` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `verify_translation_literals` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `gen_ctype_tables` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `verify_lost_exports` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `verify_c_signatures` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `verify_translation_literals` | Yes | 130 / 130; older 130 / 130 | Batch 6: exact parity on both trees; Rust fixtures. |
+| `gen_ctype_tables` | No | — | Excluded: reads build-i386 ctype.c.obj through llvm-nm/llvm-objcopy. |
+| `verify_lost_exports` | Yes | 0 / 0; older 0 / 0 | Batch 7: exact parity on both trees; Rust fixtures. |
+| `verify_c_signatures` | Yes | 10 / 10; older 10 / 10 | Batch 6: exact parity on both trees; Rust fixtures. |
 | `scan_inline_flag_literals` | Yes | 0 / 0 (current); 0 / 0 (older) | Batch 4; exact finding hashes on both trees. |
 | `scan_extern_arity` | Yes | 13 / 13 | Exact on both source revisions; batch 3. |
 | `scan_orphan_modules` | Yes | 6 / 6 (current); 6 / 6 (older) | Batch 4; exact finding hashes on both trees. |
-| `cohab_census` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `cohab_census` | Yes | 0 / 0; older 0 / 0 | Batch 7: exact parity on both trees; Rust fixtures. |
 | `scan_bugcheck_stubs` | Yes | 3 / 3 (current); 3 / 3 (older) | Batch 4; exact finding hashes on both trees. |
-| `scan_silent_failures` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_magic_offsets` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_silent_failures` | Yes | 1798 / 1798; older 1805 / 1805 | Batch 6: exact parity on both trees; Rust fixtures. |
+| `scan_magic_offsets` | Yes | 75 / 75; older 75 / 75 | Batch 6: exact parity on both trees; Rust fixtures. |
 | `scan_doc_sections` | Yes | 0 / 0 (current); 0 / 0 (older) | Batch 4; exact finding hashes on both trees. |
-| `scan_boot_media_drift` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_boot_media_drift` | Yes | 0 / 0; older 0 / 0 | Batch 7: exact parity on both trees; Rust fixtures. |
 | `scan_raw_uart_writes` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
 | `scan_bugcheck_codes` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
 | `scan_assert_to_ub` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
@@ -153,13 +153,13 @@ TSV was produced from `/tmp/vibeos-cli/*-check-*/commands.jsonl` (`stage` = `lin
 | `scan_dropped_null_guard` | Yes | 0 / 0 | Exact on both source revisions; batch 3. |
 | `scan_store_on_failure` | Yes | 0 / 0 | Exact on both source revisions; batch 3. |
 | `scan_bool_width` | Yes | 0 / 0 (current); 0 / 0 (older) | Batch 4; exact finding hashes on both trees. |
-| `scan_cfg_vs_c` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_cfg_vs_c` | Yes | 0 / 0; older 0 / 0 | Batch 5: exact parity on both trees; Rust fixtures. |
 | `scan_constant_placement` | Yes | 0 / 0 | Exact on both source revisions; batch 3. |
-| `scan_const_contradictions` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_const_vs_island` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_const_vs_own_island` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_const_within_crate` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_invented_constants` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_const_contradictions` | Yes | 209 / 209; older 209 / 209 | Batch 5: exact parity on both trees; Rust fixtures. |
+| `scan_const_vs_island` | Yes | 1 / 1; older 1 / 1 | Batch 5: exact parity on both trees; Rust fixtures. |
+| `scan_const_vs_own_island` | Yes | 0 / 0; older 0 / 0 | Batch 5: exact parity on both trees; Rust fixtures. |
+| `scan_const_within_crate` | Yes | 37 / 37; older 37 / 37 | Batch 5: exact parity on both trees; Rust fixtures. |
+| `scan_invented_constants` | Yes | 8 / 8; older 8 / 8 | Batch 6: exact parity on both trees; Rust fixtures. |
 | `scan_hresult_literals` | Yes | 0 / 0 on both revisions | Rust plugin; positive/negative controls exercise the shipping binary. |
 | `scan_byteptr_stride` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
 | `scan_gmem_flags` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
@@ -169,10 +169,10 @@ TSV was produced from `/tmp/vibeos-cli/*-check-*/commands.jsonl` (`stage` = `lin
 | `scan_case_bitor_pattern` | Yes | 0 / 0 (current); 0 / 0 (older) | Batch 4; exact finding hashes on both trees. |
 | `scan_list_walk_from_head` | Yes | 0 / 0 on both revisions | Rust plugin; positive/negative controls exercise the shipping binary. |
 | `scan_dowhile_continue` | Yes | 55 / 55 on both revisions | Rust plugin; Python helper retained for rustconv.c_body_checks. |
-| `scan_mask_drift` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_mask_drift` | Yes | 47 / 47; older 48 / 48 | Batch 5: exact parity on both trees; Rust fixtures. |
 | `scan_dropped_prints` | Yes | 1427 / 1427 (current); 1442 / 1442 (older) | Batch 4; exact finding hashes on both trees. |
 | `scan_dropped_probes` | Yes | 2 / 2 (current); 2 / 2 (older) | Batch 4; exact finding hashes on both trees. |
-| `scan_ptr_typedef_indirection` | No | — | Owed: shared CMake compiled-TU/module pairing and tree-sitter definition equivalence. |
+| `scan_ptr_typedef_indirection` | Yes | 0 / 0; older 0 / 0 | Batch 5: exact parity on both trees; Rust fixtures. |
 | `scan_dropped_seh_pairs` | Yes | 0 / 0 (current); 0 / 0 (older) | Batch 4; exact finding hashes on both trees. |
 | `scan_raising_probes` | Yes | 0 / 0 | Exact on both source revisions; batch 3. |
 | `scan_raw_user_access` | Yes | 0 / 0 (current); 0 / 0 (older) | Batch 4; exact finding hashes on both trees. |
@@ -180,7 +180,7 @@ TSV was produced from `/tmp/vibeos-cli/*-check-*/commands.jsonl` (`stage` = `lin
 | `scan_safe_probe_deref` | Yes | 0 / 0 (current); 0 / 0 (older) | Batch 4; exact finding hashes on both trees. |
 | `scan_macro_fn_shadow` | Yes | 0 / 0 (current); 30 / 30 (older) | Batch 4; exact finding hashes on both trees. |
 | `scan_type_alias_contradictions` | Yes | 0 / 0 (current); 0 / 0 (older) | Batch 4; exact finding hashes on both trees. |
-| `scan_varargs_shim_parity` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_varargs_shim_parity` | Yes | 0 / 0; older 0 / 0 | Batch 5: exact parity on both trees; Rust fixtures. |
 | `scan_wide_literals` | Yes | 0 / 0 (current); 0 / 0 (older) | Batch 4; exact finding hashes on both trees. |
 | `scan_dangling_transmute` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
 | `scan_opaque_ptr_arith` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
@@ -201,11 +201,11 @@ TSV was produced from `/tmp/vibeos-cli/*-check-*/commands.jsonl` (`stage` = `lin
 | `scan_read_after_clear` | Yes | 0 / 0 on both revisions | Rust plugin; positive/negative controls exercise the shipping binary. |
 | `scan_init_then_move` | Yes | 0 / 0 on both revisions | Rust plugin; positive/negative controls exercise the shipping binary. |
 | `scan_containing_record_null` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
-| `scan_call_literal_vs_c` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_call_literal_vs_c` | Yes | 139 / 139; older 139 / 139 | Batch 5: exact parity on both trees; Rust fixtures. |
 | `scan_pack_drift` | Yes | 3 / 3 (current); 2 / 2 (older) | Batch 4; exact finding hashes on both trees. |
-| `scan_unaligned_wide` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `verify_svc_numbering` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `marshalgen_audit` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_unaligned_wide` | Yes | 0 / 0; older 0 / 0 | Batch 5: exact parity on both trees; Rust fixtures. |
+| `verify_svc_numbering` | No | — | Excluded: disassembles built i386 user32/gdi32 stubs with llvm-objdump. |
+| `marshalgen_audit` | No | — | Excluded: invokes clang record-layout probes using configured build trees. |
 | `scan_cc_mismatch` | Yes | 14 / 14 (current); 14 / 14 (older) | Batch 4; exact finding hashes on both trees. |
 | `scan_rawdylib_linkname` | Yes | 0 / 0 (current); 0 / 0 (older) | Batch 4; exact finding hashes on both trees. |
 | `scan_import_cc` | Yes | 6 / 6 (current); 4 / 4 (older) | Batch 4; exact finding hashes on both trees. |
@@ -220,17 +220,17 @@ TSV was produced from `/tmp/vibeos-cli/*-check-*/commands.jsonl` (`stage` = `lin
 | `scan_res_named_types` | Yes | 0 / 0 (current); 0 / 0 (older) | Batch 4; exact finding hashes on both trees. |
 | `scan_bindgen_padding_index` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
 | `scan_extern_static_width` | Yes | 0 / 0 (current); 0 / 0 (older) | Batch 4; exact finding hashes on both trees. |
-| `scan_duplicate_symbols` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_export_shadows` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_irql_balance` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_ob_refcount` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_com_double_release` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_unpruned_walk` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_extern_decl_drift` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_duplicate_symbols` | Yes | 0 / 0; older 0 / 0 | Batch 5: exact parity on both trees; Rust fixtures. |
+| `scan_export_shadows` | Yes | 38 / 38; older 38 / 38 | Batch 5: exact parity on both trees; Rust fixtures. |
+| `scan_irql_balance` | Yes | 9 / 9; older 9 / 9 | Batch 5: exact parity on both trees; Rust fixtures. |
+| `scan_ob_refcount` | Yes | 8 / 8; older 8 / 8 | Batch 5: exact parity on both trees; Rust fixtures. |
+| `scan_com_double_release` | Yes | 0 / 0; older 0 / 0 | Batch 5: exact parity on both trees; Rust fixtures. |
+| `scan_unpruned_walk` | Yes | 0 / 0; older 0 / 0 | Batch 5: exact parity on both trees; Rust fixtures. |
+| `scan_extern_decl_drift` | Yes | 31 / 31; older 31 / 31 | Batch 5: exact parity on both trees; Rust fixtures. |
 | `scan_dropped_asserts` | Yes | 89 / 89 (current); 89 / 89 (older) | Batch 4; exact finding hashes on both trees. |
-| `scan_override_self_dispatch` | No | — | Owed: added on master; remains in Python until parity-proven. |
-| `scan_version_vs_c` | No | — | Owed: added on master; remains in Python until parity-proven. |
-| `null_offset_to_offset_of` | No | — | Owed: added on master; remains in Python until parity-proven. |
+| `scan_override_self_dispatch` | Yes | 0 / 0; older 36 / 36 | Batch 5: exact parity on both trees; Rust fixtures. |
+| `scan_version_vs_c` | Yes | 0 / 0; older 12 / 12 | Batch 5: exact parity on both trees; Rust fixtures. |
+| `null_offset_to_offset_of` | Yes | 0 / 0; older 15 / 15 | Batch 7: exact parity on both trees; Rust fixtures. |
 
 ## Batch 1 — host runner and twelve rules (2026-10-16)
 
@@ -416,3 +416,43 @@ syntax retention, repeated scans and cross-file indexes still need tuning.
 These measurements are not a controlled comparison with earlier batches.
 Profiling already removed repeated prefix newline counts in dropped-assert
 checking; later candidate optimizations remain separate work.
+
+## Batches 5–8 — source-suite coverage (2026-10-17)
+
+The binary now routes **108 of 116 checks**. The vendor-registry audit remains
+owed; its Rust core is checkpointed but YAML decoding still needs approval for
+an additional dependency. Seven external checks remain in Python: shellcheck,
+compileall, clang signatures, built UCRT coverage, built ctype extraction, built
+SVC numbering, and clang marshalling layouts. The latter three were previously
+marked owed; their actual registry commands read build outputs or invoke compiler
+tools, so they fall under the design's existing exclusions.
+
+The committed batch reports record exact Python/Rust finding sets on this tree
+and `cc53d01b091`: batch 5 has **519 / 568** findings across 19 rules; batch 6 has
+**2,024 / 2,031** across ten; batch 7 has **1,386 / 1,403** across six; batch 8 has
+**3 / 3** across two. These 37 rules replace more than **564 seconds** of summed
+historical scanner medians. Counts and hashes come from the original registry,
+argv, streams and helpers at `e5ffbfc1e578`, with Python fact caches disabled.
+Reports assembled from reruns are parity evidence, not combined benchmarks.
+
+Retired Python lint entrypoints are removed. Separate write/report APIs remain:
+`strip_msvc_cmake.py --write`, `null_offset_to_offset_of.py --apply`, cohab census,
+`rustconv.fix_constants --fix`, and `rustconv.shell32_inventory`. The translation
+pipeline retains pure loop checks in `tools/loop_patterns.py`. Their dedicated
+utility tests remain; source controls exercise the shipping Rust plugins.
+
+Cross-file source sets now declare standalone Cargo-feature inputs. Scoped
+fixtures retain global version catalogs, and the early invented-constant check
+prunes build directories before opening them. Bootstrap publication checks its
+source digest again after compilation; a concurrent source edit cannot publish
+a binary under the wrong digest. Finding chunks are normalized and tagged one
+physical line at a time. The replay harness validates historical Python commands
+before doing expensive work and handles nested Rustconv script roots explicitly.
+
+The 89-rule source check passed all 116 stages in **359.86 seconds**
+(`20261017-032249-edypn1un-check-all`). The 107-rule check also passed all stages
+in **541.95 seconds** (`20261017-033612-heutrck0-check-all`), under concurrent
+parity and fleet load. These runs demonstrate baseline compatibility; they do
+not demonstrate a speedup. The seconds target remains owed. Profiling found
+repeated whole-corpus path maps in crate scanning and serialized syntax parsing;
+performance changes and full tooling validation follow this checkpoint.

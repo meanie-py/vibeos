@@ -20,7 +20,7 @@ const INPUTS: &[SourceSet] = &[
     .with_pruning(&["target", ".git"]),
 ];
 static COMMENT: LazyLock<Regex> =
-    LazyLock::new(|| crate::regexes::cached(r"/\*.*?\*/|//[^\n]*").unwrap());
+    LazyLock::new(|| crate::regexes::cached(r"(?s)/\*.*?\*/|//[^\n]*").unwrap());
 static TAG: LazyLock<Regex> =
     LazyLock::new(|| crate::regexes::cached(r"\b(?:struct|union|enum)\s+([A-Za-z_]\w*)").unwrap());
 static DECL_HANDLE: LazyLock<Regex> = LazyLock::new(|| {
@@ -462,13 +462,15 @@ impl Rule for VerifyCSignatures {
                 let rs = r_fns(&rf.text);
                 for (n, (rr, rp)) in rs {
                     let Some((cr, cp)) = cs.get(&n) else { continue };
-                    if let Ok(a) = depth(cr, &m, &mut BTreeSet::new()) {
-                        if let Ok(b) = depth(&rr, &m, &mut BTreeSet::new()) {
-                            if a != b || ptr_sized(cr, &m) != ptr_sized(&rr, &m) {
-                                out.push(format!(
-                                    "{name}/{}: {n} return: C `{cr}` vs Rust `{rr}`",
-                                    rf.path.file_name().unwrap().to_string_lossy()
-                                ));
+                    if !cr.is_empty() {
+                        if let Ok(a) = depth(cr, &m, &mut BTreeSet::new()) {
+                            if let Ok(b) = depth(&rr, &m, &mut BTreeSet::new()) {
+                                if a != b || ptr_sized(cr, &m) != ptr_sized(&rr, &m) {
+                                    out.push(format!(
+                                        "{name}/{}: {n} return: C `{cr}` vs Rust `{rr}`",
+                                        rf.path.file_name().unwrap().to_string_lossy()
+                                    ));
+                                }
                             }
                         }
                     }
@@ -624,6 +626,31 @@ mod tests {
             r["Foo"],
             ("INT".into(), vec!["HANDLE".into(), "*mut PVOID".into()])
         );
+    }
+    #[test]
+    fn multiline_c_comments_do_not_create_function_definitions() {
+        let c = "/*\nINT\nFake(PVOID p)\n{\n}\n*/\nINT Real(PVOID p)\n{\n}\n";
+        let parsed = c_fns(c);
+        assert!(!parsed.contains_key("Fake"), "{parsed:?}");
+        assert_eq!(parsed.get("Real").unwrap().0, "INT");
+    }
+    #[test]
+    fn empty_c_return_type_is_not_compared() {
+        let rust = "#[no_mangle]\npub unsafe extern \"system\" fn Foo() -> HANDLE { core::ptr::null_mut() }\n";
+        let c = "Foo()\n{\n}\n";
+        let corpus = Corpus::new(
+            std::path::PathBuf::from("/repo"),
+            vec![
+                crate::SourceFile::new("sdk/lib/rust/foo-rust/Cargo.toml".into(), "".into()),
+                crate::SourceFile::new("sdk/lib/rust/foo-rust/src/lib.rs".into(), rust.into()),
+                crate::SourceFile::new("dll/foo/lib.c".into(), c.into()),
+                crate::SourceFile::new(
+                    "sdk/include/psdk/base.h".into(),
+                    "typedef void *HANDLE;\n".into(),
+                ),
+            ],
+        );
+        assert!(VerifyCSignatures.run(&corpus).unwrap().is_empty());
     }
     #[test]
     fn braced_and_ambiguous_typedefs() {

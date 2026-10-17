@@ -12,16 +12,18 @@ const SETS: &[SourceSet] = &[SourceSet::tree(
 )
 .with_inputs()];
 static BLOCK: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*\(").unwrap());
+    LazyLock::new(|| crate::regexes::cached(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*\(").unwrap());
 static HIVE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"boot/bootdata/([A-Za-z0-9_.]+)").unwrap());
+    LazyLock::new(|| crate::regexes::cached(r"boot/bootdata/([A-Za-z0-9_.]+)").unwrap());
 static ASK: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"native-mkhive\s+-h:([A-Za-z0-9_,]+)").unwrap());
+    LazyLock::new(|| crate::regexes::cached(r"native-mkhive\s+-h:([A-Za-z0-9_,]+)").unwrap());
 static NEXT: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?m)^\s*(COMMAND|DEPENDS|WORKING_DIRECTORY|COMMENT|MAIN_DEPENDENCY|IMPLICIT_DEPENDS|BYPRODUCTS|VERBATIM|APPEND|USES_TERMINAL|COMMAND_EXPAND_LISTS|TARGET|DESTINATION|FOR|NAME_ON_CD|NO_CAB|OUTPUT|FILE)\b").unwrap()
+    crate::regexes::cached(r"(?m)^\s*(COMMAND|DEPENDS|WORKING_DIRECTORY|COMMENT|MAIN_DEPENDENCY|IMPLICIT_DEPENDS|BYPRODUCTS|VERBATIM|APPEND|USES_TERMINAL|COMMAND_EXPAND_LISTS|TARGET|DESTINATION|FOR|NAME_ON_CD|NO_CAB|OUTPUT|FILE)\b").unwrap()
 });
-static DEST: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\bDESTINATION\s+(\S+)").unwrap());
-static LIVE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\bFOR\b[^)]*\blivecd\b").unwrap());
+static DEST: LazyLock<Regex> =
+    LazyLock::new(|| crate::regexes::cached(r"\bDESTINATION\s+(\S+)").unwrap());
+static LIVE: LazyLock<Regex> =
+    LazyLock::new(|| crate::regexes::cached(r"\bFOR\b[^)]*\blivecd\b").unwrap());
 fn line_at(s: &str, i: usize) -> usize {
     s[..i].bytes().filter(|b| *b == b'\n').count() + 1
 }
@@ -54,7 +56,10 @@ fn blocks<'a>(text: &'a str, command: &str) -> Vec<(&'a str, usize)> {
 fn files(body: &str, section: Option<&str>) -> Vec<String> {
     let mut s = body;
     if let Some(sec) = section {
-        let Some(m) = Regex::new(&format!(r"\b{}\b", sec)).unwrap().find(body) else {
+        let Some(m) = crate::regexes::cached(&format!(r"\b{}\b", sec))
+            .unwrap()
+            .find(body)
+        else {
             return vec![];
         };
         let rest = &body[m.end()..];
@@ -109,8 +114,10 @@ fn audit(cmake: &str, ram: &str) -> Vec<String> {
     if live.is_empty() {
         return vec![format!("{CMAKE}:1: [NO_REFERENCE] found no add_cd_file(... FOR livecd) block staging generated hives — this audit cannot see the reference set, so it would pass vacuously; the parser or the cmake layout has changed")];
     }
-    let lays =
-        Regex::new(r"livecd\.\w+\.lst").unwrap().is_match(ram) && ram.contains("ramdisk_tree.py");
+    let lays = crate::regexes::cached(r"livecd\.\w+\.lst")
+        .unwrap()
+        .is_match(ram)
+        && ram.contains("ramdisk_tree.py");
     if !lays {
         let mut h: Vec<_> = live.keys().cloned().collect();
         h.sort();

@@ -30,8 +30,10 @@ const ROOTS: &[&str] = &[
     "sdk/lib/rust/pnpmgr-rust/src",
 ];
 const SETS: &[SourceSet] = &[SourceSet::tree("kernel-src", ROOTS, &["rs"], &[]).with_inputs()];
-static FN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"fn\s+(\w+)\s*\((.*?)\)").unwrap());
-static PARAM: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(\w+)\s*:\s*(.*)").unwrap());
+static FN: LazyLock<Regex> =
+    LazyLock::new(|| crate::regexes::cached(r"fn\s+(\w+)\s*\((.*?)\)").unwrap());
+static PARAM: LazyLock<Regex> =
+    LazyLock::new(|| crate::regexes::cached(r"(\w+)\s*:\s*(.*)").unwrap());
 
 #[derive(Debug)]
 struct Violation {
@@ -107,8 +109,11 @@ fn scan(file: &SourceFile) -> Vec<Violation> {
                         }
                     }
                     for (name, _) in params {
-                        let pat =
-                            Regex::new(&format!(r"^\s*\*{}\s*=\s*", regex::escape(&name))).unwrap();
+                        let pat = crate::regexes::cached(&format!(
+                            r"^\s*\*{}\s*=\s*",
+                            regex::escape(&name)
+                        ))
+                        .unwrap();
                         for (k, line) in lines[body_start..=end].iter().enumerate() {
                             let stripped = line.trim();
                             if stripped.starts_with("//")

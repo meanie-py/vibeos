@@ -1,5 +1,5 @@
 //! Keep the hand-transcribed C va_start shims faithful to their source bodies.
-use crate::{Corpus, Rule, SourceFile};
+use crate::{Corpus, Rule, SourceFile, SourceSet};
 use regex::Regex;
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
@@ -16,6 +16,11 @@ const STDIO: &str = "sdk/include/crt/stdio.h";
 impl Rule for VarargsShimParity {
     fn name(&self) -> &'static str {
         "scan_varargs_shim_parity"
+    }
+    fn source_sets(&self) -> &'static [SourceSet] {
+        const INPUTS: &[SourceSet] =
+            &[SourceSet::tree("varargs-fixtures", &[], &["c", "h"], &[]).with_inputs()];
+        INPUTS
     }
     fn extra_files(&self) -> &'static [&'static str] {
         &[WCS, SHIM, SCAN, SSHIM, FILE, FSHIM, STDIO]
@@ -51,9 +56,9 @@ impl Rule for VarargsShimParity {
             };
             let stdio = find_file(c, STDIO).map(|x| x.text.as_str());
             out.extend(check_pair(
-                r,
+                &rt.path.to_string_lossy(),
                 &rt.text,
-                s,
+                &st.path.to_string_lossy(),
                 &st.text,
                 stdio,
                 wcs.unwrap_or(&rt.text),
@@ -65,7 +70,18 @@ impl Rule for VarargsShimParity {
 fn find_file<'a>(c: &'a Corpus, path: &str) -> Option<&'a SourceFile> {
     c.files
         .iter()
-        .find(|f| f.path == std::path::Path::new(path))
+        .find(|f| {
+            !c.explicit_paths().is_empty()
+                && c.explicit_paths()
+                    .iter()
+                    .any(|p| f.resolved_path().starts_with(p))
+                && f.path.file_name() == std::path::Path::new(path).file_name()
+        })
+        .or_else(|| {
+            c.files
+                .iter()
+                .find(|f| f.path == std::path::Path::new(path))
+        })
         .or_else(|| {
             c.files.iter().find(|f| {
                 f.path

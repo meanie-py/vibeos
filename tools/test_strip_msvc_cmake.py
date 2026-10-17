@@ -103,7 +103,7 @@ def test_conditions_without_facts_are_untouched_byte_for_byte():
 def test_check_counts_what_write_would_resolve(tmp_path):
     f = tmp_path / "CMakeLists.txt"
     f.write_text("if(MSVC)\n  a()\nendif()\nif(NOT MSVC)\n  b()\nendif()\n")
-    assert smc.main(["--check", str(f)]) == 1
+    assert smc.pending(f.read_text()) == 2
     assert smc.main(["--write", str(f)]) == 0
     assert f.read_text() == "b()\n"
-    assert smc.main(["--check", str(f)]) == 0
+    assert smc.pending(f.read_text()) == 0

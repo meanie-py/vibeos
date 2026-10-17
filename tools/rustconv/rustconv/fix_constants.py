@@ -1,5 +1,5 @@
 """
-verify_constants.py — Cross-check Rust constant values against C headers.
+fix_constants.py — Constant catalog helpers and explicit repairs.
 
 Usage:
     python -m rustconv verify-constants [file.rs ...]
@@ -759,7 +759,12 @@ def verify_file(rs_path: Path, catalog: dict[str, int], fix: bool = False) -> li
 def main():
     parser = argparse.ArgumentParser(description="Verify Rust constants against C headers")
     parser.add_argument("files", nargs="*", help="Rust files to check (default: all)")
-    parser.add_argument("--fix", action="store_true", help="Auto-fix mismatches")
+    parser.add_argument(
+        "--fix",
+        action="store_true",
+        required=True,
+        help="Auto-fix mismatches (source lint checks use vibeos-lint)",
+    )
     parser.add_argument(
         "--enums",
         action="store_true",

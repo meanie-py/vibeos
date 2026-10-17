@@ -369,6 +369,13 @@ fn scan_body(body: Node<'_>, s: &str, lines: &[&str]) -> Vec<(usize, String, Str
     }
 }
 fn scan_file(f: &SourceFile) -> Result<Vec<(usize, String, String)>, String> {
+    // A leaked reference requires one of these acquisition calls. The raw-text
+    // test is conservative: comments and strings can only cause extra parsing.
+    if !OUT.iter().any(|(name, _)| f.text.contains(name))
+        && !ACQ.iter().any(|name| f.text.contains(name))
+    {
+        return Ok(Vec::new());
+    }
     if skip(f) {
         return Ok(vec![]);
     }

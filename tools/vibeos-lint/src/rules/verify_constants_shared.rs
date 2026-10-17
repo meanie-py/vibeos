@@ -312,6 +312,11 @@ pub fn combined_catalog(c: &Corpus, enums: bool) -> BTreeMap<String, Big> {
             (k, b)
         })
         .collect();
+    // The Python catalogue applies ReactOS NT6.2 downgrades after direct
+    // headers. Reapply them here because the shared literal catalogue starts
+    // with the same values but its later header scan may overwrite them.
+    out.insert("POOL_NX_ALLOCATION".into(), Big::zero());
+    out.insert("MdlMappingNoExecute".into(), Big::zero());
     if enums {
         let direct = direct_header_names(c);
         for (name, val) in enum_values(c) {
@@ -330,7 +335,7 @@ pub fn combined_catalog(c: &Corpus, enums: bool) -> BTreeMap<String, Big> {
 
 fn rust_const(line: &str) -> Option<(String, Big)> {
     let decl = re(
-        r"(?s)^(?:pub(?:\([^)]*\))?\s+)?const\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*[\w:]+\s*=\s*(.+?)\s*;$",
+        r"(?s)^(?:pub(?:\([^)]*\))?\s+)?const\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*[\w:]+\s*=\s*(.+?)\s*;",
     );
     let m = decl.captures(line.trim())?;
     let name = m[1].to_owned();
@@ -462,6 +467,72 @@ mod tests {
         assert_eq!(vals.get("Third"), Some(&0x24));
         assert!(!vals.contains_key("First"));
         c.files.clear();
+    }
+
+    #[test]
+    fn configuration_enum_members_match_actual_header_order() {
+        let text = "typedef enum _CONFIGURATION_TYPE {\nArcSystem,\nCentralProcessor,\nFloatingPointProcessor,\nPrimaryIcache,\nPrimaryDcache,\nSecondaryIcache,\nSecondaryDcache,\nSecondaryCache,\nEisaAdapter,\nTcAdapter,\nScsiAdapter,\nDtiAdapter,\nMultiFunctionAdapter,\nDiskController,\nTapeController\n} CONFIGURATION_TYPE;";
+        let c = corpus(vec![SourceFile::new(
+            "sdk/include/xdk/iotypes.h".into(),
+            text.into(),
+        )]);
+        let got = enum_values(&c);
+        assert_eq!(got.get("EisaAdapter"), Some(&8));
+        assert_eq!(got.get("ScsiAdapter"), Some(&10));
+        assert_eq!(got.get("DiskController"), Some(&13));
+    }
+
+    #[test]
+    fn enum_mode_reports_configuration_member_disagreements() {
+        let h = SourceFile::new(
+            "sdk/include/xdk/iotypes.h".into(),
+            "typedef enum _CONFIGURATION_TYPE { ArcSystem, CentralProcessor, FloatingPointProcessor, PrimaryIcache, PrimaryDcache, SecondaryIcache, SecondaryDcache, SecondaryCache, EisaAdapter, TcAdapter, ScsiAdapter, DtiAdapter, MultiFunctionAdapter, DiskController } CONFIGURATION_TYPE;".into(),
+        );
+        let r = SourceFile::new(
+            "sdk/lib/rust/setuplib-rust/src/setuplib/arcname.rs".into(),
+            "pub const EisaAdapter: _ADAPTER_TYPE = 0; // nolint: const-contradiction (module-private enum; the island's EisaAdapter is a different enum)\npub const ScsiAdapter: _ADAPTER_TYPE = 1; // nolint: const-contradiction (module-private enum; the island's ScsiAdapter is a different enum)\npub const DiskController: _CONTROLLER_TYPE = 0; // nolint: const-contradiction (module-private enum; the island's DiskController is a different enum)\n".into(),
+        );
+        let c = corpus(vec![h, r]);
+        let got = findings(&c, true);
+        assert_eq!(got.len(), 3, "{got:?}");
+        assert!(got
+            .iter()
+            .any(|x| x.contains("EisaAdapter") && x.contains("0x00000008")));
+        assert!(got
+            .iter()
+            .any(|x| x.contains("ScsiAdapter") && x.contains("0x0000000A")));
+        assert!(got
+            .iter()
+            .any(|x| x.contains("DiskController") && x.contains("0x0000000D")));
+    }
+
+    #[test]
+    fn actual_iotypes_configuration_enum_is_indexed() {
+        let text = include_str!("../../../../sdk/include/xdk/iotypes.h");
+        let c = corpus(vec![SourceFile::new(
+            "sdk/include/xdk/iotypes.h".into(),
+            text.into(),
+        )]);
+        let got = enum_values(&c);
+        assert_eq!(got.get("EisaAdapter"), Some(&8));
+        assert_eq!(got.get("ScsiAdapter"), Some(&10));
+        assert_eq!(got.get("DiskController"), Some(&13));
+    }
+
+    #[test]
+    fn reactos_pool_downgrade_overrides_direct_header_value() {
+        let c = corpus(vec![SourceFile::new(
+            "sdk/include/xdk/iotypes.h".into(),
+            "#define POOL_NX_ALLOCATION 0x0200\n".into(),
+        )]);
+        assert_eq!(
+            combined_catalog(&c, false).get("POOL_NX_ALLOCATION"),
+            Some(&Big::zero())
+        );
+        assert_eq!(
+            combined_catalog(&c, true).get("POOL_NX_ALLOCATION"),
+            Some(&Big::zero())
+        );
     }
 
     #[test]

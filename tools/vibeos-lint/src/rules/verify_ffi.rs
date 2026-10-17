@@ -14,14 +14,18 @@ const INPUTS: &[SourceSet] = &[
     SourceSet::tree("ffi-spec", &["ntoskrnl"], &["spec"], &[]),
 ];
 static SPEC_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^@\s+(stdcall|cdecl|fastcall)\s+(?:-arch=[^\s]+\s+)?(\w+)\s*\(([^)]*)\)").unwrap()
+    crate::regexes::cached(
+        r"^@\s+(stdcall|cdecl|fastcall)\s+(?:-arch=[^\s]+\s+)?(\w+)\s*\(([^)]*)\)",
+    )
+    .unwrap()
 });
-static EXTERN_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"^\s*(?:pub\s+)?unsafe\s+extern\s+"(\w+)""#).unwrap());
+static EXTERN_RE: LazyLock<Regex> = LazyLock::new(|| {
+    crate::regexes::cached(r#"^\s*(?:pub\s+)?unsafe\s+extern\s+"(\w+)""#).unwrap()
+});
 static FN_START: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^\s*pub\s+fn\s+(\w+)\s*\(").unwrap());
+    LazyLock::new(|| crate::regexes::cached(r"^\s*pub\s+fn\s+(\w+)\s*\(").unwrap());
 static LOCAL_DEF: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"#\[no_mangle\]\s*(?:#\[[^\]]*\]\s*)*pub\s+(?:unsafe\s+)?(?:extern\s+"[A-Za-z-]+"\s+)?fn\s+(\w+)\s*[(<]"#).unwrap()
+    crate::regexes::cached(r#"#\[no_mangle\]\s*(?:#\[[^\]]*\]\s*)*pub\s+(?:unsafe\s+)?(?:extern\s+"[A-Za-z-]+"\s+)?fn\s+(\w+)\s*[(<]"#).unwrap()
 });
 static FLEX: &[(&str, &str)] = &[
     ("_DEVICE_RELATIONS", "Objects"),
@@ -230,17 +234,18 @@ fn line_issues(
     let mut pending_cfg = String::new();
     let mut fn_buf: Option<String> = None;
     let (mut fn_line, mut fn_name, mut rust_name) = (0usize, String::new(), String::new());
-    let re_ext =
-        Regex::new(r#"^(?:pub\s+)?(?:unsafe\s+)?extern\s+"(C|system|stdcall|cdecl)"\s*\{"#)
-            .unwrap();
-    let re_rejoin = Regex::new(
+    let re_ext = crate::regexes::cached(
+        r#"^(?:pub\s+)?(?:unsafe\s+)?extern\s+"(C|system|stdcall|cdecl)"\s*\{"#,
+    )
+    .unwrap();
+    let re_rejoin = crate::regexes::cached(
         r#"^\}\s*(?:pub\s+)?(?:unsafe\s+)?extern\s+"(C|system|stdcall|cdecl)"\s*\{\s*$"#,
     )
     .unwrap();
-    let re_fn = Regex::new(r"^(?:pub\s+)?fn\s+(\w+)\s*\(").unwrap();
-    let re_link = Regex::new(r#"#\[link_name\s*=\s*"(\w+)"\]"#).unwrap();
-    let re_static = Regex::new(r"^(?:pub\s+)?(?:static\s+(?:mut\s+)?)\w+").unwrap();
-    let re_cfg = Regex::new(r"#\[cfg\((.*)\)\]").unwrap();
+    let re_fn = crate::regexes::cached(r"^(?:pub\s+)?fn\s+(\w+)\s*\(").unwrap();
+    let re_link = crate::regexes::cached(r#"#\[link_name\s*=\s*"(\w+)"\]"#).unwrap();
+    let re_static = crate::regexes::cached(r"^(?:pub\s+)?(?:static\s+(?:mut\s+)?)\w+").unwrap();
+    let re_cfg = crate::regexes::cached(r"#\[cfg\((.*)\)\]").unwrap();
     for (idx, line) in file.text.lines().enumerate() {
         let lineno = idx + 1;
         let stripped = line.split("//").next().unwrap_or("").trim();
@@ -256,7 +261,7 @@ fn line_issues(
                 let cfg = pending_cfg.replace(' ', "");
                 blockskip = skip_file
                     || (cfg.contains("not(target_arch=\"x86\")") || {
-                        let a: Vec<_> = Regex::new(r#"target_arch="(\w+)""#)
+                        let a: Vec<_> = crate::regexes::cached(r#"target_arch="(\w+)""#)
                             .unwrap()
                             .captures_iter(&cfg)
                             .map(|x| x[1].to_owned())
@@ -342,7 +347,9 @@ fn line_issues(
         }
         if fn_buf.as_ref().is_some_and(|x| x.trim_end().ends_with(';')) {
             let b = fn_buf.take().unwrap();
-            let slots = Regex::new(r"\(\s*_\s*:\s*usize").unwrap().is_match(&b);
+            let slots = crate::regexes::cached(r"\(\s*_\s*:\s*usize")
+                .unwrap()
+                .is_match(&b);
             check(
                 &mut out,
                 &path,
@@ -416,29 +423,41 @@ fn check(
 fn flex_issues(file: &SourceFile) -> Vec<String> {
     let p = file.path.to_string_lossy().replace('\\', "/");
     let mut out = vec![];
+    let patterns: Vec<_> = FLEX
+        .iter()
+        .map(|(structname, field)| {
+            (
+                structname,
+                field,
+                crate::regexes::cached(&format!(r"\.{field}\s*\[")).unwrap(),
+                crate::regexes::cached(&format!(
+                    r"\.{field}\s*\[\s*0\s*(?:as\s+usize\s*|usize\s*)?\]"
+                ))
+                .unwrap(),
+                crate::regexes::cached(&format!(r"\[([^\[\]]+)\]\s*\.{field}\s*\[")).unwrap(),
+            )
+        })
+        .collect();
     for (li, line) in file.text.lines().enumerate() {
-        for (structname, field) in FLEX {
-            let pat = Regex::new(&format!(r"\.{field}\s*\[")).unwrap();
+        for (structname, field, pat, zero, array) in &patterns {
+            if !line.contains(*field) {
+                continue;
+            }
             let field_matches: Vec<_> = pat.find_iter(line).collect();
             if field_matches.is_empty() {
                 continue;
             }
-            let zero = Regex::new(&format!(
-                r"\.{field}\s*\[\s*0\s*(?:as\s+usize\s*|usize\s*)?\]"
-            ))
-            .unwrap();
             if zero.is_match(line) {
                 continue;
             }
-            let array = Regex::new(&format!(r"\[([^\[\]]+)\]\s*\.{field}\s*\[")).unwrap();
             if array.captures_iter(line).any(|m| {
-                !Regex::new(r"^\s*0\s*(?:as\s+usize\s*)?$")
+                !crate::regexes::cached(r"^\s*0\s*(?:as\s+usize\s*)?$")
                     .unwrap()
                     .is_match(&m[1])
             }) {
                 continue;
             }
-            if *field == "Data"
+            if **field == "Data"
                 && field_matches
                     .iter()
                     .all(|m| line[..m.start()].ends_with("DevicePrivate"))

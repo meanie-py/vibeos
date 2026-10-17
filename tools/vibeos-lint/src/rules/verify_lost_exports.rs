@@ -20,19 +20,23 @@ const INPUTS: &[SourceSet] = &[
     .with_pruning(&[]),
 ];
 static ENTRY: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?m)^\s*(?:@|\d+)\s+(?:stdcall|cdecl|varargs|thiscall|fastcall)\s+(?:-\S+[ \t]+)*([A-Za-z_]\w*)[ \t]*\([^)]*\)(?:[ \t]+(\S+))?[ \t]*(?:#.*)?$").unwrap()
+    crate::regexes::cached(r"(?m)^\s*(?:@|\d+)\s+(?:stdcall|cdecl|varargs|thiscall|fastcall)\s+(?:-\S+[ \t]+)*([A-Za-z_]\w*)[ \t]*\([^)]*\)(?:[ \t]+(\S+))?[ \t]*(?:#.*)?$").unwrap()
 });
-static COMMENTED: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?m)^\s*#\s*(?:\$\{\w+\}/)?([\w./-]+\.c(?:pp)?)\b").unwrap());
-static LIVE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?m)^[^#\n]*?(?:\$\{\w+\}/)?([\w./-]+\.c(?:pp)?)\b").unwrap());
+static COMMENTED: LazyLock<Regex> = LazyLock::new(|| {
+    crate::regexes::cached(r"(?m)^\s*#\s*(?:\$\{\w+\}/)?([\w./-]+\.c(?:pp)?)\b").unwrap()
+});
+static LIVE: LazyLock<Regex> = LazyLock::new(|| {
+    crate::regexes::cached(r"(?m)^[^#\n]*?(?:\$\{\w+\}/)?([\w./-]+\.c(?:pp)?)\b").unwrap()
+});
 static RUST_FN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"#\[no_mangle\](?:[ \t]*(?://[^\n]*)?\n(?:[ \t]*(?://[^\n]*|#\[[^\n]*\])?\n)*)?[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?(?:unsafe[ \t]+)?(?:extern[ \t]+(?:\"\w+\"|\$\w+)[ \t]+)?fn[ \t]+(\w+)"#).unwrap()
+    crate::regexes::cached(r#"#\[no_mangle\](?:[ \t]*(?://[^\n]*)?\n(?:[ \t]*(?://[^\n]*|#\[[^\n]*\])?\n)*)?[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?(?:unsafe[ \t]+)?(?:extern[ \t]+(?:\"\w+\"|\$\w+)[ \t]+)?fn[ \t]+(\w+)"#).unwrap()
 });
-static IDENT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\b([A-Za-z_]\w*)\b").unwrap());
+static IDENT: LazyLock<Regex> =
+    LazyLock::new(|| crate::regexes::cached(r"\b([A-Za-z_]\w*)\b").unwrap());
 
 fn dead_regions(text: &str) -> Vec<(usize, usize)> {
-    let re = Regex::new(r"(?m)^\s*#\s*(if\s+0\b|if\b|ifdef\b|ifndef\b|endif\b)").unwrap();
+    let re =
+        crate::regexes::cached(r"(?m)^\s*#\s*(if\s+0\b|if\b|ifdef\b|ifndef\b|endif\b)").unwrap();
     let mut out = vec![];
     let mut stack: Vec<isize> = vec![];
     for m in re.captures_iter(text) {
@@ -58,7 +62,7 @@ fn defined_live(text: &str, sym: &str) -> bool {
         r"(?m)^(?:[A-Za-z_][^;()\n]*?[\s*])?{}\s*\(",
         regex::escape(sym)
     );
-    let Ok(re) = Regex::new(&pat) else {
+    let Ok(re) = crate::regexes::cached(&pat) else {
         return false;
     };
     let dead = dead_regions(text);

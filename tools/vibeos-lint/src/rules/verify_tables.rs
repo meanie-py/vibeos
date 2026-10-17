@@ -253,7 +253,7 @@ struct CArray<'a> {
 }
 fn re(p: &'static str) -> &'static Regex {
     static M: OnceLock<BTreeMap<&'static str, Regex>> = OnceLock::new();
-    M.get_or_init(||[r"\b(?:pub\s+)?(?:static|const)\s+(?:mut\s+)?([A-Za-z_]\w*)\s*:\s*\[\s*([A-Za-z_]\w*)\s*;\s*([0-9A-Za-z_]+)\s*\]\s*=\s*\[",r"(?:^|[\n;}])\s*(?:(?:const|static|extern|volatile|unsigned|signed)\s+)*([A-Za-z_]\w*)\s+([A-Za-z_]\w*)\s*\[[^\];=]*\]\s*=\s*\{",r"^\s*#\s*define\s+([A-Za-z_][A-Za-z0-9_]*)\s+(.+?)\s*(?:/\*.*)?$",r"^b?'(.*)'$",r"^0[xX][0-9a-fA-F]+$",r"^0[bB][01]+$",r"^[+-]?[0-9]+$",r"^[A-Za-z_]\w*$"].into_iter().map(|p|(p,Regex::new(p).unwrap())).collect()).get(p).unwrap()
+    M.get_or_init(||[r"\b(?:pub\s+)?(?:static|const)\s+(?:mut\s+)?([A-Za-z_]\w*)\s*:\s*\[\s*([A-Za-z_]\w*)\s*;\s*([0-9A-Za-z_]+)\s*\]\s*=\s*\[",r"(?:^|[\n;}])\s*(?:(?:const|static|extern|volatile|unsigned|signed)\s+)*([A-Za-z_]\w*)\s+([A-Za-z_]\w*)\s*\[[^\];=]*\]\s*=\s*\{",r"^\s*#\s*define\s+([A-Za-z_][A-Za-z0-9_]*)\s+(.+?)\s*(?:/\*.*)?$",r"^b?'(.*)'$",r"^0[xX][0-9a-fA-F]+$",r"^0[bB][01]+$",r"^[+-]?[0-9]+$",r"^[A-Za-z_]\w*$"].into_iter().map(|p|(p,crate::regexes::cached(p).unwrap())).collect()).get(p).unwrap()
 }
 const TYPES: &[&str] = &[
     "u8",
@@ -319,7 +319,7 @@ fn extract_balanced(s: &str, start: usize, open: char, close: char) -> Option<(&
     None
 }
 fn split_initializer(s: &str) -> Vec<String> {
-    let no = Regex::new(r"/\*.*?\*/|//[^\n]*")
+    let no = crate::regexes::cached(r"/\*.*?\*/|//[^\n]*")
         .unwrap()
         .replace_all(s, " ")
         .into_owned();
@@ -459,11 +459,15 @@ fn eval(raw: &str, defs: &BTreeMap<String, String>, depth: u8) -> Option<Big> {
         return None;
     }
     let mut s = raw.trim().to_owned();
-    s = Regex::new(r"/\*.*?\*/")
+    s = crate::regexes::cached(r"/\*.*?\*/")
         .ok()?
         .replace_all(&s, " ")
         .into_owned();
-    s = Regex::new(r"//.*$").ok()?.replace(&s, "").trim().to_owned();
+    s = crate::regexes::cached(r"//.*$")
+        .ok()?
+        .replace(&s, "")
+        .trim()
+        .to_owned();
     if s.is_empty() {
         return None;
     }
@@ -537,7 +541,10 @@ fn eval(raw: &str, defs: &BTreeMap<String, String>, depth: u8) -> Option<Big> {
         }
     }
     let t = s.replace('_', "");
-    let cleaned = Regex::new(r"(?i)(u|l)+$").ok()?.replace(&t, "").to_string();
+    let cleaned = crate::regexes::cached(r"(?i)(u|l)+$")
+        .ok()?
+        .replace(&t, "")
+        .to_string();
     if re(r"^0[bB][01]+$").is_match(&cleaned) {
         let mut value = Big::zero();
         for bit in cleaned[2..].bytes() {
@@ -548,8 +555,23 @@ fn eval(raw: &str, defs: &BTreeMap<String, String>, depth: u8) -> Option<Big> {
         }
         return Some(value);
     }
-    if re(r"^0[xX][0-9a-fA-F]+$").is_match(&cleaned) || re(r"^[+-]?[0-9]+$").is_match(&cleaned) {
+    if re(r"^0[xX][0-9a-fA-F]+$").is_match(&cleaned) {
         return Big::parse(&cleaned);
+    }
+    if re(r"^[+-]?[0-9]+$").is_match(&cleaned) {
+        // Python's int(token) branch interprets every decimal digit sequence as base 10,
+        // including C spellings with a leading zero such as `01`. Big::parse uses the
+        // repository's base-0 parser, so canonicalize decimal digits before passing it on.
+        let (sign, digits) = if let Some(x) = cleaned.strip_prefix('-') {
+            ("-", x)
+        } else if let Some(x) = cleaned.strip_prefix('+') {
+            ("", x)
+        } else {
+            ("", cleaned.as_str())
+        };
+        let digits = digits.trim_start_matches('0');
+        let digits = if digits.is_empty() { "0" } else { digits };
+        return Big::parse(&format!("{sign}{digits}"));
     }
     if re(r"^[A-Za-z_]\w*$").is_match(&s) {
         return eval(defs.get(&s)?, defs, depth + 1);
@@ -625,6 +647,9 @@ mod tests {
         );
         assert_eq!(eval("b'\\x41'", &d, 0).unwrap().decimal(), "65");
         assert_eq!(eval("0b10101", &d, 0).unwrap().decimal(), "21");
+        assert_eq!(eval("01", &d, 0).unwrap().decimal(), "1");
+        assert_eq!(eval("-0012", &d, 0).unwrap().decimal(), "-12");
+        assert!(eval("+000", &d, 0).is_none());
         assert!(eval("A || B", &d, 0).is_none());
         assert_eq!(eval("'λ'", &d, 0).unwrap().decimal(), "955");
     }

@@ -23,8 +23,10 @@ const BASE_SET: SourceSet = SourceSet::tree(
 .with_inputs();
 const SETS: &[SourceSet] = &[CMAKE_SET, BASE_SET];
 static SRC_IN_COMMENT: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^\s*#.*?[A-Za-z0-9_${}/.+-]*[A-Za-z0-9_+-]\.(?:c|cpp|cxx|cc|S|s|asm|inc)\b")
-        .unwrap()
+    crate::regexes::cached(
+        r"^\s*#.*?[A-Za-z0-9_${}/.+-]*[A-Za-z0-9_+-]\.(?:c|cpp|cxx|cc|S|s|asm|inc)\b",
+    )
+    .unwrap()
 });
 type Census = BTreeMap<(String, String), usize>;
 fn normalized(s: &str) -> String {

@@ -111,6 +111,8 @@ def test_early_scanner_without_builds_and_during_generated_header_writes(tmp_pat
         header.parent.mkdir(parents=True)
         header.write_text("#define PROBE_FLAG 1\n")
 
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+
     # An audit hook observes real opens, even if a scanner catches the exception.
     # This subprocess uses the shipping scanner unchanged, with its normal CLI.
     harness = r"""

@@ -816,9 +816,20 @@ pub fn execute(
                 .into_iter()
                 .flat_map(|chunk| {
                     chunk
-                        .replace("\r\n", "\n")
-                        .replace('\r', "\n")
-                        .split('\n')
+                        .split(|c| {
+                            matches!(
+                                c,
+                                '\n' | '\r'
+                                    | '\u{000b}'
+                                    | '\u{000c}'
+                                    | '\u{001c}'
+                                    | '\u{001d}'
+                                    | '\u{001e}'
+                                    | '\u{0085}'
+                                    | '\u{2028}'
+                                    | '\u{2029}'
+                            )
+                        })
                         .filter(|line| !line.is_empty())
                         .map(str::to_owned)
                         .collect::<Vec<_>>()
@@ -847,12 +858,23 @@ mod tests {
                     "first\r\nsecond\rthird\n\n".into(),
                     String::new(),
                     "fourth\tvalue".into(),
+                    "fifth\u{2028}sixth\u{0085}".into(),
                 ])
             }
         }
         let c = Corpus::new(".".into(), vec![]);
         let got = execute(&c, &[&Report]).unwrap();
-        assert_eq!(got[0].1, vec!["first", "fourth\tvalue", "second", "third"]);
+        assert_eq!(
+            got[0].1,
+            vec![
+                "fifth",
+                "first",
+                "fourth\tvalue",
+                "second",
+                "sixth",
+                "third"
+            ]
+        );
     }
     #[test]
     fn declared_inputs_keep_binary_bytes_tracking_boundaries_and_fixture_scopes() {

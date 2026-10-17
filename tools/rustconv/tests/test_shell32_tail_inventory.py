@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from rustconv.shell32_tail_inventory import check_inventory, extract_live_sources
+from rustconv.shell32_inventory import check_inventory, extract_live_sources
 
 
 def _write(path: Path, text: str = "// source\n") -> None:

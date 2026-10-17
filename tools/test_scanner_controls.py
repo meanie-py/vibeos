@@ -3153,8 +3153,16 @@ CONTROLS: list[Control] = [
         name="scan_extern_decl_drift",
         script="tools/scan_extern_decl_drift.py",
         argv=["--lint"],
-        bad={"src/a.rs": _DECL_DRIFT_BAD_A, "src/b.rs": _DECL_DRIFT_BAD_B},
-        good={"src/a.rs": _DECL_DRIFT_GOOD_A, "src/b.rs": _DECL_DRIFT_GOOD_B},
+        bad={
+            "probe-rust/Cargo.toml": '[package]\nname = "probe-rust"\n',
+            "probe-rust/src/a.rs": _DECL_DRIFT_BAD_A,
+            "probe-rust/src/b.rs": _DECL_DRIFT_BAD_B,
+        },
+        good={
+            "probe-rust/Cargo.toml": '[package]\nname = "probe-rust"\n',
+            "probe-rust/src/a.rs": _DECL_DRIFT_GOOD_A,
+            "probe-rust/src/b.rs": _DECL_DRIFT_GOOD_B,
+        },
     ),
     Control(
         name="scan_com_double_release",
@@ -3202,7 +3210,8 @@ UNCOVERED: dict[str, str] = {
         "its pairing is body_audit's -- every module whose CMakeLists links a Rust crate, its "
         "flipped-out TUs (from the build's compiled-TU set) against its crates' sources -- so a "
         "fixture directory has no module to resolve. The decision is findings_for(c_body, "
-        "rust), driven directly in tools/test_scan_ptr_typedef_indirection.py: it must flag "
+        "rust), driven directly in tools/vibeos-lint/src/rules/ptr_typedef_indirection.rs: "
+        "it must flag "
         "usetup's `*mut PFILEPATHS_W` FileCopyCallback shape at its line, and must not flag a "
         "genuine `PFOO *x` or a nolint line."
     ),
@@ -3217,7 +3226,7 @@ UNCOVERED: dict[str, str] = {
     ),
     # Already have dedicated suites (the prototypes this harness generalizes).
     "scan_wide_literals": "covered by Rust wide_literals fixtures, including all 20 Python cases",
-    "verify_c_signatures": "covered by tools/test_verify_c_signatures.py (9 tests)",
+    "verify_c_signatures": "covered by tools/vibeos-lint/src/rules/verify_c_signatures.rs",
     "marshalgen_audit": "covered by tools/wow64gen/test_wow64gen.py",
     "verify_svc_numbering": "covered by tools/wow64gen/test_wow64gen.py",
     # Both compare a translated Rust module against the C it came FROM, so neither walks a
@@ -3226,7 +3235,7 @@ UNCOVERED: dict[str, str] = {
     # --cmake/--ramdisk case below. Dedicated suites instead, each with a real positive
     # control taken from the defect that motivated the tool:
     "verify_translation_literals": (
-        "covered by tools/test_verify_translation_literals.py (12 tests) — positive control "
+        "covered by tools/vibeos-lint/src/rules/verify_translation_literals.rs — positive control "
         'is undname.c\'s `case \'C\': "pascal"` shipping as "__stdcall", plus negatives for '
         "each way a faithful translation legitimately SPELLS a literal differently"
     ),
@@ -3271,7 +3280,7 @@ UNCOVERED: dict[str, str] = {
     "verify_ffi": "needs the whole workspace to resolve cross-crate ABI",
     "verify_constants": "needs the C header catalog; see test_verify_constants_ctlcode.py",
     "verify_constants_enums": "same catalog dependency as verify_constants",
-    "verify_tables": "needs generated tables from a build",
+    "verify_tables": "source pairing fixtures: tools/vibeos-lint/src/rules/verify_tables.rs",
     "verify_match_consts": "needs the C header catalog",
     "verify_signatures": "needs build-<arch> generated headers",
     "scan_cc_mismatch": (
@@ -3356,18 +3365,21 @@ UNCOVERED: dict[str, str] = {
     "scan_const_contradictions": "needs the whole tree (finds one NAME with two VALUES)",
     "scan_const_within_crate": (
         "needs the whole tree's const declarations. The decision, within_crate(), is a pure "
-        "function over one dict, driven in tools/test_scan_const_vs_island.py with userenv's "
+        "function over one dict, driven in tools/vibeos-lint/src/rules/const_contradictions.rs "
+        "with userenv's "
         "IDS_PROFILEPATH (0 and 1 in one crate) as the positive control."
     ),
     "scan_const_vs_island": (
         "needs the whole tree's bindgen islands as its oracle. The decision, "
         "island_disagreements(), is a pure function over two dicts, driven in "
-        "tools/test_scan_const_vs_island.py with the fsrtl swap as the positive control."
+        "tools/vibeos-lint/src/rules/const_contradictions.rs with the fsrtl swap "
+        "as the positive control."
     ),
     "scan_const_vs_own_island": (
         "needs the whole tree's per-crate islands as its oracle. The decision, "
         "own_island_shadows(), is a pure function over two dicts, driven in "
-        "tools/test_scan_const_vs_island.py with atapi's MAX_SLOTS (16 copied from usbxhci, "
+        "tools/vibeos-lint/src/rules/const_contradictions.rs with atapi's MAX_SLOTS "
+        "(16 copied from usbxhci, "
         "its island says 32) as the positive control."
     ),
     "scan_bindgen_padding_index": (
@@ -3397,7 +3409,8 @@ UNCOVERED: dict[str, str] = {
         "needs the real tree on BOTH sides: the self-labelled Rust const and the C module "
         "that crate translates. A synthetic fixture would only prove the regex fires. Its "
         "risky half -- the C expression evaluator -- is unit-tested directly in "
-        "tools/test_scan_invented_constants.py, which pins the two bugs it has actually had "
+        "tools/vibeos-lint/src/rules/invented_constants.rs, which pins the two bugs "
+        "it has actually had "
         "(a name regex matching inside 0x0501, and C's implicit enum numbering after an "
         "explicit initialiser)."
     ),
@@ -3421,8 +3434,20 @@ def _run(ctl: Control, root: Path) -> tuple[int, str]:
         targets = sorted(root.rglob(f"*{ctl.file_suffix}")) if ctl.pass_files else [root]
         assert targets, f"{ctl.name}: fixture produced no {ctl.file_suffix} files"
         fixture_root = (
-            root if ctl.name in {"scan_bugcheck_stubs", "scan_dropped_seh_pairs"} else REPO
+            root
+            if ctl.name
+            in {
+                "scan_bugcheck_stubs",
+                "scan_dropped_seh_pairs",
+                "scan_duplicate_symbols",
+                "scan_export_shadows",
+                "strip_msvc_cmake",
+            }
+            else REPO
         )
+        if ctl.name in {"scan_duplicate_symbols", "scan_export_shadows", "strip_msvc_cmake"}:
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            subprocess.run(["git", "-C", str(root), "add", "."], check=True)
         cmd = [str(runner), "--root", str(fixture_root), "--rules", ctl.name]
         for target in targets:
             cmd.extend(["--path", str(target)])
@@ -3473,7 +3498,7 @@ def test_irql_fixture_summary_resolves_cross_file_wrapper(tmp_path):
         },
     )
     rc, out = _run(ctl, root)
-    assert rc == 1 and "IRQL_LEAK_RETURN" in out and "caller.rs" in out
+    assert rc == 0 and "IRQL_LEAK_RETURN" in out and "caller.rs" in out
     (root / "caller.rs").write_text(
         "unsafe fn caller() {\nlet saved = raise_wrapper();\nKeLowerIrql(saved);\nreturn;\n}\n"
     )
@@ -3481,46 +3506,48 @@ def test_irql_fixture_summary_resolves_cross_file_wrapper(tmp_path):
     assert rc == 0 and out == ""
 
 
-def test_irql_cli_default_still_builds_whole_workspace_summaries(tmp_path, monkeypatch):
-    spec = importlib.util.spec_from_file_location(
-        "irql_default_control", REPO / "tools/scan_irql_balance.py"
+def test_irql_cli_default_still_builds_whole_workspace_summaries(tmp_path):
+    from tests.qemu.cli import rustlints
+
+    root = _materialize(
+        tmp_path,
+        {
+            "sdk/lib/rust/probe/src/wrapper.rs": (
+                "unsafe fn raise_wrapper() -> u8 { "
+                "let saved = KeRaiseIrqlToDpcLevel(); return saved; }"
+            ),
+            "sdk/lib/rust/probe/src/caller.rs": (
+                "unsafe fn caller(cond: bool) { let saved = raise_wrapper(); "
+                "if cond { return; } KeLowerIrql(saved); }"
+            ),
+        },
     )
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    seen = []
-
-    def files(paths):
-        seen.append(paths)
-        return iter(())
-
-    monkeypatch.setattr(module, "_iter_files", files)
-    monkeypatch.setattr(module, "build_summaries", lambda *a: (set(), set(), {}))
-    target = tmp_path / "selected.rs"
-    assert module.main(["--lint", str(target)]) == 0
-    assert seen == [[module.RUST_WS], [target]]
+    cp = subprocess.run(
+        [str(rustlints.ensure(REPO)), "--root", str(root), "--rules", "scan_irql_balance"],
+        capture_output=True,
+        text=True,
+    )
+    assert cp.returncode == 0, cp.stderr
+    assert "caller.rs" in cp.stdout and "IRQL_LEAK_RETURN" in cp.stdout
 
 
 def test_irql_a_passive_only_wait_does_not_make_its_callers_sleep(tmp_path):
-    """KeSynchronizeExecution waits only for a passive-level interrupt, which may be
-    synchronized only at PASSIVE_LEVEL; every caller holding a spin lock around it
-    (scsiport's) would otherwise be an IRQL_SLEEP_WHILE_HELD."""
-    spec = importlib.util.spec_from_file_location(
-        "irql_conditional_control", REPO / "tools/scan_irql_balance.py"
+    """KeSynchronizeExecution must not propagate its conditional passive wait."""
+    ctl = next(c for c in CONTROLS if c.name == "scan_irql_balance")
+    root = _materialize(
+        tmp_path,
+        {
+            "ke.rs": "fn KeSynchronizeExecution() { IopSync(); }\n"
+            "fn IopSync() { KeWaitForSingleObject(); }\n"
+            "fn Caller() { let old = KeRaiseIrqlToDpcLevel(); "
+            "KeSynchronizeExecution(); KeLowerIrql(old); }\n"
+            "fn BadCaller() { let old = KeRaiseIrqlToDpcLevel(); "
+            "IopSync(); KeLowerIrql(old); }\n"
+        },
     )
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    src = tmp_path / "ke.rs"
-    src.write_text(
-        "fn KeSynchronizeExecution() { IopSync(); }\n"
-        "fn IopSync() { KeWaitForSingleObject(); }\n"
-        "fn Caller() { KeSynchronizeExecution(); }\n"
-    )
-    may_sleep, _, _ = module.build_summaries([src], {})
-    assert "IopSync" in may_sleep
-    assert "KeSynchronizeExecution" not in may_sleep
-    assert "Caller" not in may_sleep
+    rc, out = _run(ctl, root)
+    assert rc == 0 and "IRQL_SLEEP_WHILE_HELD" in out
+    assert "ke.rs:4:" in out and "ke.rs:3:" not in out
 
 
 @pytest.mark.parametrize(
@@ -3932,7 +3959,8 @@ def test_decl_drift_sees_through_a_c_void_re_export(tmp_path: Path):
     root = _materialize(
         tmp_path,
         {
-            "src/a.rs": (
+            "probe-rust/Cargo.toml": '[package]\nname = "probe-rust"\n',
+            "probe-rust/src/a.rs": (
                 "pub type c_void = core::ffi::c_void;\n"
                 "pub type PVOID = *mut c_void;\n"
                 'extern "system" {\n'
@@ -3940,14 +3968,24 @@ def test_decl_drift_sees_through_a_c_void_re_export(tmp_path: Path):
                 "}\n"
                 "pub unsafe fn caller(p: *mut PVOID) { ExFreePool(p); }\n"
             ),
-            "src/b.rs": (
+            "probe-rust/src/b.rs": (
                 "pub type PVOID = *mut core::ffi::c_void;\n"
                 "#[no_mangle]\n"
                 'pub unsafe extern "system" fn ExFreePool(_P: PVOID) {}\n'
             ),
         },
     )
-    cmd = [sys.executable, str(REPO / "tools/scan_extern_decl_drift.py"), str(root)]
+    from tests.qemu.cli import rustlints
+
+    cmd = [
+        str(rustlints.ensure(REPO)),
+        "--root",
+        str(REPO),
+        "--rules",
+        "scan_extern_decl_drift",
+        "--path",
+        str(root),
+    ]
     out = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True).stdout
     assert "ExFreePool" in out, (
         "the c_void re-export made PVOID undecidable — coverage lost silently\n" + out

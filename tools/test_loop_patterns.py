@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from tools.scan_dowhile_continue import scan_macros, scan_text, scan_while_steps
+from tools.loop_patterns import scan_macros, scan_text, scan_while_steps
 
 BUGGY = """
 fn register(ctx: *mut Ctx) {

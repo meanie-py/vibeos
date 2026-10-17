@@ -1,5 +1,7 @@
 use crate::{Corpus, Rule, SourceFile, SourceSet};
-use std::collections::BTreeSet;
+use regex::Regex;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::OnceLock;
 use tree_sitter::Node;
 
 pub struct SilentFailures;
@@ -17,7 +19,25 @@ fn excluded(path: &std::path::Path) -> bool {
         )
     })
 }
+fn candidate_re() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| {
+        crate::regexes::cached(
+            r"(?u)\b(loop|unwrap|expect|write_bytes|copy_nonoverlapping|copy|Err)\b",
+        )
+        .unwrap()
+    })
+}
+fn candidate(f: &SourceFile) -> bool {
+    candidate_re().is_match(&f.text)
+}
 fn scan(f: &SourceFile) -> Result<Vec<String>, String> {
+    // Every finding class below requires at least one of these raw tokens.
+    // This avoids parsing the vast majority of generated/transpiled Rust files,
+    // while AST recognition remains the sole decision mechanism after a hit.
+    if !candidate(f) {
+        return Ok(Vec::new());
+    }
     let tree = f.rust_tree()?;
     let text = f.text.as_bytes();
     let lines: Vec<&str> = f.text.lines().collect();
@@ -201,11 +221,13 @@ impl Rule for SilentFailures {
         SOURCES
     }
     fn run(&self, c: &Corpus) -> Result<Vec<String>, String> {
+        let all: Vec<_> = c.sources("silent-rust").collect();
         if !c.explicit_paths().is_empty() {
             let explicit: BTreeSet<_> = c.explicit_paths().iter().cloned().collect();
             let mut out = Vec::new();
-            for f in c
-                .sources("silent-rust")
+            for f in all
+                .iter()
+                .copied()
                 .filter(|f| explicit.contains(f.resolved_path()))
             {
                 out.extend(scan(f)?);
@@ -213,9 +235,13 @@ impl Rule for SilentFailures {
             out.sort();
             return Ok(out);
         }
+        // Resolve each manifest's lib/main root through one path index rather
+        // than rescanning the complete snapshot for every manifest.
+        let by_path: BTreeMap<_, _> = all.iter().map(|f| (f.path.clone(), *f)).collect();
         let mut manifests = BTreeSet::new();
-        let mut rust: Vec<_> = c
-            .sources("silent-rust")
+        let mut rust: Vec<_> = all
+            .iter()
+            .copied()
             .filter(|f| {
                 f.path.extension().is_some_and(|x| x == "rs")
                     && !excluded(&f.path)
@@ -231,7 +257,7 @@ impl Rule for SilentFailures {
             let src = m.path.parent().unwrap().join("src");
             let root = ["lib.rs", "main.rs"]
                 .iter()
-                .find_map(|n| c.sources("silent-rust").find(|f| f.path == src.join(n)));
+                .find_map(|n| by_path.get(&src.join(n)).copied());
             if let Some(r) = root {
                 if r.text
                     .chars()
@@ -270,6 +296,27 @@ mod tests {
     fn file(s: &str) -> SourceFile {
         SourceFile::new(PathBuf::from("sdk/lib/rust/x/src/lib.rs"), s.into())
     }
+    #[test]
+    fn conservative_prefilter_covers_each_ast_finding_token_without_expected_false_hit() {
+        for (text, expected) in [
+            ("fn f(){ loop {} }", true),
+            ("fn f(){ x.unwrap(); }", true),
+            ("fn f(){ x.expect(\"ok\"); }", true),
+            (
+                "fn f(){ ptr.write_bytes(p, 0, core::mem::size_of::<T>()); }",
+                true,
+            ),
+            ("fn f(){ core::ptr::copy_nonoverlapping(a,b,n); }", true),
+            ("fn f(){ core::ptr::copy(a,b,n); }", true),
+            ("fn f(){ match x { Err(_) => (), _ => () } }", true),
+            ("fn expected(){ let expected_value = 1; }", false),
+            ("fn f(){ let result = Ok(1); }", false),
+        ] {
+            let f = file(text);
+            assert_eq!(candidate(&f), expected, "{text}");
+        }
+    }
+
     #[test]
     fn controls() {
         let f = file(

@@ -6,7 +6,7 @@ pub struct NullOffsetToOffsetOf;
 const SETS: &[SourceSet] =
     &[SourceSet::tree("rust-inputs", &["sdk/lib/rust"], &["rs"], &[]).with_inputs()];
 static NULL_PLACE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
+    crate::regexes::cached(
         r"\(\s*\*\s*(?:::)?(?:core::ptr::|ptr::|std::ptr::)?null(?:_mut)?(?:::<[^>]*>)?\s*\(\s*\)",
     )
     .unwrap()

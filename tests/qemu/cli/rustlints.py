@@ -14,6 +14,43 @@ from tools.source_walk import source_files
 # Only parity-proven plugins belong here. The original registry owns stage ordering.
 PORTED = frozenset(
     {
+        "verify_match_consts",
+        "verify_tables",
+        "scan_export_shadows",
+        "verify_ffi",
+        "verify_lost_exports",
+        "lint_kernel",
+        "cohab_census",
+        "scan_boot_media_drift",
+        "null_offset_to_offset_of",
+        "scan_magic_offsets",
+        "scan_silent_failures",
+        "strip_msvc_cmake",
+        "shell32_tail_inventory",
+        "scan_invented_constants",
+        "verify_c_signatures",
+        "verify_conv_macros",
+        "verify_translation_literals",
+        "verify_constants",
+        "verify_constants_enums",
+        "scan_call_literal_vs_c",
+        "scan_cfg_vs_c",
+        "scan_com_double_release",
+        "scan_const_contradictions",
+        "scan_const_vs_island",
+        "scan_const_vs_own_island",
+        "scan_const_within_crate",
+        "scan_duplicate_symbols",
+        "scan_extern_decl_drift",
+        "scan_irql_balance",
+        "scan_mask_drift",
+        "scan_ob_refcount",
+        "scan_override_self_dispatch",
+        "scan_ptr_typedef_indirection",
+        "scan_unaligned_wide",
+        "scan_unpruned_walk",
+        "scan_varargs_shim_parity",
+        "scan_version_vs_c",
         "scan_arg_side_effects",
         "scan_assert_polarity",
         "scan_case_bitor_pattern",
@@ -94,19 +131,23 @@ def ensure(repo: Path) -> Path:
     source = repo / "tools/vibeos-lint"
     target = repo / ".cache/vibeos-lint/vibeos-lint"
     target.parent.mkdir(parents=True, exist_ok=True)
-    files = [
-        source / "Cargo.toml",
-        source / "Cargo.lock",
-        repo / "rust-toolchain.toml",
-        *sorted(source_files(source / "src")),
-    ]
-    digest = hashlib.sha256()
-    for path in files:
-        digest.update(str(path.relative_to(repo)).encode() + b"\0" + path.read_bytes() + b"\0")
-    key = digest.hexdigest()
+
+    def fingerprint() -> str:
+        files = [
+            source / "Cargo.toml",
+            source / "Cargo.lock",
+            repo / "rust-toolchain.toml",
+            *sorted(source_files(source / "src")),
+        ]
+        digest = hashlib.sha256()
+        for path in files:
+            digest.update(str(path.relative_to(repo)).encode() + b"\0" + path.read_bytes() + b"\0")
+        return digest.hexdigest()
+
     stamp = target.with_suffix(".sha256")
     with target.with_suffix(".lock").open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
+        key = fingerprint()
         if target.is_file() and stamp.is_file() and stamp.read_text() == key:
             return target
         env = {
@@ -139,6 +180,10 @@ def ensure(repo: Path) -> Path:
         artifact = build / "release/vibeos-lint"
         if cp.returncode or not artifact.is_file():
             raise RuntimeError(f"vibeos-lint bootstrap failed: {cp.stderr}")
+        if fingerprint() != key:
+            raise RuntimeError(
+                "vibeos-lint sources changed during bootstrap; rerun after edits finish"
+            )
         temporary = target.with_suffix(f".{os.getpid()}.tmp")
         try:
             temporary.write_bytes(artifact.read_bytes())
