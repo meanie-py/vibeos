@@ -60,6 +60,8 @@ pub mod cargo_deps;
 pub mod compiler_env;
 mod storage;
 mod body_storage;
+mod rc;
+use rc::RcSpec;
 mod artifact_store;
 
 // ---- cmake-off `--trace` (ninja-`-v`-style command list) ------------------
@@ -553,6 +555,10 @@ pub struct Linker {
     /// reuses a cmake-built `.res`). (rc-rel-path, cmake `_res` target name).
     /// Drops the `ninja <m>_res` prereq — see `resource_from_rc`.
     resource_from_rc: Option<(String, String)>,
+    /// The `.rc` compiled by the engine from cmake's rule rebuilt out of the committed
+    /// per-arch template (`cflags/rc.<arch>.flags`) and the module's own includes,
+    /// extra flags and defines (see `rc`). No cmake target behind it.
+    rc: Option<RcSpec>,
     spec: Option<(String, String)>,
     link_stubs: bool,
     static_libs: Vec<String>,
@@ -616,13 +622,9 @@ impl Linker {
             .nth(4)
             .expect("repo root")
             .to_path_buf();
+        // Absent is a cmake-off build: every path that reads the build dir has its own
+        // cmake-off branch, or fails naming what it needs.
         let build_dir = repo_root.join(format!("build-{}", arch.name));
-        if !build_dir.exists() {
-            panic!(
-                "cmake build dir {} does not exist — run `ninja` there first",
-                build_dir.display()
-            );
-        }
         let pkg_name = env::var("CARGO_PKG_NAME").expect("CARGO_PKG_NAME");
         let target = RustTarget::new(&manifest_dir, target_spec);
         println!("cargo:rerun-if-changed=build.rs");
@@ -651,6 +653,7 @@ impl Linker {
             resource: None,
             resource_built: None,
             resource_from_rc: None,
+            rc: None,
             spec: None,
             link_stubs: false,
             static_libs: Vec::new(),
@@ -1003,6 +1006,29 @@ impl Linker {
     /// is no longer linked. Mutually exclusive with `resource`/`resource_built`.
     pub fn resource_from_rc(mut self, rc_rel: &str, res_target: &str) -> Self {
         self.resource_from_rc = Some((rc_rel.to_string(), res_target.to_string()));
+        self
+    }
+
+    /// Compile the `.rc` with cmake's windres rule (`CMAKE_RC_COMPILE_OBJECT` in
+    /// gcc.cmake), rebuilt from the committed `cflags/rc.<arch>.flags` and this
+    /// module's part of it, which tools/cargo_cell_gen.py read from cmake's own command:
+    ///
+    ///   windres -O coff --codepage=65001 <includes> <template flags> <flags>
+    ///           <template defs: RC_INVOKED, the LANGUAGE_* set> <sorted defines> rc out
+    ///
+    /// `includes` are repo-relative, `@build/<rel>` for the build tree, or `@std` for
+    /// the template's standard run; `defines` are the module's own (`NAME[=VALUE]`), which
+    /// join the template's global ones, sorted as cmake sorts them. With a configured
+    /// build `@build` is `build-<arch>`; without one it is a tree the engine fills itself
+    /// (the xdk headers, and `version.h`/`buildno.h` from `$VIBEOS_GEN_DIR`).
+    pub fn rc(mut self, rc_rel: &str, includes: &[&str], flags: &[&str], defines: &[&str]) -> Self {
+        let own = |v: &[&str]| v.iter().map(|x| x.to_string()).collect();
+        self.rc = Some(RcSpec {
+            rc_rel: rc_rel.to_string(),
+            includes: own(includes),
+            flags: own(flags),
+            defines: own(defines),
+        });
         self
     }
 
@@ -1454,6 +1480,11 @@ impl Linker {
                 println!("cargo:rerun-if-changed={}", committed.display());
             }
             link_arg!(self, "{}", dst.display());
+        }
+
+        if let Some(spec) = &self.rc {
+            let res = self.compile_rc(spec);
+            link_arg!(self, "{}", res.display());
         }
 
         // ---- Resource (.res) — checked-in or cmake-built -------------
@@ -2820,9 +2851,15 @@ impl Linker {
     /// to add as `-I` (appended AFTER the source-tree `-I`, matching cmake's
     /// build-dir-after-source-dir order). Output proven byte-identical to cmake's.
     fn generate_xdk_headers(&self) -> PathBuf {
+        let out = PathBuf::from(env::var("OUT_DIR").unwrap()).join("xdk-gen");
+        self.generate_xdk_headers_into(&out);
+        out
+    }
+
+    /// `generate_xdk_headers` into `out` (which gets `psdk/` and `ddk/`).
+    fn generate_xdk_headers_into(&self, out: &Path) {
         let hpp = self.compile_host_tool("sdk/tools/hpp/hpp.c", "native-hpp");
         let xdk_src = self.repo_root.join("sdk/include/xdk");
-        let out = PathBuf::from(env::var("OUT_DIR").unwrap()).join("xdk-gen");
         // (template, out-relative) — mirrors sdk/include/xdk/CMakeLists.txt.
         const HEADERS: &[(&str, &str)] = &[
             ("winnt.template.h", "psdk/winnt.h"),
@@ -2858,7 +2895,6 @@ impl Linker {
                 .unwrap_or_else(|e| panic!("rename {} -> {}: {e}", tmp.display(), dst.display()));
             println!("cargo:rerun-if-changed={}", xdk_src.join(tmpl).display());
         }
-        out
     }
 
     /// cmake-off (WS1 DEEP): compile every `c_from_compile_db` lib from its

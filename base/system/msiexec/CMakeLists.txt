@@ -1,4 +1,3 @@
-add_rc_deps(rsrc.rc ${CMAKE_CURRENT_SOURCE_DIR}/msiexec.ico)
  # CORE-5743: No ARRAY_SIZE macro
 
 # msiexec.exe is all Rust (msiexec-rust) and cargo links it:
@@ -9,15 +8,10 @@ add_rc_deps(rsrc.rc ${CMAKE_CURRENT_SOURCE_DIR}/msiexec.ico)
 # service.c  # replaced by Rust (sdk/lib/rust/msiexec-rust/src/msiexec/service.rs)
 # The C still compiled, in an OBJECT library whose compile the cargo link replays.
 add_library(msiexec_shims OBJECT rust_varargs_shim.c)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(msiexec_res OBJECT rsrc.rc)
-target_include_directories(msiexec_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # How cmake compiled the target's sources, now on the OBJECT libraries.
 set_wine_module_fixme(msiexec_shims)
-set_wine_module_fixme(msiexec_res)
 add_cargo_module(msiexec msiexec-cargo msiexec.exe
     KIND win32exe
     BODY_CRATE msiexec-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS msiexec_shims msiexec_res psdk uuid_sources)
+    EXTRA_DEPENDS msiexec_shims psdk uuid_sources)

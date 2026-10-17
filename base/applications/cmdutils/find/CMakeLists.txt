@@ -5,13 +5,8 @@ include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_or
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # find.c  # replaced by Rust (sdk/lib/rust/find-rust/src/find/find.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(find_res OBJECT find.rc)
-target_compile_definitions(find_res PRIVATE UNICODE _UNICODE)
-target_include_directories(find_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(find find-cargo find.exe
     KIND win32exe
     BODY_CRATE find-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS find_res xdk)
+    EXTRA_DEPENDS xdk psdk)

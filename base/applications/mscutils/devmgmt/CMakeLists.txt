@@ -7,13 +7,8 @@ include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_or
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # devmgmt.c  # replaced by Rust (sdk/lib/rust/devmgmt-rust/src/devmgmt/devmgmt.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(devmgmt_res OBJECT devmgmt.rc)
-target_compile_definitions(devmgmt_res PRIVATE UNICODE _UNICODE)
-target_include_directories(devmgmt_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(devmgmt devmgmt-cargo devmgmt.exe
     KIND win32exe
     BODY_CRATE devmgmt-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS devmgmt_res)
+    EXTRA_DEPENDS psdk)

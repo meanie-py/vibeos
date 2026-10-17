@@ -30,17 +30,11 @@ endif()
 add_library(spoolsv_shims OBJECT ${CMAKE_CURRENT_BINARY_DIR}/winspool_s.c)
 target_link_libraries(spoolsv_shims PRIVATE wine libadvapi32 librpcrt4 libmsvcrt libkernel32 libntdll)
 target_compile_definitions(spoolsv_shims PRIVATE UNICODE _UNICODE)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(spoolsv_res OBJECT spoolsv.rc)
-target_compile_definitions(spoolsv_res PRIVATE UNICODE _UNICODE)
-target_include_directories(spoolsv_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # How cmake compiled the target's sources, now on the OBJECT libraries.
 target_compile_options(spoolsv_shims PRIVATE "-Wno-cast-calling-convention")
-target_compile_options(spoolsv_res PRIVATE "-Wno-cast-calling-convention")
 add_cargo_module(spoolsv spoolsv-cargo spoolsv.exe
     KIND win32exe
     BODY_CRATE spoolsv-rust
     DESTINATION reactos/system32
     DELAY_IMPORTS
-    EXTRA_DEPENDS spoolsv_shims spoolsv_res psdk)
+    EXTRA_DEPENDS spoolsv_shims psdk)

@@ -7,6 +7,21 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The module's part of cmake's windres command; reactos-link adds what every
+    // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
+    let rc_includes: &[&str] = &[
+        "@build/base/services/rpcss",
+        "base/services/rpcss",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+        "@build/sdk/include/wine",
+    ];
+    let rc_flags: &[&str] = &[];
+    let rc_defines: &[&str] = &["UNICODE", "WINVER=0x502", "_UNICODE", "_WIN32_WINNT=0x502"];
+
     let (target_json, entry) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_wmainCRTStartup"),
         "x86_64" => ("x86_64-pc-windows-gnu", "wmainCRTStartup"),
@@ -24,7 +39,7 @@ fn main() {
     Linker::new(target_json)
         .rust_staticlib("rpcss-rust")
         .c_from_compile_db("rpcss_shims", &["base/services/rpcss/epm_s.c", "base/services/rpcss/irot_s.c", "base/services/rpcss/irpcss_s.c"])
-        .resource_from_rc("base/services/rpcss/rpcss.rc", "rpcss_res")
+        .rc("base/services/rpcss/rpcss.rc", rc_includes, rc_flags, rc_defines)
         .import_lib("dll/win32/advapi32/advapi32.spec", "advapi32.dll", "advapi32")
         .import_lib("dll/win32/rpcrt4/rpcrt4.spec", "rpcrt4.dll", "rpcrt4")
         .import_lib("dll/win32/msvcrt/msvcrt.spec", "msvcrt.dll", "msvcrt")

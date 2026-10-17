@@ -24,13 +24,8 @@ spec2def(winspool.drv winspool.spec ADD_IMPORTLIB)
 add_library(winspool_shims OBJECT ${CMAKE_CURRENT_BINARY_DIR}/winspool_c.c)
 target_link_libraries(winspool_shims PRIVATE wine libadvapi32 libgdi32 libuser32 librpcrt4 libmsvcrt libkernel32 libntdll)
 target_compile_definitions(winspool_shims PRIVATE UNICODE _UNICODE)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(winspool_res OBJECT winspool.rc)
-target_compile_definitions(winspool_res PRIVATE UNICODE _UNICODE)
-target_include_directories(winspool_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(winspool winspool-cargo winspool.drv
     KIND win32dll
     BODY_CRATE winspool-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS winspool_shims winspool_res psdk)
+    EXTRA_DEPENDS winspool_shims psdk)

@@ -28,10 +28,6 @@ endif()
 # the logic stays in scsiport-rust's *_v twins. Delete once c_variadic stabilizes
 # (rust-lang#44930).
 # The C still compiled, in an OBJECT library whose compile the cargo link replays.
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(scsiport_res OBJECT scsiport.rc)
-target_include_directories(scsiport_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_library(scsiport_shims OBJECT rust_varargs_shim.c guid.c)
 target_link_libraries(scsiport_shims PRIVATE sptilib libntoskrnl libhal)
 add_cargo_module(scsiport scsiport-cargo scsiport.sys
@@ -39,4 +35,4 @@ add_cargo_module(scsiport scsiport-cargo scsiport.sys
     BODY_CRATE scsiport-rust
     DESTINATION reactos/system32/drivers
     NO_CAB
-    EXTRA_DEPENDS scsiport_shims scsiport_res psdk)
+    EXTRA_DEPENDS scsiport_shims psdk)

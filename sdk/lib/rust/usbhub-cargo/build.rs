@@ -7,6 +7,21 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The module's part of cmake's windres command; reactos-link adds what every
+    // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
+    let rc_includes: &[&str] = &[
+        "@build/drivers/usb/usbhub",
+        "drivers/usb/usbhub",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+        "ntoskrnl/include",
+    ];
+    let rc_flags: &[&str] = &[];
+    let rc_defines: &[&str] = &["WINVER=0x502", "_WIN32_WINNT=0x502"];
+
     let (target_json, entry, image_base) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_DriverEntry@8", 0x10000u64),
         "x86_64" => ("x86_64-pc-windows-gnu", "DriverEntry", 0x10000u64),
@@ -34,7 +49,7 @@ fn main() {
         .rust_staticlib("usbhub-rust")
         .rust_user_target()
         .c_from_compile_db("usbhub_shims", &["drivers/usb/usbhub/rust_varargs_shim.c"])
-        .resource_from_rc("drivers/usb/usbhub/usbhub.rc", "usbhub_res")
+        .rc("drivers/usb/usbhub/usbhub.rc", rc_includes, rc_flags, rc_defines)
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .import_lib("hal/hal.spec", "hal.dll", "hal")
         .import_lib("drivers/wmi/wmilib.spec", "wmilib.sys", "wmilib")

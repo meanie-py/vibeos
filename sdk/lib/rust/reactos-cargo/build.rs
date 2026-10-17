@@ -7,6 +7,21 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The module's part of cmake's windres command; reactos-link adds what every
+    // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
+    let rc_includes: &[&str] = &[
+        "@build/base/setup/reactos",
+        "base/setup/reactos",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+        "vendor/treelist",
+    ];
+    let rc_flags: &[&str] = &[];
+    let rc_defines: &[&str] = &["UNICODE", "WINVER=0x502", "_UNICODE", "_WIN32_WINNT=0x502"];
+
     let (target_json, entry) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_wWinMainCRTStartup"),
         "x86_64" => ("x86_64-pc-windows-gnu", "wWinMainCRTStartup"),
@@ -24,7 +39,7 @@ fn main() {
     Linker::new(target_json)
         .rust_staticlib("reactos-rust")
         .c_from_compile_db("reactos_shims", &["base/setup/reactos/rust_varargs_shim.c", "vendor/treelist/treelist.c"])
-        .resource_from_rc("base/setup/reactos/reactos.rc", "reactos_res")
+        .rc("base/setup/reactos/reactos.rc", rc_includes, rc_flags, rc_defines)
         .delay_import_lib("base/setup/lib/setuplib.spec", "setuplib.dll", "setuplib")
         .import_lib("dll/win32/advapi32/advapi32.spec", "advapi32.dll", "advapi32")
         .import_lib("win32ss/gdi/gdi32/gdi32.spec", "gdi32.dll", "gdi32")

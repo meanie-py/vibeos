@@ -10,13 +10,8 @@ include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_or
 # fsutil.c  # replaced by Rust (sdk/lib/rust/fsutil-rust/src/fsutil/fsutil.rs)
 # hardlink.c  # replaced by Rust (sdk/lib/rust/fsutil-rust/src/fsutil/hardlink.rs)
 # volume.c  # replaced by Rust (sdk/lib/rust/fsutil-rust/src/fsutil/volume.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(fsutil_res OBJECT fsutil.rc)
-target_compile_definitions(fsutil_res PRIVATE UNICODE _UNICODE)
-target_include_directories(fsutil_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(fsutil fsutil-cargo fsutil.exe
     KIND win32exe
     BODY_CRATE fsutil-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS fsutil_res)
+    EXTRA_DEPENDS psdk)

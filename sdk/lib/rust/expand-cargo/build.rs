@@ -7,6 +7,20 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The module's part of cmake's windres command; reactos-link adds what every
+    // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
+    let rc_includes: &[&str] = &[
+        "@build/base/system/expand",
+        "base/system/expand",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+    ];
+    let rc_flags: &[&str] = &[];
+    let rc_defines: &[&str] = &["WINVER=0x502", "_WIN32_WINNT=0x502"];
+
     let (target_json, entry) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_mainCRTStartup"),
         "x86_64" => ("x86_64-pc-windows-gnu", "mainCRTStartup"),
@@ -24,7 +38,7 @@ fn main() {
     Linker::new(target_json)
         .rust_staticlib("expand-rust")
         .c_from_compile_db("expand_c", &["base/system/expand/rust_varargs_shim.c"])
-        .resource_from_rc("base/system/expand/expand.rc", "expand_res")
+        .rc("base/system/expand/expand.rc", rc_includes, rc_flags, rc_defines)
         .import_lib("dll/win32/lz32/lz32.spec", "lz32.dll", "lz32")
         .import_lib("dll/win32/setupapi/setupapi.spec", "setupapi.dll", "setupapi")
         .import_lib("win32ss/user/user32/user32.spec", "user32.dll", "user32")

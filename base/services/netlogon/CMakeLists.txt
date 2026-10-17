@@ -14,13 +14,8 @@ add_definitions(-DWIN32_LEAN_AND_MEAN=)
 add_library(netlogon_shims OBJECT ${CMAKE_CURRENT_BINARY_DIR}/netlogon_s.c)
 target_link_libraries(netlogon_shims PRIVATE wine libadvapi32 librpcrt4 libmsvcrt libkernel32 libntdll)
 target_compile_definitions(netlogon_shims PRIVATE UNICODE _UNICODE)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(netlogon_res OBJECT netlogon.rc)
-target_compile_definitions(netlogon_res PRIVATE UNICODE _UNICODE)
-target_include_directories(netlogon_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(netlogon netlogon-cargo netlogon.dll
     KIND win32dll
     BODY_CRATE netlogon-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS netlogon_shims netlogon_res psdk)
+    EXTRA_DEPENDS netlogon_shims psdk)

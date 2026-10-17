@@ -7,6 +7,22 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The module's part of cmake's windres command; reactos-link adds what every
+    // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
+    let rc_includes: &[&str] = &[
+        "@build/win32ss/user/user32_vista",
+        "win32ss/user/user32_vista",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+        "win32ss/user/user32_vista/include",
+        "win32ss/include",
+    ];
+    let rc_flags: &[&str] = &[];
+    let rc_defines: &[&str] = &["UNICODE", "WINVER=0x502", "_UNICODE", "_WIN32_WINNT=0x502"];
+
     let (target_json, entry, image_base) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "___ImageBase", None),
         "x86_64" => ("x86_64-pc-windows-gnu", "__ImageBase", None),
@@ -23,7 +39,7 @@ fn main() {
 
     Linker::new(target_json)
         .rust_staticlib("user32_vista-rust")
-        .resource_from_rc("win32ss/user/user32_vista/user32_vista.rc", "user32_vista_res")
+        .rc("win32ss/user/user32_vista/user32_vista.rc", rc_includes, rc_flags, rc_defines)
         .spec2def("win32ss/user/user32_vista/user32_vista.spec", "user32_vista.dll")
         .import_lib("win32ss/user/user32/user32.spec", "user32.dll", "user32")
         .import_lib("win32ss/gdi/gdi32/gdi32.spec", "gdi32.dll", "gdi32")

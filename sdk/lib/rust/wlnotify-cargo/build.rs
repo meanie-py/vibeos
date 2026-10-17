@@ -7,6 +7,20 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The module's part of cmake's windres command; reactos-link adds what every
+    // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
+    let rc_includes: &[&str] = &[
+        "@build/dll/win32/wlnotify",
+        "dll/win32/wlnotify",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+    ];
+    let rc_flags: &[&str] = &[];
+    let rc_defines: &[&str] = &["UNICODE", "WINVER=0x502", "_UNICODE", "_WIN32_WINNT=0x502"];
+
     let (target_json, entry, image_base) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_DllMain@12", Some(0x6c910000u64)),
         "x86_64" => ("x86_64-pc-windows-gnu", "DllMain", Some(0x7fe44000000u64)),
@@ -23,7 +37,7 @@ fn main() {
 
     Linker::new(target_json)
         .rust_staticlib("wlnotify-rust")
-        .resource_from_rc("dll/win32/wlnotify/wlnotify.rc", "wlnotify_res")
+        .rc("dll/win32/wlnotify/wlnotify.rc", rc_includes, rc_flags, rc_defines)
         .spec2def("dll/win32/wlnotify/wlnotify.spec", "wlnotify.dll")
         .import_lib("dll/win32/advapi32/advapi32.spec", "advapi32.dll", "advapi32")
         .import_lib("dll/win32/kernel32/kernel32.spec", "kernel32.dll", "kernel32")

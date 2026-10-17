@@ -20,16 +20,10 @@ endif()
 add_library(rpcss_shims OBJECT ${CMAKE_CURRENT_BINARY_DIR}/epm_s.c ${CMAKE_CURRENT_BINARY_DIR}/irot_s.c ${CMAKE_CURRENT_BINARY_DIR}/irpcss_s.c)
 target_link_libraries(rpcss_shims PRIVATE wine libadvapi32 librpcrt4 libmsvcrt libkernel32 libntdll)
 target_compile_definitions(rpcss_shims PRIVATE UNICODE _UNICODE)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(rpcss_res OBJECT rpcss.rc)
-target_compile_definitions(rpcss_res PRIVATE UNICODE _UNICODE)
-target_include_directories(rpcss_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # How cmake compiled the target's sources, now on the OBJECT libraries.
 target_compile_options(rpcss_shims PRIVATE "-Wno-cast-calling-convention")
-target_compile_options(rpcss_res PRIVATE "-Wno-cast-calling-convention")
 add_cargo_module(rpcss rpcss-cargo rpcss.exe
     KIND win32exe
     BODY_CRATE rpcss-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS rpcss_shims rpcss_res psdk)
+    EXTRA_DEPENDS rpcss_shims psdk)

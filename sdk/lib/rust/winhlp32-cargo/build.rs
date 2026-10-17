@@ -7,6 +7,22 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The module's part of cmake's windres command; reactos-link adds what every
+    // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
+    let rc_includes: &[&str] = &[
+        "@build/base/applications/winhlp32",
+        "base/applications/winhlp32",
+        "@build/sdk/include/wine",
+        "sdk/include/wine",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+    ];
+    let rc_flags: &[&str] = &[];
+    let rc_defines: &[&str] = &["WINVER=0x502", "_WIN32_WINNT=0x502", "__WINESRC__", "strcasecmp=_stricmp"];
+
     let (target_json, entry) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_WinMainCRTStartup"),
         "x86_64" => ("x86_64-pc-windows-gnu", "WinMainCRTStartup"),
@@ -24,7 +40,7 @@ fn main() {
     Linker::new(target_json)
         .rust_staticlib("winhlp32-rust")
         .c_from_compile_db("winhlp32_shims", &["base/applications/winhlp32/macro.lex.yy.c"])
-        .resource_from_rc("base/applications/winhlp32/rsrc.rc", "winhlp32_res")
+        .rc("base/applications/winhlp32/rsrc.rc", rc_includes, rc_flags, rc_defines)
         .import_lib("win32ss/user/user32/user32.spec", "user32.dll", "user32")
         .import_lib("win32ss/gdi/gdi32/gdi32.spec", "gdi32.dll", "gdi32")
         .import_lib("dll/win32/shell32/shell32.spec", "shell32.dll", "shell32")

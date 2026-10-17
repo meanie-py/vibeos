@@ -7,6 +7,21 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The module's part of cmake's windres command; reactos-link adds what every
+    // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
+    let rc_includes: &[&str] = &[
+        "@build/drivers/usb/usbohci",
+        "drivers/usb/usbohci",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+        "ntoskrnl/include",
+    ];
+    let rc_flags: &[&str] = &[];
+    let rc_defines: &[&str] = &["NO_KERNEL_LIST_ENTRY_CHECKS", "WINVER=0x502", "_WIN32_WINNT=0x502"];
+
     let (target_json, entry, image_base) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_DriverEntry@8", 0x10000u64),
         "x86_64" => ("x86_64-pc-windows-gnu", "DriverEntry", 0x10000u64),
@@ -34,7 +49,7 @@ fn main() {
         .rust_staticlib("usbohci-rust")
         .rust_user_target()
         .c_from_compile_db("usbohci_shims", &["drivers/usb/usbohci/guid.c"])
-        .resource_from_rc("drivers/usb/usbohci/usbohci.rc", "usbohci_res")
+        .rc("drivers/usb/usbohci/usbohci.rc", rc_includes, rc_flags, rc_defines)
         .import_lib("drivers/usb/usbport/usbport.spec", "usbport.sys", "usbport")
         .import_lib("drivers/usb/usbd/usbd.spec", "usbd.sys", "usbd")
         .import_lib("hal/hal.spec", "hal.dll", "hal")

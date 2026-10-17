@@ -7,6 +7,28 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The module's part of cmake's windres command; reactos-link adds what every
+    // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
+    let rc_includes: &[&str] = &[
+        "@build/base/applications/mstsc",
+        "base/applications/mstsc",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+        "vendor/rdesktop",
+    ];
+    let rc_flags: &[&str] = &[];
+    let rc_defines: &[&str] = &[
+        "UNICODE",
+        "WINVER=0x502",
+        "WITH_SSL",
+        "_CRT_NON_CONFORMING_SWPRINTFS",
+        "_UNICODE",
+        "_WIN32_WINNT=0x502",
+    ];
+
     let (target_json, entry) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_wWinMainCRTStartup"),
         "x86_64" => ("x86_64-pc-windows-gnu", "wWinMainCRTStartup"),
@@ -24,7 +46,7 @@ fn main() {
     Linker::new(target_json)
         .rust_staticlib("mstsc-rust")
         .c_from_compile_db("mstsc_shims", &["vendor/rdesktop/asn.c", "vendor/rdesktop/bitmap.c", "vendor/rdesktop/bsops.c", "vendor/rdesktop/cache.c", "vendor/rdesktop/channels.c", "vendor/rdesktop/iso.c", "vendor/rdesktop/licence.c", "vendor/rdesktop/mcs.c", "vendor/rdesktop/mppc.c", "vendor/rdesktop/orders.c", "vendor/rdesktop/pstcache.c", "vendor/rdesktop/rdp5.c", "vendor/rdesktop/rdp.c", "vendor/rdesktop/secure.c", "vendor/rdesktop/ssl_calls.c", "vendor/rdesktop/tcp.c", "vendor/rdesktop/uimain.c", "vendor/rdesktop/win32.c"])
-        .resource_from_rc("base/applications/mstsc/rdc.rc", "mstsc_res")
+        .rc("base/applications/mstsc/rdc.rc", rc_includes, rc_flags, rc_defines)
         .import_lib("win32ss/user/user32/user32.spec", "user32.dll", "user32")
         .import_lib("win32ss/gdi/gdi32/gdi32.spec", "gdi32.dll", "gdi32")
         .import_lib("dll/win32/comctl32/comctl32.spec", "comctl32.dll", "comctl32")

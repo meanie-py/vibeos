@@ -7,6 +7,22 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The module's part of cmake's windres command; reactos-link adds what every
+    // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
+    let rc_includes: &[&str] = &[
+        "@build/base/applications/cmdutils/taskkill",
+        "base/applications/cmdutils/taskkill",
+        "@build/sdk/include/wine",
+        "sdk/include/wine",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+    ];
+    let rc_flags: &[&str] = &[];
+    let rc_defines: &[&str] = &["UNICODE", "WINVER=0x502", "_UNICODE", "_WIN32_WINNT=0x502", "__WINESRC__"];
+
     let (target_json, entry) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_wmainCRTStartup"),
         "x86_64" => ("x86_64-pc-windows-gnu", "wmainCRTStartup"),
@@ -24,7 +40,7 @@ fn main() {
     Linker::new(target_json)
         .rust_staticlib("taskkill-rust")
         .c_from_compile_db("taskkill_shims", &["base/applications/cmdutils/taskkill/rust_varargs_shim.c"])
-        .resource_from_rc("base/applications/cmdutils/taskkill/taskkill.rc", "taskkill_res")
+        .rc("base/applications/cmdutils/taskkill/taskkill.rc", rc_includes, rc_flags, rc_defines)
         .import_lib("win32ss/user/user32/user32.spec", "user32.dll", "user32")
         .import_lib("dll/win32/msvcrt/msvcrt.spec", "msvcrt.dll", "msvcrt")
         .import_lib("dll/win32/kernel32/kernel32.spec", "kernel32.dll", "kernel32")

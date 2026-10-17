@@ -5,15 +5,8 @@ include_directories(${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs/fmifs)
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # chkdsk.c  # replaced by Rust (sdk/lib/rust/chkdsk-rust/src/chkdsk/chkdsk.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(chkdsk_res OBJECT chkdsk.rc)
-target_compile_definitions(chkdsk_res PRIVATE UNICODE _UNICODE)
-target_include_directories(chkdsk_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-# How cmake compiled the target's sources, now on the OBJECT libraries.
-target_compile_definitions(chkdsk_res PRIVATE _CRT_NON_CONFORMING_SWPRINTFS)
 add_cargo_module(chkdsk chkdsk-cargo chkdsk.exe
     KIND win32exe
     BODY_CRATE chkdsk-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS chkdsk_res xdk)
+    EXTRA_DEPENDS xdk psdk)

@@ -17,13 +17,8 @@ include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_or
 add_library(netsh_shims OBJECT rust_varargs_shim.c)
 target_link_libraries(netsh_shims PRIVATE conutils libole32 liboleaut32 libiphlpapi libadvapi32 libmsvcrt libkernel32 libntdll)
 target_compile_definitions(netsh_shims PRIVATE UNICODE _UNICODE)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(netsh_res OBJECT netsh.rc)
-target_compile_definitions(netsh_res PRIVATE UNICODE _UNICODE)
-target_include_directories(netsh_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(netsh netsh-cargo netsh.exe
     KIND win32exe
     BODY_CRATE netsh-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS netsh_shims netsh_res xdk)
+    EXTRA_DEPENDS netsh_shims xdk psdk)

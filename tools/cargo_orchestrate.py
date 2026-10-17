@@ -514,6 +514,155 @@ def verify_cmake_off(root: Path, cells: list[Cell], arch: str, out_dir: Path, pe
     return 0
 
 
+# ---- every cell, from the manifest (tools/cell_manifest.py) ---------------
+
+
+def configure_gen(root: Path, arch: str, gen: Path, seed: Path | None = None) -> Path:
+    """The configure step a build with no cmake still needs: `version.h` and `buildno.h`,
+    which `sdk/include/reactos/version.cmake` writes at CONFIGURE time (the UTC date, `git
+    describe`), into `gen/sdk/include/reactos/` for the engine (VIBEOS_GEN_DIR). Like a
+    configure, it runs once: a later build keeps them until `--reconfigure`. `seed` copies
+    a configured build's own instead (a comparison against it needs the same inputs)."""
+    import datetime
+    import re
+
+    out = gen / "sdk/include/reactos"
+    if (out / "buildno.h").exists() and (out / "version.h").exists():
+        return gen
+    out.mkdir(parents=True, exist_ok=True)
+    if seed is not None:
+        for h in ("version.h", "buildno.h"):
+            shutil.copy2(seed / "sdk/include/reactos" / h, out / h)
+        return gen
+    cm = (root / "sdk/include/reactos/version.cmake").read_text()
+    var = dict(re.findall(r'^set\((\w+) "([^"]*)"\)', cm, re.M))
+    winarch = "x86" if arch == "i386" else arch
+    tag = var["KERNEL_VERSION_BUILD_TYPE"]
+    kv = f"{var['KERNEL_VERSION_MAJOR']}.{var['KERNEL_VERSION_MINOR']}.{var['KERNEL_VERSION_PATCH_LEVEL']}"
+    dll_major = int(var["KERNEL_VERSION_MAJOR"]) + 42
+    dll = f"{dll_major}.{var['KERNEL_VERSION_MINOR']}.{var['KERNEL_VERSION_PATCH_LEVEL']}"
+
+    def git(*a: str) -> str:
+        r = subprocess.run(["git", "-C", str(root), *a], capture_output=True, text=True)
+        return r.stdout.strip() if r.returncode == 0 else ""
+
+    clang = root / ".build-tools/llvm-mingw/bin/clang"
+    ver = re.search(r"clang version (\S+)", subprocess.run(
+        [str(clang), "--version"], capture_output=True, text=True, check=True).stdout)
+    values = {
+        **var,
+        "KERNEL_VERSION_BUILD": datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d"),
+        "KERNEL_VERSION": f"{kv}-{winarch}" + (f"-{tag}" if tag else ""),
+        "REACTOS_DLL_VERSION_MAJOR": str(dll_major),
+        "DLL_VERSION_STR": dll + (f"-{tag}" if tag else ""),
+        "COMMIT_HASH": git("rev-parse", "HEAD") or "unknown-hash",
+        "REVISION": git("describe", "--abbrev=7", "--long", "--always") or "unknown-revision",
+        "CMAKE_C_COMPILER_ID": "Clang",
+        "CMAKE_C_COMPILER_VERSION": ver.group(1) if ver else "",
+    }
+    for h in ("version.h", "buildno.h"):
+        tmpl = (root / f"sdk/include/reactos/{h}.cmake").read_text()
+        text = re.sub(r"@(\w+)@", lambda m: values[m.group(1)], tmpl)
+        (out / h).write_text(text)
+    return gen
+
+
+def artifact_store_env(root: Path, arch: str, report: Path):
+    """The immutable body store, as `vibeos-cli build` gives it to cmake's cargo commands:
+    a supervisor owns the lease, and every cell's body comes from the store (or is built
+    into it once) instead of each cell compiling its own privately. A context manager
+    yielding the env to add."""
+    import contextlib
+    import json
+
+    sys.path.insert(0, str(root))
+    from tests.qemu.cli import hostjobs
+    from tools.artifact_executor import PIN
+    from tools.artifact_runtime import record_outer_result, supervise
+
+    store = Path(os.environ.get("VIBEOS_ARTIFACT_STORE_ROOT") or Path.home() / "vibeos-artifact-store")
+
+    @contextlib.contextmanager
+    def ctx():
+        hostjobs.ensure(root)
+        toolchain = Path.home() / ".rustup" / "toolchains" / PIN
+        with supervise(root, store, toolchain, report, clean=False, verify=False, arch=arch) as sup:
+            result = {"rc": 1}
+            yield {
+                "VIBEOS_ARTIFACT_STORE_MODE": "ON",
+                "VIBEOS_ARTIFACT_STORE_ROOT": str(store),
+                "VIBEOS_ARTIFACT_VERIFY_NONCE": "",
+                "VIBEOS_ARTIFACT_SUPERVISOR": str(sup),
+                "VIBEOS_ARTIFACT_PYTHON": sys.executable,
+                "VIBEOS_ARTIFACT_TOOLCHAIN_ID": json.loads(sup.read_text())["toolchain_key"],
+            }, result
+            record_outer_result(sup, result["rc"])
+
+    return ctx()
+
+
+def manifest_build(
+    root: Path, arch: str, out_dir: Path, pefixup: Path, crates: list[str] | None,
+    force_off: bool, gen: Path, store_env: dict[str, str] | None = None,
+) -> int:
+    """Build every cell `sdk/lib/rust/cells/<arch>.jsonl` lists (or the named crates), one
+    cargo per cell as add_cargo_module runs it, into `out_dir/<build-relative output>`,
+    and apply each output's post-link."""
+    sys.path.insert(0, str(root / "tools"))
+    import cell_manifest
+
+    cells = cell_manifest.load(arch, root)
+    if crates:
+        unknown = set(crates) - {c["crate"] for c in cells}
+        if unknown:
+            raise SystemExit(f"not in the {arch} cell manifest: {', '.join(sorted(unknown))}")
+        cells = [c for c in cells if c["crate"] in crates]
+    ws = root / "sdk/lib/rust"
+    failed = []
+    for n, c in enumerate(cells, 1):
+        target = c["target"]
+        stem = Path(target).stem if target.endswith(".json") else target
+        cmd = ["cargo", "build", "--release", "--target",
+               str(root / target) if target.endswith(".json") else target]
+        if c["build_std"]:
+            cmd += ["-Z", "build-std=core,alloc,compiler_builtins",
+                    "-Z", "build-std-features=compiler-builtins-mem"]
+        cmd += ["-p", c["crate"]]
+        cmd += ["--bins"] if c["bins"] == "all" else [x for b in c["bins"] for x in ("--bin", b)]
+        cmd += ["--manifest-path", str(ws / "Cargo.toml")]
+        env = {k: v for k, v in os.environ.items() if k not in ("RUSTFLAGS", "RUSTUP_TOOLCHAIN")}
+        env.update(c["env"])
+        tdir = ws / "target" / c["target_dir"]
+        env["CARGO_TARGET_DIR"] = str(tdir)
+        env["VIBEOS_GEN_DIR"] = str(gen)
+        env.update(store_env or {})
+        if force_off:
+            env["VIBEOS_FORCE_CMAKE_OFF"] = "1"
+        log(f"[{n}/{len(cells)}] {c['crate']}")
+        r = subprocess.run(cmd, cwd=ws, env=env)
+        if r.returncode:
+            failed.append(c["crate"])
+            continue
+        for o in c["outputs"]:
+            dest = out_dir / o["out"]
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(tdir / stem / "release" / f"{o['bin']}.exe", dest)
+            for step in o["post"]:
+                if step.startswith("pefixup "):
+                    run([str(pefixup), step.split()[1], str(dest)])
+                elif step == "fix_lld_forwarding":
+                    run([sys.executable, str(root / "sdk/tools/fix_lld_forwarding.py"), str(dest)])
+                elif step.startswith("strip "):
+                    run([cross_strip(root), *step.split()[1:], str(dest)])
+                else:
+                    raise SystemExit(f"{c['crate']}: unknown post-link step {step!r}")
+    if failed:
+        log(f"{len(failed)}/{len(cells)} cells FAILED: {' '.join(failed)}")
+        return 1
+    log(f"all {len(cells)} cells built into {out_dir}")
+    return 0
+
+
 def topo(targets: list[str]) -> list[Cell]:
     """Dependency-ordered cell list (cargo-cell edges only)."""
     order: list[Cell] = []
@@ -563,6 +712,32 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="everything: kernel EXEs + spine + drivers + loaders",
     )
+    ap.add_argument(
+        "--manifest",
+        action="store_true",
+        help="build every cell in sdk/lib/rust/cells/<arch>.jsonl (or the named *-cargo "
+        "crates) into <out-dir>/<build-relative output>, with no cmake configure or ninja",
+    )
+    ap.add_argument(
+        "--cmake-off",
+        action="store_true",
+        help="with --manifest: take the engine's cmake-off paths (VIBEOS_FORCE_CMAKE_OFF)",
+    )
+    ap.add_argument(
+        "--seed-from-build",
+        action="store_true",
+        help="with --manifest: configure version.h/buildno.h from build-<arch>'s own",
+    )
+    ap.add_argument(
+        "--no-artifact-store",
+        action="store_true",
+        help="with --manifest: build every cell's body privately, not through the store",
+    )
+    ap.add_argument(
+        "--reconfigure",
+        action="store_true",
+        help="with --manifest: regenerate version.h/buildno.h (a configure runs once)",
+    )
     ap.add_argument("--dry-run", action="store_true", help="print commands only")
     ap.add_argument(
         "--verify",
@@ -601,6 +776,24 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     root = repo_root()
+    if args.manifest:
+        out_dir = Path(args.out_dir) if args.out_dir else root / "cmake-off-out" / args.arch
+        pefixup = build_pefixup(root, args.arch, out_dir)
+        gen = out_dir / "gen"
+        if args.reconfigure and gen.exists():
+            shutil.rmtree(gen)
+        seed = root / f"build-{args.arch}" if args.seed_from_build else None
+        configure_gen(root, args.arch, gen, seed)
+        if args.no_artifact_store:
+            return manifest_build(
+                root, args.arch, out_dir, pefixup, args.targets or None, args.cmake_off, gen
+            )
+        with artifact_store_env(root, args.arch, out_dir / "artifact-supervisor") as (env, result):
+            result["rc"] = manifest_build(
+                root, args.arch, out_dir, pefixup, args.targets or None, args.cmake_off, gen, env
+            )
+        return result["rc"]
+
     targets: list[str] = list(args.targets)
     if args.spine or args.all:
         targets = ["ntoskrnl", "ntkrnlmp", *CMAKE_OFF_SPINE, *targets]
@@ -627,6 +820,7 @@ def main(argv: list[str] | None = None) -> int:
         trace_dir.mkdir(parents=True)
 
     pefixup = build_pefixup(root, args.arch, out_dir, dry=args.dry_run)
+
 
     if args.verify:
         return verify_cmake_off(root, cells, args.arch, out_dir, pefixup)

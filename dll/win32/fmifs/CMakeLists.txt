@@ -12,15 +12,8 @@ spec2def(fmifs.dll fmifs.spec ADD_IMPORTLIB)
 # init.c  # replaced by Rust (sdk/lib/rust/fmifs-rust/src/fmifs/init.rs)
 # media.c  # replaced by Rust (sdk/lib/rust/fmifs-rust/src/fmifs/media.rs)
 # query.c  # replaced by Rust (sdk/lib/rust/fmifs-rust/src/fmifs/query.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(fmifs_res OBJECT fmifs.rc)
-target_compile_definitions(fmifs_res PRIVATE UNICODE _UNICODE)
-target_include_directories(fmifs_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-# Generated inputs those compiles read, ordered before them.
-add_dependencies(fmifs_res psdk)
 add_cargo_module(fmifs fmifs-cargo fmifs.dll
     KIND win32dll
     BODY_CRATE fmifs-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS fmifs_res)
+    EXTRA_DEPENDS psdk)

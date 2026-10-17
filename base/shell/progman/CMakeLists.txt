@@ -13,13 +13,8 @@ PROJECT(progman)
 # The C still compiled, in an OBJECT library whose compile the cargo link replays.
 add_library(progman_shims OBJECT rust_varargs_shim.c)
 target_compile_definitions(progman_shims PRIVATE UNICODE _UNICODE)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(progman_res OBJECT progman.rc)
-target_compile_definitions(progman_res PRIVATE UNICODE _UNICODE)
-target_include_directories(progman_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(progman progman-cargo progman.exe
     KIND win32exe
     BODY_CRATE progman-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS progman_shims progman_res)
+    EXTRA_DEPENDS progman_shims psdk)

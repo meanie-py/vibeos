@@ -370,21 +370,32 @@ extends it from the boot spine to every fully-Rust module.
      entry/int386/pnpbios asm, which needs freeldr's own include set; reactos-link's
      `asm_archive` knows only the kernel chain. rosload and uefildr already build
      `mini_hal`, `libcntpr` and `chkstk` themselves.
-4. **Resources without cmake.** Cells replay cmake's `windres` command today
-   (`resource_from_rc`), so they still need cmake configured. The June fallback was a
-   committed `.res` per arch; for 189 modules that is a lot of binary in git. Better: the
-   engine runs llvm-windres itself from a committed flag template (the
-   `compile_c_db_committed` approach the loaders already use for C).
-   - **Measured 2026-10-17, before any of it is built.** cmake's windres commands (310 per
-     arch) take ~199 distinct `-D` sets and three generated headers: `psdk/winnt.h` (the
-     engine already regenerates it with native-hpp), `reactos/version.h` and
-     `reactos/buildno.h`. The last two come from `sdk/include/reactos/version.cmake` at
-     CONFIGURE time: the UTC date, `git describe --abbrev=7 --long --always`,
-     `rev-parse HEAD`, WINARCH and the C compiler's id/version. A cmake-free build must
-     reproduce exactly that (including the configure-time date, or no `.res` is
-     byte-identical to cmake's), plus a per-cell `-D`/`-I` set the generator can record.
-     It only pays off together with rungs 5 and 6: nothing builds without cmake until
-     all three exist.
+4. **Resources without cmake. Done 2026-10-17.** The engine compiles every cell's `.rc`
+   itself (`Linker::rc`, reactos-link/src/rc.rs); cmake's 223 `<m>_res` OBJECT libraries
+   are gone. cmake's windres rule (`CMAKE_RC_COMPILE_OBJECT`) is
+   `windres -O coff --codepage=65001 <INCLUDES> <FLAGS> -DRC_INVOKED ... ${I18N_DEFS}
+   <DEFINES> <SOURCE> <OBJECT>` with `<DEFINES>` sorted, so a command splits into what
+   every module shares (`reactos-link/cflags/rc.<arch>.flags`: the windres binary, the
+   standard include run, `CMAKE_RC_FLAGS`, the RC_INVOKED/LANGUAGE_* block, the 20 global
+   defines) and the module's part, which its build.rs carries as `rc_includes` /
+   `rc_flags` / `rc_defines`. `cargo_cell_gen.rc_encode` refuses any command that
+   `rc_decode` does not rebuild token for token; all 657 windres commands per arch in the
+   tree do. `--rc-template` regenerates the templates; `--own-rc` moved the existing cells.
+   - **Proof:** every cell's engine-built `.res`, 945 of 945 (×3 arches), byte-identical
+     to windres run with the decoded command, which is cmake's own. (The kdcom alternatives
+     kdcom-serial/kdgdb/kdvm are not in the default configuration; their part is taken by
+     analogy from the configured sibling's identical `_res` declaration.)
+   - **Without a cmake build** `@build/` is a tree the engine fills: the xdk headers
+     (native-hpp, as before) and `version.h`/`buildno.h`, which are CONFIGURE-time in
+     cmake (`version.cmake`: the UTC date, `git describe`), so they come from the one
+     configure step `cargo_orchestrate.py --manifest` runs (`$VIBEOS_GEN_DIR`;
+     `--seed-from-build` copies a configured build's own, `--reconfigure` redoes it).
+   - A generated input a `.rc` embeds now orders the cell: wscript/cscript's `ihost.tlb`
+     was the `_res` compile's `OBJECT_DEPENDS` and is the cell's `EXTRA_DEPENDS`; the
+     generator moves such deps on conversion (`_rc_object_depends`), and the engine
+     reruns when one changes. **Owed for cmake-off:** those generated inputs themselves
+     (widl's typelibs, wmc's message `.rc` for arp, net, eventcreate, diskpart) still
+     come only from cmake.
 5. **Assemble the ISO from a manifest** instead of 200 `add_cd_file` calls. After this the
    fully-Rust part of the tree needs no cmake at all.
 6. **Modules that still have C** compile it from cargo (`c_shims` / `c_from_compile_db`

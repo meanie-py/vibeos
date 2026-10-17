@@ -28,10 +28,6 @@ list(APPEND SOURCE
 # The translated C, kept on disk:
 # guid.c  # replaced by Rust (sdk/lib/rust/storport-rust/src/storport/guid.rs)
 # The C still compiled, in an OBJECT library whose compile the cargo link replays.
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(storport_res OBJECT storport.rc)
-target_include_directories(storport_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_library(storport_shims OBJECT rust_varargs_shim.c)
 target_link_libraries(storport_shims PRIVATE libntoskrnl libhal)
 add_cargo_module(storport storport-cargo storport.sys
@@ -39,4 +35,4 @@ add_cargo_module(storport storport-cargo storport.sys
     BODY_CRATE storport-rust
     DESTINATION reactos/system32/drivers
     NO_CAB
-    EXTRA_DEPENDS storport_shims storport_res psdk)
+    EXTRA_DEPENDS storport_shims psdk)

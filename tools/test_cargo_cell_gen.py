@@ -26,6 +26,9 @@ add_cd_file(TARGET m DESTINATION reactos/system32 FOR all)
 """
 
 
+RC_FLAGS = g.RcFlags(("@build/base/m", "base/m", "@std"), (), ("UNICODE", "_UNICODE"))
+
+
 def cell(**kw):
     base = dict(
         target="m",
@@ -47,6 +50,7 @@ def cell(**kw):
         c_shims=[],
         rc="base/m/rsrc.rc",
         rc_defines=["UNICODE", "_UNICODE"],
+        rc_flags={a: RC_FLAGS for a in g.ARCHES},
         destinations=["reactos/system32"],
         name_on_cd=None,
     )
@@ -75,7 +79,7 @@ def test_a_second_target_built_from_the_source_list_is_refused(tmp_path):
     assert g.cmake_facts(f, "m")["unknown"] == ["add_library m_static shares ${SOURCE}"]
 
 
-def test_rewrite_replaces_the_link_and_keeps_the_resource_deps(tmp_path):
+def test_rewrite_replaces_the_link_and_the_resource_compile(tmp_path):
     f = tmp_path / "CMakeLists.txt"
     f.write_text(CMAKE)
     out = g.rewrite_cmake(f, cell())
@@ -89,14 +93,14 @@ def test_rewrite_replaces_the_link_and_keeps_the_resource_deps(tmp_path):
         "keeps a stub TU",
     ):
         assert gone not in out
-    assert "add_rc_deps(rsrc.rc ${m_rc_deps})" in out
+    # The engine compiles the .rc (Linker::rc): its cmake deps and their GLOB go too.
+    assert "rc_deps" not in out
     # The cohab census reads these: a translated TU's record survives the rewrite.
     assert "# main.c  # replaced by Rust (sdk/lib/rust/m-rust/src/m/main.rs)" in out
-    assert "add_library(m_res OBJECT rsrc.rc)" in out
-    assert "target_compile_definitions(m_res PRIVATE UNICODE _UNICODE)" in out
+    assert "_res" not in out
     assert "add_cargo_module(m m-cargo m.exe" in out
     assert "set(M_REUSED\n    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a)" in out
-    assert "EXTRA_DEPENDS m_res ${M_REUSED})" in out
+    assert "EXTRA_DEPENDS psdk ${M_REUSED})" in out
 
 
 def test_an_arch_only_library_is_an_arch_only_dependency(tmp_path):
@@ -129,7 +133,7 @@ def test_an_engine_replayed_library_orders_the_cell_after_its_headers(tmp_path):
     f.write_text(CMAKE)
     libs = {a: ["engine:wine", "engine:conutils_rust"] for a in g.ARCHES}
     out = g.rewrite_cmake(f, cell(static_libs=libs))
-    assert "EXTRA_DEPENDS m_res psdk)" in out
+    assert "EXTRA_DEPENDS psdk)" in out
     assert "REUSED" not in out
 
 
@@ -137,7 +141,8 @@ def test_build_rs_names_every_input_and_keeps_an_auto_dll_base():
     rs = g.build_rs(cell(import_libs=[("dll/x/kernel32.spec", "kernel32.dll", "kernel32")]))
     assert '.rust_staticlib("m-rust")' in rs
     assert '.import_lib("dll/x/kernel32.spec", "kernel32.dll", "kernel32")' in rs
-    assert '.resource_from_rc("base/m/rsrc.rc", "m_res")' in rs
+    assert '.rc("base/m/rsrc.rc", rc_includes, rc_flags, rc_defines)' in rs
+    assert '"@build/base/m", "base/m", "@std"' in rs
     assert ".msvcrtex_crt(MsvcrtexKind::ExeWide)" in rs
     # A DLL cmake gave no --image-base keeps lld's auto base: None, never a guess.
     bases = {"i386": None, "amd64": 0x7FE60000000, "arm64": 0x7FE60000000}
@@ -166,7 +171,7 @@ def test_real_c_is_replayed_from_its_own_object_library(tmp_path):
         in out
     )
     assert "target_compile_definitions(m_shims PRIVATE UNICODE _UNICODE)" in out
-    assert "EXTRA_DEPENDS m_shims m_res" in out
+    assert "EXTRA_DEPENDS m_shims psdk" in out
     assert '.c_from_compile_db("m_shims", &["base/m/rust_varargs_shim.c"])' in g.build_rs(c)
     assert ".c_shims(" not in g.build_rs(c)
 
@@ -229,19 +234,22 @@ def test_compile_settings_move_to_the_object_libraries(tmp_path):
         + 'set_target_properties(m PROPERTIES SUFFIX ".com")\n'
     )
     assert g.cmake_facts(f, "m")["unknown"] == []
-    out = g.rewrite_cmake(f, cell())
-    assert "target_compile_definitions(m_res PRIVATE _CRT_NON_CONFORMING_SWPRINTFS)" in out
+    out = g.rewrite_cmake(f, cell(c_shims=["base/m/rust_varargs_shim.c"]))
+    assert "target_compile_definitions(m_shims PRIVATE _CRT_NON_CONFORMING_SWPRINTFS)" in out
     assert "(m PRIVATE _CRT" not in out and "SUFFIX" not in out
+    # The .rc's own command already carries them (Cell.rc_flags is read from it).
+    assert "_res" not in g.rewrite_cmake(f, cell())
 
 
 def test_a_generated_input_stays_ordered_before_the_compile_that_reads_it(tmp_path):
     # eventcreate.rc #includes the evtmsgstr.mc output: dropping the dependency raced windres.
     f = tmp_path / "CMakeLists.txt"
     f.write_text(CMAKE + "add_dependencies(m m_msg)\n")
-    out = g.rewrite_cmake(f, cell())
-    assert "add_dependencies(m_res m_msg)" in out
-    assert "rust_m_rust" not in out.split("add_dependencies(m_res", 1)[1].split(")")[0]
-    no_objlib = g.rewrite_cmake(f, cell(rc=None))
+    out = g.rewrite_cmake(f, cell(c_shims=["base/m/rust_varargs_shim.c"]))
+    assert "add_dependencies(m_shims m_msg)" in out
+    assert "rust_m_rust" not in out.split("add_dependencies(m_shims", 1)[1].split(")")[0]
+    # The engine's rc compile is the cell's, so with no OBJECT library the cell waits.
+    no_objlib = g.rewrite_cmake(f, cell())
     assert no_objlib.rstrip().endswith("add_dependencies(m m_msg)")
 
 
@@ -698,10 +706,82 @@ def test_ratchet_trusts_the_source_tree_over_a_stale_graph(monkeypatch, capsys, 
     assert out == ["n: fully-Rust module still linked by cmake (convertible)"]
 
 
-def test_a_resource_in_a_subdirectory_keeps_its_path(tmp_path):
-    """tdi's resource is misc/tdi.rc: naming only `tdi.rc` gave cmake an OBJECT library
-    over a file that does not exist ("No SOURCES given to target: tdi_res")."""
+def test_the_engine_compiles_the_rc_and_cmake_keeps_no_res_library(tmp_path):
+    """The .rc is Linker::rc's: no `<m>_res` OBJECT library, and a generated input the .rc
+    embeds (OBJECT_DEPENDS on a binary-dir file) orders the cell instead."""
     f = tmp_path / "CMakeLists.txt"
-    f.write_text(CMAKE.replace("rsrc.rc", "misc/rsrc.rc"))
-    out = g.rewrite_cmake(f, cell(rc="base/m/misc/rsrc.rc"))
-    assert "add_library(m_res OBJECT misc/rsrc.rc)" in out
+    f.write_text(
+        CMAKE
+        + "set_source_files_properties(rsrc.rc PROPERTIES OBJECT_DEPENDS "
+        + "${CMAKE_CURRENT_BINARY_DIR}/m.tlb)\n"
+    )
+    out = g.rewrite_cmake(f, cell(rc="base/m/rsrc.rc"))
+    assert "_res" not in out
+    assert "add_rc_deps" not in out and "OBJECT_DEPENDS" not in out
+    assert "EXTRA_DEPENDS psdk ${CMAKE_CURRENT_BINARY_DIR}/m.tlb ${M_REUSED})" in out
+
+
+RC_CMD = (
+    "/tmp/vibeos/.build-tools/llvm-mingw/bin/x86_64-w64-mingw32-windres -O coff --codepage=65001 "
+    "-I /tmp/vibeos/build-amd64/base/m -I /tmp/vibeos/base/m "
+    "-I /tmp/vibeos/sdk/include -I /tmp/vibeos/build-amd64/sdk/include "
+    "-I /tmp/vibeos/vendor/x -I /tmp/vibeos/sdk/include/crt -U_X86_ -UWIN32 "
+    "-DRC_INVOKED -D__WIN32__=1 -D__FLAT__=1 -DLANGUAGE_EN_US "
+    "-DDBG=1 -DUNICODE -D_UNICODE -D__REACTOS__ "
+    "/tmp/vibeos/base/m/rsrc.rc base/m/CMakeFiles/m.dir/rsrc.rc.res"
+)
+TMPL = g.RcTemplate(
+    windres="{REPO}/.build-tools/llvm-mingw/bin/x86_64-w64-mingw32-windres",
+    std=["sdk/include", "@build/sdk/include"],
+    flags=["-I", "{REPO}/sdk/include/crt", "-U_X86_", "-UWIN32"],
+    defs=["-DRC_INVOKED", "-D__WIN32__=1", "-D__FLAT__=1", "-DLANGUAGE_EN_US"],
+    defines=["-DDBG=1", "-D__REACTOS__"],
+)
+
+
+def test_an_rc_command_is_the_template_plus_the_module_part():
+    f = g.rc_encode(RC_CMD, TMPL, "amd64")
+    assert f.includes == ("@build/base/m", "base/m", "@std", "vendor/x")
+    assert f.flags == ()
+    assert f.defines == ("UNICODE", "_UNICODE")
+    # Linker::rc's order: the defines join the global ones, sorted as cmake sorts them.
+    assert g.rc_decode(f, TMPL, "amd64", "/tmp/vibeos/base/m/rsrc.rc") == RC_CMD.split()[:-1]
+
+
+def test_an_rc_command_the_template_cannot_rebuild_is_refused():
+    import pytest
+
+    with pytest.raises(g.GenError, match="global define"):
+        g.rc_encode(RC_CMD.replace("-DDBG=1 ", ""), TMPL, "amd64")
+    with pytest.raises(g.GenError, match="not sorted"):
+        g.rc_encode(RC_CMD.replace("-DUNICODE -D_UNICODE", "-D_UNICODE -DUNICODE"), TMPL, "amd64")
+
+
+def test_the_rc_template_file_reads_back(tmp_path, monkeypatch):
+    monkeypatch.setattr(g, "rc_template_path", lambda a, repo=g.REPO: tmp_path / f"rc.{a}.flags")
+    (tmp_path / "rc.amd64.flags").write_text(TMPL.text("amd64"))
+    assert g.read_rc_template("amd64") == TMPL
+
+
+def test_rc_object_depends_reads_both_spellings():
+    # (the args, as _statements gives them)
+    assert g._rc_object_depends("add_rc_deps", "a.rc x.ico") == ["x.ico"]
+    raw = 'a.rc PROPERTIES OBJECT_DEPENDS "${B}/t.tlb"'
+    assert g._rc_object_depends("set_source_files_properties", raw) == ["${B}/t.tlb"]
+    raw = "a.c PROPERTIES COMPILE_FLAGS -O0"
+    assert g._rc_object_depends("set_source_files_properties", raw) is None
+
+
+def test_a_fresh_conversion_reads_its_rc_part_from_the_module_compile(monkeypatch):
+    """--convert: the .rc compile is the module target's own (its object path is the marker);
+    an arch the module is not built on takes another arch's part."""
+    cmds = {
+        "amd64": [{"file": "/tmp/vibeos/base/m/rsrc.rc", "command": RC_CMD}],
+        "i386": [],
+        "arm64": [{"file": "/tmp/vibeos/base/m/rsrc.rc", "command": RC_CMD.replace("m.dir", "n.dir")}],
+    }
+    monkeypatch.setattr(g, "_rc_commands", lambda a, repo=g.REPO: cmds[a])
+    monkeypatch.setattr(g, "read_rc_template", lambda a, repo=g.REPO: TMPL)
+    flags = g.rc_flags_for("base/m/rsrc.rc", "base/m/CMakeFiles/m.dir/rsrc.rc.res")
+    assert flags["amd64"] == flags["i386"] == flags["arm64"]
+    assert flags["amd64"].defines == ("UNICODE", "_UNICODE")

@@ -6,13 +6,8 @@ spec2def(dcomlaunch.dll dcomlaunch.spec ADD_IMPORTLIB)
 # The translated C, kept on disk:
 # dcomlaunch.c  # replaced by Rust (sdk/lib/rust/dcomlaunch-rust/src/dcomlaunch/dcomlaunch.rs)
 # network.c  # replaced by Rust (sdk/lib/rust/dcomlaunch-rust/src/dcomlaunch/network.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(dcomlaunch_res OBJECT dcomlaunch.rc)
-target_compile_definitions(dcomlaunch_res PRIVATE UNICODE _UNICODE)
-target_include_directories(dcomlaunch_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(dcomlaunch dcomlaunch-cargo dcomlaunch.dll
     KIND win32dll
     BODY_CRATE dcomlaunch-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS dcomlaunch_res)
+    EXTRA_DEPENDS psdk)

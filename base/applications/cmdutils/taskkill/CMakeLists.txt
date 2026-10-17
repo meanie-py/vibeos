@@ -8,16 +8,10 @@
 # The C still compiled, in an OBJECT library whose compile the cargo link replays.
 add_library(taskkill_shims OBJECT rust_varargs_shim.c)
 target_compile_definitions(taskkill_shims PRIVATE UNICODE _UNICODE)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(taskkill_res OBJECT taskkill.rc)
-target_compile_definitions(taskkill_res PRIVATE UNICODE _UNICODE)
-target_include_directories(taskkill_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # How cmake compiled the target's sources, now on the OBJECT libraries.
 set_wine_module_fixme(taskkill_shims)
-set_wine_module_fixme(taskkill_res)
 add_cargo_module(taskkill taskkill-cargo taskkill.exe
     KIND win32exe
     BODY_CRATE taskkill-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS taskkill_shims taskkill_res psdk)
+    EXTRA_DEPENDS taskkill_shims psdk)

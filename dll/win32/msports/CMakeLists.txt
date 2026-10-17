@@ -9,13 +9,8 @@ spec2def(msports.dll msports.spec)
 # msports.c  # replaced by Rust (sdk/lib/rust/msports-rust/src/msports/msports.rs)
 # parallel.c  # replaced by Rust (sdk/lib/rust/msports-rust/src/msports/parallel.rs)
 # serial.c  # replaced by Rust (sdk/lib/rust/msports-rust/src/msports/serial.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(msports_res OBJECT msports.rc)
-target_compile_definitions(msports_res PRIVATE UNICODE _UNICODE)
-target_include_directories(msports_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(msports msports-cargo msports.dll
     KIND win32dll
     BODY_CRATE msports-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS msports_res psdk)
+    EXTRA_DEPENDS psdk)

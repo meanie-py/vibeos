@@ -12,13 +12,8 @@ spec2def(srvsvc.dll srvsvc.spec ADD_IMPORTLIB)
 add_library(srvsvc_shims OBJECT ${CMAKE_CURRENT_BINARY_DIR}/srvsvc_s.c)
 target_link_libraries(srvsvc_shims PRIVATE wine libadvapi32 librpcrt4 libmsvcrt libkernel32 libntdll)
 target_compile_definitions(srvsvc_shims PRIVATE UNICODE _UNICODE)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(srvsvc_res OBJECT srvsvc.rc)
-target_compile_definitions(srvsvc_res PRIVATE UNICODE _UNICODE)
-target_include_directories(srvsvc_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(srvsvc srvsvc-cargo srvsvc.dll
     KIND win32dll
     BODY_CRATE srvsvc-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS srvsvc_shims srvsvc_res psdk)
+    EXTRA_DEPENDS srvsvc_shims psdk)

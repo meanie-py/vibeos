@@ -14,15 +14,10 @@ include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_or
 # The C still compiled, in an OBJECT library whose compile the cargo link replays.
 add_library(ftp_shims OBJECT rust_varargs_shim.c)
 target_link_libraries(ftp_shims PRIVATE oldnames libws2_32 libiphlpapi libmsvcrt libkernel32)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(ftp_res OBJECT ftp.rc)
-target_include_directories(ftp_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # How cmake compiled the target's sources, now on the OBJECT libraries.
 target_compile_definitions(ftp_shims PRIVATE lint)
-target_compile_definitions(ftp_res PRIVATE lint)
 add_cargo_module(ftp ftp-cargo ftp.exe
     KIND win32exe
     BODY_CRATE ftp-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS ftp_shims ftp_res)
+    EXTRA_DEPENDS ftp_shims psdk)

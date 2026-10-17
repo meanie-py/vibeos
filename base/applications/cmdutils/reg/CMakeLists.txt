@@ -17,18 +17,11 @@ add_definitions(-D_WIN32_WINNT=0x600)
 # The C still compiled, in an OBJECT library whose compile the cargo link replays.
 add_library(reg_shims OBJECT rust_varargs_shim.c)
 target_compile_definitions(reg_shims PRIVATE UNICODE _UNICODE)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(reg_res OBJECT reg.rc)
-target_compile_definitions(reg_res PRIVATE UNICODE _UNICODE)
-target_include_directories(reg_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # How cmake compiled the target's sources, now on the OBJECT libraries.
 target_compile_definitions(reg_shims PRIVATE _CRT_NON_CONFORMING_SWPRINTFS)
 set_wine_module_fixme(reg_shims)
-target_compile_definitions(reg_res PRIVATE _CRT_NON_CONFORMING_SWPRINTFS)
-set_wine_module_fixme(reg_res)
 add_cargo_module(reg reg-cargo reg.exe
     KIND win32exe
     BODY_CRATE reg-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS reg_shims reg_res psdk)
+    EXTRA_DEPENDS reg_shims psdk)

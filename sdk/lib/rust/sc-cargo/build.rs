@@ -7,6 +7,20 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The module's part of cmake's windres command; reactos-link adds what every
+    // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
+    let rc_includes: &[&str] = &[
+        "@build/base/applications/sc",
+        "base/applications/sc",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+    ];
+    let rc_flags: &[&str] = &[];
+    let rc_defines: &[&str] = &["DEFINE_GUID", "UNICODE", "WINVER=0x502", "_UNICODE", "_WIN32_WINNT=0x502"];
+
     let (target_json, entry) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_wmainCRTStartup"),
         "x86_64" => ("x86_64-pc-windows-gnu", "wmainCRTStartup"),
@@ -23,7 +37,7 @@ fn main() {
 
     Linker::new(target_json)
         .rust_staticlib("sc-rust")
-        .resource_from_rc("base/applications/sc/sc.rc", "sc_res")
+        .rc("base/applications/sc/sc.rc", rc_includes, rc_flags, rc_defines)
         .import_lib("dll/win32/advapi32/advapi32.spec", "advapi32.dll", "advapi32")
         .import_lib("dll/win32/msvcrt/msvcrt.spec", "msvcrt.dll", "msvcrt")
         .import_lib("dll/win32/kernel32/kernel32.spec", "kernel32.dll", "kernel32")

@@ -12,16 +12,10 @@ rust_staticlib_variant(hid_hidparser_rust hidparser-rust "user" FALSE)
 # The C still compiled, in an OBJECT library whose compile the cargo link replays.
 add_library(hid_shims OBJECT rust_varargs_shim.c)
 target_compile_definitions(hid_shims PRIVATE UNICODE _UNICODE)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(hid_res OBJECT hid.rc)
-target_compile_definitions(hid_res PRIVATE UNICODE _UNICODE)
-target_include_directories(hid_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # How cmake compiled the target's sources, now on the OBJECT libraries.
 target_include_directories(hid_shims PRIVATE ${REACTOS_SOURCE_DIR}/sdk/lib/drivers/hidparser)
-target_include_directories(hid_res PRIVATE ${REACTOS_SOURCE_DIR}/sdk/lib/drivers/hidparser)
 add_cargo_module(hid hid-cargo hid.dll
     KIND win32dll
     BODY_CRATE hid-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS hid_shims hid_res)
+    EXTRA_DEPENDS hid_shims psdk)

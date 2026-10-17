@@ -7,6 +7,20 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The module's part of cmake's windres command; reactos-link adds what every
+    // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
+    let rc_includes: &[&str] = &[
+        "@build/base/system/autochk",
+        "base/system/autochk",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+    ];
+    let rc_flags: &[&str] = &[];
+    let rc_defines: &[&str] = &["WINVER=0x502", "_WIN32_WINNT=0x502"];
+
     let (target_json, entry) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_NtProcessStartup@4"),
         "x86_64" => ("x86_64-pc-windows-gnu", "NtProcessStartup"),
@@ -24,7 +38,7 @@ fn main() {
     Linker::new(target_json)
         .rust_staticlib("autochk-rust")
         .c_from_compile_db("autochk_shims", &["base/system/autochk/rust_varargs_shim.c"])
-        .resource_from_rc("base/system/autochk/autochk.rc", "autochk_res")
+        .rc("base/system/autochk/autochk.rc", rc_includes, rc_flags, rc_defines)
         .import_lib("dll/ntdll/def/ntdll.spec", "ntdll.dll", "ntdll")
         // ...and those cmake linked after the body, in the same order.
         .static_libs_after_body(late_libs)

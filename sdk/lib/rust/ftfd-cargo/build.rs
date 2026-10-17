@@ -7,6 +7,20 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The module's part of cmake's windres command; reactos-link adds what every
+    // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
+    let rc_includes: &[&str] = &[
+        "@build/win32ss/drivers/font/ftfd",
+        "win32ss/drivers/font/ftfd",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+    ];
+    let rc_flags: &[&str] = &[];
+    let rc_defines: &[&str] = &["WINVER=0x502", "_WIN32_WINNT=0x502"];
+
     let (target_json, entry, image_base) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_FtfdEnableDriver@12", 0x10000u64),
         "x86_64" => ("x86_64-pc-windows-gnu", "FtfdEnableDriver", 0x10000u64),
@@ -25,7 +39,7 @@ fn main() {
         .rust_staticlib("ftfd-rust")
         .rust_user_target()
         .c_from_compile_db("ftfd_shims", &["win32ss/drivers/font/ftfd/rust_varargs_shim.c"])
-        .resource_from_rc("win32ss/drivers/font/ftfd/freetype.rc", "ftfd_res")
+        .rc("win32ss/drivers/font/ftfd/freetype.rc", rc_includes, rc_flags, rc_defines)
         .spec2def("win32ss/drivers/font/ftfd/ftfd.spec", "ftfd.dll")
         .import_lib("win32ss/win32k.spec", "win32k.sys", "win32k")
         // The body, import libs and static libs in cmake's link order: the first
