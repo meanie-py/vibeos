@@ -35,7 +35,10 @@ pub const E_STATUS_PARTIAL: u32 = 8;
 const ESCAN_REQ_VERSION: u32 = 1;
 const ESCAN_ACTION_START: u16 = 1;
 const BSSTYPE_ANY: u8 = 2;
+const SCANTYPE_ACTIVE: u8 = 0;
 const SCANTYPE_PASSIVE: u8 = 1;
+/// One `bwfm_ssid` (length, then 32 bytes), after the parameters (no channel list).
+pub const ESCAN_SSID_LEN: usize = 36;
 /// `bwfm_escan_params_v0`: version, action, sync id, then `bwfm_scan_params_v0`
 /// (an SSID, a BSSID, BSS and scan types, four times, the channel count).
 pub const ESCAN_PARAMS_LEN: usize = 72;
@@ -55,6 +58,22 @@ pub fn event_mask(events: &[u32]) -> [u8; EVENT_MASK_LEN] {
     m
 }
 
+/// A scan of every channel: passive for any network, or active for `ssid`, which
+/// a hidden network answers only when asked by name (`bwfm_scan_v0` with an SSID).
+/// Returns the parameters and their length.
+pub fn escan_params_for(sync_id: u16, ssid: Option<&[u8]>) -> ([u8; ESCAN_PARAMS_LEN + ESCAN_SSID_LEN], usize) {
+    let mut p = [0u8; ESCAN_PARAMS_LEN + ESCAN_SSID_LEN];
+    p[..ESCAN_PARAMS_LEN].copy_from_slice(&escan_params(sync_id));
+    let Some(ssid) = ssid.filter(|s| !s.is_empty() && s.len() <= 32) else {
+        return (p, ESCAN_PARAMS_LEN);
+    };
+    p[51] = SCANTYPE_ACTIVE;
+    p[68..72].copy_from_slice(&(1u32 << 16).to_le_bytes()); // one SSID, no channels
+    p[72..76].copy_from_slice(&(ssid.len() as u32).to_le_bytes());
+    p[76..76 + ssid.len()].copy_from_slice(ssid);
+    (p, ESCAN_PARAMS_LEN + ESCAN_SSID_LEN)
+}
+
 /// A passive scan of every channel for any network.
 pub fn escan_params(sync_id: u16) -> [u8; ESCAN_PARAMS_LEN] {
     let mut p = [0u8; ESCAN_PARAMS_LEN];
@@ -72,7 +91,7 @@ pub fn escan_params(sync_id: u16) -> [u8; ESCAN_PARAMS_LEN] {
 }
 
 /// A network the scan heard.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Bss {
     pub bssid: [u8; 6],
     pub ssid: [u8; 32],
@@ -80,12 +99,46 @@ pub struct Bss {
     pub channel: u8,
     pub rssi: i16,
     pub capability: u16,
+    /// Its RSN element (`30 len ...`), whole, when it advertises one.
+    pub rsn: [u8; RSN_MAX],
+    pub rsn_len: usize,
+}
+
+/// An RSN element longer than this carries more than WPA2-Personal needs; it is cut
+/// short, and `join::our_rsn` reads only its start.
+pub const RSN_MAX: usize = 64;
+
+impl Default for Bss {
+    fn default() -> Self {
+        Self { bssid: [0; 6], ssid: [0; 32], ssid_len: 0, channel: 0, rssi: 0, capability: 0, rsn: [0; RSN_MAX], rsn_len: 0 }
+    }
 }
 
 impl Bss {
     pub fn ssid(&self) -> &[u8] {
         &self.ssid[..self.ssid_len]
     }
+
+    pub fn rsn(&self) -> &[u8] {
+        &self.rsn[..self.rsn_len]
+    }
+}
+
+/// The element with `id` in a run of information elements.
+pub fn find_ie(ies: &[u8], id: u8) -> Option<&[u8]> {
+    let mut at = 0;
+    while at + 2 <= ies.len() {
+        let len = ies[at + 1] as usize;
+        let end = at + 2 + len;
+        if end > ies.len() {
+            return None;
+        }
+        if ies[at] == id {
+            return Some(&ies[at..end]);
+        }
+        at = end;
+    }
+    None
 }
 
 /// The BSS records in an escan result's data.
@@ -110,6 +163,15 @@ pub fn escan_bss(data: &[u8]) -> impl Iterator<Item = Bss> + '_ {
         let chanspec = u16::from_le_bytes([rec[72], rec[73]]);
         b.rssi = i16::from_le_bytes([rec[78], rec[79]]);
         b.channel = if rec[88] != 0 { rec[88] } else { chanspec as u8 };
+        // The IEs, at their own offset inside this record.
+        let ie_at = u16::from_le_bytes([rec[116], rec[117]]) as usize;
+        let ie_len = u32::from_le_bytes([rec[120], rec[121], rec[122], rec[123]]) as usize;
+        if let Some(ies) = rec.get(ie_at..ie_at.saturating_add(ie_len)).filter(|_| ie_at >= BSS_INFO_MIN && ie_at + ie_len <= length) {
+            if let Some(rsn) = find_ie(ies, 0x30) {
+                b.rsn_len = rsn.len().min(RSN_MAX);
+                b.rsn[..b.rsn_len].copy_from_slice(&rsn[..b.rsn_len]);
+            }
+        }
         Some(b)
     })
 }
@@ -136,7 +198,7 @@ fn events(f: &Frame, mut on: impl FnMut(u32, u32, &[u8])) {
 }
 
 impl<P: Platform> Bus<P> {
-    fn set_int(&mut self, command: u32, v: u32, each: impl FnMut(Frame)) -> Result<(), Error> {
+    pub(crate) fn cmd_set_int(&mut self, command: u32, v: u32, each: impl FnMut(Frame)) -> Result<(), Error> {
         self.dcmd(command, true, &[&v.to_le_bytes()], &mut [], each).map(|_| ())
     }
 
@@ -145,13 +207,18 @@ impl<P: Platform> Bus<P> {
     pub fn bring_up(&mut self, mut each: impl FnMut(Frame)) -> Result<(), Error> {
         self.set_var(b"mpc", &1u32.to_le_bytes(), &mut each)?;
         self.set_var(b"event_msgs", &event_mask(&STATION_EVENTS), &mut each)?;
-        self.set_int(cmd::C_UP, 0, &mut each)?;
-        self.set_int(cmd::C_SET_INFRA, 1, &mut each)
+        self.cmd_set_int(cmd::C_UP, 0, &mut each)?;
+        self.cmd_set_int(cmd::C_SET_INFRA, 1, &mut each)
     }
 
     /// Scan every channel, handing each network heard to `found` (a network
     /// heard on several channels or twice comes once per report).
-    pub fn scan(&mut self, mut found: impl FnMut(&Bss)) -> Result<ScanEnd, Error> {
+    pub fn scan(&mut self, found: impl FnMut(&Bss)) -> Result<ScanEnd, Error> {
+        self.scan_for(None, found)
+    }
+
+    /// `scan`, actively asking for `ssid` when given (a hidden network).
+    pub fn scan_for(&mut self, ssid: Option<&[u8]>, mut found: impl FnMut(&Bss)) -> Result<ScanEnd, Error> {
         let end: Cell<Option<ScanEnd>> = Cell::new(None);
         let mut on_frame = |f: Frame| {
             events(&f, |kind, status, data| {
@@ -165,7 +232,8 @@ impl<P: Platform> Bus<P> {
                 }
             })
         };
-        self.set_var(b"escan", &escan_params(0x1234), &mut on_frame)?;
+        let (params, len) = escan_params_for(0x1234, ssid);
+        self.set_var(b"escan", &params[..len], &mut on_frame)?;
         let start = self.chip.sdio.hc.p.now_us();
         loop {
             self.poll(&mut on_frame)?;
@@ -188,7 +256,11 @@ mod tests {
     use crate::sim::{Card, Sim};
 
     fn running() -> Bus<Sim> {
-        let mut s = Sdio::new(Sim::new(Card::cyw43455()));
+        running_with(Card::cyw43455())
+    }
+
+    fn running_with(card: Card) -> Bus<Sim> {
+        let mut s = Sdio::new(Sim::new(card));
         s.init().unwrap();
         let mut chip = Chip::attach(s).map_err(|(_, e)| e).unwrap();
         let mut fw = vec![0u8; 64];
@@ -230,6 +302,31 @@ mod tests {
         assert_eq!((seen[0].ssid(), seen[0].channel, seen[0].rssi), (&b"piconet"[..], 6, -42));
         assert_eq!(seen[0].bssid, [0x02, 0x11, 0x22, 0x33, 0x44, 0x55]);
         assert_eq!((seen[1].ssid(), seen[1].channel, seen[1].rssi), (&b""[..], 36, -71), "a hidden 5 GHz network");
+    }
+
+    #[test]
+    fn a_directed_scan_is_active_and_names_one_ssid() {
+        let (p, n) = escan_params_for(0x1234, Some(b"Piconet"));
+        assert_eq!(n, 108);
+        assert_eq!(p[51], 0, "active");
+        assert_eq!(&p[68..72], &[0, 0, 1, 0], "one SSID, no channels");
+        assert_eq!(&p[72..76], &[7, 0, 0, 0]);
+        assert_eq!(&p[76..83], b"Piconet");
+        assert_eq!(escan_params_for(0x1234, None).1, 72);
+    }
+
+    #[test]
+    fn a_hidden_network_answers_a_directed_scan_by_name() {
+        let mut card = Card::cyw43455();
+        card.ap_hidden = true;
+        let mut bus = running_with(card);
+        bus.bring_up(|_| {}).unwrap();
+        let mut passive = Vec::new();
+        bus.scan(|b| passive.push(*b)).unwrap();
+        assert!(passive.iter().all(|b| b.ssid() != crate::sim::AP_SSID), "hidden from a passive scan");
+        let mut directed = Vec::new();
+        bus.scan_for(Some(crate::sim::AP_SSID), |b| directed.push(*b)).unwrap();
+        assert!(directed.iter().any(|b| b.ssid() == crate::sim::AP_SSID && b.rsn_len > 0));
     }
 
     #[test]

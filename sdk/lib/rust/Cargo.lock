@@ -509,6 +509,7 @@ dependencies = [
  "ntkrnl-sys",
  "panic-common",
  "sdhci-rust",
+ "wpa-rust",
 ]
 
 [[package]]
@@ -3824,6 +3825,7 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+ "wpa-rust",
 ]
 
 [[package]]
@@ -7411,6 +7413,10 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
 ]
+
+[[package]]
+name = "wpa-rust"
+version = "0.1.0"
 
 [[package]]
 name = "wpprecorder-cargo"

@@ -53,7 +53,39 @@ pub struct Card {
     pub up: bool,
     pub infra: bool,
     pub event_mask: Vec<u8>,
+    /// The access point's side of a join.
+    pub refuse_join: bool,
+    /// The AP does not broadcast its SSID: only a scan that names it hears it.
+    pub ap_hidden: bool,
+    /// The firmware puts its own RSN capabilities in the association request
+    /// instead of `wpaie`'s, as real firmware may.
+    pub fw_rewrites_rsn_caps: Option<u16>,
+    /// The RSN element the association request carried.
+    assoc_rsn: Vec<u8>,
+    pub wpaie: Vec<u8>,
+    pub joined_bssid: Option<[u8; 6]>,
+    pub ap_log: Vec<&'static str>,
+    pub keys_match: bool,
+    wsec: u32,
+    ap_ptk: Option<[u8; 48]>,
+    pairwise_ok: bool,
 }
+
+pub const AP_SSID: &[u8] = b"piconet";
+pub const AP_PASS: &[u8] = b"correct horse battery";
+pub const AP_BSSID: [u8; 6] = [0x02, 0x11, 0x22, 0x33, 0x44, 0x55];
+/// The AP's RSN element: CCMP group and pairwise, PSK, capabilities 0x000C.
+const AP_RSN: [u8; 22] = [0x30, 20, 1, 0, 0, 0x0F, 0xAC, 4, 1, 0, 0, 0x0F, 0xAC, 4, 1, 0, 0, 0x0F, 0xAC, 2, 0x0C, 0];
+const AP_ANONCE: [u8; 32] = [0xA5; 32];
+const AP_GTK: [u8; 16] = [0x47; 16];
+// EAPOL-Key frame offsets, from the 802.1X header (wpa-rust's own).
+const O_INFO: usize = 5;
+const O_REPLAY: usize = 9;
+const O_NONCE: usize = 17;
+const O_RSC: usize = 65;
+const O_MIC: usize = 81;
+const O_DATALEN: usize = 97;
+const O_DATA: usize = 99;
 
 /// The simulated chip's address.
 pub const MAC: [u8; 6] = [0xD8, 0x3A, 0xDD, 0x01, 0x02, 0x03];
@@ -150,6 +182,17 @@ impl Card {
             up: false,
             infra: false,
             event_mask: Vec::new(),
+            refuse_join: false,
+            ap_hidden: false,
+            fw_rewrites_rsn_caps: None,
+            assoc_rsn: Vec::new(),
+            wpaie: Vec::new(),
+            joined_bssid: None,
+            ap_log: Vec::new(),
+            keys_match: false,
+            wsec: 0,
+            ap_ptk: None,
+            pairwise_ok: false,
         }
     }
 
@@ -296,11 +339,13 @@ impl Card {
         self.queue(1, &f);
     }
 
-    /// One `bwfm_bss_info` (124 bytes, no IEs).
-    fn bss(bssid: [u8; 6], ssid: &[u8], channel: u8, rssi: i16) -> Vec<u8> {
-        let mut r = vec![0u8; 124];
+    /// One `bwfm_bss_info` (128 bytes), then `ies`.
+    fn bss(bssid: [u8; 6], ssid: &[u8], channel: u8, rssi: i16, ies: &[u8]) -> Vec<u8> {
+        let mut r = vec![0u8; 128];
         r[0..4].copy_from_slice(&109u32.to_le_bytes()); // version
-        r[4..8].copy_from_slice(&124u32.to_le_bytes());
+        r[4..8].copy_from_slice(&((128 + ies.len()) as u32).to_le_bytes());
+        r[116..118].copy_from_slice(&128u16.to_le_bytes());
+        r[120..124].copy_from_slice(&(ies.len() as u32).to_le_bytes());
         r[8..14].copy_from_slice(&bssid);
         r[16..18].copy_from_slice(&0x0411u16.to_le_bytes()); // ESS | privacy | short slot
         r[18] = ssid.len() as u8;
@@ -308,16 +353,20 @@ impl Card {
         r[72..74].copy_from_slice(&(0x1000u16 | channel as u16).to_le_bytes());
         r[78..80].copy_from_slice(&rssi.to_le_bytes());
         r[88] = channel;
+        r.extend_from_slice(ies);
         r
     }
 
     /// What a passive escan hears here: two networks, then the end.
-    fn escan_results(&mut self) {
-        for (bssid, ssid, ch, rssi) in [
-            ([0x02, 0x11, 0x22, 0x33, 0x44, 0x55], &b"piconet"[..], 6, -42),
-            ([0x02, 0x66, 0x77, 0x88, 0x99, 0xAA], &b""[..], 36, -71),
+    fn escan_results(&mut self, ap_named: bool) {
+        // The piconet entry's IEs: its SSID (empty when hidden), then its RSN element.
+        let shown: &[u8] = if ap_named { AP_SSID } else { b"" };
+        let ies = [&[0x00, shown.len() as u8][..], shown, &AP_RSN].concat();
+        for (bssid, ssid, ch, rssi, ies) in [
+            (AP_BSSID, shown, 6, -42, &ies[..]),
+            ([0x02, 0x66, 0x77, 0x88, 0x99, 0xAA], &b""[..], 36, -71, &[][..]),
         ] {
-            let rec = Self::bss(bssid, ssid, ch, rssi);
+            let rec = Self::bss(bssid, ssid, ch, rssi, ies);
             let mut res = Vec::new();
             res.extend_from_slice(&(12 + rec.len() as u32).to_le_bytes()); // buflen
             res.extend_from_slice(&109u32.to_le_bytes()); // version
@@ -327,6 +376,142 @@ impl Card {
             self.queue_bcm_event(69, 8, &res);
         }
         self.queue_bcm_event(69, 0, &[]);
+    }
+
+    fn queue_link_up(&mut self) {
+        // E_LINK with the link-up flag: version, flags 1, then the rest as queue_bcm_event.
+        let mut f = vec![0x20, 0, 0, 0];
+        f.extend_from_slice(&MAC);
+        f.extend_from_slice(&AP_BSSID);
+        f.extend_from_slice(&0x886Cu16.to_be_bytes());
+        f.extend_from_slice(&[0x80, 0x01, 0, 0, 0, 0x00, 0x10, 0x18, 0x00, 0x01]);
+        f.extend_from_slice(&2u16.to_be_bytes());
+        f.extend_from_slice(&1u16.to_be_bytes());
+        for v in [16u32, 0, 0, 0, 0] {
+            f.extend_from_slice(&v.to_be_bytes());
+        }
+        f.extend_from_slice(&[0; 6 + 16 + 2]);
+        self.queue(1, &f);
+    }
+
+    /// An EAPOL frame from the AP to us, as a data frame.
+    fn queue_eapol(&mut self, eapol: &[u8]) {
+        let mut f = vec![0x20, 0, 0, 0];
+        f.extend_from_slice(&MAC);
+        f.extend_from_slice(&AP_BSSID);
+        f.extend_from_slice(&[0x88, 0x8E]);
+        f.extend_from_slice(eapol);
+        self.queue(2, &f);
+    }
+
+    /// An EAPOL-Key frame from the authenticator (wpa-rust's test authenticator).
+    fn ap_frame(info: u16, replay: u64, nonce: &[u8; 32], rsc: &[u8; 8], data: &[u8], kck: Option<&[u8]>) -> Vec<u8> {
+        let mut f = vec![0u8; O_DATA + data.len()];
+        f[0] = 2;
+        f[1] = 3; // EAPOL-Key
+        let n = (f.len() - 4) as u16;
+        f[2..4].copy_from_slice(&n.to_be_bytes());
+        f[4] = 2; // RSN descriptor
+        f[O_INFO..O_INFO + 2].copy_from_slice(&info.to_be_bytes());
+        f[7..9].copy_from_slice(&16u16.to_be_bytes());
+        f[O_REPLAY..O_REPLAY + 8].copy_from_slice(&replay.to_be_bytes());
+        f[O_NONCE..O_NONCE + 32].copy_from_slice(nonce);
+        f[O_RSC..O_RSC + 8].copy_from_slice(rsc);
+        f[O_DATALEN..O_DATALEN + 2].copy_from_slice(&(data.len() as u16).to_be_bytes());
+        f[O_DATA..].copy_from_slice(data);
+        if let Some(kck) = kck {
+            let m = wpa_rust::HmacSha1::new(kck).mac(&[&f]);
+            f[O_MIC..O_MIC + 16].copy_from_slice(&m[..16]);
+        }
+        f
+    }
+
+    /// AES key wrap (RFC 3394).
+    fn wrap(kek: &[u8; 16], plain: &[u8]) -> Vec<u8> {
+        let n = plain.len() / 8;
+        let aes = wpa_rust::Aes128::new(kek);
+        let mut a = [0xA6u8; 8];
+        let mut r = plain.to_vec();
+        for j in 0..6 {
+            for i in 1..=n {
+                let mut b = [0u8; 16];
+                b[..8].copy_from_slice(&a);
+                b[8..].copy_from_slice(&r[8 * (i - 1)..8 * i]);
+                aes.encrypt(&mut b);
+                let t = ((n * j) + i) as u64;
+                for (k, x) in t.to_be_bytes().iter().enumerate() {
+                    a[k] = b[k] ^ x;
+                }
+                r[8 * (i - 1)..8 * i].copy_from_slice(&b[8..]);
+            }
+        }
+        let mut out = a.to_vec();
+        out.extend_from_slice(&r);
+        out
+    }
+
+    fn mic_ok(kck: &[u8], f: &[u8]) -> bool {
+        let mut z = f.to_vec();
+        z[O_MIC..O_MIC + 16].fill(0);
+        wpa_rust::HmacSha1::new(kck).mac(&[&z])[..16] == f[O_MIC..O_MIC + 16]
+    }
+
+    /// The AP's half of the 4-way handshake.
+    fn ap_eapol(&mut self, f: &[u8]) {
+        let info = u16::from_be_bytes([f[O_INFO], f[O_INFO + 1]]);
+        match info {
+            0x010A => {
+                let pmk = wpa_rust::psk(AP_PASS, AP_SSID);
+                let mut snonce = [0u8; 32];
+                snonce.copy_from_slice(&f[O_NONCE..O_NONCE + 32]);
+                let (a1, a2) = if AP_BSSID < MAC { (AP_BSSID, MAC) } else { (MAC, AP_BSSID) };
+                let (n1, n2) = if AP_ANONCE < snonce { (AP_ANONCE, snonce) } else { (snonce, AP_ANONCE) };
+                let mut ptk = [0u8; 48];
+                wpa_rust::prf(&pmk, b"Pairwise key expansion", &[&a1, &a2, &n1, &n2], &mut ptk);
+                if !Self::mic_ok(&ptk[..16], f) {
+                    self.ap_log.push("msg2 bad mic");
+                    return;
+                }
+                // An AP drops a message 2 whose RSN element is not the association
+                // request's, byte for byte.
+                let n = u16::from_be_bytes([f[O_DATALEN], f[O_DATALEN + 1]]) as usize;
+                if f[O_DATA..O_DATA + n] != self.assoc_rsn[..] {
+                    self.ap_log.push("msg2 rsn mismatch");
+                    return;
+                }
+                self.ap_log.push("msg2 ok");
+                self.ap_ptk = Some(ptk);
+                let mut kd = AP_RSN.to_vec();
+                kd.extend_from_slice(&[0xDD, 22, 0x00, 0x0F, 0xAC, 0x01, 0x01, 0x00]);
+                kd.extend_from_slice(&AP_GTK);
+                kd.push(0xDD);
+                while kd.len() % 8 != 0 {
+                    kd.push(0);
+                }
+                let kek: [u8; 16] = ptk[16..32].try_into().unwrap_or_default();
+                let m3 = Self::ap_frame(0x13CA, 2, &AP_ANONCE, &[0; 8], &Self::wrap(&kek, &kd), Some(&ptk[..16]));
+                self.queue_eapol(&m3);
+            }
+            0x030A => match self.ap_ptk {
+                Some(ptk) if Self::mic_ok(&ptk[..16], f) => self.ap_log.push("msg4 ok"),
+                _ => self.ap_log.push("msg4 bad"),
+            },
+            _ => self.ap_log.push("unexpected EAPOL"),
+        }
+    }
+
+    /// The host installs a key: does it match what the AP derived?
+    fn install_key(&mut self, k: &[u8]) {
+        let len = u32::from_le_bytes([k[4], k[5], k[6], k[7]]) as usize;
+        let key = &k[8..8 + len];
+        let algo = u32::from_le_bytes([k[112], k[113], k[114], k[115]]);
+        if k[156..162] != [0; 6] {
+            self.ap_log.push("pairwise key");
+            self.pairwise_ok = algo == 4 && k[156..162] == AP_BSSID && self.ap_ptk.is_some_and(|p| key == &p[32..48]);
+        } else {
+            self.ap_log.push("group key");
+            self.keys_match = self.pairwise_ok && algo == 4 && key == AP_GTK && k[0] == 1;
+        }
     }
 
     pub fn queue_event(&mut self, payload: &[u8]) {
@@ -364,6 +549,15 @@ impl Card {
 
     /// The host sent a frame: answer a BCDC GET_VAR the way the firmware would.
     fn answer(&mut self, frame: &[u8]) {
+        if frame.len() >= 12 + 4 + 14 && frame[5] & 0xF == 2 {
+            let at = 12 + 4 + 4 * frame[12 + 3] as usize;
+            let eth = &frame[at..u16::from_le_bytes([frame[0], frame[1]]) as usize];
+            if eth.len() > 14 && eth[12..14] == [0x88, 0x8E] && eth[..6] == AP_BSSID && eth[6..12] == MAC {
+                let body = eth[14..].to_vec();
+                self.ap_eapol(&body);
+            }
+            return;
+        }
         if frame.len() < 12 + 16 || frame[5] & 0xF != 0 {
             return;
         }
@@ -395,13 +589,54 @@ impl Card {
                 (0, Vec::new())
             }
             (263, b"mpc") => (0, Vec::new()),
+            (263, b"wpa_auth" | b"auth") => (0, Vec::new()),
+            (263, b"wpaie") => {
+                self.wpaie = rest.to_vec();
+                (0, Vec::new())
+            }
+            (263, b"wsec") => {
+                self.wsec = u32::from_le_bytes([rest[0], rest[1], rest[2], rest[3]]);
+                (0, Vec::new())
+            }
+            (262, b"wsec") => (0, self.wsec.to_le_bytes().to_vec()),
+            (262, b"assoc_info") => {
+                // req_len, resp_len: the request's IEs are its SSID and its RSN element.
+                let req = 2 + AP_SSID.len() + self.assoc_rsn.len();
+                (0, [(req as u32).to_le_bytes(), 0u32.to_le_bytes()].concat())
+            }
+            (262, b"assoc_req_ies") => (0, [&[0x00, AP_SSID.len() as u8][..], AP_SSID, &self.assoc_rsn].concat()),
+            (263, b"join") => {
+                assert_eq!(rest.len(), 68, "ext join parameters");
+                let ssid_len = u32::from_le_bytes([rest[0], rest[1], rest[2], rest[3]]) as usize;
+                if self.refuse_join || &rest[4..4 + ssid_len] != AP_SSID {
+                    self.queue_bcm_event(0, 1, &[]); // E_SET_SSID, FAIL
+                } else {
+                    let mut b = [0u8; 6];
+                    b.copy_from_slice(&rest[56..62]);
+                    self.joined_bssid = Some(b);
+                    let mut rsn = self.wpaie.clone();
+                    if let (Some(caps), true) = (self.fw_rewrites_rsn_caps, rsn.len() >= 22) {
+                        rsn[20..22].copy_from_slice(&caps.to_le_bytes());
+                    }
+                    self.assoc_rsn = rsn;
+                    self.queue_link_up();
+                    let m1 = Self::ap_frame(0x008A, 1, &AP_ANONCE, &[0; 8], &[], None);
+                    self.queue_eapol(&m1);
+                }
+                (0, Vec::new())
+            }
+            (263, b"wsec_key") => {
+                self.install_key(rest);
+                (0, Vec::new())
+            }
             (263, b"event_msgs") => {
                 self.event_mask = rest.to_vec();
                 (0, Vec::new())
             }
             (263, b"escan") => {
-                assert_eq!(rest.len(), 72, "escan v0 parameters");
-                self.escan_results();
+                assert!(rest.len() == 72 || rest.len() == 108, "escan v0 parameters");
+                let named = rest.len() == 108 && rest[51] == 0 && &rest[76..76 + rest[72] as usize] == AP_SSID;
+                self.escan_results(!self.ap_hidden || named);
                 (0, Vec::new())
             }
             (2, _) => {

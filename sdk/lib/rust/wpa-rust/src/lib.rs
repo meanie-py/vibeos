@@ -1,5 +1,7 @@
-//! WPA2-Personal for the WDI layer: the station side of the 4-way and group-key handshakes
-//! (IEEE 802.11-2016 12.7), with the SHA-1 and AES-128 they need.
+//! WPA2-Personal: the station side of the 4-way and group-key handshakes (IEEE 802.11-2016
+//! 12.7), with the SHA-1 and AES-128 they need. Shared by ndis-rust's WDI layer (the
+//! OptiPlex's Realtek, `ndis::wpa`) and bwfm-rust (the Pis' CYW43455, whose firmware leaves
+//! the handshake to the host with `sup_wpa 0`).
 //!
 //! Not a translation. On Windows the supplicant lives in user mode (wlansvc and its
 //! security modules) and hands nwifi.sys finished keys; ReactOS has neither. This is the
@@ -9,6 +11,8 @@
 //! Pure `core` and free of the kernel, so it is tested on the host (`tests` below, built with
 //! `rustc --test`). The caller owns transport: it feeds received EAPOL frames to
 //! `Supplicant::receive` and transmits what comes back, then installs the keys it reports.
+
+#![cfg_attr(not(test), no_std)]
 
 // ---- SHA-1 -----------------------------------------------------------------------------------
 

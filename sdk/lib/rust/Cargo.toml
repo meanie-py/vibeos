@@ -664,6 +664,7 @@ members = [
     "usrmgr-rust",
     "comctl32-rust",
     "inetcpl-rust",
+    "wpa-rust",
     "ndis-rust",
     "bwfm-rust",
     "bwfm-cargo",
