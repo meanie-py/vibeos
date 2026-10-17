@@ -4203,7 +4203,7 @@ def cmd_translate(args):
                         )
                         print(
                             f"  [{fi}] {dp.name} OK ({r.input_tokens}/{r.output_tokens})"
-                            f"  [running ${running_cost:.2f}]",
+                            f"  [running ${running_cost:.4f}]",
                             file=sys.stderr,
                         )
                         if cost_cap is not None and running_cost >= cost_cap:
@@ -4231,7 +4231,13 @@ def cmd_translate(args):
                             r.cache_read_tokens,
                             cache_write_tokens=r.cache_write_tokens,
                         )
-                        print(f"  [{fi}] {dp.name} FAIL: {r.error}", file=sys.stderr)
+                        # The running figure on a FAIL line too: `port translate` bills a
+                        # run by the last one printed, and a run ending in failures (Batch
+                        # H's DriveDlgProc, two 32K-token truncations) read as $0.0000.
+                        print(
+                            f"  [{fi}] {dp.name} FAIL: {r.error}  [running ${running_cost:.4f}]",
+                            file=sys.stderr,
+                        )
                         parallel_errors.append(f"{dp.name}: {r.error}")
             if parallel_errors:
                 raise CppComError(
@@ -4489,7 +4495,7 @@ def cmd_translate(args):
                     )
                     print(
                         f"OK ({result.input_tokens} in / {result.output_tokens} out)"
-                        f"  [running ${running_cost:.2f}]",
+                        f"  [running ${running_cost:.4f}]",
                         file=sys.stderr,
                     )
                 else:
@@ -4520,7 +4526,7 @@ def cmd_translate(args):
                     error=result.error,
                     **_result_fields(result, elapsed_ms),
                 )
-                print(f"FAIL: {result.error}", file=sys.stderr)
+                print(f"FAIL: {result.error}  [running ${running_cost:.4f}]", file=sys.stderr)
 
             # Hard cost cap — stop before the next (paid) call if we've crossed it.
             if cost_cap is not None and running_cost >= cost_cap:
@@ -4736,7 +4742,8 @@ def cmd_translate(args):
                 # "Stitching without preamble" silently ships a crate missing all
                 # of them, so this is a hard failure, not a warning.
                 raise RuntimeError(
-                    f"preamble translation FAILED for {c_file.name}: {pre_res.error}\n"
+                    f"preamble translation FAILED for {c_file.name}: {pre_res.error}"
+                    f"  [running ${running_cost:.4f}]\n"
                     "  Refusing to stitch without it — the result would be missing every\n"
                     "  file-scope struct/typedef/table. Re-run (the per-function work is\n"
                     "  cached in .responses/, so the retry only re-pays for the preamble)."

@@ -569,7 +569,7 @@ unsafe fn SECUR32_initializeProviders() {
     let mut key: HKEY = core::ptr::null_mut();
     let mut apiRet: LSTATUS;
 
-    const HKEY_LOCAL_MACHINE: HKEY = 0x80000002u32 as usize as HKEY;
+    const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;
 
     apiRet = RegOpenKeyExW(HKEY_LOCAL_MACHINE, securityProvidersKeyW.as_ptr(), 0,
         KEY_READ, &mut key);

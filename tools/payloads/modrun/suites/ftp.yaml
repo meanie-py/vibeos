@@ -4,9 +4,9 @@
 # toggles and status, and the hand-ported doproxy (its setjmp/longjmp became dead code or a
 # flag; the C's mput/mget/mls bugs are fixed in the Rust but need a server to reach).
 module: ftp
-# Not amd64: getservbyname("ftp", "tcp") there fails intermittently, which stops either variant
-# at startup and makes the C-vs-Rust diff a coin toss (docs/product/vibeos-roadmap.md, Known bugs).
-arches: [i386, arm64]
+# amd64 was excluded until 2026-10-17: getservbyname("ftp", "tcp") failed there whenever the
+# NIC's Tcpip\Parameters key existed, because mswsock then expanded an uninitialised block as
+# the services directory (OpenNetworkDatabase; fixed in mswsock-rust).
 variants:
   c: '%SystemRoot%\bin\modrun\ftp_c.exe'
   rust: '%SystemRoot%\system32\ftp.exe'

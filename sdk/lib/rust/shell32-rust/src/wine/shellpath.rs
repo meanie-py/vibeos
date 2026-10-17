@@ -87,10 +87,10 @@ const KEY_READ: REGSAM = 0x20019;
 const RRF_RT_REG_SZ: DWORD = 1 << 1; // winreg.h
 
 // HKEY predefined handles (winreg.h)
-const HKEY_CLASSES_ROOT: HKEY = 0x80000000u32 as usize as HKEY;
-const HKEY_CURRENT_USER: HKEY = 0x80000001u32 as usize as HKEY;
-const HKEY_LOCAL_MACHINE: HKEY = 0x80000002u32 as usize as HKEY;
-const HKEY_USERS: HKEY = 0x80000003u32 as usize as HKEY;
+const HKEY_CLASSES_ROOT: HKEY = 0x8000_0000u32 as i32 as isize as HKEY;
+const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as i32 as isize as HKEY;
+const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;
+const HKEY_USERS: HKEY = 0x8000_0003u32 as i32 as isize as HKEY;
 
 // token (winnt.h)
 const TOKEN_QUERY: DWORD = 0x0008;

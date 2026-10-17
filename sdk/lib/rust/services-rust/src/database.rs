@@ -1277,7 +1277,7 @@ unsafe fn ScmGetNoInteractiveServicesValue() {
     ];
 
     lError = RegOpenKeyExW(
-        0x80000002u32 as HKEY,
+        0x8000_0002u32 as i32 as isize as HKEY,
         subKey.as_ptr(),
         0,
         KEY_READ,

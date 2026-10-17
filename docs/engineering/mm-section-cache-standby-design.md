@@ -122,3 +122,7 @@ both 54/54): at 2G avail goes 273.8k -> 255.4k (18.4k, from 41.4k in step 1). At
 and finished in 1529 s (1934 s before). What remains of the 2G drift is pages in use: ROS pages
 still mapped (+11k over boot, the live desktop's images), private +3.1k, paged pool +1.7k,
 page tables +1k.
+
+Since COW and paged-pool commit charging (2026-10-17, `ARM3/commit.rs`), 1024M is limited by
+commit rather than by pages. The ramdisk leaves a 129 MB limit, and iexplore under FEX is
+refused there and dies (`20261017-141001-or20qi28`, 53/54). 1088M and 2G stay 54/54.

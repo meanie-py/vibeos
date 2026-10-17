@@ -331,6 +331,12 @@ pub unsafe extern "system" fn MmDeterminePoolType(pool_address: PVOID) -> POOL_T
 // MiAllocatePoolPages — the page-level allocation function
 // ============================================================================
 
+extern "system" {
+    // ntoskrnl-rust ARM3/commit.rs
+    fn MiChargePagedPoolCommitment(Pages: usize) -> u8;
+    fn MiReturnPagedPoolCommitment(Pages: usize);
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn MiAllocatePoolPages(
     pool_type: POOL_TYPE,
@@ -354,7 +360,10 @@ pub unsafe extern "system" fn MiAllocatePoolPages(
             }
         }
 
-        // DBG: before KeAcquireGuardedMutex
+        // Commit, before any pages are taken; every failure below returns it.
+        if MiChargePagedPoolCommitment(size_in_pages as usize) == 0 {
+            return null_mut();
+        }
 
         // Lock paged pool
         KeAcquireGuardedMutex(&raw mut MmPagedPoolMutex as PKGUARDED_MUTEX);
@@ -380,6 +389,7 @@ pub unsafe extern "system" fn MiAllocatePoolPages(
                 > MiAddressToPte(MmPagedPoolInfo.LastPteForPagedPool) as PVOID
             {
                 KeReleaseGuardedMutex(&raw mut MmPagedPoolMutex as PKGUARDED_MUTEX);
+                MiReturnPagedPoolCommitment(size_in_pages as usize);
                 return null_mut();
             }
 
@@ -470,6 +480,7 @@ pub unsafe extern "system" fn MiAllocatePoolPages(
             );
             if i == 0xFFFFFFFF {
                 KeReleaseGuardedMutex(&raw mut MmPagedPoolMutex as PKGUARDED_MUTEX);
+                MiReturnPagedPoolCommitment(size_in_pages as usize);
                 return null_mut();
             }
         }
@@ -718,6 +729,7 @@ pub unsafe extern "system" fn MiFreePoolPages(starting_va: PVOID) -> ULONG {
         // Delete the actual pages
         let pointer_pte = (MmPagedPoolInfo.FirstPteForPagedPool as PMMPTE).add(i as usize);
         MiDeleteSystemPageableVm(pointer_pte, number_of_pages as PFN_NUMBER, 0, null_mut());
+        MiReturnPagedPoolCommitment(number_of_pages as usize);
 
         // Clear bitmaps
         KeAcquireGuardedMutex(&raw mut MmPagedPoolMutex as PKGUARDED_MUTEX);

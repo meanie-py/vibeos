@@ -36,7 +36,7 @@ pub const INVALID_HANDLE_VALUE: HANDLE = !0isize as HANDLE;
 // IO_COMPLETION_ALL_ACCESS = STANDARD_RIGHTS_REQUIRED|SYNCHRONIZE|0x3 = 0x001F0003.
 pub const IO_COMPLETION_ALL_ACCESS: u32 = 0x001F0003;
 // HKEY_LOCAL_MACHINE = (HKEY)0x80000002 — a winreg.h macro constant, not a DLL import.
-pub const HKEY_LOCAL_MACHINE: HKEY = 0x80000002usize as HKEY;
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;
 
 // --- SOCKET_STATE / IPPROTO bare-name aliases -------------------------------------------
 // bindgen constifies the enum with prefixed names (_SOCKET_STATE_SocketOpen /

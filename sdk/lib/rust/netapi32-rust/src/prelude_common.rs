@@ -138,8 +138,8 @@ pub const MIB_IF_TYPE_TOKENRING: DWORD = 9; // ipifcons.h — `#define MIB_IF_TY
 pub const IPPROTO_TCP: c_int = 6; // winsock.h — `#define IPPROTO_TCP 6`
 pub const IPPROTO_UDP: c_int = 17; // winsock.h — `#define IPPROTO_UDP 17`
 // winreg.h — `((HKEY)(LONG_PTR)(LONG)0x8000000N)`
-pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as usize as HKEY;
-pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as usize as HKEY;
+pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as i32 as isize as HKEY;
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;
 
 
 // 4c-bis. TRUE/FALSE are bindgen u32, but BOOL is c_int (i32). Shadow as BOOL so the pervasive

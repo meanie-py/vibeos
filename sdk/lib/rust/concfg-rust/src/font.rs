@@ -30,7 +30,7 @@ unsafe fn RtlGetProcessHeap() -> *mut core::ffi::c_void {
 
 // ---- concfg/font.h + shared-header helpers (macros/inlines, not exports) ----
 pub const INVALID_CP: UINT = 0xFFFFFFFF; // (UINT)-1
-pub const HKEY_LOCAL_MACHINE: HKEY = 0x80000002u32 as usize as HKEY;
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;
 
 // CJK codepages / charsets (sdk/include/reactos/cjkcode.h).
 const CP_SHIFTJIS: UINT = 932;

@@ -48,6 +48,12 @@ unsafe extern "C" fn StrStrCase(
         if cch2 == (0) {
             return pszStr as PWSTR;
         }
+        // Divergence from the C: `i <= cch1 - cch2` is unsigned, so a search string longer
+        // than the line wrapped to ~4G and CompareStringW was handed offsets past the line's
+        // end. A longer needle simply cannot match.
+        if cch2 > cch1 {
+            return ::core::ptr::null_mut::<WCHAR>();
+        }
 
         i = (0) as INT;
         while (i as UINT) <= cch1.wrapping_sub(cch2) {

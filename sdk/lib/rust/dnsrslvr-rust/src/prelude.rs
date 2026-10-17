@@ -86,7 +86,7 @@ pub unsafe fn CopyMemory(dst: *mut c_void, src: *const c_void, len: usize) {
 }
 
 // ================= consts bindgen cannot emit ===================================================
-pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as usize as HKEY; // winreg.h cast macro
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY; // winreg.h cast macro
 pub const RPC_S_OK: RPC_STATUS = 0;
 pub type RPC_STATUS = LONG; // rpcdce.h: typedef long RPC_STATUS
 pub type RPC_MGR_EPV = *mut c_void;

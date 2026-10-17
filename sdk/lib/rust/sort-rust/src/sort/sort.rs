@@ -129,8 +129,12 @@ pub unsafe extern "C" fn main(mut argc: c_int, mut argv: *mut *mut c_char) -> c_
             break;
         }
 
-        if strlen(temp.as_ptr()) != 0 {
-            temp[strlen(temp.as_ptr()) - 1 as usize] = 0;
+        // Only a newline is stripped. Divergence from the C, which cut the last character
+        // unconditionally: a final line with no newline (or a line split at MAXLEN) lost a
+        // real character.
+        let len = strlen(temp.as_ptr());
+        if len != 0 && temp[len - 1] == b'\n' as c_char {
+            temp[len - 1] = 0;
         }
 
         *list.offset(nr as isize) = malloc(

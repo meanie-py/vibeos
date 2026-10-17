@@ -27,10 +27,10 @@ pub const FALSE: BOOL = 0;
 // Registry root pseudo-handles — winreg.h: `((HKEY)(LONG_PTR)(LONG)0x8000000N)`
 // (sdk/include/…/winreg.h). Stored as HKEY (a *mut HKEY__); the u32 magic values
 // zero-extend to the correct 64-bit pattern on amd64/arm64.
-pub const HKEY_CLASSES_ROOT: HKEY = 0x8000_0000u32 as HKEY;
-pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as HKEY;
-pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as HKEY;
-pub const HKEY_USERS: HKEY = 0x8000_0003u32 as HKEY;
+pub const HKEY_CLASSES_ROOT: HKEY = 0x8000_0000u32 as i32 as isize as HKEY;
+pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as i32 as isize as HKEY;
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;
+pub const HKEY_USERS: HKEY = 0x8000_0003u32 as i32 as isize as HKEY;
 
 // winnls.h: `#define CP_ACP 0` (ANSI code page). Passed to MultiByte/WideChar as UINT.
 pub const CP_ACP: u32 = 0;

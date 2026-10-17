@@ -370,6 +370,10 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     specs.append(
         ("scan_cmake_linked_rust", [py, str(ccl)] if ccl.is_file() else ["MISSING"], "stdout")
     )
+    # The manifests a build with no cmake reads (sdk/lib/rust/cells, boot/media) match the
+    # build graph: a converted, removed or moved module is a finding until they are
+    # regenerated. Rust only (tools/vibeos-lint); reads build-<arch>/, so it is deferred.
+    specs.append(("scan_cargo_manifests", ["MISSING"], "stdout"))
     # atl_rust's CAtlList::GetNext returns the element's SLOT; casting it instead of
     # dereferencing compiles for a list of pointers and reads list-node memory as the object
     # (mmc_new, 2026-10-17). Baseline is EMPTY.
@@ -671,6 +675,18 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_override_self_dispatch",
             [py, str(sod), "--lint"] if sod.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # A predefined registry key cast through usize/u32 to HKEY: 0x0000000080000002 on 64-bit,
+    # where winreg.h's `(LONG)` sign-extends it to 0xFFFFFFFF80000002. advapi32 masks, so
+    # calls work, but it never compares equal to a HKEY C code made. 118 sites across the
+    # tree when the rule landed (2026-10-17), all rewritten. A vibeos-lint rule. Baseline is EMPTY.
+    shz = repo / "tools" / "scan_hkey_zero_extend.py"
+    specs.append(
+        (
+            "scan_hkey_zero_extend",
+            [py, str(shz), "--lint"] if shz.is_file() else ["MISSING"],
             "stdout",
         )
     )

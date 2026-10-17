@@ -1559,7 +1559,10 @@ unsafe extern "C" fn HEXEDIT_WM_KEYDOWN(mut hed: PHEXEDIT_DATA, mut VkCode: INT)
 
 unsafe extern "C" fn HEXEDIT_WM_CHAR(hed: PHEXEDIT_DATA, wch: WCHAR) -> BOOL {
     let mut bufsize: usize = 0;
-    let ch: CHAR = wch as CHAR; // keep the lowest octet.
+    // The lowest octet, UNSIGNED. Divergence from the C: its `CHAR ch` is signed, so typed
+    // characters 0x80-0xFF came out negative and failed the `0x20 <= ch && ch <= 0xFF` test --
+    // the ASCII pane could never insert them.
+    let ch: BYTE = wch as BYTE;
     let mut buf: PBYTE = core::ptr::null_mut();
     let mut i0: INT = 0;
     let mut i1: INT = 0;

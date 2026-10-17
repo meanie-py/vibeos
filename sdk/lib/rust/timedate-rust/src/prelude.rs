@@ -90,7 +90,7 @@ impl crate::timedate::monthcal::_MONTHCALWND {
 
 
 // ==== port resolve: tree consensus (generated -- re-run `rustconv port resolve`) ====
-pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002usize as HKEY; // dhcpcsvc-rust/src/prelude.rs
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY; // dhcpcsvc-rust/src/prelude.rs
 pub const HWND_BROADCAST: HWND = 0xffffusize as HWND; // desk-rust/src/prelude.rs
 pub const IDC_ARROW: LPCWSTR = 32512usize as LPCWSTR; // desk-rust/src/prelude.rs
 pub const LOCALE_USER_DEFAULT: DWORD = 0x0400; // explorer-sys/src/server.rs

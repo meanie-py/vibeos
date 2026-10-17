@@ -28,7 +28,10 @@ pub unsafe extern "C" fn getwhoisserver(argc: core::ffi::c_int, argv: *mut *mut 
 			if i + 2 < argc
 			{
 				host = *argv.offset((i + 1) as isize);
-				optset = i + 1;
+				// Past the host name too. Divergence from the C (`i + 1`), which left the
+				// host as the first word of the query: `whois -h whois.example x` asked the
+				// server about "whois.example x".
+				optset = i + 2;
 			}
 			else
 			{

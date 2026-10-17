@@ -1891,7 +1891,7 @@ pub unsafe extern "C" fn OLECONVERT_CreateCompObjStream(
         if hRes == 0 {
             let mut hKey: HKEY = core::ptr::null_mut();
             let hErr: LONG = open_classes_key(
-                0x80000000u32 as HKEY, // HKEY_CLASSES_ROOT
+                0x8000_0000u32 as i32 as isize as HKEY, // HKEY_CLASSES_ROOT
                 bufferW.as_ptr(),
                 MAXIMUM_ALLOWED,
                 &mut hKey,

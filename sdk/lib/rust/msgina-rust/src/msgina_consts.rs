@@ -7,9 +7,9 @@
 use crate::prelude::*;
 
 // ---- registry roots (winreg.h: ((HKEY)(LONG_PTR)(LONG)0x800000xx)) ----
-pub const HKEY_CLASSES_ROOT: HKEY = 0x8000_0000u32 as usize as HKEY;
-pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as usize as HKEY;
-pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as usize as HKEY;
+pub const HKEY_CLASSES_ROOT: HKEY = 0x8000_0000u32 as i32 as isize as HKEY;
+pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as i32 as isize as HKEY;
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;
 
 // ---- winuser.h / wingdi.h ----
 pub const CW_USEDEFAULT: c_int = 0x8000_0000u32 as c_int; // ((int)0x80000000)

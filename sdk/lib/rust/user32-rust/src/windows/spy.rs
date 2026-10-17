@@ -2206,7 +2206,7 @@ extern "C" {
 }
 
 const HEAP_ZERO_MEMORY: DWORD = 0x0000_0008;
-const HKEY_CURRENT_USER: HKEY = 0x8000_0001usize as HKEY;
+const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as i32 as isize as HKEY;
 // WM_APP / WM_USER come from win32k_sys::win32k.
 
 // ───────────────────────────────────────────────────────────────────────────────

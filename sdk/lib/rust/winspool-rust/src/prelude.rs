@@ -106,7 +106,7 @@ pub use crate::winspool::marshalling_tables::{
 
 // ==== port resolve: tree consensus (generated -- re-run `rustconv port resolve`) ====
 pub const CP_ACP: u32 = 0; // advapi32-sys/src/bindgen_amd64.rs
-pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001usize as HKEY; // access-rust/src/prelude.rs
+pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as i32 as isize as HKEY; // access-rust/src/prelude.rs
 pub const INVALID_FILE_ATTRIBUTES: DWORD = 0xFFFFFFFF; // kernel32-rust/src/file/fileinfo.rs
 pub const RPC_S_OK: RPC_STATUS = 0; // advapi32-rust/src/prelude.rs
 pub const __WINE_DBCL_ERR: __wine_debug_class = 1; // appwiz-rust/src/prelude.rs

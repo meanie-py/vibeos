@@ -138,7 +138,9 @@ pub unsafe extern "C" fn BlankArgument(argc: core::ffi::c_int, argv: *mut *mut W
 }
 #[no_mangle]
 pub unsafe extern "C" fn WhoamiGetUser(NameFormat: EXTENDED_NAME_FORMAT) -> LPWSTR {
-    let mut UsrBuf: LPWSTR = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY as DWORD, MAX_PATH as SIZE_T) as LPWSTR;
+    // MAX_PATH WCHARs: the C allocated MAX_PATH BYTES and then told GetUserNameExW and
+    // LCMapStringW the buffer held MAX_PATH characters.
+    let mut UsrBuf: LPWSTR = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY as DWORD, (MAX_PATH as SIZE_T) * core::mem::size_of::<WCHAR>() as SIZE_T) as LPWSTR;
     let mut UsrSiz: ULONG = MAX_PATH as ULONG;
 
     if UsrBuf.is_null() {
@@ -796,11 +798,13 @@ pub unsafe extern "C" fn WhoamiGroups() -> ::core::ffi::c_int {
             }
 
             /* remove the last comma (', ' which is 2 wchars) of the buffer, let's keep it simple */
-            tmpBuffer[max!(
-                wcslen(core::ptr::addr_of_mut!(tmpBuffer) as *mut WCHAR)
-                    .wrapping_sub(2),
-                0,
-            ) as usize] = UNICODE_NULL as WCHAR;
+            // Divergence from the C: `max(wcslen(..) - 2, 0)` is size_t arithmetic, so the
+            // max never clamps, and a group with none of the four attributes indexed ~2^64 --
+            // out of bounds, a panic here. An empty list has no comma to remove.
+            let attr_len = wcslen(core::ptr::addr_of_mut!(tmpBuffer) as *mut WCHAR);
+            if attr_len >= 2 {
+                tmpBuffer[attr_len - 2] = UNICODE_NULL as WCHAR;
+            }
 
             WhoamiSetTable(
                 GroupTable,

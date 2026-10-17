@@ -323,7 +323,7 @@ pub use crate::types::{
 };
 
 // ---- 3f. The rest of the import surface ----
-pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as isize as HKEY; // winreg.h:12
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY; // winreg.h:12
 
 extern "system" {
     // kernel32

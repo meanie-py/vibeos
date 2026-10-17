@@ -599,9 +599,11 @@ unsafe extern "system" fn ISecurityObjectTypeInfo_fnGetInheritSource(
 
     pifSize = ((*pACL).AceCount as SIZE_T)
         .wrapping_mul(core::mem::size_of::<INHERITED_FROM>() as SIZE_T);
+    // Zeroed, unlike the C's: on failure it handed this array to FreeInheritedFromArray, which
+    // LocalFree'd every never-written AncestorName in it.
     pif = HeapAlloc(
         GetProcessHeap(),
-        0,
+        HEAP_ZERO_MEMORY as DWORD,
         pifSize,
     ) as PINHERITED_FROM;
     if pif.is_null() {
@@ -710,9 +712,12 @@ unsafe extern "C" fn CRegKeySecurity_fnConstructor(
         (*obj).ObjectInfo = *ObjectInfo;
         (*obj).Btn = Btn;
         (*obj).hRootKey = hRootKey;
+        // Divergence from the C: it bounded the copy by sizeof(obj->szRegKey), the one-WCHAR
+        // declaration of this struct-hack array, so the key path was always truncated to ""
+        // and the permissions dialog addressed the root key instead of the selected one.
         StringCbCopyW(
             core::ptr::addr_of_mut!((*obj).szRegKey) as *mut WCHAR,
-            core::mem::size_of_val(&(*obj).szRegKey),
+            (wcslen(lpRegKey as *const WCHAR) + 1) * core::mem::size_of::<WCHAR>(),
             lpRegKey,
         );
     } else {

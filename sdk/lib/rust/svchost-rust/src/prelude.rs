@@ -66,7 +66,7 @@ pub use win32macros_rust::{ALIGN_UP, ARRAYSIZE, ARRAY_SIZE, ASSERT, C_ASSERT, Co
 
 // ==== port resolve: tree consensus (generated -- re-run `rustconv port resolve`) ====
 pub const CP_ACP: u32 = 0; // advapi32-sys/src/bindgen_amd64.rs
-pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002usize as HKEY; // console-rust/src/prelude.rs
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY; // console-rust/src/prelude.rs
 pub const LANG_USER_DEFAULT: u32 = 1024; // diskpart-rust/src/prelude.rs
 pub const LCMAP_LOWERCASE: u32 = 256; // appwiz-rust/src/types_amd64.rs
 pub const RPC_S_OK: RPC_STATUS = 0; // advapi32-rust/src/prelude.rs

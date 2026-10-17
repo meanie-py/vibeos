@@ -87,22 +87,25 @@ pub unsafe extern "C" fn PrintMemory(MemorySizeByte: SIZE_T, MaxWidth: UINT) -> 
     // calculate the length
     let mut PrintLength: UINT = 0 as UINT;
     let mut Tmp: SIZE_T = MemorySize;
-    let mut Mod: UINT = 1 as UINT;
+    // 10^(PrintLength-1), in 64 bits. Divergence from the C, whose `UINT Mod` reached
+    // 10^PrintLength: from ten digits on (1e9 KB, a 64-bit size) it wrapped and every digit
+    // printed was wrong; and 10^20 does not fit in 64 bits either, so stop one power short.
+    let mut Mod: u64 = 1;
 
     loop {
         Tmp = Tmp.wrapping_div(10 as SIZE_T);
         PrintLength = PrintLength.wrapping_add(1);
-        Mod = Mod.wrapping_mul(10 as UINT);
         if !(Tmp != 0) {
             break;
         }
+        Mod *= 10;
     }
 
     let mut i: UINT = PrintLength;
     while i != 0 {
-        Mod = Mod.wrapping_div(10 as UINT);
         *pNumberStr = ((0x0030u16 as SIZE_T).wrapping_add(MemorySize / (Mod as SIZE_T))) as WCHAR;
         MemorySize = MemorySize % (Mod as SIZE_T);
+        Mod /= 10;
         pNumberStr = pNumberStr.add(1);
 
         if i != (1 as UINT) && i.wrapping_rem(3 as UINT) == (1 as UINT) {

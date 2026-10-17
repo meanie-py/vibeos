@@ -496,6 +496,10 @@ pub unsafe extern "C" fn RegFindRecurse(
                     * (core::mem::size_of::<WCHAR>() as SIZE_T);
                 *ppszFoundSubKey = malloc(cbFoundSubKey as size_t) as LPWSTR;
                 if (*ppszFoundSubKey).is_null() {
+                    // The C leaked the recursion's two results here.
+                    free(psz as *mut ::core::ffi::c_void);
+                    free(*ppszFoundValueName as *mut ::core::ffi::c_void);
+                    *ppszFoundValueName = core::ptr::null_mut();
                     break 'body;
                 }
                 if szSubKey[0 as usize] != 0 {
@@ -523,6 +527,8 @@ pub unsafe extern "C" fn RegFindRecurse(
 
     if success {
         /* success: */
+        // The C kept `pb` on this path: a match found in a value's DATA leaked that value.
+        free(pb as *mut ::core::ffi::c_void);
         if !ppszNames.is_null() {
             i = 0 as DWORD;
             while i < c {
@@ -570,6 +576,8 @@ pub unsafe extern "C" fn RegFindWalk(
     let mut jump: u8 = 0;
 
     hBaseKey = *phKey;
+    // Not NULL: an exit taken before the walk opens anything must not close a handle.
+    hSubKey = hBaseKey;
 
     if (wcslen(pszSubKey) as usize) >= (_countof!(szSubKey) as usize) {
         return (FALSE) as BOOL;
@@ -747,6 +755,10 @@ pub unsafe extern "C" fn RegFindWalk(
                             .wrapping_mul(core::mem::size_of::<WCHAR>());
                         *ppszFoundSubKey = malloc(cbFoundSubKey) as LPWSTR;
                         if (*ppszFoundSubKey).is_null() {
+                            // The C leaked the recursion's two results here.
+                            free(psz as *mut core::ffi::c_void);
+                            free(*ppszFoundValueName as *mut core::ffi::c_void);
+                            *ppszFoundValueName = core::ptr::null_mut();
                             jump = 1;
                             break 'walk;
                         }
@@ -786,6 +798,10 @@ pub unsafe extern "C" fn RegFindWalk(
             if hBaseKey != hSubKey {
                 RegCloseKey(hSubKey);
             }
+            // Divergence from the C: it left the closed handle in hSubKey, and the shared
+            // success/err exits below closed it AGAIN once the walk moved on to the next root
+            // (HKCU, HKLM, ...) -- by then possibly a handle another open had been given.
+            hSubKey = hBaseKey;
         }
 
         if *phKey == HKEY_CLASSES_ROOT {

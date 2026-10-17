@@ -1736,7 +1736,7 @@ pub unsafe extern "system" fn GetPerAdapterInfo(
 ) -> DWORD {
 
     const CP_ACP: u32 = 0;
-    const HKEY_LOCAL_MACHINE: HKEY = 0x80000002 as HKEY;
+    const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;
     const NOERROR: DWORD = 0;
 
     let mut hkey: HKEY = core::ptr::null_mut();
@@ -2453,7 +2453,7 @@ unsafe fn GetInterfaceNameInternal(
     pOutBufLen: *mut u32,
 ) -> u32 {
 
-    const HKEY_LOCAL_MACHINE: HKEY = 0x80000002 as HKEY;
+    const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;
     const MAX_INTERFACE_NAME_LEN: u32 = 256;
 
     let mut GuidString: UNICODE_STRING = UNICODE_STRING {
@@ -2531,7 +2531,7 @@ unsafe fn GetInterfaceNameInternal(
 
 
 const MAX_ADAPTER_NAME_LENGTH: usize = 256;
-const HKEY_CURRENT_USER: HKEY = 0x80000001 as HKEY;
+const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as i32 as isize as HKEY;
 const INADDR_NONE: u32 = 0xffffffff;
 const INADDR_ANY: u32 = 0x00000000;
 const TRUE: i32 = 1;
@@ -3299,7 +3299,7 @@ pub unsafe extern "system" fn NhGetGuidFromInterfaceName(
     _dwUnknown3: u32,
     _dwUnknown4: u32,
 ) -> u32 {
-    const HKEY_LOCAL_MACHINE_L: HKEY = 0x80000002u32 as HKEY;
+    const HKEY_LOCAL_MACHINE_L: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;
 
     if pInterfaceName.is_null() || pInterfaceGUID.is_null() {
         return ERROR_INVALID_PARAMETER;

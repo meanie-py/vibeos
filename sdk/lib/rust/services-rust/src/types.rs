@@ -28,7 +28,7 @@ macro_rules! wstr {
 }
 
 // Predefined registry root handles (winreg.h) — not in winsrv-sys bindgen.
-pub const HKEY_LOCAL_MACHINE: HKEY = 0x80000002u32 as usize as HKEY;
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;
 
 // winsvc.h service-object access rights (not in winsrv-sys bindgen). The
 // SECURITY_*_RID / DOMAIN_ALIAS_RID_ADMINS / READ_CONTROL / GENERIC_ALL /

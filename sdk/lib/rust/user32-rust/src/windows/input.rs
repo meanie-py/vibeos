@@ -59,8 +59,8 @@ fn UlongToHandle(ul: ULONG) -> HANDLE {
 }
 
 // ── winreg.h predefined HKEYs + REGSAM (winnt.h) ──
-const HKEY_CURRENT_USER: HKEY = 0x80000001u32 as usize as HKEY;
-const HKEY_LOCAL_MACHINE: HKEY = 0x80000002u32 as usize as HKEY;
+const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as i32 as isize as HKEY;
+const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;
 type REGSAM = u32;
 
 // ── winnls.h codepages / fileapi.h sentinel ──
@@ -310,7 +310,7 @@ pub unsafe extern "system" fn CliImmSetHotKeyWorker(
 #[no_mangle]
 pub unsafe extern "C" fn IntLoadPreloadKeyboardLayouts() {
 
-    const HKEY_CURRENT_USER: HKEY = 0x80000001u32 as usize as HKEY;
+    const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as i32 as isize as HKEY;
 
     let mut nNumber: UINT;
     let mut uFlags: UINT;
@@ -401,7 +401,7 @@ unsafe extern "system" fn CliSaveImeHotKey(
     bDelete: BOOL,
 ) -> BOOL {
 
-    const HKEY_CURRENT_USER: HKEY = 0x80000001u32 as usize as HKEY;
+    const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as i32 as isize as HKEY;
 
     let mut szName: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
     let mut error: LONG;

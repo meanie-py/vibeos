@@ -7,7 +7,7 @@ must not change is everything the loader and every caller can see:
 
   header   machine, image base, alignments, OS/subsystem versions, subsystem, file and
            DLL characteristics, stack/heap sizes, which data directories are present
-  exports  every ordinal, name and forwarder (never the RVA)
+  exports  the module's own name, every ordinal, name and forwarder (never the RVA)
   imports  every DLL and every function or ordinal taken from it, normal and delay-load
   rsrc     every resource type/name/language and the SHA-256 of its bytes
   sections names and characteristics (never sizes or addresses)
@@ -143,6 +143,13 @@ class PE:
             out.append(f"@{base + i} {names.get(i, '(noname)')}{fwd}")
         return out
 
+    def module_name(self) -> str | None:
+        """The export directory's own module name; None for an image that exports nothing."""
+        rva, _size = self.dirs.get("export", (0, 0))
+        if not rva:
+            return None
+        return self.cstr(struct.unpack_from("<I", self.data, self.off(rva) + 12)[0])
+
     def _thunks(self, rva: int) -> list[str]:
         out, width = [], 8 if self.pe64 else 4
         flag = 1 << (63 if self.pe64 else 31)
@@ -250,7 +257,12 @@ class PE:
         )
         return {
             "header": hdr,
-            "exports": self.exports(),
+            # The module's own name is part of the contract: forwarders and dbghelp read it.
+            # It went unchecked while every cargo cell carried its bin's hashed `x-<hash>.exe`.
+            "exports": [
+                *([f"module {n.lower()}"] if (n := self.module_name()) is not None else []),
+                *self.exports(),
+            ],
             "imports": self.imports(),
             "rsrc": self.resources(),
             "sections": secs,

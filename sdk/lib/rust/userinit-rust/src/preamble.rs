@@ -31,8 +31,8 @@ pub const IDS_CANCEL_CONFIRM: u32 = 602;
 pub const IDS_SPAIN: u32 = 3900;
 
 // ---- predefined registry roots (winreg.h) ----
-pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002usize as HKEY;
-pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001usize as HKEY;
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;
+pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as i32 as isize as HKEY;
 
 pub const UNICODE_NULL: u16 = 0;
 

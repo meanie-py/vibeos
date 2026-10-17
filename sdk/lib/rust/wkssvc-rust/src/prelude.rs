@@ -102,7 +102,7 @@ pub unsafe fn CopyMemory(dst: *mut c_void, src: *const c_void, len: usize) {
 
 // ================= consts bindgen cannot emit ===================================================
 // HKEY_LOCAL_MACHINE is a cast macro, not an enum/const, so bindgen skips it.
-pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as usize as HKEY;
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;
 pub const RPC_S_OK: RPC_STATUS = 0;
 pub const RPC_C_LISTEN_MAX_CALLS_DEFAULT: c_uint = 1234;
 pub const MAX_PREFERRED_LENGTH: DWORD = 0xFFFF_FFFF;

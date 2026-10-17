@@ -109,7 +109,7 @@ pub(crate) use calc_HtmlHelp;
 // ==== port resolve: tree consensus (generated -- re-run `rustconv port resolve`) ====
 pub const BP_PUSHBUTTON: BUTTONPARTS = BUTTONPARTS_BP_PUSHBUTTON; // island enum
 pub const E_NOTIMPL: HRESULT = 0x80004001u32 as HRESULT; // appwiz-rust/src/prelude.rs
-pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001usize as HKEY; // access-rust/src/prelude.rs
+pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as i32 as isize as HKEY; // access-rust/src/prelude.rs
 pub const LOCALE_USER_DEFAULT: DWORD = 0x0400; // comctl32-rust/src/prelude.rs
 pub const PBS_DISABLED: PUSHBUTTONSTATES = PUSHBUTTONSTATES_PBS_DISABLED; // island enum
 pub const PBS_HOT: PUSHBUTTONSTATES = PUSHBUTTONSTATES_PBS_HOT; // island enum

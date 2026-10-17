@@ -65,7 +65,7 @@ pub use win32macros_rust::{ALIGN_UP, ARRAYSIZE, ASSERT, C_ASSERT, CopyMemory, DB
 // The island re-exports the base NT identity: pub use ntdll_sys::nt::*;
 
 // ==== port resolve: tree consensus (generated -- re-run `rustconv port resolve`) ====
-pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002usize as HKEY; // dhcpcsvc-rust/src/prelude.rs
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY; // dhcpcsvc-rust/src/prelude.rs
 pub const IDC_ARROW: LPCWSTR = 32512usize as LPCWSTR; // desk-rust/src/prelude.rs
 pub const INVALID_CP: UINT = 0xFFFFFFFF; // concfg-rust/src/font.rs
 pub const Popup: _TEXT_TYPE = _TEXT_TYPE_Popup; // island enum

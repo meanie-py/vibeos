@@ -164,11 +164,11 @@ pub const REG_QUERY: i32 = 5;
 pub const REG_INVALID: i32 = 6;
 
 // HKEY root constants (Win32 values)
-pub const HKEY_CLASSES_ROOT: HKEY = 0x80000000 as HKEY;
-pub const HKEY_CURRENT_USER: HKEY = 0x80000001 as HKEY;
-pub const HKEY_LOCAL_MACHINE: HKEY = 0x80000002 as HKEY;
-pub const HKEY_USERS: HKEY = 0x80000003 as HKEY;
-pub const HKEY_CURRENT_CONFIG: HKEY = 0x80000005 as HKEY;
+pub const HKEY_CLASSES_ROOT: HKEY = 0x8000_0000u32 as i32 as isize as HKEY;
+pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as i32 as isize as HKEY;
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;
+pub const HKEY_USERS: HKEY = 0x8000_0003u32 as i32 as isize as HKEY;
+pub const HKEY_CURRENT_CONFIG: HKEY = 0x8000_0005u32 as i32 as isize as HKEY;
 #[no_mangle]
 pub unsafe extern "C" fn output_writeconsole(str: *const WCHAR, wlen: DWORD) {
     let mut count: DWORD = 0;

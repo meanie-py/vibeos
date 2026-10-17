@@ -7,13 +7,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import pe_equiv
 
 
-def make_pe(exports: list[str], image_base: int = 0x140000000, code: bytes = b"\xc3") -> bytes:
+def make_pe(
+    exports: list[str],
+    image_base: int = 0x140000000,
+    code: bytes = b"\xc3",
+    dll: bytes = b"t.dll",
+) -> bytes:
     """A minimal PE32+ DLL: one .rdata section holding an export directory, one .text."""
     names = [n.encode() + b"\0" for n in exports]
     n = len(exports)
     rdata_rva, text_rva = 0x1000, 0x2000
     # export dir (40) | functions (4n) | name ptrs (4n) | ordinals (2n) | dll name | names
-    dllname = b"t.dll\0"
+    dllname = dll + b"\0"
     off_fun, off_np = 40, 40 + 4 * n
     off_ord = off_np + 4 * n
     off_dll = off_ord + 2 * n
@@ -103,3 +108,12 @@ def test_not_a_pe_is_an_error_not_a_verdict(tmp_path):
     except pe_equiv.PEError:
         return
     raise AssertionError("expected PEError")
+
+
+def test_the_modules_own_export_name_is_contract():
+    # Every cargo cell shipped its bin's hashed name here until pefixup --dllname.
+    good, cell = make_pe(["Alpha"]), make_pe(["Alpha"], dll=b"t-4d1aeb251b7d5eac.exe")
+    assert pe_equiv.compare(pe_equiv.PE(good), pe_equiv.PE(cell)) == [
+        "exports: - module t.dll",
+        "exports: + module t-4d1aeb251b7d5eac.exe",
+    ]

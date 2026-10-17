@@ -217,6 +217,56 @@ static int set_delayimport(unsigned char *buffer, PIMAGE_NT_HEADERS nt_header)
     return 0;
 }
 
+/* The export directory's Name is the module's own file name: forwarders, dbghelp and
+ * anything resolving exports by module read it. lld takes it from its -o path and ignores a
+ * .def's NAME/LIBRARY, and a cargo cell links to the bin's hashed `dcomp-4d1aeb251b7d5eac.exe`
+ * before cmake copies it to dcomp.dll -- so that is what every cell's export table said.
+ * Rewritten in place: the real name must fit the linker's string, or this fails. */
+static int set_dllname(const char *dllname, unsigned char *buffer, PIMAGE_NT_HEADERS nt_header)
+{
+    unsigned char *optional = (unsigned char *)&nt_header->OptionalHeader;
+    DWORD *directory;
+    unsigned char *exports;
+    char *name;
+    size_t old_len, new_len;
+
+    if (*(WORD *)optional == 0x20b)
+        directory = (DWORD *)(optional + 112);
+    else if (*(WORD *)optional == 0x10b)
+        directory = (DWORD *)(optional + 96);
+    else
+    {
+        error("Unknown optional header magic %x\n", *(WORD *)optional);
+        return 1;
+    }
+
+    /* An image that exports nothing has no name to carry (lsass.exe). */
+    if (directory[0] == 0 || directory[1] == 0)
+        return 0;
+    exports = rva_to_ptr(buffer, nt_header, directory[0]);
+    if (!exports)
+    {
+        error("Export directory RVA %x is outside every section\n", directory[0]);
+        return 1;
+    }
+    name = rva_to_ptr(buffer, nt_header, *(DWORD *)(exports + 12));
+    if (!name)
+    {
+        error("Export directory Name RVA %x is outside every section\n", *(DWORD *)(exports + 12));
+        return 1;
+    }
+    old_len = strlen(name);
+    new_len = strlen(dllname);
+    if (new_len > old_len)
+    {
+        error("Export name '%s' has no room for '%s'\n", name, dllname);
+        return 1;
+    }
+    memset(name, 0, old_len);
+    memcpy(name, dllname, new_len);
+    return 0;
+}
+
 static int driver_fixup(enum fixup_mode mode, unsigned char *buffer, PIMAGE_NT_HEADERS nt_header)
 {
     /* GNU LD just doesn't know what a driver is, and has notably no idea of paged vs non-paged sections */
@@ -457,6 +507,8 @@ print_usage(void)
            "  --wdmdriver           Fix code, data and resource sections for WDM drivers;\n"
            "  --kerneldll           Fix code, data and resource sections for Kernel-Mode DLLs;\n"
            "  --kernel              Fix code, data and resource sections for kernels;\n"
+           "  --dllname:NAME        Set the export directory's module name to NAME (lld\n"
+           "                        writes its -o file name there);\n"
            "\n"
            "and/or a combination of the following ones:\n"
            "  --section:name[=newname][,[[!]{CDEIKOMPRSUW}][A{1248PTSX}]]\n"
@@ -469,6 +521,7 @@ int main(int argc, char **argv)
     int result = 1;
     enum fixup_mode mode = MODE_NONE;
     int delayimport = 0;
+    const char *dllname = NULL;
     int i;
     FILE* file;
     size_t len;
@@ -526,6 +579,11 @@ int main(int argc, char **argv)
         {
             /* Independent of the mode; handled after it */
             delayimport = 1;
+        }
+        else if (strncmp(&argv[i][2], "dllname:", 8) == 0 && argv[i][10])
+        {
+            /* Independent of the mode; handled after it */
+            dllname = &argv[i][10];
         }
         else
         {
@@ -606,6 +664,9 @@ int main(int argc, char **argv)
 
     if (delayimport && result == 0)
         result = set_delayimport(buffer, nt_header);
+
+    if (dllname && result == 0)
+        result = set_dllname(dllname, buffer, nt_header);
 
     /* Apply any section attributes override */
     for (i = 1; (i < argc) && (result == 0); ++i)

@@ -205,43 +205,55 @@ unsafe extern "C" fn OpenHostsFile() -> *mut FILE {
 
     let database_path: PWSTR;
     let mut reg_size: u32 = 0;
+    // Divergence from the C: with Tcpip\Parameters present (a configured NIC) but no
+    // DatabasePath value (nothing in our hives sets one), the C either bailed out with no
+    // hosts file at all or expanded a zero-byte block as the directory -- so the hosts file
+    // vanished from name resolution once the NIC was configured. Any failure falls back to
+    // the default directory, as in mswsock's OpenNetworkDatabase.
+    let mut have_path = false;
     if dw_error == ERROR_SUCCESS {
-        RegQueryValueExW(
+        let dw_size: u32 = (RegQueryValueExW(
             database_key,
             w!("DatabasePath"),
             core::ptr::null_mut(),
             core::ptr::null_mut(),
             core::ptr::null_mut(),
-            &mut reg_size,
-        );
-
-        database_path = HeapAlloc(process_heap, 0, (reg_size as usize) as SIZE_T) as PWSTR;
-        if database_path.is_null() {
-            HeapFree(process_heap, 0, expanded_path as *mut core::ffi::c_void);
-            RegCloseKey(database_key);
-            return core::ptr::null_mut();
-        }
-
-        let dw_error2: u32 = (RegQueryValueExW(
-            database_key,
-            w!("DatabasePath"),
-            core::ptr::null_mut(),
-            core::ptr::null_mut(),
-            database_path as *mut u8,
             &mut reg_size,
         )) as u32;
 
-        RegCloseKey(database_key);
+        if dw_size == ERROR_SUCCESS && reg_size as usize >= core::mem::size_of::<u16>() {
+            // One WCHAR more than the value, for a terminator the registry need not store.
+            database_path = HeapAlloc(
+                process_heap,
+                0,
+                (reg_size as usize + core::mem::size_of::<u16>()) as SIZE_T,
+            ) as PWSTR;
+            if database_path.is_null() {
+                HeapFree(process_heap, 0, expanded_path as *mut core::ffi::c_void);
+                RegCloseKey(database_key);
+                return core::ptr::null_mut();
+            }
 
-        if dw_error2 != ERROR_SUCCESS {
+            let dw_error2: u32 = (RegQueryValueExW(
+                database_key,
+                w!("DatabasePath"),
+                core::ptr::null_mut(),
+                core::ptr::null_mut(),
+                database_path as *mut u8,
+                &mut reg_size,
+            )) as u32;
+
+            if dw_error2 == ERROR_SUCCESS {
+                *database_path.add(reg_size as usize / core::mem::size_of::<u16>()) = 0;
+                let n = ExpandEnvironmentStringsW(database_path, expanded_path, MAX_PATH as u32);
+                have_path = n != 0 && n <= MAX_PATH as u32 && *expanded_path != 0;
+            }
             HeapFree(process_heap, 0, database_path as *mut core::ffi::c_void);
-            HeapFree(process_heap, 0, expanded_path as *mut core::ffi::c_void);
-            return core::ptr::null_mut();
         }
 
-        ExpandEnvironmentStringsW(database_path, expanded_path, MAX_PATH as u32);
-        HeapFree(process_heap, 0, database_path as *mut core::ffi::c_void);
-    } else {
+        RegCloseKey(database_key);
+    }
+    if !have_path {
         GetSystemDirectoryW(expanded_path, MAX_PATH as u32);
 
         let mut string_length: usize = 0;

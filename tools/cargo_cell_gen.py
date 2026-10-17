@@ -3077,7 +3077,23 @@ def convert(targets: list[str], baseline: Path | None = None, repo: Path = REPO)
     for arch in ARCHES:
         _ninja(arch, targets, repo)
         print(f"built {len(targets)} cell(s) on {arch}")
-    return check(targets, baseline, repo)
+    rc = check(targets, baseline, repo)
+    refresh_manifests(repo)
+    return rc
+
+
+def refresh_manifests(repo: Path = REPO) -> None:
+    """What a build with no cmake reads, regenerated from the graphs this wave just
+    configured: the cell and media manifests (scan_cargo_manifests fails while they are
+    stale) and the shared C libraries' recipes."""
+    for tool in ("cell_manifest.py", "media_manifest.py"):
+        subprocess.run([sys.executable, str(repo / "tools" / tool), "--write"], check=True)
+    for a in ARCHES:
+        for t in engine_c_targets(repo):
+            try:
+                clib_recipe_path(a, t, repo).write_text(clib_recipe(a, t, repo))
+            except GenError:
+                continue  # not built on this arch (freeldr's BIOS asm is amd64 only)
 
 
 def main(argv: list[str] | None = None) -> int:

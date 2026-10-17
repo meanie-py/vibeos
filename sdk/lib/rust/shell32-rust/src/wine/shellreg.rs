@@ -197,4 +197,4 @@ pub unsafe extern "system" fn SHCreateSessionKey(samDesired: REGSAM, phKey: PHKE
 }
 
 // HKEY_LOCAL_MACHINE = (HKEY)0x80000002
-const HKEY_LOCAL_MACHINE: HKEY = 0x80000002u32 as usize as HKEY;
+const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;

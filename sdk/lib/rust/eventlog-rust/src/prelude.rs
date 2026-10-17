@@ -65,7 +65,7 @@ pub use win32macros_rust::{ALIGN_UP, ARRAYSIZE, ARRAY_SIZE, ASSERT, C_ASSERT, Co
 // The island re-exports the base NT identity: pub use ntdll_sys::nt::*;
 
 // ==== port resolve: tree consensus (generated -- re-run `rustconv port resolve`) ====
-pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002usize as HKEY; // console-rust/src/prelude.rs
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY; // console-rust/src/prelude.rs
 pub const RPC_S_OK: RPC_STATUS = 0; // advapi32-rust/src/prelude.rs
 pub const STATUS_INVALID_LEVEL: i32 = 0xC0000148u32 as i32; // classpnp-rust/src/glue.rs
 extern "C" {

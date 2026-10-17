@@ -91,6 +91,7 @@ class Attempt:
                         result.input_tokens,
                         result.output_tokens,
                         result.cache_read_tokens,
+                        cache_write_tokens=getattr(result, "cache_write_tokens", 0),
                     )
                     if result.usage_known
                     else None

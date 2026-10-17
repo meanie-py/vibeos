@@ -990,7 +990,13 @@ Every fix below is a stage change, not a recipe.
 - **Stale sibling imports are dropped**, and a name that becomes hand-written leaves the
   substrate block (both were E0603/E0255 after a rename).
 - **Hand macro ports survive replays.** `port macros` skips an item defined in the prelude
-  OUTSIDE its generated block; that is where a fixed macro goes.
+  OUTSIDE its generated block, and it now finds a fix made INSIDE one by itself: each item
+  in both macro blocks carries a `// gen:<digest>` stamp of its own text, and an item that
+  no longer matches (or whose stamp was deleted, which is how to claim one unchanged) is
+  moved above the block before anything is bought for it (`generated_items.py`). An item
+  stamped before this existed is compared with today's output instead, so a mere
+  re-spelling moves too; delete the moved copy to regenerate it. Resolve's blocks (facts,
+  substrate, externs, cross-TU) still regenerate wholesale.
 - **The anon-union Deref autoref** (`dangerous_implicit_autorefs`, deny): `(*p).a.Field` read
   through the island's `impl Deref` is rewritten to name the member
   (`a.__bindgen_anon_1.Field`) by crate-repair's `anon_union_field` rule.

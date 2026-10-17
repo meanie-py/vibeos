@@ -1723,7 +1723,7 @@ const DEFAULT_CHARSET: u8 = 1;
 const ERROR_SUCCESS: LSTATUS = 0;
 const REG_SZ: u32 = 1;
 const REG_DWORD: u32 = 4;
-const HKEY_CLASSES_ROOT: HKEY = 0x80000000u32 as HKEY;
+const HKEY_CLASSES_ROOT: HKEY = 0x8000_0000u32 as i32 as isize as HKEY;
 const OBJ_FONT: u32 = 6; // wingdi.h:694 (was 7 = OBJ_BITMAP)
 const CPIOD_PEEK: u32 = 0x00000400;
 const WC_NO_BEST_FIT_CHARS: u32 = 0x00000400;

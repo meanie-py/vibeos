@@ -66,8 +66,8 @@ pub use win32macros_rust::{ALIGN_UP, ARRAYSIZE, ARRAY_SIZE, ASSERT, C_ASSERT, Co
 
 // ==== port resolve: tree consensus (generated -- re-run `rustconv port resolve`) ====
 pub const ENUM_CURRENT_SETTINGS: DWORD = 0xFFFFFFFF; // desk-rust/src/prelude.rs
-pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001usize as HKEY; // access-rust/src/prelude.rs
-pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002usize as HKEY; // console-rust/src/prelude.rs
+pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as i32 as isize as HKEY; // access-rust/src/prelude.rs
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY; // console-rust/src/prelude.rs
 pub const HWND_TOP: HWND = 0 as HWND; // comctl32-rust/src/prelude.rs
 pub const LOCALE_USER_DEFAULT: DWORD = 0x0400; // comctl32-rust/src/prelude.rs
 pub const PROCESS_ALL_ACCESS: u32 = 2035711; // win32k-sys/src/bindgen_amd64.rs
