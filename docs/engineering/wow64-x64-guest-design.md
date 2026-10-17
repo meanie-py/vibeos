@@ -55,17 +55,13 @@ media (and `--arch amd64 --ladder` for wow64.dll). Owed, most valuable first:
    pressure; field manual, "The LLM invents plausible values"). appstorm64 now passes 54/54 at
    1088M (wedged before) and 1152M; 1024M still runs out. Next is step 2 of the design doc: a
    real standby state, so cached pages count as available.
-2. Commit not yet charged: copy-on-write pages of image and file views, PEB/TEB pages, kernel
-   pool (`ARM3/commit.rs` header). PEB/TEB charging was tried 2026-10-17 (charge in
-   `MiCreatePebOrTebCapped`, return in `MmDeleteTeb`) and parked in stash `5cab7344b383`
-   ("PEB/TEB commit charging WIP", branch `wip/peb-teb-commit-charge`): a FEX ladder on 1G
-   appstorm64 media refused a 16-page WoW64 TEB at apc32's rung 7, with the SYSTEM at 35164 of
-   35171 pages (`20261017-062113-2pae52ry`), and apc32 crashed instead of failing CreateThread.
-   Not a leak as far as read: a WoW64 TEB region starts at the TEB64, so `MmDeleteTeb` returns
-   it, and no ledger warning fired. More likely the margin: on that media the ramdisk leaves a
-   137 MB commit limit, appstorm runs beside the ladder guests, and ~114 WoW64 TEBs at 16 pages
-   are 7 MB more. Before landing it: a commit census at that point, and a ladder on plain
-   `VIBEOS_FEX=1` media. amd64's ladder passed with it.
+2. Commit not yet charged: copy-on-write pages of image and file views, and kernel pool
+   (`ARM3/commit.rs` header). PEB/TEB pages are charged since 2026-10-17. Owed with it: FEX's
+   CPU layer dereferences a failed 64 KB allocation while setting up a new guest thread
+   (`ldr w8, [x20, #0x18]` at libwow64fex+, PC 0x5A9040, `20261017-062113-2pae52ry`), seen as an
+   apc32 AV when a ladder ran on 1G appstorm64 media, whose ramdisk leaves a 137 MB commit
+   limit with appstorm running beside the guests. On plain `VIBEOS_FEX=1` media the ladder is
+   green with the charging.
 3. The cnt CRT's NUL scans (`cstr_slice`/`wcstr_slice`, under strlen, wcslen and every string
    function that measures its argument) are asm now (`memops.rs`, 2026-10-17). Owed: the
    compare/search loops (`strcmp`, `wcschr`, ...), which are still unoptimised Rust; measure
