@@ -1,8 +1,8 @@
-use crate::link_model::{self, Crate as LinkCrate, Def, ARCHES};
+use crate::link_model::{self, Cond, Crate as LinkCrate, Def, ARCHES};
 use crate::{Corpus, Rule, SourceFile, SourceSet};
 use regex::Regex;
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     path::{Path, PathBuf},
     sync::LazyLock,
 };
@@ -53,7 +53,15 @@ fn strip_comments(src: &str) -> String {
         .replace_all(src, "")
         .into_owned()
 }
-fn arch_guard(cond: &str) -> Option<BTreeSet<String>> {
+const ALL_ARCHES: u8 = (1 << ARCHES.len()) - 1;
+fn arch_bit(arch: &str) -> u8 {
+    ARCHES
+        .iter()
+        .position(|candidate| *candidate == arch)
+        .map(|i| 1 << i)
+        .unwrap_or(0)
+}
+fn arch_guard(cond: &str) -> Option<u8> {
     let cond = cond.trim().trim_matches('(').trim_matches(')');
     for (op, union) in [("||", true), ("&&", false)] {
         if cond.contains(op) {
@@ -62,9 +70,9 @@ fn arch_guard(cond: &str) -> Option<BTreeSet<String>> {
             for p in parts {
                 let p = p?;
                 if union {
-                    acc.extend(p)
+                    acc |= p;
                 } else {
-                    acc.retain(|x| p.contains(x));
+                    acc &= p;
                 }
             }
             return Some(acc);
@@ -74,25 +82,24 @@ fn arch_guard(cond: &str) -> Option<BTreeSet<String>> {
         crate::regexes::cached(r#"^arch(?:\.as_str\(\))?\s*(==|!=)\s*"(\w+)"$"#).unwrap()
     });
     let c = G.captures(cond)?;
-    let all: BTreeSet<String> = ARCHES.iter().map(|x| x.to_string()).collect();
+    let bit = arch_bit(&c[2]);
     if &c[1] == "==" {
-        Some([c[2].to_string()].into_iter().collect())
+        Some(bit)
     } else {
-        Some(all.into_iter().filter(|x| x != &c[2]).collect())
+        Some(ALL_ARCHES & !bit)
     }
 }
-fn arches_at(src: &str) -> Vec<BTreeSet<String>> {
-    let all: BTreeSet<String> = ARCHES.iter().map(|x| x.to_string()).collect();
+fn arches_at(src: &str) -> Vec<u8> {
     let mut out = Vec::with_capacity(src.len());
-    let mut stack = vec![all.clone()];
-    let mut last_if: Option<BTreeSet<String>> = None;
+    let mut stack = vec![ALL_ARCHES];
+    let mut last_if: Option<u8> = None;
     let mut header_start = 0;
     for (i, ch) in src.char_indices() {
-        out.push(stack.last().unwrap().clone());
+        out.push(*stack.last().unwrap());
         match ch {
             '{' => {
                 let header = &src[header_start..i];
-                let cur = stack.last().unwrap().clone();
+                let cur = *stack.last().unwrap();
                 static IF: LazyLock<Regex> = LazyLock::new(|| {
                     crate::regexes::cached(r"(?s)(?:^|\s)(else\s+)?if\s+(.*)$").unwrap()
                 });
@@ -102,17 +109,16 @@ fn arches_at(src: &str) -> Vec<BTreeSet<String>> {
                     LazyLock::new(|| crate::regexes::cached(r"(?:^|\s)else\s*$").unwrap());
                 if let Some(m) = IF.captures(header).filter(|m| !OTHER.is_match(&m[2])) {
                     let g = arch_guard(&m[2]);
-                    let mut sel = g.clone().unwrap_or_else(|| all.clone());
+                    let mut sel = g.unwrap_or(ALL_ARCHES);
                     if m.get(1).is_some() {
-                        if let Some(prev) = &last_if {
-                            sel = sel.difference(prev).cloned().collect();
+                        if let Some(prev) = last_if {
+                            sel &= !prev;
                         }
                     }
-                    last_if = if g.is_some() { Some(sel.clone()) } else { None };
-                    stack.push(cur.intersection(&sel).cloned().collect());
+                    last_if = g.map(|_| sel);
+                    stack.push(cur & sel);
                 } else if ELSE.is_match(header) && last_if.is_some() {
-                    let prev = last_if.take().unwrap();
-                    stack.push(cur.difference(&prev).cloned().collect());
+                    stack.push(cur & !last_if.take().unwrap());
                 } else {
                     stack.push(cur);
                 }
@@ -132,6 +138,33 @@ fn arches_at(src: &str) -> Vec<BTreeSet<String>> {
         }
     }
     out
+}
+struct CondCache<'a> {
+    arch: &'a str,
+    pinned: &'a BTreeMap<String, bool>,
+    results: HashMap<(Vec<String>, Vec<String>), bool>,
+}
+impl<'a> CondCache<'a> {
+    fn new(arch: &'a str, pinned: &'a BTreeMap<String, bool>) -> Self {
+        Self {
+            arch,
+            pinned,
+            results: HashMap::new(),
+        }
+    }
+    fn satisfiable(&mut self, left: &Cond, right: &Cond) -> bool {
+        let key = if left.preds <= right.preds {
+            (left.preds.clone(), right.preds.clone())
+        } else {
+            (right.preds.clone(), left.preds.clone())
+        };
+        if let Some(&result) = self.results.get(&key) {
+            return result;
+        }
+        let result = left.satisfiable_with(right, self.arch, self.pinned);
+        self.results.insert(key, result);
+        result
+    }
 }
 fn strings(s: &str) -> BTreeSet<String> {
     STRINGS.captures_iter(s).map(|m| m[1].to_string()).collect()
@@ -194,10 +227,11 @@ pub fn link_units(c: &Corpus) -> BTreeMap<String, BTreeMap<String, Unit>> {
             .collect();
         let mut per = BTreeMap::new();
         for arch in ARCHES {
+            let arch_mask = arch_bit(arch);
             let mut roots = BTreeMap::<String, (BTreeSet<String>, bool)>::new();
             for m in LIB.captures_iter(&src) {
                 let pos = src[..m.get(0).unwrap().start()].chars().count();
-                if at.get(pos).is_some_and(|a| a.contains(arch)) {
+                if at.get(pos).is_some_and(|a| a & arch_mask != 0) {
                     let fs = if m[2].starts_with('&') {
                         strings(&m[2])
                     } else {
@@ -212,7 +246,7 @@ pub fn link_units(c: &Corpus) -> BTreeMap<String, BTreeMap<String, Unit>> {
             for stmt in src.split(';') {
                 if let Some(m) = STATICLIB.captures(stmt) {
                     let pos = src[..off + m.get(0).unwrap().start()].chars().count();
-                    if at.get(pos).is_some_and(|a| a.contains(arch)) {
+                    if at.get(pos).is_some_and(|a| a & arch_mask != 0) {
                         let fs = FEATS
                             .captures_iter(stmt)
                             .flat_map(|x| strings(&x[1]))
@@ -224,7 +258,7 @@ pub fn link_units(c: &Corpus) -> BTreeMap<String, BTreeMap<String, Unit>> {
             }
             for m in LINK_CALL.captures_iter(&src) {
                 let pos = src[..m.get(0).unwrap().start()].chars().count();
-                if at.get(pos).is_some_and(|a| a.contains(arch)) {
+                if at.get(pos).is_some_and(|a| a & arch_mask != 0) {
                     roots
                         .entry(m[1].to_string())
                         .or_insert((BTreeSet::new(), true));
@@ -261,16 +295,11 @@ pub fn link_units(c: &Corpus) -> BTreeMap<String, BTreeMap<String, Unit>> {
     units
 }
 fn nolint(c: &Corpus, d: &Def) -> bool {
-    let Some(f) = c.files.iter().find(|f| f.path == d.path) else {
+    let Some(file) = c.file(&d.path) else {
         return false;
     };
-    let lines = f.text.lines().collect::<Vec<_>>();
-    let lo = d.line.saturating_sub(6);
-    lines
-        .get(lo..d.line)
-        .unwrap_or(&[])
-        .iter()
-        .any(|l| l.contains("nolint: duplicate-symbol"))
+    (d.line.saturating_sub(6) + 1..=d.line)
+        .any(|line| file.line_text(line).contains("nolint: duplicate-symbol"))
 }
 fn fmt(d: &Def) -> String {
     format!("{} ({}, {} {})", d.loc(), d.krate, d.kind, d.name)
@@ -289,6 +318,7 @@ impl Rule for DuplicateSymbols {
             BTreeMap::<(String, String, String), (BTreeSet<String>, BTreeSet<String>)>::new();
         for (uname, per) in &units {
             for (arch, u) in per {
+                let mut cond_cache = CondCache::new(arch, &u.pinned);
                 let mut defs = Vec::new();
                 for name in &u.crates {
                     if let Some(k) = all.get(name) {
@@ -297,9 +327,7 @@ impl Rule for DuplicateSymbols {
                 }
                 let mut by = BTreeMap::<String, Vec<Def>>::new();
                 for d in defs {
-                    if STRUCTURAL.is_match(&d.base())
-                        || !d.cond.satisfiable_with(&d.cond, arch, &u.pinned)
-                    {
+                    if STRUCTURAL.is_match(&d.base()) || !cond_cache.satisfiable(&d.cond, &d.cond) {
                         continue;
                     }
                     by.entry(d.link_name(arch)).or_default().push(d);
@@ -311,7 +339,7 @@ impl Rule for DuplicateSymbols {
                         for j in i + 1..group.len() {
                             let (a, b) = (&group[i], &group[j]);
                             if a.loc() == b.loc()
-                                || !a.cond.satisfiable_with(&b.cond, arch, &u.pinned)
+                                || !cond_cache.satisfiable(&a.cond, &b.cond)
                                 || nolint(c, a)
                                 || nolint(c, b)
                             {
@@ -355,5 +383,38 @@ impl Rule for DuplicateSymbols {
                 format!("{a}: {base} [{}] also defined at {b}", ar.join(","))
             })
             .collect())
+    }
+}
+
+#[cfg(test)]
+mod perf_tests {
+    use super::*;
+
+    #[test]
+    fn compact_arch_stack_preserves_unicode_character_positions_and_else_sets() {
+        let src = "é; if arch == \"x86\" { A } else { B }";
+        let masks = arches_at(src);
+        assert_eq!(masks.len(), src.chars().count());
+        let pos_a = src.chars().position(|c| c == 'A').unwrap();
+        let pos_b = src.chars().position(|c| c == 'B').unwrap();
+        assert_ne!(masks[pos_a] & arch_bit("x86"), 0);
+        assert_eq!(masks[pos_a] & arch_bit("x86_64"), 0);
+        assert_eq!(masks[pos_b] & arch_bit("x86"), 0);
+        assert_ne!(masks[pos_b] & arch_bit("x86_64"), 0);
+        assert_ne!(masks[pos_b] & arch_bit("aarch64"), 0);
+    }
+
+    #[test]
+    fn satisfiability_memo_is_symmetric_and_matches_direct_evaluation() {
+        let pinned = BTreeMap::new();
+        let left = Cond {
+            preds: vec![r#"target_arch = "x86""#.into()],
+        };
+        let right = Cond::default();
+        let mut memo = CondCache::new("x86", &pinned);
+        let expected = left.satisfiable_with(&right, "x86", &pinned);
+        assert!(memo.satisfiable(&left, &right));
+        assert_eq!(memo.satisfiable(&right, &left), expected);
+        assert_eq!(memo.results.len(), 1);
     }
 }

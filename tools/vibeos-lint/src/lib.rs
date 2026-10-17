@@ -77,7 +77,7 @@ pub struct SourceFile {
     scopes: u8,
     noise: OnceLock<Arc<str>>,
     lines: Vec<usize>,
-    views: Mutex<HashMap<(String, Option<String>, bool), Arc<str>>>,
+    views: Mutex<HashMap<(String, Option<String>, bool), Arc<OnceLock<Arc<str>>>>>,
 }
 
 impl SourceFile {
@@ -147,30 +147,34 @@ impl SourceFile {
             cutoff.map(str::to_owned),
             characters,
         );
-        let mut views = self.views.lock().unwrap();
-        views
-            .entry(key)
-            .or_insert_with(|| {
-                let raw = cutoff
-                    .and_then(|marker| self.text.split_once(marker).map(|p| p.0))
-                    .unwrap_or(&self.text);
-                regex
-                    .replace_all(raw, |caps: &regex::Captures<'_>| {
-                        let text = caps.get(0).unwrap().as_str();
-                        if characters {
-                            text.chars()
-                                .map(|c| if c == '\n' { '\n' } else { ' ' })
-                                .collect::<String>()
-                        } else {
-                            text.bytes()
-                                .map(|b| if b == b'\n' { '\n' } else { ' ' })
-                                .collect::<String>()
-                        }
-                    })
-                    .into_owned()
-                    .into()
-            })
-            .clone()
+        let slot = {
+            let mut views = self.views.lock().unwrap();
+            views
+                .entry(key)
+                .or_insert_with(|| Arc::new(OnceLock::new()))
+                .clone()
+        };
+        slot.get_or_init(|| {
+            let raw = cutoff
+                .and_then(|marker| self.text.split_once(marker).map(|p| p.0))
+                .unwrap_or(&self.text);
+            regex
+                .replace_all(raw, |caps: &regex::Captures<'_>| {
+                    let text = caps.get(0).unwrap().as_str();
+                    if characters {
+                        text.chars()
+                            .map(|c| if c == '\n' { '\n' } else { ' ' })
+                            .collect::<String>()
+                    } else {
+                        text.bytes()
+                            .map(|b| if b == b'\n' { '\n' } else { ' ' })
+                            .collect::<String>()
+                    }
+                })
+                .into_owned()
+                .into()
+        })
+        .clone()
     }
 
     pub fn rust_noise(&self) -> &str {
@@ -201,6 +205,8 @@ pub struct Corpus {
     version_history: OnceLock<Result<VersionHistory, String>>,
     module_inputs: OnceLock<module_inputs::ModuleModel>,
     crate_configs: OnceLock<BTreeMap<PathBuf, CrateCfg>>,
+    normalized_paths: OnceLock<HashMap<PathBuf, usize>>,
+    files_by_path: OnceLock<HashMap<PathBuf, usize>>,
     link_scans: Mutex<
         BTreeMap<
             (String, Vec<PathBuf>),
@@ -250,6 +256,8 @@ impl Corpus {
             version_history: OnceLock::new(),
             module_inputs: OnceLock::new(),
             crate_configs: OnceLock::new(),
+            normalized_paths: OnceLock::new(),
+            files_by_path: OnceLock::new(),
             link_scans: Mutex::new(BTreeMap::new()),
         }
     }
@@ -267,6 +275,25 @@ impl Corpus {
     pub fn with_explicit_paths(mut self, paths: Vec<PathBuf>) -> Self {
         self.explicit_paths = paths;
         self
+    }
+    pub fn file(&self, path: &Path) -> Option<&SourceFile> {
+        let paths = self.files_by_path.get_or_init(|| {
+            let mut paths = HashMap::with_capacity(self.files.len());
+            for (index, file) in self.files.iter().enumerate() {
+                paths.entry(file.path.clone()).or_insert(index);
+            }
+            paths
+        });
+        paths.get(path).map(|&index| &self.files[index])
+    }
+    pub(crate) fn normalized_file_index(&self) -> &HashMap<PathBuf, usize> {
+        self.normalized_paths.get_or_init(|| {
+            let mut paths = HashMap::with_capacity(self.files.len());
+            for (index, file) in self.files.iter().enumerate() {
+                paths.insert(crate::modules::normalize(&file.path), index);
+            }
+            paths
+        })
     }
     pub fn crate_cfg(&self, path: &Path) -> &CrateCfg {
         static EMPTY: std::sync::LazyLock<CrateCfg> = std::sync::LazyLock::new(CrateCfg::default);

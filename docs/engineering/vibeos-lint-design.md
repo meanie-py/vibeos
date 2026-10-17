@@ -456,3 +456,30 @@ parity and fleet load. These runs demonstrate baseline compatibility; they do
 not demonstrate a speedup. The seconds target remains owed. Profiling found
 repeated whole-corpus path maps in crate scanning and serialized syntax parsing;
 performance changes and full tooling validation follow this checkpoint.
+
+## Performance checkpoint 1 (2026-10-17)
+
+All 116 source stages passed in **360.88 seconds**
+(`20261017-041258-44ci78_h-check-all`); the shared Rust invocation took
+337.84 seconds, including its startup work. All **112 tooling checks**, **507 Rust
+unit tests**, and **two integration tests** passed. Concurrent fleet/tooling load
+makes this an observed runtime, not a controlled speedup comparison.
+
+The corpus now builds exact and normalized path indexes once. Link scans reuse
+those indexes and run outside the global cache lock. Export checks reject
+non-kernel names before inspecting source suppressions; suppression lookups use
+the line index. Duplicate-symbol architecture tracking uses compact masks instead
+of cloning string sets per character, and memoizes condition results. Fixed,
+fully pinned conditions evaluate without cloning the feature map. Syntax walking
+uses cursors for wide child lists. Mask variants initialize independently, IRQL
+syntax parsing follows relevant call frontiers, and StoreOnFailure memoizes C
+success analysis. Immutable Git history caches are keyed by repository identity,
+full HEAD and schema, atomically published, and recomputed when invalid.
+
+`tools/vibeos-lint/parity/performance-01.json` records exact original-Python
+findings on both source revisions for the changed cross-file analyses, including
+38 export shadows, nine IRQL findings and zero duplicate-symbol/store findings
+per tree. Component timings are separate replays. The seconds target remains
+owed: this run still spent 248.1 seconds in extern-declaration drift, 197.7 in
+invented constants, and about 133 each in enum and match-constant checks. The next
+work is reducing repeated header/name parsing and regex-cache contention.

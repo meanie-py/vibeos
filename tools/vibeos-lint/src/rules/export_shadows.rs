@@ -163,14 +163,11 @@ fn kernel_names(c: &Corpus) -> Result<BTreeMap<String, BTreeMap<String, String>>
     Ok(out)
 }
 fn nolint(c: &Corpus, d: &Def) -> bool {
-    let Some(f) = c.files.iter().find(|f| f.path == d.path) else {
+    let Some(file) = c.file(&d.path) else {
         return false;
     };
-    f.text
-        .lines()
-        .skip(d.line.saturating_sub(6))
-        .take(6)
-        .any(|l| l.contains("nolint: export-shadow"))
+    (d.line.saturating_sub(6) + 1..=d.line)
+        .any(|line| file.line_text(line).contains("nolint: export-shadow"))
 }
 impl Rule for ExportShadows {
     fn name(&self) -> &'static str {
@@ -210,16 +207,20 @@ impl Rule for ExportShadows {
                     }
                     let Some(k) = all.get(cn) else { continue };
                     for d in link_model::crate_defs(c, k) {
-                        if d.kind != "rust"
-                            || structural.is_match(&d.base())
+                        if d.kind != "rust" {
+                            continue;
+                        }
+                        // Most definitions are not kernel exports. Resolve the name
+                        // before the cfg and source-suppression checks.
+                        let Some(what) = names.get(arch).and_then(|m| m.get(&d.name)) else {
+                            continue;
+                        };
+                        if structural.is_match(&d.name)
                             || !d.cond.satisfiable_with(&d.cond, arch, &u.pinned)
                             || nolint(c, &d)
                         {
                             continue;
                         }
-                        let Some(what) = names.get(arch).and_then(|m| m.get(&d.base())) else {
-                            continue;
-                        };
                         let (_, arches) = rows
                             .entry((d.loc(), d.name.clone(), d.krate.clone()))
                             .or_insert_with(|| (what.clone(), BTreeSet::new()));

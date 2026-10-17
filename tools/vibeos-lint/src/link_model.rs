@@ -2,7 +2,7 @@
 //! Contracts follow tools/rust_link_model.py; filesystem inputs belong to Corpus.
 use crate::modules::normalize;
 use crate::{Corpus, SourceSet};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
 
 pub const ARCHES: [&str; 3] = ["x86", "x86_64", "aarch64"];
@@ -165,6 +165,9 @@ impl Cond {
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect();
+        if atoms.is_empty() {
+            return preds.iter().all(|p| eval_pred(p, arch, pinned));
+        }
         if atoms.len() > 12 {
             return true;
         }
@@ -295,7 +298,7 @@ fn manifest(text: &str) -> Manifest {
     out
 }
 pub fn crates(c: &Corpus) -> BTreeMap<String, Crate> {
-    let files: BTreeSet<_> = c.files.iter().map(|f| normalize(&f.path)).collect();
+    let files: BTreeSet<_> = c.normalized_file_index().keys().cloned().collect();
     let mut dirs = BTreeMap::new();
     let mut edges = BTreeMap::new();
     for f in c
@@ -634,7 +637,8 @@ fn close(ss: &[Segment], i: usize, paren: bool) -> usize {
 }
 struct Scanner<'a> {
     kr: &'a Crate,
-    files: &'a BTreeMap<PathBuf, &'a crate::SourceFile>,
+    corpus: &'a Corpus,
+    file_indices: &'a HashMap<PathBuf, usize>,
     seen: BTreeSet<PathBuf>,
     defs: Vec<Def>,
 }
@@ -644,9 +648,10 @@ impl Scanner<'_> {
         if self.seen.contains(&path) {
             return;
         }
-        let Some(file) = self.files.get(&path) else {
+        let Some(&file_index) = self.file_indices.get(&path) else {
             return;
         };
+        let file = &self.corpus.files[file_index];
         self.seen.insert(path.clone());
         if !re(r"no_mangle|export_name|global_asm|\bmod\s+\w+\s*;|include!|path\s*=")
             .is_match(&file.text)
@@ -747,7 +752,7 @@ impl Scanner<'_> {
                             self.file(base.join(p), item, true);
                         } else {
                             let a = child.join(format!("{name}.rs"));
-                            let exists = self.files.contains_key(&normalize(&a));
+                            let exists = self.file_indices.contains_key(&normalize(&a));
                             self.file(
                                 if exists {
                                     a
@@ -782,9 +787,10 @@ impl Scanner<'_> {
                     .map(|m| m[1].to_owned())
                     .collect();
                 for inc in incs {
-                    if let Some(f) = self.files.get(&normalize(&parent.join(inc))) {
+                    if let Some(&file_index) = self.file_indices.get(&normalize(&parent.join(inc)))
+                    {
                         body.push('\n');
-                        body.push_str(&f.text);
+                        body.push_str(&self.corpus.files[file_index].text);
                     }
                 }
                 for m in re(r#"\.glob(?:a)?l\s+"?([@\w$.?]+)"?"#).captures_iter(&body) {
@@ -842,17 +848,27 @@ fn cached_scan(c: &Corpus, kr: &Crate) -> std::sync::Arc<(Vec<Def>, BTreeSet<Pat
     // Definitions carry cfg predicates, so all architectures and link units can
     // share this source scan. Only the name and roots affect Scanner's result.
     let key = (kr.name.clone(), kr.roots.clone());
+    let cached = {
+        c.link_scans
+            .lock()
+            .expect("link scan cache poisoned")
+            .get(&key)
+            .cloned()
+    };
+    if let Some(hit) = cached {
+        return hit;
+    }
+    // Do the expensive source walk outside the global cache lock. Racing requests
+    // for the same crate may compute twice, but cannot serialize unrelated crates.
+    let built = std::sync::Arc::new(scan_crate(c, kr));
     let mut scans = c.link_scans.lock().expect("link scan cache poisoned");
-    scans
-        .entry(key)
-        .or_insert_with(|| std::sync::Arc::new(scan_crate(c, kr)))
-        .clone()
+    scans.entry(key).or_insert_with(|| built.clone()).clone()
 }
 fn scan_crate(c: &Corpus, kr: &Crate) -> (Vec<Def>, BTreeSet<PathBuf>) {
-    let files = c.files.iter().map(|f| (normalize(&f.path), f)).collect();
     let mut scan = Scanner {
         kr,
-        files: &files,
+        corpus: c,
+        file_indices: c.normalized_file_index(),
         seen: BTreeSet::new(),
         defs: vec![],
     };

@@ -214,4 +214,3 @@ def scan_macros(raw: str) -> list[tuple[int, str]]:
                 out.append((text.count("\n", 0, m.start()) + 1, m.group(1)))
                 break
     return out
-

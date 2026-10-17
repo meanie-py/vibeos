@@ -60,10 +60,9 @@ fn text<'a>(n: tree_sitter::Node<'_>, src: &'a str) -> &'a str {
 }
 fn walk<'a>(n: tree_sitter::Node<'a>, out: &mut Vec<tree_sitter::Node<'a>>) {
     out.push(n);
-    for i in 0..n.child_count() {
-        if let Some(c) = n.child(i) {
-            walk(c, out);
-        }
+    let mut cursor = n.walk();
+    for child in n.children(&mut cursor) {
+        walk(child, out);
     }
 }
 fn in_foreign(n: tree_sitter::Node<'_>) -> bool {

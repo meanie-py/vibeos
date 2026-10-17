@@ -25,7 +25,7 @@ pub fn cached(pattern: &str) -> Result<Regex, regex::Error> {
     if let Some(found) = cache.patterns.get(pattern) {
         return Ok(found.clone());
     }
-    if cache.patterns.len() >= 512 {
+    if cache.patterns.len() >= 8192 {
         if let Some(old) = cache.order.pop_front() {
             cache.patterns.remove(&old);
         }

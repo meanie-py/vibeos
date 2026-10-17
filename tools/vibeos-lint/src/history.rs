@@ -1,7 +1,12 @@
 //! Git facts captured centrally before rule execution.
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+const CACHE_SCHEMA: u64 = 1;
 
 #[derive(Default)]
 pub struct VersionHistory {
@@ -19,6 +24,42 @@ fn git(root: &Path, args: &[&str]) -> Result<Output, String> {
 }
 impl VersionHistory {
     pub(crate) fn capture(root: &Path) -> Result<Self, String> {
+        let key = CacheKey::discover(root)?;
+        let enabled = cache_enabled();
+        let cache_path = cache_path(root, &key);
+        if enabled {
+            match fs::read(&cache_path) {
+                Ok(bytes) => {
+                    if let Some(snapshot) = decode_cache(&bytes, &key) {
+                        return Ok(snapshot);
+                    }
+                    // A truncated/old/mismatched cache is never treated as an empty
+                    // history. Recompute from Git, then replace it atomically.
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => {
+                    return Err(format!(
+                        "version history: read cache {}: {e}",
+                        cache_path.display()
+                    ))
+                }
+            }
+        }
+        let snapshot = Self::capture_git(root)?;
+        let after = current_head(root)?;
+        if after != key.head {
+            return Err(format!(
+                "version history: HEAD changed during capture ({} -> {}); retry the lint",
+                key.head, after
+            ));
+        }
+        if enabled {
+            write_cache(&cache_path, &key, &snapshot)?;
+        }
+        Ok(snapshot)
+    }
+
+    fn capture_git(root: &Path) -> Result<Self, String> {
         let paths = git(
             root,
             &[
@@ -73,6 +114,177 @@ impl VersionHistory {
         }
         Ok(out)
     }
+}
+
+#[derive(Debug)]
+struct CacheKey {
+    repository: String,
+    head: String,
+}
+impl CacheKey {
+    fn discover(root: &Path) -> Result<Self, String> {
+        let top = git(root, &["rev-parse", "--show-toplevel"])?;
+        if !top.status.success() {
+            return Err(format!(
+                "version history: {}",
+                String::from_utf8_lossy(&top.stderr)
+            ));
+        }
+        let top = PathBuf::from(String::from_utf8_lossy(&top.stdout).trim());
+        let top = top
+            .canonicalize()
+            .map_err(|e| format!("version history: canonicalize repository root: {e}"))?;
+        let common = git(root, &["rev-parse", "--git-common-dir"])?;
+        if !common.status.success() {
+            return Err(format!(
+                "version history: {}",
+                String::from_utf8_lossy(&common.stderr)
+            ));
+        }
+        let common = PathBuf::from(String::from_utf8_lossy(&common.stdout).trim());
+        let common = if common.is_absolute() {
+            common
+        } else {
+            top.join(common)
+        };
+        let common = common
+            .canonicalize()
+            .map_err(|e| format!("version history: canonicalize Git directory: {e}"))?;
+        let head = current_head(root)?;
+        Ok(Self {
+            repository: format!("{}|{}", top.display(), common.display()),
+            head,
+        })
+    }
+}
+fn current_head(root: &Path) -> Result<String, String> {
+    let out = git(root, &["rev-parse", "--verify", "HEAD"])?;
+    if !out.status.success() {
+        return Err(format!(
+            "version history: {}",
+            String::from_utf8_lossy(&out.stderr)
+        ));
+    }
+    let head = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+    if head.is_empty() {
+        return Err("version history: Git returned an empty HEAD".into());
+    }
+    Ok(head)
+}
+fn cache_enabled() -> bool {
+    std::env::var("VIBEOS_LINT_CACHE").map_or(true, |v| v != "0")
+}
+fn cache_path(root: &Path, key: &CacheKey) -> PathBuf {
+    root.join(".cache")
+        .join("vibeos-lint")
+        .join(format!("history-{}-v{}.json", key.head, CACHE_SCHEMA))
+}
+fn decode_cache(bytes: &[u8], key: &CacheKey) -> Option<VersionHistory> {
+    let value: serde_json::Value = serde_json::from_slice(bytes).ok()?;
+    if value.get("schema")?.as_u64()? != CACHE_SCHEMA
+        || value.get("head")?.as_str()? != key.head
+        || value.get("repository")?.as_str()? != key.repository
+    {
+        return None;
+    }
+    let mut out = VersionHistory::default();
+    for value in value.get("ever_versioned_cmake")?.as_array()? {
+        let path = Path::new(value.as_str()?);
+        if path.is_absolute() {
+            return None;
+        }
+        out.ever_versioned_cmake.insert(path.to_owned());
+    }
+    for entry in value.get("last_parent")?.as_array()? {
+        let path = Path::new(entry.get("path")?.as_str()?);
+        let text = entry.get("text")?.as_str()?;
+        let revision = entry.get("revision")?.as_str()?;
+        if path.is_absolute() || revision.is_empty() {
+            return None;
+        }
+        out.last_parent_text
+            .insert(path.to_owned(), text.to_owned());
+        out.last_parent_revision
+            .insert(path.to_owned(), revision.to_owned());
+    }
+    Some(out)
+}
+fn write_cache(path: &Path, key: &CacheKey, history: &VersionHistory) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("version history: cache has no parent: {}", path.display()))?;
+    fs::create_dir_all(parent).map_err(|e| {
+        format!(
+            "version history: create cache directory {}: {e}",
+            parent.display()
+        )
+    })?;
+    let mut parent_rows = Vec::with_capacity(history.last_parent_text.len());
+    for (path, text) in &history.last_parent_text {
+        let path = path
+            .to_str()
+            .ok_or("version history: non-UTF-8 path while writing cache")?;
+        let revision = history
+            .last_parent_revision
+            .get(Path::new(path))
+            .ok_or_else(|| format!("version history: missing revision for {path}"))?;
+        parent_rows.push(serde_json::json!({"path": path, "text": text, "revision": revision}));
+    }
+    let ever: Vec<_> = history
+        .ever_versioned_cmake
+        .iter()
+        .map(|p| {
+            p.to_str()
+                .ok_or("version history: non-UTF-8 path while writing cache")
+        })
+        .collect::<Result<_, _>>()?;
+    let bytes = serde_json::to_vec(&serde_json::json!({
+        "schema": CACHE_SCHEMA,
+        "repository": key.repository,
+        "head": key.head,
+        "ever_versioned_cmake": ever,
+        "last_parent": parent_rows,
+    }))
+    .map_err(|e| format!("version history: encode cache: {e}"))?;
+    let mut temp = None;
+    for attempt in 0..100u32 {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let candidate = parent.join(format!(
+            ".history-{}-{}-{nonce}-{attempt}.tmp",
+            std::process::id(),
+            key.head
+        ));
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&candidate)
+        {
+            Ok(mut file) => {
+                file.write_all(&bytes)
+                    .and_then(|_| file.sync_all())
+                    .map_err(|e| {
+                        let _ = fs::remove_file(&candidate);
+                        format!("version history: write cache {}: {e}", candidate.display())
+                    })?;
+                temp = Some(candidate);
+                break;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(format!("version history: create cache temp: {e}")),
+        }
+    }
+    let temp = temp.ok_or("version history: could not allocate unique cache temp file")?;
+    if let Err(e) = fs::rename(&temp, path) {
+        let _ = fs::remove_file(&temp);
+        return Err(format!(
+            "version history: publish cache {}: {e}",
+            path.display()
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -132,5 +344,24 @@ mod tests {
         assert!(!snapshot
             .last_parent_text
             .contains_key(Path::new("new/CMakeLists.txt")));
+        let key = CacheKey::discover(&root).unwrap();
+        let cache = cache_path(&root, &key);
+        assert!(cache.is_file(), "capture should publish a disk cache");
+        std::fs::write(&cache, b"{ truncated").unwrap();
+        let refreshed = VersionHistory::capture(&root).unwrap();
+        assert_eq!(
+            refreshed.ever_versioned_cmake,
+            snapshot.ever_versioned_cmake
+        );
+        assert_eq!(refreshed.last_parent_text, snapshot.last_parent_text);
+        assert_eq!(
+            refreshed.last_parent_revision,
+            snapshot.last_parent_revision
+        );
+        let bytes = std::fs::read(cache).unwrap();
+        assert!(
+            decode_cache(&bytes, &key).is_some(),
+            "bad cache must be recomputed and replaced"
+        );
     }
 }

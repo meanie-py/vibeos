@@ -12,9 +12,14 @@ impl Rule for IrqlBalance {
     }
     fn run(&self, c: &Corpus) -> Result<Vec<String>, String> {
         let files: Vec<_> = c.rust_files().filter(|f| !skip(f)).collect();
-        let summaries = build_summaries(&files)?;
+        let (summaries, calls) = build_summaries(&files)?;
         let mut out = Vec::new();
-        for f in files {
+        for (ix, f) in files.into_iter().enumerate() {
+            if !mentions_builtin(&calls[ix])
+                && !calls[ix].iter().any(|name| summaries.ret.contains(name))
+            {
+                continue;
+            }
             for (ln, k, _) in scan_file(f, &summaries)? {
                 out.push(format!("{}:{ln}: {k}", f.path.display()));
             }
@@ -66,6 +71,8 @@ static CTX: LazyLock<Regex> = LazyLock::new(|| {
     )
     .unwrap()
 });
+static CALL_TOKEN: LazyLock<regex::bytes::Regex> =
+    LazyLock::new(|| regex::bytes::Regex::new(r"(?-u)\b([A-Za-z_]\w*)\s*\(").unwrap());
 fn skip(f: &SourceFile) -> bool {
     let p = f.path.to_string_lossy();
     f.path
@@ -132,6 +139,22 @@ fn ids(s: &str) -> HashSet<String> {
 }
 fn all_ids(s: &str) -> HashSet<String> {
     IDENT.find_iter(s).map(|m| m.as_str().to_owned()).collect()
+}
+fn call_tokens(s: &str) -> HashSet<String> {
+    CALL_TOKEN
+        .captures_iter(s.as_bytes())
+        .filter_map(|m| {
+            m.get(1)
+                .map(|x| std::str::from_utf8(x.as_bytes()).unwrap().to_owned())
+        })
+        .collect()
+}
+fn mentions_builtin(names: &HashSet<String>) -> bool {
+    OUT.iter()
+        .chain(RAISE)
+        .chain(LOWER)
+        .chain(RELEASE)
+        .any(|n| names.contains(*n))
 }
 fn arg_ids_from(a: &[Node<'_>], s: &str, idx: usize) -> HashSet<String> {
     if idx >= a.len() {
@@ -221,6 +244,10 @@ fn summarize(file: &SourceFile, t: &Tree) -> HashMap<String, Summary> {
         let mut nodes = Vec::new();
         walk(body, &mut nodes);
         let mut sm = Summary::default();
+        // Python's call graph edges are textual call tokens within each function
+        // body (including macro/textual calls), rather than only call_expression
+        // nodes. Keep that distinction for the two bounded propagation rings.
+        sm.calls = call_tokens(txt(body, s));
         let mut held = HashSet::new();
         let mut lowered = HashSet::new();
         let mut returns = HashSet::new();
@@ -229,7 +256,6 @@ fn summarize(file: &SourceFile, t: &Tree) -> HashMap<String, Summary> {
                 returns.extend(all_ids(txt(n, s)));
             }
             if let Some((cn, a)) = call(n, s) {
-                sm.calls.insert(cn.clone());
                 let real = real_args(a);
                 if OUT.contains(&cn.as_str()) {
                     let acquire = if cn == "KeRaiseIrql" && !real.is_empty() {
@@ -284,41 +310,44 @@ fn summarize(file: &SourceFile, t: &Tree) -> HashMap<String, Summary> {
                 }
             }
         }
-        out.insert(name, sm);
+        out.entry(name)
+            .and_modify(|old: &mut Summary| {
+                old.calls.extend(sm.calls.iter().cloned());
+                old.ret |= sm.ret;
+                old.lowers.extend(sm.lowers.iter().copied());
+            })
+            .or_insert(sm);
     }
     out
 }
-fn build_summaries(files: &[&SourceFile]) -> Result<Sums, String> {
+fn build_summaries(files: &[&SourceFile]) -> Result<(Sums, Vec<HashSet<String>>), String> {
     let mut sums = Sums::default();
-    let mut byname = HashMap::<String, Summary>::new();
-    for f in files {
-        let t = f.rust_tree()?;
-        for (name, sm) in summarize(f, &t) {
-            byname
-                .entry(name)
-                .and_modify(|x| {
-                    x.calls.extend(sm.calls.clone());
-                    x.ret |= sm.ret;
-                    x.lowers.extend(sm.lowers.clone())
-                })
-                .or_insert(sm);
+    let calls: Vec<_> = files.iter().map(|f| call_tokens(&f.text)).collect();
+    // Wrapper facts are direct-only, so only syntax-parse files with a textual
+    // raise/lower builtin token. Cache each parsed file for the sleep rings and
+    // eventual findings pass.
+    let mut parsed = HashMap::<usize, HashMap<String, Summary>>::new();
+    for (ix, f) in files.iter().enumerate() {
+        if !mentions_builtin(&calls[ix]) {
+            continue;
         }
+        let tree = f.rust_tree()?;
+        let facts = summarize(f, &tree);
+        for (name, sm) in &facts {
+            if sm.ret {
+                sums.ret.insert(name.clone());
+            }
+            if !sm.lowers.is_empty() {
+                sums.lower
+                    .entry(name.clone())
+                    .or_default()
+                    .extend(sm.lowers.iter().copied());
+            }
+        }
+        parsed.insert(ix, facts);
     }
     for n in RAISE {
         sums.ret.remove(*n);
-    }
-    for (name, summary) in &byname {
-        if summary.ret {
-            sums.ret.insert(name.clone());
-        }
-    }
-    for (name, sm) in &byname {
-        if !sm.lowers.is_empty() {
-            sums.lower
-                .entry(name.clone())
-                .or_default()
-                .extend(sm.lowers.iter().copied());
-        }
     }
     for n in LOWER.iter().chain(RELEASE) {
         sums.lower.remove(*n);
@@ -331,17 +360,26 @@ fn build_summaries(files: &[&SourceFile]) -> Result<Sums, String> {
         }
         let previous = frontier.clone();
         frontier.clear();
-        for (name, sm) in &byname {
-            if !sums.sleep.contains(name)
-                && name != "KeSynchronizeExecution"
-                && sm.calls.iter().any(|x| previous.contains(x))
-            {
-                frontier.insert(name.clone());
+        for (ix, f) in files.iter().enumerate() {
+            if !calls[ix].iter().any(|x| previous.contains(x)) {
+                continue;
+            }
+            if !parsed.contains_key(&ix) {
+                let tree = f.rust_tree()?;
+                parsed.insert(ix, summarize(f, &tree));
+            }
+            for (name, sm) in parsed.get(&ix).unwrap() {
+                if !sums.sleep.contains(name)
+                    && name != "KeSynchronizeExecution"
+                    && sm.calls.iter().any(|x| previous.contains(x))
+                {
+                    frontier.insert(name.clone());
+                }
             }
         }
         sums.sleep.extend(frontier.iter().cloned());
     }
-    Ok(sums)
+    Ok((sums, calls))
 }
 fn scan_body(body: Node<'_>, s: &str, lines: &[&str], sums: &Sums) -> Vec<(usize, String, String)> {
     let mut findings = Vec::new();
@@ -514,9 +552,15 @@ mod tests {
     }
     #[test]
     fn controls_leak_and_balance() {
-        let bad=file("sdk/lib/rust/bad.rs","pub unsafe fn leaky(cond: bool) -> u32 {\nlet mut old: u8 = 0;\nKeRaiseIrql(/* NewIrql */ DISPATCH_LEVEL, &mut old /* OldIrql */);\nif cond { return 1; }\nKeLowerIrql(old);\n0\n}");
-        let good=file("sdk/lib/rust/good.rs","pub unsafe fn balanced(cond: bool) -> u32 { let mut old=0; KeRaiseIrql(DISPATCH_LEVEL,&mut old); let rc=if cond {1}else{0}; KeLowerIrql(old); rc }");
-        let sums = build_summaries(&[&bad, &good]).unwrap();
+        let bad = file(
+            "sdk/lib/rust/bad.rs",
+            "pub unsafe fn leaky(cond: bool) -> u32 {\nlet mut old: u8 = 0;\nKeRaiseIrql(/* NewIrql */ DISPATCH_LEVEL, &mut old /* OldIrql */);\nif cond { return 1; }\nKeLowerIrql(old);\n0\n}",
+        );
+        let good = file(
+            "sdk/lib/rust/good.rs",
+            "pub unsafe fn balanced(cond: bool) -> u32 { let mut old=0; KeRaiseIrql(DISPATCH_LEVEL,&mut old); let rc=if cond {1}else{0}; KeLowerIrql(old); rc }",
+        );
+        let (sums, _) = build_summaries(&[&bad, &good]).unwrap();
         assert_eq!(scan_file(&bad, &sums).unwrap()[0].1, "IRQL_LEAK_RETURN");
         assert!(scan_file(&good, &sums).unwrap().is_empty());
     }
@@ -526,8 +570,11 @@ mod tests {
             "sdk/lib/rust/wrapper.rs",
             "unsafe fn raise_wrapper()->u8 {let saved=KeRaiseIrqlToDpcLevel(); return saved;}",
         );
-        let c=file("sdk/lib/rust/caller.rs","unsafe fn caller(cond:bool){let saved=raise_wrapper();if cond{return;}KeLowerIrql(saved);}");
-        let sums = build_summaries(&[&w, &c]).unwrap();
+        let c = file(
+            "sdk/lib/rust/caller.rs",
+            "unsafe fn caller(cond:bool){let saved=raise_wrapper();if cond{return;}KeLowerIrql(saved);}",
+        );
+        let (sums, _) = build_summaries(&[&w, &c]).unwrap();
         assert!(scan_file(&c, &sums)
             .unwrap()
             .iter()
@@ -535,8 +582,11 @@ mod tests {
     }
     #[test]
     fn preorder_walk_preserves_nested_exit_and_capture_findings() {
-        let f=file("sdk/lib/rust/many.rs", "fn f(){ let p=KeGetPcr(); wait_for(|| use_it(p)); }\nfn g(){let mut old=0;KeRaiseIrql(DISPATCH_LEVEL,&mut old);if c{return;}KeLowerIrql(old);}");
-        let sums = build_summaries(&[&f]).unwrap();
+        let f = file(
+            "sdk/lib/rust/many.rs",
+            "fn f(){ let p=KeGetPcr(); wait_for(|| use_it(p)); }\nfn g(){let mut old=0;KeRaiseIrql(DISPATCH_LEVEL,&mut old);if c{return;}KeLowerIrql(old);}",
+        );
+        let (sums, _) = build_summaries(&[&f]).unwrap();
         let found = scan_file(&f, &sums).unwrap();
         assert!(found.iter().any(|x| x.1 == "CTX_CAPTURE_ACROSS_WAIT"));
         assert!(found.iter().any(|x| x.1 == "IRQL_LEAK_RETURN"));
@@ -547,9 +597,18 @@ mod tests {
             "sdk/lib/rust/ke.rs",
             "fn KeSynchronizeExecution(){IopSync();}\nfn IopSync(){KeWaitForSingleObject();}\nfn Caller(){KeSynchronizeExecution();}",
         );
-        let sums = build_summaries(&[&f]).unwrap();
+        let (sums, _) = build_summaries(&[&f]).unwrap();
         assert!(sums.sleep.contains("IopSync"));
         assert!(!sums.sleep.contains("KeSynchronizeExecution"));
         assert!(!sums.sleep.contains("Caller"));
+    }
+    #[test]
+    fn sleep_edges_are_the_legacy_textual_body_tokens() {
+        let f = file(
+            "sdk/lib/rust/comments.rs",
+            "fn Caller(){ /* KeWaitForSingleObject() */ }",
+        );
+        let (sums, _) = build_summaries(&[&f]).unwrap();
+        assert!(sums.sleep.contains("Caller"));
     }
 }
