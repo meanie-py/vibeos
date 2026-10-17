@@ -2196,6 +2196,13 @@ def test_vibeos_root_env_wins(tmp_path, monkeypatch):
     assert cachecfg.vibeos_root(tmp_path / "repo") == (tmp_path / "custom").resolve()
 
 
+def test_vibeos_root_climbs_out_of_a_premerge_worktree(monkeypatch):
+    monkeypatch.delenv("VIBEOS_ROOT", raising=False)
+    parent = Path("/home/u/Projects/os-playground")
+    premerge = parent / "vibeos/.git/vibeos-premerge/vibeos-gicv3-1234"
+    assert cachecfg.vibeos_root(premerge) == parent
+
+
 def test_vibeos_root_defaults_to_repo_parent(monkeypatch):
     monkeypatch.delenv("VIBEOS_ROOT", raising=False)
     # main checkout and a sibling worktree must resolve to the SAME root → shared
