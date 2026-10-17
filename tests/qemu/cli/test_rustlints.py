@@ -1,5 +1,6 @@
 """The shared scanner must retain per-rule baseline and coverage guarantees."""
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -42,6 +43,35 @@ def test_plugin_inventory_matches_gate():
     names = result.stdout.splitlines()
     assert set(names) == rustlints.PORTED
     assert len(names) == len(set(names))
+
+
+@pytest.mark.parametrize("jobs", [1, 2, 4])
+def test_shared_c_index_completes_with_nested_parallel_rules(tmp_path, jobs):
+    repo = Path(__file__).resolve().parents[3]
+    binary = rustlints.ensure(repo)
+    rust = tmp_path / "sdk/lib/rust/demo/src"
+    rust.mkdir(parents=True)
+    (rust / "lib.rs").write_text("pub unsafe fn Shared(out: *mut u32) -> i32 { *out = 1; 0 }\n")
+    source = tmp_path / "demo"
+    source.mkdir()
+    for name in ("one", "two"):
+        (source / f"{name}.c").write_text(
+            "int Shared(unsigned *out) { if (out) *out = 1; return 0; }\n"
+        )
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "add", "demo"], check=True)
+    names = ["scan_dropped_null_guard", "scan_store_on_failure", "scan_ptr_byte_diff"]
+    cp = subprocess.run(
+        [str(binary), "--root", str(tmp_path), "--rules", ",".join(names)],
+        env={**os.environ, "VIBEOS_LINT_JOBS": str(jobs)},
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=True,
+    )
+    results = rustlints.split_output(cp, names)
+    assert "dropped-null-guard Shared(out)" in results[names[0]].stdout
+    assert all(not results[name].stdout for name in names[1:])
 
 
 def test_selected_plugins_run_once_and_keep_baselines(tmp_path, monkeypatch):

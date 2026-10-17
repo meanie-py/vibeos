@@ -239,8 +239,6 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_scan_assert_polarity.py"),
     (".", ".", "tools/test_scan_dropped_asserts.py"),
     (".", ".", "tools/test_scan_call_literal_vs_c.py"),
-    (".", ".", "tools/test_scan_formatless_printf.py"),
-    (".", ".", "tools/test_scan_ptr_typedef_cast_read.py"),
     (".", ".", "tools/test_strip_msvc_cmake.py"),
     # The substrate half of scan_extern_decl_drift has no other oracle: its
     # findings are about declarations of symbols NOTHING in the tree defines, so

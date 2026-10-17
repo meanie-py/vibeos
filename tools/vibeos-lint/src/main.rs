@@ -70,10 +70,16 @@ fn run() -> Result<(), String> {
                 .iter()
                 .any(|r| !r.needs_sdk_rust() && !r.needs_cdecl_sources()),
             module_c: selected.iter().any(|r| r.needs_c_sources()),
+            tracked_c: selected.iter().any(|r| r.needs_c_twins()),
+            cargo_manifests: selected.iter().any(|r| r.needs_module_tree()),
             sdk_rust: selected.iter().any(|r| r.needs_sdk_rust()),
             cdecl_sources: selected.iter().any(|r| r.needs_cdecl_sources()),
         };
-        let corpus = Corpus::load_scopes(&root, &inputs, needs)?;
+        let extras: Vec<PathBuf> = selected
+            .iter()
+            .flat_map(|r| r.extra_files().iter().map(PathBuf::from))
+            .collect();
+        let corpus = Corpus::load_scopes_with_extra(&root, &inputs, needs, &extras)?;
         vibeos_lint::execute(&corpus, &selected)
     })?;
     // Buffer all results until every plugin succeeds; never publish partial coverage.

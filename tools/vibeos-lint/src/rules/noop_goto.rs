@@ -103,10 +103,10 @@ pub unsafe fn f(ramdisk: bool) -> i32 {
     fn scanner_control_bad_and_good_fixtures() {
         assert_eq!(scan(BAD), vec![(3, "quit".into())]);
         assert!(scan(GOOD).is_empty());
-        let corpus = Corpus {
-            root: PathBuf::from("/fixture"),
-            files: vec![SourceFile::new("bad.rs".into(), BAD.into())],
-        };
+        let corpus = Corpus::new(
+            PathBuf::from("/fixture"),
+            vec![SourceFile::new("bad.rs".into(), BAD.into())],
+        );
         assert_eq!(
             NoopGoto.run(&corpus).unwrap(),
             vec!["bad.rs:3: noop-goto 'quit'"]

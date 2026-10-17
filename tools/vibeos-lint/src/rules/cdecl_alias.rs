@@ -83,18 +83,18 @@ __asm__(".globl _KeInitializeSpinLock\n_KeInitializeSpinLock:\n"
             vec![(3, "KeInitializeSpinLock".into(), "4".into())]
         );
         assert!(scan(GOOD).unwrap().is_empty());
-        let corpus = Corpus {
-            root: PathBuf::from("/fixture"),
-            files: vec![SourceFile::new("bridge.c".into(), BAD.into())],
-        };
+        let corpus = Corpus::new(
+            PathBuf::from("/fixture"),
+            vec![SourceFile::new("bridge.c".into(), BAD.into())],
+        );
         assert_eq!(
             CdeclAlias.run(&corpus).unwrap(),
             vec!["bridge.c:3: cdecl-alias KeInitializeSpinLock@4"]
         );
-        let clean = Corpus {
-            root: PathBuf::from("/fixture"),
-            files: vec![SourceFile::new("bridge.c".into(), GOOD.into())],
-        };
+        let clean = Corpus::new(
+            PathBuf::from("/fixture"),
+            vec![SourceFile::new("bridge.c".into(), GOOD.into())],
+        );
         assert!(CdeclAlias.run(&clean).unwrap().is_empty());
     }
     #[test]
