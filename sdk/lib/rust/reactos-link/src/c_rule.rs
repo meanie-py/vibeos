@@ -188,8 +188,7 @@ impl Linker {
         // the command looks, so the command stays cmake's. Cells share the tree and write
         // the same bytes, so it goes in by rename.
         let ks_dir = root.join("sdk/include/asm");
-        if root != self.build_dir
-            && lines.iter().any(|l| l.asm && l.includes.iter().any(|i| i == "@build/sdk/include/asm"))
+        if lines.iter().any(|l| l.asm && l.includes.iter().any(|i| i == "@build/sdk/include/asm"))
             && !ks_dir.join(self.ks_inc_name()).exists()
         {
             let made = self.generate_ks_inc().join(self.ks_inc_name());

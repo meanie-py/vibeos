@@ -433,12 +433,18 @@ extends it from the boot spine to every fully-Rust module.
      arches (bmfd, whose objects were not in the tree to snapshot, rests on the encoder's
      check). In a cmake build the command is cmake's own, run from `build-<arch>` through
      ccache, so it hits cmake's cache entries.
-   - **Owed (6a):** acgenral and opengl32, whose shims lists are arch-guarded (`${<M>_SHIMS}`),
-     still replay; so do the shared C libraries cells link (`rtl`, `blrtl`, `libcntpr`,
-     `win32k_residue` through `c_from_compile_db`; wine, uuid, conutils and the `engine:c:`
-     set through `replay_target`). Their recipe (sources in archive order + part) belongs in
-     committed data under reactos-link, generated and checked like the templates; five of
-     them carry asm, whose rule needs its own template.
+   - **Shared C libraries without cmake, done 2026-10-17.** wine, uuid, conutils and
+     every `engine:c:<t>` (and freeldr's BIOS asm, the last cmake archive a cell named)
+     replay cmake's compile in a cmake build; with none they build from
+     `reactos-link/clibs/<arch>/<t>.recipe` (`--clib-recipes`): one line per source in
+     cmake's archive order with its part of cmake's C or ASM rule. The ASM rule (`-x
+     assembler-with-cpp -o <obj> <includes> <flags> <sorted defines> -D__ASM__`) has its
+     own template, `cflags/asm.<arch>.flags`; every asm command in the tree rebuilds
+     (75/27/9). Proof: 112 of 112 recipe-built objects byte-identical to cmake's, the
+     compile directory DWARF records aside.
+   - **Owed (6a):** opengl32's i386 asm shims still replay (`c_from_compile_db`), and so do
+     the shared `c_from_compile_db` libraries (rtl, blrtl, libcntpr, win32k_residue),
+     whose cmake-off path is the older committed `cflags/<name>.<arch>.flags`.
    - **6b, the generated SDK: recorded and replayable, 2026-10-17.**
      `tools/sdk_recipe.py --write` records, from ninja itself (`ninja -t commands`), every
      generator command that makes something a cell build reads: psdk/xdk's headers and
