@@ -16,7 +16,8 @@
  * silently clean, which is exactly the failure this harness exists to stop.
  *
  * Suite list: %SystemRoot%\bin\apitest-suites.txt, one exe name per line
- * ('#' comments; `set NAME=VALUE` sets the environment of the children after it).
+ * ('#' comments; `set NAME=VALUE` sets the environment of the children after it;
+ * `timeout SUITE.exe SECONDS` replaces the per-subtest timeout for that suite).
  * DERIVED at build time from the staged binaries, never
  * hand-maintained -- ExPushLock sat unrun for the length of a whole merge
  * because the kmtest list is committed and nothing reconciles it against the
@@ -73,6 +74,7 @@ static void dump_child_threads(DWORD pid)
 }
 
 #define PER_SUBTEST_TIMEOUT_MS (120u * 1000u)
+#define MAX_TIMEOUTS           32
 #define ENUMERATE_TIMEOUT_MS   (60u * 1000u)
 #define PIPE_BUF_BYTES       4096
 
@@ -370,6 +372,46 @@ static int run_child(const char *bindir, const char *suite, const char *arg,
     return (wait == WAIT_TIMEOUT) ? -2 : (int)code;
 }
 
+/* `timeout <suite.exe> <seconds>` in the list: a suite that is slow, not wedged. dwrite's
+ * font test runs 324K checks (on the Windows host) and was killed at 120s every time. */
+static struct
+{
+    char Suite[MAX_SUBTEST_NAME];
+    DWORD Ms;
+} Timeouts[MAX_TIMEOUTS];
+static int TimeoutCount;
+
+static DWORD subtest_timeout_ms(const char *suite)
+{
+    int i;
+
+    for (i = 0; i < TimeoutCount; ++i)
+    {
+        if (_stricmp(Timeouts[i].Suite, suite) == 0)
+            return Timeouts[i].Ms;
+    }
+    return PER_SUBTEST_TIMEOUT_MS;
+}
+
+/* Returns 0 for a malformed directive; the caller says so out loud. */
+static int set_timeout(const char *args)
+{
+    char suite[MAX_SUBTEST_NAME];
+    unsigned long secs;
+    int i;
+
+    if (sscanf(args, "%63s %lu", suite, &secs) != 2 || secs == 0 || secs > 24ul * 3600ul)
+        return 0;
+    for (i = 0; i < TimeoutCount && _stricmp(Timeouts[i].Suite, suite); ++i) { }
+    if (i == MAX_TIMEOUTS)
+        return 0;
+    if (i == TimeoutCount)
+        ++TimeoutCount;
+    _snprintf(Timeouts[i].Suite, sizeof(Timeouts[i].Suite), "%s", suite);
+    Timeouts[i].Ms = (DWORD)(secs * 1000ul);
+    return 1;
+}
+
 #define MAX_SKIPS 128
 
 static char SkipList[MAX_SKIPS][MAX_SUBTEST_NAME * 2];
@@ -430,7 +472,7 @@ static void run_one_subtest(const char *bindir, const char *suite, const char *s
     ctx.Label = subtest;
 
     emit("[APITEST-SWEEP] launch %s %s\n", suite, subtest);
-    rc = run_child(bindir, suite, subtest, &ctx, PER_SUBTEST_TIMEOUT_MS);
+    rc = run_child(bindir, suite, subtest, &ctx, subtest_timeout_ms(suite));
     ++*subtests;
 
     if (rc == -1)
@@ -438,8 +480,8 @@ static void run_one_subtest(const char *bindir, const char *suite, const char *s
     else if (rc == -2)
     {
         ++*timeouts;
-        emit("[APITEST-SWEEP] TIMEOUT %s %s (%us) - terminated\n",
-                 suite, subtest, PER_SUBTEST_TIMEOUT_MS / 1000u);
+        emit("[APITEST-SWEEP] TIMEOUT %s %s (%lus) - terminated\n",
+                 suite, subtest, (unsigned long)(subtest_timeout_ms(suite) / 1000u));
     }
     else
         emit("[APITEST-SWEEP] exit %s %s code=%d\n", suite, subtest, rc);
@@ -501,14 +543,14 @@ static void run_suite(const char *bindir, const char *suite,
             ctx.Suite = suite;
             ctx.Label = "";
             ++*launched;
-            rc = run_child(bindir, suite, NULL, &ctx, PER_SUBTEST_TIMEOUT_MS);
+            rc = run_child(bindir, suite, NULL, &ctx, subtest_timeout_ms(suite));
             if (rc == -1)
                 ++*failstart;
             else if (rc == -2)
             {
                 ++*timeouts;
-                emit("[APITEST-SWEEP] TIMEOUT %s (single test, %us) - terminated\n",
-                         suite, PER_SUBTEST_TIMEOUT_MS / 1000u);
+                emit("[APITEST-SWEEP] TIMEOUT %s (single test, %lus) - terminated\n",
+                         suite, (unsigned long)(subtest_timeout_ms(suite) / 1000u));
             }
             else
                 emit("[APITEST-SWEEP] exit %s (single test) code=%d\n", suite, rc);
@@ -536,7 +578,7 @@ static void run_suite(const char *bindir, const char *suite,
         ctx.Label = names[i];
 
         emit("[APITEST-SWEEP] launch %s %s\n", suite, names[i]);
-        rc = run_child(bindir, suite, names[i], &ctx, PER_SUBTEST_TIMEOUT_MS);
+        rc = run_child(bindir, suite, names[i], &ctx, subtest_timeout_ms(suite));
         ++*subtests;
 
         if (rc == -1)
@@ -544,8 +586,8 @@ static void run_suite(const char *bindir, const char *suite,
         else if (rc == -2)
         {
             ++*timeouts;
-            emit("[APITEST-SWEEP] TIMEOUT %s %s (%us) - terminated\n",
-                     suite, names[i], PER_SUBTEST_TIMEOUT_MS / 1000u);
+            emit("[APITEST-SWEEP] TIMEOUT %s %s (%lus) - terminated\n",
+                     suite, names[i], (unsigned long)(subtest_timeout_ms(suite) / 1000u));
         }
         else
             emit("[APITEST-SWEEP] exit %s %s code=%d\n", suite, names[i], rc);
@@ -705,6 +747,15 @@ int main(void)
                 emit("[APITEST-SWEEP] env %s=%s\n", line + 4, eq + 1);
                 continue;
             }
+        }
+        if (!strncmp(line, "timeout ", 8))
+        {
+            if (set_timeout(line + 8))
+                emit("[APITEST-SWEEP] timeout %s\n", line + 8);
+            else
+                emit("[APITEST-SWEEP] BAD timeout line (want: timeout SUITE.exe SECONDS): %s\n",
+                         line);
+            continue;
         }
         ++total;
 

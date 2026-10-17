@@ -32,5 +32,7 @@ binaries:
 
 test:
   launch_marker: "[APITEST-SWEEP] done"
-  launch_drain_secs: 3600
-  launch_idle_secs: 600
+  # dwrite's font test runs up to 1800s (gen_suites SLOW_SUITES) and prints only its
+  # failures and a summary, so serial silence through it is not a wedge.
+  launch_idle_secs: 2000
+  launch_drain_secs: 7200
