@@ -79,7 +79,10 @@ fn snapshot(c: &Corpus, registry: &Value) -> Result<AuditSnapshot, String> {
             let path = rel.join(entry.file_name());
             let name = path.to_string_lossy().replace('\\', "/");
             let kind = entry.file_type().map_err(|e| e.to_string())?;
-            if entry.path().is_dir() {
+            // read_dir already supplies the file type on supported filesystems.
+            // Only symlinks need a separate stat to preserve os.walk's treatment
+            // of directory links (recorded, but never descended).
+            if kind.is_dir() || (kind.is_symlink() && entry.path().is_dir()) {
                 out.directories.insert(name.clone());
                 if !kind.is_symlink()
                     && ![
@@ -138,7 +141,15 @@ impl Rule for VendoredRegistry {
     }
     fn run(&self, c: &Corpus) -> Result<Vec<String>, String> {
         let registry = crate::yaml::parse(&read(c, "vendor.yaml")?)?;
+        let started = std::time::Instant::now();
         let snapshot = snapshot(c, &registry)?;
+        if std::env::var_os("VIBEOS_LINT_TIMINGS").is_some() {
+            eprintln!(
+                "TIMING\tvendor_inventory\t{:.3}\t{} files",
+                started.elapsed().as_secs_f64(),
+                snapshot.files.len()
+            );
+        }
         let crates = snapshot
             .file("tools/rust-crates.yaml")
             .map(crate::yaml::parse)
