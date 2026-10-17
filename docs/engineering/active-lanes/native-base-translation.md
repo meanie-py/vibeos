@@ -192,10 +192,11 @@ driver (`tools/merge_drivers.py`, which also merges the cohab census), and psapi
   It TIGHTENS an audit, though, so measure it first. Re-check every banked body against
   its C function's live-arm callees under its TU's defines. Then fix (re-buy) or allowlist
   each body that dropped one, before the change can turn a `port replay` red.
-- **The live cost counter skips failed attempts.** Every attempt's `result.json` has
-  `cost_usd: null`, and a body that ends in `max_tokens` is never added to the running total
-  (DriveDlgProc's two 32K-token failures printed `$0.0000`). Batch H's real spend was summed
-  from the attempts' token counts. The counter should bill every attempt it sent.
+- **The cost counter now bills failed attempts** (2026-10-17). Three causes: the Claude
+  backend never set `usage_known`, so all 6,637 attempt `result.json`s said
+  `cost_usd: null`; FAIL lines did not print the running figure `port translate` bills a
+  run by; and `[running $X.XX]` rounded a Haiku run to $0.00. The old records stay null;
+  their token counts are intact if a past run needs re-pricing.
 - The three tech-debt items are in the roadmap's "Known bugs & flakes" registry, so they
   are not repeated here:
   - the i386-uefi install's fastfat flush fault;

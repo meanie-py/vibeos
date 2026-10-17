@@ -127,3 +127,37 @@ def test_direct_review_path_cannot_bypass_cap(monkeypatch, backend):
     monkeypatch.setenv("RUSTCONV_BUDGET_USD", "5")
     with pytest.raises(RuntimeError, match="refusing to bypass"):
         getattr(semdiff, backend)("model", "system", "user")
+
+
+def test_a_claude_attempt_records_its_cost_even_when_truncated(monkeypatch):
+    """Every Claude attempt said `usage_known: false`, so `cost_usd` was null on all 6,637
+    of them and a truncated 32K-token body was never billed by anything that read them."""
+    from types import SimpleNamespace as NS
+
+    from rustconv import batch_runner
+
+    events = [
+        NS(
+            type="message_start",
+            message=NS(
+                usage=NS(
+                    input_tokens=39500, cache_read_input_tokens=0, cache_creation_input_tokens=0
+                )
+            ),
+        ),
+        NS(type="content_block_delta", delta=NS(text="```rust\nfn f() {")),
+        NS(type="message_delta", usage=NS(output_tokens=32768), delta=NS(stop_reason="max_tokens")),
+    ]
+
+    class Stream:
+        def __enter__(self):
+            return iter(events)
+
+        def __exit__(self, *_a):
+            return False
+
+    client = NS(messages=NS(stream=lambda **_k: Stream()))
+    monkeypatch.setattr(batch_runner.anthropic, "Anthropic", lambda: client)
+    r = batch_runner._submit_claude("p", "claude-haiku-5-5")
+    assert not r.success and "max_tokens" in (r.error or "")
+    assert r.usage_known and (r.input_tokens, r.output_tokens) == (39500, 32768)
