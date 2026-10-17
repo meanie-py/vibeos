@@ -657,3 +657,69 @@ def test_corrupt_blob_quarantine_copies_evidence_without_moving_live_path(store)
         assert (
             diagnostic["outputs"][0]["observed_sha256"] != handle.manifest["outputs"][0]["sha256"]
         )
+
+
+def test_gc_drops_a_dead_ref_and_then_its_action(store):
+    """A ref outlives its consumer unless the caller can say the consumer is gone."""
+    with store.session() as session:
+        handle = store.lookup_or_build(DESCRIPTOR, build_bytes(), session=session)
+        session.bind("/gone/lane", "cargo:x|/tmp/vibeos/out|x", handle.action_key)
+    # Every ref is a root without a predicate, and with one that says "alive".
+    assert not store.gc(apply=True, grace_seconds=0)["actions"]
+    assert not store.gc(apply=True, grace_seconds=0, ref_alive=lambda ref: True)["actions"]
+    report = store.gc(apply=True, grace_seconds=0, ref_alive=lambda ref: False)
+    assert len(report["dead_refs"]) == 1
+    assert report["actions"] and report["blobs"]
+    assert not list((store.base / "refs").glob("*.json"))
+    assert not handle.blob_path.exists()
+
+
+def test_gc_keeps_a_young_dead_ref(store):
+    with store.session() as session:
+        handle = store.lookup_or_build(DESCRIPTOR, build_bytes(), session=session)
+        session.bind("/gone/lane", "consumer", handle.action_key)
+    report = store.gc(apply=True, grace_seconds=3600, ref_alive=lambda ref: False)
+    assert not report["dead_refs"] and not report["actions"]
+
+
+def test_gc_hashes_only_the_blobs_it_deletes(store, monkeypatch):
+    """Kept blobs are verified where they are consumed; hashing all of them here held the
+    GC lock for minutes."""
+    with store.session() as session:
+        store.lookup_or_build(DESCRIPTOR, build_bytes(), session=session)
+        hashed = []
+        original = implementation._digest_file
+        monkeypatch.setattr(
+            implementation, "_digest_file", lambda path: hashed.append(path) or original(path)
+        )
+        assert not store.gc(apply=True, grace_seconds=0)["blobs"]
+    assert hashed == []
+
+
+def test_lane_ref_alive_maps_the_canonical_out_dir_back_to_the_lane(tmp_path):
+    from tools.artifact_runtime import lane_ref_alive
+
+    lane = tmp_path / "lane"
+    out = lane / "sdk/lib/rust/target/cell/build/x-cargo-abc/out"
+    out.mkdir(parents=True)
+    consumer = "cargo:x-cargo|/tmp/vibeos/sdk/lib/rust/target/cell/build/x-cargo-abc/out|x|[]"
+    ref = {"lane": str(lane), "consumer": consumer}
+    assert lane_ref_alive(ref, canonical_root="/tmp/vibeos")
+    out.rmdir()
+    assert not lane_ref_alive(ref, canonical_root="/tmp/vibeos")
+    assert not lane_ref_alive({"lane": str(tmp_path / "removed"), "consumer": consumer})
+    # A shape it cannot read is kept, never guessed dead.
+    assert lane_ref_alive({"lane": str(lane), "consumer": "standalone:x"})
+
+
+def test_scheduled_gc_runs_once_per_interval_and_honours_the_kill_switch(store):
+    from tools.artifact_runtime import GC_INTERVAL_SECONDS, scheduled_gc
+
+    root = store.root
+    assert scheduled_gc(root, now=1_000_000.0) is not None
+    stamp = root / "last-gc"
+    os.utime(stamp, (1_000_000.0, 1_000_000.0))
+    assert scheduled_gc(root, now=1_000_000.0 + 60) is None
+    assert scheduled_gc(root, now=1_000_000.0 + GC_INTERVAL_SECONDS + 1) is not None
+    (root / "gc-disabled").touch()
+    assert scheduled_gc(root, force=True) is None

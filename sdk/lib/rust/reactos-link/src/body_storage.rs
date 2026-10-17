@@ -76,6 +76,11 @@ impl Shared {
         ));
         fs::create_dir_all(&target_dir)?;
         let lock = acquire_lock(&target_dir)?;
+        // The lock file's mtime is the shard's LAST USE. Cargo rewrites nothing for a
+        // fresh unit, so no file inside says whether a shard is still read; trim
+        // (tests/qemu/cli/trim.py) retires a shard nobody has acquired for days, which is
+        // what is left when the bodies it held move to the shared artifact store.
+        lock.set_modified(std::time::SystemTime::now())?;
         check_marker(&target_dir.join(CONFIG_MARKER), configuration)?;
 
         let mut snapshot_namespace = Vec::new();

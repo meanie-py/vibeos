@@ -18,10 +18,8 @@ const IoWriteAccess: u32 = 1;
 const CriticalWorkQueue: WORK_QUEUE_TYPE = 0;
 
 extern "C" {
-    fn ASSERT_IRP_CONTEXT(IrpContext: *mut IRP_CONTEXT);
 }
 extern "C" {
-    fn ASSERT_IRP(Irp: *mut IRP);
 }
 extern "C" {
     pub fn CdTeardownStructures( IrpContext: PIRP_CONTEXT, StartingFcb: PFCB, RemovedStartingFcb: PBOOLEAN, );
@@ -137,8 +135,8 @@ pub unsafe extern "C" fn CdFsdPostRequest(
     Irp: PIRP,
 ) -> NTSTATUS {
     PAGED_CODE!();
-    ASSERT_IRP_CONTEXT(IrpContext);
-    ASSERT_IRP(Irp);
+    ASSERT_IRP_CONTEXT!(IrpContext);
+    ASSERT_IRP!(Irp);
     CdPrePostIrp(IrpContext, Irp);
     CdAddToWorkque(IrpContext, Irp);
     STATUS_PENDING
@@ -154,8 +152,8 @@ pub unsafe extern "system" fn CdPrePostIrp(
 
     PAGED_CODE!();
 
-    ASSERT_IRP_CONTEXT(IrpContext);
-    ASSERT_IRP(Irp);
+    ASSERT_IRP_CONTEXT!(IrpContext);
+    ASSERT_IRP!(Irp);
 
     match (*IrpContext).MajorFunction {
         IRP_MJ_CREATE => {

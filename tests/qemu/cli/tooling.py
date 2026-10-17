@@ -120,7 +120,6 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_spec2def_stub_value.py"),
     # The UP and MP kernel cells name their Rust libraries by hand; keep them equal.
     (".", ".", "tools/test_kernel_cells_parity.py"),
-    (".", ".", "tools/test_scan_init_then_move.py"),
     # Same reason, one layer out: verify_cohab_coverage gates the merge train but reads
     # OBJECT FILES, so it cannot join test_scanner_controls (which drives source-only
     # `check` lints from fixture dirs) and would otherwise have no oracle at all.
@@ -136,17 +135,15 @@ _PYTEST_SUITES = [
     # here, with the migration, the moment the pinned rustc turns it into an error.
     (".", ".", "tools/test_scan_i386_sse_abi.py"),
     (".", ".", "tools/test_scan_ptr_highword_mask.py"),
-    (".", ".", "tools/test_scan_hresult_literals.py"),
     (".", ".", "tools/test_scan_dowhile_continue.py"),
-    (".", ".", "tools/test_scan_list_walk_from_head.py"),
     (".", ".", "tools/test_scan_case_bitor_pattern.py"),
     (".", ".", "tools/test_rank_unused_assignments.py"),
     (".", ".", "tools/test_apply_dead_assignments.py"),
     (".", ".", "tools/test_apply_rustc_suggestions.py"),
     (".", ".", "tools/test_extern_to_use.py"),
+    (".", ".", "tools/test_scan_version_vs_c.py"),
     (".", ".", "tools/test_scan_byteptr_stride.py"),
     (".", ".", "tools/test_scan_gmem_flags.py"),
-    (".", ".", "tools/test_scan_let_shadow.py"),
     (".", ".", "tools/test_scan_raw_bitfield.py"),
     (".", ".", "tools/test_scan_winerror_consts.py"),
     (".", ".", "tools/test_scan_export_shadows.py"),
@@ -273,6 +270,9 @@ _PYTEST_SUITES = [
     # (§9.120). Also fails on any gate lint that is in neither the control table
     # nor the documented-exemption list, so coverage gaps stay loud.
     (".", ".", "tools/test_scanner_controls.py"),
+    # The structural merge drivers for gen_driver_types.sh and the cohab census, including
+    # one real `git merge` through the configured driver (tools/merge_drivers.py).
+    (".", ".", "tools/test_merge_drivers.py"),
     # Unit tests for scan_com_double_release's matcher. The CONTROL in
     # test_scanner_controls proves the scanner is not blind; these pin the four
     # CORRECT spellings it must stay quiet about (release-then-null,
@@ -331,6 +331,22 @@ def check_tooling(args, repo: Path) -> int:
     )
     # 4. pytest
     if not args.no_tests:
+        checks.append(
+            (
+                "rust:vibeos-lint",
+                [
+                    "cargo",
+                    "test",
+                    "--offline",
+                    "--locked",
+                    "--manifest-path",
+                    "tools/vibeos-lint/Cargo.toml",
+                    "--target-dir",
+                    ".cache/vibeos-lint/test-target",
+                ],
+                {},
+            )
+        )
         for pkg, pp, target in _PYTEST_SUITES:
             # Label by the TARGET, not the package: twenty root-dir suites all
             # rendered as `pytest:.`, so a failure line named nothing runnable.

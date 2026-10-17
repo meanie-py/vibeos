@@ -11,13 +11,19 @@ add_library(psapi_static ${PSAPI_STATIC_SOURCE})
 add_dependencies(psapi_static psdk rust_psapi_rust)
 target_link_libraries(psapi_static PRIVATE ${psapi_rust_LIB})
 
+# The DLL target is all Rust too: main.c's DllMain is psapi-rust's `dllmain` feature
+# (src/psapi/main.rs), built only for this DLL so kernel32/kernelbase, which link
+# psapi_static, get no second entry point. The C stays on disk.
+rust_staticlib_variant(psapi_dll_rust psapi-rust "dllmain" TRUE)
 list(APPEND SOURCE
-    main.c
+    # main.c  # replaced by Rust (sdk/lib/rust/psapi-rust/src/psapi/main.rs)
+    rust_cohab_stub.c
     psapi.rc
     ${CMAKE_CURRENT_BINARY_DIR}/psapi.def)
 
 add_library(psapi MODULE ${SOURCE})
 set_module_type(psapi win32dll ENTRYPOINT DllMain 12)
-target_link_libraries(psapi psapi_static ${PSEH_LIB})
+add_dependencies(psapi rust_psapi_dll_rust)
+target_link_libraries(psapi ${psapi_dll_rust_LIB} ${PSEH_LIB})
 add_importlibs(psapi kernel32 ntdll)
 add_cd_file(TARGET psapi DESTINATION reactos/system32 FOR all)

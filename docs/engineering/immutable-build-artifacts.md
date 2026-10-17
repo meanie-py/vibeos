@@ -17,15 +17,24 @@ are recorded under `disk-optimization-results/20261016-artifact-spike/`.
 ## Rollout, 2026-10-16 (measured)
 
 Every nested body build on a builtin triple with the recipe's flags now goes to the
-store; discovery decides eligibility per graph. 372 of the 391 workspace bodies
+store; discovery decides eligibility per graph. **375 of the 391 workspace bodies**
 (`staticlib`, or `staticlib` + `rlib`) pass discovery, and a prepare-only pass over all
-372 (discovery, snapshot, normalization and the worker's graph check, no compile) is
-clean. Per build, about 8-9 requests per arch are ineligible and build privately; the
-supervisor summary lists each body with its reason. Today they are: build scripts
-(hal-rust, ntdll-rust), registry crates (cabinet-rust's libz-rs-sys, vioblk-rust's
-virtio-drivers), target-specific dependency tables (rtl-rust through cnt-rust),
-`build-dependencies` (svcctl-stub, winreg-stub) and manifest lints (fastfat-rust).
-Bodies on the i386 kernel's custom target JSON and the per-crate
+375 (discovery, snapshot, normalization and the worker's graph check, no compile) is
+clean (`608eb77d813`). Three of the first rollout's refusals were closed the same day:
+hal-rust and ntdll-rust lost their build scripts (the apiset table is generated into
+the tree by `tools/gen_apisets_table.py`, with a freshness test; hal's flavours are
+plain cfgs); `[lints]` tables are keyed rather than refused (fastfat-rust); and in-repo
+data a body embeds from outside its package
+(`include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "<literal>"))`, hal's pci.ids) is a
+declared input, `data_inputs` in the descriptor, copied into the worker's projection.
+
+The remaining 16 build privately, each listed with its reason in the supervisor
+summary: registry crates (atan2's libm, cabinet's libz-rs-sys, netstack's smoltcp,
+vioblk's virtio-drivers); cnt-rust's target-specific dependency tables, which make
+rtl-rust ineligible too; `build-dependencies` on the reactos-link IDL generator (icuuc,
+lsa, sam, svcctl and winreg stubs); build scripts (user32-wsprintf, which also
+`#[path]`s into cnt-rust; wowx64's generated `services.rs`); and menuband's `#[path]`
+into shell32-rust. Bodies on the i386 kernel's custom target JSON and the per-crate
 `no-prepopulate-passes` builds (cnt-rust-lib, rtl-rust i386) are never offered.
 
 | Measurement (same host, same commit) | Result |
@@ -50,6 +59,29 @@ now share `VIBEOS_CARGO_LINK_SHARDS` dirs per arch (default two per CPU;
 2-7%. What remains in a lane is each cell's own output, the private body shards
 (about 4 G) and the build dirs' C objects (about 5.5 G per arch), which ccache
 already shares the compiles of.
+
+**Maintenance, since (2026-10-16):**
+- **GC runs itself.** A green `vibeos-cli build` collects the store at most once a day
+  (`last-gc` stamp in the store root; a non-blocking claim, so lanes never queue on
+  it). `gc-disabled` in the store root turns it off for every lane; `VIBEOS_STORE_GC=0`
+  for one build. The first apply took the store from 9.1 G to 7.4 G.
+- **Refs die with their consumer.** A ref whose worktree is gone, or whose cargo `out`
+  directory has since been replaced, stops rooting anything once older than the grace
+  period (`lane_ref_alive`); 7,697 of 26,588 refs were dead. `gc --keep-dead-refs`
+  restores the old behaviour.
+- **GC no longer hashes what it keeps.** Kept blobs are verified where they are
+  consumed; hashing every blob held the GC lock for 3m32s, now ~20 s.
+- **Revalidation by stat stamps.** A request no longer re-runs discovery to prove its
+  inputs did not move while it waited; discovery's (dev, inode, size, mtime, ctime)
+  stamps decide, and any difference falls back to the full rerun. That was ~0.35-0.65 s
+  of every request, now 0.000 s; discovery itself (~0.4 s) remains.
+- **Private body shards retire.** reactos-link stamps a shard's lock file on every
+  acquire, and trim retires a shard nobody has acquired for 72 h, which is what is left
+  when its bodies move to the store.
+- **Still owed:** the supervisor's preflight re-hashes every blob the lane references on
+  every build, warm or not (13-53 s measured per build on 2026-10-16), which is the
+  largest fixed cost the store adds; discovery's per-request cost; and the 16 bodies
+  above.
 
 ## Objective and scope
 
@@ -619,10 +651,8 @@ compatibility. Storage compression and remote eviction are independent of blob i
 
 Rollback is `vibeos-cli build --arch <a> --no-artifact-store`; it reconciles the CMake
 mode to off and regenerates consumers through the existing sharded path. It must work
-without deleting the store or disturbing another lane. **Owed** before widening the body
-set: automatic reference retirement when a lane is pruned or removed (its durable refs
-now outlive it and pin their blobs; the store is small, so this leaks bytes, not
-correctness), and the per-request latency (about 0.8 s, mostly discovery and
-revalidation, overlapped across a parallel build). No migration
+without deleting the store or disturbing another lane. Reference retirement and the
+revalidation half of the per-request latency were closed on 2026-10-16 (see "Maintenance,
+since" at the top). No migration
 of existing mutable targets into the trusted store by filename, and no pruning of other
 lanes as part of this project.

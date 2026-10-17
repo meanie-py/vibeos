@@ -268,7 +268,7 @@ unsafe extern "system" fn scheme_handler_EndCreateObject(
     }
     EnterCriticalSection(&raw mut (*handler).cs);
     cur = ((*handler).results.next as *mut ::core::ffi::c_char).offset(
-        -(&raw mut (*core::ptr::null_mut::<scheme_handler_result>()).entry
+        -(core::mem::offset_of!(scheme_handler_result, entry)
             as ::core::ffi::c_ulonglong as isize),
     ) as *mut scheme_handler_result;
     while &raw mut (*cur).entry != &raw mut (*handler).results {
@@ -278,7 +278,7 @@ unsafe extern "system" fn scheme_handler_EndCreateObject(
             break;
         } else {
             cur = ((*cur).entry.next as *mut ::core::ffi::c_char).offset(
-                -(&raw mut (*core::ptr::null_mut::<scheme_handler_result>()).entry
+                -(core::mem::offset_of!(scheme_handler_result, entry)
                     as ::core::ffi::c_ulonglong as isize),
             ) as *mut scheme_handler_result;
         }
@@ -324,7 +324,7 @@ unsafe extern "system" fn scheme_handler_CancelObjectCreation(
     }
     EnterCriticalSection(&raw mut (*handler).cs);
     cur = ((*handler).results.next as *mut ::core::ffi::c_char).offset(
-        -(&raw mut (*::core::ptr::null_mut::<scheme_handler_result>()).entry
+        -(core::mem::offset_of!(scheme_handler_result, entry)
             as ::core::ffi::c_ulonglong as isize),
     ) as *mut scheme_handler_result;
     while &raw mut (*cur).entry != &raw mut (*handler).results {
@@ -334,7 +334,7 @@ unsafe extern "system" fn scheme_handler_CancelObjectCreation(
             break;
         } else {
             cur = ((*cur).entry.next as *mut ::core::ffi::c_char).offset(
-                -(&raw mut (*::core::ptr::null_mut::<scheme_handler_result>()).entry
+                -(core::mem::offset_of!(scheme_handler_result, entry)
                     as ::core::ffi::c_ulonglong as isize),
             ) as *mut scheme_handler_result;
         }

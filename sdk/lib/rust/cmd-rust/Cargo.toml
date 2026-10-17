@@ -19,3 +19,8 @@ wcwidth-rust = { path = "../wcwidth-rust" }
 panic-common = { path = "../panic-common", features = ["user"] }
 ntdll-sys = { path = "../ntdll-sys" }
 win32macros-rust = { path = "../win32macros-rust" }
+
+# cmd's C builds at WS03 (_WIN32_WINNT=0x502): its `#if NTDDI_VERSION >= NTDDI_WIN7` code is
+# compiled out, so this cfg is never set.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(ntddi_ge_ntddi_win7)'] }

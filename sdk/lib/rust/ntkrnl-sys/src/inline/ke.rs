@@ -3031,3 +3031,26 @@ pub unsafe fn InterlockedBitTestAndReset(base: *mut i32, bit: i32) -> BOOLEAN {
     let old = atomic.fetch_and(!mask, Ordering::SeqCst);
     if old & mask != 0 { 1 } else { 0 }
 }
+
+// ============================================================================
+// KeSaveFloatingPointState / KeRestoreFloatingPointState (ke.h per arch)
+// ============================================================================
+// x86 imports them from ntoskrnl. amd64 and arm64 define them FORCEINLINE as no-ops that
+// return STATUS_SUCCESS, and arm64 ntoskrnl does not export them at all (kmixer's float
+// resampler was the first Rust caller and failed arm64's link). amd64 does export a
+// KxSaveFloatingPointState under the name, but a C caller never reaches it.
+
+#[cfg(target_arch = "x86")]
+pub use ddk::{KeRestoreFloatingPointState, KeSaveFloatingPointState};
+
+#[inline]
+#[cfg(not(target_arch = "x86"))]
+pub unsafe fn KeSaveFloatingPointState(_FloatSave: ddk::PKFLOATING_SAVE) -> NTSTATUS {
+    0 // STATUS_SUCCESS
+}
+
+#[inline]
+#[cfg(not(target_arch = "x86"))]
+pub unsafe fn KeRestoreFloatingPointState(_FloatSave: ddk::PKFLOATING_SAVE) -> NTSTATUS {
+    0 // STATUS_SUCCESS
+}

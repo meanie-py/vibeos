@@ -10,6 +10,33 @@
 #   flip they take the test's Vista column instead, which still differs from Windows 11 in thread
 #   GenericExecute (+THREAD_RESUME 0x1000) and job (+JOB_OBJECT_IMPERSONATE 0x20); give the test
 #   a Windows 10 column then.
+# 2026-10-16b (x2 byte-identical sweeps, all three arches): FsRtlExpression 258/8 -> 266/0
+#   (FsRtlIsDbcsInExpression broke out of its name loop before taking the match count, so a
+#   trailing `*`/DOS_STAR/DOS_DOT match on the end-of-name pass was dropped); KeDeviceQueue
+#   44/1 -> 45/0 (Type was the literal 7, GateObject; DeviceQueueObject is 20); SeInheritance
+#   704433/14 -> 704447/0 (SeAssignSecurityEx no longer writes its output before the faults the
+#   test provokes; mandatory label ACEs inherit by the ordinary rules); HidPDescription 28/9 ->
+#   33/4 (the description is zeroed before parsing; no ID byte on a report type that is absent;
+#   LEFT: one ReportIDs entry per collection with ReportID = Index, the C's FIXME, and
+#   PreparsedDataLength in our layout, not Windows'); ObTypes 763/19 -> 768/14 is upstream-sync's
+#   test column (32c69eb0b10), not this lane; 7 new tests banked (EtwActivity, EtwProvider,
+#   ExPool2, FeatureConfig, MmMapIoSpaceEx, RtlUtf8, and MmReservedMappingFixed, below).
+#   ZwMapViewOfSection: ROS views honour ZeroBits with no base, refuse a commit larger than the
+#   view and a reservation of a read-only section; ARM3 says INVALID_PARAMETER_9 for a reserve
+#   of a section with no file. LEFT (owed): 211, a reserved view past the end of the file. Do
+#   NOT just drop the size check for it: that let a view outrun the segment, and unmapping it
+#   corrupted the file's cached pages (later reads wrong, BUGCHECK 0x1E on x86).
+#   EXPECTED, re-checked against the win11-amd64 column (Windows passes them by another branch,
+#   not by being right where we are wrong): ExDoubleList, NpfsFileInfo (both pick their
+#   expectation by PRCB_BUILD_DEBUG; we are checked, Windows 11 is free) and MmSection 14 (its
+#   WS03 column; we report 5.2).
+#   i386: HalSystemInfo 88/1 -> 89/0 (the PCI config handler refuses a port outside its
+#   range). ZwMapViewOfSection 128/6 -> 132/2; 181 owed: i386 NtMapViewOfSection refuses ZeroBits
+#   21 as INVALID_PARAMETER_4 where Windows answers NO_MEMORY. MmReservedMapping 187/44 is a TEST BUG kept as an
+#   expected failure: its ReactOS branch expects the PAE MMPTE_LIST (<<32) and this kernel is
+#   non-PAE (<<12); MmReservedMappingFixed (same source, corrected) is 231/0. ExInterlocked
+#   296/297 is the test's own SaveState (its TODO: inline asm around a C call); the export
+#   preserves edi. KeSpinLock 30 is owed: the queued spinlocks are the C's plain-lock HACK.
 # 2026-10-15: RtlRangeList pass 521 -> 520: upstream 09a03ec307d deleted one RtlFindRange check.
 #   ZwAllocateVirtualMemory unchanged (269/2): upstream's StressTesting rewrite keeps 1024 x 5 MB here.
 # 2026-10-12: ZwAllocateVirtualMemory pass 258 -> 269, fail 2 (same assertion, now line 145). Upstream's test sync renumbered it (147->145,
@@ -105,6 +132,9 @@ ExHardError OK pass=30 fail=0 skip=0 exit=0
 ExInterlocked OK pass=970 fail=4 skip=0 exit=0
     assert ExInterlocked.c:296
     assert ExInterlocked.c:297
+EtwActivity OK pass=5 fail=0 skip=0 exit=0
+EtwProvider OK pass=7 fail=0 skip=0 exit=0
+ExPool2 OK pass=42 fail=0 skip=0 exit=0
 ExPools OK pass=19 fail=1 skip=0 exit=0
     assert ExPools.c:222
 ExResource OK pass=879 fail=2 skip=0 exit=0
@@ -132,16 +162,15 @@ Example OK pass=31 fail=15 skip=0 exit=0
     assert Example.c:32
     assert Example.c:33
     assert Example.c:34
+FeatureConfig OK pass=2 fail=0 skip=0 exit=0
 FsRtlDissect OK pass=288 fail=0 skip=0 exit=0
-FsRtlExpression OK pass=258 fail=8 skip=0 exit=0
-    assert FsRtlExpression.c:233
+FsRtlExpression OK pass=266 fail=0 skip=0 exit=0
 FsRtlLegal OK pass=2528 fail=0 skip=0 exit=0
 FsRtlMcb OK pass=36213 fail=0 skip=0 exit=0
 FsRtlRemoveDotsFromPath OK pass=7 fail=0 skip=0 exit=0
 FsRtlTunnel OK pass=108 fail=0 skip=0 exit=0
 HalPortIo OK pass=6 fail=0 skip=0 exit=0
-HalSystemInfo OK pass=88 fail=1 skip=0 exit=0
-    assert HalSystemInfo.c:143
+HalSystemInfo OK pass=89 fail=0 skip=0 exit=0
 IoCreateFile OK pass=106 fail=7 skip=1 exit=0
     assert IoCreateFile.c:124
     assert IoCreateFile.c:187
@@ -162,8 +191,7 @@ IoMdl OK pass=11 fail=0 skip=0 exit=0
 IoVolume OK pass=7 fail=0 skip=0 exit=0
 KdSystemDebugControl OK pass=42 fail=0 skip=0 exit=0
 KeApc OK pass=200 fail=0 skip=0 exit=0
-KeDeviceQueue OK pass=44 fail=1 skip=0 exit=0
-    assert KeDevQueue.c:51
+KeDeviceQueue OK pass=45 fail=0 skip=0 exit=0
 KeDpc OK pass=316 fail=0 skip=0 exit=0
 KeEvent OK pass=42601 fail=0 skip=0 exit=0
 KeFloatPointState OK pass=6 fail=0 skip=0 exit=0
@@ -176,20 +204,22 @@ KeSpinLock OK pass=755 fail=30 skip=0 exit=0
     assert KeSpinLock.c:333
     assert KeSpinLock.c:343
 KeTimer OK pass=54 fail=0 skip=0 exit=0
+MmMapIoSpaceEx OK pass=10 fail=0 skip=0 exit=0
 MmMapLockedPagesSpecifyCache OK pass=16743 fail=0 skip=0 exit=0
 MmMdl OK pass=587 fail=0 skip=0 exit=0
 MmReservedMapping OK pass=187 fail=44 skip=0 exit=0
-    assert MmReservedMapping.c:159
-    assert MmReservedMapping.c:211
-    assert MmReservedMapping.c:223
-    assert MmReservedMapping.c:240
-    assert MmReservedMapping.c:252
-    assert MmReservedMapping.c:282
-    assert MmReservedMapping.c:297
-    assert MmReservedMapping.c:348
-    assert MmReservedMapping.c:359
-    assert MmReservedMapping.c:386
-    assert MmReservedMapping.c:399
+    assert MmReservedMapping.c:172
+    assert MmReservedMapping.c:224
+    assert MmReservedMapping.c:236
+    assert MmReservedMapping.c:253
+    assert MmReservedMapping.c:265
+    assert MmReservedMapping.c:295
+    assert MmReservedMapping.c:310
+    assert MmReservedMapping.c:366
+    assert MmReservedMapping.c:377
+    assert MmReservedMapping.c:404
+    assert MmReservedMapping.c:417
+MmReservedMappingFixed OK pass=231 fail=0 skip=0 exit=0
 MmSection OK pass=353 fail=14 skip=0 exit=0
     assert MmSection.c:371
     assert MmSection.c:380
@@ -236,7 +266,7 @@ ObSecurity OK pass=695 fail=14 skip=0 exit=0
     assert ObSecurity.c:153
 ObSymbolicLink OK pass=154 fail=0 skip=0 exit=0
 ObType OK pass=96 fail=0 skip=0 exit=0
-ObTypes OK pass=763 fail=19 skip=4 exit=0
+ObTypes OK pass=768 fail=14 skip=4 exit=0
     assert ObTypes.cpp:266
     assert ObTypes.cpp:267
     assert ObTypes.cpp:268
@@ -261,12 +291,8 @@ RtlStackKM OK pass=39 fail=1 skip=0 exit=0
     assert RtlStack.c:70
 RtlStrSafeKM OK pass=33 fail=0 skip=0 exit=0
 RtlUnicodeStringKM OK pass=16 fail=0 skip=0 exit=0
-SeInheritance OK pass=704433 fail=14 skip=0 exit=0
-    assert SeInheritance.c:532
-    assert SeInheritance.c:556
-    assert SeInheritance.c:801
-    assert SeInheritance.c:802
-    assert SeInheritance.c:838
+RtlUtf8 OK pass=16 fail=0 skip=0 exit=0
+SeInheritance OK pass=704447 fail=0 skip=0 exit=0
 SeLogonSession OK pass=4 fail=0 skip=0 exit=0
 SeQueryInfoToken OK pass=76 fail=0 skip=0 exit=0
 TcpIpConnect OK pass=27 fail=7 skip=0 exit=0
@@ -284,22 +310,13 @@ ZwCreateSection OK pass=284 fail=3 skip=1 exit=0
     assert ZwCreateSection.c:354
     assert ZwCreateSection.c:378
     assert ZwCreateSection.c:448
-ZwMapViewOfSection OK pass=128 fail=6 skip=1 exit=0
-    assert ZwMapViewOfSection.c:180
+ZwMapViewOfSection OK pass=132 fail=2 skip=1 exit=0
     assert ZwMapViewOfSection.c:181
-    assert ZwMapViewOfSection.c:189
     assert ZwMapViewOfSection.c:211
-    assert ZwMapViewOfSection.c:221
-    assert ZwMapViewOfSection.c:236
 ZwWaitForMultipleObjects OK pass=4 fail=0 skip=0 exit=0
 FileAttributes OK pass=84 fail=0 skip=0 exit=0
 FindFile OK pass=253 fail=0 skip=0 exit=0
-HidPDescription OK pass=28 fail=9 skip=3 exit=0
-    assert HidPDescription.c:145
-    assert HidPDescription.c:146
-    assert HidPDescription.c:147
-    assert HidPDescription.c:148
-    assert HidPDescription.c:168
+HidPDescription OK pass=33 fail=4 skip=3 exit=0
     assert HidPDescription.c:169
     assert HidPDescription.c:189
     assert HidPDescription.c:200
@@ -328,3 +345,4 @@ TcpIpTdi OK pass=31 fail=4 skip=0 exit=0
     assert tdi.c:170
     assert tdi.c:246
 ExPushLock OK pass=1134 fail=0 skip=0 exit=0
+IoDeviceProperty OK pass=653 fail=0 skip=0 exit=0

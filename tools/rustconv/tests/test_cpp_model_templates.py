@@ -229,3 +229,182 @@ def test_returning_this_as_a_secondary_base_is_the_subobject(tmp_path):
     assert "(&(this_)->__base1)" in as_box
     # an implicit-this member of the same base keeps its member path, not a wrapped `this`
     assert "this_->__base1.margin" in next(m for m in panel.methods if m.name == "m").lowered
+
+
+CONVERT_SRC = """
+#include "str.h"
+struct Name { Name(int v) : v(v) {} int v; };
+static int use(const CStringA &s) { return s.s != 0; }
+static int named(const Name &n) { return n.v; }
+struct Cab {
+    char *m_file;
+    int open(char *name) {
+        return use(name) + use("lit") + use(CStringA(name)) + use(m_file) + named(3);
+    }
+};
+int main() { Cab c; c.m_file = 0; return c.open(0); }
+"""
+
+
+def test_an_implicit_converting_constructor_is_written_out(tmp_path):
+    # rapps' fnFileOpen passes a `char *` to `const CStringA &`: with no `CStringA(` in the
+    # text the model cast the pointer instead of constructing the string.
+    if shutil.which("clang++") is None:
+        pytest.skip("no host clang++")
+    (tmp_path / "inc").mkdir()
+    (tmp_path / "inc" / "str.h").write_text(
+        "struct CStringA { CStringA(const char *p) : s(p) {} const char *s; };\n"
+    )
+    d = tmp_path / "mod"
+    d.mkdir()
+    (d / "t.cpp").write_text(CONVERT_SRC)
+    out = subprocess.run(
+        [
+            "clang++",
+            "-fsyntax-only",
+            "-I",
+            str(tmp_path / "inc"),
+            "-Xclang",
+            "-ast-dump=json",
+            str(d / "t.cpp"),
+        ],
+        capture_output=True,
+        check=True,
+    ).stdout
+    ast = json.loads(out)
+    cdp._attach_files(ast)
+    ex = cpp_model._Extractor(d, d)
+    ex.scan_overloads(ast["inner"])
+    ex.walk(ast["inner"])
+    ex.lower_pending()
+    body = next(m for m in ex.model.classes["Cab"].methods if m.name == "open").lowered
+    assert "use(CStringA(name))" in body
+    assert 'use("lit")' in body  # a literal stays as written
+    assert "use(CStringA(name)) + use(CStringA(this_->m_file))" in body  # written: unchanged
+    assert "named(Name__make_0(3))" in body
+
+
+STATIC_SRC = """
+typedef unsigned long DWORD;
+typedef unsigned char BYTE;
+struct DC {
+    static DC *s_dst;
+    static DWORD s_idx;
+    static DWORD s_low;
+    static int s_n;
+    int x;
+    static void init();
+};
+DC *DC::s_dst = 0;
+DWORD DC::s_idx = (DWORD)-1;
+DWORD DC::s_low = (BYTE)-1;
+void DC::init() { if (!DC::s_dst) DC::s_dst = new DC; s_n = 1; s_idx = 0; }
+int main() { DC::init(); return DC::s_n; }
+"""
+
+
+def test_a_static_member_defined_out_of_line_is_its_static_and_keeps_its_value(tmp_path):
+    # cicero's `CUIFBitmapDC *CUIFBitmapDC::s_phdcDst = NULL;`: every use after the
+    # definition refers to the DEFINITION's decl, which was not registered, so the body kept
+    # `CUIFBitmapDC::s_phdcDst`. And msctfime's `DWORD TLS::s_dwTlsIndex = (DWORD)-1;`
+    # shipped as a static of 0.
+    if shutil.which("clang++") is None:
+        pytest.skip("no host clang++")
+    (tmp_path / "t.cpp").write_text(STATIC_SRC)
+    out = subprocess.run(
+        ["clang++", "-fsyntax-only", "-Xclang", "-ast-dump=json", str(tmp_path / "t.cpp")],
+        capture_output=True,
+        check=True,
+    ).stdout
+    ast = json.loads(out)
+    cdp._attach_files(ast)
+    ex = cpp_model._Extractor(tmp_path, tmp_path)
+    ex.scan_overloads(ast["inner"])
+    ex.walk(ast["inner"])
+    ex.lower_pending()
+    init = next(m for m in ex.model.classes["DC"].methods if m.name == "init").lowered
+    assert "if (!DC__s_dst) DC__s_dst = " in init and "DC__s_idx = 0" in init
+    assert not any(g.name.startswith("s_") for g in ex.model.globals)  # no stray globals
+
+    from rustconv import cpp_app
+
+    classes = cpp_app.render_classes(ex.model)
+    assert "pub static mut DC__s_dst: *mut DC = unsafe { core::mem::zeroed() };" in classes
+    assert "DC__s_idx: DWORD = (-1i64) as DWORD;" in classes
+    assert "DC__s_low: DWORD = ((-1i64) as BYTE) as DWORD;" in classes
+
+
+def test_a_static_member_initializer_it_cannot_render_is_refused():
+    from rustconv import cpp_app
+    from rustconv.cpp_model import ClassModel, Field, ModuleModel
+
+    cls = ClassModel("K", "K", "class", "k.h")
+    f = Field("s_p", "LPCWSTR", "public", True, 'L"x"')
+    with pytest.raises(cpp_app.CppAppError, match="K::s_p"):
+        cpp_app._static_member_init(cls, f, "LPCWSTR", ModuleModel())
+
+
+TEMPLATE_INIT_SRC = """
+struct ArrBase { ArrBase(unsigned n) : n(n) {} unsigned n; };
+template <typename T_ITEM> struct Arr : ArrBase { Arr() : ArrBase(sizeof(T_ITEM)) {} };
+template <typename T_DATA> struct Lock { Lock(int h) : h(h) {} int h; };
+template <typename T_DATA> struct CLock : Lock<T_DATA> { CLock(int h) : Lock<T_DATA>(h) {} };
+struct Item { int a, b; };
+int main() { Arr<Item> a; CLock<Item> l(3); return (int)a.n + l.h; }
+"""
+
+
+def test_a_template_instance_constructs_its_bases_with_its_own_arguments(tmp_path):
+    # cicero's CicArray<T_ITEM> (`: CicArrayBase(sizeof(T_ITEM))`) and CicIMCCLock<T_DATA>
+    # (`: CIC_IMCC_LOCK<T_DATA>(hIMCC)`): the instance's init list was the pattern's text.
+    if shutil.which("clang++") is None:
+        pytest.skip("no host clang++")
+    (tmp_path / "t.cpp").write_text(TEMPLATE_INIT_SRC)
+    out = subprocess.run(
+        ["clang++", "-fsyntax-only", "-Xclang", "-ast-dump=json", str(tmp_path / "t.cpp")],
+        capture_output=True,
+        check=True,
+    ).stdout
+    ast = json.loads(out)
+    cdp._attach_files(ast)
+    ex = cpp_model._Extractor(tmp_path, tmp_path)
+    ex.scan_overloads(ast["inner"])
+    ex.walk(ast["inner"])
+    ex.lower_pending()
+    ex.apply_instances()
+    inits = {
+        c.name: dict(m.lowered_inits)
+        for c in ex.model.classes.values()
+        for m in c.methods
+        if m.kind == "ctor" and c.template in ("Arr", "CLock")
+    }
+    (arr,) = [v for k, v in inits.items() if k.startswith("Arr")]
+    (lock,) = [v for k, v in inits.items() if k.startswith("CLock")]
+    assert list(arr.values()) == ["(sizeof(Item))"]
+    assert list(lock.values()) == ["(h)"]
+
+
+def test_a_registered_template_is_left_to_its_hand_written_generic(tmp_path):
+    # cicero-rust's `CicArray<T>` is the one struct every CTF crate builds against.
+    if shutil.which("clang++") is None:
+        pytest.skip("no host clang++")
+    (tmp_path / "t.cpp").write_text(
+        "struct Base { Base(unsigned n) : n(n) {} unsigned n; };\n"
+        "template <typename T_ITEM> struct CicArray : Base {\n"
+        "    CicArray() : Base(sizeof(T_ITEM)) {}\n"
+        "    T_ITEM *at(unsigned i) { return 0; }\n"
+        "};\n"
+        "struct Obj { int x; };\n"
+        "int main() { CicArray<Obj> a; return a.at(0) != 0; }\n"
+    )
+    out = subprocess.run(
+        ["clang++", "-fsyntax-only", "-Xclang", "-ast-dump=json", str(tmp_path / "t.cpp")],
+        capture_output=True,
+        check=True,
+    ).stdout
+    ast = json.loads(out)
+    cdp._attach_files(ast)
+    ex = cpp_model._Extractor(tmp_path, tmp_path)
+    ex.scan_overloads(ast["inner"])
+    ex.walk(ast["inner"])
+    assert not [c for c in ex.model.classes.values() if c.template == "CicArray"]

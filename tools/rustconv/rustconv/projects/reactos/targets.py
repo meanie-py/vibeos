@@ -1397,6 +1397,29 @@ TARGETS = {
     ),
 }
 
+# The plain-C WDM audio stack: kernel modules whose crate is just `<name>-rust` on the bindgen
+# island, like wdfldr. mmixer is a static lib linked into both wdmaud.sys and the user-mode
+# wdmaud.drv; it includes wdm.h, so it ports as kernel code with a user feature for the DLL.
+AUDIO_KERNEL_DIRS = {
+    "mmixer": CSQ_DIR.parent / "sound" / "mmixer",
+    "wdmaud": REACTOS_ROOT / "drivers/wdm/audio/legacy/wdmaud",
+    "kmixer": REACTOS_ROOT / "drivers/wdm/audio/filters/kmixer",
+}
+for _name, _dir in AUDIO_KERNEL_DIRS.items():
+    TARGETS[_name] = Target(
+        name=_name,
+        source_dir=_dir,
+        output_crate=RUST_DIR / f"{_name}-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    )
+
 
 def detect_target(
     c_path: Path, output_crate: str | None = None, sys_crate: str | None = None
@@ -1410,7 +1433,7 @@ def detect_target(
     explicit --target branch read it."""
     p = c_path.resolve()
     posix = p.as_posix()
-    for name in ("sysaudio", "portcls"):
+    for name in ("sysaudio", "portcls", *AUDIO_KERNEL_DIRS):
         if p == TARGETS[name].source_dir or TARGETS[name].source_dir in p.parents:
             return TARGETS[name]
     if "/drivers/base/kdrosdbg" in posix:

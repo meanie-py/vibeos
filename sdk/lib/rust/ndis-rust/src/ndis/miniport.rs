@@ -572,9 +572,7 @@ pub unsafe extern "system" fn MiniResetComplete(MiniportAdapterHandle: NDIS_HAND
 
     while CurrentEntry != core::ptr::addr_of_mut!((*Adapter).ProtocolListHead) {
         AdapterBinding = ((CurrentEntry as ULONG_PTR).wrapping_sub(
-            core::ptr::addr_of_mut!(
-                (*core::ptr::null_mut::<ADAPTER_BINDING>()).AdapterListEntry
-            ) as ULONG_PTR,
+            core::mem::offset_of!(ADAPTER_BINDING, AdapterListEntry) as ULONG_PTR,
         )) as PADAPTER_BINDING;
 
         (*(*AdapterBinding).ProtocolBinding)
@@ -2652,9 +2650,7 @@ pub unsafe extern "system" fn NdisIPnPStartDevice(
     CurrentEntry = ProtocolListHead.Flink as PLIST_ENTRY;
     while CurrentEntry != core::ptr::addr_of_mut!(ProtocolListHead) {
         ProtocolBinding = (CurrentEntry as ULONG_PTR).wrapping_sub(
-            core::ptr::addr_of_mut!(
-                (*core::ptr::null_mut::<PROTOCOL_BINDING>()).ListEntry
-            ) as ULONG_PTR,
+            core::mem::offset_of!(PROTOCOL_BINDING, ListEntry) as ULONG_PTR,
         ) as *mut PROTOCOL_BINDING as PPROTOCOL_BINDING;
 
         ndisBindMiniportsToProtocol(

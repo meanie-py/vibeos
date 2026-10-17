@@ -342,3 +342,13 @@ def test_an_exported_global_folds_through_its_no_mangle():
     out = anchor.fold_static_initializers(text, blocks)
     assert out[0].startswith("#[no_mangle]\npub static mut NCMDS")
     assert "wrapping_div" in out[0] and "= 0;" not in out[0]
+
+
+def test_a_known_c2rust_panic_names_its_c_cause():
+    """The prototype-arity assertion names a line of c2rust; the hint names the C to fix."""
+    panic = (
+        "build-amd64: exit 101: thread 'main' panicked at .../translator/mod.rs:3338:17: "
+        "assertion failed: arg_tys.len() == exprs.len()"
+    )
+    assert "unprototyped K&R declaration" in anchor.known_panic_causes([panic])
+    assert anchor.known_panic_causes(["build-amd64: exit 1: some other failure"]) == ""

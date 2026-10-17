@@ -19,8 +19,6 @@ use ntkrnl_sys::ddk::{PopEntryList, PIRP};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::cddata::{CdData};
 use crate::ddk_shims::{FsRtlFreeFileLock, FsRtlUninitializeOplock};
-// resolve_imports.py: explicit kernel/private-type imports
-use crate::ddk_shims::{ASSERT_EXCLUSIVE_CDDATA, ASSERT_EXCLUSIVE_VCB};
 use crate::glue::{CdNonPagedPool};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CDROM_READ_TOC_EX};
@@ -872,8 +870,8 @@ pub unsafe extern "C" fn CdDeleteVcb(
 ) {
     unsafe {
         PAGED_CODE!();
-        ASSERT_EXCLUSIVE_CDDATA();
-        ASSERT_EXCLUSIVE_VCB(Vcb);
+        ASSERT_EXCLUSIVE_CDDATA!();
+        ASSERT_EXCLUSIVE_VCB!(Vcb);
         UNREFERENCED_PARAMETER!(IrpContext);
 
         CdFreePool(core::ptr::addr_of_mut!((*Vcb).SwapVpb) as *mut *mut core::ffi::c_void);

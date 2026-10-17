@@ -134,6 +134,28 @@ class Control:
 
 # ── fixtures, each seeded from a real incident ───────────────────────────────
 
+# scan_override_self_dispatch. Seeded from mspaint 2026-10-16: SmoothDrawTool::OnEndDraw's
+# `ToolBase::OnEndDraw(bCancel)` dispatched back into itself. GOOD: the base's own body, and
+# the same virtual called on ANOTHER object (a member), which is an ordinary virtual call.
+_OVERRIDE_SELF_DISPATCH_BAD = """
+impl SmoothDrawTool {
+    pub unsafe fn OnEndDraw__body(&mut self, bCancel: BOOL) {
+        let this_: *mut Self = self;
+        (*this_).m_bDrawing = 0;
+        (*this_).__base0.OnEndDraw(bCancel);
+    }
+}
+"""
+_OVERRIDE_SELF_DISPATCH_GOOD = """
+impl SmoothDrawTool {
+    pub unsafe fn OnEndDraw__body(&mut self, bCancel: BOOL) {
+        let this_: *mut Self = self;
+        (*this_).__base0.OnEndDraw__body(bCancel);
+        (*(*this_).m_pChild).__base0.OnEndDraw(bCancel);
+    }
+}
+"""
+
 # scan_bugcheck_stubs. Seeded from fastfat 2026-07-26: three boots, three stubs
 # (FatGenerateFileIdFromFcb -> FatOpenVolume -> ...), each a full build+boot to
 # discover something the tree already knew. The GOOD case pins the two ways this
@@ -495,6 +517,47 @@ _DEAD_CFG_GOOD = """\
 pub unsafe extern "fastcall" fn RtlPrefetchMemoryNonTemporal(_Source: PVOID, _Length: SIZE_T) {}
 #[cfg(all(target_arch = "x86_64", target_os = "windows"))]
 pub fn allowed() {}
+"""
+
+# scan_version_vs_c. fastfat lockctrl.c gates the "only when it interferes with oplocks"
+# filter on NTDDI_WIN8; the WS03 build checks the oplock for every lock request and never
+# asks FsRtlAreThereWaitingFileLocks. The Rust asked it eagerly, ahead of the cfg! test.
+_VERSION_BAD = """\
+pub unsafe extern "C" fn FatCommonLockControl(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS {
+    let has_waiting_locks = !is_lock && FsRtlAreThereWaitingFileLocks(lock) != 0;
+    if !cfg!(ntddi_ge_ntddi_win8) || is_lock_within_size || has_waiting_locks {
+        FsRtlCheckOplock(oplock, Irp);
+    }
+    0
+}
+"""
+_VERSION_GOOD = """\
+pub unsafe extern "C" fn FatCommonLockControl(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS {
+    if !cfg!(ntddi_ge_ntddi_win8)
+        || is_lock_within_size
+        || (!is_lock && FsRtlAreThereWaitingFileLocks(lock) != 0)
+    {
+        FsRtlCheckOplock(oplock, Irp);
+    }
+    0
+}
+"""
+
+# null_offset_to_offset_of --lint. Seeded from eventlog file.rs and Wine's LIST_ENTRY: a
+# field projection through null is UB even under &raw / addr_of!, offset_of! is the same
+# number defined.
+_NULL_PLACE_BAD = """\
+unsafe fn f(e: PLIST_ENTRY) -> PLOGFILE {
+    let off = &raw mut (*::core::ptr::null_mut::<LOGFILE>()).ListEntry as ULONG_PTR;
+    (e as ULONG_PTR).wrapping_sub(off) as PLOGFILE
+}
+"""
+_NULL_PLACE_GOOD = """\
+unsafe fn f(e: PLIST_ENTRY) -> PLOGFILE {
+    // was &raw mut (*core::ptr::null_mut::<LOGFILE>()).ListEntry
+    let off = core::mem::offset_of!(LOGFILE, ListEntry) as ULONG_PTR;
+    (e as ULONG_PTR).wrapping_sub(off) as PLOGFILE
+}
 """
 
 _BITWISE_NOT_BAD = """\
@@ -2857,6 +2920,20 @@ CONTROLS: list[Control] = [
         good=_EXPORT_SHADOW_GOOD,
     ),
     Control(
+        name="null_offset_to_offset_of",
+        script="tools/null_offset_to_offset_of.py",
+        argv=["--lint"],
+        bad={"rust/eventlog-rust/src/file.rs": _NULL_PLACE_BAD},
+        good={"rust/eventlog-rust/src/file.rs": _NULL_PLACE_GOOD},
+    ),
+    Control(
+        name="scan_version_vs_c",
+        script="tools/scan_version_vs_c.py",
+        argv=["--lint"],
+        bad={"rust/fastfat-rust/src/lockctrl.rs": _VERSION_BAD},
+        good={"rust/fastfat-rust/src/lockctrl.rs": _VERSION_GOOD},
+    ),
+    Control(
         name="scan_cfg_vs_c",
         script="tools/scan_cfg_vs_c.py",
         argv=["--lint"],
@@ -2877,6 +2954,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"bad.rs": _BITWISE_NOT_BAD},
         good={"good.rs": _BITWISE_NOT_GOOD},
+    ),
+    Control(
+        name="scan_override_self_dispatch",
+        script="tools/scan_override_self_dispatch.py",
+        argv=["--lint"],
+        bad={"bad.rs": _OVERRIDE_SELF_DISPATCH_BAD},
+        good={"good.rs": _OVERRIDE_SELF_DISPATCH_GOOD},
     ),
     Control(
         name="scan_info_class_literals",
@@ -3136,7 +3220,8 @@ UNCOVERED: dict[str, str] = {
         "its oracle is the C module scan_invented_constants.c_dirs_for() finds for a crate in "
         "the real tree, so a fixture directory has no crate to map. The decision is "
         "scan_files(rs_files, c_dirs, names), driven directly in "
-        "tools/test_scan_hresult_literals.py with an explicit C dir: it must flag ole32's "
+        "tools/vibeos-lint/src/rules/hresult_literals.rs with an explicit C fixture: it must flag "
+        "ole32's "
         "STG_E_TOOMANYOPENFILES-for-READFAULT shape and must not flag a value the C function "
         "returns, a named const, a nolint line, an extern declaration, or an NTSTATUS function."
     ),
@@ -3326,6 +3411,16 @@ UNCOVERED: dict[str, str] = {
 
 
 def _run(ctl: Control, root: Path) -> tuple[int, str]:
+    # Ported controls exercise the shipping Rust plugin, including its shared
+    # corpus and cross-file collection, rather than a retained Python oracle.
+    from tests.qemu.cli import rustlints
+
+    if ctl.name in rustlints.PORTED:
+        runner = rustlints.ensure(REPO)
+        cmd = [str(runner), "--root", str(REPO), "--path", str(root), "--rules", ctl.name]
+        p = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True)
+        result = rustlints.split_output(p, [ctl.name])[ctl.name]
+        return result.returncode, result.stdout + result.stderr
     if ctl.pass_files:
         targets = [str(p) for p in sorted(root.rglob(f"*{ctl.file_suffix}"))]
         assert targets, f"{ctl.name}: fixture produced no {ctl.file_suffix} files"
@@ -3663,6 +3758,47 @@ def test_cc_mismatch_counts_a_sys_crate_import_as_a_declaration(tmp_path: Path, 
     split = [h for h in hits if "DECL_CC_SPLIT" in h]
     assert any("pnp.rs" in h for h in split) and any("flush.rs" in h for h in split), hits
     assert not cc.scan_crate(str(lib / "clean-rust/src"))
+
+
+def test_cc_mismatch_a_call_into_a_sys_crates_rust_inline_is_not_its_extern(
+    tmp_path: Path, monkeypatch
+):
+    """The A' audio preludes wrap ke.h's FORCEINLINE as `ntkrnl_sys::inline::ke::
+    KeInitializeSpinLock(..)`, a Rust fn with a body. The same crate's bindgen file also
+    declares an extern "C" KeInitializeSpinLock, and the island declares it "system". The
+    qualified call must resolve to the inline, not the extern: no split. The same call to a
+    module that only re-exports the extern still counts."""
+    cc = _cc_mod()
+    lib = _materialize(
+        tmp_path,
+        {
+            "demo-sys/src/bindgen_i386.rs": (
+                'extern "C" {\n    pub fn KeInitializeSpinLock(SpinLock: *mut usize);\n}\n'
+            ),
+            "demo-sys/src/inline/ke.rs": (
+                "pub unsafe fn KeInitializeSpinLock(SpinLock: *mut usize) {\n"
+                "    *SpinLock = 0;\n}\n"
+            ),
+            "audio-rust/src/prelude.rs": (
+                "pub unsafe fn KeInitializeSpinLock(l: *mut usize) {\n"
+                "    demo_sys::inline::ke::KeInitializeSpinLock(l)\n}\n"
+            ),
+            "audio-rust/src/types_i386.rs": (
+                'extern "system" {\n    pub fn KeInitializeSpinLock(SpinLock: *mut usize);\n}\n'
+            ),
+            "split-rust/src/a.rs": (
+                "fn f(l: *mut usize) { demo_sys::ddk::KeInitializeSpinLock(l) }\n"
+            ),
+            "split-rust/src/types_i386.rs": (
+                'extern "system" {\n    pub fn KeInitializeSpinLock(SpinLock: *mut usize);\n}\n'
+            ),
+        },
+    )
+    monkeypatch.setattr(cc, "BASE", str(lib))
+    monkeypatch.setattr(cc, "_SYS_CACHE", {})
+    assert not [h for h in cc.scan_crate(str(lib / "audio-rust/src")) if "DECL_CC_SPLIT" in h]
+    split = [h for h in cc.scan_crate(str(lib / "split-rust/src")) if "DECL_CC_SPLIT" in h]
+    assert split, "a call through a module with no Rust body must still count as the extern"
 
 
 def test_cc_mismatch_ignores_a_commented_out_declaration(tmp_path: Path):

@@ -1100,7 +1100,27 @@ class Store:
             report["unique_inodes"] = len(seen)
         return report
 
-    def gc(self, *, apply: bool = False, grace_seconds: float = 3600) -> dict:
+    def gc(
+        self,
+        *,
+        apply: bool = False,
+        grace_seconds: float = 3600,
+        ref_alive: Callable[[dict], bool] | None = None,
+    ) -> dict:
+        """Collect what no live lease, durable ref or young action roots.
+
+        `ref_alive` lets the caller declare a durable ref DEAD: its consumer is gone (the
+        lane's worktree was removed, or the Cargo output directory it was bound for no
+        longer exists). The store cannot know that itself, and without it a ref outlives
+        its consumer forever: on 2026-10-16, 4,726 of 26,588 refs belonged to a worktree
+        removed two days earlier, and 2,971 more to build-script directories cargo had
+        replaced. A dead ref is dropped only once it is older than the grace period.
+
+        Blobs are hashed only when they are about to be deleted. Every KEPT blob is
+        re-verified where it is consumed (`_verify_tree_locked` on bind and restore), and
+        hashing all of them here held the GC lock for 3.5 minutes over 8.8 G, stalling
+        every lane's binds for that long.
+        """
         if not math.isfinite(grace_seconds) or grace_seconds < 0:
             raise StoreError("GC grace must be finite and nonnegative")
         now = time.time()
@@ -1110,6 +1130,7 @@ class Store:
             "blobs": [],
             "staging": [],
             "stale_leases": [],
+            "dead_refs": [],
             "protected_actions": [],
             "lease_anomalies": [],
         }
@@ -1130,17 +1151,28 @@ class Store:
                         )
                 else:
                     report["stale_leases"].append(str(path))
-            for path in sorted((self.base / "refs").glob("*.json")):
-                reference = _json(path)
-                self._validate_ref(path, reference)
-                roots.add(reference["action_key"])
-                self._manifest_locked(reference["action_key"])  # durable missing data is corruption
             manifests = {}
             for path in sorted((self.base / "actions").glob("*.json")):
                 key = _key(path.stem)
-                manifests[key] = self._manifest_locked(key)
+                manifests[key] = self._manifest_locked(key, verify_blobs=False)
                 if now - path.stat().st_mtime < grace_seconds:
                     roots.add(key)
+            for path in sorted((self.base / "refs").glob("*.json")):
+                reference = _json(path)
+                self._validate_ref(path, reference)
+                if (
+                    ref_alive is not None
+                    and now - path.stat().st_mtime >= grace_seconds
+                    and not ref_alive(reference)
+                ):
+                    report["dead_refs"].append(str(path))
+                    continue
+                # Durable missing data is corruption; existence is checked below with the
+                # rest of the protected set, content where it is consumed. Every indexed
+                # action was read just above; this only catches a ref to a missing one.
+                if reference["action_key"] not in manifests:
+                    self._manifest_locked(reference["action_key"], verify_blobs=False)
+                roots.add(reference["action_key"])
             for manifest in manifests.values():
                 if any(
                     dependency not in manifests for dependency in manifest["dependency_actions"]
@@ -1162,6 +1194,10 @@ class Store:
             for key in roots:
                 visit(key)
             report["protected_actions"] = sorted(protected)
+            for key in protected:
+                for output in manifests.get(key, {"outputs": []})["outputs"]:
+                    if not _exists(self._blob(output["sha256"])):
+                        raise CorruptStore(f"protected action {key} is missing a blob")
             keep_blobs = {
                 output["sha256"]
                 for key in protected
@@ -1177,11 +1213,12 @@ class Store:
                 for path in sorted(prefix.iterdir()):
                     if path != self._blob(path.name):
                         raise CorruptStore(f"invalid blob path: {path}")
+                    if path.name in keep_blobs or now - path.stat().st_mtime < grace_seconds:
+                        continue
                     digest, _size = _digest_file(path)
                     if digest != path.name:
                         raise CorruptStore(f"orphan/indexed blob digest mismatch: {path}")
-                    if path.name not in keep_blobs and now - path.stat().st_mtime >= grace_seconds:
-                        report["blobs"].append(str(path))
+                    report["blobs"].append(str(path))
             for stage in sorted((self.base / "staging").iterdir()):
                 if not stat.S_ISDIR(stage.lstat().st_mode):
                     raise CorruptStore(f"non-directory staging object: {stage}")
@@ -1198,6 +1235,12 @@ class Store:
                 if now - stage.stat().st_mtime >= grace_seconds:
                     report["staging"].append(str(stage))
             if apply:
+                # Dead refs first: a crash after this leaves only unrooted actions, which
+                # the next run collects.
+                for name in report["dead_refs"]:
+                    Path(name).unlink(missing_ok=True)
+                if report["dead_refs"]:
+                    _fsync_dir(self.base / "refs")
                 for name in report["actions"]:
                     Path(name).unlink()
                 # Make index removals durable BEFORE unlinking their blobs.

@@ -7,7 +7,7 @@ import shutil
 import subprocess
 
 import pytest
-from artifact_inputs import discover, explain
+from artifact_inputs import discover, explain, unchanged
 
 CONTEXT = {
     "target": {"triple": "x86_64-unknown-linux-gnu", "bytes": None},
@@ -371,3 +371,28 @@ def test_a_manifest_dir_data_include_outside_the_package_is_keyed(fixture):
 
 def test_bodies_without_a_data_include_keep_their_key_shape(fixture):
     assert "data_inputs" not in project(fixture)["descriptor"]
+
+
+def test_unchanged_is_true_until_any_input_moves(fixture):
+    """Request revalidation's fast path: equal stamps mean equal inputs; any edit, added
+    or removed file, or touch of a manifest the discovery read makes it re-discover."""
+    baseline = project(fixture)
+    assert unchanged(baseline)
+    for edit in (
+        lambda: write(fixture, "dep/src/lib.rs", "pub fn value() -> u32 { 2 }\n"),
+        lambda: write(fixture, "dep/src/new.rs", "// added\n"),
+        lambda: (fixture / "body/src/lib.rs").unlink(),
+        lambda: os.utime(fixture / "Cargo.lock"),
+    ):
+        current = project(fixture) if (fixture / "body/src/lib.rs").exists() else None
+        if current is None:
+            write(fixture, "body/src/lib.rs", "pub fn value() -> u32 { 1 }\n")
+            current = project(fixture)
+        assert unchanged(current)
+        edit()
+        assert not unchanged(current)
+
+
+def test_unchanged_never_vouches_for_an_unstamped_or_ineligible_discovery():
+    assert not unchanged({"eligible": True, "provenance": {}})
+    assert not unchanged({"eligible": False, "provenance": {"stamps": {"/": [0]}}})

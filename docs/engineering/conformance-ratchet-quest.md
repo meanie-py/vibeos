@@ -24,22 +24,12 @@ Rust-translated subsystem is a **pre-packaged mistranslation repro** with a name
 an assertion message — no crash forensics needed. And it executes translated code the
 boot path never touches (see `tools/coverage/` — the never-executed-rust registry).
 
-## Resume here (2026-10-12)
+## Resume here (2026-10-16)
 
-The survey below is history. The current state, and the ordered queue of owed work, is the
-**progress-log entry** "2026-10-12 — hibernation handoff". Re-derive every number in it
-from `tools/conformance-baseline/<arch>/kmtest.txt` and a fresh sweep before trusting it.
-
-Read the two research-lane entries after it before taking its queue. They reorder it.
-Windows 11 now grades these suites (`tools/conformance-baseline/win11-amd64/kmtest.txt`),
-and it says:
-- RtlStack/RtlStackKM (item 1) fail identically on Windows, so they are not a stack-walker
-  defect.
-- The rows that are clean on Windows but fail in the guest are the real queue.
-- ExDoubleList and NpfsFileInfo, both filed as expected, pass on Windows x64 and want a
-  second look.
-- Four new kmtests (EtwActivity, EtwProvider, ExPool2, FeatureConfig) are owed a
-  two-sweep banking.
+The survey below is history. The current state and the ordered owed queue are the LAST
+progress-log entry, "2026-10-16 — the Windows 11 column's queue". Re-derive every number in
+it from `tools/conformance-baseline/<arch>/kmtest.txt` and a fresh sweep before trusting it.
+Windows 11's own results for these suites are `tools/conformance-baseline/win11-amd64/kmtest.txt`.
 
 ## Survey findings (2026-07-10 — verified, start from here)
 
@@ -2030,3 +2020,47 @@ has been the only face since, except one 720 at 20:02. It rejected native-batch@
 kernel changes, so it is not them. Ledger rows: `~/vibeos-flake-farm/conformance.jsonl`,
 19:42-20:34. If something since 19:40 should NOT have cost one 32 MB mapping, that is worth a
 look; the floor change only stops it bouncing innocent batches.
+
+### 2026-10-16 — the Windows 11 column's queue
+
+Worked the rows that are clean on Windows 11 but failed in the guest, on all three arches.
+Banked from two byte-identical sweeps per arch; each baseline's `2026-10-16b` note has the
+per-row before/after.
+
+**Fixed:** FsRtlExpression 8 (DBCS matcher broke out before counting the end-of-name pass),
+KeDeviceQueue 1 plus two more invented object Type literals found by grepping for the class
+(Profile 24 -> ProfileObject 23, Controller 3 -> IO_TYPE_CONTROLLER 2), SeInheritance 14,
+HidPDescription 9 -> 4, HalSystemInfo:143, arm64 IoInterrupt 2, ZwMapViewOfSection 6 -> 1
+(2 on i386). MmFindGap tested the wrong search result (TableEmptyTree for TableFoundNode).
+Seven new tests banked, including **MmReservedMappingFixed**: the first use of the "duplicate
+the test" rule. Its original stays as a commented expected failure (a PAE-only expectation on
+a non-PAE kernel).
+
+**Re-checked, still expected:** ExDoubleList, NpfsFileInfo (PRCB_BUILD_DEBUG: we are checked,
+Windows 11 free), MmSection 14 (the test's WS03 column), amd64 RtlCaptureContextUM 10 (TCG's
+fxsave), i386 ExInterlocked 296/297 (the test's own SaveState TODO; the export preserves edi).
+RtlStack/RtlStackKM fail identically on Windows.
+
+**Owed, in order:**
+1. ZwMapViewOfSection:211, a reserved view past the end of the file. Needs real reservation
+   in the ROS segment code. Simply dropping the size check let a view outrun the segment, and
+   unmapping it corrupted the file's cached pages (wrong data, then BUGCHECK 0x1E on x86).
+2. i386 KeSpinLock 30: every arch's queued spinlocks are the C's plain-lock HACK; only i386's
+   test checks. A real MCS lock is boot-risky if anything takes one lock both ways.
+3. HidPDescription 4: a ReportIDs entry per report ID (hidclass routes on it, so test against
+   a HID device), and PreparsedDataLength in Windows' layout.
+4. arm64 RtlMemory 3: NOT memcpy (the export is overlap-safe; disassembled). Each failure is
+   the first check after a `_SEH2_TRY { (NULL, NULL, 0) }` block.
+5. i386 ZwMapViewOfSection:181 and MmReservedMapping as before; SMP baselines; the scanner
+   item from the 2026-10-12 queue.
+
+**When the research lane flips the reported version to 10.0**, 28 kmtests change columns at
+once: MmSection and ObTypes' WS03 rows should clear, KeSpinLock's i386 checks vanish (the
+queued-lock gap does not), and some 64-bit rows newly fail (ZwMapViewOfSection ZeroBits 1/5
+want INVALID_PARAMETER_4 from Win8). Sweep their branch before it lands.
+
+**Tooling:** `conformance --no-build` now refuses a build dir configured without the kmtest
+corpus. Pruning recreates build dirs, a fresh configure defaults it OFF, and the sweep then
+only failed minutes into the boot. Mistakes: I edited source during my own builds twice more
+(stopped and rebuilt both times), and first guessed RtlMemory was inlined memcpy without
+looking at the disassembly.

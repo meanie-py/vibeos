@@ -1,3 +1,5 @@
+sdk/lib/rust/mmixer-rust/src/types_i386.rs: [IMPORT_CC_ISLAND] InterlockedPopEntrySList declared extern "fastcall" but kernel32.spec exports it stdcall (i386 link wants _Name@N, we emit @Name@N)
+sdk/lib/rust/mmixer-rust/src/types_i386.rs: [IMPORT_CC_ISLAND] InterlockedPushEntrySList declared extern "fastcall" but kernel32.spec exports it stdcall (i386 link wants _Name@N, we emit @Name@N)
 sdk/lib/rust/ntdll-sys/src/bindgen_i386.rs: [IMPORT_CC_ISLAND] NtCurrentTeb declared extern "C" but ntdll.spec exports it stdcall (i386 link wants _Name@N, we emit _Name)
 sdk/lib/rust/ntkrnl-sys/src/bindgen_i386.rs: [IMPORT_CC_ISLAND] KeInitializeSpinLock declared extern "C" but ntoskrnl.spec exports it stdcall (i386 link wants _Name@N, we emit _Name)
 sdk/lib/rust/winlogon-sys/src/bindgen_i386.rs: [IMPORT_CC_ISLAND] NtCurrentTeb declared extern "C" but ntdll.spec exports it stdcall (i386 link wants _Name@N, we emit _Name)

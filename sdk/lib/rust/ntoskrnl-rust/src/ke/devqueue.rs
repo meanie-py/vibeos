@@ -23,7 +23,8 @@ unsafe fn dq_busy(dq: PKDEVICE_QUEUE) -> *mut u8 {
 
 #[no_mangle]
 pub unsafe extern "system" fn KeInitializeDeviceQueue(DeviceQueue: PKDEVICE_QUEUE) {
-    (*DeviceQueue).Type = 7i16;
+    // DeviceQueueObject is 20; the old literal 7 was GateObject (KeDevQueue.c:51).
+    (*DeviceQueue).Type = ntkrnl_sys::ddk::_KOBJECTS_DeviceQueueObject as i16;
     (*DeviceQueue).Size = core::mem::size_of::<KDEVICE_QUEUE>() as i16;
 
     InitializeListHead(core::ptr::addr_of_mut!((*DeviceQueue).DeviceListHead));

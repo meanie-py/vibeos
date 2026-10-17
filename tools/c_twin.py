@@ -18,6 +18,7 @@ Rust crate, and a caller decides whether ANY or the BEST twin counts as evidence
 
 from __future__ import annotations
 
+import bisect
 import hashlib
 import json
 import re
@@ -65,6 +66,18 @@ def match_brace(text: str, open_at: int) -> int:
     return -1
 
 
+class _Lines:
+    """1-based line of an offset, by bisecting the newline offsets once per text. A
+    `text.count("\\n", 0, at)` per function re-scans from the top every time, which is
+    quadratic: 130 s of scan_version_vs_c's 218 s on the tree, 2026-10-16."""
+
+    def __init__(self, text: str):
+        self._nl = [i for i, c in enumerate(text) if c == "\n"]
+
+    def line(self, at: int) -> int:
+        return bisect.bisect_left(self._nl, at) + 1
+
+
 @dataclass(frozen=True)
 class Func:
     name: str
@@ -82,6 +95,7 @@ _RS_FN = re.compile(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:<[^>{]*>)?\s*\(")
 def rust_functions(text: str, path: Path) -> list[Func]:
     """Every `fn` with a body in a Rust file. `text` must already be blanked."""
     out = []
+    lines = _Lines(text)
     for m in _RS_FN.finditer(text):
         close = _match_paren(text, m.end() - 1)
         if close < 0:
@@ -97,7 +111,7 @@ def rust_functions(text: str, path: Path) -> list[Func]:
             Func(
                 name=m.group(1),
                 path=path,
-                line=text.count("\n", 0, m.start()) + 1,
+                line=lines.line(m.start()),
                 body=text[brace:end],
                 body_start=brace,
                 params=text[m.end() : close],
@@ -158,6 +172,7 @@ _C_KEYWORDS = {"if", "while", "for", "switch", "return", "sizeof", "do", "else",
 def c_functions(text: str, path: Path, names: set[str]) -> list[Func]:
     """Definitions of any of `names` in one C file. `text` must already be blanked."""
     out = []
+    lines = _Lines(text)
     pat = re.compile(r"\b(" + "|".join(re.escape(n) for n in sorted(names)) + r")\s*\(")
     for m in pat.finditer(text):
         name = m.group(1)
@@ -182,7 +197,7 @@ def c_functions(text: str, path: Path, names: set[str]) -> list[Func]:
             Func(
                 name=name,
                 path=path,
-                line=text.count("\n", 0, m.start()) + 1,
+                line=lines.line(m.start()),
                 body=text[j:end],
                 body_start=j,
                 params=text[m.end() : close],

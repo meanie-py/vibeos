@@ -1,0 +1,25 @@
+# mmixer-rust — see src/lib.rs for the module map.
+[package]
+name = "mmixer-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+
+[lib]
+name = "mmixer_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+conutils-h = { path = "../conutils-h" }
+strsafe-rust = { path = "../strsafe-rust" }
+panic-common = { path = "../panic-common" }
+ntkrnl-sys = { path = "../ntkrnl-sys" }
+win32macros-rust = { path = "../win32macros-rust" }
+
+[features]
+# The panic personality: wdmaud.sys links the default (through the mmixer target);
+# wdmaud.drv builds `--no-default-features --features user` (rust_staticlib_variant there).
+default = ["kernel"]
+kernel = ["panic-common/kernel"]
+user = ["panic-common/user"]

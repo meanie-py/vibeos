@@ -17,10 +17,8 @@ extern "C" {
 }
 
 extern "C" {
-    fn ASSERT_IRP_CONTEXT(IrpContext: PIRP_CONTEXT);
 }
 extern "C" {
-    fn ASSERT_IRP(Irp: PIRP);
 }
 extern "C" {
     fn CdAcquireCdData(IrpContext: PIRP_CONTEXT);
@@ -114,8 +112,8 @@ pub unsafe extern "C" fn CdCommonCleanup(
 
     let mut SavedIrql: KIRQL = 0;
 
-    ASSERT_IRP_CONTEXT(IrpContext);
-    ASSERT_IRP(Irp);
+    ASSERT_IRP_CONTEXT!(IrpContext);
+    ASSERT_IRP!(Irp);
 
     //
     //  If we were called with our file system device object instead of a

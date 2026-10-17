@@ -486,8 +486,12 @@ PageFaultError:
     shr r9d, 1
     and r9d, 9
 
-    /* Set parameter 2 to faulting address */
-    mov r10, cr2  // Param2 = faulting address
+    /* Set parameter 2 to faulting address: the one saved at entry. Upstream
+       re-read cr2 here, after the sti above and all of MmAccessFault -- by then
+       a preemption, a CPU migration or a nested fault has replaced it with some
+       other fault's address, and the guest's AV reports the wrong VA (fault64
+       rung 1 "AV params", exit 0xBAF2, under -smp 2). */
+    mov r10, [rbp + KTRAP_FRAME_FaultAddress]  // Param2 = faulting address
 
     cmp eax, STATUS_ACCESS_VIOLATION
     je AccessViolation

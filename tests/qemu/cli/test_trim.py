@@ -229,3 +229,35 @@ def test_per_cell_link_dirs_retire_once_their_arch_shares_link_dirs(tmp_path):
     plan = trim.plan_worktree(wt, now=later, idle_hours=1)
     # Only amd64's: i386 has no configured build saying it moved.
     assert [p.name for p, _ in plan.paths] == ["beep-cargo-amd64-cargo-link"]
+
+
+def test_body_shards_retire_when_no_build_has_acquired_them_for_days(tmp_path):
+    """Once the artifact store builds every eligible body, a shard only the moved bodies
+    used is read by nothing. Its lock file's mtime (stamped on every acquire) is the
+    last use; file mtimes inside cannot say, since cargo rewrites nothing fresh."""
+    import fcntl
+
+    target = tmp_path / "sdk/lib/rust/target"
+    used = target / "body-storage-v1-amd64-ff00ca30fac39de6-2-rustlib"
+    idle = target / "body-storage-v1-i386-17bf15d2b52d02b0-0-rustlib"
+    held = target / "body-storage-v1-arm64-1e1531d0eeccac08-1-rustlib"
+    for shard in (used, idle, held):
+        (shard / "release/deps").mkdir(parents=True)
+        (shard / ".body-storage.lock").write_text("")
+    now = 2_000_000_000.0
+    old = now - trim.BODY_SHARD_IDLE_SECONDS - 60
+    for shard in (idle, held):
+        os.utime(shard / ".body-storage.lock", (old, old))
+    os.utime(used / ".body-storage.lock", (now - 3600, now - 3600))
+    with open(held / ".body-storage.lock", "rb") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        plan = trim.plan_worktree(tmp_path, now=now)
+    assert [p.name for p, _ in plan.paths] == [idle.name]
+
+
+def test_idle_orchestrator_target_dirs_are_ad_hoc(tmp_path):
+    target = tmp_path / "sdk/lib/rust/target"
+    (target / "orchestrate-i386-276820ffca02/release").mkdir(parents=True)
+    later = os.stat(target).st_mtime + 2 * 3600
+    plan = trim.plan_worktree(tmp_path, now=later, idle_hours=1)
+    assert [p.name for p, _ in plan.paths] == ["orchestrate-i386-276820ffca02"]

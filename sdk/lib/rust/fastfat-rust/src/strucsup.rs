@@ -92,7 +92,6 @@ extern "system" {
     fn ExInterlockedPopEntrySList( ListHead: *mut core::ffi::c_void, Lock: *mut core::ffi::c_void, ) -> *mut core::ffi::c_void;
     fn ExInterlockedPushEntrySList( ListHead: *mut core::ffi::c_void, ListEntry: *mut core::ffi::c_void, Lock: *mut u32, ) -> *mut core::ffi::c_void;
     fn FatRemoveNames(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
-    fn DebugDoit(value: u32);
     fn IsFileWriteThrough(file_object: *mut FILE_OBJECT, vcb: *mut VCB) -> u8;
     static mut FatFsdEntryCount: u32;
     fn ExLocalTimeToSystemTime(LocalTime: *const LARGE_INTEGER, SystemTime: *mut LARGE_INTEGER);
@@ -1585,8 +1584,7 @@ pub unsafe extern "system" fn FatCreateIrpContext(
     //  Attempt to allocate from the region first and failing that allocate
     //  from pool.
     //
-    FatFsdEntryCount += 1;
-    DebugDoit(FatFsdEntryCount);
+    DebugDoit!(FatFsdEntryCount += 1);
 
     let mut irp_context: *mut IRP_CONTEXT = FatAllocateIrpContext();
 

@@ -298,7 +298,9 @@ def harness(tmp_path, monkeypatch):
         }
 
     api.discover = discover
-    api.inputs = SimpleNamespace(discover=discover, tomllib=tomli)
+    # The fixture's discovery records no stamps, so revalidation always re-discovers
+    # (the path these tests count); `unchanged` itself is covered in test_artifact_inputs.
+    api.inputs = SimpleNamespace(discover=discover, tomllib=tomli, unchanged=lambda d: False)
     api.executor = FakeExecutor(api)
     api.storage = SimpleNamespace(
         Store=lambda root: store,
