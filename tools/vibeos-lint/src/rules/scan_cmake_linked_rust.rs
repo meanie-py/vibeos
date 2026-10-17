@@ -847,28 +847,54 @@ fn hand_engine_lib(lib: &str) -> bool {
         .expect("engine catalog parsed by model")
         .contains_key(lib)
 }
+/// `CMakeFiles/<target>.dir/` -> the files whose compile command names it, per
+/// compile database. The database is tens of MB and placeholder_archive asks once
+/// per archive per target per arch; re-parsing it each time made this rule take
+/// ~17 minutes where the Python took ~23 s.
+fn compile_db_index(
+    repo: &Path,
+    arch: &str,
+) -> Result<std::sync::Arc<BTreeMap<String, Vec<String>>>, String> {
+    static CACHE: LazyLock<
+        std::sync::Mutex<BTreeMap<PathBuf, std::sync::Arc<BTreeMap<String, Vec<String>>>>>,
+    > = LazyLock::new(Default::default);
+    let db = repo.join(format!("build-{arch}/compile_commands.json"));
+    if let Some(hit) = CACHE.lock().unwrap().get(&db) {
+        return Ok(hit.clone());
+    }
+    let value: serde_json::Value =
+        serde_json::from_str(&read(&db)?).map_err(|e| format!("{}: {e}", db.display()))?;
+    let dir = re(r"CMakeFiles/(\w+)\.dir/");
+    let mut index: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for row in value.as_array().into_iter().flatten() {
+        let cmd = row.get("command").and_then(|x| x.as_str()).unwrap_or("");
+        let Some(file) = row.get("file").and_then(|x| x.as_str()) else {
+            continue;
+        };
+        let names: BTreeSet<&str> = dir
+            .captures_iter(cmd)
+            .map(|m| m.get(1).unwrap().as_str())
+            .collect();
+        for name in names {
+            index
+                .entry(name.to_owned())
+                .or_default()
+                .push(file.to_owned());
+        }
+    }
+    let index = std::sync::Arc::new(index);
+    CACHE.lock().unwrap().insert(db, index.clone());
+    Ok(index)
+}
+
 fn placeholder_archive(repo: &Path, arch: &str, lib: &str) -> Result<bool, String> {
     let Some(c) = re(r"(?:.*/)?lib(\w+)\.a$").captures(lib) else {
         return Ok(false);
     };
-    let db = repo.join(format!("build-{arch}/compile_commands.json"));
-    let value: serde_json::Value =
-        serde_json::from_str(&read(&db)?).map_err(|e| format!("{}: {e}", db.display()))?;
-    let marker = format!("CMakeFiles/{}.dir/", &c[1]);
-    let mut files = Vec::new();
-    if let Some(rows) = value.as_array() {
-        for row in rows {
-            let cmd = row.get("command").and_then(|x| x.as_str()).unwrap_or("");
-            if cmd.contains(&marker) {
-                if let Some(file) = row.get("file").and_then(|x| x.as_str()) {
-                    files.push(file.to_owned())
-                }
-            }
-        }
-    }
-    if files.is_empty() {
+    let index = compile_db_index(repo, arch)?;
+    let Some(files) = index.get(&c[1]) else {
         return Ok(false);
-    }
+    };
     for f in files {
         if !f.ends_with(".c") {
             return Ok(false);
