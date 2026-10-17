@@ -632,19 +632,20 @@ unsafe fn ExpGetRawSMBiosTable(
     }
 
     let mut FinalStatus = STATUS_SUCCESS;
-    // WNODE_ALL_DATA layout: WNODE_HEADER then DataBlockOffset/InstanceCount/.../FixedInstanceSize.
-    // Cast to u32 array and pull FixedInstanceSize. To avoid binding to WNODE_ALL_DATA bindgen type
-    // (variable depending on build), we read the field at the standard offset.
-    // Fall back: use WMIBufSize if structural read fails.
-    // Layout: WNODE_HEADER is 48 bytes; FixedInstanceSize is at offset 48 + 4*5 = 68 on amd64,
-    // and 4*8 + 4*5 = 52 on i386. Safer to just emit WMIBufSize directly.
-    let TableSize = WMIBufSize.saturating_sub(48 + 16); // approximate header strip
+    // WNODE_ALL_DATA: a 48-byte WNODE_HEADER (identical on all three arches: its unions
+    // hold a ULONG64 and a LARGE_INTEGER), then DataBlockOffset, InstanceCount,
+    // OffsetInstanceNameOffsets and FixedInstanceSize. The C copies FixedInstanceSize
+    // bytes from the data block; this used to strip a guessed 64-byte header and take
+    // the rest of the buffer as the table.
+    const WNODE_DATA_BLOCK_OFFSET: usize = 48;
+    const WNODE_FIXED_INSTANCE_SIZE: usize = 60;
+    let DataOffset = *((AllData as *const u8).add(WNODE_DATA_BLOCK_OFFSET) as *const ULONG);
+    let TableSize = *((AllData as *const u8).add(WNODE_FIXED_INSTANCE_SIZE) as *const ULONG);
     *OutSize = TableSize;
 
     if !Buffer.is_null() {
         if BufferSize >= TableSize {
-            // Copy data after the WNODE_ALL_DATA header
-            let src = (AllData as *const u8).add(48 + 16); // nolint: magic-offset (WNODE_ALL_DATA header strip, self-consistent with TableSize)
+            let src = (AllData as *const u8).add(DataOffset as usize);
             RtlMoveMemory(Buffer, src as PVOID, TableSize as usize);
         } else {
             FinalStatus = STATUS_BUFFER_TOO_SMALL;
