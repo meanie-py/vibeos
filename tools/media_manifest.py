@@ -73,7 +73,7 @@ def _command(ninja: str, cd: str) -> str:
 def derive(arch: str, repo: Path = REPO) -> dict:
     build = repo / f"build-{arch}"
     ninja = (build / "build.ninja").read_text()
-    cells = {o["out"] for c in cell_manifest.load(arch, repo) for o in c["outputs"]}
+    cells = {o["out"] for c in cell_manifest.current(arch, repo) for o in c["outputs"]}
     out: dict = {"config": CONFIG, "cds": {}}
     for cd in CDS:
         lst = build / f"boot/{cd}.{CONFIG}.lst"
@@ -109,6 +109,14 @@ def load(arch: str, repo: Path = REPO) -> dict:
     return json.loads(path.read_text())
 
 
+def current(arch: str, repo: Path = REPO) -> dict:
+    """The media as the build lists them: derived from build-<arch> when it is configured
+    (cmake still owns placement), else the committed manifest."""
+    if (repo / f"build-{arch}/build.ninja").exists():
+        return derive(arch, repo)
+    return load(arch, repo)
+
+
 def resolve(src: str, build: Path, repo: Path, cells: Path | None) -> Path:
     kind, _, rel = src.partition(":")
     if kind == "cell":
@@ -129,7 +137,7 @@ def write_list(entries: list, build: Path, repo: Path, cells: Path | None) -> st
 
 
 def assemble(arch: str, cd: str, out: Path, cells: Path | None, repo: Path = REPO) -> Path:
-    m = load(arch, repo)
+    m = current(arch, repo)
     spec = m["cds"][cd]
     build = repo / f"build-{arch}"
     if cells is not None and any(s == "build:reactos.cab" for _d, s in spec["entries"]):
@@ -206,7 +214,18 @@ def main(argv: list[str] | None = None) -> int:
             path.write_text(text)
             print(f"wrote {path.relative_to(REPO)}")
         elif not path.exists() or path.read_text() != text:
-            print(f"{path.relative_to(REPO)}: stale (python3 tools/media_manifest.py --write)")
+            have = load(arch) if path.exists() else {"cds": {}}
+            want = derive(arch)
+            parts = []
+            for cd in CDS:
+                h = {tuple(e) for e in have["cds"].get(cd, {}).get("entries", [])}
+                w = {tuple(e) for e in want["cds"][cd]["entries"]}
+                if h != w:
+                    parts.append(f"{cd} +{len(w - h)} -{len(h - w)}")
+            print(
+                f"{path.relative_to(REPO)}: stale: {', '.join(parts) or 'order or command'} "
+                "(python3 tools/media_manifest.py --write)"
+            )
             rc = 1
     return rc
 

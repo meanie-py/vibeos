@@ -3281,14 +3281,6 @@ UNCOVERED: dict[str, str] = {
         "THREAD_BOOST_PRIORITY = 23 must be flagged, its fix through a Rust local must not, "
         "and neither must another module's same-named macro."
     ),
-    "scan_cargo_manifests": (
-        "it compares sdk/lib/rust/cells/<arch>.jsonl and boot/media/<arch>.json with a "
-        "configured build-<arch>/ (build.ninja's Cargo-linking edges, boot/<cd>.<config>.lst), "
-        "which a fixture directory does not have. Its unit tests in "
-        "tools/vibeos-lint/src/rules/scan_cargo_manifests.rs build those inputs in a temp tree: "
-        "a current pair is clean, a cell missing from the manifest and a moved CD placement "
-        "are each reported, and an arch with no configured build is skipped."
-    ),
     "scan_cmake_linked_rust": (
         "it models modules from build-amd64/build.ninja and the tree's own CMakeLists through "
         "cargo_cell_gen.survey, so a fixture directory has nothing to survey. The labelling is "
