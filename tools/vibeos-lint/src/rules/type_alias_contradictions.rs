@@ -272,6 +272,12 @@ fn contradictions(
     aliases: &BTreeMap<String, HashMap<String, String>>,
 ) -> Vec<(String, String, String, u8)> {
     let common = aliases.get("common").cloned().unwrap_or_default();
+    let mut merged = BTreeMap::new();
+    for (arch, local) in aliases {
+        let mut table = common.clone();
+        table.extend(local.clone());
+        merged.insert(arch.clone(), table);
+    }
     let mut out = BTreeSet::new();
     for (name, sites) in decls {
         if sites.len() < 2 {
@@ -297,13 +303,10 @@ fn contradictions(
             let mut widths: BTreeMap<String, BTreeSet<u8>> = BTreeMap::new();
             let mut resolved = Vec::new();
             for (rel, rhs, arch) in group {
-                let mut table = common.clone();
-                if let Some(local) = aliases.get(arch) {
-                    table.extend(local.clone());
-                }
+                let table = merged.get(arch).unwrap_or(&common);
                 if let Some(w) = width_of(
                     rhs,
-                    &table,
+                    table,
                     if arch == "common" { "common" } else { arch },
                     0,
                 ) {

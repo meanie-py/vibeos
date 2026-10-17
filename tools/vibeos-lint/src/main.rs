@@ -79,10 +79,13 @@ fn run() -> Result<(), String> {
             .iter()
             .flat_map(|r| r.extra_files().iter().map(PathBuf::from))
             .collect();
-        let source_sets: Vec<_> = selected
+        let mut source_sets: Vec<_> = selected
             .iter()
             .flat_map(|rule| rule.source_sets().iter().copied())
             .collect();
+        if selected.iter().any(|r| r.needs_module_inputs()) {
+            source_sets.extend_from_slice(vibeos_lint::module_inputs::SOURCE_SETS);
+        }
         let started = std::time::Instant::now();
         let corpus = Corpus::load_scopes_with_sets(&root, &inputs, needs, &extras, &source_sets)?;
         if std::env::var_os("VIBEOS_LINT_TIMINGS").is_some() {

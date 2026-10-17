@@ -237,7 +237,11 @@ impl Rule for MacroFnShadow {
         let mut shadows = Vec::new();
         let mut live = BTreeSet::new();
         for f in &rust {
-            if GENERATED.is_match(&f.text.chars().take(4096).collect::<String>()) {
+            if crate::regexes::cached(r"(bindgen_[a-z0-9_]+\.rs$|/target/|/\.responses/)")
+                .unwrap()
+                .is_match(&f.path.to_string_lossy())
+                || GENERATED.is_match(&f.text.chars().take(4096).collect::<String>())
+            {
                 continue;
             }
             let crate_key = crate_of(&f.path, &manifests);

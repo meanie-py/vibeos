@@ -79,8 +79,36 @@ pub mod varargs_spec_arity;
 pub mod wide_literals;
 pub mod winerror_consts;
 
+pub mod com_double_release;
+pub mod duplicate_symbols;
+pub mod export_shadows;
+pub mod extern_decl_drift;
+pub mod irql_balance;
+pub mod ob_refcount;
+pub mod unaligned_wide;
+pub mod unpruned_walk;
+pub mod varargs_shim_parity;
+
+pub mod const_contradictions;
+pub mod const_vs_island;
+pub mod const_vs_own_island;
+pub mod const_within_crate;
+
 pub fn registry() -> Vec<Box<dyn Rule>> {
     vec![
+        Box::new(const_contradictions::ConstContradictions),
+        Box::new(const_vs_island::ConstVsIsland),
+        Box::new(const_vs_own_island::ConstVsOwnIsland),
+        Box::new(const_within_crate::ConstWithinCrate),
+        Box::new(irql_balance::IrqlBalance),
+        Box::new(ob_refcount::ObRefcount),
+        Box::new(com_double_release::ComDoubleRelease),
+        Box::new(unpruned_walk::UnprunedWalk),
+        Box::new(extern_decl_drift::ExternDeclDrift),
+        Box::new(duplicate_symbols::DuplicateSymbols),
+        Box::new(export_shadows::ExportShadows),
+        Box::new(unaligned_wide::UnalignedWide),
+        Box::new(varargs_shim_parity::VarargsShimParity),
         Box::new(winerror_consts::WinerrorConsts),
         Box::new(wide_literals::WideLiterals),
         Box::new(bool_width::BoolWidth),

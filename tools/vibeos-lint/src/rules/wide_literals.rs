@@ -43,7 +43,7 @@ fn elem() -> &'static Regex {
 }
 fn intent() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
-    R.get_or_init(|| re(r#"L"((?:[^"\\]|\\.)*)"#))
+    R.get_or_init(|| re(r#"L"((?:[^"\\]|\\.)*)""#))
 }
 fn bytecast() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
@@ -671,6 +671,20 @@ b'S' as u16, b'y' as u16, b's' as u16, b't' as u16, b'e' as u16, b'm' as u16, b'
     }
     #[test]
     fn original_suite_coverage_and_remaining_unterminated_controls() {
+        // Python's L"..." intent requires a closing quote. This source comment
+        // ends in an escaped quote and is not a complete wide string annotation.
+        let escaped_closer = "// L\"\\\"\nstatic BACKSLASH_W: [u16; 2] = [b'\\\\' as u16, 0];\n";
+        assert!(intent_for(
+            escaped_closer,
+            decl()
+                .captures(escaped_closer)
+                .unwrap()
+                .get(0)
+                .unwrap()
+                .start()
+        )
+        .is_empty());
+        assert!(wide_facts(escaped_closer, "t.rs").is_empty());
         let no_intent = "static K: [u16; 3] = [b'A' as u16, b'B' as u16, 0];\n";
         assert_eq!(coverage_counts(no_intent), (1, 0));
         let prose="// UTF-16 string literals — Rust doesn't have `L\"...\"`, so spell them out.\n// All NUL-terminated.\nconst ID: [u16; 3] = [b'A' as u16, b'B' as u16, 0];\n";

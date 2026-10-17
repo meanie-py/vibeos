@@ -8,13 +8,7 @@ use std::path::PathBuf;
 pub const ARCHES: [&str; 3] = ["x86", "x86_64", "aarch64"];
 pub const SOURCE_SETS: &[SourceSet] = &[
     SourceSet::tracked("link-manifests", &[], &["Cargo.toml"]),
-    SourceSet::tree(
-        "link-inputs",
-        &["sdk/lib/rust"],
-        &["rs", "s", "S", "asm"],
-        &[],
-    )
-    .with_inputs(),
+    SourceSet::tree("link-inputs", &[""], &["rs", "s", "S", "asm"], &[]).with_inputs(),
 ];
 fn re(s: &str) -> regex::Regex {
     crate::regexes::cached(s).expect("link model pattern")

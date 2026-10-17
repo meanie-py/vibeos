@@ -43,6 +43,9 @@ static ADD_IMPORTLIBS: LazyLock<Regex> =
 static C_DEFINE: LazyLock<Regex> = LazyLock::new(|| {
     crate::regexes::cached(r"(?m)^[A-Za-z_][\w\s*]*?\bNAME\s*\([^;{}]*\)\s*\{").unwrap()
 });
+static C_DEFINE_INDEX: LazyLock<Regex> = LazyLock::new(|| {
+    crate::regexes::cached(r"(?m)^[A-Za-z_][\w\s*]*?\b([A-Za-z_]\w*)\s*\([^;{}]*\)\s*\{").unwrap()
+});
 static NOLINT: LazyLock<Regex> =
     LazyLock::new(|| crate::regexes::cached(r"nolint:\s*import-cc").unwrap());
 static ISLAND: LazyLock<Regex> =
@@ -205,6 +208,31 @@ fn c_defines(module_dirs: &[String], name: &str, cfiles: &[&SourceFile]) -> Opti
         (in_dir && re.is_match(&f.text)).then(|| path)
     })
 }
+type CDefIndex = Vec<(String, BTreeSet<String>)>;
+fn c_def_index(cfiles: &[&SourceFile]) -> CDefIndex {
+    cfiles
+        .iter()
+        .map(|f| {
+            let path = f.path.to_string_lossy().replace('\\', "/");
+            let names = C_DEFINE_INDEX
+                .captures_iter(&f.text)
+                .map(|m| m[1].to_owned())
+                .collect();
+            (path, names)
+        })
+        .collect()
+}
+fn indexed_c_defines(module_dirs: &[String], name: &str, index: &CDefIndex) -> Option<String> {
+    index.iter().find_map(|(path, names)| {
+        let in_dir = module_dirs.iter().any(|d| {
+            path == d
+                || path
+                    .strip_prefix(d.as_str())
+                    .is_some_and(|tail| tail.starts_with('/'))
+        });
+        (in_dir && names.contains(name)).then(|| path.clone())
+    })
+}
 
 fn crates_named_by(cmake: &[&SourceFile], crates: &[String]) -> BTreeMap<String, BTreeSet<String>> {
     let mut out = BTreeMap::new();
@@ -246,33 +274,63 @@ fn scan_crate(
     module_dirs: &[String],
     cfiles: &[&SourceFile],
 ) -> Vec<String> {
+    let facts = crate_files
+        .iter()
+        .map(|f| (f.path.clone(), convention_facts(&f.text)))
+        .collect::<BTreeMap<_, _>>();
+    let c_index = c_def_index(cfiles);
+    scan_crate_indexed(
+        crate_files,
+        crate_name,
+        oracle,
+        module_dirs,
+        &facts,
+        &c_index,
+    )
+}
+fn scan_crate_indexed(
+    crate_files: &[&SourceFile],
+    crate_name: &str,
+    oracle: &BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
+    module_dirs: &[String],
+    facts: &BTreeMap<
+        std::path::PathBuf,
+        (
+            Vec<(String, String, bool)>,
+            Vec<(String, String, usize, String)>,
+        ),
+    >,
+    c_index: &CDefIndex,
+) -> Vec<String> {
     let mut defs = BTreeMap::<String, BTreeSet<String>>::new();
     let mut out = Vec::new();
     for f in crate_files {
         let path = f.path.to_string_lossy().replace('\\', "/");
-        if path.contains("/target/") {
+        if !cc_mismatch::included_i386(&f.path, &f.text) {
             continue;
         }
-        for (n, cc, excluded) in convention_facts(&f.text).0 {
+        for (n, cc, excluded) in &facts[&f.path].0 {
             if !excluded {
-                defs.entry(n).or_default().insert(normalize(&cc).to_owned());
+                defs.entry(n.clone())
+                    .or_default()
+                    .insert(normalize(cc).to_owned());
             }
         }
     }
     let mut local = BTreeMap::<String, Option<String>>::new();
     for f in crate_files {
         let path = f.path.to_string_lossy().replace('\\', "/");
-        if path.contains("/target/") {
+        if !cc_mismatch::included_i386(&f.path, &f.text) {
             continue;
         }
-        for (name, cc, _line, text) in convention_facts(&f.text).1 {
-            if defs.contains_key(&name) || NOLINT.is_match(&text) {
+        for (name, cc, _line, text) in &facts[&f.path].1 {
+            if defs.contains_key(name) || NOLINT.is_match(text) {
                 continue;
             }
             let owners = oracle
                 .iter()
-                .filter(|(_, map)| map.contains_key(&name))
-                .map(|(lib, map)| (lib, map[&name].clone()))
+                .filter(|(_, map)| map.contains_key(name))
+                .map(|(lib, map)| (lib, map[name].clone()))
                 .collect::<Vec<_>>();
             let convs = owners
                 .iter()
@@ -282,14 +340,14 @@ fn scan_crate(
                 continue;
             }
             let want = convs.iter().next().unwrap();
-            let got = normalize(&cc);
+            let got = normalize(cc);
             if got == want {
                 continue;
             }
-            if !local.contains_key(&name) {
-                local.insert(name.clone(), c_defines(module_dirs, &name, cfiles));
+            if !local.contains_key(name) {
+                local.insert(name.clone(), indexed_c_defines(module_dirs, name, c_index));
             }
-            if local[&name].is_some() {
+            if local[name].is_some() {
                 continue;
             }
             let tag = if ISLAND.is_match(&path) {
@@ -394,6 +452,11 @@ impl Rule for ImportCc {
             .filter(|f| f.path.extension().is_some_and(|e| e == "c" || e == "h"))
             .collect::<Vec<_>>();
         let cfiles = cfiles.iter().copied().collect::<Vec<_>>();
+        let fact_index = rust
+            .iter()
+            .map(|f| (f.path.clone(), convention_facts(&f.text)))
+            .collect::<BTreeMap<_, _>>();
+        let c_index = c_def_index(&cfiles);
         let mut findings = Vec::new();
         for (path, files) in groups {
             let name = Path::new(&path)
@@ -414,7 +477,14 @@ impl Rule for ImportCc {
             if oracle.is_empty() {
                 continue;
             }
-            findings.extend(scan_crate(&files, &name, &oracle, &dirs, &cfiles));
+            findings.extend(scan_crate_indexed(
+                &files,
+                &name,
+                &oracle,
+                &dirs,
+                &fact_index,
+                &c_index,
+            ));
         }
         findings.sort();
         findings.dedup();
@@ -429,6 +499,43 @@ fn crate_root(path: &Path) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn indexed_c_definition_lookup_matches_legacy_pattern() {
+        let files = vec![
+            SourceFile::new(
+                "dll/demo/a.c".into(),
+                "DWORD SetErrorMode(UINT mode) { return 0; }\n".into(),
+            ),
+            SourceFile::new(
+                "dll/demo/b.c".into(),
+                "static void *AcquireFastMutex(void *p) { return p; }\n".into(),
+            ),
+            SourceFile::new(
+                "dll/other/a.c".into(),
+                "DWORD Outside(UINT mode) { return 0; }\n".into(),
+            ),
+            SourceFile::new(
+                "dll/demo/proto.h".into(),
+                "DWORD Prototype(UINT mode);\n".into(),
+            ),
+        ];
+        let refs = files.iter().collect::<Vec<_>>();
+        let index = c_def_index(&refs);
+        let dirs = vec!["dll/demo".to_owned()];
+        for name in [
+            "SetErrorMode",
+            "AcquireFastMutex",
+            "Outside",
+            "Prototype",
+            "Missing",
+        ] {
+            assert_eq!(
+                c_defines(&dirs, name, &refs),
+                indexed_c_defines(&dirs, name, &index),
+                "{name}"
+            );
+        }
+    }
     #[test]
     fn spec_parser_preserves_i386_scope_and_flags() {
         let spec = "@ stdcall SetErrorMode(long)\n@ stdcall -norelay GetProcessHeap()\n@ cdecl -arch=i386 memcpy(ptr ptr long)\n@ stdcall -arch=arm64 Acquire(ptr)\n@ cdecl -arch=!i386 _chgsignf(float)\n@ stdcall -arch=win32,arm64 Both(long)\n@ cdecl -arch=win64 SixtyFourOnly(long)\n@ stdcall -private Private(long)\n@ stub Stub\n@ extern Data\n;@ stdcall Commented(long)\n";
@@ -551,5 +658,28 @@ mod tests {
         .unwrap()
         .0
         .is_empty());
+    }
+    #[test]
+    fn arch_and_parked_files_are_outside_python_i386_walk() {
+        let spec = BTreeMap::from([(
+            "kernel32".into(),
+            read_spec("@ stdcall SetErrorMode(long)\n"),
+        )]);
+        for path in [
+            "sdk/lib/rust/demo-rust/src/types_amd64.rs",
+            "sdk/lib/rust/demo-rust/src/arm64/decl.rs",
+            "sdk/lib/rust/demo-rust/src/parked.rs",
+        ] {
+            let body = if path.ends_with("parked.rs") {
+                "//! ORPHAN-BY-DESIGN: intentionally parked\nextern \"C\" { fn SetErrorMode(x:u32); }\n"
+            } else {
+                "extern \"C\" { fn SetErrorMode(x:u32); }\n"
+            };
+            let f = SourceFile::new(path.into(), body.into());
+            assert!(
+                scan_crate(&[&f], "demo-rust", &spec, &[], &[]).is_empty(),
+                "{path}"
+            );
+        }
     }
 }

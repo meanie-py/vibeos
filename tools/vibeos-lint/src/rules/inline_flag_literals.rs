@@ -32,28 +32,6 @@ const RUST: &[SourceSet] = &[
             "sdk/include/reactos/exeformat.h",
             "sdk/lib/rust/reactos-link/committed-headers/bugcodes.h",
             "sdk/include/xdk/ntbasedef.h",
-            "sdk/include/psdk/winioctl.h",
-            "sdk/include/psdk/ntdddisk.h",
-            "sdk/include/psdk/ntddcdrm.h",
-            "sdk/include/psdk/ntddstor.h",
-            "sdk/include/psdk/ntddscsi.h",
-            "sdk/include/psdk/ntddvol.h",
-            "sdk/include/xdk/ntifs.template.h",
-            "sdk/include/reactos/drivers/afd/shared.h",
-            "sdk/include/psdk/ntddtdi.h",
-            "sdk/include/psdk/ntddndis.h",
-            "sdk/include/psdk/usbiodef.h",
-        ],
-        &["h"],
-        &[],
-    ),
-    SourceSet::tree(
-        "inline-flag-header-trees",
-        &[
-            "sdk/include/xdk",
-            "sdk/include/ndk",
-            "sdk/include/psdk",
-            "ntoskrnl/include/internal",
         ],
         &["h"],
         &[],
@@ -85,6 +63,37 @@ const RUST: &[SourceSet] = &[
         &["h"],
         &[],
     ),
+    SourceSet::tree(
+        "inline-flag-ctl-headers",
+        &[
+            "sdk/include/xdk/iotypes.h",
+            "sdk/include/psdk/winioctl.h",
+            "sdk/include/psdk/ntdddisk.h",
+            "sdk/include/psdk/ntddcdrm.h",
+            "sdk/include/psdk/ntddstor.h",
+            "sdk/include/psdk/ntddscsi.h",
+            "sdk/include/psdk/ntddvol.h",
+            "sdk/include/reactos/drivers/ntddrdsk.h",
+            "sdk/include/xdk/ntifs.template.h",
+            "sdk/include/reactos/drivers/afd/shared.h",
+            "sdk/include/psdk/ntddtdi.h",
+            "sdk/include/psdk/ntddndis.h",
+            "sdk/include/psdk/usbiodef.h",
+        ],
+        &["h"],
+        &[],
+    ),
+    SourceSet::tree(
+        "inline-flag-extra-header-trees",
+        &[
+            "sdk/include/xdk",
+            "sdk/include/ndk",
+            "sdk/include/psdk",
+            "ntoskrnl/include/internal",
+        ],
+        &["h"],
+        &[],
+    ),
 ];
 impl Rule for InlineFlagLiterals {
     fn name(&self) -> &'static str {
@@ -100,6 +109,9 @@ impl Rule for InlineFlagLiterals {
             if f.path.to_string_lossy().contains("/tests/")
                 || f.path.to_string_lossy().contains("/target/")
             {
+                continue;
+            }
+            if !potential_annotation(&f.text, &catalog) {
                 continue;
             }
             let tree = f.rust_tree()?;
@@ -156,8 +168,8 @@ impl Rule for InlineFlagLiterals {
                         .collect();
                     rowl.sort_by_key(|n| n.start_byte());
                     if rowl.len() == 1 && names.iter().all(|n| catalog.contains_key(n)) {
-                        let total = names.iter().fold(0u64, |v, n| v | catalog[n]);
-                        if !values(rowl[0], &f.text).contains(&total) {
+                        let total = names.iter().fold(0i128, |v, n| v | catalog[n]);
+                        if !values(rowl[0], &f.text).iter().any(|v| *v as i128 == total) {
                             for (n, name) in rowl.into_iter().zip(names) {
                                 pairs.push((n, name));
                             }
@@ -187,7 +199,10 @@ impl Rule for InlineFlagLiterals {
                         .collect();
                     let side = if !before.is_empty() { &before } else { &after };
                     if let Some(want) = catalog.get(name) {
-                        if side.iter().any(|n| values(*n, &f.text).contains(want)) {
+                        if side
+                            .iter()
+                            .any(|n| values(*n, &f.text).iter().any(|v| *v as i128 == *want))
+                        {
                             continue;
                         }
                     }
@@ -205,13 +220,13 @@ impl Rule for InlineFlagLiterals {
                         continue;
                     }
                     let vals = values(lit, &f.text);
-                    if vals.contains(&want) {
+                    if vals.iter().any(|v| *v as i128 == want) {
                         continue;
                     }
                     let value = literal(lit, &f.text);
                     if want != 0
                         && want.count_ones() == 1
-                        && value.is_some_and(|v| v & want == want)
+                        && value.is_some_and(|v| want > 0 && (v as i128) & want == want)
                     {
                         continue;
                     }
@@ -230,6 +245,30 @@ impl Rule for InlineFlagLiterals {
         }
         Ok(out)
     }
+}
+// Consider every opener, including openers inside strings or comments. False
+// positives only request parsing; actual comment nodes still decide findings.
+fn potential_annotation(text: &str, catalog: &BTreeMap<String, i128>) -> bool {
+    for (start, _) in text.match_indices("//") {
+        let end = text[start..].find('\n').map_or(text.len(), |n| start + n);
+        if comment_names(&text[start..end])
+            .iter()
+            .any(|n| catalog.contains_key(n))
+        {
+            return true;
+        }
+    }
+    for (start, _) in text.match_indices("/*") {
+        if let Some(end) = text[start + 2..].find("*/") {
+            if comment_names(&text[start..start + 2 + end + 2])
+                .iter()
+                .any(|n| catalog.contains_key(n))
+            {
+                return true;
+            }
+        }
+    }
+    false
 }
 fn collect<'a>(
     n: tree_sitter::Node<'a>,
@@ -281,8 +320,17 @@ fn comment_names(s: &str) -> Vec<String> {
     out
 }
 fn litval(s: &str) -> Option<u64> {
-    let x = s.trim().replace('_', "");
-    let x = x.trim_end_matches(|c: char| c.is_ascii_alphabetic());
+    // Match Python's `_SUFFIX_RE` after it removes literal separators. Stripping
+    // alphabetic characters alone leaves the digits in `u32`/`i64` behind, so
+    // every typed Rust integer silently became an unparseable value (and then
+    // the caller displayed it as zero).
+    static SUFFIX: OnceLock<Regex> = OnceLock::new();
+    let suffix = SUFFIX.get_or_init(|| {
+        crate::regexes::cached(r"(?:u8|u16|u32|u64|usize|i8|i16|i32|i64|isize)$").unwrap()
+    });
+    let clean = s.trim().replace('_', "");
+    let x = suffix.replace(&clean, "");
+    let x = x.as_ref();
     if let Some(h) = x.strip_prefix("0x").or_else(|| x.strip_prefix("0X")) {
         u64::from_str_radix(h, 16).ok()
     } else {
@@ -324,7 +372,9 @@ fn suppressed(s: &str) -> bool {
             )
         })
 }
-fn catalog(c: &Corpus) -> BTreeMap<String, u64> {
+fn catalog(c: &Corpus) -> BTreeMap<String, i128> {
+    // Keep the seed, direct-header, enum, downgrade, and CTL_CODE phases in the
+    // same order as verify_constants.build_c_catalog(include_enums=True).
     let mut out = BTreeMap::from([
         ("NonPagedPoolNx".into(), 0),
         ("NonPagedPoolNxCacheAligned".into(), 4),
@@ -340,65 +390,120 @@ fn catalog(c: &Corpus) -> BTreeMap<String, u64> {
         ("MdlMappingNoExecute".into(), 0),
     ]);
     let define =
-        crate::regexes::cached(r"(?m)^#define\s+([A-Z_][A-Z0-9_]*)\s+(.+?)\s*(?://.*)?$").unwrap();
-    let mut fixed_headers = Vec::new();
-    for f in c.sources("inline-flag-fixed-headers") {
-        fixed_headers.push(f.text.clone());
-        for m in define.captures_iter(&f.text) {
-            if let Some(v) = cvalue(m.get(2).unwrap().as_str()) {
-                out.insert(m[1].to_owned(), v);
+        crate::regexes::cached(r"^#define\s+([A-Z_][A-Z0-9_]*)\s+(.+?)(?:\s*//.*)?$").unwrap();
+    const FIXED_ORDER: &[&str] = &[
+        "sdk/include/xdk/iotypes.h",
+        "sdk/include/xdk/setypes.h",
+        "sdk/include/psdk/ntstatus.h",
+        "ntoskrnl/include/internal/tag.h",
+        "ntoskrnl/include/internal/io.h",
+        "sdk/include/xdk/ketypes.h",
+        "sdk/include/ndk/ketypes.h",
+        "sdk/include/ndk/pstypes.h",
+        "sdk/include/ndk/obtypes.h",
+        "sdk/include/ndk/mmtypes.h",
+        "sdk/include/ndk/extypes.h",
+        "sdk/include/ndk/lpctypes.h",
+        "sdk/include/ndk/cmtypes.h",
+        "sdk/include/ndk/iotypes.h",
+        "sdk/include/reactos/drivers/ntddrdsk.h",
+        "sdk/include/reactos/srmp.h",
+        "sdk/include/psdk/ntiologc.h",
+        "sdk/include/reactos/exeformat.h",
+        "sdk/lib/rust/reactos-link/committed-headers/bugcodes.h",
+        "sdk/include/xdk/ntbasedef.h",
+    ];
+    let fixed: Vec<_> = c.sources("inline-flag-fixed-headers").collect();
+    for path in FIXED_ORDER {
+        let Some(f) = fixed
+            .iter()
+            .copied()
+            .find(|f| f.path == std::path::Path::new(path))
+        else {
+            continue;
+        };
+        for raw in f.text.lines() {
+            let line = raw.trim();
+            if let Some(m) = define.captures(line) {
+                if let Some(v) = c_header_value(m.get(2).unwrap().as_str()) {
+                    out.insert(m[1].to_owned(), v);
+                }
             }
         }
     }
-    let mut all_headers = fixed_headers.clone();
-    for f in c.sources("inline-flag-header-trees") {
-        all_headers.push(f.text.clone());
-        for m in define.captures_iter(&f.text) {
-            if let Some(v) = cvalue(m.get(2).unwrap().as_str()) {
-                out.entry(m[1].to_owned()).or_insert(v);
-            }
-        }
-    }
-    // The enum oracle intentionally keeps only names with one value across the
-    // curated headers, matching verify_constants' --enums ambiguity rule.
+
     let mut enum_values: BTreeMap<String, BTreeSet<u64>> = BTreeMap::new();
     for f in c.sources("inline-flag-enum-headers") {
-        harvest_enums(&f.text, &out, &mut enum_values);
+        harvest_enums(&f.text, &mut enum_values);
     }
     for (name, values) in enum_values {
         if values.len() == 1 {
-            out.entry(name).or_insert(*values.iter().next().unwrap());
+            out.entry(name)
+                .or_insert(*values.iter().next().unwrap() as i128);
         }
     }
-    // Evaluate object aliases and function-like IOCTL wrappers from the captured
-    // CTL_CODE header family. Unknown operands/macros stay unknown rather than guessed.
+    out.insert("POOL_NX_ALLOCATION".into(), 0);
+    out.insert("MdlMappingNoExecute".into(), 0);
+
+    // Only the explicit Python CTL_CODE_HEADERS participate here. The prior
+    // broad header-tree scan both expanded the oracle and repeatedly parsed
+    // thousands of irrelevant headers.
     let mut funcs: BTreeMap<String, (Vec<String>, String)> = BTreeMap::new();
     let mut defs = Vec::new();
-    let fdef =
-        crate::regexes::cached(r"(?m)^\s*#define\s+([A-Za-z_]\w*)\(([^)]*)\)\s+(.+?)\s*$").unwrap();
-    let od = crate::regexes::cached(r"(?m)^\s*#define\s+([A-Z_][A-Z0-9_]*)\s+(.+?)\s*$").unwrap();
-    for text in &all_headers {
+    let fdef = crate::regexes::cached(r"^#define\s+([A-Za-z_]\w*)\(([^)]*)\)\s+(.+?)\s*$").unwrap();
+    let od = crate::regexes::cached(r"^#define\s+([A-Z_][A-Z0-9_]*)\s+(.+?)\s*$").unwrap();
+    let mut texts = Vec::new();
+    const CTL_ORDER: &[&str] = &[
+        "sdk/include/xdk/iotypes.h",
+        "sdk/include/psdk/winioctl.h",
+        "sdk/include/psdk/ntdddisk.h",
+        "sdk/include/psdk/ntddcdrm.h",
+        "sdk/include/psdk/ntddstor.h",
+        "sdk/include/psdk/ntddscsi.h",
+        "sdk/include/psdk/ntddvol.h",
+        "sdk/include/reactos/drivers/ntddrdsk.h",
+        "sdk/include/xdk/ntifs.template.h",
+        "sdk/include/reactos/drivers/afd/shared.h",
+        "sdk/include/psdk/ntddtdi.h",
+        "sdk/include/psdk/ntddndis.h",
+        "sdk/include/psdk/usbiodef.h",
+    ];
+    let ctl_headers: Vec<_> = c.sources("inline-flag-ctl-headers").collect();
+    for path in CTL_ORDER {
+        let Some(f) = ctl_headers
+            .iter()
+            .copied()
+            .find(|f| f.path == std::path::Path::new(path))
+        else {
+            continue;
+        };
         let joined = crate::regexes::cached(r"\\\n")
             .unwrap()
-            .replace_all(text, " ")
+            .replace_all(&f.text, " ")
             .into_owned();
-        for m in fdef.captures_iter(&joined) {
-            funcs.insert(
-                m[1].to_owned(),
-                (
-                    m[2].split(',')
-                        .map(|x| x.trim().to_owned())
-                        .filter(|x| !x.is_empty())
-                        .collect(),
-                    m[3].split("//").next().unwrap_or("").trim().to_owned(),
-                ),
-            );
-        }
-        for m in od.captures_iter(&joined) {
-            defs.push((
-                m[1].to_owned(),
-                m[2].split("//").next().unwrap_or("").trim().to_owned(),
-            ));
+        texts.push(joined);
+    }
+    for text in &texts {
+        for raw in text.lines() {
+            let line = raw.trim();
+            if let Some(m) = fdef.captures(line) {
+                funcs.insert(
+                    m[1].to_owned(),
+                    (
+                        m[2].split(',')
+                            .map(|x| x.trim().to_owned())
+                            .filter(|x| !x.is_empty())
+                            .collect(),
+                        m[3].split("//").next().unwrap_or("").trim().to_owned(),
+                    ),
+                );
+            }
+            if let Some(m) = od.captures(line) {
+                defs.push((
+                    m[1].to_owned(),
+                    m[2].split("//").next().unwrap_or("").trim().to_owned(),
+                ));
+            }
         }
     }
     funcs.entry("CTL_CODE".into()).or_insert((
@@ -410,35 +515,187 @@ fn catalog(c: &Corpus) -> BTreeMap<String, u64> {
         ],
         "(((DeviceType) << 16) | ((Access) << 14) | ((Function) << 2) | (Method))".into(),
     ));
+
+    let mut scope: BTreeMap<String, u64> =
+        out.iter().map(|(n, v)| (n.clone(), *v as u64)).collect();
+    let alias =
+        crate::regexes::cached(r"^#define\s+([A-Z_][A-Z0-9_]*)\s+([A-Z_][A-Z0-9_]*)\s*(?://.*)?$")
+            .unwrap();
+    let mut aliases = Vec::new();
+    for (name, expr) in &defs {
+        if let Some(v) = c_simple_value(expr) {
+            scope.entry(name.clone()).or_insert(v as u64);
+        } else if let Some(m) = alias.captures(&format!("#define {name} {expr}")) {
+            aliases.push((m[1].to_owned(), m[2].to_owned()));
+        }
+    }
     for _ in 0..8 {
-        let mut changed = false;
-        for (name, expr) in &defs {
-            if !out.contains_key(name) {
-                if let Some(v) = eval_macro(expr, &funcs, &out, 0) {
-                    out.insert(name.clone(), v);
-                    changed = true;
+        let mut progressed = false;
+        for (name, target) in &aliases {
+            if !scope.contains_key(name) {
+                if let Some(&v) = scope.get(target) {
+                    scope.insert(name.clone(), v);
+                    progressed = true;
                 }
             }
         }
-        if !changed {
+        if !progressed {
             break;
         }
     }
+    for (name, value) in [
+        ("METHOD_BUFFERED", 0),
+        ("METHOD_IN_DIRECT", 1),
+        ("METHOD_OUT_DIRECT", 2),
+        ("METHOD_NEITHER", 3),
+        ("FILE_ANY_ACCESS", 0),
+        ("FILE_READ_ACCESS", 1),
+        ("FILE_WRITE_ACCESS", 2),
+    ] {
+        scope.insert(name.into(), value);
+    }
+
     let mut ctl: BTreeMap<String, BTreeSet<u64>> = BTreeMap::new();
     for (name, expr) in defs {
         if name.starts_with("IOCTL_") || name.starts_with("FSCTL_") {
-            if let Some(v) = eval_macro(&expr, &funcs, &out, 0) {
-                ctl.entry(name).or_default().insert(v);
+            if let Some(v) = eval_macro(&expr, &funcs, &scope, 0) {
+                ctl.entry(name).or_default().insert(v & 0xffff_ffff);
             }
         }
     }
     for (name, vals) in ctl {
         if vals.len() == 1 {
-            out.entry(name).or_insert(*vals.iter().next().unwrap());
+            out.entry(name)
+                .or_insert(*vals.iter().next().unwrap() as i128);
+        }
+    }
+
+    // scan_inline_flag_literals.add_headers runs after build_c_catalog and
+    // harvests numeric defines from these four trees. The curated build values
+    // (including CTL_CODE results) win collisions via setdefault semantics.
+    static STRIP: OnceLock<Regex> = OnceLock::new();
+    static DEFINE: OnceLock<Regex> = OnceLock::new();
+    let strip_comments = STRIP.get_or_init(|| crate::regexes::cached(r"(?s)/\*.*?\*/").unwrap());
+    let define = DEFINE.get_or_init(|| {
+        crate::regexes::cached(r"^#define\s+([A-Z_][A-Z0-9_]*)\s+(.+?)(?:\s*//.*)?$").unwrap()
+    });
+    let ordered = c.ordered_sources("inline-flag-extra-header-trees");
+    for root in [
+        "sdk/include/xdk",
+        "sdk/include/ndk",
+        "sdk/include/psdk",
+        "ntoskrnl/include/internal",
+    ] {
+        for f in ordered
+            .iter()
+            .copied()
+            .filter(|f| f.path.strip_prefix(root).is_ok())
+        {
+            let clean = strip_comments.replace_all(&f.text, " ");
+            for raw in clean.lines() {
+                if let Some(m) = define.captures(raw.trim()) {
+                    if let Some(v) = inline_header_value(m.get(2).unwrap().as_str()) {
+                        out.entry(m[1].to_owned()).or_insert(v);
+                    }
+                }
+            }
         }
     }
     out
 }
+
+fn c_header_value(s: &str) -> Option<i128> {
+    // parse_c_hex strips C block comments; parse_c_multichar and
+    // parse_ntstatus_cast receive the unmodified RHS and therefore reject
+    // literals followed by comments, exactly as verify_constants does.
+    let raw = s.trim().trim_end_matches(';').trim();
+    let mut x = raw;
+    x = x.trim_end_matches(['U', 'L', 'u', 'l']).trim();
+    if let Some(negative) = x.strip_prefix('-') {
+        return c_header_value(negative).map(|v| -v);
+    }
+    if let Some(v) = c_simple_value(x) {
+        return Some(v);
+    }
+    if raw.starts_with('\'') && raw.ends_with('\'') {
+        let chars: Vec<_> = raw[1..raw.len() - 1].chars().collect();
+        if (1..=4).contains(&chars.len()) {
+            return Some(
+                (chars.into_iter().fold(0u64, |v, c| (v << 8) | c as u64) & 0xffff_ffff) as i128,
+            );
+        }
+    }
+    if ![",", "|", "+", "<<", ">>"]
+        .iter()
+        .any(|op| raw.contains(op))
+    {
+        static HEX: OnceLock<Regex> = OnceLock::new();
+        if let Some(m) = HEX
+            .get_or_init(|| crate::regexes::cached(r"0x[0-9A-Fa-f]+").unwrap())
+            .find(raw)
+        {
+            if let Ok(v) = u64::from_str_radix(&m.as_str()[2..], 16) {
+                return Some(v as i128);
+            }
+        }
+    }
+    None
+}
+
+// Python parse_c_hex: C 0x values, leading-zero octal, then signed/unsigned
+// decimal. Used separately from parse_c_multichar/parse_ntstatus_cast in the
+// ordinary catalog phase and alone for CTL_CODE scope literals.
+fn c_simple_value(s: &str) -> Option<i128> {
+    let x = s.split("/*").next()?.trim().trim_end_matches(';').trim();
+    let x = x.trim_end_matches(['U', 'L', 'u', 'l']).trim();
+    if let Some(negative) = x.strip_prefix('-') {
+        return c_simple_value(negative).map(|v| -v);
+    }
+    if let Some(v) = x.strip_prefix("0x").or_else(|| x.strip_prefix("0X")) {
+        if let Ok(n) = i128::from_str_radix(v, 16) {
+            return Some(n);
+        }
+    } else if x.starts_with('0') && x.len() > 1 && x[1..].chars().all(|c| c.is_ascii_digit()) {
+        if let Ok(n) = i128::from_str_radix(&x[1..], 8) {
+            return Some(n);
+        }
+    } else if x.chars().all(|c| c.is_ascii_digit()) {
+        if let Ok(n) = x.parse::<i128>() {
+            return Some(n);
+        }
+    }
+    None
+}
+
+fn inline_header_value(value: &str) -> Option<i128> {
+    // Exact shape of scan_inline_flag_literals.parse_c_value: parenthesis peel,
+    // optional C type cast, Rust-like integer suffix peel, decimal/hex parse,
+    // then verify_constants.parse_c_hex fallback (including octal).
+    let mut x = value.trim();
+    while x.starts_with('(') && x.ends_with(')') {
+        x = x[1..x.len() - 1].trim();
+    }
+    static CAST: OnceLock<Regex> = OnceLock::new();
+    let cast =
+        CAST.get_or_init(|| crate::regexes::cached(r"^\(\s*[A-Za-z_][A-Za-z0-9_ ]*\)\s*").unwrap());
+    let casted = cast.replace(x, "");
+    x = casted.trim();
+    static SUFFIX: OnceLock<Regex> = OnceLock::new();
+    let suffix = SUFFIX.get_or_init(|| {
+        crate::regexes::cached(r"(u8|u16|u32|u64|usize|i8|i16|i32|i64|isize)$").unwrap()
+    });
+    let unsuffixed = suffix.replace(x, "");
+    x = unsuffixed.trim_end_matches(['u', 'U', 'l', 'L']);
+    if let Some(h) = x.strip_prefix("0x").or_else(|| x.strip_prefix("0X")) {
+        if let Ok(v) = i128::from_str_radix(h, 16) {
+            return Some(v);
+        }
+    } else if let Ok(v) = x.parse::<i128>() {
+        return Some(v);
+    }
+    c_simple_value(x)
+}
+
 fn eval_macro(
     expr: &str,
     funcs: &BTreeMap<String, (Vec<String>, String)>,
@@ -485,11 +742,7 @@ fn eval_macro(
     }
     eval_expr(expr, scope)
 }
-fn harvest_enums(
-    text: &str,
-    scope: &BTreeMap<String, u64>,
-    out: &mut BTreeMap<String, BTreeSet<u64>>,
-) {
+fn harvest_enums(text: &str, out: &mut BTreeMap<String, BTreeSet<u64>>) {
     let no_comments = crate::regexes::cached(r"(?s)/\*.*?\*/|//[^\n]*")
         .unwrap()
         .replace_all(text, " ")
@@ -518,7 +771,7 @@ fn harvest_enums(
                 .collect::<Vec<_>>()
                 .join(" ");
             let (name, next) = if let Some((n, e)) = item.split_once('=') {
-                (n.trim(), eval_expr(e.trim(), &local))
+                (n.trim(), eval_enum_expr(e.trim(), &local))
             } else {
                 (item.trim(), val)
             };
@@ -539,6 +792,17 @@ fn harvest_enums(
             }
         }
     }
+}
+fn eval_enum_expr(expr: &str, scope: &BTreeMap<String, u64>) -> Option<u64> {
+    let cleaned = expr.replace("<<", "L");
+    if cleaned.contains('&')
+        || cleaned.contains('^')
+        || cleaned.contains('~')
+        || cleaned.contains('>')
+    {
+        return None;
+    }
+    eval_expr(expr, scope)
 }
 fn eval_expr(expr: &str, scope: &BTreeMap<String, u64>) -> Option<u64> {
     let toks =
@@ -613,8 +877,6 @@ fn parse_expr(ts: &[String], i: &mut usize, min: u8, scope: &BTreeMap<String, u6
 fn number(s: &str) -> Option<u64> {
     if let Some(x) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
         u64::from_str_radix(x, 16).ok()
-    } else if s.starts_with('0') && s.len() > 1 && s.chars().all(|c| c.is_ascii_digit()) {
-        u64::from_str_radix(&s[1..], 8).ok()
     } else {
         s.parse().ok()
     }
@@ -654,6 +916,11 @@ fn cvalue(s: &str) -> Option<u64> {
     }
 }
 
+#[doc(hidden)]
+pub fn export_catalog_for_audit(c: &Corpus) -> BTreeMap<String, i128> {
+    catalog(c)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -677,6 +944,18 @@ mod tests {
         assert!(comment_names("// NULL / no '=' => -1").is_empty());
         assert!(suppressed("// nolint: inline-literal (verified)"));
         assert!(!suppressed("// nolint: other-lint"));
+        // `integer_literal` includes these suffixes in its source text. Python
+        // strips the complete suffix; do not leave its trailing width digits.
+        assert_eq!(litval("0xC0000095_u32"), Some(0xC0000095));
+        assert_eq!(litval("0x80000016u32"), Some(0x80000016));
+        assert_eq!(litval("1u8"), Some(1));
+        assert_eq!(litval("1073741670i32"), Some(1073741670));
+        // Hexadecimal A-F digits are not type suffixes.
+        assert_eq!(litval("0x0f"), Some(15));
+        assert_eq!(litval("0x2C05C"), Some(0x2C05C));
+        assert_eq!(litval("0xFFFF_FFFF"), Some(0xFFFF_FFFF));
+        assert_eq!(litval("0x007F"), Some(0x7f));
+        assert_eq!(litval("0xC000_007B"), Some(0xC000_007B));
     }
     #[test]
     fn scanner_controls_comment_pairs_within_struct_field_only() {

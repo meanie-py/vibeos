@@ -42,7 +42,7 @@ impl Rule for DroppedAsserts {
                 if let Some(end) = brace_end(&code, open) {
                     let n = ar.find_iter(&code[open..end]).count();
                     if n > 0 {
-                        let line = f.line(m.start());
+                        let line = masked_line(&code, m.start());
                         let e = cs
                             .entry(c[1].to_owned())
                             .or_insert((p.to_string(), line, n));
@@ -74,7 +74,7 @@ impl Rule for DroppedAsserts {
                     let n = ar.find_iter(&code[op..end]).count();
                     rs.entry(c[1].into()).or_default().push((
                         f.path.to_string_lossy().into_owned(),
-                        f.line(m.start()),
+                        masked_line(code, m.start()),
                         n,
                     ));
                 }
@@ -102,6 +102,17 @@ impl Rule for DroppedAsserts {
         rows.sort_by(|a, b| (&a.0, a.1, &a.2).cmp(&(&b.0, b.1, &b.2)));
         Ok(rows.into_iter().map(|x| x.2).collect())
     }
+}
+// strip_noise preserves newline characters but replaces each non-newline character
+// with one ASCII space. A byte offset in that masked string differs from the same
+// character's byte offset in the original whenever a removed comment/literal contains
+// non-ASCII text, so compute its line in the exact text the regex searched.
+fn masked_line(text: &str, byte: usize) -> usize {
+    text.as_bytes()[..byte]
+        .iter()
+        .filter(|&&b| b == b'\n')
+        .count()
+        + 1
 }
 fn brace_end(s: &str, open: usize) -> Option<usize> {
     let mut d = 0;
@@ -237,6 +248,23 @@ mod tests {
             ),
         ]);
         assert_eq!(DroppedAsserts.run(&x).unwrap().len(), 1);
+    }
+    #[test]
+    fn unicode_in_removed_comments_preserves_original_source_lines() {
+        let x = c(&[
+            (
+                "ntoskrnl/include/internal/a.h",
+                "/* π banner */\nFORCEINLINE VOID MiFoo(VOID) { ASSERT(a); }\n",
+            ),
+            (
+                "sdk/lib/rust/foo.rs",
+                "// π banner\npub fn MiFoo() { work(); }\n",
+            ),
+        ]);
+        let got = DroppedAsserts.run(&x).unwrap();
+        assert_eq!(got, vec![
+            "ntoskrnl/include/internal/a.h:2: MiFoo: C has 1 assert(s), Rust has 0 (sdk/lib/rust/foo.rs:2)"
+        ]);
     }
 }
 

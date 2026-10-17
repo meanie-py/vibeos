@@ -129,6 +129,8 @@ pub(crate) fn convention_facts(
         })
         .collect();
     let lines = src.lines().collect::<Vec<_>>();
+    let newline_offsets: Vec<_> = src.match_indices('\n').map(|(at, _)| at).collect();
+    let newlines_before = |at: usize| newline_offsets.partition_point(|&n| n < at);
     let mut decls = Vec::new();
     for block in DECL_BLOCK.captures_iter(src) {
         let whole = block.get(0).unwrap();
@@ -138,14 +140,15 @@ pub(crate) fn convention_facts(
         }
         let body = &block["body"];
         let body_start = block.name("body").unwrap().start();
-        let block_line = src[..whole.start()].bytes().filter(|&b| b == b'\n').count();
+        let block_line = newlines_before(whole.start());
         for d in DECL_FN.captures_iter(body) {
             let ds = d.get(0).unwrap().start();
             let line_prefix = &body[body[..ds].rfind('\n').map_or(0, |x| x + 1)..ds];
             if line_prefix.contains("//") {
                 continue;
             }
-            let line = block_line + body[..ds].bytes().filter(|&b| b == b'\n').count() + 1;
+            let line =
+                block_line + newlines_before(body_start + ds) - newlines_before(body_start) + 1;
             decls.push((
                 symbol_decl(&d),
                 block["cc"].to_owned(),
@@ -162,9 +165,14 @@ fn crate_key(path: &Path) -> Option<String> {
     let text = path.to_string_lossy().replace('\\', "/");
     text.split("/src/").next().map(str::to_owned)
 }
-fn included_i386(path: &Path, text: &str) -> bool {
+pub(crate) fn included_i386(path: &Path, text: &str) -> bool {
     let s = path.to_string_lossy().replace('\\', "/");
-    if ARCH_FILE.is_match(path.file_name().and_then(|s| s.to_str()).unwrap_or(""))
+    let in_arch_directory = s.split("/src/").nth(1).is_some_and(|tail| {
+        tail.split('/')
+            .any(|part| matches!(part, "arm64" | "amd64" | "aarch64" | "x86_64"))
+    });
+    if in_arch_directory
+        || ARCH_FILE.is_match(path.file_name().and_then(|s| s.to_str()).unwrap_or(""))
         || s.contains("/target/")
     {
         return false;
@@ -196,37 +204,67 @@ fn decl_split_findings(
     out
 }
 
-fn sys_module_has_body(
-    crate_root: &str,
-    module_path: &str,
-    name: &str,
-    all: &BTreeMap<String, Vec<&SourceFile>>,
-) -> bool {
-    let base = format!("{crate_root}/src");
-    let mut module = module_path.trim_matches(':').replace("::", "/");
-    if module.is_empty() {
-        return false;
-    }
-    let prefix = format!("{base}/{module}");
-    all.get(crate_root).into_iter().flatten().any(|f| {
-        let path = f.path.to_string_lossy().replace('\\', "/");
-        if !(path == format!("{prefix}.rs") || path == format!("{prefix}/mod.rs")) {
-            return false;
+#[derive(Default)]
+struct SysIndex {
+    decl_cc: BTreeMap<String, BTreeMap<String, String>>,
+    bodies: BTreeMap<String, BTreeSet<String>>,
+}
+static SYS_BODY: LazyLock<Regex> = LazyLock::new(|| {
+    crate::regexes::cached(r"(?m)^\s*pub\s+(?:unsafe\s+)?fn\s+(\w+)\s*\([^;{]*\)[^;{]*\{").unwrap()
+});
+fn sys_index(all: &BTreeMap<String, Vec<&SourceFile>>) -> SysIndex {
+    let mut index = SysIndex::default();
+    for (root, files) in all {
+        if !root.rsplit('/').next().is_some_and(|n| n.ends_with("-sys")) {
+            continue;
         }
-        let pat = crate::regexes::cached(&format!(
-            r"(?m)^\s*pub\s+(?:unsafe\s+)?fn\s+{}\s*\([^;{{]*\)[^;{{]*\{{",
-            regex::escape(name)
-        ))
-        .unwrap();
-        pat.is_match(&f.text)
-    })
+        for f in files {
+            let path = f.path.to_string_lossy().replace('\\', "/");
+            if included_i386(&f.path, &f.text) {
+                let facts = convention_facts(&f.text);
+                for (name, cc, _line, _text) in facts.1 {
+                    index
+                        .decl_cc
+                        .entry(root.clone())
+                        .or_default()
+                        .entry(name)
+                        .or_insert(cc);
+                }
+            }
+            let body_path = path.strip_prefix(&format!("{root}/src/")).unwrap_or("");
+            let module = if let Some(x) = body_path.strip_suffix("/mod.rs") {
+                x.to_owned()
+            } else if let Some(x) = body_path.strip_suffix(".rs") {
+                if x == "lib" {
+                    String::new()
+                } else {
+                    x.to_owned()
+                }
+            } else {
+                continue;
+            };
+            if module.is_empty() {
+                continue;
+            }
+            let funcs = index
+                .bodies
+                .entry(format!("{root}/{}", module.replace('/', "::")))
+                .or_default();
+            funcs.extend(SYS_BODY.captures_iter(&f.text).map(|m| m[1].to_owned()));
+        }
+    }
+    index
+}
+fn sys_module_has_body(root: &str, module_path: &str, name: &str, index: &SysIndex) -> bool {
+    let module = module_path.trim_matches(':').replace("::", "::");
+    !module.is_empty()
+        && index
+            .bodies
+            .get(&format!("{root}/{module}"))
+            .is_some_and(|f| f.contains(name))
 }
 
-fn crate_findings(
-    files: &[&SourceFile],
-    crate_name: &str,
-    all: &BTreeMap<String, Vec<&SourceFile>>,
-) -> Vec<String> {
+fn crate_findings(files: &[&SourceFile], crate_name: &str, sys: &SysIndex) -> Vec<String> {
     let mut defs = BTreeMap::<String, Vec<(String, bool)>>::new();
     let mut decls = BTreeMap::<String, Vec<(String, String, usize, String, String)>>::new();
     for f in files {
@@ -263,10 +301,15 @@ fn crate_findings(
                 vec![tail.to_owned()]
             };
             for name in names {
-                if sys_module_has_body(&sys_root, module_path, &name, all) {
+                if sys_module_has_body(&sys_root, module_path, &name, sys) {
                     continue;
                 }
-                if let Some(cc) = sys_decl(all, &sys_root, &name) {
+                if let Some(cc) = sys
+                    .decl_cc
+                    .get(&sys_root)
+                    .and_then(|m| m.get(&name))
+                    .cloned()
+                {
                     let line = f.text[..m.get(0).unwrap().start()]
                         .bytes()
                         .filter(|&b| b == b'\n')
@@ -289,10 +332,15 @@ fn crate_findings(
             let sys_ident = &m["crate"];
             let sys_root = format!("sdk/lib/rust/{}", sys_ident.replace('_', "-"));
             let name = &m["name"];
-            if sys_module_has_body(&sys_root, &m["path"], name, all) {
+            if sys_module_has_body(&sys_root, &m["path"], name, sys) {
                 continue;
             }
-            if let Some(cc) = sys_decl(all, &sys_root, name) {
+            if let Some(cc) = sys
+                .decl_cc
+                .get(&sys_root)
+                .and_then(|m| m.get(name))
+                .cloned()
+            {
                 let line = f.text[..m.get(0).unwrap().start()]
                     .bytes()
                     .filter(|&b| b == b'\n')
@@ -335,23 +383,6 @@ fn crate_findings(
     let _ = crate_name;
     out
 }
-fn sys_decl(
-    all: &BTreeMap<String, Vec<&SourceFile>>,
-    sys_root: &str,
-    name: &str,
-) -> Option<String> {
-    all.get(sys_root)?
-        .iter()
-        .filter(|f| included_i386(&f.path, &f.text))
-        .find_map(|f| {
-            convention_facts(&f.text)
-                .1
-                .into_iter()
-                .find(|d| d.0 == name)
-                .map(|d| d.1)
-        })
-}
-
 impl Rule for CcMismatch {
     fn name(&self) -> &'static str {
         "scan_cc_mismatch"
@@ -363,9 +394,10 @@ impl Rule for CcMismatch {
                 groups.entry(k).or_default().push(f);
             }
         }
+        let sys = sys_index(&groups);
         let mut out = Vec::new();
         for (k, files) in &groups {
-            out.extend(crate_findings(files, k, &groups));
+            out.extend(crate_findings(files, k, &sys));
         }
         out.sort();
         out.dedup();
@@ -388,6 +420,74 @@ mod tests {
     }
     fn run(files: &[(&str, &str)]) -> Vec<String> {
         CcMismatch.run(&corpus(files)).unwrap()
+    }
+
+    fn legacy_module_has_body(
+        crate_root: &str,
+        module_path: &str,
+        name: &str,
+        all: &BTreeMap<String, Vec<&SourceFile>>,
+    ) -> bool {
+        let module = module_path.trim_matches(':').replace("::", "/");
+        if module.is_empty() {
+            return false;
+        }
+        let prefix = format!("{crate_root}/src/{module}");
+        all.get(crate_root).into_iter().flatten().any(|f| {
+            let path = f.path.to_string_lossy().replace('\\', "/");
+            if path != format!("{prefix}.rs") && path != format!("{prefix}/mod.rs") {
+                return false;
+            }
+            let pat = crate::regexes::cached(&format!(
+                r"(?m)^\s*pub\s+(?:unsafe\s+)?fn\s+{}\s*\([^;{{]*\)[^;{{]*\{{",
+                regex::escape(name)
+            ))
+            .unwrap();
+            pat.is_match(&f.text)
+        })
+    }
+
+    #[test]
+    fn sys_index_body_lookup_matches_legacy_even_for_arch_and_orphan_files() {
+        let c = corpus(&[
+            (
+                "sdk/lib/rust/demo-sys/src/ddk.rs",
+                "pub unsafe fn KeFoo(x:u32) { }\n",
+            ),
+            (
+                "sdk/lib/rust/demo-sys/src/parked.rs",
+                "//! ORPHAN-BY-DESIGN: parked\npub fn KeParked() {}\n",
+            ),
+            (
+                "sdk/lib/rust/demo-sys/src/types_arm64.rs",
+                "pub fn KeArchOnly() {}\n",
+            ),
+            (
+                "sdk/lib/rust/demo-sys/src/ddk/mod.rs",
+                "pub fn KeNested() {}\n",
+            ),
+        ]);
+        let mut groups = BTreeMap::<String, Vec<&SourceFile>>::new();
+        for f in &c.files {
+            if let Some(k) = crate_key(&f.path) {
+                groups.entry(k).or_default().push(f);
+            }
+        }
+        let index = sys_index(&groups);
+        for (module, name) in [
+            ("ddk", "KeFoo"),
+            ("parked", "KeParked"),
+            ("types_arm64", "KeArchOnly"),
+            ("ddk", "KeNested"),
+            ("ddk", "Missing"),
+        ] {
+            let old = legacy_module_has_body("sdk/lib/rust/demo-sys", module, name, &groups);
+            assert_eq!(
+                sys_module_has_body("sdk/lib/rust/demo-sys", module, name, &index),
+                old,
+                "{module}::{name}"
+            );
+        }
     }
 
     #[test]
@@ -489,5 +589,23 @@ mod tests {
             ("sdk/lib/rust/demo-rust/src/parked.rs","//! ORPHAN-BY-DESIGN: intentionally parked\n#[no_mangle] unsafe extern \"system\" fn X() {}\n"),
         ]);
         assert!(got.is_empty(), "{got:?}");
+    }
+    #[test]
+    fn arch_directory_sources_are_not_i386_inputs() {
+        for path in [
+            "sdk/lib/rust/demo-rust/src/arm64/a.rs",
+            "sdk/lib/rust/demo-rust/src/amd64/b.rs",
+            "sdk/lib/rust/demo-rust/src/aarch64/c.rs",
+            "sdk/lib/rust/demo-rust/src/x86_64/d.rs",
+        ] {
+            assert!(
+                !included_i386(Path::new(path), "extern \"system\" { fn X(); }"),
+                "{path}"
+            );
+        }
+        assert!(included_i386(
+            Path::new("sdk/lib/rust/demo-rust/src/common.rs"),
+            "extern \"system\" { fn X(); }"
+        ));
     }
 }

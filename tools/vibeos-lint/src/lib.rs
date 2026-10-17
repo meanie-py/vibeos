@@ -1,9 +1,16 @@
 //! Statically linked lint plugins over an immutable, shared source snapshot.
-mod integers;
+pub mod const_shared;
+pub mod const_values;
+mod crate_cfg;
+pub use crate_cfg::CrateCfg;
+mod history;
+pub mod integers;
+pub use history::VersionHistory;
 mod inventory;
 pub use inventory::SourceSet;
 pub mod lexical;
 pub mod link_model;
+pub mod module_inputs;
 pub mod modules;
 pub mod regexes;
 pub mod rules;
@@ -22,6 +29,12 @@ pub trait Rule: Sync {
     fn run(&self, corpus: &Corpus) -> Result<Vec<String>, String>;
     fn source_sets(&self) -> &'static [SourceSet] {
         &[]
+    }
+    fn needs_module_inputs(&self) -> bool {
+        false
+    }
+    fn needs_version_history(&self) -> bool {
+        false
     }
     fn needs_c_twins(&self) -> bool {
         false
@@ -162,6 +175,9 @@ pub struct Corpus {
     pub files: Vec<SourceFile>,
     twins: OnceLock<twins::CIndex>,
     modules: OnceLock<modules::ModuleTree>,
+    version_history: OnceLock<Result<VersionHistory, String>>,
+    module_inputs: OnceLock<module_inputs::ModuleModel>,
+    crate_configs: OnceLock<BTreeMap<PathBuf, CrateCfg>>,
 }
 
 const RUST: u8 = 1;
@@ -200,7 +216,31 @@ impl Corpus {
             files,
             twins: OnceLock::new(),
             modules: OnceLock::new(),
+            version_history: OnceLock::new(),
+            module_inputs: OnceLock::new(),
+            crate_configs: OnceLock::new(),
         }
+    }
+    pub fn crate_cfg(&self, path: &Path) -> &CrateCfg {
+        static EMPTY: std::sync::LazyLock<CrateCfg> = std::sync::LazyLock::new(CrateCfg::default);
+        let all = self.crate_configs.get_or_init(|| crate_cfg::configs(self));
+        for parent in path.ancestors().skip(1) {
+            if let Some(cfg) = all.get(parent) {
+                return cfg;
+            }
+        }
+        &EMPTY
+    }
+    pub fn module_inputs(&self) -> &module_inputs::ModuleModel {
+        self.module_inputs
+            .get_or_init(|| module_inputs::ModuleModel::from_corpus(self))
+    }
+    pub fn version_history(&self) -> Result<&VersionHistory, String> {
+        self.version_history
+            .get()
+            .ok_or("version history was not requested")?
+            .as_ref()
+            .map_err(Clone::clone)
     }
     pub fn module_tree(&self) -> &modules::ModuleTree {
         self.modules
@@ -376,7 +416,7 @@ impl Corpus {
             }
             for set in sets.iter().filter(|set| set.tracked) {
                 patterns.extend(set.extensions.iter().map(|ext| format!("*.{ext}")));
-                patterns.extend(set.filenames.iter().map(|name| name.to_string()));
+                patterns.extend(set.filenames.iter().map(|name| format!("*{name}")));
             }
             let output = std::process::Command::new("git")
                 .arg("-C")
@@ -662,6 +702,15 @@ pub fn execute(
 ) -> Result<Vec<(&'static str, Vec<String>)>, String> {
     // Build cross-file indexes before rules fan out. Initializing a OnceLock
     // from nested Rayon jobs can exhaust the pool with workers waiting on it.
+    if selected.iter().any(|rule| rule.needs_module_inputs()) {
+        corpus.module_inputs();
+    }
+    if selected.iter().any(|rule| rule.needs_version_history()) {
+        corpus
+            .version_history
+            .get_or_init(|| VersionHistory::capture(&corpus.root));
+        corpus.version_history()?;
+    }
     if selected.iter().any(|rule| rule.needs_c_twins()) {
         corpus.c_twins();
     }
@@ -720,6 +769,11 @@ mod tests {
         )
         .unwrap();
         fs::write(temp.join("sdk/include/catalog.h"), "#define FLAG 1\n").unwrap();
+        fs::write(
+            temp.join("sdk/lib/rust/demo/Cargo.toml"),
+            "[package]\nname=\"demo\"\n",
+        )
+        .unwrap();
         let raw = b"\xff\r\n\0\rresource";
         fs::write(temp.join("assets/tracked.res"), raw).unwrap();
         fs::write(temp.join("assets/untracked.res"), raw).unwrap();
@@ -732,19 +786,21 @@ mod tests {
         assert!(std::process::Command::new("git")
             .arg("-C")
             .arg(&temp)
-            .args(["add", "assets/tracked.res"])
+            .args(["add", "assets/tracked.res", "sdk/lib/rust/demo/Cargo.toml"])
             .status()
             .unwrap()
             .success());
         const SETS: &[SourceSet] = &[
             SourceSet::tree("catalog", &["sdk/include"], &["h"], &[]),
             SourceSet::tracked("resources", &["res"], &[]),
+            SourceSet::tracked("tracked-manifests", &[], &["Cargo.toml"]),
             SourceSet::tree("markers", &[""], &[], &[".git"]).with_pruning(&[".git", "target"]),
             SourceSet::tree("fixture-c", &["sdk/include"], &["h"], &[]).with_inputs(),
         ];
         let corpus =
             Corpus::load_scopes_with_sets(&temp, &[], SourceNeeds::default(), &[], SETS).unwrap();
         assert_eq!(corpus.sources("resources").count(), 1);
+        assert_eq!(corpus.sources("tracked-manifests").count(), 1);
         assert_eq!(corpus.sources("resources").next().unwrap().bytes(), raw);
         assert_eq!(corpus.sources("catalog").count(), 1);
         assert_eq!(
