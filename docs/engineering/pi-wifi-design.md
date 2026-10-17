@@ -1,8 +1,8 @@
 # Raspberry Pi Wi-Fi: our own CYW43455 driver
 
-Status (2026-10-17): protocol, SDIO and chip layers host-tested against a simulated
-controller; on the Pi 5, bwfm.sys reads the chip id and its cores (run
-`20261017-012021-t5v81pv4`). Next: the firmware download.
+Status (2026-10-17): protocol, SDIO, chip and firmware-load layers host-tested against a
+simulated controller; on the Pi 5, bwfm.sys loads the firmware and it runs (run
+`20261017-030446-amqa391_`). Next: SDPCM frames over function 2, then BCDC `ver`.
 
 ## Why our own
 
@@ -113,5 +113,18 @@ only when asked to (`VIBEOS_PI_WIFI_FIRMWARE`), so an image built without it is 
    the line for 20 ms and raises it, so the chip starts from its power-on reset. Two more
    components (0x135, 0x240) have no register base; they are the interconnect's own.
    SDHCI version 0x1002 is spec 3.00, vendor 0x10.
-4. Firmware download and the ready mailbox; `ver` over BCDC.
+4. Firmware download (done on the Pi 5, run `20261017-030446-amqa391_`, first try): the
+   CR4 halted and the 802.11 core held in reset, RAM sized from the CR4's TCM banks
+   (800 KiB at 0x198000), the firmware written at the bottom and the converted NVRAM
+   (`nvram.rs`) at the top, both read back and compared, the first word planted at 0 as
+   the reset vector, the CR4 released; then HT, the mailbox version, and function 2,
+   whose I/O-ready is the firmware up:
+
+       [BWFM] firmware loaded and verified: 609309 bytes at 0x198000, NVRAM 1748 bytes at 0x25f92c, reset vector 0xb83ef198, 130 ms
+       [BWFM] firmware running: function 2 ready after 75 ms
+
+   The files come from a build with `VIBEOS_PAYLOAD=piwifi` (`tools/payloads/piwifi`),
+   which runs the pinned fetch and stages them in `\SystemRoot\System32\drivers\cyw43455\`.
+   Without it bwfm.sys waits 120 s for them and logs that VibeOS does not ship them.
+   Still owed: `ver` over BCDC (needs the function 2 frame path), and the CLM blob.
 5. Scan, join, WPA2, link up, netstack traffic. Then the Pi 4 (host and power differ).
