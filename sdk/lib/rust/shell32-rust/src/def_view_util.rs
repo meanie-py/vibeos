@@ -337,8 +337,6 @@ pub type LPTBBUTTONSB = *mut core::ffi::c_void;
 pub type LPFNSVADDPROPSHEETPAGE = Option<unsafe extern "system" fn(HPROPSHEETPAGE, LPARAM) -> BOOL>;
 
 extern "system" {
-    fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
-    fn ILFree(pidl: LPITEMIDLIST);
 }
 
 pub struct CppComPtrGuard<T> { slot: *mut *mut T }
@@ -359,6 +357,9 @@ impl<T> Drop for CppComPtrGuard<T> {
 }
 
 use core::ffi::c_void;
+// The crate's own functions: the definition is the declaration.
+use crate::wine::pidl::ILClone;
+use crate::wine::pidl::ILFree;
 use crate::prelude::*;
 
 pub unsafe fn CShellFolderViewCBWrapper_CObjectWithSiteBase_base_dtor_body(this: *mut CShellFolderViewCBWrapper) -> () {

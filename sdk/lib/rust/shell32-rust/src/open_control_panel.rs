@@ -41,7 +41,6 @@ extern "C" {
 // Deterministic COM scaffold for COpenControlPanel; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    fn HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
     fn HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
@@ -198,7 +197,7 @@ pub unsafe extern "system" fn COpenControlPanel_CreateInstance(
     let this = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        core::mem::size_of::<COpenControlPanel>(),
+        (core::mem::size_of::<COpenControlPanel>()) as _,
     ) as *mut COpenControlPanel;
     if this.is_null() {
         return E_OUTOFMEMORY;
@@ -254,6 +253,14 @@ pub static CPP_COM_WSTR_CB760546C01C: [WCHAR; 64] = [
 ];
 
 use crate::shellcom::*;
+// The crate's own functions: the definition is the declaration.
+use crate::shell32::shlexec::ShellExecuteExW;
+// One declaration per external symbol: island.rs.
+use crate::island::HeapAlloc;
+use crate::island::RegCloseKey;
+use crate::island::RegEnumKeyW;
+use crate::island::RegGetValueW;
+use crate::island::RegOpenKeyExW;
 use crate::types::*;
 use crate::wine::pidl::{ILFree, SHGetNameFromIDList};
 use crate::wine::shellole::SHFree;
@@ -302,30 +309,11 @@ struct SHELLEXECUTEINFOW {
 }
 
 extern "system" {
-    fn RegOpenKeyExW(
-        hKey: HKEY,
-        lpSubKey: LPCWSTR,
-        ulOptions: DWORD,
-        samDesired: REGSAM,
-        phkResult: PHKEY,
-    ) -> LSTATUS;
-    fn RegEnumKeyW(hKey: HKEY, dwIndex: DWORD, lpName: LPWSTR, cchName: DWORD) -> LSTATUS;
-    fn RegGetValueW(
-        hKey: HKEY,
-        lpSubKey: LPCWSTR,
-        lpValue: LPCWSTR,
-        dwFlags: DWORD,
-        pdwType: LPDWORD,
-        pvData: PVOID,
-        pcbData: LPDWORD,
-    ) -> LSTATUS;
-    fn RegCloseKey(hKey: HKEY) -> LSTATUS;
     fn IIDFromString(lpsz: LPCOLESTR, lpiid: *mut IID) -> HRESULT;
     fn lstrcmpiW(left: LPCWSTR, right: LPCWSTR) -> INT;
     fn lstrcpyW(dst: LPWSTR, src: LPCWSTR) -> LPWSTR;
     fn GetSystemDirectoryW(buffer: LPWSTR, size: UINT) -> UINT;
     fn PathAppendW(path: LPWSTR, more: LPCWSTR) -> BOOL;
-    fn ShellExecuteExW(info: *mut SHELLEXECUTEINFOW) -> BOOL;
     fn GetLastError() -> DWORD;
 }
 
@@ -559,7 +547,7 @@ pub unsafe fn COpenControlPanel_Open_body(
     }
 
     if hr >= 0 {
-        let error = if ShellExecuteExW(&mut sei) != 0 {
+        let error = if ShellExecuteExW((&raw mut sei).cast()) != 0 {
             ERROR_SUCCESS as DWORD
         } else {
             GetLastError()

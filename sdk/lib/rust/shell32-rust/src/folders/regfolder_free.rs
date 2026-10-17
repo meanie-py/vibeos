@@ -1,11 +1,12 @@
 use crate::prelude::*;
+// The crate's own functions: the definition is the declaration.
+use crate::wine::shellord::SHRunControlPanel;
 // `DFM_CMD_PROPERTIES` and the shellutils.h inline `SHELL_ExecuteControlPanelCPL` already
 // have canonical copies in `desktop_folder` (CDrivesFolder.rs imports the same constant);
 // import rather than re-derive, so there is one definition of each.
 use crate::desktop_folder::DFM_CMD_PROPERTIES;
 
 extern "system" {
-    fn SHRunControlPanel(cpl: LPCWSTR, hwnd: HWND) -> BOOL;
 }
 /// `shellutils.h:218` `SHELL_ExecuteControlPanelCPL(hwnd, cpl)` := `SHRunControlPanel(cpl, hwnd)`
 /// -- a header inline with no out-of-line symbol, so each TU carries its own copy (the

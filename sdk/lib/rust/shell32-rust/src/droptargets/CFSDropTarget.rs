@@ -42,6 +42,15 @@
 // fail differently. The prelude glob resolves far more names, so it is the one kept, and the
 // per-type ownership is then stated explicitly below.
 use crate::prelude::*;
+// The crate's own functions: the definition is the declaration.
+use crate::desktop_folder_tu::SHGetDesktopFolder;
+// One declaration per external symbol: island.rs.
+use crate::island::DestroyMenu;
+use crate::island::DestroyWindow;
+use crate::island::IUnknown_QueryService;
+use crate::island::LoadStringW;
+use crate::island::PathRemoveExtensionW;
+use crate::island::SHCreateThread;
 // Explicit, not a glob: prelude globs the ISLAND, which declares its own IDataObject /
 // IDropTarget / IUnknown. An explicit import outranks a glob, so naming these three here is
 // what makes shellcom's the one nominal identity in this file — the same three whose local
@@ -751,13 +760,7 @@ pub struct CIDA {
 }
 pub type LPIDA = *mut CIDA;
 
-#[repr(C)]
-pub struct DROPFILES {
-    pub pFiles: DWORD,
-    pub pt: POINT,
-    pub fNC: BOOL,
-    pub fWide: BOOL,
-}
+pub use crate::island::DROPFILES;
 pub type LPDROPFILES = *mut DROPFILES;
 
 #[repr(C)]
@@ -770,26 +773,11 @@ pub struct DVTARGETDEVICE {
     pub tdData: [BYTE; 1],
 }
 
-#[repr(C)]
-pub struct QCMINFO {
-    pub hmenu: HMENU,
-    pub indexMenu: UINT,
-    pub idCmdFirst: UINT,
-    pub idCmdLast: UINT,
-    pub pIdMap: *const QCMINFO_IDMAP,
-}
+pub use crate::island::QCMINFO;
 
-#[repr(C)]
-pub struct QCMINFO_IDMAP {
-    pub nMaxIds: UINT,
-    pub pIdList: [QCMINFO_IDMAP_PLACEMENT; 1],
-}
+pub use crate::island::QCMINFO_IDMAP;
 
-#[repr(C)]
-pub struct QCMINFO_IDMAP_PLACEMENT {
-    pub id: UINT,
-    pub fFlags: UINT,
-}
+pub use crate::island::QCMINFO_IDMAP_PLACEMENT;
 
 #[repr(C)]
 pub struct STATDATA {
@@ -893,19 +881,7 @@ extern "C" {
     pub static IID_IShellLinkW: IID;
 }
 
-#[repr(C)]
-pub struct WIN32_FIND_DATAW {
-    pub dwFileAttributes: DWORD,
-    pub ftCreationTime: FILETIME,
-    pub ftLastAccessTime: FILETIME,
-    pub ftLastWriteTime: FILETIME,
-    pub nFileSizeHigh: DWORD,
-    pub nFileSizeLow: DWORD,
-    pub dwReserved0: DWORD,
-    pub dwReserved1: DWORD,
-    pub cFileName: [WCHAR; 260],
-    pub cAlternateFileName: [WCHAR; 14],
-}
+pub use crate::island::WIN32_FIND_DATAW;
 
 pub static INVALID_FILETITLE_CHARACTERSW: [WCHAR; 10] = [0x005c, 0x002f, 0x003a, 0x002a, 0x003f, 0x0022, 0x003c, 0x003e, 0x007c, 0];
 
@@ -917,16 +893,11 @@ pub const DROPEFFECT_MOVE: DWORD = 2;
 pub const DROPEFFECT_LINK: DWORD = 4;
 
 extern "system" {
-    fn DestroyMenu(menu: HMENU) -> BOOL;
-    fn DestroyWindow(window: HWND) -> BOOL;
-    fn IUnknown_QueryService(object: *mut IUnknown, service: REFGUID, riid: REFIID, out: *mut *mut core::ffi::c_void) -> HRESULT;
     fn SHChangeNotify(event: LONG, flags: UINT, item1: LPCVOID, item2: LPCVOID);
     fn GlobalLock(memory: HGLOBAL) -> LPVOID;
     fn lstrlenW(text: LPCWSTR) -> INT;
-    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
     fn CoTaskMemFree(memory: LPVOID);
     fn SHStrDupW(source: LPCWSTR, out: *mut LPWSTR) -> HRESULT;
-    fn SHGetDesktopFolder(folder: *mut *mut IShellFolder) -> HRESULT;
     fn SHGetNameFromIDList(pidl: PCIDLIST_ABSOLUTE, sigdn: SIGDN, name: *mut PWSTR) -> HRESULT;
     // Redeclared rather than taken from the island, which spells the thread proc as bindgen's
     // per-target concrete ABI (`extern "stdcall"` on i386). `extern "system"` IS that same
@@ -934,7 +905,6 @@ extern "system" {
     // distinct fn types, so an `extern "system"` fn item will not coerce into the island's
     // slot. Same shape as dialogs/filedefext.rs:1025. Both `pfnCallback` args are NULL at
     // every call site here, so LPVOID is enough.
-    fn SHCreateThread(proc_: unsafe extern "system" fn(LPVOID) -> DWORD, data: LPVOID, flags: DWORD, callback: LPVOID) -> BOOL;
 }
 
 extern "C" {
@@ -1571,7 +1541,7 @@ pub unsafe fn CFSDropTarget_Drop_body(this: *mut CFSDropTarget, pDataObject: *mu
         let _psfv_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(psfv));
         // `SID_SFolderView` is `#define`d to IID_IFolderView (shobjidl.idl:904) — a REFGUID,
         // so it goes in by address, not by value.
-        let hr = IUnknown_QueryService((*this).m_site, core::ptr::addr_of!(IID_IFolderView), core::ptr::addr_of!(IID_IShellFolderView), core::ptr::addr_of_mut!(psfv).cast());
+        let hr = IUnknown_QueryService(((*this).m_site).cast(), core::ptr::addr_of!(IID_IFolderView), core::ptr::addr_of!(IID_IShellFolderView), core::ptr::addr_of_mut!(psfv).cast());
         if hr >= 0 {
             // C++ passes `this` and lets the compiler upcast CFSDropTarget* -> IDropTarget*.
             // Rust has no implicit upcast, so name the embedded interface explicitly; the
@@ -1611,7 +1581,7 @@ pub unsafe fn CFSDropTarget_Drop_body(this: *mut CFSDropTarget, pDataObject: *mu
             (*data).dwKeyState = dwKeyState;
             (*data).pt = pt;
             (*data).pdwEffect = *pdwEffect;
-            SHCreateThread(CFSDropTarget_DoDropThreadProc_entry, data as *mut core::ffi::c_void, CTF_COINIT | CTF_PROCESS_REF, core::ptr::null_mut());
+            SHCreateThread(Some(CFSDropTarget_DoDropThreadProc_entry), data as *mut core::ffi::c_void, CTF_COINIT | CTF_PROCESS_REF, None);
             ((*(*pAsyncOperation).lpVtbl).Release)(pAsyncOperation);
             pAsyncOperation = core::ptr::null_mut();
             return S_OK;
@@ -1704,7 +1674,6 @@ extern "system" {
     ) -> HRESULT;
     fn PathCombineW(lpszDest: LPWSTR, lpszDir: LPCWSTR, lpszFile: LPCWSTR) -> LPWSTR;
     fn PathFindExtensionW(pszPath: LPCWSTR) -> LPWSTR;
-    fn PathRemoveExtensionW(pszPath: LPWSTR);
     fn PathFindFileNameW(pszPath: LPCWSTR) -> LPWSTR;
     fn IShellLink_ConstructFromPath(path: LPCWSTR, riid: REFIID, ppv: *mut LPVOID) -> HRESULT;
 }

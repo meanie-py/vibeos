@@ -910,6 +910,19 @@ kind of residue (2026-10-17, about 30 crates):
   `IUnknown`s in menuband, and `GUID`/`BITMAP`/`IStream` in ole32. Once one declaration survives,
   a caller that passes its own copy fails with E0308. Fix: dedupe to one definition with
   `pub use`, or `.cast()` at the pointer argument. Never use `as _` on a struct by value.
+  At crate scale, `tools/rustconv/struct_to_island.py <crate>/src` makes every hand copy whose
+  field names match the island's on all three arches a `pub use crate::island::NAME;`. It keeps
+  a copy that derives more, that the crate `impl`s (`unsafe impl Sync` included), or whose island
+  fields are bindgen anonymous records or types the crate keeps its own copy of. shell32: 161 of
+  280. crate-repair's `raw_pointer_cast` no longer bridges two DIFFERENT named pointees: `.cast()`
+  from `MENUITEMINFOW` to `tagMENUITEMINFOW` would bless a second layout without checking it
+  (void, `char` signedness, COM upcasts and one name under two paths still cast).
+- **A crate's own export, declared `extern` by its callers, is collapsed onto the definition**
+  (`extern_to_use.py --census <json> --crate X sdk/lib/rust` -- `src` is the rust root there,
+  and an empty crate is now a hard error, not 0 found). The errors that follow are calls that
+  disagreed with their OWN crate's definition: shell32's `SHGetSetSettings` took shellord's
+  bit-exact SHELLSTATE while every caller held the island's, and `SH_CreatePropertySheetPageEx`
+  took a bare fn where the header says `DLGPROC`. Retype the definition to the header's types.
 - **ntdll-sys aliases are not the canonical spelling.** On 64-bit, `SIZE_T`/`WPARAM`/`LPARAM` are
   `u64`/`i64`, while most canonical declarations spell them `usize`/`isize`. They have the same
   width on every arch but are different Rust types. Rewrite each call site from rustc's own span
@@ -2018,6 +2031,13 @@ why the bug only surfaced on amd64/arm64 -- rapps crashed extracting its databas
 module-local audit misses this; measure the header with the module's real flags (borrow its
 line from `compile_commands.json`, add `-fsyntax-only` and a `char (*x)[offsetof(T,f)+1000] = 1;`
 probe, read the numbers off the diagnostics) and pin the result with `offset_of!` asserts.
+**A hand copy beside an island is the cheapest audit there is.** Emit `size_of`/`align_of`/
+`offset_of!` asserts comparing each copy with the island's struct of the same name and compile
+all three targets. shell32 (2026-10-17): `SHQUERYRBINFO` and `SHFILEOPSTRUCTW` unpacked where
+shellapi.h is `pshpack1` on 32-bit ONLY (`#if !defined(_WIN64)`), so on i386 the exported
+`SHQueryRecycleBinW` was 24 bytes against every caller's 20 and refused them all with
+E_INVALIDARG; `SFVM_CUSTOMVIEWINFO_DATA` (undocshell.h's pshpack1 block) had `hbmBack` at 8,
+not 4, on 64-bit. 26 more differed only in alignment. Taking the island's struct fixes them.
 **The other direction, at island scale: a pack PUSH copied into a bindgen wrapper.**
 profile_derive mirrors each TU's include prologue into the module's merged `WRAPPER_INC`, and
 partlist.c's prologue ENDS with `#include <pshpack1.h>` -- its `poppack.h` comes after two

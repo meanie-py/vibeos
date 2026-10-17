@@ -126,7 +126,6 @@ extern "C" {
 // Deterministic COM scaffold for CMyDocsFolder; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    fn HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
     fn HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
@@ -515,7 +514,7 @@ unsafe fn cpp_com_iid_equal(left: REFIID, right: REFIID) -> bool {
     if ppv.is_null() { return E_POINTER; }
     *ppv = core::ptr::null_mut();
     if !outer.is_null() { return CLASS_E_NOAGGREGATION; }
-    let this = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, core::mem::size_of::<CMyDocsFolder>()) as *mut CMyDocsFolder;
+    let this = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (core::mem::size_of::<CMyDocsFolder>()) as _) as *mut CMyDocsFolder;
     if this.is_null() { return E_OUTOFMEMORY; }
     core::ptr::write(this, CMyDocsFolder {
         IShellFolder2_iface: IShellFolder2 { lpVtbl: core::ptr::addr_of!(CMYDOCSFOLDER_ISHELLFOLDER2_VTBL) },
@@ -556,7 +555,6 @@ pub static INVALID_FILETITLE_CHARACTERSW: [WCHAR; 10] = [0x005c, 0x002f, 0x003a,
 
 extern "system" {
     fn SHStrDupW(source: LPCWSTR, out: *mut LPWSTR) -> HRESULT;
-    fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
     fn SHFree(memory: LPVOID);
     fn ILGetNext(pidl: PCUIDLIST_RELATIVE) -> LPITEMIDLIST;
     #[link_name = "Shell32RustCoCreateInitSF"] fn SHELL32_CoCreateInitSF(root: LPCITEMIDLIST, clsid: *const GUID, csidl: INT, riid: REFIID, out: *mut *mut core::ffi::c_void) -> HRESULT;
@@ -574,6 +572,10 @@ extern "C" {
 }
 
 use core::ffi::c_void;
+// The crate's own functions: the definition is the declaration.
+use crate::wine::pidl::ILClone;
+// One declaration per external symbol: island.rs.
+use crate::island::HeapAlloc;
 use crate::shellcom::*;
 use crate::types::*;
 

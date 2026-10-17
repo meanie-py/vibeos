@@ -772,6 +772,36 @@ def _indirection(ty: str) -> tuple[int, str]:
     return depth, ty.strip()
 
 
+_INT_POINTEE = re.compile(r"^(?:(?:core|std)::ffi::)?(?:[iu](8|16|32|64|128|size)|c_[su]?char)$")
+_COM_POINTEE = re.compile(r"^(?:[A-Za-z_]\w*::)*I[A-Z]\w*$")
+_TYPE_PATH = re.compile(r"^(?:[A-Za-z_]\w*::)*")
+
+
+def _foreign_pointees(expected: str, found: str) -> str | None:
+    """Why `.cast()` between these two pointees is NOT a C implicit conversion, or None.
+
+    C converts `void *` to and from any object pointer, and `char *` signedness is spelling;
+    those are what the generic cast is for. Two DIFFERENT named records are not: shell32's
+    hand-written `MENUITEMINFOW` beside the island's `tagMENUITEMINFOW` is a second copy of a
+    layout, and `.cast()` would compile a copy that disagrees with the header without a word
+    (2026-10-17: 21 such casts in one shell32 run). Two handles (`HWND__` vs `HMENU__`) are a
+    wrong argument. Those stay red, so the duplicate type is retired at its root. COM interface
+    pointers are exempt: an `IShellFolder2 *` passed as `IShellFolder *` is C++'s upcast, and the
+    callee only reads `lpVtbl`.
+    """
+    (_, be), (_, bf) = _indirection(expected), _indirection(found)
+    if _VOID_POINTEE.match(be) or _VOID_POINTEE.match(bf):
+        return None
+    ie, jf = _INT_POINTEE.match(be), _INT_POINTEE.match(bf)
+    if ie and jf:
+        return None if (ie.group(1) or "8") == (jf.group(1) or "8") else "integer_pointee_width"
+    if _COM_POINTEE.match(be) and _COM_POINTEE.match(bf):
+        return None
+    if _TYPE_PATH.sub("", be) == _TYPE_PATH.sub("", bf):
+        return None
+    return "distinct_pointee_types"
+
+
 def _indirection_differs(expected: str, found: str) -> bool:
     """True when a raw-pointer mismatch changes the number of derefs. `void *` converts to and
     from any object pointer in C, so a bare `*mut c_void` on either side never counts."""
@@ -1776,6 +1806,9 @@ def _pointer_cast_rule(
             # deref, not a pointee rename, and `.cast()` would compile it. Only a bare void
             # pointer on either side is C's implicit conversion. Stays RED.
             decline("indirection_depth", f"expected {expected}, found {found}")
+            continue
+        if (why := _foreign_pointees(expected, found)) is not None:
+            decline(why, f"expected {expected}, found {found}")
             continue
         if end <= start:
             decline("zero_length_span", expected)

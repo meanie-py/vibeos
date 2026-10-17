@@ -759,25 +759,10 @@ pub struct IO_STATUS_BLOCK {
 }
 pub type _IO_STATUS_BLOCK = IO_STATUS_BLOCK;
 
-#[repr(C)]
-pub struct PROPSHEETPAGEW {
-    pub dwSize: DWORD,
-    pub dwFlags: DWORD,
-    pub hInstance: HINSTANCE,
-    pub pszTemplate: LPCWSTR,
-    pub hIcon: HICON,
-    pub pszTitle: LPCWSTR,
-    pub pfnDlgProc: DLGPROC,
-    pub lParam: LPARAM,
-}
+pub use crate::island::PROPSHEETPAGEW;
 pub type PROPSHEETPAGE = PROPSHEETPAGEW;
 
-#[repr(C)]
-pub struct OPENASINFO {
-    pub pcszFile: LPCWSTR,
-    pub pcszClass: LPCWSTR,
-    pub oaifInFlags: DWORD,
-}
+pub use crate::island::OPENASINFO;
 
 #[repr(C)]
 pub struct CIDA {
@@ -835,15 +820,7 @@ pub struct FILE_STANDARD_INFORMATION {
     pub Directory: BOOLEAN,
 }
 
-#[repr(C)]
-pub struct NUMBERFMTW {
-    pub NumDigits: UINT,
-    pub LeadingZero: UINT,
-    pub Grouping: UINT,
-    pub lpDecimalSep: LPWSTR,
-    pub lpThousandSep: LPWSTR,
-    pub NegativeOrder: UINT,
-}
+pub use crate::island::NUMBERFMTW;
 
 #[repr(C)]
 pub struct STATDATA {
@@ -873,47 +850,12 @@ pub struct ULARGE_INTEGER {
     pub QuadPart: ULONGLONG,
 }
 
-#[repr(C)]
-pub struct VS_FIXEDFILEINFO {
-    pub dwSignature: DWORD,
-    pub dwStrucVersion: DWORD,
-    pub dwFileVersionMS: DWORD,
-    pub dwFileVersionLS: DWORD,
-    pub dwProductVersionMS: DWORD,
-    pub dwProductVersionLS: DWORD,
-    pub dwFileFlagsMask: DWORD,
-    pub dwFileFlags: DWORD,
-    pub dwFileOS: DWORD,
-    pub dwFileType: DWORD,
-    pub dwFileSubtype: DWORD,
-    pub dwFileDateMS: DWORD,
-    pub dwFileDateLS: DWORD,
-}
+pub use crate::island::VS_FIXEDFILEINFO;
 
-#[repr(C)]
-pub struct WIN32_FILE_ATTRIBUTE_DATA {
-    pub dwFileAttributes: DWORD,
-    pub ftCreationTime: FILETIME,
-    pub ftLastAccessTime: FILETIME,
-    pub ftLastWriteTime: FILETIME,
-    pub nFileSizeHigh: DWORD,
-    pub nFileSizeLow: DWORD,
-}
+pub use crate::island::WIN32_FILE_ATTRIBUTE_DATA;
 pub type LPWIN32_FILE_ATTRIBUTE_DATA = *mut WIN32_FILE_ATTRIBUTE_DATA;
 
-#[repr(C)]
-pub struct WIN32_FIND_DATAW {
-    pub dwFileAttributes: DWORD,
-    pub ftCreationTime: FILETIME,
-    pub ftLastAccessTime: FILETIME,
-    pub ftLastWriteTime: FILETIME,
-    pub nFileSizeHigh: DWORD,
-    pub nFileSizeLow: DWORD,
-    pub dwReserved0: DWORD,
-    pub dwReserved1: DWORD,
-    pub cFileName: [WCHAR; 260],
-    pub cAlternateFileName: [WCHAR; 14],
-}
+pub use crate::island::WIN32_FIND_DATAW;
 
 pub static s_szShellClassInfo_WIDE: [WCHAR; 16] = [0x002E, 0x0053, 0x0068, 0x0065, 0x006C, 0x006C, 0x0043, 0x006C, 0x0061, 0x0073, 0x0073, 0x0049, 0x006E, 0x0066, 0x006F, 0x0000];
 pub const s_szShellClassInfo: LPCWSTR = s_szShellClassInfo_WIDE.as_ptr();
@@ -934,26 +876,13 @@ pub type EXPPS = UINT;
 pub type LPFNSVADDPROPSHEETPAGE = Option<unsafe extern "system" fn(HPROPSHEETPAGE, LPARAM) -> BOOL>;
 
 extern "system" {
-    fn CloseHandle(handle: HANDLE) -> BOOL;
-    fn CreateFileW(name: LPCWSTR, access: DWORD, share: DWORD, security: LPVOID, creation: DWORD, flags: DWORD, template: HANDLE) -> HANDLE;
-    fn DestroyIcon(icon: HICON) -> BOOL;
-    fn DestroyWindow(window: HWND) -> BOOL;
     #[cfg_attr(target_pointer_width = "32", link_name = "GetWindowLongW")] fn GetWindowLongPtrW(window: HWND, index: INT) -> LONG_PTR;
-    fn LoadIconW(instance: HINSTANCE, name: LPCWSTR) -> HICON;
     #[cfg_attr(target_pointer_width = "32", link_name = "SetWindowLongW")] fn SetWindowLongPtrW(window: HWND, index: INT, value: LONG_PTR) -> LONG_PTR;
     fn ExpandEnvironmentStringsW(source: LPCWSTR, dest: LPWSTR, size: DWORD) -> DWORD;
-    fn ExtractIconExW(file: LPCWSTR, index: INT, large: *mut HICON, small: *mut HICON, icons: UINT) -> UINT;
-    fn GetSystemMetrics(index: INT) -> INT;
-    fn RegGetValueW(key: HKEY, subkey: LPCWSTR, value: LPCWSTR, flags: DWORD, kind: LPDWORD, data: LPVOID, bytes: LPDWORD) -> LONG;
-    fn SHGetFileInfoW(path: LPCWSTR, attributes: DWORD, info: *mut SHFILEINFOW, bytes: UINT, flags: UINT) -> DWORD_PTR;
-    fn ILCombine(parent: PCIDLIST_ABSOLUTE, child: PCUITEMID_CHILD) -> PIDLIST_ABSOLUTE;
     fn GetLastError() -> DWORD;
     fn lstrlenW(text: LPCWSTR) -> INT;
-    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
-    fn ILFree(pidl: LPITEMIDLIST);
     fn GetFileVersionInfoSizeW(path: LPCWSTR, handle: *mut DWORD) -> DWORD;
     fn GetFileVersionInfoW(path: LPCWSTR, handle: DWORD, bytes: DWORD, data: PVOID) -> BOOL;
-    fn VerQueryValueW(block: PVOID, sub_block: LPCWSTR, buffer: *mut PVOID, bytes: *mut UINT) -> BOOL;
     fn VerLanguageNameW(lang: DWORD, buffer: LPWSTR, capacity: DWORD) -> DWORD;
     #[link_name = "CDataObjectHIDA_CreateCIDA_RustBridge"]
     fn CDataObjectHIDA_CreateCIDA(data: *mut IDataObject, cida: *mut *mut CIDA, medium: *mut STGMEDIUM) -> HRESULT;
@@ -961,8 +890,6 @@ extern "system" {
     fn CDataObjectHIDA_DestroyCIDA(cida: *mut CIDA, medium: *mut STGMEDIUM);
     #[link_name = "_ILCopyCidaToaPidl_RustBridge"]
     fn CFileDefExt_ILCopyCidaToaPidl(folder: *mut LPITEMIDLIST, cida: *const CIDA) -> *mut LPITEMIDLIST;
-    fn FindFirstFileW(path: LPCWSTR, data: *mut WIN32_FIND_DATAW) -> HANDLE;
-    fn FindNextFileW(find: HANDLE, data: *mut WIN32_FIND_DATAW) -> BOOL;
     fn FindClose(find: HANDLE) -> BOOL;
     fn NtQueryInformationFile(file: HANDLE, iosb: *mut _IO_STATUS_BLOCK, info: PVOID, bytes: ULONG, class: DWORD) -> NTSTATUS;
     fn GetFileAttributesW(path: LPCWSTR) -> DWORD;
@@ -971,7 +898,7 @@ extern "system" {
     fn PathFindExtensionW(path: LPCWSTR) -> LPWSTR;
     fn PathFindFileNameW(path: LPCWSTR) -> LPWSTR;
     #[link_name = "PathRemoveExtensionW"]
-    fn PathRemoveExtension(path: LPWSTR) -> BOOL;
+    fn PathRemoveExtension(path: LPWSTR);
     #[link_name = "PathRemoveArgsW"]
     fn PathRemoveArgs(path: LPWSTR);
     fn PathUnquoteSpacesW(path: LPWSTR) -> BOOL;
@@ -984,18 +911,6 @@ extern "system" {
     fn PathRemoveBackslashW(path: LPWSTR) -> LPWSTR;
     fn PathAppendW(path: LPWSTR, more: LPCWSTR) -> BOOL;
     fn PathParseIconLocationW(path: LPWSTR) -> INT;
-    fn GetDlgItem(dialog: HWND, id: INT) -> HWND;
-    fn SetDlgItemTextW(dialog: HWND, id: INT, text: LPCWSTR) -> BOOL;
-    fn GetDlgItemTextW(dialog: HWND, id: INT, text: LPWSTR, capacity: INT) -> UINT;
-    fn SendMessageW(window: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
-    fn SendDlgItemMessageW(dialog: HWND, id: INT, msg: UINT, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
-    fn ShowWindow(window: HWND, command: INT) -> BOOL;
-    fn GetWindowRect(window: HWND, rect: *mut RECT) -> BOOL;
-    fn GetClientRect(window: HWND, rect: *mut RECT) -> BOOL;
-    fn MapWindowPoints(from: HWND, to: HWND, points: *mut POINT, count: UINT) -> INT;
-    fn SetWindowPos(window: HWND, after: HWND, x: INT, y: INT, cx: INT, cy: INT, flags: UINT) -> BOOL;
-    fn GetParent(window: HWND) -> HWND;
-    fn EnableWindow(window: HWND, enable: BOOL) -> BOOL;
     fn MoveFileW(old: LPCWSTR, new: LPCWSTR) -> BOOL;
     fn FileTimeToLocalFileTime(input: *const FILETIME, output: *mut FILETIME) -> BOOL;
     fn FileTimeToSystemTime(input: *const FILETIME, output: *mut SYSTEMTIME) -> BOOL;
@@ -1004,30 +919,24 @@ extern "system" {
     fn GetTickCount() -> DWORD;
     fn DragQueryFileW(drop: HDROP, file: UINT, path: LPWSTR, capacity: UINT) -> UINT;
     fn ReleaseStgMedium(medium: *mut STGMEDIUM);
-    fn SHOpenWithDialog(parent: HWND, info: *const OPENASINFO) -> HRESULT;
     fn GetPrivateProfileIntW(section: LPCWSTR, key: LPCWSTR, default: INT, file: LPCWSTR) -> UINT;
     fn GetPrivateProfileStringW(section: LPCWSTR, key: LPCWSTR, default: LPCWSTR, out: LPWSTR, capacity: DWORD, file: LPCWSTR) -> DWORD;
     fn WritePrivateProfileStringW(section: LPCWSTR, key: LPCWSTR, value: LPCWSTR, file: LPCWSTR) -> BOOL;
-    fn PickIconDlg(parent: HWND, path: LPWSTR, capacity: UINT, index: *mut INT) -> BOOL;
     #[link_name = "DataObject_GetHIDACount_RustBridge"]
     fn DataObject_GetHIDACount(data: *mut IDataObject) -> HRESULT;
     #[link_name = "SHELL32_GetDllFromRundll32CommandLine_RustBridge"]
     fn SHELL32_GetDllFromRundll32CommandLine(command: LPCWSTR, out: LPWSTR, capacity: UINT) -> HRESULT;
     #[link_name = "SHELL_DisplayNameOf_RustBridge"]
     fn SHELL_DisplayNameOf(folder: *mut IShellFolder, pidl: LPCITEMIDLIST, flags: DWORD, out: *mut LPWSTR) -> HRESULT;
-    fn CheckDlgButton(dialog: HWND, id: INT, check: UINT) -> BOOL;
     #[link_name = "SH_FormatFileSizeWithBytes_RustBridge"]
     fn SH_FormatFileSizeWithBytes(size: *const ULARGE_INTEGER, out: LPWSTR, capacity: UINT) -> LPWSTR;
     #[link_name = "GetPhysicalFileSize_RustBridge"]
     fn GetPhysicalFileSize(path: LPCWSTR, size: *mut ULARGE_INTEGER) -> BOOL;
-    fn SHAlloc(bytes: usize) -> LPVOID;
     fn lstrcmpW(left: LPCWSTR, right: LPCWSTR) -> INT;
-    fn SHCreateThread(proc_: unsafe extern "system" fn(LPVOID) -> DWORD, data: LPVOID, flags: DWORD, callback: LPVOID) -> BOOL;
     #[link_name = "SH_CreatePropertySheetPage_RustBridge"]
     fn SH_CreatePropertySheetPage(id: WORD, proc_: DLGPROC, param: LPARAM, title: LPCWSTR) -> HPROPSHEETPAGE;
     #[link_name = "SH_CreatePropertySheetPageEx_RustBridge"]
     fn SH_CreatePropertySheetPageEx(id: WORD, proc_: DLGPROC, param: LPARAM, title: LPCWSTR, callback: unsafe extern "system" fn(HWND, UINT, *mut PROPSHEETPAGEW) -> UINT) -> HPROPSHEETPAGE;
-    fn DestroyPropertySheetPage(page: HPROPSHEETPAGE) -> BOOL;
 }
 
 #[inline] unsafe fn GetWindowLongPtr(window: HWND, index: INT) -> LONG_PTR { GetWindowLongPtrW(window, index) }
@@ -1044,7 +953,7 @@ unsafe fn AddPropSheetPage(page: HPROPSHEETPAGE, add: LPFNSVADDPROPSHEETPAGE, pa
     if let Some(add_page) = add {
         if add_page(page, param) != 0 { return S_OK; }
     }
-    DestroyPropertySheetPage(page);
+    DestroyPropertySheetPage((page).cast());
     E_FAIL
 }
 
@@ -1264,6 +1173,41 @@ pub static CPP_COM_WSTR_VERSION_STRING_PREFIX: [WCHAR; 17] = [0x005C,0x0053,0x00
 pub static CPP_COM_WSTR_VERSION_ROOT: [WCHAR; 2] = [0x005C,0];
 
 use core::ffi::c_void;
+// The crate's own functions: the definition is the declaration.
+use crate::shell32::iconcache::ExtractIconExW;
+use crate::wine::pidl::ILCombine;
+use crate::wine::pidl::ILFree;
+use crate::dialogs_dialogs::PickIconDlg;
+use crate::wine::shellole::SHAlloc;
+use crate::wine::shell32_main::SHGetFileInfoW;
+use crate::open_with_menu_tu::SHOpenWithDialog;
+// One declaration per external symbol: island.rs.
+use crate::island::CheckDlgButton;
+use crate::island::CloseHandle;
+use crate::island::CreateFileW;
+use crate::island::DestroyIcon;
+use crate::island::DestroyPropertySheetPage;
+use crate::island::DestroyWindow;
+use crate::island::EnableWindow;
+use crate::island::FindFirstFileW;
+use crate::island::FindNextFileW;
+use crate::island::GetClientRect;
+use crate::island::GetDlgItem;
+use crate::island::GetDlgItemTextW;
+use crate::island::GetParent;
+use crate::island::GetSystemMetrics;
+use crate::island::GetWindowRect;
+use crate::island::LoadIconW;
+use crate::island::LoadStringW;
+use crate::island::MapWindowPoints;
+use crate::island::RegGetValueW;
+use crate::island::SHCreateThread;
+use crate::island::SendDlgItemMessageW;
+use crate::island::SendMessageW;
+use crate::island::SetDlgItemTextW;
+use crate::island::SetWindowPos;
+use crate::island::ShowWindow;
+use crate::island::VerQueryValueW;
 use crate::shellcom::*;
 use crate::types::*;
 
@@ -1532,7 +1476,7 @@ pub unsafe fn CFileDefExt_InitOpensWithField_body(this: *mut CFileDefExt, hwndDl
                 wszPath.as_ptr(),
                 0,
                 core::ptr::null_mut(),
-                &mut hIcon,
+                (&raw mut hIcon).cast(),
                 1,
             ) != 0
             {
@@ -1685,7 +1629,7 @@ pub unsafe fn CFileDefExt_InitFileType_body(this: *mut CFileDefExt, hwndDlg: HWN
                 wszBuf.as_mut_ptr(),
                 core::mem::size_of_val(&wszBuf),
                 CPP_COM_WSTR_AF854C3D2274.as_ptr(),
-                fi.szTypeName.as_ptr(),
+                core::ptr::addr_of!(fi.szTypeName).cast(),
                 pwszExt,
             );
             SendMessageW(
@@ -1895,10 +1839,10 @@ pub unsafe fn CFileDefExt_InitFileAttr_body(this: *mut CFileDefExt, hwndDlg: HWN
         (*this).m_hWndDirStatsDlg = hwndDlg;
         CFileDefExt_AddRef(this);
         if SHCreateThread(
-            _CountFolderAndFilesThreadProc,
+            Some(_CountFolderAndFilesThreadProc),
             this as *mut core::ffi::c_void,
             0,
-            core::ptr::null_mut(),
+            None,
         ) == 0 {
             CFileDefExt_Release(this);
         }
@@ -1983,7 +1927,7 @@ pub unsafe fn CFileDefExt_GeneralPageProc_body(this: *mut CFileDefExt, hwndDlg: 
                 // no action
             } else {
                 pFileDefExt = (*ppsp).lParam as *mut CFileDefExt;
-                SetWindowLongPtr(hwndDlg, DWLP_USER, pFileDefExt as isize);
+                SetWindowLongPtr(hwndDlg, DWLP_USER, (pFileDefExt as isize) as _);
                 CFileDefExt_InitGeneralPage_body(pFileDefExt, hwndDlg);
             }
         }
@@ -1992,7 +1936,7 @@ pub unsafe fn CFileDefExt_GeneralPageProc_body(this: *mut CFileDefExt, hwndDlg: 
                 let mut oainfo: OPENASINFO = core::mem::zeroed();
                 oainfo.pcszFile = (*pFileDefExt).m_wszPath.as_ptr();
                 oainfo.pcszClass = core::ptr::null();
-                oainfo.oaifInFlags = OAIF_REGISTER_EXT | OAIF_FORCE_REGISTRATION;
+                oainfo.oaifInFlags = (OAIF_REGISTER_EXT | OAIF_FORCE_REGISTRATION) as i32;
                 if SHOpenWithDialog(hwndDlg, &mut oainfo as *mut _) == S_OK {
                     CFileDefExt_InitGeneralPage_body(pFileDefExt, hwndDlg);
                     PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
@@ -2088,7 +2032,7 @@ pub unsafe fn CFileDefExt_GeneralPageProc_body(this: *mut CFileDefExt, hwndDlg: 
                 0,
                 0,
             ) as HICON;
-            DestroyIcon(hIcon);
+            DestroyIcon((hIcon).cast());
             let hIcon_null: HICON = core::ptr::null_mut();
             SendMessageW(
                 hIconCtrl,
@@ -2208,9 +2152,9 @@ pub unsafe fn ProcessDirStatsItem_body(pszPath: PCWSTR, Stats: &mut DIRTREESTATS
         {
             stats.bMultipleTypes = TRUE;
         } else if stats.szType[0 as usize] == 0 {
-            wcscpy(stats.szType.as_mut_ptr(), shfi.szTypeName.as_ptr());
+            wcscpy(stats.szType.as_mut_ptr(), core::ptr::addr_of!(shfi.szTypeName).cast());
         } else {
-            stats.bMultipleTypes = lstrcmpW(stats.szType.as_ptr(), shfi.szTypeName.as_ptr());
+            stats.bMultipleTypes = lstrcmpW(stats.szType.as_ptr(), core::ptr::addr_of!(shfi.szTypeName).cast());
         }
     }
 
@@ -2230,7 +2174,7 @@ pub unsafe fn CFileDefExt_WalkDirTree_body(this: *mut CFileDefExt, pszBase: PCWS
     let mut bSuccess: BOOL = TRUE;
     let cch = lstrlenW(pszBase) as usize;
     let pszFull = SHAlloc(
-        (cch + MAX_PATH as usize) * core::mem::size_of::<u16>(),
+        ((cch + MAX_PATH as usize) * core::mem::size_of::<u16>()) as SIZE_T,
     ) as PWSTR;
     if pszFull.is_null() {
         return FALSE;
@@ -2340,7 +2284,7 @@ pub unsafe fn CFileDefExt__InitializeMultifileThreadProc_body(this: *mut CFileDe
 
 pub unsafe fn CFileDefExt_InitMultifilePage_body(this: *mut CFileDefExt, hwndDlg: HWND) -> () {
     (*this).m_hWndDirStatsDlg = hwndDlg;
-    let hIco: HICON = LoadIconW(shell32_hInstance, MAKEINTRESOURCEW(IDI_SHELL_MULTIPLE_FILES));
+    let hIco: HICON = (LoadIconW(shell32_hInstance, MAKEINTRESOURCEW(IDI_SHELL_MULTIPLE_FILES))).cast();
     SendDlgItemMessageW(hwndDlg, 14000, STM_SETICON, hIco as WPARAM, 0);
 
     // We are lazy and just reuse the directory page so we must tweak some controls
@@ -2367,7 +2311,7 @@ pub unsafe fn CFileDefExt_InitMultifilePage_body(this: *mut CFileDefExt, hwndDlg
     }
 
     CFileDefExt_AddRef(this);
-    if SHCreateThread(_InitializeMultifileThreadProc, this as *mut c_void, CTF_COINIT, core::ptr::null_mut()) == 0 {
+    if SHCreateThread(Some(_InitializeMultifileThreadProc), this as *mut c_void, CTF_COINIT, None) == 0 {
         CFileDefExt_Release(this);
     }
 }
@@ -2379,7 +2323,7 @@ pub unsafe fn CFileDefExt_MultifilePageProc_body(this: *mut CFileDefExt, hwndDlg
             let ppsp = lParam as *const PROPSHEETPAGEW;
             if !ppsp.is_null() && ((*ppsp).lParam as isize) != 0 {
                 pFileDefExt = (*ppsp).lParam as *mut CFileDefExt;
-                SetWindowLongPtr(hwndDlg, DWLP_USER, pFileDefExt as isize);
+                SetWindowLongPtr(hwndDlg, DWLP_USER, (pFileDefExt as isize) as _);
                 CFileDefExt_InitMultifilePage_body(pFileDefExt, hwndDlg);
             }
         }
@@ -2626,20 +2570,20 @@ pub unsafe fn CFileDefExt_FolderCustomizePageProc_body(this: *mut CFileDefExt, h
 }
 
 pub unsafe fn CFileDefExt_OnFolderCustDestroy_body(this: *mut CFileDefExt, hwndDlg: HWND) -> () {
-    DestroyIcon((*this).m_hFolderIcon);
+    DestroyIcon(((*this).m_hFolderIcon).cast());
     (*this).m_hFolderIcon = core::ptr::null_mut();
 
     SetWindowLongPtr(
         hwndDlg,
         DWLP_USER,
-        0 as isize,
+        (0 as isize) as _,
     );
 }
 
 pub unsafe fn CFileDefExt_UpdateFolderIcon_body(this: *mut CFileDefExt, hwndDlg: HWND) -> () {
     // destroy icon if any
     if !(*this).m_hFolderIcon.is_null() {
-        DestroyIcon((*this).m_hFolderIcon);
+        DestroyIcon(((*this).m_hFolderIcon).cast());
         (*this).m_hFolderIcon = core::ptr::null_mut();
     }
 
@@ -2648,16 +2592,16 @@ pub unsafe fn CFileDefExt_UpdateFolderIcon_body(this: *mut CFileDefExt, hwndDlg:
         && (*this).m_nFolderIconIndex == 0
     {
         // Windows ignores shell customization here and uses the default icon
-        (*this).m_hFolderIcon = LoadIconW(
+        (*this).m_hFolderIcon = (LoadIconW(
             shell32_hInstance,
             MAKEINTRESOURCEW(IDI_SHELL_FOLDER),
-        );
+        )).cast();
     } else {
         let mut h_icon: HICON = core::ptr::null_mut();
         ExtractIconExW(
             (*this).m_szFolderIconPath.as_ptr(),
             (*this).m_nFolderIconIndex,
-            &mut h_icon,
+            (&raw mut h_icon).cast(),
             core::ptr::null_mut(),
             1,
         );
@@ -2675,7 +2619,7 @@ pub unsafe fn CFileDefExt_UpdateFolderIcon_body(this: *mut CFileDefExt, hwndDlg:
 }
 
 pub unsafe fn CFileDefExt_InitFolderCustomizePage_body(this: *mut CFileDefExt, hwndDlg: HWND) -> BOOL {
-    SetWindowLongPtr(hwndDlg, DWLP_USER, this as isize);
+    SetWindowLongPtr(hwndDlg, DWLP_USER, (this as isize) as _);
     EnableWindow(
         GetDlgItem(hwndDlg, IDC_FOLDERCUST_COMBOBOX as INT),
         FALSE,

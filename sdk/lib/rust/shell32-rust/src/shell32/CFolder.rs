@@ -1,4 +1,8 @@
 use crate::prelude::*;
+// The crate's own functions: the definition is the declaration.
+use crate::wine::pidl::ILClone;
+use crate::wine::pidl::ILCombine;
+use crate::desktop_folder_tu::SHGetDesktopFolder;
 use crate::shell32::CFolderItem::CFolderItem_CreateInstance;
 use crate::shell32::CFolderItems::CFolderItems_CreateInstance;
 use crate::shell_dispatch::CShellDispatch_Constructor;
@@ -463,11 +467,7 @@ pub struct PARAMDESC {
     pub wParamFlags: USHORT,
 }
 
-#[repr(C, packed)]
-pub struct SHITEMID {
-    pub cb: WORD,
-    pub abID: [BYTE; 1],
-}
+pub use crate::island::SHITEMID;
 
 // Deterministic from shldisp.h
 #[repr(C)]
@@ -572,10 +572,7 @@ extern "C" {
 }
 
 extern "system" {
-    fn ILCombine(parent: PCIDLIST_ABSOLUTE, child: PCUITEMID_CHILD) -> PIDLIST_ABSOLUTE;
     fn CoTaskMemFree(memory: LPVOID);
-    fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
-    fn SHGetDesktopFolder(folder: *mut *mut IShellFolder) -> HRESULT;
 }
 
 #[repr(transparent)]

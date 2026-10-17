@@ -1,4 +1,9 @@
 use crate::prelude::*;
+// The crate's own functions: the definition is the declaration.
+use crate::shell32::utils::SHELL_GetUIObjectOfAbsoluteItem;
+// One declaration per external symbol: island.rs.
+use crate::island::DestroyMenu;
+use crate::island::GetMenuItemInfoW;
 use crate::atl::CComVariant;
 use crate::shell32::CFolderItemVerb::CFolderItemVerb_CreateInstance;
 use crate::shell32::CFolderItemVerb::CFolderItemVerb_Init_body;
@@ -397,12 +402,9 @@ extern "C" {
 }
 
 extern "system" {
-    fn DestroyMenu(menu: HMENU) -> BOOL;
-    fn GetMenuItemInfoW(menu: HMENU, item: UINT, by_position: BOOL, info: *mut MENUITEMINFOW) -> BOOL;
 }
 
 extern "C" {
-    fn SHELL_GetUIObjectOfAbsoluteItem(owner: HWND, pidl: PCIDLIST_ABSOLUTE, riid: REFIID, out: *mut LPVOID) -> HRESULT;
 }
 
 extern "C" {
@@ -507,7 +509,7 @@ pub unsafe fn CFolderItemVerbs_Invoke_v1_body(this: *mut CFolderItemVerbs, dispI
 pub unsafe fn CFolderItemVerbs_ctor_body(this: *mut CFolderItemVerbs) -> () {}
 
 pub unsafe fn CFolderItemVerbs_dtor_body(this: *mut CFolderItemVerbs) -> () {
-    DestroyMenu((*this).m_menu);
+    DestroyMenu(((*this).m_menu).cast());
 }
 
 pub unsafe fn CFolderItemVerbs_Init_body(this: *mut CFolderItemVerbs, idlist: LPITEMIDLIST) -> HRESULT {
@@ -527,7 +529,7 @@ pub unsafe fn CFolderItemVerbs_Init_body(this: *mut CFolderItemVerbs, idlist: LP
     let contextmenu: *mut ShellIContextMenu = (*this).m_contextmenu.cast();
     hr = ((*(*contextmenu).lpVtbl).QueryContextMenu)(
         contextmenu,
-        (*this).m_menu,
+        ((*this).m_menu).cast(),
         0,
         FCIDM_SHVIEWFIRST,
         FCIDM_SHVIEWLAST,
@@ -605,7 +607,7 @@ pub unsafe fn CFolderItemVerbs_Item_body(this: *mut CFolderItemVerbs, indexVar: 
         info.fMask = MIIM_STRING;
 
         if GetMenuItemInfoW(
-            (*this).m_menu,
+            ((*this).m_menu).cast(),
             index as UINT,
             TRUE,
             &mut info
@@ -621,7 +623,7 @@ pub unsafe fn CFolderItemVerbs_Item_body(this: *mut CFolderItemVerbs, indexVar: 
             info.dwTypeData = name;
             info.cch += 1;
             GetMenuItemInfoW(
-                (*this).m_menu,
+                ((*this).m_menu).cast(),
                 index as UINT,
                 TRUE,
                 &mut info

@@ -5,6 +5,18 @@
 // helper bodies repaired in place. See CQueryAssociations-stitch-report.md.
 
 use core::ffi::c_void;
+// One declaration per external symbol: island.rs.
+use crate::island::CLSIDFromString;
+use crate::island::HeapAlloc;
+use crate::island::LoadStringW;
+use crate::island::PathRemoveExtensionW;
+use crate::island::RegCloseKey;
+use crate::island::RegEnumKeyExW;
+use crate::island::RegGetValueW;
+use crate::island::RegOpenKeyExW;
+use crate::island::RegQueryInfoKeyW;
+use crate::island::SHQueryValueExW;
+use crate::island::VerQueryValueW;
 use crate::shellcom::*;
 use crate::types::*;
 
@@ -31,7 +43,6 @@ extern "C" {
 // Deterministic COM scaffold for CQueryAssociations; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    fn HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
     fn HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
@@ -136,7 +147,7 @@ unsafe fn cpp_com_iid_equal(left: REFIID, right: REFIID) -> bool {
     if ppv.is_null() { return E_POINTER; }
     *ppv = core::ptr::null_mut();
     if !outer.is_null() { return CLASS_E_NOAGGREGATION; }
-    let this = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, core::mem::size_of::<CQueryAssociations>()) as *mut CQueryAssociations;
+    let this = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (core::mem::size_of::<CQueryAssociations>()) as _) as *mut CQueryAssociations;
     if this.is_null() { return E_OUTOFMEMORY; }
     core::ptr::write(this, CQueryAssociations {
         IQueryAssociations_iface: IQueryAssociations { lpVtbl: core::ptr::addr_of!(CQUERYASSOCIATIONS_IQUERYASSOCIATIONS_VTBL) },
@@ -187,44 +198,8 @@ extern "system" {
     // shlwapi
     fn StrChrW(text: LPCWSTR, ch: WCHAR) -> LPWSTR;
     fn PathFindExtensionW(pszPath: LPCWSTR) -> LPWSTR;
-    fn PathRemoveExtensionW(pszPath: LPWSTR);
     fn PathStripPathW(pszPath: LPWSTR);
-    fn SHQueryValueExW(
-        hKey: HKEY,
-        pszValue: LPCWSTR,
-        pdwReserved: LPDWORD,
-        pdwType: LPDWORD,
-        pvData: LPVOID,
-        pcbData: LPDWORD,
-    ) -> LONG;
     // advapi32
-    fn RegCloseKey(hKey: HKEY) -> LONG;
-    fn RegOpenKeyExW(hKey: HKEY, lpSubKey: LPCWSTR, ulOptions: DWORD, samDesired: REGSAM, phkResult: PHKEY) -> LONG;
-    fn RegGetValueW(hkey: HKEY, lpSubKey: LPCWSTR, lpValue: LPCWSTR, dwFlags: DWORD, pdwType: LPDWORD, pvData: PVOID, pcbData: LPDWORD) -> LONG;
-    fn RegQueryInfoKeyW(
-        hKey: HKEY,
-        lpClass: LPWSTR,
-        lpcchClass: LPDWORD,
-        lpReserved: LPDWORD,
-        lpcSubKeys: LPDWORD,
-        lpcbMaxSubKeyLen: LPDWORD,
-        lpcbMaxClassLen: LPDWORD,
-        lpcValues: LPDWORD,
-        lpcbMaxValueNameLen: LPDWORD,
-        lpcbMaxValueLen: LPDWORD,
-        lpcbSecurityDescriptor: LPDWORD,
-        lpftLastWriteTime: *mut FILETIME,
-    ) -> LONG;
-    fn RegEnumKeyExW(
-        hKey: HKEY,
-        dwIndex: DWORD,
-        lpName: LPWSTR,
-        lpcchName: LPDWORD,
-        lpReserved: LPDWORD,
-        lpClass: LPWSTR,
-        lpcchClass: LPDWORD,
-        lpftLastWriteTime: *mut FILETIME,
-    ) -> LONG;
     // kernel32
     fn ExpandEnvironmentStringsW(lpSrc: LPCWSTR, lpDst: LPWSTR, nSize: DWORD) -> DWORD;
     fn SearchPathW(
@@ -238,12 +213,9 @@ extern "system" {
     // version
     fn GetFileVersionInfoSizeW(lptstrFilename: LPCWSTR, lpdwHandle: LPDWORD) -> DWORD;
     fn GetFileVersionInfoW(lptstrFilename: LPCWSTR, dwHandle: DWORD, dwLen: DWORD, lpData: LPVOID) -> BOOL;
-    fn VerQueryValueW(pBlock: LPCVOID, lpSubBlock: LPCWSTR, lplpBuffer: *mut LPVOID, puLen: *mut UINT) -> BOOL;
-    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
     fn LCMapStringW(locale: DWORD, flags: DWORD, source: LPCWSTR, source_len: INT, destination: LPWSTR, destination_len: INT) -> INT;
     fn StrTrimW(text: LPWSTR, trim_chars: LPCWSTR) -> BOOL;
     // ole32
-    fn CLSIDFromString(lpsz: LPCOLESTR, pclsid: *mut CLSID) -> HRESULT;
 }
 
 extern "C" {
@@ -643,7 +615,7 @@ pub unsafe fn CQueryAssociations_GetString_body(this: *mut CQueryAssociations, f
                 &mut size,
             );
             if ret == ERROR_SUCCESS {
-                let docName = HeapAlloc(GetProcessHeap(), 0, size as usize) as *mut WCHAR;
+                let docName = HeapAlloc(GetProcessHeap(), 0, (size as usize) as _) as *mut WCHAR;
                 if !docName.is_null() {
                     ret = RegGetValueW(
                         HKEY_CLASSES_ROOT,
@@ -690,7 +662,7 @@ pub unsafe fn CQueryAssociations_GetString_body(this: *mut CQueryAssociations, f
                 if retval == 0 {
                     break 'get_friendly_name; // goto get_friendly_name_fail
                 }
-                verinfoW = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, retval as usize);
+                verinfoW = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (retval as usize) as _);
                 if verinfoW.is_null() {
                     return E_OUTOFMEMORY;
                 }
@@ -754,7 +726,7 @@ pub unsafe fn CQueryAssociations_GetString_body(this: *mut CQueryAssociations, f
             if ret != ERROR_SUCCESS {
                 return HRESULT_FROM_WIN32(ret);
             }
-            let contentType = HeapAlloc(GetProcessHeap(), 0, size as usize) as *mut WCHAR;
+            let contentType = HeapAlloc(GetProcessHeap(), 0, (size as usize) as _) as *mut WCHAR;
             if !contentType.is_null() {
                 ret = RegGetValueW(
                     (*this).hkeySource,
@@ -789,7 +761,7 @@ pub unsafe fn CQueryAssociations_GetString_body(this: *mut CQueryAssociations, f
                 &mut size,
             );
             if ret == ERROR_SUCCESS {
-                let icon = HeapAlloc(GetProcessHeap(), 0, size as usize) as *mut WCHAR;
+                let icon = HeapAlloc(GetProcessHeap(), 0, (size as usize) as _) as *mut WCHAR;
                 if !icon.is_null() {
                     ret = RegGetValueW(
                         (*this).hkeyProgID,
@@ -917,14 +889,14 @@ pub unsafe fn CQueryAssociations_GetValue_body(this: *mut CQueryAssociations, hk
     let _ = this;
     let mut size: DWORD = 0;
 
-    let mut ret: LONG = SHQueryValueExW(
+    let mut ret: LONG = (SHQueryValueExW(
         hkey,
         name,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         &mut size,
-    );
+    )) as i32;
     if ret != ERROR_SUCCESS {
         return HRESULT_FROM_WIN32(ret);
     }
@@ -933,19 +905,19 @@ pub unsafe fn CQueryAssociations_GetValue_body(this: *mut CQueryAssociations, hk
         return E_FAIL;
     }
 
-    *data = HeapAlloc(GetProcessHeap(), 0, size as usize);
+    *data = HeapAlloc(GetProcessHeap(), 0, (size as usize) as _);
     if (*data).is_null() {
         return E_OUTOFMEMORY;
     }
 
-    ret = SHQueryValueExW(
+    ret = (SHQueryValueExW(
         hkey,
         name,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         *data,
         &mut size,
-    );
+    )) as i32;
     if ret != ERROR_SUCCESS {
         HeapFree(GetProcessHeap(), 0, *data);
         return HRESULT_FROM_WIN32(ret);
@@ -1021,7 +993,7 @@ pub unsafe fn CQueryAssociations_GetCommand_body(this: *mut CQueryAssociations, 
             }
 
             max_subkey_len += 1;
-            extra_from_reg = HeapAlloc(GetProcessHeap(), 0, (max_subkey_len as usize) * core::mem::size_of::<WCHAR>()) as *mut WCHAR;
+            extra_from_reg = HeapAlloc(GetProcessHeap(), 0, ((max_subkey_len as usize) * core::mem::size_of::<WCHAR>()) as _) as *mut WCHAR;
             if extra_from_reg.is_null() {
                 RegCloseKey(hkeyShell);
                 return E_OUTOFMEMORY;
@@ -1078,7 +1050,7 @@ pub unsafe fn CQueryAssociations_GetExecutable_body(this: *mut CQueryAssociation
     let mut expLen: DWORD = ExpandEnvironmentStringsW(pszCommand, core::ptr::null_mut(), 0);
     if expLen > 0 {
         expLen += 1;
-        let buf = HeapAlloc(GetProcessHeap(), 0, (expLen as usize) * core::mem::size_of::<WCHAR>()) as *mut WCHAR;
+        let buf = HeapAlloc(GetProcessHeap(), 0, ((expLen as usize) * core::mem::size_of::<WCHAR>()) as _) as *mut WCHAR;
         ExpandEnvironmentStringsW(pszCommand, buf, expLen);
         HeapFree(GetProcessHeap(), 0, pszCommand as *mut core::ffi::c_void);
         pszCommand = buf;

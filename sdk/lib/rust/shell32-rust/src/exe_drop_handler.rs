@@ -1,4 +1,8 @@
 use crate::shellcom::*;
+// The crate's own functions: the definition is the declaration.
+use crate::shell32::shlexec::ShellExecuteW;
+// One declaration per external symbol: island.rs.
+use crate::island::HeapAlloc;
 use crate::types::*;
 use core::ffi::c_void;
 
@@ -15,12 +19,7 @@ const DROPEFFECT_COPY: DWORD = 1;
 const SW_SHOWNORMAL: INT = 1;
 const MAX_PATH: usize = 260;
 
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct POINTL {
-    pub x: LONG,
-    pub y: LONG,
-}
+pub use crate::island::POINTL;
 
 #[repr(C)]
 struct FORMATETC {
@@ -114,7 +113,6 @@ pub struct IDropTargetVtbl {
 
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    fn HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut c_void;
     fn HeapFree(heap: HANDLE, flags: DWORD, memory: *mut c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
@@ -122,14 +120,6 @@ extern "system" {
     fn GlobalUnlock(memory: HGLOBAL) -> BOOL;
     fn ReleaseStgMedium(medium: *mut STGMEDIUM);
     fn StrChrW(start: LPCWSTR, character: WCHAR) -> LPWSTR;
-    fn ShellExecuteW(
-        hwnd: HWND,
-        operation: LPCWSTR,
-        file: LPCWSTR,
-        parameters: LPCWSTR,
-        directory: LPCWSTR,
-        show: INT,
-    ) -> HINSTANCE;
 }
 
 extern "C" {
@@ -484,7 +474,7 @@ unsafe fn wide_len(mut text: LPCWSTR) -> usize {
 unsafe fn load(this: *mut CExeDropHandler, file: LPCOLESTR, _mode: DWORD) -> HRESULT {
     let len = wide_len(file);
     let target =
-        crate::wine::shellole::SHAlloc((len + 1) * core::mem::size_of::<WCHAR>()) as LPWSTR;
+        crate::wine::shellole::SHAlloc(((len + 1) * core::mem::size_of::<WCHAR>()) as SIZE_T) as LPWSTR;
     (*this).sPathTarget = target;
     if target.is_null() {
         return E_OUTOFMEMORY;
@@ -524,7 +514,7 @@ pub unsafe extern "system" fn CExeDropHandler_CreateInstance(
     let this = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        core::mem::size_of::<CExeDropHandler>(),
+        (core::mem::size_of::<CExeDropHandler>()) as _,
     ) as *mut CExeDropHandler;
     if this.is_null() {
         return E_OUTOFMEMORY;

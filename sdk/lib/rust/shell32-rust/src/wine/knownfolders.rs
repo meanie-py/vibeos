@@ -14,6 +14,12 @@
 #![allow(non_upper_case_globals)]
 
 use crate::types::*;
+use ntdll_sys::nt::SIZE_T;
+// One declaration per external symbol: island.rs.
+use crate::island::CoTaskMemAlloc;
+use crate::island::GetModuleFileNameW;
+use crate::island::GetSystemMetrics;
+use crate::island::LoadImageW;
 use crate::wine::shellpath::{CSIDL_DATA, SHGetFolderPathW};
 use core::ffi::c_void;
 use core::ptr::{null_mut, read_unaligned};
@@ -27,10 +33,6 @@ const ERROR_FILE_NOT_FOUND: LONG = 2;
 const ERROR_NOT_ENOUGH_MEMORY: LONG = 8;
 
 extern "system" {
-    fn CoTaskMemAlloc(cb: usize) -> *mut c_void;
-    fn GetModuleFileNameW(hModule: HINSTANCE, lpFilename: LPWSTR, nSize: DWORD) -> DWORD;
-    fn LoadImageW(hInst: HINSTANCE, name: LPCWSTR, typ: UINT, cx: INT, cy: INT, fuLoad: UINT) -> *mut c_void;
-    fn GetSystemMetrics(nIndex: INT) -> INT;
 }
 extern "C" {
     fn SIC_GetIconIndex(sSourceFile: LPCWSTR, dwSourceIndex: INT, dwFlags: DWORD) -> INT;
@@ -96,7 +98,7 @@ pub unsafe extern "system" fn SHGetKnownFolderPath(
     while len < MAX_PATH && buf[len] != 0 {
         len += 1;
     }
-    let out = CoTaskMemAlloc((len + 1) * 2) as LPWSTR;
+    let out = CoTaskMemAlloc(((len + 1) * 2) as SIZE_T) as LPWSTR;
     if out.is_null() {
         return HRESULT_FROM_WIN32(ERROR_NOT_ENOUGH_MEMORY);
     }
@@ -126,14 +128,7 @@ pub unsafe extern "system" fn SHGetKnownFolderIDList(
     }
 }
 
-#[repr(C)]
-pub struct SHSTOCKICONINFO {
-    pub cbSize: DWORD,
-    pub hIcon: *mut c_void,
-    pub iSysImageIndex: INT,
-    pub iIcon: INT,
-    pub szPath: [WCHAR; MAX_PATH],
-}
+pub use crate::island::SHSTOCKICONINFO;
 
 const SHGSI_ICON: UINT = 0x100;
 const SHGSI_SMALLICON: UINT = 0x1;
@@ -188,10 +183,10 @@ pub unsafe extern "system" fn SHGetStockIconInfo(siid: INT, uFlags: UINT, psii: 
     (*psii).hIcon = null_mut();
     (*psii).iSysImageIndex = -1;
     (*psii).iIcon = 0;
-    core::ptr::write_bytes((*psii).szPath.as_mut_ptr(), 0, MAX_PATH);
+    core::ptr::write_bytes(core::ptr::addr_of_mut!((*psii).szPath).cast::<u8>(), 0, MAX_PATH * core::mem::size_of::<WCHAR>());
 
     let res = stock_icon_resource(siid);
-    GetModuleFileNameW(inst, (*psii).szPath.as_mut_ptr(), MAX_PATH as DWORD);
+    GetModuleFileNameW(inst, core::ptr::addr_of_mut!((*psii).szPath).cast(), MAX_PATH as DWORD);
     (*psii).iIcon = -res;
 
     if uFlags & SHGSI_ICON != 0 {
@@ -203,13 +198,13 @@ pub unsafe extern "system" fn SHGetStockIconInfo(siid: INT, uFlags: UINT, psii: 
             (GetSystemMetrics(11), GetSystemMetrics(12))
         };
         // IMAGE_ICON = 1
-        (*psii).hIcon = LoadImageW(inst, res as usize as LPCWSTR, 1, cx, cy, 0);
+        (*psii).hIcon = (LoadImageW(inst, res as usize as LPCWSTR, 1, cx, cy, 0)).cast();
         if (*psii).hIcon.is_null() {
             return E_FAIL;
         }
     }
     if uFlags & SHGSI_SYSICONINDEX != 0 {
-        (*psii).iSysImageIndex = SIC_GetIconIndex((*psii).szPath.as_ptr(), -res, 0);
+        (*psii).iSysImageIndex = SIC_GetIconIndex(core::ptr::addr_of!((*psii).szPath).cast(), -res, 0);
     }
     S_OK
 }

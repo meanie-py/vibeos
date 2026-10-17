@@ -1367,7 +1367,7 @@ pub unsafe fn CMenuDeskBar_Popup_body(this: *mut CMenuDeskBar, ppt: *mut POINTL,
     if !(*this).m_Banner.is_null() {
         let mut bm: BITMAP = core::mem::zeroed();
         GetObject(
-            (*this).m_Banner,
+            ((*this).m_Banner).cast(),
             core::mem::size_of::<BITMAP>() as i32,
             &mut bm,
         );
@@ -1570,7 +1570,7 @@ pub unsafe fn CMenuDeskBar_GetIconSize_body(this: *mut CMenuDeskBar, piIcon: *mu
 
 pub unsafe fn CMenuDeskBar_SetBitmap_body(this: *mut CMenuDeskBar, hBitmap: HBITMAP) -> HRESULT {
     if !(*this).m_Banner.is_null() && (*this).m_Banner != hBitmap {
-        DeleteObject((*this).m_Banner);
+        DeleteObject(((*this).m_Banner).cast());
     }
 
     (*this).m_Banner = hBitmap;
@@ -1732,7 +1732,7 @@ pub unsafe fn CMenuDeskBar__OnSize_body(this: *mut CMenuDeskBar, uMsg: UINT, wPa
         if !(*this).m_Banner.is_null() && (*this).m_IconSize != BMICON_SMALL {
             let mut bm: BITMAP = core::mem::zeroed();
             GetObject(
-                (*this).m_Banner,
+                ((*this).m_Banner).cast(),
                 core::mem::size_of::<BITMAP>() as i32,
                 (&mut bm) as *mut BITMAP,
             );
@@ -1800,9 +1800,9 @@ pub unsafe fn CMenuDeskBar__OnPaint_body(this: *mut CMenuDeskBar, uMsg: UINT, wP
         let hdc = BeginPaint(((*this).m_hWnd).cast(), (&raw mut ps).cast());
 
         let hdcMem = CreateCompatibleDC((hdc).cast());
-        let hbmOld = SelectObject(hdcMem, (*this).m_Banner);
+        let hbmOld = SelectObject(hdcMem, ((*this).m_Banner).cast());
 
-        GetObject((*this).m_Banner, core::mem::size_of::<BITMAP>() as i32, &mut bm);
+        GetObject(((*this).m_Banner).cast(), core::mem::size_of::<BITMAP>() as i32, &mut bm);
 
         let mut rc: RECT = core::mem::zeroed();
         if GetClientRect(((*this).m_hWnd).cast(), &mut rc) == 0 {
