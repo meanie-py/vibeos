@@ -1,5 +1,8 @@
 use crate::prelude::*;
+use crate::mmc_new::misc_cpp_h::StringToBool;
+use crate::mmc_new::misc_cpp_h::StringToViewMode;
 // Deterministic UTF-16 literals from the selected C++ helper closure.
+pub static CPP_COM_WSTR_22720D5B8CBF: [WCHAR; 13] = [0x0053, 0x0065, 0x006C, 0x0065, 0x0063, 0x0074, 0x0065, 0x0064, 0x004E, 0x006F, 0x0064, 0x0065, 0x0000];
 pub static CPP_COM_WSTR_25B61379E7E9: [WCHAR; 20] = [0x0044, 0x0065, 0x0066, 0x0061, 0x0075, 0x006C, 0x0074, 0x0043, 0x006F, 0x006C, 0x0075, 0x006D, 0x006E, 0x0031, 0x0057, 0x0069, 0x0064, 0x0074, 0x0068, 0x0000];
 pub static CPP_COM_WSTR_34D297E2847F: [WCHAR; 4] = [0x0032, 0x0030, 0x0030, 0x0000];
 pub static CPP_COM_WSTR_3D44317232D6: [WCHAR; 7] = [0x0053, 0x0074, 0x0061, 0x0074, 0x0069, 0x0063, 0x0000];
@@ -8,91 +11,26 @@ pub static CPP_COM_WSTR_4889C6392E22: [WCHAR; 5] = [0x0054, 0x0065, 0x0073, 0x00
 pub static CPP_COM_WSTR_4F8320D91E97: [WCHAR; 2] = [0x0030, 0x0000];
 pub static CPP_COM_WSTR_578E89C9480F: [WCHAR; 3] = [0x0049, 0x0044, 0x0000];
 pub static CPP_COM_WSTR_60E82282DE60: [WCHAR; 9] = [0x0056, 0x0069, 0x0065, 0x0077, 0x004D, 0x006F, 0x0064, 0x0065, 0x0000];
+pub static CPP_COM_WSTR_64BFC0779D3E: [WCHAR; 9] = [0x0052, 0x006F, 0x006F, 0x0074, 0x004E, 0x006F, 0x0064, 0x0065, 0x0000];
+pub static CPP_COM_WSTR_69A283E639E4: [WCHAR; 3] = [0x0025, 0x0075, 0x0000];
 pub static CPP_COM_WSTR_6AC123285056: [WCHAR; 12] = [0x0044, 0x0065, 0x0073, 0x0063, 0x0072, 0x0069, 0x0070, 0x0074, 0x0069, 0x006F, 0x006E, 0x0000];
+pub static CPP_COM_WSTR_76E480513E2C: [WCHAR; 5] = [0x004E, 0x0061, 0x006D, 0x0065, 0x0000];
 pub static CPP_COM_WSTR_84602D53EA5F: [WCHAR; 12] = [0x004E, 0x006F, 0x0053, 0x0074, 0x0061, 0x0074, 0x0075, 0x0073, 0x0042, 0x0061, 0x0072, 0x0000];
 pub static CPP_COM_WSTR_87027C6B1057: [WCHAR; 15] = [0x0053, 0x0063, 0x006F, 0x0070, 0x0065, 0x0050, 0x0061, 0x006E, 0x0065, 0x0057, 0x0069, 0x0064, 0x0074, 0x0068, 0x0000];
 pub static CPP_COM_WSTR_8E637B93C326: [WCHAR; 5] = [0x0056, 0x0069, 0x0065, 0x0077, 0x0000];
+pub static CPP_COM_WSTR_97355EE7543B: [WCHAR; 8] = [0x0041, 0x0063, 0x0074, 0x0069, 0x006F, 0x006E, 0x0073, 0x0000];
 pub static CPP_COM_WSTR_A52B679307C3: [WCHAR; 22] = [0x0044, 0x0065, 0x0073, 0x0063, 0x0072, 0x0069, 0x0070, 0x0074, 0x0069, 0x006F, 0x006E, 0x0042, 0x0061, 0x0072, 0x0056, 0x0069, 0x0073, 0x0069, 0x0062, 0x006C, 0x0065, 0x0000];
 pub static CPP_COM_WSTR_A9EDBA2FC474: [WCHAR; 3] = [0x0025, 0x0064, 0x0000];
 pub static CPP_COM_WSTR_ACF7BB451AB4: [WCHAR; 12] = [0x0056, 0x0069, 0x0065, 0x0077, 0x004F, 0x0070, 0x0074, 0x0069, 0x006F, 0x006E, 0x0073, 0x0000];
+pub static CPP_COM_WSTR_BC5156B20E3B: [WCHAR; 7] = [0x004E, 0x006F, 0x0064, 0x0065, 0x0049, 0x0044, 0x0000];
 pub static CPP_COM_WSTR_BDCA0F318C15: [WCHAR; 17] = [0x0053, 0x0063, 0x006F, 0x0070, 0x0065, 0x0050, 0x0061, 0x006E, 0x0065, 0x0056, 0x0069, 0x0073, 0x0069, 0x0062, 0x006C, 0x0065, 0x0000];
 pub static CPP_COM_WSTR_BEC2836C8636: [WCHAR; 19] = [0x0041, 0x0063, 0x0074, 0x0069, 0x006F, 0x006E, 0x0073, 0x0050, 0x0061, 0x006E, 0x0065, 0x0056, 0x0069, 0x0073, 0x0069, 0x0062, 0x006C, 0x0065, 0x0000];
 pub static CPP_COM_WSTR_CD28B1A69262: [WCHAR; 5] = [0x0074, 0x0072, 0x0075, 0x0065, 0x0000];
 pub static CPP_COM_WSTR_CD85856650BC: [WCHAR; 17] = [0x0041, 0x0063, 0x0074, 0x0069, 0x006F, 0x006E, 0x0073, 0x0050, 0x0061, 0x006E, 0x0065, 0x0057, 0x0069, 0x0064, 0x0074, 0x0068, 0x0000];
+pub static CPP_COM_WSTR_D273B69838AB: [WCHAR; 9] = [0x0042, 0x006F, 0x006F, 0x006B, 0x004D, 0x0061, 0x0072, 0x006B, 0x0000];
 pub static CPP_COM_WSTR_E999B61173C7: [WCHAR; 20] = [0x0044, 0x0065, 0x0066, 0x0061, 0x0075, 0x006C, 0x0074, 0x0043, 0x006F, 0x006C, 0x0075, 0x006D, 0x006E, 0x0030, 0x0057, 0x0069, 0x0064, 0x0074, 0x0068, 0x0000];
 
 use core::ffi::c_void;
-
-extern "system" {
-    #[link_name = "DefMDIChildProcW"]
-    fn DefMDIChildProc(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
-}
-
-// precomp.h: enum _LISTVIEW_MODE { SmallIcons, LargeIcons, List, Detail } -- Detail is 3 (the
-// bought constant said 1, which is ListView_LargeIcons: the console started in large-icon mode).
-const ListView_Detail: LISTVIEW_MODE = _LISTVIEW_MODE_ListView_Detail;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 impl CConsoleWnd {
     pub unsafe fn UpdateLayout(&mut self) {
@@ -104,15 +42,15 @@ impl CConsoleWnd {
         let mut iListViewPosY: i32 = 0;
         let mut iListViewWidth: i32 = 0;
         let mut iListViewHeight: i32 = 0;
-    
+
         (*this_).__base0.GetClientRect(core::ptr::addr_of_mut!(Rect));
         let iClientHeight: i32 = Rect.bottom - Rect.top;
         let iClientWidth: i32 = Rect.right - Rect.left;
-    
+
         let mut iStatusHeight: i32 = 0;
-    
+
         let mut iDescriptionBarHeight: i32 = 0;
-    
+
         if (*this_).m_bTreeViewVisible != 0 {
             iTreeViewWidth = (*this_).m_iTreeViewWidth;
             iListViewPosX = (*this_).m_iTreeViewWidth + (*this_).m_iSplitterWidth;
@@ -122,41 +60,43 @@ impl CConsoleWnd {
             iListViewPosX = 0;
             iListViewWidth = iClientWidth;
         }
-    
+
         iTreeViewHeight = iClientHeight;
         iListViewHeight = iClientHeight;
-    
+
         if (*this_).m_bStatusBarVisible != 0 {
             iStatusHeight = (*this_).m_iStatusBarHeight;
             iTreeViewHeight -= iStatusHeight;
             iListViewHeight -= iStatusHeight;
         }
-    
+
         if (*this_).m_bDescriptionBarVisible != 0 {
             iDescriptionBarHeight = 24;
             iListViewPosY += iDescriptionBarHeight;
             iListViewHeight -= iDescriptionBarHeight;
         }
-    
+
         if (*this_).m_bActionsPaneVisible != 0 {
             iListViewWidth -= ((*this_).m_iActionsPaneWidth + (*this_).m_iSplitterWidth);
         }
-    
+
         /* Move the status bar */
-        (*this_).m_StatusBar.MoveWindow(0, iClientHeight - iStatusHeight, iClientWidth, iStatusHeight, (TRUE as _));
-    
+        (*this_).m_StatusBar.__base0.MoveWindow(0, iClientHeight - iStatusHeight, iClientWidth, iStatusHeight, (TRUE as i32));
+
         /* Move the tree view */
-        (*this_).m_TreeView.MoveWindow(0, 0, iTreeViewWidth, iTreeViewHeight, (TRUE as _));
-    
+        (*this_).m_TreeView.__base0.MoveWindow(0, 0, iTreeViewWidth, iTreeViewHeight, (TRUE as i32));
+
         /* Move the list view */
-        (*this_).m_ListView.MoveWindow(iListViewPosX, iListViewPosY, iListViewWidth, iListViewHeight, (TRUE as _));
-    
+        (*this_).m_ListView.__base0.MoveWindow(iListViewPosX, iListViewPosY, iListViewWidth, iListViewHeight, (TRUE as i32));
+
         (*this_).m_DescriptionBar.MoveWindow(iListViewPosX, 0, iListViewWidth, iDescriptionBarHeight, (TRUE as i32));
+
+        (*this_).m_ActionsPane.__base0.MoveWindow(iClientWidth - (*this_).m_iActionsPaneWidth, 0, (*this_).m_iActionsPaneWidth, iClientHeight, (TRUE as i32));
     }
     pub unsafe fn AddTreeViewItemRecursive(&mut self, hParentTreeItem: HTREEITEM, Node: *mut CSnapin) {
         let this_: *mut Self = self;
         let mut hTreeItem: HTREEITEM;
-    
+
         hTreeItem = (*this_).m_TreeView.AddItem(
             hParentTreeItem,
             (*Node).DisplayName().GetString() as LPWSTR,
@@ -172,9 +112,9 @@ impl CConsoleWnd {
                     (*this_).AddTreeViewItemRecursive(hTreeItem, ChildNode);
                 }
             }
-    
+
             (*this_).m_TreeView.Expand(hTreeItem, TVE_EXPAND);
-    
+
             if Node == (*this_).m_ViewSelectedNode {
                 (*this_).m_TreeView.SelectItem(hTreeItem, TVGN_CARET);
             }
@@ -185,22 +125,71 @@ impl CConsoleWnd {
         (*this_).m_TreeView.DeleteItem(TVI_ROOT);
         (*this_).AddTreeViewItemRecursive(TVI_ROOT, (*this_).m_ViewRootNode);
     }
-    pub unsafe fn __ctor_0(&mut self, MainWnd: *mut CMainWnd, RootNode: *mut CSnapin) {
+    pub unsafe fn ParseViewAttributes(mscFile: *mut MscFile, pViewElement: *mut IXMLDOMElement, puViewID: *mut UINT, piScopePanelWidth: *mut INT, piActionsPanelWidth: *mut INT) -> HRESULT {
+        let mut ViewID: VARIANT = core::mem::zeroed();
+        let mut ScopePanel: VARIANT = core::mem::zeroed();
+        let mut ActionsPanel: VARIANT = core::mem::zeroed();
+        let mut ptr: PWSTR = core::ptr::null_mut();
+        let mut hr: HRESULT = S_OK;
+
+        VariantInit(core::ptr::addr_of_mut!(ViewID));
+        VariantInit(core::ptr::addr_of_mut!(ScopePanel));
+        VariantInit(core::ptr::addr_of_mut!(ActionsPanel));
+
+        /* Attribut ID */
+        hr = (*mscFile).GetAttribute(pViewElement, CPP_COM_WSTR_578E89C9480F.as_ptr() as LPWSTR, core::ptr::addr_of_mut!(ViewID));
+        if hr == S_OK
+        {
+            *puViewID = wcstoul(V_BSTR!(core::ptr::addr_of_mut!(ViewID)), core::ptr::addr_of_mut!(ptr), 10);
+        }
+
+        /* Attribute ScopePaneWidth */
+        hr = (*mscFile).GetAttribute(pViewElement, CPP_COM_WSTR_87027C6B1057.as_ptr() as LPWSTR, core::ptr::addr_of_mut!(ScopePanel));
+        if hr == S_OK
+        {
+            *piScopePanelWidth = wcstol(V_BSTR!(core::ptr::addr_of_mut!(ScopePanel)), core::ptr::addr_of_mut!(ptr), 10);
+        }
+
+        /* Attribute ActionsPaneWidth */
+        hr = (*mscFile).GetAttribute(pViewElement, CPP_COM_WSTR_CD85856650BC.as_ptr() as LPWSTR, core::ptr::addr_of_mut!(ActionsPanel));
+        if hr == S_OK
+        {
+            *piActionsPanelWidth = wcstol(V_BSTR!(core::ptr::addr_of_mut!(ActionsPanel)), core::ptr::addr_of_mut!(ptr), 10);
+        }
+
+        VariantClear(core::ptr::addr_of_mut!(ViewID));
+        VariantClear(core::ptr::addr_of_mut!(ScopePanel));
+        VariantClear(core::ptr::addr_of_mut!(ActionsPanel));
+
+        return hr;
+    }
+    pub unsafe fn __ctor_0(&mut self, MainWnd: *mut CMainWnd, RootNode: *mut CSnapin, SelectedNode: *mut CSnapin) {
         let this_: *mut Self = self;
         (*this_).__base0.__ctor_0(core::ptr::null_mut());
         (*this_).__init_vtables();
+        (*this_).m_TreeView.__ctor_0();
+        (*this_).m_ListView.__ctor_0();
+        (*this_).m_StatusBar.__ctor_0();
+        (*this_).m_DescriptionBar.__ctor_0(core::ptr::null_mut());
+        (*this_).m_ActionsPane.__ctor_0();
         {
             (*this_).m_MainWnd = MainWnd;
             (*this_).m_ViewRootNode = RootNode;
-            (*this_).m_ViewSelectedNode = RootNode;
+            (*this_).m_ViewSelectedNode = if !SelectedNode.is_null() { SelectedNode } else { RootNode };
             (*this_).m_ListViewMode = ListView_Detail;
+            (*this_).m_ViewId = 0;
+
+            (*this_).m_iTreeViewWidth = 0;
+            (*this_).m_iActionsPaneWidth = 0;
+            (*this_).m_bStatusBarVisible = (TRUE as i32);
+            (*this_).m_bDescriptionBarVisible = (FALSE as i32);
+            (*this_).m_bTreeViewVisible = (TRUE as i32);
+            (*this_).m_bActionsPaneVisible = (FALSE as i32);
+
             (*this_).m_pfnSuperWindowProc = Some(DefMDIChildProc);
-    
-            (*this_).m_hMenuTreeView = LoadMenu(
-                _AtlBaseModule.GetModuleInstance(),
-                MAKEINTRESOURCE!(IDM_TREEVIEW_CONTEXT)
-            );
-    
+
+            (*this_).m_hMenuTreeView = LoadMenu(_AtlBaseModule.GetModuleInstance(), MAKEINTRESOURCE!(IDM_TREEVIEW_CONTEXT));
+
             if (*this_).m_thunk.Init(None, core::ptr::null_mut()) == 0 {
                 return;
             }
@@ -214,24 +203,23 @@ impl CConsoleWnd {
     pub unsafe fn OnCreate(&mut self, nMessage: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
         (*this_).__base0.SetWindowLongPtr(0, this_ as LONG_PTR);
-    
-        (*this_).m_bStatusBarVisible = (TRUE as i32);
-        (*this_).m_bDescriptionBarVisible = (FALSE as i32);
-        (*this_).m_bTreeViewVisible = (TRUE as i32);
-        (*this_).m_bActionsPaneVisible = (FALSE as i32);
-    
+
         (*this_).m_iSplitterWidth = 4;
-        (*this_).m_iSplitSide = 0;
-    
+        (*this_).m_iSplitSide = SPLITTER_NONE;
+
         let mut Rect: RECT = core::mem::zeroed();
         (*this_).__base0.GetClientRect(core::ptr::addr_of_mut!(Rect));
-        (*this_).m_iTreeViewWidth = (Rect.right - Rect.left) / 4;
-        (*this_).m_iActionsPaneWidth = (Rect.right - Rect.left) / 4;
-    
+        if (*this_).m_iTreeViewWidth == 0 {
+            (*this_).m_iTreeViewWidth = (Rect.right - Rect.left) / 4;
+        }
+        if (*this_).m_iActionsPaneWidth == 0 {
+            (*this_).m_iActionsPaneWidth = (Rect.right - Rect.left) / 4;
+        }
+
         (*this_).m_StatusBar.Create((*this_).__base0.m_hWnd, core::ptr::null_mut());
-        (*this_).m_StatusBar.GetClientRect(core::ptr::addr_of_mut!(Rect));
+        (*this_).m_StatusBar.__base0.GetClientRect(core::ptr::addr_of_mut!(Rect));
         (*this_).m_iStatusBarHeight = Rect.bottom - Rect.top;
-    
+
         Rect.right = 0;
         Rect.left = 0;
         Rect.top = 0;
@@ -247,32 +235,49 @@ impl CConsoleWnd {
             core::ptr::null_mut(),
         );
         (*this_).m_DescriptionBar.SetWindowTextW(CPP_COM_WSTR_4889C6392E22.as_ptr());
-    
+
         (*this_).m_TreeView.Create(
             (*this_).__base0.m_hWnd,
             WS_CHILD | WS_VISIBLE | TVS_HASLINES | TVS_SHOWSELALWAYS | TVS_EDITLABELS,
         );
-    
-        (*this_).m_TreeView.SetImageList((*(*this_).m_MainWnd).SnapinImageList(), (TVSIL_NORMAL as _));
-    
+
+        (*this_).m_TreeView.SetImageList((*(*this_).m_MainWnd).SnapinImageList(), (TVSIL_NORMAL as i32));
+
         (*this_).m_ListView.Create(
             (*this_).__base0.m_hWnd,
-            core::ptr::addr_of_mut!(Rect),
+            ATL__U_RECT { m_lpRect: core::ptr::addr_of_mut!(Rect) },
             core::ptr::null_mut(),
             WS_CHILD | WS_VISIBLE | ViewModeToStyle((*this_).m_ListViewMode),
             WS_EX_CLIENTEDGE,
-            0,
+            ATL__U_MENUorID { m_hMenu: core::ptr::null_mut() },
+            core::ptr::null_mut(),
         );
-    
-        (*this_).m_ViewId = (*(*this_).m_MainWnd).RegisterView(this_);
-    
+
+        Rect.right = 0;
+        Rect.left = 0;
+        Rect.top = 0;
+        Rect.bottom = 0;
+        (*this_).m_ActionsPane.Create(
+            (*this_).__base0.m_hWnd,
+            core::ptr::addr_of_mut!(Rect),
+            CPP_COM_WSTR_97355EE7543B.as_ptr(),
+            WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
+            WS_EX_CLIENTEDGE,
+            0,
+            core::ptr::null_mut(),
+        );
+
+        (*(*this_).m_MainWnd).RegisterView(this_);
+
         (*this_).UpdateTreeView();
-    
+
         let mdicreate: LPMDICREATESTRUCT = (*(lParam as LPCREATESTRUCT)).lpCreateParams as LPMDICREATESTRUCT;
         if (*mdicreate).lParam != 0 {
             (*this_).__base0.PostMessageW(WM_SYSCOMMAND, (SC_MAXIMIZE as _), 0);
         }
-    
+
+        (*(*this_).m_MainWnd).UpdateViewMenu((*this_).m_ListViewMode);
+
         return 0;
     }
     pub unsafe fn OnDestroy(&mut self, nMessage: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
@@ -286,22 +291,113 @@ impl CConsoleWnd {
         (*this_).UpdateLayout();
         return DefMDIChildProc((*this_).__base0.m_hWnd, WM_SIZE, wParam, lParam);
     }
+    pub unsafe fn OnLButtonDown(&mut self, nMessage: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
+        let this_: *mut Self = self;
+        let mut rect: RECT = core::mem::zeroed();
+        let mut xPos: i32 = (LOWORD!(lParam) as u16) as i32;
+
+        (*this_).__base0.GetClientRect(&mut rect);
+        let iClientWidth: i32 = rect.right - rect.left;
+
+        if ((*this_).m_bTreeViewVisible != 0) && (xPos >= (*this_).m_iTreeViewWidth) && (xPos <= (*this_).m_iTreeViewWidth + (*this_).m_iSplitterWidth)
+        {
+            (*this_).m_iSplitOffset = xPos - (*this_).m_iTreeViewWidth;
+            (*this_).m_iSplitSide = SPLITTER_LEFT;
+        }
+        else if ((*this_).m_bActionsPaneVisible != 0) && (xPos >= (iClientWidth - (*this_).m_iActionsPaneWidth - (*this_).m_iSplitterWidth)) && (xPos <= (iClientWidth - (*this_).m_iActionsPaneWidth))
+        {
+            (*this_).m_iSplitOffset = xPos - (iClientWidth - (*this_).m_iActionsPaneWidth - (*this_).m_iSplitterWidth);
+            (*this_).m_iSplitSide = SPLITTER_RIGHT;
+        }
+        else
+        {
+            (*this_).m_iSplitSide = SPLITTER_NONE;
+        }
+        (*this_).__base0.SetCapture();
+        return 0;
+    }
+    pub unsafe fn OnLButtonUp(&mut self, nMessage: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
+        let this_: *mut Self = self;
+        (*this_).m_iSplitSide = SPLITTER_NONE;
+        ReleaseCapture();
+        return 0;
+    }
+    pub unsafe fn OnMouseMove(&mut self, nMessage: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
+        let this_: *mut Self = self;
+        if (GetCapture() == (*this_).__base0.m_hWnd) && ((*this_).m_iSplitSide != SPLITTER_NONE) {
+            let mut rect: RECT = core::mem::zeroed();
+
+            (*this_).__base0.GetClientRect(core::ptr::addr_of_mut!(rect));
+            let iClientWidth: i32 = rect.right - rect.left;
+
+            if (*this_).m_iSplitSide == SPLITTER_LEFT {
+                (*this_).m_iTreeViewWidth = (LOWORD!(lParam) as WORD as INT) - (*this_).m_iSplitOffset;
+
+                (*this_).m_TreeView.__base0.GetWindowRect(core::ptr::addr_of_mut!(rect));
+                MapWindowPoints(HWND_DESKTOP, (*this_).__base0.m_hWnd, core::ptr::addr_of_mut!(rect) as LPPOINT, (core::mem::size_of::<RECT>() / (core::mem::size_of::<POINT>() as usize)) as UINT);
+
+                (*this_).m_TreeView.__base0.MoveWindow(rect.left, rect.top, rect.left + (*this_).m_iTreeViewWidth, rect.bottom - rect.top, (TRUE as i32));
+
+                (*this_).m_ListView.__base0.GetWindowRect(core::ptr::addr_of_mut!(rect));
+                MapWindowPoints(HWND_DESKTOP, (*this_).__base0.m_hWnd, core::ptr::addr_of_mut!(rect) as LPPOINT, (core::mem::size_of::<RECT>() / (core::mem::size_of::<POINT>() as usize)) as UINT);
+
+                let mut xWidth: i32 = iClientWidth - ((*this_).m_iTreeViewWidth + (*this_).m_iSplitterWidth);
+                if (*this_).m_bActionsPaneVisible != 0 {
+                    xWidth -= ((*this_).m_iActionsPaneWidth + (*this_).m_iSplitterWidth);
+                }
+
+                (*this_).m_ListView.__base0.MoveWindow((*this_).m_iTreeViewWidth + (*this_).m_iSplitterWidth, rect.top, xWidth, rect.bottom - rect.top, (TRUE as i32));
+
+                (*this_).m_DescriptionBar.GetWindowRect(core::ptr::addr_of_mut!(rect));
+                MapWindowPoints(HWND_DESKTOP, (*this_).__base0.m_hWnd, core::ptr::addr_of_mut!(rect) as LPPOINT, (core::mem::size_of::<RECT>() / (core::mem::size_of::<POINT>() as usize)) as UINT);
+
+                (*this_).m_DescriptionBar.MoveWindow((*this_).m_iTreeViewWidth + (*this_).m_iSplitterWidth, rect.top, xWidth, rect.bottom - rect.top, (TRUE as i32));
+            }
+            else if (*this_).m_iSplitSide == SPLITTER_RIGHT {
+                let xPos: i32 = (LOWORD!(lParam) as WORD as INT) - (*this_).m_iSplitOffset;
+                (*this_).m_iActionsPaneWidth = iClientWidth - (xPos + (*this_).m_iSplitterWidth);
+
+                (*this_).m_ListView.__base0.GetWindowRect(core::ptr::addr_of_mut!(rect));
+                MapWindowPoints(HWND_DESKTOP, (*this_).__base0.m_hWnd, core::ptr::addr_of_mut!(rect) as LPPOINT, (core::mem::size_of::<RECT>() / (core::mem::size_of::<POINT>() as usize)) as UINT);
+
+                let mut xWidth: i32 = iClientWidth - ((*this_).m_iActionsPaneWidth + (*this_).m_iSplitterWidth);
+                if (*this_).m_bTreeViewVisible != 0 {
+                    xWidth -= rect.left;
+                }
+
+                (*this_).m_ListView.__base0.MoveWindow(rect.left, rect.top, xWidth, rect.bottom - rect.top, (TRUE as i32));
+
+                (*this_).m_DescriptionBar.GetWindowRect(core::ptr::addr_of_mut!(rect));
+                MapWindowPoints(HWND_DESKTOP, (*this_).__base0.m_hWnd, core::ptr::addr_of_mut!(rect) as LPPOINT, (core::mem::size_of::<RECT>() / (core::mem::size_of::<POINT>() as usize)) as UINT);
+
+                (*this_).m_DescriptionBar.MoveWindow(rect.left, rect.top, xWidth, rect.bottom - rect.top, (TRUE as i32));
+
+                (*this_).m_ActionsPane.__base0.GetWindowRect(core::ptr::addr_of_mut!(rect));
+                MapWindowPoints(HWND_DESKTOP, (*this_).__base0.m_hWnd, core::ptr::addr_of_mut!(rect) as LPPOINT, (core::mem::size_of::<RECT>() / (core::mem::size_of::<POINT>() as usize)) as UINT);
+
+                rect.left = iClientWidth - (*this_).m_iActionsPaneWidth;
+                (*this_).m_ActionsPane.__base0.MoveWindow(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, (TRUE as i32));
+            }
+        }
+
+        return 0;
+    }
     pub unsafe fn OnContextMenu(&mut self, nMessage: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
         let mut pt: POINT = core::mem::zeroed();
-    
-        if (wParam as HWND) == (*this_).m_TreeView._base.m_hWnd {
+
+        if (wParam as HWND) == (*this_).m_TreeView.__base0.m_hWnd {
             let mut hti: TVHITTESTINFO = core::mem::zeroed();
             let mut nPos: i32 = 0;
-    
+
             pt.x = LOWORD!(lParam as u32) as i16 as i32;
             pt.y = HIWORD!(lParam as u32) as i16 as i32;
-    
+
             if pt.x == -1 && pt.y == -1 {
                 let mut rc: RECT = core::mem::zeroed();
                 hti.hItem = (*this_).m_TreeView.GetSelection();
                 if hti.hItem != core::ptr::null_mut() {
-                    TreeView_GetItemRect!((*this_).m_TreeView._base.m_hWnd, hti.hItem, core::ptr::addr_of_mut!(rc), TRUE);
+                    TreeView_GetItemRect!((*this_).m_TreeView.__base0.m_hWnd, hti.hItem, core::ptr::addr_of_mut!(rc), TRUE);
                     pt.x = rc.left + 8;
                     pt.y = rc.top + 8;
                     (*this_).m_TreeView.ClientToScreen__0(core::ptr::addr_of_mut!(pt));
@@ -314,14 +410,14 @@ impl CConsoleWnd {
                 hti.pt.y = pt.y;
                 (*this_).m_TreeView.ScreenToClient(core::ptr::addr_of_mut!(hti.pt));
                 (*this_).m_TreeView.HitTest(core::ptr::addr_of_mut!(hti));
-    
+
                 if !hti.hItem.is_null() {
                     if hti.hItem == (*this_).m_TreeView.GetSelection() {
                         nPos = 1;
                     }
                 }
             }
-    
+
             if (hti.flags & (TVHT_ONITEM as u32)) != 0 {
                 let hContextMenu: HMENU = GetSubMenu((*this_).m_hMenuTreeView, nPos);
                 if nPos == 1 {
@@ -340,30 +436,30 @@ impl CConsoleWnd {
         let this_: *mut Self = self;
         let lpDrawItem: LPDRAWITEMSTRUCT = lParam as LPDRAWITEMSTRUCT;
         let mut WindowText: [u16; 256] = [0u16; 256];
-    
+
         let hBrush: HBRUSH = GetSysColorBrush((COLOR_3DDKSHADOW as i32));
         FillRect((*lpDrawItem).hDC, core::ptr::addr_of_mut!((*lpDrawItem).rcItem), hBrush);
-    
+
         SetTextColor((*lpDrawItem).hDC, GetSysColor((COLOR_3DHILIGHT as i32)));
-    
+
         GetWindowTextW((*lpDrawItem).hwndItem, WindowText.as_mut_ptr(), (ARRAYSIZE!(WindowText)) as i32);
         SetBkMode((*lpDrawItem).hDC, (TRANSPARENT as i32));
-    
+
         (*lpDrawItem).rcItem.left += 4;
         DrawTextW((*lpDrawItem).hDC, WindowText.as_ptr(), -1, core::ptr::addr_of_mut!((*lpDrawItem).rcItem),
                     DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_MODIFYSTRING | DT_END_ELLIPSIS | DT_NOPREFIX);
-    
+
         return (TRUE) as LRESULT;
     }
     pub unsafe fn OnNotify(&mut self, nMessage: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
-    
+
         let phdr: *mut NMHDR = lParam as *mut NMHDR;
         match (*phdr).code {
             TVN_BEGINLABELEDIT => {
                 return (FALSE) as LRESULT;
             }
-    
+
             TVN_ENDLABELEDIT => {
                 {
                     let pNM: *mut TV_DISPINFO = lParam as *mut TV_DISPINFO;
@@ -375,13 +471,13 @@ impl CConsoleWnd {
                 }
                 return (FALSE) as LRESULT;
             }
-    
+
             TVN_SELCHANGED => {
                 {
                     let pNmTreeview: LPNMTREEVIEW = lParam as LPNMTREEVIEW;
                     let OldSnapin: *mut CSnapin = (*pNmTreeview).itemOld.lParam as *mut CSnapin;
                     let NewSnapin: *mut CSnapin = (*pNmTreeview).itemNew.lParam as *mut CSnapin;
-    
+
                     (*this_).m_DescriptionBar.SetWindowTextW((*NewSnapin).DisplayName().GetString());
                     (*(*this_).m_MainWnd).UpdateAboutSnapinMenu(
                         if NewSnapin == (*(*this_).m_MainWnd).GetRootSnapin() {
@@ -406,12 +502,12 @@ impl CConsoleWnd {
             }
             _ => {}
         }
-    
+
         return 0;
     }
     pub unsafe fn OnActivate(&mut self, nMessage: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
-        // m_MainWnd->UpdateToolbuttons(m_bTreeViewVisible, m_bActionsPaneVisible);
+        (*(*this_).m_MainWnd).UpdateToolbuttons((*this_).m_bTreeViewVisible, (*this_).m_bActionsPaneVisible);
         (*(*this_).m_MainWnd).UpdateViewMenu((*this_).m_ListViewMode);
         return 0;
     }
@@ -421,42 +517,39 @@ impl CConsoleWnd {
         if hTreeItem.is_null() {
             return 0;
         }
-    
+
         let Snapin: *mut CSnapin = (*this_).m_TreeView.GetItemData(hTreeItem) as *mut CSnapin;
         if Snapin.is_null() {
             return 0;
         }
-    
+
         let mut mcs: MDICREATESTRUCT = core::mem::zeroed();
         let hChild: HWND;
-        let mut title = CStringW::new();
-    
-        mcs.szTitle = (*Snapin).DisplayName().GetString() as LPCWSTR;
+
+        mcs.szTitle = (*Snapin).DisplayName().GetString();
         mcs.szClass = CConsoleWnd::GetWndClassName();
         mcs.hOwner = _AtlBaseModule.GetModuleInstance();
-        mcs.x = CW_USEDEFAULT;
-        mcs.cx = mcs.x;
-        mcs.y = CW_USEDEFAULT;
-        mcs.cy = mcs.y;
+        mcs.cx = CW_USEDEFAULT;
+        mcs.x = mcs.cx;
+        mcs.cy = CW_USEDEFAULT;
+        mcs.y = mcs.cy;
         mcs.style = MDIS_ALLCHILDSTYLES;
-    
-        let child: *mut CConsoleWnd = CConsoleWnd__new_0((*this_).m_MainWnd, Snapin);
+
+        let child: *mut CConsoleWnd = CConsoleWnd__new_0((*this_).m_MainWnd, Snapin, core::ptr::null_mut());
         let mut bMaximized: BOOL = (FALSE as i32);
-        let hWndOld: HWND = (*(*this_).m_MainWnd).m_MDIClient.SendMessageW__0(
-            WM_MDIGETACTIVE,
-            0,
-            core::ptr::addr_of_mut!(bMaximized) as LPARAM,
-        ) as HWND;
-        mcs.lParam = (bMaximized != 0 || hWndOld.is_null()) as LPARAM;
-        hChild = (*(*this_).m_MainWnd).m_MDIClient.SendMessageW__0(
-            WM_MDICREATE,
-            0,
-            core::ptr::addr_of_mut!(mcs) as LONG_PTR,
-        ) as HWND;
+        let hWndOld: HWND = (*(*this_).m_MainWnd).m_MDIClient.SendMessageW__0(WM_MDIGETACTIVE, 0, core::ptr::addr_of_mut!(bMaximized) as LPARAM) as HWND;
+        mcs.lParam = ((bMaximized != 0) || hWndOld.is_null()) as LPARAM;
+        hChild = (*(*this_).m_MainWnd).m_MDIClient.SendMessageW__0(WM_MDICREATE, 0, core::ptr::addr_of_mut!(mcs) as LONG_PTR) as HWND;
         if hChild.is_null() {
             CConsoleWnd__delete(child);
+            return 0;
         }
-    
+
+        (*(*this_).m_MainWnd).UpdateLayout();
+        (*(*this_).m_MainWnd).UpdateTitle();
+        (*(*this_).m_MainWnd).UpdateMenu();
+        (*(*this_).m_MainWnd).UpdateViewMenu((*child).GetListViewMode());
+
         return 0;
     }
     pub unsafe fn OnActionRename(&mut self, wNotifyCode: WORD, wID: WORD, hWndCtl: HWND, bHandled: &mut BOOL) -> LRESULT {
@@ -522,11 +615,11 @@ impl CConsoleWnd {
         if hItem.is_null() {
             return;
         }
-    
+
         if hItem == (*this_).m_TreeView.GetNextItem(hItem, (TVGN_ROOT as _)) {
             return;
         }
-    
+
         let hParent: HTREEITEM = (*this_).m_TreeView.GetNextItem(hItem, (TVGN_PARENT as _));
         if !hParent.is_null() {
             (*this_).m_TreeView.SelectItem(hParent, TVGN_CARET);
@@ -539,79 +632,293 @@ impl CConsoleWnd {
     pub unsafe fn SetListViewMode(&mut self, ListViewMode: LISTVIEW_MODE) {
         let this_: *mut Self = self;
         (*this_).m_ListViewMode = ListViewMode;
-        SetWindowLong((*this_).m_ListView._base.m_hWnd, GWL_STYLE, (GetWindowLong((*this_).m_ListView._base.m_hWnd, GWL_STYLE) & (!LVS_TYPEMASK) as i32) | (ViewModeToStyle((*this_).m_ListViewMode)) as i32);
+        SetWindowLong((*this_).m_ListView.__base0.m_hWnd, GWL_STYLE, (GetWindowLong((*this_).m_ListView.__base0.m_hWnd, GWL_STYLE) & (!LVS_TYPEMASK) as i32) | (ViewModeToStyle((*this_).m_ListViewMode)) as i32);
     }
     pub unsafe fn SaveView(&mut self, mscFile: *mut MscFile, pParentElement: *mut IXMLDOMElement) {
         let this_: *mut Self = self;
         let mut pViewElement: *mut IXMLDOMElement = core::ptr::null_mut();
         let mut pViewOptionsElement: *mut IXMLDOMElement = core::ptr::null_mut();
+        let mut pBookMarkElement: *mut IXMLDOMElement = core::ptr::null_mut();
         let mut szBuffer: [u16; 32] = [0; 32];
         let mut hr: HRESULT = S_OK;
-    
-        /* <View ID="1" ScopePaneWidth="292" ActionsPaneWidth="-1"> */
+
         'CleanUp: {
+            /* <View ID="1" ScopePaneWidth="292" ActionsPaneWidth="-1"> */
             hr = (*mscFile).CreateAndAddElementNode(CPP_COM_WSTR_8E637B93C326.as_ptr(), pParentElement as *mut IXMLDOMNode, core::ptr::addr_of_mut!(pViewElement));
-            if hr < 0 {
+            if hr < 0 { // FAILED(hr)
                 break 'CleanUp;
             }
-            _swprintf(szBuffer.as_mut_ptr(), CPP_COM_WSTR_A9EDBA2FC474.as_ptr(), (*this_).m_ViewId);
+            _swprintf(szBuffer.as_mut_ptr(), CPP_COM_WSTR_69A283E639E4.as_ptr(), (*this_).m_ViewId);
             hr = (*mscFile).CreateAndAddAttributeNode(CPP_COM_WSTR_578E89C9480F.as_ptr(), szBuffer.as_ptr(), pViewElement);
-            if hr < 0 {
+            if hr < 0 { // FAILED(hr)
                 break 'CleanUp;
             }
             _swprintf(szBuffer.as_mut_ptr(), CPP_COM_WSTR_A9EDBA2FC474.as_ptr(), (*this_).m_iTreeViewWidth);
             hr = (*mscFile).CreateAndAddAttributeNode(CPP_COM_WSTR_87027C6B1057.as_ptr(), szBuffer.as_ptr(), pViewElement);
-            if hr < 0 {
+            if hr < 0 { // FAILED(hr)
                 break 'CleanUp;
             }
             _swprintf(szBuffer.as_mut_ptr(), CPP_COM_WSTR_A9EDBA2FC474.as_ptr(), (*this_).m_iActionsPaneWidth);
             hr = (*mscFile).CreateAndAddAttributeNode(CPP_COM_WSTR_CD85856650BC.as_ptr(), szBuffer.as_ptr(), pViewElement);
-            if hr < 0 {
+            if hr < 0 { // FAILED(hr)
                 break 'CleanUp;
             }
-    
+
+            /* Root Snap-in  <BookMark Name="RootNode" NodeID="1"/> */
+            hr = (*mscFile).CreateAndAddElementNode(CPP_COM_WSTR_D273B69838AB.as_ptr(), pViewElement as *mut IXMLDOMNode, core::ptr::addr_of_mut!(pBookMarkElement));
+            if hr < 0 { // FAILED(hr)
+                break 'CleanUp;
+            }
+            hr = (*mscFile).CreateAndAddAttributeNode(CPP_COM_WSTR_76E480513E2C.as_ptr(), CPP_COM_WSTR_64BFC0779D3E.as_ptr(), pBookMarkElement);
+            if hr < 0 { // FAILED(hr)
+                break 'CleanUp;
+            }
+            _swprintf(szBuffer.as_mut_ptr(), CPP_COM_WSTR_69A283E639E4.as_ptr(), (*(*this_).m_ViewRootNode).GetNodeId());
+            hr = (*mscFile).CreateAndAddAttributeNode(CPP_COM_WSTR_BC5156B20E3B.as_ptr(), szBuffer.as_ptr(), pBookMarkElement);
+            if hr < 0 { // FAILED(hr)
+                break 'CleanUp;
+            }
+            SAFE_RELEASE!(pBookMarkElement);
+
+            /* Selected Snap-in <BookMark Name="SelectedNode" NodeID="1"/> */
+            hr = (*mscFile).CreateAndAddElementNode(CPP_COM_WSTR_D273B69838AB.as_ptr(), pViewElement as *mut IXMLDOMNode, core::ptr::addr_of_mut!(pBookMarkElement));
+            if hr < 0 { // FAILED(hr)
+                break 'CleanUp;
+            }
+            hr = (*mscFile).CreateAndAddAttributeNode(CPP_COM_WSTR_76E480513E2C.as_ptr(), CPP_COM_WSTR_22720D5B8CBF.as_ptr(), pBookMarkElement);
+            if hr < 0 { // FAILED(hr)
+                break 'CleanUp;
+            }
+            _swprintf(szBuffer.as_mut_ptr(), CPP_COM_WSTR_69A283E639E4.as_ptr(), (*(*this_).m_ViewSelectedNode).GetNodeId());
+            hr = (*mscFile).CreateAndAddAttributeNode(CPP_COM_WSTR_BC5156B20E3B.as_ptr(), szBuffer.as_ptr(), pBookMarkElement);
+            if hr < 0 { // FAILED(hr)
+                break 'CleanUp;
+            }
+            SAFE_RELEASE!(pBookMarkElement);
+
             (*mscFile).SaveWindowPlacement(core::ptr::addr_of_mut!((*this_).__base0), pViewElement);
-    
+
             /* <ViewOptions ViewMode="Report" ScopePaneVisible="true" ActionsPaneVisible="true" DescriptionBarVisible="false" DefaultColumn0Width="200" DefaultColumn1Width="0"/> */
             hr = (*mscFile).CreateAndAddElementNode(CPP_COM_WSTR_ACF7BB451AB4.as_ptr(), pViewElement as *mut IXMLDOMNode, core::ptr::addr_of_mut!(pViewOptionsElement));
-            if hr < 0 {
+            if hr < 0 { // FAILED(hr)
                 break 'CleanUp;
             }
-            hr = (*mscFile).CreateAndAddAttributeNode(CPP_COM_WSTR_60E82282DE60.as_ptr(), ViewModeToString(((*this_).m_ListViewMode) as i32), pViewOptionsElement);
-            if hr < 0 {
+            hr = (*mscFile).CreateAndAddAttributeNode(CPP_COM_WSTR_60E82282DE60.as_ptr(), ViewModeToString((*this_).m_ListViewMode), pViewOptionsElement);
+            if hr < 0 { // FAILED(hr)
                 break 'CleanUp;
             }
             hr = (*mscFile).CreateAndAddAttributeNode(CPP_COM_WSTR_BDCA0F318C15.as_ptr(), if (*this_).IsTreeViewVisible() != 0 { CPP_COM_WSTR_CD28B1A69262.as_ptr() } else { CPP_COM_WSTR_44C8518BCAAF.as_ptr() }, pViewOptionsElement);
-            if hr < 0 {
+            if hr < 0 { // FAILED(hr)
                 break 'CleanUp;
             }
             if (*this_).IsStatusBarVisible() == 0 {
                 hr = (*mscFile).CreateAndAddAttributeNode(CPP_COM_WSTR_84602D53EA5F.as_ptr(), CPP_COM_WSTR_CD28B1A69262.as_ptr(), pViewOptionsElement);
-                if hr < 0 {
+                if hr < 0 { // FAILED(hr)
                     break 'CleanUp;
                 }
             }
             hr = (*mscFile).CreateAndAddAttributeNode(CPP_COM_WSTR_BEC2836C8636.as_ptr(), if (*this_).IsActionsPaneVisible() != 0 { CPP_COM_WSTR_CD28B1A69262.as_ptr() } else { CPP_COM_WSTR_44C8518BCAAF.as_ptr() }, pViewOptionsElement);
-            if hr < 0 {
+            if hr < 0 { // FAILED(hr)
                 break 'CleanUp;
             }
             hr = (*mscFile).CreateAndAddAttributeNode(CPP_COM_WSTR_A52B679307C3.as_ptr(), if (*this_).IsDescriptionBarVisible() != 0 { CPP_COM_WSTR_CD28B1A69262.as_ptr() } else { CPP_COM_WSTR_44C8518BCAAF.as_ptr() }, pViewOptionsElement);
-            if hr < 0 {
+            if hr < 0 { // FAILED(hr)
                 break 'CleanUp;
             }
-            hr = (*mscFile).CreateAndAddAttributeNode(CPP_COM_WSTR_E999B61173C7.as_ptr(), CPP_COM_WSTR_34D297E2847F.as_ptr(), pViewOptionsElement);
-            if hr < 0 {
+            hr = (*mscFile).CreateAndAddAttributeNode(CPP_COM_WSTR_E999B61173C7.as_ptr(), CPP_COM_WSTR_34D297E2847F.as_ptr(), pViewOptionsElement); /* FIXME */
+            if hr < 0 { // FAILED(hr)
                 break 'CleanUp;
-            } /* FIXME */
-            hr = (*mscFile).CreateAndAddAttributeNode(CPP_COM_WSTR_25B61379E7E9.as_ptr(), CPP_COM_WSTR_4F8320D91E97.as_ptr(), pViewOptionsElement);
-            if hr < 0 {
+            }
+            hr = (*mscFile).CreateAndAddAttributeNode(CPP_COM_WSTR_25B61379E7E9.as_ptr(), CPP_COM_WSTR_4F8320D91E97.as_ptr(), pViewOptionsElement); /* FIXME */
+            if hr < 0 { // FAILED(hr)
                 break 'CleanUp;
-            } /* FIXME */
+            }
             SAFE_RELEASE!(pViewOptionsElement); /* </ViewOptions> */
         }
-    
+
         // CleanUp:
         SAFE_RELEASE!(pViewElement); /* </View> */
+    }
+    pub unsafe fn ParseView(pMainWnd: *mut CMainWnd, mscFile: *mut MscFile, pViewElement: *mut IXMLDOMElement) -> HRESULT {
+        let mut pChildList: *mut IXMLDOMNodeList = core::ptr::null_mut();
+        let mut nextItem: *mut IXMLDOMNode = core::ptr::null_mut();
+        let mut NodeType: DOMNodeType = core::mem::zeroed();
+        let mut NodeName: BSTR = core::ptr::null_mut();
+        let mut pRootSnapin: *mut CSnapin = core::ptr::null_mut();
+        let mut pSelectedSnapin: *mut CSnapin = core::ptr::null_mut();
+
+        let mut mcs: MDICREATESTRUCT = core::mem::zeroed();
+        let mut hChild: HWND = core::mem::zeroed();
+        let mut hWndOld: HWND = core::mem::zeroed();
+        let mut bMaximized: BOOL = 0;
+        let mut pConsoleWnd: *mut CConsoleWnd = core::ptr::null_mut();
+
+        let mut uViewId: UINT = 0;
+        let mut iScopePanelWidth: INT = 0;
+        let mut iActionsPanelWidth: INT = 0;
+        let mut ListViewMode: LISTVIEW_MODE = ListView_Detail;
+        let mut bScopePaneVisible: BOOL = (FALSE as i32);
+        let mut bActionsPaneVisible: BOOL = (FALSE as i32);
+        let mut bDescriptionBarVisible: BOOL = (FALSE as i32);
+        let mut hr: HRESULT = S_OK;
+
+        CConsoleWnd::ParseViewAttributes(mscFile, pViewElement, core::ptr::addr_of_mut!(uViewId), core::ptr::addr_of_mut!(iScopePanelWidth), core::ptr::addr_of_mut!(iActionsPanelWidth));
+
+        'done: {
+            hr = (*pViewElement).get_childNodes(core::ptr::addr_of_mut!(pChildList));
+            if hr < 0 {
+                break 'done;
+            }
+
+            loop {
+                hr = (*pChildList).nextNode(core::ptr::addr_of_mut!(nextItem));
+                if hr == S_FALSE {
+                    hr = S_OK;
+                    break;
+                }
+
+                hr = (*nextItem).get_nodeType(core::ptr::addr_of_mut!(NodeType));
+                if hr == S_OK {
+                    NodeName = core::ptr::null_mut();
+                    hr = (*nextItem).get_baseName(core::ptr::addr_of_mut!(NodeName));
+                    if hr == S_OK {
+                        if NodeType == NODE_ELEMENT {
+                            if _wcsicmp(NodeName, CPP_COM_WSTR_D273B69838AB.as_ptr()) == 0 {
+                                let mut Name: VARIANT = core::mem::zeroed();
+                                let mut NodeID: VARIANT = core::mem::zeroed();
+
+                                VariantInit(core::ptr::addr_of_mut!(Name));
+                                VariantInit(core::ptr::addr_of_mut!(NodeID));
+
+                                hr = (*mscFile).GetAttribute(nextItem as *mut IXMLDOMElement, CPP_COM_WSTR_76E480513E2C.as_ptr() as LPWSTR, core::ptr::addr_of_mut!(Name));
+                                if hr == S_OK {
+                                    hr = (*mscFile).GetAttribute(nextItem as *mut IXMLDOMElement, CPP_COM_WSTR_BC5156B20E3B.as_ptr() as LPWSTR, core::ptr::addr_of_mut!(NodeID));
+                                    if hr == S_OK {
+                                        let mut ptr: PWSTR = core::ptr::null_mut();
+                                        let uNodeId: UINT = wcstoul(V_BSTR!(core::ptr::addr_of_mut!(NodeID)), core::ptr::addr_of_mut!(ptr), 10) as UINT;
+                                        if uNodeId != 0 {
+                                            let pSnapin: *mut CSnapin = (*(*pMainWnd).m_TempNodeMap).Lookup(uNodeId);
+                                            if !pSnapin.is_null() {
+                                                if _wcsicmp(V_BSTR!(core::ptr::addr_of_mut!(Name)), CPP_COM_WSTR_64BFC0779D3E.as_ptr()) == 0 {
+                                                    pRootSnapin = pSnapin;
+                                                } else if _wcsicmp(V_BSTR!(core::ptr::addr_of_mut!(Name)), CPP_COM_WSTR_22720D5B8CBF.as_ptr()) == 0 {
+                                                    // Divergence: the C assigns pRootSnapin here too (a copy
+                                                    // of the branch above), so pSelectedSnapin is never set and
+                                                    // the view reopens rooted at its selected node.
+                                                    pSelectedSnapin = pSnapin;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                VariantClear(core::ptr::addr_of_mut!(Name));
+                                VariantClear(core::ptr::addr_of_mut!(NodeID));
+                            } else if _wcsicmp(NodeName, CPP_COM_WSTR_ACF7BB451AB4.as_ptr()) == 0 {
+                                let mut ViewMode: VARIANT = core::mem::zeroed();
+                                let mut ScopePane: VARIANT = core::mem::zeroed();
+                                let mut ActionsPane: VARIANT = core::mem::zeroed();
+                                let mut DescriptionBar: VARIANT = core::mem::zeroed();
+
+                                VariantInit(core::ptr::addr_of_mut!(ViewMode));
+                                VariantInit(core::ptr::addr_of_mut!(ScopePane));
+                                VariantInit(core::ptr::addr_of_mut!(ActionsPane));
+                                VariantInit(core::ptr::addr_of_mut!(DescriptionBar));
+
+                                /* Attribut ViewMode="Report" */
+                                hr = (*mscFile).GetAttribute(nextItem as *mut IXMLDOMElement, CPP_COM_WSTR_60E82282DE60.as_ptr() as LPWSTR, core::ptr::addr_of_mut!(ViewMode));
+                                if hr == S_OK {
+                                    ListViewMode = StringToViewMode(V_BSTR!(core::ptr::addr_of_mut!(ViewMode)));
+                                }
+
+                                /* Attribut ScopePaneVisible="true" */
+                                hr = (*mscFile).GetAttribute(nextItem as *mut IXMLDOMElement, CPP_COM_WSTR_BDCA0F318C15.as_ptr() as LPWSTR, core::ptr::addr_of_mut!(ScopePane));
+                                if hr == S_OK {
+                                    bScopePaneVisible = StringToBool(V_BSTR!(core::ptr::addr_of_mut!(ScopePane)));
+                                }
+
+                                /* Attribut ActionsPaneVisible="true" */
+                                hr = (*mscFile).GetAttribute(nextItem as *mut IXMLDOMElement, CPP_COM_WSTR_BEC2836C8636.as_ptr() as LPWSTR, core::ptr::addr_of_mut!(ActionsPane));
+                                if hr == S_OK {
+                                    bActionsPaneVisible = StringToBool(V_BSTR!(core::ptr::addr_of_mut!(ActionsPane)));
+                                }
+
+                                /* Attribut DescriptionBarVisible="false" */
+                                hr = (*mscFile).GetAttribute(nextItem as *mut IXMLDOMElement, CPP_COM_WSTR_A52B679307C3.as_ptr() as LPWSTR, core::ptr::addr_of_mut!(DescriptionBar));
+                                if hr == S_OK {
+                                    bDescriptionBarVisible = StringToBool(V_BSTR!(core::ptr::addr_of_mut!(DescriptionBar)));
+                                }
+
+                                /* FIXME: Attribut DefaultColumn0Width="200" */
+                                /* FIXME: Attribut DefaultColumn1Width="0" */
+
+                                VariantClear(core::ptr::addr_of_mut!(ViewMode));
+                                VariantClear(core::ptr::addr_of_mut!(ScopePane));
+                                VariantClear(core::ptr::addr_of_mut!(ActionsPane));
+                                VariantClear(core::ptr::addr_of_mut!(DescriptionBar));
+                            }
+                        }
+
+                        SysFreeString(NodeName);
+                        NodeName = core::ptr::null_mut();
+                    }
+                }
+
+                (*nextItem).Release();
+            }
+
+            if hr < 0 {
+                break 'done;
+            }
+
+            /* Create the view */
+
+            mcs.szTitle = (*pRootSnapin).DisplayName().GetString();
+            mcs.szClass = CConsoleWnd::GetWndClassName();
+            mcs.hOwner = _AtlBaseModule.GetModuleInstance();
+            mcs.cx = CW_USEDEFAULT;
+            mcs.x = mcs.cx;
+            mcs.cy = CW_USEDEFAULT;
+            mcs.y = mcs.cy;
+            mcs.style = MDIS_ALLCHILDSTYLES;
+
+            pConsoleWnd = CConsoleWnd__new_0(pMainWnd, pRootSnapin, pSelectedSnapin);
+
+            (*pConsoleWnd).m_ViewId = uViewId;
+            (*pConsoleWnd).m_iTreeViewWidth = iScopePanelWidth;
+            (*pConsoleWnd).m_iActionsPaneWidth = iActionsPanelWidth;
+
+            bMaximized = (FALSE as i32);
+            hWndOld = (*pMainWnd).m_MDIClient.SendMessageW__0(WM_MDIGETACTIVE, 0, core::ptr::addr_of_mut!(bMaximized) as LPARAM) as HWND;
+            mcs.lParam = ((bMaximized != 0) || (hWndOld as usize == 0)) as LPARAM;
+            hChild = (*pMainWnd).m_MDIClient.SendMessageW__0(WM_MDICREATE, 0, core::ptr::addr_of_mut!(mcs) as LONG_PTR) as HWND;
+            if hChild as usize == 0 {
+                CConsoleWnd__delete(pConsoleWnd);
+                hr = E_FAIL;
+                break 'done;
+            }
+
+            (*pConsoleWnd).SetListViewMode(ListViewMode);
+            (*pConsoleWnd).SetTreeViewVisible(bScopePaneVisible);
+            (*pConsoleWnd).SetActionsPaneVisible(bActionsPaneVisible);
+            (*pConsoleWnd).SetDescriptionBarVisible(bDescriptionBarVisible);
+
+            (*pMainWnd).UpdateLayout();
+            (*pMainWnd).UpdateTitle();
+            (*pMainWnd).UpdateMenu();
+            (*pMainWnd).UpdateViewMenu(ListViewMode);
+        }
+
+        // done:
+        if !pChildList.is_null() {
+            (*pChildList).Release();
+        }
+
+        if !NodeName.is_null() {
+            SysFreeString(NodeName);
+        }
+
+        return hr;
     }
     pub unsafe fn QueryInterface(&mut self, riid: &IID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT {
         let this_: *mut Self = self;
@@ -645,7 +952,7 @@ impl CConsoleWnd {
                 DPRINT1!("Unhandled riid\n");
             }
         }
-    
+
         *ppvObject = core::ptr::null_mut();
         return E_NOINTERFACE;
     }
@@ -683,7 +990,7 @@ impl CConsoleWnd {
         if ppImageList.is_null() {
             return E_INVALIDARG;
         }
-    
+
         __debugbreak();
         //*ppImageList = m_ScopeImageList;
         return S_OK;

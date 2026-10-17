@@ -6974,13 +6974,13 @@ case "$DRIVER" in
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DUNICODE -D_ATL_NO_EXCEPTIONS -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
   mmc_new)
-    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-11 from base/applications/mmc_new/CMakeLists.txt
-    # (14 compiled TU(s), 202 headers in the include closure, 37 switch constant(s)).
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-16 from base/applications/mmc_new/CMakeLists.txt
+    # (15 compiled TU(s), 203 headers in the include closure, 37 switch constant(s)).
     # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
     # that exact sequence is bindgen-able). Review the WHY notes in the report.
     USERMODE=1
     REAL_UNIONS=1
-    # BLOCKLIST_FUNCS, MEASURED: 78 external prototype(s) declared by the include closure, 15 called but declared nowhere in it.
+    # BLOCKLIST_FUNCS, MEASURED: 84 external prototype(s) declared by the include closure, 17 called but declared nowhere in it.
     # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
     BLOCKLIST_FUNCS=0
     BLOCKLIST_FUNCS_FROM_CRATE=1
@@ -6998,13 +6998,14 @@ case "$DRIVER" in
                   --allowlist-file '.*[/\\]ui[/\\]rosctrls\.h'
                   --allowlist-file '.*[/\\]wingdi\.h'
                   --allowlist-file '.*mmc_new[/\\].*\.h'
+                  --allowlist-file '.*[/\\]CConsoleWnd\.h'
                   --allowlist-file '.*[/\\]atlwin\.h' )
     # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
     UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
     EXTRA_INC=( -I"${SRC}/base/applications/mmc_new" -I"${SRC}/build-i386/base/applications/mmc_new" )
     # LOWER priority than the standard SDK dirs -- the real compile lists these
     # after them, and hoisting one ahead swaps which header an include resolves to.
-    LATE_INC=( -I"${SRC}/sdk/lib/atl" -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/i686-w64-mingw32/include/c++/v1" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    LATE_INC=( -I"${SRC}/sdk/lib/atl" -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/vendor/symcrypt/inc" -I"${SRC}/vendor/symcrypt/lib" -I"${SRC}/.build-tools/llvm-mingw/i686-w64-mingw32/include/c++/v1" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_ATL_NO_EXCEPTIONS -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
   msports)

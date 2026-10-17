@@ -93,6 +93,9 @@ typedef struct _FRONTEND_VTBL
                                UINT CmdIdHigh);
     BOOL  (NTAPI *SetMenuClose)(IN OUT PFRONTEND This,
                                 BOOL Enable);
+    /* The current font's unscaled size, as GetCurrentConsoleFont reports it */
+    VOID  (NTAPI *GetFontSize)(IN OUT PFRONTEND This,
+                               PCOORD pSize);
 } FRONTEND_VTBL, *PFRONTEND_VTBL;
 
 struct _FRONTEND

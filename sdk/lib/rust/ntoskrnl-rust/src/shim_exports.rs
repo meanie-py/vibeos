@@ -2698,7 +2698,8 @@ pub unsafe extern "fastcall" fn KeAcquireInStackQueuedSpinLock(
     (*LockHandle).LockQueue.Next = core::ptr::null_mut();
     (*LockHandle).LockQueue.Lock = SpinLock as *mut u32;
     ntkrnl_sys::inline::tier1::KeRaiseIrql(ntkrnl_sys::base::DISPATCH_LEVEL, &mut (*LockHandle).OldIrql);
-    ntkrnl_sys::inline::ke::KxAcquireSpinLock((*LockHandle).LockQueue.Lock as *mut _);
+    // A real queued lock, not the C's plain-spinlock HACK (see the helper).
+    ntkrnl_sys::inline::ke::KxAcquireInStackQueuedSpinLock(core::ptr::addr_of_mut!((*LockHandle).LockQueue) as *mut ntkrnl_sys::ddk::KSPIN_LOCK_QUEUE);
 }
 
 #[cfg(target_arch = "x86")]
@@ -2711,7 +2712,8 @@ pub unsafe extern "fastcall" fn KeAcquireInStackQueuedSpinLockRaiseToSynch(
     (*LockHandle).LockQueue.Next = core::ptr::null_mut();
     (*LockHandle).LockQueue.Lock = SpinLock as *mut u32;
     ntkrnl_sys::inline::tier1::KeRaiseIrql(ntkrnl_sys::inline::ke::SYNCH_LEVEL, &mut (*LockHandle).OldIrql);
-    ntkrnl_sys::inline::ke::KxAcquireSpinLock((*LockHandle).LockQueue.Lock as *mut _);
+    // A real queued lock, not the C's plain-spinlock HACK (see the helper).
+    ntkrnl_sys::inline::ke::KxAcquireInStackQueuedSpinLock(core::ptr::addr_of_mut!((*LockHandle).LockQueue) as *mut ntkrnl_sys::ddk::KSPIN_LOCK_QUEUE);
 }
 
 #[cfg(target_arch = "x86")]
@@ -2720,7 +2722,7 @@ pub unsafe extern "fastcall" fn KeAcquireInStackQueuedSpinLockRaiseToSynch(
 pub unsafe extern "fastcall" fn KeReleaseInStackQueuedSpinLock(
     LockHandle: PKLOCK_QUEUE_HANDLE,
 ) {
-    ntkrnl_sys::inline::ke::KxReleaseSpinLock((*LockHandle).LockQueue.Lock as *mut _);
+    ntkrnl_sys::inline::ke::KxReleaseInStackQueuedSpinLock(core::ptr::addr_of_mut!((*LockHandle).LockQueue) as *mut ntkrnl_sys::ddk::KSPIN_LOCK_QUEUE);
     ntkrnl_sys::inline::tier1::KeLowerIrql((*LockHandle).OldIrql);
 }
 

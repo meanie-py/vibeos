@@ -91,7 +91,7 @@ extern "C" {
     pub fn _wcsnicmp(s1: *const u16, s2: *const u16, n: usize) -> i32; // apphelp-rust/src/prelude.rs
     pub fn fgetws(s: *mut wchar_t, size: i32, file: *mut FILE) -> *mut wchar_t; // doskey-rust/src/prelude.rs
     pub fn towlower(c: u16) -> u16; // cleanmgr-rust/src/prelude.rs
-    pub fn towupper(c: c_int) -> c_int; // at-rust/src/prelude.rs
+    pub fn towupper(c: wint_t) -> wint_t; // at-rust/src/prelude.rs
     pub fn wcscat(dst: *mut u16, src: *const u16) -> *mut u16; // advapi32-rust/src/wine/cred.rs
     pub fn wcscpy(dst: *mut u16, src: *const u16) -> *mut u16; // advapi32-rust/src/prelude.rs
     pub fn wcslen(s: *const u16) -> usize; // access-rust/src/prelude.rs

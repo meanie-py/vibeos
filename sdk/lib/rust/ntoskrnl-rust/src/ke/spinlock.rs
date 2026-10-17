@@ -362,7 +362,7 @@ pub unsafe extern "fastcall" fn KeAcquireInStackQueuedSpinLockAtDpcLevel(
         }
     }
 
-    KxAcquireSpinLock((*LockHandle).LockQueue.Lock as *mut _);
+    ntkrnl_sys::inline::ke::KxAcquireInStackQueuedSpinLock(core::ptr::addr_of_mut!((*LockHandle).LockQueue) as *mut ntkrnl_sys::ddk::KSPIN_LOCK_QUEUE);
 }
 
 #[cfg(not(target_arch = "x86"))]
@@ -407,7 +407,7 @@ pub unsafe extern "fastcall" fn KeReleaseInStackQueuedSpinLockFromDpcLevel(
         }
     }
 
-    KxReleaseSpinLock((*LockHandle).LockQueue.Lock as *mut _);
+    ntkrnl_sys::inline::ke::KxReleaseInStackQueuedSpinLock(core::ptr::addr_of_mut!((*LockHandle).LockQueue) as *mut ntkrnl_sys::ddk::KSPIN_LOCK_QUEUE);
 }
 
 #[cfg(not(target_arch = "x86"))]

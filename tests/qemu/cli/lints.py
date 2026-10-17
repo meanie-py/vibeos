@@ -370,6 +370,11 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     specs.append(
         ("scan_cmake_linked_rust", [py, str(ccl)] if ccl.is_file() else ["MISSING"], "stdout")
     )
+    # atl_rust's CAtlList::GetNext returns the element's SLOT; casting it instead of
+    # dereferencing compiles for a list of pointers and reads list-node memory as the object
+    # (mmc_new, 2026-10-17). Baseline is EMPTY.
+    sac = repo / "tools" / "scan_atl_slot_cast.py"
+    specs.append(("scan_atl_slot_cast", [py, str(sac)] if sac.is_file() else ["MISSING"], "stdout"))
     # MSVC is not a supported toolchain (roadmap section 11): every CMake `if()` that tests
     # for it was resolved by tools/strip_msvc_cmake.py on 2026-10-03. Baseline is EMPTY, so
     # an upstream merge that brings a new one fails here with the command that resolves it.

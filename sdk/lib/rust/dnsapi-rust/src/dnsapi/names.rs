@@ -43,7 +43,7 @@ pub unsafe extern "system" fn DnsNameCompare_W(mut name1: PCWSTR, mut name2: PCW
     }
 
     while (name1 as usize) <= (p as usize) {
-        if towupper(*name1 as i32) != towupper(*name2 as i32) {
+        if towupper(*name1 as wint_t) != towupper(*name2 as wint_t) {
             return 0;
         }
         name1 = name1.offset(1);

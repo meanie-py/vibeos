@@ -285,6 +285,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "audio-convert-difftest"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "audiosrv-cargo"
 version = "0.1.0"
 dependencies = [
@@ -491,6 +500,23 @@ version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
  "panic-common",
+]
+
+[[package]]
+name = "bwfm-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "bwfm-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+ "panic-common",
+ "sdhci-rust",
 ]
 
 [[package]]
@@ -5298,7 +5324,12 @@ version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
  "panic-common",
+ "sdhci-rust",
 ]
+
+[[package]]
+name = "sdhci-rust"
+version = "0.1.0"
 
 [[package]]
 name = "se-rust"

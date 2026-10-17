@@ -80,7 +80,7 @@ pub const CLSCTX_INPROC_SERVER: DWORD = 0x1; // control-rust/src/prelude.rs
 pub const VT_BSTR: DWORD = 8; // mmc-rust/src/prelude.rs
 extern "C" {
     pub fn towlower(c: u16) -> u16; // cnt-ctype/src/lib.rs
-    pub fn towupper(c: c_int) -> c_int; // dnsapi-rust/src/prelude.rs
+    pub fn towupper(c: wint_t) -> wint_t; // dnsapi-rust/src/prelude.rs
     pub fn wcschr(s: *const u16, c: u16) -> *mut u16; // advapi32-rust/src/wine/cred.rs
     pub fn wcstol(s: *const u16, endptr: *mut *mut u16, base: i32) -> i32; // mlang-rust/src/mlang/mlang.rs
     pub static CLSID_ProgressDialog: GUID; // control-rust/src/types_amd64.rs

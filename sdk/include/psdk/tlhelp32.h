@@ -28,28 +28,30 @@ extern "C" {
 #define TH32CS_SNAPMODULE	0x8
 #define TH32CS_SNAPALL	(TH32CS_SNAPHEAPLIST|TH32CS_SNAPPROCESS|TH32CS_SNAPTHREAD|TH32CS_SNAPMODULE)
 #define TH32CS_INHERIT	0x80000000
+/* The pointer-width fields are as on Windows (and kernel32): DWORDs here made every
+   64-bit caller's dwSize wrong, so Process32First/Heap32* refused it. */
 typedef struct tagHEAPLIST32 {
-	DWORD dwSize;
+	SIZE_T dwSize;
 	DWORD th32ProcessID;
-	DWORD th32HeapID;
+	ULONG_PTR th32HeapID;
 	DWORD dwFlags;
 } HEAPLIST32,*PHEAPLIST32,*LPHEAPLIST32;
 typedef struct tagHEAPENTRY32 {
-	DWORD dwSize;
+	SIZE_T dwSize;
 	HANDLE hHandle;
-	DWORD dwAddress;
-	DWORD dwBlockSize;
+	ULONG_PTR dwAddress;
+	SIZE_T dwBlockSize;
 	DWORD dwFlags;
 	DWORD dwLockCount;
 	DWORD dwResvd;
 	DWORD th32ProcessID;
-	DWORD th32HeapID;
+	ULONG_PTR th32HeapID;
 } HEAPENTRY32,*PHEAPENTRY32,*LPHEAPENTRY32;
 typedef struct tagPROCESSENTRY32W {
 	DWORD dwSize;
 	DWORD cntUsage;
 	DWORD th32ProcessID;
-	DWORD th32DefaultHeapID;
+	ULONG_PTR th32DefaultHeapID;
 	DWORD th32ModuleID;
 	DWORD cntThreads;
 	DWORD th32ParentProcessID;
@@ -61,7 +63,7 @@ typedef struct tagPROCESSENTRY32 {
 	DWORD dwSize;
 	DWORD cntUsage;
 	DWORD th32ProcessID;
-	DWORD th32DefaultHeapID;
+	ULONG_PTR th32DefaultHeapID;
 	DWORD th32ModuleID;
 	DWORD cntThreads;
 	DWORD th32ParentProcessID;
@@ -102,7 +104,7 @@ typedef struct tagMODULEENTRY32 {
 	char szModule[MAX_MODULE_NAME32 + 1];
 	char szExePath[MAX_PATH];
 } MODULEENTRY32,*PMODULEENTRY32,*LPMODULEENTRY32;
-BOOL WINAPI Heap32First(LPHEAPENTRY32,DWORD,DWORD);
+BOOL WINAPI Heap32First(LPHEAPENTRY32,DWORD,ULONG_PTR);
 BOOL WINAPI Heap32ListFirst(HANDLE,LPHEAPLIST32);
 BOOL WINAPI Heap32ListNext(HANDLE,LPHEAPLIST32);
 BOOL WINAPI Heap32Next(LPHEAPENTRY32);

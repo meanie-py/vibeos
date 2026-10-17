@@ -114,6 +114,126 @@ pub unsafe fn _IDHWNDPAIR__new_in_0(__p: *mut _IDHWNDPAIR) -> *mut _IDHWNDPAIR {
 pub unsafe fn _IDHWNDPAIR__new_0() -> *mut _IDHWNDPAIR { _IDHWNDPAIR__new_in_0(cpp_alloc::<_IDHWNDPAIR>()) }
 pub unsafe fn _IDHWNDPAIR__delete(p: *mut _IDHWNDPAIR) { if p.is_null() { return; } core::ptr::drop_in_place(p); cpp_free(p as *mut core::ffi::c_void); }
 
+// ---- CListView (sdk/include/reactos/ui/rosctrls.h)
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct CListView {
+    pub __base0: CWindow,
+}
+
+impl CListView {
+    /// Point every vtable this object contains at this class's tables: what a C++
+    /// constructor does after its bases are built and before its members are.
+    pub unsafe fn __init_vtables(&mut self) {
+        let this: *mut Self = self;
+        let _ = this;
+    }
+}
+
+impl core::ops::Deref for CListView { type Target = CWindow; fn deref(&self) -> &CWindow { &self.__base0 } }
+impl core::ops::DerefMut for CListView { fn deref_mut(&mut self) -> &mut CWindow { &mut self.__base0 } }
+pub unsafe fn CListView__zeroed() -> CListView { core::mem::zeroed() }
+pub unsafe fn CListView__make_0() -> CListView { let mut __obj = CListView__zeroed(); __obj.__ctor_0(); __obj }
+pub unsafe fn CListView__new_in_0(__p: *mut CListView) -> *mut CListView { if __p.is_null() { return __p; } (*__p).__ctor_0(); __p }
+pub unsafe fn CListView__new_0() -> *mut CListView { CListView__new_in_0(cpp_alloc::<CListView>()) }
+pub unsafe fn CListView__delete(p: *mut CListView) { if p.is_null() { return; } core::ptr::drop_in_place(p); cpp_free(p as *mut core::ffi::c_void); }
+
+// ---- CToolbar (sdk/include/reactos/ui/rosctrls.h)
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct CToolbar {
+    pub __base0: CWindow,
+}
+
+impl CToolbar {
+    /// Point every vtable this object contains at this class's tables: what a C++
+    /// constructor does after its bases are built and before its members are.
+    pub unsafe fn __init_vtables(&mut self) {
+        let this: *mut Self = self;
+        let _ = this;
+    }
+}
+
+impl core::ops::Deref for CToolbar { type Target = CWindow; fn deref(&self) -> &CWindow { &self.__base0 } }
+impl core::ops::DerefMut for CToolbar { fn deref_mut(&mut self) -> &mut CWindow { &mut self.__base0 } }
+pub unsafe fn CToolbar__zeroed() -> CToolbar { core::mem::zeroed() }
+pub unsafe fn CToolbar__make_0() -> CToolbar { let mut __obj = CToolbar__zeroed(); __obj.__ctor_0(); __obj }
+pub unsafe fn CToolbar__new_in_0(__p: *mut CToolbar) -> *mut CToolbar { if __p.is_null() { return __p; } (*__p).__ctor_0(); __p }
+pub unsafe fn CToolbar__new_0() -> *mut CToolbar { CToolbar__new_in_0(cpp_alloc::<CToolbar>()) }
+pub unsafe fn CToolbar__delete(p: *mut CToolbar) { if p.is_null() { return; } core::ptr::drop_in_place(p); cpp_free(p as *mut core::ffi::c_void); }
+
+// ---- CStatusBar (sdk/include/reactos/ui/rosctrls.h)
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct CStatusBar {
+    pub __base0: CWindow,
+}
+
+impl CStatusBar {
+    /// Point every vtable this object contains at this class's tables: what a C++
+    /// constructor does after its bases are built and before its members are.
+    pub unsafe fn __init_vtables(&mut self) {
+        let this: *mut Self = self;
+        let _ = this;
+    }
+}
+
+impl core::ops::Deref for CStatusBar { type Target = CWindow; fn deref(&self) -> &CWindow { &self.__base0 } }
+impl core::ops::DerefMut for CStatusBar { fn deref_mut(&mut self) -> &mut CWindow { &mut self.__base0 } }
+pub unsafe fn CStatusBar__zeroed() -> CStatusBar { core::mem::zeroed() }
+pub unsafe fn CStatusBar__make_0() -> CStatusBar { let mut __obj = CStatusBar__zeroed(); __obj.__ctor_0(); __obj }
+pub unsafe fn CStatusBar__new_in_0(__p: *mut CStatusBar) -> *mut CStatusBar { if __p.is_null() { return __p; } (*__p).__ctor_0(); __p }
+pub unsafe fn CStatusBar__new_0() -> *mut CStatusBar { CStatusBar__new_in_0(cpp_alloc::<CStatusBar>()) }
+pub unsafe fn CStatusBar__delete(p: *mut CStatusBar) { if p.is_null() { return; } core::ptr::drop_in_place(p); cpp_free(p as *mut core::ffi::c_void); }
+
+// ---- CTreeView (sdk/include/reactos/ui/rosctrls.h)
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct CTreeView {
+    pub __base0: CWindow,
+}
+
+impl CTreeView {
+    /// Point every vtable this object contains at this class's tables: what a C++
+    /// constructor does after its bases are built and before its members are.
+    pub unsafe fn __init_vtables(&mut self) {
+        let this: *mut Self = self;
+        let _ = this;
+    }
+}
+
+impl core::ops::Deref for CTreeView { type Target = CWindow; fn deref(&self) -> &CWindow { &self.__base0 } }
+impl core::ops::DerefMut for CTreeView { fn deref_mut(&mut self) -> &mut CWindow { &mut self.__base0 } }
+pub unsafe fn CTreeView__zeroed() -> CTreeView { core::mem::zeroed() }
+pub unsafe fn CTreeView__make_0() -> CTreeView { let mut __obj = CTreeView__zeroed(); __obj.__ctor_0(); __obj }
+pub unsafe fn CTreeView__new_in_0(__p: *mut CTreeView) -> *mut CTreeView { if __p.is_null() { return __p; } (*__p).__ctor_0(); __p }
+pub unsafe fn CTreeView__new_0() -> *mut CTreeView { CTreeView__new_in_0(cpp_alloc::<CTreeView>()) }
+pub unsafe fn CTreeView__delete(p: *mut CTreeView) { if p.is_null() { return; } core::ptr::drop_in_place(p); cpp_free(p as *mut core::ffi::c_void); }
+
+// ---- CTooltips (sdk/include/reactos/ui/rosctrls.h)
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct CTooltips {
+    pub __base0: CWindow,
+}
+
+impl CTooltips {
+    /// Point every vtable this object contains at this class's tables: what a C++
+    /// constructor does after its bases are built and before its members are.
+    pub unsafe fn __init_vtables(&mut self) {
+        let this: *mut Self = self;
+        let _ = this;
+    }
+}
+
+impl core::ops::Deref for CTooltips { type Target = CWindow; fn deref(&self) -> &CWindow { &self.__base0 } }
+impl core::ops::DerefMut for CTooltips { fn deref_mut(&mut self) -> &mut CWindow { &mut self.__base0 } }
+pub unsafe fn CTooltips__zeroed() -> CTooltips { core::mem::zeroed() }
+pub unsafe fn CTooltips__make_0() -> CTooltips { let mut __obj = CTooltips__zeroed(); __obj.__ctor_0(); __obj }
+pub unsafe fn CTooltips__new_in_0(__p: *mut CTooltips) -> *mut CTooltips { if __p.is_null() { return __p; } (*__p).__ctor_0(); __p }
+pub unsafe fn CTooltips__new_0() -> *mut CTooltips { CTooltips__new_in_0(cpp_alloc::<CTooltips>()) }
+pub unsafe fn CTooltips__delete(p: *mut CTooltips) { if p.is_null() { return; } core::ptr::drop_in_place(p); cpp_free(p as *mut core::ffi::c_void); }
+
 // ---- MscFile (base/applications/mmc_new/mscfile.h)
 #[repr(C)]
 pub struct MscFile {
@@ -202,6 +322,7 @@ impl Drop for CSnapinCacheEntry {
 // ---- CSnapin (base/applications/mmc_new/CSnapin.h)
 #[repr(C)]
 pub struct CSnapin {
+    pub m_NodeId: UINT,
     pub m_CacheEntry: *mut CSnapinCacheEntry,
     pub m_DisplayName: CAtlString,
     pub m_SubNodes: CAtlList<*mut CSnapin>,
@@ -217,9 +338,9 @@ impl CSnapin {
 }
 
 pub unsafe fn CSnapin__zeroed() -> CSnapin { core::mem::zeroed() }
-pub unsafe fn CSnapin__make_0(CacheEntry: *mut CSnapinCacheEntry, displayName: PWSTR) -> CSnapin { let mut __obj = CSnapin__zeroed(); __obj.__ctor_0(CacheEntry, displayName); __obj }
-pub unsafe fn CSnapin__new_in_0(__p: *mut CSnapin, CacheEntry: *mut CSnapinCacheEntry, displayName: PWSTR) -> *mut CSnapin { if __p.is_null() { return __p; } (*__p).__ctor_0(CacheEntry, displayName); __p }
-pub unsafe fn CSnapin__new_0(CacheEntry: *mut CSnapinCacheEntry, displayName: PWSTR) -> *mut CSnapin { CSnapin__new_in_0(cpp_alloc::<CSnapin>(), CacheEntry, displayName) }
+pub unsafe fn CSnapin__make_0(CacheEntry: *mut CSnapinCacheEntry, NodeId: UINT, displayName: PWSTR) -> CSnapin { let mut __obj = CSnapin__zeroed(); __obj.__ctor_0(CacheEntry, NodeId, displayName); __obj }
+pub unsafe fn CSnapin__new_in_0(__p: *mut CSnapin, CacheEntry: *mut CSnapinCacheEntry, NodeId: UINT, displayName: PWSTR) -> *mut CSnapin { if __p.is_null() { return __p; } (*__p).__ctor_0(CacheEntry, NodeId, displayName); __p }
+pub unsafe fn CSnapin__new_0(CacheEntry: *mut CSnapinCacheEntry, NodeId: UINT, displayName: PWSTR) -> *mut CSnapin { CSnapin__new_in_0(cpp_alloc::<CSnapin>(), CacheEntry, NodeId, displayName) }
 pub unsafe fn CSnapin__delete(p: *mut CSnapin) { if p.is_null() { return; } core::ptr::drop_in_place(p); cpp_free(p as *mut core::ffi::c_void); }
 impl Drop for CSnapin {
     fn drop(&mut self) { unsafe { self.__dtor__body() } }
@@ -253,6 +374,82 @@ impl Drop for CSnapinAlias {
     fn drop(&mut self) { unsafe { self.__dtor__body() } }
 }
 
+// ---- CActionWnd (base/applications/mmc_new/CActionWnd.h)
+#[repr(C)]
+pub struct CActionWnd {
+    pub __vtbl: *const CActionWnd__vtbl,
+    pub __base0: CWindow,
+    pub m_thunk: CWndProcThunk,
+    pub m_pCurrentMsg: *const core::ffi::c_void,
+    pub m_dwState: DWORD,
+    pub m_pfnSuperWindowProc: WNDPROC,
+}
+
+#[repr(C)]
+pub struct CActionWnd__vtbl {
+    pub __delete: unsafe fn(*mut CActionWnd),
+    pub __drop: unsafe fn(*mut CActionWnd),
+}
+
+unsafe fn CActionWnd__vt_delete_own(p: *mut CActionWnd) { let d = (p as *mut CActionWnd); core::ptr::drop_in_place(d); cpp_free(d as *mut core::ffi::c_void); }
+unsafe fn CActionWnd__vt_drop_own(p: *mut CActionWnd) { core::ptr::drop_in_place((p as *mut CActionWnd)); }
+pub static CActionWnd__VTBL_own: CActionWnd__vtbl = CActionWnd__vtbl { __delete: CActionWnd__vt_delete_own, __drop: CActionWnd__vt_drop_own };
+impl CActionWnd {
+    /// Point every vtable this object contains at this class's tables: what a C++
+    /// constructor does after its bases are built and before its members are.
+    pub unsafe fn __init_vtables(&mut self) {
+        let this: *mut Self = self;
+        (*this).__vtbl = &CActionWnd__VTBL_own as *const CActionWnd__vtbl as *const CActionWnd__vtbl;
+    }
+}
+
+impl core::ops::Deref for CActionWnd { type Target = CWindow; fn deref(&self) -> &CWindow { &self.__base0 } }
+impl core::ops::DerefMut for CActionWnd { fn deref_mut(&mut self) -> &mut CWindow { &mut self.__base0 } }
+impl atl_rust::win::MessageMap for CActionWnd {
+    unsafe fn process_window_message(&mut self, hwnd: atl_rust::win::HWND, msg: u32, w: usize, l: isize, result: &mut isize, map_id: u32) -> bool {
+        let mut handled: BOOL = 1;
+        // MESSAGE_HANDLER(WM_CREATE, OnCreate)
+        if msg == (WM_CREATE) as u32 {
+            handled = 1;
+            *result = self.OnCreate(msg as _, w as _, l as _, &mut handled) as isize;
+            if handled != 0 { return true; }
+        }
+        // MESSAGE_HANDLER(WM_DESTROY, OnDestroy)
+        if msg == (WM_DESTROY) as u32 {
+            handled = 1;
+            *result = self.OnDestroy(msg as _, w as _, l as _, &mut handled) as isize;
+            if handled != 0 { return true; }
+        }
+        // MESSAGE_HANDLER(WM_PAINT, OnPaint)
+        if msg == (WM_PAINT) as u32 {
+            handled = 1;
+            *result = self.OnPaint(msg as _, w as _, l as _, &mut handled) as isize;
+            if handled != 0 { return true; }
+        }
+        let _ = (hwnd, map_id, &mut handled);
+        false
+    }
+    unsafe fn hwnd_slot(&mut self) -> *mut atl_rust::win::HWND {
+        core::ptr::addr_of_mut!(self.__base0.m_hWnd) as *mut atl_rust::win::HWND
+    }
+}
+impl CActionWnd {
+    /// ATL `CWindowImpl::Create(hWndParent, rect, szWindowName, dwStyle, dwExStyle, MenuOrID)`; a zero style is CControlWinTraits's (`T::GetWndStyle`). Named as the C++ qualifies it, since a class's own `Create` hides it.
+    pub unsafe fn CWindowImpl_Create(&mut self, parent: HWND, rect: *mut RECT, name: LPCWSTR, style: DWORD, ex_style: DWORD, menu_or_id: impl atl_rust::win::MenuOrId) -> HWND {
+        let style = if style == 0 { (WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS) as DWORD } else { style };
+        let ex_style = if ex_style == 0 { (0) as DWORD } else { ex_style };
+        atl_rust::win::create_window_info(self as *mut Self, atl_rust::win::class_info_ptr(Self::GetWndClassInfo() as *mut _), parent as _, rect as *const i32, name as *const u16, style as u32, ex_style as u32, menu_or_id.menu_or_id()) as HWND
+    }
+    pub unsafe fn SubclassWindow(&mut self, hwnd: HWND) -> BOOL {
+        atl_rust::win::subclass_window(self as *mut Self, hwnd as _) as BOOL
+    }
+}
+pub unsafe fn CActionWnd__zeroed() -> CActionWnd { core::mem::zeroed() }
+pub unsafe fn CActionWnd__make_0() -> CActionWnd { let mut __obj = CActionWnd__zeroed(); __obj.__ctor_0(); __obj }
+pub unsafe fn CActionWnd__new_in_0(__p: *mut CActionWnd) -> *mut CActionWnd { if __p.is_null() { return __p; } (*__p).__ctor_0(); __p }
+pub unsafe fn CActionWnd__new_0() -> *mut CActionWnd { CActionWnd__new_in_0(cpp_alloc::<CActionWnd>()) }
+pub unsafe fn CActionWnd__delete(p: *mut CActionWnd) { if p.is_null() { return; } core::ptr::drop_in_place(p); cpp_free(p as *mut core::ffi::c_void); }
+
 // ---- CConsoleWnd (base/applications/mmc_new/CConsoleWnd.h)
 #[repr(C)]
 pub struct CConsoleWnd {
@@ -263,17 +460,17 @@ pub struct CConsoleWnd {
     pub m_pCurrentMsg: *const core::ffi::c_void,
     pub m_dwState: DWORD,
     pub m_pfnSuperWindowProc: WNDPROC,
-    pub m_ViewId: i32,
     pub m_MainWnd: *mut CMainWnd,
     pub m_TreeView: CTreeView,
     pub m_ListView: CListView,
     pub m_StatusBar: CStatusBar,
     pub m_DescriptionBar: CWindow,
+    pub m_ActionsPane: CActionWnd,
     pub m_iTreeViewWidth: i32,
     pub m_iActionsPaneWidth: i32,
     pub m_iSplitterWidth: i32,
     pub m_iSplitOffset: i32,
-    pub m_iSplitSide: i32,
+    pub m_iSplitSide: SPLITTER_SIDE,
     pub m_iStatusBarHeight: i32,
     pub m_bTreeViewVisible: BOOL,
     pub m_bActionsPaneVisible: BOOL,
@@ -283,6 +480,7 @@ pub struct CConsoleWnd {
     pub m_ListViewMode: LISTVIEW_MODE,
     pub m_ViewRootNode: *mut CSnapin,
     pub m_ViewSelectedNode: *mut CSnapin,
+    pub m_ViewId: UINT,
 }
 
 unsafe extern "system" fn CConsoleWnd__IConsole2_QueryInterface(This: *mut IConsole2, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { (*((This as *mut u8).sub(core::mem::offset_of!(CConsoleWnd, __base1)) as *mut CConsoleWnd)).QueryInterface(&*riid, ppvObject) }
@@ -347,6 +545,24 @@ impl atl_rust::win::MessageMap for CConsoleWnd {
         if msg == (WM_SIZE) as u32 {
             handled = 1;
             *result = self.OnSize(msg as _, w as _, l as _, &mut handled) as isize;
+            if handled != 0 { return true; }
+        }
+        // MESSAGE_HANDLER(WM_LBUTTONDOWN, OnLButtonDown)
+        if msg == (WM_LBUTTONDOWN) as u32 {
+            handled = 1;
+            *result = self.OnLButtonDown(msg as _, w as _, l as _, &mut handled) as isize;
+            if handled != 0 { return true; }
+        }
+        // MESSAGE_HANDLER(WM_LBUTTONUP, OnLButtonUp)
+        if msg == (WM_LBUTTONUP) as u32 {
+            handled = 1;
+            *result = self.OnLButtonUp(msg as _, w as _, l as _, &mut handled) as isize;
+            if handled != 0 { return true; }
+        }
+        // MESSAGE_HANDLER(WM_MOUSEMOVE, OnMouseMove)
+        if msg == (WM_MOUSEMOVE) as u32 {
+            handled = 1;
+            *result = self.OnMouseMove(msg as _, w as _, l as _, &mut handled) as isize;
             if handled != 0 { return true; }
         }
         // MESSAGE_HANDLER(WM_CONTEXTMENU, OnContextMenu)
@@ -422,14 +638,27 @@ impl atl_rust::win::MessageMap for CConsoleWnd {
         core::ptr::addr_of_mut!(self.__base0.m_hWnd) as *mut atl_rust::win::HWND
     }
 }
-// CConsoleWnd: DefWindowProc / Create / the window class live in windowimpl.rs (the thunkless CWindowImpl).
+impl CConsoleWnd {
+    /// ATL `CWindowImpl::Create(hWndParent, rect, szWindowName, dwStyle, dwExStyle, MenuOrID)`; a zero style is CControlWinTraits's (`T::GetWndStyle`). Named as the C++ qualifies it, since a class's own `Create` hides it.
+    pub unsafe fn CWindowImpl_Create(&mut self, parent: HWND, rect: *mut RECT, name: LPCWSTR, style: DWORD, ex_style: DWORD, menu_or_id: impl atl_rust::win::MenuOrId) -> HWND {
+        let style = if style == 0 { (WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS) as DWORD } else { style };
+        let ex_style = if ex_style == 0 { (0) as DWORD } else { ex_style };
+        atl_rust::win::create_window_info(self as *mut Self, atl_rust::win::class_info_ptr(Self::GetWndClassInfo() as *mut _), parent as _, rect as *const i32, name as *const u16, style as u32, ex_style as u32, menu_or_id.menu_or_id()) as HWND
+    }
+    pub unsafe fn Create(&mut self, parent: HWND, rect: *mut RECT, name: LPCWSTR, style: DWORD, ex_style: DWORD, menu_or_id: impl atl_rust::win::MenuOrId) -> HWND {
+        self.CWindowImpl_Create(parent, rect, name, style, ex_style, menu_or_id)
+    }
+    pub unsafe fn SubclassWindow(&mut self, hwnd: HWND) -> BOOL {
+        atl_rust::win::subclass_window(self as *mut Self, hwnd as _) as BOOL
+    }
+}
 pub unsafe fn CConsoleWnd__zeroed() -> CConsoleWnd { core::mem::zeroed() }
-pub unsafe fn CConsoleWnd__make_0(MainWnd: *mut CMainWnd, RootNode: *mut CSnapin) -> CConsoleWnd { let mut __obj = CConsoleWnd__zeroed(); __obj.__ctor_0(MainWnd, RootNode); __obj }
-pub unsafe fn CConsoleWnd__new_in_0(__p: *mut CConsoleWnd, MainWnd: *mut CMainWnd, RootNode: *mut CSnapin) -> *mut CConsoleWnd { if __p.is_null() { return __p; } (*__p).__ctor_0(MainWnd, RootNode); __p }
-pub unsafe fn CConsoleWnd__new_0(MainWnd: *mut CMainWnd, RootNode: *mut CSnapin) -> *mut CConsoleWnd { CConsoleWnd__new_in_0(cpp_alloc::<CConsoleWnd>(), MainWnd, RootNode) }
+pub unsafe fn CConsoleWnd__make_0(MainWnd: *mut CMainWnd, RootNode: *mut CSnapin, SelectedNode: *mut CSnapin) -> CConsoleWnd { let mut __obj = CConsoleWnd__zeroed(); __obj.__ctor_0(MainWnd, RootNode, SelectedNode); __obj }
+pub unsafe fn CConsoleWnd__new_in_0(__p: *mut CConsoleWnd, MainWnd: *mut CMainWnd, RootNode: *mut CSnapin, SelectedNode: *mut CSnapin) -> *mut CConsoleWnd { if __p.is_null() { return __p; } (*__p).__ctor_0(MainWnd, RootNode, SelectedNode); __p }
+pub unsafe fn CConsoleWnd__new_0(MainWnd: *mut CMainWnd, RootNode: *mut CSnapin, SelectedNode: *mut CSnapin) -> *mut CConsoleWnd { CConsoleWnd__new_in_0(cpp_alloc::<CConsoleWnd>(), MainWnd, RootNode, SelectedNode) }
 pub unsafe fn CConsoleWnd__delete(p: *mut CConsoleWnd) { if p.is_null() { return; } core::ptr::drop_in_place(p); cpp_free(p as *mut core::ffi::c_void); }
 impl Drop for CConsoleWnd {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- CMainWnd (base/applications/mmc_new/CMainWnd.h)
@@ -457,11 +686,13 @@ pub struct CMainWnd {
     pub m_SnapinCache: CSimpleArray<*mut CSnapinCacheEntry>,
     pub m_hSnapinImageList: HIMAGELIST,
     pub m_ViewList: CAtlList<*mut CConsoleWnd>,
-    pub m_NextViewId: i32,
+    pub m_NextViewId: UINT,
     pub m_RootNode: *mut CSnapin,
+    pub m_NextNodeId: UINT,
     pub m_RecentFilesList: CAtlList<*mut CRecentFileEntry>,
     pub m_MDIClient: CWindow,
     pub m_Filename: CAtlString,
+    pub m_TempNodeMap: *mut CSimpleMap<UINT, *mut CSnapin>,
 }
 
 #[repr(C)]
@@ -704,14 +935,24 @@ impl atl_rust::win::MessageMap for CMainWnd {
         core::ptr::addr_of_mut!(self.__base0.m_hWnd) as *mut atl_rust::win::HWND
     }
 }
-// CMainWnd: DefWindowProc / Create / the window class live in windowimpl.rs (the thunkless CWindowImpl).
+impl CMainWnd {
+    /// ATL `CWindowImpl::Create(hWndParent, rect, szWindowName, dwStyle, dwExStyle, MenuOrID)`; a zero style is CControlWinTraits's (`T::GetWndStyle`). Named as the C++ qualifies it, since a class's own `Create` hides it.
+    pub unsafe fn CWindowImpl_Create(&mut self, parent: HWND, rect: *mut RECT, name: LPCWSTR, style: DWORD, ex_style: DWORD, menu_or_id: impl atl_rust::win::MenuOrId) -> HWND {
+        let style = if style == 0 { (WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS) as DWORD } else { style };
+        let ex_style = if ex_style == 0 { (0) as DWORD } else { ex_style };
+        atl_rust::win::create_window_info(self as *mut Self, atl_rust::win::class_info_ptr(Self::GetWndClassInfo() as *mut _), parent as _, rect as *const i32, name as *const u16, style as u32, ex_style as u32, menu_or_id.menu_or_id()) as HWND
+    }
+    pub unsafe fn SubclassWindow(&mut self, hwnd: HWND) -> BOOL {
+        atl_rust::win::subclass_window(self as *mut Self, hwnd as _) as BOOL
+    }
+}
 pub unsafe fn CMainWnd__zeroed() -> CMainWnd { core::mem::zeroed() }
 pub unsafe fn CMainWnd__make_0() -> CMainWnd { let mut __obj = CMainWnd__zeroed(); __obj.__ctor_0(); __obj }
 pub unsafe fn CMainWnd__new_in_0(__p: *mut CMainWnd) -> *mut CMainWnd { if __p.is_null() { return __p; } (*__p).__ctor_0(); __p }
 pub unsafe fn CMainWnd__new_0() -> *mut CMainWnd { CMainWnd__new_in_0(cpp_alloc::<CMainWnd>()) }
 pub unsafe fn CMainWnd__delete(p: *mut CMainWnd) { if p.is_null() { return; } core::ptr::drop_in_place(p); cpp_free(p as *mut core::ffi::c_void); }
 impl Drop for CMainWnd {
-    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+    fn drop(&mut self) { unsafe { self.__init_vtables(); self.__dtor__body() } }
 }
 
 // ---- CAboutSnapinDialog (base/applications/mmc_new/CAboutSnapinDialog.h)
@@ -1288,17 +1529,25 @@ pub unsafe fn CMMCModule__new_in_0(__p: *mut CMMCModule) -> *mut CMMCModule { if
 pub unsafe fn CMMCModule__new_0() -> *mut CMMCModule { CMMCModule__new_in_0(cpp_alloc::<CMMCModule>()) }
 pub unsafe fn CMMCModule__delete(p: *mut CMMCModule) { if p.is_null() { return; } core::ptr::drop_in_place(p); cpp_free(p as *mut core::ffi::c_void); }
 
+/// ATL `CWindowImplBaseT::StartWindowProc`, which a module's own
+/// `GetWndClassInfo()` names as its class's window procedure. ATL's is the thunk's
+/// entry; atl_rust routes the object by window property instead and registers its own
+/// procedure in its place
+/// (`atl_rust::win::create_window_info`), so this one is never the class's procedure.
+pub unsafe extern "system" fn StartWindowProc(
+    hwnd: HWND, msg: UINT, w: WPARAM, l: LPARAM,
+) -> LRESULT {
+    DefWindowProcW(hwnd, msg, w, l)
+}
+
 pub static mut g_AtlModule: CMMCModule = unsafe { core::mem::zeroed() };
-impl core::ops::Deref for CListView { type Target = ATL_CWindow; fn deref(&self) -> &ATL_CWindow { &self._base } }
-impl core::ops::DerefMut for CListView { fn deref_mut(&mut self) -> &mut ATL_CWindow { &mut self._base } }
-impl core::ops::Deref for CToolbar { type Target = ATL_CWindow; fn deref(&self) -> &ATL_CWindow { &self._base } }
-impl core::ops::DerefMut for CToolbar { fn deref_mut(&mut self) -> &mut ATL_CWindow { &mut self._base } }
-impl core::ops::Deref for CStatusBar { type Target = ATL_CWindow; fn deref(&self) -> &ATL_CWindow { &self._base } }
-impl core::ops::DerefMut for CStatusBar { fn deref_mut(&mut self) -> &mut ATL_CWindow { &mut self._base } }
-impl core::ops::Deref for CTreeView { type Target = ATL_CWindow; fn deref(&self) -> &ATL_CWindow { &self._base } }
-impl core::ops::DerefMut for CTreeView { fn deref_mut(&mut self) -> &mut ATL_CWindow { &mut self._base } }
-impl core::ops::Deref for CTooltips { type Target = ATL_CWindow; fn deref(&self) -> &ATL_CWindow { &self._base } }
-impl core::ops::DerefMut for CTooltips { fn deref_mut(&mut self) -> &mut ATL_CWindow { &mut self._base } }
+/// C++ static initialization of the module's global objects, in definition order. The
+/// entry point calls it first thing (no CRT initializer table runs for a staticlib).
+#[no_mangle]
+pub unsafe extern "C" fn __cxx_global_init() {
+    (*core::ptr::addr_of_mut!(g_AtlModule)).__ctor_0();
+}
+pub type _U_MENUorID = ATL__U_MENUorID;
+pub type _U_RECT = ATL__U_RECT;
 impl core::ops::Deref for CObjectWithSiteBase { type Target = IObjectWithSite; fn deref(&self) -> &IObjectWithSite { &self._base } }
 impl core::ops::DerefMut for CObjectWithSiteBase { fn deref_mut(&mut self) -> &mut IObjectWithSite { &mut self._base } }
-
