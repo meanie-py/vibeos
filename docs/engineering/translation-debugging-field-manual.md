@@ -12502,6 +12502,30 @@ while `HwStartIo` was mid-submit on CPU 0, matched a token not yet recorded, and
 virtio-drivers a zero-length buffer (`assert_ne!` in `queue.rs` `recycle_descriptors`). A lock
 held on one side only is no lock: check the thread side AND the interrupt side.
 
+### On ONE CPU, a woken waiter that spins on its waker's lock waits out a whole quantum
+**Symptom:** a threadpool work item takes 0-470 ms to start on an idle guest, every sample near
+a multiple of the 15.6 ms tick (mfplat.c's "MFASYNC_CALLBACK_QUEUE_STANDARD is not blocked"
+100 ms check failed most runs). Plain `SetEvent` hand-offs are ~60 us, so kernel dispatch is
+fine; the CPU reads 0% idle during the pool stages, and the thread doing
+`WaitForThreadpoolWorkCallbacks` has burned seconds of CPU.
+**Cause:** `condvar.c`'s `InternalWake` called `NtReleaseKeyedEvent` while holding the CV's lock
+bit. The released waiter still carried the +1 of its last event wait, so it preempted the
+waker at once, found the bit set, and spun on it (`InternalSleep`'s post-wake check, `pause`
+in a loop). With one CPU the waker cannot run to clear the bit until the spinner's boost
+decays at its quantum end. A spin is only a wait if the holder can run meanwhile; on UP, a
+spinner that outranks the holder IS the hold.
+**Fix:** never make a syscall that readies another thread while holding a spin bit. The CV
+lock now covers only the list: waiters to wake are unlinked and marked under it, the bit is
+dropped, then each is released with no timeout. A waiter that times out checks under the lock
+whether it was already claimed, and if so waits for its release instead of leaving it pending.
+That second wait needs the KERNEL to be honest: `ExpReleaseOrWaitForKeyedEvent` reported
+STATUS_TIMEOUT when the counterpart had dequeued the thread and released its semaphore while the
+wait was timing out, so a claimed waiter waited again for a wake it had already been given and
+hung (the threadpool timer thread, every time: mf's 10 ms presentation clock stopped). An empty
+`KeyedWaitChain` after a failed wait now means the pairing happened, and returns STATUS_SUCCESS.
+Measure with `tools/payloads/wakeprobe` (median 36 ms, max 197 ms before; ~95 us, max 2 ms
+after, on amd64 TCG). Windows 11 is ~10 us.
+
 ### A dropped interrupt RESTORE: one CPU spins IF=0 on a lock while the holder waits for its TB ack
 **Symptom:** amd64 `-smp 2` `HANG_TIMEOUT`, serial silent after `[user32] DllMain PROCESS_ATTACH`
 (the WoW64 guest starting alongside). `hang-cpustate.txt`: CPU0 in `ki_tb_shootdown` waiting on

@@ -423,6 +423,18 @@ at every DLL_EXPORT_VERSION, and rtworkq is synced to 11.19 to match mfplat.
   except Docker's `mi` and three AMD GPU-driver runtimes a vendor driver installs
   (`amdhip64_6` for Blender, `mantle32`/`mantle64` for Steam).
 
+**Done 2026-10-16: console fonts and condition-variable wakes.**
+- GetCurrentConsoleFont, GetCurrentConsoleFontEx and GetConsoleFontSize report the font
+  (consrv's frontend vtable gained GetFontSize). As measured on Windows 11: the size is the
+  font's unscaled one (Consolas 16 reads 0x16), index 1 fails ERROR_INVALID_PARAMETER, and
+  `bMaximumWindow` answers the maximum window size in characters, not a font size.
+- A condition-variable wake no longer costs clock ticks on one CPU: the waker released the
+  keyed event while holding the CV's lock bit, and the boosted waiter spun on it until its
+  quantum ended (field manual, "On ONE CPU, a woken waiter that spins"). A pool work item
+  went from 36 ms median / 470 ms worst to ~95 us, which is what mfplat.c:3308's 100 ms
+  standard-queue check was catching. `tools/payloads/wakeprobe` measures it. The kernel's
+  keyed event now reports a wait that was paired while timing out as satisfied.
+
 **Owed on the export surface:**
 - **Modules other apps still need:** `mi` (Docker; WMI's Management Infrastructure, which
   Wine does not have). Office: bring it in when the rest is green, it is its own campaign.
@@ -430,13 +442,10 @@ at every DLL_EXPORT_VERSION, and rtworkq is synced to 11.19 to match mfplat.
   D3D11CreateDevice at all; Wine's mfplat suite ends on that NULL pointer, and Chrome and
   Office import d3d11. Decide whether to build the d3d family at every version (rtworkq and
   dxva2 already are).
-- **mfplat.c:3308, "MFASYNC_CALLBACK_QUEUE_STANDARD is not blocked"**, now failing in the
-  C and the Rust alike (the Rust passed it once): with an IO-queue read blocked, a
-  standard-queue work item does not run within 100 ms, and the test then releases the
-  NULL result and dies. rtworkq gives each system queue its own pool (standard max 1, IO
-  max 4) and our Tp* honour `env->Pool`; next is the same wait lengthened, then KVM, to split
-  TCG latency from a real stall. The three child-process "wait failed" lines are the same
-  suite's children; run directly they pass.
+- **mf.c:4553, the presentation clock's callback interval,** reads ~188 ms instead of a tick
+  in the second or third mf run of a boot (the first passes), with or without the
+  condition-variable fix; the 10 ms periodic pool timer alone runs at 64 Hz in wakeprobe.
+  Seen once beside it: mf.c:4493 "got count 0, state 0".
 - **mf's converter scenario:** both builds fail mf.c's "SetTopology ... requiring a
   converter" checks (no converter MFT is registered: the codec gap below).
 - **Codecs for Media Foundation** (above): native Rust demuxers/decoders, or ports of
@@ -447,9 +456,7 @@ at every DLL_EXPORT_VERSION, and rtworkq is synced to 11.19 to match mfplat.
   single "re-island and reassemble from banks" command. Split island groups are now
   reported by `port island` but still not generated.
 - **New partials from the third batch:** iphlpapi change notifications after the
-  initial one, IPv6 tables; IDN nameprep without NFKC; consrv's
-  SrvGetConsoleCurrentFont leaves the font size zero (frontendctl.c FIXME), so
-  GetCurrentConsoleFont(Ex) under-report.
+  initial one, IPv6 tables; IDN nameprep without NFKC.
 - **Bodies that answer honestly but not fully:** `GetNamedPipeServerProcessId` (npfs has
   no attribute FSCTL); `GetProcessInformation(ProcessMachineTypeInfo)` (no
   NtQuerySystemInformationEx); Get/SetRestrictedErrorInfo stay E_NOTIMPL as in Wine.

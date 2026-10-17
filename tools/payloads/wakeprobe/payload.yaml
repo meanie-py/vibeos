@@ -1,0 +1,19 @@
+# wakeprobe — how long a readied thread waits before it runs: plain event hand-off, a pool
+# work item, a pool work item beside a blocked pool, and the event hand-off beside a spinner.
+#   tools/payloads/wakeprobe/build.sh <arch>
+#   VIBEOS_PAYLOAD=wakeprobe ./vibeos-cli build --arch <arch>
+#   ./vibeos-cli smoke --arch <arch> --payload wakeprobe
+name: wakeprobe
+description: time thread wake-up latency over events and the Vista threadpool
+
+build_hint: "tools/payloads/wakeprobe/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/wakeprobe/wakeprobe-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/wakeprobe.exe
+
+test:
+  launch_marker: "[WAKEPROBE] done"
+  pass_marker: "[WAKEPROBE] done VERDICT=PASS"
+  launch_drain_secs: 600
