@@ -4575,7 +4575,7 @@ def test_gate_difftest_failure_blocks_stamp(tmp_path, monkeypatch):
 
 
 def _cohab_once_stub(ok: bool):
-    """Stand-in for gate._cohab_once (which shells tools/verify_cohab_coverage.py)."""
+    """Stand-in for gate._cohab_once (which runs the native cohab plugin)."""
 
     def stub(repo, arch, root):
         return {
@@ -8836,13 +8836,17 @@ def test_cohab_stage_reports_a_finding_and_a_refusal_differently(tmp_path, monke
         stdout = ""
         stderr = "verify_cohab_coverage: libmsvcrt_crt_cargo.a for i386 is OLDER than math.rs\n"
 
-    monkeypatch.setattr(gate_mod.subprocess, "run", lambda *a, **k: _Finding())
+    monkeypatch.setattr(
+        gate_mod.rustlints, "run_binary", lambda *a, **k: {"verify_cohab_coverage": _Finding()}
+    )
     r = gate_mod._cohab_once(tmp_path, "i386", tmp_path / "cohab-i386")
     assert r["ok"] is False and r["arch"] == "i386"
     assert r["salient"] == finding
     assert finding in (tmp_path / "cohab-i386" / "cohab-console.log").read_text()
 
-    monkeypatch.setattr(gate_mod.subprocess, "run", lambda *a, **k: _Refusal())
+    monkeypatch.setattr(
+        gate_mod.rustlints, "run_binary", lambda *a, **k: {"verify_cohab_coverage": _Refusal()}
+    )
     r = gate_mod._cohab_once(tmp_path, "i386", tmp_path / "cohab-refuse")
     assert r["ok"] is False
     assert "exit 1" in r["salient"] and "is OLDER than" in r["salient"]

@@ -330,3 +330,207 @@ def test_bootstrap_rejects_sources_changed_during_build(tmp_path, monkeypatch, c
     conventions.write_text('KW_TO_CONV = {"C": "fastcall"}\n')
     assert rustlints.ensure(tmp_path) == target
     assert len(builds) == 3
+
+
+def _native_binary(tmp_path, rule, arch="amd64"):
+    repo = Path(__file__).resolve().parents[3]
+    cp = subprocess.run(
+        [
+            str(rustlints.ensure(repo)),
+            "--root",
+            str(tmp_path),
+            "--binary-rules",
+            rule,
+            "--arch",
+            arch,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert cp.returncode == 0, cp.stderr
+    return json.loads(cp.stdout)[rule]
+
+
+def test_binary_architecture_coverage_is_explicit():
+    assert "scan_export_thunks" in rustlints.binary_names("amd64")
+    assert "scan_export_thunks" not in rustlints.binary_names("arm64")
+    assert "scan_xchg_ebx_deref" in rustlints.binary_names("i386")
+    assert "scan_xchg_ebx_deref" not in rustlints.binary_names("amd64")
+    for arch in ("amd64", "i386", "arm64"):
+        assert "scan_flex_array_panic" in rustlints.binary_names(arch)
+        assert "scan_unresolved_imports" in rustlints.binary_names(arch)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {},
+        {"scan_ud2": {"stdout": "", "stderr": "", "returncode": False}},
+        {"scan_ud2": {"stdout": "", "stderr": "", "returncode": 0}, "extra": {}},
+        {"scan_ud2": {"stdout": None, "stderr": "", "returncode": 0}},
+        {"scan_ud2": {"stdout": "", "returncode": 0}},
+    ],
+)
+def test_binary_response_cannot_publish_partial_or_invalid_coverage(tmp_path, monkeypatch, body):
+    monkeypatch.setattr(rustlints, "ensure", lambda _: Path("native"))
+    results = rustlints.run_binary(
+        tmp_path,
+        "amd64",
+        ["scan_ud2"],
+        lambda cmd: subprocess.CompletedProcess(cmd, 0, json.dumps(body), ""),
+    )
+    assert results["scan_ud2"].returncode == 2
+    assert "FATAL:" in results["scan_ud2"].stderr
+
+
+def test_native_binary_rechecks_baseline_without_reextracting(tmp_path):
+    build = tmp_path / "build-amd64"
+    build.mkdir()
+    binary = build / "fixture.exe"
+    binary.write_text("bad")
+    tool = tmp_path / ".build-tools/llvm-mingw/bin/llvm-objdump"
+    tool.parent.mkdir(parents=True)
+    calls = tmp_path / "calls"
+    tool.write_text(
+        f"#!{sys.executable}\nimport pathlib,sys\n"
+        f"p=pathlib.Path({str(calls)!r})\np.write_text(p.read_text()+'x' if p.exists() else 'x')\n"
+        "print('00001000 <loop>:\\n    1000: ' + "
+        "('jmp 0x1000 <loop>' if pathlib.Path(sys.argv[-1]).read_text()=='bad' else 'nop'))\n"
+    )
+    tool.chmod(0o755)
+    assert _native_binary(tmp_path, "scan_self_recursive")["returncode"] == 1
+    baseline = tmp_path / "tools/lint-baseline/scan_self_recursive.txt"
+    baseline.parent.mkdir(parents=True)
+    baseline.write_text("fixture.exe: loop\n")
+    assert _native_binary(tmp_path, "scan_self_recursive")["returncode"] == 0
+    assert calls.read_text() == "x"
+    baseline.write_text("")
+    assert _native_binary(tmp_path, "scan_self_recursive")["returncode"] == 1
+    before = binary.stat()
+    binary.write_text("nop")
+    os.utime(binary, ns=(before.st_atime_ns, before.st_mtime_ns))
+    assert _native_binary(tmp_path, "scan_self_recursive")["returncode"] == 0
+    assert calls.read_text() == "xx"
+
+
+def test_native_binary_tool_failure_and_empty_corpus_are_not_clean(tmp_path):
+    build = tmp_path / "build-amd64"
+    build.mkdir()
+    result = _native_binary(tmp_path, "scan_self_recursive")
+    assert result["returncode"] == 2 and "no PE inputs" in result["stderr"]
+    (build / "fixture.exe").write_bytes(b"invalid PE")
+    tool = tmp_path / ".build-tools/llvm-mingw/bin/llvm-objdump"
+    tool.parent.mkdir(parents=True)
+    tool.write_text("#!/bin/sh\necho invalid PE >&2\nexit 1\n")
+    tool.chmod(0o755)
+    result = _native_binary(tmp_path, "scan_self_recursive")
+    assert result["returncode"] == 2 and "invalid PE" in result["stderr"]
+    assert "clean" not in result["stdout"]
+
+
+def test_native_layout_compares_generator_output_without_changing_committed_files(tmp_path):
+    root = tmp_path / "sdk/lib/rust/ntkrnl-sys"
+    (root / "src").mkdir(parents=True)
+    for arch in ("i386", "amd64", "arm64"):
+        header = tmp_path / f"build-{arch}/sdk/include/psdk/ntdef.h"
+        header.parent.mkdir(parents=True)
+        header.write_text("fixture header\n")
+        for prefix in ("size_check", "offset_check"):
+            (root / f"src/{prefix}_{arch}.rs").write_text("correct assertion\n")
+    for path, prefix in (
+        (root / "verify_sizes.py", "size_check"),
+        (tmp_path / "tools/verify_offsets.py", "offset_check"),
+    ):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            "import pathlib, sys\n"
+            "dest = pathlib.Path(sys.argv[sys.argv.index('--output-dir')+1])\n"
+            "for arch in ('i386','amd64','arm64'):\n"
+            f"    (dest / ('{prefix}_' + arch + '.rs')).write_text('correct assertion\\n')\n"
+        )
+    result = _native_binary(tmp_path, "verify_layout")
+    assert result["returncode"] == 0, result
+    committed = root / "src/offset_check_arm64.rs"
+    committed.write_text("stale assertion\n")
+    result = _native_binary(tmp_path, "verify_layout")
+    assert result["returncode"] == 1 and "DRIFT" in result["stdout"]
+    assert committed.read_text() == "stale assertion\n"
+
+
+def test_generator_recipe_json_preserves_missing_entries_without_stdout_noise(tmp_path):
+    repo = Path(__file__).resolve().parents[3]
+    build = tmp_path / "build-amd64"
+    build.mkdir()
+    (build / "compile_commands.json").write_text("[]")
+    cp = subprocess.run(
+        [
+            sys.executable,
+            str(repo / "tools/gen_committed_res.py"),
+            "--jobs-json",
+            "--arch",
+            "amd64",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    record = json.loads(cp.stdout)
+    assert record["jobs"] == []
+    assert record["messages"].count("NO compile_commands entry") == 4
+    assert not (tmp_path / "sdk").exists(), "recipe discovery must not write generated artifacts"
+
+
+def test_native_bindall_refuses_partial_cargo_diagnostics_and_isolates_compiler_flags(tmp_path):
+    repo = Path(__file__).resolve().parents[3]
+    runner = rustlints.ensure(repo)
+    workspace = tmp_path / "sdk/lib/rust"
+    workspace.mkdir(parents=True)
+    (workspace / "Cargo.toml").write_text("[workspace]\nmembers=[]\n")
+    fake = tmp_path / "bin/cargo"
+    fake.parent.mkdir()
+    mode = tmp_path / "mode"
+    mode.write_text("fail")
+    message = {
+        "reason": "compiler-message",
+        "message": {
+            "code": {"code": "unreachable_patterns"},
+            "message": "unreachable pattern",
+            "spans": [{"is_primary": True, "file_name": "fixture/src/lib.rs", "line_start": 1}],
+        },
+    }
+    fake.write_text(
+        f"#!{sys.executable}\nimport os,pathlib,sys\n"
+        "assert 'RUSTC_BOOTSTRAP' not in os.environ\n"
+        "assert '--force-warn' in os.environ['RUSTFLAGS']\n"
+        "assert os.environ['CARGO_TARGET_DIR'] == os.environ['SCAN_BINDALL_TARGET_DIR']\n"
+        f"print({json.dumps(message)!r})\n"
+        f"sys.exit(7 if pathlib.Path({str(mode)!r}).read_text()=='fail' else 0)\n"
+    )
+    fake.chmod(0o755)
+    env = dict(
+        os.environ,
+        PATH=f"{fake.parent}:{os.environ['PATH']}",
+        RUSTC_BOOTSTRAP="must-be-removed",
+        SCAN_BINDALL_TARGET_DIR=str(tmp_path / "scratch"),
+    )
+    cmd = [
+        str(runner),
+        "--root",
+        str(tmp_path),
+        "--binary-rules",
+        "scan_bind_all_matches",
+        "--arch",
+        "amd64",
+        "--package",
+        "fixture",
+    ]
+    result = subprocess.run(cmd, env=env, capture_output=True, text=True, check=True)
+    record = json.loads(result.stdout)["scan_bind_all_matches"]
+    assert record["returncode"] == 2 and "cargo check failed" in record["stderr"], record
+    assert not record["stdout"], "a failed compile must not publish partial diagnostic coverage"
+    mode.write_text("ok")
+    result = subprocess.run(cmd, env=env, capture_output=True, text=True, check=True)
+    record = json.loads(result.stdout)["scan_bind_all_matches"]
+    assert record["returncode"] == 1 and "[UNREACHABLE]" in record["stdout"], record
