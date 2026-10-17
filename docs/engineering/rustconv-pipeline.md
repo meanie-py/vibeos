@@ -1619,6 +1619,10 @@ audit, and each flag contributes its own INDEPENDENT response-cache token (`fact
 free to add: turning one on misses the cache and pays for the bodies it covers, while every
 body already banked under the other tokens stays addressable and is never re-billed. Folding
 a new protection into an existing token's meaning would re-charge for work already owned.
+A call inside a `#if` arm is optional to the call seal unless the TU's own defines decide the
+arm live (`dead_regions.decided_live_lines`); then it is required like any other. That is a
+check on the reply, not the prompt, so it shares `callseal_v1`. `rustconv.live_arm_audit`
+reports shipped bodies that drop a live-arm callee, and it is how the tightening was measured.
 
 **`--seal-wide` (2026-08-07).** Rust has no UTF-16 literal, so a model asked to translate one
 has nothing correct to write: it invents an encoding, and every invention is a hand-count no

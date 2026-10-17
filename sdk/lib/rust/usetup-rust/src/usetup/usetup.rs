@@ -100,6 +100,8 @@ pub static RUSTCONV_WSTR_F3C6A8F2AC47: [u16; 4] = [0x0025u16, 0x006C, 0x0075, 0x
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
+// `#[no_mangle]`: spapisup-rust (cabinet.c, fileqsup.c) allocates from it by name.
+#[no_mangle]
 pub static mut ProcessHeap: HANDLE = core::ptr::null_mut();
 pub static mut USetupData: USETUP_DATA = unsafe { core::mem::zeroed() };
 pub static mut IsUnattendedSetup: BOOLEAN = 0;
@@ -619,7 +621,8 @@ unsafe extern "C" fn SetupStartPage(Ir: PINPUT_RECORD) -> PAGE_NUMBER {
     Error = InitializeSetup(
         &mut USetupData,
         Some(USetupErrorRoutine),
-        &mut SpFileExports,
+        // spapisup-rust's island type; the same setuplib header, so the same layout.
+        core::ptr::addr_of_mut!(SpFileExports) as PSPFILE_EXPORTS,
         &mut SpInfExports,
     );
     if Error != ERROR_SUCCESS {
