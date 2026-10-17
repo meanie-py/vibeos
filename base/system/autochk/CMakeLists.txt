@@ -12,15 +12,8 @@ target_link_libraries(autochk_shims PRIVATE nt vfatlib vfatxlib cdfslib libntdll
 # whose windres command the cargo link replays.
 add_library(autochk_res OBJECT autochk.rc)
 target_include_directories(autochk_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(AUTOCHK_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/fslib/cdfslib/libcdfslib.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/fslib/vfatlib/libvfatlib.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/fslib/vfatlib/libvfatlib_rust.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/fslib/vfatxlib/libvfatxlib.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/fslib/vfatxlib/libvfatxlib_rust.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/nt/libnt.a)
 add_cargo_module(autochk autochk-cargo autochk.exe
     KIND win32exe
     BODY_CRATE autochk-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS autochk_shims autochk_res ${AUTOCHK_REUSED})
+    EXTRA_DEPENDS autochk_shims autochk_res psdk xdk)
