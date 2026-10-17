@@ -11626,6 +11626,27 @@ def test_wowx64_cpu_layer_older_than_its_sources_is_stale(tmp_path):
     assert build_mod.wowx64_cpu_stale(tmp_path) == ["sdk/include/reactos/wowx64/btcpu64.h"]
 
 
+def test_a_payload_that_exits_with_a_message_says_why(tmp_path, monkeypatch):
+    """vendordrv's stager refuses with `sys.exit("vendordrv: no .inf in <dir>")`. A caught
+    SystemExit prints nothing, so the stage read FAIL with an empty reason (2026-10-17)."""
+    (tmp_path / "tools" / "payloads").mkdir(parents=True)
+    (tmp_path / "tools" / "payloads" / "compile.py").write_text(
+        "import os, sys\n"
+        "def resolve_env_payloads(environ=os.environ):\n"
+        "    return ['vendordrv']\n"
+        "def ensure_built(names, arch):\n"
+        "    sys.exit('vendordrv: no .inf in /somewhere')\n"
+        "def write_stamp(build_dir, environ=os.environ):\n"
+        "    return []\n"
+    )
+    build_dir = tmp_path / "build-amd64"
+    build_dir.mkdir()
+    monkeypatch.setenv("VIBEOS_PAYLOAD", "vendordrv")
+    run = Run("build", "amd64", ts=1700000000)
+    assert build_mod._stage_payloads(run, tmp_path, build_dir, "amd64") is None
+    assert run.stages[-1].salient == ["vendordrv: no .inf in /somewhere"]
+
+
 def test_a_failed_payload_build_leaves_the_old_stamp(tmp_path, monkeypatch):
     """The stamp is smoke's only evidence of what the media carries. Written ahead of a
     PAYLOAD_BUILD_FAIL, it claimed appstorm64 on media that never got it: the next smoke
