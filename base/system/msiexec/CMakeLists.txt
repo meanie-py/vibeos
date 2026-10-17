@@ -6,12 +6,8 @@
 # The translated C, kept on disk:
 # msiexec.c  # replaced by Rust (sdk/lib/rust/msiexec-rust/src/msiexec/msiexec.rs)
 # service.c  # replaced by Rust (sdk/lib/rust/msiexec-rust/src/msiexec/service.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(msiexec_shims OBJECT rust_varargs_shim.c)
-# How cmake compiled the target's sources, now on the OBJECT libraries.
-set_wine_module_fixme(msiexec_shims)
 add_cargo_module(msiexec msiexec-cargo msiexec.exe
     KIND win32exe
     BODY_CRATE msiexec-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS msiexec_shims psdk uuid_sources)
+    EXTRA_DEPENDS psdk uuid_sources)

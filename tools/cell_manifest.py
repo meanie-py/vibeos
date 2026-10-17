@@ -31,7 +31,8 @@ CANON = "/tmp/vibeos"
 CELL_ENV = ("RUSTFLAGS", "RUSTUP_TOOLCHAIN", "VIBEOS_PIC_HAL")
 
 STMT = re.compile(
-    r"\nbuild ([^\n]*?): CUSTOM_COMMAND[^\n]*\n  COMMAND = ([^\n]*)\n  DESC = Cargo-linking ([^\n]*)"
+    r"\nbuild ([^\n]*?): CUSTOM_COMMAND[^\n]*\n  COMMAND = ([^\n]*)\n"
+    r"  DESC = Cargo-linking ([^\n]*)"
 )
 
 
@@ -81,7 +82,9 @@ def parse_cell(outs: str, command: str, arch: str) -> dict:
         "build_std": "build-std=core,alloc,compiler_builtins" in args,
         "env": {k: env[k] for k in CELL_ENV if k in env},
         "target_dir": Path(env["CARGO_TARGET_DIR"]).name,
-        "bins": "all" if "--bins" in args else [args[i + 1] for i, a in enumerate(args) if a == "--bin"],
+        "bins": "all"
+        if "--bins" in args
+        else [args[i + 1] for i, a in enumerate(args) if a == "--bin"],
         "outputs": [],
     }
     i = 2
@@ -91,7 +94,11 @@ def parse_cell(outs: str, command: str, arch: str) -> dict:
             src, dst = s[3], s[4]
             post = []
             i += 1
-            while i < len(steps) and steps[i][-1] == dst and steps[i][:3] != ["/usr/bin/cmake", "-E", "copy"]:
+            while (
+                i < len(steps)
+                and steps[i][-1] == dst
+                and steps[i][:3] != ["/usr/bin/cmake", "-E", "copy"]
+            ):
                 post.append(_post(steps[i], dst, arch))
                 i += 1
             cell["outputs"].append(
@@ -99,7 +106,9 @@ def parse_cell(outs: str, command: str, arch: str) -> dict:
             )
             continue
         i += 1  # the depfile bookkeeping
-    declared = sorted(_build_rel(f"{CANON}/build-{arch}/{o}", arch) for o in outs.split("|")[0].split())
+    declared = sorted(
+        _build_rel(f"{CANON}/build-{arch}/{o}", arch) for o in outs.split("|")[0].split()
+    )
     if sorted(o["out"] for o in cell["outputs"]) != declared:
         raise ManifestError(f"{cell['crate']}: copies do not match the declared outputs")
     return cell
@@ -128,7 +137,9 @@ def load(arch: str, repo: Path = REPO) -> list[dict]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--write", action="store_true")
     g.add_argument("--check", action="store_true")

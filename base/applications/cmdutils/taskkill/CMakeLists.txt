@@ -5,13 +5,8 @@
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # taskkill.c  # replaced by Rust (sdk/lib/rust/taskkill-rust/src/taskkill/taskkill.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(taskkill_shims OBJECT rust_varargs_shim.c)
-target_compile_definitions(taskkill_shims PRIVATE UNICODE _UNICODE)
-# How cmake compiled the target's sources, now on the OBJECT libraries.
-set_wine_module_fixme(taskkill_shims)
 add_cargo_module(taskkill taskkill-cargo taskkill.exe
     KIND win32exe
     BODY_CRATE taskkill-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS taskkill_shims psdk)
+    EXTRA_DEPENDS psdk)

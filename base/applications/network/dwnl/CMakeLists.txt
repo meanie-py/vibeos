@@ -3,11 +3,8 @@
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # dwnl.c  # replaced by Rust (sdk/lib/rust/dwnl-rust/src/dwnl/dwnl.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(dwnl_shims OBJECT rust_varargs_shim.c)
-target_compile_definitions(dwnl_shims PRIVATE UNICODE _UNICODE)
 add_cargo_module(dwnl dwnl-cargo dwnl.exe
     KIND win32exe
     BODY_CRATE dwnl-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS dwnl_shims xdk uuid_sources psdk)
+    EXTRA_DEPENDS xdk uuid_sources psdk)

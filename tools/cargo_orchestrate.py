@@ -538,7 +538,10 @@ def configure_gen(root: Path, arch: str, gen: Path, seed: Path | None = None) ->
     var = dict(re.findall(r'^set\((\w+) "([^"]*)"\)', cm, re.M))
     winarch = "x86" if arch == "i386" else arch
     tag = var["KERNEL_VERSION_BUILD_TYPE"]
-    kv = f"{var['KERNEL_VERSION_MAJOR']}.{var['KERNEL_VERSION_MINOR']}.{var['KERNEL_VERSION_PATCH_LEVEL']}"
+    kv = ".".join(
+        var[k]
+        for k in ("KERNEL_VERSION_MAJOR", "KERNEL_VERSION_MINOR", "KERNEL_VERSION_PATCH_LEVEL")
+    )
     dll_major = int(var["KERNEL_VERSION_MAJOR"]) + 42
     dll = f"{dll_major}.{var['KERNEL_VERSION_MINOR']}.{var['KERNEL_VERSION_PATCH_LEVEL']}"
 
@@ -547,8 +550,12 @@ def configure_gen(root: Path, arch: str, gen: Path, seed: Path | None = None) ->
         return r.stdout.strip() if r.returncode == 0 else ""
 
     clang = root / ".build-tools/llvm-mingw/bin/clang"
-    ver = re.search(r"clang version (\S+)", subprocess.run(
-        [str(clang), "--version"], capture_output=True, text=True, check=True).stdout)
+    ver = re.search(
+        r"clang version (\S+)",
+        subprocess.run(
+            [str(clang), "--version"], capture_output=True, text=True, check=True
+        ).stdout,
+    )
     values = {
         **var,
         "KERNEL_VERSION_BUILD": datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d"),
@@ -580,7 +587,9 @@ def artifact_store_env(root: Path, arch: str, report: Path):
     from tools.artifact_executor import PIN
     from tools.artifact_runtime import record_outer_result, supervise
 
-    store = Path(os.environ.get("VIBEOS_ARTIFACT_STORE_ROOT") or Path.home() / "vibeos-artifact-store")
+    store = Path(
+        os.environ.get("VIBEOS_ARTIFACT_STORE_ROOT") or Path.home() / "vibeos-artifact-store"
+    )
 
     @contextlib.contextmanager
     def ctx():
@@ -588,22 +597,32 @@ def artifact_store_env(root: Path, arch: str, report: Path):
         toolchain = Path.home() / ".rustup" / "toolchains" / PIN
         with supervise(root, store, toolchain, report, clean=False, verify=False, arch=arch) as sup:
             result = {"rc": 1}
-            yield {
-                "VIBEOS_ARTIFACT_STORE_MODE": "ON",
-                "VIBEOS_ARTIFACT_STORE_ROOT": str(store),
-                "VIBEOS_ARTIFACT_VERIFY_NONCE": "",
-                "VIBEOS_ARTIFACT_SUPERVISOR": str(sup),
-                "VIBEOS_ARTIFACT_PYTHON": sys.executable,
-                "VIBEOS_ARTIFACT_TOOLCHAIN_ID": json.loads(sup.read_text())["toolchain_key"],
-            }, result
+            yield (
+                {
+                    "VIBEOS_ARTIFACT_STORE_MODE": "ON",
+                    "VIBEOS_ARTIFACT_STORE_ROOT": str(store),
+                    "VIBEOS_ARTIFACT_VERIFY_NONCE": "",
+                    "VIBEOS_ARTIFACT_SUPERVISOR": str(sup),
+                    "VIBEOS_ARTIFACT_PYTHON": sys.executable,
+                    "VIBEOS_ARTIFACT_TOOLCHAIN_ID": json.loads(sup.read_text())["toolchain_key"],
+                },
+                result,
+            )
             record_outer_result(sup, result["rc"])
 
     return ctx()
 
 
 def manifest_build(
-    root: Path, arch: str, out_dir: Path, pefixup: Path, crates: list[str] | None,
-    force_off: bool, gen: Path, store_env: dict[str, str] | None = None,
+    root: Path,
+    arch: str,
+    out_dir: Path,
+    pefixup: Path,
+    crates: list[str] | None,
+    force_off: bool,
+    gen: Path,
+    store_env: dict[str, str] | None = None,
+    jobs: int = 4,
 ) -> int:
     """Build every cell `sdk/lib/rust/cells/<arch>.jsonl` lists (or the named crates), one
     cargo per cell as add_cargo_module runs it, into `out_dir/<build-relative output>`,
@@ -618,15 +637,24 @@ def manifest_build(
             raise SystemExit(f"not in the {arch} cell manifest: {', '.join(sorted(unknown))}")
         cells = [c for c in cells if c["crate"] in crates]
     ws = root / "sdk/lib/rust"
-    failed = []
-    for n, c in enumerate(cells, 1):
+
+    def one(n: int, c: dict) -> str | None:
         target = c["target"]
         stem = Path(target).stem if target.endswith(".json") else target
-        cmd = ["cargo", "build", "--release", "--target",
-               str(root / target) if target.endswith(".json") else target]
+        cmd = [
+            "cargo",
+            "build",
+            "--release",
+            "--target",
+            str(root / target) if target.endswith(".json") else target,
+        ]
         if c["build_std"]:
-            cmd += ["-Z", "build-std=core,alloc,compiler_builtins",
-                    "-Z", "build-std-features=compiler-builtins-mem"]
+            cmd += [
+                "-Z",
+                "build-std=core,alloc,compiler_builtins",
+                "-Z",
+                "build-std-features=compiler-builtins-mem",
+            ]
         cmd += ["-p", c["crate"]]
         cmd += ["--bins"] if c["bins"] == "all" else [x for b in c["bins"] for x in ("--bin", b)]
         cmd += ["--manifest-path", str(ws / "Cargo.toml")]
@@ -634,15 +662,18 @@ def manifest_build(
         env.update(c["env"])
         tdir = ws / "target" / c["target_dir"]
         env["CARGO_TARGET_DIR"] = str(tdir)
+        env["CARGO_BUILD_JOBS"] = "1"  # as add_cargo_module: parallelism is across cells
         env["VIBEOS_GEN_DIR"] = str(gen)
         env.update(store_env or {})
         if force_off:
             env["VIBEOS_FORCE_CMAKE_OFF"] = "1"
-        log(f"[{n}/{len(cells)}] {c['crate']}")
-        r = subprocess.run(cmd, cwd=ws, env=env)
+        log_path = out_dir / "logs" / f"{c['crate']}.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_path, "w") as f:
+            r = subprocess.run(cmd, cwd=ws, env=env, stdout=f, stderr=subprocess.STDOUT)
         if r.returncode:
-            failed.append(c["crate"])
-            continue
+            log(f"[{n}/{len(cells)}] FAIL {c['crate']}  ({log_path})")
+            return c["crate"]
         for o in c["outputs"]:
             dest = out_dir / o["out"]
             dest.parent.mkdir(parents=True, exist_ok=True)
@@ -656,6 +687,13 @@ def manifest_build(
                     run([cross_strip(root), *step.split()[1:], str(dest)])
                 else:
                     raise SystemExit(f"{c['crate']}: unknown post-link step {step!r}")
+        log(f"[{n}/{len(cells)}] ok   {c['crate']}")
+        return None
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        failed = [x for x in pool.map(lambda nc: one(*nc), enumerate(cells, 1)) if x]
     if failed:
         log(f"{len(failed)}/{len(cells)} cells FAILED: {' '.join(failed)}")
         return 1
@@ -729,6 +767,12 @@ def main(argv: list[str] | None = None) -> int:
         help="with --manifest: configure version.h/buildno.h from build-<arch>'s own",
     )
     ap.add_argument(
+        "--jobs",
+        type=int,
+        default=4,
+        help="with --manifest: cells linked at once (cmake's vibeos_cargo_links pool is 4)",
+    )
+    ap.add_argument(
         "--no-artifact-store",
         action="store_true",
         help="with --manifest: build every cell's body privately, not through the store",
@@ -786,11 +830,27 @@ def main(argv: list[str] | None = None) -> int:
         configure_gen(root, args.arch, gen, seed)
         if args.no_artifact_store:
             return manifest_build(
-                root, args.arch, out_dir, pefixup, args.targets or None, args.cmake_off, gen
+                root,
+                args.arch,
+                out_dir,
+                pefixup,
+                args.targets or None,
+                args.cmake_off,
+                gen,
+                None,
+                args.jobs,
             )
         with artifact_store_env(root, args.arch, out_dir / "artifact-supervisor") as (env, result):
             result["rc"] = manifest_build(
-                root, args.arch, out_dir, pefixup, args.targets or None, args.cmake_off, gen, env
+                root,
+                args.arch,
+                out_dir,
+                pefixup,
+                args.targets or None,
+                args.cmake_off,
+                gen,
+                env,
+                args.jobs,
             )
         return result["rc"]
 
@@ -820,7 +880,6 @@ def main(argv: list[str] | None = None) -> int:
         trace_dir.mkdir(parents=True)
 
     pefixup = build_pefixup(root, args.arch, out_dir, dry=args.dry_run)
-
 
     if args.verify:
         return verify_cmake_off(root, cells, args.arch, out_dir, pefixup)

@@ -13,12 +13,8 @@ list(APPEND SOURCE
 # The translated C, kept on disk:
 # sprintf.c  # replaced by Rust (sdk/lib/rust/ftfd-rust/src/ftfd/sprintf.rs)
 # The C still compiled, in an OBJECT library whose compile the cargo link replays.
-# Generated inputs those compiles read, ordered before them.
-add_library(ftfd_shims OBJECT rust_varargs_shim.c)
-target_link_libraries(ftfd_shims PRIVATE freetype libcntpr setjmp libwin32k)
-add_dependencies(ftfd_shims psdk)
 add_cargo_module(ftfd ftfd-cargo ftfd.dll
     KIND kerneldll
     BODY_CRATE ftfd-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS ftfd_shims asm psdk)
+    EXTRA_DEPENDS asm psdk freetype libcntpr setjmp libwin32k)

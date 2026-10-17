@@ -72,7 +72,7 @@ fn parse_template(path: &Path) -> RcTemplate {
 impl Linker {
     /// The tree `@build/` names: `build-<arch>` when cmake configured one (and it is
     /// not forced off), else a per-crate tree the engine generates.
-    fn rc_build_root(&self) -> PathBuf {
+    pub(crate) fn rc_build_root(&self) -> PathBuf {
         if !super::cmake_off_forced() && self.build_dir.join("build.ninja").exists() {
             return self.build_dir.clone();
         }
@@ -100,7 +100,7 @@ impl Linker {
         root
     }
 
-    fn rc_path(&self, tok: &str, build_root: &Path) -> PathBuf {
+    pub(crate) fn rc_path(&self, tok: &str, build_root: &Path) -> PathBuf {
         match tok.strip_prefix("@build/") {
             Some(rel) => build_root.join(rel),
             None if tok == "@build" => build_root.to_path_buf(),

@@ -22,11 +22,8 @@
 # start.c  # replaced by Rust (sdk/lib/rust/servman-rust/src/servman/start.rs)
 # stop.c  # replaced by Rust (sdk/lib/rust/servman-rust/src/servman/stop.rs)
 # stop_dependencies.c  # replaced by Rust (sdk/lib/rust/servman-rust/src/servman/stop_dependencies.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(servman_shims OBJECT rust_varargs_shim.c)
-target_compile_definitions(servman_shims PRIVATE UNICODE _UNICODE)
 add_cargo_module(servman servman-cargo servman.exe
     KIND win32exe
     BODY_CRATE servman-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS servman_shims psdk)
+    EXTRA_DEPENDS psdk)

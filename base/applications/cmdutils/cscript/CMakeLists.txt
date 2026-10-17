@@ -16,17 +16,9 @@ include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_or
 # ${wscript_folder}/arguments.c  # replaced by Rust (sdk/lib/rust/wscript-rust/src/wscript/arguments.rs, feature cscript)
 # ${wscript_folder}/host.c  # replaced by Rust (sdk/lib/rust/wscript-rust/src/wscript/host.rs, feature cscript)
 # ${wscript_folder}/main.c  # replaced by Rust (sdk/lib/rust/wscript-rust/src/wscript/main.rs, feature cscript)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(cscript_shims OBJECT ${REACTOS_SOURCE_DIR}/base/applications/cmdutils/wscript/rust_varargs_shim.c)
-target_link_libraries(cscript_shims PRIVATE uuid wine oldnames libshell32 liboleaut32 libole32 libadvapi32 libuser32 libmsvcrt libkernel32 libntdll)
-target_compile_definitions(cscript_shims PRIVATE UNICODE _UNICODE)
-# How cmake compiled the target's sources, now on the OBJECT libraries.
-set_wine_module_fixme(cscript_shims)
-# Generated inputs those compiles read, ordered before them.
-add_dependencies(cscript_shims stdole2 cscript_idlheader)
 add_cargo_module(cscript cscript-cargo cscript.exe
     KIND win32exe
     BODY_CRATE wscript-rust
     DESTINATION reactos/system32
     DELAY_IMPORTS
-    EXTRA_DEPENDS cscript_shims psdk uuid_sources stdole2 cscript_idlheader ${CMAKE_CURRENT_BINARY_DIR}/ihost.tlb)
+    EXTRA_DEPENDS psdk uuid_sources stdole2 cscript_idlheader ${CMAKE_CURRENT_BINARY_DIR}/ihost.tlb uuid wine oldnames libshell32 liboleaut32 libole32 libadvapi32 libuser32 libmsvcrt libkernel32 libntdll)

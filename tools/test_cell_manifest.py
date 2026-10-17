@@ -16,7 +16,8 @@ COMMAND = " && ".join(
         f"CARGO_TARGET_DIR={T} CARGO_BUILD_JOBS=1 VIBEOS_ARTIFACT_STORE_MODE=ON "
         "cargo build --release --target i686-pc-windows-gnu -p beep-cargo --bin beep "
         "--manifest-path /tmp/vibeos/sdk/lib/rust/Cargo.toml",
-        f"/usr/bin/cmake -E copy {T}/i686-pc-windows-gnu/release/beep.exe {B}/drivers/beep/beep.sys",
+        f"/usr/bin/cmake -E copy {T}/i686-pc-windows-gnu/release/beep.exe "
+        f"{B}/drivers/beep/beep.sys",
         f"{B}/host-tools/bin/pefixup --kernelmodedriver {B}/drivers/beep/beep.sys",
         "/usr/bin/cmake -E env python3 /tmp/vibeos/sdk/tools/fix_lld_forwarding.py "
         f"{B}/drivers/beep/beep.sys",

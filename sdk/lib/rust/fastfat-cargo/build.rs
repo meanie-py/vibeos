@@ -8,6 +8,34 @@ use std::env;
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
 
+    // The C left, and its part of cmake's C rule; reactos-link adds what every C
+    // compile shares from reactos-link/cflags/c.<arch>.flags (Linker::c_compiled).
+    let c_sources: &[&str] = &[
+        "drivers/filesystems/fastfat/rust_cohab_stub.c",
+        "drivers/filesystems/fastfat/rust_cohab_forceinline.c",
+        "drivers/filesystems/fastfat/rust_cohab_fat.c",
+    ];
+    let c_includes: &[&str] = &[
+        "@build/drivers/filesystems/fastfat",
+        "drivers/filesystems/fastfat",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+    ];
+    let c_flags: &[&str] = match arch.as_str() {
+        "x86" => &["-std=gnu99", "@core", "-mrtd"],
+        "x86_64" => &["-std=gnu99", "-U_X86_", "-UWIN32", "@core"],
+        "aarch64" => &["-std=gnu99", "@core"],
+        _ => unreachable!(),
+    };
+    let c_defines: &[&str] = match arch.as_str() {
+        "x86" => &["WINVER=0x502", "_WIN32_WINNT=0x502"],
+        "x86_64" => &["WINVER=0x502", "_WIN32_WINNT=0x502"],
+        "aarch64" => &["ARM64_UART_TRACE_ENABLE", "WINVER=0x502", "_WIN32_WINNT=0x502"],
+        _ => unreachable!(),
+    };
+
     // The module's part of cmake's windres command; reactos-link adds what every
     // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
     let rc_includes: &[&str] = &[
@@ -52,7 +80,7 @@ fn main() {
     link
         .rust_staticlib("fastfat-rust")
         .rust_user_target()
-        .c_from_compile_db("fastfat_shims", &["drivers/filesystems/fastfat/rust_cohab_stub.c", "drivers/filesystems/fastfat/rust_cohab_forceinline.c", "drivers/filesystems/fastfat/rust_cohab_fat.c"])
+        .c_compiled("fastfat_shims", c_sources, c_includes, c_flags, c_defines)
         .rc("drivers/filesystems/fastfat/fastfat.rc", rc_includes, rc_flags, rc_defines)
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .import_lib("hal/hal.spec", "hal.dll", "hal")

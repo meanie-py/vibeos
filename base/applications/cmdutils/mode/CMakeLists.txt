@@ -3,11 +3,8 @@
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # mode.c  # replaced by Rust (sdk/lib/rust/mode-rust/src/mode/mode.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(mode_shims OBJECT rust_varargs_shim.c)
-target_compile_definitions(mode_shims PRIVATE UNICODE _UNICODE)
 add_cargo_module(mode mode-cargo mode.com
     KIND win32exe
     BODY_CRATE mode-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS mode_shims xdk psdk)
+    EXTRA_DEPENDS xdk psdk)

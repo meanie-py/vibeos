@@ -10,11 +10,8 @@ PROJECT(progman)
 # main.c  # replaced by Rust (sdk/lib/rust/progman-rust/src/progman/main.rs)
 # program.c  # replaced by Rust (sdk/lib/rust/progman-rust/src/progman/program.rs)
 # string.c  # replaced by Rust (sdk/lib/rust/progman-rust/src/progman/string.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(progman_shims OBJECT rust_varargs_shim.c)
-target_compile_definitions(progman_shims PRIVATE UNICODE _UNICODE)
 add_cargo_module(progman progman-cargo progman.exe
     KIND win32exe
     BODY_CRATE progman-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS progman_shims psdk)
+    EXTRA_DEPENDS psdk)

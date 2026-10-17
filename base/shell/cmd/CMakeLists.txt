@@ -59,13 +59,9 @@
 # vol.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/vol.rs)
 # where.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/where.rs)
 # window.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/window.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(cmd_shims OBJECT rust_varargs_shim.c)
-target_link_libraries(cmd_shims PRIVATE conutils wine libadvapi32 libmsvcrt libkernel32 libntdll)
-target_compile_definitions(cmd_shims PRIVATE UNICODE _UNICODE)
 add_cargo_module(cmd cmd-cargo cmd.exe
     KIND win32exe
     BODY_CRATE cmd-rust
     DESTINATION reactos/system32
     DELAY_IMPORTS
-    EXTRA_DEPENDS cmd_shims psdk xdk)
+    EXTRA_DEPENDS psdk xdk conutils wine libadvapi32 libmsvcrt libkernel32 libntdll)

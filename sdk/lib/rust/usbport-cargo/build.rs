@@ -8,6 +8,26 @@ use std::env;
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
 
+    // The C left, and its part of cmake's C rule; reactos-link adds what every C
+    // compile shares from reactos-link/cflags/c.<arch>.flags (Linker::c_compiled).
+    let c_sources: &[&str] = &["drivers/usb/usbport/rust_varargs_shim.c", "drivers/usb/usbport/guid.c"];
+    let c_includes: &[&str] = &[
+        "@build/drivers/usb/usbport",
+        "drivers/usb/usbport",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+        "ntoskrnl/include",
+    ];
+    let c_flags: &[&str] = match arch.as_str() {
+        "x86" => &["-std=gnu99", "@core"],
+        "x86_64" => &["-std=gnu99", "-U_X86_", "-UWIN32", "@core"],
+        "aarch64" => &["-std=gnu99", "@core"],
+        _ => unreachable!(),
+    };
+    let c_defines: &[&str] = &["NO_KERNEL_LIST_ENTRY_CHECKS", "WINVER=0x502", "_WIN32_WINNT=0x502"];
+
     // The module's part of cmake's windres command; reactos-link adds what every
     // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
     let rc_includes: &[&str] = &[
@@ -48,7 +68,7 @@ fn main() {
     link
         .rust_staticlib("usbport-rust")
         .rust_user_target()
-        .c_from_compile_db("usbport_shims", &["drivers/usb/usbport/rust_varargs_shim.c", "drivers/usb/usbport/guid.c"])
+        .c_compiled("usbport_shims", c_sources, c_includes, c_flags, c_defines)
         .rc("drivers/usb/usbport/usbport.rc", rc_includes, rc_flags, rc_defines)
         .spec2def("drivers/usb/usbport/usbport.spec", "usbport.sys")
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")

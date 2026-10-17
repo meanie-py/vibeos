@@ -7,13 +7,8 @@ include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_or
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # xcopy.c  # replaced by Rust (sdk/lib/rust/xcopy-rust/src/xcopy/xcopy.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(xcopy_shims OBJECT rust_varargs_shim.c)
-target_compile_definitions(xcopy_shims PRIVATE UNICODE _UNICODE)
-# How cmake compiled the target's sources, now on the OBJECT libraries.
-set_wine_module_fixme(xcopy_shims)
 add_cargo_module(xcopy xcopy-cargo xcopy.exe
     KIND win32exe
     BODY_CRATE xcopy-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS xcopy_shims psdk)
+    EXTRA_DEPENDS psdk)

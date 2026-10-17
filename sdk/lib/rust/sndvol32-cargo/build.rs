@@ -8,6 +8,25 @@ use std::env;
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
 
+    // The C left, and its part of cmake's C rule; reactos-link adds what every C
+    // compile shares from reactos-link/cflags/c.<arch>.flags (Linker::c_compiled).
+    let c_sources: &[&str] = &["base/applications/sndvol32/rust_varargs_shim.c"];
+    let c_includes: &[&str] = &[
+        "@build/base/applications/sndvol32",
+        "base/applications/sndvol32",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+    ];
+    let c_flags: &[&str] = match arch.as_str() {
+        "x86" => &["-std=gnu99", "@core"],
+        "x86_64" => &["-std=gnu99", "-U_X86_", "-UWIN32", "@core"],
+        "aarch64" => &["-std=gnu99", "@core"],
+        _ => unreachable!(),
+    };
+    let c_defines: &[&str] = &["UNICODE", "WINVER=0x502", "_UNICODE", "_WIN32_WINNT=0x502"];
+
     // The module's part of cmake's windres command; reactos-link adds what every
     // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
     let rc_includes: &[&str] = &[
@@ -37,7 +56,7 @@ fn main() {
 
     Linker::new(target_json)
         .rust_staticlib("sndvol32-rust")
-        .c_from_compile_db("sndvol32_shims", &["base/applications/sndvol32/rust_varargs_shim.c"])
+        .c_compiled("sndvol32_shims", c_sources, c_includes, c_flags, c_defines)
         .rc("base/applications/sndvol32/sndvol32.rc", rc_includes, rc_flags, rc_defines)
         .import_lib("win32ss/user/user32/user32.spec", "user32.dll", "user32")
         .import_lib("dll/win32/advapi32/advapi32.spec", "advapi32.dll", "advapi32")

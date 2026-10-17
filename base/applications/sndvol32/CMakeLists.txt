@@ -8,11 +8,8 @@
 # mixer.c  # replaced by Rust (sdk/lib/rust/sndvol32-rust/src/sndvol32/mixer.rs)
 # sndvol32.c  # replaced by Rust (sdk/lib/rust/sndvol32-rust/src/sndvol32/sndvol32.rs)
 # tray.c  # replaced by Rust (sdk/lib/rust/sndvol32-rust/src/sndvol32/tray.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(sndvol32_shims OBJECT rust_varargs_shim.c)
-target_compile_definitions(sndvol32_shims PRIVATE UNICODE _UNICODE)
 add_cargo_module(sndvol32 sndvol32-cargo sndvol32.exe
     KIND win32exe
     BODY_CRATE sndvol32-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS sndvol32_shims psdk)
+    EXTRA_DEPENDS psdk)

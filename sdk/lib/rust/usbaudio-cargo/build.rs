@@ -8,6 +8,25 @@ use std::env;
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
 
+    // The C left, and its part of cmake's C rule; reactos-link adds what every C
+    // compile shares from reactos-link/cflags/c.<arch>.flags (Linker::c_compiled).
+    let c_sources: &[&str] = &["drivers/usb/usbaudio/guid.c"];
+    let c_includes: &[&str] = &[
+        "@build/drivers/usb/usbaudio",
+        "drivers/usb/usbaudio",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+    ];
+    let c_flags: &[&str] = match arch.as_str() {
+        "x86" => &["-std=gnu99", "@core"],
+        "x86_64" => &["-std=gnu99", "-U_X86_", "-UWIN32", "@core"],
+        "aarch64" => &["-std=gnu99", "@core"],
+        _ => unreachable!(),
+    };
+    let c_defines: &[&str] = &["WINVER=0x502", "_WIN32_WINNT=0x600"];
+
     // The module's part of cmake's windres command; reactos-link adds what every
     // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
     let rc_includes: &[&str] = &[
@@ -47,7 +66,7 @@ fn main() {
     link
         .rust_staticlib("usbaudio-rust")
         .rust_user_target()
-        .c_from_compile_db("usbaudio_shims", &["drivers/usb/usbaudio/guid.c"])
+        .c_compiled("usbaudio_shims", c_sources, c_includes, c_flags, c_defines)
         .rc("drivers/usb/usbaudio/usbaudio.rc", rc_includes, rc_flags, rc_defines)
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .import_lib("hal/hal.spec", "hal.dll", "hal")

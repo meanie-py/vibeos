@@ -14,14 +14,8 @@ add_definitions(-D_WIN32_WINNT=0x600)
 # import.c  # replaced by Rust (sdk/lib/rust/reg-rust/src/reg/import.rs)
 # query.c  # replaced by Rust (sdk/lib/rust/reg-rust/src/reg/query.rs)
 # reg.c  # replaced by Rust (sdk/lib/rust/reg-rust/src/reg/reg.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(reg_shims OBJECT rust_varargs_shim.c)
-target_compile_definitions(reg_shims PRIVATE UNICODE _UNICODE)
-# How cmake compiled the target's sources, now on the OBJECT libraries.
-target_compile_definitions(reg_shims PRIVATE _CRT_NON_CONFORMING_SWPRINTFS)
-set_wine_module_fixme(reg_shims)
 add_cargo_module(reg reg-cargo reg.exe
     KIND win32exe
     BODY_CRATE reg-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS reg_shims psdk)
+    EXTRA_DEPENDS psdk)

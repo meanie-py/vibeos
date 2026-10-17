@@ -23,13 +23,8 @@ add_subdirectory(clb)
 # settings.c  # replaced by Rust (sdk/lib/rust/regedit-rust/src/regedit/settings.rs)
 # treeview.c  # replaced by Rust (sdk/lib/rust/regedit-rust/src/regedit/treeview.rs)
 # txtproc.c  # replaced by Rust (sdk/lib/rust/regedit-rust/src/regedit/txtproc.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(regedit_shims OBJECT rust_varargs_shim.c)
-target_compile_definitions(regedit_shims PRIVATE UNICODE _UNICODE)
-# How cmake compiled the target's sources, now on the OBJECT libraries.
-target_compile_definitions(regedit_shims PRIVATE _CRT_NON_CONFORMING_SWPRINTFS)
 add_cargo_module(regedit regedit-cargo regedit.exe
     KIND win32exe
     BODY_CRATE regedit-rust
     DESTINATION reactos
-    EXTRA_DEPENDS regedit_shims psdk uuid_sources)
+    EXTRA_DEPENDS psdk uuid_sources)

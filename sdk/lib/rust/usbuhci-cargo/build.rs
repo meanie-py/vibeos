@@ -8,6 +8,26 @@ use std::env;
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
 
+    // The C left, and its part of cmake's C rule; reactos-link adds what every C
+    // compile shares from reactos-link/cflags/c.<arch>.flags (Linker::c_compiled).
+    let c_sources: &[&str] = &["drivers/usb/usbuhci/guid.c"];
+    let c_includes: &[&str] = &[
+        "@build/drivers/usb/usbuhci",
+        "drivers/usb/usbuhci",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+        "ntoskrnl/include",
+    ];
+    let c_flags: &[&str] = match arch.as_str() {
+        "x86" => &["-std=gnu99", "@core"],
+        "x86_64" => &["-std=gnu99", "-U_X86_", "-UWIN32", "@core"],
+        "aarch64" => &["-std=gnu99", "@core"],
+        _ => unreachable!(),
+    };
+    let c_defines: &[&str] = &["NO_KERNEL_LIST_ENTRY_CHECKS", "WINVER=0x502", "_WIN32_WINNT=0x502"];
+
     // The module's part of cmake's windres command; reactos-link adds what every
     // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
     let rc_includes: &[&str] = &[
@@ -48,7 +68,7 @@ fn main() {
     link
         .rust_staticlib("usbuhci-rust")
         .rust_user_target()
-        .c_from_compile_db("usbuhci_shims", &["drivers/usb/usbuhci/guid.c"])
+        .c_compiled("usbuhci_shims", c_sources, c_includes, c_flags, c_defines)
         .rc("drivers/usb/usbuhci/usbuhci.rc", rc_includes, rc_flags, rc_defines)
         .import_lib("drivers/usb/usbport/usbport.spec", "usbport.sys", "usbport")
         .import_lib("drivers/usb/usbd/usbd.spec", "usbd.sys", "usbd")

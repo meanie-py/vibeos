@@ -778,10 +778,81 @@ def test_a_fresh_conversion_reads_its_rc_part_from_the_module_compile(monkeypatc
     cmds = {
         "amd64": [{"file": "/tmp/vibeos/base/m/rsrc.rc", "command": RC_CMD}],
         "i386": [],
-        "arm64": [{"file": "/tmp/vibeos/base/m/rsrc.rc", "command": RC_CMD.replace("m.dir", "n.dir")}],
+        "arm64": [
+            {"file": "/tmp/vibeos/base/m/rsrc.rc", "command": RC_CMD.replace("m.dir", "n.dir")}
+        ],
     }
     monkeypatch.setattr(g, "_rc_commands", lambda a, repo=g.REPO: cmds[a])
     monkeypatch.setattr(g, "read_rc_template", lambda a, repo=g.REPO: TMPL)
     flags = g.rc_flags_for("base/m/rsrc.rc", "base/m/CMakeFiles/m.dir/rsrc.rc.res")
     assert flags["amd64"] == flags["i386"] == flags["arm64"]
     assert flags["amd64"].defines == ("UNICODE", "_UNICODE")
+
+
+C_CMD = (
+    "/tmp/vibeos/.build-tools/llvm-mingw/bin/x86_64-w64-mingw32-clang --target=x86_64-w64-mingw32 "
+    "-DDBG=1 -DUNICODE -D__REACTOS__ "
+    "-I/tmp/vibeos/build-amd64/base/m -I/tmp/vibeos/base/m -I/tmp/vibeos/sdk/include "
+    "-I/tmp/vibeos/build-amd64/sdk/include "
+    "-std=gnu99 -ffile-prefix-map=/tmp/vibeos= -pipe -O1 -Wno-x "
+    "-o base/m/CMakeFiles/m_shims.dir/shim.c.obj -c /tmp/vibeos/base/m/shim.c"
+)
+CTMPL = g.CTemplate(
+    cc="{REPO}/.build-tools/llvm-mingw/bin/x86_64-w64-mingw32-clang",
+    target="--target=x86_64-w64-mingw32",
+    std=["sdk/include", "@build/sdk/include"],
+    core=["-ffile-prefix-map={REPO}=", "-pipe", "-O1"],
+    defines=["-DDBG=1", "-D__REACTOS__"],
+)
+
+
+def test_a_c_command_is_the_template_plus_the_library_part():
+    f = g.c_encode(C_CMD, CTMPL, "amd64")
+    assert f.includes == ("@build/base/m", "base/m", "@std")
+    assert f.flags == ("-std=gnu99", "@core", "-Wno-x")
+    assert f.defines == ("UNICODE",)
+    assert g.c_decode(f, CTMPL, "amd64") == C_CMD.split()[: C_CMD.split().index("-o")]
+
+
+def test_a_c_command_out_of_rule_order_is_refused():
+    import pytest
+
+    with pytest.raises(g.GenError, match="not sorted"):
+        g.c_encode(
+            C_CMD.replace("-DUNICODE -D__REACTOS__", "-D__REACTOS__ -DUNICODE"), CTMPL, "amd64"
+        )
+
+
+def test_own_c_moves_a_shims_library_into_the_cell(tmp_path, monkeypatch):
+    """The OBJECT library leaves cmake; what it linked for usage requirements, what it was
+    ordered after and its generated sources order the cell."""
+    cml = tmp_path / "base/m/CMakeLists.txt"
+    cml.parent.mkdir(parents=True)
+    cml.write_text(
+        "# The C still compiled, in an OBJECT library whose compile the cargo link replays.\n"
+        "add_library(m_shims OBJECT shim.c ${CMAKE_CURRENT_BINARY_DIR}/m_s.c)\n"
+        "target_link_libraries(m_shims PRIVATE wine libkernel32)\n"
+        "add_dependencies(m_shims m_idl)\n"
+        "add_cargo_module(m m-cargo m.exe\n    KIND win32exe\n    EXTRA_DEPENDS m_shims psdk)\n"
+    )
+    rs = tmp_path / "sdk/lib/rust/m-cargo/build.rs"
+    rs.parent.mkdir(parents=True)
+    rs.write_text(
+        'fn main() {\n    let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("x");\n'
+        '    Linker::new(t)\n        .c_from_compile_db("m_shims", &["base/m/shim.c", '
+        '"base/m/m_s.c"])\n        .link(k);\n}\n'
+    )
+    srcs = {a: ["base/m/shim.c", "@build/base/m/m_s.c"] for a in g.ARCHES}
+    monkeypatch.setattr(g, "_cmakelists", lambda repo: [cml])
+    monkeypatch.setattr(
+        g,
+        "c_lib_for",
+        lambda t, repo=g.REPO: (srcs, {a: g.c_encode(C_CMD, CTMPL, "amd64") for a in g.ARCHES}),
+    )
+    assert g.own_c(None, tmp_path) == ["m-cargo"]
+    out = cml.read_text()
+    assert "m_shims" not in out
+    assert "EXTRA_DEPENDS psdk wine libkernel32 m_idl ${REACTOS_BINARY_DIR}/base/m/m_s.c)" in out
+    text = rs.read_text()
+    assert '.c_compiled("m_shims", c_sources, c_includes, c_flags, c_defines)' in text
+    assert '"@build/base/m/m_s.c"' in text

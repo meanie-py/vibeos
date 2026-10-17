@@ -3,11 +3,8 @@
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # autochk.c  # replaced by Rust (sdk/lib/rust/autochk-rust/src/autochk/autochk.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(autochk_shims OBJECT rust_varargs_shim.c)
-target_link_libraries(autochk_shims PRIVATE nt vfatlib vfatxlib cdfslib libntdll)
 add_cargo_module(autochk autochk-cargo autochk.exe
     KIND win32exe
     BODY_CRATE autochk-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS autochk_shims psdk xdk)
+    EXTRA_DEPENDS psdk xdk nt vfatlib vfatxlib cdfslib libntdll)

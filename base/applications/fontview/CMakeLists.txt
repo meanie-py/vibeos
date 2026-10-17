@@ -4,11 +4,8 @@
 # The translated C, kept on disk:
 # display.c  # replaced by Rust (sdk/lib/rust/fontview-rust/src/fontview/display.rs)
 # fontview.c  # replaced by Rust (sdk/lib/rust/fontview-rust/src/fontview/fontview.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(fontview_shims OBJECT rust_varargs_shim.c)
-target_compile_definitions(fontview_shims PRIVATE UNICODE _UNICODE)
 add_cargo_module(fontview fontview-cargo fontview.exe
     KIND win32exe
     BODY_CRATE fontview-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS fontview_shims psdk)
+    EXTRA_DEPENDS psdk)

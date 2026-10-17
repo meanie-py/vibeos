@@ -9,13 +9,8 @@ rust_staticlib_variant(hid_hidparser_rust hidparser-rust "user" FALSE)
 # The translated C, kept on disk:
 # hid.c  # replaced by Rust (sdk/lib/rust/hid-rust/src/hid/hid.rs)
 # hid.c includes the parser's hidp.h, which the C static lib used to export as its interface.
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(hid_shims OBJECT rust_varargs_shim.c)
-target_compile_definitions(hid_shims PRIVATE UNICODE _UNICODE)
-# How cmake compiled the target's sources, now on the OBJECT libraries.
-target_include_directories(hid_shims PRIVATE ${REACTOS_SOURCE_DIR}/sdk/lib/drivers/hidparser)
 add_cargo_module(hid hid-cargo hid.dll
     KIND win32dll
     BODY_CRATE hid-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS hid_shims psdk)
+    EXTRA_DEPENDS psdk)

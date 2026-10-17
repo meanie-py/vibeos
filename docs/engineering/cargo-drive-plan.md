@@ -398,8 +398,39 @@ extends it from the boot spine to every fully-Rust module.
      come only from cmake.
 5. **Assemble the ISO from a manifest** instead of 200 `add_cd_file` calls. After this the
    fully-Rust part of the tree needs no cmake at all.
-6. **Modules that still have C** compile it from cargo (`c_shims` / `c_from_compile_db`
-   with committed flags), so cmake's last job is the C-only tail, then nothing.
+6. **Modules that still have C** compile it from cargo, so cmake's last job is the C-only
+   tail, then nothing.
+   - **6a, done 2026-10-17: the cells' own C.** cmake's C rule is `<CC> --target=<t>
+     <DEFINES> <INCLUDES> <FLAGS> -o <obj> -c <src>` with `<DEFINES>` sorted, so it gets the
+     rung-4 treatment: `reactos-link/cflags/c.<arch>.flags` (compiler, standard include
+     run, core flag run, global defines; `--c-template`) plus each library's part, which
+     the cell's build.rs carries (`c_sources`/`c_includes`/`c_flags`/`c_defines`,
+     `Linker::c_compiled`, reactos-link/src/c_rule.rs). 3473/3516/3480 of the tree's C
+     commands (i386/amd64/arm64) rebuild token for token; the rest are six ole32 sources
+     with per-source defines. `--own-c` moved 56 cells off their `<m>_shims` OBJECT
+     libraries; what those linked for usage requirements, were ordered after, and
+     generated (widl's RPC stubs, flex) now order the cell. **Proof:** 246 of 246 engine
+     objects byte-identical to the cmake objects snapshotted before the move, all three
+     arches (bmfd, whose objects were not in the tree to snapshot, rests on the encoder's
+     check). In a cmake build the command is cmake's own, run from `build-<arch>` through
+     ccache, so it hits cmake's cache entries.
+   - **Owed (6a):** acgenral and opengl32, whose shims lists are arch-guarded (`${<M>_SHIMS}`),
+     still replay; so do the shared C libraries cells link (`rtl`, `blrtl`, `libcntpr`,
+     `win32k_residue` through `c_from_compile_db`; wine, uuid, conutils and the `engine:c:`
+     set through `replay_target`). Their recipe (sources in archive order + part) belongs in
+     committed data under reactos-link, generated and checked like the templates; five of
+     them carry asm, whose rule needs its own template.
+   - **6b, owed: the generated SDK.** A C compile with no cmake build reads psdk's ~200
+     widl headers, and the generated sources need widl (RPC stubs for nine services,
+     uuid's 77 `_i.c`, wscript's typelib), wmc (four message `.rc`s) and flex (winhlp32).
+     The plan: the orchestrator's configure step self-hosts those host tools and generates
+     the SDK into `$VIBEOS_GEN_DIR`, which `@build/` then names.
+   - **The measurement that sizes it (2026-10-17):** with the engine forced cmake-off,
+     every cell whose only cmake input was its resources builds byte-identical to cmake's
+     link (beep, cacls, winmine, checked); every failure was a `c_from_compile_db` with no
+     committed flags (now `c_compiled`, which still needs 6b's SDK cmake-off) or an mc
+     `.rc`. `cargo_orchestrate.py --manifest --jobs N` builds the cells in parallel
+     through the artifact store, so a full sweep is one command.
 
 ## How a wave goes (the default for every new module)
 

@@ -9,14 +9,10 @@ include_directories(${REACTOS_SOURCE_DIR}/vendor/treelist)
 # spapisup/infsupp.c  # replaced by Rust (sdk/lib/rust/reactos-rust/src/reactos/infsupp.rs)
 # drivepage.c  # replaced by Rust (sdk/lib/rust/reactos-rust/src/reactos/drivepage.rs)
 # reactos.c  # replaced by Rust (sdk/lib/rust/reactos-rust/src/reactos/reactos.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(reactos_shims OBJECT rust_varargs_shim.c ${REACTOS_SOURCE_DIR}/vendor/treelist/treelist.c)
-target_link_libraries(reactos_shims PRIVATE uuid zlib_solo libadvapi32 libgdi32 libuser32 libcomctl32 libshlwapi libsetupapi libmsvcrt libkernel32 libntdll)
-target_compile_definitions(reactos_shims PRIVATE UNICODE _UNICODE)
 add_cargo_module(reactos reactos-cargo reactos.exe
     KIND win32exe
     BODY_CRATE reactos-rust
     NO_CD
     DELAY_IMPORTS
-    EXTRA_DEPENDS reactos_shims uuid_sources psdk)
+    EXTRA_DEPENDS uuid_sources psdk uuid zlib_solo libadvapi32 libgdi32 libuser32 libcomctl32 libshlwapi libsetupapi libmsvcrt libkernel32 libntdll)
 add_cargo_cd_file(reactos DESTINATION reactos NO_CAB FOR bootcd)

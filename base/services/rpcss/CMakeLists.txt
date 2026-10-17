@@ -16,14 +16,8 @@ endif()
 # irotp.c  # replaced by Rust (sdk/lib/rust/rpcss-rust/src/rpcss/irotp.rs)
 # rpcss_main.c  # replaced by Rust (sdk/lib/rust/rpcss-rust/src/rpcss/rpcss_main.rs)
 # setup.c  # replaced by Rust (sdk/lib/rust/rpcss-rust/src/rpcss/setup.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(rpcss_shims OBJECT ${CMAKE_CURRENT_BINARY_DIR}/epm_s.c ${CMAKE_CURRENT_BINARY_DIR}/irot_s.c ${CMAKE_CURRENT_BINARY_DIR}/irpcss_s.c)
-target_link_libraries(rpcss_shims PRIVATE wine libadvapi32 librpcrt4 libmsvcrt libkernel32 libntdll)
-target_compile_definitions(rpcss_shims PRIVATE UNICODE _UNICODE)
-# How cmake compiled the target's sources, now on the OBJECT libraries.
-target_compile_options(rpcss_shims PRIVATE "-Wno-cast-calling-convention")
 add_cargo_module(rpcss rpcss-cargo rpcss.exe
     KIND win32exe
     BODY_CRATE rpcss-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS rpcss_shims psdk)
+    EXTRA_DEPENDS psdk wine libadvapi32 librpcrt4 libmsvcrt libkernel32 libntdll ${REACTOS_BINARY_DIR}/base/services/rpcss/epm_s.c ${REACTOS_BINARY_DIR}/base/services/rpcss/irot_s.c ${REACTOS_BINARY_DIR}/base/services/rpcss/irpcss_s.c)

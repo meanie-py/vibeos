@@ -4,11 +4,8 @@
 # The translated C, kept on disk:
 # replace.c  # replaced by Rust (sdk/lib/rust/replace-rust/src/replace/replace.rs)
 # util.c  # replaced by Rust (sdk/lib/rust/replace-rust/src/replace/util.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(replace_shims OBJECT rust_varargs_shim.c)
-target_compile_definitions(replace_shims PRIVATE UNICODE _UNICODE)
 add_cargo_module(replace replace-cargo replace.exe
     KIND win32exe
     BODY_CRATE replace-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS replace_shims xdk psdk)
+    EXTRA_DEPENDS xdk psdk)

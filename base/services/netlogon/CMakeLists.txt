@@ -10,12 +10,8 @@ add_definitions(-DWIN32_LEAN_AND_MEAN=)
 # The translated C, kept on disk:
 # netlogon.c  # replaced by Rust (sdk/lib/rust/netlogon-rust/src/netlogon/netlogon.rs)
 # rpcserver.c  # replaced by Rust (sdk/lib/rust/netlogon-rust/src/netlogon/rpcserver.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(netlogon_shims OBJECT ${CMAKE_CURRENT_BINARY_DIR}/netlogon_s.c)
-target_link_libraries(netlogon_shims PRIVATE wine libadvapi32 librpcrt4 libmsvcrt libkernel32 libntdll)
-target_compile_definitions(netlogon_shims PRIVATE UNICODE _UNICODE)
 add_cargo_module(netlogon netlogon-cargo netlogon.dll
     KIND win32dll
     BODY_CRATE netlogon-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS netlogon_shims psdk)
+    EXTRA_DEPENDS psdk wine libadvapi32 librpcrt4 libmsvcrt libkernel32 libntdll ${REACTOS_BINARY_DIR}/base/services/netlogon/netlogon_s.c)

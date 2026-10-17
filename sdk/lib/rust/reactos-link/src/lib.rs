@@ -62,6 +62,8 @@ mod storage;
 mod body_storage;
 mod rc;
 use rc::RcSpec;
+mod c_rule;
+use c_rule::CSpec;
 mod artifact_store;
 
 // ---- cmake-off `--trace` (ninja-`-v`-style command list) ------------------
@@ -559,6 +561,9 @@ pub struct Linker {
     /// per-arch template (`cflags/rc.<arch>.flags`) and the module's own includes,
     /// extra flags and defines (see `rc`). No cmake target behind it.
     rc: Option<RcSpec>,
+    /// C libraries the engine compiles with cmake's C rule rebuilt from the committed
+    /// `cflags/c.<arch>.flags` and their own part (see `c_compiled`).
+    c_compiled: Vec<CSpec>,
     spec: Option<(String, String)>,
     link_stubs: bool,
     static_libs: Vec<String>,
@@ -654,6 +659,7 @@ impl Linker {
             resource_built: None,
             resource_from_rc: None,
             rc: None,
+            c_compiled: Vec::new(),
             spec: None,
             link_stubs: false,
             static_libs: Vec::new(),
@@ -751,6 +757,10 @@ impl Linker {
                 link_arg!(self, "{}", lib_a.display());
             }
             } // end else (cmake build configured → compile_commands.json replay)
+        }
+        for spec in &self.c_compiled {
+            let lib_a = self.compile_c_spec(spec, ar);
+            link_arg!(self, "{}", lib_a.display());
         }
         // Pre-expanded asm assembled into on-demand archives, IN the group
         // alongside the cmake C archives (same archive semantics + layout
@@ -1025,6 +1035,32 @@ impl Linker {
         let own = |v: &[&str]| v.iter().map(|x| x.to_string()).collect();
         self.rc = Some(RcSpec {
             rc_rel: rc_rel.to_string(),
+            includes: own(includes),
+            flags: own(flags),
+            defines: own(defines),
+        });
+        self
+    }
+
+    /// `lib<name>.a` from `sources`, compiled with cmake's C rule:
+    /// `<CC> --target <sorted defines> <includes> <flags> -o obj -c src`, where the
+    /// compiler, the standard include run (`@std`), the core flags (`@core`) and the
+    /// global defines come from `cflags/c.<arch>.flags` and the rest is this library's,
+    /// as tools/cargo_cell_gen.py read it from cmake's own commands. Linked where
+    /// `c_from_compile_db` archives go. `@build/<rel>` names a generated source or a
+    /// build-tree include; `{REPO}`/`{BUILD}` in a flag are the roots.
+    pub fn c_compiled(
+        mut self,
+        name: &str,
+        sources: &[&str],
+        includes: &[&str],
+        flags: &[&str],
+        defines: &[&str],
+    ) -> Self {
+        let own = |v: &[&str]| v.iter().map(|x| x.to_string()).collect();
+        self.c_compiled.push(CSpec {
+            name: name.to_string(),
+            sources: own(sources),
             includes: own(includes),
             flags: own(flags),
             defines: own(defines),

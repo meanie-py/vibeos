@@ -8,12 +8,8 @@ spec2def(srvsvc.dll srvsvc.spec ADD_IMPORTLIB)
 # The translated C, kept on disk:
 # rpcserver.c  # replaced by Rust (sdk/lib/rust/srvsvc-rust/src/srvsvc/rpcserver.rs)
 # srvsvc.c  # replaced by Rust (sdk/lib/rust/srvsvc-rust/src/srvsvc/srvsvc.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(srvsvc_shims OBJECT ${CMAKE_CURRENT_BINARY_DIR}/srvsvc_s.c)
-target_link_libraries(srvsvc_shims PRIVATE wine libadvapi32 librpcrt4 libmsvcrt libkernel32 libntdll)
-target_compile_definitions(srvsvc_shims PRIVATE UNICODE _UNICODE)
 add_cargo_module(srvsvc srvsvc-cargo srvsvc.dll
     KIND win32dll
     BODY_CRATE srvsvc-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS srvsvc_shims psdk)
+    EXTRA_DEPENDS psdk wine libadvapi32 librpcrt4 libmsvcrt libkernel32 libntdll ${REACTOS_BINARY_DIR}/base/services/srvsvc/srvsvc_s.c)

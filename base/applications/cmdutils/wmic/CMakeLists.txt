@@ -5,13 +5,8 @@
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # main.c  # replaced by Rust (sdk/lib/rust/wmic-rust/src/wmic/main.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(wmic_shims OBJECT rust_varargs_shim.c)
-target_compile_definitions(wmic_shims PRIVATE UNICODE _UNICODE)
-# How cmake compiled the target's sources, now on the OBJECT libraries.
-set_wine_module_fixme(wmic_shims)
 add_cargo_module(wmic wmic-cargo wmic.exe
     KIND win32exe
     BODY_CRATE wmic-rust
     DESTINATION reactos/system32/wbem
-    EXTRA_DEPENDS wmic_shims psdk)
+    EXTRA_DEPENDS psdk)

@@ -3,11 +3,8 @@
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # label.c  # replaced by Rust (sdk/lib/rust/label-rust/src/label/label.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(label_shims OBJECT rust_varargs_shim.c)
-target_compile_definitions(label_shims PRIVATE UNICODE _UNICODE)
 add_cargo_module(label label-cargo label.exe
     KIND win32exe
     BODY_CRATE label-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS label_shims xdk psdk)
+    EXTRA_DEPENDS xdk psdk)

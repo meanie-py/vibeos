@@ -27,12 +27,9 @@ list(APPEND SOURCE
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # guid.c  # replaced by Rust (sdk/lib/rust/storport-rust/src/storport/guid.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(storport_shims OBJECT rust_varargs_shim.c)
-target_link_libraries(storport_shims PRIVATE libntoskrnl libhal)
 add_cargo_module(storport storport-cargo storport.sys
     KIND kernelmodedriver
     BODY_CRATE storport-rust
     DESTINATION reactos/system32/drivers
     NO_CAB
-    EXTRA_DEPENDS storport_shims psdk)
+    EXTRA_DEPENDS psdk libntoskrnl libhal)

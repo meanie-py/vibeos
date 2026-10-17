@@ -13,12 +13,8 @@ include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_or
 # interpreter.c  # replaced by Rust (sdk/lib/rust/netsh-rust/src/netsh/interpreter.rs)
 # netsh.c  # replaced by Rust (sdk/lib/rust/netsh-rust/src/netsh/netsh.rs)
 # wmi.c  # replaced by Rust (sdk/lib/rust/netsh-rust/src/netsh/wmi.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(netsh_shims OBJECT rust_varargs_shim.c)
-target_link_libraries(netsh_shims PRIVATE conutils libole32 liboleaut32 libiphlpapi libadvapi32 libmsvcrt libkernel32 libntdll)
-target_compile_definitions(netsh_shims PRIVATE UNICODE _UNICODE)
 add_cargo_module(netsh netsh-cargo netsh.exe
     KIND win32exe
     BODY_CRATE netsh-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS netsh_shims xdk psdk)
+    EXTRA_DEPENDS xdk psdk conutils libole32 liboleaut32 libiphlpapi libadvapi32 libmsvcrt libkernel32 libntdll)

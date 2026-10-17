@@ -6,11 +6,8 @@
 # misc.c  # replaced by Rust (sdk/lib/rust/mmc-rust/src/mmc/misc.rs)
 # mmc.c  # replaced by Rust (sdk/lib/rust/mmc-rust/src/mmc/mmc.rs)
 # mscfile.c  # replaced by Rust (sdk/lib/rust/mmc-rust/src/mmc/mscfile.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(mmc_shims OBJECT rust_varargs_shim.c)
-target_compile_definitions(mmc_shims PRIVATE UNICODE _UNICODE)
 add_cargo_module(mmc mmc-cargo mmc.exe
     KIND win32exe
     BODY_CRATE mmc-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS mmc_shims uuid_sources psdk)
+    EXTRA_DEPENDS uuid_sources psdk)

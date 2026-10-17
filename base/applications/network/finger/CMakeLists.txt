@@ -8,10 +8,8 @@ add_definitions(-D__USE_W32_SOCKETS)
 # err.c  # replaced by Rust (sdk/lib/rust/finger-rust/src/finger/err.rs)
 # getopt.c  # replaced by Rust (sdk/lib/rust/finger-rust/src/finger/getopt.rs)
 # net.c  # replaced by Rust (sdk/lib/rust/finger-rust/src/finger/net.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(finger_shims OBJECT rust_varargs_shim.c)
 add_cargo_module(finger finger-cargo finger.exe
     KIND win32exe
     BODY_CRATE finger-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS finger_shims psdk)
+    EXTRA_DEPENDS psdk)

@@ -11,13 +11,8 @@ add_definitions(-DWITH_SSL)
 # connectdialog.c  # replaced by Rust (sdk/lib/rust/mstsc-rust/src/mstsc/connectdialog.rs)
 # settings.c  # replaced by Rust (sdk/lib/rust/mstsc-rust/src/mstsc/settings.rs)
 # The C still compiled, in an OBJECT library whose compile the cargo link replays.
-# How cmake compiled the target's sources, now on the OBJECT libraries.
-add_library(mstsc_shims OBJECT ${REACTOS_SOURCE_DIR}/vendor/rdesktop/asn.c ${REACTOS_SOURCE_DIR}/vendor/rdesktop/bitmap.c ${REACTOS_SOURCE_DIR}/vendor/rdesktop/bsops.c ${REACTOS_SOURCE_DIR}/vendor/rdesktop/cache.c ${REACTOS_SOURCE_DIR}/vendor/rdesktop/channels.c ${REACTOS_SOURCE_DIR}/vendor/rdesktop/iso.c ${REACTOS_SOURCE_DIR}/vendor/rdesktop/licence.c ${REACTOS_SOURCE_DIR}/vendor/rdesktop/mcs.c ${REACTOS_SOURCE_DIR}/vendor/rdesktop/mppc.c ${REACTOS_SOURCE_DIR}/vendor/rdesktop/orders.c ${REACTOS_SOURCE_DIR}/vendor/rdesktop/pstcache.c ${REACTOS_SOURCE_DIR}/vendor/rdesktop/rdp5.c ${REACTOS_SOURCE_DIR}/vendor/rdesktop/rdp.c ${REACTOS_SOURCE_DIR}/vendor/rdesktop/secure.c ${REACTOS_SOURCE_DIR}/vendor/rdesktop/ssl_calls.c ${REACTOS_SOURCE_DIR}/vendor/rdesktop/tcp.c ${REACTOS_SOURCE_DIR}/vendor/rdesktop/uimain.c ${REACTOS_SOURCE_DIR}/vendor/rdesktop/win32.c)
-target_link_libraries(mstsc_shims PRIVATE libuser32 libgdi32 libcomctl32 libws2_32 libcrypt32 libsecur32 libadvapi32 libshell32 libole32 libcomdlg32 libmsvcrt libkernel32)
-target_compile_definitions(mstsc_shims PRIVATE UNICODE _UNICODE)
-target_compile_definitions(mstsc_shims PRIVATE _CRT_NON_CONFORMING_SWPRINTFS)
 add_cargo_module(mstsc mstsc-cargo mstsc.exe
     KIND win32exe
     BODY_CRATE mstsc-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS mstsc_shims psdk)
+    EXTRA_DEPENDS psdk libuser32 libgdi32 libcomctl32 libws2_32 libcrypt32 libsecur32 libadvapi32 libshell32 libole32 libcomdlg32 libmsvcrt libkernel32)

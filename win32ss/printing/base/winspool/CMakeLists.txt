@@ -20,12 +20,8 @@ spec2def(winspool.drv winspool.spec ADD_IMPORTLIB)
 # printproviders.c  # replaced by Rust (sdk/lib/rust/winspool-rust/src/winspool/printproviders.rs)
 # spoolfile.c  # replaced by Rust (sdk/lib/rust/winspool-rust/src/winspool/spoolfile.rs)
 # utils.c  # replaced by Rust (sdk/lib/rust/winspool-rust/src/winspool/utils.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(winspool_shims OBJECT ${CMAKE_CURRENT_BINARY_DIR}/winspool_c.c)
-target_link_libraries(winspool_shims PRIVATE wine libadvapi32 libgdi32 libuser32 librpcrt4 libmsvcrt libkernel32 libntdll)
-target_compile_definitions(winspool_shims PRIVATE UNICODE _UNICODE)
 add_cargo_module(winspool winspool-cargo winspool.drv
     KIND win32dll
     BODY_CRATE winspool-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS winspool_shims psdk)
+    EXTRA_DEPENDS psdk wine libadvapi32 libgdi32 libuser32 librpcrt4 libmsvcrt libkernel32 libntdll ${REACTOS_BINARY_DIR}/win32ss/printing/base/winspool/winspool_c.c)
