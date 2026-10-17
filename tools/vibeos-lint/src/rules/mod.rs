@@ -5,6 +5,7 @@ pub mod double_fetch;
 pub mod dowhile_continue;
 pub mod fnptr_abi_transmute;
 pub mod hresult_literals;
+pub mod shadowed_c_define;
 pub mod info_class_literals;
 pub mod init_then_move;
 pub mod let_shadow;
@@ -51,6 +52,7 @@ pub mod store_on_failure;
 
 pub fn registry() -> Vec<Box<dyn Rule>> {
     vec![
+        Box::new(shadowed_c_define::ShadowedCDefine),
         Box::new(store_on_failure::StoreOnFailure),
         Box::new(dropped_null_guard::DroppedNullGuard),
         Box::new(ptr_byte_diff::PtrByteDiff),

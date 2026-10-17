@@ -3293,6 +3293,15 @@ as u32` on its flush SRB: 0x20000000 as `u16` is 0. classpnp then freed an SRB t
 device extension, and the first flush bugchecked 0xC2. rustc's overflow lint covers literals,
 never `CONST as u16`; `scan_const_narrowing_cast` does (gated at zero; all-ones narrowing, the
 WEOF and fill-byte idiom, is allowed).
+**A C macro carried across as a local `const` gets a value from memory.** balmgr.rs had
+`THREAD_BOOST_PRIORITY: ULONG = 23` where balmgr.c says `(LOW_REALTIME_PRIORITY - 1)` = 15, so
+the starvation boost lifted dynamic threads into the realtime range, where they never decay;
+it surfaced only when the restored `KiComputeNewPriority` ASSERT fired under kmtest. The same
+crate can hold both values: `ke/i386/cpu.rs` has `NPX_STATE_NOT_LOADED = 0xA` and
+`traphdlr.rs` `= CR0_TS` (8). `scan_shadowed_c_define` (native Rust rule) evaluates every
+object-like `#define` visible to the crate (shared headers plus its own module's C tree) and
+flags a Rust `const` of the same name whose value differs at the declared width; its baseline
+is the triage queue, and some entries are deliberate self-consistent re-encodings.
 - **Fix deterministically:** `ntkrnl_sys::bugcodes::NAME` from `tools/gen_bugcodes.py`;
   `tools/rustconv/rustconv/verify_constants.py` (`--enums`, `--fix`) against a header catalog;
   `tools/scan_bugcheck_codes.py` (empty baseline, gate-wired).
