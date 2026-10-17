@@ -1,6 +1,6 @@
 use crate::ntoskrnl_vista::fsrtl::PECP_LIST;
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{DEVPROPKEY, DEVPROPTYPE, IoQueueWorkItem, LCID, MmGetSystemRoutineAddress, PDEVICE_OBJECT, PIO_WORKITEM, PIO_WORKITEM_ROUTINE_EX, PIRP, PUNICODE_STRING, RtlInitUnicodeString};
+use ntkrnl_sys::ddk::{DEVPROPKEY, DEVPROPTYPE, IoQueueWorkItem, LCID, PDEVICE_OBJECT, PIO_WORKITEM, PIO_WORKITEM_ROUTINE_EX, PIRP, PUNICODE_STRING};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -59,77 +59,10 @@ pub unsafe extern "system" fn IoQueueWorkItemEx(
 
 // IoSet/GetDevicePropertyData are ntoskrnl exports now (pnpmgr-rust).
 
-type PSET_INTERFACE_PROPERTY_ROUTINE = unsafe extern "system" fn(
-    PUNICODE_STRING,
-    *const DEVPROPKEY,
-    LCID,
-    ULONG,
-    DEVPROPTYPE,
-    ULONG,
-    PVOID,
-) -> NTSTATUS;
-type PGET_INTERFACE_PROPERTY_ROUTINE = unsafe extern "system" fn(
-    PUNICODE_STRING,
-    *const DEVPROPKEY,
-    LCID,
-    ULONG,
-    ULONG,
-    PVOID,
-    PULONG,
-    *mut DEVPROPTYPE,
-) -> NTSTATUS;
-
-/// The kernel export `name`, looked up once (upstream 3cc9aa99292: "it only exists on
-/// NT 6.2+", so a driver linking this library still loads on a kernel without it).
-unsafe fn system_routine(cache: *mut PVOID, name: &[u16]) -> PVOID {
-    if (*cache).is_null() {
-        let mut RoutineName: UNICODE_STRING = core::mem::zeroed();
-        RtlInitUnicodeString(&mut RoutineName, name.as_ptr());
-        *cache = MmGetSystemRoutineAddress(&mut RoutineName);
-    }
-    *cache
-}
-
-static mut SetRoutine: PVOID = core::ptr::null_mut();
-static mut GetRoutine: PVOID = core::ptr::null_mut();
-
-/// Forward to the kernel export when present, it only exists on NT 6.2+.
-#[no_mangle]
-pub unsafe extern "system" fn IoSetDeviceInterfacePropertyData(
-    SymbolicLinkName: PUNICODE_STRING,
-    PropertyKey: *const DEVPROPKEY,
-    Lcid: LCID,
-    Flags: ULONG,
-    Type: DEVPROPTYPE,
-    Size: ULONG,
-    Data: PVOID,
-) -> NTSTATUS {
-    let routine = system_routine(&raw mut SetRoutine, ntkrnl_sys::w!("IoSetDeviceInterfacePropertyData"));
-    if routine.is_null() {
-        return STATUS_NOT_IMPLEMENTED;
-    }
-    let routine: PSET_INTERFACE_PROPERTY_ROUTINE = core::mem::transmute(routine);
-    routine(SymbolicLinkName, PropertyKey, Lcid, Flags, Type, Size, Data)
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn IoGetDeviceInterfacePropertyData(
-    SymbolicLinkName: PUNICODE_STRING,
-    PropertyKey: *const DEVPROPKEY,
-    Lcid: LCID,
-    Flags: ULONG,
-    Size: ULONG,
-    Data: PVOID,
-    RequiredSize: PULONG,
-    Type: *mut DEVPROPTYPE,
-) -> NTSTATUS {
-    let routine = system_routine(&raw mut GetRoutine, ntkrnl_sys::w!("IoGetDeviceInterfacePropertyData"));
-    if routine.is_null() {
-        return STATUS_NOT_IMPLEMENTED;
-    }
-    let routine: PGET_INTERFACE_PROPERTY_ROUTINE = core::mem::transmute(routine);
-    routine(SymbolicLinkName, PropertyKey, Lcid, Flags, Size, Data, RequiredSize, Type)
-}
+// IoSet/GetDeviceInterfacePropertyData are ntoskrnl exports too (pnpprop.rs). Upstream's
+// io.c forwards to the kernel export through MmGetSystemRoutineAddress because it may be
+// absent (it is NT 6.2+); this kernel always has it, so a copy here would only shadow the
+// import (scan_export_shadows), as the IoSet/GetDevicePropertyData ones did.
 #[no_mangle]
 pub unsafe extern "system" fn IoGetIoPriorityHint(Irp: PIRP) -> IO_PRIORITY_HINT {
     let _ = Irp;
