@@ -1475,3 +1475,27 @@ def test_an_enumerator_the_crate_also_binds_is_spelled_prefixed(tmp_path):
 
 def test_a_module_with_no_functions_has_no_fn_chunks():
     assert port._fn_chunks("pub const A: u32 = 1;\n") == []
+
+
+def test_a_replay_names_the_unbanked_functions_it_changed():
+    """wscript's Host_Echo fix (BSTR-sized array) was never banked; a replay reverted it and
+    still compiled on all three arches. The replay now names what it changed unbanked."""
+    from rustconv.port import unbanked_changes
+
+    before = {
+        "host.rs": (
+            'unsafe extern "system" fn Host_Echo() {\n    calloc(n, size_of::<BSTR>());\n}\n\n'
+            "fn kept() {}\n\npub unsafe fn banked() { 1 }\n\nfn lost() {}\n"
+        ),
+        "main.rs": "fn whole() { 1 }\n",
+    }
+    after = {
+        "host.rs": (
+            'unsafe extern "system" fn Host_Echo() {\n    calloc(n, size_of::<OLECHAR>());\n}\n\n'
+            "fn kept() {}\n\npub unsafe fn banked() { 2 }\n"
+        ),
+        "main.rs": "fn whole() { 2 }\n",
+    }
+    banked = {("host.rs", "banked"), ("main.rs", "*")}
+    assert unbanked_changes(before, after, banked) == ["host.rs:Host_Echo", "host.rs:lost"]
+    assert unbanked_changes(before, before, set()) == []

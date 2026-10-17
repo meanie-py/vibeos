@@ -113,12 +113,30 @@ def test_bare_enumerator_aliases_the_island_constant(tmp_path):
 def test_shared_macro_list_is_refreshed_in_place(tmp_path):
     src = tmp_path / "src"
     src.mkdir()
-    (src / "lib.rs").write_text("macro_rules! LOWORD {}\nmacro_rules! NEWONE {}\n")
+    (src / "lib.rs").write_text(
+        "#[macro_export]\nmacro_rules! LOWORD {}\n#[macro_export]\nmacro_rules! NEWONE {}\n"
+    )
     p = tmp_path / "prelude.rs"
     p.write_text("// x\npub use win32macros_rust::{LOWORD};\n// y\n")
     assert pr.refresh_shared_macros(p, src)
     assert "pub use win32macros_rust::{LOWORD, NEWONE};" in p.read_text()
     assert not pr.refresh_shared_macros(p, src)
+
+
+def test_a_local_macro_in_a_shared_crate_is_not_reexported(tmp_path):
+    """Only `#[macro_export]` macros are importable from a shared crate's root.
+    win32macros-rust's `wine_dbgstr_variant` defines a function-local `at!`; listed by name
+    it was E0432 in every prelude that refreshed (wscript, 2026-10-16)."""
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "lib.rs").write_text(
+        "#[macro_export]\n// why\n#[doc(hidden)]\nmacro_rules! LOWORD {}\n"
+        "pub fn f() {\n    macro_rules! at { () => {} }\n}\n"
+    )
+    p = tmp_path / "prelude.rs"
+    p.write_text("pub use win32macros_rust::{OLD};\n")
+    assert pr.refresh_shared_macros(p, src)
+    assert "pub use win32macros_rust::{LOWORD};" in p.read_text()
 
 
 def test_a_sibling_definition_is_imported_and_promoted(tmp_path):
@@ -160,7 +178,7 @@ def test_shared_constants_are_reexported_unless_the_prelude_defines_them(tmp_pat
     src = tmp_path / "src"
     src.mkdir()
     (src / "lib.rs").write_text(
-        "macro_rules! LOWORD {}\npub const INVALID_HANDLE_VALUE: HANDLE = 0;\n"
+        "#[macro_export]\nmacro_rules! LOWORD {}\npub const INVALID_HANDLE_VALUE: HANDLE = 0;\n"
         "pub const UNICODE_NULL: WCHAR = 0;\n"
     )
     p = tmp_path / "prelude.rs"
@@ -172,13 +190,15 @@ def test_shared_constants_are_reexported_unless_the_prelude_defines_them(tmp_pat
 def test_shared_crates_are_reexported_by_path_and_depended_on(tmp_path):
     ws = tmp_path
     (ws / "win32macros-rust" / "src").mkdir(parents=True)
-    (ws / "win32macros-rust" / "src" / "lib.rs").write_text("macro_rules! LOWORD {}\n")
+    (ws / "win32macros-rust" / "src" / "lib.rs").write_text(
+        "#[macro_export]\nmacro_rules! LOWORD {}\n"
+    )
     (ws / "strsafe-rust" / "src").mkdir(parents=True)
     (ws / "strsafe-rust" / "src" / "lib.rs").write_text(
-        'macro_rules! StringCchPrintfW {}\npub unsafe extern "system" fn StringCchCopyW() {}\n'
+        '#[macro_export]\nmacro_rules! StringCchPrintfW {}\npub unsafe extern "system" fn StringCchCopyW() {}\n'
     )
     (ws / "strsafe-rust" / "src" / "ntstrsafe.rs").write_text(
-        "pub unsafe fn RtlStringCchCopyW() {}\nmacro_rules! RtlStringCchPrintfW {}\n"
+        "pub unsafe fn RtlStringCchCopyW() {}\n#[macro_export]\nmacro_rules! RtlStringCchPrintfW {}\n"
     )
     crate = ws / "x-rust"
     (crate / "src").mkdir(parents=True)
@@ -223,7 +243,7 @@ def test_a_shared_name_the_prelude_already_imports_is_not_imported_again(tmp_pat
     ws = tmp_path
     (ws / "win32macros-rust" / "src").mkdir(parents=True)
     (ws / "win32macros-rust" / "src" / "lib.rs").write_text(
-        "macro_rules! LOWORD {}\npub unsafe fn heap_alloc() {}\n"
+        "#[macro_export]\nmacro_rules! LOWORD {}\npub unsafe fn heap_alloc() {}\n"
     )
     crate = ws / "x-rust"
     (crate / "src").mkdir(parents=True)
