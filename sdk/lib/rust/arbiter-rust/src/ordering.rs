@@ -206,7 +206,7 @@ unsafe extern "C" fn ArbpOpenPolicySubkey(SubkeyName: PCWSTR, KeyHandle: PHANDLE
         [0; ARBP_POLICY_ROOT.len() + ARBP_LONGEST_SUBKEY.len() - 1];
     let mut KeyPath: _UNICODE_STRING = core::mem::zeroed();
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
-    let mut Status: NTSTATUS = 0;
+    let mut Status: NTSTATUS;
 
     RtlInitEmptyUnicodeString(
         &raw mut KeyPath,
@@ -236,7 +236,7 @@ unsafe extern "C" fn ArbpReadPolicyValue(
     Value: *mut PKEY_VALUE_FULL_INFORMATION,
 ) -> NTSTATUS {
     let mut NameString: _UNICODE_STRING = core::mem::zeroed();
-    let mut Buffer: PKEY_VALUE_FULL_INFORMATION = core::ptr::null_mut();
+    let mut Buffer: PKEY_VALUE_FULL_INFORMATION;
     let mut Size: ULONG = 0;
     let mut ResultLength: ULONG = 0;
     let mut Status: NTSTATUS;

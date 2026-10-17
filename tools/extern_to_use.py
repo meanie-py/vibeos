@@ -67,13 +67,20 @@ def find_defs(files: dict[str, str], names: list[str]) -> dict[str, str]:
     """name -> the module that defines it. Refuses a name defined zero or several times."""
     out = {}
     for n in names:
-        hits = [
-            m
+        defs = [
+            (m, d)
             for m, t in files.items()
-            if any(_has_body(t, d.end()) for d in re.finditer(DEF.format(n=n), t, re.M))
+            for d in re.finditer(DEF.format(n=n), t, re.M)
+            if _has_body(t, d.end())
         ]
+        hits = sorted({m for m, _ in defs})
         if len(hits) != 1:
             raise SystemExit(f"{n}: defined in {hits or 'no module'}; pass --to <module>")
+        # A definition under `#[cfg(..)]` does not exist on every target, so a `use` of it
+        # fails where it is compiled out: cdrom's KeQueryTickCount is defined only off i386
+        # (a real kernel export there), and the declarations it replaced were the i386 path.
+        if any(re.search(r"#\[cfg\(", d.group(0)) for _, d in defs):
+            raise SystemExit(f"{n}: its definition is cfg-gated; declare the other targets' path")
         out[n] = hits[0]
     return out
 

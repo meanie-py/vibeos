@@ -374,6 +374,14 @@ def unit_staleness(fpdir: Path, repo: Path) -> str:
     if not dfile.is_file():
         return f"no dep-info {dfile.name}"
     built = stamp.stat().st_mtime
+    # The manifest is not in the dep-info, yet a `[features]` or `[lints]` change alters the
+    # diagnostics: conutils' newly declared `USE_CRT` read as fresh, still warning, because no
+    # consumer was rebuilt (2026-10-17).
+    manifest = _package_dirs(repo).get(m["crate"])
+    if manifest is not None:
+        toml = manifest / "Cargo.toml"
+        if toml.is_file() and toml.stat().st_mtime > built:
+            return f"{toml.relative_to(repo).as_posix()} changed since the build"
     for dep in _dep_paths(dfile):
         src = _resolve(dep, repo, m["crate"])
         if src is None or not src.exists():

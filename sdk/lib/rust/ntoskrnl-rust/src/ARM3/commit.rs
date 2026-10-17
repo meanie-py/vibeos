@@ -13,8 +13,11 @@
 //!   * `SEGMENT::NumberOfCommittedPages`: the charges for a pagefile-backed section, returned
 //!     when the segment is deleted.
 //!
-//! Not charged yet (owed): copy-on-write pages of image and file views, PEB/TEB pages, and
-//! kernel pool. The limit leaves headroom for them (mminit.rs).
+//!   * PEB and TEB pages (procsup.rs `MiCreatePebOrTebCapped`); a TEB's charge comes back in
+//!     `MmDeleteTeb`, a PEB's with the process's ledger.
+//!
+//! Not charged yet (owed): copy-on-write pages of image and file views, and kernel pool. The
+//! limit leaves headroom for them (mminit.rs).
 
 use core::ptr::addr_of_mut;
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};

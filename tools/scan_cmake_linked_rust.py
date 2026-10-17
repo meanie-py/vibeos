@@ -33,11 +33,35 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import cargo_cell_gen
 
 
+def _source_facts(repo: Path) -> tuple[set[str], set[str]]:
+    """(targets handed to add_cargo_module, targets whose defining file has a stub).
+
+    The survey reads build.ninja, which only a configure refreshes, so it can describe a
+    tree that no longer exists in either direction: a module converted since (its cmake
+    edge is still there) or one whose flip is not in this tree at all (an integration
+    batch re-created without the lane that flipped it: blue.c and font.c compiled again,
+    while the graph still had blue's stub-only link). A finding needs the source to agree:
+    not a cargo cell, and defined in a cmake file that still compiles rust_cohab_stub.
+    """
+    cells: set[str] = set()
+    stubbed: set[str] = set()
+    for cm in [*repo.glob("**/CMakeLists.txt"), *repo.glob("**/*.cmake")]:
+        if cm.parts[len(repo.parts)].startswith(("build-", ".")):
+            continue
+        text = cm.read_text(errors="replace")
+        if "add_cargo_module" in text:
+            cells.update(re.findall(r"add_cargo_module\(\s*([\w.+-]+)", text))
+        if "rust_cohab_stub" in text:
+            stubbed.update(re.findall(r"add_(?:library|executable)\(\s*([\w.+-]+)", text))
+    return cells, stubbed
+
+
 def main() -> int:
     if not (cargo_cell_gen.REPO / "build-amd64/build.ninja").is_file():
         print("FATAL: no build-amd64/build.ninja; fix: ./vibeos-cli build --arch amd64")
         return 2
-    rows = cargo_cell_gen.survey()
+    cells, stubbed = _source_facts(cargo_cell_gen.REPO)
+    rows = [(t, v) for t, v in cargo_cell_gen.survey() if t not in cells and t in stubbed]
     for target, verdict in rows:
         label = "convertible" if verdict.startswith("OK") else "refused"
         print(f"{target}: fully-Rust module still linked by cmake ({label})")
