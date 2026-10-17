@@ -632,15 +632,27 @@ unsafe fn ExpGetRawSMBiosTable(
     }
 
     let mut FinalStatus = STATUS_SUCCESS;
-    // WNODE_ALL_DATA: a 48-byte WNODE_HEADER (identical on all three arches: its unions
-    // hold a ULONG64 and a LARGE_INTEGER), then DataBlockOffset, InstanceCount,
-    // OffsetInstanceNameOffsets and FixedInstanceSize. The C copies FixedInstanceSize
-    // bytes from the data block; this used to strip a guessed 64-byte header and take
-    // the rest of the buffer as the table.
-    const WNODE_DATA_BLOCK_OFFSET: usize = 48;
-    const WNODE_FIXED_INSTANCE_SIZE: usize = 60;
-    let DataOffset = *((AllData as *const u8).add(WNODE_DATA_BLOCK_OFFSET) as *const ULONG);
-    let TableSize = *((AllData as *const u8).add(WNODE_FIXED_INSTANCE_SIZE) as *const ULONG);
+    // wmistr.h's WNODE_ALL_DATA up to FixedInstanceSize (the provider fills the
+    // fixed-instance arm of its union). The C copies FixedInstanceSize bytes from the
+    // data block; this used to strip a guessed 64-byte header and take the rest of the
+    // buffer as the table.
+    #[repr(C)]
+    struct WnodeAllData {
+        BufferSize: ULONG,
+        ProviderId: ULONG,
+        HistoricalContext: u64,
+        TimeStamp: i64,
+        Guid: ntkrnl_sys::ddk::GUID,
+        ClientContext: ULONG,
+        Flags: ULONG,
+        DataBlockOffset: ULONG,
+        InstanceCount: ULONG,
+        OffsetInstanceNameOffsets: ULONG,
+        FixedInstanceSize: ULONG,
+    }
+    let Wnode = AllData as *const WnodeAllData;
+    let DataOffset = (*Wnode).DataBlockOffset;
+    let TableSize = (*Wnode).FixedInstanceSize;
     *OutSize = TableSize;
 
     if !Buffer.is_null() {
