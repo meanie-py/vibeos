@@ -27,6 +27,8 @@
 #![allow(unused_unsafe, dead_code, unused_variables, unused_mut, unused_assignments, unused_macros)]
 
 use core::ffi::c_void;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::prelude::FindActCtxSectionGuid;
 use core::mem::size_of;
 use core::ptr::{null, null_mut};
 
@@ -677,10 +679,6 @@ extern "system" {
         lpPath: LPCWSTR, lpFileName: LPCWSTR, lpExtension: LPCWSTR, nBufferLength: DWORD,
         lpBuffer: LPWSTR, lpFilePart: *mut LPWSTR,
     ) -> DWORD;
-    fn FindActCtxSectionGuid(
-        dwFlags: DWORD, lpExtensionGuid: *const GUID, ulSectionId: ULONG,
-        lpGuidToFind: *const GUID, ReturnedData: *mut ACTCTX_SECTION_KEYED_DATA,
-    ) -> BOOL;
     fn IsWow64Process(hProcess: HANDLE, Wow64Process: *mut BOOL) -> BOOL;
     fn GetCurrentProcess() -> HANDLE;
     fn lstrlenW(lpString: LPCWSTR) -> INT;
@@ -1000,8 +998,8 @@ pub(crate) unsafe fn query_typelib_path(
             0,
             null(),
             ACTIVATION_CONTEXT_SECTION_COM_TYPE_LIBRARY_REDIRECTION,
-            guid,
-            &raw mut data,
+            (guid).cast(),
+            (&raw mut data).cast(),
         ) != FALSE
         {
             let tlib = data.lpData as *mut tlibredirect_data;

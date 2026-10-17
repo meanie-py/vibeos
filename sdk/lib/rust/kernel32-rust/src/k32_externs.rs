@@ -13,6 +13,11 @@
 //! lone __cdecl callback (see k32_types).
 
 use ntdll_sys::nt::*;
+// The crate's own functions: the definition is the declaration.
+pub use crate::client::utils::Basep8BitStringToDynamicUnicodeString;
+pub use crate::client::handle::CloseHandle;
+pub use crate::file::create::CreateFileW;
+pub use crate::client::thread::ExitThread;
 
 extern "system" {
     /* ---- 1. kernel32 Base* helpers (kernel32.h) ----------------------- */
@@ -37,10 +42,6 @@ extern "system" {
     );
     pub fn BasepIsRealtimeAllowed(Keep: BOOLEAN) -> PVOID;
     pub fn BasepAnsiStringToHeapUnicodeString(AnsiString: LPCSTR, UnicodeString: *mut LPWSTR);
-    pub fn Basep8BitStringToDynamicUnicodeString(
-        UnicodeString: PUNICODE_STRING,
-        String: LPCSTR,
-    ) -> BOOLEAN;
     pub fn BaseComputeProcessDllPath(FullPath: LPWSTR, Environment: PVOID) -> LPWSTR;
     pub fn BaseComputeProcessExePath(FullPath: LPWSTR) -> LPWSTR;
     pub fn BaseIsDosApplication(PathName: PUNICODE_STRING, Status: NTSTATUS) -> ULONG;
@@ -109,16 +110,6 @@ extern "system" {
         lpBuffer: LPWSTR,
         lpFilePart: *mut LPWSTR,
     ) -> DWORD;
-    pub fn CreateFileW(
-        lpFileName: LPCWSTR,
-        dwDesiredAccess: DWORD,
-        dwShareMode: DWORD,
-        lpSecurityAttributes: LPSECURITY_ATTRIBUTES,
-        dwCreationDisposition: DWORD,
-        dwFlagsAndAttributes: DWORD,
-        hTemplateFile: HANDLE,
-    ) -> HANDLE;
-    pub fn CloseHandle(hObject: HANDLE) -> BOOL;
     pub fn GetLastError() -> DWORD;
     pub fn SetLastError(dwErrCode: DWORD);
     pub fn GetModuleHandleW(lpModuleName: LPCWSTR) -> HMODULE;
@@ -131,7 +122,6 @@ extern "system" {
         lpBuffer: LPWSTR,
         lpFilePart: *mut LPWSTR,
     ) -> DWORD;
-    pub fn ExitThread(dwExitCode: DWORD) -> !;
     pub fn UnhandledExceptionFilter(ExceptionInfo: LPEXCEPTION_POINTERS) -> LONG;
     pub fn IsBadWritePtr(lp: LPVOID, ucb: UINT_PTR) -> BOOL;
 

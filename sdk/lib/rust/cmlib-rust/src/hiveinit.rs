@@ -45,12 +45,11 @@
 //!   is local and properly ordered). ChunkSize source in HvpCreateHive (ChunkBase->Length not
 //!   ChunkBase->Length+HBASE_BLOCK) is inherited from the body-confusion bug and not reviewed
 //!   independently.
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, CmIsSelfHealEnabled, HBASE_BLOCK, HBIN, HCELL_INDEX, HHIVE, HMAP_ENTRY, PCELL_DATA, PCMHIVE, PCUNICODE_STRING, PFILE_FLUSH_ROUTINE, PFILE_READ_ROUTINE, PFILE_SET_SIZE_ROUTINE, PFILE_WRITE_ROUTINE, PFREE_ROUTINE, PHBASE_BLOCK, PHBIN, PHHIVE, PLARGE_INTEGER, HSTORAGE_TYPE_Stable as Stable, TimeStamp, HSTORAGE_TYPE_Volatile as Volatile, _HHIVE, _UNICODE_STRING, LARGE_INTEGER, PALLOCATE_ROUTINE};
+use ntkrnl_sys::ddk::{CmIsSelfHealEnabled, HBASE_BLOCK, HCELL_INDEX, HHIVE, HMAP_ENTRY, PCELL_DATA, PCMHIVE, PCUNICODE_STRING, PFILE_FLUSH_ROUTINE, PFILE_READ_ROUTINE, PFILE_SET_SIZE_ROUTINE, PFILE_WRITE_ROUTINE, PFREE_ROUTINE, PHBASE_BLOCK, PHBIN, PHHIVE, HSTORAGE_TYPE_Stable as Stable, HSTORAGE_TYPE_Volatile as Volatile, _UNICODE_STRING, LARGE_INTEGER, PALLOCATE_ROUTINE};
 #[cfg(not(feature = "bldr"))]
 use ntkrnl_sys::ddk::{FILE_STANDARD_INFORMATION, ZwQueryInformationFile, _FILE_INFORMATION_CLASS_FileStandardInformation, _IO_STATUS_BLOCK};
 use crate::glue::*;
@@ -58,7 +57,7 @@ use crate::hivewrt::HvSyncHiveFromRecover;
 use core::ffi::c_void;
 
 extern "C" {
-    fn DbgPrint(format: *const i8, ...) -> u32;
+    pub fn DbgPrint(format: *const i8, ...) -> u32;
 }
 
 // Pointer-width integer matching ULONG_PTR/SIZE_T on all arches.

@@ -9,35 +9,35 @@ the genuine-signal warnings are audited and fixed, and — critically — the fi
 **stay** fixed (no blanket re-suppression). Incremental, per-crate, each cluster gated ×3
 and landed on its own so conflicts stay localized and every step is revertible.
 
-## RESUME HERE (updated 2026-10-16)
+## RESUME HERE (updated 2026-10-17)
 
-**State.** The 2026-10-16 session closed four owed items and part of the UB tier, all in one
-landing (see "2026-10-16" below). The census on that tree read **7,215 sites (66 UB,
-1,362 LOGIC, 5,787 NOISE)**, with 668 units read and none stale, against 7,517 on 2026-10-12.
-`invalid_value` and `deref_nullptr` read 0, and the build now denies both (`rust_ub_deny`, a
-post-build stage that reads the census, so no rustflag changed). Re-run it with
-`python3 tools/rust_warning_census.py build-i386 build-amd64 build-arm64`. fastfat-rust is still at 0 warnings. The apc32 rung-7 flake that bounced
-b8eac0dccad2 was fixed by 61998182a8f (roadmap registry).
+**State.** The 2026-10-17 census read **2,349 sites (48 UB, 1,072 LOGIC, 1,229 NOISE)**,
+down from 7,215. It covered 695 fresh units; the only stale one was reactos-link, a host tool
+whose mtime the merge bumped. `static_mut_refs` and `improper_ctypes_definitions` read 0 and are
+now in `rust_ub_deny` next to `invalid_value` and `deref_nullptr`. Re-run the census with
+`python3 tools/rust_warning_census.py build-i386 build-amd64 build-arm64`. Details are under
+"2026-10-17" below.
 
 **Owed, roughly in priority order:**
-- **UB tier.**
-  - New since 2026-10-12: `static_mut_refs` (9, crt-startup-rust) and
-    `improper_ctypes_definitions` (9, drwtsn32-rust and rapps-rust). Grade them, and add each to
-    `rust_ub_deny` once it reads 0.
-  - `improper_ctypes` (48): mspaint and msctfime. **The user said leave mspaint for now
-    (2026-10-11).**
-- **The rest of `clashing_extern` (1,325).** fastfat's recipe generalises:
-  `tools/extern_to_use.py`, then a build, `rustconv crate-repair`, and graded residue applied
-  with `tools/apply_agent_edits.py`. Next candidates are the biggest per-crate counts in the
-  census.
-- **scan_version_vs_c follow-ups.** It judges a dead branch by the calls it makes, so pure
-  arithmetic or a flag test in a dead branch is invisible. It also skips files two targets
-  compile at different versions (1 today). classpnp still uses `#[cfg(any())]` for its WIN10
-  firmware handlers. That is correct, but a `cfg(ntddi_ge_ntddi_winthreshold)` would read better.
-- **Noise.**
-  - Regenerate the bindgen islands (about 4,590 of the 4,610 `unnecessary_transmutes`).
-  - `unused_imports`, held back by imports used only under cfg(test).
-  - `stdmethod!` unused-variable noise.
+- **`improper_ctypes` (48):** mspaint and msctfime. The user said to do these next, after the
+  2026-10-17 landing.
+- **The rest of `clashing_extern_declarations` (1,031).** The recipe is: `tools/extern_to_use.py`
+  for a crate's own functions; `--canonical` for external APIs, graded by agents against the C
+  prototypes; then `rustconv crate-repair` over 3 arches; then the residue. Each kind of residue
+  is in the field manual, "Collapsing a clashing extern to ONE declaration".
+- **`unexpected_cfgs` (54).** Real signal: cdfs's `cfg!(not(reactos))` was a feature misspelled
+  as a cfg, and shipped the C's non-ReactOS answer. Sort each site into one of two:
+  - an intentional never-set gate, which gets declared in that crate's `check-cfg`, as
+    fastfat's ntddi cfgs are;
+  - a misspelling, which gets fixed. Then gate the lint.
+- **LOGIC smalls:** `unused_assignments` (29), `unreachable_code` (6), `useless_ptr_null_checks`,
+  `unused_comparisons`, `unused_must_use`, and the obname/psnotify fn-pointer comparison.
+- **Noise:**
+  - `non_snake_case` (334), `unused_labels` (172), `unused_unsafe` (142), `unused_imports` (97),
+    `dead_code` (90).
+  - `tools/apply_rustc_suggestions.py --skip-crate` keeps a sweep off hot crates. Rustc offers
+    no machine fix for most of what is left.
+  - The 12 float `unnecessary_transmutes` are msvcrt-homebrew's.
 - **Upstream drift:** explorer #9332, oleaut32 VarMod and serializeBMP.
 - **pcix arbiters**, and the preserved upstream-C bugs under "Owed follow-ups".
 
@@ -54,6 +54,45 @@ b8eac0dccad2 was fixed by 61998182a8f (roadmap registry).
   `merge warnings-burndown @ <sha> — <one line>`. Keep working; it merges, gates and reports
   back (docs/engineering/active-lanes/integration.md). No `land`, and no warm builds ×3 just
   to submit. Don't touch the tree while a smoke you started is running.
+
+## 2026-10-17 — UB tier closed except mspaint; clashing_extern 1,325 -> 1,031
+
+- **UB:**
+  - crt-startup-rust's `static mut` refs became `&raw mut`.
+  - rapps and drwtsn32 had Rust-only helpers declared `extern "C"` with Rust types. They are
+    plain `unsafe fn` now.
+  - Both lints are denied now.
+- **`clashing_extern`.** `tools/extern_to_use.py` grew several things:
+  - a real mod-tree walk (`#[path]`, inline `mod x {}`);
+  - `pub use` for a pub declaration;
+  - generated-island and bindgen-declaration skips;
+  - `--canonical` for externals.
+
+  It also learned that a declaration's attributes travel with it. menuband's orphaned
+  `link_name` would have rebound an i386 import. 83 external APIs (254 declarations) were
+  graded by two Haiku agents and checked against the headers; none passed a wrong width. Real
+  bugs fixed:
+  - kernel32's `ExitThread`/`ExitProcess` declared as returning;
+  - cdfs's FSP dispatcher discarding a status;
+  - private struct copies: user32 DDE, acpi `POWER_STATE`, menuband `IUnknown`, ole32
+    `GUID`/`BITMAP`.
+- **`crate-repair` `c_integer_widen`:** under an arithmetic, bitwise or shift operator, `as _`
+  cannot be inferred, so the rule traded an E0308 for an E0282 that its pass guard kept. It now
+  names the other operand's declared type, or declines with `uninferable_operand`. Comparisons
+  infer, and keep `as _`.
+- **`scan_version_vs_c`** now also reads ALL_CAPS constants in a dead branch, counted only where
+  the Rust decides on them. This was the "flag test is invisible" follow-up. It found:
+  - cdfs refusing `FILE_OPEN_REQUIRING_OPLOCK` (WIN7-only);
+  - classpnp parsing the WINBLUE LBP parameter block on a WIN8 build;
+  - pnpmgr answering `PNP_PROPERTY_CONTAINERID` (WIN7) on a WS03 kernel;
+  - cdfs's `cfg!(not(reactos))`.
+
+  Field names were tried and dropped, because every hit was an eager pure read. classpnp's
+  `#[cfg(any())]` stays: a named cfg would need check-cfg plumbing to say what the
+  `// dead: C is #if ...` comment already says.
+- **Noise:** the bindgen generator now writes `allow(unnecessary_transmutes)` into its islands
+  (4,590 sites; all 915 islands updated). `apply_rustc_suggestions` applied about 120 fixes in
+  cold crates, and gained `--skip-crate` plus the census's renamed-lib dep-info lookup.
 
 ## 2026-10-16 — four owed items closed, and the version/null classes gated
 

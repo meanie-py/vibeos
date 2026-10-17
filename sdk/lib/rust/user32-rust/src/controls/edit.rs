@@ -1,4 +1,13 @@
 use win32k_sys::win32k::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::wow64::DbgPrint;
+use crate::windows::message::GlobalAlloc;
+use crate::windows::window::HeapAlloc;
+use crate::windows::message::HeapReAlloc;
+// The crate's own functions: the definition is the declaration.
+use crate::windows::class::GetWindowLongPtrW;
+use crate::windows::rect::IsRectEmpty;
+use crate::controls::scrollbar::SetScrollInfo;
 use core::ffi::c_void;
 // NOTE: no `use ntkrnl_sys::ddk::*` here — `tm` in this file is always a local
 // TEXTMETRICW variable, and ntkrnl_sys is not a dependency of user32-rust.
@@ -35,7 +44,6 @@ extern "system" {
     // user32 own-exports / imports
     fn GetWindowLongW(hWnd: HWND, nIndex: i32) -> LONG;
     fn SetWindowLongW(hWnd: HWND, nIndex: i32, dwNewLong: LONG) -> LONG;
-    fn GetWindowLongPtrW(hWnd: HWND, nIndex: i32) -> LONG_PTR;
     fn DefWindowProcW(hwnd: HWND, msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     fn DefWindowProcA(hwnd: HWND, msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     fn SendMessageW(hWnd: HWND, msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
@@ -46,7 +54,6 @@ extern "system" {
     fn GetDlgItem(hDlg: HWND, nIDDlgItem: INT) -> HWND;
     fn GetClientRect(hWnd: HWND, lpRect: LPRECT) -> BOOL;
     fn MapWindowPoints(hWndFrom: HWND, hWndTo: HWND, lpPoints: *mut POINT, cPoints: UINT) -> INT;
-    fn SetScrollInfo(hwnd: HWND, fnBar: INT, lpsi: *mut SCROLLINFO, fRedraw: BOOL) -> INT;
     fn GetScrollInfo(hwnd: HWND, fnBar: INT, lpsi: *mut SCROLLINFO) -> BOOL;
     fn GetScrollPos(hWnd: HWND, nBar: INT) -> INT;
     fn ScrollWindowEx(hWnd: HWND, dx: INT, dy: INT, prcScroll: *const RECT, prcClip: *const RECT,
@@ -63,7 +70,6 @@ extern "system" {
     fn GetSysColor(nIndex: INT) -> DWORD;
     fn GetSysColorBrush(nIndex: INT) -> HBRUSH;
     fn IntersectRect(lprcDst: LPRECT, lprcSrc1: *const RECT, lprcSrc2: *const RECT) -> BOOL;
-    fn IsRectEmpty(lprc: *const RECT) -> BOOL;
     fn SetRectEmpty(lprc: LPRECT) -> BOOL;
     fn CopyRect(lprcDst: LPRECT, lprcSrc: *const RECT) -> BOOL;
     fn PtInRect(lprc: *const RECT, pt: POINT) -> BOOL;
@@ -125,22 +131,18 @@ extern "system" {
 }
 
 extern "C" {
-    fn DbgPrint(Format: *const i8, ...) -> u32;
 }
 
 // ── kernel32 heap / global / multibyte (extern "system"). ─────────────────────
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: SIZE_T) -> *mut c_void;
     fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: *mut c_void) -> BOOL;
-    fn HeapReAlloc(hHeap: HANDLE, dwFlags: DWORD, lpMem: *mut c_void, dwBytes: SIZE_T) -> *mut c_void;
     fn LocalAlloc(uFlags: UINT, uBytes: SIZE_T) -> HLOCAL;
     fn LocalFree(hMem: HLOCAL) -> HLOCAL;
     fn LocalReAlloc(hMem: HLOCAL, uBytes: SIZE_T, uFlags: UINT) -> HLOCAL;
     fn LocalLock(hMem: HLOCAL) -> *mut c_void;
     fn LocalUnlock(hMem: HLOCAL) -> BOOL;
     fn LocalSize(hMem: HLOCAL) -> SIZE_T;
-    fn GlobalAlloc(uFlags: UINT, dwBytes: SIZE_T) -> HGLOBAL;
     fn GlobalLock(hMem: HGLOBAL) -> *mut c_void;
     fn GlobalUnlock(hMem: HGLOBAL) -> BOOL;
     fn WideCharToMultiByte(CodePage: UINT, dwFlags: DWORD, lpWideCharStr: LPCWSTR, cchWideChar: INT,

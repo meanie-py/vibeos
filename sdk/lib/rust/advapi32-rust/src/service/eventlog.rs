@@ -1,4 +1,6 @@
 use crate::prelude::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::externs::HeapAlloc;
 use ntdll_sys::seh::rpc_try;
 use core::ffi::c_void;
 
@@ -26,7 +28,6 @@ extern "system" {
     fn ElfrNumberOfRecords(hEventLog: HANDLE, NumberOfRecords: PULONG) -> NTSTATUS;
     fn SetLastError(dwErrCode: DWORD);
     fn GetProcessHeap() -> HANDLE;
-    fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: usize) -> LPVOID;
     fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID) -> i32;
 }
 
@@ -1084,7 +1085,7 @@ pub unsafe extern "system" fn ReportEventA(
     let Strings: *mut PANSI_STRING = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        (wNumStrings as usize) * core::mem::size_of::<PANSI_STRING>(),
+        ((wNumStrings as usize) * core::mem::size_of::<PANSI_STRING>()) as SIZE_T,
     ) as *mut PANSI_STRING;
 
     if Strings.is_null() {
@@ -1097,7 +1098,7 @@ pub unsafe extern "system" fn ReportEventA(
         *Strings.add(i as usize) = HeapAlloc(
             GetProcessHeap(),
             HEAP_ZERO_MEMORY,
-            core::mem::size_of::<ANSI_STRING>(),
+            (core::mem::size_of::<ANSI_STRING>()) as SIZE_T,
         ) as PANSI_STRING;
         if !(*Strings.add(i as usize)).is_null() {
             RtlInitAnsiString(*Strings.add(i as usize), *lpStrings.add(i as usize) as PSTR);
@@ -1220,7 +1221,7 @@ pub unsafe extern "system" fn ReportEventW(
     Strings = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        (wNumStrings as usize) * core::mem::size_of::<PUNICODE_STRING>(),
+        ((wNumStrings as usize) * core::mem::size_of::<PUNICODE_STRING>()) as SIZE_T,
     ) as *mut PUNICODE_STRING;
     if Strings.is_null() {
         SetLastError(ERROR_NOT_ENOUGH_MEMORY);
@@ -1232,7 +1233,7 @@ pub unsafe extern "system" fn ReportEventW(
         *Strings.add(i as usize) = HeapAlloc(
             GetProcessHeap(),
             HEAP_ZERO_MEMORY,
-            core::mem::size_of::<_UNICODE_STRING>(),
+            (core::mem::size_of::<_UNICODE_STRING>()) as SIZE_T,
         ) as PUNICODE_STRING;
         if !(*Strings.add(i as usize)).is_null() {
             RtlInitUnicodeString(*Strings.add(i as usize), *lpStrings.add(i as usize) as PWSTR);

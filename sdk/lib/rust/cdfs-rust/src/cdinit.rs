@@ -1,4 +1,6 @@
 use ntkrnl_sys::base::*;
+// One declaration per external symbol: ddk_shims.rs.
+use crate::ddk_shims::CdFreePool;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::mm::*;
@@ -28,7 +30,6 @@ use crate::ddk_shims::{
 
 extern "C" {
     // cdfs-internal _CdFreePool (static INLINE in C); cdfs-private helper, not NTAPI table.
-    fn CdFreePool(IrpContext: *mut *mut IRP_CONTEXT);
 }
 extern "system" {
     #[cfg(feature = "CDFS_TELEMETRY_DATA")]
@@ -233,7 +234,7 @@ pub unsafe extern "system" fn CdUnload(DriverObject: *mut DRIVER_OBJECT) {
         if IrpContext.is_null() {
             break;
         }
-        CdFreePool(core::ptr::addr_of_mut!(IrpContext));
+        CdFreePool((core::ptr::addr_of_mut!(IrpContext)).cast());
     }
 
     IoFreeWorkItem(cd_data.CloseItem);

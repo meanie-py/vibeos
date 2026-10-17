@@ -7,6 +7,8 @@
 //! internal, types}). See the integration notes at the bottom of each helper.
 
 use win32k_sys::win32k::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::misc::imm::GetProcAddress;
 use crate::ntwrapper::*;
 use crate::internal::*;
 // user32 BOOL/FALSE/TRUE are i32; win32k-sys defines them too (u32 FALSE/TRUE) — shadow locally.
@@ -22,7 +24,6 @@ use core::ffi::c_void;
 extern "system" {
     fn GetModuleHandleW(lpModuleName: LPCWSTR) -> HMODULE;
     fn LoadLibraryW(lpLibFileName: LPCWSTR) -> HMODULE;
-    fn GetProcAddress(hModule: HMODULE, lpProcName: LPCSTR) -> *mut c_void;
     fn FreeLibrary(hLibModule: HMODULE) -> BOOL;
     fn GetLastError() -> DWORD;
     fn SetLastError(dwErrCode: DWORD);

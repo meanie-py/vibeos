@@ -477,7 +477,7 @@ unsafe fn COMCAT_PrepareClassCategories(
             * core::mem::size_of::<WCHAR>() as ULONG;
 
     let categories =
-        HeapAlloc(GetProcessHeap(), 0, size as SIZE_T) as *mut class_categories;
+        HeapAlloc(GetProcessHeap(), 0, size as usize) as *mut class_categories;
     if categories.is_null() {
         return categories;
     }
@@ -1307,7 +1307,7 @@ stdmethod! {
         let new_this = HeapAlloc(
             GetProcessHeap(),
             HEAP_ZERO_MEMORY,
-            core::mem::size_of::<IEnumCATEGORYINFOImpl>() as SIZE_T,
+            core::mem::size_of::<IEnumCATEGORYINFOImpl>() as usize,
         ) as *mut IEnumCATEGORYINFOImpl;
         if new_this.is_null() {
             return E_OUTOFMEMORY;
@@ -1346,7 +1346,7 @@ unsafe fn EnumCATEGORYINFO_Construct(lcid: LCID, ret: *mut *mut IEnumCATEGORYINF
     let This = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        core::mem::size_of::<IEnumCATEGORYINFOImpl>() as SIZE_T,
+        core::mem::size_of::<IEnumCATEGORYINFOImpl>() as usize,
     ) as *mut IEnumCATEGORYINFOImpl;
     if This.is_null() {
         return E_OUTOFMEMORY;
@@ -1547,7 +1547,7 @@ stdmethod! {
         let cloned = HeapAlloc(
             GetProcessHeap(),
             0,
-            core::mem::size_of::<CLSID_IEnumGUIDImpl>() as SIZE_T,
+            core::mem::size_of::<CLSID_IEnumGUIDImpl>() as usize,
         ) as *mut CLSID_IEnumGUIDImpl;
         if cloned.is_null() {
             return E_OUTOFMEMORY;
@@ -1559,7 +1559,7 @@ stdmethod! {
         (*cloned).categories = HeapAlloc(
             GetProcessHeap(),
             0,
-            (*(*This).categories).size as SIZE_T,
+            (*(*This).categories).size as usize,
         ) as *mut class_categories;
         if (*cloned).categories.is_null() {
             HeapFree(GetProcessHeap(), 0, cloned as LPVOID);
@@ -1604,7 +1604,7 @@ unsafe fn CLSIDEnumGUID_Construct(
     let This = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        core::mem::size_of::<CLSID_IEnumGUIDImpl>() as SIZE_T,
+        core::mem::size_of::<CLSID_IEnumGUIDImpl>() as usize,
     ) as *mut CLSID_IEnumGUIDImpl;
     if This.is_null() {
         return E_OUTOFMEMORY;
@@ -1786,7 +1786,7 @@ stdmethod! {
         let new_this = HeapAlloc(
             GetProcessHeap(),
             HEAP_ZERO_MEMORY,
-            core::mem::size_of::<CATID_IEnumGUIDImpl>() as SIZE_T,
+            core::mem::size_of::<CATID_IEnumGUIDImpl>() as usize,
         ) as *mut CATID_IEnumGUIDImpl;
         if new_this.is_null() {
             return E_OUTOFMEMORY;
@@ -1835,7 +1835,7 @@ unsafe fn CATIDEnumGUID_Construct(
     let This = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        core::mem::size_of::<CATID_IEnumGUIDImpl>() as SIZE_T,
+        core::mem::size_of::<CATID_IEnumGUIDImpl>() as usize,
     ) as *mut CATID_IEnumGUIDImpl;
     if This.is_null() {
         return E_OUTOFMEMORY;

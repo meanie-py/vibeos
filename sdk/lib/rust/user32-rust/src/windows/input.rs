@@ -1,4 +1,6 @@
 use win32k_sys::win32k::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::windows::window::HeapAlloc;
 // ntdll Rtl* exports + RtlInitEmptyUnicodeString inline live in crate::internal.
 use crate::internal::{RtlAllocateHeap, RtlFreeHeap, RtlGetProcessHeap, RtlInitEmptyUnicodeString, RtlInitUnicodeString, LOWORD, HIWORD, MAKELONG};
 use crate::ntwrapper::{NtUserxEnableWindow, NtUserxGetKeyboardLayout, NtUserxGetKeyboardType, NtUserxSwapMouseButton};
@@ -117,7 +119,6 @@ extern "system" {
 // kernel32 — extern "system" (stdcall on i386).
 extern "system" {
     fn GetProcessHeap() -> *mut core::ffi::c_void;
-    fn HeapAlloc( hHeap: *mut core::ffi::c_void, dwFlags: DWORD, dwBytes: usize, ) -> *mut core::ffi::c_void;
     fn HeapFree( hHeap: *mut core::ffi::c_void, dwFlags: DWORD, lpMem: *mut core::ffi::c_void, ) -> core::ffi::c_int;
     fn WideCharToMultiByte( CodePage: UINT, dwFlags: DWORD, lpWideCharStr: LPCWSTR, cchWideChar: core::ffi::c_int, lpMultiByteStr: LPSTR, cbMultiByte: core::ffi::c_int, lpDefaultChar: LPCSTR, lpUsedDefaultChar: *mut core::ffi::c_int, ) -> core::ffi::c_int;
     fn MultiByteToWideChar( CodePage: UINT, dwFlags: DWORD, lpMultiByteStr: PCSTR, cbMultiByte: core::ffi::c_int, lpWideCharStr: LPWSTR, cchWideChar: core::ffi::c_int, ) -> core::ffi::c_int;
@@ -840,7 +841,7 @@ pub unsafe extern "system" fn GetKeyNameTextA(
     pwszBuf = HeapAlloc(
         GetProcessHeap(),
         0,
-        (nSize as usize) * core::mem::size_of::<u16>(),
+        ((nSize as usize) * core::mem::size_of::<u16>()) as SIZE_T,
     ) as LPWSTR;
     if pwszBuf.is_null() {
         return 0;

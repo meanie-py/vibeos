@@ -32,7 +32,7 @@ pub unsafe extern "C" fn NotifyFileExtractCallback(ItemPath: *const CStringW, Un
     return if Callback.is_some() { (Callback.unwrap_unchecked())(&eci, Cookie) } else { (TRUE as i32) };
 }
 
-pub unsafe extern "C" fn BuildPath__T0(Base: *const CStringW, mut Append: LPCWSTR) -> CStringW {
+pub unsafe fn BuildPath__T0(Base: *const CStringW, mut Append: LPCWSTR) -> CStringW {
     let mut path = CStringW::from_ptr((*Base).GetString());
     let len: usize = path.GetLength() as usize;
     if len != 0 && path.GetAt((len - 1) as i32) != 0x005Cu16 && path.GetAt((len - 1) as i32) != 0x002Fu16 {
@@ -45,7 +45,7 @@ pub unsafe extern "C" fn BuildPath__T0(Base: *const CStringW, mut Append: LPCWST
     return path;
 }
 
-pub unsafe extern "C" fn BuildPath__T1(Base: *const *const wchar_t, mut Append: LPCWSTR) -> CStringW {
+pub unsafe fn BuildPath__T1(Base: *const *const wchar_t, mut Append: LPCWSTR) -> CStringW {
     let mut path = CStringW::from_ptr(*Base);
     let len: usize = path.GetLength() as usize;
     if len != 0 && path.GetAt((len - 1) as i32) != 0x005Cu16 && path.GetAt((len - 1) as i32) != 0x002Fu16 {
@@ -58,7 +58,7 @@ pub unsafe extern "C" fn BuildPath__T1(Base: *const *const wchar_t, mut Append: 
     path
 }
 
-pub unsafe extern "C" fn BuildPath__T2(Base: *const wchar_t, mut Append: LPCWSTR) -> CStringW {
+pub unsafe fn BuildPath__T2(Base: *const wchar_t, mut Append: LPCWSTR) -> CStringW {
     let mut path = CStringW::from_ptr(Base);
     let mut len: SIZE_T = path.GetLength() as SIZE_T;
     if len != 0 && path.GetAt((len - 1) as i32) != 0x005Cu16 && path.GetAt((len - 1) as i32) != 0x002Fu16 {
@@ -72,7 +72,7 @@ pub unsafe extern "C" fn BuildPath__T2(Base: *const wchar_t, mut Append: LPCWSTR
     return result;
 }
 
-pub unsafe extern "C" fn BuildPath__T3(Base: *const wchar_t, mut Append: LPCWSTR) -> CStringW {
+pub unsafe fn BuildPath__T3(Base: *const wchar_t, mut Append: LPCWSTR) -> CStringW {
     let mut path = CStringW::from_ptr(Base);
     let mut len: usize = path.GetLength() as usize;
     if len != 0

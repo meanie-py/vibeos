@@ -1,4 +1,6 @@
 use winedebug_rust::{TRACE, WARN};
+// The crate's own functions: the definition is the declaration.
+use crate::client::handle::CloseHandle;
 use ntdll_sys::nt::*;
 use crate::prelude::*;
 use core::ffi::c_void;
@@ -19,7 +21,6 @@ extern "system" {
     fn MultiByteToWideChar(CodePage: UINT, Flags: DWORD, MultiByteString: LPCSTR, MultiByteCount: INT, WideCharString: LPWSTR, WideCharCount: INT) -> INT;
     fn GetFileTime(hFile: HANDLE, lpCreationTime: LPFILETIME, lpLastAccessTime: LPFILETIME, lpLastWriteTime: LPFILETIME) -> BOOL;
     fn SetFileTime(hFile: HANDLE, lpCreationTime: *const FILETIME, lpLastAccessTime: *const FILETIME, lpLastWriteTime: *const FILETIME) -> BOOL;
-    fn CloseHandle(hObject: HANDLE) -> BOOL;
 }
 
 // ---- cohab glue: Wine debug macros (no-ops, as in the other ported modules) ----

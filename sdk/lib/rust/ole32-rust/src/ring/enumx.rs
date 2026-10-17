@@ -190,7 +190,7 @@ pub unsafe extern "C" fn enumx_allocate(
     let enumx = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<enumx_impl>() as SIZE_T,
+        core::mem::size_of::<enumx_impl>() as usize,
     ) as *mut enumx_impl;
 
     if !enumx.is_null() {
@@ -225,7 +225,7 @@ pub unsafe extern "C" fn enumx_add_element(
     element = HeapAlloc(
         GetProcessHeap(),
         0,
-        (core::mem::size_of::<list>() + (*enumx).elem_size as usize) as SIZE_T,
+        (core::mem::size_of::<list>() + (*enumx).elem_size as usize) as usize,
     ) as *mut list;
     if element.is_null() {
         return core::ptr::null_mut();

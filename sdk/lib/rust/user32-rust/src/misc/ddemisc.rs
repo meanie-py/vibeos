@@ -10,6 +10,14 @@
 #![allow(clippy::missing_safety_doc)]
 
 use win32k_sys::win32k::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::windows::message::EnterCriticalSection;
+use crate::windows::message::GlobalAlloc;
+use crate::windows::window::HeapAlloc;
+use crate::windows::message::InitializeCriticalSection;
+use crate::windows::message::LeaveCriticalSection;
+// The crate's own functions: the definition is the declaration.
+use crate::windows::class::GetWindowLongPtrW;
 #[allow(unused_imports)]
 use core::ffi::c_void;
 
@@ -330,7 +338,6 @@ pub struct DDE_DATAHANDLE_HEAD {
 // ================================================================
 extern "system" {
     // kernel32 global memory / atoms
-    fn GlobalAlloc(uFlags: UINT, dwBytes: SIZE_T) -> HGLOBAL;
     fn GlobalLock(hMem: HGLOBAL) -> LPVOID;
     fn GlobalUnlock(hMem: HGLOBAL) -> BOOL;
     fn GlobalFree(hMem: HGLOBAL) -> HGLOBAL;
@@ -346,11 +353,9 @@ extern "system" {
     fn GetAtomNameA(nAtom: ATOM, lpBuffer: LPSTR, nSize: INT) -> UINT;
     fn GetAtomNameW(nAtom: ATOM, lpBuffer: LPWSTR, nSize: INT) -> UINT;
     fn GetProcessHeap() -> HANDLE;
-    fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: SIZE_T) -> LPVOID;
     fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID) -> BOOL;
     fn GetCurrentThreadId() -> DWORD;
     fn GetCurrentProcessId() -> DWORD;
-    fn EnterCriticalSection(lpCriticalSection: *mut c_void);
 }
 
 // InterlockedIncrement: kernel32 import on i386, compiler intrinsic on amd64/arm64
@@ -363,8 +368,6 @@ unsafe fn InterlockedIncrement(addend: *mut LONG) -> LONG {
 }
 
 extern "system" {
-    fn LeaveCriticalSection(lpCriticalSection: *mut c_void);
-    fn InitializeCriticalSection(lpCriticalSection: *mut c_void);
     fn lstrcmpiW(lpString1: LPCWSTR, lpString2: LPCWSTR) -> INT;
 
     // user32 window APIs (cross-DLL link symbols, stdcall on i386)
@@ -385,7 +388,6 @@ extern "system" {
     ) -> HWND;
     fn DefWindowProcW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     fn SetWindowLongPtrW(hWnd: HWND, nIndex: INT, dwNewLong: LONG_PTR) -> LONG_PTR;
-    fn GetWindowLongPtrW(hWnd: HWND, nIndex: INT) -> LONG_PTR;
     fn PostMessageW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> BOOL;
     fn EnumWindows(lpEnumFunc: WNDENUMPROC, lParam: LPARAM) -> BOOL;
     fn GetClassNameW(hWnd: HWND, lpClassName: LPWSTR, nMaxCount: INT) -> INT;
@@ -447,18 +449,18 @@ static mut WDML_CritSect_Init: BOOL = 0;
 #[inline]
 unsafe fn WDML_EnsureCritSect() {
     if WDML_CritSect_Init == 0 {
-        InitializeCriticalSection(core::ptr::addr_of_mut!(WDML_CritSect) as *mut c_void);
+        InitializeCriticalSection((core::ptr::addr_of_mut!(WDML_CritSect) as *mut c_void).cast());
         WDML_CritSect_Init = 1;
     }
 }
 #[inline]
 unsafe fn WDML_Enter() {
     WDML_EnsureCritSect();
-    EnterCriticalSection(core::ptr::addr_of_mut!(WDML_CritSect) as *mut c_void);
+    EnterCriticalSection((core::ptr::addr_of_mut!(WDML_CritSect) as *mut c_void).cast());
 }
 #[inline]
 unsafe fn WDML_Leave() {
-    LeaveCriticalSection(core::ptr::addr_of_mut!(WDML_CritSect) as *mut c_void);
+    LeaveCriticalSection((core::ptr::addr_of_mut!(WDML_CritSect) as *mut c_void).cast());
 }
 
 // helpers mirroring the ATOM2HSZ / HSZ2ATOM macros

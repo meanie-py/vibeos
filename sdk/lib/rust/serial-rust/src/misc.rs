@@ -1,4 +1,9 @@
 use crate::types::*;
+// The crate's own functions: the definition is the declaration.
+use crate::circularbuffer::GetNumberOfElementsInCircularBuffer;
+use crate::circularbuffer::IsCircularBufferEmpty;
+use crate::circularbuffer::PopCircularBufferEntry;
+use crate::circularbuffer::PushCircularBufferEntry;
 use crate::glue::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
@@ -13,11 +18,7 @@ use ntkrnl_sys::ddk::{KeInsertQueueDpc, PDEVICE_OBJECT, PIRP, PKINTERRUPT};
 use core::ffi::c_void;
 
 extern "C" {
-    fn PushCircularBufferEntry(Buffer: PVOID, Entry: UCHAR) -> NTSTATUS;
     fn DbgPrintEx( ComponentId: ULONG, Level: ULONG, Format: PCSTR, ... ) -> ULONG;
-    fn IsCircularBufferEmpty(Buffer: PVOID) -> u8;
-    fn PopCircularBufferEntry(Buffer: PVOID, Byte: PUCHAR) -> NTSTATUS;
-    fn GetNumberOfElementsInCircularBuffer(CircularBuffer: PVOID) -> ULONG;
 }
 
 #[no_mangle]
@@ -82,7 +83,7 @@ pub unsafe extern "system" fn SerialReceiveByte(
             Byte as ::core::ffi::c_int,
         );
         Status = PushCircularBufferEntry(
-            core::ptr::addr_of_mut!((*DeviceExtension).InputBuffer) as PVOID,
+            (core::ptr::addr_of_mut!((*DeviceExtension).InputBuffer) as PVOID).cast(),
             Byte,
         );
         if NT_SUCCESS(Status) {
@@ -140,11 +141,11 @@ pub unsafe extern "system" fn SerialSendByte(
         core::ptr::addr_of_mut!((*DeviceExtension).OutputBufferLock) as PKSPIN_LOCK,
         core::ptr::addr_of_mut!(Irql),
     );
-    while IsCircularBufferEmpty(core::ptr::addr_of_mut!((*DeviceExtension).OutputBuffer) as PVOID) == 0
+    while IsCircularBufferEmpty((core::ptr::addr_of_mut!((*DeviceExtension).OutputBuffer) as PVOID).cast()) == 0
         && READ_PORT_UCHAR(SER_LSR(ComPortBase)) as ::core::ffi::c_int & SR_LSR_THR_EMPTY != 0
     {
         Status = PopCircularBufferEntry(
-            core::ptr::addr_of_mut!((*DeviceExtension).OutputBuffer) as PVOID,
+            (core::ptr::addr_of_mut!((*DeviceExtension).OutputBuffer) as PVOID).cast(),
             core::ptr::addr_of_mut!(Byte),
         );
         if !NT_SUCCESS(Status) {
@@ -164,7 +165,7 @@ pub unsafe extern "system" fn SerialSendByte(
         (*DeviceExtension).SerialPerfStats.TransmittedCount =
             (*DeviceExtension).SerialPerfStats.TransmittedCount.wrapping_add(1);
     }
-    if IsCircularBufferEmpty(core::ptr::addr_of_mut!((*DeviceExtension).OutputBuffer) as PVOID) == 0 {
+    if IsCircularBufferEmpty((core::ptr::addr_of_mut!((*DeviceExtension).OutputBuffer) as PVOID).cast()) == 0 {
         /* allow new interrupts */
         IER = READ_PORT_UCHAR(SER_IER(ComPortBase));
         WRITE_PORT_UCHAR(
@@ -316,7 +317,7 @@ pub unsafe extern "system" fn SerialInterruptService(
             Events |= SERIAL_EV_RXCHAR;
 
             AlreadyReceivedBytes = (GetNumberOfElementsInCircularBuffer(
-                core::ptr::addr_of_mut!((*DeviceExtension).InputBuffer) as PVOID,
+                (core::ptr::addr_of_mut!((*DeviceExtension).InputBuffer) as PVOID).cast(),
             ) as ULONG)
                 .wrapping_mul(5 as ULONG);
             Limit = ((*DeviceExtension).InputBuffer.Length as ULONG).wrapping_mul(4 as ULONG);

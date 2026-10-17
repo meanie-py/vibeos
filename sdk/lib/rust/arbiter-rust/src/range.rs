@@ -6,7 +6,6 @@ use crate::ordering::ArbiterLibIsConflictWithMmConfigRange;
 pub static RUSTCONV_WSTR_90953F2876F4: [u16; 5] = [0x0052u16, 0x004F, 0x004F, 0x0054, 0x0000];
 
 use ntkrnl_sys::ddk::{INT32, IoGetDeviceProperty, PARBITER_ALLOCATION_STATE, PARBITER_ALTERNATIVE, PARBITER_INSTANCE, PARBITER_LIST_ENTRY, PARBITER_ORDERING, PDEVICE_OBJECT, PRTL_RANGE, PUINT64, RTL_RANGE_LIST_ITERATOR, RtlAddRange, RtlDeleteRange, RtlEqualUnicodeString, RtlFindRange, RtlGetFirstRange, RtlGetNextRange, RtlInitUnicodeString, UINT64};
-use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 pub const ARBITER_RESERVED_PASS_DONE: u32 = 0xFFFFFFFF;
@@ -67,7 +66,7 @@ pub unsafe extern "system" fn ArbiterLibOverrideConflict(
 unsafe extern "C" fn ArbpWritePriority(Arbiter: PARBITER_INSTANCE, Alternative: PARBITER_ALTERNATIVE) {
     let mut Ordering: PARBITER_ORDERING = core::ptr::null_mut();
     let mut End: PARBITER_ORDERING = core::ptr::null_mut();
-    let mut Priority: INT32 = (*Alternative).Priority;
+    let Priority: INT32 = (*Alternative).Priority;
     let mut Preferred: BOOLEAN = 0;
     let mut Index: ULONG = 0;
 
@@ -93,7 +92,7 @@ unsafe extern "C" fn ArbpWritePriority(Arbiter: PARBITER_INSTANCE, Alternative: 
 
     if Priority == (ARBITER_PRIORITY_RESERVED as i32) || Priority == (ARBITER_PRIORITY_PREFERRED_RESERVED as i32) {
         if (*Alternative).Reserved[0 as usize] == ARBITER_RESERVED_PASS_DONE {
-            (*Alternative).Priority = (ARBITER_PRIORITY_EXHAUSTED as i32);
+            (*Alternative).Priority = ARBITER_PRIORITY_EXHAUSTED as i32;
         }
         return;
     }
@@ -104,7 +103,7 @@ unsafe extern "C" fn ArbpWritePriority(Arbiter: PARBITER_INSTANCE, Alternative: 
         Ordering = (*Arbiter).OrderingList.Orderings;
     } else {
         if ((*Alternative).Flags & ARBITER_ALTERNATIVE_FLAG_FIXED) != 0 {
-            (*Alternative).Priority = (ARBITER_PRIORITY_EXHAUSTED as i32);
+            (*Alternative).Priority = ARBITER_PRIORITY_EXHAUSTED as i32;
             return;
         }
 
@@ -117,9 +116,9 @@ unsafe extern "C" fn ArbpWritePriority(Arbiter: PARBITER_INSTANCE, Alternative: 
         if Index >= (*Arbiter).OrderingList.Count as ULONG {
             (*Alternative).Reserved[0 as usize] = 0;
             (*Alternative).Priority = if Preferred != 0 {
-                (ARBITER_PRIORITY_PREFERRED_RESERVED as i32)
+                ARBITER_PRIORITY_PREFERRED_RESERVED as i32
             } else {
-                (ARBITER_PRIORITY_RESERVED as i32)
+                ARBITER_PRIORITY_RESERVED as i32
             };
             return;
         }
@@ -169,9 +168,9 @@ unsafe extern "C" fn ArbpWritePriority(Arbiter: PARBITER_INSTANCE, Alternative: 
 
     (*Alternative).Reserved[0 as usize] = 0;
     (*Alternative).Priority = if Preferred != 0 {
-        (ARBITER_PRIORITY_PREFERRED_RESERVED as i32)
+        ARBITER_PRIORITY_PREFERRED_RESERVED as i32
     } else {
-        (ARBITER_PRIORITY_RESERVED as i32)
+        ARBITER_PRIORITY_RESERVED as i32
     };
 }
 unsafe extern "C" fn ArbpIsRootEnumerated(DeviceObject: PDEVICE_OBJECT) -> BOOLEAN {
@@ -239,7 +238,7 @@ unsafe extern "C" fn ArbpShareDriverExclusive(
     let mut Requester: PDEVICE_OBJECT = core::ptr::null_mut();
     let mut Iterator: RTL_RANGE_LIST_ITERATOR = core::mem::zeroed();
     let mut Range: PRTL_RANGE = core::ptr::null_mut();
-    let mut RequesterIsRoot: BOOLEAN;
+    let RequesterIsRoot: BOOLEAN;
 
     if Entry.is_null()
         || (*Entry).PhysicalDeviceObject.is_null()
@@ -531,7 +530,7 @@ pub unsafe extern "system" fn ArbiterLibFindSuitableRange(
 ) -> BOOLEAN {
     let Alternative: PARBITER_ALTERNATIVE = (*ArbState).CurrentAlternative;
     let mut Flags: ULONG = 0;
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     PAGED_CODE!();
 
@@ -562,7 +561,7 @@ pub unsafe extern "system" fn ArbiterLibFindSuitableRange(
         && ((*(*ArbState).Entry).RequestSource == ArbiterRequestLegacyReported
             || (*(*ArbState).Entry).RequestSource == ArbiterRequestLegacyAssigned)
     {
-        (*ArbState).RangeAvailableAttributes |= (ARBITER_RANGE_BOOT_ALLOCATED as u8);
+        (*ArbState).RangeAvailableAttributes |= ARBITER_RANGE_BOOT_ALLOCATED as u8;
     }
 
     if (*ArbState).Flags & (ARBITER_STATE_FLAG_NULL_CONFLICT_OK as u16) != 0 {
@@ -572,7 +571,7 @@ pub unsafe extern "system" fn ArbiterLibFindSuitableRange(
         Flags |= RTL_RANGE_LIST_SHARED_OK;
     }
     if (*Alternative).Flags & ARBITER_ALTERNATIVE_FLAG_INACCESSIBLE_OK != 0 {
-        (*ArbState).RangeAvailableAttributes |= (ARBITER_RANGE_INACCESSIBLE as u8);
+        (*ArbState).RangeAvailableAttributes |= ARBITER_RANGE_INACCESSIBLE as u8;
     }
 
     Status = RtlFindRange(
@@ -614,7 +613,7 @@ pub unsafe extern "system" fn ArbiterLibFindSuitableRange(
             (*ArbState).CurrentMaximum,
         ) != 0
         {
-            (*ArbState).Flags |= (ARBITER_STATE_FLAG_MCFG_CONFLICT as u16);
+            (*ArbState).Flags |= ARBITER_STATE_FLAG_MCFG_CONFLICT as u16;
         }
 
         return FALSE;

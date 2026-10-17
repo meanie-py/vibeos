@@ -1,4 +1,7 @@
 use crate::prelude::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::externs::FreeLibrary;
+use crate::externs::LocalAlloc;
 use core::ffi::c_void;
 
 // w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
@@ -26,7 +29,6 @@ const SE_FILE_OBJECT: SE_OBJECT_TYPE = advapi32_sys::_SE_OBJECT_TYPE_SE_FILE_OBJ
 const SE_REGISTRY_KEY: SE_OBJECT_TYPE = advapi32_sys::_SE_OBJECT_TYPE_SE_REGISTRY_KEY;
 
 extern "system" {
-    fn FreeLibrary(hLibModule: *mut core::ffi::c_void) -> i32;
     fn SetLastError(dwErrCode: DWORD);
     fn LsaClose(ObjectHandle: LSA_HANDLE) -> NTSTATUS;
     fn LsaFreeMemory(Buffer: PVOID) -> NTSTATUS;
@@ -42,7 +44,6 @@ extern "system" {
     fn SetSecurityDescriptorSacl( pSecurityDescriptor: PSECURITY_DESCRIPTOR, bSaclPresent: i32, pSacl: PACL, bSaclDefaulted: i32, ) -> i32;
     // Acc{Rewrite,Tree}* are advapi32.h macros for NtMartaStatic.<field>(...) — no
     // real symbol; the call sites below dispatch through the function-pointer table.
-    fn LocalAlloc(uFlags: u32, uBytes: usize) -> *mut core::ffi::c_void;
     fn LocalFree(hMem: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
 }
 
@@ -161,7 +162,7 @@ pub unsafe extern "C" fn CheckNtMartaPresent() -> DWORD {
                 core::ptr::null_mut(),
             ) != core::ptr::null_mut()
             {
-                FreeLibrary(NtMartaStatic.hDllInstance as *mut core::ffi::c_void);
+                FreeLibrary((NtMartaStatic.hDllInstance as *mut core::ffi::c_void).cast());
             }
         }
     } else {
@@ -178,7 +179,7 @@ pub unsafe extern "C" fn UnloadNtMarta() {
     )
     .is_null()
     {
-        FreeLibrary(NtMartaStatic.hDllInstance as *mut core::ffi::c_void);
+        FreeLibrary((NtMartaStatic.hDllInstance as *mut core::ffi::c_void).cast());
     }
 }
 
@@ -277,7 +278,7 @@ pub unsafe extern "system" fn GetUserNameA(
     let Ret: BOOL;
 
     NameW.MaximumLength = ((*lpSize) * core::mem::size_of::<u16>() as u32) as u16;
-    NameW.Buffer = LocalAlloc(LMEM_FIXED, NameW.MaximumLength as usize) as LPWSTR;
+    NameW.Buffer = LocalAlloc(LMEM_FIXED, (NameW.MaximumLength) as SIZE_T) as LPWSTR;
     if NameW.Buffer.is_null() {
         SetLastError(ERROR_NOT_ENOUGH_MEMORY);
         return 0;
@@ -338,7 +339,7 @@ pub unsafe extern "system" fn GetUserNameW(
 
     if GetTokenInformation(hToken, TokenUser, tu_buf as PVOID, 36, &mut tu_len) == 0 || tu_len > 36 {
         LocalFree(tu_buf as HLOCAL);
-        tu_buf = LocalAlloc(LMEM_FIXED, tu_len as usize) as *mut core::ffi::c_char;
+        tu_buf = LocalAlloc(LMEM_FIXED, (tu_len) as SIZE_T) as *mut core::ffi::c_char;
         if tu_buf.is_null() {
             SetLastError(ERROR_NOT_ENOUGH_MEMORY);
             CloseHandle(hToken);
@@ -357,7 +358,7 @@ pub unsafe extern "system" fn GetUserNameW(
 
     an_len = *lpSize;
     dn_len = 32;
-    domain_name = LocalAlloc(LMEM_FIXED, (dn_len as usize) * core::mem::size_of::<WCHAR>()) as *mut WCHAR;
+    domain_name = LocalAlloc(LMEM_FIXED, ((dn_len as usize) * core::mem::size_of::<WCHAR>()) as SIZE_T) as *mut WCHAR;
     if domain_name.is_null() {
         LocalFree(tu_buf as HLOCAL);
         SetLastError(ERROR_NOT_ENOUGH_MEMORY);
@@ -377,7 +378,7 @@ pub unsafe extern "system" fn GetUserNameW(
     {
         if dn_len > 32 {
             LocalFree(domain_name as HLOCAL);
-            domain_name = LocalAlloc(LMEM_FIXED, (dn_len as usize) * core::mem::size_of::<WCHAR>()) as *mut WCHAR;
+            domain_name = LocalAlloc(LMEM_FIXED, ((dn_len as usize) * core::mem::size_of::<WCHAR>()) as SIZE_T) as *mut WCHAR;
             if domain_name.is_null() {
                 LocalFree(tu_buf as HLOCAL);
                 SetLastError(ERROR_NOT_ENOUGH_MEMORY);

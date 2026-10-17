@@ -225,7 +225,7 @@ fn FileMonikerImpl_Load(iface: *mut IMoniker, pStm: *mut IStream) -> HRESULT {
     }
 
     /* read filePath string */
-    filePathA = HeapAlloc(GetProcessHeap(), 0, bytesA as SIZE_T) as *mut c_char;
+    filePathA = HeapAlloc(GetProcessHeap(), 0, bytesA as usize) as *mut c_char;
     if filePathA.is_null() {
         res = E_OUTOFMEMORY;
         return load_fail(res, filePathA, filePathW);
@@ -281,7 +281,7 @@ fn FileMonikerImpl_Load(iface: *mut IMoniker, pStm: *mut IStream) -> HRESULT {
         }
 
         filePathW = HeapAlloc(GetProcessHeap(), 0,
-                              ((len as usize + 1) * core::mem::size_of::<u16>()) as SIZE_T) as *mut u16;
+                              ((len as usize + 1) * core::mem::size_of::<u16>()) as usize) as *mut u16;
         if filePathW.is_null() {
             res = E_OUTOFMEMORY;
             return load_fail(res, filePathA, filePathW);
@@ -317,7 +317,7 @@ fn FileMonikerImpl_Load(iface: *mut IMoniker, pStm: *mut IStream) -> HRESULT {
 
     len = bytesW / core::mem::size_of::<u16>() as DWORD;
     filePathW = HeapAlloc(GetProcessHeap(), 0,
-                          ((len as usize + 1) * core::mem::size_of::<u16>()) as SIZE_T) as *mut u16;
+                          ((len as usize + 1) * core::mem::size_of::<u16>()) as usize) as *mut u16;
     if filePathW.is_null() {
         res = E_OUTOFMEMORY;
         return load_fail(res, filePathA, filePathW);
@@ -386,7 +386,7 @@ fn FileMonikerImpl_Save(iface: *mut IMoniker, pStm: *mut IStream, fClearDirty: B
     if FAILED(res) { return res; }
 
     /* write A string (with '\0') */
-    filePathA = HeapAlloc(GetProcessHeap(), 0, bytesA as SIZE_T) as *mut c_char;
+    filePathA = HeapAlloc(GetProcessHeap(), 0, bytesA as usize) as *mut c_char;
     if filePathA.is_null() {
         return E_OUTOFMEMORY;
     }
@@ -528,10 +528,10 @@ fn FileMonikerImpl_BindToObject(
                 res = crate::ring::moniker::GetClassFile((*This).filePathName, &mut clsID);
                 if SUCCEEDED(res) {
                     res = CoCreateInstance(
-                        &clsID,
+                        (&raw const clsID).cast(),
                         core::ptr::null_mut(),
                         CLSCTX_SERVER,
-                        core::ptr::addr_of!(IID_IPersistFile),
+                        (core::ptr::addr_of!(IID_IPersistFile)).cast(),
                         &mut ppf as *mut *mut IPersistFile as *mut LPVOID,
                     );
                     if SUCCEEDED(res) {
@@ -800,7 +800,7 @@ fn FileMonikerImpl_ComposeWith(
                 GetProcessHeap(),
                 0,
                 (core::mem::size_of::<u16>()
-                    * (lstrlenW(str1) + lstrlenW(str2) + 1) as usize) as SIZE_T,
+                    * (lstrlenW(str1) + lstrlenW(str2) + 1) as usize) as usize,
             ) as LPOLESTR;
 
             if !newStr.is_null() {
@@ -1366,7 +1366,7 @@ fn FileMonikerImpl_RelativePathTo(
     relPath = HeapAlloc(
         GetProcessHeap(),
         0,
-        (core::mem::size_of::<u16>() * (1 + lstrlenW(str1) + lstrlenW(str2)) as usize) as SIZE_T,
+        (core::mem::size_of::<u16>() * (1 + lstrlenW(str1) + lstrlenW(str2)) as usize) as usize,
     ) as LPOLESTR;
 
     *relPath = 0;
@@ -1617,7 +1617,7 @@ unsafe fn FileMonikerImpl_Construct(
     (*This).filePathName = HeapAlloc(
         GetProcessHeap(),
         0,
-        (core::mem::size_of::<u16>() * (sizeStr as usize + 1)) as SIZE_T,
+        (core::mem::size_of::<u16>() * (sizeStr as usize + 1)) as usize,
     ) as LPOLESTR;
 
     if (*This).filePathName.is_null() {
@@ -1707,7 +1707,7 @@ pub unsafe extern "system" fn CreateFileMoniker(
     newFileMoniker = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<FileMonikerImpl>() as SIZE_T,
+        core::mem::size_of::<FileMonikerImpl>() as usize,
     ) as *mut FileMonikerImpl;
 
     if newFileMoniker.is_null() {
@@ -1773,7 +1773,7 @@ pub unsafe extern "C" fn FileMoniker_CreateFromDisplayName(
         file_display_name = HeapAlloc(
             GetProcessHeap(),
             0,
-            ((len as usize + 1) * core::mem::size_of::<u16>()) as SIZE_T,
+            ((len as usize + 1) * core::mem::size_of::<u16>()) as usize,
         ) as LPOLESTR;
         if file_display_name.is_null() {
             return E_OUTOFMEMORY;
@@ -1824,7 +1824,7 @@ pub unsafe extern "C" fn FileMoniker_CreateFromDisplayName(
         full_path_name = HeapAlloc(
             GetProcessHeap(),
             0,
-            (full_path_name_len as usize * core::mem::size_of::<u16>()) as SIZE_T,
+            (full_path_name_len as usize * core::mem::size_of::<u16>()) as usize,
         ) as LPOLESTR;
         if full_path_name.is_null() {
             HeapFree(GetProcessHeap(), 0, file_display_name as LPVOID);
@@ -1883,7 +1883,7 @@ pub unsafe extern "system" fn FileMoniker_CreateInstance(
     newFileMoniker = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<FileMonikerImpl>() as SIZE_T,
+        core::mem::size_of::<FileMonikerImpl>() as usize,
     ) as *mut FileMonikerImpl;
     if newFileMoniker.is_null() {
         return E_OUTOFMEMORY;

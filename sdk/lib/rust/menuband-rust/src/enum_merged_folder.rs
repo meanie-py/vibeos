@@ -1,4 +1,6 @@
 use crate::prelude::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::menu_toolbars::StrRetToStrW;
 use crate::enum_merged_folder_support::s_DsaDeleteCallback;
 // Deterministic from shobjidl.h
 #[repr(C)]
@@ -228,7 +230,6 @@ pub struct SHCOLUMNID {
 }
 
 extern "system" {
-    fn StrRetToStrW(value: *mut STRRET, pidl: PCUITEMID_CHILD, out: *mut LPWSTR) -> HRESULT;
     fn lstrlenW(text: LPCWSTR) -> INT;
     fn CoTaskMemFree(memory: LPVOID);
     fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
@@ -333,7 +334,7 @@ pub unsafe fn CEnumMergedFolder_Begin_body(this: *mut CEnumMergedFolder, hwndOwn
             str.uType = STRRET_WSTR;
             hr = ((*(*(*this).m_UserLocalFolder).lpVtbl).GetDisplayNameOf)((*this).m_UserLocalFolder, pidl, SHGDN_FORPARSING | SHGDN_INFOLDER, core::ptr::addr_of_mut!(str).cast());
             if hr < 0 { return hr; }
-            StrRetToStrW(core::ptr::addr_of_mut!(str), pidl, core::ptr::addr_of_mut!(name));
+            StrRetToStrW((core::ptr::addr_of_mut!(str)).cast(), pidl, core::ptr::addr_of_mut!(name));
 
             let mut info = LocalPidlInfo {
                 shared: FALSE as i32,
@@ -360,7 +361,7 @@ pub unsafe fn CEnumMergedFolder_Begin_body(this: *mut CEnumMergedFolder, hwndOwn
             str.uType = STRRET_WSTR;
             hr = ((*(*(*this).m_AllUSersFolder).lpVtbl).GetDisplayNameOf)((*this).m_AllUSersFolder, pidl, SHGDN_FORPARSING | SHGDN_INFOLDER, core::ptr::addr_of_mut!(str).cast());
             if hr < 0 { return hr; }
-            StrRetToStrW(core::ptr::addr_of_mut!(str), pidl, core::ptr::addr_of_mut!(name));
+            StrRetToStrW((core::ptr::addr_of_mut!(str)).cast(), pidl, core::ptr::addr_of_mut!(name));
 
             let mut info = LocalPidlInfo {
                 shared: FALSE as i32,

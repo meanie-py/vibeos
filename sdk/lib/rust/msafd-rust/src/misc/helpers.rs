@@ -5,7 +5,7 @@ use core::ffi::c_void;
 // stdcall kernel32/advapi32 imports -> extern "system" (i386 `_Name@N` decoration).
 extern "system" {
     fn HeapAlloc(heap: HANDLE, flags: DWORD, size: usize) -> *mut core::ffi::c_void;
-    fn HeapFree(heap: HANDLE, flags: DWORD, ptr: *mut core::ffi::c_void) -> BOOL;
+    pub fn HeapFree(heap: HANDLE, flags: DWORD, ptr: *mut core::ffi::c_void) -> BOOL;
     fn RegOpenKeyExW(hKey: HKEY, lpSubKey: LPCWSTR, ulOptions: DWORD, samDesired: REGSAM, phkResult: *mut HKEY) -> LONG;
     fn RegQueryValueExW(hKey: HKEY, lpValueName: LPCWSTR, lpReserved: LPDWORD, lpType: LPDWORD, lpData: LPBYTE, lpcbData: LPDWORD) -> LONG;
     fn RegCloseKey(hKey: HKEY) -> LONG;

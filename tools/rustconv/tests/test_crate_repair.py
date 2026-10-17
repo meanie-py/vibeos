@@ -1822,6 +1822,27 @@ def test_widening_never_casts_a_match_arm_pattern():
     assert not plan.edits, at
 
 
+def test_widening_under_an_arithmetic_operator_names_the_sibling_or_declines():
+    # `a + (n) as _` is E0282 (`u64: Add<u64>` and `Add<&u64>`), so the pass guard would
+    # keep a swap of one error for another. A comparison infers, and keeps `as _`.
+    from rustconv.crate_repair import RULE_INFER_WIDEN
+
+    src = (
+        b"fn f(w: WPARAM, n: u32, m: u32) -> bool {\n"
+        b"    let a = w & nn;\n    let b = mm << 2;\n    w == kk\n}\n"
+    )
+    diags = [
+        _mismatch(src, b"nn", "u64", "u32"),
+        _mismatch(src, b"mm", "u64", "u32"),
+        _mismatch(src, b"kk", "u64", "u32"),
+    ]
+    plan = propose_edits(
+        diags, _reader({"src/a.rs": src}), target="amd64", rules=[RULE_INFER_WIDEN]
+    )
+    assert sorted(e.replacement for e in plan.edits) == ["(kk) as _", "(nn) as WPARAM"]
+    assert [s.reason for s in plan.skipped] == ["uninferable_operand"]
+
+
 def test_keyword_named_fields_take_bindgens_spelling():
     from rustconv.crate_repair import RULE_KEYWORD_FIELD
 

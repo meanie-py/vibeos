@@ -8,6 +8,18 @@
 #![allow(non_snake_case, dead_code)]
 
 use core::ffi::{c_int, c_uint};
+// The crate's own functions: the definition is the declaration.
+pub use crate::reg_reg::RegCloseKey;
+pub use crate::reg_reg::RegCreateKeyExW;
+pub use crate::reg_reg::RegDeleteKeyW;
+pub use crate::reg_reg::RegDeleteValueW;
+pub use crate::reg_reg::RegEnumKeyExW;
+pub use crate::reg_reg::RegEnumKeyW;
+pub use crate::reg_reg::RegOpenKeyExW;
+pub use crate::reg_reg::RegOpenKeyW;
+pub use crate::reg_reg::RegQueryInfoKeyW;
+pub use crate::reg_reg::RegQueryValueExW;
+pub use crate::reg_reg::RegSetValueExW;
 use crate::prelude::{
     PREGISTRY_SERVER_NAME, PRPC_UNICODE_STRING, PTRUSTEE_A, PTRUSTEE_W, RPC_STATUS, REGSAM,
     TRUSTEE_FORM, TRUSTEE_TYPE, MD4_CTX, MD5_CTX,
@@ -42,11 +54,7 @@ extern "system" {
     pub fn RpcBindingFree(Binding: *mut *mut core::ffi::c_void) -> RPC_STATUS;
     pub fn UuidCreate(Uuid: *mut crate::prelude::UUID) -> LONG;
     // advapi32's own reg exports (reg/reg.c, Wave 4) — WINAPI = stdcall.
-    pub fn RegCloseKey(hKey: HKEY) -> LONG;
-    pub fn RegOpenKeyExW( hKey: HKEY, lpSubKey: *const u16, ulOptions: DWORD, samDesired: DWORD, phkResult: *mut HKEY, ) -> LONG;
-    pub fn RegQueryValueExW( hKey: HKEY, lpValueName: *const u16, lpReserved: *mut DWORD, lpType: *mut DWORD, lpData: LPBYTE, lpcbData: *mut DWORD, ) -> LONG;
     // RegSetValueExW takes `const BYTE* lpData` (winreg.h) — input, so *const u8.
-    pub fn RegSetValueExW( hKey: HKEY, lpValueName: *const u16, Reserved: DWORD, dwType: DWORD, lpData: *const u8, cbData: DWORD, ) -> LONG;
     // winreg_c.c RPC client stubs (generated C, never flipped) — __stdcall.
     pub fn BaseInitiateSystemShutdown( ServerName: PREGISTRY_SERVER_NAME, lpMessage: PRPC_UNICODE_STRING, dwTimeout: ULONG, bForceAppsClosed: BOOLEAN, bRebootAfterShutdown: BOOLEAN, ) -> ULONG;
     pub fn BaseInitiateSystemShutdownEx( ServerName: PREGISTRY_SERVER_NAME, lpMessage: PRPC_UNICODE_STRING, dwTimeout: ULONG, bForceAppsClosed: BOOLEAN, bRebootAfterShutdown: BOOLEAN, dwReason: ULONG, ) -> ULONG;
@@ -61,12 +69,8 @@ extern "system" {
     pub fn MultiByteToWideChar( CodePage: UINT, dwFlags: DWORD, lpMultiByteStr: LPCSTR, cbMultiByte: c_int, lpWideCharStr: LPWSTR, cchWideChar: c_int, ) -> c_int;
     pub fn WideCharToMultiByte( CodePage: UINT, dwFlags: DWORD, lpWideCharStr: LPCWSTR, cchWideChar: c_int, lpMultiByteStr: LPSTR, cbMultiByte: c_int, lpDefaultChar: LPCSTR, lpUsedDefaultChar: *mut BOOL, ) -> c_int;
     // advapi32 reg exports (reg/reg.c, Wave 4) — WINAPI = stdcall.
-    pub fn RegCreateKeyExW( hKey: HKEY, lpSubKey: *const u16, Reserved: DWORD, lpClass: *mut u16, dwOptions: DWORD, samDesired: REGSAM, lpSecurityAttributes: *mut _SECURITY_ATTRIBUTES, phkResult: *mut HKEY, lpdwDisposition: *mut DWORD, ) -> LONG;
     pub fn RegDeleteKeyExW(hKey: HKEY, lpSubKey: *const u16, samDesired: REGSAM, Reserved: DWORD) -> LONG;
-    pub fn RegDeleteKeyW(hKey: HKEY, lpSubKey: *const u16) -> LONG;
-    pub fn RegEnumKeyExW( hKey: HKEY, dwIndex: DWORD, lpName: *mut u16, lpcchName: *mut DWORD, lpReserved: *mut DWORD, lpClass: *mut u16, lpcchClass: *mut DWORD, lpftLastWriteTime: *mut FILETIME, ) -> LONG;
     pub fn RegEnumValueW( hKey: HKEY, dwIndex: DWORD, lpValueName: *mut u16, lpcchValueName: *mut DWORD, lpReserved: *mut DWORD, lpType: *mut DWORD, lpData: LPBYTE, lpcbData: *mut DWORD, ) -> LONG;
-    pub fn RegQueryInfoKeyW( hKey: HKEY, lpClass: *mut u16, lpcchClass: *mut DWORD, lpReserved: *mut DWORD, lpcSubKeys: *mut DWORD, lpcbMaxSubKeyLen: *mut DWORD, lpcbMaxClassLen: *mut DWORD, lpcValues: *mut DWORD, lpcbMaxValueNameLen: *mut DWORD, lpcbMaxValueLen: *mut DWORD, lpcbSecurityDescriptor: *mut DWORD, lpftLastWriteTime: *mut FILETIME, ) -> LONG;
     // kernel32 base APIs — service/sctrl.c (Wave 2). WINAPI = stdcall.
     pub fn WaitNamedPipeW(lpNamedPipeName: LPCWSTR, nTimeOut: DWORD) -> BOOL;
     pub fn Sleep(dwMilliseconds: DWORD);
@@ -217,9 +221,6 @@ extern "system" {
     pub fn CreateProcessW( lpApplicationName: LPCWSTR, lpCommandLine: LPWSTR, lpProcessAttributes: LPSECURITY_ATTRIBUTES, lpThreadAttributes: LPSECURITY_ATTRIBUTES, bInheritHandles: BOOL, dwCreationFlags: DWORD, lpEnvironment: LPVOID, lpCurrentDirectory: LPCWSTR, lpStartupInfo: LPSTARTUPINFOW, lpProcessInformation: LPPROCESS_INFORMATION, ) -> BOOL;
     pub fn CreateProcessA( lpApplicationName: LPCSTR, lpCommandLine: LPSTR, lpProcessAttributes: LPSECURITY_ATTRIBUTES, lpThreadAttributes: LPSECURITY_ATTRIBUTES, bInheritHandles: BOOL, dwCreationFlags: DWORD, lpEnvironment: LPVOID, lpCurrentDirectory: LPCSTR, lpStartupInfo: LPSTARTUPINFOA, lpProcessInformation: LPPROCESS_INFORMATION, ) -> BOOL;
     // advapi32-own reg exports (reg/reg.c, Wave 4)
-    pub fn RegOpenKeyW(hKey: HKEY, lpSubKey: LPCWSTR, phkResult: *mut HKEY) -> LONG;
-    pub fn RegEnumKeyW(hKey: HKEY, dwIndex: DWORD, lpName: LPWSTR, cchName: DWORD) -> LONG;
-    pub fn RegDeleteValueW(hKey: HKEY, lpValueName: LPCWSTR) -> LONG;
     // advapi32-own security exports (token/sid/sec — not flipped or crate-defined)
     pub fn CopySid(nDestinationSidLength: DWORD, pDestinationSid: PSID, pSourceSid: PSID) -> BOOL;
     pub fn GetSidLengthRequired(nSubAuthorityCount: u8) -> DWORD;

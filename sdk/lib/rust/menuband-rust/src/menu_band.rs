@@ -1518,18 +1518,18 @@ extern "system" {
     fn RSHELL_CMenuDeskBar_CreateInstance(riid: REFIID, ppv: *mut LPVOID) -> HRESULT;
 
     // ── Win32 / shlwapi imports ──
-    fn DestroyMenu(menu: HMENU) -> BOOL; // winuser.h
+    pub fn DestroyMenu(menu: HMENU) -> BOOL; // winuser.h
     fn CreatePopupMenu() -> HMENU; // winuser.h
     fn TrackPopupMenuEx(hMenu: HMENU, uFlags: UINT, x: INT, y: INT, hwnd: HWND, lptpm: *const TPMPARAMS) -> BOOL; // winuser.h
     fn GetKeyState(nVirtKey: INT) -> i16; // winuser.h (SHORT return)
-    fn IsWindow(hWnd: HWND) -> BOOL; // winuser.h
+    pub fn IsWindow(hWnd: HWND) -> BOOL; // winuser.h
     fn SendMessageW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT; // winuser.h (UNICODE SendMessage)
     fn SystemParametersInfoW(uiAction: UINT, uiParam: UINT, pvParam: PVOID, fWinIni: UINT) -> BOOL; // winuser.h (UNICODE SystemParametersInfo)
     fn GetLastError() -> DWORD; // winbase.h
     fn ILFree(pidl: LPITEMIDLIST); // shlobj.h
-    fn IUnknown_QueryService(punk: *mut IUnknown, guidService: REFGUID, riid: REFIID, ppvOut: *mut *mut core::ffi::c_void) -> HRESULT; // shlwapi.h
-    fn IUnknown_SetSite(punk: *mut IUnknown, punkSite: *mut IUnknown) -> HRESULT; // shlwapi.h
-    fn IUnknown_QueryServiceExec(punk: *mut IUnknown, service: REFIID, group: *const GUID, cmdId: DWORD, cmdOpt: DWORD, pIn: *mut VARIANT, pOut: *mut VARIANT) -> HRESULT; // shlwapi_undoc.h:255
+    pub fn IUnknown_QueryService(punk: *mut IUnknown, guidService: REFGUID, riid: REFIID, ppvOut: *mut *mut core::ffi::c_void) -> HRESULT; // shlwapi.h
+    pub fn IUnknown_SetSite(punk: *mut IUnknown, punkSite: *mut IUnknown) -> HRESULT; // shlwapi.h
+    pub fn IUnknown_QueryServiceExec(punk: *mut IUnknown, service: REFIID, group: *const GUID, cmdId: DWORD, cmdOpt: DWORD, pIn: *mut VARIANT, pOut: *mut VARIANT) -> HRESULT; // shlwapi_undoc.h:255
 }
 
 extern "C" {

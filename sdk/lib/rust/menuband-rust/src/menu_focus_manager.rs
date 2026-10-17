@@ -1,4 +1,6 @@
 use crate::prelude::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::menu_band::IUnknown_QueryService;
 use crate::menu_band::CMenuBand;
 use crate::menu_band::CMenuToolbarBase;
 use crate::menu_focus_manager_support::s_GetMsgHook;
@@ -187,7 +189,6 @@ extern "C" {
 }
 
 extern "system" {
-    fn IUnknown_QueryService(object: *mut IUnknown, service: REFGUID, riid: REFIID, out: *mut *mut core::ffi::c_void) -> HRESULT;
 }
 
 extern "C" {
@@ -473,7 +474,7 @@ pub unsafe fn CMenuFocusManager_IsTrackedWindowOrParent_body(this: *mut CMenuFoc
                 if (((hr) < 0)) {
                     continue;
                 }
-                hr = IUnknown_QueryService(site, core::ptr::addr_of!(SID_SMenuBandParent), core::ptr::addr_of!(IID_IOleWindow), core::ptr::addr_of_mut!(pw).cast());
+                hr = IUnknown_QueryService((site).cast(), core::ptr::addr_of!(SID_SMenuBandParent), core::ptr::addr_of!(IID_IOleWindow), core::ptr::addr_of_mut!(pw).cast());
                 if (((hr) < 0)) {
                     continue;
                 }

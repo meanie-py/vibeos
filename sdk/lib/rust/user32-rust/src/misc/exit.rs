@@ -1,4 +1,6 @@
 use win32k_sys::win32k::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::misc::stubs::ExitThread;
 use core::ffi::c_void;
 
 // ---- substrate glue (added for compile; mirrors misc/logon.rs + misc/desktop.rs) ----
@@ -35,7 +37,6 @@ extern "system" {
 
     // kernel32 imports.
     fn GetLastError() -> DWORD;
-    fn ExitThread(dwExitCode: DWORD) -> !;
     fn CreateThread(
         lpThreadAttributes: LPVOID,
         dwStackSize: SIZE_T,

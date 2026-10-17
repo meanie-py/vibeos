@@ -1,4 +1,11 @@
 use win32k_sys::win32k::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::windows::cursoricon::CreateDIBSection;
+use crate::windows::window::HeapAlloc;
+use crate::windows::message::HeapReAlloc;
+// The crate's own functions: the definition is the declaration.
+use crate::windows::class::GetWindowLongPtrW;
+use crate::windows::cursoricon::LoadCursorW;
 #[allow(unused_imports)]
 use core::ffi::c_void;
 
@@ -22,7 +29,6 @@ extern "C" {
 // gdi32 exports (stdcall on i386).
 extern "system" {
     fn CreateCompatibleDC(hdc: HDC) -> HDC;
-    fn CreateDIBSection( hdc: HDC, pbmi: *mut BITMAPINFO, usage: u32, ppvBits: *mut LPVOID, hSection: *mut core::ffi::c_void, offset: u32, ) -> HBITMAP;
     fn DeleteDC(hdc: HDC) -> i32;
     fn BitBlt( hdcDest: HDC, x: INT, y: INT, cx: INT, cy: INT, hdcSrc: HDC, x1: INT, y1: INT, rop: u32, ) -> i32;
     fn GetObjectW(h: HGDIOBJ, c: i32, pv: LPVOID) -> i32;
@@ -33,8 +39,6 @@ extern "system" {
     fn ReleaseDC(hwnd: HWND, hdc: HDC) -> i32;
     fn DefWindowProcW(hwnd: HWND, msg: u32, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     fn DefWindowProcA(hwnd: HWND, msg: u32, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
-    fn LoadCursorW(hInstance: *mut core::ffi::c_void, lpCursorName: *const u16) -> *mut core::ffi::c_void;
-    fn GetWindowLongPtrW(hWnd: HWND, nIndex: INT) -> LONG_PTR;
     fn SetWindowLongPtrW(hWnd: HWND, nIndex: INT, dwNewLong: LONG_PTR) -> LONG_PTR;
     fn GetClassLongPtrW(hWnd: HWND, nIndex: INT) -> ULONG_PTR;
     fn IsWindow(hWnd: HWND) -> BOOL;
@@ -55,8 +59,6 @@ extern "system" {
 
 // kernel32 exports.
 extern "system" {
-    fn HeapAlloc(hHeap: *mut core::ffi::c_void, dwFlags: u32, dwBytes: usize) -> *mut core::ffi::c_void;
-    fn HeapReAlloc(hHeap: *mut core::ffi::c_void, dwFlags: u32, lpMem: *mut core::ffi::c_void, dwBytes: usize) -> *mut core::ffi::c_void;
     fn HeapFree(hHeap: *mut core::ffi::c_void, dwFlags: u32, lpMem: *mut core::ffi::c_void) -> i32;
     fn OpenProcess(dwDesiredAccess: DWORD, bInheritHandle: BOOL, dwProcessId: DWORD) -> *mut core::ffi::c_void;
     fn TerminateProcess(hProcess: *mut core::ffi::c_void, uExitCode: UINT) -> BOOL;
@@ -316,7 +318,7 @@ unsafe fn Ghost_OnCreate(hwnd: HWND, lpcs: *mut CREATESTRUCTW) -> BOOL {
 
     SetPropW(hwndTarget, GHOST_PROP(), hwnd as *mut core::ffi::c_void);
 
-    pData = HeapAlloc(GetProcessHeap(), 0, core::mem::size_of::<GHOST_DATA>()) as *mut GHOST_DATA;
+    pData = HeapAlloc(GetProcessHeap(), 0, (core::mem::size_of::<GHOST_DATA>()) as SIZE_T) as *mut GHOST_DATA;
     if pData.is_null() {
         ERR!("HeapAlloc failed\n");
         return 0;

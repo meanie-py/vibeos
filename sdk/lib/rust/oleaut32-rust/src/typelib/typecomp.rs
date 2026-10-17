@@ -104,7 +104,7 @@ pub unsafe extern "system" fn CreateDispTypeInfo(
         (*pFuncDesc).funcdesc.lprgelemdescParam = HeapAlloc(
             GetProcessHeap(),
             HEAP_ZERO_MEMORY,
-            (*md).cArgs as usize * size_of::<ELEMDESC>(),
+            ((*md).cArgs as usize * size_of::<ELEMDESC>()) as _,
         ) as *mut ELEMDESC;
         (*pFuncDesc).pParamDesc = TLBParDesc_Constructor((*md).cArgs);
         let mut param: UINT = 0;

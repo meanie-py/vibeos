@@ -2102,7 +2102,14 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         run,
         repo,
         "rust_ub_deny",
-        [py, str(census), str(build_dir), "--allow-stale", "--deny", "invalid_value,deref_nullptr"]
+        [
+            py,
+            str(census),
+            str(build_dir),
+            "--allow-stale",
+            "--deny",
+            "invalid_value,deref_nullptr,static_mut_refs,improper_ctypes_definitions",
+        ]
         if census.is_file()
         else ["MISSING"],
         strict=strict,
