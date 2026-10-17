@@ -102,14 +102,23 @@ unsafe extern "system" fn ExtCabCallback(
                 );
                 return FILEOP_SKIP as UINT;
             } else {
-                lstrcpyW(
+                // The C's lstrcpyW + lstrcatW into FullTargetName (MAX_PATH WCHARs) take the
+                // destination and a file name from inside the cabinet, unbounded: a long name
+                // in a crafted cab overran the setupapi structure. Such a file is skipped
+                // rather than extracted under a truncated, different name.
+                if StringCchCopyW(
                     &raw mut (*pInfo).FullTargetName as LPWSTR,
+                    MAX_PATH as usize,
                     Context as LPCWSTR,
-                );
-                lstrcatW(
-                    &raw mut (*pInfo).FullTargetName as LPWSTR,
-                    (*pInfo).NameInCabinet as LPCWSTR,
-                );
+                ) < 0
+                    || StringCchCatW(
+                        &raw mut (*pInfo).FullTargetName as LPWSTR,
+                        MAX_PATH as usize,
+                        (*pInfo).NameInCabinet as LPCWSTR,
+                    ) < 0
+                {
+                    return FILEOP_SKIP as UINT;
+                }
                 /* SetupIterateCabinet() doesn't create full path to target by itself,
                    so we should do it manually */
                 create_target_directory(&raw mut (*pInfo).FullTargetName as LPWSTR);

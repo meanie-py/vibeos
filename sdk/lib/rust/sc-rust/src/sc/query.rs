@@ -111,6 +111,7 @@ unsafe extern "C" fn EnumServices(
         );
         if (Ret == 0) && (GetLastError() != ERROR_MORE_DATA) {
             ReportLastError();
+            CloseServiceHandle(hSCManagerLocal); // the C leaks the handle on this path
             return 0;
         }
 
@@ -141,18 +142,29 @@ unsafe extern "C" fn EnumServices(
         }
     }
 
+    // Divergence from the C, which freed the buffer here but still returned NumServices: with
+    // a small `bufsize=` the call fails ERROR_MORE_DATA having filled NumServices entries, so
+    // Query walked the freed array and then freed it a second time. Those entries are the
+    // point of `bufsize=` ("Enumerates with a 50 byte buffer"): keep them, and Query prints
+    // them and frees the buffer once. Any other failure returns nothing and no buffer.
+    let more_data = GetLastError() == ERROR_MORE_DATA;
     ReportLastError();
+    if more_data && NumServices != 0 && !(*pServiceStatus).is_null() {
+        CloseServiceHandle(hSCManagerLocal);
+        return NumServices;
+    }
     if !(*pServiceStatus).is_null() {
         HeapFree(
             GetProcessHeap(),
             0,
             *pServiceStatus as PVOID,
         );
+        *pServiceStatus = core::ptr::null_mut();
     }
 
     CloseServiceHandle(hSCManagerLocal);
 
-    return NumServices;
+    return 0;
 }
 
 unsafe extern "C" fn ParseQueryArguments(
@@ -310,7 +322,9 @@ unsafe extern "C" fn ParseQueryArguments(
             TmpIndex += 1;
             TmpCount -= 1;
 
-            if TmpCount >= 0 {
+            // The C tests `>= 0` here (every sibling tests `> 0`): `sc query ri=` as the last
+            // argument read ServiceArgs[ArgCount], one past the array.
+            if TmpCount > 0 {
                 dwValue = _tcstoul(
                     *ServiceArgs.offset(TmpIndex as isize),
                     core::ptr::null_mut(),
