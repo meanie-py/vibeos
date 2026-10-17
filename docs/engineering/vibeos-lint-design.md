@@ -31,11 +31,11 @@ One host binary, `vibeos-lint`, that walks the tree **once**, reads and tokenise
 Target: **the whole source suite in seconds** (single digits on this host), so the check a
 lane runs before landing and the check the gate runs are the same fast command.
 
-Non-goals for now: the post-link binary lints (`run_binary_lints`: scan_ud2,
-scan_flex_array_panic, … read built objects), `check-tooling` (ruff/pyright/pytest), and
-checks that drive external tools (`shellcheck`, `py-syntax`/compileall, anything that runs
-clang, bindgen or cargo, or reads `build-<arch>/`). Those keep running as today; list each
-you leave out, with the reason, in this doc's inventory.
+The final coverage batch expands the original source-only scope at the user's request:
+all source-registry checks run through Rust plugins, including the checks that invoke
+external tools or inspect `build-<arch>/`. Shellcheck, clang, binutils and the Python
+compiler remain their respective authorities; Rust owns their invocation and check logic.
+Post-link `run_binary_lints` and `check-tooling` remain separate commands.
 
 ## The contract it must keep (do not change behaviour)
 
@@ -64,7 +64,7 @@ The current system, so the switch is invisible to every lane:
   `.cache/vibeos-lint/`, keyed by a digest of its sources, under a lock. Commit
   `Cargo.lock`; build `--offline`. Available offline in `~/.cargo/registry`: `regex`,
   `rayon`, `memchr`, `aho-corasick`, `syn` 2, `serde`/`serde_json`. Nothing else without
-  asking.
+  asking. Tree-sitter and `yaml-rust` were subsequently approved by the user.
 - **One pass:** walk once (same pruning as `source_walk.py`), read each file once, and build
   a per-file representation that rules share: raw bytes, line index, and for `.rs` a
   comment/string-masked view (most Python scanners strip comments and strings themselves,
@@ -116,12 +116,12 @@ TSV was produced from `/tmp/vibeos-cli/*-check-*/commands.jsonl` (`stage` = `lin
 
 | Scanner | Ported? | Parity (py / rs findings) | Notes / reason left out |
 |---|---|---|---|
-| `scan_atl_slot_cast` | No | — | Owed: added on master; retained Python command and controls. |
-| `scan_fnclass_cc` | No | — | Owed: added on master; retained Python command and controls. |
-| `scan_cmake_linked_rust` | No | — | Added on master; excluded: reads build-amd64/build.ninja through cargo_cell_gen. |
-| `scan_list_walk_cursor_after_loop` | No | — | Owed: added on master; retained Python command and controls. |
-| `shellcheck` | No | — | Excluded: invokes shellcheck. |
-| `py-syntax` | No | — | Excluded: invokes Python compileall. |
+| `scan_atl_slot_cast` | Yes | 0 / 0; older 0 / 0 | Final batch: native scanner controls. |
+| `scan_fnclass_cc` | Yes | 0 / 0; older 4 / 4 | Final batch: tracked header and KMDF class authority; native controls. |
+| `scan_cmake_linked_rust` | Yes | 25 / 25 current | Final batch: full read-only cargo-cell model, three-arch fixtures; reads build graphs/PE files. |
+| `scan_list_walk_cursor_after_loop` | Yes | 0 / 0; older 1 / 1 | Final batch: native scanner controls. |
+| `shellcheck` | Yes | 8 / 8 on both trees | Rust driver invokes the existing shellcheck binary; missing-tool coverage stays strict. |
+| `py-syntax` | Yes | 0 / 0 on both trees | Rust driver invokes the CLI Python interpreter as the syntax compiler. |
 | `verify_ffi` | Yes | 157 / 157; older 157 / 157 | Batch 7: exact parity on both trees; Rust fixtures. |
 | `verify_constants` | Yes | 0 / 0; older 0 / 0 | Batch 6: exact parity on both trees; Rust fixtures. |
 | `verify_constants_enums` | Yes | 3 / 3; older 3 / 3 | Batch 6: exact parity on both trees; Rust fixtures. |
@@ -131,12 +131,12 @@ TSV was produced from `/tmp/vibeos-cli/*-check-*/commands.jsonl` (`stage` = `lin
 | `shell32_tail_inventory` | Yes | 0 / 0; older 0 / 0 | Batch 6: exact parity on both trees; Rust fixtures. |
 | `verify_tables` | Yes | 3 / 3; older 3 / 3 | Batch 8: exact parity on both trees; Rust fixtures. |
 | `verify_match_consts` | Yes | 0 / 0; older 0 / 0 | Batch 8: exact parity on both trees; Rust fixtures. |
-| `verify_signatures` | No | — | Excluded: invokes clang against this checkout’s generated build headers. |
+| `verify_signatures` | Yes | 15 / 15 current | Native parser/AST/Unicode fixtures; configured headers required. |
 | `verify_conv_macros` | Yes | 0 / 0; older 0 / 0 | Batch 6: exact parity on both trees; Rust fixtures. |
-| `verify_ucrtbase_cohab` | No | — | Excluded: reads built archives/DLLs with nm/objdump. |
-| `vendored_registry` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `verify_ucrtbase_cohab` | Yes | 0 / 0 on both trees | Rust graph/archive/takeover/import checks; Python reporting helpers retained. |
+| `vendored_registry` | Yes | 0 / 0 on both trees | Approved YAML parser; metadata/marker snapshot and exact notices regeneration. |
 | `verify_translation_literals` | Yes | 130 / 130; older 130 / 130 | Batch 6: exact parity on both trees; Rust fixtures. |
-| `gen_ctype_tables` | No | — | Excluded: reads build-i386 ctype.c.obj through llvm-nm/llvm-objcopy. |
+| `gen_ctype_tables` | Yes | 0 / 0 on both trees | Native derivation and object proof; Python --emit generator retained. |
 | `verify_lost_exports` | Yes | 0 / 0; older 0 / 0 | Batch 7: exact parity on both trees; Rust fixtures. |
 | `verify_c_signatures` | Yes | 10 / 10; older 10 / 10 | Batch 6: exact parity on both trees; Rust fixtures. |
 | `scan_inline_flag_literals` | Yes | 0 / 0 (current); 0 / 0 (older) | Batch 4; exact finding hashes on both trees. |
@@ -209,8 +209,8 @@ TSV was produced from `/tmp/vibeos-cli/*-check-*/commands.jsonl` (`stage` = `lin
 | `scan_call_literal_vs_c` | Yes | 139 / 139; older 139 / 139 | Batch 5: exact parity on both trees; Rust fixtures. |
 | `scan_pack_drift` | Yes | 3 / 3 (current); 2 / 2 (older) | Batch 4; exact finding hashes on both trees. |
 | `scan_unaligned_wide` | Yes | 0 / 0; older 0 / 0 | Batch 5: exact parity on both trees; Rust fixtures. |
-| `verify_svc_numbering` | No | — | Excluded: disassembles built i386 user32/gdi32 stubs with llvm-objdump. |
-| `marshalgen_audit` | No | — | Excluded: invokes clang record-layout probes using configured build trees. |
+| `verify_svc_numbering` | Yes | 0 / 0 on both trees | Rust driver invokes objdump; table/stub controls cover unavailable builds. |
+| `marshalgen_audit` | Yes | 0 / 0 on both trees | Source-derived tables and clang layout checks; stale artifact/positive divergence controls. |
 | `scan_cc_mismatch` | Yes | 14 / 14 (current); 14 / 14 (older) | Batch 4; exact finding hashes on both trees. |
 | `scan_rawdylib_linkname` | Yes | 0 / 0 (current); 0 / 0 (older) | Batch 4; exact finding hashes on both trees. |
 | `scan_import_cc` | Yes | 6 / 6 (current); 4 / 4 (older) | Batch 4; exact finding hashes on both trees. |
@@ -587,3 +587,47 @@ during a build. The original four-rule replay remains exact. Convention replay a
 master oracle also matches on both trees (zero findings); its reports are included
 in `parity/master-sync-996c6ff.json`. Three focused bootstrap regression tests
 passed. Both full gates are rerun on the retired implementations and corrected catalog.
+
+## Complete source-registry cutover (2026-10-17)
+
+All **120 source checks** now have registered Rust plugins and are routed through
+one shared invocation by `./vibeos-cli check`. The final twelve include the three
+new source scanners, vendor registry, and all eight formerly excluded external/build
+checks. Shellcheck, clang/binutils and Python's compiler remain external authorities;
+no standalone Python scanner command runs in the source registry. Missing shellcheck
+and an empty shell input set retain their original coverage verdicts.
+
+`parity/final-coverage.json` records the method and limits. Against master `996c6ff`,
+all twelve match on this tree (**48 findings**); ten also match on `cc53d01b091`
+(**13 findings**). The older tree has no configured headers/build graph, so signature
+and cargo-cell checks additionally use native parser and three-arch model fixtures.
+The latter compare accepted/refused labels with the real converter survey on the same
+synthetic build inputs. Build-dependent SVC and marshalling success on these trees is
+an original skip, not evidence of an executed disassembly/layout probe; separate
+controls exercise divergence, repair and stale-table failure.
+
+The signature port fixes Unicode character windows and crate-wide deduplication.
+Vendor parity caught form feeds in GPL grants: notice rendering now follows Python's
+full line-break semantics, with a byte-exact committed-notices control. Vendor grant
+policy lives once in `tools/vendor-grants.json`; cargo-cell engine dictionaries and
+calling-convention aliases are embedded from their canonical tables. Bootstrap
+fingerprints all three inputs and rejects a build whose inputs changed underneath it.
+
+Six standalone Python scanners and the dedicated signature pytest file are retired.
+Writer/report libraries remain for vendored notices, ctype generation, UCRT burndown
+and marshalling generation; their old lint CLI modes now direct callers to the native
+front door. The cargo-cell ratchet tests and all scanner controls exercise the shipping
+binary. A registry test requires every source stage to belong to the native routed set,
+so a future Python scanner cannot silently reopen the split. External/registry
+plugins declare their own inputs rather than requiring an unrelated default Rust
+workspace. The vendor fixture driver uses its temporary registry as the repository;
+project-specific tolerated grants apply only to project checkouts carrying the
+canonical vendored writer. Follow-up vendor-only parity remains exact on both trees.
+Native no-SDK fixtures also prove missing-build skips and a guest syscall dispatched
+to its neighbor failing loudly.
+
+The parity subsets ran concurrently: **92.69 seconds** for the current twelve and
+**71.92 seconds** for the older ten. These are coverage checks, not a controlled full-suite
+performance comparison. Performance tuning and the single-digit target remain next.
+Full source/tooling gates run after retirement; their artifact paths are recorded in
+the checkpoint commit message. No push or landing is performed by this lane.

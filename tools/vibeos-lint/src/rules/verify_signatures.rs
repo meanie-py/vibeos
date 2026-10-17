@@ -37,6 +37,9 @@ const KERNEL_ROOTS: &[&str] = &[
     "sdk/lib/rust/pnpmgr-rust/src",
 ];
 impl Rule for VerifySignatures {
+    fn needs_workspace_rust(&self) -> bool {
+        false
+    }
     fn name(&self) -> &'static str {
         "verify_signatures"
     }
@@ -62,8 +65,9 @@ impl Rule for VerifySignatures {
                 })
                 .collect();
             fs.sort_by(|a, b| a.path.cmp(&b.path));
+            let mut seen = BTreeSet::new();
             for f in fs {
-                rust.extend(scan_rust(&f.text, &f.path));
+                rust.extend(scan_rust_with_seen(&f.text, &f.path, &mut seen));
             }
         }
         let (findings, stats) = compare(&rust, &protos, &ctypes);
@@ -276,16 +280,32 @@ fn balanced_params(s: &str, open: usize) -> (String, usize) {
     }
     (out, j)
 }
+/// Byte position immediately after at most `count` Unicode scalar values.
+/// Python regex/string slices use character offsets; regex crate matches expose
+/// byte offsets, so windows must cross this conversion boundary explicitly.
+fn byte_after_chars(s: &str, start: usize, count: usize) -> usize {
+    let tail = &s[start..];
+    tail.char_indices()
+        .nth(count)
+        .map_or(s.len(), |(offset, _)| start + offset)
+}
+
 fn scan_rust(s: &str, path: &std::path::Path) -> Vec<RF> {
+    scan_rust_with_seen(s, path, &mut BTreeSet::new())
+}
+
+fn scan_rust_with_seen(
+    s: &str,
+    path: &std::path::Path,
+    seen: &mut BTreeSet<(String, usize)>,
+) -> Vec<RF> {
     let mut out = vec![];
-    let mut seen = BTreeSet::new();
     for a in EXPORT.captures_iter(s) {
         let pos = a.get(0).unwrap().start();
-        let end = (pos + 600).min(s.len());
+        let end = byte_after_chars(s, pos, 600);
         let Some(f) = FN.captures(&s[pos..end]) else {
             continue;
         };
-        let fs = pos + f.get(0).unwrap().start();
         let open = pos + f.get(0).unwrap().end() - 1;
         let name = f.get(2).unwrap().as_str();
         let link = a.get(2).map(|x| x.as_str());
@@ -295,7 +315,9 @@ fn scan_rust(s: &str, path: &std::path::Path) -> Vec<RF> {
             .iter()
             .filter_map(|x| param_type(x))
             .collect();
-        let ret_text = &s[(j + 1).min(s.len())..(j + 401).min(s.len())];
+        let ret_start = (j + 1).min(s.len());
+        let ret_end = byte_after_chars(s, ret_start, 400);
+        let ret_text = &s[ret_start..ret_end];
         let rr = crate::regexes::cached(r"(?s)^\s*->\s*(.+?)\s*(\{|;|where\b)").unwrap();
         let ret = rr
             .captures(ret_text)
@@ -312,7 +334,6 @@ fn scan_rust(s: &str, path: &std::path::Path) -> Vec<RF> {
             file: path.into(),
             line: s[..pos].bytes().filter(|b| *b == b'\n').count() + 1,
         });
-        let _ = fs;
     }
     out
 }
@@ -414,6 +435,33 @@ fn rshape(t: &str, arch: &str, ct: &BTreeMap<String, (String, String)>) -> Shape
         .rsplit("::")
         .next()
         .unwrap_or("");
+    // Python's classifier checks Rust primitives before the shared C typedef
+    // table. Keep that order even if an unusual AST happens to define an alias
+    // with a primitive spelling.
+    let primitive = match base {
+        "u8" => Some(("int", 1, false)),
+        "i8" => Some(("int", 1, true)),
+        "u16" => Some(("int", 2, false)),
+        "i16" => Some(("int", 2, true)),
+        "u32" => Some(("int", 4, false)),
+        "i32" => Some(("int", 4, true)),
+        "u64" => Some(("int", 8, false)),
+        "i64" => Some(("int", 8, true)),
+        "usize" => Some(("int", ptr, false)),
+        "isize" => Some(("int", ptr, true)),
+        "bool" => Some(("int", 1, false)),
+        "f32" => Some(("float", 4, true)),
+        "f64" => Some(("float", 8, true)),
+        "c_void" | "()" => Some(("void", 0, false)),
+        _ => None,
+    };
+    if let Some((cat, size, sign)) = primitive {
+        return Shape {
+            cat,
+            size: Some(size),
+            sign,
+        };
+    }
     if let Some((q, d)) = ct.get(base) {
         let _ = q;
         return cshape(d, arch);
@@ -444,6 +492,7 @@ fn rshape(t: &str, arch: &str, ct: &BTreeMap<String, (String, String)>) -> Shape
         "LONGLONG" | "LONG64" => ("int", 8, true),
         "SIZE_T" | "ULONG_PTR" | "DWORD_PTR" | "UINT_PTR" | "WPARAM" => ("int", ptr, false),
         "SSIZE_T" | "LONG_PTR" | "INT_PTR" | "LPARAM" | "LRESULT" => ("int", ptr, true),
+        "PVOID64" => ("ptr", 8, false),
         "HANDLE" | "HWND" | "HKEY" | "HDC" | "HMODULE" | "HINSTANCE" | "HICON" | "HMENU"
         | "HGDIOBJ" | "HBRUSH" | "HBITMAP" | "HPALETTE" | "HFONT" | "HRGN" | "SC_HANDLE"
         | "PVOID" | "LPVOID" | "PWSTR" | "PCWSTR" | "LPWSTR" | "LPCWSTR" | "PSTR" | "PCSTR"
@@ -682,6 +731,52 @@ pub extern "system" fn Foo(a: ULONG, /* note: see ( below */ b: PVOID, // traili
 pub extern "C" fn Bar(x: *mut [u8; 4], f: Option<fn(u32) -> u32>) {}"#;
         let f = scan_rust(s, std::path::Path::new("x.rs"));
         assert_eq!(f[0].params, vec!["*mut [u8; 4]", "Option<fn(u32) -> u32>"]);
+    }
+    #[test]
+    fn python_character_windows_handle_multibyte_text_before_the_function() {
+        let s = format!(
+            "#[no_mangle]\n// {}\npub extern \"system\" fn UnicodeWindow() {{}}\n",
+            "—".repeat(300)
+        );
+        let f = scan_rust(&s, std::path::Path::new("unicode.rs"));
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].name, "UnicodeWindow");
+    }
+    #[test]
+    fn python_character_return_window_does_not_slice_inside_utf8() {
+        let s = format!(
+            "#[no_mangle]\npub extern \"system\" fn UnicodeReturn() -> u32 /*é{}*/ {{ 0 }}\n",
+            "—".repeat(130)
+        );
+        let f = scan_rust(&s, std::path::Path::new("unicode.rs"));
+        assert_eq!(f.len(), 1);
+        assert!(f[0].ret.starts_with("u32 /*é"));
+    }
+    #[test]
+    fn exported_twins_deduplicate_across_files_within_one_crate() {
+        let mut seen = BTreeSet::new();
+        let first = scan_rust_with_seen(
+            "#[no_mangle]\npub extern \"system\" fn Twin(a: ULONG) {}",
+            std::path::Path::new("a.rs"),
+            &mut seen,
+        );
+        let second = scan_rust_with_seen(
+            "#[no_mangle]\npub extern \"system\" fn Twin(a: ULONG) {}",
+            std::path::Path::new("b.rs"),
+            &mut seen,
+        );
+        assert_eq!(first.len(), 1);
+        assert!(second.is_empty());
+    }
+    #[test]
+    fn primitive_precedence_and_fixed_width_pointer_alias_match_python() {
+        let mut aliases = BTreeMap::new();
+        aliases.insert("u32".into(), ("u32".into(), "unsigned long long".into()));
+        let primitive = rshape("u32", "i386", &aliases);
+        assert_eq!(primitive.size, Some(4));
+        let fixed = rshape("PVOID64", "i386", &BTreeMap::new());
+        assert_eq!(fixed.cat, "ptr");
+        assert_eq!(fixed.size, Some(8));
     }
     #[test]
     fn ast_facts_extract_prototypes_and_typedefs() {

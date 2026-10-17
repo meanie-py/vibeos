@@ -6,6 +6,7 @@ import fcntl
 import hashlib
 import os
 import subprocess
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -14,6 +15,18 @@ from tools.source_walk import source_files
 # Only parity-proven plugins belong here. The original registry owns stage ordering.
 PORTED = frozenset(
     {
+        "shellcheck",
+        "py-syntax",
+        "scan_cmake_linked_rust",
+        "scan_atl_slot_cast",
+        "scan_fnclass_cc",
+        "scan_list_walk_cursor_after_loop",
+        "vendored_registry",
+        "verify_signatures",
+        "verify_ucrtbase_cohab",
+        "gen_ctype_tables",
+        "verify_svc_numbering",
+        "marshalgen_audit",
         "verify_match_consts",
         "verify_tables",
         "scan_export_shadows",
@@ -138,6 +151,8 @@ def ensure(repo: Path) -> Path:
             source / "Cargo.lock",
             repo / "rust-toolchain.toml",
             repo / "tools/rustconv/rustconv/conventions.py",
+            repo / "tools/vendor-grants.json",
+            repo / "tools/cargo_cell_gen.py",
             *sorted(source_files(source / "src")),
         ]
         digest = hashlib.sha256()
@@ -230,7 +245,17 @@ def run_many(
 ) -> dict[str, subprocess.CompletedProcess]:
     try:
         runner = ensure(repo)
-        cp = invoke([str(runner), "--root", str(repo), "--rules", ",".join(names)])
+        command = [str(runner), "--root", str(repo), "--rules", ",".join(names)]
+        if "py-syntax" in names:
+            command.extend(["--python", sys.executable])
+        if "shellcheck" in names:
+            from .lints import _shellcheck_bin
+
+            shellcheck = _shellcheck_bin()
+            if shellcheck is None:
+                raise RuntimeError("shellcheck is unavailable")
+            command.extend(["--shellcheck", shellcheck])
+        cp = invoke(command)
     except (OSError, RuntimeError, subprocess.SubprocessError) as error:
         cp = subprocess.CompletedProcess([], 2, "", f"FATAL: {error}")
     return split_output(cp, names)

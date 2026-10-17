@@ -1763,6 +1763,7 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     return [
         (name, [rustlints.SENTINEL, name], "stdout")
         if name in rustlints.PORTED
+        and (name != "shellcheck" or cmd[0] not in {"MISSING", "NOCHECK"})
         else (name, cmd, src)
         for name, cmd, src in specs
     ]

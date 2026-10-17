@@ -1,0 +1,3 @@
+{
+  "ptr:copying.bsd": "sdk/tools/kbdtool, 5 files: `LICENSE: BSD - See COPYING.BSD in the top level directory`. ReactOS has never shipped a COPYING.BSD -- it is absent from our history and from upstream master -- and no file in this tree carries a ReactOS-authored BSD grant to copy the wording from, so the variant is unknown. Writing one on the ReactOS Foundation's behalf would be inventing a grant, which is the thing this scan exists to catch."
+}

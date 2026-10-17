@@ -191,7 +191,6 @@ _PYTEST_SUITES = [
     # called 31 of 65 commits oracle hits by counting winetests sources the build does not
     # compile by configuration; the wrong number reads exactly like the right one.
     (".", ".", "tools/test_upstream_triage.py"),
-    (".", ".", "tools/test_verify_signatures.py"),
     # The vendored-code move plan is a reference list: a missed spelling (relative
     # add_subdirectory, a .cmake fragment, a ${VAR}-built path, an include root) is a
     # build that breaks after the move. Hermetic fixtures, no build dirs needed.

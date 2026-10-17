@@ -11,6 +11,14 @@ fn run() -> Result<(), String> {
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
+            "--python" => std::env::set_var(
+                "VIBEOS_LINT_PYTHON",
+                args.next().ok_or("--python requires an executable")?,
+            ),
+            "--shellcheck" => std::env::set_var(
+                "VIBEOS_LINT_SHELLCHECK",
+                args.next().ok_or("--shellcheck requires an executable")?,
+            ),
             "--root" => root = args.next().ok_or("--root requires a path")?.into(),
             "--path" => inputs.push(args.next().ok_or("--path requires a path")?.into()),
             "--rules" => names = Some(args.next().ok_or("--rules requires names")?),
@@ -66,9 +74,9 @@ fn run() -> Result<(), String> {
     let pool = builder.build().map_err(|e| e.to_string())?;
     let results = pool.install(|| {
         let needs = SourceNeeds {
-            workspace_rust: selected
-                .iter()
-                .any(|r| !r.needs_sdk_rust() && !r.needs_cdecl_sources()),
+            workspace_rust: selected.iter().any(|r| {
+                r.needs_workspace_rust() && !r.needs_sdk_rust() && !r.needs_cdecl_sources()
+            }),
             module_c: selected.iter().any(|r| r.needs_c_sources()),
             tracked_c: selected.iter().any(|r| r.needs_c_twins()),
             cargo_manifests: selected.iter().any(|r| r.needs_module_tree()),
