@@ -647,6 +647,7 @@ members = [
     "comctl32-rust",
     "inetcpl-rust",
     "ndis-rust",
+    "bwfm-rust",
     "notepad-rust",
     "winver-rust",
     "logoff-rust",
