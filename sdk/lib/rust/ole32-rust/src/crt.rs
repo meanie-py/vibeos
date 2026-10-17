@@ -27,7 +27,7 @@ extern "C" {
     pub fn wcstol(s: *const u16, endp: *mut *mut u16, base: c_int) -> c_long;
     pub fn wcstoul(s: *const u16, endp: *mut *mut u16, base: c_int) -> c_ulong;
     pub fn _wcsnicmp(s1: *const u16, s2: *const u16, n: usize) -> c_int;
-    pub fn towupper(c: c_int) -> c_int;
+    pub fn towupper(c: u16) -> u16; // wint_t: the C returns an unsigned short, not an int
 
     /// user32's wsprintfW. It lives with the CRT rather than in user32.rs because it is
     /// VARIADIC: a variadic Win32 function is __cdecl even on i386 (callee-cleans-stack

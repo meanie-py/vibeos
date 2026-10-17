@@ -3672,6 +3672,8 @@ pub const SHGNLI_PIDL: u32 = 1;
 pub const SHGNLI_PREFIXNAME: u32 = 2;
 pub const SHGNLI_NOUNIQUE: u32 = 4;
 pub const SHGNLI_NOLNK: u32 = 8;
+pub const SHGNLI_NOLOCNAME: u32 = 16;
+pub const SHGNLI_USEURLEXT: u32 = 32;
 pub const HF32_DEFAULT: u32 = 1;
 pub const HF32_SHARED: u32 = 2;
 pub const LF32_FIXED: u32 = 1;
@@ -8809,9 +8811,9 @@ pub type LPSHNAMEMAPPING = LPSHNAMEMAPPINGW;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct tagHEAPLIST32 {
-    pub dwSize: DWORD,
+    pub dwSize: SIZE_T,
     pub th32ProcessID: DWORD,
-    pub th32HeapID: DWORD,
+    pub th32HeapID: ULONG_PTR,
     pub dwFlags: DWORD,
 }
 pub type HEAPLIST32 = tagHEAPLIST32;
@@ -8820,15 +8822,15 @@ pub type LPHEAPLIST32 = *mut tagHEAPLIST32;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct tagHEAPENTRY32 {
-    pub dwSize: DWORD,
+    pub dwSize: SIZE_T,
     pub hHandle: HANDLE,
-    pub dwAddress: DWORD,
-    pub dwBlockSize: DWORD,
+    pub dwAddress: ULONG_PTR,
+    pub dwBlockSize: SIZE_T,
     pub dwFlags: DWORD,
     pub dwLockCount: DWORD,
     pub dwResvd: DWORD,
     pub th32ProcessID: DWORD,
-    pub th32HeapID: DWORD,
+    pub th32HeapID: ULONG_PTR,
 }
 pub type HEAPENTRY32 = tagHEAPENTRY32;
 pub type PHEAPENTRY32 = *mut tagHEAPENTRY32;
@@ -8839,7 +8841,7 @@ pub struct tagPROCESSENTRY32W {
     pub dwSize: DWORD,
     pub cntUsage: DWORD,
     pub th32ProcessID: DWORD,
-    pub th32DefaultHeapID: DWORD,
+    pub th32DefaultHeapID: ULONG_PTR,
     pub th32ModuleID: DWORD,
     pub cntThreads: DWORD,
     pub th32ParentProcessID: DWORD,
@@ -8856,7 +8858,7 @@ pub struct tagPROCESSENTRY32 {
     pub dwSize: DWORD,
     pub cntUsage: DWORD,
     pub th32ProcessID: DWORD,
-    pub th32DefaultHeapID: DWORD,
+    pub th32DefaultHeapID: ULONG_PTR,
     pub th32ModuleID: DWORD,
     pub cntThreads: DWORD,
     pub th32ParentProcessID: DWORD,

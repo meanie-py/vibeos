@@ -677,3 +677,16 @@ pub unsafe extern "system" fn GetIfTable2(Table: *mut PMIB_IF_TABLE2) -> u32 {
 pub extern "system" fn GetCurrentThreadCompartmentId() -> u32 {
     NET_IF_COMPARTMENT_ID_PRIMARY
 }
+
+/// C: `DWORD ConvertLengthToIpv4Mask(ULONG MaskLength, PULONG Mask)`. The mask is in network
+/// byte order; over 32 bits yields INADDR_NONE and ERROR_INVALID_PARAMETER (measured on
+/// Windows 11: 24 -> 00ffffff in memory, 33 -> ffffffff / 87).
+#[no_mangle]
+pub unsafe extern "system" fn ConvertLengthToIpv4Mask(MaskLength: u32, Mask: *mut u32) -> u32 {
+    if MaskLength > 32 {
+        *Mask = u32::MAX;
+        return ERROR_INVALID_PARAMETER;
+    }
+    *Mask = if MaskLength == 0 { 0 } else { (u32::MAX << (32 - MaskLength)).to_be() };
+    NO_ERROR
+}

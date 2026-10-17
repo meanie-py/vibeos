@@ -23,7 +23,11 @@ include(time/time.cmake)
 include(wine/wine.cmake)
 include(wstring/wstring.cmake)
 
-include(crt.cmake)
+# The static `crt` library (crt.cmake): nothing links it -- its one consumer,
+# modules/rostests/apitests/crt/static_crt_apitest.cmake, is itself commented out -- and
+# no build target pulled it, so its ~720 TUs only showed up in compile_commands.json,
+# where scanners and coverage counts took them for shipping code (2026-10-16).
+#include(crt.cmake)
 include(crtmath.cmake)
 include(libcntpr.cmake)
 include(msvcrtex.cmake)

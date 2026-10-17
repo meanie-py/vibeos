@@ -1883,6 +1883,26 @@ at zero.
 Bugs that compile and link clean but corrupt memory or strings at runtime, because the Rust
 mirror, literal width, or field offset silently disagrees with C.
 
+### The SDK header can be the wrong side: a `dwSize` struct that disagrees with Windows
+**Symptom:** on 64-bit only, a C or bindgen-islanded caller's `Process32FirstW` fails (wbemprox's
+`Win32_Process` returned WBEM_E_FAILED for every query; our wbemprox.dll fails the same way on
+Windows 11 itself), while the Rust kernel32 that implements it is fine.
+**Cause:** `sdk/include/psdk/tlhelp32.h` declared `th32DefaultHeapID` and the HEAPLIST32 /
+HEAPENTRY32 pointer-width fields as DWORD. kernel32-rust had the Windows layout (ULONG_PTR,
+SIZE_T), so a caller built from the header passed `dwSize` 556 where the callee expects 568,
+and the size check refused it. Every island generated from that header inherited the error
+(drwtsn32, taskkill, taskmgr, umandlg).
+**Fix:** correct the header to the Windows layout, then regenerate the islands built from it
+(`gen_driver_types.sh <module>`; a C++ module's island carries post-generation fixes, so edit
+those fields by hand instead). Running OUR DLL on Windows (load it, `DllGetClassObject`) splits
+"our code" from "our OS" in one step.
+The same class runs the other way when a callee adopts the LARGER version of a versioned
+struct: every pointer step over it must move too. iphlpapi's `GetAdaptersAddresses` was
+switched to report `Length` = the LH size, but still started its packed strings at
+`current_aa.add(1)` on the XP-typed pointer, so AdapterName landed on `FirstGatewayAddress`
+and wbemprox walked string bytes as a list (`0x4000000000000000`). Grep the pointer's type,
+not just the size constant.
+
 ### Never hand-roll a shadow struct for a type bindgen already emits
 The single highest-yield rule in this section. Hand-rolled mirrors drift; bindgen's are
 size-verified. Real damage:
@@ -2022,6 +2042,13 @@ passed `infoPtr` first, a few did not. **Fix:** hand-port above the generated bl
 replay keeps it), with each captured local as an explicit LEADING parameter, and make every call
 site pass it. One parse error like this halts rustc before type checking, which also makes
 crate-repair's pass look like it fixed everything (10 errors left, 0 applied).
+The goto form is worse, because no parameter can carry it: mmc_new's `CHK_HR(stmt)` is
+`do { hr = (stmt); if (FAILED(hr)) goto CleanUp; } while (0)`, and its `macro_rules!` port
+names both the caller's `hr` and the caller's `'CleanUp` label, so every use is E0425 + E0426,
+reported at the PRELUDE line rather than the call site. Expand it in the body
+(`hr = ..; if hr < 0 { break 'CleanUp; }` inside a `'CleanUp: { .. }` block, as mscfile's
+bodies already were) and bank the function. Owed in `port macros`: lower a goto-carrying
+macro by inlining it at the call sites, not as a `macro_rules!`.
 
 ### A UNICODE module inherits the ANSI TCHAR family from the `-sys` glob
 `ntdll-sys` is generated WITHOUT `-DUNICODE`, so its bindgen carries `pub type LPTSTR = LPSTR;`.
@@ -5435,6 +5462,26 @@ TU's file-scope `TypedefDecl`s.
 ### Small C++-pipeline shapes that cost rapps a re-buy or a hundred errors
 
 Each was one fix in the tool; listed so the next module's symptom can be matched to one.
+- **A hand bank outlives the C it was written for.** `port replay` re-applies a bank by
+  NAME, so a function whose C changed upstream keeps its old body silently: after the
+  2026-10-15 sync, mmc_new's `CAddDialog::OnCommand` still built `new CSnapin(CacheEntry)`
+  without upstream's node id, and four more banks (`ParseWindowPlacement`'s S_FALSE,
+  `PreMessageLoop`'s CActionWnd registration, CCustomizeDialog's toolbar refresh) had the
+  same shape. A bank now records the hash of its C definition (`c_sha`, comments and
+  whitespace ignored) and `port replay` refuses every bank whose C changed since, naming
+  them; port the change into each body and re-capture it with `port hand`. Banks captured
+  before this carry no hash and are not checked until re-captured. Dropping is wrong too: two of the stale banks were the class LAYOUTS carrying
+  ATL's `m_thunk`/`m_pfnSuperWindowProc`, and the generic glue without them loses the MDI
+  frame's DefFrameProc.
+- **`CAtlList::GetNext(&mut pos)` returns the element's SLOT.** The C++ `(CConsoleWnd*)
+  list.GetNext(pos)` came back as `list.GetNext(&mut pos) as *mut CConsoleWnd`, which for a
+  list of pointers casts `*mut *mut X` to `*mut X` and compiles; five mmc_new sites read
+  list-node memory as the window (WM_CLOSE to a bogus HWND, then a use-after-free of the
+  root node). Deref instead. `tools/scan_atl_slot_cast.py` gates it in `vibeos-cli check`.
+- **Hand-written window glue beside the generated one.** A crate whose `src/*.rs` defines
+  `impl Class { DefWindowProc / Create }` or re-exports `CWndProcThunk` from its prelude now
+  wins: `port cppapp` skips its generic copies (they were E0592/E0252, and the generic
+  DefWindowProc ignores `m_pfnSuperWindowProc`).
 - **A comment between the declarator and the brace** (`BOOL F(..) // note` then `{`): the
   free-function signature is joined onto one line and the comment swallowed the `{`; the
   stitch dropped the function ("Planned Rust definitions absent"). `cpp_model` strips comments
@@ -12621,6 +12668,21 @@ deterministically, not by soak:** a `gdb probe` with a hardware breakpoint at
 `PsConvertToGuiThread` read IF=0 on 6/6 entries before and IF=1 on 6/6 after. When a C body
 brackets a region with a save/restore of flags or IRQL, diff the Rust for BOTH halves -- a sweep
 of every Rust fn that disables interrupts without restoring found this one only.
+
+### A torn-read protocol written in the wrong order passes every check but the one it exists for
+**Symptom:** none you will see in a boot. A reader of `KSYSTEM_TIME` (system, interrupt or tick
+time) on one CPU, racing the clock update on another, accepts a value whose high word is new
+and low word old: about 7 minutes off, once per low-word wrap.
+**Cause:** the protocol (ndk/kefuncs.h `KiWriteSystemTime`) is writer `High2Time`, `LowPart`,
+`High1Time`; reader `High1Time`, `LowPart`, then accept only if `High2Time` equals `High1Time`.
+Rust's `KiWriteSystemTime` (`ke/time.rs`) wrote `High1Time` first and `High2Time` last on i386,
+under a comment claiming it matched the C, and on 64-bit wrote the u64 before `High2Time`,
+which breaks 32-bit WoW64 readers the same way. The 64-bit store was also a `write_volatile::<u64>`
+to `KUSER_SHARED_DATA+0x14`, only 4-aligned: UB that debug-assertions' alignment check caught.
+**Fix:** C order exactly; the 64-bit half is one unaligned `str`/`mov` in asm, with `dmb ishst`
+first on arm64 so the other CPU cannot see the stores out of order. A UP boot can never show
+this: the writer is the clock interrupt, which a reader on the same CPU never interleaves with.
+For any seqlock-shaped protocol, check the write order against the C, not the comment.
 
 ### A per-CPU register read after `sti` belongs to whoever faulted last
 **Symptom:** amd64 ladder `fault64.exe`/`fault32.exe` exit `0xBAF2` ("rung1 FAIL: AV params"):

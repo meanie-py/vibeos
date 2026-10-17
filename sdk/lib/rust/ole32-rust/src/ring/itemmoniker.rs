@@ -724,7 +724,7 @@ fn ItemMonikerImpl_Hash(iface: *mut IMoniker, pdwHash: *mut DWORD) -> HRESULT {
 
     let mut i = len;
     while i > 0 {
-        h = h.wrapping_mul(3) ^ (towupper(*val.offset(off) as c_int) as DWORD);
+        h = h.wrapping_mul(3) ^ (towupper(*val.offset(off) as u16) as DWORD);
         off += 1;
         i -= 1;
     }
@@ -1066,13 +1066,13 @@ fn ItemMonikerROTDataImpl_GetComparisonData(
 
     /* write delimiter, upper-cased (the whole string, not just its first char) */
     for i in 0..delim_len {
-        ptrW.write_unaligned(towupper(*(*This).itemDelimiter.add(i) as c_int) as WCHAR);
+        ptrW.write_unaligned(towupper(*(*This).itemDelimiter.add(i) as u16) as WCHAR);
         ptrW = ptrW.add(1);
     }
 
     /* write name */
     for i in 0..name_len {
-        ptrW.write_unaligned(towupper(*(*This).itemName.add(i) as c_int) as WCHAR);
+        ptrW.write_unaligned(towupper(*(*This).itemName.add(i) as u16) as WCHAR);
         ptrW = ptrW.add(1);
     }
     ptrW.write_unaligned(0);

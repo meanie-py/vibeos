@@ -291,6 +291,7 @@ class ReceiptSession:
         self.root.mkdir(parents=True, exist_ok=True)
         self.before = self._identity()
         self.generated_before = generated_identity(self.repo)
+        self.generated_checked: str | None = None
         self.key = _digest([_VERSION, self.before])
         self.lock = (self.root / f"{self.key}.lock").open("a")
         fcntl.flock(self.lock, fcntl.LOCK_EX)
@@ -368,7 +369,8 @@ class ReceiptSession:
         rejected a lane resubmitted unchanged after a halted train (shell32-com
         b20d7379364c) while its base-only regate, with no receipt, passed."""
         generated = self.hits & GENERATED_INPUT_CHECKS
-        if generated and generated_identity(self.repo) != self.generated_before:
+        self.generated_checked = generated_identity(self.repo)
+        if generated and self.generated_checked != self.generated_before:
             return generated
         return set()
 
@@ -393,7 +395,14 @@ class ReceiptSession:
                     "in the foreground and make no edits until it returns."
                 )
             generated_changed = generated_identity(self.repo) != self.generated_before
-            if generated_changed and "pytest:tools/rustconv/tests" in self.hits:
+            # A hit that `stale_generated_hits` re-validated after every check had
+            # finished is as current as a live run finishing then: headers the gate's
+            # builds rewrite AFTER that moment are newer than any live result too.
+            # Raising here anyway failed a green 62-minute gate between the two
+            # hashes (integration batch 4+5, 2026-10-17). Its receipt is still not
+            # published (generated_keys below), so the cache stays strict.
+            validated = self.generated_checked == self.generated_before
+            if generated_changed and not validated and "pytest:tools/rustconv/tests" in self.hits:
                 raise RuntimeError(
                     "Generated tooling inputs changed after receipt reuse; rerun check-tooling."
                 )

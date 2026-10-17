@@ -72,7 +72,7 @@ extern "C" {
     pub fn _wfopen(file: *const u16, mode: *const u16) -> *mut c_void; // msconfig-rust/src/prelude.rs
     pub fn fclose(stream: *mut FILE) -> c_int; // cmd-rust/src/prelude.rs
     pub fn fgetws(s: *mut wchar_t, size: i32, file: *mut FILE) -> *mut wchar_t; // msconfig-rust/src/prelude.rs
-    pub fn towupper(c: c_int) -> c_int; // comctl32-rust/src/prelude.rs
+    pub fn towupper(c: wint_t) -> wint_t; // comctl32-rust/src/prelude.rs
     pub fn wcslen(s: *const u16) -> usize; // access-rust/src/prelude.rs
     pub fn wcsrchr(s: *const u16, c: u16) -> *mut u16; // advapi32-rust/src/prelude.rs
     pub fn wcsstr(haystack: LPCWSTR, needle: LPCWSTR) -> LPWSTR; // appwiz-rust/src/prelude.rs

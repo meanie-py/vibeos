@@ -4,6 +4,10 @@ pub static CPP_COM_WSTR_96A296D224F2: [WCHAR; 1] = [0x0000];
 
 use core::ffi::c_void;
 
+
+
+
+
 #[no_mangle]
 pub unsafe extern "system" fn wWinMain(_hInstance: HINSTANCE, _hPrevInstance: HINSTANCE, _lpCmdLine: LPWSTR, nCmdShow: i32) -> i32 {
     __cxx_global_init();
@@ -18,11 +22,6 @@ pub unsafe extern "system" fn wWinMain(_hInstance: HINSTANCE, _hPrevInstance: HI
 
     return g_AtlModule.WinMain(nCmdShow);
 }
-#[no_mangle]
-pub unsafe extern "C" fn __cxx_global_init() {
-    // `static CMMCModule g_AtlModule;` -- its constructor (CMainWnd's included).
-    (*core::ptr::addr_of_mut!(g_AtlModule)).__ctor_0();
-}
 
 impl CMMCModule {
     pub unsafe fn PreMessageLoop(&mut self, nShowCmd: i32) -> HRESULT {
@@ -31,21 +30,26 @@ impl CMMCModule {
         if FAILED_UNEXPECTEDLY!(hr) {
             return hr;
         }
-    
+
         (*this_).m_hAccel = LoadAcceleratorsW(_AtlBaseModule.GetModuleInstance(), MAKEINTRESOURCEW!(IDA_MMC));
         if (*this_).m_hAccel.is_null() {
             DPRINT1!("ERROR: Failed to load accelerators\n");
             return E_FAIL;
         }
-    
+
         let mut ret: WNDPROC = core::mem::zeroed();
         if CConsoleWnd::GetWndClassInfo().Register(core::ptr::addr_of_mut!(ret)) == 0 {
             DPRINT1!("ERROR: Failed to register CConsoleWnd class\n");
             return E_FAIL;
         }
-    
+
+        if CActionWnd::GetWndClassInfo().Register(core::ptr::addr_of_mut!(ret)) == 0 {
+            DPRINT1!("ERROR: Failed to register CActionWnd class\n");
+            return E_FAIL;
+        }
+
         let mut Filename: LPCWSTR = core::ptr::null();
-    
+
         if (*this_).m_MainWnd.Create(
             core::ptr::null_mut(),
             core::ptr::null_mut(),
@@ -59,7 +63,7 @@ impl CMMCModule {
             DPRINT1!("ERROR: Failed to create m_MainWnd\n");
             return E_FAIL;
         }
-    
+
         (*this_).m_MainWnd.__base0.ShowWindow(nShowCmd);
         return S_OK;
     }

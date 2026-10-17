@@ -206,7 +206,7 @@ extern "C" {
     pub fn _wtol(str: *const u16) -> i32; // cnt-rust/src/cabi/generated.rs
     pub fn free(p: *mut c_void); // atlclasses-rust/src/lib.rs
     pub fn malloc(size: usize) -> *mut c_void; // atlclasses-rust/src/lib.rs
-    pub fn towupper(c: c_int) -> c_int; // comctl32-rust/src/prelude.rs
+    pub fn towupper(c: wint_t) -> wint_t; // comctl32-rust/src/prelude.rs
     pub fn wcscmp(a: *const u16, b: *const u16) -> c_int; // apphelp-rust/src/prelude.rs
     pub fn wcstok(s: *mut u16, delim: *const u16) -> *mut u16; // desk-rust/src/prelude.rs
     pub fn wcstol(s: *const u16, endptr: *mut *mut u16, base: i32) -> i32; // comctl32-rust/src/prelude.rs

@@ -14,6 +14,17 @@ from tools.source_walk import source_files
 # Only parity-proven plugins belong here. The original registry owns stage ordering.
 PORTED = frozenset(
     {
+        "scan_comment_swallowed_code",
+        "scan_formatless_printf",
+        "scan_ptr_typedef_cast_read",
+        "scan_call_arg_swap",
+        "scan_sse_helpers",
+        "scan_extern_arity",
+        "scan_dropped_null_guard",
+        "scan_ptr_byte_diff",
+        "scan_constant_placement",
+        "scan_raising_probes",
+        "scan_store_on_failure",
         "scan_assert_to_ub",
         "scan_bindgen_padding_index",
         "scan_bitwise_not_bool",
