@@ -6757,6 +6757,20 @@ implied LIMITED grants a full right carries), and grade with a test that runs on
 11 as well (`Win10Surface`'s Test_LimitedAccess). A `*_ALL_ACCESS` in a kernel crate is a
 version-dependent constant: write the value the KERNEL means, not what `0x502` expands to.
 
+### An undeclared cfg is a branch that never compiles, and the warning is the only trace
+Symptom: the Rust always takes one side of a translated `#ifdef`, whatever the C build defines.
+rustc says so once, as `unexpected_cfgs`, and the census filed that lint under NOISE until
+2026-10-17. Cause: the translation renamed a C define into a cfg or feature that nothing
+declares and nothing sets. cdfs wrote `cfg!(not(reactos))` where `reactos` is a Cargo feature,
+not a cfg, so `CdQueryFsDeviceInfo` always returned the non-ReactOS `FILE_DEVICE_CD_ROM`. desk
+gated `pCDevSettings_AllocAndCopyString` on `feature = "unicode"`, and desk is built UNICODE, so
+it ran the ANSI branch on a wide string: every display device name came out one character
+long. oleaut32 hung a `feature = "__REACTOS__"` choice on a split the C does not make.
+Fix: decide each site against what the C build defines, never against what the name suggests.
+Fix a misspelling. Declare a gate that is off on purpose in the crate's `[features]` (or in
+`check-cfg` for a tool cfg like `kani`), with a comment naming the C define, so that the next
+misspelling still warns. The census now counts `unexpected_cfgs` as LOGIC.
+
 ### A `#if` on a WINDOWS VERSION comes back as `#[cfg(target_arch)]`
 
 **Symptom.** Either a hard parse error (`attributes on expressions are experimental`, because

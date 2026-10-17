@@ -18,18 +18,26 @@ now in `rust_ub_deny` next to `invalid_value` and `deref_nullptr`. Re-run the ce
 `python3 tools/rust_warning_census.py build-i386 build-amd64 build-arm64`. Details are under
 "2026-10-17" below.
 
+**Later on 2026-10-17** (after that census; landed as b8f5a91889d, dd8d8701261 and the
+`unexpected_cfgs` batch):
+- **`improper_ctypes` 48 -> 0, now denied.** All of the UB tier is denied in `rust_ub_deny`.
+- **More `clashing_extern` cleared.**
+  - cdrom 72 -> 0, plus about 75 external-API clashes in 12 crates.
+  - Remaining outside shell32: menuband's 4 come from the `SIZE_T = usize` in shell32's
+    shellcom.rs, and the i386-only pairs are the same width (benign).
+  - shell32's 880 stay with the shell32-com lane.
+- **New gate `scan_fnclass_cc`:** a callback declared through an NTAPI function class and defined
+  cdecl. It found 4 real i386 bugs.
+- **`unexpected_cfgs` is LOGIC now.** It found desk's `unicode` bug. The remaining 4 are
+  crt-shared (msvcrt-homebrew's) and wdmaud_drv (the audio lane).
+
 **Owed, roughly in priority order:**
-- **`improper_ctypes` (48):** mspaint and msctfime. The user said to do these next, after the
-  2026-10-17 landing.
-- **The rest of `clashing_extern_declarations` (1,031).** The recipe is: `tools/extern_to_use.py`
-  for a crate's own functions; `--canonical` for external APIs, graded by agents against the C
-  prototypes; then `rustconv crate-repair` over 3 arches; then the residue. Each kind of residue
-  is in the field manual, "Collapsing a clashing extern to ONE declaration".
-- **`unexpected_cfgs` (54).** Real signal: cdfs's `cfg!(not(reactos))` was a feature misspelled
-  as a cfg, and shipped the C's non-ReactOS answer. Sort each site into one of two:
-  - an intentional never-set gate, which gets declared in that crate's `check-cfg`, as
-    fastfat's ntddi cfgs are;
-  - a misspelling, which gets fixed. Then gate the lint.
+- **The rest of `clashing_extern`:** shell32 (880, the shell32-com lane's), and menuband's
+  shellcom pair. `extern_to_use` gaps:
+  - it does not collapse two declarations in the SAME file under different inline mods
+    (rtl-strings' `cabi/mod.rs` was done by hand);
+  - it does not see that a definition is cfg-gated (cdrom's i386-only `KeQueryTickCount`
+    extern).
 - **LOGIC smalls:** `unused_assignments` (29), `unreachable_code` (6), `useless_ptr_null_checks`,
   `unused_comparisons`, `unused_must_use`, and the obname/psnotify fn-pointer comparison.
 - **Noise:**
@@ -38,6 +46,11 @@ now in `rust_ub_deny` next to `invalid_value` and `deref_nullptr`. Re-run the ce
   - `tools/apply_rustc_suggestions.py --skip-crate` keeps a sweep off hot crates. Rustc offers
     no machine fix for most of what is left.
   - The 12 float `unnecessary_transmutes` are msvcrt-homebrew's.
+- **Islands:**
+  - the committed mspaint and msctfime islands have drifted far from what the generator now
+    writes (thousands of lines). A real regen is its own job.
+  - bindgen declares a function-class declaration `extern "C"` on i386, which is wrong for
+    NTAPI classes. `scan_fnclass_cc` covers the Rust side.
 - **Upstream drift:** explorer #9332, oleaut32 VarMod and serializeBMP.
 - **pcix arbiters**, and the preserved upstream-C bugs under "Owed follow-ups".
 
