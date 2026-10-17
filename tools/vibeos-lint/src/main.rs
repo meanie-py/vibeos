@@ -79,7 +79,20 @@ fn run() -> Result<(), String> {
             .iter()
             .flat_map(|r| r.extra_files().iter().map(PathBuf::from))
             .collect();
-        let corpus = Corpus::load_scopes_with_extra(&root, &inputs, needs, &extras)?;
+        let source_sets: Vec<_> = selected
+            .iter()
+            .flat_map(|rule| rule.source_sets().iter().copied())
+            .collect();
+        let started = std::time::Instant::now();
+        let corpus = Corpus::load_scopes_with_sets(&root, &inputs, needs, &extras, &source_sets)?;
+        if std::env::var_os("VIBEOS_LINT_TIMINGS").is_some() {
+            eprintln!(
+                "TIMING\tsource_snapshot\t{:.3}\t{} files\t{} bytes",
+                started.elapsed().as_secs_f64(),
+                corpus.files.len(),
+                corpus.files.iter().map(|f| f.bytes().len()).sum::<usize>()
+            );
+        }
         vibeos_lint::execute(&corpus, &selected)
     })?;
     // Buffer all results until every plugin succeeds; never publish partial coverage.

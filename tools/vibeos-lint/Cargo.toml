@@ -9,6 +9,8 @@ publish = false
 [dependencies]
 regex = "=1.11.1"
 rayon = "=1.10.0"
+tree-sitter = "=0.25.2"
+tree-sitter-rust = "=0.24.1"
 
 [profile.release]
 lto = "thin"

@@ -49,8 +49,65 @@ pub mod raising_probes;
 
 pub mod store_on_failure;
 
+pub mod arg_side_effects;
+pub mod assert_polarity;
+pub mod case_bitor_pattern;
+pub mod octal_literals;
+pub mod raw_user_access;
+pub mod safe_probe_deref;
+
+pub mod doc_sections;
+pub mod orphan_modules;
+pub mod pack_drift;
+
+pub mod bool_width;
+pub mod bugcheck_stubs;
+pub mod cc_mismatch;
+pub mod dropped_asserts;
+pub mod dropped_prints;
+pub mod dropped_probes;
+pub mod dropped_seh_pairs;
+pub mod extern_static_width;
+pub mod import_cc;
+pub mod inline_flag_literals;
+pub mod macro_fn_shadow;
+pub mod nightly_surface;
+pub mod rawdylib_linkname;
+pub mod res_named_types;
+pub mod type_alias_contradictions;
+pub mod varargs_spec_arity;
+pub mod wide_literals;
+pub mod winerror_consts;
+
 pub fn registry() -> Vec<Box<dyn Rule>> {
     vec![
+        Box::new(winerror_consts::WinerrorConsts),
+        Box::new(wide_literals::WideLiterals),
+        Box::new(bool_width::BoolWidth),
+        Box::new(type_alias_contradictions::TypeAliasContradictions),
+        Box::new(inline_flag_literals::InlineFlagLiterals),
+        Box::new(res_named_types::ResNamedTypes),
+        Box::new(dropped_prints::DroppedPrints),
+        Box::new(dropped_probes::DroppedProbes),
+        Box::new(dropped_seh_pairs::DroppedSehPairs),
+        Box::new(dropped_asserts::DroppedAsserts),
+        Box::new(nightly_surface::NightlySurface),
+        Box::new(bugcheck_stubs::BugcheckStubs),
+        Box::new(macro_fn_shadow::MacroFnShadow),
+        Box::new(varargs_spec_arity::VarargsSpecArity),
+        Box::new(import_cc::ImportCc),
+        Box::new(cc_mismatch::CcMismatch),
+        Box::new(extern_static_width::ExternStaticWidth),
+        Box::new(rawdylib_linkname::RawdylibLinkname),
+        Box::new(orphan_modules::OrphanModules),
+        Box::new(pack_drift::PackDrift),
+        Box::new(doc_sections::DocSections),
+        Box::new(octal_literals::OctalLiterals),
+        Box::new(case_bitor_pattern::CaseBitorPattern),
+        Box::new(arg_side_effects::ArgSideEffects),
+        Box::new(assert_polarity::AssertPolarity),
+        Box::new(raw_user_access::RawUserAccess),
+        Box::new(safe_probe_deref::SafeProbeDeref),
         Box::new(store_on_failure::StoreOnFailure),
         Box::new(dropped_null_guard::DroppedNullGuard),
         Box::new(ptr_byte_diff::PtrByteDiff),
