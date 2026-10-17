@@ -195,6 +195,25 @@ impl Default for JoinLog {
     }
 }
 
+/// A joined station: what the link keeps after the 4-way handshake, to answer the AP's
+/// group rekeys (`Bus::answer_eapol`) for as long as the association lasts.
+pub struct Station {
+    sup: Supplicant,
+    /// The AP's address: EAPOL frames go to it.
+    pub aa: [u8; 6],
+    group_tkip: bool,
+}
+
+/// What one EAPOL frame from the AP did.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Answer {
+    /// The supplicant refused it (replayed, bad MIC, ...): nothing was sent.
+    Rejected(wpa_rust::Error),
+    /// `sent`: a reply went out. `complete`: it ended the 4-way handshake. `group`: a
+    /// group key went in (message 3, or a rekey).
+    Answered { sent: bool, complete: bool, group: bool },
+}
+
 /// Received frames the join cares about, collected during a poll.
 struct Inbox {
     eapol: [[u8; 256]; 4],
@@ -257,6 +276,32 @@ impl Nonce {
 }
 
 impl<P: Platform> Bus<P> {
+    /// Run one EAPOL frame from the AP (from the 802.1X header) through the station's
+    /// supplicant: send its reply, then install the keys it yields. The pairwise key goes
+    /// in only after message 4 has left, since the key it confirms must not encrypt it.
+    pub fn answer_eapol(&mut self, st: &mut Station, body: &[u8], mut each: impl FnMut(Frame)) -> Result<Answer, Error> {
+        let mut reply = Reply { frame: [0; MAX_REPLY], len: 0, install_ptk: false, gtk: None, complete: false };
+        if let Err(e) = st.sup.receive(body, &mut reply) {
+            return Ok(Answer::Rejected(e));
+        }
+        let sent = reply.len != 0;
+        if sent {
+            self.send_data(&st.aa, ETHERTYPE_EAPOL, &reply.frame[..reply.len], &mut each)?;
+        }
+        if reply.install_ptk {
+            self.chip.sdio.hc.p.stall_us(MSG4_DRAIN_US);
+            let key = wsec_key(st.sup.tk(), 0, CRYPTO_ALGO_AES_CCM, Some(&st.aa));
+            self.set_var(b"wsec_key", &key, &mut each).map_err(named("pairwise wsec_key refused"))?;
+        }
+        let group = reply.gtk.is_some();
+        if let Some(g) = reply.gtk {
+            let algo = if st.group_tkip { CRYPTO_ALGO_TKIP } else { CRYPTO_ALGO_AES_CCM };
+            let key = wsec_key(&g.key[..g.len], g.id as u32, algo, None);
+            self.set_var(b"wsec_key", &key, &mut each).map_err(named("group wsec_key refused"))?;
+        }
+        Ok(Answer::Answered { sent, complete: reply.complete, group })
+    }
+
     /// The RSN element in the association request the firmware sent: `assoc_info`
     /// gives the request's IE length, `assoc_req_ies` the IEs. Some((offset, len))
     /// into `out`, or None when the request carried none.
@@ -280,13 +325,19 @@ impl<P: Platform> Bus<P> {
 
     /// Join `cfg`'s network at `target` (the strongest scan entry for its SSID).
     /// `read_mac` must have run. `each` gets every frame the join does not consume.
-    pub fn join(
+    pub fn join(&mut self, cfg: &WifiConfig, target: &Bss, log: &mut JoinLog, each: impl FnMut(Frame)) -> Result<JoinEnd, Error> {
+        self.join_station(cfg, target, log, each).map(|(end, _)| end)
+    }
+
+    /// `join`, keeping the station when the link comes up: its supplicant answers the
+    /// AP's group rekeys from then on (`Bus::service`).
+    pub fn join_station(
         &mut self,
         cfg: &WifiConfig,
         target: &Bss,
         log: &mut JoinLog,
         mut each: impl FnMut(Frame),
-    ) -> Result<JoinEnd, Error> {
+    ) -> Result<(JoinEnd, Option<Station>), Error> {
         let rsn = our_rsn(target.rsn()).map_err(|why| Error::Card(why, target.channel as u32))?;
         // Events and message 1 can arrive while a command still waits for its reply:
         // every frame read from here on goes through the inbox first.
@@ -330,9 +381,8 @@ impl<P: Platform> Bus<P> {
         let spa = self.mac;
         nonce.stir(self);
         let snonce = nonce.snonce(&aa, &spa);
-        let mut sup = Supplicant::new(&pmk, &aa, &spa, &rsn, &snonce);
+        let mut st = Station { sup: Supplicant::new(&pmk, &aa, &spa, &rsn, &snonce), aa, group_tkip };
         let mut checked_assoc_ie = false;
-        let mut reply = Reply { frame: [0; MAX_REPLY], len: 0, install_ptk: false, gtk: None, complete: false };
         let start = self.chip.sdio.hc.p.now_us();
         let mut frame = [0u8; 256];
         loop {
@@ -342,7 +392,7 @@ impl<P: Platform> Bus<P> {
                 (b.refused, b.linked, b.n)
             };
             if let Some((e, s)) = refused {
-                return Ok(JoinEnd::Refused(e, s));
+                return Ok((JoinEnd::Refused(e, s), None));
             }
             log.associated |= linked;
             if n > 0 && !checked_assoc_ie {
@@ -357,7 +407,7 @@ impl<P: Platform> Bus<P> {
                         log.assoc_rsn[..log.assoc_rsn_len].copy_from_slice(&sent[..log.assoc_rsn_len]);
                         if sent != rsn {
                             log.assoc_rsn_differs = true;
-                            sup = Supplicant::new(&pmk, &aa, &spa, sent, &snonce);
+                            st.sup = Supplicant::new(&pmk, &aa, &spa, sent, &snonce);
                         }
                     }
                     Ok(None) => log.assoc_rsn_len = 0,
@@ -371,27 +421,17 @@ impl<P: Platform> Bus<P> {
                     b.eapol_len[i]
                 };
                 log.eapol_in += 1;
-                if let Err(e) = sup.receive(&frame[..len], &mut reply) {
-                    log.rejected += 1;
-                    log.last_reject = Some(e);
-                    continue;
-                }
-                if reply.len != 0 {
-                    self.send_data(&aa, ETHERTYPE_EAPOL, &reply.frame[..reply.len], &mut each)?;
-                    log.eapol_out += 1;
-                }
-                if reply.install_ptk {
-                    self.chip.sdio.hc.p.stall_us(MSG4_DRAIN_US);
-                    let key = wsec_key(sup.tk(), 0, CRYPTO_ALGO_AES_CCM, Some(&aa));
-                    self.set_var(b"wsec_key", &key, &mut each).map_err(named("pairwise wsec_key refused"))?;
-                }
-                if let Some(g) = reply.gtk {
-                    let algo = if group_tkip { CRYPTO_ALGO_TKIP } else { CRYPTO_ALGO_AES_CCM };
-                    let key = wsec_key(&g.key[..g.len], g.id as u32, algo, None);
-                    self.set_var(b"wsec_key", &key, &mut each).map_err(named("group wsec_key refused"))?;
-                }
-                if reply.complete {
-                    return Ok(JoinEnd::Up);
+                match self.answer_eapol(&mut st, &frame[..len], &mut each)? {
+                    Answer::Rejected(e) => {
+                        log.rejected += 1;
+                        log.last_reject = Some(e);
+                    }
+                    Answer::Answered { sent, complete, .. } => {
+                        log.eapol_out += sent as u32;
+                        if complete {
+                            return Ok((JoinEnd::Up, Some(st)));
+                        }
+                    }
                 }
             }
             // Those frames are handled; frames that arrived during the sends above
@@ -406,7 +446,7 @@ impl<P: Platform> Bus<P> {
                 b.n = left;
             }
             if self.chip.sdio.hc.p.now_us().wrapping_sub(start) > JOIN_WAIT_US {
-                return Ok(if log.associated { JoinEnd::NoHandshake } else { JoinEnd::Timeout });
+                return Ok((if log.associated { JoinEnd::NoHandshake } else { JoinEnd::Timeout }, None));
             }
             self.chip.sdio.hc.p.stall_us(10_000);
         }

@@ -85,12 +85,6 @@ HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\ACPI#BRCME88C","Cl
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\ACPI#BRCM5D12","Service",0x00000000,"sdhc"
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\ACPI#BRCM5D12","ClassGUID",0x00000000,"{4D36E97B-E325-11CE-BFC1-08002BE10318}"
 
-; The Raspberry Pi 5's Wi-Fi SDIO host (SDC1, the BRCM5D12 with the WLAN child),
-; which the arm64 HAL publishes under the chip on it so sdhc.sys does not take it.
-; bwfm.sys drives the CYW43455; see bwfm-rust/src/driver.rs.
-HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\VIBEOS#CYW43455","Service",0x00000000,"bwfm"
-HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\VIBEOS#CYW43455","ClassGUID",0x00000000,"{4D36E972-E325-11CE-BFC1-08002BE10318}"
-
 ; NVM Express controllers (PCI class 01/08/02) on every architecture: the
 ; OptiPlex's drive, QEMU's nvme device, a Graviton's EBS volumes. nvme.sys
 ; presents each namespace to disk.sys; see nvme-rust/src/lib.rs.
@@ -1928,12 +1922,6 @@ HKLM,"SYSTEM\CurrentControlSet\Services\sdhc","Group",0x00000000,"SCSI miniport"
 HKLM,"SYSTEM\CurrentControlSet\Services\sdhc","ImagePath",0x00020000,"system32\drivers\sdhc.sys"
 HKLM,"SYSTEM\CurrentControlSet\Services\sdhc","Start",0x00010001,0x00000003
 HKLM,"SYSTEM\CurrentControlSet\Services\sdhc","Type",0x00010001,0x00000001
-
-; The Raspberry Pis' CYW43455 Wi-Fi (arm64)
-HKLM,"SYSTEM\CurrentControlSet\Services\bwfm","ErrorControl",0x00010001,0x00000001
-HKLM,"SYSTEM\CurrentControlSet\Services\bwfm","ImagePath",0x00020000,"system32\drivers\bwfm.sys"
-HKLM,"SYSTEM\CurrentControlSet\Services\bwfm","Start",0x00010001,0x00000003
-HKLM,"SYSTEM\CurrentControlSet\Services\bwfm","Type",0x00010001,0x00000001
 
 ; NVM Express driver. Boot-start, so an NVMe drive can hold the system volume.
 HKLM,"SYSTEM\CurrentControlSet\Services\nvme","ErrorControl",0x00010001,0x00000001
