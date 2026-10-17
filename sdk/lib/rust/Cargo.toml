@@ -1,5 +1,11 @@
 [workspace]
 members = [
+    "reactos-cargo",
+    "tdi-cargo",
+    "rtl8139-cargo",
+    "netio-cargo",
+    "ndisuio-cargo",
+    "blue-cargo",
     "user32_vista-cargo",
     "wdmaud-cargo",
     "sysaudio-cargo",
@@ -228,6 +234,8 @@ members = [
     "sysaudio-rust",
     "sysaudio-difftest",
     "audio-convert-difftest",
+    "mmixer-difftest",
+    "ddk-macros-rust",
     "portcls-difftest",
     "varargs-rust",
     "drvtrace-shim",
@@ -879,6 +887,13 @@ members = [
     "mmdrv-rust",
     "beepmidi-rust",
     "sndblst-rust",
+    "reactos-rust",
+    "blue-rust",
+    "ndisuio-rust",
+    "netio-rust",
+    "rtl8139-rust",
+    "tdi-rust",
+    "tzlib-rust",
 ]
 resolver = "2"
 
@@ -942,10 +957,18 @@ debug = 1
 # Enable it one crate at a time, with a boot per crate. Full accounting, and the
 # three already-fixed never-compiled blocks, are in the roadmap entry.
 #
-# ARMED: ntoskrnl-rust (2026-10-16). Next: ex-rust, hal-rust, the ob/ps/mm crates.
+# ARMED: ntoskrnl-rust (2026-10-16), ex-rust and hal-rust (2026-10-17). Next: the
+# ob/ps/se/mm crates. overflow-checks defaults to FOLLOWING debug-assertions and
+# must stay off: the C has no overflow traps.
 [profile.release.package.ntoskrnl-rust]
 debug-assertions = true
-overflow-checks = false   # defaults to FOLLOWING debug-assertions; C has no overflow traps
+overflow-checks = false
+[profile.release.package.ex-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.hal-rust]
+debug-assertions = true
+overflow-checks = false
 
 # The appcompat shim DLLs register their shims as `.shm$BBB` records that only shimlib's section
 # walk ever reads, so the DLL reaches each crate through ONE anchor symbol (lib.rs). One codegen

@@ -1858,7 +1858,7 @@ pub unsafe extern "system" fn HalGetInterruptVector(
     }
 
     *Irql = 0;
-    *Affinity = 0;
+    core::ptr::write_unaligned(Affinity, 0);
 
     // A message token is not a line on any bus: the HAL routes it (crate::message).
     if crate::message::is_message_token(BusInterruptVector) {

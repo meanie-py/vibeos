@@ -1170,11 +1170,14 @@ pub unsafe extern "C" fn MMixerSetGetVolumeControlDetails(
         if bSet == 0 {
             /* FIXME SEH */
             /* Convert from hardware range (DB) to logical units */
-            (*Input.offset(Channel as isize)).dwValue = ((((Value as INT64
-                - (*VolumeData).SignedMinimum as INT64
-                + 1 as INT64)
+            // Divergence from sup.c: its `+ 1` (which offsets the set path's truncation) makes
+            // full volume read back as 0x10000, one past the control's Bounds.dwMaximum of
+            // 0xFFFF (controls.c), and a driver value outside [SignedMinimum, SignedMaximum]
+            // wraps the ULONG. The same formula, kept inside the control's bounds.
+            let Logical = ((Value as INT64 - (*VolumeData).SignedMinimum as INT64 + 1)
                 * 0x10000 as INT64)
-                / MaxRange as INT64) as ULONG) as DWORD;
+                / MaxRange as INT64;
+            (*Input.offset(Channel as isize)).dwValue = Logical.clamp(0, 0xFFFF) as DWORD;
         }
 
         Channel = Channel.wrapping_add(1);

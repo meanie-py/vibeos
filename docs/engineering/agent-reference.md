@@ -59,10 +59,14 @@ resolves it. A red batch **splits recursively**, so innocent lanes still land an
 is rejected with its gate classification plus its artifact dir. Full design:
 `tests/qemu/cli/README.md` → `land`, and the header of `tests/qemu/cli/queue.py`.
 
-Two files every lane appends to, `tools/rustconv/gen_driver_types.sh` and
-`tools/cohab-census.txt`, have structural merge drivers (`tools/merge_drivers.py`, named
-in `.gitattributes`): the driver table merges arm by arm and the census row by row, so two
-lanes adding different modules no longer conflict. A real both-sides edit still does. The
+Three files every lane appends to, `tools/rustconv/gen_driver_types.sh`,
+`tools/cohab-census.txt` and `sdk/lib/rust/Cargo.toml`, have structural merge drivers
+(`tools/merge_drivers.py`, named in `.gitattributes`): the driver table merges arm by arm,
+the census row by row and the workspace `members` crate by crate, so two lanes adding
+different modules no longer conflict. (Replayed over the last 174 real merges of
+Cargo.toml, the members driver reproduces 170 byte for byte, 38 of them merges plain git
+conflicted on.) `Cargo.lock` has no driver: it is generated, so take master's and
+regenerate. A real both-sides edit still does. The
 drivers are git config, set per clone by `tools/install-git-hooks.sh`; without it git
 merges those files as plain text, as before.
 

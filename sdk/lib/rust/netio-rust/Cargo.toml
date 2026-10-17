@@ -1,0 +1,18 @@
+# netio-rust — see src/lib.rs for the module map.
+[package]
+name = "netio-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+
+[lib]
+name = "netio_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+ddk-macros-rust = { path = "../ddk-macros-rust" }
+strsafe-rust = { path = "../strsafe-rust" }
+panic-common = { path = "../panic-common", features = ["kernel"] }
+ntkrnl-sys = { path = "../ntkrnl-sys" }
+win32macros-rust = { path = "../win32macros-rust" }

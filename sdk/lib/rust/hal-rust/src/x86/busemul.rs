@@ -99,6 +99,11 @@ pub unsafe extern "system" fn HalpAssignSlotResources(
 
 // ---------------------------------------------------------------------------
 // HalpTranslateBusAddress — internal helper, identity translation.
+//
+// TranslatedAddress usually points INTO a CM_PARTIAL_RESOURCE_DESCRIPTOR,
+// which is #pragma pack(4): its PHYSICAL_ADDRESS fields are only 4-aligned.
+// Legal C, UB as a Rust deref (debug-assertions' alignment check fires on
+// every boot), so every write through a PPHYSICAL_ADDRESS here is unaligned.
 // ---------------------------------------------------------------------------
 
 #[unsafe(no_mangle)]
@@ -110,7 +115,7 @@ pub unsafe extern "system" fn HalpTranslateBusAddress(
     TranslatedAddress: PPHYSICAL_ADDRESS,
 ) -> BOOLEAN {
     unsafe {
-        (*TranslatedAddress).QuadPart = BusAddress.QuadPart;
+        core::ptr::write_unaligned(core::ptr::addr_of_mut!((*TranslatedAddress).QuadPart), BusAddress.QuadPart);
         1 /* TRUE */
     }
 }
@@ -136,7 +141,7 @@ pub unsafe extern "system" fn HalpFindBusAddressTranslation(
         if *Context != 0 && NextBus != 0 {
             return 0;
         }
-        (*TranslatedAddress).QuadPart = BusAddress.QuadPart;
+        core::ptr::write_unaligned(core::ptr::addr_of_mut!((*TranslatedAddress).QuadPart), BusAddress.QuadPart);
         *Context = 1;
         1
     }
@@ -318,7 +323,7 @@ pub unsafe extern "system" fn HalTranslateBusAddress(
                 TranslatedAddress,
             )
         } else {
-            (*TranslatedAddress).QuadPart = BusAddress.QuadPart;
+            core::ptr::write_unaligned(core::ptr::addr_of_mut!((*TranslatedAddress).QuadPart), BusAddress.QuadPart);
             1
         }
     }

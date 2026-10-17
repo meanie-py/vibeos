@@ -25,6 +25,10 @@ use ntkrnl_sys::probe::{probe_user_buffer, probe_user_buffer_write};
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
+    fn RtlMoveMemory(Destination: PVOID, Source: PVOID, Length: usize);
+}
+
+extern "system" {
     static mut LpcPortObjectType: PVOID;
     static SeTcbPrivilege: _LUID;
     static SeShutdownPrivilege: _LUID;
@@ -281,9 +285,14 @@ pub unsafe extern "system" fn ExRaiseHardError(
 
             for i in 0..(NumberOfParameters as usize) {
                 if (UnicodeStringParameterMask & (1 << i)) != 0 {
-                    core::ptr::copy_nonoverlapping(
-                        *Parameters.add(i) as *const u8,
-                        core::ptr::addr_of_mut!(CapturedParams[i]) as *mut u8,
+                    // The C's RtlMoveMemory, via the export, on purpose: a caller's
+                    // NULL string parameter must FAULT here and reach the caller's
+                    // handler as STATUS_ACCESS_VIOLATION (kmtest ExHardError checks
+                    // exactly that). copy_nonoverlapping's UB check would panic
+                    // the kernel instead.
+                    RtlMoveMemory(
+                        core::ptr::addr_of_mut!(CapturedParams[i]) as PVOID,
+                        *Parameters.add(i) as PVOID,
                         core::mem::size_of::<UNICODE_STRING>(),
                     );
 
@@ -312,11 +321,16 @@ pub unsafe extern "system" fn ExRaiseHardError(
                     // ULONG_PTR field: u32 on i386, u64 on amd64/arm64. Cast via usize then `as _`.
                     (*UserParams).Parameters[i] = core::ptr::addr_of_mut!((*UserParams).Strings[i]) as usize as _;
 
-                    core::ptr::copy_nonoverlapping(
-                        CapturedParams[i].Buffer as *const u8,
-                        BufferBase as *mut u8,
-                        CapturedParams[i].MaximumLength as usize,
-                    );
+                    // An empty UNICODE_STRING carries Buffer == NULL: fine for the
+                    // C's RtlCopyMemory of 0 bytes, UB for copy_nonoverlapping
+                    // (kmtest ExHardError trips the armed check on it).
+                    if CapturedParams[i].MaximumLength != 0 {
+                        core::ptr::copy_nonoverlapping(
+                            CapturedParams[i].Buffer as *const u8,
+                            BufferBase as *mut u8,
+                            CapturedParams[i].MaximumLength as usize,
+                        );
+                    }
 
                     CapturedParams[i].Buffer = BufferBase;
                     core::ptr::copy_nonoverlapping(

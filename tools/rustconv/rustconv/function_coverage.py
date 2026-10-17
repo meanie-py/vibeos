@@ -47,6 +47,10 @@ def rust_definitions(text: str) -> set[str]:
     return set(rust_definition_bodies(text))
 
 
+#: tchar.h's entry-point macros and what they expand to (UNICODE, then ANSI).
+_TCHAR_EXPANSIONS = {"_tWinMain": ("wWinMain", "WinMain"), "_tmain": ("wmain", "main")}
+
+
 def restore_requested_name(rust: str, name: str) -> str:
     """Respell a definition whose name differs from the requested C name only in CASE.
 
@@ -59,6 +63,13 @@ def restore_requested_name(rust: str, name: str) -> str:
     defs = rust_definitions(rust)
     if name in defs:
         return rust
+    # A tchar.h entry macro answered as its expansion: reactos.exe's `_tWinMain` came back
+    # as `fn wWinMain`, the function the UNICODE build really defines, and the stitch
+    # refused a paid body as missing. The C spelling is put back; port's entry-point pass
+    # exports it under the name the CRT calls.
+    expansions = [d for d in _TCHAR_EXPANSIONS.get(name, ()) if d in defs]
+    if len(expansions) == 1:
+        return re.sub(rf"\bfn\s+{expansions[0]}\b", f"fn {name}", rust, count=1)
     twins = [d for d in defs if d.lower() == name.lower()]
     if len(twins) != 1:
         return _restore_method_form(rust, name, defs)

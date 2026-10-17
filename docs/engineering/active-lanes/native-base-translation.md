@@ -84,14 +84,26 @@ What the batch added to the shared crates and tools:
 2. **The static `crt` library is pruned too** (`#include(crt.cmake)`, 2026-10-16). Nothing
    linked it and no target pulled it in, so its ~720 TUs only appeared in
    compile_commands.json.
-3. More audio difftest targets, ranked by a survey on 2026-10-16:
-   - mmixer's `MMixerSetGetVolumeControlDetails` (`sup.c:648`): its round trip is off by
-     one, and `Value == Max` gives 0x10000.
-   - mmixer's topology walkers (`topology.c:568-1077`): duplicate inserts, `Visited` set
-     on the wrong node, and nothing guards against cycles.
-   - mmebuddy's `DoWaveStreaming`/`CompleteIO` (`streaming.c`): looped playback never
-     counts its loops down.
-4. Pick the next native area from `rust-port-status.md` (what is still C and not on the
+3. **Audio difftests, round two (2026-10-17, `mmixer-difftest`, $0).** Both mmixer findings
+   from the survey were real and are fixed:
+   - `MMixerSetGetVolumeControlDetails` reported full volume as 0x10000, one past the
+     control's 0xFFFF maximum, and wrapped a driver value outside its range. The Rust
+     clamps; the C formula is kept.
+   - The topology walkers: `MMixerAddPinIndexToArray` had no equality case, so a pin or node
+     reached along two paths was listed twice. With the array full that pushed the count
+     past MaxPins. Neither walker skipped a visited node; they only ASSERTed, and ASSERT!
+     compiles out in the Rust, so a cycle would recurse without end. `GetUpOrDownstreamNodes`
+     also marked the parent where it meant the child. The harness grades trees exactly
+     against the C and diamonds and cycles against a reachability model.
+   - Still owed: mmebuddy's `DoWaveStreaming`/`CompleteIO` looped-playback state machine
+     (`streaming.c`), which never counts its loops down.
+4. **Batch H flipped (2026-10-17):** reactos.exe, blue, ndisuio, netio, rtl8139, tdi and
+   tzlib. The row in rust-port-status.md has the details. After it, the ReactOS-native
+   plain-C tail is small: tdihelpers (owed below), sdk/lib/crt's `strtol` lib, normaliz's
+   native part, the boot loader's `blcmlib`/`blrtl`, and cdrom's data TUs. The rest is Wine
+   (needs the owner's call) or other lanes'. Measured from build-amd64/compile_commands.json,
+   filtering any TU with a Wine debug channel or `wine/` include.
+5. Pick the next native area from `rust-port-status.md` (what is still C and not on the
    skip list below).
 
 ## Not ours: skip these
@@ -114,6 +126,25 @@ driver (`tools/merge_drivers.py`, which also merges the cohab census), and psapi
 2026-10-16. The first run per stem compiles ntkrnl-sys cold in its private
 `target-<arch>`, which is the likely source of the earlier figure.
 
+- **tdihelpers needs one shared crate** (owed since 2026-10-17). `drivers/network/tdihelpers/
+  tdi.c`/`tdiconn.c` compile into BOTH afd.sys and netio.sys, so translate refuses them
+  ("no proven CMake source owner"), and buying them per driver would pay twice. netio was
+  ported with `port derive --keep-c tdi.c tdiconn.c`; they stay C in both drivers until a
+  `tdihelpers-rust` static crate exists that both link.
+- **`port macros` loses two things a hand fix then has to restore** (reactos.exe): it does
+  not widen integer operands (`GetDiskSizeInBytes` needed `as ULONGLONG`) and it drops the
+  `!` when one lowered macro calls another (`SetDlgItemFont` -> `SetWindowFont!`). The three
+  hand edits live inside reactos-rust's generated prelude block, so a `port macros` re-run
+  reverts them.
+- **usetup's cabinet/file-queue code exists twice** (usetup-rust, and reactos-rust's
+  `fileqsup.rs`, because the C `#include`s the .c files). One shared crate, like tdihelpers.
+- **`port flip` of a static library misses cargo cells.** timedate.cpl's cell linked
+  `engine:c:tzlib` (now only a stub) and failed every arch's link until it was pointed at
+  `engine:tzlib_rust`. flip should find `engine:c:<target>` users and rewrite or refuse.
+- **The live cost counter skips failed attempts.** Every attempt's `result.json` has
+  `cost_usd: null`, and a body that ends in `max_tokens` is never added to the running total
+  (DriveDlgProc's two 32K-token failures printed `$0.0000`). Batch H's real spend was summed
+  from the attempts' token counts. The counter should bill every attempt it sent.
 - The three tech-debt items are in the roadmap's "Known bugs & flakes" registry, so they
   are not repeated here:
   - the i386-uefi install's fastfat flush fault;

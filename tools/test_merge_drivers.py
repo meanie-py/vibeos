@@ -119,3 +119,54 @@ def test_git_runs_the_driver_on_a_real_merge(tmp_path: Path):
     git("commit", "-qam", "yours")
     git("merge", "-q", "--no-edit", "lane")
     assert script.read_text() == table(arm("a"), arm("yours"), arm("mine"))
+
+
+MEMBERS_HEAD = "[workspace]\nmembers = [\n"
+MEMBERS_TAIL = ']\nresolver = "2"\n\n[profile.release]\nopt-level = 2\n'
+
+
+def members(*names: str) -> str:
+    return MEMBERS_HEAD + "".join(f'    "{n}",\n' for n in names) + MEMBERS_TAIL
+
+
+def test_two_lanes_each_adding_a_crate_both_keep_theirs():
+    base = members("a-rust", "z-rust")
+    ours = members("a-rust", "mine-rust", "z-rust")
+    theirs = members("a-rust", "yours-rust", "z-rust")
+    out, clean = md.merge_cargo_members(base, ours, theirs)
+    assert clean
+    assert out == members("a-rust", "mine-rust", "yours-rust", "z-rust")
+
+
+def test_a_comment_block_travels_with_its_member_and_the_rest_merges_as_text():
+    base = members("a-rust")
+    ours = base.replace('    "a-rust",\n', '    "a-rust",\n    # why b\n    "b-rust",\n')
+    theirs = members("a-rust", "c-rust").replace("opt-level = 2", "opt-level = 3")
+    out, clean = md.merge_cargo_members(base, ours, theirs)
+    assert clean
+    assert '    # why b\n    "b-rust",\n    "c-rust",\n' in out
+    assert "opt-level = 3" in out
+
+
+def test_a_member_removed_on_one_side_stays_removed():
+    base = members("a-rust", "gone-rust", "z-rust")
+    out, clean = md.merge_cargo_members(
+        base, members("a-rust", "z-rust"), members("a-rust", "gone-rust", "z-rust", "new-rust")
+    )
+    assert clean and out == members("a-rust", "z-rust", "new-rust")
+
+
+def test_an_unrecognised_members_list_falls_back_to_the_text_merge():
+    weird = '[workspace]\nmembers = ["a", "b"]\n'
+    out, clean = md.merge_cargo_members(weird, weird.replace('"b"', '"c"'), weird)
+    assert clean and out == weird.replace('"b"', '"c"')
+
+
+def test_a_crate_listed_twice_still_merges_by_crate():
+    # aclui-rust sat in members twice; refusing such a file sent 23 of 174 merges to text.
+    base = members("a-rust", "dup-rust", "dup-rust")
+    ours = members("a-rust", "dup-rust", "dup-rust", "mine-rust")
+    theirs = members("a-rust", "dup-rust", "dup-rust", "yours-rust")
+    out, clean = md.merge_cargo_members(base, ours, theirs)
+    assert clean
+    assert out == members("a-rust", "dup-rust", "dup-rust", "mine-rust", "yours-rust")

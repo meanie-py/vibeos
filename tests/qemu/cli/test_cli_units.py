@@ -880,6 +880,26 @@ def test_crate_for_stem_separator_normalization(arm64_cohab_repo: Path):
     assert provenance._crate_for_stem(arm64_cohab_repo, "nonexistent") is None
 
 
+def test_a_binary_with_its_extension_in_its_name_maps_to_its_own_crate(monkeypatch):
+    """wdmaud.drv's Path.stem is `wdmaud` -- wdmaud.SYS's crate -- so a kernel-crate rebuild
+    reported wdmaud.drv "never relinked" against an archive it does not link (arm64,
+    2026-10-17). The crate port names it with the dot as `_` wins; the stem is the fallback."""
+    crates = {
+        "wdmaud": Path("wdmaud-rust"),
+        "wdmaud_drv": Path("wdmaud_drv-rust"),
+        "kernel32": Path("kernel32-rust"),
+    }
+    monkeypatch.setattr(provenance, "_crate_for_stem", lambda _repo, stem: crates.get(stem))
+    repo = Path("/r")
+    drv = "dll/win32/wdmaud.drv/wdmaud.drv"
+    sys_ = "drivers/wdm/audio/legacy/wdmaud/wdmaud.sys"
+    assert provenance._crate_for_rel(repo, drv) == Path("wdmaud_drv-rust")
+    assert provenance._crate_for_rel(repo, sys_) == Path("wdmaud-rust")
+    k32 = "dll/win32/kernel32/kernel32.dll"
+    assert provenance._crate_for_rel(repo, k32) == Path("kernel32-rust")
+    assert provenance._crate_for_rel(repo, "dll/win32/other/other.dll") is None
+
+
 def test_crate_for_stem_ignores_a_parked_non_member_crate(arm64_cohab_repo: Path):
     """A translated-but-NOT-YET-FLIPPED crate is not cohab, and treating it as one
     halted the merge train on 2026-08-04: msv1_0-rust was committed and parked out

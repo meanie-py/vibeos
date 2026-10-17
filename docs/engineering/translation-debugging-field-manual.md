@@ -1552,7 +1552,12 @@ loop means "before the head", i.e. append. A macro whose cursor stops on the las
 inserts one place too early. One that rebinds the cursor per iteration (`let $elem` in the
 loop, as ole32's does) leaves the caller's variable stale. winelist-rust's
 `LIST_FOR_EACH_ENTRY{,_SAFE}` assign the caller's variable and finish on the head's
-container, as C does. Its tests pin the append shape.
+container, as C does. Its tests pin the append shape. A walk lowered BY HAND over the raw
+entries (`while e != head { cur = container_of(e); ...; e = (*e).next }`) has the same trap:
+after the loop use `e`, which is the head when nothing broke, not `cur`. rtl-threadpool's
+timer re-arm inserted a periodic timer one place early this way (2026-10-17).
+`scan_list_walk_cursor_after_loop` flags the shape on `.next` walks only: a ReactOS
+`LIST_ENTRY` walk is an explicit C loop whose cursor ends on the last node in C as well.
 
 ### A list walk that reads `Flink` after freeing the entry
 
@@ -10256,6 +10261,29 @@ compiler. That asymmetry is why the assertion count (2,120) and the never-compil
 **Wider rule:** any `cfg` never enabled in a shipping configuration is an unverified region, and
 how many you have is a measurable debt. The same argument covers any feature flag CI never
 builds. A `cfg` you never compile is a `cfg` you cannot claim works.
+
+### Arming `debug-assertions` also arms rustc's UB checks: three shapes they hit in kernel code
+**Symptom.** With a kernel crate armed, a boot or kmtest panics on `misaligned pointer
+dereference` or `unsafe precondition(s) violated: ptr::copy_nonoverlapping / write_bytes`, in
+code that has always worked. On stable the UB checks share `cfg(debug_assertions)`.
+**Cause and fix, by shape (2026-10-17, arming ex-rust and hal-rust):**
+- **A real unaligned C object.** `CM_PARTIAL_RESOURCE_DESCRIPTOR` is `#pragma pack(4)`, so the
+  `PHYSICAL_ADDRESS`/`KAFFINITY` a HAL writes back through `TranslatedAddress`/`Affinity` is only
+  4-aligned on 64-bit. Legal C, UB as a Rust deref. Fix: `ptr::write_unaligned` for every
+  out-parameter that can point into a packed struct.
+- **An API whose contract is to FAULT.** `ExInitializeResourceLite(NULL)` and a NULL
+  `UNICODE_STRING` parameter to `ExRaiseHardError` must raise `STATUS_ACCESS_VIOLATION` into the
+  caller's `__try` (kmtest checks both). `write_bytes`/`copy_nonoverlapping` panic first. Fix: do
+  the C's `memset`/`RtlMoveMemory` through the export, which faults like the C. Find these up front
+  by grepping kmtests for a NULL argument inside `_SEH2_TRY`.
+- **An i386 trap frame at an odd address.** core's `check_language_ub` is a leaf with a 1-byte
+  local; LLVM keeps the x86 stack aligned only in functions that make calls, so it runs at an
+  odd ESP. i386 hardware pushes an interrupt frame wherever ESP points (amd64 realigns), and the
+  HAL's checked `KTRAP_FRAME` deref panics. Fix: `-Zub-checks=no` for i386 kernel code (it is
+  already the build-std nightly cell), set in both `reactos-link`'s nested RUSTFLAGS and
+  `.cargo/config.toml`'s `[target.i686-kernel]`; `debug_assert!` stays live.
+Triage tip: the i386 HAL loads as `halmp.dll` under the harness label `hal.dll`, and its panic
+text can print garbled; P4 of the `0xE0525354` bugcheck is still the source line.
 
 ### A flake that wipes the WHOLE population confirms whatever you hoped to see
 

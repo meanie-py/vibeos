@@ -962,7 +962,13 @@ pub unsafe extern "system" fn ExGetSharedWaiterCount(Resource: PERESOURCE) -> UL
 
 #[no_mangle]
 pub unsafe extern "system" fn ExInitializeResourceLite(Resource: PERESOURCE) -> NTSTATUS {
-    core::ptr::write_bytes(Resource as *mut u8, 0, core::mem::size_of::<_ERESOURCE>());
+    // The C's RtlZeroMemory, i.e. memset, on purpose: ExInitializeResourceLite(NULL)
+    // must FAULT and reach the caller's handler as STATUS_ACCESS_VIOLATION (kmtest
+    // ExResource checks it). write_bytes' UB check would panic the kernel instead.
+    extern "C" {
+        fn memset(dst: *mut core::ffi::c_void, c: i32, n: usize) -> *mut core::ffi::c_void;
+    }
+    memset(Resource as *mut core::ffi::c_void, 0, core::mem::size_of::<_ERESOURCE>());
 
     KeInitializeSpinLock(core::ptr::addr_of_mut!((*Resource).SpinLock));
 
