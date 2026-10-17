@@ -856,3 +856,29 @@ def test_own_c_moves_a_shims_library_into_the_cell(tmp_path, monkeypatch):
     text = rs.read_text()
     assert '.c_compiled("m_shims", c_sources, c_includes, c_flags, c_defines)' in text
     assert '"@build/base/m/m_s.c"' in text
+
+
+ASM_CMD = (
+    "/tmp/vibeos/.build-tools/llvm-mingw/bin/x86_64-w64-mingw32-clang -x assembler-with-cpp "
+    "-o sdk/lib/x/CMakeFiles/x.dir/a.s.obj -I/tmp/vibeos/sdk/include/asm "
+    "-I/tmp/vibeos/build-amd64/sdk/include/asm -U_X86_ -pipe -O1 "
+    "-DDBG=1 -D_M_AMD64 -DCRTDLL -D__CRT__NO_INLINE -D__ASM__ -c /tmp/vibeos/sdk/lib/x/a.s"
+)
+ATMPL = g.CTemplate(
+    cc="{REPO}/.build-tools/llvm-mingw/bin/x86_64-w64-mingw32-clang",
+    target="",
+    std=["sdk/include/asm", "@build/sdk/include/asm"],
+    core=["-pipe", "-O1"],
+    defines=["-DDBG=1"],
+)
+
+
+def test_an_asm_command_keeps_the_defines_a_source_adds_after_cmakes_sorted_run():
+    """libcntpr's asm adds CRTDLL/__CRT__NO_INLINE after the sorted <DEFINES>; the rule ends
+    -D__ASM__ -c <src>."""
+    f = g.asm_encode(ASM_CMD, ATMPL, "amd64")
+    assert f.includes == ("@std",)
+    assert f.flags == ("-U_X86_", "@core", "@defines", "-DCRTDLL", "-D__CRT__NO_INLINE")
+    assert f.defines == ("_M_AMD64",)
+    obj = "sdk/lib/x/CMakeFiles/x.dir/a.s.obj"
+    assert g.asm_decode(f, ATMPL, "amd64", obj) == ASM_CMD.split()[:-2]
