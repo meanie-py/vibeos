@@ -6,6 +6,7 @@ pub mod dowhile_continue;
 pub mod fnptr_abi_transmute;
 pub mod hkey_zero_extend;
 pub mod hresult_literals;
+pub mod shadowed_c_define;
 pub mod info_class_literals;
 pub mod init_then_move;
 pub mod let_shadow;
@@ -214,6 +215,7 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(assert_polarity::AssertPolarity),
         Box::new(raw_user_access::RawUserAccess),
         Box::new(safe_probe_deref::SafeProbeDeref),
+        Box::new(shadowed_c_define::ShadowedCDefine),
         Box::new(store_on_failure::StoreOnFailure),
         Box::new(dropped_null_guard::DroppedNullGuard),
         Box::new(ptr_byte_diff::PtrByteDiff),
