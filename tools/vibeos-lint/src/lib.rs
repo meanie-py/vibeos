@@ -1,6 +1,7 @@
 //! Statically linked lint plugins over an immutable, shared source snapshot.
 mod ast_facts;
 pub mod big_math;
+pub mod binary;
 pub mod catalog;
 pub mod const_shared;
 pub mod const_values;
