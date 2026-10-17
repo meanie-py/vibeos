@@ -1275,6 +1275,7 @@ dll/win32/msgina/CMakeLists.txt	1	# shutdown.c — replaced by Rust (sdk/lib/rus
 dll/win32/msgina/CMakeLists.txt	1	# stubs.c — replaced by Rust (sdk/lib/rust/msgina-rust/src/stubs.rs)
 dll/win32/msgina/CMakeLists.txt	1	# tui.c — replaced by Rust (sdk/lib/rust/msgina-rust/src/tui.rs)
 dll/win32/msgina/CMakeLists.txt	1	# utils.c — replaced by Rust (sdk/lib/rust/msgina-rust/src/utils.rs)
+dll/win32/msi/CMakeLists.txt	1	# The guarded client stubs (remote_*_guarded, winemsi_guard.c) run under RtlSehTryExcept, since
 dll/win32/msports/CMakeLists.txt	1	# classinst.c # replaced by Rust (sdk/lib/rust/msports-rust/src/msports/classinst.rs)
 dll/win32/msports/CMakeLists.txt	1	# comdb.c # replaced by Rust (sdk/lib/rust/msports-rust/src/msports/comdb.rs)
 dll/win32/msports/CMakeLists.txt	1	# msports.c # replaced by Rust (sdk/lib/rust/msports-rust/src/msports/msports.rs)
@@ -1431,6 +1432,7 @@ dll/win32/rasdlg/CMakeLists.txt	1	# rasdlg.c)
 dll/win32/rasman/CMakeLists.txt	1	# functions lowered deterministically for $0. rasman.c is commented out below and kept
 dll/win32/rasman/CMakeLists.txt	1	# rasman.c → rasman-rust
 dll/win32/rasman/CMakeLists.txt	1	# rasman.c)
+dll/win32/rpcrt4/CMakeLists.txt	1	# The endpoint-mapper calls in rpc_epmap.c go through ept_*_guarded (epm_guard.c), which
 dll/win32/samlib/CMakeLists.txt	1	# The RpcExcept(EXCEPTION_EXECUTE_HANDLER) handlers throughout samlib.c are compiled but never
 dll/win32/samlib/CMakeLists.txt	1	# add_pch dropped with precomp.h: the only remaining C is generated (sam_c.c, samlib_stubs.c)
 dll/win32/samlib/CMakeLists.txt	1	# dllmain.c
