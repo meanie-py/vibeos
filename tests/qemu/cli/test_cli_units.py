@@ -12345,3 +12345,30 @@ def test_a_build_input_edited_mid_build_is_named_and_a_doc_is_not(tiny_repo: Pat
     (tiny_repo / "new.c").unlink()
     (tiny_repo / "Cargo.lock").write_text("version = 4\n")
     assert build_mod._inputs_moved(tiny_repo, start) == []
+
+
+def test_fex_build_prerequisites_are_named_up_front(tmp_path):
+    """VIBEOS_FEX=1 arm64 on a fresh worktree: every missing out-of-tree piece is named with
+    the command that provides it, before the build runs (it used to skip, warn, and die at
+    mkramdisk twelve minutes on, or finish green with media that fails every WoW64 guest)."""
+    missing = build_mod.fex_prerequisites_missing(tmp_path, environ={})
+    assert any("build-fex-arm64 not configured" in m for m in missing)
+    assert any("build-i386/dll/ntdll/ntdll.dll" in m and "--arch i386" in m for m in missing)
+    assert any("testgui.exe" in m and "--arch amd64" in m for m in missing)
+    for _stage, tree, _targets, _script in build_mod.FEX_OUT_OF_TREE:
+        (tmp_path / tree).mkdir(parents=True, exist_ok=True)
+        (tmp_path / tree / "build.ninja").write_text("")
+    for rel in (
+        "build-i386/dll/ntdll/ntdll.dll",
+        "build-amd64/base/applications/testgui/testgui.exe",
+    ):
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text("")
+    assert build_mod.fex_prerequisites_missing(tmp_path, environ={}) == []
+    # mkramdisk's overrides are honoured: an override pointing nowhere is still missing.
+    assert build_mod.fex_prerequisites_missing(
+        tmp_path, environ={"VIBEOS_NTDLL32": str(tmp_path / "nope.dll")}
+    ) == [
+        f"{tmp_path / 'nope.dll'} absent (the i386 guests' SysWOW64 set): "
+        "./vibeos-cli build --arch i386"
+    ]

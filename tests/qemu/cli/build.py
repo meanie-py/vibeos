@@ -400,6 +400,20 @@ def build(args, repo: Path) -> int:
         )
         return run.finalize(repo)
 
+    if arch == "arm64" and os.environ.get("VIBEOS_FEX", "0") == "1":
+        missing = fex_prerequisites_missing(repo)
+        if missing:
+            run.classification = "FEX_PREREQ_MISSING"
+            run.add(
+                Stage(
+                    "fex-preflight",
+                    status="fail",
+                    detail=f"VIBEOS_FEX=1 needs {len(missing)} thing(s) this tree does not have",
+                    salient=missing,
+                )
+            )
+            return run.finalize(repo)
+
     # Directory serialization is a correctness lock. CPU admission belongs to the
     # compiler/linker processes, after Cargo and Ninja have resolved their own waits.
     #
@@ -1125,6 +1139,35 @@ FEX_OUT_OF_TREE = (
         "tools/fex/build-hello-compute.sh",
     ),
 )
+
+
+def fex_prerequisites_missing(repo: Path, environ=os.environ) -> list[str]:
+    """What a VIBEOS_FEX=1 arm64 build needs from outside its own tree, each with the
+    command that provides it; [] = all there.
+
+    Asked for up front because each used to surface late or not at all: an unconfigured
+    FEX tree was a `skip` here and a RESTAGE_FAIL at mkramdisk twelve minutes on, and a
+    missing build-i386/build-amd64 was a `[!]` line in a green build whose media then
+    failed every WoW64 guest (the integrator's first ladder on a fresh worktree). The
+    paths are mkramdisk.sh's, overrides included."""
+    missing = []
+    for _stage, tree, _targets, script in FEX_OUT_OF_TREE:
+        if not (repo / tree / "build.ninja").is_file():
+            missing.append(f"{tree} not configured: run {script}")
+    ntdll32 = environ.get("VIBEOS_NTDLL32") or str(repo / "build-i386/dll/ntdll/ntdll.dll")
+    if not Path(ntdll32).is_file():
+        missing.append(
+            f"{ntdll32} absent (the i386 guests' SysWOW64 set): ./vibeos-cli build --arch i386"
+        )
+    testgui64 = environ.get("VIBEOS_TESTGUI64_EXE") or str(
+        repo / "build-amd64/base/applications/testgui/testgui.exe"
+    )
+    if not Path(testgui64).is_file():
+        missing.append(
+            f"{testgui64} absent (anchors the x86-64 guests' sysamd64 set): "
+            "./vibeos-cli build --arch amd64 (after i386)"
+        )
+    return missing
 
 
 def _refresh_wowx64_cpu(run, repo: Path) -> bool:
