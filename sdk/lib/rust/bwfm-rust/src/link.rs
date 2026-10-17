@@ -16,7 +16,7 @@ use crate::proto::{self, cmd, event};
 /// EAPOL frames held between the read that brought them and their answer. A rekey is
 /// one frame; a second is a retransmission.
 const EAPOL_HELD: usize = 2;
-const EAPOL_MAX: usize = 256;
+const EAPOL_BODY_MAX: usize = 256;
 
 /// What a `service` call found.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -42,7 +42,7 @@ pub struct LinkLog {
 }
 
 struct Pending {
-    eapol: [[u8; EAPOL_MAX]; EAPOL_HELD],
+    eapol: [[u8; EAPOL_BODY_MAX]; EAPOL_HELD],
     len: [usize; EAPOL_HELD],
     n: usize,
     lost: Option<(u32, u32)>,
@@ -57,7 +57,7 @@ impl Pending {
             if u16::from_be_bytes([eth[12], eth[13]]) == ETHERTYPE_EAPOL {
                 if self.n < EAPOL_HELD {
                     let body = &eth[14..];
-                    let k = body.len().min(EAPOL_MAX);
+                    let k = body.len().min(EAPOL_BODY_MAX);
                     self.eapol[self.n][..k].copy_from_slice(&body[..k]);
                     self.len[self.n] = k;
                     self.n += 1;
@@ -127,7 +127,7 @@ impl<P: Platform> Bus<P> {
         io: impl FnOnce(&mut Self, &mut dyn FnMut(Frame)) -> Result<u32, Error>,
     ) -> Result<Serviced, Error> {
         let pending = RefCell::new(Pending {
-            eapol: [[0; EAPOL_MAX]; EAPOL_HELD],
+            eapol: [[0; EAPOL_BODY_MAX]; EAPOL_HELD],
             len: [0; EAPOL_HELD],
             n: 0,
             lost: None,
@@ -135,7 +135,7 @@ impl<P: Platform> Bus<P> {
         });
         let mut each = |f: Frame| pending.borrow_mut().take(&f, &mut deliver);
         let frames = io(self, &mut each)?;
-        let mut frame = [0u8; EAPOL_MAX];
+        let mut frame = [0u8; EAPOL_BODY_MAX];
         loop {
             let len = {
                 let mut p = pending.borrow_mut();
