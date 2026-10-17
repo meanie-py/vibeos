@@ -112,7 +112,8 @@ What the batch added to the shared crates and tools:
      mutants are killed.
 4. **Batch H flipped (2026-10-17):** reactos.exe, blue, ndisuio, netio, rtl8139, tdi and
    tzlib. The row in rust-port-status.md has the details. After it, the ReactOS-native
-   plain-C tail is small: tdihelpers (done, item 5), sdk/lib/crt's `strtol` lib, normaliz's
+   plain-C tail is small: tdihelpers (done, item 5), sdk/lib/crt's `strtol` lib (done,
+   item 5), normaliz's
    native part, the boot loader's `blcmlib`/`blrtl`, and cdrom's data TUs. The rest is Wine
    (needs the owner's call) or other lanes'. Measured from build-amd64/compile_commands.json,
    filtering any TU with a Wine debug channel or `wine/` include.
@@ -128,6 +129,10 @@ What the batch added to the shared crates and tools:
    - crate-repair's flex-array rule sees `addr_of_mut!`/`&raw mut` borrows.
    - `port flip` rewrites cargo cells' `engine:c:<target>` to the crate archive.
    - vibeos-lint's `scan_raising_probes` no longer reads a probe's name inside a string.
+   **The `strtol` library is pruned ($0).** acpi.sys used only isprint/isspace/isxdigit/
+   toupper from it, which cnt-difftest grades against the C. It now links them from
+   libcntpr_rust.a, as hal.dll does. Linked on all three arches; smoke boots on all three,
+   and amd64 smoke:net passed 16/16. `acpi_new`, which is not built, still names the library.
 6. Pick the next native area from `rust-port-status.md` (what is still C and not on the
    skip list below).
 
