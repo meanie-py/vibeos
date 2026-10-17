@@ -432,12 +432,12 @@ pub unsafe extern "C" fn MMixerGetMixerLineContainingNodeId(
     Entry = (*MixerInfo).LineList.Flink as PLIST_ENTRY;
     while Entry != &raw mut (*MixerInfo).LineList {
         MixerLineSrc = (Entry as ULONG_PTR)
-            .wrapping_sub(&raw mut (*::core::ptr::null_mut::<MIXERLINE_EXT>()).Entry as ULONG_PTR)
+            .wrapping_sub(core::mem::offset_of!(MIXERLINE_EXT, Entry) as ULONG_PTR)
             as *mut MIXERLINE_EXT as LPMIXERLINE_EXT;
         ControlEntry = (*MixerLineSrc).ControlsList.Flink as PLIST_ENTRY;
         while ControlEntry != &raw mut (*MixerLineSrc).ControlsList {
             MixerControl = (ControlEntry as ULONG_PTR).wrapping_sub(
-                &raw mut (*::core::ptr::null_mut::<MIXERCONTROL_EXT>()).Entry as ULONG_PTR,
+                core::mem::offset_of!(MIXERCONTROL_EXT, Entry) as ULONG_PTR,
             ) as *mut MIXERCONTROL_EXT as LPMIXERCONTROL_EXT;
             if (*MixerControl).NodeID == NodeID {
                 return MixerLineSrc;
@@ -628,7 +628,7 @@ pub unsafe extern "C" fn MMixerGetSourceMixerLineByComponentType(
 
     while Entry != &raw mut (*MixerInfo).LineList {
         MixerLineSrc = (Entry as usize)
-            .wrapping_sub(&raw mut (*::core::ptr::null_mut::<MIXERLINE_EXT>()).Entry as usize)
+            .wrapping_sub(core::mem::offset_of!(MIXERLINE_EXT, Entry) as usize)
             as *mut MIXERLINE_EXT as LPMIXERLINE_EXT;
         if (*MixerLineSrc).Line.dwComponentType == dwComponentType {
             return MixerLineSrc;
@@ -655,12 +655,12 @@ pub unsafe extern "C" fn MMixerGetMixerControlById(
     Entry = (*MixerInfo).LineList.Flink as PLIST_ENTRY;
     while Entry != &raw mut (*MixerInfo).LineList {
         MixerLineSrc = (Entry as ULONG_PTR)
-            .wrapping_sub(&raw mut (*::core::ptr::null_mut::<MIXERLINE_EXT>()).Entry as ULONG_PTR)
+            .wrapping_sub(core::mem::offset_of!(MIXERLINE_EXT, Entry) as ULONG_PTR)
             as *mut MIXERLINE_EXT as LPMIXERLINE_EXT;
         ControlEntry = (*MixerLineSrc).ControlsList.Flink as PLIST_ENTRY;
         while ControlEntry != &raw mut (*MixerLineSrc).ControlsList {
             MixerControl = (ControlEntry as ULONG_PTR).wrapping_sub(
-                &raw mut (*::core::ptr::null_mut::<MIXERCONTROL_EXT>()).Entry as ULONG_PTR,
+                core::mem::offset_of!(MIXERCONTROL_EXT, Entry) as ULONG_PTR,
             ) as *mut MIXERCONTROL_EXT as LPMIXERCONTROL_EXT;
             if (*MixerControl).Control.dwControlID == dwControlID {
                 if !OutMixerLine.is_null() {
