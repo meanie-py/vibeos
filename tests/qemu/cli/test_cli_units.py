@@ -12209,6 +12209,26 @@ def test_payload_vm_memory_sizes_compare_numerically():
     assert max("1536M", "2G", "", key=smoke_mod._mem_mb) == "2G"
 
 
+def test_smoke_vm_memory_beats_the_payloads_declaration(tmp_path, monkeypatch):
+    """A low-memory sweep (smoke --vm-memory 768M) must boot at 768M even though appstorm64
+    declares vm_memory: 2G; without --vm-memory the declaration still applies."""
+    spec = tmp_path / "tools" / "payloads" / "big" / "payload.yaml"
+    spec.parent.mkdir(parents=True)
+    spec.write_text("test:\n  vm_memory: 2G\n")
+    seen: list[str] = []
+
+    def fake_run(cmd, **kw):
+        seen.append(kw["env"].get("VIBEOS_QEMU_MEMORY", ""))
+        raise subprocess.TimeoutExpired(cmd, 1)
+
+    monkeypatch.setattr(smoke_mod.subprocess, "run", fake_run)
+    monkeypatch.delenv("VIBEOS_QEMU_MEMORY", raising=False)
+    run = Run("smoke", "arm64", ts=1700000000)
+    smoke_mod._payload_stage(run, tmp_path, "arm64", "big", vm_memory_override="768M")
+    smoke_mod._payload_stage(run, tmp_path, "arm64", "big")
+    assert seen == ["768M", "2G"]
+
+
 def test_qemu_memory_override_is_validated(monkeypatch):
     from tests.qemu import vm as vm_mod
 

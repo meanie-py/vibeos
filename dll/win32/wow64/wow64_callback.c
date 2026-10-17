@@ -41,6 +41,7 @@ extern LONG (WINAPI *Wow64pBTCpuSetContext)(HANDLE, HANDLE, PVOID, PVOID);
 extern LONG (WINAPI *Wow64pBTCpuGetContext)(HANDLE, HANDLE, PVOID, PVOID);
 extern VOID (WINAPI *Wow64pBTCpuSimulate)(VOID);
 extern PVOID Wow64pKiUserCallbackDispatcher32; /* guest ntdll32 export */
+extern PVOID Wow64pGuestModule32(const WCHAR *Name, SIZE_T *ImgSize); /* wow64.c */
 
 /* wow64.c — the guest/host last-error mirror. This file owns its 64->32
  * boundary; wow64_win32k.c owns the 32->64 one. */
@@ -715,6 +716,96 @@ static NTSTATUS Wow64pUserCallbackCommon(ULONG Index, PVOID Arg, ULONG Len)
                 break;
             }
 
+            case 6: /* LOADMENU: LOADMENU_CALLBACK_ARGUMENTS {HINSTANCE; LPCWSTR
+                     * InterSource; WCHAR MenuName[]}: the name starts at 16 on the
+                     * host, 8 in the guest. win32k asks for a class's menu this way
+                     * the first time a window of the class is created; unbridged,
+                     * every WoW64 window with a class menu came up without one
+                     * ("No Menu!!"). InterSource is a guest pointer or a
+                     * MAKEINTRESOURCE id, so it narrows as it is. */
+            {
+                typedef struct { ULONGLONG hModule; ULONGLONG InterSource; } WOW64_LOADMENU64;
+                typedef struct { ULONG hModule; ULONG InterSource; } WOW64_LOADMENU32;
+                C_ASSERT(sizeof(WOW64_LOADMENU64) == 16 && sizeof(WOW64_LOADMENU32) == 8);
+                const WOW64_LOADMENU64 *A64 = (const WOW64_LOADMENU64 *)Arg;
+                UCHAR *Buf = Frame.Buf64;
+                WOW64_LOADMENU32 *A32 = (WOW64_LOADMENU32 *)Buf;
+                ULONG Tail, i;
+
+                if (!Arg || Len < sizeof(*A64) ||
+                    Len - sizeof(*A64) > sizeof(Frame.Buf64) - sizeof(*A32))
+                {
+                    DbgPrint("[WOW64CB] LOADMENU arg=%p len=%lu unusable\n", Arg, Len);
+                    break;
+                }
+                Tail = Len - sizeof(*A64);
+                /* A module above 4 GB is the HOST user32: win32k's hModClient, which
+                 * it passes for the SYSMENU/SYSMENUMDI templates, is the native
+                 * user32 that registered with it in this process. Narrowed, it is a
+                 * wild address the guest's LoadMenuW faults on; the guest's own
+                 * user32 holds the same templates. */
+                if (A64->hModule > 0xFFFFFFFFull)
+                {
+                    SIZE_T ImgSize = 0;
+                    PVOID User32 = Wow64pGuestModule32(L"user32.dll", &ImgSize);
+                    if (!User32)
+                    {
+                        DbgPrint("[WOW64CB] LOADMENU host module %I64x, no guest user32\n",
+                                 A64->hModule);
+                        break;
+                    }
+                    A32->hModule = (ULONG)(ULONG_PTR)User32;
+                }
+                else
+                    A32->hModule = (ULONG)A64->hModule;
+                A32->InterSource = (ULONG)A64->InterSource;
+                for (i = 0; i < Tail; i++)
+                    Buf[sizeof(*A32) + i] = ((const UCHAR *)Arg)[sizeof(*A64) + i];
+                Wow64pEnterGuestCallback(&Frame, Index, Buf, sizeof(*A32) + Tail);
+                break;
+            }
+
+            case 16: /* LPK: LPK_CALLBACK_ARGUMENTS 56 -> 44, then the string.
+                      * lpString is the string's SELF-RELATIVE offset (win32k sets
+                      * it to the struct size; guest user32 adds the argument
+                      * base), so it becomes the 32-bit struct size. win32k routes
+                      * ExtTextOut through here when the guest loaded lpk.dll;
+                      * unbridged, that text was drawn without LPK (no complex
+                      * scripts, no bidi). The BOOL result passes back flat. */
+            {
+                typedef struct { ULONGLONG lpString; ULONGLONG hdc; LONG x, y;
+                                 ULONG flags; RECT rect; ULONG count;
+                                 LONG bRect; } WOW64_LPK64;  /* 56 */
+                typedef struct { ULONG lpString; ULONG hdc; LONG x, y;
+                                 ULONG flags; RECT rect; ULONG count;
+                                 LONG bRect; } WOW64_LPK32;  /* 44 */
+                C_ASSERT(sizeof(WOW64_LPK64) == 56 && sizeof(WOW64_LPK32) == 44);
+                const WOW64_LPK64 *A64 = (const WOW64_LPK64 *)Arg;
+                UCHAR *Buf = Frame.Buf64;
+                WOW64_LPK32 *A32 = (WOW64_LPK32 *)Buf;
+                ULONG Tail, i;
+
+                if (!Arg || Len < sizeof(*A64) || A64->lpString != sizeof(*A64) ||
+                    Len - sizeof(*A64) > sizeof(Frame.Buf64) - sizeof(*A32))
+                {
+                    DbgPrint("[WOW64CB] LPK arg=%p len=%lu unusable\n", Arg, Len);
+                    break;
+                }
+                Tail = Len - sizeof(*A64);
+                A32->lpString = sizeof(*A32);
+                A32->hdc = (ULONG)A64->hdc;
+                A32->x = A64->x;
+                A32->y = A64->y;
+                A32->flags = A64->flags;
+                A32->rect = A64->rect;
+                A32->count = A64->count;
+                A32->bRect = A64->bRect;
+                for (i = 0; i < Tail; i++)
+                    Buf[sizeof(*A32) + i] = ((const UCHAR *)Arg)[sizeof(*A64) + i];
+                Wow64pEnterGuestCallback(&Frame, Index, Buf, sizeof(*A32) + Tail);
+                break;
+            }
+
             case 3:  /* LOADDEFAULTCURSORS: arg = BOOL* (flat 4 bytes ok) */
             case 11: /* SETWNDICONS: no meaningful payload divergence */
             case 12: /* DELIVERUSERAPC */
@@ -979,6 +1070,7 @@ int Wow64pCompleteUserCallback(ULONG Result32, ULONG Len32, NTSTATUS Status)
                      * ResultPointer as an 8-byte HMODULE — widen zero-extended
                      * so the high half is never stale scratch. */
             case 10: /* COPYIMAGE: a 4-byte HANDLE, read by win32k as 8. */
+            case 6:  /* LOADMENU: the guest's 4-byte LRESULT (an HMENU), read as 8. */
             {
                 ULONGLONG R = (Len32 >= sizeof(ULONG))
                                   ? *(const ULONG *)(ULONG_PTR)Result32 : 0;
