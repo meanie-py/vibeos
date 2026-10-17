@@ -625,15 +625,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   and passed 6/6 on the fixed one. Field manual: "A per-CPU register read after `sti` belongs to
   whoever faulted last".
 
-- **ws2_32: `getservbyname("ftp", "tcp")` fails INTERMITTENTLY on amd64 (FLAKE, open, found
-  2026-10-14).** In one of two identical amd64 modrun runs, both the C ftp (`ftp_c`) and the Rust
-  one printed `ftp: ftp/tcp: unknown service` and exited 1
-  (`/tmp/vibeos-cli/20261014-194635-5y1gb4y3-smoke-amd64`); the next run looked it up fine
-  (`/tmp/vibeos-cli/20261014-195513-7n1vo6ki-smoke-amd64`). Not seen on i386 or arm64. ws2_32-rust's
-  `getservbyname`/`getxyDataEnt` mirror the C, so suspect what is below them (the RNR/namespace
-  provider, the services file read). amd64 is also the only arch whose smoke boots with a NIC.
-  modrun's ftp suite is i386/arm64-only until this is fixed. Repro: `VIBEOS_PAYLOAD=modrun
-  ./vibeos-cli build --arch amd64 && ./vibeos-cli smoke --arch amd64 --payload modrun --repeat 4`.
+- **ws2_32: `getservbyname("ftp", "tcp")` failed INTERMITTENTLY on amd64 (FIXED 2026-10-17).**
+  In one of two identical amd64 modrun runs both the C and the Rust ftp printed `ftp: ftp/tcp:
+  unknown service` (`/tmp/vibeos-cli/20261014-194635-5y1gb4y3-smoke-amd64`). Cause, from the
+  code: mswsock's `OpenNetworkDatabase` (and ws2_32's `GetProtoOpenNetworkDatabase`, dnsrslvr's
+  `OpenHostsFile`) read `Tcpip\Parameters\DatabasePath`, which nothing in our hives sets. Until a
+  NIC's TCP/IP settings create that key they fall back to `system32\drivers\etc`; once it exists,
+  `RegSize` stays 0 and the C expanded an uninitialised zero-byte block as the directory (dnsrslvr
+  returned no hosts file at all). amd64 is the only arch whose smoke boots with a NIC, so it
+  depended on whether the NIC had been configured yet. Any failure now falls back to the default
+  directory; ftp's suite runs on amd64 again and passed 8/8 in 4/4 amd64 modrun runs
+  (`/tmp/vibeos-cli/20261017-132346-vwy2z0pe-smoke-amd64`). Not directly observed: the key's
+  presence in a failing guest.
 
 - **MM: finding free user address space is linear in the VAD count (open, found 2026-10-12).**
   `MiFindEmptyAddressRangeInTree` (`ARM3/vadnode.rs`, as ReactOS's C) walks every VAD in
