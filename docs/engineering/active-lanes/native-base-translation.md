@@ -84,13 +84,19 @@ What the batch added to the shared crates and tools:
 2. **The static `crt` library is pruned too** (`#include(crt.cmake)`, 2026-10-16). Nothing
    linked it and no target pulled it in, so its ~720 TUs only appeared in
    compile_commands.json.
-3. More audio difftest targets, ranked by a survey on 2026-10-16:
-   - mmixer's `MMixerSetGetVolumeControlDetails` (`sup.c:648`): its round trip is off by
-     one, and `Value == Max` gives 0x10000.
-   - mmixer's topology walkers (`topology.c:568-1077`): duplicate inserts, `Visited` set
-     on the wrong node, and nothing guards against cycles.
-   - mmebuddy's `DoWaveStreaming`/`CompleteIO` (`streaming.c`): looped playback never
-     counts its loops down.
+3. **Audio difftests, round two (2026-10-17, `mmixer-difftest`, $0).** Both mmixer findings
+   from the survey were real and are fixed:
+   - `MMixerSetGetVolumeControlDetails` reported full volume as 0x10000, one past the
+     control's 0xFFFF maximum, and wrapped a driver value outside its range. The Rust
+     clamps; the C formula is kept.
+   - The topology walkers: `MMixerAddPinIndexToArray` had no equality case, so a pin or node
+     reached along two paths was listed twice. With the array full that pushed the count
+     past MaxPins. Neither walker skipped a visited node; they only ASSERTed, and ASSERT!
+     compiles out in the Rust, so a cycle would recurse without end. `GetUpOrDownstreamNodes`
+     also marked the parent where it meant the child. The harness grades trees exactly
+     against the C and diamonds and cycles against a reachability model.
+   - Still owed: mmebuddy's `DoWaveStreaming`/`CompleteIO` looped-playback state machine
+     (`streaming.c`), which never counts its loops down.
 4. **Batch H flipped (2026-10-17):** reactos.exe, blue, ndisuio, netio, rtl8139, tdi and
    tzlib. The row in rust-port-status.md has the details. After it, the ReactOS-native
    plain-C tail is small: tdihelpers (owed below), sdk/lib/crt's `strtol` lib, normaliz's
