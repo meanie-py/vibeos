@@ -138,6 +138,7 @@ PORTED = frozenset(
         "scan_misaligned_cast",
         "scan_fnptr_abi_transmute",
         "scan_shadowed_c_define",
+        "scan_hkey_zero_extend",
     }
 )
 SENTINEL = "VIBEOS_LINT"

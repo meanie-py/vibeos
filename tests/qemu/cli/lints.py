@@ -678,6 +678,18 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A predefined registry key cast through usize/u32 to HKEY: 0x0000000080000002 on 64-bit,
+    # where winreg.h's `(LONG)` sign-extends it to 0xFFFFFFFF80000002. advapi32 masks, so
+    # calls work, but it never compares equal to a HKEY C code made. 118 sites across the
+    # tree when the rule landed (2026-10-17), all rewritten. A vibeos-lint rule. Baseline is EMPTY.
+    shz = repo / "tools" / "scan_hkey_zero_extend.py"
+    specs.append(
+        (
+            "scan_hkey_zero_extend",
+            [py, str(shz), "--lint"] if shz.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # An array FIELD passed by value to a C variadic (`note("%s", (*ip).name)`): C decays
     # it to a pointer, Rust passes the array, and only i386 copies the bytes onto the stack,
     # so `%s` reads the string's first four bytes as a pointer. The i386 DHCP client died on

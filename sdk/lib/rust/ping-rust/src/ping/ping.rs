@@ -24,6 +24,7 @@ static mut Target: PADDRINFOW = ::core::ptr::null::<addrinfoW>() as *mut addrinf
 
 static mut TargetName: PCWSTR = ::core::ptr::null::<WCHAR>();
 
+// Holds a NUMERIC host only (INET6_ADDRSTRLEN), so GetNameInfoW must be told this size.
 static mut Address: [WCHAR; 46] = [0; 46];
 
 static mut CanonName: [WCHAR; 1025] = [0; 1025];
@@ -579,7 +580,8 @@ unsafe extern "C" fn Ping() {
                 SockAddr,
                 Size,
                 core::ptr::addr_of_mut!(Address) as PWCHAR,
-                NI_MAXHOST as DWORD,
+                // Address's own 46 WCHARs; the C offered NI_MAXHOST (1025).
+                (*core::ptr::addr_of!(Address)).len() as DWORD,
                 core::ptr::null_mut(),
                 0 as DWORD,
                 NI_NUMERICHOST as ::core::ffi::c_int,
@@ -642,7 +644,8 @@ unsafe extern "C" fn Ping() {
                 SockAddr,
                 Size,
                 core::ptr::addr_of_mut!(Address) as PWCHAR,
-                NI_MAXHOST as DWORD,
+                // Address's own 46 WCHARs; the C offered NI_MAXHOST (1025).
+                (*core::ptr::addr_of!(Address)).len() as DWORD,
                 core::ptr::null_mut(),
                 0 as DWORD,
                 NI_NUMERICHOST as ::core::ffi::c_int,

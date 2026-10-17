@@ -67,7 +67,7 @@ pub use win32macros_rust::{ALIGN_UP, ARRAYSIZE, ARRAY_SIZE, ASSERT, C_ASSERT, Co
 // ==== port resolve: tree consensus (generated -- re-run `rustconv port resolve`) ====
 pub const AF_INET: u32 = 2; // iphlpapi-rust/src/types_amd64.rs
 pub const E_FAIL: HRESULT = 0x80004005u32 as HRESULT; // aclui-rust/src/prelude.rs
-pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002usize as HKEY; // console-rust/src/prelude.rs
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY; // console-rust/src/prelude.rs
 pub const SOCK_DGRAM: u32 = 2; // iphlpapi-rust/src/types_amd64.rs
 pub const S_OK: HRESULT = 0; // aclui-rust/src/prelude.rs
 extern "C" {
