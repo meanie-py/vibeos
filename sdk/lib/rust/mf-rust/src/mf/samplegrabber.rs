@@ -794,11 +794,11 @@ unsafe extern "system" fn sample_grabber_stream_timer_callback_Invoke(
     EnterCriticalSection(&raw mut (*grabber).cs);
 
     item = ((*grabber).items.next as *mut ::core::ffi::c_char).offset(
-        -(&raw mut (*::core::ptr::null_mut::<scheduled_item>()).entry as ::core::ffi::c_ulonglong
+        -(core::mem::offset_of!(scheduled_item, entry) as ::core::ffi::c_ulonglong
             as isize),
     ) as *mut scheduled_item;
     item2 = ((*item).entry.next as *mut ::core::ffi::c_char).offset(
-        -(&raw mut (*::core::ptr::null_mut::<scheduled_item>()).entry as ::core::ffi::c_ulonglong
+        -(core::mem::offset_of!(scheduled_item, entry) as ::core::ffi::c_ulonglong
             as isize),
     ) as *mut scheduled_item;
     while &raw mut (*item).entry != &raw mut (*grabber).items {
@@ -834,7 +834,7 @@ unsafe extern "system" fn sample_grabber_stream_timer_callback_Invoke(
         }
         item = item2;
         item2 = ((*item).entry.next as *mut ::core::ffi::c_char).offset(
-            -(&raw mut (*::core::ptr::null_mut::<scheduled_item>()).entry
+            -(core::mem::offset_of!(scheduled_item, entry)
                 as ::core::ffi::c_ulonglong as isize),
         ) as *mut scheduled_item;
     }

@@ -51,10 +51,8 @@ extern "C" {
     fn SetFlag(Flags: *mut u32, Flag: u32);
 }
 extern "C" {
-    fn ASSERT_IRP(Irp: PIRP);
 }
 extern "C" {
-    fn ASSERT_IRP_CONTEXT(IrpContext: PIRP_CONTEXT);
 }
 extern "C" {
     // these mimic the MSVC __try/__except/__end
@@ -749,8 +747,8 @@ pub unsafe extern "C" fn CdCreateUserMdl(
     UNREFERENCED_PARAMETER!(Operation as usize);
     UNREFERENCED_PARAMETER!(IrpContext as usize);
 
-    ASSERT_IRP_CONTEXT(IrpContext);
-    ASSERT_IRP((*IrpContext).Irp);
+    ASSERT_IRP_CONTEXT!(IrpContext);
+    ASSERT_IRP!((*IrpContext).Irp);
     NT_ASSERT!((*(*IrpContext).Irp).MdlAddress.is_null() as i32);
 
     //

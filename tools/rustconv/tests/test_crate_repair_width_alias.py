@@ -19,6 +19,7 @@ from rustconv.crate_repair import (
     RULE_NUMERIC_CAST,
     RULE_WIDTH_ALIAS,
     _local_authorities,
+    harvest_alias_scope,
     harvest_signatures,
     propose_edits,
 )
@@ -238,3 +239,46 @@ def test_generic_parameter_is_not_a_cast_authority():
     )
     assert sigs["min"] == ["", ""]
     assert sigs["f"] == ["ULONG"]
+
+
+def test_alias_private_to_another_module_is_refused():
+    # fastfat: flush.rs's `type FAT_FLUSH_TYPE = i32;` (no `pub`) was written as
+    # `as FAT_FLUSH_TYPE` into three other modules, which cannot name it (E0412).
+    src = b"unsafe { Purge(c, (n) as u64); }\n"
+    plan = _plan(
+        src,
+        [_site(src, b"(n) as u64", "i32", "u64")],
+        signatures={"Purge": ["PVOID", "FAT_FLUSH_TYPE"]},
+        local_aliases=frozenset({"PVOID", "FAT_FLUSH_TYPE"}),
+        alias_scope={"FAT_FLUSH_TYPE": frozenset({"src/flush.rs"})},
+    )
+    assert not [e for e in plan.edits if e.rule == RULE_WIDTH_ALIAS]
+    assert [s.reason for s in plan.skipped if s.rule == RULE_WIDTH_ALIAS] == ["alias_not_in_scope"]
+
+
+def test_alias_scope_follows_the_resolution_translated_crates_use():
+    scope = harvest_alias_scope(
+        {
+            "src/lib.rs": b"pub mod types;\npub mod flush;\npub mod read;\nmod outer;\n",
+            # The per-arch island is mounted at a #[path] as `types::types_arch`, so its
+            # `use super::*` reaches types.rs, not a module named after the file.
+            "src/types.rs": (
+                b'#[cfg(target_arch = "x86")]      #[path = "types_i386.rs"]  mod types_arch;\n'
+                b"pub use types_arch::*;\ntype TYPES_LOCAL = u16;\n"
+            ),
+            "src/types_i386.rs": b"use super::*;\npub(crate) type ISLAND = u32;\n",
+            "src/flush.rs": b"type FLUSH = i32;\n",
+            "src/read.rs": b"use crate::types::*;\n",
+            "src/outer.rs": b"type OUTER = u8;\nmod inner;\n",
+            "src/outer/inner.rs": b"use super::*;\n",
+            "src/other.rs": b"type PUBLIC_SOMEWHERE = u8;\n",
+            "src/other2.rs": b"pub type PUBLIC_SOMEWHERE = u8;\n",
+        }
+    )
+    assert scope["FLUSH"] == {"src/flush.rs"}
+    assert scope["OUTER"] == {"src/outer.rs", "src/outer/inner.rs"}
+    assert scope["TYPES_LOCAL"] == {"src/types.rs", "src/types_i386.rs"}
+    # Declared non-private anywhere (`pub`, `pub(crate)`): it may also arrive by globs the
+    # harvest cannot follow, so it is not scoped at all.
+    assert "ISLAND" not in scope
+    assert "PUBLIC_SOMEWHERE" not in scope

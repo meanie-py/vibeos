@@ -73,12 +73,6 @@ extern "C" {
     fn CdQueryFidDirentOffset(FileId: FILE_ID) -> u32;
 }
 
-// DBG-only no-op verification macros (PAGED_CODE / ASSERT_* / NT_ASSERT /
-// UNREFERENCED_PARAMETER expand to nothing in a retail build).
-#[inline(always)] unsafe fn ASSERT_IRP_CONTEXT(_p: *const IRP_CONTEXT) {}
-#[inline(always)] unsafe fn ASSERT_FCB(_p: *const FCB) {}
-#[inline(always)] unsafe fn ASSERT_LOCKED_FCB(_p: *const FCB) {}
-
 // ---- cdfs private fn-macro inlines (cdprocs.h) ----
 //   __bindgen_anon_1 = { FSRTL_ADVANCED_FCB_HEADER Header; ... } — holds NodeTypeCode.
 //   __bindgen_anon_2 = { ULONG FcbType; FCB_DATA; FCB_INDEX }    — holds StreamOffset.
@@ -119,9 +113,9 @@ pub unsafe extern "C" fn CdAddAllocationFromDirent(
     let McbEntry: *mut CD_MCB_ENTRY;
 
     UNREFERENCED_PARAMETER!(IrpContext);
-    ASSERT_IRP_CONTEXT(IrpContext);
-    ASSERT_FCB(Fcb);
-    ASSERT_LOCKED_FCB(Fcb);
+    ASSERT_IRP_CONTEXT!(IrpContext);
+    ASSERT_FCB!(Fcb);
+    ASSERT_LOCKED_FCB!(Fcb);
 
     if McbEntryOffset >= (*Fcb).Mcb.MaximumEntryCount {
         NewArraySize =
@@ -180,9 +174,9 @@ pub unsafe extern "C" fn CdAddInitialAllocation(
     unsafe {
         PAGED_CODE!();
         let _ = IrpContext;
-        ASSERT_IRP_CONTEXT(IrpContext as *const IRP_CONTEXT);
-        ASSERT_FCB(Fcb);
-        ASSERT_LOCKED_FCB(Fcb);
+        ASSERT_IRP_CONTEXT!(IrpContext as *const IRP_CONTEXT);
+        ASSERT_FCB!(Fcb);
+        ASSERT_LOCKED_FCB!(Fcb);
         NT_ASSERT!(0 == (*Fcb).Mcb.CurrentEntryCount);
         NT_ASSERT!(CDFS_NTC_FCB_DATA != (*fcb_hdr(Fcb)).NodeTypeCode as u32);
 
@@ -207,9 +201,9 @@ pub unsafe extern "C" fn CdTruncateAllocation(
 
     PAGED_CODE!();
 
-    ASSERT_IRP_CONTEXT(IrpContext);
-    ASSERT_FCB(Fcb);
-    ASSERT_LOCKED_FCB(Fcb);
+    ASSERT_IRP_CONTEXT!(IrpContext);
+    ASSERT_FCB!(Fcb);
+    ASSERT_LOCKED_FCB!(Fcb);
 
     McbEntryOffset = CdFindMcbEntry(IrpContext, Fcb, StartingFileOffset);
 
@@ -225,8 +219,8 @@ pub unsafe extern "C" fn CdInitializeMcb(
 ) {
     PAGED_CODE!();
     UNREFERENCED_PARAMETER!(IrpContext);
-    ASSERT_IRP_CONTEXT(IrpContext);
-    ASSERT_FCB(Fcb);
+    ASSERT_IRP_CONTEXT!(IrpContext);
+    ASSERT_FCB!(Fcb);
 
     (*Fcb).Mcb.MaximumEntryCount = 1;
     (*Fcb).Mcb.CurrentEntryCount = 0;
@@ -241,8 +235,8 @@ pub unsafe extern "C" fn CdUninitializeMcb(
 ) {
     PAGED_CODE!();
     UNREFERENCED_PARAMETER!(IrpContext);
-    ASSERT_IRP_CONTEXT(IrpContext);
-    ASSERT_FCB(Fcb);
+    ASSERT_IRP_CONTEXT!(IrpContext);
+    ASSERT_FCB!(Fcb);
 
     if (*Fcb).Mcb.MaximumEntryCount > 1 {
         CdFreePool(core::ptr::addr_of_mut!((*Fcb).Mcb.McbArray) as *mut *mut core::ffi::c_void);
@@ -260,9 +254,9 @@ pub unsafe extern "C" fn CdFindMcbEntry(
 
     PAGED_CODE!();
 
-    ASSERT_IRP_CONTEXT(IrpContext);
-    ASSERT_FCB(Fcb);
-    ASSERT_LOCKED_FCB(Fcb);
+    ASSERT_IRP_CONTEXT!(IrpContext);
+    ASSERT_FCB!(Fcb);
+    ASSERT_LOCKED_FCB!(Fcb);
 
     let mut CurrentMcbOffset: u32 = 0;
     let mut CurrentMcbEntry: *mut CD_MCB_ENTRY = (*Fcb).Mcb.McbArray;
@@ -293,7 +287,7 @@ pub unsafe extern "C" fn CdDiskOffsetFromMcbEntry(
 
     // PAGED_CODE();
     // UNREFERENCED_PARAMETER( IrpContext );
-    ASSERT_IRP_CONTEXT(IrpContext);
+    ASSERT_IRP_CONTEXT!(IrpContext);
 
     ExtentOffset = FileOffset - (*McbEntry).FileOffset;
 
@@ -351,8 +345,8 @@ pub unsafe extern "C" fn CdLookupAllocation(
 
     PAGED_CODE!();
 
-    ASSERT_IRP_CONTEXT(IrpContext);
-    ASSERT_FCB(Fcb);
+    ASSERT_IRP_CONTEXT!(IrpContext);
+    ASSERT_FCB!(Fcb);
 
     //
     //  For DASD IO we already have clamped the read to the volume limits.

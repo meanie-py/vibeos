@@ -139,7 +139,7 @@ pub unsafe extern "system" fn FatInitializeCacheMap(
         LazyWriteContext,
     );
 
-    // NTDDI_VERSION >= NTDDI_WIN8
+    #[cfg(ntddi_ge_ntddi_win8)] // FatDiskAccountingEnabled is only ever set under WIN8 (fatinit.c:428)
     if FatDiskAccountingEnabled != 0 {
         CcSetAdditionalCacheAttributesEx(FileObject, CC_ENABLE_DISK_IO_ACCOUNTING);
     }

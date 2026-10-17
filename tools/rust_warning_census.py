@@ -356,7 +356,11 @@ def unit_staleness(fpdir: Path, repo: Path) -> str:
     if not stamp.is_file() or not m:
         return "no invoked.timestamp"
     deps_dir = fpdir.parent.parent / "deps"
-    dfile = deps_dir / f"{m['crate'].replace('-', '_')}-{m['hash']}.d"
+    # The dep-info is named after the LIB target, which a `[lib] name =` can rename
+    # (atlclasses-rust builds `atl_rust`); the fingerprint records it as `lib-<name>`.
+    libs = [f.name[4:] for f in fpdir.glob("lib-*") if not f.name.endswith(".json")]
+    stem = libs[0] if len(libs) == 1 else m["crate"].replace("-", "_")
+    dfile = deps_dir / f"{stem}-{m['hash']}.d"
     if not dfile.is_file():
         return f"no dep-info {dfile.name}"
     built = stamp.stat().st_mtime
@@ -462,6 +466,11 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--lint", help="list the sites of one lint")
     ap.add_argument("--crate", help="restrict to one crate (path prefix, e.g. kernel32-rust)")
     ap.add_argument("--json", action="store_true", help="machine-readable sites")
+    ap.add_argument(
+        "--deny",
+        help="comma-separated lints that must have NO site: list them and exit 1 if any do "
+        "(the post-build gate for lints burned to zero, e.g. invalid_value,deref_nullptr)",
+    )
     args = ap.parse_args(argv)
 
     per_arch: dict[str, list[Site]] = defaultdict(list)
@@ -514,6 +523,18 @@ def main(argv: list[str]) -> int:
 
     def label(s: Site) -> str:
         return s.lint or "UNATTRIBUTED"
+
+    if args.deny:
+        denied = {x.strip() for x in args.deny.split(",") if x.strip()}
+        hits = [s for s in sites if s.lint in denied]
+        for s in hits:
+            print(f"{s.path}:{s.line}:{s.col}: {s.lint}: {s.msg} [{','.join(sorted(s.arches))}]")
+        print(
+            f"{len(hits)} site(s) of a denied lint ({', '.join(sorted(denied))}); "
+            f"{len(fresh_all)} fresh unit(s) read",
+            file=sys.stderr,
+        )
+        return 1 if hits else 0
 
     if args.json:
         json.dump(

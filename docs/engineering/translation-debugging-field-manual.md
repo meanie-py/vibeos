@@ -318,6 +318,14 @@ field, and kdbg's symbol loader walks `InInitializationOrderLinks`. **Fix:** pas
 `core::mem::size_of::<T>()` and `core::mem::offset_of!(T, Field)` at every site, including
 first-field ones, so the layout is stated, not assumed. `tools/scan_containing_record_null.py`
 gates it at zero.
+The other spelling computes offsetof by hand through a null place:
+`&raw mut (*core::ptr::null_mut::<T>()).Field as ULONG_PTR`, or the `addr_of_mut!` form. The
+number is right, but it is UB even though only an address is taken: a field projection is an
+in-bounds offset of its base, and null is in bounds of nothing. rustc's `deref_nullptr` flags
+only some spellings, 7 of the 78 the tree had on 2026-10-16 (Wine's `LIST_ENTRY` in
+mf/mfplat/mfreadwrite/rpcss, and eventlog, ndis, storport, fmifs, spoolss, localspl). All 78
+are `core::mem::offset_of!` now, via `tools/null_offset_to_offset_of.py --apply`; its `--lint`
+mode gates the null place at zero.
 ### Phantom symbols — declaring something that is not a symbol
 A C **macro** or **FORCEINLINE** has no out-of-line symbol; `extern`-declaring it demands a
 symbol that exists nowhere. It may "resolve" by accident and break later when an unrelated
@@ -618,6 +626,12 @@ gate-red), and the span must **be** the whole argument, because rustc labels the
 disagreeing operand, so in `SetAutoDaylight(SendDlgItemMessage(..) != BST_UNCHECKED as i64)` it
 blames a sub-expression of argument 0 and casting *that* to `BOOL` is well-formed and wrong.
 syssetup: 34 sites the width rule could only withhold, plus 55 more it stood down from.
+A crate-local alias is in scope only where it is visible. fastfat's flush.rs declares
+`type FAT_FLUSH_TYPE = i32;` without `pub`, and the rule wrote `as FAT_FLUSH_TYPE` into three
+callers in other modules (E0412). The pass loop kept the edits because the same pass fixed
+more than it broke. `harvest_alias_scope` now records, for each alias the crate declares only
+privately, the files that can name it, and the rule declines elsewhere (`alias_not_in_scope`).
+Over the tree it agrees with all 181 compiling uses of such aliases.
 
 ### An `extern` declaration for a symbol YOUR OWN CRATE defines
 The worst version of a width mismatch, because both halves are yours and neither compiler nor
@@ -1690,8 +1704,14 @@ way, and they still compiled.
 A third form is a C stub DEFINITION in the module's own cohab file. fastfat's fatdata.h
 `DebugTrace`/`DebugUnwind`/`DebugDump`/`DbgDoit` are `{NOTHING;}` in a free build. The Rust
 called them as FFI into `VOID DebugTrace(...) {}` bodies in rust_cohab_stub.c, about 880 calls
-(fixed 2026-10-11: crate macros that discard their tokens). `scan_macro_fn_shadow` did not
-flag them, so check why its harvest misses a driver-private header like fatdata.h.
+(fixed 2026-10-11: crate macros that discard their tokens). `scan_macro_fn_shadow` missed them
+because its harvest of argument-discarding C macros knew `__noop`, `((void)0)` and
+`do {} while(0)`, but not a bare block. It now expands empty object-like macros (`NOTHING`)
+first, and treats `{}` / `{;}` as a discard. The widened harvest found 28 more in cdfs: the
+`ASSERT_*` family (`{ NOTHING; }` without `CD_SANITY`, which cddata.h force-undefines even
+under DBG), lowered to empty fns, extern declarations and `#[no_mangle]` no-op exports. It also
+found fastfat's `DebugDoit`, an extern bound to a `VOID DebugDoit(PVOID)` cohab stub that took
+`u32`, with two counter increments the free build never evaluates.
 
 ### A C macro that NULLS its argument, translated as a by-value `fn`, silently double-frees
 Symptom: 0x19 BAD_POOL_HEADER "at the next free" (special pool escalates it to 0x1E in a pool
@@ -6710,8 +6730,23 @@ WIN7/VISTA blocks the WS03 build compiles out: `FSCTL_REQUEST_OPLOCK`,
 and zero-on-dealloc FSCTLs, and the VISTA user-writable-section share check. They are gated
 the same way now (`ntddi_ge_ntddi_{vista,win7,win8,winthreshold}`). The inverse appeared in
 the same crate: `#[cfg(not(reactos))]` for `#ifndef __REACTOS__`. Nothing sets `reactos`, so
-the code the C excludes compiled IN. `scan_cfg_vs_c` only judges ARCH conditionals; a version
-scanner is owed (the lane plan).
+the code the C excludes compiled IN. `tools/scan_version_vs_c.py` gates the class now: it
+evaluates each C function's version and `__REACTOS__` chains at the module's real version and
+flags a Rust twin that still calls something only a dead branch calls. Its first tree-wide run
+(2026-10-16) found 7 more in other crates. The worst was classpnp's `ClasspDeleteTimer`. At
+WIN8 `TickTimer` is an inline `KTIMER`, and the WINBLUE `ExDeleteTimer` path read its
+dispatcher header as an `EX_TIMER` pointer, then zeroed it on every FDO teardown. comctl32's
+syslink deleted the parent's `WM_CTLCOLORSTATIC` brush, which ReactOS deliberately keeps. The
+rest were behavioural: cmd's Win7 `%HIGHESTNUMANODENUMBER%`, tooltips asking the parent again,
+threadpool naming threads, fastfat's eager `FsRtlAreThereWaitingFileLocks`, and the runtime-dead
+disk-accounting calls. Take the version from the BUILD, not a guess. The cargo-link cutovers
+rewrote whole CMakeLists files, and the module's version went with them: classpnp is 0x602 /
+NTDDI_WIN8 (`git show 7a67eeddf88^:drivers/storage/class/classpnp/CMakeLists.txt`), and so is
+the translation. The scanner reads build.ninja first and the CMakeLists history when the file
+is no longer compiled. Gate the Rust with `cfg!(name)` in an expression rather than
+`#[cfg(name)]` on a block: it compiles out the same, keeps the code type-checked, and leaves
+no unused imports. Declare the name in `[lints.rust] check-cfg`. Use `if cfg!(g) { .. }` or
+`cfg!(g) && ..`, not an early return the scanner cannot see.
 
 **Stacked `#[cfg]`s AND together.** Deleting an item's per-arch twin can leave its
 `#[cfg(target_arch = "x86")]` behind, which then fuses with the next item's

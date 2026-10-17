@@ -470,7 +470,7 @@ pub unsafe extern "C" fn LogfCloseAll() {
     while IsListEmpty(&raw mut LogFileListHead) == false {
         LogfClose(
             ((LogFileListHead.Flink as ULONG_PTR)
-                .wrapping_sub(&raw mut (*::core::ptr::null_mut::<LOGFILE>()).ListEntry as ULONG_PTR))
+                .wrapping_sub(core::mem::offset_of!(LOGFILE, ListEntry) as ULONG_PTR))
                 as PLOGFILE,
             TRUE as BOOLEAN,
         );

@@ -3419,11 +3419,11 @@ pub unsafe extern "system" fn ClassModeSelect(
     Length: ULONG,
     SavePages: BOOLEAN
 ) -> NTSTATUS {
-    #[cfg(feature = "ntddi_winblue")]
+    #[cfg(ntddi_ge_ntddi_winblue)]
     {
         ClasspModeSelect(Fdo, ModeSelectBuffer, Length, SavePages)
     }
-    #[cfg(not(feature = "ntddi_winblue"))]
+    #[cfg(not(ntddi_ge_ntddi_winblue))]
     {
         let _ = Fdo;
         let _ = ModeSelectBuffer;

@@ -23,11 +23,23 @@ macro_rules! PAGED_CODE {
 }
 
 // cdprocs.h `AssertVerifyDevice` / `AssertVerifyDeviceIrp` (the NT_ASSERT forms are under
-// `#if 0`) and cddata.h `ASSERT_OPTIONAL_IRP` (`{ NOTHING; }` without CD_SANITY): empty,
-// operands never evaluated -- so token-discarding macros, not empty fns.
+// `#if 0`) and cddata.h's ASSERT_* family (`{ NOTHING; }` without CD_SANITY): empty,
+// operands never evaluated -- so token-discarding macros, not empty fns. The family were
+// empty fns, extern declarations and `#[no_mangle]` no-op exports until 2026-10-16.
 macro_rules! AssertVerifyDevice { ($($t:tt)*) => { () }; }
 macro_rules! AssertVerifyDeviceIrp { ($($t:tt)*) => { () }; }
 macro_rules! ASSERT_OPTIONAL_IRP { ($($t:tt)*) => { () }; }
+macro_rules! ASSERT_IRP_CONTEXT { ($($t:tt)*) => { () }; }
+macro_rules! ASSERT_FCB { ($($t:tt)*) => { () }; }
+macro_rules! ASSERT_IRP { ($($t:tt)*) => { () }; }
+macro_rules! ASSERT_FILE_OBJECT { ($($t:tt)*) => { () }; }
+macro_rules! ASSERT_LOCKED_FCB { ($($t:tt)*) => { () }; }
+macro_rules! ASSERT_EXCLUSIVE_VCB { ($($t:tt)*) => { () }; }
+macro_rules! ASSERT_OPTIONAL_IRP_CONTEXT { ($($t:tt)*) => { () }; }
+macro_rules! ASSERT_VCB { ($($t:tt)*) => { () }; }
+macro_rules! ASSERT_EXCLUSIVE_CDDATA { ($($t:tt)*) => { () }; }
+macro_rules! ASSERT_OPTIONAL_VCB { ($($t:tt)*) => { () }; }
+macro_rules! ASSERT_STRUCT { ($($t:tt)*) => { () }; }
 
 pub mod types;
 pub mod glue;       // harvested #define consts + grind-noise aliases

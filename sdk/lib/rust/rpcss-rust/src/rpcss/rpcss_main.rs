@@ -151,7 +151,7 @@ pub unsafe extern "C" fn irpcss_get_class_object(
     *object = ::core::ptr::null_mut::<MInterfacePointer>();
     EnterCriticalSection(&raw mut registered_classes_cs);
     cur = (registered_classes.next as *mut ::core::ffi::c_char).offset(
-        -(&raw mut (*::core::ptr::null_mut::<registered_class>()).entry as ::core::ffi::c_ulonglong
+        -(core::mem::offset_of!(registered_class, entry) as ::core::ffi::c_ulonglong
             as isize),
     ) as *mut registered_class;
     while &raw mut (*cur).entry != &raw mut registered_classes {
@@ -177,7 +177,7 @@ pub unsafe extern "C" fn irpcss_get_class_object(
             break;
         } else {
             cur = ((*cur).entry.next as *mut ::core::ffi::c_char).offset(
-                -(&raw mut (*::core::ptr::null_mut::<registered_class>()).entry
+                -(core::mem::offset_of!(registered_class, entry)
                     as ::core::ffi::c_ulonglong as isize),
             ) as *mut registered_class;
         }

@@ -26,3 +26,7 @@ winedebug-rust = { path = "../winedebug-rust" }
 win32macros-rust = { path = "../win32macros-rust" }
 winelist-rust = { path = "../winelist-rust" }
 ntkrnl-sys = { path = "../ntkrnl-sys" }
+
+# `#ifndef __REACTOS__`: __REACTOS__ is always defined, so this is never set.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(not_reactos)'] }

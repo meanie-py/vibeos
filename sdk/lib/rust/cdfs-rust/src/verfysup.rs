@@ -20,13 +20,10 @@ const IRP_MN_VERIFY_VOLUME: u8 = 0x02;
 const IOCTL_CDROM_CHECK_VERIFY: u32 = (2u32 << 16) | (1u32 << 14) | (0x200u32 << 2) | 0u32;
 
 extern "C" {
-    fn ASSERT_IRP_CONTEXT(arg: *mut IRP_CONTEXT);
 }
 extern "C" {
-    fn ASSERT_VCB(arg: *mut VCB);
 }
 extern "C" {
-    fn ASSERT_EXCLUSIVE_CDDATA();
 }
 extern "C" {
     fn CdAcquireVcbExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, arg2: u8) -> u32;
@@ -52,7 +49,6 @@ extern "C" {
     fn CdMarkRealDevForVerify(Device: *mut DEVICE_OBJECT);
 }
 extern "C" {
-    fn ASSERT_EXCLUSIVE_VCB(Vcb: *mut VCB);
 }
 extern "C" {
 }
@@ -130,7 +126,6 @@ extern "C" {
     fn CdNormalizeAndRaiseStatus( IrpContext: PIRP_CONTEXT, Status: NTSTATUS, );
 }
 extern "C" {
-    fn ASSERT_IRP(_: PIRP);
 }
 extern "system" {
     fn IoVerifyVolume( DeviceToVerify: PDEVICE_OBJECT, AllowRawMount: i32, ) -> NTSTATUS;
@@ -158,8 +153,8 @@ pub unsafe extern "C" fn CdPerformVerify(
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let IrpSp: *mut IO_STACK_LOCATION;
 
-    ASSERT_IRP_CONTEXT(IrpContext);
-    ASSERT_IRP(Irp);
+    ASSERT_IRP_CONTEXT!(IrpContext);
+    ASSERT_IRP!(Irp);
 
     // Early return if this is a mount/verify FSCTL
     if ((*IrpContext).MajorFunction == IRP_MJ_FILE_SYSTEM_CONTROL)
@@ -257,9 +252,9 @@ pub unsafe extern "C" fn CdCheckForDismount(
         let mut VcbPresent: i32 = 1;
         let mut SavedIrql: KIRQL = 0;
 
-        ASSERT_IRP_CONTEXT(IrpContext);
-        ASSERT_VCB(Vcb);
-        ASSERT_EXCLUSIVE_CDDATA();
+        ASSERT_IRP_CONTEXT!(IrpContext);
+        ASSERT_VCB!(Vcb);
+        ASSERT_EXCLUSIVE_CDDATA!();
 
         CdAcquireVcbExclusive(IrpContext, Vcb, 0); // FALSE
 
@@ -524,8 +519,8 @@ pub unsafe extern "C" fn CdVerifyFcbOperation(
     let mut SavedIrql: KIRQL = 0;
     let FinalReference: u8;
 
-    ASSERT_EXCLUSIVE_CDDATA();
-    ASSERT_EXCLUSIVE_VCB(Vcb);
+    ASSERT_EXCLUSIVE_CDDATA!();
+    ASSERT_EXCLUSIVE_VCB!(Vcb);
 
     CdLockVcb(IrpContext, Vcb);
 

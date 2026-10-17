@@ -580,8 +580,7 @@ pub unsafe extern "C" fn HCR_GetDefaultVerbW(
     wv(szDest, UNICODE_NULL);
 
     // then fallback to 'open'
-    lstrcpyW(sTemp.as_mut_ptr(), W_SHELL_OPEN_COMMAND.as_ptr());
-    if RegOpenKeyExW(hkeyClass, sTemp.as_ptr(), 0, KEY_READ, &mut hkey) == 0 {
+    if RegOpenKeyExW(hkeyClass, W_SHELL_OPEN_COMMAND.as_ptr(), 0, KEY_READ, &mut hkey) == 0 {
         RegCloseKey(hkey);
         lstrcpynW(szDest, W_OPEN.as_ptr(), len as INT);
         return TRUE;
