@@ -1,4 +1,5 @@
 use crate::{Corpus, Rule, SourceFile, SourceSet};
+use rayon::prelude::*;
 use regex::Regex;
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
@@ -47,6 +48,33 @@ struct Facts {
     statics_decl: BTreeMap<String, Vec<(String, usize, String)>>,
     ret_def: BTreeMap<String, Vec<(String, String, String)>>,
     ret_decl: BTreeMap<String, Vec<(String, usize, String, String)>>,
+}
+fn merge_facts(dst: &mut Facts, src: Facts) {
+    for (name, values) in src.aliases {
+        dst.aliases.entry(name).or_default().extend(values);
+    }
+    dst.aggregates.extend(src.aggregates);
+    for (name, values) in src.defs {
+        dst.defs.entry(name).or_default().extend(values);
+    }
+    for (name, values) in src.decls {
+        dst.decls.entry(name).or_default().extend(values);
+    }
+    for (path, values) in src.called {
+        dst.called.entry(path).or_default().extend(values);
+    }
+    for (name, values) in src.statics_def {
+        dst.statics_def.entry(name).or_default().extend(values);
+    }
+    for (name, values) in src.statics_decl {
+        dst.statics_decl.entry(name).or_default().extend(values);
+    }
+    for (name, values) in src.ret_def {
+        dst.ret_def.entry(name).or_default().extend(values);
+    }
+    for (name, values) in src.ret_decl {
+        dst.ret_decl.entry(name).or_default().extend(values);
+    }
 }
 #[derive(Default)]
 struct Types {
@@ -715,7 +743,6 @@ impl Rule for ExternDeclDrift {
         SOURCES
     }
     fn run(&self, c: &Corpus) -> Result<Vec<String>, String> {
-        let mut facts = Facts::default();
         let manifests = c
             .sources("drift_manifests")
             .filter(|f| f.path.file_name().is_some_and(|n| n == "Cargo.toml"))
@@ -756,29 +783,57 @@ impl Rule for ExternDeclDrift {
             .sources("drift_rust")
             .filter(|f| f.path.extension().is_some_and(|e| e == "rs"))
             .collect::<Vec<_>>();
-        for f in &files {
-            let src = f.path.to_string_lossy().replace('\\', "/");
-            let owner = f.path.ancestors().find(|d| crate_dirs.contains(*d));
-            let owner_key = owner.map(|p| p.to_string_lossy().to_string());
-            file_facts(f, owner_key.as_deref(), &mut facts)?;
-            if owner.is_none()
-                && f.path
-                    .file_name()
-                    .is_some_and(|n| n.to_string_lossy().contains("bindgen"))
-            {
-                if let Some(sd) = sys_deps.values().flatten().find(|d| f.path.starts_with(d)) {
-                    let mut local = Facts::default();
-                    file_facts(f, Some("island"), &mut local)?;
-                    let entry = islands.entry(sd.clone()).or_default();
-                    for (n, rows) in local.decls {
+        // Each file is independent during AST fact extraction. Bounded chunks
+        // cap concurrent large bindgen parses while ordered collection preserves
+        // the original source iteration order for every Vec-valued fact.
+        let chunk_size = files.len().max(1).div_ceil(8);
+        let chunks: Vec<Result<Vec<(Facts, Option<(PathBuf, Facts)>)>, String>> = files
+            .par_chunks(chunk_size)
+            .map(|chunk| {
+                chunk
+                    .iter()
+                    .map(|f| {
+                        let owner = f.path.ancestors().find(|d| crate_dirs.contains(*d));
+                        let owner_key = owner.map(|p| p.to_string_lossy().to_string());
+                        let mut local = Facts::default();
+                        file_facts(f, owner_key.as_deref(), &mut local)?;
+                        let island = if owner.is_none()
+                            && f.path
+                                .file_name()
+                                .is_some_and(|n| n.to_string_lossy().contains("bindgen"))
+                        {
+                            sys_deps
+                                .values()
+                                .flatten()
+                                .find(|d| f.path.starts_with(d))
+                                .map(|sd| {
+                                    let mut facts = Facts::default();
+                                    file_facts(f, Some("island"), &mut facts)?;
+                                    Ok::<_, String>((sd.clone(), facts))
+                                })
+                                .transpose()?
+                        } else {
+                            None
+                        };
+                        Ok((local, island))
+                    })
+                    .collect()
+            })
+            .collect();
+        let mut facts = Facts::default();
+        for chunk in chunks {
+            for (local, island) in chunk? {
+                merge_facts(&mut facts, local);
+                if let Some((sd, local)) = island {
+                    let entry = islands.entry(sd).or_default();
+                    for (name, rows) in local.decls {
                         entry
-                            .entry(n)
+                            .entry(name)
                             .or_default()
-                            .extend(rows.into_iter().map(|(_, ln, s, _, id)| (ln, s, id)));
+                            .extend(rows.into_iter().map(|(_, ln, sig, _, id)| (ln, sig, id)));
                     }
                 }
             }
-            let _ = src;
         }
         let mut types = Types {
             aliases: facts.aliases.clone(),

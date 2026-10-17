@@ -77,11 +77,7 @@ static GENERATED: LazyLock<Regex> = LazyLock::new(|| {
 static PREFILTER: LazyLock<Regex> =
     LazyLock::new(|| crate::regexes::cached(r"(DPRINT1|DbgPrint|ERR|FIXME)\s*[({!]").unwrap());
 fn walk<'a>(node: Node<'a>, out: &mut Vec<Node<'a>>) {
-    out.push(node);
-    let mut c = node.walk();
-    for ch in node.children(&mut c) {
-        walk(ch, out)
-    }
+    out.extend(crate::syntax::preorder(node));
 }
 pub(super) fn regions(text: &str, tree: &tree_sitter::Tree) -> (String, String) {
     let src = text.as_bytes();

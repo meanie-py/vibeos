@@ -69,11 +69,7 @@ const NO_KEY: &[&str] = &[
     "_",
 ];
 fn walk<'a>(n: Node<'a>, v: &mut Vec<Node<'a>>) {
-    v.push(n);
-    let mut c = n.walk();
-    for x in n.children(&mut c) {
-        walk(x, v)
-    }
+    v.extend(crate::syntax::preorder(n));
 }
 fn boundary(s: &str, at: usize) -> bool {
     at == 0

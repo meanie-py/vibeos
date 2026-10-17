@@ -62,25 +62,12 @@ fn skip(f: &SourceFile) -> bool {
         || f.path.components().any(|x| x.as_os_str() == "target")
 }
 fn walk<'a>(n: Node<'a>, v: &mut Vec<Node<'a>>) {
-    v.push(n);
-    let mut c = n.walk();
-    for x in n.children(&mut c) {
-        walk(x, v)
-    }
+    v.extend(crate::syntax::preorder(n));
 }
 fn functions<'a>(t: &'a Tree) -> Vec<Node<'a>> {
-    fn visit<'a>(n: Node<'a>, out: &mut Vec<Node<'a>>) {
-        if n.kind() == "function_item" && n.child_by_field_name("body").is_some() {
-            out.push(n);
-        }
-        let mut cursor = n.walk();
-        for child in n.children(&mut cursor) {
-            visit(child, out);
-        }
-    }
-    let mut out = Vec::new();
-    visit(t.root_node(), &mut out);
-    out
+    crate::syntax::preorder(t.root_node())
+        .filter(|n| n.kind() == "function_item" && n.child_by_field_name("body").is_some())
+        .collect()
 }
 fn text<'a>(n: Node<'_>, s: &'a str) -> &'a str {
     &s[n.start_byte()..n.end_byte()]

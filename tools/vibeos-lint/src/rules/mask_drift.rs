@@ -259,17 +259,10 @@ fn names(s: &str) -> BTreeSet<String> {
 }
 fn split_comments(f: &crate::SourceFile) -> Result<(String, Vec<String>), String> {
     let tree = f.rust_tree()?;
-    let mut nodes = Vec::new();
-    fn visit(n: tree_sitter::Node<'_>, v: &mut Vec<(usize, usize)>) {
-        if matches!(n.kind(), "line_comment" | "block_comment") {
-            v.push((n.start_byte(), n.end_byte()));
-        }
-        let mut c = n.walk();
-        for ch in n.children(&mut c) {
-            visit(ch, v)
-        }
-    }
-    visit(tree.root_node(), &mut nodes);
+    let mut nodes: Vec<_> = crate::syntax::preorder(tree.root_node())
+        .filter(|n| matches!(n.kind(), "line_comment" | "block_comment"))
+        .map(|n| (n.start_byte(), n.end_byte()))
+        .collect();
     nodes.sort();
     let b = f.text.as_bytes();
     let mut live = b.to_vec();

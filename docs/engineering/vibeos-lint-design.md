@@ -529,3 +529,30 @@ is still running at this checkpoint. Extern drift remains the largest measured
 rule (162.64s), followed by IRQL (68.34s) and match constants (59.61s); independent
 per-file extern fact extraction is the next candidate. The seconds target and
 vendor YAML integration remain owed.
+
+## Performance checkpoint 4 (2026-10-17)
+
+The cursor/evaluation checkpoint is now parity-proven on both trees: **39 / 51
+findings** across three rules. The bounded parallel extern extraction and shared
+preorder traversal also match exactly: **1,524 / 1,540 findings** across six rules.
+`parity/performance-03.json` records the finding hashes and finalized measurements.
+
+Extern facts are extracted in at most eight chunks on the existing Rayon pool,
+then merged in original file order. Set facts union; vector facts retain their
+append order. IRQL, object-reference, dropped-probe, dropped-print and mask checks
+reuse a single-cursor preorder iterator that preserves unnamed nodes and subtree
+boundaries. These changes passed **513 unit tests**, **two integration tests**,
+all **112 tooling checks**, and all **116 source stages**.
+
+The overlapping source run took **243.70 seconds**
+(`20261017-044112-1ogfr654-check-all`), including 49.47 seconds before the shared
+invocation started. A subsequent warm run with no other lint/tooling jobs from
+this lane passed in **89.77 seconds**, with **89.56 seconds** in the shared binary
+(`20261017-044724-qflcws0k-check-all`). Other fleet activity continued; this is an
+observed warm runtime, not a controlled comparison with historical Python runs.
+The report preserves each run's corpus file/byte counts because the inputs differ.
+
+The single-digit target remains owed. The warm run's largest rules were extern
+drift (72.44s), IRQL (38.39s), match constants (33.19s), and double fetch (32.14s).
+Vendor YAML decoding is the only remaining source port, pending its separate
+dependency decision; the seven external checks retain their documented exclusions.
