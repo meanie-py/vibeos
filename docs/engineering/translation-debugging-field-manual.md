@@ -12521,6 +12521,21 @@ deterministically, not by soak:** a `gdb probe` with a hardware breakpoint at
 brackets a region with a save/restore of flags or IRQL, diff the Rust for BOTH halves -- a sweep
 of every Rust fn that disables interrupts without restoring found this one only.
 
+### A torn-read protocol written in the wrong order passes every check but the one it exists for
+**Symptom:** none you will see in a boot. A reader of `KSYSTEM_TIME` (system, interrupt or tick
+time) on one CPU, racing the clock update on another, accepts a value whose high word is new
+and low word old: about 7 minutes off, once per low-word wrap.
+**Cause:** the protocol (ndk/kefuncs.h `KiWriteSystemTime`) is writer `High2Time`, `LowPart`,
+`High1Time`; reader `High1Time`, `LowPart`, then accept only if `High2Time` equals `High1Time`.
+Rust's `KiWriteSystemTime` (`ke/time.rs`) wrote `High1Time` first and `High2Time` last on i386,
+under a comment claiming it matched the C, and on 64-bit wrote the u64 before `High2Time`,
+which breaks 32-bit WoW64 readers the same way. The 64-bit store was also a `write_volatile::<u64>`
+to `KUSER_SHARED_DATA+0x14`, only 4-aligned: UB that debug-assertions' alignment check caught.
+**Fix:** C order exactly; the 64-bit half is one unaligned `str`/`mov` in asm, with `dmb ishst`
+first on arm64 so the other CPU cannot see the stores out of order. A UP boot can never show
+this: the writer is the clock interrupt, which a reader on the same CPU never interleaves with.
+For any seqlock-shaped protocol, check the write order against the C, not the comment.
+
 ### A per-CPU register read after `sti` belongs to whoever faulted last
 **Symptom:** amd64 ladder `fault64.exe`/`fault32.exe` exit `0xBAF2` ("rung1 FAIL: AV params"):
 a guest access violation arrives with the right code but the wrong

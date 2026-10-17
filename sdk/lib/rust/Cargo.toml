@@ -905,19 +905,19 @@ debug = 1
 #     read_unaligned) since it is correct regardless.
 #   - arm64, ntoskrnl-rust/src/ke/time.rs:56 — `write_volatile` of a u64
 #     through a `*mut KSYSTEM_TIME`, which is 4-aligned (SystemTime lives at
-#     offset 0x14 of KUSER_SHARED_DATA). NOT fixed: the misalignment also means
-#     that store was never atomic, so the torn-read guard the code documents
-#     does not actually hold, and repairing it means reworking the KSYSTEM_TIME
-#     write protocol against the C rather than silencing a checker.
+#     offset 0x14 of KUSER_SHARED_DATA). FIXED 2026-10-16 against the C
+#     protocol (ndk/kefuncs.h): High2Time first, then one unaligned 64-bit
+#     store in asm -- and the write order was wrong on both widths besides.
 #
 # So this is a MIGRATION, not a flag flip — two of two crates tested had a UB
 # site, on top of the 108 never-compiled `#[cfg(debug_assertions)]` blocks.
 # Enable it one crate at a time, with a boot per crate. Full accounting, and the
 # three already-fixed never-compiled blocks, are in the roadmap entry.
 #
-# [profile.release.package.ntoskrnl-rust]
-# debug-assertions = true
-# overflow-checks = false   # NB: defaults to FOLLOWING debug-assertions; must be explicit
+# ARMED: ntoskrnl-rust (2026-10-16). Next: ex-rust, hal-rust, the ob/ps/mm crates.
+[profile.release.package.ntoskrnl-rust]
+debug-assertions = true
+overflow-checks = false   # defaults to FOLLOWING debug-assertions; C has no overflow traps
 
 # The appcompat shim DLLs register their shims as `.shm$BBB` records that only shimlib's section
 # walk ever reads, so the DLL reaches each crate through ONE anchor symbol (lib.rs). One codegen
