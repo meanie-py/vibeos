@@ -168,11 +168,12 @@ driver (`tools/merge_drivers.py`, which also merges the cohab census), and psapi
 2026-10-16. The first run per stem compiles ntkrnl-sys cold in its private
 `target-<arch>`, which is the likely source of the earlier figure.
 
-- **`port macros` loses two things a hand fix then has to restore** (reactos.exe): it does
-  not widen integer operands (`GetDiskSizeInBytes` needed `as ULONGLONG`) and it drops the
-  `!` when one lowered macro calls another (`SetDlgItemFont` -> `SetWindowFont!`). The three
-  hand edits live inside reactos-rust's generated prelude block, so a `port macros` re-run
-  reverts them.
+- **`port macros` no longer reverts hand edits** (2026-10-17): items are `gen:`-stamped and
+  an edited one leaves the block (`generated_items.py`). reactos-rust's three fixes now sit
+  above their blocks; the `!` one was also fixed at the root (render applies the bang).
+  Still owed: the SDK lowering does not widen a `ULONGLONG * ULONG` (it has no member
+  types for a macro parameter), so `GetDiskSizeInBytes` stays a hand port; and resolve's
+  generated blocks have no stamps yet.
 - **usetup's cabinet/file-queue code exists twice** (usetup-rust, and reactos-rust's
   `fileqsup.rs`, because the C `#include`s the .c files). One shared crate, as tdihelpers
   got (item 5 above).
@@ -191,10 +192,11 @@ driver (`tools/merge_drivers.py`, which also merges the cohab census), and psapi
   It TIGHTENS an audit, though, so measure it first. Re-check every banked body against
   its C function's live-arm callees under its TU's defines. Then fix (re-buy) or allowlist
   each body that dropped one, before the change can turn a `port replay` red.
-- **The live cost counter skips failed attempts.** Every attempt's `result.json` has
-  `cost_usd: null`, and a body that ends in `max_tokens` is never added to the running total
-  (DriveDlgProc's two 32K-token failures printed `$0.0000`). Batch H's real spend was summed
-  from the attempts' token counts. The counter should bill every attempt it sent.
+- **The cost counter now bills failed attempts** (2026-10-17). Three causes: the Claude
+  backend never set `usage_known`, so all 6,637 attempt `result.json`s said
+  `cost_usd: null`; FAIL lines did not print the running figure `port translate` bills a
+  run by; and `[running $X.XX]` rounded a Haiku run to $0.00. The old records stay null;
+  their token counts are intact if a past run needs re-pricing.
 - The three tech-debt items are in the roadmap's "Known bugs & flakes" registry, so they
   are not repeated here:
   - the i386-uefi install's fastfat flush fault;
