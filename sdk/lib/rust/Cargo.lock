@@ -424,6 +424,14 @@ name = "bitmap"
 version = "0.1.0"
 
 [[package]]
+name = "blue-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "blue-rust"
 version = "0.1.0"
 dependencies = [
@@ -3875,6 +3883,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ndisuio-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "ndisuio-rust"
 version = "0.1.0"
 dependencies = [
@@ -3930,6 +3946,14 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
  "win32macros-rust",
+]
+
+[[package]]
+name = "netio-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]
@@ -4756,6 +4780,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "reactos-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "reactos-link"
 version = "0.1.0"
 dependencies = [
@@ -5143,6 +5175,14 @@ dependencies = [
  "panic-common",
  "rtl-sync",
  "rtl-threadpool",
+]
+
+[[package]]
+name = "rtl8139-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]
@@ -6155,6 +6195,14 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
  "winedebug-rust",
+]
+
+[[package]]
+name = "tdi-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]

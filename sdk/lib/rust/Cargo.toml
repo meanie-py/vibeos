@@ -1,5 +1,11 @@
 [workspace]
 members = [
+    "reactos-cargo",
+    "tdi-cargo",
+    "rtl8139-cargo",
+    "netio-cargo",
+    "ndisuio-cargo",
+    "blue-cargo",
     "user32_vista-cargo",
     "wdmaud-cargo",
     "sysaudio-cargo",
