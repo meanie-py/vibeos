@@ -820,7 +820,10 @@ def _preprocess(argv: list[str], source: Path, probe: str) -> str:
     """`argv` run with -E over `#include <source>` followed by `probe`."""
     with tempfile.TemporaryDirectory(prefix="rcv-sdkmacro-") as d:
         p = Path(d) / "probe.c"
-        p.write_text(f'#include "{source}"\n{probe}\n')
+        # `#line` gives the probe one name on every arch. Each arch's probe lives in its own
+        # temp dir, so a macro that expands `__FILE__` read as "expands differently per arch"
+        # (mmebuddy_debug.h's SND_ERR) when the real refusal is its string literal.
+        p.write_text(f'#include "{source}"\n#line 1 "rcv-sdkmacro-probe.c"\n{probe}\n')
         args = [str(p) if a == str(source) else a for a in _without_outputs(argv)]
         if str(p) not in args:
             raise LowerError(f"compile command does not name {source}")

@@ -59,6 +59,13 @@ resolves it. A red batch **splits recursively**, so innocent lanes still land an
 is rejected with its gate classification plus its artifact dir. Full design:
 `tests/qemu/cli/README.md` → `land`, and the header of `tests/qemu/cli/queue.py`.
 
+Two files every lane appends to, `tools/rustconv/gen_driver_types.sh` and
+`tools/cohab-census.txt`, have structural merge drivers (`tools/merge_drivers.py`, named
+in `.gitattributes`): the driver table merges arm by arm and the census row by row, so two
+lanes adding different modules no longer conflict. A real both-sides edit still does. The
+drivers are git config, set per clone by `tools/install-git-hooks.sh`; without it git
+merges those files as plain text, as before.
+
 ### Which local gate to run BEFORE submitting — and never DURING
 
 `land` gates for you, so these are about not wasting a 25-minute queue wait on something you

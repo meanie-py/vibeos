@@ -270,6 +270,9 @@ _PYTEST_SUITES = [
     # (§9.120). Also fails on any gate lint that is in neither the control table
     # nor the documented-exemption list, so coverage gaps stay loud.
     (".", ".", "tools/test_scanner_controls.py"),
+    # The structural merge drivers for gen_driver_types.sh and the cohab census, including
+    # one real `git merge` through the configured driver (tools/merge_drivers.py).
+    (".", ".", "tools/test_merge_drivers.py"),
     # Unit tests for scan_com_double_release's matcher. The CONTROL in
     # test_scanner_controls proves the scanner is not blind; these pin the four
     # CORRECT spellings it must stay quiet about (release-then-null,

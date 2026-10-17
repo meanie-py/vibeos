@@ -5287,6 +5287,16 @@ def _crate_defined_fns(modules_dir: Path) -> set[str]:
     }
 
 
+def _prelude_declared_fns(prelude: Path) -> set[str]:
+    """Every function name the prelude already provides, so `_resolve_externs` never adds a
+    second: hand-written, the consensus block's, and the kernel substrate block's imports."""
+    return (
+        prelude_resolve.hand_written_names(prelude)
+        | {k for k, v in prelude_resolve.existing_block(prelude).items() if v.kind == "fn"}
+        | set(prelude_resolve.existing_substrate(prelude))
+    )
+
+
 def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
     """Functions the module's C calls and no Rust declares, two ways, both exact:
 
@@ -5306,11 +5316,7 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
     # Nor one the kernel substrate block imports: wdfldr's `#define ObDereferenceObject
     # ObfDereferenceObject` was aliased on top of `ntkrnl_sys::ob::ObDereferenceObject` (E0252),
     # and kept by the existing-externs merge below on every later run.
-    declared = (
-        prelude_resolve.hand_written_names(prelude)
-        | {k for k, v in prelude_resolve.existing_block(prelude).items() if v.kind == "fn"}
-        | set(prelude_resolve.existing_substrate(prelude))
-    )
+    declared = _prelude_declared_fns(prelude)
     stem = state["stem"]
     modules_dir = _crate_dir(state) / "src" / stem
     # Nor one the crate's own modules define: that is a sibling to wire, not an import. fc's
