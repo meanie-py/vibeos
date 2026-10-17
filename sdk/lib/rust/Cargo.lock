@@ -3268,6 +3268,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "mi-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "mi-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "midl-rt"
 version = "0.1.0"
 

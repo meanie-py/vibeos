@@ -1,0 +1,15 @@
+# Cargo-driven `mi.dll` link (the body is mi-rust; reactos-link builds the PE).
+
+[package]
+name = "mi-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "mi"
+path = "src/main.rs"
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }

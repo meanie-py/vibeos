@@ -8138,6 +8138,21 @@ case "$DRIVER" in
     LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/vendor/symcrypt/inc" -I"${SRC}/vendor/symcrypt/lib" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x0A00 -DNTDDI_VERSION=0x0A000000 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D__USE_CRTIMP -D__WINESRC__ -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
+  mi)
+    # mi.dll, the Management Infrastructure client, written fresh in Rust over wbemprox (no C
+    # to translate). The island is OMI's MI.h (the ABI; table layouts measured on Windows 11)
+    # plus wbemcli.h for the IWbem* vtables the sessions call. MI_CHAR_TYPE 2 and the V1 API
+    # are mi.h's defaults here.
+    USERMODE=1
+    REAL_UNIONS=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/mi"
+    WRAPPER_INC=$'#include <stdarg.h>\n#include "windef.h"\n#include "winbase.h"\n#include "objbase.h"\n#include "oleauto.h"\n#include "wbemcli.h"\n#include "mi.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]mi\.h' --allowlist-file '.*[/\\]wbemcli\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/win32/mi" )
+    LATE_INC=( -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x0A00 -DNTDDI_VERSION=0x0A000000 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_DLL -D__USE_CRTIMP -DCOBJMACROS )
+    ;;
   tbs)
     # AUTO-DERIVED by rustconv.profile_derive on 2026-10-15 from dll/win32/tbs/CMakeLists.txt
     # (1 compiled TU(s), 61 headers in the include closure, 0 switch constant(s)).
