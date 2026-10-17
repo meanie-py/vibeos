@@ -2595,6 +2595,13 @@ sdk/lib/crt/msvcrtex.cmake	1	# recalloc.c is NEW upstream (CORE-20596): it defin
 sdk/lib/crt/msvcrtex.cmake	1	# sec_mgr.c started calling it in this merge.
 sdk/lib/crt/printf/printf.cmake	1	# instead deleted swprintf.c and renamed vswprintf.c to _vswprintf.c; we keep ours,
 sdk/lib/crt/printf/printf.cmake	1	# swprintf. We took that change. But swprintf.c / vswprintf.c ARE the non-conforming
+sdk/lib/crt/string/string.cmake	1	# string/ctype.c
+sdk/lib/crt/string/string.cmake	1	# string/iswctype.c
+sdk/lib/crt/string/string.cmake	1	# string/strtoi64.c
+sdk/lib/crt/string/string.cmake	1	# string/strtol.c
+sdk/lib/crt/string/string.cmake	1	# string/strtoul.c
+sdk/lib/crt/string/string.cmake	1	# string/strtoull.c
+sdk/lib/crt/string/string.cmake	1	# string/wctype.c)
 sdk/lib/delayimp/CMakeLists.txt	1	# __pfnDliNotifyHook2/__pfnDliFailureHook2 hook variables, from delayimp.c,
 sdk/lib/delayimp/CMakeLists.txt	1	# pfnDliNotifyHook2.c and pfnDliFailureHook2.c (kept on disk as the record). `delayimp` stays
 sdk/lib/dnslib/CMakeLists.txt	1	# addr.c dnsaddr.c flatbuf.c hostent.c memory.c sablob.c straddr.c string.c
