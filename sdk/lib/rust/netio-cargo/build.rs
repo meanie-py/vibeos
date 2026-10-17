@@ -15,16 +15,15 @@ fn main() {
     };
 
     let link_order: &[&str] = match arch.as_str() {
-        "x86" => &["body", "engine:pseh", "import:ntoskrnl", "import:hal", "engine:chkstk", "engine:c:memcmp"],
-        "x86_64" => &["body", "engine:pseh", "import:ntoskrnl", "import:hal", "engine:c:memcmp"],
-        "aarch64" => &["body", "engine:pseh", "import:ntoskrnl", "import:hal", "engine:chkstk", "engine:c:memcmp"],
+        "x86" => &["body", "engine:c:tdihelpers", "engine:pseh", "import:ntoskrnl", "import:hal", "engine:chkstk", "engine:c:memcmp"],
+        "x86_64" => &["body", "engine:c:tdihelpers", "engine:pseh", "import:ntoskrnl", "import:hal", "engine:c:memcmp"],
+        "aarch64" => &["body", "engine:c:tdihelpers", "engine:pseh", "import:ntoskrnl", "import:hal", "engine:chkstk", "engine:c:memcmp"],
         _ => unreachable!(),
     };
 
     Linker::new(target_json)
         .rust_staticlib("netio-rust")
         .rust_user_target()
-        .c_from_compile_db("netio_shims", &["drivers/network/tdihelpers/tdi.c", "drivers/network/tdihelpers/tdiconn.c"])
         .spec2def("drivers/network/netio/netio.spec", "netio.sys")
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .import_lib("hal/hal.spec", "hal.dll", "hal")
