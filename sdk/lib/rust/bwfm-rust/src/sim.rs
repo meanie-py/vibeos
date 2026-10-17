@@ -35,6 +35,33 @@ pub struct Card {
 }
 
 const CIS_AT: u32 = 0x1000;
+const EROM: u32 = 0x1800_F000;
+
+/// A small enumeration ROM in the AI layout (bwfmreg.h `BWFM_DMP_*`).
+fn erom() -> Vec<u32> {
+    let comp_a = |part: u32| 0x4BF << 20 | part << 8 | 0x1;
+    let comp_b = |rev: u32, nsw: u32, nmw: u32| rev << 24 | nsw << 19 | nmw << 14 | 0x1;
+    // base | port | slave type | size type (0 = 4K) | ADDRESS
+    let addr = |base: u32, stype: u32| base | stype << 6 | 0x5;
+    vec![
+        comp_a(0x800),
+        comp_b(0x2B, 1, 0),
+        addr(0x1800_0000, 0),
+        addr(0x1810_0000, 2), // slave wrapper
+        comp_a(0x83E),
+        comp_b(7, 0, 1),
+        0x0000_0013, // master port 1
+        addr(0x1800_2000, 0),
+        addr(0x1810_2000, 3), // master wrapper
+        comp_a(0x135),
+        comp_b(0, 0, 0), // no wrappers: skipped
+        comp_a(0x827),
+        comp_b(1, 1, 0),
+        addr(0x1801_2000, 0),
+        addr(0x1811_2000, 2),
+        0x0000_000F,
+    ]
+}
 const R5_STATE_CMD: u32 = 0x1000;
 const R5_FUNCTION_NUMBER: u32 = 0x0200;
 
@@ -45,6 +72,10 @@ impl Card {
         cccr[0x09..0x0C].copy_from_slice(&CIS_AT.to_le_bytes()[..3]);
         let mut backplane = HashMap::new();
         backplane.insert(0x1800_0000, 0x1526_4345);
+        backplane.insert(0x1800_00FC, EROM);
+        for (i, w) in erom().iter().enumerate() {
+            backplane.insert(EROM + 4 * i as u32, *w);
+        }
         Self {
             present: true,
             alp_never: false,

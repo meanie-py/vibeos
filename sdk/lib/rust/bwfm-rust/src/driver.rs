@@ -2,7 +2,8 @@
 //! 5's SDC1, hal-rust/src/arm64/pnpdd.rs), bound through the critical device
 //! database.
 //!
-//! So far START powers the chip, brings the SDIO bus up, and reads the chip id:
+//! So far START powers the chip, brings the SDIO bus up, and reads the chip id
+//! and its cores:
 //! the first board milestone in docs/engineering/pi-wifi-design.md. The chip
 //! stays attached in `CHIP` for the firmware download that comes next. Every
 //! other IRP passes down untouched.
@@ -243,6 +244,9 @@ unsafe fn start(io: PIO_STACK_LOCATION) -> NTSTATUS {
                 id.raw,
                 if id.chip == 0x4345 { "CYW43455" } else { "not a CYW43455" }
             );
+            for c in &chip.cores[..chip.ncores] {
+                bwprint!("  core {:#05x} rev {:2} base {:#010x} wrap {:#010x}\n", c.id, c.rev, c.base, c.wrap);
+            }
             CHIP = Some(chip);
         }
         Err((_, e)) => bwprint!("chip did not attach: {:?}\n", e),
