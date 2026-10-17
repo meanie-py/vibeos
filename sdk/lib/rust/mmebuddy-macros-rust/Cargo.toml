@@ -1,0 +1,19 @@
+# mmebuddy-macros-rust — mmebuddy_debug.h / mmebuddy.h statement macros for the sound crates.
+# See src/lib.rs for why there are two flavours.
+[package]
+name = "mmebuddy-macros-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+
+[lib]
+# rlib, like win32macros-rust: macros plus extern declarations the consumers' DLLs import.
+crate-type = ["rlib"]
+
+[dependencies]
+
+[package.metadata.difftest]
+host-tests = true

@@ -32,3 +32,12 @@ if [ "$(git -C "$repo_root" config --get-all remote.origin.fetch || true)" != "$
     git -C "$repo_root" config --add remote.origin.fetch "$want_refspec"
     echo "fixed remote.origin.fetch -> $want_refspec (was master-only; broke non-master tracking)"
 fi
+
+# Structural merge drivers for the files every lane appends to (.gitattributes names
+# them). Git runs a driver from the top of the worktree being merged, so the relative
+# path finds that worktree's own copy of the script.
+git -C "$repo_root" config merge.vibeos-case-arms.name "gen_driver_types.sh: merge the driver table arm by arm"
+git -C "$repo_root" config merge.vibeos-case-arms.driver "python3 tools/merge_drivers.py case-arms %O %A %B"
+git -C "$repo_root" config merge.vibeos-census.name "cohab-census.txt: merge the census row by row"
+git -C "$repo_root" config merge.vibeos-census.driver "python3 tools/merge_drivers.py census %O %A %B"
+echo "merge drivers configured: vibeos-case-arms, vibeos-census"

@@ -1020,6 +1020,7 @@ dll/win32/authz/CMakeLists.txt	1	# authz.c clictx.c resman.c → authz-rust
 dll/win32/authz/CMakeLists.txt	1	# clictx.c
 dll/win32/authz/CMakeLists.txt	1	# resman.c
 dll/win32/avicap32/CMakeLists.txt	1	# avicap32.c # replaced by Rust (sdk/lib/rust/avicap32-rust/src/avicap32/avicap32.rs)
+dll/win32/beepmidi/CMakeLists.txt	1	# beepmidi.c # replaced by Rust (sdk/lib/rust/beepmidi-rust/src/beepmidi/beepmidi.rs)
 dll/win32/cabinet/CMakeLists.txt	1	# (reactos-link, ModuleKind::Win32Dll) compiles rust_cohab_stub.c (wine debug
 dll/win32/cards/CMakeLists.txt	1	# cards.c # replaced by Rust (sdk/lib/rust/cards-rust/src/cards/cards.rs)
 dll/win32/comctl32/CMakeLists.txt	1	# animate.c # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/animate.rs)
@@ -1248,6 +1249,13 @@ dll/win32/mfreadwrite/CMakeLists.txt	1	# writer.c # replaced by Rust (sdk/lib/ru
 dll/win32/mlang/CMakeLists.txt	1	# compiles rust_cohab_stub.c (wine debug no-ops + IsEqualGUID/min + vtbl
 dll/win32/mlang/CMakeLists.txt	1	# mlang.c is translated to Rust (sdk/lib/rust/mlang-rust, kept on disk per the
 dll/win32/mlang/CMakeLists.txt	1	# spec2def-generated mlang_stubs.c for the `stub`-only entries), compiles the
+dll/win32/mmdrv/CMakeLists.txt	1	# common.c # replaced by Rust (sdk/lib/rust/mmdrv-rust/src/mmdrv/common.rs)
+dll/win32/mmdrv/CMakeLists.txt	1	# entry.c # replaced by Rust (sdk/lib/rust/mmdrv-rust/src/mmdrv/entry.rs)
+dll/win32/mmdrv/CMakeLists.txt	1	# kernel.c # replaced by Rust (sdk/lib/rust/mmdrv-rust/src/mmdrv/kernel.rs)
+dll/win32/mmdrv/CMakeLists.txt	1	# mme.c # replaced by Rust (sdk/lib/rust/mmdrv-rust/src/mmdrv/mme.rs)
+dll/win32/mmdrv/CMakeLists.txt	1	# session.c # replaced by Rust (sdk/lib/rust/mmdrv-rust/src/mmdrv/session.rs)
+dll/win32/mmdrv/CMakeLists.txt	1	# wave.c # replaced by Rust (sdk/lib/rust/mmdrv-rust/src/mmdrv/wave.rs)
+dll/win32/mmdrv/CMakeLists.txt	1	# wave_io.c # replaced by Rust (sdk/lib/rust/mmdrv-rust/src/mmdrv/wave_io.rs)
 dll/win32/mprapi/CMakeLists.txt	1	# functions deterministically for $0. mprapi.c is commented out below and kept on disk per
 dll/win32/mprapi/CMakeLists.txt	1	# mprapi.c → mprapi-rust
 dll/win32/mprapi/CMakeLists.txt	1	# mprapi.c)
@@ -1601,6 +1609,7 @@ dll/win32/shell32/shellrecyclebin/CMakeLists.txt	1	# recyclebin_v5_enumerator.cp
 dll/win32/shlwapi/CMakeLists.txt	1	# (our ordinal.c only had a guessed-prototype FIXME stub), and policy.cpp / querysrc.cpp
 dll/win32/shlwapi/CMakeLists.txt	1	# New upstream TUs taken with this merge: zonechk.c implements ZoneCheckUrlEx* for real
 dll/win32/shlwapi/CMakeLists.txt	1	# is NOT taken, so kernelbase.c stays out and the .spec stays ours.
+dll/win32/sndblst/CMakeLists.txt	1	# sndblst.c # replaced by Rust (sdk/lib/rust/sndblst-rust/src/sndblst/sndblst.rs)
 dll/win32/snmpapi/CMakeLists.txt	1	# (field manual §9.112). main.c is commented out below and kept on disk per the
 dll/win32/snmpapi/CMakeLists.txt	1	# main.c → snmpapi-rust
 dll/win32/snmpapi/CMakeLists.txt	1	# main.c)
@@ -1653,6 +1662,10 @@ dll/win32/version/CMakeLists.txt	1	# #[no_mangle] symbols are the sole providers
 dll/win32/version/CMakeLists.txt	1	# since every version.c symbol was removed).
 dll/win32/version/CMakeLists.txt	1	# version-rust cohab: the entire version.c body (GetFileVersionInfo*/VerQueryValue*/
 dll/win32/version/CMakeLists.txt	1	# version.c — replaced by Rust (sdk/lib/rust/version-rust); cohab-linked
+dll/win32/wdmaud.drv/CMakeLists.txt	1	# legacy.c # replaced by Rust (sdk/lib/rust/wdmaud_drv-rust/src/wdmaud_drv/legacy.rs)
+dll/win32/wdmaud.drv/CMakeLists.txt	1	# mixer.c # replaced by Rust (sdk/lib/rust/wdmaud_drv-rust/src/wdmaud_drv/mixer.rs)
+dll/win32/wdmaud.drv/CMakeLists.txt	1	# mmixer.c # replaced by Rust (sdk/lib/rust/wdmaud_drv-rust/src/wdmaud_drv/mmixer.rs)
+dll/win32/wdmaud.drv/CMakeLists.txt	1	# wdmaud.c # replaced by Rust (sdk/lib/rust/wdmaud_drv-rust/src/wdmaud_drv/wdmaud.rs)
 dll/win32/wer/CMakeLists.txt	1	# Written in Rust (sdk/lib/rust/wer-rust): wer.dll (WER API, no WER service); port of Wine's dlls/wer/main.c.
 dll/win32/wevtapi/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/wevtapi-rust/src/wevtapi/main.rs)
 dll/win32/winfax/CMakeLists.txt	1	# winfax.c # replaced by Rust (sdk/lib/rust/winfax-rust/src/winfax/winfax.rs)
@@ -2014,8 +2027,15 @@ drivers/usb/usbxhci/CMakeLists.txt	1	# implementation. rust_stub.c only gives ad
 drivers/video/sysfb/CMakeLists.txt	1	# arches (it renders the desktop; it was arm64vid until it outgrew arm64). sysfb.c is fully translated
 drivers/video/sysfb/CMakeLists.txt	1	# cmake's add_library(MODULE) + the rust_cohab_stub.c + per-arch custom_command
 drivers/wdm/audio/backpln/portcls/CMakeLists.txt	1	# resource.cpp # replaced by sdk/lib/rust/portcls-rust/src/resource_*.rs
-drivers/wdm/audio/sysaudio/CMakeLists.txt	1	# pin.c # replaced by sdk/lib/rust/sysaudio-rust/src/pin.rs
-drivers/wdm/audio/sysaudio/CMakeLists.txt	1	# pin.c is retained on disk; its eight definitions are linked from Rust.
+drivers/wdm/audio/filters/kmixer/CMakeLists.txt	1	# filter.c # replaced by Rust (sdk/lib/rust/kmixer-rust/src/kmixer/filter.rs)
+drivers/wdm/audio/filters/kmixer/CMakeLists.txt	1	# kmixer.c # replaced by Rust (sdk/lib/rust/kmixer-rust/src/kmixer/kmixer.rs)
+drivers/wdm/audio/filters/kmixer/CMakeLists.txt	1	# pin.c # replaced by Rust (sdk/lib/rust/kmixer-rust/src/kmixer/pin.rs)
+drivers/wdm/audio/legacy/wdmaud/CMakeLists.txt	1	# control.c # replaced by Rust (sdk/lib/rust/wdmaud-rust/src/wdmaud/control.rs)
+drivers/wdm/audio/legacy/wdmaud/CMakeLists.txt	1	# deviface.c # replaced by Rust (sdk/lib/rust/wdmaud-rust/src/wdmaud/deviface.rs)
+drivers/wdm/audio/legacy/wdmaud/CMakeLists.txt	1	# entry.c # replaced by Rust (sdk/lib/rust/wdmaud-rust/src/wdmaud/entry.rs)
+drivers/wdm/audio/legacy/wdmaud/CMakeLists.txt	1	# mmixer.c # replaced by Rust (sdk/lib/rust/wdmaud-rust/src/wdmaud/mmixer.rs)
+drivers/wdm/audio/legacy/wdmaud/CMakeLists.txt	1	# sup.c # replaced by Rust (sdk/lib/rust/wdmaud-rust/src/wdmaud/sup.rs)
+drivers/wdm/audio/sysaudio/CMakeLists.txt	1	# control.c deviface.c dispatcher.c main.c pin.c
 drivers/wmi/CMakeLists.txt	1	# wmilib.c # replaced by Rust (wmilib-rust); kept on disk
 drivers/wmi/CMakeLists.txt	1	# wmilib.c (WmiCompleteRequest / WmiFireEvent / WmiSystemControl) is translated
 drivers/wmi/CMakeLists.txt	1	# wmilib.sys — Rust cohabitation flip (wmilib.c -> sdk/lib/rust/wmilib-rust)
@@ -2569,6 +2589,34 @@ sdk/lib/drivers/ntoskrnl_vista/CMakeLists.txt	1	# io.c # replaced by Rust (sdk/l
 sdk/lib/drivers/ntoskrnl_vista/CMakeLists.txt	1	# ke.c # replaced by Rust (sdk/lib/rust/ntoskrnl_vista-rust/src/ntoskrnl_vista/ke.rs)
 sdk/lib/drivers/ntoskrnl_vista/CMakeLists.txt	1	# po.c # replaced by Rust (sdk/lib/rust/ntoskrnl_vista-rust/src/ntoskrnl_vista/po.rs)
 sdk/lib/drivers/ntoskrnl_vista/CMakeLists.txt	1	# pofx.c # replaced by Rust (sdk/lib/rust/ntoskrnl_vista-rust/src/ntoskrnl_vista/pofx.rs)
+sdk/lib/drivers/sound/mmebuddy/CMakeLists.txt	1	# auxiliary/auxMessage.c # replaced by Rust (sdk/lib/rust/mmebuddy-rust/src/mmebuddy/auxMessage.rs)
+sdk/lib/drivers/sound/mmebuddy/CMakeLists.txt	1	# capabilities.c # replaced by Rust (sdk/lib/rust/mmebuddy-rust/src/mmebuddy/capabilities.rs)
+sdk/lib/drivers/sound/mmebuddy/CMakeLists.txt	1	# deviceinstance.c # replaced by Rust (sdk/lib/rust/mmebuddy-rust/src/mmebuddy/deviceinstance.rs)
+sdk/lib/drivers/sound/mmebuddy/CMakeLists.txt	1	# devicelist.c # replaced by Rust (sdk/lib/rust/mmebuddy-rust/src/mmebuddy/devicelist.rs)
+sdk/lib/drivers/sound/mmebuddy/CMakeLists.txt	1	# functiontable.c # replaced by Rust (sdk/lib/rust/mmebuddy-rust/src/mmebuddy/functiontable.rs)
+sdk/lib/drivers/sound/mmebuddy/CMakeLists.txt	1	# kernel.c # replaced by Rust (sdk/lib/rust/mmebuddy-rust/src/mmebuddy/kernel.rs)
+sdk/lib/drivers/sound/mmebuddy/CMakeLists.txt	1	# midi/midMessage.c # replaced by Rust (sdk/lib/rust/mmebuddy-rust/src/mmebuddy/midMessage.rs)
+sdk/lib/drivers/sound/mmebuddy/CMakeLists.txt	1	# midi/modMessage.c # replaced by Rust (sdk/lib/rust/mmebuddy-rust/src/mmebuddy/modMessage.rs)
+sdk/lib/drivers/sound/mmebuddy/CMakeLists.txt	1	# mixer/mxdMessage.c # replaced by Rust (sdk/lib/rust/mmebuddy-rust/src/mmebuddy/mxdMessage.rs)
+sdk/lib/drivers/sound/mmebuddy/CMakeLists.txt	1	# mmewrap.c # replaced by Rust (sdk/lib/rust/mmebuddy-rust/src/mmebuddy/mmewrap.rs)
+sdk/lib/drivers/sound/mmebuddy/CMakeLists.txt	1	# reentrancy.c # replaced by Rust (sdk/lib/rust/mmebuddy-rust/src/mmebuddy/reentrancy.rs)
+sdk/lib/drivers/sound/mmebuddy/CMakeLists.txt	1	# thread.c # replaced by Rust (sdk/lib/rust/mmebuddy-rust/src/mmebuddy/thread.rs)
+sdk/lib/drivers/sound/mmebuddy/CMakeLists.txt	1	# utility.c # replaced by Rust (sdk/lib/rust/mmebuddy-rust/src/mmebuddy/utility.rs)
+sdk/lib/drivers/sound/mmebuddy/CMakeLists.txt	1	# wave/format.c # replaced by Rust (sdk/lib/rust/mmebuddy-rust/src/mmebuddy/format.rs)
+sdk/lib/drivers/sound/mmebuddy/CMakeLists.txt	1	# wave/header.c # replaced by Rust (sdk/lib/rust/mmebuddy-rust/src/mmebuddy/header.rs)
+sdk/lib/drivers/sound/mmebuddy/CMakeLists.txt	1	# wave/streaming.c # replaced by Rust (sdk/lib/rust/mmebuddy-rust/src/mmebuddy/streaming.rs)
+sdk/lib/drivers/sound/mmebuddy/CMakeLists.txt	1	# wave/widMessage.c # replaced by Rust (sdk/lib/rust/mmebuddy-rust/src/mmebuddy/widMessage.rs)
+sdk/lib/drivers/sound/mmebuddy/CMakeLists.txt	1	# wave/wodMessage.c # replaced by Rust (sdk/lib/rust/mmebuddy-rust/src/mmebuddy/wodMessage.rs)
+sdk/lib/drivers/sound/mment4/CMakeLists.txt	1	# control.c # replaced by Rust (sdk/lib/rust/mment4-rust/src/mment4/control.rs)
+sdk/lib/drivers/sound/mment4/CMakeLists.txt	1	# detect.c # replaced by Rust (sdk/lib/rust/mment4-rust/src/mment4/detect.rs)
+sdk/lib/drivers/sound/mment4/CMakeLists.txt	1	# registry.c # replaced by Rust (sdk/lib/rust/mment4-rust/src/mment4/registry.rs)
+sdk/lib/drivers/sound/mmixer/CMakeLists.txt	1	# controls.c # replaced by Rust (sdk/lib/rust/mmixer-rust/src/mmixer/controls.rs)
+sdk/lib/drivers/sound/mmixer/CMakeLists.txt	1	# filter.c # replaced by Rust (sdk/lib/rust/mmixer-rust/src/mmixer/filter.rs)
+sdk/lib/drivers/sound/mmixer/CMakeLists.txt	1	# midi.c # replaced by Rust (sdk/lib/rust/mmixer-rust/src/mmixer/midi.rs)
+sdk/lib/drivers/sound/mmixer/CMakeLists.txt	1	# mixer.c # replaced by Rust (sdk/lib/rust/mmixer-rust/src/mmixer/mixer.rs)
+sdk/lib/drivers/sound/mmixer/CMakeLists.txt	1	# sup.c # replaced by Rust (sdk/lib/rust/mmixer-rust/src/mmixer/sup.rs)
+sdk/lib/drivers/sound/mmixer/CMakeLists.txt	1	# topology.c # replaced by Rust (sdk/lib/rust/mmixer-rust/src/mmixer/topology.rs)
+sdk/lib/drivers/sound/mmixer/CMakeLists.txt	1	# wave.c # replaced by Rust (sdk/lib/rust/mmixer-rust/src/mmixer/wave.rs)
 sdk/lib/drivers/sptilib/CMakeLists.txt	1	# sptilib.c # replaced by Rust (sdk/lib/rust/sptilib-rust/src/sptilib/sptilib.rs)
 sdk/lib/drivers/usbdex/CMakeLists.txt	1	# add_library(usbdex usbdex.c) # replaced by Rust (usbdex-rust); kept on disk
 sdk/lib/drivers/usbdex/CMakeLists.txt	1	# usbdex — Rust cohabitation flip (usbdex.c -> sdk/lib/rust/usbdex-rust)

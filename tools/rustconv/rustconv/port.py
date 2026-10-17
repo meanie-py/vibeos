@@ -466,6 +466,14 @@ def _seed_switch_facts(state: dict, prelude: Path) -> None:
         )
 
 
+def _stem_hint(stem: str) -> str:
+    """A valid crate stem near `stem`: digits moved off the front, other characters to `_`.
+
+    wdmaud.drv's target used to be told `--stem wdmaud.drv`, the name it had just refused.
+    """
+    return re.sub(r"[^A-Za-z0-9_-]", "_", re.sub(r"^([0-9]+)(.*)$", r"\2\1", stem))
+
+
 def stage_derive(
     module_dir: Path,
     target: str | None,
@@ -483,10 +491,11 @@ def stage_derive(
     # with a digit: the 3dtext screensaver's target scaffolded `3dtext-rust` and broke
     # `cargo metadata` for the whole workspace. Refuse before anything is written.
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]*", stem):
-        hint = re.sub(r"^([0-9]+)(.*)$", r"\2\1", stem)
+        hint = _stem_hint(stem)
         raise PortError(
             f"stem {stem!r} is not a valid crate name (`{stem}-rust`; cargo needs a leading "
-            f"letter): re-run with --stem <name>, e.g. --stem {hint}"
+            f"letter and only letters, digits, `_` and `-`): re-run with --stem <name>, "
+            f"e.g. --stem {hint}"
         )
     _add_island_headers(dp, load_state(stem).get("island_headers", {}))
     arm = pd.emit_profile(dp)
@@ -5278,6 +5287,16 @@ def _crate_defined_fns(modules_dir: Path) -> set[str]:
     }
 
 
+def _prelude_declared_fns(prelude: Path) -> set[str]:
+    """Every function name the prelude already provides, so `_resolve_externs` never adds a
+    second: hand-written, the consensus block's, and the kernel substrate block's imports."""
+    return (
+        prelude_resolve.hand_written_names(prelude)
+        | {k for k, v in prelude_resolve.existing_block(prelude).items() if v.kind == "fn"}
+        | set(prelude_resolve.existing_substrate(prelude))
+    )
+
+
 def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
     """Functions the module's C calls and no Rust declares, two ways, both exact:
 
@@ -5297,11 +5316,7 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
     # Nor one the kernel substrate block imports: wdfldr's `#define ObDereferenceObject
     # ObfDereferenceObject` was aliased on top of `ntkrnl_sys::ob::ObDereferenceObject` (E0252),
     # and kept by the existing-externs merge below on every later run.
-    declared = (
-        prelude_resolve.hand_written_names(prelude)
-        | {k for k, v in prelude_resolve.existing_block(prelude).items() if v.kind == "fn"}
-        | set(prelude_resolve.existing_substrate(prelude))
-    )
+    declared = _prelude_declared_fns(prelude)
     stem = state["stem"]
     modules_dir = _crate_dir(state) / "src" / stem
     # Nor one the crate's own modules define: that is a sibling to wire, not an import. fc's

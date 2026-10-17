@@ -1359,6 +1359,12 @@ def test_a_function_the_crate_defines_is_never_declared_extern(tmp_path):
     assert port._crate_defined_fns(tmp_path) == {"TextCompareA", "TextCompare"}
 
 
+def test_an_invalid_stem_is_offered_a_valid_one():
+    """`3dtext` and `wdmaud.drv` are CMake targets that cannot name a crate."""
+    assert port._stem_hint("3dtext") == "dtext3"
+    assert port._stem_hint("wdmaud.drv") == "wdmaud_drv"
+
+
 def test_split_island_groups_names_each_ignored_group_and_its_tus():
     script = (
         "  mfplat|mfplat-types_1|mfplat-types_2)\n"
@@ -1475,3 +1481,19 @@ def test_an_enumerator_the_crate_also_binds_is_spelled_prefixed(tmp_path):
 
 def test_a_module_with_no_functions_has_no_fn_chunks():
     assert port._fn_chunks("pub const A: u32 = 1;\n") == []
+
+
+def test_a_substrate_import_counts_as_declared(tmp_path):
+    """wdfldr: `#define ObDereferenceObject ObfDereferenceObject` was aliased on top of the
+    substrate block's `ntkrnl_sys::ob::ObDereferenceObject` (E0252), and every later resolve
+    kept the duplicate. A name the substrate imports is already declared."""
+    from rustconv import prelude_resolve
+
+    prelude = tmp_path / "prelude.rs"
+    prelude.write_text(
+        "pub use crate::types::*;\n\n"
+        f"{prelude_resolve.SUBSTRATE_BEGIN}\n"
+        "pub use ntkrnl_sys::ob::ObDereferenceObject;\n"
+        f"{prelude_resolve.SUBSTRATE_END}\n"
+    )
+    assert "ObDereferenceObject" in port._prelude_declared_fns(prelude)

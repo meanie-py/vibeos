@@ -2203,3 +2203,51 @@ pub unsafe fn InterlockedCompareExchange(destination: *mut i32, exchange: i32, c
         Ok(v) | Err(v) => v,
     }
 }
+
+// ================= intrin.h / math.h header inlines ===========================================
+// kmixer and wdmaud.drv's sample-format conversions call these; no import library exports them.
+
+/// intrin.h `unsigned short _byteswap_ushort(unsigned short)`.
+#[inline(always)]
+pub const fn _byteswap_ushort(value: u16) -> u16 {
+    value.swap_bytes()
+}
+
+/// intrin.h `unsigned long _byteswap_ulong(unsigned long)` (`unsigned long` is 32-bit on Windows).
+#[inline(always)]
+pub const fn _byteswap_ulong(value: u32) -> u32 {
+    value.swap_bytes()
+}
+
+/// intrin.h `unsigned __int64 _byteswap_uint64(unsigned __int64)`.
+#[inline(always)]
+pub const fn _byteswap_uint64(value: u64) -> u64 {
+    value.swap_bytes()
+}
+
+/// math.h's `__CRT_INLINE long lrintf(float x)`, as the header writes it — round half away
+/// from zero, NOT C99's current-rounding-mode lrintf: `(long)((x < 0) ? (x - 0.5f) : (x + 0.5))`.
+/// The positive arm adds a `double` 0.5, so it is evaluated in double; the negative arm in float.
+#[inline(always)]
+pub fn lrintf(x: f32) -> i32 {
+    if x < 0.0 {
+        (x - 0.5f32) as i32
+    } else {
+        (x as f64 + 0.5) as i32
+    }
+}
+
+#[cfg(test)]
+mod header_inline_tests {
+    use super::*;
+
+    #[test]
+    fn byteswaps_and_lrintf_match_the_headers() {
+        assert_eq!(_byteswap_ushort(0x1234), 0x3412);
+        assert_eq!(_byteswap_ulong(0x1234_5678), 0x7856_3412);
+        assert_eq!(lrintf(2.5), 3);
+        assert_eq!(lrintf(-2.5), -3);
+        assert_eq!(lrintf(1.4), 1);
+        assert_eq!(lrintf(-1.4), -1);
+    }
+}

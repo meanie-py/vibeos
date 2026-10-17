@@ -1,15 +1,11 @@
 
 add_definitions(-D_COMDDK_)
 
-list(APPEND SOURCE
-    control.c
-    deviface.c
-    dispatcher.c
-    main.c
-    # pin.c # replaced by sdk/lib/rust/sysaudio-rust/src/pin.rs
-    sysaudio.h)
-
-# pin.c is retained on disk; its eight definitions are linked from Rust.
+# All five .c bodies are translated to Rust (sdk/lib/rust/sysaudio-rust: pin.rs from the 2026
+# pilot, sysaudio/{control,deviface,dispatcher,main}.rs from the A' batch) and stay on disk,
+# uncompiled. The MODULE link needs one C source, the placeholder stub.
+#   control.c deviface.c dispatcher.c main.c pin.c
+list(APPEND SOURCE rust_cohab_stub.c)
 set(SYSAUDIO_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
 rust_storage_target(SYSAUDIO_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-sysaudio-target" sysaudio-rust)
 set(SYSAUDIO_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libsysaudio_rust.a")
@@ -47,5 +43,4 @@ set_module_type(sysaudio kernelmodedriver)
 add_dependencies(sysaudio rust_sysaudio)
 target_link_libraries(sysaudio ${SYSAUDIO_RUST_LIB} libcntpr)
 add_importlibs(sysaudio ntoskrnl ks hal)
-add_pch(sysaudio sysaudio.h SOURCE)
 add_cd_file(TARGET sysaudio DESTINATION reactos/system32/drivers FOR all)

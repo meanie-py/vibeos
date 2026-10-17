@@ -95,18 +95,24 @@ case "$DRIVER" in
                -DPC_IMPLEMENTATION -DCOM_STDMETHOD_CAN_THROW -DPC_NO_IMPORTS )
     ;;
   sysaudio)
-    # Derived from the real sysaudio include closure; KS declarations are direct
-    # behavior dependencies of pin.c as well as nested types of portcls.h.
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-15 from drivers/wdm/audio/sysaudio/CMakeLists.txt
+    # (4 compiled TU(s), 77 headers in the include closure, 0 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=0
+    REAL_UNIONS=1
     DRIVER_DIR="${SRC}/drivers/wdm/audio/sysaudio"
-    WRAPPER_INC=$'#include "sysaudio.h"\nstatic const unsigned int SYSAUDIO_IOCTL_KS_PROPERTY = IOCTL_KS_PROPERTY;'
-    ALLOW_FILES=( --allowlist-file '.*sysaudio[/\\].*\.h'
-                  --allowlist-file '.*[/\\]portcls\.h'
+    WRAPPER_INC=$'#include "sysaudio.h"\n#define NDEBUG\n#include <debug.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]portcls\.h' --allowlist-file '.*sysaudio[/\\].*\.h'
                   --allowlist-file '.*[/\\]ks\.h'
-                  --allowlist-file '.*[/\\]ksmedia\.h'
-                  --allowlist-var SYSAUDIO_IOCTL_KS_PROPERTY )
-    EXTRA_INC=( -I"${DRIVER_DIR}" )
-    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
-               -D_COMDDK_ )
+                  --allowlist-file '.*[/\\]minwindef\.h'
+                  --allowlist-file '.*[/\\]ntdef\.h'
+                  --allowlist-file '.*[/\\]wdm\.h' )
+    EXTRA_INC=( -I"${SRC}/drivers/wdm/audio/sysaudio" -I"${SRC}/build-i386/drivers/wdm/audio/sysaudio" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_COMDDK_ -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
   acpi)
     # ACPI bus driver glue (buspdo.c/bus.c). Private structs live in acpisys.h
@@ -8570,6 +8576,227 @@ case "$DRIVER" in
     # after them, and hoisting one ahead swaps which header an include resolves to.
     LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/vendor/symcrypt/inc" -I"${SRC}/vendor/symcrypt/lib" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  beepmidi)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-15 from dll/win32/beepmidi/CMakeLists.txt
+    # (1 compiled TU(s), 103 headers in the include closure, 20 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 20 external prototype(s) declared by the include closure, 1 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/beepmidi"
+    WRAPPER_INC=$'#define TIMESLICE_SIZE  60\n#define ALLOW_DUPLICATE_NOTES\n#define POLYPHONY   3\n#define CONTINUOUS_NOTES\n#define WIN32_NO_STATUS\n#define _INC_WINDOWS\n#define COM_NO_WINDOWS_H\n#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#define NTOS_MODE_USER\n#include <ndk/iofuncs.h>\n#include <ndk/obfuncs.h>\n#include <ndk/rtlfuncs.h>\n#include <ntddbeep.h>\n#include <math.h>\n#include <mmddk.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]mmddk\.h' --allowlist-file '.*[/\\]mmsystem\.h'
+                  --allowlist-file '.*[/\\]ntddbeep\.h'
+                  --allowlist-file '.*beepmidi[/\\].*\.h' )
+    # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
+    UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
+    EXTRA_INC=( -I"${SRC}/dll/win32/beepmidi" -I"${SRC}/build-i386/dll/win32/beepmidi" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/vendor/symcrypt/inc" -I"${SRC}/vendor/symcrypt/lib" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES -DNTOS_MODE_USER )
+    ;;
+  mmixer)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-15 from sdk/lib/drivers/sound/mmixer/CMakeLists.txt
+    # (7 compiled TU(s), 74 headers in the include closure, 4 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=0
+    REAL_UNIONS=1
+    DRIVER_DIR="${SRC}/sdk/lib/drivers/sound/mmixer"
+    WRAPPER_INC=$'#include "precomp.h"\n#include <debug.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]ks\.h' --allowlist-file '.*[/\\]ksmedia\.h'
+                  --allowlist-file '.*[/\\]mmreg\.h'
+                  --allowlist-file '.*[/\\]mmsystem\.h'
+                  --allowlist-file '.*mmixer[/\\].*\.h'
+                  --allowlist-file '.*[/\\]minwindef\.h'
+                  --allowlist-file '.*[/\\]ntdef\.h'
+                  --allowlist-file '.*[/\\]wdm\.h' )
+    EXTRA_INC=( -I"${SRC}/sdk/lib/drivers/sound/mmixer" -I"${SRC}/build-i386/sdk/lib/drivers/sound/mmixer" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/reactos/libs/sound" -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DUNICODE -D_UNICODE -DNDEBUG -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  mmebuddy)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-15 from sdk/lib/drivers/sound/mmebuddy/CMakeLists.txt
+    # (18 compiled TU(s), 70 headers in the include closure, 67 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 17 external prototype(s) declared by the include closure, 0 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/sdk/lib/drivers/sound/mmebuddy"
+    WRAPPER_INC=$'#include "precomp.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]mmddk\.h' --allowlist-file '.*[/\\]mmebuddy\.h'
+                  --allowlist-file '.*[/\\]mmebuddy_debug\.h'
+                  --allowlist-file '.*[/\\]mmsystem\.h'
+                  --allowlist-file '.*[/\\]sndtypes\.h'
+                  --allowlist-file '.*mmebuddy[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/sdk/lib/drivers/sound/mmebuddy" -I"${SRC}/build-i386/sdk/lib/drivers/sound/mmebuddy" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/reactos/libs/sound" -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DUNICODE -D_UNICODE -DNDEBUG -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  mment4)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-15 from sdk/lib/drivers/sound/mment4/CMakeLists.txt
+    # (3 compiled TU(s), 78 headers in the include closure, 0 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 13 external prototype(s) declared by the include closure, 1 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/sdk/lib/drivers/sound/mment4"
+    WRAPPER_INC=$'#include "precomp.h"\n#include <winioctl.h>\n#include <ntddsnd.h>\n#include <mment4.h>\n#include <mmebuddy_debug.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]mmddk\.h' --allowlist-file '.*[/\\]mmebuddy\.h'
+                  --allowlist-file '.*[/\\]mmebuddy_debug\.h'
+                  --allowlist-file '.*[/\\]mment4\.h'
+                  --allowlist-file '.*[/\\]ntddsnd\.h'
+                  --allowlist-file '.*[/\\]sndnames\.h'
+                  --allowlist-file '.*[/\\]sndtypes\.h'
+                  --allowlist-file '.*[/\\]winioctl\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*mment4[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/sdk/lib/drivers/sound/mment4" -I"${SRC}/build-i386/sdk/lib/drivers/sound/mment4" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/reactos/libs/sound" -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DUNICODE -D_UNICODE -DDEBUG_NT4=1 -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  wdmaud)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-15 from drivers/wdm/audio/legacy/wdmaud/CMakeLists.txt
+    # (5 compiled TU(s), 84 headers in the include closure, 17 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=0
+    REAL_UNIONS=1
+    DRIVER_DIR="${SRC}/drivers/wdm/audio/legacy/wdmaud"
+    WRAPPER_INC=$'#include "wdmaud.h"\n#include <stdio.h>\n#include <mmixer.h>\n#define NDEBUG\n#include <debug.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]mmixer\.h' --allowlist-file '.*[/\\]mmsystem\.h'
+                  --allowlist-file '.*[/\\]portcls\.h'
+                  --allowlist-file '.*[/\\]pseh[/\\]pseh2\.h'
+                  --allowlist-file '.*[/\\]sndtypes\.h'
+                  --allowlist-file '.*wdmaud[/\\].*\.h'
+                  --allowlist-file '.*[/\\]ks\.h'
+                  --allowlist-file '.*[/\\]ntdef\.h'
+                  --allowlist-file '.*[/\\]wdm\.h' )
+    EXTRA_INC=( -I"${SRC}/drivers/wdm/audio/legacy/wdmaud" -I"${SRC}/build-i386/drivers/wdm/audio/legacy/wdmaud" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/reactos/libs/sound" -I"${SRC}/sdk/lib/drivers/sound/mmixer" -I"${SRC}/sdk/lib/pseh/include" -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_COMDDK_ -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  kmixer)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-15 from drivers/wdm/audio/filters/kmixer/CMakeLists.txt
+    # (3 compiled TU(s), 80 headers in the include closure, 0 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=0
+    REAL_UNIONS=1
+    DRIVER_DIR="${SRC}/drivers/wdm/audio/filters/kmixer"
+    WRAPPER_INC=$'#include "kmixer.h"\n#include <samplerate.h>\n#define NDEBUG\n#include <swenum.h>\n#include <debug.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]portcls\.h' --allowlist-file '.*[/\\]samplerate\.h'
+                  --allowlist-file '.*[/\\]swenum\.h'
+                  --allowlist-file '.*kmixer[/\\].*\.h'
+                  --allowlist-file '.*[/\\]ks\.h'
+                  --allowlist-file '.*[/\\]mmreg\.h'
+                  --allowlist-file '.*[/\\]ntdef\.h'
+                  --allowlist-file '.*[/\\]wdm\.h' )
+    EXTRA_INC=( -I"${SRC}/drivers/wdm/audio/filters/kmixer" -I"${SRC}/build-i386/drivers/wdm/audio/filters/kmixer" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/vendor/libsamplerate" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  mmdrv)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-15 from dll/win32/mmdrv/CMakeLists.txt
+    # (7 compiled TU(s), 73 headers in the include closure, 39 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 18 external prototype(s) declared by the include closure, 0 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/mmdrv"
+    WRAPPER_INC=$'#include "mmdrv.h"\n#include <winuser.h>\n#define NDEBUG\n#include <debug.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]mmsystem\.h' --allowlist-file '.*[/\\]winioctl\.h'
+                  --allowlist-file '.*mmdrv[/\\].*\.h' )
+    # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
+    UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
+    EXTRA_INC=( -I"${SRC}/dll/win32/mmdrv" -I"${SRC}/build-i386/dll/win32/mmdrv" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/vendor/symcrypt/inc" -I"${SRC}/vendor/symcrypt/lib" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  sndblst)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-15 from dll/win32/sndblst/CMakeLists.txt
+    # (1 compiled TU(s), 72 headers in the include closure, 18 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 10 external prototype(s) declared by the include closure, 0 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/sndblst"
+    WRAPPER_INC=$'#define WIN32_NO_STATUS\n#define _INC_WINDOWS\n#define COM_NO_WINDOWS_H\n#include <stdarg.h>\n#include <windef.h>\n#include <winuser.h>\n#include <sndtypes.h>\n#include <mmddk.h>\n#include <mmebuddy.h>\n#include <mment4.h>\n#include <mmebuddy_debug.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]mmddk\.h' --allowlist-file '.*[/\\]mmebuddy\.h'
+                  --allowlist-file '.*[/\\]mmebuddy_debug\.h'
+                  --allowlist-file '.*[/\\]mment4\.h'
+                  --allowlist-file '.*[/\\]mmsystem\.h'
+                  --allowlist-file '.*[/\\]sndtypes\.h'
+                  --allowlist-file '.*sndblst[/\\].*\.h' )
+    # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
+    UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
+    EXTRA_INC=( -I"${SRC}/dll/win32/sndblst" -I"${SRC}/build-i386/dll/win32/sndblst" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/reactos/libs/sound" -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/vendor/symcrypt/inc" -I"${SRC}/vendor/symcrypt/lib" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DDEBUG_NT4 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  wdmaud_drv)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-15 from dll/win32/wdmaud.drv/CMakeLists.txt
+    # (4 compiled TU(s), 122 headers in the include closure, 21 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 66 external prototype(s) declared by the include closure, 1 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/wdmaud.drv"
+    WRAPPER_INC=$'#include "wdmaud.h"\n#include <winreg.h>\n#include <setupapi.h>\n#include <mmixer.h>\n#define NTOS_MODE_USER\n#include <ndk/rtlfuncs.h>\n#include <ndk/iofuncs.h>\n#include <samplerate.h>\n#include <math.h>\n#define NDEBUG\n#include <debug.h>\n#include <mmebuddy_debug.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]devioctl\.h' --allowlist-file '.*[/\\]interface\.h'
+                  --allowlist-file '.*[/\\]ks\.h'
+                  --allowlist-file '.*[/\\]ksmedia\.h'
+                  --allowlist-file '.*[/\\]mmddk\.h'
+                  --allowlist-file '.*[/\\]mmebuddy\.h'
+                  --allowlist-file '.*[/\\]mmebuddy_debug\.h'
+                  --allowlist-file '.*[/\\]mmixer\.h'
+                  --allowlist-file '.*[/\\]mmsystem\.h'
+                  --allowlist-file '.*[/\\]samplerate\.h'
+                  --allowlist-file '.*[/\\]setupapi\.h'
+                  --allowlist-file '.*[/\\]sndtypes\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*wdmaud\.drv[/\\].*\.h' )
+    # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
+    UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
+    EXTRA_INC=( -I"${SRC}/dll/win32/wdmaud.drv" -I"${SRC}/build-i386/dll/win32/wdmaud.drv" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/reactos/libs/sound" -I"${SRC}/drivers/wdm/audio/legacy/wdmaud" -I"${SRC}/sdk/lib/drivers/sound/mmixer" -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/vendor/libsamplerate" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/vendor/symcrypt/inc" -I"${SRC}/vendor/symcrypt/lib" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES -DNTOS_MODE_USER )
     ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac

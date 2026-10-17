@@ -193,6 +193,22 @@ def test_shared_crates_are_reexported_by_path_and_depended_on(tmp_path):
     assert pr.refresh_shared_crates(crate, ws) == []
 
 
+def test_a_shared_const_fn_is_a_function_not_a_const_named_fn(tmp_path):
+    # kmixer's `_byteswap_ulong` is `pub const fn`; the const pattern read it as a const `fn`.
+    ws = tmp_path
+    (ws / "win32macros-rust" / "src").mkdir(parents=True)
+    (ws / "win32macros-rust" / "src" / "lib.rs").write_text(
+        "pub const fn _byteswap_ulong(v: u32) -> u32 { v }\npub const UNICODE_NULL: u16 = 0;\n"
+    )
+    crate = ws / "x-rust"
+    (crate / "src").mkdir(parents=True)
+    (crate / "Cargo.toml").write_text('[package]\nname = "x"\n\n[dependencies]\n')
+    (crate / "src" / "prelude.rs").write_text("pub use win32macros_rust::{UNICODE_NULL};\n")
+    pr.refresh_shared_crates(crate, ws)
+    text = (crate / "src" / "prelude.rs").read_text()
+    assert "pub use win32macros_rust::{UNICODE_NULL, _byteswap_ulong};" in text
+
+
 def test_winelist_is_taken_only_by_a_crate_that_calls_it(tmp_path):
     # wine/list.h's helpers are opt-in: every crate getting `list_*` and a winelist-rust
     # dependency would be noise, but a crate that calls one must import it, never copy it

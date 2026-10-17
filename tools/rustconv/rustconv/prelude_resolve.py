@@ -802,7 +802,9 @@ def refresh_shared_macros(prelude: Path, macro_src: Path) -> bool:
             n
             for f in (macro_src.glob("*.rs") if macro_src.is_dir() else [])
             for n in re.findall(
-                r"macro_rules!\s+([A-Za-z_]\w*)|^pub const ([A-Za-z_]\w*)", f.read_text(), re.M
+                r"macro_rules!\s+([A-Za-z_]\w*)|^pub const (?!fn\b)([A-Za-z_]\w*)",
+                f.read_text(),
+                re.M,
             )
             for n in n
             if n
@@ -828,8 +830,9 @@ SHARED_CRATES: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
         (
             (
                 "",
-                r"macro_rules!\s+([A-Za-z_]\w*)|^pub const ([A-Za-z_]\w*)"
-                r"|^pub (?:unsafe )?fn ([A-Za-z_]\w*)",
+                # `pub const fn` is a function (kmixer's `_byteswap_ulong`), not a const named `fn`.
+                r"macro_rules!\s+([A-Za-z_]\w*)|^pub const (?!fn\b)([A-Za-z_]\w*)"
+                r"|^pub (?:const )?(?:unsafe )?fn ([A-Za-z_]\w*)",
             ),
         ),
     ),
