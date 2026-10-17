@@ -30,44 +30,11 @@ extern "system" {
     fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID) -> i32;
 }
 
-// ---- native-SEH thunks (service/eventlog_seh.c) --------------------------
-// The C original wrapped every EventLog RPC client-stub call in RpcTryExcept so
-// an absent EventLog server (RPC_S_SERVER_UNAVAILABLE raise) returned an error
-// instead of unwinding out of the process. Rust has no __try, so this cohab
-// dropped those handlers — a raise escaped and killed services.exe at
-// ScmLoadService with 0x6BA on the arm64 minimal-SCM boot. eventlog_seh.c is a
-// native-SEH C boundary (real __try on amd64/arm64, pass-through on i386) that
-// restores the catch; we call these *_seh thunks instead of the raw Elfr* stubs
-// at the three ScmLogEvent-lifecycle sites (Register/Report/Deregister). Same
-// ABI as the bindgen stubs (extern "system" => __stdcall@N on i386, cdecl on
-// win64). See eventlog_seh.c for the full rationale.
-extern "system" {
-    fn ElfrRegisterEventSourceW_seh(
-        UNCServerName: EVENTLOG_HANDLE_W,
-        ModuleName: PRPC_UNICODE_STRING,
-        RegModuleName: PRPC_UNICODE_STRING,
-        MajorVersion: ULONG,
-        MinorVersion: ULONG,
-        LogHandle: *mut IELF_HANDLE,
-    ) -> NTSTATUS;
-    fn ElfrReportEventW_seh(
-        LogHandle: IELF_HANDLE,
-        Time: ULONG,
-        EventType: USHORT,
-        EventCategory: USHORT,
-        EventID: ULONG,
-        NumStrings: USHORT,
-        DataSize: ULONG,
-        ComputerName: PRPC_UNICODE_STRING,
-        UserSID: PRPC_SID,
-        Strings: *mut PRPC_UNICODE_STRING,
-        Data: *mut u8,
-        Flags: USHORT,
-        RecordNumber: PULONG,
-        TimeWritten: PULONG,
-    ) -> NTSTATUS;
-    fn ElfrDeregisterEventSource_seh(LogHandle: *mut IELF_HANDLE) -> NTSTATUS;
-}
+// Register/Report/Deregister used to go through service/eventlog_seh.c's native-SEH thunks,
+// which are a pass-through on i386 (no native SEH there). csrss died of it: winsrv's
+// UserServerHardError -> ReportEventW while the EventLog service was exiting raised
+// RPC_S_CALL_FAILED (0x6be) through the unguarded stub, BUGCHECK 0xF4 (2026-10-17, i386).
+// They now use rpc_try like every other Elfr* call here, which works on all three arches.
 
 // ---- file-scope preamble (translated) ----
 static mut EmptyStringU: RPC_UNICODE_STRING = RPC_UNICODE_STRING {
@@ -378,7 +345,8 @@ pub unsafe extern "system" fn ElfDeregisterEventSource(hEventLog: HANDLE) -> NTS
     let mut hEventLog = hEventLog;
     let Status: NTSTATUS;
 
-    Status = ElfrDeregisterEventSource_seh(&mut hEventLog);
+    Status = rpc_try(|| advapi32_sys::ElfrDeregisterEventSource(&mut hEventLog))
+        .unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -981,14 +949,17 @@ pub unsafe extern "system" fn ElfRegisterEventSourceW(
 
     *phEventLog = core::ptr::null_mut();
 
-    Status = ElfrRegisterEventSourceW_seh(
-        pUNCServerName,
-        SourceNameU as PRPC_UNICODE_STRING,
-        core::ptr::addr_of_mut!(EmptyStringU),
-        1,
-        1,
-        phEventLog as *mut IELF_HANDLE,
-    );
+    Status = rpc_try(|| {
+        advapi32_sys::ElfrRegisterEventSourceW(
+            pUNCServerName,
+            SourceNameU as PRPC_UNICODE_STRING,
+            core::ptr::addr_of_mut!(EmptyStringU),
+            1,
+            1,
+            phEventLog as *mut IELF_HANDLE,
+        )
+    })
+    .unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -1168,22 +1139,25 @@ pub unsafe extern "system" fn ElfReportEventW(
     NtQuerySystemTime(&mut SystemTime);
     RtlTimeToSecondsSince1970(&mut SystemTime, &mut Time);
 
-    Status = ElfrReportEventW_seh(
-        hEventLog,
-        Time,
-        EventType,
-        EventCategory,
-        EventID,
-        NumStrings,
-        DataSize,
-        &mut ComputerName as *mut _UNICODE_STRING as PRPC_UNICODE_STRING,
-        UserSID as PRPC_SID,
-        Strings as *mut PRPC_UNICODE_STRING,
-        Data as *mut u8,
-        Flags,
-        RecordNumber,
-        TimeWritten,
-    );
+    Status = rpc_try(|| {
+        advapi32_sys::ElfrReportEventW(
+            hEventLog,
+            Time,
+            EventType,
+            EventCategory,
+            EventID,
+            NumStrings,
+            DataSize,
+            &mut ComputerName as *mut _UNICODE_STRING as PRPC_UNICODE_STRING,
+            UserSID as PRPC_SID,
+            Strings as *mut PRPC_UNICODE_STRING,
+            Data as *mut u8,
+            Flags,
+            RecordNumber,
+            TimeWritten,
+        )
+    })
+    .unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }

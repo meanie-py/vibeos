@@ -7913,6 +7913,13 @@ at ring 3, and exports both trampolines. `ntdll_sys::seh::rpc_try(|| Stub(..))` 
 call. It exits 1 while any stub call is left unwrapped, so its listing is the to-do list.
 Test: netprobe's rpc-raise step calls OpenSCManagerW on a host that does not exist and
 expects 1722.
+**A native-SEH C thunk is NOT this fix on i386.** The `*_seh.c` thunks (advapi32's
+eventlog_seh.c, ole32's rpcss_seh.c and stubmanager_seh.c) get a real `__try` only on
+amd64/arm64 and are a plain call on i386, because clang's i386 native SEH is unreliable. So
+csrss died BUGCHECK 0xF4 on i386: winsrv's hard-error path called ReportEventW while the
+EventLog service was exiting, and the stub's 0x6be went through the "guard". `rpc_try` goes
+through ntdll's trampoline and works on i386; advapi32 now uses it for those three calls, and
+the thunk is gone.
 
 ### DUMMY_PSEH turns a protected capture into an unprotected `memcpy` `[§9.59]`
 A whole class, not three bugs: in C, a kernel API captures a caller buffer inside `_SEH2_TRY`;
