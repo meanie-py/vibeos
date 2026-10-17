@@ -898,6 +898,7 @@ members = [
     "tzlib-rust",
     "mmcshext-rust",
     "tdihelpers-rust",
+    "setupapi-rust",
 ]
 resolver = "2"
 

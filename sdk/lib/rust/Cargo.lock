@@ -5619,6 +5619,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "setupapi-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "setuplib-rust"
 version = "0.1.0"
 dependencies = [
