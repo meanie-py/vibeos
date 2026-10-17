@@ -6,6 +6,7 @@ use crate::mmebuddy::devicelist::GetSoundDeviceType;
 use crate::mmebuddy::deviceinstance::IsValidSoundDeviceInstance;
 use crate::mmebuddy::mmewrap::NotifyMmeClient;
 use crate::mmebuddy::utility::TranslateInternalMmResult;
+use crate::mmebuddy::streaming::InitializeWaveHeaderLoops;
 // Deterministic UTF-16 literals, generated from the C by rustconv (--seal-wide); the model never saw the bytes.
 use crate::prelude::*;
 pub static RUSTCONV_WSTR_10E2E1251C1E: [u16; 31] = [
@@ -108,6 +109,8 @@ pub unsafe extern "C" fn SanitizeWaveHeader(Header: PWAVEHDR) {
 
     (*Extension).BytesCommitted = 0;
     (*Extension).BytesCompleted = 0;
+    (*Extension).LoopsToCommit = 0;
+    (*Extension).LoopsToComplete = 0;
 }
 #[no_mangle]
 pub unsafe extern "C" fn PrepareWaveHeader(
@@ -146,6 +149,8 @@ pub unsafe extern "C" fn PrepareWaveHeader(
     (*Header).reserved = Extension as DWORD_PTR;
     (*Extension).BytesCommitted = 0;
     (*Extension).BytesCompleted = 0;
+    (*Extension).LoopsToCommit = 0;
+    (*Extension).LoopsToComplete = 0;
 
     /* Configure the flags */
     (*Header).dwFlags |= WHDR_PREPARED;
@@ -228,6 +233,14 @@ pub unsafe extern "C" fn WriteWaveHeader(
     VALIDATE_MMSYS_PARAMETER!(!((*Header).dwFlags & WHDR_INQUEUE != 0));
 
     SanitizeWaveHeader(Header);
+
+    // Not in header.c: the loop count is taken once per write (see streaming.rs).
+    let mut DeviceType: MMDEVICE_TYPE = 0;
+    Result = GetSoundDeviceType(SoundDevice, core::ptr::addr_of_mut!(DeviceType));
+    if ((MMSUCCESS!(Result)) == 0) {
+        return TranslateInternalMmResult(Result);
+    }
+    InitializeWaveHeaderLoops(DeviceType, Header);
 
     /* Clear the "done" flag for the buffer */
     (*Header).dwFlags &= !WHDR_DONE;

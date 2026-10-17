@@ -235,6 +235,7 @@ members = [
     "sysaudio-difftest",
     "audio-convert-difftest",
     "mmixer-difftest",
+    "mmebuddy-difftest",
     "ddk-macros-rust",
     "portcls-difftest",
     "varargs-rust",
