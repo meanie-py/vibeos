@@ -99,10 +99,26 @@ Measured (appstorm64 under FEX, MEMCENSUS, arm64):
 
 Plus smoke on all three arches and the FEX ladder (27/27, `20261017-122114-rw9sm82p`).
 
-**Left of the 2G drift** (25k pages): `other` (pages in Transition/Bad locations) grows 368 ->
-10k in both the step 1 and step 2 runs. In both, `MC_USER`'s `PagesUsed` exceeds the ROS
-pages it can account for by about 10k (step 1: user 40.2k vs ros 30.1k; step 2: 23.5k vs 13.4k
-non-standby). The two are about the same size, which makes MC_USER pages that end up somewhere
-the census calls `other` the next lead. That link is a guess from the sizes, not yet measured. Also open: `MmMakeSegmentResident`'s readahead scan claims every
-standby neighbour it passes (correct, but those pages go back to the LRU), and a page cleaned by
-`MmCheckDirtySegment` stays on the LRU instead of moving to standby.
+**Left of the 2G drift** (25k pages): not a leak. The census's `other` column grew 368 -> 10k
+in both runs because the ROS `MmDeleteVirtualMapping` (arm64/i386 `page.rs`) leaves a ROS page
+in `TransitionPage` once its last mapping goes, and the census counted ROS pages only under
+`ActiveAndValid`. Put back, the ROS total matches `MC_USER`'s `PagesUsed`. Step 1: 30.1k + 9.7k
+= 39.8k vs 40.2k. Step 2: 30.2k + 9.7k - 16.7k on standby = 23.2k vs 23.5k. The census now
+counts ROS pages in either location, and prints `rosidle` for the unmapped ones that are not on
+standby.
+
+What kept unmapped pages off standby, fixed after the first measurement:
+- **Readahead.** `MmMakeSegmentResident` reads 16 KiB, and the pages the fault did not ask for
+  were never mapped, so no unshare ever offered them to standby. They now go to standby
+  straight from the read, as Windows' prefetch does.
+- **Claim by inspection.** That same readahead scan, and `MmCheckDirtySegment` called from a
+  flush, read each slot through Get, which pulled every standby page they passed back to the
+  LRU. The scan now peeks (`MiPeekPageEntrySectionSegment`) at neighbours outside the requested
+  range, and a flush puts a clean, unmapped page back on standby.
+
+Re-measured with both (`20261017-132301-sdn0bd9x` 2G, `20261017-132301-nlm83rh0` 1024M,
+both 54/54): at 2G avail goes 273.8k -> 255.4k (18.4k, from 41.4k in step 1). At the end,
+24.2k pages are on standby and only 2.1k are unmapped but off it. 1024M repurposed 16k+ pages
+and finished in 1529 s (1934 s before). What remains of the 2G drift is pages in use: ROS pages
+still mapped (+11k over boot, the live desktop's images), private +3.1k, paged pool +1.7k,
+page tables +1k.

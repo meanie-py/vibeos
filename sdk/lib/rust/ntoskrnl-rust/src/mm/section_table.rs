@@ -300,6 +300,18 @@ pub unsafe extern "system" fn _MmGetPageEntrySectionSegment(
     if entry == crate::mm::standby::MM_REPURPOSED_SSE { 0 } else { entry }
 }
 
+/// `Offset`'s entry without claiming a standby page: for a caller that only asks whether
+/// a page is resident and will not use it. Segment lock held. The answer can go stale as
+/// soon as it is given (a repurpose may take the page), so never act on the page itself.
+pub(crate) unsafe fn MiPeekPageEntrySectionSegment(
+    Segment: PMM_SECTION_SEGMENT,
+    Offset: PLARGE_INTEGER,
+) -> ULONG_PTR {
+    let slot = MiSectionPageEntrySlot(Segment, Offset);
+    let entry = if slot.is_null() { 0 } else { core::ptr::read_volatile(slot) };
+    if entry == crate::mm::standby::MM_REPURPOSED_SSE { 0 } else { entry }
+}
+
 /// The address of `Offset`'s entry, or null if its table was never allocated. The
 /// tables are nonpaged and live until `MmFreePageTablesSectionSegment`, which is what
 /// lets the standby list point at a slot from the PFN database.
