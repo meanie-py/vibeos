@@ -622,10 +622,22 @@ def test_the_ddk_macros_go_to_a_kernel_crate_that_calls_them_and_nowhere_else(tm
     assert "ddk_macros" not in (ws / "user/src/prelude.rs").read_text()
 
 
-def test_a_delay_imported_library_is_an_export_authority():
-    # reactos.exe takes setuplib with add_delay_importlibs; SelectPartition is its export.
-    from pathlib import Path
+def test_a_delay_imported_library_is_an_export_authority(tmp_path):
+    # reactos.exe took setuplib with add_delay_importlibs, and resolve refused SelectPartition
+    # & co. as "no import library this module links exports it". A fixture, not the real
+    # tree: that CMakeLists became a cargo cell and no longer names its import libraries.
+    import subprocess
 
-    repo = Path(__file__).resolve().parents[3]
-    names = pr.module_exports(repo / "base/setup/reactos", repo)
-    assert names is not None and "SelectPartition" in names
+    repo = tmp_path / "repo"
+    (repo / "app").mkdir(parents=True)
+    (repo / "lib").mkdir()
+    (repo / "app" / "CMakeLists.txt").write_text(
+        "add_executable(app app.c)\nset_module_type(app win32gui UNICODE)\n"
+        "add_importlibs(app kernel32)\nadd_delay_importlibs(app setupx)\n"
+    )
+    (repo / "lib" / "kernel32.spec").write_text("@ stdcall Sleep(long)\n")
+    (repo / "lib" / "setupx.spec").write_text("@ stdcall SelectPartition(ptr long)\n")
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    names = pr.module_exports(repo / "app", repo)
+    assert names is not None and {"Sleep", "SelectPartition"} <= names
