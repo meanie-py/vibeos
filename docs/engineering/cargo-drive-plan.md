@@ -472,7 +472,17 @@ extends it from the boot spine to every fully-Rust module.
    - **What still needs cmake for a whole image:** the C tail's own modules (about 1000 of
      livecd's 1364 entries are not cells), the host tools that master the media
      (mkisofs/isohybrid/cabman), bootcd's reactos.cab, and a smoke that boots media
-     mastered outside build-<arch>. i386 and arm64 runs of the no-cmake build are owed.
+     mastered outside build-<arch>.
+   - **i386 and arm64, measured 2026-10-17.** The same fresh worktree builds all 271 i386
+     cells (after rosload's 16-bit drvmap object joined the SDK recipe and opengl32's i386
+     asm shims got a recipe) and all 276 arm64 cells. Against cmake's links: i386 358
+     byte-identical, 7 `pe_equiv --code` equivalent, 1 different; arm64 368 byte-identical,
+     3 code-equivalent, 0 different. **The i386 difference is open and unexplained:**
+     usetup.exe is loader-equivalent (`pe_equiv`) but 16 bytes of `.text` differ: cmake's
+     link pulls ntdll's import thunk for `NlsMbOemCodePageTag` (`ntdll.dlls00000.o`, 8
+     bytes, ahead of inflib_rust) and the no-cmake link references that symbol nowhere.
+     The inflib_rust objects are the same size in both; what references the bare symbol in
+     cmake's link is not found yet.
 
 ## How a wave goes (the default for every new module)
 
