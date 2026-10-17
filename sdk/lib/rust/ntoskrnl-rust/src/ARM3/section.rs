@@ -292,13 +292,16 @@ fn MI_IS_MAPPED_PTE(pte_long: ULONG_PTR) -> bool {
     pte_long != 0
 }
 
+// The C's MI_MAX_ZERO_BITS is 21 on i386 and arm64 (internal/<arch>/mm.h); amd64's 53 is
+// the mask form, which NtMapViewOfSection handles apart (`zero_bits_is_mask`). The
+// translation had 20 on 32-bit, so i386 refused ZeroBits 21 as INVALID_PARAMETER_4 where
+// Windows looks for a gap and answers NO_MEMORY (ZwMapViewOfSection.c:181).
 #[inline]
 fn MI_MAX_ZERO_BITS() -> ULONG_PTR {
-    #[cfg(target_pointer_width = "64")]
-    { 21 }
-    #[cfg(target_pointer_width = "32")]
-    { 20 }
+    21
 }
+#[cfg(target_arch = "x86")]
+const _: () = assert!(ntkrnl_sys::hal_ddk::MI_MAX_ZERO_BITS == 21);
 
 #[inline]
 fn MI_GET_PROTOTYPE_PTE_FOR_VPN(vad: *const _MMVAD_LONG, vpn: ULONG_PTR) -> PMMPTE {

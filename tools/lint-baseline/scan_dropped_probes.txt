@@ -1,7 +1,2 @@
-sdk/lib/rust/config-rust/src/ntapi.rs: NtCreateKey [PARTIAL]
-sdk/lib/rust/config-rust/src/ntapi.rs: NtLoadKeyEx [PARTIAL]
-sdk/lib/rust/config-rust/src/ntapi.rs: NtQueryOpenSubKeys [PARTIAL]
-sdk/lib/rust/config-rust/src/ntapi.rs: NtQueryValueKey [PARTIAL]
-sdk/lib/rust/config-rust/src/ntapi.rs: NtUnloadKey2 [PARTIAL]
 sdk/lib/rust/config-rust/src/ntapi.rs: ProbeAndCaptureObjectAttributes [PARTIAL]
 sdk/lib/rust/ks-rust/src/irp.rs: KsProbeStreamIrp [PARTIAL]

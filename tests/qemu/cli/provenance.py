@@ -621,6 +621,8 @@ def cohab_staleness_reasons(repo: Path, arch: str) -> list[str]:
                 )
                 continue
         # B. did the link consume the current staticlib?
+        if copied is not None and _belongs_to_sibling(copied, artifact):
+            continue
         if copied is not None and artifact.stat().st_mtime < copied.stat().st_mtime:
             reasons.append(
                 f"{rel}: stale — {copied.name} is newer than the built binary; the "
@@ -628,6 +630,21 @@ def cohab_staleness_reasons(repo: Path, arch: str) -> list[str]:
                 f"(not in ninja_targets?)" + _lag(artifact, copied)
             )
     return reasons
+
+
+def _belongs_to_sibling(copied: Path, artifact: Path) -> bool:
+    """The copied staticlib sits beside ANOTHER binary of the same stem, so that binary links
+    it and this one does not. The stem convention pairs both `wdmaud.drv` (user mode, links
+    libwdmaud_drv_rust.a) and the kernel's `wdmaud.sys` with wdmaud-rust; when the kernel
+    crate rebuilt, rule B reported wdmaud.drv "never relinked" on every arm64 build, a false
+    RED no rebuild could clear (2026-10-17)."""
+    if copied.parent == artifact.parent:
+        return False
+    stem = artifact.stem.lower()
+    return any(
+        p.is_file() and p.stem.lower() == stem and p.suffix.lower() in _PE_SUFFIXES
+        for p in copied.parent.iterdir()
+    )
 
 
 def _lag(older: Path, newer: Path) -> str:

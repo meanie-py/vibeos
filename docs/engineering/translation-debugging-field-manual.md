@@ -3314,6 +3314,11 @@ WEOF and fill-byte idiom, is allowed).
   dispatched on them, so nothing broke; KeDevQueue.c:51 caught the first and a grep for
   `\.Type = <digits>` found the other two. Name the KOBJECTS value from bindgen
   (`ddk::_KOBJECTS_*`).
+- **A per-arch macro re-spelled as a `cfg`'d fn hides from every constant scanner.**
+  ARM3/section.rs had `fn MI_MAX_ZERO_BITS() { #[cfg(64)] 21 #[cfg(32)] 20 }`; the C's
+  `internal/<arch>/mm.h` says 21/53/21 and the i386 island has 21. i386 refused ZeroBits 21 as
+  INVALID_PARAMETER_4 (ZwMapViewOfSection.c:181). Use the island's constant, or check each arm
+  against `internal/<arch>/*.h`.
 - **A constant that lives in only SOME arches' islands cannot simply be imported.**
   `KEY_ALL_ACCESS` is in `hal_bindgen_i386/amd64` and **not** `hal_bindgen_arm64`, so `use`-ing
   it breaks the arm64 build. Declare it locally *and pin it* —
