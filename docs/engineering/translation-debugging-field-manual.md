@@ -984,6 +984,21 @@ after a header change, compare parameter TYPES, not just how many there are** �
 passes clean on exactly this bug, and `ULONG_PTR == ULONG` on i386 makes a plain ABI mismatch
 read as an arch-specific mystery.
 
+### A callback declared through a FUNCTION CLASS loses its convention in translation
+Symptom: none on amd64 or arm64. On i386, a stdcall caller invokes a cdecl callee, which leaves
+its arguments on the stack, so the caller's `esp` is off by their size after every call.
+Cause: the C spells the convention once, in the typedef. `typedef NTSTATUS (NTAPI
+POWER_SETTING_CALLBACK)(..)` is followed by `POWER_SETTING_CALLBACK DevicePowerSettingCallback;`,
+and the definition below it carries no NTAPI. A translation reading the definition writes
+`extern "C"`. bindgen does the same: cdrom's i386 island declares these functions `extern "C"`,
+so `scan_cc_mismatch`, which treats the island as evidence, sees agreement. Per-module
+redeclarations hid the rest: each caller's local `extern` typed the callback the way the
+definition did, until `extern_to_use` gave every call site the definition (2026-10-17).
+Fix: define it `extern "system"` (cdrom's two `EVT_WDF_WORKITEM`s and its power-setting
+callback, classpnp's `EXT_CALLBACK`). `tools/scan_fnclass_cc.py` gates the class: every
+NTAPI-family function-class typedef, plus kmdf's `EVT_*`, against the Rust definition of each
+function declared through one.
+
 ### Per-arch `#[cfg]` twins: the OTHER nominal-ABI workaround, and what it hides
 Same root cause as the transmute above — `extern "system" fn` unifies with neither
 `extern "stdcall"` (i386) nor `extern "C"` (64-bit) in a fn-POINTER type — but the workaround is

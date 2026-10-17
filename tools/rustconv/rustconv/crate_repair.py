@@ -5362,9 +5362,39 @@ def _literal_mut_rule(
                 )
             )
             continue
+        # `x as *const T` into a `*mut T` parameter: the translation picked the const spelling
+        # of what in C is one cast to the parameter's type (cdrom's `vendorId as *const i8`
+        # into `StringsAreMatched(PCHAR, PCHAR)`, `&raw const cdb as *const c_void` into
+        # `PCDB`). Respelling the cast is that C cast; the pointee is untouched.
+        cast = re.fullmatch(r"(.+?)\s+as\s+\*const\s+([\w:]+(?:<[^<>]*>)?)", inner.strip(), re.S)
+        masked = _mask_lexical(data)
+        if (
+            cast is not None
+            and not _in_macro_definition(masked, lo)
+            and _balanced(cast.group(1).encode())
+            and not re.search(r"\bas\s*$", cast.group(1))
+        ):
+            edits.append(
+                _simple_edit(
+                    RULE_LITERAL_MUT,
+                    file_name,
+                    data,
+                    lo,
+                    hi,
+                    # A shared reference cannot be cast to `*mut` directly (E0606), only
+                    # through the `*const` it already is.
+                    f"({inner.strip()}).cast_mut()"
+                    if re.match(r"&(?!\s*raw\b)", cast.group(1).lstrip())
+                    else f"{cast.group(1)} as *mut {cast.group(2)}",
+                    "rustc E0308 (mutability): the C cast is to the parameter's (non-const) type",
+                    span,
+                    ctx,
+                )
+            )
+            continue
         if not _C_LITERAL_PTR.fullmatch(inner.strip()):
             continue
-        if _in_macro_definition(_mask_lexical(data), lo):
+        if _in_macro_definition(masked, lo):
             continue
         edits.append(
             _simple_edit(

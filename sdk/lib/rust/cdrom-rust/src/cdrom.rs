@@ -1,5 +1,23 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use crate::types::*;
+// The crate's own functions: the definition is the declaration.
+use crate::autorun::DeviceEnableMainTimer;
+use crate::autorun::DeviceEnableMediaChangeDetection;
+use crate::common::DeviceRegisterInterface;
+use crate::common::DeviceSendPowerDownProcessRequest;
+use crate::common::DeviceSendSrbSynchronously;
+use crate::common::DeviceUnlockExclusive;
+use crate::ddk_shims::EXCLUSIVE_MODE;
+use crate::ddk_shims::EXCLUSIVE_OWNER;
+use crate::pnppower::PowerContextEndUse;
+use crate::common::RequestDummyCompletionRoutine;
+use crate::ddk_shims::RequestGetContext;
+use crate::ioctl::RequestHandleEventNotification;
+use crate::common::RequestSend;
+use crate::common::RequestSetReceivedTime;
+use crate::ddk_shims::TEST_FLAG;
+use crate::ddk_shims::WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE;
+use crate::ddk_shims::WDF_WORKITEM_CONFIG_INIT;
 // On i386 there is no separate 32-bit thunk struct — the native SCSI_PASS_THROUGH
 // *is* the 32-bit form. These aliases (only used in size_of bounds checks) keep the
 // amd64-shared code compiling on i386 where SCSI_PASS_THROUGH32/_EX don't exist.
@@ -107,24 +125,17 @@ extern "system" {
     fn WDF_IO_QUEUE_CONFIG_INIT_DEFAULT_QUEUE(cfg: *mut WDF_IO_QUEUE_CONFIG, dispatch: WDF_IO_QUEUE_DISPATCH_TYPE);
     fn WDF_IO_TARGET_OPEN_PARAMS_INIT_EXISTING_DEVICE( params: *mut WDF_IO_TARGET_OPEN_PARAMS, target: PDEVICE_OBJECT, );
     fn WDF_OBJECT_ATTRIBUTES_INIT(attr: *mut WDF_OBJECT_ATTRIBUTES);
-    fn WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE( attr: *mut WDF_OBJECT_ATTRIBUTES, ctx: *const WDF_OBJECT_CONTEXT_TYPE_INFO, );
     fn WDF_PNPPOWER_EVENT_CALLBACKS_INIT(cbs: *mut WDF_PNPPOWER_EVENT_CALLBACKS);
     fn WDF_REMOVE_LOCK_OPTIONS_INIT(opts: *mut WDF_REMOVE_LOCK_OPTIONS, flags: u32);
-    fn WDF_WORKITEM_CONFIG_INIT(cfg: *mut WDF_WORKITEM_CONFIG, routine: unsafe extern "system" fn(WDFWORKITEM) -> ());
     fn DeviceEvtSelfManagedIoInit(Dev: WDFDEVICE) -> NTSTATUS;
     fn RequestProcessSetPower(Dev: WDFDEVICE, Irp: PIRP) -> NTSTATUS;
     fn RequestProcessShutdownFlush(Dev: WDFDEVICE, Irp: PIRP) -> NTSTATUS;
     fn PoQueryWatchdogTime(LowerPdo: *mut core::ffi::c_void, secondsRemaining: *mut u32) -> u8;
     fn SET_FLAG(p: *mut u32, flag: u32);
-    fn TEST_FLAG(flags: u32, mask: u32) -> i32;
     fn PagedCode();
     fn FileObjectGetContext(fileObject: WDFFILEOBJECT) -> *mut FILE_OBJECT_CONTEXT;
-    fn DeviceSendSrbSynchronously(Device: *mut core::ffi::c_void, Srb: *mut SCSI_REQUEST_BLOCK, Buffer: *mut core::ffi::c_void, Length: u32, WriteToDevice: u8, BytesReturned: *mut u32) -> NTSTATUS;
-    fn RequestHandleEventNotification( deviceExtension: PCDROM_DEVICE_EXTENSION, Request: WDFREQUEST, RequestParameters: *const WDF_REQUEST_PARAMETERS, dataLength: *mut usize, ) -> NTSTATUS;
     fn RequestGetCurrentStackLocationFlags(Request: WDFREQUEST) -> UCHAR;
     fn IoInvalidateDeviceRelations( Pdo: *mut core::ffi::c_void, Relations: u32, );
-    fn RequestDummyCompletionRoutine( request: WDFREQUEST, target: WDFIOTARGET, params: *mut core::ffi::c_void, context: *mut core::ffi::c_void, );
-    fn RequestGetContext(Request: *mut c_void) -> PCDROM_REQUEST_CONTEXT;
     fn WDF_REQUEST_PARAMETERS_INIT(params: *mut WDF_REQUEST_PARAMETERS);
     fn WDF_DRIVER_CONFIG_INIT( Config: *mut WDF_DRIVER_CONFIG, EvtDeviceAdd: PFN_WDF_DRIVER_DEVICE_ADD, );
     fn KeGetCurrentIrql() -> u8;
@@ -223,7 +234,6 @@ unsafe extern "C" {
     fn DeviceInitReleaseQueueContext(ext: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
 }
 unsafe extern "C" {
-    fn DeviceRegisterInterface(ext: *mut CDROM_DEVICE_EXTENSION, InterfaceType: i32) -> NTSTATUS;
 }
 unsafe extern "C" {
     fn FREE_POOL(ptr: *mut core::ffi::c_void);
@@ -244,34 +254,25 @@ unsafe extern "C" {
     fn DeviceDisableMainTimer(extension: *mut CDROM_DEVICE_EXTENSION);
 }
 unsafe extern "C" {
-    fn DeviceSendPowerDownProcessRequest(extension: *mut CDROM_DEVICE_EXTENSION, param2: *mut core::ffi::c_void, param3: *mut core::ffi::c_void) -> i32;
 }
 unsafe extern "C" {
     fn PowerContextBeginUse(extension: *mut CDROM_DEVICE_EXTENSION) -> i32;
 }
 unsafe extern "C" {
-    fn PowerContextEndUse(extension: *mut CDROM_DEVICE_EXTENSION) -> u32;
 }
 unsafe extern "C" {
-    fn DeviceEnableMediaChangeDetection(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, FileObjectContext: *mut FILE_OBJECT_CONTEXT, Enable: i32);
 }
 unsafe extern "C" {
-    fn RequestSend( device_ext: *mut CDROM_DEVICE_EXTENSION, request: WDFREQUEST, target: WDFIOTARGET, flags: u32, request_sent: *mut u8, ) -> NTSTATUS;
 }
 unsafe extern "C" {
-    fn DeviceUnlockExclusive(deviceExtension: *mut CDROM_DEVICE_EXTENSION, FileObject: WDFFILEOBJECT, Flag: BOOL) -> NTSTATUS;
 }
 unsafe extern "C" {
-    fn EXCLUSIVE_MODE(cdData: *const CDROM_DATA) -> BOOL;
 }
 unsafe extern "C" {
-    fn EXCLUSIVE_OWNER(cdData: *const CDROM_DATA, FileObject: WDFFILEOBJECT) -> u8;
 }
 unsafe extern "C" {
-    fn RequestSetReceivedTime(Request: *mut core::ffi::c_void);
 }
 extern "C" {
-    fn DeviceEnableMainTimer(DeviceExtension: PCDROM_DEVICE_EXTENSION) -> u32;
 }
 extern "C" {
     fn RequestHandleGetMediaTypeEx( deviceExtension: PCDROM_DEVICE_EXTENSION, Request: WDFREQUEST, dataLength: *mut usize, ) -> NTSTATUS;
@@ -1469,7 +1470,7 @@ pub unsafe extern "C" fn DeviceCleanupProtectedLocks(
             (*cdb).MEDIA_REMOVAL.as_mut().set_Prevent(0); // FALSE
             srb.TimeOutValue = (*DeviceExtension).TimeOutValue;
             status = DeviceSendSrbSynchronously(
-                (*DeviceExtension).Device as *mut core::ffi::c_void,
+                ((*DeviceExtension).Device as *mut core::ffi::c_void).cast(),
                 &mut srb,
                 core::ptr::null_mut(),
                 0,
@@ -1724,7 +1725,7 @@ pub unsafe extern "C" fn RequestDispatchProcessDirectly(
             processed = 1;
         }
         IOCTL_STORAGE_EVENT_NOTIFICATION => {
-            status = RequestHandleEventNotification(deviceExtension, Request, &RequestParameters as *const WDF_REQUEST_PARAMETERS, &mut dataLength);
+            status = RequestHandleEventNotification(deviceExtension, Request, (&RequestParameters as *const WDF_REQUEST_PARAMETERS).cast_mut(), &mut dataLength);
             processed = 1;
         }
         IOCTL_VOLUME_ONLINE => {
@@ -2830,7 +2831,7 @@ pub unsafe extern "C" fn RequestProcessInternalDeviceControl(
     (*nextStack).MajorFunction = IRP_MJ_SCSI;
     (*nextStack).MinorFunction = IRP_MN_SCSI_CLASS;
 
-    WdfRequestSetCompletionRoutine(Request, core::mem::transmute::<unsafe extern "system" fn(WDFREQUEST, WDFIOTARGET, *mut core::ffi::c_void, *mut core::ffi::c_void), _>(RequestDummyCompletionRoutine), core::ptr::null_mut());
+    WdfRequestSetCompletionRoutine(Request, Some(RequestDummyCompletionRoutine), core::ptr::null_mut());
 
     status = RequestSend(
         DeviceExtension,
@@ -3016,7 +3017,7 @@ pub unsafe extern "system" fn SequentialQueueEvtIoDeviceControl(
     let mut status: NTSTATUS;
     let device: WDFDEVICE = WdfIoQueueGetDevice(Queue);
     let deviceExtension: PCDROM_DEVICE_EXTENSION = DeviceGetExtension(device);
-    let requestContext: PCDROM_REQUEST_CONTEXT = RequestGetContext(Request as *mut core::ffi::c_void);
+    let requestContext: PCDROM_REQUEST_CONTEXT = RequestGetContext((Request as *mut core::ffi::c_void).cast());
     let cdData: *mut CDROM_DATA = core::ptr::addr_of_mut!((*deviceExtension).DeviceAdditionalData);
     let mut requestParameters: core::mem::MaybeUninit<WDF_REQUEST_PARAMETERS> = core::mem::MaybeUninit::uninit();
 
@@ -3306,7 +3307,7 @@ pub unsafe extern "system" fn SequentialQueueEvtCanceledOnQueue(
     Queue: *mut c_void,
     Request: *mut c_void,
 ) {
-    let requestContext: PCDROM_REQUEST_CONTEXT = RequestGetContext(Request);
+    let requestContext: PCDROM_REQUEST_CONTEXT = RequestGetContext((Request).cast());
     if (*requestContext).SyncRequired != 0 {
         KeSetEvent((*requestContext).SyncEvent as *mut c_void, 1, 0); // IO_CD_ROM_INCREMENT, FALSE
     } else {
@@ -3329,7 +3330,7 @@ pub unsafe extern "C" fn RequestSynchronizeProcessWithSerialQueue(
     // Local variables, preserving original names
     let mut status: NTSTATUS;
     let deviceExtension: *mut CDROM_DEVICE_EXTENSION = DeviceGetExtension(Device);
-    let requestContext: *mut CDROM_REQUEST_CONTEXT = RequestGetContext(Request as *mut core::ffi::c_void);
+    let requestContext: *mut CDROM_REQUEST_CONTEXT = RequestGetContext((Request as *mut core::ffi::c_void).cast());
     let bufferToFree: *mut KEVENT = (*requestContext).SyncEvent;
 
     let mut sync_freq: i64 = 0;
@@ -3608,7 +3609,7 @@ pub unsafe extern "C" fn DeviceIsMmcUpdateRequired(Device: WDFDEVICE) -> u8 {
 #[no_mangle]
 pub unsafe extern "system" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
     // WDFREQUEST request = (WDFREQUEST)Request;  — parameter is already the right type.
-    let requestContext = RequestGetContext(request);
+    let requestContext = RequestGetContext((request).cast());
     if (*requestContext).SyncRequired != 0 {
         // NT_ASSERT(KeReadStateEvent(requestContext->SyncEvent) != 0)
         ntkrnl_sys::ASSERT!(KeReadStateEvent((*requestContext).SyncEvent as *mut ntkrnl_sys::ddk::_KEVENT) != 0);

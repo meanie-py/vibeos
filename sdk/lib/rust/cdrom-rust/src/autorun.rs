@@ -1,5 +1,18 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use crate::types::*;
+// The crate's own functions: the definition is the declaration.
+use crate::common::DeviceGetParameter;
+use crate::common::DeviceReleaseQueue;
+use crate::common::DeviceSendNotification;
+use crate::common::DeviceSetParameter;
+use crate::ddk_shims::IsVolumeMounted;
+use crate::common::RequestClearSendTime;
+use crate::ioctl::RequestHandleEventNotification;
+use crate::common::RequestSend;
+use crate::sense::RequestSenseInfoInterpret;
+use crate::ddk_shims::TEST_FLAG;
+use crate::ddk_shims::WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE;
+use crate::ddk_shims::WDF_WORKITEM_CONFIG_INIT;
 use kmdf_sys::*;
 use ntkrnl_sys::ddk::{IRP, PIRP, IO_STACK_LOCATION, PIO_STACK_LOCATION, GUID, LPGUID, LPCGUID, DEVICE_OBJECT, PDEVICE_OBJECT, MDL, PMDL, _UNICODE_STRING, HANDLE};
 use ntkrnl_sys::globals::*;
@@ -25,18 +38,15 @@ extern "C" {
 }
 unsafe extern "system" {
     fn SET_FLAG(flags: *mut u32, flag: u32);
-    fn TEST_FLAG(flags: u32, flag: u32) -> i32;
 }
 unsafe extern "system" {
     fn WDF_OBJECT_ATTRIBUTES_INIT(attributes: *mut WDF_OBJECT_ATTRIBUTES);
 }
 unsafe extern "system" {
-    fn WDF_WORKITEM_CONFIG_INIT(config: *mut WDF_WORKITEM_CONFIG, routine: unsafe extern "C" fn(WDFWORKITEM));
 }
 extern "system" {
 }
 extern "C" {
-    fn DeviceSendNotification( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, guid: *const GUID, size: u32, context: *const core::ffi::c_void, );
     fn CdromMcnPollMark();
     fn NT_SUCCESS(status: NTSTATUS) -> bool;
     fn strlen(s: *const u8) -> usize;
@@ -44,15 +54,13 @@ extern "C" {
 extern "system" {
     fn WDF_REQUEST_REUSE_PARAMS_INIT(params: *mut WDF_REQUEST_REUSE_PARAMS, flags: u32, status: NTSTATUS);
     fn DeviceGetExtension(device: WDFDEVICE) -> PCDROM_DEVICE_EXTENSION;
-    fn DeviceSetParameter( deviceExtension: PCDROM_DEVICE_EXTENSION, SubKeyName: *mut u16, ValueName: *mut u16, Value: u32, ) -> i32;
     fn RtlInitUnicodeString( DestinationString: *mut ntkrnl_sys::ddk::_UNICODE_STRING, SourceString: *const u16 );
     fn KeWaitForMutexObject( Mutex: *mut core::ffi::c_void, WaitReason: i32, WaitMode: i32, Alertable: i32, Timeout: *const core::ffi::c_void, ) -> i32;
     static GUID_IO_DEVICE_EXTERNAL_REQUEST: GUID;
     static GUID_IO_MEDIA_EJECT_REQUEST: GUID;
     static GUID_IO_DEVICE_BECOMING_READY: GUID;
-    fn DeviceGetParameter( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, SubKeyName: *mut u16, ValueName: *mut u16, Data: *mut u32, ); // PULONG
+// PULONG
     fn PoRegisterPowerSettingCallback( DeviceObject: *mut core::ffi::c_void, SettingGuid: *const core::ffi::c_void, Callback: *mut core::ffi::c_void, Context: *mut core::ffi::c_void, Handle: *mut *mut core::ffi::c_void, ) -> NTSTATUS;
-    fn WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE( attr: *mut WDF_OBJECT_ATTRIBUTES, context_type: *const core::ffi::c_void, );
 }
 
 // These two are cdecl, NOT stdcall — they were mis-declared in the `extern "system"` block
@@ -71,7 +79,6 @@ extern "system" {
     fn KeGetCurrentIrql() -> KIRQL;
     fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER);
     fn PoUnregisterPowerSettingCallback(Handle: *mut core::ffi::c_void) -> NTSTATUS;
-    fn RequestHandleEventNotification( DeviceExtension: PCDROM_DEVICE_EXTENSION, Param2: *mut core::ffi::c_void, Param3: *mut core::ffi::c_void, DataLength: *mut usize, ) -> i32;
     fn FileObjectGetContext( FileObject: WDFFILEOBJECT, ) -> *mut FILE_OBJECT_CONTEXT;
 }
 
@@ -79,19 +86,16 @@ extern "system" {
 // crate (common.rs / pnppower.rs / …) and declared with no NTAPI in cdrom.h, but they were
 // all sitting in the `extern "system"` block above, so on i386 the call sites emitted
 // `_Name@N` while the definitions emitted `_Name`. See the block comment above.
+// NOT DevicePowerSettingCallback: cdrom.h declares it as `POWER_SETTING_CALLBACK`, whose
+// typedef (potypes.h) is NTAPI, and PoRegisterPowerSettingCallback calls it stdcall. Its
+// definition is `extern "system"`, and this module uses it rather than redeclaring it.
+use crate::pnppower::DevicePowerSettingCallback;
 extern "C" {
     fn DeviceSendRequestSynchronously( Device: WDFDEVICE, Request: WDFREQUEST, WaitForCompletion: BOOLEAN, ) -> NTSTATUS;
-    // full def sig (pnppower.rs) — old 3-arg decl was address-only shorthand
-    fn DevicePowerSettingCallback( SettingGuid: *const ntkrnl_sys::ddk::GUID, Value: *mut core::ffi::c_void, ValueLength: u32, Context: *mut core::ffi::c_void, ) -> i32;
-    fn RequestClearSendTime(request: *mut core::ffi::c_void);
-    fn RequestSend( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: *mut core::ffi::c_void, Target: *mut core::ffi::c_void, Options: u32, RequestSent: *mut u8, ) -> i32;
     fn FREE_POOL(ptr: *mut core::ffi::c_void);
     fn CountOfSetBitsUChar(byte: u8) -> u8;
     fn DeviceMarkActive(Extension: *mut CDROM_DEVICE_EXTENSION, Active: BOOLEAN, b: BOOLEAN);
     fn DeviceZPODDIsInHomePosition(Extension: *mut CDROM_DEVICE_EXTENSION) -> BOOLEAN;
-    fn IsVolumeMounted(DeviceObject: PDEVICE_OBJECT) -> BOOLEAN;
-    fn DeviceReleaseQueue(Device: WDFDEVICE);
-    fn RequestSenseInfoInterpret( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: *mut core::ffi::c_void, Srb: *mut SCSI_REQUEST_BLOCK, Flags: u32, Status: *mut NTSTATUS, SenseData: *mut i64, ) -> i32;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -416,7 +420,7 @@ pub unsafe extern "C" fn GesnDataInterpret(
                     DeviceExtension,
                     &GUID_IO_DEVICE_EXTERNAL_REQUEST as *const GUID,
                     core::mem::size_of::<DEVICE_EVENT_EXTERNAL_REQUEST>() as u32,
-                    &externalData as *const DEVICE_EVENT_EXTERNAL_REQUEST as *const core::ffi::c_void,
+                    &externalData as *const DEVICE_EVENT_EXTERNAL_REQUEST as *mut core::ffi::c_void,
                 );
 
                 return status;
@@ -490,7 +494,7 @@ pub unsafe extern "C" fn GesnDataInterpret(
                     DeviceExtension,
                     &GUID_IO_MEDIA_EJECT_REQUEST as *const GUID,
                     0,
-                    core::ptr::null(),
+                    core::ptr::null_mut(),
                 );
             }
         }
@@ -525,7 +529,7 @@ pub unsafe extern "C" fn GesnDataInterpret(
                     DeviceExtension,
                     &GUID_IO_DEVICE_BECOMING_READY as *const GUID,
                     core::mem::size_of::<DEVICE_EVENT_BECOMING_READY>() as u32,
-                    &busyData as *const DEVICE_EVENT_BECOMING_READY as *const core::ffi::c_void,
+                    &busyData as *const DEVICE_EVENT_BECOMING_READY as *mut core::ffi::c_void,
                 );
             }
 
@@ -653,7 +657,7 @@ pub unsafe extern "C" fn DeviceInternalSetMediaChangeState(
                 DeviceExtension,
                 &GUID_IO_MEDIA_ARRIVAL as *const GUID,
                 core::mem::size_of::<CLASS_MEDIA_CHANGE_CONTEXT>() as u32,
-                &mcnContext as *const CLASS_MEDIA_CHANGE_CONTEXT as *const core::ffi::c_void,
+                &mcnContext as *const CLASS_MEDIA_CHANGE_CONTEXT as *mut core::ffi::c_void,
             );
         } else if NewState == MediaNotPresent || NewState == MediaUnavailable {
             #[cfg(debug_assertions)]
@@ -669,7 +673,7 @@ pub unsafe extern "C" fn DeviceInternalSetMediaChangeState(
                 DeviceExtension,
                 &GUID_IO_MEDIA_REMOVAL as *const GUID,
                 core::mem::size_of::<CLASS_MEDIA_CHANGE_CONTEXT>() as u32,
-                &mcnContext as *const CLASS_MEDIA_CHANGE_CONTEXT as *const core::ffi::c_void,
+                &mcnContext as *const CLASS_MEDIA_CHANGE_CONTEXT as *mut core::ffi::c_void,
             );
         } else {
             // Don't notify of changed going to unknown.
@@ -807,7 +811,7 @@ pub unsafe extern "system" fn RequestSetupMcnRequest(
     }
 
     if NT_SUCCESS(status) {
-        RequestClearSendTime((*info).MediaChangeRequest as *mut core::ffi::c_void);
+        RequestClearSendTime(((*info).MediaChangeRequest as *mut core::ffi::c_void).cast());
 
         nextIrpStack = IoGetNextIrpStackLocation(irp);
 
@@ -873,7 +877,7 @@ pub unsafe extern "system" fn RequestSetupMcnRequest(
     status
 }
 #[no_mangle]
-pub unsafe extern "C" fn DeviceDisableGesn(WorkItem: WDFWORKITEM) {
+pub unsafe extern "system" fn DeviceDisableGesn(WorkItem: WDFWORKITEM) {
     let device = WdfWorkItemGetParentObject(WorkItem) as WDFDEVICE;
     let deviceExtension = DeviceGetExtension(device);
 
@@ -1004,7 +1008,7 @@ pub unsafe extern "C" fn RequestPostWorkMcnRequest(
             WDF_OBJECT_ATTRIBUTES_INIT(&mut attributes);
             attributes.ParentObject = (*DeviceExtension).Device as *mut core::ffi::c_void;
 
-            WDF_WORKITEM_CONFIG_INIT(&mut workitemConfig, DeviceDisableGesn);
+            WDF_WORKITEM_CONFIG_INIT(&mut workitemConfig, Some(DeviceDisableGesn));
             workitemConfig.AutomaticSerialization = 0; // FALSE
 
             status = WdfWorkItemCreate(
@@ -1046,8 +1050,8 @@ pub unsafe extern "C" fn RequestSendMcnRequest(
 
     RequestSend(
         DeviceExtension,
-        (*info).MediaChangeRequest as *mut core::ffi::c_void,
-        (*DeviceExtension).IoTarget as *mut core::ffi::c_void,
+        ((*info).MediaChangeRequest as *mut core::ffi::c_void).cast(),
+        ((*DeviceExtension).IoTarget as *mut core::ffi::c_void).cast(),
         WDF_REQUEST_SEND_OPTION_SYNCHRONOUS,
         core::ptr::addr_of_mut!(request_sent),
     );
@@ -1109,7 +1113,7 @@ pub unsafe extern "C" fn DeviceInitializeMcn(
     if status >= 0 {
         WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(
             &mut attributes,
-            &CDROM_REQUEST_CONTEXT_TYPE_INFO as *const _ as *const core::ffi::c_void,
+            (&CDROM_REQUEST_CONTEXT_TYPE_INFO as *const _ as *const core::ffi::c_void).cast(),
         );
         attributes.ParentObject = (*DeviceExtension).Device as *mut core::ffi::c_void;
         status = WdfRequestCreate(

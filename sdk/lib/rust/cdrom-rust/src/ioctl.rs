@@ -1,5 +1,27 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use crate::types::*;
+// The crate's own functions: the definition is the declaration.
+use crate::common::DevicePickDvdRegion;
+use crate::common::DeviceSendNotification;
+use crate::common::DeviceSendSrbSynchronously;
+use crate::common::DeviceSetParameter;
+use crate::common::DeviceUnlockExclusive;
+use crate::ddk_shims::EXCLUSIVE_MODE;
+use crate::ddk_shims::EXCLUSIVE_OWNER;
+use crate::ddk_shims::IsVolumeMounted;
+use crate::common::MediaReadCapacity;
+use crate::common::ModeSenseFindSpecificPage;
+use crate::common::PerformEjectionControl;
+use crate::ddk_shims::REVERSE_BYTES;
+use crate::ddk_shims::REVERSE_BYTES_SHORT;
+use crate::common::RequestCompletion;
+use crate::common::RequestDummyCompletionRoutine;
+use crate::ddk_shims::RequestGetContext;
+use crate::common::RequestSend;
+use crate::sense::RequestSenseInfoInterpretForScratchBuffer;
+use crate::ddk_shims::ScratchBuffer_ExecuteCdb;
+use crate::scratch::ScratchBuffer_ExecuteCdbEx;
+use crate::ddk_shims::TEST_FLAG;
 use kmdf_sys::*;
 use ntkrnl_sys::ddk::{IRP, PIRP, IO_STACK_LOCATION, PIO_STACK_LOCATION, GUID, LPGUID, LPCGUID, DEVICE_OBJECT, PDEVICE_OBJECT, MDL, PMDL};
 use ntkrnl_sys::globals::*;
@@ -84,7 +106,6 @@ extern "C" {
     fn CdromDbgPrintForce2(format: *const i8, arg1: usize, arg2: usize) -> u32;
     fn CdromDbgPrint3(format: *const i8, arg1: usize, arg2: usize, arg3: usize) -> u32;
     fn NT_SUCCESS(status: NTSTATUS) -> bool;
-    fn PerformEjectionControl(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: *mut core::ffi::c_void, LockType: i32, PreventMediaRemoval: u8) -> NTSTATUS;
     fn CdromDbgPrintReadWriteValidate(
         format: *const i8,
         request_type: usize,
@@ -106,17 +127,14 @@ extern "C" {
 extern "system" {
     static CLASSP_REG_SUBKEY_NAME: u16;
     static CLASSP_REG_REMOVAL_POLICY_VALUE_NAME: u16;
-    fn RequestGetContext(request: WDFREQUEST) -> *mut CDROM_REQUEST_CONTEXT;
     fn ScratchBuffer_BeginUse(device_extension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_PerformNextReadWrite(device_extension: *mut CDROM_DEVICE_EXTENSION, first: u32) -> NTSTATUS;
     fn ScratchBuffer_EndUse(DeviceExtension: PCDROM_DEVICE_EXTENSION);
-    fn ScratchBuffer_ExecuteCdb(DeviceExtension: PCDROM_DEVICE_EXTENSION, OriginalRequest: *mut core::ffi::c_void, transferByteCount: u32, flag: u8, cdb: *mut CDB, cdbLen: u8) -> NTSTATUS;
     fn DeviceGetExtension(Device: WDFDEVICE) -> *mut CDROM_DEVICE_EXTENSION;
     fn MmGetMdlVirtualAddress(Mdl: PMDL) -> *mut core::ffi::c_void;
     fn MmGetMdlByteCount(Mdl: PMDL) -> u32;
 }
 unsafe extern "C" {
-    fn REVERSE_BYTES(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void);
     fn PLAY_ACTIVE(DeviceExtension: PCDROM_DEVICE_EXTENSION) -> *mut i32;
     fn REVERSE_SHORT(p: *mut u16);
     fn REVERSE_LONG(p: *mut u32);
@@ -125,54 +143,39 @@ unsafe extern "C" {
     fn MSF_TO_LBA(m: u8, s: u8, f: u8) -> u32;
 }
 unsafe extern "C" {
-    fn MediaReadCapacity(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS;
 }
 unsafe extern "C" {
-    fn RequestCompletion( device_extension: *mut CDROM_DEVICE_EXTENSION, request: WDFREQUEST, status: NTSTATUS, info: ULONG_PTR, );
 }
 extern "system" {
-    fn RequestDummyCompletionRoutine( Request: WDFREQUEST, ioTarget: WDFIOTARGET, CompletionParams: *mut WDF_REQUEST_COMPLETION_PARAMS, CompletionContext: WDFCONTEXT, );
-    fn DeviceSendSrbSynchronously(Device: *mut core::ffi::c_void, Srb: *mut SCSI_REQUEST_BLOCK, DataBuffer: *mut core::ffi::c_void, DataTransferLength: u32, AutoSense: u8, Request: *mut core::ffi::c_void) -> i32;
     fn IoWriteErrorLogEntry(ElEntry: *mut IO_ERROR_LOG_PACKET);
     fn IoAllocateErrorLogEntry(IoObject: *mut core::ffi::c_void, EntrySize: u32) -> *mut IO_ERROR_LOG_PACKET;
     fn WDF_REQUEST_PARAMETERS_INIT(Parameters: *mut WDF_REQUEST_PARAMETERS);
     fn RtlZeroMemory(Destination: *mut core::ffi::c_void, Length: usize);
     fn KeGetCurrentIrql() -> u8;
     fn ExFreePool(Pool: *mut core::ffi::c_void);
-    fn ScratchBuffer_ExecuteCdbEx(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: *mut core::ffi::c_void, transferSize: u32, bFlag: u8, Cdb: *const CDB, CdbLength: u8, TimeoutValue: u32) -> NTSTATUS;
-    fn DeviceSetParameter( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, SubkeyName: *const u16, ValueName: *const u16, Value: u32, ) -> NTSTATUS;
     fn FileObjectGetContext(FileObject: WDFFILEOBJECT) -> PFILE_OBJECT_CONTEXT;
-    fn TEST_FLAG(flags: u32, bit: u32) -> bool;
     fn RequestSetupMcnRequest(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, supported: u8) -> i32;
     fn RequestGetCurrentStackLocationFlags(Request: WDFREQUEST) -> u8;
     fn ScratchBuffer_ResetItems(device_extension: *mut CDROM_DEVICE_EXTENSION, free_mdl: u8);
-    fn DevicePickDvdRegion(Device: *mut core::ffi::c_void);
 }
 unsafe extern "C" {
     fn ValidChar(c: u8) -> i32;
     fn CompareStorageDuids( Duid1: *const STORAGE_DEVICE_UNIQUE_IDENTIFIER, Duid2: *const STORAGE_DEVICE_UNIQUE_IDENTIFIER, ) -> i32;
     fn TimeOutValueGetCapValue(timeout: u32, multiplier: u32) -> u32;
     fn InterlockedCompareExchange(Destination: *mut i32, Exchange: i32, Comperand: i32) -> i32;
-    fn REVERSE_BYTES_SHORT(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void);
     fn Int64ShrlMod32(value: i64, shift: u32) -> i64;
 }
 unsafe extern "C" {
-    fn RequestSend( deviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, ioTarget: WDFIOTARGET, sendOptionsFlags: ULONG, requestSent: *mut BOOLEAN, ) -> NTSTATUS;
 }
 unsafe extern "C" {
-    fn EXCLUSIVE_MODE(cdData: *mut CDROM_DATA) -> u8;
 }
 unsafe extern "C" {
-    fn EXCLUSIVE_OWNER(cdData: *mut CDROM_DATA, FileObject: *mut core::ffi::c_void) -> u8;
 }
 unsafe extern "C" {
-    fn DeviceSendNotification(deviceExtension: PCDROM_DEVICE_EXTENSION, guid: *const GUID, param1: u32, param2: *mut core::ffi::c_void);
 }
 unsafe extern "C" {
-    fn IsVolumeMounted(DeviceObject: *mut core::ffi::c_void) -> u8;
 }
 unsafe extern "C" {
-    fn DeviceUnlockExclusive( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, FileObject: WDFFILEOBJECT, NoMediaNotifications: i32, ) -> NTSTATUS;
 }
 unsafe extern "C" {
     fn RequestDuidGetDeviceIdProperty( deviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, requestParameters: WDF_REQUEST_PARAMETERS, outLength: *mut usize, ) -> i32;
@@ -191,7 +194,6 @@ unsafe fn DeviceRetrieveModeSenseUsingScratch(DeviceExtension: *mut CDROM_DEVICE
     DeviceRetrieveModeSenseUsingScratch__c(DeviceExtension, Buffer, BufferLength, Page, PageControl) as usize
 }
 unsafe extern "C" {
-    fn ModeSenseFindSpecificPage(Data: *mut i8, DataLength: usize, PageCode: u8, ReadWrite: i32) -> *mut MODE_CACHING_PAGE;
 }
 unsafe extern "C" {
     fn FREE_POOL(Pool: *mut core::ffi::c_void);
@@ -209,7 +211,6 @@ unsafe extern "C" {
     fn DeviceSendDelayedMediaChangeNotifications( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, );
 }
 unsafe extern "C" {
-    fn RequestSenseInfoInterpretForScratchBuffer( device_extension: *mut CDROM_DEVICE_EXTENSION, times_already_retried: u32, status: *mut i32, retry_in_100ns_units: *mut i64, ) -> i32;
 }
 unsafe extern "C" {
     fn ScratchBuffer_SetupSrb(device_extension: *mut CDROM_DEVICE_EXTENSION, request: *mut core::ffi::c_void, transfer_byte_count: u32, use_scratch: u8);
@@ -1077,7 +1078,7 @@ pub unsafe extern "C" fn RequestHandleGetMediaTypeEx(
             srb.TimeOutValue = CDROM_TEST_UNIT_READY_TIMEOUT;
 
             status = DeviceSendSrbSynchronously(
-                (*DeviceExtension).Device as *mut core::ffi::c_void,
+                ((*DeviceExtension).Device as *mut core::ffi::c_void).cast(),
                 &mut srb,
                 core::ptr::null_mut(),
                 0,
@@ -2456,7 +2457,7 @@ pub unsafe extern "system" fn RequestHandleExclusiveAccessLockDevice(
 
     if NT_SUCCESS(status) {
         if ((*exclusiveLock).Access.Flags & CDROM_LOCK_IGNORE_VOLUME) == 0 &&
-            IsVolumeMounted((*deviceExtension).DeviceObject as *mut core::ffi::c_void) != 0
+            IsVolumeMounted(((*deviceExtension).DeviceObject as *mut core::ffi::c_void).cast()) != 0
         {
             TracePrint!(TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
                 b"RequestHandleExclusiveAccessLockDevice: Unable to lock device, file system mounted\n".as_ptr() as *const i8);
@@ -2553,7 +2554,7 @@ pub unsafe extern "system" fn RequestHandleExclusiveAccessUnlockDevice(
     if status >= 0 {
         let noMediaFlag: i32 =
             if ((*exclusiveAccess).Flags & CDROM_NO_MEDIA_NOTIFICATIONS) != 0 { 1 } else { 0 };
-        status = DeviceUnlockExclusive(deviceExtension, fileObject, noMediaFlag);
+        status = DeviceUnlockExclusive(deviceExtension, (fileObject).cast(), noMediaFlag);
         TracePrint!(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_IOCTL,
@@ -2960,7 +2961,7 @@ pub unsafe extern "system" fn RequestHandleQueryPropertyWriteCache(
         (*srb).Cdb[0] = SCSIOP_SYNCHRONIZE_CACHE as u8;
 
         status = DeviceSendSrbSynchronously(
-            Device as *mut core::ffi::c_void,
+            (Device as *mut core::ffi::c_void).cast(),
             srb,
             core::ptr::null_mut(),
             0,
@@ -3037,12 +3038,12 @@ pub unsafe extern "system" fn RequestHandleQueryPropertyWriteCache(
             length = (*modeData).ModeDataLength as usize + 1usize;
         }
 
-        pageData = ModeSenseFindSpecificPage(
-            modeData as *mut i8,
+        pageData = (ModeSenseFindSpecificPage(
+            (modeData as *mut i8).cast(),
             length,
             (MODE_PAGE_CACHING) as _,
             1, // TRUE
-        );
+        )).cast();
 
         if pageData.is_null() {
             TracePrint!(
@@ -3112,12 +3113,12 @@ pub unsafe extern "system" fn RequestHandleQueryPropertyWriteCache(
             length = (*modeData).ModeDataLength as usize + 1usize;
         }
 
-        pageData = ModeSenseFindSpecificPage(
-            modeData as *mut i8,
+        pageData = (ModeSenseFindSpecificPage(
+            (modeData as *mut i8).cast(),
             length,
             (MODE_PAGE_CACHING) as _,
             1, // TRUE
-        );
+        )).cast();
 
         if pageData.is_null() {
             TracePrint!(
@@ -4145,8 +4146,8 @@ pub unsafe extern "C" fn GetConfigurationDataSynthesize(
 
     header = InputBuffer as *mut GET_CONFIGURATION_HEADER;
     REVERSE_BYTES(
-        &mut validLength as *mut u32 as *mut core::ffi::c_void,
-        (*header).DataLength.as_ptr() as *const core::ffi::c_void,
+        (&mut validLength as *mut u32 as *mut core::ffi::c_void).cast(),
+        ((*header).DataLength.as_ptr() as *const core::ffi::c_void).cast(),
     );
 
     validLength += (core::mem::offset_of!(GET_CONFIGURATION_HEADER, DataLength)
@@ -4220,8 +4221,8 @@ pub unsafe extern "C" fn GetConfigurationDataSynthesize(
         headerLength = (requiredLength as u32) - (rtl_size as u32);
         header = OutputBuffer as *mut GET_CONFIGURATION_HEADER;
         REVERSE_BYTES(
-            (*header).DataLength.as_ptr() as *mut core::ffi::c_void,
-            &headerLength as *const u32 as *const core::ffi::c_void,
+            ((*header).DataLength.as_ptr() as *mut core::ffi::c_void).cast(),
+            (&headerLength as *const u32 as *const core::ffi::c_void).cast(),
         );
     }
 
@@ -4393,7 +4394,7 @@ pub unsafe extern "C" fn RequestHandleGetDriveGeometry(
     );
 
     if NT_SUCCESS(status) {
-        status = MediaReadCapacity((*DeviceExtension).Device as PDEVICE_OBJECT);
+        status = MediaReadCapacity(((*DeviceExtension).Device as PDEVICE_OBJECT).cast());
     }
 
     if NT_SUCCESS(status) {
@@ -4527,7 +4528,7 @@ pub unsafe extern "C" fn RequestHandleDiskVerify(
                     (Request) as _,
                     transferSize,
                     0u8, // FALSE
-                    &cdb as *const CDB,
+                    (&cdb as *const CDB).cast_mut(),
                     (10u32) as _,
                     timeoutValue,
                 );
@@ -4959,7 +4960,7 @@ pub unsafe extern "C" fn RequestHandleEjectionControl(
         status = PerformEjectionControl(
             DeviceExtension,
             (Request) as _,
-            lock_type,
+            (lock_type) as MEDIA_LOCK_TYPE,
             ((*mediaRemoval).PreventMediaRemoval as i32) as _,
         );
     }
@@ -5022,8 +5023,8 @@ pub unsafe extern "C" fn RequestHandleEnableStreaming(
                 enforceStreamingWrite = 1;
             }
             let mmc = &(*cdData).Mmc;
-            streamingReadSupported = if (mmc.StreamingReadSupported != 0) && !TEST_FLAG((*fdoData).HackFlags as u32, FDO_HACK_NO_STREAMING) { 1 } else { 0 };
-            streamingWriteSupported = if (mmc.StreamingWriteSupported != 0) && !TEST_FLAG((*fdoData).HackFlags as u32, FDO_HACK_NO_STREAMING) { 1 } else { 0 };
+            streamingReadSupported = if (mmc.StreamingReadSupported != 0) && ((TEST_FLAG((*fdoData).HackFlags as u32, FDO_HACK_NO_STREAMING)) == 0) { 1 } else { 0 };
+            streamingWriteSupported = if (mmc.StreamingWriteSupported != 0) && ((TEST_FLAG((*fdoData).HackFlags as u32, FDO_HACK_NO_STREAMING)) == 0) { 1 } else { 0 };
             if (enforceStreamingRead != 0 && streamingReadSupported == 0) ||
                 (enforceStreamingWrite != 0 && streamingWriteSupported == 0) {
                 TracePrint!(
@@ -5158,8 +5159,8 @@ pub unsafe extern "C" fn RequestHandleGetPerformance(
             }
 
             REVERSE_BYTES(
-                &mut cdb.GET_PERFORMANCE.as_mut().StartingLBA as *mut _ as *mut core::ffi::c_void,
-                &(*inputBuffer).StaringLba as *const _ as *const core::ffi::c_void,
+                (&mut cdb.GET_PERFORMANCE.as_mut().StartingLBA as *mut _ as *mut core::ffi::c_void).cast(),
+                (&(*inputBuffer).StaringLba as *const _ as *const core::ffi::c_void).cast(),
             );
         } else if (*inputBuffer).RequestType == 1 /* CdromWriteSpeedRequest */ {
             cdb.GET_PERFORMANCE.as_mut().Type = 3;
@@ -5198,7 +5199,7 @@ pub unsafe extern "C" fn RequestHandleGetPerformance(
                 (Request) as _,
                 transferSize as u32,
                 1, // TRUE
-                &cdb,
+                &raw mut cdb,
                 (core::mem::size_of::<GetPerformanceCdb>() as u32) as _,
                 10 /* CDROM_GET_PERFORMANCE_TIMEOUT */,
             );
@@ -5692,7 +5693,7 @@ pub unsafe extern "C" fn RequestHandleLoadEjectMedia(
             }
 
             status = DeviceSendSrbSynchronously(
-                (*DeviceExtension).Device as *mut core::ffi::c_void,
+                ((*DeviceExtension).Device as *mut core::ffi::c_void).cast(),
                 core::ptr::addr_of_mut!(srb),
                 core::ptr::null_mut(),
                 0u32,
@@ -5767,7 +5768,7 @@ pub unsafe extern "C" fn RequestHandleReserveRelease(
         }
 
         status = DeviceSendSrbSynchronously(
-            (*DeviceExtension).Device as *mut core::ffi::c_void,
+            ((*DeviceExtension).Device as *mut core::ffi::c_void).cast(),
             srb,
             core::ptr::null_mut(),
             0,
@@ -5994,7 +5995,7 @@ pub unsafe extern "C" fn RequestHandlePersistentReserve(
         (*srb).QueueAction = SRB_SIMPLE_TAG_REQUEST;
 
         status = DeviceSendSrbSynchronously(
-            (*DeviceExtension).Device as *mut core::ffi::c_void,
+            ((*DeviceExtension).Device as *mut core::ffi::c_void).cast(),
             srb,
             reserveCommand as *mut core::ffi::c_void,
             dataBufLen as u32,
@@ -6125,7 +6126,7 @@ pub unsafe extern "C" fn DeviceHandleRawRead(
         (*currentIrpStack).MinorFunction as u32 != CDROM_VOLUME_VERIFY_CHECKED &&
         ((*currentIrpStack).Flags as u32 & SL_OVERRIDE_VERIFY_VOLUME) == 0
     {
-        MediaReadCapacity((*DeviceExtension).Device as PDEVICE_OBJECT);
+        MediaReadCapacity(((*DeviceExtension).Device as PDEVICE_OBJECT).cast());
         *DataLength = 0;
         status = STATUS_VERIFY_REQUIRED;
     }
@@ -6652,7 +6653,7 @@ pub unsafe extern "C" fn DeviceHandleGetSetVolume(
 
                 if NT_SUCCESS(status) {
                     audioOutput = ModeSenseFindSpecificPage(
-                        (*(*DeviceExtension).ScratchContext.ScratchSrb).DataBuffer as *mut i8,
+                        ((*(*DeviceExtension).ScratchContext.ScratchSrb).DataBuffer as *mut i8).cast(),
                         (*(*DeviceExtension).ScratchContext.ScratchSrb).DataTransferLength as usize,
                         (CDROM_AUDIO_CONTROL_PAGE as u32) as _,
                         0,
@@ -6691,7 +6692,7 @@ pub unsafe extern "C" fn DeviceHandleGetSetVolume(
 
                 if NT_SUCCESS(status) {
                     audioInput = ModeSenseFindSpecificPage(
-                        (*(*DeviceExtension).ScratchContext.ScratchSrb).DataBuffer as *mut i8,
+                        ((*(*DeviceExtension).ScratchContext.ScratchSrb).DataBuffer as *mut i8).cast(),
                         (*(*DeviceExtension).ScratchContext.ScratchSrb).DataTransferLength as usize,
                         (CDROM_AUDIO_CONTROL_PAGE as u32) as _,
                         0,
@@ -6934,7 +6935,7 @@ pub unsafe extern "C" fn DvdStartSessionReadKey(
             (*keyParameters).KeyType == DvdGetRpcKey &&
             (*DeviceExtension).DeviceAdditionalData.Mmc.IsCssDvd != 0
         {
-            DevicePickDvdRegion((*DeviceExtension).Device as *mut core::ffi::c_void);
+            DevicePickDvdRegion(((*DeviceExtension).Device as *mut core::ffi::c_void).cast());
         }
 
         if status >= 0 &&
@@ -7389,28 +7390,28 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
             (*perfDescriptor).set_WriteRotationControl((*stream).RotationControl as u8);
 
             REVERSE_BYTES(
-                core::ptr::addr_of_mut!((*perfDescriptor).StartLba) as *mut core::ffi::c_void,
-                core::ptr::addr_of!((*stream).StartLba) as *const core::ffi::c_void,
+                (core::ptr::addr_of_mut!((*perfDescriptor).StartLba) as *mut core::ffi::c_void).cast(),
+                (core::ptr::addr_of!((*stream).StartLba) as *const core::ffi::c_void).cast(),
             );
             REVERSE_BYTES(
-                core::ptr::addr_of_mut!((*perfDescriptor).EndLba) as *mut core::ffi::c_void,
-                core::ptr::addr_of!((*stream).EndLba) as *const core::ffi::c_void,
+                (core::ptr::addr_of_mut!((*perfDescriptor).EndLba) as *mut core::ffi::c_void).cast(),
+                (core::ptr::addr_of!((*stream).EndLba) as *const core::ffi::c_void).cast(),
             );
             REVERSE_BYTES(
-                core::ptr::addr_of_mut!((*perfDescriptor).ReadSize) as *mut core::ffi::c_void,
-                core::ptr::addr_of!((*stream).ReadSize) as *const core::ffi::c_void,
+                (core::ptr::addr_of_mut!((*perfDescriptor).ReadSize) as *mut core::ffi::c_void).cast(),
+                (core::ptr::addr_of!((*stream).ReadSize) as *const core::ffi::c_void).cast(),
             );
             REVERSE_BYTES(
-                core::ptr::addr_of_mut!((*perfDescriptor).ReadTime) as *mut core::ffi::c_void,
-                core::ptr::addr_of!((*stream).ReadTime) as *const core::ffi::c_void,
+                (core::ptr::addr_of_mut!((*perfDescriptor).ReadTime) as *mut core::ffi::c_void).cast(),
+                (core::ptr::addr_of!((*stream).ReadTime) as *const core::ffi::c_void).cast(),
             );
             REVERSE_BYTES(
-                core::ptr::addr_of_mut!((*perfDescriptor).WriteSize) as *mut core::ffi::c_void,
-                core::ptr::addr_of!((*stream).WriteSize) as *const core::ffi::c_void,
+                (core::ptr::addr_of_mut!((*perfDescriptor).WriteSize) as *mut core::ffi::c_void).cast(),
+                (core::ptr::addr_of!((*stream).WriteSize) as *const core::ffi::c_void).cast(),
             );
             REVERSE_BYTES(
-                core::ptr::addr_of_mut!((*perfDescriptor).WriteTime) as *mut core::ffi::c_void,
-                core::ptr::addr_of!((*stream).WriteTime) as *const core::ffi::c_void,
+                (core::ptr::addr_of_mut!((*perfDescriptor).WriteTime) as *mut core::ffi::c_void).cast(),
+                (core::ptr::addr_of!((*stream).WriteTime) as *const core::ffi::c_void).cast(),
             );
 
             cdb.SET_STREAMING.as_mut().OperationCode = SCSIOP_SET_STREAMING;

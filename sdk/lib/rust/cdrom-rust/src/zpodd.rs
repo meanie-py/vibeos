@@ -1,4 +1,7 @@
 use crate::types::*;
+// The crate's own functions: the definition is the declaration.
+use crate::common::DeviceFindFeaturePage;
+use crate::common::DeviceSendSrbSynchronously;
 use kmdf_sys::*;
 use ntkrnl_sys::ddk::{IRP, PIRP, IO_STACK_LOCATION, PIO_STACK_LOCATION, GUID, LPGUID, LPCGUID, DEVICE_OBJECT, PDEVICE_OBJECT, MDL, PMDL};
 use ntkrnl_sys::globals::*;
@@ -20,14 +23,12 @@ extern "C" {
     fn FREE_POOL(ptr: *mut core::ffi::c_void);
 }
 extern "system" {
-    fn DeviceSendSrbSynchronously(device: PDEVICE_OBJECT, srb: *mut SCSI_REQUEST_BLOCK, buffer: *mut core::ffi::c_void, length: u32, request_sense: u8, sense_info: *mut u8) -> NTSTATUS;
     fn DeviceGetConfigurationWithAlloc( Device: PDEVICE_OBJECT, Buffer: *mut *mut core::ffi::c_void, BufferSize: *mut ULONG, Feature: u32, RequestType: u32, ) -> NTSTATUS;
 }
 unsafe extern "C" {
     fn DeviceSendIoctlAsynchronously( DeviceExtension: PCDROM_DEVICE_EXTENSION, IoControlCode: u32, LowerPdo: PDEVICE_OBJECT, );
 }
 unsafe extern "C" {
-    fn DeviceFindFeaturePage(buffer: *mut u8, buffer_size: u32, feature_code: u32) -> *mut FEATURE_DATA_REMOVABLE_MEDIUM;
 }
 
 const IRP_MN_QUERY_INTERFACE: u8 = 0x08u8;
@@ -104,7 +105,7 @@ pub unsafe extern "C" fn DeviceInitializeZPODD(DeviceExtension: *mut CDROM_DEVIC
     // Check for LoChange / MediaRemoval
     let capabilities_buffer: *mut u8 = (*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBuffer as *mut u8;
     let capabilities_buffer_size: u32 = (*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBufferSize;
-    removableMediumHeader = DeviceFindFeaturePage(capabilities_buffer, capabilities_buffer_size, FeatureRemovableMedium);
+    removableMediumHeader = (DeviceFindFeaturePage((capabilities_buffer).cast(), capabilities_buffer_size, FeatureRemovableMedium)).cast();
 
     if removableMediumHeader.is_null()
         || !(
@@ -484,7 +485,7 @@ pub unsafe extern "C" fn DeviceZPODDIsInHomePosition(DeviceExtension: *mut CDROM
 
         let device = (*DeviceExtension).Device;
         status = DeviceSendSrbSynchronously(
-            device as PDEVICE_OBJECT,
+            (device as PDEVICE_OBJECT).cast(),
             core::ptr::addr_of_mut!(srb),
             core::ptr::null_mut(),
             0,

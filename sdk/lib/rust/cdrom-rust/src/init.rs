@@ -1,5 +1,20 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use crate::types::*;
+// The crate's own functions: the definition is the declaration.
+use crate::autorun::DeviceEnableMainTimer;
+use crate::common::DeviceFindFeaturePage;
+use crate::common::DeviceGetParameter;
+use crate::common::DevicePickDvdRegion;
+use crate::common::DevicePrintAllFeaturePages;
+use crate::common::DeviceSendSrbSynchronously;
+use crate::autorun::DeviceSetMediaChangeStateEx;
+use crate::common::DeviceSetParameter;
+use crate::ioctl::DvdStartSessionReadKey;
+use crate::common::MediaReadCapacity;
+use crate::ddk_shims::REVERSE_BYTES;
+use crate::common::StringsAreMatched;
+use crate::ddk_shims::TEST_FLAG;
+use crate::ddk_shims::WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE;
 use kmdf_sys::*;
 use ntkrnl_sys::ddk::{IRP, PIRP, IO_STACK_LOCATION, PIO_STACK_LOCATION, GUID, LPGUID, LPCGUID, DEVICE_OBJECT, PDEVICE_OBJECT, MDL, PMDL};
 use ntkrnl_sys::globals::*;
@@ -35,11 +50,9 @@ extern "C" {
 #[inline] fn max(a: u32, b: u32) -> u32 { core::cmp::max(a, b) }
 extern "system" {
     fn WDF_OBJECT_ATTRIBUTES_INIT(attributes: *mut WDF_OBJECT_ATTRIBUTES);
-    fn WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(attributes: *mut WDF_OBJECT_ATTRIBUTES, context_type_info: *mut WDF_OBJECT_CONTEXT_TYPE_INFO);
     static DEVPKEY_Device_InLocalMachineContainer: DEVPROPKEY;
     static mut CdromHackItems: CDROM_SCAN_FOR_SPECIAL_INFO;
     fn DeviceErrorHandlerForHitachiGD2000( DeviceExtension: PCDROM_DEVICE_EXTENSION, Srb: *mut SCSI_REQUEST_BLOCK, Status: *mut NTSTATUS, Retry: *mut u8, ) -> NTSTATUS;
-    fn DeviceSendSrbSynchronously( Device: *mut core::ffi::c_void, Srb: *mut SCSI_REQUEST_BLOCK, DataBuffer: *mut core::ffi::c_void, DataBufferLength: u32, Write: u8, SrbStatus: *mut u8, ) -> NTSTATUS;
     fn RtlZeroMemory(Destination: *mut core::ffi::c_void, Length: usize);
     fn ExAllocatePoolWithTag(PoolType: u32, NumberOfBytes: SIZE_T, Tag: u32) -> *mut core::ffi::c_void;
     fn ExFreePool(P: *mut core::ffi::c_void);
@@ -52,8 +65,6 @@ extern "system" {
 }
 extern "C" {
     fn DeviceInitializeZPODD(deviceExtension: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
-    fn DeviceEnableMainTimer(deviceExtension: *mut CDROM_DEVICE_EXTENSION) -> u32;
-    fn MediaReadCapacity(Device: WDFDEVICE) -> NTSTATUS;
 }
 extern "system" {
     // NTAPI in iofuncs.h (ntoskrnl_vista forwards it to the kernel export).
@@ -61,30 +72,22 @@ extern "system" {
     fn WDF_MEMORY_DESCRIPTOR_INIT_BUFFER( descriptor: *mut WDF_MEMORY_DESCRIPTOR, buffer: *mut core::ffi::c_void, length: u32, );
     static WdfObjectContextTypeInfo_CDROM_REQUEST_CONTEXT: WDF_OBJECT_CONTEXT_TYPE_INFO;
     fn DeviceGetExtension(Device: WDFDEVICE) -> PCDROM_DEVICE_EXTENSION;
-    fn DeviceGetParameter( DeviceExtension: *mut core::ffi::c_void, SubKeyName: *mut u16, ValueName: *mut u16, Value: *mut u32, ) -> ();
-    fn TEST_FLAG(Flags: u32, Flag: u32) -> u32;
-    fn DeviceSetParameter(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, SubKeyName: *const u16, ValueName: *const u16, Value: u32) -> u32;
-    fn DevicePickDvdRegion(Device: WDFDEVICE);
     fn IoGetDevicePropertyData( DeviceObject: *mut core::ffi::c_void, PropertyKey: *const DEVPROPKEY, Lcid: u32, Flags: u32, Size: u32, Data: *mut core::ffi::c_void, RequiredSize: *mut u32, Type: *mut u32, ) -> NTSTATUS;
     fn SET_FLAG(flags: *mut u32, flag: u32);
 }
 unsafe extern "C" {
     fn DeviceGetConfiguration(Device: *mut core::ffi::c_void, Buffer: *mut core::ffi::c_void, Size: u32, Usable: *mut u32, Feature: u16, RequestType: u32) -> i32; // NTSTATUS
-    fn REVERSE_BYTES(dest: *mut u32, src: *const u8);
     fn DeviceAllocateMmcResources(Device: WDFDEVICE) -> i32;
     fn DeviceUpdateMmcWriteCapability(buffer: *const u8, size: u32, check: u8, is_writer: *mut u8, validation_schema: *mut u32, blocking_factor: *mut u32);
 }
 unsafe extern "C" {
-    fn StringsAreMatched(a: *const i8, b: *const i8) -> i32;
 }
 unsafe extern "C" {
     fn FREE_POOL(Ptr: *mut core::ffi::c_void);
 }
 unsafe extern "C" {
-    fn DeviceFindFeaturePage(buffer: *mut u8, size: u32, feature: u32) -> *mut FEATURE_DATA_CD_READ;
 }
 unsafe extern "C" {
-    fn DevicePrintAllFeaturePages(buffer: *const u8, size: u32);
 }
 unsafe extern "C" {
     // full def sig (sense.rs) — the old zero-arg decl was address-only shorthand
@@ -100,10 +103,8 @@ unsafe extern "C" {
     fn DeviceInitializeMediaChangeDetection(deviceExtension: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
 }
 unsafe extern "C" {
-    fn DeviceSetMediaChangeStateEx( deviceExtension: *mut CDROM_DEVICE_EXTENSION, new_state: u32, old_state: *mut u32, );
 }
 extern "C" {
-    fn DvdStartSessionReadKey( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, IoControlCode: u32, OriginalRequest: WDFREQUEST, InputBuffer: *mut core::ffi::c_void, InputBufferLength: usize, OutputBuffer: *mut core::ffi::c_void, OutputBufferLength: usize, BytesReturned: *mut usize, ) -> NTSTATUS;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -409,7 +410,7 @@ pub unsafe extern "system" fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> N
         let sub = widen(CLASSP_REG_SUBKEY_NAME);
         let val = widen(CLASSP_REG_PERF_RESTORE_VALUE_NAME);
         DeviceGetParameter(
-            deviceExtension as *mut core::ffi::c_void,
+            (deviceExtension as *mut core::ffi::c_void).cast(),
             sub.as_ptr().cast_mut(),
             val.as_ptr().cast_mut(),
             &mut t,
@@ -1197,7 +1198,7 @@ pub unsafe extern "C" fn DeviceInitializeHotplugInfo(
                 let sub = widen(CLASSP_REG_SUBKEY_NAME);
                 let val = widen(CLASSP_REG_REMOVAL_POLICY_VALUE_NAME);
                 DeviceGetParameter(
-                    DeviceExtension as *mut core::ffi::c_void,
+                    (DeviceExtension as *mut core::ffi::c_void).cast(),
                     sub.as_ptr().cast_mut(),
                     val.as_ptr().cast_mut(),
                     &raw mut userRemovalPolicy as *mut DEVICE_REMOVAL_POLICY as *mut u32,
@@ -1220,7 +1221,7 @@ pub unsafe extern "C" fn DeviceInitializeHotplugInfo(
             let sub = widen(CLASSP_REG_SUBKEY_NAME);
             let val = widen(CLASSP_REG_WRITE_CACHE_VALUE_NAME);
             DeviceGetParameter(
-                DeviceExtension as *mut core::ffi::c_void,
+                (DeviceExtension as *mut core::ffi::c_void).cast(),
                 sub.as_ptr().cast_mut(),
                 val.as_ptr().cast_mut(),
                 &raw mut writeCacheOverride,
@@ -1336,7 +1337,7 @@ pub unsafe extern "C" fn DeviceCacheDeviceInquiryData(
         (*cdb).AsByte.as_mut()[4] = (requestedInquiryTransferBytes >> (8 * 0)) as u8;
 
         status = DeviceSendSrbSynchronously(
-            (*DeviceExtension).Device as *mut core::ffi::c_void,
+            ((*DeviceExtension).Device as *mut core::ffi::c_void).cast(),
             core::ptr::addr_of_mut!(srb),
             tmpInquiry as *mut core::ffi::c_void,
             requestedInquiryTransferBytes,
@@ -1403,7 +1404,7 @@ pub unsafe extern "C" fn DeviceCacheDeviceInquiryData(
         (*cdb).AsByte.as_mut()[4] = (requestedInquiryTransferBytes >> (8 * 0)) as u8;
 
         status = DeviceSendSrbSynchronously(
-            (*DeviceExtension).Device as *mut core::ffi::c_void,
+            ((*DeviceExtension).Device as *mut core::ffi::c_void).cast(),
             core::ptr::addr_of_mut!(srb),
             tmpInquiry as *mut core::ffi::c_void,
             requestedInquiryTransferBytes,
@@ -1438,7 +1439,7 @@ pub unsafe extern "C" fn DeviceCacheDeviceInquiryData(
                     (*cdb).AsByte.as_mut()[4] = (requestedInquiryTransferBytes >> (8 * 0)) as u8;
 
                     status = DeviceSendSrbSynchronously(
-                        (*DeviceExtension).Device as *mut core::ffi::c_void,
+                        ((*DeviceExtension).Device as *mut core::ffi::c_void).cast(),
                         core::ptr::addr_of_mut!(srb),
                         tmpInquiry as *mut core::ffi::c_void,
                         requestedInquiryTransferBytes,
@@ -1505,11 +1506,11 @@ pub unsafe extern "C" fn DeviceSetRawReadInfo(
         let additional_length: u32 =
             core::mem::size_of::<FEATURE_DATA_CD_READ>() as u32 - core::mem::size_of::<FEATURE_HEADER>() as u32;
 
-        cd_read_header = DeviceFindFeaturePage(
-            (*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBuffer as *mut u8,
+        cd_read_header = (DeviceFindFeaturePage(
+            ((*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBuffer as *mut u8).cast(),
             (*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBufferSize,
             FeatureCdRead,
-        );
+        )).cast();
 
         if !cd_read_header.is_null()
             && u32::from((*cd_read_header).Header.AdditionalLength) >= additional_length
@@ -1581,7 +1582,7 @@ pub unsafe extern "C" fn DeviceSetRawReadInfo(
         core::ptr::write_bytes((buffer) as *mut u8, 0, buffer_length as usize);
 
         status = DeviceSendSrbSynchronously(
-            (*DeviceExtension).Device as *mut core::ffi::c_void,
+            ((*DeviceExtension).Device as *mut core::ffi::c_void).cast(),
             &mut srb,
             buffer as *mut core::ffi::c_void,
             buffer_length,
@@ -4791,7 +4792,7 @@ pub unsafe extern "system" fn DeviceScanSpecialDevices(DeviceExtension: PCDROM_D
 
         // Send synchronous SRB
         let status = DeviceSendSrbSynchronously(
-            (*DeviceExtension).Device as *mut core::ffi::c_void,
+            ((*DeviceExtension).Device as *mut core::ffi::c_void).cast(),
             core::ptr::addr_of_mut!(srb),
             mode_parameters as *mut core::ffi::c_void,
             core::mem::size_of::<MODE_PARM_READ_WRITE_DATA>() as u32,
@@ -4915,15 +4916,15 @@ pub unsafe extern "system" fn DeviceInitMmcContext(
         );
 
         DevicePrintAllFeaturePages(
-            (*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBuffer as *const u8,
+            ((*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBuffer as *mut u8).cast(),
             (*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBufferSize,
         );
 
-        header = DeviceFindFeaturePage(
-            (*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBuffer as *mut u8,
+        header = (DeviceFindFeaturePage(
+            ((*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBuffer as *mut u8).cast(),
             (*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBufferSize,
             FeatureAACS,
-        );
+        )).cast();
         if !header.is_null() {
             TracePrint!(
                 TRACE_LEVEL_INFORMATION,
@@ -4939,11 +4940,11 @@ pub unsafe extern "system" fn DeviceInitMmcContext(
             (*DeviceExtension).DeviceAdditionalData.Mmc.IsAACS = 1u8;
         }
 
-        header = DeviceFindFeaturePage(
-            (*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBuffer as *mut u8,
+        header = (DeviceFindFeaturePage(
+            ((*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBuffer as *mut u8).cast(),
             (*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBufferSize,
             FeatureDvdRead,
-        );
+        )).cast();
         if !header.is_null() {
             (*DeviceExtension).DeviceAdditionalData.DriveDeviceType = FILE_DEVICE_DVD;
         }
@@ -4957,11 +4958,11 @@ pub unsafe extern "system" fn DeviceInitMmcContext(
             core::ptr::addr_of_mut!(blockingFactor),
         );
 
-        header = DeviceFindFeaturePage(
-            (*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBuffer as *mut u8,
+        header = (DeviceFindFeaturePage(
+            ((*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBuffer as *mut u8).cast(),
             (*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBufferSize,
             FeatureDvdCSS,
-        );
+        )).cast();
 
         (*DeviceExtension).DeviceAdditionalData.Mmc.IsCssDvd =
             if !header.is_null() && (*(header as *mut FEATURE_HEADER)).Current() != 0 {
@@ -5037,7 +5038,7 @@ pub unsafe extern "system" fn DeviceGetMmcSupportInfo(
     // never consulted, so a non-MMC drive re-timed-out on every start.)
     previously_failed = 0; // FALSE
     DeviceGetParameter(
-        DeviceExtension as *mut core::ffi::c_void,
+        (DeviceExtension as *mut core::ffi::c_void).cast(),
         CDROM_SUBKEY_NAME as *mut u16,
         CDROM_NON_MMC_DRIVE_NAME as *mut u16,
         &mut previously_failed,
@@ -5050,7 +5051,7 @@ pub unsafe extern "system" fn DeviceGetMmcSupportInfo(
     // read from the registry in case the drive reports bad profile lengths
     previously_failed = 0;
     DeviceGetParameter(
-        DeviceExtension as *mut core::ffi::c_void,
+        (DeviceExtension as *mut core::ffi::c_void).cast(),
         CDROM_SUBKEY_NAME as *mut u16,
         CDROM_NON_MMC_VENDOR_SPECIFIC_PROFILE as *mut u16,
         &mut previously_failed,
@@ -5209,7 +5210,7 @@ pub unsafe extern "system" fn DeviceGetMmcSupportInfo(
         // and a timeout is occurring.
         previously_failed = 0;
         DeviceGetParameter(
-            DeviceExtension as *mut core::ffi::c_void,
+            (DeviceExtension as *mut core::ffi::c_void).cast(),
             CDROM_SUBKEY_NAME as *mut u16,
             CDROM_TYPE_ONE_GET_CONFIG_NAME as *mut u16,
             &mut previously_failed,
