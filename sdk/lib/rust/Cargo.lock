@@ -4232,6 +4232,7 @@ name = "ole32-rust"
 version = "0.1.0"
 dependencies = [
  "com-sys",
+ "ntdll-sys",
  "panic-common",
  "winedebug-rust",
  "winelist-rust",
