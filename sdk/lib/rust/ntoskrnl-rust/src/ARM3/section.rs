@@ -1468,6 +1468,14 @@ pub unsafe extern "system" fn MiFlushTbAndCapture(
     }
     MI_UPDATE_VALID_PTE(pointer_pte, temp_pte);
     // All CPUs, not the C's KeFlushCurrentTb: see virtual.rs MiProcessValidPteList.
+    // arm64 invalidates just this VA: `tlbi vae1is` broadcasts in hardware and every PTE
+    // here is global, so it reaches every CPU's copy of this one entry. The full
+    // `vmalle1is` ran once per page of every NtProtectVirtualMemory, and under TCG cost
+    // about 12 ms a call: FEX re-protects guest code pages constantly (cpl-console made
+    // 312 such calls and timed out under appstorm64).
+    #[cfg(target_arch = "aarch64")]
+    ntkrnl_sys::inline::mm::KeInvalidateTlbEntry(MiPteToAddress(pointer_pte));
+    #[cfg(not(target_arch = "aarch64"))]
     ntkrnl_sys::inline::mm::KeFlushProcessTb();
     #[cfg(target_arch = "aarch64")]
     {

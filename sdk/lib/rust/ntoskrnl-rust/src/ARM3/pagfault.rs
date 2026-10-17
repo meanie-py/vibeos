@@ -2609,7 +2609,14 @@ pub unsafe extern "system" fn MmArmAccessFault(
         {
             MmRebalanceMemoryConsumers();
         } else {
+            // The balancer can now give pages back (cached section pages, rmap.rs), so a
+            // fault that waited for it and finds pages free again retries: success
+            // re-executes the access, which faults afresh. Only on progress, so a
+            // machine that is truly out still fails the starving app as above.
             MmRebalanceMemoryConsumersAndWait();
+            if MmAvailablePages > 4 * crate::ARM3::mminit::MmMinimumFreePages {
+                return STATUS_SUCCESS;
+            }
         }
     }
 

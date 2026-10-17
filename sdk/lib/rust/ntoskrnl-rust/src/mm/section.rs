@@ -1936,7 +1936,12 @@ pub unsafe extern "system" fn MmCheckDirtySegment(
                     &mut resource_to_release,
                 );
                 if status >= 0 {
-                    IoSetTopLevelIrp(0x80000000usize as PIRP);
+                    // The C's FSRTL_MOD_WRITE_TOP_LEVEL_IRP. This was a literal 0x80000000,
+                    // above FSRTL_MAX_TOP_LEVEL_IRP_FLAG, so the filesystem took it for a real
+                    // IRP: fastfat's FatCommonWrite read its NodeType and bugchecked 0x23. Only
+                    // a page-out of a dirty data-file page gets here, which arm64 first did once
+                    // cached section pages became reclaimable (rmap.rs).
+                    IoSetTopLevelIrp(FSRTL_MOD_WRITE_TOP_LEVEL_IRP as PIRP);
                 } else {
                     resource_to_release = core::ptr::null_mut();
                 }

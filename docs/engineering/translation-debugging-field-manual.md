@@ -3189,6 +3189,11 @@ the C says FileEndOfFileInformation (20). Every file-backed section larger than 
 back SECTION_NOT_EXTENDED, and setup's cabinet extraction lost 964 files. ps-rust's apphelp
 passed 0 for FileBasicInformation. `scan_info_class_literals` requires the class to be named in
 every file-information call (gated at zero).
+The same file can hold the right constant and still call with an invented one: `mm/section.rs`
+defines `FSRTL_MOD_WRITE_TOP_LEVEL_IRP = 0x03`, yet `MmCheckDirtySegment` passed
+`IoSetTopLevelIrp(0x80000000)`. Anything above `FSRTL_MAX_TOP_LEVEL_IRP_FLAG` is taken for a real
+IRP, so fastfat's FatCommonWrite read a NodeType at 0x80000000 and bugchecked 0x23, but only
+under memory pressure, on a page-out of a dirty data-file page, which hid it for months.
 
 **And a correct constant cast too narrow:** disk.sys set `(SRB_CLASS_FLAGS_PERSISTANT as USHORT)
 as u32` on its flush SRB: 0x20000000 as `u16` is 0. classpnp then freed an SRB that lives in the
@@ -12457,6 +12462,18 @@ touches addresses, and boot several sizes (QEMU BIOS at 4/12/32 GiB, `VIBEOS_QEM
 and `q35,mem` for UEFI) before blaming the cap. A HAL bounce through map registers for 32-bit
 scsiport masters looked right and broke uniata, which does its own bouncing: scsiport's
 `IoFlushAdapterBuffers` then copies an untouched map buffer over the data.
+
+### Free memory drifts down app after app while commit stays flat (arm64)
+Symptom: a long sweep (appstorm64) loses available memory with every new image it loads, the
+commit charge does not move, and a smaller VM starves apps at 7-20 MB free. `--tripwire
+MEMCENSUS=1` puts the loss in the `ros` column: section pages the ReactOS Mm allocated, held by
+their segment after the last view went. Cause: arm64's `MmPageOutPhysicalAddress` returned
+UNSUCCESSFUL for a page with no process rmap (a bring-up `#ifdef _M_ARM64` carried into the
+Rust), so the balancer could never release a cached page there; and it trimmed only below 256
+free pages. Fix: the segment (`WriteSegment`) path on every arch, plus trimming below
+`MmLowMemoryThreshold` (`docs/engineering/mm-section-cache-standby-design.md`). An arm64
+`#ifdef` that turns a bugcheck or a reclaim into "return UNSUCCESSFUL" hides the work, not just
+the crash; when memory runs out on arm64 only, grep for them first.
 
 ### Other Mm one-offs
 - **A registry/hive addition that "shouldn't matter" trips an early 0x50** `[§9.10]` — the
