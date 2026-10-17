@@ -1,0 +1,14 @@
+[package]
+name = "vibeos-lint"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+regex = "=1.11.1"
+rayon = "=1.10.0"
+
+[profile.release]
+lto = "thin"

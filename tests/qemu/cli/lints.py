@@ -15,6 +15,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+from . import rustlints
 from .artifacts import Run, Stage
 
 BASELINE_DIR = "tools/lint-baseline"
@@ -1720,7 +1721,12 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # no-op under a check-only scan — then wire it here as a strict 0-baseline.
     # The bind-all *fixes* themselves are already in the tree and compile-verified.
 
-    return specs
+    return [
+        (name, [rustlints.SENTINEL, name], "stdout")
+        if name in rustlints.PORTED
+        else (name, cmd, src)
+        for name, cmd, src in specs
+    ]
 
 
 # Audited CLI paths read Rust sources only and prune Cargo output before traversal.
@@ -1790,22 +1796,43 @@ def run_source_lints(
             raise ValueError(f"empty or unknown scanner selection: {sorted(unknown)}")
     todo = [(n, c, s) for n, c, s in specs if only is None or n in only]
     # NOCHECK/MISSING never spawn anything; they are classified in phase 2 alone.
-    runnable = [(n, c) for n, c, _ in todo if c[0] not in ("NOCHECK", "MISSING")]
+    ported = [n for n, c, _ in todo if c[0] == rustlints.SENTINEL]
+    runnable = [
+        (n, c) for n, c, _ in todo if c[0] not in ("NOCHECK", "MISSING", rustlints.SENTINEL)
+    ]
     done: dict[str, subprocess.CompletedProcess] = {}
-    workers = min(lint_jobs(), len(runnable))
+    workers = min(lint_jobs(), len(runnable) + bool(ported))
     if workers > 1:
         from concurrent.futures import ThreadPoolExecutor
 
         # Threads, not processes: each worker blocks in subprocess.run, which holds
         # no GIL, and `Run.run` already serialises its own log writes under a lock.
         with ThreadPoolExecutor(max_workers=workers) as pool:
+            shared = (
+                pool.submit(
+                    rustlints.run_many,
+                    repo,
+                    ported,
+                    lambda cmd: run.run(cmd, cwd=repo, stage="lint:vibeos-lint"),
+                )
+                if ported
+                else None
+            )
             futures = {
                 name: pool.submit(run.run, cmd, cwd=repo, stage=f"lint:{name}")
                 for name, cmd in runnable
             }
             for name, fut in futures.items():
                 done[name] = fut.result()
+            if shared is not None:
+                done.update(shared.result())
     else:
+        if ported:
+            done.update(
+                rustlints.run_many(
+                    repo, ported, lambda cmd: run.run(cmd, cwd=repo, stage="lint:vibeos-lint")
+                )
+            )
         for name, cmd in runnable:
             done[name] = run.run(cmd, cwd=repo, stage=f"lint:{name}")
     for name, cmd, src in todo:
@@ -1841,13 +1868,32 @@ def write_baselines(repo: Path, only: set[str] | None = None) -> dict:
     out: dict = {}
     bdir = repo / BASELINE_DIR
     bdir.mkdir(parents=True, exist_ok=True)
-    for name, cmd, src in source_lint_specs(repo):
+    specs = source_lint_specs(repo)
+    ported = [n for n, c, _ in specs if c[0] == rustlints.SENTINEL and (only is None or n in only)]
+    shared = (
+        rustlints.run_many(
+            repo,
+            ported,
+            lambda cmd: subprocess.run(cmd, cwd=repo, capture_output=True, text=True, timeout=600),
+        )
+        if ported
+        else {}
+    )
+    # Refuse the whole update before touching any baseline if the shared scan failed.
+    for name, cp in shared.items():
+        if _scanner_error(cp, "stdout"):
+            raise RuntimeError(f"SCANNER_ERROR: {name} did not complete; refusing baseline update")
+    for name, cmd, src in specs:
         if only is not None and name not in only:
             continue
         if cmd[0] == "MISSING":
             continue
         try:
-            cp = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, timeout=600)
+            cp = (
+                shared[name]
+                if name in shared
+                else subprocess.run(cmd, cwd=repo, capture_output=True, text=True, timeout=600)
+            )
         except (OSError, subprocess.SubprocessError):
             continue
         if _scanner_error(cp, src):
