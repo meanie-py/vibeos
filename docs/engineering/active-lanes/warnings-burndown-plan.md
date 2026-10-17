@@ -18,6 +18,17 @@ now in `rust_ub_deny` next to `invalid_value` and `deref_nullptr`. Re-run the ce
 `python3 tools/rust_warning_census.py build-i386 build-amd64 build-arm64`. Details are under
 "2026-10-17" below.
 
+**Final census, 2026-10-17 morning** (3-arch build of d7f6514670b): **2,014 sites, 0 UB,
+913 LOGIC, 1,101 NOISE.** `clashing_extern` is 889, of which 880 are shell32's.
+**Open, for the control-plane lane:** a unit the artifact store restores can carry diagnostics
+older than its own metadata. conutils' fingerprint JSON has `declared_features: ["USE_CRT"]`,
+yet its `output-lib` replays "no expected values for `feature`". Every file in the unit is
+hardlinked (links=2) and carries the 06:35 restore time, against a Cargo.toml edited at 05:56.
+That is why the census still shows conutils' 14 and ws2_32's 1 `unexpected_cfgs`, which a
+plain `cargo check` reports as 0. The census now treats a manifest newer than the build as
+stale, but that cannot catch this case, because the restore stamped the unit newer than the
+edit.
+
 **Later on 2026-10-17** (after that census; landed as b8f5a91889d, dd8d8701261 and the
 `unexpected_cfgs` batch):
 - **`improper_ctypes` 48 -> 0, now denied.** All of the UB tier is denied in `rust_ub_deny`.
