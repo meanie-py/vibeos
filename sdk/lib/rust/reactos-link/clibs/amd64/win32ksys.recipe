@@ -1,0 +1,2 @@
+# win32ksys (amd64), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+asm	win32ss/sys-stubs.S	sdk/include/asm @build/sdk/include/asm @build/win32ss win32ss @std win32ss/include vendor/freetype/include sdk/include/reactos/subsys sdk/include/reactos/drivers	@core	KDBG LANGPACK _WIN32K_

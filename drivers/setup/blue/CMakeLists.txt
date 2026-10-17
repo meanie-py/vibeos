@@ -6,13 +6,9 @@ include_directories(${REACTOS_SOURCE_DIR}/sdk/include/reactos/drivers)
 # The translated C, kept on disk:
 # blue.c  # replaced by Rust (sdk/lib/rust/blue-rust/src/blue/blue.rs)
 # font.c  # replaced by Rust (sdk/lib/rust/blue-rust/src/blue/font.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(blue_res OBJECT blue.rc)
-target_include_directories(blue_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(blue blue-cargo blue.sys
     KIND kernelmodedriver
     BODY_CRATE blue-rust
     DESTINATION reactos/system32/drivers
     NO_CAB
-    EXTRA_DEPENDS blue_res psdk)
+    EXTRA_DEPENDS psdk)

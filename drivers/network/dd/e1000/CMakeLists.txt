@@ -15,12 +15,8 @@ add_driver_inf(e1000 nete1000.inf)
 # interrupt.c  # replaced by Rust (sdk/lib/rust/e1000-rust/src/e1000/interrupt.rs)
 # debug.c  # replaced by Rust (sdk/lib/rust/e1000-rust/src/e1000/debug.rs)
 # send.c  # replaced by Rust (sdk/lib/rust/e1000-rust/src/e1000/send.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(e1000_res OBJECT e1000.rc)
-target_include_directories(e1000_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(e1000 e1000-cargo e1000.sys
     KIND kernelmodedriver
     BODY_CRATE e1000-rust
     DESTINATION reactos/system32/drivers
-    EXTRA_DEPENDS e1000_res psdk)
+    EXTRA_DEPENDS psdk)

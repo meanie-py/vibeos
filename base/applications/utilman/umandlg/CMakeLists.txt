@@ -7,13 +7,8 @@ spec2def(umandlg.dll umandlg.spec)
 # process.c  # replaced by Rust (sdk/lib/rust/umandlg-rust/src/umandlg/process.rs)
 # registry.c  # replaced by Rust (sdk/lib/rust/umandlg-rust/src/umandlg/registry.rs)
 # umandlg.c  # replaced by Rust (sdk/lib/rust/umandlg-rust/src/umandlg/umandlg.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(umandlg_res OBJECT umandlg.rc)
-target_compile_definitions(umandlg_res PRIVATE UNICODE _UNICODE)
-target_include_directories(umandlg_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(umandlg umandlg-cargo umandlg.dll
     KIND win32dll
     BODY_CRATE umandlg-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS umandlg_res)
+    EXTRA_DEPENDS psdk)

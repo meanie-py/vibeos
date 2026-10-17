@@ -1,0 +1,2 @@
+# memcmp (amd64), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+c	sdk/lib/crt/mem/memcmp.c	@build/sdk/lib/crt sdk/lib/crt @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include sdk/lib/crt/include sdk/lib/crt/libm_sse2 sdk/include/wine sdk/lib/crt/include/internal/mingw-w64	-std=gnu99 -U_X86_ -UWIN32 @core	WINVER=0x502 _CRTBLD _WIN32_WINNT=0x502

@@ -7,13 +7,8 @@ spec2def(w32time.dll w32time.spec ADD_IMPORTLIB)
 # w32time.c  # replaced by Rust (sdk/lib/rust/w32time-rust/src/w32time/w32time.rs)
 # ntpclient.c  # replaced by Rust (sdk/lib/rust/w32time-rust/src/w32time/ntpclient.rs)
 # register.c  # replaced by Rust (sdk/lib/rust/w32time-rust/src/w32time/register.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(w32time_res OBJECT w32time.rc)
-target_compile_definitions(w32time_res PRIVATE UNICODE _UNICODE)
-target_include_directories(w32time_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(w32time w32time-cargo w32time.dll
     KIND win32dll
     BODY_CRATE w32time-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS w32time_res)
+    EXTRA_DEPENDS psdk)

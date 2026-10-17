@@ -7,6 +7,20 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The module's part of cmake's windres command; reactos-link adds what every
+    // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
+    let rc_includes: &[&str] = &[
+        "@build/base/applications/control",
+        "base/applications/control",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+    ];
+    let rc_flags: &[&str] = &[];
+    let rc_defines: &[&str] = &["UNICODE", "WINVER=0x502", "_UNICODE", "_WIN32_WINNT=0x502"];
+
     let (target_json, entry) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_wWinMainCRTStartup"),
         "x86_64" => ("x86_64-pc-windows-gnu", "wWinMainCRTStartup"),
@@ -23,7 +37,7 @@ fn main() {
 
     Linker::new(target_json)
         .rust_staticlib("control-rust")
-        .resource_from_rc("base/applications/control/control.rc", "control_res")
+        .rc("base/applications/control/control.rc", rc_includes, rc_flags, rc_defines)
         .delay_import_lib("dll/win32/ole32/ole32.spec", "ole32.dll", "ole32")
         .import_lib("dll/win32/advapi32/advapi32.spec", "advapi32.dll", "advapi32")
         .import_lib("dll/win32/shell32/shell32.spec", "shell32.dll", "shell32")

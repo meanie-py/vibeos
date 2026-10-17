@@ -7,6 +7,21 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The module's part of cmake's windres command; reactos-link adds what every
+    // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
+    let rc_includes: &[&str] = &[
+        "@build/win32ss/printing/providers/localspl",
+        "win32ss/printing/providers/localspl",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+        "win32ss/printing/include",
+    ];
+    let rc_flags: &[&str] = &[];
+    let rc_defines: &[&str] = &["UNICODE", "WINVER=0x502", "_UNICODE", "_WIN32_WINNT=0x600"];
+
     let (target_json, entry, image_base) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_DllMainCRTStartup@12", Some(0x72a60000u64)),
         "x86_64" => ("x86_64-pc-windows-gnu", "DllMainCRTStartup", Some(0x7fef6000000u64)),
@@ -23,7 +38,7 @@ fn main() {
 
     Linker::new(target_json)
         .rust_staticlib("localspl-rust")
-        .resource_from_rc("win32ss/printing/providers/localspl/localspl.rc", "localspl_res")
+        .rc("win32ss/printing/providers/localspl/localspl.rc", rc_includes, rc_flags, rc_defines)
         .spec2def("win32ss/printing/providers/localspl/localspl.spec", "localspl.dll")
         .spec_stubs()
         .import_lib("win32ss/user/user32/user32.spec", "user32.dll", "user32")

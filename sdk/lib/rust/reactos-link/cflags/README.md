@@ -1,5 +1,11 @@
 # Committed C-compile flag templates — cmake-off fallback (WS1 DEEP)
 
+**`rc.<arch>.flags`** and **`c.<arch>.flags`** are different in kind: it is not a fallback but the shared part of
+cmake's windres rule and C rule, which `Linker::rc` / `Linker::c_compiled` complete with
+each cell's own includes, flags and defines for EVERY such compile, cmake build or not (docs/engineering/
+cargo-drive-plan.md, rung 4). Regenerate with `python3 tools/cargo_cell_gen.py
+--rc-template` / `--c-template`.
+
 These are per-arch flag templates that let `reactos-link`'s
 `c_from_compile_db(<name>, …)` compile its C floor **without** a configured
 `build-<arch>/compile_commands.json` — the cmake-off path (a cargo build with no

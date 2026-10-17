@@ -5,13 +5,8 @@ include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_or
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # timeout.c  # replaced by Rust (sdk/lib/rust/timeout-rust/src/timeout/timeout.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(timeout_res OBJECT timeout.rc)
-target_compile_definitions(timeout_res PRIVATE UNICODE _UNICODE)
-target_include_directories(timeout_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(timeout timeout-cargo timeout.exe
     KIND win32exe
     BODY_CRATE timeout-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS timeout_res xdk)
+    EXTRA_DEPENDS xdk psdk)

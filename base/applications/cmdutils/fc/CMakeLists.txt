@@ -7,13 +7,8 @@ include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_or
 # fc.c  # replaced by Rust (sdk/lib/rust/fc-rust/src/fc/fc.rs)
 # texta.c  # replaced by Rust (sdk/lib/rust/fc-rust/src/fc/texta.rs)
 # textw.c  # replaced by Rust (sdk/lib/rust/fc-rust/src/fc/textw.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(fc_res OBJECT fc.rc)
-target_compile_definitions(fc_res PRIVATE UNICODE _UNICODE)
-target_include_directories(fc_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(fc fc-cargo fc.exe
     KIND win32exe
     BODY_CRATE fc-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS fc_res xdk)
+    EXTRA_DEPENDS xdk psdk)

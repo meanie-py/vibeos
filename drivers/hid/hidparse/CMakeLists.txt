@@ -1,4 +1,3 @@
-
 spec2def(hidparse.sys hidparse.spec ADD_IMPORTLIB)
 
 # ============================================================================
@@ -17,8 +16,6 @@ spec2def(hidparse.sys hidparse.spec ADD_IMPORTLIB)
 # spec2def(... ADD_IMPORTLIB) above STAYS (consumers link the libhidparse implib).
 # The version resource: cmake compiles it in this OBJECT library, whose windres
 # command the cargo link replays.
-add_library(hidparse_res OBJECT hidparse.rc)
-target_include_directories(hidparse_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(hidparse hidparse-cargo hidparse.sys KIND kerneldll
     BODY_CRATES hidparse-rust hidparser-rust DESTINATION reactos/system32/drivers
-    EXTRA_DEPENDS hidparse_res psdk)
+    EXTRA_DEPENDS psdk)

@@ -5,16 +5,8 @@ include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_or
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # attrib.c  # replaced by Rust (sdk/lib/rust/attrib-rust/src/attrib/attrib.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(attrib_shims OBJECT rust_varargs_shim.c)
-target_compile_definitions(attrib_shims PRIVATE UNICODE _UNICODE)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(attrib_res OBJECT attrib.rc)
-target_compile_definitions(attrib_res PRIVATE UNICODE _UNICODE)
-target_include_directories(attrib_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(attrib attrib-cargo attrib.exe
     KIND win32exe
     BODY_CRATE attrib-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS attrib_shims attrib_res xdk)
+    EXTRA_DEPENDS xdk psdk)

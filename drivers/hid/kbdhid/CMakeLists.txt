@@ -10,13 +10,9 @@
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # replaced by Rust (sdk/lib/rust/kbdhid-rust): kbdhid.c
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(kbdhid_res OBJECT kbdhid.rc)
-target_include_directories(kbdhid_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(kbdhid kbdhid-cargo kbdhid.sys
     KIND kernelmodedriver
     BODY_CRATE kbdhid-rust
     DESTINATION reactos/system32/drivers
     NO_CAB
-    EXTRA_DEPENDS kbdhid_res psdk)
+    EXTRA_DEPENDS psdk)

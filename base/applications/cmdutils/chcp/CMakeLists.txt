@@ -5,13 +5,8 @@ include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_or
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # chcp.c  # replaced by Rust (sdk/lib/rust/chcp-rust/src/chcp/chcp.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(chcp_res OBJECT chcp.rc)
-target_compile_definitions(chcp_res PRIVATE UNICODE _UNICODE)
-target_include_directories(chcp_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(chcp chcp-cargo chcp.com
     KIND win32exe
     BODY_CRATE chcp-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS chcp_res xdk)
+    EXTRA_DEPENDS xdk psdk)
