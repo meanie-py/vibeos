@@ -346,6 +346,18 @@ def _crate_for_stem(repo: Path, stem: str) -> Path | None:
     return None
 
 
+def _crate_for_artifact(repo: Path, rel: str) -> Path | None:
+    """The cohab crate of a staged binary, by its file name.
+
+    A binary whose extension is part of its name loses it to `Path.stem`: wdmaud.drv's stem
+    is `wdmaud`, which is wdmaud.SYS's crate, so a kernel-crate rebuild reported wdmaud.drv
+    "never relinked" against an archive it does not link (the arm64 build, 2026-10-17). Port
+    names such a crate with the dot as `_` (`wdmaud_drv-rust`), so that spelling is tried
+    first; the stem only when no crate has the full name."""
+    name = Path(rel).name
+    return _crate_for_stem(repo, name.replace(".", "_")) or _crate_for_stem(repo, Path(rel).stem)
+
+
 @functools.lru_cache(maxsize=4)
 def _cmake_named_crates(repo: str) -> frozenset[str] | None:
     """Every `<name>-rust` crate some CMake file names (a cohab flip's
@@ -493,8 +505,7 @@ def boot_set_cohab_rels(repo: Path, arch: str) -> list[str]:
     return sorted(
         rel
         for rel in boot_set
-        if Path(rel).suffix.lower() in _PE_SUFFIXES
-        and _crate_for_stem(repo, Path(rel).stem) is not None
+        if Path(rel).suffix.lower() in _PE_SUFFIXES and _crate_for_artifact(repo, rel) is not None
     )
 
 
@@ -555,7 +566,7 @@ def cohab_staleness_reasons(repo: Path, arch: str) -> list[str]:
     build_dir = repo / f"build-{archcfg.base_arch(arch)}"
     reasons = []
     for rel in boot_set_cohab_rels(repo, arch):
-        crate = _crate_for_stem(repo, Path(rel).stem)
+        crate = _crate_for_artifact(repo, rel)
         assert crate is not None  # boot_set_cohab_rels only returns mapped rels
         artifact = build_dir / rel
         if not artifact.is_file():

@@ -3054,3 +3054,29 @@ pub unsafe fn KeSaveFloatingPointState(_FloatSave: ddk::PKFLOATING_SAVE) -> NTST
 pub unsafe fn KeRestoreFloatingPointState(_FloatSave: ddk::PKFLOATING_SAVE) -> NTSTATUS {
     0 // STATUS_SUCCESS
 }
+
+// ============================================================================
+// _disable / _enable (intrin.h): compiler intrinsics, never exports
+// ============================================================================
+// A driver's C calls them and the compiler emits the instruction in place. blue.sys's
+// translation declared them `extern` (copied from kernel-rust's declaration), which linked
+// on amd64 only by accident -- ke_amd64.rs's global_asm happens to define the symbols -- and
+// failed i386 (`__disable`) and arm64. Inline here, as MSVC emits them: cli/sti on x86, and
+// on arm64 the IRQ mask bit (DAIF.I), `msr daifset/daifclr, #2`. No `nomem`: each is a compiler barrier, so no load or store
+// of the critical section moves across it.
+
+#[inline(always)]
+pub unsafe fn _disable() {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    core::arch::asm!("cli", options(nostack));
+    #[cfg(target_arch = "aarch64")]
+    core::arch::asm!("msr daifset, #2", options(nostack));
+}
+
+#[inline(always)]
+pub unsafe fn _enable() {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    core::arch::asm!("sti", options(nostack));
+    #[cfg(target_arch = "aarch64")]
+    core::arch::asm!("msr daifclr, #2", options(nostack));
+}

@@ -205,6 +205,7 @@ members = [
     "sysaudio-rust",
     "sysaudio-difftest",
     "audio-convert-difftest",
+    "ddk-macros-rust",
     "portcls-difftest",
     "varargs-rust",
     "drvtrace-shim",
@@ -852,6 +853,13 @@ members = [
     "mmdrv-rust",
     "beepmidi-rust",
     "sndblst-rust",
+    "reactos-rust",
+    "blue-rust",
+    "ndisuio-rust",
+    "netio-rust",
+    "rtl8139-rust",
+    "tdi-rust",
+    "tzlib-rust",
 ]
 resolver = "2"
 

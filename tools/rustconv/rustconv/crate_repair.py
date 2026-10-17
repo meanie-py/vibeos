@@ -2571,6 +2571,58 @@ def _guid_eq_rule(
     )
 
 
+_PTR_INT_RE = re.compile(
+    r"cannot (add|subtract) `(?P<int>[iu](?:8|16|32|64|128|size))` (?:to|from) "
+    r"`\*(?:mut|const) [^`]+`"
+)
+
+
+def _ptr_int_arith_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """E0369 `(*Adapter).IoBase + R_CMD`: C pointer arithmetic, which Rust has no operator for.
+
+    C scales `p + n` by the pointee size and so does `wrapping_add`, so the rewrite is exact
+    whatever the pointee; `wrapping_` keeps C's freedom to form an address it never reads
+    through (rtl8139 adds port offsets to an I/O base it hands to READ_PORT_UCHAR). A signed
+    offset goes through `wrapping_offset` so a negative one stays negative. rustc names both
+    operands (secondary spans) around the operator (primary)."""
+    if (diagnostic.get("code") or {}).get("code") != "E0369":
+        return [], [], False
+    m = _PTR_INT_RE.search(str(diagnostic.get("message") or ""))
+    if m is None:
+        return [], [], False
+    spans = diagnostic.get("spans") or []
+    ops = sorted(
+        (s for s in spans if not s.get("is_primary")), key=lambda s: int(s.get("byte_start") or 0)
+    )
+    if len(ops) != 2 or ops[0].get("file_name") != ops[1].get("file_name"):
+        return [], [], False
+    file_name = str(ops[0].get("file_name") or "")
+    data = load(file_name)
+    if data is None:
+        return [], [], False
+    a0, a1 = int(ops[0]["byte_start"]), int(ops[0]["byte_end"])
+    b0, b1 = int(ops[1]["byte_start"]), int(ops[1]["byte_end"])
+    op = "+" if m.group(1) == "add" else "-"
+    if data[a1:b0].decode("utf-8", "replace").strip() != op:
+        return [], [], False
+    lhs = data[a0:a1].decode("utf-8", "replace")
+    rhs = data[b0:b1].decode("utf-8", "replace")
+    if m.group("int").startswith("i"):
+        sign = "" if op == "+" else "-"
+        repl = f"({lhs}).wrapping_offset({sign}(({rhs}) as isize))"
+    else:
+        method = "wrapping_add" if op == "+" else "wrapping_sub"
+        repl = f"({lhs}).{method}(({rhs}) as usize)"
+    note = "rustc E0369: C pointer arithmetic scales by the pointee, as wrapping_add/offset does"
+    return (
+        [_simple_edit(RULE_OBJECT_DEREF, file_name, data, a0, b1, repl, note, ops[0], ctx)],
+        [],
+        True,
+    )
+
+
 def _heap_ptr_conversion_rule(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -5605,6 +5657,7 @@ _RULE_TABLE: dict[
         _zero_constant_pointer_rule,
         _int_float_arith_rule,
         _guid_eq_rule,
+        _ptr_int_arith_rule,
         _heap_ptr_conversion_rule,
         _com_ptr_receiver_rule,
         _hwnd_to_cwindow_rule,

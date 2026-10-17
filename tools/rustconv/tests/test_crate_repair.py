@@ -3396,6 +3396,40 @@ def test_a_guid_comparison_is_is_equal_guid():
     ]
 
 
+def test_c_pointer_arithmetic_is_a_scaled_wrapping_add():
+    """rtl8139: `(*Adapter).IoBase + R_CMD` -- C scales by the pointee, as wrapping_add does;
+    a signed offset subtracted stays negative through wrapping_offset."""
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    src = b"f((*a).IoBase + R_CMD); g(p - delta);\n"
+    diags = []
+    for lhs, op, rhs, msg in (
+        (b"(*a).IoBase", b"+", b"R_CMD", "cannot add `u32` to `*mut u8`"),
+        (b"p", b"-", b"delta", "cannot subtract `i32` from `*const u16`"),
+    ):
+        a = src.index(lhs)
+        o = src.index(op, a + len(lhs))
+        r = src.index(rhs, o)
+        diags.append(
+            _diag(
+                msg,
+                code="E0369",
+                spans=[
+                    _span("src/a.rs", a, a + len(lhs), label="ptr"),
+                    _span("src/a.rs", r, r + len(rhs), label="int"),
+                    _span("src/a.rs", o, o + 1, is_primary=True),
+                ],
+            )
+        )
+    plan = propose_edits(
+        diags, _reader({"src/a.rs": src}), target="amd64", rules=[RULE_OBJECT_DEREF]
+    )
+    assert sorted(e.replacement for e in plan.edits) == [
+        "((*a).IoBase).wrapping_add((R_CMD) as usize)",
+        "(p).wrapping_offset(-((delta) as isize))",
+    ]
+
+
 def test_a_heap_ptr_where_a_pointer_is_wanted_is_its_held_pointer():
     """cleanmgr: `SetWindowTextW((*h).wszBtnText)` on a CComHeapPtr<WCHAR> field."""
     from rustconv.crate_repair import RULE_OBJECT_DEREF

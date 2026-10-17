@@ -416,6 +416,17 @@ name = "bitmap"
 version = "0.1.0"
 
 [[package]]
+name = "blue-rust"
+version = "0.1.0"
+dependencies = [
+ "ddk-macros-rust",
+ "ntkrnl-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "bmfd-cargo"
 version = "0.1.0"
 dependencies = [
@@ -1214,6 +1225,10 @@ dependencies = [
  "strsafe-rust",
  "win32macros-rust",
 ]
+
+[[package]]
+name = "ddk-macros-rust"
+version = "0.1.0"
 
 [[package]]
 name = "defmt"
@@ -3760,6 +3775,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ndisuio-rust"
+version = "0.1.0"
+dependencies = [
+ "ddk-macros-rust",
+ "ntkrnl-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "net-cargo"
 version = "0.1.0"
 dependencies = [
@@ -3803,6 +3829,17 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "netio-rust"
+version = "0.1.0"
+dependencies = [
+ "ddk-macros-rust",
+ "ntkrnl-sys",
+ "panic-common",
+ "strsafe-rust",
  "win32macros-rust",
 ]
 
@@ -4618,6 +4655,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "reactos-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "recyclebin-rust"
 version = "0.1.0"
 dependencies = [
@@ -4986,6 +5035,17 @@ dependencies = [
  "panic-common",
  "rtl-sync",
  "rtl-threadpool",
+]
+
+[[package]]
+name = "rtl8139-rust"
+version = "0.1.0"
+dependencies = [
+ "ddk-macros-rust",
+ "ntkrnl-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -5936,6 +5996,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tdi-rust"
+version = "0.1.0"
+dependencies = [
+ "ddk-macros-rust",
+ "ntkrnl-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "telephon-cargo"
 version = "0.1.0"
 dependencies = [
@@ -6143,6 +6214,17 @@ dependencies = [
 
 [[package]]
 name = "tree-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "tzlib-rust"
 version = "0.1.0"
 dependencies = [
  "conutils-h",

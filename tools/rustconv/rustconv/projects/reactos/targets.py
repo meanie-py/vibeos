@@ -1445,6 +1445,7 @@ for _name, _dir, _spec in NATIVE_KERNEL_H:
         arches=("i386", "amd64", "arm64"),
     )
 
+
 def detect_target(
     c_path: Path, output_crate: str | None = None, sys_crate: str | None = None
 ) -> Target:
