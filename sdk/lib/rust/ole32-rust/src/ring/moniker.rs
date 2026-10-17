@@ -160,14 +160,25 @@ pub const MAX_COMPARISON_DATA: ULONG = 2048;
 /// The RPC exception filter the C installs around every Irot call
 /// (`__TRY { IrotXxx(..) } __EXCEPT(rpc_filter) { hr = HRESULT_FROM_WIN32(GetExceptionCode()); }`).
 ///
-/// We have no SEH in this crate, so the Irot calls below are UNGUARDED: an RPC
-/// exception (e.g. rpcss not reachable) propagates instead of being converted to an
-/// HRESULT. That is a known faithfulness gap, kept visible here rather than papered
-/// over — the filter itself is translated and ready for the day the ring gets a
-/// try/except facility.
-#[allow(dead_code)]
+/// [`irot_guarded`] installs it through ntdll's trampoline (ntdll_sys::seh), so an RPC
+/// raise (rpcss not reachable) becomes the HRESULT the retry loops below test for. Until
+/// 2026-10-17 the calls were unguarded on every arch: the raise killed the caller, and
+/// every `RPC_S_SERVER_UNAVAILABLE -> start_rpcss()` retry was dead code.
 unsafe fn rpc_filter(eptr: *mut EXCEPTION_POINTERS) -> LONG {
     I_RpcExceptionFilter((*(*eptr).ExceptionRecord).ExceptionCode) as LONG
+}
+
+/// `__TRY { hr = call(); } __EXCEPT(rpc_filter) { hr = HRESULT_FROM_WIN32(GetExceptionCode()); }`
+unsafe fn irot_guarded(call: impl FnOnce() -> HRESULT) -> HRESULT {
+    let mut hr: HRESULT = S_OK;
+    match ntdll_sys::seh::try_except(
+        &mut hr,
+        |hr| *hr = call(),
+        |_, pointers| rpc_filter(pointers as *mut EXCEPTION_POINTERS) as i32,
+    ) {
+        Ok(()) => hr,
+        Err(code) => HRESULT_FROM_WIN32(code as u32),
+    }
 }
 
 /* define the structure of the running object table elements */
@@ -355,13 +366,16 @@ unsafe fn rot_entry_delete(rot_entry: *mut rot_entry) {
         let mut moniker: *mut InterfaceData = core::ptr::null_mut();
 
         // C: __TRY { .. } __EXCEPT(rpc_filter) { } — see the note on rpc_filter.
-        IrotRevoke(
+        irot_guarded(|| {
+            IrotRevoke(
             get_irot_handle(),
             (*rot_entry).cookie,
             core::ptr::addr_of_mut!((*rot_entry).ctxt_handle),
             &mut object,
             &mut moniker,
         );
+            S_OK
+        });
 
         MIDL_user_free(object as LPVOID);
         if !moniker.is_null() {
@@ -815,7 +829,7 @@ fn RunningObjectTableImpl_Register(
 
     loop {
         // C: __TRY { .. } __EXCEPT(rpc_filter) { hr = HRESULT_FROM_WIN32(GetExceptionCode()); }
-        hr = IrotRegister(
+        hr = irot_guarded(|| IrotRegister(
             get_irot_handle(),
             (*rot_entry).moniker_data,
             (*rot_entry).object,
@@ -824,7 +838,7 @@ fn RunningObjectTableImpl_Register(
             grfFlags,
             core::ptr::addr_of_mut!((*rot_entry).cookie),
             core::ptr::addr_of_mut!((*rot_entry).ctxt_handle),
-        );
+        ));
         if hr == HRESULT_FROM_WIN32(RPC_S_SERVER_UNAVAILABLE) && start_rpcss() != 0 {
             continue;
         }
@@ -940,7 +954,7 @@ fn RunningObjectTableImpl_IsRunning(
     if hr == S_FALSE {
         loop {
             // C: __TRY/__EXCEPT(rpc_filter) — see the note on rpc_filter.
-            hr = IrotIsRunning(get_irot_handle(), moniker_data);
+            hr = irot_guarded(|| IrotIsRunning(get_irot_handle(), moniker_data));
             if hr == HRESULT_FROM_WIN32(RPC_S_SERVER_UNAVAILABLE) && start_rpcss() != 0 {
                 continue;
             }
@@ -1034,7 +1048,7 @@ fn RunningObjectTableImpl_GetObject(
 
     loop {
         // C: __TRY/__EXCEPT(rpc_filter) — see the note on rpc_filter.
-        hr = IrotGetObject(get_irot_handle(), moniker_data, &mut object, &mut cookie);
+        hr = irot_guarded(|| IrotGetObject(get_irot_handle(), moniker_data, &mut object, &mut cookie));
         if hr == HRESULT_FROM_WIN32(RPC_S_SERVER_UNAVAILABLE) && start_rpcss() != 0 {
             continue;
         }
@@ -1096,7 +1110,7 @@ fn RunningObjectTableImpl_NoteChangeTime(
 
                 loop {
                     // C: __TRY/__EXCEPT(rpc_filter) — see the note on rpc_filter.
-                    hr = IrotNoteChangeTime(get_irot_handle(), dwRegister, pfiletime);
+                    hr = irot_guarded(|| IrotNoteChangeTime(get_irot_handle(), dwRegister, pfiletime));
                     if hr == HRESULT_FROM_WIN32(RPC_S_SERVER_UNAVAILABLE) && start_rpcss() != 0 {
                         continue;
                     }
@@ -1177,7 +1191,7 @@ fn RunningObjectTableImpl_GetTimeOfLastChange(
     if hr != S_OK {
         loop {
             // C: __TRY/__EXCEPT(rpc_filter) — see the note on rpc_filter.
-            hr = IrotGetTimeOfLastChange(get_irot_handle(), moniker_data, pfiletime);
+            hr = irot_guarded(|| IrotGetTimeOfLastChange(get_irot_handle(), moniker_data, pfiletime));
             if hr == HRESULT_FROM_WIN32(RPC_S_SERVER_UNAVAILABLE) && start_rpcss() != 0 {
                 continue;
             }
@@ -1213,7 +1227,7 @@ fn RunningObjectTableImpl_EnumRunning(
 
     loop {
         // C: __TRY/__EXCEPT(rpc_filter) — see the note on rpc_filter.
-        hr = IrotEnumRunning(get_irot_handle(), &mut interface_list);
+        hr = irot_guarded(|| IrotEnumRunning(get_irot_handle(), &mut interface_list));
         if hr == HRESULT_FROM_WIN32(RPC_S_SERVER_UNAVAILABLE) && start_rpcss() != 0 {
             continue;
         }

@@ -670,3 +670,19 @@ def test_rebound_exports_name_what_the_spec_actually_exports():
         text = specs[module].read_text()
         for name in names:
             assert f" {name}(" in text, f"{module}: {name} is no longer exported"
+
+
+def test_ratchet_trusts_the_source_tree_over_a_stale_graph(monkeypatch, capsys, tmp_path):
+    """A module converted since the last configure still has its cmake link edge in
+    build.ninja; its CMakeLists' add_cargo_module is what says it is done."""
+    import scan_cmake_linked_rust as ratchet
+
+    (tmp_path / "build-amd64").mkdir()
+    (tmp_path / "build-amd64/build.ninja").write_text("")
+    (tmp_path / "dll/m").mkdir(parents=True)
+    (tmp_path / "dll/m/CMakeLists.txt").write_text("add_cargo_module(m m-cargo m.dll\n)\n")
+    monkeypatch.setattr(g, "REPO", tmp_path)
+    monkeypatch.setattr(g, "survey", lambda: [("m", "OK Win32Dll"), ("n", "OK Win32Dll")])
+    ratchet.main()
+    out = capsys.readouterr().out.splitlines()
+    assert out == ["n: fully-Rust module still linked by cmake (convertible)"]

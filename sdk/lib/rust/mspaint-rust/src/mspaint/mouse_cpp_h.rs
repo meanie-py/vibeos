@@ -415,8 +415,7 @@ impl ToolBase {
             }
             _ => {}
         }
-        UNREACHABLE!();
-        core::ptr::null_mut()
+        UNREACHABLE!()
     }
 }
 

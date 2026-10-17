@@ -3405,7 +3405,9 @@ pub unsafe extern "system" fn CreateProcessWithLogonW(
     Response.dwThreadId = 0;
     Response.dwError = ERROR_SUCCESS;
 
-    SeclCreateProcessWithLogonW(hBinding, &mut Request, &mut Response);
+    // RpcTryExcept { .. } RpcExcept(EXCEPTION_EXECUTE_HANDLER) { WARN(..) }: a raise leaves
+    // Response as initialised above.
+    let _ = ntdll_sys::seh::rpc_try(|| SeclCreateProcessWithLogonW(hBinding, &mut Request, &mut Response));
 
     if !hBinding.is_null() {
         Status = RpcBindingFree(&mut hBinding);
