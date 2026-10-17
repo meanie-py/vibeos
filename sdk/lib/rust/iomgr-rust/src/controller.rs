@@ -15,6 +15,11 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::inline::common::InitializeObjectAttributes;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
+/// iotypes.h; not in the arm64 bindgen island, so named here.
+const IO_TYPE_CONTROLLER: i16 = 2;
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+const _: () = assert!(IO_TYPE_CONTROLLER as u32 == ntkrnl_sys::hal_ddk::IO_TYPE_CONTROLLER);
+
 #[no_mangle]
 pub static mut IoControllerObjectType: POBJECT_TYPE = core::ptr::null_mut();
 
@@ -97,7 +102,8 @@ pub unsafe extern "system" fn IoCreateController(Size: ULONG) -> PCONTROLLER_OBJ
         0,
         core::mem::size_of::<CONTROLLER_OBJECT>() + Size as usize,
     );
-    (*Controller).Type = 3i16;
+    // IO_TYPE_CONTROLLER; the old literal 3 was IO_TYPE_DEVICE.
+    (*Controller).Type = IO_TYPE_CONTROLLER;
     (*Controller).Size = (core::mem::size_of::<CONTROLLER_OBJECT>() + Size as usize) as i16;
     (*Controller).ControllerExtension = (Controller as usize + core::mem::size_of::<CONTROLLER_OBJECT>()) as PVOID;
 

@@ -401,7 +401,12 @@ pub unsafe extern "C" fn SepPropagateAcl(
         ace_dest = current_dest as PACCESS_ALLOWED_ACE;
         ace_source = current_source as PACCESS_ALLOWED_ACE;
 
-        if (*ace_source).Header.AceType > ACCESS_MAX_MS_V2_ACE_TYPE {
+        // A mandatory label ACE has ACCESS_ALLOWED_ACE's layout (header, mask, SID), and
+        // Windows inherits it by the ordinary rules: dropped when not inheritable, inherit
+        // flags cleared on a leaf, CREATOR_OWNER replaced (SeInheritance.c:801-838). The C
+        // copied it verbatim like the object ACEs, whose GUIDs move the SID and which stay so.
+        let is_label = (*ace_source).Header.AceType == SYSTEM_MANDATORY_LABEL_ACE_TYPE;
+        if (*ace_source).Header.AceType > ACCESS_MAX_MS_V2_ACE_TYPE && !is_label {
             ace_size = (*ace_source).Header.AceSize;
 
             if *AclLength >= written + ace_size as ULONG {
@@ -431,8 +436,11 @@ pub unsafe extern "C" fn SepPropagateAcl(
 
         write_two_aces = 0u8;
         if (ace_flags & INHERIT_ONLY_ACE) == 0 {
-            RtlMapGenericMask(&mut mask, GenericMapping);
-            mask &= (*GenericMapping).GenericAll;
+            // A label's mask is policy (NO_WRITE_UP and friends), not access rights.
+            if !is_label {
+                RtlMapGenericMask(&mut mask, GenericMapping);
+                mask &= (*GenericMapping).GenericAll;
+            }
 
             if IsInherited != 0u8 {
                 if RtlEqualSid(sid, SeCreatorOwnerSid) != 0u8 {

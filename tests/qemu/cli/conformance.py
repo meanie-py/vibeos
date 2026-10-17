@@ -1069,4 +1069,29 @@ def media_payload_gap(build_dir: Path) -> str | None:
         return f"{stamp} is unreadable ({e}); {fix}"
     if SUITE not in names:
         return f"this media was built with payloads {names or '[]'}, not {SUITE!r}; {fix}"
+    # The stamp says the sweep is staged, not that there is anything for it to run: a
+    # build dir configured without the corpus (a pruned lane's fresh configure defaults
+    # both options OFF) stages kmtest-sweep.exe beside no kmtest_drv.sys, and the round
+    # ends in `[KMTEST-SWEEP] launch FAILED` minutes later (2026-10-16).
+    cache = _cmake_cache_bools(build_dir / "CMakeCache.txt")
+    if cache and not (cache.get("ENABLE_ROSTESTS_KMTESTS") or cache.get("ENABLE_ROSTESTS")):
+        return (
+            f"{build_dir.name} was configured without the kmtest corpus "
+            "(ENABLE_ROSTESTS_KMTESTS=OFF); drop --no-build (conformance passes --kmtests) "
+            f"or `vibeos-cli build --arch <arch> --kmtests` with VIBEOS_PAYLOAD={SUITE}"
+        )
     return None
+
+
+def _cmake_cache_bools(cache: Path) -> dict[str, bool]:
+    """BOOL entries of a CMakeCache.txt; empty when there is none to read."""
+    try:
+        text = cache.read_text(errors="replace")
+    except OSError:
+        return {}
+    out: dict[str, bool] = {}
+    for line in text.splitlines():
+        name, sep, value = line.partition(":BOOL=")
+        if sep:
+            out[name.strip()] = value.strip().upper() in ("ON", "TRUE", "1", "YES")
+    return out

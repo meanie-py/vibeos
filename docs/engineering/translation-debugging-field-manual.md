@@ -3280,6 +3280,13 @@ WEOF and fill-byte idiom, is allowed).
   `A` function misbehaves and its `W` twin does not, diff the two Rust bodies against each
   other before anything else -- the C keeps them parallel, so any non-parallel literal is the
   suspect.
+- **An object's `Type` field is the same class, and conformance is what sees it.** Three
+  kernel initializers wrote `Type` as a literal neighbour: `KeInitializeDeviceQueue` 7
+  (GateObject, not DeviceQueueObject 20), `KeInitializeProfile` 24 (ThreadedDpcObject, not
+  ProfileObject 23), `IoCreateController` 3 (IO_TYPE_DEVICE, not IO_TYPE_CONTROLLER 2). Nothing
+  dispatched on them, so nothing broke; KeDevQueue.c:51 caught the first and a grep for
+  `\.Type = <digits>` found the other two. Name the KOBJECTS value from bindgen
+  (`ddk::_KOBJECTS_*`).
 - **A constant that lives in only SOME arches' islands cannot simply be imported.**
   `KEY_ALL_ACCESS` is in `hal_bindgen_i386/amd64` and **not** `hal_bindgen_arm64`, so `use`-ing
   it breaks the arm64 build. Declare it locally *and pin it* —

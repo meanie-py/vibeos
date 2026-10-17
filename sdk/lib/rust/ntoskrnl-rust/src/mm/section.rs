@@ -3810,6 +3810,22 @@ pub unsafe extern "system" fn MmMapViewOfSection(
             return STATUS_SECTION_PROTECTION;
         }
 
+        // Windows refuses a reservation of a section that cannot be written
+        // (ZwMapViewOfSection.c:236; the C had no such check). A reserved view reaching past
+        // the end of the file (211) is NOT supported: the segment has no pages there, and
+        // unmapping such a view corrupted the file's cached pages for every later test
+        // (wrong data, then a BUGCHECK 0x1E on x86, 2026-10-16), so it stays refused below.
+        // \Device\PhysicalMemory is not a file.
+        let Reserve = (AllocationType & MEM_RESERVE) != 0;
+        let IsFile = (*Section).u.Flags.PhysicalMemory() == 0;
+        if IsFile && Reserve && (Initial & WRITE) == 0 {
+            MmUnlockAddressSpace(AddressSpace);
+            if IsAttached != 0 {
+                KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
+            }
+            return STATUS_SECTION_PROTECTION;
+        }
+
         // Round the caller's offset down to a page IN PLACE, as the C does (MmSection reads
         // the aligned offset back after an unaligned \Device\PhysicalMemory view), and grow
         // a non-zero ViewSize by the bytes rounded off, as the ARM3 path does at 64K: the
@@ -3862,9 +3878,51 @@ pub unsafe extern "system" fn MmMapViewOfSection(
             core::ptr::write_volatile(ViewSize, current_view_size);
         }
 
+        // A commit larger than the view is refused, as the ARM3 path does: after the view
+        // size checks (MmSection.c maps with CommitSize 1 and expects success;
+        // ZwMapViewOfSection.c:189 commits 500 to a smaller file, :301 wants the view size
+        // refused first). A reservation commits nothing.
+        if IsFile && !Reserve && CommitSize > current_view_size {
+            MmUnlockAddressSpace(AddressSpace);
+            if IsAttached != 0 {
+                KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
+            }
+            return STATUS_INVALID_PARAMETER_5;
+        }
+
         // Page-round the view size
         current_view_size = PAGE_ROUND_UP(current_view_size);
         core::ptr::write_volatile(ViewSize, current_view_size);
+
+        // ZeroBits bounds where the view may land. NtMapViewOfSection validated a caller's
+        // base against it, but with no base the C let MmCreateMemoryArea place the view
+        // anywhere (ZwMapViewOfSection.c:180/181: ZeroBits 20 leaves 4 KB, so NO_MEMORY).
+        // Same arithmetic as NtAllocateVirtualMemory: a 32-bit limit clamped to the VAD
+        // ceiling, or on 64-bit a value above 32 is the ceiling itself.
+        if ZeroBits != 0 && (*BaseAddress).is_null() {
+            let Limit: ULONG_PTR = if core::mem::size_of::<ULONG_PTR>() == 8 && ZeroBits > 32 {
+                ZeroBits
+            } else {
+                (0xFFFF_FFFFu32 as ULONG_PTR) >> ZeroBits
+            };
+            // Both forms clamp to the VAD ceiling: the mask form's -1 means "anywhere"
+            // (ZwMapViewOfSection.c:178), not a ceiling in kernel space.
+            let Highest = core::cmp::min(Limit, MM_HIGHEST_VAD_ADDRESS as ULONG_PTR);
+            let Gap = crate::mm::marea::MmFindGapBelow(
+                AddressSpace as _,
+                current_view_size,
+                MM_ALLOCATION_GRANULARITY,
+                Highest,
+            );
+            if Gap.is_null() {
+                MmUnlockAddressSpace(AddressSpace);
+                if IsAttached != 0 {
+                    KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
+                }
+                return STATUS_NO_MEMORY;
+            }
+            core::ptr::write_volatile(BaseAddress, Gap);
+        }
 
         MmLockSectionSegment(Segment as PVOID);
         Status = MmMapViewOfSegment(

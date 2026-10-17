@@ -294,6 +294,15 @@ def test_no_build_refuses_media_without_the_sweep(tmp_path):
     assert "not" in (media_payload_gap(tmp_path) or "")
     (tmp_path / "payload-selection.json").write_text(_json.dumps({"payloads": [SUITE]}))
     assert media_payload_gap(tmp_path) is None
+    # Staged sweep, no corpus: a fresh configure defaults the kmtests OFF.
+    (tmp_path / "CMakeCache.txt").write_text(
+        "ENABLE_ROSTESTS_KMTESTS:BOOL=OFF\nENABLE_ROSTESTS:BOOL=OFF\n"
+    )
+    assert "kmtest corpus" in (media_payload_gap(tmp_path) or "")
+    (tmp_path / "CMakeCache.txt").write_text(
+        "ENABLE_ROSTESTS_KMTESTS:BOOL=ON\nENABLE_ROSTESTS:BOOL=OFF\n"
+    )
+    assert media_payload_gap(tmp_path) is None
 
 
 def test_conformance_strips_every_host_stamp_the_tee_writes(tmp_path):
