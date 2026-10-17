@@ -183,3 +183,19 @@ def test_module_walk_follows_an_inline_mod(tmp_path):
     (src / "types.rs").write_text("")
     (src / "mspaint" / "cpp_classes.rs").write_text("pub static mut X: u32 = 0;\n")
     assert sorted(e2u.module_files(src)) == ["", "mspaint::cpp_classes", "types"]
+
+
+def test_a_cfg_gated_definition_is_refused():
+    # cdrom: `#[cfg(not(target_arch = "x86"))] #[no_mangle] pub unsafe extern "system" fn
+    # KeQueryTickCount(..)` -- on i386 it is a kernel export, and a `use` would not resolve.
+    files = {
+        "ddk_shims": '#[cfg(not(target_arch = "x86"))]\n#[no_mangle]\n'
+        'pub unsafe extern "system" fn KeQueryTickCount(c: *mut i64) {}\n',
+        "common": 'extern "system" {\n    fn KeQueryTickCount(c: *mut i64);\n}\n',
+    }
+    try:
+        e2u.find_defs(files, ["KeQueryTickCount"])
+    except SystemExit as err:
+        assert "cfg-gated" in str(err)
+    else:
+        raise AssertionError("a cfg-gated definition was accepted")

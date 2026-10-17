@@ -18,6 +18,18 @@ now in `rust_ub_deny` next to `invalid_value` and `deref_nullptr`. Re-run the ce
 `python3 tools/rust_warning_census.py build-i386 build-amd64 build-arm64`. Details are under
 "2026-10-17" below.
 
+**Final census, 2026-10-17 morning** (3-arch build of d7f6514670b): **2,014 sites, 0 UB,
+913 LOGIC, 1,101 NOISE.** `clashing_extern` is 889, of which 880 are shell32's.
+**A census artifact, not a store bug** (corrected after control-plane checked it):
+conutils' unit in `build-amd64/rust-shared-0-target` replays an `unexpected_cfgs` for
+`USE_CRT` that a fresh compile of the current crate does not produce. Its fingerprint JSON
+already lists `declared_features: ["USE_CRT"]`, but cargo kept the old rustc output. That is
+plain cargo's shared target dir; the artifact store never stores diagnostics, and the
+links=2 I read as a store hardlink is cargo's own deps/final pair. Control-plane's
+unconfirmed reading is that a declared-only feature change does not make cargo recompile.
+The code is unaffected. To clear the 15 phantom sites (conutils 14, ws2_32 1), delete those
+units and rebuild.
+
 **Later on 2026-10-17** (after that census; landed as b8f5a91889d, dd8d8701261 and the
 `unexpected_cfgs` batch):
 - **`improper_ctypes` 48 -> 0, now denied.** All of the UB tier is denied in `rust_ub_deny`.
