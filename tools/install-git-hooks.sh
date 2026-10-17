@@ -40,4 +40,6 @@ git -C "$repo_root" config merge.vibeos-case-arms.name "gen_driver_types.sh: mer
 git -C "$repo_root" config merge.vibeos-case-arms.driver "python3 tools/merge_drivers.py case-arms %O %A %B"
 git -C "$repo_root" config merge.vibeos-census.name "cohab-census.txt: merge the census row by row"
 git -C "$repo_root" config merge.vibeos-census.driver "python3 tools/merge_drivers.py census %O %A %B"
-echo "merge drivers configured: vibeos-case-arms, vibeos-census"
+git -C "$repo_root" config merge.vibeos-cargo-members.name "Cargo.toml: merge the workspace members by crate"
+git -C "$repo_root" config merge.vibeos-cargo-members.driver "python3 tools/merge_drivers.py cargo-members %O %A %B"
+echo "merge drivers configured: vibeos-case-arms, vibeos-census, vibeos-cargo-members"
