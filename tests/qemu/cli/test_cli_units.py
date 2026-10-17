@@ -900,6 +900,27 @@ def test_crate_for_stem_ignores_a_member_crate_no_cmake_links_yet(arm64_cohab_re
     assert provenance._crate_for_stem(arm64_cohab_repo, "foo") is not None
 
 
+def test_crate_for_rel_breaks_a_shared_stem_by_extension(arm64_cohab_repo: Path):
+    """wdmaud.sys is wdmaud-rust, wdmaud.drv is wdmaud_drv-rust. By stem alone the .drv
+    was judged against the kernel crate's staticlib, which it never links, and a cold
+    arm64 gate went BUILD_INCOMPLETE on a current tree."""
+    rust = arm64_cohab_repo / "sdk" / "lib" / "rust"
+    (rust / "foo_drv-rust").mkdir()
+    (rust / "foo_drv-rust" / "Cargo.toml").write_text("[package]\nname = 'foo_drv-rust'\n")
+    manifest = rust / "Cargo.toml"
+    manifest.write_text(
+        manifest.read_text().replace('"foo-rust",', '"foo-rust",\n    "foo_drv-rust",')
+    )
+    cm = arm64_cohab_repo / "drivers" / "x" / "foo" / "CMakeLists.txt"
+    cm.write_text(cm.read_text() + 'rust_staticlib_variant(foo_drv_rust foo_drv-rust "" TRUE)\n')
+    _git(arm64_cohab_repo, "add", "-A")
+    _git(arm64_cohab_repo, "commit", "-qm", "foo.drv")
+    provenance._workspace_members.cache_clear()
+    provenance._cmake_named_crates.cache_clear()
+    assert provenance._crate_for_rel(arm64_cohab_repo, "dll/x/foo.drv").name == "foo_drv-rust"
+    assert provenance._crate_for_rel(arm64_cohab_repo, "drivers/x/foo/foo.sys").name == "foo-rust"
+
+
 def test_cohab_rels_maps_only_rust_binaries(arm64_cohab_repo: Path):
     rels = provenance.boot_set_cohab_rels(arm64_cohab_repo, "arm64")
     assert "drivers/x/foo/foo.sys" in rels  # has foo-rust crate
