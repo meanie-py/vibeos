@@ -1132,6 +1132,7 @@ impl<T> CAtlList<T> {
     }
 
     /// `Find(element)` returning the node's `POSITION`, null when no element compares equal.
+    /// mmc_new's `UnregisterView` keeps it and hands it to `RemoveAt`.
     pub unsafe fn FindPos(&self, element: &T) -> POSITION
     where
         T: PartialEq,
