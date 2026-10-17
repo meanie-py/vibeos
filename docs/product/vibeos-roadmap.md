@@ -602,14 +602,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
-- **cicero: CUIFWindow::Initialize and CUIFShadow::Initialize recurse forever (open, found
-  2026-10-15, latent).** `cicero-rust/src/cicero/cicuif_cpp_h.rs` (lines ~1942, ~3051 at
-  c94cd0f6a11's tree): each override's `return CUIFObject::Initialize();` became
-  `(*this_).__base0.Initialize()` -- the VIRTUAL dispatcher, i.e. itself -- so anything that
-  initializes a cicero UI window overflows the stack. Boot never reaches it. The generator
-  is fixed (`cpp_app._qualified_base_calls`, from rapps' identical ComputeMinimalSize hang);
-  re-run `port cppapp` + `port replay` for cicero, msutb (18 qualified base calls) and
-  msctfime (4), or hand-fix the two sites to `Initialize__body()` and bank them.
+- **C++ apps: an override calling `Base::M()` recursed into itself, 36 sites (FIXED
+  2026-10-16, cpp-cluster; latent).** A qualified base call is non-virtual in C++, but the
+  generated Rust called the base's VIRTUAL dispatcher (`(*this_).__base0.M(..)`) from inside
+  the override, so it landed back on the override: cicero 17 (CUIFWindow/CUIFShadow/CUIFMenu
+  `Initialize`, `SetRect`, `PaintObject`, ...), mspaint 9 (every drawing tool's `OnEndDraw` and
+  `OnDrawOverlayOnImage`: ending a stroke overflowed the stack), msutb 9, msctfime 1. Boot,
+  smoke and appstorm reached none of them. cicero was regenerated with the fixed generator
+  (`cpp_app._qualified_base_calls`); the other 19 sites were rewritten to `M__body` and banked.
+  `tools/scan_override_self_dispatch.py` gates the shape (baseline empty). Same session:
+  msctfime's `TLS::s_dwTlsIndex` shipped as 0 instead of `(DWORD)-1` (a valid TLS index that
+  `Uninitialize` would free); fixed and banked, and static member initializers are now
+  carried by the generator.
 
 - **amd64 ladder: fault64 rung 1 "AV params" (exit 0xBAF2) (FLAKE, open, found 2026-10-14).**
   The merge-queue gate's amd64 smoke (`-smp 2`) saw fault64.exe's access-violation reach the

@@ -1121,22 +1121,42 @@ impl<T> CAtlList<T> {
         core::ptr::addr_of_mut!((*node).element)
     }
 
-    /// `Find(const E& element, POSITION posStartAfter = NULL)` — atlcoll.h. The C++ tests
-    /// the returned `POSITION` for truth (`if (!list.Find(key))`), so this returns `bool`:
-    /// handing back a raw node pointer would invite it to be dereferenced, and no caller
-    /// in the tree wants the position itself.
+    /// `Find(const E& element, POSITION posStartAfter = NULL)` — atlcoll.h, for the callers
+    /// that test the returned `POSITION` for truth (`if (!list.Find(key))`). One that keeps
+    /// the position (rapps' `CMainWindow::ItemCheckStateChanged`) uses `FindPos`.
     pub unsafe fn Find(&self, element: &T) -> bool
     where
         T: PartialEq,
     {
-        let mut node = self.head;
+        !self.FindPos(element).is_null()
+    }
+
+    /// `Find(element)` returning the node's `POSITION`, null when no element compares equal.
+    pub unsafe fn FindPos(&self, element: &T) -> POSITION
+    where
+        T: PartialEq,
+    {
+        self.FindPosAfter(element, core::ptr::null_mut())
+    }
+
+    /// `Find(element, posStartAfter)`: the search starts after `posStartAfter` (null: from
+    /// the head).
+    pub unsafe fn FindPosAfter(&self, element: &T, posStartAfter: POSITION) -> POSITION
+    where
+        T: PartialEq,
+    {
+        let mut node = if posStartAfter.is_null() {
+            self.head
+        } else {
+            (*(posStartAfter as *mut CAtlListNode<T>)).next
+        };
         while !node.is_null() {
             if (*node).element == *element {
-                return true;
+                return node as POSITION;
             }
             node = (*node).next;
         }
-        false
+        core::ptr::null_mut()
     }
 
     /// Null when the index is out of range, matching the `POSITION` the C++ then tests.
@@ -2316,6 +2336,21 @@ mod collection_tests {
             l.RemoveAt(p3);
             assert!(l.IsEmpty());
             assert_eq!(l.GetCount(), 0);
+        }
+    }
+
+    #[test]
+    fn atl_list_find_pos_is_the_node_and_resumes_after_one() {
+        let mut l: CAtlList<u32> = CAtlList::new();
+        unsafe {
+            let p1 = l.AddTail(5);
+            let _ = l.AddTail(6);
+            let p3 = l.AddTail(5);
+            assert_eq!(l.FindPos(&5), p1);
+            assert_eq!(l.FindPosAfter(&5, p1), p3);
+            assert!(l.FindPosAfter(&5, p3).is_null());
+            assert!(l.Find(&6) && !l.Find(&7));
+            l.RemoveAll();
         }
     }
 }

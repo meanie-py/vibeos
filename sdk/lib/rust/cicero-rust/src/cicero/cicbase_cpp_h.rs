@@ -1,4 +1,8 @@
 use crate::prelude::*;
+// Deterministic UTF-16 literals from the selected C++ helper closure.
+pub static CPP_COM_WSTR_80073828D8A0: [WCHAR; 10] = [0x006E, 0x0074, 0x0064, 0x006C, 0x006C, 0x002E, 0x0064, 0x006C, 0x006C, 0x0000];
+pub static CPP_COM_WSTR_9C0CDFFB216F: [WCHAR; 10] = [0x006F, 0x006C, 0x0065, 0x0033, 0x0032, 0x002E, 0x0064, 0x006C, 0x006C, 0x0000];
+
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -11,7 +15,7 @@ pub const ProcessBreakOnTermination: PROCESSINFOCLASS = 29;
 
 pub type NTSTATUS = i32;
 
-pub type FN_NtQueryInformationProcess = unsafe extern "system" fn(HANDLE, PROCESSINFOCLASS, PVOID, ULONG, PULONG) -> NTSTATUS;
+pub type FN_NtQueryInformationProcess = Option<unsafe extern "system" fn(HANDLE, PROCESSINFOCLASS, PVOID, ULONG, PULONG) -> NTSTATUS>;
 
 #[no_mangle]
 pub unsafe extern "C" fn cxx_operator_new(size: usize, _: &CicNoThrow) -> *mut core::ffi::c_void {
@@ -86,7 +90,8 @@ pub unsafe extern "C" fn cicIsWow64() -> i32 {
         );
 
     Value = 0;
-    s_fnNtQueryInformationProcess(
+    // FN_NtQueryInformationProcess is the nullable fn-pointer typedef; null was refused above.
+    (s_fnNtQueryInformationProcess.unwrap_unchecked())(
         GetCurrentProcess(),
         ProcessWow64Information,
         core::ptr::addr_of_mut!(Value) as LPVOID,
@@ -209,7 +214,7 @@ pub unsafe extern "C" fn TFInitLib(fnCoCreateInstance: FN_CoCreateInstance) -> B
 impl CicSystemModulePath {
     pub unsafe fn Init(&mut self, pszFileName: LPCTSTR, bSysWinDir: BOOL) -> BOOL {
         let this_: *mut Self = self;
-        let mut cchPath: SIZE_T;
+        let cchPath: SIZE_T;
         if bSysWinDir != 0 {
             // Usually C:\Windows or C:\ReactOS
             cchPath = GetSystemWindowsDirectory((*this_).m_szPath.as_mut_ptr(), _countof!((*this_).m_szPath)) as SIZE_T;
@@ -217,29 +222,29 @@ impl CicSystemModulePath {
             // Usually C:\Windows\system32 or C:\ReactOS\system32
             cchPath = GetSystemDirectory((*this_).m_szPath.as_mut_ptr(), _countof!((*this_).m_szPath)) as SIZE_T;
         }
-    
-        (*this_).m_szPath[(_countof!((*this_).m_szPath) - 1) as usize] = ('\0' as u16); // Avoid buffer overrun
-    
-        'body: {
+
+        (*this_).m_szPath[(_countof!((*this_).m_szPath) - 1) as usize] = 0x0000u16; // Avoid buffer overrun
+
+        'failure: {
             if (cchPath == 0) || (cchPath > (_countof!((*this_).m_szPath) - 2) as _) {
-                break 'body;
+                break 'failure;
             }
-    
+
             // Add backslash if necessary
-            if (cchPath > 0) && ((*this_).m_szPath[(cchPath - 1) as usize] != ('\\' as u16)) {
-                (*this_).m_szPath[(cchPath + 0) as usize] = ('\\' as u16);
-                (*this_).m_szPath[(cchPath + 1) as usize] = ('\0' as u16);
+            if (cchPath > 0) && ((*this_).m_szPath[(cchPath - 1) as usize] != 0x005Cu16) {
+                (*this_).m_szPath[(cchPath + 0) as usize] = 0x005Cu16;
+                (*this_).m_szPath[(cchPath + 1) as usize] = 0x0000u16;
             }
-    
+
             // Append pszFileName
             if (StringCchCat((*this_).m_szPath.as_mut_ptr(), (_countof!((*this_).m_szPath)) as _, pszFileName)) < 0 {
-                break 'body;
+                break 'failure;
             }
-    
+
             (*this_).m_cchPath = _tcslen((*this_).m_szPath.as_mut_ptr()) as SIZE_T;
             return (TRUE) as BOOL;
         }
-    
+
         // Failure:
         (*this_).m_szPath[0] = UNICODE_NULL;
         (*this_).m_cchPath = 0;

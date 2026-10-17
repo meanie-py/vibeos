@@ -5457,14 +5457,18 @@ Each was one fix in the tool; listed so the next module's symptom can be matched
   The lowering left `Base::this_->__baseK.M(`, and `this_->__baseK.M(` in Rust is the virtual
   dispatcher, which lands on the override making the call. rapps' `CUiWindow<CToolbar>::
   ComputeMinimalSize` spun forever (appstorm's stuck-thread dump: `rapps.exe+0x29270`,
-  symbolized to CUiBox::ComputeMinimalSize <-> the override); cicero shipped the same in
-  CUIFWindow::Initialize. `_qualified_base_calls` writes `M__body` for a virtual M and drops
-  the qualifier otherwise -- only when the lowering supplied a base path.
+  symbolized to CUiBox::ComputeMinimalSize <-> the override). The shipped crates held 36 more
+  (cicero 17, mspaint 9 including every tool's `OnEndDraw`, msutb 9, msctfime 1).
+  `_qualified_base_calls` writes `M__body` for a virtual M and drops the qualifier otherwise
+  -- only when the lowering supplied a base path. `tools/scan_override_self_dispatch.py`
+  (a `check` lint) flags an `M__body` that calls `(*this_).__baseN.M(`.
 - **A `char*` passed to a `const CStringA&` parameter** builds a temporary in C++. The model
   wrote `pszFile as *const CStringA` -- reinterpreting the path TEXT as a CStringA object --
   and `GetString()` returned its first eight bytes as the buffer: rapps' FDI callbacks
   faulted on arm64 at address 0x69666F72505C3A58, i.e. `"X:\Profi"` (any fault address that
   decodes as ASCII is this class). Use `&CStringA::from_ptr(p)` (`CStringW::from_ptr` for wide).
+  cpp_lower now writes the implicit construction out (`use(CStringA(p))`, `Cls__make_N(p)` for
+  a module class); a string literal argument is left as written.
 - **A polymorphic destructor** runs with the class's OWN vtables (C++ resets them first);
   Drop dispatched through the derived tables, so CPointerArray's destructor reached
   CUiCollection::OnRemoveItem's `delete ptr`. Drop now calls `__init_vtables` first.
@@ -5478,6 +5482,37 @@ Each was one fix in the tool; listed so the next module's symptom can be matched
   the string macros folded first.
 - **crate-repair took over an hour** on a 100 KB-unit crate. Some 30 rules re-masked the
   whole file per diagnostic, in a per-byte Python loop. Memoized on content: 6 minutes.
+- **A static member DEFINED out of line** (`CUIFBitmapDC *CUIFBitmapDC::s_phdcDst = NULL;`):
+  every use after the definition refers to the definition's decl id, which was never
+  registered. The lowering left `CUIFBitmapDC::s_phdcDst` (cicero regeneration: 116 E0599), and
+  the definition itself became a stray class-less global `s_phdcDst` in the unit's preamble.
+  The definition now aliases the in-class decl. Its initializer is carried to the static
+  too: msctfime SHIPPED `TLS__s_dwTlsIndex = 0` for `= (DWORD)-1`, a valid TLS index that
+  `TLS::Uninitialize` would free. An initializer `_static_member_init` cannot render is a
+  hard error, never a zeroed static.
+- **A new virtual that hides an inherited one of the same name** (cicero's
+  `CUIFWindow::OnTimer(WPARAM)` over `CUIFObject::OnTimer()`): both vtable thunks were
+  `CUIFWindow__vt_b0b0_OnTimer` (E0428). The hiding slot's thunk takes `__<Class>`.
+- **An empty constructor, `X() { }`**, rendered `{ { } }`, which tree-sitter-cpp reads as a
+  declaration with a brace initializer. The scanner dropped the definition, nothing
+  translated it, and every `X__make_0` called a missing `__ctor_0`. If a synthetic-unit function
+  is missing from the translate log's `Functions: N`, run `scan_file` over the unit.
+- **A template instance's init list is the pattern's text**: `: CicArrayBase(sizeof(T_ITEM))`
+  kept `T_ITEM`, and a templated base (`: CIC_IMCC_LOCK<T_DATA>(h)`) missed `_ctor_args`'
+  head match, so the prologue stripped its first and last characters as if they were the
+  parentheses (`__ctor_0(IC_IMCC_LOCK<T_DATA>(h)`). Both are bound/matched now.
+- **A template with a hand-written generic** (`cpp_templates.REGISTRY`: cicero's `CicArray<T>`,
+  `CicIMCCLock<T>`) must never be instantiated per argument: msutb and msctfime build against
+  the generic, so per-instance classes change cicero's API under them.
+- **A function-local `macro_rules!` in a shared crate** (win32macros-rust's `at!` inside
+  `wine_dbgstr_variant`) was re-exported by name from every refreshed prelude: E0432.
+  Only `#[macro_export]` macros are listed.
+- **A regeneration that drops a unit** leaves the old unit's module in the crate, still
+  compiling. `port cppapp` now parks it under the stem's staging dir and unwires it.
+- **A module ported in ANOTHER worktree replays nothing here**: each worktree has its own
+  `.responses`, so cicero's 15 units all missed. Run `port bank-import <stem>` (from every
+  sibling, missing files only, never overwriting); a failed replay names the sibling holding
+  the missing bodies.
 
 ### A vtable SLOT the interface parser could not read renumbers every slot after it
 

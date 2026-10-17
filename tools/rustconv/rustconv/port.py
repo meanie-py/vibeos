@@ -40,6 +40,7 @@ import time
 from pathlib import Path
 
 from . import (
+    bank_import,
     crate_integrate,
     dead_regions,
     default_arm,
@@ -1216,6 +1217,8 @@ def stage_cppapp(stem: str) -> None:
         via = body_file if body_file in cpp_tus else _including_tu(REPO / body_file, cpp_tus)
         units[str(out / name)] = via
     state["cpp_tus"] = cpp_tus
+    for gone in sorted(set(state.get("header_tus", {})) - set(units)):
+        _park_dropped_unit(state, gone)
     # `tus` keeps meaning "the TUs the module compiles" (facts and macros are evaluated
     # against them); _units() is what changes: the synthetic units replace them.
     state["header_tus"] = units
@@ -1233,6 +1236,33 @@ def stage_cppapp(stem: str) -> None:
         f"cppapp: {stem}: {len(model.classes)} class(es), {len(model.functions)} function(s), "
         f"{len(units)} synthetic unit(s); cpp_classes.rs written"
     )
+
+
+def _own_reexports(prelude: Path) -> set[str]:
+    """Names a prelude re-exports BY NAME from the crate's own modules."""
+    text = prelude.read_text(errors="replace") if prelude.is_file() else ""
+    names: set[str] = set()
+    for group, single in re.findall(r"(?m)^pub use crate::[\w:]+::(?:\{([^}]*)\}|(\w+))\s*;", text):
+        names |= {n.strip() for n in (group or single).split(",") if n.strip() and n.strip() != "*"}
+    return names
+
+
+def _park_dropped_unit(state: dict, unit: str) -> None:
+    """A synthetic unit this regeneration no longer writes (cicero's `cicarray_h.hpp` once
+    its template became the registered generic again) leaves its module in the crate and
+    `pub mod` in lib.rs, still compiling the old bodies. Moved, never deleted -- it was
+    translated -- to the stem's staging dir; its bodies stay banked in `.responses`."""
+    out = _tu_output(state, unit)
+    if not out.is_file():
+        return
+    park = STATE_ROOT / state["stem"] / f"orphans-{time.strftime('%Y%m%d')}"
+    park.mkdir(parents=True, exist_ok=True)
+    os.replace(out, park / out.name)
+    lib = _crate_dir(state) / "src" / "lib.rs"
+    if lib.is_file():
+        text = lib.read_text()
+        lib.write_text(re.sub(rf"(?m)^[ \t]*pub mod {re.escape(out.stem)};[ \t]*\n", "", text))
+    print(f"cppapp: unit {Path(unit).name} is gone: parked {out.name} in {park}, unwired")
 
 
 def _including_tu(header: Path, tus: list[str]) -> str:
@@ -1924,12 +1954,52 @@ def stage_translate(
             reason = refused[-1] if refused else f"rc={d['rc']}"
             why.append(f"{Path(d['tu']).name}: {reason}")
         if why:
+            missing = {m for w in why for m in re.findall(r"no accepted cached body for (\S+)", w)}
+            elsewhere = bank_import.banked_elsewhere(_unit_paths(state), missing, REPO)
+            hint = "".join(
+                f"\n  {n} of the missing bodies are banked in {root}: "
+                f"`port bank-import {state['stem']} --from {root}`, then replay again"
+                for root, n in sorted(elsewhere.items())
+            )
             raise PortError(
                 "replay: unit(s) the bank cannot fully reassemble -- each file is stale, or "
                 "rebuilt without its refused preamble. Buy the missing bodies first "
-                "(`port translate <stem> -m <model> --cost-cap X`):\n  " + "\n  ".join(why)
+                "(`port translate <stem> -m <model> --cost-cap X`):\n  " + "\n  ".join(why) + hint
             )
     return spent, [Path(d["tu"]).name for d in done]
+
+
+def _unit_paths(state: dict) -> list[Path]:
+    return [Path(u) if Path(u).is_absolute() else REPO / u for u in _units(state)]
+
+
+def stage_bank_import(stem: str, *, sources: list[Path] | None, dry_run: bool) -> None:
+    """Merge this module's banks from sibling worktrees into this one's (see bank_import)."""
+    from .response_cache import RESPONSES_DIR
+
+    state = load_state(stem)
+    banks = (
+        [Path(r) / "tools" / "rustconv" / ".responses" for r in sources]
+        if sources
+        else bank_import.sibling_bank_dirs(REPO)
+    )
+    if not banks:
+        raise PortError("bank-import: no other worktree has a response bank")
+    units = _unit_paths(state)
+    for bank in banks:
+        if not bank.is_dir():
+            raise PortError(f"bank-import: {bank} is not a response bank")
+        rep = bank_import.import_banks(units, bank, RESPONSES_DIR, REPO, dry_run=dry_run)
+        root = bank.parent.parent.parent
+        verb = "would copy" if dry_run else "copied"
+        print(
+            f"bank-import: {root}: {verb} {rep.files} file(s), {rep.entries} entry(ies) into "
+            f"{len(rep.namespaces)} namespace(s)"
+        )
+        for c in rep.conflicts:
+            print(f"bank-import:   kept ours, theirs differs: {c}")
+        for f in rep.foreign:
+            print(f"bank-import:   skipped {f}: claimed by a different source file")
 
 
 def _fn_item_span(text: str, name: str) -> tuple[int, int] | None:
@@ -2566,9 +2636,11 @@ _UNIT_PLACEHOLDER = re.compile(
 
 
 def _strip_unit_placeholders(state: dict) -> list[str]:
-    """Drop every `static NAME: () = ();` (and its attributes) from the module's outputs."""
+    """Drop every `static NAME: () = ();` (and its attributes) from the module's outputs --
+    its UNITS: a cppapp module's are the synthetic headers, and walking only `tus` left
+    cicero's `#[inline] pub static cicGetFN__T5: () = ();` beside the real fn (E0428)."""
     changed = []
-    for tu in state["tus"]:
+    for tu in _units(state):
         path = _tu_output(state, tu)
         if not path.is_file():
             continue
@@ -4942,6 +5014,13 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
         case_enums = (
             set(load_state(stem).get("switch_enums", [])) | _pattern_idents(modules_dir)
         ) - set(copied)
+        # A name the prelude already re-exports from the crate's own modules (cppapp's
+        # `pub use crate::cicero::cpp_classes::{.., POINTING_TIMER_ID, ..}`) needs no alias, and
+        # one copied by an earlier run is a second definition of it (E0255).
+        own = _own_reexports(prelude)
+        case_enums -= own
+        for name in sorted(own & {n for n, i in copied.items() if i.path == "island enum"}):
+            copied.pop(name)
         aliases = prelude_resolve.island_enum_aliases(todo | case_enums, crate / "src", island_sys)
         # An enumerator the crate ALSO binds (a parameter, a `let`) cannot be a prelude const:
         # Rust reads `fn f(FdoExtension: PFDO_DEVICE_EXTENSION)` as a constant PATTERN when a
@@ -7369,13 +7448,22 @@ def main(args) -> int:
         # Every stage writes crate files; leave them as `git diff --check` wants them, so a
         # commit after any stage passes (fifteen of Wave I's generated files did not).
         stem = getattr(args, "stem", None)
-        if stem and _state_path(stem).is_file() and args.port_stage != "status":
+        if stem and _state_path(stem).is_file() and not _writes_nothing(args):
             src = _crate_dir(load_state(stem)) / "src"
             if src.is_dir():
                 _one_trailing_newline(src)
         return rc
     finally:
         held.close()
+
+
+def _writes_nothing(args) -> bool:
+    """A stage that leaves the crate as it found it, so the whitespace pass must too: a dry
+    run of `bank-import` over ten shipped crates rewrote ~2,000 lines of their blank-line
+    indentation, which they were committed with before the pass existed."""
+    if args.port_stage in ("status", "check", "bank-import") or getattr(args, "dry_run", False):
+        return True
+    return args.port_stage == "hand" and not getattr(args, "apply", False)
 
 
 def _main(args) -> int:
@@ -7454,6 +7542,8 @@ def _main(args) -> int:
                 dry_run=args.dry_run,
                 thinking=args.thinking,
             )
+        elif args.port_stage == "bank-import":
+            stage_bank_import(args.stem, sources=args.sources, dry_run=args.dry_run)
         elif args.port_stage == "replay":
             stage_replay(
                 args.stem, fix_cap=args.fix_cap, fix_rounds=args.fix_rounds, model=args.model
@@ -7577,6 +7667,20 @@ def add_parser(sub) -> None:
     q.add_argument("--cost-cap", type=float, default=0.30)
     q.add_argument("--dry-run", action="store_true")
     q.add_argument("--thinking", choices=("on", "off"), default="on")
+    q = stages.add_parser(
+        "bank-import",
+        help="copy this module's paid response banks from sibling worktrees (missing files "
+        "only; never overwrites)",
+    )
+    q.add_argument("stem")
+    q.add_argument(
+        "--from",
+        dest="sources",
+        nargs="*",
+        type=Path,
+        help="worktree roots to read (default: every other worktree)",
+    )
+    q.add_argument("--dry-run", action="store_true")
     q = stages.add_parser("replay", help="rebuild the crate from the banks, in order, for $0")
     q.add_argument("stem")
     q.add_argument("--fix-cap", type=float, default=0.0, help="USD of NEW fix purchases")

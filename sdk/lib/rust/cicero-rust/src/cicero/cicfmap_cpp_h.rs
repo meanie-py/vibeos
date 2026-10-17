@@ -26,8 +26,8 @@ impl CicFileMappingStatic {
         if !pMutex.is_null() {
             (*this_).m_pMutex = pMutex;
         }
-    
-        (*this_).m_bCreated = (FALSE) as i32;
+
+        (*this_).m_bCreated = (FALSE as i32);
         (*this_).m_pszName = pszName;
         (*this_).m_bHasMutex = (pMutex != core::ptr::null_mut()) as BOOL;
     }
@@ -36,7 +36,7 @@ impl CicFileMappingStatic {
         if (*this_).m_pszName.is_null() {
             return core::ptr::null_mut();
         }
-    
+
         (*this_).m_hMapping = CreateFileMapping(INVALID_HANDLE_VALUE,
                                          pSA,
                                          PAGE_READWRITE,
@@ -49,8 +49,8 @@ impl CicFileMappingStatic {
         if (*this_).m_hMapping.is_null() {
             return core::ptr::null_mut();
         }
-    
-        (*this_).m_bCreated = (TRUE) as i32;
+
+        (*this_).m_bCreated = (TRUE as i32);
         return (*this_)._Map();
     }
     pub unsafe fn Open(&mut self) -> LPVOID {
@@ -58,11 +58,11 @@ impl CicFileMappingStatic {
         if (*this_).m_pszName.is_null() {
             return core::ptr::null_mut();
         }
-        (*this_).m_hMapping = OpenFileMapping(FILE_MAP_ALL_ACCESS, (FALSE) as i32, (*this_).m_pszName);
+        (*this_).m_hMapping = OpenFileMapping(FILE_MAP_ALL_ACCESS, (FALSE as i32), (*this_).m_pszName);
         if (*this_).m_hMapping as usize == 0 {
             return core::ptr::null_mut();
         }
-    
+
         return (*this_)._Map();
     }
     pub unsafe fn Close(&mut self) {
@@ -71,13 +71,13 @@ impl CicFileMappingStatic {
             UnmapViewOfFile((*this_).m_pView);
             (*this_).m_pView = core::ptr::null_mut();
         }
-    
+
         if !(*this_).m_hMapping.is_null() {
             CloseHandle((*this_).m_hMapping);
             (*this_).m_hMapping = core::ptr::null_mut();
         }
-    
-        (*this_).m_bCreated = (FALSE) as i32;
+
+        (*this_).m_bCreated = (FALSE as i32);
     }
     pub unsafe fn Enter(&mut self) -> BOOL {
         let this_: *mut Self = self;
@@ -105,7 +105,7 @@ impl CicFileMappingStatic {
         if (*this_).m_bHasMutex == 0 {
             return;
         }
-    
+
         (*this_).Close();
         (*this_).Leave();
     }
@@ -120,8 +120,8 @@ impl CicFileMapping {
             (*this_).__base0.m_pszName = core::ptr::null_mut();
             (*this_).__base0.m_pView = core::ptr::null_mut();
             (*this_).__base0.m_hMapping = core::ptr::null_mut();
-            (*this_).__base0.m_bCreated = (FALSE) as i32;
-            (*this_).__base0.m_bHasMutex = (FALSE) as i32;
+            (*this_).__base0.m_bCreated = (FALSE as i32);
+            (*this_).__base0.m_bHasMutex = (FALSE as i32);
             (*this_).__base0.m_pMutex = core::ptr::null_mut();
             (*this_).__base0.Init(pszName, pMutex);
         }

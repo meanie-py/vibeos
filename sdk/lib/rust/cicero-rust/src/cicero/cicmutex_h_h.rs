@@ -15,7 +15,7 @@ impl CicMutex {
     pub unsafe fn __ctor_0(&mut self) {
         let this_: *mut Self = self;
         (*this_).m_hMutex = core::ptr::null_mut();
-        (*this_).m_bInit = (FALSE) as i32;
+        (*this_).m_bInit = (FALSE as i32);
         {
         }
     }
@@ -25,8 +25,8 @@ impl CicMutex {
     }
     pub unsafe fn Init(&mut self, lpSA: LPSECURITY_ATTRIBUTES, pszMutexName: LPCTSTR) {
         let this_: *mut Self = self;
-        (*this_).m_hMutex = CreateMutex(lpSA, (FALSE) as i32, pszMutexName);
-        (*this_).m_bInit = (TRUE) as i32;
+        (*this_).m_hMutex = CreateMutex(lpSA, (FALSE as i32), pszMutexName);
+        (*this_).m_bInit = (TRUE as i32);
     }
     pub unsafe fn Uninit(&mut self) {
         let this_: *mut Self = self;
@@ -34,7 +34,7 @@ impl CicMutex {
             CloseHandle((*this_).m_hMutex);
             (*this_).m_hMutex = core::ptr::null_mut();
         }
-        (*this_).m_bInit = (FALSE) as i32;
+        (*this_).m_bInit = (FALSE as i32);
     }
     pub unsafe fn Enter(&mut self) -> BOOL {
         let this_: *mut Self = self;

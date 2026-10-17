@@ -1388,13 +1388,13 @@ impl CUTBLangBarDlg {
             UpdateWindow(hDlg);
             return (TRUE) as INT_PTR;
         }
-    
+
         if uMsg == WM_COMMAND {
             let pThis: *mut CUTBLangBarDlg = CUTBLangBarDlg::GetThis(hDlg);
             (*pThis).OnCommand(hDlg, wParam, lParam);
             return (TRUE) as INT_PTR;
         }
-    
+
         return (FALSE) as INT_PTR;
     }
     pub unsafe fn StartThread(&mut self) -> BOOL {
@@ -1402,9 +1402,9 @@ impl CUTBLangBarDlg {
         if (*this_).IsDlgShown() != 0 {
             return (FALSE) as BOOL;
         }
-    
+
         (*this_).SetDlgShown((TRUE) as BOOL);
-    
+
         let mut dwThreadId: DWORD = 0;
         let hThread: HANDLE = CreateThread(
             core::ptr::null_mut(),
@@ -1418,7 +1418,7 @@ impl CUTBLangBarDlg {
             (*this_).SetDlgShown((FALSE) as BOOL);
             return (TRUE) as BOOL;
         }
-    
+
         (*this_).m_cRefs += 1;
         CloseHandle(hThread);
         return (TRUE) as BOOL;
@@ -1448,7 +1448,7 @@ impl CUTBCloseLangBarDlg {
         (*this_).__init_vtables();
         {
             (*this_).__base0.m_cRefs = 1;
-    
+
             if !((g_dwOSInfo & (CIC_OSINFO_XPPLUS as u32)) != 0) {
                 (*this_).__base0.m_pszDialogName = MAKEINTRESOURCE!(IDD_CLOSELANGBARNOBAND);
             } else {
@@ -1465,11 +1465,11 @@ impl CUTBCloseLangBarDlg {
         if (error) as u32 == ERROR_SUCCESS {
             regKey.QueryDword((&[0x0044, 0x006f, 0x006e, 0x0074, 0x0053, 0x0068, 0x006f, 0x0077, 0x0043, 0x006c, 0x006f, 0x0073, 0x0065, 0x004c, 0x0061, 0x006e, 0x0067, 0x0042, 0x0061, 0x0072, 0x0044, 0x006c, 0x0067, 0x0000u16]).as_ptr() /* TEXT "DontShowCloseLangBarDlg" */, core::ptr::addr_of_mut!(dwValue));
         }
-    
+
         if dwValue != 0 {
             return (FALSE) as BOOL;
         }
-    
+
         (*this_).__base0.StartThread();
         return (TRUE) as BOOL;
     }
@@ -1495,11 +1495,11 @@ impl CUTBCloseLangBarDlg {
                 }
                 EndDialog(hDlg, (TRUE) as INT_PTR);
             }
-    
+
             IDCANCEL => {
                 EndDialog(hDlg, (FALSE) as INT_PTR);
             }
-    
+
             _ => {
                 return (FALSE) as BOOL;
             }
@@ -1534,17 +1534,17 @@ impl CUTBMinimizeLangBarDlg {
         let this_: *mut Self = self;
         let mut regKey: CicRegKey = CicRegKey__zeroed();
         let mut error: LSTATUS;
-    
+
         let mut dwValue: DWORD = FALSE;
         error = regKey.Open(HKEY_CURRENT_USER, (&[0x0053, 0x004f, 0x0046, 0x0054, 0x0057, 0x0041, 0x0052, 0x0045, 0x005c, 0x004d, 0x0069, 0x0063, 0x0072, 0x006f, 0x0073, 0x006f, 0x0066, 0x0074, 0x005c, 0x0043, 0x0054, 0x0046, 0x005c, 0x004d, 0x0053, 0x0055, 0x0054, 0x0042, 0x005c, 0x0000u16]).as_ptr() /* TEXT "SOFTWARE\\Microsoft\\CTF\\MSUTB\\" */, KEY_READ);
         if (error) as u32 == ERROR_SUCCESS {
             regKey.QueryDword((&[0x0044, 0x006f, 0x006e, 0x0074, 0x0053, 0x0068, 0x006f, 0x0077, 0x004d, 0x0069, 0x006e, 0x0069, 0x006d, 0x0069, 0x007a, 0x0065, 0x004c, 0x0061, 0x006e, 0x0067, 0x0042, 0x0061, 0x0072, 0x0044, 0x006c, 0x0067, 0x0000u16]).as_ptr() /* TEXT "DontShowMinimizeLangBarDlg" */, core::ptr::addr_of_mut!(dwValue));
         }
-    
+
         if dwValue != 0 {
             return (FALSE) as BOOL;
         }
-    
+
         (*this_).__base0.StartThread();
         return (TRUE) as BOOL;
     }
@@ -1585,7 +1585,7 @@ impl CUTBMinimizeLangBarDlg {
     pub unsafe fn ThreadProc__body(&mut self) -> BOOL {
         let this_: *mut Self = self;
         Sleep(700);
-        return (*this_).__base0.ThreadProc();
+        return (*this_).__base0.ThreadProc__body();
     }
 }
 
@@ -1639,7 +1639,7 @@ impl CCicLibMenu {
         if !ppSubMenu.is_null() {
             *ppSubMenu = core::ptr::null_mut();
         }
-    
+
         let mut pSubMenu: *mut CCicLibMenu = core::ptr::null_mut();
         if dwFlags & TF_LBMENUF_SUBMENU != 0 {
             if ppSubMenu.is_null() {
@@ -1647,21 +1647,21 @@ impl CCicLibMenu {
             }
             pSubMenu = (*this_).CreateSubMenu();
         }
-    
+
         let pMenuItem: *mut CCicLibMenuItem = (*this_).CreateMenuItem();
         if pMenuItem.is_null() {
             return E_OUTOFMEMORY;
         }
-    
+
         if (*pMenuItem).Init(uId, dwFlags, hbmp, hbmpMask, pch, cch, (&mut (*pSubMenu).__base0) as *mut ITfMenu) == 0 {
             return E_FAIL;
         }
-    
+
         if !ppSubMenu.is_null() && !pSubMenu.is_null() {
             *ppSubMenu = (&mut (*pSubMenu).__base0) as *mut ITfMenu;
             (*pSubMenu).AddRef();
         }
-    
+
         (*this_).m_MenuItems.Add(pMenuItem);
         return S_OK;
     }
@@ -1694,17 +1694,17 @@ impl CCicLibMenuItem {
             (*(*this_).m_pMenu).Release();
             (*this_).m_pMenu = core::ptr::null_mut();
         }
-    
+
         if !(*this_).m_hbmp.is_null() {
             DeleteObject(((*this_).m_hbmp).cast());
             (*this_).m_hbmp = core::ptr::null_mut();
         }
-    
+
         if !(*this_).m_hbmpMask.is_null() {
             DeleteObject(((*this_).m_hbmpMask).cast());
             (*this_).m_hbmpMask = core::ptr::null_mut();
         }
-    
+
         SysFreeString((*this_).m_bstrText);
         (*this_).m_bstrText = core::ptr::null_mut();
     }
@@ -1716,7 +1716,7 @@ impl CCicLibMenuItem {
         if (*this_).m_bstrText.is_null() && cch != 0 {
             return (FALSE) as BOOL;
         }
-    
+
         (*this_).m_pMenu = pMenu;
         (*this_).m_hbmp = (*this_).CreateBitmap((hbmp).cast());
         (*this_).m_hbmpMask = (*this_).CreateBitmap((hbmpMask).cast());
@@ -1726,7 +1726,7 @@ impl CCicLibMenuItem {
         if !hbmpMask.is_null() {
             DeleteObject((hbmpMask).cast());
         }
-    
+
         return (TRUE) as BOOL;
     }
     pub unsafe fn CreateBitmap(&mut self, hBitmap: HANDLE) -> HBITMAP {
@@ -1734,39 +1734,39 @@ impl CCicLibMenuItem {
         if hBitmap.is_null() {
             return core::ptr::null_mut();
         }
-    
+
         let hDC: HDC = CreateDC((['D' as u16, 'I' as u16, 'S' as u16, 'P' as u16, 'L' as u16, 'A' as u16, 'Y' as u16, 0u16].as_ptr()), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut());
         if hDC.is_null() {
             return core::ptr::null_mut();
         }
-    
+
         let mut hbmMem: HBITMAP = core::ptr::null_mut();
-    
+
         let mut bm: BITMAP = core::mem::zeroed();
         GetObject(hBitmap, core::mem::size_of::<BITMAP>() as i32, core::ptr::addr_of_mut!(bm) as LPVOID);
-    
+
         let mut hbmOld1: HGDIOBJ = core::ptr::null_mut();
         let hdcMem1: HDC = CreateCompatibleDC(hDC);
         if !hdcMem1.is_null() {
             hbmOld1 = SelectObject(hdcMem1, hBitmap);
         }
-    
+
         let mut hbmOld2: HGDIOBJ = core::ptr::null_mut();
         let hdcMem2: HDC = CreateCompatibleDC(hDC);
         if !hdcMem2.is_null() {
             hbmMem = CreateCompatibleBitmap(hDC, bm.bmWidth, bm.bmHeight);
             hbmOld2 = SelectObject(hdcMem2, hbmMem as HGDIOBJ);
         }
-    
+
         BitBlt(hdcMem2, 0, 0, bm.bmWidth, bm.bmHeight, hdcMem1, 0, 0, SRCCOPY);
-    
+
         if !hbmOld1.is_null() {
             SelectObject(hdcMem1, hbmOld1);
         }
         if !hbmOld2.is_null() {
             SelectObject(hdcMem2, hbmOld2);
         }
-    
+
         DeleteDC(hDC);
         if !hdcMem1.is_null() {
             DeleteDC(hdcMem1);
@@ -1774,7 +1774,7 @@ impl CCicLibMenuItem {
         if !hdcMem2.is_null() {
             DeleteDC(hdcMem2);
         }
-    
+
         hbmMem
     }
 }
@@ -1810,24 +1810,24 @@ impl CTipbarAccessible {
     pub unsafe fn Initialize(&mut self) -> HRESULT {
         let this_: *mut Self = self;
         (*this_).m_bInitialized = (TRUE) as i32;
-    
+
         let mut hr: HRESULT = CreateStdAccessibleObject((*this_).m_hWnd, (OBJID_CLIENT) as LONG, &IID_IAccessible,
                                                  core::ptr::addr_of_mut!((*this_).m_pStdAccessible) as *mut *mut core::ffi::c_void);
         if hr < 0 {
             return hr;
         }
-    
+
         let mut pTypeLib: *mut ITypeLib = core::ptr::null_mut();
         hr = LoadRegTypeLib(&LIBID_Accessibility, 1, 0, 0, core::ptr::addr_of_mut!(pTypeLib));
         if hr < 0 {
             hr = LoadTypeLib(CPP_COM_WSTR_FB3ED1CCBECC.as_ptr(), core::ptr::addr_of_mut!(pTypeLib));
         }
-    
+
         if hr >= 0 {
             hr = (*pTypeLib).GetTypeInfoOfGuid(&IID_IAccessible, core::ptr::addr_of_mut!((*this_).m_pTypeInfo));
             (*pTypeLib).Release();
         }
-    
+
         hr
     }
     pub unsafe fn AddAccItem(&mut self, pItem: *mut CTipbarAccItem) -> BOOL {
@@ -1886,7 +1886,7 @@ impl CTipbarAccessible {
         if nID < 0 {
             return;
         }
-    
+
         NotifyWinEvent(event, (*this_).m_hWnd, -4, nID);
     }
     pub unsafe fn SetWindow(&mut self, hWnd: HWND,
@@ -2080,19 +2080,19 @@ impl CTipbarAccessible {
         if pvarID.is_null() {
             return E_INVALIDARG;
         }
-    
+
         V_VT!(pvarID) = VT_EMPTY;
-    
+
         let cItems: INT = (*this_).m_AccItems.size() as INT;
         if cItems < (*this_).m_cSelection {
             return S_FALSE;
         }
-    
+
         if cItems > (*this_).m_cSelection {
             V_VT!(pvarID) = (VT_I4 as u16);
             V_I4!(pvarID) = (*this_).m_cSelection;
         }
-    
+
         return S_OK;
     }
     pub unsafe fn get_accDefaultAction(&mut self, mut varID: VARIANT, action: *mut BSTR) -> HRESULT {
@@ -2101,11 +2101,11 @@ impl CTipbarAccessible {
             return E_INVALIDARG;
         }
         *action = core::ptr::null_mut();
-    
+
         if V_VT!(core::ptr::addr_of_mut!(varID)) != (VT_I4 as u16) {
             return E_INVALIDARG;
         }
-    
+
         let mut pItem: *mut CTipbarAccItem = (*this_).AccItemFromID(V_I4!(core::ptr::addr_of_mut!(varID)));
         if pItem.is_null() {
             return DISP_E_MEMBERNOTFOUND;
@@ -2141,15 +2141,15 @@ impl CTipbarAccessible {
         if left.is_null() || top.is_null() || width.is_null() || height.is_null() {
             return E_INVALIDARG;
         }
-    
+
         if !(V_I4!(core::ptr::addr_of_mut!(varID)) != 0) {
             return (*(*this_).m_pStdAccessible).accLocation(left, top, width, height, varID);
         }
-    
+
         let mut rc: RECT = core::mem::zeroed();
         let pItem: *mut CTipbarAccItem = (*this_).AccItemFromID(V_I4!(core::ptr::addr_of_mut!(varID)));
         (*pItem).GetAccLocation(core::ptr::addr_of_mut!(rc));
-    
+
         *left = rc.left;
         *top = rc.top;
         *width = rc.right - rc.left;
@@ -2162,7 +2162,7 @@ impl CTipbarAccessible {
             V_VT!(pvarEnd) = VT_EMPTY;
             return S_OK;
         }
-    
+
         match (dir) as u32 {
             _ if (dir) as u32 == NAVDIR_UP || (dir) as u32 == NAVDIR_LEFT || (dir) as u32 == NAVDIR_PREVIOUS => {
                 V_VT!(pvarEnd) = (VT_I4 as u16);
@@ -2172,7 +2172,7 @@ impl CTipbarAccessible {
                 }
                 return S_OK;
             }
-    
+
             _ if (dir) as u32 == NAVDIR_DOWN || (dir) as u32 == NAVDIR_RIGHT || (dir) as u32 == NAVDIR_NEXT => {
                 V_VT!(pvarEnd) = (VT_I4 as u16);
                 V_I4!(pvarEnd) = V_I4!(core::ptr::addr_of_mut!(varStart)) + 1;
@@ -2181,22 +2181,22 @@ impl CTipbarAccessible {
                 }
                 return S_OK;
             }
-    
+
             _ if (dir) as u32 == NAVDIR_FIRSTCHILD => {
                 V_VT!(pvarEnd) = (VT_I4 as u16);
                 V_I4!(pvarEnd) = 1;
                 return S_OK;
             }
-    
+
             _ if (dir) as u32 == NAVDIR_LASTCHILD => {
                 V_VT!(pvarEnd) = (VT_I4 as u16);
                 V_I4!(pvarEnd) = ((*this_).m_AccItems.size() - 1) as INT;
                 return S_OK;
             }
-    
+
             _ => {}
         }
-    
+
         V_VT!(pvarEnd) = VT_EMPTY;
         return S_OK;
     }
@@ -2209,15 +2209,15 @@ impl CTipbarAccessible {
         let mut Rect: RECT = core::mem::zeroed();
         ScreenToClient((*this_).m_hWnd, core::ptr::addr_of_mut!(Point));
         GetClientRect((*this_).m_hWnd, core::ptr::addr_of_mut!(Rect));
-    
+
         if PtInRect(core::ptr::addr_of_mut!(Rect), Point) == 0 {
             V_VT!(pvarID) = VT_EMPTY;
             return S_OK;
         }
-    
+
         V_VT!(pvarID) = (VT_I4 as u16);
         V_I4!(pvarID) = 0;
-    
+
         let mut iItem: usize = 1;
         while iItem < (*this_).m_AccItems.size() {
             let pItem: *mut CTipbarAccItem = (*this_).m_AccItems[iItem as size_t];
@@ -2230,7 +2230,7 @@ impl CTipbarAccessible {
             }
             iItem += 1;
         }
-    
+
         S_OK
     }
     pub unsafe fn accDoDefaultAction(&mut self, mut varID: VARIANT) -> HRESULT {
@@ -2351,17 +2351,17 @@ impl CUTBMenuWnd {
         if (*this_).m_pAccessible.is_null() {
             return (FALSE) as BOOL;
         }
-    
+
         (*this_).m_nMenuWndID = ((*(*this_).m_pAccessible).GetIDOfItem(core::ptr::addr_of_mut!((*pTarget).__base0))) as u32;
         if (*this_).m_nMenuWndID == 0 || (*this_).m_nMenuWndID == (1 as UINT).wrapping_neg() {
             return (FALSE) as BOOL;
         }
-    
+
         if IsWindow((*this_).__base1.m_hWnd) != 0 {
             KillTimer((*this_).__base1.m_hWnd, TIMER_ID_DOACCDEFAULTACTION as UINT_PTR);
             SetTimer((*this_).__base1.m_hWnd, TIMER_ID_DOACCDEFAULTACTION as UINT_PTR, g_uTimerElapseDOACCDEFAULTACTION, None);
         }
-    
+
         return (TRUE) as BOOL;
     }
     pub unsafe fn GetAccItem(&mut self) -> *mut CTipbarAccItem {
@@ -2388,8 +2388,8 @@ impl CUTBMenuWnd {
         if !pAccessible.is_null() {
             (*this_).m_pAccessible = pAccessible;
         }
-    
-        return (*this_).__base1.Initialize();
+
+        return (*this_).__base1.Initialize__body();
     }
     pub unsafe fn OnCreate__body(&mut self, hWnd: HWND) {
         let this_: *mut Self = self;
@@ -2412,15 +2412,15 @@ impl CUTBMenuWnd {
         if lParam != -4 {
             return S_OK;
         }
-    
+
         if (*this_).m_pAccessible.is_null() {
             return E_OUTOFMEMORY;
         }
-    
+
         if (*(*this_).m_pAccessible).m_bInitialized != 0 {
             return ((*(*this_).m_pAccessible).CreateRefToAccObj(wParam)) as HRESULT;
         }
-    
+
         if (*this_).m_coInit.EnsureCoInit() >= 0 {
             let mut hr: HRESULT = (*(*this_).m_pAccessible).Initialize();
             if hr < 0 {
@@ -2428,11 +2428,11 @@ impl CUTBMenuWnd {
                 (*this_).m_pAccessible = core::ptr::null_mut();
                 return hr;
             }
-    
+
             (*(*this_).m_pAccessible).NotifyWinEvent(EVENT_OBJECT_CREATE, (*this_).GetAccItem());
             return ((*(*this_).m_pAccessible).CreateRefToAccObj(wParam)) as HRESULT;
         }
-    
+
         return S_OK;
     }
     pub unsafe fn OnShowWindow__body(&mut self, hWnd: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
@@ -2445,7 +2445,7 @@ impl CUTBMenuWnd {
                 (*(*this_).m_pAccessible).NotifyWinEvent(EVENT_OBJECT_HIDE, (*this_).GetAccItem());
             }
         }
-    
+
         return DefWindowProc(hWnd, uMsg, wParam, lParam);
     }
     pub unsafe fn OnTimer__body(&mut self, wParam: WPARAM) {
@@ -2489,7 +2489,7 @@ impl CUTBMenuItem {
         if (*this_).m_pMenuUI.is_null() {
             return (FALSE) as BOOL;
         }
-    
+
         (*(*this_).m_pMenuUI).StartDoAccDefaultActionTimer(this_);
         return (TRUE) as BOOL;
     }
@@ -2539,17 +2539,17 @@ impl CModalMenu {
         if pMenuItem.is_null() {
             return core::ptr::null_mut();
         }
-    
+
         let mut szText: [u16; 256] = [0u16; 256];
         LoadStringW(g_hInst, nStringID as UINT, szText.as_mut_ptr(), _countof!(szText) as INT);
-    
+
         if (*pMenuItem).__base1.Initialize() != 0
             && (*pMenuItem).__base1.Init(nCommandId as UINT, szText.as_mut_ptr()) != 0
             && (*pMenuUI).__base1.InsertItem(core::ptr::addr_of_mut!((*pMenuItem).__base1)) != 0
         {
             return pMenuItem;
         }
-    
+
         CUTBMenuItem__delete(pMenuItem);
         core::ptr::null_mut()
     }
@@ -2582,18 +2582,18 @@ impl CUTBContextMenu {
     pub unsafe fn CreateMenuUI(&mut self, bFlag: BOOL) -> *mut CUTBMenuWnd {
         let this_: *mut Self = self;
         let mut dwStatus: DWORD = 0;
-    
+
         if ((*(*(*this_).m_pTipbarWnd).m_pLangBarMgr).GetShowFloatingStatus(core::ptr::addr_of_mut!(dwStatus))) < 0 {
             return core::ptr::null_mut();
         }
-    
+
         let pMenuUI: *mut CUTBMenuWnd = CUTBMenuWnd__new_in_0(cpp_alloc_CicNoThrow::<CUTBMenuWnd>(), g_hInst, g_dwMenuStyle, 0);
         if pMenuUI.is_null() {
             return core::ptr::null_mut();
         }
-    
+
         (*pMenuUI).Initialize();
-    
+
         if (dwStatus & (TF_SFT_DESKBAND | TF_SFT_MINIMIZED)) != 0 {
             let pRestoreLangBar: *mut CUTBMenuItem = (*this_).__base0.InsertItem(pMenuUI, (ID_RESTORELANGBAR) as INT, (IDS_RESTORELANGBAR2) as INT);
             if !pRestoreLangBar.is_null() && (*(*this_).m_pTipbarWnd).m_dwUnknown20 == 0 {
@@ -2601,7 +2601,7 @@ impl CUTBContextMenu {
             }
         } else {
             (*this_).__base0.InsertItem(pMenuUI, (ID_DESKBAND) as INT, (IDS_MINIMIZE) as INT);
-    
+
             if bFlag != 0 {
                 if IsTransparecyAvailable() != 0 {
                     if (dwStatus & TF_LBI_BALLOON) != 0 {
@@ -2613,7 +2613,7 @@ impl CUTBContextMenu {
                         }
                     }
                 }
-    
+
                 if (dwStatus & TF_SFT_LABELS) == 0 {
                     (*this_).__base0.InsertItem(pMenuUI, (ID_LABELS) as INT, (IDS_TEXTLABELS) as INT);
                 } else {
@@ -2622,17 +2622,17 @@ impl CUTBContextMenu {
                         (*pTextLabels).__base1.Check((TRUE) as i32);
                     }
                 }
-    
+
                 let pVertical: *mut CUTBMenuItem = (*this_).__base0.InsertItem(pMenuUI, (ID_VERTICAL) as INT, (IDS_VERTICAL) as INT);
                 if !pVertical.is_null() {
                     (*pVertical).__base1.Check((((*(*this_).m_pTipbarWnd).m_dwTipbarWndFlags & TIPBAR_VERTICAL) != 0) as BOOL);
                 }
             }
         }
-    
+
         if bFlag != 0 {
             let mut pExtraIcons: *mut CUTBMenuItem = core::ptr::null_mut();
-    
+
             if (dwStatus & TF_SFT_EXTRAICONSONMINIMIZED) != 0 {
                 pExtraIcons = (*this_).__base0.InsertItem(pMenuUI, (ID_NOEXTRAICONS) as INT, (IDS_EXTRAICONS) as INT);
                 if !pExtraIcons.is_null() {
@@ -2641,7 +2641,7 @@ impl CUTBContextMenu {
             } else {
                 pExtraIcons = (*this_).__base0.InsertItem(pMenuUI, (ID_EXTRAICONS) as INT, (IDS_EXTRAICONS) as INT);
             }
-    
+
             if !pExtraIcons.is_null() {
                 if GetKeyboardLayoutList(0, core::ptr::null_mut()) == 1 {
                     (*pExtraIcons).__base1.Check((TRUE) as i32);
@@ -2650,18 +2650,18 @@ impl CUTBContextMenu {
                     (*pExtraIcons).__base1.Gray((FALSE) as i32);
                 }
             }
-    
+
             if (dwStatus & TF_SFT_DESKBAND) != 0 {
                 (*this_).__base0.InsertItem(pMenuUI, (ID_ADJUSTDESKBAND) as INT, (IDS_ADJUSTLANGBAND) as INT);
             }
-    
+
             (*this_).__base0.InsertItem(pMenuUI, (ID_SETTINGS) as INT, (IDS_SETTINGS) as INT);
-    
+
             if CheckCloseMenuAvailable() != 0 {
                 (*this_).__base0.InsertItem(pMenuUI, (ID_CLOSELANGBAR) as INT, (IDS_CLOSELANGBAR) as INT);
             }
         }
-    
+
         pMenuUI
     }
     pub unsafe fn ShowPopup(&mut self, pWindow: *mut CUIFWindow, pt: POINT, prc: LPCRECT, bFlag: BOOL) -> UINT {
@@ -2669,23 +2669,23 @@ impl CUTBContextMenu {
         if g_bWinLogon != 0 {
             return 0;
         }
-    
+
         if !(*this_).__base0.m_pMenuUI.is_null() {
             return -(1 as i32) as UINT;
         }
-    
+
         (*this_).__base0.m_pMenuUI = (*this_).CreateMenuUI(bFlag);
         if (*this_).__base0.m_pMenuUI.is_null() {
             return 0;
         }
-    
+
         let nCommandId: UINT = (*(*this_).__base0.m_pMenuUI).__base1.ShowModalPopup(pWindow, prc, (TRUE) as i32);
-    
+
         if !(*this_).__base0.m_pMenuUI.is_null() {
             CUTBMenuWnd__delete((*this_).__base0.m_pMenuUI);
             (*this_).__base0.m_pMenuUI = core::ptr::null_mut();
         }
-    
+
         return nCommandId;
     }
     pub unsafe fn SelectMenuItem(&mut self, nCommandId: UINT) -> BOOL {
@@ -2696,22 +2696,22 @@ impl CUTBContextMenu {
                     (*(*(*this_).m_pTipbarWnd).m_pLangBarMgr).ShowFloating(TF_SFT_LOWTRANSPARENCY);
                     break 'sw;
                 }
-    
+
                 ID_NOTRANS => {
                     (*(*(*this_).m_pTipbarWnd).m_pLangBarMgr).ShowFloating(TF_SFT_NOTRANSPARENCY);
                     break 'sw;
                 }
-    
+
                 ID_LABELS => {
                     (*(*(*this_).m_pTipbarWnd).m_pLangBarMgr).ShowFloating(TF_SFT_LABELS);
                     break 'sw;
                 }
-    
+
                 ID_NOLABELS => {
                     (*(*(*this_).m_pTipbarWnd).m_pLangBarMgr).ShowFloating(TF_SFT_NOLABELS);
                     break 'sw;
                 }
-    
+
                 ID_DESKBAND => {
                     if g_bEnableDeskBand == 0 || (g_dwOSInfo & (CIC_OSINFO_XPPLUS as u32)) == 0 {
                         (*(*(*this_).m_pTipbarWnd).m_pLangBarMgr).ShowFloating(TF_SFT_MINIMIZED);
@@ -2719,14 +2719,14 @@ impl CUTBContextMenu {
                         let mut dwStatus: DWORD = 0;
                         (*(*(*this_).m_pTipbarWnd).m_pLangBarMgr)
                             .GetShowFloatingStatus(core::ptr::addr_of_mut!(dwStatus));
-    
+
                         if (dwStatus & TF_SFT_DESKBAND) != 0 {
                             break 'sw;
                         }
-    
+
                         (*(*(*this_).m_pTipbarWnd).m_pLangBarMgr).ShowFloating(TF_SFT_DESKBAND);
                     }
-    
+
                     let pDialog: *mut CUTBMinimizeLangBarDlg =
                         CUTBMinimizeLangBarDlg__new_in_0(cpp_alloc_CicNoThrow::<CUTBMinimizeLangBarDlg>());
                     if !pDialog.is_null() {
@@ -2735,7 +2735,7 @@ impl CUTBContextMenu {
                     }
                     break 'sw;
                 }
-    
+
                 ID_CLOSELANGBAR => {
                     let pDialog: *mut CUTBCloseLangBarDlg =
                         CUTBCloseLangBarDlg__new_in_0(cpp_alloc_CicNoThrow::<CUTBCloseLangBarDlg>());
@@ -2748,47 +2748,47 @@ impl CUTBContextMenu {
                     }
                     break 'sw;
                 }
-    
+
                 ID_EXTRAICONS => {
                     (*(*this_).m_pTipbarWnd).m_dwTipbarWndFlags &= !TIPBAR_NODESKBAND;
                     (*(*(*this_).m_pTipbarWnd).m_pLangBarMgr).ShowFloating(TF_SFT_EXTRAICONSONMINIMIZED);
                     break 'sw;
                 }
-    
+
                 ID_NOEXTRAICONS => {
                     (*(*this_).m_pTipbarWnd).m_dwTipbarWndFlags &= !TIPBAR_NODESKBAND;
                     (*(*(*this_).m_pTipbarWnd).m_pLangBarMgr).ShowFloating(TF_SFT_NOEXTRAICONSONMINIMIZED);
                     break 'sw;
                 }
-    
+
                 ID_RESTORELANGBAR => {
                     (*(*(*this_).m_pTipbarWnd).m_pLangBarMgr).ShowFloating(TF_LBI_ICON);
                     break 'sw;
                 }
-    
+
                 ID_VERTICAL => {
                     (*(*this_).m_pTipbarWnd).SetVertical(
                         ((((*(*this_).m_pTipbarWnd).m_dwTipbarWndFlags & TIPBAR_VERTICAL) != 0) as BOOL),
                     );
                     break 'sw;
                 }
-    
+
                 ID_ADJUSTDESKBAND => {
                     (*(*this_).m_pTipbarWnd).AdjustDeskBandSize((TRUE) as BOOL);
                     break 'sw;
                 }
-    
+
                 ID_SETTINGS => {
                     TF_RunInputCPL();
                     break 'sw;
                 }
-    
+
                 _ => {
                     break 'sw;
                 }
             }
         }
-    
+
         return (TRUE) as BOOL;
     }
 }
@@ -2809,7 +2809,7 @@ impl CUTBLBarMenu {
         if pMenuUI.is_null() {
             return core::ptr::null_mut();
         }
-    
+
         (*pMenuUI).Initialize();
         let mut iItem: usize = 0 as usize;
         while iItem < (*this_).__base0.m_MenuItems.size() {
@@ -2817,7 +2817,7 @@ impl CUTBLBarMenu {
             (*pItem).InsertToUI(pMenuUI);
             iItem += 1;
         }
-    
+
         return pMenuUI;
     }
     pub unsafe fn ShowPopup(&mut self, pWindow: *mut CUIFWindow, pt: POINT, prcExclude: LPCRECT) -> INT {
@@ -2825,19 +2825,19 @@ impl CUTBLBarMenu {
         if !(*this_).m_pMenuUI.is_null() {
             return 0;
         }
-    
+
         (*this_).m_pMenuUI = (*this_).CreateMenuUI();
         if (*this_).m_pMenuUI.is_null() {
             return -1;
         }
-    
+
         let mut nCommandId: INT = (*(*this_).m_pMenuUI).__base1.ShowModalPopup(pWindow, prcExclude, TRUE as BOOL) as INT;
-    
+
         if !(*this_).m_pMenuUI.is_null() {
             CUTBMenuWnd__delete((*this_).m_pMenuUI);
             (*this_).m_pMenuUI = core::ptr::null_mut();
         }
-    
+
         return nCommandId;
     }
     pub unsafe fn CreateMenuItem__body(&mut self) -> *mut CCicLibMenuItem {
@@ -2892,7 +2892,7 @@ impl CTipbarGripper {
     pub unsafe fn OnLButtonUp__body(&mut self, x: LONG, y: LONG) {
         let this_: *mut Self = self;
         (*(*this_).m_pTipbarWnd).RestoreFromStub();
-    
+
         if g_bEnableDeskBand != 0 && (g_dwOSInfo & (CIC_OSINFO_XPPLUS as u32)) != 0
         {
             let mut AppBar: APPBARDATA = core::mem::zeroed();
@@ -2910,8 +2910,8 @@ impl CTipbarGripper {
                 }
             }
         }
-    
-        (*this_).__base0.OnLButtonUp(x, y);
+
+        (*this_).__base0.OnLButtonUp__body(x, y);
         (*(*this_).m_pTipbarWnd).UpdatePosFlags();
     }
     pub unsafe fn OnRButtonUp__body(&mut self, x: LONG, y: LONG) {
@@ -2928,8 +2928,8 @@ impl CTipbarGripper {
         if (*this_).m_bInDebugMenu != 0 {
             return (FALSE) as BOOL;
         }
-    
-        return (*this_).__base0.OnSetCursor(uMsg, x, y);
+
+        return (*this_).__base0.OnSetCursor__body(uMsg, x, y);
     }
 }
 
@@ -2948,12 +2948,12 @@ impl CLangBarItemList {
         if !pItem.is_null() {
             return pItem;
         }
-    
+
         pItem = (*this_).__base0.Append(1);
         if pItem.is_null() {
             return core::ptr::null_mut();
         }
-    
+
         ZeroMemory!(pItem as LPVOID, core::mem::size_of::<LANGBARITEMSTATE>());
         (*pItem).m_clsid = *rclsid;
         (*pItem).m_dwDemoteLevel = 0;
@@ -2962,7 +2962,7 @@ impl CLangBarItemList {
     pub unsafe fn Clear(&mut self) {
         let this_: *mut Self = self;
         (*this_).__base0.clear();
-    
+
         let mut regKey: CicRegKey = CicRegKey__zeroed();
         let mut error: LSTATUS;
         error = regKey.Open(HKEY_CURRENT_USER, CPP_COM_WSTR_E8561835E59F.as_ptr(), KEY_ALL_ACCESS);
@@ -2976,7 +2976,7 @@ impl CLangBarItemList {
         if pItem.is_null() {
             return (TRUE) as BOOL;
         }
-    
+
         (*pItem).m_dwDemoteLevel = dwDemoteLevel;
         if (((*pItem).IsShown()) == 0) {
             if (*pItem).m_nTimerID != 0 {
@@ -2988,7 +2988,7 @@ impl CLangBarItemList {
             }
             (*pItem).m_bDisableDemoting = (FALSE) as i32;
         }
-    
+
         (*this_).SaveItem(core::ptr::null_mut(), pItem);
         return (TRUE) as BOOL;
     }
@@ -3024,7 +3024,7 @@ impl CLangBarItemList {
         if (error) as u32 != ERROR_SUCCESS {
             return;
         }
-    
+
         let mut szKeyName: [WCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
         let mut dwIndex: DWORD = 0;
         'outer: loop {
@@ -3033,23 +3033,23 @@ impl CLangBarItemList {
                 if (error) as u32 != ERROR_SUCCESS {
                     break 'outer; // the C `break` leaves the for loop
                 }
-    
+
                 let mut clsid: CLSID = core::mem::zeroed();
                 if CLSIDFromString(szKeyName.as_ptr(), core::ptr::addr_of_mut!(clsid)) != S_OK {
                     break 'body;
                 }
-    
+
                 let mut regKey2: CicRegKey = CicRegKey__zeroed();
                 error = regKey2.Open(regKey.m_hKey, szKeyName.as_ptr(), KEY_READ);
                 if (error) as u32 != ERROR_SUCCESS {
                     break 'body;
                 }
-    
+
                 let pItem: *mut LANGBARITEMSTATE = (*this_).AddItem(&clsid);
                 if pItem.is_null() {
                     break 'body;
                 }
-    
+
                 let mut Data: DWORD = 0;
                 regKey2.QueryDword(CPP_COM_WSTR_C8D26F04DF9D.as_ptr(), core::ptr::addr_of_mut!(Data));
                 (*pItem).m_dwDemoteLevel = Data;
@@ -3063,19 +3063,19 @@ impl CLangBarItemList {
         let this_: *mut Self = self;
         let mut error: LSTATUS = 0;
         let mut regKey: CicRegKey = CicRegKey__zeroed();
-    
+
         if pRegKey.is_null() {
             error = regKey.Create(HKEY_CURRENT_USER, CPP_COM_WSTR_A5A4F2227C74.as_ptr());
             if (error) as u32 != ERROR_SUCCESS {
                 return;
             }
-    
+
             pRegKey = core::ptr::addr_of_mut!(regKey);
         }
-    
+
         let mut szSubKey: [WCHAR; (MAX_PATH) as _] = core::mem::zeroed();
         StringFromGUID2(&(*pState).m_clsid, szSubKey.as_mut_ptr(), (_countof!(szSubKey)) as INT);
-    
+
         if (*pState).m_dwDemoteLevel != 0 || (*pState).m_bDisableDemoting != 0 {
             let mut regKey2: CicRegKey = CicRegKey__zeroed();
             error = regKey2.Create((&raw mut *pRegKey).cast(), szSubKey.as_ptr());
@@ -3086,7 +3086,7 @@ impl CLangBarItemList {
                 } else {
                     regKey2.DeleteValue(CPP_COM_WSTR_C8D26F04DF9D.as_ptr());
                 }
-    
+
                 regKey2.SetDword(CPP_COM_WSTR_DAD1FE337325.as_ptr(), ((*pState).m_bDisableDemoting) as u32);
             }
         } else {
@@ -3098,33 +3098,33 @@ impl CLangBarItemList {
         if g_bIntelliSense == 0 {
             return;
         }
-    
+
         let pItem: *mut LANGBARITEMSTATE = (*this_).AddItem(rclsid);
         if pItem.is_null() || (*pItem).m_bDisableDemoting != 0 {
             return;
         }
-    
+
         if (*pItem).m_nTimerID != 0 {
             if bIntentional == 0 {
                 return;
             }
-    
+
             if !g_pTipbarWnd.is_null() {
                 (*g_pTipbarWnd).KillTimer((*pItem).m_nTimerID);
             }
-    
+
             (*pItem).m_nTimerID = 0;
         }
-    
+
         (*pItem).m_bStartedIntentionally |= bIntentional;
-    
+
         let uTimeOut: UINT = if bIntentional != 0 {
             g_uTimeOutIntentional
         } else {
             g_uTimeOutNonIntentional
         };
         (*pItem).m_uTimeOut += uTimeOut;
-    
+
         if (*pItem).m_uTimeOut < g_uTimeOutMax {
             let uDemotingTimerId: UINT_PTR = (*this_).FindDemotingTimerId();
             (*pItem).m_nTimerID = uDemotingTimerId;
@@ -3140,21 +3140,21 @@ impl CLangBarItemList {
     pub unsafe fn FindDemotingTimerId(&mut self) -> UINT_PTR {
         let this_: *mut Self = self;
         let mut nTimerID: UINT_PTR = 10000;
-    
+
         if (*this_).__base0.empty() {
             return nTimerID;
         }
-    
+
         loop {
             let mut iItem: usize = 0;
-    
+
             while (*this_).__base0[iItem].m_nTimerID != nTimerID {
                 iItem += 1;
                 if iItem >= (*this_).__base0.size() {
                     return nTimerID;
                 }
             }
-    
+
             nTimerID += 1;
             if nTimerID >= 10050 {
                 return 0;
@@ -3170,7 +3170,7 @@ impl CLangBarItemList {
 impl CTrayIconWnd {
     pub unsafe extern "system" fn EnumChildWndProc(hWnd: HWND, lParam: LPARAM) -> BOOL {
         let pWnd: *mut CTrayIconWnd = lParam as *mut CTrayIconWnd;
-    
+
         let mut ClassName: [u16; 60] = [0u16; 60];
         GetClassName(hWnd, ClassName.as_mut_ptr(), _countof!(ClassName) as i32);
         let TrayNotifyWnd: [u16; 14] = [
@@ -3180,7 +3180,7 @@ impl CTrayIconWnd {
         if lstrcmp(ClassName.as_ptr(), TrayNotifyWnd.as_ptr()) != 0 {
             return (TRUE) as BOOL;
         }
-    
+
         (*pWnd).m_hNotifyWnd = hWnd;
         return (FALSE) as BOOL;
     }
@@ -3268,14 +3268,14 @@ impl CTrayIconWnd {
         (*this_).m_hWnd = CreateWindowEx(0, (class_name.as_ptr()), core::ptr::null_mut(), WS_DISABLED,
                                   0, 0, 0, 0, core::ptr::null_mut(), core::ptr::null_mut(), g_hInst, this_ as LPVOID);
         (*this_).FindTrayEtc();
-    
+
         (*this_).m_pMainIconItem = CMainIconItem__new_in_0(cpp_alloc_CicNoThrow::<CMainIconItem>(), this_);
         if !(*this_).m_pMainIconItem.is_null()
         {
             (*(*this_).m_pMainIconItem).Init((*this_).m_hWnd);
             (*this_).m_Items.Add(core::ptr::addr_of_mut!((*(*this_).m_pMainIconItem).__base0));
         }
-    
+
         return (*this_).m_hWnd;
     }
     pub unsafe fn DestroyWnd(&mut self) {
@@ -3290,7 +3290,7 @@ impl CTrayIconWnd {
             (*(*this_).m_pMainIconItem).__base0.m_hKL = core::ptr::null_mut();
             return (TRUE) as BOOL;
         }
-    
+
         if hKL != (*(*this_).m_pMainIconItem).__base0.m_hKL {
             let mut szText: [u16; 64 as usize] = [0u16; 64 as usize];
             let mut hIcon: HICON = TF_GetLangIcon(LOWORD!(hKL), szText.as_mut_ptr(), (_countof!(szText)) as INT);
@@ -3302,10 +3302,10 @@ impl CTrayIconWnd {
                 hIcon = LoadIconW(g_hInst, MAKEINTRESOURCEW!(IDI_MAINICON));
                 (*(*this_).m_pMainIconItem).__base0.__base0.SetIcon(hIcon, szText.as_ptr());
             }
-    
+
             (*(*this_).m_pMainIconItem).__base0.m_hKL = hKL;
         }
-    
+
         return (TRUE) as BOOL;
     }
     pub unsafe fn SetIcon(&mut self, rguid: &GUID, dwUnknown24: DWORD, hIcon: HICON, psz: LPCWSTR) -> BOOL {
@@ -3319,17 +3319,17 @@ impl CTrayIconWnd {
             if pItem.is_null() {
                 return (FALSE) as BOOL;
             }
-    
+
             (*pItem).__base0._Init((*this_).m_hWnd, (*this_).m_uCallbackMsg, (*this_).m_uNotifyIconID, rguid);
             (*this_).m_uCallbackMsg += 2;
             (*this_).m_uNotifyIconID += 1;
             (*this_).m_Items.Add(pItem);
         }
-    
+
         if hIcon.is_null() {
             return (*pItem).__base0.RemoveIcon();
         }
-    
+
         return (*pItem).__base0.SetIcon(hIcon, psz);
     }
     pub unsafe fn RemoveAllIcon(&mut self, dwFlags: DWORD) {
@@ -3345,17 +3345,17 @@ impl CTrayIconWnd {
                         break 'body;
                     }
                 }
-    
+
                 if (dwFlags & 0x2) != 0 {
                     if IsEqualGUID!(core::ptr::addr_of!((*pItem).__base0.m_guid), &GUID_TFCAT_TIP_KEYBOARD) {
                         break 'body;
                     }
                 }
-    
+
                 if (*pItem).__base0.m_uNotifyIconID < 0x1000 {
                     break 'body;
                 }
-    
+
                 (*pItem).__base0.RemoveIcon();
             }
             iItem += 1;
@@ -3384,7 +3384,7 @@ impl CTrayIconWnd {
         if (*this_).m_hTrayWnd.is_null() {
             return (FALSE) as BOOL;
         }
-    
+
         EnumChildWindows((*this_).m_hTrayWnd, Some(CTrayIconWnd::EnumChildWndProc), this_ as LPARAM);
         if (*this_).m_hNotifyWnd.is_null() {
             return (FALSE) as BOOL;
@@ -3406,7 +3406,7 @@ impl CTrayIconWnd {
         if !g_pTipbarWnd.is_null() {
             (*g_pTipbarWnd).AttachFocusThread();
         }
-    
+
         let mut iItem: usize = 0;
         while iItem < (*this_).m_Items.size() {
             let pItem: *mut CButtonIconItem = (*this_).m_Items[iItem];
@@ -3471,7 +3471,7 @@ impl CTrayIconItem {
             NotifyIcon.uCallbackMessage = (*this_).m_uCallbackMessage;
             Shell_NotifyIconW(NIM_DELETE, core::ptr::addr_of_mut!(NotifyIcon));
         }
-    
+
         (*this_).m_dwIconAddOrModify = NIM_ADD;
         (*this_).m_bIconAdded = (TRUE) as i32;
         return (TRUE) as BOOL;
@@ -3481,7 +3481,7 @@ impl CTrayIconItem {
         if hIcon.is_null() {
             return (FALSE) as BOOL;
         }
-    
+
         let mut NotifyIcon: NOTIFYICONDATAW = core::mem::zeroed();
         NotifyIcon.cbSize = core::mem::size_of::<NOTIFYICONDATAW>() as DWORD;
         NotifyIcon.hWnd = (*this_).m_hWnd;
@@ -3495,9 +3495,9 @@ impl CTrayIconItem {
         const fn __len<T, const N: usize>(_: *const [T; N]) -> usize { N }
         StringCchCopyW(core::ptr::addr_of_mut!(NotifyIcon.szTip).cast(), __len(core::ptr::addr_of!(NotifyIcon.szTip)), pszTip);
         }
-    
+
         Shell_NotifyIconW((*this_).m_dwIconAddOrModify, core::ptr::addr_of_mut!(NotifyIcon));
-    
+
         (*this_).m_dwIconAddOrModify = NIM_MODIFY;
         (*this_).m_bIconAdded = (NIM_MODIFY as i32);
         return (TRUE) as BOOL;
@@ -3536,7 +3536,7 @@ impl CButtonIconItem {
                 return (TRUE) as BOOL;
             }
         }
-    
+
         //FIXME
         return (TRUE) as BOOL;
     }
@@ -3561,10 +3561,10 @@ impl CMainIconItem {
     }
     pub unsafe fn OnDelayMsg__body(&mut self, uMsg: UINT) -> BOOL {
         let this_: *mut Self = self;
-        if (*this_).__base0.OnDelayMsg(uMsg) == 0 {
+        if (*this_).__base0.OnDelayMsg__body(uMsg) == 0 {
             return 0;
         }
-    
+
         if uMsg == WM_LBUTTONDBLCLK {
             if (*g_pTipbarWnd).m_dwUnknown20 != 0 {
                 (*(*g_pTipbarWnd).m_pLangBarMgr).ShowFloating(TF_SFT_SHOWNORMAL);
@@ -3600,19 +3600,19 @@ impl CLBarItemBase {
     pub unsafe fn ShowInternal(&mut self, bShow: BOOL, bUpdate: BOOL) -> HRESULT {
         let this_: *mut Self = self;
         let dwOldStatus: DWORD = (*this_).m_dwItemStatus;
-    
+
         if bShow != 0 {
             (*this_).m_dwItemStatus &= !TF_LBI_STATUS_HIDDEN;
         } else {
             (*this_).m_dwItemStatus |= TF_LBI_STATUS_HIDDEN;
         }
-    
+
         if bUpdate != 0 && (dwOldStatus != (*this_).m_dwItemStatus) {
             if !(*this_).m_pLangBarItemSink.is_null() {
                 (*(*this_).m_pLangBarItemSink).OnUpdate(TF_LBI_STATUS);
             }
         }
-    
+
         return S_OK;
     }
     pub unsafe fn InitNuiInfo(&mut self, clsidService: &IID, guidItem: &GUID, dwStyle: DWORD, ulSort: DWORD, Source: LPCWSTR) {
@@ -3651,7 +3651,7 @@ impl CLBarItemBase {
         if IsEqualIID!(riid, &IID_ITfLangBarItemSink) != false || !(*this_).m_pLangBarItemSink.is_null() {
             return TF_E_NOOBJECT;
         }
-    
+
         let mut hr: HRESULT = (*punk).QueryInterface(&IID_ITfLangBarItemSink, core::ptr::addr_of_mut!((*this_).m_pLangBarItemSink) as *mut *mut core::ffi::c_void);
         if ((hr) >= 0) {
             *pdwCookie = 0x80000001;
@@ -3663,11 +3663,11 @@ impl CLBarItemBase {
         if dwCookie != 0x80000001 {
             return E_FAIL;
         }
-    
+
         if (*this_).m_pLangBarItemSink.is_null() {
             return E_UNEXPECTED;
         }
-    
+
         (*(*this_).m_pLangBarItemSink).Release();
         (*this_).m_pLangBarItemSink = core::ptr::null_mut();
         return S_OK;
@@ -3794,12 +3794,12 @@ impl CLBarInatItem {
             let mut szText: [WCHAR; 256] = [0; 256];
             LoadStringW(g_hInst, IDS_LANGUAGE, szText.as_mut_ptr(), (_countof!(szText)) as i32);
             (*this_).__base0.__base0.InitNuiInfo(&CLSID_SYSTEMLANGBARITEM, &GUID_LBI_INATITEM, 0x20001, 0, szText.as_mut_ptr());
-    
+
             LoadStringW(g_hInst, IDS_LANGUAGEBUTTON, szText.as_mut_ptr(), (_countof!(szText)) as i32);
             StringCchCopyW((*this_).__base0.__base0.m_szToolTipText.as_mut_ptr(), (_countof!((*this_).__base0.__base0.m_szToolTipText)) as _, szText.as_ptr());
             (*this_).m_dwThreadId = dwThreadId;
             (*this_).m_hKL = GetKeyboardLayout((*this_).m_dwThreadId);
-    
+
             TF_InitMlngInfo();
             (*this_).__base0.__base0.ShowInternal((TF_MlngInfoCount() > 1) as i32, 0);
         }
@@ -3807,7 +3807,7 @@ impl CLBarInatItem {
     pub unsafe fn InitMenu(&mut self, pMenu: *mut ITfMenu) -> HRESULT {
         let this_: *mut Self = self;
         TF_InitMlngInfo();
-    
+
         let mut iKL: INT = 0;
         let cKLs: INT = TF_MlngInfoCount();
         iKL = 0;
@@ -3820,12 +3820,12 @@ impl CLBarInatItem {
                 if iIndex != -1 {
                     hIcon = TF_InatExtractIcon(iIndex);
                 }
-    
+
                 LangBarInsertMenu(pMenu, iKL as UINT, szDesc.as_ptr(), ((hKL == (*this_).m_hKL) as BOOL), hIcon);
             }
             iKL += 1;
         }
-    
+
         let mut dwStatus: DWORD = core::mem::zeroed();
         if !g_pTipbarWnd.is_null()
             && !(*g_pTipbarWnd).m_pLangBarMgr.is_null()
@@ -3833,18 +3833,18 @@ impl CLBarInatItem {
             && (dwStatus & (TF_SFT_DESKBAND | TF_SFT_MINIMIZED)) != 0
         {
             LangBarInsertSeparator(pMenu);
-    
+
             let mut szText: [WCHAR; 256] = [0 as WCHAR; 256];
             LoadStringW(g_hInst, IDS_RESTORELANGBAR2 as UINT, szText.as_mut_ptr(), (_countof!(szText)) as i32);
             LangBarInsertMenu(pMenu, 2000 as UINT, szText.as_ptr(), (FALSE) as BOOL, core::ptr::null_mut());
         }
-    
+
         return S_OK;
     }
     pub unsafe fn OnMenuSelect(&mut self, nCommandId: INT) -> HRESULT {
         let this_: *mut Self = self;
         let mut hKL: HKL = core::mem::zeroed();
-    
+
         if nCommandId == 2000 {
             if !g_pTipbarWnd.is_null() {
                 let pLangBarMgr: *mut ITfLangBarMgr = ((*g_pTipbarWnd).m_pLangBarMgr).cast();
@@ -3860,7 +3860,7 @@ impl CLBarInatItem {
                 PostMessage(hwndFore, WM_INPUTLANGCHANGEREQUEST, FontSig as WPARAM, hKL as LPARAM);
             }
         }
-    
+
         return S_OK;
     }
     pub unsafe fn GetIcon(&mut self, phIcon: *mut HICON) -> HRESULT {
@@ -3878,12 +3878,12 @@ impl CLBarInatItem {
         if pbstr.is_null() {
             return E_INVALIDARG;
         }
-    
+
         let mut szText = [0u16; 256];
         if GethKLDesc((*this_).m_hKL, szText.as_mut_ptr(), _countof!(szText) as UINT) == 0 {
             return (*this_).GetText(pbstr);
         }
-    
+
         *pbstr = SysAllocString(szText.as_ptr());
         return S_OK;
     }
@@ -3906,9 +3906,9 @@ impl CTipbarThread {
             (*this_).RemoveUIObjs();
             (*(*this_).m_pTipbarWnd).CleanUpThreadPointer(this_, 1);
         }
-    
+
         (*this_)._UninitItemList(1);
-    
+
         if !(*this_).m_pLangBarItemMgr.is_null() {
             (*(*this_).m_pLangBarItemMgr).Release();
             (*this_).m_pLangBarItemMgr = core::ptr::null_mut();
@@ -3949,14 +3949,14 @@ impl CTipbarThread {
             }
             iItem += 1;
         }
-    
+
         let mut hr: HRESULT = S_OK;
         if bUnAdvise != 0 {
             if (*this_).m_dwThreadId == GetCurrentThreadId() || !(MyWaitForInputIdle((*this_).m_dwThreadId, 2000) != 0) {
                 hr = (*this_)._UnadviseItemsSink();
             }
         }
-    
+
         let mut iItem: usize = 0;
         while iItem < (*this_).m_UIObjects.size() {
             let pItem: *mut CTipbarItem = (*this_).m_UIObjects[iItem];
@@ -3964,25 +3964,25 @@ impl CTipbarThread {
                 if !(*this_).m_pTipbarWnd.is_null() {
                     (*pItem).OnUnknown47((*(*this_).m_pTipbarWnd).GetWindow());
                 }
-    
+
                 (*pItem).ClearConnections();
-    
+
                 if !(*this_).m_pTipbarWnd.is_null() {
                     (*pItem).OnUnknown50();
                 } else {
                     (*pItem).OnUnknown51();
                 }
-    
+
                 (*pItem).OnUnknown59();
                 (*pItem).OnUnknown42();
             }
             iItem += 1;
         }
-    
+
         (*this_).m_UIObjects.clear();
-    
+
         (*this_).RemoveAllSeparators();
-    
+
         return hr;
     }
     pub unsafe fn IsDirtyItem(&mut self) -> DWORD {
@@ -4041,7 +4041,7 @@ impl CTipbarThread {
     pub unsafe fn AddUIObjs(&mut self) {
         let this_: *mut Self = self;
         (*this_)._AddRef();
-    
+
         let mut iItem: usize = 0;
         while iItem < (*this_).m_UIObjects.size() {
             let pItem: *mut CTipbarItem = (*this_).m_UIObjects[iItem];
@@ -4055,10 +4055,10 @@ impl CTipbarThread {
             }
             iItem += 1;
         }
-    
+
         (*this_).AddAllSeparators();
         (*this_).MyMoveWnd(0, 0);
-    
+
         (*this_)._Release();
     }
     pub unsafe fn RemoveUIObjs(&mut self) {
@@ -4092,9 +4092,9 @@ impl CTipbarThread {
     pub unsafe fn GetTextSize(&mut self, bstr: BSTR, pSize: LPSIZE) {
         let this_: *mut Self = self;
         let hWnd: HWND = (*(*(*this_).m_pTipbarWnd).GetWindow()).m_hWnd;
-    
+
         let mut hFontOld: HGDIOBJ = core::ptr::null_mut();
-    
+
         let hDC: HDC = GetDC(hWnd);
         if (*(*this_).m_pTipbarWnd).__base3.EnsureThemeData((*(*(*this_).m_pTipbarWnd).GetWindow()).m_hWnd) < 0 {
             let hFont: HFONT = (*(*this_).m_pTipbarWnd).__base3.__base0.m_hFont;
@@ -4111,9 +4111,9 @@ impl CTipbarThread {
             theme.m_iPartId = 1;
             theme.m_iStateId = 0;
             theme.m_pszClassList = CPP_COM_WSTR_91CDBB74B095.as_ptr();
-    
+
             let mut hFont: HFONT = core::ptr::null_mut();
-    
+
             if theme.InternalOpenThemeData(hWnd) >= 0 {
                 let mut lf: LOGFONTW = core::mem::zeroed::<LOGFONTW>();
                 if GetThemeFont(theme.m_hTheme, core::ptr::null_mut(), theme.m_iPartId, 0, 210, core::ptr::addr_of_mut!(lf)) >= 0 {
@@ -4122,15 +4122,15 @@ impl CTipbarThread {
                         hFontOld = SelectObject(hDC, (hFont).cast());
                     }
                 }
-    
+
                 let mut rc: RECT = core::mem::zeroed::<RECT>();
                 let cch: INT = (SysStringLen(bstr)) as i32;
                 GetThemeTextExtent(theme.m_hTheme, hDC, theme.m_iPartId, 0, bstr, cch, 0, core::ptr::null_mut(), core::ptr::addr_of_mut!(rc));
-    
+
                 (*pSize).cx = rc.right;
                 (*pSize).cy = rc.bottom;
             }
-    
+
             if !hFontOld.is_null() {
                 SelectObject(hDC, hFontOld);
             }
@@ -4138,7 +4138,7 @@ impl CTipbarThread {
                 DeleteObject((hFont).cast());
             }
         }
-    
+
         ReleaseDC(hWnd, hDC);
     }
     pub unsafe fn LocateItems(&mut self) {
@@ -4148,15 +4148,15 @@ impl CTipbarThread {
         if (*this_).m_pTipbarWnd.is_null() || (*(*this_).m_pTipbarWnd).m_pFocusThread != this_ {
             return;
         }
-    
+
         let mut Rect: RECT = core::mem::zeroed();
         let mut rcWorkArea: RECT = core::mem::zeroed();
         (*(*this_).m_pTipbarWnd).__base3.GetRect(core::ptr::addr_of_mut!(Rect));
         let pt: POINT = POINT { x: Rect.left, y: Rect.top };
         cicGetWorkAreaRect(pt, core::ptr::addr_of_mut!(rcWorkArea));
-    
+
         GetWindowRect((*(*(*this_).m_pTipbarWnd).GetWindow()).m_hWnd, core::ptr::addr_of_mut!(Rect));
-    
+
         let mut X0: LONG = Rect.left + xDelta;
         let mut Y0: LONG = Rect.top + yDelta;
         if (*(*this_).m_pTipbarWnd).m_dwTipbarWndFlags & 0x1000 != 0 {
@@ -4174,7 +4174,7 @@ impl CTipbarThread {
                 (*(*this_).m_pTipbarWnd).m_dwTipbarWndFlags &= !(0x1000);
             }
         }
-    
+
         if (*this_).IsVertical() != 0 {
             let width: LONG = (*(*this_).m_pTipbarWnd).m_cxDlgFrameX2
                 + (*(*this_).m_pTipbarWnd).GetTipbarHeight();
@@ -4186,12 +4186,12 @@ impl CTipbarThread {
                 + (*(*this_).m_pTipbarWnd).GetTipbarHeight();
             (*(*this_).m_pTipbarWnd).SetMoveRect(X0, Y0, width, height);
         }
-    
+
         let mut frameSize: SIZE = SIZE { cx: 0, cy: 0 };
         if !(*(*this_).m_pTipbarWnd).m_pWndFrame.is_null() {
             (*(*(*this_).m_pTipbarWnd).m_pWndFrame).GetFrameSize(core::ptr::addr_of_mut!(frameSize));
         }
-    
+
         (*(*this_).m_pTipbarWnd).LocateCtrlButtons();
         (*(*this_).m_pTipbarWnd).AutoAdjustDeskBandSize();
     }
@@ -4200,12 +4200,12 @@ impl CTipbarThread {
         if (*this_).m_pLangBarItemMgr.is_null() {
             return E_FAIL;
         }
-    
+
         let pdwCoolkies: *mut DWORD = cpp_new_array_CicNoThrow::<DWORD>((*this_).m_UIObjects.size());
         if pdwCoolkies.is_null() {
             return E_OUTOFMEMORY;
         }
-    
+
         let cItems: usize = (*this_).m_UIObjects.size();
         let mut iItem: usize = 0;
         while iItem < cItems {
@@ -4215,11 +4215,11 @@ impl CTipbarThread {
             }
             iItem += 1;
         }
-    
+
         let hr: HRESULT = (*(*this_).m_pLangBarItemMgr).UnadviseItemsSink((cItems as LONG) as ULONG, pdwCoolkies);
-    
+
         cpp_delete_array(pdwCoolkies);
-    
+
         return hr;
     }
     pub unsafe fn _AddRef(&mut self) -> LONG {
@@ -4272,7 +4272,7 @@ impl CTipbarItem {
                 (*(*g_pTipbarWnd).m_pTipbarAccessible).RemoveAccItem((this_).cast());
             }
         }
-    
+
         if !(*this_).m_pLangBarItem.is_null() {
             (*(*this_).m_pLangBarItem).Release();
         }
@@ -4282,11 +4282,11 @@ impl CTipbarItem {
         if (*this_).IsConnected() == 0 {
             return;
         }
-    
+
         (*this_).OnUnknown41();
-    
+
         (*this_).m_dwItemFlags |= 0x2;
-    
+
         let mut dwStatus: DWORD = 0;
         if (*this_).m_dwDirty != 0 {
             if ((*this_).m_dwDirty & 0x10000) != 0 {
@@ -4297,7 +4297,7 @@ impl CTipbarItem {
             (*this_).OnUnknown45((*this_).m_dwDirty, dwStatus);
             (*this_).m_dwDirty = 0;
         }
-    
+
         if !(*this_).m_pTipbarThread.is_null() {
             let mut pTipbarWnd: *mut CTipbarWnd = (*(*this_).m_pTipbarThread).m_pTipbarWnd;
             if !pTipbarWnd.is_null() {
@@ -4307,13 +4307,13 @@ impl CTipbarItem {
                 }
             }
         }
-    
+
         (*this_).OnUnknown42();
     }
     pub unsafe fn _RemovedToUI(&mut self) {
         let this_: *mut Self = self;
         (*this_).m_dwItemFlags &= !0x2;
-    
+
         if !g_pTipbarWnd.is_null() {
             let pAccessible: *mut CTipbarAccessible = (*g_pTipbarWnd).m_pTipbarAccessible;
             if !pAccessible.is_null() {
@@ -4326,15 +4326,15 @@ impl CTipbarItem {
         if (*this_).IsConnected() == 0 {
             return;
         }
-    
+
         (*(*this_).m_pTipbarThread).LocateItems();
-    
+
         if (*this_).IsConnected() == 0 {
             return;
         }
-    
+
         (*(*this_).m_pTipbarThread).AddAllSeparators();
-    
+
         let pTipbarWnd: *mut CTipbarWnd = (*(*this_).m_pTipbarThread).m_pTipbarWnd;
         if bFlag != 0 {
             (*this_).OnUnknown46(if !pTipbarWnd.is_null() {
@@ -4370,16 +4370,16 @@ impl CTipbarItem {
         if g_bIntelliSense == 0 {
             return;
         }
-    
+
         if (*this_).m_pTipbarThread.is_null() {
             return;
         }
-    
+
         let pTipbarWnd: *mut CTipbarWnd = (*(*this_).m_pTipbarThread).m_pTipbarWnd;
         if pTipbarWnd.is_null() {
             return;
         }
-    
+
         //FIXME
     }
     pub unsafe fn MyClientToScreen__0(&mut self, ppt: LPPOINT, prc: LPRECT) {
@@ -4436,10 +4436,10 @@ impl CTipbarItem {
         if (*this_).IsConnected() == 0 {
             return S_OK;
         }
-    
+
         (*this_).m_dwDirty |= dwDirty;
         (*this_).m_dwItemFlags |= 0x20;
-    
+
         if (dwDirty & 0x10000) != 0 || ((*this_).m_dwItemFlags & 0x6) != 0 {
             if !(*this_).m_pTipbarThread.is_null() {
                 let pTipBarWnd: *mut CTipbarWnd = (*(*this_).m_pTipbarThread).m_pTipbarWnd;
@@ -4451,7 +4451,7 @@ impl CTipbarItem {
                 }
             }
         }
-    
+
         return S_OK;
     }
     pub unsafe fn OnUnknown44__body(&mut self) -> HRESULT {
@@ -4512,26 +4512,26 @@ impl CTipbarItem {
     pub unsafe fn GetToolTip__body(&mut self) -> LPCWSTR {
         let this_: *mut Self = self;
         (*this_).OnUnknown41();
-    
+
         if ((*this_).m_dwItemFlags & 0x1) == 0 {
             (*this_).m_dwItemFlags |= 0x1;
-    
+
             let mut bstrString: BSTR = core::ptr::null_mut();
             let hr: HRESULT = (*(*this_).m_pLangBarItem).GetTooltipString(core::ptr::addr_of_mut!(bstrString));
             if hr < 0 {
                 return core::ptr::null_mut();
             }
-    
+
             if !bstrString.is_null() {
                 (*this_).OnUnknown53(bstrString);
                 SysFreeString(bstrString);
             }
         }
-    
+
         let pszToolTip: LPCWSTR = (*this_).OnUnknown55();
-    
+
         (*this_).OnUnknown42();
-    
+
         pszToolTip
     }
     pub unsafe fn OnUnknown57__body(&mut self, prc: LPRECT,
@@ -4567,25 +4567,25 @@ impl CTipbarWnd {
         (*this_).m_dwUnknown23_1[5] = 0;
         (*this_).m_dwUnknown23_1[6] = 0;
         (*this_).m_dwUnknown23_1[7] = 0;
-    
+
         let mut rc: RECT = core::mem::zeroed();
         cicGetScreenRect(g_ptTipbar, core::ptr::addr_of_mut!(rc));
-    
+
         //FIXME: Fix g_ptTipbar
-    
+
         (*this_).Move(g_ptTipbar.x, g_ptTipbar.y, 100, 24);
         (*this_).UpdatePosFlags();
-    
+
         (*this_).m_hMarlettFont = CreateFontW(8, 8, 0, 0, (FW_NORMAL as i32), 0, 0, 0,
                                        SYMBOL_CHARSET, 0, 0, 0, 0, CPP_COM_WSTR_B728528EE8A8.as_ptr());
-    
+
         let mut pLangBarMgr: *mut ITfLangBarMgr = core::ptr::null_mut();
         if ((TF_CreateLangBarMgr(core::ptr::addr_of_mut!(pLangBarMgr))) >= 0) && !pLangBarMgr.is_null()
         {
             (*pLangBarMgr).QueryInterface(&IID_ITfLangBarMgr_P, core::ptr::addr_of_mut!((*this_).m_pLangBarMgr) as *mut *mut core::ffi::c_void);
             (*pLangBarMgr).Release();
         }
-    
+
         if style & UIF_WINDOW_ENABLETHEMED != 0
         {
             if g_fTaskbarTheme != 0
@@ -4601,23 +4601,23 @@ impl CTipbarWnd {
                 (*this_).__base3.__base0.__base0.m_pszClassList = CPP_COM_WSTR_672463267A33.as_ptr();
             }
         }
-    
+
         (*this_).SetVertical(g_fVertical);
-    
+
         (*this_).m_cRefs = 1;
         }
     }
     pub unsafe fn __dtor__body(&mut self) {
         let this_: *mut Self = self;
         (*this_).UnInit();
-    
+
         if !(*this_).m_hMarlettFont.is_null() {
             DeleteObject(((*this_).m_hMarlettFont).cast());
         }
         if !(*this_).m_hTextFont.is_null() {
             DeleteObject(((*this_).m_hTextFont).cast());
         }
-    
+
         TFUninitLib_Thread(core::ptr::addr_of_mut!(g_libTLS));
     }
     pub unsafe fn GetWindow(&mut self) -> *mut CUIFWindow {
@@ -4635,20 +4635,20 @@ impl CTipbarWnd {
         } else {
             (*this_).m_dwTipbarWndFlags &= !TIPBAR_CHILD;
         }
-    
+
         if ((*this_).m_dwTipbarWndFlags & TIPBAR_CHILD) != 0 {
             (*this_).m_dwTipbarWndFlags &= TIPBAR_HIGHCONTRAST;
         }
-    
+
         (*this_).m_pDeskBand = pDeskBand;
-    
+
         let mut rc: RECT = RECT {
             left: 0,
             top: 0,
             right: 0,
             bottom: 0,
         };
-    
+
         if g_bNewLook != 0 && (*this_).m_pWndFrame.is_null() && ((*this_).__base3.__base0.m_style & 0x20000000) != 0 {
             let pWndFrame: *mut CUIFWndFrame = cicero_rust::cicero::cpp_classes::CUIFWndFrame__new_in_0(
                 cpp_alloc_CicNoThrow::<CUIFWndFrame>(),
@@ -4661,7 +4661,7 @@ impl CTipbarWnd {
                 (*this_).__base3.AddUIObj(((*this_).m_pWndFrame).cast());
             }
         }
-    
+
         if (*this_).m_pTipbarGripper.is_null() && ((*this_).m_dwTipbarWndFlags & TIPBAR_CHILD) == 0 {
             (*this_).m_pTipbarGripper = CTipbarGripper__new_in_0(
                 cpp_alloc_CicNoThrow::<CTipbarGripper>(),
@@ -4674,9 +4674,9 @@ impl CTipbarWnd {
                 (*this_).__base3.AddUIObj((core::ptr::addr_of_mut!((*(*this_).m_pTipbarGripper).__base0)).cast());
             }
         }
-    
+
         // FIXME: CTipbarCtrlButtonHolder
-    
+
         if ((*this_).m_dwTipbarWndFlags & TIPBAR_VERTICAL) != 0 {
             (*this_).Move(
                 (*this_).__base3.m_nLeft,
@@ -4696,7 +4696,7 @@ impl CTipbarWnd {
     pub unsafe fn InitHighContrast(&mut self) {
         let this_: *mut Self = self;
         (*this_).m_dwTipbarWndFlags &= !TIPBAR_HIGHCONTRAST;
-    
+
         let mut HiCon: HIGHCONTRAST = core::mem::zeroed();
         HiCon.cbSize = core::mem::size_of::<HIGHCONTRAST>() as UINT;
         if SystemParametersInfo(SPI_GETHIGHCONTRAST, core::mem::size_of::<HIGHCONTRAST>() as UINT, core::ptr::addr_of_mut!(HiCon) as LPVOID, 0) != 0
@@ -4710,7 +4710,7 @@ impl CTipbarWnd {
         let this_: *mut Self = self;
         (*this_).m_cxSmallIcon = GetSystemMetrics((SM_CXSMICON as i32));
         (*this_).m_cySmallIcon = GetSystemMetrics((SM_CYSMICON as i32));
-    
+
         let style: DWORD_PTR = GetWindowLongPtr((*this_).__base3.m_hWnd, GWL_STYLE) as DWORD_PTR;
         if (style & (WS_DLGFRAME as DWORD_PTR)) != 0
         {
@@ -4731,13 +4731,13 @@ impl CTipbarWnd {
     pub unsafe fn InitThemeMargins(&mut self) {
         let this_: *mut Self = self;
         ZeroMemory!(core::ptr::addr_of_mut!((*this_).m_Margins) as *mut core::ffi::c_void, core::mem::size_of::<MARGINS>());
-    
+
         let mut theme: CUIFTheme = CUIFTheme__zeroed();
         (*this_).m_dwUnknown23_5[0 as usize] = 6;
         (*this_).m_dwUnknown23_5[1 as usize] = 6;
         (*this_).m_dwUnknown23_5[2 as usize] = 0;
         (*this_).m_ButtonWidth = GetSystemMetrics((SM_CXSIZE as i32));
-    
+
         theme.m_iPartId = 1;
         theme.m_iStateId = 0;
         theme.m_pszClassList = CPP_COM_WSTR_91CDBB74B095.as_ptr();
@@ -4749,7 +4749,7 @@ impl CTipbarWnd {
             (*this_).m_dwUnknown23_5[2 as usize] = 1;
         }
         theme.CloseThemeData();
-    
+
         theme.m_iPartId = 18;
         theme.m_iStateId = 0;
         theme.m_pszClassList = CPP_COM_WSTR_DDBF4DF411E1.as_ptr();
@@ -4776,11 +4776,11 @@ impl CTipbarWnd {
             iItem += 1;
         }
         (*this_).m_Threads.clear();
-    
+
         if !(*this_).m_pLangBarMgr.is_null() {
             (*(*this_).m_pLangBarMgr).UnAdviseEventSink((*this_).m_dwSinkCookie);
         }
-    
+
         if !(*this_).m_pLangBarMgr.is_null() {
             (*(*this_).m_pLangBarMgr).Release();
             (*this_).m_pLangBarMgr = core::ptr::null_mut();
@@ -4791,21 +4791,21 @@ impl CTipbarWnd {
         if g_fPolicyEnableLanguagebarInFullscreen != 0 {
             return (FALSE) as BOOL;
         }
-    
+
         let style: DWORD_PTR = GetWindowLongPtr(hWnd, GWL_STYLE) as DWORD_PTR;
         if ((style & (WS_VISIBLE as DWORD_PTR)) == 0) || ((style & (WS_CAPTION as DWORD_PTR)) != 0) {
             return (FALSE) as BOOL;
         }
-    
+
         let exstyle: DWORD_PTR = GetWindowLongPtr(hWnd, GWL_EXSTYLE) as DWORD_PTR;
         if (exstyle & (WS_EX_LAYERED as DWORD_PTR)) != 0 {
             return (FALSE) as BOOL;
         }
-    
+
         if ((exstyle & (WS_EX_TOOLWINDOW as DWORD_PTR)) != 0) && (hWnd == (*this_).m_ShellWndThread.GetWndProgman()) {
             return (FALSE) as BOOL;
         }
-    
+
         ((cicIsFullScreenSize(hWnd) != 0) as BOOL)
     }
     pub unsafe fn IsHKLToSkipRedrawOnNoItem(&mut self) -> BOOL {
@@ -4834,10 +4834,10 @@ impl CTipbarWnd {
     pub unsafe fn MoveToStub(&mut self, bFlag: BOOL) {
         let this_: *mut Self = self;
         (*this_).m_dwTipbarWndFlags |= 0x40;
-    
+
         let mut rcWorkArea: RECT = core::mem::zeroed();
         SystemParametersInfo(SPI_GETWORKAREA, 0, (core::ptr::addr_of_mut!(rcWorkArea)).cast(), 0);
-    
+
         if bFlag != 0 {
             (*this_).__base3.m_nLeft = rcWorkArea.right - 38;
             (*this_).m_dwTipbarWndFlags &= !0x80;
@@ -4847,9 +4847,9 @@ impl CTipbarWnd {
             (*this_).__base3.m_nLeft = rcWorkArea.right + Rect.left - Rect.right;
             (*this_).m_dwTipbarWndFlags |= 0x80;
         }
-    
+
         (*this_).__base3.m_nTop = rcWorkArea.bottom - (*this_).m_cyDlgFrameX2 - (*this_).GetTipbarHeight();
-    
+
         if !(*this_).m_pFocusThread.is_null() {
             (*(*this_).m_pFocusThread).MyMoveWnd(0, 0);
         }
@@ -4869,11 +4869,11 @@ impl CTipbarWnd {
         if ((*this_).m_dwTipbarWndFlags & 2) != 0 {
             return 0;
         }
-    
+
         if (*this_).m_pTipbarGripper.is_null() || (((*(*this_).m_pTipbarGripper).EnsureThemeData((*this_).__base3.m_hWnd)) < 0) {
             return 5;
         }
-    
+
         let mut width: INT = -1;
         let mut partSize: SIZE = core::mem::zeroed();
         let hDC: HDC = GetDC((*this_).__base3.m_hWnd);
@@ -4886,7 +4886,7 @@ impl CTipbarWnd {
             width = cx + 4;
         }
         ReleaseDC((*this_).__base3.m_hWnd, hDC);
-    
+
         return if width < 0 { 5 } else { width };
     }
     pub unsafe fn GetTipbarHeight(&mut self) -> INT {
@@ -4909,14 +4909,14 @@ impl CTipbarWnd {
         {
             return (FALSE) as BOOL;
         }
-    
+
         let dwOldWndFlags: DWORD = (*this_).m_dwTipbarWndFlags;
         (*this_).m_dwTipbarWndFlags &= !0x8000;
-    
+
         if (*this_).AdjustDeskBandSize(((dwOldWndFlags & 0x8000) == 0) as BOOL) == 0 {
             return (FALSE) as BOOL;
         }
-    
+
         (*this_).m_dwTipbarWndFlags |= TIPBAR_NODESKBAND;
         return (TRUE) as BOOL;
     }
@@ -4939,7 +4939,7 @@ impl CTipbarWnd {
         if (*this_).__base3.GetWorkArea(core::ptr::addr_of_mut!(rc), core::ptr::addr_of_mut!(rcWorkArea)) == 0 {
             return;
         }
-    
+
         let mut x: INT = (*this_).__base3.m_nLeft;
         let mut y: INT = (*this_).__base3.m_nTop;
         if ((*this_).m_dwTipbarWndFlags & TIPBAR_LEFTFIT) != 0 {
@@ -4965,7 +4965,7 @@ impl CTipbarWnd {
         } else {
             (*this_).m_dwTipbarWndFlags &= !TIPBAR_VERTICAL;
         }
-    
+
         if !(*this_).m_pTipbarGripper.is_null() {
             let mut style: DWORD = (*(*this_).m_pTipbarGripper).m_style;
             if bVertical != 0 {
@@ -4975,7 +4975,7 @@ impl CTipbarWnd {
             }
             (*(*this_).m_pTipbarGripper).SetStyle(style);
         }
-    
+
         if g_fTaskbarTheme != 0 {
             (*this_).__base3.SetActiveTheme(
                 CPP_COM_WSTR_D3128F43EECC.as_ptr(),
@@ -4983,7 +4983,7 @@ impl CTipbarWnd {
                 1,
             );
         }
-    
+
         if ((*this_).m_dwTipbarWndFlags & TIPBAR_CHILD) == 0 {
             if ((*this_).m_dwTipbarWndFlags & TIPBAR_VERTICAL) != 0 {
                 (*this_).Move(
@@ -5001,7 +5001,7 @@ impl CTipbarWnd {
                 );
             }
         }
-    
+
         if !(*this_).__base3.m_hWnd.is_null() {
             (*this_).KillTimer(7);
             (*this_).SetTimer(7, g_uTimerElapseSYSCOLORCHANGED);
@@ -5012,7 +5012,7 @@ impl CTipbarWnd {
         if (*this_).m_dwTipbarWndFlags & TIPBAR_CHILD != 0 {
             return;
         }
-    
+
         let mut rc: RECT = RECT {
             left: (*this_).__base3.m_nLeft,
             top: (*this_).__base3.m_nTop,
@@ -5023,25 +5023,25 @@ impl CTipbarWnd {
         if (*this_).__base3.GetWorkArea(core::ptr::addr_of_mut!(rc), core::ptr::addr_of_mut!(rcWorkArea)) == 0 {
             return;
         }
-    
+
         if rcWorkArea.left + 2 < (*this_).__base3.m_nLeft {
             (*this_).m_dwTipbarWndFlags &= !TIPBAR_LEFTFIT;
         } else {
             (*this_).m_dwTipbarWndFlags |= TIPBAR_LEFTFIT;
         }
-    
+
         if rcWorkArea.top + 2 < (*this_).__base3.m_nTop {
             (*this_).m_dwTipbarWndFlags &= !TIPBAR_TOPFIT;
         } else {
             (*this_).m_dwTipbarWndFlags |= TIPBAR_TOPFIT;
         }
-    
+
         if (*this_).__base3.m_nLeft + (*this_).__base3.m_nWidth < rcWorkArea.right - 2 {
             (*this_).m_dwTipbarWndFlags &= !TIPBAR_RIGHTFIT;
         } else {
             (*this_).m_dwTipbarWndFlags |= TIPBAR_RIGHTFIT;
         }
-    
+
         if (*this_).__base3.m_nTop + (*this_).__base3.m_nHeight < rcWorkArea.bottom - 2 {
             (*this_).m_dwTipbarWndFlags &= !TIPBAR_BOTTOMFIT;
         } else {
@@ -5053,14 +5053,14 @@ impl CTipbarWnd {
         if (*this_).m_pThread.is_null() {
             return;
         }
-    
+
         let mut pTipbarWnd: *mut CTipbarWnd = (*(*this_).m_pThread).m_pTipbarWnd;
         if !pTipbarWnd.is_null() {
             if !(*pTipbarWnd).m_pLangBarMgr.is_null() {
                 (*pTipbarWnd).StartModalInput(core::ptr::null_mut(), (*(*this_).m_pThread).m_dwThreadId);
             }
         }
-    
+
         (*(*this_).m_pModalMenu).CancelMenu();
         (*this_).StartBackToAlphaTimer();
     }
@@ -5080,12 +5080,12 @@ impl CTipbarWnd {
         if (*this_).__base3.m_hWnd.is_null() {
             return core::ptr::null_mut();
         }
-    
+
         let mut theme: CUIFTheme = core::mem::zeroed();
         theme.m_iPartId = 1;
         theme.m_iStateId = 0;
         theme.m_pszClassList = CPP_COM_WSTR_91CDBB74B095.as_ptr();
-    
+
         let mut lf: LOGFONTW = core::mem::zeroed();
         if (theme.InternalOpenThemeData((*this_).__base3.m_hWnd) < 0)
             || ((GetThemeFont(
@@ -5103,11 +5103,11 @@ impl CTipbarWnd {
                 core::ptr::addr_of_mut!(lf) as *mut core::ffi::c_void,
             );
         }
-    
+
         lf.lfEscapement = 2700;
         lf.lfOrientation = 2700;
         lf.lfOutPrecision = (OUT_TT_ONLY_PRECIS as u8);
-    
+
         if CheckEAFonts() != 0 {
             let mut szText: [WCHAR; LF_FACESIZE as usize] =
                 [0u16; LF_FACESIZE as usize];
@@ -5123,7 +5123,7 @@ impl CTipbarWnd {
                 szText.as_ptr(),
             );
         }
-    
+
         return CreateFontIndirectW(core::ptr::addr_of!(lf));
     }
     pub unsafe fn UpdateVerticalFont(&mut self) {
@@ -5171,7 +5171,7 @@ impl CTipbarWnd {
         let dwChangingThreadId: DWORD = (*this_).m_dwChangingThreadId;
         (*this_).m_dwChangingThreadId = 0;
         (*this_).KillTimer(4);
-    
+
         if dwChangingThreadId != 0 {
             let pThread: *mut CTipbarThread = (*this_)._FindThread(dwChangingThreadId);
             if !pThread.is_null() {
@@ -5204,7 +5204,7 @@ impl CTipbarWnd {
         if !lpPoint.is_null() {
             ClientToScreen((*this_).__base3.m_hWnd, lpPoint);
         }
-    
+
         if !prc.is_null() {
             ClientToScreen((*this_).__base3.m_hWnd, prc as LPPOINT);
             ClientToScreen((*this_).__base3.m_hWnd, core::ptr::addr_of_mut!((*prc).right) as LPPOINT);
@@ -5234,7 +5234,7 @@ impl CTipbarWnd {
         if bDeskBand == ((((*this_).m_dwShowType & TF_SFT_DESKBAND) != 0) as BOOL) {
             return (TRUE) as BOOL;
         }
-    
+
         let mut ret: BOOL = (TRUE) as i32;
         let hwndTray: HWND = (*this_).m_ShellWndThread.GetWndTray();
         if bFlag2 != 0 && !hwndTray.is_null() {
@@ -5264,12 +5264,12 @@ impl CTipbarWnd {
         } else {
             ret = (FALSE) as i32;
         }
-    
+
         if ((*this_).m_dwTipbarWndFlags & TIPBAR_CHILD) == 0 && bDeskBand != 0 {
             (*this_).KillTimer(7);
             (*this_).SetTimer(7, g_uTimerElapseSYSCOLORCHANGED);
         }
-    
+
         return ret;
     }
     pub unsafe fn SetMoveRect(&mut self, X: INT, Y: INT, nWidth: INT, nHeight: INT) {
@@ -5279,16 +5279,16 @@ impl CTipbarWnd {
             (*this_).__base3.m_nHeight = nHeight;
             return;
         }
-    
+
         (*this_).m_bInCallOn += 1;
-    
+
         (*this_).m_dwTipbarWndFlags |= TIPBAR_UPDATING;
-    
+
         (*this_).m_X = X;
         (*this_).m_Y = Y;
         (*this_).m_CX = nWidth;
         (*this_).m_CY = nHeight;
-    
+
         let mut rc: RECT = core::mem::zeroed();
         let mut size: SIZE = SIZE { cx: 0, cy: 0 };
         if !(*this_).m_pWndFrame.is_null() {
@@ -5302,7 +5302,7 @@ impl CTipbarWnd {
             (*(*this_).m_pWndFrame).SetRect(core::ptr::addr_of_mut!(rc));
             (*(*this_).m_pWndFrame).GetFrameSize(core::ptr::addr_of_mut!(size));
         }
-    
+
         if !(*this_).m_pTipbarGripper.is_null() {
             if ((*this_).m_dwTipbarWndFlags & TIPBAR_VERTICAL) != 0 {
                 let GripperWidth: INT = (*this_).GetGripperWidth();
@@ -5326,7 +5326,7 @@ impl CTipbarWnd {
             }
             (*(*this_).m_pTipbarGripper).SetRect(core::ptr::addr_of_mut!(rc));
         }
-    
+
         (*this_).m_bInCallOn -= 1;
     }
     pub unsafe fn SetShowText(&mut self, bShow: BOOL) {
@@ -5336,11 +5336,11 @@ impl CTipbarWnd {
         } else {
             (*this_).m_dwTipbarWndFlags &= !TIPBAR_HIGHCONTRAST;
         }
-    
+
         if !(*this_).m_pFocusThread.is_null() {
             (*this_).OnThreadItemChange((*(*this_).m_pFocusThread).m_dwThreadId);
         }
-    
+
         (*this_).TerminateAllThreads((FALSE) as BOOL);
     }
     pub unsafe fn SetShowTrayIcon(&mut self, bShow: BOOL) {
@@ -5350,7 +5350,7 @@ impl CTipbarWnd {
         } else {
             (*this_).m_dwTipbarWndFlags |= TIPBAR_TRAYICON;
         }
-    
+
         if ((*this_).m_dwTipbarWndFlags & TIPBAR_TRAYICON) != 0 && !(*this_).m_pFocusThread.is_null() {
             (*this_).KillTimer(10);
             (*this_).SetTimer(10, g_uTimerElapseMOVETOTRAY);
@@ -5362,12 +5362,12 @@ impl CTipbarWnd {
     pub unsafe fn ShowContextMenu(&mut self, pt: POINT, mut prc: LPCRECT, bFlag: BOOL) {
         let this_: *mut Self = self;
         (*this_).AddRef();
-    
+
         let rc: RECT = RECT { left: pt.x, top: pt.y, right: pt.x, bottom: pt.y };
         if prc.is_null() {
             prc = core::ptr::addr_of!(rc);
         }
-    
+
         if !(*this_).m_pFocusThread.is_null() {
             let pContextMenu: *mut CUTBContextMenu = CUTBContextMenu__new_in_0(cpp_alloc_CicNoThrow::<CUTBContextMenu>(), this_);
             if !pContextMenu.is_null() {
@@ -5377,26 +5377,26 @@ impl CTipbarWnd {
                         core::ptr::addr_of_mut!((*this_).__base0),
                         (*(*this_).m_pFocusThread).m_dwThreadId,
                     );
-    
+
                     (*this_).m_pModalMenu = core::ptr::addr_of_mut!((*pContextMenu).__base0);
                     let dwCommandId: DWORD = (*pContextMenu).ShowPopup((*this_).GetWindow(), pt, prc, bFlag);
                     (*this_).m_pModalMenu = core::ptr::null_mut();
-    
+
                     if !(*this_).m_pThread.is_null() {
                         (*this_).StopModalInput((*(*this_).m_pThread).m_dwThreadId);
                     }
-    
+
                     (*this_).m_pThread = core::ptr::null_mut();
-    
+
                     if dwCommandId != (0 as DWORD).wrapping_sub(1 as DWORD) {
                         (*pContextMenu).SelectMenuItem(dwCommandId);
                     }
                 }
-    
+
                 CUTBContextMenu__delete(pContextMenu);
             }
         }
-    
+
         (*this_).Release();
     }
     pub unsafe fn StartBackToAlphaTimer(&mut self) {
@@ -5423,12 +5423,12 @@ impl CTipbarWnd {
         if (*this_).m_pLangBarMgr.is_null() {
             return;
         }
-    
+
         (*(*this_).m_pLangBarMgr).SetModalInput(pSink, dwThreadId, 0);
         if !g_pTrayIconWnd.is_null() {
             (*(*this_).m_pLangBarMgr).SetModalInput(pSink, (*g_pTrayIconWnd).m_dwTrayWndThreadId, 0);
         }
-    
+
         let dwCurThreadId: DWORD = GetCurrentThreadId();
         (*(*this_).m_pLangBarMgr).SetModalInput(pSink, dwCurThreadId, 1);
     }
@@ -5437,12 +5437,12 @@ impl CTipbarWnd {
         if (*this_).m_pLangBarMgr.is_null() {
             return;
         }
-    
+
         (*(*this_).m_pLangBarMgr).SetModalInput(core::ptr::null_mut(), dwThreadId, 0);
         if !g_pTrayIconWnd.is_null() {
             (*(*this_).m_pLangBarMgr).SetModalInput(core::ptr::null_mut(), (*g_pTrayIconWnd).m_dwTrayWndThreadId, 0);
         }
-    
+
         let dwCurThreadId: DWORD = GetCurrentThreadId();
         (*(*this_).m_pLangBarMgr).SetModalInput(core::ptr::null_mut(), dwCurThreadId, 0);
     }
@@ -5452,27 +5452,27 @@ impl CTipbarWnd {
         if !pTarget.is_null() {
             return pTarget;
         }
-    
+
         MyWaitForInputIdle(dwThreadId, 2000);
-    
+
         pTarget = CTipbarThread__new_in_0(cpp_alloc_CicNoThrow::<CTipbarThread>(), this_);
         if pTarget.is_null() {
             return core::ptr::null_mut();
         }
-    
+
         (*this_).AddThreadToThreadCreatingList(pTarget);
-    
+
         let hr: HRESULT = (*pTarget).Init(dwThreadId);
-    
+
         (*this_).RemoveThredFromThreadCreatingList(pTarget);
-    
+
         if (hr >= 0) && (*this_).m_Threads.Add(pTarget) == 0 {
             (*pTarget)._UninitItemList((TRUE) as BOOL);
             (*pTarget).m_pTipbarWnd = core::ptr::null_mut();
             (*pTarget)._Release();
             return core::ptr::null_mut();
         }
-    
+
         pTarget
     }
     pub unsafe fn _FindThread(&mut self, dwThreadId: DWORD) -> *mut CTipbarThread {
@@ -5480,7 +5480,7 @@ impl CTipbarWnd {
         if g_bWinLogon != 0 {
             return core::ptr::null_mut();
         }
-    
+
         let mut pTarget: *mut CTipbarThread = core::ptr::null_mut();
         let mut iItem: usize = 0;
         while iItem < (*this_).m_Threads.size() {
@@ -5491,11 +5491,11 @@ impl CTipbarWnd {
             }
             iItem += 1;
         }
-    
+
         if pTarget.is_null() {
             return core::ptr::null_mut();
         }
-    
+
         let mut dwFlags1: DWORD = 0;
         let mut dwFlags2: DWORD = 0;
         let mut dwFlags3: DWORD = 0;
@@ -5505,12 +5505,12 @@ impl CTipbarWnd {
             core::ptr::addr_of_mut!(dwFlags2),
             core::ptr::addr_of_mut!(dwFlags3),
         );
-    
+
         if dwFlags2 == 0 || (dwFlags2 != (*pTarget).m_dwFlags2) || (dwFlags3 != (*pTarget).m_dwFlags3) {
             (*this_).OnThreadTerminateInternal(dwThreadId);
             return core::ptr::null_mut();
         }
-    
+
         pTarget
     }
     pub unsafe fn EnsureFocusThread(&mut self) {
@@ -5518,19 +5518,19 @@ impl CTipbarWnd {
         if !(*this_).m_pFocusThread.is_null() || ((*this_).m_dwTipbarWndFlags & (TIPBAR_TOOLBARENDED | TIPBAR_ENSURING)) != 0 {
             return;
         }
-    
+
         (*this_).m_dwTipbarWndFlags |= TIPBAR_ENSURING;
-    
+
         let hwndFore: HWND = GetForegroundWindow();
         if hwndFore as usize == 0 {
             return;
         }
-    
+
         let dwThreadId: DWORD = GetWindowThreadProcessId(hwndFore, core::ptr::null_mut());
         if dwThreadId != 0 {
             (*this_).OnSetFocus(dwThreadId);
         }
-    
+
         (*this_).m_dwTipbarWndFlags &= !TIPBAR_ENSURING;
     }
     pub unsafe fn SetFocusThread(&mut self, pFocusThread: *mut CTipbarThread) -> HRESULT {
@@ -5538,15 +5538,15 @@ impl CTipbarWnd {
         if pFocusThread == (*this_).m_pFocusThread {
             return S_OK;
         }
-    
+
         let dwThreadId: DWORD = GetCurrentThreadId();
         (*this_).DestroyOverScreenSizeBalloon();
-    
+
         if !(*this_).m_pFocusThread.is_null() {
             (*(*this_).m_pFocusThread).SetFocus(core::ptr::null_mut());
             AttachThreadInput(dwThreadId, (*(*this_).m_pFocusThread).m_dwThreadId, (FALSE) as BOOL);
         }
-    
+
         (*this_).m_dwTipbarWndFlags &= !TIPBAR_ATTACHED;
         (*this_).m_pFocusThread = pFocusThread;
         return S_OK;
@@ -5556,13 +5556,13 @@ impl CTipbarWnd {
         if ((*this_).m_dwTipbarWndFlags & TIPBAR_ATTACHED) != 0 {
             return S_FALSE;
         }
-    
+
         if !(*this_).m_pFocusThread.is_null() {
             let dwThreadId: DWORD = GetCurrentThreadId();
             AttachThreadInput(dwThreadId, (*(*this_).m_pFocusThread).m_dwThreadId, (TRUE) as BOOL);
             (*this_).m_dwTipbarWndFlags |= TIPBAR_ATTACHED;
         }
-    
+
         return S_OK;
     }
     pub unsafe fn RestoreLastFocus(&mut self, pdwThreadId: *mut DWORD, fPrev: BOOL) {
@@ -5579,15 +5579,15 @@ impl CTipbarWnd {
                 (*this_).m_Threads.Remove((iItem) as usize, 1);
             }
         }
-    
+
         if pThread == (*this_).m_pFocusThread {
             (*this_).SetFocusThread(core::ptr::null_mut());
         }
-    
+
         if pThread == (*this_).m_pThread {
             (*this_).m_pThread = core::ptr::null_mut();
         }
-    
+
         if pThread == (*this_).m_pUnknownThread {
             (*this_).m_pUnknownThread = core::ptr::null_mut();
         }
@@ -5595,12 +5595,12 @@ impl CTipbarWnd {
     pub unsafe fn TerminateAllThreads(&mut self, bFlag: BOOL) {
         let this_: *mut Self = self;
         let cItems: usize = (*this_).m_Threads.size() as usize;
-    
+
         let pdwThreadIds: *mut DWORD = cpp_new_array_CicNoThrow::<DWORD>(cItems);
         if pdwThreadIds.is_null() {
             return;
         }
-    
+
         let mut iItem: usize = 0;
         while iItem < cItems {
             *pdwThreadIds.add(iItem) = 0;
@@ -5610,7 +5610,7 @@ impl CTipbarWnd {
             }
             iItem += 1;
         }
-    
+
         let mut iItem: usize = 0;
         while iItem < cItems {
             if *pdwThreadIds.add(iItem) != 0 {
@@ -5618,7 +5618,7 @@ impl CTipbarWnd {
             }
             iItem += 1;
         }
-    
+
         cpp_delete_array(pdwThreadIds);
     }
     pub unsafe fn OnTerminateToolbar(&mut self) {
@@ -5646,7 +5646,7 @@ impl CTipbarWnd {
             }
             iItem += 1;
         }
-    
+
         return S_OK as HRESULT;
     }
     pub unsafe fn OnThreadItemChangeInternal(&mut self, dwThreadId: DWORD,
@@ -5714,7 +5714,7 @@ impl CTipbarWnd {
         if ((*this_).m_dwTipbarWndFlags & TIPBAR_CHILD == 0) && ((*this_).m_dwShowType & TF_SFT_DESKBAND) != 0 {
             return S_OK;
         }
-    
+
         let pThread: *mut CTipbarThread = (*this_)._FindThread(dwThreadId);
         if !pThread.is_null() {
             if ((*this_).m_dwUnknown23 == 0 || (*this_).m_dwUnknown23 == dwThreadId) && pThread == (*this_).m_pFocusThread {
@@ -5735,7 +5735,7 @@ impl CTipbarWnd {
                 iItem += 1;
             }
         }
-    
+
         S_OK
     }
     pub unsafe fn OnModalInput(&mut self, dwThreadId: DWORD, mut uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> HRESULT {
@@ -5748,7 +5748,7 @@ impl CTipbarWnd {
             WM_RBUTTONUP |
             WM_MBUTTONUP => {
             }
-    
+
             WM_NCLBUTTONUP |
             WM_NCRBUTTONUP |
             WM_NCMBUTTONUP => {
@@ -5768,7 +5768,7 @@ impl CTipbarWnd {
                     }
                 }
             }
-    
+
             _ => {
                 if uMsg == WM_KEYDOWN || uMsg == WM_KEYUP {
                     if !(*this_).m_pThread.is_null() {
@@ -5779,7 +5779,7 @@ impl CTipbarWnd {
                 }
             }
         }
-    
+
         return 0;
     }
     pub unsafe fn ShowFloating(&mut self, dwFlags: DWORD,
@@ -5792,11 +5792,11 @@ impl CTipbarWnd {
         if (*this_).m_dwTipbarWndFlags & TIPBAR_TRAYICON != 0 {
             return E_UNEXPECTED;
         }
-    
+
         if (*this_).m_pFocusThread.is_null() || ((*(*this_).m_pFocusThread).m_dwThreadId != dwThreadId) {
             return E_FAIL;
         }
-    
+
         let mut iItem: usize = 0;
         while iItem < (*(*this_).m_pFocusThread).m_UIObjects.size() {
             let pItem: *mut CTipbarItem = (*(*this_).m_pFocusThread).m_UIObjects[iItem];
@@ -5810,7 +5810,7 @@ impl CTipbarWnd {
             }
             iItem += 1;
         }
-    
+
         return E_FAIL;
     }
     pub unsafe fn OnLangBarUpdate__body(&mut self, click: TfLBIClick,
@@ -5835,21 +5835,21 @@ impl CTipbarWnd {
             (*this_).Move((*this_).m_X, (*this_).m_Y, (*this_).m_CX, (*this_).m_CY);
             (*this_).m_dwTipbarWndFlags &= !TIPBAR_UPDATING;
         }
-    
+
         if (*this_).m_pFocusThread.is_null() || (((*(*this_).m_pFocusThread).IsDirtyItem()) == 0) {
             (*(*this_).m_pFocusThread).CallOnUpdateHandler();
             if !g_pTipbarWnd.is_null() {
-                (*this_).__base3.PaintObject(hDC, prc);
+                (*this_).__base3.PaintObject__body(hDC, prc);
             }
         }
     }
     pub unsafe fn GetWndStyle__body(&mut self) -> DWORD {
         let this_: *mut Self = self;
-        return (*this_).__base3.GetWndStyle() & !WS_BORDER;
+        return (*this_).__base3.GetWndStyle__body() & !WS_BORDER;
     }
     pub unsafe fn Move__body(&mut self, x: INT, y: INT, nWidth: INT, nHeight: INT) {
         let this_: *mut Self = self;
-        (*this_).__base3.Move(x, y, nWidth, nHeight);
+        (*this_).__base3.Move__body(x, y, nWidth, nHeight);
     }
     pub unsafe fn OnMouseOutFromWindow__body(&mut self, x: LONG, y: LONG) {
         let this_: *mut Self = self;
@@ -5864,20 +5864,20 @@ impl CTipbarWnd {
         let this_: *mut Self = self;
         let _ = hWnd;
         (*this_).CancelMenu();
-    
+
         if !(*this_).m_pTipbarAccessible.is_null() {
             (*(*this_).m_pTipbarAccessible).NotifyWinEvent(EVENT_OBJECT_DESTROY, (*this_).GetAccItem());
         }
-    
+
         (*this_).OnTerminateToolbar();
         if !(*this_).m_pTipbarAccessible.is_null() {
             (*(*this_).m_pTipbarAccessible).ClearAccItems();
             (*(*this_).m_pTipbarAccessible).Release();
             (*this_).m_pTipbarAccessible = core::ptr::null_mut();
         }
-    
+
         (*this_).m_coInit.CoUninit();
-    
+
         if !(*this_).m_pLangBarMgr.is_null() {
             (*(*this_).m_pLangBarMgr).UnAdviseEventSink((*this_).m_dwSinkCookie);
         }
@@ -5942,17 +5942,17 @@ impl CTipbarWnd {
                     if !(*this_).m_pFocusThread.is_null() {
                         dwThreadId = (*(*this_).m_pFocusThread).m_dwThreadId;
                     }
-    
+
                     (*this_).TerminateAllThreads((TRUE) as BOOL);
                     (*this_).UpdateVerticalFont();
-    
+
                     if dwThreadId != 0 {
                         (*this_).OnSetFocus(dwThreadId);
                     }
-    
+
                     (*this_).InitMetrics();
                     // FIXME: CTipbarCtrlButtonHolder
-    
+
                     (*this_).InitHighContrast();
                     (*this_).SetAlpha(0xFF, (TRUE) as BOOL);
                     RedrawWindow(
@@ -6019,7 +6019,7 @@ impl CTipbarWnd {
                 }
             }
         }
-    
+
         (*this_).Release();
     }
     pub unsafe fn OnSysColorChange__body(&mut self) {
@@ -6032,14 +6032,14 @@ impl CTipbarWnd {
         if g_bWinLogon == 0 {
             (*this_).OnTerminateToolbar();
         }
-    
+
         if wParam != 0 { // End session?
             if lParam & (ENDSESSION_LOGOFF as LPARAM) != 0 {
                 (*this_).KillTimer(9);
                 (*this_).__base3.Show((FALSE) as i32);
             } else {
                 (*this_).OnTerminateToolbar();
-    
+
                 (*this_).AddRef();
                 DestroyWindow(hWnd);
                 (*this_).Release();
@@ -6071,7 +6071,7 @@ impl CTipbarWnd {
                 iItem += 1;
             }
         }
-    
+
         return DefWindowProc(hWnd, uMsg, wParam, lParam);
     }
     pub unsafe fn OnWindowPosChanging__body(&mut self, hWnd: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
@@ -6121,11 +6121,11 @@ impl CTipbarWnd {
         if (*this_).m_pTipbarAccessible.is_null() {
             return E_OUTOFMEMORY;
         }
-    
+
         if (*(*this_).m_pTipbarAccessible).m_bInitialized != 0 {
             return ((*(*this_).m_pTipbarAccessible).CreateRefToAccObj(wParam)) as HRESULT;
         }
-    
+
         let mut hr: HRESULT = S_OK;
         if (*this_).m_coInit.EnsureCoInit() >= 0 {
             hr = (*(*this_).m_pTipbarAccessible).Initialize();
@@ -6134,11 +6134,11 @@ impl CTipbarWnd {
                 (*this_).m_pTipbarAccessible = core::ptr::null_mut();
                 return hr;
             }
-    
+
             (*(*this_).m_pTipbarAccessible).NotifyWinEvent(EVENT_OBJECT_CREATE, (*this_).GetAccItem());
             return ((*(*this_).m_pTipbarAccessible).CreateRefToAccObj(wParam)) as HRESULT;
         }
-    
+
         hr
     }
     pub unsafe fn OnEraseBkGnd__body(&mut self, hWnd: HWND,
@@ -6156,7 +6156,7 @@ impl CTipbarWnd {
     pub unsafe fn UpdateUI__body(&mut self, prc: LPCRECT) {
         let this_: *mut Self = self;
         (*this_).KillTimer(8);
-    
+
         if (*this_).m_dwChangingThreadId != 0
             || (*this_).m_bInCallOn != 0
             || ((*this_).m_pFocusThread != core::ptr::null_mut()
@@ -6165,15 +6165,15 @@ impl CTipbarWnd {
             (*this_).SetTimer(8, g_uTimerElapseUPDATEUI);
             return;
         }
-    
+
         if ((*this_).m_dwTipbarWndFlags & TIPBAR_UPDATING) != 0 {
             (*this_).m_bInCallOn += 1;
             (*this_).Move((*this_).m_X, (*this_).m_Y, (*this_).m_CX, (*this_).m_CY);
             (*this_).m_dwTipbarWndFlags &= !TIPBAR_UPDATING;
             (*this_).m_bInCallOn -= 1;
         }
-    
-        (*this_).__base3.UpdateUI(core::ptr::null());
+
+        (*this_).__base3.UpdateUI__body(core::ptr::null());
     }
     pub unsafe fn HandleMouseMsg__body(&mut self, uMsg: UINT,
         x: LONG,
