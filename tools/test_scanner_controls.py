@@ -3466,6 +3466,25 @@ def test_irql_fixture_summary_resolves_cross_file_wrapper(tmp_path):
     assert rc == 0 and out == ""
 
 
+def test_irql_std_path_does_not_inherit_a_workspace_name(tmp_path):
+    # Summaries are keyed by bare name: a sleeping workspace `fn read` must not
+    # make `core::ptr::read` under a spinlock look like a sleep.
+    ctl = next(c for c in CONTROLS if c.name == "scan_irql_balance")
+    sleeper = "unsafe fn read() {\nKeWaitForSingleObject(e, 0, 0, 0, t);\n}\n"
+    held = (
+        "unsafe fn caller(p: *const u32) -> u32 {{\nKeAcquireSpinLock(&mut l, &mut old);\n"
+        "let v = {call}(p);\nKeReleaseSpinLock(&mut l, old);\nv\n}}\n"
+    )
+    root = _materialize(
+        tmp_path, {"sleeper.rs": sleeper, "caller.rs": held.format(call="core::ptr::read")}
+    )
+    rc, out = _run(ctl, root)
+    assert rc == 0 and out == "", out
+    (root / "caller.rs").write_text(held.format(call="read"))
+    rc, out = _run(ctl, root)
+    assert rc == 1 and "IRQL_SLEEP_WHILE_HELD" in out, out
+
+
 def test_irql_cli_default_still_builds_whole_workspace_summaries(tmp_path, monkeypatch):
     spec = importlib.util.spec_from_file_location(
         "irql_default_control", REPO / "tools/scan_irql_balance.py"

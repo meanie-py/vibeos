@@ -1,6 +1,8 @@
 # Raspberry Pi Wi-Fi: our own CYW43455 driver
 
-Status: design, plus the host-tested protocol layer (2026-10-16). No board run yet.
+Status (2026-10-17): protocol, SDIO and chip layers host-tested against a simulated
+controller; on the Pi 5, bwfm.sys reads the chip id and its cores (run
+`20261017-012021-t5v81pv4`). Next: the firmware download.
 
 ## Why our own
 
@@ -14,25 +16,39 @@ carries no Realtek Wi-Fi driver at all; its only USB network drivers are ASIX Et
 | | Pi 4 | Pi 5 |
 |---|---|---|
 | Chip | Cypress/Infineon CYW43455 (BCM4345/6), SDIO, FullMAC | same |
-| SDIO host | Arasan SDHCI, ACPI `SDC1` `_HID BCM2847` | BCM2712 `sdio2`, ACPI `SDC0` `_HID 80860F16` (generic SDHCI) |
-| SD card slot (not this) | EMMC2 `BRCME88C`, sdhc.sys | `SDC1` `BRCM5D12`, sdhc.sys |
+| SDIO host | Arasan SDHCI, ACPI `SDC1` `_HID BCM2847` | BCM2712 `sdio2`, ACPI `SDC1` `_HID BRCM5D12` (child `WLAN`, `_CID 80860F16`: generic SDHCI) |
+| SD card slot (not this) | EMMC2 `BRCME88C`, sdhc.sys | `SDC0`, also BRCM5D12 (child `SDMM`), sdhc.sys |
 | Power (WL_REG_ON) | firmware GPIO expander, via the mailbox (`RPIQ`) | a GPIO line |
-| NVRAM file | `brcmfmac43455-sdio.raspberrypi,4-model-b.txt` | `...,5-model-b.txt` |
+| NVRAM file | `brcmfmac43455-sdio.txt` (the `raspberrypi,*` names link to it) | same |
 
-The `_HID`s are read from our own boots' `[ACPI] DSDT` lines (Pi 5: run
-`20261016-210210-5ptzil5g`; Pi 4: `serial-20261008-194631`). The power lines and whether the
-UEFI firmware already raises WL_REG_ON are from the Linux device trees and are **to be
-checked on the boards** before anything depends on them.
+The Pi 4's `_HID`s are from a boot's `[ACPI] DSDT` lines (`serial-20261008-194631`). The
+Pi 5's are from its DSDT (`docs/engineering/pi5-acpi/dsdt.dsl`): SDC1 is at 0x10_0110_0000
+(0x260 bytes), INTID 306, level, with no power method. Its boot log line reads
+`SDC0 _HID 80860F16` because SDC0's `_HID` is a method whose first string is that one; it
+returns BRCM5D12 by default (`SDCM`). The HAL publishes SDC1 as `VIBEOS\CYW43455`, so
+sdhc.sys, which takes BRCM5D12, does not bind it.
+
+**Pi 5, checked on the board's Linux (2026-10-17):** the chip is `mmc1`, an SDHCI at
+`0x1001100000` (DDR50, 4-bit), SDIO vendor `0x02d0` device `0x4345`, three functions, chip id
+`0x15264345` at `0x18000000` (BCM4345 rev 6), firmware `7.45.265`. WL_REG_ON is line 28
+(`WL_ON`) of the `brcm,brcmstb-gpio` block at `0x107d508500` (lines 30-35 are the SDIO pins),
+active high, with a 150 ms start-up delay (`wl-on-reg`'s `startup-delay-us`). Whether the UEFI
+firmware leaves it high at handoff is still to be read from that register under VibeOS. The
+Pi 4's power line (the firmware's GPIO expander, line 1 in its Linux tree) is unchecked.
+
+Every Pi links the same NVRAM file, `brcmfmac43455-sdio.txt`, so one set of three files
+serves both boards.
 
 Everything above the SDIO host is shared: same chip, same firmware image, same protocol.
 
 ## Layers
 
-1. **SDIO host** (per board, small): SDHCI registers as `sdhc-rust/src/host.rs` drives them,
-   plus SDIO: CMD5 (I/O OCR), CMD3/CMD7, CMD52 (one register), CMD53 (byte and block mode),
-   4-bit bus, card interrupt. `host.rs` is SD-memory only; its register layer should become a
-   shared module rather than a second copy.
-2. **Chip bring-up**: the SDIO backplane window (function 1, `SBADDR`), chip and core ids,
+1. **SDIO host**: `sdhci-rust`, the SDHCI controller layer that sdhc.sys also runs on now
+   (taken out of `sdhc-rust/src/host.rs`), and `bwfm-rust/src/sdio.rs`: CMD5 (I/O OCR),
+   CMD3/CMD7, CMD52, CMD53 (whole blocks in block mode, the tail in byte mode), CCCR/FBR,
+   the CIS's MANFID, 4-bit bus. Still to come: high speed and the card interrupt.
+2. **Chip bring-up** (`chip.rs`, so far up to the chip id): the SDIO backplane window
+   (function 1, `SBADDR`), chip and core ids,
    ALP/HT clock requests, halt the ARM core, write firmware and NVRAM into RAM, release the
    core, wait for the firmware's ready mailbox; then load the CLM blob (`clmload`).
    `if_bwfm_sdio.c` `bwfm_sdio_preinit` / `load_microcode` / `clkctl` / `htclk`.
@@ -57,17 +73,45 @@ Linux's `brcmfmac` is GPL: read it to answer a question, never copy from it.
 
 ## Firmware files
 
-`cyfmac43455-sdio.bin`, `cyfmac43455-sdio.clm_blob` and the board's NVRAM text, from the
-Raspberry Pi's `firmware-brcm80211` package (on the Pi 5 stager: `/lib/firmware/cypress`,
-`/lib/firmware/brcm`). Staged like the vendor drivers, from `~/vibeos-vendor-drivers/`, never
-committed. Whether VibeOS may ship them (Cypress's redistribution licence) is the user's
-decision, as with any vendor licence.
+`cyfmac43455-sdio.bin` (609,309 bytes), `cyfmac43455-sdio.clm_blob` (2,676) and
+`brcmfmac43455-sdio.txt` (2,074): the chip's own program, its regulatory table, and the board's
+calibration. All Pis use these three.
+
+**VibeOS does not ship them** (the user's decision, 2026-10-17). Cypress/Infineon license the
+program for redistribution only in object form, for use with their chips, and Raspberry Pi
+distributes it under its own agreement with them. So it is never committed or hosted here; the
+published images go without Pi Wi-Fi, and a user who wants it builds their own image, which
+downloads the files at build time:
+
+    python3 tools/fetch_pi_wifi_firmware.py      # into $VIBEOS_PI_WIFI_FIRMWARE or ~/.cache/vibeos/cyw43455
+
+It takes them from Raspberry Pi's `RPi-Distro/firmware-nonfree` at a pinned commit and checks
+each against a pinned SHA-256: those of the files Raspberry Pi OS (`firmware-brcm80211`
+1:20241210-1+rpt4) runs on our Pi 5, which the pinned commit's are byte for byte. A mismatch
+fails the fetch. The build will stage the directory into the image when the driver exists, and
+only when asked to (`VIBEOS_PI_WIFI_FIRMWARE`), so an image built without it is the default.
 
 ## Order of work
 
 1. Protocol layer, host-tested (done: `proto.rs`, `tools/test_bwfm_proto.py`).
-2. On the Pi 5 stager's Linux: confirm the WL_REG_ON line and the `sdio2` registers against
-   the ACPI resources, and copy the firmware files.
+2. On the Pi 5 stager's Linux: confirm the WL_REG_ON line and the `sdio2` registers, and copy
+   the firmware files (done, above); SDC1's resources match `0x1001100000` (done).
 3. SDIO host: CMD5 and CMD52 against the chip, read its CIS and chip id. First board milestone.
+   Done on the Pi 5 (run `20261017-012021-t5v81pv4`), first try:
+
+       [BWFM] SDIO host 0x1001100000+0x260: version 0x1002, caps 0x55eec832, ...
+       [BWFM] WL_ON (GPIO 28) as the firmware left it: output high (DATA 0x9f100002 IODIR 0xefffffff)
+       [BWFM] SDIO card 02d0:4345, RCA 0x0001, 3 functions, OCR 0xffff00, CCCR rev 0x43, 25000 kHz 4-bit
+       [BWFM] chip 0x4345 rev 6 package 2 cores 5 (chip id 0x15264345, CYW43455)
+       [BWFM]   core 0x800 rev 51 base 0x18000000 wrap 0x18100000    chip-common
+       [BWFM]   core 0x812 rev 54 base 0x18001000 wrap 0x18101000    802.11
+       [BWFM]   core 0x83e rev  9 base 0x18002000 wrap 0x18102000    ARM CR4
+       [BWFM]   core 0x83c rev 14 base 0x18003000 wrap 0x18103000    PCIe2
+       [BWFM]   core 0x829 rev 21 base 0x18004000 wrap 0x18104000    SDIO device
+
+   So the UEFI firmware leaves WL_ON high and the SDIO pins muxed: the driver still drops
+   the line for 20 ms and raises it, so the chip starts from its power-on reset. Two more
+   components (0x135, 0x240) have no register base; they are the interconnect's own.
+   SDHCI version 0x1002 is spec 3.00, vendor 0x10.
 4. Firmware download and the ready mailbox; `ver` over BCDC.
 5. Scan, join, WPA2, link up, netstack traffic. Then the Pi 4 (host and power differ).

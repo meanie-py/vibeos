@@ -496,6 +496,11 @@ pub(crate) unsafe fn find_sdhc_pi5() -> Option<AcpiDevice> {
     find_device(&[SDHC5_HID_STRING], |body| find(body, b"WLAN").is_none())
 }
 
+/// The Raspberry Pi 5's Wi-Fi SDIO host: SDC1, the BRCM5D12 with the `WLAN` child.
+pub(crate) unsafe fn find_wifi_pi5() -> Option<AcpiDevice> {
+    find_device(&[SDHC5_HID_STRING], |body| find(body, b"WLAN").is_some())
+}
+
 /// RP1's Ethernet MAC (a Cadence GEM, rev 0x00070109) sits 0x100000 into RP1's
 /// peripheral window, on the same shared interrupt as RP1's xHCIs.
 const RP1_GEM_OFFSET: u64 = 0x10_0000;
