@@ -6651,9 +6651,17 @@ def _local_alias_scope(crate_dir: Path) -> dict[str, frozenset[str]]:
     """``harvest_alias_scope`` over the crate, less the SDK names a ``-sys`` crate also
     declares: a module's private ``type BOOLEAN = u8;`` says nothing about where else
     ``BOOLEAN`` resolves (790 compiling uses in the tree reach those through globs)."""
+    try:
+        from tools.source_walk import source_files
+    except ModuleNotFoundError:
+        import sys
+
+        sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+        from tools.source_walk import source_files
+
     src = crate_dir / "src"
     scope = harvest_alias_scope(
-        {f"src/{p.relative_to(src).as_posix()}": p.read_bytes() for p in sorted(src.rglob("*.rs"))}
+        {f"src/{p.relative_to(src).as_posix()}": p.read_bytes() for p in sorted(source_files(src))}
     )
     sdk = _sys_type_names(crate_dir.resolve().parent)
     return {n: v for n, v in scope.items() if n not in sdk}

@@ -29,6 +29,8 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO))
+from tools.source_walk import source_files  # noqa: E402
 
 _NULL = r"\(\s*\*\s*(?:::)?(?:core::ptr::|ptr::)?null(?:_mut)?::<\s*(?P<ty>[A-Za-z_][\w:]*)\s*>\s*\(\s*\)\s*\)"  # noqa: E501
 _FIELDS = r"(?P<fields>(?:\s*\.\s*[A-Za-z_]\w*)+)"
@@ -74,7 +76,7 @@ def main(argv: list[str]) -> int:
     apply = "--apply" in argv
     lint = "--lint" in argv
     args = [Path(a) for a in argv if not a.startswith("--")] or [REPO / "sdk" / "lib" / "rust"]
-    files = [f for a in args for f in ([a] if a.is_file() else sorted(a.rglob("*.rs")))]
+    files = [f for a in args for f in ([a] if a.is_file() else sorted(source_files(a)))]
     total = 0
     bad = 0
     for f in files:
