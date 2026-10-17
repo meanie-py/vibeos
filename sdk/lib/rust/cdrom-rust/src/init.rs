@@ -72,7 +72,7 @@ extern "system" {
     fn WDF_MEMORY_DESCRIPTOR_INIT_BUFFER( descriptor: *mut WDF_MEMORY_DESCRIPTOR, buffer: *mut core::ffi::c_void, length: u32, );
     static WdfObjectContextTypeInfo_CDROM_REQUEST_CONTEXT: WDF_OBJECT_CONTEXT_TYPE_INFO;
     fn DeviceGetExtension(Device: WDFDEVICE) -> PCDROM_DEVICE_EXTENSION;
-    fn IoGetDevicePropertyData( DeviceObject: *mut core::ffi::c_void, PropertyKey: *const DEVPROPKEY, Lcid: u32, Flags: u32, Size: u32, Data: *mut core::ffi::c_void, RequiredSize: *mut u32, Type: *mut u32, ) -> NTSTATUS;
+    pub fn IoGetDevicePropertyData( DeviceObject: *mut core::ffi::c_void, PropertyKey: *const DEVPROPKEY, Lcid: u32, Flags: u32, Size: u32, Data: *mut core::ffi::c_void, RequiredSize: *mut u32, Type: *mut u32, ) -> NTSTATUS;
     fn SET_FLAG(flags: *mut u32, flag: u32);
 }
 unsafe extern "C" {

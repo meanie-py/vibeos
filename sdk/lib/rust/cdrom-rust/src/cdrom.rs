@@ -1,5 +1,7 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use crate::types::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::init::IoGetDevicePropertyData;
 // The crate's own functions: the definition is the declaration.
 use crate::autorun::DeviceEnableMainTimer;
 use crate::autorun::DeviceEnableMediaChangeDetection;
@@ -118,7 +120,6 @@ extern "system" {
     fn CdromSequentialQueueEvtIoReadWrite(queue: WDFQUEUE, request: WDFREQUEST, length: usize);
     fn DriverGetExtension(Driver: WDFDRIVER) -> *mut CDROM_DRIVER_EXTENSION;
     fn DeviceGetExtension(Device: WDFDEVICE) -> *mut CDROM_DEVICE_EXTENSION;
-    fn IoGetDevicePropertyData( PDO: *mut DEVICE_OBJECT, propertyKey: *const c_void, lcid: u32, flags: u32, size: u32, data: *mut c_void, requiredSize: *mut u32, dataType: *mut u32, ) -> NTSTATUS;
     fn RtlInitUnicodeString(s: *mut _UNICODE_STRING, src: *const u16);
     fn WDF_FILEOBJECT_CONFIG_INIT( cfg: *mut WDF_FILEOBJECT_CONFIG, evtFileCreate: Option<unsafe extern "system" fn(WDFDEVICE, WDFFILEOBJECT) -> ()>, evtFileClose: Option<unsafe extern "system" fn(WDFFILEOBJECT) -> ()>, evtFileCleanup: Option<unsafe extern "system" fn(WDFFILEOBJECT) -> ()>, );
     fn WDF_IO_QUEUE_CONFIG_INIT(cfg: *mut WDF_IO_QUEUE_CONFIG, dispatch: WDF_IO_QUEUE_DISPATCH_TYPE);
@@ -966,8 +967,8 @@ pub unsafe extern "system" fn DriverEvtDeviceAdd(
         // 16. Query session ID
         if NT_SUCCESS(status) {
             status = IoGetDevicePropertyData(
-                (*(deviceExtension)).LowerPdo,
-                &DEVPKEY_Device_SessionId as *const _ as *const c_void,
+                ((*(deviceExtension)).LowerPdo).cast(),
+                (&DEVPKEY_Device_SessionId as *const _ as *const c_void).cast(),
                 0,
                 0,
                 core::mem::size_of_val(&devicePropertySessionId) as u32,

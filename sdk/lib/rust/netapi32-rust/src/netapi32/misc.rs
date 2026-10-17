@@ -1,4 +1,7 @@
 use crate::prelude_rpc::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::rpc_stubs::NetrServerStatisticsGet;
+use crate::rpc_stubs::NetrWorkstationStatisticsGet;
 use core::ffi::c_void;
 
 // ---- NTSTATUS codes from sdk/include/psdk/ntstatus.h that the netapi32 substrate
@@ -36,20 +39,6 @@ pub unsafe extern "system" fn NetStatisticsGet(
         fn _wcsicmp(a: *const u16, b: *const u16) -> i32;
     }
     extern "system" {
-        fn NetrWorkstationStatisticsGet(
-            server: *mut u16,
-            service: *const u16,
-            level: u32,
-            options: u32,
-            buf: *mut *mut u8,
-        ) -> u32;
-        fn NetrServerStatisticsGet(
-            server: *mut u16,
-            service: *const u16,
-            level: u32,
-            options: u32,
-            buf: *mut *mut u8,
-        ) -> u32;
     }
 
     let mut status = ERROR_NOT_SUPPORTED;
@@ -71,7 +60,7 @@ pub unsafe extern "system" fn NetStatisticsGet(
         if options != 0 {
             return ERROR_INVALID_PARAMETER;
         }
-        status = NetrWorkstationStatisticsGet(server, LANMAN_WORKSTATION.as_ptr(), level, options, bufptr);
+        status = NetrWorkstationStatisticsGet(server, LANMAN_WORKSTATION.as_ptr().cast_mut(), level, options, (bufptr).cast());
     } else if _wcsicmp(service, LANMAN_SERVER.as_ptr()) == 0 {
         if level != 0 {
             return ERROR_INVALID_LEVEL;
@@ -79,7 +68,7 @@ pub unsafe extern "system" fn NetStatisticsGet(
         if options != 0 {
             return ERROR_INVALID_PARAMETER;
         }
-        status = NetrServerStatisticsGet(server, LANMAN_SERVER.as_ptr(), level, options, bufptr);
+        status = NetrServerStatisticsGet(server, LANMAN_SERVER.as_ptr().cast_mut(), level, options, (bufptr).cast());
     }
 
     status

@@ -183,15 +183,13 @@ unsafe extern "C" {
 unsafe extern "C" {
     fn RequestDuidGetDeviceProperty( deviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, requestParameters: WDF_REQUEST_PARAMETERS, outLength: *mut usize, ) -> i32;
 }
-unsafe extern "C" {
-    #[link_name = "DeviceRetrieveModeSenseUsingScratch"]
-    fn DeviceRetrieveModeSenseUsingScratch__c(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Buffer: *mut i8, BufferLength: usize, Page: u8, PageControl: u8) -> u32;
-}
 
 // common.rs (and the C) return ULONG; a usize decl read 32 bits nobody wrote on 64-bit.
 #[allow(non_snake_case)]
 unsafe fn DeviceRetrieveModeSenseUsingScratch(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Buffer: *mut i8, BufferLength: usize, Page: u8, PageControl: u8) -> usize {
-    DeviceRetrieveModeSenseUsingScratch__c(DeviceExtension, Buffer, BufferLength, Page, PageControl) as usize
+    // The definition is common.rs's, with cdrom.h's `ULONG Length`: the old `#[link_name]`
+    // alias passed it as a usize, 8 bytes against 4 on amd64 and arm64.
+    crate::common::DeviceRetrieveModeSenseUsingScratch(DeviceExtension, Buffer.cast(), BufferLength as u32, Page, PageControl) as usize
 }
 unsafe extern "C" {
 }

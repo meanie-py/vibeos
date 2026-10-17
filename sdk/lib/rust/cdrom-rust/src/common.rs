@@ -210,7 +210,7 @@ const MountedDeviceInterface: i32 = 1;
 // Forward declaration: opaque structs used by this function (caller provides definitions)
 
 unsafe extern "C" {
-    fn strlen(s: *const i8) -> usize;
+    pub fn strlen(s: *const i8) -> usize;
     fn strncmp(s1: *const i8, s2: *const i8, n: usize) -> i32;
 }
 

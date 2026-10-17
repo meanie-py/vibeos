@@ -1558,7 +1558,15 @@ def _ref_to_void_pointer(
     is made, and the pointee type comes from the parameter. A shared `&X` goes only to
     `*const c_void`; to `*mut` it is a mutability question, not this one."""
     want = re.fullmatch(r"\*(mut|const) (?:core::ffi::|std::ffi::|libc::)?c_void", expected)
-    if want is None or not found.startswith("&"):
+    # A HANDLE out-parameter: `&mut hwnd` (a `*mut c_void` local) where the header wants
+    # `*mut *mut HWND__` (menuband's `IUnknown_GetWindow(.., &mut parent)`). Both pointees are
+    # thin raw pointers, so the layout is identical whatever they point at; this is C's
+    # `HWND *` from a `void *` variable's address.
+    if want is None:
+        want = re.fullmatch(r"\*(mut|const) \*(?:mut|const) [\w:]+", expected)
+        if want is None or not re.fullmatch(r"&(?:mut )?\*(?:mut|const) [\w:]+", found):
+            return None
+    if not found.startswith("&"):
         return None
     mutable = found.startswith("&mut ")
     if want.group(1) == "mut" and not mutable:
@@ -6933,6 +6941,7 @@ def repair_crate(
     timeout: int = 1800,
     check_runner: Callable[[str], CargoCheckRun] | None = None,
     target_dirs: Mapping[str, Path] | None = None,
+    features: Sequence[str] = (),
 ) -> RepairSession:
     """Iterate propose/apply to a fixpoint, never leaving the tree worse than we found it.
 
@@ -7019,6 +7028,9 @@ def repair_crate(
             target,
             root=root,
             timeout=timeout,
+            # A feature-gated module (rtl-strings' `cabi`, which the kernel build turns on)
+            # is invisible to a default-features check, so its errors were never repaired.
+            extra_args=("--features", ",".join(features)) if features else (),
             target_dir=(target_dirs or {}).get(target),
         )
     )

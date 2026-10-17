@@ -1,5 +1,7 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use crate::types::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::common::strlen;
 // The crate's own functions: the definition is the declaration.
 use crate::common::DeviceGetParameter;
 use crate::common::DeviceReleaseQueue;
@@ -49,7 +51,6 @@ extern "system" {
 extern "C" {
     fn CdromMcnPollMark();
     fn NT_SUCCESS(status: NTSTATUS) -> bool;
-    fn strlen(s: *const u8) -> usize;
 }
 extern "system" {
     fn WDF_REQUEST_REUSE_PARAMS_INIT(params: *mut WDF_REQUEST_REUSE_PARAMS, flags: u32, status: NTSTATUS);
@@ -1955,7 +1956,7 @@ pub unsafe extern "C" fn DeviceIsMediaChangeDisabledDueToHardwareLimitation(
             } else {
                 vendor_id = (device_descriptor as *const u8)
                     .add((*device_descriptor).VendorIdOffset as usize);
-                length = strlen(vendor_id);
+                length = strlen((vendor_id).cast());
             }
 
             if (*device_descriptor).ProductIdOffset == 0 {
@@ -1963,7 +1964,7 @@ pub unsafe extern "C" fn DeviceIsMediaChangeDisabledDueToHardwareLimitation(
             } else {
                 product_id = (device_descriptor as *const u8)
                     .add((*device_descriptor).ProductIdOffset as usize);
-                length += strlen(product_id);
+                length += strlen((product_id).cast());
             }
 
             if (*device_descriptor).ProductRevisionOffset == 0 {
@@ -1971,7 +1972,7 @@ pub unsafe extern "C" fn DeviceIsMediaChangeDisabledDueToHardwareLimitation(
             } else {
                 revision_id = (device_descriptor as *const u8)
                     .add((*device_descriptor).ProductRevisionOffset as usize);
-                length += strlen(revision_id);
+                length += strlen((revision_id).cast());
             }
 
             // allocate a buffer for the string
@@ -2001,27 +2002,27 @@ pub unsafe extern "C" fn DeviceIsMediaChangeDisabledDueToHardwareLimitation(
                 core::ptr::copy_nonoverlapping(
                     vendor_id,
                     device_string.Buffer.add(offset) as *mut u8,
-                    strlen(vendor_id),
+                    strlen((vendor_id).cast()),
                 );
-                offset += strlen(vendor_id);
+                offset += strlen((vendor_id).cast());
             }
 
             if !product_id.is_null() {
                 core::ptr::copy_nonoverlapping(
                     product_id,
                     device_string.Buffer.add(offset) as *mut u8,
-                    strlen(product_id),
+                    strlen((product_id).cast()),
                 );
-                offset += strlen(product_id);
+                offset += strlen((product_id).cast());
             }
 
             if !revision_id.is_null() {
                 core::ptr::copy_nonoverlapping(
                     revision_id,
                     device_string.Buffer.add(offset) as *mut u8,
-                    strlen(revision_id),
+                    strlen((revision_id).cast()),
                 );
-                offset += strlen(revision_id);
+                offset += strlen((revision_id).cast());
             }
 
             NT_ASSERT!((offset == device_string.Length as usize) as i32);

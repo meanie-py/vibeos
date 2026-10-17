@@ -1,4 +1,8 @@
 use crate::prelude::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::prelude::RegOpenKeyExW;
+use crate::prelude::RegCloseKey;
+use crate::prelude::RegQueryValueExW;
 use core::ffi::c_void;
 
 extern "C" {
@@ -895,14 +899,11 @@ pub unsafe extern "system" fn DeleteItemW(
 extern "C" {
     fn memcpy(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void;
     fn wcscat(dest: *mut WCHAR, src: *const WCHAR) -> *mut WCHAR;
-    fn wcschr(s: *const WCHAR, c: WCHAR) -> *mut WCHAR;
+    pub fn wcschr(s: *const WCHAR, c: WCHAR) -> *mut WCHAR;
     fn wcsrchr(str_: LPCWSTR, ch: u16) -> LPWSTR;
 }
 extern "system" {
     fn ExpandEnvironmentStringsW(lpSrc: LPCWSTR, lpDst: LPWSTR, nSize: u32) -> u32;
-    fn RegCloseKey(hKey: HKEY) -> i32;
-    fn RegOpenKeyExW(hKey: HKEY, lpSubKey: LPCWSTR, ulOptions: u32, samDesired: u32, phkResult: *mut HKEY) -> i32;
-    fn RegQueryValueExW(hKey: HKEY, lpValueName: LPCWSTR, lpReserved: *mut u32, lpType: *mut u32, lpData: LPBYTE, lpcbData: *mut u32) -> i32;
     fn SetLastError(dwErrCode: u32);
 }
 
