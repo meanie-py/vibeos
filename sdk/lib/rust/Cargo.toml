@@ -204,6 +204,7 @@ members = [
     "portcls-rust",
     "sysaudio-rust",
     "sysaudio-difftest",
+    "audio-convert-difftest",
     "portcls-difftest",
     "varargs-rust",
     "drvtrace-shim",

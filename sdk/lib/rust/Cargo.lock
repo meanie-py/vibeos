@@ -285,6 +285,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "audio-convert-difftest"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "audiosrv-cargo"
 version = "0.1.0"
 dependencies = [
