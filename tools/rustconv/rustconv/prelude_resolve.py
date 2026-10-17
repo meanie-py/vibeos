@@ -554,7 +554,12 @@ def consensus(name: str, items: list[Item]) -> tuple[Item | None, str]:
         # An extern DATA symbol: the island's declaration is the header's own transcript. It
         # outranks a crate's `const GUID_NULL: GUID = ..` copy, which is not the symbol.
         voters = [i for i in statics if _is_bindgen(i.path)] or statics
-        types = {re.sub(r"\s+", "", i.text.split(":", 1)[1]) for i in voters}
+        # guiddef.h's IID/CLSID/FMTID are typedefs of GUID: shell32 declares IID_IDropTarget
+        # as IID in some files and GUID in others, which is one type, not a disagreement.
+        types = {
+            re.sub(r"\b(?:IID|CLSID|FMTID)\b", "GUID", re.sub(r"\s+", "", i.text.split(":", 1)[1]))
+            for i in voters
+        }
         if len(types) != 1:
             return None, f"extern static type disagreement ({len(types)} types)"
         return _most_common(voters), ""
@@ -1391,7 +1396,9 @@ _EXPLICIT_DDK = re.compile(r"^\s*use\s+\w+::ddk::\{([^}]*)\}", re.M)
 _DECLARED = r"^\s*pub\s+(?:fn|static(?:\s+mut)?)\s+([A-Za-z_]\w*)\b[^{;=]*;"
 
 
-_IMPORTLIBS = re.compile(r"add_importlibs\(\s*\S+\s+([^)]*)\)")
+# add_delay_importlibs too: a delay-loaded DLL (the shell extensions' ole32) is still an
+# import library the module links, so its exports are externs like any other.
+_IMPORTLIBS = re.compile(r"add_(?:delay_)?importlibs\(\s*\S+\s+([^)]*)\)")
 
 
 def module_exports(module_dir: Path, repo: Path, every_arch: bool = True) -> set[str] | None:

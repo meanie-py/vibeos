@@ -1575,6 +1575,7 @@ unsafe extern "C" fn InstallLiveCD() -> u32 {
     }
 
     DPRINT1!("[SYSSETUP] InstallLiveCD: registration done\n");
+    super::install_vibeos::mark_registration_done();
     SetupCloseInfFile(hSysSetupInf);
 
     // userinit is how the LiveCD reaches its shell upstream (the language page, then

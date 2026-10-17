@@ -852,6 +852,8 @@ members = [
     "beepmidi-rust",
     "sndblst-rust",
     "mmcshext-rust",
+    "sendmail-rust",
+    "mydocs-rust",
 ]
 resolver = "2"
 

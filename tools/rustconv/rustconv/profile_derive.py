@@ -2511,6 +2511,26 @@ _COM_BASE_RE = re.compile(
 )
 
 
+LOCAL_RAII = Path(__file__).resolve().parent.parent / "data" / "local_raii"
+
+
+def local_raii_types(m) -> list[str]:
+    """The canonical RAII lowerings (data/local_raii/<Name>.rs) the module's C++ names.
+
+    `port translate` splices each into the module that uses it, struct and Drop together,
+    so the island must not emit that struct too: integrate drops a module item the island
+    already provides, and the lowering's `impl Drop` then lands on bindgen's `Copy` copy
+    (E0184; sendmail's CDataObjectHIDA)."""
+    names = {f.stem for f in LOCAL_RAII.glob("*.rs")}
+    found: set[str] = set()
+    for tu in m.compiled_tus:
+        for f in [tu, *tu.parent.glob("*.h*")]:
+            if f.is_file():
+                text = f.read_text(errors="replace")
+                found |= {n for n in names if re.search(rf"\b{re.escape(n)}\b", text)}
+    return sorted(found)
+
+
 def cpp_interface_bases(m) -> list[str]:
     """The COM interfaces the module's own C++ classes derive from.
 
@@ -4071,14 +4091,24 @@ def emit_profile(dp: DerivedProfile) -> str:
         )
         out.append("    # this module's C, so the island emits the real layout (fields reachable).")
         out.append('    UNBLOCK="' + " ".join(unblock) + '"')
+    bl_items: list[str] = []
     if m.is_usermode and any(
         str(h).replace("\\", "/").endswith("/wine/list.h") for h in dp.closure.headers
     ):
         # wine/list.h's `struct list` is winelist-rust's, so the list_* helpers resolve
         # imports from it operate on the same type as this module's struct fields.
         out.append("    # wine/list.h: `struct list` and its helpers are winelist-rust's.")
-        out.append("    EXTRA_BL_ITEMS=( list )")
+        bl_items.append("list")
         out.append("    EXTRA_RAW_LINES=( 'pub use winelist_rust::*;' )")
+    raii = local_raii_types(m) if cpp else []
+    if raii:
+        out.append(
+            "    # Body-local RAII types translate takes from data/local_raii, whose lowering"
+        )
+        out.append("    # defines the struct with its Drop: bindgen's Copy layout would shadow it.")
+        bl_items += raii
+    if bl_items:
+        out.append("    EXTRA_BL_ITEMS=( " + " ".join(bl_items) + " )")
     out.append("    EXTRA_INC=( " + " ".join(dp.extra_inc) + " )")
     if dp.late_inc:
         out.append(
@@ -4536,6 +4566,21 @@ def _kernel_panic(m: CMakeModule) -> str:
     return "kernel"
 
 
+_SHELLUTILS_SHARED = {
+    "CDataObjectHIDA": "hida_clipformat",
+    "HIDA_GetPIDLFolder": "HIDA_GetPIDLFolder",
+    "HIDA_GetPIDLItem": "HIDA_GetPIDLItem",
+}
+
+
+def _shellutils_uses(texts: list[str]) -> str:
+    """`pub use atl_rust::shellutils::{..};` for the shellutils.h names the module uses."""
+    names = sorted(
+        {v for k, v in _SHELLUTILS_SHARED.items() if any(re.search(rf"\b{k}\b", t) for t in texts)}
+    )
+    return f"pub use atl_rust::shellutils::{{{', '.join(names)}}};\n" if names else ""
+
+
 def scaffold_crate(
     dp: DerivedProfile,
     out_dir: Path,
@@ -4644,6 +4689,9 @@ def scaffold_crate(
             "pub use atl_rust::CStringW as CSimpleString;\n"
             + ("pub use atl_rust::CComHeapPtr;\n" if com else "")
             + ("pub use atl_rust::CPath;\npub use atl_rust::CPath as CPathW;\n" if path else "")
+            # shellutils.h's shared half (g_cfHIDA, which the CDataObjectHIDA lowering calls;
+            # the HIDA accessors), by what the module names.
+            + _shellutils_uses(texts)
             # shellutils.h's creator over atl_rust::com (a class with a COM map).
             + (
                 "pub use atl_rust::com::ShellObjectCreator;\n"

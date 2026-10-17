@@ -1179,6 +1179,23 @@ def _cppapp_dir(stem: str) -> Path:
     return STATE_ROOT / stem / "cppapp"
 
 
+LOCAL_RAII = Path(__file__).resolve().parent.parent / "data" / "local_raii"
+
+
+def _local_raii_args(tu: Path) -> list[str]:
+    """`--local-raii` for each canonical lowering (data/local_raii/<Name>.rs) whose type the
+    C++ TU names. translate refuses a body-local RAII type it has no lowering for rather
+    than guess its drop; the lowering for a shared header's type (shellutils.h's
+    CDataObjectHIDA) is one file, so no module's run should have to be told where it is."""
+    text = tu.read_text(errors="replace")
+    return [
+        a
+        for f in sorted(LOCAL_RAII.glob("*.rs"))
+        if re.search(rf"\b{re.escape(f.stem)}\b", text)
+        for a in ("--local-raii", f"{f.stem}={f}")
+    ]
+
+
 def stage_cppapp(stem: str) -> None:
     """Render a C++ module's classes and lower every body into synthetic headers, $0.
 
@@ -1780,6 +1797,7 @@ def stage_translate(
             # translate refuses a C++ TU without a mode: the classless half is one run, and
             # each class defined in the TU is its own class-atomic run.
             cmd.append("--free-functions")
+            cmd += _local_raii_args(REPO / tu)
         if cppapp and tu in vias:
             # A synthetic unit: lowered C++ that c2rust cannot anchor (it is not the TU's
             # text, and c2rust has no C++), with the generated class context per worker.

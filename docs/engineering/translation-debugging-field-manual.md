@@ -1339,6 +1339,24 @@ function goes in a plain `extern "system"` block and resolves through the import
 `scan_unresolved_imports` (binary lint, every arch) checks every livecd PE's imports against
 its exporter's export table, so any name the loader cannot bind fails the build.
 
+### An `extern "C"` DllMain never runs on i386: crt-startup's default takes its place
+
+**Symptom:** none visible. The DLL loads and works on amd64 and arm64. On i386 its DllMain
+never runs, so whatever it initializes (ATL's `gModule.Init`, a module handle, a TLS slot)
+stays zero, and the first caller of that state fails far from the cause.
+
+**Cause:** crt-startup calls `_DllMain@12` and supplies a default through
+`-alternatename:_DllMain@12=_vibeos_default_DllMain@12`. A `#[no_mangle] extern "C" fn DllMain`
+defines `_DllMain`, which is a different symbol, so the reference stays unresolved and the
+alternate name binds the default (returns TRUE). No link error and no warning. wshtcpip
+shipped this way; sendmail and mydocs came back from translation with it, the model having
+read `STDAPI_(BOOL)` as no convention. The other Windows-called entry points (the COM server
+exports, `CPlApplet`, `DriverEntry`) are WINAPI too, and get stack imbalance rather than a
+silent swap.
+
+**Fix:** `extern "system"`. `scan_entry_point_cc` (a vibeos-lint rule, empty baseline) fails
+`check` on any of these names defined with another convention.
+
 ### Assorted ABI-adjacent traps
 - **A trap handler that never sets the return register returns the caller's own argument.**
   User-mode `DbgPrint` returns what the kernel leaves in eax/rax/x0 after `int 0x2d`, and

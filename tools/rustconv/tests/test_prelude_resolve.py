@@ -504,6 +504,22 @@ def test_an_extern_static_is_copied_from_the_island():
     assert 'extern "C" {\n    pub static GUID_NULL: GUID;' in render({"GUID_NULL": pick})
 
 
+def test_iid_and_guid_spell_one_extern_static_type():
+    """sendmail's IID_IDropTarget: shell32 declares it `: IID` in some files, `: GUID` in
+    others -- guiddef.h's typedef, not a disagreement."""
+    from rustconv.prelude_resolve import Item, consensus
+
+    items = [
+        Item("static", "static IID_IDropTarget: IID;", '"C"', "shell32-rust/src/a.rs"),
+        Item("static", "static IID_IDropTarget: IID;", '"C"', "shell32-rust/src/b.rs"),
+        Item("static", "static IID_IDropTarget: GUID;", '"C"', "ole32-rust/src/iids.rs"),
+    ]
+    pick, why = consensus("IID_IDropTarget", items)
+    assert pick is not None, why
+    items.append(Item("static", "static IID_IDropTarget: u32;", '"C"', "x-rust/src/c.rs"))
+    assert consensus("IID_IDropTarget", items)[0] is None
+
+
 def test_a_bare_long_ptr_with_only_64bit_link_names_gets_the_i386_alias():
     """mspaint's prelude copied `GetWindowLongPtr` with x86_64/aarch64 link_names only, and
     i386 linked the literal macro name: `undefined symbol: _GetWindowLongPtr@8`."""

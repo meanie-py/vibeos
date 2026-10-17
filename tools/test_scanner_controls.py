@@ -766,6 +766,25 @@ pub unsafe fn f(irp: *mut u8) {
     );
 }
 """
+# scan_entry_point_cc. Seeded from wshtcpip (2026-10-17): an `extern "C"` DllMain defines
+# `_DllMain` on i386 where crt-startup calls `_DllMain@12`, so the module's own never runs.
+_ENTRYCC_BAD = """\
+#[no_mangle]
+pub unsafe extern "C" fn DllMain(hInstDll: HANDLE, dwReason: ULONG, Reserved: PVOID) -> BOOL {
+    1
+}
+"""
+_ENTRYCC_GOOD = """\
+#[no_mangle]
+pub unsafe extern "system" fn DllMain(hInstDll: HANDLE, dwReason: ULONG, Reserved: PVOID) -> BOOL {
+    1
+}
+#[no_mangle]
+pub unsafe extern "C" fn CreateShellLink() -> i32 {
+    0
+}
+"""
+
 _FNABI_GOOD = """\
 pub unsafe extern "system" fn InitFrontEnd(this: *mut u8) -> i32 { 0 }
 pub static SLOT: Option<unsafe extern "system" fn(*mut u8) -> i32> = Some(InitFrontEnd);
@@ -3116,6 +3135,12 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"bad.rs": _FNABI_BAD, "bad_typed.rs": _FNABI_BAD_TYPED},
         good={"good.rs": _FNABI_GOOD},
+    ),
+    Control(
+        name="scan_entry_point_cc",
+        script="tools/vibeos-lint/src/rules/entry_point_cc.rs",
+        bad={"bad.rs": _ENTRYCC_BAD},
+        good={"good.rs": _ENTRYCC_GOOD},
     ),
     Control(
         name="scan_cdecl_alias",

@@ -1227,6 +1227,18 @@ External classes nothing in the module names (CRegKey, merely defined by atlbase
 longer rendered or bought. Runtime: `tools/payloads/modrun/suites/mmcshext.yaml` drives the
 factory, QueryInterface, the icon paths and register/unregister against the C.
 
+The drop handlers (sendmail, mydocs) added four things. A COM-map entry may name an ANCESTOR
+of a derived interface (`COM_INTERFACE_ENTRY_IID(IID_IPersist, IPersist)` on an IPersistFile
+class): it resolves to the derived base whose WIDL slots it prefixes, and two such bases is
+C++'s ambiguous cast, refused. `port translate` passes `--local-raii` for each canonical
+lowering in `tools/rustconv/data/local_raii/` that a C++ TU names (CDataObjectHIDA), and
+profile_derive blocklists that type from the island, so the lowering's struct (with its
+Drop) is the only one. shellutils.h's shared half (`hida_clipformat`, the HIDA accessors) is
+`atl_rust::shellutils`, re-exported by the prelude when the module names it; `port headers`
+over shellutils.h would buy 40 functions for those two. resolve counts
+`add_delay_importlibs` (ole32 is delay-loaded in every shell extension). Runtime:
+`probes/droptarget.c` serves both suites, dropping a real two-item HIDA on each handler.
+
 ## `body-audit`: did a pre-seal body keep its C's calls? (2026-09-26)
 
 Call sealing makes a dropped call fail at translation time; crates translated before it

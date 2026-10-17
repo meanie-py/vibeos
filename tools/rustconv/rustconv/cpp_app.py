@@ -1199,6 +1199,35 @@ def _iface_path(h: Hierarchy, cls: ClassModel, iface: str) -> str | None:
     return None
 
 
+def _iface_paths(h: Hierarchy, cls: ClassModel, pre: str = "") -> list[tuple[str, str]]:
+    """Every (interface, field path) `cls` derives, through module bases."""
+    out = [(short(b.name), f"{pre}__base{i}") for i, b in enumerate(cls.bases)]
+    for i, b in h.module_bases(cls):
+        out += _iface_paths(h, b, f"{pre}__base{i}.")
+    return out
+
+
+def _iface_upcast_path(h: Hierarchy, cls: ClassModel, iface: str) -> str | None:
+    """The path for an interface `cls` reaches only as an ANCESTOR of one it derives:
+    ATL's `COM_INTERFACE_ENTRY_IID(IID_IPersist, IPersist)` on a class deriving
+    IPersistFile is `static_cast<IPersist*>`, which lands on the IPersistFile subobject.
+    COM interfaces inherit singly, so the ancestor's WIDL slots are a prefix of the
+    derived one's; two derived bases sharing it is C++'s ambiguous cast, refused."""
+    want = [s.name for s in h.com.get(iface, [])]
+    if not want:
+        return None
+    hits = {
+        path
+        for d, path in _iface_paths(h, cls)
+        if d != iface and [s.name for s in h.com.get(d, [])][: len(want)] == want
+    }
+    if len(hits) > 1:
+        raise CppAppError(
+            f"{cls.qualified}: {iface} is an ambiguous base ({', '.join(sorted(hits))})"
+        )
+    return next(iter(hits), None)
+
+
 def _render_com_object_glue(cls: ClassModel, h: Hierarchy, model: ModuleModel) -> str:
     """What `CComObject<T>` adds over a class with a COM map, given to the class itself:
     QueryInterface over the map, AddRef/Release on CComObjectRootEx's count (destroying at
@@ -1224,7 +1253,7 @@ def _render_com_object_glue(cls: ClassModel, h: Hierarchy, model: ModuleModel) -
             iid, via = f"IID_{e.args[0]}", e.args[1]
         else:
             raise CppAppError(f"{cls.qualified}: COM map entry {e.macro}({', '.join(e.args)})")
-        path = _iface_path(h, cls, short(via))
+        path = _iface_path(h, cls, short(via)) or _iface_upcast_path(h, cls, short(via))
         if path is None:
             raise CppAppError(f"{cls.qualified}: {e.macro} names {via}, which it does not derive")
         entries.append(
