@@ -14177,6 +14177,22 @@ sit out the whole 420s ceiling waiting for WoW64 guests that do not exist there.
 (not its subject), skip it loudly with the errno and keep the remaining rungs running, rather
 than failing the whole guest. The arch where the fixture works keeps full coverage of that rung.
 
+### Every guest after one slow guest exits `0xdead0030`: the slow one was never ended
+**Symptom.** One guest records an odd exit, typically `0x103` (STILL_ACTIVE), and then several
+unrelated later guests each print `[WINLOGON] <x>.exe TIMED OUT after 30s - terminating` and
+exit `0xdead0030`. Their own rungs pass, just too slowly. On 2026-10-17 it read as a kernel
+regression in thread creation and cost a bisect.
+**Cause.** `0xDEAD0030` is winlogon's `TerminateProcess` code, not a guest failure. The guest
+that ran first outlived its wait, but its launcher only waited and then moved on without ending
+it, so it kept running through every later rung and took their CPU. The trigger was
+`Fault32.c` rung 3b, 5000 AVs: under FEX each AV is a host fault, a JIT exit and a guest-SEH
+redirect, plus two serial lines (~10/s under TCG). fault32 got 577 iterations into its 60 s wait
+and was still faulting 900 AVs later.
+**Fix.** Every launcher goes through `WaitGuestOrEnd` (winlogon-rust), which ends a guest on
+timeout. A rung whose cost scales with emulation speed is bounded by time as well as count, and
+it reports how far it got. When this signature appears, grep for the eip of the AV storm and
+find out which image it belongs to before suspecting the guests that timed out.
+
 ### On a JIT host a `[UEXC]` record is not a crash — FEX takes access violations BY DESIGN
 
 **Symptom.** A WoW64 guest on arm64 fails to report, and its serial holds `[UEXC]
