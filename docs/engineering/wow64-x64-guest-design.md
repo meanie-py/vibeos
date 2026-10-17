@@ -52,8 +52,9 @@ media (and `--arch amd64 --ladder` for wow64.dll). Owed, most valuable first:
    `MmLowMemoryThreshold`, and a starving user fault retries while the balancer makes progress.
    `smoke --vm-memory 1024M` overrides a payload's declared RAM for exactly this sweep. Reclaim
    exposed `MmCheckDirtySegment`'s invented `IoSetTopLevelIrp(0x80000000)` (fastfat 0x23 under
-   pressure; field manual, "The LLM invents plausible values"). Next is step 2 of the design
-   doc: a real standby state, so cached pages count as available.
+   pressure; field manual, "The LLM invents plausible values"). appstorm64 now passes 54/54 at
+   1088M (wedged before) and 1152M; 1024M still runs out. Next is step 2 of the design doc: a
+   real standby state, so cached pages count as available.
 2. Commit not yet charged: copy-on-write pages of image and file views, PEB/TEB pages, kernel
    pool (`ARM3/commit.rs` header).
 3. The cnt CRT's NUL scans (`cstr_slice`/`wcstr_slice`, under strlen, wcslen and every string
