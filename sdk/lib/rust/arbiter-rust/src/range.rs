@@ -64,11 +64,11 @@ pub unsafe extern "system" fn ArbiterLibOverrideConflict(
     SelfConflictOnly
 }
 unsafe extern "C" fn ArbpWritePriority(Arbiter: PARBITER_INSTANCE, Alternative: PARBITER_ALTERNATIVE) {
-    let mut Ordering: PARBITER_ORDERING = core::ptr::null_mut();
-    let mut End: PARBITER_ORDERING = core::ptr::null_mut();
+    let mut Ordering: PARBITER_ORDERING;
+    let mut End: PARBITER_ORDERING;
     let Priority: INT32 = (*Alternative).Priority;
-    let mut Preferred: BOOLEAN = 0;
-    let mut Index: ULONG = 0;
+    let mut Preferred: BOOLEAN;
+    let mut Index: ULONG;
 
     if KeGetCurrentIrql() as core::ffi::c_int > (APC_LEVEL) as _ {
         DbgPrint(
@@ -135,8 +135,8 @@ unsafe extern "C" fn ArbpWritePriority(Arbiter: PARBITER_INSTANCE, Alternative: 
         .add((*Arbiter).OrderingList.Count as usize);
 
     while Ordering < End {
-        let mut Start: UINT64 = 0;
-        let mut RangeEnd: UINT64 = 0;
+        let mut Start: UINT64;
+        let mut RangeEnd: UINT64;
 
         'body: {
             /* No intersection with this alternative's window */
@@ -202,8 +202,8 @@ unsafe extern "C" fn ArbpSharesDriverStack(
     DeviceA: PDEVICE_OBJECT,
     DeviceB: PDEVICE_OBJECT,
 ) -> BOOLEAN {
-    let mut A: PDEVICE_OBJECT = core::ptr::null_mut();
-    let mut B: PDEVICE_OBJECT = core::ptr::null_mut();
+    let mut A: PDEVICE_OBJECT;
+    let mut B: PDEVICE_OBJECT;
     if KeGetCurrentIrql() as ::core::ffi::c_int > (APC_LEVEL) as _ {
         DbgPrint(
             b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8 as PCSTR,
@@ -235,7 +235,7 @@ unsafe extern "C" fn ArbpShareDriverExclusive(
     ArbState: PARBITER_ALLOCATION_STATE,
 ) -> BOOLEAN {
     let Entry: PARBITER_LIST_ENTRY = (*ArbState).Entry;
-    let mut Requester: PDEVICE_OBJECT = core::ptr::null_mut();
+    let mut Requester: PDEVICE_OBJECT;
     let mut Iterator: RTL_RANGE_LIST_ITERATOR = core::mem::zeroed();
     let mut Range: PRTL_RANGE = core::ptr::null_mut();
     let RequesterIsRoot: BOOLEAN;
@@ -360,7 +360,7 @@ unsafe extern "C" fn ArbpTakeReservedWindow(
     Minimum: PUINT64,
     Maximum: PUINT64,
 ) -> BOOLEAN {
-    let mut Index: ULONG = 0;
+    let mut Index: ULONG;
 
     if (*Alternative).Reserved[0 as usize] == ARBITER_RESERVED_PASS_DONE {
         return FALSE;
@@ -369,8 +369,8 @@ unsafe extern "C" fn ArbpTakeReservedWindow(
     Index = (*Alternative).Reserved[0 as usize] as ULONG;
     while Index < (*Arbiter).ReservedList.Count as ULONG {
         let Window: PARBITER_ORDERING = (*Arbiter).ReservedList.Orderings.add(Index as usize);
-        let mut Lo: UINT64 = 0;
-        let mut Hi: UINT64 = 0;
+        let mut Lo: UINT64;
+        let mut Hi: UINT64;
 
         if !((*Window).Start > (*Alternative).Maximum || (*Alternative).Minimum > (*Window).End) {
             Lo = max((*Alternative).Minimum, (*Window).Start);
@@ -403,8 +403,8 @@ pub unsafe extern "system" fn ArbiterLibGetNextAllocationRange(
     Arbiter: PARBITER_INSTANCE,
     ArbState: PARBITER_ALLOCATION_STATE,
 ) -> BOOLEAN {
-    let mut Alternative: PARBITER_ALTERNATIVE = core::ptr::null_mut();
-    let mut Lowest: PARBITER_ALTERNATIVE = core::ptr::null_mut();
+    let mut Alternative: PARBITER_ALTERNATIVE;
+    let mut Lowest: PARBITER_ALTERNATIVE;
     let mut Minimum: UINT64 = 0;
     let mut Maximum: UINT64 = 0;
 
@@ -462,7 +462,7 @@ pub unsafe extern "system" fn ArbiterLibGetNextAllocationRange(
                 continue;
             }
         } else {
-            let mut Ordering: PARBITER_ORDERING = core::ptr::null_mut();
+            let mut Ordering: PARBITER_ORDERING;
             let Index: ULONG = if (*Lowest).Priority < 0 as INT32 {
                 (-((*Lowest).Priority + 1 as INT32)) as ULONG
             } else {

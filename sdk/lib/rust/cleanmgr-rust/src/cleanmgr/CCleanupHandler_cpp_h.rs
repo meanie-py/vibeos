@@ -212,7 +212,8 @@ impl CCleanupHandler {
                     GuidStr.as_ptr(),
                     core::ptr::addr_of_mut!(guid),
                 )) {
-                    FAILED_UNEXPECTEDLY!(CoCreateInstance(
+                    // The C++ uses it as a statement for its debug trace; the result is unused.
+                    let _ = FAILED_UNEXPECTEDLY!(CoCreateInstance(
                         core::ptr::addr_of!(guid),
                         core::ptr::null_mut(),
                         CLSCTX_INPROC_SERVER,

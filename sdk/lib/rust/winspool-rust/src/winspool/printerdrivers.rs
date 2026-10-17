@@ -1,4 +1,5 @@
 use crate::winspool::marshalling::MarshallUpStructure;
+use ntdll_sys::seh::rpc_try;
 use crate::winspool::marshalling::MarshallUpStructuresArray;
 use crate::winspool::utils::UnicodeToAnsiInPlace;
 use crate::winspool::utils::UnicodeToAnsiZZInPlace;
@@ -375,10 +376,9 @@ pub unsafe extern "system" fn AddPrinterDriverExW(pName: PWSTR, Level: DWORD, pD
 
     pDriverContainer.DriverInfo.Level8 = pdi;
 
-    // RpcTryExcept: SEH guard has no direct Rust equivalent; try body is executed directly.
     // RpcExcept(EXCEPTION_EXECUTE_HANDLER) handler: dwErrorCode = RpcExceptionCode();
     // RpcEndExcept
-    dwErrorCode = _RpcAddPrinterDriverEx(pName, core::ptr::addr_of_mut!(pDriverContainer), dwFileCopyFlags);
+    dwErrorCode = rpc_try(|| _RpcAddPrinterDriverEx(pName, core::ptr::addr_of_mut!(pDriverContainer), dwFileCopyFlags)).unwrap_or_else(|code| code as _);
 
     if !pdi.is_null() {
         HeapFree(GetProcessHeap(), 0, pdi as LPVOID);
@@ -439,7 +439,7 @@ pub unsafe extern "system" fn DeletePrinterDriverExW(pName: PWSTR, pEnvironment:
     // Do the RPC call.
     // RpcTryExcept
     {
-        dwErrorCode = _RpcDeletePrinterDriverEx(pName, pEnvironment, pDriverName, dwDeleteFlag, dwVersionFlag);
+        dwErrorCode = rpc_try(|| _RpcDeletePrinterDriverEx(pName, pEnvironment, pDriverName, dwDeleteFlag, dwVersionFlag)).unwrap_or_else(|code| code as _);
     }
     // RpcExcept handler: dead under this tree's USE_DUMMY_PSEH build (the C handler never runs either), and stable Rust has no SEH. Original: dwErrorCode = RpcExceptionCode();
     // RpcEndExcept
@@ -642,7 +642,7 @@ pub unsafe extern "system" fn EnumPrinterDriversW(pName: PWSTR, mut pEnvironment
         // RpcTryExcept
         let RpcExceptionOccurred: bool = false;
         {
-            dwErrorCode = _RpcEnumPrinterDrivers(pName, pEnvironment, Level, pDriverInfo, cbBuf, pcbNeeded, pcReturned);
+            dwErrorCode = rpc_try(|| _RpcEnumPrinterDrivers(pName, pEnvironment, Level, pDriverInfo, cbBuf, pcbNeeded, pcReturned)).unwrap_or_else(|code| code as _);
         }
         // RpcExcept(EXCEPTION_EXECUTE_HANDLER)
         if RpcExceptionOccurred {
@@ -852,7 +852,7 @@ pub unsafe extern "system" fn GetPrinterDriverW(hPrinter: HANDLE, mut pEnvironme
         }
 
         // RpcTryExcept
-        dwErrorCode = _RpcGetPrinterDriver((*pHandle).hPrinter, pEnvironment, Level, pDriverInfo, cbBuf, pcbNeeded);
+        dwErrorCode = rpc_try(|| _RpcGetPrinterDriver((*pHandle).hPrinter, pEnvironment, Level, pDriverInfo, cbBuf, pcbNeeded)).unwrap_or_else(|code| code as _);
         // RpcExcept(EXCEPTION_EXECUTE_HANDLER)
         // RpcExcept handler: dead under this tree's USE_DUMMY_PSEH build (the C handler never runs either), and stable Rust has no SEH. Original: dwErrorCode = RpcExceptionCode();
         // RpcEndExcept
@@ -938,13 +938,10 @@ pub unsafe extern "system" fn GetPrinterDriverDirectoryW(pName: PWSTR, mut pEnvi
         // Do the RPC call.
         // RpcTryExcept: the protected body runs as a plain block (SEH is not modeled).
         {
-            dwErrorCode = _RpcGetPrinterDriverDirectory(pName, pEnvironment, Level, pDriverDirectory, cbBuf, pcbNeeded);
+            dwErrorCode = rpc_try(|| _RpcGetPrinterDriverDirectory(pName, pEnvironment, Level, pDriverDirectory, cbBuf, pcbNeeded)).unwrap_or_else(|code| code as _);
         }
         // RpcExcept(EXCEPTION_EXECUTE_HANDLER): handler is kept but cannot be reached
         // without SEH; it is preserved so the call and its assignment remain present.
-        if false {
-            dwErrorCode = RpcExceptionCode!() as DWORD;
-        }
         // RpcEndExcept
     }
 

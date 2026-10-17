@@ -1,4 +1,5 @@
 use crate::winspool::marshalling::MarshallUpStructure;
+use ntdll_sys::seh::rpc_try;
 use crate::winspool::marshalling::MarshallUpStructuresArray;
 use crate::winspool::utils::UnicodeToAnsiInPlace;
 use crate::prelude::*;
@@ -98,7 +99,7 @@ pub unsafe extern "system" fn AddFormW(hPrinter: HANDLE, Level: DWORD, pForm: PB
 
     // Do the RPC call
     // RpcTryExcept
-    dwErrorCode = _RpcAddForm((*pHandle).hPrinter, core::ptr::addr_of_mut!(FormInfoContainer));
+    dwErrorCode = rpc_try(|| _RpcAddForm((*pHandle).hPrinter, core::ptr::addr_of_mut!(FormInfoContainer))).unwrap_or_else(|code| code as _);
     // RpcExcept(EXCEPTION_EXECUTE_HANDLER)
     let rpc_exception_raised: bool = false;
     if rpc_exception_raised {
@@ -136,13 +137,8 @@ pub unsafe extern "system" fn DeleteFormW(hPrinter: HANDLE, pFormName: PWSTR) ->
     }
 
     // Do the RPC call
-    // RpcTryExcept: the protected body runs straight through.
-    dwErrorCode = _RpcDeleteForm((*pHandle).hPrinter, pFormName);
+    dwErrorCode = rpc_try(|| _RpcDeleteForm((*pHandle).hPrinter, pFormName)).unwrap_or_else(|code| code as _);
     // RpcExcept(EXCEPTION_EXECUTE_HANDLER): handler body, only reached on an
-    // structured exception, which has no direct Rust equivalent here.
-    if false {
-        dwErrorCode = RpcExceptionCode!() as DWORD;
-    }
     // RpcEndExcept
 
     SetLastError(dwErrorCode);
@@ -214,7 +210,7 @@ pub unsafe extern "system" fn EnumFormsW(hPrinter: HANDLE, Level: DWORD, pForm: 
 
         // Do the RPC call
         // RpcTryExcept: SEH frame is not modelled in Rust; the try body runs directly.
-        dwErrorCode = _RpcEnumForms((*pHandle).hPrinter, Level, pForm, cbBuf, pcbNeeded, pcReturned);
+        dwErrorCode = rpc_try(|| _RpcEnumForms((*pHandle).hPrinter, Level, pForm, cbBuf, pcbNeeded, pcReturned)).unwrap_or_else(|code| code as _);
         // RpcExcept(EXCEPTION_EXECUTE_HANDLER) handler would be:
         //     dwErrorCode = RpcExceptionCode();
         // RpcEndExcept;
@@ -312,8 +308,7 @@ pub unsafe extern "system" fn GetFormW(hPrinter: HANDLE, pFormName: PWSTR, Level
 
         // Do the RPC call
         // RpcTryExcept: the guarded body is executed directly; the RpcExcept
-        // handler (SEH) has no direct Rust equivalent and is not reproduced here.
-        dwErrorCode = _RpcGetForm((*pHandle).hPrinter, pFormName, Level, pForm, cbBuf, pcbNeeded);
+        dwErrorCode = rpc_try(|| _RpcGetForm((*pHandle).hPrinter, pFormName, Level, pForm, cbBuf, pcbNeeded)).unwrap_or_else(|code| code as _);
         // RpcEndExcept;
 
         if dwErrorCode == ERROR_SUCCESS {
@@ -433,13 +428,10 @@ pub unsafe extern "system" fn SetFormW(hPrinter: HANDLE, pFormName: PWSTR, Level
     // Do the RPC call
     // RpcTryExcept: the protected body runs directly; SEH wrapping is owned by integration.
     {
-        dwErrorCode = _RpcSetForm((*pHandle).hPrinter, pFormName, core::ptr::addr_of_mut!(FormInfoContainer));
+        dwErrorCode = rpc_try(|| _RpcSetForm((*pHandle).hPrinter, pFormName, core::ptr::addr_of_mut!(FormInfoContainer))).unwrap_or_else(|code| code as _);
     }
     // RpcExcept(EXCEPTION_EXECUTE_HANDLER): handler body preserved; executed only on exception
     // (exception dispatch is owned by integration).
-    if false {
-        dwErrorCode = RpcExceptionCode!() as DWORD;
-    }
     // RpcEndExcept;
 
     SetLastError(dwErrorCode);
