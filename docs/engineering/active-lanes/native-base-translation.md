@@ -112,11 +112,28 @@ What the batch added to the shared crates and tools:
      mutants are killed.
 4. **Batch H flipped (2026-10-17):** reactos.exe, blue, ndisuio, netio, rtl8139, tdi and
    tzlib. The row in rust-port-status.md has the details. After it, the ReactOS-native
-   plain-C tail is small: tdihelpers (owed below), sdk/lib/crt's `strtol` lib, normaliz's
+   plain-C tail is small: tdihelpers (done, item 5), sdk/lib/crt's `strtol` lib (done,
+   item 5), normaliz's
    native part, the boot loader's `blcmlib`/`blrtl`, and cdrom's data TUs. The rest is Wine
    (needs the owner's call) or other lanes'. Measured from build-amd64/compile_commands.json,
    filtering any TU with a Wine debug channel or `wine/` include.
-5. Pick the next native area from `rust-port-status.md` (what is still C and not on the
+5. **tdihelpers is one shared Rust library (2026-10-17, $0.06).** `tdi.c`/`tdiconn.c` are
+   the `tdihelpers` STATIC target now. afd.sys links it, and netio's cell takes
+   `engine:crate:tdihelpers-rust`. Their objects were byte-identical under afd's and netio's
+   `_WIN32_WINNT` on all three arches, so one build serves both. The six `_SEH2_TRY` sites are
+   hand-ported to `ntkrnl_sys::seh::try_except`. The C's except arms are dead under
+   DUMMY_PSEH, so the Rust now really catches a failed `MmProbeAndLockPages`. tdikrnl.h's
+   `TdiBuild*` request builders went into `ddk-macros-rust`. Tool fixes:
+   - The `c` fact-seal no longer seals PSEH's statement macros.
+   - A preamble of bare conditionals and `#undef`s is $0.
+   - crate-repair's flex-array rule sees `addr_of_mut!`/`&raw mut` borrows.
+   - `port flip` rewrites cargo cells' `engine:c:<target>` to the crate archive.
+   - vibeos-lint's `scan_raising_probes` no longer reads a probe's name inside a string.
+   **The `strtol` library is pruned ($0).** acpi.sys used only isprint/isspace/isxdigit/
+   toupper from it, which cnt-difftest grades against the C. It now links them from
+   libcntpr_rust.a, as hal.dll does. Linked on all three arches; smoke boots on all three,
+   and amd64 smoke:net passed 16/16. `acpi_new`, which is not built, still names the library.
+6. Pick the next native area from `rust-port-status.md` (what is still C and not on the
    skip list below).
 
 ## Not ours: skip these
@@ -139,21 +156,14 @@ driver (`tools/merge_drivers.py`, which also merges the cohab census), and psapi
 2026-10-16. The first run per stem compiles ntkrnl-sys cold in its private
 `target-<arch>`, which is the likely source of the earlier figure.
 
-- **tdihelpers needs one shared crate** (owed since 2026-10-17). `drivers/network/tdihelpers/
-  tdi.c`/`tdiconn.c` compile into BOTH afd.sys and netio.sys, so translate refuses them
-  ("no proven CMake source owner"), and buying them per driver would pay twice. netio was
-  ported with `port derive --keep-c tdi.c tdiconn.c`; they stay C in both drivers until a
-  `tdihelpers-rust` static crate exists that both link.
 - **`port macros` loses two things a hand fix then has to restore** (reactos.exe): it does
   not widen integer operands (`GetDiskSizeInBytes` needed `as ULONGLONG`) and it drops the
   `!` when one lowered macro calls another (`SetDlgItemFont` -> `SetWindowFont!`). The three
   hand edits live inside reactos-rust's generated prelude block, so a `port macros` re-run
   reverts them.
 - **usetup's cabinet/file-queue code exists twice** (usetup-rust, and reactos-rust's
-  `fileqsup.rs`, because the C `#include`s the .c files). One shared crate, like tdihelpers.
-- **`port flip` of a static library misses cargo cells.** timedate.cpl's cell linked
-  `engine:c:tzlib` (now only a stub) and failed every arch's link until it was pointed at
-  `engine:tzlib_rust`. flip should find `engine:c:<target>` users and rewrite or refuse.
+  `fileqsup.rs`, because the C `#include`s the .c files). One shared crate, as tdihelpers
+  got (item 5 above).
 - **The call seal leaves a live `#ifdef` arm's calls optional** (from control-plane's owed
   list, 2026-10-17; the original report, "it demands calls in dead arms", no longer
   reproduces). `dead_regions.preprocessor_conditional_spans` marks EVERY arm of any `#if`

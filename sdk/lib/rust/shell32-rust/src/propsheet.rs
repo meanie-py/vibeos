@@ -170,7 +170,7 @@ unsafe extern "C" fn SHELL32_PropertySheet(
     let mut Result = -1;
     (*ppsh).hwndParent = stub_hwnd;
     if (*ppsh).nPages != 0 {
-        Result = PropertySheetW(ppsh);
+        Result = PropertySheetW((ppsh).cast());
     } else {
         let mut szFormat: [u16; 128] = [0u16; 128];
         let mut szMessage: [u16; 128 + 42] =
@@ -194,7 +194,7 @@ unsafe extern "C" fn SHELL32_PropertySheet(
         );
     }
     CStubWindow32_DestroyStub_RustBridge(stub_obj);
-    Result
+    (Result) as _
 }
 unsafe extern "C" fn SHELL32_OpenPropSheet(
     pszCaption: PCWSTR,
@@ -347,36 +347,36 @@ pub unsafe extern "system" fn SHOpenPropSheetW(
 #[no_mangle]
 pub unsafe extern "C" fn SH_CreatePropertySheetPageEx(
     wDialogId: WORD,
-    pfnDlgProc: DLGPROC,
+    pfnDlgProc: crate::island::DLGPROC,
     lParam: LPARAM,
     pwszTitle: LPCWSTR,
-    Callback: LPFNPSPCALLBACK,
+    Callback: crate::island::LPFNPSPCALLBACKW,
 ) -> HPROPSHEETPAGE {
     let mut Page: PROPSHEETPAGEW = core::mem::zeroed();
     Page.dwSize = core::mem::size_of::<PROPSHEETPAGEW>() as u32;
     Page.dwFlags = PSP_DEFAULT;
     Page.hInstance = shell32_hInstance;
-    Page.pszTemplate = MAKEINTRESOURCEW(wDialogId as UINT) as *const _;
-    Page.pfnDlgProc = Some(pfnDlgProc);
+    *Page.__bindgen_anon_1.pszTemplate.as_mut() = MAKEINTRESOURCEW(wDialogId as UINT) as *const _;
+    Page.pfnDlgProc = pfnDlgProc;
     Page.lParam = lParam;
     Page.pszTitle = pwszTitle;
-    Page.pfnCallback = core::mem::transmute::<*mut c_void, Option<LPFNPSPCALLBACKW>>(Callback);
+    Page.pfnCallback = Callback;
 
     if !pwszTitle.is_null() {
         Page.dwFlags |= PSP_USETITLE;
     }
-    if !Callback.is_null() {
+    if Callback.is_some() {
         Page.dwFlags |= PSP_USECALLBACK;
     }
 
-    CreatePropertySheetPageW(core::ptr::addr_of!(Page))
+    (CreatePropertySheetPageW((core::ptr::addr_of!(Page)).cast())).cast()
 }
 #[no_mangle]
 pub unsafe extern "C" fn SH_CreatePropertySheetPage(
     wDialogId: WORD,
-    pfnDlgProc: DLGPROC,
+    pfnDlgProc: crate::island::DLGPROC,
     lParam: LPARAM,
     pwszTitle: LPCWSTR,
 ) -> HPROPSHEETPAGE {
-    SH_CreatePropertySheetPageEx(wDialogId, pfnDlgProc, lParam, pwszTitle, core::ptr::null_mut())
+    SH_CreatePropertySheetPageEx(wDialogId, pfnDlgProc, lParam, pwszTitle, None)
 }

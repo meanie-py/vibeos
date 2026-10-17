@@ -11,6 +11,9 @@ add_definitions(
 spec2def(rpcrt4.dll rpcrt4.spec ADD_IMPORTLIB)
 
 add_rpc_files(client epm.idl)
+# The endpoint-mapper calls in rpc_epmap.c go through ept_*_guarded (epm_guard.c), which
+# catch on every arch; native SEH below never covered i386.
+add_rpc_guards(epm windef.h winbase.h)
 add_idl_headers(ndr_types_header ndr_types.idl)
 
 set(OLD_IDL_FLAGS ${IDL_FLAGS})
@@ -51,7 +54,6 @@ list(APPEND SOURCE
 set(RPCRT4_SEH_SOURCE
     cstub.c
     ndr_stubless.c
-    rpc_epmap.c
     rpc_server.c)
 if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "arm64")
     set_source_files_properties(${RPCRT4_SEH_SOURCE} PROPERTIES COMPILE_DEFINITIONS _USE_NATIVE_SEH)
@@ -59,6 +61,8 @@ endif()
 
 list(APPEND PCH_SKIP_SOURCE
     ${RPCRT4_SEH_SOURCE}
+    rpc_epmap.c
+    ${epm_GUARD_SOURCE}
     ndr_typelib.c
     thunks.c
     ${CMAKE_CURRENT_BINARY_DIR}/ndr_types_p.c

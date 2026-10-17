@@ -122,7 +122,7 @@ unsafe extern "C" fn _BindToObject(pidl: PCUIDLIST_ABSOLUTE, spFolder: &mut *mut
     SHBindToObject(
         core::ptr::null_mut(),
         pidl,
-        core::ptr::addr_of!(IID_IShellFolder), (spFolder as *mut *mut IShellFolder).cast(),
+        (core::ptr::addr_of!(IID_IShellFolder)).cast(), (spFolder as *mut *mut IShellFolder).cast(),
     )
 }
 

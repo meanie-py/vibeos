@@ -16,20 +16,47 @@
 #![allow(non_camel_case_types)]
 
 use crate::types::*;
+// The crate's own functions: the definition is the declaration.
+use crate::shell32::shlexec::ShellExecuteW;
+// One declaration per external symbol: island.rs.
+use crate::island::ActivateActCtx;
+use crate::island::BringWindowToTop;
+use crate::island::CoCreateInstance;
+use crate::island::CreateActCtxW;
+use crate::island::DeactivateActCtx;
+use crate::island::EnumWindows;
+use crate::island::FreeLibrary;
+use crate::island::GetLastActivePopup;
+use crate::island::GetParent;
+use crate::island::GetProcAddress;
+use crate::island::GetPropW;
+use crate::island::GetShellWindow;
+use crate::island::GetSystemMetrics;
+use crate::island::HeapAlloc;
+use crate::island::HeapReAlloc;
+use crate::island::IsWindow;
+use crate::island::LoadIconW;
+use crate::island::LoadImageW;
+use crate::island::LoadLibraryW;
+use crate::island::LoadStringW;
+use crate::island::RemovePropW;
+use crate::island::SendMessageW;
+use crate::island::SetPropW;
+use crate::island::SetWindowTextW;
+use crate::island::ShowWindow;
 use core::mem::{offset_of, size_of, zeroed};
 use core::ptr::{self, addr_of, addr_of_mut};
 
 // ── types not in types.rs ─────────────────────────────────────────────────────────────
-type HMODULE = HANDLE;
-type HICON = HANDLE;
+use crate::island::HMODULE;
+use crate::island::HICON;
 type ATOM = WORD; // u16
 type WPARAM = UINT_PTR;
 type LPARAM = LONG_PTR;
 type LRESULT = LONG_PTR;
 type USHORT = u16;
 type LANGID = u16;
-type SIZE_T = usize;
-type FARPROC = PVOID;
+use ntdll_sys::nt::SIZE_T;
 
 /// CPL applet entry point: `LONG APIENTRY (HWND, UINT, LPARAM, LPARAM)` (cpl.h).
 /// APIENTRY == WINAPI == stdcall on i386 → `extern "system"`.
@@ -79,14 +106,7 @@ const MAX_PATH: usize = 260;
 // ── file-local structs (faithful layouts from headers) ────────────────────────────────
 
 /// GUID (guiddef.h).
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct GUID {
-    pub Data1: u32,
-    pub Data2: u16,
-    pub Data3: u16,
-    pub Data4: [u8; 8],
-}
+pub use crate::island::GUID;
 
 /// CPLINFO (cpl.h, packed(1) via pshpack1.h).
 #[repr(C, packed(1))]
@@ -127,19 +147,7 @@ pub struct NEWCPLINFOW {
 }
 
 /// ACTCTXW (winbase.h:1016).
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct ACTCTXW {
-    pub cbSize: DWORD, // ULONG
-    pub dwFlags: DWORD,
-    pub lpSource: LPCWSTR,
-    pub wProcessorArchitecture: USHORT,
-    pub wLangId: LANGID,
-    pub lpAssemblyDirectory: LPCWSTR,
-    pub lpResourceName: LPCWSTR,
-    pub lpApplicationName: LPCWSTR,
-    pub hModule: HMODULE,
-}
+pub use crate::island::ACTCTXW;
 
 /// `struct applet_info` (wine/cpanel.h, ReactOS layout — includes `idIcon`).
 #[repr(C)]
@@ -184,21 +192,13 @@ pub struct AppDlgFindData {
 // ── imports (resolved from shell32's existing import libs at link) ─────────────────────
 extern "system" {
     // kernel32
-    fn ActivateActCtx(hActCtx: HANDLE, lpCookie: *mut ULONG_PTR) -> BOOL;
-    fn CreateActCtxW(pActCtx: *mut ACTCTXW) -> HANDLE;
-    fn DeactivateActCtx(dwFlags: DWORD, ulCookie: ULONG_PTR) -> BOOL;
     fn ExpandEnvironmentStringsW(lpSrc: LPCWSTR, lpDst: LPWSTR, nSize: DWORD) -> DWORD;
-    fn FreeLibrary(hLibModule: HMODULE) -> BOOL;
-    fn GetProcAddress(hModule: HMODULE, lpProcName: LPCSTR) -> FARPROC;
     fn GetProcessHeap() -> HANDLE;
     fn GlobalAddAtomW(lpString: LPCWSTR) -> ATOM;
     fn GlobalDeleteAtom(nAtom: ATOM) -> ATOM;
     fn GlobalFindAtomW(lpString: LPCWSTR) -> ATOM;
     fn GlobalGetAtomNameW(nAtom: ATOM, lpBuffer: LPWSTR, nSize: INT) -> UINT;
-    fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: SIZE_T) -> LPVOID;
     fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID) -> BOOL;
-    fn HeapReAlloc(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID, dwBytes: SIZE_T) -> LPVOID;
-    fn LoadLibraryW(lpLibFileName: LPCWSTR) -> HMODULE;
     fn MultiByteToWideChar(
         CodePage: UINT,
         dwFlags: DWORD,
@@ -209,22 +209,6 @@ extern "system" {
     ) -> INT;
     fn lstrlenW(lpString: LPCWSTR) -> INT;
     // user32
-    fn BringWindowToTop(hWnd: HWND) -> BOOL;
-    fn EnumWindows(lpEnumFunc: WNDENUMPROC, lParam: LPARAM) -> BOOL;
-    fn GetLastActivePopup(hWnd: HWND) -> HWND;
-    fn GetParent(hWnd: HWND) -> HWND;
-    fn GetPropW(hWnd: HWND, lpString: LPCWSTR) -> HANDLE;
-    fn GetShellWindow() -> HWND;
-    fn GetSystemMetrics(nIndex: INT) -> INT;
-    fn IsWindow(hWnd: HWND) -> BOOL;
-    fn LoadIconW(hInstance: HINSTANCE, lpIconName: LPCWSTR) -> HICON;
-    fn LoadImageW(hInst: HINSTANCE, name: LPCWSTR, type_: UINT, cx: INT, cy: INT, fuLoad: UINT) -> HANDLE;
-    fn LoadStringW(hInstance: HINSTANCE, uID: UINT, lpBuffer: LPWSTR, cchBufferMax: INT) -> INT;
-    fn RemovePropW(hWnd: HWND, lpString: LPCWSTR) -> HANDLE;
-    fn SendMessageW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
-    fn SetPropW(hWnd: HWND, lpString: LPCWSTR, hData: HANDLE) -> BOOL;
-    fn SetWindowTextW(hWnd: HWND, lpString: LPCWSTR) -> BOOL;
-    fn ShowWindow(hWnd: HWND, nCmdShow: INT) -> BOOL;
     // shlwapi
     fn PathIsFileSpecW(pszPath: LPCWSTR) -> BOOL;
     fn StrChrW(pszStart: LPCWSTR, wMatch: WCHAR) -> LPWSTR;
@@ -239,24 +223,9 @@ extern "system" {
         lpFilePart: *mut LPWSTR,
     ) -> DWORD;
     // shell32 (ShellExecuteW)
-    fn ShellExecuteW(
-        hwnd: HWND,
-        lpOperation: LPCWSTR,
-        lpFile: LPCWSTR,
-        lpParameters: LPCWSTR,
-        lpDirectory: LPCWSTR,
-        nShowCmd: INT,
-    ) -> HINSTANCE;
     // ole32
     fn CoInitialize(pvReserved: LPVOID) -> HRESULT;
     fn CoUninitialize();
-    fn CoCreateInstance(
-        rclsid: *const GUID,
-        pUnkOuter: LPVOID,
-        dwClsContext: DWORD,
-        riid: *const GUID,
-        ppv: *mut LPVOID,
-    ) -> HRESULT;
 }
 
 extern "C" {
@@ -386,14 +355,14 @@ pub unsafe extern "C" fn Control_UnloadApplet(applet: *mut CPlApplet) {
     if (*applet).proc_.is_some() {
         call_proc(applet, (*applet).hWnd, CPL_EXIT, 0, 0);
     }
-    FreeLibrary((*applet).hModule);
+    FreeLibrary(((*applet).hModule).cast());
     HeapFree(GetProcessHeap(), 0, (*applet).cmd as LPVOID);
     HeapFree(GetProcessHeap(), 0, applet as LPVOID);
 }
 
 /// `theError:` cleanup path from Control_LoadApplet — frees and returns NULL.
 unsafe fn load_applet_error(applet: *mut CPlApplet) -> *mut CPlApplet {
-    FreeLibrary((*applet).hModule);
+    FreeLibrary(((*applet).hModule).cast());
     HeapFree(GetProcessHeap(), 0, (*applet).cmd as LPVOID);
     HeapFree(GetProcessHeap(), 0, applet as LPVOID);
     ptr::null_mut()
@@ -410,7 +379,7 @@ pub unsafe extern "C" fn Control_LoadApplet(hWnd: HWND, cmd: LPCWSTR, _panel: *m
     let mut file_buffer: [WCHAR; MAX_PATH] = [0; MAX_PATH];
 
     let mut applet: *mut CPlApplet =
-        HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, size_of::<CPlApplet>()) as *mut CPlApplet;
+        HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (size_of::<CPlApplet>()) as _) as *mut CPlApplet;
     if applet.is_null() {
         return applet;
     }
@@ -418,7 +387,7 @@ pub unsafe extern "C" fn Control_LoadApplet(hWnd: HWND, cmd: LPCWSTR, _panel: *m
     let len: DWORD = ExpandEnvironmentStringsW(cmd, ptr::null_mut(), 0);
     if len > 0 {
         (*applet).cmd =
-            HeapAlloc(GetProcessHeap(), 0, ((len + 1) as usize) * size_of::<WCHAR>()) as LPWSTR;
+            HeapAlloc(GetProcessHeap(), 0, (((len + 1) as usize) * size_of::<WCHAR>()) as _) as LPWSTR;
         if (*applet).cmd.is_null() {
             return load_applet_error(applet);
         }
@@ -449,15 +418,14 @@ pub unsafe extern "C" fn Control_LoadApplet(hWnd: HWND, cmd: LPCWSTR, _panel: *m
         FALSE
     };
 
-    (*applet).hModule = LoadLibraryW((*applet).cmd);
+    (*applet).hModule = (LoadLibraryW((*applet).cmd)).cast();
     if (*applet).hModule.is_null() {
         return load_applet_error(applet);
     }
-    let proc_raw: FARPROC = GetProcAddress((*applet).hModule, CPLAPPLET_A.as_ptr() as LPCSTR);
-    if proc_raw.is_null() {
+    let Some(proc_fn) = GetProcAddress(((*applet).hModule).cast(), CPLAPPLET_A.as_ptr() as LPCSTR) else {
         return load_applet_error(applet);
-    }
-    (*applet).proc_ = Some(core::mem::transmute::<FARPROC, AppletProc>(proc_raw));
+    };
+    (*applet).proc_ = Some(core::mem::transmute::<_, AppletProc>(proc_fn));
 
     if call_proc(applet, hWnd, CPL_INIT, 0, 0) == 0 {
         return load_applet_error(applet);
@@ -470,14 +438,14 @@ pub unsafe extern "C" fn Control_LoadApplet(hWnd: HWND, cmd: LPCWSTR, _panel: *m
 
     // FIELD_OFFSET(CPlApplet, info[applet->count])
     let new_size = offset_of!(CPlApplet, info) + (*applet).count as usize * size_of::<AppletInfo>();
-    applet = HeapReAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, applet as LPVOID, new_size) as *mut CPlApplet;
+    applet = HeapReAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, applet as LPVOID, (new_size) as SIZE_T) as *mut CPlApplet;
 
     let count = (*applet).count;
     let mut i: UINT = 0;
     while i < count {
         let info_i = info_at(applet, i as usize);
         let mut newinfo: NEWCPLINFOW = zeroed();
-        memset(addr_of_mut!(newinfo) as PVOID, 0, size_of::<NEWCPLINFOW>());
+        memset(addr_of_mut!(newinfo) as PVOID, 0, (size_of::<NEWCPLINFOW>()) as _);
         newinfo.dwSize = size_of::<NEWCPLINFOA>() as DWORD;
         (*info_i).helpfile[0] = 0;
 
@@ -487,13 +455,13 @@ pub unsafe extern "C" fn Control_LoadApplet(hWnd: HWND, cmd: LPCWSTR, _panel: *m
         (*info_i).idIcon = info.idIcon; // __REACTOS__
 
         if info.idIcon != CPL_DYNAMIC_RES {
-            (*info_i).icon = LoadIconW((*applet).hModule, make_int_resource(info.idIcon));
+            (*info_i).icon = (LoadIconW(((*applet).hModule).cast(), make_int_resource(info.idIcon))).cast();
         }
         if info.idName != CPL_DYNAMIC_RES {
-            LoadStringW((*applet).hModule, info.idName as UINT, (*info_i).name.as_mut_ptr(), 256);
+            LoadStringW(((*applet).hModule).cast(), info.idName as UINT, (*info_i).name.as_mut_ptr(), 256);
         }
         if info.idInfo != CPL_DYNAMIC_RES {
-            LoadStringW((*applet).hModule, info.idInfo as UINT, (*info_i).info.as_mut_ptr(), 256);
+            LoadStringW(((*applet).hModule).cast(), info.idInfo as UINT, (*info_i).info.as_mut_ptr(), 256);
         }
 
         // introspection fallbacks (broken applets)
@@ -639,7 +607,7 @@ unsafe fn Control_ShowAppletInTaskbar(applet: *mut CPlApplet, index: UINT) {
 
     // Try loading the small icon for the taskbar button.
     let hSmallIcon: HICON = LoadImageW(
-        (*applet).hModule,
+        ((*applet).hModule).cast(),
         make_int_resource((*info_i).idIcon),
         IMAGE_ICON,
         GetSystemMetrics(SM_CXSMICON),
@@ -685,9 +653,9 @@ unsafe fn Control_DoLaunch(panel: *mut CPanel, hWnd: HWND, wszCmd: LPCWSTR) {
     let nLen: SIZE_T = lstrlenW(wszCmd) as SIZE_T;
 
     let buffer: LPWSTR =
-        HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, size_of::<WCHAR>() * (nLen + 1)) as LPWSTR;
+        HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (size_of::<WCHAR>() * ((nLen + 1)) as usize) as _) as LPWSTR;
     let wszDialogBoxName: LPWSTR =
-        HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, size_of::<WCHAR>() * (nLen + 1)) as LPWSTR;
+        HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (size_of::<WCHAR>() * ((nLen + 1)) as usize) as _) as LPWSTR;
     if wszDialogBoxName.is_null() || buffer.is_null() {
         if !buffer.is_null() {
             HeapFree(GetProcessHeap(), 0, buffer as LPVOID);
@@ -701,7 +669,7 @@ unsafe fn Control_DoLaunch(panel: *mut CPanel, hWnd: HWND, wszCmd: LPCWSTR) {
     // Search for unquoted commas and spaces.
     let mut i: SIZE_T = 0;
     while i < nLen {
-        let ch = *wszCmd.add(i);
+        let ch = *wszCmd.add((i) as _);
         if quoted != FALSE && ch != b'"' as WCHAR {
             i += 1;
             continue;
@@ -710,15 +678,15 @@ unsafe fn Control_DoLaunch(panel: *mut CPanel, hWnd: HWND, wszCmd: LPCWSTR) {
             quoted = (quoted == FALSE) as BOOL;
         } else if ch == b',' as WCHAR {
             if pchFirstComma.is_null() {
-                pchFirstComma = wszCmd.add(i);
+                pchFirstComma = wszCmd.add((i) as _);
             } else if pchSecondComma.is_null() {
-                pchSecondComma = wszCmd.add(i);
+                pchSecondComma = wszCmd.add((i) as _);
             }
         } else if ch == b' ' as WCHAR {
             if pchFirstComma.is_null() {
-                pchFirstComma = wszCmd.add(i);
+                pchFirstComma = wszCmd.add((i) as _);
             } else {
-                pchLastUnquotedSpace = wszCmd.add(i);
+                pchLastUnquotedSpace = wszCmd.add((i) as _);
             }
         }
         i += 1;
@@ -731,23 +699,23 @@ unsafe fn Control_DoLaunch(panel: *mut CPanel, hWnd: HWND, wszCmd: LPCWSTR) {
             while *pchLastUnquotedSpace.add(nSpaces) == b' ' as WCHAR {
                 nSpaces += 1;
             }
-            string_cch_copy_nw(buffer, nLen + 1, wszCmd, pchLastUnquotedSpace.offset_from(wszCmd) as usize);
-            string_cch_copy_w(wszDialogBoxName, nLen + 1, pchLastUnquotedSpace.add(nSpaces));
+            string_cch_copy_nw(buffer, (nLen + 1) as _, wszCmd, pchLastUnquotedSpace.offset_from(wszCmd) as usize);
+            string_cch_copy_w(wszDialogBoxName, (nLen + 1) as _, pchLastUnquotedSpace.add(nSpaces));
         } else {
-            string_cch_copy_w(buffer, nLen + 1, wszCmd);
+            string_cch_copy_w(buffer, (nLen + 1) as _, wszCmd);
         }
     } else {
         if pchSecondComma.is_null() {
-            pchSecondComma = wszCmd.add(nLen);
+            pchSecondComma = wszCmd.add((nLen) as _);
         }
-        string_cch_copy_nw(buffer, nLen + 1, wszCmd, pchFirstComma.offset_from(wszCmd) as usize);
+        string_cch_copy_nw(buffer, (nLen + 1) as _, wszCmd, pchFirstComma.offset_from(wszCmd) as usize);
         string_cch_copy_nw(
             wszDialogBoxName,
-            nLen + 1,
+            (nLen + 1) as _,
             pchFirstComma.add(1),
             (pchSecondComma.offset_from(pchFirstComma) - 1) as usize,
         );
-        if pchSecondComma != wszCmd.add(nLen) {
+        if pchSecondComma != wszCmd.add((nLen) as _) {
             extraPmts = pchSecondComma.add(1);
         }
     }
@@ -758,14 +726,14 @@ unsafe fn Control_DoLaunch(panel: *mut CPanel, hWnd: HWND, wszCmd: LPCWSTR) {
         if ptr.is_null() {
             break;
         }
-        memmove(ptr as PVOID, ptr.add(1) as LPCVOID, lstrlenW(ptr) as usize * size_of::<WCHAR>());
+        memmove(ptr as PVOID, ptr.add(1) as LPCVOID, (lstrlenW(ptr) as usize * size_of::<WCHAR>()) as SIZE_T);
     }
     loop {
         let ptr = StrChrW(wszDialogBoxName, b'"' as WCHAR);
         if ptr.is_null() {
             break;
         }
-        memmove(ptr as PVOID, ptr.add(1) as LPCVOID, lstrlenW(ptr) as usize * size_of::<WCHAR>());
+        memmove(ptr as PVOID, ptr.add(1) as LPCVOID, (lstrlenW(ptr) as usize * size_of::<WCHAR>()) as SIZE_T);
     }
 
     if *wszDialogBoxName == b'@' as WCHAR {
@@ -825,7 +793,7 @@ unsafe fn Control_DoLaunch(panel: *mut CPanel, hWnd: HWND, wszCmd: LPCWSTR) {
             findData.hRunDLL = (*applet).hWnd;
             findData.hDlgResult = ptr::null_mut();
             // Find the dialog of this applet in the first instance.
-            EnumWindows(Control_EnumWinProc, addr_of_mut!(findData) as LPARAM);
+            EnumWindows(Some(Control_EnumWinProc), addr_of_mut!(findData) as LPARAM);
             if !findData.hDlgResult.is_null() {
                 BringWindowToTop(findData.hDlgResult);
             } else {
@@ -880,7 +848,7 @@ pub unsafe extern "system" fn Control_RunDLLW(hWnd: HWND, hInst: HINSTANCE, cmd:
 #[no_mangle]
 pub unsafe extern "system" fn Control_RunDLLA(hWnd: HWND, hInst: HINSTANCE, cmd: LPCSTR, nCmdShow: DWORD) {
     let len: DWORD = MultiByteToWideChar(CP_ACP, 0, cmd, -1, ptr::null_mut(), 0) as DWORD;
-    let wszCmd: LPWSTR = HeapAlloc(GetProcessHeap(), 0, len as usize * size_of::<WCHAR>()) as LPWSTR;
+    let wszCmd: LPWSTR = HeapAlloc(GetProcessHeap(), 0, (len as usize * size_of::<WCHAR>()) as _) as LPWSTR;
     if !wszCmd.is_null() && MultiByteToWideChar(CP_ACP, 0, cmd, -1, wszCmd, len as INT) != 0 {
         Control_RunDLLW(hWnd, hInst, wszCmd, nCmdShow);
     }

@@ -1,6 +1,6 @@
-//! The Raspberry Pis' CYW43455 Wi-Fi: docs/engineering/pi-wifi-design.md.
+//! The Raspberry Pis' CYW43455 Wi-Fi, an NDIS 6 miniport: docs/engineering/pi-wifi-design.md.
 //!
-//! `proto`, `sdio`, `chip`, `nvram`, `bus`, `scan` and `join` are plain code over a `sdhci_rust::Platform`, so the
+//! `proto`, `sdio`, `chip`, `nvram`, `bus`, `scan`, `join`, `link` and `net` are plain code over a `sdhci_rust::Platform`, so the
 //! host tests (tools/test_bwfm_proto.py) run them against `sim`'s simulated
 //! controller and chip.
 
@@ -9,6 +9,8 @@
 pub mod bus;
 pub mod chip;
 pub mod join;
+pub mod link;
+pub mod net;
 pub mod nvram;
 pub mod proto;
 pub mod scan;
@@ -20,10 +22,9 @@ mod sim;
 #[cfg(not(test))]
 mod driver;
 #[cfg(not(test))]
-mod print;
-
+mod miniport;
 #[cfg(not(test))]
-const IRP_MJ_MAXIMUM_FUNCTION: usize = 0x1B;
+mod print;
 
 /// # Safety
 /// Called once by the I/O manager with a valid driver object.
@@ -31,14 +32,9 @@ const IRP_MJ_MAXIMUM_FUNCTION: usize = 0x1B;
 #[no_mangle]
 pub unsafe extern "system" fn DriverEntry(
     driver: ntkrnl_sys::ddk::PDRIVER_OBJECT,
-    _registry: ntkrnl_sys::ddk::PUNICODE_STRING,
+    registry: ntkrnl_sys::ddk::PUNICODE_STRING,
 ) -> ntkrnl_sys::ddk::NTSTATUS {
-    let driver = &mut *driver;
-    for f in driver.MajorFunction[..=IRP_MJ_MAXIMUM_FUNCTION].iter_mut() {
-        *f = Some(driver::dispatch);
-    }
-    (*driver.DriverExtension).AddDevice = Some(driver::add_device);
-    0
+    miniport::register(driver, registry)
 }
 
 #[cfg(not(test))]

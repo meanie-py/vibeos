@@ -99,7 +99,7 @@ fn scan_file(path: &str, text: &str) -> Vec<String> {
     findings
 }
 
-/// Matches the Python scanner's per-line comment pass, including its simple string handling.
+/// The per-line comment pass, with string-literal text blanked (the quotes stay).
 fn strip_comments(text: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
     let mut in_block = false;
@@ -121,16 +121,18 @@ fn strip_comments(text: &str) -> Vec<(String, String)> {
             }
             let b = bytes[i];
             if in_string {
-                code.push(b);
+                // A string's text is blanked: tdihelpers' `DPRINT!("MmProbeAndLockPages()
+                // failed.\n")` inside a try_except's handler read as an unguarded call.
                 if b == b'\\' {
-                    if i + 1 < bytes.len() {
-                        code.push(bytes[i + 1]);
-                    }
+                    code.extend_from_slice(if i + 1 < bytes.len() { b"  " } else { b" " });
                     i += 2;
                     continue;
                 }
                 if b == b'"' {
                     in_string = false;
+                    code.push(b);
+                } else {
+                    code.push(b' ');
                 }
                 i += 1;
                 continue;
@@ -255,6 +257,19 @@ pub unsafe extern "C" fn HackSecureVirtualMemory(pmdl: PMDL) -> NTSTATUS {
             .run(&corpus("sdk/lib/rust/ex-rust/src/uuid.rs", GOOD))
             .unwrap()
             .is_empty());
+    }
+    #[test]
+    fn a_probe_named_in_a_string_is_not_a_call() {
+        let s = "DPRINT!(\"MmProbeAndLockPages() failed.\\n\");\nlet m = \"a \\\" ProbeForWrite(x)\";\n";
+        assert!(scan_file("sdk/lib/rust/a/src/x.rs", s).is_empty());
+        assert_eq!(
+            scan_file(
+                "sdk/lib/rust/a/src/x.rs",
+                "g(\"x\"); MmProbeAndLockPages(m, 0, 1);\n"
+            )
+            .len(),
+            1
+        );
     }
     #[test]
     fn scanner_control_mdl_any_path_and_seh_guard() {

@@ -254,3 +254,231 @@ macro_rules! RTL_CONSTANT_OBJECT_ATTRIBUTES {
         }
     };
 }
+
+// ---- tdikrnl.h: the TDI request builders ------------------------------------------------
+//
+// Each fills the NEXT stack location of an IRP for an IRP_MJ_INTERNAL_DEVICE_CONTROL to a
+// transport. `port macros` refuses them as statement blocks. The request structs
+// (TDI_REQUEST_KERNEL_*) and minor codes (TDI_*) are named unqualified, so they resolve
+// in the consumer's own island, as the NDIS macros' fields do.
+
+/// `TdiBuildBaseIrp`: major/minor, device and file object, and the completion routine --
+/// invoked on success, error and cancel when there is one, cleared when there is not.
+#[macro_export]
+macro_rules! TdiBuildBaseIrp {
+    ($irp:expr, $dev:expr, $file:expr, $routine:expr, $context:expr, $sp:expr, $minor:expr $(,)?) => {{
+        let (irp, sp) = ($irp, $sp);
+        (*sp).MajorFunction = ntkrnl_sys::driver_ddk::IRP_MJ_INTERNAL_DEVICE_CONTROL as _;
+        (*sp).MinorFunction = ($minor) as _;
+        (*sp).DeviceObject = ($dev) as _;
+        (*sp).FileObject = ($file) as _;
+        let routine: ntkrnl_sys::ddk::PIO_COMPLETION_ROUTINE = $routine;
+        if routine.is_some() {
+            ntkrnl_sys::inline::tier1::IoSetCompletionRoutine(irp, routine, ($context) as _, 1, 1, 1);
+        } else {
+            ntkrnl_sys::inline::tier1::IoSetCompletionRoutine(
+                irp,
+                None,
+                core::ptr::null_mut(),
+                0,
+                0,
+                0,
+            );
+        }
+    }};
+}
+
+/// The shared prologue: the next stack location, its base fields, and the request
+/// overlaid on its `Parameters`.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __tdi_request {
+    ($irp:expr, $dev:expr, $file:expr, $routine:expr, $context:expr, $minor:expr, $req:ty) => {{
+        let irp = $irp;
+        let sp = ntkrnl_sys::inline::tier1::IoGetNextIrpStackLocation(irp);
+        $crate::TdiBuildBaseIrp!(irp, $dev, $file, $routine, $context, sp, $minor);
+        (irp, core::ptr::addr_of_mut!((*sp).Parameters) as *mut $req)
+    }};
+}
+
+#[macro_export]
+macro_rules! TdiBuildAccept {
+    ($irp:expr, $dev:expr, $file:expr, $routine:expr, $context:expr, $request_info:expr,
+     $return_info:expr $(,)?) => {{
+        let (_, r) = $crate::__tdi_request!($irp, $dev, $file, $routine, $context, TDI_ACCEPT,
+            TDI_REQUEST_KERNEL_ACCEPT);
+        (*r).RequestConnectionInformation = ($request_info) as _;
+        (*r).ReturnConnectionInformation = ($return_info) as _;
+    }};
+}
+
+#[macro_export]
+macro_rules! TdiBuildAction {
+    ($irp:expr, $dev:expr, $file:expr, $routine:expr, $context:expr, $mdl:expr $(,)?) => {{
+        let irp = $irp;
+        let sp = ntkrnl_sys::inline::tier1::IoGetNextIrpStackLocation(irp);
+        $crate::TdiBuildBaseIrp!(irp, $dev, $file, $routine, $context, sp, TDI_ACTION);
+        (*irp).MdlAddress = ($mdl) as _;
+    }};
+}
+
+#[macro_export]
+macro_rules! TdiBuildAssociateAddress {
+    ($irp:expr, $dev:expr, $file:expr, $routine:expr, $context:expr, $handle:expr $(,)?) => {{
+        let (_, r) = $crate::__tdi_request!($irp, $dev, $file, $routine, $context,
+            TDI_ASSOCIATE_ADDRESS, TDI_REQUEST_KERNEL_ASSOCIATE);
+        (*r).AddressHandle = ($handle) as _;
+    }};
+}
+
+#[macro_export]
+macro_rules! TdiBuildConnect {
+    ($irp:expr, $dev:expr, $file:expr, $routine:expr, $context:expr, $time:expr,
+     $request_info:expr, $return_info:expr $(,)?) => {{
+        let (_, r) = $crate::__tdi_request!($irp, $dev, $file, $routine, $context, TDI_CONNECT,
+            TDI_REQUEST_KERNEL);
+        (*r).RequestConnectionInformation = ($request_info) as _;
+        (*r).ReturnConnectionInformation = ($return_info) as _;
+        (*r).RequestSpecific = ($time) as _;
+    }};
+}
+
+#[macro_export]
+macro_rules! TdiBuildDisassociateAddress {
+    ($irp:expr, $dev:expr, $file:expr, $routine:expr, $context:expr $(,)?) => {{
+        let irp = $irp;
+        let sp = ntkrnl_sys::inline::tier1::IoGetNextIrpStackLocation(irp);
+        $crate::TdiBuildBaseIrp!(irp, $dev, $file, $routine, $context, sp,
+            TDI_DISASSOCIATE_ADDRESS);
+    }};
+}
+
+#[macro_export]
+macro_rules! TdiBuildDisconnect {
+    ($irp:expr, $dev:expr, $file:expr, $routine:expr, $context:expr, $time:expr, $flags:expr,
+     $request_info:expr, $return_info:expr $(,)?) => {{
+        let (_, r) = $crate::__tdi_request!($irp, $dev, $file, $routine, $context,
+            TDI_DISCONNECT, TDI_REQUEST_KERNEL);
+        (*r).RequestConnectionInformation = ($request_info) as _;
+        (*r).ReturnConnectionInformation = ($return_info) as _;
+        (*r).RequestSpecific = ($time) as _;
+        (*r).RequestFlags = ($flags) as _;
+    }};
+}
+
+/// An expression: the IRP, from IoBuildDeviceIoControlRequest with no buffers.
+#[macro_export]
+macro_rules! TdiBuildInternalDeviceControlIrp {
+    ($sub:expr, $dev:expr, $file:expr, $event:expr, $iosb:expr $(,)?) => {{
+        let _ = $file; // the C takes it and never uses it
+        IoBuildDeviceIoControlRequest(
+            ($sub) as _,
+            ($dev) as _,
+            core::ptr::null_mut(),
+            0,
+            core::ptr::null_mut(),
+            0,
+            1,
+            ($event) as _,
+            ($iosb) as _,
+        )
+    }};
+}
+
+#[macro_export]
+macro_rules! TdiBuildListen {
+    ($irp:expr, $dev:expr, $file:expr, $routine:expr, $context:expr, $flags:expr,
+     $request_info:expr, $return_info:expr $(,)?) => {{
+        let (_, r) = $crate::__tdi_request!($irp, $dev, $file, $routine, $context, TDI_LISTEN,
+            TDI_REQUEST_KERNEL);
+        (*r).RequestConnectionInformation = ($request_info) as _;
+        (*r).ReturnConnectionInformation = ($return_info) as _;
+        (*r).RequestFlags = ($flags) as _;
+    }};
+}
+
+#[macro_export]
+macro_rules! TdiBuildQueryInformation {
+    ($irp:expr, $dev:expr, $file:expr, $routine:expr, $context:expr, $qtype:expr,
+     $mdl:expr $(,)?) => {{
+        let (irp, r) = $crate::__tdi_request!($irp, $dev, $file, $routine, $context,
+            TDI_QUERY_INFORMATION, TDI_REQUEST_KERNEL_QUERY_INFORMATION);
+        (*r).RequestConnectionInformation = core::ptr::null_mut();
+        (*r).QueryType = ($qtype) as _;
+        (*irp).MdlAddress = ($mdl) as _;
+    }};
+}
+
+#[macro_export]
+macro_rules! TdiBuildReceive {
+    ($irp:expr, $dev:expr, $file:expr, $routine:expr, $context:expr, $mdl:expr, $flags:expr,
+     $len:expr $(,)?) => {{
+        let (irp, r) = $crate::__tdi_request!($irp, $dev, $file, $routine, $context,
+            TDI_RECEIVE, TDI_REQUEST_KERNEL_RECEIVE);
+        (*r).ReceiveFlags = ($flags) as _;
+        (*r).ReceiveLength = ($len) as _;
+        (*irp).MdlAddress = ($mdl) as _;
+    }};
+}
+
+#[macro_export]
+macro_rules! TdiBuildReceiveDatagram {
+    ($irp:expr, $dev:expr, $file:expr, $routine:expr, $context:expr, $mdl:expr, $len:expr,
+     $receive_info:expr, $return_info:expr, $flags:expr $(,)?) => {{
+        let (irp, r) = $crate::__tdi_request!($irp, $dev, $file, $routine, $context,
+            TDI_RECEIVE_DATAGRAM, TDI_REQUEST_KERNEL_RECEIVEDG);
+        (*r).ReceiveDatagramInformation = ($receive_info) as _;
+        (*r).ReturnDatagramInformation = ($return_info) as _;
+        (*r).ReceiveLength = ($len) as _;
+        (*r).ReceiveFlags = ($flags) as _;
+        (*irp).MdlAddress = ($mdl) as _;
+    }};
+}
+
+#[macro_export]
+macro_rules! TdiBuildSend {
+    ($irp:expr, $dev:expr, $file:expr, $routine:expr, $context:expr, $mdl:expr, $flags:expr,
+     $len:expr $(,)?) => {{
+        let (irp, r) = $crate::__tdi_request!($irp, $dev, $file, $routine, $context, TDI_SEND,
+            TDI_REQUEST_KERNEL_SEND);
+        (*r).SendFlags = ($flags) as _;
+        (*r).SendLength = ($len) as _;
+        (*irp).MdlAddress = ($mdl) as _;
+    }};
+}
+
+#[macro_export]
+macro_rules! TdiBuildSendDatagram {
+    ($irp:expr, $dev:expr, $file:expr, $routine:expr, $context:expr, $mdl:expr, $len:expr,
+     $send_info:expr $(,)?) => {{
+        let (irp, r) = $crate::__tdi_request!($irp, $dev, $file, $routine, $context,
+            TDI_SEND_DATAGRAM, TDI_REQUEST_KERNEL_SENDDG);
+        (*r).SendDatagramInformation = ($send_info) as _;
+        (*r).SendLength = ($len) as _;
+        (*irp).MdlAddress = ($mdl) as _;
+    }};
+}
+
+#[macro_export]
+macro_rules! TdiBuildSetEventHandler {
+    ($irp:expr, $dev:expr, $file:expr, $routine:expr, $context:expr, $event_type:expr,
+     $handler:expr, $event_context:expr $(,)?) => {{
+        let (_, r) = $crate::__tdi_request!($irp, $dev, $file, $routine, $context,
+            TDI_SET_EVENT_HANDLER, TDI_REQUEST_KERNEL_SET_EVENT);
+        (*r).EventType = ($event_type) as _;
+        (*r).EventHandler = ($handler) as _;
+        (*r).EventContext = ($event_context) as _;
+    }};
+}
+
+#[macro_export]
+macro_rules! TdiBuildSetInformation {
+    ($irp:expr, $dev:expr, $file:expr, $routine:expr, $context:expr, $stype:expr,
+     $mdl:expr $(,)?) => {{
+        let (irp, r) = $crate::__tdi_request!($irp, $dev, $file, $routine, $context,
+            TDI_SET_INFORMATION, TDI_REQUEST_KERNEL_SET_INFORMATION);
+        (*r).RequestConnectionInformation = core::ptr::null_mut();
+        (*r).SetType = ($stype) as _;
+        (*irp).MdlAddress = ($mdl) as _;
+    }};
+}

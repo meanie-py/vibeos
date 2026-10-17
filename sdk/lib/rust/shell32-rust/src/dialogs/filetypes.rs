@@ -1,5 +1,19 @@
 // rustconv-assembly: class:_FILE_TYPE_ENTRY
 use crate::prelude::*;
+// The crate's own functions: the definition is the declaration.
+use crate::shell32::iconcache::ExtractIconExW;
+// One declaration per external symbol: island.rs.
+use crate::island::DestroyIcon;
+use crate::island::GetModuleHandleW;
+use crate::island::GetSystemMetrics;
+use crate::island::HeapReAlloc;
+use crate::island::LoadStringW;
+use crate::island::MessageBoxW;
+use crate::island::RegCloseKey;
+use crate::island::RegEnumKeyW;
+use crate::island::RegOpenKeyExW;
+use crate::island::RegQueryValueExW;
+use crate::island::RegSetValueExW;
 use crate::win32::max;
 // Deterministic COM scaffold for _FILE_TYPE_ENTRY; method bodies are generated separately.
 extern "system" {
@@ -426,32 +440,9 @@ pub const WM_SETREDRAW: DWORD = 11;
 
 pub const VERBKEY_CCHMAX: INT = 64;
 
-#[repr(C)]
-pub struct LVITEMW {
-    pub mask: UINT,
-    pub iItem: i32,
-    pub iSubItem: i32,
-    pub state: UINT,
-    pub stateMask: UINT,
-    pub pszText: LPWSTR,
-    pub cchTextMax: i32,
-    pub iImage: i32,
-    pub lParam: LPARAM,
-    pub iIndent: i32,
-    pub iGroupId: i32,
-    pub cColumns: UINT,
-    pub puColumns: PUINT,
-}
+pub use crate::island::LVITEMW;
 
-#[repr(C)]
-pub struct MEASUREITEMSTRUCT {
-    pub CtlType: UINT,
-    pub CtlID: UINT,
-    pub itemID: UINT,
-    pub itemWidth: UINT,
-    pub itemHeight: UINT,
-    pub itemData: ULONG_PTR,
-}
+pub use crate::island::MEASUREITEMSTRUCT;
 pub type LPMEASUREITEMSTRUCT = *mut MEASUREITEMSTRUCT;
 
 macro_rules! ASSERT { ($($arg:tt)*) => {{}}; }
@@ -459,22 +450,12 @@ macro_rules! ASSERT { ($($arg:tt)*) => {{}}; }
 macro_rules! LOWORD { ($value:expr) => { (($value as usize) & 0xffff) as UINT }; }
 
 extern "system" {
-    fn DestroyIcon(icon: HICON) -> BOOL;
     #[cfg_attr(target_pointer_width = "32", link_name = "GetWindowLongW")] fn GetWindowLongPtrW(window: HWND, index: INT) -> LONG_PTR;
     #[cfg_attr(target_pointer_width = "32", link_name = "SetWindowLongW")] fn SetWindowLongPtrW(window: HWND, index: INT, value: LONG_PTR) -> LONG_PTR;
     fn ExpandEnvironmentStringsW(source: LPCWSTR, dest: LPWSTR, size: DWORD) -> DWORD;
-    fn ExtractIconExW(file: LPCWSTR, index: INT, large: *mut HICON, small: *mut HICON, icons: UINT) -> UINT;
-    fn GetSystemMetrics(index: UINT) -> INT;
-    fn MessageBoxW(owner: HWND, text: LPCWSTR, caption: LPCWSTR, kind: UINT) -> INT;
-    fn RegCloseKey(key: HKEY) -> LONG;
     #[link_name = "RegCreateKeyExW"] fn RegCreateKeyEx(key: HKEY, subkey: LPCWSTR, reserved: DWORD, class: LPWSTR, options: DWORD, access: REGSAM, security: LPVOID, result: PHKEY, disposition: LPDWORD) -> LONG;
-    fn RegEnumKeyW(key: HKEY, index: DWORD, name: LPWSTR, capacity: DWORD) -> LONG;
-    fn RegOpenKeyExW(key: HKEY, subkey: LPCWSTR, options: DWORD, access: REGSAM, result: PHKEY) -> LONG;
-    fn RegQueryValueExW(key: HKEY, value: LPCWSTR, reserved: LPDWORD, kind: LPDWORD, data: PBYTE, bytes: LPDWORD) -> LONG;
-    fn RegSetValueExW(key: HKEY, value: LPCWSTR, reserved: DWORD, kind: DWORD, data: *const BYTE, bytes: DWORD) -> LONG;
     fn SHChangeNotify(event: LONG, flags: UINT, item1: LPCVOID, item2: LPCVOID);
     fn lstrlenW(text: LPCWSTR) -> INT;
-    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
     fn StrChrW(text: LPCWSTR, ch: WCHAR) -> LPWSTR;
 }
 
@@ -559,8 +540,6 @@ unsafe fn StringCchCopyW(dst: LPWSTR, capacity: usize, src: LPCWSTR) -> HRESULT 
 }
 
 extern "system" {
-    fn HeapReAlloc(heap: HANDLE, flags: DWORD, memory: LPVOID, bytes: usize) -> LPVOID;
-    fn GetModuleHandleW(name: LPCWSTR) -> HINSTANCE;
 }
 
 pub struct CStringW { buffer: LPWSTR, len: usize, capacity: usize }
@@ -590,7 +569,7 @@ impl CStringW {
         let next = if self.buffer.is_null() {
             HeapAlloc(GetProcessHeap(), 0, bytes)
         } else {
-            HeapReAlloc(GetProcessHeap(), 0, self.buffer.cast(), bytes)
+            HeapReAlloc(GetProcessHeap(), 0, self.buffer.cast(), (bytes) as SIZE_T)
         } as LPWSTR;
         if next.is_null() { return false; }
         self.buffer = next; self.capacity = capacity; true

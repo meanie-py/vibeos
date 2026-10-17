@@ -504,6 +504,28 @@ static UINT custom_proc_wrapper( MsiCustomActionEntryPoint entry, MSIHANDLE hins
 }
 #endif
 
+struct custom_proc_call
+{
+    MsiCustomActionEntryPoint fn;
+    MSIHANDLE hPackage;
+    UINT r;
+};
+
+static void __cdecl custom_proc_body(void *context)
+{
+    struct custom_proc_call *call = context;
+
+    call->r = custom_proc_wrapper( call->fn, call->hPackage );
+}
+
+/* __EXCEPT_PAGE_FAULT's filter. */
+static long __cdecl page_fault_only(void *context, void *pointers)
+{
+    return ((EXCEPTION_POINTERS *)pointers)->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION
+               ? EXCEPTION_EXECUTE_HANDLER
+               : EXCEPTION_CONTINUE_SEARCH;
+}
+
 UINT CDECL __wine_msi_call_dll_function(DWORD client_pid, const GUID *guid)
 {
     MsiCustomActionEntryPoint fn;
@@ -570,17 +592,19 @@ UINT CDECL __wine_msi_call_dll_function(DWORD client_pid, const GUID *guid)
     {
         handle_msi_break(action);
 
-        __TRY
-        {
-            r = custom_proc_wrapper( fn, hPackage );
-        }
-        __EXCEPT_PAGE_FAULT
+        struct custom_proc_call call = { fn, hPackage, ERROR_SUCCESS };
+        long code;
+
+        /* __TRY/__EXCEPT_PAGE_FAULT compiles to nothing under DUMMY_PSEH, so a faulting
+         * custom action took this process down instead of failing softly. */
+        if (RtlSehTryExcept(custom_proc_body, &call, page_fault_only, NULL, &code))
         {
             ERR( "Custom action (%s:%s) caused a page fault: %#lx\n",
-                 debugstr_w(dll), debugstr_a(proc), GetExceptionCode() );
+                 debugstr_w(dll), debugstr_a(proc), code );
             r = ERROR_SUCCESS;
         }
-        __ENDTRY;
+        else
+            r = call.r;
     }
 
     FreeLibrary(hModule);

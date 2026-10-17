@@ -128,7 +128,7 @@ use crate::shell32::sdk_consts::*;
 pub unsafe extern "C" fn SHELL_GetDefaultFolderEnumSHCONTF() -> SHCONTF {
     let mut flags: SHCONTF = SHCONTF_FOLDERS | SHCONTF_NONFOLDERS;
     let mut ss: SHELLSTATE = core::mem::zeroed();
-    SHGetSetSettings(core::ptr::addr_of_mut!(ss), SSF_SHOWALLOBJECTS | SSF_SHOWSUPERHIDDEN, FALSE);
+    SHGetSetSettings((core::ptr::addr_of_mut!(ss)).cast(), SSF_SHOWALLOBJECTS | SSF_SHOWSUPERHIDDEN, FALSE);
     if ss.fShowAllObjects() != 0 {
         flags |= SHCONTF_INCLUDEHIDDEN;
     }
@@ -423,7 +423,7 @@ pub unsafe extern "C" fn SHELL32_CoCreateInitSF(
 
     hr = SHCoCreateInstance(
         core::ptr::null_mut(),
-        clsid,
+        (clsid).cast(),
         core::ptr::null_mut(),
         core::ptr::addr_of!(IID_IShellFolder).cast(),
         &mut pShellFolder as *mut *mut IShellFolder as *mut *mut core::ffi::c_void,
@@ -567,7 +567,7 @@ pub unsafe extern "C" fn SHELL32_CompareChildren(psf: *mut IShellFolder2, lParam
         return MAKE_COMPARE_HRESULT!(0);
     }
 
-    let result = ((*(*psf2).lpVtbl).CompareIDs)(psf2, (lParam) as isize, nextpidl1.cast(), nextpidl2.cast());
+    let result = ((*(*psf2).lpVtbl).CompareIDs)(psf2, ((lParam) as isize) as _, nextpidl1.cast(), nextpidl2.cast());
     ((*(*psf2).lpVtbl).Release)(psf2);
     result
 }

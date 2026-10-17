@@ -35,7 +35,7 @@ use core::ffi::{c_int, c_void};
 // ── scalar aliases not in crate::types ──────────────────────────────────────────────────
 pub type ULONG = u32; // winnt.h
 pub type USHORT = u16; // winnt.h
-pub type SIZE_T = usize; // basetsd.h (ULONG_PTR)
+pub use ntdll_sys::nt::SIZE_T; // basetsd.h (ULONG_PTR)
 pub type LPARAM = LONG_PTR; // windef.h
 pub type SIGDN = u32; // shobjidl (v1_enum)
 pub const SIGDN_DESKTOPABSOLUTEPARSING: SIGDN = 0x8002_8000;
@@ -301,12 +301,7 @@ pub struct STRRET {
 }
 
 /// FILETIME (minwinbase.h): { DWORD dwLowDateTime; DWORD dwHighDateTime; }
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct FILETIME {
-    pub dwLowDateTime: DWORD,
-    pub dwHighDateTime: DWORD,
-}
+pub use crate::island::FILETIME;
 
 // ── VARIANT / SAFEARRAY / SHCOLUMNID (oaidl.idl / shobjidl.idl) ──────────────────────────
 // SAFEARRAY: same rule as VARIANT below -- the island owns it. The local copy stopped at

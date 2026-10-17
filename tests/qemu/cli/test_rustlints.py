@@ -1,13 +1,148 @@
 """The shared scanner must retain per-rule baseline and coverage guarantees."""
 
+import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from . import lints, rustlints
 from .artifacts import Run
+
+
+def _native_fixture(tmp_path, rule, *args):
+    repo = Path(__file__).resolve().parents[3]
+    return subprocess.run(
+        [str(rustlints.ensure(repo)), "--root", str(tmp_path), "--rules", rule, *args],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_native_python_syntax_reports_invalid_source_and_accepts_repair(tmp_path):
+    source = tmp_path / "tools/fixture.py"
+    source.parent.mkdir()
+    (tmp_path / "tests/qemu").mkdir(parents=True)
+    source.write_text("def broken(:\n")
+    result = _native_fixture(tmp_path, "py-syntax", "--python", sys.executable)
+    assert result.returncode == 0, result.stderr
+    assert "SyntaxError" in result.stdout
+    source.write_text("def repaired():\n    return 1\n")
+    result = _native_fixture(tmp_path, "py-syntax", "--python", sys.executable)
+    assert result.returncode == 0 and not result.stdout, result.stderr
+
+
+def test_native_shellcheck_checks_both_script_directories(tmp_path):
+    checker = lints._shellcheck_bin()
+    assert checker is not None, "shellcheck is required by check-tooling"
+    script = tmp_path / "qemu/lib/fixture.sh"
+    script.parent.mkdir(parents=True)
+    script.write_text('#!/bin/sh\nprintf "%s\\n" $unquoted\n')
+    result = _native_fixture(tmp_path, "shellcheck", "--shellcheck", checker)
+    assert result.returncode == 0 and "SC2154" in result.stdout, result.stderr
+    script.write_text('#!/bin/sh\nquoted=hello\nprintf "%s\\n" "$quoted"\n')
+    result = _native_fixture(tmp_path, "shellcheck", "--shellcheck", checker)
+    assert result.returncode == 0 and not result.stdout, result.stderr
+
+
+@pytest.mark.parametrize("rule", ["verify_svc_numbering", "marshalgen_audit"])
+def test_native_artifact_checks_preserve_missing_build_skips_without_a_workspace(tmp_path, rule):
+    result = _native_fixture(tmp_path, rule)
+    assert result.returncode == 0 and not result.stdout, result.stderr
+
+
+def test_native_svc_check_rejects_a_guest_syscall_routed_to_its_neighbor(tmp_path):
+    def write(path, text):
+        dest = tmp_path / path
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(text)
+        return dest
+
+    table = write(
+        "build-arm64/dll/win32/wow64/wow64_win32k_thunks.gen.c",
+        '{ "NtUserFixture", 0, 1 }, /* [0] MANUAL */\n',
+    )
+    for dll in ("win32ss/user/user32/user32.dll", "win32ss/gdi/gdi32/gdi32.dll"):
+        write(f"build-i386/{dll}", "fixture PE; disassembly supplied by the test tool\n")
+    objdump = write(
+        ".build-tools/llvm-mingw/bin/llvm-objdump",
+        "#!/bin/sh\nprintf '0000 <_ZwUserFixture@0>:\\n  movl $0x1000, %%eax\\n'\n",
+    )
+    objdump.chmod(0o755)
+    result = _native_fixture(tmp_path, "verify_svc_numbering")
+    assert result.returncode == 0 and not result.stdout, result.stderr
+    table.write_text('{ "NtUserNeighbor", 0, 1 }, /* [0] MANUAL */\n')
+    result = _native_fixture(tmp_path, "verify_svc_numbering")
+    assert result.returncode != 0 and "misrouted" in result.stderr
+    assert "guest calls NtUserFixture" in result.stderr
+    assert not result.stdout
+
+
+def test_native_marshal_audit_checks_layouts_and_rejects_stale_table(tmp_path):
+    def write(path, content):
+        dest = tmp_path / path
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(content)
+        return dest
+
+    headers = [
+        "win32ss/include/ntuser.h",
+        "sdk/include/psdk/ntgdi.h",
+        "win32ss/include/ntgdibad.h",
+        *[
+            f"sdk/include/ndk/{n}funcs.h"
+            for n in ("cm", "dbgk", "ex", "io", "kd", "ke", "lpc", "mm", "ob", "po", "ps", "se")
+        ],
+    ]
+    for header in headers:
+        write(header, "")
+    write(headers[0], "NTSTATUS NTAPI NtUserFixture(SIZE_T *count);\n")
+    write("win32ss/win32u/win32u.spec", "@ stdcall NtUserFixture(ptr)\n")
+    write("win32ss/w32ksvc32.h", "SVC_(UserFixture, 1)\n")
+    write("dll/ntdll/def/ntdll.spec", "@ stdcall NtFixture(long)\n")
+    write("ntoskrnl/include/sysfuncs.h", "SVC_(Fixture, 1)\n")
+    for name in ("manual.txt", "manual-win32k.txt", "automarshal-win32k.txt"):
+        write(f"tools/wow64gen/{name}", "")
+    tus = ["user32_layout_probe.c", "gdi32/wine/rust_cohab_stub.c", "ntdll/rtl/rtl_um_rust_stub.c"]
+    for arch in ("i386", "amd64"):
+        write(
+            f"build-{arch}/compile_commands.json",
+            json.dumps(
+                [
+                    {"file": suffix, "command": "clang -I /tmp/vibeos/sdk/include -c " + suffix}
+                    for suffix in tus
+                ]
+            ),
+        )
+    clang = write(
+        ".build-tools/llvm-mingw/bin/clang",
+        "#!/bin/sh\ncat <<'LAYOUT'\n"
+        "*** Dumping AST Record Layout\n"
+        "         0 | struct _FIXTURE\n"
+        "         0 |   int value\n"
+        "           | [sizeof=4, align=4]\nLAYOUT\n",
+    )
+    clang.chmod(0o755)
+    result = _native_fixture(tmp_path, "marshalgen_audit")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == (
+        "marshalgen_audit\tFLAT-DIVERGENT: win32k NtUserFixture(count) "
+        "SCALAR_WIDEN -> SIZE_T: 4->8 scalar pointee"
+    )
+    generated = write(
+        "build-amd64/dll/win32/wow64/wow64_win32k_thunks.gen.c",
+        '{ "NtUserFixture", 0, 1 }, /* [0] MANUAL */\n',
+    )
+    result = _native_fixture(tmp_path, "marshalgen_audit")
+    assert result.returncode != 0 and "stale" in result.stderr.lower()
+    assert not result.stdout
+    generated.unlink()
+    write(headers[0], "NTSTATUS NTAPI NtUserFixture(PULONG count);\n")
+    result = _native_fixture(tmp_path, "marshalgen_audit")
+    assert result.returncode == 0 and not result.stdout, result.stderr
 
 
 @pytest.mark.parametrize(
@@ -44,8 +179,25 @@ def test_plugin_inventory_matches_gate():
     assert set(names) >= rustlints.PORTED
     # Candidates remain callable for parity before being routed into the gate.
     registry = {name for name, _cmd, _stream in lints.source_lint_specs(repo)}
+    assert registry == rustlints.PORTED, "add every source check as a native Rust plugin"
     assert set(names) <= registry
     assert len(names) == len(set(names))
+
+
+def test_native_shellcheck_routing_retains_missing_tool_coverage(monkeypatch, tmp_path):
+    monkeypatch.setattr(lints, "_shellcheck_bin", lambda: None)
+    specs = {name: cmd for name, cmd, _ in lints.source_lint_specs(tmp_path)}
+    assert specs["shellcheck"] == ["MISSING"]
+    monkeypatch.setattr(lints, "_shellcheck_bin", lambda: "/fixture/shellcheck")
+    assert dict((n, c) for n, c, _ in lints.source_lint_specs(tmp_path))["shellcheck"] == [
+        "NOCHECK"
+    ]
+    (tmp_path / "qemu").mkdir()
+    (tmp_path / "qemu/example.sh").write_text("#!/bin/sh\n")
+    assert dict((n, c) for n, c, _ in lints.source_lint_specs(tmp_path))["shellcheck"] == [
+        rustlints.SENTINEL,
+        "shellcheck",
+    ]
 
 
 @pytest.mark.parametrize("jobs", [1, 2, 4])
@@ -131,7 +283,7 @@ def test_bootstrap_failure_is_scanner_error(tmp_path, monkeypatch):
     assert "compiler unavailable" in result["a"].stderr
 
 
-@pytest.mark.parametrize("changed_input", ["rust", "conventions"])
+@pytest.mark.parametrize("changed_input", ["rust", "conventions", "grants", "engines"])
 def test_bootstrap_rejects_sources_changed_during_build(tmp_path, monkeypatch, changed_input):
     source = tmp_path / "tools/vibeos-lint"
     (source / "src").mkdir(parents=True)
@@ -141,6 +293,10 @@ def test_bootstrap_rejects_sources_changed_during_build(tmp_path, monkeypatch, c
     conventions = tmp_path / "tools/rustconv/rustconv/conventions.py"
     conventions.parent.mkdir(parents=True)
     conventions.write_text('KW_TO_CONV = {"A": "system"}\n')
+    grants = tmp_path / "tools/vendor-grants.json"
+    grants.write_text("{}\n")
+    engines = tmp_path / "tools/cargo_cell_gen.py"
+    engines.write_text("ENGINE_LIBS = {}\n")
     rust = source / "src/main.rs"
     rust.write_text("fn main() {}")
     builds = []
@@ -154,8 +310,12 @@ def test_bootstrap_rejects_sources_changed_during_build(tmp_path, monkeypatch, c
             # A new source file must invalidate the build too, not only edits.
             if changed_input == "rust":
                 (source / "src/new.rs").write_text("fn newly_added() {}")
-            else:
+            elif changed_input == "conventions":
                 conventions.write_text('KW_TO_CONV = {"B": "cdecl"}\n')
+            elif changed_input == "grants":
+                grants.write_text('{"ptr:fixture": "reviewed"}\n')
+            else:
+                engines.write_text('ENGINE_LIBS = {"libfixture.a": "engine:fixture"}\n')
         return subprocess.CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr(rustlints.subprocess, "run", build)

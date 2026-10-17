@@ -12,6 +12,9 @@
 //! simply does not resolve — these are ports, not translations, and each records its source.
 
 use crate::prelude::*;
+// The crate's own functions: the definition is the declaration.
+pub use crate::vista::RegLoadMUIStringW;
+pub use crate::wine::shlmenu::Shell_MergeMenus;
 
 // ── winerror.h / shellutils.h ────────────────────────────────────────────────────────────
 
@@ -151,30 +154,11 @@ extern "system" {
     /// ole32.
     pub fn OleGetClipboard(ppDataObj: *mut *mut IDataObject) -> HRESULT;
     pub fn OleSetClipboard(pDataObj: *mut IDataObject) -> HRESULT;
-    /// shell32's own, undocumented (wine/shell32_main.h).
-    pub fn Shell_MergeMenus(
-        hmDst: HMENU,
-        hmSrc: HMENU,
-        uInsert: UINT,
-        uIDAdjust: UINT,
-        uIDAdjustMax: UINT,
-        uFlags: ULONG,
-    ) -> UINT;
     /// shlwapi — the W form; the C++ spells it unsuffixed under UNICODE.
     #[link_name = "PathRemoveFileSpecW"]
     pub fn PathRemoveFileSpec(path: LPWSTR) -> BOOL;
     /// Rust `#[no_mangle]` def: droptargets/CRecyclerDropTarget.rs:658.
     pub fn CRecyclerDropTarget_CreateInstance_RustBridge(riid: REFIID, ppvOut: *mut LPVOID) -> HRESULT;
-    /// Rust `#[no_mangle]` def: vista.rs:137.
-    pub fn RegLoadMUIStringW(
-        hKey: HKEY,
-        pszValue: LPCWSTR,
-        pszOutBuf: LPWSTR,
-        cbOutBuf: DWORD,
-        pcbData: LPDWORD,
-        Flags: DWORD,
-        pszDirectory: LPCWSTR,
-    ) -> LONG;
 }
 
 extern "C" {

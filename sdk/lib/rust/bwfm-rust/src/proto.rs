@@ -173,12 +173,14 @@ pub mod cmd {
     pub const C_GET_VERSION: u32 = 1;
     pub const C_UP: u32 = 2;
     pub const C_DOWN: u32 = 3;
+    pub const C_GET_RATE: u32 = 12;
     pub const C_SET_INFRA: u32 = 20;
     pub const C_SET_AUTH: u32 = 22;
     pub const C_GET_BSSID: u32 = 23;
     pub const C_SET_SSID: u32 = 26;
     pub const C_SET_KEY: u32 = 45;
     pub const C_SET_PASSIVE_SCAN: u32 = 49;
+    pub const C_DISASSOC: u32 = 52;
     pub const C_GET_VAR: u32 = 262;
     pub const C_SET_VAR: u32 = 263;
 }

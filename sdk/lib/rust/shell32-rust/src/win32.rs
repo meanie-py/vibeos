@@ -17,6 +17,102 @@
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals, dead_code)]
 
 use crate::shellcom::*;
+// The crate's own functions: the definition is the declaration.
+pub use crate::wine::classes::HCR_GetProgIdKeyOfExtension;
+pub use crate::wine::classes::HLM_GetIconW;
+pub use crate::wine::pidl::ILClone;
+pub use crate::wine::pidl::ILCombine;
+pub use crate::wine::pidl::ILGetSize;
+pub use crate::open_with_menu_tu::SH32_InvokeOpenWith;
+pub use crate::wine::shellole::SHAlloc;
+pub use crate::shell32::utils::SHBindToObject;
+pub use crate::wine::pidl::SHBindToParent;
+pub use crate::wine::pidl::SHCloneSpecialIDList;
+pub use crate::shell32::utils::SHELL_GetUIObjectOfAbsoluteItem;
+pub use crate::desktop_folder_tu::SHGetDesktopFolder;
+pub use crate::wine::shellpath::SHGetFolderLocation;
+pub use crate::wine::pidl::SHGetPathFromIDListW;
+pub use crate::open_with_menu_tu::SHOpenWithDialog;
+pub use crate::shell32::shlexec::ShellExecuteExW;
+pub use crate::wine::shellstring::StrRetToStrNW;
+pub use crate::default_context_menu_tu::_InsertMenuItemW;
+// One declaration per external symbol: island.rs.
+pub use crate::island::BeginPaint;
+pub use crate::island::BitBlt;
+pub use crate::island::CLSIDFromString;
+pub use crate::island::CloseHandle;
+pub use crate::island::CoCreateInstance;
+pub use crate::island::CreateCompatibleDC;
+pub use crate::island::CreateIconIndirect;
+pub use crate::island::CreateMenu;
+pub use crate::island::CreatePopupMenu;
+pub use crate::island::CreateProcessW;
+pub use crate::island::CreatePropertySheetPageW;
+pub use crate::island::DeleteDC;
+pub use crate::island::DestroyIcon;
+pub use crate::island::DestroyMenu;
+pub use crate::island::DialogBoxParamW;
+pub use crate::island::EnableWindow;
+pub use crate::island::EndDialog;
+pub use crate::island::EndPaint;
+pub use crate::island::EnumWindows;
+pub use crate::island::FindFirstFileW;
+pub use crate::island::FindNextFileW;
+pub use crate::island::FindWindowW;
+pub use crate::island::GetClassNameW;
+pub use crate::island::GetClientRect;
+pub use crate::island::GetDC;
+pub use crate::island::GetDlgItem;
+pub use crate::island::GetDlgItemTextW;
+pub use crate::island::GetIconInfo;
+pub use crate::island::GetMenuDefaultItem;
+pub use crate::island::GetMenuItemCount;
+pub use crate::island::GetMenuItemInfoW;
+pub use crate::island::GetModuleFileNameW;
+pub use crate::island::GetParent;
+pub use crate::island::GetShellWindow;
+pub use crate::island::GetSystemMetrics;
+pub use crate::island::GetWindowLongW;
+pub use crate::island::GetWindowRect;
+pub use crate::island::HeapAlloc;
+pub use crate::island::HeapReAlloc;
+pub use crate::island::ImageList_Create;
+pub use crate::island::ImageList_Destroy;
+pub use crate::island::ImageList_GetIcon;
+pub use crate::island::LoadIconW;
+pub use crate::island::LoadImageW;
+pub use crate::island::LoadStringW;
+pub use crate::island::LocalAlloc;
+pub use crate::island::MapWindowPoints;
+pub use crate::island::MessageBoxW;
+pub use crate::island::PathFindOnPathExW;
+pub use crate::island::PathFindOnPathW;
+pub use crate::island::PostMessageW;
+pub use crate::island::PrivateExtractIconsW;
+pub use crate::island::PropertySheetW;
+pub use crate::island::RegCloseKey;
+pub use crate::island::RegEnumKeyExW;
+pub use crate::island::RegEnumKeyW;
+pub use crate::island::RegGetValueW;
+pub use crate::island::RegOpenKeyExW;
+pub use crate::island::RegOpenKeyW;
+pub use crate::island::RegQueryInfoKeyW;
+pub use crate::island::RegQueryValueW;
+pub use crate::island::ReleaseDC;
+pub use crate::island::SHAutoComplete;
+pub use crate::island::SHGetValueW;
+pub use crate::island::SHSendMessageBroadcastW;
+pub use crate::island::ScreenToClient;
+pub use crate::island::SelectObject;
+pub use crate::island::SendDlgItemMessageW;
+pub use crate::island::SendMessageW;
+pub use crate::island::SetDlgItemTextW;
+pub use crate::island::SetTextColor;
+pub use crate::island::SetWindowLongW;
+pub use crate::island::SetWindowTextW;
+pub use crate::island::ShowWindow;
+pub use crate::island::StrRetToBufW;
+pub use crate::island::TrackPopupMenuEx;
 use crate::types::*;
 use core::ffi::c_void;
 
@@ -42,25 +138,10 @@ pub struct COPYDATASTRUCT {
 }
 
 /// commctrl.h `tagNMCUSTOMDRAWINFO`.
-#[repr(C)]
-pub struct NMCUSTOMDRAW {
-    pub hdr: NMHDR,
-    pub dwDrawStage: DWORD,
-    pub hdc: HDC,
-    pub rc: RECT,
-    pub dwItemSpec: DWORD_PTR,
-    pub uItemState: UINT,
-    pub lItemlParam: LPARAM,
-}
+pub use crate::island::NMCUSTOMDRAW;
 
 /// commctrl.h `tagNMTVCUSTOMDRAW`.
-#[repr(C)]
-pub struct NMTVCUSTOMDRAW {
-    pub nmcd: NMCUSTOMDRAW,
-    pub clrText: COLORREF,
-    pub clrTextBk: COLORREF,
-    pub iLevel: INT,
-}
+pub use crate::island::NMTVCUSTOMDRAW;
 
 /// commctrl.h `tagTVHITTESTINFO`.
 #[repr(C)]
@@ -219,11 +300,7 @@ pub unsafe fn CopyMemory<T, U>(dst: *mut T, src: *const U, len: usize) {
 // ---------------------------------------------------------------------------
 
 extern "system" {
-    pub fn GetClassNameW(hWnd: HWND, lpClassName: LPWSTR, nMaxCount: INT) -> INT;
     pub fn GetMessagePos() -> DWORD;
-    pub fn ScreenToClient(hWnd: HWND, lpPoint: *mut POINT) -> BOOL;
-    pub fn CreatePropertySheetPageW(konst: *const PROPSHEETPAGEW) -> HPROPSHEETPAGE;
-    pub fn PropertySheetW(konst: *const PROPSHEETHEADERW) -> INT_PTR;
 }
 
 extern "C" {
@@ -331,7 +408,6 @@ pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;
 // The other caller, open_with_menu.rs, is fine and stays as it is: it declares the name with
 // `#[link_name = "Shell32RustInvokeOpenWith"]`, and that wrapper really is WINAPI/stdcall.
 extern "C" {
-    pub fn SH32_InvokeOpenWith(path: PCWSTR, info: LPCMINVOKECOMMANDINFO, process: *mut HANDLE) -> HRESULT;
 }
 
 // IID_IClassFactory — promoted from 1 module-local definition(s).
@@ -453,22 +529,7 @@ pub const NOTIFYICONDATAW_V3_SIZE: DWORD =
 pub type PROPSHEETPAGE = PROPSHEETPAGEW;
 
 // PROPSHEETPAGEW — promoted from 4 module-local definition(s) (prefix-merged).
-#[repr(C)]
-pub struct PROPSHEETPAGEW {
-    pub dwSize: DWORD,
-    pub dwFlags: DWORD,
-    pub hInstance: HINSTANCE,
-    pub pszTemplate: LPCWSTR,      // union { pszTemplate, pResource }
-    pub hIcon: HICON,              // union { hIcon, pszIcon }
-    pub pszTitle: LPCWSTR,
-    pub pfnDlgProc: Option<DLGPROC>,
-    pub lParam: LPARAM,
-    pub pfnCallback: Option<LPFNPSPCALLBACKW>,
-    pub pcRefParent: *mut UINT,
-    pub pszHeaderTitle: LPCWSTR,
-    pub pszHeaderSubTitle: LPCWSTR,
-    pub hActCtx: HANDLE,
-}
+pub use crate::island::PROPSHEETPAGEW;
 
 // SHGFI_ICON — promoted from 5 module-local definition(s).
 pub const SHGFI_ICON: DWORD = 256;
@@ -499,18 +560,10 @@ pub use crate::folder_options::CFolderOptions_ResetGlobalAndDefViewFolderSetting
 
 // CLSIDFromString — promoted from 0 module-local definition(s) (verified-equivalent).
 extern "system" {
-    pub fn CLSIDFromString(lpsz: LPCOLESTR, pclsid: *mut CLSID) -> HRESULT;
 }
 
 // CoCreateInstance — promoted from 0 module-local definition(s) (verified-equivalent).
 extern "system" {
-    pub fn CoCreateInstance(
-        rclsid: REFCLSID,
-        pUnkOuter: LPUNKNOWN,
-        dwClsContext: DWORD,
-        riid: REFIID,
-        ppv: *mut LPVOID,
-    ) -> HRESULT;
 }
 
 // CoInitialize — promoted from 2 module-local definition(s).
@@ -520,27 +573,22 @@ extern "system" {
 
 // EnableWindow — promoted from 2 module-local definition(s).
 extern "system" {
-    pub fn EnableWindow(window: HWND, enable: BOOL) -> BOOL;
 }
 
 // EnumWindows — promoted from 1 module-local definition(s).
 extern "system" {
-    pub fn EnumWindows(lpEnumFunc: WNDENUMPROC, lParam: LPARAM) -> BOOL;
 }
 
 // FindWindowW — promoted from 2 module-local definition(s).
 extern "system" {
-    pub fn FindWindowW(lpClassName: LPCWSTR, lpWindowName: LPCWSTR) -> HWND;
 }
 
 // GetDlgItem — promoted from 4 module-local definition(s).
 extern "system" {
-    pub fn GetDlgItem(dlg: HWND, id: INT) -> HWND;
 }
 
 // GetParent — promoted from 4 module-local definition(s).
 extern "system" {
-    pub fn GetParent(hwnd: HWND) -> HWND;
 }
 
 // GetProcessHeap — promoted from 40 module-local definition(s).
@@ -556,7 +604,6 @@ extern "system" {
 
 // HeapAlloc — promoted from 20 module-local definition(s).
 extern "system" {
-    pub fn HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
 }
 
 // ILFree — promoted from 13 module-local definition(s) (in-crate impl).
@@ -572,12 +619,10 @@ pub unsafe fn IsEqualIID(a: *const GUID, b: *const GUID) -> bool {
 
 // LoadStringW — promoted from 25 module-local definition(s).
 extern "system" {
-    pub fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
 }
 
 // MessageBoxW — promoted from 3 module-local definition(s).
 extern "system" {
-    pub fn MessageBoxW(owner: HWND, text: LPCWSTR, caption: LPCWSTR, kind: UINT) -> INT;
 }
 
 // MultiByteToWideChar — promoted from 8 module-local definition(s).
@@ -589,7 +634,6 @@ extern "system" {
 // `PostMessage`/`SetWindowLongPtr` are winuser.h MACROS selecting the A/W export —
 // there is no symbol of either name to import. Bind the real W entry points.
 extern "system" {
-    pub fn PostMessageW(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM) -> BOOL;
 }
 #[inline]
 pub unsafe fn PostMessage(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM) -> BOOL {
@@ -607,8 +651,6 @@ extern "system" {
 }
 #[cfg(target_pointer_width = "32")]
 extern "system" {
-    pub fn SetWindowLongW(hwnd: HWND, index: INT, value: LONG) -> LONG;
-    pub fn GetWindowLongW(hwnd: HWND, index: INT) -> LONG;
 }
 
 #[cfg(not(target_pointer_width = "32"))]
@@ -635,41 +677,26 @@ pub unsafe fn GetWindowLongPtr(hwnd: HWND, index: INT) -> LONG_PTR {
 
 // RegCloseKey — promoted from 13 module-local definition(s).
 extern "system" {
-    pub fn RegCloseKey(key: HKEY) -> LONG;
 }
 
 // RegEnumKeyExW — promoted from 0 module-local definition(s) (verified-equivalent).
 extern "system" {
-    pub fn RegEnumKeyExW(
-        hKey: HKEY,
-        dwIndex: DWORD,
-        lpName: LPWSTR,
-        lpcchName: LPDWORD,
-        lpReserved: LPDWORD,
-        lpClass: LPWSTR,
-        lpcchClass: LPDWORD,
-        lpftLastWriteTime: PFILETIME,
-    ) -> LONG;
 }
 
 // RegEnumKeyW — promoted from 4 module-local definition(s).
 extern "system" {
-    pub fn RegEnumKeyW(key: HKEY, index: DWORD, name: LPWSTR, capacity: DWORD) -> LONG;
 }
 
 // RegGetValueW — promoted from 11 module-local definition(s).
 extern "system" {
-    pub fn RegGetValueW(key: HKEY, subkey: LPCWSTR, value: LPCWSTR, flags: DWORD, kind: LPDWORD, data: LPVOID, bytes: LPDWORD) -> LONG;
 }
 
 // RegOpenKeyExW — promoted from 11 module-local definition(s).
 extern "system" {
-    pub fn RegOpenKeyExW(key: HKEY, subkey: LPCWSTR, options: DWORD, access: REGSAM, result: PHKEY) -> LONG;
 }
 
 // RegQueryInfoKeyW — promoted from 1 module-local definition(s).
 extern "system" {
-    pub fn RegQueryInfoKeyW(hKey: HKEY, lpClass: LPWSTR, lpcchClass: LPDWORD, lpReserved: LPDWORD, lpcSubKeys: LPDWORD, lpcbMaxSubKeyLen: LPDWORD, lpcbMaxClassLen: LPDWORD, lpcValues: LPDWORD, lpcbMaxValueNameLen: LPDWORD, lpcbMaxValueLen: LPDWORD, lpcbSecurityDescriptor: LPDWORD, lpftLastWriteTime: *mut FILETIME) -> LONG;
 }
 
 // SHCLSIDFromStringW — promoted from 2 module-local definition(s) (in-crate impl).
@@ -707,7 +734,6 @@ pub use crate::wine::shellord::SHGetSetSettings;
 
 // SHSendMessageBroadcastW — promoted from 1 module-local definition(s).
 extern "system" {
-    pub fn SHSendMessageBroadcastW(msg: UINT, w: WPARAM, l: LPARAM) -> DWORD;
 }
 
 // SHSettingsChanged — promoted from 1 module-local definition(s) (in-crate impl).
@@ -720,7 +746,6 @@ extern "system" {
 
 // SendMessageW — promoted from 6 module-local definition(s).
 extern "system" {
-    pub fn SendMessageW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
 }
 
 
@@ -1277,8 +1302,8 @@ pub use crate::wine::shellstring::LPSTRRET;
 // Base types the promoted declarations reference. Aliases of types this crate already
 // has, so they are declared here rather than re-exported from whichever module happened
 // to spell them first; `LPTPMPARAMS` is a real pointer type owned by wine::shlmenu.
-pub type HGDIOBJ = HANDLE; // windef.h
-pub type HMODULE = HANDLE; // minwindef.h
+pub use crate::island::HGDIOBJ; // windef.h
+pub use crate::island::HMODULE; // minwindef.h
 pub type SHORT = i16; // winnt.h
 pub use core::ffi::c_int;
 pub use crate::wine::shlmenu::LPTPMPARAMS;
@@ -1301,11 +1326,7 @@ pub use crate::wine::shlmenu::LPTPMPARAMS;
 // ---------------------------------------------------------------------------
 
 extern "C" {
-    pub fn HCR_GetProgIdKeyOfExtension(szExtension: LPCWSTR, phKey: PHKEY, AllowFallback: BOOL) -> HRESULT;
-    pub fn HLM_GetIconW(index: INT, destination: LPWSTR, length: DWORD, icon_index: *mut INT) -> BOOL;
     pub fn PathIsExeW(path: LPCWSTR) -> BOOL;
-    pub fn SHBindToObject(psf: *mut IShellFolder, pidl: LPCITEMIDLIST, riid: REFIID, ppvObj: *mut *mut core::ffi::c_void) -> HRESULT;
-    pub fn SHELL_GetUIObjectOfAbsoluteItem(owner: HWND, pidl: PCIDLIST_ABSOLUTE, riid: REFIID, out: *mut LPVOID) -> HRESULT;
     pub fn _wcsicmp(left: LPCWSTR, right: LPCWSTR) -> INT;
     pub fn _wtoi(str: *const WCHAR) -> INT;
     pub fn memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, bytes: usize) -> *mut core::ffi::c_void;
@@ -1314,70 +1335,32 @@ extern "C" {
 }
 
 extern "system" {
-    pub fn BeginPaint(hWnd: HWND, lpPaint: *mut PAINTSTRUCT) -> HDC;
-    pub fn BitBlt(hdc: HDC, x: INT, y: INT, cx: INT, cy: INT, hdcSrc: HDC, x1: INT, y1: INT, rop: DWORD) -> BOOL;
-    pub fn CloseHandle(hObject: HANDLE) -> BOOL;
     pub fn CoTaskMemFree(memory: LPVOID);
     pub fn CoUninitialize();
-    pub fn CreateCompatibleDC(hdc: HDC) -> HDC;
-    pub fn CreateIconIndirect(piconinfo: *mut ICONINFO) -> HICON;
-    pub fn CreateMenu() -> HMENU;
-    pub fn CreatePopupMenu() -> HMENU;
-    pub fn CreateProcessW(app: LPCWSTR, command: LPWSTR, process_attrs: LPCVOID, thread_attrs: LPCVOID, inherit: BOOL, flags: DWORD, environment: LPCVOID, directory: LPCWSTR, startup: *const STARTUPINFOW, info: *mut PROCESS_INFORMATION) -> BOOL;
-    pub fn DeleteDC(hdc: HDC) -> BOOL;
     pub fn DeleteFileW(path: LPCWSTR) -> BOOL;
     pub fn DeleteObject(object: HGDIOBJ) -> BOOL;
-    pub fn DestroyIcon(icon: HICON) -> BOOL;
-    pub fn DestroyMenu(hMenu: HMENU) -> BOOL;
-    pub fn DialogBoxParamW(instance: HINSTANCE, template: LPCWSTR, parent: HWND, dlgproc: DLGPROC, lparam: LPARAM) -> INT_PTR;
-    pub fn EndDialog(hDlg: HWND, nResult: INT_PTR) -> BOOL;
-    pub fn EndPaint(hWnd: HWND, lpPaint: *const PAINTSTRUCT) -> BOOL;
     pub fn ExpandEnvironmentStringsW(lpSrc: LPCWSTR, lpDst: LPWSTR, nSize: DWORD) -> DWORD;
     pub fn FindClose(hFindFile: HANDLE) -> BOOL;
     pub fn FindExecutableW(file: LPCWSTR, directory: LPCWSTR, result: LPWSTR) -> HINSTANCE;
-    pub fn FindFirstFileW(lpFileName: LPCWSTR, lpFindFileData: *mut WIN32_FIND_DATAW) -> HANDLE;
-    pub fn FindNextFileW(find: HANDLE, data: *mut WIN32_FIND_DATAW) -> BOOL;
     pub fn GetBinaryTypeW(lpApplicationName: LPCWSTR, lpBinaryType: LPDWORD) -> BOOL;
-    pub fn GetClientRect(window: HWND, rect: *mut RECT) -> BOOL;
     pub fn GetCurrentDirectoryW(nBufferLength: DWORD, lpBuffer: LPWSTR) -> DWORD;
-    pub fn GetDC(window: HWND) -> HDC;
-    pub fn GetDlgItemTextW(hDlg: HWND, nIDDlgItem: INT, lpString: LPWSTR, cchMax: INT) -> UINT;
     pub fn GetDriveTypeW(lpRootPathName: LPCWSTR) -> UINT;
     pub fn GetFileAttributesW(lpFileName: LPCWSTR) -> DWORD;
     pub fn GetFullPathNameW(name: LPCWSTR, len: DWORD, buf: LPWSTR, part: *mut LPWSTR) -> DWORD;
-    pub fn GetIconInfo(hIcon: HICON, piconinfo: *mut ICONINFO) -> BOOL;
     pub fn GetKeyState(vk: c_int) -> SHORT;
     pub fn GetLastError() -> DWORD;
-    pub fn GetMenuDefaultItem(menu: HMENU, by_position: UINT, flags: UINT) -> UINT;
-    pub fn GetMenuItemCount(hMenu: HMENU) -> INT;
-    pub fn GetMenuItemInfoW(hMenu: HMENU, item: UINT, fByPosition: BOOL, lpmii: *mut MENUITEMINFOW) -> BOOL;
-    pub fn GetModuleFileNameW(hModule: HMODULE, lpFilename: LPWSTR, nSize: DWORD) -> DWORD;
     pub fn GetObjectW(h: HGDIOBJ, c: INT, pv: LPVOID) -> INT;
-    pub fn GetShellWindow() -> HWND;
     pub fn GetShortPathNameW(lpszLongPath: LPCWSTR, lpszShortPath: LPWSTR, cchBuffer: DWORD) -> DWORD;
-    pub fn GetSystemMetrics(nIndex: INT) -> INT;
     pub fn GetTickCount() -> DWORD;
     pub fn GetVersion() -> DWORD;
-    pub fn GetWindowRect(window: HWND, rect: *mut RECT) -> BOOL;
     pub fn GetWindowsDirectoryW(lpBuffer: LPWSTR, uSize: UINT) -> UINT;
     pub fn HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
-    pub fn HeapReAlloc(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID, dwBytes: SIZE_T) -> LPVOID;
-    pub fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
-    pub fn ILCombine(parent: PCIDLIST_ABSOLUTE, child: PCUITEMID_CHILD) -> PIDLIST_ABSOLUTE;
     pub fn ILCreateFromPathW(pszPath: LPCWSTR) -> LPITEMIDLIST;
     pub fn ILFindLastID(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
     pub fn ILGetNext(pidl: PCUIDLIST_RELATIVE) -> LPITEMIDLIST;
-    pub fn ILGetSize(pidl: LPCITEMIDLIST) -> UINT;
     pub fn ILIsEqual(pidl1: LPCITEMIDLIST, pidl2: LPCITEMIDLIST) -> BOOL;
     pub fn ILRemoveLastID(pidl: LPITEMIDLIST) -> BOOL;
-    pub fn ImageList_Create(cx: INT, cy: INT, flags: UINT, initial: INT, grow: INT) -> HIMAGELIST;
-    pub fn ImageList_Destroy(himl: HIMAGELIST) -> BOOL;
-    pub fn ImageList_GetIcon(himl: HIMAGELIST, index: INT, flags: UINT) -> HICON;
-    pub fn LoadIconW(hInstance: HINSTANCE, lpIconName: LPCWSTR) -> HICON;
-    pub fn LoadImageW(instance: HINSTANCE, name: LPCWSTR, image_type: UINT, cx: INT, cy: INT, flags: UINT) -> HANDLE;
-    pub fn LocalAlloc(uFlags: UINT, uBytes: SIZE_T) -> HLOCAL;
     pub fn LocalFree(hMem: HANDLE) -> HANDLE;
-    pub fn MapWindowPoints(from: HWND, to: HWND, points: *mut POINT, count: UINT) -> INT;
     pub fn MessageBeep(t: UINT) -> BOOL;
     pub fn MoveFileW(old: LPCWSTR, new: LPCWSTR) -> BOOL;
     pub fn PathAddBackslashW(pszPath: LPWSTR) -> LPWSTR;
@@ -1388,8 +1371,6 @@ extern "system" {
     pub fn PathFileExistsW(pszPath: LPCWSTR) -> BOOL;
     pub fn PathFindExtensionW(pszPath: LPCWSTR) -> LPWSTR;
     pub fn PathFindFileNameW(pszPath: LPCWSTR) -> LPWSTR;
-    pub fn PathFindOnPathExW(pszPath: LPWSTR, ppszOtherDirs: *const LPCWSTR, dwWhich: DWORD) -> BOOL;
-    pub fn PathFindOnPathW(pszPath: LPWSTR, ppszOtherDirs: *const LPCWSTR) -> BOOL;
     pub fn PathGetArgsW(path: LPCWSTR) -> LPWSTR;
     pub fn PathGetDriveNumberW(path: LPCWSTR) -> INT;
     pub fn PathIsDirectoryW(pszPath: LPCWSTR) -> BOOL;
@@ -1401,50 +1382,26 @@ extern "system" {
     pub fn PathStripToRootW(pszPath: LPWSTR) -> BOOL;
     pub fn PathUnquoteSpacesW(path: LPWSTR) -> BOOL;
     pub fn PathYetAnotherMakeUniqueName(buffer: LPWSTR, path: LPCWSTR, short: LPCWSTR, long: LPCWSTR) -> BOOL;
-    pub fn PrivateExtractIconsW(szFileName: LPCWSTR, nIconIndex: INT, cxIcon: INT, cyIcon: INT, phicon: *mut HICON, piconid: *mut UINT, nIcons: UINT, flags: UINT) -> UINT;
-    pub fn RegOpenKeyW(hKey: HKEY, lpSubKey: LPCWSTR, phkResult: PHKEY) -> LONG;
-    pub fn RegQueryValueW(hKey: HKEY, lpSubKey: LPCWSTR, lpData: LPWSTR, lpcbData: *mut LONG) -> LONG;
-    pub fn ReleaseDC(window: HWND, dc: HDC) -> INT;
-    pub fn SHAlloc(bytes: SIZE_T) -> LPVOID;
     pub fn SHAllocShared(pvData: LPCVOID, dwSize: DWORD, dwProcessId: DWORD) -> HANDLE;
     pub fn SHAnsiToUnicode(pszSrc: LPCSTR, pwszDst: LPWSTR, cwchBuf: INT) -> DWORD;
-    pub fn SHAutoComplete(edit: HWND, flags: DWORD) -> HRESULT;
-    pub fn SHBindToParent(pidl: PCIDLIST_ABSOLUTE, riid: REFIID, ppv: *mut *mut core::ffi::c_void, ppidlLast: *mut PCUITEMID_CHILD) -> HRESULT;
     pub fn SHChangeNotify(event: LONG, flags: UINT, item1: LPCVOID, item2: LPCVOID);
-    pub fn SHCloneSpecialIDList(hwnd: HWND, csidl: INT, create: BOOL) -> PIDLIST_ABSOLUTE;
     pub fn SHELL_CreateSHDESCRIPTIONID(pVar: *mut VARIANT, Id: DWORD, pCLSID: *const CLSID) -> HRESULT;
     pub fn SHELL_CreateVariantBuffer(pVar: *mut VARIANT, cb: UINT) -> HRESULT;
-    pub fn SHGetDesktopFolder(folder: *mut *mut IShellFolder) -> HRESULT;
-    pub fn SHGetFolderLocation(hwndOwner: HWND, nFolder: INT, hToken: HANDLE, dwReserved: DWORD, ppidl: *mut LPITEMIDLIST) -> HRESULT;
-    pub fn SHGetPathFromIDListW(pidl: LPCITEMIDLIST, pszPath: *mut u16) -> i32;
-    pub fn SHGetValueW(hkey: HKEY, pszSubKey: LPCWSTR, pszValue: LPCWSTR, pdwType: LPDWORD, pvData: PVOID, pcbData: LPDWORD) -> DWORD;
     pub fn SHLockShared(hData: HANDLE, dwProcessId: DWORD) -> PVOID;
-    pub fn SHOpenWithDialog(parent: HWND, info: *const OPENASINFO) -> HRESULT;
     pub fn SHUnlockShared(pvData: PVOID) -> BOOL;
     pub fn SearchPathW(lpPath: LPCWSTR, lpFileName: LPCWSTR, lpExtension: LPCWSTR, nBufferLength: DWORD, lpBuffer: LPWSTR, lpFilePart: *mut LPWSTR) -> DWORD;
-    pub fn SelectObject(dc: HDC, object: HGDIOBJ) -> HGDIOBJ;
-    pub fn SendDlgItemMessageW(hDlg: HWND, nIDDlgItem: INT, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
-    pub fn SetDlgItemTextW(hDlg: HWND, nIDDlgItem: INT, lpString: LPCWSTR) -> BOOL;
     pub fn SetFileAttributesW(lpFileName: LPCWSTR, dwFileAttributes: DWORD) -> BOOL;
     pub fn SetLastError(dwErrCode: DWORD);
-    pub fn SetTextColor(hdc: HDC, color: COLORREF) -> COLORREF;
-    pub fn SetWindowTextW(hWnd: HWND, lpString: LPCWSTR) -> BOOL;
-    pub fn ShellExecuteExW(info: *mut SHELLEXECUTEINFOW) -> BOOL;
     pub fn Shell_GetImageLists(lpBigList: *mut HIMAGELIST, lpSmallList: *mut HIMAGELIST) -> BOOL;
-    pub fn ShowWindow(window: HWND, command: INT) -> BOOL;
     pub fn StrChrW(start: LPCWSTR, character: WCHAR) -> LPWSTR;
     pub fn StrCmpIW(psz1: LPCWSTR, psz2: LPCWSTR) -> INT;
     pub fn StrCpyNW(pszDst: LPWSTR, pszSrc: LPCWSTR, cchMax: INT) -> LPWSTR;
     pub fn StrDupW(lpsz: LPCWSTR) -> LPWSTR;
     pub fn StrPBrkW(psz: LPCWSTR, pszSet: LPCWSTR) -> LPWSTR;
-    pub fn StrRetToBufW(psr: *mut STRRET, pidl: LPCITEMIDLIST, pszBuf: LPWSTR, cchBuf: UINT) -> HRESULT;
-    pub fn StrRetToStrNW(pszBuf: LPWSTR, cchBuf: UINT, pstr: *mut STRRET, pidl: LPCITEMIDLIST) -> BOOL;
     pub fn StrTrimW(psz: LPWSTR, pszTrimChars: LPCWSTR) -> BOOL;
     pub fn StringFromGUID2(rguid: REFGUID, lpsz: LPWSTR, cchMax: INT) -> INT;
-    pub fn TrackPopupMenuEx(hMenu: HMENU, uFlags: UINT, x: INT, y: INT, hwnd: HWND, lptpm: LPTPMPARAMS) -> BOOL;
     pub fn UrlIsW(pszUrl: LPCWSTR, UrlIs: DWORD) -> BOOL;
     pub fn VariantChangeType(dst: *mut VARIANT, src: *const VARIANT, flags: USHORT, vt: VARTYPE) -> HRESULT;
-    pub fn _InsertMenuItemW(hmenu: HMENU, indexMenu: UINT, fByPosition: BOOL, wID: UINT, fType: UINT, dwTypeData: LPCWSTR, fState: UINT) -> BOOL;
     pub fn lstrcatW(lpString1: LPWSTR, lpString2: LPCWSTR) -> LPWSTR;
     pub fn lstrcmpiW(left: LPCWSTR, right: LPCWSTR) -> INT;
     pub fn lstrcpyW(lpString1: LPWSTR, lpString2: LPCWSTR) -> LPWSTR;

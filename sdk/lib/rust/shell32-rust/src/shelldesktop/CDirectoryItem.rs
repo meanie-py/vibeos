@@ -51,19 +51,7 @@ pub unsafe fn CDirectoryItem_delete(this: *mut CDirectoryItem) {
 
 pub const FILE_ATTRIBUTE_DIRECTORY: DWORD = 0x00000010;
 
-#[repr(C)]
-pub struct WIN32_FIND_DATAW {
-    pub dwFileAttributes: DWORD,
-    pub ftCreationTime: FILETIME,
-    pub ftLastAccessTime: FILETIME,
-    pub ftLastWriteTime: FILETIME,
-    pub nFileSizeHigh: DWORD,
-    pub nFileSizeLow: DWORD,
-    pub dwReserved0: DWORD,
-    pub dwReserved1: DWORD,
-    pub cFileName: [WCHAR; 260],
-    pub cAlternateFileName: [WCHAR; 14],
-}
+pub use crate::island::WIN32_FIND_DATAW;
 
 extern "system" {
     fn lstrlenW(text: LPCWSTR) -> INT;

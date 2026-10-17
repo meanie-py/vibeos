@@ -705,15 +705,7 @@ pub struct DVTARGETDEVICE {
     pub tdData: [BYTE; 1],
 }
 
-#[repr(C)]
-pub struct MEASUREITEMSTRUCT {
-    pub CtlType: UINT,
-    pub CtlID: UINT,
-    pub itemID: UINT,
-    pub itemWidth: UINT,
-    pub itemHeight: UINT,
-    pub itemData: ULONG_PTR,
-}
+pub use crate::island::MEASUREITEMSTRUCT;
 
 #[repr(C)]
 pub struct STATDATA {
@@ -774,29 +766,13 @@ pub const DROPEFFECT_MOVE: DWORD = 2;
 pub const DROPEFFECT_LINK: DWORD = 4;
 
 extern "system" {
-    fn CreateMenu() -> HMENU;
-    fn DestroyMenu(menu: HMENU) -> BOOL;
     fn GetAsyncKeyState(key: INT) -> i16;
-    fn InsertMenuW(menu: HMENU, position: UINT, flags: UINT, id: UINT_PTR, text: LPCWSTR) -> BOOL;
-    fn AppendMenuW(menu: HMENU, flags: UINT, id: UINT_PTR, text: LPCWSTR) -> BOOL;
-    fn SetMenuItemInfoW(menu: HMENU, item: UINT, by_position: BOOL, info: *const MENUITEMINFOW) -> BOOL;
-    fn DestroyIcon(icon: HICON) -> BOOL;
-    fn DrawIconEx(dc: HDC, x: INT, y: INT, icon: HICON, width: INT, height: INT, step: UINT, brush: HANDLE, flags: UINT) -> BOOL;
-    fn GetMenuItemInfoW(menu: HMENU, item: UINT, by_position: BOOL, info: *mut MENUITEMINFOW) -> BOOL;
-    fn GetSystemMetrics(index: INT) -> INT;
-    fn SHGetFileInfoW(path: LPCWSTR, attributes: DWORD, info: *mut SHFILEINFOW, bytes: UINT, flags: UINT) -> DWORD_PTR;
-    fn StrRetToStrW(value: *mut STRRET, pidl: PCUITEMID_CHILD, out: *mut LPWSTR) -> HRESULT;
-    fn ILCombine(parent: PCIDLIST_ABSOLUTE, child: PCUITEMID_CHILD) -> PIDLIST_ABSOLUTE;
     fn GetLastError() -> DWORD;
     fn lstrlenW(text: LPCWSTR) -> INT;
     fn CoTaskMemFree(memory: LPVOID);
-    fn SHGetDesktopFolder(folder: *mut *mut IShellFolder) -> HRESULT;
-    fn SHGetSpecialFolderLocation(owner: HWND, csidl: INT, pidl: *mut LPITEMIDLIST) -> HRESULT;
-    fn InsertMenuItemW(menu: HMENU, item: UINT, by_position: BOOL, info: *const MENUITEMINFOW) -> BOOL;
 }
 
 extern "C" {
-    fn SHELL_GetUIObjectOfAbsoluteItem(owner: HWND, pidl: PCIDLIST_ABSOLUTE, riid: REFIID, out: *mut LPVOID) -> HRESULT;
     #[link_name = "memcpy"] fn cpp_com_memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, bytes: usize) -> *mut core::ffi::c_void;
 }
 
@@ -898,7 +874,7 @@ unsafe fn SENDTO_ITEM_delete(item: *mut SENDTO_ITEM) {
     if item.is_null() { return; }
     CoTaskMemFree((*item).pidlChild.cast());
     CoTaskMemFree((*item).pszText.cast());
-    if !(*item).hIcon.is_null() { DestroyIcon((*item).hIcon); }
+    if !(*item).hIcon.is_null() { DestroyIcon(((*item).hIcon).cast()); }
     HeapFree(GetProcessHeap(), 0, item.cast::<core::ffi::c_void>());
 }
 
@@ -908,9 +884,6 @@ extern "C" {
 }
 
 extern "system" {
-    fn HeapReAlloc(heap: HANDLE, flags: DWORD, memory: LPVOID, bytes: usize) -> LPVOID;
-    fn GetModuleHandleW(name: LPCWSTR) -> HINSTANCE;
-    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
 }
 
 pub struct CStringW { buffer: LPWSTR, len: usize, capacity: usize }
@@ -940,7 +913,7 @@ impl CStringW {
         let next = if self.buffer.is_null() {
             HeapAlloc(GetProcessHeap(), 0, bytes)
         } else {
-            HeapReAlloc(GetProcessHeap(), 0, self.buffer.cast(), bytes)
+            HeapReAlloc(GetProcessHeap(), 0, self.buffer.cast(), (bytes) as SIZE_T)
         } as LPWSTR;
         if next.is_null() { return false; }
         self.buffer = next; self.capacity = capacity; true
@@ -1012,6 +985,27 @@ impl<T> Drop for CppComPtrGuard<T> {
 }
 
 use core::ffi::c_void;
+// The crate's own functions: the definition is the declaration.
+use crate::wine::pidl::ILCombine;
+use crate::shell32::utils::SHELL_GetUIObjectOfAbsoluteItem;
+use crate::desktop_folder_tu::SHGetDesktopFolder;
+use crate::wine::shell32_main::SHGetFileInfoW;
+use crate::wine::shellpath::SHGetSpecialFolderLocation;
+// One declaration per external symbol: island.rs.
+use crate::island::AppendMenuW;
+use crate::island::CreateMenu;
+use crate::island::DestroyIcon;
+use crate::island::DestroyMenu;
+use crate::island::DrawIconEx;
+use crate::island::GetMenuItemInfoW;
+use crate::island::GetModuleHandleW;
+use crate::island::GetSystemMetrics;
+use crate::island::HeapReAlloc;
+use crate::island::InsertMenuItemW;
+use crate::island::InsertMenuW;
+use crate::island::LoadStringW;
+use crate::island::SetMenuItemInfoW;
+use crate::island::StrRetToStrW;
 use crate::shellcom::*;
 use crate::types::*;
 
@@ -1147,7 +1141,7 @@ pub unsafe fn CSendToMenu_GetSpecialFolder_body(this: *mut CSendToMenu, hwnd: HW
 
 pub unsafe fn CSendToMenu_GetUIObjectFromPidl_body(this: *mut CSendToMenu, hwnd: HWND, pidl: PIDLIST_ABSOLUTE, riid: REFIID, ppvOut: *mut LPVOID) -> HRESULT {
     *ppvOut = core::ptr::null_mut();
-    let hr = SHELL_GetUIObjectOfAbsoluteItem(hwnd, pidl, riid, ppvOut);
+    let hr = SHELL_GetUIObjectOfAbsoluteItem(hwnd, pidl, (riid).cast(), ppvOut);
     if ((hr) < 0) {
         return hr;
     }
@@ -1227,7 +1221,7 @@ pub unsafe fn CSendToMenu_LoadAllItems_body(this: *mut CSendToMenu, hwnd: HWND) 
         }
 
         let mut pszText: CComHeapPtr<WCHAR> = CComHeapPtr::empty();
-        hr = StrRetToStrW(&mut strret, pidlChild.as_raw(), pszText.as_mut_slot());
+        hr = StrRetToStrW((&raw mut strret).cast(), pidlChild.as_raw(), pszText.as_mut_slot());
         if ((hr) < 0) {
             continue;
         }
@@ -1256,7 +1250,7 @@ pub unsafe fn CSendToMenu_LoadAllItems_body(this: *mut CSendToMenu, hwnd: HWND) 
         let pNewItem: *mut SENDTO_ITEM = SENDTO_ITEM_new(
             pidlChild.Detach(),
             pszText.Detach(),
-            fi.hIcon,
+            (fi.hIcon).cast(),
         );
         if !(*this).m_pItems.is_null() {
             (*pNewItem).pNext = (*this).m_pItems;
@@ -1466,7 +1460,7 @@ pub unsafe fn CSendToMenu_HandleMenuMsg2_body(this: *mut CSendToMenu, uMsg: UINT
                         (*lpdis).hDC,
                         x,
                         y,
-                        hIcon,
+                        (hIcon).cast(),
                         cxSmall,
                         cySmall,
                         0,

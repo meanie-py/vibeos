@@ -1,6 +1,8 @@
 // rustconv-assembly: class:CRecyclerDropTarget
 // Deterministic from oleidl.h
 use crate::prelude::*;
+// One declaration per external symbol: island.rs.
+use crate::island::SHCreateThread;
 #[repr(C)]
 pub struct IDropTarget {
     pub lpVtbl: *const IDropTargetVtbl,
@@ -417,13 +419,7 @@ pub struct BIND_OPTS {
     pub dwTickCountDeadline: DWORD,
 }
 
-#[repr(C)]
-pub struct DROPFILES {
-    pub pFiles: DWORD,
-    pub pt: POINT,
-    pub fNC: BOOL,
-    pub fWide: BOOL,
-}
+pub use crate::island::DROPFILES;
 pub type LPDROPFILES = *mut DROPFILES;
 
 #[repr(C)]
@@ -512,7 +508,6 @@ unsafe fn InitFormatEtc(fe: *mut FORMATETC, cf: UINT, med: DWORD) {
 // `extern "system"` fn item will not coerce into the island's slot. Same shape as
 // droptargets/CFSDropTarget.rs and dialogs/filedefext.rs.
 extern "system" {
-    fn SHCreateThread(proc_: unsafe extern "system" fn(LPVOID) -> DWORD, data: LPVOID, flags: DWORD, callback: LPVOID) -> BOOL;
 }
 
 // ONE glob only. The scaffold header already emits `use crate::prelude::*` at the top of this
@@ -593,7 +588,7 @@ pub unsafe fn CRecyclerDropTarget__DoDeleteAsync_body(this: *mut CRecyclerDropTa
     (*data).fMask = fMask;
     CoMarshalInterThreadInterfaceInStream(core::ptr::addr_of!(IID_IDataObject).cast(), pda.cast(), core::ptr::addr_of_mut!((*data).s).cast());
     // The C passes NULL for both the flags and the callback; flags is a DWORD, not a pointer.
-    SHCreateThread(CRecyclerDropTarget_DoDeleteThreadProc_entry, data as LPVOID, 0, core::ptr::null_mut());
+    SHCreateThread(Some(CRecyclerDropTarget_DoDeleteThreadProc_entry), data as LPVOID, 0, None);
 }
 
 pub unsafe fn CRecyclerDropTarget_ctor_body(this: *mut CRecyclerDropTarget) -> () {

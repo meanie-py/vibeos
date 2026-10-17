@@ -1981,15 +1981,12 @@ UINT WINAPI MsiEnumComponentCostsW( MSIHANDLE handle, const WCHAR *component, DW
         if (!(remote = msi_get_remote(handle)))
             return ERROR_INVALID_HANDLE;
 
-        __TRY
         {
-            r = remote_EnumComponentCosts(remote, component, index, state, buffer, cost, temp);
+            DWORD code;
+
+            if (!remote_EnumComponentCosts_guarded(rpc_filter, &code, &r, remote, component, index, state, buffer, cost, temp))
+                r = code;
         }
-        __EXCEPT(rpc_filter)
-        {
-            r = GetExceptionCode();
-        }
-        __ENDTRY
 
         if (r == ERROR_SUCCESS)
         {

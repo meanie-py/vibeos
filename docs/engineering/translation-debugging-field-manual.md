@@ -910,6 +910,19 @@ kind of residue (2026-10-17, about 30 crates):
   `IUnknown`s in menuband, and `GUID`/`BITMAP`/`IStream` in ole32. Once one declaration survives,
   a caller that passes its own copy fails with E0308. Fix: dedupe to one definition with
   `pub use`, or `.cast()` at the pointer argument. Never use `as _` on a struct by value.
+  At crate scale, `tools/rustconv/struct_to_island.py <crate>/src` makes every hand copy whose
+  field names match the island's on all three arches a `pub use crate::island::NAME;`. It keeps
+  a copy that derives more, that the crate `impl`s (`unsafe impl Sync` included), or whose island
+  fields are bindgen anonymous records or types the crate keeps its own copy of. shell32: 161 of
+  280. crate-repair's `raw_pointer_cast` no longer bridges two DIFFERENT named pointees: `.cast()`
+  from `MENUITEMINFOW` to `tagMENUITEMINFOW` would bless a second layout without checking it
+  (void, `char` signedness, COM upcasts and one name under two paths still cast).
+- **A crate's own export, declared `extern` by its callers, is collapsed onto the definition**
+  (`extern_to_use.py --census <json> --crate X sdk/lib/rust` -- `src` is the rust root there,
+  and an empty crate is now a hard error, not 0 found). The errors that follow are calls that
+  disagreed with their OWN crate's definition: shell32's `SHGetSetSettings` took shellord's
+  bit-exact SHELLSTATE while every caller held the island's, and `SH_CreatePropertySheetPageEx`
+  took a bare fn where the header says `DLGPROC`. Retype the definition to the header's types.
 - **ntdll-sys aliases are not the canonical spelling.** On 64-bit, `SIZE_T`/`WPARAM`/`LPARAM` are
   `u64`/`i64`, while most canonical declarations spell them `usize`/`isize`. They have the same
   width on every arch but are different Rust types. Rewrite each call site from rustc's own span
@@ -2018,6 +2031,13 @@ why the bug only surfaced on amd64/arm64 -- rapps crashed extracting its databas
 module-local audit misses this; measure the header with the module's real flags (borrow its
 line from `compile_commands.json`, add `-fsyntax-only` and a `char (*x)[offsetof(T,f)+1000] = 1;`
 probe, read the numbers off the diagnostics) and pin the result with `offset_of!` asserts.
+**A hand copy beside an island is the cheapest audit there is.** Emit `size_of`/`align_of`/
+`offset_of!` asserts comparing each copy with the island's struct of the same name and compile
+all three targets. shell32 (2026-10-17): `SHQUERYRBINFO` and `SHFILEOPSTRUCTW` unpacked where
+shellapi.h is `pshpack1` on 32-bit ONLY (`#if !defined(_WIN64)`), so on i386 the exported
+`SHQueryRecycleBinW` was 24 bytes against every caller's 20 and refused them all with
+E_INVALIDARG; `SFVM_CUSTOMVIEWINFO_DATA` (undocshell.h's pshpack1 block) had `hbmBack` at 8,
+not 4, on 64-bit. 26 more differed only in alignment. Taking the island's struct fixes them.
 **The other direction, at island scale: a pack PUSH copied into a bindgen wrapper.**
 profile_derive mirrors each TU's include prologue into the module's merged `WRAPPER_INC`, and
 partlist.c's prologue ENDS with `#include <pshpack1.h>` -- its `poppack.h` comes after two
@@ -6173,6 +6193,20 @@ lose the function while one, or four, or a semicolon-terminated `ERR_MAPS` among
 a fixture that "looks worse" can test nothing — and a name can be **redefined** with a different
 body in one TU (dinput's `FE(x)` is `type = #x` then `wave = #x`), so expansion must track the
 definition in force by POSITION, not keep a name→body map.
+
+**Variant: an SEH block under another name cuts the function at its first nested `}`.**
+`mask_seh_for_parse` rewrote only the `_SEH2_*` spellings to same-length C, so rpc.h's
+`RpcTryExcept`/`RpcExcept`/`RpcEndExcept` and Wine's `__TRY`/`__EXCEPT`/`__ENDTRY` reached
+tree-sitter raw. A second, nested RpcTryExcept ended setupapi's `GetDeviceInstanceKeyPath`
+there. The tail went to the model as "file-scope preamble", the body was bought truncated, and
+the run died only because the preamble's wide-literal seal noticed 21 literals that the real
+preamble does not have. Both spellings are masked now, and `preamble_audit` masks too. It ran
+its own parse without the mask or `_strip_sal`, so it called the same file "does not parse at
+top level" and skipped every file-scope check. **The scanner and every audit that re-parses
+the C must apply the same normalizers, or they disagree about what the file contains.** The
+old scanner gives different bodies for 248 functions in 31 files, including shipped ports
+(advapi32 scm.c/lsa.c/crypt.c, samlib, netapi32, winspool, kernel32 res.c). Which of those
+were bought truncated is owed (conformance-ratchet-quest.md).
 
 The two fixes compose, and the order matters: expanding is what lets `--seal-facts` see the arms
 at all. Sealed, `msvcrt_set_errno`'s 60 constants go to the model as `__RUSTCONV_FACT_00NN__` and

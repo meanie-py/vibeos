@@ -1,4 +1,9 @@
 use crate::prelude::*;
+// The crate's own functions: the definition is the declaration.
+use crate::shell32::utils::SHELL_GetUIObjectOfAbsoluteItem;
+// One declaration per external symbol: island.rs.
+use crate::island::DestroyMenu;
+use crate::island::GetMenuItemInfoW;
 use crate::atl::CComBSTR;
 use crate::wine::shlmenu::HMENU;
 use crate::def_view_support::IsEqualCLSID;
@@ -388,12 +393,9 @@ extern "C" {
 }
 
 extern "system" {
-    fn DestroyMenu(menu: HMENU) -> BOOL;
-    fn GetMenuItemInfoW(menu: HMENU, item: UINT, by_position: BOOL, info: *mut MENUITEMINFOW) -> BOOL;
 }
 
 extern "C" {
-    fn SHELL_GetUIObjectOfAbsoluteItem(owner: HWND, pidl: PCIDLIST_ABSOLUTE, riid: REFIID, out: *mut LPVOID) -> HRESULT;
 }
 
 extern "C" {

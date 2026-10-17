@@ -1,47 +1,30 @@
-//! bwfm.sys's device stack: our FDO on the HAL's `VIBEOS\CYW43455` PDO (the Pi
-//! 5's SDC1, hal-rust/src/arm64/pnpdd.rs), bound through the critical device
-//! database.
-//!
-//! START powers the chip, brings the SDIO bus up, and reads the chip id and its
-//! cores. A worker thread then loads the firmware from
-//! `\SystemRoot\System32\drivers\cyw43455\` (staged only by a build with
-//! `VIBEOS_PAYLOAD=piwifi`: VibeOS does not ship it) and starts it; function 2
-//! coming ready is the firmware running. docs/engineering/pi-wifi-design.md.
-//! Every other IRP passes down untouched.
+//! bwfm.sys's bring-up, in the order the miniport's initialize runs it: map the SDIO
+//! host the HAL's `VIBEOS\CYW43455` PDO describes (the Pi 5's SDC1,
+//! hal-rust/src/arm64/pnpdd.rs), power the chip, bring the SDIO bus up, read the chip
+//! and its cores, load the firmware from `\SystemRoot\System32\drivers\cyw43455\`
+//! (staged only by a build with `VIBEOS_PAYLOAD=piwifi`: VibeOS does not ship it), start
+//! it, and ready it to scan. Then the network: the scan, and the join's log.
+//! docs/engineering/pi-wifi-design.md. The NDIS side is miniport.rs.
 
 use core::ptr::null_mut;
-use core::sync::atomic::{AtomicPtr, Ordering};
 
 use ntkrnl_sys::ddk::{
-    ExAllocatePoolWithTag, ExFreePoolWithTag, IoAttachDeviceToDeviceStack, IoCreateDevice, IoDeleteDevice,
-    IoForwardIrpSynchronously, KeDelayExecutionThread, KeQueryPerformanceCounter, KeStallExecutionProcessor,
-    MmMapIoSpace, PsCreateSystemThread, ZwClose, ZwCreateFile, ZwQueryInformationFile, ZwReadFile,
-    _FILE_INFORMATION_CLASS_FileStandardInformation, _MEMORY_CACHING_TYPE_MmNonCached, DEVICE_OBJECT,
-    FILE_STANDARD_INFORMATION, HANDLE, IO_STATUS_BLOCK, LARGE_INTEGER,
-    NTSTATUS, OBJECT_ATTRIBUTES, PDEVICE_OBJECT, PDRIVER_OBJECT, PHYSICAL_ADDRESS, PIO_STACK_LOCATION, PIRP, PVOID,
-    ULONG, UNICODE_STRING,
+    ExAllocatePoolWithTag, ExFreePoolWithTag, KeDelayExecutionThread, KeQueryPerformanceCounter, KeStallExecutionProcessor,
+    MmMapIoSpace, ZwClose, ZwCreateFile, ZwQueryInformationFile, ZwReadFile,
+    _FILE_INFORMATION_CLASS_FileStandardInformation, _MEMORY_CACHING_TYPE_MmNonCached, FILE_STANDARD_INFORMATION,
+    HANDLE, IO_STATUS_BLOCK, LARGE_INTEGER, NTSTATUS, OBJECT_ATTRIBUTES, PHYSICAL_ADDRESS, PVOID, ULONG,
+    UNICODE_STRING,
 };
-use ntkrnl_sys::driver_ddk::{IoCallDriver, IoCompleteRequest, PoCallDriver, PoStartNextPowerIrp};
-use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoSkipCurrentIrpStackLocation};
 use sdhci_rust::Platform;
 
-use crate::bus::{Buffers, Bus};
+use crate::bus::Bus;
 use crate::chip::Chip;
 use crate::join::{JoinEnd, JoinLog, WifiConfig};
-use crate::scan::Bss;
 use crate::nvram;
 use crate::print::bwprint;
+use crate::scan::Bss;
 use crate::sdio::Sdio;
 
-const IRP_MJ_POWER: u8 = 0x16;
-const IRP_MJ_PNP: u8 = 0x1B;
-const IRP_MN_START_DEVICE: u8 = 0x00;
-const CM_RESOURCE_TYPE_MEMORY: u8 = 3;
-const FILE_DEVICE_PHYSICAL_NETCARD: ULONG = 0x17;
-const FILE_DEVICE_SECURE_OPEN: ULONG = 0x100;
-const DO_DEVICE_INITIALIZING: ULONG = 0x80;
-const STATUS_SUCCESS: NTSTATUS = 0;
-const STATUS_NO_SUCH_DEVICE: NTSTATUS = 0xC000_000Eu32 as NTSTATUS;
 const STATUS_INSUFFICIENT_RESOURCES: NTSTATUS = 0xC000_009Au32 as NTSTATUS;
 const STATUS_DEVICE_CONFIGURATION_ERROR: NTSTATUS = 0xC000_0182u32 as NTSTATUS;
 
@@ -58,17 +41,8 @@ const PI5_WL_ON: u32 = 1 << 28;
 const WL_OFF_MS: i64 = 20;
 const WL_ON_MS: i64 = 150;
 
-static FDO: AtomicPtr<DEVICE_OBJECT> = AtomicPtr::new(null_mut());
-static LOWER: AtomicPtr<DEVICE_OBJECT> = AtomicPtr::new(null_mut());
-/// Written once in START, then owned by the firmware worker, which moves it into
-/// BUS once the firmware runs.
-static mut CHIP: Option<Chip<Kernel>> = None;
-static mut BUS: Option<Bus<Kernel>> = None;
-static mut BUFFERS: Buffers = Buffers::new();
-
-const BWFM_POOL_TAG: ULONG = u32::from_le_bytes(*b"Bwfm");
+pub const BWFM_POOL_TAG: ULONG = u32::from_le_bytes(*b"Bwfm");
 const NON_PAGED_POOL: i32 = 0;
-const THREAD_ALL_ACCESS: ULONG = 0x001F_03FF;
 /// The files, under \SystemRoot\System32\drivers\cyw43455\, as
 /// tools/fetch_pi_wifi_firmware.py names them.
 const FIRMWARE: &str = "\\SystemRoot\\System32\\drivers\\cyw43455\\cyfmac43455-sdio.bin";
@@ -78,17 +52,18 @@ const CLM: &str = "\\SystemRoot\\System32\\drivers\\cyw43455\\cyfmac43455-sdio.c
 const WIFI_CONFIG: &str = "\\SystemRoot\\bin\\wifi.txt";
 /// The firmware is ~600 KiB and the NVRAM ~2 KiB; anything far past that is not them.
 const FILE_MAX: usize = 1 << 20;
-/// How long the worker waits for the system volume to answer for the files.
-const FILE_WAIT_S: u32 = 120;
+/// How long bring-up waits for the system volume to answer for the files. PnP starts
+/// the adapter late in boot, after the volume is up, so this is a margin, not a wait.
+const FILE_WAIT_S: u32 = 30;
 
 /// The mapped SDHCI window and the ARM generic timer. No interrupt yet: the
-/// bring-up polls.
+/// driver polls.
 pub struct Kernel {
     regs: *mut u32,
 }
 
 impl Kernel {
-    fn now_us_static() -> u64 {
+    pub fn now_us_static() -> u64 {
         let mut freq: LARGE_INTEGER = unsafe { core::mem::zeroed() };
         let count = unsafe { KeQueryPerformanceCounter(&mut freq) };
         let f = unsafe { freq.QuadPart }.max(1) as u128;
@@ -111,7 +86,7 @@ impl Platform for Kernel {
     }
 }
 
-fn sleep_ms(ms: i64) {
+pub fn sleep_ms(ms: i64) {
     let mut t: LARGE_INTEGER = unsafe { core::mem::zeroed() };
     t.QuadPart = -(ms * 10_000);
     // KernelMode (0), not alertable.
@@ -122,63 +97,6 @@ unsafe fn map(pa: u64, len: usize) -> *mut u8 {
     let mut p: PHYSICAL_ADDRESS = core::mem::zeroed();
     p.QuadPart = pa as i64;
     MmMapIoSpace(p, len as _, _MEMORY_CACHING_TYPE_MmNonCached) as *mut u8
-}
-
-unsafe fn complete(irp: PIRP, status: NTSTATUS) -> NTSTATUS {
-    (*irp).IoStatus.__bindgen_anon_1.Status = status;
-    IoCompleteRequest(irp, 0);
-    status
-}
-
-pub unsafe extern "system" fn add_device(driver: PDRIVER_OBJECT, pdo: PDEVICE_OBJECT) -> NTSTATUS {
-    if !FDO.load(Ordering::Acquire).is_null() {
-        bwprint!("a second Wi-Fi chip was ignored\n");
-        return STATUS_NO_SUCH_DEVICE;
-    }
-    let mut fdo: PDEVICE_OBJECT = null_mut();
-    let status = IoCreateDevice(driver, 0, null_mut(), FILE_DEVICE_PHYSICAL_NETCARD, FILE_DEVICE_SECURE_OPEN, 0, &mut fdo);
-    if status < 0 {
-        bwprint!("IoCreateDevice failed {:#010x}\n", status as u32);
-        return status;
-    }
-    let lower = IoAttachDeviceToDeviceStack(fdo, pdo);
-    if lower.is_null() {
-        IoDeleteDevice(fdo);
-        return STATUS_NO_SUCH_DEVICE;
-    }
-    LOWER.store(lower, Ordering::Release);
-    FDO.store(fdo, Ordering::Release);
-    (*fdo).Flags &= !DO_DEVICE_INITIALIZING;
-    STATUS_SUCCESS
-}
-
-pub unsafe extern "system" fn dispatch(device: PDEVICE_OBJECT, irp: PIRP) -> NTSTATUS {
-    let lower = LOWER.load(Ordering::Acquire);
-    if device != FDO.load(Ordering::Acquire) || lower.is_null() {
-        return complete(irp, STATUS_NO_SUCH_DEVICE);
-    }
-    let io = IoGetCurrentIrpStackLocation(irp);
-    match ((*io).MajorFunction, (*io).MinorFunction) {
-        (IRP_MJ_PNP, IRP_MN_START_DEVICE) => {
-            let status = if IoForwardIrpSynchronously(lower, irp) == 0 {
-                STATUS_NO_SUCH_DEVICE
-            } else if (*irp).IoStatus.__bindgen_anon_1.Status < 0 {
-                (*irp).IoStatus.__bindgen_anon_1.Status
-            } else {
-                start(io)
-            };
-            complete(irp, status)
-        }
-        (IRP_MJ_POWER, _) => {
-            PoStartNextPowerIrp(irp);
-            IoSkipCurrentIrpStackLocation(irp);
-            PoCallDriver(lower, irp)
-        }
-        _ => {
-            IoSkipCurrentIrpStackLocation(irp);
-            IoCallDriver(lower, irp)
-        }
-    }
 }
 
 /// Raise WL_REG_ON from low, so the chip starts from its power-on reset
@@ -277,9 +195,81 @@ unsafe fn read_driver_file(path: &str) -> Result<(*mut u8, usize), NTSTATUS> {
     Ok((buf, size))
 }
 
-/// Wait for the files, convert the NVRAM, load the firmware and start it.
-unsafe extern "system" fn firmware_worker(_context: PVOID) {
-    let Some(chip) = (*(&raw mut CHIP)).as_mut() else { return };
+/// Map the SDIO host at `pa`, power the chip, bring the bus up and read the chip:
+/// the chip, halted, ready for its firmware. None (logged) when any step fails.
+pub unsafe fn attach(pa: u64, len: usize) -> Option<Chip<Kernel>> {
+    let regs = map(pa, len);
+    if regs.is_null() {
+        bwprint!("could not map the SDIO host at {:#x}\n", pa);
+        return None;
+    }
+    let p = Kernel { regs: regs.cast() };
+    bwprint!(
+        "SDIO host {:#x}+{:#x}: version {:#x}, caps {:#010x}, firmware left clock {:#06x} host {:#010x}\n",
+        pa,
+        len,
+        p.rd(sdhci_rust::REG_VERSION) >> 16,
+        p.rd(sdhci_rust::REG_CAPS),
+        p.rd(sdhci_rust::REG_CLOCK) & 0xFFFF,
+        p.rd(sdhci_rust::REG_HOST_CTRL)
+    );
+    // Nothing may signal: this driver polls.
+    p.wr(sdhci_rust::REG_INT_SIGNAL, 0);
+    if !power_on(pa) {
+        bwprint!("no known power line on this board: trying the chip as it is\n");
+    }
+    let mut sdio = Sdio::new(p);
+    let card = match sdio.init() {
+        Ok(c) => c,
+        Err(e) => {
+            bwprint!("no SDIO card: {:?}\n", e);
+            return None;
+        }
+    };
+    bwprint!(
+        "SDIO card {:04x}:{:04x}, RCA {:#06x}, {} functions, OCR {:#08x}, CCCR rev {:#04x}, {} kHz 4-bit\n",
+        card.vendor,
+        card.device,
+        card.rca,
+        card.functions,
+        card.ocr,
+        card.cccr_rev,
+        card.clock_hz / 1000
+    );
+    match Chip::attach(sdio) {
+        Ok(chip) => {
+            let id = chip.id;
+            bwprint!(
+                "chip {:#06x} rev {} package {} cores {} (chip id {:#010x}, {})\n",
+                id.chip,
+                id.rev,
+                id.package,
+                id.cores,
+                id.raw,
+                if id.chip == 0x4345 { "CYW43455" } else { "not a CYW43455" }
+            );
+            for c in &chip.cores[..chip.ncores] {
+                bwprint!("  core {:#05x} rev {:2} base {:#010x} wrap {:#010x}\n", c.id, c.rev, c.base, c.wrap);
+            }
+            bwprint!(
+                "CR4 halted; RAM {} KiB at {:#x}; chip-common caps {:#010x}, PMU rev {}\n",
+                chip.ramsize / 1024,
+                chip.rambase,
+                chip.cc_caps,
+                chip.pmurev
+            );
+            Some(chip)
+        }
+        Err((_, e)) => {
+            bwprint!("chip did not attach: {:?}\n", e);
+            None
+        }
+    }
+}
+
+/// Wait for the files, convert the NVRAM, load the firmware and start it. True once
+/// function 2 says the firmware runs.
+pub unsafe fn run_firmware(chip: &mut Chip<Kernel>) -> bool {
     let mut waited = 0;
     let (fw, nv) = loop {
         match (read_driver_file(FIRMWARE), read_driver_file(NVRAM)) {
@@ -297,7 +287,7 @@ unsafe extern "system" fn firmware_worker(_context: PVOID) {
                          build with VIBEOS_PAYLOAD=piwifi to fetch and stage it\n",
                         FILE_WAIT_S
                     );
-                    return;
+                    return false;
                 }
                 sleep_ms(1000);
                 waited += 1;
@@ -320,51 +310,49 @@ unsafe extern "system" fn firmware_worker(_context: PVOID) {
     };
     ExFreePoolWithTag(fw.0.cast(), BWFM_POOL_TAG);
     ExFreePoolWithTag(nv.0.cast(), BWFM_POOL_TAG);
-    match loaded {
-        None => {}
-        Some((Err(e), _)) => bwprint!("firmware load failed: {:?}\n", e),
-        Some((Ok(l), us)) => {
-            bwprint!(
-                "firmware loaded and verified: {} bytes at {:#x}, NVRAM {} bytes at {:#x}, reset vector {:#010x}, {} ms\n",
-                l.firmware,
-                chip.rambase,
-                l.nvram,
-                l.nvram_at,
-                l.reset_vector,
-                us / 1000
-            );
-            let t0 = Kernel::now_us_static();
-            match chip.start() {
-                Ok(()) => {
-                    bwprint!(
-                        "firmware running: function 2 ready after {} ms\n",
-                        Kernel::now_us_static().wrapping_sub(t0) / 1000
-                    );
-                    if let Some(chip) = (*(&raw mut CHIP)).take() {
-                        talk(chip);
-                    }
-                }
-                Err(e) => bwprint!("firmware did not come up: {:?}\n", e),
-            }
+    let (l, us) = match loaded {
+        None => return false,
+        Some((Err(e), _)) => {
+            bwprint!("firmware load failed: {:?}\n", e);
+            return false;
+        }
+        Some((Ok(l), us)) => (l, us),
+    };
+    bwprint!(
+        "firmware loaded and verified: {} bytes at {:#x}, NVRAM {} bytes at {:#x}, reset vector {:#010x}, {} ms\n",
+        l.firmware,
+        chip.rambase,
+        l.nvram,
+        l.nvram_at,
+        l.reset_vector,
+        us / 1000
+    );
+    let t0 = Kernel::now_us_static();
+    match chip.start() {
+        Ok(()) => {
+            bwprint!("firmware running: function 2 ready after {} ms\n", Kernel::now_us_static().wrapping_sub(t0) / 1000);
+            true
+        }
+        Err(e) => {
+            bwprint!("firmware did not come up: {:?}\n", e);
+            false
         }
     }
 }
 
-/// The first exchange with the running firmware: its version string over BCDC.
-unsafe fn talk(chip: Chip<Kernel>) {
-    let bus = (*(&raw mut BUS)).insert(Bus::new(chip, &mut *(&raw mut BUFFERS)));
-    let mut events = 0u32;
+/// The first exchange with the running firmware: its version, the MAC address, the
+/// regulatory table (without which it will not scan), then the interface up. True
+/// when the chip is ready to scan.
+pub unsafe fn ready(bus: &mut Bus<Kernel>) -> bool {
     let mut out = [0u8; 256];
-    match bus.get_var(b"ver", &mut out, |_| events += 1) {
+    match bus.get_var(b"ver", &mut out, |_| {}) {
         Ok(n) => {
             let text = &out[..out[..n].iter().position(|&c| c == 0).unwrap_or(n)];
             // The firmware ends the string with a newline; one line in the log.
             let text = text.strip_suffix(b"\n").unwrap_or(text);
             bwprint!(
-                "firmware says: {} ({} frames, {} other frames before the reply, credit window {})\n",
+                "firmware says: {} (credit window {})\n",
                 core::str::from_utf8(text).unwrap_or("<not UTF-8>"),
-                bus.frames,
-                events,
                 bus.credit.window()
             );
         }
@@ -377,29 +365,23 @@ unsafe fn talk(chip: Chip<Kernel>) {
                 bus.credit.seq,
                 bus.credit.max_seq
             );
-            return;
+            return false;
         }
     }
-    match bus.read_mac(|_| events += 1) {
-        Ok(mac) => bwprint!(
-            "MAC {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}\n",
-            mac[0],
-            mac[1],
-            mac[2],
-            mac[3],
-            mac[4],
-            mac[5]
-        ),
-        Err(e) => bwprint!("no MAC address: {:?}\n", e),
+    match bus.read_mac(|_| {}) {
+        Ok(m) => bwprint!("MAC {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}\n", m[0], m[1], m[2], m[3], m[4], m[5]),
+        Err(e) => {
+            bwprint!("no MAC address: {:?}\n", e);
+            return false;
+        }
     }
-    // The regulatory table: without it the firmware will not scan.
     match read_driver_file(CLM) {
         Err(s) => bwprint!("no CLM blob ({:#010x}): the firmware cannot scan\n", s as u32),
         Ok((p, n)) => {
-            let r = bus.load_clm(core::slice::from_raw_parts(p, n), |_| events += 1);
+            let r = bus.load_clm(core::slice::from_raw_parts(p, n), |_| {});
             ExFreePoolWithTag(p.cast(), BWFM_POOL_TAG);
             let mut status = [0u8; 4];
-            let st = bus.get_var(b"clmload_status", &mut status, |_| events += 1);
+            let st = bus.get_var(b"clmload_status", &mut status, |_| {});
             match (r, st) {
                 (Ok(chunks), Ok(_)) => bwprint!(
                     "CLM loaded: {} bytes in {} chunks, clmload_status {}\n",
@@ -414,30 +396,38 @@ unsafe fn talk(chip: Chip<Kernel>) {
             }
         }
     }
-    if let Err(e) = bus.bring_up(|_| events += 1) {
+    if let Err(e) = bus.bring_up(|_| {}) {
         bwprint!("could not bring the interface up: {:?}\n", e);
-        return;
+        return false;
     }
-    // The network to join, if this image carries one (VIBEOS_WIFI_CONFIG).
-    let cfg = read_driver_file(WIFI_CONFIG).ok().and_then(|(p, n)| {
+    true
+}
+
+/// The network to join, if this image carries one (VIBEOS_WIFI_CONFIG). The file's
+/// copy in pool is zeroed before it is freed: the passphrase does not linger.
+pub unsafe fn read_config() -> Option<WifiConfig> {
+    read_driver_file(WIFI_CONFIG).ok().and_then(|(p, n)| {
         let c = WifiConfig::parse(core::slice::from_raw_parts(p, n));
-        core::ptr::write_bytes(p, 0, n); // the passphrase does not linger in pool
+        core::ptr::write_bytes(p, 0, n);
         ExFreePoolWithTag(p.cast(), BWFM_POOL_TAG);
         c
-    });
+    })
+}
+
+/// Scan, and find `cfg`'s network: the strongest report for its SSID, asking for it
+/// by name when the plain scan did not hear it (a hidden network answers only that).
+/// `list`: log every network heard, once each (the first scan of a boot).
+pub fn find(bus: &mut Bus<Kernel>, cfg: &WifiConfig, list: bool) -> Option<Bss> {
     let mut best: Option<Bss> = None;
-    // Each network once, however many times the scan reports it.
     let mut seen = [[0u8; 6]; 32];
     let (mut n, mut reports) = (0usize, 0u32);
     let t0 = Kernel::now_us_static();
     let end = bus.scan(|b| {
         reports += 1;
-        if let Some(c) = &cfg {
-            if b.ssid() == c.ssid() && best.is_none_or(|x| b.rssi > x.rssi) {
-                best = Some(*b);
-            }
+        if b.ssid() == cfg.ssid() && best.is_none_or(|x| b.rssi > x.rssi) {
+            best = Some(*b);
         }
-        if seen[..n].contains(&b.bssid) || n == seen.len() {
+        if !list || seen[..n].contains(&b.bssid) || n == seen.len() {
             return;
         }
         seen[n] = b.bssid;
@@ -463,22 +453,16 @@ unsafe fn talk(chip: Chip<Kernel>) {
     });
     match end {
         Ok(e) => bwprint!(
-            "scan {:?} in {} ms: {} networks, {} reports\n",
+            "scan {:?} in {} ms: {} reports{}\n",
             e,
             Kernel::now_us_static().wrapping_sub(t0) / 1000,
-            n,
-            reports
+            reports,
+            if list { "" } else { " (not listed again)" }
         ),
-        Err(e) => bwprint!("scan failed after {} networks: {:?}\n", n, e),
+        Err(e) => bwprint!("scan failed after {} reports: {:?}\n", reports, e),
     }
-    let Some(cfg) = cfg else {
-        bwprint!("no \\SystemRoot\\bin\\wifi.txt (ssid=, psk=): no network to join\n");
-        bwprint!("{} frames other than replies so far\n", events);
-        return;
-    };
     let ssid = core::str::from_utf8(cfg.ssid()).unwrap_or("?");
     if best.is_none() {
-        // A hidden network answers only a scan that names it.
         bwprint!("'{}' not heard{}: asking for it by name\n", ssid, if cfg.hidden { " (hidden=1)" } else { "" });
         let r = bus.scan_for(Some(cfg.ssid()), |b| {
             if b.ssid() == cfg.ssid() && best.is_none_or(|x| b.rssi > x.rssi) {
@@ -489,26 +473,28 @@ unsafe fn talk(chip: Chip<Kernel>) {
             bwprint!("directed scan failed: {:?}\n", e);
         }
     }
-    let Some(target) = best else {
+    if best.is_none() {
         bwprint!("'{}' is not in the scan: nothing to join\n", ssid);
-        return;
-    };
+    }
+    best
+}
+
+/// The join's outcome, for the log.
+pub fn log_join(cfg: &WifiConfig, target: &Bss, log: &JoinLog, end: &Result<JoinEnd, sdhci_rust::Error>, ms: u64) {
+    let ssid = core::str::from_utf8(cfg.ssid()).unwrap_or("?");
+    let t = target.bssid;
     bwprint!(
-        "joining '{}' at {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} (ch {}, {} dBm)\n",
+        "join '{}' at {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} (ch {}, {} dBm)\n",
         ssid,
-        target.bssid[0],
-        target.bssid[1],
-        target.bssid[2],
-        target.bssid[3],
-        target.bssid[4],
-        target.bssid[5],
+        t[0],
+        t[1],
+        t[2],
+        t[3],
+        t[4],
+        t[5],
         target.channel,
         target.rssi
     );
-    let mut log = JoinLog::default();
-    let t0 = Kernel::now_us_static();
-    let end = bus.join(&cfg, &target, &mut log, |_| events += 1);
-    let ms = Kernel::now_us_static().wrapping_sub(t0) / 1000;
     if log.optional_refused != 0 {
         bwprint!(
             "firmware refused optional settings (bit 0 sup_wpa, bit 1 mfp): {:#x}, last {:?}\n",
@@ -547,103 +533,4 @@ unsafe fn talk(chip: Chip<Kernel>) {
         ),
         Err(e) => bwprint!("join failed: {:?}\n", e),
     }
-    bwprint!("{} frames other than replies so far\n", events);
-}
-
-unsafe fn start(io: PIO_STACK_LOCATION) -> NTSTATUS {
-    let list = (*io).Parameters.StartDevice.AllocatedResourcesTranslated;
-    if list.is_null() || (*list).Count == 0 {
-        bwprint!("START_DEVICE carried no resources\n");
-        return STATUS_DEVICE_CONFIGURATION_ERROR;
-    }
-    let partial = &(*(*list).List.as_ptr()).PartialResourceList;
-    let descs = core::slice::from_raw_parts(partial.PartialDescriptors.as_ptr(), partial.Count as usize);
-    let Some(mem) = descs.iter().find(|d| d.Type == CM_RESOURCE_TYPE_MEMORY) else {
-        bwprint!("START_DEVICE carried no register window\n");
-        return STATUS_DEVICE_CONFIGURATION_ERROR;
-    };
-    let pa = mem.u.Memory.Start.QuadPart as u64;
-    let len = mem.u.Memory.Length as usize;
-    let regs = map(pa, len);
-    if regs.is_null() {
-        bwprint!("could not map the SDIO host at {:#x}\n", pa);
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    let p = Kernel { regs: regs.cast() };
-    bwprint!(
-        "SDIO host {:#x}+{:#x}: version {:#x}, caps {:#010x}, firmware left clock {:#06x} host {:#010x}\n",
-        pa,
-        len,
-        p.rd(sdhci_rust::REG_VERSION) >> 16,
-        p.rd(sdhci_rust::REG_CAPS),
-        p.rd(sdhci_rust::REG_CLOCK) & 0xFFFF,
-        p.rd(sdhci_rust::REG_HOST_CTRL)
-    );
-    // Nothing may signal: this driver polls.
-    p.wr(sdhci_rust::REG_INT_SIGNAL, 0);
-    if !power_on(pa) {
-        bwprint!("no known power line on this board: trying the chip as it is\n");
-    }
-
-    let mut sdio = Sdio::new(p);
-    let card = match sdio.init() {
-        Ok(c) => c,
-        Err(e) => {
-            // No chip answering: the device stays started, with no network.
-            bwprint!("no SDIO card: {:?}\n", e);
-            return STATUS_SUCCESS;
-        }
-    };
-    bwprint!(
-        "SDIO card {:04x}:{:04x}, RCA {:#06x}, {} functions, OCR {:#08x}, CCCR rev {:#04x}, {} kHz 4-bit\n",
-        card.vendor,
-        card.device,
-        card.rca,
-        card.functions,
-        card.ocr,
-        card.cccr_rev,
-        card.clock_hz / 1000
-    );
-    match Chip::attach(sdio) {
-        Ok(chip) => {
-            let id = chip.id;
-            bwprint!(
-                "chip {:#06x} rev {} package {} cores {} (chip id {:#010x}, {})\n",
-                id.chip,
-                id.rev,
-                id.package,
-                id.cores,
-                id.raw,
-                if id.chip == 0x4345 { "CYW43455" } else { "not a CYW43455" }
-            );
-            for c in &chip.cores[..chip.ncores] {
-                bwprint!("  core {:#05x} rev {:2} base {:#010x} wrap {:#010x}\n", c.id, c.rev, c.base, c.wrap);
-            }
-            bwprint!(
-                "CR4 halted; RAM {} KiB at {:#x}; chip-common caps {:#010x}, PMU rev {}\n",
-                chip.ramsize / 1024,
-                chip.rambase,
-                chip.cc_caps,
-                chip.pmurev
-            );
-            CHIP = Some(chip);
-            let mut thread: HANDLE = null_mut();
-            let s = PsCreateSystemThread(
-                &mut thread,
-                THREAD_ALL_ACCESS,
-                null_mut(),
-                null_mut(),
-                null_mut(),
-                Some(firmware_worker),
-                null_mut(),
-            );
-            if s < 0 {
-                bwprint!("PsCreateSystemThread failed {:#010x}: no firmware\n", s as u32);
-            } else {
-                ZwClose(thread);
-            }
-        }
-        Err((_, e)) => bwprint!("chip did not attach: {:?}\n", e),
-    }
-    STATUS_SUCCESS
 }

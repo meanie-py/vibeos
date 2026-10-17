@@ -78,12 +78,20 @@ def compare(root: Path, revision: str, names: list[str]) -> dict:
         if name not in specs:
             raise RuntimeError(f"{name}: absent from the historical registry")
         cmd, _stream = specs[name]
-        if len(cmd) < 2 or not cmd[1].endswith(".py"):
+        if name not in {"shellcheck", "py-syntax"} and (len(cmd) < 2 or not cmd[1].endswith(".py")):
             raise RuntimeError(f"{name}: oracle is not a standalone Python source command: {cmd}")
     runner = rustlints.ensure(REPO)
     started = time.monotonic()
+    rust_cmd = [str(runner), "--root", str(root), "--rules", ",".join(names)]
+    if "py-syntax" in names:
+        rust_cmd.extend(["--python", sys.executable])
+    if "shellcheck" in names:
+        shellcheck = lints._shellcheck_bin()
+        if shellcheck is None:
+            raise RuntimeError("shellcheck is unavailable")
+        rust_cmd.extend(["--shellcheck", shellcheck])
     cp = subprocess.run(
-        [str(runner), "--root", str(root), "--rules", ",".join(names)],
+        rust_cmd,
         cwd=root,
         capture_output=True,
         text=True,
@@ -98,6 +106,7 @@ def compare(root: Path, revision: str, names: list[str]) -> dict:
             ["git", "rev-parse", "HEAD"], cwd=root, text=True
         ).strip(),
         "rust_seconds": rust_seconds,
+        "rust_binary_sha256": hashlib.sha256(runner.read_bytes()).hexdigest(),
         "rules": {},
     }
 
@@ -106,6 +115,10 @@ def compare(root: Path, revision: str, names: list[str]) -> dict:
         if lints._scanner_error(rust, "stdout"):
             raise RuntimeError(rust.stderr)
         cmd, stream = specs[name]
+        if name in {"shellcheck", "py-syntax"}:
+            started = time.monotonic()
+            python = subprocess.run(cmd, cwd=root, capture_output=True, text=True, check=False)
+            return name, result_for(python, stream, rust, time.monotonic() - started)
         if len(cmd) < 2 or not cmd[1].endswith(".py"):
             raise RuntimeError(f"{name}: oracle is not a standalone Python source command: {cmd}")
         script = Path(cmd[1]).relative_to(root)
@@ -173,9 +186,16 @@ exec(compile(sys.stdin.read(), __file__, "exec"))
             text=True,
             check=False,
         )
-        python_seconds = time.monotonic() - started
+        return name, result_for(python, stream, rust, time.monotonic() - started)
+
+    def result_for(
+        python: subprocess.CompletedProcess,
+        stream: str,
+        rust: subprocess.CompletedProcess,
+        python_seconds: float,
+    ) -> dict:
         if lints._scanner_error(python, stream):
-            raise RuntimeError(f"{name}: Python oracle did not complete: {python.stderr}")
+            raise RuntimeError(f"Python oracle did not complete: {python.stderr}")
         output = python.stdout if stream == "stdout" else python.stdout + "\n" + python.stderr
         py_lines = lints._finding_lines(lints._rel(output, root))
         rs_lines = lints._finding_lines(lints._rel(rust.stdout, root))
@@ -188,7 +208,7 @@ exec(compile(sys.stdin.read(), __file__, "exec"))
             "python_sha256": hashlib.sha256("\n".join(sorted(py_lines)).encode()).hexdigest(),
             "rust_sha256": hashlib.sha256("\n".join(sorted(rs_lines)).encode()).hexdigest(),
         }
-        return name, result
+        return result
 
     with ThreadPoolExecutor(max_workers=min(lints.lint_jobs(), len(names))) as pool:
         report["rules"] = dict(pool.map(oracle_result, names))
