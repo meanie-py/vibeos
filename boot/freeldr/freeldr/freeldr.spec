@@ -104,6 +104,7 @@
 @ cdecl FrldrGetBootPartition()
 @ cdecl FrLdrGetBootPath()
 @ cdecl FrLdrIsUefiBoot()
+@ cdecl FrLdrFindSmbiosEntryPoint()
 @ cdecl FsGetServiceName()
 @ cdecl FsOpenFile() # Why not ArcOpen?
 @ cdecl GetArgumentValue()

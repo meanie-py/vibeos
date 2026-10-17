@@ -496,19 +496,15 @@ runs it.
   (class 76) answers only the `'RSMB'` provider; `'ACPI'` and `'FIRM'` return
   STATUS_NOT_IMPLEMENTED in ex-rust `QSI_SystemFirmwareTableInformation`. kernel32's
   version.c does not exercise them, but `GetSystemFirmwareTable('ACPI')` is how programs
-  find the TPM, the battery and whether they run in a VM. RSMB itself returned
-  STATUS_NOT_SUPPORTED until 2026-10-17 (wmi-rust compared the SMBIOS GUID against a
-  guid object declared without its leading KEVENT); it now reaches the provider and
-  answers STATUS_NOT_FOUND, because the kernel never finds an entry point. Measured
-  2026-10-17: SeaBIOS (`-M pc`) leaves a valid `_SM3_` at 0xF52D0, but the kernel's
-  MmMapIoSpace view of 0xF0000-0xFFFFF holds no `_SM`/`RSD PTR` anchor at all (2411
-  non-0xFF bytes in 64 KB) -- the shadowed F-segment is not what reads there after boot,
-  which the HAL never notices because freeldr finds ACPI first. And on UEFI (amd64-uefi,
-  arm64) SMBIOS is only in the EFI configuration table, which nothing passes on:
-  `LOADER_PARAMETER_EXTENSION.SMBiosEPSHeader` (arc.h) is never filled. Owed: have
-  freeldr (pc: real-mode scan, as for ACPI; uefi: SMBIOS/SMBIOS3 config-table GUIDs)
-  record the entry point and copy the table, and WmipGetRawSMBiosTableData use it first.
-  Then kernel32 version.c:741-785 (RSMB) is the check.
+  find the TPM, the battery and whether they run in a VM. RSMB works on every arch since
+  2026-10-17 (kernel32 version.c 120/0 on amd64-uefi, amd64-bios, i386, arm64): the loader
+  hands the kernel a copy of the SMBIOS entry point and table in
+  `LOADER_PARAMETER_EXTENSION.SMBiosEPSHeader`, as Windows' does.
+- **Open question from that work:** after boot, the kernel's `MmMapIoSpace` view of the
+  BIOS F-segment (0xF0000-0xFFFFF) holds none of what SeaBIOS left there -- no `_SM3_`
+  (host dump: valid at 0xF52D0) and no `RSD PTR`, 2411 non-0xFF bytes in 64 KB. The
+  loader still reads it correctly. Anything else that maps the F-segment after boot (a
+  driver reading the BIOS data area or option ROMs) sees the same; not investigated.
 - **Bodies that answer honestly but not fully:** `GetNamedPipeServerProcessId` (npfs has
   no attribute FSCTL); `GetProcessInformation(ProcessMachineTypeInfo)` (no
   NtQuerySystemInformationEx); Get/SetRestrictedErrorInfo stay E_NOTIMPL as in Wine.

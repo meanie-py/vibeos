@@ -72,6 +72,7 @@ pub static mut NoExecuteEnabled: BOOLEAN = 0;
 extern "C" {
     fn RtlStringCbPrintfA(pszDest: *mut u8, cbDest: usize, pszFormat: PCSTR, ...) -> i32;
     fn FrLdrIsUefiBoot() -> u8; // the first-stage loader (freeldr.spec)
+    fn FrLdrFindSmbiosEntryPoint() -> usize; // ditto: physical address or 0
     fn UiDrawStatusText(text: PCSTR);
     fn printf(fmt: *const i8, ...) -> i32;
     // Returns the option's PCSTR (ntldropts.c). Read as a byte, an option found at an
@@ -351,6 +352,16 @@ pub unsafe extern "C" fn WinLdrInitializePhase1(
 
     if IsAcpiPresent() != 0 {
         (*Extension).AcpiTable = 1 as *mut core::ffi::c_void;
+    }
+
+    // SMBIOS: Windows' loader hands the kernel the entry point here. Neither copy the
+    // kernel could reach on its own works -- the BIOS F-segment reads empty after boot on
+    // the smoke VMs, and UEFI publishes SMBIOS only in its configuration table -- so the
+    // entry point and the table it describes are copied into firmware-permanent memory
+    // (never reclaimed) and the copy's table address points at the copied table.
+    let eps = smbios_copy(FrLdrFindSmbiosEntryPoint());
+    if !eps.is_null() {
+        (*Extension).SMBiosEPSHeader = PaToVa(eps as *mut core::ffi::c_void) as _;
     }
 
     if VersionToBoot >= _WIN32_WINNT_VISTA {
@@ -2823,3 +2834,52 @@ unsafe fn WinLdrpDumpArcDisks(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+
+/// Copy the SMBIOS entry point at physical `eps` and its structure table into one
+/// LoaderFirmwarePermanent block, retarget the copy's table address at the copied table and
+/// fix its checksums. Null when there is none, or it cannot be described (an `_SM_` 2.1
+/// entry point's table address is 32-bit).
+unsafe fn smbios_copy(eps: usize) -> *mut u8 {
+    if eps == 0 {
+        return core::ptr::null_mut();
+    }
+    let p = eps as *const u8;
+    let v3 = core::slice::from_raw_parts(p, 5) == b"_SM3_";
+    let (len, table, size) = if v3 {
+        (*p.add(6) as usize, core::ptr::read_unaligned(p.add(16) as *const u64) as usize,
+         core::ptr::read_unaligned(p.add(12) as *const u32) as usize)
+    } else {
+        (*p.add(5) as usize, core::ptr::read_unaligned(p.add(24) as *const u32) as usize,
+         core::ptr::read_unaligned(p.add(22) as *const u16) as usize)
+    };
+    if table == 0 || size == 0 || size > 0x10_0000 {
+        return core::ptr::null_mut();
+    }
+    let block = MmAllocateMemoryWithType(32 + size, LoaderFirmwarePermanent) as *mut u8;
+    if block.is_null() {
+        return core::ptr::null_mut();
+    }
+    core::ptr::copy_nonoverlapping(p, block, len);
+    core::ptr::copy_nonoverlapping(table as *const u8, block.add(32), size);
+    let copied = block as usize + 32;
+    let sum = |from: usize, n: usize| {
+        core::slice::from_raw_parts(block.add(from), n).iter().fold(0u8, |s, b| s.wrapping_add(*b))
+    };
+    if v3 {
+        core::ptr::write_unaligned(block.add(16) as *mut u64, copied as u64);
+        *block.add(5) = 0;
+        *block.add(5) = 0u8.wrapping_sub(sum(0, len));
+    } else {
+        if copied > u32::MAX as usize {
+            return core::ptr::null_mut();
+        }
+        core::ptr::write_unaligned(block.add(24) as *mut u32, copied as u32);
+        // `_DMI_` intermediate checksum (bytes 0x10-0x1E) at 0x15, then the whole.
+        *block.add(0x15) = 0;
+        *block.add(0x15) = 0u8.wrapping_sub(sum(0x10, 0x0F));
+        *block.add(4) = 0;
+        *block.add(4) = 0u8.wrapping_sub(sum(0, len));
+    }
+    block
+}
