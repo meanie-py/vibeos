@@ -658,3 +658,15 @@ def test_remap_moves_a_cell_off_cmake_archives(tmp_path):
     cml = (tmp_path / "base/m/CMakeLists.txt").read_text()
     assert "M_REUSED" not in cml
     assert "EXTRA_DEPENDS m_res psdk xdk)" in cml
+
+
+def test_rebound_exports_name_what_the_spec_actually_exports():
+    """REBOUND_EXPORTS accepts a module whose exports cmake bound to import thunks. Every
+    name listed must still be an export of that module's spec, or the acceptance is
+    covering for something that no longer exists."""
+    repo = Path(__file__).resolve().parent.parent
+    specs = {"user32_vista": repo / "win32ss/user/user32_vista/user32_vista.spec"}
+    for module, names in g.REBOUND_EXPORTS.items():
+        text = specs[module].read_text()
+        for name in names:
+            assert f" {name}(" in text, f"{module}: {name} is no longer exported"

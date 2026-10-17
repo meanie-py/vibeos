@@ -71,6 +71,15 @@ DEAD_IMPORTS = {
     # The engine archives the shim objects, so whether lld keeps it varies by arch.
     "sndvol32": {"kernel32.dll!FormatMessageW"},
 }
+# Modules whose cmake link bound an EXPORT to an import thunk of the same name, which the
+# cell fixes by linking the body first. user32_vista (2026-10-17): its `dpi.c` was an object
+# in the C link, so it won; the cohab flip moved it into an archive that loses to user32's
+# import library, so user32_vista.dll exported user32!GetDpiFor* while user32.dll (export
+# version 0x502) forwards those names to user32_vista: a forwarding cycle on every arch, and
+# dpi.rs was never linked. The cell's only accepted difference is losing those imports.
+REBOUND_EXPORTS = {
+    "user32_vista": {"GetDpiForSystem", "GetDpiForWindow"},
+}
 # The engine builds a body with `-C force-frame-pointers=yes` (stack walks need them) where
 # cmake's rust_staticlib_variant did not; a frame pointer can push a big frame over the
 # probe threshold. ntdll exports __chkstk on amd64/arm64 and kernel32 forwards it there.
@@ -1388,7 +1397,8 @@ def model(target: str, repo: Path = REPO) -> Cell:
         raise GenError(f"{target}: subsystem set on some arches only {subs}")
     panics = {a: carries_panic_handler(repo / f"build-{a}" / links[a].output) for a in ARCHES}
     for a in ARCHES:
-        if bound := _exports_bound_to_imports(repo / f"build-{a}" / links[a].output):
+        bound = _exports_bound_to_imports(repo / f"build-{a}" / links[a].output)
+        if bound and not bound <= REBOUND_EXPORTS.get(target, set()):
             # user32_vista: cmake's link resolved its exports to user32's import thunks
             # before it reached the body, so the Rust is never linked and the DLL only
             # forwards. A cell links the body first, which is a different module.
@@ -1437,7 +1447,13 @@ def model(target: str, repo: Path = REPO) -> Cell:
         panics=panics,
         body_var=facts["body_var"],
         late_libs=late,
-        link_order=orders,
+        # REBOUND_EXPORTS: the body ahead of the import libs, so a name both exported
+        # and imported binds to the body's definition, not the import thunk.
+        link_order=(
+            {a: ["body"] + [x for x in o if x != "body"] for a, o in orders.items()}
+            if target in REBOUND_EXPORTS
+            else orders
+        ),
         no_cab=facts["no_cab"],
         kernel_kind=facts.get("module_type", "") if module_kind == "KernelDll" else "",
         custom_body=custom or {},
@@ -1898,6 +1914,12 @@ def check(targets: list[str], baseline: Path, repo: Path = REPO) -> int:
                 and not _cell_uses_panic_common(t, a, repo)
             }
             dead = {d for d in diffs if d.removeprefix("imports: - ") in DEAD_IMPORTS.get(t, ())}
+            rebound = {
+                d
+                for d in diffs
+                if d.startswith("imports: - ") and d.split("!")[-1] in REBOUND_EXPORTS.get(t, set())
+            }
+            dead |= rebound
             # A panic-lean cell links only what its body, CRT and exports reach; cmake's
             # link also kept whatever shared an archive member with the body's panic
             # path. An import can only vanish when no linked code references it, so the
@@ -1917,6 +1939,18 @@ def check(targets: list[str], baseline: Path, repo: Path = REPO) -> int:
                 diffs.append(
                     f"size: mapped image grew {grew // 1024} KB (slack {SIZE_SLACK // 1024})"
                 )
+            # REBOUND_EXPORTS: cmake's module never linked the body, so the cell is a
+            # different (fixed) module. What linking the body brings is accepted and
+            # reported: imports it calls, sections it has, the size it adds. Losing an
+            # export, a resource or a CD placement still fails.
+            rebound_diffs = set()
+            if t in REBOUND_EXPORTS:
+                rebound_diffs = {
+                    d
+                    for d in diffs
+                    if d.startswith(("imports: + ", "sections: + ", "size: mapped image grew"))
+                }
+                diffs = [d for d in diffs if d not in rebound_diffs]
             # Where the CDs put it. cmake's `FOR all` is the live CD plus reactos.cab; the
             # cell's add_cargo_module also lays the file loose on the boot CD, which is the
             # one accepted addition. Anything removed is a file some CD or install lost.
@@ -1936,6 +1970,13 @@ def check(targets: list[str], baseline: Path, repo: Path = REPO) -> int:
                 diffs += [f"cd: - {x}" for x in sorted(gone)]
                 diffs += [f"cd: + {x}" for x in sorted(added - loose)]
             note = " (+ panic_common imports)" if extra else ""
+            note += (
+                f" (rebound exports: linked the body; {len(rebound_diffs)} expected differences: "
+                + "; ".join(sorted(rebound_diffs))
+                + ")"
+                if rebound_diffs
+                else ""
+            )
             note += " (+ loose on the boot CD)" if loose else ""
             note += " (- cab: txtsetup.sif installs it)" if note_txtsetup else ""
             note += " (+ rsbegin .ctors/.dtors)" if rsbegin else ""
