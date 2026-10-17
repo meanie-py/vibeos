@@ -2196,6 +2196,13 @@ def test_vibeos_root_env_wins(tmp_path, monkeypatch):
     assert cachecfg.vibeos_root(tmp_path / "repo") == (tmp_path / "custom").resolve()
 
 
+def test_vibeos_root_climbs_out_of_a_premerge_worktree(monkeypatch):
+    monkeypatch.delenv("VIBEOS_ROOT", raising=False)
+    parent = Path("/home/u/Projects/os-playground")
+    premerge = parent / "vibeos/.git/vibeos-premerge/vibeos-gicv3-1234"
+    assert cachecfg.vibeos_root(premerge) == parent
+
+
 def test_vibeos_root_defaults_to_repo_parent(monkeypatch):
     monkeypatch.delenv("VIBEOS_ROOT", raising=False)
     # main checkout and a sibling worktree must resolve to the SAME root → shared
@@ -12184,3 +12191,20 @@ def test_scan_const_contradictions_keys_associated_consts_by_their_type(tmp_path
         "CFontsDialog::IDD": [710],
         "IDD": [5],
     }
+
+
+def test_a_build_input_edited_mid_build_is_named_and_a_doc_is_not(tiny_repo: Path):
+    """The stamp and warm receipt fingerprint the tree when the build ENDS, so an edit
+    made after ninja compiled the file read as built. `_inputs_moved` compares the tree
+    the build started from with the one it would stamp, scoped like the stamp."""
+    from . import warmth
+
+    start = warmth.worktree_tree(tiny_repo)
+    assert build_mod._inputs_moved(tiny_repo, start) == []
+    (tiny_repo / "docs").mkdir()
+    (tiny_repo / "docs" / "note.md").write_text("mid-build doc edit\n")
+    assert build_mod._inputs_moved(tiny_repo, start) == []
+    (tiny_repo / "a.txt").write_text("edited after ninja compiled it\n")
+    (tiny_repo / "new.c").write_text("int x;\n")
+    assert build_mod._inputs_moved(tiny_repo, start) == ["a.txt", "new.c"]
+    assert build_mod._inputs_moved(tiny_repo, None) == []

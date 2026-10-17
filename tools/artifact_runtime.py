@@ -499,6 +499,64 @@ def retire_build_refs(supervisor, *, _api=None):
     return retired
 
 
+GC_INTERVAL_SECONDS = 24 * 3600
+
+
+def lane_ref_alive(reference: dict, *, canonical_root: str | None = None) -> bool:
+    """Is the consumer a durable ref was bound for still there?
+
+    A ref's lane is the worktree path, and a `cargo:` consumer names the build-script
+    `out` directory under the canonical mount (`/tmp/vibeos`, which is the lane during
+    its build). Map it back to the lane and look. A missing worktree, or an `out`
+    directory cargo has since replaced, can never link the blob again. Unknown consumer
+    shapes are kept: this only ever answers "dead" for something it can see is gone.
+    """
+    lane = Path(reference["lane"])
+    if not lane.is_dir():
+        return False
+    consumer = reference["consumer"]
+    if not consumer.startswith("cargo:"):
+        return True
+    fields = consumer[len("cargo:") :].split("|")
+    root = (canonical_root or os.environ.get("VIBEOS_CANON") or "/tmp/vibeos").rstrip("/")
+    if len(fields) < 2 or not fields[1].startswith(root + "/"):
+        return True
+    return (lane / fields[1][len(root) + 1 :]).is_dir()
+
+
+def scheduled_gc(store_root: Path, *, now: float | None = None, force: bool = False):
+    """Collect the shared store at most once per GC_INTERVAL_SECONDS. Returns the report
+    or None when skipped.
+
+    Run after a green build (build.py), so the fleet needs no cron and no owner: whichever
+    lane finishes first after the interval does it, under the store's own GC lock and
+    a non-blocking claim so two lanes never queue up behind each other. The kill switch
+    is a `gc-disabled` file in the store root, outside every worktree, so it reaches
+    every lane at once.
+    """
+    import fcntl
+
+    if not (store_root / "v1").is_dir() or (store_root / "gc-disabled").exists():
+        return None
+    stamp = store_root / "last-gc"
+    now = time.time() if now is None else now
+    try:
+        if not force and now - stamp.stat().st_mtime < GC_INTERVAL_SECONDS:
+            return None
+    except FileNotFoundError:
+        pass
+    with open(store_root / "gc-claim.lock", "w") as claim:
+        try:
+            fcntl.flock(claim, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return None
+        report = _apis().storage.Store(store_root).gc(apply=True, ref_alive=lane_ref_alive)
+        stamp.write_text(
+            json.dumps({"at": now, **{k: len(v) for k, v in report.items() if isinstance(v, list)}})
+        )
+        return report
+
+
 def _execute(repo, broker, output, executor):
     if os.environ.get("VIBEOS_HOST_JOB_HELD") == "1":
         return executor.run(output)
@@ -755,8 +813,12 @@ def request(
             raise RuntimeError_("store result/action verification mismatch")
         lookup_build_seconds = time.monotonic() - lookup_started
         revalidation_started = time.monotonic()
-        current = api.inputs.discover(
-            repo, body, context, cargo=str(toolchain / "bin/cargo"), **options
+        current = (
+            discovery
+            if api.inputs.unchanged(discovery)
+            else api.inputs.discover(
+                repo, body, context, cargo=str(toolchain / "bin/cargo"), **options
+            )
         )
         if not current.get("eligible") or current.get("action_key") != expected:
             raise RuntimeError_("lane inputs changed while waiting/building the artifact")
