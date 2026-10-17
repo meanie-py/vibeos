@@ -1890,7 +1890,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the balancer wait under AddressCreationLock, syssetup's unattended display settings for
   inactive adapters, serial's PnP queries, comctl32 TB_SETMETRICS, dhcpcsvc RegCloseKey,
   kbd103 generated. Already ours: TrimWsList's flush, NtRemoveIoCompletion's zeroed status,
-  AmILastThread on ActiveThreads, the fiber checks. Then translated sealed on Haiku and integrated ($0.10): DeviceProperty (`pnpprop.c` -> ntoskrnl-rust pnpmgr/pnpprop.rs, plus its hooks: the property-change event, interface keys, release on IopDeleteDevice, kernel-mode Rtl locale table) and x86/x64 cache enumeration (`cacheinfo.c` -> ke/x86x64, with both KiGetCacheInformation rewritten onto it; amd64 cpu.rs had Intel/AMD swapped against ketypes.h since 0e95a343b33). Storport re-ported over its old crate with `rustconv port` (owner's call, 2026-10-16; all 8 TUs incl. upstream's new `ioctl.c`/`srb.c`, plus inline.h; $0.25 Haiku, 0/0/0 from a $0 `port replay`). Done since (2026-10-16): IoGet/SetDeviceInterfacePropertyData exported from pnpprop.rs, and ntoskrnl_vista's NOT_IMPLEMENTED copies removed so drivers import them (upstream's copies forward through MmGetSystemRoutineAddress for kernels without them, 3cc9aa99292; ours always has them; cdrom's extern was cdecl), with upstream's `IoDeviceProperty` kmtest added to the sweep (653/0 on all three arches); shell32's RegenerateUserEnvironment ported (c25e4fd7dec; its apitest 8/0 on amd64). Owed from it: mmc_new's views (c0f01460800, 857f521a704) and CActionWnd.cpp (88da81d9b8b) -- re-rendering the C++ model misses every banked unit (257 functions), so it waits on the owner's re-buy call. Owed, by cluster (upstream-sync): pciidex rewrite
+  AmILastThread on ActiveThreads, the fiber checks. Then translated sealed on Haiku and integrated ($0.10): DeviceProperty (`pnpprop.c` -> ntoskrnl-rust pnpmgr/pnpprop.rs, plus its hooks: the property-change event, interface keys, release on IopDeleteDevice, kernel-mode Rtl locale table) and x86/x64 cache enumeration (`cacheinfo.c` -> ke/x86x64, with both KiGetCacheInformation rewritten onto it; amd64 cpu.rs had Intel/AMD swapped against ketypes.h since 0e95a343b33). Storport re-ported over its old crate with `rustconv port` (owner's call, 2026-10-16; all 8 TUs incl. upstream's new `ioctl.c`/`srb.c`, plus inline.h; $0.25 Haiku, 0/0/0 from a $0 `port replay`). Done since (2026-10-16): IoGet/SetDeviceInterfacePropertyData exported from pnpprop.rs, and ntoskrnl_vista's NOT_IMPLEMENTED copies removed so drivers import them (upstream's copies forward through MmGetSystemRoutineAddress for kernels without them, 3cc9aa99292; ours always has them; cdrom's extern was cdecl), with upstream's `IoDeviceProperty` kmtest added to the sweep (653/0 on all three arches); shell32's RegenerateUserEnvironment ported (c25e4fd7dec; its apitest 8/0 on amd64). Then (2026-10-17, owner approved the re-buy) mmc_new's views (c0f01460800, 857f521a704) and CActionWnd.cpp (88da81d9b8b): 37 functions re-bought on Haiku ($0.34), the rest replayed from banks; the stale banks fixed by hand, CActionWnd on the module's own ATL window machinery, and five list-slot casts, a swapped icon-mode pair and two C bugs (a never-set selected node, a VARIANT leak) fixed after review. Owed, by cluster (upstream-sync): pciidex rewrite
   (~15K lines), PCIX arbiters/ECAM, netcfgx and dhcpcsvc alternate configuration, freeldr
   disk registration and boot menu, the Wine 10 ole32/oleaut32/mlang/crypt syncs, msgina and
   syssetup branding. **The msgina branding commit (6ae2d5ab43f) deleted IDI_ROSLOGO/IDI_BAR,
@@ -6640,7 +6640,25 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   passing rungs keep reporting. Note the smoke gate stays GREEN through this: the boot
   marker fires long before the ladder runs.
 - **All 1962 Rust-kernel `debug_assert!` are compiled OUT, while the C `ASSERT` they were
-  translated from is LIVE — OPEN** (2026-07-25, task #72, §9.135). `debug_assert!` is gated on
+  translated from is LIVE — IN PROGRESS: `ntoskrnl-rust` ARMED 2026-10-16** (2026-07-25, task
+  #72, §9.135). The arm64 blocker (`ke/time.rs` KSYSTEM_TIME store) is fixed, see below. On the
+  first armed boot two translation bugs fired at once on all three arches, both invisible
+  while the checks compiled to nothing: `MiResolveDemandZeroFault` asserted `PrototypePte != 0`
+  where the C says `== 0`, and `MiCheckVirtualAddress` compared `VadType` against invented
+  numbers (2 for VadDevicePhysicalMemory, 0 for VadImageMap). The same invention was LIVE in
+  `NtQueryVirtualMemory`, which reported every image view as `MEM_PRIVATE` and device-physical
+  memory as `MEM_IMAGE`; all now use the `_MI_VAD_TYPE_*` names. Armed, all three arches then
+  booted green UP and `-smp 2` (amd64 with the ladder), and kmtest conformance held on all
+  three. **ex-rust and hal-rust ARMED 2026-10-17**, finding: `NtGlobalFlag`'s DBG bits invented
+  (0x20, heap free-checking in every process, for the C's close-exception/symbol-load bits);
+  HAL writes through pointers into the pack(4) resource descriptor (now unaligned writes);
+  `ExRaiseHardError`/`ExInitializeResourceLite` must fault on NULL like the C (kmtest); and i386
+  interrupt frames at odd addresses from LLVM's leaf frames, so i386 kernel code builds with
+  `-Zub-checks=no`. Field manual: "Arming `debug-assertions` also arms rustc's UB checks".
+  **ob-rust, ps-rust, se-rust, iomgr-rust, config-rust and cc-rust ARMED 2026-10-17** (their 28
+  never-compiled `cfg(debug_assertions)` blocks included): green first boot, UP and `-smp 2`, and
+  kmtest conformance on all three arches. **Next:** restore the 89 asserts `scan_dropped_asserts`
+  baselines, now that the kernel core actually checks them; then the loader/FS/driver tail. `debug_assert!` is gated on
   `cfg(debug_assertions)`; `sdk/lib/rust/Cargo.toml`'s `[profile.release]` never sets it, so
   cargo's release default (off) applies and every kernel crate builds `--release`. Meanwhile
   `CMakeLists.txt:233` sets `-DDBG=1`, so the C original calls `RtlAssert`. **The mirror of

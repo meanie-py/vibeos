@@ -17,6 +17,19 @@
 #![allow(static_mut_refs)]
 
 use core::ffi::c_void;
+// The crate's own functions: the definition is the declaration.
+pub use crate::marshal::marshal::CoMarshalInterface;
+pub use crate::marshal::marshal::CoReleaseMarshalData;
+pub use crate::marshal::marshal::CoUnmarshalInterface;
+pub use crate::ring::hglobalstream::CreateStreamOnHGlobal;
+pub use crate::marshal::rpc::RPC_ExecuteCall;
+pub use crate::marshal::marshal::apartment_disconnectproxies;
+pub use crate::marshal::git::get_std_git;
+pub use crate::marshal::stubmanager::get_stub_manager_from_object;
+pub use crate::marshal::stubmanager::stub_manager_disconnect;
+pub use crate::marshal::stubmanager::stub_manager_ext_addref;
+pub use crate::marshal::stubmanager::stub_manager_ext_release;
+pub use crate::marshal::stubmanager::stub_manager_int_release;
 use core::mem::{offset_of, size_of};
 use core::ptr::{null, null_mut};
 
@@ -67,23 +80,7 @@ extern "system" {
     pub fn CoTaskMemAlloc(size: SIZE_T) -> PVOID;
     pub fn CoTaskMemFree(ptr: PVOID);
     // hglobalstream.c
-    pub fn CreateStreamOnHGlobal(
-        hGlobal: HANDLE,
-        fDeleteOnRelease: BOOL,
-        ppstm: *mut *mut IStream,
-    ) -> HRESULT;
     // marshal.c (Lane B)
-    pub fn CoMarshalInterface(
-        pStream: *mut IStream,
-        riid: REFIID,
-        pUnk: *mut IUnknown,
-        dwDestContext: DWORD,
-        pvDestContext: PVOID,
-        mshlFlags: DWORD,
-    ) -> HRESULT;
-    pub fn CoUnmarshalInterface(pStream: *mut IStream, riid: REFIID, ppv: *mut *mut c_void)
-        -> HRESULT;
-    pub fn CoReleaseMarshalData(pStream: *mut IStream) -> HRESULT;
     // bindctx.c
     pub fn CreateBindCtx(reserved: DWORD, ppbc: *mut *mut IBindCtx) -> HRESULT;
     // moniker.c
@@ -107,22 +104,7 @@ extern "system" {
 // cdecl private helpers.
 extern "C" {
     // marshal.c (Lane B)
-    pub fn apartment_disconnectproxies(apt: *mut apartment) -> HRESULT;
     // stubmanager.c (Lane B)
-    pub fn stub_manager_int_release(m: *mut stub_manager) -> ULONG;
-    pub fn stub_manager_ext_addref(m: *mut stub_manager, refs: ULONG, tableweak: BOOL) -> ULONG;
-    pub fn stub_manager_ext_release(
-        m: *mut stub_manager,
-        refs: ULONG,
-        tableweak: BOOL,
-        last_unlock_releases: BOOL,
-    ) -> ULONG;
-    pub fn get_stub_manager_from_object(
-        apt: *mut APARTMENT,
-        object: *mut IUnknown,
-        alloc: BOOL,
-    ) -> *mut stub_manager;
-    pub fn stub_manager_disconnect(m: *mut stub_manager);
     // rpc.c (Lane B)
     pub fn RPC_StartLocalServer(
         clsid: REFCLSID,
@@ -135,11 +117,9 @@ extern "C" {
         -> HRESULT;
     pub fn RPC_RegisterChannelHook(rguid: REFGUID, hook: *mut IChannelHook) -> HRESULT;
     pub fn RPC_UnregisterAllChannelHooks();
-    pub fn RPC_ExecuteCall(params: *mut dispatch_params);
     // ftmarshal.c (Lane B)
     pub fn FTMarshalCF_Create(riid: REFIID, ppv: *mut *mut c_void) -> HRESULT;
     // git.c (Lane B)
-    pub fn get_std_git() -> *mut IGlobalInterfaceTable;
     pub fn release_std_git();
     // defaulthandler.c
     pub fn HandlerCF_Create(rclsid: REFCLSID, riid: REFIID, ppv: *mut *mut c_void) -> HRESULT;
@@ -1070,12 +1050,12 @@ unsafe fn get_local_server_stream(apt: *mut APARTMENT, ret: *mut *mut IStream) -
             (*obj).ref_ = 1;
             (*obj).apt = apt;
 
-            hres = CreateStreamOnHGlobal(null_mut(), TRUE, &raw mut (*obj).marshal_stream);
+            hres = CreateStreamOnHGlobal(null_mut(), TRUE, (&raw mut (*obj).marshal_stream).cast());
             if SUCCEEDED(hres) {
                 hres = CoMarshalInterface(
-                    (*obj).marshal_stream,
-                    &IID_IServiceProvider,
-                    &raw mut (*obj).IServiceProvider_iface as *mut IUnknown,
+                    ((*obj).marshal_stream).cast(),
+                    (&raw const IID_IServiceProvider).cast(),
+                    (&raw mut (*obj).IServiceProvider_iface as *mut IUnknown).cast(),
                     MSHCTX_LOCAL,
                     null_mut(),
                     MSHLFLAGS_TABLESTRONG,
@@ -1241,7 +1221,7 @@ pub unsafe extern "C" fn apartment_release(apt: *mut apartment) -> DWORD {
 
             let s = (*local_server).marshal_stream;
             ((*(*s).lpVtbl).Seek)(s, zero, STREAM_SEEK_SET, null_mut());
-            CoReleaseMarshalData(s);
+            CoReleaseMarshalData((s).cast());
             ((*(*s).lpVtbl).Release)(s);
             (*local_server).marshal_stream = null_mut();
 
@@ -1257,7 +1237,7 @@ pub unsafe extern "C" fn apartment_release(apt: *mut apartment) -> DWORD {
         /* no locking is needed for this apartment, because no other thread
          * can access it at this point */
 
-        apartment_disconnectproxies(apt);
+        apartment_disconnectproxies((apt).cast());
 
         if !(*apt).win.is_null() {
             DestroyWindow((*apt).win);
@@ -1278,7 +1258,7 @@ pub unsafe extern "C" fn apartment_release(apt: *mut apartment) -> DWORD {
              * stub manager list in the apartment and all non-apartment users
              * must have a ref on the apartment and so it cannot be destroyed).
              */
-            stub_manager_int_release(stubmgr);
+            stub_manager_int_release((stubmgr).cast());
             cursor = cursor2;
         }
 
@@ -1561,9 +1541,9 @@ unsafe fn apartment_hostobject(
     }
 
     hr = CoMarshalInterface(
-        (*params).stream,
-        &(*params).iid,
-        object,
+        ((*params).stream).cast(),
+        (&raw const (*params).iid).cast(),
+        (object).cast(),
         MSHCTX_INPROC,
         null_mut(),
         MSHLFLAGS_NORMAL,
@@ -1585,7 +1565,7 @@ unsafe extern "system" fn apartment_wndproc(
 ) -> LRESULT {
     match msg {
         DM_EXECUTERPC => {
-            RPC_ExecuteCall(lParam as *mut dispatch_params);
+            RPC_ExecuteCall((lParam as *mut dispatch_params).cast());
             0
         }
         DM_HOSTOBJECT => {
@@ -1727,7 +1707,7 @@ unsafe fn apartment_hostobject_in_hostapt(
     params.regdata = core::ptr::read(regdata);
     params.clsid = *rclsid;
     params.iid = *riid;
-    hr = CreateStreamOnHGlobal(null_mut(), TRUE, &raw mut params.stream);
+    hr = CreateStreamOnHGlobal(null_mut(), TRUE, (&raw mut params.stream).cast());
     if FAILED(hr) {
         return hr;
     }
@@ -1753,7 +1733,7 @@ unsafe fn apartment_hostobject_in_hostapt(
         }
     }
     if SUCCEEDED(hr) {
-        hr = CoUnmarshalInterface(params.stream, riid, ppv);
+        hr = CoUnmarshalInterface((params.stream).cast(), (riid).cast(), ppv);
     }
     let s = params.stream;
     ((*(*s).lpVtbl).Release)(s);
@@ -2239,7 +2219,7 @@ pub unsafe extern "system" fn CoDisconnectObject(lpUnk: *mut IUnknown, reserved:
         return CO_E_NOTINITIALIZED;
     }
 
-    let manager = get_stub_manager_from_object(apt, lpUnk, FALSE);
+    let manager = get_stub_manager_from_object((apt).cast(), (lpUnk).cast(), FALSE);
     if !manager.is_null() {
         stub_manager_disconnect(manager);
         /* Release stub manager twice, to remove the apartment reference. */
@@ -3784,7 +3764,7 @@ pub unsafe extern "system" fn CoLockObjectExternal(
         return CO_E_NOTINITIALIZED;
     }
 
-    let stubmgr = get_stub_manager_from_object(apt, pUnk, fLock);
+    let stubmgr = get_stub_manager_from_object((apt).cast(), (pUnk).cast(), fLock);
     if stubmgr.is_null() {
         WARN!();
         /* Note: native is pretty broken here because it just silently

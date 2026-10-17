@@ -44,6 +44,23 @@ Lessons a resume or the next batch should know:
   belongs in `ntkrnl_sys::inline`, per arch. The island's extern links on x86 and
   fails on arm64.
 
+**Graded 2026-10-16 (`audio-convert-difftest`, $0).** kmixer's `pin.c` and wdmaud.drv's
+`mixer.c` carry the same PCM converters, and their C is right in only two cases: 8-bit
+channel up-mixing and 16→32-bit. Everywhere else it is wrong:
+- The channel converter sizes its buffer in samples, not bytes. It reads the input at
+  byte offsets, fills one channel too many on the last frame, and reports a sample count
+  as the length. So every 16-bit mono↔stereo stream overran the pool (kmixer) or the
+  heap (wdmaud.drv).
+- The quality converter never re-centres unsigned 8-bit samples. 8→32 maps silence to full
+  scale.
+- Under `_X86_` it byte-swaps every sample, so i386 produced different audio from amd64 for
+  the same stream.
+
+The Rust in both crates now does the right thing, with divergence comments. The harness
+grades it against the C where the C is defined, and against an independent PCM model
+everywhere else. It also pins each C defect, so a later fix to the C shows up as a test
+change.
+
 What the batch added to the shared crates and tools:
 - **mmebuddy-macros-rust** (new): `mmebuddy_debug.h` / `mmebuddy.h` / `sndtypes.h` statement
   macros, in a quiet `_NDEBUG` and a printing `_DBG` flavour (mmebuddy and wdmaud.drv define
@@ -64,7 +81,29 @@ What the batch added to the shared crates and tools:
    which this tree does not carry), and nothing links sound's `shared` (`audio`) or
    `uartmidi`. Their `add_subdirectory` lines are commented out with the reason; the C stays
    on disk, so re-enabling one is a one-line change if a consumer ever arrives.
-2. Pick the next native area from `rust-port-status.md` (what is still C and not on the
+2. **The static `crt` library is pruned too** (`#include(crt.cmake)`, 2026-10-16). Nothing
+   linked it and no target pulled it in, so its ~720 TUs only appeared in
+   compile_commands.json.
+3. **Audio difftests, round two (2026-10-17, `mmixer-difftest`, $0).** Both mmixer findings
+   from the survey were real and are fixed:
+   - `MMixerSetGetVolumeControlDetails` reported full volume as 0x10000, one past the
+     control's 0xFFFF maximum, and wrapped a driver value outside its range. The Rust
+     clamps; the C formula is kept.
+   - The topology walkers: `MMixerAddPinIndexToArray` had no equality case, so a pin or node
+     reached along two paths was listed twice. With the array full that pushed the count
+     past MaxPins. Neither walker skipped a visited node; they only ASSERTed, and ASSERT!
+     compiles out in the Rust, so a cycle would recurse without end. `GetUpOrDownstreamNodes`
+     also marked the parent where it meant the child. The harness grades trees exactly
+     against the C and diamonds and cycles against a reachability model.
+   - Still owed: mmebuddy's `DoWaveStreaming`/`CompleteIO` looped-playback state machine
+     (`streaming.c`), which never counts its loops down.
+4. **Batch H flipped (2026-10-17):** reactos.exe, blue, ndisuio, netio, rtl8139, tdi and
+   tzlib. The row in rust-port-status.md has the details. After it, the ReactOS-native
+   plain-C tail is small: tdihelpers (owed below), sdk/lib/crt's `strtol` lib, normaliz's
+   native part, the boot loader's `blcmlib`/`blrtl`, and cdrom's data TUs. The rest is Wine
+   (needs the owner's call) or other lanes'. Measured from build-amd64/compile_commands.json,
+   filtering any TU with a Wine debug channel or `wine/` include.
+5. Pick the next native area from `rust-port-status.md` (what is still C and not on the
    skip list below).
 
 ## Not ours: skip these
@@ -87,6 +126,25 @@ driver (`tools/merge_drivers.py`, which also merges the cohab census), and psapi
 2026-10-16. The first run per stem compiles ntkrnl-sys cold in its private
 `target-<arch>`, which is the likely source of the earlier figure.
 
+- **tdihelpers needs one shared crate** (owed since 2026-10-17). `drivers/network/tdihelpers/
+  tdi.c`/`tdiconn.c` compile into BOTH afd.sys and netio.sys, so translate refuses them
+  ("no proven CMake source owner"), and buying them per driver would pay twice. netio was
+  ported with `port derive --keep-c tdi.c tdiconn.c`; they stay C in both drivers until a
+  `tdihelpers-rust` static crate exists that both link.
+- **`port macros` loses two things a hand fix then has to restore** (reactos.exe): it does
+  not widen integer operands (`GetDiskSizeInBytes` needed `as ULONGLONG`) and it drops the
+  `!` when one lowered macro calls another (`SetDlgItemFont` -> `SetWindowFont!`). The three
+  hand edits live inside reactos-rust's generated prelude block, so a `port macros` re-run
+  reverts them.
+- **usetup's cabinet/file-queue code exists twice** (usetup-rust, and reactos-rust's
+  `fileqsup.rs`, because the C `#include`s the .c files). One shared crate, like tdihelpers.
+- **`port flip` of a static library misses cargo cells.** timedate.cpl's cell linked
+  `engine:c:tzlib` (now only a stub) and failed every arch's link until it was pointed at
+  `engine:tzlib_rust`. flip should find `engine:c:<target>` users and rewrite or refuse.
+- **The live cost counter skips failed attempts.** Every attempt's `result.json` has
+  `cost_usd: null`, and a body that ends in `max_tokens` is never added to the running total
+  (DriveDlgProc's two 32K-token failures printed `$0.0000`). Batch H's real spend was summed
+  from the attempts' token counts. The counter should bill every attempt it sent.
 - The three tech-debt items are in the roadmap's "Known bugs & flakes" registry, so they
   are not repeated here:
   - the i386-uefi install's fastfat flush fault;

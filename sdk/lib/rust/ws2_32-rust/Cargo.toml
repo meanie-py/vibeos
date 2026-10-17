@@ -31,6 +31,11 @@ name = "ws2_32_rust"
 path = "src/lib.rs"
 crate-type = ["staticlib"]
 
+[features]
+# Declared so a misspelled gate warns; never enabled: dllmain.c's
+# `#if (DLL_EXPORT_VERSION >= _WIN32_WINNT_VISTA)`, and ws2_32 exports at 0x502.
+vista_or_later = []
+
 [dependencies]
 win32macros-rust = { path = "../win32macros-rust" }
 panic-common = { path = "../panic-common", features = ["user"] }

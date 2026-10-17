@@ -220,8 +220,10 @@ pub unsafe extern "system" fn cicGetFN__T12(hinstDLL: &mut HINSTANCE, r#fn: &mut
     *r#fn = Some(core::mem::transmute(GetProcAddress(*hinstDLL, pszFuncName)));
     return (*r#fn).is_some() as BOOL;
 }
-pub unsafe extern "system" fn cicGetFN__T13(hinstDLL: *mut HINSTANCE, r#fn: *mut unsafe extern "system" fn(LPVOID, i32) -> u32, pszDllName: LPCTSTR, pszFuncName: LPCSTR) -> BOOL {
-    if !(*r#fn as *const ()).is_null() {
+// The cache slot is `Option`: C keeps it NULL until the first lookup, and a bare `fn` pointer
+// that holds NULL is undefined behaviour (and its null test compiles to `false`).
+pub unsafe extern "system" fn cicGetFN__T13(hinstDLL: *mut HINSTANCE, r#fn: *mut Option<unsafe extern "system" fn(LPVOID, i32) -> u32>, pszDllName: LPCTSTR, pszFuncName: LPCSTR) -> BOOL {
+    if (*r#fn).is_some() {
         return (TRUE) as BOOL;
     }
     if (*hinstDLL).is_null() {
@@ -231,11 +233,11 @@ pub unsafe extern "system" fn cicGetFN__T13(hinstDLL: *mut HINSTANCE, r#fn: *mut
         return (FALSE) as BOOL;
     }
     *r#fn = core::mem::transmute(GetProcAddress(*hinstDLL, pszFuncName));
-    return (!(*r#fn as *const ()).is_null()) as BOOL;
+    return (*r#fn).is_some() as BOOL;
 }
 
-pub unsafe extern "system" fn cicGetFN__T14(hinstDLL: *mut HINSTANCE, fn_: *mut unsafe extern "system" fn(*mut core::ffi::c_void, i32) -> i32, pszDllName: LPCTSTR, pszFuncName: LPCSTR) -> BOOL {
-    if (*fn_ as usize) != 0 {
+pub unsafe extern "system" fn cicGetFN__T14(hinstDLL: *mut HINSTANCE, fn_: *mut Option<unsafe extern "system" fn(*mut core::ffi::c_void, i32) -> i32>, pszDllName: LPCTSTR, pszFuncName: LPCSTR) -> BOOL {
+    if (*fn_).is_some() {
         return (TRUE) as BOOL;
     }
     if (*hinstDLL).is_null() {
@@ -245,7 +247,7 @@ pub unsafe extern "system" fn cicGetFN__T14(hinstDLL: *mut HINSTANCE, fn_: *mut 
         return (FALSE) as BOOL;
     }
     *fn_ = core::mem::transmute(GetProcAddress(*hinstDLL, pszFuncName));
-    return ((*fn_ as usize) != 0) as BOOL;
+    return (*fn_).is_some() as BOOL;
 }
 
 impl CicNoThrow {

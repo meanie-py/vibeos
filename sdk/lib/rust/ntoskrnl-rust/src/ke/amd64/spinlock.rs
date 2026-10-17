@@ -62,7 +62,7 @@ pub unsafe extern "C" fn KeAcquireInStackQueuedSpinLock(
     (*LockHandle).LockQueue.Next = core::ptr::null_mut();
     (*LockHandle).LockQueue.Lock = SpinLock as *mut u64;
     KeRaiseIrql(DISPATCH_LEVEL, &mut (*LockHandle).OldIrql);
-    KxAcquireSpinLock((*LockHandle).LockQueue.Lock as *mut _);
+    ntkrnl_sys::inline::ke::KxAcquireInStackQueuedSpinLock(core::ptr::addr_of_mut!((*LockHandle).LockQueue) as *mut ntkrnl_sys::ddk::KSPIN_LOCK_QUEUE);
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -74,7 +74,7 @@ pub unsafe extern "C" fn KeAcquireInStackQueuedSpinLockRaiseToSynch(
     (*LockHandle).LockQueue.Next = core::ptr::null_mut();
     (*LockHandle).LockQueue.Lock = SpinLock as *mut u64;
     KeRaiseIrql(SYNCH_LEVEL, &mut (*LockHandle).OldIrql);
-    KxAcquireSpinLock((*LockHandle).LockQueue.Lock as *mut _);
+    ntkrnl_sys::inline::ke::KxAcquireInStackQueuedSpinLock(core::ptr::addr_of_mut!((*LockHandle).LockQueue) as *mut ntkrnl_sys::ddk::KSPIN_LOCK_QUEUE);
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -91,7 +91,7 @@ pub unsafe extern "C" fn KeReleaseQueuedSpinLock(
 #[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub unsafe extern "C" fn KeReleaseInStackQueuedSpinLock(LockHandle: PKLOCK_QUEUE_HANDLE) {
-    KxReleaseSpinLock((*LockHandle).LockQueue.Lock as *mut _);
+    ntkrnl_sys::inline::ke::KxReleaseInStackQueuedSpinLock(core::ptr::addr_of_mut!((*LockHandle).LockQueue) as *mut ntkrnl_sys::ddk::KSPIN_LOCK_QUEUE);
     KeLowerIrql((*LockHandle).OldIrql);
 }
 

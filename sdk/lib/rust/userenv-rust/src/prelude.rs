@@ -11,6 +11,9 @@
 
 pub use crate::types::*;
 use core::ffi::c_void;
+// One declaration per external symbol: the variant matching the C prototype.
+pub use crate::userenv::profile::InitializeSecurityDescriptor;
+pub use crate::userenv::profile::SetSecurityDescriptorDacl;
 
 // bindgen emits `TRUE/FALSE: u32`, but Win32 `BOOL` is `c_int` (i32) and the translated
 // #[no_mangle] fns are declared `-> BOOL`; the u32 constants collide at every BOOL slot
@@ -126,8 +129,6 @@ extern "system" {
     pub fn FreeSid(pSid: PSID) -> PVOID;
     pub fn GetLengthSid(pSid: PSID) -> DWORD;
     pub fn AllocateAndInitializeSid(pIdentifierAuthority: *mut SID_IDENTIFIER_AUTHORITY, nSubAuthorityCount: u8, dwSubAuthority0: DWORD, dwSubAuthority1: DWORD, dwSubAuthority2: DWORD, dwSubAuthority3: DWORD, dwSubAuthority4: DWORD, dwSubAuthority5: DWORD, dwSubAuthority6: DWORD, dwSubAuthority7: DWORD, pSid: *mut PSID) -> BOOL;
-    pub fn InitializeSecurityDescriptor(pSecurityDescriptor: PVOID, dwRevision: DWORD) -> BOOL;
-    pub fn SetSecurityDescriptorDacl(pSecurityDescriptor: PVOID, bDaclPresent: BOOL, pDacl: PACL, bDaclDefaulted: BOOL) -> BOOL;
     pub fn InitializeAcl(pAcl: PACL, nAclLength: DWORD, dwAclRevision: DWORD) -> BOOL;
     pub fn AddAccessAllowedAce(pAcl: PACL, dwAceRevision: DWORD, AccessMask: DWORD, pSid: PSID) -> BOOL;
     pub fn LocalAlloc(uFlags: UINT, uBytes: usize) -> LPVOID;

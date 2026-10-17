@@ -156,6 +156,27 @@ impl SmoothDrawTool {
 }
 """
 
+# mmc_new 2026-10-17: atl_rust's CAtlList::GetNext returns the element's SLOT; the cast read
+# list-node memory as the window (WM_CLOSE to a bogus HWND, then a use-after-free).
+_ATL_SLOT_CAST_BAD = """
+unsafe fn close_all(this_: *mut CMainWnd) {
+    let mut pos: POSITION = (*this_).m_ViewList.GetHeadPosition();
+    while !pos.is_null() {
+        let console: *mut CConsoleWnd = (*this_).m_ViewList.GetNext(&mut pos) as *mut CConsoleWnd;
+        (*console).__base0.SendMessageW__0(WM_CLOSE, 0, 0);
+    }
+}
+"""
+_ATL_SLOT_CAST_GOOD = """
+unsafe fn close_all(this_: *mut CMainWnd) {
+    let mut pos: POSITION = (*this_).m_ViewList.GetHeadPosition();
+    while !pos.is_null() {
+        let console: *mut CConsoleWnd = *(*this_).m_ViewList.GetNext(&mut pos);
+        (*console).__base0.SendMessageW__0(WM_CLOSE, 0, 0);
+    }
+}
+"""
+
 # scan_bugcheck_stubs. Seeded from fastfat 2026-07-26: three boots, three stubs
 # (FatGenerateFileIdFromFcb -> FatOpenVolume -> ...), each a full build+boot to
 # discover something the tree already knew. The GOOD case pins the two ways this
@@ -517,6 +538,19 @@ _DEAD_CFG_GOOD = """\
 pub unsafe extern "fastcall" fn RtlPrefetchMemoryNonTemporal(_Source: PVOID, _Length: SIZE_T) {}
 #[cfg(all(target_arch = "x86_64", target_os = "windows"))]
 pub fn allowed() {}
+"""
+
+# scan_fnclass_cc. cdrom.h declares `EVT_WDF_WORKITEM DeviceRestoreDefaultSpeed;`, a WDF
+# work item the framework calls stdcall on i386; the Rust defined it cdecl (2026-10-17).
+_FNCLASS_BAD = """\
+#[no_mangle]
+pub unsafe extern "C" fn DeviceRestoreDefaultSpeed(WorkItem: WDFWORKITEM) {}
+"""
+_FNCLASS_GOOD = """\
+#[no_mangle]
+pub unsafe extern "system" fn DeviceRestoreDefaultSpeed(WorkItem: WDFWORKITEM) {}
+#[no_mangle]
+pub unsafe extern "C" fn StringsAreMatched(a: *const i8, b: *const i8) -> u8 { 0 }
 """
 
 # scan_version_vs_c. fastfat lockctrl.c gates the "only when it interferes with oplocks"
@@ -2210,6 +2244,28 @@ _LISTWALK_GOOD = _LISTWALK_BAD.replace(
     "(core::ptr::addr_of_mut!(Table) as *mut u8)", "(Table.next as *mut u8)"
 )
 
+# scan_list_walk_cursor_after_loop. Seeded from rtl-threadpool timerqueue_thread_proc
+# (2026-10-17): the re-arm walk left `other` at the LAST timer when none was later, so
+# list_add_before put the timer one place early; the C's cursor ends at the head.
+_LISTCURSOR_BAD = """\
+unsafe fn rearm(t: *mut obj) {
+    let head = core::ptr::addr_of_mut!(pending);
+    let mut other: *mut obj = core::ptr::null_mut();
+    let mut e = (*head).next;
+    while e != head {
+        other = (e as usize - core::mem::offset_of!(obj, entry)) as *mut obj;
+        if (*t).timeout < (*other).timeout {
+            break;
+        }
+        e = (*e).next;
+    }
+    list_add_before(core::ptr::addr_of_mut!((*other).entry), core::ptr::addr_of_mut!((*t).entry));
+}
+"""
+_LISTCURSOR_GOOD = _LISTCURSOR_BAD.replace(
+    "list_add_before(core::ptr::addr_of_mut!((*other).entry),", "list_add_before(e,"
+)
+
 # scan_dowhile_continue. Seeded from syssetup RegisterTypeLibraries (2026-10-04): a C
 # do-while's `continue` re-ran the same INF line forever once translated to `loop`.
 # scan_case_bitor_pattern. Seeded from comctl32 TREEVIEW_SelectItem (2026-10-09): C's
@@ -2631,6 +2687,13 @@ CONTROLS: list[Control] = [
         good={"irotp.rs": _LISTWALK_GOOD},
     ),
     Control(
+        name="scan_list_walk_cursor_after_loop",
+        script="tools/scan_list_walk_cursor_after_loop.py",
+        argv=["--lint", "--root"],
+        bad={"threadpool.rs": _LISTCURSOR_BAD},
+        good={"threadpool.rs": _LISTCURSOR_GOOD},
+    ),
+    Control(
         name="scan_dowhile_continue",
         script="tools/scan_dowhile_continue.py",
         argv=["--lint"],
@@ -2916,6 +2979,13 @@ CONTROLS: list[Control] = [
         good={"rust/eventlog-rust/src/file.rs": _NULL_PLACE_GOOD},
     ),
     Control(
+        name="scan_fnclass_cc",
+        script="tools/scan_fnclass_cc.py",
+        argv=["--lint"],
+        bad={"rust/cdrom-rust/src/common.rs": _FNCLASS_BAD},
+        good={"rust/cdrom-rust/src/common.rs": _FNCLASS_GOOD},
+    ),
+    Control(
         name="scan_version_vs_c",
         script="tools/scan_version_vs_c.py",
         argv=["--lint"],
@@ -2936,6 +3006,12 @@ CONTROLS: list[Control] = [
             "rust/user32-rust/src/windows/class.rs": _WIN64_CFG_GOOD,
             "rust/rtlk-rust/src/misc.rs": _DEAD_CFG_GOOD,
         },
+    ),
+    Control(
+        name="scan_atl_slot_cast",
+        script="tools/scan_atl_slot_cast.py",
+        bad={"mmc.rs": _ATL_SLOT_CAST_BAD},
+        good={"mmc.rs": _ATL_SLOT_CAST_GOOD},
     ),
     Control(
         name="scan_bitwise_not_bool",
@@ -3198,6 +3274,12 @@ CONTROLS: list[Control] = [
 # Lints deliberately NOT fixture-driven, each with the reason. Anything absent
 # from both this set and CONTROLS fails test_every_lint_is_accounted_for.
 UNCOVERED: dict[str, str] = {
+    "scan_cmake_linked_rust": (
+        "it models modules from build-amd64/build.ninja and the tree's own CMakeLists through "
+        "cargo_cell_gen.survey, so a fixture directory has nothing to survey. The labelling is "
+        "driven directly in tools/test_cargo_cell_gen.py: a module the generator accepts must "
+        "read `(convertible)` and a refused one `(refused)`, with a nonzero exit while any remain."
+    ),
     "scan_pack_drift": (
         "it maps every flipped module to its crate through the tree's own CMakeLists flip "
         "comments, so a fixture directory has no module to resolve. Driven directly in "
@@ -3504,6 +3586,25 @@ def test_irql_fixture_summary_resolves_cross_file_wrapper(tmp_path):
     )
     rc, out = _run(ctl, root)
     assert rc == 0 and out == ""
+
+
+def test_irql_std_path_does_not_inherit_a_workspace_name(tmp_path):
+    # Summaries are keyed by bare name: a sleeping workspace `fn read` must not
+    # make `core::ptr::read` under a spinlock look like a sleep.
+    ctl = next(c for c in CONTROLS if c.name == "scan_irql_balance")
+    sleeper = "unsafe fn read() {\nKeWaitForSingleObject(e, 0, 0, 0, t);\n}\n"
+    held = (
+        "unsafe fn caller(p: *const u32) -> u32 {{\nKeAcquireSpinLock(&mut l, &mut old);\n"
+        "let v = {call}(p);\nKeReleaseSpinLock(&mut l, old);\nv\n}}\n"
+    )
+    root = _materialize(
+        tmp_path, {"sleeper.rs": sleeper, "caller.rs": held.format(call="core::ptr::read")}
+    )
+    rc, out = _run(ctl, root)
+    assert rc == 0 and out == "", out
+    (root / "caller.rs").write_text(held.format(call="read"))
+    rc, out = _run(ctl, root)
+    assert rc == 0 and "IRQL_SLEEP_WHILE_HELD" in out, out
 
 
 def test_irql_cli_default_still_builds_whole_workspace_summaries(tmp_path):

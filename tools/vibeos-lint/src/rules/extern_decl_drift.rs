@@ -647,6 +647,7 @@ fn compare_returns(
     owner: &str,
     facts: &Facts,
     c_rets: &BTreeMap<String, (String, usize, String)>,
+    crt_rdefs: Option<&BTreeMap<String, Vec<(String, String)>>>,
     ty: &mut Types,
     out: &mut Vec<String>,
 ) {
@@ -706,6 +707,35 @@ fn compare_returns(
                             .to_string_lossy()
                     ),
                     ct.clone(),
+                )
+            } else if let Some(sites) = crt_rdefs.and_then(|defs| defs.get(sym)) {
+                let shapes = sites
+                    .iter()
+                    .map(|(_, ret)| {
+                        if ret.is_empty() {
+                            None
+                        } else {
+                            c_width(ret, ty)
+                        }
+                    })
+                    .collect::<BTreeSet<_>>();
+                if shapes.len() != 1 {
+                    continue; // disagreeing CRT definitions are not an authority
+                }
+                let Some(width) = shapes.iter().next().unwrap().clone() else {
+                    continue;
+                };
+                let (def_path, def_ty) = &sites[0];
+                (
+                    width,
+                    format!(
+                        "CRT def `-> {def_ty}` ({})",
+                        Path::new(def_path)
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                    ),
+                    def_ty.clone(),
                 )
             } else {
                 continue;
@@ -835,6 +865,38 @@ impl Rule for ExternDeclDrift {
                 }
             }
         }
+        const CRT_CRATES: &[&str] = &["ucrt-rust", "msvcrt-crt-rust"];
+        let crt_dirs = crate_dirs
+            .iter()
+            .filter(|dir| {
+                dir.file_name()
+                    .is_some_and(|n| CRT_CRATES.contains(&n.to_string_lossy().as_ref()))
+            })
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        let key_re = crate::regexes::cached(r"(?m)^\s*([A-Za-z0-9_-]+)\s*=").unwrap();
+        let kernel_dirs = manifests
+            .iter()
+            .filter_map(|m| {
+                let dir = m.path.parent()?;
+                (crate_dirs.contains(dir)
+                    && key_re
+                        .captures_iter(&m.text)
+                        .any(|cap| &cap[1] == "ntkrnl-sys"))
+                .then(|| dir.to_owned())
+            })
+            .collect::<BTreeSet<_>>();
+        let mut crt_rdefs = BTreeMap::<String, Vec<(String, String)>>::new();
+        for (sym, defs) in &facts.ret_def {
+            for (owner, path, ret) in defs {
+                if crt_dirs.contains(Path::new(owner)) {
+                    crt_rdefs
+                        .entry(sym.clone())
+                        .or_default()
+                        .push((path.clone(), ret.clone()));
+                }
+            }
+        }
         let mut types = Types {
             aliases: facts.aliases.clone(),
             aggregates: facts.aggregates.clone(),
@@ -848,8 +910,17 @@ impl Rule for ExternDeclDrift {
         let c_rets = c_return_oracle(&cfiles);
         for (crate_src, deps) in &sys_deps {
             let crate_owner = crate_src.parent().unwrap_or(crate_src).to_string_lossy();
+            let owner_path = crate_src.parent().unwrap_or(crate_src);
+            let use_crt = !kernel_dirs.contains(owner_path) && !crt_dirs.contains(owner_path);
             compare_statics(&crate_owner, &facts, &mut types, &mut out);
-            compare_returns(&crate_owner, &facts, &c_rets, &mut types, &mut out);
+            compare_returns(
+                &crate_owner,
+                &facts,
+                &c_rets,
+                use_crt.then_some(&crt_rdefs),
+                &mut types,
+                &mut out,
+            );
             let mut oracle =
                 BTreeMap::<String, (Vec<(Option<usize>, Option<String>)>, Vec<String>)>::new();
             let mut all_sites = BTreeMap::<String, Vec<&(usize, Sig, String)>>::new();
@@ -1293,5 +1364,60 @@ extern "C" {
             ("foo-rust/src/lib.rs", &uncalled)
         ])
         .is_empty());
+    }
+
+    fn crt_tree(kernel: bool, ret: &str) -> Vec<(String, String)> {
+        let mut items = vec![
+            (
+                "ucrt-rust/Cargo.toml".into(),
+                "[package]\nname = \"ucrt-rust\"\n".into(),
+            ),
+            (
+                "ucrt-rust/src/lib.rs".into(),
+                "#[no_mangle]\npub unsafe extern \"C\" fn towupper(c: u16) -> u16 { c }\n"
+                    .into(),
+            ),
+            (
+                "find-rust/Cargo.toml".into(),
+                format!(
+                    "[package]\nname = \"find-rust\"\n\n[dependencies]\n{}",
+                    if kernel {
+                        "ntkrnl-sys = { path = \"../ntkrnl-sys\" }\n"
+                    } else {
+                        ""
+                    }
+                ),
+            ),
+            (
+                "find-rust/src/lib.rs".into(),
+                format!(
+                    "pub type c_int = i32;\nextern \"C\" {{ fn towupper(c: c_int) -> {ret}; }}\npub unsafe fn go() {{ towupper(97); }}\n"
+                ),
+            ),
+        ];
+        if kernel {
+            // The scanner uses the manifest key to identify kernel crates; this
+            // fixture mirrors that even though the dependency source is absent.
+            items.push((
+                "ntkrnl-sys/Cargo.toml".into(),
+                "[package]\nname = \"ntkrnl-sys\"\n".into(),
+            ));
+        }
+        items
+    }
+
+    #[test]
+    fn crt_import_wider_than_definition_uses_crt_return_authority() {
+        let got = run_owned(crt_tree(false, "c_int"));
+        assert_eq!(got.len(), 1, "{got:?}");
+        assert!(got[0].contains(
+            "towupper: RETURN WIDTH decl `-> c_int` (4) wider than CRT def `-> u16` (lib.rs)"
+        ));
+    }
+
+    #[test]
+    fn crt_authority_skips_kernel_crates_and_matching_user_return_widths() {
+        assert!(run_owned(crt_tree(true, "c_int")).is_empty());
+        assert!(run_owned(crt_tree(false, "u16")).is_empty());
     }
 }

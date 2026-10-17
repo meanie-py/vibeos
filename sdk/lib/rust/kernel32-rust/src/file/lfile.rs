@@ -1,4 +1,8 @@
 use ntdll_sys::nt::*;
+// The crate's own functions: the definition is the declaration.
+use crate::client::handle::CloseHandle;
+use crate::file::create::CreateFileA;
+use crate::file::rw::ReadFile;
 use crate::prelude::*;
 use core::ffi::c_void;
 
@@ -14,10 +18,7 @@ unsafe fn LongToHandle(l_long: i32) -> HANDLE {
 }
 
 extern "system" {
-    fn CreateFileA( lpFileName: LPCSTR, dwDesiredAccess: u32, dwShareMode: u32, lpSecurityAttributes: *mut core::ffi::c_void, dwCreationDisposition: u32, dwFlagsAndAttributes: u32, hTemplateFile: *mut core::ffi::c_void, ) -> isize;
-    fn CloseHandle(hObject: HANDLE) -> BOOL;
     fn SetFilePointer( hFile: HANDLE, lDistanceToMove: LONG, lpDistanceToMoveHigh: *mut LONG, dwMoveMethod: DWORD, ) -> DWORD;
-    fn ReadFile( hFile: HANDLE, lpBuffer: LPVOID, nNumberOfBytesToRead: DWORD, lpNumberOfBytesRead: LPDWORD, lpOverlapped: LPOVERLAPPED, ) -> BOOL;
     fn WriteFile( hFile: HANDLE, lpBuffer: LPCVOID, nNumberOfBytesToWrite: DWORD, lpNumberOfBytesWritten: LPDWORD, lpOverlapped: LPOVERLAPPED, ) -> BOOL;
     fn SetEndOfFile(hFile: HANDLE) -> BOOL;
 }

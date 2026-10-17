@@ -33,11 +33,12 @@
 //!   (arch-conditional 32/64 bit magic) — the fix must use the correct arch-specific constant.
 
 use crate::types::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::fromfile::memcmp;
+use crate::fromfile::strncpy;
 use ntkrnl_sys::ddk::{IMAGE_DOS_HEADER, IMAGE_NT_HEADERS, IMAGE_SECTION_HEADER};
 
 extern "C" {
-    fn memcmp(s1: *const u8, s2: *const u8, n: usize) -> i32;
-    fn strncpy(dest: *mut u8, src: *const u8, count: usize) -> *mut u8;
 }
 
 // PE signature constants (defined locally; see fromfile.rs).
@@ -106,15 +107,15 @@ pub unsafe extern "C" fn RosSymCreateFromMem(
         }
 
         strncpy(
-            SectionName.as_mut_ptr() as *mut u8,
-            ROSSYM_SECTION_NAME.as_ptr() as *const u8,
+            (SectionName.as_mut_ptr() as *mut u8).cast(),
+            (ROSSYM_SECTION_NAME.as_ptr() as *const u8).cast(),
             IMAGE_SIZEOF_SHORT_NAME as usize,
         );
 
         for _SectionIndex in 0..((*NtHeaders).FileHeader.NumberOfSections as u32) {
             if memcmp(
-                SectionName.as_ptr() as *const u8,
-                (*SectionHeader).Name.as_ptr() as *const u8,
+                (SectionName.as_ptr() as *const u8).cast(),
+                ((*SectionHeader).Name.as_ptr() as *const u8).cast(),
                 IMAGE_SIZEOF_SHORT_NAME as usize,
             ) == 0 {
                 RosSymSectionFound = 1;

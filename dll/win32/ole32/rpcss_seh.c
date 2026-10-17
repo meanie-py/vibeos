@@ -5,8 +5,10 @@
  * client stub reports failure by RAISING (e.g. RPC_S_SERVER_UNAVAILABLE before rpcss
  * is up), and the filter turns that into an HRESULT the caller can retry on. Rust
  * has no __try, so the call lives here in a native-SEH TU (_USE_NATIVE_SEH on
- * amd64/arm64, set in CMakeLists.txt) with a calls-only try body. i386 keeps the
- * plain call, as ole32's Irot calls do there: clang's i386 native SEH is unreliable.
+ * amd64/arm64, set in CMakeLists.txt) with a calls-only try body. clang's i386 native
+ * SEH is unreliable, so i386 goes through ntdll's RtlSehTryExcept (ntoskrnl/sehtry.c,
+ * built on the fs:[0] chain) instead. It was a plain call there, which is how advapi32's
+ * identical EventLog thunk let an RPC raise kill csrss (BUGCHECK 0xF4, 2026-10-17).
  */
 
 #include <windef.h>
@@ -38,6 +40,31 @@ static RPC_BINDING_HANDLE get_irpcss_handle(void)
     return irpcss_handle;
 }
 
+#if !defined(_USE_NATIVE_SEH)
+/* ntdll's trampoline (dll/ntdll/def/ntdll.spec): TRUE when Filter accepted an exception. */
+unsigned char __cdecl RtlSehTryExcept(void (__cdecl *Body)(void *), void *BodyContext,
+                                      long (__cdecl *Filter)(void *, void *),
+                                      void *FilterContext, long *ExceptionCode);
+
+struct seqid_call
+{
+    RPC_BINDING_HANDLE handle;
+    DWORD *id;
+    HRESULT hr;
+};
+
+static void __cdecl seqid_body(void *context)
+{
+    struct seqid_call *call = context;
+    call->hr = irpcss_get_thread_seq_id(call->handle, call->id);
+}
+
+static long __cdecl seqid_filter(void *context, void *pointers)
+{
+    return I_RpcExceptionFilter(((EXCEPTION_POINTERS *)pointers)->ExceptionRecord->ExceptionCode);
+}
+#endif
+
 /* wine-10 rpcss_get_next_seqid, minus the start-rpcss retry (the Rust caller owns it). */
 HRESULT __cdecl ole32_rpcss_get_next_seqid(DWORD *id)
 {
@@ -54,7 +81,13 @@ HRESULT __cdecl ole32_rpcss_get_next_seqid(DWORD *id)
         hr = HRESULT_FROM_WIN32(GetExceptionCode());
     }
 #else
-    hr = irpcss_get_thread_seq_id(handle, id);
+    struct seqid_call call = { handle, id, S_OK };
+    long code = 0;
+
+    if (RtlSehTryExcept(seqid_body, &call, seqid_filter, NULL, &code))
+        hr = HRESULT_FROM_WIN32(code);
+    else
+        hr = call.hr;
 #endif
     return hr;
 }

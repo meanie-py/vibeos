@@ -15,7 +15,6 @@ use crate::handler::{ArbiterLibAddReserved, ArbiterLibQueryArbitrate, ArbiterLib
 use crate::transaction::{ArbiterLibBootAllocation, ArbiterLibCommitAllocation, ArbiterLibQueryConflict,
     ArbiterLibRetestAllocation, ArbiterLibRollbackAllocation, ArbiterLibTestAllocation};
 use ntkrnl_sys::ddk::{CM_RESOURCE_TYPE, KEVENT, KeInitializeEvent, PARBITER_INSTANCE, PARB_TRANSLATE_ORDERING, PDEVICE_OBJECT, RTL_RANGE_LIST, RtlFreeRangeList, RtlInitializeRangeList, _EVENT_TYPE_SynchronizationEvent};
-use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 pub const ARBITER_SIG: u32 = 0x73627241;
@@ -58,7 +57,7 @@ pub unsafe extern "system" fn ArbiterLibInitializeInstance(
     OrderName: PCWSTR,
     TranslateOrderingFunction: PARB_TRANSLATE_ORDERING,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
 
     PAGED_CODE!();
 

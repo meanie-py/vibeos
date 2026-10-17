@@ -1,4 +1,8 @@
 use crate::prelude::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::prelude::RegOpenKeyExW;
+use crate::prelude::RegCloseKey;
+use crate::prelude::RegQueryValueExW;
 use core::ffi::c_void;
 
 extern "C" {
@@ -19,7 +23,6 @@ extern "system" {
     fn GetAllUsersProfileDirectoryW(lpProfileDir: LPWSTR, lpcchSize: *mut DWORD) -> BOOL;
     fn GetDefaultUserProfileDirectoryW(lpProfileDir: LPWSTR, lpcchSize: *mut DWORD) -> BOOL;
     fn GetUserProfileDirectoryW(hToken: HANDLE, lpProfileDir: LPWSTR, lpcchSize: *mut DWORD) -> BOOL;
-    fn RegQueryValueExW(hKey: HKEY, lpValueName: LPCWSTR, lpReserved: *mut DWORD, lpType: *mut DWORD, lpData: LPBYTE, lpcbData: *mut DWORD) -> LONG;
     // StringCchCopyNW removed: strsafe.h `static inline`, no linkable symbol → prelude shim.
     fn GlobalAlloc(uFlags: u32, dwBytes: usize) -> *mut core::ffi::c_void;
     fn GlobalFree(hMem: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
@@ -822,10 +825,8 @@ extern "system" {
     fn GetShortPathNameW(lpszLongPath: LPCWSTR, lpszShortPath: LPWSTR, cchBuffer: u32) -> u32;
     fn LocalAlloc(uFlags: u32, uBytes: usize) -> LPVOID;
     fn LocalFree(hMem: HGLOBAL) -> HGLOBAL;
-    fn RegOpenKeyExW(hKey: HKEY, lpSubKey: LPCWSTR, ulOptions: u32, samDesired: u32, phkResult: *mut HKEY) -> i32;
     fn SetLastError(dwErrCode: u32);
     fn LookupAccountSidW( lpSystemName: LPCWSTR, lpSid: PSID, lpName: LPWSTR, cchName: *mut u32, lpReferencedDomainName: LPWSTR, cchReferencedDomainName: *mut u32, peUse: *mut u32, ) -> i32;
-    fn RegCloseKey(hKey: HKEY) -> LONG;
     fn RegEnumValueW( hKey: HKEY, dwIndex: DWORD, lpValueName: LPWSTR, lpcchValueName: *mut DWORD, lpReserved: *mut DWORD, lpType: *mut DWORD, lpData: LPBYTE, lpcbData: *mut DWORD, ) -> LONG;
 }
 

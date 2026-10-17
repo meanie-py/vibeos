@@ -1,4 +1,7 @@
 use crate::types::*;
+// The crate's own functions: the definition is the declaration.
+pub use crate::lock::LockRequest;
+use crate::lock::UnlockBuffers;
 use crate::glue::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -13,11 +16,9 @@ extern "C" {
     pub fn PollReeval(DeviceObject: PAFD_DEVICE_EXTENSION, FileObject: PFILE_OBJECT);
     fn SocketAcquireStateLock(fcb: PAFD_FCB) -> BOOLEAN;
     fn SocketStateUnlock(fcb: PAFD_FCB);
-    fn UnlockBuffers(buffer_array: PAFD_WSABUF, buffer_count: u32, write: u32);
     fn UnlockRequest(irp: PIRP, stack: PIO_STACK_LOCATION);
     fn LeaveIrpUntilLater(fcb: PAFD_FCB, irp: PIRP, function: u32) -> NTSTATUS;
     pub fn LockBuffers( Buf: PAFD_WSABUF, Count: UINT, AddressBuf: PVOID, AddressLen: PINT, Write: BOOLEAN, LockAddress: BOOLEAN, LockMode: KPROCESSOR_MODE, ) -> PAFD_WSABUF;
-    pub fn LockRequest( Irp: PIRP, IrpSp: PIO_STACK_LOCATION, Output: BOOLEAN, LockMode: *mut KPROCESSOR_MODE, ) -> PVOID;
     fn LostSocket(irp: PIRP) -> NTSTATUS;
     fn QueueUserModeIrp(fcb: PAFD_FCB, irp: PIRP, function: u32) -> NTSTATUS;
     fn TdiBuildConnectionInfo(out: *mut PTDI_CONNECTION_INFORMATION, addr: PTRANSPORT_ADDRESS) -> NTSTATUS;

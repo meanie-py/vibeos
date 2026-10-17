@@ -382,6 +382,22 @@ def test_smp_iso_patch_is_idempotent(tmp_path: Path):
     assert vm_mod.smp_selected_iso(src, tmp_path / "work") == src
 
 
+def test_smp_iso_patch_handles_a_duplicated_freeldr_ini(tmp_path: Path):
+    """The writable-root ISO carries freeldr.ini twice, identically. Both copies are one
+    file, not an ambiguity: patch both, and an already-MP pair is a no-op."""
+    one = _fake_iso()
+    src = tmp_path / "livecd-rw.iso"
+    src.write_bytes(one + b"\0" * 64 + one)
+    out = vm_mod.smp_selected_iso(src, tmp_path / "work")
+    data = out.read_bytes()
+    assert data.count(b"DefaultOS=LiveCD_SMP") == 2
+    assert b"DefaultOS=LiveCD_Debug" not in data
+    mp = tmp_path / "mp-rw.iso"
+    twin = _fake_iso(default_os=b"LiveCD_SMP")
+    mp.write_bytes(twin + b"\0" * 64 + twin)
+    assert vm_mod.smp_selected_iso(mp, tmp_path / "work2") == mp
+
+
 def test_smp_iso_patch_raises_rather_than_booting_up_media(tmp_path: Path):
     """Every failure path must raise. Silently returning the unpatched ISO would
     boot the UP pair on an --smp run — exactly the false green _smp_check exists
@@ -864,6 +880,26 @@ def test_crate_for_stem_separator_normalization(arm64_cohab_repo: Path):
     assert provenance._crate_for_stem(arm64_cohab_repo, "nonexistent") is None
 
 
+def test_a_binary_with_its_extension_in_its_name_maps_to_its_own_crate(monkeypatch):
+    """wdmaud.drv's Path.stem is `wdmaud` -- wdmaud.SYS's crate -- so a kernel-crate rebuild
+    reported wdmaud.drv "never relinked" against an archive it does not link (arm64,
+    2026-10-17). The crate port names it with the dot as `_` wins; the stem is the fallback."""
+    crates = {
+        "wdmaud": Path("wdmaud-rust"),
+        "wdmaud_drv": Path("wdmaud_drv-rust"),
+        "kernel32": Path("kernel32-rust"),
+    }
+    monkeypatch.setattr(provenance, "_crate_for_stem", lambda _repo, stem: crates.get(stem))
+    repo = Path("/r")
+    drv = "dll/win32/wdmaud.drv/wdmaud.drv"
+    sys_ = "drivers/wdm/audio/legacy/wdmaud/wdmaud.sys"
+    assert provenance._crate_for_rel(repo, drv) == Path("wdmaud_drv-rust")
+    assert provenance._crate_for_rel(repo, sys_) == Path("wdmaud-rust")
+    k32 = "dll/win32/kernel32/kernel32.dll"
+    assert provenance._crate_for_rel(repo, k32) == Path("kernel32-rust")
+    assert provenance._crate_for_rel(repo, "dll/win32/other/other.dll") is None
+
+
 def test_crate_for_stem_ignores_a_parked_non_member_crate(arm64_cohab_repo: Path):
     """A translated-but-NOT-YET-FLIPPED crate is not cohab, and treating it as one
     halted the merge train on 2026-08-04: msv1_0-rust was committed and parked out
@@ -898,6 +934,29 @@ def test_crate_for_stem_ignores_a_member_crate_no_cmake_links_yet(arm64_cohab_re
     provenance._cmake_named_crates.cache_clear()
     assert provenance._crate_for_stem(arm64_cohab_repo, "inwork") is None
     assert provenance._crate_for_stem(arm64_cohab_repo, "foo") is not None
+
+
+def test_crate_for_rel_breaks_a_shared_stem_by_extension(arm64_cohab_repo: Path):
+    """wdmaud.sys is wdmaud-rust, wdmaud.drv is wdmaud_drv-rust. By stem alone the .drv
+    was judged against the kernel crate's staticlib, which it never links, and a cold
+    arm64 gate went BUILD_INCOMPLETE on a current tree."""
+    rust = arm64_cohab_repo / "sdk" / "lib" / "rust"
+    (rust / "foo_drv-rust").mkdir()
+    (rust / "foo_drv-rust" / "Cargo.toml").write_text("[package]\nname = 'foo_drv-rust'\n")
+    manifest = rust / "Cargo.toml"
+    manifest.write_text(
+        manifest.read_text().replace('"foo-rust",', '"foo-rust",\n    "foo_drv-rust",')
+    )
+    cm = arm64_cohab_repo / "drivers" / "x" / "foo" / "CMakeLists.txt"
+    cm.write_text(cm.read_text() + 'rust_staticlib_variant(foo_drv_rust foo_drv-rust "" TRUE)\n')
+    _git(arm64_cohab_repo, "add", "-A")
+    _git(arm64_cohab_repo, "commit", "-qm", "foo.drv")
+    provenance._workspace_members.cache_clear()
+    provenance._cmake_named_crates.cache_clear()
+    drv = provenance._crate_for_rel(arm64_cohab_repo, "dll/x/foo.drv")
+    sys_ = provenance._crate_for_rel(arm64_cohab_repo, "drivers/x/foo/foo.sys")
+    assert drv is not None and drv.name == "foo_drv-rust"
+    assert sys_ is not None and sys_.name == "foo-rust"
 
 
 def test_cohab_rels_maps_only_rust_binaries(arm64_cohab_repo: Path):
@@ -5686,6 +5745,24 @@ def test_cohab_binary_not_relinked_is_stale(cohab_repo: Path):
     os.utime(mod / "libwidget_rust.a", (6000, 6000))  # copy updated => bytes DID change
     r = _cohab(cohab_repo)
     assert r and "never relinked" in r[0], r
+
+
+def test_cohab_same_stem_other_binary_is_not_stale(cohab_repo: Path):
+    """wdmaud.drv and wdmaud.sys share a stem; only the .sys links libwdmaud_rust.a. A
+    changed kernel crate must not report the user-mode binary as never relinked."""
+    drv = cohab_repo / "build-arm64" / "dll" / "widget"
+    drv.mkdir(parents=True)
+    (drv / "widget.drv").write_bytes(b"x")
+    os.utime(drv / "widget.drv", (2000, 2000))
+    lst = cohab_repo / "build-arm64" / "boot" / "livecd.Debug.lst"
+    lst.write_text(
+        lst.read_text()
+        + "reactos/system32/widget.drv=/tmp/vibeos/build-arm64/dll/widget/widget.drv\n"
+    )
+    mod = cohab_repo / "build-arm64" / "drivers" / "widget"
+    for f in ("libwidget_rust.a", "widget.sys"):
+        os.utime(mod / f, (6000, 6000))  # the kernel crate changed and its .sys relinked
+    assert _cohab(cohab_repo) == []
 
 
 def test_cohab_cargo_output_missing_is_stale(cohab_repo: Path):
@@ -12134,6 +12211,26 @@ def test_payload_vm_memory_sizes_compare_numerically():
     assert max("1536M", "2G", "", key=smoke_mod._mem_mb) == "2G"
 
 
+def test_smoke_vm_memory_beats_the_payloads_declaration(tmp_path, monkeypatch):
+    """A low-memory sweep (smoke --vm-memory 768M) must boot at 768M even though appstorm64
+    declares vm_memory: 2G; without --vm-memory the declaration still applies."""
+    spec = tmp_path / "tools" / "payloads" / "big" / "payload.yaml"
+    spec.parent.mkdir(parents=True)
+    spec.write_text("test:\n  vm_memory: 2G\n")
+    seen: list[str] = []
+
+    def fake_run(cmd, **kw):
+        seen.append(kw["env"].get("VIBEOS_QEMU_MEMORY", ""))
+        raise subprocess.TimeoutExpired(cmd, 1)
+
+    monkeypatch.setattr(smoke_mod.subprocess, "run", fake_run)
+    monkeypatch.delenv("VIBEOS_QEMU_MEMORY", raising=False)
+    run = Run("smoke", "arm64", ts=1700000000)
+    smoke_mod._payload_stage(run, tmp_path, "arm64", "big", vm_memory_override="768M")
+    smoke_mod._payload_stage(run, tmp_path, "arm64", "big")
+    assert seen == ["768M", "2G"]
+
+
 def test_qemu_memory_override_is_validated(monkeypatch):
     from tests.qemu import vm as vm_mod
 
@@ -12208,3 +12305,35 @@ def test_a_build_input_edited_mid_build_is_named_and_a_doc_is_not(tiny_repo: Pat
     (tiny_repo / "new.c").write_text("int x;\n")
     assert build_mod._inputs_moved(tiny_repo, start) == ["a.txt", "new.c"]
     assert build_mod._inputs_moved(tiny_repo, None) == []
+    # The build's own lockfile update (a new crate) is not an edit under it.
+    (tiny_repo / "a.txt").write_text("hello\n")
+    (tiny_repo / "new.c").unlink()
+    (tiny_repo / "Cargo.lock").write_text("version = 4\n")
+    assert build_mod._inputs_moved(tiny_repo, start) == []
+
+
+def test_fex_build_prerequisites_are_named_up_front(tmp_path):
+    """VIBEOS_FEX=1 arm64 on a fresh worktree: every missing out-of-tree piece is named with
+    the command that provides it, before the build runs (it used to skip, warn, and die at
+    mkramdisk twelve minutes on, or finish green with media that fails every WoW64 guest)."""
+    missing = build_mod.fex_prerequisites_missing(tmp_path, environ={})
+    assert any("build-fex-arm64 not configured" in m for m in missing)
+    assert any("build-i386/dll/ntdll/ntdll.dll" in m and "--arch i386" in m for m in missing)
+    assert any("testgui.exe" in m and "--arch amd64" in m for m in missing)
+    for _stage, tree, _targets, _script in build_mod.FEX_OUT_OF_TREE:
+        (tmp_path / tree).mkdir(parents=True, exist_ok=True)
+        (tmp_path / tree / "build.ninja").write_text("")
+    for rel in (
+        "build-i386/dll/ntdll/ntdll.dll",
+        "build-amd64/base/applications/testgui/testgui.exe",
+    ):
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text("")
+    assert build_mod.fex_prerequisites_missing(tmp_path, environ={}) == []
+    # mkramdisk's overrides are honoured: an override pointing nowhere is still missing.
+    assert build_mod.fex_prerequisites_missing(
+        tmp_path, environ={"VIBEOS_NTDLL32": str(tmp_path / "nope.dll")}
+    ) == [
+        f"{tmp_path / 'nope.dll'} absent (the i386 guests' SysWOW64 set): "
+        "./vibeos-cli build --arch i386"
+    ]

@@ -532,3 +532,176 @@ def test_the_engine_built_delayimp_counts_as_the_delayimp_runtime():
     assert g._links_delayimp(["engine:uuid", "engine:delayimp_rust"])
     assert g._links_delayimp(["sdk/lib/delayimp/libdelayimp.a"])
     assert not g._links_delayimp(["engine:uuid", "engine:wine"])
+
+
+def test_convert_models_every_target_before_writing_anything(tmp_path, monkeypatch):
+    """One refusal in a --convert batch must leave no half-applied cells behind."""
+    import pytest
+
+    writes = []
+
+    def model(t, repo):
+        if t == "bad":
+            raise g.GenError("bad: refused")
+        return t
+
+    monkeypatch.setattr(g, "model", model)
+    monkeypatch.setattr(g, "save_baseline", lambda *a: writes.append("baseline"))
+    monkeypatch.setattr(g, "apply", lambda *a: writes.append("apply") or [])
+    with pytest.raises(g.GenError, match="refused"):
+        g.convert(["good", "bad"], tmp_path / "b", tmp_path)
+    assert writes == []
+
+
+def test_convert_runs_the_wave_in_order(tmp_path, monkeypatch):
+    steps = []
+    monkeypatch.setattr(g, "model", lambda t, repo: t)
+    monkeypatch.setattr(g, "save_baseline", lambda ts, b, repo: steps.append(("baseline", b)))
+    monkeypatch.setattr(g, "apply", lambda c, repo: steps.append(("apply", c)) or [])
+    monkeypatch.setattr(g, "_ninja", lambda a, ts, repo: steps.append(("ninja", a)))
+    monkeypatch.setattr(g, "check", lambda ts, b, repo: steps.append(("check", b)) or 0)
+    assert g.convert(["m"], tmp_path / "b", tmp_path) == 0
+    assert steps == [
+        ("baseline", tmp_path / "b"),
+        ("apply", "m"),
+        ("ninja", "i386"),
+        ("ninja", "amd64"),
+        ("ninja", "arm64"),
+        ("check", tmp_path / "b"),
+    ]
+
+
+def test_ratchet_labels_follow_the_generator(monkeypatch, capsys, tmp_path):
+    for t in ("a", "b"):
+        (tmp_path / t).mkdir()
+        (tmp_path / t / "CMakeLists.txt").write_text(f"add_library({t} MODULE rust_cohab_stub.c)\n")
+    """A refused module the generator learns to handle flips to `convertible`, which the
+    baseline has never seen: that is how the ratchet forces the conversion."""
+    import scan_cmake_linked_rust as ratchet
+
+    monkeypatch.setattr(
+        g, "survey", lambda: [("a", "OK Win32Dll"), ("b", "REFUSED b: link kind X")]
+    )
+    (tmp_path / "build-amd64").mkdir()
+    (tmp_path / "build-amd64/build.ninja").write_text("")
+    cell = tmp_path / "sdk/lib/rust/c-cargo/build.rs"
+    cell.parent.mkdir(parents=True)
+    cell.write_text('&["body", "boot/x/libbios_asm.a"]\n')
+    monkeypatch.setattr(g, "REPO", tmp_path)
+    monkeypatch.setattr(g, "engine_lib", lambda lib, repo=None: None)
+    rc = ratchet.main()
+    out = capsys.readouterr().out.splitlines()
+    assert out == [
+        "a: fully-Rust module still linked by cmake (convertible)",
+        "b: fully-Rust module still linked by cmake (refused)",
+        "c-cargo: links cmake-built boot/x/libbios_asm.a (not engine-buildable)",
+    ]
+    assert rc == 1
+
+
+def _cml(root, rel, text):
+    path = root / rel / "CMakeLists.txt"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+
+
+def test_engine_lib_builds_any_cmake_static_library_or_rust_variant(tmp_path):
+    g._library_index.cache_clear()
+    _cml(tmp_path, "sdk/lib/nt", "add_library(nt entry_point.c)\nadd_dependencies(nt psdk)\n")
+    _cml(
+        tmp_path,
+        "vendor/sr",
+        "add_library(libsamplerate STATIC ${SOURCE})\n",
+    )
+    _cml(
+        tmp_path,
+        "sdk/lib/mm",
+        'rust_staticlib_variant(mm_rust mm-rust "user kernel" FALSE)\n'
+        'rust_staticlib_variant(env_rust env-rust "" TRUE ENV RUSTFLAGS=-x)\n'
+        "add_library(shared_one SHARED a.c)\n",
+    )
+    try:
+        assert g.engine_lib("sdk/lib/nt/libnt.a", tmp_path) == ("engine:c:nt", ["psdk"])
+        # The archive's directory need not be its CMakeLists' (add_subdirectory remaps it).
+        assert g.engine_lib("sdk/lib/3rdparty/sr/liblibsamplerate.a", tmp_path) == (
+            "engine:c:libsamplerate",
+            ["psdk"],
+        )
+        assert g.engine_lib("sdk/lib/mm/libmm_rust.a", tmp_path) == (
+            "engine:crate:mm-rust:user,kernel:FALSE",
+            [],
+        )
+        assert g.engine_lib("sdk/lib/mm/libenv_rust.a", tmp_path) is None
+        assert g.engine_lib("sdk/lib/mm/libshared_one.a", tmp_path) is None
+        assert g.engine_lib("sdk/lib/x/libunknown.a", tmp_path) is None
+        # The hand-kept table still wins.
+        assert g.engine_lib("sdk/lib/crt/libchkstk.a", tmp_path)[0] == "engine:chkstk"
+    finally:
+        g._library_index.cache_clear()
+
+
+def test_remap_moves_a_cell_off_cmake_archives(tmp_path):
+    g._library_index.cache_clear()
+    _cml(tmp_path, "sdk/lib/nt", "add_library(nt entry_point.c)\nadd_dependencies(nt xdk)\n")
+    _cml(
+        tmp_path,
+        "base/m",
+        "set(M_REUSED\n    ${CMAKE_BINARY_DIR}/sdk/lib/nt/libnt.a)\n"
+        "add_cargo_module(m m-cargo m.exe\n    KIND win32exe\n    BODY_CRATE m-rust\n"
+        "    EXTRA_DEPENDS m_res ${M_REUSED} psdk)\n",
+    )
+    rs = tmp_path / "sdk/lib/rust/m-cargo/build.rs"
+    rs.parent.mkdir(parents=True)
+    rs.write_text('&["body", "sdk/lib/nt/libnt.a", "import:ntdll"]\n')
+    try:
+        assert g.remap(None, tmp_path) == ["m-cargo"]
+    finally:
+        g._library_index.cache_clear()
+    assert rs.read_text() == '&["body", "engine:c:nt", "import:ntdll"]\n'
+    cml = (tmp_path / "base/m/CMakeLists.txt").read_text()
+    assert "M_REUSED" not in cml
+    assert "EXTRA_DEPENDS m_res psdk xdk)" in cml
+
+
+def test_rebound_exports_name_what_the_spec_actually_exports():
+    """REBOUND_EXPORTS accepts a module whose exports cmake bound to import thunks. Every
+    name listed must still be an export of that module's spec, or the acceptance is
+    covering for something that no longer exists."""
+    repo = Path(__file__).resolve().parent.parent
+    specs = {"user32_vista": repo / "win32ss/user/user32_vista/user32_vista.spec"}
+    for module, names in g.REBOUND_EXPORTS.items():
+        text = specs[module].read_text()
+        for name in names:
+            assert f" {name}(" in text, f"{module}: {name} is no longer exported"
+
+
+def test_ratchet_trusts_the_source_tree_over_a_stale_graph(monkeypatch, capsys, tmp_path):
+    """A module converted since the last configure still has its cmake link edge in
+    build.ninja; its CMakeLists' add_cargo_module is what says it is done."""
+    import scan_cmake_linked_rust as ratchet
+
+    (tmp_path / "build-amd64").mkdir()
+    (tmp_path / "build-amd64/build.ninja").write_text("")
+    (tmp_path / "dll/m").mkdir(parents=True)
+    (tmp_path / "dll/m/CMakeLists.txt").write_text("add_cargo_module(m m-cargo m.dll\n)\n")
+    monkeypatch.setattr(g, "REPO", tmp_path)
+    (tmp_path / "dll/n").mkdir(parents=True)
+    (tmp_path / "dll/n/CMakeLists.txt").write_text("add_library(n MODULE rust_cohab_stub.c)\n")
+    # o's flip is not in this tree: its CMakeLists compiles its C again.
+    (tmp_path / "dll/o").mkdir(parents=True)
+    (tmp_path / "dll/o/CMakeLists.txt").write_text("add_library(o MODULE o.c font.c)\n")
+    monkeypatch.setattr(
+        g, "survey", lambda: [("m", "OK Win32Dll"), ("n", "OK Win32Dll"), ("o", "OK Win32Dll")]
+    )
+    ratchet.main()
+    out = capsys.readouterr().out.splitlines()
+    assert out == ["n: fully-Rust module still linked by cmake (convertible)"]
+
+
+def test_a_resource_in_a_subdirectory_keeps_its_path(tmp_path):
+    """tdi's resource is misc/tdi.rc: naming only `tdi.rc` gave cmake an OBJECT library
+    over a file that does not exist ("No SOURCES given to target: tdi_res")."""
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE.replace("rsrc.rc", "misc/rsrc.rc"))
+    out = g.rewrite_cmake(f, cell(rc="base/m/misc/rsrc.rc"))
+    assert "add_library(m_res OBJECT misc/rsrc.rc)" in out

@@ -429,9 +429,7 @@ impl Rule for VersionVsC {
                 );
                 let hit: Vec<_> = calls
                     .keys()
-                    .filter(|name| {
-                        re(&format!(r"\b{}\s*!?\s*\(", regex::escape(name))).is_match(&live)
-                    })
+                    .filter(|name| eval::rust_uses(name, &live))
                     .cloned()
                     .collect();
                 if hit.is_empty() {

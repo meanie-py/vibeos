@@ -10,3 +10,5 @@ add_cargo_module(sdbinst sdbinst-cargo sdbinst.exe
     KIND win32exe
     BODY_CRATE sdbinst-rust
     DESTINATION reactos/system32)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

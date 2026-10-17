@@ -1,4 +1,10 @@
 use ntkrnl_sys::base::*;
+// The crate's own functions: the definition is the declaration.
+use crate::cdmacros::CdAcquireVcbExclusive;
+use crate::verfysup::CdCheckForDismount;
+use crate::cddata::CdCompleteRequest;
+use crate::cdmacros::CdLockVolumeInternal;
+use crate::fsctrl::CdUnlockVolumeInternal;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ke::*;
@@ -17,19 +23,16 @@ const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000004; // FIXED 2026-07-06: cdfs flag mi
 const STATUS_DEVICE_BUSY: i32 = 0x80000011u32 as i32;
 
 extern "C" {
-    fn CdAcquireVcbExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut Vcb, Exclusive: u8) -> i32;
 }
 extern "C" {
     fn CdReleaseCdData(IrpContext: *mut IRP_CONTEXT);
 }
 extern "C" {
-    fn CdUnlockVolumeInternal(IrpContext: *mut IRP_CONTEXT, Vcb: *mut Vcb, Unused: *mut core::ffi::c_void) -> i32;
 }
 extern "C" {
     fn CdReleaseVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut Vcb);
 }
 extern "C" {
-    fn CdCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: PIRP, Status: i32);
 }
 extern "C" {
     fn CdAcquireCdData(IrpContext: *mut IRP_CONTEXT);
@@ -41,13 +44,11 @@ extern "C" {
     fn CdUnlockVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut Vcb);
 }
 extern "C" {
-    fn CdLockVolumeInternal(IrpContext: *mut IRP_CONTEXT, Vcb: *mut Vcb, FileObject: *mut core::ffi::c_void) -> i32;
 }
 extern "C" {
     fn CdUpdateVcbCondition(Vcb: *mut Vcb, Condition: u32);
 }
 extern "C" {
-    fn CdCheckForDismount(IrpContext: *mut IRP_CONTEXT, Vcb: *mut Vcb, Force: i32) -> i32;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -89,7 +90,7 @@ pub unsafe extern "C" fn CdPnpCancelRemove(
 
     Status = IoCallDriver((*Vcb).TargetDeviceObject, Irp);
 
-    CdCompleteRequest(IrpContext, core::ptr::null_mut(), STATUS_SUCCESS);
+    CdCompleteRequest((IrpContext).cast(), core::ptr::null_mut(), STATUS_SUCCESS);
 
     return Status;
 }
@@ -168,7 +169,7 @@ pub unsafe extern "C" fn CdCommonPnp(
 
         Status = STATUS_INVALID_PARAMETER;
         CdReleaseCdData(IrpContext);
-        CdCompleteRequest(IrpContext, Irp, Status);
+        CdCompleteRequest((IrpContext).cast(), Irp, Status);
         return Status;
     }
 
@@ -231,7 +232,7 @@ pub unsafe extern "C" fn CdCommonPnp(
         //  Cleanup our Irp Context.  The driver has completed the Irp.
         //
 
-        CdCompleteRequest(IrpContext, core::ptr::null_mut(), STATUS_SUCCESS);
+        CdCompleteRequest((IrpContext).cast(), core::ptr::null_mut(), STATUS_SUCCESS);
     }
 
     return Status;
@@ -377,7 +378,7 @@ pub unsafe extern "C" fn CdPnpQueryRemove(
     //  Cleanup our IrpContext and complete the IRP if neccesary.
     //
 
-    CdCompleteRequest(IrpContext, Irp, Status);
+    CdCompleteRequest((IrpContext).cast(), Irp, Status);
 
     return Status;
 }
@@ -498,7 +499,7 @@ pub unsafe extern "C" fn CdPnpRemove(
     //  Cleanup our IrpContext and complete the IRP.
     //
 
-    CdCompleteRequest(IrpContext, Irp, Status);
+    CdCompleteRequest((IrpContext).cast(), Irp, Status);
 
     return Status;
 }
@@ -603,7 +604,7 @@ pub unsafe extern "C" fn CdPnpSurpriseRemove(
     //  Cleanup our IrpContext and complete the IRP.
     //
 
-    CdCompleteRequest(IrpContext, Irp, Status);
+    CdCompleteRequest((IrpContext).cast(), Irp, Status);
 
     return Status;
 }

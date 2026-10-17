@@ -373,7 +373,7 @@ extern "C" {
 // Deterministic COM scaffold for CMenuBand; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    #[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
+    #[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: SIZE_T) -> *mut core::ffi::c_void;
     #[link_name = "HeapFree"] fn cpp_com_HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn MenuBandRustModuleLock();
     fn MenuBandRustModuleUnlock();
@@ -383,7 +383,7 @@ impl CppComSize for usize { fn cpp_com_size(self) -> usize { self } }
 impl CppComSize for u32 { fn cpp_com_size(self) -> usize { self as usize } }
 #[inline]
 unsafe fn HeapAlloc<N: CppComSize>(heap: HANDLE, flags: DWORD, bytes: N) -> *mut core::ffi::c_void {
-    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size())
+    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size() as SIZE_T)
 }
 #[inline]
 unsafe fn HeapFree<T>(heap: HANDLE, flags: DWORD, memory: *mut T) -> BOOL {
@@ -1518,18 +1518,18 @@ extern "system" {
     fn RSHELL_CMenuDeskBar_CreateInstance(riid: REFIID, ppv: *mut LPVOID) -> HRESULT;
 
     // ── Win32 / shlwapi imports ──
-    fn DestroyMenu(menu: HMENU) -> BOOL; // winuser.h
-    fn CreatePopupMenu() -> HMENU; // winuser.h
-    fn TrackPopupMenuEx(hMenu: HMENU, uFlags: UINT, x: INT, y: INT, hwnd: HWND, lptpm: *const TPMPARAMS) -> BOOL; // winuser.h
+// winuser.h
+// winuser.h
+// winuser.h
     fn GetKeyState(nVirtKey: INT) -> i16; // winuser.h (SHORT return)
-    fn IsWindow(hWnd: HWND) -> BOOL; // winuser.h
-    fn SendMessageW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT; // winuser.h (UNICODE SendMessage)
+// winuser.h
+// winuser.h (UNICODE SendMessage)
     fn SystemParametersInfoW(uiAction: UINT, uiParam: UINT, pvParam: PVOID, fWinIni: UINT) -> BOOL; // winuser.h (UNICODE SystemParametersInfo)
     fn GetLastError() -> DWORD; // winbase.h
     fn ILFree(pidl: LPITEMIDLIST); // shlobj.h
-    fn IUnknown_QueryService(punk: *mut IUnknown, guidService: REFGUID, riid: REFIID, ppvOut: *mut *mut core::ffi::c_void) -> HRESULT; // shlwapi.h
-    fn IUnknown_SetSite(punk: *mut IUnknown, punkSite: *mut IUnknown) -> HRESULT; // shlwapi.h
-    fn IUnknown_QueryServiceExec(punk: *mut IUnknown, service: REFIID, group: *const GUID, cmdId: DWORD, cmdOpt: DWORD, pIn: *mut VARIANT, pOut: *mut VARIANT) -> HRESULT; // shlwapi_undoc.h:255
+// shlwapi.h
+// shlwapi.h
+// shlwapi_undoc.h:255
 }
 
 extern "C" {
@@ -1571,6 +1571,15 @@ impl<T> Drop for CppComPtrGuard<T> {
 }
 
 use core::cmp::{max, min};
+// One declaration per external symbol: island.rs.
+use crate::island::CreatePopupMenu;
+pub use crate::island::DestroyMenu;
+pub use crate::island::IUnknown_QueryService;
+pub use crate::island::IUnknown_QueryServiceExec;
+pub use crate::island::IUnknown_SetSite;
+pub use crate::island::IsWindow;
+use crate::island::SendMessageW;
+use crate::island::TrackPopupMenuEx;
 use core::ffi::c_void;
 use crate::shellcom::*;
 use crate::types::*;
@@ -1616,7 +1625,7 @@ pub unsafe fn CMenuBand_dtor_body(this: *mut CMenuBand) {
     CMenuSFToolbar_Delete_RustBridge((*this).m_SFToolbar);
 
     if !(*this).m_hmenu.is_null() {
-        DestroyMenu((*this).m_hmenu);
+        DestroyMenu(((*this).m_hmenu).cast());
     }
 }
 
@@ -1674,7 +1683,7 @@ pub unsafe fn CMenuBand_SetMenu_body(this: *mut CMenuBand, hmenu: HMENU, hwnd: H
     let mut created: BOOL = FALSE;
 
     if !(*this).m_hmenu.is_null() && (*this).m_hmenu != hmenu {
-        DestroyMenu((*this).m_hmenu);
+        DestroyMenu(((*this).m_hmenu).cast());
         (*this).m_hmenu = core::ptr::null_mut();
     }
 
@@ -1752,7 +1761,7 @@ pub unsafe fn CMenuBand_SetSite_body(this: *mut CMenuBand, pUnkSite: *mut IUnkno
         return hr;
     }
 
-    if IsWindow(hwndParent) == FALSE {
+    if IsWindow((hwndParent).cast()) == FALSE {
         return E_FAIL;
     }
 
@@ -1782,7 +1791,7 @@ pub unsafe fn CMenuBand_SetSite_body(this: *mut CMenuBand, pUnkSite: *mut IUnkno
 
     // IUnknown_QueryService(m_site, SID_SMenuPopup, IID_PPV_ARG(IMenuPopup, &m_subMenuParent))
     hr = IUnknown_QueryService(
-        (*this).m_site as *mut IUnknown,
+        ((*this).m_site as *mut IUnknown).cast(),
         core::ptr::addr_of!(SID_SMenuPopup),
         core::ptr::addr_of!(IID_IMenuPopup),
         core::ptr::addr_of_mut!((*this).m_subMenuParent).cast(),
@@ -1795,7 +1804,7 @@ pub unsafe fn CMenuBand_SetSite_body(this: *mut CMenuBand, pUnkSite: *mut IUnkno
     let mut pTopLevelWindow: *mut IOleWindow = core::ptr::null_mut();
     let _pTopLevelWindow_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(pTopLevelWindow));
     hr = IUnknown_QueryService(
-        (*this).m_site as *mut IUnknown,
+        ((*this).m_site as *mut IUnknown).cast(),
         core::ptr::addr_of!(SID_STopLevelBrowser),
         core::ptr::addr_of!(IID_IOleWindow),
         core::ptr::addr_of_mut!(pTopLevelWindow).cast(),
@@ -2073,7 +2082,7 @@ pub unsafe fn CMenuBand_UIActivateIO_body(this: *mut CMenuBand, fActivate: BOOL,
         let mut pTopLevelWindow: *mut IOleWindow = core::ptr::null_mut();
         let _pTopLevelWindow_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(pTopLevelWindow));
         hr = IUnknown_QueryService(
-            (*this).m_site as *mut IUnknown,
+            ((*this).m_site as *mut IUnknown).cast(),
             core::ptr::addr_of!(SID_SMenuPopup),
             core::ptr::addr_of!(IID_IOleWindow),
             core::ptr::addr_of_mut!(pTopLevelWindow).cast(),
@@ -2239,7 +2248,7 @@ pub unsafe fn CMenuBand_SetClient_body(this: *mut CMenuBand, punkClient: *mut IU
     CMenuBand_cpp_com_assign_m_subMenuChild(this, core::ptr::null_mut());
 
     if !child.is_null() {
-        IUnknown_SetSite(child as *mut IUnknown, core::ptr::null_mut());
+        IUnknown_SetSite((child as *mut IUnknown).cast(), core::ptr::null_mut());
         // child.Release(); (releases and nulls; the guard then has nothing left to do)
         ((*(*child).lpVtbl).Release)(child);
         child = core::ptr::null_mut();
@@ -2468,7 +2477,7 @@ pub unsafe fn CMenuBand__TrackSubMenu_body(this: *mut CMenuBand, popup: HMENU, x
     (*this).m_trackedHwnd = hwnd;
 
     CMenuFocusManager_PushTrackedPopup_RustBridge((*this).m_focusManager, popup);
-    TrackPopupMenuEx(popup, flags, x, y, hwnd, &params);
+    TrackPopupMenuEx((popup).cast(), flags, x, y, (hwnd).cast(), (&raw mut params).cast());
     CMenuFocusManager_PopTrackedPopup_RustBridge((*this).m_focusManager, popup);
 
     (*this).m_trackedPopup = core::ptr::null_mut();
@@ -2492,7 +2501,7 @@ pub unsafe fn CMenuBand__TrackContextMenu_body(this: *mut CMenuBand, contextMenu
         ((*(*ctxMenu).lpVtbl).AddRef)(ctxMenu);
     }
 
-    let popup: HMENU = CreatePopupMenu();
+    let popup: HMENU = (CreatePopupMenu()).cast();
 
     if popup.is_null() {
         return E_FAIL;
@@ -2509,7 +2518,7 @@ pub unsafe fn CMenuBand__TrackContextMenu_body(this: *mut CMenuBand, contextMenu
     hr = ((*(*contextMenu).lpVtbl).QueryContextMenu)(contextMenu, popup, 0, idCmdFirst, idCmdLast, cmf);
     if hr < 0 {
         TRACE!("Query failed\n");
-        DestroyMenu(popup);
+        DestroyMenu((popup).cast());
         return hr;
     }
 
@@ -2522,7 +2531,7 @@ pub unsafe fn CMenuBand__TrackContextMenu_body(this: *mut CMenuBand, contextMenu
     CMenuFocusManager_PushTrackedPopup_RustBridge((*this).m_focusManager, popup);
 
     TRACE!("Before Tracking\n");
-    uCommand = TrackPopupMenuEx(popup, TPM_RETURNCMD, x, y, hwnd, core::ptr::null()) as UINT;
+    uCommand = TrackPopupMenuEx((popup).cast(), TPM_RETURNCMD, x, y, (hwnd).cast(), core::ptr::null_mut()) as UINT;
 
     CMenuFocusManager_PopTrackedPopup_RustBridge((*this).m_focusManager, popup);
 
@@ -2548,7 +2557,7 @@ pub unsafe fn CMenuBand__TrackContextMenu_body(this: *mut CMenuBand, contextMenu
         hr = S_FALSE;
     }
 
-    DestroyMenu(popup);
+    DestroyMenu((popup).cast());
     hr
 }
 
@@ -2760,7 +2769,7 @@ pub unsafe fn CMenuBand__CancelCurrentPopup_body(this: *mut CMenuBand) -> HRESUL
     }
 
     if !(*this).m_trackedPopup.is_null() {
-        SendMessageW((*this).m_trackedHwnd, WM_CANCELMODE, 0, 0);
+        SendMessageW(((*this).m_trackedHwnd).cast(), WM_CANCELMODE, 0, 0);
         return S_OK;
     }
 
@@ -2812,9 +2821,9 @@ pub unsafe fn CMenuBand__OnPopupSubMenu_body(this: *mut CMenuBand, childShellMen
     CMenuBand_cpp_com_assign_m_subMenuChild(this, popup);
 
     if !(*this).m_subMenuParent.is_null() {
-        IUnknown_SetSite(popup as *mut IUnknown, (*this).m_subMenuParent as *mut IUnknown);
+        IUnknown_SetSite((popup as *mut IUnknown).cast(), ((*this).m_subMenuParent as *mut IUnknown).cast());
     } else {
-        IUnknown_SetSite(popup as *mut IUnknown, (*this).m_site as *mut IUnknown);
+        IUnknown_SetSite((popup as *mut IUnknown).cast(), ((*this).m_site as *mut IUnknown).cast());
     }
 
     let mut flags: DWORD = MPPF_RIGHT;
@@ -2909,7 +2918,7 @@ pub unsafe fn CMenuBand__HasSubMenu_body(this: *mut CMenuBand) -> HRESULT {
 // C++ CMenuBand::AdjustForTheme — CMenuBand.cpp:1167-1170
 pub unsafe fn CMenuBand_AdjustForTheme_body(this: *mut CMenuBand, bFlatStyle: BOOL) -> HRESULT {
     IUnknown_QueryServiceExec(
-        (*this).m_site as *mut IUnknown,
+        ((*this).m_site as *mut IUnknown).cast(),
         core::ptr::addr_of!(SID_SMenuPopup),
         core::ptr::addr_of!(CGID_MenuDeskBar),
         4,

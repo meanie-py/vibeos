@@ -53,6 +53,13 @@ fn ident_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
     R.get_or_init(|| re(r"\b[A-Za-z_]\w*\b"))
 }
+fn constant_re() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| re(r"\b([A-Z][A-Z0-9]*_[A-Z0-9_]*[A-Z0-9])\b"))
+}
+fn rust_call_re(name: &str) -> Regex {
+    re(&format!(r"\b{}\s*!?\s*\(", regex::escape(name)))
+}
 fn cfg_tokens() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
     R.get_or_init(|| re(r#"[A-Za-z_]\w*|"[^"]*"|[(),=]"#))
@@ -308,14 +315,44 @@ pub fn dead_only_calls(
     let blanked = twins::blank_c(body);
     let mut out = BTreeMap::new();
     for r in ranges {
-        for m in calls_re().captures_iter(&blanked[r.start..r.end]) {
-            let name = &m[1];
-            if !live_names.contains(name) && !C_KEYWORDS.contains(&name) {
-                out.entry(name.to_owned()).or_insert(r.directive.clone());
+        let dead = &blanked[r.start..r.end];
+        for name in calls_re()
+            .captures_iter(dead)
+            .map(|m| m[1].to_owned())
+            .chain(constant_re().captures_iter(dead).map(|m| m[1].to_owned()))
+        {
+            if !live_names.contains(&name) && !C_KEYWORDS.contains(&name.as_str()) {
+                out.entry(name).or_insert(r.directive.clone());
             }
         }
     }
     (out, judged)
+}
+
+/// Match Python's VersionVsC check: any dead-only name called in live Rust is
+/// a hit, while an ALL_CAPS constant is a hit only on a decision line.
+pub fn rust_uses(name: &str, live: &str) -> bool {
+    if rust_call_re(name).is_match(live) {
+        return true;
+    }
+    if !constant_re()
+        .find(name)
+        .is_some_and(|m| m.start() == 0 && m.end() == name.len())
+    {
+        return false;
+    }
+    let occurrence = re(&format!(r"\b{}\b", regex::escape(name)));
+    let declaration = re(r"^\s*(?:pub\s+)?const\s");
+    let decision = re(r"\b(?:if|while)\b|=>");
+    let found = occurrence.find_iter(live).any(|m| {
+        let start = live[..m.start()].rfind('\n').map_or(0, |i| i + 1);
+        let end = live[m.end()..]
+            .find('\n')
+            .map_or(live.len(), |i| m.end() + i);
+        let line = &live[start..end];
+        !declaration.is_match(line) && decision.is_match(line)
+    });
+    found
 }
 
 pub fn version_constants(header: &str) -> BTreeMap<String, i64> {
@@ -693,6 +730,43 @@ mod tests {
             ["FsRtlChangeBackingFileObject", "NotOnReactos"]
         );
         assert_eq!(n, 2);
+    }
+    #[test]
+    fn dead_constant_tests_are_indexed_alongside_calls() {
+        let c = "{\nPrep();\n#if (NTDDI_VERSION >= NTDDI_WIN7)\nif (FlagOn(o, FILE_OPEN_REQUIRING_OPLOCK)) { return 1; }\n#endif\n}";
+        let (names, _) = dead_only_calls(c, &env(0x502, 0x05020100), &constants());
+        assert_eq!(
+            names.keys().map(String::as_str).collect::<Vec<_>>(),
+            vec!["FILE_OPEN_REQUIRING_OPLOCK", "FlagOn"]
+        );
+    }
+    #[test]
+    fn rust_constants_count_only_when_they_decide() {
+        let constant = "FILE_OPEN_REQUIRING_OPLOCK";
+        assert!(rust_uses(
+            constant,
+            "{ if FlagOn(o, FILE_OPEN_REQUIRING_OPLOCK) != 0 { return 1; } }"
+        ));
+        assert!(rust_uses(
+            "PNP_X_ID",
+            "{ match p { PNP_X_ID => a, _ => b } }"
+        ));
+        assert!(!rust_uses(
+            "IRP_MJ_WRITE",
+            "{ w = (mj == IRP_MJ_WRITE) as u32; }"
+        ));
+        assert!(!rust_uses(
+            constant,
+            "{\n const FILE_OPEN_REQUIRING_OPLOCK: u32 = 2;\n}"
+        ));
+        assert!(!rust_uses(
+            constant,
+            "{ let s: *mut FILE_OPEN_REQUIRING_OPLOCK = p; }"
+        ));
+        assert!(rust_uses(
+            "FlagOn",
+            "{ FlagOn(o, FILE_OPEN_REQUIRING_OPLOCK); }"
+        ));
     }
     #[test]
     fn scanner_control_gates_short_circuit_and_cfg_values_match_python() {

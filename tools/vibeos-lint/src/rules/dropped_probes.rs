@@ -1,20 +1,33 @@
 //! Compare executable Rust user-buffer validation against commented C.
-use crate::{Corpus, Rule, SourceFile};
+use crate::{twins, Corpus, Rule, SourceFile};
 use regex::Regex;
-use std::{collections::HashMap, sync::LazyLock};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::LazyLock,
+};
 use tree_sitter::Node;
 pub struct DroppedProbes;
 impl Rule for DroppedProbes {
     fn name(&self) -> &'static str {
         "scan_dropped_probes"
     }
+    fn needs_c_twins(&self) -> bool {
+        true
+    }
     fn run(&self, c: &Corpus) -> Result<Vec<String>, String> {
+        let files: Vec<_> = c.rust_files().collect();
         let mut out = Vec::new();
-        for f in c.rust_files() {
-            for (_, n, k, _) in scan_file(f)? {
+        let mut paired = HashSet::new();
+        for f in &files {
+            let (hits, names) = scan_file_paired(f)?;
+            for name in names {
+                paired.insert((f.path.clone(), name));
+            }
+            for (_, n, k, _) in hits {
                 out.push(format!("{}: {n} [{k}]", f.path.display()));
             }
         }
+        out.extend(scan_twins(c, &files, &paired));
         out.sort();
         Ok(out)
     }
@@ -145,15 +158,20 @@ fn base(name: &str) -> Vec<String> {
     v
 }
 fn scan_file(f: &SourceFile) -> Result<Vec<(String, String, String, String)>, String> {
+    Ok(scan_file_paired(f)?.0)
+}
+fn scan_file_paired(
+    f: &SourceFile,
+) -> Result<(Vec<(String, String, String, String)>, HashSet<String>), String> {
     let path = f.path.to_string_lossy().into_owned();
     if f.path.components().any(|p| p.as_os_str() == "target")
         || SKIP.is_match(&path)
         || !PREFILTER.is_match(&f.text)
     {
-        return Ok(vec![]);
+        return Ok((vec![], HashSet::new()));
     }
     if GENERATED.is_match(&f.text.chars().take(4096).collect::<String>()) {
-        return Ok(vec![]);
+        return Ok((vec![], HashSet::new()));
     }
     let tree = f.rust_tree()?;
     let (live, craw) = crate::rules::dropped_prints::regions(&f.text, &tree);
@@ -164,8 +182,9 @@ fn scan_file(f: &SourceFile) -> Result<Vec<(String, String, String, String)>, St
         *cf.entry(n.clone()).or_default() += count(&b);
         cw.entry(n).or_default().extend(keys(&b, &WRITE));
     }
+    let paired: HashSet<String> = cf.keys().cloned().collect();
     if !cf.values().any(|x| *x > 0) {
-        return Ok(vec![]);
+        return Ok((vec![], paired));
     }
     let mut nodes = Vec::new();
     walk(tree.root_node(), &mut nodes);
@@ -248,7 +267,93 @@ fn scan_file(f: &SourceFile) -> Result<Vec<(String, String, String, String)>, St
         }
     }
     out.sort();
-    Ok(out)
+    Ok((out, paired))
+}
+
+static TWIN_RANGE: LazyLock<Regex> =
+    LazyLock::new(|| crate::regexes::cached(r"probe_user_buffer\s*\(").unwrap());
+static TWIN_C_WRITE: LazyLock<Regex> =
+    LazyLock::new(|| crate::regexes::cached(r"ProbeForWrite[A-Za-z0-9_]*\s*\(").unwrap());
+fn twin_generated(raw: &str) -> bool {
+    GENERATED.is_match(&raw.chars().take(4096).collect::<String>())
+}
+fn twin_keys(text: &str, pattern: &Regex) -> HashSet<String> {
+    valid_calls(text, pattern)
+        .into_iter()
+        .filter_map(|m| key(first_arg(text, m.end())))
+        .collect()
+}
+fn scan_twins(
+    c: &Corpus,
+    files: &[&SourceFile],
+    paired: &HashSet<(std::path::PathBuf, String)>,
+) -> Vec<String> {
+    scan_twins_with_index(c, files, paired, c.c_twins())
+}
+fn scan_twins_with_index(
+    c: &Corpus,
+    files: &[&SourceFile],
+    paired: &HashSet<(std::path::PathBuf, String)>,
+    index: &twins::CIndex,
+) -> Vec<String> {
+    let mut work = Vec::new();
+    for f in files {
+        if !TWIN_RANGE.is_match(&f.text) || twin_generated(&f.text) {
+            continue;
+        }
+        let blank = twins::blank_rust(&f.text);
+        for fun in twins::rust_functions(&blank, &c.root.join(&f.path)) {
+            if paired.contains(&(f.path.clone(), fun.name.clone()))
+                || !valid_calls(&fun.body, &TWIN_RANGE).iter().next().is_some()
+            {
+                continue;
+            }
+            let sig_at = f.text[..fun.body_start].rfind("fn ");
+            // Python's 240-character suppression window is measured in text,
+            // not UTF-8 bytes. A missing `fn ` starts at the beginning.
+            let suppress_start = sig_at
+                .and_then(|at| f.text[..at].char_indices().rev().nth(239).map(|(ix, _)| ix))
+                .unwrap_or(0);
+            let end = fun
+                .body_start
+                .saturating_add(fun.body.len())
+                .min(f.text.len());
+            if suppressed(&f.text[suppress_start..end]) {
+                continue;
+            }
+            work.push((f.path.clone(), fun));
+        }
+    }
+    if work.is_empty() {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for (rust_path, fun) in work {
+        let c_functions: Vec<_> = index
+            .get(&fun.name)
+            .iter()
+            .filter(|t| twins::same_module(&fun.path, t))
+            .collect();
+        if c_functions.is_empty() {
+            continue;
+        }
+        let mut c_write_keys = HashSet::new();
+        for twin in &c_functions {
+            c_write_keys.extend(twin_keys(&twin.body, &TWIN_C_WRITE));
+        }
+        let range_keys = twin_keys(&fun.body, &TWIN_RANGE);
+        let live_write_keys = twin_keys(&fun.body, &LIVE_WRITE);
+        let mut weak: Vec<_> = c_write_keys
+            .intersection(&range_keys)
+            .filter(|key| !live_write_keys.contains(*key))
+            .cloned()
+            .collect();
+        weak.sort();
+        if !weak.is_empty() {
+            out.push(format!("{}: {} [WEAK]", rust_path.display(), fun.name));
+        }
+    }
+    out
 }
 #[cfg(test)]
 mod tests {
@@ -268,6 +373,89 @@ mod tests {
             DroppedProbes.run(&c).unwrap(),
             vec!["sdk/lib/rust/t.rs: f [ALL]"]
         );
+    }
+
+    fn twin_corpus(c_path: &str, c_name: &str, rust: &str) -> Corpus {
+        Corpus::new(
+            PathBuf::from("."),
+            vec![
+                SourceFile::new(c_path.into(), c_name.into()),
+                SourceFile::new(
+                    "sdk/lib/rust/ntoskrnl-rust/src/io/iofunc.rs".into(),
+                    rust.into(),
+                ),
+            ],
+        )
+    }
+    #[test]
+    fn hand_port_weak_write_probe_uses_same_module_c_twin() {
+        let c = twin_corpus(
+            "ntoskrnl/io/iomgr/iofunc.c",
+            "NTSTATUS NtReadFile(PVOID Buffer, ULONG Length) { ProbeForWrite(Buffer, Length, 1); return 0; }",
+            "pub unsafe fn NtReadFile(Buffer: PVOID, Length: ULONG) -> NTSTATUS { probe_user_buffer(Buffer, Length as usize, 1, mode)?; STATUS_SUCCESS }",
+        );
+        let index = crate::twins::CIndex::from_files(&c.files);
+        let files = c.rust_files().collect::<Vec<_>>();
+        let got = scan_twins(&c, &files, &HashSet::new());
+        assert_eq!(
+            got,
+            vec!["sdk/lib/rust/ntoskrnl-rust/src/io/iofunc.rs: NtReadFile [WEAK]".to_owned()]
+        );
+        assert_eq!(
+            scan_twins_with_index(&c, &files, &HashSet::new(), &index),
+            got
+        );
+    }
+    #[test]
+    fn twin_suppression_window_uses_characters_and_multiline_fn_is_checked() {
+        let csrc = "NTSTATUS NtReadFile(PVOID Buffer, ULONG Length) { ProbeForWrite(Buffer, Length, 1); return 0; }";
+        let body = "(Buffer: PVOID, Length: ULONG) -> NTSTATUS { probe_user_buffer(Buffer, Length as usize, 1, mode)?; STATUS_SUCCESS }";
+        let suppressed = format!(
+            "// nolint: dropped-probe\n//{}\npub unsafe fn NtReadFile{body}",
+            "é".repeat(110)
+        );
+        let c = twin_corpus("ntoskrnl/io/iomgr/iofunc.c", csrc, &suppressed);
+        assert!(scan_twins(&c, &c.rust_files().collect::<Vec<_>>(), &HashSet::new()).is_empty());
+        let multiline = format!("//{}\npub unsafe fn\nNtReadFile{body}", "é".repeat(110));
+        let c = twin_corpus("ntoskrnl/io/iomgr/iofunc.c", csrc, &multiline);
+        assert_eq!(
+            scan_twins(&c, &c.rust_files().collect::<Vec<_>>(), &HashSet::new()).len(),
+            1
+        );
+    }
+    #[test]
+    fn twin_write_probe_is_cleared_by_touching_check_or_wrong_module_is_ignored() {
+        let c = twin_corpus(
+            "ntoskrnl/io/iomgr/iofunc.c",
+            "NTSTATUS NtReadFile(PVOID Buffer, ULONG Length) { ProbeForWrite(Buffer, Length, 1); return 0; }",
+            "pub unsafe fn NtReadFile(Buffer: PVOID, Length: ULONG) -> NTSTATUS { probe_user_buffer(Buffer, Length as usize, 1, mode)?; probe_user_buffer_write(Buffer, Length as usize, 1, mode)?; STATUS_SUCCESS }",
+        );
+        assert!(scan_twins(&c, &c.rust_files().collect::<Vec<_>>(), &HashSet::new()).is_empty());
+        let wrong = twin_corpus(
+            "drivers/bus/acpi/iofunc.c",
+            "NTSTATUS NtReadFile(PVOID Buffer, ULONG Length) { ProbeForWrite(Buffer, Length, 1); return 0; }",
+            "pub unsafe fn NtReadFile(Buffer: PVOID, Length: ULONG) -> NTSTATUS { probe_user_buffer(Buffer, Length as usize, 1, mode)?; STATUS_SUCCESS }",
+        );
+        assert!(scan_twins(
+            &wrong,
+            &wrong.rust_files().collect::<Vec<_>>(),
+            &HashSet::new()
+        )
+        .is_empty());
+    }
+    #[test]
+    fn commented_c_pair_prevents_duplicate_twin_finding() {
+        let c = twin_corpus(
+            "ntoskrnl/io/iomgr/iofunc.c",
+            "NTSTATUS NtReadFile(PVOID Buffer, ULONG Length) { ProbeForWrite(Buffer, Length, 1); return 0; }",
+            "pub unsafe fn NtReadFile(Buffer: PVOID, Length: ULONG) -> NTSTATUS { probe_user_buffer(Buffer, Length as usize, 1, mode)?; STATUS_SUCCESS }\n// NTSTATUS NtReadFile(PVOID Buffer, ULONG Length) { ProbeForWrite(Buffer, Length, 1); return 0; }",
+        );
+        let rust = c.rust_files().next().unwrap();
+        let (hits, names) = scan_file_paired(rust).unwrap();
+        assert!(hits.is_empty());
+        assert!(names.contains("NtReadFile"));
+        let paired = HashSet::from([(rust.path.clone(), "NtReadFile".into())]);
+        assert!(scan_twins(&c, &[rust], &paired).is_empty());
     }
 }
 

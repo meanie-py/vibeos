@@ -64,7 +64,10 @@ pub unsafe extern "system" fn HalpTranslateSystemBusAddress(
             return 0; /* FALSE */
         }
 
-        (*TranslatedAddress).QuadPart = bus_addr + (*range).SystemBase;
+        core::ptr::write_unaligned(
+            core::ptr::addr_of_mut!((*TranslatedAddress).QuadPart),
+            bus_addr + (*range).SystemBase,
+        );
         *AddressSpace = (*range).SystemAddressSpace;
         1 /* TRUE */
     }

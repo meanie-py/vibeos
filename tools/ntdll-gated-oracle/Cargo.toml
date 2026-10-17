@@ -1,0 +1,19 @@
+# Differential oracle for the ntdll exports ungated 2026-10-17 (hashes, mem/IO resource
+# codecs, processor number, SList push, RtlIsNameInExpression, locale names). NOT part of
+# the OS build: the test binary is built for Windows and run on the real Windows host, where
+# each in-tree body is called beside the real ntdll export on identical inputs and every
+# caller-visible byte is compared. Run with ./run.sh.
+[package]
+name = "ntdll-gated-oracle"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+ntkrnl-sys = { path = "../../sdk/lib/rust/ntkrnl-sys", default-features = false }
+rtl-strings = { path = "../../sdk/lib/rust/rtl-strings", features = ["cabi"] }

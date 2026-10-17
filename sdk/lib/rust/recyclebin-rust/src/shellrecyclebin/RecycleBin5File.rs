@@ -1,4 +1,6 @@
 use crate::prelude::*;
+// One declaration per external symbol: types.rs.
+use crate::types::CreateFileW;
 use crate::shellrecyclebin::recyclebin_generic_free::RecycleBinGeneric_IsEqualFileIdentity;
 // IRecycleBinFile: 14 slot(s) from the bindgen island, which agrees with recyclebin.h.
 // Not re-rendered here -- a second `IRecycleBinFile` would be a distinct type with the same name.
@@ -6,7 +8,7 @@ use crate::shellrecyclebin::recyclebin_generic_free::RecycleBinGeneric_IsEqualFi
 // Deterministic COM scaffold for RecycleBin5File; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    #[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
+    #[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: SIZE_T) -> *mut core::ffi::c_void;
     #[link_name = "HeapFree"] fn cpp_com_HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
@@ -16,7 +18,7 @@ impl CppComSize for usize { fn cpp_com_size(self) -> usize { self } }
 impl CppComSize for u32 { fn cpp_com_size(self) -> usize { self as usize } }
 #[inline]
 unsafe fn HeapAlloc<N: CppComSize>(heap: HANDLE, flags: DWORD, bytes: N) -> *mut core::ffi::c_void {
-    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size())
+    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size() as SIZE_T)
 }
 #[inline]
 unsafe fn HeapFree<T>(heap: HANDLE, flags: DWORD, memory: *mut T) -> BOOL {
@@ -318,7 +320,6 @@ pub struct PARAMDESC {
 
 extern "system" {
     fn CloseHandle(handle: HANDLE) -> BOOL;
-    fn CreateFileW(name: LPCWSTR, access: DWORD, share: DWORD, security: LPVOID, creation: DWORD, flags: DWORD, template: HANDLE) -> HANDLE;
     fn GetLastError() -> DWORD;
 }
 

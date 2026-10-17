@@ -6974,13 +6974,13 @@ case "$DRIVER" in
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DUNICODE -D_ATL_NO_EXCEPTIONS -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
   mmc_new)
-    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-11 from base/applications/mmc_new/CMakeLists.txt
-    # (14 compiled TU(s), 202 headers in the include closure, 37 switch constant(s)).
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-16 from base/applications/mmc_new/CMakeLists.txt
+    # (15 compiled TU(s), 203 headers in the include closure, 37 switch constant(s)).
     # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
     # that exact sequence is bindgen-able). Review the WHY notes in the report.
     USERMODE=1
     REAL_UNIONS=1
-    # BLOCKLIST_FUNCS, MEASURED: 78 external prototype(s) declared by the include closure, 15 called but declared nowhere in it.
+    # BLOCKLIST_FUNCS, MEASURED: 84 external prototype(s) declared by the include closure, 17 called but declared nowhere in it.
     # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
     BLOCKLIST_FUNCS=0
     BLOCKLIST_FUNCS_FROM_CRATE=1
@@ -6998,13 +6998,14 @@ case "$DRIVER" in
                   --allowlist-file '.*[/\\]ui[/\\]rosctrls\.h'
                   --allowlist-file '.*[/\\]wingdi\.h'
                   --allowlist-file '.*mmc_new[/\\].*\.h'
+                  --allowlist-file '.*[/\\]CConsoleWnd\.h'
                   --allowlist-file '.*[/\\]atlwin\.h' )
     # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
     UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
     EXTRA_INC=( -I"${SRC}/base/applications/mmc_new" -I"${SRC}/build-i386/base/applications/mmc_new" )
     # LOWER priority than the standard SDK dirs -- the real compile lists these
     # after them, and hoisting one ahead swaps which header an include resolves to.
-    LATE_INC=( -I"${SRC}/sdk/lib/atl" -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/i686-w64-mingw32/include/c++/v1" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    LATE_INC=( -I"${SRC}/sdk/lib/atl" -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/vendor/symcrypt/inc" -I"${SRC}/vendor/symcrypt/lib" -I"${SRC}/.build-tools/llvm-mingw/i686-w64-mingw32/include/c++/v1" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_ATL_NO_EXCEPTIONS -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
   msports)
@@ -8798,6 +8799,217 @@ case "$DRIVER" in
     LATE_INC=( -I"${SRC}/sdk/include/reactos/libs/sound" -I"${SRC}/drivers/wdm/audio/legacy/wdmaud" -I"${SRC}/sdk/lib/drivers/sound/mmixer" -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/vendor/libsamplerate" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/vendor/symcrypt/inc" -I"${SRC}/vendor/symcrypt/lib" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES -DNTOS_MODE_USER )
     ;;
+  reactos)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-17 from base/setup/reactos/CMakeLists.txt
+    # (5 compiled TU(s), 234 headers in the include closure, 221 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 213 external prototype(s) declared by the include closure, 31 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/base/setup/reactos"
+    WRAPPER_INC=$'#include	<stdio.h>\n#include	<windows.h>\n#include	<string.h>\n#include	<malloc.h>\n#include	<tchar.h>\n#include "reactos.h"\n#include <winnls.h> // For GetUserDefaultLCID()\n#include <shlwapi.h>\n#include <math.h> // For pow()\n#include <ntddstor.h>\n#include <ntddscsi.h>\n#include "resource.h"\n#include <winnls.h>\n#define NDEBUG\n#include <debug.h>\n#define _USETUP_PCH_ // Disable USetup header inclusion\n#define NTOS_MODE_USER\n#include <ndk/mmfuncs.h>\n#include <ndk/obfuncs.h>\n#include <delayimp.h>\n#include <ntstrsafe.h>\n#include "../../usetup/spapisup/cabinet.h"\n#include "../../usetup/spapisup/cabinet.c"\n#define SetupOpenFileQueue      _SetupOpenFileQueue\n#define SetupCloseFileQueue     _SetupCloseFileQueue\n#define SetupQueueDeleteW       _SetupQueueDeleteW\n#define SetupQueueRenameW       _SetupQueueRenameW\n#define SetupCommitFileQueueW   _SetupCommitFileQueueW\n#include "../../usetup/spapisup/fileqsup.c"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]\.\.[/\\]\.\.[/\\]usetup[/\\]spapisup[/\\]cabinet\.c' --allowlist-file '.*[/\\]\.\.[/\\]\.\.[/\\]usetup[/\\]spapisup[/\\]cabinet\.h'
+                  --allowlist-file '.*[/\\]\.\.[/\\]\.\.[/\\]usetup[/\\]spapisup[/\\]fileqsup\.c'
+                  --allowlist-file '.*[/\\]\.\.[/\\]lib[/\\]setuplib\.h'
+                  --allowlist-file '.*[/\\]commctrl\.h'
+                  --allowlist-file '.*[/\\]delayimp\.h'
+                  --allowlist-file '.*[/\\]devguid\.h'
+                  --allowlist-file '.*[/\\]ntddscsi\.h'
+                  --allowlist-file '.*[/\\]ntddstor\.h'
+                  --allowlist-file '.*[/\\]ntstrsafe\.h'
+                  --allowlist-file '.*[/\\]prsht\.h'
+                  --allowlist-file '.*[/\\]shlwapi\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  --allowlist-file '.*[/\\]treelist\.h'
+                  --allowlist-file '.*[/\\]windowsx\.h'
+                  --allowlist-file '.*[/\\]wingdi\.h'
+                  --allowlist-file '.*[/\\]winnls\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*reactos[/\\].*\.h'
+                  --allowlist-file '.*[/\\]winuser\.h' )
+    # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
+    UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
+    EXTRA_INC=( -I"${SRC}/base/setup/reactos" -I"${SRC}/build-i386/base/setup/reactos" -I"${SRC}/base/setup/reactos/spapisup" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/vendor/treelist" -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/vendor/zlib/include" -I"${SRC}/base/setup/lib" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/vendor/symcrypt/inc" -I"${SRC}/vendor/symcrypt/lib" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES -DNTOS_MODE_USER )
+    ;;
+  blue)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-17 from drivers/setup/blue/CMakeLists.txt
+    # (2 compiled TU(s), 80 headers in the include closure, 16 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=0
+    REAL_UNIONS=1
+    DRIVER_DIR="${SRC}/drivers/setup/blue"
+    WRAPPER_INC=$'#include "blue.h"\n#include <ndk/inbvfuncs.h>\n#define NDEBUG\n#include <debug.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]blue[/\\]ntddblue\.h' --allowlist-file '.*blue[/\\].*\.h'
+                  --allowlist-file '.*[/\\]wdm\.h' )
+    EXTRA_INC=( -I"${SRC}/drivers/setup/blue" -I"${SRC}/build-i386/drivers/setup/blue" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/reactos/drivers" -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  ndisuio)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-17 from drivers/network/ndisuio/CMakeLists.txt
+    # (6 compiled TU(s), 73 headers in the include closure, 14 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=0
+    REAL_UNIONS=1
+    DRIVER_DIR="${SRC}/drivers/network/ndisuio"
+    WRAPPER_INC=$'#include "ndisuio.h"\n#define NDEBUG\n#include <debug.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]ndis\.h' --allowlist-file '.*[/\\]nuiouser\.h'
+                  --allowlist-file '.*ndisuio[/\\].*\.h'
+                  --allowlist-file '.*[/\\]ntddndis\.h'
+                  --allowlist-file '.*[/\\]ntdef\.h'
+                  --allowlist-file '.*[/\\]wdm\.h' )
+    EXTRA_INC=( -I"${SRC}/drivers/network/ndisuio" -I"${SRC}/build-i386/drivers/network/ndisuio" -I"${SRC}/sdk/include/reactos/drivers/ndisuio" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DNDIS50 -D_NTDRIVER_ -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  netio|netio-types_1)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-17 from drivers/network/netio/CMakeLists.txt
+    # (3 compiled TU(s), 199 headers in the include closure, 14 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=0
+    REAL_UNIONS=1
+    DRIVER_DIR="${SRC}/drivers/network/netio"
+    case "$DRIVER" in
+      # island types — 1 TU(s):
+      # netio.c
+      netio)
+        WRAPPER_INC=$'#include <ntifs.h>\n#include <netiodef.h>\n#include <ws2def.h>\n#include <wsk.h>\n#include <ndis.h>\n#define NDEBUG\n#include <reactos/debug.h>\n#include <tdi.h>\n#include <tcpioctl.h>\n#include <tdikrnl.h>\n#include <tdiinfo.h>\n#include <tdi_proto.h>\n#include <tdiconn.h>'
+        ALLOW_FILES=( --allowlist-file '.*[/\\]ndis\.h' --allowlist-file '.*[/\\]netiodef\.h'
+                      --allowlist-file '.*[/\\]tcpioctl\.h'
+                      --allowlist-file '.*[/\\]tdi\.h'
+                      --allowlist-file '.*[/\\]tdi_proto\.h'
+                      --allowlist-file '.*[/\\]tdiconn\.h'
+                      --allowlist-file '.*[/\\]tdiinfo\.h'
+                      --allowlist-file '.*[/\\]tdikrnl\.h'
+                      --allowlist-file '.*[/\\]ws2def\.h'
+                      --allowlist-file '.*[/\\]wsk\.h'
+                      --allowlist-file '.*netio[/\\].*\.h'
+                      --allowlist-file '.*[/\\]wdm\.h' )
+        ;;
+      # island types_1 — 2 TU(s):
+      # tdi.c tdiconn.c
+      netio-types_1)
+        WRAPPER_INC=$'#include <afd.h>\n#undef UNIMPLEMENTED\n#include <tdikrnl.h>\n#include <tdiinfo.h>\n#define NDEBUG\n#include <reactos/debug.h>'
+        ALLOW_FILES=( --allowlist-file '.*[/\\]afd\.h' --allowlist-file '.*[/\\]tcpioctl\.h'
+                      --allowlist-file '.*[/\\]tdi\.h'
+                      --allowlist-file '.*[/\\]tdi_proto\.h'
+                      --allowlist-file '.*[/\\]tdiconn\.h'
+                      --allowlist-file '.*[/\\]tdiinfo\.h'
+                      --allowlist-file '.*[/\\]tdikrnl\.h'
+                      --allowlist-file '.*[/\\]ws2def\.h'
+                      --allowlist-file '.*netio[/\\].*\.h'
+                      --allowlist-file '.*[/\\]wdm\.h' )
+        ;;
+    esac
+    EXTRA_INC=( -I"${SRC}/drivers/network/netio" -I"${SRC}/build-i386/drivers/network/netio" -I"${SRC}/drivers/network/afd/include" -I"${SRC}/drivers/network/tdihelpers/include" -I"${SRC}/sdk/include/reactos/drivers" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x600 -DNTDDI_VERSION=0x06000000 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_CRT_NO_POSIX_ERROR_CODES )
+    OUT_CRATE_DIR="${OUT_CRATE_DIR:-${SRC}/sdk/lib/rust/netio-rust/src}"
+    ;;
+
+  # MULTI-ISLAND: these TUs do NOT share one legal include set (§9.108), so
+  # generate one pass per group — all into the same crate:
+  #   gen_driver_types.sh netio
+  #   TYPES_STEM=types_1 gen_driver_types.sh netio-types_1
+  # Then dispatch them from the crate: one `mod <stem>;` per island, and each
+  # translated module imports from the island its own C include set belongs to
+  # (names legitimately overlap between islands — never glob both into scope).
+
+  # MULTI-ISLAND: these TUs do NOT share one legal include set (§9.108), so
+  # generate one pass per group — all into the same crate:
+  #   gen_driver_types.sh netio
+  #   TYPES_STEM=types_1 gen_driver_types.sh netio-types_1
+  # Then dispatch them from the crate: one `mod <stem>;` per island, and each
+  # translated module imports from the island its own C include set belongs to
+  # (names legitimately overlap between islands — never glob both into scope).
+
+  # MULTI-ISLAND: these TUs do NOT share one legal include set (§9.108), so
+  # generate one pass per group — all into the same crate:
+  #   gen_driver_types.sh netio
+  #   TYPES_STEM=types_1 gen_driver_types.sh netio-types_1
+  # Then dispatch them from the crate: one `mod <stem>;` per island, and each
+  # translated module imports from the island its own C include set belongs to
+  # (names legitimately overlap between islands — never glob both into scope).
+
+  # MULTI-ISLAND: these TUs do NOT share one legal include set (§9.108), so
+  # generate one pass per group — all into the same crate:
+  #   gen_driver_types.sh netio
+  #   TYPES_STEM=types_1 gen_driver_types.sh netio-types_1
+  # Then dispatch them from the crate: one `mod <stem>;` per island, and each
+  # translated module imports from the island its own C include set belongs to
+  # (names legitimately overlap between islands — never glob both into scope).
+  rtl8139)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-17 from drivers/network/dd/rtl8139/CMakeLists.txt
+    # (4 compiled TU(s), 73 headers in the include closure, 38 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=0
+    REAL_UNIONS=1
+    DRIVER_DIR="${SRC}/drivers/network/dd/rtl8139"
+    WRAPPER_INC=$'#include "nic.h"\n#define NDEBUG\n#include <debug.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]ndis\.h' --allowlist-file '.*[/\\]ntddndis\.h'
+                  --allowlist-file '.*rtl8139[/\\].*\.h'
+                  --allowlist-file '.*[/\\]ntdef\.h'
+                  --allowlist-file '.*[/\\]wdm\.h' )
+    EXTRA_INC=( -I"${SRC}/drivers/network/dd/rtl8139" -I"${SRC}/build-i386/drivers/network/dd/rtl8139" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DNDIS50_MINIPORT -DNDIS_MINIPORT_DRIVER -DNDIS_LEGACY_MINIPORT=1 -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  tdi)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-17 from drivers/network/tdi/CMakeLists.txt
+    # (8 compiled TU(s), 68 headers in the include closure, 0 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=0
+    REAL_UNIONS=1
+    DRIVER_DIR="${SRC}/drivers/network/tdi"
+    WRAPPER_INC=$'#include "precomp.h"\n#define NDEBUG\n#include <debug.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]tdikrnl\.h' --allowlist-file '.*tdi[/\\].*\.h'
+                  --allowlist-file '.*[/\\]tdi\.h'
+                  --allowlist-file '.*[/\\]wdm\.h' )
+    EXTRA_INC=( -I"${SRC}/drivers/network/tdi" -I"${SRC}/build-i386/drivers/network/tdi" -I"${SRC}/drivers/network/tdi/cte" -I"${SRC}/drivers/network/tdi/misc" -I"${SRC}/drivers/network/tdi/tdi" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DNDIS40 -D_NTDRIVER_ -D_TDI_ -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  tzlib)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-17 from sdk/lib/tzlib/CMakeLists.txt
+    # (1 compiled TU(s), 68 headers in the include closure, 0 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 9 external prototype(s) declared by the include closure, 1 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/sdk/lib/tzlib"
+    WRAPPER_INC=$'#include <stdlib.h>\n#include <windef.h>\n#include <winbase.h>\n#include <winreg.h>\n#include "tzlib.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]winreg\.h' --allowlist-file '.*tzlib[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/sdk/lib/tzlib" -I"${SRC}/build-i386/sdk/lib/tzlib" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 
@@ -9011,7 +9223,7 @@ run_arch() {
       "${ALLOW_FILES[@]}" \
       "${BL[@]}" "${FN_BL[@]}" "${ITEM_BL[@]}" "${OPQ[@]}" \
       --raw-line '// @generated by tools/rustconv/gen_driver_types.sh — driver-private structs.' \
-      --raw-line '#![allow(non_camel_case_types, non_snake_case, dead_code)]' \
+      --raw-line '#![allow(non_camel_case_types, non_snake_case, dead_code, unnecessary_transmutes)]' \
       --raw-line '// base field types resolved via the sibling -sys glob below (kernel: private' \
       --raw-line '// ntkrnl_sys::ddk; usermode: public ntdll_sys::nt — see USERMODE in the script).' \
       --raw-line "$REEXPORT_LINE" \
@@ -9183,6 +9395,15 @@ PYEOF
     # Strip `pub static [mut] Name: T;` extern-global lines (msafd owns these in the
     # translation). Leaves the surrounding `extern "C" { ... }` block valid even if emptied.
     sed -i -E '/^[[:space:]]*pub static (mut )?[A-Za-z_][A-Za-z0-9_]*:/d' "$FINAL"
+  fi
+  if [ "${BLOCKLIST_FUNCS_FROM_CRATE:-0}" = 1 ] && [ "${KEEP_CRATE_FUNCS:-0}" != 1 ]; then
+    # The same rule for GLOBALS: the island must not declare a variable the crate defines.
+    # mspaint's translation defines `pub static mut toolsModel: ToolsModel` in Rust, and the
+    # island re-declared it as an `extern` static that nothing ever linked. Worse, its type
+    # reaches cppapp's Rust-ABI vtables (`__delete: unsafe fn(*mut T)`), which is all 48 of
+    # the tree's `improper_ctypes` warnings on 2026-10-17. Unlike BLOCKLIST_VARS, a global
+    # the module IMPORTS (`ATL::_pobjMapEntryFirst`) stays.
+    python3 "${SCRIPT_DIR}/drop_crate_globals.py" "$FINAL" "$CRATE_SRC"
   fi
   if [ "${CALLBACK_SYSTEM:-0}" = 1 ]; then
     # Normalize fn-POINTER-TYPE calling conventions to the portable `extern "system"`.

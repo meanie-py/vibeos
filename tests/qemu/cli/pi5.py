@@ -16,6 +16,7 @@ import json
 import os
 import shutil
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -369,7 +370,8 @@ def _boot(run: Run, args, repo: Path) -> int:
             )
             return run.finalize(repo)
         run.add(Stage("serve-image", detail=f"{STORTEST_LABEL} writable"))
-        rc = _await(run, args, repo, serial, start, stortest=True)
+        medium = ImageServerWatch(server, run.dir / "serve-image.log")
+        rc = _await(run, args, repo, serial, start, stortest=True, medium=medium)
     finally:
         server.terminate()
         try:
@@ -395,8 +397,54 @@ def _boot(run: Run, args, repo: Path) -> int:
     return rc
 
 
+class ImageServerWatch:
+    """When the Pico's image server exited, if it has. The Pico serves the medium only while
+    the server's websocket is open: the moment it closes, every READ answers MEDIUM NOT
+    PRESENT. A server lost a minute into the boot looked like a stortest hang (HANG_TIMEOUT,
+    "no verdict 240s after the desktop", 2026-10-16) while the guest was really reading a
+    disk whose medium had gone, so the wait watches the server for the whole run."""
+
+    def __init__(self, server: subprocess.Popen, log: Path) -> None:
+        self.log = log
+        self.started = time.monotonic()
+        self.lost_after: float | None = None
+        self.returncode: int | None = None
+
+        def wait() -> None:
+            rc = server.wait()
+            if self.lost_after is None:
+                self.returncode = rc
+                self.lost_after = time.monotonic() - self.started
+
+        threading.Thread(target=wait, daemon=True).start()
+
+    def lost(self) -> bool:
+        return self.lost_after is not None
+
+    def stage(self) -> Stage:
+        try:
+            tail = self.log.read_text(errors="replace").strip().splitlines()[-2:]
+        except OSError:
+            tail = []
+        return Stage(
+            "serve-image",
+            status="fail",
+            detail=(
+                f"image server exited {self.returncode} {self.lost_after:.0f}s after the "
+                "reboot: the Pico dropped the medium"
+            ),
+            salient=[*tail, f"see {self.log}"],
+        )
+
+
 def _await(
-    run: Run, args, repo: Path, serial: Path | None, start: int, stortest: bool = False
+    run: Run,
+    args,
+    repo: Path,
+    serial: Path | None,
+    start: int,
+    stortest: bool = False,
+    medium: ImageServerWatch | None = None,
 ) -> int:
 
     if serial is not None:
@@ -406,7 +454,9 @@ def _await(
         if reached:
             run.add(Stage("desktop", detail=pi4.MARKER))
             if stortest:
-                _await_stortest(run, serial, start)
+                _await_stortest(run, serial, start, medium)
+            elif getattr(args, "until", None):
+                _await_until(run, serial, start, args.until, args.until_timeout)
         else:
             verdict = triage.classify(text, reached=False, fail_marker=None, debugcon=None)
             run.classification = verdict["classification"]
@@ -463,7 +513,9 @@ def _await(
     return run.finalize(repo)
 
 
-def _await_stortest(run: Run, serial: Path, start: int) -> None:
+def _await_stortest(
+    run: Run, serial: Path, start: int, medium: ImageServerWatch | None = None
+) -> None:
     deadline = time.monotonic() + STORTEST_WAIT
     while True:
         try:
@@ -475,9 +527,16 @@ def _await_stortest(run: Run, serial: Path, start: int) -> None:
         verdict, lines = stortest_verdict(text)
         if verdict is not None or time.monotonic() > deadline:
             break
+        if medium is not None and medium.lost():
+            break
         time.sleep(5)
     pi4._save_serial(run, text)
     run.extra["stortest"] = lines
+    if verdict != "ok" and medium is not None and medium.lost():
+        # Whatever the guest printed after this, it was about a medium that had gone.
+        run.classification = "BENCH_UNHEALTHY"
+        run.add(medium.stage())
+        return
     if verdict == "ok":
         run.add(Stage("stortest", detail=lines[-1]))
         return
@@ -488,6 +547,38 @@ def _await_stortest(run: Run, serial: Path, start: int) -> None:
             status="fail",
             detail="failed" if verdict else f"no verdict {STORTEST_WAIT}s after the desktop",
             salient=lines[-6:] or ["no [STORTEST] line: did winlogon start it?"],
+        )
+    )
+
+
+def _await_until(run: Run, serial: Path, start: int, needle: str, timeout: float) -> None:
+    """`pi5 boot --until TEXT`: the desktop is not the end of every test. A driver
+    that works on after it (the Wi-Fi's join, 2026-10-17) needs the serial read on
+    until its line arrives, or the run says it never did."""
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            with open(serial, "rb") as f:
+                f.seek(start)
+                text = f.read().decode("utf-8", errors="replace")
+        except OSError:
+            text = ""
+        if needle in text or time.monotonic() > deadline:
+            break
+        time.sleep(2)
+    pi4._save_serial(run, text)
+    hit = next((line for line in text.splitlines() if needle in line), None)
+    if hit is not None:
+        run.add(Stage("until", detail=hit.strip()[:200]))
+        return
+    run.classification = "HANG_TIMEOUT"
+    tail = [line.strip()[:200] for line in text.splitlines()[-6:]]
+    run.add(
+        Stage(
+            "until",
+            status="fail",
+            detail=f"{needle!r} not seen {timeout:.0f}s after the desktop",
+            salient=tail,
         )
     )
 
@@ -519,6 +610,19 @@ def add_parser(sub) -> None:
         default=[],
         metavar="OPT",
         help="loader options for this boot only, e.g. /PROCTRACE (pi5-bench.md)",
+    )
+    boot.add_argument(
+        "--until",
+        metavar="TEXT",
+        help="after the desktop, keep reading serial until a line contains TEXT (a driver "
+        "that works on past the desktop); HANG_TIMEOUT if it never comes",
+    )
+    boot.add_argument(
+        "--until-timeout",
+        type=float,
+        default=180.0,
+        metavar="S",
+        help="seconds --until waits after the desktop (default 180)",
     )
     boot.add_argument(
         "--stortest",

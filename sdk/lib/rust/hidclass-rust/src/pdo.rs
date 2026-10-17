@@ -112,15 +112,22 @@ pub unsafe fn HidClassPDO_GetReportDescription(
     DeviceDescription: PHIDP_DEVICE_DESC,
     CollectionNumber: ULONG,
 ) -> PHIDP_REPORT_IDS {
+    // hidparse gives each report ID its own entry, so a collection can have several. The
+    // read path sizes its buffer from the one returned here, so return the entry with the
+    // longest input report; the first entry may be a feature-only ID with InputLength 0.
+    let mut Best: PHIDP_REPORT_IDS = null_mut();
     let mut Index: ULONG = 0;
     while Index < (*DeviceDescription).ReportIDsLength {
-        if (*(*DeviceDescription).ReportIDs.add(Index as usize)).CollectionNumber as ULONG
-            == CollectionNumber
+        let Entry = (*DeviceDescription).ReportIDs.add(Index as usize);
+        if (*Entry).CollectionNumber as ULONG == CollectionNumber
+            && (Best.is_null() || (*Entry).InputLength > (*Best).InputLength)
         {
-            // found collection
-            return (*DeviceDescription).ReportIDs.add(Index as usize);
+            Best = Entry;
         }
         Index += 1;
+    }
+    if !Best.is_null() {
+        return Best;
     }
 
     // failed to find collection

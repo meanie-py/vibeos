@@ -1,4 +1,11 @@
 use win32k_sys::win32k::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::winbase::ExtTextOutW;
+use crate::windows::window::HeapAlloc;
+// The crate's own functions: the definition is the declaration.
+use crate::windows::class::GetWindowLongPtrW;
+use crate::windows::rect::IsRectEmpty;
+use crate::misc::display::MonitorFromRect;
 #[allow(unused_imports)]
 use core::ffi::c_void;
 
@@ -75,7 +82,6 @@ fn max(a: i32, b: i32) -> i32 { if a > b { a } else { b } }
 extern "system" {
     // kernel32 — process heap + string helpers
     fn GetProcessHeap() -> *mut c_void;
-    fn HeapAlloc(hHeap: *mut c_void, dwFlags: u32, dwBytes: usize) -> *mut c_void;
     fn HeapFree(hHeap: *mut c_void, dwFlags: u32, lpMem: *mut c_void) -> i32;
     fn GetVersion() -> DWORD;
     fn lstrcpynW(lpString1: LPWSTR, lpString2: LPCWSTR, iMaxLength: INT) -> LPWSTR;
@@ -88,7 +94,6 @@ extern "system" {
     fn SendMessageA(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     fn DefWindowProcW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     fn DefWindowProcA(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
-    fn GetWindowLongPtrW(hWnd: HWND, nIndex: i32) -> LONG_PTR;
     fn IsWindow(hWnd: HWND) -> BOOL;
     fn IsWindowVisible(hWnd: HWND) -> BOOL;
     fn IsWindowEnabled(hWnd: HWND) -> BOOL;
@@ -110,7 +115,6 @@ extern "system" {
     fn CharUpperW(lpsz: LPWSTR) -> LPWSTR;
     fn CharLowerA(lpsz: LPSTR) -> LPSTR;
     fn CharUpperA(lpsz: LPSTR) -> LPSTR;
-    fn MonitorFromRect(lprc: *const RECT, dwFlags: DWORD) -> HMONITOR;
     fn GetMonitorInfoW(hMonitor: HMONITOR, lpmi: *mut MONITORINFO) -> BOOL;
 
     // rect helpers (user32)
@@ -119,7 +123,6 @@ extern "system" {
     fn InflateRect(lprc: *mut RECT, dx: i32, dy: i32) -> BOOL;
     fn CopyRect(lprcDst: *mut RECT, lprcSrc: *const RECT) -> BOOL;
     fn UnionRect(lprcDst: *mut RECT, lprcSrc1: *const RECT, lprcSrc2: *const RECT) -> BOOL;
-    fn IsRectEmpty(lprc: *const RECT) -> BOOL;
     fn DrawFocusRect(hDC: HDC, lprc: *const RECT) -> BOOL;
     fn DrawFrameControl(hdc: HDC, lprc: *mut RECT, uType: UINT, uState: UINT) -> BOOL;
     fn DrawEdge(hdc: HDC, qrc: *mut RECT, edge: UINT, grfFlags: UINT) -> BOOL;
@@ -137,7 +140,6 @@ extern "system" {
     fn SetTextColor(hdc: HDC, color: COLORREF) -> COLORREF;
     fn SetBkColor(hdc: HDC, color: COLORREF) -> COLORREF;
     fn SelectClipRgn(hdc: HDC, hrgn: HRGN) -> i32;
-    fn ExtTextOutW(hdc: HDC, x: i32, y: i32, options: UINT, lprect: *const RECT, lpString: LPCWSTR, c: UINT, lpDx: *const i32) -> BOOL;
 }
 
 // `set_control_clipping` — surviving C symbol in user32 (controls/uitools.c), cdecl.
@@ -305,7 +307,7 @@ unsafe fn COMBO_NCCreate(hwnd: HWND, style: LONG) -> LRESULT {
     let lphc: LPHEADCOMBO;
 
     if COMBO_Init() != 0 && {
-        lphc = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, core::mem::size_of::<HEADCOMBO>()) as LPHEADCOMBO;
+        lphc = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (core::mem::size_of::<HEADCOMBO>()) as SIZE_T) as LPHEADCOMBO;
         !lphc.is_null()
     } {
         (*lphc).self_ = hwnd;
@@ -741,7 +743,7 @@ unsafe fn CBPaintText(lphc: LPHEADCOMBO, hdc_paint: HDC) {
         pText = HeapAlloc(
             GetProcessHeap(),
             0,
-            ((size + 1) as usize * core::mem::size_of::<u16>()) as usize,
+            ((size + 1) as usize * core::mem::size_of::<u16>()) as SIZE_T,
         ) as LPWSTR;
         if !pText.is_null() {
             size = SendMessageW(
@@ -1423,7 +1425,7 @@ unsafe fn COMBO_GetTextW(lphc: LPHEADCOMBO, count: INT, buf: LPWSTR) -> LRESULT 
 
             /* 'length' is without the terminating character */
             if length >= count {
-                let lpBuffer = HeapAlloc(GetProcessHeap(), 0, ((length + 1) as usize) * core::mem::size_of::<u16>()) as LPWSTR;
+                let lpBuffer = HeapAlloc(GetProcessHeap(), 0, (((length + 1) as usize) * core::mem::size_of::<u16>()) as SIZE_T) as LPWSTR;
                 if lpBuffer.is_null() {
                     break 'error;
                 }
@@ -1474,7 +1476,7 @@ unsafe fn COMBO_GetTextA( lphc: LPHEADCOMBO, count: INT, buf: LPSTR ) -> LRESULT
             /* 'length' is without the terminating character */
             if length >= count
             {
-                let lpBuffer = HeapAlloc(GetProcessHeap(), 0, (length + 1) as usize) as LPSTR;
+                let lpBuffer = HeapAlloc(GetProcessHeap(), 0, (length + 1) as SIZE_T) as LPSTR;
                 if lpBuffer.is_null() { break 'error; }
                 length = SendMessageA((*lphc).hWndLBox, LB_GETTEXT, idx as WPARAM, lpBuffer as LPARAM) as INT;
 
@@ -1783,7 +1785,7 @@ unsafe fn strdupA(str: LPCSTR) -> *mut core::ffi::c_char {
     }
 
     let len = strlen(str) as DWORD;
-    let ret = HeapAlloc(GetProcessHeap(), 0, (len + 1) as usize) as *mut core::ffi::c_char;
+    let ret = HeapAlloc(GetProcessHeap(), 0, (len + 1) as SIZE_T) as *mut core::ffi::c_char;
     if !ret.is_null() {
         memcpy(ret as *mut _, str as *const _, (len + 1) as usize);
     }

@@ -1602,8 +1602,11 @@ pub unsafe extern "system" fn SearchPathW(
                     }
 
                     if Status == STATUS_BUFFER_TOO_SMALL {
-                        Result = (LengthNeeded as usize / core::mem::size_of::<WCHAR>()) as DWORD;
-                        if Result > 0xFFFFFFFF {
+                        // The C (path.c) compares `Result > 0xFFFFFFFF` after narrowing to a DWORD, which can
+                        // never be true. Its intent is the SIZE_T count before the narrowing; compare that.
+                        let needed = LengthNeeded as usize / core::mem::size_of::<WCHAR>();
+                        Result = needed as DWORD;
+                        if needed as u64 > 0xFFFF_FFFF {
                             BaseSetLastNTError(STATUS_NAME_TOO_LONG);
                         }
                     } else {
@@ -1665,8 +1668,11 @@ pub unsafe extern "system" fn SearchPathW(
                         }
 
                         if Status == STATUS_BUFFER_TOO_SMALL {
-                            Result = (LengthNeeded as usize / core::mem::size_of::<WCHAR>()) as DWORD;
-                            if Result > 0xFFFFFFFF {
+                            // The C (path.c) compares `Result > 0xFFFFFFFF` after narrowing to a DWORD, which can
+                            // never be true. Its intent is the SIZE_T count before the narrowing; compare that.
+                            let needed = LengthNeeded as usize / core::mem::size_of::<WCHAR>();
+                            Result = needed as DWORD;
+                            if needed as u64 > 0xFFFF_FFFF {
                                 BaseSetLastNTError(STATUS_NAME_TOO_LONG);
                             }
                         } else {

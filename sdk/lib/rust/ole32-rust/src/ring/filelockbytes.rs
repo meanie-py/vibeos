@@ -93,7 +93,7 @@ pub unsafe extern "C" fn FileLockBytesImpl_Construct(
     let This = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<FileLockBytesImpl>() as SIZE_T,
+        core::mem::size_of::<FileLockBytesImpl>() as usize,
     ) as *mut FileLockBytesImpl;
 
     if This.is_null() {
@@ -120,7 +120,7 @@ pub unsafe extern "C" fn FileLockBytesImpl_Construct(
             GetProcessHeap(),
             0,
             (((lstrlenW(fullpath.as_ptr()) + 1) as usize) * core::mem::size_of::<WCHAR>())
-                as SIZE_T,
+                as usize,
         ) as LPWSTR;
         if (*This).pwcsName.is_null() {
             HeapFree(GetProcessHeap(), 0, This as LPVOID);

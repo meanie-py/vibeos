@@ -1,5 +1,8 @@
 //! ole2impl.c — Ole2 Create functions implementation.
 use crate::prelude::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::user32::CopyEnhMetaFileW;
+use crate::user32::GetBitmapBits;
 
 // ---------------------------------------------------------------------------
 // Locally-declared bits the shared surface does not carry yet.
@@ -41,7 +44,7 @@ extern "system" {
 /// wingdi.h `tagBITMAP`. com-sys carries PALETTEENTRY/LOGPALETTE but not this one.
 #[repr(C)]
 #[derive(Copy, Clone)]
-struct BITMAP {
+pub struct BITMAP {
     bmType: LONG,
     bmWidth: LONG,
     bmHeight: LONG,
@@ -55,18 +58,16 @@ struct BITMAP {
 // (the raw translation had these `extern "C"`, which is the i386 stdcall-decoration
 // bug: `_CreatePalette@4` would go unresolved).
 extern "system" {
-    fn CopyEnhMetaFileW(hemfSrc: HANDLE, lpszFile: *const u16) -> HANDLE;
     fn CopyMetaFileW(hmfSrc: HANDLE, lpszFile: *const u16) -> HANDLE;
-    fn GetPaletteEntries(
+    pub fn GetPaletteEntries(
         hpal: HANDLE,
         iStart: UINT,
         cEntries: UINT,
         pPalEntries: *mut PALETTEENTRY,
     ) -> UINT;
-    fn CreatePalette(plpal: *const LOGPALETTE) -> HANDLE;
+    pub fn CreatePalette(plpal: *const LOGPALETTE) -> HANDLE;
     fn GetObjectW(h: HANDLE, c: c_int, pv: LPVOID) -> c_int;
-    fn GetBitmapBits(hbit: HANDLE, cb: LONG, lpvBits: LPVOID) -> LONG;
-    fn CreateBitmapIndirect(pbm: *const BITMAP) -> HANDLE;
+    pub fn CreateBitmapIndirect(pbm: *const BITMAP) -> HANDLE;
 }
 
 /// winuser.h clipboard formats
@@ -712,7 +713,7 @@ pub unsafe extern "system" fn OleDuplicateData(
 
     match cfFormat as DWORD {
         CF_ENHMETAFILE => {
-            hDst = CopyEnhMetaFileW(hSrc, core::ptr::null());
+            hDst = (CopyEnhMetaFileW((hSrc).cast(), core::ptr::null())).cast();
         }
         CF_METAFILEPICT => {
             hDst = CopyMetaFileW(hSrc, core::ptr::null());
@@ -729,7 +730,7 @@ pub unsafe extern "system" fn OleDuplicateData(
                 0,
                 (core::mem::offset_of!(LOGPALETTE, palPalEntry)
                     + (nEntries as usize) * core::mem::size_of::<PALETTEENTRY>())
-                    as SIZE_T,
+                    as usize,
             ) as *mut LOGPALETTE;
             if logpalette.is_null() {
                 return core::ptr::null_mut();
@@ -761,15 +762,15 @@ pub unsafe extern "system" fn OleDuplicateData(
             {
                 return core::ptr::null_mut();
             }
-            let size: LONG = GetBitmapBits(hSrc, 0, core::ptr::null_mut());
+            let size: LONG = GetBitmapBits((hSrc).cast(), 0, core::ptr::null_mut());
             if size == 0 {
                 return core::ptr::null_mut();
             }
-            bm.bmBits = HeapAlloc(GetProcessHeap(), 0, size as SIZE_T);
+            bm.bmBits = HeapAlloc(GetProcessHeap(), 0, size as usize);
             if bm.bmBits.is_null() {
                 return core::ptr::null_mut();
             }
-            if GetBitmapBits(hSrc, size, bm.bmBits) != 0 {
+            if GetBitmapBits((hSrc).cast(), size, bm.bmBits) != 0 {
                 hDst = CreateBitmapIndirect(&bm);
             }
             HeapFree(GetProcessHeap(), 0, bm.bmBits);

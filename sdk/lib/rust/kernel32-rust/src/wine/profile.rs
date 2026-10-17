@@ -1,4 +1,8 @@
 use winedebug_rust::{TRACE, WARN};
+// The crate's own functions: the definition is the declaration.
+use crate::client::handle::CloseHandle;
+use crate::file::create::CreateFileW;
+use crate::file::rw::ReadFile;
 use ntdll_sys::nt::*;
 use crate::prelude::*;
 use core::ffi::c_void;
@@ -12,8 +16,6 @@ use crate::string::nls_subst::{HeapAlloc, HeapFree, RtlUshortByteSwap};
 // ---- cohab glue: kernel32 Rust exports this module calls (real stdcall @N exports) ----
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    fn CloseHandle(hObject: HANDLE) -> BOOL;
-    fn CreateFileW(lpFileName: LPCWSTR, dwDesiredAccess: DWORD, dwShareMode: DWORD, lpSecurityAttributes: *mut c_void, dwCreationDisposition: DWORD, dwFlagsAndAttributes: DWORD, hTemplateFile: HANDLE) -> HANDLE;
     fn GetFileSize(hFile: HANDLE, lpFileSizeHigh: LPDWORD) -> DWORD;
     fn GetFileTime(hFile: HANDLE, lpCreationTime: LPFILETIME, lpLastAccessTime: LPFILETIME, lpLastWriteTime: LPFILETIME) -> BOOL;
     fn GetFullPathNameW(lpFileName: LPCWSTR, nBufferLength: DWORD, lpBuffer: LPWSTR, lpFilePart: *mut LPWSTR) -> DWORD;
@@ -21,7 +23,6 @@ extern "system" {
     fn GetWindowsDirectoryW(lpBuffer: LPWSTR, uSize: UINT) -> UINT;
     fn MultiByteToWideChar(CodePage: UINT, dwFlags: DWORD, lpMultiByteStr: LPCSTR, cbMultiByte: INT, lpWideCharStr: LPWSTR, cchWideChar: INT) -> INT;
     fn WideCharToMultiByte(CodePage: UINT, dwFlags: DWORD, lpWideCharStr: LPCWSTR, cchWideChar: INT, lpMultiByteStr: LPSTR, cbMultiByte: INT, lpDefaultChar: *const CHAR, lpUsedDefaultChar: *mut BOOL) -> INT;
-    fn ReadFile(hFile: HANDLE, lpBuffer: LPVOID, nNumberOfBytesToRead: DWORD, lpNumberOfBytesRead: LPDWORD, lpOverlapped: LPOVERLAPPED) -> BOOL;
     fn WriteFile(hFile: HANDLE, lpBuffer: LPCVOID, nNumberOfBytesToWrite: DWORD, lpNumberOfBytesWritten: LPDWORD, lpOverlapped: LPOVERLAPPED) -> BOOL;
     fn lstrcpynW(lpString1: LPWSTR, lpString2: LPCWSTR, iMaxLength: INT) -> LPWSTR;
 }

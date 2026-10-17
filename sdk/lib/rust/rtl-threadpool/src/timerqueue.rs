@@ -1,10 +1,8 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::mm::*;
-use ntkrnl_sys::ddk::{LARGE_INTEGER, LIST_ENTRY, RTL_CRITICAL_SECTION, PTHREAD_START_ROUTINE, NtClose, NtCreateEvent, NtQueryPerformanceCounter, NtResumeThread, NtSetEvent, NtWaitForSingleObject, PHANDLE, PLARGE_INTEGER,  RtlAllocateHeap, RtlDeleteCriticalSection, RtlEnterCriticalSection, RtlFreeHeap, RtlInitializeCriticalSection, RtlLeaveCriticalSection, _EVENT_TYPE_SynchronizationEvent};
-use core::ffi::c_void;
+use ntkrnl_sys::ddk::{LARGE_INTEGER, RTL_CRITICAL_SECTION, PTHREAD_START_ROUTINE, NtClose, NtCreateEvent, NtQueryPerformanceCounter, NtResumeThread, NtSetEvent, NtWaitForSingleObject, PHANDLE, PLARGE_INTEGER,  RtlAllocateHeap, RtlDeleteCriticalSection, RtlEnterCriticalSection, RtlFreeHeap, RtlInitializeCriticalSection, RtlLeaveCriticalSection, _EVENT_TYPE_SynchronizationEvent};
 use crate::types::*;
 use crate::wine_list::*;
 // RtlpStartThreadFunc / RtlpExitThreadFunc (globals) + RtlQueueWorkItem

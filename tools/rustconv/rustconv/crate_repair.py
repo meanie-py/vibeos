@@ -564,6 +564,21 @@ def _prev_code_byte(masked: bytes, pos: int) -> bytes:
     return masked[pos : pos + 1] if pos >= 0 else b""
 
 
+_ARITH_BEFORE = re.compile(rb"(?:<<|>>|(?<![&|])[&|]|[-+*/%^])=?\s*\Z")
+_ARITH_AFTER = re.compile(rb"\s*(?:<<|>>|[&|](?![&|])|[-+*/%^](?!>))")
+
+
+def _arith_operand(masked: bytes, start: int, end: int) -> bool:
+    """Is start..end an operand of an arithmetic, bitwise or shift operator (compound
+    assignment included)? There `(x) as _` cannot be inferred -- `u64: Add<u64>` and
+    `Add<&u64>` both exist -- so rustc trades the E0308 for an E0282 at the same count.
+    Comparisons are not here: `PartialEq`/`PartialOrd` have one impl per integer, and infer.
+    `&x` (a borrow) and `-x` (negation) read as operators too, which only ever declines."""
+    if _ARITH_BEFORE.search(masked[max(0, start - 8) : start]):
+        return not masked[:start].rstrip().endswith((b"&&", b"||", b"->", b"=>", b"==", b"!="))
+    return _ARITH_AFTER.match(masked, end) is not None
+
+
 def _in_match_pattern(masked: bytes, end: int) -> bool:
     """True when the span ending at ``end`` sits in match-arm PATTERN position.
 
@@ -1543,7 +1558,15 @@ def _ref_to_void_pointer(
     is made, and the pointee type comes from the parameter. A shared `&X` goes only to
     `*const c_void`; to `*mut` it is a mutability question, not this one."""
     want = re.fullmatch(r"\*(mut|const) (?:core::ffi::|std::ffi::|libc::)?c_void", expected)
-    if want is None or not found.startswith("&"):
+    # A HANDLE out-parameter: `&mut hwnd` (a `*mut c_void` local) where the header wants
+    # `*mut *mut HWND__` (menuband's `IUnknown_GetWindow(.., &mut parent)`). Both pointees are
+    # thin raw pointers, so the layout is identical whatever they point at; this is C's
+    # `HWND *` from a `void *` variable's address.
+    if want is None:
+        want = re.fullmatch(r"\*(mut|const) \*(?:mut|const) [\w:]+", expected)
+        if want is None or not re.fullmatch(r"&(?:mut )?\*(?:mut|const) [\w:]+", found):
+            return None
+    if not found.startswith("&"):
         return None
     mutable = found.startswith("&mut ")
     if want.group(1) == "mut" and not mutable:
@@ -2571,6 +2594,58 @@ def _guid_eq_rule(
     )
 
 
+_PTR_INT_RE = re.compile(
+    r"cannot (add|subtract) `(?P<int>[iu](?:8|16|32|64|128|size))` (?:to|from) "
+    r"`\*(?:mut|const) [^`]+`"
+)
+
+
+def _ptr_int_arith_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """E0369 `(*Adapter).IoBase + R_CMD`: C pointer arithmetic, which Rust has no operator for.
+
+    C scales `p + n` by the pointee size and so does `wrapping_add`, so the rewrite is exact
+    whatever the pointee; `wrapping_` keeps C's freedom to form an address it never reads
+    through (rtl8139 adds port offsets to an I/O base it hands to READ_PORT_UCHAR). A signed
+    offset goes through `wrapping_offset` so a negative one stays negative. rustc names both
+    operands (secondary spans) around the operator (primary)."""
+    if (diagnostic.get("code") or {}).get("code") != "E0369":
+        return [], [], False
+    m = _PTR_INT_RE.search(str(diagnostic.get("message") or ""))
+    if m is None:
+        return [], [], False
+    spans = diagnostic.get("spans") or []
+    ops = sorted(
+        (s for s in spans if not s.get("is_primary")), key=lambda s: int(s.get("byte_start") or 0)
+    )
+    if len(ops) != 2 or ops[0].get("file_name") != ops[1].get("file_name"):
+        return [], [], False
+    file_name = str(ops[0].get("file_name") or "")
+    data = load(file_name)
+    if data is None:
+        return [], [], False
+    a0, a1 = int(ops[0]["byte_start"]), int(ops[0]["byte_end"])
+    b0, b1 = int(ops[1]["byte_start"]), int(ops[1]["byte_end"])
+    op = "+" if m.group(1) == "add" else "-"
+    if data[a1:b0].decode("utf-8", "replace").strip() != op:
+        return [], [], False
+    lhs = data[a0:a1].decode("utf-8", "replace")
+    rhs = data[b0:b1].decode("utf-8", "replace")
+    if m.group("int").startswith("i"):
+        sign = "" if op == "+" else "-"
+        repl = f"({lhs}).wrapping_offset({sign}(({rhs}) as isize))"
+    else:
+        method = "wrapping_add" if op == "+" else "wrapping_sub"
+        repl = f"({lhs}).{method}(({rhs}) as usize)"
+    note = "rustc E0369: C pointer arithmetic scales by the pointee, as wrapping_add/offset does"
+    return (
+        [_simple_edit(RULE_OBJECT_DEREF, file_name, data, a0, b1, repl, note, ops[0], ctx)],
+        [],
+        True,
+    )
+
+
 def _heap_ptr_conversion_rule(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -3459,6 +3534,7 @@ def _infer_widen_rule(
     or sign change stays with the other rules (that is C truncation, and it needs a name).
     """
     edits: list[Edit] = []
+    skipped: list[Skipped] = []
     for span, expected, found in _mismatch_sites(diagnostic):
         if expected not in INT_PRIMITIVES or found not in INT_PRIMITIVES or expected == found:
             continue
@@ -3484,13 +3560,31 @@ def _infer_widen_rule(
         if _next_code_byte(masked, end) == b"(":
             continue  # a callee, not a value
         text = data[start:end].decode("utf-8", "replace")
+        target = "_"
+        if _arith_operand(masked, start, end):
+            # `wParam & (x) as _` does not infer; the other operand's declared NAME is
+            # portable (WPARAM is u32 on i386, u64 on amd64), a primitive would bake a width.
+            sibling = _sibling_declared_type(data, start, end)
+            if sibling is None:
+                skipped.append(
+                    Skipped(
+                        RULE_INFER_WIDEN,
+                        "uninferable_operand",
+                        file_name,
+                        int(span.get("line_start") or 0),
+                        f"`{text}` is an arithmetic/bitwise operand, where `as _` cannot be "
+                        "inferred, and the other operand has no declared type name to use",
+                    )
+                )
+                continue
+            target = sibling
         ctx.claimed.add((file_name, start, end))
         edits.append(
             Edit(
                 file_name=file_name,
                 byte_start=start,
                 byte_end=end,
-                replacement=f"({text}) as _",
+                replacement=f"({text}) as {target}",
                 rule=RULE_INFER_WIDEN,
                 authority=(
                     f"rustc: `{found}` into `{expected}` on {ctx.target} only widens; `as _` is "
@@ -3502,7 +3596,7 @@ def _infer_widen_rule(
                 targets=(ctx.target,),
             )
         )
-    return edits, [], bool(edits)
+    return edits, skipped, bool(edits)
 
 
 def _no_std_path_rule(
@@ -5328,9 +5422,39 @@ def _literal_mut_rule(
                 )
             )
             continue
+        # `x as *const T` into a `*mut T` parameter: the translation picked the const spelling
+        # of what in C is one cast to the parameter's type (cdrom's `vendorId as *const i8`
+        # into `StringsAreMatched(PCHAR, PCHAR)`, `&raw const cdb as *const c_void` into
+        # `PCDB`). Respelling the cast is that C cast; the pointee is untouched.
+        cast = re.fullmatch(r"(.+?)\s+as\s+\*const\s+([\w:]+(?:<[^<>]*>)?)", inner.strip(), re.S)
+        masked = _mask_lexical(data)
+        if (
+            cast is not None
+            and not _in_macro_definition(masked, lo)
+            and _balanced(cast.group(1).encode())
+            and not re.search(r"\bas\s*$", cast.group(1))
+        ):
+            edits.append(
+                _simple_edit(
+                    RULE_LITERAL_MUT,
+                    file_name,
+                    data,
+                    lo,
+                    hi,
+                    # A shared reference cannot be cast to `*mut` directly (E0606), only
+                    # through the `*const` it already is.
+                    f"({inner.strip()}).cast_mut()"
+                    if re.match(r"&(?!\s*raw\b)", cast.group(1).lstrip())
+                    else f"{cast.group(1)} as *mut {cast.group(2)}",
+                    "rustc E0308 (mutability): the C cast is to the parameter's (non-const) type",
+                    span,
+                    ctx,
+                )
+            )
+            continue
         if not _C_LITERAL_PTR.fullmatch(inner.strip()):
             continue
-        if _in_macro_definition(_mask_lexical(data), lo):
+        if _in_macro_definition(masked, lo):
             continue
         edits.append(
             _simple_edit(
@@ -5605,6 +5729,7 @@ _RULE_TABLE: dict[
         _zero_constant_pointer_rule,
         _int_float_arith_rule,
         _guid_eq_rule,
+        _ptr_int_arith_rule,
         _heap_ptr_conversion_rule,
         _com_ptr_receiver_rule,
         _hwnd_to_cwindow_rule,
@@ -6869,6 +6994,7 @@ def repair_crate(
     timeout: int = 1800,
     check_runner: Callable[[str], CargoCheckRun] | None = None,
     target_dirs: Mapping[str, Path] | None = None,
+    features: Sequence[str] = (),
 ) -> RepairSession:
     """Iterate propose/apply to a fixpoint, never leaving the tree worse than we found it.
 
@@ -6955,6 +7081,9 @@ def repair_crate(
             target,
             root=root,
             timeout=timeout,
+            # A feature-gated module (rtl-strings' `cabi`, which the kernel build turns on)
+            # is invisible to a default-features check, so its errors were never repaired.
+            extra_args=("--features", ",".join(features)) if features else (),
             target_dir=(target_dirs or {}).get(target),
         )
     )

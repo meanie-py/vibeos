@@ -1,5 +1,16 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::base::{NTSTATUS, BOOLEAN, ULONG, PULONG, LONGLONG, STATUS_SUCCESS};
+// One declaration per external symbol: ddk_shims.rs.
+use crate::ddk_shims::FlagOn;
+// One declaration per external symbol: types.rs.
+use crate::types::CdDecodeFileObject;
+// The crate's own functions: the definition is the declaration.
+use crate::cddata::CdCompleteRequest;
+use crate::namesup::CdGenerate8dot3Name;
+use crate::namesup::CdIs8dot3Name;
+use crate::ddk_shims::CdRaiseStatus;
+use crate::dirsup::CdUpdateDirentFromRawDirent;
+use crate::verfysup::CdVerifyFcbOperation;
 use ntkrnl_sys::constants::{STATUS_INVALID_PARAMETER, STATUS_BUFFER_OVERFLOW, STATUS_OBJECT_NAME_NOT_FOUND};
 use ntkrnl_sys::rtl::RtlCopyMemory;
 use ntkrnl_sys::ddk::{ExAcquireResourceSharedLite, ExReleaseResourceLite, FILE_ACCESS_INFORMATION, FILE_ALIGNMENT_INFORMATION, FILE_BASIC_INFORMATION, FILE_EA_INFORMATION, FILE_INTERNAL_INFORMATION, FILE_MODE_INFORMATION, FILE_NETWORK_OPEN_INFORMATION, FILE_POSITION_INFORMATION, FILE_STANDARD_INFORMATION, LARGE_INTEGER, PDEVICE_OBJECT, PFILE_BASIC_INFORMATION, PFILE_INTERNAL_INFORMATION, PFILE_NETWORK_OPEN_INFORMATION, PFILE_OBJECT, PFILE_POSITION_INFORMATION, PFILE_STANDARD_INFORMATION, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP};
@@ -40,7 +51,6 @@ unsafe fn cd_fcb_index(Fcb: *mut FCB) -> *mut FCB_INDEX {
 
 // cdecl cdfs-internal routines (C defs in filobsup.c are plain cdecl, no NTAPI).
 extern "C" {
-    fn CdDecodeFileObject( IrpContext: PIRP_CONTEXT, FileObject: PFILE_OBJECT, Fcb: *mut PFCB, Ccb: *mut PCCB, ) -> TYPE_OF_OPEN;
 }
 extern "C" {
     fn CdFastDecodeFileObject(FileObject: PFILE_OBJECT, Fcb: *mut PFCB) -> u32; // TYPE_OF_OPEN
@@ -50,13 +60,11 @@ extern "C" {
     fn IoGetCurrentIrpStackLocation(Irp: PIRP) -> PIO_STACK_LOCATION;
 }
 extern "C" {
-    fn CdCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
 }
 extern "C" {
     fn CdAcquireFileShared(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
 }
 extern "C" {
-    fn CdVerifyFcbOperation(IrpContext: PIRP_CONTEXT, Fcb: PFCB) -> u32;
 }
 extern "C" {
     fn CdLockFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
@@ -70,7 +78,6 @@ extern "C" {
 extern "C" {
 }
 extern "C" {
-    fn FlagOn(Flags: u32, Bit: u32) -> u32;
 }
 extern "C" {
     fn CdVerifyOrCreateDirStreamFile(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
@@ -94,7 +101,6 @@ extern "C" {
     fn CdFindDirectory( IrpContext: *mut IRP_CONTEXT, ParentFcb: *mut FCB, Name: *mut CD_NAME, Flag: BOOLEAN, FileContext: *mut FILE_ENUM_CONTEXT, ) -> BOOLEAN;
 }
 extern "C" {
-    fn CdRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
 }
 extern "C" {
     fn CdInitializeDirContext(IrpContext: *mut IRP_CONTEXT, Context: *mut DIRENT_ENUM_CONTEXT);
@@ -106,16 +112,13 @@ extern "C" {
     fn CdLookupDirent( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Offset: ULONG, Context: *mut DIRENT_ENUM_CONTEXT, );
 }
 extern "C" {
-    fn CdUpdateDirentFromRawDirent( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Context: *mut DIRENT_ENUM_CONTEXT, Dirent: *mut DIRENT, );
 }
 extern "C" {
     fn CdUpdateDirentName(IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT, Flag: u32);
 }
 extern "C" {
-    fn CdIs8dot3Name(IrpContext: *mut IRP_CONTEXT, Name: _UNICODE_STRING) -> BOOLEAN;
 }
 extern "C" {
-    fn CdGenerate8dot3Name( IrpContext: *mut IRP_CONTEXT, NameToUse: *mut _UNICODE_STRING, DirentOffset: ULONG, ShortNameBuffer: *mut u16, ShortNameLength: *mut u16, );
 }
 extern "C" {
     fn CdCleanupDirContext(IrpContext: *mut IRP_CONTEXT, Context: *mut DIRENT_ENUM_CONTEXT);
@@ -354,7 +357,7 @@ pub unsafe extern "C" fn CdCommonQueryInfo(
     // _SEH2_END done
 
     // Complete the request and return status
-    CdCompleteRequest(IrpContext, Irp, Status);
+    CdCompleteRequest((IrpContext).cast(), Irp, Status);
     Status
 }
 #[no_mangle]
@@ -378,7 +381,7 @@ pub unsafe extern "C" fn CdCommonSetInfo(
     if (TypeOfOpen != UserFileOpen)
         || ((*IrpSp).Parameters.QueryFile.FileInformationClass != FilePositionInformation)
     {
-        CdCompleteRequest(IrpContext, Irp, Status);
+        CdCompleteRequest((IrpContext).cast(), Irp, Status);
         return Status;
     }
 
@@ -429,7 +432,7 @@ pub unsafe extern "C" fn CdCommonSetInfo(
 
     // _SEH2_END
 
-    CdCompleteRequest(IrpContext, Irp, Status);
+    CdCompleteRequest((IrpContext).cast(), Irp, Status);
     Status
 }
 #[no_mangle]
@@ -865,13 +868,13 @@ pub unsafe extern "C" fn CdQueryAlternateNameInfo(
                     dirent_offset = Dirent.DirentOffset;
                 }
 
-                if CdIs8dot3Name(IrpContext, *name_to_use) != 0 {
+                if CdIs8dot3Name((IrpContext).cast(), *name_to_use) != 0 {
                     Status = STATUS_OBJECT_NAME_NOT_FOUND;
                     break 'try_block;
                 }
 
                 CdGenerate8dot3Name(
-                    IrpContext,
+                    (IrpContext).cast(),
                     name_to_use,
                     dirent_offset,
                     ShortNameBuffer.as_mut_ptr(),

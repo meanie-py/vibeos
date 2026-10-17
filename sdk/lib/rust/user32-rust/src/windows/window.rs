@@ -14,6 +14,9 @@
 #![allow(non_snake_case)]
 
 use crate::internal::*;
+// The crate's own functions: the definition is the declaration.
+use crate::misc::rtlstr::RtlInitLargeAnsiString;
+use crate::misc::rtlstr::RtlInitLargeUnicodeString;
 use crate::ntwrapper::*;
 use crate::windows::class::GetWindowLongPtrW;
 use win32k_sys::win32k::*;
@@ -79,7 +82,7 @@ extern "system" {
     fn SetLastError(dwErrCode: DWORD);
     fn GetLastError() -> DWORD;
     fn GetProcessHeap() -> HANDLE;
-    fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: SIZE_T) -> LPVOID;
+    pub fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: SIZE_T) -> LPVOID;
     fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID) -> BOOL;
     fn GetModuleHandleW(lpModuleName: LPCWSTR) -> HMODULE;
     fn GetModuleFileNameA(hModule: HMODULE, lpFilename: LPSTR, nSize: DWORD) -> DWORD;
@@ -114,8 +117,6 @@ extern "system" {
     fn LoadMenuW(hInstance: HINSTANCE, lpMenuName: LPCWSTR) -> HMENU;
 
     // ntdll.dll — NTAPI (stdcall on i386). RtlInitLarge* live in ntdll.
-    fn RtlInitLargeUnicodeString(plstr: PLARGE_UNICODE_STRING, psz: PWSTR, cch: INT);
-    fn RtlInitLargeAnsiString(plstr: PLARGE_ANSI_STRING, psz: PSTR, cch: INT);
 }
 
 // ───────────────────────────────────────────────────────────────────────────

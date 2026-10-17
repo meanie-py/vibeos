@@ -119,7 +119,7 @@ base/applications/mmc/CMakeLists.txt	1	# misc.c # replaced by Rust (sdk/lib/rust
 base/applications/mmc/CMakeLists.txt	1	# mmc.c # replaced by Rust (sdk/lib/rust/mmc-rust/src/mmc/mmc.rs)
 base/applications/mmc/CMakeLists.txt	1	# mscfile.c # replaced by Rust (sdk/lib/rust/mmc-rust/src/mmc/mscfile.rs)
 base/applications/mmc_new/CMakeLists.txt	1	# CAboutSnapinDialog.cpp # replaced by Rust (sdk/lib/rust/mmc_new-rust/src/mmc_new/CAboutSnapinDialog_cpp_h.rs)
-base/applications/mmc_new/CMakeLists.txt	1	# CActionWnd.cpp # upstream 88da81d9b8b's action pane: not translated yet (the Rust is from before it); owed to mmc_new-rust
+base/applications/mmc_new/CMakeLists.txt	1	# CActionWnd.cpp # replaced by Rust (sdk/lib/rust/mmc_new-rust/src/mmc_new/CActionWnd_cpp_h.rs)
 base/applications/mmc_new/CMakeLists.txt	1	# CAddAdvancedDialog.cpp # replaced by Rust (sdk/lib/rust/mmc_new-rust/src/mmc_new/CAddAdvancedDialog_cpp_h.rs)
 base/applications/mmc_new/CMakeLists.txt	1	# CAddDialog.cpp # replaced by Rust (sdk/lib/rust/mmc_new-rust/src/mmc_new/CAddDialog_cpp_h.rs)
 base/applications/mmc_new/CMakeLists.txt	1	# CConsoleWnd.cpp # replaced by Rust (sdk/lib/rust/mmc_new-rust/src/mmc_new/CConsoleWnd_cpp_h.rs)
@@ -500,6 +500,10 @@ base/setup/lib/CMakeLists.txt	1	# utils/partinfo.c # replaced by Rust (sdk/lib/r
 base/setup/lib/CMakeLists.txt	1	# utils/partlist.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/partlist.rs)
 base/setup/lib/CMakeLists.txt	1	# utils/regutil.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/regutil.rs)
 base/setup/lib/CMakeLists.txt	1	# utils/volutil.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/volutil.rs)
+base/setup/reactos/CMakeLists.txt	1	# drivepage.c # replaced by Rust (sdk/lib/rust/reactos-rust/src/reactos/drivepage.rs)
+base/setup/reactos/CMakeLists.txt	1	# reactos.c # replaced by Rust (sdk/lib/rust/reactos-rust/src/reactos/reactos.rs)
+base/setup/reactos/CMakeLists.txt	1	# spapisup/fileqsup.c # replaced by Rust (sdk/lib/rust/reactos-rust/src/reactos/fileqsup.rs)
+base/setup/reactos/CMakeLists.txt	1	# spapisup/infsupp.c # replaced by Rust (sdk/lib/rust/reactos-rust/src/reactos/infsupp.rs)
 base/setup/usetup/CMakeLists.txt	1	# cmdcons.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/cmdcons.rs)
 base/setup/usetup/CMakeLists.txt	1	# console.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/console.rs)
 base/setup/usetup/CMakeLists.txt	1	# consup.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/consup.rs)
@@ -1003,7 +1007,6 @@ dll/win32/advapi32/CMakeLists.txt	1	# sec/safer.c — replaced by Rust (advapi32
 dll/win32/advapi32/CMakeLists.txt	1	# sec/sec.c — replaced by Rust (advapi32-rust)
 dll/win32/advapi32/CMakeLists.txt	1	# sec/trustee.c — replaced by Rust (advapi32-rust)
 dll/win32/advapi32/CMakeLists.txt	1	# service/eventlog.c — replaced by Rust (advapi32-rust)
-dll/win32/advapi32/CMakeLists.txt	1	# service/eventlog_seh.c — native-SEH wrappers restoring the RpcTryExcept the
 dll/win32/advapi32/CMakeLists.txt	1	# service/rpc.c — replaced by Rust (advapi32-rust)
 dll/win32/advapi32/CMakeLists.txt	1	# service/scm.c — replaced by Rust (advapi32-rust)
 dll/win32/advapi32/CMakeLists.txt	1	# service/sctrl.c — replaced by Rust (advapi32-rust)
@@ -1907,6 +1910,10 @@ drivers/network/dd/e1000/CMakeLists.txt	1	# info.c # replaced by Rust (sdk/lib/r
 drivers/network/dd/e1000/CMakeLists.txt	1	# interrupt.c # replaced by Rust (sdk/lib/rust/e1000-rust/src/e1000/interrupt.rs)
 drivers/network/dd/e1000/CMakeLists.txt	1	# ndis.c # replaced by Rust (sdk/lib/rust/e1000-rust/src/e1000/ndis.rs)
 drivers/network/dd/e1000/CMakeLists.txt	1	# send.c # replaced by Rust (sdk/lib/rust/e1000-rust/src/e1000/send.rs)
+drivers/network/dd/rtl8139/CMakeLists.txt	1	# hardware.c # replaced by Rust (sdk/lib/rust/rtl8139-rust/src/rtl8139/hardware.rs)
+drivers/network/dd/rtl8139/CMakeLists.txt	1	# info.c # replaced by Rust (sdk/lib/rust/rtl8139-rust/src/rtl8139/info.rs)
+drivers/network/dd/rtl8139/CMakeLists.txt	1	# interrupt.c # replaced by Rust (sdk/lib/rust/rtl8139-rust/src/rtl8139/interrupt.rs)
+drivers/network/dd/rtl8139/CMakeLists.txt	1	# ndis.c # replaced by Rust (sdk/lib/rust/rtl8139-rust/src/rtl8139/ndis.rs)
 drivers/network/ndis/CMakeLists.txt	1	# ndis/30stubs.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/30stubs.rs)
 drivers/network/ndis/CMakeLists.txt	1	# ndis/40stubs.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/40stubs.rs)
 drivers/network/ndis/CMakeLists.txt	1	# ndis/50stubs.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/50stubs.rs)
@@ -1927,12 +1934,30 @@ drivers/network/ndis/CMakeLists.txt	1	# ndis/misc.c # replaced by Rust (sdk/lib/
 drivers/network/ndis/CMakeLists.txt	1	# ndis/protocol.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/protocol.rs)
 drivers/network/ndis/CMakeLists.txt	1	# ndis/string.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/string.rs)
 drivers/network/ndis/CMakeLists.txt	1	# ndis/time.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/time.rs)
+drivers/network/ndisuio/CMakeLists.txt	1	# createclose.c # replaced by Rust (sdk/lib/rust/ndisuio-rust/src/ndisuio/createclose.rs)
+drivers/network/ndisuio/CMakeLists.txt	1	# ioctl.c # replaced by Rust (sdk/lib/rust/ndisuio-rust/src/ndisuio/ioctl.rs)
+drivers/network/ndisuio/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/ndisuio-rust/src/ndisuio/main.rs)
+drivers/network/ndisuio/CMakeLists.txt	1	# misc.c # replaced by Rust (sdk/lib/rust/ndisuio-rust/src/ndisuio/misc.rs)
+drivers/network/ndisuio/CMakeLists.txt	1	# protocol.c # replaced by Rust (sdk/lib/rust/ndisuio-rust/src/ndisuio/protocol.rs)
+drivers/network/ndisuio/CMakeLists.txt	1	# readwrite.c # replaced by Rust (sdk/lib/rust/ndisuio-rust/src/ndisuio/readwrite.rs)
+drivers/network/netio/CMakeLists.txt	1	# Every translation unit is Rust now (netio-rust, `rustconv port`) except tdi.c, tdiconn.c,
+drivers/network/netio/CMakeLists.txt	1	# netio.c # replaced by Rust (sdk/lib/rust/netio-rust/src/netio/netio.rs)
+drivers/network/tdi/CMakeLists.txt	1	# cte/events.c # replaced by Rust (sdk/lib/rust/tdi-rust/src/tdi/events.rs)
+drivers/network/tdi/CMakeLists.txt	1	# cte/string.c # replaced by Rust (sdk/lib/rust/tdi-rust/src/tdi/string.rs)
+drivers/network/tdi/CMakeLists.txt	1	# cte/timer.c # replaced by Rust (sdk/lib/rust/tdi-rust/src/tdi/timer.rs)
+drivers/network/tdi/CMakeLists.txt	1	# misc/main.c # replaced by Rust (sdk/lib/rust/tdi-rust/src/tdi/main.rs)
+drivers/network/tdi/CMakeLists.txt	1	# tdi/dereg.c # replaced by Rust (sdk/lib/rust/tdi-rust/src/tdi/dereg.rs)
+drivers/network/tdi/CMakeLists.txt	1	# tdi/handler.c # replaced by Rust (sdk/lib/rust/tdi-rust/src/tdi/handler.rs)
+drivers/network/tdi/CMakeLists.txt	1	# tdi/obsolete.c # replaced by Rust (sdk/lib/rust/tdi-rust/src/tdi/obsolete.rs)
+drivers/network/tdi/CMakeLists.txt	1	# tdi/stubs.c # replaced by Rust (sdk/lib/rust/tdi-rust/src/tdi/stubs.rs)
 drivers/processor/processr/CMakeLists.txt	1	# processr.c/misc.c/pnp.c are translated to Rust (sdk/lib/rust/processr-rust,
 drivers/serial/pl011/CMakeLists.txt	1	# add_library(pl011 MODULE pl011.c) # body replaced by Rust; kept on disk
 drivers/serial/pl011/CMakeLists.txt	1	# pl011.c (the minimal ARM64 PL011 UART driver) is translated to Rust
 drivers/serial/pl011/CMakeLists.txt	1	# pl011.sys — Rust cohabitation flip (pl011.c -> sdk/lib/rust/pl011-rust)
 drivers/serial/serial/CMakeLists.txt	1	# circularbuffer/cleanup/close/create/devctrl/info/legacy/misc/pnp/power/rw/serial.c
 drivers/serial/serial/CMakeLists.txt	1	# replaced by Rust (serial-rust); guid.c stays C (GUID data TU). NOT boot-loaded in smoke
+drivers/setup/blue/CMakeLists.txt	1	# blue.c # replaced by Rust (sdk/lib/rust/blue-rust/src/blue/blue.rs)
+drivers/setup/blue/CMakeLists.txt	1	# font.c # replaced by Rust (sdk/lib/rust/blue-rust/src/blue/font.rs)
 drivers/storage/class/cdrom/CMakeLists.txt	1	# aacs.c autorun.c cdrom.c common.c init.c ioctl.c mmc.c pnppower.c scratch.c sense.c zpodd.c
 drivers/storage/class/cdrom/CMakeLists.txt	1	# data.c (CDROM data tables) + guid.c (GUID data) stay C:
 drivers/storage/class/cdrom/CMakeLists.txt	1	# data.c (the CDROM data tables the Rust modules reference) + guid.c (GUID data
@@ -2777,6 +2802,7 @@ sdk/lib/smlib/CMakeLists.txt	1	# stays on disk (never delete the C); smlib_rust_
 sdk/lib/strmbase/CMakeLists.txt	1	# fork with eight extra files -- audio.c, dllfunc.c, enumpins.c, outputqueue.c,
 sdk/lib/strmbase/CMakeLists.txt	1	# has since folded into quartz itself (quartz has its own window.c now). Those
 sdk/lib/strmbase/CMakeLists.txt	1	# qualitycontrol.c, transform.c, video.c, window.c -- whose contents upstream
+sdk/lib/tzlib/CMakeLists.txt	1	# tzlib.c # replaced by Rust (sdk/lib/rust/tzlib-rust/src/tzlib/tzlib.rs)
 sdk/lib/uuid/CMakeLists.txt	1	# bthguid.c
 sdk/lib/uuid/CMakeLists.txt	1	# cluscfgguids.c
 sdk/lib/uuid/CMakeLists.txt	1	# ctfspui_g.c

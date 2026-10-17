@@ -2171,7 +2171,21 @@ impl Linker {
             } else {
                 "-C force-frame-pointers=yes "
             };
-            let rustflags = format!("{sse}{frame_ptr}{no_prepop}{emit_ir}{allow}");
+            // i386 kernel bodies keep debug_assert! but drop rustc's UB checks
+            // (`-Z ub-checks`, nightly -- this build-std path is the sanctioned
+            // nightly user). Their entry point, core's check_language_ub, is a LEAF
+            // function with a 1-byte local, and LLVM keeps the x86 stack aligned only
+            // in functions that make calls: it runs with ESP odd. An interrupt there
+            // pushes its frame at an odd address (i386 hardware does not realign,
+            // amd64's does), and the next checked KTRAP_FRAME deref -- armed
+            // hal-rust's KiEnterInterruptTrap -- panics on a "misaligned pointer"
+            // the checks themselves produced. amd64 and arm64 keep the UB checks.
+            let ub_checks = if kernel_build_std && self.arch.name == "i386" {
+                " -Zub-checks=no"
+            } else {
+                ""
+            };
+            let rustflags = format!("{sse}{frame_ptr}{no_prepop}{emit_ir}{allow}{ub_checks}");
             cmd.env_remove("CARGO_ENCODED_RUSTFLAGS");
             cmd.env_remove("CARGO_BUILD_RUSTFLAGS");
             if !rustflags.is_empty() {
@@ -2493,6 +2507,7 @@ impl Linker {
                 self.engine_crate("cnt-rust-lib", feats, true)
             }
             "skiplist_rust" => self.engine_crate("skiplist-rust", &[], true),
+            "tzlib_rust" => self.engine_crate("tzlib-rust", &[], true),
             // concfg-rust is an rlib (winsrv-rust's dependency); cmake builds the
             // console CPL's archive with `cargo rustc --crate-type staticlib
             // --features standalone`, and on i386 RUSTFLAGS `-sse,-sse2
@@ -2504,6 +2519,19 @@ impl Linker {
             }
             // Any other cmake C target, by name: `engine:c:<target>`.
             o if o.starts_with("c:") => self.replay_target(&o[2..], ar),
+            // Any `rust_staticlib_variant(<name> <crate> "<features>" <defaults>)` archive,
+            // spelled `engine:crate:<crate>:<features,...>:<TRUE|FALSE>` by
+            // tools/cargo_cell_gen.py: that function's `cargo build -p <crate>` on the
+            // builtin triple, which `engine_crate` repeats. (A variant that passes ENV keeps
+            // a named arm above.)
+            o if o.starts_with("crate:") => {
+                let mut parts = o["crate:".len()..].splitn(3, ':');
+                let krate = parts.next().unwrap_or_default();
+                let features: Vec<&str> =
+                    parts.next().unwrap_or_default().split(',').filter(|f| !f.is_empty()).collect();
+                let defaults = matches!(parts.next(), Some("TRUE" | "ON" | "1" | "YES"));
+                self.engine_crate(krate, &features, defaults)
+            }
             "oldnames" => {
                 let def = self.repo_root.join("sdk/lib/crt/moldname-msvcrt.def");
                 println!("cargo:rerun-if-changed={}", def.display());

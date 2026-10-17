@@ -1,4 +1,5 @@
 use crate::winspool::marshalling::MarshallUpStructuresArray;
+use ntdll_sys::seh::rpc_try;
 use crate::prelude::*;
 use core::ffi::c_void;
 
@@ -89,7 +90,7 @@ pub unsafe extern "system" fn AddMonitorW(pName: PWSTR, Level: DWORD, pMonitors:
 
     // Do the RPC call
     // RpcTryExcept
-    dwErrorCode = _RpcAddMonitor(pName, core::ptr::addr_of_mut!(MonitorInfoContainer));
+    dwErrorCode = rpc_try(|| _RpcAddMonitor(pName, core::ptr::addr_of_mut!(MonitorInfoContainer))).unwrap_or_else(|code| code as _);
     // RpcExcept(EXCEPTION_EXECUTE_HANDLER)
     // RpcExcept handler: dead under this tree's USE_DUMMY_PSEH build (the C handler never runs either), and stable Rust has no SEH. Original: dwErrorCode = RpcExceptionCode();
     // RpcEndExcept;
@@ -135,17 +136,10 @@ pub unsafe extern "system" fn DeleteMonitorA(pName: PSTR, pEnvironment: PSTR, pM
 #[no_mangle]
 pub unsafe extern "system" fn DeleteMonitorW(pName: PWSTR, pEnvironment: PWSTR, pMonitorName: PWSTR) -> BOOL {
     let mut dwErrorCode: DWORD;
-    let mut __rpc_raised: BOOL = 0;
 
     // RpcTryExcept
-    dwErrorCode = _RpcDeleteMonitor(pName, pEnvironment, pMonitorName);
+    dwErrorCode = rpc_try(|| _RpcDeleteMonitor(pName, pEnvironment, pMonitorName)).unwrap_or_else(|code| code as _);
 
-    // RpcExcept(EXCEPTION_EXECUTE_HANDLER): handler runs only if the try body raised.
-    // No SEH frame is available in Rust; the raise flag is never set by this translation.
-    if __rpc_raised != 0 {
-        dwErrorCode = RpcExceptionCode!() as DWORD;
-    }
-    // RpcEndExcept
 
     SetLastError(dwErrorCode);
     return (dwErrorCode == ERROR_SUCCESS) as BOOL;
@@ -314,7 +308,7 @@ pub unsafe extern "system" fn EnumMonitorsW(pName: PWSTR, Level: DWORD, pMonitor
     // Do the RPC call
     // RpcTryExcept
     {
-        dwErrorCode = _RpcEnumMonitors(pName, Level, pMonitors, cbBuf, pcbNeeded, pcReturned);
+        dwErrorCode = rpc_try(|| _RpcEnumMonitors(pName, Level, pMonitors, cbBuf, pcbNeeded, pcReturned)).unwrap_or_else(|code| code as _);
     }
     // RpcExcept(EXCEPTION_EXECUTE_HANDLER) handler: reached only on a structured exception,
     // which plain Rust cannot model here; kept literally but never taken on this path.

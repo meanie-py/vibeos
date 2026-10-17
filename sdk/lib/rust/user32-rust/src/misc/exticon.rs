@@ -1,4 +1,6 @@
 use win32k_sys::win32k::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::windows::window::HeapAlloc;
 #[allow(unused_imports)]
 use core::ffi::c_void;
 use crate::internal::{HIWORD, LOWORD};
@@ -9,7 +11,6 @@ use crate::FIELD_OFFSET;
 // ---- kernel32.dll exports (WINAPI = stdcall) ----
 extern "system" {
     fn GetProcessHeap() -> *mut core::ffi::c_void;
-    fn HeapAlloc(hHeap: *mut core::ffi::c_void, dwFlags: u32, dwBytes: usize) -> *mut core::ffi::c_void;
     fn HeapFree(hHeap: *mut core::ffi::c_void, dwFlags: u32, lpMem: *mut core::ffi::c_void) -> i32;
     fn MultiByteToWideChar(CodePage: u32, dwFlags: u32, lpMultiByteStr: LPCSTR, cbMultiByte: core::ffi::c_int, lpWideCharStr: LPWSTR, cchWideChar: core::ffi::c_int) -> core::ffi::c_int;
     #[allow(dead_code)]
@@ -272,7 +273,7 @@ unsafe fn ICO_GetIconDirectory(peimage: LPBYTE, lplpiID: *mut LPicoICONDIR, uSiz
     *uSize = (FIELD_OFFSET!(CURSORICONDIR, idEntries)
         + (*lpcid).idCount as usize * core::mem::size_of::<CURSORICONDIRENTRY>()) as ULONG;
 
-    lpID = HeapAlloc(GetProcessHeap(), 0, *uSize as usize) as *mut CURSORICONDIR;
+    lpID = HeapAlloc(GetProcessHeap(), 0, (*uSize) as SIZE_T) as *mut CURSORICONDIR;
     if !lpID.is_null() {
         (*lpID).idReserved = (*lpcid).idReserved;
         (*lpID).idType = (*lpcid).idType;
@@ -672,7 +673,7 @@ unsafe fn ICO_ExtractIconExW(
                             cursorData = HeapAlloc(
                                 GetProcessHeap(),
                                 0,
-                                2 * core::mem::size_of::<WORD>() + cbTotal as usize,
+                                (2 * core::mem::size_of::<WORD>() + (cbTotal) as usize) as SIZE_T,
                             ) as *mut WORD;
 
                             if cursorData.is_null() {
@@ -1040,7 +1041,7 @@ pub unsafe extern "system" fn PrivateExtractIconsA(
     let lpwstrFile = HeapAlloc(
         GetProcessHeap(),
         0,
-        len as usize * core::mem::size_of::<u16>(),
+        (len as usize * core::mem::size_of::<u16>()) as SIZE_T,
     ) as LPWSTR;
 
     if lpwstrFile.is_null() {
@@ -1162,7 +1163,7 @@ pub unsafe extern "system" fn PrivateExtractIconExA(
     let lpwstrFile: LPWSTR = HeapAlloc(
         GetProcessHeap(),
         0,
-        len as usize * core::mem::size_of::<WCHAR>(),
+        (len as usize * core::mem::size_of::<WCHAR>()) as SIZE_T,
     ) as LPWSTR;
 
     if lpwstrFile.is_null() {

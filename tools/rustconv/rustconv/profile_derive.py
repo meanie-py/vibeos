@@ -661,7 +661,10 @@ def _strip_cmake_comments(text: str) -> str:
 #: `rust_*.c` (12 distinct names as of 2026-08-07: rust_varargs_shim, rust_scanf_shim,
 #: rust_strsafe_shim, rust_cohab_fat, rust_layout_assert, …). None is a translation surface, so
 #: a module whose whole compiled source list is these is FLIPPED, not un-translated.
-_SHIM_TU_RE = re.compile(r"^rust_\w*\.c$")
+#: A flipped C++ app keeps a `rust_cohab_stub.cpp` (so its target keeps the C++ flags), and
+#: until this matched `.cpp` too, certmgr, certutil, drwtsn32 and rapps recorded that stub as
+#: one of their translation units.
+_SHIM_TU_RE = re.compile(r"^rust_\w*\.(?:c|cpp)$")
 
 
 def is_shim_tu(path: Path) -> bool:
@@ -3747,6 +3750,18 @@ def derive(
         p = (d if d.is_absolute() else module.module_dir / d).resolve()
         if p.is_dir() and _is_within(p, repo_root):
             extra_inc.append(f'-I"${{SRC}}/{p.relative_to(repo_root)}"')
+    # A quoted include searches the INCLUDING file's directory first, and the wrapper
+    # mirrors a subdirectory TU's prologue from /tmp. reactos's spapisup/fileqsup.c includes
+    # "../../usetup/spapisup/cabinet.h", which only resolves from spapisup/; from the module
+    # directory it named a file that does not exist and bindgen died. Searching the TU's own
+    # directory after the module's resolves it to the path the real compile sees, so the
+    # allowlist regexes derived from that compile still match.
+    for tu in tus:
+        sub = tu.parent
+        if sub != module.module_dir and _is_within(sub, module.module_dir):
+            entry = f'-I"${{SRC}}/{sub.relative_to(repo_root)}"'
+            if entry not in extra_inc:
+                extra_inc.append(entry)
     late_inc: list[str] = []
     for d in extra_inc_dirs:
         p = (d if d.is_absolute() else repo_root / d).resolve()
@@ -4620,13 +4635,8 @@ def scaffold_crate(
     # The MACROS only, by name: a glob would also pull win32macros' type aliases
     # (HANDLE, WCHAR) into the prelude next to the island's, and every use of either
     # becomes E0659 ambiguous.
-    macro_src = dp.env.repo_root / "sdk" / "lib" / "rust" / "win32macros-rust" / "src"
-    names = sorted(
-        {
-            n
-            for f in (macro_src.glob("*.rs") if macro_src.is_dir() else [])
-            for n in re.findall(r"macro_rules!\s+([A-Za-z_]\w*)", f.read_text())
-        }
+    names = exported_macro_names(
+        dp.env.repo_root / "sdk" / "lib" / "rust" / "win32macros-rust" / "src"
     )
     if names:
         win32_reexport = (
@@ -4931,3 +4941,19 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def exported_macro_names(macro_src: Path) -> list[str]:
+    """The `#[macro_export]` macros of a crate's source: what `pub use krate::{..}` can name.
+    A helper `macro_rules!` local to a function body (win32macros' `at!` inside
+    wine_dbgstr_variant) is no crate-root name, and importing it is E0432 in every prelude."""
+    return sorted(
+        {
+            n
+            for f in (macro_src.glob("*.rs") if macro_src.is_dir() else [])
+            for n in re.findall(
+                r"(?m)^\s*#\[macro_export\](?:\s*#\[[^\]]*\])*\s*macro_rules!\s+([A-Za-z_]\w*)",
+                f.read_text(),
+            )
+        }
+    )

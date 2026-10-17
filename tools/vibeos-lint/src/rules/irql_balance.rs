@@ -99,7 +99,17 @@ fn call<'a>(n: Node<'a>, s: &str) -> Option<(String, Option<Node<'a>>)> {
     let f = n.child_by_field_name("function")?;
     let name = match f.kind() {
         "identifier" => txt(f, s),
-        "scoped_identifier" => txt(f.child_by_field_name("name")?, s),
+        "scoped_identifier" => {
+            // Standard-library paths never resolve to name-keyed workspace
+            // summaries (master 6cab479, e.g. core::ptr::read vs Host::read).
+            if matches!(
+                txt(f, s).trim_start_matches(':').split("::").next(),
+                Some("core" | "std" | "alloc")
+            ) {
+                return None;
+            }
+            txt(f.child_by_field_name("name")?, s)
+        }
         _ => return None,
     };
     Some((name.to_owned(), n.child_by_field_name("arguments")))
@@ -588,6 +598,31 @@ mod tests {
         assert!(sums.sleep.contains("IopSync"));
         assert!(!sums.sleep.contains("KeSynchronizeExecution"));
         assert!(!sums.sleep.contains("Caller"));
+    }
+    #[test]
+    fn std_paths_do_not_inherit_a_sleeping_workspace_name() {
+        let sleeper = file(
+            "sdk/lib/rust/sleeper.rs",
+            "fn read(){KeWaitForSingleObject(e,0,0,0,t);}",
+        );
+        for name in [
+            "core::ptr::read",
+            "::core::ptr::read",
+            "std::ptr::read",
+            "alloc::boxed::read",
+            "read",
+            "workspace::read",
+        ] {
+            let caller = file("sdk/lib/rust/caller.rs", &format!("fn caller(p:*const u32){{KeAcquireSpinLock(&mut l,&mut old);let v={name}(p);KeReleaseSpinLock(&mut l,old);}}"));
+            let (sums, _) = build_summaries(&[&sleeper, &caller]).unwrap();
+            let found = scan_file(&caller, &sums).unwrap();
+            let sleep = found.iter().any(|row| row.1 == "IRQL_SLEEP_WHILE_HELD");
+            assert_eq!(
+                sleep,
+                matches!(name, "read" | "workspace::read"),
+                "{name}: {found:?}"
+            );
+        }
     }
     #[test]
     fn sleep_edges_are_the_legacy_textual_body_tokens() {

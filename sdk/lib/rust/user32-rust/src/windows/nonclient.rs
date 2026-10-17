@@ -11,6 +11,8 @@
 //! path runs the call directly (the empty `_SEH2_EXCEPT` body swallows nothing here).
 
 use crate::ntwrapper::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::windows::window::HeapAlloc;
 use win32k_sys::win32k::*;
 // user32 BOOL is i32; win32k-sys TRUE/FALSE are u32 — shadow as BOOL for this module.
 const TRUE: BOOL = 1;
@@ -24,7 +26,6 @@ extern "system" {
 
     // kernel32 — process heap + ANSI→wide.
     fn GetProcessHeap() -> *mut core::ffi::c_void;
-    fn HeapAlloc(hHeap: *mut core::ffi::c_void, dwFlags: u32, dwBytes: usize) -> *mut core::ffi::c_void;
     fn HeapFree(hHeap: *mut core::ffi::c_void, dwFlags: u32, lpMem: *mut core::ffi::c_void) -> BOOL;
     fn MultiByteToWideChar(
         CodePage: u32,
@@ -278,7 +279,7 @@ pub unsafe extern "system" fn DrawCaptionTempA(
     let strW = HeapAlloc(
         GetProcessHeap(),
         0,
-        (len as usize) * core::mem::size_of::<u16>(),
+        ((len as usize) * core::mem::size_of::<u16>()) as SIZE_T,
     ) as LPWSTR;
     if !strW.is_null() {
         MultiByteToWideChar(CP_ACP, 0, str_, -1, strW, len);

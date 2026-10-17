@@ -1,10 +1,8 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ddk::{LARGE_INTEGER, _EVENT_TYPE_NotificationEvent, NtClose, NtCreateEvent, NtSetEvent, NtWaitForMultipleObjects, NtWaitForSingleObject, PHANDLE, PLARGE_INTEGER, RtlAllocateHeap, RtlFreeHeap, RtlQueueWorkItem, WAITORTIMERCALLBACKFUNC, WORKERCALLBACKFUNC};
-use core::ffi::c_void;
 use crate::shared::*;
 
 // ---- file-scope preamble (translated) ----

@@ -1,8 +1,7 @@
 #[allow(unused_imports)]
 use crate::prelude::*;
 // rustconv-assembly: whole-tu
-use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive, KeWaitForSingleObject, PARBITER_ADD_RESERVED_PARAMETERS, PARBITER_INSTANCE, PARBITER_PARAMETERS, PARBITER_QUERY_ARBITRATE_PARAMETERS, PCM_FULL_RESOURCE_DESCRIPTOR, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_RESOURCE_LIST, PIO_RESOURCE_DESCRIPTOR, PRTL_RANGE_LIST, RtlAddRange, RtlDeleteOwnersRanges, RtlFreeRangeList, RtlInitializeRangeList};
-use core::ffi::c_void;
+use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive, KeWaitForSingleObject, PARBITER_INSTANCE, PARBITER_PARAMETERS, PCM_FULL_RESOURCE_DESCRIPTOR, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_RESOURCE_LIST, PIO_RESOURCE_DESCRIPTOR, PRTL_RANGE_LIST, RtlAddRange, RtlDeleteOwnersRanges, RtlFreeRangeList, RtlInitializeRangeList};
 
 // ---- file-scope preamble (translated) ----
 #[repr(C)]
@@ -49,7 +48,7 @@ pub unsafe extern "system" fn ArbiterLibHandler(
     Parameters: PARBITER_PARAMETERS,
 ) -> NTSTATUS {
     let Arbiter: PARBITER_INSTANCE = Context as PARBITER_INSTANCE;
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     ArbpAcquireLock(Arbiter);
 
@@ -103,7 +102,7 @@ unsafe extern "C" fn ArbpSeedRangeList(
     Resources: PCM_PARTIAL_RESOURCE_DESCRIPTOR,
     RangeList: PRTL_RANGE_LIST,
 ) -> NTSTATUS {
-    let mut Windows: PARBITER_SEED_WINDOW;
+    let Windows: PARBITER_SEED_WINDOW;
     let mut WindowCount: ULONG = 0;
     let mut Next: ULONGLONG;
     let mut Index: ULONG;
@@ -215,7 +214,7 @@ pub unsafe extern "system" fn ArbiterLibStartArbiter(
     Arbiter: PARBITER_INSTANCE,
     StartResources: PCM_RESOURCE_LIST,
 ) -> NTSTATUS {
-    let mut Full: PCM_FULL_RESOURCE_DESCRIPTOR;
+    let Full: PCM_FULL_RESOURCE_DESCRIPTOR;
 
     if StartResources.is_null() || (*StartResources).Count == 0 {
         return STATUS_SUCCESS;

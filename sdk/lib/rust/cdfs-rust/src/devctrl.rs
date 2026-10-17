@@ -1,9 +1,11 @@
-use ntkrnl_sys::globals::*;
+// One declaration per external symbol: types.rs.
+use crate::types::CdDecodeFileObject;
+// The crate's own functions: the definition is the declaration.
+use crate::cddata::CdCompleteRequest;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ddk::{IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoMarkIrpPending, IoSetCompletionRoutine, PIO_COMPLETION_ROUTINE, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP};
-use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CCB, FCB, IRP_CONTEXT, TYPE_OF_OPEN, VCB};
 use ntkrnl_sys::ddk::{IRP};
@@ -14,14 +16,12 @@ use crate::types::{CDROM_DISK_DATA};
 
 // cdecl cdfs-internal routines (C defs in filobsup.c are plain cdecl, no NTAPI).
 extern "C" {
-    fn CdDecodeFileObject(IrpContext: *mut IRP_CONTEXT, FileObject: *mut core::ffi::c_void, Fcb: *mut *mut FCB, Ccb: *mut *mut CCB) -> TYPE_OF_OPEN;
 }
 
 extern "C" {
     fn CdVerifyVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
 }
 extern "C" {
-    fn CdCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: NTSTATUS);
 }
 
 // ---- file-scope preamble (translated) ----
@@ -45,13 +45,13 @@ pub unsafe extern "C" fn CdCommonDevControl(
 
     TypeOfOpen = CdDecodeFileObject(
         IrpContext,
-        (*IrpSp).FileObject as *mut core::ffi::c_void,
+        ((*IrpSp).FileObject as *mut core::ffi::c_void).cast(),
         &mut Fcb,
         &mut Ccb,
     );
 
     if TypeOfOpen != 0 { // UserVolumeOpen
-        CdCompleteRequest(IrpContext, Irp, STATUS_INVALID_PARAMETER);
+        CdCompleteRequest((IrpContext).cast(), Irp, STATUS_INVALID_PARAMETER);
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -61,13 +61,13 @@ pub unsafe extern "C" fn CdCommonDevControl(
         CdVerifyVcb(IrpContext, (*Fcb).Vcb);
 
         if (*IrpSp).Parameters.DeviceIoControl.OutputBufferLength < core::mem::size_of::<CDROM_DISK_DATA>() as u32 {
-            CdCompleteRequest(IrpContext, Irp, STATUS_BUFFER_TOO_SMALL);
+            CdCompleteRequest((IrpContext).cast(), Irp, STATUS_BUFFER_TOO_SMALL);
             return STATUS_BUFFER_TOO_SMALL;
         }
 
         (*((*Irp).AssociatedIrp.SystemBuffer as *mut CDROM_DISK_DATA)).DiskData = (*(*Fcb).Vcb).DiskFlags;
         (*Irp).IoStatus.Information = core::mem::size_of::<CDROM_DISK_DATA>() as _;
-        CdCompleteRequest(IrpContext, Irp, STATUS_SUCCESS);
+        CdCompleteRequest((IrpContext).cast(), Irp, STATUS_SUCCESS);
         return STATUS_SUCCESS;
     }
 
@@ -85,7 +85,7 @@ pub unsafe extern "C" fn CdCommonDevControl(
 
     Status = IoCallDriver((*(*IrpContext).Vcb).TargetDeviceObject, Irp);
 
-    CdCompleteRequest(IrpContext, core::ptr::null_mut(), STATUS_SUCCESS);
+    CdCompleteRequest((IrpContext).cast(), core::ptr::null_mut(), STATUS_SUCCESS);
 
     return Status;
 }

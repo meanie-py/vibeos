@@ -325,7 +325,7 @@ pub unsafe extern "C" fn wmain(mut argc: ::core::ffi::c_int, mut argv: *mut *mut
                 || *(*argv.offset(index as isize)).offset(0 as isize) == 0x002Fu16
             {
                 match (towupper(
-                    (*(*argv.offset(index as isize)).offset(1 as isize) as u32) as i32,
+                    (*(*argv.offset(index as isize)).offset(1 as isize) as u32) as wint_t,
                 ) as ::core::ffi::c_int) as u16
                 {
                     0x003Fu16 => {

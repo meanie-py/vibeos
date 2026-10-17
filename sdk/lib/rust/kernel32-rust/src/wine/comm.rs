@@ -1,4 +1,6 @@
 use winedebug_rust::{ERR, TRACE, WARN};
+// The crate's own functions: the definition is the declaration.
+use crate::file::deviceio::DeviceIoControl;
 use ntdll_sys::nt::*;
 use crate::prelude::*;
 use core::ffi::c_void;
@@ -151,10 +153,6 @@ pub type PSERIAL_TIMEOUTS = *mut _SERIAL_TIMEOUTS;
 
 // intra-DLL kernel32 exports (resolve to sibling #[no_mangle] symbols at link)
 extern "system" {
-    fn DeviceIoControl(
-        hDevice: HANDLE, dwIoControlCode: DWORD, lpInBuffer: LPVOID, nInBufferSize: DWORD,
-        lpOutBuffer: LPVOID, nOutBufferSize: DWORD, lpBytesReturned: LPDWORD, lpOverlapped: LPOVERLAPPED,
-    ) -> BOOL;
     fn LoadLibraryW(lpLibFileName: LPCWSTR) -> HINSTANCE;
     fn FreeLibrary(hLibModule: HINSTANCE) -> BOOL;
     fn GetProcAddress(hModule: HMODULE, lpProcName: LPCSTR) -> FARPROC;

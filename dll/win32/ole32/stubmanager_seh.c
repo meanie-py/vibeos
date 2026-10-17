@@ -10,14 +10,34 @@
  *
  * Rust has no __try, so the guard lives here, in a native-SEH TU (_USE_NATIVE_SEH on
  * amd64/arm64, set in CMakeLists.txt). The try body is only the call, so the fault is
- * raised one frame down in the callee: the same contract as advapi32's EventLog shim.
- * i386 keeps the plain call: clang's i386 native SEH is unreliable, and the DUMMY_PSEH
- * original never caught anything there either.
+ * raised one frame down in the callee.
+ * clang's i386 native SEH is unreliable, so i386 goes through ntdll's RtlSehTryExcept
+ * (ntoskrnl/sehtry.c, built on the fs:[0] chain), which catches hardware faults too.
  */
 
 #include <windef.h>
 #include <winbase.h>
 #include <objbase.h>
+
+#if !defined(_USE_NATIVE_SEH)
+/* ntdll's trampoline (dll/ntdll/def/ntdll.spec): TRUE when Filter accepted an exception. */
+unsigned char __cdecl RtlSehTryExcept(void (__cdecl *Body)(void *), void *BodyContext,
+                                      long (__cdecl *Filter)(void *, void *),
+                                      void *FilterContext, long *ExceptionCode);
+
+static void __cdecl release_body(void *context)
+{
+    IUnknown *object = context;
+    object->lpVtbl->Release(object);
+}
+
+static long __cdecl access_violation_only(void *context, void *pointers)
+{
+    return ((EXCEPTION_POINTERS *)pointers)->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION
+               ? EXCEPTION_EXECUTE_HANDLER
+               : EXCEPTION_CONTINUE_SEARCH;
+}
+#endif
 
 /* Returns FALSE when the release faulted (and the fault was swallowed). */
 BOOL __cdecl ole32_release_object_guarded(IUnknown *object)
@@ -33,7 +53,10 @@ BOOL __cdecl ole32_release_object_guarded(IUnknown *object)
         return FALSE;
     }
 #else
-    object->lpVtbl->Release(object);
+    long code = 0;
+
+    if (RtlSehTryExcept(release_body, object, access_violation_only, NULL, &code))
+        return FALSE;
 #endif
     return TRUE;
 }

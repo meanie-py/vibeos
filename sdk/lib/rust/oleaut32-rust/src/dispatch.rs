@@ -306,7 +306,7 @@ pub unsafe extern "system" fn CreateStdDispatch(
         return E_INVALIDARG;
     }
 
-    let pStdDispatch = CoTaskMemAlloc(size_of::<StdDispatch>()) as *mut StdDispatch;
+    let pStdDispatch = CoTaskMemAlloc((size_of::<StdDispatch>()) as _) as *mut StdDispatch;
     if pStdDispatch.is_null() {
         return E_OUTOFMEMORY;
     }
