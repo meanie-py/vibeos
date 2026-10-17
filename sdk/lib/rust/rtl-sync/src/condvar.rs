@@ -158,6 +158,19 @@ unsafe fn InternalUnlockCondVar(ConditionVariable: PRTL_CONDITION_VARIABLE,
     }
 }
 
+// DIVERGES from condvar.c, which calls NtReleaseKeyedEvent (timeout 0) once per
+// waiter while it still holds the CV's lock bit. The released waiter becomes
+// ready, and when it outranks the waker -- it usually does, still carrying the
+// +1 of its last event wait -- it preempts the waker at once, finds the lock bit
+// set and spins on it. On one CPU the waker cannot run to clear the bit until
+// the spinner's boost decays at the end of its quantum, so every such wake cost
+// clock ticks: a pool work item took 0-470 ms to start where Windows takes ~10 us
+// (tools/payloads/wakeprobe), and mfplat's 100 ms MFPutWorkItem check failed.
+// So the lock covers only the list: each waiter to wake is unlinked and marked
+// removed under it, the bit is dropped, and THEN each is released, with no
+// timeout. A removed waiter always waits for its release (see InternalSleep), so
+// the release cannot block for long, and a waiter that timed out meanwhile
+// consumes it instead of leaving it pending.
 unsafe fn InternalWake(ConditionVariable: PRTL_CONDITION_VARIABLE,
                         ReleaseAll: BOOLEAN) {
     let HeadEntry: PCOND_VAR_WAIT_ENTRY = InternalLockCondVar(ConditionVariable,
@@ -165,40 +178,35 @@ unsafe fn InternalWake(ConditionVariable: PRTL_CONDITION_VARIABLE,
                                                               core::ptr::null_mut());
     let mut Entry: PCOND_VAR_WAIT_ENTRY;
     let mut NextEntry: PCOND_VAR_WAIT_ENTRY;
-    let mut Timeout: LARGE_INTEGER = core::mem::zeroed();
-    let mut RemoveOnUnlockEntry: PCOND_VAR_WAIT_ENTRY;
+    let mut RemoveOnUnlockEntry: PCOND_VAR_WAIT_ENTRY = core::ptr::null_mut();
+    // Unlinked entries, chained through WaitKey: only its ADDRESS is the key, and
+    // the entry (on its waiter's stack) stays valid until we release it.
+    let mut WakeFirst: PCOND_VAR_WAIT_ENTRY = core::ptr::null_mut();
+    let mut WakeLast: PCOND_VAR_WAIT_ENTRY = core::ptr::null_mut();
 
     if HeadEntry.is_null() {
         return;
     }
 
-    Timeout.QuadPart = 0;
-    RemoveOnUnlockEntry = core::ptr::null_mut();
-
     Entry = CONTAINING_COND_VAR_WAIT_ENTRY!((*HeadEntry).ListEntry.Blink, ListEntry);
     while !Entry.is_null() {
         if HeadEntry == Entry {
             NextEntry = core::ptr::null_mut();
-        } else {
-            NextEntry = CONTAINING_COND_VAR_WAIT_ENTRY!((*Entry).ListEntry.Blink, ListEntry);
-        }
-
-        let Status = NtReleaseKeyedEvent(CondVarKeyedEventHandle,
-                                         core::ptr::addr_of_mut!((*Entry).WaitKey) as *mut _,
-                                         0u8,
-                                         core::ptr::addr_of_mut!(Timeout));
-
-        if !NT_SUCCESS(Status) {
-            Entry = NextEntry;
-            continue;
-        }
-
-        if HeadEntry == Entry {
+            // InternalUnlockCondVar unlinks the head and sets its flag.
             RemoveOnUnlockEntry = HeadEntry;
         } else {
+            NextEntry = CONTAINING_COND_VAR_WAIT_ENTRY!((*Entry).ListEntry.Blink, ListEntry);
             RemoveEntryList(core::ptr::addr_of_mut!((*Entry).ListEntry));
             *InternalGetListRemovalHandledFlag(Entry) = 1u8;
         }
+
+        (*Entry).WaitKey = core::ptr::null_mut();
+        if WakeLast.is_null() {
+            WakeFirst = Entry;
+        } else {
+            (*WakeLast).WaitKey = Entry as PVOID;
+        }
+        WakeLast = Entry;
 
         if ReleaseAll == 0 {
             break;
@@ -208,6 +216,18 @@ unsafe fn InternalWake(ConditionVariable: PRTL_CONDITION_VARIABLE,
     }
 
     InternalUnlockCondVar(ConditionVariable, RemoveOnUnlockEntry);
+
+    Entry = WakeFirst;
+    while !Entry.is_null() {
+        // Read the link first: once released, the waiter may return and its
+        // stack (this entry) is gone.
+        NextEntry = (*Entry).WaitKey as PCOND_VAR_WAIT_ENTRY;
+        NtReleaseKeyedEvent(CondVarKeyedEventHandle,
+                            core::ptr::addr_of_mut!((*Entry).WaitKey) as *mut _,
+                            0u8,
+                            core::ptr::null_mut());
+        Entry = NextEntry;
+    }
 }
 // Hand-translated from condvar.c:365-456 (rustconv's scanner dropped this static).
 // Either CriticalSection or SRWLock must be NULL (not both); the lock is held on
@@ -248,21 +268,26 @@ unsafe fn InternalSleep(
         TimeOut,
     );
 
-    if *InternalGetListRemovalHandledFlag(core::ptr::addr_of_mut!(OwnEntry)) == 0 {
-        // OwnEntry still seems to be on the list; remove it once we hold the lock.
-        if !InternalLockCondVar(
-            ConditionVariable,
-            core::ptr::null_mut(),
-            InternalGetListRemovalHandledFlag(core::ptr::addr_of_mut!(OwnEntry)),
-        )
-        .is_null()
-        {
-            let RemoveEntry = if OwnEntry.ListRemovalHandled == 0 {
-                core::ptr::addr_of_mut!(OwnEntry)
-            } else {
-                core::ptr::null_mut()
-            };
-            InternalUnlockCondVar(ConditionVariable, RemoveEntry);
+    let mut Status = Status;
+    if Status != STATUS_SUCCESS {
+        // Timed out (or alerted). Under the lock, either we are still listed and
+        // take ourselves off, or a waker already unlinked us (InternalWake) and
+        // is about to release our key: wait for that release, so it is not left
+        // pending, and report the wake we were given.
+        let Head = InternalLockCondVar(ConditionVariable, core::ptr::null_mut(), core::ptr::null_mut());
+        if !Head.is_null() && OwnEntry.ListRemovalHandled == 0 {
+            InternalUnlockCondVar(ConditionVariable, core::ptr::addr_of_mut!(OwnEntry));
+        } else {
+            if !Head.is_null() {
+                InternalUnlockCondVar(ConditionVariable, core::ptr::null_mut());
+            }
+            NtWaitForKeyedEvent(
+                CondVarKeyedEventHandle,
+                core::ptr::addr_of_mut!(OwnEntry.WaitKey) as PVOID,
+                0u8,
+                core::ptr::null_mut(),
+            );
+            Status = STATUS_SUCCESS;
         }
     }
 

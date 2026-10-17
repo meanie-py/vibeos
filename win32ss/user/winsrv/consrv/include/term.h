@@ -65,5 +65,7 @@
     (Console)->FrontEndIFace.Vtbl->MenuControl(&(Console)->FrontEndIFace, (CmdIdLow), (CmdIdHigh))
 #define TermSetMenuClose(Console, Enable) \
     (Console)->FrontEndIFace.Vtbl->SetMenuClose(&(Console)->FrontEndIFace, (Enable))
+#define TermGetFontSize(Console, pSize) \
+    (Console)->FrontEndIFace.Vtbl->GetFontSize(&(Console)->FrontEndIFace, (pSize))
 
 /* EOF */
