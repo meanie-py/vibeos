@@ -27,4 +27,6 @@ cases:
   variants:
     rust: '%SystemRoot%\system32\taskkill.exe'
   args: /IM smss.exe /IM nosuch.exe
-  expect: ['"nosuch.exe"', '"smss.exe"']
+  # Only the missing name: smss's own line spells its image name as Toolhelp reports it,
+  # SMSS.EXE on i386 and smss.exe elsewhere.
+  expect: ['"nosuch.exe"']

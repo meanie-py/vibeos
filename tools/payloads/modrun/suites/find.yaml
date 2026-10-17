@@ -22,7 +22,10 @@ cases:
   args: /I "apple" %SystemRoot%\bin\modrun\data\lines.txt
   diverge:
   - why: "the C's unsigned cch1 - cch2 let the empty line match: it compared past the line"
+    # Both variants also print a blank line before the file header; the pattern drops every
+    # blank line on both sides, so only the C's extra one differs.
     c: '^$'
+    rust: '^$'
 - id: count
   args: /C "an" %SystemRoot%\bin\modrun\data\lines.txt
 - id: invert-number
