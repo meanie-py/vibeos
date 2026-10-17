@@ -6138,6 +6138,20 @@ a fixture that "looks worse" can test nothing — and a name can be **redefined*
 body in one TU (dinput's `FE(x)` is `type = #x` then `wave = #x`), so expansion must track the
 definition in force by POSITION, not keep a name→body map.
 
+**Variant: an SEH block under another name cuts the function at its first nested `}`.**
+`mask_seh_for_parse` rewrote only the `_SEH2_*` spellings to same-length C, so rpc.h's
+`RpcTryExcept`/`RpcExcept`/`RpcEndExcept` and Wine's `__TRY`/`__EXCEPT`/`__ENDTRY` reached
+tree-sitter raw. A second, nested RpcTryExcept ended setupapi's `GetDeviceInstanceKeyPath`
+there. The tail went to the model as "file-scope preamble", the body was bought truncated, and
+the run died only because the preamble's wide-literal seal noticed 21 literals that the real
+preamble does not have. Both spellings are masked now, and `preamble_audit` masks too. It ran
+its own parse without the mask or `_strip_sal`, so it called the same file "does not parse at
+top level" and skipped every file-scope check. **The scanner and every audit that re-parses
+the C must apply the same normalizers, or they disagree about what the file contains.** The
+old scanner gives different bodies for 248 functions in 31 files, including shipped ports
+(advapi32 scm.c/lsa.c/crypt.c, samlib, netapi32, winspool, kernel32 res.c). Which of those
+were bought truncated is owed (conformance-ratchet-quest.md).
+
 The two fixes compose, and the order matters: expanding is what lets `--seal-facts` see the arms
 at all. Sealed, `msvcrt_set_errno`'s 60 constants go to the model as `__RUSTCONV_FACT_00NN__` and
 cannot be invented — which is the whole defence, given `EDEADLK` is 36 in msvcrt and 35 in glibc.

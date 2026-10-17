@@ -65,7 +65,9 @@ class Resolution:
 
 #: rustc found a VALUE where the code names a type: setuplib's `FILE_SYSTEM` typedef, after
 #: tree consensus had copied bugcodes.h's `FILE_SYSTEM: ULONG = 0x22` for the missing name.
-_VALUE_FOR_TYPE = re.compile(r"^expected type, found (?:constant|static|function) `(\w+)`")
+#: And a MACRO: setupapi parser.c's `struct line` is named like core's `line!`, so a missing
+#: `line` type reads "expected type, found macro" and was never requested (E0573).
+_VALUE_FOR_TYPE = re.compile(r"^expected type, found (?:constant|static|function|macro) `(\w+)`")
 _TYPE_WORDS = ("cannot find type ", "cannot find struct, variant or union type ")
 
 
