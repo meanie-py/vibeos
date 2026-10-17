@@ -869,17 +869,22 @@ pub unsafe extern "system" fn MmUnsharePageEntrySectionSegment(
         MmSetPageEntrySectionSegment(Segment, Offset, Entry);
         return 0u8;
     }
+    // From here the last view of the page is gone. Where the C keeps it cached, a clean
+    // page goes to standby: still the segment's, but available (mm/standby.rs).
     if IsDataMap {
         MmSetPageEntrySectionSegment(Segment, Offset, Entry);
+        crate::mm::standby::MiRosStandbyInsert(Segment, Offset, Entry);
         return 0u8;
     }
     if (*Segment).Image.Characteristics & IMAGE_SCN_MEM_SHARED == 0 {
         MmSetPageEntrySectionSegment(Segment, Offset, Entry);
+        crate::mm::standby::MiRosStandbyInsert(Segment, Offset, Entry);
         return 0u8;
     }
     let SwapEntry = MmGetSavedSwapEntryPage(Page);
     if SwapEntry == 0 && !IS_DIRTY_SSE(Entry) {
         MmSetPageEntrySectionSegment(Segment, Offset, Entry);
+        crate::mm::standby::MiRosStandbyInsert(Segment, Offset, Entry);
         return 0u8;
     }
     if SwapEntry != 0 {
