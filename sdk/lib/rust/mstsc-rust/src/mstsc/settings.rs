@@ -219,9 +219,11 @@ pub unsafe extern "C" fn SetStringToSettings(
                     (*(*pRdpSettings).pSettings.offset(i as isize)).Type = 0x0073u16;
                 }
 
-                wcscpy(
-                    core::ptr::addr_of_mut!((*(*pRdpSettings).pSettings.offset(i as isize)).Value.s) as *mut wchar_t,
-                    lpValue as *const wchar_t,
+                // Bounded like the file path above: Value.s holds MAXVALUE WCHARs.
+                StringCchCopyW(
+                    core::ptr::addr_of_mut!((*(*pRdpSettings).pSettings.offset(i as isize)).Value.s) as *mut WCHAR,
+                    MAXVALUE as usize,
+                    lpValue as *const WCHAR,
                 );
                 bRet = (TRUE) as i32;
                 break;
@@ -381,8 +383,12 @@ unsafe extern "C" fn ParseSettings(pRdpSettings: PRDPSETTINGS, lpBuffer: LPWSTR)
                         lpToken = wcstok(core::ptr::null_mut(), core::ptr::addr_of_mut!(szNewline) as *mut WCHAR) as LPWSTR;
                     }
                     if !lpToken.is_null() {
-                        wcscpy(
+                        // The C's wcscpy into Value.s (MAXVALUE WCHARs) takes the token from
+                        // the .rdp file unbounded; a longer value overran the settings array.
+                        // Truncated instead, always terminated.
+                        StringCchCopyW(
                             core::ptr::addr_of_mut!((*(*pRdpSettings).pSettings.offset(i as isize)).Value.s) as *mut WCHAR,
+                            MAXVALUE as usize,
                             lpToken as *const WCHAR,
                         );
                     }
