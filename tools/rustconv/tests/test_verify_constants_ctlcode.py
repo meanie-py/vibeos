@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import ClassVar
 
 from rustconv.config import REACTOS_ROOT
-from rustconv.verify_constants import (
+from rustconv.fix_constants import (
     _BUILTIN_FUNC_MACROS,
     _eval_int_expr,
     _parse_func_macros,

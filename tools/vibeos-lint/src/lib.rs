@@ -1,9 +1,24 @@
 //! Statically linked lint plugins over an immutable, shared source snapshot.
-mod integers;
+mod ast_facts;
+pub mod big_math;
+pub mod catalog;
+pub mod const_shared;
+pub mod const_values;
+mod crate_cfg;
+pub mod vendor_registry;
+pub use crate_cfg::CrateCfg;
+mod history;
+pub mod integers;
+pub use history::VersionHistory;
+mod inventory;
+pub use inventory::SourceSet;
 pub mod lexical;
+pub mod link_model;
+pub mod module_inputs;
 pub mod modules;
 pub mod regexes;
 pub mod rules;
+pub mod syntax;
 pub mod twins;
 
 use rayon::prelude::*;
@@ -11,11 +26,23 @@ use regex::Regex;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 pub trait Rule: Sync {
     fn name(&self) -> &'static str;
     fn run(&self, corpus: &Corpus) -> Result<Vec<String>, String>;
+    fn source_sets(&self) -> &'static [SourceSet] {
+        &[]
+    }
+    fn needs_c_signature_asts(&self) -> &'static [&'static str] {
+        &[]
+    }
+    fn needs_module_inputs(&self) -> bool {
+        false
+    }
+    fn needs_version_history(&self) -> bool {
+        false
+    }
     fn needs_c_twins(&self) -> bool {
         false
     }
@@ -41,11 +68,16 @@ pub struct SourceFile {
     pub text: String,
     resolved: Option<PathBuf>,
     raw: Option<Arc<[u8]>>,
+    groups: Vec<&'static str>,
+    directory: bool,
+    inventory_order: usize,
+    rust_tree: OnceLock<Result<Arc<tree_sitter::Tree>, String>>,
+    large_rust_tree: Mutex<Weak<tree_sitter::Tree>>,
     twin_functions: OnceLock<Vec<twins::Function>>,
     scopes: u8,
     noise: OnceLock<Arc<str>>,
     lines: Vec<usize>,
-    views: Mutex<HashMap<(String, Option<String>, bool), Arc<str>>>,
+    views: Mutex<HashMap<(String, Option<String>, bool), Arc<OnceLock<Arc<str>>>>>,
 }
 
 impl SourceFile {
@@ -57,6 +89,11 @@ impl SourceFile {
             text,
             resolved: None,
             raw: None,
+            groups: Vec::new(),
+            directory: false,
+            inventory_order: 0,
+            rust_tree: OnceLock::new(),
+            large_rust_tree: Mutex::new(Weak::new()),
             twin_functions: OnceLock::new(),
             scopes: u8::MAX,
             noise: OnceLock::new(),
@@ -67,6 +104,27 @@ impl SourceFile {
 
     pub fn bytes(&self) -> &[u8] {
         self.raw.as_deref().unwrap_or(self.text.as_bytes())
+    }
+    pub fn is_directory(&self) -> bool {
+        self.directory
+    }
+    pub fn rust_tree(&self) -> Result<Arc<tree_sitter::Tree>, String> {
+        // Retaining every bindgen AST costs many times the source bytes. Large
+        // parses are shared while consumers hold them, then released; ordinary
+        // source parses stay cached for the whole run.
+        if self.text.len() <= 256 * 1024 {
+            return self
+                .rust_tree
+                .get_or_init(|| syntax::parse(&self.text).map(Arc::new))
+                .clone();
+        }
+        let mut cached = self.large_rust_tree.lock().expect("syntax cache poisoned");
+        if let Some(tree) = cached.upgrade() {
+            return Ok(tree);
+        }
+        let tree = Arc::new(syntax::parse(&self.text)?);
+        *cached = Arc::downgrade(&tree);
+        Ok(tree)
     }
     pub fn twin_functions(&self, root: &Path) -> &[twins::Function] {
         self.twin_functions.get_or_init(|| {
@@ -89,30 +147,34 @@ impl SourceFile {
             cutoff.map(str::to_owned),
             characters,
         );
-        let mut views = self.views.lock().unwrap();
-        views
-            .entry(key)
-            .or_insert_with(|| {
-                let raw = cutoff
-                    .and_then(|marker| self.text.split_once(marker).map(|p| p.0))
-                    .unwrap_or(&self.text);
-                regex
-                    .replace_all(raw, |caps: &regex::Captures<'_>| {
-                        let text = caps.get(0).unwrap().as_str();
-                        if characters {
-                            text.chars()
-                                .map(|c| if c == '\n' { '\n' } else { ' ' })
-                                .collect::<String>()
-                        } else {
-                            text.bytes()
-                                .map(|b| if b == b'\n' { '\n' } else { ' ' })
-                                .collect::<String>()
-                        }
-                    })
-                    .into_owned()
-                    .into()
-            })
-            .clone()
+        let slot = {
+            let mut views = self.views.lock().unwrap();
+            views
+                .entry(key)
+                .or_insert_with(|| Arc::new(OnceLock::new()))
+                .clone()
+        };
+        slot.get_or_init(|| {
+            let raw = cutoff
+                .and_then(|marker| self.text.split_once(marker).map(|p| p.0))
+                .unwrap_or(&self.text);
+            regex
+                .replace_all(raw, |caps: &regex::Captures<'_>| {
+                    let text = caps.get(0).unwrap().as_str();
+                    if characters {
+                        text.chars()
+                            .map(|c| if c == '\n' { '\n' } else { ' ' })
+                            .collect::<String>()
+                    } else {
+                        text.bytes()
+                            .map(|b| if b == b'\n' { '\n' } else { ' ' })
+                            .collect::<String>()
+                    }
+                })
+                .into_owned()
+                .into()
+        })
+        .clone()
     }
 
     pub fn rust_noise(&self) -> &str {
@@ -136,8 +198,21 @@ impl SourceFile {
 pub struct Corpus {
     pub root: PathBuf,
     pub files: Vec<SourceFile>,
+    explicit_paths: Vec<PathBuf>,
+    c_signature_asts: OnceLock<BTreeMap<String, Result<serde_json::Value, String>>>,
     twins: OnceLock<twins::CIndex>,
     modules: OnceLock<modules::ModuleTree>,
+    version_history: OnceLock<Result<VersionHistory, String>>,
+    module_inputs: OnceLock<module_inputs::ModuleModel>,
+    crate_configs: OnceLock<BTreeMap<PathBuf, CrateCfg>>,
+    normalized_paths: OnceLock<HashMap<PathBuf, usize>>,
+    files_by_path: OnceLock<HashMap<PathBuf, usize>>,
+    link_scans: Mutex<
+        BTreeMap<
+            (String, Vec<PathBuf>),
+            Arc<(Vec<link_model::Def>, std::collections::BTreeSet<PathBuf>)>,
+        >,
+    >,
 }
 
 const RUST: u8 = 1;
@@ -174,9 +249,72 @@ impl Corpus {
         Self {
             root,
             files,
+            explicit_paths: Vec::new(),
+            c_signature_asts: OnceLock::new(),
             twins: OnceLock::new(),
             modules: OnceLock::new(),
+            version_history: OnceLock::new(),
+            module_inputs: OnceLock::new(),
+            crate_configs: OnceLock::new(),
+            normalized_paths: OnceLock::new(),
+            files_by_path: OnceLock::new(),
+            link_scans: Mutex::new(BTreeMap::new()),
         }
+    }
+    pub fn c_signature_ast(&self, arch: &str) -> Result<&serde_json::Value, String> {
+        self.c_signature_asts
+            .get()
+            .and_then(|all| all.get(arch))
+            .ok_or_else(|| format!("C signature AST {arch} was not requested"))?
+            .as_ref()
+            .map_err(Clone::clone)
+    }
+    pub fn explicit_paths(&self) -> &[PathBuf] {
+        &self.explicit_paths
+    }
+    pub fn with_explicit_paths(mut self, paths: Vec<PathBuf>) -> Self {
+        self.explicit_paths = paths;
+        self
+    }
+    pub fn file(&self, path: &Path) -> Option<&SourceFile> {
+        let paths = self.files_by_path.get_or_init(|| {
+            let mut paths = HashMap::with_capacity(self.files.len());
+            for (index, file) in self.files.iter().enumerate() {
+                paths.entry(file.path.clone()).or_insert(index);
+            }
+            paths
+        });
+        paths.get(path).map(|&index| &self.files[index])
+    }
+    pub(crate) fn normalized_file_index(&self) -> &HashMap<PathBuf, usize> {
+        self.normalized_paths.get_or_init(|| {
+            let mut paths = HashMap::with_capacity(self.files.len());
+            for (index, file) in self.files.iter().enumerate() {
+                paths.insert(crate::modules::normalize(&file.path), index);
+            }
+            paths
+        })
+    }
+    pub fn crate_cfg(&self, path: &Path) -> &CrateCfg {
+        static EMPTY: std::sync::LazyLock<CrateCfg> = std::sync::LazyLock::new(CrateCfg::default);
+        let all = self.crate_configs.get_or_init(|| crate_cfg::configs(self));
+        for parent in path.ancestors().skip(1) {
+            if let Some(cfg) = all.get(parent) {
+                return cfg;
+            }
+        }
+        &EMPTY
+    }
+    pub fn module_inputs(&self) -> &module_inputs::ModuleModel {
+        self.module_inputs
+            .get_or_init(|| module_inputs::ModuleModel::from_corpus(self))
+    }
+    pub fn version_history(&self) -> Result<&VersionHistory, String> {
+        self.version_history
+            .get()
+            .ok_or("version history was not requested")?
+            .as_ref()
+            .map_err(Clone::clone)
     }
     pub fn module_tree(&self) -> &modules::ModuleTree {
         self.modules
@@ -186,6 +324,18 @@ impl Corpus {
         self.twins.get_or_init(|| {
             twins::CIndex::from_files(self.files.iter().filter(|f| f.scopes & TRACKED_C != 0))
         })
+    }
+    pub fn sources<'a>(&'a self, name: &'a str) -> impl Iterator<Item = &'a SourceFile> + 'a {
+        self.files
+            .iter()
+            .filter(move |file| file.groups.contains(&name) || file.scopes == u8::MAX)
+    }
+
+    /// Directory traversal order for scanners whose first definition wins.
+    pub fn ordered_sources<'a>(&'a self, name: &'a str) -> Vec<&'a SourceFile> {
+        let mut files: Vec<_> = self.sources(name).collect();
+        files.sort_by_key(|f| f.inventory_order);
+        files
     }
 
     pub fn load(root: &Path) -> Result<Self, String> {
@@ -217,13 +367,33 @@ impl Corpus {
         needs: SourceNeeds,
         extras: &[PathBuf],
     ) -> Result<Self, String> {
+        Self::load_scopes_with_sets(root, inputs, needs, extras, &[])
+    }
+    pub fn load_scopes_with_sets(
+        root: &Path,
+        inputs: &[PathBuf],
+        needs: SourceNeeds,
+        extras: &[PathBuf],
+        sets: &[SourceSet],
+    ) -> Result<Self, String> {
         let root = root
             .canonicalize()
             .map_err(|e| format!("{}: {e}", root.display()))?;
         let mut paths = BTreeMap::<PathBuf, u8>::new();
+        let mut groups = BTreeMap::<PathBuf, Vec<&'static str>>::new();
+        let mut traversal = BTreeMap::<PathBuf, usize>::new();
         if inputs.is_empty() {
-            collect_scopes(&root, &root, needs, false, &mut paths)
-                .map_err(|e| format!("source traversal: {e}"))?;
+            collect_scopes_with_sets(
+                &root,
+                &root,
+                needs,
+                false,
+                &mut paths,
+                sets,
+                &mut groups,
+                &mut traversal,
+            )
+            .map_err(|e| format!("source traversal: {e}"))?;
             // Missing the default Rust corpus is an incomplete check, even if
             // another scope happens to exist and supplies files.
             if needs.workspace_rust {
@@ -243,11 +413,49 @@ impl Corpus {
                 let metadata =
                     fs::metadata(&input).map_err(|e| format!("{}: {e}", input.display()))?;
                 if metadata.is_dir() {
-                    collect_scopes(&input, &input, needs, true, &mut paths)
-                        .map_err(|e| format!("source traversal: {e}"))?;
+                    collect_scopes_with_sets(
+                        &input,
+                        &input,
+                        needs,
+                        true,
+                        &mut paths,
+                        sets,
+                        &mut groups,
+                        &mut traversal,
+                    )
+                    .map_err(|e| format!("source traversal: {e}"))?;
                 } else {
+                    for set in sets.iter().filter(|set| !set.tracked && set.inputs) {
+                        if set.accepts(input.strip_prefix(&root).unwrap_or(&input), true) {
+                            groups.entry(input.clone()).or_default().push(set.name);
+                        }
+                    }
                     paths.insert(input, RUST | SDK_RUST | CDECL);
                 }
+            }
+            // Global catalog inputs remain repository-scoped when fixture Rust
+            // inputs are narrowed. Input-relative requests override their roots.
+            let global_sets: Vec<_> = sets
+                .iter()
+                .copied()
+                .filter(|set| !set.tracked && !set.inputs)
+                .collect();
+            if !global_sets.is_empty() {
+                let no_defaults = SourceNeeds {
+                    workspace_rust: false,
+                    ..SourceNeeds::default()
+                };
+                collect_scopes_with_sets(
+                    &root,
+                    &root,
+                    no_defaults,
+                    false,
+                    &mut paths,
+                    &global_sets,
+                    &mut groups,
+                    &mut traversal,
+                )
+                .map_err(|e| format!("catalog traversal: {e}"))?;
             }
             if needs.module_c {
                 // Fixture paths narrow Rust inputs, but the HRESULT oracle still
@@ -275,11 +483,20 @@ impl Corpus {
         for path in extras {
             *paths.entry(root.join(path)).or_default() |= 0;
         }
-        if needs.tracked_c {
+        if needs.tracked_c || sets.iter().any(|set| set.tracked) {
+            let mut patterns = std::collections::BTreeSet::new();
+            if needs.tracked_c {
+                patterns.extend(["*.c".to_owned(), "*.cpp".to_owned()]);
+            }
+            for set in sets.iter().filter(|set| set.tracked) {
+                patterns.extend(set.extensions.iter().map(|ext| format!("*.{ext}")));
+                patterns.extend(set.filenames.iter().map(|name| format!("*{name}")));
+            }
             let output = std::process::Command::new("git")
                 .arg("-C")
                 .arg(&root)
-                .args(["ls-files", "-z", "--", "*.c", "*.cpp", ":!sdk/lib/rust"])
+                .args(["ls-files", "-z", "--"])
+                .args(patterns)
                 .output()
                 .map_err(|e| format!("tracked C inventory: {e}"))?;
             if !output.status.success() {
@@ -304,7 +521,21 @@ impl Corpus {
                 let path = root.join(relative);
                 match fs::metadata(&path) {
                     Ok(_) => {
-                        *paths.entry(path).or_default() |= TRACKED_C;
+                        if needs.tracked_c
+                            && !relative.starts_with("sdk/lib/rust")
+                            && relative
+                                .extension()
+                                .is_some_and(|ext| ext == "c" || ext == "cpp")
+                        {
+                            *paths.entry(path.clone()).or_default() |= TRACKED_C;
+                        }
+                        for set in sets
+                            .iter()
+                            .filter(|set| set.tracked && set.accepts(relative, false))
+                        {
+                            groups.entry(path.clone()).or_default().push(set.name);
+                            paths.entry(path.clone()).or_default();
+                        }
                     }
                     Err(e) if e.kind() == std::io::ErrorKind::NotFound => {} // staged/unstaged deletion, as in Python
                     Err(e) => return Err(format!("{}: {e}", path.display())),
@@ -315,7 +546,14 @@ impl Corpus {
         let files: Result<Vec<_>, String> = entries
             .par_iter()
             .map(|(path, scopes)| {
-                let bytes = fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+                let directory = fs::metadata(path)
+                    .map_err(|e| format!("{}: {e}", path.display()))?
+                    .is_dir();
+                let bytes = if directory {
+                    Vec::new()
+                } else {
+                    fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?
+                };
                 // Path.read_text() uses universal newlines in the Python oracles.
                 let text = String::from_utf8_lossy(&bytes);
                 let text = if text.contains('\r') {
@@ -329,19 +567,47 @@ impl Corpus {
                     .canonicalize()
                     .map_err(|e| format!("{}: {e}", path.display()))?;
                 file.resolved = Some(resolved.strip_prefix(&root).unwrap_or(&resolved).to_owned());
-                if needs.cargo_manifests && path.extension().is_some_and(|ext| ext == "rs") {
+                file.directory = directory;
+                file.inventory_order = traversal.get(path).copied().unwrap_or(usize::MAX);
+                file.groups = groups.get(path).cloned().unwrap_or_default();
+                if needs.cargo_manifests && path.extension().is_some_and(|ext| ext == "rs")
+                    || path.extension().is_some_and(|ext| ext == "res")
+                {
                     file.raw = Some(bytes.into());
                 }
                 file.scopes = *scopes;
                 Ok(file)
             })
             .collect();
-        Ok(Self::new(root, files?))
+        let explicit_paths = inputs
+            .iter()
+            .map(|p| {
+                let path = if p.is_absolute() {
+                    p.clone()
+                } else {
+                    root.join(p)
+                };
+                let resolved = path
+                    .canonicalize()
+                    .map_err(|e| format!("{}: {e}", path.display()))?;
+                Ok(resolved.strip_prefix(&root).unwrap_or(&resolved).to_owned())
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        Ok(Self::new(root, files?).with_explicit_paths(explicit_paths))
     }
     pub fn rust_files(&self) -> impl Iterator<Item = &SourceFile> {
         self.files
             .iter()
             .filter(|f| f.scopes & RUST != 0 && f.path.extension().is_some_and(|ext| ext == "rs"))
+    }
+    pub fn cargo_manifests(&self) -> impl Iterator<Item = &SourceFile> {
+        self.files.iter().filter(|file| {
+            file.scopes & MANIFEST != 0
+                && file
+                    .path
+                    .file_name()
+                    .is_some_and(|name| name == "Cargo.toml")
+        })
     }
     pub fn sdk_rust_files(&self) -> impl Iterator<Item = &SourceFile> {
         self.files.iter().filter(|f| {
@@ -413,20 +679,68 @@ fn collect_scopes(
     explicit: bool,
     paths: &mut BTreeMap<PathBuf, u8>,
 ) -> std::io::Result<()> {
+    collect_scopes_with_sets(
+        base,
+        dir,
+        needs,
+        explicit,
+        paths,
+        &[],
+        &mut BTreeMap::new(),
+        &mut BTreeMap::new(),
+    )
+}
+fn collect_scopes_with_sets(
+    base: &Path,
+    dir: &Path,
+    needs: SourceNeeds,
+    explicit: bool,
+    paths: &mut BTreeMap<PathBuf, u8>,
+    sets: &[SourceSet],
+    groups: &mut BTreeMap<PathBuf, Vec<&'static str>>,
+    traversal: &mut BTreeMap<PathBuf, usize>,
+) -> std::io::Result<()> {
     if base.components().any(|p| p.as_os_str() == "target") {
         return Ok(());
     }
     let relative = dir.strip_prefix(base).unwrap();
     let scopes = directory_scopes(relative, needs, explicit);
-    if scopes == 0 {
+    if scopes == 0 && !sets.iter().any(|set| set.visits(relative, explicit)) {
         return Ok(());
     }
+    let mut directories = Vec::new();
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
         let kind = entry.file_type()?;
+        if kind.is_symlink() && fs::metadata(&path)?.is_dir() {
+            continue;
+        }
+        let file_relative = path.strip_prefix(base).unwrap();
+        let mut grouped = false;
+        for set in sets.iter().filter(|set| {
+            !set.tracked
+                && (set.accepts(file_relative, explicit)
+                    || kind.is_dir() && set.directories && set.visits(file_relative, explicit))
+        }) {
+            if !kind.is_dir()
+                || set.directories
+                || set
+                    .filenames
+                    .iter()
+                    .any(|name| path.file_name().is_some_and(|n| n == *name))
+            {
+                groups.entry(path.clone()).or_default().push(set.name);
+                grouped = true;
+            }
+        }
+        if grouped {
+            paths.entry(path.clone()).or_default();
+            let next = traversal.len();
+            traversal.entry(path.clone()).or_insert(next);
+        }
         if kind.is_dir() {
-            collect_scopes(base, &path, needs, explicit, paths)?;
+            directories.push(path);
             continue;
         }
         let ext = path.extension().unwrap_or_default().to_string_lossy();
@@ -465,6 +779,10 @@ fn collect_scopes(
             *paths.entry(path).or_default() |= selected;
         }
     }
+    // pathlib.rglob visits all matches in a directory before its subdirectories.
+    for path in directories {
+        collect_scopes_with_sets(base, &path, needs, explicit, paths, sets, groups, traversal)?;
+    }
     Ok(())
 }
 
@@ -474,6 +792,37 @@ pub fn execute(
 ) -> Result<Vec<(&'static str, Vec<String>)>, String> {
     // Build cross-file indexes before rules fan out. Initializing a OnceLock
     // from nested Rayon jobs can exhaust the pool with workers waiting on it.
+    let ast_arches: std::collections::BTreeSet<_> = selected
+        .iter()
+        .flat_map(|r| r.needs_c_signature_asts().iter().copied())
+        .collect();
+    if !ast_arches.is_empty() {
+        corpus.c_signature_asts.get_or_init(|| {
+            ast_arches
+                .iter()
+                .map(|a| (a.to_string(), ast_facts::c_signature_ast(&corpus.root, a)))
+                .collect()
+        });
+        for arch in ast_arches {
+            corpus.c_signature_ast(arch)?;
+        }
+    }
+    if selected.iter().any(|rule| rule.needs_module_inputs()) {
+        corpus.module_inputs();
+    }
+    if selected.iter().any(|rule| rule.needs_version_history()) {
+        let started = std::time::Instant::now();
+        corpus
+            .version_history
+            .get_or_init(|| VersionHistory::capture(&corpus.root));
+        corpus.version_history()?;
+        if std::env::var_os("VIBEOS_LINT_TIMINGS").is_some() {
+            eprintln!(
+                "TIMING\tversion_history\t{:.3}",
+                started.elapsed().as_secs_f64()
+            );
+        }
+    }
     if selected.iter().any(|rule| rule.needs_c_twins()) {
         corpus.c_twins();
     }
@@ -484,7 +833,7 @@ pub fn execute(
         .par_iter()
         .map(|rule| {
             let started = std::time::Instant::now();
-            let mut lines = rule
+            let chunks = rule
                 .run(corpus)
                 .map_err(|e| format!("{}: {e}", rule.name()))?;
             if std::env::var_os("VIBEOS_LINT_TIMINGS").is_some() {
@@ -494,12 +843,32 @@ pub fn execute(
                     started.elapsed().as_secs_f64()
                 );
             }
-            if lines
-                .iter()
-                .any(|line| line.contains(['\n', '\r']) || line.is_empty())
-            {
-                return Err(format!("{}: invalid finding in tagged output", rule.name()));
-            }
+            // Original stdout may include multiline types or report sections.
+            // Match subprocess text-mode universal newlines, then tag each
+            // physical output line independently. Blank lines carry no finding.
+            let mut lines: Vec<String> = chunks
+                .into_iter()
+                .flat_map(|chunk| {
+                    chunk
+                        .split(|c| {
+                            matches!(
+                                c,
+                                '\n' | '\r'
+                                    | '\u{000b}'
+                                    | '\u{000c}'
+                                    | '\u{001c}'
+                                    | '\u{001d}'
+                                    | '\u{001e}'
+                                    | '\u{0085}'
+                                    | '\u{2028}'
+                                    | '\u{2029}'
+                            )
+                        })
+                        .filter(|line| !line.is_empty())
+                        .map(str::to_owned)
+                        .collect::<Vec<_>>()
+                })
+                .collect();
             lines.sort();
             lines.dedup();
             Ok((rule.name(), lines))
@@ -511,6 +880,138 @@ pub fn execute(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn multiline_reports_are_tagged_as_individual_output_lines() {
+        struct Report;
+        impl Rule for Report {
+            fn name(&self) -> &'static str {
+                "report"
+            }
+            fn run(&self, _: &Corpus) -> Result<Vec<String>, String> {
+                Ok(vec![
+                    "first\r\nsecond\rthird\n\n".into(),
+                    String::new(),
+                    "fourth\tvalue".into(),
+                    "fifth\u{2028}sixth\u{0085}".into(),
+                ])
+            }
+        }
+        let c = Corpus::new(".".into(), vec![]);
+        let got = execute(&c, &[&Report]).unwrap();
+        assert_eq!(
+            got[0].1,
+            vec![
+                "fifth",
+                "first",
+                "fourth\tvalue",
+                "second",
+                "sixth",
+                "third"
+            ]
+        );
+    }
+    #[test]
+    fn declared_inputs_keep_binary_bytes_tracking_boundaries_and_fixture_scopes() {
+        let temp =
+            std::env::temp_dir().join(format!("vibeos-lint-source-sets-{}", std::process::id()));
+        struct Cleanup(PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = fs::remove_dir_all(&self.0);
+            }
+        }
+        let _cleanup = Cleanup(temp.clone());
+        fs::create_dir_all(temp.join("sdk/lib/rust/demo/src")).unwrap();
+        fs::create_dir_all(temp.join("sdk/include")).unwrap();
+        fs::create_dir_all(temp.join("sdk/lib/rust/clone/.git")).unwrap();
+        fs::create_dir_all(temp.join("assets")).unwrap();
+        fs::write(
+            temp.join("sdk/lib/rust/demo/src/lib.rs"),
+            "fn parsed() { /* nested /* comment */ */ }\n",
+        )
+        .unwrap();
+        fs::write(temp.join("sdk/include/catalog.h"), "#define FLAG 1\n").unwrap();
+        fs::write(
+            temp.join("sdk/lib/rust/demo/Cargo.toml"),
+            "[package]\nname=\"demo\"\n",
+        )
+        .unwrap();
+        let raw = b"\xff\r\n\0\rresource";
+        fs::write(temp.join("assets/tracked.res"), raw).unwrap();
+        fs::write(temp.join("assets/untracked.res"), raw).unwrap();
+        assert!(std::process::Command::new("git")
+            .args(["init", "-q"])
+            .arg(&temp)
+            .status()
+            .unwrap()
+            .success());
+        assert!(std::process::Command::new("git")
+            .arg("-C")
+            .arg(&temp)
+            .args(["add", "assets/tracked.res", "sdk/lib/rust/demo/Cargo.toml"])
+            .status()
+            .unwrap()
+            .success());
+        const SETS: &[SourceSet] = &[
+            SourceSet::tree("catalog", &["sdk/include"], &["h"], &[]),
+            SourceSet::tracked("resources", &["res"], &[]),
+            SourceSet::tracked("tracked-manifests", &[], &["Cargo.toml"]),
+            SourceSet::tree("markers", &[""], &[], &[".git"]).with_pruning(&[".git", "target"]),
+            SourceSet::tree("fixture-c", &["sdk/include"], &["h"], &[]).with_inputs(),
+        ];
+        let corpus =
+            Corpus::load_scopes_with_sets(&temp, &[], SourceNeeds::default(), &[], SETS).unwrap();
+        assert_eq!(corpus.sources("resources").count(), 1);
+        assert_eq!(corpus.sources("tracked-manifests").count(), 1);
+        assert_eq!(corpus.sources("resources").next().unwrap().bytes(), raw);
+        assert_eq!(corpus.sources("catalog").count(), 1);
+        assert_eq!(
+            corpus
+                .sources("markers")
+                .filter(|file| file.is_directory())
+                .count(),
+            2
+        );
+        let file = corpus.rust_files().next().unwrap();
+        assert!(Arc::ptr_eq(
+            &file.rust_tree().unwrap(),
+            &file.rust_tree().unwrap()
+        ));
+        fs::create_dir_all(temp.join("fixture")).unwrap();
+        fs::write(temp.join("fixture/local.h"), "#define LOCAL 2").unwrap();
+        let narrowed = Corpus::load_scopes_with_sets(
+            &temp,
+            &[temp.join("fixture")],
+            SourceNeeds::default(),
+            &[],
+            SETS,
+        )
+        .unwrap();
+        assert_eq!(
+            narrowed.sources("catalog").next().unwrap().path,
+            Path::new("sdk/include/catalog.h")
+        );
+        assert_eq!(
+            narrowed.sources("fixture-c").next().unwrap().path,
+            Path::new("fixture/local.h")
+        );
+    }
+
+    #[test]
+    fn large_syntax_is_shared_only_while_consumers_hold_it() {
+        let file = SourceFile::new(
+            "large.rs".into(),
+            format!("{}fn live() {{}}", " ".repeat(256 * 1024)),
+        );
+        let first = file.rust_tree().unwrap();
+        let second = file.rust_tree().unwrap();
+        assert!(Arc::ptr_eq(&first, &second));
+        let weak = Arc::downgrade(&first);
+        drop(first);
+        drop(second);
+        assert!(weak.upgrade().is_none());
+        assert_eq!(file.rust_tree().unwrap().root_node().kind(), "source_file");
+    }
 
     #[test]
     fn byte_offsets_and_unicode() {
