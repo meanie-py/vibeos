@@ -51,5 +51,15 @@ def test_bwfm(tmp_path: Path) -> None:
     ran = subprocess.run([str(binary)], capture_output=True, text=True, timeout=60, check=False)
     assert ran.returncode == 0, ran.stdout + ran.stderr
     # Each layer must actually have run, not just compiled.
-    for layer in ("proto::", "sdio::", "chip::", "nvram::", "bus::", "scan::", "join::", "link::", "net::"):
+    for layer in (
+        "proto::",
+        "sdio::",
+        "chip::",
+        "nvram::",
+        "bus::",
+        "scan::",
+        "join::",
+        "link::",
+        "net::",
+    ):
         assert f"test {layer}" in ran.stdout, ran.stdout
