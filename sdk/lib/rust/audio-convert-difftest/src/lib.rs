@@ -36,7 +36,11 @@ mod tests {
         };
     }
     macro_rules! DPRINT1 {
-        ($($t:tt)*) => {};
+        ($fmt:expr $(, $arg:expr)*) => {{
+            eprint!("DPRINT1: {}", $fmt);
+            $(eprint!(" {}", $arg);)*
+            eprintln!();
+        }};
     }
 
     const CANARY: u8 = 0xa5;
