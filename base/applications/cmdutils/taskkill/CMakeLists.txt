@@ -21,3 +21,5 @@ add_cargo_module(taskkill taskkill-cargo taskkill.exe
     BODY_CRATE taskkill-rust
     DESTINATION reactos/system32
     EXTRA_DEPENDS taskkill_shims taskkill_res psdk)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

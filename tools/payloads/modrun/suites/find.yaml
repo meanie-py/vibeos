@@ -36,3 +36,10 @@ cases:
   args: '"x" %SystemRoot%\bin\modrun\data\nosuch.txt'
 - id: usage
   args: /?
+# /I with a search string longer than every line: the C's unsigned `cch1 - cch2` wrapped and
+# CompareStringW was handed offsets far past the line, so this case runs the Rust alone.
+- id: ignorecase_long_needle
+  variants:
+    rust: '%SystemRoot%\system32\find.exe'
+  args: /I /C "a search string longer than any line in this little file" %SystemRoot%\bin\modrun\data\lines.txt
+  expect: [': 0']

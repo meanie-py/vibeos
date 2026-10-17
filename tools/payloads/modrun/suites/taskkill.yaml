@@ -1,0 +1,30 @@
+# taskkill (base/applications/cmdutils/taskkill -> taskkill-rust, batch C). The shipped Rust
+# diffed against the pre-flip C. Nothing here terminates anything: without /F taskkill only
+# posts WM_CLOSE to the target's top-level windows, and smss.exe has none, so it reports
+# the process as not found. The C tested "not found" against the whole command line's kill
+# list, so a second, missing name after one that matched was never reported; that case runs
+# the Rust alone.
+module: taskkill
+variants:
+  c: '%SystemRoot%\bin\modrun\taskkill_c.exe'
+  rust: '%SystemRoot%\system32\taskkill.exe'
+ninja:
+- taskkill_c
+stage:
+- src: build-{arch}/base/applications/cmdutils/taskkill/taskkill_c.exe
+  dest: bin/modrun/taskkill_c.exe
+cases:
+- id: usage
+  args: /?
+- id: no_arguments
+- id: missing_name
+  args: /IM nosuch.exe
+  expect: ['"nosuch.exe"']
+- id: missing_pid
+  args: /PID 999999
+  expect: ['"999999"']
+- id: second_name_missing
+  variants:
+    rust: '%SystemRoot%\system32\taskkill.exe'
+  args: /IM smss.exe /IM nosuch.exe
+  expect: ['"nosuch.exe"', '"smss.exe"']

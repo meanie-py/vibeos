@@ -252,10 +252,10 @@ pub const IDI_WINLOGO: LPCWSTR = 32517 as LPCWSTR; // winuser.h: MAKEINTRESOURCE
 // and the shared copy records why it must stay computed rather than pasted per target.
 pub use win32macros_rust::{DWLP_DLGPROC, DWLP_MSGRESULT, DWLP_USER};
 // winreg.h predefined keys: `#define HKEY_LOCAL_MACHINE ((HKEY)(ULONG_PTR)((LONG)0x80000002))`.
-pub const HKEY_CLASSES_ROOT: HKEY = 0x80000000u32 as usize as HKEY;
-pub const HKEY_CURRENT_USER: HKEY = 0x80000001u32 as usize as HKEY;
-pub const HKEY_LOCAL_MACHINE: HKEY = 0x80000002u32 as usize as HKEY;
-pub const HKEY_USERS: HKEY = 0x80000003u32 as usize as HKEY;
+pub const HKEY_CLASSES_ROOT: HKEY = 0x8000_0000u32 as i32 as isize as HKEY;
+pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as i32 as isize as HKEY;
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;
+pub const HKEY_USERS: HKEY = 0x8000_0003u32 as i32 as isize as HKEY;
 // winnt.h `#define SE_SHUTDOWN_NAME TEXT("SeShutdownPrivilege")` — wide under UNICODE, so it
 // needs the w!() backing rather than the island's narrow byte array.
 #[macro_export]

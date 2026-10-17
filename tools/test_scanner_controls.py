@@ -134,6 +134,21 @@ class Control:
 
 # ── fixtures, each seeded from a real incident ───────────────────────────────
 
+# scan_hkey_zero_extend. Seeded from the ~14 preludes found 2026-10-10 (winlogon's preamble,
+# iphlpapi's prelude): a predefined key cast through usize/u32 is 0x0000000080000002 on
+# 64-bit where winreg.h's `(LONG)` makes it 0xFFFFFFFF80000002. GOOD: the sign-extending
+# chain, and an unrelated 0x8000_0002 that is not a HKEY.
+_HKEY_ZERO_EXTEND_BAD = """
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002usize as HKEY;
+const HKEY_USERS: HKEY = 0x80000003u32 as usize as HKEY;
+unsafe fn f() { RegOpenKeyExW(0x80000001 as HKEY, k, 0, KEY_READ, &mut h); }
+"""
+_HKEY_ZERO_EXTEND_GOOD = """
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;
+const HKEY_USERS: HKEY = 0x80000003u32 as ::core::ffi::c_int as isize as HKEY;
+const STATUS_GUARD_PAGE_VIOLATION: NTSTATUS = 0x8000_0001u32 as NTSTATUS;
+"""
+
 # scan_override_self_dispatch. Seeded from mspaint 2026-10-16: SmoothDrawTool::OnEndDraw's
 # `ToolBase::OnEndDraw(bCancel)` dispatched back into itself. GOOD: the base's own body, and
 # the same virtual called on ANOTHER object (a member), which is an ordinary virtual call.
@@ -3019,6 +3034,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"bad.rs": _BITWISE_NOT_BAD},
         good={"good.rs": _BITWISE_NOT_GOOD},
+    ),
+    Control(
+        name="scan_hkey_zero_extend",
+        script="tools/scan_hkey_zero_extend.py",
+        argv=["--lint"],
+        bad={"bad.rs": _HKEY_ZERO_EXTEND_BAD},
+        good={"good.rs": _HKEY_ZERO_EXTEND_GOOD},
     ),
     Control(
         name="scan_override_self_dispatch",

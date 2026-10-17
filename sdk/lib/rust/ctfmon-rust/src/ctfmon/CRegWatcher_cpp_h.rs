@@ -10,8 +10,8 @@ extern "system" {
 pub type FN_TF_CreateLangProfileUtil = unsafe extern "system" fn(*mut *mut ITfFnLangProfileUtil) -> HRESULT;
 pub type FN_RegNotifyChangeKeyValue = unsafe extern "system" fn(HKEY, BOOL, DWORD, HANDLE, BOOL) -> LONG;
 
-pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001usize as HKEY;
-pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002usize as HKEY;
+pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as i32 as isize as HKEY;
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;
 
 pub static mut CRegWatcher__s_ahWatchEvents: [HANDLE; 12] = [core::ptr::null_mut(); 12];
 

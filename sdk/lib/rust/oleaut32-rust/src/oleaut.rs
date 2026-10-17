@@ -665,9 +665,9 @@ unsafe fn reg_get_typelib_module(iid: REFIID, module: *mut u16, len: u32) -> i32
         (*iid).Data4[7] as c_uint
     );
 
-    err = RegOpenKeyExA(0x80000000u32 as HKEY, interfacekey.as_ptr(), 0, KEY_READ, &mut ikey);
+    err = RegOpenKeyExA(0x8000_0000u32 as i32 as isize as HKEY, interfacekey.as_ptr(), 0, KEY_READ, &mut ikey);
     if err != 0 && (opposite == KEY_WOW64_32KEY || (IsWow64Process(GetCurrentProcess(), &mut is_wow64) != 0 && is_wow64 != 0)) {
-        err = RegOpenKeyExA(0x80000000u32 as HKEY, interfacekey.as_ptr(), 0, KEY_READ | opposite, &mut ikey);
+        err = RegOpenKeyExA(0x8000_0000u32 as i32 as isize as HKEY, interfacekey.as_ptr(), 0, KEY_READ | opposite, &mut ikey);
     }
 
     if err != 0 {
@@ -701,7 +701,7 @@ unsafe fn reg_get_typelib_module(iid: REFIID, module: *mut u16, len: u32) -> i32
     );
 
     tlfnlen = core::mem::size_of_val(&tlfn) as i32;
-    if RegQueryValueA(0x80000000u32 as HKEY, typelibkey.as_ptr(), tlfn.as_mut_ptr(), &mut tlfnlen) != 0 {
+    if RegQueryValueA(0x8000_0000u32 as i32 as isize as HKEY, typelibkey.as_ptr(), tlfn.as_mut_ptr(), &mut tlfnlen) != 0 {
         #[cfg(target_pointer_width = "64")]
         {
             snprintf(
@@ -712,7 +712,7 @@ unsafe fn reg_get_typelib_module(iid: REFIID, module: *mut u16, len: u32) -> i32
                 ver.as_ptr()
             );
             tlfnlen = core::mem::size_of_val(&tlfn) as i32;
-            if RegQueryValueA(0x80000000u32 as HKEY, typelibkey.as_ptr(), tlfn.as_mut_ptr(), &mut tlfnlen) != 0 {
+            if RegQueryValueA(0x8000_0000u32 as i32 as isize as HKEY, typelibkey.as_ptr(), tlfn.as_mut_ptr(), &mut tlfnlen) != 0 {
                 ERR!(b"Could not get typelib fn?\n\0".as_ptr() as *const i8);
                 return -2147467259i32;
             }

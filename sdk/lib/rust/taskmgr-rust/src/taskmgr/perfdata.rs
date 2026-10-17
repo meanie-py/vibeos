@@ -797,31 +797,31 @@ pub unsafe extern "C" fn PerfDataGetCommandLine(Index: ULONG, lpCommandLine: LPW
     let mut new_string: LPWSTR = core::ptr::null_mut();
 
     let mut cache: PCMD_LINE_CACHE = global_cache;
+    let mut tail: PCMD_LINE_CACHE = core::ptr::null_mut();
+
+    if nMaxCount == 0 {
+        return (TRUE) as BOOL;
+    }
+
+    // Divergence from the C: it keyed the cache by the list-view `Index`, which shifts whenever
+    // a process above it starts or exits (so a row showed another process's command line), and
+    // its walk stopped BEFORE the last entry (`cache->pnext != NULL`), so the newest entry was
+    // never found and was re-read and appended again. Entries are keyed by process id, every
+    // entry is searched, and `tail` remembers where to append.
+    ProcessId = PerfDataGetProcessId(Index);
 
     /* [A] Search for a string already in cache? If so, use it */
-    while !cache.is_null() && !(*cache).pnext.is_null() {
-        if (*cache).idx == Index && !(*cache).str_.is_null() {
-            /* Found it. Use it, and add some ellipsis at the very end to make it cute */
-            wcsncpy(
-                lpCommandLine as *mut u16,
-                (*cache).str_ as *const u16,
-                CMD_LINE_MIN!(nMaxCount as usize, (*cache).len as usize) as usize,
-            );
-            wcscpy(
-                lpCommandLine.offset(
-                    CMD_LINE_MIN!(nMaxCount as usize, (*cache).len as usize) as isize
-                        - wcslen(ellipsis as *const u16) as isize,
-                ) as *mut u16,
-                ellipsis as *const u16,
-            );
+    while !cache.is_null() {
+        if (*cache).idx == ProcessId && !(*cache).str_.is_null() {
+            CmdLineCopy(lpCommandLine, nMaxCount, (*cache).str_, (*cache).len, ellipsis);
             return (TRUE) as BOOL;
         }
 
+        tail = cache;
         cache = (*cache).pnext;
     }
 
     /* [B] We don't; let's allocate and load a value from the process mem... and cache it */
-    ProcessId = PerfDataGetProcessId(Index);
 
     /* Default blank command line in case things don't work out */
     wcsncpy(lpCommandLine as *mut u16, RUSTCONV_WSTR_96A296D224F2.as_ptr(), nMaxCount as usize);
@@ -916,22 +916,20 @@ pub unsafe extern "C" fn PerfDataGetCommandLine(Index: ULONG, lpCommandLine: LPW
         }
 
         /* Add our pointer to the cache... */
-        (*new_entry).idx = Index;
+        // `len` is in WCHARs; the C stored the UNICODE_STRING's byte Length and compared it
+        // against the WCHAR count `nMaxCount`.
+        (*new_entry).idx = ProcessId;
         (*new_entry).str_ = new_string;
-        (*new_entry).len = CommandLineStr.Length as ULONG;
+        (*new_entry).len = (CommandLineStr.Length as ULONG) / core::mem::size_of::<WCHAR>() as ULONG;
 
         if global_cache.is_null() {
             global_cache = new_entry;
         } else {
-            (*cache).pnext = new_entry;
+            (*tail).pnext = new_entry;
         }
 
         /* ... and print the buffer for the first time */
-        wcsncpy(
-            lpCommandLine as *mut u16,
-            new_string as *const u16,
-            CMD_LINE_MIN!(nMaxCount as usize, CommandLineStr.Length as usize) as usize,
-        );
+        CmdLineCopy(lpCommandLine, nMaxCount, new_string, (*new_entry).len, ellipsis);
     }
 
     // cleanup:
@@ -939,6 +937,25 @@ pub unsafe extern "C" fn PerfDataGetCommandLine(Index: ULONG, lpCommandLine: LPW
         CloseHandle(hProcess);
     }
     return (TRUE) as BOOL;
+}
+/// Copies a cached command line of `len` WCHARs into a `nMaxCount`-WCHAR buffer, always
+/// terminated, ending in "..." only when it had to be cut. Divergence from the C, which mixed
+/// bytes and WCHARs here (`CMD_LINE_MIN` subtracted `sizeof(WCHAR)` from a WCHAR count) and
+/// wrote the ellipsis at `min(..) - 3` unconditionally: a command line under three bytes put it
+/// before the start of the caller's buffer.
+unsafe fn CmdLineCopy(lpCommandLine: LPWSTR, nMaxCount: ULONG, str_: LPWSTR, len: ULONG, ellipsis: LPWSTR) {
+    let ellipsis_len = wcslen(ellipsis as *const u16) as ULONG;
+    if len < nMaxCount {
+        wcsncpy(lpCommandLine as *mut u16, str_ as *const u16, len as usize);
+        *lpCommandLine.add(len as usize) = 0;
+        return;
+    }
+    let keep = nMaxCount - 1;
+    wcsncpy(lpCommandLine as *mut u16, str_ as *const u16, keep as usize);
+    *lpCommandLine.add(keep as usize) = 0;
+    if keep >= ellipsis_len {
+        wcscpy(lpCommandLine.add((keep - ellipsis_len) as usize) as *mut u16, ellipsis as *const u16);
+    }
 }
 #[no_mangle]
 pub unsafe extern "C" fn PerfDataDeallocCommandLineCache() {

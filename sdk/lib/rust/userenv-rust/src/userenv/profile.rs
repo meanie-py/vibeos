@@ -144,7 +144,7 @@ static ERR_PROFILE_LOAD_FAILED: [u16; 164] = [
 // ---- file-scope preamble (translated) ----
 pub const NDEBUG: u32 = 1;
 
-const HKEY_LOCAL_MACHINE: HKEY = 0x80000002 as HKEY;
+const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;
 #[no_mangle]
 pub unsafe extern "C" fn AppendSystemPostfix(mut lpName: LPWSTR, mut dwMaxLength: DWORD) -> BOOL {
     let mut szSystemRoot: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
@@ -718,7 +718,7 @@ pub unsafe extern "system" fn CopySystemProfile(_Unused: u32) -> BOOL {
     RtlFreeUnicodeString(&mut SidString);
 
     dwError = RegCreateKeyExW(
-        0x80000002 as HKEY,
+        0x8000_0002u32 as i32 as isize as HKEY,
         &szKeyName[0],
         0,
         core::ptr::null_mut(),
@@ -2323,7 +2323,7 @@ pub unsafe extern "system" fn LoadUserProfileW(
         }
 
         dwError = RegLoadKeyW(
-            0x80000003 as HKEY,
+            0x8000_0003u32 as i32 as isize as HKEY,
             SidString.Buffer,
             szUserHivePath.as_mut_ptr() as LPCWSTR,
         ) as u32;
@@ -2343,7 +2343,7 @@ pub unsafe extern "system" fn LoadUserProfileW(
     }
 
     dwError = (RegOpenKeyExW(
-        0x80000003 as HKEY,
+        0x8000_0003u32 as i32 as isize as HKEY,
         SidString.Buffer,
         0,
         MAXIMUM_ALLOWED,
