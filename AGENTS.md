@@ -267,21 +267,16 @@ substance, don't pad with filler sections, redundant summaries, or boilerplate.
   — identical content from a divergent lineage collapses to a no-op. A genuine conflict is the
   rare real signal: resolve it and move on. If it didn't conflict, there was nothing to look at;
   stop narrating it. (The rewind incident was a `reset --hard` to a stale ref, **not** a merge.)
-- **Land with `./vibeos-cli land` — it is a MERGE QUEUE.** `land` publishes your
-  lane tip to the queue and returns in ~2s; you do **not** merge master, do **not** gate, do
-  **not** wait. Whichever agent finds the land lock free becomes the *conductor*: it merges every
-  queued lane onto current master in a dedicated integration worktree, gates **once**, and
-  fast-forwards master to exactly the commit it gated. N ready lanes = ONE gate, zero blocked
-  agents. A conflict is bounced back to its lane (never resolved for you); a red batch splits
-  recursively so the culprit is rejected with its classification + artifact dir while the
-  innocent lanes still land. `./vibeos-cli land-status [--mine]` shows the conductor, the queue,
-  and your verdict. `land --direct` is the opt-out (single-lane: merge master → gate → push,
-  same lock) and `land --drain` forces a drain if the queue ever sits with no conductor.
-  **Mainline red? `land --hold "why" [--preempt]`, fix it with `land --direct`, `land --release`**
-  — never by messaging lanes to stop submitting (a red base also auto-holds until master moves).
-  Hand-rolling gate-then-push is what made every lane race: the stamp is keyed to an exact
-  TREE, so whoever pushes first voids everyone else's gate — and each wasted gate is 3 builds
-  + 4 boots of fleet load that widens the window that voided it.
+- **Land by messaging the integrator, not with `./vibeos-cli land`** (since 2026-10-16). One
+  session, `vibeos-integration-f2` in `vibeos-integration`, is the only thing that merges to
+  `master`. Commit, run `./vibeos-cli check` and the tests for what you touched, then send it
+  `merge <branch> @ <sha> — <what it is, what it touches>` and keep working: no warm builds
+  just to submit, no waiting for the verdict. It does an ordinary merge, resolves conflicts
+  itself, gates the batch with the full gate, pushes, and messages you the result (or a fix
+  it made, or the classification + artifact dir). Its brief:
+  `docs/engineering/active-lanes/integration.md`. The old merge train piled up 13 lane-hours
+  of queueing in one afternoon, gating one lane at a time; it is held, not used.
+  Hand-rolling gate-then-push stays forbidden: with one pusher there is no race.
 - **Never move the local `master` ref from a worktree that doesn't have it checked out** — no
   `branch -f master`, no `update-ref`, no `fetch origin master:master`. That leaves the OTHER
   worktree's index+files at the old tree, which resurfaces as a giant phantom staged revert — a
