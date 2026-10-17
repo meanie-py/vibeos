@@ -2959,6 +2959,17 @@ impl Linker {
             let flags_rel =
                 format!("sdk/lib/rust/reactos-link/cflags/{name}.{}.flags", self.arch.name);
             let flags_path = self.repo_root.join(&flags_rel);
+            // No flag template, but a recipe (cargo_cell_gen --clib-recipes): opengl32's
+            // i386 asm shims. The recipe is the newer form of the same thing.
+            let recipe = self.repo_root.join(format!(
+                "sdk/lib/rust/reactos-link/clibs/{}/{name}.recipe",
+                self.arch.name
+            ));
+            if !flags_path.exists() && recipe.exists() {
+                let lib_a = self.compile_recipe(name, ar);
+                link_arg!(self, "{}", lib_a.display());
+                continue;
+            }
             let raw = std::fs::read_to_string(&flags_path).unwrap_or_else(|e| {
                 panic!(
                     "cmake-off c_from_compile_db({name}) needs committed flags {} \
