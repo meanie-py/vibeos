@@ -15,9 +15,9 @@ fn main() {
     };
 
     let link_order: &[&str] = match arch.as_str() {
-        "x86" => &["body", "import:user32", "import:winmm", "import:advapi32", "import:msvcrt", "import:kernel32", "import:ntdll", "sdk/lib/drivers/sound/mment4/libmment4_rust.a", "sdk/lib/drivers/sound/mmebuddy/libmmebuddy_rust.a", "engine:oldnames"],
-        "x86_64" => &["body", "import:user32", "import:winmm", "import:advapi32", "import:msvcrt", "import:kernel32", "import:ntdll", "sdk/lib/drivers/sound/mment4/libmment4_rust.a", "sdk/lib/drivers/sound/mmebuddy/libmmebuddy_rust.a", "engine:oldnames"],
-        "aarch64" => &["body", "import:user32", "import:winmm", "import:advapi32", "import:msvcrt", "import:kernel32", "import:ntdll", "sdk/lib/drivers/sound/mment4/libmment4_rust.a", "sdk/lib/drivers/sound/mmebuddy/libmmebuddy_rust.a", "engine:oldnames"],
+        "x86" => &["body", "import:user32", "import:winmm", "import:advapi32", "import:msvcrt", "import:kernel32", "import:ntdll", "engine:crate:mment4-rust::TRUE", "engine:crate:mmebuddy-rust::TRUE", "engine:oldnames"],
+        "x86_64" => &["body", "import:user32", "import:winmm", "import:advapi32", "import:msvcrt", "import:kernel32", "import:ntdll", "engine:crate:mment4-rust::TRUE", "engine:crate:mmebuddy-rust::TRUE", "engine:oldnames"],
+        "aarch64" => &["body", "import:user32", "import:winmm", "import:advapi32", "import:msvcrt", "import:kernel32", "import:ntdll", "engine:crate:mment4-rust::TRUE", "engine:crate:mmebuddy-rust::TRUE", "engine:oldnames"],
         _ => unreachable!(),
     };
 

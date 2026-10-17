@@ -16,10 +16,8 @@ include_directories(
 # whose windres command the cargo link replays.
 add_library(wdmaud_res OBJECT wdmaud.rc)
 target_include_directories(wdmaud_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(WDMAUD_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/drivers/sound/mmixer/libmmixer_rust.a)
 add_cargo_module(wdmaud wdmaud-cargo wdmaud.sys
     KIND kernelmodedriver
     BODY_CRATE wdmaud-rust
     DESTINATION reactos/system32/drivers
-    EXTRA_DEPENDS wdmaud_res ${WDMAUD_REUSED} asm psdk)
+    EXTRA_DEPENDS wdmaud_res asm psdk)

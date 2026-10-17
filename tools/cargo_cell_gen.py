@@ -929,9 +929,7 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
                 block.append("endif()")
         extra.append(f"${{{var}}}")
     named = {lib for libs in cell.static_libs.values() for lib in libs}
-    extra += sorted(
-        {d for lib in named if lib in ENGINE_LIB_DEPS for d in ENGINE_LIB_DEPS[lib].split()}
-    )
+    extra += sorted({d for lib in named for d in _engine_deps(lib)})
     kind = cell.kernel_kind or ("win32exe" if cell.module_kind == "Win32Exe" else "win32dll")
     call = [f"add_cargo_module({cell.target} {cell.crate} {cell.output_name}"]
     call.append(f"    KIND {kind}")
@@ -1029,6 +1027,68 @@ ENGINE_LIBS = {
     "sdk/lib/vcruntime/libsetjmp.a": "engine:c:setjmp",
     "sdk/lib/drivers/aux_klib/libaux_klib.a": "engine:c:aux_klib",
 }
+
+
+@functools.lru_cache(maxsize=1)
+def _library_index(repo: Path = REPO) -> dict[str, tuple[str, list[str], list[str]]]:
+    """name -> (kind, args, add_dependencies) for every `add_library` and
+    `rust_staticlib_variant` in the tree's CMakeLists. A static library's archive is
+    `lib<name>.a` wherever cmake puts it (libsamplerate's binary dir is not its source dir),
+    so the name is the key. A name defined twice maps to nothing: never guess."""
+    found: dict[str, list[tuple[str, list[str]]]] = {}
+    deps: dict[str, list[str]] = {}
+    for cm in repo.glob("**/CMakeLists.txt"):
+        if cm.parts[len(repo.parts)].startswith(("build-", ".")):
+            continue
+        text = cm.read_text(errors="replace")
+        if "add_library" not in text and "rust_staticlib_variant" not in text:
+            continue
+        for _s, _e, cmd, raw in _statements(text):
+            a = _args(raw)
+            if not a:
+                continue
+            if cmd in ("add_library", "rust_staticlib_variant"):
+                found.setdefault(a[0], []).append((cmd, a))
+            elif cmd == "add_dependencies":
+                deps.setdefault(a[0], []).extend(a[1:])
+    return {
+        name: (defs[0][0], defs[0][1], deps.get(name, []))
+        for name, defs in found.items()
+        if len(defs) == 1
+    }
+
+
+_NOT_STATIC = {"SHARED", "MODULE", "OBJECT", "INTERFACE", "IMPORTED", "ALIAS"}
+
+
+def engine_lib(lib: str, repo: Path = REPO) -> tuple[str, list[str]] | None:
+    """The `engine:` entry that builds cmake's `lib`, and the cmake targets its compile
+    must order after; None when the engine cannot build it.
+
+    The hand-kept ENGINE_LIBS table first; then any `rust_staticlib_variant` archive
+    becomes `engine:crate:<crate>:<features>:<defaults>` (what that function's
+    `cargo build` does, which `engine_crate` repeats; a variant passing ENV is not
+    modelled), and any other cmake static library `engine:c:<target>` (its compile
+    replayed from compile_commands.json), after the targets its `add_dependencies` names.
+    """
+    if lib in ENGINE_LIBS:
+        name = ENGINE_LIBS[lib]
+        return name, ENGINE_LIB_DEPS.get(name, "").split()
+    m = re.fullmatch(r"(?:.*/)?lib([\w.+-]+)\.a", lib)
+    entry = _library_index(repo).get(m.group(1)) if m else None
+    if entry is None:
+        return None
+    kind, a, deps = entry
+    if kind == "rust_staticlib_variant":
+        if len(a) < 4 or "ENV" in a[4:]:
+            return None
+        feats = ",".join(f for f in re.split(r"[ ,;]+", a[2].strip('"')) if f)
+        return f"engine:crate:{a[1]}:{feats}:{a[3].upper()}", []
+    if any(x in _NOT_STATIC for x in a[1:2]):
+        return None
+    return f"engine:c:{a[0]}", [d for d in deps if not d.startswith("rust_")] or ["psdk"]
+
+
 # The engine replays cmake's compile of these, which reads what cmake generates (psdk
 # and xdk headers, uuid's widl output): the cell builds after the targets that make it.
 ENGINE_LIB_DEPS = {
@@ -1054,6 +1114,17 @@ ENGINE_LIB_DEPS = {
     "engine:c:setjmp": "psdk asm",
     "engine:c:aux_klib": "xdk",
 }
+
+
+# Deps of the engine libraries `engine_lib` resolved while modelling (the generic ones
+# have no ENGINE_LIB_DEPS row).
+_ENGINE_DEPS_SEEN: dict[str, list[str]] = {}
+
+
+def _engine_deps(name: str) -> list[str]:
+    if name in ENGINE_LIB_DEPS:
+        return ENGINE_LIB_DEPS[name].split()
+    return _ENGINE_DEPS_SEEN.get(name, [])
 
 
 # ---------------------------------------------------------------- the model
@@ -1190,7 +1261,10 @@ def model(target: str, repo: Path = REPO) -> Cell:
                 # else (the body it carries is linked as the body), inflib one empty
                 # inflib_rust_stub.c beside libinflib_rust.a: they add no code.
                 continue
-            lib = ENGINE_LIBS.get(lib, lib)
+            mapped = engine_lib(lib, repo)
+            if mapped:
+                lib = mapped[0]
+                _ENGINE_DEPS_SEEN[lib] = mapped[1]
             if lib not in static:
                 static.append(lib)
                 seq.append(lib)
@@ -1877,6 +1951,75 @@ def check(targets: list[str], baseline: Path, repo: Path = REPO) -> int:
     return 1 if bad else 0
 
 
+def remap(crates: list[str] | None = None, repo: Path = REPO) -> list[str]:
+    """Move existing cells off cmake-built archives the engine can now build itself.
+
+    A cell's `static_libs` may still name a raw `<dir>/lib<x>.a` that cmake builds (the
+    generator only knew ENGINE_LIBS when it ran). For each one `engine_lib` resolves, this
+    rewrites the build.rs entry to the engine name, drops the archive from the cell's
+    `<T>_REUSED` list in its CMakeLists (and the variable, once empty) and adds the engine
+    library's order-only targets to EXTRA_DEPENDS. Returns the crates it changed.
+    """
+    changed = []
+    for build_rs_path in sorted((repo / "sdk/lib/rust").glob("*-cargo/build.rs")):
+        crate = build_rs_path.parent.name
+        if crates and crate not in crates:
+            continue
+        text = build_rs_path.read_text()
+        raw = sorted(set(re.findall(r'"([^"]+\.a)"', text)))
+        mapping = {lib: engine_lib(lib, repo) for lib in raw}
+        mapping = {lib: m for lib, m in mapping.items() if m}
+        if not mapping:
+            continue
+        cm = next(
+            (
+                c
+                for c in repo.glob("**/CMakeLists.txt")
+                if not c.parts[len(repo.parts)].startswith(("build-", "."))
+                and re.search(
+                    rf"add_cargo_module\(\S+ {re.escape(crate)}\b", c.read_text(errors="replace")
+                )
+            ),
+            None,
+        )
+        if cm is None:
+            # The loader cells (freeldr, rosload, uefildr) are hand-made recipes, not
+            # add_cargo_module cells; their archives are the loader rung's.
+            print(f"skipped {crate}: not an add_cargo_module cell")
+            continue
+        for lib, (name, _deps) in mapping.items():
+            text = text.replace(f'"{lib}"', f'"{name}"')
+        cml = cm.read_text()
+        for lib in mapping:
+            cml = re.sub(
+                rf"(?m)^[ \t]*(?:list\(APPEND \w+ )?\$\{{CMAKE_BINARY_DIR\}}/{re.escape(lib)}\)?\n",
+                lambda m: (
+                    ")\n"
+                    if m.group(0).rstrip().endswith(")") and "list(APPEND" not in m.group(0)
+                    else ""
+                ),
+                cml,
+            )
+        # An emptied `set(X_REUSED\n)` and the list(APPEND) guards left with nothing in them.
+        for var in re.findall(r"set\((\w+_REUSED)\s*\)", cml):
+            cml = re.sub(rf"set\({var}\s*\)\n", "", cml)
+            cml = cml.replace(f" ${{{var}}}", "")
+        cml = re.sub(r'(?m)^if\(ARCH STREQUAL "\w+"\)\nendif\(\)\n', "", cml)
+        deps = sorted({d for _n, ds in mapping.values() for d in ds})
+        m = re.search(r"(?m)^(\s*EXTRA_DEPENDS)([^)\n]*)\)", cml)
+        if deps:
+            if m:
+                have = m.group(2).split()
+                new = have + [d for d in deps if d not in have]
+                cml = cml[: m.start()] + f"{m.group(1)} {' '.join(new)})" + cml[m.end() :]
+            else:
+                raise GenError(f"{crate}: no EXTRA_DEPENDS to add {deps} to")
+        build_rs_path.write_text(text)
+        cm.write_text(cml)
+        changed.append(crate)
+    return changed
+
+
 def save_baseline(targets: list[str], baseline: Path, repo: Path = REPO) -> None:
     """Copy each target's cmake-built PE, per arch, into `baseline`, with the index
     `--check` reads (output name and CD placement per arch)."""
@@ -1966,6 +2109,12 @@ def main(argv: list[str] | None = None) -> int:
         "apply, build just the new cells on every arch, check equivalence",
     )
     ap.add_argument(
+        "--remap",
+        action="store_true",
+        help="move existing cells (all, or the named *-cargo crates) off cmake-built "
+        "archives the engine can build itself",
+    )
+    ap.add_argument(
         "--baseline",
         metavar="DIR",
         type=Path,
@@ -1982,6 +2131,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.save_baseline:
         save_baseline(args.targets, args.save_baseline)
         print(f"saved {len(args.targets)} modules x {len(ARCHES)} arches")
+        return 0
+    if args.remap:
+        for crate in remap(args.targets or None):
+            print(f"remapped {crate}")
         return 0
     if args.convert:
         return convert(args.targets, args.baseline)

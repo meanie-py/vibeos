@@ -7,12 +7,9 @@ spec2def(ndfapi.dll ndfapi.spec ADD_IMPORTLIB)
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # ndfapi_main.c  # replaced by Rust (sdk/lib/rust/ndfapi-rust/src/ndfapi/ndfapi_main.rs)
-set(NDFAPI_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine_dll_canunload.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine_dll_register.a)
 add_cargo_module(ndfapi ndfapi-cargo ndfapi.dll
     KIND win32dll
     BODY_CRATE ndfapi-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS ${NDFAPI_REUSED} psdk)
+    EXTRA_DEPENDS psdk)
 add_dependencies(ndfapi psdk)

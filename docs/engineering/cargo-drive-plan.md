@@ -356,6 +356,18 @@ extends it from the boot spine to every fully-Rust module.
      **No user-mode cell links a cmake-built static library any more.** What is left
      is the kernel and loader cells' `libcntpr` / `mini_hal` / `freeldr_bios_asm`,
      which belong to the driver rung.
+   - **Done 2026-10-17: every archive is generic.** `cargo_cell_gen.engine_lib` maps any
+     cmake static library to `engine:c:<target>` (ordered after its own
+     `add_dependencies`) and any `rust_staticlib_variant` archive without ENV to
+     `engine:crate:<crate>:<features>:<defaults>`, which reactos-link's `engine_lib` builds
+     with `engine_crate`; ENGINE_LIBS is only for the shapes those cannot express. A
+     `.a` is found by name through an index of every `add_library`/`rust_staticlib_variant`
+     (libsamplerate's binary dir is not its source dir). `--remap` moved the seven cells
+     still on cmake archives (autochk, dcomp, kmixer, mfplat, ndfapi, sndblst, wdmaud):
+     all 21 PEs **byte-identical** after the rebuild. `scan_cmake_linked_rust` reports any
+     cell that names a cmake-built archive; only the loader cells' (freeldr's
+     `freeldr_bios_asm`, rosload's and uefildr's `mini_hal`/`libcntpr`/`chkstk`) are left,
+     and they are not `add_cargo_module` cells.
 4. **Resources without cmake.** Cells replay cmake's `windres` command today
    (`resource_from_rc`), so they still need cmake configured. The June fallback was a
    committed `.res` per arch; for 189 modules that is a lot of binary in git. Better: the

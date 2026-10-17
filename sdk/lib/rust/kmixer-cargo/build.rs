@@ -15,9 +15,9 @@ fn main() {
     };
 
     let link_order: &[&str] = match arch.as_str() {
-        "x86" => &["body", "engine:c:libcntpr", "sdk/lib/3rdparty/libsamplerate/liblibsamplerate.a", "import:ntoskrnl", "import:ks", "import:hal", "engine:cntpr_rust", "engine:c:memcmp"],
-        "x86_64" => &["body", "engine:c:libcntpr", "sdk/lib/3rdparty/libsamplerate/liblibsamplerate.a", "import:ntoskrnl", "import:ks", "import:hal", "engine:cntpr_rust", "engine:c:memcmp"],
-        "aarch64" => &["body", "engine:c:libcntpr", "sdk/lib/3rdparty/libsamplerate/liblibsamplerate.a", "import:ntoskrnl", "import:ks", "import:hal", "engine:cntpr_rust", "engine:c:memcmp"],
+        "x86" => &["body", "engine:c:libcntpr", "engine:c:libsamplerate", "import:ntoskrnl", "import:ks", "import:hal", "engine:cntpr_rust", "engine:c:memcmp"],
+        "x86_64" => &["body", "engine:c:libcntpr", "engine:c:libsamplerate", "import:ntoskrnl", "import:ks", "import:hal", "engine:cntpr_rust", "engine:c:memcmp"],
+        "aarch64" => &["body", "engine:c:libcntpr", "engine:c:libsamplerate", "import:ntoskrnl", "import:ks", "import:hal", "engine:cntpr_rust", "engine:c:memcmp"],
         _ => unreachable!(),
     };
 

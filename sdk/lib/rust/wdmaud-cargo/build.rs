@@ -15,9 +15,9 @@ fn main() {
     };
 
     let link_order: &[&str] = match arch.as_str() {
-        "x86" => &["body", "engine:c:libcntpr", "engine:pseh", "import:ntoskrnl", "import:ks", "import:hal", "sdk/lib/drivers/sound/mmixer/libmmixer_rust.a", "engine:cntpr_rust", "engine:chkstk", "engine:c:memcmp"],
-        "x86_64" => &["body", "engine:c:libcntpr", "engine:pseh", "import:ntoskrnl", "import:ks", "import:hal", "sdk/lib/drivers/sound/mmixer/libmmixer_rust.a", "engine:cntpr_rust", "engine:c:memcmp"],
-        "aarch64" => &["body", "engine:c:libcntpr", "engine:pseh", "import:ntoskrnl", "import:ks", "import:hal", "sdk/lib/drivers/sound/mmixer/libmmixer_rust.a", "engine:cntpr_rust", "engine:chkstk", "engine:c:memcmp"],
+        "x86" => &["body", "engine:c:libcntpr", "engine:pseh", "import:ntoskrnl", "import:ks", "import:hal", "engine:crate:mmixer-rust::TRUE", "engine:cntpr_rust", "engine:chkstk", "engine:c:memcmp"],
+        "x86_64" => &["body", "engine:c:libcntpr", "engine:pseh", "import:ntoskrnl", "import:ks", "import:hal", "engine:crate:mmixer-rust::TRUE", "engine:cntpr_rust", "engine:c:memcmp"],
+        "aarch64" => &["body", "engine:c:libcntpr", "engine:pseh", "import:ntoskrnl", "import:ks", "import:hal", "engine:crate:mmixer-rust::TRUE", "engine:cntpr_rust", "engine:chkstk", "engine:c:memcmp"],
         _ => unreachable!(),
     };
 

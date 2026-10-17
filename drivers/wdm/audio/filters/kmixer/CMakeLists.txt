@@ -7,10 +7,8 @@
 # kmixer.c  # replaced by Rust (sdk/lib/rust/kmixer-rust/src/kmixer/kmixer.rs)
 # filter.c  # replaced by Rust (sdk/lib/rust/kmixer-rust/src/kmixer/filter.rs)
 # pin.c  # replaced by Rust (sdk/lib/rust/kmixer-rust/src/kmixer/pin.rs)
-set(KMIXER_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/3rdparty/libsamplerate/liblibsamplerate.a)
 add_cargo_module(kmixer kmixer-cargo kmixer.sys
     KIND kernelmodedriver
     BODY_CRATE kmixer-rust
     DESTINATION reactos/system32/drivers
-    EXTRA_DEPENDS ${KMIXER_REUSED} asm psdk)
+    EXTRA_DEPENDS asm psdk)

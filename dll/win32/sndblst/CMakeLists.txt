@@ -7,11 +7,8 @@ spec2def(sndblst.dll sndblst.spec)
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # sndblst.c  # replaced by Rust (sdk/lib/rust/sndblst-rust/src/sndblst/sndblst.rs)
-set(SNDBLST_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/drivers/sound/mmebuddy/libmmebuddy_rust.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/drivers/sound/mment4/libmment4_rust.a)
 add_cargo_module(sndblst sndblst-cargo sndblst.dll
     KIND win32dll
     BODY_CRATE sndblst-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS ${SNDBLST_REUSED})
+    EXTRA_DEPENDS)

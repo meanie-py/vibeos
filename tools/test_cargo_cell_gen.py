@@ -571,7 +571,7 @@ def test_convert_runs_the_wave_in_order(tmp_path, monkeypatch):
     ]
 
 
-def test_ratchet_labels_follow_the_generator(monkeypatch, capsys):
+def test_ratchet_labels_follow_the_generator(monkeypatch, capsys, tmp_path):
     """A refused module the generator learns to handle flips to `convertible`, which the
     baseline has never seen: that is how the ratchet forces the conversion."""
     import scan_cmake_linked_rust as ratchet
@@ -579,11 +579,82 @@ def test_ratchet_labels_follow_the_generator(monkeypatch, capsys):
     monkeypatch.setattr(
         g, "survey", lambda: [("a", "OK Win32Dll"), ("b", "REFUSED b: link kind X")]
     )
-    monkeypatch.setattr(g, "REPO", Path(__file__).resolve().parent.parent)
+    (tmp_path / "build-amd64").mkdir()
+    (tmp_path / "build-amd64/build.ninja").write_text("")
+    cell = tmp_path / "sdk/lib/rust/c-cargo/build.rs"
+    cell.parent.mkdir(parents=True)
+    cell.write_text('&["body", "boot/x/libbios_asm.a"]\n')
+    monkeypatch.setattr(g, "REPO", tmp_path)
+    monkeypatch.setattr(g, "engine_lib", lambda lib, repo=None: None)
     rc = ratchet.main()
     out = capsys.readouterr().out.splitlines()
     assert out == [
         "a: fully-Rust module still linked by cmake (convertible)",
         "b: fully-Rust module still linked by cmake (refused)",
+        "c-cargo: links cmake-built boot/x/libbios_asm.a (not engine-buildable)",
     ]
     assert rc == 1
+
+
+def _cml(root, rel, text):
+    path = root / rel / "CMakeLists.txt"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+
+
+def test_engine_lib_builds_any_cmake_static_library_or_rust_variant(tmp_path):
+    g._library_index.cache_clear()
+    _cml(tmp_path, "sdk/lib/nt", "add_library(nt entry_point.c)\nadd_dependencies(nt psdk)\n")
+    _cml(
+        tmp_path,
+        "vendor/sr",
+        "add_library(libsamplerate STATIC ${SOURCE})\n",
+    )
+    _cml(
+        tmp_path,
+        "sdk/lib/mm",
+        'rust_staticlib_variant(mm_rust mm-rust "user kernel" FALSE)\n'
+        'rust_staticlib_variant(env_rust env-rust "" TRUE ENV RUSTFLAGS=-x)\n'
+        "add_library(shared_one SHARED a.c)\n",
+    )
+    try:
+        assert g.engine_lib("sdk/lib/nt/libnt.a", tmp_path) == ("engine:c:nt", ["psdk"])
+        # The archive's directory need not be its CMakeLists' (add_subdirectory remaps it).
+        assert g.engine_lib("sdk/lib/3rdparty/sr/liblibsamplerate.a", tmp_path) == (
+            "engine:c:libsamplerate",
+            ["psdk"],
+        )
+        assert g.engine_lib("sdk/lib/mm/libmm_rust.a", tmp_path) == (
+            "engine:crate:mm-rust:user,kernel:FALSE",
+            [],
+        )
+        assert g.engine_lib("sdk/lib/mm/libenv_rust.a", tmp_path) is None
+        assert g.engine_lib("sdk/lib/mm/libshared_one.a", tmp_path) is None
+        assert g.engine_lib("sdk/lib/x/libunknown.a", tmp_path) is None
+        # The hand-kept table still wins.
+        assert g.engine_lib("sdk/lib/crt/libchkstk.a", tmp_path)[0] == "engine:chkstk"
+    finally:
+        g._library_index.cache_clear()
+
+
+def test_remap_moves_a_cell_off_cmake_archives(tmp_path):
+    g._library_index.cache_clear()
+    _cml(tmp_path, "sdk/lib/nt", "add_library(nt entry_point.c)\nadd_dependencies(nt xdk)\n")
+    _cml(
+        tmp_path,
+        "base/m",
+        "set(M_REUSED\n    ${CMAKE_BINARY_DIR}/sdk/lib/nt/libnt.a)\n"
+        "add_cargo_module(m m-cargo m.exe\n    KIND win32exe\n    BODY_CRATE m-rust\n"
+        "    EXTRA_DEPENDS m_res ${M_REUSED} psdk)\n",
+    )
+    rs = tmp_path / "sdk/lib/rust/m-cargo/build.rs"
+    rs.parent.mkdir(parents=True)
+    rs.write_text('&["body", "sdk/lib/nt/libnt.a", "import:ntdll"]\n')
+    try:
+        assert g.remap(None, tmp_path) == ["m-cargo"]
+    finally:
+        g._library_index.cache_clear()
+    assert rs.read_text() == '&["body", "engine:c:nt", "import:ntdll"]\n'
+    cml = (tmp_path / "base/m/CMakeLists.txt").read_text()
+    assert "M_REUSED" not in cml
+    assert "EXTRA_DEPENDS m_res psdk xdk)" in cml
