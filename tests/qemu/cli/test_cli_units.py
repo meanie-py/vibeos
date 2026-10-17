@@ -12222,3 +12222,8 @@ def test_a_build_input_edited_mid_build_is_named_and_a_doc_is_not(tiny_repo: Pat
     (tiny_repo / "new.c").write_text("int x;\n")
     assert build_mod._inputs_moved(tiny_repo, start) == ["a.txt", "new.c"]
     assert build_mod._inputs_moved(tiny_repo, None) == []
+    # The build's own lockfile update (a new crate) is not an edit under it.
+    (tiny_repo / "a.txt").write_text("hello\n")
+    (tiny_repo / "new.c").unlink()
+    (tiny_repo / "Cargo.lock").write_text("version = 4\n")
+    assert build_mod._inputs_moved(tiny_repo, start) == []
