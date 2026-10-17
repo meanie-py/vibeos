@@ -917,8 +917,10 @@ def test_crate_for_rel_breaks_a_shared_stem_by_extension(arm64_cohab_repo: Path)
     _git(arm64_cohab_repo, "commit", "-qm", "foo.drv")
     provenance._workspace_members.cache_clear()
     provenance._cmake_named_crates.cache_clear()
-    assert provenance._crate_for_rel(arm64_cohab_repo, "dll/x/foo.drv").name == "foo_drv-rust"
-    assert provenance._crate_for_rel(arm64_cohab_repo, "drivers/x/foo/foo.sys").name == "foo-rust"
+    drv = provenance._crate_for_rel(arm64_cohab_repo, "dll/x/foo.drv")
+    sys_ = provenance._crate_for_rel(arm64_cohab_repo, "drivers/x/foo/foo.sys")
+    assert drv is not None and drv.name == "foo_drv-rust"
+    assert sys_ is not None and sys_.name == "foo-rust"
 
 
 def test_cohab_rels_maps_only_rust_binaries(arm64_cohab_repo: Path):

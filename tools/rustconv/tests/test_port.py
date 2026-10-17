@@ -1386,8 +1386,15 @@ def test_split_island_groups_names_each_ignored_group_and_its_tus():
     assert port.split_island_groups(script, "mf") == []
 
 
-def test_guid_libraries_are_every_sdk_lib_the_target_links():
-    libs = port.guid_libraries(port.REPO / "dll" / "win32" / "mfplat" / "CMakeLists.txt")
+def test_guid_libraries_are_every_sdk_lib_the_target_links(tmp_path):
+    # mfplat's link line as it stood before cargo-drive wave 13 made it a cargo cell
+    # (which left the live CMakeLists with no target_link_libraries to read).
+    cm = tmp_path / "CMakeLists.txt"
+    cm.write_text(
+        "target_link_libraries(mfplat ${mfplat_rust_LIB})\n"
+        "target_link_libraries(mfplat wine uuid dmoguids mfuuid strmiids dxguid oldnames)\n"
+    )
+    libs = port.guid_libraries(cm)
     assert {"uuid", "dmoguids", "mfuuid", "strmiids", "dxguid"} <= set(libs)
     assert "wine" not in libs and "oldnames" not in libs  # sdk/lib/<name> must exist
 

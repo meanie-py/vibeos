@@ -513,8 +513,7 @@ def boot_set_cohab_rels(repo: Path, arch: str) -> list[str]:
     return sorted(
         rel
         for rel in boot_set
-        if Path(rel).suffix.lower() in _PE_SUFFIXES
-        and _crate_for_rel(repo, rel) is not None
+        if Path(rel).suffix.lower() in _PE_SUFFIXES and _crate_for_rel(repo, rel) is not None
     )
 
 
