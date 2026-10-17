@@ -661,7 +661,10 @@ def _strip_cmake_comments(text: str) -> str:
 #: `rust_*.c` (12 distinct names as of 2026-08-07: rust_varargs_shim, rust_scanf_shim,
 #: rust_strsafe_shim, rust_cohab_fat, rust_layout_assert, …). None is a translation surface, so
 #: a module whose whole compiled source list is these is FLIPPED, not un-translated.
-_SHIM_TU_RE = re.compile(r"^rust_\w*\.c$")
+#: A flipped C++ app keeps a `rust_cohab_stub.cpp` (so its target keeps the C++ flags), and
+#: until this matched `.cpp` too, certmgr, certutil, drwtsn32 and rapps recorded that stub as
+#: one of their translation units.
+_SHIM_TU_RE = re.compile(r"^rust_\w*\.(?:c|cpp)$")
 
 
 def is_shim_tu(path: Path) -> bool:

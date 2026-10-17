@@ -1854,3 +1854,11 @@ def test_late_includes_are_file_scope_and_live_only():
     live, undecided = late_includes(src)
     assert live == [(4, "#include <msxml2.h>"), (20, '#include "after.h"')]
     assert undecided == [(10, "#include <maybe.h>")]
+
+
+def test_a_cpp_cohab_stub_is_a_shim_not_a_translation_unit():
+    """A flipped C++ app keeps rust_cohab_stub.cpp; rapps recorded it as a TU."""
+    assert is_shim_tu(Path("base/applications/rapps/rust_cohab_stub.cpp"))
+    assert is_shim_tu(Path("dll/win32/x/rust_varargs_shim.c"))
+    assert not is_shim_tu(Path("base/applications/rapps/appview.cpp"))
+    assert not is_shim_tu(Path("base/applications/rapps/rust_notes.h"))
