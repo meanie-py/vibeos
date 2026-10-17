@@ -62,6 +62,8 @@ pub struct Card {
     pub fw_rewrites_rsn_caps: Option<u16>,
     /// The RSN element the association request carried.
     assoc_rsn: Vec<u8>,
+    /// Ethernet frames the host sent that were not EAPOL.
+    pub tx_ethernet: Vec<Vec<u8>>,
     pub wpaie: Vec<u8>,
     pub joined_bssid: Option<[u8; 6]>,
     pub ap_log: Vec<&'static str>,
@@ -186,6 +188,7 @@ impl Card {
             ap_hidden: false,
             fw_rewrites_rsn_caps: None,
             assoc_rsn: Vec::new(),
+            tx_ethernet: Vec::new(),
             wpaie: Vec::new(),
             joined_bssid: None,
             ap_log: Vec::new(),
@@ -514,6 +517,13 @@ impl Card {
         }
     }
 
+    /// An Ethernet frame arriving for the host, as a data frame.
+    pub fn queue_ethernet(&mut self, eth: &[u8]) {
+        let mut f = vec![0x20, 0, 0, 0];
+        f.extend_from_slice(eth);
+        self.queue(2, &f);
+    }
+
     pub fn queue_event(&mut self, payload: &[u8]) {
         self.queue(1, payload);
     }
@@ -555,6 +565,8 @@ impl Card {
             if eth.len() > 14 && eth[12..14] == [0x88, 0x8E] && eth[..6] == AP_BSSID && eth[6..12] == MAC {
                 let body = eth[14..].to_vec();
                 self.ap_eapol(&body);
+            } else {
+                self.tx_ethernet.push(eth.to_vec());
             }
             return;
         }
