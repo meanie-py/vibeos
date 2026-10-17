@@ -137,9 +137,13 @@ add_subdirectory(xcopy)
 add_subdirectory(xinput1_3)
 add_subdirectory(xmllite)
 
+# Built at every version, with the DLLs they test (dll/directx/wine/CMakeLists.txt).
+add_subdirectory(d2d1)
+add_subdirectory(d3d11)
+add_subdirectory(dwrite)
+add_subdirectory(dxgi)
+
 if(DLL_EXPORT_VERSION GREATER_EQUAL 0x600)
-    add_subdirectory(d2d1)
-    add_subdirectory(dwrite)
     add_subdirectory(ncrypt)
     add_subdirectory(uiautomationcore)
 endif()

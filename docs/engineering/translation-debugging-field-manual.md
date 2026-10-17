@@ -1552,7 +1552,12 @@ loop means "before the head", i.e. append. A macro whose cursor stops on the las
 inserts one place too early. One that rebinds the cursor per iteration (`let $elem` in the
 loop, as ole32's does) leaves the caller's variable stale. winelist-rust's
 `LIST_FOR_EACH_ENTRY{,_SAFE}` assign the caller's variable and finish on the head's
-container, as C does. Its tests pin the append shape.
+container, as C does. Its tests pin the append shape. A walk lowered BY HAND over the raw
+entries (`while e != head { cur = container_of(e); ...; e = (*e).next }`) has the same trap:
+after the loop use `e`, which is the head when nothing broke, not `cur`. rtl-threadpool's
+timer re-arm inserted a periodic timer one place early this way (2026-10-17).
+`scan_list_walk_cursor_after_loop` flags the shape on `.next` walks only: a ReactOS
+`LIST_ENTRY` walk is an explicit C loop whose cursor ends on the last node in C as well.
 
 ### A list walk that reads `Flink` after freeing the entry
 
