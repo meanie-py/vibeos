@@ -85,7 +85,7 @@ extern "C" {
     pub fn strlen(s: *const c_char) -> usize; // browser-rust/src/prelude.rs
     pub fn strpbrk(s: *const c_char, set: *const c_char) -> *mut c_char; // string.h; ucrt-rust/src/argv/wildcards.rs spells char as u8
     pub fn towlower(c: u16) -> u16; // cnt-ctype/src/lib.rs
-    pub fn towupper(c: c_int) -> c_int; // dnsapi-rust/src/prelude.rs
+    pub fn towupper(c: wint_t) -> wint_t; // dnsapi-rust/src/prelude.rs
     pub fn wcschr(s: *const u16, c: u16) -> *mut u16; // advapi32-rust/src/wine/cred.rs
     pub fn wcsicmp(a: *const u16, b: *const u16) -> c_int; // browser-rust/src/prelude.rs
     pub fn wcsncmp(a: *const u16, b: *const u16, n: usize) -> c_int; // desk-rust/src/prelude.rs

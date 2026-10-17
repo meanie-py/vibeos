@@ -292,7 +292,8 @@ unsafe fn entryNameCmp(
     let mut n2 = name2;
 
     while diff == 0 && *n1 != 0 {
-        diff = towupper(*n1 as c_int) - towupper(*n2 as c_int);
+        // The C subtracts two wint_t promoted to int: widen first, or u16 wraps.
+        diff = towupper(*n1 as u16) as c_int - towupper(*n2 as u16) as c_int;
         n1 = n1.offset(1);
         n2 = n2.offset(1);
     }

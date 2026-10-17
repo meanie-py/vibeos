@@ -225,7 +225,7 @@ extern "C" {
     pub fn _wcstoui64(nptr: *const u16, endptr: *mut *mut u16, base: i32) -> u64; // cnt-rust/src/cabi/generated.rs
     pub fn _wtoi(s: *const u16) -> i32; // userinit-rust/src/preamble.rs
     pub fn fclose(stream: *mut FILE) -> c_int; // dnsrslvr-rust/src/prelude.rs
-    pub fn towupper(c: c_int) -> c_int; // dnsapi-rust/src/prelude.rs
+    pub fn towupper(c: wint_t) -> wint_t; // dnsapi-rust/src/prelude.rs
     pub fn wcscat(dst: *mut u16, src: *const u16) -> *mut u16; // advapi32-rust/src/wine/cred.rs
     pub fn wcschr(s: *const u16, c: u16) -> *mut u16; // advapi32-rust/src/wine/cred.rs
     pub fn wcscmp(a: *const u16, b: *const u16) -> c_int; // browser-rust/src/prelude.rs

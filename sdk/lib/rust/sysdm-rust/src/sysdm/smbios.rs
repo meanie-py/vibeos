@@ -79,10 +79,10 @@ unsafe extern "C" fn wcsistr(s: *const wchar_t, b: *const wchar_t) -> *mut wchar
     let mut c: *mut wchar_t;
     x = s as *mut wchar_t;
     while *x != 0 {
-        if towlower((*x) as i32) == towlower((*b) as i32) {
+        if towlower((*x) as wint_t) == towlower((*b) as wint_t) {
             y = x;
             c = b as *mut wchar_t;
-            while *y != 0 && *c != 0 && towlower((*y) as i32) == towlower((*c) as i32) {
+            while *y != 0 && *c != 0 && towlower((*y) as wint_t) == towlower((*c) as wint_t) {
                 c = c.add(1);
                 y = y.add(1);
             }
