@@ -2605,7 +2605,9 @@ def own_rc(crates: list[str] | None = None, repo: Path = REPO) -> list[str]:
     return moved
 
 
-SHIMS_CALL = re.compile(r'\.c_from_compile_db\(\s*"(\w+_shims)"')
+SHIMS_CALL = re.compile(r'\.c_from_compile_db\(\s*"(\w+)"')
+# c_from_compile_db libraries several cells share, which are cmake libraries of their own.
+SHARED_C_LIBS = {"rtl", "blrtl", "libcntpr", "win32k_residue"}
 
 
 def _call_span(text: str, start: int) -> int:
@@ -2652,7 +2654,7 @@ def own_c(crates: list[str] | None = None, repo: Path = REPO) -> list[str]:
         rs = d / "build.rs"
         text = rs.read_text() if rs.exists() else ""
         m = SHIMS_CALL.search(text)
-        if not m:
+        if not m or m.group(1) in SHARED_C_LIBS:
             continue
         name = m.group(1)
         plain = rf"add_library\(\s*{name}\s+OBJECT\s+(?!\$\{{\w+_SHIMS\}})"

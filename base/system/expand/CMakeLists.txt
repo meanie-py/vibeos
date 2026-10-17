@@ -3,10 +3,8 @@
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # expand.c  # replaced by Rust (sdk/lib/rust/expand-rust/src/expand/expand.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(expand_c OBJECT rust_varargs_shim.c)
 add_cargo_module(expand expand-cargo expand.exe
     KIND win32exe
     BODY_CRATE expand-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS expand_c psdk)
+    EXTRA_DEPENDS psdk)
