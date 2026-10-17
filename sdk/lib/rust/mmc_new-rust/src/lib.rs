@@ -14,7 +14,6 @@
 pub mod types; // bindgen island, per arch (gen_driver_types.sh mmc_new)
 #[macro_use]
 pub mod prelude; // the ONE import surface: types glob + debug macros + CRT externs
-pub mod rosctrls; // rosctrls.h CListView/CTreeView/CStatusBar/CToolbar methods mmc_new calls (hand-ported)
 pub mod templates; // CAtlList members atlclasses-rust lacks (RemoveAt/RemoveTail/GetPrev/FindPos), hand-written
 pub mod windowimpl; // ATL CWindowImpl machinery (StartWindowProc/WindowProc/thunk) for CMainWnd/CConsoleWnd (hand-written)
 
@@ -43,6 +42,9 @@ pub mod mmc_new {
     pub mod COptionsDialog_cpp_h;
     pub mod mmc_cpp_h;
     pub mod misc_cpp_h;
+    pub mod rosctrls_h_h;
+    pub mod CActionWnd_h_h;
+    pub mod CActionWnd_cpp_h;
 }
 
 // staticlib needs a panic handler + eh personality (no_std cohab); std supplies them under test.

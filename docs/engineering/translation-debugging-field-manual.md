@@ -2002,6 +2002,13 @@ passed `infoPtr` first, a few did not. **Fix:** hand-port above the generated bl
 replay keeps it), with each captured local as an explicit LEADING parameter, and make every call
 site pass it. One parse error like this halts rustc before type checking, which also makes
 crate-repair's pass look like it fixed everything (10 errors left, 0 applied).
+The goto form is worse, because no parameter can carry it: mmc_new's `CHK_HR(stmt)` is
+`do { hr = (stmt); if (FAILED(hr)) goto CleanUp; } while (0)`, and its `macro_rules!` port
+names both the caller's `hr` and the caller's `'CleanUp` label, so every use is E0425 + E0426,
+reported at the PRELUDE line rather than the call site. Expand it in the body
+(`hr = ..; if hr < 0 { break 'CleanUp; }` inside a `'CleanUp: { .. }` block, as mscfile's
+bodies already were) and bank the function. Owed in `port macros`: lower a goto-carrying
+macro by inlining it at the call sites, not as a `macro_rules!`.
 
 ### A UNICODE module inherits the ANSI TCHAR family from the `-sys` glob
 `ntdll-sys` is generated WITHOUT `-DUNICODE`, so its bindgen carries `pub type LPTSTR = LPSTR;`.
@@ -5408,6 +5415,25 @@ TU's file-scope `TypedefDecl`s.
 ### Small C++-pipeline shapes that cost rapps a re-buy or a hundred errors
 
 Each was one fix in the tool; listed so the next module's symptom can be matched to one.
+- **A hand bank outlives the C it was written for.** `port replay` re-applies a bank by
+  NAME, so a function whose C changed upstream keeps its old body silently: after the
+  2026-10-15 sync, mmc_new's `CAddDialog::OnCommand` still built `new CSnapin(CacheEntry)`
+  without upstream's node id, and four more banks (`ParseWindowPlacement`'s S_FALSE,
+  `PreMessageLoop`'s CActionWnd registration, CCustomizeDialog's toolbar refresh) had the
+  same shape. Only a bank whose ITEM vanished errors ("0 items named X"). After an upstream
+  sync, diff each banked function's C against the port's base and port the change into the
+  bank by hand. Dropping is wrong too: two of the stale banks were the class LAYOUTS carrying
+  ATL's `m_thunk`/`m_pfnSuperWindowProc`, and the generic glue without them loses the MDI
+  frame's DefFrameProc.
+- **`CAtlList::GetNext(&mut pos)` returns the element's SLOT.** The C++ `(CConsoleWnd*)
+  list.GetNext(pos)` came back as `list.GetNext(&mut pos) as *mut CConsoleWnd`, which for a
+  list of pointers casts `*mut *mut X` to `*mut X` and compiles; five mmc_new sites read
+  list-node memory as the window (WM_CLOSE to a bogus HWND, then a use-after-free of the
+  root node). Deref instead. `tools/scan_atl_slot_cast.py` gates it in `vibeos-cli check`.
+- **Hand-written window glue beside the generated one.** A crate whose `src/*.rs` defines
+  `impl Class { DefWindowProc / Create }` or re-exports `CWndProcThunk` from its prelude now
+  wins: `port cppapp` skips its generic copies (they were E0592/E0252, and the generic
+  DefWindowProc ignores `m_pfnSuperWindowProc`).
 - **A comment between the declarator and the brace** (`BOOL F(..) // note` then `{`): the
   free-function signature is joined onto one line and the comment swallowed the `{`; the
   stitch dropped the function ("Planned Rust definitions absent"). `cpp_model` strips comments

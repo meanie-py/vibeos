@@ -1339,11 +1339,12 @@ class TestFlippedModule:
             "rust_strsafe_shim.c",
             "rust_cohab_fat.c",
             "rust_layout_assert.c",
+            "rust_cohab_stub.cpp",
         ):
             assert is_shim_tu(Path("dll/cpl/sysdm") / name), name
 
     def test_a_real_tu_is_not_mistaken_for_scaffolding(self):
-        for name in ("sysdm.c", "environment.c", "rustle.c", "trust.c"):
+        for name in ("sysdm.c", "environment.c", "rustle.c", "trust.c", "rustle.cpp"):
             assert not is_shim_tu(Path("dll/cpl/sysdm") / name), name
 
     def test_a_commented_out_source_list_is_restored(self):
@@ -1823,3 +1824,14 @@ def test_a_cargo_linked_module_still_owns_its_flipped_sources(tmp_path):
     assert sorted(p.name for p in m.compiled_tus) == ["host.c", "main.c"]
     assert m.module_type == "win32cui" and m.unicode
     assert "-DUNICODE" in m.definitions
+
+
+def test_only_exported_macros_are_reexported(tmp_path):
+    (tmp_path / "lib.rs").write_text(
+        "#[macro_export]\nmacro_rules! ZeroMemory { () => {} }\n"
+        "#[macro_export]\n#[doc(hidden)]\nmacro_rules! HIWORD { () => {} }\n"
+        "pub fn f() {\n    macro_rules! at { () => {} }\n}\n"
+    )
+    from rustconv.profile_derive import exported_macro_names
+
+    assert exported_macro_names(tmp_path) == ["HIWORD", "ZeroMemory"]

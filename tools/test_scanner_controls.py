@@ -134,6 +134,27 @@ class Control:
 
 # ── fixtures, each seeded from a real incident ───────────────────────────────
 
+# mmc_new 2026-10-17: atl_rust's CAtlList::GetNext returns the element's SLOT; the cast read
+# list-node memory as the window (WM_CLOSE to a bogus HWND, then a use-after-free).
+_ATL_SLOT_CAST_BAD = """
+unsafe fn close_all(this_: *mut CMainWnd) {
+    let mut pos: POSITION = (*this_).m_ViewList.GetHeadPosition();
+    while !pos.is_null() {
+        let console: *mut CConsoleWnd = (*this_).m_ViewList.GetNext(&mut pos) as *mut CConsoleWnd;
+        (*console).__base0.SendMessageW__0(WM_CLOSE, 0, 0);
+    }
+}
+"""
+_ATL_SLOT_CAST_GOOD = """
+unsafe fn close_all(this_: *mut CMainWnd) {
+    let mut pos: POSITION = (*this_).m_ViewList.GetHeadPosition();
+    while !pos.is_null() {
+        let console: *mut CConsoleWnd = *(*this_).m_ViewList.GetNext(&mut pos);
+        (*console).__base0.SendMessageW__0(WM_CLOSE, 0, 0);
+    }
+}
+"""
+
 # scan_bugcheck_stubs. Seeded from fastfat 2026-07-26: three boots, three stubs
 # (FatGenerateFileIdFromFcb -> FatOpenVolume -> ...), each a full build+boot to
 # discover something the tree already knew. The GOOD case pins the two ways this
@@ -2870,6 +2891,12 @@ CONTROLS: list[Control] = [
             "rust/user32-rust/src/windows/class.rs": _WIN64_CFG_GOOD,
             "rust/rtlk-rust/src/misc.rs": _DEAD_CFG_GOOD,
         },
+    ),
+    Control(
+        name="scan_atl_slot_cast",
+        script="tools/scan_atl_slot_cast.py",
+        bad={"mmc.rs": _ATL_SLOT_CAST_BAD},
+        good={"mmc.rs": _ATL_SLOT_CAST_GOOD},
     ),
     Control(
         name="scan_bitwise_not_bool",

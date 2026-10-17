@@ -1121,22 +1121,29 @@ impl<T> CAtlList<T> {
         core::ptr::addr_of_mut!((*node).element)
     }
 
-    /// `Find(const E& element, POSITION posStartAfter = NULL)` — atlcoll.h. The C++ tests
-    /// the returned `POSITION` for truth (`if (!list.Find(key))`), so this returns `bool`:
-    /// handing back a raw node pointer would invite it to be dereferenced, and no caller
-    /// in the tree wants the position itself.
+    /// `Find(const E& element, POSITION posStartAfter = NULL)` — atlcoll.h, for the callers
+    /// that only test the returned `POSITION` for truth (`if (!list.Find(key))`).
     pub unsafe fn Find(&self, element: &T) -> bool
+    where
+        T: PartialEq,
+    {
+        !self.FindPos(element).is_null()
+    }
+
+    /// `Find` for a caller that keeps the `POSITION` (mmc_new's `UnregisterView` hands it to
+    /// `RemoveAt`): the first node holding `element`, else null.
+    pub unsafe fn FindPos(&self, element: &T) -> POSITION
     where
         T: PartialEq,
     {
         let mut node = self.head;
         while !node.is_null() {
             if (*node).element == *element {
-                return true;
+                return node as POSITION;
             }
             node = (*node).next;
         }
-        false
+        core::ptr::null_mut()
     }
 
     /// Null when the index is out of range, matching the `POSITION` the C++ then tests.
