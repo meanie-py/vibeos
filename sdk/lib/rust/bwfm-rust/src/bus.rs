@@ -15,8 +15,9 @@ use sdhci_rust::{Error, Platform};
 use crate::chip::{Chip, CHIPCOMMON_BASE, SB_ACCESS_2_4B, SB_OFT_ADDR_MASK};
 use crate::proto::{self, Credit, RxHeader, HEADER};
 
-/// The largest frame we read: an Ethernet frame with its headers fits well under.
-pub const SDPCM_FRAME_MAX: usize = 2048;
+/// The largest frame we keep. An Ethernet frame fits well under; a scan result
+/// carries each network's information elements, which can run past 2 KiB.
+pub const SDPCM_FRAME_MAX: usize = 8192;
 /// The largest command: a CLM chunk (1400 bytes and its 12-byte header) behind
 /// `clmload\0` and the BCDC header, with room to spare.
 pub const DCMD_MAX: usize = 1536;
@@ -38,15 +39,34 @@ pub struct Frame<'a> {
     pub payload: &'a [u8],
 }
 
+/// The bus's frame and command buffers, ~18 KiB: kept out of `Bus` so that
+/// building one does not put them on a kernel thread's small stack.
+pub struct Buffers {
+    rx: [u8; SDPCM_FRAME_MAX],
+    tx: [u8; SDPCM_FRAME_MAX],
+    req: [u8; DCMD_MAX],
+}
+
+impl Buffers {
+    pub const fn new() -> Self {
+        Self { rx: [0; SDPCM_FRAME_MAX], tx: [0; SDPCM_FRAME_MAX], req: [0; DCMD_MAX] }
+    }
+}
+
+impl Default for Buffers {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct Bus<P: Platform> {
     pub chip: Chip<P>,
     pub credit: Credit,
     /// The next frame's length, when the last header announced it.
     next_len: usize,
-    rx: [u8; SDPCM_FRAME_MAX],
-    tx: [u8; SDPCM_FRAME_MAX],
-    /// A BCDC command being built: header, then the iovar.
-    req: [u8; DCMD_MAX],
+    /// rx: the frame being read; tx: the frame being sent; req: a BCDC
+    /// command being built (header, then the iovar).
+    buf: &'static mut Buffers,
     dcmd_id: u16,
     /// Frames polled, and those that were not ours to keep (bad header, unknown
     /// channel, too big), for the log.
@@ -64,14 +84,12 @@ pub struct Polled {
 
 impl<P: Platform> Bus<P> {
     /// The bus over a chip whose firmware `Chip::start` has brought up.
-    pub fn new(chip: Chip<P>) -> Self {
+    pub fn new(chip: Chip<P>, buf: &'static mut Buffers) -> Self {
         Self {
             chip,
             credit: Credit::default(),
             next_len: 0,
-            rx: [0; SDPCM_FRAME_MAX],
-            tx: [0; SDPCM_FRAME_MAX],
-            req: [0; DCMD_MAX],
+            buf,
             dcmd_id: 0,
             frames: 0,
             dropped: 0,
@@ -93,9 +111,9 @@ impl<P: Platform> Bus<P> {
         let mut out = Polled::default();
         loop {
             let first = if self.next_len >= HEADER { self.next_len.min(SDPCM_FRAME_MAX) } else { HEADER };
-            self.chip.sdio.read(2, addr, false, &mut self.rx[..first])?;
+            self.chip.sdio.read(2, addr, false, &mut self.buf.rx[..first])?;
             let mut h = [0u8; HEADER];
-            h.copy_from_slice(&self.rx[..HEADER]);
+            h.copy_from_slice(&self.buf.rx[..HEADER]);
             let header = match proto::parse_header(&h) {
                 Ok(None) => {
                     self.next_len = 0;
@@ -110,11 +128,26 @@ impl<P: Platform> Bus<P> {
                 }
             };
             let len = header.len as usize;
-            if len > SDPCM_FRAME_MAX || (self.next_len >= HEADER && len > first) {
+            if self.next_len >= HEADER && len > first {
+                // The read-ahead was shorter than the frame: the FIFO is out of step.
                 self.dropped += 1;
                 self.next_len = 0;
                 out.broken = true;
                 return Ok(out);
+            }
+            if len > SDPCM_FRAME_MAX {
+                // Too big to keep: read it out anyway, so the next read starts at a
+                // frame boundary.
+                let mut left = (len - first).div_ceil(4) * 4;
+                while left > 0 {
+                    let k = left.min(SDPCM_FRAME_MAX);
+                    self.chip.sdio.read(2, addr, false, &mut self.buf.rx[..k])?;
+                    left -= k;
+                }
+                self.dropped += 1;
+                self.credit.max_seq = header.max_seq;
+                self.next_len = header.next_len as usize;
+                continue;
             }
             self.credit.max_seq = header.max_seq;
             self.next_len = header.next_len as usize;
@@ -125,7 +158,7 @@ impl<P: Platform> Bus<P> {
             }
             if first < len {
                 let rest = (len - first).div_ceil(4) * 4;
-                self.chip.sdio.read(2, addr, false, &mut self.rx[first..first + rest])?;
+                self.chip.sdio.read(2, addr, false, &mut self.buf.rx[first..first + rest])?;
             }
             self.dispatch(&header, &mut each);
         }
@@ -135,7 +168,7 @@ impl<P: Platform> Bus<P> {
         let (at, len) = (h.data_offset as usize, h.len as usize);
         match h.channel {
             proto::CHANNEL_CONTROL | proto::CHANNEL_EVENT | proto::CHANNEL_DATA => {
-                each(Frame { channel: h.channel, payload: &self.rx[at..len] });
+                each(Frame { channel: h.channel, payload: &self.buf.rx[at..len] });
             }
             _ => self.dropped += 1,
         }
@@ -155,11 +188,11 @@ impl<P: Platform> Bus<P> {
             }
             self.chip.sdio.hc.p.stall_us(1000);
         };
-        let Some(len) = proto::frame(proto::CHANNEL_CONTROL, seq, &[&self.req[..n]], &mut self.tx) else {
+        let Some(len) = proto::frame(proto::CHANNEL_CONTROL, seq, &[&self.buf.req[..n]], &mut self.buf.tx) else {
             return Err(Error::Card("control frame too big", n as u32));
         };
         let addr = self.frame_addr()?;
-        self.chip.sdio.write(2, addr, true, &self.tx[..len])
+        self.chip.sdio.write(2, addr, true, &self.buf.tx[..len])
     }
 
     /// One BCDC command and its reply: the reply's data goes to `out`, and its
@@ -177,19 +210,19 @@ impl<P: Platform> Bus<P> {
         self.dcmd_id = self.dcmd_id.wrapping_add(1);
         let id = self.dcmd_id;
         let len: usize = parts.iter().map(|p| p.len()).sum();
-        if proto::DCMD_HEADER + len > self.req.len() {
+        if proto::DCMD_HEADER + len > self.buf.req.len() {
             return Err(Error::Card("command too big", len as u32));
         }
         let mut at = proto::DCMD_HEADER;
         for p in parts {
-            self.req[at..at + p.len()].copy_from_slice(p);
+            self.buf.req[at..at + p.len()].copy_from_slice(p);
             at += p.len();
         }
         // The header goes in front of the data already in place.
         let mut head = [0u8; proto::DCMD_HEADER];
         proto::encode_dcmd(command, set, id, 0, &[], &mut head);
         head[4..8].copy_from_slice(&(len as u32).to_le_bytes());
-        self.req[..proto::DCMD_HEADER].copy_from_slice(&head);
+        self.buf.req[..proto::DCMD_HEADER].copy_from_slice(&head);
         self.send_request(at, &mut each)?;
         let start = self.chip.sdio.hc.p.now_us();
         let mut got: Option<Result<usize, Error>> = None;
@@ -275,7 +308,7 @@ mod tests {
         let n = crate::nvram::convert(b"a=1\n", &mut nv).unwrap();
         chip.load_firmware(&fw, &nv[..n]).unwrap();
         chip.start().unwrap();
-        Bus::new(chip)
+        Bus::new(chip, Box::leak(Box::default()))
     }
 
     #[test]
@@ -335,6 +368,18 @@ mod tests {
         let mut mac = [0u8; 6];
         assert_eq!(bus.get_var(b"cur_etheraddr", &mut mac, |_| {}).unwrap(), 6);
         assert_eq!(mac, crate::sim::MAC);
+    }
+
+    #[test]
+    fn a_frame_too_big_to_keep_is_read_out_and_the_next_one_still_parses() {
+        let mut bus = running();
+        bus.poll(|_| {}).unwrap();
+        bus.chip.sdio.hc.p.card_mut().queue_event(&vec![0xAB; SDPCM_FRAME_MAX + 100]);
+        bus.chip.sdio.hc.p.card_mut().queue_event(b"after");
+        let mut got = Vec::new();
+        let p = bus.poll(|f| got.push(f.payload.to_vec())).unwrap();
+        assert!(!p.broken);
+        assert_eq!((got, bus.dropped), (vec![b"after".to_vec()], 1));
     }
 
     #[test]

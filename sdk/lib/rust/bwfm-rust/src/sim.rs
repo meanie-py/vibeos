@@ -50,6 +50,9 @@ pub struct Card {
     /// The CLM as clmload reassembled it, and each chunk's flag.
     pub clm: Vec<u8>,
     pub clm_flags: Vec<u16>,
+    pub up: bool,
+    pub infra: bool,
+    pub event_mask: Vec<u8>,
 }
 
 /// The simulated chip's address.
@@ -144,6 +147,9 @@ impl Card {
             desynced: false,
             clm: Vec::new(),
             clm_flags: Vec::new(),
+            up: false,
+            infra: false,
+            event_mask: Vec::new(),
         }
     }
 
@@ -272,6 +278,57 @@ impl Card {
         self.queue(0, &r);
     }
 
+    /// An event as the firmware sends it: the BCDC data header, an Ethernet
+    /// frame of type 0x886C, Broadcom's header, the big-endian event message.
+    fn queue_bcm_event(&mut self, event_type: u32, status: u32, data: &[u8]) {
+        let mut f = vec![0x20, 0, 0, 0];
+        f.extend_from_slice(&MAC);
+        f.extend_from_slice(&MAC);
+        f.extend_from_slice(&0x886Cu16.to_be_bytes());
+        f.extend_from_slice(&[0x80, 0x01, 0, 0, 0, 0x00, 0x10, 0x18, 0x00, 0x01]);
+        f.extend_from_slice(&2u16.to_be_bytes()); // version
+        f.extend_from_slice(&0u16.to_be_bytes()); // flags
+        for v in [event_type, status, 0, 0, data.len() as u32] {
+            f.extend_from_slice(&v.to_be_bytes());
+        }
+        f.extend_from_slice(&[0; 6 + 16 + 2]); // addr, ifname, ifidx, bsscfgidx
+        f.extend_from_slice(data);
+        self.queue(1, &f);
+    }
+
+    /// One `bwfm_bss_info` (124 bytes, no IEs).
+    fn bss(bssid: [u8; 6], ssid: &[u8], channel: u8, rssi: i16) -> Vec<u8> {
+        let mut r = vec![0u8; 124];
+        r[0..4].copy_from_slice(&109u32.to_le_bytes()); // version
+        r[4..8].copy_from_slice(&124u32.to_le_bytes());
+        r[8..14].copy_from_slice(&bssid);
+        r[16..18].copy_from_slice(&0x0411u16.to_le_bytes()); // ESS | privacy | short slot
+        r[18] = ssid.len() as u8;
+        r[19..19 + ssid.len()].copy_from_slice(ssid);
+        r[72..74].copy_from_slice(&(0x1000u16 | channel as u16).to_le_bytes());
+        r[78..80].copy_from_slice(&rssi.to_le_bytes());
+        r[88] = channel;
+        r
+    }
+
+    /// What a passive escan hears here: two networks, then the end.
+    fn escan_results(&mut self) {
+        for (bssid, ssid, ch, rssi) in [
+            ([0x02, 0x11, 0x22, 0x33, 0x44, 0x55], &b"piconet"[..], 6, -42),
+            ([0x02, 0x66, 0x77, 0x88, 0x99, 0xAA], &b""[..], 36, -71),
+        ] {
+            let rec = Self::bss(bssid, ssid, ch, rssi);
+            let mut res = Vec::new();
+            res.extend_from_slice(&(12 + rec.len() as u32).to_le_bytes()); // buflen
+            res.extend_from_slice(&109u32.to_le_bytes()); // version
+            res.extend_from_slice(&0x1234u16.to_le_bytes()); // sync id
+            res.extend_from_slice(&1u16.to_le_bytes()); // one BSS
+            res.extend_from_slice(&rec);
+            self.queue_bcm_event(69, 8, &res);
+        }
+        self.queue_bcm_event(69, 0, &[]);
+    }
+
     pub fn queue_event(&mut self, payload: &[u8]) {
         self.queue(1, payload);
     }
@@ -335,6 +392,24 @@ impl Card {
                 assert_eq!(n, rest.len() - 12, "chunk length");
                 self.clm_flags.push(flag);
                 self.clm.extend_from_slice(&rest[12..]);
+                (0, Vec::new())
+            }
+            (263, b"mpc") => (0, Vec::new()),
+            (263, b"event_msgs") => {
+                self.event_mask = rest.to_vec();
+                (0, Vec::new())
+            }
+            (263, b"escan") => {
+                assert_eq!(rest.len(), 72, "escan v0 parameters");
+                self.escan_results();
+                (0, Vec::new())
+            }
+            (2, _) => {
+                self.up = true;
+                (0, Vec::new())
+            }
+            (20, _) => {
+                self.infra = data.first() == Some(&1);
                 (0, Vec::new())
             }
             _ => (BCME_UNSUPPORTED, Vec::new()),
