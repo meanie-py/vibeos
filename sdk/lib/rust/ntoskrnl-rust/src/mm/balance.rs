@@ -154,11 +154,19 @@ unsafe fn MiTrimMemoryConsumer(Consumer: ULONG, InitialTarget: ULONG) -> ULONG {
         return InitialTarget;
     }
 
+    let Low = core::ptr::read_volatile(core::ptr::addr_of!(crate::ARM3::mminit::MmLowMemoryThreshold)) as ULONG;
     if (MmAvailablePages as ULONG) < MiMinimumAvailablePages {
         target = core::cmp::max(
             target,
             MiMinimumAvailablePages - MmAvailablePages as ULONG,
         );
+    } else if Consumer == MC_USER && (MmAvailablePages as ULONG) < Low {
+        // Below the low-memory mark, give back cached section pages nobody is using,
+        // the way Windows repurposes standby pages before anything starves: aging trim
+        // (Priority 0), so a page some process still touches keeps its frame. Without
+        // this the cache was trimmed only at MiMinimumAvailablePages (1 MB), well past
+        // the point where appstorm64's apps were already failing their faults.
+        target = core::cmp::max(target, Low - MmAvailablePages as ULONG);
     } else if MiMemoryConsumers[Consumer as usize].PagesUsed
         > MiMemoryConsumers[Consumer as usize].PagesTarget
     {

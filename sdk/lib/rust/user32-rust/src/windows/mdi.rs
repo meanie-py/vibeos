@@ -1,4 +1,13 @@
 use win32k_sys::win32k::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::windows::dialog::FindResourceA;
+use crate::windows::cursoricon::FindResourceW;
+use crate::windows::window::HeapAlloc;
+use crate::windows::message::HeapReAlloc;
+use crate::windows::cursoricon::LoadResource;
+// The crate's own functions: the definition is the declaration.
+use crate::windows::class::GetWindowLongPtrW;
+use crate::controls::scrollbar::SetScrollInfo;
 use core::ffi::c_void;
 
 // WINE debug macros — no-ops (mirror windows/menu.rs).
@@ -109,12 +118,8 @@ extern "C" {
 // ── kernel32 imports (extern "system") ───────────────────────────────────────
 extern "system" {
     fn GetProcessHeap() -> *mut c_void;
-    fn HeapAlloc(hHeap: *mut c_void, dwFlags: DWORD, dwBytes: usize) -> *mut c_void;
     fn HeapFree(hHeap: *mut c_void, dwFlags: DWORD, lpMem: LPVOID) -> BOOL;
-    fn HeapReAlloc(hHeap: *mut c_void, dwFlags: DWORD, lpMem: LPVOID, dwBytes: usize) -> *mut c_void;
     fn SetLastError(dwErrCode: DWORD);
-    fn FindResourceW(hModule: HINSTANCE, lpName: LPCWSTR, lpType: LPCWSTR) -> HRSRC;
-    fn LoadResource(hModule: HINSTANCE, hResInfo: HRSRC) -> *mut c_void;
     fn LockResource(hResData: *mut c_void) -> LPVOID;
 }
 
@@ -137,7 +142,6 @@ extern "system" {
     fn DefWindowProcA(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     fn DefWindowProcW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     fn GetWindowLongW(hWnd: HWND, nIndex: INT) -> LONG;
-    fn GetWindowLongPtrW(hWnd: HWND, nIndex: INT) -> LONG_PTR;
     fn GetWindowLongPtrA(hWnd: HWND, nIndex: INT) -> LONG_PTR;
     fn SetWindowLongPtrW(hWnd: HWND, nIndex: INT, dwNewLong: LONG_PTR) -> LONG_PTR;
     fn GetClassLongPtrW(hWnd: HWND, nIndex: INT) -> ULONG_PTR;
@@ -198,12 +202,10 @@ extern "system" {
     fn DialogBoxIndirectParamA(hInstance: HINSTANCE, hDialogTemplate: LPCVOID, hWndParent: HWND, lpDialogFunc: *mut c_void, dwInitParam: LPARAM) -> INT_PTR;
     fn MonitorFromPoint(pt: POINT, dwFlags: DWORD) -> HMONITOR;
     fn GetMonitorInfoW(hMonitor: HMONITOR, lpmi: LPMONITORINFO) -> BOOL;
-    fn SetScrollInfo(hwnd: HWND, nBar: INT, lpsi: *const SCROLLINFO, redraw: BOOL) -> INT;
     fn GetScrollPos(hWnd: HWND, nBar: INT) -> INT;
     fn GetScrollRange(hWnd: HWND, nBar: INT, lpMinPos: LPINT, lpMaxPos: LPINT) -> BOOL;
     fn SetScrollPos(hWnd: HWND, nBar: INT, nPos: INT, bRedraw: BOOL) -> INT;
     fn ScrollWindowEx(hWnd: HWND, dx: INT, dy: INT, prcScroll: LPCRECT, prcClip: LPCRECT, hrgnUpdate: HRGN, prcUpdate: LPRECT, flags: UINT) -> INT;
-    fn FindResourceA(hModule: HINSTANCE, lpName: LPCSTR, lpType: LPCSTR) -> HRSRC;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -625,7 +627,7 @@ unsafe fn MDIDestroyChild(client: HWND, ci: *mut MDICLIENTINFO, child: HWND, fla
     i = 0;
     while i < (*ci).nActiveChildren {
         if *(*ci).child.offset(i as isize) == child {
-            let new_child = HeapAlloc(GetProcessHeap(), 0, ((*ci).nActiveChildren - 1) as usize * core::mem::size_of::<HWND>()) as *mut HWND;
+            let new_child = HeapAlloc(GetProcessHeap(), 0, (((*ci).nActiveChildren - 1) as usize * core::mem::size_of::<HWND>()) as SIZE_T) as *mut HWND;
             if !new_child.is_null() {
                 memcpy(new_child as *mut _, (*ci).child as *const _, i as usize * core::mem::size_of::<HWND>());
                 if i + 1 < (*ci).nActiveChildren {
@@ -1096,7 +1098,7 @@ unsafe fn MDI_UpdateFrameText(frame: HWND, hClient: HWND, repaint: BOOL, mut lpT
         (*ci).frameTitle = HeapAlloc(
             GetProcessHeap(),
             0,
-            ((strlenW(lpTitle) + 1) as usize * core::mem::size_of::<u16>()) as usize,
+            ((strlenW(lpTitle) + 1) as usize * core::mem::size_of::<u16>()) as SIZE_T,
         ) as LPWSTR;
         if !(*ci).frameTitle.is_null() {
             strcpyW((*ci).frameTitle, lpTitle);
@@ -1168,7 +1170,7 @@ pub unsafe extern "system" fn MDIClientWndProc_common(
             ci = HeapAlloc(
                 GetProcessHeap(),
                 HEAP_ZERO_MEMORY,
-                core::mem::size_of::<MDICLIENTINFO>(),
+                (core::mem::size_of::<MDICLIENTINFO>()) as SIZE_T,
             ) as *mut MDICLIENTINFO;
             if ci.is_null() {
                 return 0;
@@ -1386,15 +1388,15 @@ pub unsafe extern "system" fn MDIClientWndProc_common(
                             (*ci).child = HeapAlloc(
                                 GetProcessHeap(),
                                 0,
-                                core::mem::size_of::<HWND>(),
+                                (core::mem::size_of::<HWND>()) as SIZE_T,
                             ) as *mut HWND;
                         } else {
                             (*ci).child = HeapReAlloc(
                                 GetProcessHeap(),
                                 0,
                                 (*ci).child as LPVOID,
-                                core::mem::size_of::<HWND>()
-                                    * ((*ci).nActiveChildren as usize + 1),
+                                (core::mem::size_of::<HWND>()
+                                    * ((*ci).nActiveChildren as usize + 1)) as SIZE_T,
                             ) as *mut HWND;
                         }
 
@@ -1520,7 +1522,7 @@ pub unsafe extern "system" fn DefFrameProcA(
         match message {
             WM_SETTEXT => {
                 let len = MultiByteToWideChar(CP_ACP, 0, lParam as LPSTR, -1, core::ptr::null_mut(), 0);
-                let text = HeapAlloc(GetProcessHeap(), 0, (len as usize) * core::mem::size_of::<u16>()) as LPWSTR;
+                let text = HeapAlloc(GetProcessHeap(), 0, ((len as usize) * core::mem::size_of::<u16>()) as SIZE_T) as LPWSTR;
                 if text.is_null() {
                     return 0;
                 }
@@ -2146,9 +2148,9 @@ unsafe fn GetCascadeChildProcImpl(hwnd: HWND, lParam: LPARAM) -> BOOL {
 
     if count == 0 || (*pInfo).ahwnd.is_null() {
         count = 0;
-        (*pInfo).ahwnd = HeapAlloc(GetProcessHeap(), 0, size as usize) as *mut HWND;
+        (*pInfo).ahwnd = HeapAlloc(GetProcessHeap(), 0, (size) as SIZE_T) as *mut HWND;
     } else {
-        ahwnd = HeapReAlloc(GetProcessHeap(), 0, (*pInfo).ahwnd as LPVOID, size as usize) as *mut HWND;
+        ahwnd = HeapReAlloc(GetProcessHeap(), 0, (*pInfo).ahwnd as LPVOID, (size) as SIZE_T) as *mut HWND;
         if ahwnd.is_null() {
             HeapFree(GetProcessHeap(), 0, (*pInfo).ahwnd as LPVOID);
         }

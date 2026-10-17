@@ -634,9 +634,9 @@ fn pointer_moniker_marshal_MarshalInterface(
     );
 
     CoMarshalInterface(
-        stream,
-        core::ptr::addr_of!(IID_IUnknown),
-        (*moniker).pObject,
+        (stream).cast(),
+        (core::ptr::addr_of!(IID_IUnknown)).cast(),
+        ((*moniker).pObject).cast(),
         dwDestContext,
         pvDestContext,
         mshlflags,
@@ -657,8 +657,8 @@ fn pointer_moniker_marshal_UnmarshalInterface(
     TRACE!(b"%p, %p, %s, %p.\n\0".as_ptr(), iface, stream, debugstr_guid(riid), ppv);
 
     let hr = CoUnmarshalInterface(
-        stream,
-        core::ptr::addr_of!(IID_IUnknown),
+        (stream).cast(),
+        (core::ptr::addr_of!(IID_IUnknown)).cast(),
         core::ptr::addr_of_mut!(object) as *mut LPVOID,
     );
     if FAILED(hr) {
@@ -708,7 +708,7 @@ pub unsafe extern "system" fn CreatePointerMoniker(
     let moniker = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        core::mem::size_of::<PointerMonikerImpl>() as SIZE_T,
+        core::mem::size_of::<PointerMonikerImpl>() as usize,
     ) as *mut PointerMonikerImpl;
     if moniker.is_null() {
         *ret = core::ptr::null_mut();
@@ -1179,7 +1179,7 @@ fn objref_moniker_marshal_MarshalInterface(
     TRACE!(b"%p, %s, %p, %#lx, %p, %#lx\n\0".as_ptr(), stream, debugstr_guid(riid), pv,
         dwDestContext, pvDestContext, mshlflags);
 
-    CoMarshalInterface(stream, addr_of!(IID_IUnknown), (*moniker).pObject, dwDestContext, pvDestContext, mshlflags)
+    CoMarshalInterface((stream).cast(), (addr_of!(IID_IUnknown)).cast(), ((*moniker).pObject).cast(), dwDestContext, pvDestContext, mshlflags)
 }
 }
 
@@ -1195,7 +1195,7 @@ fn objref_moniker_marshal_UnmarshalInterface(
 
     TRACE!(b"(%p,%p,%s,%p)\n\0".as_ptr(), iface, stream, debugstr_guid(riid), ppv);
 
-    let hr = CoUnmarshalInterface(stream, addr_of!(IID_IUnknown), addr_of_mut!(object) as *mut LPVOID);
+    let hr = CoUnmarshalInterface((stream).cast(), (addr_of!(IID_IUnknown)).cast(), addr_of_mut!(object) as *mut LPVOID);
     if FAILED(hr) {
         ERR!(b"Couldn't unmarshal moniker, hr = %#lx.\n\0".as_ptr(), hr);
         return hr;
@@ -1248,7 +1248,7 @@ pub unsafe extern "system" fn CreateObjrefMoniker(obj: *mut IUnknown, ret: *mut 
     }
 
     // calloc in the C; HEAP_ZERO_MEMORY is the same zeroed block from this file's allocator.
-    let moniker = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, core::mem::size_of::<ObjrefMonikerImpl>() as SIZE_T)
+    let moniker = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, core::mem::size_of::<ObjrefMonikerImpl>() as usize)
         as *mut ObjrefMonikerImpl;
     if moniker.is_null() {
         *ret = core::ptr::null_mut();

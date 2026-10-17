@@ -4,6 +4,8 @@
 #[allow(unused_imports)] use crate::glue::*;
 #[allow(unused_imports)] use crate::guids::*;
 use ntkrnl_sys::globals::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::pci::config::RtlAssert;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
@@ -25,10 +27,9 @@ use ntkrnl_sys::ddk::{ACCESS_MASK, DEVICE_POWER_STATE, PCSTR, _SINGLE_LIST_ENTRY
 
 extern "system" {
     fn DbgBreakPoint();
-    fn RtlAssert(pvFailedAssertion: PVOID, pvFileName: PVOID, ulLineNumber: ULONG, pszMessage: *mut ::core::ffi::c_char);
 }
 extern "C" {
-    fn DbgPrint(format: *const u8, ...) -> ULONG;
+    pub fn DbgPrint(format: *const u8, ...) -> ULONG;
 }
 unsafe extern "system" {
     fn PciSendIoctl( DeviceObject: PDEVICE_OBJECT, Ioctl: ULONG, InputBuffer: PVOID, InputBufferLength: ULONG, OutputBuffer: PVOID, OutputBufferLength: ULONG, ) -> NTSTATUS;
@@ -264,7 +265,7 @@ pub unsafe extern "system" fn PciFdoIrpStartDevice(
             b"0\0".as_ptr() as *const i8 as PVOID,
             b"drivers/bus/pcix/fdo.c\0".as_ptr() as *const i8 as PVOID,
             82 as ULONG,
-            core::ptr::null_mut::<i8>(),
+            (core::ptr::null_mut::<i8>()).cast(),
         );
     }
 
@@ -419,7 +420,7 @@ pub unsafe extern "system" fn PciFdoIrpQueryDeviceRelations(
                 b"drivers/bus/pcix/fdo.c\0".as_ptr()
                     as *const i8 as PVOID,
                 213u32,
-                core::ptr::null_mut::<i8>(),
+                (core::ptr::null_mut::<i8>()).cast(),
             );
         }
     }
@@ -451,7 +452,7 @@ pub unsafe extern "system" fn PciFdoIrpQueryInterface(
             b"drivers/bus/pcix/fdo.c\0".as_ptr()
                 as *mut core::ffi::c_void,
             240u32,
-            core::ptr::null_mut::<i8>(),
+            (core::ptr::null_mut::<i8>()).cast(),
         );
     }
     if !((*DeviceExtension).ExtensionType == PciFdoExtensionType) {
@@ -461,7 +462,7 @@ pub unsafe extern "system" fn PciFdoIrpQueryInterface(
             b"drivers/bus/pcix/fdo.c\0".as_ptr()
                 as *mut core::ffi::c_void,
             241u32,
-            core::ptr::null_mut::<i8>(),
+            (core::ptr::null_mut::<i8>()).cast(),
         );
     }
 
@@ -528,7 +529,7 @@ pub unsafe extern "system" fn PciFdoIrpQueryCapabilities(
             b"0\0".as_ptr() as PVOID,
             b"drivers/bus/pcix/fdo.c\0".as_ptr() as PVOID,
             315 as ULONG,
-            core::ptr::null_mut::<CHAR>(),
+            (core::ptr::null_mut::<CHAR>()).cast(),
         );
     }
 
@@ -538,7 +539,7 @@ pub unsafe extern "system" fn PciFdoIrpQueryCapabilities(
             b"(DeviceExtension)->ExtensionType == PciFdoExtensionType\0".as_ptr() as PVOID,
             b"drivers/bus/pcix/fdo.c\0".as_ptr() as PVOID,
             316 as ULONG,
-            core::ptr::null_mut::<CHAR>(),
+            (core::ptr::null_mut::<CHAR>()).cast(),
         );
     }
 
@@ -626,7 +627,7 @@ pub unsafe extern "system" fn PciGetHotPlugParameters(FdoExtension: PPCI_FDO_EXT
             b"0\0".as_ptr() as PVOID,
             b"drivers/bus/pcix/fdo.c\0".as_ptr() as PVOID,
             385 as ULONG,
-            core::ptr::null_mut::<CHAR>(),
+            (core::ptr::null_mut::<CHAR>()).cast(),
         );
     }
 
@@ -798,7 +799,7 @@ pub unsafe extern "system" fn PciAddDevice(
                 b"drivers/bus/pcix/fdo.c\0".as_ptr()
                     as *const i8 as *mut core::ffi::c_void,
                 473 as ULONG,
-                core::ptr::null_mut::<i8>(),
+                (core::ptr::null_mut::<i8>()).cast(),
             );
         }
     }
@@ -841,7 +842,7 @@ pub unsafe extern "system" fn PciAddDevice(
                     b"drivers/bus/pcix/fdo.c\0".as_ptr()
                         as *const i8 as *mut core::ffi::c_void,
                     492 as ULONG,
-                    core::ptr::null_mut::<i8>(),
+                    (core::ptr::null_mut::<i8>()).cast(),
                 );
             }
             if (*PdoExtension).BaseClass as i32 != PCI_CLASS_BRIDGE_DEV as i32
@@ -875,7 +876,7 @@ pub unsafe extern "system" fn PciAddDevice(
                         b"drivers/bus/pcix/fdo.c\0"
                             .as_ptr() as *const i8 as *mut core::ffi::c_void,
                         504 as ULONG,
-                        core::ptr::null_mut::<i8>(),
+                        (core::ptr::null_mut::<i8>()).cast(),
                     );
                 }
                 Status = STATUS_INVALID_DEVICE_REQUEST;
@@ -947,7 +948,7 @@ pub unsafe extern "system" fn PciAddDevice(
                     b"drivers/bus/pcix/fdo.c\0".as_ptr()
                         as *const i8 as *mut core::ffi::c_void,
                     550 as ULONG,
-                    core::ptr::null_mut::<i8>(),
+                    (core::ptr::null_mut::<i8>()).cast(),
                 );
             }
             if !AttachedTo.is_null() {
@@ -1104,7 +1105,7 @@ pub unsafe extern "system" fn PciAddDevice(
                 b"drivers/bus/pcix/fdo.c\0".as_ptr()
                     as *const i8 as *mut core::ffi::c_void,
                 658 as ULONG,
-                core::ptr::null_mut::<i8>(),
+                (core::ptr::null_mut::<i8>()).cast(),
             );
         }
         if !FdoExtension.is_null() {

@@ -26,6 +26,10 @@ pub mod condvar;
 pub mod runonce;
 #[cfg(any(feature = "cabi", feature = "vista"))]
 pub mod locale;
+// name.c (upstream rtl_vista): RtlIsNameInExpression. cabi only: it allocates through
+// RtlpAllocateMemory, which ntdll.dll and ntoskrnl provide but ntdll_vista.dll does not.
+#[cfg(feature = "cabi")]
+pub mod name;
 
 // critical + wait are NOT exported by ntdll_vista.dll — only the main `rtl`
 // link surface (`cabi`) compiles them. Under `vista`, condvar imports

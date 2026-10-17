@@ -57,6 +57,10 @@ pub unsafe extern "system" fn KeGetCurrentIrql() -> u8 {
 }
 // KeQueryTickCount: a real export on i386, an inline on amd64/arm64. KI_USER_SHARED_DATA is at
 // the fixed VA 0xFFFFF78000000000 on both; TickCount (KSYSTEM_TIME) at +0x320. Lockless read.
+#[cfg(target_arch = "x86")]
+extern "system" {
+    pub fn KeQueryTickCount(CurrentCount: *mut LARGE_INTEGER);
+}
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "system" fn KeQueryTickCount(Count: *mut LARGE_INTEGER) {

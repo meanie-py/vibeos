@@ -1,4 +1,7 @@
 use win32k_sys::win32k::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::misc::imm::GetProcAddress;
+use crate::windows::window::HeapAlloc;
 // ntdll Rtl*/Zw* + the NtCurrentTeb() TEB inline come from the user32 substrate
 // (crate::internal), NOT from ntkrnl_sys (which is a kernel-only crate and not a
 // dependency of this usermode DLL).
@@ -35,10 +38,8 @@ extern "system" {
     fn LoadLibraryW(lpLibFileName: LPCWSTR) -> HMODULE;
     fn LoadLibraryExW(lpLibFileName: LPCWSTR, hFile: *mut core::ffi::c_void, dwFlags: u32) -> HMODULE;
     fn FreeLibrary(hLibModule: HMODULE) -> i32;
-    fn GetProcAddress(hModule: HMODULE, lpProcName: *const i8) -> *mut core::ffi::c_void;
     fn GetCurrentProcessId() -> DWORD;
     fn GetProcessHeap() -> *mut core::ffi::c_void;
-    fn HeapAlloc(hHeap: *mut core::ffi::c_void, dwFlags: u32, dwBytes: usize) -> *mut core::ffi::c_void;
     fn HeapFree(hHeap: *mut core::ffi::c_void, dwFlags: u32, lpMem: *mut core::ffi::c_void) -> i32;
     fn SetLastError(dwErrCode: DWORD);
     // user32-internal (usrapihk.c / dllmain.c) — WINAPI = stdcall on i386.
@@ -516,7 +517,8 @@ unsafe fn ClientLoadLibrary(
             return 0;
         }
 
-        pInitFunction = GetProcAddress(hLibrary, InitFuncName.Buffer);
+        pInitFunction = GetProcAddress(hLibrary, InitFuncName.Buffer)
+            .map_or(core::ptr::null_mut(), |f| f as PVOID);
         if !pInitFunction.is_null() {
             // C: (USERAPIHOOKPROC)pInitFunction — USERAPIHOOKPROC is Option<fn>,
             // so transmute the raw PVOID into the optional fn pointer.
@@ -640,7 +642,7 @@ pub unsafe extern "system" fn User32CallHookProcFromKernel(
                     CbtCreatewndExtra = (Common as *mut u8).offset((*Common).lParam as isize)
                         as PHOOKPROC_CBT_CREATEWND_EXTRA_ARGUMENTS;
 
-                    pCbtCreatewndw = HeapAlloc(GetProcessHeap(), 0, core::mem::size_of::<CBT_CREATEWNDW>())
+                    pCbtCreatewndw = HeapAlloc(GetProcessHeap(), 0, (core::mem::size_of::<CBT_CREATEWNDW>()) as SIZE_T)
                         as *mut CBT_CREATEWNDW;
                     core::ptr::copy_nonoverlapping(
                         CbtCreatewndExtra as *const u8,
@@ -648,7 +650,7 @@ pub unsafe extern "system" fn User32CallHookProcFromKernel(
                         core::mem::size_of::<CBT_CREATEWNDW>(),
                     );
 
-                    pCsw = HeapAlloc(GetProcessHeap(), 0, core::mem::size_of::<CREATESTRUCTW>())
+                    pCsw = HeapAlloc(GetProcessHeap(), 0, (core::mem::size_of::<CREATESTRUCTW>()) as SIZE_T)
                         as *mut CREATESTRUCTW;
                     core::ptr::copy_nonoverlapping(
                         core::ptr::addr_of!((*CbtCreatewndExtra).Cs) as *const u8,
@@ -731,7 +733,7 @@ pub unsafe extern "system" fn User32CallHookProcFromKernel(
             let pCWP_local = HeapAlloc(
                 GetProcessHeap(),
                 0,
-                (*Common).lParamSize as usize + core::mem::size_of::<CWPSTRUCT>(),
+                ((*Common).lParamSize as usize + core::mem::size_of::<CWPSTRUCT>()) as SIZE_T,
             ) as *mut CWPSTRUCT;
             core::ptr::copy_nonoverlapping(
                 pCWPT as *const u8,
@@ -756,7 +758,7 @@ pub unsafe extern "system" fn User32CallHookProcFromKernel(
             let pCWPR_local = HeapAlloc(
                 GetProcessHeap(),
                 0,
-                (*Common).lParamSize as usize + core::mem::size_of::<CWPRETSTRUCT>(),
+                ((*Common).lParamSize as usize + core::mem::size_of::<CWPRETSTRUCT>()) as SIZE_T,
             ) as *mut CWPRETSTRUCT;
             core::ptr::copy_nonoverlapping(
                 pCWPRT as *const u8,
@@ -777,7 +779,7 @@ pub unsafe extern "system" fn User32CallHookProcFromKernel(
         }
         WH_MSGFILTER_U | WH_SYSMSGFILTER | WH_GETMESSAGE => {
             pMsg = (Common as *mut u8).offset((*Common).lParam as isize) as PMSG;
-            pcMsg = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, core::mem::size_of::<MSG>()) as *mut MSG;
+            pcMsg = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (core::mem::size_of::<MSG>()) as SIZE_T) as *mut MSG;
             core::ptr::copy_nonoverlapping(
                 pMsg as *const u8,
                 pcMsg as *mut u8,

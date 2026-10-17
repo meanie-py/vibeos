@@ -59,3 +59,7 @@ rtl-error    = { path = "../rtl-error" }
 rtl-heappage = { path = "../rtl-heappage", features = ["cabi"] }
 rtl-heapuser = { path = "../rtl-heapuser", features = ["cabi"], optional = true }
 time         = { path = "../time" }
+
+[lints.rust]
+# `kani` is the Kani model checker's cfg (`cargo kani` sets it); declared so it is expected.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }

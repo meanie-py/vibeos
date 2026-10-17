@@ -1,5 +1,16 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use crate::types::*;
+// The crate's own functions: the definition is the declaration.
+use crate::common::DeviceReleaseQueue;
+use crate::common::DeviceSendNotification;
+use crate::common::DeviceSendStartUnit;
+use crate::autorun::DeviceSetMediaChangeStateEx;
+use crate::ddk_shims::IsVolumeMounted;
+use crate::ddk_shims::KeQueryTickCount;
+use crate::common::MediaReadCapacity;
+use crate::ddk_shims::RequestGetContext;
+use crate::ddk_shims::TEST_FLAG;
+use crate::ddk_shims::WDF_WORKITEM_CONFIG_INIT;
 use kmdf_sys::*;
 use ntkrnl_sys::ddk::{IRP, PIRP, IO_STACK_LOCATION, PIO_STACK_LOCATION, GUID, LPGUID, LPCGUID, DEVICE_OBJECT, PDEVICE_OBJECT, MDL, PMDL};
 use ntkrnl_sys::globals::*;
@@ -16,14 +27,12 @@ use core::ptr;
 
 extern "system" {
     fn SET_FLAG(flags: *mut u32, flag: u32);
-    fn TEST_FLAG(flags: u32, flag: u32) -> i32;
 }
 unsafe extern "C" {
     fn IS_SCSIOP_READWRITE(opCode: u8) -> i32;
     fn SECONDS_TO_100NS_UNITS(seconds: i32) -> i64;
 }
 unsafe extern "system" {
-    fn KeQueryTickCount(CurrentCount: *mut i64);
 }
 // C max() is a macro; extern "system" decl = i386 stdcall/cdecl mismatch vs
 // ddk_shims' extern "C" def → stack corruption. Local wrapper instead.
@@ -31,25 +40,18 @@ unsafe extern "system" {
 extern "system" {
     static GUID_IO_DEVICE_BECOMING_READY: GUID;
     static GUID_IO_MEDIA_EJECT_REQUEST: GUID;
-    fn RequestGetContext(Request: WDFREQUEST) -> *mut CDROM_REQUEST_CONTEXT;
 }
 unsafe extern "C" {
     fn SRB_STATUS(status: u8) -> u32;
     fn RTL_SIZEOF_THROUGH_FIELD_SENSE_DATA_AdditionalSenseCodeQualifier() -> usize;
 }
 unsafe extern "C" {
-    fn MediaReadCapacity(Device: *mut core::ffi::c_void) -> i32;
 }
 unsafe extern "C" {
-    fn DeviceSendNotification(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Guid: *const GUID, DataSize: u32, Data: *const core::ffi::c_void);
 }
 extern "C" {
-    fn DeviceSendStartUnit(device: *mut DEVICE_OBJECT);
-    fn DeviceSetMediaChangeStateEx( device_extension: *mut CDROM_DEVICE_EXTENSION, state: u32, param: *mut core::ffi::c_void, );
-    fn IsVolumeMounted(device_object: *mut DEVICE_OBJECT) -> u8;
     fn DevicePerfIncrementErrorCount(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn IS_SCSIOP_READ(opcode: u8) -> u8;
-    fn DeviceReleaseQueue(device: *mut core::ffi::c_void);
 }
 extern "system" {
 }
@@ -73,17 +75,11 @@ pub struct ERROR_LOG_CONTEXT {
 pub type PERROR_LOG_CONTEXT = *mut ERROR_LOG_CONTEXT;
 
 // Forward declarations for external symbols used in this file.
-extern "C" {
-    fn DeviceRestoreDefaultSpeed(work_item: WDFWORKITEM);
-}
+use crate::common::DeviceRestoreDefaultSpeed;
 unsafe extern "system" {
     fn WDF_OBJECT_ATTRIBUTES_INIT(attributes: *mut WDF_OBJECT_ATTRIBUTES);
 }
 unsafe extern "system" {
-    fn WDF_WORKITEM_CONFIG_INIT(
-        config: *mut WDF_WORKITEM_CONFIG,
-        func: Option<unsafe extern "C" fn(WDFWORKITEM)>,
-    );
 }
 
 // -------- Constants used in the bodies (single definitions) --------
@@ -482,7 +478,7 @@ pub unsafe extern "system" fn DeviceErrorHandlerForHitachiGD2000(
         //       mechanism, but the completion routine on this will NOT
         //       call StartNextPacket(), so it's a temporary disruption
         //       of the serialization only.
-        DeviceSendStartUnit((*DeviceExtension).Device as *mut DEVICE_OBJECT);
+        DeviceSendStartUnit(((*DeviceExtension).Device as *mut DEVICE_OBJECT).cast());
     }
 
     return STATUS_SUCCESS;
@@ -525,7 +521,7 @@ pub unsafe extern "C" fn SenseInfoRequestGetInformation(
 
         if (*request_context).TimeSentDownFirstTime.QuadPart > 0 {
             let mut tmp: i64 = 0;
-            KeQueryTickCount(&mut tmp);
+            KeQueryTickCount((&raw mut tmp).cast());
             tmp -= (*request_context).TimeSentDownFirstTime.QuadPart;
             tmp *= KeQueryTimeIncrement() as i64;
             *total_100ns_since_first_send = tmp as u64;
@@ -587,7 +583,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
                         device_extension,
                         &GUID_IO_DEVICE_BECOMING_READY,
                         core::mem::size_of::<DEVICE_EVENT_BECOMING_READY>() as u32,
-                        &not_ready as *const _ as *const core::ffi::c_void,
+                        &not_ready as *const _ as *mut core::ffi::c_void,
                     );
                 }
                 SCSI_SENSEQ_BECOMING_READY => {
@@ -613,7 +609,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
                         device_extension,
                         &GUID_IO_DEVICE_BECOMING_READY,
                         core::mem::size_of::<DEVICE_EVENT_BECOMING_READY>() as u32,
-                        &not_ready as *const _ as *const core::ffi::c_void,
+                        &not_ready as *const _ as *mut core::ffi::c_void,
                     );
                 }
                 SCSI_SENSEQ_LONG_WRITE_IN_PROGRESS => {
@@ -677,7 +673,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
                     if TEST_FLAG((*device_extension).DeviceFlags as u32, DEV_SAFE_START_UNIT) != 0
                         && TEST_FLAG((*srb).SrbFlags, SRB_CLASS_FLAGS_LOW_PRIORITY) == 0
                     {
-                        DeviceSendStartUnit((*device_extension).Device as *mut DEVICE_OBJECT);
+                        DeviceSendStartUnit(((*device_extension).Device as *mut DEVICE_OBJECT).cast());
                     }
                 }
             }
@@ -932,7 +928,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
                         device_extension,
                         &GUID_IO_MEDIA_EJECT_REQUEST,
                         0,
-                        core::ptr::null(),
+                        core::ptr::null_mut(),
                     );
 
                     if IsVolumeMounted((*device_extension).DeviceObject) != 0 {
@@ -1429,7 +1425,7 @@ pub unsafe extern "C" fn SenseInfoLogError(
     staticErrLogEntry.RetryCount = RetriedCount as u8;
     staticErrLogEntry.UniqueErrorValue = (*LogContext).UniqueErrorValue;
 
-    KeQueryTickCount(&raw mut staticErrLogData.TickCount as *mut i64);
+    KeQueryTickCount((&raw mut staticErrLogData.TickCount as *mut i64).cast());
     staticErrLogData.PortNumber = u32::MAX;
 
     core::ptr::write(
@@ -1752,7 +1748,7 @@ pub unsafe extern "C" fn SenseInfoInterpretRefineByIoControl(
             || IoControlCode == IOCTL_STORAGE_CHECK_VERIFY2
             || IoControlCode == IOCTL_DISK_CHECK_VERIFY
         {
-            MediaReadCapacity((*DeviceExtension).Device as *mut core::ffi::c_void);
+            MediaReadCapacity(((*DeviceExtension).Device as *mut core::ffi::c_void).cast());
         }
     }
 
@@ -2181,7 +2177,7 @@ pub unsafe extern "C" fn SenseInfoInterpretForZPODD(
                     DeviceExtension,
                     &GUID_IO_DEVICE_BECOMING_READY as *const GUID,
                     core::mem::size_of::<DEVICE_EVENT_BECOMING_READY>() as u32,
-                    &notReady as *const DEVICE_EVENT_BECOMING_READY as *const core::ffi::c_void,
+                    &notReady as *const DEVICE_EVENT_BECOMING_READY as *mut core::ffi::c_void,
                 );
             }
         }
@@ -2229,7 +2225,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpret(
         retry = 0;
     } else {
         if ((*Srb).SrbStatus & SRB_STATUS_QUEUE_FROZEN) != 0 {
-            DeviceReleaseQueue((*DeviceExtension).Device as *mut core::ffi::c_void);
+            DeviceReleaseQueue(((*DeviceExtension).Device as *mut core::ffi::c_void).cast());
         }
 
         if !zpoddInfo.is_null() && (((*zpoddInfo).RetryFirstCommand != 0) || ((*zpoddInfo).BecomingReadyRetryCount > 0)) {

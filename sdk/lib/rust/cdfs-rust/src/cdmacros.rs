@@ -12,6 +12,8 @@
 #![allow(non_snake_case, dead_code)]
 
 use core::ffi::c_void;
+// One declaration per external symbol: ddk_shims.rs.
+use crate::ddk_shims::CdFreePool;
 use core::ptr::null_mut;
 
 use ntkrnl_sys::ddk::{
@@ -48,7 +50,6 @@ extern "C" {
     fn CdGetFcbOplock(Fcb: *mut FCB) -> POPLOCK;
 }
 extern "C" {
-    fn CdFreePool(Pool: *mut *mut c_void);
 }
 
 // FsRtlPrivateLock is a real ntoskrnl export. ntoskrnl.spec:

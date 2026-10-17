@@ -1,4 +1,6 @@
 use crate::prelude::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::menu_band::DestroyMenu;
 use crate::menu_band::LPSMDATA;
 // Deterministic from shobjidl.h
 #[repr(C)]
@@ -19,7 +21,7 @@ extern "C" {
 // Deterministic COM scaffold for CShellMenuCallback; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    #[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
+    #[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: SIZE_T) -> *mut core::ffi::c_void;
     #[link_name = "HeapFree"] fn cpp_com_HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn MenuBandRustModuleLock();
     fn MenuBandRustModuleUnlock();
@@ -29,7 +31,7 @@ impl CppComSize for usize { fn cpp_com_size(self) -> usize { self } }
 impl CppComSize for u32 { fn cpp_com_size(self) -> usize { self as usize } }
 #[inline]
 unsafe fn HeapAlloc<N: CppComSize>(heap: HANDLE, flags: DWORD, bytes: N) -> *mut core::ffi::c_void {
-    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size())
+    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size() as SIZE_T)
 }
 #[inline]
 unsafe fn HeapFree<T>(heap: HANDLE, flags: DWORD, memory: *mut T) -> BOOL {
@@ -515,7 +517,6 @@ pub struct BANDSITEINFO {
 
 extern "system" {
     fn CreateMenu() -> HMENU;
-    fn DestroyMenu(menu: HMENU) -> BOOL;
     fn AppendMenuW(menu: HMENU, flags: UINT, id: UINT_PTR, text: LPCWSTR) -> BOOL;
     fn SetMenuItemInfoW(menu: HMENU, item: UINT, by_position: BOOL, info: *const MENUITEMINFOW) -> BOOL;
     fn GetMenuItemInfoW(menu: HMENU, item: UINT, by_position: BOOL, info: *mut MENUITEMINFOW) -> BOOL;
@@ -618,7 +619,7 @@ pub unsafe fn CShellMenuCallback_OnInitMenu_body(this: *mut CShellMenuCallback) 
 
     hr = ((*(*(*this).m_pShellMenu).lpVtbl).SetMenu)((*this).m_pShellMenu, hmenu, core::ptr::null_mut(), SMSET_BOTTOM);
     if ((hr) < 0) {
-        DestroyMenu(hmenu);
+        DestroyMenu((hmenu).cast());
         return hr;
     }
 

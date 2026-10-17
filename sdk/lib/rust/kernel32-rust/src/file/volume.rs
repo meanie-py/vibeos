@@ -1,4 +1,11 @@
 use ntdll_sys::nt::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::k32_externs::BaseSetLastNTError;
+// The crate's own functions: the definition is the declaration.
+use crate::client::utils::Basep8BitStringToDynamicUnicodeString;
+use crate::client::handle::CloseHandle;
+use crate::file::create::CreateFileW;
+use crate::file::deviceio::DeviceIoControl;
 use crate::prelude::*;
 use core::ffi::c_void;
 
@@ -19,15 +26,10 @@ unsafe fn RtlMoveMemory(Destination: PVOID, Source: *const core::ffi::c_void, Le
 }
 
 extern "system" {
-    fn BaseSetLastNTError(Status: NTSTATUS);
-    fn CloseHandle(hObject: HANDLE) -> u32;
-    fn CreateFileW( lpFileName: LPCWSTR, dwDesiredAccess: DWORD, dwShareMode: DWORD, lpSecurityAttributes: *mut core::ffi::c_void, dwCreationDisposition: DWORD, dwFlagsAndAttributes: DWORD, hTemplateFile: HANDLE, ) -> HANDLE;
-    fn DeviceIoControl( hDevice: HANDLE, dwIoControlCode: DWORD, lpInBuffer: *mut core::ffi::c_void, nInBufferSize: DWORD, lpOutBuffer: *mut core::ffi::c_void, nOutBufferSize: DWORD, lpBytesReturned: LPDWORD, lpOverlapped: *mut core::ffi::c_void, ) -> BOOL;
     fn GetLastError() -> DWORD;
     fn MOUNTMGR_IS_DOS_VOLUME_NAME_WB(VolumeName: PUNICODE_STRING) -> BOOLEAN;
     fn SetLastError(dwErrCode: DWORD);
     fn Basep8BitStringToStaticUnicodeString(lpString: LPCSTR) -> PUNICODE_STRING;
-    fn Basep8BitStringToDynamicUnicodeString( DestinationString: PUNICODE_STRING, lpString: LPCSTR, ) -> u8;
     fn GetVolumeNameForVolumeMountPointW(lpszVolumeMountPoint: LPCWSTR, lpszVolumeName: LPWSTR, cchBufferLength: DWORD) -> BOOL;
     fn WideCharToMultiByte(CodePage: UINT, dwFlags: DWORD, lpWideCharStr: LPCWSTR, cchWideChar: c_int, lpMultiByteStr: LPSTR, cbMultiByte: c_int, lpDefaultChar: LPCSTR, lpUsedDefaultChar: *mut BOOL) -> c_int;
     fn GetDriveTypeA(lpRootPathName: LPCSTR) -> UINT;

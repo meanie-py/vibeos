@@ -1,4 +1,6 @@
 use ntkrnl_sys::base::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::pnp::PoSetPowerState;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ex::*;
@@ -43,11 +45,6 @@ use crate::bus::{acpi_bus_get_device, acpi_bus_power_manageable, acpi_bus_set_po
 // amd64/arm64 — `extern "system"` resolves per arch). Returns POWER_STATE by
 // value (the C glue ignores it). Signature: pofuncs.h. ----
 extern "system" {
-    fn PoSetPowerState(
-        DeviceObject: PDEVICE_OBJECT,
-        Type: ULONG,
-        State: POWER_STATE,
-    ) -> POWER_STATE;
 }
 
 // NT_ASSERT maps to the no-op ASSERT helper (kept from the substrate).
@@ -528,13 +525,9 @@ pub type DEVICE_POWER_STATE = core::ffi::c_uint;
 // GUID is the kernel _GUID (used by IoRegisterDeviceInterface / PNP_BUS_INFORMATION).
 pub use ntkrnl_sys::ddk::GUID;
 
-// POWER_STATE is a C union of {SystemState, DeviceState}; only DeviceState is
-// used here. Layout-compatible (single c_uint) with the kernel POWER_STATE for
-// the PoSetPowerState call.
-#[repr(C)]
-pub struct POWER_STATE {
-    pub DeviceState: DEVICE_POWER_STATE,
-}
+// POWER_STATE is the kernel's union of {SystemState, DeviceState}: the type
+// PoSetPowerState takes (a one-field local copy was a distinct type).
+use ntkrnl_sys::ddk::POWER_STATE;
 
 // _POWER_STATE_TYPE_DevicePowerState == 1 (the c2rust preamble had 0 — WRONG).
 pub const DevicePowerState: ULONG = 1;

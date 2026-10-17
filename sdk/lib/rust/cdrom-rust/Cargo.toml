@@ -17,6 +17,13 @@ edition = "2021"
 [lib]
 crate-type = ["staticlib"]
 
+[features]
+# Declared so a misspelled gate warns (unexpected_cfgs); never enabled, as in the C build:
+# ioctl.c's `#if BUILD_WOW64_ENABLED && defined(_WIN64)` (nothing defines it for cdrom) and
+# `#ifdef ENABLE_AACS_TESTING` (a test-only define).
+wow64 = []
+ENABLE_AACS_TESTING = []
+
 [dependencies]
 panic-common = { path = "../panic-common", features = ["kernel"] }
 ntkrnl-sys = { path = "../ntkrnl-sys", default-features = false }

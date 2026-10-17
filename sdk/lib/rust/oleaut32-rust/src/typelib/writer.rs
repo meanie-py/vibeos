@@ -129,7 +129,7 @@ unsafe extern "system" fn ICreateTypeLib2_fnCreateTypeInfo(
             GetProcessHeap(),
             HEAP_ZERO_MEMORY,
             (*This).typeinfos as *mut c_void,
-            size_of::<*mut ITypeInfoImpl>() * ((*This).TypeInfoCount as usize + 1),
+            (size_of::<*mut ITypeInfoImpl>() * ((*This).TypeInfoCount as usize + 1)) as _,
         ) as *mut *mut ITypeInfoImpl;
     } else {
         (*This).typeinfos =
@@ -2294,7 +2294,7 @@ unsafe extern "system" fn ICreateTypeInfo2_fnAddFuncDesc(
             GetProcessHeap(),
             HEAP_ZERO_MEMORY,
             (*This).funcdescs as *mut c_void,
-            size_of::<TLBFuncDesc>() * ((*This).typeattr.cFuncs as usize + 1),
+            (size_of::<TLBFuncDesc>() * ((*This).typeattr.cFuncs as usize + 1)) as _,
         ) as *mut TLBFuncDesc;
 
         if index < (*This).typeattr.cFuncs as UINT {
@@ -2378,7 +2378,7 @@ unsafe extern "system" fn ICreateTypeInfo2_fnAddImplType(
             GetProcessHeap(),
             HEAP_ZERO_MEMORY,
             (*This).impltypes as *mut c_void,
-            size_of::<TLBImplType>() * ((*This).typeattr.cImplTypes as usize + 1),
+            (size_of::<TLBImplType>() * ((*This).typeattr.cImplTypes as usize + 1)) as _,
         ) as *mut TLBImplType;
 
         if index < (*This).typeattr.cImplTypes as UINT {
@@ -2500,7 +2500,7 @@ unsafe extern "system" fn ICreateTypeInfo2_fnAddVarDesc(
             GetProcessHeap(),
             HEAP_ZERO_MEMORY,
             (*This).vardescs as *mut c_void,
-            size_of::<TLBVarDesc>() * ((*This).typeattr.cVars as usize + 1),
+            (size_of::<TLBVarDesc>() * ((*This).typeattr.cVars as usize + 1)) as _,
         ) as *mut TLBVarDesc;
 
         if index < (*This).typeattr.cVars as UINT {

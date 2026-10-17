@@ -1,4 +1,6 @@
 use win32k_sys::win32k::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::windows::message::GlobalAlloc;
 // ntdll Rtl* heap/string helpers + RtlGetProcessHeap inline live in the substrate.
 use crate::internal::{
     RtlAllocateHeap, RtlCreateUnicodeStringFromAsciiz, RtlFreeHeap, RtlFreeUnicodeString,
@@ -21,7 +23,6 @@ extern "system" {
     fn GdiConvertMetaFilePict(h: HANDLE) -> HANDLE;
     fn GdiCreateLocalEnhMetaFile(h: HANDLE) -> HANDLE;
     fn GdiCreateLocalMetaFilePict(h: HANDLE) -> HANDLE;
-    fn GlobalAlloc(uFlags: UINT, dwBytes: SIZE_T) -> HANDLE;
     fn GlobalLock(h: HANDLE) -> LPVOID;
     fn GlobalSize(h: HANDLE) -> SIZE_T;
     fn GlobalUnlock(h: HANDLE) -> i32;

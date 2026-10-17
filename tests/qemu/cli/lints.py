@@ -714,6 +714,7 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         "scan_bool_width",
         "scan_cfg_vs_c",
         "scan_version_vs_c",
+        "scan_fnclass_cc",
         "null_offset_to_offset_of",
         "scan_constant_placement",
     ):
@@ -2110,7 +2111,14 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         run,
         repo,
         "rust_ub_deny",
-        [py, str(census), str(build_dir), "--allow-stale", "--deny", "invalid_value,deref_nullptr"]
+        [
+            py,
+            str(census),
+            str(build_dir),
+            "--allow-stale",
+            "--deny",
+            "invalid_value,deref_nullptr,static_mut_refs,improper_ctypes_definitions,improper_ctypes",
+        ]
         if census.is_file()
         else ["MISSING"],
         strict=strict,

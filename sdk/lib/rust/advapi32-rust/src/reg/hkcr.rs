@@ -1,4 +1,7 @@
 use crate::prelude::*;
+// The crate's own functions: the definition is the declaration.
+use crate::reg_reg::RegCloseKey;
+use crate::reg_reg::RegOpenKeyExW;
 use core::ffi::c_void;
 
 // w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
@@ -23,8 +26,6 @@ macro_rules! w {
 
 extern "system" {
     fn IsHKCRKey(hKey: HKEY) -> BOOL;
-    fn RegCloseKey(hKey: HKEY) -> LONG;
-    fn RegOpenKeyExW( hKey: HKEY, lpSubKey: LPCWSTR, ulOptions: DWORD, samDesired: REGSAM, phkResult: PHKEY, ) -> LONG;
 }
 
 // ---- file-scope preamble (translated) ----

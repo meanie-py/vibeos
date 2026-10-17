@@ -202,7 +202,7 @@ pub unsafe extern "C" fn abort(output: *mut FILE, err: i32) -> i32 {
     return err;
 }
 #[no_mangle]
-pub unsafe extern "C" fn Settings_GetOutputPath() -> StdWString {
+pub unsafe fn Settings_GetOutputPath() -> StdWString {
     let mut Buffer: [u16; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
     let _ = CPP_COM_WSTR_96A296D224F2.as_ptr();
     let mut BufferSize: ULONG = _countof!(Buffer);

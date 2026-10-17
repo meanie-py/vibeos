@@ -105,7 +105,7 @@ unsafe fn CONTAINING_RECORD_PDO_Link(entry: *mut LIST_ENTRY) -> *mut PDO_DEVICE_
 // PoSetPowerState: kernel export, NTAPI (stdcall on i386, cdecl on amd64/arm64 —
 // `extern "system"` resolves per arch). Returns POWER_STATE by value (matches power.rs).
 extern "system" {
-    fn PoSetPowerState(
+    pub fn PoSetPowerState(
         DeviceObject: PDEVICE_OBJECT,
         Type: POWER_STATE_TYPE,
         State: POWER_STATE,

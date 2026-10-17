@@ -1,4 +1,6 @@
 use win32k_sys::win32k::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::windows::window::HeapAlloc;
 // ntdll Rtl*/Zw* exports come from the user32-internal substrate, NOT ntkrnl_sys
 // (which is the KERNEL FFI crate and is not a dependency here). The `CR` import
 // the translator emitted was a bindgen mis-resolution of the local `#define CR 13`
@@ -16,7 +18,6 @@ use core::ffi::c_void;
 // ---- kernel32.dll exports (WINAPI = stdcall) ----
 extern "system" {
     fn GetSystemMetrics(nIndex: core::ffi::c_int) -> core::ffi::c_int;
-    fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: usize) -> LPVOID;
     fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID) -> BOOL;
     fn GetProcessHeap() -> HANDLE;
     fn SetLastError(dwErrCode: DWORD);
@@ -29,8 +30,8 @@ extern "C" {
 extern "system" {
     fn GetModuleFileNameW(hModule: HMODULE, lpFilename: LPWSTR, nSize: DWORD) -> DWORD;
     fn GetModuleHandleExW(dwFlags: DWORD, lpModuleName: LPCWSTR, phModule: *mut HMODULE) -> BOOL;
-    fn FindResourceW(hModule: HMODULE, lpName: LPCWSTR, lpType: LPCWSTR) -> HRSRC;
-    fn LoadResource(hModule: HMODULE, hResInfo: HRSRC) -> HGLOBAL;
+    pub fn FindResourceW(hModule: HMODULE, lpName: LPCWSTR, lpType: LPCWSTR) -> HRSRC;
+    pub fn LoadResource(hModule: HMODULE, hResInfo: HRSRC) -> HGLOBAL;
     fn LockResource(hResData: HGLOBAL) -> LPVOID;
     fn FreeResource(hResData: HGLOBAL) -> BOOL;
     fn SizeofResource(hModule: HMODULE, hResInfo: HRSRC) -> DWORD;
@@ -58,7 +59,7 @@ extern "system" {
     fn GetObjectW(h: *mut core::ffi::c_void, c: i32, pv: LPVOID) -> i32;
     fn GetDIBits(hdc: HDC, hbm: HBITMAP, start: u32, cLines: u32, lpvBits: LPVOID, lpbmi: *mut BITMAPINFO, usage: u32) -> i32;
     fn CreateDIBitmap(hdc: HDC, pbmih: *const BITMAPINFOHEADER, flInit: u32, pjBits: *const core::ffi::c_void, pbmi: *const BITMAPINFO, iUsage: u32) -> HBITMAP;
-    fn CreateDIBSection(hdc: HDC, pbmi: *const BITMAPINFO, usage: u32, ppvBits: *mut LPVOID, hSection: HANDLE, offset: DWORD) -> HBITMAP;
+    pub fn CreateDIBSection(hdc: HDC, pbmi: *const BITMAPINFO, usage: u32, ppvBits: *mut LPVOID, hSection: HANDLE, offset: DWORD) -> HBITMAP;
     fn SelectObject(hdc: HDC, h: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
     fn StretchDIBits(hdc: HDC, xDest: i32, yDest: i32, DestWidth: i32, DestHeight: i32, xSrc: i32, ySrc: i32, SrcWidth: i32, SrcHeight: i32, lpBits: *const core::ffi::c_void, lpbmi: *const BITMAPINFO, iUsage: u32, rop: u32) -> i32;
     fn StretchBlt(hdcDest: HDC, xDest: i32, yDest: i32, wDest: i32, hDest: i32, hdcSrc: HDC, xSrc: i32, ySrc: i32, wSrc: i32, hSrc: i32, rop: u32) -> i32;
@@ -839,7 +840,7 @@ unsafe fn stretch_blt_icon(hdc_dst: HDC, dst_width: i32, dst_height: i32, src: H
         let info = HeapAlloc(
             GetProcessHeap(),
             0,
-            (core::mem::size_of::<BITMAPINFOHEADER>() + 256 * core::mem::size_of::<RGBQUAD>()),
+            (core::mem::size_of::<BITMAPINFOHEADER>() + 256 * core::mem::size_of::<RGBQUAD>()) as SIZE_T,
         ) as *mut BITMAPINFO;
         if info.is_null() {
             return;
@@ -856,7 +857,7 @@ unsafe fn stretch_blt_icon(hdc_dst: HDC, dst_width: i32, dst_height: i32, src: H
         (*info).bmiHeader.biYPelsPerMeter = 0;
         (*info).bmiHeader.biClrUsed = 0;
         (*info).bmiHeader.biClrImportant = 0;
-        let bits = HeapAlloc(GetProcessHeap(), 0, (*info).bmiHeader.biSizeImage as usize) as LPVOID;
+        let bits = HeapAlloc(GetProcessHeap(), 0, ((*info).bmiHeader.biSizeImage) as SIZE_T) as LPVOID;
         if !bits.is_null()
             && GetDIBits(hdc, src, 0, bm.bmHeight as u32, bits, info, DIB_RGB_COLORS as u32) != 0
         {
@@ -942,7 +943,7 @@ unsafe fn create_alpha_bitmap(
                 let dummy: *const BITMAPINFO = core::ptr::null();
                 (*dummy).bmiColors.as_ptr().add(256) as usize
             };
-            info = HeapAlloc(GetProcessHeap(), 0, field_off) as *mut BITMAPINFO;
+            info = HeapAlloc(GetProcessHeap(), 0, (field_off) as SIZE_T) as *mut BITMAPINFO;
             if info.is_null() {
                 break 'done;
             }
@@ -958,7 +959,7 @@ unsafe fn create_alpha_bitmap(
             (*info).bmiHeader.biClrUsed = 0;
             (*info).bmiHeader.biClrImportant = 0;
 
-            bits = HeapAlloc(GetProcessHeap(), 0, size as usize);
+            bits = HeapAlloc(GetProcessHeap(), 0, (size) as SIZE_T);
             if bits.is_null() {
                 HeapFree(GetProcessHeap(), 0, info as LPVOID);
                 break 'done;
@@ -1002,7 +1003,7 @@ unsafe fn create_alpha_bitmap(
             }
 
             size = get_dib_image_size(orig_width, orig_height, bpp as i32) as u32;
-            bits = HeapAlloc(GetProcessHeap(), 0, size as usize);
+            bits = HeapAlloc(GetProcessHeap(), 0, (size) as SIZE_T);
             if bits.is_null() {
                 break 'done;
             }
@@ -1099,7 +1100,7 @@ unsafe fn get_best_icon_file_entry(
         base + idCount * core::mem::size_of::<CURSORICONDIRENTRY>()
     };
 
-    fakeDir = HeapAlloc(GetProcessHeap(), 0, allocSize) as *mut CURSORICONDIR;
+    fakeDir = HeapAlloc(GetProcessHeap(), 0, (allocSize) as SIZE_T) as *mut CURSORICONDIR;
     if fakeDir.is_null() {
         SetLastError(ERROR_NOT_ENOUGH_MEMORY);
         return core::ptr::null();
@@ -1283,7 +1284,7 @@ unsafe fn CURSORICON_GetCursorDataFromBMI(
             (*base).bmiColors.as_ptr().add(3) as usize
         };
         let allocSize = if ubmiSize as usize > field_off { ubmiSize as usize } else { field_off };
-        pbmiCopy = HeapAlloc(GetProcessHeap(), 0, allocSize) as *mut BITMAPINFO;
+        pbmiCopy = HeapAlloc(GetProcessHeap(), 0, (allocSize) as SIZE_T) as *mut BITMAPINFO;
         if pbmiCopy.is_null() {
             break 'done;
         }
@@ -1687,9 +1688,9 @@ unsafe fn CURSORICON_GetCursorDataFromANI(
         (*pCurData).aspcur = HeapAlloc(
             GetProcessHeap(),
             HEAP_ZERO_MEMORY,
-            (*pHeader).num_frames as usize * core::mem::size_of::<CURSORDATA>()
+            ((*pHeader).num_frames as usize * core::mem::size_of::<CURSORDATA>()
                 + (*pHeader).num_steps as usize
-                    * (core::mem::size_of::<DWORD>() + core::mem::size_of::<INT>()),
+                    * (core::mem::size_of::<DWORD>() + core::mem::size_of::<INT>())) as SIZE_T,
         ) as *mut CURSORDATA;
         if (*pCurData).aspcur.is_null() {
             SetLastError(ERROR_NOT_ENOUGH_MEMORY);
@@ -1903,7 +1904,7 @@ unsafe fn BITMAP_LoadImageW(
             .add(if dwOffset != 0 { dwOffset as usize } else { iBMISize as usize })
             as *mut core::ffi::c_void;
 
-        pbmiCopy = HeapAlloc(GetProcessHeap(), 0, iBMISize as usize) as *mut BITMAPINFO;
+        pbmiCopy = HeapAlloc(GetProcessHeap(), 0, (iBMISize) as SIZE_T) as *mut BITMAPINFO;
         if pbmiCopy.is_null() {
             break 'end;
         }
@@ -2026,7 +2027,7 @@ unsafe fn BITMAP_LoadImageW(
         }
 
         if (fuLoad & LR_CREATEDIBSECTION) != 0 {
-            pbmiScaled = HeapAlloc(GetProcessHeap(), 0, iBMISize as usize) as *mut BITMAPINFO;
+            pbmiScaled = HeapAlloc(GetProcessHeap(), 0, (iBMISize) as SIZE_T) as *mut BITMAPINFO;
             if pbmiScaled.is_null() {
                 break 'end;
             }
@@ -2346,7 +2347,7 @@ unsafe fn CURSORICON_LoadImageW(
             FMT32.as_ptr()
         };
         ustrModule.MaximumLength = (18 * core::mem::size_of::<WCHAR>()) as u16;
-        ustrModule.Buffer = HeapAlloc(GetProcessHeap(), 0, ustrModule.MaximumLength as usize) as LPWSTR;
+        ustrModule.Buffer = HeapAlloc(GetProcessHeap(), 0, (ustrModule.MaximumLength) as SIZE_T) as LPWSTR;
         if ustrModule.Buffer.is_null() {
             SetLastError(ERROR_NOT_ENOUGH_MEMORY);
             return core::ptr::null_mut();
@@ -2355,7 +2356,7 @@ unsafe fn CURSORICON_LoadImageW(
     } else if !hinst.is_null() {
         let mut size: DWORD = MAX_PATH as DWORD;
         loop {
-            ustrModule.Buffer = HeapAlloc(GetProcessHeap(), 0, (size as usize) * core::mem::size_of::<WCHAR>()) as LPWSTR;
+            ustrModule.Buffer = HeapAlloc(GetProcessHeap(), 0, ((size as usize) * core::mem::size_of::<WCHAR>()) as SIZE_T) as LPWSTR;
             if ustrModule.Buffer.is_null() {
                 SetLastError(ERROR_NOT_ENOUGH_MEMORY);
                 return core::ptr::null_mut();
@@ -2540,7 +2541,7 @@ unsafe fn BITMAP_CopyImage(
     bi = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        core::mem::size_of::<BITMAPINFOHEADER>() + 256 * core::mem::size_of::<RGBQUAD>(),
+        (core::mem::size_of::<BITMAPINFOHEADER>() + 256 * core::mem::size_of::<RGBQUAD>()) as SIZE_T,
     ) as *mut BITMAPINFO;
     if bi.is_null() {
         return core::ptr::null_mut();
@@ -2638,7 +2639,7 @@ unsafe fn BITMAP_CopyImage(
             (*bi).bmiHeader.biClrImportant = 0;
 
             GetDIBits(dc, hnd, 0, ds.dsBm.bmHeight as UINT, core::ptr::null_mut(), bi, DIB_RGB_COLORS);
-            bits = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (*bi).bmiHeader.biSizeImage as usize);
+            bits = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, ((*bi).bmiHeader.biSizeImage) as SIZE_T);
 
             if !bits.is_null() {
                 let oldBmp: HBITMAP;
@@ -2699,7 +2700,7 @@ unsafe fn CURSORICON_CopyImage(
         }
 
         ustrModule.Buffer =
-            HeapAlloc(GetProcessHeap(), 0, ustrModule.MaximumLength as usize) as LPWSTR;
+            HeapAlloc(GetProcessHeap(), 0, (ustrModule.MaximumLength) as SIZE_T) as LPWSTR;
         if ustrModule.Buffer.is_null() {
             SetLastError(ERROR_NOT_ENOUGH_MEMORY);
             return core::ptr::null_mut();
@@ -2707,7 +2708,7 @@ unsafe fn CURSORICON_CopyImage(
 
         if ustrRsrc.MaximumLength != 0 {
             ustrRsrc.Buffer =
-                HeapAlloc(GetProcessHeap(), 0, ustrRsrc.MaximumLength as usize) as LPWSTR;
+                HeapAlloc(GetProcessHeap(), 0, (ustrRsrc.MaximumLength) as SIZE_T) as LPWSTR;
             if ustrRsrc.Buffer.is_null() {
                 HeapFree(GetProcessHeap(), 0, ustrModule.Buffer as LPVOID);
                 SetLastError(ERROR_NOT_ENOUGH_MEMORY);
@@ -3107,7 +3108,7 @@ pub unsafe extern "system" fn LoadImageA(
     u_name = HeapAlloc(
         GetProcessHeap(),
         0,
-        (len as usize) * core::mem::size_of::<u16>(),
+        ((len as usize) * core::mem::size_of::<u16>()) as SIZE_T,
     ) as LPWSTR;
     MultiByteToWideChar(CP_ACP, 0, lpszName, -1, u_name, len as core::ffi::c_int);
 

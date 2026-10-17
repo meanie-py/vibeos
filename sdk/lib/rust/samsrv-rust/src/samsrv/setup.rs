@@ -1,4 +1,8 @@
 use crate::prelude::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::prelude::wcslen;
+// The crate's own functions: the definition is the declaration.
+use crate::samsrv::registry::SampRegOpenKey;
 
 // w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
 // a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
@@ -25,10 +29,8 @@ extern "C" {
     fn SampRegCloseKey(KeyHandle: *mut HANDLE) -> NTSTATUS;
     fn SampRegCreateKey( hParentKey: HANDLE, lpKeyName: LPCWSTR, samDesired: ULONG, phKeyHandle: *mut HANDLE, ) -> NTSTATUS;
     fn SampRegDeleteKey(hParentKey: HANDLE, lpKeyName: LPCWSTR) -> NTSTATUS;
-    fn SampRegOpenKey( hParentKey: HANDLE, lpKeyName: LPCWSTR, samDesired: ULONG, phKeyHandle: *mut HANDLE, ) -> NTSTATUS;
     fn SampRegSetValue( hKey: HANDLE, lpValueName: LPCWSTR, dwType: ULONG, lpData: LPVOID, cbData: ULONG, ) -> NTSTATUS;
     fn swprintf(buffer: *mut u16, format: *const u16, ...) -> i32;
-    fn wcslen(s: *const u16) -> usize;
     fn SampCreateGroupSD(Sd: *mut PSECURITY_DESCRIPTOR, SdSize: *mut ULONG) -> NTSTATUS;
     fn SampCreateServerSD(Sd: *mut PSECURITY_DESCRIPTOR, SdSize: *mut ULONG) -> NTSTATUS;
 }

@@ -758,8 +758,6 @@ NOT_A_BODY = {
     "D3DKMTSetProcessSchedulingPriorityClass": "returns 1, a success status, and does nothing",
     "D3DKMTSharedPrimaryLockNotification": "returns 1, a success status, and does nothing",
     "D3DKMTSharedPrimaryUnLockNotification": "returns 1, a success status, and does nothing",
-    "RtlConvertLCIDToString": "returns STATUS_NOT_IMPLEMENTED",
-    "RtlIsValidLocaleName": "answers TRUE for every name",
     "SHCreateItemInKnownFolder": "returns E_NOTIMPL",
     "AddClipboardFormatListener": "fails without setting a last error",
     "RemoveClipboardFormatListener": "fails without setting a last error",
@@ -801,6 +799,21 @@ def defined_symbols(image: Path) -> dict[str, set[int | None]]:
 
 
 _ARG_BYTES_I386 = {"int64": 8, "double": 8, "int128": 16}
+
+
+def _row_on_arch(opts: list[str], arch: str) -> bool:
+    """Whether a spec row's `-arch=`/`-i386` options export it on `arch` (spec2def's rule,
+    as pecheck.spec_exports applies it)."""
+    wide = "win64" if arch in ("x86_64", "arm64") else "win32"
+    for opt in opts:
+        if opt.startswith("-arch="):
+            if not any(
+                (a.lstrip("!") in (arch, wide)) != a.startswith("!") for a in opt[6:].split(",")
+            ):
+                return False
+        elif opt == "-i386" and arch != "i386":
+            return False
+    return True
 
 
 def stdcall_bytes(args: str) -> int:
@@ -869,12 +882,15 @@ def survey_gated(builds: list[Path], ref: dict, version: int) -> list[GatedRow]:
             ]
             if not real:
                 continue
-            row = real[0]
             arches: dict[str, str] = {}
             for build in builds:
                 arch = BUILD_ARCH.get(build.name)
                 if arch is None or not states[arch].get(name, "").startswith("exported only"):
                     continue
+                # A name can have one row per arch: ntdll's RtlInterlockedPushListSListEx is
+                # a body on i386 and a forward to RtlInterlockedPushListSList elsewhere.
+                # Judge the row this arch builds, not the first one in the file.
+                row = next((r for r in real if _row_on_arch(r.opts, arch)), real[0])
                 target = row.target or name
                 facts = image_facts(module, build)
                 if "." in target:
@@ -896,7 +912,7 @@ def survey_gated(builds: list[Path], ref: dict, version: int) -> list[GatedRow]:
                 else:
                     arches[arch] = "absent"
             if arches:
-                out.append(GatedRow(module, spec, name, row, arches, NOT_A_BODY.get(name)))
+                out.append(GatedRow(module, spec, name, real[0], arches, NOT_A_BODY.get(name)))
     return out
 
 

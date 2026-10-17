@@ -1,12 +1,14 @@
 use crate::prelude::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::prelude::GetNumberFormatW;
+use crate::typelib::sys::LoadResource;
+use crate::variant::iswspace;
 use core::ffi::c_void;
 
 extern "C" {
     fn _wcsnicmp(s1: *const u16, s2: *const u16, n: usize) -> i32;
     fn wcstoul(s: *const u16, endptr: *mut *mut u16, base: i32) -> u32;
-    fn iswdigit(wc: u32) -> i32;
     fn iswalpha(wc: u32) -> i32;
-    fn iswspace(wc: u32) -> i32;
     // CRT math/string used directly by vartype.c
     fn ceil(x: f64) -> f64;
     fn floor(x: f64) -> f64;
@@ -44,9 +46,7 @@ pub struct CURRENCYFMTW {
 
 extern "system" {
     fn FindResourceExW(hModule: *mut c_void, lpType: *const u16, lpName: *const u16, wLanguage: u16) -> *mut c_void;
-    fn LoadResource(hModule: *mut c_void, hResInfo: *mut c_void) -> *mut c_void;
     fn LockResource(hResData: *mut c_void) -> *mut c_void;
-    fn GetNumberFormatW(Locale: LCID, dwFlags: u32, lpValue: *const u16, lpFormat: *const NUMBERFMTW, lpNumberStr: *mut u16, cchNumber: i32) -> i32;
     fn GetCurrencyFormatW(Locale: LCID, dwFlags: u32, lpValue: *const u16, lpFormat: *const CURRENCYFMTW, lpCurrencyStr: *mut u16, cchCurrency: i32) -> i32;
     fn GetTimeFormatW(Locale: LCID, dwFlags: u32, lpTime: *const SYSTEMTIME, lpFormat: *const u16, lpTimeStr: *mut u16, cchTime: i32) -> i32;
     fn CompareStringW(Locale: LCID, dwCmpFlags: u32, lpString1: *const u16, cchCount1: i32, lpString2: *const u16, cchCount2: i32) -> i32;
@@ -3733,7 +3733,7 @@ unsafe fn VARIANT_BstrReplaceDecimal(buff: *const u16, lcid: u32, dwFlags: u32) 
         let buff = work.as_ptr();
 
         numbuff[0] = 0u16;
-        if GetNumberFormatW(lcid, 0, buff, &minFormat, numbuff.as_mut_ptr(), 256) == 0 {
+        if GetNumberFormatW(lcid, 0, buff, (&raw const minFormat).cast(), numbuff.as_mut_ptr(), 256) == 0 {
             WARN!(
                 b"GetNumberFormatW() failed, returning raw number string instead\0"
                     .as_ptr() as *const i8,
@@ -4872,7 +4872,7 @@ pub unsafe extern "system" fn VarDateFromStr(
             } else {
                 dp.dwFlags[(dp.dwCount - 1) as usize] |= DP_DATESEP;
             }
-        } else if *strIn == b',' as u16 || iswspace(ch) != 0 {
+        } else if *strIn == b',' as u16 || iswspace((ch) as OLECHAR) != 0 {
             if *strIn == b',' as u16 && *strIn.offset(1) == 0 {
                 hRet = DISP_E_TYPEMISMATCH; // DISP_E_TYPEMISMATCH
             }

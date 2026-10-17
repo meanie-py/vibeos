@@ -3337,7 +3337,11 @@ pub unsafe extern "C" fn ClasspDeviceGetLBAStatus(
             length_in_bytes = (*data_set_ranges).LengthInBytes;
         }
 
+        #[allow(unused_mut)] // only the WINBLUE block below assigns it
         let mut output_version = DEVICE_DATA_SET_LB_PROVISIONING_STATE_VERSION_V1;
+        // dead: C is #if (NTDDI_VERSION >= NTDDI_WINBLUE), classpnp builds at WIN8. Running
+        // it failed requests the WIN8 C serves, and asked the worker for V2 output.
+        #[cfg(any())]
         if (*dsm_attributes).ParameterBlockOffset >= core::mem::size_of::<DEVICE_MANAGE_DATA_SET_ATTRIBUTES>() as u32
             && (*dsm_attributes).ParameterBlockLength >= core::mem::size_of::<DEVICE_DATA_SET_LBP_STATE_PARAMETERS>() as u32
         {
@@ -3437,7 +3441,7 @@ pub unsafe extern "C" fn ClasspDeviceGetLBAStatus(
     final_status
 }
 #[no_mangle]
-pub unsafe extern "C" fn ClasspDeviceGetLBAStatusWorker(
+pub unsafe extern "C" fn ClasspDeviceGetLBAStatusWorker( // nolint: version-vs-c -- its V2 arm is unreachable: the caller's WINBLUE block is compiled out, so OutputVersion is always V1
     DeviceObject: *mut DEVICE_OBJECT,
     BlockLimitsData: *mut CLASS_VPD_B0_DATA,
     StartingOffset: u64,

@@ -1,4 +1,6 @@
 use crate::ntwrapper::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::windows::window::HeapAlloc;
 use win32k_sys::win32k::*;
 use crate::internal::*;
 use crate::winbase::*;
@@ -9,7 +11,6 @@ extern "system" {
     fn GdiGetCodePage(hdc: HDC) -> DWORD;
     fn GetProcessHeap() -> HANDLE;
     fn GetTextMetricsA(hdc: HDC, lptm: *mut TEXTMETRICA) -> BOOL;
-    fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: SIZE_T) -> LPVOID;
     fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID) -> BOOL;
     fn MultiByteToWideChar( CodePage: UINT, dwFlags: DWORD, lpMultiByteStr: LPCSTR, cbMultiByte: INT, lpWideCharStr: LPWSTR, cchWideChar: INT, ) -> INT;
     fn WideCharToMultiByte( CodePage: UINT, dwFlags: DWORD, lpWideCharStr: LPCWSTR, cchWideChar: INT, lpMultiByteStr: LPSTR, cbMultiByte: INT, lpDefaultChar: LPCSTR, lpUsedDefaultChar: *mut BOOL, ) -> INT;

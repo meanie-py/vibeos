@@ -1,4 +1,6 @@
 use crate::prelude::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::externs::HeapAlloc;
 use core::ffi::c_void;
 
 extern "C" {
@@ -15,7 +17,6 @@ extern "system" {
     fn RegCloseKey(hKey: HKEY) -> LSTATUS;
     fn lstrlenW(lpString: LPCWSTR) -> i32;
     fn GetProcessHeap() -> *mut core::ffi::c_void;
-    fn HeapAlloc(hHeap: *mut core::ffi::c_void, dwFlags: u32, dwBytes: usize) -> *mut core::ffi::c_void;
     fn lstrcpyW(lpString1: PWSTR, lpString2: PCWSTR) -> PWSTR;
     fn MultiByteToWideChar( CodePage: u32, dwFlags: u32, lpMultiByteStr: PCSTR, cbMultiByte: i32, lpWideCharStr: PWSTR, cchWideChar: i32, ) -> i32;
     fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: PVOID) -> BOOL;
@@ -165,7 +166,7 @@ unsafe fn SECUR32_strdupW(str: PCWSTR) -> PWSTR {
     let ret: PWSTR;
 
     if !str.is_null() {
-        ret = HeapAlloc(GetProcessHeap(), 0, ((lstrlenW(str) + 1) as usize) * core::mem::size_of::<u16>()) as PWSTR;
+        ret = HeapAlloc(GetProcessHeap(), 0, (((lstrlenW(str) + 1) as usize) * core::mem::size_of::<u16>()) as SIZE_T) as PWSTR;
         if !ret.is_null() {
             lstrcpyW(ret, str);
         }
@@ -188,7 +189,7 @@ pub unsafe extern "C" fn SECUR32_AllocWideFromMultiByte(str: PCSTR) -> PWSTR {
             ret = HeapAlloc(
                 GetProcessHeap(),
                 0,
-                charsNeeded as usize * core::mem::size_of::<u16>(),
+                (charsNeeded as usize * core::mem::size_of::<u16>()) as SIZE_T,
             ) as PWSTR;
             if !ret.is_null() {
                 MultiByteToWideChar(CP_ACP, 0, str, -1, ret, charsNeeded);
@@ -218,7 +219,7 @@ pub unsafe extern "C" fn SECUR32_AllocMultiByteFromWide(str: PCWSTR) -> PSTR {
         );
 
         if charsNeeded != 0 {
-            ret = HeapAlloc(GetProcessHeap(), 0, charsNeeded as usize) as PSTR;
+            ret = HeapAlloc(GetProcessHeap(), 0, (charsNeeded) as SIZE_T) as PSTR;
             if !ret.is_null() {
                 WideCharToMultiByte(
                     CP_ACP,
@@ -395,7 +396,7 @@ pub unsafe extern "C" fn SECUR32_addProvider(
         providerTable = HeapAlloc(
             GetProcessHeap(),
             0,
-            core::mem::size_of::<SecureProviderTable>(),
+            (core::mem::size_of::<SecureProviderTable>()) as SIZE_T,
         ) as *mut SecureProviderTable;
         if providerTable.is_null() {
             LeaveCriticalSection(core::ptr::addr_of_mut!(cs));
@@ -408,7 +409,7 @@ pub unsafe extern "C" fn SECUR32_addProvider(
     ret = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<SecureProvider>(),
+        (core::mem::size_of::<SecureProvider>()) as SIZE_T,
     ) as *mut SecureProvider;
     if ret.is_null() {
         LeaveCriticalSection(core::ptr::addr_of_mut!(cs));
@@ -452,7 +453,7 @@ pub unsafe extern "C" fn SECUR32_addPackages(
         packageTable = HeapAlloc(
             GetProcessHeap(),
             0,
-            core::mem::size_of::<SecurePackageTable>(),
+            (core::mem::size_of::<SecurePackageTable>()) as SIZE_T,
         ) as *mut SecurePackageTable;
         if packageTable.is_null() {
             LeaveCriticalSection(core::ptr::addr_of_mut!(cs));
@@ -468,7 +469,7 @@ pub unsafe extern "C" fn SECUR32_addPackages(
         let package = HeapAlloc(
             GetProcessHeap(),
             0,
-            core::mem::size_of::<SecurePackage>(),
+            (core::mem::size_of::<SecurePackage>()) as SIZE_T,
         ) as *mut SecurePackage;
         if package.is_null() {
             i += 1;
@@ -791,7 +792,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
 
         if bytesNeeded != 0 {
             *ppPackageInfo =
-                HeapAlloc(GetProcessHeap(), 0, bytesNeeded) as PSecPkgInfoW;
+                HeapAlloc(GetProcessHeap(), 0, (bytesNeeded) as SIZE_T) as PSecPkgInfoW;
             if !(*ppPackageInfo).is_null() {
                 let mut i: ULONG = 0;
                 let mut nextString: PWSTR;
@@ -859,7 +860,7 @@ unsafe fn thunk_PSecPkgInfoWToA(cPackages: ULONG, info: *const SecPkgInfoW) -> P
             }
             i += 1;
         }
-        ret = HeapAlloc(GetProcessHeap(), 0, bytesNeeded) as PSecPkgInfoA;
+        ret = HeapAlloc(GetProcessHeap(), 0, (bytesNeeded) as SIZE_T) as PSecPkgInfoA;
         if !ret.is_null() {
             let mut nextString: PSTR;
 
@@ -931,7 +932,7 @@ pub unsafe extern "system" fn GetComputerObjectNameA(
     let mut sizeW: ULONG = *nSize;
 
     if !lpNameBuffer.is_null() {
-        bufferW = HeapAlloc(GetProcessHeap(), 0, sizeW as usize * core::mem::size_of::<u16>())
+        bufferW = HeapAlloc(GetProcessHeap(), 0, (sizeW as usize * core::mem::size_of::<u16>()) as SIZE_T)
             as LPWSTR;
         if bufferW.is_null() {
             SetLastError(ERROR_NOT_ENOUGH_MEMORY);
@@ -1091,7 +1092,7 @@ pub unsafe extern "system" fn GetUserNameExA(
         bufferW = HeapAlloc(
             GetProcessHeap(),
             0,
-            (sizeW as usize) * core::mem::size_of::<u16>(),
+            ((sizeW as usize) * core::mem::size_of::<u16>()) as SIZE_T,
         ) as LPWSTR;
         if bufferW.is_null() {
             SetLastError(ERROR_NOT_ENOUGH_MEMORY);

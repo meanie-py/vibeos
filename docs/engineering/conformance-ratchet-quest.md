@@ -27,7 +27,7 @@ boot path never touches (see `tools/coverage/` — the never-executed-rust regis
 ## Resume here (2026-10-17)
 
 The survey below is history. The current state and the ordered owed queue are the LAST
-progress-log entry, "2026-10-17 — two owed items, and a cause I got wrong". Re-derive every number in
+progress-log entry, "2026-10-17b — the overnight queue". Re-derive every number in
 it from `tools/conformance-baseline/<arch>/kmtest.txt` and a fresh sweep before trusting it.
 Windows 11's own results for these suites are `tools/conformance-baseline/win11-amd64/kmtest.txt`.
 
@@ -2098,3 +2098,62 @@ family (still plain) only takes PRCB LockQueue[] entries.
    the first check after a `_SEH2_TRY { (NULL, NULL, 0) }` block.
 4. i386 ZwMapViewOfSection:181 (ZeroBits 21: we say INVALID_PARAMETER_4, Windows NO_MEMORY),
    SMP baselines, the scanner item from the 2026-10-12 queue.
+
+### 2026-10-17b — the overnight queue
+
+Banked from two byte-identical sweeps per arch (baselines' `2026-10-17b` notes).
+
+**In-stack queued spinlocks are the MCS lock on every arch.** The ntkrnl-sys helper lost its
+`cfg(x86)`; amd64's ntoskrnl exports, arm64's hal.dll exports and both arches' AtDpcLevel pair
+use it. The audit carries over because every in-stack caller is shared code; only where the
+exports live differed. No row moves (the kmtest checks are `_M_IX86` only).
+
+**HidPDescription 4 -> 2 (3 skips -> 0).** One ReportIDs entry per report ID with its own
+lengths, in declaration order; hidclass picks the collection's longest input report to size
+reads, since the first entry can now be a feature-only ID. The C also leaked every built
+preparsed context on a failure path; the Rust frees them. Left, EXPECTED: PreparsedDataLength
+476/1388 is Windows' own preparsed-data layout, which our HidP_* routines do not read.
+
+**i386 ZwMapViewOfSection:181 done.** `MI_MAX_ZERO_BITS()` was a hand translation: 20 on
+32-bit, where the C's i386 header says 21.
+
+**arm64 RtlMemory 3 is EXPECTED, and yesterday's note was wrong.** I said the driver calls the
+overlap-safe export. At these three sites it does not: clang inlines the overlapping
+`RtlCopyMemory(Buffer + 13, Buffer + 62, 95)` as interleaved 16-byte loads and stores
+(`Test_RtlMemory+0x82c`), and an overlap forward-copy through them reads bytes it has
+already overwritten (offset 13 reads 0x34, src[111]'s value). "First check after the SEH
+block" was a coincidence of layout: each section's first check is its forward-overlap case.
+Overlapping memcpy is undefined; RtlCopyMemory's contract forbids overlap.
+
+**Tooling.**
+- `scan_dropped_probes` pairs functions with no commented C to their same-module C twin
+  (`c_twin`) for the WEAK kind; on the tree it pairs 72 of 80 range-only functions and finds
+  nothing, as it should after 2026-10-12. Its baseline lost the 5 stale PARTIAL lines.
+- artifact-check: a cohab staticlib that sits beside ANOTHER same-stem binary belongs to that
+  binary. `wdmaud.drv` was reported "never relinked" on every arm64 build once the kernel's
+  wdmaud-rust rebuilt.
+- `--smp N` boots the writable-root ISO, which carries freeldr.ini twice; identical copies
+  are now both patched instead of refused.
+
+**SMP baselines rebanked** (`kmtest-smp2.txt`, two identical `--smp 2` sweeps per arch, both
+CPUs live on the MP pair). Every row now equals the arch's UP baseline (amd64 MmMdl aside, a
+machine-dependent pass count). IoInterrupt's banked MP failures (156 on 64-bit, 306 on i386)
+are gone: its CheckSpinLock takes the checked-build branch first, which only wants non-zero,
+and the kernel reported a free build when they were banked. Rows for tests an arch does not
+build were dropped.
+
+**Seen once, not mine:** i386 `--smp 2` sweep 2 died BUGCHECK 0xF4. csrss took an unhandled
+RPC exception (`6be`, then `6ba` on second chance) at 7c505de7. flake-report already holds the
+same signature from a UP boot on 2026-10-16 (graded FLAKY, 2 commits), on a tree before this
+work. It looks like the field manual's `rpc_try` class (a Rust RPC client that kept only the try
+body) reached from csrss. The sweep after it was clean and identical to the first.
+
+**Owed, in order:**
+1. ~~The csrss F4 flake~~ (fixed): winsrv `UserServerHardError` -> `ReportEventW` ->
+   `ElfrReportEventW_seh`, a native-SEH thunk that is a plain call on i386, so the RPC raise
+   killed csrss while eventlog.exe was exiting. advapi32 now uses `rpc_try` for those three calls.
+   ole32's rpcss_seh.c and stubmanager_seh.c had the same i386 hole; their i386 branch now
+   calls ntdll's RtlSehTryExcept. Smoke-verified only: olewinetest's marshal case (an object
+   whose Release faults) has not been run on i386 since (it needs a `--rostests` build).
+2. HidPDescription's preparsed-data layout, only if something needs Windows' bytes.
+3. The WS03-column rows that move at the version flip (above).

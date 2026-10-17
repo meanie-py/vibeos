@@ -1,4 +1,12 @@
 use winedebug_rust::{ERR, TRACE};
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::prelude::memcpy;
+use crate::prelude::memmove;
+// The crate's own functions: the definition is the declaration.
+use crate::client::handle::CloseHandle;
+use crate::file::filemap::CreateFileMappingW;
+use crate::file::create::CreateFileW;
+use crate::client::loader::GetModuleHandleA;
 use ntdll_sys::nt::*;
 use core::ffi::c_void;
 
@@ -46,7 +54,6 @@ use winelist_rust::{
 };
 
 extern "system" {
-    fn GetModuleHandleA(lpModuleName: *const u8) -> HINSTANCE;
     fn SetLastError(dwErrCode: u32);
     fn GetModuleHandleW(lpModuleName: LPCWSTR) -> HMODULE;
 }
@@ -113,16 +120,6 @@ extern "system" {
         lpMultiByteStr: LPSTR, cbMultiByte: INT, lpDefaultChar: LPCSTR,
         lpUsedDefaultChar: *mut BOOL,
     ) -> INT;
-    fn CloseHandle(hObject: HANDLE) -> BOOL;
-    fn CreateFileW(
-        lpFileName: LPCWSTR, dwDesiredAccess: DWORD, dwShareMode: DWORD,
-        lpSecurityAttributes: *mut c_void, dwCreationDisposition: DWORD,
-        dwFlagsAndAttributes: DWORD, hTemplateFile: HANDLE,
-    ) -> HANDLE;
-    fn CreateFileMappingW(
-        hFile: HANDLE, lpFileMappingAttributes: *mut c_void, flProtect: DWORD,
-        dwMaximumSizeHigh: DWORD, dwMaximumSizeLow: DWORD, lpName: LPCWSTR,
-    ) -> HANDLE;
     fn MapViewOfFile(
         hFileMappingObject: HANDLE, dwDesiredAccess: DWORD,
         dwFileOffsetHigh: DWORD, dwFileOffsetLow: DWORD, dwNumberOfBytesToMap: SIZE_T,
@@ -143,8 +140,6 @@ extern "system" {
 
 // ---- CRT functions (cdecl — MUST be extern "C" for i386 link) ----
 extern "C" {
-    fn memcpy(dest: *mut c_void, src: *const c_void, n: usize) -> *mut c_void;
-    fn memmove(dest: *mut c_void, src: *const c_void, n: usize) -> *mut c_void;
     fn memcmp(s1: *const c_void, s2: *const c_void, n: usize) -> INT;
     fn memset(s: *mut c_void, c: INT, n: usize) -> *mut c_void;
 }

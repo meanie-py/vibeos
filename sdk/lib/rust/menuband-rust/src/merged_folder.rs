@@ -254,7 +254,7 @@ extern "C" {
 // Deterministic COM scaffold for CMergedFolder; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    #[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
+    #[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: SIZE_T) -> *mut core::ffi::c_void;
     #[link_name = "HeapFree"] fn cpp_com_HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn MenuBandRustModuleLock();
     fn MenuBandRustModuleUnlock();
@@ -264,7 +264,7 @@ impl CppComSize for usize { fn cpp_com_size(self) -> usize { self } }
 impl CppComSize for u32 { fn cpp_com_size(self) -> usize { self as usize } }
 #[inline]
 unsafe fn HeapAlloc<N: CppComSize>(heap: HANDLE, flags: DWORD, bytes: N) -> *mut core::ffi::c_void {
-    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size())
+    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size() as SIZE_T)
 }
 #[inline]
 unsafe fn HeapFree<T>(heap: HANDLE, flags: DWORD, memory: *mut T) -> BOOL {
@@ -769,7 +769,6 @@ pub struct EXTRASEARCH {
 pub static INVALID_FILETITLE_CHARACTERSW: [WCHAR; 10] = [0x005c, 0x002f, 0x003a, 0x002a, 0x003f, 0x0022, 0x003c, 0x003e, 0x007c, 0];
 
 extern "system" {
-    fn StrRetToStrW(value: *mut STRRET, pidl: PCUITEMID_CHILD, out: *mut LPWSTR) -> HRESULT;
     fn lstrlenW(text: LPCWSTR) -> INT;
     fn CoTaskMemFree(memory: LPVOID);
     fn SHStrDupW(source: LPCWSTR, out: *mut LPWSTR) -> HRESULT;
@@ -799,6 +798,8 @@ impl<T> Drop for CppComPtrGuard<T> {
 }
 
 use core::ffi::c_void;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::menu_toolbars::StrRetToStrW;
 use crate::shellcom::*;
 use crate::types::*;
 

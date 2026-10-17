@@ -190,11 +190,15 @@ pub unsafe extern "C" fn GetDisabledAutostartEntriesFromRegistry(szBasePath: *mu
                     Index = Index.wrapping_add(1);
                     continue;
                 }
-                let _ = _stprintf(
+                // The C's _stprintf into szSubPath (MAX_KEY_LENGTH) took the base path plus a
+                // subkey name that is itself up to MAX_KEY_LENGTH: a long autostart entry
+                // overran the stack buffer. Bounded; a truncated path just fails to open.
+                let _ = StringCchPrintfW!(
                     core::ptr::addr_of_mut!(szSubPath) as *mut TCHAR,
+                    MAX_KEY_LENGTH as usize,
                     (&[0x0025, 0x0073, 0x005c, 0x0025, 0x0073, 0x0000u16]).as_ptr() /* _T "%s\\%s" */,
                     szBasePath,
-                    core::ptr::addr_of_mut!(szValueName) as *mut TCHAR,
+                    core::ptr::addr_of_mut!(szValueName) as *mut TCHAR
                 );
                 memset(
                     core::ptr::addr_of_mut!(item) as *mut ::core::ffi::c_void,

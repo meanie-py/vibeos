@@ -240,7 +240,7 @@ unsafe fn IMalloc_fnAlloc(iface: *mut IMalloc, cb: SIZE_T) -> LPVOID {
         }
     }
 
-    addr = HeapAlloc(GetProcessHeap(), 0, cb);
+    addr = HeapAlloc(GetProcessHeap(), 0, (cb) as usize);
 
     if !Malloc32.pSpy.is_null() {
         addr = IMallocSpy_PostAlloc(Malloc32.pSpy, addr);
@@ -297,7 +297,7 @@ unsafe fn IMalloc_fnRealloc(iface: *mut IMalloc, pv: LPVOID, cb: SIZE_T) -> LPVO
     }
 
     if pv.is_null() {
-        pNewMemory = HeapAlloc(GetProcessHeap(), 0, cb);
+        pNewMemory = HeapAlloc(GetProcessHeap(), 0, (cb) as usize);
     } else if cb != 0 {
         pNewMemory = HeapReAlloc(GetProcessHeap(), 0, pv, cb);
     } else {

@@ -3,6 +3,10 @@
 #[allow(unused_imports)] use crate::glue::*;
 #[allow(unused_imports)] use crate::guids::*;
 use ntkrnl_sys::globals::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::fdo::DbgPrint;
+// The crate's own functions: the definition is the declaration.
+use crate::pci::config::PciWriteDeviceConfig;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
@@ -64,10 +68,8 @@ unsafe fn PCI_MULTIFUNCTION_DEVICE(PciData: PPCI_COMMON_HEADER) -> u8 {
 macro_rules! UNIMPLEMENTED { () => {{}}; }
 
 extern "C" {
-    fn DbgPrint( format: *const i8, ... );
 }
 unsafe extern "system" {
-    fn PciWriteDeviceConfig( PdoExtension: PPCI_PDO_EXTENSION, PciData: PPCI_COMMON_HEADER, Offset: u32, Length: u32, );
 }
 unsafe extern "system" {
     fn PciDecodeEnable( PdoExtension: PPCI_PDO_EXTENSION, Enable: BOOLEAN, CommandEnables: *mut u16, );
@@ -315,7 +317,7 @@ pub unsafe extern "system" fn PcipUpdateHardware(
 
     // Update device configuration
     (*PciData).Status = 0;
-    PciWriteDeviceConfig(PdoExtension, PciData, 0, PCI_COMMON_HDR_LENGTH); // nolint: magic-offset (PCI config-space header length, protocol constant)
+    PciWriteDeviceConfig(PdoExtension, (PciData).cast(), 0, PCI_COMMON_HDR_LENGTH); // nolint: magic-offset (PCI config-space header length, protocol constant)
 
     // Turn decodes back on
     PciDecodeEnable(
@@ -673,8 +675,8 @@ pub unsafe extern "system" fn PciBuildRequirementsList(
         *Buffer = RequirementsList;
 
         DbgPrint(
-            b"PCI - build resource reqs - early out, 0 resources\n\0"
-                .as_ptr() as *const i8,
+            (b"PCI - build resource reqs - early out, 0 resources\n\0"
+                .as_ptr() as *const i8).cast(),
         );
 
         return STATUS_SUCCESS;
@@ -812,12 +814,12 @@ pub unsafe extern "system" fn PciQueryRequirements(
 
         if *RequirementsList == PciZeroIoResourceRequirements {
             *RequirementsList = core::ptr::null_mut();
-            DbgPrint(b"Returning NULL requirements list\n\0".as_ptr() as *const i8);
+            DbgPrint((b"Returning NULL requirements list\n\0".as_ptr() as *const i8).cast());
         } else {
             PciDebugPrintIoResReqList(*RequirementsList);
         }
     } else {
-        DbgPrint(b"PciQueryRequirements returning NULL requirements list\n\0".as_ptr() as *const i8);
+        DbgPrint((b"PciQueryRequirements returning NULL requirements list\n\0".as_ptr() as *const i8).cast());
         *RequirementsList = core::ptr::null_mut();
     }
 
@@ -840,8 +842,8 @@ pub unsafe extern "system" fn PciConfigureIdeController(
 
     if (master_mode != slave_mode) || (master_fixed != slave_fixed) {
         DbgPrint(
-            b"PCI: Warning unsupported IDE controller configuration for VEN_%04x&DEV_%04x!\0"
-                .as_ptr() as *const i8,
+            (b"PCI: Warning unsupported IDE controller configuration for VEN_%04x&DEV_%04x!\0"
+                .as_ptr() as *const i8).cast(),
             (*pdo_extension).VendorId as u32,
             (*pdo_extension).DeviceId as u32,
         );
@@ -937,8 +939,8 @@ pub unsafe extern "system" fn PciConfigureIdeController(
             switched = 1u8;
         } else {
             DbgPrint(
-                b"PCI: Warning failed switch to native mode for IDE controller VEN_%04x&DEV_%04x!\0"
-                    .as_ptr() as *const i8,
+                (b"PCI: Warning failed switch to native mode for IDE controller VEN_%04x&DEV_%04x!\0"
+                    .as_ptr() as *const i8).cast(),
                 (*pci_data).VendorID as u32,
                 (*pci_data).DeviceID as u32,
             );
@@ -1224,7 +1226,7 @@ pub unsafe extern "system" fn PciGetEnhancedCapabilities(
             (*PdoExtension).HackFlags |= (PCI_HACK_NO_PM_CAPS as u64);
         } else {
             DbgPrint(
-                b"Device has capabilities at: %lx\n\0".as_ptr() as *const i8,
+                (b"Device has capabilities at: %lx\n\0".as_ptr() as *const i8).cast(),
                 cap_ptr as u32,
             );
             (*PdoExtension).CapabilitiesPtr = cap_ptr;
@@ -1249,7 +1251,7 @@ pub unsafe extern "system" fn PciGetEnhancedCapabilities(
                 ) != 0
                 {
                     DbgPrint(
-                        b"AGP ID: %lx\n\0".as_ptr() as *const i8,
+                        (b"AGP ID: %lx\n\0".as_ptr() as *const i8).cast(),
                         target_agp_capability_id,
                     );
                     (*PdoExtension).TargetAgpCapabilityId = target_agp_capability_id as u8;
@@ -1265,7 +1267,7 @@ pub unsafe extern "system" fn PciGetEnhancedCapabilities(
                     core::mem::size_of::<PCI_PM_CAPABILITY>() as u32,
                 ) == 0
                 {
-                    DbgPrint(b"No PM caps, disabling PM\n\0".as_ptr() as *const i8);
+                    DbgPrint((b"No PM caps, disabling PM\n\0".as_ptr() as *const i8).cast());
                     (*PdoExtension).HackFlags |= (PCI_HACK_NO_PM_CAPS as u64);
                 } else {
                     let mut wake_level = PowerDeviceUnspecified;
@@ -1289,8 +1291,8 @@ pub unsafe extern "system" fn PciGetEnhancedCapabilities(
                         power_capabilities.PMCSR.ControlStatus.PowerState() as u32 + 1;
                     (*PdoExtension).PowerCapabilities = power_capabilities.PMC.Capabilities;
                     DbgPrint(
-                        b"PM Caps Found! Wake Level: %d Power State: %d\n\0".as_ptr()
-                            as *const i8,
+                        (b"PM Caps Found! Wake Level: %d Power State: %d\n\0".as_ptr()
+                            as *const i8).cast(),
                         wake_level,
                         (*PdoExtension).PowerState.CurrentDeviceState,
                     );
@@ -1314,8 +1316,8 @@ pub unsafe extern "system" fn PciGetEnhancedCapabilities(
             PowerDeviceD3
         };
         DbgPrint(
-            b"PM is off, so assumed device is: %d based on enables\n\0".as_ptr()
-                as *const i8,
+            (b"PM is off, so assumed device is: %d based on enables\n\0".as_ptr()
+                as *const i8).cast(),
             (*PdoExtension).PowerState.CurrentDeviceState,
         );
     }
@@ -1333,13 +1335,13 @@ pub unsafe extern "system" fn PciWriteLimitsAndRestoreCurrent(
     let PciData = (*Context).PciData;
 
     // Write limit discovery header
-    PciWriteDeviceConfig(PdoExtension, PciData, 0, PCI_COMMON_HDR_LENGTH); // nolint: magic-offset (PCI config-space header length, protocol constant)
+    PciWriteDeviceConfig(PdoExtension, (PciData).cast(), 0, PCI_COMMON_HDR_LENGTH); // nolint: magic-offset (PCI config-space header length, protocol constant)
 
     // Read what the device indicated the limits are
     PciReadDeviceConfig(PdoExtension, PciData.cast(), 0, PCI_COMMON_HDR_LENGTH); // nolint: magic-offset (PCI config-space header length, protocol constant)
 
     // Write back the original configuration header
-    PciWriteDeviceConfig(PdoExtension, Current, 0, PCI_COMMON_HDR_LENGTH); // nolint: magic-offset (PCI config-space header length, protocol constant)
+    PciWriteDeviceConfig(PdoExtension, (Current).cast(), 0, PCI_COMMON_HDR_LENGTH); // nolint: magic-offset (PCI config-space header length, protocol constant)
 
     // Copy back the original command from the context
     (*Current).Command = (*Context).Command;
@@ -1347,7 +1349,7 @@ pub unsafe extern "system" fn PciWriteLimitsAndRestoreCurrent(
         // Program it back into the device
         PciWriteDeviceConfig(
             PdoExtension,
-            core::ptr::addr_of_mut!((*Context).Command) as *mut PCI_COMMON_HEADER,
+            (core::ptr::addr_of_mut!((*Context).Command) as *mut PCI_COMMON_HEADER).cast(),
             ::core::mem::offset_of!(PCI_COMMON_HEADER, Command) as u32,
             ::core::mem::size_of::<USHORT>() as u32,
         );
@@ -2087,7 +2089,7 @@ pub unsafe extern "system" fn PciSetResources(
             (*PdoExtension).CommandEnables |= PCI_ENABLE_WRITE_AND_INVALIDATE as u16;
         } else {
             DbgPrint(
-                b"(%s:%d) PCI (pdox %p) cache line size %02x rejected, MWI stays off\n\0".as_ptr() as *const i8,
+                (b"(%s:%d) PCI (pdox %p) cache line size %02x rejected, MWI stays off\n\0".as_ptr() as *const i8).cast(),
                 b"drivers/bus/pcix/enum.c\0".as_ptr() as *const i8,
                 2358,
                 PdoExtension,
@@ -2111,7 +2113,7 @@ pub unsafe extern "system" fn PciSetResources(
     let new_latency_timer = (*PdoExtension).SavedLatencyTimer;
     if pci_data.LatencyTimer != new_latency_timer {
         DbgPrint(
-            b"PCI (pdox %p) changing latency from %02x to %02x.\n\0".as_ptr() as *const i8,
+            (b"PCI (pdox %p) changing latency from %02x to %02x.\n\0".as_ptr() as *const i8).cast(),
             PdoExtension,
             pci_data.LatencyTimer as u32,
             new_latency_timer as u32,
@@ -2121,8 +2123,8 @@ pub unsafe extern "system" fn PciSetResources(
     let new_cache_line_size = (*PdoExtension).SavedCacheLineSize;
     if pci_data.CacheLineSize != new_cache_line_size {
         DbgPrint(
-            b"PCI (pdox %p) changing cache line size from %02x to %02x.\n\0".as_ptr()
-                as *const i8,
+            (b"PCI (pdox %p) changing cache line size from %02x to %02x.\n\0".as_ptr()
+                as *const i8).cast(),
             PdoExtension,
             pci_data.CacheLineSize as u32,
             new_cache_line_size as u32,

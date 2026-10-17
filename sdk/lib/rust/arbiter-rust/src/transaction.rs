@@ -2,8 +2,7 @@
 use crate::prelude::*;
 // rustconv-assembly: whole-tu
 use crate::entry::ArbiterLibSortArbitrationList;
-use ntkrnl_sys::ddk::{ARBITER_ALLOCATION_STATE, ARBITER_ALTERNATIVE, ARBITER_CONFLICT_INFO, ARBITER_LIST_ENTRY, INT32, IoGetDeviceProperty, PARBITER_ALLOCATION_STATE, PARBITER_ALTERNATIVE, PARBITER_BOOT_ALLOCATION_PARAMETERS, PARBITER_CONFLICT_INFO, PARBITER_INSTANCE, PARBITER_LIST_ENTRY, PARBITER_QUERY_CONFLICT_PARAMETERS, PARBITER_RETEST_ALLOCATION_PARAMETERS, PARBITER_TEST_ALLOCATION_PARAMETERS, PDEVICE_OBJECT, PIO_RESOURCE_DESCRIPTOR, PRTL_CONFLICT_RANGE_CALLBACK, PRTL_RANGE, PRTL_RANGE_LIST, RtlCopyRangeList, RtlDeleteOwnersRanges, RtlFreeRangeList, RtlInitializeRangeList, UINT32, UINT64};
-use core::ffi::c_void;
+use ntkrnl_sys::ddk::{ARBITER_ALLOCATION_STATE, ARBITER_ALTERNATIVE, ARBITER_CONFLICT_INFO, ARBITER_LIST_ENTRY, INT32, IoGetDeviceProperty, PARBITER_ALLOCATION_STATE, PARBITER_ALTERNATIVE, PARBITER_CONFLICT_INFO, PARBITER_INSTANCE, PARBITER_LIST_ENTRY, PDEVICE_OBJECT, PIO_RESOURCE_DESCRIPTOR, PRTL_CONFLICT_RANGE_CALLBACK, PRTL_RANGE, PRTL_RANGE_LIST, RtlCopyRangeList, RtlDeleteOwnersRanges, RtlFreeRangeList, RtlInitializeRangeList, UINT64};
 
 // ---- file-scope preamble (translated) ----
 // No file-scope declarations: the preamble contains only function definitions and `#define NDEBUG` (valueless, so no constant is emitted).
@@ -14,7 +13,7 @@ unsafe extern "C" fn ArbpBuildAlternative(
 ) -> NTSTATUS {
     let mut Length: UINT64 = 0;
     let mut Alignment: UINT64 = 0;
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     (*Alternative).Descriptor = Descriptor;
     Status = ((*Arbiter).UnpackRequirement.unwrap_unchecked())(
@@ -40,7 +39,7 @@ unsafe extern "C" fn ArbpBuildAlternative(
     }
 
     (*Alternative).Flags = 0;
-    (*Alternative).Priority = (ARBITER_PRIORITY_NULL as i32);
+    (*Alternative).Priority = ARBITER_PRIORITY_NULL as i32;
 
     if (*Descriptor).ShareDisposition as ::core::ffi::c_int
         == CmResourceShareShared as ::core::ffi::c_int
@@ -78,7 +77,7 @@ unsafe extern "C" fn ArbpBuildAllocationStack(
     let mut ListEntry: PLIST_ENTRY;
     let mut StateCount: ULONG = EntryCount.wrapping_add(1);
     let mut AlternativeCount: ULONG = 0;
-    let mut Size: ULONG;
+    let Size: ULONG;
 
     PAGED_CODE!();
 
@@ -103,7 +102,7 @@ unsafe extern "C" fn ArbpBuildAllocationStack(
         ) as ULONG;
 
     if (*Arbiter).AllocationStackMaxSize < Size {
-        let mut NewStack: PARBITER_ALLOCATION_STATE;
+        let NewStack: PARBITER_ALLOCATION_STATE;
 
         NewStack = ExAllocatePoolWithTag(
             PagedPool,
@@ -379,8 +378,8 @@ unsafe extern "C" fn ArbpBootAllocation(
     let mut ListEntry: PLIST_ENTRY;
     let mut State: ARBITER_ALLOCATION_STATE = core::mem::zeroed();
     let mut Alternative: ARBITER_ALTERNATIVE = core::mem::zeroed();
-    let mut Old: PRTL_RANGE_LIST;
-    let mut Status: NTSTATUS;
+    let Old: PRTL_RANGE_LIST;
+    let Status: NTSTATUS;
 
     PAGED_CODE!();
 
@@ -429,8 +428,8 @@ unsafe extern "C" fn ArbpBootAllocation(
             State.AlternativeCount = 1;
             State.Alternatives = core::ptr::addr_of_mut!(Alternative);
             State.CurrentAlternative = core::ptr::addr_of_mut!(Alternative);
-            State.Flags = (ARBITER_STATE_FLAG_BOOT as u16);
-            State.RangeAttributes = (ARBITER_RANGE_BOOT_ALLOCATED as u8);
+            State.Flags = ARBITER_STATE_FLAG_BOOT as u16;
+            State.RangeAttributes = ARBITER_RANGE_BOOT_ALLOCATED as u8;
             State.Start = Alternative.Minimum;
             State.CurrentMinimum = State.Start;
             State.End = Alternative.Maximum;
