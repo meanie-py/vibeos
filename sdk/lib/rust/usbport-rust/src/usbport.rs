@@ -2564,11 +2564,15 @@ pub unsafe extern "system" fn USBPORT_CompleteTransfer(Urb: PURB, TransferStatus
 
     if ((*Urb).__bindgen_anon_1.UrbHeader.UsbdFlags as u32 & USBD_FLAG_ALLOCATED_MDL as u32) != 0 {
         IoFreeMdl((*Transfer).TransferBufferMDL);
-        (*Urb).__bindgen_anon_1.UrbHeader.UsbdFlags |= !(USBD_FLAG_ALLOCATED_MDL as u32);
+        // The C writes `|= ~FLAG`, which SETS every other flag (ALLOCATED_MDL among them,
+        // so a reused URB could IoFreeMdl a stale pointer) instead of clearing this one.
+        (*Urb).__bindgen_anon_1.UrbHeader.UsbdFlags &= !(USBD_FLAG_ALLOCATED_MDL as u32);
     }
 
     (*Urb).__bindgen_anon_1.UrbControlTransfer.hca.Reserved8[0] = core::ptr::null_mut();
-    (*Urb).__bindgen_anon_1.UrbHeader.UsbdFlags |= !(USBD_FLAG_ALLOCATED_TRANSFER as u32);
+    // The C writes `|= ~FLAG`, which SETS every other flag (ALLOCATED_MDL among them,
+    // so a reused URB could IoFreeMdl a stale pointer) instead of clearing this one.
+    (*Urb).__bindgen_anon_1.UrbHeader.UsbdFlags &= !(USBD_FLAG_ALLOCATED_TRANSFER as u32);
 
     Irp = (*Transfer).Irp;
 

@@ -12945,6 +12945,32 @@ page, and it asked for a 0-byte common buffer.
 **Fix:** report `BYTES_TO_PAGES(MaximumLength) + 1` for a bus master and 1 otherwise, as
 `x86/dma.rs` does. "Map registers are free here" is true of the hardware, not of the contract.
 
+### x86 HAL: a queued adapter-channel request gets map registers it never asked for
+**Symptom:** BUGCHECK 0xA, a write to 0 at DISPATCH_LEVEL in the HAL's memcpy, under
+`IoMapTransfer` from `USBPORT_MapTransfer`, minutes into heavy USB traffic (Wi-Fi on the
+OptiPlex). The bugcheck says `hal.dll+`; the board runs `halmp.dll`, so symbolicate that.
+**Cause:** `HalAllocateAdapterChannel` gives map registers only when the adapter
+`NeedsMapRegisters`; `IoFreeAdapterChannel`, starting a request that queued while the channel
+was busy, checked only the count (the C has the same line). usbport's scatter/gather adapter
+passes a count, so a queued transfer got map registers, `IoMapTransfer` took the copy path,
+and copied into an entry with no buffer behind it.
+**Fix:** check `NeedsMapRegisters` there too. Contention is the trigger, so a light boot
+never shows it.
+
+### The loader faults with ESR EC 0 right after dropping from EL2 to EL1
+- **Symptom:** on a board whose firmware hands off at EL2 (Pi 4, Pi 5), `[FLDR] ctx-el1`
+  prints and then `!!FLDR-EL1-FAULT esr=0x02000000 far=0 ... ec=0x00`, the ELR inside
+  ordinary loader code (printf's flag parsing). QEMU, handing off at EL1, never shows it.
+- **Cause:** `Arm64DropToEl1` erets into EL1 with SCTLR_EL1.M/C/I clear, so until the MMU
+  is on every fetch and load reads DRAM, and DRAM is missing whatever the firmware's EL2
+  caches never wrote back: here, the loader page holding printf, read as zeros (`udf`).
+  It surfaced when a debug print was restored inside that window (582e3f20ad4); the few
+  lines that had run there before happened to be in DRAM.
+- **Fix:** clean and invalidate the data caches to PoC by set/way, plus `ic iallu`, in
+  the same asm block as the `eret` (a function call in between could dirty a line), and
+  keep the flat window free of anything but the MMU enable. Any EL or MMU transition
+  that turns caching off needs that clean first.
+
 ### A UEFI boot with no display hangs in the loader (and then bugchecks 0xB4)
 - **Symptom:** with no display device (a server; `smoke --arch arm64 --headless`) the
   serial log stops at `[FLDR] past _changestack, entering RunLoader` with the CPU in

@@ -918,7 +918,10 @@ SetupDiBuildDriverInfoList(
                                 && strlenW(Nt10Section) > BaseLength
                                 && SetupGetLineCountW(currentInfFileDetails->hInf, Nt10Section) > 0)
                             {
-                                /* Once per INF: every device install rescans every INF */
+                                /* Once per INF per process: every device install rescans every
+                                 * INF. A WARN, not an ERR: this is the expected path for every
+                                 * current vendor INF, and setupapi loads afresh in each install
+                                 * process, so an ERR here printed hundreds of times a boot. */
                                 static ULONG Reported[16];
                                 ULONG Hash = 5381, k;
                                 LPCWSTR c;
@@ -929,7 +932,7 @@ SetupDiBuildDriverInfoList(
                                 if (!Seen)
                                 {
                                     if (k < ARRAYSIZE(Reported)) Reported[k] = Hash;
-                                    ERR("%s: no models for this version; using the NT 10.0 models section %s\n",
+                                    WARN("%s: no models for this version; using the NT 10.0 models section %s\n",
                                         debugstr_w(FullInfFileName), debugstr_w(Nt10Section));
                                 }
                                 strcpyW(ManufacturerSection, Nt10Section);
