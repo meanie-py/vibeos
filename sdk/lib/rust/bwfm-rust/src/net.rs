@@ -27,6 +27,65 @@ pub fn ethernet<'a>(f: &Frame<'a>) -> Option<&'a [u8]> {
     Some(eth)
 }
 
+/// Frames the stack has handed over, waiting for the worker that owns the bus. The
+/// stack's send path may run at DISPATCH_LEVEL and must not wait on the SDIO bus, so
+/// it only copies the frame in; the worker copies it out and sends it. A full ring
+/// refuses the frame, and the stack's protocol retries as it would a lost one.
+pub struct TxRing<const N: usize> {
+    slots: [[u8; ETH_FRAME_MAX]; N],
+    len: [u16; N],
+    head: usize,
+    count: usize,
+}
+
+impl<const N: usize> TxRing<N> {
+    pub const fn new() -> Self {
+        Self { slots: [[0; ETH_FRAME_MAX]; N], len: [0; N], head: 0, count: 0 }
+    }
+
+    /// Queue a copy of `eth`. False when the ring is full or the frame is no Ethernet frame.
+    pub fn push(&mut self, eth: &[u8]) -> bool {
+        if self.count == N || eth.len() < 14 || eth.len() > ETH_FRAME_MAX {
+            return false;
+        }
+        let at = (self.head + self.count) % N;
+        self.slots[at][..eth.len()].copy_from_slice(eth);
+        self.len[at] = eth.len() as u16;
+        self.count += 1;
+        true
+    }
+
+    /// The oldest frame, copied into `out`; its length.
+    pub fn pop(&mut self, out: &mut [u8; ETH_FRAME_MAX]) -> Option<usize> {
+        if self.count == 0 {
+            return None;
+        }
+        let n = self.len[self.head] as usize;
+        out[..n].copy_from_slice(&self.slots[self.head][..n]);
+        self.head = (self.head + 1) % N;
+        self.count -= 1;
+        Some(n)
+    }
+
+    pub fn len(&self) -> usize {
+        self.count
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.count == 0
+    }
+
+    pub fn clear(&mut self) {
+        self.count = 0;
+    }
+}
+
+impl<const N: usize> Default for TxRing<N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<P: Platform> Bus<P> {
     /// Send a whole Ethernet frame as the stack built it; its source address
     /// should be the chip's (`read_mac`).
@@ -96,6 +155,24 @@ mod tests {
         })
         .unwrap();
         assert_eq!(got, vec![reply]);
+    }
+
+    #[test]
+    fn the_ring_hands_frames_out_in_order_and_refuses_when_full() {
+        let mut r: Box<TxRing<2>> = Box::default();
+        let mut out = [0u8; ETH_FRAME_MAX];
+        assert_eq!(r.pop(&mut out), None);
+        let (a, b, c) = (vec![1u8; 60], vec![2u8; ETH_FRAME_MAX], vec![3u8; 14]);
+        assert!(r.push(&a) && r.push(&b));
+        assert!(!r.push(&c), "two slots");
+        assert_eq!(r.pop(&mut out), Some(60));
+        assert_eq!(out[..60], a[..]);
+        assert!(r.push(&c), "a slot came free; the ring wraps");
+        assert_eq!(r.pop(&mut out), Some(ETH_FRAME_MAX));
+        assert_eq!(out[..], b[..]);
+        assert_eq!(r.pop(&mut out), Some(14));
+        assert_eq!((r.pop(&mut out), r.len()), (None, 0));
+        assert!(!r.push(&[0u8; 13]) && !r.push(&vec![0u8; ETH_FRAME_MAX + 1]), "not Ethernet frames");
     }
 
     #[test]

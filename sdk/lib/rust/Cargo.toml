@@ -680,6 +680,7 @@ members = [
     "comctl32-rust",
     "inetcpl-rust",
     "wpa-rust",
+    "ndis6-sys",
     "ndis-rust",
     "bwfm-rust",
     "bwfm-cargo",

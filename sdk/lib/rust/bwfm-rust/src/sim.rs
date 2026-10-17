@@ -71,6 +71,11 @@ pub struct Card {
     wsec: u32,
     ap_ptk: Option<[u8; 48]>,
     pairwise_ok: bool,
+    /// Group keys the host installed, (key id, key), in order.
+    pub group_keys: Vec<(u8, Vec<u8>)>,
+    /// The AP's EAPOL replay counter: message 3 used 2.
+    ap_replay: u64,
+    last_rekey: Vec<u8>,
 }
 
 pub const AP_SSID: &[u8] = b"piconet";
@@ -196,6 +201,9 @@ impl Card {
             wsec: 0,
             ap_ptk: None,
             pairwise_ok: false,
+            group_keys: Vec::new(),
+            ap_replay: 2,
+            last_rekey: Vec::new(),
         }
     }
 
@@ -327,6 +335,10 @@ impl Card {
     /// An event as the firmware sends it: the BCDC data header, an Ethernet
     /// frame of type 0x886C, Broadcom's header, the big-endian event message.
     fn queue_bcm_event(&mut self, event_type: u32, status: u32, data: &[u8]) {
+        self.queue_bcm_event_reason(event_type, status, 0, data)
+    }
+
+    fn queue_bcm_event_reason(&mut self, event_type: u32, status: u32, reason: u32, data: &[u8]) {
         let mut f = vec![0x20, 0, 0, 0];
         f.extend_from_slice(&MAC);
         f.extend_from_slice(&MAC);
@@ -334,7 +346,7 @@ impl Card {
         f.extend_from_slice(&[0x80, 0x01, 0, 0, 0, 0x00, 0x10, 0x18, 0x00, 0x01]);
         f.extend_from_slice(&2u16.to_be_bytes()); // version
         f.extend_from_slice(&0u16.to_be_bytes()); // flags
-        for v in [event_type, status, 0, 0, data.len() as u32] {
+        for v in [event_type, status, reason, 0, data.len() as u32] {
             f.extend_from_slice(&v.to_be_bytes());
         }
         f.extend_from_slice(&[0; 6 + 16 + 2]); // addr, ifname, ifidx, bsscfgidx
@@ -499,6 +511,10 @@ impl Card {
                 Some(ptk) if Self::mic_ok(&ptk[..16], f) => self.ap_log.push("msg4 ok"),
                 _ => self.ap_log.push("msg4 bad"),
             },
+            0x0302 => match self.ap_ptk {
+                Some(ptk) if Self::mic_ok(&ptk[..16], f) => self.ap_log.push("group msg2 ok"),
+                _ => self.ap_log.push("group msg2 bad"),
+            },
             _ => self.ap_log.push("unexpected EAPOL"),
         }
     }
@@ -513,8 +529,33 @@ impl Card {
             self.pairwise_ok = algo == 4 && k[156..162] == AP_BSSID && self.ap_ptk.is_some_and(|p| key == &p[32..48]);
         } else {
             self.ap_log.push("group key");
+            self.group_keys.push((k[0], key.to_vec()));
             self.keys_match = self.pairwise_ok && algo == 4 && key == AP_GTK && k[0] == 1;
         }
+    }
+
+    /// The AP rekeys the group: message 1 of the group handshake, carrying `gtk` as key
+    /// `id`, wrapped with the pairwise KEK.
+    pub fn ap_rekeys(&mut self, gtk: [u8; 16], id: u8) {
+        let Some(ptk) = self.ap_ptk else { panic!("a rekey before the 4-way handshake") };
+        self.ap_replay += 1;
+        let mut kd = vec![0xDD, 22, 0x00, 0x0F, 0xAC, 0x01, id, 0x00];
+        kd.extend_from_slice(&gtk);
+        let kek: [u8; 16] = ptk[16..32].try_into().unwrap_or_default();
+        let g1 = Self::ap_frame(0x1382, self.ap_replay, &[0; 32], &[0; 8], &Self::wrap(&kek, &kd), Some(&ptk[..16]));
+        self.queue_eapol(&g1);
+        self.last_rekey = g1;
+    }
+
+    /// The last rekey message again, unchanged: a replay.
+    pub fn ap_replays_rekey(&mut self) {
+        let g1 = self.last_rekey.clone();
+        self.queue_eapol(&g1);
+    }
+
+    /// The AP deauthenticates us, with an 802.11 reason code.
+    pub fn ap_deauths(&mut self, reason: u32) {
+        self.queue_bcm_event_reason(6, 0, reason, &[]);
     }
 
     /// An Ethernet frame arriving for the host, as a data frame.

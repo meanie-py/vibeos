@@ -533,6 +533,7 @@ dependencies = [
 name = "bwfm-rust"
 version = "0.1.0"
 dependencies = [
+ "ndis6-sys",
  "ntkrnl-sys",
  "panic-common",
  "sdhci-rust",
@@ -3877,11 +3878,19 @@ dependencies = [
 name = "ndis-rust"
 version = "0.1.0"
 dependencies = [
+ "ndis6-sys",
  "ntkrnl-sys",
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
  "wpa-rust",
+]
+
+[[package]]
+name = "ndis6-sys"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
 ]
 
 [[package]]

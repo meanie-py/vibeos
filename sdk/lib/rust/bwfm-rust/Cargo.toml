@@ -18,3 +18,4 @@ panic-common = { path = "../panic-common", features = ["kernel"] }
 ntkrnl-sys = { path = "../ntkrnl-sys" }
 sdhci-rust = { path = "../sdhci-rust" }
 wpa-rust = { path = "../wpa-rust" }
+ndis6-sys = { path = "../ndis6-sys" }
