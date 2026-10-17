@@ -2168,10 +2168,12 @@ body) reached from csrss. The sweep after it was clean and identical to the firs
    `add_rpc_guards`) generates `<fn>_guarded` wrappers over ntdll's RtlSehTryExcept from the
    widl client header: msi's 37 `remote_*` sites and its custom-action page-fault guard, and
    rpcrt4 rpc_epmap.c's endpoint-mapper calls (i386 had no guard). setupapi's cfgmgr.c (64
-   sites) was ported to Rust instead (setupapi-rust, rpc_try). STILL OWED from that work:
-   (a) the setupapi winetest (devinst/misc call CM_*) as a before/after oracle for the 217
-   translated functions, which smoke never reaches; it needs a `--rostests` build and a
-   payload in the olewinetest pattern. (b) The scanner bug the port found (field manual,
+   sites) was ported to Rust instead (setupapi-rust, rpc_try). Graded in the guest (amd64):
+   Wine's setupapi suite gives byte-identical output on the Rust and on the pre-flip C
+   (payloads `setupapiwinetest` / `setupapiwinetestc`; 461 lines, devinst 481/197 on both).
+   The C payload has to import the C as setupapc.dll, because setupapi is a KnownDLL; its
+   build.sh says why. STILL OWED from that work: (a) the same before/after on i386, where
+   rpc_try takes the fs:[0] path. (b) The scanner bug the port found (field manual,
    "an SEH block under another name"): the old scanner gives different bodies for 248 functions
    in 31 files. Settle which SHIPPED ports were bought truncated, by diffing each one's banked
    C input (`.responses`) against the new scanner's body. A naive call-coverage audit was all

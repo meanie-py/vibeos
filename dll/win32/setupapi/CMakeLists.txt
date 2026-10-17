@@ -83,3 +83,5 @@ add_importlibs(setupapi gdi32 comctl32 advapi32 user32 rpcrt4 version msvcrt ker
 add_pch(setupapi setupapi_private.h "${PCH_SKIP_SOURCE}")
 add_dependencies(setupapi rust_setupapi)
 add_cd_file(TARGET setupapi DESTINATION reactos/system32 FOR all)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

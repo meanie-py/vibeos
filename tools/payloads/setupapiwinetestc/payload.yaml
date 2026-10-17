@@ -1,0 +1,29 @@
+# setupapi's runtime oracle: Wine's setupapi suite (setupapiwinetest's list) against the
+# pre-flip C of the TUs setupapi-rust has taken over. build.sh builds setupapi_c.dll
+# (`python -m rustconv.c_oracle dll/win32/setupapi`) and a copy of the test exe that
+# imports it as setupapc.dll; build.sh says why the rename is the only way past the
+# KnownDLL. Diff the [APITEST:...] lines of the two runs: they should be identical.
+name: setupapiwinetestc
+description: Wine setupapi conformance suite against setupapi's pre-flip C (the Rust port's oracle)
+
+build_hint: "generate setupapiwinetest's list first (its build_hint); build.sh {arch} does the rest"
+
+binaries:
+  - src: tools/payloads/apitest/apitest-sweep-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/apitest-sweep.exe
+  - src: tools/payloads/setupapiwinetest/winetest-suites-{arch}.txt
+    dest: bin/apitest-suites.txt
+  - src: tools/payloads/setupapiwinetest/winetest-skip-{arch}.txt
+    dest: bin/apitest-skip.txt
+  - src: tools/payloads/setupapiwinetest/cwd.txt
+    dest: bin/apitest-cwd.txt
+  - src: tools/payloads/setupapiwinetestc/setupapi_winetest_c-{arch}.exe
+    dest: bin/setupapi_winetest.exe
+  - src: tools/payloads/setupapiwinetestc/setupapi_c-{arch}.dll
+    dest: bin/setupapc.dll
+
+test:
+  launch_marker: "[APITEST-SWEEP] done"
+  launch_drain_secs: 3600
+  launch_idle_secs: 600

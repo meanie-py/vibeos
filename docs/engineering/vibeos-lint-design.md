@@ -672,3 +672,28 @@ single-digit source suite.
 Regroup before starting the next tooling migration. The user's order is migration/reporting
 utilities, code generators, build infrastructure, QEMU/testing infrastructure, hardware/payload
 tools, `vibeos-cli`, and finally C-to-Rust tooling.
+
+
+## Performance checkpoint 5: vendor audit and CLI lifetime (2026-10-17)
+
+Vendor directory lookups now use the existing sorted inventory instead of scanning every
+file for every directory. Fixed prose-license regexes compile once, and the filesystem walk
+uses directory-entry types, checking symlink targets only when necessary. The first selected
+comparison dropped from 119.95s to 9.81s with identical empty output. A later current-tree
+observation was 2.23s (2.33s external wall), including 1.29s to inventory 62,360 files. Cache
+state and the master merge differ between observations; these are component measurements.
+
+Extern drift retains a large bindgen tree across both existing extraction passes. Original
+Python at `996c6ff8957` still matches exactly: 23 extern findings and zero vendor findings.
+The one-shot source CLI also leaves its read-only corpus for OS reclamation at process exit,
+avoiding a destructor walk through potentially swapped-out cached trees and source views.
+Library callers retain normal ownership and cleanup. `TIMING source_rules` now measures the
+aggregate execution phase, separately from snapshot loading and process teardown.
+
+Both source gates passed all 120 stages with the same 5,638 finding lines and SHA-256. The
+first overlapping native run took 453.7s; a subsequent run without other lint/tooling jobs
+from this lane took 182.9s: 29.49s snapshot loading and 150.37s rule execution. Build/history
+caches differ and fleet activity was not controlled, so this is not a controlled speedup.
+`parity/performance-04.json` preserves the method, hashes, timings and Python replay.
+The single-digit target remains owed; retained source-view/AST memory and repeated fact
+extraction are the next performance work.

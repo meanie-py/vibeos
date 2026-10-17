@@ -189,3 +189,14 @@ def test_a_module_born_cargo_says_so(tmp_path):
     _git(tmp_path, "commit", "-qm", "born cargo")
     with pytest.raises(co.OracleError, match="born in cargo form"):
         co.write(tmp_path)
+
+
+def test_the_em_dash_flip_spelling_counts_as_flipped():
+    # advapi32 and setupapi spell it `# x.c — replaced by Rust (...)`; ~450 lines do.
+    out = co.generate(_CML.replace("  # replaced by Rust", " — replaced by Rust"))
+    assert "set(SOURCE_C_ORACLE\n    active.c\n    help.c\n    x.h\n)" in out
+
+
+def test_a_library_whose_name_contains_rust_is_kept():
+    out = co.generate(_CML + "add_delay_importlibs(x comdlg32 wintrust)\n")
+    assert "add_delay_importlibs(x_c comdlg32 wintrust)" in out

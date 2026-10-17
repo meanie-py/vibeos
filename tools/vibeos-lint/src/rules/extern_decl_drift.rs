@@ -245,8 +245,12 @@ fn nolint(s: &str) -> bool {
         }
     })
 }
-fn file_facts(f: &SourceFile, owner: Option<&str>, all: &mut Facts) -> Result<(), String> {
-    let tree = f.rust_tree()?;
+fn file_facts(
+    f: &SourceFile,
+    tree: &tree_sitter::Tree,
+    owner: Option<&str>,
+    all: &mut Facts,
+) -> Result<(), String> {
     let src = &f.text;
     let (nodes, sibling_attrs) = collect_tree(tree.root_node(), src);
     let lines = src.lines().collect::<Vec<_>>();
@@ -825,8 +829,11 @@ impl Rule for ExternDeclDrift {
                     .map(|f| {
                         let owner = f.path.ancestors().find(|d| crate_dirs.contains(*d));
                         let owner_key = owner.map(|p| p.to_string_lossy().to_string());
+                        // Large bindgen trees are weak-cached. Hold this tree
+                        // across both extraction passes so islands parse once.
+                        let tree = f.rust_tree()?;
                         let mut local = Facts::default();
-                        file_facts(f, owner_key.as_deref(), &mut local)?;
+                        file_facts(f, &tree, owner_key.as_deref(), &mut local)?;
                         let island = if owner.is_none()
                             && f.path
                                 .file_name()
@@ -838,7 +845,7 @@ impl Rule for ExternDeclDrift {
                                 .find(|d| f.path.starts_with(d))
                                 .map(|sd| {
                                     let mut facts = Facts::default();
-                                    file_facts(f, Some("island"), &mut facts)?;
+                                    file_facts(f, &tree, Some("island"), &mut facts)?;
                                     Ok::<_, String>((sd.clone(), facts))
                                 })
                                 .transpose()?
