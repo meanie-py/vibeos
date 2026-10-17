@@ -1163,6 +1163,22 @@ def land(args, repo: Path) -> int:
     return _land_direct(args, repo)
 
 
+def _direct_gate_skip(repo: Path, tree: str) -> str | None:
+    """Why `land --direct` may push this (already master-merged) tree ungated, or None.
+
+    A fresh full-gate stamp, or a delta vs origin/master that is docs-only. The second is
+    the pre-push hook's own exemption (every non-docs path on master was gated when it
+    landed), so the push it allows is one the hook would have allowed anyway. Without it
+    the integrator paid a 21-minute cold gate for one Markdown file (cpp-cluster's plan
+    note, 2026-10-16): the preflights skipped it, the gate did not.
+    """
+    if fresh_full_stamp(repo, tree):
+        return f"fresh green full-gate stamp already covers tree {tree[:12]}"
+    if _docs_only_vs_master(repo):
+        return "docs-only delta vs origin/master (the pre-push hook's exemption)"
+    return None
+
+
 def _land_direct(args, repo: Path) -> int:
     run = Run("land", "master")
     pushed = False
@@ -1219,15 +1235,9 @@ def _land_direct(args, repo: Path) -> int:
             _check_hold_for_direct(repo)
             head = _merge_master(repo, run)
             tree = _git(repo, "rev-parse", "HEAD^{tree}")
-            stamp = fresh_full_stamp(repo, tree)
-            if stamp:
-                run.add(
-                    Stage(
-                        "gate",
-                        status="skip",
-                        detail=f"fresh green full-gate stamp already covers tree {tree[:12]}",
-                    )
-                )
+            skip = _direct_gate_skip(repo, tree)
+            if skip:
+                run.add(Stage("gate", status="skip", detail=skip))
             else:
                 _run_gate(repo, run, args)
             if getattr(args, "no_push", False):

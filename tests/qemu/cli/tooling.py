@@ -58,6 +58,9 @@ _PYTEST_SUITES = [
     # The Wi-Fi supplicant (ndis-rust's wpa.rs): a wrong MIC or key looks on the bench like
     # an access point silently dropping the handshake.
     (".", ".", "tools/test_wpa_supplicant.py"),
+    # The Pi Wi-Fi driver's SDPCM/BCDC layouts (bwfm-rust's proto.rs): a wrong one looks on
+    # the board like a chip that never answers.
+    (".", ".", "tools/test_bwfm_proto.py"),
     # An oracle needs an oracle. verify_c_signatures reports its own type-resolution gaps as
     # defects in the code when it is wrong, and reports "verified" over types it never
     # resolved when it is blind — neither shows up in review or in its own output.

@@ -11025,6 +11025,20 @@ def test_docs_only_predicate_ignores_what_master_did_meanwhile(tiny_repo: Path):
     assert land_mod._docs_only_vs_master(tiny_repo) is True
 
 
+def test_direct_land_skips_the_gate_for_a_docs_only_delta(tiny_repo: Path, monkeypatch):
+    """The pre-push hook passes a docs-only delta vs master with no stamp, so `land
+    --direct` gating one (21 minutes for a single `.md`) bought nothing."""
+    monkeypatch.setattr(land_mod, "fresh_full_stamp", lambda repo, tree: None)
+    _with_origin_master(tiny_repo, "docs/engineering/plan.md")
+    assert "docs-only" in (land_mod._direct_gate_skip(tiny_repo, "t" * 40) or "")
+
+
+def test_direct_land_still_gates_when_source_rides_along(tiny_repo: Path, monkeypatch):
+    monkeypatch.setattr(land_mod, "fresh_full_stamp", lambda repo, tree: None)
+    _with_origin_master(tiny_repo, "docs/engineering/plan.md", "tools/thing.py")
+    assert land_mod._direct_gate_skip(tiny_repo, "t" * 40) is None
+
+
 # --- launch retry (host-side socket flake, 2026-09-20) ----------------------
 
 
