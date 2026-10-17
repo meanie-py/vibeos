@@ -220,14 +220,16 @@ fn match_brace(s: &str, open: usize) -> Option<usize> {
     }
     None
 }
-fn harvest(
-    files: impl IntoIterator<Item = (String, String)>,
-) -> BTreeMap<String, BTreeSet<(i128, String)>> {
+#[derive(Clone, Default)]
+struct HarvestState {
+    raw: BTreeMap<String, String>,
+    sites: BTreeMap<String, Vec<(String, String)>>,
+}
+
+fn harvest_into(state: &mut HarvestState, files: impl IntoIterator<Item = (String, String)>) {
     let define = re(r"^\s*#\s*define\s+([A-Za-z_][A-Za-z0-9_]*)\s+(.+?)\s*$");
     let en = re(r"\benum\b[^{};]*\{");
     let item = re(r"^([A-Za-z_][A-Za-z0-9_]*)\s*(?:=\s*(.+))?$");
-    let mut raw: BTreeMap<String, String> = BTreeMap::new();
-    let mut sites: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
     for (rel, content) in files {
         let text = strip_comments(&content);
         // Match the Python phase order: collect file macros first, then parse
@@ -236,8 +238,9 @@ fn harvest(
         for (i, line) in text.lines().enumerate() {
             if let Some(m) = define.captures(line) {
                 if !m[1].contains('(') {
-                    raw.entry(m[1].into()).or_insert_with(|| m[2].into());
-                    sites
+                    state.raw.entry(m[1].into()).or_insert_with(|| m[2].into());
+                    state
+                        .sites
                         .entry(m[1].into())
                         .or_default()
                         .push((m[2].into(), format!("{rel}:{}", i + 1)))
@@ -257,10 +260,14 @@ fn harvest(
                         .map_or_else(|| next.to_string(), |v| v.as_str().to_owned());
                     let val = x
                         .get(2)
-                        .and_then(|v| eval_c(v.as_str(), &raw, 0))
+                        .and_then(|v| eval_c(v.as_str(), &state.raw, 0))
                         .or_else(|| x.get(2).is_none().then_some(next));
-                    raw.entry(name.clone()).or_insert(expr.clone());
-                    sites.entry(name).or_default().push((expr, rel.clone()));
+                    state.raw.entry(name.clone()).or_insert(expr.clone());
+                    state
+                        .sites
+                        .entry(name)
+                        .or_default()
+                        .push((expr, rel.clone()));
                     next = val.unwrap_or(next) + 1
                 } else {
                     next += 1
@@ -268,16 +275,28 @@ fn harvest(
             }
         }
     }
+}
+
+fn finish_harvest(state: HarvestState) -> BTreeMap<String, BTreeSet<(i128, String)>> {
     let mut out: BTreeMap<String, BTreeSet<(i128, String)>> = BTreeMap::new();
-    for (name, entries) in sites {
+    for (name, entries) in state.sites {
         for (expr, where_) in entries {
-            if let Some(v) = eval_c(&expr, &raw, 0) {
+            if let Some(v) = eval_c(&expr, &state.raw, 0) {
                 out.entry(name.clone()).or_default().insert((v, where_));
             }
         }
     }
     out
 }
+
+fn harvest(
+    files: impl IntoIterator<Item = (String, String)>,
+) -> BTreeMap<String, BTreeSet<(i128, String)>> {
+    let mut state = HarvestState::default();
+    harvest_into(&mut state, files);
+    finish_harvest(state)
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Tok {
     Num(i128),
@@ -484,17 +503,31 @@ fn eval_c(expr: &str, raw: &BTreeMap<String, String>, depth: usize) -> Option<i1
     let v = p.expr(0)?;
     (p.i == p.ts.len()).then_some(v)
 }
-fn crate_oracle(c: &Corpus, name: &str) -> BTreeMap<String, BTreeSet<(i128, String)>> {
-    let s = stem(name);
-    let all = c.ordered_sources("invented-corpus");
-    let mut files = Vec::new();
-    let mut headers: Vec<_> = all
+fn shared_sdk_state(c: &Corpus) -> HarvestState {
+    let mut headers: Vec<_> = c
+        .ordered_sources("invented-corpus")
         .iter()
         .copied()
         .filter(|f| path_ext(&f.path, "h") && sdk_header(&f.path))
         .collect();
     headers.sort_by_key(|f| f.path.clone());
-    files.extend(headers);
+    let mut state = HarvestState::default();
+    harvest_into(
+        &mut state,
+        headers
+            .into_iter()
+            .map(|f| (f.path.display().to_string(), f.text.clone())),
+    );
+    state
+}
+
+fn crate_oracle(
+    c: &Corpus,
+    name: &str,
+    shared: &HarvestState,
+) -> BTreeMap<String, BTreeSet<(i128, String)>> {
+    let s = stem(name);
+    let all = c.ordered_sources("invented-corpus");
 
     // c_dirs_for keeps every matching directory in source-walk order. A parent
     // module directory can overlap a nested directory with the same basename,
@@ -518,6 +551,7 @@ fn crate_oracle(c: &Corpus, name: &str) -> BTreeMap<String, BTreeSet<(i128, Stri
         }
     }
     roots.sort();
+    let mut state = shared.clone();
     for root in roots {
         for ext in ["h", "c"] {
             let mut group: Vec<_> = all
@@ -526,15 +560,17 @@ fn crate_oracle(c: &Corpus, name: &str) -> BTreeMap<String, BTreeSet<(i128, Stri
                 .filter(|f| f.path.starts_with(&root) && path_ext(&f.path, ext))
                 .collect();
             group.sort_by_key(|f| f.path.clone());
-            files.extend(group);
+            harvest_into(
+                &mut state,
+                group
+                    .into_iter()
+                    .map(|f| (f.path.display().to_string(), f.text.clone())),
+            );
         }
     }
-    harvest(
-        files
-            .into_iter()
-            .map(|f| (f.path.display().to_string(), f.text.clone())),
-    )
+    finish_harvest(state)
 }
+
 fn path_ext(p: &Path, ext: &str) -> bool {
     p.extension().is_some_and(|x| x == ext)
 }
@@ -634,6 +670,36 @@ mod tests {
     }
 
     #[test]
+    fn shared_sdk_harvest_clones_keep_module_definitions_isolated() {
+        let mut shared = HarvestState::default();
+        harvest_into(
+            &mut shared,
+            [("sdk/include/shared.h".into(), "#define BASE 0x10\n".into())],
+        );
+        let mut left = shared.clone();
+        harvest_into(
+            &mut left,
+            [("dll/left/left.h".into(), "#define LOCAL BASE + 1\n".into())],
+        );
+        let mut right = shared.clone();
+        harvest_into(
+            &mut right,
+            [(
+                "dll/right/right.h".into(),
+                "#define LOCAL BASE + 2\n".into(),
+            )],
+        );
+        let left_values = finish_harvest(left);
+        let right_values = finish_harvest(right);
+        assert_eq!(left_values["LOCAL"].iter().next().unwrap().0, 0x11);
+        assert_eq!(right_values["LOCAL"].iter().next().unwrap().0, 0x12);
+        assert_eq!(
+            finish_harvest(shared)["BASE"].iter().next().unwrap().0,
+            0x10
+        );
+    }
+
+    #[test]
     fn enum_numbering_and_comment_lines_match_python_oracle() {
         let header = "/* a\n   multi-line\n   comment */\n#define WANTED 0x7\ntypedef enum _E { A = 1, B, C } E;";
         let got = harvest([("x.h".into(), header.into())]);
@@ -696,9 +762,10 @@ impl Rule for InventedConstants {
     fn run(&self, c: &Corpus) -> Result<Vec<String>, String> {
         let facts = rust_consts(c);
         let crates: BTreeSet<_> = facts.iter().map(|x| x.0.clone()).collect();
+        let shared = shared_sdk_state(c);
         let ors: BTreeMap<_, _> = crates
             .iter()
-            .map(|n| (n.clone(), crate_oracle(c, n)))
+            .map(|n| (n.clone(), crate_oracle(c, n, &shared)))
             .collect();
         let mut found = Vec::new();
         for (cr, rel, f) in facts {

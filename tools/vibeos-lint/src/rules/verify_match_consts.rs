@@ -26,6 +26,13 @@ impl Rule for VerifyMatchConsts {
             .sources("match-consts-rust")
             .filter(|f| f.path.extension().is_some_and(|e| e == "rs"))
             .collect();
+        // The dependency closure and glob resolver use the same exported-name
+        // parser. Compute its immutable per-file result once and share it across
+        // every crate/source lookup in this run.
+        let names_by_path: BTreeMap<PathBuf, BTreeSet<String>> = all
+            .iter()
+            .map(|f| (f.path.clone(), names_in_text(&f.text)))
+            .collect();
         let default: Vec<_> = all
             .iter()
             .copied()
@@ -33,7 +40,7 @@ impl Rule for VerifyMatchConsts {
             .collect();
         let mut universe = BTreeSet::new();
         for f in &default {
-            universe.extend(names_in_text(&f.text));
+            universe.extend(names_by_path[&f.path].iter().cloned());
         }
         let by_path: BTreeMap<PathBuf, &SourceFile> =
             all.iter().map(|f| (f.path.clone(), *f)).collect();
@@ -77,6 +84,7 @@ impl Rule for VerifyMatchConsts {
                                 &manifests,
                                 &deps_by_dir,
                                 &descendants,
+                                &names_by_path,
                             ))
                         })
                         .clone()
@@ -84,7 +92,16 @@ impl Rule for VerifyMatchConsts {
                 .unwrap_or_else(|| Arc::new(BTreeSet::new()));
             let (glob, resolved) = crate_dir
                 .as_ref()
-                .map(|dir| glob_names(&f.text, dir, &manifests, &by_path))
+                .map(|dir| {
+                    glob_names_cached(
+                        &f.text,
+                        dir,
+                        &manifests,
+                        &by_path,
+                        &deps_by_dir,
+                        &names_by_path,
+                    )
+                })
                 .unwrap_or_default();
             let root = c.module_tree().crate_root_of(&f.path).map(Path::to_owned);
             let is_live = root.as_ref().map_or(true, |r| {
@@ -394,6 +411,7 @@ fn crate_universe_index(
     manifests: &BTreeMap<PathBuf, &SourceFile>,
     deps_by_dir: &BTreeMap<PathBuf, Vec<PathBuf>>,
     descendants: &BTreeMap<PathBuf, Vec<&SourceFile>>,
+    names_by_path: &BTreeMap<PathBuf, BTreeSet<String>>,
 ) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     let mut seen = HashSet::new();
@@ -411,7 +429,9 @@ fn crate_universe_index(
             .or_else(|| descendants.get(&d));
         if let Some(files) = files {
             for f in files {
-                out.extend(names_in_text(&f.text));
+                if let Some(names) = names_by_path.get(&f.path) {
+                    out.extend(names.iter().cloned());
+                }
             }
         }
         if let Some(deps) = deps_by_dir.get(&d) {
@@ -434,6 +454,26 @@ fn glob_names(
     manifests: &BTreeMap<PathBuf, &SourceFile>,
     files: &BTreeMap<PathBuf, &SourceFile>,
 ) -> (BTreeSet<String>, bool) {
+    let deps_by_dir = manifests
+        .keys()
+        .filter_map(|p| p.parent())
+        .map(|dir| (dir.to_owned(), crate_path_deps(dir, manifests)))
+        .collect();
+    let names_by_path = files
+        .iter()
+        .map(|(path, file)| (path.clone(), names_in_text(&file.text)))
+        .collect();
+    glob_names_cached(text, dir, manifests, files, &deps_by_dir, &names_by_path)
+}
+
+fn glob_names_cached(
+    text: &str,
+    dir: &Path,
+    manifests: &BTreeMap<PathBuf, &SourceFile>,
+    files: &BTreeMap<PathBuf, &SourceFile>,
+    deps_by_dir: &BTreeMap<PathBuf, Vec<PathBuf>>,
+    names_by_path: &BTreeMap<PathBuf, BTreeSet<String>>,
+) -> (BTreeSet<String>, bool) {
     let mut all = BTreeSet::new();
     let mut ok = true;
     for m in regex(r"(?m)^\s*(?:#\[[^\]]*\]\s*)*(?:pub\s+)?use\s+([A-Za-z_][A-Za-z0-9_:]*)::\*\s*;")
@@ -441,7 +481,7 @@ fn glob_names(
     {
         let segs = m[1].split("::").collect::<Vec<_>>();
         if segs.first() != Some(&"crate")
-            && !crate_path_deps(dir, manifests).iter().any(|p| {
+            && !deps_by_dir.get(dir).into_iter().flatten().any(|p| {
                 p.file_name()
                     .is_some_and(|n| n.to_string_lossy().replace('-', "_") == segs[0])
             })
@@ -458,6 +498,8 @@ fn glob_names(
             &m[1].split("::").map(str::to_owned).collect::<Vec<_>>(),
             manifests,
             files,
+            deps_by_dir,
+            names_by_path,
             &mut seen,
             0,
         );
@@ -514,6 +556,8 @@ fn exported_module_names(
     request: &[String],
     manifests: &BTreeMap<PathBuf, &SourceFile>,
     files: &BTreeMap<PathBuf, &SourceFile>,
+    deps_by_dir: &BTreeMap<PathBuf, Vec<PathBuf>>,
+    names_by_path: &BTreeMap<PathBuf, BTreeSet<String>>,
     seen: &mut HashSet<PathBuf>,
     depth: usize,
 ) -> (BTreeSet<String>, bool) {
@@ -529,11 +573,11 @@ fn exported_module_names(
             (dir.to_owned(), target.clone(), target)
         }
         Some(extern_name) => {
-            if let Some(dep) = crate_path_deps(dir, manifests).into_iter().find(|p| {
+            if let Some(dep) = deps_by_dir.get(dir).into_iter().flatten().find(|p| {
                 p.file_name()
                     .is_some_and(|n| n.to_string_lossy().replace('-', "_") == extern_name)
             }) {
-                (dep, request[1..].to_vec(), request[1..].to_vec())
+                (dep.clone(), request[1..].to_vec(), request[1..].to_vec())
             } else {
                 let mut target = module.to_vec();
                 target.pop();
@@ -546,7 +590,17 @@ fn exported_module_names(
     let Some(file) = module_file(&base, &parts, files) else {
         return (BTreeSet::new(), false);
     };
-    exported_file_names(&base, &child_module, &file, manifests, files, seen, depth)
+    exported_file_names(
+        &base,
+        &child_module,
+        &file,
+        manifests,
+        files,
+        deps_by_dir,
+        names_by_path,
+        seen,
+        depth,
+    )
 }
 
 fn exported_file_names(
@@ -555,6 +609,8 @@ fn exported_file_names(
     file: &Path,
     manifests: &BTreeMap<PathBuf, &SourceFile>,
     files: &BTreeMap<PathBuf, &SourceFile>,
+    deps_by_dir: &BTreeMap<PathBuf, Vec<PathBuf>>,
+    names_by_path: &BTreeMap<PathBuf, BTreeSet<String>>,
     seen: &mut HashSet<PathBuf>,
     depth: usize,
 ) -> (BTreeSet<String>, bool) {
@@ -567,7 +623,10 @@ fn exported_file_names(
     let Some(source) = files.get(file) else {
         return (BTreeSet::new(), false);
     };
-    let mut names = names_in_text(&source.text);
+    let mut names = names_by_path
+        .get(file)
+        .cloned()
+        .unwrap_or_else(|| names_in_text(&source.text));
     let attrs = crate::regexes::cached(
         r#"(?m)#\[path\s*=\s*"([^"]+)"\]\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+([A-Za-z_]\w*)\s*;"#,
     )
@@ -602,6 +661,8 @@ fn exported_file_names(
                         path,
                         manifests,
                         files,
+                        deps_by_dir,
+                        names_by_path,
                         seen,
                         depth + 1,
                     );
@@ -611,7 +672,17 @@ fn exported_file_names(
             }
             (sub, all_ok)
         } else {
-            exported_module_names(base, child_module, &segs, manifests, files, seen, depth + 1)
+            exported_module_names(
+                base,
+                child_module,
+                &segs,
+                manifests,
+                files,
+                deps_by_dir,
+                names_by_path,
+                seen,
+                depth + 1,
+            )
         };
         names.extend(sub);
         resolved &= ok;

@@ -38,8 +38,33 @@ pub const FIXED_ORDER: &[&str] = &[
     "sdk/include/xdk/ntbasedef.h",
 ];
 
-fn re(p: &str) -> Regex {
-    crate::regexes::cached(p).expect("valid scanner regex")
+// Fixed patterns retain their compiled search state across source lines.
+fn re(p: &str) -> &'static Regex {
+    static PATTERNS: std::sync::LazyLock<BTreeMap<&'static str, Regex>> = std::sync::LazyLock::new(
+        || {
+            [
+            r"0[xX][0-9A-Fa-f]+|\d+|[A-Za-z_]\w*|<<|[|+\-]",
+            r"^\p{Nd}$",
+            r"(?s)\benum\b[^{};]*\{([^}]*)\}",
+            r"(?s)^([A-Za-z_][A-Za-z0-9_]*)\s*(?:=\s*(.+))?$",
+            r"(?s)/\*.*?\*/",
+            r"//.*",
+            r"^#define\s+([A-Z_][A-Z0-9_]*)\s+(.+?)(?:\s*//.*)?$",
+            r"(?s)^(?:pub(?:\([^)]*\))?\s+)?const\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*[\w:]+\s*=\s*(.+?)\s*;",
+            r"^(0x[0-9A-Fa-f_]+)(?:_?[ui]\d+)?",
+            r"^(-?[0-9][0-9_]*)(?:_?[ui](?:8|16|32|64|size))?$",
+            r#"from_le_bytes\(\*?b"(.{4})"\)"#,
+            r"from_le_bytes\(\[(.+)\]\)",
+            r"^(0x[0-9A-Fa-f_]+)_?u\d+\s+as\s+i\d+",
+        ]
+        .into_iter()
+        .map(|pattern| (pattern, Regex::new(pattern).expect("valid scanner regex")))
+        .collect()
+        },
+    );
+    PATTERNS
+        .get(p)
+        .unwrap_or_else(|| panic!("unregistered constants pattern: {p}"))
 }
 
 pub fn is_target_rust(f: &SourceFile) -> bool {

@@ -1,7 +1,7 @@
 use crate::{Corpus, Rule, SourceFile, SourceSet};
 use regex::Regex;
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     path::{Path, PathBuf},
     sync::LazyLock,
 };
@@ -65,26 +65,61 @@ fn walk<'a>(n: tree_sitter::Node<'a>, out: &mut Vec<tree_sitter::Node<'a>>) {
         walk(child, out);
     }
 }
-fn in_foreign(n: tree_sitter::Node<'_>) -> bool {
-    let mut p = n.parent();
-    while let Some(x) = p {
-        if x.kind() == "foreign_mod_item" {
-            return true;
-        }
-        p = x.parent();
-    }
-    false
+#[derive(Default)]
+struct SiblingAttrs {
+    linkname: Option<String>,
+    exported: bool,
+    foreign: bool,
 }
-fn symbol(n: tree_sitter::Node<'_>, src: &str, ident: &str) -> String {
-    let mut p = n.prev_sibling();
-    while let Some(a) = p {
-        if a.kind() != "attribute_item" {
-            break;
+fn sibling_attrs(root: tree_sitter::Node<'_>, src: &str) -> HashMap<usize, SiblingAttrs> {
+    fn visit(
+        n: tree_sitter::Node<'_>,
+        src: &str,
+        foreign: bool,
+        out: &mut HashMap<usize, SiblingAttrs>,
+    ) {
+        let foreign = foreign || n.kind() == "foreign_mod_item";
+        let mut cursor = n.walk();
+        let mut preceding = Vec::new();
+        for child in n.children(&mut cursor) {
+            if child.kind() == "attribute_item" {
+                preceding.push(child);
+            } else {
+                if matches!(
+                    child.kind(),
+                    "function_signature_item" | "static_item" | "function_item"
+                ) {
+                    let mut facts = SiblingAttrs {
+                        foreign,
+                        ..SiblingAttrs::default()
+                    };
+                    for attr in preceding.iter().rev() {
+                        let value = text(*attr, src);
+                        if facts.linkname.is_none() {
+                            facts.linkname = LINKNAME.captures(value).map(|c| c[1].to_owned());
+                        }
+                        facts.exported |=
+                            value.contains("no_mangle") || value.contains("export_name");
+                    }
+                    out.insert(child.id(), facts);
+                }
+                preceding.clear();
+            }
+            visit(child, src, foreign, out);
         }
-        if let Some(c) = LINKNAME.captures(text(a, src)) {
-            return c[1].to_owned();
-        }
-        p = a.prev_sibling();
+    }
+    let mut out = HashMap::new();
+    visit(root, src, false, &mut out);
+    out
+}
+fn symbol(
+    n: tree_sitter::Node<'_>,
+    src: &str,
+    ident: &str,
+    sibling: Option<&SiblingAttrs>,
+) -> String {
+    if let Some(name) = sibling.and_then(|a| a.linkname.as_ref()) {
+        return name.clone();
     }
     for i in 0..n.child_count() {
         if let Some(a) = n.child(i) {
@@ -151,6 +186,7 @@ fn file_facts(f: &SourceFile, owner: Option<&str>, all: &mut Facts) -> Result<()
         v
     };
     let src = &f.text;
+    let sibling_attrs = sibling_attrs(tree.root_node(), src);
     let lines = src.lines().collect::<Vec<_>>();
     let p = f.path.to_string_lossy().replace('\\', "/");
     for n in nodes {
@@ -197,7 +233,9 @@ fn file_facts(f: &SourceFile, owner: Option<&str>, all: &mut Facts) -> Result<()
                 }
             }
         }
-        if n.kind() == "function_signature_item" && in_foreign(n) {
+        if n.kind() == "function_signature_item"
+            && sibling_attrs.get(&n.id()).is_some_and(|a| a.foreign)
+        {
             let ln = n.start_position().row;
             let line = lines.get(ln).copied().unwrap_or("");
             if nolint(line) {
@@ -205,7 +243,7 @@ fn file_facts(f: &SourceFile, owner: Option<&str>, all: &mut Facts) -> Result<()
             }
             if let Some(nm) = n.child_by_field_name("name") {
                 let ident = text(nm, src);
-                let sym = symbol(n, src, ident);
+                let sym = symbol(n, src, ident, sibling_attrs.get(&n.id()));
                 let s = sig(n, src);
                 let r = ret(n, src);
                 all.decls.entry(sym.clone()).or_default().push((
@@ -228,16 +266,17 @@ fn file_facts(f: &SourceFile, owner: Option<&str>, all: &mut Facts) -> Result<()
                 (n.child_by_field_name("name"), n.child_by_field_name("type"))
             {
                 let ln = n.start_position().row;
-                let sym = symbol(n, src, text(nm, src));
+                let sib = sibling_attrs.get(&n.id());
+                let sym = symbol(n, src, text(nm, src), sib);
                 let t = norm(text(ty, src));
-                if in_foreign(n) {
+                if sibling_attrs.get(&n.id()).is_some_and(|a| a.foreign) {
                     if !nolint(lines.get(ln).copied().unwrap_or("")) {
                         all.statics_decl
                             .entry(sym)
                             .or_default()
                             .push((p.clone(), ln + 1, t));
                     }
-                } else if has_export_attr(n, src) {
+                } else if has_export_attr(sib) {
                     all.statics_def.entry(sym).or_default().push((
                         owner.unwrap().to_owned(),
                         p.clone(),
@@ -246,9 +285,9 @@ fn file_facts(f: &SourceFile, owner: Option<&str>, all: &mut Facts) -> Result<()
                 }
             }
         }
-        if n.kind() == "function_item" && has_export_attr(n, src) {
+        if n.kind() == "function_item" && has_export_attr(sibling_attrs.get(&n.id())) {
             if let Some(nm) = n.child_by_field_name("name") {
-                let sym = symbol(n, src, text(nm, src));
+                let sym = symbol(n, src, text(nm, src), sibling_attrs.get(&n.id()));
                 all.defs.entry(sym.clone()).or_default().push((
                     owner.unwrap().to_owned(),
                     p.clone(),
@@ -265,19 +304,8 @@ fn file_facts(f: &SourceFile, owner: Option<&str>, all: &mut Facts) -> Result<()
     }
     Ok(())
 }
-fn has_export_attr(n: tree_sitter::Node<'_>, src: &str) -> bool {
-    let mut p = n.prev_sibling();
-    while let Some(a) = p {
-        if a.kind() != "attribute_item" {
-            break;
-        }
-        let t = text(a, src);
-        if t.contains("no_mangle") || t.contains("export_name") {
-            return true;
-        }
-        p = a.prev_sibling();
-    }
-    false
+fn has_export_attr(sibling: Option<&SiblingAttrs>) -> bool {
+    sibling.is_some_and(|a| a.exported)
 }
 fn norm(s: &str) -> String {
     PATH_QUAL
@@ -948,6 +976,40 @@ fn compare(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn indexed_attributes_keep_nearest_link_name_and_foreign_context() {
+        let src = r#"#[no_mangle]
+#[export_name = "exported"]
+fn outer() {}
+extern "C" {
+    #[link_name = "older"]
+    #[link_name = "nearer"]
+    fn probe();
+    static VALUE: u32;
+}"#;
+        let tree = crate::syntax::parse(src).unwrap();
+        let attrs = sibling_attrs(tree.root_node(), src);
+        let mut nodes = Vec::new();
+        walk(tree.root_node(), &mut nodes);
+        let signature = nodes
+            .iter()
+            .find(|n| n.kind() == "function_signature_item")
+            .unwrap();
+        let facts = &attrs[&signature.id()];
+        assert!(facts.foreign);
+        assert_eq!(facts.linkname.as_deref(), Some("nearer"));
+        let outer = nodes.iter().find(|n| n.kind() == "function_item").unwrap();
+        let facts = &attrs[&outer.id()];
+        assert!(!facts.foreign);
+        assert!(facts.exported);
+        assert_eq!(facts.linkname.as_deref(), Some("exported"));
+        let value = nodes.iter().find(|n| n.kind() == "static_item").unwrap();
+        let facts = &attrs[&value.id()];
+        assert!(facts.foreign);
+        assert!(facts.linkname.is_none());
+        assert!(!facts.exported);
+    }
+
     #[test]
     fn indexed_c_lines_match_prefix_counting_at_boundaries() {
         let src = "first\nsecond\n\nlast";

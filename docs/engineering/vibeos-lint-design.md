@@ -483,3 +483,25 @@ per tree. Component timings are separate replays. The seconds target remains
 owed: this run still spent 248.1 seconds in extern-declaration drift, 197.7 in
 invented constants, and about 133 each in enum and match-constant checks. The next
 work is reducing repeated header/name parsing and regex-cache contention.
+
+## Performance checkpoint 2 (2026-10-17)
+
+The next frozen tree passed all **116 source stages** in **467.84 seconds**
+(`20261017-042159-2gyhdvtp-check-all`) and all **112 tooling checks**. Its Rust
+invocation took 358.67 seconds; bootstrap delayed its start by 108.24 seconds.
+Two parity replays and tooling ran concurrently, so these observations are not
+a controlled speed comparison. The historical Python replay is still running
+at this checkpoint.
+
+Regex lookups now have a bounded thread-local front cache, while fixed constant
+parser patterns retain their search state. Constant-universe and glob resolution
+reuse per-file names and Cargo dependency indexes. Version checks index and cache
+directory overrides; invented constants harvest common SDK headers once per run.
+Extern drift indexes sibling attributes and inherited foreign-block context
+instead of repeatedly looking up previous siblings and parents.
+
+The remaining measured hotspots in this run were constant placement (242.7s),
+extern drift (192.0s), and invented constants (114.0s). Follow-up candidates reduce
+symbol-by-symbol body scans, per-node syntax cursor allocations, repeated SDK
+expression evaluation, and serial cold-history queries. The seconds target
+remains owed.

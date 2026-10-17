@@ -1,6 +1,6 @@
 use crate::{regexes::cached, twins, Corpus, Rule, SourceSet};
 use regex::Regex;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
@@ -51,7 +51,14 @@ fn parse_int(s: &str) -> Option<i64> {
         s.parse().ok()
     }
 }
-fn parse_override(texts: &[(String, String)]) -> Option<(Option<i64>, Option<i64>, bool, String)> {
+#[derive(Clone)]
+struct Override {
+    winnt: Option<i64>,
+    ntddi: Option<i64>,
+    removed: bool,
+    source: String,
+}
+fn parse_override<'a>(texts: impl IntoIterator<Item = (String, &'a str)>) -> Option<Override> {
     let def = re(
         r"(?s)(?:add_definitions|add_compile_definitions|target_compile_definitions)\s*\(([^)]*)\)",
     );
@@ -69,21 +76,21 @@ fn parse_override(texts: &[(String, String)]) -> Option<(Option<i64>, Option<i64
                 .and_then(|x| parse_int(&x[1]))
             {
                 w = Some(v);
-                src = where_.clone()
+                src.clone_from(&where_)
             }
             if let Some(v) = re(r"NTDDI_VERSION=(\w+)")
                 .captures(arg)
                 .and_then(|x| parse_int(&x[1]))
             {
                 n = Some(v);
-                src = where_.clone()
+                src.clone_from(&where_)
             }
         }
         for m in rem.captures_iter(&text) {
             if m[1].contains("_WIN32_WINNT") {
                 removed = true;
                 if src.is_empty() {
-                    src = where_.clone()
+                    src.clone_from(&where_)
                 }
             }
         }
@@ -91,28 +98,12 @@ fn parse_override(texts: &[(String, String)]) -> Option<(Option<i64>, Option<i64
     if w.is_none() && n.is_none() && !removed {
         return None;
     }
-    Some((w, n, removed && w.is_none(), src))
-}
-fn files_in_dir<'a>(c: &'a Corpus, dir: &Path) -> Vec<&'a crate::SourceFile> {
-    let mut v: Vec<_> = c
-        .sources("version-cmake")
-        .filter(|f| {
-            f.path.parent() == Some(dir)
-                && (f.path.file_name().is_some_and(|n| n == "CMakeLists.txt")
-                    || path_ext(&f.path, &["cmake"]))
-        })
-        .collect();
-    v.sort_by_key(|f| {
-        (
-            if f.path.file_name().is_some_and(|n| n == "CMakeLists.txt") {
-                0
-            } else {
-                1
-            },
-            f.path.clone(),
-        )
-    });
-    v
+    Some(Override {
+        winnt: w,
+        ntddi: n,
+        removed: removed && w.is_none(),
+        source: src,
+    })
 }
 fn env(w: i64, n: Option<i64>, consts: &BTreeMap<String, i64>) -> eval::Env {
     let nv = n.unwrap_or_else(|| {
@@ -128,8 +119,102 @@ fn env(w: i64, n: Option<i64>, consts: &BTreeMap<String, i64>) -> eval::Env {
         ("WINVER".into(), w),
     ])
 }
+struct EnvFacts<'a> {
+    current: BTreeMap<PathBuf, Vec<&'a crate::SourceFile>>,
+    history: &'a crate::VersionHistory,
+    overrides: HashMap<PathBuf, Option<Override>>,
+    versions_by_parent: BTreeMap<PathBuf, BTreeMap<(i64, Option<i64>), usize>>,
+    root_default: Option<i64>,
+}
+impl<'a> EnvFacts<'a> {
+    fn new(
+        c: &'a Corpus,
+        history: &'a crate::VersionHistory,
+        versions: &BTreeMap<PathBuf, BTreeSet<(i64, Option<i64>)>>,
+    ) -> Self {
+        let mut current = BTreeMap::<PathBuf, Vec<&crate::SourceFile>>::new();
+        for f in c.sources("version-cmake") {
+            if f.path.file_name().is_some_and(|n| n == "CMakeLists.txt")
+                || path_ext(&f.path, &["cmake"])
+            {
+                if let Some(dir) = f.path.parent() {
+                    current.entry(dir.to_path_buf()).or_default().push(f);
+                }
+            }
+        }
+        for files in current.values_mut() {
+            files.sort_by_key(|f| {
+                (
+                    if f.path.file_name().is_some_and(|n| n == "CMakeLists.txt") {
+                        0
+                    } else {
+                        1
+                    },
+                    f.path.clone(),
+                )
+            });
+        }
+        let mut versions_by_parent = BTreeMap::<PathBuf, BTreeMap<_, usize>>::new();
+        for (path, vals) in versions {
+            let Some(parent) = path.parent() else {
+                continue;
+            };
+            let counts = versions_by_parent.entry(parent.to_path_buf()).or_default();
+            for val in vals {
+                *counts.entry(*val).or_default() += 1;
+            }
+        }
+        let root_default = c
+            .sources("version-root-cmake")
+            .find(|f| f.path == Path::new("CMakeLists.txt"))
+            .and_then(|f| {
+                re(r"-D_WIN32_WINNT=(0x[0-9A-Fa-f]+)")
+                    .captures(&f.text)
+                    .and_then(|x| parse_int(&x[1]))
+            });
+        Self {
+            current,
+            history,
+            overrides: HashMap::new(),
+            versions_by_parent,
+            root_default,
+        }
+    }
+    fn override_for(&mut self, dir: &Path) -> Option<Override> {
+        if let Some(cached) = self.overrides.get(dir) {
+            return cached.clone();
+        }
+        let current = self.current.get(dir).and_then(|files| {
+            parse_override(
+                files
+                    .iter()
+                    .map(|f| (f.path.display().to_string(), f.text.as_str())),
+            )
+        });
+        let hist_path = dir.join("CMakeLists.txt");
+        let historical = || {
+            if !self.history.ever_versioned_cmake.contains(&hist_path) {
+                return None;
+            }
+            let text = self.history.last_parent_text.get(&hist_path)?;
+            let source = format!(
+                "{}@{}",
+                hist_path.display(),
+                self.history
+                    .last_parent_revision
+                    .get(&hist_path)
+                    .map(String::as_str)
+                    .unwrap_or("")
+            );
+            parse_override([(source, text.as_str())])
+        };
+        let facts = current.or_else(historical);
+        self.overrides.insert(dir.to_path_buf(), facts.clone());
+        facts
+    }
+}
 fn module_env(
-    c: &Corpus,
+    facts: &mut EnvFacts<'_>,
     path: &Path,
     consts: &BTreeMap<String, i64>,
     versions: &BTreeMap<PathBuf, BTreeSet<(i64, Option<i64>)>>,
@@ -146,42 +231,20 @@ fn module_env(
     }
     let mut dir = path.parent()?;
     while dir != Path::new("") {
-        let current = files_in_dir(c, dir);
-        let hist_path = dir.join("CMakeLists.txt");
-        let hist = c.version_history().ok()?;
-        let hist_override = if hist.ever_versioned_cmake.contains(&hist_path) {
-            hist.last_parent_text.get(&hist_path).map(|t| {
-                (
-                    format!(
-                        "{}@{}",
-                        hist_path.display(),
-                        hist.last_parent_revision
-                            .get(&hist_path)
-                            .map(String::as_str)
-                            .unwrap_or("")
-                    ),
-                    t.clone(),
-                )
-            })
-        } else {
-            None
-        };
-        let current_text: Vec<_> = current
-            .iter()
-            .map(|f| (f.path.display().to_string(), f.text.clone()))
-            .collect();
-        let ov = parse_override(&current_text)
-            .or_else(|| hist_override.and_then(|x| parse_override(&[x])));
-        if let Some((w, n, removed, where_)) = ov {
-            if removed {
+        if let Some(ov) = facts.override_for(dir) {
+            if ov.removed {
                 return Some((
                     env(0x600, None, consts),
-                    format!("{where_} (removed; sdkddkver.h default)"),
+                    format!("{} (removed; sdkddkver.h default)", ov.source),
                 ));
             }
             return Some((
-                env(w.unwrap_or_else(|| (n.unwrap_or(0) >> 16)), n, consts),
-                where_,
+                env(
+                    ov.winnt.unwrap_or_else(|| (ov.ntddi.unwrap_or(0) >> 16)),
+                    ov.ntddi,
+                    consts,
+                ),
+                ov.source,
             ));
         }
         if dir == Path::new(".") {
@@ -190,33 +253,23 @@ fn module_env(
         dir = dir.parent().unwrap_or(Path::new(""));
     }
     let prefix = path.parent().unwrap_or(Path::new(""));
-    let mut same = Vec::new();
-    for (p, vs) in versions {
-        if p.parent() == Some(prefix) {
-            same.extend(vs.iter().copied())
-        }
-    }
-    if !same.is_empty() {
-        let mut counts = BTreeMap::new();
-        for v in &same {
-            *counts.entry(*v).or_insert(0usize) += 1
-        }
-        let (best, count) = counts.into_iter().max_by_key(|(v, n)| (*n, *v))?;
+    if let Some(counts) = facts
+        .versions_by_parent
+        .get(prefix)
+        .filter(|x| !x.is_empty())
+    {
+        let total: usize = counts.values().sum();
+        let (best, count) = counts.iter().max_by_key(|(v, n)| (**n, **v))?;
         return Some((
             env(best.0, best.1, consts),
             format!(
                 "build.ninja ({}*, {count}/{} objects)",
                 prefix.display(),
-                same.len()
+                total
             ),
         ));
     }
-    let root = c
-        .sources("version-root-cmake")
-        .find(|f| f.path == Path::new("CMakeLists.txt"))?;
-    let w = re(r"-D_WIN32_WINNT=(0x[0-9A-Fa-f]+)")
-        .captures(&root.text)
-        .and_then(|x| parse_int(&x[1]))?;
+    let w = facts.root_default?;
     Some((env(w, None, consts), "CMakeLists.txt (root default)".into()))
 }
 fn ninja_versions(c: &Corpus) -> BTreeMap<PathBuf, BTreeSet<(i64, Option<i64>)>> {
@@ -272,9 +325,9 @@ impl Rule for VersionVsC {
     }
     fn run(&self, c: &Corpus) -> Result<Vec<String>, String> {
         let history = c.version_history()?;
-        let _ = history;
         let constants = consts(c);
         let versions = ninja_versions(c);
+        let mut facts = EnvFacts::new(c, history, &versions);
         let mut candidates: BTreeMap<
             String,
             Vec<(twins::Function, BTreeMap<String, String>, String)>,
@@ -288,7 +341,7 @@ impl Rule for VersionVsC {
             {
                 continue;
             }
-            let Some((e, src)) = module_env(c, &f.path, &constants, &versions) else {
+            let Some((e, src)) = module_env(&mut facts, &f.path, &constants, &versions) else {
                 continue;
             };
             let blank = twins::blank_c(&f.text);
