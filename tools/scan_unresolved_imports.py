@@ -31,6 +31,12 @@ WHAT IT CHECKS
 
     An import naming a module that is not on the medium at all is reported as MISSING_DLL.
 
+    EXPORT_NAME: an image whose export directory names a module other than its own file.
+    Forwarders, dbghelp and anything resolving exports by module read that name. lld takes
+    it from its -o path, and a cargo cell links to the bin's hashed name before cmake copies
+    it, so ~199 cells per arch shipped `dcomp-4d1aeb251b7d5eac.exe` as dcomp.dll's own name
+    until add_cargo_module ran `pefixup --dllname` on every output (2026-10-17).
+
 `--check` fails on ANY finding: there is no baseline, because the tree had none when this
 landed and an unresolved import has no legitimate reason to exist.
 
@@ -57,6 +63,11 @@ CONTAINER_NAMES = frozenset(Path(c).name.lower() for c in CONTAINERS)
 # Modules whose imports the RUNNING loader satisfies: rosload.exe is loaded by freeldr
 # and binds to the exports of the freeldr already in memory, not to a file on the medium.
 LOADER_PROVIDED = frozenset({"freeldr.sys"})
+
+# Shipped under another name on purpose: the redirection test copies redirtest1.dll to
+# kernel32test_versioned.dll (add_rostests_file RENAME), and its export table keeps the
+# name it was built as -- as a renamed DLL on Windows does.
+RENAMED_ON_MEDIUM = frozenset({"kernel32test_versioned.dll"})
 
 # Import names the loader binds to whichever image it selected for that role.
 KERNEL_ALIASES = {
@@ -121,6 +132,13 @@ class Pe:
             self.cstr(struct.unpack_from("<I", self.data, names_off + 4 * i)[0])
             for i in range(nnames)
         }
+
+    def module_name(self) -> str | None:
+        """The export directory's own module name; None for an image that exports nothing."""
+        if len(self.dirs) < 1 or not self.dirs[0][0]:
+            return None
+        o = self.off(self.dirs[0][0])
+        return self.cstr(struct.unpack_from("<I", self.data, o + 12)[0])
 
     def imports(self) -> dict[str, list[str]]:
         """{dll: [by-name imports]} from the regular (not delay) import directory."""
@@ -203,15 +221,29 @@ def resolve(
     return findings
 
 
+def misnamed(names: dict[str, str | None]) -> list[str]:
+    """Images whose export directory names another module (`names`: file -> that name)."""
+    return [
+        f"EXPORT_NAME {name}: export directory names {own}"
+        for name, own in sorted(names.items())
+        if own is not None and own.lower() != name and name not in RENAMED_ON_MEDIUM
+    ]
+
+
 def scan(build_dir: Path) -> list[str]:
     imports: dict[str, dict[str, list[str]] | None] = {}
     exports: dict[str, set[str] | None] = {}
+    names: dict[str, str | None] = {}
     for name, path in corpus(build_dir).items():
         try:
             image = Pe(path.read_bytes())
         except (PeError, struct.error, ValueError):
             imports[name] = exports[name] = None
             continue
+        try:
+            names[name] = image.module_name()
+        except (PeError, struct.error, ValueError):
+            names[name] = None  # the export table read below reports it UNREADABLE
         try:
             imports[name] = image.imports()
         except (PeError, struct.error, ValueError):
@@ -220,7 +252,7 @@ def scan(build_dir: Path) -> list[str]:
             exports[name] = image.exports()
         except (PeError, struct.error, ValueError):
             exports[name] = None
-    return resolve(imports, exports)
+    return resolve(imports, exports) + misnamed(names)
 
 
 def main() -> int:

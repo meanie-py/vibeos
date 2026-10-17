@@ -12,7 +12,9 @@ SECTION_RVA = 0x1000
 FILE_ALIGN = 0x200
 
 
-def build_pe(*, pe64: bool, imports: dict[str, list[str | int]], exports: list[str]) -> bytes:
+def build_pe(
+    *, pe64: bool, imports: dict[str, list[str | int]], exports: list[str], dll_name: str = "x.dll"
+) -> bytes:
     """A minimal PE: headers plus one section holding the import and export tables."""
     body = bytearray()
 
@@ -45,7 +47,7 @@ def build_pe(*, pe64: bool, imports: dict[str, list[str | int]], exports: list[s
     names_table = put(b"".join(struct.pack("<I", r) for r in name_rvas))
     export_dir = put(
         struct.pack(
-            "<IIHHIIIIIII", 0, 0, 0, 0, cstr("x.dll"), 1, 0, len(exports), 0, names_table, 0
+            "<IIHHIIIIIII", 0, 0, 0, 0, cstr(dll_name), 1, 0, len(exports), 0, names_table, 0
         )
     )
 
@@ -123,3 +125,18 @@ def test_loader_provided_imports_are_not_judged():
         )
         == []
     )
+
+
+def test_a_cargo_cells_hashed_export_name_is_a_finding():
+    image = scanner.Pe(
+        build_pe(pe64=True, imports={}, exports=["A"], dll_name="dcomp-4d1aeb251b7d5eac.exe")
+    )
+    assert image.module_name() == "dcomp-4d1aeb251b7d5eac.exe"
+    assert scanner.misnamed(
+        {
+            "dcomp.dll": image.module_name(),
+            "ntdll.dll": "NTDLL.dll",  # case is not a mismatch
+            "lsass.exe": None,  # exports nothing
+            "kernel32test_versioned.dll": "redirtest1.dll",  # renamed on the medium on purpose
+        }
+    ) == ["EXPORT_NAME dcomp.dll: export directory names dcomp-4d1aeb251b7d5eac.exe"]
