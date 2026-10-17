@@ -133,6 +133,10 @@ class ClassModel:
     template_args: list[tuple[str, str]] = field(default_factory=list)
     # BEGIN_COM_MAP entries (COM_INTERFACE_ENTRY(IFoo), ...), in order; None without a map.
     com_map: list[MsgMapEntry] | None = None
+    # atlcom.h's in-class DECLARE_* macros, name -> argument text as written
+    # (`DECLARE_REGISTRY_RESOURCEID` -> `IDR_EXTRACTICON`). The methods they generate are
+    # dropped from `methods` (macro-generated, see _method); cpp_app renders their effect.
+    atl_declares: dict[str, str] = field(default_factory=dict)
 
     def method(self, name: str) -> list[Method]:
         return [m for m in self.methods if m.name == name]
@@ -189,6 +193,9 @@ class ModuleModel:
     # Each spelling of a template instantiation (cpp_templates.instance_key) -> the concrete
     # class that lays it out (`CUiWindow<CTreeView>` -> `CUiWindow_CTreeView`).
     instances: dict[str, str] = field(default_factory=dict)
+    # The compile's `-DNAME=VALUE` macros: mmcshext's IDR_EXTRACTICON is defined by its
+    # CMakeLists, not a header, so the island has no constant for it.
+    defines: dict[str, str] = field(default_factory=dict)
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=1, sort_keys=True)
@@ -225,6 +232,7 @@ class ModuleModel:
         out.allocator_fns = raw.get("allocator_fns", {})
         out.typedefs = [tuple(t) for t in raw.get("typedefs", [])]
         out.instances = raw.get("instances", {})
+        out.defines = raw.get("defines", {})
         return out
 
 
@@ -476,6 +484,26 @@ _COM_OBJECT_UNKNOWN = (
     ("AddRef", [], "ULONG"),
     ("Release", [], "ULONG"),
 )
+
+
+_ATL_DECLARE_RE = re.compile(r"\b(DECLARE_[A-Z_]+)\s*\(((?:[^()]|\([^()]*\))*)\)")
+
+
+def parse_atl_declares(class_text: str) -> dict[str, str]:
+    """The class's own `DECLARE_*(..)` lines (not a nested class's), name -> arguments."""
+    body = re.sub(r"//[^\n]*|/\*.*?\*/", "", class_text, flags=re.S)
+    brace = body.find("{")
+    if brace < 0:
+        return {}
+    # Blank out nested braces' contents (member bodies, nested classes) at depth > 1.
+    depth, own = 0, []
+    for ch in body[brace:]:
+        if ch == "{":
+            depth += 1
+        own.append(ch if depth <= 1 else " ")
+        if ch == "}":
+            depth -= 1
+    return {m.group(1): m.group(2).strip() for m in _ATL_DECLARE_RE.finditer("".join(own))}
 
 
 def _add_com_object_unknown(cls: ClassModel) -> None:
@@ -1005,6 +1033,7 @@ class _Extractor:
         text = self.src.text(span) or ""
         cls.msg_map = parse_msg_map(text)
         cls.com_map = parse_com_map(text)
+        cls.atl_declares = parse_atl_declares(text)
         cls.external = self.external_class(n)
         wc = re.search(r"\bDECLARE_WND_CLASS(_EX)?\s*\(((?:[^()]|\([^()]*\))*)\)", text)
         if wc:
@@ -1535,6 +1564,10 @@ def extract(
             )
         ast = cdp.clang_ast(repo, arch, tu)
         ex.unicode = any(a in ("-DUNICODE", "-D_UNICODE") for a in argv)
+        for a in argv:
+            m = re.fullmatch(r"-D([A-Za-z_]\w*)=(.*)", a)
+            if m:
+                ex.model.defines.setdefault(m.group(1), m.group(2))
         # ids are per-AST; record() re-registers them on each TU
         ex.by_id, ex.decls, ex.method_by_id = {}, {}, {}
         ex._anon_seen, ex._anon_registered = set(), set()

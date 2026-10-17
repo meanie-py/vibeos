@@ -306,7 +306,7 @@ const LZX_ALIGNED_TABLEBITS: u32 = 7;
 
 // PFNFDINOTIFY — the FDICopy progress/extract callback ABI (non-null in practice)
 pub type PFNFDINOTIFY =
-    unsafe extern "C" fn(fdint: FDINOTIFICATIONTYPE, pfdin: *mut FDINOTIFICATION) -> isize;
+    Option<unsafe extern "C" fn(fdint: FDINOTIFICATIONTYPE, pfdin: *mut FDINOTIFICATION) -> isize>;
 
 extern "system" {
     fn SetLastError(dwErrCode: u32);
@@ -541,7 +541,7 @@ pub unsafe extern "C" fn FDICreate(
 ) -> *mut FDI_Int {
     winedebug_rust::TRACE!("(pfnalloc == ^%p, pfnfree == ^%p, pfnopen == ^%p, pfnread == ^%p, pfnwrite == ^%p, pfnclose == ^%p, pfnseek == ^%p, cpuType == %d, perf == ^%p)\n", pfnalloc, pfnfree, pfnopen, pfnread, pfnwrite, pfnclose, pfnseek, cpuType, perf);
 
-    if (pfnalloc as *const ()).is_null() || (pfnfree as *const ()).is_null() {
+    if pfnalloc.is_none() || pfnfree.is_none() {
         (*perf).erfOper = FDIERROR_NONE;
         (*perf).erfType = ERROR_BAD_ARGUMENTS as i32;
         (*perf).fError = TRUE;
@@ -550,7 +550,7 @@ pub unsafe extern "C" fn FDICreate(
         return core::ptr::null_mut();
     }
 
-    let fdi = pfnalloc(core::mem::size_of::<FDI_Int>() as u32) as *mut FDI_Int;
+    let fdi = (pfnalloc.unwrap_unchecked())(core::mem::size_of::<FDI_Int>() as u32) as *mut FDI_Int;
     if fdi.is_null() {
         (*perf).erfOper = FDIERROR_ALLOC_FAIL;
         (*perf).erfType = 0;
@@ -572,7 +572,7 @@ pub unsafe extern "C" fn FDICreate(
 }
 
 unsafe fn FDI_getoffset(fdi: *mut FDI_Int, hf: INT_PTR) -> i32 {
-    ((*fdi).seek)(hf as isize, 0, SEEK_CUR)
+    (((*fdi).seek).unwrap_unchecked())(hf as isize, 0, SEEK_CUR)
 }
 
 unsafe fn QTMfdi_initmodel(m: *mut QTMmodel, sym: *mut QTMmodelsym, n: i32, s: i32) {
@@ -630,13 +630,13 @@ unsafe extern "C" fn LZXfdi_init(window: i32, decomp_state: *mut fdi_decomp_stat
 
         if (*decomp_state).methods.lzx.actual_size < wndsize {
             if !(*decomp_state).methods.lzx.window.is_null() {
-                ((*(*decomp_state).fdi).free)((*decomp_state).methods.lzx.window as *mut core::ffi::c_void);
+                (((*(*decomp_state).fdi).free).unwrap_unchecked())((*decomp_state).methods.lzx.window as *mut core::ffi::c_void);
             }
             (*decomp_state).methods.lzx.window = core::ptr::null_mut();
         }
 
         if (*decomp_state).methods.lzx.window.is_null() {
-            let mem = ((*(*decomp_state).fdi).alloc)(wndsize as u32) as *mut u8;
+            let mem = (((*(*decomp_state).fdi).alloc).unwrap_unchecked())(wndsize as u32) as *mut u8;
             if mem.is_null() {
                 return DECR_NOMEMORY;
             }
@@ -721,7 +721,7 @@ unsafe fn fdi_Ziphuft_free(fdi: *mut FDI_Int, t: *mut Ziphuft) {
     while p != core::ptr::null_mut() {
         p = p.sub(1);
         q = (*p).v.t;
-        ((*fdi).free)(p as *mut core::ffi::c_void);
+        (((*fdi).free).unwrap_unchecked())(p as *mut core::ffi::c_void);
         p = q;
     }
 }
@@ -1427,14 +1427,14 @@ unsafe extern "C" fn free_decompression_temps(fdi: *mut FDI_Int, fol: *const fdi
         // cffoldCOMPTYPE_LZX
         0x0003 => {
             if !(*decomp_state).methods.lzx.window.is_null() {
-                ((*fdi).free)((*decomp_state).methods.lzx.window as *mut core::ffi::c_void);
+                (((*fdi).free).unwrap_unchecked())((*decomp_state).methods.lzx.window as *mut core::ffi::c_void);
                 (*decomp_state).methods.lzx.window = core::ptr::null_mut();
             }
         }
         // cffoldCOMPTYPE_QUANTUM
         0x0004 => {
             if !(*decomp_state).methods.qtm.window.is_null() {
-                ((*fdi).free)((*decomp_state).methods.qtm.window as *mut core::ffi::c_void);
+                (((*fdi).free).unwrap_unchecked())((*decomp_state).methods.qtm.window as *mut core::ffi::c_void);
                 (*decomp_state).methods.qtm.window = core::ptr::null_mut();
             }
         }
@@ -1447,35 +1447,35 @@ unsafe fn free_decompression_mem(fdi: *mut FDI_Int, decomp_state: *mut fdi_decom
     let mut fol: *mut fdi_folder;
     while !decomp_state.is_null() {
         let prev_fds: *mut fdi_decomp_state;
-        ((*fdi).close)((*decomp_state).cabhf as isize);
+        (((*fdi).close).unwrap_unchecked())((*decomp_state).cabhf as isize);
         if !(*decomp_state).mii.nextname.is_null() {
-            ((*fdi).free)((*decomp_state).mii.nextname as *mut core::ffi::c_void);
+            (((*fdi).free).unwrap_unchecked())((*decomp_state).mii.nextname as *mut core::ffi::c_void);
         }
         if !(*decomp_state).mii.nextinfo.is_null() {
-            ((*fdi).free)((*decomp_state).mii.nextinfo as *mut core::ffi::c_void);
+            (((*fdi).free).unwrap_unchecked())((*decomp_state).mii.nextinfo as *mut core::ffi::c_void);
         }
         if !(*decomp_state).mii.prevname.is_null() {
-            ((*fdi).free)((*decomp_state).mii.prevname as *mut core::ffi::c_void);
+            (((*fdi).free).unwrap_unchecked())((*decomp_state).mii.prevname as *mut core::ffi::c_void);
         }
         if !(*decomp_state).mii.previnfo.is_null() {
-            ((*fdi).free)((*decomp_state).mii.previnfo as *mut core::ffi::c_void);
+            (((*fdi).free).unwrap_unchecked())((*decomp_state).mii.previnfo as *mut core::ffi::c_void);
         }
         while !(*decomp_state).firstfol.is_null() {
             fol = (*decomp_state).firstfol;
             (*decomp_state).firstfol = (*fol).next;
-            ((*fdi).free)(fol as *mut core::ffi::c_void);
+            (((*fdi).free).unwrap_unchecked())(fol as *mut core::ffi::c_void);
         }
         while !(*decomp_state).firstfile.is_null() {
             let file = (*decomp_state).firstfile;
             if !(*file).filename.is_null() {
-                ((*fdi).free)((*file).filename as *mut core::ffi::c_void);
+                (((*fdi).free).unwrap_unchecked())((*file).filename as *mut core::ffi::c_void);
             }
             (*decomp_state).firstfile = (*file).next;
-            ((*fdi).free)(file as *mut core::ffi::c_void);
+            (((*fdi).free).unwrap_unchecked())(file as *mut core::ffi::c_void);
         }
         prev_fds = decomp_state;
         decomp_state = (*decomp_state).next;
-        ((*fdi).free)(prev_fds as *mut core::ffi::c_void);
+        (((*fdi).free).unwrap_unchecked())(prev_fds as *mut core::ffi::c_void);
     }
 }
 
@@ -1487,7 +1487,7 @@ pub unsafe extern "C" fn FDIDestroy(hfdi: isize) -> i32 {
         return 0;
     }
     (*fdi).magic = 0;
-    ((*fdi).free)(fdi as *mut core::ffi::c_void);
+    (((*fdi).free).unwrap_unchecked())(fdi as *mut core::ffi::c_void);
     return 1;
 }
 
@@ -1519,11 +1519,11 @@ unsafe fn FDI_read_string(fdi: *mut FDI_Int, hf: INT_PTR, cabsize: i32) -> *mut 
         if len > (maxlen as usize) {
             len = maxlen as usize;
         }
-        buf = ((*fdi).alloc)(len as u32) as *mut u8;
+        buf = (((*fdi).alloc).unwrap_unchecked())(len as u32) as *mut u8;
         if buf.is_null() {
             break;
         }
-        if ((*fdi).read)(hf as isize, buf as *mut core::ffi::c_void, len as u32) == 0 {
+        if (((*fdi).read).unwrap_unchecked())(hf as isize, buf as *mut core::ffi::c_void, len as u32) == 0 {
             break;
         }
 
@@ -1539,8 +1539,8 @@ unsafe fn FDI_read_string(fdi: *mut FDI_Int, hf: INT_PTR, cabsize: i32) -> *mut 
                 winedebug_rust::ERR!("cabinet is truncated\n");
                 break;
             }
-            ((*fdi).seek)(hf as isize, base, SEEK_SET);
-            ((*fdi).free)(buf as *mut core::ffi::c_void);
+            (((*fdi).seek).unwrap_unchecked())(hf as isize, base, SEEK_SET);
+            (((*fdi).free).unwrap_unchecked())(buf as *mut core::ffi::c_void);
             buf = core::ptr::null_mut();
             len *= 2;
         }
@@ -1552,7 +1552,7 @@ unsafe fn FDI_read_string(fdi: *mut FDI_Int, hf: INT_PTR, cabsize: i32) -> *mut 
 
     if ok == 0 {
         if !buf.is_null() {
-            ((*fdi).free)(buf as *mut core::ffi::c_void);
+            (((*fdi).free).unwrap_unchecked())(buf as *mut core::ffi::c_void);
         } else {
             winedebug_rust::ERR!("out of memory!\n");
         }
@@ -1560,7 +1560,7 @@ unsafe fn FDI_read_string(fdi: *mut FDI_Int, hf: INT_PTR, cabsize: i32) -> *mut 
     }
 
     let seek_pos = (base as i32).wrapping_add((strlen(buf as *const i8) + 1) as i32);
-    ((*fdi).seek)(hf as isize, seek_pos, SEEK_SET);
+    (((*fdi).seek).unwrap_unchecked())(hf as isize, seek_pos, SEEK_SET);
 
     return buf as *mut i8;
 }
@@ -1576,12 +1576,12 @@ unsafe fn QTMfdi_init(window: i32, level: i32, decomp_state: *mut fdi_decomp_sta
     }
     if (*decomp_state).methods.qtm.actual_size < wndsize {
         if !(*decomp_state).methods.qtm.window.is_null() {
-            ((*(*decomp_state).fdi).free)((*decomp_state).methods.qtm.window as *mut core::ffi::c_void);
+            (((*(*decomp_state).fdi).free).unwrap_unchecked())((*decomp_state).methods.qtm.window as *mut core::ffi::c_void);
         }
         (*decomp_state).methods.qtm.window = core::ptr::null_mut();
     }
     if (*decomp_state).methods.qtm.window.is_null() {
-        let ptr = ((*(*decomp_state).fdi).alloc)(wndsize) as *mut u8;
+        let ptr = (((*(*decomp_state).fdi).alloc).unwrap_unchecked())(wndsize) as *mut u8;
         (*decomp_state).methods.qtm.window = ptr;
         if ptr.is_null() {
             return 3; /* DECR_NOMEMORY */
@@ -1712,7 +1712,7 @@ unsafe fn FDI_read_entries(
 
     winedebug_rust::TRACE!("(fdi == ^%p, hf == %ld, pfdici == ^%p)\n", fdi as *const core::ffi::c_void, hf, pfdici as *const core::ffi::c_void);
 
-    if ((*fdi).read)(hf as isize, buf.as_mut_ptr() as *mut core::ffi::c_void, cfhead_SIZEOF as _)
+    if (((*fdi).read).unwrap_unchecked())(hf as isize, buf.as_mut_ptr() as *mut core::ffi::c_void, cfhead_SIZEOF as _)
         != cfhead_SIZEOF as _
     {
         if !pmii.is_null() {
@@ -1751,7 +1751,7 @@ unsafe fn FDI_read_entries(
     flags = EndGetI16(buf.as_ptr().add(cfhead_Flags)) as u16;
 
     if (flags & cfheadRESERVE_PRESENT as u16) != 0 {
-        if ((*fdi).read)(
+        if (((*fdi).read).unwrap_unchecked())(
             hf as isize,
             buf.as_mut_ptr() as *mut core::ffi::c_void,
             cfheadext_SIZEOF as _,
@@ -1781,7 +1781,7 @@ unsafe fn FDI_read_entries(
             winedebug_rust::WARN!("WARNING; header reserved space > 60000\n");
         }
 
-        if (header_resv != 0) && (((*fdi).seek)(hf as isize, header_resv, SEEK_CUR) == -1) {
+        if (header_resv != 0) && ((((*fdi).seek).unwrap_unchecked())(hf as isize, header_resv, SEEK_CUR) == -1) {
             winedebug_rust::ERR!("seek failure: header_resv\n");
             if !pmii.is_null() {
                 set_error(fdi, FDIERROR_CORRUPT_CABINET, 0);
@@ -1801,7 +1801,7 @@ unsafe fn FDI_read_entries(
             if !pmii.is_null() {
                 (*pmii).prevname = prevname;
             } else {
-                ((*fdi).free)(prevname as *mut core::ffi::c_void);
+                (((*fdi).free).unwrap_unchecked())(prevname as *mut core::ffi::c_void);
             }
         }
         previnfo = FDI_read_string(fdi, hf, cabsize);
@@ -1809,7 +1809,7 @@ unsafe fn FDI_read_entries(
             if !pmii.is_null() {
                 (*pmii).previnfo = previnfo;
             } else {
-                ((*fdi).free)(previnfo as *mut core::ffi::c_void);
+                (((*fdi).free).unwrap_unchecked())(previnfo as *mut core::ffi::c_void);
             }
         }
     }
@@ -1822,10 +1822,10 @@ unsafe fn FDI_read_entries(
         if nextname.is_null() {
             if ((flags & cfheadPREV_CABINET as u16) != 0) && !pmii.is_null() {
                 if !(*pmii).prevname.is_null() {
-                    ((*fdi).free)((*pmii).prevname as *mut core::ffi::c_void);
+                    (((*fdi).free).unwrap_unchecked())((*pmii).prevname as *mut core::ffi::c_void);
                 }
                 if !(*pmii).previnfo.is_null() {
-                    ((*fdi).free)((*pmii).previnfo as *mut core::ffi::c_void);
+                    (((*fdi).free).unwrap_unchecked())((*pmii).previnfo as *mut core::ffi::c_void);
                 }
             }
             set_error(fdi, FDIERROR_CORRUPT_CABINET, 0);
@@ -1834,7 +1834,7 @@ unsafe fn FDI_read_entries(
             if !pmii.is_null() {
                 (*pmii).nextname = nextname;
             } else {
-                ((*fdi).free)(nextname as *mut core::ffi::c_void);
+                (((*fdi).free).unwrap_unchecked())(nextname as *mut core::ffi::c_void);
             }
         }
         nextinfo = FDI_read_string(fdi, hf, cabsize);
@@ -1842,7 +1842,7 @@ unsafe fn FDI_read_entries(
             if !pmii.is_null() {
                 (*pmii).nextinfo = nextinfo;
             } else {
-                ((*fdi).free)(nextinfo as *mut core::ffi::c_void);
+                (((*fdi).free).unwrap_unchecked())(nextinfo as *mut core::ffi::c_void);
             }
         }
     }
@@ -2424,7 +2424,7 @@ unsafe fn fdi_Ziphuft_build(
 
                 /* allocate and link in new table */
                 let alloc_size = (z + 1) as usize * core::mem::size_of::<Ziphuft>();
-                let alloc_ptr = ((*(*decomp_state).fdi).alloc)(alloc_size as u32);
+                let alloc_ptr = (((*(*decomp_state).fdi).alloc).unwrap_unchecked())(alloc_size as u32);
                 if alloc_ptr.is_null() {
                     if h != 0 {
                         fdi_Ziphuft_free((*decomp_state).fdi, (*decomp_state).methods.zip.u[0]);
@@ -2588,7 +2588,7 @@ unsafe fn fdi_decomp(
             cando = bytes;
         }
         if cando != 0 && savemode != 0 {
-            write((*decomp_state).filehf as isize, (*decomp_state).outpos as *const core::ffi::c_void, cando);
+            (write.unwrap_unchecked())((*decomp_state).filehf as isize, (*decomp_state).outpos as *const core::ffi::c_void, cando);
         }
         (*decomp_state).outpos = (*decomp_state).outpos.add(cando as usize);
         (*decomp_state).outlen -= cando as u16;
@@ -2601,10 +2601,10 @@ unsafe fn fdi_decomp(
         let mut inlen: u16 = 0;
         let mut outlen: u16 = 0;
         while outlen == 0 {
-            if read((*cab).cabhf as isize, buf.as_mut_ptr() as *mut core::ffi::c_void, cfdata_SIZEOF) != cfdata_SIZEOF {
+            if (read.unwrap_unchecked())((*cab).cabhf as isize, buf.as_mut_ptr() as *mut core::ffi::c_void, cfdata_SIZEOF) != cfdata_SIZEOF {
                 return DECR_INPUT;
             }
-            if seek((*cab).cabhf as isize, (*cab).mii.block_resv as i32, SEEK_CUR) == -1 {
+            if (seek.unwrap_unchecked())((*cab).cabhf as isize, (*cab).mii.block_resv as i32, SEEK_CUR) == -1 {
                 return DECR_INPUT;
             }
             let data: *mut u8 = (*decomp_state).inbuf.as_mut_ptr().add(inlen as usize);
@@ -2613,7 +2613,7 @@ unsafe fn fdi_decomp(
             if inlen as u32 > CAB_INPUTMAX {
                 return DECR_INPUT;
             }
-            if read((*cab).cabhf as isize, data as *mut core::ffi::c_void, len as u32) != len as u32 {
+            if (read.unwrap_unchecked())((*cab).cabhf as isize, data as *mut core::ffi::c_void, len as u32) != len as u32 {
                 return DECR_INPUT;
             }
             // clear two bytes after read-in data
@@ -2642,7 +2642,7 @@ unsafe fn fdi_decomp(
                         if (*cab).mii.hasnext == 0 {
                             return DECR_INPUT;
                         }
-                        (*cab).next = alloc(core::mem::size_of::<fdi_decomp_state>() as u32)
+                        (*cab).next = (alloc.unwrap_unchecked())(core::mem::size_of::<fdi_decomp_state>() as u32)
                             as *mut fdi_decomp_state;
                         if (*cab).next.is_null() {
                             return DECR_NOMEMORY;
@@ -2698,7 +2698,7 @@ unsafe fn fdi_decomp(
 
                             winedebug_rust::TRACE!("full cab path/file name: %s\n", debugstr_a(fullpath.as_ptr()));
 
-                            let h: isize = open(fullpath.as_mut_ptr(), OPEN_FLAGS, OPEN_MODE);
+                            let h: isize = (open.unwrap_unchecked())(fullpath.as_mut_ptr(), OPEN_FLAGS, OPEN_MODE);
                             if h == -1 {
                                 fdin.fdie = FDIERROR_CABINET_NOT_FOUND;
                                 if (pfnfdin.unwrap())(fdintNEXT_CABINET, &mut fdin) != 0 {
@@ -2715,7 +2715,7 @@ unsafe fn fdi_decomp(
                             }
                             if FDI_read_entries(fdi, h as INT_PTR, &mut fdici, &mut (*(*cab).next).mii) == 0 {
                                 winedebug_rust::WARN!("FDIIsCabinet failed.\n");
-                                close(h as isize);
+                                (close.unwrap_unchecked())(h as isize);
                                 fdin.fdie = FDIERROR_NOT_A_CABINET;
                                 if (pfnfdin.unwrap())(fdintNEXT_CABINET, &mut fdin) != 0 {
                                     return DECR_USERABORT;
@@ -2724,7 +2724,7 @@ unsafe fn fdi_decomp(
                             }
                             if fdici.setID != (*cab).setID || fdici.iCabinet != (*cab).iCabinet + 1 {
                                 winedebug_rust::WARN!("Wrong Cabinet.\n");
-                                close(h as isize);
+                                (close.unwrap_unchecked())(h as isize);
                                 fdin.fdie = FDIERROR_WRONG_CABINET;
                                 if (pfnfdin.unwrap())(fdintNEXT_CABINET, &mut fdin) != 0 {
                                     return DECR_USERABORT;
@@ -2759,13 +2759,13 @@ unsafe fn fdi_decomp(
                         let mut linkfol: *mut fdi_folder = core::ptr::null_mut();
                         let mut i: u32 = 0;
                         while i < fdici.cFolders as u32 {
-                            if read((*cab).cabhf as isize, buf2.as_mut_ptr() as *mut core::ffi::c_void, cffold_SIZEOF) != cffold_SIZEOF {
+                            if (read.unwrap_unchecked())((*cab).cabhf as isize, buf2.as_mut_ptr() as *mut core::ffi::c_void, cffold_SIZEOF) != cffold_SIZEOF {
                                 return DECR_INPUT;
                             }
                             if (*cab).mii.folder_resv > 0 {
-                                seek((*cab).cabhf as isize, (*cab).mii.folder_resv, SEEK_CUR);
+                                (seek.unwrap_unchecked())((*cab).cabhf as isize, (*cab).mii.folder_resv, SEEK_CUR);
                             }
-                            let fol: *mut fdi_folder = alloc(core::mem::size_of::<fdi_folder>() as u32) as *mut fdi_folder;
+                            let fol: *mut fdi_folder = (alloc.unwrap_unchecked())(core::mem::size_of::<fdi_folder>() as u32) as *mut fdi_folder;
                             if fol.is_null() {
                                 winedebug_rust::ERR!("out of memory!\n");
                                 return DECR_NOMEMORY;
@@ -2788,10 +2788,10 @@ unsafe fn fdi_decomp(
                         let mut linkfile: *mut fdi_file = core::ptr::null_mut();
                         let mut i2: u32 = 0;
                         while i2 < fdici.cFiles as u32 {
-                            if read((*cab).cabhf as isize, buf2.as_mut_ptr() as *mut core::ffi::c_void, cffile_SIZEOF) != cffile_SIZEOF {
+                            if (read.unwrap_unchecked())((*cab).cabhf as isize, buf2.as_mut_ptr() as *mut core::ffi::c_void, cffile_SIZEOF) != cffile_SIZEOF {
                                 return DECR_INPUT;
                             }
-                            let file: *mut fdi_file = alloc(core::mem::size_of::<fdi_file>() as u32) as *mut fdi_file;
+                            let file: *mut fdi_file = (alloc.unwrap_unchecked())(core::mem::size_of::<fdi_file>() as u32) as *mut fdi_file;
                             if file.is_null() {
                                 winedebug_rust::ERR!("out of memory!\n");
                                 return DECR_NOMEMORY;
@@ -2828,7 +2828,7 @@ unsafe fn fdi_decomp(
                             && lstrcmpiA((*fi).filename, (*file).filename) == 0
                         {
                             success = true;
-                            if seek((*cab).cabhf as isize, (*(*cab).firstfol).offset as i32, SEEK_SET) == -1 {
+                            if (seek.unwrap_unchecked())((*cab).cabhf as isize, (*(*cab).firstfol).offset as i32, SEEK_SET) == -1 {
                                 return DECR_INPUT;
                             }
                             break;
@@ -2924,7 +2924,7 @@ pub unsafe extern "C" fn FDICopy(
     let free = (*fdi).free;
 
     let decomp_state: *mut fdi_decomp_state =
-        alloc(size_of::<fdi_decomp_state>() as u32) as *mut fdi_decomp_state;
+        (alloc.unwrap_unchecked())(size_of::<fdi_decomp_state>() as u32) as *mut fdi_decomp_state;
     if decomp_state.is_null() {
         SetLastError(ERROR_NOT_ENOUGH_MEMORY);
         return FALSE;
@@ -2937,7 +2937,7 @@ pub unsafe extern "C" fn FDICopy(
     // slight overestimation here to save CPU cycles in the developer's brain
     if (pathlen + filenamelen + 3) > MAX_PATH {
         winedebug_rust::ERR!("MAX_PATH exceeded.\n");
-        free(decomp_state as *mut core::ffi::c_void);
+        (free.unwrap_unchecked())(decomp_state as *mut core::ffi::c_void);
         set_error(fdi, FDIERROR_CABINET_NOT_FOUND, ERROR_FILE_NOT_FOUND as i32);
         return FALSE;
     }
@@ -2949,9 +2949,9 @@ pub unsafe extern "C" fn FDICopy(
     if filenamelen != 0 { strcat(fullpath.as_mut_ptr(), pszCabinet); }
 
     // get a handle to the cabfile
-    let cabhf: isize = ((*fdi).open)(fullpath.as_mut_ptr(), _O_RDONLY | _O_BINARY, _S_IREAD | _S_IWRITE);
+    let cabhf: isize = (((*fdi).open).unwrap_unchecked())(fullpath.as_mut_ptr(), _O_RDONLY | _O_BINARY, _S_IREAD | _S_IWRITE);
     if cabhf == -1 {
-        free(decomp_state as *mut core::ffi::c_void);
+        (free.unwrap_unchecked())(decomp_state as *mut core::ffi::c_void);
         set_error(fdi, FDIERROR_CABINET_NOT_FOUND, 0);
         SetLastError(ERROR_FILE_NOT_FOUND);
         return FALSE;
@@ -2962,8 +2962,8 @@ pub unsafe extern "C" fn FDICopy(
     // check if it's really a cabfile
     if FDI_read_entries(fdi, cabhf as INT_PTR, &mut fdici, addr_of_mut!((*decomp_state).mii)) == 0 {
         winedebug_rust::WARN!("FDI_read_entries failed\n");
-        free(decomp_state as *mut core::ffi::c_void);
-        ((*fdi).close)(cabhf);
+        (free.unwrap_unchecked())(decomp_state as *mut core::ffi::c_void);
+        (((*fdi).close).unwrap_unchecked())(cabhf);
         return FALSE;
     }
 
@@ -2993,7 +2993,7 @@ pub unsafe extern "C" fn FDICopy(
         fdin.psz2 = if (*decomp_state).mii.nextinfo.is_null() { addr_of_mut!(emptystring) } else { (*decomp_state).mii.nextinfo };
         fdin.psz3 = pszCabPath;
 
-        if pfnfdin(fdintCABINET_INFO, &mut fdin) == -1 {
+        if (pfnfdin.unwrap_unchecked())(fdintCABINET_INFO, &mut fdin) == -1 {
             set_error(fdi, FDIERROR_USER_ABORT, 0);
             bail = true; break 'main;
         }
@@ -3005,14 +3005,14 @@ pub unsafe extern "C" fn FDICopy(
         // read folders
         i = 0;
         while i < fdici.cFolders as u32 {
-            if ((*fdi).read)(cabhf, buf.as_mut_ptr() as *mut core::ffi::c_void, cffold_SIZEOF) != cffold_SIZEOF {
+            if (((*fdi).read).unwrap_unchecked())(cabhf, buf.as_mut_ptr() as *mut core::ffi::c_void, cffold_SIZEOF) != cffold_SIZEOF {
                 set_error(fdi, FDIERROR_CORRUPT_CABINET, 0);
                 bail = true; break 'main;
             }
             if (*decomp_state).mii.folder_resv > 0 {
-                ((*fdi).seek)(cabhf, (*decomp_state).mii.folder_resv, SEEK_CUR);
+                (((*fdi).seek).unwrap_unchecked())(cabhf, (*decomp_state).mii.folder_resv, SEEK_CUR);
             }
-            fol = alloc(size_of::<fdi_folder>() as u32) as *mut fdi_folder;
+            fol = (alloc.unwrap_unchecked())(size_of::<fdi_folder>() as u32) as *mut fdi_folder;
             if fol.is_null() {
                 winedebug_rust::ERR!("out of memory!\n");
                 set_error(fdi, FDIERROR_ALLOC_FAIL, ERROR_NOT_ENOUGH_MEMORY as i32);
@@ -3033,11 +3033,11 @@ pub unsafe extern "C" fn FDICopy(
         // read files
         i = 0;
         while i < fdici.cFiles as u32 {
-            if ((*fdi).read)(cabhf, buf.as_mut_ptr() as *mut core::ffi::c_void, cffile_SIZEOF) != cffile_SIZEOF {
+            if (((*fdi).read).unwrap_unchecked())(cabhf, buf.as_mut_ptr() as *mut core::ffi::c_void, cffile_SIZEOF) != cffile_SIZEOF {
                 set_error(fdi, FDIERROR_CORRUPT_CABINET, 0);
                 bail = true; break 'main;
             }
-            file = alloc(size_of::<fdi_file>() as u32) as *mut fdi_file;
+            file = (alloc.unwrap_unchecked())(size_of::<fdi_file>() as u32) as *mut fdi_file;
             if file.is_null() {
                 winedebug_rust::ERR!("out of memory!\n");
                 set_error(fdi, FDIERROR_ALLOC_FAIL, ERROR_NOT_ENOUGH_MEMORY as i32);
@@ -3073,7 +3073,7 @@ pub unsafe extern "C" fn FDICopy(
                 fdin.psz1 = (*file).filename;
                 fdin.psz2 = if (*decomp_state).mii.prevname.is_null() { addr_of_mut!(emptystring) } else { (*decomp_state).mii.prevname };
                 fdin.psz3 = if (*decomp_state).mii.previnfo.is_null() { addr_of_mut!(emptystring) } else { (*decomp_state).mii.previnfo };
-                if pfnfdin(fdintPARTIAL_FILE, &mut fdin) == -1 {
+                if (pfnfdin.unwrap_unchecked())(fdintPARTIAL_FILE, &mut fdin) == -1 {
                     set_error(fdi, FDIERROR_USER_ABORT, 0);
                     bail = true; break 'main;
                 }
@@ -3091,7 +3091,7 @@ pub unsafe extern "C" fn FDICopy(
                 fdin.time = (*file).time;
                 fdin.attribs = (*file).attribs;
                 fdin.iFolder = (*file).index;
-                filehf = pfnfdin(fdintCOPY_FILE, &mut fdin);
+                filehf = (pfnfdin.unwrap_unchecked())(fdintCOPY_FILE, &mut fdin);
                 if filehf == -1 {
                     set_error(fdi, FDIERROR_USER_ABORT, 0);
                     filehf = 0;
@@ -3133,18 +3133,18 @@ pub unsafe extern "C" fn FDICopy(
                     // free stuff for the old decompressor
                     if ct2 == cffoldCOMPTYPE_LZX {
                         if !(*decomp_state).methods.lzx.window.is_null() {
-                            free((*decomp_state).methods.lzx.window as *mut core::ffi::c_void);
+                            (free.unwrap_unchecked())((*decomp_state).methods.lzx.window as *mut core::ffi::c_void);
                             (*decomp_state).methods.lzx.window = core::ptr::null_mut();
                         }
                     } else if ct2 == cffoldCOMPTYPE_QUANTUM {
                         if !(*decomp_state).methods.qtm.window.is_null() {
-                            free((*decomp_state).methods.qtm.window as *mut core::ffi::c_void);
+                            (free.unwrap_unchecked())((*decomp_state).methods.qtm.window as *mut core::ffi::c_void);
                             (*decomp_state).methods.qtm.window = core::ptr::null_mut();
                         }
                     }
 
                     (*decomp_state).decomp_cab = core::ptr::null_mut();
-                    ((*fdi).seek)(cabhf, (*fol).offset as i32, SEEK_SET);
+                    (((*fdi).seek).unwrap_unchecked())(cabhf, (*fol).offset as i32, SEEK_SET);
                     (*decomp_state).offset = 0;
                     (*decomp_state).outlen = 0;
 
@@ -3209,7 +3209,7 @@ pub unsafe extern "C" fn FDICopy(
                 fdin.time = (*file).time;
                 fdin.attribs = (*file).attribs;
                 fdin.iFolder = (*file).index;
-                pfnfdin(fdintCLOSE_FILE_INFO, &mut fdin);
+                (pfnfdin.unwrap_unchecked())(fdintCLOSE_FILE_INFO, &mut fdin);
                 filehf = 0;
 
                 if err2 == DECR_OK {
@@ -3234,7 +3234,7 @@ pub unsafe extern "C" fn FDICopy(
 
     // cleanup (shared by success + bail, matching C bail_and_fail/return TRUE)
     if !fol.is_null() { free_decompression_temps(fdi, fol, decomp_state); }
-    if bail && filehf != 0 { ((*fdi).close)(filehf); }
+    if bail && filehf != 0 { (((*fdi).close).unwrap_unchecked())(filehf); }
     free_decompression_mem(fdi, decomp_state);
 
     if bail { FALSE } else { TRUE }
