@@ -54,18 +54,6 @@ list(APPEND PCH_SKIP_SOURCE
     ${CMAKE_CURRENT_BINARY_DIR}/svcctl_c.c
     ${CMAKE_CURRENT_BINARY_DIR}/winreg_c.c)
 
-# service/eventlog_seh.c — native-SEH wrappers restoring the RpcTryExcept the
-# advapi32-rust cohab dropped around the EventLog RPC client stubs (see the file
-# header). PCH-skipped so it carries its own include set + per-file define.
-# amd64/arm64 opt into a real __try via _USE_NATIVE_SEH (pseh2.h checks it before
-# the DUMMY_PSEH default); i386 keeps the DUMMY pass-through (no reliable clang
-# native SEH there — same rationale the kmtest native-SEH opt-in excludes i386).
-set(EVENTLOG_SEH_SHIM ${CMAKE_CURRENT_SOURCE_DIR}/service/eventlog_seh.c)
-list(APPEND PCH_SKIP_SOURCE ${EVENTLOG_SEH_SHIM})
-if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "arm64")
-    set_source_files_properties(${EVENTLOG_SEH_SHIM} PROPERTIES COMPILE_DEFINITIONS _USE_NATIVE_SEH)
-endif()
-
 # --- Rust cohabitation (advapi32-rust) ------------------------------------
 # Build libadvapi32_rust.a from the workspace crate (STANDARD user-mode per-arch
 # targets; i386 gets -sse,-sse2 via sdk/lib/rust/.cargo/config.toml). The
