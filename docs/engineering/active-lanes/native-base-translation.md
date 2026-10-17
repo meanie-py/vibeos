@@ -168,11 +168,12 @@ driver (`tools/merge_drivers.py`, which also merges the cohab census), and psapi
 2026-10-16. The first run per stem compiles ntkrnl-sys cold in its private
 `target-<arch>`, which is the likely source of the earlier figure.
 
-- **`port macros` loses two things a hand fix then has to restore** (reactos.exe): it does
-  not widen integer operands (`GetDiskSizeInBytes` needed `as ULONGLONG`) and it drops the
-  `!` when one lowered macro calls another (`SetDlgItemFont` -> `SetWindowFont!`). The three
-  hand edits live inside reactos-rust's generated prelude block, so a `port macros` re-run
-  reverts them.
+- **`port macros` no longer reverts hand edits** (2026-10-17): items are `gen:`-stamped and
+  an edited one leaves the block (`generated_items.py`). reactos-rust's three fixes now sit
+  above their blocks; the `!` one was also fixed at the root (render applies the bang).
+  Still owed: the SDK lowering does not widen a `ULONGLONG * ULONG` (it has no member
+  types for a macro parameter), so `GetDiskSizeInBytes` stays a hand port; and resolve's
+  generated blocks have no stamps yet.
 - **usetup's cabinet/file-queue code exists twice** (usetup-rust, and reactos-rust's
   `fileqsup.rs`, because the C `#include`s the .c files). One shared crate, as tdihelpers
   got (item 5 above).
