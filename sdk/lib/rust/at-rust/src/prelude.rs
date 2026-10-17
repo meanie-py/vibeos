@@ -73,7 +73,7 @@ extern "C" {
     pub fn _swprintf(buf: *mut WCHAR, fmt: *const WCHAR, ...) -> c_int; // diskpart-rust/src/prelude.rs
     pub fn _wcsicmp(s1: *const u16, s2: *const u16) -> i32; // apphelp-rust/src/prelude.rs
     pub fn _wcsnicmp(s1: *const u16, s2: *const u16, n: usize) -> i32; // apphelp-rust/src/prelude.rs
-    pub fn towupper(c: c_int) -> c_int; // attrib-rust/src/prelude.rs
+    pub fn towupper(c: wint_t) -> wint_t; // attrib-rust/src/prelude.rs
     pub fn wcscat(dst: *mut u16, src: *const u16) -> *mut u16; // advapi32-rust/src/wine/cred.rs
     pub fn wcschr(s: *const u16, c: u16) -> *mut u16; // advapi32-rust/src/wine/cred.rs
     pub fn wcslen(s: *const u16) -> usize; // access-rust/src/prelude.rs

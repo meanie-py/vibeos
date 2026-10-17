@@ -7,6 +7,18 @@
 //! rustconv output does exactly that, which is why they are centralized here.
 #![allow(clippy::all)]
 use crate::prelude::*;
+// One declaration per external symbol: the variant matching the C prototype.
+pub use crate::ring::ole2impl::CreateBitmapIndirect;
+pub use crate::ring::ole2impl::CreatePalette;
+pub use crate::compobj::ffi::CreateWindowExW;
+pub use crate::compobj::ffi::DestroyWindow;
+pub use crate::compobj::ffi::DispatchMessageW;
+pub use crate::compobj::ffi::GetMessageW;
+pub use crate::ring::ole2impl::GetPaletteEntries;
+pub use crate::marshal::types::PostMessageW;
+pub use crate::marshal::types::ReadFile;
+pub use crate::compobj::ffi::SendMessageW;
+pub use crate::marshal::types::WriteFile;
 use core::ffi::{c_char, c_int, c_void};
 
 pub type HHOOK = *mut c_void;
@@ -55,19 +67,9 @@ extern "system" {
     // --- windows / messages (the clipboard's hidden window + DoDragDrop's loop) ---
     pub fn RegisterClassExW(unnamedParam1: *const c_void) -> u16;
     pub fn UnregisterClassW(lpClassName: *const u16, hInstance: HINSTANCE) -> BOOL;
-    pub fn CreateWindowExW(
-        dwExStyle: DWORD, lpClassName: *const u16, lpWindowName: *const u16, dwStyle: DWORD,
-        X: c_int, Y: c_int, nWidth: c_int, nHeight: c_int,
-        hWndParent: HWND, hMenu: HMENU, hInstance: HINSTANCE, lpParam: LPVOID,
-    ) -> HWND;
-    pub fn DestroyWindow(hWnd: HWND) -> BOOL;
     pub fn IsWindow(hWnd: HWND) -> BOOL;
     pub fn IsWindowUnicode(hWnd: HWND) -> BOOL;
-    pub fn GetMessageW(lpMsg: *mut c_void, hWnd: HWND, wMsgFilterMin: UINT, wMsgFilterMax: UINT) -> BOOL;
-    pub fn DispatchMessageW(lpMsg: *const c_void) -> LRESULT;
-    pub fn PostMessageW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> BOOL;
     pub fn PostMessageA(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> BOOL;
-    pub fn SendMessageW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     pub fn PostQuitMessage(nExitCode: c_int);
     pub fn GetWindowThreadProcessId(hWnd: HWND, lpdwProcessId: *mut DWORD) -> DWORD;
 
@@ -92,13 +94,10 @@ extern "system" {
     pub fn CreateCompatibleDC(hdc: HDC) -> HDC;
     pub fn DeleteDC(hdc: HDC) -> BOOL;
     pub fn CreateCompatibleBitmap(hdc: HDC, cx: c_int, cy: c_int) -> HBITMAP;
-    pub fn CreateBitmapIndirect(pbm: *const c_void) -> HBITMAP;
     pub fn GetBitmapBits(hbit: HBITMAP, cb: LONG, lpvBits: LPVOID) -> LONG;
     pub fn GetObjectW(h: HANDLE, c: c_int, pv: LPVOID) -> c_int;
     pub fn BitBlt(hdc: HDC, x: c_int, y: c_int, cx: c_int, cy: c_int,
                   hdcSrc: HDC, x1: c_int, y1: c_int, rop: DWORD) -> BOOL;
-    pub fn CreatePalette(plpal: *const c_void) -> HPALETTE;
-    pub fn GetPaletteEntries(hpal: HPALETTE, iStart: UINT, cEntries: UINT, pPalEntries: *mut c_void) -> UINT;
     pub fn CopyMetaFileW(hmfSrc: HANDLE, lpszFile: *const u16) -> HANDLE;
     pub fn CopyEnhMetaFileW(hEnh: HENHMETAFILE, lpFileName: *const u16) -> HENHMETAFILE;
     pub fn DeleteEnhMetaFile(hmf: HENHMETAFILE) -> BOOL;
@@ -113,10 +112,6 @@ extern "system" {
     pub fn Sleep(dwMilliseconds: DWORD);
     pub fn GetModuleHandleW(lpModuleName: *const u16) -> HINSTANCE;
     pub fn CloseHandle(hObject: HANDLE) -> BOOL;
-    pub fn ReadFile(hFile: HANDLE, lpBuffer: LPVOID, nNumberOfBytesToRead: DWORD,
-                    lpNumberOfBytesRead: *mut DWORD, lpOverlapped: *mut c_void) -> BOOL;
-    pub fn WriteFile(hFile: HANDLE, lpBuffer: LPCVOID, nNumberOfBytesToWrite: DWORD,
-                     lpNumberOfBytesWritten: *mut DWORD, lpOverlapped: *mut c_void) -> BOOL;
     pub fn SetFilePointerEx(hFile: HANDLE, liDistanceToMove: LARGE_INTEGER,
                             lpNewFilePointer: *mut LARGE_INTEGER, dwMoveMethod: DWORD) -> BOOL;
     pub fn SetEndOfFile(hFile: HANDLE) -> BOOL;

@@ -13,6 +13,25 @@
 #![allow(dead_code)]
 
 use win32k_sys::win32k::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::windows::message::GlobalAlloc;
+// The crate's own functions: the definition is the declaration.
+use crate::misc::ddemisc::WDML_AddConv;
+use crate::misc::ddemisc::WDML_AddLink;
+use crate::misc::ddemisc::WDML_AllocTransaction;
+use crate::misc::ddemisc::WDML_DecHSZ;
+use crate::misc::ddemisc::WDML_FindLink;
+use crate::misc::ddemisc::WDML_FreeTransaction;
+use crate::misc::ddemisc::WDML_GetConv;
+use crate::misc::ddemisc::WDML_GetConvFromWnd;
+use crate::misc::ddemisc::WDML_GetInstance;
+use crate::misc::ddemisc::WDML_GetInstanceFromWnd;
+use crate::misc::ddemisc::WDML_InvokeCallback;
+use crate::misc::ddemisc::WDML_MakeHszFromAtom;
+use crate::misc::ddemisc::WDML_PostAck;
+use crate::misc::ddemisc::WDML_QueueTransaction;
+use crate::misc::ddemisc::WDML_RemoveConv;
+use crate::misc::ddemisc::WDML_RemoveLink;
 #[allow(unused_imports)]
 use core::ffi::c_void;
 
@@ -123,26 +142,10 @@ type PFNCALLBACK = HDDEDATA; // not used in this TU; placeholder for symmetry
 // ────────────────────────────────────────────────────────────────────────────
 
 // CONVCONTEXT (ddeml.h)
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CONVCONTEXT {
-    pub cb: UINT,
-    pub wFlags: UINT,
-    pub wCountryID: UINT,
-    pub iCodePage: INT,
-    pub dwLangID: DWORD,
-    pub dwSecurity: DWORD,
-}
 
 // WINE_DDEHEAD (dde_private.h) — bitfield pack of a DDE??? header word.
 //   unsigned short unused:12, fResponse:1, fRelease:1, fDeferUpd:1, fAckReq:1;
 //   short cfFormat;
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct WINE_DDEHEAD {
-    pub flags: u16,
-    pub cfFormat: i16,
-}
 impl WINE_DDEHEAD {
     #[inline]
     fn fResponse(&self) -> bool {
@@ -191,11 +194,6 @@ struct DDEPOKE {
 }
 
 // DDE_DATAHANDLE_HEAD (dde_private.h)
-#[repr(C)]
-struct DDE_DATAHANDLE_HEAD {
-    cfFormat: WORD,
-    bAppOwned: WORD,
-}
 
 // ────────────────────────────────────────────────────────────────────────────
 // Shared WDML_* internal structs (dde_private.h) — #[repr(C)], faithful layout.
@@ -213,85 +211,9 @@ const WDML_QS_PASS: WDML_QUEUE_STATE = 2;
 const WDML_QS_SWALLOWED: WDML_QUEUE_STATE = 3;
 const WDML_QS_BLOCK: WDML_QUEUE_STATE = 4;
 
-#[repr(C)]
-struct HSZNode {
-    next: *mut HSZNode,
-    hsz: HSZ,
-    refCount: UINT,
-}
-
-#[repr(C)]
-struct WDML_SERVER {
-    next: *mut WDML_SERVER,
-    hszService: HSZ,
-    hszServiceSpec: HSZ,
-    atomService: ATOM,
-    atomServiceSpec: ATOM,
-    filterOn: BOOL,
-    hwndServer: HWND,
-}
-
-#[repr(C)]
-pub struct WDML_XACT {
-    pub next: *mut WDML_XACT,
-    pub xActID: DWORD,
-    pub ddeMsg: UINT,
-    pub hDdeData: HDDEDATA,
-    pub dwTimeout: DWORD,
-    pub hUser: DWORD,
-    pub wType: UINT,
-    pub wFmt: UINT,
-    pub hszItem: HSZ,
-    pub atom: ATOM,
-    pub hMem: HGLOBAL,
-    pub lParam: LPARAM,
-}
-
-#[repr(C)]
-pub struct WDML_CONV {
-    pub next: *mut WDML_CONV,
-    pub instance: *mut WDML_INSTANCE,
-    pub hszService: HSZ,
-    pub hszTopic: HSZ,
-    pub magic: UINT,
-    pub afCmd: UINT,
-    pub convContext: CONVCONTEXT,
-    pub hwndClient: HWND,
-    pub hwndServer: HWND,
-    pub transactions: *mut WDML_XACT,
-    pub hUser: DWORD,
-    pub wStatus: DWORD,
-    pub wConvst: DWORD,
-}
-
-#[repr(C)]
-pub struct WDML_LINK {
-    pub next: *mut WDML_LINK,
-    pub hConv: HCONV,
-    pub transactionType: UINT,
-    pub hszItem: HSZ,
-    pub uFmt: UINT,
-}
-
-#[repr(C)]
-pub struct WDML_INSTANCE {
-    pub next: *mut WDML_INSTANCE,
-    pub instanceID: DWORD,
-    pub threadID: DWORD,
-    pub monitor: BOOL,
-    pub clientOnly: BOOL,
-    pub unicode: BOOL,
-    pub nodeList: *mut HSZNode,
-    pub callback: PFNCALLBACK,
-    pub CBFflags: DWORD,
-    pub monitorFlags: DWORD,
-    pub lastError: DWORD,
-    pub hwndEvent: HWND,
-    pub wStatus: DWORD,
-    pub servers: *mut WDML_SERVER,
-    pub convs: [*mut WDML_CONV; 2],
-    pub links: [*mut WDML_LINK; 2],
-}
+// The dde_private.h structs are ddemisc's: one definition, so the ddemisc functions
+// this module calls take the same types (a byte-identical copy here was a distinct type).
+pub use crate::misc::ddemisc::{CONVCONTEXT, DDE_DATAHANDLE_HEAD, HSZNode, WDML_CONV, WDML_INSTANCE, WDML_LINK, WDML_SERVER, WDML_XACT, WINE_DDEHEAD};
 
 // ────────────────────────────────────────────────────────────────────────────
 // Class-name globals.
@@ -316,86 +238,19 @@ pub static WDML_szClientConvClassW: [u16; 19] = [
 // Cross-file WDML_* helpers (defined in ddemisc.c / ddeserver.c) — plain cdecl.
 // ────────────────────────────────────────────────────────────────────────────
 extern "C" {
-    fn WDML_InvokeCallback(
-        pInst: *mut WDML_INSTANCE,
-        uType: UINT,
-        uFmt: UINT,
-        hConv: HCONV,
-        hsz1: HSZ,
-        hsz2: HSZ,
-        hdata: HDDEDATA,
-        dwData1: ULONG_PTR,
-        dwData2: ULONG_PTR,
-    ) -> HDDEDATA;
-    fn WDML_AddConv(
-        pInstance: *mut WDML_INSTANCE,
-        side: INT,
-        hszService: HSZ,
-        hszTopic: HSZ,
-        hwndClient: HWND,
-        hwndServer: HWND,
-    ) -> *mut WDML_CONV;
-    fn WDML_RemoveConv(pConv: *mut WDML_CONV, side: INT);
-    fn WDML_GetConv(hConv: HCONV, checkConnected: BOOL) -> *mut WDML_CONV;
-    fn WDML_GetConvFromWnd(hWnd: HWND) -> *mut WDML_CONV;
     fn WDML_FindConv(
         pInstance: *mut WDML_INSTANCE,
         side: INT,
         hszService: HSZ,
         hszTopic: HSZ,
     ) -> *mut WDML_CONV;
-    fn WDML_PostAck(
-        pConv: *mut WDML_CONV,
-        side: INT,
-        appRetCode: WORD,
-        fBusy: BOOL,
-        fAck: BOOL,
-        pmt: UINT_PTR,
-        lParam: LPARAM,
-        oldMsg: UINT,
-    ) -> BOOL;
-    fn WDML_AddLink(
-        pInstance: *mut WDML_INSTANCE,
-        hConv: HCONV,
-        side: INT,
-        wType: UINT,
-        hszItem: HSZ,
-        wFmt: UINT,
-    );
-    fn WDML_FindLink(
-        pInstance: *mut WDML_INSTANCE,
-        hConv: HCONV,
-        side: INT,
-        hszItem: HSZ,
-        use_fmt: BOOL,
-        uFmt: UINT,
-    ) -> *mut WDML_LINK;
-    fn WDML_RemoveLink(
-        pInstance: *mut WDML_INSTANCE,
-        hConv: HCONV,
-        side: INT,
-        hszItem: HSZ,
-        wFmt: UINT,
-    );
-    fn WDML_DecHSZ(pInstance: *mut WDML_INSTANCE, hsz: HSZ) -> BOOL;
     fn WDML_MakeAtomFromHsz(hsz: HSZ) -> ATOM;
-    fn WDML_MakeHszFromAtom(pInstance: *const WDML_INSTANCE, atom: ATOM) -> HSZ;
-    fn WDML_AllocTransaction(
-        pInstance: *mut WDML_INSTANCE,
-        ddeMsg: UINT,
-        wFmt: UINT,
-        hszItem: HSZ,
-    ) -> *mut WDML_XACT;
-    fn WDML_QueueTransaction(pConv: *mut WDML_CONV, pXAct: *mut WDML_XACT);
     fn WDML_UnQueueTransaction(pConv: *mut WDML_CONV, pXAct: *mut WDML_XACT) -> BOOL;
-    fn WDML_FreeTransaction(pInstance: *mut WDML_INSTANCE, pXAct: *mut WDML_XACT, doFreePmt: BOOL);
     fn WDML_Global2DataHandle(
         pConv: *mut WDML_CONV,
         hMem: HGLOBAL,
         da: *mut WINE_DDEHEAD,
     ) -> HDDEDATA;
-    fn WDML_GetInstance(InstId: DWORD) -> *mut WDML_INSTANCE;
-    fn WDML_GetInstanceFromWnd(hWnd: HWND) -> *mut WDML_INSTANCE;
 }
 
 // Cross-file server-side conversation class-name globals (defined in ddeserver.c).
@@ -479,7 +334,6 @@ extern "system" {
     fn lstrcmpiW(lpString1: LPCWSTR, lpString2: LPCWSTR) -> INT;
 
     // kernel32 exports
-    fn GlobalAlloc(uFlags: UINT, dwBytes: SIZE_T) -> HGLOBAL;
     fn GlobalLock(hMem: HGLOBAL) -> LPVOID;
     fn GlobalUnlock(hMem: HGLOBAL) -> BOOL;
     fn GlobalFree(hMem: HGLOBAL) -> HGLOBAL;
@@ -592,7 +446,7 @@ pub unsafe extern "system" fn DdeConnect(
     let mut aSrv: ATOM = 0;
     let mut aTpc: ATOM = 0;
 
-    pInstance = WDML_GetInstance(idInst);
+    pInstance = (WDML_GetInstance(idInst)).cast();
     if pInstance.is_null() {
         return core::ptr::null_mut();
     }
@@ -702,13 +556,13 @@ pub unsafe extern "system" fn DdeConnect(
         core::ptr::null_mut(),
     );
 
-    pInstance = WDML_GetInstance(idInst);
+    pInstance = (WDML_GetInstance(idInst)).cast();
     if pInstance.is_null() {
         return theEnd(pConv, aSrv, aTpc);
     }
 
     /* At this point, Client WM_DDE_ACK should have saved hwndServer ... */
-    pConv = WDML_GetConvFromWnd(hwndClient);
+    pConv = (WDML_GetConvFromWnd(hwndClient)).cast();
     if pConv.is_null() || (*pConv).hwndServer.is_null() {
         pConv = core::ptr::null_mut();
         (*pInstance).lastError = DMLERR_NO_CONV_ESTABLISHED;
@@ -753,12 +607,12 @@ pub unsafe extern "system" fn DdeReconnect(hConv: HCONV) -> HCONV {
     let mut aSrv: ATOM = 0;
     let mut aTpc: ATOM = 0;
 
-    pConv = WDML_GetConv(hConv, 0);
+    pConv = (WDML_GetConv(hConv, 0)).cast();
     if !pConv.is_null() && ((*pConv).wStatus & ST_CLIENT) != 0 {
         let ret: BOOL;
 
         /* to reestablish a connection ... */
-        if pConv == WDML_GetConvFromWnd((*pConv).hwndClient)
+        if pConv == (WDML_GetConvFromWnd((*pConv).hwndClient)).cast()
             && ((*pConv).wStatus & ST_TERMINATED) != 0
             && ((*pConv).wStatus & ST_CONNECTED) == 0
         {
@@ -781,12 +635,12 @@ pub unsafe extern "system" fn DdeReconnect(hConv: HCONV) -> HCONV {
                 MAKELPARAM(aSrv as UINT, aTpc as UINT),
             ) as BOOL;
 
-            pConv = WDML_GetConv(hConv, 0);
+            pConv = (WDML_GetConv(hConv, 0)).cast();
             if pConv.is_null() {
                 return reconnectEnd(pNewConv, aSrv, aTpc);
             }
 
-            pNewConv = WDML_GetConvFromWnd((*pConv).hwndClient);
+            pNewConv = (WDML_GetConvFromWnd((*pConv).hwndClient)).cast();
             if ret != 0 && !pNewConv.is_null() {
                 /* re-establish all links... */
                 let mut pLink: *mut WDML_LINK;
@@ -851,7 +705,7 @@ unsafe fn WDML_ClientQueueAdvise(
         return core::ptr::null_mut();
     }
 
-    pXAct = WDML_AllocTransaction((*pConv).instance, WM_DDE_ADVISE, wFmt, hszItem);
+    pXAct = (WDML_AllocTransaction(((*pConv).instance).cast(), WM_DDE_ADVISE, wFmt, hszItem)).cast();
     if pXAct.is_null() {
         GlobalDeleteAtom(atom);
         return core::ptr::null_mut();
@@ -920,19 +774,19 @@ unsafe fn WDML_HandleAdviseReply(
         let pLink: *mut WDML_LINK;
 
         /* billx: first to see if the link is already created. */
-        pLink = WDML_FindLink(
-            (*pConv).instance,
+        pLink = (WDML_FindLink(
+            ((*pConv).instance).cast(),
             pConv as HCONV,
             WDML_CLIENT_SIDE as INT,
             (*pXAct).hszItem,
             1,
             (*pXAct).wFmt,
-        );
+        )).cast();
         if !pLink.is_null() {
             (*pLink).transactionType = (*pXAct).wType;
         } else {
             WDML_AddLink(
-                (*pConv).instance,
+                ((*pConv).instance).cast(),
                 pConv as HCONV,
                 WDML_CLIENT_SIDE as INT,
                 (*pXAct).wType,
@@ -965,7 +819,7 @@ unsafe fn WDML_ClientQueueUnadvise(
         return core::ptr::null_mut();
     }
 
-    pXAct = WDML_AllocTransaction((*pConv).instance, WM_DDE_UNADVISE, wFmt, hszItem);
+    pXAct = (WDML_AllocTransaction(((*pConv).instance).cast(), WM_DDE_UNADVISE, wFmt, hszItem)).cast();
     if pXAct.is_null() {
         GlobalDeleteAtom(atom);
         return core::ptr::null_mut();
@@ -1015,7 +869,7 @@ unsafe fn WDML_HandleUnadviseReply(
     } else {
         /* billx: remove the link */
         WDML_RemoveLink(
-            (*pConv).instance,
+            ((*pConv).instance).cast(),
             pConv as HCONV,
             WDML_CLIENT_SIDE as INT,
             (*pXAct).hszItem,
@@ -1042,7 +896,7 @@ unsafe fn WDML_ClientQueueRequest(
         return core::ptr::null_mut();
     }
 
-    pXAct = WDML_AllocTransaction((*pConv).instance, WM_DDE_REQUEST, wFmt, hszItem);
+    pXAct = (WDML_AllocTransaction(((*pConv).instance).cast(), WM_DDE_REQUEST, wFmt, hszItem)).cast();
     if pXAct.is_null() {
         GlobalDeleteAtom(atom);
         return core::ptr::null_mut();
@@ -1223,7 +1077,7 @@ unsafe fn WDML_ClientQueueExecute(
         return core::ptr::null_mut();
     }
 
-    pXAct = WDML_AllocTransaction((*pConv).instance, WM_DDE_EXECUTE, 0, core::ptr::null_mut());
+    pXAct = (WDML_AllocTransaction(((*pConv).instance).cast(), WM_DDE_EXECUTE, 0, core::ptr::null_mut())).cast();
     if pXAct.is_null() {
         return core::ptr::null_mut();
     }
@@ -1307,7 +1161,7 @@ unsafe fn WDML_ClientQueuePoke(
         return core::ptr::null_mut();
     }
 
-    pXAct = WDML_AllocTransaction((*pConv).instance, WM_DDE_POKE, wFmt, hszItem);
+    pXAct = (WDML_AllocTransaction(((*pConv).instance).cast(), WM_DDE_POKE, wFmt, hszItem)).cast();
     if pXAct.is_null() {
         GlobalDeleteAtom(atom);
         return core::ptr::null_mut();
@@ -1391,7 +1245,7 @@ unsafe fn WDML_ClientQueueTerminate(pConv: *mut WDML_CONV) -> *mut WDML_XACT {
     let pXAct: *mut WDML_XACT;
 
     pXAct =
-        WDML_AllocTransaction((*pConv).instance, WM_DDE_TERMINATE, 0, core::ptr::null_mut());
+        (WDML_AllocTransaction(((*pConv).instance).cast(), WM_DDE_TERMINATE, 0, core::ptr::null_mut())).cast();
     if pXAct.is_null() {
         return core::ptr::null_mut();
     }
@@ -1416,7 +1270,7 @@ unsafe fn WDML_HandleTerminateReply(pConv: *mut WDML_CONV, msg: *mut MSG) -> WDM
     }
     if ((*(*pConv).instance).CBFflags & CBF_SKIP_DISCONNECTS) == 0 {
         WDML_InvokeCallback(
-            (*pConv).instance,
+            ((*pConv).instance).cast(),
             XTYP_DISCONNECT,
             0,
             pConv as HCONV,
@@ -1427,7 +1281,7 @@ unsafe fn WDML_HandleTerminateReply(pConv: *mut WDML_CONV, msg: *mut MSG) -> WDM
             if ((*pConv).wStatus & ST_ISSELF) != 0 { 1 } else { 0 },
         );
     }
-    WDML_RemoveConv(pConv, WDML_CLIENT_SIDE as INT);
+    WDML_RemoveConv((pConv).cast(), WDML_CLIENT_SIDE as INT);
     WDML_QS_HANDLED
 }
 
@@ -1454,23 +1308,23 @@ unsafe fn WDML_HandleIncomingData(
     hDdeDataIn = WDML_Global2DataHandle(pConv, uiLo as HGLOBAL, &mut wdh);
 
     /* billx: for hot link, data should be passed to its callback with XTYP_ADVDATA */
-    pLink = WDML_FindLink(
-        (*pConv).instance,
+    pLink = (WDML_FindLink(
+        ((*pConv).instance).cast(),
         pConv as HCONV,
         WDML_CLIENT_SIDE as INT,
         hsz,
         (uiLo != 0) as BOOL,
         wdh.cfFormat as UINT,
-    );
+    )).cast();
     if pLink.is_null() {
-        WDML_DecHSZ((*pConv).instance, hsz);
+        WDML_DecHSZ(((*pConv).instance).cast(), hsz);
         DdeFreeDataHandle(hDdeDataIn);
         return WDML_QS_PASS;
     }
 
     if !hDdeDataIn.is_null() && wdh.fAckReq() {
         WDML_PostAck(
-            pConv,
+            (pConv).cast(),
             WDML_CLIENT_SIDE as INT,
             0,
             0,
@@ -1487,7 +1341,7 @@ unsafe fn WDML_HandleIncomingData(
     }
 
     hDdeDataOut = WDML_InvokeCallback(
-        (*pConv).instance,
+        ((*pConv).instance).cast(),
         XTYP_ADVDATA,
         (*pLink).uFmt,
         (*pLink).hConv,
@@ -1506,7 +1360,7 @@ unsafe fn WDML_HandleIncomingData(
 
     DdeFreeDataHandle(hDdeDataIn);
 
-    WDML_DecHSZ((*pConv).instance, hsz);
+    WDML_DecHSZ(((*pConv).instance).cast(), hsz);
     if (*msg).lParam != 0 {
         FreeDDElParam(WM_DDE_DATA, (*msg).lParam);
     }
@@ -1580,7 +1434,7 @@ unsafe fn WDML_HandleReply(
             /* ok, we have resolved a pending transaction; notify cb if asynchronous */
             if (*pXAct).dwTimeout == TIMEOUT_ASYNC && (*pXAct).ddeMsg != WM_DDE_TERMINATE {
                 WDML_InvokeCallback(
-                    (*pConv).instance,
+                    ((*pConv).instance).cast(),
                     XTYP_XACT_COMPLETE,
                     (*pXAct).wFmt,
                     pConv as HCONV,
@@ -1665,7 +1519,7 @@ unsafe fn WDML_SyncWaitTransactionReply(
             {
                 let mut hdd: HDDEDATA = core::ptr::null_mut();
 
-                pConv = WDML_GetConv(hConv, 0);
+                pConv = (WDML_GetConv(hConv, 0)).cast();
                 if pConv.is_null() {
                     /* conversation no longer available... return failure */
                     return core::ptr::null_mut();
@@ -1694,7 +1548,7 @@ unsafe fn WDML_SyncWaitTransactionReply(
         }
     }
 
-    pConv = WDML_GetConv(hConv, 0);
+    pConv = (WDML_GetConv(hConv, 0)).cast();
     if !pConv.is_null() && !(*pConv).transactions.is_null() {
         err = match (*(*pConv).transactions).ddeMsg {
             WM_DDE_ADVISE => DMLERR_ADVACKTIMEOUT,
@@ -1773,7 +1627,7 @@ pub unsafe extern "system" fn DdeClientTransaction(
         return core::ptr::null_mut();
     }
 
-    pConv = WDML_GetConv(hConv, 1);
+    pConv = (WDML_GetConv(hConv, 1)).cast();
     if pConv.is_null() {
         /* cannot set error... cannot get back to DDE instance */
         return core::ptr::null_mut();
@@ -1832,7 +1686,7 @@ pub unsafe extern "system" fn DdeClientTransaction(
         return core::ptr::null_mut();
     }
 
-    WDML_QueueTransaction(pConv, pXAct);
+    WDML_QueueTransaction((pConv).cast(), (pXAct).cast());
 
     if ((*pConv).wStatus & ST_BLOCKED) != 0 {
         return 1 as HDDEDATA;
@@ -1841,7 +1695,7 @@ pub unsafe extern "system" fn DdeClientTransaction(
     hDdeData = WDML_ClientHandle(pConv, pXAct, dwTimeout, pdwResult);
     if dwTimeout != TIMEOUT_ASYNC {
         WDML_UnQueueTransaction(pConv, pXAct);
-        WDML_FreeTransaction((*pConv).instance, pXAct, 1);
+        WDML_FreeTransaction(((*pConv).instance).cast(), (pXAct).cast(), 1);
     }
 
     hDdeData
@@ -1856,13 +1710,13 @@ pub unsafe extern "system" fn DdeAbandonTransaction(
     hConv: HCONV,
     idTransaction: DWORD,
 ) -> BOOL {
-    let pInstance: *mut WDML_INSTANCE = WDML_GetInstance(idInst);
+    let pInstance: *mut WDML_INSTANCE = (WDML_GetInstance(idInst)).cast();
     let mut pConv: *mut WDML_CONV;
     let mut pXAct: *mut WDML_XACT;
 
     if !pInstance.is_null() {
         if !hConv.is_null() {
-            pConv = WDML_GetConv(hConv, 1);
+            pConv = (WDML_GetConv(hConv, 1)).cast();
             if !pConv.is_null() && (*pConv).instance == pInstance {
                 pXAct = (*pConv).transactions;
                 while !pXAct.is_null() {
@@ -1872,7 +1726,7 @@ pub unsafe extern "system" fn DdeAbandonTransaction(
                         && (idTransaction == 0 || (*pXAct).xActID == idTransaction)
                     {
                         WDML_UnQueueTransaction(pConv, pXAct);
-                        WDML_FreeTransaction(pInstance, pXAct, 1);
+                        WDML_FreeTransaction((pInstance).cast(), (pXAct).cast(), 1);
                     }
                     pXAct = nextXAct;
                 }
@@ -1890,7 +1744,7 @@ pub unsafe extern "system" fn DdeAbandonTransaction(
 
                     if (*pXAct).dwTimeout == TIMEOUT_ASYNC {
                         WDML_UnQueueTransaction(pConv, pXAct);
-                        WDML_FreeTransaction(pInstance, pXAct, 1);
+                        WDML_FreeTransaction((pInstance).cast(), (pXAct).cast(), 1);
                     }
                     pXAct = nextXAct;
                 }
@@ -1919,7 +1773,7 @@ unsafe extern "system" fn WDML_ClientProc(
     let hszTpc: HSZ;
 
     if iMsg == WM_DDE_ACK && {
-        pConv = WDML_GetConvFromWnd(hwnd);
+        pConv = (WDML_GetConvFromWnd(hwnd)).cast();
         pConv.is_null() || (*pConv).wStatus == XST_INIT1
     } {
         /* In response to WM_DDE_INITIATE, save server window  */
@@ -1939,19 +1793,19 @@ unsafe extern "system" fn WDML_ClientProc(
             return 0;
         }
 
-        pInstance = WDML_GetInstanceFromWnd(hwnd);
+        pInstance = (WDML_GetInstanceFromWnd(hwnd)).cast();
 
         hszSrv = WDML_MakeHszFromAtom(pInstance, uiLo as ATOM);
         hszTpc = WDML_MakeHszFromAtom(pInstance, uiHi as ATOM);
 
-        pConv = WDML_AddConv(
-            pInstance,
+        pConv = (WDML_AddConv(
+            (pInstance).cast(),
             WDML_CLIENT_SIDE as INT,
             hszSrv,
             hszTpc,
             hwnd,
             wParam as HWND,
-        );
+        )).cast();
 
         SetWindowLongPtrW(hwnd, GWL_WDML_CONVERSATION, pConv as LONG_PTR);
         (*pConv).wStatus |= ST_CONNECTED;
@@ -1988,7 +1842,7 @@ unsafe extern "system" fn WDML_ClientProc(
     }
 
     if iMsg >= WM_DDE_FIRST && iMsg <= WM_DDE_LAST {
-        pConv = WDML_GetConvFromWnd(hwnd);
+        pConv = (WDML_GetConvFromWnd(hwnd)).cast();
 
         if !pConv.is_null() {
             let mut msg: MSG = core::mem::zeroed();
@@ -2025,7 +1879,7 @@ pub unsafe extern "system" fn DdeDisconnect(hConv: HCONV) -> BOOL {
         return 0;
     }
 
-    pConv = WDML_GetConv(hConv, 1);
+    pConv = (WDML_GetConv(hConv, 1)).cast();
     if !pConv.is_null() && ((*pConv).wStatus & ST_CLIENT) != 0 {
         /* FIXME: should abandon all pending transactions */
         pXAct = WDML_ClientQueueTerminate(pConv);
@@ -2043,9 +1897,9 @@ pub unsafe extern "system" fn DdeDisconnect(hConv: HCONV) -> BOOL {
                 (*(*pConv).instance).lastError = DMLERR_POSTMSG_FAILED;
             }
 
-            WDML_FreeTransaction((*pConv).instance, pXAct, 1);
+            WDML_FreeTransaction(((*pConv).instance).cast(), (pXAct).cast(), 1);
             /* still have to destroy data associated with conversation */
-            WDML_RemoveConv(pConv, WDML_CLIENT_SIDE as INT);
+            WDML_RemoveConv((pConv).cast(), WDML_CLIENT_SIDE as INT);
         }
         /* else: FIXME — not implemented yet for a server side conversation */
     }
@@ -2061,7 +1915,7 @@ pub unsafe extern "system" fn DdeImpersonateClient(hConv: HCONV) -> BOOL {
     let pConv: *mut WDML_CONV;
     let mut ret: BOOL = 0;
 
-    pConv = WDML_GetConv(hConv, 1);
+    pConv = (WDML_GetConv(hConv, 1)).cast();
     if !pConv.is_null() {
         ret = ImpersonateDdeClientWindow((*pConv).hwndClient, (*pConv).hwndServer);
     }

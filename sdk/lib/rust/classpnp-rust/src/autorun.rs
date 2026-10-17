@@ -2879,7 +2879,7 @@ pub unsafe extern "C" fn ClasspMcnControl(
     status
 }
 #[no_mangle]
-pub unsafe extern "C" fn ClasspTimerTickEx(Timer: PEX_TIMER, Context: PVOID) {
+pub unsafe extern "system" fn ClasspTimerTickEx(Timer: PEX_TIMER, Context: PVOID) {
     let mut dummyDpc: KDPC = core::mem::zeroed();
     let _ = Timer;
     ClasspTimerTick(

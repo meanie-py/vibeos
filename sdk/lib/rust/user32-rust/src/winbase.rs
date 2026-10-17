@@ -69,8 +69,8 @@ extern "C" {
     pub fn wcslen(s: *const u16) -> usize;
     pub fn abs(i: c_int) -> c_int;
     pub fn iswspace(c: c_int) -> c_int;
-    pub fn towlower(c: c_int) -> c_int;
-    pub fn towupper(c: c_int) -> c_int;
+    pub fn towlower(c: wint_t) -> wint_t;
+    pub fn towupper(c: wint_t) -> wint_t;
 }
 
 // ---- codepage + heap constants ----

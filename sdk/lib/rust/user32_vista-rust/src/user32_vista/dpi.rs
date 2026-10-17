@@ -1,8 +1,12 @@
 use crate::prelude::*;
 use core::ffi::c_void;
 
+// ntdll's, not kernel32's SetLastError: this crate is linked into user32.dll AND into
+// user32_vista.dll, and user32_vista imports only user32, gdi32 and ntdll. kernel32's
+// SetLastError is this call. (Unresolved there until 2026-10-17, when the user32_vista cell
+// first linked the body: cmake's link had bound the exports to import thunks instead.)
 extern "system" {
-    fn SetLastError(dwErrCode: DWORD);
+    fn RtlSetLastWin32Error(dwErrCode: DWORD);
 }
 
 // ---- file-scope preamble (translated) ----
@@ -60,7 +64,7 @@ pub unsafe extern "system" fn SetProcessDpiAwarenessContext(
     // Only the five pseudo-handles -1..-5 are contexts.
     let c = context as isize;
     if !(DPI_CTX_UNAWARE_GDISCALED..=DPI_CTX_UNAWARE).contains(&c) {
-        SetLastError(ERROR_INVALID_PARAMETER as DWORD);
+        RtlSetLastWin32Error(ERROR_INVALID_PARAMETER as DWORD);
         return (FALSE) as i32;
     }
     PROCESS_DPI_CONTEXT.store(c, core::sync::atomic::Ordering::SeqCst);

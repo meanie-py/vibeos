@@ -412,7 +412,7 @@ unsafe fn PropertyStorage_StringCopy(
                 wideStr_tmp = HeapAlloc(
                     GetProcessHeap(),
                     0,
-                    (len as usize * core::mem::size_of::<WCHAR>()) as SIZE_T,
+                    (len as usize * core::mem::size_of::<WCHAR>()) as usize,
                 ) as LPWSTR;
                 if !wideStr_tmp.is_null() {
                     MultiByteToWideChar(srcCP, 0, src, -1, wideStr_tmp, len);
@@ -542,7 +542,7 @@ unsafe fn PropertyStorage_StorePropWithId(
         let prop = HeapAlloc(
             GetProcessHeap(),
             HEAP_ZERO_MEMORY,
-            core::mem::size_of::<PROPVARIANT>() as SIZE_T,
+            core::mem::size_of::<PROPVARIANT>() as usize,
         ) as *mut PROPVARIANT;
         if !prop.is_null() {
             hr = PropertyStorage_PropVariantCopy(prop, propvar, (*This).codePage, lcid);
@@ -1874,7 +1874,7 @@ unsafe fn PropertyStorage_ReadFromStream(This: *mut PropertyStorage_impl) -> HRE
             GetProcessHeap(),
             0,
             (sectionHdr.cbSection - core::mem::size_of::<PROPERTYSECTIONHEADER>() as DWORD)
-                as SIZE_T,
+                as usize,
         ) as *mut BYTE;
         if buf.is_null() {
             hr = STG_E_INSUFFICIENTMEMORY;
@@ -2497,7 +2497,7 @@ unsafe fn PropertyStorage_WritePropertyToStream(
                 // Zeroed: wine-10 converts only the SysStringLen characters (not the NUL
                 // its length counted) into an uninitialised buffer, so the last byte it
                 // writes to the stream is heap garbage. Here it is the terminator.
-                let str_ = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, len as SIZE_T) as LPSTR;
+                let str_ = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, len as usize) as LPSTR;
                 if str_.is_null() {
                     return E_OUTOFMEMORY;
                 }
@@ -2955,7 +2955,7 @@ unsafe fn PropertyStorage_BaseConstruct(
     *pps = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        core::mem::size_of::<PropertyStorage_impl>() as SIZE_T,
+        core::mem::size_of::<PropertyStorage_impl>() as usize,
     ) as *mut PropertyStorage_impl;
 
     if (*pps).is_null() {

@@ -1,4 +1,7 @@
 use win32k_sys::win32k::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::windows::message::GlobalAlloc;
+use crate::windows::window::HeapAlloc;
 #[allow(unused_imports)]
 use core::ffi::c_void;
 
@@ -21,10 +24,8 @@ extern "system" {
 // kernel32 exports.
 extern "system" {
     fn WinExec(lpCmdLine: LPCSTR, uCmdShow: UINT) -> UINT;
-    fn GlobalAlloc(uFlags: UINT, dwBytes: usize) -> HGLOBAL;
     fn GlobalLock(hMem: HGLOBAL) -> LPVOID;
     fn GlobalUnlock(hMem: HGLOBAL) -> BOOL;
-    fn HeapAlloc(hHeap: *mut core::ffi::c_void, dwFlags: u32, dwBytes: usize) -> *mut core::ffi::c_void;
     fn HeapFree(hHeap: *mut core::ffi::c_void, dwFlags: u32, lpMem: *mut core::ffi::c_void) -> i32;
 }
 
@@ -107,7 +108,7 @@ pub unsafe extern "system" fn WinHelpA(
     }
 
     size = core::mem::size_of::<WINHELP>() as i32 + nlen + dsize;
-    hwh = GlobalAlloc(0, size as usize);
+    hwh = GlobalAlloc(0, (size) as SIZE_T);
     if hwh.is_null() {
         return 0;
     }
@@ -169,7 +170,7 @@ pub unsafe extern "system" fn WinHelpW(
         core::ptr::null_mut(),
     );
 
-    file = HeapAlloc(GetProcessHeap(), 0, len as usize) as LPSTR;
+    file = HeapAlloc(GetProcessHeap(), 0, (len) as SIZE_T) as LPSTR;
     if !file.is_null() {
         WideCharToMultiByte(
             CP_ACP,

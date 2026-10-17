@@ -119,7 +119,7 @@ base/applications/mmc/CMakeLists.txt	1	# misc.c # replaced by Rust (sdk/lib/rust
 base/applications/mmc/CMakeLists.txt	1	# mmc.c # replaced by Rust (sdk/lib/rust/mmc-rust/src/mmc/mmc.rs)
 base/applications/mmc/CMakeLists.txt	1	# mscfile.c # replaced by Rust (sdk/lib/rust/mmc-rust/src/mmc/mscfile.rs)
 base/applications/mmc_new/CMakeLists.txt	1	# CAboutSnapinDialog.cpp # replaced by Rust (sdk/lib/rust/mmc_new-rust/src/mmc_new/CAboutSnapinDialog_cpp_h.rs)
-base/applications/mmc_new/CMakeLists.txt	1	# CActionWnd.cpp # upstream 88da81d9b8b's action pane: not translated yet (the Rust is from before it); owed to mmc_new-rust
+base/applications/mmc_new/CMakeLists.txt	1	# CActionWnd.cpp # replaced by Rust (sdk/lib/rust/mmc_new-rust/src/mmc_new/CActionWnd_cpp_h.rs)
 base/applications/mmc_new/CMakeLists.txt	1	# CAddAdvancedDialog.cpp # replaced by Rust (sdk/lib/rust/mmc_new-rust/src/mmc_new/CAddAdvancedDialog_cpp_h.rs)
 base/applications/mmc_new/CMakeLists.txt	1	# CAddDialog.cpp # replaced by Rust (sdk/lib/rust/mmc_new-rust/src/mmc_new/CAddDialog_cpp_h.rs)
 base/applications/mmc_new/CMakeLists.txt	1	# CConsoleWnd.cpp # replaced by Rust (sdk/lib/rust/mmc_new-rust/src/mmc_new/CConsoleWnd_cpp_h.rs)
@@ -1007,7 +1007,6 @@ dll/win32/advapi32/CMakeLists.txt	1	# sec/safer.c — replaced by Rust (advapi32
 dll/win32/advapi32/CMakeLists.txt	1	# sec/sec.c — replaced by Rust (advapi32-rust)
 dll/win32/advapi32/CMakeLists.txt	1	# sec/trustee.c — replaced by Rust (advapi32-rust)
 dll/win32/advapi32/CMakeLists.txt	1	# service/eventlog.c — replaced by Rust (advapi32-rust)
-dll/win32/advapi32/CMakeLists.txt	1	# service/eventlog_seh.c — native-SEH wrappers restoring the RpcTryExcept the
 dll/win32/advapi32/CMakeLists.txt	1	# service/rpc.c — replaced by Rust (advapi32-rust)
 dll/win32/advapi32/CMakeLists.txt	1	# service/scm.c — replaced by Rust (advapi32-rust)
 dll/win32/advapi32/CMakeLists.txt	1	# service/sctrl.c — replaced by Rust (advapi32-rust)

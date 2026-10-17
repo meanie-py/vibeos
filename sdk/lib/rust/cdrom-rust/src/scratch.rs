@@ -1,5 +1,12 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use crate::types::*;
+// The crate's own functions: the definition is the declaration.
+use crate::ddk_shims::KeQueryTickCount;
+use crate::common::RequestCompletion;
+use crate::ddk_shims::RequestGetContext;
+use crate::common::RequestSend;
+use crate::sense::RequestSenseInfoInterpretForScratchBuffer;
+use crate::ddk_shims::WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE;
 use kmdf_sys::*;
 use ntkrnl_sys::ddk::{IRP, PIRP, IO_STACK_LOCATION, PIO_STACK_LOCATION, GUID, LPGUID, LPCGUID, DEVICE_OBJECT, PDEVICE_OBJECT, MDL, PMDL};
 use ntkrnl_sys::globals::*;
@@ -12,19 +19,15 @@ use ntkrnl_sys::ddk::{ExFreePool, IoAllocateMdl, IoBuildPartialMdl, IoFreeMdl, I
 use core::ffi::c_void;
 
 extern "system" {
-    fn RequestGetContext(scratch_request: *mut core::ffi::c_void) -> *mut CDROM_REQUEST_CONTEXT;
     fn KeDelayExecutionThread( WaitMode: i32, Alertable: u8, Interval: *mut LARGE_INTEGER, ) -> i32;
     fn KeQueryPerformanceCounter(PerformanceFrequency: *mut i64) -> i64;
 }
 unsafe extern "C" {
-    fn RequestSenseInfoInterpretForScratchBuffer( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, timesAlreadyRetried: u32, status: *mut i32, retryIn100nsUnits: *mut i64, ) -> u8;
 }
 unsafe extern "system" {
-    fn KeQueryTickCount(CurrentCount: *mut LARGE_INTEGER);
 }
 extern "C" {
     fn CdromDbgPrintForce2(format: *const i8, arg1: usize, arg2: usize) -> u32;
-    fn RequestSend( device_ext: *mut CDROM_DEVICE_EXTENSION, request: *mut core::ffi::c_void, iotarget: *mut core::ffi::c_void, options: u32, timeout: *mut core::ffi::c_void, ) -> i32;
     fn CdromRustScratchCompleteOrContinueReadWrite(
         DeviceExtension: PCDROM_DEVICE_EXTENSION,
         OriginalRequest: WDFREQUEST,
@@ -63,7 +66,6 @@ extern "system" {
     fn SET_FLAG(flags: *mut u32, flag: u32);
 }
 unsafe extern "C" {
-    fn RequestCompletion(DeviceExtension: PCDROM_DEVICE_EXTENSION, Request: WDFREQUEST, Status: i32, TransferedBytes: ULONG_PTR);
 }
 // C min() is a macro; extern "system" decl = i386 stdcall/cdecl mismatch vs
 // ddk_shims' extern "C" def → stack corruption. Local wrapper instead.
@@ -172,10 +174,6 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
     // Forward declarations for unknown symbols
     unsafe extern "system" {
         fn KeGetCurrentIrql() -> KIRQL;
-        fn WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(
-            attributes: *mut WDF_OBJECT_ATTRIBUTES,
-            context_type: *const core::ffi::c_void,
-        ) -> ();
     }
     unsafe extern "C" {
         fn RtlULongAdd(ul1: u32, ul2: u32, result: *mut u32) -> NTSTATUS;
@@ -280,7 +278,7 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
         let mut attributes: WDF_OBJECT_ATTRIBUTES = core::mem::zeroed();
         WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(
             &mut attributes,
-            core::ptr::addr_of!(crate::ddk_shims::CDROM_REQUEST_CONTEXT) as *const core::ffi::c_void,
+            (core::ptr::addr_of!(crate::ddk_shims::CDROM_REQUEST_CONTEXT) as *const core::ffi::c_void).cast(),
         ); // C passes CDROM_REQUEST_CONTEXT type-info; null here → NULL deref of UniqueType (0x1E)
         status = WdfRequestCreate(
             &mut attributes,
@@ -483,7 +481,7 @@ pub unsafe extern "system" fn ScratchBuffer_PerformNextReadWrite(
     unsafe {
         let readWriteContext =
             core::ptr::addr_of_mut!((*DeviceExtension).ScratchContext.ScratchReadWriteContext);
-        let requestContext = RequestGetContext((*DeviceExtension).ScratchContext.ScratchRequest as *mut core::ffi::c_void);
+        let requestContext = RequestGetContext(((*DeviceExtension).ScratchContext.ScratchRequest as *mut core::ffi::c_void).cast());
         let originalRequest = (*requestContext).OriginalRequest;
         let mut status: i32; // STATUS_SUCCESS
         CdromDbgPrint3(b"[PNRW] scratchreq=%p reqctx=%p origreq=%p\n\0".as_ptr() as *const i8,
@@ -577,7 +575,7 @@ pub unsafe extern "system" fn ScratchBuffer_ReadWriteTimerRoutine(
     }
 
     originalRequest = DeferredContext;
-    requestContext = RequestGetContext(originalRequest);
+    requestContext = RequestGetContext((originalRequest).cast());
 
     KeAcquireSpinLock(&raw mut (*requestContext).ReadWriteCancelSpinLock as *mut usize, &raw mut oldIrql);
 
@@ -610,7 +608,7 @@ pub unsafe extern "system" fn ScratchBuffer_ReadWriteTimerRoutine(
 }
 #[no_mangle]
 pub unsafe extern "system" fn ScratchBuffer_ReadWriteEvtRequestCancel(Request: WDFREQUEST) {
-    let requestContext: PCDROM_REQUEST_CONTEXT = RequestGetContext(Request as *mut core::ffi::c_void);
+    let requestContext: PCDROM_REQUEST_CONTEXT = RequestGetContext((Request as *mut core::ffi::c_void).cast());
     let deviceExtension: PCDROM_DEVICE_EXTENSION = (*requestContext).DeviceExtension;
     let readWriteContext: PCDROM_SCRATCH_READ_WRITE_CONTEXT = core::ptr::addr_of_mut!((*deviceExtension).ScratchContext.ScratchReadWriteContext);
     let mut oldIrql: ntkrnl_sys::base::KIRQL = 0;
@@ -646,7 +644,7 @@ pub unsafe extern "system" fn ScratchBuffer_ReadWriteCompletionRoutine(
         core::ptr::addr_of_mut!((*device_extension).ScratchContext.ScratchReadWriteContext);
     let mut status: i32 = STATUS_SUCCESS;
     let request_context: *mut CDROM_REQUEST_CONTEXT =
-        RequestGetContext((*device_extension).ScratchContext.ScratchRequest as *mut core::ffi::c_void);
+        RequestGetContext(((*device_extension).ScratchContext.ScratchRequest as *mut core::ffi::c_void).cast());
     let original_request: WDFREQUEST = (*request_context).OriginalRequest;
 
     {
@@ -720,7 +718,7 @@ pub unsafe extern "system" fn ScratchBuffer_ReadWriteCompletionRoutine(
                 }
             } else {
                 let original_request_context: *mut CDROM_REQUEST_CONTEXT =
-                    RequestGetContext(original_request as *mut core::ffi::c_void);
+                    RequestGetContext((original_request as *mut core::ffi::c_void).cast());
                 let mut old_irql: KIRQL = 0;
 
                 //
@@ -878,7 +876,7 @@ pub unsafe extern "C" fn ScratchBuffer_SetupSrb(
     irp = WdfRequestWdmGetIrp(request);
     srb = (*DeviceExtension).ScratchContext.ScratchSrb;
     IoGetNextIrpStackLocation(irp);
-    requestContext = RequestGetContext(request as *mut core::ffi::c_void);
+    requestContext = RequestGetContext((request as *mut core::ffi::c_void).cast());
 
     PAGED_CODE!();
 
@@ -976,7 +974,7 @@ pub unsafe extern "C" fn ScratchBuffer_SendSrb(
     }
 
     let request_context =
-        RequestGetContext((*DeviceExtension).ScratchContext.ScratchRequest as *mut core::ffi::c_void);
+        RequestGetContext(((*DeviceExtension).ScratchContext.ScratchRequest as *mut core::ffi::c_void).cast());
     let original_request = core::ptr::read_volatile(core::ptr::addr_of!((*request_context).OriginalRequest));
     if !original_request.is_null() {
         request_cancelled = ScratchBuffer_RequestIsCanceled(original_request as WDFREQUEST);
@@ -990,8 +988,8 @@ pub unsafe extern "C" fn ScratchBuffer_SendSrb(
         };
         status = RequestSend(
             DeviceExtension,
-            (*DeviceExtension).ScratchContext.ScratchRequest as *mut core::ffi::c_void,
-            (*DeviceExtension).IoTarget as *mut core::ffi::c_void,
+            ((*DeviceExtension).ScratchContext.ScratchRequest as *mut core::ffi::c_void).cast(),
+            ((*DeviceExtension).IoTarget as *mut core::ffi::c_void).cast(),
             send_options,
             core::ptr::null_mut(),
         );
@@ -1215,7 +1213,7 @@ pub unsafe extern "C" fn ScratchBuffer_SetupReadWriteSrb(
     let originalIrp: PIRP = WdfRequestWdmGetIrp(OriginalRequest);
     let irp: PIRP = WdfRequestWdmGetIrp(scratch_request);
     let mut irpStack: *mut IO_STACK_LOCATION;
-    let requestContext: *mut CDROM_REQUEST_CONTEXT = RequestGetContext(scratch_request as *mut core::ffi::c_void);
+    let requestContext: *mut CDROM_REQUEST_CONTEXT = RequestGetContext((scratch_request as *mut core::ffi::c_void).cast());
 
     (*requestContext).OriginalRequest = OriginalRequest;
 
@@ -1434,12 +1432,12 @@ pub unsafe extern "system" fn ScratchBuffer_ExecuteCdbEx(
             shouldRetry = 0u8;
             status = STATUS_CANCELLED;
         } else {
-            shouldRetry = RequestSenseInfoInterpretForScratchBuffer(
+            shouldRetry = (RequestSenseInfoInterpretForScratchBuffer(
                 DeviceExtension,
                 timesAlreadyRetried,
                 core::ptr::addr_of_mut!(status),
                 core::ptr::addr_of_mut!(retryIn100nsUnits),
-            );
+            )) as u8;
             if shouldRetry != 0 {
                 let mut t: LARGE_INTEGER = core::mem::zeroed();
                 t.QuadPart = -retryIn100nsUnits;

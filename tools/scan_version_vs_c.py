@@ -20,15 +20,17 @@ HOW.
      symbols, numbers and `defined(__REACTOS__)` / `defined(<version symbol>)`. A chain with
      anything else in it (DBG, an arch macro, a feature flag) is UNKNOWN from that branch
      on, and never judged: this tool never guesses.
-  3. DEAD-ONLY names: identifiers called in a dead branch that the function's live text
-     never mentions at all.
+  3. DEAD-ONLY names: identifiers called in a dead branch, or ALL_CAPS constants it names,
+     that the function's live text never mentions at all.
   4. The Rust function of the same name (tools/c_twin.py, same module), with every region
      gated on a version cfg masked out (`#[cfg(..ntddi..)]` / `#[cfg(..reactos..)]` items
      and statements, and `if cfg!(..)` chains naming one). A dead-only name still CALLED in
-     what is left is the finding: the Rust runs a branch the C compiles out.
+     what is left is the finding: the Rust runs a branch the C compiles out. A constant
+     counts only where it decides something (an `if`/`while` line or a match arm).
 
-What it cannot see: a dead branch that calls nothing the live text does not (pure
-arithmetic, an extra flag test), and a Rust body that inlined the dead branch's callee.
+What it cannot see: a dead branch that calls nothing and tests no constant the live text
+does not (pure arithmetic, a field store), a constant the Rust reads eagerly into a local
+and decides on later, and a Rust body that inlined the dead branch's callee.
 Those need a human; the fastfat sweep found most of its sites by the call they made.
 
 Usage:
@@ -431,6 +433,11 @@ def dead_ranges(body: str, env: dict[str, int]) -> tuple[list[tuple[int, int, st
 
 _CALL = re.compile(r"\b([A-Za-z_]\w*)\s*\(")
 _IDENT = re.compile(r"\b[A-Za-z_]\w*\b")
+# A dead branch that calls nothing new can still test a flag the live text never names
+# (`FlagOn(Options, FILE_OPEN_REQUIRING_OPLOCK)`, `case PNP_PROPERTY_CONTAINERID:`): an
+# ALL_CAPS constant with an underscore. (Field names were tried and dropped: every hit was
+# an eager pure read whose consumer was gated.)
+_CONST = re.compile(r"\b([A-Z][A-Z0-9]*_[A-Z0-9_]*[A-Z0-9])\b")
 
 
 def dead_only_calls(body: str, env: dict[str, int]) -> tuple[dict[str, str], int]:
@@ -448,10 +455,32 @@ def dead_only_calls(body: str, env: dict[str, int]) -> tuple[dict[str, str], int
     live_idents = set(_IDENT.findall(live))
     out: dict[str, str] = {}
     for s, e, directive in ranges:
-        for name in _CALL.findall(blanked[s:e]):
+        dead = blanked[s:e]
+        names = _CALL.findall(dead) + _CONST.findall(dead)
+        for name in names:
             if name not in live_idents and name not in _C_KEYWORDS:
                 out.setdefault(name, directive)
     return out, judged
+
+
+def rust_uses(name: str, live: str) -> bool:
+    """Does the Rust text use ``name`` the way the dead C branch did? A call anywhere; an
+    ALL_CAPS constant only where it DECIDES something -- a line with `if`/`while`, or a
+    match arm. An eager pure read (`IsAWrite = (Mj == IRP_MJ_WRITE)`, whose only consumer is
+    itself gated), a type in that spelling (`OEM_STRING`) or the fn's own `const X` is not
+    the dead branch running."""
+    n = re.escape(name)
+    if re.search(rf"\b{n}\s*!?\s*\(", live):
+        return True
+    if not _CONST.fullmatch(name):
+        return False
+    for m in re.finditer(rf"\b{n}\b", live):
+        line = live[live.rfind("\n", 0, m.start()) + 1 : live.find("\n", m.end()) % (len(live) + 1)]
+        if re.match(r"\s*(?:pub\s+)?const\s", line):
+            continue
+        if re.search(r"\b(?:if|while)\b|=>", line):
+            return True
+    return False
 
 
 # --- the Rust side ----------------------------------------------------------------------
@@ -811,7 +840,7 @@ def scan(roots: list[Path]) -> list[tuple[str, int, str, str, str, list[str], st
             calls, src = next((c, w) for t, c, w in cands[fn.name] if t is twin)
             raw_body = raw[fn.body_start : fn.body_start + len(fn.body)]
             live = mask_gated(fn.body, raw_body, env, consts)
-            hit = sorted(n for n in calls if re.search(rf"\b{re.escape(n)}\s*!?\s*\(", live))
+            hit = sorted(n for n in calls if rust_uses(n, live))
             if not hit:
                 continue
             try:
@@ -946,6 +975,24 @@ def self_test() -> int:
     ]:  # fmt: skip
         live = mask_gated(body, body, on, {"REACTOS_BUILD": True})
         checks.append((desc, bool(re.search(r"\bFsRtlChangeBackingFileObject\s*\(", live)), want))
+    flag_c = "{\n  Prep();\n#if (NTDDI_VERSION >= NTDDI_WIN7)\n  if (FlagOn(o, FILE_OPEN_REQUIRING_OPLOCK)) { return 1; }\n#endif\n}"  # noqa: E501
+    checks.append(
+        (
+            "a dead flag test is a dead-only name (cdfs create)",
+            sorted(dead_only_calls(flag_c, ws03)[0]),
+            ["FILE_OPEN_REQUIRING_OPLOCK", "FlagOn"],
+        )
+    )
+    for desc, live, want in [
+        ("a constant in an `if` is the dead branch running",
+         "{ if FlagOn(o, FILE_OPEN_REQUIRING_OPLOCK) != 0 { return 1; } }", True),
+        ("...and in a match arm (pnpmgr CONTAINERID)", "{ match p { PNP_X_ID => a, _ => b } }", True),  # noqa: E501
+        ("an eager pure read is not (fastfat IsAWrite)", "{ w = (mj == IRP_MJ_WRITE) as u32; }", False),  # noqa: E501
+        ("the fn's own `const` is not", "{\n const FILE_X_Y: u32 = 2;\n}", False),
+        ("a type in that spelling is not", "{ let s: *mut OEM_STRING = p; }", False),
+    ]:  # fmt: skip
+        name = re.findall(r"\b[A-Z][A-Z0-9]*_[A-Z0-9_]*[A-Z0-9]\b", live)[0]
+        checks.append((desc, rust_uses(name, live), want))
     item = [
         "// dead: C is THRESHOLD-only",
         "#[cfg(any())]",

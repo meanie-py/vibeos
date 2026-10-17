@@ -280,16 +280,33 @@ def smp_selected_iso(iso: Path, work_dir: Path) -> Path:
         i = data.find(_INI_DEFAULT_OS, i + 1)
     if len(hits) > 1:
         hits = _hits_in_fat_freeldr_ini(iso, data, hits)
-    if len(hits) != 1:
+
+    def _line_end(at: int) -> int:
+        while at < len(data) and data[at] not in (0x0D, 0x0A):
+            at += 1
+        return at
+
+    # The writable-root ISO (mk_writable_livecd) stores freeldr.ini twice, byte for byte:
+    # two hits whose whole [FREELOADER] sections match are one file, and both copies
+    # are patched so whichever one freeldr reads selects the MP pair. Hits that differ
+    # are still ambiguous and raise below.
+    def _section(at: int) -> bytes:
+        head = data.rfind(b"[FREELOADER]", 0, at)
+        return bytes(data[head : _line_end(at)]) if head != -1 else b""
+
+    copies = (
+        len(hits) > 1
+        and _section(hits[0]) != b""
+        and all(_section(h) == _section(hits[0]) for h in hits)
+    )
+    if len(hits) != 1 and not copies:
         raise RuntimeError(
             f"{iso}: expected exactly one line-initial {_INI_DEFAULT_OS.decode()} in the "
             f"image, found {len(hits)} — freeldr.ini is not where this expects it; rebuild "
             "with `build --smp-kernel` instead of patching"
         )
     start = hits[0]
-    end = start
-    while end < len(data) and data[end] not in (0x0D, 0x0A):
-        end += 1
+    end = _line_end(start)
     old = bytes(data[start:end])
     old_entry = old[len(_INI_DEFAULT_OS) :]
     if old_entry in _MP_ENTRY_FOR.values():
@@ -312,7 +329,8 @@ def smp_selected_iso(iso: Path, work_dir: Path) -> Path:
     if pad:
         new += b"\r\n" + b";" * (pad - 2)
     assert len(new) == len(old)
-    data[start:end] = new
+    for at in hits:
+        data[at : at + len(old)] = new
     out = work_dir / iso.name
     out.parent.mkdir(parents=True, exist_ok=True)
     _write_sparse_image(out, data)

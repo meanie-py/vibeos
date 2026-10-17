@@ -1,4 +1,8 @@
 use ntdll_sys::nt::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::prelude::memcpy;
+// The crate's own functions: the definition is the declaration.
+use crate::file::create::CreateFileW;
 use core::ffi::c_void;
 // NLS substrate: winnls.h types/constants + Wine unicode helpers not in ntdll-sys.
 use crate::string::nls_subst::*;
@@ -20,15 +24,6 @@ extern "system" {
     fn ConvertDefaultLocale(Locale: LCID) -> LCID;
     fn GetProcessHeap() -> HANDLE;
     fn GetSystemDirectoryW(lpBuffer: LPWSTR, uSize: UINT) -> UINT;
-    fn CreateFileW(
-        lpFileName: LPCWSTR,
-        dwDesiredAccess: DWORD,
-        dwShareMode: DWORD,
-        lpSecurityAttributes: LPSECURITY_ATTRIBUTES,
-        dwCreationDisposition: DWORD,
-        dwFlagsAndAttributes: DWORD,
-        hTemplateFile: HANDLE,
-    ) -> HANDLE;
     fn MapViewOfFile(
         hFileMappingObject: HANDLE,
         dwDesiredAccess: DWORD,
@@ -42,7 +37,6 @@ extern "system" {
     fn lstrlenA(lpString: LPCSTR) -> INT;
 }
 extern "C" {
-    fn memcpy(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void;
     fn strlen(s: *const i8) -> usize;
 }
 extern "C" {

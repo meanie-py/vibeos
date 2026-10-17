@@ -367,7 +367,11 @@ pub unsafe extern "C" fn ParseFailureActions(
     pActions = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        ((nCount / 2) * (core::mem::size_of::<SC_ACTION>()) as i32) as SIZE_T,
+        // The C allocates nCount / 2 actions, but the parse loop writes the Type of a trailing
+        // action that has no delay after it: `restart/60000/reboot` (three tokens) stored into
+        // a second SC_ACTION past a one-element buffer, and a lone `restart` into a zero-byte
+        // one. Room for every action written; *pcActions still counts only complete pairs.
+        (((nCount + 1) / 2) * (core::mem::size_of::<SC_ACTION>()) as i32) as SIZE_T,
     ) as *mut SC_ACTION;
     if pActions.is_null() {
         HeapFree(

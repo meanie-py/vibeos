@@ -1,4 +1,11 @@
 use ntkrnl_sys::base::{BOOLEAN, NTSTATUS, STATUS_SUCCESS};
+// One declaration per external symbol: types.rs.
+use crate::types::CdDecodeFileObject;
+// The crate's own functions: the definition is the declaration.
+use crate::cddata::CdCompleteRequest;
+use crate::cdmacros::CdIsFastIoPossible;
+use crate::workque::CdOplockComplete;
+use crate::verfysup::CdVerifyFcbOperation;
 use ntkrnl_sys::constants::{STATUS_INVALID_PARAMETER, STATUS_RANGE_NOT_LOCKED};
 use ntkrnl_sys::ddk::{
     IoGetCurrentIrpStackLocation, PDEVICE_OBJECT, PEPROCESS, PFILE_OBJECT, PIO_STACK_LOCATION,
@@ -18,20 +25,17 @@ use crate::glue::CDFS_BUG_CHECK_LOCKCTRL;
 
 // cdecl cdfs-internal routines (C defs in filobsup.c are plain cdecl, no NTAPI).
 extern "C" {
-    fn CdDecodeFileObject(IrpContext: PIRP_CONTEXT, FileObject: PFILE_OBJECT, Fcb: *mut PFCB, Ccb: *mut PCCB) -> TYPE_OF_OPEN;
 }
 extern "C" {
     fn CdFastDecodeFileObject(FileObject: PFILE_OBJECT, Fcb: *mut PFCB) -> TYPE_OF_OPEN;
 }
 
 extern "C" {
-    fn CdCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
 }
 extern "C" {
     fn CdGetFcbOplock(Fcb: PFCB) -> POPLOCK;
 }
 extern "C" {
-    fn CdVerifyFcbOperation(IrpContext: PIRP_CONTEXT, Fcb: PFCB) -> u32;
 }
 extern "C" {
     fn CdCreateFileLock(IrpContext: PIRP_CONTEXT, Fcb: PFCB, Lock: BOOLEAN) -> BOOLEAN;
@@ -43,10 +47,8 @@ extern "C" {
     fn CdUnlockFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
 }
 extern "C" {
-    fn CdIsFastIoPossible(Fcb: PFCB) -> BOOLEAN;
 }
 extern "system" {
-    fn CdOplockComplete(Context: PIRP_CONTEXT, Irp: PIRP);
 }
 extern "C" {
     fn FsRtlFastLock(FileLock: PFILE_LOCK, FileObject: PFILE_OBJECT, FileOffset: PLARGE_INTEGER, Length: PLARGE_INTEGER, ProcessId: PEPROCESS, Key: ULONG, FailImmediately: BOOLEAN, ExclusiveLock: BOOLEAN, IoStatus: PIO_STATUS_BLOCK, DeviceObject: PDEVICE_OBJECT, Wait: BOOLEAN) -> BOOLEAN;
@@ -93,7 +95,7 @@ pub unsafe extern "C" fn CdCommonLockControl(
     );
 
     if TypeOfOpen != UserFileOpen {
-        CdCompleteRequest(IrpContext, Irp, STATUS_INVALID_PARAMETER);
+        CdCompleteRequest((IrpContext).cast(), Irp, STATUS_INVALID_PARAMETER);
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -120,10 +122,10 @@ pub unsafe extern "C" fn CdCommonLockControl(
     Status = FsRtlProcessFileLock(fcb_file_lock(Fcb), Irp, core::ptr::null_mut());
 
     CdLockFcb(IrpContext, Fcb);
-    (*Fcb).__bindgen_anon_1.Header.as_mut().IsFastIoPossible = CdIsFastIoPossible(Fcb);
+    (*Fcb).__bindgen_anon_1.Header.as_mut().IsFastIoPossible = (CdIsFastIoPossible(Fcb)) as u8;
     CdUnlockFcb(IrpContext, Fcb);
 
-    CdCompleteRequest(IrpContext, core::ptr::null_mut(), Status);
+    CdCompleteRequest((IrpContext).cast(), core::ptr::null_mut(), Status);
     return Status;
 }
 #[no_mangle]
@@ -194,7 +196,7 @@ pub unsafe extern "system" fn CdFastLock(
                 if Results != 0 {
                     if (*Fcb).__bindgen_anon_1.Header.as_ref().IsFastIoPossible == FastIoIsPossible {
                         CdLockFcb(core::ptr::null_mut(), Fcb);
-                        (*Fcb).__bindgen_anon_1.Header.as_mut().IsFastIoPossible = CdIsFastIoPossible(Fcb);
+                        (*Fcb).__bindgen_anon_1.Header.as_mut().IsFastIoPossible = (CdIsFastIoPossible(Fcb)) as u8;
                         CdUnlockFcb(core::ptr::null_mut(), Fcb);
                     }
                 }
@@ -286,7 +288,7 @@ pub unsafe extern "system" fn CdFastUnlockSingle(
                     && (*fcb).__bindgen_anon_1.Header.as_ref().IsFastIoPossible != FastIoIsPossible
                 {
                     CdLockFcb(core::ptr::null_mut(), fcb);
-                    (*fcb).__bindgen_anon_1.Header.as_mut().IsFastIoPossible = CdIsFastIoPossible(fcb);
+                    (*fcb).__bindgen_anon_1.Header.as_mut().IsFastIoPossible = (CdIsFastIoPossible(fcb)) as u8;
                     CdUnlockFcb(core::ptr::null_mut(), fcb);
                 }
 
@@ -364,7 +366,7 @@ pub unsafe extern "system" fn CdFastUnlockAll(
 
                     // CdLockFcb/CdUnlockFcb macros ignore the IrpContext argument; pass NULL.
                     CdLockFcb(core::ptr::null_mut(), Fcb);
-                    (*Fcb).__bindgen_anon_1.Header.as_mut().IsFastIoPossible = CdIsFastIoPossible(Fcb);
+                    (*Fcb).__bindgen_anon_1.Header.as_mut().IsFastIoPossible = (CdIsFastIoPossible(Fcb)) as u8;
                     CdUnlockFcb(core::ptr::null_mut(), Fcb);
 
                     // try_exit: NOTHING; -- fall through to loop exit
@@ -436,7 +438,7 @@ pub unsafe extern "system" fn CdFastUnlockAllByKey(
 
                 // CdLockFcb/CdUnlockFcb macros ignore the IrpContext argument; pass NULL.
                 CdLockFcb(core::ptr::null_mut(), Fcb);
-                (*Fcb).__bindgen_anon_1.Header.as_mut().IsFastIoPossible = CdIsFastIoPossible(Fcb);
+                (*Fcb).__bindgen_anon_1.Header.as_mut().IsFastIoPossible = (CdIsFastIoPossible(Fcb)) as u8;
                 CdUnlockFcb(core::ptr::null_mut(), Fcb);
 
                 break;

@@ -362,6 +362,19 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # drove this to zero and a concurrent lane re-introduced it the same day.
     ns = repo / "tools" / "scan_nightly_surface.py"
     specs.append(("scan_nightly_surface", [py, str(ns)] if ns.is_file() else ["MISSING"], "stdout"))
+    # Cargo-drive ratchet: a fully-Rust module is linked by a cargo cell, not by cmake
+    # around a placeholder stub. A newly flipped module, or a refused one the generator has
+    # learned to handle, is a NEW finding until `cargo_cell_gen.py --convert` moves it.
+    # Reads build-amd64/build.ninja, so it is a deferred check.
+    ccl = repo / "tools" / "scan_cmake_linked_rust.py"
+    specs.append(
+        ("scan_cmake_linked_rust", [py, str(ccl)] if ccl.is_file() else ["MISSING"], "stdout")
+    )
+    # atl_rust's CAtlList::GetNext returns the element's SLOT; casting it instead of
+    # dereferencing compiles for a list of pointers and reads list-node memory as the object
+    # (mmc_new, 2026-10-17). Baseline is EMPTY.
+    sac = repo / "tools" / "scan_atl_slot_cast.py"
+    specs.append(("scan_atl_slot_cast", [py, str(sac)] if sac.is_file() else ["MISSING"], "stdout"))
     # MSVC is not a supported toolchain (roadmap section 11): every CMake `if()` that tests
     # for it was resolved by tools/strip_msvc_cmake.py on 2026-10-03. Baseline is EMPTY, so
     # an upstream merge that brings a new one fails here with the command that resolves it.
@@ -701,6 +714,7 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         "scan_bool_width",
         "scan_cfg_vs_c",
         "scan_version_vs_c",
+        "scan_fnclass_cc",
         "null_offset_to_offset_of",
         "scan_constant_placement",
     ):
@@ -2097,7 +2111,14 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         run,
         repo,
         "rust_ub_deny",
-        [py, str(census), str(build_dir), "--allow-stale", "--deny", "invalid_value,deref_nullptr"]
+        [
+            py,
+            str(census),
+            str(build_dir),
+            "--allow-stale",
+            "--deny",
+            "invalid_value,deref_nullptr,static_mut_refs,improper_ctypes_definitions,improper_ctypes",
+        ]
         if census.is_file()
         else ["MISSING"],
         strict=strict,

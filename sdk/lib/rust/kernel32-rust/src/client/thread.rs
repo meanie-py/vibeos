@@ -1,4 +1,6 @@
 use ntdll_sys::nt::*;
+// The crate's own functions: the definition is the declaration.
+use crate::client::loader::GetModuleHandleA;
 use crate::prelude::*;
 use core::ffi::c_void;
 
@@ -10,7 +12,6 @@ use crate::k32_externs::{
 // ExitProcess (process.c, still C) / GetModuleHandleA / ERROR_FATAL helpers:
 extern "system" {
     fn ExitProcess(uExitCode: DWORD) -> !;
-    fn GetModuleHandleA(lpModuleName: LPCSTR) -> HMODULE;
     fn BaseFreeThreadStack(hProcess: HANDLE, InitialTeb: PINITIAL_TEB);
 }
 
@@ -369,7 +370,7 @@ pub unsafe extern "system" fn CreateRemoteThread(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn ExitThread(uExitCode: DWORD) {
+pub unsafe extern "system" fn ExitThread(uExitCode: DWORD) -> ! {
     let mut Status: NTSTATUS;
     let mut LastThread: ULONG = 0;
     let LoaderLock: PRTL_CRITICAL_SECTION;

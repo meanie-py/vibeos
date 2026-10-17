@@ -139,6 +139,38 @@ mod i386 {
     };
     use crate::x86::pcr::KeGetCurrentPrcb;
 
+    // The in-stack queued lock is ntkrnl-sys's MCS lock, the same one ntoskrnl's exports use:
+    // a driver may acquire through hal.dll and release through ntoskrnl. The mini-HAL keeps
+    // its bare fence, single-threaded and before there is a KPCR (see kx_acquire_spinlock).
+    #[cfg(not(feature = "minihal"))]
+    #[inline(always)]
+    unsafe fn hal_inst_acquire(h: PKLOCK_QUEUE_HANDLE) {
+        unsafe {
+            ntkrnl_sys::inline::ke::KxAcquireInStackQueuedSpinLock(
+                core::ptr::addr_of_mut!((*h).LockQueue) as *mut ntkrnl_sys::ddk::KSPIN_LOCK_QUEUE,
+            )
+        }
+    }
+    #[cfg(not(feature = "minihal"))]
+    #[inline(always)]
+    unsafe fn hal_inst_release(h: PKLOCK_QUEUE_HANDLE) {
+        unsafe {
+            ntkrnl_sys::inline::ke::KxReleaseInStackQueuedSpinLock(
+                core::ptr::addr_of_mut!((*h).LockQueue) as *mut ntkrnl_sys::ddk::KSPIN_LOCK_QUEUE,
+            )
+        }
+    }
+    #[cfg(feature = "minihal")]
+    #[inline(always)]
+    unsafe fn hal_inst_acquire(h: PKLOCK_QUEUE_HANDLE) {
+        unsafe { kx_acquire_spinlock((*h).LockQueue.Lock) }
+    }
+    #[cfg(feature = "minihal")]
+    #[inline(always)]
+    unsafe fn hal_inst_release(h: PKLOCK_QUEUE_HANDLE) {
+        unsafe { kx_release_spinlock((*h).LockQueue.Lock) }
+    }
+
     // KfRaiseIrql / KfLowerIrql are NTHALAPI — declared in xdk/x86/ke.h, defined
     // in hal/halx86/pic/pic.c, exported from hal.dll (see hal.spec).  The
     // hal_bindgen output drops them (no extern fn produced) so declare locally.
@@ -222,7 +254,7 @@ mod i386 {
             (*LockHandle).LockQueue.Next = core::ptr::null_mut();
             (*LockHandle).LockQueue.Lock = SpinLock;
             (*LockHandle).OldIrql = KfRaiseIrql(DISPATCH_LEVEL);
-            kx_acquire_spinlock((*LockHandle).LockQueue.Lock);
+            hal_inst_acquire(LockHandle);
         }
     }
 
@@ -235,7 +267,7 @@ mod i386 {
             (*LockHandle).LockQueue.Next = core::ptr::null_mut();
             (*LockHandle).LockQueue.Lock = SpinLock;
             (*LockHandle).OldIrql = KfRaiseIrql(SYNCH_LEVEL);
-            kx_acquire_spinlock((*LockHandle).LockQueue.Lock);
+            hal_inst_acquire(LockHandle);
         }
     }
 
@@ -253,7 +285,7 @@ mod i386 {
     #[unsafe(no_mangle)]
     pub unsafe extern "fastcall" fn KeReleaseInStackQueuedSpinLock(LockHandle: PKLOCK_QUEUE_HANDLE) {
         unsafe {
-            kx_release_spinlock((*LockHandle).LockQueue.Lock);
+            hal_inst_release(LockHandle);
             KfLowerIrql((*LockHandle).OldIrql);
         }
     }

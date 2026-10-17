@@ -70,7 +70,7 @@ extern "C" {
     pub fn free(p: *mut c_void); // atlclasses-rust/src/lib.rs
     pub fn malloc(size: usize) -> *mut c_void; // atlclasses-rust/src/lib.rs
     pub fn realloc(p: *mut c_void, size: usize) -> *mut c_void; // atlclasses-rust/src/lib.rs
-    pub fn towupper(c: c_int) -> c_int; // comctl32-rust/src/prelude.rs
+    pub fn towupper(c: wint_t) -> wint_t; // comctl32-rust/src/prelude.rs
     pub fn wcschr(s: *const u16, c: u16) -> *mut u16; // advapi32-rust/src/wine/cred.rs
     pub fn wcslen(s: *const u16) -> usize; // access-rust/src/prelude.rs
     pub fn wcsrchr(s: *const u16, c: u16) -> *mut u16; // advapi32-rust/src/prelude.rs

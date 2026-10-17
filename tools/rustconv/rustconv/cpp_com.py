@@ -7245,7 +7245,9 @@ def render_class_scaffold(
             'extern "system" {',
             "    fn GetProcessHeap() -> HANDLE;",
             '    #[link_name = "HeapAlloc"]',
-            "    fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) "
+            # SIZE_T, the header's spelling: `usize` is the same width on every arch but a
+            # different Rust type, a clashing_extern against the island's HeapAlloc.
+            "    fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: SIZE_T) "
             "-> *mut core::ffi::c_void;",
             '    #[link_name = "HeapFree"]',
             "    fn cpp_com_HeapFree(heap: HANDLE, flags: DWORD, "
@@ -7259,7 +7261,7 @@ def render_class_scaffold(
             "#[inline]",
             "unsafe fn HeapAlloc<N: CppComSize>(heap: HANDLE, flags: DWORD, bytes: N) "
             "-> *mut core::ffi::c_void {",
-            "    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size())",
+            "    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size() as SIZE_T)",
             "}",
             "#[inline]",
             "unsafe fn HeapFree<T>(heap: HANDLE, flags: DWORD, memory: *mut T) -> BOOL {",
