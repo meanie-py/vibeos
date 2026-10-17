@@ -284,19 +284,19 @@ pub unsafe fn pattern(FilePattern: UNICODE_STRING) -> bool {
                 "RtlCompareMemory arg1: b\"*.*\" where C passes L\"...\"".into()
             )]
         );
-        let corpus = Corpus {
-            root: std::path::PathBuf::from("/fixture"),
-            files: vec![crate::SourceFile::new("bad.rs".into(), BAD.into())],
-        };
+        let corpus = Corpus::new(
+            std::path::PathBuf::from("/fixture"),
+            vec![crate::SourceFile::new("bad.rs".into(), BAD.into())],
+        );
         assert_eq!(NarrowVsWideLiteral.run(&corpus).unwrap(), vec!["bad.rs:2: narrow-vs-wide-literal RtlCompareMemory arg1: b\"*.*\" where C passes L\"...\""]);
     }
     #[test]
     fn macro_literal_different_call_and_nolint_are_clean() {
         assert!(scan_text(GOOD).is_empty());
-        let corpus = Corpus {
-            root: std::path::PathBuf::from("/fixture"),
-            files: vec![crate::SourceFile::new("good.rs".into(), GOOD.into())],
-        };
+        let corpus = Corpus::new(
+            std::path::PathBuf::from("/fixture"),
+            vec![crate::SourceFile::new("good.rs".into(), GOOD.into())],
+        );
         assert!(NarrowVsWideLiteral.run(&corpus).unwrap().is_empty());
     }
     #[test]

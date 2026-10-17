@@ -4048,12 +4048,6 @@ def test_formatless_printf_name_needs_a_real_printf(tmp_path):
     """apphelp's `SeiPrintFunctionName(lpProcName, szOrdProcFmt)` ends in a `...Fmt`
     parameter and its name contains Print+F(unctionName); it is not a printf, and the old
     case-insensitive `printf` match flagged it. A real one must still flag."""
-    spec = importlib.util.spec_from_file_location(
-        "formatless_name_control", REPO / "tools/scan_formatless_printf.py"
-    )
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
     rs = tmp_path / "x.rs"
     rs.write_text(
         "#[no_mangle]\n"
@@ -4062,4 +4056,11 @@ def test_formatless_printf_name_needs_a_real_printf(tmp_path):
         "#[no_mangle]\n"
         'pub unsafe extern "C" fn DbgPrintfEx(Format: PCSTR) -> u32 { 0 }\n'
     )
-    assert [f[2] for f in module.scan([rs])] == ["DbgPrintfEx"]
+    rc, output = _run(
+        Control(name="scan_formatless_printf", script="tools/scan_formatless_printf.py"),
+        tmp_path,
+    )
+    assert rc == 0, output
+    assert [
+        line.rsplit(" ", 1)[-1] for line in output.splitlines() if "formatless-printf" in line
+    ] == ["DbgPrintfEx"]
