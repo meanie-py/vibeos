@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import time
@@ -24,7 +25,43 @@ sys.path.insert(0, str(REPO))
 from cli import lints, rustlints  # noqa: E402
 
 
+def oracle_specs(root: Path, revision: str) -> dict[str, tuple[list[str], str]]:
+    """Use the original registry, including its flags and output streams.
+
+    Its file-existence guards consult the selected git tree, so a removed Python
+    scanner still has its original command. We execute only registry construction;
+    scanner source is independently fetched with git show below.
+    """
+    tracked = set(
+        subprocess.check_output(["git", "ls-tree", "-r", "--name-only", "-z", revision], cwd=REPO)
+        .decode()
+        .split("\0")
+    )
+
+    class OraclePath(type(root)):
+        def is_file(self) -> bool:
+            try:
+                return self.relative_to(root).as_posix() in tracked
+            except ValueError:
+                return super().is_file()
+
+    registry = subprocess.check_output(
+        ["git", "show", f"{revision}:tests/qemu/cli/lints.py"], cwd=REPO
+    )
+    namespace = {
+        "__name__": "cli.parity_registry",
+        "__package__": "cli",
+        "__file__": str(root / "tests/qemu/cli/lints.py"),
+    }
+    exec(compile(registry, namespace["__file__"], "exec"), namespace)
+    return {
+        name: (cmd, stream)
+        for name, cmd, stream in namespace["source_lint_specs"](OraclePath(root))
+    }
+
+
 def compare(root: Path, revision: str, names: list[str]) -> dict:
+    specs = oracle_specs(root, revision)
     runner = rustlints.ensure(REPO)
     started = time.monotonic()
     cp = subprocess.run(
@@ -50,29 +87,77 @@ def compare(root: Path, revision: str, names: list[str]) -> dict:
         rust = results[name]
         if lints._scanner_error(rust, "stdout"):
             raise RuntimeError(rust.stderr)
+        cmd, stream = specs[name]
+        if len(cmd) < 2 or not cmd[1].endswith(".py"):
+            raise RuntimeError(f"{name}: oracle is not a standalone Python source command: {cmd}")
+        script = Path(cmd[1]).relative_to(root)
         source = subprocess.run(
-            ["git", "show", f"{revision}:tools/{name}.py"],
+            ["git", "show", f"{revision}:{script.as_posix()}"],
             cwd=REPO,
             capture_output=True,
             check=True,
         ).stdout
         started = time.monotonic()
-        replay = (
-            "import sys; __file__ = sys.argv[1]; sys.argv = sys.argv[1:]; "
-            "exec(compile(sys.stdin.read(), __file__, 'exec'))"
-        )
+        # Imports must also come from the oracle revision: both a scanner and
+        # its shared Python helper may already have been retired in this lane.
+        replay = r"""
+import importlib.abc
+import importlib.util
+import subprocess
+import sys
+from pathlib import Path
+
+__file__, revision = sys.argv[1:3]
+sys.argv = sys.argv[1:2] + sys.argv[3:]
+repo = Path(__file__).parent.parent
+sys.path.insert(0, str(repo / "tools"))
+tracked = set(subprocess.check_output(
+    ["git", "ls-tree", "-r", "--name-only", revision, "--", "tools"], cwd=repo
+).decode().splitlines())
+
+class OriginalTools(importlib.abc.MetaPathFinder, importlib.abc.Loader):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.startswith("tools."):
+            stem = fullname.replace(".", "/")
+        elif "." not in fullname:
+            stem = "tools/" + fullname
+        else:
+            return None
+        for relative in (stem + ".py", stem + "/__init__.py"):
+            if relative in tracked:
+                spec = importlib.util.spec_from_loader(
+                    fullname, self, is_package=relative.endswith("/__init__.py")
+                )
+                spec.loader_state = relative
+                return spec
+        return None
+
+    def create_module(self, spec):
+        return None
+
+    def exec_module(self, module):
+        relative = module.__spec__.loader_state
+        module.__file__ = str(repo / relative)
+        source = subprocess.check_output(["git", "show", revision + ":" + relative], cwd=repo)
+        exec(compile(source, module.__file__, "exec"), module.__dict__)
+
+sys.meta_path.insert(0, OriginalTools())
+exec(compile(sys.stdin.read(), __file__, "exec"))
+"""
         python = subprocess.run(
-            [sys.executable, "-c", replay, str(root / "tools" / f"{name}.py"), "--lint"],
+            [sys.executable, "-c", replay, cmd[1], revision, *cmd[2:]],
             cwd=root,
             input=source.decode(),
+            env={**os.environ, "VIBEOS_LINT_CACHE": "0"},
             capture_output=True,
             text=True,
             check=False,
         )
         python_seconds = time.monotonic() - started
-        if lints._scanner_error(python, "stdout"):
+        if lints._scanner_error(python, stream):
             raise RuntimeError(f"{name}: Python oracle did not complete: {python.stderr}")
-        py_lines = lints._finding_lines(lints._rel(python.stdout, root))
+        output = python.stdout if stream == "stdout" else python.stdout + "\n" + python.stderr
+        py_lines = lints._finding_lines(lints._rel(output, root))
         rs_lines = lints._finding_lines(lints._rel(rust.stdout, root))
         result = {
             "python": len(py_lines),
@@ -94,11 +179,20 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=REPO)
     parser.add_argument("--oracle-revision", default="34d3d7e1941")
-    parser.add_argument("--rules", required=True, help="comma-separated ported rule names")
+    selection = parser.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--rules", help="comma-separated ported rule names")
+    selection.add_argument("--all-ported", action="store_true")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     try:
-        report = compare(args.root.resolve(), args.oracle_revision, args.rules.split(","))
+        names = (
+            args.rules.split(",")
+            if args.rules
+            else subprocess.check_output(
+                [str(rustlints.ensure(REPO)), "--list-rules"], text=True
+            ).splitlines()
+        )
+        report = compare(args.root.resolve(), args.oracle_revision, names)
     except (OSError, RuntimeError, subprocess.SubprocessError) as error:
         print(f"FATAL: {error}", file=sys.stderr)
         return 2
