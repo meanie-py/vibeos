@@ -50,7 +50,9 @@ TYPEDEF = re.compile(
     rf"typedef\s+[\w\s\*]+?\(\s*{_CC}\s+(\w+)\s*\)\s*\(|typedef\s+[\w\s\*]+?\s{_CC}\s+(\w+)\s*\(",
     re.S,
 )
-KMDF_PFN = re.compile(r'pub type (?:PFN_|EVT_)(\w+) = ::core::option::Option<unsafe extern "system"')
+KMDF_PFN = re.compile(
+    r'pub type (?:PFN_|EVT_)(\w+) = ::core::option::Option<unsafe extern "system"'
+)
 DEF = re.compile(r'^\s*pub\s+(?:unsafe\s+)?extern\s+"C"\s+fn\s+(\w+)\s*\(', re.M)
 
 
