@@ -2113,8 +2113,11 @@ The goto form is worse, because no parameter can carry it: mmc_new's `CHK_HR(stm
 names both the caller's `hr` and the caller's `'CleanUp` label, so every use is E0425 + E0426,
 reported at the PRELUDE line rather than the call site. Expand it in the body
 (`hr = ..; if hr < 0 { break 'CleanUp; }` inside a `'CleanUp: { .. }` block, as mscfile's
-bodies already were) and bank the function. Owed in `port macros`: lower a goto-carrying
-macro by inlining it at the call sites, not as a `macro_rules!`.
+bodies already were) and bank the function. Mechanized: `port translate` now buys any FRESH
+TU that calls such a macro with it expanded in the C (`--expand-goto-macros`, with C's `#x`
+stringizing — imm32's `CHECK_IME_FN`, opengl32's `DRV_LOAD`), and `port macros` never ports
+one. A TU that already has output keeps its banked question, so cmd/imm32/opengl32/mmc_new
+re-buys still see the macro and need the hand port.
 
 ### A UNICODE module inherits the ANSI TCHAR family from the `-sys` glob
 `ntdll-sys` is generated WITHOUT `-DUNICODE`, so its bindgen carries `pub type LPTSTR = LPSTR;`.

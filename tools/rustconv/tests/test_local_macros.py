@@ -209,3 +209,38 @@ def test_a_unicode_module_reads_only_its_w_arm(tmp_path):
     assert "calc_HtmlHelp" in lm.module_macros(files, tmp_path)[1]
     found, ambiguous = lm.module_macros(files, tmp_path, {"UNICODE": 1})
     assert not ambiguous and found["calc_HtmlHelp"].body == "calc_HtmlHelpW"
+
+
+def test_a_macro_that_jumps_to_the_callers_label_is_expanded_as_c_would():
+    from rustconv.local_macros import CMacro, expand, leaves_caller
+
+    defs = {
+        # mmc_new's mscfile.h: no macro_rules! can name the caller's `'CleanUp`.
+        "CHK_HR": CMacro(
+            "CHK_HR", ("stmt",), "do { hr=(stmt); if (FAILED(hr)) goto CleanUp; } while(0)", "h:1"
+        ),
+        # opengl32's icdload.c: the stringized argument, and a param name inside a literal.
+        "DRV_LOAD": CMacro(
+            "DRV_LOAD",
+            ("x",),
+            'do { data->x = GetProcAddress(m, #x); if (!data->x) { ERR("lacks x " #x); '
+            "goto fail; } } while(0)",
+            "h:2",
+        ),
+        "SAFE_RELEASE": CMacro(
+            "SAFE_RELEASE", ("p",), "do { if (p) (p)->Release(); } while(0)", "h:3"
+        ),
+        "GOTO_IN_TEXT": CMacro("GOTO_IN_TEXT", ("a",), 'puts("goto x") /* goto y */', "h:4"),
+    }
+    assert leaves_caller(defs["CHK_HR"]) and leaves_caller(defs["DRV_LOAD"])
+    assert not leaves_caller(defs["SAFE_RELEASE"]) and not leaves_caller(defs["GOTO_IN_TEXT"])
+    src = "CHK_HR(p->Load(a, b)); DRV_LOAD(DrvSetContext); SAFE_RELEASE(p);"
+    out, used = expand(src, defs, control_flow=True)
+    assert used == {"CHK_HR", "DRV_LOAD"}
+    # A statement body is not wrapped in parentheses (C could not parse `(do {..} while(0));`).
+    assert "do { hr=(p->Load(a, b)); if (FAILED(hr)) goto CleanUp; } while(0);" in out
+    assert 'GetProcAddress(m, "DrvSetContext")' in out
+    assert 'ERR("lacks x " "DrvSetContext")' in out
+    assert "data->DrvSetContext = " in out
+    # Only the label-jumping macros: the rest stay for `port macros`.
+    assert "SAFE_RELEASE(p);" in out
