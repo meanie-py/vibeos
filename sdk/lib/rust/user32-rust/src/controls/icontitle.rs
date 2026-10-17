@@ -1,4 +1,7 @@
 use win32k_sys::win32k::*;
+// The crate's own functions: the definition is the declaration.
+use crate::windows::font::DrawTextW;
+use crate::windows::class::GetWindowLongPtrW;
 #[allow(unused_imports)]
 use core::ffi::c_void;
 
@@ -11,7 +14,6 @@ use crate::ntwrapper::{GetDC, SetWindowPos, ValidateRect, SetActiveWindow};
 // ---- user32 / gdi32 own-exports + cross-module imports (WINAPI = stdcall) ----
 extern "system" {
     fn GetWindowLongPtrA(hWnd: HWND, nIndex: core::ffi::c_int) -> LONG_PTR;
-    fn GetWindowLongPtrW(hWnd: HWND, nIndex: core::ffi::c_int) -> LONG_PTR;
     fn SetWindowLongPtrW(hWnd: HWND, nIndex: core::ffi::c_int, dwNewLong: LONG_PTR) -> LONG_PTR;
     fn IsWindowEnabled(hWnd: HWND) -> BOOL;
     fn IsWindow(hWnd: HWND) -> BOOL;
@@ -43,7 +45,6 @@ extern "system" {
     fn GetSysColorBrush(nIndex: core::ffi::c_int) -> HBRUSH;
     fn ReleaseDC(hWnd: HWND, hDC: HDC) -> core::ffi::c_int;
     fn FillRect(hDC: HDC, lprc: *const RECT, hbr: HBRUSH) -> core::ffi::c_int;
-    fn DrawTextW(hdc: HDC, lpchText: LPCWSTR, cchText: core::ffi::c_int, lprc: LPRECT, format: UINT) -> core::ffi::c_int;
     fn GetClassLongPtrW(hWnd: HWND, nIndex: core::ffi::c_int) -> ULONG_PTR;
     fn SystemParametersInfoA(uiAction: UINT, uiParam: UINT, pvParam: PVOID, fWinIni: UINT) -> BOOL;
     // gdi32 exports

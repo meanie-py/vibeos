@@ -388,6 +388,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "beepmidi-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "beepmidi-rust"
 version = "0.1.0"
 dependencies = [
@@ -2811,6 +2819,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "kmixer-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "kmixer-rust"
 version = "0.1.0"
 dependencies = [
@@ -3279,6 +3295,14 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "mmdrv-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
 ]
 
 [[package]]
@@ -5587,6 +5611,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "sndblst-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "sndblst-rust"
 version = "0.1.0"
 dependencies = [
@@ -5903,6 +5935,14 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "sysaudio-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]
@@ -6556,6 +6596,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "user32_vista-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "user32_vista-rust"
 version = "0.1.0"
 dependencies = [
@@ -6818,6 +6866,14 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "wdmaud-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
 ]
 
 [[package]]

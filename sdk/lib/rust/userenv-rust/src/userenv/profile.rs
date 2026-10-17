@@ -1,4 +1,9 @@
 use crate::prelude::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::userenv::directory::CreateDirectoryW;
+use crate::prelude::RegOpenKeyExW;
+use crate::prelude::RegCloseKey;
+use crate::prelude::RegQueryValueExW;
 use core::ffi::c_void;
 
 extern "C" {
@@ -324,22 +329,22 @@ unsafe extern "C" fn IncrementRefCount(
     let mut dwError: DWORD = 0;
 
     'done: {
-    dwError = RegOpenKeyExW(
+    dwError = (RegOpenKeyExW(
         HKEY_LOCAL_MACHINE,
         PROFILE_LIST_KEY3.as_ptr() as LPCWSTR,
         0,
         KEY_QUERY_VALUE,
-        &mut hProfilesKey);
+        &mut hProfilesKey)) as u32;
     if dwError != ERROR_SUCCESS {
         break 'done;
     }
 
-    dwError = RegOpenKeyExW(
+    dwError = (RegOpenKeyExW(
         hProfilesKey,
         pszSidString as LPCWSTR,
         0,
         KEY_QUERY_VALUE | KEY_SET_VALUE,
-        &mut hProfileKey);
+        &mut hProfileKey)) as u32;
     if dwError != ERROR_SUCCESS {
         break 'done;
     }
@@ -393,37 +398,37 @@ unsafe extern "C" fn DecrementRefCount(mut pszSidString: PWSTR, mut pdwRefCount:
     let mut dwError: DWORD = 0;
 
     'done: {
-    dwError = RegOpenKeyExW(
+    dwError = (RegOpenKeyExW(
         HKEY_LOCAL_MACHINE,
         PROFILE_LIST_KEY3.as_ptr() as LPCWSTR,
         0,
         KEY_QUERY_VALUE,
         &mut hProfilesKey,
-    );
+    )) as u32;
     if dwError != ERROR_SUCCESS {
         break 'done;
     }
 
-    dwError = RegOpenKeyExW(
+    dwError = (RegOpenKeyExW(
         hProfilesKey,
         pszSidString as LPCWSTR,
         0,
         KEY_QUERY_VALUE | KEY_SET_VALUE,
         &mut hProfileKey,
-    );
+    )) as u32;
     if dwError != ERROR_SUCCESS {
         break 'done;
     }
 
     dwLength = core::mem::size_of::<DWORD>() as DWORD;
-    dwError = RegQueryValueExW(
+    dwError = (RegQueryValueExW(
         hProfileKey,
         REG_REF_COUNT.as_ptr() as LPCWSTR,
         core::ptr::null_mut(),
         &mut dwType,
         &mut dwRefCount as *mut DWORD as LPBYTE,
         &mut dwLength,
-    );
+    )) as u32;
     if dwError != ERROR_SUCCESS {
         break 'done;
     }
@@ -566,24 +571,24 @@ unsafe extern "C" fn SetProfileData(
     let mut dwError: DWORD = 0;
 
     'done: {
-    dwError = RegOpenKeyExW(
+    dwError = (RegOpenKeyExW(
         HKEY_LOCAL_MACHINE,
         PROFILE_LIST_KEY3.as_ptr() as LPCWSTR,
         0,
         KEY_QUERY_VALUE,
         core::ptr::addr_of_mut!(hProfilesKey),
-    );
+    )) as u32;
     if dwError != ERROR_SUCCESS {
         break 'done;
     }
 
-    dwError = RegOpenKeyExW(
+    dwError = (RegOpenKeyExW(
         hProfilesKey,
         pszSidString as LPCWSTR,
         0,
         KEY_QUERY_VALUE | KEY_SET_VALUE,
         core::ptr::addr_of_mut!(hProfileKey),
-    );
+    )) as u32;
     if dwError != ERROR_SUCCESS {
         break 'done;
     }
@@ -1336,39 +1341,39 @@ pub unsafe extern "system" fn DeleteProfileW(
     }
 
     if !lpProfilePath.is_null() {
-        dwError = RegOpenKeyExW(
+        dwError = (RegOpenKeyExW(
             core::ptr::null_mut(),
             PROFILE_LIST_KEY3.as_ptr() as LPCWSTR,
             0,
             KEY_QUERY_VALUE,
             &mut hProfilesKey,
-        );
+        )) as u32;
         if dwError != ERROR_SUCCESS {
             goto_done!(dwError, hProfilesKey, hProfileKey, bRet);
             return bRet;
         }
 
-        dwError = RegOpenKeyExW(
+        dwError = (RegOpenKeyExW(
             core::ptr::null_mut(),
             lpSidString,
             0,
             KEY_QUERY_VALUE,
             &mut hProfileKey,
-        );
+        )) as u32;
         if dwError != ERROR_SUCCESS {
             goto_done!(dwError, hProfilesKey, hProfileKey, bRet);
             return bRet;
         }
 
         dwLength = core::mem::size_of::<[u16; 260]>() as DWORD;
-        dwError = RegQueryValueExW(
+        dwError = (RegQueryValueExW(
             hProfileKey,
             REG_PROFILE_IMAGE_PATH.as_ptr() as LPCWSTR,
             core::ptr::null_mut(),
             &mut dwType,
             szRawProfilePath.as_mut_ptr() as LPBYTE,
             &mut dwLength,
-        );
+        )) as u32;
         if dwError != ERROR_SUCCESS {
             goto_done!(dwError, hProfilesKey, hProfileKey, bRet);
             return bRet;
@@ -1817,25 +1822,25 @@ pub unsafe extern "system" fn GetProfileType(pdwFlags: PDWORD) -> BOOL {
         b's' as u16, b'i' as u16, b'o' as u16, b'n' as u16, b'\\' as u16, b'P' as u16, b'r' as u16, b'o' as u16, b'f' as u16, b'i' as u16,
         b'l' as u16, b'e' as u16, b'L' as u16, b'i' as u16, b's' as u16, b't' as u16, 0,
     ];
-    dwError = RegOpenKeyExW(
+    dwError = (RegOpenKeyExW(
         core::ptr::null_mut(),
         PROFILE_LIST_KEY_BUF.as_ptr() as *const u16 as LPCWSTR,
         0,
         KEY_QUERY_VALUE,
         &mut hProfilesKey,
-    );
+    )) as u32;
     if dwError != ERROR_SUCCESS {
         SetLastError(dwError);
         break 'done;
     }
 
-    dwError = RegOpenKeyExW(
+    dwError = (RegOpenKeyExW(
         hProfilesKey,
         SidString.Buffer as LPCWSTR,
         0,
         KEY_QUERY_VALUE | KEY_SET_VALUE,
         &mut hProfileKey,
-    );
+    )) as u32;
     if dwError != ERROR_SUCCESS {
         SetLastError(dwError);
         break 'done;
@@ -1844,14 +1849,14 @@ pub unsafe extern "system" fn GetProfileType(pdwFlags: PDWORD) -> BOOL {
     dwLength = core::mem::size_of::<DWORD>() as DWORD;
     // L"State"
     static STATE_VALUE_BUF: [u16; 6] = [b'S' as u16, b't' as u16, b'a' as u16, b't' as u16, b'e' as u16, 0];
-    dwError = RegQueryValueExW(
+    dwError = (RegQueryValueExW(
         hProfileKey,
         STATE_VALUE_BUF.as_ptr() as *const u16 as LPCWSTR,
         core::ptr::null_mut(),
         &mut dwType,
         &mut dwState as *mut DWORD as LPBYTE,
         &mut dwLength,
-    );
+    )) as u32;
     if dwError != ERROR_SUCCESS {
         SetLastError(dwError);
         break 'done;
@@ -2337,13 +2342,13 @@ pub unsafe extern "system" fn LoadUserProfileW(
         SetProfileData(SidString.Buffer, *(lpProfileInfo as *mut u32).add(6), hToken);
     }
 
-    dwError = RegOpenKeyExW(
+    dwError = (RegOpenKeyExW(
         0x80000003 as HKEY,
         SidString.Buffer,
         0,
         MAXIMUM_ALLOWED,
         &mut *(lpProfileInfo as *mut HKEY).add(5),
-    );
+    )) as u32;
     if dwError != ERROR_SUCCESS {
         loop {
             break 'cleanup;
@@ -2433,13 +2438,13 @@ pub unsafe extern "system" fn UnloadUserProfile(mut hToken: HANDLE, mut hProfile
             }
 
             let mut hUserKey: HKEY = core::ptr::null_mut();
-            dwError = RegOpenKeyExW(
+            dwError = (RegOpenKeyExW(
                 HKEY_USERS,
                 SidString.Buffer,
                 0,
                 KEY_WRITE,
                 &mut hUserKey,
-            );
+            )) as u32;
             if dwError == ERROR_SUCCESS {
                 RegDeleteKeyW(hUserKey, win32macros_rust::wide_bytes!(b"V\0o\0l\0a\0t\0i\0l\0e\0 \0E\0n\0v\0i\0r\0o\0n\0m\0e\0n\0t\0\0\0") as PWSTR);
                 RegCloseKey(hUserKey);
@@ -2453,39 +2458,39 @@ pub unsafe extern "system" fn UnloadUserProfile(mut hToken: HANDLE, mut hProfile
                 break 'cleanup;
             }
 
-            dwError = RegOpenKeyExW(
+            dwError = (RegOpenKeyExW(
                 HKEY_LOCAL_MACHINE,
                 win32macros_rust::wide_bytes!(b"S\0O\0F\0T\0W\0A\0R\0E\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0 \0N\0T\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0P\0r\0o\0f\0i\0l\0e\0L\0i\0s\0t\0\0\0") as PWSTR,
                 0,
                 KEY_QUERY_VALUE,
                 &mut hProfilesKey,
-            );
+            )) as u32;
             if dwError != ERROR_SUCCESS {
                 SetLastError(dwError);
                 break 'cleanup;
             }
 
-            dwError = RegOpenKeyExW(
+            dwError = (RegOpenKeyExW(
                 hProfilesKey,
                 SidString.Buffer,
                 0,
                 KEY_QUERY_VALUE,
                 &mut hProfileKey,
-            );
+            )) as u32;
             if dwError != ERROR_SUCCESS {
                 SetLastError(dwError);
                 break 'cleanup;
             }
 
             dwLength = core::mem::size_of::<DWORD>() as DWORD;
-            dwError = RegQueryValueExW(
+            dwError = (RegQueryValueExW(
                 hProfileKey,
                 win32macros_rust::wide_bytes!(b"S\0t\0a\0t\0e\0\0\0") as PWSTR,
                 core::ptr::null_mut(),
                 &mut dwType,
                 &mut dwState as *mut DWORD as PBYTE,
                 &mut dwLength,
-            );
+            )) as u32;
             if dwError != ERROR_SUCCESS {
                 SetLastError(dwError);
                 break 'cleanup;
@@ -2526,8 +2531,6 @@ pub unsafe extern "system" fn UnloadUserProfile(mut hToken: HANDLE, mut hProfile
 // The CRT is cdecl, Win32 is stdcall, and the C source does not say which is which —
 // a wrong guess is a silent i386 stack walk on every call. The .spec is the truth.
 extern "system" {
-    fn RegOpenKeyExW(hKey: HKEY, lpSubKey: LPCWSTR, ulOptions: u32, samDesired: u32, phkResult: *mut HKEY) -> u32;
-    fn RegCloseKey(hKey: HKEY) -> u32;
     fn AllocateAndInitializeSid(pIdentifierAuthority: *mut SID_IDENTIFIER_AUTHORITY, nSubAuthorityCount: u8, dwSubAuthority0: u32, dwSubAuthority1: u32, dwSubAuthority2: u32, dwSubAuthority3: u32, dwSubAuthority4: u32, dwSubAuthority5: u32, dwSubAuthority6: u32, dwSubAuthority7: u32, pSid: *mut PSID) -> i32;
     fn EqualSid(pSid1: PSID, pSid2: PSID) -> i32;
     fn FreeSid(pSid: PSID) -> PVOID;
@@ -2542,15 +2545,13 @@ extern "system" {
     fn AdjustTokenPrivileges(TokenHandle: HANDLE, DisableAllPrivileges: BOOL, NewState: *mut TOKEN_PRIVILEGES, BufferLength: DWORD, PreviousState: *mut TOKEN_PRIVILEGES, ReturnLength: *mut DWORD) -> BOOL;
     fn CloseHandle(hObject: HANDLE) -> BOOL;
     fn CreateMutexW(lpMutexAttributes: *mut SECURITY_ATTRIBUTES, bInitialOwner: i32, lpName: LPCWSTR) -> HANDLE;
-    fn InitializeSecurityDescriptor(pSecurityDescriptor: *mut _SECURITY_DESCRIPTOR, dwRevision: u32) -> i32;
+    pub fn InitializeSecurityDescriptor(pSecurityDescriptor: *mut _SECURITY_DESCRIPTOR, dwRevision: u32) -> i32;
     fn SetLastError(dwErrCode: u32);
-    fn SetSecurityDescriptorDacl(pSecurityDescriptor: *mut _SECURITY_DESCRIPTOR, bDaclPresent: i32, pDacl: *mut core::ffi::c_void, bDaclDefaulted: i32) -> i32;
+    pub fn SetSecurityDescriptorDacl(pSecurityDescriptor: *mut _SECURITY_DESCRIPTOR, bDaclPresent: i32, pDacl: *mut _ACL, bDaclDefaulted: i32) -> i32;
     fn ExpandEnvironmentStringsW(lpSrc: LPCWSTR, lpDst: LPWSTR, cchDst: DWORD) -> DWORD;
-    fn RegQueryValueExW(hKey: HKEY, lpValueName: LPCWSTR, lpReserved: *mut DWORD, lpType: *mut DWORD, lpData: LPBYTE, lpcbData: *mut DWORD) -> DWORD;
     fn GetCurrentThread() -> HANDLE;
     fn OpenThreadToken(ThreadHandle: HANDLE, DesiredAccess: DWORD, OpenAsSelf: BOOL, TokenHandle: *mut HANDLE) -> BOOL;
     fn ConvertSidToStringSidW(pSid: PSID, ppStringSid: *mut LPWSTR) -> BOOL;
-    fn CreateDirectoryW(lpPathName: LPCWSTR, lpSecurityAttributes: *mut SECURITY_ATTRIBUTES) -> BOOL;
     fn GetLengthSid(pSid: PSID) -> DWORD;
     fn LocalFree(hMem: HLOCAL) -> HLOCAL;
     fn RegCreateKeyExW(hKey: HKEY, lpSubKey: LPCWSTR, Reserved: DWORD, lpClass: LPWSTR, dwOptions: DWORD, samDesired: ::core::ffi::c_ulong, lpSecurityAttributes: *mut SECURITY_ATTRIBUTES, phkResult: *mut HKEY, lpdwDisposition: *mut DWORD) -> LONG;

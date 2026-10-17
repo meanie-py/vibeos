@@ -1,9 +1,7 @@
 use crate::shim::*;
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
-use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{CONTEXT, EXCEPTION_RECORD, PCONTEXT, PCSTR, PEXCEPTION_POINTERS, PEXCEPTION_RECORD, PRTLP_UNHANDLED_EXCEPTION_FILTER, PSZ, RtlCaptureContext, RtlDispatchException, RtlWalkFrameChain, ZwContinue, ZwRaiseException, _EXCEPTION_POINTERS};
 use core::ffi::c_void;
 

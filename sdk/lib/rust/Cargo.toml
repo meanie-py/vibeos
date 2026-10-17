@@ -1,5 +1,12 @@
 [workspace]
 members = [
+    "user32_vista-cargo",
+    "wdmaud-cargo",
+    "sysaudio-cargo",
+    "sndblst-cargo",
+    "mmdrv-cargo",
+    "kmixer-cargo",
+    "beepmidi-cargo",
     "wevtapi-cargo",
     "wer-cargo",
     "virtdisk-cargo",

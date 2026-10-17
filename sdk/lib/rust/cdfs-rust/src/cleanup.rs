@@ -1,10 +1,23 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::base::*;
+// One declaration per external symbol: ddk_shims.rs.
+use crate::ddk_shims::FlagOn;
+// One declaration per external symbol: types.rs.
+use crate::types::CdDecodeFileObject;
+// The crate's own functions: the definition is the declaration.
+use crate::cdmacros::CdAcquireFcbExclusive;
+use crate::cdmacros::CdAcquireVcbExclusive;
+use crate::verfysup::CdCheckForDismount;
+use crate::cddata::CdCompleteRequest;
+use crate::deviosup::CdHijackIrpAndFlushDevice;
+use crate::cdmacros::CdIsFastIoPossible;
+use crate::cachesup::CdPurgeVolume;
+use crate::cdmacros::CdReleaseFcb;
 use ntkrnl_sys::ddk::{CcUninitializeCacheMap, IoAcquireVpbSpinLock, IoGetCurrentIrpStackLocation, IoGetRequestorProcess, IoReleaseVpbSpinLock, IoRemoveShareAccess, PFILE_OBJECT, PIRP};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CCB_FLAG_DISMOUNT_ON_CLOSE, FCB_DATA, PCCB, PFCB, PIRP_CONTEXT, PVCB, TYPE_OF_OPEN, VCB_STATE_LOCKED, _TYPE_OF_OPEN_StreamFileOpen as StreamFileOpen, _TYPE_OF_OPEN_UserDirectoryOpen as UserDirectoryOpen, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen, _TYPE_OF_OPEN_UserVolumeOpen as UserVolumeOpen, _VCB_CONDITION_VcbNotMounted as VcbNotMounted};
-use ntkrnl_sys::ddk::{PDEVICE_OBJECT, POPLOCK, POPLOCK_FS_PREPOST_IRP, POPLOCK_WAIT_COMPLETE_ROUTINE};
+use ntkrnl_sys::ddk::{POPLOCK, POPLOCK_FS_PREPOST_IRP, POPLOCK_WAIT_COMPLETE_ROUTINE};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlCheckOplock, FsRtlFastUnlockAll, FsRtlNotifyVolumeEvent};
 use crate::glue::{CDFS_BUG_CHECK_CLEANUP, FO_CLEANUP_COMPLETE, FO_FILE_MODIFIED, FSRTL_VOLUME_UNLOCK, VPB_LOCKED};
@@ -13,7 +26,6 @@ use crate::ddk_shims::{FsRtlNotifyCleanup};
 
 // cdecl cdfs-internal routines (C defs in filobsup.c are plain cdecl, no NTAPI).
 extern "C" {
-    fn CdDecodeFileObject(IrpContext: PIRP_CONTEXT, FileObject: PFILE_OBJECT, Fcb: *mut PFCB, Ccb: *mut PCCB) -> TYPE_OF_OPEN;
 }
 
 extern "C" {
@@ -25,12 +37,9 @@ extern "C" {
 }
 extern "C" {
     // Teardown-on-last-cleanup helpers (cleanup.c AttemptTeardown block).
-    fn CdAcquireVcbExclusive(IrpContext: PIRP_CONTEXT, Vcb: PVCB, IgnoreWait: BOOLEAN) -> u32;
     fn CdReleaseVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
-    fn CdPurgeVolume(IrpContext: PIRP_CONTEXT, Vcb: PVCB, DismountUnderway: BOOLEAN) -> NTSTATUS;
 }
 extern "C" {
-    fn CdAcquireFcbExclusive(IrpContext: PIRP_CONTEXT, Fcb: PFCB, Flag: BOOLEAN) -> u32;
 }
 extern "C" {
     fn CdAcquireFileExclusive(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
@@ -39,10 +48,8 @@ extern "C" {
     fn CdBugCheck(Arg1: usize, Arg2: usize, Arg3: usize);
 }
 extern "C" {
-    fn CdCheckForDismount(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Arg: u32) -> u32;
 }
 extern "C" {
-    fn CdCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
 }
 extern "C" {
     fn CdDecrementCleanupCounts(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
@@ -51,10 +58,8 @@ extern "C" {
     fn CdGetFcbOplock(Fcb: PFCB) -> POPLOCK;
 }
 extern "C" {
-    fn CdHijackIrpAndFlushDevice(IrpContext: PIRP_CONTEXT, Irp: PIRP, TargetDeviceObject: PDEVICE_OBJECT) -> u32;
 }
 extern "C" {
-    fn CdIsFastIoPossible(Fcb: PFCB) -> BOOLEAN;
 }
 extern "C" {
     fn CdLockFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
@@ -81,7 +86,6 @@ extern "C" {
     fn ClearFlag(Flags: *mut u32, Flag: u32);
 }
 extern "C" {
-    fn FlagOn(Flags: u32, Flag: u32) -> u32;
 }
 extern "C" {
 }
@@ -89,7 +93,6 @@ extern "C" {
     fn SetFlag(Flags: *mut u32, Flag: u32);
 }
 extern "C" {
-    fn CdReleaseFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
 }
 
 // ---- file-scope preamble (translated) ----
@@ -121,7 +124,7 @@ pub unsafe extern "C" fn CdCommonCleanup(
     //
 
     if (*IrpContext).Vcb.is_null() {
-        CdCompleteRequest(IrpContext, Irp, STATUS_SUCCESS);
+        CdCompleteRequest((IrpContext).cast(), Irp, STATUS_SUCCESS);
         return STATUS_SUCCESS;
     }
 
@@ -143,7 +146,7 @@ pub unsafe extern "C" fn CdCommonCleanup(
     //
 
     if TypeOfOpen <= StreamFileOpen {
-        CdCompleteRequest(IrpContext, Irp, STATUS_SUCCESS);
+        CdCompleteRequest((IrpContext).cast(), Irp, STATUS_SUCCESS);
         return STATUS_SUCCESS;
     }
 
@@ -272,7 +275,7 @@ pub unsafe extern "C" fn CdCommonCleanup(
                         //
 
                         CdLockFcb(IrpContext, Fcb);
-                        (*Fcb).__bindgen_anon_1.Header.as_mut().IsFastIoPossible = CdIsFastIoPossible(Fcb);
+                        (*Fcb).__bindgen_anon_1.Header.as_mut().IsFastIoPossible = (CdIsFastIoPossible(Fcb)) as u8;
                         CdUnlockFcb(IrpContext, Fcb);
                     }
                     UserVolumeOpen => { }
@@ -377,7 +380,7 @@ pub unsafe extern "C" fn CdCommonCleanup(
 
     }
 
-    CdCompleteRequest(IrpContext, Irp, STATUS_SUCCESS);
+    CdCompleteRequest((IrpContext).cast(), Irp, STATUS_SUCCESS);
     return STATUS_SUCCESS;
 }
 

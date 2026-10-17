@@ -675,10 +675,12 @@ unsafe extern "C" fn AddDisplayDevice(
         (*newEntry).Resolutions = HeapAlloc(
             GetProcessHeap(),
             0 as DWORD,
-            (ResolutionsCount as SIZE_T).wrapping_mul(
-                (core::mem::size_of::<RESOLUTION_INFO>() as SIZE_T)
-                    .wrapping_add(1 as SIZE_T),
-            ),
+            // The C allocates ResolutionsCount * (sizeof + 1) bytes, but the fill loop writes
+            // ResolutionsCount entries and the fullscreen one goes at [ResolutionsCount] (the
+            // geometry slider runs 0..=ResolutionsCount): one RESOLUTION_INFO past the buffer,
+            // which the stray byte per entry only partly covered. Room for all of them.
+            (ResolutionsCount as SIZE_T + 1)
+                .wrapping_mul(core::mem::size_of::<RESOLUTION_INFO>() as SIZE_T),
         ) as PRESOLUTION_INFO;
         if (*newEntry).Resolutions.is_null() {
             break 'ByeBye;

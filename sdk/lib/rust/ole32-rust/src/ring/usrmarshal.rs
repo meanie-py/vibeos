@@ -986,7 +986,7 @@ pub unsafe extern "system" fn HBITMAP_UserUnmarshal(
 
             bitmap_size = *(buffer as *const ULONG);
             buffer = buffer.add(core::mem::size_of::<ULONG>());
-            let bits = HeapAlloc(GetProcessHeap(), 0, bitmap_size as SIZE_T);
+            let bits = HeapAlloc(GetProcessHeap(), 0, bitmap_size as usize);
 
             memcpy(
                 core::ptr::addr_of_mut!(bitmap) as *mut c_void,
@@ -999,7 +999,7 @@ pub unsafe extern "system" fn HBITMAP_UserUnmarshal(
             buffer = buffer.add(bitmap_size as usize);
 
             bitmap.bmBits = bits;
-            *bmp = CreateBitmapIndirect(core::ptr::addr_of!(bitmap) as *const c_void);
+            *bmp = (CreateBitmapIndirect((core::ptr::addr_of!(bitmap) as *const c_void).cast())).cast();
 
             HeapFree(GetProcessHeap(), 0, bits);
         } else {
@@ -1643,9 +1643,9 @@ pub unsafe extern "system" fn WdtpInterfacePointer_UserMarshal(
     }
 
     if CoMarshalInterface(
-        stm,
-        riid,
-        punk,
+        (stm).cast(),
+        (riid).cast(),
+        (punk).cast(),
         LOWORD(RealFlags) as DWORD,
         core::ptr::null_mut(),
         tagMSHLFLAGS_MSHLFLAGS_NORMAL as DWORD,
@@ -1723,7 +1723,7 @@ pub unsafe extern "system" fn WdtpInterfacePointer_UserUnmarshal(
     GlobalUnlock(h);
 
     orig = *ppunk;
-    hr = CoUnmarshalInterface(stm, riid, ppunk as *mut LPVOID);
+    hr = CoUnmarshalInterface((stm).cast(), (riid).cast(), ppunk as *mut LPVOID);
     IStream_Release(stm);
 
     if hr != S_OK {

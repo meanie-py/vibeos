@@ -1,4 +1,10 @@
 use win32k_sys::win32k::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::wow64::DbgPrint;
+use crate::windows::message::DeleteCriticalSection;
+use crate::winbase::ExtTextOutW;
+use crate::windows::window::HeapAlloc;
+use crate::windows::message::InitializeCriticalSection;
 // TEB/PEB self-pointer inlines (ntuser.h FORCEINLINE) live in crate::internal.
 use crate::internal::{NtCurrentPeb, NtCurrentTeb};
 use core::ffi::c_void;
@@ -81,7 +87,6 @@ macro_rules! w {
 
 extern "C" {
     // ntoskrnl/ntdll cdecl variadic debug print.
-    fn DbgPrint(Format: *const i8, ...) -> ULONG;
     // CRT cdecl (`_wcslen`, no @N) — was wrongly in the "system" block; only
     // linkable before because its callers were UB-folded (see note below).
     fn wcslen(s: *const u16) -> usize;
@@ -112,16 +117,12 @@ extern "system" {
     fn RtlZeroMemory(Destination: PVOID, Length: SIZE_T);
 
     // ── kernel32 exports ──
-    fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: SIZE_T) -> PVOID;
     fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: PVOID) -> BOOL;
     fn GetProcessHeap() -> HANDLE;
     fn TlsAlloc() -> DWORD;
     fn TlsFree(dwTlsIndex: DWORD) -> BOOL;
-    fn InitializeCriticalSection(lpCriticalSection: LPCRITICAL_SECTION);
-    fn DeleteCriticalSection(lpCriticalSection: LPCRITICAL_SECTION);
 
     // ── gdi32 exports ──
-    fn ExtTextOutW(hdc: HDC, x: INT, y: INT, options: UINT, lprect: *const RECT, lpString: LPCWSTR, c: UINT, lpDx: *const INT) -> BOOL;
     fn GdiDllInitialize(hDll: HANDLE, dwReason: DWORD, lpReserved: LPVOID) -> BOOL;
     fn GdiProcessSetup() -> BOOL;
     fn GdiPrinterThunk(pumpd: PVOID, pvOut: PVOID, cjOut: ULONG) -> ULONG;
@@ -584,7 +585,7 @@ pub unsafe extern "system" fn ClientThreadSetupHelper(IsCallback: BOOL) -> BOOL 
         if !gpsi.is_null() {
             if MessageInit() != 0 {
                 if MenuInit() != 0 {
-                    InitializeCriticalSection(core::ptr::addr_of_mut!(U32AccelCacheLock));
+                    InitializeCriticalSection((core::ptr::addr_of_mut!(U32AccelCacheLock)).cast());
                     LoadAppInitDlls();
                     return TRUE as BOOL;
                 }
@@ -662,7 +663,7 @@ extern "system" {
 
 unsafe fn Cleanup() {
     UnloadAppInitDlls();
-    DeleteCriticalSection(core::ptr::addr_of_mut!(U32AccelCacheLock));
+    DeleteCriticalSection((core::ptr::addr_of_mut!(U32AccelCacheLock)).cast());
     MenuCleanup();
     MessageCleanup();
     TlsFree(User32TlsIndex);

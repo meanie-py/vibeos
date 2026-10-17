@@ -562,7 +562,9 @@ unsafe extern "C" fn GetPathOfFile(FilePath: LPTSTR, pszFiles: LPCTSTR) -> BOOL 
     let mut pch: LPTSTR = core::ptr::null_mut();
     let mut attrs: DWORD = 0;
 
-    _tcsncpy(FilePath, pszFiles, (MAX_PATH) as _);
+    // The C's _tcsncpy(.., MAX_PATH) leaves FilePath unterminated for a MAX_PATH-long
+    // argument, and _tcsrchr then scans past it. Both copies here always terminate.
+    StringCchCopyW(FilePath, MAX_PATH as usize, pszFiles);
     pch = _tcsrchr(FilePath, ('\\' as u16));
     if !pch.is_null() {
         *pch = 0;
@@ -576,11 +578,7 @@ unsafe extern "C" fn GetPathOfFile(FilePath: LPTSTR, pszFiles: LPCTSTR) -> BOOL 
             PrintError(GetLastError());
             return (FALSE) as BOOL;
         }
-        _tcsncpy(
-            FilePath,
-            core::ptr::addr_of_mut!(FullPath) as LPTSTR,
-            (MAX_PATH) as _,
-        );
+        StringCchCopyW(FilePath, MAX_PATH as usize, core::ptr::addr_of_mut!(FullPath) as LPTSTR);
 
         attrs = GetFileAttributes(FilePath);
         if attrs == 0xFFFFFFFF || (attrs & FILE_ATTRIBUTE_DIRECTORY) == 0 {

@@ -894,6 +894,32 @@ reported **3,790** phantom findings against a true count of 15, and the identica
 `crate_repair`'s argument-index counter the same night. If you are counting top-level commas in
 Rust, assume `->` is there to ruin it.
 
+### Collapsing a clashing extern to ONE declaration: attributes, struct copies, alias spellings
+Symptom: `tools/extern_to_use.py` (one canonical declaration plus `use` everywhere else) leaves a
+crate that won't compile, or that compiles and binds a different symbol. Three causes, one per
+kind of residue (2026-10-17, about 30 crates):
+- **The attributes belong to the declaration.** menuband declared `GetWindowLongPtrW` under
+  `#[cfg_attr(target_pointer_width = "32", link_name = "GetWindowLongW")]`. The first version of
+  the tool deleted the `fn` line and left the attribute above it, where it attached itself to the
+  NEXT declaration in the block. That rebinds an unrelated import on i386 only, with no
+  diagnostic. Fix: the tool removes the attribute lines together with their declaration, and
+  refuses (`KEPT`) to merge two declarations whose attributes differ, because they may bind
+  different symbols on some arch.
+- **A per-module copy of a C struct is a distinct Rust type.** This happened with DDE structs in
+  user32, `POWER_STATE` in acpi (a one-field copy of what the ddk declares as a union), three
+  `IUnknown`s in menuband, and `GUID`/`BITMAP`/`IStream` in ole32. Once one declaration survives,
+  a caller that passes its own copy fails with E0308. Fix: dedupe to one definition with
+  `pub use`, or `.cast()` at the pointer argument. Never use `as _` on a struct by value.
+- **ntdll-sys aliases are not the canonical spelling.** On 64-bit, `SIZE_T`/`WPARAM`/`LPARAM` are
+  `u64`/`i64`, while most canonical declarations spell them `usize`/`isize`. They have the same
+  width on every arch but are different Rust types. Rewrite each call site from rustc's own span
+  as `as usize` or `as _`, which bakes no width in. Watch precedence when the cast lands inside
+  `a * b`.
+
+The pass also finds real bugs. kernel32's `ExitThread`/`ExitProcess` were declared as returning,
+cdfs's FSP dispatcher discarded a status, and `DbgPrint`, `memmove` and `BaseSetLastNTError` had
+return values silently dropped.
+
 ### A `transmute` at a callback-install site erases the CALLING CONVENTION
 **The same bug without a transmute: a callback DEFINED `extern "C"` and cast into its slot.**
 setuplib's `RtlQueryRegistryValues` query routines, boot-store enumerators and INF entry
@@ -957,6 +983,21 @@ that transmutes past the stale field once, in one place. **When you sweep a call
 after a header change, compare parameter TYPES, not just how many there are** — an arity sweep
 passes clean on exactly this bug, and `ULONG_PTR == ULONG` on i386 makes a plain ABI mismatch
 read as an arch-specific mystery.
+
+### A callback declared through a FUNCTION CLASS loses its convention in translation
+Symptom: none on amd64 or arm64. On i386, a stdcall caller invokes a cdecl callee, which leaves
+its arguments on the stack, so the caller's `esp` is off by their size after every call.
+Cause: the C spells the convention once, in the typedef. `typedef NTSTATUS (NTAPI
+POWER_SETTING_CALLBACK)(..)` is followed by `POWER_SETTING_CALLBACK DevicePowerSettingCallback;`,
+and the definition below it carries no NTAPI. A translation reading the definition writes
+`extern "C"`. bindgen does the same: cdrom's i386 island declares these functions `extern "C"`,
+so `scan_cc_mismatch`, which treats the island as evidence, sees agreement. Per-module
+redeclarations hid the rest: each caller's local `extern` typed the callback the way the
+definition did, until `extern_to_use` gave every call site the definition (2026-10-17).
+Fix: define it `extern "system"` (cdrom's two `EVT_WDF_WORKITEM`s and its power-setting
+callback, classpnp's `EXT_CALLBACK`). `tools/scan_fnclass_cc.py` gates the class: every
+NTAPI-family function-class typedef, plus kmdf's `EVT_*`, against the Rust definition of each
+function declared through one.
 
 ### Per-arch `#[cfg]` twins: the OTHER nominal-ABI workaround, and what it hides
 Same root cause as the transmute above — `extern "system" fn` unifies with neither
@@ -3236,6 +3277,11 @@ the C says FileEndOfFileInformation (20). Every file-backed section larger than 
 back SECTION_NOT_EXTENDED, and setup's cabinet extraction lost 964 files. ps-rust's apphelp
 passed 0 for FileBasicInformation. `scan_info_class_literals` requires the class to be named in
 every file-information call (gated at zero).
+The same file can hold the right constant and still call with an invented one: `mm/section.rs`
+defines `FSRTL_MOD_WRITE_TOP_LEVEL_IRP = 0x03`, yet `MmCheckDirtySegment` passed
+`IoSetTopLevelIrp(0x80000000)`. Anything above `FSRTL_MAX_TOP_LEVEL_IRP_FLAG` is taken for a real
+IRP, so fastfat's FatCommonWrite read a NodeType at 0x80000000 and bugchecked 0x23, but only
+under memory pressure, on a page-out of a dirty data-file page, which hid it for months.
 
 **And a correct constant cast too narrow:** disk.sys set `(SRB_CLASS_FLAGS_PERSISTANT as USHORT)
 as u32` on its flush SRB: 0x20000000 as `u16` is 0. classpnp then freed an SRB that lives in the
@@ -6767,6 +6813,20 @@ SMSS's process creation once (`ps_globals.rs`).
 implied LIMITED grants a full right carries), and grade with a test that runs on Windows
 11 as well (`Win10Surface`'s Test_LimitedAccess). A `*_ALL_ACCESS` in a kernel crate is a
 version-dependent constant: write the value the KERNEL means, not what `0x502` expands to.
+
+### An undeclared cfg is a branch that never compiles, and the warning is the only trace
+Symptom: the Rust always takes one side of a translated `#ifdef`, whatever the C build defines.
+rustc says so once, as `unexpected_cfgs`, and the census filed that lint under NOISE until
+2026-10-17. Cause: the translation renamed a C define into a cfg or feature that nothing
+declares and nothing sets. cdfs wrote `cfg!(not(reactos))` where `reactos` is a Cargo feature,
+not a cfg, so `CdQueryFsDeviceInfo` always returned the non-ReactOS `FILE_DEVICE_CD_ROM`. desk
+gated `pCDevSettings_AllocAndCopyString` on `feature = "unicode"`, and desk is built UNICODE, so
+it ran the ANSI branch on a wide string: every display device name came out one character
+long. oleaut32 hung a `feature = "__REACTOS__"` choice on a split the C does not make.
+Fix: decide each site against what the C build defines, never against what the name suggests.
+Fix a misspelling. Declare a gate that is off on purpose in the crate's `[features]` (or in
+`check-cfg` for a tool cfg like `kani`), with a comment naming the C define, so that the next
+misspelling still warns. The census now counts `unexpected_cfgs` as LOGIC.
 
 ### A `#if` on a WINDOWS VERSION comes back as `#[cfg(target_arch)]`
 
@@ -12594,6 +12654,18 @@ touches addresses, and boot several sizes (QEMU BIOS at 4/12/32 GiB, `VIBEOS_QEM
 and `q35,mem` for UEFI) before blaming the cap. A HAL bounce through map registers for 32-bit
 scsiport masters looked right and broke uniata, which does its own bouncing: scsiport's
 `IoFlushAdapterBuffers` then copies an untouched map buffer over the data.
+
+### Free memory drifts down app after app while commit stays flat (arm64)
+Symptom: a long sweep (appstorm64) loses available memory with every new image it loads, the
+commit charge does not move, and a smaller VM starves apps at 7-20 MB free. `--tripwire
+MEMCENSUS=1` puts the loss in the `ros` column: section pages the ReactOS Mm allocated, held by
+their segment after the last view went. Cause: arm64's `MmPageOutPhysicalAddress` returned
+UNSUCCESSFUL for a page with no process rmap (a bring-up `#ifdef _M_ARM64` carried into the
+Rust), so the balancer could never release a cached page there; and it trimmed only below 256
+free pages. Fix: the segment (`WriteSegment`) path on every arch, plus trimming below
+`MmLowMemoryThreshold` (`docs/engineering/mm-section-cache-standby-design.md`). An arm64
+`#ifdef` that turns a bugcheck or a reclaim into "return UNSUCCESSFUL" hides the work, not just
+the crash; when memory runs out on arm64 only, grep for them first.
 
 ### Other Mm one-offs
 - **A registry/hive addition that "shouldn't matter" trips an early 0x50** `[§9.10]` — the

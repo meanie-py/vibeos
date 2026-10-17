@@ -1,5 +1,10 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::base::*;
+// One declaration per external symbol: ddk_shims.rs.
+use crate::ddk_shims::FlagOn;
+// The crate's own functions: the definition is the declaration.
+use crate::ddk_shims::CdRaiseStatus;
+use crate::cdmacros::RtlEqualMemory;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ddk::{GENERATE_NAME_CONTEXT, OEM_STRING, PUNICODE_STRING, RtlCompareMemory, RtlFreeOemString, RtlGenerate8dot3Name, RtlUnicodeStringToCountedOemString, RtlUnicodeStringToOemString, RtlUpcaseUnicodeString, STRING};
 use ntkrnl_sys::ddk::{FSRTL_COMPARISON_RESULT, _FSRTL_COMPARISON_RESULT_EqualTo as EqualTo, _FSRTL_COMPARISON_RESULT_GreaterThan as GreaterThan, _FSRTL_COMPARISON_RESULT_LessThan as LessThan};
@@ -14,10 +19,8 @@ use crate::glue::{CDFS_BUG_CHECK_NAMESUP, STATUS_DISK_CORRUPT_ERROR};
 use crate::ddk_shims::{FsRtlIsFatDbcsLegal};
 
 extern "C" {
-    fn CdRaiseStatus(IrpContext: PIRP_CONTEXT, Status: u32);
 }
 extern "C" {
-    fn FlagOn(Value: u32, Flags: u32) -> i32;
 }
 extern "C" {
 }
@@ -28,7 +31,6 @@ extern "C" {
     fn FsRtlIsLeadDbcsCharacter(Char: u8) -> u8;
 }
 extern "C" {
-    fn RtlEqualMemory(Buffer1: *const c_void, Buffer2: *const c_void, Length: usize) -> BOOLEAN;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -93,7 +95,7 @@ pub unsafe extern "C" fn CdConvertBigToLittleEndian(
     PAGED_CODE!();
 
     if FlagOn(ByteCount, 1) != 0 {
-        CdRaiseStatus(IrpContext, STATUS_DISK_CORRUPT_ERROR as u32);
+        CdRaiseStatus(IrpContext, (STATUS_DISK_CORRUPT_ERROR) as NTSTATUS);
     }
 
     core::ptr::copy_nonoverlapping(
@@ -345,7 +347,7 @@ pub unsafe extern "C" fn CdGenerate8dot3Name(
 
     if !NT_SUCCESS(Status) {
         NT_ASSERT!((STATUS_INSUFFICIENT_RESOURCES == Status) as i32);
-        CdRaiseStatus(IrpContext as PIRP_CONTEXT, Status as u32);
+        CdRaiseStatus(IrpContext as PIRP_CONTEXT, (Status) as NTSTATUS);
     }
 
     Length = 0;

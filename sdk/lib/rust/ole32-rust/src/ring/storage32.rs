@@ -869,7 +869,7 @@ unsafe fn IEnumSTATSTGImpl_Construct(
 ) -> *mut IEnumSTATSTGImpl {
     let newEnumeration: *mut IEnumSTATSTGImpl;
 
-    newEnumeration = HeapAlloc(GetProcessHeap(), 0, (core::mem::size_of::<IEnumSTATSTGImpl>()) as SIZE_T) as *mut IEnumSTATSTGImpl;
+    newEnumeration = HeapAlloc(GetProcessHeap(), 0, (core::mem::size_of::<IEnumSTATSTGImpl>()) as usize) as *mut IEnumSTATSTGImpl;
 
     if !newEnumeration.is_null() {
         (*newEnumeration).IEnumSTATSTG_iface.lpVtbl = &IEnumSTATSTGImpl_Vtbl as *const IEnumSTATSTGVtbl as *mut IEnumSTATSTGVtbl;
@@ -1994,10 +1994,10 @@ pub unsafe extern "system" fn OleLoadFromStream(
 
     const CLSCTX_INPROC_SERVER: u32 = 0x1;
     res = CoCreateInstance(
-        &clsid,
+        (&raw const clsid).cast(),
         core::ptr::null_mut(),
         CLSCTX_INPROC_SERVER,
-        iidInterface,
+        (iidInterface).cast(),
         ppvObj,
     );
     if FAILED(res) {
@@ -3021,7 +3021,7 @@ unsafe fn Storage32Impl_AddExtBlockDepot(This: *mut StorageImpl) -> ULONG {
 
     if (*This).extBigBlockDepotLocationsSize == numExtBlocks {
         let new_cache_size = ((*This).extBigBlockDepotLocationsSize + 1) * 2;
-        let new_cache = HeapAlloc(GetProcessHeap(), 0, (core::mem::size_of::<ULONG>() * new_cache_size as usize) as SIZE_T) as *mut ULONG;
+        let new_cache = HeapAlloc(GetProcessHeap(), 0, (core::mem::size_of::<ULONG>() * new_cache_size as usize) as usize) as *mut ULONG;
 
         memcpy(
             new_cache as *mut core::ffi::c_void,
@@ -5435,7 +5435,7 @@ unsafe fn Storage32Impl_SmallBlocksToBigBlocks(
     offset.u.HighPart = 0;
     cbTotalRead.QuadPart = 0;
 
-    buffer = HeapAlloc(GetProcessHeap(), 0, (DEF_SMALL_BLOCK_SIZE as usize) as SIZE_T) as *mut BYTE;
+    buffer = HeapAlloc(GetProcessHeap(), 0, (DEF_SMALL_BLOCK_SIZE as usize) as usize) as *mut BYTE;
     
     let final_resRead = loop {
         resRead = SmallBlockChainStream_ReadAt(
@@ -5544,7 +5544,7 @@ unsafe fn Storage32Impl_BigBlocksToSmallBlocks(
     offset.u.HighPart = 0;
     offset.u.LowPart = 0;
     cbTotalRead.QuadPart = 0;
-    buffer = HeapAlloc(GetProcessHeap(), 0, ((*This).bigBlockSize as usize) as SIZE_T) as *mut BYTE;
+    buffer = HeapAlloc(GetProcessHeap(), 0, ((*This).bigBlockSize as usize) as usize) as *mut BYTE;
 
     while cbTotalRead.QuadPart < size.QuadPart {
         resRead = BlockChainStream_ReadAt(
@@ -5920,7 +5920,7 @@ unsafe fn StorageImpl_Refresh(This: *mut StorageImpl, new_object: BOOL, create: 
         let cache_size: ULONG = (*This).extBigBlockDepotCount * 2;
         let mut i: ULONG;
 
-        (*This).extBigBlockDepotLocations = HeapAlloc(GetProcessHeap(), 0, ((core::mem::size_of::<ULONG>() * cache_size as usize) as usize) as SIZE_T) as *mut ULONG;
+        (*This).extBigBlockDepotLocations = HeapAlloc(GetProcessHeap(), 0, ((core::mem::size_of::<ULONG>() * cache_size as usize) as usize) as usize) as *mut ULONG;
         if (*This).extBigBlockDepotLocations.is_null() {
             return E_OUTOFMEMORY;
         }
@@ -6078,7 +6078,7 @@ unsafe fn StorageImpl_Construct(
         return STG_E_INVALIDFLAG;
     }
 
-    let This = HeapAlloc(GetProcessHeap(), 0, (core::mem::size_of::<StorageImpl>()) as SIZE_T) as *mut StorageImpl;
+    let This = HeapAlloc(GetProcessHeap(), 0, (core::mem::size_of::<StorageImpl>()) as usize) as *mut StorageImpl;
     if This.is_null() {
         return E_OUTOFMEMORY;
     }
@@ -6150,7 +6150,7 @@ unsafe fn TransactedSnapshotImpl_Construct(
 ) -> HRESULT {
     let mut hr: HRESULT;
 
-    *result = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (core::mem::size_of::<TransactedSnapshotImpl>()) as SIZE_T) as *mut TransactedSnapshotImpl;
+    *result = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (core::mem::size_of::<TransactedSnapshotImpl>()) as usize) as *mut TransactedSnapshotImpl;
     if !(*result).is_null() {
         let mut scratch: *mut IStorage = core::ptr::null_mut();
 
@@ -6183,7 +6183,7 @@ unsafe fn TransactedSnapshotImpl_Construct(
             (*(*result)).entries = HeapAlloc(
                 GetProcessHeap(),
                 HEAP_ZERO_MEMORY,
-                (core::mem::size_of::<TransactedDirEntry>() * num_entries as usize) as SIZE_T,
+                (core::mem::size_of::<TransactedDirEntry>() * num_entries as usize) as usize,
             ) as *mut TransactedDirEntry;
             (*(*result)).entries_size = num_entries;
             (*(*result)).firstFreeEntry = 0;
@@ -6217,7 +6217,7 @@ unsafe fn TransactedSharedImpl_Construct(
 ) -> HRESULT {
     let mut hr: HRESULT;
 
-    *result = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (core::mem::size_of::<TransactedSharedImpl>()) as SIZE_T) as *mut TransactedSharedImpl;
+    *result = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (core::mem::size_of::<TransactedSharedImpl>()) as usize) as *mut TransactedSharedImpl;
     if !(*result).is_null() {
         let mut scratch: *mut IStorage = core::ptr::null_mut();
 
@@ -6430,7 +6430,7 @@ unsafe fn BlockChainStream_UpdateIndexCache(This: *mut BlockChainStream) -> HRES
                 (*This).indexCache = HeapAlloc(
                     GetProcessHeap(),
                     0,
-                    (core::mem::size_of::<BlockChainRun>() * 16) as SIZE_T,
+                    (core::mem::size_of::<BlockChainRun>() * 16) as usize,
                 ) as *mut BlockChainRun;
                 if (*This).indexCache.is_null() {
                     return E_OUTOFMEMORY;
@@ -6444,7 +6444,7 @@ unsafe fn BlockChainStream_UpdateIndexCache(This: *mut BlockChainStream) -> HRES
                 new_cache = HeapAlloc(
                     GetProcessHeap(),
                     0,
-                    (core::mem::size_of::<BlockChainRun>() * new_size as usize) as SIZE_T,
+                    (core::mem::size_of::<BlockChainRun>() * new_size as usize) as usize,
                 ) as *mut BlockChainRun;
                 if new_cache.is_null() {
                     return E_OUTOFMEMORY;
@@ -6493,7 +6493,7 @@ unsafe fn BlockChainStream_Construct(
 ) -> *mut BlockChainStream {
     let newStream: *mut BlockChainStream;
 
-    newStream = HeapAlloc(GetProcessHeap(), 0, (core::mem::size_of::<BlockChainStream>()) as SIZE_T) as *mut BlockChainStream;
+    newStream = HeapAlloc(GetProcessHeap(), 0, (core::mem::size_of::<BlockChainStream>()) as usize) as *mut BlockChainStream;
     if newStream.is_null() {
         return core::ptr::null_mut();
     }
@@ -8113,7 +8113,7 @@ unsafe fn OLECONVERT_WriteOLE20ToBuffer(pStorage: *mut IStorage, pData: *mut *mu
         );
         if hFile != INVALID_HANDLE_VALUE {
             nDataLength = GetFileSize(hFile, core::ptr::null_mut());
-            *pData = HeapAlloc(GetProcessHeap(), 0, (nDataLength as usize) as SIZE_T) as *mut BYTE;
+            *pData = HeapAlloc(GetProcessHeap(), 0, (nDataLength as usize) as usize) as *mut BYTE;
             ReadFile(hFile, *pData as LPVOID, nDataLength, &mut nDataLength, core::ptr::null_mut());
             CloseHandle(hFile);
         }
@@ -8213,7 +8213,7 @@ unsafe fn OLECONVERT_GetOle20PresData(pStorage: *mut IStorage, pOleStreamData: *
             MetaFilePict.yExt = olePress.dwExtentY as i16;
             MetaFilePict.hMF = 0;
 
-            (*pOleStreamData.offset(1)).pData = HeapAlloc(GetProcessHeap(), 0, ((*pOleStreamData.offset(1)).dwDataLength as usize) as SIZE_T) as *mut BYTE;
+            (*pOleStreamData.offset(1)).pData = HeapAlloc(GetProcessHeap(), 0, ((*pOleStreamData.offset(1)).dwDataLength as usize) as usize) as *mut BYTE;
             memcpy((*pOleStreamData.offset(1)).pData as *mut core::ffi::c_void, core::ptr::addr_of!(MetaFilePict) as *const core::ffi::c_void, core::mem::size_of::<METAFILEPICT16>());
             IStream_Read(pStream, ((*pOleStreamData.offset(1)).pData as usize + core::mem::size_of::<METAFILEPICT16>()) as *mut core::ffi::c_void, (*pOleStreamData.offset(1)).dwDataLength - core::mem::size_of::<METAFILEPICT16>() as DWORD, core::ptr::null_mut());
         }
@@ -8593,7 +8593,7 @@ unsafe fn StorageInternalImpl_Construct(
     newStorage = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        (core::mem::size_of::<StorageInternalImpl>()) as SIZE_T,
+        (core::mem::size_of::<StorageInternalImpl>()) as usize,
     ) as *mut StorageInternalImpl;
 
     if !newStorage.is_null() {
@@ -8636,7 +8636,7 @@ unsafe fn TransactedSnapshotImpl_FindFreeEntry(This: *mut TransactedSnapshotImpl
         new_entries = HeapAlloc(
             GetProcessHeap(),
             HEAP_ZERO_MEMORY,
-            ((core::mem::size_of::<TransactedDirEntry>()).wrapping_mul(new_size as usize)) as SIZE_T
+            ((core::mem::size_of::<TransactedDirEntry>()).wrapping_mul(new_size as usize)) as usize
         ) as *mut TransactedDirEntry;
         if new_entries.is_null() {
             return DIRENTRY_NULL;
@@ -9151,7 +9151,7 @@ unsafe fn SmallBlockChainStream_Construct(
     let newStream = HeapAlloc(
         GetProcessHeap(),
         0,
-        (core::mem::size_of::<SmallBlockChainStream>()) as SIZE_T,
+        (core::mem::size_of::<SmallBlockChainStream>()) as usize,
     ) as *mut SmallBlockChainStream;
 
     (*newStream).parentStorage = parentStorage;
@@ -9558,7 +9558,7 @@ unsafe fn OLECONVERT_LoadOLE10(
                     (*pData).pstrOleObjFileName = HeapAlloc(
                         GetProcessHeap(),
                         0,
-                        ((*pData).dwOleObjFileNameLength as usize) as SIZE_T,
+                        ((*pData).dwOleObjFileNameLength as usize) as usize,
                     ) as *mut CHAR;
                     if !(*pData).pstrOleObjFileName.is_null() {
                         dwSize = ((*(*pOleStream).lpstbl).Get.unwrap_unchecked())(
@@ -9624,7 +9624,7 @@ unsafe fn OLECONVERT_LoadOLE10(
                     (*pData).pData = HeapAlloc(
                         GetProcessHeap(),
                         0,
-                        ((*pData).dwDataLength as usize) as SIZE_T,
+                        ((*pData).dwDataLength as usize) as usize,
                     ) as *mut BYTE;
 
                     if !(*pData).pData.is_null() {
@@ -9906,7 +9906,7 @@ unsafe fn OLECONVERT_GetOle10PresData(pStorage: *mut IStorage, pOleStreamData: *
         IStream_Read(pStream, core::ptr::addr_of_mut!((*pOleStreamData).dwDataLength) as LPVOID, core::mem::size_of::<DWORD>() as u32, core::ptr::null_mut());
         if (*pOleStreamData).dwDataLength > 0
         {
-            (*pOleStreamData).pData = HeapAlloc(GetProcessHeap(), 0, ((*pOleStreamData).dwDataLength as usize) as SIZE_T) as *mut BYTE;
+            (*pOleStreamData).pData = HeapAlloc(GetProcessHeap(), 0, ((*pOleStreamData).dwDataLength as usize) as usize) as *mut BYTE;
             IStream_Read(pStream, (*pOleStreamData).pData as LPVOID, (*pOleStreamData).dwDataLength, core::ptr::null_mut());
         }
         IStream_Release(pStream);

@@ -164,6 +164,9 @@ unsafe fn MiDecrementAvailablePages() {
         KeClearEvent(MiHighMemoryEvent);
     } else if MmAvailablePages == MmLowMemoryThreshold {
         KeSetEvent(MiLowMemoryEvent, 0, 0u8);
+        // Crossing the low mark is when the balancer starts giving back cached section
+        // pages (balance.rs MiTrimMemoryConsumer); wake it now rather than at its timer.
+        MmRebalanceMemoryConsumers();
     }
 
     MmAvailablePages -= 1;

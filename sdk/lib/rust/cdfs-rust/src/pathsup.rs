@@ -1,5 +1,11 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::base::*;
+// One declaration per external symbol: ddk_shims.rs.
+use crate::ddk_shims::CdFreePool;
+// The crate's own functions: the definition is the declaration.
+use crate::namesup::CdConvertBigToLittleEndian;
+use crate::ddk_shims::CdRaiseStatus;
+use crate::namesup::CdUpcaseName;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{CcMapData, RtlOemToUnicodeN, FSRTL_ADVANCED_FCB_HEADER, _LARGE_INTEGER};
 // resolve_imports.py: explicit kernel/private-type imports
@@ -15,7 +21,6 @@ extern "C" {
     fn CdUnpinData(IrpContext: *mut IRP_CONTEXT, Bcb: *mut *mut core::ffi::c_void);
 }
 extern "C" {
-    fn CdFreePool(Data: *mut *mut core::ffi::c_void);
 }
 extern "C" {
     fn CdRawPathEntry(IrpContext: *mut IRP_CONTEXT, PathContext: *const PATH_ENUM_CONTEXT) -> *mut RAW_PATH_ENTRY;
@@ -33,7 +38,6 @@ extern "C" {
     fn BlockOffset(Vcb: *mut VCB, DataLength: u32) -> u32;
 }
 extern "C" {
-    fn CdRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: i32);
 }
 extern "C" {
     fn CopyUchar2(dest: *mut u16, src: *const u16);
@@ -45,10 +49,8 @@ extern "C" {
     fn WordAlign(Value: u32) -> u32;
 }
 extern "C" {
-    fn CdConvertBigToLittleEndian( IrpContext: *mut IRP_CONTEXT, DiskName: *const u8, DiskNameLen: u32, Buffer: *mut u8, );
 }
 extern "C" {
-    fn CdUpcaseName( IrpContext: *mut IRP_CONTEXT, InputName: *mut CD_NAME, OutputName: *mut CD_NAME, );
 }
 extern "C" {
 }
@@ -481,7 +483,7 @@ pub unsafe extern "C" fn CdUpdatePathEntryName(
     } else {
         CdConvertBigToLittleEndian(
             IrpContext,
-            (*PathEntry).DirName as *const u8,
+            (*PathEntry).DirName as *mut u8,
             (*PathEntry).DirNameLen,
             (*PathEntry).CdDirName.FileName.Buffer as *mut u8,
         );
@@ -510,7 +512,7 @@ pub unsafe extern "C" fn CdUpdatePathEntryName(
         (*PathEntry).CdCaseDirName.FileName.MaximumLength = (dir_max / 2) as u16;
 
         CdUpcaseName(
-            IrpContext,
+            (IrpContext).cast(),
             core::ptr::addr_of_mut!((*PathEntry).CdDirName),
             core::ptr::addr_of_mut!((*PathEntry).CdCaseDirName),
         );

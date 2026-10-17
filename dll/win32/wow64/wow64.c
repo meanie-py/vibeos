@@ -1748,8 +1748,9 @@ LONG Wow64CreateGuestThread(ULONG Eip, ULONG Esp, ULONG Eax, ULONG Ebx,
 static WCHAR Wow64pLowerW(WCHAR c);
 
 /* A 32-bit module of THIS process, by base name, from the 32-bit loader's own
- * list (offsets per ntkrnl-sys offset_check_i386.rs). NULL if not loaded. */
-static PVOID Wow64pGuestModule32(const WCHAR *Name, SIZE_T *ImgSize)
+ * list (offsets per ntkrnl-sys offset_check_i386.rs). NULL if not loaded. Also
+ * used by wow64_callback.c (LOADMENU's module handle). */
+PVOID Wow64pGuestModule32(const WCHAR *Name, SIZE_T *ImgSize)
 {
     PBYTE Teb32 = Wow64pCurrentTeb32();
     ULONG Peb32, Ldr, Head, Cur;

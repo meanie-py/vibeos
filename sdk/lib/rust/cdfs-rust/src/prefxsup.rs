@@ -1,4 +1,11 @@
 use ntkrnl_sys::ex::*;
+// One declaration per external symbol: ddk_shims.rs.
+use crate::ddk_shims::CdFreePool;
+// The crate's own functions: the definition is the declaration.
+use crate::cdmacros::CdAcquireFcbExclusive;
+use crate::namesup::CdFullCompareNames;
+use crate::cdmacros::CdReleaseFcb;
+use crate::cdmacros::SafeNodeType;
 use ntkrnl_sys::rtl::RtlZeroMemory;
 use ntkrnl_sys::ddk::{PRTL_SPLAY_LINKS, PUNICODE_STRING, RtlDelete, RtlSplay, FSRTL_COMPARISON_RESULT};
 // resolve_imports.py: explicit kernel/private-type imports
@@ -11,10 +18,8 @@ use crate::ddk_shims::{RtlInitializeSplayLinks, RtlInsertAsLeftChild, RtlInsertA
     FlagOn, ClearFlag, Add2Ptr, CdRaiseStatus};
 
 extern "C" {
-    fn CdFreePool(Pool: *mut *mut u16);
 }
 extern "C" {
-    fn SafeNodeType(fcb: *mut FCB) -> u32;
 }
 extern "C" {
     fn CdLockVcb(irp_context: *mut IRP_CONTEXT, vcb: *mut VCB);
@@ -23,15 +28,13 @@ extern "C" {
     fn CdUnlockVcb(irp_context: *mut IRP_CONTEXT, vcb: *mut VCB);
 }
 extern "C" {
-    fn CdReleaseFcb(irp_context: *mut IRP_CONTEXT, fcb: *mut FCB);
 }
 extern "C" {
-    fn CdAcquireFcbExclusive(irp_context: *mut IRP_CONTEXT, fcb: *mut FCB, wait: u8) -> i32; // returns BOOL
+// returns BOOL
     // SHARED NEED: cdfs-local static, not yet translated.
     //   FSRTL_COMPARISON_RESULT CdFullCompareNames(PIRP_CONTEXT, PUNICODE_STRING, PUNICODE_STRING);
 }
 extern "C" {
-    fn CdFullCompareNames(IrpContext: *mut IRP_CONTEXT, Name1: *const _UNICODE_STRING, Name2: *const _UNICODE_STRING) -> FSRTL_COMPARISON_RESULT;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -226,9 +229,9 @@ pub unsafe extern "C" fn CdRemovePrefix(
         != (core::ptr::addr_of!((*Fcb).FileNamePrefix.FileNameBuffer) as *mut u16)
         && !(*Fcb).FileNamePrefix.ExactCaseName.FileName.Buffer.is_null()
     {
-        CdFreePool(core::ptr::addr_of_mut!(
+        CdFreePool((core::ptr::addr_of_mut!(
             (*Fcb).FileNamePrefix.ExactCaseName.FileName.Buffer
-        ));
+        )).cast());
         (*Fcb).FileNamePrefix.ExactCaseName.FileName.Buffer = core::ptr::null_mut();
     }
 }
@@ -250,7 +253,7 @@ pub unsafe extern "C" fn CdFindPrefix(
 
     loop {
         if local_remaining_name.Length == 0
-            || SafeNodeType(*current_fcb) != CDFS_NTC_FCB_INDEX
+            || SafeNodeType((*current_fcb).cast()) != CDFS_NTC_FCB_INDEX
         {
             return;
         }
@@ -352,8 +355,8 @@ pub unsafe extern "C" fn CdFindNameLink(
         // Compare the prefix in the tree with the full name.
         Comparison = CdFullCompareNames(
             IrpContext,
-            core::ptr::addr_of!((*Node).FileName) as *const _UNICODE_STRING,
-            Name,
+            core::ptr::addr_of_mut!((*Node).FileName),
+            Name.cast_mut(),
         );
 
         if Comparison == GreaterThan {

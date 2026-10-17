@@ -337,7 +337,7 @@ pub unsafe fn RtlInsertAsRightChild(ParentLinks: PRTL_SPLAY_LINKS, ChildLinks: P
 // but leaves them undefined at link. #[no_mangle] provides BOTH the path import
 // (modules that call bare) AND the link symbol (modules with their own extern decl).
 // ===========================================================================
-use crate::types::{VCB, IRP_CONTEXT};
+use crate::types::IRP_CONTEXT;
 
 // MUST return a full-width zero-extended 0/1 (u32), NOT a u8 BOOLEAN. The grind
 // declares these per-module with inconsistent return types — some `-> BOOLEAN`

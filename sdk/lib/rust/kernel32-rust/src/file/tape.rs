@@ -1,4 +1,6 @@
 use ntdll_sys::nt::*;
+// The crate's own functions: the definition is the declaration.
+use crate::client::handle::CloseHandle;
 use crate::prelude::*;
 use core::ffi::c_void;
 
@@ -6,7 +8,6 @@ use core::ffi::c_void;
 extern "system" {
     fn CreateEventA(lpEventAttributes: *mut c_void, bManualReset: BOOL, bInitialState: BOOL, lpName: LPCSTR) -> HANDLE;
     fn WaitForSingleObject(hHandle: HANDLE, dwMilliseconds: DWORD) -> DWORD;
-    fn CloseHandle(hObject: HANDLE) -> BOOL;
 }
 
 // ---- cohab glue: IOCTL_TAPE_* control codes (winioctl.h) ----

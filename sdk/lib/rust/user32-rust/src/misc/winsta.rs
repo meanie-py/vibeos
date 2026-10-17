@@ -1,4 +1,6 @@
 use win32k_sys::win32k::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::windows::window::HeapAlloc;
 #[allow(unused_imports)]
 use core::ffi::c_void;
 
@@ -66,7 +68,6 @@ struct SECURITY_ATTRIBUTES_LAYOUT {
 }
 extern "system" {
     fn GetProcessHeap() -> *mut core::ffi::c_void;
-    fn HeapAlloc( hHeap: *mut core::ffi::c_void, dwFlags: u32, dwBytes: usize, ) -> *mut core::ffi::c_void;
     fn HeapFree( hHeap: *mut core::ffi::c_void, dwFlags: u32, lpMem: *mut core::ffi::c_void, ) -> i32;
     fn SetLastError(dwErrCode: u32);
     fn WideCharToMultiByte( CodePage: u32, dwFlags: u32, lpWideCharStr: LPCWSTR, cchWideChar: i32, lpMultiByteStr: LPSTR, cbMultiByte: i32, lpDefaultChar: LPCSTR, lpUsedDefaultChar: *mut i32, ) -> i32;
@@ -232,7 +233,7 @@ unsafe fn EnumNamesW_impl(
     if NT_SUCCESS(Status) {
         NameList = Buffer.as_mut_ptr() as *mut core::ffi::c_void;
     } else if Status == STATUS_BUFFER_TOO_SMALL {
-        NameList = HeapAlloc(GetProcessHeap(), 0, RequiredSize as usize);
+        NameList = HeapAlloc(GetProcessHeap(), 0, (RequiredSize) as SIZE_T);
         if NameList.is_null() {
             return 0;
         }
@@ -296,7 +297,7 @@ unsafe extern "system" fn EnumNamesCallback(Name: LPWSTR, Param: LPARAM) -> i32 
     } else if (Len as usize) <= core::mem::size_of_val(&FixedNameA) {
         NameA = FixedNameA.as_mut_ptr();
     } else {
-        NameA = HeapAlloc(GetProcessHeap(), 0, Len as usize) as LPSTR;
+        NameA = HeapAlloc(GetProcessHeap(), 0, (Len) as SIZE_T) as LPSTR;
         if NameA.is_null() {
             SetLastError(ERROR_NOT_ENOUGH_MEMORY);
             return 0;

@@ -660,7 +660,7 @@ pub unsafe fn create_anti_moniker(order: DWORD, ret: *mut *mut IMoniker) -> HRES
     let moniker = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        core::mem::size_of::<AntiMonikerImpl>() as SIZE_T,
+        core::mem::size_of::<AntiMonikerImpl>() as usize,
     ) as *mut AntiMonikerImpl;
 
     if moniker.is_null() {

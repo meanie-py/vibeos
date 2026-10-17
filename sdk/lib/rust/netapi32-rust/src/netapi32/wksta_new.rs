@@ -1,4 +1,6 @@
 use crate::prelude_rpc::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::rpc_stubs::NetrWkstaUserGetInfo;
 use ntdll_sys::seh::rpc_try;
 use core::ffi::c_void;
 
@@ -506,9 +508,8 @@ pub unsafe extern "system" fn NetWkstaUserGetInfo(
     }
     *bufptr = core::ptr::null_mut();
     extern "system" {
-        fn NetrWkstaUserGetInfo(reserved: *mut u16, level: u32, info: *mut *mut u8) -> u32;
     }
-    let status = rpc_try(|| NetrWkstaUserGetInfo(core::ptr::null_mut(), level, bufptr)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
+    let status = rpc_try(|| NetrWkstaUserGetInfo(core::ptr::null_mut(), level, bufptr.cast())).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     status
 }
 

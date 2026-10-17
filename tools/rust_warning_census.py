@@ -80,6 +80,11 @@ LOGIC = {
     "unreachable_code",
     "unreachable_patterns",
     "clashing_extern_declarations",
+    # A cfg rustc has never heard of is always false, so the gated branch silently never
+    # compiles: cdfs's `cfg!(not(reactos))` (a feature spelled as a cfg) shipped the
+    # non-ReactOS answer, and desk's `feature = "unicode"` ran the ANSI branch in a UNICODE
+    # module (2026-10-17). An intentionally-off gate is declared in the crate's Cargo.toml.
+    "unexpected_cfgs",
     "unpredictable_function_pointer_comparisons",
     "ambiguous_wide_pointer_comparisons",
     "overflowing_literals",
@@ -119,7 +124,6 @@ NOISE = {
     "non_camel_case_types",
     "non_upper_case_globals",
     "bad_asm_style",
-    "unexpected_cfgs",
     "unnecessary_transmutes",
     "private_interfaces",
     "private_bounds",
@@ -350,17 +354,23 @@ class Unit:
     sites: list[Site] = field(default_factory=list)
 
 
+def dep_info(fpdir: Path) -> Path:
+    """A fingerprint dir's `deps/<lib>-<hash>.d`. It is named after the LIB target, which a
+    `[lib] name =` can rename (atlclasses-rust builds `atl_rust`); the fingerprint records it
+    as `lib-<name>`."""
+    m = _FP_HASH.match(fpdir.name)
+    assert m, fpdir
+    libs = [f.name[4:] for f in fpdir.glob("lib-*") if not f.name.endswith(".json")]
+    stem = libs[0] if len(libs) == 1 else m["crate"].replace("-", "_")
+    return fpdir.parent.parent / "deps" / f"{stem}-{m['hash']}.d"
+
+
 def unit_staleness(fpdir: Path, repo: Path) -> str:
     stamp = fpdir / "invoked.timestamp"
     m = _FP_HASH.match(fpdir.name)
     if not stamp.is_file() or not m:
         return "no invoked.timestamp"
-    deps_dir = fpdir.parent.parent / "deps"
-    # The dep-info is named after the LIB target, which a `[lib] name =` can rename
-    # (atlclasses-rust builds `atl_rust`); the fingerprint records it as `lib-<name>`.
-    libs = [f.name[4:] for f in fpdir.glob("lib-*") if not f.name.endswith(".json")]
-    stem = libs[0] if len(libs) == 1 else m["crate"].replace("-", "_")
-    dfile = deps_dir / f"{stem}-{m['hash']}.d"
+    dfile = dep_info(fpdir)
     if not dfile.is_file():
         return f"no dep-info {dfile.name}"
     built = stamp.stat().st_mtime

@@ -39,7 +39,7 @@ use crate::ntwrapper::NtUserxGetDesktopMapping;
 
 extern "C" {
     // ntoskrnl/ntdll cdecl variadic debug print.
-    fn DbgPrint(Format: *const i8, ...) -> ULONG;
+    pub fn DbgPrint(Format: *const i8, ...) -> ULONG;
     // misc/misc.c: PTHREADINFO GetW32ThreadInfo(VOID) — plain cdecl, NOT stdcall
     // (matches windows/window.rs; an extern "system" decl here would be stdcall on
     // i386 and silently UB-fold the call).

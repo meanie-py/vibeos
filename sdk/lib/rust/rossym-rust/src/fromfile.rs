@@ -38,8 +38,8 @@ use crate::types::*;
 use ntkrnl_sys::ddk::{IMAGE_DOS_HEADER, IMAGE_NT_HEADERS, IMAGE_SECTION_HEADER};
 
 extern "C" {
-    fn memcmp(s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, n: usize) -> i32;
-    fn strncpy(dst: *mut core::ffi::c_char, src: *const core::ffi::c_char, n: usize) -> *mut core::ffi::c_char;
+    pub fn memcmp(s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, n: usize) -> i32;
+    pub fn strncpy(dst: *mut core::ffi::c_char, src: *const core::ffi::c_char, n: usize) -> *mut core::ffi::c_char;
 }
 
 // PE signature constants. The ROSSYM_IS_VALID_* macros expand against these; they're not in the

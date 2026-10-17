@@ -1313,6 +1313,7 @@ def cmd_crate_repair(args):
         max_passes=args.max_passes,
         allow_single_target_width=args.allow_single_target_width,
         dry_run=args.dry_run,
+        features=args.features.split(",") if args.features else (),
     )
     crate_repair.print_session(session, as_json=args.json)
     if session.status in ("regressed", "max_passes"):
@@ -5604,6 +5605,9 @@ def main():
         "--allow-single-target-width",
         action="store_true",
         help="LOUD override: bake a pointer-width cast proven on ONE target only",
+    )
+    p.add_argument(
+        "--features", help="cargo features to check with (comma-separated), as the build does"
     )
     p.add_argument("--json", action="store_true", help="Machine-readable ledger")
 

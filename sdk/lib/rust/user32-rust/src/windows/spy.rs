@@ -14,6 +14,8 @@
 #![allow(dead_code, unused_mut)]
 
 use core::ffi::{c_char, c_void};
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::windows::window::HeapAlloc;
 use win32k_sys::win32k::*;
 
 // ── message-range bases (psdk/commctrl.h). Not in the win32k-sys substrate, so
@@ -2170,7 +2172,6 @@ extern "system" {
     fn TlsSetValue(dwTlsIndex: DWORD, lpTlsValue: LPVOID) -> BOOL;
     fn GlobalGetAtomNameA(nAtom: ATOM, lpBuffer: LPSTR, nSize: INT) -> UINT;
     fn GetProcessHeap() -> HANDLE;
-    fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: SIZE_T) -> LPVOID;
     fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID) -> BOOL;
     fn RegOpenKeyA(hKey: HKEY, lpSubKey: LPCSTR, phkResult: PHKEY) -> LONG;
     fn RegQueryValueExA(

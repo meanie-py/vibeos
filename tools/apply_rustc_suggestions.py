@@ -27,6 +27,7 @@ the canonical path, per arch, and it would apply one arch's view of a cfg-split 
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import posixpath
 import re
@@ -104,9 +105,7 @@ def collect(build_dirs: list[Path], lints: set[str]) -> tuple[dict, dict, dict[s
         for u in units:
             if u.stale:
                 continue
-            m = census._FP_HASH.match(u.fpdir.name)
-            assert m
-            dfile = u.fpdir.parent.parent / "deps" / f"{m['crate'].replace('-', '_')}-{m['hash']}.d"
+            dfile = census.dep_info(u.fpdir)
             compiled[arch].update(_norm(d) for d in census._dep_paths(dfile))
             for out in u.fpdir.glob("output-lib-*"):
                 for line in out.read_text(errors="replace").splitlines():
@@ -157,10 +156,24 @@ def main(argv: list[str]) -> int:
     )
     ap.add_argument("build_dirs", nargs="+", type=Path)
     ap.add_argument("--lint", action="append", required=True, help="lint to fix (repeatable)")
+    ap.add_argument(
+        "--skip-crate",
+        action="append",
+        default=[],
+        metavar="GLOB",
+        help="leave a crate dir alone (fnmatch, repeatable): another lane's hot crate, "
+        "where a mechanical sweep is only a merge conflict",
+    )
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args(argv)
 
     sugg, compiled, stale = collect(args.build_dirs, set(args.lint))
+    # A crate this run will not touch needs no fresh diagnostics.
+    stale = {
+        k: v
+        for k, v in stale.items()
+        if not any(fnmatch.fnmatchcase(k.split(":", 1)[1], g) for g in args.skip_crate)
+    }
     if stale:
         print(
             f"STALE: {len(stale)} crate(s) edited since their build; rebuild first:",
@@ -173,7 +186,11 @@ def main(argv: list[str]) -> int:
     root = REPO / "sdk" / "lib" / "rust"
     n = 0
     skipped_generated = 0
+    skipped_crates = 0
     for f, edits in plan.items():
+        if any(fnmatch.fnmatchcase(f.split("/", 1)[0], g) for g in args.skip_crate):
+            skipped_crates += len(edits)
+            continue
         p = root / f
         if generated(p):
             skipped_generated += len(edits)
@@ -187,6 +204,7 @@ def main(argv: list[str]) -> int:
     offered = sum(len(v) for per in sugg.values() for v in per.values())
     print(
         f"{n} edit(s); {skipped_generated} left in generated files; "
+        f"{skipped_crates} in --skip-crate crates; "
         f"{offered} arch-suggestions read",
         file=sys.stderr,
     )

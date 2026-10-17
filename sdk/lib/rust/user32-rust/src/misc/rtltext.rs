@@ -9,6 +9,10 @@
 // (KeUserModeCallback shim) is dropped — usermode DrawTextExWorker calls ExtTextOutW
 // directly.
 use win32k_sys::win32k::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::winbase::ExtTextOutW;
+use crate::windows::window::HeapAlloc;
+use crate::winbase::MoveToEx;
 #[allow(unused_imports)]
 use core::ffi::c_void;
 
@@ -40,19 +44,8 @@ extern "system" {
     fn GetTextExtentPointW(hdc: HDC, lpString: LPCWSTR, cbString: i32, lpSize: *mut SIZE) -> i32;
     fn GetTextMetricsW(hdc: HDC, lptm: *mut TEXTMETRICW) -> i32;
     fn GetTextColor(hdc: HDC) -> u32;
-    fn ExtTextOutW(
-        hdc: HDC,
-        x: i32,
-        y: i32,
-        fuOptions: u32,
-        lprc: *const RECT,
-        lpString: LPCWSTR,
-        cchCount: u32,
-        lpDx: *const i32,
-    ) -> i32;
     fn CreatePen(iStyle: i32, cWidth: i32, color: u32) -> HPEN;
     fn SelectObject(hdc: HDC, h: HGDIOBJ) -> HGDIOBJ;
-    fn MoveToEx(hdc: HDC, x: i32, y: i32, lppt: *mut core::ffi::c_void) -> i32;
     fn LineTo(hdc: HDC, x: i32, y: i32) -> i32;
     fn DeleteObject(ho: HGDIOBJ) -> i32;
     fn GetGraphicsMode(hdc: HDC) -> i32;
@@ -64,7 +57,6 @@ extern "system" {
     fn SelectClipRgn(hdc: HDC, hrgn: HRGN) -> i32;
     fn GdiFlush() -> i32;
     fn GetProcessHeap() -> *mut core::ffi::c_void;
-    fn HeapAlloc(hHeap: *mut core::ffi::c_void, dwFlags: u32, dwBytes: usize) -> *mut core::ffi::c_void;
     fn HeapFree(hHeap: *mut core::ffi::c_void, dwFlags: u32, lpMem: *mut core::ffi::c_void) -> i32;
     fn ExitProcess(uExitCode: u32) -> !;
 }
@@ -937,7 +929,7 @@ pub unsafe extern "system" fn DrawTextExWorker(
 
     if (flags & DT_MODIFYSTRING) != 0 {
         size_retstr = ((count + 4) as usize) * core::mem::size_of::<u16>();
-        retstr = HeapAlloc(GetProcessHeap(), 0, size_retstr).cast();
+        retstr = HeapAlloc(GetProcessHeap(), 0, (size_retstr) as SIZE_T).cast();
         if retstr.is_null() {
             return 0;
         }

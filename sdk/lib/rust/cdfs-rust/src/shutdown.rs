@@ -1,4 +1,9 @@
 use ntkrnl_sys::base::*;
+// The crate's own functions: the definition is the declaration.
+use crate::cdmacros::CdAcquireVcbExclusive;
+use crate::verfysup::CdCheckForDismount;
+use crate::cddata::CdCompleteRequest;
+use crate::cachesup::CdPurgeVolume;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ke::*;
@@ -17,13 +22,10 @@ extern "C" {
     fn CdAcquireCdData(IrpContext: *mut IRP_CONTEXT);
 }
 extern "C" {
-    fn CdAcquireVcbExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, IgnoreWait: BOOLEAN,) -> u32;
 }
 extern "C" {
-    fn CdPurgeVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, DismountUnderway: BOOLEAN,) -> NTSTATUS;
 }
 extern "C" {
-    fn CdCheckForDismount(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Force: i32,) -> i32;
 }
 extern "C" {
     fn CdReleaseVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
@@ -32,7 +34,6 @@ extern "C" {
     fn CdReleaseCdData(IrpContext: *mut IRP_CONTEXT);
 }
 extern "C" {
-    fn CdCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: PIRP, Status: i32);
 }
 
 // ---- file-scope preamble (translated) ----
@@ -139,7 +140,7 @@ pub unsafe extern "C" fn CdCommonShutdown(IrpContext: *mut IRP_CONTEXT, Irp: PIR
         IoUnregisterFileSystem(CdData.HddFileSystemDeviceObject);
         IoDeleteDevice(CdData.HddFileSystemDeviceObject);
 
-        CdCompleteRequest(IrpContext, Irp, STATUS_SUCCESS);
+        CdCompleteRequest((IrpContext).cast(), Irp, STATUS_SUCCESS);
         return STATUS_SUCCESS;
     }
 }

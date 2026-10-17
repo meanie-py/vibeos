@@ -1,0 +1,37 @@
+# sc (base/applications/sc -> sc-rust, batch A). The shipped Rust diffed against the pre-flip C
+# (`python -m rustconv.c_oracle`). The Rust fixes two C crashes on input alone, so those cases
+# run the Rust by itself: the C's `query bufsize=` freed the buffer it returned a count for and
+# Query read it (use-after-free, then a double free), and `query ri=` as the last argument read
+# argv[argc]. `sc failure`'s ParseFailureActions overflow is not exercised here: reaching it
+# means giving a live service a failure action.
+module: sc
+variants:
+  c: '%SystemRoot%\bin\modrun\sc_c.exe'
+  rust: '%SystemRoot%\system32\sc.exe'
+ninja:
+- sc_c
+stage:
+- src: build-{arch}/base/applications/sc/sc_c.exe
+  dest: bin/modrun/sc_c.exe
+cases:
+- id: usage
+  expect: ['DESCRIPTION:']
+- id: query_all
+  args: 'query'
+  expect: ['SERVICE_NAME:']
+- id: query_one
+  args: 'query eventlog'
+  expect: ['SERVICE_NAME: eventlog']
+- id: query_missing
+  args: 'query nosuchservice'
+# A buffer that holds some entries but not all: ERROR_MORE_DATA with NumServices > 0.
+- id: bufsize_partial
+  variants:
+    rust: '%SystemRoot%\system32\sc.exe'
+  args: 'query bufsize= 600'
+  expect: ['SERVICE_NAME:']
+- id: resume_index_missing
+  variants:
+    rust: '%SystemRoot%\system32\sc.exe'
+  args: 'query ri='
+  expect: ['SERVICE_NAME:']

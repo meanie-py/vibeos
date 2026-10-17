@@ -1,5 +1,7 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use crate::types::*;
+// The crate's own functions: the definition is the declaration.
+use crate::ddk_shims::ScratchBuffer_ExecuteCdb;
 use kmdf_sys::*;
 use ntkrnl_sys::ddk::{IRP, PIRP, IO_STACK_LOCATION, PIO_STACK_LOCATION, GUID, LPGUID, LPCGUID, DEVICE_OBJECT, PDEVICE_OBJECT, MDL, PMDL};
 use ntkrnl_sys::base::*;
@@ -10,7 +12,6 @@ use core::ffi::c_void;
 extern "system" {
     fn ScratchBuffer_BeginUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_EndUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
-    fn ScratchBuffer_ExecuteCdb( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, TransferSize: u32, Retry: u8, Cdb: *const core::ffi::c_void, CdbLength: u32, ) -> i32;
     fn ScratchBuffer_ResetItems(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, ClearStatus: u8);
 }
 unsafe extern "C" {
@@ -104,7 +105,7 @@ pub unsafe extern "C" fn DeviceHandleAacsReadMediaKeyBlock(
                     Request,
                     transferSize,
                     1u8,
-                    &raw const cdb as *const core::ffi::c_void,
+                    (&raw const cdb as *mut core::ffi::c_void).cast(),
                     12,
                 );
             }
@@ -291,7 +292,7 @@ pub unsafe extern "C" fn DeviceHandleAacsStartSession(
         cdb.REPORT_KEY.as_mut().AllocationLength[1] = (dataTransferLength & 0xff) as u8;
         cdb.REPORT_KEY.as_mut().set_KeyFormat(0x00); // DVD_REPORT_AGID?
 
-        status = ScratchBuffer_ExecuteCdb(DeviceExtension, Request, dataTransferLength, 1, core::ptr::addr_of_mut!(cdb) as *const core::ffi::c_void, 12);
+        status = ScratchBuffer_ExecuteCdb(DeviceExtension, Request, dataTransferLength, 1, (core::ptr::addr_of_mut!(cdb) as *mut core::ffi::c_void).cast(), 12);
 
         #[cfg(feature = "ENABLE_AACS_TESTING")]
         {
@@ -363,7 +364,7 @@ pub unsafe extern "C" fn DeviceHandleAacsEndSession(
                 Request,
                 transferSize,
                 0, // FALSE
-                &cdb as *const CDB as *const core::ffi::c_void,
+                (&cdb as *const CDB as *mut core::ffi::c_void).cast(),
                 12,
             );
 
@@ -452,8 +453,8 @@ pub unsafe extern "C" fn DeviceHandleAacsSendCertificate(
             Request,
             data_transfer_length,
             0u8, // FALSE
-            core::ptr::addr_of_mut!(cdb) as *const core::ffi::c_void,
-            12u32,
+            (core::ptr::addr_of_mut!(cdb) as *mut core::ffi::c_void).cast(),
+            (12u32) as u8,
         );
 
         // #ifdef ENABLE_AACS_TESTING — must NOT mask the real CDB status in
@@ -527,7 +528,7 @@ pub unsafe extern "C" fn DeviceHandleAacsGetCertificate(
             Request,
             data_transfer_length,
             1, // TRUE
-            &cdb as *const CDB as *const core::ffi::c_void,
+            (&cdb as *const CDB as *mut core::ffi::c_void).cast(),
             12,
         );
 
@@ -650,7 +651,7 @@ pub unsafe extern "C" fn DeviceHandleAacsGetChallengeKey(
             Request,
             dataTransferLength,
             1, // TRUE
-            &mut cdb as *mut CDB as *const core::ffi::c_void,
+            (&mut cdb as *mut CDB as *mut core::ffi::c_void).cast(),
             12,
         );
 
@@ -776,8 +777,8 @@ pub unsafe extern "C" fn DeviceHandleSendChallengeKey(
             Request,
             dataTransferLength,
             0, // FALSE
-            &cdb as *const CDB as *const core::ffi::c_void,
-            12u32,
+            (&cdb as *const CDB as *mut core::ffi::c_void).cast(),
+            (12u32) as u8,
         );
 
         // #ifdef ENABLE_AACS_TESTING
@@ -849,7 +850,7 @@ pub unsafe extern "C" fn DeviceHandleReadVolumeId(
             Request,
             data_transfer_length,
             TRUE as u8,
-            cdb.as_mut_ptr() as *const core::ffi::c_void,
+            (cdb.as_mut_ptr() as *mut core::ffi::c_void).cast(),
             12,
         );
 
@@ -974,7 +975,7 @@ pub unsafe extern "C" fn DeviceHandleAacsReadSerialNumber(
                 Request as WDFREQUEST,
                 dataTransferLength,
                 1, // TRUE
-                &cdb as *const CDB as *const core::ffi::c_void,
+                (&cdb as *const CDB as *mut core::ffi::c_void).cast(),
                 12,
             );
 
@@ -1084,8 +1085,8 @@ pub unsafe extern "C" fn DeviceHandleAacsReadMediaId(
             Request,
             dataTransferLength,
             1u8,
-            &mut cdb as *mut CDB as *const core::ffi::c_void,
-            12u32,
+            (&mut cdb as *mut CDB as *mut core::ffi::c_void).cast(),
+            (12u32) as u8,
         );
 
         #[cfg(feature = "ENABLE_AACS_TESTING")]
@@ -1207,7 +1208,7 @@ pub unsafe extern "C" fn DeviceHandleAacsReadBindingNonce(
             Request,
             dataTransferLength,
             1, // TRUE
-            core::ptr::addr_of!(cdb) as *const CDB as *const core::ffi::c_void,
+            (core::ptr::addr_of!(cdb) as *const CDB as *mut core::ffi::c_void).cast(),
             12,
         );
 
@@ -1319,7 +1320,7 @@ pub unsafe extern "C" fn DeviceHandleAacsGenerateBindingNonce(
                 Request,
                 dataTransferLength,
                 1, // TRUE
-                &mut cdb as *mut CDB as *const core::ffi::c_void,
+                (&mut cdb as *mut CDB as *mut core::ffi::c_void).cast(),
                 12,
             );
 

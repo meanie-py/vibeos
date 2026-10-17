@@ -14,6 +14,8 @@
 //! tripwire that catches any that creep back.
 #![allow(clippy::all)]
 use crate::prelude::*;
+// One declaration per external symbol: the variant matching the C prototype.
+pub use crate::compobj::ffi::HeapAlloc;
 use core::ffi::c_void;
 
 // Base types com-sys doesn't carry (they're kernel32, not COM).
@@ -66,7 +68,6 @@ pub const HEAP_ZERO_MEMORY: u32 = 0x0000_0008;
 extern "system" {
     // --- heap ---
     pub fn GetProcessHeap() -> HANDLE;
-    pub fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: SIZE_T) -> LPVOID;
     pub fn HeapReAlloc(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID, dwBytes: SIZE_T) -> LPVOID;
     pub fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID) -> BOOL;
     pub fn HeapSize(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPCVOID) -> SIZE_T;
@@ -141,13 +142,13 @@ extern "system" {
 /// wine/heap.h: `heap_alloc(len)` → HeapAlloc(GetProcessHeap(), 0, len)
 #[inline]
 pub unsafe fn heap_alloc(len: SIZE_T) -> LPVOID {
-    HeapAlloc(GetProcessHeap(), 0, len)
+    HeapAlloc(GetProcessHeap(), 0, (len) as usize)
 }
 
 /// wine/heap.h: `heap_alloc_zero(len)` → HeapAlloc(.., HEAP_ZERO_MEMORY, len)
 #[inline]
 pub unsafe fn heap_alloc_zero(len: SIZE_T) -> LPVOID {
-    HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, len)
+    HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (len) as usize)
 }
 
 /// wine/heap.h: `heap_realloc(mem, len)` — NULL mem means a fresh alloc (HeapReAlloc
@@ -155,7 +156,7 @@ pub unsafe fn heap_alloc_zero(len: SIZE_T) -> LPVOID {
 #[inline]
 pub unsafe fn heap_realloc(mem: LPVOID, len: SIZE_T) -> LPVOID {
     if mem.is_null() {
-        HeapAlloc(GetProcessHeap(), 0, len)
+        HeapAlloc(GetProcessHeap(), 0, (len) as usize)
     } else {
         HeapReAlloc(GetProcessHeap(), 0, mem, len)
     }

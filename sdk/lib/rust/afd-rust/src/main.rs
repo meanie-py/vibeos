@@ -1,4 +1,7 @@
 use crate::types::*;
+// One declaration per external symbol: types.rs.
+use crate::types::TdiDisassociateAddressFile;
+use crate::types::TdiDisconnect;
 use crate::glue::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -24,8 +27,6 @@ extern "C" {
     fn SocketAcquireStateLock(FCB: PAFD_FCB) -> BOOLEAN;
     fn SocketStateUnlock(FCB: PAFD_FCB);
     fn KillSelectsForFCB(DeviceExt: PAFD_DEVICE_EXTENSION, FileObject: PFILE_OBJECT, Force: BOOLEAN);
-    fn TdiDisassociateAddressFile(Object: PVOID) -> NTSTATUS;
-    fn TdiDisconnect( Request: *mut PIRP, ConnectionObject: PVOID, Timeout: PLARGE_INTEGER, Flags: USHORT, CompletionRoutine: PIO_COMPLETION_ROUTINE, CompletionContext: PVOID, CallInfo: PTDI_CONNECTION_INFORMATION, ReturnInfo: PTDI_CONNECTION_INFORMATION, ) -> NTSTATUS;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -606,7 +607,7 @@ unsafe fn AfdCloseSocket(
         QeltEntry = RemoveHeadList(core::ptr::addr_of_mut!((*FCB).PendingConnections));
         Qelt = (QeltEntry as *mut u8).offset(-(core::mem::offset_of!(AFD_TDI_OBJECT_QELT, ListEntry) as isize)) as PAFD_TDI_OBJECT_QELT;
 
-        TdiDisassociateAddressFile((*Qelt).Object.Object as PVOID);
+        TdiDisassociateAddressFile(((*Qelt).Object.Object as PVOID).cast());
         ObDereferenceObject((*Qelt).Object.Object as PVOID);
         ZwClose((*Qelt).Object.Handle);
 
@@ -672,7 +673,7 @@ unsafe fn AfdCloseSocket(
     }
 
     if !(*FCB).Connection.Object.is_null() {
-        TdiDisassociateAddressFile((*FCB).Connection.Object as PVOID);
+        TdiDisassociateAddressFile(((*FCB).Connection.Object as PVOID).cast());
         ObDereferenceObject((*FCB).Connection.Object as PVOID);
     }
 
@@ -811,7 +812,7 @@ unsafe fn DoDisconnect(FCB: PAFD_FCB) -> NTSTATUS {
 
     Status = TdiDisconnect(
         core::ptr::addr_of_mut!((*FCB).DisconnectIrp.InFlightRequest),
-        (*FCB).Connection.Object as PVOID,
+        ((*FCB).Connection.Object as PVOID).cast(),
         core::ptr::addr_of_mut!((*FCB).DisconnectTimeout),
         (*FCB).DisconnectFlags,
         Some(DisconnectComplete),
