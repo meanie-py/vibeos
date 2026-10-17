@@ -343,8 +343,12 @@ unsafe extern "C" fn ArbpRetestAllocation(
     // Failure:
     if (State.Flags as ::core::ffi::c_int) & (ARBITER_STATE_FLAG_WORKSPACE as i32) != 0 {
         ExFreePoolWithTag(State.WorkSpace as PVOID, TAG_ARBITER);
-        // The C also clears WorkSpace and the flag here; State is a local that is never read
-        // again, so those resets are dropped.
+        // As the C does; State is a local never read again, so rustc calls these dead.
+        #[allow(unused_assignments)]
+        {
+            State.WorkSpace = 0;
+            State.Flags = ((State.Flags as ::core::ffi::c_int) & (!ARBITER_STATE_FLAG_WORKSPACE) as i32) as UINT16;
+        }
     }
     RtlFreeRangeList((*Arbiter).PossibleAllocation);
     RtlInitializeRangeList((*Arbiter).PossibleAllocation);
@@ -646,8 +650,12 @@ unsafe extern "C" fn ArbpQueryConflict(
     /* Cleanup */
     if (State.Flags & (ARBITER_STATE_FLAG_WORKSPACE as UINT16)) != 0 {
         ExFreePoolWithTag(State.WorkSpace as PVOID, TAG_ARBITER);
-        // The C also clears WorkSpace and the flag here; State is a local that is never read
-        // again, so those resets are dropped.
+        // As the C does; State is a local never read again, so rustc calls these dead.
+        #[allow(unused_assignments)]
+        {
+            State.WorkSpace = 0;
+            State.Flags &= !(ARBITER_STATE_FLAG_WORKSPACE as UINT16);
+        }
     }
     RtlFreeRangeList((*Arbiter).PossibleAllocation);
     RtlInitializeRangeList((*Arbiter).PossibleAllocation);
