@@ -3274,6 +3274,13 @@ CONTROLS: list[Control] = [
 # Lints deliberately NOT fixture-driven, each with the reason. Anything absent
 # from both this set and CONTROLS fails test_every_lint_is_accounted_for.
 UNCOVERED: dict[str, str] = {
+    "scan_shadowed_c_define": (
+        "it is a native Rust rule with no Python script for a Control to run. Its known-bad "
+        "and known-good fixtures are the unit tests in "
+        "tools/vibeos-lint/src/rules/shadowed_c_define.rs: balmgr's invented "
+        "THREAD_BOOST_PRIORITY = 23 must be flagged, its fix through a Rust local must not, "
+        "and neither must another module's same-named macro."
+    ),
     "scan_cmake_linked_rust": (
         "it models modules from build-amd64/build.ninja and the tree's own CMakeLists through "
         "cargo_cell_gen.survey, so a fixture directory has nothing to survey. The labelling is "
