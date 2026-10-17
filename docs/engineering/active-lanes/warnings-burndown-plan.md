@@ -49,10 +49,11 @@ b8eac0dccad2 was fixed by 61998182a8f (roadmap registry).
   external-symbol grader's 14 "UB" calls were all benign or latent once checked: it missed a
   `cfg` split, a trampoline, and a C-side truncation. By contrast the FlagOn-truncation and
   constant audits were right, and found live bugs.
-- Before `land`: build all three arches on the exact tree you commit, then run `check-tooling`
-  and `check --strict --scope source-early` and `--scope source-deferred`. `land` refuses a tree
-  no build has seen, and its strict preflight lints run partitions plain `check` skips.
-  Don't touch the tree while a smoke is running; its staleness check runs late.
+- Landing (since 2026-10-16): commit, run `./vibeos-cli check` and the tests for what you
+  touched, then message the `vibeos-integration-f2` session with
+  `merge warnings-burndown @ <sha> — <one line>`. Keep working; it merges, gates and reports
+  back (docs/engineering/active-lanes/integration.md). No `land`, and no warm builds ×3 just
+  to submit. Don't touch the tree while a smoke you started is running.
 
 ## 2026-10-16 — four owed items closed, and the version/null classes gated
 
