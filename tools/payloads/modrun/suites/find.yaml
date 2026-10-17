@@ -20,6 +20,9 @@ cases:
   - apple pie
 - id: ignorecase
   args: /I "apple" %SystemRoot%\bin\modrun\data\lines.txt
+  diverge:
+  - why: "the C's unsigned cch1 - cch2 let the empty line match: it compared past the line"
+    c: '^$'
 - id: count
   args: /C "an" %SystemRoot%\bin\modrun\data\lines.txt
 - id: invert-number

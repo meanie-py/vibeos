@@ -1,8 +1,8 @@
 # sort (base/applications/cmdutils/sort -> sort-rust, batch C). The shipped Rust diffed
 # against the pre-flip C (`python -m rustconv.c_oracle`). ReactOS sort reads stdin only:
-# a file argument is ignored by the C, so every case feeds stdin. modrun ends every stdin
-# line with CRLF, so `nonl` redirects a file through cmd instead: the C cut the last
-# character of a final line without a newline ("newlin"), and that case runs the Rust alone.
+# a file argument is ignored by the C, so every case feeds stdin. Not covered: the C cut the
+# last character of a final line with no newline (fixed in the Rust), but modrun ends every
+# stdin line with CRLF, and `cmd /c sort < file` hangs under modrun's detached launch.
 module: sort
 variants:
   c: '%SystemRoot%\bin\modrun\sort_c.exe'
@@ -12,8 +12,6 @@ ninja:
 stage:
 - src: build-{arch}/base/applications/cmdutils/sort/sort_c.exe
   dest: bin/modrun/sort_c.exe
-- src: tools/payloads/modrun/data/nonl.txt
-  dest: bin/modrun/data/nonl.txt
 cases:
 - id: stdin
   stdin: &id001
@@ -42,8 +40,3 @@ cases:
   - a
 - id: usage
   args: /?
-- id: nonl
-  variants:
-    rust: '%SystemRoot%\system32\cmd.exe /c %SystemRoot%\system32\sort.exe <'
-  args: '%SystemRoot%\bin\modrun\data\nonl.txt'
-  expect: ['no trailing newline']

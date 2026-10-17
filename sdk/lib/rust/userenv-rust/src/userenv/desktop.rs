@@ -111,7 +111,7 @@ unsafe extern "C" fn GetProgramsPath(mut bCommonPath: BOOL, mut lpProgramsPath: 
     let mut Error: i32 = 0;
 
     Error = RegOpenKeyExW(
-        0x8000_0001u32 as i32 as isize as HKEY,
+        HKEY_CURRENT_USER,
         win32macros_rust::wide_bytes!(b"S\0o\0f\0t\0w\0a\0r\0e\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0E\0x\0p\0l\0o\0r\0e\0r\0\\\0U\0s\0e\0r\0 \0S\0h\0e\0l\0l\0 \0F\0o\0l\0d\0e\0r\0s\0\0\0") as LPCWSTR,
         0,
         KEY_QUERY_VALUE,
