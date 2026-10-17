@@ -199,7 +199,7 @@ pub unsafe extern "system" fn HalAllocateCommonBuffer(
         return core::ptr::null_mut();
     }
     if !LogicalAddress.is_null() {
-        *LogicalAddress = base_phys;
+        core::ptr::write_unaligned(LogicalAddress, base_phys);
     }
     va
 }

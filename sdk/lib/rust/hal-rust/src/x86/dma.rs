@@ -980,7 +980,7 @@ pub unsafe extern "system" fn HalAllocateCommonBuffer(
         if va.is_null() {
             return ptr::null_mut();
         }
-        *LogicalAddress = core::mem::transmute(MmGetPhysicalAddress(va));
+        core::ptr::write_unaligned(LogicalAddress, core::mem::transmute(MmGetPhysicalAddress(va)));
         va
     }
 }

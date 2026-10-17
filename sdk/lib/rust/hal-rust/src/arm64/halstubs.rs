@@ -588,7 +588,7 @@ pub unsafe extern "system" fn HalGetInterruptVector(
             *Irql = super::clock::DEVICE_IRQL;
         }
         if !Affinity.is_null() {
-            *Affinity = 1;
+            core::ptr::write_unaligned(Affinity, 1);
         }
     }
     intid
@@ -851,7 +851,7 @@ pub unsafe extern "system" fn HalTranslateBusAddress(
 ) -> ddk::BOOLEAN {
     unsafe {
         if !TranslatedAddress.is_null() {
-            (*TranslatedAddress).QuadPart = BusAddress.QuadPart;
+            core::ptr::write_unaligned(core::ptr::addr_of_mut!((*TranslatedAddress).QuadPart), BusAddress.QuadPart);
         }
     }
 

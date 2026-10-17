@@ -1444,7 +1444,7 @@ pub unsafe extern "system" fn HalpGetRootInterruptVector(
 
 
     unsafe {
-        *Affinity = HalpDefaultInterruptAffinity;
+        core::ptr::write_unaligned(Affinity, HalpDefaultInterruptAffinity);
     }
 
     system_vector as ULONG

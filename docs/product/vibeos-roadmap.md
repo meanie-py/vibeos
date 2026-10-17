@@ -6645,8 +6645,14 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   `NtQueryVirtualMemory`, which reported every image view as `MEM_PRIVATE` and device-physical
   memory as `MEM_IMAGE`; all now use the `_MI_VAD_TYPE_*` names. Armed, all three arches then
   booted green UP and `-smp 2` (amd64 with the ladder), and kmtest conformance held on all
-  three. **Next:** ex-rust, hal-rust, then the ob/ps/se/mm crates, one crate and one boot
-  each; then restore the 89 asserts `scan_dropped_asserts` baselines. `debug_assert!` is gated on
+  three. **ex-rust and hal-rust ARMED 2026-10-17**, finding: `NtGlobalFlag`'s DBG bits invented
+  (0x20, heap free-checking in every process, for the C's close-exception/symbol-load bits);
+  HAL writes through pointers into the pack(4) resource descriptor (now unaligned writes);
+  `ExRaiseHardError`/`ExInitializeResourceLite` must fault on NULL like the C (kmtest); and i386
+  interrupt frames at odd addresses from LLVM's leaf frames, so i386 kernel code builds with
+  `-Zub-checks=no`. Field manual: "Arming `debug-assertions` also arms rustc's UB checks".
+  **Next:** the ob/ps/se/mm crates, one crate and one boot each; then restore the 89 asserts
+  `scan_dropped_asserts` baselines. `debug_assert!` is gated on
   `cfg(debug_assertions)`; `sdk/lib/rust/Cargo.toml`'s `[profile.release]` never sets it, so
   cargo's release default (off) applies and every kernel crate builds `--release`. Meanwhile
   `CMakeLists.txt:233` sets `-DDBG=1`, so the C original calls `RtlAssert`. **The mirror of

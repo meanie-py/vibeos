@@ -1015,9 +1015,14 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
 
     (*SharedUserData).CryptoExponent = 0;
 
+    // C (#if DBG): FLG_ENABLE_CLOSE_EXCEPTIONS | FLG_ENABLE_KDEBUG_SYMBOL_LOAD.
+    // The translation had invented 0x20 | 0x80000 -- FLG_HEAP_ENABLE_FREE_CHECK,
+    // which every PEB inherits, so arming this crate would have turned on heap
+    // free-checking in every process.
     #[cfg(debug_assertions)]
     {
-        NtGlobalFlag |= 0x00000020 | 0x00080000;
+        NtGlobalFlag |= 0x00400000 /* FLG_ENABLE_CLOSE_EXCEPTIONS */
+            | 0x00040000 /* FLG_ENABLE_KDEBUG_SYMBOL_LOAD */;
     }
 
     let boot_path = (*LoaderBlock).NtBootPathName;
