@@ -141,6 +141,32 @@ driver (`tools/merge_drivers.py`, which also merges the cohab census), and psapi
 - **`port flip` of a static library misses cargo cells.** timedate.cpl's cell linked
   `engine:c:tzlib` (now only a stub) and failed every arch's link until it was pointed at
   `engine:tzlib_rust`. flip should find `engine:c:<target>` users and rewrite or refuse.
+- **The call seal leaves a live `#ifdef` arm's calls optional** (from control-plane's owed
+  list, 2026-10-17; the original report, "it demands calls in dead arms", no longer
+  reproduces). `dead_regions.preprocessor_conditional_spans` marks EVERY arm of any `#if`
+  in a body dead. So on rundll32's `#ifdef UNICODE WideCharToMultiByte #else strncpy`, both
+  calls are optional, and a model that drops the live call passes the seal. The fix:
+  - Decide arms with `dead_regions.cond_truth`, given the TU's own defines. That means
+    `pinned_int_macros(module.definitions)`, plus the bare `-DNAME`s as `local` (UNICODE is
+    one); `pinned_int_macros` drops them. Plumb these through `seal_calls` into
+    `dead_region_spans`.
+  - Live arm required, dead arm optional, an undecidable chain optional as today.
+  - The prompt and cache are untouched: `call_contract` never reads `.dead`.
+
+  It TIGHTENS an audit, though, so measure it first. Re-check every banked body against
+  its C function's live-arm callees under its TU's defines. Then fix (re-buy) or allowlist
+  each body that dropped one, before the change can turn a `port replay` red.
+- **mmebuddy's looped playback is wrong twice** (`wave/streaming.c`; diagnosed 2026-10-17,
+  not yet graded or fixed).
+  - `DoWaveStreaming` reloads `LoopsRemaining = dwLoops` whenever the head header is
+    BEGINLOOP|ENDLOOP, and `CompleteIO` calls it after every completion, so a finite loop
+    count never runs down.
+  - `CompleteIO`'s loop branch drops that completion's bytes while partial completions keep
+    adding to `BytesCompleted` across passes, so the final pass can complete the header
+    with chunks still outstanding.
+
+  A harness needs fixtures for GetSoundDeviceFromInstance/Type/FunctionTable,
+  CompleteWaveHeader and a scripted CommitWaveBuffer.
 - **The live cost counter skips failed attempts.** Every attempt's `result.json` has
   `cost_usd: null`, and a body that ends in `max_tokens` is never added to the running total
   (DriveDlgProc's two 32K-token failures printed `$0.0000`). Batch H's real spend was summed
