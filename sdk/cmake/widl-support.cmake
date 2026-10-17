@@ -106,6 +106,26 @@ function(add_rpc_files __type)
     endforeach()
 endfunction()
 
+# SEH-guarded wrappers for a client stub set: add_rpc_guards(<idl stem> [prelude.h ...])
+# generates <stem>_guard.{c,h} from <stem>_c.h, and returns the .c in <stem>_GUARD_SOURCE
+# for the caller's source list. Under DUMMY_PSEH a C RpcTryExcept/__TRY is a no-op on
+# every arch; <fn>_guarded runs the stub under ntdll's RtlSehTryExcept instead.
+# tools/gen_rpc_guards.py explains the contract.
+function(add_rpc_guards __stem)
+    set(__bin ${CMAKE_CURRENT_BINARY_DIR})
+    set(__preludes)
+    foreach(__inc ${ARGN})
+        list(APPEND __preludes --prelude ${__inc})
+    endforeach()
+    add_custom_command(
+        OUTPUT ${__bin}/${__stem}_guard.c ${__bin}/${__stem}_guard.h
+        COMMAND ${CMAKE_COMMAND} -E env python3 ${REACTOS_SOURCE_DIR}/tools/gen_rpc_guards.py
+            --header ${__bin}/${__stem}_c.h ${__preludes}
+            --out-c ${__bin}/${__stem}_guard.c --out-h ${__bin}/${__stem}_guard.h
+        DEPENDS ${__bin}/${__stem}_c.h ${REACTOS_SOURCE_DIR}/tools/gen_rpc_guards.py)
+    set(${__stem}_GUARD_SOURCE ${__bin}/${__stem}_guard.c ${__bin}/${__stem}_guard.h PARENT_SCOPE)
+endfunction()
+
 function(add_rpc_file __type __idl_file)
     cmake_parse_arguments(__args "" "ACF;PREFIX_ALL;PREFIX_CLIENT;PREFIX_SERVER" "" ${ARGN})
     get_includes(INCLUDES)

@@ -34,6 +34,7 @@
 
 #include "rpc_binding.h"
 #include "epm.h"
+#include "epm_guard.h"
 #include "epm_towers.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(ole);
@@ -199,6 +200,7 @@ static RPC_STATUS epm_register( RPC_IF_HANDLE IfSpec, RPC_BINDING_VECTOR *Bindin
   ULONG i;
   RPC_STATUS status = RPC_S_OK;
   error_status_t status2;
+  DWORD code;
   ept_entry_t *entries;
   handle_t handle;
 
@@ -253,16 +255,12 @@ static RPC_STATUS epm_register( RPC_IF_HANDLE IfSpec, RPC_BINDING_VECTOR *Bindin
   {
       while (TRUE)
       {
-          __TRY
-          {
-              ept_insert(handle, BindingVector->Count * (UuidVector ? UuidVector->Count : 1),
-                         entries, replace, &status2);
-          }
-          __EXCEPT(rpc_filter)
-          {
-              status2 = GetExceptionCode();
-          }
-          __ENDTRY
+          /* The guarded wrapper catches on every arch; a __TRY here is a no-op under
+           * DUMMY_PSEH (epm_guard.c, tools/gen_rpc_guards.py). */
+          if (!ept_insert_guarded(rpc_filter, &code,
+                                  handle, BindingVector->Count * (UuidVector ? UuidVector->Count : 1),
+                                  entries, replace, &status2))
+              status2 = code;
           if (status2 == RPC_S_SERVER_UNAVAILABLE &&
               is_epm_destination_local(handle))
           {
@@ -347,6 +345,7 @@ RPC_STATUS WINAPI RpcEpUnregister( RPC_IF_HANDLE IfSpec, RPC_BINDING_VECTOR *Bin
   ULONG i;
   RPC_STATUS status = RPC_S_OK;
   error_status_t status2;
+  DWORD code;
   ept_entry_t *entries;
   handle_t handle;
 
@@ -394,16 +393,10 @@ RPC_STATUS WINAPI RpcEpUnregister( RPC_IF_HANDLE IfSpec, RPC_BINDING_VECTOR *Bin
 
   if (status == RPC_S_OK)
   {
-      __TRY
-      {
-          ept_insert(handle, BindingVector->Count * (UuidVector ? UuidVector->Count : 1),
-                     entries, TRUE, &status2);
-      }
-      __EXCEPT(rpc_filter)
-      {
-          status2 = GetExceptionCode();
-      }
-      __ENDTRY
+      if (!ept_insert_guarded(rpc_filter, &code,
+                              handle, BindingVector->Count * (UuidVector ? UuidVector->Count : 1),
+                              entries, TRUE, &status2))
+          status2 = code;
       if (status2 == RPC_S_SERVER_UNAVAILABLE)
           status2 = EPT_S_NOT_REGISTERED;
       if (status2 != RPC_S_OK)
@@ -433,6 +426,7 @@ RPC_STATUS WINAPI RpcEpResolveBinding( RPC_BINDING_HANDLE Binding, RPC_IF_HANDLE
   RpcBinding* bind = Binding;
   RPC_STATUS status;
   error_status_t status2;
+  DWORD code;
   handle_t handle;
   ept_lookup_handle_t entry_handle = NULL;
   twr_t *tower;
@@ -466,16 +460,10 @@ RPC_STATUS WINAPI RpcEpResolveBinding( RPC_BINDING_HANDLE Binding, RPC_IF_HANDLE
 
   while (TRUE)
   {
-    __TRY
-    {
-      ept_map(handle, &uuid, tower, &entry_handle, ARRAY_SIZE(towers), &num_towers, towers, &status2);
-      /* FIXME: translate status2? */
-    }
-    __EXCEPT(rpc_filter)
-    {
-      status2 = GetExceptionCode();
-    }
-    __ENDTRY
+    if (!ept_map_guarded(rpc_filter, &code,
+                         handle, &uuid, tower, &entry_handle, ARRAY_SIZE(towers), &num_towers, towers, &status2))
+      status2 = code;
+    /* FIXME: translate status2? */
     if (status2 == RPC_S_SERVER_UNAVAILABLE &&
         is_epm_destination_local(handle))
     {

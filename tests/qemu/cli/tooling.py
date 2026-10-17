@@ -95,6 +95,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_wine_registry_resources.py"),
     (".", ".", "tools/test_gen_delaylib.py"),
     (".", ".", "tools/test_gen_apisets_table.py"),
+    (".", ".", "tools/test_gen_rpc_guards.py"),
     # The characterisation driver's accusation rule. Its failure mode is to
     # quarantine INNOCENT tests -- it blamed seven for a drain bug, and four more
     # for the VM watchdog on the very next run after that was fixed. Raising
