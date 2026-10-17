@@ -24,6 +24,14 @@
  *      natively (guest kernel32's __except is DUMMY_PSEH — if the print
  *      exception reached guest SEH it would land in OUR frame).
  *
+ *   3b. The AV parameters survive a busy machine: thousands of AVs at varying
+ *      addresses while a second thread takes demand-zero faults. amd64's
+ *      KiPageFault used to re-read cr2 for ExceptionInformation[1] AFTER
+ *      enabling interrupts and running MmAccessFault, so a preemption, CPU
+ *      migration or nested fault in between reported ANOTHER fault's address
+ *      (rung 1 "AV params", exit 0xBAF2, once per few hundred -smp 2 gates).
+ *      One AV per boot could not see it; this rung makes it a near certainty.
+ *
  *   4. GetThreadContext(GetCurrentThread()) must return the GUEST's registers,
  *      into a buffer with a canary right behind it. While this syscall was
  *      flat-thunked the 64-bit kernel wrote its OWN 1232-byte CONTEXT into the
@@ -127,6 +135,25 @@ __asm__(
     "    nop\n"                    /* keep the return address inside the frame */
     "    addq $40, %rsp\n"
     "    ret\n"
+    ".seh_endproc\n"
+    /* FaultAt(Va): AV reading Va, resumed at FaultAtRecover (rung 3b). */
+    ".globl FaultAt\n"
+    ".def FaultAt; .scl 2; .type 32; .endef\n"
+    ".seh_proc FaultAt\n"
+    "FaultAt:\n"
+    "    subq $40, %rsp\n"
+    "    .seh_stackalloc 40\n"
+    "    .seh_endprologue\n"
+    "    .seh_handler Fault32Handler, @except\n"
+    "    movl (%rcx), %eax\n"
+    "    xorl %eax, %eax\n"
+    "    jmp 2f\n"
+    ".globl FaultAtRecover\n"
+    "FaultAtRecover:\n"
+    "    movl $0x1234, %eax\n"
+    "2:\n"
+    "    addq $40, %rsp\n"
+    "    ret\n"
     ".seh_endproc\n");
 ULONG_PTR CallInFrame(void *Fn, ULONG_PTR A1, ULONG_PTR A2, ULONG_PTR A3, ULONG_PTR A4);
 #define CTX_PC(c) ((c)->Rip)
@@ -163,6 +190,17 @@ __asm__(
     "    popl %edi\n"
     "    popl %esi\n"
     "    popl %ebx\n"
+    "    ret\n"
+    /* FaultAt(Va), cdecl: AV reading Va, resumed at FaultAtRecover (rung 3b). */
+    ".globl _FaultAt\n"
+    "_FaultAt:\n"
+    "    movl 4(%esp), %ecx\n"
+    "    movl (%ecx), %eax\n"
+    "    xorl %eax, %eax\n"
+    "    ret\n"
+    ".globl _FaultAtRecover\n"
+    "_FaultAtRecover:\n"
+    "    movl $0x1234, %eax\n"
     "    ret\n");
 
 #define CTX_PC(c) ((c)->Eip)
@@ -172,6 +210,10 @@ __asm__(
 #define CTX_DI(c) ((c)->Edi)
 #define GUEST_PC_LIMIT 0x80000000u
 #endif
+ULONG FaultAt(ULONG_PTR Va);
+void FaultAtRecover(void);
+/* Where the handler resumes an AV: rung 1's stub, or rung 3b's. */
+static void *volatile g_Recover = (void *)FaultRecover;
 
 /* i386 SEH handler ABI: cdecl(ExceptionRecord, EstablisherFrame, Context,
  * DispatcherContext) -> EXCEPTION_DISPOSITION. */
@@ -192,7 +234,7 @@ Fault32Handler(EXCEPTION_RECORD *Rec, void *Frame, CONTEXT *Ctx, void *Disp)
     g_Esi = (ULONG)CTX_SI(Ctx);
     g_Edi = (ULONG)CTX_DI(Ctx);
     if (Rec->ExceptionCode == 0xC0000005)
-        CTX_PC(Ctx) = (ULONG_PTR)FaultRecover; /* skip the faulting insn */
+        CTX_PC(Ctx) = (ULONG_PTR)g_Recover; /* skip the faulting insn */
     return ExceptionContinueExecution;
 }
 
@@ -244,6 +286,43 @@ typedef struct _FAULT32_CTXBUF
 
 #define FAULT32_CANARY(i) (0xC0DE0000u + (ULONG)(i))
 
+static void SayHex(const char *Label, ULONG V)
+{
+    static const char Digits[] = "0123456789abcdef";
+    char Buf[96];
+    ULONG n = 0, i;
+    while (Label[n] && n < 80) { Buf[n] = Label[n]; n++; }
+    Buf[n++] = ' '; Buf[n++] = '0'; Buf[n++] = 'x';
+    for (i = 0; i < 8; i++)
+        Buf[n++] = Digits[(V >> (28 - 4 * i)) & 0xF];
+    Buf[n++] = '\n';
+    Buf[n] = 0;
+    Say(Buf);
+    /* stdout does not reach serial; a debug print does (rung 3 proves it is
+     * consumed without touching our handler), so the failure is triageable. */
+    OutputDebugStringA(Buf);
+}
+
+/* Rung 3b's churn: demand-zero faults on fresh pages, so cr2 keeps moving on
+ * whichever CPU this runs on, at addresses far above rung 3b's < 64 KiB. */
+#define FAULT32_STORM 5000
+static volatile LONG g_StopChurn;
+static DWORD WINAPI Churn(LPVOID Param)
+{
+    (void)Param;
+    while (!g_StopChurn)
+    {
+        volatile UCHAR *Mem = VirtualAlloc(NULL, 0x40000, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+        ULONG Off;
+        if (!Mem)
+            break;
+        for (Off = 0; Off < 0x40000 && !g_StopChurn; Off += 0x1000)
+            Mem[Off] = 1;
+        VirtualFree((void *)Mem, 0, MEM_RELEASE);
+    }
+    return 0;
+}
+
 int start(void) /* i386 symbol _start (-e _start); x64 symbol start (-e start) */
 {
     FAULT32_EXCREG Reg; /* on-stack: see PushFrame note */
@@ -294,6 +373,38 @@ int start(void) /* i386 symbol _start (-e _start); x64 symbol start (-e start) *
     if (g_Hits != 2)
         { PopFrame(&Reg); Say("[FAULT32] rung3 FAIL: DBG_PRINTEXCEPTION hit guest SEH\n"); ExitProcess(0xBAF5); }
     Say("[FAULT32] rung3 PASS: ODS consumed\n");
+
+    /* -- Rung 3b: AV parameters under fault churn ------------------------- */
+    {
+        HANDLE Churner = CreateThread(NULL, 0, Churn, NULL, 0, NULL);
+        ULONG k;
+        if (!Churner)
+            { PopFrame(&Reg); Say("[FAULT32] rung3b FAIL: CreateThread\n"); ExitProcess(0xBAF9); }
+        g_Recover = (void *)FaultAtRecover;
+        for (k = 0; k < FAULT32_STORM; k++)
+        {
+            /* Inside the never-mapped first 64 KiB; the churn faults far
+             * above it, so a borrowed cr2 cannot match by accident. */
+            ULONG_PTR Va = 0x1000 + ((k * 0x1238u) & 0xEFF8u);
+            ULONG Hits = g_Hits;
+            if (FaultAt(Va) != 0x1234 || g_Hits != Hits + 1 || g_Code != 0xC0000005 ||
+                g_NParams < 2 || g_P0 != 0 || g_P1 != (ULONG)Va)
+            {
+                g_StopChurn = 1;
+                SayHex("[FAULT32] rung3b FAIL at iteration", k);
+                SayHex("[FAULT32] rung3b expected address", (ULONG)Va);
+                SayHex("[FAULT32] rung3b ExceptionInformation[1]", g_P1);
+                SayHex("[FAULT32] rung3b ExceptionInformation[0]", g_P0);
+                PopFrame(&Reg);
+                ExitProcess(0xBAF2);
+            }
+        }
+        g_StopChurn = 1;
+        WaitForSingleObject(Churner, 30000);
+        CloseHandle(Churner);
+        g_Recover = (void *)FaultRecover;
+    }
+    Say("[FAULT32] rung3b PASS: AV parameters exact across 5000 faults under churn\n");
 
     /* Rungs 4-5 need no handler, and rung 5 never returns here to pop it. */
     PopFrame(&Reg);

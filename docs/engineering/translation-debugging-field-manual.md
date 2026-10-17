@@ -12521,6 +12521,23 @@ deterministically, not by soak:** a `gdb probe` with a hardware breakpoint at
 brackets a region with a save/restore of flags or IRQL, diff the Rust for BOTH halves -- a sweep
 of every Rust fn that disables interrupts without restoring found this one only.
 
+### A per-CPU register read after `sti` belongs to whoever faulted last
+**Symptom:** amd64 ladder `fault64.exe`/`fault32.exe` exit `0xBAF2` ("rung1 FAIL: AV params"):
+a guest access violation arrives with the right code but the wrong
+`ExceptionInformation[1]`. About once per few hundred `-smp 2` gates, invisible under UP
+(merge-queue reject of shell32-com a6e93b659ef8, 2026-10-14).
+**Cause:** `KiPageFault` (`ntoskrnl/ke/amd64/trap.S`, inherited from upstream) saves cr2 into
+`KTRAP_FRAME.FaultAddress` at entry, then `sti`, runs `MmAccessFault`, and on failure built the
+AV's address parameter with a SECOND `mov r10, cr2`. By then a quantum end, a migration to the
+other CPU or any nested fault has replaced cr2 with another fault's address. i386
+(`KiTrap0EHandler` reads cr2 before `_enable()`) and arm64 (the saved FAR) were already right.
+**Fix:** take the parameter from `[rbp + KTRAP_FRAME_FaultAddress]`. **Proved by a negative
+control, not a soak:** `Fault32.c` rung 3b takes 5000 AVs at varying addresses while a thread
+churns demand-zero faults. With the old line, 3 of 4 `-smp 2` guest runs failed `0xBAF2`; with
+the fix, 6 of 6 passed. Any trap-time register that is per-CPU and overwritten by the next event
+(cr2, FAR/ESR, DR6) must be captured before interrupts are re-enabled and read from the trap
+frame afterwards; grep the handler for a second read.
+
 ### A thread "switching" to itself spins forever on its own SwapBusy
 **Symptom:** amd64 `-smp 2` `HANG_TIMEOUT` after a 60 s `[WIN32K] STUCK SEND`, one CPU idle in
 `hlt`, the other parked at `.SwapBusySet` (`ctxswitch.S:181`) with **`RDX == R8`** in
