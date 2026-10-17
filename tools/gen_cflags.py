@@ -144,7 +144,15 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--target", action="append", help=f"target(s) (default: {DEFAULT_TARGETS})")
     ap.add_argument("--arch", action="append", help="arch(es) (default: i386 amd64 arm64)")
+    ap.add_argument(
+        "--stdout", action="store_true", help="emit JSON generated content without writing"
+    )
     args = ap.parse_args()
+    if args.stdout:
+        if not args.target or len(args.target) != 1 or not args.arch or len(args.arch) != 1:
+            ap.error("--stdout requires exactly one --target and --arch")
+        print(json.dumps(gen_content(args.target[0], args.arch[0], repo)))
+        return
     for target in args.target or DEFAULT_TARGETS:
         # NOTE: arm64 is in the default list. It was not, while check_committed_drift.py has
         # always CHECKED arm64 — so a regeneration after any input change left arm64 stale and

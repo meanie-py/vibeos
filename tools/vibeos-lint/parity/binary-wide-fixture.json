@@ -1,0 +1,22 @@
+{
+  "root": "/home/curi/Projects/os-playground/vibeos-lint/.cache/vibeos-lint/binary-fixture",
+  "oracle_revision": "e7d43269260efd6e05654d503223d531b0ac3d7b",
+  "arch": "i386",
+  "artifact_basis": "same existing build tree; freshness not asserted",
+  "rust_binary_sha256": "a29513a09b9ffcd71730537adda7f47fc2ae84d4eb5f8b4f83fdf78e5f38aee8",
+  "rust_seconds": 0.045752648991765454,
+  "rules": {
+    "lint_wide_strings": {
+      "python": 8,
+      "rust": 8,
+      "python_exit": 1,
+      "rust_exit": 1,
+      "python_seconds": 0.08997172600356862,
+      "python_only": [],
+      "rust_only": [],
+      "python_sha256": "dd9a43b572f8cf6a4e733c7f9bdb85862a23ef03fdc6aba636aa01fbafc43041",
+      "rust_sha256": "dd9a43b572f8cf6a4e733c7f9bdb85862a23ef03fdc6aba636aa01fbafc43041",
+      "exact": true
+    }
+  }
+}

@@ -18,6 +18,8 @@ Convention: <consumer crate>/data/<rc-stem>-<arch>.rc.res
 """
 
 import argparse
+import contextlib
+import io
 import json
 import os
 import shlex
@@ -80,7 +82,18 @@ def gen(arch):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--arch", action="append", help="arch(es) to regen (default: i386 amd64 arm64)")
+    ap.add_argument(
+        "--jobs-json", action="store_true", help="emit read-only regeneration recipes as JSON"
+    )
     args = ap.parse_args()
+    if args.jobs_json:
+        if not args.arch or len(args.arch) != 1:
+            ap.error("--jobs-json requires exactly one --arch")
+        messages = io.StringIO()
+        with contextlib.redirect_stdout(messages):
+            jobs = res_jobs(args.arch[0])
+        print(json.dumps({"jobs": jobs, "messages": messages.getvalue()}))
+        return
     # NOTE: arm64 is in the default list. It was not, while check_committed_drift.py has
     # always CHECKED arm64 — so a regeneration after any input change left arm64 stale and
     # only the drift checker noticed, one gate later. Found during the 2026-09-20 upstream

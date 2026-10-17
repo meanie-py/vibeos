@@ -401,8 +401,11 @@ guide: `tests/qemu/cli/README.md`.
 
 **Source lints live in `tools/vibeos-lint/src/rules/` as Rust plugins.** Use
 `./vibeos-cli check`, which builds and runs the shared binary automatically. Add
-new rules there; standalone Python scanners are retired. Python CLI, generator,
-and reporting helpers remain supported.
+new source rules there and artifact checks in `tools/vibeos-lint/src/binary/`.
+`./vibeos-cli lint --list-rules` lists native artifact/diagnostic checks; use
+`lint --arch <arch> --rules <name>` for an individual check. Gate, smoke static
+checks, and cohab coverage use that same binary. Do not add Python lint checkers.
+Python CLI, generator, and reporting helpers remain supported.
 
 **No default arch** — always pass `--arch`. Why it matters:
 

@@ -35,7 +35,7 @@ The final coverage batch expands the original source-only scope at the user's re
 all source-registry checks run through Rust plugins, including the checks that invoke
 external tools or inspect `build-<arch>/`. Shellcheck, clang, binutils and the Python
 compiler remain their respective authorities; Rust owns their invocation and check logic.
-Post-link `run_binary_lints` and `check-tooling` remain separate commands.
+Post-link `run_binary_lints` and `check-tooling` remain separate commands; the final artifact cutover below ports the post-link checker implementations too.
 
 ## The contract it must keep (do not change behaviour)
 
@@ -63,8 +63,9 @@ The current system, so the switch is invisible to every lane:
   the way `tests/qemu/cli/hostjobs.py::ensure` builds host-jobs: into
   `.cache/vibeos-lint/`, keyed by a digest of its sources, under a lock. Commit
   `Cargo.lock`; build `--offline`. Available offline in `~/.cargo/registry`: `regex`,
-  `rayon`, `memchr`, `aho-corasick`, `syn` 2, `serde`/`serde_json`. Nothing else without
-  asking. Tree-sitter and `yaml-rust` were subsequently approved by the user.
+  `rayon`, `memchr`, `aho-corasick`, `syn` 2, `serde`/`serde_json`. Tree-sitter and
+  `yaml-rust` were approved separately; the user subsequently authorized introducing
+  dependencies as needed for the remaining tooling migration.
 - **One pass:** walk once (same pruning as `source_walk.py`), read each file once, and build
   a per-file representation that rules share: raw bytes, line index, and for `.rs` a
   comment/string-masked view (most Python scanners strip comments and strings themselves,
@@ -631,3 +632,43 @@ The parity subsets ran concurrently: **92.69 seconds** for the current twelve an
 performance comparison. Performance tuning and the single-digit target remain next.
 Full source/tooling gates run after retirement; their artifact paths are recorded in
 the checkpoint commit message. No push or landing is performed by this lane.
+
+## Artifact and standalone checks (final linter cutover)
+
+The binary now also owns the post-link suite, cohab coverage, committed-artifact drift,
+layout-output comparisons, i386 compiler ABI tripwire, optional wide-byte-string and
+bind-all checks, LLVM IR audits, and ARM64 unwind verification. Gate and the smoke static
+assertions route to it. `./vibeos-cli lint --list-rules` lists the artifact/standalone
+plugins; source baseline checks remain the existing 120-stage registry. See
+`tools/vibeos-lint/README.md` for invocation and ownership boundaries.
+
+Artifact records carry each check's stdout, stderr and exit code in a validated JSON envelope.
+The Python bridge refuses incomplete or malformed coverage. Disassembly/symbol extraction
+is content-addressed against input/tool/implementation bytes and relevant environment,
+locked across invocations, and revalidated before publishing. Records are compressed with
+zstd; raw extraction text is released between plugins. Baselines and allowlists are read
+again on every invocation, including cache hits. SHA-256 and zstd dependencies were added
+under the user's subsequent blanket dependency approval.
+
+The first nine artifact checks matched historical Python/shell stdout, stderr and exits
+exactly on the same existing amd64 build tree (`parity/binary-amd64.json`). This establishes
+scanner parity, not build freshness or boot coverage. Positive/negative fixtures cover the
+other architectures and incomplete inputs. `lint_parity.py` can replay retired scanner and
+helper bytes from Git; binary-cache implementation fingerprints are materialized from those
+same historical bytes while preserving the original path identities; the original
+cache verifies binary/tool content and record integrity before reuse.
+
+Generators remain Python authorities for now, as requested for the next migration. They
+emit into temporary output directories or return read-only regeneration recipes; Rust owns
+the drift comparison. Migration targeting reports (`scan_arch_cfg`, sibling drift, probe
+leads) and the warning census's reporting interface are also separate from lint verdicts.
+The native bind-all audit deliberately refuses any failed Cargo check instead of accepting
+partial diagnostics; it uses stable force-warn flags without `RUSTC_BOOTSTRAP`.
+
+Performance tuning remains owed. The historical Python timings and the source-suite target
+above remain the reference; successful migration or warm cache parity is not proof of a
+single-digit source suite.
+
+Regroup before starting the next tooling migration. The user's order is migration/reporting
+utilities, code generators, build infrastructure, QEMU/testing infrastructure, hardware/payload
+tools, `vibeos-cli`, and finally C-to-Rust tooling.
