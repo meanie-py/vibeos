@@ -193,7 +193,21 @@ fn run() -> Result<(), String> {
                 corpus.files.iter().map(|f| f.bytes().len()).sum::<usize>()
             );
         }
-        vibeos_lint::execute(&corpus, &selected)
+        let started = std::time::Instant::now();
+        let results = vibeos_lint::execute(&corpus, &selected);
+        if std::env::var_os("VIBEOS_LINT_TIMINGS").is_some() {
+            eprintln!(
+                "TIMING\tsource_rules\t{:.3}",
+                started.elapsed().as_secs_f64()
+            );
+        }
+        // This is a one-shot CLI snapshot with no destructor side effects.
+        // Cached trees/views can occupy gigabytes: walking their allocations
+        // merely to free them faults swapped pages back in before process exit.
+        // Let the OS reclaim them, including on a failed check. Library callers
+        // still own and drop their Corpus normally.
+        std::mem::forget(corpus);
+        results
     })?;
     // Buffer all results until every plugin succeeds; never publish partial coverage.
     let stdout = io::stdout();
