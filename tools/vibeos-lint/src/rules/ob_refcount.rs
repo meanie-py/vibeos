@@ -280,7 +280,10 @@ fn scan_body(body: Node<'_>, s: &str, lines: &[&str]) -> Vec<(usize, String, Str
                 } else {
                     None
                 };
-                let guard = if status.is_some() {
+                let guard = if matches!(
+                    name.as_str(),
+                    "ObReferenceObjectByPointer" | "ObReferenceObjectSafe"
+                ) {
                     enclosing_guard(n, body)
                 } else {
                     None
@@ -404,6 +407,12 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         assert_eq!(key(&preorder), key(&sorted));
+    }
+    #[test]
+    fn inline_conditional_safe_acquire_exempts_its_failure_return() {
+        let source =
+            f("unsafe fn f(){if ObReferenceObjectSafe(obj)==0{return;}ObDereferenceObject(obj);}");
+        assert!(scan_file(&source).unwrap().is_empty());
     }
     #[test]
     fn control_leak_and_balanced() {

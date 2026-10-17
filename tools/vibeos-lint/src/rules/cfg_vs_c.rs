@@ -433,28 +433,19 @@ fn os_or_arch(pred: &str) -> Option<Vec<String>> {
         rust_set(pred)
     }
 }
-fn crate_of(path: &Path, manifests: &[PathBuf]) -> String {
-    let mut best = None;
-    for p in manifests {
-        if let Some(parent) = p.parent() {
-            if path.starts_with(parent)
-                && best.map_or(true, |b: &Path| {
-                    parent.components().count() > b.components().count()
-                })
-            {
-                best = Some(parent)
-            }
-        }
-    }
-    best.map(|x| x.to_string_lossy().into_owned())
+fn crate_of(path: &Path, crate_dirs: &std::collections::BTreeSet<PathBuf>) -> String {
+    path.ancestors()
+        .find(|parent| crate_dirs.contains(*parent))
+        .map(|x| x.to_string_lossy().into_owned())
         .unwrap_or_default()
 }
-fn lineno(text: &str, at: usize) -> usize {
-    text.as_bytes()[..at]
-        .iter()
-        .filter(|&&b| b == b'\n')
-        .count()
-        + 1
+fn line_starts(text: &str) -> Vec<usize> {
+    let mut out = vec![0];
+    out.extend(text.match_indices('\n').map(|(i, _)| i + 1));
+    out
+}
+fn lineno(starts: &[usize], at: usize) -> usize {
+    starts.partition_point(|&start| start <= at)
 }
 impl Rule for CfgVsC {
     fn name(&self) -> &'static str {
@@ -476,23 +467,28 @@ impl Rule for CfgVsC {
             .filter(|f| f.path.file_name().is_some_and(|n| n == "Cargo.toml"))
             .map(|f| f.path.clone())
             .collect();
+        let crate_dirs: std::collections::BTreeSet<_> = manifests
+            .iter()
+            .filter_map(|p| p.parent().map(Path::to_path_buf))
+            .collect();
         let mut defs = HashMap::<(String, String), usize>::new();
         let mut parsed = Vec::new();
         for f in &files {
             let raw = &f.text;
+            let owner = crate_of(&f.path, &crate_dirs);
             for m in FN_DEF.captures_iter(raw) {
-                *defs
-                    .entry((crate_of(&f.path, &manifests), m[1].into()))
-                    .or_default() += 1
+                *defs.entry((owner.clone(), m[1].into())).or_default() += 1
             }
             if raw.contains("#[cfg(") && raw.contains("target_") {
-                parsed.push(*f)
+                parsed.push((*f, owner))
             }
         }
         let mut sites = Vec::new();
         let mut dead = Vec::new();
-        for f in parsed {
+        for (f, owner) in parsed {
             let raw = &f.text;
+            let starts = line_starts(raw);
+            let raw_lines: Vec<_> = raw.lines().collect();
             let blank = twins::blank_rust(raw);
             for fnc in twins::rust_functions(&blank, &f.path) {
                 let body = &raw[fnc.body_start..fnc.body_start + fnc.body.len()];
@@ -514,15 +510,15 @@ impl Rule for CfgVsC {
                         continue;
                     }
                     if defs
-                        .get(&(crate_of(&f.path, &manifests), fnc.name.clone()))
+                        .get(&(owner.clone(), fnc.name.clone()))
                         .copied()
                         .unwrap_or(0)
                         > 1
                     {
                         continue;
                     }
-                    let line = lineno(raw, fnc.body_start + off);
-                    if raw.lines().nth(line - 1).unwrap_or("").contains(NOLINT) {
+                    let line = lineno(&starts, fnc.body_start + off);
+                    if raw_lines.get(line - 1).unwrap_or(&"").contains(NOLINT) {
                         continue;
                     }
                     sites.push((f, fnc.name.clone(), line, pred, s, nxt));
@@ -579,6 +575,17 @@ impl Rule for CfgVsC {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn indexed_line_lookup_matches_legacy_prefix_count() {
+        let src = "a\nbb\nccc";
+        let starts = line_starts(src);
+        for at in 0..=src.len() {
+            assert_eq!(
+                lineno(&starts, at),
+                src[..at].bytes().filter(|b| *b == b'\n').count() + 1
+            );
+        }
+    }
     #[test]
     fn architecture_predicates_and_c_branches() {
         assert_eq!(

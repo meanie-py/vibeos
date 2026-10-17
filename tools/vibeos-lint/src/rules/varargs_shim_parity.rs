@@ -303,7 +303,7 @@ fn check_pair(
                 .filter(|i| !keep.contains(i))
                 .map(|i| (i, want[i].to_string()))
                 .collect();
-            rewrites.push(("vswprintf_p_l".into(), wrapper.into(), keep, fixed));
+            rewrites.push(("vswprintf_p_l_opt".into(), wrapper.into(), keep, fixed));
         }
     }
     let needs_vsnprintf = rf.values().any(|x| x.callee == "vsnprintf");

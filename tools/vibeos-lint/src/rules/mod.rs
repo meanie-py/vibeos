@@ -122,8 +122,13 @@ pub mod scan_boot_media_drift;
 pub mod verify_ffi;
 pub mod verify_lost_exports;
 
+pub mod verify_match_consts;
+pub mod verify_tables;
+
 pub fn registry() -> Vec<Box<dyn Rule>> {
     vec![
+        Box::new(verify_tables::VerifyTables),
+        Box::new(verify_match_consts::VerifyMatchConsts),
         Box::new(lint_kernel::LintKernel),
         Box::new(cohab_census::CohabCensus),
         Box::new(scan_boot_media_drift::ScanBootMediaDrift),

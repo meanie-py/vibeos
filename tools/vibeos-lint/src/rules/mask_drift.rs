@@ -49,6 +49,10 @@ impl Rule for MaskDrift {
                 continue;
             }
             let (live, comments) = split_comments(f)?;
+            // Keep the legacy one-based/zero-based mappings, but index the raw line
+            // table once instead of restarting an iterator from the beginning for each
+            // statement and each bit-test site.
+            let raw_lines: Vec<_> = f.text.lines().collect();
             let local = in_file_consts(&f.text);
             let mut c_masks: BTreeMap<String, (String, BTreeSet<String>)> = BTreeMap::new();
             for comment in &comments {
@@ -75,10 +79,10 @@ impl Rule for MaskDrift {
                     .captures_iter(stmt)
                     .map(|m| m[1].to_ascii_lowercase())
                     .collect();
-                if f.text
-                    .lines()
-                    .skip(line0)
-                    .take(line1 - line0 + 1)
+                if raw_lines
+                    .get(line0..=line1)
+                    .unwrap_or(&[])
+                    .iter()
                     .any(|l| suppressed(l))
                 {
                     suppressed_targets.extend(bound);
@@ -153,9 +157,9 @@ impl Rule for MaskDrift {
             }
             // TEST form pairing is intentionally separate: C expressions bind by (base,member),
             // while clear masks above use only the immediately-adjacent member identifier.
-            for (target, name, kind) in
-                scan_test_form(&f.text, &live, &comments, &local, &catalog, &fallback)
-            {
+            for (target, name, kind) in scan_test_form(
+                &f.text, &live, &comments, &local, &catalog, &fallback, &raw_lines,
+            ) {
                 out.insert(format!(
                     "{}: {} & {} [{}]",
                     f.path.display(),
@@ -404,6 +408,7 @@ fn scan_test_form(
     local: &BTreeMap<String, i128>,
     catalog: &BTreeMap<String, i128>,
     fallback: &BTreeMap<String, i128>,
+    raw_lines: &[&str],
 ) -> Vec<(String, String, String)> {
     let mut c: BTreeMap<(String, String), (String, BTreeSet<String>, BTreeSet<i128>)> =
         BTreeMap::new();
@@ -431,7 +436,7 @@ fn scan_test_form(
     for (key, _, op, line) in bit_tests(live) {
         let ns = names(&op);
         if ns.is_empty() {
-            if !text.lines().nth(line).is_some_and(suppressed) {
+            if !raw_lines.get(line).is_some_and(|s| suppressed(s)) {
                 if let Some(v) = eval_const(&op) {
                     vals.entry(key).or_default().insert(v);
                 }

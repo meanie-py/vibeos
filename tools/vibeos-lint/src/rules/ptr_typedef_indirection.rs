@@ -93,7 +93,7 @@ fn c_functions(text: &str) -> BTreeSet<String> {
             }
             continue;
         }
-        if crate::regexes::cached(r"#\s*if\s+0\b").unwrap().is_match(t) {
+        if if_zero().is_match(t) {
             depth = 1;
             continue;
         }
@@ -117,27 +117,41 @@ fn c_functions(text: &str) -> BTreeSet<String> {
 fn c_definitions(text: &str) -> BTreeMap<String, String> {
     let names = c_functions(text);
     let mut out = BTreeMap::new();
-    for name in names {
-        let pat = crate::regexes::cached(&format!(r"\b{}\s*\(", regex::escape(&name))).unwrap();
-        for m in pat.find_iter(text) {
-            let open = text[m.start()..m.end()].rfind('(').unwrap() + m.start();
-            let Some(close) = matching(text, open, '(', ')') else {
-                continue;
-            };
-            let mut brace = close + 1;
-            while brace < text.len() && text.as_bytes()[brace].is_ascii_whitespace() {
-                brace += 1
-            }
-            if brace >= text.len() || text.as_bytes()[brace] != b'{' {
-                continue;
-            }
-            if let Some(end) = matching(text, brace, '{', '}') {
-                out.insert(name.clone(), text[m.start()..end + 1].to_owned());
-                break;
-            }
+    // The legacy implementation compiled one regex and rescanned the entire raw
+    // translation unit for every candidate name. This single lexical pass retains
+    // the same per-name first raw occurrence that is followed by a function body.
+    for m in raw_name_call().captures_iter(text) {
+        let name = m.get(1).unwrap().as_str();
+        if !names.contains(name) || out.contains_key(name) {
+            continue;
+        }
+        let open = m.get(0).unwrap().end() - 1;
+        let Some(close) = matching(text, open, '(', ')') else {
+            continue;
+        };
+        let mut brace = close + 1;
+        while brace < text.len() && text.as_bytes()[brace].is_ascii_whitespace() {
+            brace += 1;
+        }
+        if brace >= text.len() || text.as_bytes()[brace] != b'{' {
+            continue;
+        }
+        if let Some(end) = matching(text, brace, '{', '}') {
+            out.insert(
+                name.to_owned(),
+                text[m.get(0).unwrap().start()..end + 1].to_owned(),
+            );
         }
     }
     out
+}
+fn raw_name_call() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| crate::regexes::cached(r"\b([A-Za-z_]\w*)\s*\(").unwrap())
+}
+fn if_zero() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| crate::regexes::cached(r"#\s*if\s+0\b").unwrap())
 }
 fn after_params(s: &str, open: usize) -> &str {
     let mut d = 0i32;
@@ -204,6 +218,15 @@ fn findings_for(
     rust_body: &str,
     body_at: usize,
 ) -> Vec<(usize, String)> {
+    findings_for_impl(c_body, rust_text, rust_body, body_at, None)
+}
+fn findings_for_impl(
+    c_body: &str,
+    rust_text: &str,
+    rust_body: &str,
+    body_at: usize,
+    known_lines: Option<&[usize]>,
+) -> Vec<(usize, String)> {
     let c_code = clean_c(c_body);
     let mut c_types: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for m in c_ptr_decl().captures_iter(&c_code) {
@@ -228,21 +251,30 @@ fn findings_for(
             .insert(m[1].to_owned());
     }
     let lines: Vec<_> = rust_text.lines().collect();
+    let body_line = known_lines.map_or_else(
+        || {
+            rust_text[..body_at.min(rust_text.len())]
+                .bytes()
+                .filter(|b| *b == b'\n')
+                .count()
+                + 1
+        },
+        |starts| starts.partition_point(|&at| at <= body_at.min(rust_text.len())),
+    );
     let mut out = Vec::new();
+    let mut prev = 0usize;
+    let mut line = body_line;
     for m in rust_ptr_decl().captures_iter(rust_body) {
         let (name, kind, ty) = (&m[1], &m[2], &m[3]);
-        if !c_types.get(name).is_some_and(|s| s.contains(ty)) {
-            continue;
-        }
-        let mut line = rust_text[..body_at.min(rust_text.len())]
-            .bytes()
-            .filter(|b| *b == b'\n')
-            .count()
-            + 1;
-        line += rust_body[..m.get(0).unwrap().start()]
+        let start = m.get(0).unwrap().start();
+        line += rust_body[prev..start]
             .bytes()
             .filter(|b| *b == b'\n')
             .count();
+        prev = m.get(0).unwrap().end();
+        if !c_types.get(name).is_some_and(|s| s.contains(ty)) {
+            continue;
+        }
         if nolint().is_match(lines.get(line - 1).copied().unwrap_or("")) {
             continue;
         }
@@ -292,5 +324,13 @@ mod tests {
         let r="fn f(){ let mut FilePathInfo: *mut PFILEPATHS_W = core::ptr::null_mut(); } // nolint: ptr-typedef-indirection";
         let b = c_definitions(c).get("f").cloned().unwrap_or_default();
         assert!(findings_for(&b, r, r, 0).is_empty());
+    }
+    #[test]
+    fn skipped_rust_declarations_still_advance_line_cursor() {
+        let c = "void f(){ PFOO second; }";
+        let r = "fn f(){\nlet first: *mut POTHER;\nlet second: *mut PFOO;\n}";
+        let body = c_definitions(c).remove("f").unwrap();
+        let got = findings_for(&body, r, r, 0);
+        assert_eq!(got.iter().map(|x| x.0).collect::<Vec<_>>(), vec![3]);
     }
 }

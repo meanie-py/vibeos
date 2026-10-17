@@ -438,6 +438,7 @@ fn c_return_oracle(files: &[&SourceFile]) -> BTreeMap<String, (String, usize, St
     let mut found = BTreeMap::new();
     let mut clash = BTreeSet::new();
     for f in files {
+        let line_starts = line_starts(&f.text);
         let base = f.path.file_name().unwrap_or_default().to_string_lossy();
         if !base.to_ascii_lowercase().contains("cohab")
             && !base.to_ascii_lowercase().contains("rust")
@@ -467,7 +468,7 @@ fn c_return_oracle(files: &[&SourceFile]) -> BTreeMap<String, (String, usize, St
                 }
             );
             let name = m[4].to_owned();
-            let line = f.text[..start].bytes().filter(|b| *b == b'\n').count() + 1;
+            let line = line_number(&line_starts, start);
             if found
                 .get(&name)
                 .is_some_and(|(_, _, old): &(String, usize, String)| old != &ret_ty)
@@ -485,6 +486,14 @@ fn c_return_oracle(files: &[&SourceFile]) -> BTreeMap<String, (String, usize, St
         found.remove(&n);
     }
     found
+}
+fn line_starts(text: &str) -> Vec<usize> {
+    let mut starts = vec![0];
+    starts.extend(text.match_indices('\n').map(|(i, _)| i + 1));
+    starts
+}
+fn line_number(starts: &[usize], at: usize) -> usize {
+    starts.partition_point(|&start| start <= at)
 }
 fn compare_statics(owner: &str, facts: &Facts, ty: &mut Types, out: &mut Vec<String>) {
     for (sym, defs) in &facts.statics_def {
@@ -561,14 +570,14 @@ fn compare_returns(
             {
                 continue;
             }
-            let (dw, authority, dty) = if let Some(defs) = facts.ret_def.get(sym) {
-                let local = defs
-                    .iter()
-                    .filter(|(o, _, _)| o == owner)
-                    .collect::<Vec<_>>();
-                if local.is_empty() {
-                    continue;
-                }
+            let local = facts
+                .ret_def
+                .get(sym)
+                .into_iter()
+                .flatten()
+                .filter(|(o, _, _)| o == owner)
+                .collect::<Vec<_>>();
+            let (dw, authority, dty) = if !local.is_empty() {
                 let shapes = local
                     .iter()
                     .map(|(_, _, t)| c_width(t, ty))
@@ -680,13 +689,15 @@ impl Rule for ExternDeclDrift {
             sys_deps.insert(dir.join("src"), deps);
         }
         let mut islands = BTreeMap::<PathBuf, BTreeMap<String, Vec<(usize, Sig, String)>>>::new();
+        // Resolve each bindgen file's first sys-crate owner once. Iteration order
+        // matches the legacy BTreeMap flatten/find selection exactly.
         let files = c
             .sources("drift_rust")
             .filter(|f| f.path.extension().is_some_and(|e| e == "rs"))
             .collect::<Vec<_>>();
         for f in &files {
             let src = f.path.to_string_lossy().replace('\\', "/");
-            let owner = crate_dirs.iter().find(|d| f.path.starts_with(d));
+            let owner = f.path.ancestors().find(|d| crate_dirs.contains(*d));
             let owner_key = owner.map(|p| p.to_string_lossy().to_string());
             file_facts(f, owner_key.as_deref(), &mut facts)?;
             if owner.is_none()
@@ -774,62 +785,67 @@ impl Rule for ExternDeclDrift {
                 }
             }
             for (sym, defs) in &facts.defs {
-                for (def_owner, dpath, ds, dr) in defs {
-                    if def_owner != crate_owner.as_ref() {
+                // Python's per-crate `defs[name] = ...` keeps the last
+                // definition encountered for a symbol. Match that authority
+                // selection instead of treating every duplicate as independent.
+                let Some((_, dpath, ds, dr)) = defs
+                    .iter()
+                    .rev()
+                    .find(|(def_owner, _, _, _)| def_owner == crate_owner.as_ref())
+                else {
+                    continue;
+                };
+                for (path, line, s, var, ident) in facts.decls.get(sym).into_iter().flatten() {
+                    if !Path::new(path).starts_with(crate_src)
+                        || *var
+                        || ds.variadic
+                        || !facts.called.get(path).is_some_and(|x| x.contains(ident))
+                    {
                         continue;
                     }
-                    for (path, line, s, var, ident) in facts.decls.get(sym).into_iter().flatten() {
-                        if !Path::new(path).starts_with(crate_src)
-                            || *var
-                            || ds.variadic
-                            || !facts.called.get(path).is_some_and(|x| x.contains(ident))
-                        {
-                            continue;
-                        }
-                        if ds.params.len() != s.params.len() {
-                            out.push(format!(
-                                "{path}:{line}: {sym}: ARITY decl {} vs def {} ({})",
-                                s.params.len(),
-                                ds.params.len(),
-                                Path::new(dpath).file_name().unwrap().to_string_lossy()
-                            ));
-                            continue;
-                        }
-                        for (i, (ct, dt)) in s.params.iter().zip(&ds.params).enumerate() {
-                            let (cd, mut cw) = resolve(ct, &mut types, &mut vec![]);
-                            let (dd, mut dw) = resolve(dt, &mut types, &mut vec![]);
-                            let ptr = arch_ptr(path);
-                            if let Some(ptr) = ptr {
-                                if cw.as_deref() == Some(PTR) {
-                                    cw = Some(ptr.to_string());
-                                }
-                                if dw.as_deref() == Some(PTR) {
-                                    dw = Some(ptr.to_string());
-                                }
-                            }
-                            if let Some(m) = compare_param(
-                                &sym,
-                                i,
-                                ct,
-                                dt,
-                                cd,
-                                cw,
-                                dd,
-                                dw,
-                                "def",
-                                Some(
-                                    Path::new(dpath)
-                                        .file_name()
-                                        .unwrap()
-                                        .to_string_lossy()
-                                        .as_ref(),
-                                ),
-                            ) {
-                                out.push(format!("{path}:{line}: {m}"));
-                            }
-                        }
-                        let _ = dr;
+                    if ds.params.len() != s.params.len() {
+                        out.push(format!(
+                            "{path}:{line}: {sym}: ARITY decl {} vs def {} ({})",
+                            s.params.len(),
+                            ds.params.len(),
+                            Path::new(dpath).file_name().unwrap().to_string_lossy()
+                        ));
+                        continue;
                     }
+                    for (i, (ct, dt)) in s.params.iter().zip(&ds.params).enumerate() {
+                        let (cd, mut cw) = resolve(ct, &mut types, &mut vec![]);
+                        let (dd, mut dw) = resolve(dt, &mut types, &mut vec![]);
+                        let ptr = arch_ptr(path);
+                        if let Some(ptr) = ptr {
+                            if cw.as_deref() == Some(PTR) {
+                                cw = Some(ptr.to_string());
+                            }
+                            if dw.as_deref() == Some(PTR) {
+                                dw = Some(ptr.to_string());
+                            }
+                        }
+                        if let Some(m) = compare_param(
+                            &sym,
+                            i,
+                            ct,
+                            dt,
+                            cd,
+                            cw,
+                            dd,
+                            dw,
+                            "def",
+                            Some(
+                                Path::new(dpath)
+                                    .file_name()
+                                    .unwrap()
+                                    .to_string_lossy()
+                                    .as_ref(),
+                            ),
+                        ) {
+                            out.push(format!("{path}:{line}: {m}"));
+                        }
+                    }
+                    let _ = dr;
                 }
             }
         }
@@ -933,6 +949,15 @@ fn compare(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn indexed_c_lines_match_prefix_counting_at_boundaries() {
+        let src = "first\nsecond\n\nlast";
+        let starts = line_starts(src);
+        for at in [0, 5, 6, 12, 13, src.len()] {
+            let old = src[..at].bytes().filter(|b| *b == b'\n').count() + 1;
+            assert_eq!(line_number(&starts, at), old);
+        }
+    }
 
     fn run(items: &[(&str, &str)]) -> Vec<String> {
         let files = items
@@ -1044,6 +1069,54 @@ mod tests {
             ("drv/rust_cohab.c", c),
         ])
         .is_empty());
+    }
+
+    #[test]
+    fn c_int_return_narrowed_to_byte_is_reported() {
+        let got = run(&[
+            ("foo-rust/Cargo.toml", "[package]\nname = \"foo-rust\"\n[dependencies]\nntdll-sys = { path = \"../ntdll-sys\" }\n"),
+            ("foo-rust/src/lib.rs", "extern \"C\" { fn IsEqualGUID(a: *const u8, b: *const u8) -> u8; }\npub unsafe fn go() { IsEqualGUID(core::ptr::null(), core::ptr::null()); }\n"),
+            ("ntdll-sys/src/bindgen.rs", "pub type ULONG = u32;\n"),
+            ("drv/rust_cohab_stub.c", "int __stdcall IsEqualGUID(const void *a, const void *b) { return 1; }\n"),
+        ]);
+        assert!(
+            got.iter()
+                .any(|x| x.contains("IsEqualGUID: RETURN NARROWED")),
+            "{got:?}"
+        );
+    }
+
+    #[test]
+    fn real_mlang_is_equal_guid_fixture() {
+        let rust = include_str!("/home/curi/Projects/os-playground/vibeos-lint/sdk/lib/rust/mlang-rust/src/mlang/mlang.rs");
+        let c = include_str!(
+            "/home/curi/Projects/os-playground/vibeos-lint/dll/win32/mlang/rust_cohab_stub.c"
+        );
+        let manifest = include_str!(
+            "/home/curi/Projects/os-playground/vibeos-lint/sdk/lib/rust/mlang-rust/Cargo.toml"
+        );
+        let got = run(&[
+            ("sdk/lib/rust/mlang-rust/Cargo.toml", manifest),
+            ("sdk/lib/rust/mlang-rust/src/mlang/mlang.rs", rust),
+            (
+                "sdk/lib/rust/ntdll-sys/src/bindgen.rs",
+                "pub type ULONG = u32;\n",
+            ),
+            (
+                "sdk/lib/rust/other-rust/Cargo.toml",
+                "[package]\nname = \"other-rust\"\n[dependencies]\nntdll-sys = { path = \"../ntdll-sys\" }\n",
+            ),
+            (
+                "sdk/lib/rust/other-rust/src/lib.rs",
+                "#[no_mangle]\npub extern \"C\" fn IsEqualGUID(a: *const u8, b: *const u8) -> bool { true }\n",
+            ),
+            ("dll/win32/mlang/rust_cohab_stub.c", c),
+        ]);
+        assert!(
+            got.iter()
+                .any(|x| x.contains("mlang.rs:1816: IsEqualGUID: RETURN NARROWED")),
+            "{got:?}"
+        );
     }
 
     #[test]

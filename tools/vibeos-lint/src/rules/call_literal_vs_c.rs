@@ -253,6 +253,7 @@ impl Rule for CallLiteralVsC {
             }
             let rust = &f.text[..cut];
             let code = blank_comments(rust);
+            let newlines: Vec<_> = code.match_indices('\n').map(|(at, _)| at).collect();
             let lines: Vec<_> = rust.lines().collect();
             let root = crate_root(&f.path, &manifests);
             let local = crate_cache
@@ -298,7 +299,7 @@ impl Rule for CallLiteralVsC {
                     if known.is_some_and(|x| x.contains(&lit)) {
                         continue;
                     }
-                    let line = f.line(call.start);
+                    let line = newlines.partition_point(|at| *at < call.start) + 1;
                     if lines.get(line - 1).is_some_and(|l| NOLINT.is_match(l)) {
                         continue;
                     }
@@ -330,6 +331,19 @@ impl Rule for CallLiteralVsC {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    #[test]
+    fn unicode_comments_preserve_python_call_line_offsets() {
+        let text = "// éééééééééééééééééééé\nconst MY_CONST: u32 = 1;\nfn f() {\n Frob(0);\n}\n// ORIGINAL C SOURCE\n// Frob(MY_CONST);\n";
+        let c = Corpus::new(
+            ".".into(),
+            vec![SourceFile::new(
+                "sdk/lib/rust/demo/src/lib.rs".into(),
+                text.into(),
+            )],
+        );
+        let got = CallLiteralVsC.run(&c).unwrap();
+        assert_eq!(got,vec!["sdk/lib/rust/demo/src/lib.rs:4: call-literal-vs-c MISMATCH Frob arg0: 0 where C passes MY_CONST=[1]"]);
+    }
     #[test]
     fn parser_honors_nested_args_and_call_boundaries() {
         assert_eq!(

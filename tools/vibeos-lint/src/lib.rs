@@ -1,9 +1,11 @@
 //! Statically linked lint plugins over an immutable, shared source snapshot.
 mod ast_facts;
+pub mod big_math;
 pub mod catalog;
 pub mod const_shared;
 pub mod const_values;
 mod crate_cfg;
+pub mod vendor_registry;
 pub use crate_cfg::CrateCfg;
 mod history;
 pub mod integers;
@@ -797,7 +799,7 @@ pub fn execute(
         .par_iter()
         .map(|rule| {
             let started = std::time::Instant::now();
-            let mut lines = rule
+            let chunks = rule
                 .run(corpus)
                 .map_err(|e| format!("{}: {e}", rule.name()))?;
             if std::env::var_os("VIBEOS_LINT_TIMINGS").is_some() {
@@ -807,12 +809,21 @@ pub fn execute(
                     started.elapsed().as_secs_f64()
                 );
             }
-            if lines
-                .iter()
-                .any(|line| line.contains(['\n', '\r']) || line.is_empty())
-            {
-                return Err(format!("{}: invalid finding in tagged output", rule.name()));
-            }
+            // Original stdout may include multiline types or report sections.
+            // Match subprocess text-mode universal newlines, then tag each
+            // physical output line independently. Blank lines carry no finding.
+            let mut lines: Vec<String> = chunks
+                .into_iter()
+                .flat_map(|chunk| {
+                    chunk
+                        .replace("\r\n", "\n")
+                        .replace('\r', "\n")
+                        .split('\n')
+                        .filter(|line| !line.is_empty())
+                        .map(str::to_owned)
+                        .collect::<Vec<_>>()
+                })
+                .collect();
             lines.sort();
             lines.dedup();
             Ok((rule.name(), lines))
@@ -824,6 +835,25 @@ pub fn execute(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn multiline_reports_are_tagged_as_individual_output_lines() {
+        struct Report;
+        impl Rule for Report {
+            fn name(&self) -> &'static str {
+                "report"
+            }
+            fn run(&self, _: &Corpus) -> Result<Vec<String>, String> {
+                Ok(vec![
+                    "first\r\nsecond\rthird\n\n".into(),
+                    String::new(),
+                    "fourth\tvalue".into(),
+                ])
+            }
+        }
+        let c = Corpus::new(".".into(), vec![]);
+        let got = execute(&c, &[&Report]).unwrap();
+        assert_eq!(got[0].1, vec!["first", "fourth\tvalue", "second", "third"]);
+    }
     #[test]
     fn declared_inputs_keep_binary_bytes_tracking_boundaries_and_fixture_scopes() {
         let temp =

@@ -1,6 +1,9 @@
 """Early scanners must work without builds and ignore changing generated inputs."""
 
+import ctypes
+import os
 import shutil
+import struct
 import subprocess
 import sys
 import threading
@@ -8,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.qemu.cli import rustlints
 from tests.qemu.cli.lints import EARLY_SOURCE_CHECKS, source_partition_specs
 
 REPO = Path(__file__).resolve().parents[1]
@@ -26,11 +30,70 @@ def _registered_flags(scanner: str) -> list[str]:
     raise AssertionError(f"{scanner} is in EARLY_SOURCE_CHECKS but has no spec")
 
 
+def _run_native_audited(root: Path, command: list[str]) -> subprocess.CompletedProcess:
+    """Observe native opens through the kernel, independently of the lint binary."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    fd = libc.inotify_init1(os.O_NONBLOCK | os.O_CLOEXEC)
+    if fd < 0:
+        raise OSError(ctypes.get_errno(), "inotify_init1")
+    watches = {}
+    try:
+        paths = [(root / "build-amd64", "forbidden"), (root / "sdk/lib/rust/target", "forbidden")]
+        paths.extend((path, "source") for path in (root / "sdk/lib/rust").glob("*/src"))
+        for path, kind in paths:
+            if path.is_dir():
+                watch = libc.inotify_add_watch(fd, os.fsencode(path), 0x20)  # IN_OPEN
+                if watch < 0:
+                    raise OSError(ctypes.get_errno(), f"inotify_add_watch {path}")
+                watches[watch] = (kind, path)
+        result = subprocess.run(command, cwd=root, capture_output=True, text=True, timeout=30)
+        source_reads = []
+        forbidden_reads = []
+        while True:
+            try:
+                events = os.read(fd, 65536)
+            except BlockingIOError:
+                break
+            offset = 0
+            while offset < len(events):
+                watch, mask, _cookie, size = struct.unpack_from("iIII", events, offset)
+                name = os.fsdecode(events[offset + 16 : offset + 16 + size].split(b"\0", 1)[0])
+                offset += 16 + size
+                if mask & 0x4000:  # IN_Q_OVERFLOW must never hide an open.
+                    raise AssertionError("native input audit overflowed")
+                kind, path = watches[watch]
+                if mask & 0x20:
+                    if kind == "forbidden":
+                        forbidden_reads.append(str(path / name))
+                    elif name.endswith(".rs"):
+                        source_reads.append(str(path / name))
+        assert not forbidden_reads, forbidden_reads
+        assert source_reads, "scanner did not read the positive source corpus"
+        return result
+    finally:
+        os.close(fd)
+
+
+def test_native_input_audit_detects_a_forbidden_directory_open(tmp_path):
+    source = tmp_path / "sdk/lib/rust/probe/src"
+    source.mkdir(parents=True)
+    (source / "lib.rs").write_text("fn source() {}")
+    (tmp_path / "build-amd64").mkdir()
+    script = (
+        "from pathlib import Path; "
+        "Path('sdk/lib/rust/probe/src/lib.rs').read_text(); "
+        "list(Path('build-amd64').iterdir())"
+    )
+    with pytest.raises(AssertionError, match="build-amd64"):
+        _run_native_audited(tmp_path, [sys.executable, "-c", script])
+
+
 @pytest.mark.parametrize("scanner", sorted(EARLY_SOURCE_CHECKS))
 def test_early_scanner_without_builds_and_during_generated_header_writes(tmp_path, scanner):
     script = tmp_path / "tools" / f"{scanner}.py"
     script.parent.mkdir()
-    shutil.copyfile(REPO / "tools" / script.name, script)
+    if scanner not in rustlints.PORTED:
+        shutil.copyfile(REPO / "tools" / script.name, script)
     shutil.copyfile(REPO / "tools/source_walk.py", script.parent / "source_walk.py")
     shutil.copyfile(REPO / "tools/lint_facts.py", script.parent / "lint_facts.py")
     for crate, source in (
@@ -83,6 +146,10 @@ sys.exit(code)
     flags = _registered_flags(scanner)
 
     def run():
+        if scanner in rustlints.PORTED:
+            return _run_native_audited(
+                tmp_path, [str(rustlints.ensure(REPO)), "--root", str(tmp_path), "--rules", scanner]
+            )
         return subprocess.run(
             [sys.executable, "-c", harness, str(tmp_path), str(script), *flags],
             cwd=tmp_path,

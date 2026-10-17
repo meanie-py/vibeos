@@ -228,6 +228,9 @@ fn harvest(
     let mut sites: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
     for (rel, content) in files {
         let text = strip_comments(&content);
+        // Match the Python phase order: collect file macros first, then parse
+        // this file's enum bodies exactly once using the macro table accumulated
+        // from prior definitions/files.
         for (i, line) in text.lines().enumerate() {
             if let Some(m) = define.captures(line) {
                 if !m[1].contains('(') {
@@ -238,27 +241,27 @@ fn harvest(
                         .push((m[2].into(), format!("{rel}:{}", i + 1)))
                 }
             }
-            for m in en.find_iter(&text) {
-                let Some(end) = match_brace(&text, m.end() - 1) else {
-                    continue;
-                };
-                let mut next = 0i128;
-                for part in text[m.end()..end].split(',') {
-                    if let Some(x) = item.captures(part.trim()) {
-                        let name = x[1].to_owned();
-                        let expr = x
-                            .get(2)
-                            .map_or_else(|| next.to_string(), |v| v.as_str().to_owned());
-                        let val = x
-                            .get(2)
-                            .and_then(|v| eval_c(v.as_str(), &raw, 0))
-                            .or_else(|| x.get(2).is_none().then_some(next));
-                        raw.entry(name.clone()).or_insert(expr.clone());
-                        sites.entry(name).or_default().push((expr, rel.clone()));
-                        next = val.unwrap_or(next) + 1
-                    } else {
-                        next += 1
-                    }
+        }
+        for m in en.find_iter(&text) {
+            let Some(end) = match_brace(&text, m.end() - 1) else {
+                continue;
+            };
+            let mut next = 0i128;
+            for part in text[m.end()..end].split(',') {
+                if let Some(x) = item.captures(part.trim()) {
+                    let name = x[1].to_owned();
+                    let expr = x
+                        .get(2)
+                        .map_or_else(|| next.to_string(), |v| v.as_str().to_owned());
+                    let val = x
+                        .get(2)
+                        .and_then(|v| eval_c(v.as_str(), &raw, 0))
+                        .or_else(|| x.get(2).is_none().then_some(next));
+                    raw.entry(name.clone()).or_insert(expr.clone());
+                    sites.entry(name).or_default().push((expr, rel.clone()));
+                    next = val.unwrap_or(next) + 1
+                } else {
+                    next += 1
                 }
             }
         }
@@ -604,6 +607,20 @@ mod tests {
         assert_eq!(
             got["C"].iter().map(|x| x.0).collect::<BTreeSet<_>>(),
             BTreeSet::from([3])
+        );
+    }
+
+    #[test]
+    fn enum_phase_runs_once_after_all_file_defines_are_collected() {
+        // Python scans all defines in this file, then each enum once. The enum
+        // can therefore refer to a macro appearing later in the same header.
+        let header = "typedef enum _E { A = LATE_VALUE, B } E;\n#define LATE_VALUE 0x20\n";
+        let got = harvest([("phase.h".into(), header.into())]);
+        assert_eq!(got["A"], BTreeSet::from([(0x20, "phase.h".into())]));
+        assert_eq!(got["B"], BTreeSet::from([(0x21, "phase.h".into())]));
+        assert_eq!(
+            got["LATE_VALUE"],
+            BTreeSet::from([(0x20, "phase.h:2".into())])
         );
     }
 

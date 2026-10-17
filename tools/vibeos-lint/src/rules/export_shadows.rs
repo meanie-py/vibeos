@@ -1,10 +1,9 @@
-use super::duplicate_symbols::{self, Unit};
+use super::duplicate_symbols;
 use crate::link_model::{self, Def, ARCHES};
 use crate::{Corpus, Rule, SourceSet};
 use regex::Regex;
 use std::{
     collections::{BTreeMap, BTreeSet},
-    path::{Path, PathBuf},
     sync::LazyLock,
 };
 
@@ -16,6 +15,13 @@ static SOURCES: &[SourceSet] = &[
         &["sdk/lib/rust"],
         &["rs", "s", "S", "asm"],
         &[],
+    )
+    .with_inputs(),
+    SourceSet::tree(
+        "link-build-inputs",
+        &["sdk/lib/rust"],
+        &["rs"],
+        &["build.rs"],
     )
     .with_inputs(),
     SourceSet::tracked("export-specs", &["spec"], &["ntoskrnl.spec", "hal.spec"]).with_inputs(),
@@ -166,9 +172,6 @@ fn nolint(c: &Corpus, d: &Def) -> bool {
         .take(6)
         .any(|l| l.contains("nolint: export-shadow"))
 }
-fn fmt(d: &Def) -> String {
-    format!("{} ({}, {} {})", d.loc(), d.krate, d.kind, d.name)
-}
 impl Rule for ExportShadows {
     fn name(&self) -> &'static str {
         "scan_export_shadows"
@@ -189,7 +192,8 @@ impl Rule for ExportShadows {
             }
         }
         let structural = crate::regexes::cached(STRUCTURAL).unwrap();
-        let mut rows: BTreeMap<(String, String, String), BTreeSet<String>> = BTreeMap::new();
+        let mut rows: BTreeMap<(String, String, String, String), BTreeSet<String>> =
+            BTreeMap::new();
         for (unit, per) in &units {
             if EXPORTERS.contains(&unit.as_str()) || NOT_DRIVERS.contains(&unit.as_str()) {
                 continue;
@@ -215,21 +219,107 @@ impl Rule for ExportShadows {
                             continue;
                         };
                         let e = rows
-                            .entry((fmt(&d), d.name.clone(), what.clone()))
+                            .entry((d.loc(), d.name.clone(), d.krate.clone(), what.clone()))
                             .or_default();
                         e.insert(arch.clone());
                     }
                 }
             }
         }
-        let rank = |a: &str| ARCHES.iter().position(|x| x == &a).unwrap_or(99);
         Ok(rows
             .into_iter()
-            .map(|((loc, name, what), arches)| {
-                let mut ar = arches.into_iter().collect::<Vec<_>>();
-                ar.sort_by_key(|x| rank(x));
-                format!("{loc}: {name}, a kernel export ({what}) [{}]", ar.join(","))
+            .map(|((loc, name, krate, what), arches)| {
+                let ar = ARCHES
+                    .iter()
+                    .filter(|a| arches.contains(**a))
+                    .copied()
+                    .collect::<Vec<_>>();
+                format!(
+                    "{loc}: {krate} defines {name}, a kernel export ({what}) [{}]",
+                    ar.join(",")
+                )
             })
             .collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn python_version_probe_fixtures() {
+        assert!(version_included(&["-arch=x86_64"]).unwrap());
+        assert!(!version_included(&["-version=0x602+"]).unwrap());
+        assert!(!version_included(&["-version=0xA00+"]).unwrap());
+        assert!(version_included(&["-version=0x400-0x502"]).unwrap());
+        assert!(!version_included(&["-version=0x400-0x501"]).unwrap());
+        assert!(version_included(&["-version=0x600+,0x502"]).unwrap());
+        assert!(version_included(&["-version=0x502+"]).unwrap());
+    }
+
+    #[test]
+    fn spec_export_and_forward_target_are_both_names_but_stubs_are_not() {
+        let c=Corpus::new(std::path::PathBuf::from("."),vec![
+            crate::SourceFile::new("ntoskrnl/ntoskrnl.spec".into(), "@ stdcall -arch=x86_64,arm64 ExpInterlockedPopEntrySList(ptr ptr) RtlInterlockedPopEntrySList\n@ stub DeadStub\n@ stdcall -version=0x602+ PoFxLater()\n".into()),
+            crate::SourceFile::new("hal/hal.spec".into(), "@ extern HalPort\n".into()),
+        ]);
+        let names = kernel_names(&c).unwrap();
+        for arch in ["x86_64", "aarch64"] {
+            assert_eq!(
+                names[arch]["ExpInterlockedPopEntrySList"],
+                "ntoskrnl.spec: ExpInterlockedPopEntrySList"
+            );
+            assert_eq!(
+                names[arch]["RtlInterlockedPopEntrySList"],
+                "ntoskrnl.spec: ExpInterlockedPopEntrySList"
+            );
+            assert!(!names[arch].contains_key("DeadStub"));
+            assert!(!names[arch].contains_key("PoFxLater"));
+        }
+        assert!(!names["x86"].contains_key("ExpInterlockedPopEntrySList"));
+    }
+
+    #[test]
+    fn scanner_control_bad_forward_target_is_reported_and_nolint_good_is_quiet() {
+        let specs=[("ntoskrnl/ntoskrnl.spec", "@ stdcall -arch=x86_64,arm64 ExpInterlockedPopEntrySList(ptr ptr) RtlInterlockedPopEntrySList\n@ stdcall KeInitializeSpinLock(ptr)\n"), ("hal/hal.spec","@ extern KdComPortInUse\n")];
+        let manifest="[package]\nname = \"drv-rust\"\nversion = \"0.1.0\"\n\n[lib]\ncrate-type = [\"staticlib\"]\npath = \"src/lib.rs\"\n\n[dependencies]\nntkrnl-sys = { path = \"../ntkrnl-sys\" }\n";
+        let sys = "[package]\nname = \"ntkrnl-sys\"\nversion = \"0.1.0\"\n";
+        let mk = |good: bool| {
+            let mut fs = specs
+                .iter()
+                .map(|(p, t)| crate::SourceFile::new((*p).into(), (*t).into()))
+                .collect::<Vec<_>>();
+            fs.push(crate::SourceFile::new(
+                "ntkrnl-sys/Cargo.toml".into(),
+                sys.into(),
+            ));
+            fs.push(crate::SourceFile::new(
+                "ntkrnl-sys/src/lib.rs".into(),
+                String::new(),
+            ));
+            fs.push(crate::SourceFile::new(
+                "drv-rust/Cargo.toml".into(),
+                manifest.into(),
+            ));
+            let body = if good {
+                "// nolint: export-shadow (wdm.h FORCEINLINE; expected local body)\n#[no_mangle]\npub unsafe extern \"C\" fn KeInitializeSpinLock(l: *mut usize) { *l = 0; }\n#[no_mangle]\npub unsafe extern \"system\" fn DrvPopEntry(_h: PVOID) -> PVOID { null_mut() }\n"
+            } else {
+                "#[no_mangle]\npub unsafe extern \"system\" fn RtlInterlockedPopEntrySList(_h: PVOID) -> PVOID { null_mut() }\n"
+            };
+            fs.push(crate::SourceFile::new(
+                "drv-rust/src/lib.rs".into(),
+                body.into(),
+            ));
+            Corpus::new(std::path::PathBuf::from("."), fs)
+        };
+        let bad = ExportShadows.run(&mk(false)).unwrap();
+        assert!(
+            bad.iter().any(
+                |x| x.contains("drv-rust defines RtlInterlockedPopEntrySList")
+                    && x.contains("[x86_64,aarch64]")
+            ),
+            "{bad:#?}"
+        );
+        assert!(ExportShadows.run(&mk(true)).unwrap().is_empty());
     }
 }

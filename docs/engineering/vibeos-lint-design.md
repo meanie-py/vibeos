@@ -401,4 +401,18 @@ write-path controls. Those utilities do not run as source lint stages.
 
 Additional candidate plugins and shared compiler/history/module facts are
 checkpointed on this branch, but are not routed until their own parity is proven.
-Validation and final timing for the 71-rule routing are pending.
+The **116-stage source check passed** in 101.60 seconds
+(`20261017-025615-jf_k4_7w-check-all`), and **all 124 tooling checks passed**
+(`.cache/vibeos-lint/check-tooling-checkpoint06.log`). The Rust suite passes
+**486 unit tests and two integration tests**; all **186 scanner-control/runner
+tests** pass. Early-stage fixtures now run the Rust plugins and observe native
+file opens through Linux inotify, including a positive test that deliberately
+opens forbidden build output; all eight early-stage tests pass.
+
+A subsequent warm 71-rule run took **101.55 seconds wall / 260.16 seconds user
+CPU**, with **9.76 GiB peak RSS**, under concurrent parity and fleet build load.
+The source snapshot took 10.78 seconds. The seconds target remains unfinished:
+syntax retention, repeated scans and cross-file indexes still need tuning.
+These measurements are not a controlled comparison with earlier batches.
+Profiling already removed repeated prefix newline counts in dropped-assert
+checking; later candidate optimizations remain separate work.
