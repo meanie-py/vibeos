@@ -1459,6 +1459,15 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A Windows-called entry point (DllMain, the COM server exports, CPlApplet, DriverEntry)
+    # defined with a convention other than WINAPI. Neither cc scanner sees it: nothing in the
+    # crate declares DllMain, and nothing imports it by a decorated name. On i386 an
+    # `extern "C"` DllMain defines `_DllMain` while the CRT calls `_DllMain@12`, so the link
+    # silently binds crt-startup's default and the module's own DllMain never runs
+    # (wshtcpip shipped that way; sendmail/mydocs came back from translation with it).
+    # Baseline is EMPTY.
+    # A Rust rule (tools/vibeos-lint/src/rules/entry_point_cc.rs).
+    specs.append(("scan_entry_point_cc", [rustlints.SENTINEL, "scan_entry_point_cc"], "stdout"))
     # The OTHER half of that pair: a cross-MODULE extern declaration, checked against the
     # .spec of the DLL that exports it. `cargo check` never links, so nothing in `check`,
     # `check-tooling` or `difftest` can see a wrong-ABI import — it survives to the PE link,

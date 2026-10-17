@@ -9076,6 +9076,73 @@ case "$DRIVER" in
     LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/sdk/lib/atl" -I"${SRC}/vendor/symcrypt/inc" -I"${SRC}/vendor/symcrypt/lib" -I"${SRC}/.build-tools/llvm-mingw/i686-w64-mingw32/include/c++/v1" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DIDR_EXTRACTICON=101 -DUNICODE -D_ATL_NO_EXCEPTIONS -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
+  sendmail)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-17 from dll/shellext/sendmail/CMakeLists.txt
+    # (2 compiled TU(s), 186 headers in the include closure, 0 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 25 external prototype(s) declared by the include closure, 2 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=0
+    BLOCKLIST_FUNCS_FROM_CRATE=1
+    DRIVER_DIR="${SRC}/dll/shellext/sendmail"
+    LANG_ARGS=( -x c++ -std=gnu++17 )
+    WRAPPER_INC=$'#include "precomp.hpp"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]shellapi\.h' --allowlist-file '.*[/\\]shellutils\.h'
+                  --allowlist-file '.*[/\\]shlguid_undoc\.h'
+                  --allowlist-file '.*[/\\]shlobj\.h'
+                  --allowlist-file '.*[/\\]shlwapi\.h'
+                  --allowlist-file '.*[/\\]shobjidl\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  --allowlist-file '.*sendmail[/\\].*\.h'
+                  --allowlist-type '(IDropTarget|IPersistFile)(Vtbl)?' )
+    # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
+    UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
+    # Body-local RAII types translate takes from data/local_raii, whose lowering
+    # defines the struct with its Drop: bindgen's Copy layout would shadow it.
+    EXTRA_BL_ITEMS=( CDataObjectHIDA )
+    EXTRA_INC=( -I"${SRC}/dll/shellext/sendmail" -I"${SRC}/build-i386/dll/shellext/sendmail" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/sdk/lib/atl" -I"${SRC}/vendor/symcrypt/inc" -I"${SRC}/vendor/symcrypt/lib" -I"${SRC}/.build-tools/llvm-mingw/i686-w64-mingw32/include/c++/v1" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_WINE -DUNICODE -D_ATL_NO_EXCEPTIONS -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  mydocs)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-17 from dll/shellext/mydocs/CMakeLists.txt
+    # (2 compiled TU(s), 186 headers in the include closure, 0 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 19 external prototype(s) declared by the include closure, 2 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=0
+    BLOCKLIST_FUNCS_FROM_CRATE=1
+    DRIVER_DIR="${SRC}/dll/shellext/mydocs"
+    LANG_ARGS=( -x c++ -std=gnu++17 )
+    WRAPPER_INC=$'#include "precomp.hpp"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]shellapi\.h' --allowlist-file '.*[/\\]shellutils\.h'
+                  --allowlist-file '.*[/\\]shlguid_undoc\.h'
+                  --allowlist-file '.*[/\\]shlobj\.h'
+                  --allowlist-file '.*[/\\]shlwapi\.h'
+                  --allowlist-file '.*[/\\]shobjidl\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  --allowlist-file '.*mydocs[/\\].*\.h'
+                  --allowlist-file '.*[/\\]shtypes\.h'
+                  --allowlist-type '(IDropTarget|IPersistFile)(Vtbl)?' )
+    # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
+    UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
+    # Body-local RAII types translate takes from data/local_raii, whose lowering
+    # defines the struct with its Drop: bindgen's Copy layout would shadow it.
+    EXTRA_BL_ITEMS=( CDataObjectHIDA )
+    EXTRA_INC=( -I"${SRC}/dll/shellext/mydocs" -I"${SRC}/build-i386/dll/shellext/mydocs" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/sdk/lib/atl" -I"${SRC}/vendor/symcrypt/inc" -I"${SRC}/vendor/symcrypt/lib" -I"${SRC}/.build-tools/llvm-mingw/i686-w64-mingw32/include/c++/v1" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_WINE -DUNICODE -D_ATL_NO_EXCEPTIONS -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
   tdihelpers)
     # AUTO-DERIVED by rustconv.profile_derive on 2026-10-17 from drivers/network/tdihelpers/CMakeLists.txt
     # (2 compiled TU(s), 188 headers in the include closure, 5 switch constant(s)).

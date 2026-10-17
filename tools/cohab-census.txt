@@ -978,8 +978,12 @@ dll/shellext/deskadp/CMakeLists.txt	1	# shxiface.c # replaced by Rust (sdk/lib/r
 dll/shellext/deskmon/CMakeLists.txt	1	# deskmon.c # replaced by Rust (sdk/lib/rust/deskmon-rust/src/deskmon/deskmon.rs)
 dll/shellext/deskmon/CMakeLists.txt	1	# shxiface.c # replaced by Rust (sdk/lib/rust/deskmon-rust/src/deskmon/shxiface.rs)
 dll/shellext/mmcshext/CMakeLists.txt	1	# mmcshext.cpp # replaced by Rust (sdk/lib/rust/mmcshext-rust/src/mmcshext/mmcshext_cpp_h.rs)
+dll/shellext/mydocs/CMakeLists.txt	1	# CMyDocsDropHandler.cpp # replaced by Rust (sdk/lib/rust/mydocs-rust/src/mydocs/CMyDocsDropHandler_cpp_h.rs)
+dll/shellext/mydocs/CMakeLists.txt	1	# mydocs.cpp # replaced by Rust (sdk/lib/rust/mydocs-rust/src/mydocs/mydocs_cpp_h.rs)
 dll/shellext/netplwiz/CMakeLists.txt	1	# SHDisconnectNetDrives.c # replaced by Rust (sdk/lib/rust/netplwiz-rust/src/netplwiz/SHDisconnectNetDrives.rs)
 dll/shellext/netplwiz/CMakeLists.txt	1	# netplwiz.c # replaced by Rust (sdk/lib/rust/netplwiz-rust/src/netplwiz/netplwiz.rs)
+dll/shellext/sendmail/CMakeLists.txt	1	# CDeskLinkDropHandler.cpp # replaced by Rust (sdk/lib/rust/sendmail-rust/src/sendmail/CDeskLinkDropHandler_cpp_h.rs)
+dll/shellext/sendmail/CMakeLists.txt	1	# sendmail.cpp # replaced by Rust (sdk/lib/rust/sendmail-rust/src/sendmail/sendmail_cpp_h.rs)
 dll/win32/CMakeLists.txt	1	# exports instead of forwarding to kernelbase_ros. combase.c externs
 dll/win32/aclui/CMakeLists.txt	1	# (rust_varargs_shim.c and the generated aclui_stubs.c) do not include precomp.h.
 dll/win32/aclui/CMakeLists.txt	1	# aclui.c

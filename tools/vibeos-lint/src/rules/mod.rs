@@ -3,6 +3,7 @@ use crate::Rule;
 pub mod const_narrowing_cast;
 pub mod double_fetch;
 pub mod dowhile_continue;
+pub mod entry_point_cc;
 pub mod fnptr_abi_transmute;
 pub mod hkey_zero_extend;
 pub mod hresult_literals;
@@ -261,5 +262,6 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(info_class_literals::InfoClassLiterals),
         Box::new(misaligned_cast::MisalignedCast),
         Box::new(fnptr_abi_transmute::FnptrAbiTransmute),
+        Box::new(entry_point_cc::EntryPointCc),
     ]
 }
