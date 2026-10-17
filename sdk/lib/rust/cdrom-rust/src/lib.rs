@@ -58,6 +58,7 @@ macro_rules! TracePrint {
 }
 
 pub mod types;
+pub mod prelude;
 pub mod glue;
 pub mod ddk_shims;
 
@@ -72,6 +73,8 @@ pub mod pnppower;
 pub mod scratch;
 pub mod sense;
 pub mod zpodd;
+// data.c's tables (the hack list, WDF context type infos), from `rustconv data-port`.
+pub mod data;
 
 /// Write `<prefix><num>\0` as a UTF-16 string into `dst` (capacity `cch` u16 units).
 ///
