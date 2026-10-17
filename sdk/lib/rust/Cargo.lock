@@ -6229,6 +6229,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tdihelpers-rust"
+version = "0.1.0"
+dependencies = [
+ "ddk-macros-rust",
+ "ntkrnl-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "telephon-cargo"
 version = "0.1.0"
 dependencies = [

@@ -5958,7 +5958,15 @@ def propose_flex_array_edits(
             # A raw-pointer deref needs an unsafe context; we will not silently add one.
             decline("not_unsafe_context", f"{field_name}[{index_text}]")
             continue
-        borrowed_mut = re.search(r"&\s*mut\s*$", text[max(0, start - 16) : start]) is not None
+        # `addr_of_mut!(x.flex[i])` and `&raw mut` borrow it mutably too: tdihelpers'
+        # TaLengthOfTransportAddress got `addr_of_mut!((*a.as_ptr().add(0)))`, E0596.
+        borrowed_mut = (
+            re.search(
+                r"(?:&\s*(?:raw\s+)?mut|\baddr_of_mut!\s*\(\s*)\s*$",
+                text[max(0, start - 32) : start],
+            )
+            is not None
+        )
         mutable = borrowed_mut or _is_assignment_target(masked, closing)
         accessor = "as_mut_ptr" if mutable else "as_ptr"
         base = data[start : match.end("base")].decode("utf-8", "replace")

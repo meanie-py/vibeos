@@ -613,6 +613,15 @@ def _preamble_has_translatable_content(preamble_src: str, tu_text: str | None = 
             continue
         if re.match(r"^#\s*pragma\s+once\b", stripped):
             continue
+        # A bare conditional only gates the lines between it and its #endif, and each of
+        # those is judged here on its own. tdihelpers' tdi.c guards an #undef with one:
+        # `#ifdef UNIMPLEMENTED` / `#undef UNIMPLEMENTED` / `#endif`.
+        if re.match(r"^#\s*(?:if|ifdef|ifndef|elif|else|endif)\b", stripped):
+            continue
+        # An #undef alone introduces nothing: a later use of the name would not compile in
+        # the C unless the TU defines it again, and that #define is judged on its own line.
+        if re.match(r"^#\s*undef\s+[A-Za-z_]\w*\s*$", stripped):
+            continue
         # A wine debug-channel declaration is owned by the CRATE PRELUDE in this project, not
         # by the per-file translation (the lsasrv/netapi32 pattern: wine/debug.h is parsed but
         # not allowlisted, and the prelude supplies the no-op TRACE/ERR/WARN/FIXME macros).

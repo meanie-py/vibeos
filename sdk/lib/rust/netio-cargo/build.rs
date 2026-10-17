@@ -15,9 +15,9 @@ fn main() {
     };
 
     let link_order: &[&str] = match arch.as_str() {
-        "x86" => &["body", "engine:c:tdihelpers", "engine:pseh", "import:ntoskrnl", "import:hal", "engine:chkstk", "engine:c:memcmp"],
-        "x86_64" => &["body", "engine:c:tdihelpers", "engine:pseh", "import:ntoskrnl", "import:hal", "engine:c:memcmp"],
-        "aarch64" => &["body", "engine:c:tdihelpers", "engine:pseh", "import:ntoskrnl", "import:hal", "engine:chkstk", "engine:c:memcmp"],
+        "x86" => &["body", "engine:crate:tdihelpers-rust::TRUE", "engine:pseh", "import:ntoskrnl", "import:hal", "engine:chkstk", "engine:c:memcmp"],
+        "x86_64" => &["body", "engine:crate:tdihelpers-rust::TRUE", "engine:pseh", "import:ntoskrnl", "import:hal", "engine:c:memcmp"],
+        "aarch64" => &["body", "engine:crate:tdihelpers-rust::TRUE", "engine:pseh", "import:ntoskrnl", "import:hal", "engine:chkstk", "engine:c:memcmp"],
         _ => unreachable!(),
     };
 

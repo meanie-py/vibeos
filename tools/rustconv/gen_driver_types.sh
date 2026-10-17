@@ -9010,6 +9010,22 @@ case "$DRIVER" in
     LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
+  tdihelpers)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-17 from drivers/network/tdihelpers/CMakeLists.txt
+    # (2 compiled TU(s), 188 headers in the include closure, 5 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=0
+    REAL_UNIONS=1
+    DRIVER_DIR="${SRC}/drivers/network/tdihelpers"
+    WRAPPER_INC=$'#include <afd.h>\n#undef UNIMPLEMENTED\n#include <tdikrnl.h>\n#include <tdiinfo.h>\n#define NDEBUG\n#include <reactos/debug.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]afd\.h' --allowlist-file '.*[/\\]tdi\.h'
+                  --allowlist-file '.*[/\\]tdiinfo\.h'
+                  --allowlist-file '.*[/\\]tdikrnl\.h'
+                  --allowlist-file '.*tdihelpers[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/drivers/network/tdihelpers" -I"${SRC}/drivers/network/tdihelpers/include" -I"${SRC}/build-i386/drivers/network/tdihelpers" -I"${SRC}/drivers/network/tdihelpers/include" -I"${SRC}/drivers/network/afd/include" -I"${SRC}/sdk/include/reactos/drivers" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 

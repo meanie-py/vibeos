@@ -2335,6 +2335,26 @@ def _stub_name(state: dict) -> str:
     return "rust_cohab_stub.cpp" if state.get("cpp_tus") else "rust_cohab_stub.c"
 
 
+def _repoint_cargo_cells(target: str, crate: str) -> list[Path]:
+    """Point every cargo cell that replays `target`'s C at its Rust archive instead.
+
+    A cell takes a cmake static library as `engine:c:<target>`, which replays that target's
+    compiles; after the flip those are only the stub, so the cell links nothing in their
+    place. timedate.cpl's cell did that with tzlib and failed every arch's link. The archive
+    the flip just declared (`rust_staticlib_variant(... <crate> "" TRUE)`) is spelled
+    `engine:crate:<crate>::TRUE`, as tools/cargo_cell_gen.py writes it. Returns the cells
+    rewritten.
+    """
+    old, new = f'"engine:c:{target}"', f'"engine:crate:{crate}::TRUE"'
+    changed = []
+    for build_rs in sorted((REPO / "sdk" / "lib" / "rust").glob("*-cargo/build.rs")):
+        text = build_rs.read_text()
+        if old in text:
+            build_rs.write_text(text.replace(old, new))
+            changed.append(build_rs)
+    return changed
+
+
 def stage_flip(stem: str) -> None:
     started = time.time()
     state = load_state(stem)
@@ -2375,6 +2395,8 @@ def stage_flip(stem: str) -> None:
         )
     _record(state, "flip", started, changed=changed)
     print(f"flip: {cml.relative_to(REPO)} {'rewritten' if changed else 'already flipped'}")
+    for cell in _repoint_cargo_cells(state["target"], state["crate"]):
+        print(f"flip: {cell.relative_to(REPO)} now links {state['crate']}")
     # A flip leaves the module linked by cmake around the stub; the cargo cell is the next
     # step, and `vibeos-cli check` (scan_cmake_linked_rust) fails until it is taken.
     print(
