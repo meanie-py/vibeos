@@ -76,12 +76,12 @@ extern "C" {
     fn DbgPrint(Format: *const u8, ...) -> u32;
 }
 
-// KiEndInterrupt is FORCEINLINE in internal/amd64/ke.h.  Inline its body:
-//   ASSERT(TrapFrame->ErrorCode == 0xc10c4);  -- skipped (release build)
-//   _disable();
-//   HalEndSystemInterrupt(Irql, TrapFrame);
+// KiEndInterrupt is FORCEINLINE in internal/amd64/ke.h. Its ASSERT checks the
+// marker the entry paths below stamp into ErrorCode (print-and-continue, as the C).
 #[inline(always)]
 unsafe fn KiEndInterrupt(Irql: KIRQL, TrapFrame: PKTRAP_FRAME) {
+    #[cfg(target_arch = "x86_64")]
+    ntkrnl_sys::ASSERT!((*TrapFrame).__bindgen_anon_4.ErrorCode == 0xc10c4);
     core::arch::asm!("cli", options(nomem, nostack));
     HalEndSystemInterrupt(Irql as u32, TrapFrame as _);
 }

@@ -243,6 +243,9 @@ unsafe fn MI_IS_PAGE_DIRTY(pte: &MMPTE) -> bool {
 
 #[inline]
 unsafe fn MI_UPDATE_VALID_PTE(pte: PMMPTE, value: MMPTE) {
+    ntkrnl_sys::ASSERT!((*pte).valid());
+    ntkrnl_sys::ASSERT!(value.valid());
+    ntkrnl_sys::ASSERT!((*pte).page_frame_number() == value.page_frame_number());
     (*pte).Long = value.Long;
 }
 
@@ -306,7 +309,10 @@ const _: () = assert!(ntkrnl_sys::hal_ddk::MI_MAX_ZERO_BITS == 21);
 #[inline]
 fn MI_GET_PROTOTYPE_PTE_FOR_VPN(vad: *const _MMVAD_LONG, vpn: ULONG_PTR) -> PMMPTE {
     unsafe {
-        (*vad).FirstPrototypePte.add((vpn - (*vad).StartingVpn as ULONG_PTR) as usize) as PMMPTE
+        let proto_pte =
+            (*vad).FirstPrototypePte.add((vpn - (*vad).StartingVpn as ULONG_PTR) as usize) as PMMPTE;
+        ntkrnl_sys::ASSERT!(proto_pte as usize <= (*vad).LastContiguousPte as usize);
+        proto_pte
     }
 }
 

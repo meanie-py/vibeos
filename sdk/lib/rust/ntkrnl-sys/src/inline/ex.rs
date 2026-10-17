@@ -6,6 +6,29 @@
 use crate::base::*;
 use crate::ddk;
 
+// The C ASSERTs these helpers carried, restored (scan_dropped_asserts). ASSERT! here is
+// RtlAssert: it prints and continues, like the C under DBG.
+#[inline(always)]
+unsafe fn push_lock_locked(push_lock: ddk::PEX_PUSH_LOCK) -> bool {
+    core::ptr::read_volatile(push_lock as *const usize) & EX_PUSH_LOCK_LOCK != 0
+}
+
+/// C `(KeGetCurrentIrql() == APC_LEVEL) || Thread->CombinedApcDisable != 0 ||
+/// Thread->Teb == NULL || Thread->Teb >= MM_SYSTEM_RANGE_START`: the caller of an
+/// unsafe fast-mutex op cannot take an APC that would re-enter it.
+#[inline(always)]
+unsafe fn fast_mutex_unsafe_ok(thread: ddk::PKTHREAD) -> bool {
+    #[cfg(target_arch = "x86")]
+    let combined = (*thread).__bindgen_anon_4.CombinedApcDisable;
+    #[cfg(not(target_arch = "x86"))]
+    let combined = (*thread).__bindgen_anon_5.__bindgen_anon_8.__bindgen_anon_1.CombinedApcDisable;
+    let teb = (*thread).Teb as usize;
+    crate::ke::KeGetCurrentIrql() == crate::base::APC_LEVEL
+        || combined != 0
+        || teb == 0
+        || teb >= crate::mm::MmSystemRangeStart as usize
+}
+
 // ============================================================================
 // Push lock constants (from ntoskrnl/include/internal/ex.h)
 // ============================================================================
@@ -284,6 +307,7 @@ pub unsafe fn ExAcquirePushLockExclusiveSited(push_lock: ddk::PEX_PUSH_LOCK, sit
     if old & EX_PUSH_LOCK_LOCK != 0 {
         ddk::ExfAcquirePushLockExclusive(push_lock);
     }
+    crate::ASSERT!(push_lock_locked(push_lock));
     // held now (fast or slow path) — record excl
     lockdep_acquire(push_lock as _, 2, site);
 }
@@ -310,6 +334,7 @@ pub unsafe fn ExAcquirePushLockSharedSited(push_lock: ddk::PEX_PUSH_LOCK, site: 
     {
         ddk::ExfAcquirePushLockShared(push_lock);
     }
+    crate::ASSERT!(push_lock_locked(push_lock));
     // held now (fast or slow path) — record shared
     lockdep_acquire(push_lock as _, 1, site);
 }
@@ -325,6 +350,7 @@ pub unsafe fn ExReleasePushLock(push_lock: ddk::PEX_PUSH_LOCK) {
     lockdep_release(push_lock as _); // pop from held-set before we drop it
     let atomic = &*(push_lock as *const AtomicUsize);
     let old_value = atomic.load(Ordering::Relaxed);
+    crate::ASSERT!(old_value & EX_PUSH_LOCK_LOCK != 0);
 
     // Check if there are multiple shared owners
     let shared = old_value >> 4; // Share count from bits 4+
@@ -353,8 +379,12 @@ pub unsafe fn ExReleasePushLock(push_lock: ddk::PEX_PUSH_LOCK) {
 pub unsafe fn ExReleasePushLockExclusive(push_lock: ddk::PEX_PUSH_LOCK) {
     use core::sync::atomic::{AtomicUsize, Ordering};
     lockdep_release(push_lock as _); // pop from held-set before we drop it
+    crate::ASSERT!(push_lock_locked(push_lock));
     let atomic = &*(push_lock as *const AtomicUsize);
     let old_value = atomic.fetch_sub(EX_PUSH_LOCK_LOCK, Ordering::SeqCst);
+    crate::ASSERT!(old_value & EX_PUSH_LOCK_LOCK != 0);
+    // C: OldValue.Waiting || OldValue.Shared == 0 (Shared is bits 4+)
+    crate::ASSERT!(old_value & EX_PUSH_LOCK_WAITING != 0 || (old_value >> 4) == 0);
 
     if (old_value & EX_PUSH_LOCK_WAITING != 0)
         && (old_value & EX_PUSH_LOCK_WAKING == 0)
@@ -382,7 +412,10 @@ pub unsafe fn ExConvertPushLockSharedToExclusive(
         Ordering::SeqCst,
         Ordering::SeqCst,
     ) {
-        Ok(_) => 1,
+        Ok(_) => {
+            crate::ASSERT!(push_lock_locked(push_lock));
+            1
+        }
         Err(_) => 0,
     }
 }
@@ -411,6 +444,7 @@ pub unsafe fn ExInitializeFastReference(
     fast_ref: ddk::PEX_FAST_REF,
     object: PVOID,
 ) {
+    crate::ASSERT!((object as usize) & MAX_FAST_REFS == 0);
     if object.is_null() {
         core::ptr::write_volatile(fast_ref as *mut usize, 0);
     } else {
@@ -451,6 +485,7 @@ pub unsafe fn ExInsertFastReference(
     object: PVOID,
 ) -> BOOLEAN {
     use core::sync::atomic::{AtomicUsize, Ordering};
+    crate::ASSERT!((object as usize) & MAX_FAST_REFS == 0);
     let atomic = &*(fast_ref as *const AtomicUsize);
     let obj_usize = object as usize;
     loop {
@@ -480,6 +515,8 @@ pub unsafe fn ExReleaseFastReference(
 ) -> BOOLEAN {
     use core::sync::atomic::{AtomicUsize, Ordering};
     let atomic = &*(fast_ref as *const AtomicUsize);
+    crate::ASSERT!(!object.is_null());
+    crate::ASSERT!((object as usize) & MAX_FAST_REFS == 0);
     loop {
         let old_value = atomic.load(Ordering::Relaxed);
         // XOR trick: if pointer matches, result is just RefCnt (< MAX_FAST_REFS)
@@ -504,6 +541,7 @@ pub unsafe fn ExSwapFastReference(
     object: PVOID,
 ) -> usize {
     use core::sync::atomic::{AtomicUsize, Ordering};
+    crate::ASSERT!((object as usize) & MAX_FAST_REFS == 0);
     let atomic = &*(fast_ref as *const AtomicUsize);
     let new_value = if object.is_null() {
         0
@@ -523,6 +561,7 @@ pub unsafe fn ExCompareSwapFastReference(
 ) -> usize {
     use core::sync::atomic::{AtomicUsize, Ordering};
     let atomic = &*(fast_ref as *const AtomicUsize);
+    crate::ASSERT!((object as usize) & MAX_FAST_REFS == 0);
     loop {
         let old_value = atomic.load(Ordering::Relaxed);
         // Check pointer match: XOR of old_value and old_object should be <= MAX_FAST_REFS
@@ -591,6 +630,7 @@ extern "C" {
 /// _ExAcquireFastMutex — raise IRQL to APC, acquire via InterlockedDecrement.
 #[inline]
 pub unsafe fn _ExAcquireFastMutex(fast_mutex: ddk::PFAST_MUTEX) {
+    crate::ASSERT!(crate::ke::KeGetCurrentIrql() <= crate::base::APC_LEVEL);
     let mut old_irql: KIRQL = 0;
     super::tier1::KeRaiseIrqlInternal(crate::base::APC_LEVEL, &mut old_irql);
 
@@ -609,6 +649,7 @@ pub unsafe fn _ExAcquireFastMutex(fast_mutex: ddk::PFAST_MUTEX) {
 /// _ExReleaseFastMutex — release via InterlockedIncrement, lower IRQL.
 #[inline]
 pub unsafe fn _ExReleaseFastMutex(fast_mutex: ddk::PFAST_MUTEX) {
+    crate::ASSERT!(crate::ke::KeGetCurrentIrql() == crate::base::APC_LEVEL);
     (*fast_mutex).Owner = core::ptr::null_mut::<ddk::_KTHREAD>();
     let old_irql = (*fast_mutex).OldIrql as KIRQL;
 
@@ -630,6 +671,8 @@ pub unsafe fn _ExReleaseFastMutex(fast_mutex: ddk::PFAST_MUTEX) {
 #[inline]
 pub unsafe fn _ExAcquireFastMutexUnsafe(fast_mutex: ddk::PFAST_MUTEX) {
     let thread = crate::mm::KeGetCurrentThread() as ddk::PKTHREAD;
+    crate::ASSERT!(fast_mutex_unsafe_ok(thread));
+    crate::ASSERT!((*fast_mutex).Owner != thread);
 
     let count = core::sync::atomic::AtomicI32::from_ptr(
         core::ptr::addr_of_mut!((*fast_mutex).Count) as *mut i32,
@@ -645,6 +688,9 @@ pub unsafe fn _ExAcquireFastMutexUnsafe(fast_mutex: ddk::PFAST_MUTEX) {
 /// _ExReleaseFastMutexUnsafe — release without IRQL change.
 #[inline]
 pub unsafe fn _ExReleaseFastMutexUnsafe(fast_mutex: ddk::PFAST_MUTEX) {
+    let thread = crate::mm::KeGetCurrentThread() as ddk::PKTHREAD;
+    crate::ASSERT!(fast_mutex_unsafe_ok(thread));
+    crate::ASSERT!((*fast_mutex).Owner == thread);
     (*fast_mutex).Owner = core::ptr::null_mut::<ddk::_KTHREAD>();
 
     let count = core::sync::atomic::AtomicI32::from_ptr(
@@ -676,6 +722,7 @@ pub unsafe fn _ExReleaseFastMutexUnsafeAndLeaveCriticalRegion(fast_mutex: ddk::P
 /// _ExTryToAcquireFastMutex — try to acquire (CAS 1→0), return TRUE on success.
 #[inline]
 pub unsafe fn _ExTryToAcquireFastMutex(fast_mutex: ddk::PFAST_MUTEX) -> BOOLEAN {
+    crate::ASSERT!(crate::ke::KeGetCurrentIrql() <= crate::base::APC_LEVEL);
     let mut old_irql: KIRQL = 0;
     super::tier1::KeRaiseIrqlInternal(crate::base::APC_LEVEL, &mut old_irql);
 
@@ -723,6 +770,7 @@ pub unsafe fn ExWaitOnPushLock(push_lock: ddk::PEX_PUSH_LOCK) {
     let locked = core::ptr::read_volatile(push_lock as *const usize) & EX_PUSH_LOCK_LOCK != 0;
     if locked {
         ddk::ExfAcquirePushLockExclusive(push_lock);
+        crate::ASSERT!(push_lock_locked(push_lock));
         ddk::ExfReleasePushLockExclusive(push_lock);
     }
 }
@@ -806,6 +854,7 @@ pub unsafe fn ExDoCallBack(
 #[inline]
 pub unsafe fn ExReleasePushLockShared(push_lock: ddk::PEX_PUSH_LOCK) {
     lockdep_release(push_lock as _); // pop from held-set before we drop it
+    crate::ASSERT!(push_lock_locked(push_lock));
     let old_val = (EX_PUSH_LOCK_LOCK | EX_PUSH_LOCK_SHARE_INC) as usize;
     let current = ExpChangePushlock(push_lock, 0, old_val);
     if current != old_val {
