@@ -1,0 +1,29 @@
+{
+  "oracle_revision": "996c6ff8957615baccfd3a51286b1f8d7ec27c9d",
+  "method": "Run the historical registry argv/stream and original Python scripts/imported helpers against each source tree. Normalize repo paths, remove registry summary lines, sort unique finding lines, join with LF without final LF, then compare SHA-256 and differences.",
+  "reports": [
+    "final-coverage-current.json",
+    "final-coverage-older.json"
+  ],
+  "current_rules": 12,
+  "older_rules": 10,
+  "older_missing_build_inputs": [
+    "verify_signatures: no configured build-amd64 generated headers",
+    "scan_cmake_linked_rust: no build-amd64/build.ninja"
+  ],
+  "additional_controls": [
+    "verify_signatures original three parser fixtures plus Unicode, classifier and AST controls",
+    "native three-arch CMake model convertible/refused labels compared to current cargo_cell_gen.survey on the same synthetic PE/build inputs",
+    "native marshalling audit with controlled clang layout output, scalar divergence, clean repair and stale generated table hard failure",
+    "vendor path/version/stamp/translate/grant/crate/notice controls and byte-exact real notices regeneration",
+    "all six new source scanner controls execute the native binary",
+    "shellchecker and Python compiler positive/negative controls through Rust plugins",
+    "Native external-tool/artifact fixtures run without synthetic sdk/lib/rust directories; SVC fixture proves a valid guest mapping passes and a neighbor misroute hard-fails."
+  ],
+  "build_dependent_skips": "Older tree has no configured build directories; UCRT/SVC/marshalling build-dependent branches preserve original skips. Parser and failure controls exercise these branches separately.",
+  "vendor_followup_reports": [
+    "final-coverage-vendor-current.json",
+    "final-coverage-vendor-older.json"
+  ],
+  "vendor_followup": "After native scanner-control routing was corrected, the vendor-only runner accepts standalone registries without a Rust workspace and scopes project grant tolerances to checkouts carrying the canonical vendored writer. Both real source trees still match master Python exactly. Other external plugins also declare their own inputs instead of requiring an unrelated default Rust workspace."
+}

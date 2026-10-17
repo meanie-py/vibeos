@@ -1832,9 +1832,15 @@ pub unsafe extern "system" fn NtGdiGetRealizationInfo(
     Ret
 }
 
-// The three NT6 font-file syscalls dwrite probes (upstream ab1aefbabb3, appended to
-// w32ksvc32/64.h). Stubs upstream as well: "Does not appear necessary for the main
-// functionality".
+// The three NT6 font-file syscalls dwrite's GDI interop uses (upstream ab1aefbabb3
+// appended them to w32ksvc32/64.h as stubs). Semantics are Wine win32u's
+// (NtGdiGetRealizationInfo, NtGdiGetFontFileInfo, NtGdiGetFontFileData); the face lookup
+// lives in freetype.rs beside the font lists it walks.
+
+// FONT_REALIZATION_INFO has two sizes: 16 (through instance_id) and 24.
+const FONT_REALIZATION_INFO_V0: usize = 16;
+
+/// The bytes of the selected font's file, for dwrite's custom loader when there is no path.
 #[no_mangle]
 pub unsafe extern "system" fn NtGdiGetFontFileData(
     uFileCollectionID: UINT,
@@ -1843,11 +1849,74 @@ pub unsafe extern "system" fn NtGdiGetFontFileData(
     pvBuf: PVOID,
     cjBuf: SIZE_T,
 ) -> DWORD {
-    let _ = (uFileCollectionID, uFileIndex, pullFileOffset, pvBuf, cjBuf);
-    DPRINT1!("WARNING: NtGdiGetFontFileData is UNIMPLEMENTED!\n");
-    0
+    let mut Offset: u64 = 0;
+    if uFileIndex != 0 || pullFileOffset.is_null()
+        || !NT_SUCCESS(SafeProbeForRead(pullFileOffset as PVOID, core::mem::size_of::<u64>(), 1))
+        || !crate::copy::capture_from_user(&mut Offset as *mut u64 as _, pullFileOffset as _, core::mem::size_of::<u64>())
+    {
+        EngSetLastError(ERROR_INVALID_PARAMETER);
+        return 0;
+    }
+    let Some((SharedFace, Name)) = crate::freetype::IntFindFontInstance(uFileCollectionID) else {
+        EngSetLastError(ERROR_INVALID_PARAMETER);
+        return 0;
+    };
+    let (Buffer, Size) = crate::freetype::IntFontInstanceMemory(SharedFace);
+    let mut Ret: DWORD = 0;
+    match Offset.checked_add(cjBuf as u64) {
+        Some(End) if !Buffer.is_null() && End <= Size as u64 => {
+            if cjBuf == 0
+                || (NT_SUCCESS(SafeProbeForWrite(pvBuf, cjBuf as usize, 1))
+                    && crate::copy::publish_to_user(pvBuf, Buffer.add(Offset as usize) as _, cjBuf as usize))
+            {
+                Ret = 1;
+            } else {
+                EngSetLastError(ERROR_NOACCESS);
+            }
+        }
+        _ => EngSetLastError(ERROR_INVALID_PARAMETER),
+    }
+    crate::freetype::IntReleaseFontInstance(SharedFace, Name);
+    Ret
 }
 
+/// `\SystemRoot\x` -> `<NtSystemRoot>\x`, `\??\C:\x` -> `C:\x`; anything else has no DOS
+/// spelling and yields an empty path, which sends dwrite to GetFontFileData instead.
+unsafe fn FontDosPath(NtName: *const u16, Out: &mut [u16; 520]) -> usize {
+    let mut n = 0usize;
+    if NtName.is_null() {
+        return 0;
+    }
+    let len = { let mut l = 0; while *NtName.add(l) != 0 { l += 1; } l };
+    let name = core::slice::from_raw_parts(NtName, len);
+    let starts = |p: &str| name.len() >= p.len() && p.encode_utf16().zip(name).all(|(a, &b)| {
+        let up = |c: u16| if (b'a' as u16..=b'z' as u16).contains(&c) { c - 32 } else { c };
+        up(a) == up(b)
+    });
+    let rest: &[u16] = if starts("\\SystemRoot\\") {
+        let sud = ntkrnl_sys::mm::KI_USER_SHARED_DATA as usize as *const ntkrnl_sys::ddk::_KUSER_SHARED_DATA;
+        let root = &(*sud).NtSystemRoot;
+        for &c in root.iter().take_while(|&&c| c != 0) {
+            if n + 1 >= Out.len() { return 0; }
+            Out[n] = c;
+            n += 1;
+        }
+        &name[11..] // keeps the backslash after \SystemRoot
+    } else if starts("\\??\\") {
+        &name[4..]
+    } else {
+        return 0;
+    };
+    for &c in rest {
+        if n + 1 >= Out.len() { return 0; }
+        Out[n] = c;
+        n += 1;
+    }
+    Out[n] = 0;
+    n
+}
+
+/// Write time, size and DOS path of the selected font's file.
 #[no_mangle]
 pub unsafe extern "system" fn NtGdiGetFontFileInfo(
     uFileCollectionID: UINT,
@@ -1856,16 +1925,138 @@ pub unsafe extern "system" fn NtGdiGetFontFileInfo(
     cjSize: SIZE_T,
     pcjActualSize: PSIZE_T,
 ) -> DWORD {
-    let _ = (uFileCollectionID, uFileIndex, pffi, cjSize, pcjActualSize);
-    DPRINT1!("WARNING: NtGdiGetFontFileInfo is UNIMPLEMENTED!\n");
-    0
+    let mut Required: SIZE_T = 0;
+    let mut Ret: DWORD = 0;
+    let found = if uFileIndex == 0 { crate::freetype::IntFindFontInstance(uFileCollectionID) } else { None };
+    if let Some((SharedFace, Name)) = found {
+        let mut Path = [0u16; 520];
+        let PathLen = FontDosPath(Name, &mut Path);
+        Required = (core::mem::size_of::<FONT_FILE_INFO>() + PathLen * core::mem::size_of::<u16>()) as SIZE_T;
+        if Required <= cjSize && !pffi.is_null() {
+            let mut WriteTime: i64 = 0;
+            let mut FileSize: i64 = crate::freetype::IntFontInstanceMemory(SharedFace).1 as i64;
+            if !Name.is_null() {
+                if let Some((w, s)) = FontFileTimes(Name) {
+                    WriteTime = w;
+                    FileSize = s;
+                }
+            }
+            let mut Head: FONT_FILE_INFO = core::mem::zeroed();
+            Head.writetime.dwLowDateTime = WriteTime as u32;
+            Head.writetime.dwHighDateTime = (WriteTime >> 32) as u32;
+            *(core::ptr::addr_of_mut!(Head.size) as *mut i64) = FileSize;
+            let PathOff = core::mem::offset_of!(FONT_FILE_INFO, path);
+            if NT_SUCCESS(SafeProbeForWrite(pffi as PVOID, Required as usize, 1))
+                && crate::copy::publish_to_user(pffi as _, &Head as *const FONT_FILE_INFO as _, PathOff)
+                && crate::copy::publish_to_user(
+                    (pffi as *mut u8).add(PathOff) as _,
+                    Path.as_ptr() as _,
+                    (PathLen + 1) * core::mem::size_of::<u16>(),
+                )
+            {
+                Ret = 1;
+            } else {
+                EngSetLastError(ERROR_NOACCESS);
+            }
+        } else {
+            EngSetLastError(ERROR_INSUFFICIENT_BUFFER);
+        }
+        crate::freetype::IntReleaseFontInstance(SharedFace, Name);
+    } else {
+        EngSetLastError(ERROR_INVALID_PARAMETER);
+    }
+    if !pcjActualSize.is_null()
+        && NT_SUCCESS(SafeProbeForWrite(pcjActualSize as PVOID, core::mem::size_of::<SIZE_T>(), 1))
+    {
+        let _ = crate::copy::publish_to_user(pcjActualSize as _, &Required as *const SIZE_T as _, core::mem::size_of::<SIZE_T>());
+    }
+    Ret
 }
 
+extern "system" {
+    #[link_name = "ZwQueryInformationFile"]
+    fn ZwQueryInformationFileRaw(FileHandle: HANDLE, IoStatusBlock: *mut IO_STATUS_BLOCK, FileInformation: PVOID, Length: ULONG, FileInformationClass: ULONG) -> NTSTATUS;
+    #[link_name = "ZwOpenFile"]
+    fn ZwOpenFileRaw(FileHandle: *mut HANDLE, DesiredAccess: ACCESS_MASK, ObjectAttributes: *mut OBJECT_ATTRIBUTES, IoStatusBlock: *mut IO_STATUS_BLOCK, ShareAccess: ULONG, OpenOptions: ULONG) -> NTSTATUS;
+    #[link_name = "ZwClose"]
+    fn ZwCloseRaw(Handle: HANDLE) -> NTSTATUS;
+}
+
+/// (LastWriteTime, EndOfFile) of an NT-named file.
+unsafe fn FontFileTimes(NtName: *const u16) -> Option<(i64, i64)> {
+    let mut Name: UNICODE_STRING = core::mem::zeroed();
+    let len = { let mut l = 0; while *NtName.add(l) != 0 { l += 1; } l };
+    Name.Buffer = NtName as *mut u16;
+    Name.Length = (len * 2) as u16;
+    Name.MaximumLength = Name.Length;
+    let mut Oa: OBJECT_ATTRIBUTES = core::mem::zeroed();
+    Oa.Length = core::mem::size_of::<OBJECT_ATTRIBUTES>() as ULONG;
+    Oa.Attributes = OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE;
+    Oa.ObjectName = &mut Name;
+    let mut Iosb: IO_STATUS_BLOCK = core::mem::zeroed();
+    let mut Handle: HANDLE = core::ptr::null_mut();
+    if !NT_SUCCESS(ZwOpenFileRaw(&mut Handle, FILE_READ_ATTRIBUTES | SYNCHRONIZE, &mut Oa, &mut Iosb,
+                                 FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_SYNCHRONOUS_IO_NONALERT)) {
+        return None;
+    }
+    let mut Basic: FILE_BASIC_INFORMATION = core::mem::zeroed();
+    let mut Std: FILE_STANDARD_INFORMATION = core::mem::zeroed();
+    let ok = NT_SUCCESS(ZwQueryInformationFileRaw(Handle, &mut Iosb, &mut Basic as *mut _ as PVOID,
+                                                  core::mem::size_of::<FILE_BASIC_INFORMATION>() as ULONG,
+                                                  _FILE_INFORMATION_CLASS_FileBasicInformation as ULONG))
+        && NT_SUCCESS(ZwQueryInformationFileRaw(Handle, &mut Iosb, &mut Std as *mut _ as PVOID,
+                                                core::mem::size_of::<FILE_STANDARD_INFORMATION>() as ULONG,
+                                                _FILE_INFORMATION_CLASS_FileStandardInformation as ULONG));
+    ZwCloseRaw(Handle);
+    ok.then(|| (*(core::ptr::addr_of!(Basic.LastWriteTime) as *const i64), *(core::ptr::addr_of!(Std.EndOfFile) as *const i64)))
+}
+
+/// Which loaded face the DC's font realized to, and the simulations GDI applies to it.
 #[no_mangle]
 pub unsafe extern "system" fn NtGdiGetFontRealizationInfo(hdc: HDC, info: PFONT_REALIZATION_INFO) -> BOOL {
-    let _ = (hdc, info);
-    DPRINT1!("WARNING: NtGdiGetFontRealizationInfo is UNIMPLEMENTED!\n");
-    FALSE as BOOL
+    let mut Size: DWORD = 0;
+    if info.is_null()
+        || !NT_SUCCESS(SafeProbeForRead(info as PVOID, core::mem::size_of::<DWORD>(), 1))
+        || !crate::copy::capture_from_user(&mut Size as *mut DWORD as _, info as _, core::mem::size_of::<DWORD>())
+    {
+        return 0;
+    }
+    if Size as usize != core::mem::size_of::<FONT_REALIZATION_INFO>() && Size as usize != FONT_REALIZATION_INFO_V0 {
+        return 0;
+    }
+    let Dc: PDC = DC_LockDc(hdc);
+    if Dc.is_null() {
+        EngSetLastError(ERROR_INVALID_HANDLE);
+        return 0;
+    }
+    let TextObj: PTEXTOBJ = RealizeFontInit((*(*Dc).pdcattr).hlfntNew as _);
+    if TextObj.is_null() {
+        DC_UnlockDc(Dc);
+        EngSetLastError(ERROR_INVALID_HANDLE);
+        return 0;
+    }
+    let FontGdi: PFONTGDI = ObjToGDI!((*TextObj).Font);
+    let (flags, id, face_index, simulations) = crate::freetype::IntFontRealization(
+        FontGdi,
+        core::ptr::addr_of!((*TextObj).logfont.elfEnumLogfontEx.elfLogFont),
+    );
+    w32r_TEXTOBJ_UnlockText(TextObj);
+    DC_UnlockDc(Dc);
+
+    let mut Out: FONT_REALIZATION_INFO = core::mem::zeroed();
+    Out.size = Size;
+    Out.flags = flags;
+    Out.cache_num = id;
+    Out.instance_id = id;
+    Out.file_count = 1;
+    Out.face_index = face_index;
+    Out.simulations = simulations;
+    if !NT_SUCCESS(SafeProbeForWrite(info as PVOID, Size as usize, 1))
+        || !crate::copy::publish_to_user(info as _, &Out as *const FONT_REALIZATION_INFO as _, Size as usize)
+    {
+        return 0;
+    }
+    1
 }
 
 #[no_mangle]

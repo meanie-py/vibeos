@@ -40,15 +40,8 @@ add_dependencies(user32_vista_static psdk)
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # dpi.c  # replaced by Rust (sdk/lib/rust/user32_vista-rust/src/user32_vista/dpi.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(user32_vista_res OBJECT user32_vista.rc)
-target_compile_definitions(user32_vista_res PRIVATE UNICODE _UNICODE)
-target_include_directories(user32_vista_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-# Generated inputs those compiles read, ordered before them.
-add_dependencies(user32_vista_res psdk)
 add_cargo_module(user32_vista user32_vista-cargo user32_vista.dll
     KIND win32dll
     BODY_CRATE user32_vista-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS user32_vista_res asm)
+    EXTRA_DEPENDS asm psdk)

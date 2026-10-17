@@ -51,6 +51,8 @@ from .scanner import (
     _blank_memmodel,
     _expand_case_macros,
     _normalize_callbacks,
+    _strip_sal,
+    mask_seh_for_parse,
 )
 
 C_LANG = Language(tsc.language())
@@ -149,8 +151,12 @@ def _scan(c_path: Path) -> tuple[list[CDecl], dict[str, str], list[int]]:
     # RE_CODE_SEG_BYTES); left in here, every PAGED function of the arbiter library read as a
     # top-level ERROR and all six of its files skipped their file-scope checks.
     raw = RE_CODE_SEG_BYTES.sub(lambda m: b" " * len(m.group()), raw.encode()).decode()
-    text = _normalize_callbacks(_blank_memmodel(_expand_case_macros(raw)))
-    src = text.encode()
+    text = _normalize_callbacks(_blank_memmodel(_expand_case_macros(_strip_sal(raw))))
+    # A fifth and sixth: the catalog also strips SAL (`_Out_writes_bytes_(DataLen)` in a
+    # parameter list is a top-level ERROR) and parses with SEH/RpcTryExcept/__TRY masked
+    # to same-length C (a nested RpcTryExcept ends the function early, its tail reads as a
+    # top-level ERROR). setupapi's cfgmgr.c skipped every file-scope check on both.
+    src = mask_seh_for_parse(text.encode())
     # Parse a .cpp with the C++ grammar, as the function catalog already does. Using the C
     # grammar on C++ makes `class X : public Y {` a top-level ERROR by construction, which
     # this function reads as "cannot trust the parse" and returns INCOMPLETE -- so every

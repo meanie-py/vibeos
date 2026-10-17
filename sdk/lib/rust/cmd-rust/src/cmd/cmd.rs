@@ -100,7 +100,7 @@ pub type NtReadVirtualMemoryProc = Option<unsafe extern "system" fn(
 
 // SHELLEXECUTETEXT (_UNICODE branch)
 
-pub type MYEX = unsafe extern "system" fn(LPSHELLEXECUTEINFO) -> BOOL;
+pub type MYEX = Option<unsafe extern "system" fn(LPSHELLEXECUTEINFO) -> BOOL>;
 #[no_mangle]
 pub unsafe extern "C" fn ConvertULargeInteger(mut num: ULONGLONG, mut des: LPTSTR, mut len: UINT, mut bPutSeparator: BOOL) -> INT {
     let mut temp: [TCHAR; 39] = [0; 39];
@@ -202,7 +202,7 @@ pub unsafe extern "C" fn RunFile(mut flags: DWORD, mut filename: LPTSTR, mut par
     }
 
     hShExt = ::core::mem::transmute::<FARPROC, MYEX>(GetProcAddress(hShell32 as _, (SHELLEXECUTETEXT).as_ptr()));
-    if (hShExt as usize) == 0 {
+    if (hShExt).map_or(0, |f| f as usize) as usize == 0 {
         FreeLibrary(hShell32);
         return core::ptr::null_mut();
     }
@@ -211,7 +211,7 @@ pub unsafe extern "C" fn RunFile(mut flags: DWORD, mut filename: LPTSTR, mut par
     sei.lpParameters = params;
     sei.lpDirectory = directory;
     sei.nShow = show;
-    err = (if hShExt(&raw mut sei) != 0 { ERROR_SUCCESS } else { GetLastError() }) as UINT;
+    err = (if (hShExt.unwrap_unchecked())(&raw mut sei) != 0 { ERROR_SUCCESS } else { GetLastError() }) as UINT;
 
     FreeLibrary(hShell32);
 

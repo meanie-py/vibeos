@@ -16,6 +16,11 @@ pub static CPP_COM_WSTR_EB4CE2024A43: [WCHAR; 7] = [0x0046, 0x006F, 0x006C, 0x00
 // `types`/`win32`/`shellcom` globs the assembler also emits are dropped rather than joined,
 // because carrying both makes every shared name ambiguous (E0659) at 70+ sites. See prelude.rs.
 use core::ffi::c_void;
+// The crate's own functions: the definition is the declaration.
+use crate::reg_folder::CRegFolder_CreateInstance;
+use crate::wine::classes::HLM_GetIconW;
+use crate::shell32::shlfolder::SHELL32_DefaultContextMenuCallBack;
+use crate::wine::pidl::_ILGetDrive;
 use crate::prelude::*;
 
 // --- substrate the island does not carry ---
@@ -47,12 +52,8 @@ pub const STRRET_WSTR: UINT = 0;
 
 unsafe extern "C" {
     fn _ILCreateDrive(lpszNew: LPCWSTR) -> LPITEMIDLIST;
-    fn _ILGetDrive(pidl: LPCITEMIDLIST, pOut: LPWSTR, uSize: UINT) -> BOOL;
     fn _ILFreeaPidl(apidl: *mut LPITEMIDLIST, cidl: UINT);
-    fn HLM_GetIconW(index: UINT, destination: LPWSTR, capacity: UINT, index_out: *mut INT) -> BOOL;
-    fn SHELL32_DefaultContextMenuCallBack(psf: *mut IShellFolder, pdtobj: *mut IDataObject, uMsg: UINT) -> HRESULT;
     // CRegFolder.cpp stays C++; the same bridge CControlPanelFolder.rs uses.
-    fn CRegFolder_CreateInstance(pInit: PREGFOLDERINITDATA, pidlRoot: LPCITEMIDLIST, riid: REFIID, ppv: *mut *mut c_void) -> HRESULT;
 }
 
 // CDrivesFolder.cpp: `enum { CMDID_FORMAT, CMDID_EJECT, CMDID_DISCONNECT }`. Upstream 62519e131a7
@@ -177,43 +178,37 @@ pub const RETRY_COUNT: i32 = 3;
 
 pub const RETRY_SLEEP: i32 = 250;
 
-#[repr(C)]
-pub struct shvheader {
-    pub colnameid: i32,
-    pub colstate: SHCOLSTATEF,
-    pub fmt: i32,
-    pub cxChar: i32,
-}
+pub use crate::island::shvheader;
 
 pub static MyComputerSFHeader: [shvheader; 5] = [
     shvheader {
-        colnameid: IDS_SHV_COLUMN_NAME as i32,
-        colstate: SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT,
-        fmt: LVCFMT_LEFT as i32,
+        colnameid: (IDS_SHV_COLUMN_NAME as i32) as u16,
+        colstate: (SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT) as u16,
+        fmt: (LVCFMT_LEFT as i32) as u16,
         cxChar: 15,
     },
     shvheader {
-        colnameid: IDS_SHV_COLUMN_TYPE as i32,
-        colstate: SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT,
-        fmt: LVCFMT_LEFT as i32,
+        colnameid: (IDS_SHV_COLUMN_TYPE as i32) as u16,
+        colstate: (SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT) as u16,
+        fmt: (LVCFMT_LEFT as i32) as u16,
         cxChar: 10,
     },
     shvheader {
-        colnameid: IDS_SHV_COLUMN_DISK_CAPACITY as i32,
-        colstate: SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT,
-        fmt: LVCFMT_RIGHT as i32,
+        colnameid: (IDS_SHV_COLUMN_DISK_CAPACITY as i32) as u16,
+        colstate: (SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT) as u16,
+        fmt: (LVCFMT_RIGHT as i32) as u16,
         cxChar: 10,
     },
     shvheader {
-        colnameid: IDS_SHV_COLUMN_DISK_AVAILABLE as i32,
-        colstate: SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT,
-        fmt: LVCFMT_RIGHT as i32,
+        colnameid: (IDS_SHV_COLUMN_DISK_AVAILABLE as i32) as u16,
+        colstate: (SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT) as u16,
+        fmt: (LVCFMT_RIGHT as i32) as u16,
         cxChar: 10,
     },
     shvheader {
-        colnameid: IDS_SHV_COLUMN_COMMENTS as i32,
-        colstate: SHCOLSTATE_TYPE_STR,
-        fmt: LVCFMT_LEFT as i32,
+        colnameid: (IDS_SHV_COLUMN_COMMENTS as i32) as u16,
+        colstate: (SHCOLSTATE_TYPE_STR as u16),
+        fmt: (LVCFMT_LEFT as i32) as u16,
         cxChar: 10,
     },
 ];
@@ -912,7 +907,7 @@ pub unsafe extern "C" fn CDrivesExtractIcon_CreateInstance(
         ((*(*initIcon).lpVtbl).SetNormalIcon)(initIcon, wTemp.as_ptr(), icon_idx);
     } else if reg_idx != 0
         && HLM_GetIconW(
-            (reg_idx - 1) as u32,
+            (reg_idx - 1) as INT,
             wTemp.as_mut_ptr(),
             _countof!(wTemp),
             &mut icon_idx,

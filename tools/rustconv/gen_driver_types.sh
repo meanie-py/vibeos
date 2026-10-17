@@ -9010,6 +9010,100 @@ case "$DRIVER" in
     LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
+  mmcshext)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-17 from dll/shellext/mmcshext/CMakeLists.txt
+    # (1 compiled TU(s), 176 headers in the include closure, 1 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 10 external prototype(s) declared by the include closure, 2 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=0
+    BLOCKLIST_FUNCS_FROM_CRATE=1
+    DRIVER_DIR="${SRC}/dll/shellext/mmcshext"
+    LANG_ARGS=( -x c++ -std=gnu++17 )
+    WRAPPER_INC=$'#include <windows.h>\n#include <atlbase.h>\n#include <atlcom.h>\n#include <strsafe.h>\n#include <shlobj.h>\n#include <shobjidl.h>\n#include <shlwapi.h>\n#include <initguid.h>\n#include <msxml2.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]initguid\.h' --allowlist-file '.*[/\\]msxml2\.h'
+                  --allowlist-file '.*[/\\]shlobj\.h'
+                  --allowlist-file '.*[/\\]shlwapi\.h'
+                  --allowlist-file '.*[/\\]shobjidl\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  --allowlist-file '.*mmcshext[/\\].*\.h'
+                  --allowlist-type '(IExtractIconW|IPersistFile)(Vtbl)?' )
+    # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
+    UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
+    EXTRA_INC=( -I"${SRC}/dll/shellext/mmcshext" -I"${SRC}/build-i386/dll/shellext/mmcshext" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/sdk/lib/atl" -I"${SRC}/vendor/symcrypt/inc" -I"${SRC}/vendor/symcrypt/lib" -I"${SRC}/.build-tools/llvm-mingw/i686-w64-mingw32/include/c++/v1" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DIDR_EXTRACTICON=101 -DUNICODE -D_ATL_NO_EXCEPTIONS -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  tdihelpers)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-17 from drivers/network/tdihelpers/CMakeLists.txt
+    # (2 compiled TU(s), 188 headers in the include closure, 5 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=0
+    REAL_UNIONS=1
+    DRIVER_DIR="${SRC}/drivers/network/tdihelpers"
+    WRAPPER_INC=$'#include <afd.h>\n#undef UNIMPLEMENTED\n#include <tdikrnl.h>\n#include <tdiinfo.h>\n#define NDEBUG\n#include <reactos/debug.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]afd\.h' --allowlist-file '.*[/\\]tdi\.h'
+                  --allowlist-file '.*[/\\]tdiinfo\.h'
+                  --allowlist-file '.*[/\\]tdikrnl\.h'
+                  --allowlist-file '.*tdihelpers[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/drivers/network/tdihelpers" -I"${SRC}/drivers/network/tdihelpers/include" -I"${SRC}/build-i386/drivers/network/tdihelpers" -I"${SRC}/drivers/network/tdihelpers/include" -I"${SRC}/drivers/network/afd/include" -I"${SRC}/sdk/include/reactos/drivers" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  setupapi)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-17 from dll/win32/setupapi/CMakeLists.txt
+    # (18 compiled TU(s), 211 headers in the include closure, 196 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 231 external prototype(s) declared by the include closure, 18 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=0
+    BLOCKLIST_FUNCS_FROM_CRATE=1
+    EXTRA_BL_ITEMS=( _SEH2_Volatile0 _SEH2_VolatileExceptionCode )
+    DRIVER_DIR="${SRC}/dll/win32/setupapi"
+    WRAPPER_INC=$'#include "setupapi_private.h"\n#include <fcntl.h>\n#include <share.h>\n#include <fdi.h>\n#include <aclapi.h>\n#include <ndk/obfuncs.h>\n#include <winver.h>\n#include <lzexpand.h>\n#include <wingdi.h>\n#include <shellapi.h>\n#include <strsafe.h>\n#include <dbt.h>\n#include <pnp_c.h>\n#include <winsvc.h>\n#include <ndk/cmfuncs.h>\n#include <winsvc_undoc.h>\n#include <pseh/pseh2.h>\n#include "rpc_private.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]aclapi\.h' --allowlist-file '.*[/\\]cfgmgr32\.h'
+                  --allowlist-file '.*[/\\]commdlg\.h'
+                  --allowlist-file '.*[/\\]dbt\.h'
+                  --allowlist-file '.*[/\\]devpropdef\.h'
+                  --allowlist-file '.*[/\\]fdi\.h'
+                  --allowlist-file '.*[/\\]lzexpand\.h'
+                  --allowlist-file '.*[/\\]mscat\.h'
+                  --allowlist-file '.*[/\\]objbase\.h'
+                  --allowlist-file '.*[/\\]ole2\.h'
+                  --allowlist-file '.*[/\\]pnp_c\.h'
+                  --allowlist-file '.*[/\\]pseh[/\\]pseh2\.h'
+                  --allowlist-file '.*[/\\]regstr\.h'
+                  --allowlist-file '.*[/\\]rpc\.h'
+                  --allowlist-file '.*[/\\]rpcndr\.h'
+                  --allowlist-file '.*[/\\]sddl\.h'
+                  --allowlist-file '.*[/\\]setupapi\.h'
+                  --allowlist-file '.*[/\\]shellapi\.h'
+                  --allowlist-file '.*[/\\]shlobj\.h'
+                  --allowlist-file '.*[/\\]softpub\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  --allowlist-file '.*[/\\]wingdi\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*[/\\]winspool\.h'
+                  --allowlist-file '.*[/\\]winsvc\.h'
+                  --allowlist-file '.*[/\\]winsvc_undoc\.h'
+                  --allowlist-file '.*[/\\]winver\.h'
+                  --allowlist-file '.*setupapi[/\\].*\.h' )
+    # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
+    UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
+    EXTRA_INC=( -I"${SRC}/dll/win32/setupapi" -I"${SRC}/build-i386/dll/win32/setupapi" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/wine" -I"${SRC}/sdk/include/reactos/idl" -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/symcrypt/inc" -I"${SRC}/vendor/symcrypt/lib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_SETUPAPI_ -D_CFGMGR32_ -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES -DNTOS_MODE_USER )
+    ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 

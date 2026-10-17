@@ -1,0 +1,127 @@
+{
+  "method": "Exact sorted unique finding-line counts and SHA256 (LF join, no final LF); historical Python helpers and registry argv/streams at e5ffbfc1e578, caches disabled. Component Rust times include two candidates omitted from this exact rule set.",
+  "reports": [
+    {
+      "oracle_revision": "e5ffbfc1e578b0ce342a64a12a8bfbb6817a64f1",
+      "source_revision": "495acb63d4702e6d5ffe17cd204bed9e48504083",
+      "rust_seconds": 150.11545479201595,
+      "rules": {
+        "verify_ffi": {
+          "python": 157,
+          "rust": 157,
+          "python_seconds": 71.08302419999382,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "c609d1fdeed5a67fd275fad415a81e53331a1c43e8820497fc27373e46182533",
+          "rust_sha256": "c609d1fdeed5a67fd275fad415a81e53331a1c43e8820497fc27373e46182533"
+        },
+        "verify_lost_exports": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 47.72724300599657,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "lint_kernel": {
+          "python": 1229,
+          "rust": 1229,
+          "python_seconds": 2.8825500019884203,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "ba028d373e37c38dfd41667e5f1f36820916163961511bf7bb1dd882b3df9b87",
+          "rust_sha256": "ba028d373e37c38dfd41667e5f1f36820916163961511bf7bb1dd882b3df9b87"
+        },
+        "cohab_census": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 2.1137077749881428,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_boot_media_drift": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 0.3371739469876047,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "null_offset_to_offset_of": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 7.283136923011625,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    {
+      "oracle_revision": "e5ffbfc1e578b0ce342a64a12a8bfbb6817a64f1",
+      "source_revision": "cc53d01b091e365cccbc7e56f7a929963331d379",
+      "rust_seconds": 120.0001007039973,
+      "rules": {
+        "verify_ffi": {
+          "python": 157,
+          "rust": 157,
+          "python_seconds": 68.860462326993,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "88889814bdab64eb11547cb255f3aa6841b5ffa9a03f06a1a778198c1c0cd920",
+          "rust_sha256": "88889814bdab64eb11547cb255f3aa6841b5ffa9a03f06a1a778198c1c0cd920"
+        },
+        "verify_lost_exports": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 39.24708617600845,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "lint_kernel": {
+          "python": 1231,
+          "rust": 1231,
+          "python_seconds": 3.8190010290127248,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e4b48a95d5586478e904d0a1d08eca09ceb66b8a486e26ac5fb194cecd6c368f",
+          "rust_sha256": "e4b48a95d5586478e904d0a1d08eca09ceb66b8a486e26ac5fb194cecd6c368f"
+        },
+        "cohab_census": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 3.574477764981566,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_boot_media_drift": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 0.18637209699954838,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "null_offset_to_offset_of": {
+          "python": 15,
+          "rust": 15,
+          "python_seconds": 12.286529785982566,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "35bd88c0aa30e5fbbe6239f772ce69a257694db8503979814d782c845db83c57",
+          "rust_sha256": "35bd88c0aa30e5fbbe6239f772ce69a257694db8503979814d782c845db83c57"
+        }
+      }
+    }
+  ]
+}

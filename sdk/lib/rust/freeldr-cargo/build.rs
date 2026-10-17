@@ -26,7 +26,10 @@ fn main() {
         panic!("freeldr-cargo: the BIOS loader is built for amd64 only (got {arch}); see build.rs");
     }
     let target_json = "x86_64-pc-windows-gnu";
-    let libs: Vec<&str> = vec!["boot/freeldr/freeldr/libfreeldr_bios_asm.a"];
+    // The BIOS entry/int386/pnpbios asm, assembled with freeldr's own include set: the
+    // engine replays cmake's compile of `freeldr_bios_asm` (pcat.cmake), or with no cmake
+    // build compiles its recipe (reactos-link/clibs).
+    let libs: Vec<&str> = vec!["engine:c:freeldr_bios_asm"];
 
     // blrtl (boot-loader RTL leaf, boot/rtl/blrtl.cmake) compiled in-cargo: C
     // via compile_commands.json replay (target `blrtl` disambiguates the shared

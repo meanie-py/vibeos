@@ -14,6 +14,9 @@ pub static CPP_COM_WSTR_F51AA22D711D: [WCHAR; 5] = [0x0043, 0x003A, 0x005C, 0x00
 // rather than joined: carrying both makes every shared name ambiguous (E0659) at 70+ sites.
 // See prelude.rs, and CNetFolder.rs for the same note.
 use core::ffi::c_void;
+// One declaration per external symbol: island.rs.
+use crate::island::GetDefaultRecycleBin;
+use crate::island::StrRetToBufW;
 use crate::prelude::*;
 use crate::recycle_bin::{IDC_PROPERTIES};
 
@@ -47,8 +50,6 @@ pub const SND_ASYNC: DWORD = 0x0001;
 unsafe extern "system" {
     /// winmm.dll. shell32 links winmm for the "empty recycle bin" sound.
     fn PlaySoundW(pszSound: LPCWSTR, hmod: HMODULE, fdwSound: DWORD) -> BOOL;
-    /// shlwapi.dll.
-    fn StrRetToBufW(pstr: *mut STRRET, pidl: LPCITEMIDLIST, pszBuf: LPWSTR, cchBuf: UINT) -> HRESULT;
 }
 
 unsafe extern "system" {
@@ -920,18 +921,12 @@ struct IRecycleBin {
 
 unsafe extern "C" {
     // shellrecyclebin/recyclebin_private.h — plain C, already inside an `extern "C"` block.
-    fn GetDefaultRecycleBin(pszVolume: LPCWSTR, pprb: *mut *mut IRecycleBin) -> HRESULT;
 }
 
-/// `SHQUERYRBINFO` (shellapi.h). Not in the island: shell32's include closure reaches the
-/// declaration of these two exports but never a use of the struct, so bindgen has no reason to
-/// emit it. Both fields are `__int64` in the header on every arch — do NOT widen to `isize`.
-#[repr(C)]
-pub struct SHQUERYRBINFO {
-    pub cbSize: DWORD,
-    pub i64Size: i64,
-    pub i64NumItems: i64,
-}
+/// `SHQUERYRBINFO` (shellapi.h), from the island. shellapi.h is `pshpack1` on 32-bit only, so
+/// it is 20 bytes on i386 and 24 on 64-bit. The hand copy that stood here was unpacked: 24 on
+/// i386, so every real i386 caller's `cbSize` failed the check below with E_INVALIDARG.
+pub use crate::island::SHQUERYRBINFO;
 
 #[no_mangle]
 pub unsafe extern "system" fn SHQueryRecycleBinW(
@@ -950,7 +945,7 @@ pub unsafe extern "system" fn SHQueryRecycleBinW(
     (*pSHQueryRBInfo).i64NumItems = 0;
 
     let mut prb: *mut IRecycleBin = core::ptr::null_mut();
-    let hr = GetDefaultRecycleBin(pszRootPath, core::ptr::addr_of_mut!(prb));
+    let hr = GetDefaultRecycleBin(pszRootPath, (core::ptr::addr_of_mut!(prb)).cast());
     if hr < 0 {
         return hr;
     }

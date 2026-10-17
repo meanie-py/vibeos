@@ -1,0 +1,2 @@
+# udmihelp (amd64), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+c	sdk/lib/udmihelp/udmihelp.c	@build/sdk/lib/udmihelp sdk/lib/udmihelp @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include sdk/lib/dmilib	-std=gnu99 -U_X86_ -UWIN32 @core	WINVER=0x502 _WIN32_WINNT=0x502

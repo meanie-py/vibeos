@@ -2,6 +2,10 @@
 //! QueryInterface, lifetime, and activation are emitted deterministically by rustconv.
 
 use crate::shellcom::*;
+// One declaration per external symbol: island.rs.
+use crate::island::HeapAlloc;
+use crate::island::IUnknown_SetSite;
+use crate::island::SHSimulateDrop;
 use crate::types::*;
 use core::ffi::c_void;
 
@@ -70,18 +74,9 @@ extern "C" {
 
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    fn HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut c_void;
     fn HeapFree(heap: HANDLE, flags: DWORD, memory: *mut c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
-    fn IUnknown_SetSite(object: *mut IUnknown, site: *mut IUnknown) -> HRESULT;
-    fn SHSimulateDrop(
-        drop_target: *mut IDropTarget,
-        data_object: *mut IDataObject,
-        key_state: DWORD,
-        point: *mut POINTL,
-        effect: *mut DWORD,
-    ) -> BOOL;
     fn SH32_ExtCoCreateInstance(
         class_name: LPCWSTR,
         clsid: REFCLSID,
@@ -297,7 +292,7 @@ pub unsafe extern "system" fn CDropTargetHelper_CreateInstance(
     let this = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        core::mem::size_of::<CDropTargetHelper>(),
+        (core::mem::size_of::<CDropTargetHelper>()) as _,
     ) as *mut CDropTargetHelper;
     if this.is_null() {
         return E_OUTOFMEMORY;
@@ -334,12 +329,12 @@ unsafe fn simulate_drop_with_site(
         core::ptr::null_mut()
     } else {
         let object = drop_target.cast::<IUnknown>();
-        IUnknown_SetSite(object, site);
+        IUnknown_SetSite((object).cast(), (site).cast());
         object
     };
 
-    let result = SHSimulateDrop(drop_target, data_object, key_state, point, effect);
-    IUnknown_SetSite(guarded_object, core::ptr::null_mut());
+    let result = SHSimulateDrop((drop_target).cast(), (data_object).cast(), key_state, point, effect);
+    IUnknown_SetSite((guarded_object).cast(), core::ptr::null_mut());
     result
 }
 

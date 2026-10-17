@@ -782,45 +782,11 @@ pub struct DVTARGETDEVICE {
     pub tdData: [BYTE; 1],
 }
 
-#[repr(C)]
-pub struct MEASUREITEMSTRUCT {
-    pub CtlType: UINT,
-    pub CtlID: UINT,
-    pub itemID: UINT,
-    pub itemWidth: UINT,
-    pub itemHeight: UINT,
-    pub itemData: ULONG_PTR,
-}
+pub use crate::island::MEASUREITEMSTRUCT;
 
-#[repr(C)]
-pub struct PROCESS_INFORMATION {
-    pub hProcess: HANDLE,
-    pub hThread: HANDLE,
-    pub dwProcessId: DWORD,
-    pub dwThreadId: DWORD,
-}
+pub use crate::island::PROCESS_INFORMATION;
 
-#[repr(C)]
-pub struct STARTUPINFOW {
-    pub cb: DWORD,
-    pub lpReserved: LPWSTR,
-    pub lpDesktop: LPWSTR,
-    pub lpTitle: LPWSTR,
-    pub dwX: DWORD,
-    pub dwY: DWORD,
-    pub dwXSize: DWORD,
-    pub dwYSize: DWORD,
-    pub dwXCountChars: DWORD,
-    pub dwYCountChars: DWORD,
-    pub dwFillAttribute: DWORD,
-    pub dwFlags: DWORD,
-    pub wShowWindow: WORD,
-    pub cbReserved2: WORD,
-    pub lpReserved2: PBYTE,
-    pub hStdInput: HANDLE,
-    pub hStdOutput: HANDLE,
-    pub hStdError: HANDLE,
-}
+pub use crate::island::STARTUPINFOW;
 
 #[repr(C)]
 pub struct STATDATA {
@@ -925,44 +891,18 @@ const fn MAKEINTRESOURCE(value: UINT) -> LPCWSTR {
 pub type LPFNSVADDPROPSHEETPAGE = Option<unsafe extern "system" fn(HPROPSHEETPAGE, LPARAM) -> BOOL>;
 
 extern "system" {
-    fn CloseHandle(handle: HANDLE) -> BOOL;
     fn CopyFileW(existing: LPCWSTR, new: LPCWSTR, fail_if_exists: BOOL) -> BOOL;
-    fn CreateFileW(name: LPCWSTR, access: DWORD, share: DWORD, security: LPVOID, creation: DWORD, flags: DWORD, template: HANDLE) -> HANDLE;
-    fn CreateMenu() -> HMENU;
-    fn CreateProcessW(app: LPCWSTR, command: LPWSTR, process_attrs: LPCVOID, thread_attrs: LPCVOID, inherit: BOOL, flags: DWORD, environment: LPCVOID, directory: LPCWSTR, startup: *const STARTUPINFOW, info: *mut PROCESS_INFORMATION) -> BOOL;
-    fn DestroyIcon(icon: HICON) -> BOOL;
-    fn DrawIconEx(dc: HDC, x: INT, y: INT, icon: HICON, width: INT, height: INT, step: UINT, brush: HANDLE, flags: UINT) -> BOOL;
     fn ExpandEnvironmentStringsW(source: LPCWSTR, dest: LPWSTR, size: DWORD) -> DWORD;
-    fn ExtractIconExW(file: LPCWSTR, index: INT, large: *mut HICON, small: *mut HICON, icons: UINT) -> UINT;
-    fn GetMenuItemInfoW(menu: HMENU, item: UINT, by_position: BOOL, info: *mut MENUITEMINFOW) -> BOOL;
-    fn GetSystemMetrics(index: INT) -> INT;
-    fn IUnknown_QueryService(object: *mut IUnknown, service: REFGUID, riid: REFIID, out: *mut *mut core::ffi::c_void) -> HRESULT;
     #[link_name = "LoadImageW"] fn LoadImage(instance: HINSTANCE, name: LPCWSTR, kind: UINT, width: INT, height: INT, flags: UINT) -> HANDLE;
-    fn MessageBoxW(owner: HWND, text: LPCWSTR, caption: LPCWSTR, kind: UINT) -> INT;
     fn PathYetAnotherMakeUniqueName(buffer: LPWSTR, path: LPCWSTR, short: LPCWSTR, long: LPCWSTR) -> BOOL;
-    fn RegCloseKey(key: HKEY) -> LONG;
     #[link_name = "RegCreateKeyExW"] fn RegCreateKeyEx(key: HKEY, subkey: LPCWSTR, reserved: DWORD, class: LPWSTR, options: DWORD, access: REGSAM, security: LPVOID, result: PHKEY, disposition: LPDWORD) -> LONG;
-    fn RegEnumKeyW(key: HKEY, index: DWORD, name: LPWSTR, capacity: DWORD) -> LONG;
-    fn RegGetValueW(key: HKEY, subkey: LPCWSTR, value: LPCWSTR, flags: DWORD, kind: LPDWORD, data: LPVOID, bytes: LPDWORD) -> LONG;
-    fn RegOpenKeyExW(key: HKEY, subkey: LPCWSTR, options: DWORD, access: REGSAM, result: PHKEY) -> LONG;
-    fn RegQueryValueExW(key: HKEY, value: LPCWSTR, reserved: LPDWORD, kind: LPDWORD, data: PBYTE, bytes: LPDWORD) -> LONG;
-    fn RegSetValueExW(key: HKEY, value: LPCWSTR, reserved: DWORD, kind: DWORD, data: *const BYTE, bytes: DWORD) -> LONG;
     fn SHChangeNotify(event: LONG, flags: UINT, item1: LPCVOID, item2: LPCVOID);
-    fn SHCreateDirectory(owner: HWND, path: LPCWSTR) -> INT;
-    fn SHGetFileInfoW(path: LPCWSTR, attributes: DWORD, info: *mut SHFILEINFOW, bytes: UINT, flags: UINT) -> DWORD_PTR;
-    fn SHGetPathFromIDListW(pidl: LPCITEMIDLIST, path: LPWSTR) -> BOOL;
-    fn SHILCreateFromPathW(path: LPCWSTR, pidl: *mut LPITEMIDLIST, attributes: LPDWORD) -> HRESULT;
     fn WideCharToMultiByte(page: UINT, flags: DWORD, wide: LPCWSTR, wide_len: INT, multi: LPSTR, multi_len: INT, default_char: LPCSTR, used_default: *mut BOOL) -> INT;
-    fn WriteFile(file: HANDLE, buffer: LPCVOID, bytes: DWORD, written: LPDWORD, overlapped: LPVOID) -> BOOL;
     fn lstrlenW(text: LPCWSTR) -> INT;
-    fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
     fn ILFindLastID(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
-    fn ILFree(pidl: LPITEMIDLIST);
-    fn InsertMenuItemW(menu: HMENU, item: UINT, by_position: BOOL, info: *const MENUITEMINFOW) -> BOOL;
 }
 
 extern "C" {
-    fn HLM_GetIconW(index: INT, destination: LPWSTR, length: DWORD, icon_index: *mut INT) -> BOOL;
     #[link_name = "memcpy"] fn cpp_com_memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, bytes: usize) -> *mut core::ffi::c_void;
     fn malloc(bytes: usize) -> *mut ();
     fn wcsstr(haystack: LPCWSTR, needle: LPCWSTR) -> LPWSTR;
@@ -1054,9 +994,6 @@ unsafe fn ZeroMemory<T, N: CppComSize>(dst: *mut T, bytes: N) {
 }
 
 extern "system" {
-    fn HeapReAlloc(heap: HANDLE, flags: DWORD, memory: LPVOID, bytes: usize) -> LPVOID;
-    fn GetModuleHandleW(name: LPCWSTR) -> HINSTANCE;
-    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
 }
 
 pub struct CStringW { buffer: LPWSTR, len: usize, capacity: usize }
@@ -1086,7 +1023,7 @@ impl CStringW {
         let next = if self.buffer.is_null() {
             HeapAlloc(GetProcessHeap(), 0, bytes)
         } else {
-            HeapReAlloc(GetProcessHeap(), 0, self.buffer.cast(), bytes)
+            HeapReAlloc(GetProcessHeap(), 0, self.buffer.cast(), (bytes) as SIZE_T)
         } as LPWSTR;
         if next.is_null() { return false; }
         self.buffer = next; self.capacity = capacity; true
@@ -1173,6 +1110,37 @@ pub static CPP_COM_WSTR_F4D7F37FC85E: [WCHAR; 9] = [0x004E, 0x0075, 0x006C, 0x00
 pub static CPP_COM_WSTR_FE706C396A0C: [WCHAR; 5] = [0x002E, 0x006C, 0x006E, 0x006B, 0x0000];
 
 use core::ffi::c_void;
+// The crate's own functions: the definition is the declaration.
+use crate::shell32::iconcache::ExtractIconExW;
+use crate::wine::classes::HLM_GetIconW;
+use crate::wine::pidl::ILClone;
+use crate::wine::pidl::ILFree;
+use crate::shell32::shlfileop::SHCreateDirectory;
+use crate::wine::shell32_main::SHGetFileInfoW;
+use crate::wine::pidl::SHGetPathFromIDListW;
+use crate::wine::pidl::SHILCreateFromPathW;
+// One declaration per external symbol: island.rs.
+use crate::island::CloseHandle;
+use crate::island::CreateFileW;
+use crate::island::CreateMenu;
+use crate::island::CreateProcessW;
+use crate::island::DestroyIcon;
+use crate::island::DrawIconEx;
+use crate::island::GetMenuItemInfoW;
+use crate::island::GetModuleHandleW;
+use crate::island::GetSystemMetrics;
+use crate::island::HeapReAlloc;
+use crate::island::IUnknown_QueryService;
+use crate::island::InsertMenuItemW;
+use crate::island::LoadStringW;
+use crate::island::MessageBoxW;
+use crate::island::RegCloseKey;
+use crate::island::RegEnumKeyW;
+use crate::island::RegGetValueW;
+use crate::island::RegOpenKeyExW;
+use crate::island::RegQueryValueExW;
+use crate::island::RegSetValueExW;
+use crate::island::WriteFile;
 use crate::shellcom::*;
 use crate::types::*;
 
@@ -1193,10 +1161,10 @@ pub unsafe fn CNewMenu_ctor_body(this: *mut CNewMenu) -> () {
 pub unsafe fn CNewMenu_dtor_body(this: *mut CNewMenu) -> () {
     CNewMenu_UnloadAllItems_body(this);
     if (*this).m_bCustomIconFolder != 0 && !(*this).m_hIconFolder.is_null() {
-        DestroyIcon((*this).m_hIconFolder);
+        DestroyIcon(((*this).m_hIconFolder).cast());
     }
     if (*this).m_bCustomIconLink != 0 && !(*this).m_hIconLink.is_null() {
-        DestroyIcon((*this).m_hIconLink);
+        DestroyIcon(((*this).m_hIconLink).cast());
     }
     if !(*this).m_pidlFolder.is_null() {
         ILFree((*this).m_pidlFolder);
@@ -1209,7 +1177,7 @@ pub unsafe fn CNewMenu_UnloadItem_body(this: *mut CNewMenu, pItem: *mut SHELLNEW
     free((*pItem).pwszExt);
 
     if !(*pItem).hIcon.is_null() {
-        DestroyIcon((*pItem).hIcon);
+        DestroyIcon(((*pItem).hIcon).cast());
     }
 
     HeapFree(GetProcessHeap(), 0, pItem);
@@ -1423,9 +1391,9 @@ pub unsafe fn CNewMenu_LoadItem_body(this: *mut CNewMenu, pwszExt: LPCWSTR) -> *
         cbData
     };
     (*pNewItem_shell).pwszExt = _wcsdup(pwszExt);
-    (*pNewItem_shell).pwszDesc = _wcsdup(fi.szTypeName.as_ptr());
+    (*pNewItem_shell).pwszDesc = _wcsdup(core::ptr::addr_of!(fi.szTypeName).cast());
     if !fi.hIcon.is_null() {
-        (*pNewItem_shell).hIcon = fi.hIcon;
+        (*pNewItem_shell).hIcon = (fi.hIcon).cast();
     }
 
     pNewItem_shell
@@ -1817,7 +1785,7 @@ pub unsafe fn CNewMenu_SelectNewItem_body(this: *mut CNewMenu, wEventId: LONG, u
 
     // IUnknown_QueryService(m_pSite, IID_IFolderView, IID_PPV_ARG(IShellView, &lpSV))
 
-    hr = IUnknown_QueryService((*this).m_pSite, &IID_IFolderView, core::ptr::addr_of!(IID_IShellView), core::ptr::addr_of_mut!(lpSV).cast());
+    hr = IUnknown_QueryService(((*this).m_pSite).cast(), &IID_IFolderView, core::ptr::addr_of!(IID_IShellView), core::ptr::addr_of_mut!(lpSV).cast());
     if hr < 0 {
         return S_OK;
     }
@@ -1904,13 +1872,13 @@ pub unsafe fn CNewMenu_NewItemByCommand_body(this: *mut CNewMenu, pItem: *mut SH
     if CreateProcessW(
         core::ptr::null(),
         pwszCmd as *mut u16,
-        core::ptr::null(),
-        core::ptr::null(),
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
         FALSE,
         0,
+        core::ptr::null_mut(),
         core::ptr::null(),
-        core::ptr::null(),
-        core::ptr::addr_of!(si),
+        core::ptr::addr_of_mut!(si),
         core::ptr::addr_of_mut!(pi),
     ) != 0
     {
@@ -2168,7 +2136,7 @@ pub unsafe fn CNewMenu_HandleMenuMsg2_body(this: *mut CNewMenu, uMsg: UINT, wPar
                                 - (*lpdis).rcItem.top
                                 - 16)
                                 / 2,
-                        hIcon,
+                        (hIcon).cast(),
                         16,
                         16,
                         0,
@@ -2204,7 +2172,7 @@ pub unsafe fn CNewMenu_Initialize_body(this: *mut CNewMenu, pidlFolder: PCIDLIST
         ExtractIconExW(
             wszIconPath.as_mut_ptr(),
             icon_idx,
-            &mut (*this).m_hIconFolder,
+            (&raw mut (*this).m_hIconFolder).cast(),
             core::ptr::null_mut(),
             1,
         );
@@ -2230,7 +2198,7 @@ pub unsafe fn CNewMenu_Initialize_body(this: *mut CNewMenu, pidlFolder: PCIDLIST
         ExtractIconExW(
             wszIconPath.as_mut_ptr(),
             icon_idx,
-            &mut (*this).m_hIconLink,
+            (&raw mut (*this).m_hIconLink).cast(),
             core::ptr::null_mut(),
             1,
         );

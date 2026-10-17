@@ -11,6 +11,25 @@
 //! translated (verified against the compiled obj's string table). TRACE/WARN/ERR dropped.
 
 use crate::types::*;
+// The crate's own functions: the definition is the declaration.
+use crate::vista::RegLoadMUIStringW;
+use crate::desktop_folder_tu::SHGetDesktopFolder;
+use crate::wine::pidl::_ILIsDesktop;
+use crate::wine::pidl::_ILIsPidlSimple;
+// One declaration per external symbol: island.rs.
+use crate::island::LoadStringA;
+use crate::island::LoadStringW;
+use crate::island::RegCloseKey;
+use crate::island::RegEnumKeyW;
+use crate::island::RegGetValueA;
+use crate::island::RegGetValueW;
+use crate::island::RegOpenKeyExA;
+use crate::island::RegOpenKeyExW;
+use crate::island::RegQueryValueA;
+use crate::island::RegQueryValueExA;
+use crate::island::RegQueryValueExW;
+use crate::island::RegQueryValueW;
+use crate::island::SHGetValueW;
 use core::ffi::c_void;
 
 // ── file-local types not (yet) in crate::types — see ADDED-TO-TYPES note at EOF ───────────
@@ -23,14 +42,7 @@ pub type PINT = *mut INT;
 pub type LPCITEMIDLIST = *const c_void;
 
 /// GUID/IID (guiddef.h): { Data1: DWORD, Data2: WORD, Data3: WORD, Data4: [BYTE;8] }.
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct GUID {
-    pub Data1: DWORD,
-    pub Data2: WORD,
-    pub Data3: WORD,
-    pub Data4: [BYTE; 8],
-}
+pub use crate::island::GUID;
 pub type REFIID = *const GUID;
 
 /// IShellFolder vtable (shobjidl.h). Only Release(2) / BindToObject(5) / GetAttributesOf(9)
@@ -127,23 +139,23 @@ const SHELLFOLDER_KEY_LEN: usize = 57;
 // ── imports (resolved via shell32's existing import libs at link) ─────────────────────────
 extern "system" {
     // advapi32
-    fn RegOpenKeyExW(hKey: HKEY, lpSubKey: LPCWSTR, ulOptions: DWORD, samDesired: REGSAM, phkResult: PHKEY) -> LONG; // @20
-    fn RegOpenKeyExA(hKey: HKEY, lpSubKey: LPCSTR, ulOptions: DWORD, samDesired: REGSAM, phkResult: PHKEY) -> LONG; // @20
-    fn RegCloseKey(hKey: HKEY) -> LONG; // @4
-    fn RegEnumKeyW(hKey: HKEY, dwIndex: DWORD, lpName: LPWSTR, cchName: DWORD) -> LONG; // @16
-    fn RegQueryValueW(hKey: HKEY, lpSubKey: LPCWSTR, lpData: LPWSTR, lpcbData: *mut LONG) -> LONG; // @16
-    fn RegQueryValueA(hKey: HKEY, lpSubKey: LPCSTR, lpData: LPSTR, lpcbData: *mut LONG) -> LONG; // @16
-    fn RegQueryValueExW(hKey: HKEY, lpValueName: LPCWSTR, lpReserved: LPDWORD, lpType: LPDWORD, lpData: LPBYTE, lpcbData: LPDWORD) -> LONG; // @24
-    fn RegQueryValueExA(hKey: HKEY, lpValueName: LPCSTR, lpReserved: LPDWORD, lpType: LPDWORD, lpData: LPBYTE, lpcbData: LPDWORD) -> LONG; // @24
-    fn RegGetValueW(hkey: HKEY, lpSubKey: LPCWSTR, lpValue: LPCWSTR, dwFlags: DWORD, pdwType: LPDWORD, pvData: PVOID, pcbData: LPDWORD) -> LONG; // @28
-    fn RegGetValueA(hkey: HKEY, lpSubKey: LPCSTR, lpValue: LPCSTR, dwFlags: DWORD, pdwType: LPDWORD, pvData: PVOID, pcbData: LPDWORD) -> LONG; // @28
-    fn RegLoadMUIStringW(hKey: HKEY, pszValue: LPCWSTR, pszOutBuf: LPWSTR, cbBuffer: DWORD, pcbData: LPDWORD, Flags: DWORD, pszDirectory: LPCWSTR) -> LONG; // @28
+// @20
+// @20
+// @4
+// @16
+// @16
+// @16
+// @24
+// @24
+// @28
+// @28
+// @28
     fn RegLoadMUIStringA(hKey: HKEY, pszValue: LPCSTR, pszOutBuf: LPSTR, cbBuffer: DWORD, pcbData: LPDWORD, Flags: DWORD, pszDirectory: LPCSTR) -> LONG; // @28
     // kernel32
     fn ExpandEnvironmentStringsW(lpSrc: LPCWSTR, lpDst: LPWSTR, nSize: DWORD) -> DWORD; // @12
     fn ExpandEnvironmentStringsA(lpSrc: LPCSTR, lpDst: LPSTR, nSize: DWORD) -> DWORD; // @12
-    fn LoadStringW(hInstance: HINSTANCE, uID: UINT, lpBuffer: LPWSTR, cchBufferMax: INT) -> INT; // @16
-    fn LoadStringA(hInstance: HINSTANCE, uID: UINT, lpBuffer: LPSTR, cchBufferMax: INT) -> INT; // @16
+// @16
+// @16
     fn lstrcatW(lpString1: LPWSTR, lpString2: LPCWSTR) -> LPWSTR; // @8
     fn lstrcpyW(lpString1: LPWSTR, lpString2: LPCWSTR) -> LPWSTR; // @8
     fn lstrcpynW(lpString1: LPWSTR, lpString2: LPCWSTR, iMaxLength: INT) -> LPWSTR; // @12
@@ -153,9 +165,9 @@ extern "system" {
     fn ParseFieldA(src: LPCSTR, nField: DWORD, dst: LPSTR, len: DWORD) -> DWORD; // @16
     fn PathUnquoteSpacesW(lpsz: LPWSTR) -> BOOL; // @4
     fn PathUnquoteSpacesA(lpsz: LPSTR) -> BOOL; // @4
-    fn SHGetValueW(hkey: HKEY, pszSubKey: LPCWSTR, pszValue: LPCWSTR, pdwType: LPDWORD, pvData: PVOID, pcbData: LPDWORD) -> DWORD; // @24
+// @24
     // shell32 (self)
-    fn SHGetDesktopFolder(ppshf: *mut LPSHELLFOLDER) -> HRESULT; // @4
+// @4
     // ole32
     fn StringFromCLSID(rclsid: REFIID, lplpsz: *mut LPOLESTR) -> HRESULT; // @8
     fn CoTaskMemFree(pv: LPVOID); // @4
@@ -164,8 +176,6 @@ extern "system" {
 extern "C" {
     // shell32 internal cdecl helpers/data (no @N)
     fn SHELL32_EnumDefaultVerbList(List: LPCWSTR, Index: UINT, Verb: LPWSTR, cchMax: usize) -> HRESULT;
-    fn _ILIsPidlSimple(pidl: LPCITEMIDLIST) -> BOOL;
-    fn _ILIsDesktop(pidl: LPCITEMIDLIST) -> BOOL;
     fn _ILGetGUIDPointer(pidl: LPCITEMIDLIST) -> *mut GUID;
     static shell32_hInstance: HINSTANCE;
     static CLSID_ShellDesktop: GUID;
@@ -958,12 +968,12 @@ pub unsafe extern "C" fn HCR_GetFolderAttributes(pidlFolder: LPCITEMIDLIST, pdwA
     // WCHAR wszShellFolderKey[] = L"CLSID\\{00021400-...046}\\ShellFolder"
     let mut wszShellFolderKey: [WCHAR; SHELLFOLDER_KEY_LEN] = W_SHELLFOLDER_KEY;
 
-    if _ILIsPidlSimple(pidlFolder) == FALSE {
+    if _ILIsPidlSimple((pidlFolder).cast()) == FALSE {
         // static firstHit ERR-once — observable behavior is just "return FALSE".
         return FALSE;
     }
 
-    if _ILIsDesktop(pidlFolder) == FALSE {
+    if _ILIsDesktop((pidlFolder).cast()) == FALSE {
         if failed(StringFromCLSID(_ILGetGUIDPointer(pidlFolder), &mut pwszCLSID)) {
             return FALSE;
         }
@@ -985,7 +995,7 @@ pub unsafe extern "C" fn HCR_GetFolderAttributes(pidlFolder: LPCITEMIDLIST, pdwA
         let mut hr: HRESULT;
 
         RegCloseKey(hSFKey);
-        hr = SHGetDesktopFolder(&mut psfDesktop);
+        hr = SHGetDesktopFolder((&raw mut psfDesktop).cast());
         if !failed(hr) {
             hr = ((*(*psfDesktop).lpVtbl).BindToObject)(
                 psfDesktop,

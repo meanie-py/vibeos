@@ -4,9 +4,6 @@ add_definitions(-D_WIN32_WINNT=0x600)
 add_definitions(-D_CRT_DECLARE_NONSTDC_NAMES=1)
 spec2def(appwiz.cpl appwiz.spec)
 
-file(GLOB appwiz_rc_deps resources/*.*)
-add_rc_deps(appwiz.rc ${appwiz_rc_deps})
-
  # CORE-5743: No CONST_VTABLE
 
 # appwiz.cpl is all Rust (appwiz-rust) and cargo links it:
@@ -17,16 +14,9 @@ add_rc_deps(appwiz.rc ${appwiz_rc_deps})
 # appwiz.c  # replaced by Rust (sdk/lib/rust/appwiz-rust/src/appwiz/appwiz.rs)
 # createlink.c  # replaced by Rust (sdk/lib/rust/appwiz-rust/src/appwiz/createlink.rs)
 # removestartmenuitems.c  # replaced by Rust (sdk/lib/rust/appwiz-rust/src/appwiz/removestartmenuitems.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(appwiz_res OBJECT appwiz.rc)
-target_compile_definitions(appwiz_res PRIVATE UNICODE _UNICODE)
-target_include_directories(appwiz_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-# How cmake compiled the target's sources, now on the OBJECT libraries.
-set_wine_module_fixme(appwiz_res)
 add_cargo_module(appwiz appwiz-cargo appwiz.cpl
     KIND win32dll
     BODY_CRATE appwiz-rust
     DESTINATION reactos/system32
     DELAY_IMPORTS
-    EXTRA_DEPENDS appwiz_res psdk uuid_sources)
+    EXTRA_DEPENDS psdk uuid_sources)

@@ -14,3 +14,4 @@ add_subdirectory(netstack)
 # (dhcpcsvc/ws2_32 read Services\Tcpip\Parameters by literal path) but now points
 # ServiceBinary at netstack.sys. See docs/engineering/smoltcp-netstack-design.md.
 add_subdirectory(tdi)
+add_subdirectory(tdihelpers)

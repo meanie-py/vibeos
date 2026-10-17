@@ -18,8 +18,6 @@
 # kernelmodedrivers it imports win32k, NOT ntoskrnl/hal.
 # The version resource: cmake compiles it in this OBJECT library, whose windres
 # command the cargo link replays.
-add_library(framebuf_res OBJECT framebuf.rc)
-target_include_directories(framebuf_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(framebuf framebuf-cargo framebuf.dll KIND kerneldll
     BODY_CRATE framebuf-rust DESTINATION reactos/system32
-    EXTRA_DEPENDS framebuf_res psdk)
+    EXTRA_DEPENDS psdk)

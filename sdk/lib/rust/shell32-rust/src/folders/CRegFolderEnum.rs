@@ -1,4 +1,15 @@
 use crate::prelude::*;
+// The crate's own functions: the definition is the declaration.
+use crate::wine::pidl::ILClone;
+use crate::wine::pidl::ILFree;
+use crate::desktop_folder_tu::SHGetDesktopFolder;
+use crate::wine::pidl::_ILIsDesktop;
+// One declaration per external symbol: island.rs.
+use crate::island::CoTaskMemAlloc;
+use crate::island::LoadStringW;
+use crate::island::RegCloseKey;
+use crate::island::RegEnumKeyW;
+use crate::island::RegGetValueW;
 use crate::reg_folder::CreateRegItem_2_body;
 use crate::reg_folder::CreateRegItem_body;
 use crate::shell32::shlfolder::SHELL32_CompareDetails;
@@ -228,17 +239,9 @@ pub struct ITEMIDLIST {
     pub mkid: SHITEMID,
 }
 
-#[repr(C)]
-pub struct SHCOLUMNID {
-    pub fmtid: GUID,
-    pub pid: DWORD,
-}
+pub use crate::island::SHCOLUMNID;
 
-#[repr(C, packed)]
-pub struct SHITEMID {
-    pub cb: WORD,
-    pub abID: [BYTE; 1],
-}
+pub use crate::island::SHITEMID;
 
 // Deterministic from shobjidl.h
 #[repr(C)]
@@ -262,21 +265,12 @@ extern "C" {
 }
 
 extern "system" {
-    fn RegCloseKey(key: HKEY) -> LONG;
-    fn RegEnumKeyW(key: HKEY, index: DWORD, name: LPWSTR, capacity: DWORD) -> LONG;
-    fn RegGetValueW(key: HKEY, subkey: LPCWSTR, value: LPCWSTR, flags: DWORD, kind: LPDWORD, data: LPVOID, bytes: LPDWORD) -> LONG;
     fn SHChangeNotify(event: LONG, flags: UINT, item1: LPCVOID, item2: LPCVOID);
     fn lstrlenW(text: LPCWSTR) -> INT;
-    fn CoTaskMemAlloc(bytes: SIZE_T) -> LPVOID;
-    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
     fn CoTaskMemFree(memory: LPVOID);
-    fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
-    fn ILFree(pidl: LPITEMIDLIST);
-    fn SHGetDesktopFolder(folder: *mut *mut IShellFolder) -> HRESULT;
 }
 
 extern "C" {
-    fn _ILIsDesktop(pidl: LPCITEMIDLIST) -> BOOL;
     // _ILIsSpecialFolder and SHELL32_CompareDetails are already brought into scope by the
     // `use` imports at the top of this file (crate::wine::pidl / crate::shell32::shlfolder);
     // redeclaring them here as extern fns duplicated those names (E0255).

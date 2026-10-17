@@ -377,29 +377,32 @@ pub struct SHELLEXECUTEINFOW {
 // the assembler; CControlPanelFolder.rs (the free-functions slice) is the designated owner --
 // see its header comment. Import by name instead of carrying a second copy.
 use crate::control_panel_folder_tu::{shvheader, ControlPanelSFHeader};
+// The crate's own functions: the definition is the declaration.
+use crate::wine::pidl::ILClone;
+use crate::wine::pidl::ILFree;
+use crate::def_view::SHCreateShellFolderView;
+use crate::desktop_folder_tu::SHGetDesktopFolder;
+use crate::wine::shellpath::SHGetSpecialFolderLocation;
+use crate::shell32::shlexec::ShellExecuteExW;
+use crate::shell32::shlexec::ShellExecuteW;
+use crate::wine::pidl::_ILGetDataPointer;
+// One declaration per external symbol: island.rs.
+use crate::island::CoTaskMemAlloc;
+use crate::island::LoadStringW;
+use crate::island::RegCloseKey;
+use crate::island::RegEnumKeyW;
+use crate::island::RegGetValueW;
+use crate::island::RegOpenKeyExW;
 
 extern "system" {
     fn ExpandEnvironmentStringsW(source: LPCWSTR, dest: LPWSTR, size: DWORD) -> DWORD;
-    fn RegCloseKey(key: HKEY) -> LONG;
-    fn RegEnumKeyW(key: HKEY, index: DWORD, name: LPWSTR, capacity: DWORD) -> LONG;
-    fn RegGetValueW(key: HKEY, subkey: LPCWSTR, value: LPCWSTR, flags: DWORD, kind: LPDWORD, data: LPVOID, bytes: LPDWORD) -> LONG;
-    fn RegOpenKeyExW(key: HKEY, subkey: LPCWSTR, options: DWORD, access: REGSAM, result: PHKEY) -> LONG;
     fn GetLastError() -> DWORD;
     fn lstrlenW(text: LPCWSTR) -> INT;
-    fn CoTaskMemAlloc(bytes: SIZE_T) -> LPVOID;
-    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
-    fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
-    fn ILFree(pidl: LPITEMIDLIST);
-    fn SHGetDesktopFolder(folder: *mut *mut IShellFolder) -> HRESULT;
     fn SHGetNameFromIDList(pidl: PCIDLIST_ABSOLUTE, sigdn: SIGDN, name: *mut PWSTR) -> HRESULT;
-    fn SHCreateShellFolderView(create: *const SFV_CREATE, view: *mut *mut IShellView) -> HRESULT;
-    fn SHGetSpecialFolderLocation(owner: HWND, csidl: INT, pidl: *mut LPITEMIDLIST) -> HRESULT;
-    fn ShellExecuteExW(info: *mut SHELLEXECUTEINFOW) -> BOOL;
 }
 
 extern "C" {
     fn _ILIsSpecialFolder(pidl: LPCITEMIDLIST) -> BOOL;
-    fn _ILGetDataPointer(pidl: LPCITEMIDLIST) -> *mut PIDLDATA;
     #[link_name = "CPrinterFolder_CompareDetails_RustBridge"] fn SHELL32_CompareDetails(folder: *mut IShellFolder2, lparam: LPARAM, left: PCUIDLIST_RELATIVE, right: PCUIDLIST_RELATIVE) -> HRESULT;
     #[link_name = "memcpy"] fn cpp_com_memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, bytes: usize) -> *mut core::ffi::c_void;
 }
@@ -513,11 +516,10 @@ extern "C" {
     fn _ILCreateControlPanel() -> LPITEMIDLIST;
 }
 extern "system" {
-    fn ShellExecuteW(hwnd: HWND, lpOperation: LPCWSTR, lpFile: LPCWSTR, lpParameters: LPCWSTR, lpDirectory: LPCWSTR, nShowCmd: INT) -> HINSTANCE;
 }
 
 pub unsafe fn _ILGetCPanelPointer_body(pidl: LPCITEMIDLIST) -> *mut PIDLCPanelStruct {
-    let pdata: *mut PIDLDATA = _ILGetDataPointer(pidl);
+    let pdata: crate::shellcom::LPPIDLDATA = _ILGetDataPointer(pidl);
 
     if !pdata.is_null() && (*pdata).type_ == PT_CPLAPPLET as u8 {
         return core::ptr::addr_of_mut!((*pdata).u.cpanel).cast::<PIDLCPanelStruct>();

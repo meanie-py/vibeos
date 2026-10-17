@@ -8,13 +8,8 @@ spec2def(cards.dll cards.spec)
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # cards.c  # replaced by Rust (sdk/lib/rust/cards-rust/src/cards/cards.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(cards_res OBJECT cards.rc)
-target_compile_definitions(cards_res PRIVATE UNICODE _UNICODE)
-target_include_directories(cards_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(cards cards-cargo cards.dll
     KIND win32dll
     BODY_CRATE cards-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS cards_res)
+    EXTRA_DEPENDS psdk)

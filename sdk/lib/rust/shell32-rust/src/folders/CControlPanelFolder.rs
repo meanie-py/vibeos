@@ -1,6 +1,10 @@
 // rustconv-assembly: free-functions
 // Deterministic UTF-16 literals from the selected C++ helper closure.
 use crate::prelude::*;
+// The crate's own functions: the definition is the declaration.
+use crate::reg_folder::CRegFolder_CreateInstance;
+use crate::wine::shellpath::SHGetSpecialFolderLocation;
+use crate::wine::pidl::_ILGetDataPointer;
 pub static CPP_COM_WSTR_1DFA8F4A4E17: [WCHAR; 13] = [0x0043, 0x006F, 0x006E, 0x0074, 0x0072, 0x006F, 0x006C, 0x0050, 0x0061, 0x006E, 0x0065, 0x006C, 0x0000];
 pub static CPP_COM_WSTR_7CBCF6E893AD: [WCHAR; 8] = [0x0025, 0x0073, 0x005C, 0x0025, 0x0073, 0x0025, 0x0073, 0x0000];
 // CControlPanelFolder.cpp:31. NOT emitted by the assembler: the two g_RegFolderInfo string
@@ -68,7 +72,6 @@ pub type PREGFOLDERINITDATA = *mut REGFOLDERINITDATA;
 // pidlRoot, REFIID riid, void **ppv);` -- not WINAPI-decorated, so cdecl (`extern "C"`).
 // CRegFolder.cpp stays C++; this is the only bridge these three files need into it.
 extern "C" {
-    fn CRegFolder_CreateInstance(pInit: PREGFOLDERINITDATA, pidlRoot: LPCITEMIDLIST, riid: REFIID, ppv: *mut *mut core::ffi::c_void) -> HRESULT;
 }
 
 pub static g_RegFolderInfo: REGFOLDERINFO = REGFOLDERINFO {
@@ -80,13 +83,7 @@ pub static g_RegFolderInfo: REGFOLDERINFO = REGFOLDERINFO {
     pszEnumKeyName: CPP_COM_WSTR_1DFA8F4A4E17.as_ptr(),
 };
 
-#[repr(C)]
-pub struct shvheader {
-    pub colnameid: WORD,
-    pub colstate: WORD,
-    pub fmt: WORD,
-    pub cxChar: WORD,
-}
+pub use crate::island::shvheader;
 
 pub static ControlPanelSFHeader: [shvheader; 2] = [
     shvheader {
@@ -128,7 +125,6 @@ unsafe fn _ILGetType(pidl: LPCITEMIDLIST) -> BYTE {
 // at every call site -- CControlPanelEnum.rs / CCPLItemMenu.rs already carry the same local
 // redeclaration.
 extern "C" {
-    fn _ILGetDataPointer(pidl: LPCITEMIDLIST) -> LPPIDLDATA;
 }
 
 // shobjidl.h SIGDN_DESKTOPABSOLUTEPARSING -- the island only carries it under its mangled WIDL
@@ -137,7 +133,6 @@ extern "C" {
 const SIGDN_DESKTOPABSOLUTEPARSING: SIGDN = 0x8002_8000;
 
 extern "system" {
-    fn SHGetSpecialFolderLocation(owner: HWND, csidl: INT, pidl: *mut LPITEMIDLIST) -> HRESULT;
     fn SHGetNameFromIDList(pidl: PCIDLIST_ABSOLUTE, sigdn: SIGDN, name: *mut PWSTR) -> HRESULT;
 }
 
@@ -217,7 +212,7 @@ pub unsafe extern "C" fn _ILCreateCPanelApplet(
     return pidl;
 }
 unsafe extern "C" fn _ILGetCPanelPointer(pidl: LPCITEMIDLIST) -> *mut PIDLCPanelStruct {
-    let pdata: LPPIDLDATA = _ILGetDataPointer(pidl);
+    let pdata: crate::shellcom::LPPIDLDATA = _ILGetDataPointer(pidl);
 
     if !pdata.is_null() && (*pdata).type_ == PT_CPLAPPLET as u8 {
         return core::ptr::addr_of_mut!((*pdata).u.cpanel).cast::<PIDLCPanelStruct>();
@@ -362,7 +357,7 @@ pub unsafe extern "system" fn CControlPanelFolder_CreateRegFolder_RustBridge(
         psfOuter: psfOuter,
         pInfo: core::ptr::addr_of!(g_RegFolderInfo),
     };
-    CRegFolder_CreateInstance(core::ptr::addr_of_mut!(RegInit), pidlRoot, riid, ppv)
+    CRegFolder_CreateInstance((core::ptr::addr_of_mut!(RegInit)).cast(), pidlRoot, riid, ppv)
 }
 
 #[no_mangle]

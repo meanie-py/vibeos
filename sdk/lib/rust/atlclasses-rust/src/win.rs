@@ -159,10 +159,13 @@ unsafe fn report_failure(what: &[u8], class: *const u16, inst: *mut c_void) {
 extern "system" {
     #[link_name = "SetWindowLongW"]
     fn SetWindowLongPtrW(h: HWND, index: i32, value: isize) -> isize;
+    #[link_name = "GetWindowLongW"]
+    fn GetWindowLongPtrW(h: HWND, index: i32) -> isize;
 }
 #[cfg(not(target_arch = "x86"))]
 extern "system" {
     fn SetWindowLongPtrW(h: HWND, index: i32, value: isize) -> isize;
+    fn GetWindowLongPtrW(h: HWND, index: i32) -> isize;
 }
 
 /// L"AtlRustThis" / L"AtlRustSuper": the object, and a subclassed window's previous proc.
@@ -302,8 +305,12 @@ impl<P> MenuOrId for *mut P {
     }
 }
 
-/// `CWindowImpl::Create`: register the class on first use, then create with `this` as the
-/// create parameter. `rect` is `*const RECT` (null: CW_USEDEFAULT), as ATL's `_U_RECT`.
+/// `CWindowImpl::Create` (atlwin.h `CWindowImplBaseT::Create`): register the class on first
+/// use, then create with `this` as the create parameter. `rect` is `*const RECT` (null:
+/// `rcDefault`, i.e. CW_USEDEFAULT), as ATL's `_U_RECT`. Like [`create_window_info`], it
+/// follows ATL on the two points this once missed: a WS_CHILD window given no menu/ID gets
+/// `this` as its control ID, and the class and window belong to `_AtlBaseModule`'s module
+/// instance (this image), not the resource instance.
 #[allow(clippy::too_many_arguments)]
 pub unsafe fn create_window<T: MessageMap>(
     this: *mut T,
@@ -315,7 +322,8 @@ pub unsafe fn create_window<T: MessageMap>(
     ex_style: u32,
     menu_or_id: *mut c_void,
 ) -> HWND {
-    let inst = crate::resource_instance();
+    const WS_CHILD: u32 = 0x4000_0000;
+    let inst = crate::module_instance();
     let mut wc: WndClassExW = core::mem::zeroed();
     wc.cb_size = core::mem::size_of::<WndClassExW>() as u32;
     if GetClassInfoExW(inst, info.class_name, &mut wc) == 0 {
@@ -332,13 +340,12 @@ pub unsafe fn create_window<T: MessageMap>(
             return core::ptr::null_mut();
         }
     }
-    const CW_USEDEFAULT: i32 = 0x8000_0000u32 as i32;
-    let (x, y, w, h) = if rect.is_null() {
-        (CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT)
+    let menu = if menu_or_id.is_null() && style & WS_CHILD != 0 {
+        this as *mut c_void
     } else {
-        let r = core::slice::from_raw_parts(rect, 4);
-        (r[0], r[1], r[2] - r[0], r[3] - r[1])
+        menu_or_id
     };
+    let (x, y, w, h) = window_rect(rect);
     let hwnd = CreateWindowExW(
         ex_style,
         info.class_name,
@@ -349,7 +356,7 @@ pub unsafe fn create_window<T: MessageMap>(
         w,
         h,
         parent,
-        menu_or_id,
+        menu,
         inst,
         this as *mut c_void,
     );
@@ -357,6 +364,18 @@ pub unsafe fn create_window<T: MessageMap>(
         report_failure(b"CreateWindowExW", info.class_name, inst);
     }
     hwnd
+}
+
+/// `_U_RECT` to CreateWindowEx's position and size. Null is `rcDefault` =
+/// `{ CW_USEDEFAULT, CW_USEDEFAULT, 0, 0 }`, whose right-left WRAPS to CW_USEDEFAULT.
+unsafe fn window_rect(rect: *const i32) -> (i32, i32, i32, i32) {
+    const CW_USEDEFAULT: i32 = 0x8000_0000u32 as i32;
+    if rect.is_null() {
+        (CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT)
+    } else {
+        let r = core::slice::from_raw_parts(rect, 4);
+        (r[0], r[1], r[2].wrapping_sub(r[0]), r[3].wrapping_sub(r[1]))
+    }
 }
 
 /// atlwin.h `_ATL_WNDCLASSINFOW` (`CWndClassInfo`): the class a module's OWN
@@ -432,14 +451,7 @@ pub unsafe fn create_window_info<T: MessageMap>(
     } else {
         menu_or_id
     };
-    const CW_USEDEFAULT: i32 = 0x8000_0000u32 as i32;
-    let (x, y, w, h) = if rect.is_null() {
-        // rcDefault = { CW_USEDEFAULT, CW_USEDEFAULT, 0, 0 }: right-left wraps to CW_USEDEFAULT.
-        (CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT)
-    } else {
-        let r = core::slice::from_raw_parts(rect, 4);
-        (r[0], r[1], r[2].wrapping_sub(r[0]), r[3].wrapping_sub(r[1]))
-    };
+    let (x, y, w, h) = window_rect(rect);
     let hwnd = CreateWindowExW(
         ex_style,
         atom as usize as *const u16,
@@ -475,6 +487,29 @@ pub unsafe fn subclass_window<T: MessageMap>(this: *mut T, hwnd: HWND) -> bool {
     SetPropW(hwnd, PROP_SUPER.as_ptr(), old as *mut c_void);
     *(*this).hwnd_slot() = hwnd;
     true
+}
+
+/// `CWindowImpl::UnsubclassWindow(bForce)`: give the window back the procedure
+/// [`subclass_window`] replaced, and return it (null if there was none). Unless `force`, it
+/// refuses when another procedure has subclassed the window since: restoring the saved one
+/// would silently cut that one out of the chain.
+pub unsafe fn unsubclass_window<T: MessageMap>(this: *mut T, force: bool) -> HWND {
+    let hwnd = *(*this).hwnd_slot();
+    if hwnd.is_null() {
+        return core::ptr::null_mut(); // ATLASSERT(m_hWnd != NULL)
+    }
+    let current = GetWindowLongPtrW(hwnd, GWLP_WNDPROC);
+    if !force && current != window_proc::<T> as usize as isize {
+        return core::ptr::null_mut();
+    }
+    // ATL restores m_pfnSuperWindowProc, which is DefWindowProc for a window it created.
+    let sup = GetPropW(hwnd, PROP_SUPER.as_ptr());
+    let restore = if sup.is_null() { DefWindowProcW as usize as isize } else { sup as isize };
+    SetWindowLongPtrW(hwnd, GWLP_WNDPROC, restore);
+    RemovePropW(hwnd, PROP_SUPER.as_ptr());
+    RemovePropW(hwnd, PROP_THIS.as_ptr());
+    *(*this).hwnd_slot() = core::ptr::null_mut();
+    hwnd
 }
 
 unsafe extern "system" fn dialog_proc<T: MessageMap>(

@@ -1004,48 +1004,17 @@ pub struct DVTARGETDEVICE {
     pub tdData: [BYTE; 1],
 }
 
-#[repr(C)]
-pub struct EXTRASEARCH {
-    pub guidSearch: GUID,
-    pub wszFriendlyName: [WCHAR; 80],
-    pub wszUrl: [WCHAR; 2084],
-}
+pub use crate::island::EXTRASEARCH;
 
-#[repr(C)]
-pub struct PERSIST_FOLDER_TARGET_INFO {
-    pub pidlTargetFolder: PIDLIST_ABSOLUTE,
-    pub szTargetParsingName: [WCHAR; 260],
-    pub szNetworkProvider: [WCHAR; 260],
-    pub dwAttributes: DWORD,
-    pub csidl: i32,
-}
+pub use crate::island::PERSIST_FOLDER_TARGET_INFO;
 
-#[repr(C)]
-pub struct QCMINFO {
-    pub hmenu: HMENU,
-    pub indexMenu: UINT,
-    pub idCmdFirst: UINT,
-    pub idCmdLast: UINT,
-    pub pIdMap: *const QCMINFO_IDMAP,
-}
+pub use crate::island::QCMINFO;
 
-#[repr(C)]
-pub struct QCMINFO_IDMAP {
-    pub nMaxIds: UINT,
-    pub pIdList: [QCMINFO_IDMAP_PLACEMENT; 1],
-}
+pub use crate::island::QCMINFO_IDMAP;
 
-#[repr(C)]
-pub struct QCMINFO_IDMAP_PLACEMENT {
-    pub id: UINT,
-    pub fFlags: UINT,
-}
+pub use crate::island::QCMINFO_IDMAP_PLACEMENT;
 
-#[repr(C)]
-pub struct SHDESCRIPTIONID {
-    pub dwDescriptionId: DWORD,
-    pub clsid: CLSID,
-}
+pub use crate::island::SHDESCRIPTIONID;
 
 #[repr(C)]
 pub struct STATDATA {
@@ -1075,19 +1044,7 @@ pub struct ULARGE_INTEGER {
     pub QuadPart: ULONGLONG,
 }
 
-#[repr(C)]
-pub struct WIN32_FIND_DATAW {
-    pub dwFileAttributes: DWORD,
-    pub ftCreationTime: FILETIME,
-    pub ftLastAccessTime: FILETIME,
-    pub ftLastWriteTime: FILETIME,
-    pub nFileSizeHigh: DWORD,
-    pub nFileSizeLow: DWORD,
-    pub dwReserved0: DWORD,
-    pub dwReserved1: DWORD,
-    pub cFileName: [WCHAR; 260],
-    pub cAlternateFileName: [WCHAR; 14],
-}
+pub use crate::island::WIN32_FIND_DATAW;
 
 // Deterministic from shobjidl.h
 #[repr(C)]
@@ -1236,11 +1193,7 @@ macro_rules! LOWORD { ($value:expr) => { (($value as usize) & 0xffff) as UINT };
 
 pub type LPFNSVADDPROPSHEETPAGE = Option<unsafe extern "system" fn(HPROPSHEETPAGE, LPARAM) -> BOOL>;
 
-#[repr(C)]
-pub struct shvheader {
-    pub colnameid: WORD, pub colstate: WORD,
-    pub fmt: WORD, pub cxChar: WORD,
-}
+pub use crate::island::shvheader;
 pub static GenericSFHeader: [shvheader; 6] = [
     shvheader { colnameid: (IDS_SHV_COLUMN_NAME) as WORD, colstate: (SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT) as WORD, fmt: (LVCFMT_LEFT) as WORD, cxChar: (18) as WORD },
     shvheader { colnameid: (IDS_SHV_COLUMN_SIZE) as WORD, colstate: (SHCOLSTATE_TYPE_INT | SHCOLSTATE_ONBYDEFAULT) as WORD, fmt: (LVCFMT_RIGHT) as WORD, cxChar: (10) as WORD },
@@ -1251,32 +1204,16 @@ pub static GenericSFHeader: [shvheader; 6] = [
 ];
 
 extern "system" {
-    pub fn DestroyMenu(menu: HMENU) -> BOOL;
     pub fn ExpandEnvironmentStringsW(source: LPCWSTR, dest: LPWSTR, size: DWORD) -> DWORD;
-    pub fn RegCloseKey(key: HKEY) -> LONG;
-    pub fn RegGetValueW(key: HKEY, subkey: LPCWSTR, value: LPCWSTR, flags: DWORD, kind: LPDWORD, data: LPVOID, bytes: LPDWORD) -> LONG;
-    pub fn RegOpenKeyExW(key: HKEY, subkey: LPCWSTR, options: DWORD, access: REGSAM, result: PHKEY) -> LONG;
-    pub fn RegQueryValueExW(key: HKEY, value: LPCWSTR, reserved: LPDWORD, kind: LPDWORD, data: PBYTE, bytes: LPDWORD) -> LONG;
-    pub fn SHGetFileInfoW(path: LPCWSTR, attributes: DWORD, info: *mut SHFILEINFOW, bytes: UINT, flags: UINT) -> DWORD_PTR;
-    pub fn SHGetPathFromIDListW(pidl: LPCITEMIDLIST, path: LPWSTR) -> BOOL;
-    pub fn StrRetToStrW(value: *mut STRRET, pidl: PCUITEMID_CHILD, out: *mut LPWSTR) -> HRESULT;
     pub fn GetLastError() -> DWORD;
     pub fn lstrlenW(text: LPCWSTR) -> INT;
-    pub fn CoTaskMemAlloc(bytes: SIZE_T) -> LPVOID;
-    pub fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
     pub fn CoTaskMemFree(memory: LPVOID);
     pub fn SHStrDupW(source: LPCWSTR, out: *mut LPWSTR) -> HRESULT;
-    pub fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
     pub fn ILFindLastID(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
-    pub fn ILFree(pidl: LPITEMIDLIST);
-    pub fn SHCreateShellFolderView(create: *const SFV_CREATE, view: *mut *mut IShellView) -> HRESULT;
     pub fn ILGetNext(pidl: PCUIDLIST_RELATIVE) -> LPITEMIDLIST;
-    pub fn SHELL32_CompareDetails(folder: *mut IShellFolder2, lparam: LPARAM, left: PCUIDLIST_RELATIVE, right: PCUIDLIST_RELATIVE) -> HRESULT;
 }
 
 extern "C" {
-    pub fn HLM_GetIconW(index: INT, destination: LPWSTR, length: DWORD, icon_index: *mut INT) -> BOOL;
-    pub fn _ILGetDataPointer(pidl: LPCITEMIDLIST) -> *mut PIDLDATA;
     #[link_name = "memcpy"] pub fn cpp_com_memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, bytes: usize) -> *mut core::ffi::c_void;
     pub fn _wcsicmp(left: LPCWSTR, right: LPCWSTR) -> INT;
 }
@@ -1351,7 +1288,7 @@ pub unsafe fn StringCchCopyW(dst: LPWSTR, capacity: usize, src: LPCWSTR) -> HRES
 pub unsafe fn cpp_com_SHSetStrRetW(out: *mut STRRET, value: LPCWSTR) -> HRESULT {
     let len = lstrlenW(value) as usize;
     let bytes = (len + 1) * core::mem::size_of::<WCHAR>();
-    let buffer = CoTaskMemAlloc(bytes) as LPWSTR;
+    let buffer = CoTaskMemAlloc((bytes) as SIZE_T) as LPWSTR;
     if buffer.is_null() { return E_OUTOFMEMORY; }
     let _ = memcpy(buffer, value, bytes);
     (*out).uType = STRRET_WSTR; (*out).u.pOleStr = buffer; S_OK
@@ -1401,6 +1338,37 @@ pub static CPP_COM_WSTR_B0CA6D12B3C0: [WCHAR; 39] = [0x007B, 0x0042, 0x0045, 0x0
 pub static CPP_COM_WSTR_FD81E9BD116B: [WCHAR; 7] = [0x0020, 0x0009, 0x000A, 0x000D, 0x000C, 0x000B, 0x0000];
 
 use core::ffi::c_void;
+// The crate's own functions: the definition is the declaration.
+pub use crate::wine::classes::HLM_GetIconW;
+pub use crate::shell32::cidldataobj_free::IDataObject_Constructor;
+pub use crate::wine::pidl::ILClone;
+pub use crate::wine::pidl::ILFree;
+pub use crate::wine::pidl::SHBindToParent;
+pub use crate::wine::shellole::SHCoCreateInstance;
+pub use crate::default_context_menu_tu::SHCreateDefaultContextMenu;
+pub use crate::def_view::SHCreateShellFolderView;
+pub use crate::shell32::shlfolder::SHELL32_CompareDetails;
+pub use crate::wine::shell32_main::SHGetFileInfoW;
+pub use crate::wine::pidl::SHGetPathFromIDListW;
+pub use crate::wine::shellpath::SHGetSpecialFolderPathW;
+pub use crate::wine::shlmenu::Shell_MergeMenus;
+pub use crate::wine::pidl::_ILGetDataPointer;
+pub use crate::wine::pidl::_ILIsDrive;
+pub use crate::wine::pidl::_ILIsPidlSimple;
+pub use crate::default_context_menu_tu::_InsertMenuItemW;
+// One declaration per external symbol: island.rs.
+pub use crate::island::CLSIDFromString;
+pub use crate::island::CoTaskMemAlloc;
+pub use crate::island::CreatePopupMenu;
+pub use crate::island::DestroyMenu;
+pub use crate::island::FindFirstFileW;
+pub use crate::island::LoadStringW;
+pub use crate::island::RegCloseKey;
+pub use crate::island::RegGetValueW;
+pub use crate::island::RegOpenKeyExW;
+pub use crate::island::RegQueryValueExW;
+pub use crate::island::SHCreateStreamOnFileEx;
+pub use crate::island::StrRetToStrW;
 use crate::shellcom::*;
 use crate::types::*;
 
@@ -1814,7 +1782,7 @@ pub unsafe fn CFSFolder_BindToObject_v1_body(this: *mut CFSFolder, pidl: PCUIDLI
     pfti.dwAttributes = (-( 1 as i32 )) as u32;
     pfti.csidl = -(1 as i32);
     PathCombineW(
-        pfti.szTargetParsingName.as_mut_ptr(),
+        core::ptr::addr_of_mut!(pfti.szTargetParsingName).cast(),
         (*this).m_sPathTarget,
         pszName,
     );
@@ -1826,7 +1794,7 @@ pub unsafe fn CFSFolder_BindToObject_v1_body(this: *mut CFSFolder, pidl: PCUIDLI
         if (attribs & (FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_READONLY)) != 0 {
             let mut hr: HRESULT;
             hr = SHELL32_GetCLSIDForDirectory_body(
-                pfti.szTargetParsingName.as_ptr(),
+                core::ptr::addr_of!(pfti.szTargetParsingName).cast(),
                 CPP_COM_WSTR_AFF3436D7481.as_ptr(),
                 &mut clsidFolder,
             );
@@ -1961,8 +1929,8 @@ pub unsafe fn CFSFolder_CompareIDs_body(this: *mut CFSFolder, lParam: LPARAM, pi
                     flags,
                 ) != 0)
             {
-                result = CFSFolder_CompareUiStrings_body(this, info1.szTypeName.as_ptr(),
-                    info2.szTypeName.as_ptr(),
+                result = CFSFolder_CompareUiStrings_body(this, core::ptr::addr_of!(info1.szTypeName).cast(),
+                    core::ptr::addr_of!(info2.szTypeName).cast(),
                     lParam,
                 ) as i32;
             }
@@ -1976,7 +1944,7 @@ pub unsafe fn CFSFolder_CompareIDs_body(this: *mut CFSFolder, lParam: LPARAM, pi
             }
         }
         SHFSF_COL_FATTS => {
-            return SHELL32_CompareDetails(core::ptr::addr_of_mut!((*this).IShellFolder2_iface), lParam, pidl1, pidl2);
+            return SHELL32_CompareDetails((core::ptr::addr_of_mut!((*this).IShellFolder2_iface)).cast(), lParam, pidl1, pidl2);
         }
         SHFSF_COL_COMMENT => {
             result = 0;
@@ -2057,7 +2025,7 @@ pub unsafe fn CFSFolder_CreateViewObject_body(this: *mut CFSFolder, hwndOwner: H
                     psvOuter: core::ptr::null_mut(),
                     psfvcb: core::ptr::addr_of_mut!((*this).IShellFolderViewCB_iface) as *mut core::ffi::c_void,
                 };
-                hr = SHCreateShellFolderView(&sfvparams, ppvOut as *mut *mut IShellView);
+                hr = SHCreateShellFolderView((&raw const sfvparams).cast(), (ppvOut as *mut *mut IShellView).cast());
             } else if cpp_com_iid_equal(riid, &IID_IContextMenu) {
                 // DEFCONTEXTMENU dcm = { hwndOwner, this, m_pidlRoot, this, 0, NULL, NULL, keys, keys };
                 let mut keys = CRegKeyHandleArray::default();
@@ -2077,7 +2045,7 @@ pub unsafe fn CFSFolder_CreateViewObject_body(this: *mut CFSFolder, hwndOwner: H
                     cKeys: keys.cKeys,
                     aKeys: keys.hKeys.as_ptr(),
                 };
-                hr = SHCreateDefaultContextMenu(&dcm, riid, ppvOut);
+                hr = SHCreateDefaultContextMenu(core::ptr::from_ref(&dcm).cast(), (riid).cast(), ppvOut);
             } else {
                 hr = E_INVALIDARG;
             }
@@ -2172,7 +2140,7 @@ pub unsafe fn CFSFolder_GetUIObjectOf_body(this: *mut CFSFolder, hwndOwner: HWND
                 cKeys: keys.len() as u32,
                 aKeys: keys.as_ptr() as *const HKEY,
             };
-            hr = SHCreateDefaultContextMenu(&dcm as *const _ as *const _, riid, &mut pObj as *mut _);
+            hr = SHCreateDefaultContextMenu(&dcm as *const _ as *const _, (riid).cast(), &mut pObj as *mut _);
         } else if cpp_com_iid_equal(riid, &IID_IDataObject) {
             if cidl >= 1 {
                 let pobj_idata = &mut pObj as *mut *mut core::ffi::c_void as *mut *mut IDataObject;
@@ -2182,7 +2150,7 @@ pub unsafe fn CFSFolder_GetUIObjectOf_body(this: *mut CFSFolder, hwndOwner: HWND
                     apidl,
                     cidl,
                     TRUE,
-                    pobj_idata,
+                    (pobj_idata).cast(),
                 );
             } else {
                 hr = E_INVALIDARG;
@@ -2258,7 +2226,7 @@ pub unsafe fn CFSFolder_GetDisplayNameOf_body(this: *mut CFSFolder, pidl: PCUITE
     let mut len = 0 as usize;
     let size = ((MAX_PATH as usize) + (1 as usize))
         * core::mem::size_of::<u16>();
-    let pszPath = CoTaskMemAlloc(size) as *mut u16;
+    let pszPath = CoTaskMemAlloc((size) as SIZE_T) as *mut u16;
     if pszPath.is_null() {
         return E_OUTOFMEMORY;
     }
@@ -2455,7 +2423,7 @@ pub unsafe fn CFSFolder_GetDetailsOf_body(this: *mut CFSFolder, pidl: PCUITEMID_
     (*psd).str_.uType = STRRET_WSTR;
 
     if iColumn != SHFSF_COL_NAME {
-        let p = CoTaskMemAlloc(MAX_PATH * core::mem::size_of::<u16>()) as LPWSTR;
+        let p = CoTaskMemAlloc((MAX_PATH * core::mem::size_of::<u16>()) as SIZE_T) as LPWSTR;
         if p.is_null() {
             return E_OUTOFMEMORY;
         }
@@ -2600,7 +2568,7 @@ pub unsafe fn CFSFolder_InitializeEx_body(this: *mut CFSFolder, pbc: *mut IBindC
             }
         } else if (*ppfti).szTargetParsingName[0] != 0 {
             hr = SHStrDupW(
-                (*ppfti).szTargetParsingName.as_ptr(),
+                core::ptr::addr_of!((*ppfti).szTargetParsingName).cast(),
                 &mut (*this).m_sPathTarget as *mut *mut u16,
             );
         } else if !(*ppfti).pidlTargetFolder.is_null() {
@@ -2799,7 +2767,7 @@ pub unsafe fn DoLoadPicture_body(pszFileName: LPCWSTR) -> HBITMAP {
         FILE_ATTRIBUTE_NORMAL,
         FALSE,
         core::ptr::null_mut(),
-        &mut pStream,
+        (&raw mut pStream).cast(),
     );
     if hr < 0 {
         return core::ptr::null_mut() as HBITMAP;
@@ -2823,7 +2791,7 @@ pub unsafe fn DoLoadPicture_body(pszFileName: LPCWSTR) -> HBITMAP {
         );
 
         hbm = CopyImage(
-            hbm,
+            (hbm).cast(),
             IMAGE_BITMAP,
             0,
             0,
@@ -3000,13 +2968,7 @@ pub type LPCRECT = *const RECT;
 pub type LPSTREAM = *mut IStream;
 
 // ── SFVM_CUSTOMVIEWINFO_DATA (undocshell.h) ──
-#[repr(C)]
-pub struct SFVM_CUSTOMVIEWINFO_DATA {
-    pub cbSize: ULONG,
-    pub hbmBack: HBITMAP,
-    pub clrText: COLORREF,
-    pub clrTextBack: COLORREF,
-}
+pub use crate::island::SFVM_CUSTOMVIEWINFO_DATA;
 
 // ── CRegKeyHandleArray (shfldr.h:191) — one definition, in crate::shfldr ──
 // Was re-derived here; `desktop_folder.rs` re-derived it too, and both copies had lost the
@@ -3093,10 +3055,7 @@ extern "system" {
     #[link_name = "PathIsDosDevice_RustBridge"]
     pub fn PathIsDosDevice(pszName: LPCWSTR) -> BOOL;
     pub fn GetPrivateProfileStringW(lpAppName: LPCWSTR, lpKeyName: LPCWSTR, lpDefault: LPCWSTR, lpReturnedString: LPWSTR, nSize: DWORD, lpFileName: LPCWSTR) -> DWORD;
-    pub fn CLSIDFromString(lpsz: LPCOLESTR, pclsid: *mut CLSID) -> HRESULT;
-    pub fn FindFirstFileW(lpFileName: LPCWSTR, lpFindFileData: *mut WIN32_FIND_DATAW) -> HANDLE;
     pub fn FindClose(hFindFile: HANDLE) -> BOOL;
-    pub fn CreatePopupMenu() -> HMENU;
     pub fn StrTrimW(psz: LPWSTR, pszTrimChars: LPCWSTR) -> BOOL;
     pub fn StrFormatKBSizeW(qdw: i64, pszBuf: LPWSTR, cchBuf: UINT) -> LPWSTR;
     pub fn FileTimeToLocalFileTime(lpFileTime: *const FILETIME, lpLocalFileTime: *mut FILETIME) -> BOOL;
@@ -3104,17 +3063,10 @@ extern "system" {
     pub fn GetDateFormatW(Locale: DWORD, dwFlags: DWORD, lpDate: *const SYSTEMTIME, lpFormat: LPCWSTR, lpDateStr: LPWSTR, cchDate: core::ffi::c_int) -> core::ffi::c_int;
     pub fn GetTimeFormatW(Locale: DWORD, dwFlags: DWORD, lpTime: *const SYSTEMTIME, lpFormat: LPCWSTR, lpTimeStr: LPWSTR, cchTime: core::ffi::c_int) -> core::ffi::c_int;
     pub fn DosDateTimeToVariantTime(wDosDate: WORD, wDosTime: WORD, pvtime: *mut DATE) -> BOOL;
-    pub fn SHGetSpecialFolderPathW(hwnd: HWND, pszPath: LPWSTR, csidl: core::ffi::c_int, fCreate: BOOL) -> BOOL;
     pub fn CopyImage(h: HANDLE, type_: UINT, cx: core::ffi::c_int, cy: core::ffi::c_int, flags: UINT) -> HANDLE;
     pub fn OleLoadPicture(lpstream: *mut IStream, lSize: LONG, fRunmode: BOOL, riid: REFIID, lplpvObj: *mut core::ffi::c_void) -> HRESULT;
-    pub fn SHCreateStreamOnFileEx(pszFile: LPCWSTR, grfMode: DWORD, dwAttributes: DWORD, fCreate: BOOL, pstmTemplate: *mut IStream, ppstm: *mut *mut IStream) -> HRESULT;
-    pub fn SHCoCreateInstance(aclsid: LPCWSTR, clsid: *const CLSID, pUnkOuter: *mut IUnknown, riid: REFIID, ppv: *mut *mut core::ffi::c_void) -> HRESULT;
-    pub fn SHBindToParent(pidl: PCIDLIST_ABSOLUTE, riid: REFIID, ppv: *mut *mut core::ffi::c_void, ppidlLast: *mut PCUITEMID_CHILD) -> HRESULT;
     #[link_name = "SHIsFileSysBindCtx_RustBridge"]
     pub fn SHIsFileSysBindCtx(pbc: LPBC, pfd: *mut WIN32_FIND_DATAW) -> HRESULT;
-    pub fn Shell_MergeMenus(hmDst: HMENU, hmSrc: HMENU, uInsert: UINT, uIDAdjust: UINT, uIDAdjustMax: UINT, uFlags: ULONG) -> UINT;
-    pub fn SHCreateDefaultContextMenu(pdcm: *const DEFCONTEXTMENU, riid: REFIID, ppv: *mut *mut core::ffi::c_void) -> HRESULT;
-    pub fn _InsertMenuItemW(hmenu: HMENU, indexMenu: UINT, fByPosition: BOOL, wID: UINT, fType: UINT, dwTypeData: LPCWSTR, fState: UINT) -> BOOL;
     #[link_name = "AddClassKeyToArray_RustBridge"]
     pub fn AddClassKeyToArray(szClass: LPCWSTR, array: *mut HKEY, cKeys: *mut UINT) -> LONG;
     #[link_name = "AddFSClassKeysToArray_RustBridge"]
@@ -3160,8 +3112,6 @@ extern "C" {
     pub fn SHELL_ShowItemIDListProperties(pidl: LPCITEMIDLIST) -> HRESULT;
     pub fn _ILIsFolder(pidl: LPCITEMIDLIST) -> BOOL;
     pub fn _ILIsValue(pidl: LPCITEMIDLIST) -> BOOL;
-    pub fn _ILIsDrive(pidl: LPCITEMIDLIST) -> BOOL;
-    pub fn _ILIsPidlSimple(pidl: LPCITEMIDLIST) -> BOOL;
     pub fn _ILGetFileSize(pidl: LPCITEMIDLIST, pOut: LPWSTR, uOutSize: UINT) -> DWORD;
     pub fn _ILGetFileAttributes(pidl: LPCITEMIDLIST, pOut: LPWSTR, uOutSize: UINT) -> DWORD;
     pub fn _ILGetFileStructW(pidl: LPCITEMIDLIST) -> *mut FileStructW;
@@ -3172,7 +3122,6 @@ extern "C" {
     pub fn GetCLSIDForFileType(pidl: LPCITEMIDLIST, KeyName: LPCWSTR, pclsid: *mut CLSID) -> HRESULT;
     #[link_name = "GetItemCLSID_RustBridge"]
     pub fn GetItemCLSID(pidl: LPCITEMIDLIST, pclsid: *mut CLSID) -> HRESULT;
-    pub fn IDataObject_Constructor(hwndOwner: HWND, pMyPidl: PCIDLIST_ABSOLUTE, apidl: PCUITEMID_CHILD_ARRAY, cidl: UINT, bExtendedObject: BOOL, dataObject: *mut *mut IDataObject) -> HRESULT;
     pub fn SHELL32_AssocGetFSDirectoryDescription(Buf: LPWSTR, cchBuf: UINT) -> HRESULT;
     pub fn SHELL32_AssocGetFileDescription(Name: LPCWSTR, Buf: LPWSTR, cchBuf: UINT) -> HRESULT;
     #[link_name = "SHELL_FS_HideExtension_RustBridge"]

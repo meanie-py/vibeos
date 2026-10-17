@@ -7,6 +7,80 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The C left, and its part of cmake's C rule; reactos-link adds what every C
+    // compile shares from reactos-link/cflags/c.<arch>.flags (Linker::c_compiled).
+    let c_sources: &[&str] = match arch.as_str() {
+        "x86" => &["dll/appcompat/shims/genral/rust_cohab_stub.c"],
+        "x86_64" => &[
+            "dll/appcompat/shims/genral/rust_cohab_stub.c",
+            "dll/appcompat/shims/genral/msys2.c",
+        ],
+        "aarch64" => &["dll/appcompat/shims/genral/rust_cohab_stub.c"],
+        _ => unreachable!(),
+    };
+    let c_includes: &[&str] = &[
+        "@build/dll/appcompat/shims/genral",
+        "dll/appcompat/shims/genral",
+        "@std",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+        "dll/appcompat/shims/shimlib",
+    ];
+    let c_flags: &[&str] = match arch.as_str() {
+        "x86" => &[
+            "-isystem",
+            "{REPO}/sdk/lib/pseh/include",
+            "-isystem",
+            "{REPO}/sdk/lib/tdilib",
+            "-isystem",
+            "{REPO}/vendor/zlib/include",
+            "-isystem",
+            "{REPO}/vendor/libtiff/include",
+            "-isystem",
+            "{REPO}/vendor/symcrypt/inc",
+            "-isystem",
+            "{REPO}/vendor/symcrypt/lib",
+            "-std=gnu99",
+            "@core",
+        ],
+        "x86_64" => &[
+            "-isystem",
+            "{REPO}/sdk/lib/pseh/include",
+            "-isystem",
+            "{REPO}/sdk/lib/tdilib",
+            "-isystem",
+            "{REPO}/vendor/zlib/include",
+            "-isystem",
+            "{REPO}/vendor/libtiff/include",
+            "-isystem",
+            "{REPO}/vendor/symcrypt/inc",
+            "-isystem",
+            "{REPO}/vendor/symcrypt/lib",
+            "-std=gnu99",
+            "-U_X86_",
+            "-UWIN32",
+            "@core",
+        ],
+        "aarch64" => &[
+            "-isystem",
+            "{REPO}/sdk/lib/pseh/include",
+            "-isystem",
+            "{REPO}/sdk/lib/tdilib",
+            "-isystem",
+            "{REPO}/vendor/zlib/include",
+            "-isystem",
+            "{REPO}/vendor/libtiff/include",
+            "-isystem",
+            "{REPO}/vendor/symcrypt/inc",
+            "-isystem",
+            "{REPO}/vendor/symcrypt/lib",
+            "-std=gnu99",
+            "@core",
+        ],
+        _ => unreachable!(),
+    };
+    let c_defines: &[&str] = &["WINVER=0x502", "_WIN32_WINNT=0x502"];
     let (target_json, entry, image_base) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_DllMain@12", Some(0x78120000u64)),
         "x86_64" => ("x86_64-pc-windows-gnu", "DllMain", Some(0x7ff77000000u64)),
@@ -23,15 +97,7 @@ fn main() {
 
     Linker::new(target_json)
         .rust_staticlib("acgenral-rust")
-        .c_from_compile_db(
-            "acgenral_shims",
-            match arch.as_str() {
-                "x86" => &["dll/appcompat/shims/genral/rust_cohab_stub.c"],
-                "x86_64" => &["dll/appcompat/shims/genral/rust_cohab_stub.c", "dll/appcompat/shims/genral/msys2.c"],
-                "aarch64" => &["dll/appcompat/shims/genral/rust_cohab_stub.c"],
-                _ => unreachable!(),
-            },
-        )
+        .c_compiled("acgenral_shims", c_sources, c_includes, c_flags, c_defines)
         .spec2def("dll/appcompat/shims/genral/genral.spec", "acgenral.dll")
         .import_lib("dll/win32/uxtheme/uxtheme.spec", "uxtheme.dll", "uxtheme")
         .import_lib("dll/win32/kernel32/kernel32.spec", "kernel32.dll", "kernel32")

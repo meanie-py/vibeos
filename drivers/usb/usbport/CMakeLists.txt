@@ -15,22 +15,9 @@ spec2def(usbport.sys usbport.spec ADD_IMPORTLIB)
 # All usbport .c bodies are now Rust (usbport-rust). guid.c stays as the data-only TU
 # (DEFINE_GUID via initguid.h — instantiates the interface/bus GUID symbols).
 # The C still compiled, in an OBJECT library whose compile the cargo link replays.
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(usbport_res OBJECT usbport.rc)
-target_include_directories(usbport_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-# How cmake compiled the target's sources, now on the OBJECT libraries.
-target_compile_definitions(usbport_res
-    # HACK: Disabled until USB Stack is reinvestigated.
-    PRIVATE NO_KERNEL_LIST_ENTRY_CHECKS)
-add_library(usbport_shims OBJECT rust_varargs_shim.c guid.c)
-target_link_libraries(usbport_shims PRIVATE libntoskrnl libhal)
-target_compile_definitions(usbport_shims
-    # HACK: Disabled until USB Stack is reinvestigated.
-    PRIVATE NO_KERNEL_LIST_ENTRY_CHECKS)
 add_cargo_module(usbport usbport-cargo usbport.sys
     KIND kernelmodedriver
     BODY_CRATE usbport-rust
     DESTINATION reactos/system32/drivers
     NO_CAB
-    EXTRA_DEPENDS usbport_shims usbport_res psdk)
+    EXTRA_DEPENDS psdk libntoskrnl libhal)

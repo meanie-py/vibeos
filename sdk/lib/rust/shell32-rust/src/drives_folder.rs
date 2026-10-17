@@ -1010,47 +1010,17 @@ pub struct DVTARGETDEVICE {
     pub tdData: [BYTE; 1],
 }
 
-#[repr(C)]
-pub struct EXTRASEARCH {
-    pub guidSearch: GUID,
-    pub wszFriendlyName: [WCHAR; 80],
-    pub wszUrl: [WCHAR; 2084],
-}
+pub use crate::island::EXTRASEARCH;
 
-#[repr(C)]
-pub struct PERSIST_FOLDER_TARGET_INFO {
-    pub pidlTargetFolder: PIDLIST_ABSOLUTE,
-    pub szTargetParsingName: [WCHAR; 260],
-    pub szNetworkProvider: [WCHAR; 260],
-    pub dwAttributes: DWORD,
-    pub csidl: i32,
-}
+pub use crate::island::PERSIST_FOLDER_TARGET_INFO;
 
-#[repr(C)]
-pub struct PREVENT_MEDIA_REMOVAL {
-    pub PreventMediaRemoval: BOOLEAN,
-}
+pub use crate::island::PREVENT_MEDIA_REMOVAL;
 
-#[repr(C)]
-pub struct QCMINFO {
-    pub hmenu: HMENU,
-    pub indexMenu: UINT,
-    pub idCmdFirst: UINT,
-    pub idCmdLast: UINT,
-    pub pIdMap: *const QCMINFO_IDMAP,
-}
+pub use crate::island::QCMINFO;
 
-#[repr(C)]
-pub struct QCMINFO_IDMAP {
-    pub nMaxIds: UINT,
-    pub pIdList: [QCMINFO_IDMAP_PLACEMENT; 1],
-}
+pub use crate::island::QCMINFO_IDMAP;
 
-#[repr(C)]
-pub struct QCMINFO_IDMAP_PLACEMENT {
-    pub id: UINT,
-    pub fFlags: UINT,
-}
+pub use crate::island::QCMINFO_IDMAP_PLACEMENT;
 
 #[repr(C)]
 pub struct STATDATA {
@@ -1193,11 +1163,7 @@ macro_rules! LOWORD { ($value:expr) => { (($value as usize) & 0xffff) as UINT };
 
 pub type LPFNSVADDPROPSHEETPAGE = Option<unsafe extern "system" fn(HPROPSHEETPAGE, LPARAM) -> BOOL>;
 
-#[repr(C)]
-pub struct shvheader {
-    pub colnameid: WORD, pub colstate: WORD,
-    pub fmt: WORD, pub cxChar: WORD,
-}
+pub use crate::island::shvheader;
 pub static MyComputerSFHeader: [shvheader; 5] = [
     shvheader { colnameid: (IDS_SHV_COLUMN_NAME) as WORD, colstate: (SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT) as WORD, fmt: (LVCFMT_LEFT) as WORD, cxChar: (15) as WORD },
     shvheader { colnameid: (IDS_SHV_COLUMN_TYPE) as WORD, colstate: (SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT) as WORD, fmt: (LVCFMT_LEFT) as WORD, cxChar: (10) as WORD },
@@ -1207,27 +1173,15 @@ pub static MyComputerSFHeader: [shvheader; 5] = [
 ];
 
 extern "system" {
-    fn CloseHandle(handle: HANDLE) -> BOOL;
-    fn DestroyMenu(menu: HMENU) -> BOOL;
-    fn DestroyWindow(window: HWND) -> BOOL;
     fn ExpandEnvironmentStringsW(source: LPCWSTR, dest: LPWSTR, size: DWORD) -> DWORD;
-    fn MessageBoxW(owner: HWND, text: LPCWSTR, caption: LPCWSTR, kind: UINT) -> INT;
-    fn RegGetValueW(key: HKEY, subkey: LPCWSTR, value: LPCWSTR, flags: DWORD, kind: LPDWORD, data: LPVOID, bytes: LPDWORD) -> LONG;
     fn SHChangeNotify(event: LONG, flags: UINT, item1: LPCVOID, item2: LPCVOID);
     fn GetLastError() -> DWORD;
     fn lstrlenW(text: LPCWSTR) -> INT;
-    fn CoTaskMemAlloc(bytes: SIZE_T) -> LPVOID;
-    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
     fn CoTaskMemFree(memory: LPVOID);
-    fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
-    fn SHCreateShellFolderView(create: *const SFV_CREATE, view: *mut *mut IShellView) -> HRESULT;
-    fn SHELL32_CompareDetails(folder: *mut IShellFolder2, lparam: LPARAM, left: PCUIDLIST_RELATIVE, right: PCUIDLIST_RELATIVE) -> HRESULT;
 }
 
 extern "C" {
-    fn HLM_GetIconW(index: INT, destination: LPWSTR, length: DWORD, icon_index: *mut INT) -> BOOL;
     fn _ILIsSpecialFolder(pidl: LPCITEMIDLIST) -> BOOL;
-    fn _ILGetDataPointer(pidl: LPCITEMIDLIST) -> *mut PIDLDATA;
     #[link_name = "memcpy"] fn cpp_com_memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, bytes: usize) -> *mut core::ffi::c_void;
 }
 
@@ -1288,7 +1242,7 @@ unsafe fn StringCchCopyW(dst: LPWSTR, capacity: usize, src: LPCWSTR) -> HRESULT 
 unsafe fn cpp_com_SHSetStrRetW(out: *mut STRRET, value: LPCWSTR) -> HRESULT {
     let len = lstrlenW(value) as usize;
     let bytes = (len + 1) * core::mem::size_of::<WCHAR>();
-    let buffer = CoTaskMemAlloc(bytes) as LPWSTR;
+    let buffer = CoTaskMemAlloc((bytes) as SIZE_T) as LPWSTR;
     if buffer.is_null() { return E_OUTOFMEMORY; }
     let _ = memcpy(buffer, value, bytes);
     (*out).uType = STRRET_WSTR; (*out).u.pOleStr = buffer; S_OK
@@ -1332,6 +1286,32 @@ pub static CPP_COM_WSTR_DFA857FD38EE: [WCHAR; 16] = [0x0025, 0x0063, 0x003A, 0x0
 pub static CPP_COM_WSTR_F3A549CDECCE: [WCHAR; 7] = [0x0020, 0x0028, 0x0025, 0x0063, 0x003A, 0x0029, 0x0000];
 
 use crate::island::{GetVersion, CLSID_ShellSearchExt};
+// The crate's own functions: the definition is the declaration.
+use crate::wine::classes::HLM_GetIconW;
+use crate::shell32::cidldataobj_free::IDataObject_Constructor;
+use crate::wine::pidl::ILClone;
+use crate::wine::pidl::ILCombine;
+use crate::default_context_menu_tu::SHCreateDefaultContextMenu;
+use crate::def_view::SHCreateShellFolderView;
+use crate::shell32::shlfolder::SHELL32_CompareDetails;
+use crate::wine::shellord::SHRunControlPanel;
+use crate::wine::shlmenu::Shell_MergeMenus;
+use crate::wine::pidl::_ILGetDataPointer;
+use crate::wine::pidl::_ILGetDrive;
+use crate::wine::pidl::_ILIsDrive;
+use crate::wine::pidl::_ILIsPidlSimple;
+use crate::default_context_menu_tu::_InsertMenuItemW;
+// One declaration per external symbol: island.rs.
+use crate::island::CloseHandle;
+use crate::island::CoTaskMemAlloc;
+use crate::island::CreatePopupMenu;
+use crate::island::DestroyMenu;
+use crate::island::DestroyWindow;
+use crate::island::GetDiskFreeSpaceExA;
+use crate::island::GetDiskFreeSpaceExW;
+use crate::island::LoadStringW;
+use crate::island::MessageBoxW;
+use crate::island::RegGetValueW;
 use crate::prelude::LOBYTE;
 use core::ffi::c_void;
 use crate::shellcom::*;
@@ -1349,9 +1329,7 @@ extern "system" {
     /// winbase.h:2276
     fn GetVolumeInformationA(lpRootPathName: LPCSTR, lpVolumeNameBuffer: LPSTR, nVolumeNameSize: DWORD, lpVolumeSerialNumber: LPDWORD, lpMaximumComponentLength: LPDWORD, lpFileSystemFlags: LPDWORD, lpFileSystemNameBuffer: LPSTR, nFileSystemNameSize: DWORD) -> BOOL;
     /// winbase.h:1877
-    fn GetDiskFreeSpaceExW(lpDirectoryName: LPCWSTR, lpFreeBytesAvailableToCaller: *mut ULARGE_INTEGER, lpTotalNumberOfBytes: *mut ULARGE_INTEGER, lpTotalNumberOfFreeBytes: *mut ULARGE_INTEGER) -> BOOL;
     /// winbase.h:1876
-    fn GetDiskFreeSpaceExA(lpDirectoryName: LPCSTR, lpFreeBytesAvailableToCaller: *mut ULARGE_INTEGER, lpTotalNumberOfBytes: *mut ULARGE_INTEGER, lpTotalNumberOfFreeBytes: *mut ULARGE_INTEGER) -> BOOL;
     /// winbase.h:3093
     fn SetVolumeLabelW(lpRootPathName: LPCWSTR, lpVolumeName: LPCWSTR) -> BOOL;
     /// winbase.h:2072
@@ -1360,22 +1338,10 @@ extern "system" {
     fn SHRegGetUSValueW(pszSubKey: LPCWSTR, pszValue: LPCWSTR, pdwType: LPDWORD, pvData: LPVOID, pcbData: LPDWORD, fIgnoreHKCU: BOOL, pvDefaultData: LPVOID, dwDefaultDataSize: DWORD) -> LONG;
     /// shlwapi.h:1112 `LWSTDAPI_(LPSTR) StrFormatByteSize64A(LONGLONG, LPSTR, UINT)`
     fn StrFormatByteSize64A(qdw: i64, pszBuf: LPSTR, cchBuf: UINT) -> LPSTR;
-    /// winuser.h:4415
-    fn CreatePopupMenu() -> HMENU;
-    /// shlobj.h:2566-2571
-    fn SHCreateDefaultContextMenu(pdcm: *const DEFCONTEXTMENU, riid: REFIID, ppv: *mut *mut core::ffi::c_void) -> HRESULT;
-    /// shlobj.h:2662-2666 `BOOL WINAPI SHRunControlPanel(LPCWSTR commandLine, HWND parent)`
-    fn SHRunControlPanel(commandLine: LPCWSTR, parent: HWND) -> BOOL;
     /// shlwapi.h:289 `LWSTDAPI_(LPWSTR) PathBuildRootW(_Out_writes_(4) LPWSTR, int)`
     fn PathBuildRootW(szRoot: LPWSTR, iDrive: INT) -> LPWSTR;
     /// Rust #[no_mangle] extern "system" def: sdk/lib/rust/shell32-rust/src/wine/shpolicy.rs:506
     fn SHRestricted(rest: DWORD) -> DWORD;
-    /// Rust #[no_mangle] extern "system" def: sdk/lib/rust/shell32-rust/src/wine/shlmenu.rs:1111
-    fn Shell_MergeMenus(hmDst: HMENU, hmSrc: HMENU, uInsert: UINT, uIDAdjust: UINT, uIDAdjustMax: UINT, uFlags: ULONG) -> UINT;
-    /// C linkage (extern "C" block wine/shell32_main.h:190) + WINAPI; def CDefaultContextMenu.cpp:884
-    fn _InsertMenuItemW(hmenu: HMENU, indexMenu: UINT, fByPosition: BOOL, wID: UINT, fType: UINT, dwTypeData: LPCWSTR, fState: UINT) -> BOOL;
-    /// Rust #[no_mangle] extern "system" def: wine/pidl.rs:843
-    fn ILCombine(pidl1: LPCITEMIDLIST, pidl2: LPCITEMIDLIST) -> LPITEMIDLIST;
 }
 
 // ── cdecl imports ───────────────────────────────────────────────────────────────────────
@@ -1385,13 +1351,11 @@ extern "C" {
     /// crt/string.h:217 `int __cdecl _stricmp(const char*, const char*)`
     fn _stricmp(left: LPCSTR, right: LPCSTR) -> INT;
     // Rust #[no_mangle] extern "C" defs in sdk/lib/rust/shell32-rust/src/wine/pidl.rs
-    fn _ILIsDrive(pidl: LPCITEMIDLIST) -> BOOL; // pidl.rs:1927
+// pidl.rs:1927
     fn _ILCreateDrive(lpszNew: LPCWSTR) -> LPITEMIDLIST; // pidl.rs:1815
     fn _ILCreateMyComputer() -> LPITEMIDLIST; // pidl.rs:1622
-    fn _ILIsPidlSimple(pidl: LPCITEMIDLIST) -> BOOL; // pidl.rs:1972
-    fn _ILGetDrive(pidl: LPCITEMIDLIST, pOut: LPWSTR, uSize: UINT) -> DWORD; // pidl.rs:1842
-    /// C linkage cdecl (extern "C" block wine/shell32_main.h:126); def CIDLDataObj.cpp:395
-    fn IDataObject_Constructor(hwndOwner: HWND, pMyPidl: PCIDLIST_ABSOLUTE, apidl: PCUITEMID_CHILD_ARRAY, cidl: UINT, bExtendedObject: BOOL, dataObject: *mut *mut IDataObject) -> HRESULT;
+// pidl.rs:1972
+// pidl.rs:1842
     /// Shared cache word — C++ definition stays authoritative (CDrivesFolder.cpp:102;
     /// global-scope variable → unmangled symbol).
     static mut g_IsFloppyCache: UINT;
@@ -1958,7 +1922,7 @@ pub unsafe fn CDrivesFolder_CompareIDs_body(this: *mut CDrivesFolder, lParam: LP
     match col_id {
         IDS_SHV_COLUMN_NAME => {
             if pszDrive1.is_null() && pszDrive2.is_null() {
-                return SHELL32_CompareDetails(core::ptr::addr_of_mut!((*this).IShellFolder2_iface), lParam, pidl1, pidl2);
+                return SHELL32_CompareDetails((core::ptr::addr_of_mut!((*this).IShellFolder2_iface)).cast(), lParam, pidl1, pidl2);
             } else if !pszDrive1.is_null() && !pszDrive2.is_null() {
                 result = _stricmp(pszDrive1, pszDrive2);
             } else {
@@ -1990,7 +1954,7 @@ pub unsafe fn CDrivesFolder_CompareIDs_body(this: *mut CDrivesFolder, lParam: LP
                 let mut Drive1Total: ULARGE_INTEGER = core::mem::zeroed();
 
                 if vol1_ok != 0 {
-                    let disk_ok = GetDiskFreeSpaceExA(pszDrive1, &mut Drive1Available, &mut Drive1Total, core::ptr::null_mut());
+                    let disk_ok = GetDiskFreeSpaceExA(pszDrive1, (&raw mut Drive1Available).cast(), (&raw mut Drive1Total).cast(), core::ptr::null_mut());
                     bValid1 = disk_ok;
                 } else {
                     Drive1Available.QuadPart = 0;
@@ -2012,7 +1976,7 @@ pub unsafe fn CDrivesFolder_CompareIDs_body(this: *mut CDrivesFolder, lParam: LP
                 let mut Drive2Total: ULARGE_INTEGER = core::mem::zeroed();
 
                 if vol2_ok != 0 {
-                    let disk_ok = GetDiskFreeSpaceExA(pszDrive2, &mut Drive2Available, &mut Drive2Total, core::ptr::null_mut());
+                    let disk_ok = GetDiskFreeSpaceExA(pszDrive2, (&raw mut Drive2Available).cast(), (&raw mut Drive2Total).cast(), core::ptr::null_mut());
                     bValid2 = disk_ok;
                 } else {
                     Drive2Available.QuadPart = 0;
@@ -2039,7 +2003,7 @@ pub unsafe fn CDrivesFolder_CompareIDs_body(this: *mut CDrivesFolder, lParam: LP
         }
 
         IDS_SHV_COLUMN_TYPE | IDS_SHV_COLUMN_COMMENTS => {
-            return SHELL32_CompareDetails(core::ptr::addr_of_mut!((*this).IShellFolder2_iface), lParam, pidl1, pidl2);
+            return SHELL32_CompareDetails((core::ptr::addr_of_mut!((*this).IShellFolder2_iface)).cast(), lParam, pidl1, pidl2);
         }
 
         // C marks the default case unreachable (DEFAULT_UNREACHABLE); all real column
@@ -2072,7 +2036,7 @@ pub unsafe fn CDrivesFolder_CreateViewObject_body(this: *mut CDrivesFolder, hwnd
         dcm.pcmcb = core::ptr::addr_of_mut!((*this).IContextMenuCB_iface);
         dcm.pidlFolder = (*this).pidlRoot;
         dcm.psf = core::ptr::addr_of_mut!((*this).IShellFolder2_iface) as *mut IShellFolder;
-        hr = SHCreateDefaultContextMenu(&dcm, riid, ppvOut);
+        hr = SHCreateDefaultContextMenu(core::ptr::from_ref(&dcm).cast(), (riid).cast(), ppvOut);
     } else if cpp_com_iid_equal(riid, core::ptr::addr_of!(IID_IShellView)) {
         // C++: SFV_CREATE sfvparams = { sizeof(SFV_CREATE), this, NULL, this };
         let sfvparams = SFV_CREATE {
@@ -2082,8 +2046,8 @@ pub unsafe fn CDrivesFolder_CreateViewObject_body(this: *mut CDrivesFolder, hwnd
             psfvcb: core::ptr::addr_of_mut!((*this).IShellFolderViewCB_iface) as *mut core::ffi::c_void,
         };
         hr = SHCreateShellFolderView(
-            &sfvparams,
-            ppvOut as *mut *mut IShellView,
+            (&raw const sfvparams).cast(),
+            (ppvOut as *mut *mut IShellView).cast(),
         );
     }
     hr
@@ -2172,7 +2136,7 @@ pub unsafe fn CDrivesFolder_GetUIObjectOf_body(this: *mut CDrivesFolder, hwndOwn
             apidl,
             cidl,
             TRUE,
-            core::ptr::addr_of_mut!(pObj) as *mut *mut IDataObject,
+            (core::ptr::addr_of_mut!(pObj) as *mut *mut IDataObject).cast(),
         );
     } else if ((cpp_com_iid_equal(riid, core::ptr::addr_of!(IID_IExtractIconA))
         || cpp_com_iid_equal(riid, core::ptr::addr_of!(IID_IExtractIconW)))
@@ -2255,7 +2219,7 @@ pub unsafe fn CDrivesFolder_GetDisplayNameOf_body(this: *mut CDrivesFolder, pidl
     }
 
     let pszPath: *mut u16 =
-        CoTaskMemAlloc((MAX_PATH + 1) * core::mem::size_of::<WCHAR>()) as *mut u16;
+        CoTaskMemAlloc(((MAX_PATH + 1) * core::mem::size_of::<WCHAR>()) as SIZE_T) as *mut u16;
     if pszPath.is_null() {
         return E_OUTOFMEMORY;
     }
@@ -2563,8 +2527,8 @@ pub unsafe fn CDrivesFolder_GetDetailsOf_body(this: *mut CDrivesFolder, pidl: PC
                 {
                     GetDiskFreeSpaceExW(
                         szDrive.as_ptr(),
-                        &raw mut ulFreeBytes,
-                        &raw mut ulTotalBytes,
+                        (&raw mut ulFreeBytes).cast(),
+                        (&raw mut ulTotalBytes).cast(),
                         core::ptr::null_mut(),
                     );
                     if iColumn == 2 {

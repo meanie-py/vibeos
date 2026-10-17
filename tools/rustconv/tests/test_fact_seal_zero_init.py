@@ -69,3 +69,20 @@ def test_an_ordinary_zero_is_untouched():
 def test_a_zero_init_does_not_hide_a_later_zero_in_the_same_body():
     src = "FOO f = {0};\nint n = 0;"
     assert _sealed(src) == ["0"]
+
+
+def test_pseh_statement_macros_are_syntax_not_facts():
+    # tdihelpers: a sealed _SEH2_TRY/_SEH2_END hid the construct and the reply did not parse
+    from rustconv.fact_seal import seal_facts
+
+    c = (
+        "{ NTSTATUS Status = STATUS_SUCCESS;\n"
+        "  _SEH2_TRY { RtlCopyMemory(a, b, n); }\n"
+        "  _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { Status = _SEH2_GetExceptionCode(); }\n"
+        "  _SEH2_END;\n  return Status; }\n"
+    )
+    sealed = seal_facts(c, dialect="c")
+    originals = {f.original for f in sealed.facts}
+    assert {"_SEH2_TRY", "_SEH2_END"}.isdisjoint(originals)
+    assert "_SEH2_TRY {" in sealed.text and "_SEH2_END;" in sealed.text
+    assert "STATUS_SUCCESS" in originals

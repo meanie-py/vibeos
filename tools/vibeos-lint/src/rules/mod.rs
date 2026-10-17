@@ -49,8 +49,170 @@ pub mod raising_probes;
 
 pub mod store_on_failure;
 
+pub mod arg_side_effects;
+pub mod assert_polarity;
+pub mod case_bitor_pattern;
+pub mod octal_literals;
+pub mod raw_user_access;
+pub mod safe_probe_deref;
+
+pub mod doc_sections;
+pub mod orphan_modules;
+pub mod pack_drift;
+
+pub mod bool_width;
+pub mod bugcheck_stubs;
+pub mod cc_mismatch;
+pub mod dropped_asserts;
+pub mod dropped_prints;
+pub mod dropped_probes;
+pub mod dropped_seh_pairs;
+pub mod extern_static_width;
+pub mod import_cc;
+pub mod inline_flag_literals;
+pub mod macro_fn_shadow;
+pub mod nightly_surface;
+pub mod rawdylib_linkname;
+pub mod res_named_types;
+pub mod type_alias_contradictions;
+pub mod varargs_spec_arity;
+pub mod wide_literals;
+pub mod winerror_consts;
+
+pub mod com_double_release;
+pub mod duplicate_symbols;
+pub mod export_shadows;
+pub mod extern_decl_drift;
+pub mod irql_balance;
+pub mod ob_refcount;
+pub mod unaligned_wide;
+pub mod unpruned_walk;
+pub mod varargs_shim_parity;
+
+pub mod const_contradictions;
+pub mod const_vs_island;
+pub mod const_vs_own_island;
+pub mod const_within_crate;
+
+pub mod call_literal_vs_c;
+pub mod cfg_vs_c;
+pub mod mask_drift;
+pub mod override_self_dispatch;
+pub mod ptr_typedef_indirection;
+pub mod version_vs_c;
+
+pub mod invented_constants;
+pub mod magic_offsets;
+pub mod shell32_tail_inventory;
+pub mod silent_failures;
+pub mod strip_msvc_cmake;
+pub mod verify_c_signatures;
+pub mod verify_conv_macros;
+pub mod verify_signatures;
+pub mod verify_translation_literals;
+
+pub mod verify_constants;
+pub mod verify_constants_enums;
+pub mod verify_constants_shared;
+
+pub mod cohab_census;
+pub mod lint_kernel;
+pub mod null_offset_to_offset_of;
+pub mod scan_boot_media_drift;
+pub mod verify_ffi;
+pub mod verify_lost_exports;
+
+pub mod atl_slot_cast;
+pub mod external_tools;
+pub mod fnclass_cc;
+pub mod gen_ctype_tables;
+pub mod list_walk_cursor_after_loop;
+pub mod marshalgen_audit;
+pub mod scan_cmake_linked_rust;
+pub mod vendored_registry;
+pub mod verify_match_consts;
+pub mod verify_svc_numbering;
+pub mod verify_tables;
+pub mod verify_ucrtbase_cohab;
+
 pub fn registry() -> Vec<Box<dyn Rule>> {
     vec![
+        Box::new(scan_cmake_linked_rust::ScanCmakeLinkedRust),
+        Box::new(verify_ucrtbase_cohab::VerifyUcrtbaseCohab),
+        Box::new(marshalgen_audit::MarshalgenAudit),
+        Box::new(atl_slot_cast::AtlSlotCast),
+        Box::new(fnclass_cc::FnclassCc),
+        Box::new(list_walk_cursor_after_loop::ListWalkCursorAfterLoop),
+        Box::new(gen_ctype_tables::GenCtypeTables),
+        Box::new(verify_svc_numbering::VerifySvcNumbering),
+        Box::new(vendored_registry::VendoredRegistry),
+        Box::new(external_tools::Shellcheck),
+        Box::new(external_tools::PythonSyntax),
+        Box::new(verify_tables::VerifyTables),
+        Box::new(verify_match_consts::VerifyMatchConsts),
+        Box::new(lint_kernel::LintKernel),
+        Box::new(cohab_census::CohabCensus),
+        Box::new(scan_boot_media_drift::ScanBootMediaDrift),
+        Box::new(null_offset_to_offset_of::NullOffsetToOffsetOf),
+        Box::new(verify_ffi::VerifyFfi),
+        Box::new(verify_lost_exports::VerifyLostExports),
+        Box::new(verify_constants::VerifyConstants),
+        Box::new(verify_constants_enums::VerifyConstantsEnums),
+        Box::new(magic_offsets::MagicOffsets),
+        Box::new(silent_failures::SilentFailures),
+        Box::new(strip_msvc_cmake::StripMsvcCmake),
+        Box::new(shell32_tail_inventory::Shell32TailInventory),
+        Box::new(invented_constants::InventedConstants),
+        Box::new(verify_c_signatures::VerifyCSignatures),
+        Box::new(verify_signatures::VerifySignatures),
+        Box::new(verify_conv_macros::VerifyConvMacros),
+        Box::new(verify_translation_literals::VerifyTranslationLiterals),
+        Box::new(cfg_vs_c::CfgVsC),
+        Box::new(call_literal_vs_c::CallLiteralVsC),
+        Box::new(override_self_dispatch::OverrideSelfDispatch),
+        Box::new(mask_drift::MaskDrift),
+        Box::new(ptr_typedef_indirection::PtrTypedefIndirection),
+        Box::new(version_vs_c::VersionVsC),
+        Box::new(const_contradictions::ConstContradictions),
+        Box::new(const_vs_island::ConstVsIsland),
+        Box::new(const_vs_own_island::ConstVsOwnIsland),
+        Box::new(const_within_crate::ConstWithinCrate),
+        Box::new(irql_balance::IrqlBalance),
+        Box::new(ob_refcount::ObRefcount),
+        Box::new(com_double_release::ComDoubleRelease),
+        Box::new(unpruned_walk::UnprunedWalk),
+        Box::new(extern_decl_drift::ExternDeclDrift),
+        Box::new(duplicate_symbols::DuplicateSymbols),
+        Box::new(export_shadows::ExportShadows),
+        Box::new(unaligned_wide::UnalignedWide),
+        Box::new(varargs_shim_parity::VarargsShimParity),
+        Box::new(winerror_consts::WinerrorConsts),
+        Box::new(wide_literals::WideLiterals),
+        Box::new(bool_width::BoolWidth),
+        Box::new(type_alias_contradictions::TypeAliasContradictions),
+        Box::new(inline_flag_literals::InlineFlagLiterals),
+        Box::new(res_named_types::ResNamedTypes),
+        Box::new(dropped_prints::DroppedPrints),
+        Box::new(dropped_probes::DroppedProbes),
+        Box::new(dropped_seh_pairs::DroppedSehPairs),
+        Box::new(dropped_asserts::DroppedAsserts),
+        Box::new(nightly_surface::NightlySurface),
+        Box::new(bugcheck_stubs::BugcheckStubs),
+        Box::new(macro_fn_shadow::MacroFnShadow),
+        Box::new(varargs_spec_arity::VarargsSpecArity),
+        Box::new(import_cc::ImportCc),
+        Box::new(cc_mismatch::CcMismatch),
+        Box::new(extern_static_width::ExternStaticWidth),
+        Box::new(rawdylib_linkname::RawdylibLinkname),
+        Box::new(orphan_modules::OrphanModules),
+        Box::new(pack_drift::PackDrift),
+        Box::new(doc_sections::DocSections),
+        Box::new(octal_literals::OctalLiterals),
+        Box::new(case_bitor_pattern::CaseBitorPattern),
+        Box::new(arg_side_effects::ArgSideEffects),
+        Box::new(assert_polarity::AssertPolarity),
+        Box::new(raw_user_access::RawUserAccess),
+        Box::new(safe_probe_deref::SafeProbeDeref),
         Box::new(store_on_failure::StoreOnFailure),
         Box::new(dropped_null_guard::DroppedNullGuard),
         Box::new(ptr_byte_diff::PtrByteDiff),

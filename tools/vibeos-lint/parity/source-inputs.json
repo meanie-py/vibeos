@@ -1,0 +1,91 @@
+{
+  "method": "Standalone source dependency and conservative token-filter reruns; original registry/helpers at e5ffbfc1e578; exact sorted unique finding-line counts and SHA256.",
+  "reports": [
+    {
+      "oracle_revision": "e5ffbfc1e578b0ce342a64a12a8bfbb6817a64f1",
+      "source_revision": "495acb63d4702e6d5ffe17cd204bed9e48504083",
+      "rust_seconds": 115.97850641899277,
+      "rules": {
+        "verify_match_consts": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 55.13651074000518,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_version_vs_c": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 52.22214907599846,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_ob_refcount": {
+          "python": 8,
+          "rust": 8,
+          "python_seconds": 121.07364100898849,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "0bd235d7284d8938b90217a1f8e409509a8d3a48f09a77f7ff5d656294a1f499",
+          "rust_sha256": "0bd235d7284d8938b90217a1f8e409509a8d3a48f09a77f7ff5d656294a1f499"
+        },
+        "scan_invented_constants": {
+          "python": 8,
+          "rust": 8,
+          "python_seconds": 55.68353681601002,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "9b65c130a785d8d053202b1b9cbb7179ab9ec598205a427703d4b281866e75a6",
+          "rust_sha256": "9b65c130a785d8d053202b1b9cbb7179ab9ec598205a427703d4b281866e75a6"
+        }
+      }
+    },
+    {
+      "oracle_revision": "e5ffbfc1e578b0ce342a64a12a8bfbb6817a64f1",
+      "source_revision": "cc53d01b091e365cccbc7e56f7a929963331d379",
+      "rust_seconds": 120.003114489984,
+      "rules": {
+        "verify_match_consts": {
+          "python": 0,
+          "rust": 0,
+          "python_seconds": 50.965012752014445,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rust_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "scan_version_vs_c": {
+          "python": 12,
+          "rust": 12,
+          "python_seconds": 50.49982432302204,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "08ba45e694cb8d92f3605eb967711ab78a05be15202e2a85fbe835392ec1346e",
+          "rust_sha256": "08ba45e694cb8d92f3605eb967711ab78a05be15202e2a85fbe835392ec1346e"
+        },
+        "scan_ob_refcount": {
+          "python": 8,
+          "rust": 8,
+          "python_seconds": 117.48505968297832,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "7a052929b956d85cdacfbe06a4daf09de4d31091ecb5d0db0d85adb64e9bb738",
+          "rust_sha256": "7a052929b956d85cdacfbe06a4daf09de4d31091ecb5d0db0d85adb64e9bb738"
+        },
+        "scan_invented_constants": {
+          "python": 8,
+          "rust": 8,
+          "python_seconds": 55.983832268975675,
+          "python_only": [],
+          "rust_only": [],
+          "python_sha256": "9b65c130a785d8d053202b1b9cbb7179ab9ec598205a427703d4b281866e75a6",
+          "rust_sha256": "9b65c130a785d8d053202b1b9cbb7179ab9ec598205a427703d4b281866e75a6"
+        }
+      }
+    }
+  ]
+}

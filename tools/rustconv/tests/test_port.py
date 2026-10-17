@@ -1557,3 +1557,21 @@ def test_a_replay_names_the_unbanked_functions_it_changed():
     banked = {("host.rs", "banked"), ("main.rs", "*")}
     assert unbanked_changes(before, after, banked) == ["host.rs:Host_Echo", "host.rs:lost"]
     assert unbanked_changes(before, before, set()) == []
+
+
+def test_flipping_a_static_library_repoints_the_cargo_cells_that_replay_it(tmp_path, monkeypatch):
+    # timedate.cpl's cell linked `engine:c:tzlib` after tzlib's flip left only a stub in it,
+    # and every arch's link failed until it was pointed at the Rust archive by hand.
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    cells = tmp_path / "sdk" / "lib" / "rust"
+    for name, body in {
+        "a-cargo": '&["body", "engine:c:tzlib", "engine:c:tzlibx"],',
+        "b-cargo": '&["body", "engine:pseh"],',
+    }.items():
+        (cells / name).mkdir(parents=True)
+        (cells / name / "build.rs").write_text(f"let x = {body}\n")
+    changed = port._repoint_cargo_cells("tzlib", "tzlib-rust")
+    assert changed == [cells / "a-cargo" / "build.rs"]
+    text = (cells / "a-cargo" / "build.rs").read_text()
+    assert '"engine:crate:tzlib-rust::TRUE"' in text and '"engine:c:tzlibx"' in text
+    assert port._repoint_cargo_cells("tzlib", "tzlib-rust") == [], "idempotent"

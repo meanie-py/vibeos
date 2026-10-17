@@ -2367,7 +2367,7 @@ pub unsafe extern "C" fn SHELL32_FileOperation(
         let hr = SHELL32_FileOpErrorToHResult(ret, ((*lpFileOp).fAnyOperationsAborted) as u8);
         FileOpCallback(&mut op, FOCE_FINISHOPERATIONS, core::ptr::null(), core::ptr::null(), 0, hr);
         if hr < 0 && CanShowFileOpErrorUI(op.req as *const SHFILEOPSTRUCTW) != 0 && op.bHasDisplayedError == 0 {
-            SHELL_ErrorBox(op.hWndOwner as *mut c_void, (hr) as u32);
+            SHELL_ErrorBox((op.hWndOwner as *mut c_void).cast(), (hr) as u32);
         }
         CoUninitialize();
         return ret;
@@ -2396,7 +2396,7 @@ pub unsafe extern "C" fn SHELL32_FileOperation(
             let hr = SHELL32_FileOpErrorToHResult(ret, ((*lpFileOp).fAnyOperationsAborted) as u8);
             FileOpCallback(&mut op, FOCE_FINISHOPERATIONS, core::ptr::null(), core::ptr::null(), 0, hr);
             if hr < 0 && CanShowFileOpErrorUI(op.req as *const SHFILEOPSTRUCTW) != 0 && op.bHasDisplayedError == 0 {
-                SHELL_ErrorBox(op.hWndOwner as *mut c_void, (hr) as u32);
+                SHELL_ErrorBox((op.hWndOwner as *mut c_void).cast(), (hr) as u32);
             }
             CoUninitialize();
             return ret;
@@ -2452,7 +2452,7 @@ pub unsafe extern "C" fn SHELL32_FileOperation(
     FileOpCallback(&mut op, FOCE_FINISHOPERATIONS, core::ptr::null(), core::ptr::null(), 0, hr);
 
     if hr < 0 && CanShowFileOpErrorUI(op.req as *const SHFILEOPSTRUCTW) != 0 && op.bHasDisplayedError == 0 {
-        SHELL_ErrorBox(op.hWndOwner as *mut c_void, (hr) as u32);
+        SHELL_ErrorBox((op.hWndOwner as *mut c_void).cast(), (hr) as u32);
     }
 
     CoUninitialize();
@@ -2729,7 +2729,7 @@ pub unsafe extern "C" fn SHELL_SingleFileOperation(
         let err = SHFileOperationW(&mut fos);
         hr = SHELL32_FileOpErrorToHResult(err, (fos.fAnyOperationsAborted) as u8);
     } else if CanShowFileOpErrorUI(&fos) != 0 {
-        SHELL_ErrorBox(hWnd as *mut c_void, (hr) as u32);
+        SHELL_ErrorBox((hWnd as *mut c_void).cast(), (hr) as u32);
     }
 
     SHFree((Src as PWSTR).cast());

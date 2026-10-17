@@ -7,6 +7,47 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The C left, and its part of cmake's C rule; reactos-link adds what every C
+    // compile shares from reactos-link/cflags/c.<arch>.flags (Linker::c_compiled).
+    let c_sources: &[&str] = &["dll/appcompat/apphelp/rust_varargs_shim.c"];
+    let c_includes: &[&str] = &[
+        "@build/dll/appcompat/apphelp",
+        "dll/appcompat/apphelp",
+        "@std",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+        "dll/appcompat/shims/shimlib",
+    ];
+    let c_flags: &[&str] = match arch.as_str() {
+        "x86" => &["-isystem", "{REPO}/sdk/lib/pseh/include", "-std=gnu99", "@core"],
+        "x86_64" => &[
+            "-isystem",
+            "{REPO}/sdk/lib/pseh/include",
+            "-std=gnu99",
+            "-U_X86_",
+            "-UWIN32",
+            "@core",
+        ],
+        "aarch64" => &["-isystem", "{REPO}/sdk/lib/pseh/include", "-std=gnu99", "@core"],
+        _ => unreachable!(),
+    };
+    let c_defines: &[&str] = &["UNICODE", "WINVER=0x601", "_UNICODE", "_WIN32_WINNT=0x601"];
+
+    // The module's part of cmake's windres command; reactos-link adds what every
+    // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
+    let rc_includes: &[&str] = &[
+        "@build/dll/appcompat/apphelp",
+        "dll/appcompat/apphelp",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+        "dll/appcompat/shims/shimlib",
+    ];
+    let rc_flags: &[&str] = &[];
+    let rc_defines: &[&str] = &["UNICODE", "WINVER=0x601", "_UNICODE", "_WIN32_WINNT=0x601"];
+
     let (target_json, entry, image_base) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_DllMain@12", Some(0x77480000u64)),
         "x86_64" => ("x86_64-pc-windows-gnu", "DllMain", Some(0x7ff6d000000u64)),
@@ -23,8 +64,8 @@ fn main() {
 
     Linker::new(target_json)
         .rust_staticlib("apphelp-rust")
-        .c_from_compile_db("apphelp_shims", &["dll/appcompat/apphelp/rust_varargs_shim.c"])
-        .resource_from_rc("dll/appcompat/apphelp/apphelp.rc", "apphelp_res")
+        .c_compiled("apphelp_shims", c_sources, c_includes, c_flags, c_defines)
+        .rc("dll/appcompat/apphelp/apphelp.rc", rc_includes, rc_flags, rc_defines)
         .spec2def("dll/appcompat/apphelp/apphelp.spec", "apphelp.dll")
         .spec_stubs()
         .delay_import_lib("dll/win32/version/version.spec", "version.dll", "version")

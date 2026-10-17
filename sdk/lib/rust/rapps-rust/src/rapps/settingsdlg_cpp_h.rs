@@ -255,13 +255,13 @@ unsafe extern "system" fn SettingsDlgProc(hDlg: HWND, Msg: UINT, wParam: WPARAM,
 
                         GetWindowTextW(GetDlgItem(hDlg, (IDC_PROXY_SERVER as i32)), szProxy.GetBuffer((MAX_PATH as i32)), (MAX_PATH as i32));
                         szProxy.ReleaseBuffer();
-                        core::ptr::copy_nonoverlapping(szProxy.GetString(), NewSettingsInfo.szProxyServer.as_mut_ptr(), (szProxy.GetLength() + 1) as usize); // CStringW::CopyChars == memcpy
+                        CStringW::CopyChars(NewSettingsInfo.szProxyServer.as_mut_ptr(), _countof!(NewSettingsInfo.szProxyServer) as usize, szProxy.GetString(), szProxy.GetLength() + 1);
 
                         GetWindowTextW(GetDlgItem(hDlg, (IDC_NO_PROXY_FOR as i32)), szNoProxy.GetBuffer((MAX_PATH as i32)), (MAX_PATH as i32));
                         szNoProxy.ReleaseBuffer();
-                        core::ptr::copy_nonoverlapping(szNoProxy.GetString(), NewSettingsInfo.szNoProxyFor.as_mut_ptr(), (szNoProxy.GetLength() + 1) as usize); // CStringW::CopyChars == memcpy
+                        CStringW::CopyChars(NewSettingsInfo.szNoProxyFor.as_mut_ptr(), _countof!(NewSettingsInfo.szNoProxyFor) as usize, szNoProxy.GetString(), szNoProxy.GetLength() + 1);
 
-                        core::ptr::copy_nonoverlapping(szDir.GetString(), NewSettingsInfo.szDownloadDir.as_mut_ptr(), (szDir.GetLength() + 1) as usize); // CStringW::CopyChars == memcpy
+                        CStringW::CopyChars(NewSettingsInfo.szDownloadDir.as_mut_ptr(), _countof!(NewSettingsInfo.szDownloadDir) as usize, szDir.GetString(), szDir.GetLength() + 1);
                         dwAttr = GetFileAttributesW(szDir.GetString());
                         if dwAttr == INVALID_FILE_ATTRIBUTES || (dwAttr & FILE_ATTRIBUTE_DIRECTORY) == 0
                         {
@@ -294,7 +294,7 @@ unsafe extern "system" fn SettingsDlgProc(hDlg: HWND, Msg: UINT, wParam: WPARAM,
                         }
                         else
                         {
-                            core::ptr::copy_nonoverlapping(szSource.GetString(), NewSettingsInfo.szSourceURL.as_mut_ptr(), (szSource.GetLength() + 1) as usize); // CStringW::CopyChars == memcpy
+                            CStringW::CopyChars(NewSettingsInfo.szSourceURL.as_mut_ptr(), _countof!(NewSettingsInfo.szSourceURL) as usize, szSource.GetString(), szSource.GetLength() + 1);
                         }
 
                         if SettingsInfo.bSmallIcons != NewSettingsInfo.bSmallIcons

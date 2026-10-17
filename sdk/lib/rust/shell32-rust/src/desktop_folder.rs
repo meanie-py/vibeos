@@ -878,43 +878,15 @@ pub struct DVTARGETDEVICE {
     pub tdData: [BYTE; 1],
 }
 
-#[repr(C)]
-pub struct EXTRASEARCH {
-    pub guidSearch: GUID,
-    pub wszFriendlyName: [WCHAR; 80],
-    pub wszUrl: [WCHAR; 2084],
-}
+pub use crate::island::EXTRASEARCH;
 
-#[repr(C)]
-pub struct PARSEDURLW {
-    pub cbSize: DWORD,
-    pub pszProtocol: LPCWSTR,
-    pub cchProtocol: UINT,
-    pub pszSuffix: LPCWSTR,
-    pub cchSuffix: UINT,
-    pub nScheme: UINT,
-}
+pub use crate::island::PARSEDURLW;
 
-#[repr(C)]
-pub struct QCMINFO {
-    pub hmenu: HMENU,
-    pub indexMenu: UINT,
-    pub idCmdFirst: UINT,
-    pub idCmdLast: UINT,
-    pub pIdMap: *const QCMINFO_IDMAP,
-}
+pub use crate::island::QCMINFO;
 
-#[repr(C)]
-pub struct QCMINFO_IDMAP {
-    pub nMaxIds: UINT,
-    pub pIdList: [QCMINFO_IDMAP_PLACEMENT; 1],
-}
+pub use crate::island::QCMINFO_IDMAP;
 
-#[repr(C)]
-pub struct QCMINFO_IDMAP_PLACEMENT {
-    pub id: UINT,
-    pub fFlags: UINT,
-}
+pub use crate::island::QCMINFO_IDMAP_PLACEMENT;
 
 #[repr(C)]
 pub struct STATDATA {
@@ -1038,22 +1010,13 @@ pub type LPTBBUTTONSB = *mut core::ffi::c_void;
 pub type LPFNSVADDPROPSHEETPAGE = Option<unsafe extern "system" fn(HPROPSHEETPAGE, LPARAM) -> BOOL>;
 
 extern "system" {
-    fn DestroyMenu(menu: HMENU) -> BOOL;
-    fn ILCombine(parent: PCIDLIST_ABSOLUTE, child: PCUITEMID_CHILD) -> PIDLIST_ABSOLUTE;
     fn lstrlenW(text: LPCWSTR) -> INT;
-    fn CoTaskMemAlloc(bytes: SIZE_T) -> LPVOID;
-    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
     fn CoTaskMemFree(memory: LPVOID);
     fn SHStrDupW(source: LPCWSTR, out: *mut LPWSTR) -> HRESULT;
-    fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
-    fn ILFree(pidl: LPITEMIDLIST);
-    fn SHGetDesktopFolder(folder: *mut *mut IShellFolder) -> HRESULT;
-    fn SHCreateShellFolderView(create: *const SFV_CREATE, view: *mut *mut IShellView) -> HRESULT;
     #[link_name = "Shell32RustCoCreateInitSF"] fn SHELL32_CoCreateInitSF(root: LPCITEMIDLIST, clsid: *const GUID, csidl: INT, riid: REFIID, out: *mut *mut core::ffi::c_void) -> HRESULT;
 }
 
 extern "C" {
-    fn _ILIsDesktop(pidl: LPCITEMIDLIST) -> BOOL;
     fn _ILIsSpecialFolder(pidl: LPCITEMIDLIST) -> BOOL;
     #[link_name = "memcpy"] fn cpp_com_memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, bytes: usize) -> *mut core::ffi::c_void;
 }
@@ -1110,7 +1073,7 @@ unsafe fn StringCchCopyW(dst: LPWSTR, capacity: usize, src: LPCWSTR) -> HRESULT 
 unsafe fn cpp_com_SHSetStrRetW(out: *mut STRRET, value: LPCWSTR) -> HRESULT {
     let len = lstrlenW(value) as usize;
     let bytes = (len + 1) * core::mem::size_of::<WCHAR>();
-    let buffer = CoTaskMemAlloc(bytes) as LPWSTR;
+    let buffer = CoTaskMemAlloc((bytes) as SIZE_T) as LPWSTR;
     if buffer.is_null() { return E_OUTOFMEMORY; }
     let _ = memcpy(buffer, value, bytes);
     (*out).uType = STRRET_WSTR; (*out).u.pOleStr = buffer; S_OK
@@ -1148,6 +1111,29 @@ pub static CPP_COM_WSTR_19AD2888CFA5: [WCHAR; 9] = [0x0064, 0x0065, 0x0073, 0x00
 pub static CPP_COM_WSTR_EB4CE2024A43: [WCHAR; 7] = [0x0046, 0x006F, 0x006C, 0x0064, 0x0065, 0x0072, 0x0000];
 
 use core::ffi::c_void;
+// The crate's own functions: the definition is the declaration.
+use crate::shell32::cidldataobj_free::IDataObject_Constructor;
+use crate::wine::pidl::ILClone;
+use crate::wine::pidl::ILCombine;
+use crate::wine::pidl::ILFree;
+use crate::wine::shellole::SHAlloc;
+use crate::shell32::utils::SHBindToObject;
+use crate::default_context_menu_tu::SHCreateDefaultContextMenu;
+use crate::def_view::SHCreateShellFolderView;
+use crate::desktop_folder_tu::SHGetDesktopFolder;
+use crate::wine::shellpath::SHGetFolderLocation;
+use crate::wine::shellpath::SHGetSpecialFolderPathW;
+use crate::wine::shellord::SHRunControlPanel;
+use crate::wine::shlmenu::Shell_MergeMenus;
+use crate::wine::pidl::_ILIsDesktop;
+use crate::wine::pidl::_ILIsPidlSimple;
+use crate::default_context_menu_tu::_InsertMenuItemW;
+// One declaration per external symbol: island.rs.
+use crate::island::CoTaskMemAlloc;
+use crate::island::CreateBindCtx;
+use crate::island::CreatePopupMenu;
+use crate::island::DestroyMenu;
+use crate::island::LoadStringW;
 use core::mem::size_of;
 use core::ptr::null_mut;
 use crate::shellcom::*;
@@ -1206,11 +1192,11 @@ pub unsafe fn CDesktopFolder_ShellUrlParseDisplayName_body(this: *mut CDesktopFo
         // "::" prefix
         let mut psfDesktop: *mut IShellFolder = core::ptr::null_mut();
         let _psfDesktop_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(psfDesktop));
-        hr = SHGetDesktopFolder(&mut psfDesktop);
+        hr = SHGetDesktopFolder((&raw mut psfDesktop).cast());
         if hr >= 0 {
             let mut pBindCtx: *mut IBindCtx = core::ptr::null_mut();
             let _pBindCtx_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(pBindCtx));
-            hr = CreateBindCtx(0, &mut pBindCtx);
+            hr = CreateBindCtx(0, (&raw mut pBindCtx).cast());
             if hr >= 0 {
                 let mut BindOps: BIND_OPTS = core::mem::zeroed();
                 BindOps.cbStruct = size_of::<BIND_OPTS>() as u32;
@@ -1255,7 +1241,7 @@ pub unsafe fn CDesktopFolder_ShellUrlParseDisplayName_body(this: *mut CDesktopFo
             hr = SHBindToObject(
                 null_mut(),
                 pidlLocation.as_raw(),
-                core::ptr::addr_of!(IID_IShellFolder), core::ptr::addr_of_mut!(psfFolder).cast(),
+                (core::ptr::addr_of!(IID_IShellFolder)).cast(), core::ptr::addr_of_mut!(psfFolder).cast(),
             );
             if hr >= 0 {
                 let mut pidlNew: CComHeapPtr<ITEMIDLIST> = CComHeapPtr::empty();
@@ -1390,7 +1376,7 @@ pub unsafe fn CDesktopFolder_FinalConstruct_body(this: *mut CDesktopFolder) -> H
 
     let len = wcslen(szMyPath.as_ptr());
     let alloc_size = (len + 1) * core::mem::size_of::<u16>();
-    (*this).sPathTarget = SHAlloc(alloc_size) as *mut u16;
+    (*this).sPathTarget = SHAlloc((alloc_size) as SIZE_T) as *mut u16;
     if (*this).sPathTarget.is_null() {
         return E_OUTOFMEMORY;
     }
@@ -1453,7 +1439,7 @@ pub unsafe fn CDesktopFolder__ParseDisplayNameByParent_body(this: *mut CDesktopF
         SHBindToObject(
             core::ptr::null_mut(),
             pidlParent,
-            core::ptr::addr_of!(IID_IShellFolder),
+            (core::ptr::addr_of!(IID_IShellFolder)).cast(),
             core::ptr::addr_of_mut!(pParentFolder).cast(),
         );
 
@@ -1504,7 +1490,7 @@ pub unsafe fn CDesktopFolder__ParseDisplayNameByParent_body(this: *mut CDesktopF
 
             let mut psfDesktop: *mut IShellFolder = core::ptr::null_mut();
             let _psfDesktop_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(psfDesktop));
-            let hr = SHGetDesktopFolder(&raw mut psfDesktop as *mut *mut IShellFolder);
+            let hr = SHGetDesktopFolder((&raw mut psfDesktop as *mut *mut IShellFolder).cast());
             if ((hr) < 0) {
                 return hr;
             }
@@ -1791,7 +1777,7 @@ pub unsafe fn CDesktopFolder_CreateViewObject_body(this: *mut CDesktopFolder, hw
             cKeys: keys.len() as UINT,
             aKeys: keys.as_ptr() as *const HKEY,
         };
-        hr = SHCreateDefaultContextMenu(&dcm, riid, ppvOut);
+        hr = SHCreateDefaultContextMenu(core::ptr::from_ref(&dcm).cast(), (riid).cast(), ppvOut);
     } else if cpp_com_iid_equal(riid, core::ptr::addr_of!(IID_IShellView)) {
         // C++: creates a CDesktopFolderViewCB, SFV_CREATE{ sizeof, this, NULL, sfviewcb },
         // SHCreateShellFolderView(&create, ppvOut), then sfviewcb->Initialize(*ppvOut).
@@ -1923,8 +1909,8 @@ pub unsafe fn CDesktopFolder_GetUIObjectOf_body(this: *mut CDesktopFolder, hwndO
                 aKeys: keys.as_ptr() as *const HKEY,
             };
             hr = SHCreateDefaultContextMenu(
-                &dcm as *const DEFCONTEXTMENU,
-                riid,
+                (&dcm as *const DEFCONTEXTMENU).cast(),
+                (riid).cast(),
                 &mut pObj,
             );
         }
@@ -1937,7 +1923,7 @@ pub unsafe fn CDesktopFolder_GetUIObjectOf_body(this: *mut CDesktopFolder, hwndO
             apidl,
             cidl,
             TRUE,
-            core::ptr::addr_of_mut!(pObj) as *mut *mut IDataObject,
+            (core::ptr::addr_of_mut!(pObj) as *mut *mut IDataObject).cast(),
         );
     } else if (cpp_com_iid_equal(riid, core::ptr::addr_of!(IID_IExtractIconA))
         || cpp_com_iid_equal(riid, core::ptr::addr_of!(IID_IExtractIconW)))
@@ -2274,15 +2260,6 @@ extern "system" {
     fn UrlIsW(pszUrl: LPCWSTR, UrlIs: DWORD) -> BOOL;
     fn PathCreateFromUrlW(pszUrl: LPCWSTR, pszPath: LPWSTR, pcchPath: *mut DWORD, dwFlags: DWORD) -> HRESULT;
     fn PathIsUNCW(pszPath: LPCWSTR) -> BOOL;
-    fn CreateBindCtx(reserved: DWORD, ppbc: *mut *mut IBindCtx) -> HRESULT;
-    fn SHGetSpecialFolderPathW(hwnd: HWND, pszPath: LPWSTR, csidl: INT, fCreate: BOOL) -> BOOL;
-    fn SHGetFolderLocation(hwndOwner: HWND, nFolder: INT, hToken: HANDLE, dwReserved: DWORD, ppidl: *mut LPITEMIDLIST) -> HRESULT;
-    fn SHAlloc(cb: SIZE_T) -> LPVOID;
-    fn SHRunControlPanel(commandLine: LPCWSTR, parent: HWND) -> BOOL;
-    fn CreatePopupMenu() -> HMENU;
-    fn Shell_MergeMenus(hmDst: HMENU, hmSrc: HMENU, uInsert: UINT, uIDAdjust: UINT, uIDAdjustMax: UINT, uFlags: ULONG) -> UINT;
-    fn SHCreateDefaultContextMenu(pdcm: *const DEFCONTEXTMENU, riid: REFIID, ppv: *mut *mut core::ffi::c_void) -> HRESULT;
-    fn _InsertMenuItemW(hmenu: HMENU, indexMenu: UINT, fByPosition: BOOL, wID: UINT, fType: UINT, dwTypeData: LPCWSTR, fState: UINT) -> BOOL;
 }
 
 // _ILIsEmpty is a `static inline BOOL _ILIsEmpty(pidl) { return _ILIsDesktop(pidl); }`
@@ -2296,14 +2273,11 @@ unsafe fn _ILIsEmpty(pidl: LPCITEMIDLIST) -> BOOL {
 // -- shell32-internal cdecl helpers (Rust #[no_mangle] extern "C" siblings / EXTERN_C) --
 extern "C" {
     fn _ILIsMyComputer(pidl: LPCITEMIDLIST) -> BOOL;
-    fn _ILIsPidlSimple(pidl: LPCITEMIDLIST) -> BOOL;
     fn _ILCreateDesktop() -> LPITEMIDLIST;
     fn _ILCreateMyComputer() -> LPITEMIDLIST;
     fn _ILCreateNetwork() -> LPITEMIDLIST;
-    fn SHBindToObject(psf: *mut IShellFolder, pidl: LPCITEMIDLIST, riid: REFIID, ppvObj: *mut *mut core::ffi::c_void) -> HRESULT;
     fn Shell_ParseSpecialFolder(pszStart: LPCWSTR, ppch: *mut LPWSTR, pcch: *mut INT) -> INT;
     fn SHELL32_AliasTranslatePidl(pidl: LPCITEMIDLIST, ppidlNew: *mut LPITEMIDLIST, dwFlags: DWORD) -> HRESULT;
-    fn IDataObject_Constructor(hwndOwner: HWND, pMyPidl: PCIDLIST_ABSOLUTE, apidl: PCUITEMID_CHILD_ARRAY, cidl: UINT, bExtendedObject: BOOL, dataObject: *mut *mut IDataObject) -> HRESULT;
 }
 
 // -- Rust bridges to retained C++ companions (EXTERN_C ... WINAPI shims C++-side) --

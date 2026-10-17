@@ -19,7 +19,7 @@ A condition with no MSVC atom in it is never touched, and neither is any atom th
 do not decide. Run it after an upstream merge:
 
     python3 tools/strip_msvc_cmake.py --write      # rewrite in place
-    python3 tools/strip_msvc_cmake.py --check      # exit 1 if anything is left to resolve
+    ./vibeos-cli check                            # Rust lint reports remaining conditions
 
 Vendored trees (vendor/) are skipped: their CMake belongs to the tree, and editing it makes
 the next re-vendor a merge. Generator expressions ($<C_COMPILER_ID:MSVC>) are left alone.
@@ -429,9 +429,7 @@ def cmake_files(paths: list[str]) -> list[Path]:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    mode = ap.add_mutually_exclusive_group()
-    mode.add_argument("--write", action="store_true", help="rewrite files in place")
-    mode.add_argument("--check", action="store_true", help="exit 1 if any site is left")
+    ap.add_argument("--write", action="store_true", required=True, help="rewrite files in place")
     ap.add_argument("paths", nargs="*", help="files (default: every tracked CMake file)")
     a = ap.parse_args(argv)
     left = changed = 0
@@ -469,7 +467,7 @@ def main(argv: list[str] | None = None) -> int:
             f"[strip_msvc_cmake] {left} MSVC condition(s) left -- MSVC is not a supported "
             "toolchain; resolve them with: python3 tools/strip_msvc_cmake.py --write"
         )
-    return 1 if (a.check and left) else 0
+    return 1 if left else 0
 
 
 if __name__ == "__main__":

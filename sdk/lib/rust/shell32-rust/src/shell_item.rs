@@ -72,7 +72,6 @@ extern "C" {
 // Deterministic COM scaffold for CShellItem; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    fn HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
     fn HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
@@ -290,7 +289,7 @@ pub unsafe extern "system" fn CShellItem_CreateInstance(
     let this = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        core::mem::size_of::<CShellItem>(),
+        (core::mem::size_of::<CShellItem>()) as _,
     ) as *mut CShellItem;
     if this.is_null() {
         return E_OUTOFMEMORY;
@@ -318,17 +317,12 @@ pub unsafe extern "system" fn CShellItem_CreateInstance(
 // Deterministic C++ support closure selected from source identifiers.
 
 extern "system" {
-    fn ILCombine(parent: PCIDLIST_ABSOLUTE, child: PCUITEMID_CHILD) -> PIDLIST_ABSOLUTE;
-    fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
     fn ILFindLastID(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
-    fn ILFree(pidl: LPITEMIDLIST);
     fn ILRemoveLastID(pidl: LPITEMIDLIST) -> BOOL;
-    fn SHGetDesktopFolder(folder: *mut *mut IShellFolder) -> HRESULT;
     fn SHGetNameFromIDList(pidl: PCIDLIST_ABSOLUTE, sigdn: SIGDN, name: *mut PWSTR) -> HRESULT;
 }
 
 extern "C" {
-    fn _ILIsDesktop(pidl: LPCITEMIDLIST) -> BOOL;
 }
 
 extern "C" {
@@ -364,6 +358,14 @@ impl<T> Drop for CppComPtrGuard<T> {
 }
 
 use crate::shellcom::*;
+// The crate's own functions: the definition is the declaration.
+use crate::wine::pidl::ILClone;
+use crate::wine::pidl::ILCombine;
+use crate::wine::pidl::ILFree;
+use crate::desktop_folder_tu::SHGetDesktopFolder;
+use crate::wine::pidl::_ILIsDesktop;
+// One declaration per external symbol: island.rs.
+use crate::island::HeapAlloc;
 use crate::types::*;
 use core::ffi::c_void;
 

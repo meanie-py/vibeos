@@ -16,6 +16,10 @@
 // ---------------------------------------------------------------------------------------
 
 use crate::prelude::*;
+// One declaration per external symbol: island.rs.
+use crate::island::DispatchMessageW;
+use crate::island::GetMessageW;
+use crate::island::TranslateMessage;
 use crate::user_notification::MSG;
 // A #[macro_export] macro lives at the CRATE ROOT whatever module defines it, so this is
 // `crate::FAILED_UNEXPECTEDLY` and not a prelude path.
@@ -24,9 +28,6 @@ use crate::shelldesktop::CDesktopBrowser::{IShellBrowser, IShellView};
 
 extern "system" {
     fn SetLastError(code: DWORD);
-    fn GetMessageW(message: *mut MSG, window: HWND, first: UINT, last: UINT) -> BOOL;
-    fn TranslateMessage(message: *const MSG) -> BOOL;
-    fn DispatchMessageW(message: *const MSG) -> LRESULT;
 }
 
 /// `SHCreateDesktop` [SHELL32.200] — create the desktop browser and hand its window back.

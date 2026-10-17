@@ -45,9 +45,10 @@ carries the follow-ups: the interface DeviceProperty exports (ntoskrnl, upstream
 ntoskrnl_vista's copies removed, and its `IoDeviceProperty` kmtest in the sweep lists) and
 shell32's RegenerateUserEnvironment (c25e4fd7dec), and (2026-10-17) mmc_new's views
 (c0f01460800, 857f521a704) plus `CActionWnd.cpp` (88da81d9b8b), re-bought with the owner's
-approval ($0.34 Haiku) and flipped. Nothing from the 2026-10-15 sync is owed. Owed tooling
-from that work: `port macros` should inline a goto-carrying macro (CHK_HR) at its call sites
-instead of emitting a `macro_rules!` that can never resolve. (`port replay` now refuses a
+approval ($0.34 Haiku) and flipped. Nothing from the 2026-10-15 sync is owed, tooling
+included: a goto-carrying macro (CHK_HR) is now expanded in a fresh TU's C by `port translate`
+and never ported as a `macro_rules!` (owner chose not to re-buy mmc_new's 14 hand-banked
+bodies; the first real test is the next fresh module that uses one). (`port replay` now refuses a
 hand bank whose C changed since it was captured; banks from before 2026-10-17 carry no C
 hash until re-captured -- mmc_new's are stamped.)
 

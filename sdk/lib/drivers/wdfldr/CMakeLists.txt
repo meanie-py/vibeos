@@ -11,18 +11,9 @@ add_registry_inf(wdfldr_reg.inf)
 # library.c  # replaced by Rust (sdk/lib/rust/wdfldr-rust/src/wdfldr/library.rs)
 # registry.c  # replaced by Rust (sdk/lib/rust/wdfldr-rust/src/wdfldr/registry.rs)
 # wdfldr.c  # replaced by Rust (sdk/lib/rust/wdfldr-rust/src/wdfldr/wdfldr.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(wdfldr_res OBJECT wdfldr.rc)
-target_include_directories(wdfldr_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-# How cmake compiled the target's sources, now on the OBJECT libraries.
-target_include_directories(wdfldr_res
-    PRIVATE ${REACTOS_SOURCE_DIR}/vendor/wdf/shared/inc/private/common
-    ${REACTOS_SOURCE_DIR}/vendor/wdf/kmdf/inc/private
-    ${REACTOS_SOURCE_DIR}/sdk/lib/drivers/wdf_reactos/include)
 add_cargo_module(wdfldr wdfldr-cargo wdfldr.sys
     KIND kernelmodedriver
     BODY_CRATE wdfldr-rust
     DESTINATION reactos/system32/drivers
     NO_CAB
-    EXTRA_DEPENDS wdfldr_res asm psdk xdk)
+    EXTRA_DEPENDS asm psdk xdk)

@@ -16,12 +16,8 @@ include_directories(
 # misc.c  # replaced by Rust (sdk/lib/rust/ndisuio-rust/src/ndisuio/misc.rs)
 # protocol.c  # replaced by Rust (sdk/lib/rust/ndisuio-rust/src/ndisuio/protocol.rs)
 # readwrite.c  # replaced by Rust (sdk/lib/rust/ndisuio-rust/src/ndisuio/readwrite.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(ndisuio_res OBJECT ndisuio.rc)
-target_include_directories(ndisuio_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(ndisuio ndisuio-cargo ndisuio.sys
     KIND kernelmodedriver
     BODY_CRATE ndisuio-rust
     DESTINATION reactos/system32/drivers
-    EXTRA_DEPENDS ndisuio_res psdk)
+    EXTRA_DEPENDS psdk)

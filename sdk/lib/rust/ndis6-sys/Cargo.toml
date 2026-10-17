@@ -1,0 +1,12 @@
+# ndis6-sys: NDIS 6 structure layouts shared by ndis.sys (ndis-rust) and the Rust NDIS 6
+# miniports (bwfm-rust). Layouts only: no code, no exports.
+[package]
+name = "ndis6-sys"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

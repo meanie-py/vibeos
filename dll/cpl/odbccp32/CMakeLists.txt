@@ -5,13 +5,8 @@ spec2def(odbccp32i.cpl odbccp32.spec)
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # odbccp32.c  # replaced by Rust (sdk/lib/rust/odbccp32i-rust/src/odbccp32i/odbccp32.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(odbccp32i_res OBJECT odbccp32.rc)
-target_compile_definitions(odbccp32i_res PRIVATE UNICODE _UNICODE)
-target_include_directories(odbccp32i_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(odbccp32i odbccp32i-cargo odbccp32i.cpl
     KIND win32dll
     BODY_CRATE odbccp32i-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS odbccp32i_res)
+    EXTRA_DEPENDS psdk)

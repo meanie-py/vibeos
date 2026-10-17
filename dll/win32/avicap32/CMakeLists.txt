@@ -7,13 +7,8 @@ include_directories(BEFORE ${REACTOS_SOURCE_DIR}/sdk/include/wine)
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # avicap32.c  # replaced by Rust (sdk/lib/rust/avicap32-rust/src/avicap32/avicap32.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(avicap32_res OBJECT avicap32.rc)
-target_compile_definitions(avicap32_res PRIVATE UNICODE _UNICODE)
-target_include_directories(avicap32_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(avicap32 avicap32-cargo avicap32.dll
     KIND win32dll
     BODY_CRATE avicap32-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS avicap32_res psdk)
+    EXTRA_DEPENDS psdk)

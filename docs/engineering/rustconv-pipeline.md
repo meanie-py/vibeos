@@ -1210,6 +1210,23 @@ QueryInterface/AddRef/Release on the class itself, over `atl_rust::com`, with th
 vptr laid out at offset 0 as C++ puts it. Stage order matters: run `resolve` and `macros`
 AFTER `translate`, or the prelude facts and externs come out empty.
 
+In-process COM servers, from 2026-10-17 (the shell extensions; mmcshext first, $0.01):
+`atl_rust::dll` (feature `dll`, which scaffold turns on for a module with `BEGIN_OBJECT_MAP`)
+is ATL's `CComModule`, the object map, `CComObjectCached<CComClassFactory>` and the `.rgs`
+registrar (`atl_rust::registrar`, statreg.h's parser over a `Registry` trait, host-tested
+against mmcshext's real script). cppapp renders the server's file-scope statics instead of
+buying them: a `DEFINE_GUID` CLSID, the `CComModule` global (const-constructed, so no global
+init), and the object map, whose entries name each class's `UpdateRegistry` thunk and
+`atl_rust::dll::creator::<T>`. Each object-map class gets `atl_rust::dll::CoClass` and its
+`UpdateRegistry` from `DECLARE_REGISTRY_RESOURCEID` (a CMake `-D` resource id is resolved
+from the compile) or `DECLARE_NO_REGISTRY`; `DECLARE_PROTECT_FINAL_CONSTRUCT` brackets
+FinalConstruct. Refused, never approximated: aggregation (no `DECLARE_NOT_AGGREGATABLE`),
+`OBJECT_ENTRY_AUTO`, other class factories, a class's own `ObjectMain`, typelib
+registration. A worker whose body names the module global gets CComModule's API as a contract.
+External classes nothing in the module names (CRegKey, merely defined by atlbase.h) are no
+longer rendered or bought. Runtime: `tools/payloads/modrun/suites/mmcshext.yaml` drives the
+factory, QueryInterface, the icon paths and register/unregister against the C.
+
 ## `body-audit`: did a pre-seal body keep its C's calls? (2026-09-26)
 
 Call sealing makes a dropped call fail at translation time; crates translated before it

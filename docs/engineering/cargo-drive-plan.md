@@ -370,25 +370,109 @@ extends it from the boot spine to every fully-Rust module.
      entry/int386/pnpbios asm, which needs freeldr's own include set; reactos-link's
      `asm_archive` knows only the kernel chain. rosload and uefildr already build
      `mini_hal`, `libcntpr` and `chkstk` themselves.
-4. **Resources without cmake.** Cells replay cmake's `windres` command today
-   (`resource_from_rc`), so they still need cmake configured. The June fallback was a
-   committed `.res` per arch; for 189 modules that is a lot of binary in git. Better: the
-   engine runs llvm-windres itself from a committed flag template (the
-   `compile_c_db_committed` approach the loaders already use for C).
-   - **Measured 2026-10-17, before any of it is built.** cmake's windres commands (310 per
-     arch) take ~199 distinct `-D` sets and three generated headers: `psdk/winnt.h` (the
-     engine already regenerates it with native-hpp), `reactos/version.h` and
-     `reactos/buildno.h`. The last two come from `sdk/include/reactos/version.cmake` at
-     CONFIGURE time: the UTC date, `git describe --abbrev=7 --long --always`,
-     `rev-parse HEAD`, WINARCH and the C compiler's id/version. A cmake-free build must
-     reproduce exactly that (including the configure-time date, or no `.res` is
-     byte-identical to cmake's), plus a per-cell `-D`/`-I` set the generator can record.
-     It only pays off together with rungs 5 and 6: nothing builds without cmake until
-     all three exist.
-5. **Assemble the ISO from a manifest** instead of 200 `add_cd_file` calls. After this the
-   fully-Rust part of the tree needs no cmake at all.
-6. **Modules that still have C** compile it from cargo (`c_shims` / `c_from_compile_db`
-   with committed flags), so cmake's last job is the C-only tail, then nothing.
+4. **Resources without cmake. Done 2026-10-17.** The engine compiles every cell's `.rc`
+   itself (`Linker::rc`, reactos-link/src/rc.rs); cmake's 223 `<m>_res` OBJECT libraries
+   are gone. cmake's windres rule (`CMAKE_RC_COMPILE_OBJECT`) is
+   `windres -O coff --codepage=65001 <INCLUDES> <FLAGS> -DRC_INVOKED ... ${I18N_DEFS}
+   <DEFINES> <SOURCE> <OBJECT>` with `<DEFINES>` sorted, so a command splits into what
+   every module shares (`reactos-link/cflags/rc.<arch>.flags`: the windres binary, the
+   standard include run, `CMAKE_RC_FLAGS`, the RC_INVOKED/LANGUAGE_* block, the 20 global
+   defines) and the module's part, which its build.rs carries as `rc_includes` /
+   `rc_flags` / `rc_defines`. `cargo_cell_gen.rc_encode` refuses any command that
+   `rc_decode` does not rebuild token for token; all 657 windres commands per arch in the
+   tree do. `--rc-template` regenerates the templates; `--own-rc` moved the existing cells.
+   - **Proof:** every cell's engine-built `.res`, 945 of 945 (×3 arches), byte-identical
+     to windres run with the decoded command, which is cmake's own. (The kdcom alternatives
+     kdcom-serial/kdgdb/kdvm are not in the default configuration; their part is taken by
+     analogy from the configured sibling's identical `_res` declaration.)
+   - **Without a cmake build** `@build/` is a tree the engine fills: the xdk headers
+     (native-hpp, as before) and `version.h`/`buildno.h`, which are CONFIGURE-time in
+     cmake (`version.cmake`: the UTC date, `git describe`), so they come from the one
+     configure step `cargo_orchestrate.py --manifest` runs (`$VIBEOS_GEN_DIR`;
+     `--seed-from-build` copies a configured build's own, `--reconfigure` redoes it).
+   - A generated input a `.rc` embeds now orders the cell: wscript/cscript's `ihost.tlb`
+     was the `_res` compile's `OBJECT_DEPENDS` and is the cell's `EXTRA_DEPENDS`; the
+     generator moves such deps on conversion (`_rc_object_depends`), and the engine
+     reruns when one changes. **Owed for cmake-off:** those generated inputs themselves
+     (widl's typelibs, wmc's message `.rc` for arp, net, eventcreate, diskpart) still
+     come only from cmake.
+5. **Assemble the media from a manifest. Done 2026-10-17 for the lists and mastering.**
+   cmake already masters each CD from a path list (every `add_cd_file` appends
+   `<dest>=<source>` to `build-<arch>/boot/<cd>.<config>.lst` at configure time; the CD
+   target runs `strip_cd_media.py`, mkisofs and isohybrid over it).
+   `tools/media_manifest.py --write` records the three lists and their mastering commands
+   as `boot/media/<arch>.json`, each source named by what makes it: `cell:<out>` (a cell's
+   output, from `sdk/lib/rust/cells/<arch>.jsonl`, `tools/cell_manifest.py`),
+   `build:<rel>` or `repo:<rel>`. `--assemble --cd livecd --out DIR [--cells DIR]` rebuilds
+   the list and masters the image, taking the cells' outputs from a
+   `cargo_orchestrate.py --manifest` build when `--cells` is given.
+   - **Proof:** all nine lists (3 CDs × 3 arches) rebuild byte-identical to cmake's; an
+     amd64 livecd mastered from the manifest holds the same 1364 files as cmake's, every
+     one byte-identical (the one that first differed, `syswow64/sysdm.cpl`, had been
+     relinked by the i386 build twelve minutes after cmake mastered its ISO).
+   - About 365 entries per CD are cells; the rest are the C tail's modules, configure
+     products and source files, still made by cmake.
+   - **Owed:** `--check` as a Rust rule in tools/vibeos-lint (for cell_manifest too);
+     self-hosting mkisofs/isohybrid/cabman (`--assemble` uses build-<arch>/host-tools and
+     fails without them); re-cabbing reactos.cab from `--cells` for bootcd; and a smoke
+     that boots media mastered outside build-<arch> (`smoke` reads only
+     build-<arch>/livecd.iso, with its staleness checks).
+6. **Modules that still have C** compile it from cargo, so cmake's last job is the C-only
+   tail, then nothing.
+   - **6a, done 2026-10-17: the cells' own C.** cmake's C rule is `<CC> --target=<t>
+     <DEFINES> <INCLUDES> <FLAGS> -o <obj> -c <src>` with `<DEFINES>` sorted, so it gets the
+     rung-4 treatment: `reactos-link/cflags/c.<arch>.flags` (compiler, standard include
+     run, core flag run, global defines; `--c-template`) plus each library's part, which
+     the cell's build.rs carries (`c_sources`/`c_includes`/`c_flags`/`c_defines`,
+     `Linker::c_compiled`, reactos-link/src/c_rule.rs). 3473/3516/3480 of the tree's C
+     commands (i386/amd64/arm64) rebuild token for token; the rest are six ole32 sources
+     with per-source defines. `--own-c` moved 56 cells off their `<m>_shims` OBJECT
+     libraries; what those linked for usage requirements, were ordered after, and
+     generated (widl's RPC stubs, flex) now order the cell. **Proof:** 246 of 246 engine
+     objects byte-identical to the cmake objects snapshotted before the move, all three
+     arches (bmfd, whose objects were not in the tree to snapshot, rests on the encoder's
+     check). In a cmake build the command is cmake's own, run from `build-<arch>` through
+     ccache, so it hits cmake's cache entries.
+   - **Shared C libraries without cmake, done 2026-10-17.** wine, uuid, conutils and
+     every `engine:c:<t>` (and freeldr's BIOS asm, the last cmake archive a cell named)
+     replay cmake's compile in a cmake build; with none they build from
+     `reactos-link/clibs/<arch>/<t>.recipe` (`--clib-recipes`): one line per source in
+     cmake's archive order with its part of cmake's C or ASM rule. The ASM rule (`-x
+     assembler-with-cpp -o <obj> <includes> <flags> <sorted defines> -D__ASM__`) has its
+     own template, `cflags/asm.<arch>.flags`; every asm command in the tree rebuilds
+     (75/27/9). Proof: 112 of 112 recipe-built objects byte-identical to cmake's, the
+     compile directory DWARF records aside.
+   - **Owed (6a):** opengl32's i386 asm shims still replay (`c_from_compile_db`), and so do
+     the shared `c_from_compile_db` libraries (rtl, blrtl, libcntpr, win32k_residue),
+     whose cmake-off path is the older committed `cflags/<name>.<arch>.flags`.
+   - **6b, the generated SDK: recorded and replayable, 2026-10-17.**
+     `tools/sdk_recipe.py --write` records, from ninja itself (`ninja -t commands`), every
+     generator command that makes something a cell build reads: psdk/xdk's headers and
+     the generated inputs cells depend on (widl headers, RPC stubs and typelibs, windmc
+     message files, flex scanners) — 320 commands per arch, 293 of them widl — as
+     `sdk/lib/rust/generated/<arch>.cmds`, plus the host-tools project's commands that
+     build the tools they run (`<arch>.host.cmds`: widl with its bison/flex parser, hpp,
+     utf16le). `--run --gen DIR` replays both in 20 seconds; on amd64, 360 of the 361 files
+     it makes are byte-identical to build-amd64's (winhlp32's flex scanner names its own
+     path in `#line`). `cargo_orchestrate --manifest --cmake-off` runs it as the configure
+     step (once per recipe hash), and the engine then takes `$VIBEOS_GEN_DIR` as `@build/`.
+     Compiles, archives, import libraries and cmake's ExternalProject bookkeeping are not
+     in the recipe: the engine owns those. geninc and gendib are left out too, since the
+     engine already self-hosts both.
+   - **No cmake at all, measured 2026-10-17.** A fresh worktree that never ran cmake (no
+     build-* directory; only the pinned toolchain) builds all 274 amd64 cells with
+     `cargo_orchestrate.py --arch amd64 --manifest --cmake-off`: the configure step
+     replays the generated SDK into `build-amd64` (where a generated header's path is part
+     of the image: wdm.h's inline ASSERTs name it), and every cell's resources, C, asm and
+     shared C libraries come from build.rs, the templates and the recipes. Against cmake's
+     links: 366 of 369 outputs byte-identical, the other 3 (services, win32k, winlogon)
+     `pe_equiv --code` equivalent. An amd64 livecd mastered from those cells
+     (`media_manifest.py --assemble --cells`) holds the same 1364 files as cmake's, 1361
+     byte-identical and the same three code-equivalent.
+   - **What still needs cmake for a whole image:** the C tail's own modules (about 1000 of
+     livecd's 1364 entries are not cells), the host tools that master the media
+     (mkisofs/isohybrid/cabman), bootcd's reactos.cab, and a smoke that boots media
+     mastered outside build-<arch>. i386 and arm64 runs of the no-cmake build are owed.
 
 ## How a wave goes (the default for every new module)
 

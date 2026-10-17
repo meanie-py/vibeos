@@ -104,22 +104,10 @@ pub unsafe extern "C" fn DoWaveStreaming(SoundDeviceInstance: PSOUND_DEVICE_INST
         return;
     }
 
-    /* Do we need to loop a header? */
-    if (DeviceType) as u32 == WAVE_OUT_DEVICE_TYPE
-        && (((*Header).dwFlags & (WHDR_BEGINLOOP as DWORD)) != 0)
-    {
-        if ((*Header).dwFlags & (WHDR_ENDLOOP as DWORD)) != 0 {
-            /* Get loop count */
-            (*SoundDeviceInstance).LoopsRemaining = (*Header).dwLoops;
-        } else {
-            /* Report and help notice such a case */
-            SND_WARN!(RUSTCONV_WSTR_067109C93D63.as_ptr());
-            SND_ASSERT!(
-                ((*Header).dwFlags & ((WHDR_BEGINLOOP as DWORD) | (WHDR_ENDLOOP as DWORD)))
-                    == ((WHDR_BEGINLOOP as DWORD) | (WHDR_ENDLOOP as DWORD))
-            );
-        }
-    }
+    // Divergence from streaming.c: the C reloaded `LoopsRemaining = dwLoops` here whenever
+    // the HEAD header was BEGINLOOP|ENDLOOP, and CompleteIO calls this after every
+    // completion, so a finite loop never ran down. The count is now set once per
+    // WODM_WRITE (InitializeWaveHeaderLoops) and kept per header.
 
     while ((*SoundDeviceInstance).OutstandingBuffers < (*SoundDeviceInstance).BufferCount)
         && (!Header.is_null())
@@ -137,7 +125,20 @@ pub unsafe extern "C" fn DoWaveStreaming(SoundDeviceInstance: PSOUND_DEVICE_INST
 
         /* Is this header entirely committed? */
         if (*HeaderExtension).BytesCommitted == (*Header).dwBufferLength {
-            {
+            if (*HeaderExtension).LoopsToCommit != 0 {
+                // Divergence from streaming.c: the C rewound a looped header from
+                // CompleteIO, by which time this loop had already moved on and committed
+                // the NEXT header, so the repeat played after it. Rewind here, so each
+                // pass is committed directly behind the one before.
+                (*HeaderExtension).BytesCommitted = 0;
+                if (*HeaderExtension).LoopsToCommit != INFINITE {
+                    (*HeaderExtension).LoopsToCommit -= 1;
+                }
+                SND_TRACE!(
+                    RUSTCONV_WSTR_28D447F5BB18.as_ptr(),
+                    (*HeaderExtension).LoopsToCommit
+                );
+            } else {
                 /* Move on to the next header */
                 SND_ASSERT!(Header != (*Header).lpNext);
                 Header = (*Header).lpNext;
@@ -210,6 +211,37 @@ pub unsafe extern "C" fn DoWaveStreaming(SoundDeviceInstance: PSOUND_DEVICE_INST
         }
     }
 }
+/// Set a header's repeat counts when it is written. Not in streaming.c, whose loop count
+/// lived in the device instance and was reloaded on every streaming pass (see
+/// DoWaveStreaming). `dwLoops` is the number of times to play the loop (WAVEHDR), so
+/// 0 and 1 both play once; the C repeated `dwLoops` extra times, which no client could
+/// observe because its count never ran down. INFINITE loops until reset.
+pub unsafe fn InitializeWaveHeaderLoops(DeviceType: MMDEVICE_TYPE, Header: PWAVEHDR) {
+    let Extension: PWAVEHDR_EXTENSION = (*Header).reserved as PWAVEHDR_EXTENSION;
+    SND_ASSERT!(!Extension.is_null());
+
+    let mut Repeats: DWORD = 0;
+    if (DeviceType) as u32 == WAVE_OUT_DEVICE_TYPE
+        && (((*Header).dwFlags & (WHDR_BEGINLOOP as DWORD)) != 0)
+    {
+        if ((*Header).dwFlags & (WHDR_ENDLOOP as DWORD)) != 0 {
+            Repeats = if (*Header).dwLoops == INFINITE {
+                INFINITE
+            } else {
+                (*Header).dwLoops.saturating_sub(1)
+            };
+        } else {
+            /* Report and help notice such a case */
+            SND_WARN!(RUSTCONV_WSTR_067109C93D63.as_ptr());
+            SND_ASSERT!(
+                ((*Header).dwFlags & ((WHDR_BEGINLOOP as DWORD) | (WHDR_ENDLOOP as DWORD)))
+                    == ((WHDR_BEGINLOOP as DWORD) | (WHDR_ENDLOOP as DWORD))
+            );
+        }
+    }
+    (*Extension).LoopsToCommit = Repeats;
+    (*Extension).LoopsToComplete = Repeats;
+}
 #[no_mangle]
 pub unsafe extern "system" fn CompleteIO(
     dwErrorCode: DWORD,
@@ -239,66 +271,66 @@ pub unsafe extern "system" fn CompleteIO(
     Result = GetSoundDeviceType(SoundDevice, core::ptr::addr_of_mut!(DeviceType));
     SND_ASSERT!(MMSUCCESS!(Result));
 
+    // Divergence from streaming.c, which (a) dropped the bytes of the completion that
+    // triggered a loop rewind while partial completions kept adding to BytesCompleted
+    // across passes, so a later pass could complete the header with its own chunks still
+    // in flight, and (b) decremented OutstandingBuffers once per header the completion
+    // spilled into, though one completion frees one buffer. Completion now counts each
+    // pass to dwBufferLength and wraps while repeats remain, so the header is returned
+    // only after its last pass's last byte.
+
+    /* We have an available buffer now */
+    (*SoundDeviceInstance).OutstandingBuffers =
+        (*SoundDeviceInstance).OutstandingBuffers.wrapping_sub(1);
+
     loop {
-        /* We have an available buffer now */
-        (*SoundDeviceInstance).OutstandingBuffers =
-            (*SoundDeviceInstance).OutstandingBuffers.wrapping_sub(1);
+        Bytes = (*WaveHdr)
+            .dwBufferLength
+            .wrapping_sub((*HdrExtension).BytesCompleted);
+        if Bytes > dwNumberOfBytesTransferred {
+            Bytes = dwNumberOfBytesTransferred;
+        }
+        (*HdrExtension).BytesCompleted = (*HdrExtension).BytesCompleted.wrapping_add(Bytes);
+        dwNumberOfBytesTransferred = dwNumberOfBytesTransferred.wrapping_sub(Bytes);
 
-        /* Did we finish a WAVEHDR and aren't looping? */
-        if (*HdrExtension)
-            .BytesCompleted
-            .wrapping_add(dwNumberOfBytesTransferred)
-            >= (*WaveHdr).dwBufferLength
-            && (*SoundDeviceInstance).LoopsRemaining == 0
-        {
-            /* Wave buffer fully completed */
-            Bytes = (*WaveHdr)
-                .dwBufferLength
-                .wrapping_sub((*HdrExtension).BytesCompleted);
+        if (*HdrExtension).BytesCompleted < (*WaveHdr).dwBufferLength {
+            /* Partially completed */
+            SND_TRACE!(
+                RUSTCONV_WSTR_95EBFAD14685.as_ptr(),
+                (*HdrExtension).BytesCompleted,
+                (*WaveHdr).dwBufferLength
+            );
+            break;
+        }
 
-            (*HdrExtension).BytesCompleted = (*HdrExtension).BytesCompleted.wrapping_add(Bytes);
-            dwNumberOfBytesTransferred = dwNumberOfBytesTransferred.wrapping_sub(Bytes);
-
-            CompleteWaveHeader(SoundDeviceInstance, WaveHdr);
+        if (*HdrExtension).LoopsToComplete != 0 {
+            /* One pass of a looped header done; the next is already being committed */
+            (*HdrExtension).BytesCompleted = 0;
+            if (*HdrExtension).LoopsToComplete != INFINITE {
+                (*HdrExtension).LoopsToComplete -= 1;
+            }
+            SND_TRACE!(
+                RUSTCONV_WSTR_28D447F5BB18.as_ptr(),
+                (*HdrExtension).LoopsToComplete
+            );
+        } else {
+            /* Wave buffer fully completed. Take the link first: the client is
+               notified, and may requeue the header, before CompleteWaveHeader returns. */
+            let Next: PWAVEHDR = (*WaveHdr).lpNext as PWAVEHDR;
             SND_TRACE!(
                 RUSTCONV_WSTR_E02460FA282D.as_ptr(),
                 (*HdrExtension).BytesCompleted,
                 (*WaveHdr).dwBufferLength
             );
-        } else {
-            /* Do we loop a header? */
-            if (*HdrExtension).BytesCommitted == (*WaveHdr).dwBufferLength
-                && (*SoundDeviceInstance).LoopsRemaining != 0
-            {
-                /* Reset amount of bytes and decrement loop count, to play next iteration */
-                (*HdrExtension).BytesCommitted = 0;
+            CompleteWaveHeader(SoundDeviceInstance, WaveHdr);
+            WaveHdr = Next;
+        }
 
-                if (*SoundDeviceInstance).LoopsRemaining != INFINITE {
-                    (*SoundDeviceInstance).LoopsRemaining =
-                        (*SoundDeviceInstance).LoopsRemaining.wrapping_sub(1);
-                }
-                SND_TRACE!(
-                    RUSTCONV_WSTR_28D447F5BB18.as_ptr(),
-                    (*SoundDeviceInstance).LoopsRemaining
-                );
-            } else {
-                /* Partially completed */
-                (*HdrExtension).BytesCompleted = (*HdrExtension)
-                    .BytesCompleted
-                    .wrapping_add(dwNumberOfBytesTransferred);
-                SND_TRACE!(
-                    RUSTCONV_WSTR_95EBFAD14685.as_ptr(),
-                    (*HdrExtension).BytesCompleted,
-                    (*WaveHdr).dwBufferLength
-                );
-            }
-
+        if dwNumberOfBytesTransferred == 0 {
             break;
         }
 
         /* Move to next wave header */
-        WaveHdr = (*WaveHdr).lpNext as PWAVEHDR;
-
         if WaveHdr.is_null() {
             /* No following WaveHdr */
             SND_ASSERT!(dwNumberOfBytesTransferred == 0);
@@ -307,10 +339,6 @@ pub unsafe extern "system" fn CompleteIO(
 
         HdrExtension = (*WaveHdr).reserved as PWAVEHDR_EXTENSION;
         SND_ASSERT!(!HdrExtension.is_null());
-
-        if !(dwNumberOfBytesTransferred != 0) {
-            break;
-        }
     }
 
     // AUDIO-BRANCH DIFF

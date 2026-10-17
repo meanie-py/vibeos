@@ -19,6 +19,20 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The module's part of cmake's windres command; reactos-link adds what every
+    // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
+    let rc_includes: &[&str] = &[
+        "@build/base/system/userinit",
+        "base/system/userinit",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+    ];
+    let rc_flags: &[&str] = &[];
+    let rc_defines: &[&str] = &["UNICODE", "WINVER=0x502", "_UNICODE", "_WIN32_WINNT=0x502"];
+
     let (target_json, entry) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_wWinMainCRTStartup"),
         "x86_64" => ("x86_64-pc-windows-gnu", "wWinMainCRTStartup"),
@@ -31,7 +45,7 @@ fn main() {
         // Load-bearing resource (manifest + IDB_ROSLOGO bitmaps + localized
         // dialogs), compiled IN-cargo by replaying the userinit_res windres
         // command from compile_commands.json (drops the cmake-built .res reuse).
-        .resource_from_rc("base/system/userinit/userinit.rc", "userinit_res")
+        .rc("base/system/userinit/userinit.rc", rc_includes, rc_flags, rc_defines)
         // 7 import libs generated in-cargo from .spec.
         .import_lib("win32ss/user/user32/user32.spec", "user32.dll", "user32")
         .import_lib("win32ss/gdi/gdi32/gdi32.spec", "gdi32.dll", "gdi32")

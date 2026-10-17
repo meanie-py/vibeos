@@ -62,11 +62,7 @@ extern "C" {
     pub static IID_IUnknown: IID;
 }
 
-#[repr(C)]
-pub struct ENUMLIST {
-    pub pNext: *mut ENUMLIST,
-    pub pidl: LPITEMIDLIST,
-}
+pub use crate::island::ENUMLIST;
 
 #[repr(C)]
 pub struct CPrintersEnum {
@@ -470,13 +466,7 @@ pub type LPTBBUTTONSB = *mut core::ffi::c_void;
 
 pub type LPFNSVADDPROPSHEETPAGE = Option<unsafe extern "system" fn(HPROPSHEETPAGE, LPARAM) -> BOOL>;
 
-#[repr(C)]
-pub struct shvheader {
-    pub colnameid: WORD,
-    pub colstate: WORD,
-    pub fmt: WORD,
-    pub cxChar: WORD,
-}
+pub use crate::island::shvheader;
 pub static PrinterSFHeader: [shvheader; 6] = [
     shvheader {
         colnameid: (IDS_SHV_COLUMN_NAME) as WORD,
@@ -518,16 +508,12 @@ pub static PrinterSFHeader: [shvheader; 6] = [
 
 extern "system" {
     fn lstrlenW(text: LPCWSTR) -> INT;
-    fn CoTaskMemAlloc(bytes: SIZE_T) -> LPVOID;
-    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
     #[link_name = "CPrintersExtractIconW_RustBridge"]
     fn CPrintersExtractIconW_CreateInstane(
         pidl: LPCITEMIDLIST,
         riid: REFIID,
         out: *mut LPVOID,
     ) -> HRESULT;
-    fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
-    fn SHCreateShellFolderView(create: *const SFV_CREATE, view: *mut *mut IShellView) -> HRESULT;
     #[link_name = "SHAlloc"]
     fn cpp_com_SHAlloc(bytes: SIZE_T) -> LPVOID;
     fn EnumPrintersW(
@@ -542,7 +528,6 @@ extern "system" {
 }
 
 extern "C" {
-    fn _ILGetDataPointer(pidl: LPCITEMIDLIST) -> *mut PIDLDATA;
     #[link_name = "memcpy"]
     fn cpp_com_memcpy(
         dst: *mut core::ffi::c_void,
@@ -585,7 +570,7 @@ extern "C" {
 unsafe fn cpp_com_SHSetStrRetW(out: *mut STRRET, value: LPCWSTR) -> HRESULT {
     let len = lstrlenW(value) as usize;
     let bytes = (len + 1) * core::mem::size_of::<WCHAR>();
-    let buffer = CoTaskMemAlloc(bytes) as LPWSTR;
+    let buffer = CoTaskMemAlloc((bytes) as SIZE_T) as LPWSTR;
     if buffer.is_null() {
         return E_OUTOFMEMORY;
     }
@@ -628,6 +613,13 @@ extern "C" {
 }
 
 use crate::shellcom::*;
+// The crate's own functions: the definition is the declaration.
+use crate::wine::pidl::ILClone;
+use crate::def_view::SHCreateShellFolderView;
+use crate::wine::pidl::_ILGetDataPointer;
+// One declaration per external symbol: island.rs.
+use crate::island::CoTaskMemAlloc;
+use crate::island::LoadStringW;
 use crate::types::*;
 use core::ffi::c_void;
 use core::mem::size_of;
@@ -645,7 +637,7 @@ pub unsafe fn CPrintersEnum_AddToEnumList_body(
     if pidl.is_null() {
         return FALSE;
     }
-    let pNew: *mut ENUMLIST = SHAlloc(core::mem::size_of::<ENUMLIST>()) as *mut ENUMLIST;
+    let pNew: *mut ENUMLIST = SHAlloc((core::mem::size_of::<ENUMLIST>()) as SIZE_T) as *mut ENUMLIST;
     if !pNew.is_null() {
         (*pNew).pNext = core::ptr::null_mut();
         (*pNew).pidl = pidl;
@@ -738,7 +730,7 @@ pub unsafe fn _ILCreatePrinterItem_body(pi: *mut PRINTER_INFO_4W) -> LPITEMIDLIS
         size += size_of::<u16>() as i32;
     }
 
-    let pidl = SHAlloc((size + 4) as usize) as LPITEMIDLIST;
+    let pidl = SHAlloc((size + 4) as SIZE_T) as LPITEMIDLIST;
     if pidl.is_null() {
         return pidl;
     }

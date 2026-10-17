@@ -17,12 +17,8 @@ spec2def(tdi.sys misc/tdi.spec)
 # tdi/handler.c  # replaced by Rust (sdk/lib/rust/tdi-rust/src/tdi/handler.rs)
 # tdi/obsolete.c  # replaced by Rust (sdk/lib/rust/tdi-rust/src/tdi/obsolete.rs)
 # tdi/stubs.c  # replaced by Rust (sdk/lib/rust/tdi-rust/src/tdi/stubs.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(tdi_res OBJECT misc/tdi.rc)
-target_include_directories(tdi_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(tdi tdi-cargo tdi.sys
     KIND kernelmodedriver
     BODY_CRATE tdi-rust
     DESTINATION reactos/system32/drivers
-    EXTRA_DEPENDS tdi_res psdk)
+    EXTRA_DEPENDS psdk)

@@ -1,6 +1,6 @@
 add_idl_headers(wscript_idlheader ihost.idl)
+# rsrc.rc embeds the typelib (Linker::rc compiles it): the cell depends on it below.
 add_typelib(ihost.idl)
-set_source_files_properties(rsrc.rc PROPERTIES OBJECT_DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/ihost.tlb)
  # CORE-5743: No ARRAY_SIZE macro
 
 # wscript.exe is all Rust (wscript-rust) and cargo links it:
@@ -10,26 +10,11 @@ set_source_files_properties(rsrc.rc PROPERTIES OBJECT_DEPENDS ${CMAKE_CURRENT_BI
 # arguments.c  # replaced by Rust (sdk/lib/rust/wscript-rust/src/wscript/arguments.rs)
 # host.c  # replaced by Rust (sdk/lib/rust/wscript-rust/src/wscript/host.rs)
 # main.c  # replaced by Rust (sdk/lib/rust/wscript-rust/src/wscript/main.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(wscript_shims OBJECT rust_varargs_shim.c)
-target_link_libraries(wscript_shims PRIVATE uuid wine oldnames libshell32 liboleaut32 libole32 libuser32 libadvapi32 libmsvcrt libkernel32 libntdll)
-target_compile_definitions(wscript_shims PRIVATE UNICODE _UNICODE)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(wscript_res OBJECT rsrc.rc)
-target_compile_definitions(wscript_res PRIVATE UNICODE _UNICODE)
-target_include_directories(wscript_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-# How cmake compiled the target's sources, now on the OBJECT libraries.
-set_wine_module_fixme(wscript_shims)
-set_wine_module_fixme(wscript_res)
-# Generated inputs those compiles read, ordered before them.
-add_dependencies(wscript_shims stdole2 wscript_idlheader)
-add_dependencies(wscript_res stdole2 wscript_idlheader)
 add_cargo_module(wscript wscript-cargo wscript.exe
     KIND win32exe
     BODY_CRATE wscript-rust
     DESTINATION reactos/system32
     DELAY_IMPORTS
-    EXTRA_DEPENDS wscript_shims wscript_res psdk uuid_sources)
+    EXTRA_DEPENDS psdk uuid_sources stdole2 wscript_idlheader ${CMAKE_CURRENT_BINARY_DIR}/ihost.tlb uuid wine oldnames libshell32 liboleaut32 libole32 libuser32 libadvapi32 libmsvcrt libkernel32 libntdll)
 
 include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle
