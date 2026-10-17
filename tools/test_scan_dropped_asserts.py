@@ -198,3 +198,21 @@ def test_cargo_target_dir_is_pruned(tmp_path):
     )
     findings = sda.scan(header_roots=(inc,), rust_ws=ws, repo=tmp_path)
     assert len(findings) == 1, "the pruned target copy must not mask the real drop"
+
+
+def test_a_wrapper_inherits_its_sited_body(tmp_path):
+    """`ExAcquirePushLockExclusive` forwards to `ExAcquirePushLockExclusiveSited`, which
+    the export shims call directly; the C's assert lives in the Sited body."""
+    findings = build(
+        tmp_path,
+        """
+FORCEINLINE VOID MiFoo(VOID)
+{
+    ASSERT(locked);
+}
+""",
+        """pub unsafe fn MiFoo() { MiFooSited(0) }
+           pub unsafe fn MiFooSited(site: usize) { crate::ASSERT!(locked()); }""",
+    )
+    assert findings == []
+

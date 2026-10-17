@@ -651,6 +651,7 @@ pub unsafe extern "system" fn Ke386SanitizeFlags(Eflags: ULONG, Mode: u8) -> ULO
 pub unsafe extern "system" fn KiGetThreadNpxArea(
     Thread: *const ddk::_KTHREAD,
 ) -> *mut ddk::_FX_SAVE_AREA {
+    crate::ASSERT!((*Thread).InitialStack as usize % 16 == 0);
     ((*Thread).InitialStack as *mut u8).sub(core::mem::size_of::<ddk::_FX_SAVE_AREA>())
         as *mut ddk::_FX_SAVE_AREA
 }

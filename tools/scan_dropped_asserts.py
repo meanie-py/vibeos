@@ -206,6 +206,13 @@ def rust_fns(paths: list[Path]) -> dict[str, tuple[list[tuple[Path, int]], int]]
             sites, best = found.get(name, ([], -1))
             sites.append((p, line))
             found[name] = (sites, max(best, n))
+    # `X` forwarding to `XSited(…, site)` is the lockdep convention in ntkrnl-sys:
+    # the export shims call the Sited body directly with their return address, so
+    # the C's asserts belong there, and the plain wrapper inherits its count.
+    for name, (sites, best) in list(found.items()):
+        sited = found.get(name + "Sited")
+        if sited is not None and sited[1] > best:
+            found[name] = (sites, sited[1])
     return found
 
 

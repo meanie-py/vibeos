@@ -10277,6 +10277,12 @@ code that has always worked. On stable the UB checks share `cfg(debug_assertions
   HAL's checked `KTRAP_FRAME` deref panics. Fix: `-Zub-checks=no` for i386 kernel code (it is
   already the build-std nightly cell), set in both `reactos-link`'s nested RUSTFLAGS and
   `.cargo/config.toml`'s `[target.i686-kernel]`; `debug_assert!` stays live.
+- **A DRIVER's misaligned object, on real hardware only.** The OptiPlex's `rtwlanu.sys` hands
+  `KeAcquireSpinLockRaiseToDpc` a spinlock that is not 8-aligned, which Windows' `lock bts`
+  tolerates; `ntkrnl-sys`'s `#[inline]` `KxAcquireSpinLock` is compiled inside armed
+  `ntoskrnl-rust`, so its `read_volatile` alignment check panicked (2026-10-17, rpi-bringup).
+  QEMU smoke never sees it: every in-tree driver aligns its locks. Read any driver-supplied lock
+  word or structure through a byte view or `read_unaligned`, never a typed deref.
 Triage tip: the i386 HAL loads as `halmp.dll` under the harness label `hal.dll`, and its panic
 text can print garbled; P4 of the `0xE0525354` bugcheck is still the source line.
 

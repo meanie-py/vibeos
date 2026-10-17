@@ -108,6 +108,13 @@ unsafe fn lock_ptr(index: u32) -> PEX_PUSH_LOCK {
 
 #[no_mangle]
 pub unsafe extern "C" fn CmpAcquireKcbLockExclusiveByIndex(index: u32) {
+    // cm_x.h's ASSERTs, restored (scan_dropped_asserts). ntkrnl_sys::ASSERT! prints
+    // and continues, exactly as the C under DBG; this crate's debug_assert! would
+    // stop the box. A recursive acquire would self-deadlock right after.
+    ntkrnl_sys::ASSERT!(
+        core::ptr::read_volatile(core::ptr::addr_of!((*entry_ptr(index)).Owner)) as *mut c_void
+            != ke_get_current_thread()
+    );
     ExAcquirePushLockExclusive(lock_ptr(index));
     let entry = entry_ptr(index);
     core::ptr::write_volatile(
@@ -167,6 +174,7 @@ pub unsafe extern "C" fn CmpTryToConvertKcbSharedToExclusive(
     kcb: *mut CM_KEY_CONTROL_BLOCK,
 ) -> u8 {
     let kcb = opaque_ptr(kcb);
+    ntkrnl_sys::ASSERT!(CmpIsKcbLockedExclusive(kcb) == 0);
     let conv_key = core::ptr::read_volatile(core::ptr::addr_of!(
         (*kcb).__bindgen_anon_2.__bindgen_anon_1.ConvKey
     ));
@@ -187,6 +195,7 @@ pub unsafe extern "C" fn CmpTryToConvertKcbSharedToExclusive(
 pub unsafe extern "C" fn CmpConvertKcbSharedToExclusive(
     kcb: *mut CM_KEY_CONTROL_BLOCK,
 ) {
+    ntkrnl_sys::ASSERT!(CmpIsKcbLockedExclusive(kcb) == 0);
     CmpReleaseKcbLock(kcb);
     CmpAcquireKcbLockExclusive(kcb);
 }

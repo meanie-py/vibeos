@@ -948,25 +948,37 @@ unsafe fn mi_publish_pte() {
     core::arch::asm!("dsb ishst", options(nostack, preserves_flags));
 }
 
+// miarm.h's ASSERTs, restored (scan_dropped_asserts): RtlAssert prints and continues.
 #[inline]
 pub unsafe fn MI_WRITE_VALID_PTE(pte: PMMPTE, value: MMPTE) {
+    crate::ASSERT!(!(*pte).valid());
+    crate::ASSERT!(value.valid());
+    // amd64: a page-table page is never mapped no-execute (NX is bit 63).
+    #[cfg(target_arch = "x86_64")]
+    crate::ASSERT!(!MI_IS_PAGE_TABLE_ADDRESS(MiPteToAddress(pte)) || (value.Long >> 63) == 0);
     core::ptr::write_volatile(pte, value);
     mi_publish_pte();
 }
 
 #[inline]
 pub unsafe fn MI_WRITE_VALID_PDE(pde: PMMPDE, value: MMPTE) {
+    crate::ASSERT!(!(*pde).valid());
+    #[cfg(target_arch = "x86_64")]
+    crate::ASSERT!(((*pde).Long >> 63) == 0);
+    crate::ASSERT!(value.valid());
     core::ptr::write_volatile(pde, value);
     mi_publish_pte();
 }
 
 #[inline]
 pub unsafe fn MI_WRITE_INVALID_PTE(pte: PMMPTE, value: MMPTE) {
+    crate::ASSERT!(!value.valid());
     core::ptr::write_volatile(pte, value);
 }
 
 #[inline]
 pub unsafe fn MI_ERASE_PTE(pte: PMMPTE) {
+    crate::ASSERT!((*pte).Long != 0);
     core::ptr::write_volatile(pte, MMPTE { Long: 0 });
 }
 
@@ -1272,6 +1284,7 @@ pub unsafe fn MiAcquirePfnLockAtDpcLevel() {
     extern "system" {
         fn KeAcquireSpinLockAtDpcLevel(SpinLock: *mut KSPIN_LOCK);
     }
+    crate::ASSERT!(crate::ke::KeGetCurrentIrql() >= crate::base::DISPATCH_LEVEL);
     KeAcquireSpinLockAtDpcLevel(&raw mut MmPfnLock);
 }
 
@@ -1282,6 +1295,7 @@ pub unsafe fn MiReleasePfnLockFromDpcLevel() {
         fn KeReleaseSpinLockFromDpcLevel(SpinLock: *mut KSPIN_LOCK);
     }
     KeReleaseSpinLockFromDpcLevel(&raw mut MmPfnLock);
+    crate::ASSERT!(crate::ke::KeGetCurrentIrql() >= crate::base::DISPATCH_LEVEL);
 }
 
 /// MiAcquirePfnLock — acquires PFN lock, returns old IRQL.

@@ -638,8 +638,7 @@ unsafe fn KiSwapThreadImpl(
             if (*Prcb).ReadySummary != 0 {
                 let HighBit: ULONG = 31 - (*Prcb).ReadySummary.leading_zeros();
                 if (HighBit as SCHAR) > (*NextThread).Priority {
-                    (*NextThread).Preempted = 0u8;
-                    KxQueueReadyThread(NextThread, Prcb);
+                    ntkrnl_sys::inline::ke::KiRequeueStandbyThreadLocked(NextThread, Prcb);
                     NextThread = KiSelectReadyThread(0, Prcb);
                 }
             }
@@ -1080,8 +1079,7 @@ pub unsafe extern "system" fn NtYieldExecution() -> NTSTATUS {
                 let HighBit: ULONG = 31 - (*Prcb).ReadySummary.leading_zeros();
                 if (HighBit as SCHAR) > (*(*Prcb).NextThread).Priority {
                     let Scheduled = (*Prcb).NextThread;
-                    (*Scheduled).Preempted = 0u8;
-                    KxQueueReadyThread(Scheduled, Prcb);
+                    ntkrnl_sys::inline::ke::KiRequeueStandbyThreadLocked(Scheduled, Prcb);
                     (*Prcb).NextThread = core::ptr::null_mut();
                 }
             }
