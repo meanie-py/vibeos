@@ -33,6 +33,11 @@ pub mod nt_0600;
 // ntdll.dll proper.
 pub mod rtl;
 
+// crypt — MD4 / MD5 / SHA-1 (MD4*/MD5*/A_SHA*): ntdll.dll proper only. Windows exports
+// them from ntdll; advapi32's copies forward there.
+#[cfg(not(feature = "vista"))]
+pub mod crypt;
+
 // etw/ — main ntdll.dll Event Tracing API (the etwtrace static lib:
 // etw/trace.c). Always compiled — lands in ntdll.dll proper.
 pub mod etw;
