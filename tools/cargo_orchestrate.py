@@ -595,7 +595,8 @@ def artifact_store_env(root: Path, arch: str, report: Path):
     def ctx():
         hostjobs.ensure(root)
         toolchain = Path.home() / ".rustup" / "toolchains" / PIN
-        with supervise(root, store, toolchain, report, clean=False, verify=False, arch=arch) as sup:
+        real = Path(os.environ.get("VIBEOS_ORCHESTRATE_REPO") or root)
+        with supervise(real, store, toolchain, report, clean=False, verify=False, arch=arch) as sup:
             result = {"rc": 1}
             yield (
                 {
@@ -611,6 +612,24 @@ def artifact_store_env(root: Path, arch: str, report: Path):
             record_outer_result(sup, result["rc"])
 
     return ctx()
+
+
+def configure_sdk(root: Path, arch: str, gen: Path) -> None:
+    """The generated SDK and the generated inputs cells read (tools/sdk_recipe.py), into
+    `gen`, once per recipe: the stamp holds the recipe's hash, so a changed recipe
+    regenerates and an unchanged one is a no-op."""
+    sys.path.insert(0, str(root / "tools"))
+    import sdk_recipe
+
+    digest = hashlib.sha256(
+        b"".join(sdk_recipe.recipe_path(arch, h, root).read_bytes() for h in (True, False))
+    ).hexdigest()
+    stamp = gen / ".sdk-recipe"
+    if stamp.exists() and stamp.read_text().strip() == digest:
+        return
+    log(f"configure: generating the SDK into {gen}")
+    sdk_recipe.run(arch, gen, root)
+    stamp.write_text(digest + "\n")
 
 
 def manifest_build(
@@ -809,6 +828,11 @@ def main(argv: list[str] | None = None) -> int:
     if not args.list and not args.dry_run and str(repo_root()) != canon:
         # The canonical copy of this script, so the re-run's repo_root() IS the mount.
         script = f"{canon}/tools/{Path(__file__).name}"
+        # The artifact store's supervisor must be told the REAL checkout: its worker checks
+        # that the checkout is hidden inside the isolated compile, where the canonical
+        # path is the (read-only) source mount and so always visible (vibeos-cli build
+        # passes the worktree path for the same reason).
+        os.environ["VIBEOS_ORCHESTRATE_REPO"] = str(repo_root())
         cmd = ["bash", str(repo_root() / "tools/canon-run.sh"), sys.executable, script]
         os.chdir(repo_root())
         os.execvp("bash", cmd + list(sys.argv[1:] if argv is None else argv))
@@ -828,6 +852,8 @@ def main(argv: list[str] | None = None) -> int:
             shutil.rmtree(gen)
         seed = root / f"build-{args.arch}" if args.seed_from_build else None
         configure_gen(root, args.arch, gen, seed)
+        if args.cmake_off:
+            configure_sdk(root, args.arch, gen)
         if args.no_artifact_store:
             return manifest_build(
                 root,

@@ -396,8 +396,27 @@ extends it from the boot spine to every fully-Rust module.
      reruns when one changes. **Owed for cmake-off:** those generated inputs themselves
      (widl's typelibs, wmc's message `.rc` for arp, net, eventcreate, diskpart) still
      come only from cmake.
-5. **Assemble the ISO from a manifest** instead of 200 `add_cd_file` calls. After this the
-   fully-Rust part of the tree needs no cmake at all.
+5. **Assemble the media from a manifest. Done 2026-10-17 for the lists and mastering.**
+   cmake already masters each CD from a path list (every `add_cd_file` appends
+   `<dest>=<source>` to `build-<arch>/boot/<cd>.<config>.lst` at configure time; the CD
+   target runs `strip_cd_media.py`, mkisofs and isohybrid over it).
+   `tools/media_manifest.py --write` records the three lists and their mastering commands
+   as `boot/media/<arch>.json`, each source named by what makes it: `cell:<out>` (a cell's
+   output, from `sdk/lib/rust/cells/<arch>.jsonl`, `tools/cell_manifest.py`),
+   `build:<rel>` or `repo:<rel>`. `--assemble --cd livecd --out DIR [--cells DIR]` rebuilds
+   the list and masters the image, taking the cells' outputs from a
+   `cargo_orchestrate.py --manifest` build when `--cells` is given.
+   - **Proof:** all nine lists (3 CDs × 3 arches) rebuild byte-identical to cmake's; an
+     amd64 livecd mastered from the manifest holds the same 1364 files as cmake's, every
+     one byte-identical (the one that first differed, `syswow64/sysdm.cpl`, had been
+     relinked by the i386 build twelve minutes after cmake mastered its ISO).
+   - About 365 entries per CD are cells; the rest are the C tail's modules, configure
+     products and source files, still made by cmake.
+   - **Owed:** `--check` as a Rust rule in tools/vibeos-lint (for cell_manifest too);
+     self-hosting mkisofs/isohybrid/cabman (`--assemble` uses build-<arch>/host-tools and
+     fails without them); re-cabbing reactos.cab from `--cells` for bootcd; and a smoke
+     that boots media mastered outside build-<arch> (`smoke` reads only
+     build-<arch>/livecd.iso, with its staleness checks).
 6. **Modules that still have C** compile it from cargo, so cmake's last job is the C-only
    tail, then nothing.
    - **6a, done 2026-10-17: the cells' own C.** cmake's C rule is `<CC> --target=<t>
@@ -420,11 +439,20 @@ extends it from the boot spine to every fully-Rust module.
      set through `replay_target`). Their recipe (sources in archive order + part) belongs in
      committed data under reactos-link, generated and checked like the templates; five of
      them carry asm, whose rule needs its own template.
-   - **6b, owed: the generated SDK.** A C compile with no cmake build reads psdk's ~200
-     widl headers, and the generated sources need widl (RPC stubs for nine services,
-     uuid's 77 `_i.c`, wscript's typelib), wmc (four message `.rc`s) and flex (winhlp32).
-     The plan: the orchestrator's configure step self-hosts those host tools and generates
-     the SDK into `$VIBEOS_GEN_DIR`, which `@build/` then names.
+   - **6b, the generated SDK: recorded and replayable, 2026-10-17.**
+     `tools/sdk_recipe.py --write` records, from ninja itself (`ninja -t commands`), every
+     generator command that makes something a cell build reads: psdk/xdk's headers and
+     the generated inputs cells depend on (widl headers, RPC stubs and typelibs, windmc
+     message files, flex scanners) — 320 commands per arch, 293 of them widl — as
+     `sdk/lib/rust/generated/<arch>.cmds`, plus the host-tools project's commands that
+     build the tools they run (`<arch>.host.cmds`: widl with its bison/flex parser, hpp,
+     utf16le). `--run --gen DIR` replays both in 20 seconds; on amd64, 360 of the 361 files
+     it makes are byte-identical to build-amd64's (winhlp32's flex scanner names its own
+     path in `#line`). `cargo_orchestrate --manifest --cmake-off` runs it as the configure
+     step (once per recipe hash), and the engine then takes `$VIBEOS_GEN_DIR` as `@build/`.
+     Compiles, archives, import libraries and cmake's ExternalProject bookkeeping are not
+     in the recipe: the engine owns those. geninc and gendib are left out too, since the
+     engine already self-hosts both.
    - **The measurement that sizes it (2026-10-17):** with the engine forced cmake-off,
      every cell whose only cmake input was its resources builds byte-identical to cmake's
      link (beep, cacls, winmine, checked); every failure was a `c_from_compile_db` with no

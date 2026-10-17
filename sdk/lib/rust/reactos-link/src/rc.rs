@@ -76,6 +76,16 @@ impl Linker {
         if !super::cmake_off_forced() && self.build_dir.join("build.ninja").exists() {
             return self.build_dir.clone();
         }
+        // The generated SDK (tools/sdk_recipe.py, replayed by the orchestrator's configure
+        // step) stands in for the whole build tree: use it as it is.
+        if let Some(gen) = env::var_os("VIBEOS_GEN_DIR").map(PathBuf::from) {
+            println!("cargo:rerun-if-env-changed=VIBEOS_GEN_DIR");
+            let stamp = gen.join(".sdk-recipe");
+            if stamp.exists() {
+                println!("cargo:rerun-if-changed={}", stamp.display());
+                return gen;
+            }
+        }
         let root = PathBuf::from(env::var("OUT_DIR").unwrap()).join("cmake-off-build");
         // winnt.h (and the other xdk headers) are native-hpp output, regenerated here.
         self.generate_xdk_headers_into(&root.join("sdk/include"));
