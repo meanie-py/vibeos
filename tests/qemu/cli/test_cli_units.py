@@ -9258,7 +9258,7 @@ def test_boot_media_drift_fails_loudly_if_it_can_no_longer_find_the_reference_se
 
 
 def test_check_registers_the_vendored_registry_stage():
-    """`vibeos-cli check` must run tools/vendored.py.
+    """`vibeos-cli check` must run the native vendor-registry audit.
 
     The registry answers "which C is NOT ours to translate" — the denominator under
     every progress number in this project. Its container ratchet only ratchets if
@@ -9273,7 +9273,9 @@ def test_check_registers_the_vendored_registry_stage():
     names = [s[0] for s in specs]
     assert "vendored_registry" in names
     argv = next(s[1] for s in specs if s[0] == "vendored_registry")
-    assert argv != ["MISSING"], "tools/vendored.py is not where the stage expects it"
+    from . import rustlints
+
+    assert argv == [rustlints.SENTINEL, "vendored_registry"]
 
 
 def test_vendored_registry_stage_is_silent_on_stdout_when_green():
@@ -9283,15 +9285,19 @@ def test_vendored_registry_stage_is_silent_on_stdout_when_green():
     park this stage permanently red. The pass condition is an empty stdout.
     """
     repo = Path(__file__).resolve().parents[3]
+    from . import rustlints
+
     r = subprocess.run(
-        ["python3", str(repo / "tools" / "vendored.py")],
+        [str(rustlints.ensure(repo)), "--root", str(repo), "--rules", "vendored_registry"],
         capture_output=True,
         text=True,
         cwd=str(repo),
     )
     assert r.returncode == 0, r.stdout + r.stderr
     assert r.stdout == "", f"stdout must be empty when green, got: {r.stdout!r}"
-    assert "OK" in r.stderr
+    from .lints import _scanner_error
+
+    assert not _scanner_error(r, "stdout")
 
 
 # --- the ratchet gates on assertion IDENTITIES, not counts (#78) --------------

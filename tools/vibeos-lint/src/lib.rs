@@ -6,6 +6,7 @@ pub mod const_shared;
 pub mod const_values;
 mod crate_cfg;
 pub mod vendor_registry;
+pub mod yaml;
 pub use crate_cfg::CrateCfg;
 mod history;
 pub mod integers;
@@ -31,6 +32,10 @@ use std::sync::{Arc, Mutex, OnceLock, Weak};
 pub trait Rule: Sync {
     fn name(&self) -> &'static str;
     fn run(&self, corpus: &Corpus) -> Result<Vec<String>, String>;
+    /// Registry-only checks also support standalone trees without sdk/lib/rust.
+    fn needs_workspace_rust(&self) -> bool {
+        true
+    }
     fn source_sets(&self) -> &'static [SourceSet] {
         &[]
     }

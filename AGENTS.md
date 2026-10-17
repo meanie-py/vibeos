@@ -399,6 +399,11 @@ guide: `tests/qemu/cli/README.md`.
 ./vibeos-cli farm   --arches amd64 --minutes 480   # overnight flake soak
 ```
 
+**Source lints live in `tools/vibeos-lint/src/rules/` as Rust plugins.** Use
+`./vibeos-cli check`, which builds and runs the shared binary automatically. Add
+new rules there; standalone Python scanners are retired. Python CLI, generator,
+and reporting helpers remain supported.
+
 **No default arch** — always pass `--arch`. Why it matters:
 
 - **No false-green from stale artifacts.** `smoke` hard-fails on stale media. Do a `--clean`

@@ -23,7 +23,7 @@ instead of shipping a silently-wrong table.
 The emitted Rust keeps the C's own spelling -- `_S_|_C_`, `0x0028 | B110` -- via u16
 aliases, so the two files stay diffable line by line.
 
-    python3 tools/gen_ctype_tables.py --check    # verify the committed .rs still matches
+    ./vibeos-cli check                         # native ctype-table freshness/proof check
     python3 tools/gen_ctype_tables.py --emit     # rewrite the table block in place
 """
 
@@ -253,25 +253,9 @@ def main() -> int:
     )
     args = ap.parse_args()
 
-    block = build_block(island_masks())
-
     if args.check:
-        target = Path(args.check)
-        text = target.read_text()
-        if BEGIN not in text or END not in text:
-            sys.exit(f"gen_ctype_tables: {target} has no {BEGIN} .. {END} block")
-        have = text.split(BEGIN, 1)[1].split(END, 1)[0].strip("\n")
-        if have.strip() != block.strip():
-            # A FINDING line on stdout, which is what `vibeos-cli check` diffs against the
-            # baseline; the how-to-fix goes to stderr so it cannot become baseline noise.
-            print(
-                f"MISMATCH: {target.relative_to(REPO) if target.is_absolute() else target}: "
-                f"ctype table block is stale vs dll/win32/msvcrt/ctype.c"
-            )
-            print(f"  fix: python3 tools/gen_ctype_tables.py --emit {target}", file=sys.stderr)
-            return 1
-        print(f"gen_ctype_tables: {target} matches ctype.c (514/514)", file=sys.stderr)
-        return 0
+        ap.error("ctype audit moved to ./vibeos-cli check (Rust rule: gen_ctype_tables)")
+    block = build_block(island_masks())
 
     if args.emit and args.emit != "-":
         target = Path(args.emit)

@@ -180,7 +180,14 @@ impl Registry {
                 license_note: optional_str(v, "license_note"),
                 headers: strings(v, "headers"),
                 version: v.get("version").filter(|x| !x.is_null()).cloned(),
-                translate: json_str(v, "translate").unwrap_or("undecided").into(),
+                translate: match v.get("translate") {
+                    None => "undecided".into(),
+                    Some(Value::String(s)) => s.clone(),
+                    Some(Value::Bool(true)) => "True".into(),
+                    Some(Value::Bool(false)) => "False".into(),
+                    Some(Value::Null) => "None".into(),
+                    Some(value) => value.to_string(),
+                },
             });
         }
         if trees.is_empty() {
@@ -508,8 +515,15 @@ pub fn audit(
         problems.push(format!("NON-FLOSS LICENCE DECLARED by {n} file(s): `{value}`\n    e.g. {example}\n    A ReactOS `LICENSE:` header naming terms that are not a FLOSS licence.\n    Settle it: delete the code, correct the header if it is wrong, or add a\n    vendor.yaml entry recording what the terms actually are and why we ship it."));
     }
     let (no_grant, dangling) = grant_gaps(&reg, snapshot);
+    let grants: Value = serde_json::from_str(include_str!("../../vendor-grants.json"))
+        .map_err(|e| format!("invalid vendor-grants.json: {e}"))?;
     let accepted: BTreeSet<&str> = if snapshot.is_project_repo {
-        ["ptr:copying.bsd"].into_iter().collect()
+        grants
+            .as_object()
+            .ok_or("vendor-grants.json must be a mapping")?
+            .keys()
+            .map(String::as_str)
+            .collect()
     } else {
         BTreeSet::new()
     };
@@ -886,7 +900,7 @@ fn grant_gaps(
             .unwrap_or("")
             .replace('\\', "/");
         let root_dir = dir.split('/').next().unwrap_or("");
-        if skip_suspect(root_dir) {
+        if skip_suspect(root_dir) || blocked(s, &dir) {
             continue;
         }
         let head = read_head(s, &p, 4000).unwrap_or(text);
@@ -1017,6 +1031,12 @@ fn crate_drift(v: &Value, s: &AuditSnapshot, out: &mut Vec<String>) {
         out.push(format!("{CRATES_PATH} is STALE against {CARGO_LOCK}.\n    in the lockfile but not recorded: {}\n    recorded but no longer in the lockfile: {}\n    Regenerate: tools/vendored.py --write-crates",if add.is_empty(){"none"}else{&add},if gone.is_empty(){"none"}else{&gone}));
     }
 }
+fn python_lines(text: &str) -> impl Iterator<Item = &str> {
+    static BREAKS: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"\r\n|[\n\r\x0b\x0c\x1c-\x1e\x{85}\x{2028}\x{2029}]").unwrap()
+    });
+    BREAKS.split(text)
+}
 fn license_text(t: &Tree, s: &AuditSnapshot) -> Result<(String, String), String> {
     if let Some(p) = &t.license_file {
         let text = s
@@ -1024,7 +1044,7 @@ fn license_text(t: &Tree, s: &AuditSnapshot) -> Result<(String, String), String>
             .ok_or_else(|| format!("{}: license_file is missing from snapshot: {p}", t.name))?;
         return Ok((
             p.clone(),
-            text.lines()
+            python_lines(text)
                 .map(str::trim_end)
                 .collect::<Vec<_>>()
                 .join("\n")
@@ -1038,7 +1058,7 @@ fn license_text(t: &Tree, s: &AuditSnapshot) -> Result<(String, String), String>
             .ok_or_else(|| format!("{}: license_ref is missing from snapshot: {p}", t.name))?;
         let mut out = Vec::new();
         let mut in_block = false;
-        for line in text.lines().take(200) {
+        for line in python_lines(text).take(200) {
             let stripped = line.trim();
             if in_block {
                 out.push(REF_LEAD.replace(line, "").trim_end().to_string());
@@ -1132,6 +1152,15 @@ fn notices(r: &Registry, s: &AuditSnapshot, crates: &Value) -> Result<String, St
         out.push(String::new());
     }
     Ok(out.join("\n"))
+}
+
+/// Render from the same immutable inputs as the audit's freshness assertion.
+pub fn render_notices(
+    registry: &Value,
+    snapshot: &AuditSnapshot,
+    crates: &Value,
+) -> Result<String, String> {
+    notices(&Registry::parse(registry)?, snapshot, crates)
 }
 
 #[cfg(test)]
@@ -1277,10 +1306,12 @@ mod tests {
     fn notices_render_license_grant_and_shipped_crates() {
         let r=Registry::parse(&serde_json::json!({"trees":[{"path":"vendor/a","name":"A","reason":"r","upstream":"u","license":"MIT","license_file":"vendor/a/LICENSE"}]})).unwrap();
         let mut s = AuditSnapshot::default();
-        file(&mut s, "vendor/a/LICENSE", "MIT grant\n");
+        file(&mut s, "vendor/a/LICENSE", "MIT grant\n\x0c\nTerms\n");
         let crates = serde_json::json!({"crates":[{"name":"x","version":"1.0","license":"MIT","ships":true},{"name":"build-x","version":"2","license":"MIT","ships":false}]});
         let text = notices(&r, &s, &crates).unwrap();
         assert!(text.contains("Grant reproduced from: `vendor/a/LICENSE`"));
+        assert!(text.contains("MIT grant\n\n\nTerms"));
+        assert!(!text.contains('\x0c'));
         assert!(text.contains("| x | 1.0 | MIT |"));
         assert!(!text.contains("| build-x |"));
     }

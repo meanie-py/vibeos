@@ -1,3 +1,5 @@
+import struct
+import subprocess
 import sys
 from pathlib import Path
 
@@ -571,32 +573,80 @@ def test_convert_runs_the_wave_in_order(tmp_path, monkeypatch):
     ]
 
 
-def test_ratchet_labels_follow_the_generator(monkeypatch, capsys, tmp_path):
-    for t in ("a", "b"):
-        (tmp_path / t).mkdir()
-        (tmp_path / t / "CMakeLists.txt").write_text(f"add_library({t} MODULE rust_cohab_stub.c)\n")
-    """A refused module the generator learns to handle flips to `convertible`, which the
-    baseline has never seen: that is how the ratchet forces the conversion."""
-    import scan_cmake_linked_rust as ratchet
+def _native_ratchet(root):
+    from tests.qemu.cli import rustlints
 
-    monkeypatch.setattr(
-        g, "survey", lambda: [("a", "OK Win32Dll"), ("b", "REFUSED b: link kind X")]
+    repo = Path(__file__).resolve().parent.parent
+    cp = subprocess.run(
+        [str(rustlints.ensure(repo)), "--root", str(root), "--rules", "scan_cmake_linked_rust"],
+        capture_output=True,
+        text=True,
+        check=True,
     )
-    (tmp_path / "build-amd64").mkdir()
-    (tmp_path / "build-amd64/build.ninja").write_text("")
-    cell = tmp_path / "sdk/lib/rust/c-cargo/build.rs"
-    cell.parent.mkdir(parents=True)
-    cell.write_text('&["body", "boot/x/libbios_asm.a"]\n')
-    monkeypatch.setattr(g, "REPO", tmp_path)
-    monkeypatch.setattr(g, "engine_lib", lambda lib, repo=None: None)
-    rc = ratchet.main()
-    out = capsys.readouterr().out.splitlines()
-    assert out == [
-        "a: fully-Rust module still linked by cmake (convertible)",
-        "b: fully-Rust module still linked by cmake (refused)",
-        "c-cargo: links cmake-built boot/x/libbios_asm.a (not engine-buildable)",
-    ]
-    assert rc == 1
+    return [line.split("\t", 1)[1] for line in cp.stdout.splitlines()]
+
+
+def _ratchet_fixture(root, extra=""):
+    def put(relative, text):
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+
+    put(
+        "foo/CMakeLists.txt",
+        "add_library(foo MODULE rust_cohab_stub.c)\n"
+        'rust_staticlib_variant(foo_rust foo-rust "" TRUE)\n'
+        "add_cd_file(TARGET foo DESTINATION /system32 FOR all)\n" + extra,
+    )
+    put("foo/rust_cohab_stub.c", "/* placeholder */\n")
+    put("sdk/lib/rust/foo-cargo/build.rs", "fn main() {}\n")
+    pe = bytearray(0x200)
+    pe[:2] = b"MZ"
+    struct.pack_into("<I", pe, 0x3C, 0x80)
+    pe[0x80:0x84] = b"PE\0\0"
+    struct.pack_into("<H", pe, 0x84, 0x8664)
+    struct.pack_into("<H", pe, 0x94, 0xF0)
+    struct.pack_into("<H", pe, 0x98, 0x20B)
+    for arch in ("i386", "amd64", "arm64"):
+        put(
+            f"build-{arch}/build.ninja",
+            "build foo/foo.dll: C_MODULE_LIBRARY_LINKER__foo_Debug "
+            "foo/CMakeFiles/foo.dir/rust_cohab_stub.c.obj\n"
+            "  LINK_FLAGS = --subsystem,windows\n"
+            "  LINK_LIBRARIES = sdk/lib/rust/foo_rust/libfoo_rust.a\n",
+        )
+        put(
+            f"build-{arch}/boot/livecd.Release.lst",
+            f"/system32/foo.dll=/tmp/vibeos/build-{arch}/foo/foo.dll\n",
+        )
+        path = root / f"build-{arch}/foo/foo.dll"
+        path.parent.mkdir(parents=True)
+        path.write_bytes(pe)
+
+
+def test_ratchet_labels_follow_the_generator(tmp_path):
+    # Exercise the real three-arch model instead of substituting a survey result.
+    for i, (extra, label) in enumerate(
+        [
+            ("", "convertible"),
+            ("unknown_target_property(foo X)\n", "refused"),
+        ]
+    ):
+        root = tmp_path / str(i)
+        _ratchet_fixture(root, extra)
+        [(target, verdict)] = g.survey(root)
+        assert target == "foo"
+        assert verdict.startswith("OK") == (label == "convertible")
+        archive = root / "sdk/lib/rust/c-cargo/build.rs"
+        archive.parent.mkdir(parents=True)
+        archive.write_text('&["body", "boot/x/libbios_asm.a"]\n')
+        assert g.engine_lib("boot/x/libbios_asm.a", root) is None
+        assert _native_ratchet(root) == sorted(
+            [
+                f"foo: fully-Rust module still linked by cmake ({label})",
+                "c-cargo: links cmake-built boot/x/libbios_asm.a (not engine-buildable)",
+            ]
+        )
 
 
 def _cml(root, rel, text):
@@ -675,27 +725,19 @@ def test_rebound_exports_name_what_the_spec_actually_exports():
             assert f" {name}(" in text, f"{module}: {name} is no longer exported"
 
 
-def test_ratchet_trusts_the_source_tree_over_a_stale_graph(monkeypatch, capsys, tmp_path):
-    """A module converted since the last configure still has its cmake link edge in
-    build.ninja; its CMakeLists' add_cargo_module is what says it is done."""
-    import scan_cmake_linked_rust as ratchet
-
-    (tmp_path / "build-amd64").mkdir()
-    (tmp_path / "build-amd64/build.ninja").write_text("")
-    (tmp_path / "dll/m").mkdir(parents=True)
-    (tmp_path / "dll/m/CMakeLists.txt").write_text("add_cargo_module(m m-cargo m.dll\n)\n")
-    monkeypatch.setattr(g, "REPO", tmp_path)
-    (tmp_path / "dll/n").mkdir(parents=True)
-    (tmp_path / "dll/n/CMakeLists.txt").write_text("add_library(n MODULE rust_cohab_stub.c)\n")
-    # o's flip is not in this tree: its CMakeLists compiles its C again.
-    (tmp_path / "dll/o").mkdir(parents=True)
-    (tmp_path / "dll/o/CMakeLists.txt").write_text("add_library(o MODULE o.c font.c)\n")
-    monkeypatch.setattr(
-        g, "survey", lambda: [("m", "OK Win32Dll"), ("n", "OK Win32Dll"), ("o", "OK Win32Dll")]
+def test_ratchet_trusts_the_source_tree_over_a_stale_graph(tmp_path):
+    graph = tmp_path / "build-amd64/build.ninja"
+    graph.parent.mkdir()
+    graph.write_text(
+        "".join(
+            f"build {t}/{t}.dll: C_SHARED_LIBRARY_LINKER__{t}_Debug rust_cohab_stub.c.obj\n"
+            for t in ("m", "n", "o")
+        )
     )
-    ratchet.main()
-    out = capsys.readouterr().out.splitlines()
-    assert out == ["n: fully-Rust module still linked by cmake (convertible)"]
+    _cml(tmp_path, "dll/m", "add_cargo_module(m m-cargo m.dll)\n")
+    _cml(tmp_path, "dll/n", "add_library(n MODULE rust_cohab_stub.c)\n")
+    _cml(tmp_path, "dll/o", "add_library(o MODULE o.c font.c)\n")
+    assert _native_ratchet(tmp_path) == ["n: fully-Rust module still linked by cmake (refused)"]
 
 
 def test_a_resource_in_a_subdirectory_keeps_its_path(tmp_path):
