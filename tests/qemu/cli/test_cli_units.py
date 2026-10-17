@@ -382,6 +382,22 @@ def test_smp_iso_patch_is_idempotent(tmp_path: Path):
     assert vm_mod.smp_selected_iso(src, tmp_path / "work") == src
 
 
+def test_smp_iso_patch_handles_a_duplicated_freeldr_ini(tmp_path: Path):
+    """The writable-root ISO carries freeldr.ini twice, identically. Both copies are one
+    file, not an ambiguity: patch both, and an already-MP pair is a no-op."""
+    one = _fake_iso()
+    src = tmp_path / "livecd-rw.iso"
+    src.write_bytes(one + b"\0" * 64 + one)
+    out = vm_mod.smp_selected_iso(src, tmp_path / "work")
+    data = out.read_bytes()
+    assert data.count(b"DefaultOS=LiveCD_SMP") == 2
+    assert b"DefaultOS=LiveCD_Debug" not in data
+    mp = tmp_path / "mp-rw.iso"
+    twin = _fake_iso(default_os=b"LiveCD_SMP")
+    mp.write_bytes(twin + b"\0" * 64 + twin)
+    assert vm_mod.smp_selected_iso(mp, tmp_path / "work2") == mp
+
+
 def test_smp_iso_patch_raises_rather_than_booting_up_media(tmp_path: Path):
     """Every failure path must raise. Silently returning the unpatched ISO would
     boot the UP pair on an --smp run — exactly the false green _smp_check exists
@@ -5686,6 +5702,24 @@ def test_cohab_binary_not_relinked_is_stale(cohab_repo: Path):
     os.utime(mod / "libwidget_rust.a", (6000, 6000))  # copy updated => bytes DID change
     r = _cohab(cohab_repo)
     assert r and "never relinked" in r[0], r
+
+
+def test_cohab_same_stem_other_binary_is_not_stale(cohab_repo: Path):
+    """wdmaud.drv and wdmaud.sys share a stem; only the .sys links libwdmaud_rust.a. A
+    changed kernel crate must not report the user-mode binary as never relinked."""
+    drv = cohab_repo / "build-arm64" / "dll" / "widget"
+    drv.mkdir(parents=True)
+    (drv / "widget.drv").write_bytes(b"x")
+    os.utime(drv / "widget.drv", (2000, 2000))
+    lst = cohab_repo / "build-arm64" / "boot" / "livecd.Debug.lst"
+    lst.write_text(
+        lst.read_text()
+        + "reactos/system32/widget.drv=/tmp/vibeos/build-arm64/dll/widget/widget.drv\n"
+    )
+    mod = cohab_repo / "build-arm64" / "drivers" / "widget"
+    for f in ("libwidget_rust.a", "widget.sys"):
+        os.utime(mod / f, (6000, 6000))  # the kernel crate changed and its .sys relinked
+    assert _cohab(cohab_repo) == []
 
 
 def test_cohab_cargo_output_missing_is_stale(cohab_repo: Path):

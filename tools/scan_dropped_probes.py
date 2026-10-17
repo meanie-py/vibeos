@@ -277,8 +277,11 @@ def rust_probe_counts(src: bytes, live: str) -> dict[str, tuple[int, int, int, s
     return out
 
 
-def scan_file(path: Path, rel: str) -> list[tuple[str, str, str, str]]:
-    """[(rel, fn name, kind, detail)] for one translated file."""
+def scan_file(
+    path: Path, rel: str, paired: set[tuple[str, str]] | None = None
+) -> list[tuple[str, str, str, str]]:
+    """[(rel, fn name, kind, detail)] for one translated file. `paired` collects the
+    functions its commented C covers, so the twin pass below skips them."""
     src = path.read_bytes()
     if not PREFILTER_RE.search(src):
         return []
@@ -293,6 +296,8 @@ def scan_file(path: Path, rel: str) -> list[tuple[str, str, str, str]]:
     for name, body in c_function_bodies(craw):
         cfuncs[name] = cfuncs.get(name, 0) + count_probes(body)
         cwrites.setdefault(name, set()).update(call_keys(body, C_WRITE_PROBE_RE))
+    if paired is not None:
+        paired.update((rel, n) for n in cfuncs)
     if not any(v > 0 for v in cfuncs.values()):
         return []
 
@@ -329,6 +334,64 @@ def scan_file(path: Path, rel: str) -> list[tuple[str, str, str, str]]:
         if weak:
             detail = "C write-probes, live range-checks: " + ", ".join(sorted(weak))
             out.append((rel, cname, "WEAK", detail))
+    return out
+
+
+# --- WEAK through the C twin: files that do NOT carry their C ------------------------
+#
+# The commented-C oracle above only sees files rustconv emitted with the C kept as
+# trailing comments. Hand ports and cohab flips carry none, and 61 of the 119 range-only
+# write probes fixed on 2026-10-12 were in such files: they were found by pairing each Rust
+# function with its same-named C function in the tree (tools/c_twin.py) and matching the
+# probed pointer by its last identifier. This pass is that search, so the class stays
+# closed. Only the WEAK kind runs here: ALL and PARTIAL compare probe COUNTS, which a
+# hand port legitimately restructures, while WEAK compares one named pointer.
+#
+# A twin must come from the same module (c_twin.same_module): a name alone pairs
+# win32k's `DriverEntry` with ACPI's. A function the commented-C pass already paired is
+# skipped, so one site never reports twice.
+
+
+def scan_twins(
+    paths: list[Path], rels: list[str], paired: set[tuple[str, str]], index=None
+) -> list[tuple[str, str, str, str]]:
+    from c_twin import CIndex, blank_rust, rust_functions, same_module
+
+    work: list[tuple[str, object]] = []
+    for path, rel in zip(paths, rels, strict=True):
+        try:
+            raw = path.read_text(errors="replace")
+        except OSError:
+            continue
+        if not RANGE_ONLY_RE.search(raw) or GENERATED_RE.search(raw[:4096]):
+            continue
+        text = blank_rust(raw)
+        for fn in rust_functions(text, path):
+            if (rel, fn.name) in paired or not RANGE_ONLY_RE.search(fn.body):
+                continue
+            # The suppression comment is blanked out of `text`; read it from the source.
+            sig_at = raw.rfind("fn ", 0, fn.body_start)
+            if suppressed(raw[max(0, sig_at - 240) : fn.body_start + len(fn.body)]):
+                continue
+            work.append((rel, fn))
+    if not work:
+        return []
+
+    idx = index if index is not None else CIndex()
+    idx.load({fn.name for _, fn in work})
+    out = []
+    for rel, fn in work:
+        twins = [t for t in idx.get(fn.name) if same_module(fn.path, t)]
+        if not twins:
+            continue
+        cw: set[str] = set()
+        for t in twins:
+            cw |= call_keys(t.body, C_WRITE_PROBE_RE)
+        weak = (cw & call_keys(fn.body, RANGE_ONLY_RE)) - call_keys(fn.body, LIVE_WRITE_RE)
+        if weak:
+            src = ", ".join(sorted({t.path.relative_to(idx.repo).as_posix() for t in twins}))
+            detail = f"C twin ({src}) write-probes, live range-checks: " + ", ".join(sorted(weak))
+            out.append((rel, fn.name, "WEAK", detail))
     return out
 
 
@@ -503,8 +566,70 @@ def self_test() -> int:
             ok += 1
         else:
             print(f"FAIL: {desc}\n  want {sorted(want)}\n  got  {got}")
-    print(f"self-test: {ok}/{len(SELF_TEST)}")
-    return 0 if ok == len(SELF_TEST) else 1
+    tok, tn = twin_self_test()
+    print(f"self-test: {ok + tok}/{len(SELF_TEST) + tn}")
+    return 0 if ok == len(SELF_TEST) and tok == tn else 1
+
+
+_TWIN_C = (
+    "NTSTATUS NtReadFile(PVOID Buffer, ULONG Length)\n"
+    "{ ProbeForWrite(Buffer, Length, 1); return 0; }\n"
+)
+
+# (description, C path, C source, Rust source, findings)
+TWIN_SELF_TEST: list[tuple[str, str, str, str, list[str]]] = [
+    (
+        "a hand port with no commented C: the twin's ProbeForWrite became a range check",
+        "ntoskrnl/io/iomgr/iofunc.c",
+        _TWIN_C,
+        "pub unsafe fn NtReadFile(Buffer: PVOID, Length: ULONG) -> NTSTATUS {\n"
+        "    probe_user_buffer(Buffer, Length as usize, 1, mode)?;\n    STATUS_SUCCESS\n}\n",
+        ["NtReadFile WEAK"],
+    ),
+    (
+        "the touching probe satisfies the twin",
+        "ntoskrnl/io/iomgr/iofunc.c",
+        _TWIN_C,
+        "pub unsafe fn NtReadFile(Buffer: PVOID, Length: ULONG) -> NTSTATUS {\n"
+        "    probe_user_buffer(Header, 8, 1, mode)?;\n"
+        "    probe_user_buffer_write(Buffer, Length as usize, 1, mode)?;\n    STATUS_SUCCESS\n}\n",
+        [],
+    ),
+    (
+        "a same-named C function in another module is not a twin",
+        "drivers/bus/acpi/iofunc.c",
+        _TWIN_C,
+        "pub unsafe fn NtReadFile(Buffer: PVOID, Length: ULONG) -> NTSTATUS {\n"
+        "    probe_user_buffer(Buffer, Length as usize, 1, mode)?;\n    STATUS_SUCCESS\n}\n",
+        [],
+    ),
+]
+
+
+def twin_self_test() -> tuple[int, int]:
+    import subprocess
+    import tempfile
+
+    from c_twin import CIndex
+
+    ok = 0
+    for desc, cpath, csrc, rsrc, want in TWIN_SELF_TEST:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / cpath).parent.mkdir(parents=True)
+            (root / cpath).write_text(csrc)
+            rs = root / "sdk/lib/rust/ntoskrnl-rust/src/io/iofunc.rs"
+            rs.parent.mkdir(parents=True)
+            rs.write_text(rsrc)
+            subprocess.run(["git", "init", "-q", td], check=True)
+            subprocess.run(["git", "-C", td, "add", "-A"], check=True)
+            hits = scan_twins([rs], ["t.rs"], set(), CIndex(repo=root, cache=None))
+            got = sorted(f"{n} {k}" for _, n, k, _ in hits)
+        if got == sorted(want):
+            ok += 1
+        else:
+            print(f"FAIL: {desc}\n  want {sorted(want)}\n  got  {got}")
+    return ok, len(TWIN_SELF_TEST)
 
 
 def main() -> int:
@@ -516,12 +641,16 @@ def main() -> int:
     paths = [Path(a).resolve() for a in args] if args else rust_files()
 
     hits = []
+    rels = []
+    paired: set[tuple[str, str]] = set()
     for p in paths:
         try:
             rel = p.relative_to(REPO).as_posix()
         except ValueError:
             rel = p.as_posix()
-        hits.extend(scan_file(p, rel))
+        rels.append(rel)
+        hits.extend(scan_file(p, rel, paired))
+    hits.extend(scan_twins(paths, rels, paired))
 
     hits.sort()
     for rel, name, kind, detail in hits:
