@@ -830,7 +830,10 @@ fn collect_scopes_with_sets(
         let entry = entry?;
         let path = entry.path();
         let kind = entry.file_type()?;
-        if kind.is_symlink() && fs::metadata(&path)?.is_dir() {
+        // A link to a directory is not followed, and a dangling link (a ramdisk
+        // stage's link to a deleted payload under build-<arch>/) has nothing to
+        // read: skip both rather than fail the whole traversal on its ENOENT.
+        if kind.is_symlink() && fs::metadata(&path).map_or(true, |m| m.is_dir()) {
             continue;
         }
         let file_relative = path.strip_prefix(base).unwrap();
@@ -890,7 +893,7 @@ fn collect_scopes_with_sets(
             selected |= CDECL;
         }
         if selected != 0 {
-            if kind.is_symlink() && fs::metadata(&path)?.is_dir() {
+            if kind.is_symlink() && fs::metadata(&path).map_or(true, |m| m.is_dir()) {
                 continue;
             }
             *paths.entry(path).or_default() |= selected;
@@ -1290,6 +1293,14 @@ mod tests {
             std::os::unix::fs::symlink(&rust, rust.join("cycle")).unwrap();
             std::os::unix::fs::symlink(rust.join("crate/src/lib.rs"), rust.join("alias.rs"))
                 .unwrap();
+            // Dangling links, in scope and under a build tree, are skipped.
+            std::os::unix::fs::symlink(rust.join("deleted.rs"), rust.join("dangling.rs")).unwrap();
+            fs::create_dir_all(temp.join("build-arm64/boot/ramdisk")).unwrap();
+            std::os::unix::fs::symlink(
+                temp.join("gone/payload.exe"),
+                temp.join("build-arm64/boot/ramdisk/payload.exe"),
+            )
+            .unwrap();
         }
         let corpus = Corpus::load(&temp).unwrap();
         assert!(corpus
