@@ -382,6 +382,22 @@ def test_smp_iso_patch_is_idempotent(tmp_path: Path):
     assert vm_mod.smp_selected_iso(src, tmp_path / "work") == src
 
 
+def test_smp_iso_patch_handles_a_duplicated_freeldr_ini(tmp_path: Path):
+    """The writable-root ISO carries freeldr.ini twice, identically. Both copies are one
+    file, not an ambiguity: patch both, and an already-MP pair is a no-op."""
+    one = _fake_iso()
+    src = tmp_path / "livecd-rw.iso"
+    src.write_bytes(one + b"\0" * 64 + one)
+    out = vm_mod.smp_selected_iso(src, tmp_path / "work")
+    data = out.read_bytes()
+    assert data.count(b"DefaultOS=LiveCD_SMP") == 2
+    assert b"DefaultOS=LiveCD_Debug" not in data
+    mp = tmp_path / "mp-rw.iso"
+    twin = _fake_iso(default_os=b"LiveCD_SMP")
+    mp.write_bytes(twin + b"\0" * 64 + twin)
+    assert vm_mod.smp_selected_iso(mp, tmp_path / "work2") == mp
+
+
 def test_smp_iso_patch_raises_rather_than_booting_up_media(tmp_path: Path):
     """Every failure path must raise. Silently returning the unpatched ISO would
     boot the UP pair on an --smp run — exactly the false green _smp_check exists
@@ -898,6 +914,29 @@ def test_crate_for_stem_ignores_a_member_crate_no_cmake_links_yet(arm64_cohab_re
     provenance._cmake_named_crates.cache_clear()
     assert provenance._crate_for_stem(arm64_cohab_repo, "inwork") is None
     assert provenance._crate_for_stem(arm64_cohab_repo, "foo") is not None
+
+
+def test_crate_for_rel_breaks_a_shared_stem_by_extension(arm64_cohab_repo: Path):
+    """wdmaud.sys is wdmaud-rust, wdmaud.drv is wdmaud_drv-rust. By stem alone the .drv
+    was judged against the kernel crate's staticlib, which it never links, and a cold
+    arm64 gate went BUILD_INCOMPLETE on a current tree."""
+    rust = arm64_cohab_repo / "sdk" / "lib" / "rust"
+    (rust / "foo_drv-rust").mkdir()
+    (rust / "foo_drv-rust" / "Cargo.toml").write_text("[package]\nname = 'foo_drv-rust'\n")
+    manifest = rust / "Cargo.toml"
+    manifest.write_text(
+        manifest.read_text().replace('"foo-rust",', '"foo-rust",\n    "foo_drv-rust",')
+    )
+    cm = arm64_cohab_repo / "drivers" / "x" / "foo" / "CMakeLists.txt"
+    cm.write_text(cm.read_text() + 'rust_staticlib_variant(foo_drv_rust foo_drv-rust "" TRUE)\n')
+    _git(arm64_cohab_repo, "add", "-A")
+    _git(arm64_cohab_repo, "commit", "-qm", "foo.drv")
+    provenance._workspace_members.cache_clear()
+    provenance._cmake_named_crates.cache_clear()
+    drv = provenance._crate_for_rel(arm64_cohab_repo, "dll/x/foo.drv")
+    sys_ = provenance._crate_for_rel(arm64_cohab_repo, "drivers/x/foo/foo.sys")
+    assert drv is not None and drv.name == "foo_drv-rust"
+    assert sys_ is not None and sys_.name == "foo-rust"
 
 
 def test_cohab_rels_maps_only_rust_binaries(arm64_cohab_repo: Path):
@@ -5686,6 +5725,24 @@ def test_cohab_binary_not_relinked_is_stale(cohab_repo: Path):
     os.utime(mod / "libwidget_rust.a", (6000, 6000))  # copy updated => bytes DID change
     r = _cohab(cohab_repo)
     assert r and "never relinked" in r[0], r
+
+
+def test_cohab_same_stem_other_binary_is_not_stale(cohab_repo: Path):
+    """wdmaud.drv and wdmaud.sys share a stem; only the .sys links libwdmaud_rust.a. A
+    changed kernel crate must not report the user-mode binary as never relinked."""
+    drv = cohab_repo / "build-arm64" / "dll" / "widget"
+    drv.mkdir(parents=True)
+    (drv / "widget.drv").write_bytes(b"x")
+    os.utime(drv / "widget.drv", (2000, 2000))
+    lst = cohab_repo / "build-arm64" / "boot" / "livecd.Debug.lst"
+    lst.write_text(
+        lst.read_text()
+        + "reactos/system32/widget.drv=/tmp/vibeos/build-arm64/dll/widget/widget.drv\n"
+    )
+    mod = cohab_repo / "build-arm64" / "drivers" / "widget"
+    for f in ("libwidget_rust.a", "widget.sys"):
+        os.utime(mod / f, (6000, 6000))  # the kernel crate changed and its .sys relinked
+    assert _cohab(cohab_repo) == []
 
 
 def test_cohab_cargo_output_missing_is_stale(cohab_repo: Path):
@@ -11025,6 +11082,20 @@ def test_docs_only_predicate_ignores_what_master_did_meanwhile(tiny_repo: Path):
     assert land_mod._docs_only_vs_master(tiny_repo) is True
 
 
+def test_direct_land_skips_the_gate_for_a_docs_only_delta(tiny_repo: Path, monkeypatch):
+    """The pre-push hook passes a docs-only delta vs master with no stamp, so `land
+    --direct` gating one (21 minutes for a single `.md`) bought nothing."""
+    monkeypatch.setattr(land_mod, "fresh_full_stamp", lambda repo, tree: None)
+    _with_origin_master(tiny_repo, "docs/engineering/plan.md")
+    assert "docs-only" in (land_mod._direct_gate_skip(tiny_repo, "t" * 40) or "")
+
+
+def test_direct_land_still_gates_when_source_rides_along(tiny_repo: Path, monkeypatch):
+    monkeypatch.setattr(land_mod, "fresh_full_stamp", lambda repo, tree: None)
+    _with_origin_master(tiny_repo, "docs/engineering/plan.md", "tools/thing.py")
+    assert land_mod._direct_gate_skip(tiny_repo, "t" * 40) is None
+
+
 # --- launch retry (host-side socket flake, 2026-09-20) ----------------------
 
 
@@ -12138,6 +12209,26 @@ def test_payload_vm_memory_sizes_compare_numerically():
     assert max("1536M", "2G", "", key=smoke_mod._mem_mb) == "2G"
 
 
+def test_smoke_vm_memory_beats_the_payloads_declaration(tmp_path, monkeypatch):
+    """A low-memory sweep (smoke --vm-memory 768M) must boot at 768M even though appstorm64
+    declares vm_memory: 2G; without --vm-memory the declaration still applies."""
+    spec = tmp_path / "tools" / "payloads" / "big" / "payload.yaml"
+    spec.parent.mkdir(parents=True)
+    spec.write_text("test:\n  vm_memory: 2G\n")
+    seen: list[str] = []
+
+    def fake_run(cmd, **kw):
+        seen.append(kw["env"].get("VIBEOS_QEMU_MEMORY", ""))
+        raise subprocess.TimeoutExpired(cmd, 1)
+
+    monkeypatch.setattr(smoke_mod.subprocess, "run", fake_run)
+    monkeypatch.delenv("VIBEOS_QEMU_MEMORY", raising=False)
+    run = Run("smoke", "arm64", ts=1700000000)
+    smoke_mod._payload_stage(run, tmp_path, "arm64", "big", vm_memory_override="768M")
+    smoke_mod._payload_stage(run, tmp_path, "arm64", "big")
+    assert seen == ["768M", "2G"]
+
+
 def test_qemu_memory_override_is_validated(monkeypatch):
     from tests.qemu import vm as vm_mod
 
@@ -12208,3 +12299,8 @@ def test_a_build_input_edited_mid_build_is_named_and_a_doc_is_not(tiny_repo: Pat
     (tiny_repo / "new.c").write_text("int x;\n")
     assert build_mod._inputs_moved(tiny_repo, start) == ["a.txt", "new.c"]
     assert build_mod._inputs_moved(tiny_repo, None) == []
+    # The build's own lockfile update (a new crate) is not an edit under it.
+    (tiny_repo / "a.txt").write_text("hello\n")
+    (tiny_repo / "new.c").unlink()
+    (tiny_repo / "Cargo.lock").write_text("version = 4\n")
+    assert build_mod._inputs_moved(tiny_repo, start) == []

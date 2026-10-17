@@ -25,7 +25,7 @@
 @ stdcall ConvertInterfaceLuidToNameW(ptr ptr ptr)
 @ stdcall ConvertInterfaceNameToLuidA(str ptr)
 @ stdcall ConvertInterfaceNameToLuidW(wstr ptr)
-@ stdcall -stub -version=0x600+ ConvertLengthToIpv4Mask(long ptr)
+@ stdcall ConvertLengthToIpv4Mask(long ptr)
 @ stdcall -stub -version=0x600+ ConvertStringToGuidW(wstr ptr)
 @ stdcall CreateIpForwardEntry(ptr)
 @ stdcall CreateIpNetEntry(ptr)

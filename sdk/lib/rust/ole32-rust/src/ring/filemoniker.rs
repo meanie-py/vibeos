@@ -1540,7 +1540,7 @@ fn FileMonikerROTDataImpl_GetComparisonData(
     i = 0;
     while i < len {
         *pszFileName.offset(i as isize) =
-            towupper(*(*This).filePathName.offset(i as isize) as c_int) as u16;
+            towupper(*(*This).filePathName.offset(i as isize) as u16);
         i += 1;
     }
 

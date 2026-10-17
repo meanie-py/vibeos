@@ -613,6 +613,57 @@ static void Test_ConsoleFontEx(void)
     Ret = pGet(Out, FALSE, &Fi);
     trace("GetCurrentConsoleFontEx: ret=%d error=%lu font=%lu size=%d,%d face=%S\n",
           Ret, GetLastError(), Fi.nFont, Fi.dwFontSize.X, Fi.dwFontSize.Y, Ret ? Fi.FaceName : L"");
+
+    /* Measured on Windows 11: the current font is index 0, and GetConsoleFontSize(0) is
+     * the same unscaled size; index 1 fails ERROR_INVALID_PARAMETER. bMaximumWindow
+     * answers the maximum window size in characters, not a font size. */
+    {
+        HANDLE Con = CreateFileW(L"CONOUT$", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                 NULL, OPEN_EXISTING, 0, NULL);
+        CONSOLE_SCREEN_BUFFER_INFO Sbi;
+        CONSOLE_FONT_INFO Cur, Max;
+        BOOL Allocated = FALSE;
+        COORD Size;
+
+        /* A sweep runner starts us detached; give ourselves a console to ask. */
+        if (Con == INVALID_HANDLE_VALUE && AllocConsole())
+        {
+            Allocated = TRUE;
+            Con = CreateFileW(L"CONOUT$", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                              NULL, OPEN_EXISTING, 0, NULL);
+        }
+        if (Con == INVALID_HANDLE_VALUE)
+        {
+            skip("no console: CONOUT$ error %lu\n", GetLastError());
+            if (Allocated) FreeConsole();
+            return;
+        }
+        ok(GetConsoleScreenBufferInfo(Con, &Sbi), "GetConsoleScreenBufferInfo: error %lu\n", GetLastError());
+        Ret = GetCurrentConsoleFont(Con, FALSE, &Cur);
+        ok(Ret, "GetCurrentConsoleFont: error %lu\n", GetLastError());
+        ok(Cur.nFont == 0, "nFont %lu\n", Cur.nFont);
+        ok(Cur.dwFontSize.Y > 0, "font height %d\n", Cur.dwFontSize.Y);
+        SetLastError(0xdeadbeef);
+        Size = GetConsoleFontSize(Con, 0);
+        ok(Size.X == Cur.dwFontSize.X && Size.Y == Cur.dwFontSize.Y, "GetConsoleFontSize(0) %d,%d vs current %d,%d\n",
+           Size.X, Size.Y, Cur.dwFontSize.X, Cur.dwFontSize.Y);
+        ok(GetLastError() == 0xdeadbeef, "GetConsoleFontSize(0) set error %lu\n", GetLastError());
+        SetLastError(0xdeadbeef);
+        Size = GetConsoleFontSize(Con, 1);
+        ok(Size.X == 0 && Size.Y == 0, "GetConsoleFontSize(1) %d,%d\n", Size.X, Size.Y);
+        ok(GetLastError() == ERROR_INVALID_PARAMETER, "GetConsoleFontSize(1): error %lu\n", GetLastError());
+        Ret = GetCurrentConsoleFont(Con, TRUE, &Max);
+        ok(Ret, "GetCurrentConsoleFont(max): error %lu\n", GetLastError());
+        ok(Max.dwFontSize.X == Sbi.dwMaximumWindowSize.X && Max.dwFontSize.Y == Sbi.dwMaximumWindowSize.Y,
+           "maximum-window size %d,%d vs dwMaximumWindowSize %d,%d\n",
+           Max.dwFontSize.X, Max.dwFontSize.Y, Sbi.dwMaximumWindowSize.X, Sbi.dwMaximumWindowSize.Y);
+        SetLastError(0xdeadbeef);
+        Size = GetConsoleFontSize((HANDLE)(ULONG_PTR)0x1234, 0);
+        ok(Size.X == 0 && Size.Y == 0 && GetLastError() == ERROR_INVALID_HANDLE,
+           "GetConsoleFontSize(bad handle) %d,%d error %lu\n", Size.X, Size.Y, GetLastError());
+        CloseHandle(Con);
+        if (Allocated) FreeConsole();
+    }
 }
 
 /* ---- 12 ---- */

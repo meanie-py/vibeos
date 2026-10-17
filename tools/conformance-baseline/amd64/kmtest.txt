@@ -23,9 +23,10 @@
 #   ExPool2, FeatureConfig, MmMapIoSpaceEx, RtlUtf8, and MmReservedMappingFixed, below).
 #   ZwMapViewOfSection: ROS views honour ZeroBits with no base, refuse a commit larger than the
 #   view and a reservation of a read-only section; ARM3 says INVALID_PARAMETER_9 for a reserve
-#   of a section with no file. LEFT (owed): 211, a reserved view past the end of the file. Do
-#   NOT just drop the size check for it: that let a view outrun the segment, and unmapping it
-#   corrupted the file's cached pages (later reads wrong, BUGCHECK 0x1E on x86).
+#   of a section with no file. LEFT (owed): 211, a reserved view past the end of the file.
+#   (CORRECTED 2026-10-17: the BUGCHECK 0x1E and wrong reads this note blamed on that view came
+#   from the first version's blanket CommitSize rule; an isolated sweep put the reserve back with
+#   no crash. See the 2026-10-17 note.)
 #   EXPECTED, re-checked against the win11-amd64 column (Windows passes them by another branch,
 #   not by being right where we are wrong): ExDoubleList, NpfsFileInfo (both pick their
 #   expectation by PRCB_BUILD_DEBUG; we are checked, Windows 11 is free) and MmSection 14 (its
@@ -33,6 +34,19 @@
 #   amd64: HalSystemInfo 88/1 -> 89/0 (the PCI config handler refuses a port outside its
 #   range). ZwMapViewOfSection 128/6 -> 133/1. RtlCaptureContextUM 10 is TCG: its fxsave writes
 #   neither the x87 slots' upper bytes nor FOP, and reports MXCSR_MASK 0xffff.
+# 2026-10-17 (x2 byte-identical sweeps): ZwMapViewOfSection 133/1 -> 135/0: a file view's
+#   reservation may run past the end of the file (211), bounded by the user address space so a
+#   ViewSize of -1 is INVALID_VIEW_SIZE rather than a page-rounded empty view (295).
+# 2026-10-17b (x2 byte-identical sweeps): in-stack queued spinlocks moved onto the MCS lock
+#   (no row moves: only i386's KeSpinLock checks the queue entry).
+#   HidPDescription 33/4 (3 skipped) -> 50/2: one ReportIDs entry per report ID a collection uses,
+#   each with that ID's own lengths, where the C made one per collection with ReportID = Index
+#   (its FIXME); hidclass routes feature/output requests by looking the ID up there, and now
+#   sizes its read buffer from the collection's longest input report. EXPECTED, left: 169/200,
+#   PreparsedDataLength 476/1388, the size of Windows' own HIDP_PREPARSED_DATA layout (INFERRED,
+#   unverified: both fit a 44-byte header + 104-byte caps + 16-byte link nodes). Ours is the
+#   parser's own context, which every HidP_* routine reads, so matching it is a rewrite of the
+#   preparsed data, not a length fix.
 # 2026-10-15: RtlRangeList pass 538 -> 537: upstream 09a03ec307d deleted one RtlFindRange check.
 #   ZwAllocateVirtualMemory pass 1004/3 -> 198/2: upstream's StressTesting rewrite (4096 x 64 GB
 #   chunks, element counts) replaced our 4096-chunk cap; fewer chunks, fewer every-tenth checks. The
@@ -307,17 +321,14 @@ ZwCreateSection OK pass=284 fail=3 skip=1 exit=0
     assert ZwCreateSection.c:354
     assert ZwCreateSection.c:378
     assert ZwCreateSection.c:448
-ZwMapViewOfSection OK pass=133 fail=1 skip=1 exit=0
-    assert ZwMapViewOfSection.c:211
+ZwMapViewOfSection OK pass=135 fail=0 skip=1 exit=0
 ZwWaitForMultipleObjects OK pass=4 fail=0 skip=0 exit=0
 RtlCaptureContextKM OK pass=273 fail=0 skip=0 exit=0
 FileAttributes OK pass=84 fail=0 skip=0 exit=0
 FindFile OK pass=253 fail=0 skip=0 exit=0
-HidPDescription OK pass=33 fail=4 skip=3 exit=0
+HidPDescription OK pass=50 fail=2 skip=0 exit=0
     assert HidPDescription.c:169
-    assert HidPDescription.c:189
     assert HidPDescription.c:200
-    assert HidPDescription.c:204
 IoDeviceObject OK pass=185 fail=4 skip=0 exit=0
     assert IoDeviceObject_drv.c:188
     assert IoDeviceObject_drv.c:189

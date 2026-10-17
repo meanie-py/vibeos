@@ -24,11 +24,11 @@ extern "system" {
 // wine/unicode.h static-inline helpers (inlined per-TU in C; no external symbol).
 #[inline]
 unsafe fn toupperW(ch: WCHAR) -> WCHAR {
-    towupper(ch as core::ffi::c_int) as WCHAR
+    towupper(ch as wint_t) as WCHAR
 }
 #[inline]
 unsafe fn tolowerW(ch: WCHAR) -> WCHAR {
-    towlower(ch as core::ffi::c_int) as WCHAR
+    towlower(ch as wint_t) as WCHAR
 }
 #[inline]
 unsafe fn struprW(str: *mut WCHAR) -> *mut WCHAR {
@@ -321,7 +321,7 @@ pub unsafe extern "system" fn CharUpperBuffW(mut str: LPWSTR, mut len: DWORD) ->
         return 0;
     }
     while len != 0 {
-        *str = towupper(*str as i32) as u16;
+        *str = towupper(*str as wint_t) as u16;
         len -= 1;
         str = str.add(1);
     }

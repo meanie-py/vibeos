@@ -91,3 +91,36 @@ def test_stage_appends_loader_options_to_every_entry() -> None:
     assert plain and len(extra) == len(plain)
     assert all(e == p[:-1] + b" /STORTEST\r" for p, e in zip(plain, extra, strict=True))
     assert ini(VIBEOS_LOADER_OPTIONS="/X|Y").returncode == 2
+
+
+def test_a_lost_image_server_is_the_verdict_not_a_stortest_hang(tmp_path: Path) -> None:
+    """2026-10-16: the image server's websocket closed a minute into the boot, the Pico
+    answered every READ with MEDIUM NOT PRESENT, and the run reported HANG_TIMEOUT 240s
+    later. The wait now stops when the server exits and says so."""
+    import subprocess
+    import sys
+    import time
+
+    class FakeRun:
+        def __init__(self) -> None:
+            self.dir = tmp_path
+            self.extra: dict = {}
+            self.stages: list = []
+            self.classification = ""
+
+        def add(self, stage) -> None:
+            self.stages.append(stage)
+
+    log = tmp_path / "serve-image.log"
+    log.write_text('Serving media.\n{"ok": false, "error": "other", "exit_code": 1}\n')
+    server = subprocess.Popen([sys.executable, "-c", "import sys; sys.exit(1)"])
+    watch = pi5.ImageServerWatch(server, log)
+    serial = tmp_path / "live.log"
+    serial.write_text("[STORTEST] start\n[STORTEST] next-letter Harddisk3 failed (error 3)\n")
+    run = FakeRun()
+    t0 = time.monotonic()
+    pi5._await_stortest(run, serial, 0, watch)  # type: ignore[arg-type]
+    assert time.monotonic() - t0 < 30  # not STORTEST_WAIT
+    assert run.classification == "BENCH_UNHEALTHY"
+    assert run.stages[-1].name == "serve-image"
+    assert "image server exited 1" in run.stages[-1].detail

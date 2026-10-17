@@ -286,12 +286,18 @@ unsafe extern "C" fn Display_SetTypeFace(hwnd: HWND, pLogFont: PLOGFONTW) -> LRE
             pch = pb as LPWSTR;
             if *pch != 0
             {
-                lstrcatW(
+                // The C lstrcatW's the font's style name onto szTypeFaceName
+                // (LF_FULLFACESIZE WCHARs) unbounded; a font with a long style name
+                // overran DISPLAYDATA. Truncated to the array instead.
+                let cch = (*pData).szTypeFaceName.len();
+                StringCchCatW(
                     core::ptr::addr_of_mut!((*pData).szTypeFaceName) as LPWSTR,
+                    cch,
                     RUSTCONV_WSTR_8D71B3FAAB82.as_ptr(),
                 );
-                lstrcatW(
+                StringCchCatW(
                     core::ptr::addr_of_mut!((*pData).szTypeFaceName) as LPWSTR,
+                    cch,
                     pch as LPCWSTR,
                 );
             }

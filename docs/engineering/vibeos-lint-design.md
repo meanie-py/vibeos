@@ -5,7 +5,7 @@ branch `lint-rs`. Read `AGENTS.md` first: every rule there applies to this lane.
 
 ## The problem, measured
 
-`./vibeos-cli check` currently registers **113 source checks**; the historical logs
+`./vibeos-cli check` currently registers **116 source checks**; the historical logs
 contain 117 scanner names. Almost all began as separate Python scripts
 (`tools/scan_*.py`: 102 files, ~27K lines; plus `tools/verify_*.py`, `tools/rustconv/...`).
 Each one is its own process, and almost each one walks, reads and re-tokenises the same
@@ -111,7 +111,7 @@ time they replaced (from the TSV), and the full `check` wall time before and aft
 TSV was produced from `/tmp/vibeos-cli/*-check-*/commands.jsonl` (`stage` = `lint:<name>`,
 `seconds`); regenerate it the same way.
 
-## Inventory (fill in)
+## Inventory
 
 | Scanner | Ported? | Parity (py / rs findings) | Notes / reason left out |
 |---|---|---|---|
@@ -135,7 +135,7 @@ TSV was produced from `/tmp/vibeos-cli/*-check-*/commands.jsonl` (`stage` = `lin
 | `verify_lost_exports` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `verify_c_signatures` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_inline_flag_literals` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_extern_arity` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_extern_arity` | Yes | 13 / 13 | Exact on both source revisions; batch 3. |
 | `scan_orphan_modules` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `cohab_census` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_bugcheck_stubs` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
@@ -143,28 +143,28 @@ TSV was produced from `/tmp/vibeos-cli/*-check-*/commands.jsonl` (`stage` = `lin
 | `scan_magic_offsets` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_doc_sections` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_boot_media_drift` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_raw_uart_writes` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_bugcheck_codes` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_assert_to_ub` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_bitwise_not_bool` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_raw_uart_writes` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
+| `scan_bugcheck_codes` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
+| `scan_assert_to_ub` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
+| `scan_bitwise_not_bool` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
 | `scan_variadic_array_arg` | Yes | 0 / 0 on both revisions | Rust plugin; positive/negative controls exercise the shipping binary. |
-| `scan_ptr_byte_diff` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_ptr_byte_diff` | Yes | 0 / 0 | Exact on both source revisions; batch 3. |
 | `scan_misaligned_cast` | Yes | 0 / 0 on both revisions | Rust plugin; positive/negative controls exercise the shipping binary. |
-| `scan_dropped_null_guard` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_store_on_failure` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_dropped_null_guard` | Yes | 0 / 0 | Exact on both source revisions; batch 3. |
+| `scan_store_on_failure` | Yes | 0 / 0 | Exact on both source revisions; batch 3. |
 | `scan_bool_width` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_cfg_vs_c` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_constant_placement` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_constant_placement` | Yes | 0 / 0 | Exact on both source revisions; batch 3. |
 | `scan_const_contradictions` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_const_vs_island` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_const_vs_own_island` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_const_within_crate` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_invented_constants` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_hresult_literals` | Yes | 0 / 0 on both revisions | Rust plugin; positive/negative controls exercise the shipping binary. |
-| `scan_byteptr_stride` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_gmem_flags` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_byteptr_stride` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
+| `scan_gmem_flags` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
 | `scan_let_shadow` | Yes | 0 / 0 on both revisions | Rust plugin; positive/negative controls exercise the shipping binary. |
-| `scan_raw_bitfield` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_raw_bitfield` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
 | `scan_winerror_consts` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_case_bitor_pattern` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_list_walk_from_head` | Yes | 0 / 0 on both revisions | Rust plugin; positive/negative controls exercise the shipping binary. |
@@ -174,7 +174,7 @@ TSV was produced from `/tmp/vibeos-cli/*-check-*/commands.jsonl` (`stage` = `lin
 | `scan_dropped_probes` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_ptr_typedef_indirection` | No | — | Owed: shared CMake compiled-TU/module pairing and tree-sitter definition equivalence. |
 | `scan_dropped_seh_pairs` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_raising_probes` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_raising_probes` | Yes | 0 / 0 | Exact on both source revisions; batch 3. |
 | `scan_raw_user_access` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_double_fetch` | Yes | 3 / 3 on both revisions | Rust plugin; Python helper retained for scan_safe_probe_deref. |
 | `scan_safe_probe_deref` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
@@ -182,25 +182,25 @@ TSV was produced from `/tmp/vibeos-cli/*-check-*/commands.jsonl` (`stage` = `lin
 | `scan_type_alias_contradictions` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_varargs_shim_parity` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_wide_literals` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_dangling_transmute` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_opaque_ptr_arith` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_dangling_transmute` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
+| `scan_opaque_ptr_arith` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
 | `scan_fnptr_abi_transmute` | Yes | 0 / 0 on both revisions | Rust plugin; positive/negative controls exercise the shipping binary. |
-| `scan_cdecl_alias` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_wide_byte_copy` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_typed_byte_copy` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_noop_goto` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_formatless_printf` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_byte_step_one` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_ptr_typedef_cast_read` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_cdecl_alias` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
+| `scan_wide_byte_copy` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
+| `scan_typed_byte_copy` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
+| `scan_noop_goto` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
+| `scan_formatless_printf` | Yes | 0 / 0 | Exact on both source revisions; batch 3. |
+| `scan_byte_step_one` | Yes | 4 / 4 | Exact on both source revisions; batch 2. |
+| `scan_ptr_typedef_cast_read` | Yes | 0 / 0 | Exact on both source revisions; batch 3. |
 | `scan_info_class_literals` | Yes | 0 / 0 on both revisions | Rust plugin; positive/negative controls exercise the shipping binary. |
 | `scan_const_narrowing_cast` | Yes | 0 / 0 on both revisions | Rust plugin; positive/negative controls exercise the shipping binary. |
-| `scan_comment_swallowed_code` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_call_arg_swap` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_narrow_vs_wide_literal` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_sse_helpers` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_comment_swallowed_code` | Yes | 0 / 0 | Exact on both source revisions; batch 3. |
+| `scan_call_arg_swap` | Yes | 3 / 3 | Exact on both source revisions; batch 3. |
+| `scan_narrow_vs_wide_literal` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
+| `scan_sse_helpers` | Yes | 0 / 0 | Exact on both source revisions; batch 3. |
 | `scan_read_after_clear` | Yes | 0 / 0 on both revisions | Rust plugin; positive/negative controls exercise the shipping binary. |
 | `scan_init_then_move` | Yes | 0 / 0 on both revisions | Rust plugin; positive/negative controls exercise the shipping binary. |
-| `scan_containing_record_null` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_containing_record_null` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
 | `scan_call_literal_vs_c` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_pack_drift` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_unaligned_wide` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
@@ -210,15 +210,15 @@ TSV was produced from `/tmp/vibeos-cli/*-check-*/commands.jsonl` (`stage` = `lin
 | `scan_rawdylib_linkname` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_import_cc` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_assert_polarity` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_fourcc_literals` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_match_arm_break` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_calloc_elem_type` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_fourcc_literals` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
+| `scan_match_arm_break` | Yes | 19 / 19 | Exact on both source revisions; batch 2. |
+| `scan_calloc_elem_type` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
 | `scan_varargs_spec_arity` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_octal_literals` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-| `scan_ptr_highword_mask` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_ptr_highword_mask` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
 | `scan_arg_side_effects` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_res_named_types` | No | — | Excluded: reads committed PE-COFF resource objects, not source text. |
-| `scan_bindgen_padding_index` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
+| `scan_bindgen_padding_index` | Yes | 0 / 0 | Exact on both source revisions; batch 2. |
 | `scan_extern_static_width` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_duplicate_symbols` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_export_shadows` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
@@ -228,7 +228,9 @@ TSV was produced from `/tmp/vibeos-cli/*-check-*/commands.jsonl` (`stage` = `lin
 | `scan_unpruned_walk` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_extern_decl_drift` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
 | `scan_dropped_asserts` | No | — | Owed: remains in the Python registry until ported and parity-proven. |
-
+| `scan_override_self_dispatch` | No | — | Owed: added on master; remains in Python until parity-proven. |
+| `scan_version_vs_c` | No | — | Owed: added on master; remains in Python until parity-proven. |
+| `null_offset_to_offset_of` | No | — | Owed: added on master; remains in Python until parity-proven. |
 
 ## Batch 1 — host runner and twelve rules (2026-10-16)
 
@@ -263,12 +265,11 @@ execution for both is Rust. Their library tests remain. The shipping Rust plugin
 also run the original positive/negative scanner controls, and `check-tooling` runs
 the Cargo tests.
 
-The full rewrite remains owed: 96 registry entries await ports, and five external
+After batch 1, 96 registry entries awaited ports, and five external
 or binary checks remain intentionally outside this source-only binary. The next
 shared roots are tracked C/header inventory, C-twin/function indexing, and CMake
 module pairing; the pointer-typedef and macro-shadow rules keep using Python until
-those contracts have faithful replacements. Additional pure-source ports are
-staged under `~/vibeos-rust-staging/` for the next batch; they are not registered.
+those contracts have faithful replacements. Those roots remain owed; batch 2 below adds further source rules.
 
 Validation: full `vibeos-cli check` passed all 113 stages in 103 seconds
 (run `20261016-224400-kmksrwzt-check-all`); `check-tooling` passed all 150 checks
@@ -279,3 +280,95 @@ concurrent parity/tooling load and failed only because this fresh lane lacked
 seconds; these differently loaded runs are not a controlled before/after wall
 comparison. No OS boot-path source changed, so no smoke run was required for
 this host-tool batch.
+
+## Batch 2 — twenty-one more rules (2026-10-16)
+
+Thirty-three rules now run in the host binary. The 21 new rules replace 255.4 seconds
+of summed historical scanner medians (1,116.5 seconds across all 33). These are
+scanner elapsed times, not CPU measurements. This batch adds byte/element-size,
+allocation-flag, bitfield, pointer, literal, alias and control-flow rules listed above.
+Input scopes preserve the original workspace Rust, SDK Rust and C/assembly walks;
+overlapping files are read once. Pointer-mask and UART rules share a cached Rust
+lexer, including raw strings, nested comments and lifetimes.
+
+The 21 new rules exactly match the original Python finding sets on the lane and
+`cc53d01b091`: four byte-step findings, 19 match-arm findings, zero for the other
+19. No baseline changed. `parity/batch-02.json` records counts and digests.
+The parity harness now uses the original registry's arguments and streams, restores
+Python's script-directory import path, loads imported tool helpers from the oracle
+revision too, and disables persistent Python fact caches.
+A warm run of all 33 rules took **6.82 seconds wall / 48.33 seconds user CPU**,
+with 2.58 GiB peak RSS. This includes the shared source snapshot.
+Twenty independent Python scanners and ten pytest files are removed; their fixtures
+run in Rust. `scan_wide_byte_copy.py` remains a helper library for unported rules.
+
+The full rewrite remains owed: 78 registry entries still need ports, and five
+external/binary checks remain excluded. C-twin/function indexing and CMake pairing
+are still needed by the remaining cross-language rules.
+
+Validation: all 134 Rust tests and 31 selected CLI controls pass. Full source check
+passed all 113 stages (`20261016-232120-v3e5p7hs-check-all`), and full tooling check
+passed all 140 checks (`.cache/vibeos-lint/check-tooling-batch02.log`). The source
+check took 208.59 seconds while two uncached Python parity suites and tooling ran
+concurrently, versus batch 1's 103.84-second run under different load; this is not
+a controlled before/after suite timing. Both final parity reports cover all 33
+plugins and yield the same 81 findings: the prior 58 plus this batch's 23.
+No baseline or OS source changed; no OS build or smoke was needed for this batch.
+
+Syncing current master adds `scan_override_self_dispatch`, `scan_version_vs_c` and
+`null_offset_to_offset_of`, bringing the registry to 116 checks. All three remain
+Python entries tracked in the inventory; 33 Rust plugins and five exclusions leave
+78 source checks owed. The tooling merge preserves the new version-scanner tests
+and keeps the retired scanner tests removed.
+
+Post-merge validation: all **116 source stages** pass in 256.12 seconds
+(`20261016-233006-xh6a60u7-check-all`), while full tooling ran concurrently.
+All **141 tooling checks** pass (`.cache/vibeos-lint/check-tooling-batch02-merged.log`).
+A subsequent warm run of all 33 Rust rules over the merged tree yields 81 findings
+in **7.61 seconds wall / 46.11 seconds user CPU**, with 2.58 GiB peak RSS.
+
+
+## Batch 3 — shared C twins and module reachability (2026-10-17)
+
+Eleven more plugins bring the binary to **44 rules**: constant placement, dropped
+null guards, stores on failure, pointer byte differences, extern arity, raising
+probes, swapped call arguments, SSE helpers, swallowed comment code, formatless
+printfs, and pointer typedef reads. They replace **374.6 seconds** of summed
+historical scanner medians; the 44-rule total is 1,491.1 seconds. **67 source
+checks remain owed**, alongside the five explicit exclusions.
+
+The shared snapshot now includes tracked C/C++ sources, Cargo manifests and
+rule-declared auxiliary headers. C definitions, local callee lookups, Rust
+function bodies and crate reachability are shared across plugins. Cross-file
+indexes initialize before rule fan-out to avoid worker-pool deadlock; a shipping
+binary fixture exercises one, two and four workers. Dynamic regex compilation
+is bounded and cached, and suppression comments are indexed once per file.
+
+`parity/batch-03.json` compares the original Python rules at `c442ed9fc6db`
+against both that source revision and `cc53d01b091`: **16 findings on each**,
+with identical hashes and no differences. Thirteen are extern-arity findings
+and three are swapped-call-argument findings. The complete 44-rule run yields
+97 findings. No baseline changed. The original eleven scanner scripts and two
+dedicated pytest files are retired; the shared Python C/module/placement helpers
+remain for their other callers and the translation pipeline.
+
+The module walker was also checked independently on the full current tree:
+for each Cargo manifest under `sdk/lib/rust`, compare the crate directory plus
+every resolved reachable file from Python `crate_live_files` and Rust
+`ModuleTree::live_files`, as sorted sets of repository-relative paths (absolute
+for targets outside the repository). Both produced **7,362 entries**, with zero
+differences. Rust fixtures retain nested modules, path attributes, includes,
+opaque generated includes and symlink identities.
+
+A warm 44-rule run under concurrent Python parity load took **18.04 seconds
+wall / 108.39 seconds user CPU**, peaking at **3.95 GiB RSS**. This is an expanded
+corpus and rule set, not a controlled comparison against batch 2's 7.61-second
+33-rule run. The new cross-file roots remain candidates for further tuning.
+The Rust suite passes **197 tests**, and all **186 scanner-control/runner tests**
+pass. The full **116-stage source check passes in 103.65 seconds**
+(`20261017-003306-ledhjs7v-check-all`); its shared 44-rule invocation took 33.47
+seconds under concurrent scanner load. The preceding merged batch's full source
+check took 256.12 seconds under concurrent tooling load; these are observed runs
+under different load, not a controlled speedup. Full tooling validation is
+recorded with the batch commit. No OS source changed, so this batch needs no OS
+build or smoke run.

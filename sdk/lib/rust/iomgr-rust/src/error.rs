@@ -19,7 +19,7 @@ use ntkrnl_sys::ddk::{
     KeInitializeTimer, KeSetTimer, ZwConnectPort, ZwRequestPort, ZwClose,
     SECURITY_QUALITY_OF_SERVICE, _SECURITY_QUALITY_OF_SERVICE,
     ExAllocatePool, ExFreePool,
-    PsGetCurrentThread, RtlInitEmptyUnicodeString,
+    PsGetCurrentThread, KeAreApcsDisabled, RtlInitEmptyUnicodeString,
     HANDLE, CSHORT,
     _UNICODE_STRING,
 };
@@ -666,6 +666,27 @@ pub unsafe extern "system" fn IoRaiseHardError(
     if (*(Thread as *mut _ETHREAD)).__bindgen_anon_7.__bindgen_anon_1.HardErrorsAreDisabled() != 0 {
         (*Irp).IoStatus.Information = 0;
         IoCompleteRequest(Irp, IO_DISK_INCREMENT);
+        return;
+    }
+
+    // The C's TODO, done: "In case we were called ... for a synchronous operation, that
+    // happens with APCs disabled, queue the hard-error call for later processing". A mount
+    // is that case. IopMountVolume holds a critical region from before IoCallDriver until
+    // after its wait for the mount IRP, and FastFat raises the hard error for a missing
+    // medium on that same thread (FatProcessException, user-induced status), then returns
+    // STATUS_PENDING. A normal kernel APC queued to a thread in a critical region is not
+    // delivered until it leaves, and it leaves only once the IRP completes: the mount waited
+    // forever, and with it every opener of the drive (stortest's GetVolumeInformationA on
+    // the Pi 5, once the Pico's medium went away, 2026-10-16). The APC's only work is to
+    // complete the IRP (IopRaiseHardError raises no pop-up), and the caller marked the IRP
+    // pending so it may complete now, as the hard-errors-disabled path above does.
+    if Thread == PsGetCurrentThread() && KeAreApcsDisabled() != 0 {
+        ntkrnl_sys::driver_ddk::DbgPrint(
+            b"[IO] hard error 0x%x completed inline: the requester has APCs disabled\n\0"
+                .as_ptr() as _,
+            (*Irp).IoStatus.__bindgen_anon_1.Status,
+        );
+        IopRaiseHardErrorInner(Irp as PVOID, Vpb as PVOID, RealDeviceObject as PVOID);
         return;
     }
 

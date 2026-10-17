@@ -136,7 +136,7 @@ pub unsafe fn RtlFreeHeap<T>(HeapHandle: PVOID, Flags: ULONG, BaseAddress: *mut 
 extern "C" {
     pub fn memcmp(a: *const c_void, b: *const c_void, n: usize) -> c_int;
     pub fn _stricmp(a: *const c_char, b: *const c_char) -> c_int;
-    pub fn towupper(c: c_int) -> c_int;
+    pub fn towupper(c: wint_t) -> wint_t;
     pub fn wcsstr(haystack: *const u16, needle: *const u16) -> *mut u16;
     pub fn wcschr(s: *const u16, c: u16) -> *mut u16;
     // DbgPrint is a real ntdll cdecl-variadic export; declaring a C-variadic is stable Rust.

@@ -189,6 +189,7 @@ class Hierarchy:
         # Every type name the island defines (render_classes sets it): _nested_names.
         self.island_names: frozenset[str] = frozenset()
         self.dep_classes: frozenset[str] = frozenset()
+        self.hand_methods: dict[str, set[str]] = {}
 
     def com_bases(self, cls: ClassModel) -> list[tuple[int, str]]:
         return [
@@ -409,14 +410,25 @@ def drop_generated_statics(text: str, generated: set[str]) -> str:
 
 
 def render_classes(
-    model: ModuleModel, island_structs: frozenset[str] = frozenset(), island: str = ""
+    model: ModuleModel,
+    island_structs: frozenset[str] = frozenset(),
+    island: str = "",
+    hand_methods: dict[str, set[str]] | None = None,
+    hand_names: frozenset[str] = frozenset(),
 ) -> str:
     """`island_structs`: names the crate's bindgen island already lays out. A plain struct
     (no methods, no bases, no vtable) the island has is the island's -- its C layout is the
     authority, and a second definition makes every use of the name ambiguous (E0659).
-    `island`: its text, for the COM interfaces a class implements (their IFooVtbl)."""
+    `island`: its text, for the COM interfaces a class implements (their IFooVtbl).
+    `hand_methods` / `hand_names`: what the crate's hand-written modules already define --
+    methods per class, and the names its prelude re-exports from them. The hand version wins:
+    mmc_new's MDI frame needs ATL's `m_pfnSuperWindowProc` honoured (DefFrameProc /
+    DefMDIChildProc), which the generic glue's DefWindowProc does not do, and its
+    `CWndProcThunk` is a `{ proc, this }` pair, not the island's instruction bytes. Rendering
+    both is E0592/E0252, and dropping the hand one silently loses the MDI behaviour."""
     h = Hierarchy(model, parse_com_vtbls(island))
     h.island_names = island_type_names(island)
+    h.hand_methods = hand_methods or {}
     # Classes a path dependency owns (`pub use cicero_rust::cicero::cpp_classes::X;`, from
     # port's _dep_classes). Whether one drops is not knowable from here.
     h.dep_classes = frozenset(
@@ -449,7 +461,7 @@ def render_classes(
         out.append(_START_WINDOW_PROC)
     out.append(_render_globals(model, h))
     out.append(_render_global_init(model, h))
-    out.append(_render_island_glue(model, island))
+    out.append(_render_island_glue(model, island, hand_names))
     return "\n".join(out) + "\n"
 
 
@@ -499,7 +511,9 @@ def _model_words(model: ModuleModel) -> frozenset[str]:
     return frozenset(re.findall(r"[A-Za-z_]\w*", "\n".join(texts)))
 
 
-def _render_island_glue(model: ModuleModel, island: str) -> str:
+def _render_island_glue(
+    model: ModuleModel, island: str, hand_names: frozenset[str] = frozenset()
+) -> str:
     """Two C++ spellings bindgen's island has no name for.
 
     A class-scoped anonymous enum (`class CUIFWindow { enum { USER_TIMER_ID = 0x5461 }; }`)
@@ -550,6 +564,7 @@ def _render_island_glue(model: ModuleModel, island: str) -> str:
                 and name not in island_names
                 and name not in rendered
                 and name not in _ATL_RUST_PROVIDED
+                and name not in hand_names
                 and name not in aliased
             ):
                 aliased.add(name)
@@ -1722,6 +1737,7 @@ def _render_atl_glue(cls: ClassModel, h: Hierarchy, model: ModuleModel, win: Atl
     # C++ name hiding: a class that declares its own `Create(HWND)` (CTextEditWindow) hides
     # every inherited Create, so the glue of that name is not rendered (E0592 otherwise).
     own = {m.rust_name for m in cls.methods if m.kind == "method"}
+    own |= h.hand_methods.get(n, set())
     lines[glue_start:] = _drop_hidden_glue(lines[glue_start:], own)
     lines.append("}")
     if t == "CWindowImpl" and not cls.method("GetWndClassInfo"):

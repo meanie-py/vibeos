@@ -3731,9 +3731,9 @@ pub type TASKDIALOGCONFIG = _TASKDIALOGCONFIG;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct tagHEAPLIST32 {
-    pub dwSize: DWORD,
+    pub dwSize: SIZE_T,
     pub th32ProcessID: DWORD,
-    pub th32HeapID: DWORD,
+    pub th32HeapID: ULONG_PTR,
     pub dwFlags: DWORD,
 }
 pub type HEAPLIST32 = tagHEAPLIST32;
@@ -3742,15 +3742,15 @@ pub type LPHEAPLIST32 = *mut tagHEAPLIST32;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct tagHEAPENTRY32 {
-    pub dwSize: DWORD,
+    pub dwSize: SIZE_T,
     pub hHandle: HANDLE,
-    pub dwAddress: DWORD,
-    pub dwBlockSize: DWORD,
+    pub dwAddress: ULONG_PTR,
+    pub dwBlockSize: SIZE_T,
     pub dwFlags: DWORD,
     pub dwLockCount: DWORD,
     pub dwResvd: DWORD,
     pub th32ProcessID: DWORD,
-    pub th32HeapID: DWORD,
+    pub th32HeapID: ULONG_PTR,
 }
 pub type HEAPENTRY32 = tagHEAPENTRY32;
 pub type PHEAPENTRY32 = *mut tagHEAPENTRY32;
@@ -3761,7 +3761,7 @@ pub struct tagPROCESSENTRY32W {
     pub dwSize: DWORD,
     pub cntUsage: DWORD,
     pub th32ProcessID: DWORD,
-    pub th32DefaultHeapID: DWORD,
+    pub th32DefaultHeapID: ULONG_PTR,
     pub th32ModuleID: DWORD,
     pub cntThreads: DWORD,
     pub th32ParentProcessID: DWORD,
@@ -3778,7 +3778,7 @@ pub struct tagPROCESSENTRY32 {
     pub dwSize: DWORD,
     pub cntUsage: DWORD,
     pub th32ProcessID: DWORD,
-    pub th32DefaultHeapID: DWORD,
+    pub th32DefaultHeapID: ULONG_PTR,
     pub th32ModuleID: DWORD,
     pub cntThreads: DWORD,
     pub th32ParentProcessID: DWORD,

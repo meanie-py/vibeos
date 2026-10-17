@@ -1,0 +1,17 @@
+# Cargo-driven `bwfm.sys` link (arm64). build.rs is a manifest for the shared
+# `reactos-link` engine; the body is the `bwfm-rust` staticlib, whose
+# `DriverEntry` is the PE entry point.
+
+[package]
+name = "bwfm-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "bwfm"
+path = "src/main.rs"
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["kernel"] }
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }
