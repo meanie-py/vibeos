@@ -25,6 +25,7 @@ use ntkrnl_sys::driver_ddk::{IoCallDriver, IoCompleteRequest, PoCallDriver, PoSt
 use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoSkipCurrentIrpStackLocation};
 use sdhci_rust::Platform;
 
+use crate::bus::Bus;
 use crate::chip::Chip;
 use crate::nvram;
 use crate::print::bwprint;
@@ -57,8 +58,10 @@ const WL_ON_MS: i64 = 150;
 
 static FDO: AtomicPtr<DEVICE_OBJECT> = AtomicPtr::new(null_mut());
 static LOWER: AtomicPtr<DEVICE_OBJECT> = AtomicPtr::new(null_mut());
-/// Written once in START, then owned by the firmware worker.
+/// Written once in START, then owned by the firmware worker, which moves it into
+/// BUS once the firmware runs.
 static mut CHIP: Option<Chip<Kernel>> = None;
+static mut BUS: Option<Bus<Kernel>> = None;
 
 const BWFM_POOL_TAG: ULONG = u32::from_le_bytes(*b"Bwfm");
 const NON_PAGED_POOL: i32 = 0;
@@ -326,13 +329,47 @@ unsafe extern "system" fn firmware_worker(_context: PVOID) {
             );
             let t0 = Kernel::now_us_static();
             match chip.start() {
-                Ok(()) => bwprint!(
-                    "firmware running: function 2 ready after {} ms\n",
-                    Kernel::now_us_static().wrapping_sub(t0) / 1000
-                ),
+                Ok(()) => {
+                    bwprint!(
+                        "firmware running: function 2 ready after {} ms\n",
+                        Kernel::now_us_static().wrapping_sub(t0) / 1000
+                    );
+                    if let Some(chip) = (*(&raw mut CHIP)).take() {
+                        talk(chip);
+                    }
+                }
                 Err(e) => bwprint!("firmware did not come up: {:?}\n", e),
             }
         }
+    }
+}
+
+/// The first exchange with the running firmware: its version string over BCDC.
+unsafe fn talk(chip: Chip<Kernel>) {
+    let bus = (*(&raw mut BUS)).insert(Bus::new(chip));
+    let mut events = 0u32;
+    let mut out = [0u8; 256];
+    match bus.get_var(b"ver", &mut out, |_| events += 1) {
+        Ok(n) => {
+            let text = &out[..out[..n].iter().position(|&c| c == 0).unwrap_or(n)];
+            // The firmware ends the string with a newline; one line in the log.
+            let text = text.strip_suffix(b"\n").unwrap_or(text);
+            bwprint!(
+                "firmware says: {} ({} frames, {} other frames before the reply, credit window {})\n",
+                core::str::from_utf8(text).unwrap_or("<not UTF-8>"),
+                bus.frames,
+                events,
+                bus.credit.window()
+            );
+        }
+        Err(e) => bwprint!(
+            "no answer to `ver`: {:?} ({} frames read, {} dropped, credit seq {} max {})\n",
+            e,
+            bus.frames,
+            bus.dropped,
+            bus.credit.seq,
+            bus.credit.max_seq
+        ),
     }
 }
 

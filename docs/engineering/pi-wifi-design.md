@@ -1,8 +1,9 @@
 # Raspberry Pi Wi-Fi: our own CYW43455 driver
 
-Status (2026-10-17): protocol, SDIO, chip and firmware-load layers host-tested against a
-simulated controller; on the Pi 5, bwfm.sys loads the firmware and it runs (run
-`20261017-030446-amqa391_`). Next: SDPCM frames over function 2, then BCDC `ver`.
+Status (2026-10-17): protocol, SDIO, chip, firmware-load and frame layers host-tested
+against a simulated controller and firmware; on the Pi 5, bwfm.sys loads the firmware and
+the firmware answers `ver` over BCDC (run `20261017-035410-ouzyie33`). Next: the CLM
+blob, then scan.
 
 ## Why our own
 
@@ -126,5 +127,13 @@ only when asked to (`VIBEOS_PI_WIFI_FIRMWARE`), so an image built without it is 
    The files come from a build with `VIBEOS_PAYLOAD=piwifi` (`tools/payloads/piwifi`),
    which runs the pinned fetch and stages them in `\SystemRoot\System32\drivers\cyw43455\`.
    Without it bwfm.sys waits 120 s for them and logs that VibeOS does not ship them.
-   Still owed: `ver` over BCDC (needs the function 2 frame path), and the CLM blob.
+   `ver` over BCDC (done, run `20261017-035410-ouzyie33`): `bus.rs` reads function 2's
+   FIFO (a zero header is "nothing queued"; an empty frame only carries credit), sends
+   control frames against the credit window, and matches a reply by command and request
+   id, handing anything else that arrives meanwhile on:
+
+       [BWFM] firmware says: wl0: Aug 29 2023 01:47:08 version 7.45.265 (28bca26 CY) FWID 01-b677b91b (2 frames, 0 other frames before the reply, credit window 20)
+
+   The firmware's first frame is a credit-only one; the host sends nothing until it has
+   read it. Still owed before a scan: the CLM blob (`clmload`).
 5. Scan, join, WPA2, link up, netstack traffic. Then the Pi 4 (host and power differ).
