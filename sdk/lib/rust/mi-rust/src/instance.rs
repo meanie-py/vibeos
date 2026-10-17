@@ -384,7 +384,7 @@ pub static INSTANCE_FT: MI_InstanceFT = MI_InstanceFT {
 unsafe fn get_string(obj: *mut IWbemClassObject, name: &str) -> Option<WString> {
     let n = wa(name);
     let mut v: VARIANT = core::mem::zeroed();
-    let hr = ((*(*obj).lpVtbl).Get.unwrap())(obj, n.as_ptr(), 0, &mut v, null_mut(), null_mut());
+    let hr = com!(obj, Get(n.as_ptr(), 0, &mut v, null_mut(), null_mut()));
     if hr < 0 {
         return None;
     }
@@ -400,13 +400,13 @@ unsafe fn get_string(obj: *mut IWbemClassObject, name: &str) -> Option<WString> 
 
 unsafe fn is_key(obj: *mut IWbemClassObject, prop: &[u16]) -> bool {
     let mut qs: *mut IWbemQualifierSet = null_mut();
-    if ((*(*obj).lpVtbl).GetPropertyQualifierSet.unwrap())(obj, prop.as_ptr(), &mut qs) < 0 || qs.is_null() {
+    if com!(obj, GetPropertyQualifierSet(prop.as_ptr(), &mut qs)) < 0 || qs.is_null() {
         return false;
     }
     let qs = ComPtr(qs);
     let key = wa("key");
     let mut v: VARIANT = core::mem::zeroed();
-    let hr = ((*(*qs.0).lpVtbl).Get.unwrap())(qs.0, key.as_ptr(), 0, &mut v, null_mut());
+    let hr = com!(qs.0, Get(key.as_ptr(), 0, &mut v, null_mut()));
     let yes = hr >= 0 && !(v.n1.n2.vt == VT_BOOL && v.n1.n2.n3.boolVal == 0);
     VariantClear(&mut v);
     yes
@@ -415,19 +415,18 @@ unsafe fn is_key(obj: *mut IWbemClassObject, prop: &[u16]) -> bool {
 /// Convert a WMI object (an instance or an embedded object) into one of our instances.
 /// `ns`/`server` are the operation's, used where the object does not say.
 pub unsafe fn from_wbem(obj: *mut IWbemClassObject, ns: &[u16], server: &[u16]) -> Result<*mut MI_Instance, MI_Result> {
-    let vt = &*(*obj).lpVtbl;
     let class = get_string(obj, "__CLASS").unwrap_or_else(|| alloc::vec![0]);
     let mut inst = Inst::new(class);
     inst.namespace = Some(get_string(obj, "__NAMESPACE").map(slash_ns).unwrap_or_else(|| wfrom(body(ns))));
     inst.server = Some(get_string(obj, "__SERVER").unwrap_or_else(|| wfrom(body(server))));
-    if (vt.BeginEnumeration.unwrap())(obj, tag_WBEM_CONDITION_FLAG_TYPE_WBEM_FLAG_NONSYSTEM_ONLY as i32) < 0 {
+    if com!(obj, BeginEnumeration(tag_WBEM_CONDITION_FLAG_TYPE_WBEM_FLAG_NONSYSTEM_ONLY as i32)) < 0 {
         return Err(MI_RESULT_FAILED);
     }
     loop {
         let mut name: BSTR = null_mut();
         let mut v: VARIANT = core::mem::zeroed();
         let mut cim: CIMTYPE = 0;
-        let hr = (vt.Next.unwrap())(obj, 0, &mut name, &mut v, &mut cim, null_mut());
+        let hr = com!(obj, Next(0, &mut name, &mut v, &mut cim, null_mut()));
         if hr != 0 {
             break; // WBEM_S_NO_MORE_DATA, or a failure that ends the walk the same way
         }
@@ -439,7 +438,7 @@ pub unsafe fn from_wbem(obj: *mut IWbemClassObject, ns: &[u16], server: &[u16]) 
         let flags = if is_key(obj, &wname) { FLAG_KEY } else { 0 };
         inst.elems.push(Elem { name: wname, flags, value });
     }
-    (vt.EndEnumeration.unwrap())(obj);
+    com!(obj, EndEnumeration());
     inst.sync();
     Ok(inst.into_mi())
 }

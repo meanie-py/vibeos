@@ -463,7 +463,7 @@ unsafe fn scalar_from_raw(
             return match r {
                 Raw::Unk(u) if !u.is_null() => {
                     let mut obj: *mut c_void = core::ptr::null_mut();
-                    let hr = ((*(*u).lpVtbl).QueryInterface.unwrap())(u, &IID_IWBEM_CLASS_OBJECT, &mut obj);
+                    let hr = com!(u, QueryInterface(&IID_IWBEM_CLASS_OBJECT, &mut obj));
                     if hr < 0 || obj.is_null() {
                         return Err(bad());
                     }
@@ -511,39 +511,37 @@ pub unsafe fn from_variant(var: &VARIANT, cim: i32, ns: &[u16], server: &[u16]) 
     }
     let esize = vt_size(evt);
     let elem = ty & !MI_ARRAY_BIT;
-    let mut result: Result<Owned, MI_Result> = Ok(Owned::null(ty));
     let mut strs = Vec::new();
     let mut insts = Vec::new();
     let mut bytes = Vec::new();
-    for k in 0..n {
-        let raw = read_raw(evt, (data as *const u8).add(k * esize));
-        match scalar_from_raw(elem, raw, ns, server) {
-            Ok(mut o) => match elem {
-                MI_STRING => {
-                    if let Store::Str(s) = core::mem::replace(&mut o.store, Store::None) {
-                        strs.push(s)
-                    }
-                }
-                MI_INSTANCE | MI_REFERENCE => {
-                    if let Store::Inst(i) = core::mem::replace(&mut o.store, Store::None) {
-                        insts.push(i)
-                    }
-                }
+    let mut convert = || -> Result<(), MI_Result> {
+        for k in 0..n {
+            let raw = read_raw(evt, (data as *const u8).add(k * esize));
+            let mut o = scalar_from_raw(elem, raw, ns, server)?;
+            match (elem, core::mem::replace(&mut o.store, Store::None)) {
+                (MI_STRING, Store::Str(s)) => strs.push(s),
+                (MI_INSTANCE | MI_REFERENCE, Store::Inst(i)) => insts.push(i),
+                (MI_STRING | MI_INSTANCE | MI_REFERENCE, _) => {}
                 _ => {
                     let p = core::ptr::addr_of!(o.val) as *const u8;
                     bytes.extend_from_slice(core::slice::from_raw_parts(p, scalar_size(elem)));
                 }
-            },
-            Err(e) => {
-                result = Err(e);
-                break;
             }
         }
-    }
+        Ok(())
+    };
+    let result = convert();
     if n != 0 {
         SafeArrayUnaccessData(sa);
     }
-    result?;
+    if let Err(e) = result {
+        for i in insts {
+            if let Some(d) = (*(*i).ft).Delete {
+                d(i);
+            }
+        }
+        return Err(e);
+    }
     Ok(match elem {
         MI_STRING => Owned::strings(ty, strs),
         MI_INSTANCE | MI_REFERENCE => Owned::instances(ty, insts),

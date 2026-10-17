@@ -200,19 +200,18 @@ unsafe fn run(st: &OpState, job: Job) -> MI_Result {
     }
     let ns_bstr = Bstr::new(&wmi_ns(&ns));
     let mut svc = ComPtr::<IWbemServices>::null();
-    let hr = ((*(*loc.0).lpVtbl).ConnectServer.unwrap())(loc.0, ns_bstr.0, null_mut(), null_mut(), null_mut(), 0, null_mut(), null_mut(), &mut svc.0);
+    let hr = com!(loc.0, ConnectServer(ns_bstr.0, null_mut(), null_mut(), null_mut(), 0, null_mut(), null_mut(), &mut svc.0));
     if hr < 0 || svc.is_null() {
         return hr_to_result(hr);
     }
     impersonate(svc.0);
-    let vt = &*(*svc.0).lpVtbl;
     match request {
         Ok(wql) => {
             let lang = Bstr::new(&wa("WQL"));
             let q = Bstr::new(&wql);
             let mut e = ComPtr::<IEnumWbemClassObject>::null();
             let flags = (tag_WBEM_GENERIC_FLAG_TYPE_WBEM_FLAG_FORWARD_ONLY | tag_WBEM_GENERIC_FLAG_TYPE_WBEM_FLAG_RETURN_IMMEDIATELY) as i32;
-            let hr = (vt.ExecQuery.unwrap())(svc.0, lang.0, q.0, flags, null_mut(), &mut e.0);
+            let hr = com!(svc.0, ExecQuery(lang.0, q.0, flags, null_mut(), &mut e.0));
             if hr < 0 || e.is_null() {
                 return hr_to_result(hr);
             }
@@ -223,7 +222,7 @@ unsafe fn run(st: &OpState, job: Job) -> MI_Result {
                 }
                 let mut obj: *mut IWbemClassObject = null_mut();
                 let mut got: ULONG = 0;
-                let hr = ((*(*e.0).lpVtbl).Next.unwrap())(e.0, tag_WBEM_TIMEOUT_TYPE_WBEM_INFINITE as i32, 1, &mut obj, &mut got);
+                let hr = com!(e.0, Next(tag_WBEM_TIMEOUT_TYPE_WBEM_INFINITE as i32, 1, &mut obj, &mut got));
                 if hr < 0 {
                     return hr_to_result(hr);
                 }
@@ -245,7 +244,7 @@ unsafe fn run(st: &OpState, job: Job) -> MI_Result {
             let p = Bstr::new(&path);
             let mut obj = ComPtr::<IWbemClassObject>::null();
             // `GetObjectA`: wingdi.h's GetObject macro renamed the slot in the island; its position is what counts.
-            let hr = (vt.GetObjectA.unwrap())(svc.0, p.0, 0, null_mut(), &mut obj.0, null_mut());
+            let hr = com!(svc.0, GetObjectA(p.0, 0, null_mut(), &mut obj.0, null_mut()));
             if hr < 0 || obj.is_null() {
                 return hr_to_result(hr);
             }

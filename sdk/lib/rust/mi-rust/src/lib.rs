@@ -17,13 +17,14 @@ extern crate alloc;
 
 pub mod types; // bindgen island, per arch (gen_driver_types.sh mi)
 
+#[macro_use]
+mod sys;
 mod application;
 mod heap;
 mod instance;
 mod operation;
 mod options;
 mod session;
-mod sys;
 mod value;
 mod wstr;
 

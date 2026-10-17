@@ -115,6 +115,21 @@ pub const IID_IWBEM_LOCATOR: GUID =
 pub const IID_IWBEM_CLASS_OBJECT: GUID =
     guid(0xdc12a681, 0x737f, 0x11cf, [0x88, 0x4d, 0x00, 0xaa, 0x00, 0x4b, 0x2e, 0x24]);
 
+pub const E_NOTIMPL: HRESULT = 0x8000_4001_u32 as HRESULT;
+
+/// Call a COM method through its vtable: `com!(obj, Method(args...))`. A NULL slot (which no
+/// real object has) reads as E_NOTIMPL rather than a panic.
+#[macro_export]
+macro_rules! com {
+    ($obj:expr, $m:ident ( $($a:expr),* $(,)? )) => {{
+        let o = $obj;
+        match (*(*o).lpVtbl).$m {
+            Some(f) => f(o $(, $a)*),
+            None => $crate::sys::E_NOTIMPL,
+        }
+    }};
+}
+
 /// A COM interface pointer released on drop.
 pub struct ComPtr<T>(pub *mut T);
 impl<T> ComPtr<T> {

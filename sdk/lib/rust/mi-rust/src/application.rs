@@ -86,11 +86,8 @@ unsafe fn new_instance(class: *const MI_Char, decl: *const MI_ClassDecl, out: *m
         return MI_RESULT_INVALID_PARAMETER;
     }
     *out = null_mut();
-    let name = match (wdup(class), decl.is_null()) {
-        (Some(n), _) => n,
-        (None, false) if !(*decl).name.is_null() => wdup((*decl).name).unwrap(),
-        _ => return MI_RESULT_INVALID_PARAMETER,
-    };
+    let from_decl = if decl.is_null() { None } else { wdup((*decl).name) };
+    let Some(name) = wdup(class).or(from_decl) else { return MI_RESULT_INVALID_PARAMETER };
     let mut inst = Inst::new(name);
     if !decl.is_null() && !(*decl).properties.is_null() {
         for k in 0..(*decl).numProperties as usize {
