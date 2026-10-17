@@ -1260,6 +1260,11 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A Rust `const` re-declaring a C `#define` with a different value (native Rust rule,
+    # tools/vibeos-lint/src/rules/shadowed_c_define.rs). balmgr's THREAD_BOOST_PRIORITY was an
+    # invented 23 for the C's 15 and boosted starved threads into the realtime range. The
+    # baseline is the triage queue; new findings fail.
+    specs.append(("scan_shadowed_c_define", ["MISSING"], "stdout"))
     # A named constant cast to a type too narrow for it: rustc's overflow lint covers
     # literals only. disk.sys set SRB_CLASS_FLAGS_PERSISTANT `as USHORT` (= 0), classpnp freed
     # an SRB inside the device extension, 0xC2 on the first flush. Gated at zero.
