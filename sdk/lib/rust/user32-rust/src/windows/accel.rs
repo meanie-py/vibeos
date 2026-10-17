@@ -1,4 +1,8 @@
 use crate::ntwrapper::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::windows::message::EnterCriticalSection;
+use crate::windows::message::LeaveCriticalSection;
+use crate::windows::cursoricon::LoadResource;
 use win32k_sys::win32k::*;
 use crate::internal::*;
 use crate::winbase::*;
@@ -6,9 +10,6 @@ use crate::FIELD_OFFSET;
 use core::ffi::c_void;
 
 extern "system" {
-    fn EnterCriticalSection(lpCriticalSection: *mut CRITICAL_SECTION);
-    fn LeaveCriticalSection(lpCriticalSection: *mut CRITICAL_SECTION);
-    fn LoadResource(hModule: HINSTANCE, hResInfo: HRSRC) -> HGLOBAL;
     fn LocalAlloc(uFlags: UINT, uBytes: SIZE_T) -> HGLOBAL;
     fn LocalFree(hMem: HGLOBAL) -> HGLOBAL;
     fn NtUserCreateAcceleratorTable(Entries: LPACCEL, EntriesCount: SIZE_T) -> HACCEL;
@@ -100,7 +101,7 @@ pub unsafe extern "system" fn U32LoadAccelerators(hInstance: HINSTANCE, hTableRe
         return core::ptr::null_mut();
     }
 
-    EnterCriticalSection(&raw mut U32AccelCacheLock);
+    EnterCriticalSection((&raw mut U32AccelCacheLock).cast());
 
     'l_Leave: {
         /* see if this accelerator table has already been loaded */
@@ -156,7 +157,7 @@ pub unsafe extern "system" fn U32LoadAccelerators(hInstance: HINSTANCE, hTableRe
         U32AccelCacheAdd(hAccTable, pAccTableResData as HGLOBAL);
     }
 
-    LeaveCriticalSection(&raw mut U32AccelCacheLock);
+    LeaveCriticalSection((&raw mut U32AccelCacheLock).cast());
     hAccTable
 }
 #[no_mangle]
@@ -175,7 +176,7 @@ pub unsafe extern "system" fn DestroyAcceleratorTable(hAccel: HACCEL) -> BOOL {
         return FALSE as BOOL;
     }
 
-    EnterCriticalSection(core::ptr::addr_of_mut!(U32AccelCacheLock));
+    EnterCriticalSection((core::ptr::addr_of_mut!(U32AccelCacheLock)).cast());
 
     let ppEntry = U32AccelCacheFind(hAccel as HANDLE, core::ptr::null_mut());
 
@@ -191,7 +192,7 @@ pub unsafe extern "system" fn DestroyAcceleratorTable(hAccel: HACCEL) -> BOOL {
         }
     }
 
-    LeaveCriticalSection(core::ptr::addr_of_mut!(U32AccelCacheLock));
+    LeaveCriticalSection((core::ptr::addr_of_mut!(U32AccelCacheLock)).cast());
 
     if nUsage > 0 {
         return FALSE as BOOL;

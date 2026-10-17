@@ -894,6 +894,32 @@ reported **3,790** phantom findings against a true count of 15, and the identica
 `crate_repair`'s argument-index counter the same night. If you are counting top-level commas in
 Rust, assume `->` is there to ruin it.
 
+### Collapsing a clashing extern to ONE declaration: attributes, struct copies, alias spellings
+Symptom: `tools/extern_to_use.py` (one canonical declaration plus `use` everywhere else) leaves a
+crate that won't compile, or that compiles and binds a different symbol. Three causes, one per
+kind of residue (2026-10-17, about 30 crates):
+- **The attributes belong to the declaration.** menuband declared `GetWindowLongPtrW` under
+  `#[cfg_attr(target_pointer_width = "32", link_name = "GetWindowLongW")]`. The first version of
+  the tool deleted the `fn` line and left the attribute above it, where it attached itself to the
+  NEXT declaration in the block. That rebinds an unrelated import on i386 only, with no
+  diagnostic. Fix: the tool removes the attribute lines together with their declaration, and
+  refuses (`KEPT`) to merge two declarations whose attributes differ, because they may bind
+  different symbols on some arch.
+- **A per-module copy of a C struct is a distinct Rust type.** This happened with DDE structs in
+  user32, `POWER_STATE` in acpi (a one-field copy of what the ddk declares as a union), three
+  `IUnknown`s in menuband, and `GUID`/`BITMAP`/`IStream` in ole32. Once one declaration survives,
+  a caller that passes its own copy fails with E0308. Fix: dedupe to one definition with
+  `pub use`, or `.cast()` at the pointer argument. Never use `as _` on a struct by value.
+- **ntdll-sys aliases are not the canonical spelling.** On 64-bit, `SIZE_T`/`WPARAM`/`LPARAM` are
+  `u64`/`i64`, while most canonical declarations spell them `usize`/`isize`. They have the same
+  width on every arch but are different Rust types. Rewrite each call site from rustc's own span
+  as `as usize` or `as _`, which bakes no width in. Watch precedence when the cast lands inside
+  `a * b`.
+
+The pass also finds real bugs. kernel32's `ExitThread`/`ExitProcess` were declared as returning,
+cdfs's FSP dispatcher discarded a status, and `DbgPrint`, `memmove` and `BaseSetLastNTError` had
+return values silently dropped.
+
 ### A `transmute` at a callback-install site erases the CALLING CONVENTION
 **The same bug without a transmute: a callback DEFINED `extern "C"` and cast into its slot.**
 setuplib's `RtlQueryRegistryValues` query routines, boot-store enumerators and INF entry

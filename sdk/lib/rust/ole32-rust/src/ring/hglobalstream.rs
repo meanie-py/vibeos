@@ -189,7 +189,7 @@ unsafe fn handle_create(hglobal: HGLOBAL, delete_on_release: BOOL) -> *mut handl
     let handle = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<handle_wrapper>() as SIZE_T,
+        core::mem::size_of::<handle_wrapper>() as usize,
     ) as *mut handle_wrapper;
     if !handle.is_null() {
         (*handle).ref_ = 1;
@@ -232,7 +232,7 @@ unsafe fn HGLOBALStreamImpl_Create() -> *mut HGLOBALStreamImpl {
     let This = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<HGLOBALStreamImpl>() as SIZE_T,
+        core::mem::size_of::<HGLOBALStreamImpl>() as usize,
     ) as *mut HGLOBALStreamImpl;
     if !This.is_null() {
         (*This).IStream_iface.lpVtbl =

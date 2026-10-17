@@ -867,23 +867,23 @@ extern "C" {
 macro_rules! LOWORD { ($value:expr) => { (($value as usize) & 0xffff) as UINT }; }
 
 extern "system" {
-    fn DestroyWindow(window: HWND) -> BOOL;
-    fn DefWindowProcW(window: HWND, message: UINT, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
-    fn GetModuleHandleExW(flags: DWORD, name: LPCWSTR, module: *mut HINSTANCE) -> BOOL;
-    fn RegisterClassW(class: *const WNDCLASSW) -> WORD;
-    fn CreateWindowExW(ex_style: DWORD, class_name: LPCWSTR, window_name: LPCWSTR,
+    pub fn DestroyWindow(window: HWND) -> BOOL;
+    pub fn DefWindowProcW(window: HWND, message: UINT, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
+    pub fn GetModuleHandleExW(flags: DWORD, name: LPCWSTR, module: *mut HINSTANCE) -> BOOL;
+    pub fn RegisterClassW(class: *const WNDCLASSW) -> WORD;
+    pub fn CreateWindowExW(ex_style: DWORD, class_name: LPCWSTR, window_name: LPCWSTR,
         style: DWORD, x: INT, y: INT, width: INT, height: INT, parent: HWND,
         menu: HMENU, instance: HINSTANCE, param: LPVOID) -> HWND;
     #[cfg_attr(target_pointer_width = "32", link_name = "GetWindowLongW")]
-    fn GetWindowLongPtrW(window: HWND, index: INT) -> LONG_PTR;
+    pub fn GetWindowLongPtrW(window: HWND, index: INT) -> LONG_PTR;
     #[cfg_attr(target_pointer_width = "32", link_name = "SetWindowLongW")]
-    fn SetWindowLongPtrW(window: HWND, index: INT, value: LONG_PTR) -> LONG_PTR;
+    pub fn SetWindowLongPtrW(window: HWND, index: INT, value: LONG_PTR) -> LONG_PTR;
     fn AdjustWindowRect(rect: *mut RECT, style: DWORD, menu: BOOL) -> BOOL;
     fn OffsetRect(rect: *mut RECT, dx: INT, dy: INT) -> BOOL;
     #[link_name = "GetObjectW"] fn cpp_com_GetObject(object: HANDLE, bytes: INT, out: LPVOID) -> INT;
     fn GetDesktopWindow() -> HWND;
     fn GetWindowRect(window: HWND, rect: *mut RECT) -> BOOL;
-    fn GetClientRect(window: HWND, rect: *mut RECT) -> BOOL;
+    pub fn GetClientRect(window: HWND, rect: *mut RECT) -> BOOL;
     fn SetWindowPos(window: HWND, insert_after: HWND, x: INT, y: INT, cx: INT, cy: INT, flags: UINT) -> BOOL;
     fn DeleteObject(object: HANDLE) -> BOOL;
     fn BeginPaint(window: HWND, paint: *mut PAINTSTRUCT) -> HDC;
@@ -900,16 +900,12 @@ extern "system" {
     fn GetSysColorBrush(index: INT) -> HANDLE;
     fn FrameRect(dc: HDC, rect: *const RECT, brush: HANDLE) -> INT;
     fn SHSetWindowBits(window: HWND, index: INT, mask: DWORD, flags: DWORD) -> DWORD;
-    fn IUnknown_GetWindow(object: *mut IUnknown, out: *mut HWND) -> HRESULT;
+    pub fn IUnknown_GetWindow(object: *mut IUnknown, out: *mut HWND) -> HRESULT;
     fn IUnknown_GetSite(object: *mut IUnknown, riid: REFIID, out: *mut *mut core::ffi::c_void) -> HRESULT;
     fn IUnknown_OnFocusChangeIS(object: *mut IUnknown, changed: *mut IUnknown, focus: BOOL) -> HRESULT;
-    fn IUnknown_UIActivateIO(object: *mut IUnknown, activate: BOOL, message: LPMSG) -> HRESULT;
+    pub fn IUnknown_UIActivateIO(object: *mut IUnknown, activate: BOOL, message: LPMSG) -> HRESULT;
     fn IUnknown_HasFocusIO(object: *mut IUnknown) -> HRESULT;
     fn IUnknown_TranslateAcceleratorIO(object: *mut IUnknown, message: LPMSG) -> HRESULT;
-    fn IUnknown_QueryService(object: *mut IUnknown, service: REFGUID, riid: REFIID, out: *mut *mut core::ffi::c_void) -> HRESULT;
-    fn IUnknown_QueryServiceExec(object: *mut IUnknown, service: REFGUID,
-        command_group: *const GUID, command: DWORD, options: DWORD,
-        input: *mut VARIANT, output: *mut VARIANT) -> HRESULT;
 }
 
 #[inline]
@@ -964,6 +960,9 @@ impl<T> Drop for CppComPtrGuard<T> {
 }
 
 use core::ffi::c_void;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::menu_band::IUnknown_QueryService;
+use crate::menu_band::IUnknown_QueryServiceExec;
 use crate::shellcom::*;
 use crate::types::*;
 
@@ -1125,7 +1124,7 @@ pub unsafe fn CMenuDeskBar_QueryService_body(this: *mut CMenuDeskBar, guidServic
         if (*this).m_Client.is_null() {
             return E_NOINTERFACE;
         }
-        hr = IUnknown_QueryService((*this).m_Client, guidService, riid, ppvObject);
+        hr = IUnknown_QueryService((*this).m_Client.cast(), guidService, riid, ppvObject);
         if hr >= 0 {
             return hr;
         }
@@ -1135,7 +1134,7 @@ pub unsafe fn CMenuDeskBar_QueryService_body(this: *mut CMenuDeskBar, guidServic
         return E_NOINTERFACE;
     }
 
-    IUnknown_QueryService((*this).m_Site, guidService, riid, ppvObject)
+    IUnknown_QueryService((*this).m_Site.cast(), guidService, riid, ppvObject)
 }
 
 pub unsafe fn CMenuDeskBar_UIActivateIO_body(this: *mut CMenuDeskBar, fActivate: BOOL, lpMsg: LPMSG) -> HRESULT {
@@ -1223,7 +1222,7 @@ pub unsafe fn CMenuDeskBar_SetSite_body(this: *mut CMenuDeskBar, pUnkSite: *mut 
     CMenuDeskBar_cpp_com_assign_m_Site(this, pUnkSite);
     if !((*this).m_Site).is_null() {
         IUnknown_QueryService(
-            (*this).m_Site,
+            ((*this).m_Site).cast(),
             core::ptr::addr_of!(SID_SMenuPopup),
             core::ptr::addr_of!(IID_IMenuPopup),
             core::ptr::addr_of_mut!((*this).m_SubMenuParent).cast(),
@@ -1291,7 +1290,7 @@ pub unsafe fn CMenuDeskBar_Popup_body(this: *mut CMenuDeskBar, ppt: *mut POINTL,
     let _dbc_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(dbc));
 
     let mut hr: HRESULT = IUnknown_QueryService(
-        (*this).m_Client,
+        ((*this).m_Client).cast(),
         core::ptr::addr_of!(SID_SMenuBandChild),
         core::ptr::addr_of!(IID_IOleCommandTarget), core::ptr::addr_of_mut!(oct).cast(),
     );
@@ -1338,7 +1337,7 @@ pub unsafe fn CMenuDeskBar_Popup_body(this: *mut CMenuDeskBar, ppt: *mut POINTL,
     const CMD_EXEC_OPT: DWORD = 0;
 
     hr = IUnknown_QueryServiceExec(
-        (*this).m_Client,
+        ((*this).m_Client).cast(),
         core::ptr::addr_of!(SID_SMenuBandChild),
         core::ptr::addr_of!(CLSID_MenuBand),
         CMD_POPUP,
@@ -1528,7 +1527,7 @@ pub unsafe fn CMenuDeskBar_Popup_body(this: *mut CMenuDeskBar, ppt: *mut POINTL,
             (-2i32) as DWORD
         };
         IUnknown_QueryServiceExec(
-            (*this).m_Client,
+            ((*this).m_Client).cast(),
             core::ptr::addr_of!(SID_SMenuBandChild),
             core::ptr::addr_of!(CLSID_MenuBand),
             CMD_SELECT,
@@ -1546,7 +1545,7 @@ pub unsafe fn CMenuDeskBar_SetIconSize_body(this: *mut CMenuDeskBar, iIcon: DWOR
     // See CMD_POPUP above: C++ names both function-local constants `CMD`.
     const CMD_SETICONSIZE: DWORD = 16;
     let CMD_EXEC_OPT: DWORD = if iIcon != 0 { 0 } else { 2 };
-    let hr = IUnknown_QueryServiceExec((*this).m_Client, core::ptr::addr_of!(SID_SMenuBandChild), core::ptr::addr_of!(CLSID_MenuBand), CMD_SETICONSIZE, CMD_EXEC_OPT, core::ptr::null_mut(), core::ptr::null_mut());
+    let hr = IUnknown_QueryServiceExec(((*this).m_Client).cast(), core::ptr::addr_of!(SID_SMenuBandChild), core::ptr::addr_of!(CLSID_MenuBand), CMD_SETICONSIZE, CMD_EXEC_OPT, core::ptr::null_mut(), core::ptr::null_mut());
     if ((hr) < 0) {
         return hr;
     }
@@ -1834,7 +1833,7 @@ pub unsafe fn CMenuDeskBar__OnActivate_body(this: *mut CMenuDeskBar, uMsg: UINT,
     let mut db: *mut IDeskBar = core::ptr::null_mut();
     let _db_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(db));
     let hr = IUnknown_QueryService(
-        (*this).m_Client,
+        ((*this).m_Client).cast(),
         core::ptr::addr_of!(SID_SMenuBandChild),
         core::ptr::addr_of!(IID_IDeskBar), core::ptr::addr_of_mut!(db).cast(),
     );

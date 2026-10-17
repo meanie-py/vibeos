@@ -1,4 +1,6 @@
 use crate::prelude::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::menu_band::DestroyMenu;
 use crate::menu_band::LPSMDATA;
 // Deterministic from shobjidl.h
 #[repr(C)]
@@ -515,7 +517,6 @@ pub struct BANDSITEINFO {
 
 extern "system" {
     fn CreateMenu() -> HMENU;
-    fn DestroyMenu(menu: HMENU) -> BOOL;
     fn AppendMenuW(menu: HMENU, flags: UINT, id: UINT_PTR, text: LPCWSTR) -> BOOL;
     fn SetMenuItemInfoW(menu: HMENU, item: UINT, by_position: BOOL, info: *const MENUITEMINFOW) -> BOOL;
     fn GetMenuItemInfoW(menu: HMENU, item: UINT, by_position: BOOL, info: *mut MENUITEMINFOW) -> BOOL;
@@ -618,7 +619,7 @@ pub unsafe fn CShellMenuCallback_OnInitMenu_body(this: *mut CShellMenuCallback) 
 
     hr = ((*(*(*this).m_pShellMenu).lpVtbl).SetMenu)((*this).m_pShellMenu, hmenu, core::ptr::null_mut(), SMSET_BOTTOM);
     if ((hr) < 0) {
-        DestroyMenu(hmenu);
+        DestroyMenu((hmenu).cast());
         return hr;
     }
 

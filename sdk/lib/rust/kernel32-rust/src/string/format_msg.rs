@@ -1,4 +1,7 @@
 use winedebug_rust::{TRACE};
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::prelude::memcpy;
+use crate::prelude::memmove;
 use ntdll_sys::nt::*;
 use core::ffi::c_void;
 use crate::string::nls_subst::*;
@@ -31,8 +34,6 @@ extern "system" {
     ) -> INT;
 }
 extern "C" {
-    fn memcpy(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void;
-    fn memmove(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void;
     // snprintfW == _snwprintf (msvcrt). Variadic; resolves to the real ntdll export.
     // count is size_t (usize) — matches nls_subst/lcformat. Declaring it c_int here
     // fed garbage upper bits to the variadic callee on 64-bit (amd64/arm64).

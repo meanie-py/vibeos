@@ -153,7 +153,7 @@ unsafe fn set_container_lock(container: *mut IOleItemContainer, pbc: *mut IBindC
     let lock = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<container_lock>() as SIZE_T,
+        core::mem::size_of::<container_lock>() as usize,
     ) as *mut container_lock;
     if lock.is_null() {
         return E_OUTOFMEMORY;
@@ -317,7 +317,7 @@ unsafe fn item_moniker_load_string_record(stream: *mut IStream, ret: *mut *mut W
         return S_OK;
     }
 
-    let buffer = HeapAlloc(GetProcessHeap(), 0, str_len as SIZE_T) as *mut c_char;
+    let buffer = HeapAlloc(GetProcessHeap(), 0, str_len as usize) as *mut c_char;
     if buffer.is_null() {
         return E_OUTOFMEMORY;
     }
@@ -355,7 +355,7 @@ unsafe fn item_moniker_load_string_record(stream: *mut IStream, ret: *mut *mut W
             str_ = HeapAlloc(
                 GetProcessHeap(),
                 0,
-                (wlen as usize + core::mem::size_of::<WCHAR>()) as SIZE_T,
+                (wlen as usize + core::mem::size_of::<WCHAR>()) as usize,
             ) as *mut WCHAR;
             if !str_.is_null() {
                 core::ptr::copy_nonoverlapping(
@@ -370,7 +370,7 @@ unsafe fn item_moniker_load_string_record(stream: *mut IStream, ret: *mut *mut W
             str_ = HeapAlloc(
                 GetProcessHeap(),
                 0,
-                (lenW as usize * core::mem::size_of::<WCHAR>()) as SIZE_T,
+                (lenW as usize * core::mem::size_of::<WCHAR>()) as usize,
             ) as *mut WCHAR;
             if !str_.is_null() {
                 MultiByteToWideChar(CP_ACP, 0, buffer, -1, str_, lenW);
@@ -423,7 +423,7 @@ unsafe fn item_moniker_save_string(stream: *mut IStream, s: *const WCHAR) -> HRE
         core::ptr::null(),
         core::ptr::null_mut(),
     );
-    let buf = HeapAlloc(GetProcessHeap(), 0, str_len as SIZE_T) as *mut c_char;
+    let buf = HeapAlloc(GetProcessHeap(), 0, str_len as usize) as *mut c_char;
     WideCharToMultiByte(
         CP_ACP,
         0,
@@ -1097,7 +1097,7 @@ pub unsafe extern "system" fn CreateItemMoniker(
     let moniker = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        core::mem::size_of::<ItemMonikerImpl>() as SIZE_T,
+        core::mem::size_of::<ItemMonikerImpl>() as usize,
     ) as *mut ItemMonikerImpl;
     if moniker.is_null() {
         return E_OUTOFMEMORY;
@@ -1111,7 +1111,7 @@ pub unsafe extern "system" fn CreateItemMoniker(
 
     'failed: {
         let mut str_len = (lstrlenW(name) as usize + 1) * core::mem::size_of::<WCHAR>();
-        (*moniker).itemName = HeapAlloc(GetProcessHeap(), 0, str_len as SIZE_T) as *mut WCHAR;
+        (*moniker).itemName = HeapAlloc(GetProcessHeap(), 0, str_len as usize) as *mut WCHAR;
         if (*moniker).itemName.is_null() {
             hr = E_OUTOFMEMORY;
             break 'failed;
@@ -1121,7 +1121,7 @@ pub unsafe extern "system" fn CreateItemMoniker(
         if !delimiter.is_null() {
             str_len = (lstrlenW(delimiter) as usize + 1) * core::mem::size_of::<WCHAR>();
             (*moniker).itemDelimiter =
-                HeapAlloc(GetProcessHeap(), 0, str_len as SIZE_T) as *mut WCHAR;
+                HeapAlloc(GetProcessHeap(), 0, str_len as usize) as *mut WCHAR;
             if (*moniker).itemDelimiter.is_null() {
                 hr = E_OUTOFMEMORY;
                 break 'failed;

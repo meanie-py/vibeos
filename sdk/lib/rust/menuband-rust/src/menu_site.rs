@@ -771,27 +771,10 @@ extern "C" {
 }
 
 extern "system" {
-    fn DestroyWindow(window: HWND) -> BOOL;
-    fn DefWindowProcW(window: HWND, message: UINT, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
-    fn GetClientRect(window: HWND, rect: *mut RECT) -> BOOL;
-    fn GetModuleHandleExW(flags: DWORD, name: LPCWSTR, module: *mut HINSTANCE) -> BOOL;
-    fn IsWindow(window: HWND) -> BOOL;
-    fn RegisterClassW(class: *const WNDCLASSW) -> WORD;
-    fn CreateWindowExW(ex_style: DWORD, class_name: LPCWSTR, window_name: LPCWSTR,
-        style: DWORD, x: INT, y: INT, width: INT, height: INT, parent: HWND,
-        menu: HMENU, instance: HINSTANCE, param: LPVOID) -> HWND;
-    #[cfg_attr(target_pointer_width = "32", link_name = "GetWindowLongW")]
-    fn GetWindowLongPtrW(window: HWND, index: INT) -> LONG_PTR;
-    #[cfg_attr(target_pointer_width = "32", link_name = "SetWindowLongW")]
-    fn SetWindowLongPtrW(window: HWND, index: INT, value: LONG_PTR) -> LONG_PTR;
-    fn IUnknown_GetWindow(object: *mut IUnknown, out: *mut HWND) -> HRESULT;
-    fn IUnknown_SetSite(object: *mut IUnknown, site: *mut IUnknown) -> HRESULT;
-    fn IUnknown_UIActivateIO(object: *mut IUnknown, activate: BOOL, message: LPMSG) -> HRESULT;
     fn IUnknown_Exec(object: *mut IUnknown, command_group: REFGUID, command: DWORD,
         options: DWORD, input: *mut VARIANT, output: *mut VARIANT) -> HRESULT;
     fn IUnknown_QueryStatus(object: *mut IUnknown, command_group: REFGUID, count: ULONG,
         commands: *mut OLECMD, text: *mut OLECMDTEXT) -> HRESULT;
-    fn IUnknown_QueryService(object: *mut IUnknown, service: REFGUID, riid: REFIID, out: *mut *mut core::ffi::c_void) -> HRESULT;
 }
 
 pub type WNDPROC = Option<unsafe extern "system" fn(HWND, UINT, WPARAM, LPARAM) -> LRESULT>;
@@ -854,6 +837,20 @@ impl<T> Drop for CppComPtrGuard<T> {
 pub static CPP_COM_WSTR_0542E293B3EE: [WCHAR; 9] = [0x004D, 0x0065, 0x006E, 0x0075, 0x0053, 0x0069, 0x0074, 0x0065, 0x0000];
 
 use core::ffi::c_void;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::menu_desk_bar::CreateWindowExW;
+use crate::menu_desk_bar::DefWindowProcW;
+use crate::menu_desk_bar::DestroyWindow;
+use crate::menu_desk_bar::GetClientRect;
+use crate::menu_desk_bar::GetModuleHandleExW;
+use crate::menu_desk_bar::GetWindowLongPtrW;
+use crate::menu_desk_bar::IUnknown_GetWindow;
+use crate::menu_band::IUnknown_QueryService;
+use crate::menu_band::IUnknown_SetSite;
+use crate::menu_desk_bar::IUnknown_UIActivateIO;
+use crate::menu_band::IsWindow;
+use crate::menu_desk_bar::RegisterClassW;
+use crate::menu_desk_bar::SetWindowLongPtrW;
 use crate::shellcom::*;
 use crate::types::*;
 
@@ -912,7 +909,7 @@ unsafe fn CMenuSite_CreateWindow(this: *mut CMenuSite, parent: HWND) -> HWND {
         lpszMenuName: core::ptr::null(),
         lpszClassName: CPP_COM_WSTR_0542E293B3EE.as_ptr(),
     };
-    RegisterClassW(core::ptr::addr_of!(class));
+    RegisterClassW((core::ptr::addr_of!(class)).cast());
     let window = CreateWindowExW(
         0,
         CPP_COM_WSTR_0542E293B3EE.as_ptr(),
@@ -955,7 +952,7 @@ pub unsafe fn CMenuSite_AddBand_body(this: *mut CMenuSite, punk: *mut IUnknown) 
     }
 
     if !(*this).m_BandObject.is_null() {
-        hr = IUnknown_SetSite((*this).m_BandObject, core::ptr::null_mut());
+        hr = IUnknown_SetSite(((*this).m_BandObject).cast(), core::ptr::null_mut());
         if hr < 0 {
             return hr;
         }
@@ -989,12 +986,12 @@ pub unsafe fn CMenuSite_AddBand_body(this: *mut CMenuSite, punk: *mut IUnknown) 
     }
 
     let site = CMenuSite_ToIUnknown_body(this);
-    hr = IUnknown_SetSite(pUnknown, site);
+    hr = IUnknown_SetSite((pUnknown).cast(), (site).cast());
     if hr < 0 {
         return hr;
     }
 
-    hr = IUnknown_GetWindow(pUnknown, &mut (*this).m_hWndBand);
+    hr = IUnknown_GetWindow((pUnknown).cast(), &mut (*this).m_hWndBand);
     if hr < 0 {
         return hr;
     }
@@ -1136,14 +1133,14 @@ pub unsafe fn CMenuSite_QueryService_body(this: *mut CMenuSite, guidService: REF
             return E_NOINTERFACE;
         }
 
-        return IUnknown_QueryService((*this).m_BandObject, guidService, riid, ppvObject);
+        return IUnknown_QueryService(((*this).m_BandObject).cast(), guidService, riid, ppvObject);
     }
 
     if (*this).m_DeskBarSite.is_null() {
         return E_NOINTERFACE;
     }
 
-    IUnknown_QueryService((*this).m_DeskBarSite, guidService, riid, ppvObject)
+    IUnknown_QueryService(((*this).m_DeskBarSite).cast(), guidService, riid, ppvObject)
 }
 
 pub unsafe fn CMenuSite_Exec_body(this: *mut CMenuSite, pguidCmdGroup: *const GUID, nCmdID: DWORD, nCmdexecopt: DWORD, pvaIn: *mut VARIANT, pvaOut: *mut VARIANT) -> HRESULT {
@@ -1164,7 +1161,7 @@ pub unsafe fn CMenuSite_SetDeskBarSite_body(this: *mut CMenuSite, punkSite: *mut
 
         CMenuSite_cpp_com_assign_m_DeskBarSite(this, core::ptr::null_mut());
 
-        let hr: HRESULT = IUnknown_GetWindow(punkSite, &mut hWndSite);
+        let hr: HRESULT = IUnknown_GetWindow((punkSite).cast(), &mut hWndSite);
         if hr < 0 || hWndSite.is_null() {
             return E_FAIL;
         }
@@ -1180,7 +1177,7 @@ pub unsafe fn CMenuSite_SetDeskBarSite_body(this: *mut CMenuSite, punkSite: *mut
             ((*(*pDeskBand).lpVtbl).CloseDW)(pDeskBand, 0 as u32);
         }
 
-        IUnknown_SetSite((*this).m_BandObject, core::ptr::null_mut());
+        IUnknown_SetSite(((*this).m_BandObject).cast(), core::ptr::null_mut());
 
         CMenuSite_cpp_com_assign_m_BandObject(this, core::ptr::null_mut());
         CMenuSite_cpp_com_assign_m_DeskBand(this, core::ptr::null_mut());
@@ -1211,7 +1208,7 @@ pub unsafe fn CMenuSite_UIActivateIO_body(this: *mut CMenuSite, fActivate: BOOL,
     if !lpMsg.is_null() {
         return E_FAIL;
     }
-    return IUnknown_UIActivateIO((*this).m_BandObject, fActivate, lpMsg);
+    return IUnknown_UIActivateIO(((*this).m_BandObject).cast(), fActivate, lpMsg);
 }
 
 pub unsafe fn CMenuSite_ProcessWindowMessage_body(this: *mut CMenuSite, hWnd: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM, lResult: &mut LRESULT, mapId: DWORD) -> BOOL {

@@ -1,13 +1,14 @@
 use crate::prelude::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::typelib::sys::FindResourceW;
+use crate::typelib::sys::FreeLibrary;
+use crate::typelib::sys::LoadLibraryW;
+use crate::typelib::sys::LoadResource;
 
 extern "system" {
-    fn CreateFontIndirectW(lplf: *const LOGFONTW) -> HFONT;
+    pub fn CreateFontIndirectW(lplf: *const LOGFONTW) -> HFONT;
     fn CreatePropertySheetPageW(lpPsp: *const PROPSHEETPAGEW) -> HPROPSHEETPAGE;
-    fn FindResourceW(hModule: HMODULE, lpName: LPCWSTR, lpType: LPCWSTR) -> HRSRC;
-    fn FreeLibrary(hLibModule: HMODULE) -> i32;
     fn GdiGetCharDimensions(hdc: HDC, lptm: *mut TEXTMETRICW, lpcy: *mut i32) -> i32;
-    fn LoadLibraryW(lpLibFileName: LPCWSTR) -> HMODULE;
-    fn LoadResource(hModule: HMODULE, hResInfo: HRSRC) -> HGLOBAL;
     fn LockResource(hResData: HGLOBAL) -> LPVOID;
     fn MulDiv(nNumber: i32, nNumerator: i32, nDenominator: i32) -> i32;
     fn PropertySheetW(lppsph: *mut PROPSHEETHEADERW) -> isize;
@@ -298,12 +299,12 @@ pub unsafe extern "system" fn OleCreatePropertyFrameIndirect(lpParams: *mut OCPF
     }
 
     hdc = GetDC(core::ptr::null_mut());
-    hcomctl = LoadLibraryW(comctlW.as_ptr());
+    hcomctl = (LoadLibraryW(comctlW.as_ptr())).cast();
     if !hcomctl.is_null() {
-        property_sheet_dialog_find = FindResourceW(hcomctl, MAKEINTRESOURCEW(1006), RT_DIALOG as LPWSTR);
+        property_sheet_dialog_find = (FindResourceW((hcomctl).cast(), MAKEINTRESOURCEW(1006), RT_DIALOG as LPWSTR)).cast();
     }
     if !property_sheet_dialog_find.is_null() {
-        property_sheet_dialog_load = LoadResource(hcomctl, property_sheet_dialog_find);
+        property_sheet_dialog_load = LoadResource((hcomctl).cast(), (property_sheet_dialog_find).cast());
     }
     if !property_sheet_dialog_load.is_null() {
         property_sheet_dialog_data = LockResource(property_sheet_dialog_load) as *mut u16;
@@ -312,7 +313,7 @@ pub unsafe extern "system" fn OleCreatePropertyFrameIndirect(lpParams: *mut OCPF
     if !property_sheet_dialog_data.is_null() {
         if *property_sheet_dialog_data.offset(1) == 0xffff {
             ERR!(b"Expected DLGTEMPLATE structure\n\0".as_ptr());
-            FreeLibrary(hcomctl);
+            FreeLibrary((hcomctl).cast());
             return E_OUTOFMEMORY;
         }
 
@@ -344,7 +345,7 @@ pub unsafe extern "system" fn OleCreatePropertyFrameIndirect(lpParams: *mut OCPF
         }
     }
     if !hcomctl.is_null() {
-        FreeLibrary(hcomctl);
+        FreeLibrary((hcomctl).cast());
     }
     ReleaseDC(core::ptr::null_mut(), hdc);
 

@@ -1,4 +1,9 @@
 use win32k_sys::win32k::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::windows::cursoricon::FindResourceW;
+use crate::misc::imm::GetProcAddress;
+use crate::windows::cursoricon::LoadResource;
+use crate::internal::RtlUnicodeToMultiByteN;
 #[allow(unused_imports)]
 use core::ffi::c_void;
 
@@ -26,21 +31,11 @@ extern "C" {
 
 extern "system" {
     fn FreeLibrary(hLibModule: HINSTANCE) -> BOOL;
-    fn GetProcAddress(hModule: HINSTANCE, lpProcName: LPCSTR) -> *mut core::ffi::c_void;
     fn LoadLibraryA(lpLibFileName: LPCSTR) -> HINSTANCE;
     fn SetLastError(dwErrCode: DWORD);
     // ── kernel32 resource APIs (lpName/lpType passed as MAKEINTRESOURCEW → LPWSTR).
-    fn FindResourceW(hModule: HINSTANCE, lpName: LPWSTR, lpType: LPWSTR) -> HRSRC;
-    fn LoadResource(hModule: HINSTANCE, hResInfo: HRSRC) -> HGLOBAL;
     fn LockResource(hResData: HGLOBAL) -> LPVOID;
     // ── ntdll string conversion.
-    fn RtlUnicodeToMultiByteN(
-        MultiByteString: *mut core::ffi::c_char,
-        MaxBytesInMultiByteString: ULONG,
-        BytesInMultiByteString: PULONG,
-        UnicodeString: PWSTR,
-        BytesInUnicodeString: ULONG,
-    ) -> NTSTATUS;
 }
 
 // ---- file-scope preamble (translated) ----

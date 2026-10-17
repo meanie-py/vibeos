@@ -1,6 +1,4 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::HANDLE;
 use ntkrnl_sys::ddk::{LARGE_INTEGER, NtClose, NtCreateKeyedEvent, NtReleaseKeyedEvent, NtWaitForKeyedEvent, PLARGE_INTEGER, PRTL_CONDITION_VARIABLE, PRTL_CRITICAL_SECTION, PRTL_SRWLOCK};
 // Atomics substrate (Acquire/Release CAS + YieldProcessor) and the keyed-event
@@ -19,7 +17,6 @@ extern "system" {
     fn RtlLeaveCriticalSection(CriticalSection: PRTL_CRITICAL_SECTION) -> NTSTATUS;
 }
 use crate::srw::{RtlAcquireSRWLockExclusive, RtlAcquireSRWLockShared, RtlReleaseSRWLockExclusive, RtlReleaseSRWLockShared};
-use core::ffi::c_void;
 
 // winbase.h
 const RTL_CONDITION_VARIABLE_LOCKMODE_SHARED: ULONG = 1;

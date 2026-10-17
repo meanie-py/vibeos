@@ -1,4 +1,6 @@
 use win32k_sys::win32k::*;
+// The crate's own functions: the definition is the declaration.
+use crate::windows::cursoricon::LoadCursorW;
 use crate::internal::*;   // ntdll Rtl* + LoadUserApiHook/BeginIf*/End*/guah/gpsi + NT_SUCCESS not here
 use crate::winbase::*;    // MultiByteToWideChar/WideCharToMultiByte + CP_THREAD_ACP + NT_SUCCESS
 use crate::ntwrapper::*;  // GetWindowDC, SetCursor, SetShellWindowEx (spec forwarders)
@@ -46,7 +48,6 @@ extern "system" {
     // controls). Called here via a local decl, resolved at link to those `#[no_mangle]`s.
     fn ReleaseDC(hWnd: HWND, hDC: HDC) -> INT;
     fn DefWindowProcW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
-    fn LoadCursorW(hInstance: HINSTANCE, name: LPCWSTR) -> HCURSOR;
 }
 
 // winuser.h `IDC_ARROW == MAKEINTRESOURCEW(32512)` — not in win32k-sys; reproduced

@@ -14,6 +14,8 @@ use crate::shared::*; // crate::types::* (P*_DEVICE_DATA, ACPI_STATUS, AE_OK, ac
 // STATUS_* + IO_NO_INCREMENT + NTSTATUS live in base/constants (NOT re-exported
 // by crate::types). IRP_MN_* / IRP_MJ_POWER live in driver_ddk. Mirror buspdo.rs.
 use ntkrnl_sys::base::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::pnp::PoSetPowerState;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::{
     IRP_MN_SET_POWER, IRP_MN_QUERY_POWER, IRP_MN_WAIT_WAKE, IRP_MN_POWER_SEQUENCE, IRP_MJ_POWER,
@@ -84,11 +86,6 @@ unsafe fn ACPI_SUCCESS(s: ACPI_STATUS) -> bool {
 // amd64/arm64 — `extern "system"` resolves per arch). Returns POWER_STATE by
 // value (the C glue ignores it). Signature: pofuncs.h. ----
 extern "system" {
-    fn PoSetPowerState(
-        DeviceObject: PDEVICE_OBJECT,
-        Type: ULONG,
-        State: POWER_STATE,
-    ) -> POWER_STATE;
 }
 
 // ---------------------------------------------------------------------------

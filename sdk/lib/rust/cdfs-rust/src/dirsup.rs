@@ -1,5 +1,15 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::base::*;
+// One declaration per external symbol: ddk_shims.rs.
+use crate::ddk_shims::CdFreePool;
+// The crate's own functions: the definition is the declaration.
+use crate::namesup::CdConvertBigToLittleEndian;
+use crate::namesup::CdGenerate8dot3Name;
+use crate::namesup::CdIs8dot3Name;
+use crate::namesup::CdIsLegalName;
+use crate::ddk_shims::CdRaiseStatus;
+use crate::namesup::CdUpcaseName;
+use crate::cdmacros::SectorOffset;
 use ntkrnl_sys::ddk::{CcMapData, PLARGE_INTEGER, RtlOemToUnicodeN};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CD_NAME, COMPOUND_DIRENT, DIRENT, DIRENT_ENUM_CONTEXT, DIRENT_FLAG_ALLOC_BUFFER, FCB, FCB_INDEX, FILE_CONTEXT_MULTIPLE_DIRENTS, FILE_ENUM_CONTEXT, IRP_CONTEXT, PDIRENT, PIRP_CONTEXT, RIFF_HEADER, VCB, VCB_STATE_CDXA, VCB_STATE_JOLIET, XA_EXTENT_TYPE, _XA_EXTENT_TYPE_CDAudio as CDAudio, _XA_EXTENT_TYPE_Form1Data as Form1Data, _XA_EXTENT_TYPE_Mode2Form2Data as Mode2Form2Data};
@@ -23,7 +33,6 @@ extern "C" {
     fn CopyUchar4( dest: *mut u32, src: *const u8, );
 }
 extern "C" {
-    fn CdRaiseStatus( IrpContext: *mut IRP_CONTEXT, Status: i32, ) -> !;
 }
 extern "C" {
     fn WordAlign(offset: u32) -> u32;
@@ -35,19 +44,15 @@ extern "C" {
     fn Int32x32To64(a: i32, b: i32) -> LONGLONG;
 }
 extern "C" {
-    fn CdConvertBigToLittleEndian(IrpContext: PIRP_CONTEXT, Src: *const u8, SrcLen: ULONG, Dst: *mut u8);
 }
 extern "C" {
     fn CdConvertNameToCdName(IrpContext: PIRP_CONTEXT, FileName: *mut CD_NAME);
 }
 extern "C" {
-    fn CdUpcaseName(IrpContext: PIRP_CONTEXT, ExactName: *const CD_NAME, UpcasedName: *mut CD_NAME);
 }
 extern "C" {
-    fn CdIsLegalName(IrpContext: PIRP_CONTEXT, Name: *const _UNICODE_STRING) -> BOOLEAN;
 }
 extern "C" {
-    fn CdFreePool(Pool: *mut *mut core::ffi::c_void);
 }
 extern "C" {
 }
@@ -72,7 +77,6 @@ extern "C" {
     fn SectorTruncate(Offset: u32) -> u32; // defined -> u32; i64 decl leaks garbage EDX on i386
 }
 extern "C" {
-    fn SectorOffset(Offset: u32) -> u32;
 }
 extern "C" {
     fn CdUnpinData(IrpContext: *mut IRP_CONTEXT, Bcb: *mut *mut core::ffi::c_void);
@@ -81,10 +85,8 @@ extern "C" {
     fn CdShortNameDirentOffset(IrpContext: *mut IRP_CONTEXT, FileName: *mut _UNICODE_STRING) -> u32;
 }
 extern "C" {
-    fn CdIs8dot3Name(IrpContext: *mut IRP_CONTEXT, Name: _UNICODE_STRING) -> i32;
 }
 extern "C" {
-    fn CdGenerate8dot3Name(IrpContext: *mut IRP_CONTEXT, Source: *mut _UNICODE_STRING, Offset: u32, Buffer: *mut u16, Length: *mut u16);
 }
 
 // ---- file-scope preamble (translated) ----
@@ -438,7 +440,7 @@ pub unsafe extern "C" fn CdUpdateDirentName(
         } else {
             CdConvertBigToLittleEndian(
                 IrpContext,
-                (*Dirent).FileName as *const u8,
+                (*Dirent).FileName as *mut u8,
                 (*Dirent).FileNameLen,
                 (*Dirent).CdFileName.FileName.Buffer as *mut u8,
             );
@@ -486,7 +488,7 @@ pub unsafe extern "C" fn CdUpdateDirentName(
             (*Dirent).CdFileName.FileName.Length -= core::mem::size_of::<WCHAR>() as USHORT;
         }
 
-        if CdIsLegalName(IrpContext, &(*Dirent).CdFileName.FileName) == 0 {
+        if CdIsLegalName((IrpContext).cast(), &raw mut (*Dirent).CdFileName.FileName) == 0 {
             CdRaiseStatus(IrpContext, STATUS_FILE_CORRUPT_ERROR);
         }
 
@@ -507,8 +509,8 @@ pub unsafe extern "C" fn CdUpdateDirentName(
                 (*Dirent).CdFileName.FileName.MaximumLength / 2;
 
             CdUpcaseName(
-                IrpContext,
-                &(*Dirent).CdFileName,
+                (IrpContext).cast(),
+                &raw mut (*Dirent).CdFileName,
                 &mut (*Dirent).CdCaseFileName,
             );
         }
@@ -574,12 +576,12 @@ pub unsafe extern "C" fn CdFindFile(
             if ((*Dirent).DirentOffset >> SHORT_NAME_SHIFT) as u32 == ShortNameDirentOffset
                 && (*Name).VersionString.Length as u32 == 0
                 && CdIs8dot3Name(
-                    IrpContext,
+                    (IrpContext).cast(),
                     (*Dirent).CdFileName.FileName,
                 ) == 0
             {
                 CdGenerate8dot3Name(
-                    IrpContext,
+                    (IrpContext).cast(),
                     core::ptr::addr_of_mut!((*Dirent).CdCaseFileName.FileName),
                     (*Dirent).DirentOffset,
                     (*FileContext).ShortName.FileName.Buffer,
@@ -923,7 +925,7 @@ pub unsafe extern "C" fn CdFindFileByShortName(
             CdUpdateDirentName(IrpContext, Dirent, IgnoreCase as u32);
 
             if CdIs8dot3Name(
-                IrpContext,
+                (IrpContext).cast(),
                 (*Dirent).CdFileName.FileName,
             ) != 0 {
                 break;
@@ -934,7 +936,7 @@ pub unsafe extern "C" fn CdFindFileByShortName(
             //
 
             CdGenerate8dot3Name(
-                IrpContext,
+                (IrpContext).cast(),
                 core::ptr::addr_of_mut!((*Dirent).CdCaseFileName.FileName),
                 (*Dirent).DirentOffset,
                 (*FileContext).ShortName.FileName.Buffer,

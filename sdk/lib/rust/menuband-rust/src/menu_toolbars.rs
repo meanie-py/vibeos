@@ -51,6 +51,9 @@
 #![allow(non_snake_case)]
 
 use crate::prelude::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::menu_desk_bar::GetWindowLongPtrW;
+use crate::menu_desk_bar::SetWindowLongPtrW;
 use crate::menu_band::{
     CppComPtrGuard, IContextMenu, IContextMenuVtbl, IEnumIDList, IEnumIDListVtbl, IShellFolder,
     IShellFolderVtbl, IShellMenu, IShellMenuVtbl, IShellMenuCallback, IShellMenuCallbackVtbl,
@@ -139,16 +142,12 @@ const FALSE: BOOL = 0;
 // glob on 64-bit too, which keeps one spelling for all three arches. menu_desk_bar.rs and
 // menu_site.rs carry the same two declarations privately.
 extern "system" {
-    #[cfg_attr(target_pointer_width = "32", link_name = "GetWindowLongW")]
-    fn GetWindowLongPtrW(window: HWND, index: INT) -> LONG_PTR;
-    #[cfg_attr(target_pointer_width = "32", link_name = "SetWindowLongW")]
-    fn SetWindowLongPtrW(window: HWND, index: INT, value: LONG_PTR) -> LONG_PTR;
 }
 
 extern "system" {
     fn SHGetImageList(iImageList: INT, riid: REFIID, ppv: *mut *mut core::ffi::c_void) -> HRESULT;
     fn SHGetPathFromIDListW(pidl: LPCITEMIDLIST, pszPath: LPWSTR) -> BOOL;
-    fn StrRetToStrW(value: *mut STRRET, pidl: LPCITEMIDLIST, out: *mut LPWSTR) -> HRESULT;
+    pub fn StrRetToStrW(value: *mut STRRET, pidl: LPCITEMIDLIST, out: *mut LPWSTR) -> HRESULT;
 }
 extern "C" {
     static IID_IImageList: IID;
@@ -603,9 +602,9 @@ unsafe fn dispatch(
 
     if uMsg == WM_NCDESTROY {
         if !(*orig_slot).is_none() {
-            SetWindowLongPtrW(hwnd, GWLP_WNDPROC, core::mem::transmute::<WNDPROC, LONG_PTR>(*orig_slot));
+            SetWindowLongPtrW((hwnd).cast(), GWLP_WNDPROC, (core::mem::transmute::<WNDPROC, LONG_PTR>(*orig_slot)) as _);
         }
-        SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+        SetWindowLongPtrW((hwnd).cast(), GWLP_USERDATA, 0);
         *orig_slot = None;
         *hwnd_slot = core::ptr::null_mut();
     }
@@ -614,7 +613,7 @@ unsafe fn dispatch(
 }
 
 unsafe extern "system" fn tb_wndproc(hwnd: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
-    let this = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut CMenuToolbarBase;
+    let this = GetWindowLongPtrW((hwnd).cast(), GWLP_USERDATA) as *mut CMenuToolbarBase;
     if this.is_null() {
         return DefWindowProcW(hwnd, uMsg, wParam, lParam);
     }
@@ -622,7 +621,7 @@ unsafe extern "system" fn tb_wndproc(hwnd: HWND, uMsg: UINT, wParam: WPARAM, lPa
 }
 
 unsafe extern "system" fn pager_wndproc(hwnd: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
-    let this = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut CMenuToolbarBase;
+    let this = GetWindowLongPtrW((hwnd).cast(), GWLP_USERDATA) as *mut CMenuToolbarBase;
     if this.is_null() {
         return DefWindowProcW(hwnd, uMsg, wParam, lParam);
     }
@@ -637,13 +636,13 @@ unsafe fn subclass_window(hwnd: HWND, this: *mut CMenuToolbarBase, wndproc: WNDP
     if hwnd.is_null() || IsWindow(hwnd) == 0 {
         return FALSE;
     }
-    SetWindowLongPtrW(hwnd, GWLP_USERDATA, this as LONG_PTR);
-    let previous = SetWindowLongPtrW(hwnd, GWLP_WNDPROC, core::mem::transmute::<WNDPROC, LONG_PTR>(wndproc));
+    SetWindowLongPtrW((hwnd).cast(), GWLP_USERDATA, this as _);
+    let previous = SetWindowLongPtrW((hwnd).cast(), GWLP_WNDPROC, (core::mem::transmute::<WNDPROC, LONG_PTR>(wndproc)) as _);
     if previous == 0 {
-        SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+        SetWindowLongPtrW((hwnd).cast(), GWLP_USERDATA, 0);
         return FALSE;
     }
-    *orig_slot = core::mem::transmute::<LONG_PTR, WNDPROC>(previous);
+    *orig_slot = core::mem::transmute::<LONG_PTR, WNDPROC>((previous) as _);
     *hwnd_slot = hwnd;
     TRUE
 }

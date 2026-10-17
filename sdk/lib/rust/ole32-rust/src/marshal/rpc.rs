@@ -2221,7 +2221,7 @@ pub unsafe extern "C" fn RPC_GetLocalClassObject(
         return E_NOINTERFACE;
     }
 
-    hres = CreateStreamOnHGlobal(core::ptr::null_mut(), TRUE, &mut pStm);
+    hres = CreateStreamOnHGlobal(core::ptr::null_mut(), TRUE, (&raw mut pStm).cast());
     if hres != S_OK {
         return hres;
     }

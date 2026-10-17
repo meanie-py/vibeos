@@ -390,7 +390,7 @@ unsafe fn DefaultHandler_SetHostNames(
         let ptr = HeapAlloc(
             GetProcessHeap(),
             0,
-            ((len + 1) * core::mem::size_of::<u16>()) as SIZE_T,
+            ((len + 1) * core::mem::size_of::<u16>()) as usize,
         );
         if !ptr.is_null() {
             (*This).containerApp = ptr as *mut u16;
@@ -403,7 +403,7 @@ unsafe fn DefaultHandler_SetHostNames(
         let ptr = HeapAlloc(
             GetProcessHeap(),
             0,
-            ((len + 1) * core::mem::size_of::<u16>()) as SIZE_T,
+            ((len + 1) * core::mem::size_of::<u16>()) as usize,
         );
         if !ptr.is_null() {
             (*This).containerObj = ptr as *mut u16;
@@ -1252,10 +1252,10 @@ unsafe fn DefaultHandler_Run(
     release_delegates(This);
 
     hr = CoCreateInstance(
-        core::ptr::addr_of!((*This).clsid),
+        (core::ptr::addr_of!((*This).clsid)).cast(),
         core::ptr::null_mut(),
         CLSCTX_LOCAL_SERVER | CLSCTX_REMOTE_SERVER,
-        &IID_IOleObject,
+        (&raw const IID_IOleObject).cast(),
         core::ptr::addr_of_mut!((*This).pOleDelegate) as *mut LPVOID,
     );
     if FAILED(hr) {
@@ -1721,7 +1721,7 @@ unsafe fn DefaultHandler_Construct(
     This = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<DefaultHandler>() as SIZE_T,
+        core::mem::size_of::<DefaultHandler>() as usize,
     ) as *mut DefaultHandler;
 
     if This.is_null() {
@@ -1806,10 +1806,10 @@ unsafe fn DefaultHandler_Construct(
             );
         } else {
             hr = CoCreateInstance(
-                &(*This).clsid,
+                (&raw const (*This).clsid).cast(),
                 core::ptr::null_mut(),
                 CLSCTX_INPROC_SERVER,
-                &IID_IOleObject,
+                (&raw const IID_IOleObject).cast(),
                 &mut (*This).pOleDelegate as *mut *mut IOleObject as *mut LPVOID,
             );
         }
@@ -2031,7 +2031,7 @@ pub unsafe extern "C" fn HandlerCF_Create(rclsid: *const CLSID, riid: *const CLS
     let This = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<HandlerCF>() as SIZE_T,
+        core::mem::size_of::<HandlerCF>() as usize,
     ) as *mut HandlerCF;
     if This.is_null() {
         return E_OUTOFMEMORY;

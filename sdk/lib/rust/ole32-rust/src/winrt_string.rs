@@ -25,9 +25,10 @@ const HSTRING_REFERENCE_FLAG: u32 = 1;
 
 mod k32 {
     use core::ffi::c_void;
+    // One declaration per external symbol: the variant matching the C prototype.
+    pub use crate::compobj::ffi::HeapAlloc;
     extern "system" {
         pub fn GetProcessHeap() -> *mut c_void;
-        pub fn HeapAlloc(heap: *mut c_void, flags: u32, bytes: usize) -> *mut c_void;
         pub fn HeapFree(heap: *mut c_void, flags: u32, mem: *mut c_void) -> i32;
     }
 }

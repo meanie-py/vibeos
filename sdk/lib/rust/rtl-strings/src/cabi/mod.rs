@@ -6808,7 +6808,7 @@ pub unsafe extern "system" fn RtlReleaseResource(resource: *mut res::RTL_RESOURC
 #[no_mangle]
 pub unsafe extern "system" fn RtlDumpResource(resource: *mut res::RTL_RESOURCE) {
     extern "C" {
-        fn DbgPrint(fmt: *const u8, ...) -> u32;
+        pub fn DbgPrint(fmt: *const u8, ...) -> u32;
     }
     let r = &*resource;
 
@@ -9025,12 +9025,12 @@ mod path_wave {
         // rtlp.h: RtlpAllocateStringMemory/RtlpFreeStringMemory are C MACROS for
         // RtlpAllocateMemory/RtlpFreeMemory — C never emits a `RtlpAllocateString*`
         // symbol. Bind the real macro targets and wrap them inline below.
-        fn RtlpAllocateMemory(Bytes: ULONG, Tag: ULONG) -> PWSTR;
-        fn RtlpFreeMemory(Mem: *mut core::ffi::c_void, Tag: ULONG);
+        pub fn RtlpAllocateMemory(Bytes: ULONG, Tag: ULONG) -> PWSTR;
+        pub fn RtlpFreeMemory(Mem: *mut core::ffi::c_void, Tag: ULONG);
         fn RtlGetCurrentPeb() -> PPEB;
         fn RtlAcquirePebLock();
         fn RtlReleasePebLock();
-        fn NtClose(Handle: HANDLE) -> NTSTATUS;
+        pub fn NtClose(Handle: HANDLE) -> NTSTATUS;
         fn NtOpenFile(
             FileHandle: *mut HANDLE,
             DesiredAccess: u32,

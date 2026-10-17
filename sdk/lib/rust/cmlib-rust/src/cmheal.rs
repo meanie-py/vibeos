@@ -13,6 +13,8 @@
 //!   plus the two leaf-cell removers (CmpRemoveFastIndexKeyCell/CmpRemoveIndexKeyCell)
 //!   they depend on — all `static` in C, so private `unsafe fn` here.
 use ntkrnl_sys::base::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::hiveinit::DbgPrint;
 use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, CM_KEY_FAST_INDEX, CM_KEY_INDEX, CM_INDEX, HCELL_INDEX, HHIVE, PCELL_DATA, PCM_KEY_FAST_INDEX, PCM_KEY_INDEX, PCM_KEY_NODE, PHHIVE, HSTORAGE_TYPE_Stable as Stable};
 use crate::glue::{HvGetCell, HvReleaseCell, HCELL_NIL, HBOOT_TYPE_SELF_HEAL, CM_KEY_INDEX_ROOT, CM_KEY_INDEX_LEAF, CM_KEY_FAST_LEAF, CM_KEY_HASH_LEAF, CM_KEY_NODE_SIGNATURE};
 
@@ -40,7 +42,6 @@ unsafe fn DPRINT1(format: *const i8) {
     DbgPrint(format);
 }
 unsafe extern "C" {
-    fn DbgPrint(format: *const i8, ...);
     // Consumer-provided globals (ntoskrnl in the kernel; loader supplies a
     // zero stub). Gated behind !CMLIB_HOST && !_BLDR_ in C.
     #[cfg(not(feature = "bldr"))]

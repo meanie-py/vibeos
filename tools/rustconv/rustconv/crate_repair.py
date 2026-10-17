@@ -564,6 +564,21 @@ def _prev_code_byte(masked: bytes, pos: int) -> bytes:
     return masked[pos : pos + 1] if pos >= 0 else b""
 
 
+_ARITH_BEFORE = re.compile(rb"(?:<<|>>|(?<![&|])[&|]|[-+*/%^])=?\s*\Z")
+_ARITH_AFTER = re.compile(rb"\s*(?:<<|>>|[&|](?![&|])|[-+*/%^](?!>))")
+
+
+def _arith_operand(masked: bytes, start: int, end: int) -> bool:
+    """Is start..end an operand of an arithmetic, bitwise or shift operator (compound
+    assignment included)? There `(x) as _` cannot be inferred -- `u64: Add<u64>` and
+    `Add<&u64>` both exist -- so rustc trades the E0308 for an E0282 at the same count.
+    Comparisons are not here: `PartialEq`/`PartialOrd` have one impl per integer, and infer.
+    `&x` (a borrow) and `-x` (negation) read as operators too, which only ever declines."""
+    if _ARITH_BEFORE.search(masked[max(0, start - 8) : start]):
+        return not masked[:start].rstrip().endswith((b"&&", b"||", b"->", b"=>", b"==", b"!="))
+    return _ARITH_AFTER.match(masked, end) is not None
+
+
 def _in_match_pattern(masked: bytes, end: int) -> bool:
     """True when the span ending at ``end`` sits in match-arm PATTERN position.
 
@@ -3459,6 +3474,7 @@ def _infer_widen_rule(
     or sign change stays with the other rules (that is C truncation, and it needs a name).
     """
     edits: list[Edit] = []
+    skipped: list[Skipped] = []
     for span, expected, found in _mismatch_sites(diagnostic):
         if expected not in INT_PRIMITIVES or found not in INT_PRIMITIVES or expected == found:
             continue
@@ -3484,13 +3500,31 @@ def _infer_widen_rule(
         if _next_code_byte(masked, end) == b"(":
             continue  # a callee, not a value
         text = data[start:end].decode("utf-8", "replace")
+        target = "_"
+        if _arith_operand(masked, start, end):
+            # `wParam & (x) as _` does not infer; the other operand's declared NAME is
+            # portable (WPARAM is u32 on i386, u64 on amd64), a primitive would bake a width.
+            sibling = _sibling_declared_type(data, start, end)
+            if sibling is None:
+                skipped.append(
+                    Skipped(
+                        RULE_INFER_WIDEN,
+                        "uninferable_operand",
+                        file_name,
+                        int(span.get("line_start") or 0),
+                        f"`{text}` is an arithmetic/bitwise operand, where `as _` cannot be "
+                        "inferred, and the other operand has no declared type name to use",
+                    )
+                )
+                continue
+            target = sibling
         ctx.claimed.add((file_name, start, end))
         edits.append(
             Edit(
                 file_name=file_name,
                 byte_start=start,
                 byte_end=end,
-                replacement=f"({text}) as _",
+                replacement=f"({text}) as {target}",
                 rule=RULE_INFER_WIDEN,
                 authority=(
                     f"rustc: `{found}` into `{expected}` on {ctx.target} only widens; `as _` is "
@@ -3502,7 +3536,7 @@ def _infer_widen_rule(
                 targets=(ctx.target,),
             )
         )
-    return edits, [], bool(edits)
+    return edits, skipped, bool(edits)
 
 
 def _no_std_path_rule(
