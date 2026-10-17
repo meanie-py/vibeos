@@ -2,8 +2,8 @@
 
 Status (2026-10-17): protocol, SDIO, chip, firmware-load and frame layers host-tested
 against a simulated controller and firmware; on the Pi 5, bwfm.sys loads the firmware and
-the firmware answers `ver` over BCDC (run `20261017-035410-ouzyie33`). Next: the CLM
-blob, then scan.
+the firmware answers `ver`, gives its MAC and takes the CLM blob (run
+`20261017-043257-y_61cdjm`). Next: scan.
 
 ## Why our own
 
@@ -135,5 +135,10 @@ only when asked to (`VIBEOS_PI_WIFI_FIRMWARE`), so an image built without it is 
        [BWFM] firmware says: wl0: Aug 29 2023 01:47:08 version 7.45.265 (28bca26 CY) FWID 01-b677b91b (2 frames, 0 other frames before the reply, credit window 20)
 
    The firmware's first frame is a credit-only one; the host sends nothing until it has
-   read it. Still owed before a scan: the CLM blob (`clmload`).
+   read it. Then the MAC (`cur_etheraddr`) and the CLM blob, in `clmload` chunks of at
+   most 1400 bytes behind a download header (BEGIN on the first, END on the last), checked
+   with `clmload_status` (done, run `20261017-043257-y_61cdjm`):
+
+       [BWFM] MAC b8:27:eb:74:f2:6c
+       [BWFM] CLM loaded: 2676 bytes in 2 chunks, clmload_status 0
 5. Scan, join, WPA2, link up, netstack traffic. Then the Pi 4 (host and power differ).

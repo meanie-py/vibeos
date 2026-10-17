@@ -17,6 +17,16 @@ use crate::proto::{self, Credit, RxHeader, HEADER};
 
 /// The largest frame we read: an Ethernet frame with its headers fits well under.
 pub const SDPCM_FRAME_MAX: usize = 2048;
+/// The largest command: a CLM chunk (1400 bytes and its 12-byte header) behind
+/// `clmload\0` and the BCDC header, with room to spare.
+pub const DCMD_MAX: usize = 1536;
+/// One `clmload` chunk at most (`BWFM_DLOAD_MAX_LEN`).
+pub const CLM_CHUNK: usize = 1400;
+const DLOAD_FLAG_BEGIN: u16 = 1 << 1;
+const DLOAD_FLAG_END: u16 = 1 << 2;
+const DLOAD_FLAG_HANDLER_VER_1: u16 = 1 << 12;
+const DLOAD_TYPE_CLM: u16 = 2;
+const DLOAD_HEADER: usize = 12;
 /// How long a command waits for its reply.
 const DCMD_WAIT_US: u64 = 1_000_000;
 /// How long the bus waits for the firmware's first credit.
@@ -35,6 +45,8 @@ pub struct Bus<P: Platform> {
     next_len: usize,
     rx: [u8; SDPCM_FRAME_MAX],
     tx: [u8; SDPCM_FRAME_MAX],
+    /// A BCDC command being built: header, then the iovar.
+    req: [u8; DCMD_MAX],
     dcmd_id: u16,
     /// Frames polled, and those that were not ours to keep (bad header, unknown
     /// channel, too big), for the log.
@@ -59,6 +71,7 @@ impl<P: Platform> Bus<P> {
             next_len: 0,
             rx: [0; SDPCM_FRAME_MAX],
             tx: [0; SDPCM_FRAME_MAX],
+            req: [0; DCMD_MAX],
             dcmd_id: 0,
             frames: 0,
             dropped: 0,
@@ -128,9 +141,9 @@ impl<P: Platform> Bus<P> {
         }
     }
 
-    /// Send `payload` on the control channel, waiting for credit (reading
-    /// frames meanwhile and handing them to `each`).
-    pub fn send_control(&mut self, payload: &[u8], mut each: impl FnMut(Frame)) -> Result<(), Error> {
+    /// Send the first `n` bytes of `req` on the control channel, waiting for
+    /// credit (reading frames meanwhile and handing them to `each`).
+    fn send_request(&mut self, n: usize, mut each: impl FnMut(Frame)) -> Result<(), Error> {
         let start = self.chip.sdio.hc.p.now_us();
         let seq = loop {
             if let Some(s) = self.credit.take() {
@@ -142,31 +155,42 @@ impl<P: Platform> Bus<P> {
             }
             self.chip.sdio.hc.p.stall_us(1000);
         };
-        let Some(n) = proto::frame(proto::CHANNEL_CONTROL, seq, &[payload], &mut self.tx) else {
-            return Err(Error::Card("control frame too big", payload.len() as u32));
+        let Some(len) = proto::frame(proto::CHANNEL_CONTROL, seq, &[&self.req[..n]], &mut self.tx) else {
+            return Err(Error::Card("control frame too big", n as u32));
         };
         let addr = self.frame_addr()?;
-        self.chip.sdio.write(2, addr, true, &self.tx[..n])
+        self.chip.sdio.write(2, addr, true, &self.tx[..len])
     }
 
     /// One BCDC command and its reply: the reply's data goes to `out`, and its
     /// length comes back. A firmware error is `Error::Card("firmware refused ...", status)`.
     /// Frames that arrive meanwhile and are not the reply go to `each`.
+    /// `parts` are the command's data, concatenated.
     pub fn dcmd(
         &mut self,
         command: u32,
         set: bool,
-        data: &[u8],
+        parts: &[&[u8]],
         out: &mut [u8],
         mut each: impl FnMut(Frame),
     ) -> Result<usize, Error> {
         self.dcmd_id = self.dcmd_id.wrapping_add(1);
         let id = self.dcmd_id;
-        let mut req = [0u8; 512];
-        let Some(n) = proto::encode_dcmd(command, set, id, 0, data, &mut req) else {
-            return Err(Error::Card("command too big", data.len() as u32));
-        };
-        self.send_control(&req[..n], &mut each)?;
+        let len: usize = parts.iter().map(|p| p.len()).sum();
+        if proto::DCMD_HEADER + len > self.req.len() {
+            return Err(Error::Card("command too big", len as u32));
+        }
+        let mut at = proto::DCMD_HEADER;
+        for p in parts {
+            self.req[at..at + p.len()].copy_from_slice(p);
+            at += p.len();
+        }
+        // The header goes in front of the data already in place.
+        let mut head = [0u8; proto::DCMD_HEADER];
+        proto::encode_dcmd(command, set, id, 0, &[], &mut head);
+        head[4..8].copy_from_slice(&(len as u32).to_le_bytes());
+        self.req[..proto::DCMD_HEADER].copy_from_slice(&head);
+        self.send_request(at, &mut each)?;
         let start = self.chip.sdio.hc.p.now_us();
         let mut got: Option<Result<usize, Error>> = None;
         loop {
@@ -201,13 +225,37 @@ impl<P: Platform> Bus<P> {
     /// GET an iovar: `name`'s value into `out`.
     pub fn get_var(&mut self, name: &[u8], out: &mut [u8], each: impl FnMut(Frame)) -> Result<usize, Error> {
         // The query's length is also the most the reply may carry: ask for as
-        // much as `out` holds.
-        let mut q = [0u8; 480];
-        let want = out.len().min(q.len());
-        let Some(n) = proto::iovar(name, &[], &mut q) else {
-            return Err(Error::Card("iovar name too long", name.len() as u32));
-        };
-        self.dcmd(proto::cmd::C_GET_VAR, false, &q[..n.max(want)], out, each)
+        // much as `out` holds, as zeros after the name.
+        const ZEROS: [u8; 480] = [0; 480];
+        let room = out.len().min(ZEROS.len()).saturating_sub(name.len() + 1);
+        self.dcmd(proto::cmd::C_GET_VAR, false, &[name, &[0], &ZEROS[..room]], out, each)
+    }
+
+    /// SET an iovar: `name\0` then `value`.
+    pub fn set_var(&mut self, name: &[u8], value: &[u8], each: impl FnMut(Frame)) -> Result<(), Error> {
+        self.dcmd(proto::cmd::C_SET_VAR, true, &[name, &[0], value], &mut [], each).map(|_| ())
+    }
+
+    /// Hand the firmware its regulatory table (the CLM blob) in `clmload`
+    /// chunks (`bwfm_process_blob`). Returns the chunks sent.
+    pub fn load_clm(&mut self, blob: &[u8], mut each: impl FnMut(Frame)) -> Result<usize, Error> {
+        let chunks = blob.len().div_ceil(CLM_CHUNK);
+        for (i, chunk) in blob.chunks(CLM_CHUNK).enumerate() {
+            let mut flag = DLOAD_FLAG_HANDLER_VER_1;
+            if i == 0 {
+                flag |= DLOAD_FLAG_BEGIN;
+            }
+            if i + 1 == chunks {
+                flag |= DLOAD_FLAG_END;
+            }
+            let mut head = [0u8; DLOAD_HEADER];
+            head[0..2].copy_from_slice(&flag.to_le_bytes());
+            head[2..4].copy_from_slice(&DLOAD_TYPE_CLM.to_le_bytes());
+            head[4..8].copy_from_slice(&(chunk.len() as u32).to_le_bytes());
+            // CRC 0: the firmware does not check it (OpenBSD and Linux send 0).
+            self.dcmd(proto::cmd::C_SET_VAR, true, &[b"clmload\0", &head, chunk], &mut [], &mut each)?;
+        }
+        Ok(chunks)
     }
 }
 
@@ -269,6 +317,24 @@ mod tests {
         let mut bus = running();
         bus.get_var(b"ver", &mut [0u8; 256], |_| {}).unwrap();
         assert!(!bus.chip.sdio.hc.p.card().desynced);
+    }
+
+    #[test]
+    fn the_clm_goes_in_chunks_marked_begin_and_end() {
+        let mut bus = running();
+        let blob: Vec<u8> = (0..2676u32).map(|i| i as u8).collect(); // the Pi's is 2,676 bytes
+        assert_eq!(bus.load_clm(&blob, |_| {}).unwrap(), 2);
+        let card = bus.chip.sdio.hc.p.card();
+        assert_eq!(card.clm, blob, "the chunks reassemble to the blob");
+        assert_eq!(card.clm_flags, vec![DLOAD_FLAG_HANDLER_VER_1 | DLOAD_FLAG_BEGIN, DLOAD_FLAG_HANDLER_VER_1 | DLOAD_FLAG_END]);
+    }
+
+    #[test]
+    fn the_mac_address_is_an_iovar() {
+        let mut bus = running();
+        let mut mac = [0u8; 6];
+        assert_eq!(bus.get_var(b"cur_etheraddr", &mut mac, |_| {}).unwrap(), 6);
+        assert_eq!(mac, crate::sim::MAC);
     }
 
     #[test]

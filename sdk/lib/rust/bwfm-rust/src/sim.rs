@@ -47,7 +47,13 @@ pub struct Card {
     pub credit_frames: bool,
     rx_seq: u8,
     pub desynced: bool,
+    /// The CLM as clmload reassembled it, and each chunk's flag.
+    pub clm: Vec<u8>,
+    pub clm_flags: Vec<u16>,
 }
+
+/// The simulated chip's address.
+pub const MAC: [u8; 6] = [0xD8, 0x3A, 0xDD, 0x01, 0x02, 0x03];
 
 /// What the simulated firmware answers `ver` with.
 pub const FW_VERSION: &[u8] = b"wl0: Mar 28 2025 version 7.45.265 (28bca26 CY) FWID 01-b677b91b";
@@ -136,6 +142,8 @@ impl Card {
             credit_frames: true,
             rx_seq: 0,
             desynced: false,
+            clm: Vec::new(),
+            clm_flags: Vec::new(),
         }
     }
 
@@ -315,12 +323,26 @@ impl Card {
         let (command, len, flags) = (u(0), u(4) as usize, u(8));
         let data = &dcmd[16..16 + len.min(dcmd.len() - 16)];
         let name = &data[..data.iter().position(|&c| c == 0).unwrap_or(data.len())];
+        let rest = &data[(name.len() + 1).min(data.len())..];
         let (status, mut value) = match (command, name) {
-            (262, b"ver") => (0, FW_VERSION.to_vec()),
+            (262, b"ver") => (0, [FW_VERSION, b"\0"].concat()),
+            (262, b"cur_etheraddr") => (0, MAC.to_vec()),
+            (262, b"clmload_status") => (0, 0u32.to_le_bytes().to_vec()),
+            (263, b"clmload") if rest.len() >= 12 => {
+                let flag = u16::from_le_bytes([rest[0], rest[1]]);
+                let n = u32::from_le_bytes([rest[4], rest[5], rest[6], rest[7]]) as usize;
+                assert_eq!(u16::from_le_bytes([rest[2], rest[3]]), 2, "dload type CLM");
+                assert_eq!(n, rest.len() - 12, "chunk length");
+                self.clm_flags.push(flag);
+                self.clm.extend_from_slice(&rest[12..]);
+                (0, Vec::new())
+            }
             _ => (BCME_UNSUPPORTED, Vec::new()),
         };
-        value.push(0);
-        value.resize(len.max(value.len()), 0);
+        // A GET's reply fills the query's length; a SET's carries nothing back.
+        if command == 262 {
+            value.resize(len.max(value.len()), 0);
+        }
         let error = if status != 0 { 1 } else { 0 };
         let mut reply = Vec::new();
         reply.extend_from_slice(&command.to_le_bytes());
