@@ -58,12 +58,14 @@ media (and `--arch amd64 --ladder` for wow64.dll). Owed, most valuable first:
 2. Commit not yet charged: copy-on-write pages of image and file views, PEB/TEB pages, kernel
    pool (`ARM3/commit.rs` header). PEB/TEB charging was tried 2026-10-17 (charge in
    `MiCreatePebOrTebCapped`, return in `MmDeleteTeb`) and parked in stash `5cab7344b383`
-   ("PEB/TEB commit charging WIP"): on 1G appstorm64 media, apc32 under FEX reached the 137 MB
-   commit limit at rung 7 (`20261017-062113-2pae52ry`), ~100 MB charged to the process while
-   its PrivateUsage read 3 MB, and commit fell back once it died. Suspect: `MmDeleteTeb` skips
-   (no free, no return) a TEB whose VAD does not start at the TEB address, which a WoW64 TEB
-   region may not; charging turns that address-space leak into a commit leak. amd64's ladder
-   passed with it.
+   ("PEB/TEB commit charging WIP", branch `wip/peb-teb-commit-charge`): a FEX ladder on 1G
+   appstorm64 media refused a 16-page WoW64 TEB at apc32's rung 7, with the SYSTEM at 35164 of
+   35171 pages (`20261017-062113-2pae52ry`), and apc32 crashed instead of failing CreateThread.
+   Not a leak as far as read: a WoW64 TEB region starts at the TEB64, so `MmDeleteTeb` returns
+   it, and no ledger warning fired. More likely the margin: on that media the ramdisk leaves a
+   137 MB commit limit, appstorm runs beside the ladder guests, and ~114 WoW64 TEBs at 16 pages
+   are 7 MB more. Before landing it: a commit census at that point, and a ladder on plain
+   `VIBEOS_FEX=1` media. amd64's ladder passed with it.
 3. The cnt CRT's NUL scans (`cstr_slice`/`wcstr_slice`, under strlen, wcslen and every string
    function that measures its argument) are asm now (`memops.rs`, 2026-10-17). Owed: the
    compare/search loops (`strcmp`, `wcschr`, ...), which are still unoptimised Rust; measure
