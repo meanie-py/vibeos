@@ -686,3 +686,12 @@ def test_ratchet_trusts_the_source_tree_over_a_stale_graph(monkeypatch, capsys, 
     ratchet.main()
     out = capsys.readouterr().out.splitlines()
     assert out == ["n: fully-Rust module still linked by cmake (convertible)"]
+
+
+def test_a_resource_in_a_subdirectory_keeps_its_path(tmp_path):
+    """tdi's resource is misc/tdi.rc: naming only `tdi.rc` gave cmake an OBJECT library
+    over a file that does not exist ("No SOURCES given to target: tdi_res")."""
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE.replace("rsrc.rc", "misc/rsrc.rc"))
+    out = g.rewrite_cmake(f, cell(rc="base/m/misc/rsrc.rc"))
+    assert "add_library(m_res OBJECT misc/rsrc.rc)" in out
