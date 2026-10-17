@@ -2836,6 +2836,21 @@ unsafe fn WinLdrpDumpArcDisks(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
 // ============================================================================
 
 
+// SMBIOS entry-point layouts (DSP0134): 2.1 `_SM_` and 3.x `_SM3_`.
+const SM21_CHECKSUM: usize = 4;
+const SM21_LENGTH: usize = 5;
+const SM21_IEPS: usize = 16; // the `_DMI_` intermediate entry point: 15 bytes
+const SM21_IEPS_LEN: usize = 15;
+const SM21_IEPS_CHECKSUM: usize = 21;
+const SM21_TABLE_LENGTH: usize = 22;
+const SM21_TABLE_ADDRESS: usize = 24;
+const SM3_CHECKSUM: usize = 5;
+const SM3_LENGTH: usize = 6;
+const SM3_TABLE_MAX_SIZE: usize = 12;
+const SM3_TABLE_ADDRESS: usize = 16;
+/// The copied entry point's slot in the block; the table follows it.
+const SM_EPS_SLOT: usize = 32;
+
 /// Copy the SMBIOS entry point at physical `eps` and its structure table into one
 /// LoaderFirmwarePermanent block, retarget the copy's table address at the copied table and
 /// fix its checksums. Null when there is none, or it cannot be described (an `_SM_` 2.1
@@ -2847,39 +2862,41 @@ unsafe fn smbios_copy(eps: usize) -> *mut u8 {
     let p = eps as *const u8;
     let v3 = core::slice::from_raw_parts(p, 5) == b"_SM3_";
     let (len, table, size) = if v3 {
-        (*p.add(6) as usize, core::ptr::read_unaligned(p.add(16) as *const u64) as usize,
-         core::ptr::read_unaligned(p.add(12) as *const u32) as usize)
+        (*p.add(SM3_LENGTH) as usize,
+         core::ptr::read_unaligned(p.add(SM3_TABLE_ADDRESS) as *const u64) as usize,
+         core::ptr::read_unaligned(p.add(SM3_TABLE_MAX_SIZE) as *const u32) as usize)
     } else {
-        (*p.add(5) as usize, core::ptr::read_unaligned(p.add(24) as *const u32) as usize,
-         core::ptr::read_unaligned(p.add(22) as *const u16) as usize)
+        (*p.add(SM21_LENGTH) as usize,
+         core::ptr::read_unaligned(p.add(SM21_TABLE_ADDRESS) as *const u32) as usize,
+         core::ptr::read_unaligned(p.add(SM21_TABLE_LENGTH) as *const u16) as usize)
     };
-    if table == 0 || size == 0 || size > 0x10_0000 {
+    if table == 0 || size == 0 || size > 0x10_0000 || len > SM_EPS_SLOT {
         return core::ptr::null_mut();
     }
-    let block = MmAllocateMemoryWithType(32 + size, LoaderFirmwarePermanent) as *mut u8;
+    let block = MmAllocateMemoryWithType(SM_EPS_SLOT + size, LoaderFirmwarePermanent) as *mut u8;
     if block.is_null() {
         return core::ptr::null_mut();
     }
     core::ptr::copy_nonoverlapping(p, block, len);
-    core::ptr::copy_nonoverlapping(table as *const u8, block.add(32), size);
-    let copied = block as usize + 32;
+    core::ptr::copy_nonoverlapping(table as *const u8, block.add(SM_EPS_SLOT), size);
+    let copied = block as usize + SM_EPS_SLOT;
     let sum = |from: usize, n: usize| {
         core::slice::from_raw_parts(block.add(from), n).iter().fold(0u8, |s, b| s.wrapping_add(*b))
     };
     if v3 {
-        core::ptr::write_unaligned(block.add(16) as *mut u64, copied as u64);
-        *block.add(5) = 0;
-        *block.add(5) = 0u8.wrapping_sub(sum(0, len));
+        core::ptr::write_unaligned(block.add(SM3_TABLE_ADDRESS) as *mut u64, copied as u64);
+        *block.add(SM3_CHECKSUM) = 0;
+        *block.add(SM3_CHECKSUM) = 0u8.wrapping_sub(sum(0, len));
     } else {
         if copied > u32::MAX as usize {
             return core::ptr::null_mut();
         }
-        core::ptr::write_unaligned(block.add(24) as *mut u32, copied as u32);
-        // `_DMI_` intermediate checksum (bytes 0x10-0x1E) at 0x15, then the whole.
-        *block.add(0x15) = 0;
-        *block.add(0x15) = 0u8.wrapping_sub(sum(0x10, 0x0F));
-        *block.add(4) = 0;
-        *block.add(4) = 0u8.wrapping_sub(sum(0, len));
+        core::ptr::write_unaligned(block.add(SM21_TABLE_ADDRESS) as *mut u32, copied as u32);
+        // The intermediate checksum covers the `_DMI_` structure, then the whole.
+        *block.add(SM21_IEPS_CHECKSUM) = 0;
+        *block.add(SM21_IEPS_CHECKSUM) = 0u8.wrapping_sub(sum(SM21_IEPS, SM21_IEPS_LEN));
+        *block.add(SM21_CHECKSUM) = 0;
+        *block.add(SM21_CHECKSUM) = 0u8.wrapping_sub(sum(0, len));
     }
     block
 }
