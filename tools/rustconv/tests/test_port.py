@@ -162,6 +162,35 @@ def test_a_banked_hand_function_survives_a_replay(tmp_path, monkeypatch):
     assert "args: ..." not in (mods / "f.rs").read_text()
 
 
+def test_a_hand_bank_over_changed_c_is_refused(tmp_path, monkeypatch):
+    """mmc_new's CAddDialog::OnCommand bank kept `new CSnapin(CacheEntry)` through the sync
+    that added the node id: a bank replays by NAME, so its C is pinned at capture."""
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    monkeypatch.setattr(port, "STATE_ROOT", tmp_path / "state")
+    state = {"stem": "m", "crate": "m-rust", "stages": [], "tus": ["m/f.c"]}
+    (tmp_path / "state" / "m").mkdir(parents=True)
+    (tmp_path / "state" / "m" / "state.json").write_text(json.dumps(state))
+    (tmp_path / "m").mkdir()
+    c = tmp_path / "m" / "f.c"
+    c.write_text(
+        "int A(int x);\nint\nA(int x)\n{\n    return x; /* why */\n}\nint B(void) { return A(1); }\n"
+    )
+    mods = tmp_path / "sdk" / "lib" / "rust" / "m-rust" / "src" / "m"
+    mods.mkdir(parents=True)
+    (mods / "f.rs").write_text("fn A(x: i32) -> i32 {\n    x\n}\n")
+    port.stage_hand("m", ["f.rs:A"])
+    bank = json.loads((tmp_path / "state" / "m" / "hand" / "f.A.json").read_text())
+    assert bank["c_sha"]
+    # A comment or whitespace change is not a change of the C.
+    c.write_text(c.read_text().replace("/* why */", "").replace("    return", "  return"))
+    assert port.apply_hand("m") == 1
+    c.write_text(c.read_text().replace("return x;", "return x + 1;"))
+    with pytest.raises(port.PortError, match=r"changed: f\.rs:A"):
+        port.apply_hand("m")
+    port.stage_hand("m", ["f.rs:A"])  # re-captured after porting the change by hand
+    assert port.apply_hand("m") == 1
+
+
 def test_a_c_variadic_hand_port_is_banked_as_one_piece(tmp_path, monkeypatch):
     # The extern decl, the va_entry! mod and the comments above each are one hand item: a
     # replay must put all three back over the one bought `args: ...` function.

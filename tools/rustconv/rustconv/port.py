@@ -6596,11 +6596,64 @@ def stage_hand(stem: str, specs: list[str], drop: bool = False) -> None:
         else:
             lo, hi = hand_span(text, name, where=f"hand: {spec}")
             body = text[lo:hi]
-        entry.write_text(
-            json.dumps({"file": fname, "name": replaces, "text": body, "added": added}, indent=1)
-        )
+        bank = {"file": fname, "name": replaces, "text": body, "added": added}
+        origin = None if added or name == "*" else _c_origin(state, fname, replaces)
+        if origin is not None:
+            bank["c_sha"] = origin
+        entry.write_text(json.dumps(bank, indent=1))
         print(f"hand: banked {spec} ({len(body.splitlines())} lines)")
     _record(state, "hand", started, specs=specs, drop=drop)
+
+
+def _c_definition_span(text: str, name: str) -> tuple[int, int] | None:
+    """The definition of C function `name` in `text`, from its line to its closing brace (a
+    prototype or a call is skipped: what follows the parameter list must be a body)."""
+    from .lex_mask import mask_code
+
+    masked = mask_code(text)
+    for m in re.finditer(rf"\b{re.escape(name)}\s*\(", masked):
+        depth, i = 0, m.end() - 1
+        while i < len(masked):
+            depth += {"(": 1, ")": -1}.get(masked[i], 0)
+            if depth == 0:
+                break
+            i += 1
+        j = i + 1
+        while j < len(masked) and masked[j] in " \t\r\n":
+            j += 1
+        if j >= len(masked) or masked[j] != "{":
+            continue
+        depth, k = 0, j
+        while k < len(masked):
+            depth += {"{": 1, "}": -1}.get(masked[k], 0)
+            if depth == 0:
+                return text.rfind("\n", 0, m.start()) + 1, k + 1
+            k += 1
+    return None
+
+
+_C_COMMENTS = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
+
+
+def _c_origin(state: dict, fname: str, name: str) -> str | None:
+    """sha256 of the C a hand bank of `fname:name` was written against: the definition of
+    `name` in the unit `fname` translates (a cppapp module's synthetic unit names a method
+    `Class__Method` exactly as the bank does). Comments and whitespace do not count. None
+    when there is no such definition (a class layout, a preamble constant)."""
+    if "tus" not in state:
+        return None
+    unit = next((u for u in _units(state) if _module_name(u) == Path(fname).stem), None)
+    if unit is None:
+        return None
+    path = Path(unit) if Path(unit).is_absolute() else REPO / unit
+    if not path.is_file():
+        return None
+    text = path.read_text(errors="replace")
+    span = _c_definition_span(text, name)
+    if span is None:
+        return None
+    code = " ".join(_C_COMMENTS.sub(" ", text[span[0] : span[1]]).split())
+    return hashlib.sha256(code.encode()).hexdigest()
 
 
 _ITEM_HEAD = (
@@ -6765,6 +6818,21 @@ def apply_hand(stem: str, early_only: bool = False) -> int:
     modules = _crate_dir(state) / "src" / stem
     applied = 0
     skipped = set(state.get("skip_fn", []))
+    # A bank is applied by NAME, so one whose C changed upstream would put its old body back
+    # silently: mmc_new's CAddDialog::OnCommand kept `new CSnapin(CacheEntry)` through the
+    # 2026-10-15 sync that added the node id. Refused, all at once, before anything is written.
+    stale = []
+    for entry in sorted(_hand_dir(stem).glob("*.json")):
+        h = json.loads(entry.read_text())
+        if h.get("c_sha") and _c_origin(state, h["file"], h["name"]) not in (h["c_sha"], None):
+            stale.append(f"{h['file']}:{h['name']}")
+    if stale:
+        raise PortError(
+            f"hand: {len(stale)} bank(s) were written against C that has since changed: "
+            + ", ".join(stale)
+            + f"\nfix: port the C change into each function, then re-capture it with "
+            f"`port hand {stem} <file.rs:Name>` (or `port hand --drop {stem} ..` to re-buy it)"
+        )
     for entry in sorted(_hand_dir(stem).glob("*.json")):
         h = json.loads(entry.read_text())
         # A hand item over a body the translate SKIPPED (`skip_fn`) has nothing in the file to

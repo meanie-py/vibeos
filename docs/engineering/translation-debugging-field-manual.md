@@ -5420,9 +5420,10 @@ Each was one fix in the tool; listed so the next module's symptom can be matched
   2026-10-15 sync, mmc_new's `CAddDialog::OnCommand` still built `new CSnapin(CacheEntry)`
   without upstream's node id, and four more banks (`ParseWindowPlacement`'s S_FALSE,
   `PreMessageLoop`'s CActionWnd registration, CCustomizeDialog's toolbar refresh) had the
-  same shape. Only a bank whose ITEM vanished errors ("0 items named X"). After an upstream
-  sync, diff each banked function's C against the port's base and port the change into the
-  bank by hand. Dropping is wrong too: two of the stale banks were the class LAYOUTS carrying
+  same shape. A bank now records the hash of its C definition (`c_sha`, comments and
+  whitespace ignored) and `port replay` refuses every bank whose C changed since, naming
+  them; port the change into each body and re-capture it with `port hand`. Banks captured
+  before this carry no hash and are not checked until re-captured. Dropping is wrong too: two of the stale banks were the class LAYOUTS carrying
   ATL's `m_thunk`/`m_pfnSuperWindowProc`, and the generic glue without them loses the MDI
   frame's DefFrameProc.
 - **`CAtlList::GetNext(&mut pos)` returns the element's SLOT.** The C++ `(CConsoleWnd*)

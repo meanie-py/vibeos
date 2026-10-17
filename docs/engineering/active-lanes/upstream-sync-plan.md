@@ -47,8 +47,9 @@ shell32's RegenerateUserEnvironment (c25e4fd7dec), and (2026-10-17) mmc_new's vi
 (c0f01460800, 857f521a704) plus `CActionWnd.cpp` (88da81d9b8b), re-bought with the owner's
 approval ($0.34 Haiku) and flipped. Nothing from the 2026-10-15 sync is owed. Owed tooling
 from that work: `port macros` should inline a goto-carrying macro (CHK_HR) at its call sites
-instead of emitting a `macro_rules!` that can never resolve, and `port replay` should refuse a
-bank whose C changed since it was captured (today only a vanished item errors).
+instead of emitting a `macro_rules!` that can never resolve. (`port replay` now refuses a
+hand bank whose C changed since it was captured; banks from before 2026-10-17 carry no C
+hash until re-captured -- mmc_new's are stamped.)
 
 ## Measured, 2026-09-20 (re-derive before trusting — these will drift)
 
