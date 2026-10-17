@@ -6410,6 +6410,7 @@ def stage_replay(
     constants among them reached `port fix` unresolved, and the model invented values.
     """
     started = time.time()
+    before = _module_texts(stem)
     stage_translate(
         stem,
         model="deepseek",
@@ -6462,7 +6463,66 @@ def stage_replay(
     stage_resolve(stem)
     _one_trailing_newline(_crate_dir(load_state(stem)) / "src")
     stage_check(stem)
+    changed = unbanked_changes(before, _module_texts(stem), _banked_items(stem))
+    if changed:
+        print(
+            f"replay: WARNING {len(changed)} function(s) the crate had came back DIFFERENT and "
+            "no hand bank holds them -- if the crate's version was a hand fix, the replay just "
+            "reverted it. Diff against git; bank the ones to keep with `port hand "
+            f"{stem} {' '.join(changed)}` and replay again: {', '.join(changed)}"
+        )
     print(f"replay: {(time.time() - started) / 60:.1f} min")
+
+
+_TOP_FN = re.compile(
+    r'(?m)^(?:pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?(?:extern\s+"\w+"\s+)?fn\s+(\w+)'
+)
+
+
+def _module_texts(stem: str) -> dict[str, str]:
+    modules = _crate_dir(load_state(stem)) / "src" / stem
+    return {p.name: p.read_text() for p in sorted(modules.glob("*.rs"))} if modules.is_dir() else {}
+
+
+def _banked_items(stem: str) -> set[tuple[str, str]]:
+    hand = _hand_dir(stem)
+    out: set[tuple[str, str]] = set()
+    for entry in sorted(hand.glob("*.json")) if hand.is_dir() else ():
+        h = json.loads(entry.read_text())
+        out.add((h["file"], h["name"]))
+    return out
+
+
+def unbanked_changes(
+    before: dict[str, str], after: dict[str, str], banked: set[tuple[str, str]]
+) -> list[str]:
+    """`file.rs:fn` for each top-level function a replay changed or lost that no bank holds.
+
+    A replay rebuilds the crate from what was bought plus the hand bank, so a fix made by
+    hand and never banked is silently reverted: wscript's Host_Echo went back to sizing its
+    BSTR array in OLECHARs -- the heap overrun modrun had caught a day earlier -- and the
+    replayed crate still compiled clean on all three arches (2026-10-16).
+    """
+    out: list[str] = []
+    for file, old in before.items():
+        if (file, "*") in banked:
+            continue
+        new = after.get(file, "")
+        for name in dict.fromkeys(_TOP_FN.findall(old)):
+            if (file, name) in banked:
+                continue
+            try:
+                lo, hi = hand_span(old, name, where="")
+            except PortError:
+                continue
+            try:
+                nlo, nhi = hand_span(new, name, where="")
+            except PortError:
+                out.append(f"{file}:{name}")
+                continue
+            if old[lo:hi] != new[nlo:nhi]:
+                out.append(f"{file}:{name}")
+    return out
 
 
 def _one_trailing_newline(src: Path) -> int:

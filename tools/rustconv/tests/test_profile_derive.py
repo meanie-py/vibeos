@@ -34,6 +34,7 @@ from rustconv.profile_derive import (
     find_switch_constants,
     header_symbols,
     is_shim_tu,
+    late_includes,
     merge_prologue,
     parse_cmakelists,
     resolve_sys_crate,
@@ -1823,3 +1824,33 @@ def test_a_cargo_linked_module_still_owns_its_flipped_sources(tmp_path):
     assert sorted(p.name for p in m.compiled_tus) == ["host.c", "main.c"]
     assert m.module_type == "win32cui" and m.unicode
     assert "-DUNICODE" in m.definitions
+
+
+def test_late_includes_are_file_scope_and_live_only():
+    """wscript's main.c includes <msxml2.h> at line 749 under `#ifdef __REACTOS__`; the
+    prologue mirror stopped at the first code line, so the island had none of msxml2.h."""
+    src = (
+        "#include <windows.h>\n"
+        "static int x;\n"
+        "#ifdef __REACTOS__\n"
+        "#include <msxml2.h>\n"
+        "#endif\n"
+        "#ifndef __REACTOS__\n"
+        "#include <unistd.h>\n"
+        "#endif\n"
+        "#ifdef SOMETHING_UNKNOWN\n"
+        "#include <maybe.h>\n"
+        "#endif\n"
+        "/* a comment\n"
+        "#include <commented.h>\n"
+        "*/\n"
+        "void f(void)\n"
+        "{\n"
+        '    const char *s = "{";\n'
+        '#include "body.inl"\n'
+        "}\n"
+        '#include "after.h"\n'
+    )
+    live, undecided = late_includes(src)
+    assert live == [(4, "#include <msxml2.h>"), (20, '#include "after.h"')]
+    assert undecided == [(10, "#include <maybe.h>")]
