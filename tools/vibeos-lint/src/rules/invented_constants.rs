@@ -3,7 +3,7 @@ use crate::{Corpus, Rule, SourceSet};
 use regex::Regex;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 pub struct InventedConstants;
 const INPUTS: &[SourceSet] = &[
@@ -224,6 +224,10 @@ fn match_brace(s: &str, open: usize) -> Option<usize> {
 struct HarvestState {
     raw: BTreeMap<String, String>,
     sites: BTreeMap<String, Vec<(String, String)>>,
+    // Successful shared-header sites cannot change when module definitions are
+    // appended: `raw.entry(...).or_insert(...)` preserves every first binding.
+    // Cache only these; unresolved sites must be retried against crate headers.
+    resolved: Arc<BTreeMap<String, BTreeSet<(i128, String)>>>,
 }
 
 fn harvest_into(state: &mut HarvestState, files: impl IntoIterator<Item = (String, String)>) {
@@ -277,8 +281,29 @@ fn harvest_into(state: &mut HarvestState, files: impl IntoIterator<Item = (Strin
     }
 }
 
+fn memoize_successes(state: &mut HarvestState) {
+    let mut remaining = BTreeMap::new();
+    let resolved = Arc::make_mut(&mut state.resolved);
+    for (name, entries) in std::mem::take(&mut state.sites) {
+        let mut unresolved = Vec::new();
+        for (expr, where_) in entries {
+            if let Some(v) = eval_c(&expr, &state.raw, 0) {
+                resolved
+                    .entry(name.clone())
+                    .or_default()
+                    .insert((v, where_));
+            } else {
+                unresolved.push((expr, where_));
+            }
+        }
+        if !unresolved.is_empty() {
+            remaining.insert(name, unresolved);
+        }
+    }
+    state.sites = remaining;
+}
 fn finish_harvest(state: HarvestState) -> BTreeMap<String, BTreeSet<(i128, String)>> {
-    let mut out: BTreeMap<String, BTreeSet<(i128, String)>> = BTreeMap::new();
+    let mut out = (*state.resolved).clone();
     for (name, entries) in state.sites {
         for (expr, where_) in entries {
             if let Some(v) = eval_c(&expr, &state.raw, 0) {
@@ -478,12 +503,22 @@ impl Parser<'_> {
         Some(lhs)
     }
 }
+fn cast_re() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| {
+        re(r"\(\s*(?:const\s+)?(?:unsigned\s+|signed\s+)?[A-Za-z_][A-Za-z0-9_]*\s*\**\s*\)")
+    })
+}
+fn suffix_re() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| re(r"\b(0[xX][0-9A-Fa-f]+|\d+)[uUlL]+\b"))
+}
 fn eval_c(expr: &str, raw: &BTreeMap<String, String>, depth: usize) -> Option<i128> {
     if depth > 8 {
         return None;
     }
     let text = expr.trim().trim_end_matches(',').trim();
-    let cast = re(r"\(\s*(?:const\s+)?(?:unsigned\s+|signed\s+)?[A-Za-z_][A-Za-z0-9_]*\s*\**\s*\)");
+    let cast = cast_re();
     let mut clean = text.to_owned();
     for _ in 0..4 {
         let x = cast.replace_all(&clean, " ").into_owned();
@@ -492,8 +527,7 @@ fn eval_c(expr: &str, raw: &BTreeMap<String, String>, depth: usize) -> Option<i1
         }
         clean = x
     }
-    let suffix = re(r"\b(0[xX][0-9A-Fa-f]+|\d+)[uUlL]+\b");
-    clean = suffix.replace_all(&clean, "$1").into_owned();
+    clean = suffix_re().replace_all(&clean, "$1").into_owned();
     let mut p = Parser {
         ts: tokenize(&clean)?,
         i: 0,
@@ -518,6 +552,7 @@ fn shared_sdk_state(c: &Corpus) -> HarvestState {
             .into_iter()
             .map(|f| (f.path.display().to_string(), f.text.clone())),
     );
+    memoize_successes(&mut state);
     state
 }
 
@@ -715,6 +750,42 @@ mod tests {
         assert_eq!(
             got["C"].iter().map(|x| x.0).collect::<BTreeSet<_>>(),
             BTreeSet::from([3])
+        );
+    }
+
+    #[test]
+    fn shared_successes_are_cached_but_unresolved_sites_retry_after_module_additions() {
+        let mut shared = HarvestState::default();
+        harvest_into(
+            &mut shared,
+            [(
+                "sdk/include/shared.h".into(),
+                "#define KNOWN 0x10\n#define LATE_ALIAS LATE\n".into(),
+            )],
+        );
+        memoize_successes(&mut shared);
+        assert_eq!(
+            shared.resolved["KNOWN"],
+            BTreeSet::from([(0x10, "sdk/include/shared.h:1".into())])
+        );
+        assert!(!shared.sites.contains_key("KNOWN"));
+        assert_eq!(
+            shared.sites["LATE_ALIAS"],
+            vec![("LATE".into(), "sdk/include/shared.h:2".into())]
+        );
+        let mut per_crate = shared.clone();
+        harvest_into(
+            &mut per_crate,
+            [("dll/module/module.h".into(), "#define LATE 0x20\n".into())],
+        );
+        let got = finish_harvest(per_crate);
+        assert_eq!(
+            got["KNOWN"],
+            BTreeSet::from([(0x10, "sdk/include/shared.h:1".into())])
+        );
+        assert_eq!(
+            got["LATE_ALIAS"],
+            BTreeSet::from([(0x20, "sdk/include/shared.h:2".into())])
         );
     }
 

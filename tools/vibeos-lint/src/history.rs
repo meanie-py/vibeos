@@ -1,4 +1,5 @@
 //! Git facts captured centrally before rule execution.
+use rayon::prelude::*;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -82,35 +83,51 @@ impl VersionHistory {
             .split_whitespace()
             .map(PathBuf::from)
             .collect();
-        for path in &out.ever_versioned_cmake {
-            let p = path
-                .to_str()
-                .ok_or("version history: non-UTF-8 CMake path")?;
-            let last = git(
-                root,
-                &["log", "-1", "--format=%h", "-S_WIN32_WINNT", "--", p],
-            )?;
-            if !last.status.success() {
-                return Err(format!(
-                    "version history: {}",
-                    String::from_utf8_lossy(&last.stderr)
-                ));
-            }
-            let commit = String::from_utf8_lossy(&last.stdout).trim().to_owned();
-            if commit.is_empty() {
-                continue;
-            }
-            let revision = format!("{commit}^");
-            let old = git(root, &["show", &format!("{revision}:{p}")])?;
-            // A newly created file has no copy in the parent. The old scanner
-            // treats this as no historical override, not an empty source file.
-            if old.status.success() {
-                out.last_parent_text.insert(
-                    path.clone(),
-                    String::from_utf8_lossy(&old.stdout).into_owned(),
-                );
-                out.last_parent_revision.insert(path.clone(), revision);
-            }
+        // Each path's Git queries are independent. Bound concurrency rather than
+        // spawning one process per path or serializing every cold cache miss.
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(8)
+            .build()
+            .map_err(|e| format!("version history: worker pool: {e}"))?;
+        let rows: Result<Vec<_>, String> = pool.install(|| {
+            out.ever_versioned_cmake
+                .par_iter()
+                .map(|path| {
+                    let p = path
+                        .to_str()
+                        .ok_or("version history: non-UTF-8 CMake path")?;
+                    let last = git(
+                        root,
+                        &["log", "-1", "--format=%h", "-S_WIN32_WINNT", "--", p],
+                    )?;
+                    if !last.status.success() {
+                        return Err(format!(
+                            "version history: {}",
+                            String::from_utf8_lossy(&last.stderr)
+                        ));
+                    }
+                    let commit = String::from_utf8_lossy(&last.stdout).trim().to_owned();
+                    if commit.is_empty() {
+                        return Ok(None);
+                    }
+                    let revision = format!("{commit}^");
+                    let old = git(root, &["show", &format!("{revision}:{p}")])?;
+                    // A newly created file has no copy in the parent. The old scanner
+                    // treats this as no historical override, not an empty source file.
+                    if old.status.success() {
+                        return Ok(Some((
+                            path.clone(),
+                            String::from_utf8_lossy(&old.stdout).into_owned(),
+                            revision,
+                        )));
+                    }
+                    Ok(None)
+                })
+                .collect()
+        });
+        for (path, text, revision) in rows?.into_iter().flatten() {
+            out.last_parent_text.insert(path.clone(), text);
+            out.last_parent_revision.insert(path, revision);
         }
         Ok(out)
     }

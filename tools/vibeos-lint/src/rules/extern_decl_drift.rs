@@ -58,59 +58,98 @@ struct Types {
 fn text<'a>(n: tree_sitter::Node<'_>, src: &'a str) -> &'a str {
     &src[n.start_byte()..n.end_byte()]
 }
-fn walk<'a>(n: tree_sitter::Node<'a>, out: &mut Vec<tree_sitter::Node<'a>>) {
-    out.push(n);
-    let mut cursor = n.walk();
-    for child in n.children(&mut cursor) {
-        walk(child, out);
-    }
-}
 #[derive(Default)]
 struct SiblingAttrs {
     linkname: Option<String>,
     exported: bool,
     foreign: bool,
 }
-fn sibling_attrs(root: tree_sitter::Node<'_>, src: &str) -> HashMap<usize, SiblingAttrs> {
-    fn visit(
-        n: tree_sitter::Node<'_>,
-        src: &str,
-        foreign: bool,
-        out: &mut HashMap<usize, SiblingAttrs>,
-    ) {
-        let foreign = foreign || n.kind() == "foreign_mod_item";
-        let mut cursor = n.walk();
-        let mut preceding = Vec::new();
-        for child in n.children(&mut cursor) {
-            if child.kind() == "attribute_item" {
-                preceding.push(child);
-            } else {
-                if matches!(
-                    child.kind(),
-                    "function_signature_item" | "static_item" | "function_item"
-                ) {
-                    let mut facts = SiblingAttrs {
-                        foreign,
-                        ..SiblingAttrs::default()
-                    };
-                    for attr in preceding.iter().rev() {
-                        let value = text(*attr, src);
-                        if facts.linkname.is_none() {
-                            facts.linkname = LINKNAME.captures(value).map(|c| c[1].to_owned());
-                        }
-                        facts.exported |=
-                            value.contains("no_mangle") || value.contains("export_name");
+fn collect_tree<'a>(
+    root: tree_sitter::Node<'a>,
+    src: &str,
+) -> (Vec<tree_sitter::Node<'a>>, HashMap<usize, SiblingAttrs>) {
+    let mut cursor = root.walk();
+    let mut nodes = Vec::new();
+    let mut out = HashMap::new();
+    // Each stack entry represents the preceding attribute run among the current
+    // node's siblings. Parent-local runs are updated only as a node's subtree is
+    // completed, preserving the old contiguous-sibling rule.
+    let mut preceding: Vec<Vec<tree_sitter::Node<'a>>> = Vec::new();
+    let mut inherited_foreign = vec![false];
+    let mut depth = 0usize;
+    loop {
+        let n = cursor.node();
+        nodes.push(n);
+        let foreign = inherited_foreign[depth];
+        if matches!(
+            n.kind(),
+            "function_signature_item" | "static_item" | "function_item"
+        ) {
+            let mut facts = SiblingAttrs {
+                foreign,
+                ..SiblingAttrs::default()
+            };
+            if let Some(attrs) = depth.checked_sub(1).and_then(|d| preceding.get(d)) {
+                for attr in attrs.iter().rev() {
+                    let value = text(*attr, src);
+                    if facts.linkname.is_none() {
+                        facts.linkname = LINKNAME.captures(value).map(|c| c[1].to_owned());
                     }
-                    out.insert(child.id(), facts);
+                    facts.exported |= value.contains("no_mangle") || value.contains("export_name");
                 }
-                preceding.clear();
             }
-            visit(child, src, foreign, out);
+            out.insert(n.id(), facts);
+        }
+
+        if cursor.goto_first_child() {
+            preceding.push(Vec::new());
+            inherited_foreign.push(foreign || n.kind() == "foreign_mod_item");
+            depth += 1;
+            continue;
+        }
+
+        // Finish this node, then climb until a next sibling exists. This is a
+        // single cursor traversal; no per-node TreeCursor construction or
+        // sibling rescans are needed.
+        loop {
+            if depth == 0 {
+                return (nodes, out);
+            }
+            let completed = cursor.node();
+            let attrs = &mut preceding[depth - 1];
+            if completed.kind() == "attribute_item" {
+                attrs.push(completed);
+            } else {
+                attrs.clear();
+            }
+            if cursor.goto_next_sibling() {
+                break;
+            }
+            cursor.goto_parent();
+            preceding.pop();
+            inherited_foreign.pop();
+            depth -= 1;
         }
     }
-    let mut out = HashMap::new();
-    visit(root, src, false, &mut out);
-    out
+}
+fn walk<'a>(root: tree_sitter::Node<'a>, out: &mut Vec<tree_sitter::Node<'a>>) {
+    fn visit<'a>(cursor: &mut tree_sitter::TreeCursor<'a>, out: &mut Vec<tree_sitter::Node<'a>>) {
+        out.push(cursor.node());
+        if cursor.goto_first_child() {
+            loop {
+                visit(cursor, out);
+                if !cursor.goto_next_sibling() {
+                    cursor.goto_parent();
+                    break;
+                }
+            }
+        }
+    }
+    let mut cursor = root.walk();
+    visit(&mut cursor, out);
+}
+fn sibling_attrs(root: tree_sitter::Node<'_>, src: &str) -> HashMap<usize, SiblingAttrs> {
+    collect_tree(root, src).1
 }
 fn symbol(
     n: tree_sitter::Node<'_>,
@@ -180,13 +219,8 @@ fn nolint(s: &str) -> bool {
 }
 fn file_facts(f: &SourceFile, owner: Option<&str>, all: &mut Facts) -> Result<(), String> {
     let tree = f.rust_tree()?;
-    let nodes = {
-        let mut v = vec![];
-        walk(tree.root_node(), &mut v);
-        v
-    };
     let src = &f.text;
-    let sibling_attrs = sibling_attrs(tree.root_node(), src);
+    let (nodes, sibling_attrs) = collect_tree(tree.root_node(), src);
     let lines = src.lines().collect::<Vec<_>>();
     let p = f.path.to_string_lossy().replace('\\', "/");
     for n in nodes {

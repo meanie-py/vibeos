@@ -505,3 +505,27 @@ extern drift (192.0s), and invented constants (114.0s). Follow-up candidates red
 symbol-by-symbol body scans, per-node syntax cursor allocations, repeated SDK
 expression evaluation, and serial cold-history queries. The seconds target
 remains owed.
+
+## Performance checkpoint 3 (2026-10-17)
+
+The second checkpoint's six changed rules now have exact two-tree Python parity:
+**42 / 54 findings**, recorded in `parity/performance-02.json`. The same report
+proves the new constant-placement identifier scan on both trees (zero findings).
+Its separate Rust replays took **14.44 / 16.92 seconds**. Non-identifier symbolic
+facts, including invalid C octal spellings, retain their original exact searches.
+
+This checkpoint passed **116 source stages** in **283.51 seconds**
+(`20261017-043324-8ci736i8-check-all`), **112 tooling checks**, **512 Rust unit
+tests** and **two integration tests**. Bootstrap delayed the shared invocation by
+78.65 seconds; that invocation took 204.13 seconds under concurrent replay and
+tooling load. This remains an observed runtime rather than a controlled speedup.
+
+Extern drift now collects nodes, sibling attributes and foreign-block context
+with one cursor. Invented constants retain successful common-header evaluations
+in a shared catalog and retry unresolved sites after adding module definitions.
+Cold history queries use eight bounded workers; timings separately expose that
+shared initialization phase. Historical replay for the cursor/evaluation changes
+is still running at this checkpoint. Extern drift remains the largest measured
+rule (162.64s), followed by IRQL (68.34s) and match constants (59.61s); independent
+per-file extern fact extraction is the next candidate. The seconds target and
+vendor YAML integration remain owed.

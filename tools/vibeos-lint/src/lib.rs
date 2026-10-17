@@ -811,10 +811,17 @@ pub fn execute(
         corpus.module_inputs();
     }
     if selected.iter().any(|rule| rule.needs_version_history()) {
+        let started = std::time::Instant::now();
         corpus
             .version_history
             .get_or_init(|| VersionHistory::capture(&corpus.root));
         corpus.version_history()?;
+        if std::env::var_os("VIBEOS_LINT_TIMINGS").is_some() {
+            eprintln!(
+                "TIMING\tversion_history\t{:.3}",
+                started.elapsed().as_secs_f64()
+            );
+        }
     }
     if selected.iter().any(|rule| rule.needs_c_twins()) {
         corpus.c_twins();
