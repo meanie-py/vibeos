@@ -205,6 +205,33 @@ def test_smp_iso_patch_is_equal_length_and_selects_the_mp_entry(tmp_path: Path):
     assert b"LiveCD_Debug" not in patched
 
 
+def test_stortest_patch_swaps_the_baud_option_at_equal_length(tmp_path: Path):
+    """VIBEOS_QEMU_STORTEST: /BAUDRATE=115200 becomes /STORTEST on every line-initial
+    Options= line, same length; prose mentioning the option is left alone."""
+    src = tmp_path / "livecd.iso"
+    body = (
+        b"\x00" * 64
+        + b"[LiveCD_Debug]\r\nOptions=/DEBUG /DEBUGPORT=COM1 /BAUDRATE=115200 /SOS /MININT\r\n"
+        + b"[LiveCD_SMP]\r\nOptions=/KERNEL=ntkrnlmp.exe /BAUDRATE=115200 /MININT\r\n"
+        + b"; prose: Options= /BAUDRATE=115200\r\n"
+        + b"\x00" * 64
+    )
+    src.write_bytes(body)
+    (tmp_path / "work").mkdir()
+    out = vm_mod.stortest_selected_iso(src, tmp_path / "work")
+    patched = out.read_bytes()
+    assert out != src and src.read_bytes() == body, "must not patch the build tree's media"
+    assert len(patched) == len(body)
+    assert patched.count(b"/STORTEST       ") == 2
+    assert b"; prose: Options= /BAUDRATE=115200" in patched
+    # Already-patched media is accepted as is; media with nothing to patch refuses.
+    vm_mod.stortest_selected_iso(out, tmp_path / "work")
+    bare = tmp_path / "bare.iso"
+    bare.write_bytes(b"[LiveCD]\r\nOptions=/MININT\r\n")
+    with pytest.raises(RuntimeError, match="STORTEST cannot be added"):
+        vm_mod.stortest_selected_iso(bare, tmp_path / "work")
+
+
 def test_smp_patch_picks_freeldr_ini_when_the_fat_image_embeds_another_ini(tmp_path: Path):
     """arm64 boot.img embeds ramdisk.img, which carries the livecd file set and so an
     x86 livecd.ini with its own line-initial DefaultOS=. The raw scan finds two; the
