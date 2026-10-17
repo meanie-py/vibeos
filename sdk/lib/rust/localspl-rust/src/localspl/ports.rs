@@ -235,9 +235,7 @@ pub unsafe extern "system" fn LocalEnumPorts(pName: PWSTR, Level: DWORD, pPorts:
     pEntry = PrintMonitorList.Flink as PLIST_ENTRY;
     while pEntry != core::ptr::addr_of_mut!(PrintMonitorList) as PLIST_ENTRY {
         pPrintMonitor = (pEntry as ULONG_PTR).wrapping_sub(
-            core::ptr::addr_of_mut!(
-                (*core::ptr::null_mut::<LOCAL_PRINT_MONITOR>()).Entry
-            ) as ULONG_PTR,
+            core::mem::offset_of!(LOCAL_PRINT_MONITOR, Entry) as ULONG_PTR,
         ) as *mut LOCAL_PRINT_MONITOR as PLOCAL_PRINT_MONITOR;
 
         // Call the EnumPorts function of this Print Monitor.

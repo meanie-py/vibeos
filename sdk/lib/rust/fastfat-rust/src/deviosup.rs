@@ -99,12 +99,6 @@ unsafe fn MmGetMdlVirtualAddress(mdl: *mut MDL) -> *mut c_void {
     ((*mdl).StartVa as *mut u8).add((*mdl).ByteOffset as usize) as *mut c_void
 }
 
-/// DebugDoit(X) is a retail no-op debug macro (the argument expression still
-/// evaluates for its side effects). Model it as an inline generic so it emits no
-/// linker symbol — avoids an i386 stdcall-arity (@0 vs @4) cohab mismatch.
-#[inline(always)]
-unsafe fn DebugDoit<T>(_expr: T) {}
-
 /// Helper: transmute an `extern "system"` completion routine to the `extern "C"`
 /// type that PIO_COMPLETION_ROUTINE requires.  On amd64 the calling conventions
 /// are identical so this is a zero-cost cast.
@@ -439,7 +433,7 @@ pub unsafe extern "system" fn FatSingleNonAlignedSync(
         SetFlag!((*irp_sp).Flags, SL_OVERRIDE_VERIFY_VOLUME);
     }
 
-    FatIoCallDriverCount += 1;
+    DebugDoit!(FatIoCallDriverCount += 1);
 
     crate::seh::try_finally(
         &mut (),
@@ -606,6 +600,7 @@ pub unsafe extern "system" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
         FatBugCheck((Vbo) as ULONG_PTR, (ByteCount) as ULONG_PTR, 0);
     }
 
+    #[cfg(ntddi_ge_ntddi_win8)] // FatDiskAccountingEnabled is only ever set under WIN8 (fatinit.c:428)
     if FatDiskAccountingEnabled != 0 {
         let ThreadIssuingIo: ntkrnl_sys::ddk::PETHREAD = PsGetCurrentThread();
         let IsWriteOperation = ((*IrpSp).MajorFunction == ntkrnl_sys::constants::IRP_MJ_WRITE) as u32;
@@ -966,6 +961,7 @@ pub unsafe extern "system" fn FatNonCachedIo(
     let OriginalByteCount: u32 = ByteCount;
     let Wait: u8 = (BooleanFlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT)) as u8;
 
+    #[cfg(ntddi_ge_ntddi_win8)] // FatDiskAccountingEnabled is only ever set under WIN8 (fatinit.c:428)
     if FatDiskAccountingEnabled != 0 {
         FatUpdateDiskStats(IrpContext, Irp, ByteCount);
     }
@@ -1545,7 +1541,7 @@ pub unsafe extern "system" fn FatMultipleAsync(
         (*p_unwind_run_count) = 0;
         while (*p_unwind_run_count) < MultipleIrpCount {
             Irp = (*(IoRuns as *mut IO_RUN).offset((*p_unwind_run_count) as isize)).SavedIrp;
-            DebugDoit({ FatIoCallDriverCount += 1; });
+            DebugDoit!(FatIoCallDriverCount += 1);
 
             // If IoCallDriver returns an error, it has completed the Irp and the error will be
             // caught by our completion routines and dealt with as a normal IO error.
@@ -1670,11 +1666,7 @@ pub unsafe extern "system" fn FatSingleAsync(
 
     (*(*(IrpContext as *mut _IRP_CONTEXT)).FatIoContext).IrpContextFlags = (*(IrpContext as *mut _IRP_CONTEXT)).Flags;
 
-    let tmp = {
-        FatIoCallDriverCount = FatIoCallDriverCount.wrapping_add(1);
-        DebugDoit(());
-        FatIoCallDriverCount
-    };
+    DebugDoit!(FatIoCallDriverCount += 1);
 
     IoCallDriver((*(Vcb as *mut _VCB)).TargetDeviceObject, (Irp).cast());
 

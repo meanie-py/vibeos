@@ -687,6 +687,8 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         "scan_store_on_failure",
         "scan_bool_width",
         "scan_cfg_vs_c",
+        "scan_version_vs_c",
+        "null_offset_to_offset_of",
         "scan_constant_placement",
     ):
         script = repo / "tools" / f"{lint_name}.py"

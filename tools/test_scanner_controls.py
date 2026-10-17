@@ -497,6 +497,47 @@ pub unsafe extern "fastcall" fn RtlPrefetchMemoryNonTemporal(_Source: PVOID, _Le
 pub fn allowed() {}
 """
 
+# scan_version_vs_c. fastfat lockctrl.c gates the "only when it interferes with oplocks"
+# filter on NTDDI_WIN8; the WS03 build checks the oplock for every lock request and never
+# asks FsRtlAreThereWaitingFileLocks. The Rust asked it eagerly, ahead of the cfg! test.
+_VERSION_BAD = """\
+pub unsafe extern "C" fn FatCommonLockControl(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS {
+    let has_waiting_locks = !is_lock && FsRtlAreThereWaitingFileLocks(lock) != 0;
+    if !cfg!(ntddi_ge_ntddi_win8) || is_lock_within_size || has_waiting_locks {
+        FsRtlCheckOplock(oplock, Irp);
+    }
+    0
+}
+"""
+_VERSION_GOOD = """\
+pub unsafe extern "C" fn FatCommonLockControl(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS {
+    if !cfg!(ntddi_ge_ntddi_win8)
+        || is_lock_within_size
+        || (!is_lock && FsRtlAreThereWaitingFileLocks(lock) != 0)
+    {
+        FsRtlCheckOplock(oplock, Irp);
+    }
+    0
+}
+"""
+
+# null_offset_to_offset_of --lint. Seeded from eventlog file.rs and Wine's LIST_ENTRY: a
+# field projection through null is UB even under &raw / addr_of!, offset_of! is the same
+# number defined.
+_NULL_PLACE_BAD = """\
+unsafe fn f(e: PLIST_ENTRY) -> PLOGFILE {
+    let off = &raw mut (*::core::ptr::null_mut::<LOGFILE>()).ListEntry as ULONG_PTR;
+    (e as ULONG_PTR).wrapping_sub(off) as PLOGFILE
+}
+"""
+_NULL_PLACE_GOOD = """\
+unsafe fn f(e: PLIST_ENTRY) -> PLOGFILE {
+    // was &raw mut (*core::ptr::null_mut::<LOGFILE>()).ListEntry
+    let off = core::mem::offset_of!(LOGFILE, ListEntry) as ULONG_PTR;
+    (e as ULONG_PTR).wrapping_sub(off) as PLOGFILE
+}
+"""
+
 _BITWISE_NOT_BAD = """\
 pub unsafe fn adjust_fua(flags: u32, special: u32) -> bool {
     // C: DEV_WRITE_CACHE && !DEV_POWER_PROTECTED && !CLASS_SPECIAL_FUA_NOT_SUPPORTED.
@@ -2855,6 +2896,20 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad=_EXPORT_SHADOW_BAD,
         good=_EXPORT_SHADOW_GOOD,
+    ),
+    Control(
+        name="null_offset_to_offset_of",
+        script="tools/null_offset_to_offset_of.py",
+        argv=["--lint"],
+        bad={"rust/eventlog-rust/src/file.rs": _NULL_PLACE_BAD},
+        good={"rust/eventlog-rust/src/file.rs": _NULL_PLACE_GOOD},
+    ),
+    Control(
+        name="scan_version_vs_c",
+        script="tools/scan_version_vs_c.py",
+        argv=["--lint"],
+        bad={"rust/fastfat-rust/src/lockctrl.rs": _VERSION_BAD},
+        good={"rust/fastfat-rust/src/lockctrl.rs": _VERSION_GOOD},
     ),
     Control(
         name="scan_cfg_vs_c",

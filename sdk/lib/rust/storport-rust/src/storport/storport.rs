@@ -59,7 +59,7 @@ unsafe extern "C" fn PortDeleteDriverInitData(DriverExtension: PDRIVER_OBJECT_EX
     ListEntry = (*DriverExtension).InitDataListHead.Flink as PLIST_ENTRY;
     while ListEntry != &raw mut (*DriverExtension).InitDataListHead {
         InitData = (ListEntry as ULONG_PTR).wrapping_sub(
-            &raw mut (*core::ptr::null_mut::<DRIVER_INIT_DATA>()).Entry as ULONG_PTR,
+            core::mem::offset_of!(DRIVER_INIT_DATA, Entry) as ULONG_PTR,
         ) as *mut DRIVER_INIT_DATA as PDRIVER_INIT_DATA;
 
         RemoveEntryList(&raw mut (*InitData).Entry);
@@ -694,8 +694,7 @@ pub unsafe extern "C" fn StorPortExtendedFunction_v(
                     KeInitializeTimer(&raw mut (*TimerEntry).Timer);
 
                     MiniportExtension = (HwDeviceExtension as ULONG_PTR).wrapping_sub(
-                        &raw mut (*::core::ptr::null_mut::<MINIPORT_DEVICE_EXTENSION>())
-                            .HwDeviceExtension as ULONG_PTR,
+                        core::mem::offset_of!(MINIPORT_DEVICE_EXTENSION, HwDeviceExtension) as ULONG_PTR,
                     ) as *mut MINIPORT_DEVICE_EXTENSION
                         as PMINIPORT_DEVICE_EXTENSION;
                     DeviceExtension =
@@ -738,7 +737,7 @@ pub unsafe extern "C" fn StorPortExtendedFunction_v(
                 Status = STOR_STATUS_INVALID_PARAMETER as ULONG;
             } else {
                 TimerEntry = (TimerHandle as ULONG_PTR).wrapping_sub(
-                    &raw mut (*::core::ptr::null_mut::<TIMER_ENTRY>()).ListEntry
+                    core::mem::offset_of!(TIMER_ENTRY, ListEntry)
                         as ULONG_PTR,
                 ) as *mut TIMER_ENTRY as PTIMER_ENTRY;
 

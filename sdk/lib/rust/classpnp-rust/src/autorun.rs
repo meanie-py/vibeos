@@ -3040,18 +3040,22 @@ pub unsafe extern "C" fn ClasspDeleteTimer(FdoExtension: PFUNCTIONAL_DEVICE_EXTE
     if (*FdoExtension).__bindgen_anon_1.CommonExtension.as_ref().__bindgen_anon_1.IsFdo() != 0u8 {
         fdoData = (*FdoExtension).PrivateFdoData;
         if !fdoData.is_null() {
-            // NEEDS SHARED SUBSTRATE: TickTimer is KTIMER but should be PEX_TIMER
-            let tick_ptr = *(core::ptr::addr_of!((*fdoData).TickTimer) as *const PVOID);
-            if !tick_ptr.is_null() {
-                let mut parameters: EXT_DELETE_PARAMETERS = core::mem::zeroed();
-                ExInitializeDeleteTimerParameters(&mut parameters as *mut EXT_DELETE_PARAMETERS as PVOID);
-                ExDeleteTimer(
-                    tick_ptr,
-                    1u8,  // TRUE
-                    0u8,  // FALSE
-                    &mut parameters as *mut EXT_DELETE_PARAMETERS as PVOID,
-                );
-                *(core::ptr::addr_of_mut!((*fdoData).TickTimer) as *mut PVOID) = core::ptr::null_mut();
+            // autorun.c: the EX_TIMER delete is NTDDI_WINBLUE-only, and classpnp builds at WIN8,
+            // where TickTimer is an inline KTIMER that ClasspInitializeTimer KeInitializeTimer'd.
+            // Ungated, this read the dispatcher header as a pointer and then zeroed it.
+            if cfg!(ntddi_ge_ntddi_winblue) {
+                let tick_ptr = *(core::ptr::addr_of!((*fdoData).TickTimer) as *const PVOID);
+                if !tick_ptr.is_null() {
+                    let mut parameters: EXT_DELETE_PARAMETERS = core::mem::zeroed();
+                    ExInitializeDeleteTimerParameters(&mut parameters as *mut EXT_DELETE_PARAMETERS as PVOID);
+                    ExDeleteTimer(
+                        tick_ptr,
+                        1u8,  // TRUE
+                        0u8,  // FALSE
+                        &mut parameters as *mut EXT_DELETE_PARAMETERS as PVOID,
+                    );
+                    *(core::ptr::addr_of_mut!((*fdoData).TickTimer) as *mut PVOID) = core::ptr::null_mut();
+                }
             }
             (*fdoData).TimerInitialized = 0u8;
             (*fdoData).TickTimerEnabled = 0u8;

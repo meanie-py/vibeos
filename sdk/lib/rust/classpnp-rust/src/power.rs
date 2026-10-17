@@ -2057,7 +2057,10 @@ pub unsafe extern "system" fn ClasspPowerSettingCallback(
                             }
                         }
                     }
-                    ClasspUpdateTimerNoWakeTolerance(fdoExtension);
+                    // power.c: NTDDI_WINBLUE-only (the EX_TIMER no-wake tolerance); WIN8 here.
+                    if cfg!(ntddi_ge_ntddi_winblue) {
+                        ClasspUpdateTimerNoWakeTolerance(fdoExtension);
+                    }
                 }
                 ClassReleaseRemoveLock((*fdoEntry).Fdo, removeLockTag);
                 fdoEntry = (*fdoEntry).ListEntry.Flink as PIDLE_POWER_FDO_LIST_ENTRY;

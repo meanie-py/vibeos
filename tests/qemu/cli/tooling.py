@@ -141,6 +141,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_apply_dead_assignments.py"),
     (".", ".", "tools/test_apply_rustc_suggestions.py"),
     (".", ".", "tools/test_extern_to_use.py"),
+    (".", ".", "tools/test_scan_version_vs_c.py"),
     (".", ".", "tools/test_scan_byteptr_stride.py"),
     (".", ".", "tools/test_scan_gmem_flags.py"),
     (".", ".", "tools/test_scan_let_shadow.py"),

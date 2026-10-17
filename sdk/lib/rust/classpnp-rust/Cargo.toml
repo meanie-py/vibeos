@@ -14,3 +14,10 @@ panic-common = { path = "../panic-common", features = ["kernel"] }
 ntkrnl-sys = { path = "../ntkrnl-sys" }
 drvtrace-shim = { path = "../drvtrace-shim" }
 strsafe-rust = { path = "../strsafe-rust" }
+
+# classpnp's C built at _WIN32_WINNT=0x602 / NTDDI_WIN8 (its CMakeLists until 7a67eeddf88), so
+# every newer `#if NTDDI_VERSION >= ...` block is compiled out: these cfgs are never set.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = [
+    'cfg(ntddi_ge_ntddi_winblue)', 'cfg(ntddi_ge_ntddi_winthreshold)',
+] }

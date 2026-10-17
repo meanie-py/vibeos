@@ -17,3 +17,7 @@ panic-common = { path = "../panic-common", features = ["user"] }
 ntdll-sys = { path = "../ntdll-sys" }
 winelist-rust = { path = "../winelist-rust" }
 win32macros-rust = { path = "../win32macros-rust" }
+
+# `#ifndef __REACTOS__`: __REACTOS__ is always defined, so this is never set.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(not_reactos)'] }

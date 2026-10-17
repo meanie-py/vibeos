@@ -997,8 +997,8 @@ pub unsafe extern "C" fn GetEnvVarOrSpecial(varName: LPCTSTR) -> LPCTSTR {
         return addr_of_mut!(ret) as *mut TCHAR as LPCTSTR;
     }
     /* Available in Win7+, even if the underlying API is available in Win2003+ */
-    /* %HIGHESTNUMANODENUMBER% */
-    else if _tcsicmp(varName, (&[0x0048, 0x0049, 0x0047, 0x0048, 0x0045, 0x0053, 0x0054, 0x004e, 0x0055, 0x004d, 0x0041, 0x004e, 0x004f, 0x0044, 0x0045, 0x004e, 0x0055, 0x004d, 0x0042, 0x0045, 0x0052, 0x0000u16]).as_ptr() /* _T "HIGHESTNUMANODENUMBER" */) == 0 {
+    /* %HIGHESTNUMANODENUMBER% -- NTDDI_WIN7-only in cmd.c, and cmd builds at WS03 */
+    else if cfg!(ntddi_ge_ntddi_win7) && _tcsicmp(varName, (&[0x0048, 0x0049, 0x0047, 0x0048, 0x0045, 0x0053, 0x0054, 0x004e, 0x0055, 0x004d, 0x0041, 0x004e, 0x004f, 0x0044, 0x0045, 0x004e, 0x0055, 0x004d, 0x0042, 0x0045, 0x0052, 0x0000u16]).as_ptr() /* _T "HIGHESTNUMANODENUMBER" */) == 0 {
         let mut NumaNodeNumber: ULONG = 0;
         GetNumaHighestNodeNumber(addr_of_mut!(NumaNodeNumber));
         _itot(

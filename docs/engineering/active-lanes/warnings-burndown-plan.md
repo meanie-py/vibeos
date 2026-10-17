@@ -9,42 +9,31 @@ the genuine-signal warnings are audited and fixed, and — critically — the fi
 **stay** fixed (no blanket re-suppression). Incremental, per-crate, each cluster gated ×3
 and landed on its own so conflicts stay localized and every step is revertible.
 
-## RESUME HERE (parked 2026-10-12, next session the following weekend)
+## RESUME HERE (updated 2026-10-16)
 
-**State at park.** Last landing: master `20b8abeb1468` (lane tip `410f354cf48c`). The lane is
-clean at master. The census on that tree (`python3 tools/rust_warning_census.py build-i386
-build-amd64 build-arm64`) read **7,517 sites: 55 UB, 1,440 LOGIC, 6,002 NOISE**. That count
-left 12 stale crates out, so rebuild all three arches before trusting a new total.
-fastfat-rust has **0** warnings on all three arches.
+**State.** The 2026-10-16 session closed four owed items and part of the UB tier, all in one
+landing (see "2026-10-16" below). The census on the 2026-10-12 tree read 7,517 sites
+(55 UB, 1,440 LOGIC, 6,002 NOISE), with 12 stale crates left out. Rebuild all three arches and
+re-run it (`python3 tools/rust_warning_census.py build-i386 build-amd64 build-arm64`) before
+quoting a new total. fastfat-rust is still at 0 warnings. The apc32 rung-7 flake that bounced
+b8eac0dccad2 was fixed by 61998182a8f (roadmap registry).
 
-**First moves next session:**
-1. `git fetch && git merge origin/master`, then build all three arches and re-run the census.
-2. Check `land-status --mine` and the roadmap registry entry "apc32.exe rung 7". The kernel
-   APC flake that bounced b8eac0dccad2 is not ours, but note whether anyone has fixed it.
-
-**Owed, roughly in priority order** (each is detailed in the dated sections below):
+**Owed, roughly in priority order:**
 - **UB tier.**
-  - `invalid_value`: deny it tree-wide once the census reads 0. shell32-com fixed attrib,
-    setuplib and winspool (c06ca3ba658). cpp-cluster owns msctf. The shell32 session agreed
-    the deny comes after a fresh zero.
-  - `deref_nullptr` (7): eventlog, localspl, ndis, rpcss and one more. These are newer crates
-    from other lanes; grade them.
+  - `invalid_value`: deny it tree-wide once a fresh census reads 0. shell32-com fixed attrib,
+    setuplib and winspool (c06ca3ba658); cpp-cluster owns msctf.
   - `improper_ctypes` (48): mspaint and msctfime. **The user said leave mspaint for now
     (2026-10-11).**
-- **NTDDI version-branch scanner.** `scan_cfg_vs_c` only judges arch conditionals. Every
-  MS-architecture driver with `#if NTDDI_VERSION` blocks (cdfs, classpnp, disk, cdrom) can run
-  code its WS03 build compiles out, as fastfat did (~100 sites). Method: evaluate each C `#if`
-  at the module's real `_WIN32_WINNT`, then diff against the same-stem Rust fn. Field manual,
-  "The version block translated UNGATED".
+  - `deref_nullptr`: done, and wider than the census said (78 sites, not 7). Re-read the
+    census for any form `null_offset_to_offset_of --lint` does not match.
 - **The rest of `clashing_extern` (1,392).** fastfat's recipe generalises:
   `tools/extern_to_use.py`, then a build, `rustconv crate-repair`, and graded residue applied
   with `tools/apply_agent_edits.py`. Next candidates are the biggest per-crate counts in the
   census.
-- **`scan_macro_fn_shadow` missed fastfat's fatdata.h trace macros.** Find out why the harvest
-  skips a driver-private header.
-- **crate-repair's `width_alias_cast`** cast to a type alias local to the callee's module
-  (`as FAT_FLUSH_TYPE`), a name the call site cannot see. Three sites, fixed by hand. Make it
-  qualify the name or use the definition's real type.
+- **scan_version_vs_c follow-ups.** It judges a dead branch by the calls it makes, so pure
+  arithmetic or a flag test in a dead branch is invisible. It also skips files two targets
+  compile at different versions (1 today). classpnp still uses `#[cfg(any())]` for its WIN10
+  firmware handlers. That is correct, but a `cfg(ntddi_ge_ntddi_winthreshold)` would read better.
 - **Noise.**
   - Regenerate the bindgen islands (about 4,590 of the 4,610 `unnecessary_transmutes`).
   - `unused_imports`, held back by imports used only under cfg(test).
@@ -64,6 +53,26 @@ fastfat-rust has **0** warnings on all three arches.
   and `check --strict --scope source-early` and `--scope source-deferred`. `land` refuses a tree
   no build has seen, and its strict preflight lints run partitions plain `check` skips.
   Don't touch the tree while a smoke is running; its staleness check runs late.
+
+## 2026-10-16 — four owed items closed, and the version/null classes gated
+
+- **crate-repair `width_alias_cast`** no longer writes a crate-private alias into a module that
+  cannot see it (`harvest_alias_scope`, decline `alias_not_in_scope`). Measured over the tree,
+  it agrees with all 181 compiling uses of such aliases.
+- **`scan_macro_fn_shadow` and fatdata.h:** its discard harvest did not know `{NOTHING;}`. Now it
+  does, and that found cdfs's 28 `ASSERT_*` shadows and fastfat's `DebugDoit`. Those are crate
+  macros now, and fastfat's dead C debug stubs (`DebugTrace` … `TimerStop`) are gone.
+- **`tools/scan_version_vs_c.py`** (new lint, empty baseline, control). Its first run found 7
+  real sites beyond fastfat: classpnp `ClasspDeleteTimer` (zeroed a live KTIMER header) and its
+  power callback, comctl32 syslink (deleted the parent's brush) and tooltips, cmd's Win7
+  variable, threadpool's thread naming, and shell32's open-verb spelling. It also found fastfat's
+  four disk-accounting calls and `FsRtlAreThereWaitingFileLocks`, which the 2026-10-11 pass had
+  left ungated. Lesson: classpnp builds at WIN8, not WS03; the cutover erased that from its
+  CMakeLists, so the scanner reads build.ninja first and the CMakeLists history second.
+- **`deref_nullptr`:** 78 offsetof-through-null sites became `core::mem::offset_of!`
+  (`tools/null_offset_to_offset_of.py`; `--lint` gates the class at 0).
+- `c_twin.rust_functions` counted lines quadratically. Fixing that took the version scanner
+  from 218 s to 71 s and sped up `scan_cfg_vs_c` too.
 
 ## The census finding that reframes everything (2026-07-16)
 
