@@ -2360,6 +2360,29 @@ impl Linker {
         ) {
             return archive;
         }
+        // Built privately: with the same pinned llvm-dlltool the artifact store's worker
+        // uses for raw-dylib import members. Left to rustc, it is the host's GNU dlltool,
+        // which writes rustc's random --temp-prefix into COFF symbol names, so the body
+        // differed from run to run and from the store's (an i386 usetup.exe pulled an extra
+        // ntdll thunk). Added after the store's audited-flags check, before the shared
+        // body storage key, so a body cached either way is keyed by it.
+        let dlltool = format!(
+            "-C dlltool={}",
+            self.repo_root.join(".build-tools/llvm-mingw/bin/llvm-dlltool").display()
+        );
+        if flags.iter().any(|(name, value)| {
+            **name != "RUSTFLAGS" && value.as_ref().is_some_and(|v| !v.is_empty())
+        }) {
+            panic!("{crate_name}: a private body build with encoded/build RUSTFLAGS cannot take the pinned dlltool");
+        }
+        let rustflags = format!("{effective_flags} {dlltool}").trim().to_string();
+        cmd.env("RUSTFLAGS", &rustflags);
+        let flags: Vec<_> = flags
+            .into_iter()
+            .map(|(name, value)| {
+                if *name == "RUSTFLAGS" { (name, Some(rustflags.clone().into())) } else { (name, value) }
+            })
+            .collect();
         let configuration = format!("{target_identity:?}|{pin:?}|{flags:?}");
         let emit_ir = env::var("VIBEOS_EMIT_LLVM_IR").as_deref() == Ok("1");
         let shared = body_storage::enabled(shards, emit_ir).then(|| {

@@ -477,12 +477,14 @@ extends it from the boot spine to every fully-Rust module.
      cells (after rosload's 16-bit drvmap object joined the SDK recipe and opengl32's i386
      asm shims got a recipe) and all 276 arm64 cells. Against cmake's links: i386 358
      byte-identical, 7 `pe_equiv --code` equivalent, 1 different; arm64 368 byte-identical,
-     3 code-equivalent, 0 different. **The i386 difference is open and unexplained:**
-     usetup.exe is loader-equivalent (`pe_equiv`) but 16 bytes of `.text` differ: cmake's
-     link pulls ntdll's import thunk for `NlsMbOemCodePageTag` (`ntdll.dlls00000.o`, 8
-     bytes, ahead of inflib_rust) and the no-cmake link references that symbol nowhere.
-     The inflib_rust objects are the same size in both; what references the bare symbol in
-     cmake's link is not found yet.
+     3 code-equivalent, 0 different. The i386 difference was not cmake's: the cmake-side
+     usetup.exe had been linked by a raw `ninja usetup` (no build supervisor), whose body
+     crates were built privately, and a private build left rustc's raw-dylib import members
+     to the host's GNU dlltool while the artifact store's worker uses the pinned
+     llvm-dlltool. GNU dlltool's members differ (and carry rustc's random temp prefix, so
+     they also differed run to run); the link pulled an extra 8-byte ntdll thunk from one
+     of them. Private body builds now take the pinned llvm-dlltool too, after the store's
+     audited-flags check: usetup.exe is byte-identical either way.
 
 ## How a wave goes (the default for every new module)
 
