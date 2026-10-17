@@ -602,6 +602,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **arm64 FEX: a guest dies when a commit is refused; appstorm64 at 1024M is 53/54 (open,
+  found 2026-10-17, human-only).** On 1G `VIBEOS_PAYLOAD=appstorm64` media, the ramdisk leaves
+  a 129 MB commit limit. Since copy-on-write and paged pool were charged (`203a6c64d51`, a
+  steady ~15 MB), FEX's peaks reach it. iexplore under FEX is refused 16 pages, faults in the
+  CPU layer and never closes (`20261017-141001-or20qi28`). A ladder run on that media loses
+  apc32 the same way (`20261017-141001-lz2_v41g`). Cause: rpmalloc's `span_allocate_page`
+  calls the VIBEOS `memory_commit` hook (FEXCore `AllocatorHooks.cpp`
+  `FEX_rp_memory_commit`), which returns `void`, and then writes into memory that was never
+  committed. The fix belongs in `vendor/fex`, whose CLAUDE.md forbids AI-written code. Plain
+  `VIBEOS_FEX=1` media (the gate's ladder) and appstorm64 at 1088M and 2G are clean. Details:
+  `docs/engineering/wow64-x64-guest-design.md`, resume item 2.
+
 - **C++ apps: an override calling `Base::M()` recursed into itself, 36 sites (FIXED
   2026-10-16, cpp-cluster; latent).** A qualified base call is non-virtual in C++, but the
   generated Rust called the base's VIRTUAL dispatcher (`(*this_).__base0.M(..)`) from inside
