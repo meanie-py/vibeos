@@ -84,6 +84,19 @@
 #![allow(dangerous_implicit_autorefs)]
 
 use crate::prelude::*;
+// One declaration per external symbol: island.rs.
+use crate::island::CreateMenu;
+use crate::island::DestroyMenu;
+use crate::island::DestroyWindow;
+use crate::island::GetMenuItemInfoW;
+use crate::island::IUnknown_QueryService;
+use crate::island::InsertMenuItemW;
+use crate::island::InsertMenuW;
+use crate::island::LoadIconW;
+use crate::island::LoadStringW;
+use crate::island::RegCloseKey;
+use crate::island::RegOpenKeyExW;
+use crate::island::RegQueryValueExW;
 use crate::def_view_support::*;
 use crate::rosctrls::*;
 use crate::def_view_support::UPDATEFOLDERVIEWFLAGS;
@@ -2579,19 +2592,7 @@ pub const DROPEFFECT_NONE: DWORD = 0;
 pub const DROPEFFECT_MOVE: DWORD = 2;
 
 extern "system" {
-    fn CreateMenu() -> HMENU;
-    fn DestroyMenu(menu: HMENU) -> BOOL;
-    fn InsertMenuW(menu: HMENU, position: UINT, flags: UINT, id: UINT_PTR, text: LPCWSTR) -> BOOL;
-    fn DestroyWindow(window: HWND) -> BOOL;
-    fn LoadIconW(instance: HINSTANCE, name: LPCWSTR) -> HICON;
-    fn GetMenuItemInfoW(menu: HMENU, item: UINT, by_position: BOOL, info: *mut MENUITEMINFOW) -> BOOL;
-    fn IUnknown_QueryService(object: *mut IUnknown, service: REFGUID, riid: REFIID, out: *mut *mut core::ffi::c_void) -> HRESULT;
-    fn RegCloseKey(key: HKEY) -> LONG;
-    fn RegOpenKeyExW(key: HKEY, subkey: LPCWSTR, options: DWORD, access: REGSAM, result: PHKEY) -> LONG;
-    fn RegQueryValueExW(key: HKEY, value: LPCWSTR, reserved: LPDWORD, kind: LPDWORD, data: PBYTE, bytes: LPDWORD) -> LONG;
-    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
     fn CoTaskMemFree(memory: LPVOID);
-    fn InsertMenuItemW(menu: HMENU, item: UINT, by_position: BOOL, info: *const MENUITEMINFOW) -> BOOL;
 }
 
 extern "C" {
@@ -7878,7 +7879,7 @@ pub unsafe fn CDefView__MergeToolbar_body(this: *mut CDefView) -> HRESULT {
     let mut hr: HRESULT = S_OK;
 
     hr = IUnknown_QueryService(
-        (*this).m_pShellBrowser as *mut IUnknown,
+        ((*this).m_pShellBrowser as *mut IUnknown).cast(),
         &IID_IExplorerToolbar as *const _,
         core::ptr::addr_of!(IID_IExplorerToolbar), core::ptr::addr_of_mut!(ptb).cast(),
     );

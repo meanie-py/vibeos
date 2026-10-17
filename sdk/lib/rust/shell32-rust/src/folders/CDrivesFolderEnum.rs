@@ -350,31 +350,13 @@ pub struct DEFCONTEXTMENU {
     pub aKeys: *const HKEY,
 }
 
-#[repr(C)]
-pub struct PREVENT_MEDIA_REMOVAL {
-    pub PreventMediaRemoval: BOOLEAN,
-}
+pub use crate::island::PREVENT_MEDIA_REMOVAL;
 
-#[repr(C)]
-pub struct QCMINFO {
-    pub hmenu: HMENU,
-    pub indexMenu: UINT,
-    pub idCmdFirst: UINT,
-    pub idCmdLast: UINT,
-    pub pIdMap: *const QCMINFO_IDMAP,
-}
+pub use crate::island::QCMINFO;
 
-#[repr(C)]
-pub struct QCMINFO_IDMAP {
-    pub nMaxIds: UINT,
-    pub pIdList: [QCMINFO_IDMAP_PLACEMENT; 1],
-}
+pub use crate::island::QCMINFO_IDMAP;
 
-#[repr(C)]
-pub struct QCMINFO_IDMAP_PLACEMENT {
-    pub id: UINT,
-    pub fFlags: UINT,
-}
+pub use crate::island::QCMINFO_IDMAP_PLACEMENT;
 
 #[repr(C)]
 pub struct ULARGE_INTEGER {
@@ -492,11 +474,7 @@ macro_rules! LOWORD { ($value:expr) => { (($value as usize) & 0xffff) as UINT };
 
 pub type LPFNSVADDPROPSHEETPAGE = Option<unsafe extern "system" fn(HPROPSHEETPAGE, LPARAM) -> BOOL>;
 
-#[repr(C)]
-pub struct shvheader {
-    pub colnameid: WORD, pub colstate: WORD,
-    pub fmt: WORD, pub cxChar: WORD,
-}
+pub use crate::island::shvheader;
 pub static MyComputerSFHeader: [shvheader; 5] = [
     shvheader { colnameid: (IDS_SHV_COLUMN_NAME) as WORD, colstate: (SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT) as WORD, fmt: (LVCFMT_LEFT) as WORD, cxChar: (15) as WORD },
     shvheader { colnameid: (IDS_SHV_COLUMN_TYPE) as WORD, colstate: (SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT) as WORD, fmt: (LVCFMT_LEFT) as WORD, cxChar: (10) as WORD },
@@ -506,26 +484,15 @@ pub static MyComputerSFHeader: [shvheader; 5] = [
 ];
 
 extern "system" {
-    fn CloseHandle(handle: HANDLE) -> BOOL;
-    fn DestroyMenu(menu: HMENU) -> BOOL;
-    fn DestroyWindow(window: HWND) -> BOOL;
     fn ExpandEnvironmentStringsW(source: LPCWSTR, dest: LPWSTR, size: DWORD) -> DWORD;
-    fn MessageBoxW(owner: HWND, text: LPCWSTR, caption: LPCWSTR, kind: UINT) -> INT;
-    fn RegGetValueW(key: HKEY, subkey: LPCWSTR, value: LPCWSTR, flags: DWORD, kind: LPDWORD, data: LPVOID, bytes: LPDWORD) -> LONG;
     fn SHChangeNotify(event: LONG, flags: UINT, item1: LPCVOID, item2: LPCVOID);
     fn GetLastError() -> DWORD;
     fn lstrlenW(text: LPCWSTR) -> INT;
-    fn CoTaskMemAlloc(bytes: SIZE_T) -> LPVOID;
-    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
     fn CoTaskMemFree(memory: LPVOID);
-    fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
-    fn SHCreateShellFolderView(create: *const SFV_CREATE, view: *mut *mut IShellView) -> HRESULT;
 }
 
 extern "C" {
-    fn HLM_GetIconW(index: UINT, destination: LPWSTR, length: DWORD, icon_index: *mut INT) -> BOOL;
     fn _ILIsSpecialFolder(pidl: LPCITEMIDLIST) -> BOOL;
-    fn _ILGetDataPointer(pidl: LPCITEMIDLIST) -> *mut PIDLDATA;
     #[link_name = "CPrinterFolder_CompareDetails_RustBridge"] fn SHELL32_CompareDetails(folder: *mut IShellFolder2, lparam: LPARAM, left: PCUIDLIST_RELATIVE, right: PCUIDLIST_RELATIVE) -> HRESULT;
     #[link_name = "memcpy"] fn cpp_com_memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, bytes: usize) -> *mut core::ffi::c_void;
 }
@@ -625,6 +592,19 @@ extern "C" {
 // the `types`/`win32`/`shellcom` globs the assembler also emits are dropped rather than
 // joined, because carrying both makes every shared name ambiguous (E0659). See prelude.rs.
 use core::ffi::c_void;
+// The crate's own functions: the definition is the declaration.
+use crate::wine::classes::HLM_GetIconW;
+use crate::wine::pidl::ILClone;
+use crate::def_view::SHCreateShellFolderView;
+use crate::wine::pidl::_ILGetDataPointer;
+// One declaration per external symbol: island.rs.
+use crate::island::CloseHandle;
+use crate::island::CoTaskMemAlloc;
+use crate::island::DestroyMenu;
+use crate::island::DestroyWindow;
+use crate::island::LoadStringW;
+use crate::island::MessageBoxW;
+use crate::island::RegGetValueW;
 use crate::prelude::*;
 // Owned by the free-function slice of this same TU.
 use crate::drives_folder_tu::STRRET_WSTR;

@@ -614,6 +614,41 @@ def test_bare_void_pointer_converts_at_any_depth():
         assert [edit.replacement for edit in plan.edits] == ["(ctx).cast()"]
 
 
+def test_two_distinct_named_pointees_stay_red():
+    # shell32's hand-written MENUITEMINFOW beside the island's tagMENUITEMINFOW: `.cast()` would
+    # bless a second copy of the layout without checking it. Two handles are a wrong argument.
+    source = b"unsafe { Foo(p); }\n"
+    for expected, found, why in (
+        ("*mut tagMENUITEMINFOW", "*mut MENUITEMINFOW", "distinct_pointee_types"),
+        ("*mut HWND__", "*mut HMENU__", "distinct_pointee_types"),
+        ("*const u16", "*const u8", "integer_pointee_width"),
+    ):
+        plan = propose_edits(
+            [_pointer_diag(expected, found, source, b"p")],
+            _reader({"src/c.rs": source}),
+            target="amd64",
+            rules=[RULE_POINTER_CAST],
+        )
+        assert plan.edits == (), (expected, found)
+        assert [item.reason for item in plan.skipped] == [why]
+
+
+def test_char_signedness_and_com_upcast_still_cast():
+    source = b"unsafe { Foo(p); }\n"
+    for expected, found in (
+        ("*const i8", "*const u8"),
+        ("*mut IShellFolder", "*mut shellcom::IShellFolder2"),
+        ("*mut ntdll_sys::nt::HDC__", "*mut com_sys::HDC__"),
+    ):
+        plan = propose_edits(
+            [_pointer_diag(expected, found, source, b"p")],
+            _reader({"src/c.rs": source}),
+            target="amd64",
+            rules=[RULE_POINTER_CAST],
+        )
+        assert [edit.replacement for edit in plan.edits] == ["(p).cast()"], (expected, found)
+
+
 # --- rule 2: bindgen flexible-array members ---------------------------------------------------
 
 _TYPES = """

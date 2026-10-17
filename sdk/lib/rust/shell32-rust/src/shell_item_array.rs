@@ -765,12 +765,8 @@ pub struct ULARGE_INTEGER {
 }
 
 extern "system" {
-    fn ILCombine(parent: PCIDLIST_ABSOLUTE, child: PCUITEMID_CHILD) -> PIDLIST_ABSOLUTE;
-    fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
     fn ILFindLastID(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
-    fn ILFree(pidl: LPITEMIDLIST);
     fn ILRemoveLastID(pidl: LPITEMIDLIST) -> BOOL;
-    fn SHGetDesktopFolder(folder: *mut *mut IShellFolder) -> HRESULT;
     fn SHGetNameFromIDList(pidl: PCIDLIST_ABSOLUTE, sigdn: SIGDN, name: *mut PWSTR) -> HRESULT;
     fn SHCreateShellItem(
         parent: PCIDLIST_ABSOLUTE,
@@ -789,7 +785,6 @@ extern "system" {
 }
 
 extern "C" {
-    fn _ILIsDesktop(pidl: LPCITEMIDLIST) -> BOOL;
 }
 
 extern "C" {
@@ -827,6 +822,12 @@ impl<T> Drop for CppComPtrGuard<T> {
 }
 
 use crate::shellcom::*;
+// The crate's own functions: the definition is the declaration.
+use crate::wine::pidl::ILClone;
+use crate::wine::pidl::ILCombine;
+use crate::wine::pidl::ILFree;
+use crate::desktop_folder_tu::SHGetDesktopFolder;
+use crate::wine::pidl::_ILIsDesktop;
 use crate::types::*;
 use core::ffi::c_void;
 

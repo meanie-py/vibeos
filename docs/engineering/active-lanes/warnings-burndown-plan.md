@@ -37,15 +37,33 @@ units and rebuild.
   - cdrom 72 -> 0, plus about 75 external-API clashes in 12 crates.
   - Remaining outside shell32: menuband's 4 come from the `SIZE_T = usize` in shell32's
     shellcom.rs, and the i386-only pairs are the same width (benign).
-  - shell32's 880 stay with the shell32-com lane.
+  - shell32's 880 were then taken over (below).
 - **New gate `scan_fnclass_cc`:** a callback declared through an NTAPI function class and defined
   cdecl. It found 4 real i386 bugs.
 - **`unexpected_cfgs` is LOGIC now.** It found desk's `unicode` bug. The remaining 4 are
   crt-shared (msvcrt-homebrew's) and wdmaud_drv (the audio lane).
 
+**Later still, 2026-10-17: shell32 taken over** (the shell32-com lane has moved on).
+`clashing_extern` in shell32 516 -> 36 per 64-bit arch (522 -> 32 on i386), menuband 6 -> 0,
+no new warnings. Order of operations, each one a tool:
+1. `extern_to_use.py <src> NAMES --to island` for the 190 symbols all three islands declare.
+2. Roots, not call sites: `types.rs` takes HWND/HKEY/HINSTANCE/HMENU/HBITMAP and the
+   pointer-sized scalars from ntdll-sys; `SIZE_T = usize` (shellcom + 6 modules) and every
+   `type HDC = HANDLE`-style alias became the island's. 948 errors -> 416.
+3. `tools/rustconv/struct_to_island.py`: 161 hand struct copies re-export the island. A
+   layout-assert probe found real bugs: SHQUERYRBINFO/SHFILEOPSTRUCTW unpacked where shellapi.h
+   is pshpack1 on 32-bit only (the exported `SHQueryRecycleBinW` refused every i386 caller),
+   SFVM_CUSTOMVIEWINFO_DATA's `hbmBack` at the wrong 64-bit offset.
+4. `extern_to_use --census` for shell32's 66 own exports; definitions retyped to the header
+   where callers disagreed (`SHGetSetSettings`, `SH_CreatePropertySheetPage[Ex]`); the 5
+   PROPSHEETPAGEW and 3 STRRET copies unified.
+5. crate-repair between each step (`raw_pointer_cast` no longer bridges two distinct named
+   pointees).
+
 **Owed, roughly in priority order:**
-- **The rest of `clashing_extern`:** shell32 (880, the shell32-com lane's), and menuband's
-  shellcom pair. `extern_to_use` gaps:
+- **The rest of `clashing_extern`:** shell32's 36 are `#[link_name = "..._RustBridge"]`
+  aliases that `extern_to_use` KEEPs (a link name is a different symbol), plus the
+  GetWindowLongPtr* pairs (island `extern "C"` on 64-bit vs `system`). `extern_to_use` gaps:
   - it does not collapse two declarations in the SAME file under different inline mods
     (rtl-strings' `cabi/mod.rs` was done by hand);
   - it does not see that a definition is cfg-gated (cdrom's i386-only `KeQueryTickCount`

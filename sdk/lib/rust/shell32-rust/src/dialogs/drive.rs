@@ -40,6 +40,9 @@ pub static CPP_COM_WSTR_F3A549CDECCE: [WCHAR; 7] = [
 ];
 
 use crate::prelude::*;
+// One declaration per external symbol: island.rs.
+use crate::island::DialogBoxParamW;
+use crate::island::SHCreateThread;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -50,31 +53,6 @@ extern "system" {
     /// `CDrivesFolder.cpp:1500` already exports for `drives_folder.rs` and `drvdefext.rs`.
     #[link_name = "IsDriveFloppyW_RustBridge"]
     fn IsDriveFloppyW(pszDriveRoot: LPCWSTR) -> BOOL;
-
-    /// shlwapi ordinal 16. RE-DECLARED here, shadowing the island's, so the thread procedure
-    /// can be spelled `extern "system"` once instead of `#[cfg]`-duplicated per arch: the
-    /// island types this parameter `LPTHREAD_START_ROUTINE`, which comes from `ntdll-sys` and
-    /// so carries bindgen's LITERAL convention (`stdcall` on i386, `C` on 64-bit). Those are
-    /// three spellings of one ABI but three distinct Rust fn-pointer types. Same reasoning as
-    /// `prelude::DLGPROC`; the ABI is unchanged, only how it is written.
-    fn SHCreateThread(
-        pfnThreadProc: Option<unsafe extern "system" fn(pData: *mut c_void) -> DWORD>,
-        pData: *mut c_void,
-        flags: DWORD,
-        pfnCallback: Option<unsafe extern "system" fn(pData: *mut c_void) -> DWORD>,
-    ) -> BOOL;
-
-    /// Same treatment, same reason: the island types `arg4` `DLGPROC`, which is `ntdll-sys`'s
-    /// and so literally `stdcall` on i386. `prelude::DLGPROC` is the `extern "system"` spelling
-    /// of the identical ABI, and declaring against it is what lets `FormatDriveDlg` exist once
-    /// instead of once per arch.
-    fn DialogBoxParamW(
-        hInstance: HINSTANCE,
-        lpTemplateName: LPCWSTR,
-        hWndParent: HWND,
-        lpDialogFunc: DLGPROC,
-        dwInitParam: LPARAM,
-    ) -> INT_PTR;
 }
 
 /// `drive.cpp:30-39`. FILE-LOCAL, so it is in no header and no island can carry it.

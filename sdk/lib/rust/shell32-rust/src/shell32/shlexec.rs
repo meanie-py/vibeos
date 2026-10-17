@@ -44,6 +44,9 @@ pub static CPP_COM_WSTR_F99F36C2F40B: [WCHAR; 9] = [0x0070, 0x0072, 0x006F, 0x00
 pub static CPP_COM_WSTR_FC9A94A80631: [WCHAR; 13] = [0x005C, 0x0061, 0x0070, 0x0070, 0x006C, 0x0069, 0x0063, 0x0061, 0x0074, 0x0069, 0x006F, 0x006E, 0x0000];
 
 use core::ffi::c_void;
+// The crate's own functions: the definition is the declaration.
+use crate::wine::classes::HCR_GetProgIdKeyOfExtension;
+use crate::wine::pidl::ILGetSize;
 use crate::prelude::*;
 use crate::shell32::sdk_consts::*;
 // Both globs define this; an explicit import beats a glob, so it cannot go ambiguous.
@@ -65,8 +68,6 @@ use crate::shellcom::{IContextMenu, IUnknown};
 extern "system" {
     /// shlwapi.
     fn PathFindFileNameW(path: LPCWSTR) -> LPWSTR;
-    /// shlobj.h — implemented in `wine/pidl.rs`.
-    fn ILGetSize(pidl: LPCITEMIDLIST) -> UINT;
     /// `COpenWithMenu.cpp:100` has C++ linkage and no header declaration, so there is no
     /// unmangled `SH32_InvokeOpenWith` to bind to — the same file already exports a WINAPI
     /// bridge for exactly this, which `open_with_menu.rs` also uses. (`win32.rs` declares the
@@ -80,7 +81,6 @@ extern "C" {
     fn SH32_InternalRestricted(rest: DWORD) -> DWORD;
     /// `classes.c` — both __cdecl, same reasoning.
     fn HCR_GetDefaultVerbW(hkeyClass: HKEY, szVerb: LPCWSTR, szDest: LPWSTR, len: DWORD) -> BOOL;
-    fn HCR_GetProgIdKeyOfExtension(szExtension: PCWSTR, phKey: PHKEY, AllowFallback: BOOL) -> HRESULT;
 }
 extern "C" {
     /// The interface ids. `IID_IShellExtInit` / `IID_IShellExecuteHookW` come from the island;
@@ -681,7 +681,7 @@ unsafe extern "C" fn SHELL_GetPathFromIDListForExecuteW(pidl: LPCITEMIDLIST, psz
     if hr >= 0 {
         hr = ((*(*desktop).lpVtbl).GetDisplayNameOf)(desktop, pidl.cast(), SHGDN_FORPARSING, core::ptr::addr_of_mut!(strret).cast());
         if hr >= 0 {
-            StrRetToStrNW(pszPath, uOutSize, core::ptr::addr_of_mut!(strret), pidl);
+            StrRetToStrNW(pszPath, uOutSize, (core::ptr::addr_of_mut!(strret)).cast(), (pidl).cast());
         }
     }
     if !desktop.is_null() {
@@ -818,7 +818,7 @@ unsafe extern "system" fn RunAsDlgProc(
                     EndDialog(hwnd, (IDOK) as INT_PTR);
                 }
                 IDC_RUNAS_BROWSE => {
-                    return SHELL_ErrorBox(hwnd as *mut c_void, ERROR_NOT_SUPPORTED) as INT_PTR;
+                    return SHELL_ErrorBox((hwnd as *mut c_void).cast(), ERROR_NOT_SUPPORTED) as INT_PTR;
                 }
                 _ => {}
             }
@@ -949,7 +949,7 @@ unsafe extern "system" fn RunAsDlgProc(
                     EndDialog(hwnd, (IDOK) as INT_PTR);
                 }
                 IDC_RUNAS_BROWSE => {
-                    return SHELL_ErrorBox(hwnd as *mut c_void, ERROR_NOT_SUPPORTED) as INT_PTR;
+                    return SHELL_ErrorBox((hwnd as *mut c_void).cast(), ERROR_NOT_SUPPORTED) as INT_PTR;
                 }
                 _ => {}
             }
@@ -1007,7 +1007,7 @@ unsafe extern "C" fn PromptAndRunProcessAs(
                 | ERROR_ACCOUNT_RESTRICTION
                 | ERROR_INVALID_LOGON_HOURS
                 | ERROR_PASSWORD_EXPIRED => {
-                    SHELL_ErrorBox(hwnd as *mut c_void, error);
+                    SHELL_ErrorBox((hwnd as *mut c_void).cast(), error);
                     continue 'again;
                 }
                 _ => {}

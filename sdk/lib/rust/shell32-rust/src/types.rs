@@ -27,20 +27,16 @@ pub type BYTE = u8;
 pub type CHAR = i8;
 pub type WCHAR = u16;
 
-pub type UINT_PTR = usize;
-pub type INT_PTR = isize;
-pub type DWORD_PTR = usize;
-pub type ULONG_PTR = usize;
-pub type LONG_PTR = isize;
+// The pointer-sized scalars and the nominal handles are the island's (ntdll-sys's), not
+// `usize`/`*mut c_void`: two spellings of the same bytes are two Rust types, and every
+// island function declaration rejects the other one at the call.
+pub use ntdll_sys::nt::{
+    DWORD_PTR, HBITMAP, HINSTANCE, HKEY, HMENU, HWND, INT_PTR, LONG_PTR, UINT_PTR, ULONG_PTR,
+};
 
 pub type HANDLE = *mut c_void;
-pub type HKEY = HANDLE;
 pub type PHKEY = *mut HKEY;
-pub type HINSTANCE = HANDLE;
-pub type HWND = HANDLE;
-pub type HMENU = HANDLE;
 pub type HGLOBAL = HANDLE;
-pub type HBITMAP = HANDLE;
 pub type HPROPSHEETPAGE = HANDLE;
 pub type COLORREF = DWORD;
 
@@ -96,19 +92,7 @@ pub struct FOLDERSETTINGS {
 pub type LPFOLDERSETTINGS = *mut FOLDERSETTINGS;
 pub type LPCFOLDERSETTINGS = *const FOLDERSETTINGS;
 
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct DRAWITEMSTRUCT {
-    pub CtlType: UINT,
-    pub CtlID: UINT,
-    pub itemID: UINT,
-    pub itemAction: UINT,
-    pub itemState: UINT,
-    pub hwndItem: HWND,
-    pub hDC: HDC,
-    pub rcItem: RECT,
-    pub itemData: ULONG_PTR,
-}
+pub use crate::island::DRAWITEMSTRUCT;
 
 pub const CF_UNICODETEXT: UINT = 13;
 pub const GMEM_MOVEABLE: UINT = 2;
@@ -141,22 +125,7 @@ pub struct CMINVOKECOMMANDINFO {
 }
 pub type LPCMINVOKECOMMANDINFO = *mut CMINVOKECOMMANDINFO;
 
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct MENUITEMINFOW {
-    pub cbSize: UINT,
-    pub fMask: UINT,
-    pub fType: UINT,
-    pub fState: UINT,
-    pub wID: UINT,
-    pub hSubMenu: HMENU,
-    pub hbmpChecked: HBITMAP,
-    pub hbmpUnchecked: HBITMAP,
-    pub dwItemData: ULONG_PTR,
-    pub dwTypeData: LPWSTR,
-    pub cch: UINT,
-    pub hbmpItem: HBITMAP,
-}
+pub use crate::island::MENUITEMINFOW;
 
 /// SIZE and POINT from wtypes.h. RE-EXPORTED from the bindgen island, not declared here:
 /// the island owns DATA LAYOUTS (see shellcom.rs's header). A second local copy is a
@@ -166,39 +135,16 @@ pub struct MENUITEMINFOW {
 pub use crate::island::{POINT, SIZE};
 
 /// winuser.h notification header. `idFrom` is pointer-sized on Win64.
-#[repr(C)]
-pub struct NMHDR {
-    pub hwndFrom: HWND,
-    pub idFrom: UINT_PTR,
-    pub code: UINT,
-}
+pub use crate::island::NMHDR;
 
 pub type LPNMHDR = *mut NMHDR;
 
-#[repr(C)]
-pub struct PSHNOTIFY {
-    pub hdr: NMHDR,
-    pub lParam: LONG_PTR,
-}
+pub use crate::island::PSHNOTIFY;
 
 /// Canonical shellapi.h file-information records shared by C and C++ ports.
-#[repr(C)]
-pub struct SHFILEINFOA {
-    pub hIcon: HICON,
-    pub iIcon: INT,
-    pub dwAttributes: DWORD,
-    pub szDisplayName: [CHAR; MAX_PATH],
-    pub szTypeName: [CHAR; 80],
-}
+pub use crate::island::SHFILEINFOA;
 
-#[repr(C)]
-pub struct SHFILEINFOW {
-    pub hIcon: HICON,
-    pub iIcon: INT,
-    pub dwAttributes: DWORD,
-    pub szDisplayName: [WCHAR; MAX_PATH],
-    pub szTypeName: [WCHAR; 80],
-}
+pub use crate::island::SHFILEINFOW;
 
 extern "system" {
     pub fn lstrcpynW(dst: LPWSTR, src: LPCWSTR, capacity: INT) -> LPWSTR;
@@ -224,12 +170,7 @@ pub fn HRESULT_FROM_WIN32(x: LONG) -> HRESULT {
 }
 
 /// LUID — { LowPart: DWORD, HighPart: LONG }.
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct LUID {
-    pub LowPart: DWORD,
-    pub HighPart: LONG,
-}
+pub use crate::island::LUID;
 
 // LARGE_INTEGER: the island owns it (same rule as POINT/SIZE/RECT above). The local copy
 // kept only the quad arm.

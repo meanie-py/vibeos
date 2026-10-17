@@ -537,7 +537,7 @@ pub unsafe extern "C" fn SHELL32_GetFSItemAttributes(psf: *mut IShellFolder, pid
         let mut strret: STRRET = core::mem::zeroed();
         let mut path: PWSTR = core::ptr::null_mut();
         if (((*(*psf).lpVtbl).GetDisplayNameOf)(psf, pidl, SHGDN_FORPARSING, &mut strret)) >= 0 &&
-           (StrRetToStrW(&mut strret, pidl, &mut path)) >= 0 {
+           (StrRetToStrW((&raw mut strret).cast(), pidl, &mut path)) >= 0 {
             let exists = PathFileExistsW(path);
             SHFree(path);
             if exists == 0 {
@@ -571,7 +571,7 @@ pub unsafe extern "C" fn SHELL32_GetFSItemAttributes(psf: *mut IShellFolder, pid
                         if Status == STATUS_SUCCESS as i32 {
                             dwShellAttributes |= dwAttributes;
                         }
-                        RegCloseKey(hkey);
+                        RegCloseKey((hkey).cast());
 
                         bDirectory = (dwAttributes & SFGAO_FOLDER) != 0 || dwAttributes == 0;
                     }
@@ -668,14 +668,14 @@ pub unsafe extern "C" fn SHELL_FS_HideExtension(szPath: LPCWSTR) -> BOOL {
             let mut classlen: i32 = core::mem::size_of_val(&classname) as i32;
             lError = RegQueryValueW(HKEY_CLASSES_ROOT, DotExt, classname.as_mut_ptr(), core::ptr::addr_of_mut!(classlen));
             if lError == ERROR_SUCCESS {
-                lError = RegOpenKeyW(HKEY_CLASSES_ROOT, classname.as_ptr(), core::ptr::addr_of_mut!(hKey));
+                lError = RegOpenKeyW(HKEY_CLASSES_ROOT, classname.as_ptr(), (core::ptr::addr_of_mut!(hKey)).cast());
                 if lError == ERROR_SUCCESS {
-                    lError = RegQueryValueExW(hKey, CPP_COM_WSTR_05F96F56AE26.as_ptr(), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut());
+                    lError = RegQueryValueExW((hKey).cast(), CPP_COM_WSTR_05F96F56AE26.as_ptr(), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut());
                     if lError == ERROR_SUCCESS {
                         doHide = TRUE;
                     }
 
-                    RegCloseKey(hKey);
+                    RegCloseKey((hKey).cast());
                 }
             }
         }
@@ -701,7 +701,7 @@ unsafe extern "C" fn DoLoadPicture(pszFileName: LPCWSTR) -> HBITMAP {
         FILE_ATTRIBUTE_NORMAL,
         FALSE,
         core::ptr::null_mut(),
-        &mut pStream,
+        (&raw mut pStream).cast(),
     );
     if ((hr) < 0) {
         return core::ptr::null_mut();
@@ -721,7 +721,7 @@ unsafe extern "C" fn DoLoadPicture(pszFileName: LPCWSTR) -> HBITMAP {
         ((*(*pPicture).lpVtbl).get_Handle)(pPicture, &mut hbm as *mut HBITMAP as *mut OLE_HANDLE);
 
         hbm = CopyImage(
-            hbm,
+            (hbm).cast(),
             IMAGE_BITMAP,
             0,
             0,

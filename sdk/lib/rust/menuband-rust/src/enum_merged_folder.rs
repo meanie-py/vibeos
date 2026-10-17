@@ -311,9 +311,9 @@ pub unsafe fn CEnumMergedFolder_Begin_body(this: *mut CEnumMergedFolder, hwndOwn
         let mut allUsers: *mut IEnumIDList = core::ptr::null_mut();
         let _allUsers_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(allUsers));
 
-        hr = ((*(*(*this).m_UserLocalFolder).lpVtbl).EnumObjects)((*this).m_UserLocalFolder, hwndOwner.cast::<core::ffi::c_void>(), flags, core::ptr::addr_of_mut!(userLocal).cast());
+        hr = ((*(*(*this).m_UserLocalFolder).lpVtbl).EnumObjects)((*this).m_UserLocalFolder, hwndOwner, flags, core::ptr::addr_of_mut!(userLocal).cast());
         if ((hr) < 0) { return hr; }
-        hr = ((*(*(*this).m_AllUSersFolder).lpVtbl).EnumObjects)((*this).m_AllUSersFolder, hwndOwner.cast::<core::ffi::c_void>(), flags, core::ptr::addr_of_mut!(allUsers).cast());
+        hr = ((*(*(*this).m_AllUSersFolder).lpVtbl).EnumObjects)((*this).m_AllUSersFolder, hwndOwner, flags, core::ptr::addr_of_mut!(allUsers).cast());
         if ((hr) < 0) { return hr; }
 
         if (*this).m_hDsa as usize == 0 {
