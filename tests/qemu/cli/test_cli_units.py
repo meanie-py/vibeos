@@ -880,6 +880,26 @@ def test_crate_for_stem_separator_normalization(arm64_cohab_repo: Path):
     assert provenance._crate_for_stem(arm64_cohab_repo, "nonexistent") is None
 
 
+def test_a_binary_with_its_extension_in_its_name_maps_to_its_own_crate(monkeypatch):
+    """wdmaud.drv's Path.stem is `wdmaud` -- wdmaud.SYS's crate -- so a kernel-crate rebuild
+    reported wdmaud.drv "never relinked" against an archive it does not link (arm64,
+    2026-10-17). The crate port names it with the dot as `_` wins; the stem is the fallback."""
+    crates = {
+        "wdmaud": Path("wdmaud-rust"),
+        "wdmaud_drv": Path("wdmaud_drv-rust"),
+        "kernel32": Path("kernel32-rust"),
+    }
+    monkeypatch.setattr(provenance, "_crate_for_stem", lambda _repo, stem: crates.get(stem))
+    repo = Path("/r")
+    drv = "dll/win32/wdmaud.drv/wdmaud.drv"
+    sys_ = "drivers/wdm/audio/legacy/wdmaud/wdmaud.sys"
+    assert provenance._crate_for_rel(repo, drv) == Path("wdmaud_drv-rust")
+    assert provenance._crate_for_rel(repo, sys_) == Path("wdmaud-rust")
+    k32 = "dll/win32/kernel32/kernel32.dll"
+    assert provenance._crate_for_rel(repo, k32) == Path("kernel32-rust")
+    assert provenance._crate_for_rel(repo, "dll/win32/other/other.dll") is None
+
+
 def test_crate_for_stem_ignores_a_parked_non_member_crate(arm64_cohab_repo: Path):
     """A translated-but-NOT-YET-FLIPPED crate is not cohab, and treating it as one
     halted the merge train on 2026-08-04: msv1_0-rust was committed and parked out
@@ -11604,6 +11624,27 @@ def test_wowx64_cpu_layer_older_than_its_sources_is_stale(tmp_path):
 
     os.utime(header, (3_000_000, 3_000_000))
     assert build_mod.wowx64_cpu_stale(tmp_path) == ["sdk/include/reactos/wowx64/btcpu64.h"]
+
+
+def test_a_payload_that_exits_with_a_message_says_why(tmp_path, monkeypatch):
+    """vendordrv's stager refuses with `sys.exit("vendordrv: no .inf in <dir>")`. A caught
+    SystemExit prints nothing, so the stage read FAIL with an empty reason (2026-10-17)."""
+    (tmp_path / "tools" / "payloads").mkdir(parents=True)
+    (tmp_path / "tools" / "payloads" / "compile.py").write_text(
+        "import os, sys\n"
+        "def resolve_env_payloads(environ=os.environ):\n"
+        "    return ['vendordrv']\n"
+        "def ensure_built(names, arch):\n"
+        "    sys.exit('vendordrv: no .inf in /somewhere')\n"
+        "def write_stamp(build_dir, environ=os.environ):\n"
+        "    return []\n"
+    )
+    build_dir = tmp_path / "build-amd64"
+    build_dir.mkdir()
+    monkeypatch.setenv("VIBEOS_PAYLOAD", "vendordrv")
+    run = Run("build", "amd64", ts=1700000000)
+    assert build_mod._stage_payloads(run, tmp_path, build_dir, "amd64") is None
+    assert run.stages[-1].salient == ["vendordrv: no .inf in /somewhere"]
 
 
 def test_a_failed_payload_build_leaves_the_old_stamp(tmp_path, monkeypatch):

@@ -31,6 +31,15 @@ def test_name_restore_takes_no_other_freedom():
     assert restore_requested_name(other, "Foo") == other  # not a case variant
 
 
+def test_a_tchar_entry_answered_as_its_expansion_is_respelled():
+    """reactos.exe: `_tWinMain` came back as `fn wWinMain`, and the stitch refused it."""
+    body = "pub unsafe extern \"system\" fn wWinMain(h: u32) -> i32 {\n    wWinMain_helper(h)\n}\n"
+    out = restore_requested_name(body, "_tWinMain")
+    assert "fn _tWinMain(" in out and "wWinMain_helper(h)" in out
+    both = "fn wmain() {}\nfn main() {}\n"
+    assert restore_requested_name(both, "_tmain") == both  # ambiguous: no freedom taken
+
+
 def test_a_function_defined_in_a_c_header_has_no_symbol_of_its_own(tmp_path):
     h = tmp_path / "identify_funcs.h"
     h.write_text(_HEADER)

@@ -1,6 +1,6 @@
 //! The Raspberry Pis' CYW43455 Wi-Fi: docs/engineering/pi-wifi-design.md.
 //!
-//! `proto`, `sdio`, `chip`, `nvram`, `bus` and `scan` are plain code over a `sdhci_rust::Platform`, so the
+//! `proto`, `sdio`, `chip`, `nvram`, `bus`, `scan` and `join` are plain code over a `sdhci_rust::Platform`, so the
 //! host tests (tools/test_bwfm_proto.py) run them against `sim`'s simulated
 //! controller and chip.
 
@@ -8,6 +8,7 @@
 
 pub mod bus;
 pub mod chip;
+pub mod join;
 pub mod nvram;
 pub mod proto;
 pub mod scan;

@@ -68,6 +68,8 @@ pub struct Bus<P: Platform> {
     /// command being built (header, then the iovar).
     buf: &'static mut Buffers,
     dcmd_id: u16,
+    /// The chip's own address (`cur_etheraddr`), once read (`read_mac`).
+    pub mac: [u8; 6],
     /// Frames polled, and those that were not ours to keep (bad header, unknown
     /// channel, too big), for the log.
     pub frames: u32,
@@ -91,6 +93,7 @@ impl<P: Platform> Bus<P> {
             next_len: 0,
             buf,
             dcmd_id: 0,
+            mac: [0; 6],
             frames: 0,
             dropped: 0,
         }
@@ -174,9 +177,8 @@ impl<P: Platform> Bus<P> {
         }
     }
 
-    /// Send the first `n` bytes of `req` on the control channel, waiting for
-    /// credit (reading frames meanwhile and handing them to `each`).
-    fn send_request(&mut self, n: usize, mut each: impl FnMut(Frame)) -> Result<(), Error> {
+    /// Wait for a transmit credit, reading frames meanwhile and handing them to `each`.
+    fn credit_wait(&mut self, mut each: impl FnMut(Frame)) -> Result<u8, Error> {
         let start = self.chip.sdio.hc.p.now_us();
         let seq = loop {
             if let Some(s) = self.credit.take() {
@@ -188,8 +190,36 @@ impl<P: Platform> Bus<P> {
             }
             self.chip.sdio.hc.p.stall_us(1000);
         };
+        Ok(seq)
+    }
+
+    /// Send the first `n` bytes of `req` on the control channel.
+    fn send_request(&mut self, n: usize, each: impl FnMut(Frame)) -> Result<(), Error> {
+        let seq = self.credit_wait(each)?;
         let Some(len) = proto::frame(proto::CHANNEL_CONTROL, seq, &[&self.buf.req[..n]], &mut self.buf.tx) else {
             return Err(Error::Card("control frame too big", n as u32));
+        };
+        let addr = self.frame_addr()?;
+        self.chip.sdio.write(2, addr, true, &self.buf.tx[..len])
+    }
+
+    /// Send an Ethernet frame to `dst` (from the chip's own address, `mac`) on the
+    /// data channel, behind the BCDC data header.
+    pub fn send_data(
+        &mut self,
+        dst: &[u8; 6],
+        ethertype: u16,
+        body: &[u8],
+        each: impl FnMut(Frame),
+    ) -> Result<(), Error> {
+        let seq = self.credit_wait(each)?;
+        let mut eth = [0u8; 14];
+        eth[..6].copy_from_slice(dst);
+        eth[6..12].copy_from_slice(&self.mac);
+        eth[12..].copy_from_slice(&ethertype.to_be_bytes());
+        let parts: [&[u8]; 3] = [&proto::data_header(0), &eth, body];
+        let Some(len) = proto::frame(proto::CHANNEL_DATA, seq, &parts, &mut self.buf.tx) else {
+            return Err(Error::Card("data frame too big", body.len() as u32));
         };
         let addr = self.frame_addr()?;
         self.chip.sdio.write(2, addr, true, &self.buf.tx[..len])
@@ -262,6 +292,21 @@ impl<P: Platform> Bus<P> {
         const ZEROS: [u8; 480] = [0; 480];
         let room = out.len().min(ZEROS.len()).saturating_sub(name.len() + 1);
         self.dcmd(proto::cmd::C_GET_VAR, false, &[name, &[0], &ZEROS[..room]], out, each)
+    }
+
+    /// Read the chip's own address into `mac`.
+    pub fn read_mac(&mut self, each: impl FnMut(Frame)) -> Result<[u8; 6], Error> {
+        let mut mac = [0u8; 6];
+        self.get_var(b"cur_etheraddr", &mut mac, each)?;
+        self.mac = mac;
+        Ok(mac)
+    }
+
+    /// GET an iovar holding a 32-bit integer.
+    pub fn get_int(&mut self, name: &[u8], each: impl FnMut(Frame)) -> Result<u32, Error> {
+        let mut v = [0u8; 4];
+        self.get_var(name, &mut v, each)?;
+        Ok(u32::from_le_bytes(v))
     }
 
     /// SET an iovar: `name\0` then `value`.

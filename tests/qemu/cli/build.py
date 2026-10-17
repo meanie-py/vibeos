@@ -752,8 +752,13 @@ def _stage_payloads(run, repo: Path, build_dir: Path, arch: str):
         try:
             with contextlib.redirect_stderr(err):
                 rebuilt = payload_compile.ensure_built(wanted, arch)
-        except SystemExit:
+        except SystemExit as e:
             why = [ln for ln in err.getvalue().strip().splitlines() if ln.strip()]
+            # `sys.exit("why")` (the binaries_from stagers' style) prints nothing until
+            # the interpreter exits, which a caught SystemExit never reaches: take it
+            # from the exception, or the stage says FAIL and nothing about why.
+            if isinstance(e.code, str) and e.code.strip():
+                why.append(e.code.strip())
             run.classification = "PAYLOAD_BUILD_FAIL"
             run.add(Stage("payloads", status="fail", detail=",".join(wanted), salient=why[:6]))
             return None

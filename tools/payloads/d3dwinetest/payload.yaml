@@ -1,0 +1,36 @@
+# Wine's conformance suites for the Direct3D 10/11 family (d3d11, dxgi, d2d1, dwrite),
+# which is built at every DLL_EXPORT_VERSION since 2026-10-17. Before that a default build
+# had no d3d11.dll and a program took its fallback; now D3D11CreateDevice goes to wined3d,
+# so these suites say whether it answers honestly (a device that works, or a clean
+# failure) rather than one that half-works.
+#
+# The list is olewinetest's gen_suites.py pointed at these suites; see that payload for
+# why children start on C:.
+name: d3dwinetest
+description: Wine d3d11 + dxgi + d2d1 + dwrite conformance suites under the apitest sweep runner
+
+build_hint: "tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites d3d11,dxgi,d2d1,dwrite --register '' --out-dir tools/payloads/d3dwinetest"
+
+binaries:
+  - src: tools/payloads/apitest/apitest-sweep-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/apitest-sweep.exe
+  - src: tools/payloads/d3dwinetest/winetest-suites-{arch}.txt
+    dest: bin/apitest-suites.txt
+  - src: tools/payloads/d3dwinetest/winetest-skip-{arch}.txt
+    dest: bin/apitest-skip.txt
+  - src: tools/payloads/d3dwinetest/cwd.txt
+    dest: bin/apitest-cwd.txt
+  - src: build-{arch}/modules/rostests/winetests/d3d11/d3d11_winetest.exe
+    dest: bin/d3d11_winetest.exe
+  - src: build-{arch}/modules/rostests/winetests/dxgi/dxgi_winetest.exe
+    dest: bin/dxgi_winetest.exe
+  - src: build-{arch}/modules/rostests/winetests/d2d1/d2d1_winetest.exe
+    dest: bin/d2d1_winetest.exe
+  - src: build-{arch}/modules/rostests/winetests/dwrite/dwrite_winetest.exe
+    dest: bin/dwrite_winetest.exe
+
+test:
+  launch_marker: "[APITEST-SWEEP] done"
+  launch_drain_secs: 3600
+  launch_idle_secs: 600

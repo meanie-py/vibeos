@@ -434,11 +434,14 @@ unsafe extern "system" fn timerqueue_thread_proc(param: PVOID) -> ULONG {
                     (*timer).u.timer.timeout = now.QuadPart as ULONGLONG + 1;
                 }
 
-                other_timer = (core::ptr::addr_of_mut!(timerqueue.pending_timers) as usize
-                    - core::mem::offset_of!(threadpool_object, u.timer.timer_entry))
-                    as *mut threadpool_object;
-                let mut entry = (*core::ptr::addr_of_mut!(timerqueue.pending_timers)).next;
-                while entry != core::ptr::addr_of_mut!(timerqueue.pending_timers) {
+                // LIST_FOR_EACH_ENTRY + list_add_before: insert before the first timer due
+                // later, or before the HEAD (= at the tail) when none is. The loop cursor
+                // must be the list entry, not the last element visited: a walk that ran off
+                // the end used to insert before the LAST timer, out of order, and the timer
+                // thread only sleeps on the head, so the timer it displaced fired late.
+                let head = core::ptr::addr_of_mut!(timerqueue.pending_timers);
+                let mut entry = (*head).next;
+                while entry != head {
                     other_timer = (entry as usize
                         - core::mem::offset_of!(threadpool_object, u.timer.timer_entry))
                         as *mut threadpool_object;
@@ -447,10 +450,7 @@ unsafe extern "system" fn timerqueue_thread_proc(param: PVOID) -> ULONG {
                     }
                     entry = (*entry).next;
                 }
-                list_add_before(
-                    core::ptr::addr_of_mut!((*other_timer).u.timer.timer_entry),
-                    core::ptr::addr_of_mut!((*timer).u.timer.timer_entry),
-                );
+                list_add_before(entry, core::ptr::addr_of_mut!((*timer).u.timer.timer_entry));
                 (*timer).u.timer.timer_pending = 1;
             }
         }

@@ -15,6 +15,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 SDHCI = "sdk/lib/rust/sdhci-rust/src/lib.rs"
+WPA = "sdk/lib/rust/wpa-rust/src/lib.rs"
 BWFM = "sdk/lib/rust/bwfm-rust/src/lib.rs"
 
 
@@ -35,20 +36,20 @@ def _rustc(args: list[str]) -> subprocess.CompletedProcess[str]:
 
 
 def test_bwfm(tmp_path: Path) -> None:
-    for module in (SDHCI, BWFM):
+    externs = []
+    for crate, module in (("sdhci_rust", SDHCI), ("wpa_rust", WPA)):
         assert (REPO / module).is_file(), f"missing {module}"
-    rlib = tmp_path / "libsdhci_rust.rlib"
-    built = _rustc(
-        ["--crate-type=rlib", "--crate-name=sdhci_rust", str(REPO / SDHCI), "-o", str(rlib)]
-    )
-    assert built.returncode == 0, built.stdout + built.stderr
+        rlib = tmp_path / f"lib{crate}.rlib"
+        built = _rustc(
+            ["--crate-type=rlib", f"--crate-name={crate}", str(REPO / module), "-o", str(rlib)]
+        )
+        assert built.returncode == 0, built.stdout + built.stderr
+        externs += ["--extern", f"{crate}={rlib}"]
     binary = tmp_path / "tests"
-    built = _rustc(
-        ["--test", str(REPO / BWFM), "--extern", f"sdhci_rust={rlib}", "-o", str(binary)]
-    )
+    built = _rustc(["--test", str(REPO / BWFM), *externs, "-o", str(binary)])
     assert built.returncode == 0, built.stdout + built.stderr
     ran = subprocess.run([str(binary)], capture_output=True, text=True, timeout=60, check=False)
     assert ran.returncode == 0, ran.stdout + ran.stderr
     # Each layer must actually have run, not just compiled.
-    for layer in ("proto::", "sdio::", "chip::"):
+    for layer in ("proto::", "sdio::", "chip::", "nvram::", "bus::", "scan::", "join::"):
         assert f"test {layer}" in ran.stdout, ran.stdout
