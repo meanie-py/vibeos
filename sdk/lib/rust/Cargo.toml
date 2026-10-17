@@ -894,6 +894,7 @@ members = [
     "rtl8139-rust",
     "tdi-rust",
     "tzlib-rust",
+    "mmcshext-rust",
 ]
 resolver = "2"
 

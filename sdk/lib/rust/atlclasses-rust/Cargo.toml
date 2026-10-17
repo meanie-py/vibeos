@@ -25,3 +25,6 @@ com = []
 # CPath (atlpath.h's CPathT<CStringW>): shlwapi's PathCompactPathExW. Off by default so a
 # module that never builds a CPath never imports shlwapi.
 path = []
+# CComModule, the object map and the .rgs registrar (dll.rs, registrar.rs): an in-process
+# COM server. Off by default so a module that is not one never imports advapi32.
+dll = []

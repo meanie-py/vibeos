@@ -29,7 +29,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import cpp_templates
+from . import atl_contract, cpp_templates
 from .cpp_core import c_type_to_rust
 from .cpp_model import (
     ATL_IMPL_METHODS,
@@ -192,11 +192,23 @@ class Hierarchy:
         self.hand_methods: dict[str, set[str]] = {}
 
     def com_bases(self, cls: ClassModel) -> list[tuple[int, str]]:
-        return [
-            (i, short(b.name))
-            for i, b in enumerate(cls.bases)
-            if short(b.name) not in self.by_short and short(b.name) in self.com
-        ]
+        out = []
+        for i, b in enumerate(cls.bases):
+            name = short(b.name)
+            if name in self.by_short:
+                continue
+            if name in self.com:
+                out.append((i, name))
+            elif self.com and b.template is None and re.fullmatch(r"I[A-Z]\w*", name):
+                # An interface base the island does not lay out was skipped here: its field
+                # was embedded, its vptr never set, so the first call through it jumped to
+                # address 0 (mmcshext's IPersistFile, absent from the island).
+                raise CppAppError(
+                    f"{cls.qualified}: base {name} looks like a COM interface, but the island "
+                    f"lays out no {name}Vtbl\nfix: re-run `port derive` (profile_derive "
+                    "allowlists class-head interfaces) and `port island`"
+                )
+        return out
 
     def implements_com(self, cls: ClassModel, m: Method) -> bool:
         """`m` is the class's implementation of a COM interface method: dispatched through
@@ -1244,7 +1256,16 @@ def _render_com_object_glue(cls: ClassModel, h: Hierarchy, model: ModuleModel) -
     fc = cls.method("FinalConstruct")
     fr = cls.method("FinalRelease")
     construct = f"(*p).{fc[0].rust_name}() as i32" if fc else "0"
+    if fc and "DECLARE_PROTECT_FINAL_CONSTRUCT" in cls.atl_declares:
+        # InternalFinalConstructAddRef/Release: a FinalConstruct that hands `this` out and
+        # takes it back (AddRef, Release) would otherwise destroy the object it is building.
+        r = f"core::ptr::addr_of_mut!((*p).__base{root})"
+        construct = (
+            f"{{ atl_rust::com::internal_add_ref({r}); let hr = {construct}; "
+            f"atl_rust::com::internal_release({r}); hr }}"
+        )
     release = f"(*p).{fr[0].rust_name}(); " if fr else ""
+    coclass = _render_coclass_glue(cls, model) if cls.name in object_map_classes(model) else []
     return "\n".join(
         [
             f"impl {n} {{",
@@ -1277,13 +1298,81 @@ def _render_com_object_glue(cls: ClassModel, h: Hierarchy, model: ModuleModel) -
             "        if p.is_null() { return atl_rust::com::E_OUTOFMEMORY; }",
             "        atl_rust::com::module_lock();",
             f"        let hr: i32 = {construct};",
-            f"        if hr != 0 {{ {n}__com_destroy(p); return hr; }}",
+            f"        if hr < 0 {{ {n}__com_destroy(p); return hr; }}",
             "        *pp = p;",
             "        hr",
             "    }",
             "}",
+            *coclass,
         ]
     )
+
+
+# Class-level ATL macros atl_rust::dll does not provide: refused, never approximated.
+_UNPORTED_DECLARES = (
+    "DECLARE_AGGREGATABLE",
+    "DECLARE_ONLY_AGGREGATABLE",
+    "DECLARE_POLY_AGGREGATABLE",
+    "DECLARE_CLASSFACTORY",
+    "DECLARE_CLASSFACTORY_EX",
+    "DECLARE_CLASSFACTORY2",
+    "DECLARE_CLASSFACTORY_SINGLETON",
+    "DECLARE_CLASSFACTORY_AUTO_THREAD",
+    "DECLARE_REGISTRY",
+    "DECLARE_REGISTRY_RESOURCE",
+)
+
+
+def _render_coclass_glue(cls: ClassModel, model: ModuleModel) -> list[str]:
+    """An object-map class: `atl_rust::dll::CoClass` (what CComCreator needs past
+    construction), its `UpdateRegistry` from DECLARE_REGISTRY_RESOURCEID / DECLARE_NO_REGISTRY
+    (or the class's own static), and the `extern "system"` thunk the map entry holds."""
+    n = cls.name
+    for d in _UNPORTED_DECLARES:
+        if d in cls.atl_declares:
+            raise CppAppError(f"{cls.qualified}: {d} is not ported (atl_rust::dll)")
+    if "DECLARE_NOT_AGGREGATABLE" not in cls.atl_declares:
+        raise CppAppError(
+            f"{cls.qualified}: in an object map without DECLARE_NOT_AGGREGATABLE, i.e. "
+            "aggregatable (CComCoClass's default); atl_rust has no CComAggObject"
+        )
+    if cls.method("ObjectMain"):
+        raise CppAppError(f"{cls.qualified}: its own ObjectMain is not called by atl_rust::dll")
+    lines = [
+        f"impl atl_rust::dll::CoClass for {n} {{",
+        "    unsafe fn query_interface(p: *mut Self, riid: *const c_void, ppv: *mut *mut c_void)"
+        " -> i32 {",
+        "        (*p).QueryInterface(riid as _, ppv as _) as i32",
+        "    }",
+        f"    unsafe fn destroy(p: *mut Self) {{ {n}__com_destroy(p) }}",
+        "}",
+    ]
+    reg = cls.atl_declares.get("DECLARE_REGISTRY_RESOURCEID")
+    if reg is not None:
+        rid = model.defines.get(reg, reg)
+        lines += [
+            f"impl {n} {{",
+            f"    /// DECLARE_REGISTRY_RESOURCEID({reg}): the module's REGISTRY resource.",
+            "    pub unsafe fn UpdateRegistry(bRegister: BOOL) -> HRESULT {",
+            f"        atl_rust::dll::update_registry_from_resource(({rid}) as u32, "
+            "bRegister as i32, core::ptr::null()) as HRESULT",
+            "    }",
+            "}",
+        ]
+    elif "DECLARE_NO_REGISTRY" in cls.atl_declares:
+        lines += [
+            f"impl {n} {{",
+            "    /// DECLARE_NO_REGISTRY().",
+            "    pub unsafe fn UpdateRegistry(_bRegister: BOOL) -> HRESULT { 0 }",
+            "}",
+        ]
+    elif not any(m.static for m in cls.method("UpdateRegistry")):
+        raise CppAppError(f"{cls.qualified}: in an object map with no UpdateRegistry")
+    lines.append(
+        f'unsafe extern "system" fn {n}__UpdateRegistry_thunk(b: i32) -> i32 '
+        f"{{ {n}::UpdateRegistry(b as _) as i32 }}"
+    )
+    return lines
 
 
 # rosdlgs.h `CPropertyPageImpl<T>` overridable -> (atl_rust::win::PropertyPage method, its
@@ -1800,6 +1889,72 @@ def _static_member_init(cls, f, ty: str, model: ModuleModel) -> str:
     )
 
 
+_DEFINE_GUID_RE = re.compile(
+    r"DEFINE_GUID\s*\(\s*(\w+)\s*,((?:\s*(?:0[xX][0-9a-fA-F]+|\d+)[uUlL]*\s*,){10}"
+    r"\s*(?:0[xX][0-9a-fA-F]+|\d+)[uUlL]*)\s*\)\s*$"
+)
+_OBJECT_ENTRY_RE = re.compile(r"\b(OBJECT_ENTRY\w*)\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)")
+
+
+def object_map(g) -> list[tuple[str, str]] | None:
+    """`BEGIN_OBJECT_MAP(x) OBJECT_ENTRY(clsid, class) .. END_OBJECT_MAP()`: its entries, or
+    None when `g` is not an object map."""
+    if "_ATL_OBJMAP_ENTRY" not in g.c_type or not g.init or "BEGIN_OBJECT_MAP" not in g.init:
+        return None
+    entries = []
+    for m in _OBJECT_ENTRY_RE.finditer(g.init):
+        if m.group(1) != "OBJECT_ENTRY":
+            raise CppAppError(f"{g.name}: {m.group(1)}({m.group(2)}, {m.group(3)}) is not ported")
+        entries.append((m.group(2), m.group(3)))
+    return entries
+
+
+def object_map_classes(model: ModuleModel) -> set[str]:
+    return {c for g in model.globals for _, c in (object_map(g) or [])}
+
+
+def atl_module_static(g, model: ModuleModel) -> str | None:
+    """The ATL in-process server's file-scope statics, rendered here rather than translated:
+    a `DEFINE_GUID` CLSID, the `CComModule` global (atl_rust::dll, const-constructed), and
+    the object map, whose entries name the generated `UpdateRegistry` thunk and
+    `atl_rust::dll::creator::<T>`."""
+    t = " ".join(g.c_type.split())
+    if g.init and re.fullmatch(r"(?:const )?(?:GUID|CLSID|IID)", t):
+        m = _DEFINE_GUID_RE.search(g.init.strip())
+        if m is None or m.group(1) != g.name:
+            return None
+        v = [x.strip().rstrip("uUlL") for x in m.group(2).split(",")]
+        return (
+            f"pub static {g.name}: GUID = GUID {{ Data1: {v[0]}, Data2: {v[1]}, Data3: {v[2]}, "
+            f"Data4: [{', '.join(v[3:])}] }};"
+        )
+    if short(t) == "CComModule":
+        return (
+            f"pub static mut {g.name}: atl_rust::dll::CComModule = "
+            "atl_rust::dll::CComModule::new();"
+        )
+    entries = object_map(g)
+    if entries is None:
+        if "_ATL_OBJMAP_ENTRY" in t:
+            # OBJECT_ENTRY_AUTO's `__objMap_X`: a linker-section map atl_rust does not walk.
+            raise CppAppError(f"{g.name}: OBJECT_ENTRY_AUTO is not ported (atl_rust::dll)")
+        return None
+    rows = [
+        f"    atl_rust::dll::ObjMapEntry::new(core::ptr::addr_of!({clsid}) as *const c_void, "
+        f"{cls}__UpdateRegistry_thunk, atl_rust::dll::creator::<{cls}>),"
+        for clsid, cls in entries
+    ]
+    return "\n".join(
+        [
+            f"/// BEGIN_OBJECT_MAP({g.name}): what `CComModule::Init` is given.",
+            f"pub static {g.name}: [atl_rust::dll::ObjMapEntry; {len(entries) + 1}] = [",
+            *rows,
+            "    atl_rust::dll::ObjMapEntry::END,",
+            "];",
+        ]
+    )
+
+
 def aggregate_static(g, h: Hierarchy, model: ModuleModel) -> str | None:
     """A module struct (or array of them) with a brace initializer, as a Rust static:
     positional C values zipped with the struct's DECLARED field order. The model, given
@@ -1929,6 +2084,10 @@ def _render_globals(model: ModuleModel, h: Hierarchy) -> str:
         wide = wide_string_static(g)
         if wide is not None:
             out.append(wide)
+            continue
+        atl = atl_module_static(g, model)
+        if atl is not None:
+            out.append(atl)
             continue
         agg = aggregate_static(g, h, model)
         if agg is not None:
@@ -2164,7 +2323,11 @@ def synthetic_tus(model: ModuleModel, island: str = "") -> dict[str, str]:
         cls = h.by_short.get(short(g.c_type))
         if cls is not None and "*" not in g.c_type and "[" not in g.c_type:
             continue
-        if aggregate_static(g, h, model) is not None or wide_string_static(g) is not None:
+        if (
+            aggregate_static(g, h, model) is not None
+            or wide_string_static(g) is not None
+            or atl_module_static(g, model) is not None
+        ):
             continue  # rendered in cpp_classes.rs, field by field / unit by unit
         decl = _c_declarator(g.c_type, g.name)
         init = f" = {g.init}" if g.init and not g.init.startswith("(") else ""
@@ -2230,6 +2393,46 @@ def _flatten_island_ns(text: str, island_names: frozenset[str]) -> str:
 
 _QUALIFIED_CALL_RE = re.compile(r"\b\w+::\s*([A-Za-z_]\w*)\s*\(")
 _CALL_RE = re.compile(r"(?:\.|->)\s*([A-Za-z_]\w*)\s*\(")
+
+
+def prune_unused_external(model: ModuleModel) -> list[str]:
+    """Drop the EXTERNAL classes (EXTERNAL_CLASSES: CRegKey, CWindow, ..) that nothing in the
+    module names. Their constructors and destructor are translated unconditionally (Drop calls
+    the destructor), so a class merely DEFINED by an included header -- mmcshext includes
+    atlbase.h and never touches CRegKey -- was rendered and bought as dead code. Used means
+    named by a module class (base, field, method text), a global, a free function, or a used
+    external class in turn. Returns the names dropped."""
+    ext = {n: c for n, c in model.classes.items() if c.external}
+    if not ext:
+        return []
+
+    def words(c: ClassModel) -> str:
+        parts = [b.name for b in c.bases] + [f.c_type for f in c.fields]
+        for m in c.methods:
+            parts += [m.return_type, m.lowered or "", *(p.c_type for p in m.params)]
+            parts += [t for _, t in m.lowered_inits]
+        return "\n".join(parts)
+
+    texts = [words(c) for c in model.classes.values() if not c.external]
+    texts += [g.c_type for g in model.globals]
+    texts += [f.lowered or "" for f in model.functions]
+    texts += [f.signature for f in model.functions]
+    used: set[str] = set()
+    pending = "\n".join(texts)
+    while True:
+        new = {
+            n
+            for n, c in ext.items()
+            if n not in used and re.search(rf"\b{re.escape(c.name)}\b", pending)
+        }
+        if not new:
+            break
+        used |= new
+        pending = "\n".join(words(ext[n]) for n in new)
+    dropped = sorted(ext[n].name for n in ext if n not in used)
+    for n in [n for n in ext if n not in used]:
+        del model.classes[n]
+    return dropped
 
 
 def external_reached(model: ModuleModel) -> set[tuple[str, str]]:
@@ -2784,9 +2987,21 @@ def worker_contract(model: ModuleModel, worker: str, body: str) -> str:
         ),
         key=lambda c: (not worker.startswith(c.name + "__"), c.name),
     )
+    module_globals = [
+        g.name
+        for g in model.globals
+        if short(" ".join(g.c_type.split())) == "CComModule"
+        and re.search(rf"\b{re.escape(g.name)}\b", body)
+    ]
+    maps = [
+        g.name
+        for g in model.globals
+        if object_map(g) is not None and re.search(rf"\b{re.escape(g.name)}\b", body)
+    ]
+    atl = atl_contract.com_module_contract(module_globals, maps) if module_globals else ""
     if not names and "this_" not in body:
-        return ""
-    parts = [_CONVENTIONS]
+        return atl
+    parts = [_CONVENTIONS, atl]
     own = next((c for c in names if worker.startswith(c.name + "__")), None)
     if own is not None:
         member = worker[len(own.name) + 2 :].removesuffix("__body")

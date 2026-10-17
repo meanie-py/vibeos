@@ -42,28 +42,28 @@ pub struct CCAB {
 pub type PCCAB = *const CCAB;
 
 // ---- FCI function pointer types ----
-pub type PFNFCIALLOC = unsafe extern "C" fn(cb: u32) -> *mut c_void;
-pub type PFNFCIFREE = unsafe extern "C" fn(memory: *mut c_void);
-pub type PFNFCIOPEN = unsafe extern "C" fn(pszFile: *mut i8, oflag: i32, pmode: i32, err: *mut i32, pv: *mut c_void) -> isize;
-pub type PFNFCIREAD = unsafe extern "C" fn(hf: isize, memory: *mut c_void, cb: u32, err: *mut i32, pv: *mut c_void) -> u32;
-pub type PFNFCIWRITE = unsafe extern "C" fn(hf: isize, memory: *const c_void, cb: u32, err: *mut i32, pv: *mut c_void) -> u32;
-pub type PFNFCICLOSE = unsafe extern "C" fn(hf: isize, err: *mut i32, pv: *mut c_void) -> i32;
-pub type PFNFCISEEK = unsafe extern "C" fn(hf: isize, dist: i32, seektype: i32, err: *mut i32, pv: *mut c_void) -> i32;
-pub type PFNFCIDELETE = unsafe extern "C" fn(pszFile: *mut i8, err: *mut i32, pv: *mut c_void) -> i32;
-pub type PFNFCIGETNEXTCABINET = unsafe extern "C" fn(pccab: PCCAB, cbPrevCab: u32, pv: *mut c_void) -> i32;
-pub type PFNFCIFILEPLACED = unsafe extern "C" fn(pccab: PCCAB, pszFile: *mut i8, cbFile: i32, fContinuation: i32, pv: *mut c_void) -> i32;
-pub type PFNFCIGETOPENINFO = unsafe extern "C" fn(pszName: *mut i8, pdate: *mut u16, ptime: *mut u16, pattribs: *mut u16, err: *mut i32, pv: *mut c_void) -> isize;
-pub type PFNFCISTATUS = unsafe extern "C" fn(typeStatus: u32, cb1: u32, cb2: u32, pv: *mut c_void) -> i32;
-pub type PFNFCIGETTEMPFILE = unsafe extern "C" fn(pszTempName: *mut i8, cbTempName: i32, pv: *mut c_void) -> i32;
+pub type PFNFCIALLOC = Option<unsafe extern "C" fn(cb: u32) -> *mut c_void>;
+pub type PFNFCIFREE = Option<unsafe extern "C" fn(memory: *mut c_void)>;
+pub type PFNFCIOPEN = Option<unsafe extern "C" fn(pszFile: *mut i8, oflag: i32, pmode: i32, err: *mut i32, pv: *mut c_void) -> isize>;
+pub type PFNFCIREAD = Option<unsafe extern "C" fn(hf: isize, memory: *mut c_void, cb: u32, err: *mut i32, pv: *mut c_void) -> u32>;
+pub type PFNFCIWRITE = Option<unsafe extern "C" fn(hf: isize, memory: *const c_void, cb: u32, err: *mut i32, pv: *mut c_void) -> u32>;
+pub type PFNFCICLOSE = Option<unsafe extern "C" fn(hf: isize, err: *mut i32, pv: *mut c_void) -> i32>;
+pub type PFNFCISEEK = Option<unsafe extern "C" fn(hf: isize, dist: i32, seektype: i32, err: *mut i32, pv: *mut c_void) -> i32>;
+pub type PFNFCIDELETE = Option<unsafe extern "C" fn(pszFile: *mut i8, err: *mut i32, pv: *mut c_void) -> i32>;
+pub type PFNFCIGETNEXTCABINET = Option<unsafe extern "C" fn(pccab: PCCAB, cbPrevCab: u32, pv: *mut c_void) -> i32>;
+pub type PFNFCIFILEPLACED = Option<unsafe extern "C" fn(pccab: PCCAB, pszFile: *mut i8, cbFile: i32, fContinuation: i32, pv: *mut c_void) -> i32>;
+pub type PFNFCIGETOPENINFO = Option<unsafe extern "C" fn(pszName: *mut i8, pdate: *mut u16, ptime: *mut u16, pattribs: *mut u16, err: *mut i32, pv: *mut c_void) -> isize>;
+pub type PFNFCISTATUS = Option<unsafe extern "C" fn(typeStatus: u32, cb1: u32, cb2: u32, pv: *mut c_void) -> i32>;
+pub type PFNFCIGETTEMPFILE = Option<unsafe extern "C" fn(pszTempName: *mut i8, cbTempName: i32, pv: *mut c_void) -> i32>;
 
 // ---- FDI function pointer types ----
-pub type PFNALLOC = unsafe extern "C" fn(cb: u32) -> *mut c_void;
-pub type PFNFREE = unsafe extern "C" fn(pv: *mut c_void);
-pub type PFNOPEN = unsafe extern "C" fn(pszFile: *mut i8, oflag: i32, pmode: i32) -> isize;
-pub type PFNREAD = unsafe extern "C" fn(hf: isize, pv: *mut c_void, cb: u32) -> u32;
-pub type PFNWRITE = unsafe extern "C" fn(hf: isize, pv: *const c_void, cb: u32) -> u32;
-pub type PFNCLOSE = unsafe extern "C" fn(hf: isize) -> i32;
-pub type PFNSEEK = unsafe extern "C" fn(hf: isize, dist: i32, seektype: i32) -> i32;
+pub type PFNALLOC = Option<unsafe extern "C" fn(cb: u32) -> *mut c_void>;
+pub type PFNFREE = Option<unsafe extern "C" fn(pv: *mut c_void)>;
+pub type PFNOPEN = Option<unsafe extern "C" fn(pszFile: *mut i8, oflag: i32, pmode: i32) -> isize>;
+pub type PFNREAD = Option<unsafe extern "C" fn(hf: isize, pv: *mut c_void, cb: u32) -> u32>;
+pub type PFNWRITE = Option<unsafe extern "C" fn(hf: isize, pv: *const c_void, cb: u32) -> u32>;
+pub type PFNCLOSE = Option<unsafe extern "C" fn(hf: isize) -> i32>;
+pub type PFNSEEK = Option<unsafe extern "C" fn(hf: isize, dist: i32, seektype: i32) -> i32>;
 
 // ---- FDICABINETINFO ----
 #[repr(C)]

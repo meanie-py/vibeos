@@ -2322,12 +2322,3 @@ impl CAsyncLoadIcon {
     pub unsafe fn __ctor_0(&mut self) {
         let this_: *mut Self = self;}
 }
-
-/// winnt.h `InterlockedIncrement64` (an intrinsic, so win32macros_rust only carries the 32-bit forms):
-/// atomically adds one and returns the NEW value. `lock cmpxchg8b`/`lock xadd` need no alignment for
-/// correctness on x86, which is all the i386 `LONGLONG` member can promise.
-#[inline]
-unsafe fn InterlockedIncrement64(addend: *mut LONGLONG) -> LONGLONG {
-    let atomic = &*(addend as *const core::sync::atomic::AtomicI64);
-    atomic.fetch_add(1, core::sync::atomic::Ordering::SeqCst).wrapping_add(1)
-}
