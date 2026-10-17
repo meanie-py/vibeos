@@ -42,3 +42,15 @@ python3 tools/lint_parity.py --oracle-revision REV --binary-rules scan_ud2 --arc
 
 This compares the same existing artifacts; it does not certify their freshness or boot health.
 Coverage controls and failure cases live in Rust tests and `tests/qemu/cli/test_rustlints.py`.
+
+
+Source execution defaults to at most eight workers and four million retained syntax nodes.
+Trees are admitted after a second request; sources above 256 KiB remain weakly cached.
+Active consumers and other fact caches are outside that node budget.
+`VIBEOS_LINT_JOBS` overrides worker count with a positive integer;
+`VIBEOS_LINT_AST_CACHE_NODES` overrides retention with a nonnegative integer (zero disables
+retention). Library callers can use `Corpus::with_ast_cache_nodes`.
+
+Set `VIBEOS_LINT_TIMINGS=1` for snapshot, shared-index and rule timings. Optional
+`VIBEOS_LINT_CACHE_STATS=1` reports initialized payload sizes and syntax cache counters
+to stderr without forcing new parses or views; these counts exclude allocator overhead.
