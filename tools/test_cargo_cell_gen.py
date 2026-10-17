@@ -532,3 +532,58 @@ def test_the_engine_built_delayimp_counts_as_the_delayimp_runtime():
     assert g._links_delayimp(["engine:uuid", "engine:delayimp_rust"])
     assert g._links_delayimp(["sdk/lib/delayimp/libdelayimp.a"])
     assert not g._links_delayimp(["engine:uuid", "engine:wine"])
+
+
+def test_convert_models_every_target_before_writing_anything(tmp_path, monkeypatch):
+    """One refusal in a --convert batch must leave no half-applied cells behind."""
+    import pytest
+
+    writes = []
+
+    def model(t, repo):
+        if t == "bad":
+            raise g.GenError("bad: refused")
+        return t
+
+    monkeypatch.setattr(g, "model", model)
+    monkeypatch.setattr(g, "save_baseline", lambda *a: writes.append("baseline"))
+    monkeypatch.setattr(g, "apply", lambda *a: writes.append("apply") or [])
+    with pytest.raises(g.GenError, match="refused"):
+        g.convert(["good", "bad"], tmp_path / "b", tmp_path)
+    assert writes == []
+
+
+def test_convert_runs_the_wave_in_order(tmp_path, monkeypatch):
+    steps = []
+    monkeypatch.setattr(g, "model", lambda t, repo: t)
+    monkeypatch.setattr(g, "save_baseline", lambda ts, b, repo: steps.append(("baseline", b)))
+    monkeypatch.setattr(g, "apply", lambda c, repo: steps.append(("apply", c)) or [])
+    monkeypatch.setattr(g, "_ninja", lambda a, ts, repo: steps.append(("ninja", a)))
+    monkeypatch.setattr(g, "check", lambda ts, b, repo: steps.append(("check", b)) or 0)
+    assert g.convert(["m"], tmp_path / "b", tmp_path) == 0
+    assert steps == [
+        ("baseline", tmp_path / "b"),
+        ("apply", "m"),
+        ("ninja", "i386"),
+        ("ninja", "amd64"),
+        ("ninja", "arm64"),
+        ("check", tmp_path / "b"),
+    ]
+
+
+def test_ratchet_labels_follow_the_generator(monkeypatch, capsys):
+    """A refused module the generator learns to handle flips to `convertible`, which the
+    baseline has never seen: that is how the ratchet forces the conversion."""
+    import scan_cmake_linked_rust as ratchet
+
+    monkeypatch.setattr(
+        g, "survey", lambda: [("a", "OK Win32Dll"), ("b", "REFUSED b: link kind X")]
+    )
+    monkeypatch.setattr(g, "REPO", Path(__file__).resolve().parent.parent)
+    rc = ratchet.main()
+    out = capsys.readouterr().out.splitlines()
+    assert out == [
+        "a: fully-Rust module still linked by cmake (convertible)",
+        "b: fully-Rust module still linked by cmake (refused)",
+    ]
+    assert rc == 1

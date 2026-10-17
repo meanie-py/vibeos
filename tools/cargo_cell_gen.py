@@ -29,7 +29,9 @@ import functools
 import json
 import os
 import re
+import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -1875,6 +1877,71 @@ def check(targets: list[str], baseline: Path, repo: Path = REPO) -> int:
     return 1 if bad else 0
 
 
+def save_baseline(targets: list[str], baseline: Path, repo: Path = REPO) -> None:
+    """Copy each target's cmake-built PE, per arch, into `baseline`, with the index
+    `--check` reads (output name and CD placement per arch)."""
+    index_path = baseline / "targets.json"
+    index = json.loads(index_path.read_text()) if index_path.exists() else {}
+    for t in targets:
+        for a in ARCHES:
+            out = link_edge(a, t, repo).output
+            src = repo / f"build-{a}" / out
+            if not src.is_file():
+                raise GenError(f"{t}: no cmake-built {out} in build-{a}; build every arch first")
+            dst = baseline / a / out
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.write_bytes(src.read_bytes())
+            index.setdefault(t, {})[a] = out
+            index[t][f"cd:{a}"] = cd_placement(a, out, repo)
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    index_path.write_text(json.dumps(index, indent=1, sort_keys=True))
+
+
+def _ninja(arch: str, targets: list[str], repo: Path) -> None:
+    """Regenerate the graph from the rewritten CMakeLists, then build only the cells."""
+    build = repo / f"build-{arch}"
+    for step in (["ninja", "build.ninja"], ["ninja", *targets]):
+        cp = subprocess.run(
+            ["bash", str(repo / "tools/canon-run.sh"), *step],
+            cwd=build,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if cp.returncode:
+            tail = "\n".join((cp.stdout + cp.stderr).splitlines()[-15:])
+            raise GenError(f"build-{arch}: `{' '.join(step)}` failed:\n{tail}")
+
+
+def convert(targets: list[str], baseline: Path | None = None, repo: Path = REPO) -> int:
+    """Move freshly flipped modules from cmake's link to cargo cells in one command.
+
+    The wave procedure, minus the three full builds it used to cost: the cmake-built PEs
+    the lane's own build left in `build-<arch>` are the baseline, every target is modelled
+    before anything is written (one refusal writes nothing), and after `--apply` only the
+    new cells are rebuilt (`ninja <targets>` under the canonical mount) before `--check`
+    compares them. Run it after the build that follows `rustconv port flip`; the next full
+    build and the gate's smoke then cover the boot.
+    """
+    if not targets:
+        raise GenError("--convert needs at least one target")
+    cells = []
+    for t in targets:
+        cells.append(model(t, repo))
+    baseline = baseline or (
+        Path.home() / "vibeos-cargo-baselines" / time.strftime("convert-%Y%m%d-%H%M%S")
+    )
+    save_baseline(targets, baseline, repo)
+    print(f"baseline: {baseline}")
+    for cell in cells:
+        for p in apply(cell, repo):
+            print(f"wrote {p.relative_to(repo)}")
+    for arch in ARCHES:
+        _ninja(arch, targets, repo)
+        print(f"built {len(targets)} cell(s) on {arch}")
+    return check(targets, baseline, repo)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("targets", nargs="*")
@@ -1893,6 +1960,19 @@ def main(argv: list[str] | None = None) -> int:
         help="pe_equiv each target's current PE against DIR, on every arch",
     )
     ap.add_argument(
+        "--convert",
+        action="store_true",
+        help="the whole wave for TARGETS in one command: baseline from the current build, "
+        "apply, build just the new cells on every arch, check equivalence",
+    )
+    ap.add_argument(
+        "--baseline",
+        metavar="DIR",
+        type=Path,
+        help="with --convert: where to keep the baselines "
+        "(default ~/vibeos-cargo-baselines/convert-<time>)",
+    )
+    ap.add_argument(
         "--reshell",
         type=Path,
         metavar="DIR",
@@ -1900,20 +1980,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = ap.parse_args(argv)
     if args.save_baseline:
-        index_path = args.save_baseline / "targets.json"
-        index = json.loads(index_path.read_text()) if index_path.exists() else {}
-        for t in args.targets:
-            for a in ARCHES:
-                out = link_edge(a, t).output
-                dst = args.save_baseline / a / out
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                dst.write_bytes((REPO / f"build-{a}" / out).read_bytes())
-                index.setdefault(t, {})[a] = out
-                index[t][f"cd:{a}"] = cd_placement(a, out)
-        index_path.parent.mkdir(parents=True, exist_ok=True)
-        index_path.write_text(json.dumps(index, indent=1, sort_keys=True))
+        save_baseline(args.targets, args.save_baseline)
         print(f"saved {len(args.targets)} modules x {len(ARCHES)} arches")
         return 0
+    if args.convert:
+        return convert(args.targets, args.baseline)
     if args.check:
         return check(args.targets, args.check)
     if args.reshell:

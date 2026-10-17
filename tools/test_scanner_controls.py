@@ -3201,6 +3201,12 @@ CONTROLS: list[Control] = [
 # Lints deliberately NOT fixture-driven, each with the reason. Anything absent
 # from both this set and CONTROLS fails test_every_lint_is_accounted_for.
 UNCOVERED: dict[str, str] = {
+    "scan_cmake_linked_rust": (
+        "it models modules from build-amd64/build.ninja and the tree's own CMakeLists through "
+        "cargo_cell_gen.survey, so a fixture directory has nothing to survey. The labelling is "
+        "driven directly in tools/test_cargo_cell_gen.py: a module the generator accepts must "
+        "read `(convertible)` and a refused one `(refused)`, with a nonzero exit while any remain."
+    ),
     "scan_pack_drift": (
         "it maps every flipped module to its crate through the tree's own CMakeLists flip "
         "comments, so a fixture directory has no module to resolve. Driven directly in "
