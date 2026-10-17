@@ -95,8 +95,21 @@ What the batch added to the shared crates and tools:
      compiles out in the Rust, so a cycle would recurse without end. `GetUpOrDownstreamNodes`
      also marked the parent where it meant the child. The harness grades trees exactly
      against the C and diamonds and cycles against a reachability model.
-   - Still owed: mmebuddy's `DoWaveStreaming`/`CompleteIO` looped-playback state machine
-     (`streaming.c`), which never counts its loops down.
+   - mmebuddy's looped playback (`mmebuddy-difftest`, 2026-10-17) was wrong four ways,
+     all now fixed in `streaming.rs`:
+     - `DoWaveStreaming` reloaded `LoopsRemaining = dwLoops` on every call, so a finite
+       loop never ended.
+     - The repeat was rewound from `CompleteIO`, after the commit side had already moved
+       on to the next header, so the repeat played after it.
+     - `CompleteIO` dropped the completion that triggered a rewind while counting partials
+       across passes, so a header could be returned with chunks still in flight.
+     - A completion spilling into the next header freed one buffer per header.
+
+     The loop counts now live per header in `WAVEHDR_EXTENSION` (`LoopsToCommit`/
+     `LoopsToComplete`, set once per write). `dwLoops` is honoured as "times to play",
+     so 0 and 1 both mean once. The harness grades plain streaming against the C and a
+     client-side model, grades loops against the model, and pins the C's defects. Five
+     mutants are killed.
 4. **Batch H flipped (2026-10-17):** reactos.exe, blue, ndisuio, netio, rtl8139, tdi and
    tzlib. The row in rust-port-status.md has the details. After it, the ReactOS-native
    plain-C tail is small: tdihelpers (owed below), sdk/lib/crt's `strtol` lib, normaliz's
@@ -156,17 +169,6 @@ driver (`tools/merge_drivers.py`, which also merges the cohab census), and psapi
   It TIGHTENS an audit, though, so measure it first. Re-check every banked body against
   its C function's live-arm callees under its TU's defines. Then fix (re-buy) or allowlist
   each body that dropped one, before the change can turn a `port replay` red.
-- **mmebuddy's looped playback is wrong twice** (`wave/streaming.c`; diagnosed 2026-10-17,
-  not yet graded or fixed).
-  - `DoWaveStreaming` reloads `LoopsRemaining = dwLoops` whenever the head header is
-    BEGINLOOP|ENDLOOP, and `CompleteIO` calls it after every completion, so a finite loop
-    count never runs down.
-  - `CompleteIO`'s loop branch drops that completion's bytes while partial completions keep
-    adding to `BytesCompleted` across passes, so the final pass can complete the header
-    with chunks still outstanding.
-
-  A harness needs fixtures for GetSoundDeviceFromInstance/Type/FunctionTable,
-  CompleteWaveHeader and a scripted CommitWaveBuffer.
 - **The live cost counter skips failed attempts.** Every attempt's `result.json` has
   `cost_usd: null`, and a body that ends in `max_tokens` is never added to the running total
   (DriveDlgProc's two 32K-token failures printed `$0.0000`). Batch H's real spend was summed

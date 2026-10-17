@@ -235,6 +235,7 @@ members = [
     "sysaudio-difftest",
     "audio-convert-difftest",
     "mmixer-difftest",
+    "mmebuddy-difftest",
     "ddk-macros-rust",
     "portcls-difftest",
     "varargs-rust",
@@ -894,6 +895,7 @@ members = [
     "rtl8139-rust",
     "tdi-rust",
     "tzlib-rust",
+    "mmcshext-rust",
 ]
 resolver = "2"
 

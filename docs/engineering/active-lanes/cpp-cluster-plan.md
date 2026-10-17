@@ -56,14 +56,17 @@ and all shared-file edits stay central. The brief that worked (Sonnet; mmc_new) 
   matches itself forever (an integrator lost 3 hours to this). Run long stages in the
   foreground with a long timeout.
 
-## rapps (FLIPPED 2026-10-15)
+## Shell extensions (from 2026-10-17)
 
-**RESUME HERE (2026-10-16 night):** rapps and the 2026-10-16 owed-items batch are on master
-(`d2d76dfa041`; appstorm 54/54 x3). Landing is now a merge request to the integration
-session (`vibeos-integration-f2`), not `./vibeos-cli land`. Next: the shell extensions, which
-first need a DLL object map / class factories in `atl_rust::com` (see Owed). A named stash
-`6298017a93468426bae860a6887d8112086980cf` holds whitespace-only churn the old port CLI wrote
-into ten shipped crates; it is safe to drop.
+**RESUME HERE (2026-10-17):** mmcshext is the first shell extension and the first module on
+`atl_rust::dll` (CComModule, object map, class factory, `.rgs` registrar; pipeline doc).
+$0.01 on Haiku, 0 errors x3, `port replay mmcshext` rebuilds it at $0, and
+`tools/payloads/modrun/suites/mmcshext.yaml` grades it against its C. Next in the queue:
+sendmail, mydocs (same shape, one class each), then acppage, cabview, stobject, fontext,
+ntobjshex, netshell, zipfldr. Landing is a merge request to `vibeos-integration-f2`. The
+named stash `6298017a93468426bae860a6887d8112086980cf` (whitespace churn) is safe to drop.
+
+## rapps (FLIPPED 2026-10-15)
 
 Tooling done for it (pipeline doc § `port cppapp`): per-instantiation class templates, the
 rosctrls.h controls modeled as external classes (only reached methods are translated), ATL
@@ -105,24 +108,19 @@ Rust — don't requeue it.)
   CONTEXT access was hand-written as `cfg` blocks instead).
 - certmgr's hand-ported `src/rosctrls.rs`: rosctrls.h is now modeled by cppapp (rapps), so
   a certmgr regeneration should drop the hand port.
-- The shell extensions need what rapps half-built: `atl_rust::com` covers a COM object's
-  IUnknown, but not a DLL's object map (`BEGIN_OBJECT_MAP`/`OBJECT_ENTRY_AUTO`), class
-  factories, `DllGetClassObject`/`DllCanUnloadNow`, or `.rgs` registration.
+- `atl_rust::dll` refuses, rather than approximates, what no module in the queue has used
+  yet: aggregation, `OBJECT_ENTRY_AUTO`, other class factories, a class's own `ObjectMain`,
+  typelib registration. Port each when a module needs it.
 - rapps' `src/gdiplus_flat.rs` is a hand-made extern block, copied from desk-rust's C island:
   the C++ island binds no `Gdiplus::DllExports` function. gen_driver_types should bind the
   flat functions reached by an external class's bodies.
-- `atl_rust::win::create_window` (the DECLARE_WND_CLASS path) does not give a child window
-  `this` as its control ID the way ATL's `CWindowImplBaseT::Create` does;
-  `create_window_info` (a module's own GetWndClassInfo) does. Unify them, and check the
-  shipped window modules when doing so.
-- rapps integrators' local workarounds that want an atl_rust/prelude home (`CAtlList::FindPos`
-  / `FindPosAfter` landed 2026-10-16, mmc_new's private copy dropped): `CStringW::{Replace(str,str), FindOneOf,
-  CopyChars, GetEnvironmentVariable}`, `CStringA::Append`, `InterlockedIncrement64` in
-  win32macros-rust, and an `atl_rust::win::unsubclass_window` (loaddlg declares GetPropW /
-  RemovePropW locally and hard-codes atl_rust's prop names). The island's
+- rapps' remaining local workaround: `CComPtr::CoCreateInstance` (geninst declares
+  CoCreateInstance itself; atl_rust would need its `com` feature). The island's
   `ATL__ATL_WNDCLASSINFOW::m_wc` is `WNDCLASSEXA`, and prelude `DLGPROC`/`WNDPROC` are spelled
   over `ntdll_sys::HWND__` rather than the island's; both are transmuted at the call site.
-  The model also wrote `new_0::<T>()` on non-generic fns and called `__ctor_0CUiWindow`.
+  (2026-10-17: CStringW `ReplaceStr`/`FindOneOf`/`CopyChars`/`GetEnvironmentVariable`,
+  `CStringA::Append`, `InterlockedIncrement64`, `unsubclass_window` and `CAtlList::FindPos`
+  are shared now, and rapps uses them; `create_window` follows ATL's child-ID rule.)
 - **Shipped C++ apps vs this session's generator fixes (2026-10-16).** cicero was
   regenerated (`port cppapp` + `port replay`, $0.18 of re-buys; bodies imported from
   vibeos-msvcrt-homebrew with `port bank-import`) and the whole CTF cluster checks clean x3;
@@ -132,12 +130,19 @@ Rust — don't requeue it.)
   zeroed `m_hWnd` is what their constructor writes) and CSortableHeader has none, mspaint's
   are benign (plan, 2026-10-15) -- so no other regeneration is owed for correctness. Still
   owed: a regeneration of mspaint/msutb/msctfime/msctf/ctfmon to drop their hand-banked
-  workarounds, and `this` PASSED as a base argument is not audited.
-- Two port passes still walk `state["tus"]` over OUTPUTS (`_wine_channel_macro_calls`,
-  `_resolve_anonymous_types`), which for a cppapp module skips every synthetic unit -- the
-  same miss that left cicero's `static cicGetFN__T5: () = ();` placeholder in place.
-- ~290 bare fn aliases in already-shipped crates have the shape `_option_fn_aliases` fixes
-  (non-`Option` fn pointer); UB only if the value can be zero. Audit with that pass.
+  workarounds. `this` passed as a non-primary base: audited 2026-10-17 (28 sites in the
+  13 shipped crates), one wrong in msctf, fixed and banked.
+- Port passes that read only `*.[ch]`: audited 2026-10-17. `_wine_channel_macro_calls` and
+  `_resolve_anonymous_types` are C-only by design (cppapp preludes define no channel macro;
+  c2rust cannot read C++). `initguid_storage` was a real miss (a `.cpp`'s `<initguid.h>`),
+  fixed. The C++ crates' preambles still carry a dead `__wine_dbch_<x>` static nothing reads.
+- Bare fn aliases in shipped crates: 119 in 45 crates (2026-10-17 count), 48 with a field,
+  transmute or null-test use. `rustconv fn-alias-audit <crate> [--apply]` reports them and
+  rewrites to `Option<fn>` + crate-repair. Confirmed UB: cmd's `MYEX` (fixed), cabinet's
+  `FDICreate`/`FCICreate` null tests on bare-fn parameters, ctfmon's
+  `TF_CreateLangProfileUtil` -- all three fixed. The other eight flagged (apphelp, cnt, ucrt,
+  msiexec x2, mouhid, freeldr, shell32) transmute values that are null-checked first or
+  non-null by contract: safe as written. The remaining ~70 have no null test or transmute.
 - certutil: a SHA1/`hashfile` case on a system with a CSP registered (the live CD has none;
   current suite expects "no context", identical in C and Rust).
 - Not exercised at runtime: a real drwtsn32 crash dump, mmc_new's console view/snap-ins.

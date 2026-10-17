@@ -976,6 +976,7 @@ dll/shellext/deskadp/CMakeLists.txt	1	# deskadp.c # replaced by Rust (sdk/lib/ru
 dll/shellext/deskadp/CMakeLists.txt	1	# shxiface.c # replaced by Rust (sdk/lib/rust/deskadp-rust/src/deskadp/shxiface.rs)
 dll/shellext/deskmon/CMakeLists.txt	1	# deskmon.c # replaced by Rust (sdk/lib/rust/deskmon-rust/src/deskmon/deskmon.rs)
 dll/shellext/deskmon/CMakeLists.txt	1	# shxiface.c # replaced by Rust (sdk/lib/rust/deskmon-rust/src/deskmon/shxiface.rs)
+dll/shellext/mmcshext/CMakeLists.txt	1	# mmcshext.cpp # replaced by Rust (sdk/lib/rust/mmcshext-rust/src/mmcshext/mmcshext_cpp_h.rs)
 dll/shellext/netplwiz/CMakeLists.txt	1	# SHDisconnectNetDrives.c # replaced by Rust (sdk/lib/rust/netplwiz-rust/src/netplwiz/SHDisconnectNetDrives.rs)
 dll/shellext/netplwiz/CMakeLists.txt	1	# netplwiz.c # replaced by Rust (sdk/lib/rust/netplwiz-rust/src/netplwiz/netplwiz.rs)
 dll/win32/CMakeLists.txt	1	# exports instead of forwarding to kernelbase_ros. combase.c externs

@@ -1109,6 +1109,8 @@ pub type PSOUND_DEVICE_INSTANCE = *mut _SOUND_DEVICE_INSTANCE;
 pub struct _WAVEHDR_EXTENSION {
     pub BytesCommitted: DWORD,
     pub BytesCompleted: DWORD,
+    pub LoopsToCommit: DWORD,
+    pub LoopsToComplete: DWORD,
 }
 pub type WAVEHDR_EXTENSION = _WAVEHDR_EXTENSION;
 pub type PWAVEHDR_EXTENSION = *mut _WAVEHDR_EXTENSION;

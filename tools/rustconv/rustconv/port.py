@@ -1239,6 +1239,9 @@ def stage_cppapp(stem: str) -> None:
     ] + [f"{f.name}: {u}" for f in model.functions for u in f.unplaced]
     for u in unplaced:
         print(f"cppapp: UNLOWERED (inside a macro expansion): {u}")
+    dropped = cpp_app.prune_unused_external(model)
+    if dropped:
+        print(f"cppapp: external class(es) nothing names, not rendered: {', '.join(dropped)}")
     crate_src = _crate_dir(state) / "src" / stem
     crate_src.mkdir(parents=True, exist_ok=True)
     island = "\n".join(
@@ -1548,7 +1551,13 @@ def initguid_storage(state: dict, crate: Path, modules_dir: Path) -> tuple[str, 
     Returns (block, refused names).
     """
     module_dir = REPO / state["module_dir"]
-    c_texts = [p.read_text(errors="replace") for p in module_dir.glob("*.[ch]")]
+    # C++ sources too: mmcshext.cpp includes <initguid.h> before <msxml2.h>, so the C++ TU
+    # defined CLSID_DOMDocument30, and the cppapp crate failed to link without it.
+    c_texts = [
+        p.read_text(errors="replace")
+        for p in sorted(module_dir.iterdir())
+        if p.suffix.lower() in (".c", ".h", ".hpp", *CPP_SUFFIXES)
+    ]
     if not any(
         re.search(r"#\s*include\s*<initguid\.h>|#\s*define\s+INITGUID\b", t) for t in c_texts
     ):

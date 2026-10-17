@@ -31,6 +31,7 @@ from . import (
     difftest_gen,
     dup_census,
     file_splitter,
+    fn_alias_audit,
     gdi_lock_inventory,
     hybrid_closure,
     profile_derive,
@@ -40,7 +41,7 @@ from . import (
     seh_rewrite,
     semantic_skeleton,
     semdiff,
-    shell32_tail_inventory,
+    shell32_inventory,
     substrate_closure,
     switch_extract,
     trivial_c,
@@ -512,13 +513,11 @@ def cmd_hybrid_closure(args):
 
 def cmd_shell32_tail_inventory(args):
     """Ratchet the planned shell32 tail against the literal live CMake source lists."""
-    ledger = (
-        Path(args.ledger) if args.ledger else REACTOS_ROOT / shell32_tail_inventory.DEFAULT_LEDGER
-    )
+    ledger = Path(args.ledger) if args.ledger else REACTOS_ROOT / shell32_inventory.DEFAULT_LEDGER
     if not ledger.is_absolute():
         ledger = (Path.cwd() / ledger).resolve()
-    report = shell32_tail_inventory.check_inventory(REACTOS_ROOT, ledger)
-    shell32_tail_inventory.print_report(report, as_json=args.json)
+    report = shell32_inventory.check_inventory(REACTOS_ROOT, ledger)
+    shell32_inventory.print_report(report, as_json=args.json)
     if not report.ok:
         sys.exit(1)
 
@@ -6376,6 +6375,7 @@ def main():
     p.add_argument("--arch", default="i386", choices=["i386", "amd64", "arm64"])
 
     port_mod.add_parser(sub)
+    fn_alias_audit.add_parser(sub)
 
     args = parser.parse_args()
 
@@ -6420,6 +6420,7 @@ def main():
         "pp": cmd_postprocess,
         "trace-catalog": cmd_trace_catalog,
         "port": lambda a: sys.exit(port_mod.main(a)),
+        "fn-alias-audit": lambda a: sys.exit(fn_alias_audit.main(a)),
     }
 
     try:

@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import os
 import re
 import sys
 from dataclasses import dataclass, field
@@ -79,6 +80,15 @@ def load_suites() -> dict[str, dict]:
         if not spec.get("variants") or not spec.get("cases"):
             raise SystemExit(f"modrun: {path}: needs `variants` and `cases`")
         out[path.stem] = spec
+    # MODRUN_SUITES=mmcshext[,..]: grade one module without booting through all thirty. Set it
+    # for the build (case list and staging) AND the smoke (the grader), or the grader expects
+    # cases the media never ran.
+    only = [s for s in os.environ.get("MODRUN_SUITES", "").split(",") if s]
+    if only:
+        missing = sorted(set(only) - set(out))
+        if missing:
+            raise SystemExit(f"modrun: MODRUN_SUITES names no suite: {', '.join(missing)}")
+        out = {k: v for k, v in out.items() if k in only}
     return out
 
 

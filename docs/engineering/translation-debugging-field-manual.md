@@ -5579,6 +5579,23 @@ Each was one fix in the tool; listed so the next module's symptom can be matched
   the CUiPrimitive vtable at offset 0, and rapps' teardown read `RichEdit` from an HWND.
   Found with `atl_rust::win::trace` probes: the window glue saw the object at +16, its
   destructor at +0. An explicit `this` converted to a base is now `(&(this_)->__baseK)`.
+  The same class as an ARGUMENT, in a crate generated before that fix: msctf's
+  `DocumentMgr_Constructor(this, ppdim)` hands CThreadMgr to a parameter typed
+  `ITfThreadMgrEventSink*`, its EIGHTH base, and the shipped Rust passed `this_.cast()`.
+  CDocumentMgr's `OnPushContext`/`OnPopContext` calls then ran ITfThreadMgrEx's slots 6 and 7
+  (EnumDocumentMgrs, GetFocus), writing out-pointers into the context. Audit (2026-10-17): of
+  28 explicit-`this` upcasts to a non-primary base in the 13 shipped C++ crates, that was the
+  only wrong one; fixed and banked.
+- **A COM interface base missing from the island** (mmcshext's `IPersistFile`): bindgen emits
+  what allowlisted headers REFERENCE, and nothing but the C++ class head names the base, so
+  objidl.h's interface never arrived. cpp_app skipped the base in `__init_vtables` -- the
+  field was embedded with a null vptr, and the first call through it would jump to 0.
+  `profile_derive` now allowlists every interface a module class derives from
+  (`--allowlist-type '(IExtractIconW|IPersistFile)(Vtbl)?'`), and `Hierarchy.com_bases` fails
+  loud on an `I*` base with no `IFooVtbl`.
+- **A DLL's resource strings read from the host EXE**: atl_rust's `resource_instance()` fell
+  back to `GetModuleHandleW(NULL)` -- right for an EXE, explorer.exe for a shell extension.
+  ATL's `m_hInstResource` is `&__ImageBase`, the image ATL is linked into; so is the fallback.
 - **`delete member;` through an implicit `this`** lowered to `X__delete(m_Foo)Foo;`: the rule
   replaced the whole expression with the operand's source text, so the operand's own
   `this_->` edit fell inside the replaced span. The model repaired every site, which hid it.
@@ -6087,6 +6104,17 @@ spells it `Option<fn>`, which is pointer-sized with None at 0.
 **Fix:** `port integrate` wraps a module-level `pub type` in `Option<..>` when the module's C
 typedefs that name as a POINTER to function. A typedef of a function type (`typedef R X(..)`,
 used as `X *`) is left alone.
+When it COMPILES it is worse, because the NULL test is then something the optimizer may
+delete. Shipped crates held 119 such aliases (2026-10-17), and the dangerous ones look like
+working code: cabinet's `FDICreate`/`FCICreate`/`FCIAddFile` tested
+`(pfnalloc as *const ()).is_null()` on bare-fn parameters (the C returns
+ERROR_BAD_ARGUMENTS there; the Rust was UB for a C caller passing NULL), cmd transmuted
+`GetProcAddress`'s result into `MYEX` and then tested `as usize == 0`. `rustconv
+fn-alias-audit <crate> [--apply]` lists them and rewrites a shipped crate the way integrate
+does, then crate-repair fixes the calls. The same cabinet file also carried a file-local
+`type PFNFCISTATUS = unsafe extern "system" fn(..)` -- the C's is `__cdecl` -- shadowing the
+right one: on i386 every FCI status callback left the stack 16 bytes off. A local re-declaration
+of a C callback type is worth diffing against the header's calling convention.
 
 ### A lowered SDK macro lost its `volatile`, its `Option<fn>`, or a field it never had
 
@@ -14176,6 +14204,22 @@ sit out the whole 420s ceiling waiting for WoW64 guests that do not exist there.
 **Also the general rule for fixtures:** when the environment cannot support a rung's *fixture*
 (not its subject), skip it loudly with the errno and keep the remaining rungs running, rather
 than failing the whole guest. The arch where the fixture works keeps full coverage of that rung.
+
+### Every guest after one slow guest exits `0xdead0030`: the slow one was never ended
+**Symptom.** One guest records an odd exit, typically `0x103` (STILL_ACTIVE), and then several
+unrelated later guests each print `[WINLOGON] <x>.exe TIMED OUT after 30s - terminating` and
+exit `0xdead0030`. Their own rungs pass, just too slowly. On 2026-10-17 it read as a kernel
+regression in thread creation and cost a bisect.
+**Cause.** `0xDEAD0030` is winlogon's `TerminateProcess` code, not a guest failure. The guest
+that ran first outlived its wait, but its launcher only waited and then moved on without ending
+it, so it kept running through every later rung and took their CPU. The trigger was
+`Fault32.c` rung 3b, 5000 AVs: under FEX each AV is a host fault, a JIT exit and a guest-SEH
+redirect, plus two serial lines (~10/s under TCG). fault32 got 577 iterations into its 60 s wait
+and was still faulting 900 AVs later.
+**Fix.** Every launcher goes through `WaitGuestOrEnd` (winlogon-rust), which ends a guest on
+timeout. A rung whose cost scales with emulation speed is bounded by time as well as count, and
+it reports how far it got. When this signature appears, grep for the eip of the AV storm and
+find out which image it belongs to before suspecting the guests that timed out.
 
 ### On a JIT host a `[UEXC]` record is not a crash — FEX takes access violations BY DESIGN
 

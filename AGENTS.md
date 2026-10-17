@@ -268,7 +268,8 @@ substance, don't pad with filler sections, redundant summaries, or boilerplate.
   rare real signal: resolve it and move on. If it didn't conflict, there was nothing to look at;
   stop narrating it. (The rewind incident was a `reset --hard` to a stale ref, **not** a merge.)
 - **Land by messaging the integrator, not with `./vibeos-cli land`** (since 2026-10-16). One
-  session, `vibeos-integration-f2` in `vibeos-integration`, is the only thing that merges to
+  session, the `vibeos-integration-*` one in `ListAgents` (worktree `vibeos-integration`; its
+  suffix changes when the session restarts, so look it up), is the only thing that merges to
   `master`. Commit, run `./vibeos-cli check` and the tests for what you touched, then send it
   `merge <branch> @ <sha> — <what it is, what it touches>` and keep working: no warm builds
   just to submit, no waiting for the verdict. It does an ordinary merge, resolves conflicts

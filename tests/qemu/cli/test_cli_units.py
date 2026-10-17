@@ -9208,21 +9208,19 @@ def _ramdisk_fixture(from_livecd: bool):
     return 'RMC "$BUILD_DIR/boot/bootdata/system"   ::/reactos/system32/config/system\n'
 
 
-def _run_drift(tmp_path, from_livecd):
+def _run_drift(tmp_path, from_livecd, cmake_text=_CMAKE_FIXTURE):
+    from . import rustlints
+
     repo = Path(__file__).resolve().parents[3]
-    cmake = tmp_path / "CMakeMacros.cmake"
-    cmake.write_text(_CMAKE_FIXTURE)
-    ramdisk = tmp_path / "mkramdisk.sh"
+    (tmp_path / "sdk/lib/rust").mkdir(parents=True)
+    cmake = tmp_path / "sdk/cmake/CMakeMacros.cmake"
+    cmake.parent.mkdir(parents=True)
+    cmake.write_text(cmake_text)
+    ramdisk = tmp_path / "qemu/mkramdisk.sh"
+    ramdisk.parent.mkdir(parents=True)
     ramdisk.write_text(_ramdisk_fixture(from_livecd))
     return subprocess.run(
-        [
-            "python3",
-            str(repo / "tools" / "scan_boot_media_drift.py"),
-            "--cmake",
-            str(cmake),
-            "--ramdisk",
-            str(ramdisk),
-        ],
+        [str(rustlints.ensure(repo)), "--root", str(tmp_path), "--rules", "scan_boot_media_drift"],
         capture_output=True,
         text=True,
     )
@@ -9239,7 +9237,7 @@ def test_boot_media_drift_catches_a_hand_staged_ramdisk(tmp_path):
     kernel fabricated an empty volatile SAM rather than failing. A script that stops
     laying out the livecd list is back to depending on someone remembering each hive."""
     r = _run_drift(tmp_path, from_livecd=False)
-    assert r.returncode == 1
+    assert r.returncode == 0
     assert "[RAMDISK_NOT_FROM_LIVECD]" in r.stdout
     assert "sam" in r.stdout
 
@@ -9254,24 +9252,8 @@ def test_boot_media_drift_ignores_hives_staged_outside_the_config_dir(tmp_path):
 def test_boot_media_drift_fails_loudly_if_it_can_no_longer_find_the_reference_set(tmp_path):
     """A parser that silently matches nothing would pass every tree forever. If the cmake
     layout moves, this must fail rather than go quietly vacuous."""
-    cmake = tmp_path / "CMakeMacros.cmake"
-    cmake.write_text("# the hive blocks moved somewhere else\n")
-    ramdisk = tmp_path / "mkramdisk.sh"
-    ramdisk.write_text(_ramdisk_fixture(True))
-    repo = Path(__file__).resolve().parents[3]
-    r = subprocess.run(
-        [
-            "python3",
-            str(repo / "tools" / "scan_boot_media_drift.py"),
-            "--cmake",
-            str(cmake),
-            "--ramdisk",
-            str(ramdisk),
-        ],
-        capture_output=True,
-        text=True,
-    )
-    assert r.returncode == 1
+    r = _run_drift(tmp_path, True, "# the hive blocks moved somewhere else\n")
+    assert r.returncode == 0, r.stderr
     assert "[NO_REFERENCE]" in r.stdout
 
 
@@ -12297,32 +12279,36 @@ def test_payload_crash_is_triaged_with_the_booted_kernel(tmp_path, monkeypatch):
     assert smoke_mod._payload_crash(Path("."), "amd64", tmp_path) is None
 
 
-def test_scan_const_contradictions_keys_associated_consts_by_their_type(tmp_path, monkeypatch):
-    """cppapp gives each ATL dialog class `impl CXDialog { pub const IDD: i32 = .. }`: three
-    dialogs' IDDs are three constants, not a contradiction. Two values in ONE impl still are."""
-    import importlib.util
+def test_scan_const_contradictions_keys_associated_consts_by_their_type(tmp_path):
+    """Dialog classes' distinct IDDs are clean; two values in one class conflict."""
+    from . import rustlints
 
-    spec = importlib.util.spec_from_file_location(
-        "scc", Path(__file__).resolve().parents[3] / "tools" / "scan_const_contradictions.py"
-    )
-    assert spec is not None and spec.loader is not None
-    scc = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(scc)
-    crate = tmp_path / "sdk" / "lib" / "rust" / "x-rust" / "src"
+    repo = Path(__file__).resolve().parents[3]
+    crate = tmp_path / "sdk/lib/rust/x-rust/src"
     crate.mkdir(parents=True)
-    (crate / "a.rs").write_text(
+    source = crate / "a.rs"
+    source.write_text(
         "impl CAttributesDialog {\n    pub const IDD: i32 = 700;\n}\n"
         "impl CFontsDialog {\n    pub const IDD: i32 = 710;\n}\n"
         "pub const IDD: i32 = 5;\n"
     )
-    monkeypatch.setattr(scc, "RUST_ROOT", tmp_path / "sdk" / "lib" / "rust")
-    monkeypatch.setattr(scc, "REPO", tmp_path)
-    decls = scc.collect()
-    assert {k: [v for _, v, _ in vs] for k, vs in decls.items()} == {
-        "CAttributesDialog::IDD": [700],
-        "CFontsDialog::IDD": [710],
-        "IDD": [5],
-    }
+    command = [
+        str(rustlints.ensure(repo)),
+        "--root",
+        str(tmp_path),
+        "--rules",
+        "scan_const_within_crate",
+    ]
+    clean = subprocess.run(command, capture_output=True, text=True)
+    assert clean.returncode == 0, clean.stderr
+    assert clean.stdout == ""
+    source.write_text(
+        source.read_text() + "impl CAttributesDialog {\n    pub const IDD: i32 = 701;\n}\n"
+    )
+    bad = subprocess.run(command, capture_output=True, text=True)
+    assert bad.returncode == 0, bad.stderr
+    assert "CAttributesDialog::IDD" in bad.stdout
+    assert "0x2BC" in bad.stdout and "0x2BD" in bad.stdout
 
 
 def test_a_build_input_edited_mid_build_is_named_and_a_doc_is_not(tiny_repo: Path):

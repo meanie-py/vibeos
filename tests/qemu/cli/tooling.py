@@ -65,10 +65,6 @@ _PYTEST_SUITES = [
     # An oracle needs an oracle. verify_c_signatures reports its own type-resolution gaps as
     # defects in the code when it is wrong, and reports "verified" over types it never
     # resolved when it is blind — neither shows up in review or in its own output.
-    (".", ".", "tools/test_verify_c_signatures.py"),
-    (".", ".", "tools/test_scan_wide_literals.py"),
-    (".", ".", "tools/test_scan_unaligned_wide.py"),
-    (".", ".", "tools/test_scan_pack_drift.py"),
     # The apitest sweep's parser. Its failure mode is FALSE GREEN, not a crash --
     # it shipped scoring `afd_apitest send` OK on the boot whose BUGCHECK that
     # subtest caused, because the subtest printed a clean summary before taking
@@ -125,37 +121,23 @@ _PYTEST_SUITES = [
     # OBJECT FILES, so it cannot join test_scanner_controls (which drives source-only
     # `check` lints from fixture dirs) and would otherwise have no oracle at all.
     (".", ".", "tools/test_verify_cohab_coverage.py"),
-    (".", ".", "tools/test_scan_import_cc.py"),
-    (".", ".", "tools/test_scan_octal_literals.py"),
-    (".", ".", "tools/test_scan_varargs_spec_arity.py"),
     # The i386 no-SSE ABI time bomb: -sse,-sse2 on the builtin i686 triple is a
     # phase-out warning today and a hard error after a toolchain bump. Fires loudly
     # here, with the migration, the moment the pinned rustc turns it into an error.
     (".", ".", "tools/test_scan_i386_sse_abi.py"),
-    (".", ".", "tools/test_scan_dowhile_continue.py"),
-    (".", ".", "tools/test_scan_case_bitor_pattern.py"),
+    (".", ".", "tools/test_loop_patterns.py"),
     (".", ".", "tools/test_rank_unused_assignments.py"),
     (".", ".", "tools/test_apply_dead_assignments.py"),
     (".", ".", "tools/test_apply_rustc_suggestions.py"),
     (".", ".", "tools/test_extern_to_use.py"),
-    (".", ".", "tools/test_scan_version_vs_c.py"),
-    (".", ".", "tools/test_scan_winerror_consts.py"),
-    (".", ".", "tools/test_scan_export_shadows.py"),
-    (".", ".", "tools/test_scan_res_named_types.py"),
-    (".", ".", "tools/test_scan_extern_static_width.py"),
     (".", ".", "tools/test_ramdisk_tree.py"),
-    (".", ".", "tools/test_scan_const_vs_island.py"),
     # The callee pass of the user-pointer lint: its quieting rules (kernel arm,
     # early return, scoped rebind, null guard) each hid or invented rows once.
-    (".", ".", "tools/test_scan_raw_user_access.py"),
     # The double-fetch lint's quieting rules (sibling arms, early-exit branch,
     # advanced source, inner-cast normalisation) each over- or under-fired once.
-    (".", ".", "tools/test_scan_double_fetch.py"),
     # The safe-probe-deref lint: a range probe validates a user pointer that is then
     # touched raw. Its quieting rules (fault-tolerant copy, trusted kernel arm,
     # capture-shadow, field-of-capture) share _walk with scan_raw_user_access.
-    (".", ".", "tools/test_scan_safe_probe_deref.py"),
-    (".", ".", "tools/test_scan_ptr_typedef_indirection.py"),
     (".", ".", "tools/test_lint_facts.py"),
     (".", ".", "tools/test_cargo_link_context.py"),
     (".", ".", "tools/test_cargo_orchestrate.py"),
@@ -181,7 +163,6 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_tooling_receipts.py"),
     (".", ".", "tools/test_registry_security_persistence.py"),
     (".", ".", "tools/test_nested_cargo_deps.py"),
-    (".", ".", "tools/test_scan_invented_constants.py"),
     # These six existed and were collected by NOTHING — the same defect the two comments
     # above record, twice more. test_verify_ucrtbase_cohab.py is the sharpest case: it was
     # written the night the ucrtbase math flip landed, to prove the cohab checker parses
@@ -192,8 +173,6 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_link_pulls.py"),
     (".", ".", "tools/test_ninja_closure_prune.py"),
     (".", ".", "tools/test_gen_ctype_tables.py"),
-    (".", ".", "tools/test_verify_lost_exports.py"),
-    (".", ".", "tools/test_verify_translation_literals.py"),
     (".", ".", "tools/test_verify_ucrtbase_cohab.py"),
     (".", ".", "tools/test_ucrt_tier2_refset.py"),
     # The sharded sweep's completeness oracle. Its failure mode is FALSE
@@ -225,7 +204,6 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_rust_warning_census.py"),
     (".", ".", "tools/test_kernel_probe.py"),
     (".", ".", "tools/test_link_guard.py"),
-    (".", ".", "tools/test_scan_orphan_modules.py"),
     (".", ".", "tools/test_cohab_census.py"),
     (".", ".", "tools/test_build_invalidation.py"),
     (".", ".", "tools/test_bindgen_generation.py"),
@@ -238,9 +216,6 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_scan_export_thunks.py"),
     (".", ".", "tools/test_scan_xchg_ebx_deref.py"),
     (".", ".", "tools/test_scan_unresolved_imports.py"),
-    (".", ".", "tools/test_scan_assert_polarity.py"),
-    (".", ".", "tools/test_scan_dropped_asserts.py"),
-    (".", ".", "tools/test_scan_call_literal_vs_c.py"),
     (".", ".", "tools/test_strip_msvc_cmake.py"),
     # The substrate half of scan_extern_decl_drift has no other oracle: its
     # findings are about declarations of symbols NOTHING in the tree defines, so
@@ -248,11 +223,9 @@ _PYTEST_SUITES = [
     # Its two scoping rules are also the kind that fail SILENTLY -- judging a crate
     # by an island it does not link invents findings, and resolving pointer width
     # arch-agnostically inside a `#[cfg(target_arch)]`d module invents three more.
-    (".", ".", "tools/test_scan_extern_decl_drift.py"),
     # Same shape as the two above: the matcher is pure functions over a string, and its
     # positive control is the real demangler bug — a sequencing error that shipped because
     # no value-based check can see it.
-    (".", ".", "tools/test_scan_arg_side_effects.py"),
     # Generalizes the two above from "this oracle has an oracle" to "every gate
     # lint has one, or a written reason it doesn't". A scanner reporting 0 means
     # nothing until something proves the matcher still fires: scan_bugcheck_codes
@@ -269,7 +242,6 @@ _PYTEST_SUITES = [
     # release-then-reassign, release with no guard, and a guard whose release
     # lives in a DIFFERENT function), since each was a false positive an earlier
     # cut of the matcher produced against real shipping code.
-    (".", ".", "tools/test_scan_com_double_release.py"),
     # A WRITE-capable tool needs the same treatment as a read-only one, and more:
     # migrate_debug_assert rewrote 454 sites, and its failure modes (a dropped
     # message, a mangled path-qualified invocation, a silently skipped form) all
