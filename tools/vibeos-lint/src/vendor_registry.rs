@@ -588,16 +588,6 @@ fn blocked(s: &AuditSnapshot, d: &str) -> bool {
 fn skip_suspect(d: &str) -> bool {
     SUSPECT_SKIP.contains(&d)
 }
-fn files_in_dir<'a>(
-    s: &'a AuditSnapshot,
-    d: &'a str,
-) -> impl Iterator<Item = (&'a String, &'a String)> + 'a {
-    s.files.iter().filter(move |(p, _)| {
-        Path::new(p.as_str())
-            .parent()
-            .is_some_and(|x| x == Path::new(d))
-    })
-}
 fn suspects(reg: &Registry, s: &AuditSnapshot) -> Vec<(String, usize)> {
     let mut counts = BTreeMap::<String, usize>::new();
     let mut dir_order = Vec::<String>::new();
@@ -808,33 +798,35 @@ fn grant_gaps(
     Vec<(String, usize, String)>,
     BTreeMap<String, (usize, String)>,
 ) {
+    // Group every file by its parent in one pass. Rescanning the whole snapshot
+    // once per walkable directory was quadratic in the tree and took this rule
+    // past pytest's 300 s timeout.
+    let mut grouped = BTreeMap::<&Path, BTreeSet<String>>::new();
+    for p in s.files.keys() {
+        let path = Path::new(p.as_str());
+        if let Some(parent) = path.parent() {
+            grouped.entry(parent).or_default().insert(
+                path.file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_lowercase(),
+            );
+        }
+    }
     let mut by_dir = BTreeMap::<String, BTreeSet<String>>::new();
     by_dir.insert(
         String::new(),
-        files_in_dir(s, "")
-            .map(|(p, _)| {
-                Path::new(p)
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_lowercase()
-            })
-            .collect(),
+        grouped.get(Path::new("")).cloned().unwrap_or_default(),
     );
     for d in walkable_dirs(s, "") {
         let root_dir = d.split('/').next().unwrap_or("");
         if skip_suspect(root_dir) || blocked(s, &d) {
             continue;
         }
-        let names = files_in_dir(s, &d)
-            .map(|(p, _)| {
-                Path::new(p)
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_lowercase()
-            })
-            .collect();
+        let names = grouped
+            .get(Path::new(d.as_str()))
+            .cloned()
+            .unwrap_or_default();
         by_dir.insert(d, names);
     }
     fn resolve(name: &str, from: &str, by: &BTreeMap<String, BTreeSet<String>>, depth: u8) -> bool {
