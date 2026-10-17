@@ -36,8 +36,13 @@ use super::krnlinit::KiProcessorBlock;
 // Use actual definition from clock.rs, not extern (lto=false splits them)
 use super::clock::KeTickCount;
 
-const THREAD_BOOST_PRIORITY: ULONG = 23;
 const LOW_REALTIME_PRIORITY: ULONG = 16;
+// balmgr.c: `(LOW_REALTIME_PRIORITY - 1)`, the top dynamic priority. It was an
+// invented 23 until 2026-10-17: the starvation scan then covered priorities up to
+// 22 and boosted dynamic threads INTO the realtime range, where
+// KiComputeNewPriority never decays them (its restored ASSERT caught pri=23 base=8
+// dec=15 under kmtest).
+const THREAD_BOOST_PRIORITY: ULONG = LOW_REALTIME_PRIORITY - 1;
 const WAIT_QUANTUM_DECREMENT: ULONG = 1;
 
 static mut KiReadyScanLast: ULONG = 0;
