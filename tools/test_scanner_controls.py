@@ -2231,6 +2231,28 @@ _LISTWALK_GOOD = _LISTWALK_BAD.replace(
     "(core::ptr::addr_of_mut!(Table) as *mut u8)", "(Table.next as *mut u8)"
 )
 
+# scan_list_walk_cursor_after_loop. Seeded from rtl-threadpool timerqueue_thread_proc
+# (2026-10-17): the re-arm walk left `other` at the LAST timer when none was later, so
+# list_add_before put the timer one place early; the C's cursor ends at the head.
+_LISTCURSOR_BAD = """\
+unsafe fn rearm(t: *mut obj) {
+    let head = core::ptr::addr_of_mut!(pending);
+    let mut other: *mut obj = core::ptr::null_mut();
+    let mut e = (*head).next;
+    while e != head {
+        other = (e as usize - core::mem::offset_of!(obj, entry)) as *mut obj;
+        if (*t).timeout < (*other).timeout {
+            break;
+        }
+        e = (*e).next;
+    }
+    list_add_before(core::ptr::addr_of_mut!((*other).entry), core::ptr::addr_of_mut!((*t).entry));
+}
+"""
+_LISTCURSOR_GOOD = _LISTCURSOR_BAD.replace(
+    "list_add_before(core::ptr::addr_of_mut!((*other).entry),", "list_add_before(e,"
+)
+
 # scan_dowhile_continue. Seeded from syssetup RegisterTypeLibraries (2026-10-04): a C
 # do-while's `continue` re-ran the same INF line forever once translated to `loop`.
 # scan_case_bitor_pattern. Seeded from comctl32 TREEVIEW_SelectItem (2026-10-09): C's
@@ -2650,6 +2672,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"irotp.rs": _LISTWALK_BAD},
         good={"irotp.rs": _LISTWALK_GOOD},
+    ),
+    Control(
+        name="scan_list_walk_cursor_after_loop",
+        script="tools/scan_list_walk_cursor_after_loop.py",
+        argv=["--lint", "--root"],
+        bad={"threadpool.rs": _LISTCURSOR_BAD},
+        good={"threadpool.rs": _LISTCURSOR_GOOD},
     ),
     Control(
         name="scan_dowhile_continue",

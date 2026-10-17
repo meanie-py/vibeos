@@ -875,6 +875,17 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # Its sibling: a wine/list.h LIST_FOR_EACH_ENTRY lowered to a raw-entry walk leaves the
+    # cursor at the LAST element, not the head, when nothing broke, so a following
+    # list_add_before inserts out of order (rtl-threadpool's timer re-arm, 2026-10-17).
+    slc = repo / "tools" / "scan_list_walk_cursor_after_loop.py"
+    specs.append(
+        (
+            "scan_list_walk_cursor_after_loop",
+            [py, str(slc), "--lint"] if slc.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     sdc = repo / "tools" / "scan_dowhile_continue.py"
     specs.append(
         (
