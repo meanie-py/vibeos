@@ -27,6 +27,8 @@ import re
 import sys
 from pathlib import Path
 
+from source_walk import source_files
+
 REPO = Path(__file__).resolve().parents[1]
 LEX = re.compile(r'/\*.*?\*/|//[^\n]*|b?r#*"(?:.|\n)*?"#*|b?"(?:\\.|[^"\\])*"', re.S)
 WHILE = re.compile(r"\bwhile\s+(?P<e>[A-Za-z_]\w*)\s*!=\s*(?P<head>[^{]+?)\s*\{")
@@ -123,9 +125,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--root", type=Path, default=REPO / "sdk" / "lib" / "rust")
     args = ap.parse_args(argv)
     findings = []
-    for path in sorted(args.root.rglob("*.rs")):
-        if "/target/" in str(path):
-            continue
+    for path in sorted(source_files(args.root)):
         try:
             text = path.read_text(errors="replace")
         except OSError:
