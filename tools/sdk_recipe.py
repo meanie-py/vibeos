@@ -94,6 +94,15 @@ def _keep(line: str) -> bool:
     )
 
 
+HOST_JOBS = re.compile(r'"?\S*/\.cache/host-jobs/host-jobs"? --kind \w+ -- ')
+
+
+def _unwrap(line: str) -> str:
+    """The fleet's host-jobs admission wrapper is how this host scheduled the command, not
+    part of it (and a fresh checkout has not built it)."""
+    return HOST_JOBS.sub("", line)
+
+
 def _cell_deps(ninja: str) -> list[str]:
     deps: list[str] = []
     for m in CELL_EDGE.finditer(ninja):
@@ -150,7 +159,9 @@ def derive(arch: str, repo: Path = REPO) -> tuple[list[str], list[str]]:
             f"build-{arch}: generator commands run host tools not recorded: {unknown}"
         )
     host = [
-        line.replace(f"{CANON}/build-{arch}/host-tools/bin", "{TOOLS}").replace(CANON, "{REPO}")
+        _unwrap(line)
+        .replace(f"{CANON}/build-{arch}/host-tools/bin", "{TOOLS}")
+        .replace(CANON, "{REPO}")
         for line in _ninja_commands(build / "host-tools/bin", used)
     ]
     return sdk, host

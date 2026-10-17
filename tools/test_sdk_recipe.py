@@ -47,3 +47,8 @@ def test_a_replay_makes_the_directories_ninja_would(tmp_path, monkeypatch):
     s.run("amd64", gen, repo)
     assert (gen / "host-tools/bin/sub/dir/tool.o").exists()
     assert (gen / "a/b/c.h").exists()
+
+
+def test_the_host_jobs_wrapper_is_not_part_of_a_command():
+    line = '"/tmp/vibeos/.cache/host-jobs/host-jobs" --kind compile -- /usr/bin/cc -c x.c && : '
+    assert s._unwrap(line) == "/usr/bin/cc -c x.c && : "
