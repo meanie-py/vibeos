@@ -3747,6 +3747,18 @@ def derive(
         p = (d if d.is_absolute() else module.module_dir / d).resolve()
         if p.is_dir() and _is_within(p, repo_root):
             extra_inc.append(f'-I"${{SRC}}/{p.relative_to(repo_root)}"')
+    # A quoted include searches the INCLUDING file's directory first, and the wrapper
+    # mirrors a subdirectory TU's prologue from /tmp. reactos's spapisup/fileqsup.c includes
+    # "../../usetup/spapisup/cabinet.h", which only resolves from spapisup/; from the module
+    # directory it named a file that does not exist and bindgen died. Searching the TU's own
+    # directory after the module's resolves it to the path the real compile sees, so the
+    # allowlist regexes derived from that compile still match.
+    for tu in tus:
+        sub = tu.parent
+        if sub != module.module_dir and _is_within(sub, module.module_dir):
+            entry = f'-I"${{SRC}}/{sub.relative_to(repo_root)}"'
+            if entry not in extra_inc:
+                extra_inc.append(entry)
     late_inc: list[str] = []
     for d in extra_inc_dirs:
         p = (d if d.is_absolute() else repo_root / d).resolve()

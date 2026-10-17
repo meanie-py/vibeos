@@ -1004,6 +1004,20 @@ class TestGeneratorBaseIncludes:
             )
         )
 
+    def test_a_subdirectory_tus_own_dir_is_searched(self, tmp_path: Path):
+        """reactos.exe's spapisup/fileqsup.c includes "../../usetup/spapisup/cabinet.h",
+        which resolves only from spapisup/. The wrapper mirrored it from the module
+        directory and bindgen died: 'file not found'."""
+        cmake = CMAKE_USERMODE.replace("    helper.c\n", "    helper.c\n    sub/fileq.c\n")
+        root = _basic_module(tmp_path, cmake=cmake)
+        _write(root / "dll/shared/cab.h", "typedef struct _CAB { int z; } CAB;\n")
+        _write(_mod(tmp_path) / "sub/fileq.c", '#include "../../shared/cab.h"\nint fq(void) { return 0; }\n')
+        dp = derive(_mod(tmp_path), root)
+        assert '-I"${SRC}/dll/win32/widget/sub"' in dp.extra_inc, dp.extra_inc
+        assert dp.extra_inc.index('-I"${SRC}/dll/win32/widget/sub"') > dp.extra_inc.index(
+            '-I"${SRC}/dll/win32/widget"'
+        ), "the module directory still wins a bare name"
+
     def test_a_dir_the_generator_lacks_is_emitted(self, tmp_path: Path):
         root = _basic_module(tmp_path)
         (root / "sdk/include/wine").mkdir(parents=True, exist_ok=True)
