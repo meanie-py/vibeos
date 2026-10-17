@@ -16,7 +16,8 @@ use ntkrnl_sys::ddk::{
     ExAllocatePoolWithTag, ExFreePoolWithTag, IoAttachDeviceToDeviceStack, IoCreateDevice, IoDeleteDevice,
     IoForwardIrpSynchronously, KeDelayExecutionThread, KeQueryPerformanceCounter, KeStallExecutionProcessor,
     MmMapIoSpace, PsCreateSystemThread, ZwClose, ZwCreateFile, ZwQueryInformationFile, ZwReadFile,
-    _MEMORY_CACHING_TYPE_MmNonCached, DEVICE_OBJECT, FILE_STANDARD_INFORMATION, HANDLE, IO_STATUS_BLOCK, LARGE_INTEGER,
+    _FILE_INFORMATION_CLASS_FileStandardInformation, _MEMORY_CACHING_TYPE_MmNonCached, DEVICE_OBJECT,
+    FILE_STANDARD_INFORMATION, HANDLE, IO_STATUS_BLOCK, LARGE_INTEGER,
     NTSTATUS, OBJECT_ATTRIBUTES, PDEVICE_OBJECT, PDRIVER_OBJECT, PHYSICAL_ADDRESS, PIO_STACK_LOCATION, PIRP, PVOID,
     ULONG, UNICODE_STRING,
 };
@@ -59,7 +60,7 @@ static LOWER: AtomicPtr<DEVICE_OBJECT> = AtomicPtr::new(null_mut());
 /// Written once in START, then owned by the firmware worker.
 static mut CHIP: Option<Chip<Kernel>> = None;
 
-const POOL_TAG: ULONG = u32::from_le_bytes(*b"Bwfm");
+const BWFM_POOL_TAG: ULONG = u32::from_le_bytes(*b"Bwfm");
 const NON_PAGED_POOL: i32 = 0;
 const THREAD_ALL_ACCESS: ULONG = 0x001F_03FF;
 /// The files, under \SystemRoot\System32\drivers\cyw43455\, as
@@ -202,7 +203,7 @@ unsafe fn power_on(host: u64) -> bool {
 }
 
 /// A file under \SystemRoot\System32\drivers\ read whole into pool, or the
-/// status that stopped it. The caller frees it with POOL_TAG.
+/// status that stopped it. The caller frees it with BWFM_POOL_TAG.
 unsafe fn read_driver_file(rel: &str) -> Result<(*mut u8, usize), NTSTATUS> {
     let mut name = [0u16; 96];
     let mut len = 0;
@@ -245,7 +246,7 @@ unsafe fn read_driver_file(rel: &str) -> Result<(*mut u8, usize), NTSTATUS> {
         &mut iosb,
         (&raw mut info).cast(),
         core::mem::size_of::<FILE_STANDARD_INFORMATION>() as ULONG,
-        5 as _, // FileStandardInformation
+        _FILE_INFORMATION_CLASS_FileStandardInformation,
     );
     let size = info.EndOfFile.QuadPart as usize;
     if s < 0 || size == 0 || size > FILE_MAX {
@@ -253,7 +254,7 @@ unsafe fn read_driver_file(rel: &str) -> Result<(*mut u8, usize), NTSTATUS> {
         return Err(if s < 0 { s } else { STATUS_DEVICE_CONFIGURATION_ERROR });
     }
     // Room for nvram::convert's padding and token after the text.
-    let buf = ExAllocatePoolWithTag(NON_PAGED_POOL as _, (size + nvram::SLACK) as _, POOL_TAG) as *mut u8;
+    let buf = ExAllocatePoolWithTag(NON_PAGED_POOL as _, (size + nvram::SLACK) as _, BWFM_POOL_TAG) as *mut u8;
     if buf.is_null() {
         ZwClose(h);
         return Err(STATUS_INSUFFICIENT_RESOURCES);
@@ -261,7 +262,7 @@ unsafe fn read_driver_file(rel: &str) -> Result<(*mut u8, usize), NTSTATUS> {
     let s = ZwReadFile(h, null_mut(), None, null_mut(), &mut iosb, buf as PVOID, size as u32, null_mut(), null_mut());
     ZwClose(h);
     if s < 0 || iosb.Information as usize != size {
-        ExFreePoolWithTag(buf.cast(), POOL_TAG);
+        ExFreePoolWithTag(buf.cast(), BWFM_POOL_TAG);
         return Err(if s < 0 { s } else { STATUS_DEVICE_CONFIGURATION_ERROR });
     }
     Ok((buf, size))
@@ -278,7 +279,7 @@ unsafe extern "system" fn firmware_worker(_context: PVOID) {
                 // One may be readable before the other: free it, retry both.
                 for r in [f, n] {
                     if let Ok((p, _)) = r {
-                        ExFreePoolWithTag(p.cast(), POOL_TAG);
+                        ExFreePoolWithTag(p.cast(), BWFM_POOL_TAG);
                     }
                 }
                 if waited >= FILE_WAIT_S {
@@ -308,8 +309,8 @@ unsafe extern "system" fn firmware_worker(_context: PVOID) {
             Some((r, Kernel::now_us_static().wrapping_sub(t0)))
         }
     };
-    ExFreePoolWithTag(fw.0.cast(), POOL_TAG);
-    ExFreePoolWithTag(nv.0.cast(), POOL_TAG);
+    ExFreePoolWithTag(fw.0.cast(), BWFM_POOL_TAG);
+    ExFreePoolWithTag(nv.0.cast(), BWFM_POOL_TAG);
     match loaded {
         None => {}
         Some((Err(e), _)) => bwprint!("firmware load failed: {:?}\n", e),
