@@ -540,6 +540,19 @@ pub unsafe extern "fastcall" fn RtlPrefetchMemoryNonTemporal(_Source: PVOID, _Le
 pub fn allowed() {}
 """
 
+# scan_fnclass_cc. cdrom.h declares `EVT_WDF_WORKITEM DeviceRestoreDefaultSpeed;`, a WDF
+# work item the framework calls stdcall on i386; the Rust defined it cdecl (2026-10-17).
+_FNCLASS_BAD = """\
+#[no_mangle]
+pub unsafe extern "C" fn DeviceRestoreDefaultSpeed(WorkItem: WDFWORKITEM) {}
+"""
+_FNCLASS_GOOD = """\
+#[no_mangle]
+pub unsafe extern "system" fn DeviceRestoreDefaultSpeed(WorkItem: WDFWORKITEM) {}
+#[no_mangle]
+pub unsafe extern "C" fn StringsAreMatched(a: *const i8, b: *const i8) -> u8 { 0 }
+"""
+
 # scan_version_vs_c. fastfat lockctrl.c gates the "only when it interferes with oplocks"
 # filter on NTDDI_WIN8; the WS03 build checks the oplock for every lock request and never
 # asks FsRtlAreThereWaitingFileLocks. The Rust asked it eagerly, ahead of the cfg! test.
@@ -2937,6 +2950,13 @@ CONTROLS: list[Control] = [
         good={"rust/eventlog-rust/src/file.rs": _NULL_PLACE_GOOD},
     ),
     Control(
+        name="scan_fnclass_cc",
+        script="tools/scan_fnclass_cc.py",
+        argv=["--lint"],
+        bad={"rust/cdrom-rust/src/common.rs": _FNCLASS_BAD},
+        good={"rust/cdrom-rust/src/common.rs": _FNCLASS_GOOD},
+    ),
+    Control(
         name="scan_version_vs_c",
         script="tools/scan_version_vs_c.py",
         argv=["--lint"],
@@ -3217,6 +3237,12 @@ CONTROLS: list[Control] = [
 # Lints deliberately NOT fixture-driven, each with the reason. Anything absent
 # from both this set and CONTROLS fails test_every_lint_is_accounted_for.
 UNCOVERED: dict[str, str] = {
+    "scan_cmake_linked_rust": (
+        "it models modules from build-amd64/build.ninja and the tree's own CMakeLists through "
+        "cargo_cell_gen.survey, so a fixture directory has nothing to survey. The labelling is "
+        "driven directly in tools/test_cargo_cell_gen.py: a module the generator accepts must "
+        "read `(convertible)` and a refused one `(refused)`, with a nonzero exit while any remain."
+    ),
     "scan_pack_drift": (
         "it maps every flipped module to its crate through the tree's own CMakeLists flip "
         "comments, so a fixture directory has no module to resolve. Driven directly in "

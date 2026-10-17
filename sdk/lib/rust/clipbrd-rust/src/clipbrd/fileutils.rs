@@ -232,9 +232,18 @@ unsafe extern "C" fn ClipboardReadBitmap(mut hFile: HANDLE, mut dwOffset: DWORD,
         GlobalFree(hData);
         return (FALSE) as BOOL;
     }
-    (*lpBitmap).bmBits = lpBitmap
-        .offset(core::mem::size_of::<BITMAP>() as usize as isize)
-        .offset(1 as isize) as LPVOID;
+    // The C's `lpBitmap + sizeof(BITMAP) + 1` is arithmetic on a BITMAP*, so it scales by
+    // sizeof(BITMAP): bmBits pointed some 25 headers past a block holding one header and its
+    // bits, and CreateBitmapIndirect read out of bounds. The bits follow the header; a block
+    // too short to hold the header and bmHeight * bmWidthBytes of them is refused.
+    let need = core::mem::size_of::<BITMAP>() as u64
+        + ((*lpBitmap).bmHeight.max(0) as u64) * ((*lpBitmap).bmWidthBytes.max(0) as u64);
+    if (dwLength as u64) < core::mem::size_of::<BITMAP>() as u64 || (dwLength as u64) < need {
+        GlobalUnlock(hData);
+        GlobalFree(hData);
+        return (FALSE) as BOOL;
+    }
+    (*lpBitmap).bmBits = lpBitmap.add(1) as LPVOID;
     hBitmap = CreateBitmapIndirect(lpBitmap as *const BITMAP);
     GlobalUnlock(hData);
     GlobalFree(hData);

@@ -171,7 +171,10 @@ extern "system" {
     pub fn GetSystemWindowsDirectoryW(arg1: LPWSTR, arg2: UINT) -> UINT; // aclui-rust/src/types_i386.rs
     pub fn GetTextMetricsW(arg1: HDC, arg2: LPTEXTMETRICW) -> BOOL; // aclui-rust/src/types_i386.rs
     pub fn GetVersionExW(arg1: LPOSVERSIONINFOW) -> BOOL; // aclui-rust/src/types_i386.rs
-    #[cfg_attr(target_arch = "x86", link_name = "GetWindowLongW")]
+    // i386 only: there `GetWindowLongPtrW` is a winuser.h macro for `GetWindowLongW`, so the island has no
+    // declaration of it. On 64-bit the island's header-exact one is used.
+    #[cfg(target_arch = "x86")]
+    #[link_name = "GetWindowLongW"]
     pub fn GetWindowLongPtrW(hWnd: HWND, nIndex: INT) -> LONG_PTR; // charmap-rust/src/prelude.rs
     pub fn LoadCursorW(arg1: HINSTANCE, arg2: LPCWSTR) -> HCURSOR; // aclui-rust/src/types_i386.rs
     pub fn LoadLibraryW(arg1: LPCWSTR) -> HINSTANCE; // aclui-rust/src/types_i386.rs
@@ -184,7 +187,10 @@ extern "system" {
     pub fn RegOpenKeyExW( arg1: HKEY, arg2: LPCWSTR, arg3: DWORD, arg4: REGSAM, arg5: PHKEY, ) -> LSTATUS; // desk-rust/src/types_i386.rs
     pub fn RegQueryValueExW( hKey: HKEY, lpValueName: LPCWSTR, lpReserved: LPDWORD, lpType: LPDWORD, lpData: LPBYTE, lpcbData: LPDWORD, ) -> LSTATUS; // desk-rust/src/types_i386.rs
     pub fn RegisterClassExW(arg1: *const WNDCLASSEXW) -> ATOM; // aclui-rust/src/types_i386.rs
-    #[cfg_attr(target_arch = "x86", link_name = "SetWindowLongW")]
+    // i386 only: there `SetWindowLongPtrW` is a winuser.h macro for `SetWindowLongW`, so the island has no
+    // declaration of it. On 64-bit the island's header-exact one is used.
+    #[cfg(target_arch = "x86")]
+    #[link_name = "SetWindowLongW"]
     pub fn SetWindowLongPtrW(hWnd: HWND, nIndex: INT, dwNewLong: LONG_PTR) -> LONG_PTR; // charmap-rust/src/prelude.rs
     pub fn SystemParametersInfoW( uiAction: UINT, uiParam: UINT, pvParam: PVOID, fWinIni: UINT, ) -> BOOL; // aclui-rust/src/types_i386.rs
 }

@@ -23,6 +23,13 @@
 use crate::internal::{
     guah, BeginIfHookedUserApiHook, EndUserApiHook, LoadUserApiHook, NtCurrentTeb, ValidateHwnd,
 };
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::wow64::DbgPrint;
+use crate::windows::window::HeapAlloc;
+// The crate's own functions: the definition is the declaration.
+use crate::misc::rtlstr::RtlInitLargeAnsiString;
+use crate::misc::rtlstr::RtlInitLargeUnicodeString;
+use crate::controls::scrollbar::SetScrollInfo;
 use crate::ntwrapper::*;
 // GetWindowLongPtrW / GetClassLongPtrW: i386 winuser.h macro forms of the *LongW
 // exports (real forwarding exports in class.rs); non-x86 they're the genuine
@@ -71,8 +78,6 @@ extern "system" {
     // win32ss/user/user32/controls/regcontrol.c  (LRESULT WINAPI)
     fn ImeWndProc_common(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM, unicode: BOOL) -> LRESULT;
     // ntdll
-    fn RtlInitLargeAnsiString(DestinationString: PLARGE_ANSI_STRING, SourceString: PCSZ, Unknown: INT);
-    fn RtlInitLargeUnicodeString(DestinationString: PLARGE_UNICODE_STRING, SourceString: PCWSTR, Unknown: INT);
     // ntdll rtl export (winternl.h): NTAPI (PULONG, PWCH, ULONG) -> NTSTATUS.
     // (opus had this wrongly imported from ntkrnl_sys::ddk — killed per integration rule 1.)
     fn RtlUnicodeToMultiByteSize(BytesInMultiByteString: *mut ULONG, UnicodeString: PWCH, BytesInUnicodeString: ULONG) -> NTSTATUS;
@@ -90,7 +95,6 @@ unsafe fn RtlCopyMemory(dst: PVOID, src: *const core::ffi::c_void, n: usize) {
 extern "system" {
     // kernel32
     fn SetLastError(dwErrCode: DWORD);
-    fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: SIZE_T) -> LPVOID;
     fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID) -> BOOL;
     fn GetProcessHeap() -> HANDLE;
     fn WideCharToMultiByte(CodePage: UINT, dwFlags: DWORD, lpWideCharStr: PCWCH, cchWideChar: INT,
@@ -127,7 +131,6 @@ extern "system" {
     fn GetClientRect(hWnd: HWND, lpRect: LPRECT) -> BOOL;
     fn GetClipBox(hdc: HDC, lprc: LPRECT) -> INT;
     fn FillRect(hDC: HDC, lprc: *const RECT, hbr: HBRUSH) -> INT;
-    fn SetScrollInfo(hwnd: HWND, nBar: INT, lpsi: *const SCROLLINFO, redraw: BOOL) -> INT;
     fn ReleaseDC(hWnd: HWND, hDC: HDC) -> INT;
     fn NtUserDrawCaption(hWnd: HWND, hDC: HDC, lprc: *const RECT, uFlags: UINT) -> BOOL;
 }
@@ -299,11 +302,10 @@ fn min_sz(a: SIZE_T, b: SIZE_T) -> SIZE_T { if a < b { a } else { b } }
 // here ("IDCWTO Nothing found", "hwndIME was NULL" x2, "WM_NCRBUTTONUP") are
 // upstream reporting broken window/IME state. Route it to ntdll's DbgPrint.
 extern "C" {
-    fn DbgPrint(fmt: *const u8, ...) -> u32;
 }
 #[inline]
 unsafe fn ERR(fmt: *const u8) {
-    DbgPrint(fmt);
+    DbgPrint((fmt).cast());
 }
 // TRACE/WARN are wine channels that are off by default and FIXME is on by default:
 // winedebug_rust's macros say exactly that. (These were empty fns, which evaluated the

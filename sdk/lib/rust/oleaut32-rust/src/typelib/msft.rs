@@ -1616,7 +1616,7 @@ pub unsafe fn TLB_ReadTypeLib(
                 + size_of::<WCHAR>() as DWORD;
 
             let info =
-                HeapAlloc(GetProcessHeap(), 0, size as usize) as *mut FILE_NAME_INFORMATION;
+                HeapAlloc(GetProcessHeap(), 0, (size) as _) as *mut FILE_NAME_INFORMATION;
 
             let br = GetFileInformationByHandleEx(h, FileNameInfo, info as *mut c_void, size);
             if br != FALSE {

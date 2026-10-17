@@ -1,4 +1,6 @@
 use ntdll_sys::nt::*;
+// The crate's own functions: the definition is the declaration.
+pub use crate::file::filemap::CreateFileMappingW;
 use crate::prelude::*;
 use core::ffi::c_void;
 
@@ -98,14 +100,6 @@ extern "system" {
         lpBuffer: LPSTR,
         lpFilePart: *mut LPSTR,
     ) -> DWORD;
-    pub fn CreateFileMappingW(
-        hFile: HANDLE,
-        lpFileMappingAttributes: LPSECURITY_ATTRIBUTES,
-        flProtect: DWORD,
-        dwMaximumSizeHigh: DWORD,
-        dwMaximumSizeLow: DWORD,
-        lpName: LPCWSTR,
-    ) -> HANDLE;
     pub fn UnmapViewOfFile(lpBaseAddress: LPCVOID) -> BOOL;
     pub fn CreateProcessA(
         lpApplicationName: LPCSTR,

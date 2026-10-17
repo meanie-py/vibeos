@@ -336,7 +336,7 @@ unsafe extern "C" fn GetLocalizedSMFolderName(WinVal: LPCWSTR, RosInf: LPCWSTR, 
     return (ReadIniValue((&path).GetString(), CPP_COM_WSTR_96277DFBE0C8.as_ptr(), RosVal, Output) > 0) as i32;
 }
 
-unsafe extern "C" fn CreateMainShortcut(Target: &CStringW) -> CStringW {
+unsafe fn CreateMainShortcut(Target: &CStringW) -> CStringW {
     let Info: *mut InstallInfo = g_pInfo as *mut InstallInfo;
     let csidl: UINT = if (*Info).PerUser != 0 { CSIDL_PROGRAMS } else { CSIDL_COMMON_PROGRAMS };
     let mut rel = CStringW::from_ptr((*Info).ShortcutFile);
@@ -488,7 +488,7 @@ unsafe extern "C" fn InstallFiles(SourceDirBase: &CStringW, Spec: &CStringW, Des
     return success;
 }
 
-unsafe extern "C" fn AddUninstallOperationsFromDB(Name: LPCWSTR, UnOp: WCHAR, PathPrefix: CStringW) {
+unsafe fn AddUninstallOperationsFromDB(Name: LPCWSTR, UnOp: WCHAR, PathPrefix: CStringW) {
     let mut item = CStringW::new();
     let mut tmp = CStringW::new();
     if *GetGenerateString(Name, &mut tmp, CPP_COM_WSTR_96A296D224F2.as_ptr()) != 0 {

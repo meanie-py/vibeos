@@ -40,6 +40,8 @@
 //!   (all dead code; C bodies win at link time). HvValidateHive (extern C, not translated here).
 
 use ntkrnl_sys::base::*;
+// The crate's own functions: the definition is the declaration.
+use crate::hivecell::HvGetCellSize;
 use ntkrnl_sys::ddk::{CELL_DATA, CM_CHECK_REGISTRY_STATUS, CM_KEY_NODE, CM_KEY_VALUE, CmpAllocate, CmpFindSubKeyByNumber, CmpFree, CmpRepairClassOfNodeKey, CmpRepairKeyNodeSignature, CmpRepairParentKey, CmpRepairParentNode, CmpRepairSubKeyCounts, CmpRepairSubKeyList, CmpRepairValueList, CmpRepairValueListCount, HBIN, HCELL, HCELL_INDEX, HHIVE, PCM_KEY_INDEX, CMHIVE, PHBIN, PHCELL, RtlCompareUnicodeString, SIZE_T, HSTORAGE_TYPE_Stable as Stable, HSTORAGE_TYPE_Volatile as Volatile, _HHIVE, _UNICODE_STRING};
 use crate::glue::{HvGetCell, HvGetCellType, CmpIsKeyValueSmall, HCELL_NIL, HBLOCK_SIZE, CM_KEY_INDEX_ROOT, CM_KEY_INDEX_LEAF, CM_KEY_FAST_LEAF, CM_KEY_HASH_LEAF, CM_KEY_NODE_SIGNATURE, HV_HHIVE_SIGNATURE, HV_HBIN_SIGNATURE};
 use core::ffi::c_void;
@@ -57,7 +59,6 @@ unsafe extern "system" {
     fn CmpCompareCompressedName(String: *const _UNICODE_STRING, Name: *const u16, NameLength: u32) -> i32;
     fn HvMarkCellDirty(Hive: *mut HHIVE, Cell: u32, Unk: u8) -> u8;
     fn HvIsCellAllocated(Hive: *mut HHIVE, Cell: u32) -> u8;
-    fn HvGetCellSize(Hive: *mut _HHIVE, Cell: *mut c_void) -> u32;
 }
 unsafe extern "system" {
     // NTAPI. Resolvable in BOTH of cmlib's link contexts, which is why an assert here can
@@ -379,7 +380,7 @@ unsafe fn CmpValidateValueListByCount(
         }
 
         /* Check that the value size is sane */
-        let value_data_size: u32 = HvGetCellSize(Hive, value_data as *mut c_void);
+        let value_data_size: u32 = (HvGetCellSize(Hive, value_data as *mut c_void)) as u32;
         let value_name_length: u32 =
             core::ptr::addr_of!((*value_data).u.KeyValue.NameLength).read_unaligned() as u32;
         let total_value_name_length: u32 =
@@ -521,7 +522,7 @@ unsafe fn CmpValidateValueList(
          * Cache the value size and total length and ensure this is a sane
          * value list to begin with.
          */
-        let value_size: u32 = HvGetCellSize(Hive, value_list_data as *mut c_void);
+        let value_size: u32 = (HvGetCellSize(Hive, value_list_data as *mut c_void)) as u32;
         let total_value_length: u32 =
             value_list_count.wrapping_mul(core::mem::size_of::<HCELL_INDEX>() as u32);
         if total_value_length > value_size {
@@ -786,7 +787,7 @@ unsafe fn CmpValidateKey(
         return CM_CHECK_REGISTRY_CELL_DATA_NOT_FOUND;
     }
 
-    cell_size = HvGetCellSize(Hive, cell_data as *mut c_void);
+    cell_size = (HvGetCellSize(Hive, cell_data as *mut c_void)) as u32;
     if cell_size > CMP_KEY_SIZE_THRESHOLD {
         // DPRINT removed
         return CM_CHECK_REGISTRY_CELL_SIZE_NOT_SANE;

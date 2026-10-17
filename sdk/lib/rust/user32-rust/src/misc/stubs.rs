@@ -1,4 +1,6 @@
 use win32k_sys::win32k::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::windows::window::HeapAlloc;
 #[allow(unused_imports)]
 use core::ffi::c_void;
 
@@ -33,9 +35,8 @@ extern "system" {
     fn CreatePen(iStyle: i32, cWidth: i32, color: COLORREF) -> HPEN;
     fn DeleteObject(ho: LPVOID) -> i32;
     fn GetProcessHeap() -> LPVOID;
-    fn HeapAlloc(hHeap: LPVOID, dwFlags: u32, dwBytes: usize) -> LPVOID;
     fn HeapFree(hHeap: LPVOID, dwFlags: u32, lpMem: LPVOID) -> i32;
-    fn ExitThread(code: DWORD);
+    pub fn ExitThread(code: DWORD) -> !; // DECLSPEC_NORETURN
     fn SetLastError(dwErrCode: DWORD);
     // ── ntdll CSR client (csr.h). WINAPI/NTAPI = stdcall on i386 → extern "system".
     fn CsrClientCallServer(
@@ -113,9 +114,9 @@ pub unsafe extern "system" fn SetSysColorsTemp(
         let pOldCol: LPVOID = HeapAlloc(
             GetProcessHeap(),
             0,
-            core::mem::size_of::<u32>()
+            (core::mem::size_of::<u32>()
                 + (n as usize) * core::mem::size_of::<HPEN>()
-                + (n as usize) * core::mem::size_of::<HBRUSH>(),
+                + (n as usize) * core::mem::size_of::<HBRUSH>()) as SIZE_T,
         );
         let mut p: LPVOID = pOldCol;
         *(p as *mut DWORD_PTR) = n;
@@ -212,7 +213,7 @@ pub unsafe extern "system" fn GetRawInputDeviceInfoA(
     let mut cbSize: UINT = *pcbSize;
 
     if uiCommand == RIDI_DEVICENAME as UINT && !pData.is_null() {
-        pDataW = HeapAlloc(GetProcessHeap(), 0, cbSize as usize * core::mem::size_of::<WCHAR>());
+        pDataW = HeapAlloc(GetProcessHeap(), 0, (cbSize as usize * core::mem::size_of::<WCHAR>()) as SIZE_T);
         if pDataW.is_null() {
             SetLastError(ERROR_NOT_ENOUGH_MEMORY as DWORD);
             return UINT::MAX;

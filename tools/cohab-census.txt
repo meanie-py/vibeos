@@ -1003,7 +1003,6 @@ dll/win32/advapi32/CMakeLists.txt	1	# sec/safer.c — replaced by Rust (advapi32
 dll/win32/advapi32/CMakeLists.txt	1	# sec/sec.c — replaced by Rust (advapi32-rust)
 dll/win32/advapi32/CMakeLists.txt	1	# sec/trustee.c — replaced by Rust (advapi32-rust)
 dll/win32/advapi32/CMakeLists.txt	1	# service/eventlog.c — replaced by Rust (advapi32-rust)
-dll/win32/advapi32/CMakeLists.txt	1	# service/eventlog_seh.c — native-SEH wrappers restoring the RpcTryExcept the
 dll/win32/advapi32/CMakeLists.txt	1	# service/rpc.c — replaced by Rust (advapi32-rust)
 dll/win32/advapi32/CMakeLists.txt	1	# service/scm.c — replaced by Rust (advapi32-rust)
 dll/win32/advapi32/CMakeLists.txt	1	# service/sctrl.c — replaced by Rust (advapi32-rust)

@@ -1889,10 +1889,10 @@ unsafe fn get_unmarshaler_from_stream(
         }
         /* now create the marshaler specified in the stream */
         hr = CoCreateInstance(
-            core::ptr::addr_of!(objref.u_objref.u_custom.clsid),
+            (core::ptr::addr_of!(objref.u_objref.u_custom.clsid)).cast(),
             core::ptr::null_mut(),
             CLSCTX_INPROC_SERVER,
-            &IID_IMarshal,
+            (&IID_IMarshal as *const crate::marshal::types::GUID).cast(),
             marshal as *mut *mut c_void,
         );
     } else {
@@ -2193,7 +2193,7 @@ pub unsafe extern "system" fn CoMarshalInterThreadInterfaceInStream(
 
     TRACE!("(%s, %p, %p)\n");
 
-    let mut hres = CreateStreamOnHGlobal(core::ptr::null_mut(), TRUE, ppStm);
+    let mut hres = CreateStreamOnHGlobal(core::ptr::null_mut(), TRUE, (ppStm).cast());
     if FAILED(hres) {
         return hres;
     }

@@ -20,6 +20,8 @@
 //!   HvGetCellSize, HvMarkCellDirty, HvIsCellDirty, HvpCreateHiveFreeCellList, HvFreeCell).
 
 use ntkrnl_sys::mm::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::hiveinit::DbgPrint;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{CELL_DATA, CmpAllocate, CmpFree, CmpLazyFlush, HBIN, HCELL, HCELL_INDEX, HHIVE, HSTORAGE_TYPE, HV_HIVE_CELL_PAIR, PHV_TRACK_CELL_REF, HV_TRACK_CELL_REF, RtlSetBits, HSTORAGE_TYPE_Stable as Stable, HSTORAGE_TYPE_Volatile as Volatile, _HHIVE};
 use crate::glue::{HvGetCell, HvReleaseCell, HvGetCellType, HvGetCellBlock, HCELL_NIL, HBLOCK_SIZE};
@@ -38,7 +40,6 @@ unsafe extern "system" {
     fn HvpAddBin(RegistryHive: *mut HHIVE, Size: u32, Storage: HSTORAGE_TYPE) -> *mut HBIN;
 }
 unsafe extern "C" {
-    fn DbgPrint(format: *const u8, ...);
 }
 
 // RtlCheckBit is a FORCEINLINE in the SDK headers (no exported symbol), so we
@@ -500,7 +501,7 @@ pub unsafe extern "system" fn HvTrackCellRef(
     }
 
     // DPRINT("HvTrackCellRef: Static array full, use dynamic array.\n");
-    DbgPrint(b"HvTrackCellRef: Static array full, use dynamic array.\n\0".as_ptr() as *const u8);
+    DbgPrint((b"HvTrackCellRef: Static array full, use dynamic array.\n\0".as_ptr() as *const u8).cast());
 
     if (*CellRef).Max == 0 {
         ntkrnl_sys::ASSERT!((*CellRef).CellArray.is_null());
@@ -515,7 +516,7 @@ pub unsafe extern "system" fn HvTrackCellRef(
         let new_cell_array = CmpAllocate(size as PtrInt, 1u8, TAG_CM) as *mut HV_HIVE_CELL_PAIR;
         if new_cell_array.is_null() {
             // DPRINT1("HvTrackCellRef: Cannot reallocate the reference table.\n");
-            DbgPrint(b"HvTrackCellRef: Cannot reallocate the reference table.\n\0".as_ptr() as *const u8);
+            DbgPrint((b"HvTrackCellRef: Cannot reallocate the reference table.\n\0".as_ptr() as *const u8).cast());
             HvReleaseCell(Hive, Cell);
             return 0;
         }

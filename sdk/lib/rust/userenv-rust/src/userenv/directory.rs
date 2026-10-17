@@ -1,4 +1,6 @@
 use crate::prelude::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::userenv::desktop::wcschr;
 use core::ffi::c_void;
 
 extern "C" {
@@ -6,7 +8,6 @@ extern "C" {
     fn wcscat(dst: *mut u16, src: *const u16) -> *mut u16;
     fn wcscmp(s1: *const u16, s2: *const u16) -> i32;
     fn wcscpy(dst: *mut u16, src: *const u16) -> *mut u16;
-    fn wcschr(s: *const WCHAR, c: i32) -> LPWSTR;
     fn wcslen(s: *const WCHAR) -> usize;
 }
 extern "system" {
@@ -183,7 +184,7 @@ pub unsafe extern "C" fn CreateDirectoryPath(
     }
 
     while !Ptr.is_null() {
-        Ptr = wcschr(Ptr as *const WCHAR, '\\' as i32) as LPWSTR;
+        Ptr = wcschr(Ptr as *const WCHAR, ('\\') as WCHAR) as LPWSTR;
         if !Ptr.is_null() {
             *Ptr = 0 as WCHAR;
         }
@@ -292,7 +293,7 @@ extern "system" {
     fn FindFirstFileW(lpFileName: LPCWSTR, lpFindFileData: *mut WIN32_FIND_DATAW) -> *mut core::ffi::c_void;
     fn FindNextFileW(hFindFile: *mut core::ffi::c_void, lpFindFileData: *mut WIN32_FIND_DATAW) -> BOOL;
     fn GetLastError() -> u32;
-    fn CreateDirectoryW(lpPathName: LPCWSTR, lpSecurityAttributes: LPSECURITY_ATTRIBUTES) -> BOOL;
+    pub fn CreateDirectoryW(lpPathName: LPCWSTR, lpSecurityAttributes: LPSECURITY_ATTRIBUTES) -> BOOL;
     fn DeleteFileW(lpFileName: LPCWSTR) -> i32;
     fn RemoveDirectoryW(lpPathName: LPCWSTR) -> i32;
     fn SetFileAttributesW(lpFileName: LPCWSTR, dwFileAttributes: u32) -> i32;

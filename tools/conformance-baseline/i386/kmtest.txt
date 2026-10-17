@@ -45,6 +45,17 @@
 #   is NEW and LOWERED BY DESIGN: the test's WS03 column wants a 4 GB reservation (ViewSize -1)
 #   to succeed, and it "passed" before only because ViewSize + the offset remainder wrapped to a
 #   small view. It now saturates and is refused INVALID_VIEW_SIZE, the Windows 8 answer.
+# 2026-10-17b (x2 byte-identical sweeps): ZwMapViewOfSection 133/2 -> 134/1: 181 fixed, ZeroBits
+#   21 (MI_MAX_ZERO_BITS is 21 on i386 in the C; the translation had 20, so it was refused
+#   INVALID_PARAMETER_4 before the gap search could answer NO_MEMORY). 292 stays, as above.
+#   HidPDescription 33/4 (3 skipped) -> 50/2: one ReportIDs entry per report ID a collection uses,
+#   each with that ID's own lengths, where the C made one per collection with ReportID = Index
+#   (its FIXME); hidclass routes feature/output requests by looking the ID up there, and now
+#   sizes its read buffer from the collection's longest input report. EXPECTED, left: 169/200,
+#   PreparsedDataLength 476/1388, the size of Windows' own HIDP_PREPARSED_DATA layout (INFERRED,
+#   unverified: both fit a 44-byte header + 104-byte caps + 16-byte link nodes). Ours is the
+#   parser's own context, which every HidP_* routine reads, so matching it is a rewrite of the
+#   preparsed data, not a length fix.
 # 2026-10-15: RtlRangeList pass 521 -> 520: upstream 09a03ec307d deleted one RtlFindRange check.
 #   ZwAllocateVirtualMemory unchanged (269/2): upstream's StressTesting rewrite keeps 1024 x 5 MB here.
 # 2026-10-12: ZwAllocateVirtualMemory pass 258 -> 269, fail 2 (same assertion, now line 145). Upstream's test sync renumbered it (147->145,
@@ -314,17 +325,14 @@ ZwCreateSection OK pass=284 fail=3 skip=1 exit=0
     assert ZwCreateSection.c:354
     assert ZwCreateSection.c:378
     assert ZwCreateSection.c:448
-ZwMapViewOfSection OK pass=133 fail=2 skip=1 exit=0
-    assert ZwMapViewOfSection.c:181
+ZwMapViewOfSection OK pass=134 fail=1 skip=1 exit=0
     assert ZwMapViewOfSection.c:292
 ZwWaitForMultipleObjects OK pass=4 fail=0 skip=0 exit=0
 FileAttributes OK pass=84 fail=0 skip=0 exit=0
 FindFile OK pass=253 fail=0 skip=0 exit=0
-HidPDescription OK pass=33 fail=4 skip=3 exit=0
+HidPDescription OK pass=50 fail=2 skip=0 exit=0
     assert HidPDescription.c:169
-    assert HidPDescription.c:189
     assert HidPDescription.c:200
-    assert HidPDescription.c:204
 IoDeviceObject OK pass=185 fail=4 skip=0 exit=0
     assert IoDeviceObject_drv.c:188
     assert IoDeviceObject_drv.c:189

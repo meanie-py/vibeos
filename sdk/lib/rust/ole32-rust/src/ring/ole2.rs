@@ -1,4 +1,7 @@
 use crate::prelude::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::compobj::ffi::DefWindowProcW;
+use crate::compobj::ffi::RegisterClassW;
 use core::ffi::c_void;
 
 // ---------------------------------------------------------------------------
@@ -226,8 +229,6 @@ extern "system" {
     ) -> LONG;
 
     // user32 — windows / timers / cursors
-    fn RegisterClassW(lpWndClass: *const WNDCLASSW) -> ATOM;
-    fn DefWindowProcW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     fn GetParent(hWnd: HWND) -> HWND;
     fn WindowFromPoint(Point: POINT) -> HWND;
     fn SetTimer(hWnd: HWND, nIDEvent: UINT_PTR, uElapse: UINT, lpTimerFunc: TIMERPROC) -> UINT_PTR;
@@ -708,7 +709,7 @@ unsafe fn WrapDropTarget(hwnd: HWND) -> *mut IDropTarget {
     let This = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<DropTargetWrapper>() as SIZE_T,
+        core::mem::size_of::<DropTargetWrapper>() as usize,
     ) as *mut DropTargetWrapper;
 
     if !This.is_null() {
@@ -734,8 +735,8 @@ unsafe fn get_droptarget_pointer(hwnd: HWND) -> *mut IDropTarget {
 
     if SUCCEEDED(create_stream_from_map(map, &mut stream)) {
         CoUnmarshalInterface(
-            stream,
-            &IID_IDropTarget,
+            (stream).cast(),
+            (&raw const IID_IDropTarget).cast(),
             &mut droptarget as *mut *mut IDropTarget as *mut LPVOID,
         );
         IStream_Release(stream);
@@ -791,9 +792,9 @@ pub unsafe extern "system" fn RegisterDragDrop(hwnd: HWND, pDropTarget: LPDROPTA
         return E_OUTOFMEMORY;
     }
     hr = CoMarshalInterface(
-        stream,
-        &IID_IDropTarget,
-        wrapper as *mut IUnknown,
+        (stream).cast(),
+        (&raw const IID_IDropTarget).cast(),
+        (wrapper as *mut IUnknown).cast(),
         MSHCTX_LOCAL,
         core::ptr::null_mut(),
         MSHLFLAGS_TABLESTRONG,
@@ -810,7 +811,7 @@ pub unsafe extern "system" fn RegisterDragDrop(hwnd: HWND, pDropTarget: LPDROPTA
             let mut zero: LARGE_INTEGER = core::mem::zeroed();
             zero.QuadPart = 0;
             IStream_Seek(stream, zero, STREAM_SEEK_SET, core::ptr::null_mut());
-            CoReleaseMarshalData(stream);
+            CoReleaseMarshalData((stream).cast());
         }
     }
     IStream_Release(stream);
@@ -845,7 +846,7 @@ pub unsafe extern "system" fn RevokeDragDrop(hwnd: HWND) -> HRESULT {
     let mut stream: *mut IStream = core::ptr::null_mut();
     let hr = create_stream_from_map(map, &mut stream);
     if SUCCEEDED(hr) {
-        CoReleaseMarshalData(stream);
+        CoReleaseMarshalData((stream).cast());
         IStream_Release(stream);
     }
     CloseHandle(map);
@@ -1010,7 +1011,7 @@ pub unsafe extern "system" fn DoDragDrop(
 
     if !hwndTrackWindow.is_null() {
         // Capture the mouse input
-        SetCapture(hwndTrackWindow);
+        SetCapture((hwndTrackWindow).cast());
 
         let mut msg: MSG = core::mem::zeroed();
         msg.message = 0;
@@ -1018,7 +1019,7 @@ pub unsafe extern "system" fn DoDragDrop(
         // Pump messages. All mouse input should go to the capture window.
         while trackerInfo.trackingDone == 0
             && GetMessageW(
-                &mut msg as *mut MSG as *mut c_void,
+                (&mut msg as *mut MSG as *mut c_void).cast(),
                 core::ptr::null_mut(),
                 0,
                 0,
@@ -1038,7 +1039,7 @@ pub unsafe extern "system" fn DoDragDrop(
                 OLEDD_TrackStateChange(&mut trackerInfo);
             } else {
                 // Dispatch the messages only when it's not a keyboard message.
-                DispatchMessageW(&msg as *const MSG as *const c_void);
+                DispatchMessageW((&msg as *const MSG as *const c_void).cast());
             }
         }
 
@@ -1332,7 +1333,7 @@ unsafe fn EnumOLEVERB_Construct(
     let This = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<EnumOLEVERB>() as SIZE_T,
+        core::mem::size_of::<EnumOLEVERB>() as usize,
     ) as *mut EnumOLEVERB;
     if This.is_null() {
         RegCloseKey(hkeyVerb);
@@ -1498,10 +1499,10 @@ pub unsafe extern "system" fn OleLoad(
 
     // Now, try and create the handler for the object
     hres = CoCreateInstance(
-        &storageInfo.clsid,
+        (&raw const storageInfo.clsid).cast(),
         core::ptr::null_mut(),
         CLSCTX_INPROC_HANDLER | CLSCTX_INPROC_SERVER,
-        riid,
+        (riid).cast(),
         &mut pUnk as *mut *mut IUnknown as *mut LPVOID,
     );
 
@@ -1653,7 +1654,7 @@ unsafe fn OLEMenu_InstallHooks(tid: DWORD) -> BOOL {
     let pHookItem = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<OleMenuHookItem>() as SIZE_T,
+        core::mem::size_of::<OleMenuHookItem>() as usize,
     ) as *mut OleMenuHookItem;
     if pHookItem.is_null() {
         return 0;
@@ -1889,10 +1890,10 @@ unsafe extern "system" fn OLEMenu_CallWndProc(
 
             // Send this message to the server as well
             SendMessageW(
-                (*pOleMenuDescriptor).hwndActiveObject,
+                ((*pOleMenuDescriptor).hwndActiveObject).cast(),
                 (*pMsg).message,
-                (*pMsg).wParam,
-                (*pMsg).lParam,
+                ((*pMsg).wParam) as usize,
+                ((*pMsg).lParam) as isize,
             );
             return OLEMenu_CallWndProc_nexthook(hOleMenu, pOleMenuDescriptor, code, wParam, lParam);
         }
@@ -1937,10 +1938,10 @@ unsafe extern "system" fn OLEMenu_CallWndProc(
     // If the message was for the server dispatch it accordingly
     if (*pOleMenuDescriptor).bIsServerItem != 0 {
         SendMessageW(
-            (*pOleMenuDescriptor).hwndActiveObject,
+            ((*pOleMenuDescriptor).hwndActiveObject).cast(),
             (*pMsg).message,
-            (*pMsg).wParam,
-            (*pMsg).lParam,
+            ((*pMsg).wParam) as usize,
+            ((*pMsg).lParam) as isize,
         );
     }
 
@@ -2169,7 +2170,7 @@ pub unsafe extern "system" fn IsAccelerator(
     let lpAccelTbl = HeapAlloc(
         GetProcessHeap(),
         0,
-        (cAccelEntries as SIZE_T) * core::mem::size_of::<ACCEL>() as SIZE_T,
+        (cAccelEntries as usize) * core::mem::size_of::<ACCEL>(),
     ) as LPACCEL;
     if lpAccelTbl.is_null() {
         return 0;
@@ -2339,7 +2340,7 @@ unsafe fn OLEDD_Initialize() {
     wndClass.hbrBackground = core::ptr::null_mut();
     wndClass.lpszClassName = OLEDD_DRAGTRACKERCLASS.as_ptr();
 
-    RegisterClassW(&wndClass);
+    RegisterClassW((&raw const wndClass).cast());
 }
 
 /// ole2.c:2150 OLEDD_DragTrackerWindowProc
@@ -2376,7 +2377,7 @@ unsafe extern "system" fn OLEDD_DragTrackerWindowProc(
     }
 
     // This is a window proc after all. Let's call the default.
-    DefWindowProcW(hwnd, uMsg, wParam, lParam)
+    (DefWindowProcW((hwnd).cast(), uMsg, (wParam) as usize, (lParam) as isize)) as _
 }
 
 /// ole2.c:2195 DefaultDragEnter (ReactOS)
@@ -2447,7 +2448,7 @@ unsafe fn DefaultDrop(
         let hGlobal: HGLOBAL = stgm.__bindgen_anon_1.hGlobal;
         if !hGlobal.is_null() {
             if IsWindowUnicode(hwndAccepter) != 0 {
-                PostMessageW(hwndAccepter, WM_DROPFILES, hGlobal as WPARAM, 0);
+                PostMessageW((hwndAccepter).cast(), WM_DROPFILES, hGlobal as usize, 0);
             } else {
                 PostMessageA(hwndAccepter, WM_DROPFILES, hGlobal as WPARAM, 0);
             }
@@ -2802,10 +2803,10 @@ pub unsafe extern "system" fn OleCreate(
     );
 
     let mut hres = CoCreateInstance(
-        rclsid,
+        (rclsid).cast(),
         core::ptr::null_mut(),
         CLSCTX_INPROC_SERVER | CLSCTX_INPROC_HANDLER,
-        riid,
+        (riid).cast(),
         &mut pUnk as *mut *mut IUnknown as *mut LPVOID,
     );
 

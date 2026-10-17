@@ -1,4 +1,6 @@
 use winedebug_rust::{TRACE, WARN};
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::prelude::memcpy;
 use ntdll_sys::nt::*;
 use core::ffi::c_void;
 // NLS substrate: winnls.h types/constants + Wine unicode helpers not in ntdll-sys.
@@ -30,7 +32,6 @@ extern "C" {
     fn strlenW(s: LPCWSTR) -> INT;
     fn tolowerW(ch: u16) -> u16;
     fn debugstr_w(s: *const WCHAR) -> *const u8;
-    fn memcpy(dest: *mut u8, src: *const u8, n: usize) -> *mut u8;
     // Internal cdecl C function (winnls/string/japanese.c — `void JapaneseEra_ClearCache(void)`).
     fn JapaneseEra_ClearCache();
 }
@@ -26571,8 +26572,8 @@ unsafe fn get_registry_locale_info(
             }
 
             memcpy(
-                cached_value as *mut u8,
-                (*info).Data.as_ptr() as *const u8,
+                (cached_value as *mut u8).cast(),
+                ((*info).Data.as_ptr() as *const u8).cast(),
                 ((length - 1) as usize) * core::mem::size_of::<WCHAR>(),
             );
             *cached_value.offset((length - 1) as isize) = 0;
@@ -26657,8 +26658,8 @@ pub unsafe extern "system" fn GetLocaleInfoA(
             if !buffer.is_null() {
                 if ret <= len {
                     memcpy(
-                        buffer as *mut u8,
-                        bufferW as *const u8,
+                        (buffer as *mut u8).cast(),
+                        (bufferW as *const u8).cast(),
                         ret as usize,
                     );
                 } else {
@@ -29518,8 +29519,8 @@ pub unsafe extern "system" fn GetGeoInfoW(
     }
 
     memcpy(
-        data as *mut u8,
-        str as *const u8,
+        (data as *mut u8).cast(),
+        (str as *const u8).cast(),
         (min(len, data_len) as usize) * core::mem::size_of::<WCHAR>(),
     );
     if data_len < len {

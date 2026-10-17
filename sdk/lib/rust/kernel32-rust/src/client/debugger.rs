@@ -1,4 +1,6 @@
 use ntdll_sys::nt::*;
+// The crate's own functions: the definition is the declaration.
+use crate::client::handle::CloseHandle;
 use crate::prelude::*;
 use core::ffi::c_void;
 
@@ -39,7 +41,6 @@ unsafe fn DbgSsSetThreadData(d: PDBGSS_THREAD_DATA) {
 }
 
 extern "system" {
-    fn CloseHandle(hObject: HANDLE) -> BOOL;
     fn OpenMutexW(dwDesiredAccess: DWORD, bInheritHandle: BOOL, lpName: LPCWSTR) -> HANDLE;
     fn CreateMutexW(lpAttrs: LPSECURITY_ATTRIBUTES, bInitialOwner: BOOL, lpName: LPCWSTR) -> HANDLE;
     fn ReleaseMutex(hMutex: HANDLE) -> BOOL;

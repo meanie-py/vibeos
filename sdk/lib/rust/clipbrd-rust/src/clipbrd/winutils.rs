@@ -384,7 +384,9 @@ pub unsafe extern "C" fn HDropFromClipboard(hdc: HDC, lpRect: *const RECT) {
 
     iFile = 0 as UINT;
     while iFile < cFiles {
-        DragQueryFileW(hDrop, iFile, core::ptr::addr_of_mut!(szFile) as LPWSTR, _countof!(szFile) as UINT);
+        // szFile's two spare WCHARs are for the "\r\n" below; the C offered them to
+        // DragQueryFileW too, so a MAX_PATH+1-character name left lstrcatW two short.
+        DragQueryFileW(hDrop, iFile, core::ptr::addr_of_mut!(szFile) as LPWSTR, (_countof!(szFile) - 2) as UINT);
         lstrcatW(core::ptr::addr_of_mut!(szFile) as LPWSTR, RUSTCONV_WSTR_80E09B2F645F.as_ptr());
         pszAlloc = AllocStrCat(pszAlloc, core::ptr::addr_of_mut!(szFile) as LPCWSTR);
         iFile += 1;

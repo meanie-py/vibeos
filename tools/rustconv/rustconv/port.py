@@ -2350,6 +2350,12 @@ def stage_flip(stem: str) -> None:
         )
     _record(state, "flip", started, changed=changed)
     print(f"flip: {cml.relative_to(REPO)} {'rewritten' if changed else 'already flipped'}")
+    # A flip leaves the module linked by cmake around the stub; the cargo cell is the next
+    # step, and `vibeos-cli check` (scan_cmake_linked_rust) fails until it is taken.
+    print(
+        f"next: ./vibeos-cli build on each arch, then "
+        f"python3 tools/cargo_cell_gen.py --convert {state['target']}"
+    )
 
 
 # --------------------------------------------------------------------------------------

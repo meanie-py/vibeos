@@ -1,13 +1,14 @@
 use crate::prelude::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::externs::HeapAlloc;
+use crate::externs::LocalAlloc;
 use core::ffi::c_void;
 
 extern "system" {
     fn SetLastError(dwErrCode: DWORD);
-    fn LocalAlloc(uFlags: u32, uBytes: usize) -> LPVOID;
     fn LocalFree(hMem: LPVOID) -> LPVOID;
     fn WideCharToMultiByte( CodePage: u32, dwFlags: u32, lpWideCharStr: LPCWSTR, cchWideChar: i32, lpMultiByteStr: LPSTR, cbMultiByte: i32, lpDefaultChar: LPCSTR, lpUsedDefaultChar: LPBOOL, ) -> i32;
     fn GetProcessHeap() -> HANDLE;
-    fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: usize) -> LPVOID;
     fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID) -> BOOL;
     fn MultiByteToWideChar( CodePage: UINT, dwFlags: DWORD, lpMultiByteStr: LPCSTR, cbMultiByte: i32, lpWideCharStr: LPWSTR, cchWideChar: i32, ) -> i32;
 }
@@ -585,7 +586,7 @@ pub unsafe extern "system" fn CreateRestrictedToken(
         if SidsToDisable != core::ptr::null_mut() {
             DisableSids = LocalAlloc(
                 LMEM_FIXED,
-                (DisableSidCount as usize) * core::mem::size_of::<TOKEN_GROUPS>(),
+                ((DisableSidCount as usize) * core::mem::size_of::<TOKEN_GROUPS>()) as SIZE_T,
             ) as PTOKEN_GROUPS;
             if DisableSids == core::ptr::null_mut() {
                 SetLastError(RtlNtStatusToDosError(STATUS_INSUFFICIENT_RESOURCES));
@@ -605,7 +606,7 @@ pub unsafe extern "system" fn CreateRestrictedToken(
         if PrivilegesToDelete != core::ptr::null_mut() {
             DeletePrivileges = LocalAlloc(
                 LMEM_FIXED,
-                (DeletePrivilegeCount as usize) * core::mem::size_of::<TOKEN_PRIVILEGES>(),
+                ((DeletePrivilegeCount as usize) * core::mem::size_of::<TOKEN_PRIVILEGES>()) as SIZE_T,
             ) as PTOKEN_PRIVILEGES;
             if DeletePrivileges == core::ptr::null_mut() {
                 SetLastError(RtlNtStatusToDosError(STATUS_INSUFFICIENT_RESOURCES));
@@ -627,7 +628,7 @@ pub unsafe extern "system" fn CreateRestrictedToken(
         if SidsToRestrict != core::ptr::null_mut() {
             RestrictedSids = LocalAlloc(
                 LMEM_FIXED,
-                (RestrictedSidCount as usize) * core::mem::size_of::<TOKEN_GROUPS>(),
+                ((RestrictedSidCount as usize) * core::mem::size_of::<TOKEN_GROUPS>()) as SIZE_T,
             ) as PTOKEN_GROUPS;
             if RestrictedSids == core::ptr::null_mut() {
                 SetLastError(RtlNtStatusToDosError(STATUS_INSUFFICIENT_RESOURCES));
@@ -1207,7 +1208,7 @@ pub unsafe extern "system" fn LookupPrivilegeDisplayNameA(
         let lpDisplayNameW: LPWSTR = HeapAlloc(
             GetProcessHeap(),
             0,
-            (wLen as usize) * core::mem::size_of::<u16>(),
+            ((wLen as usize) * core::mem::size_of::<u16>()) as SIZE_T,
         ) as LPWSTR;
 
         ret = LookupPrivilegeDisplayNameW(
@@ -1276,7 +1277,7 @@ pub unsafe extern "system" fn LookupPrivilegeNameA(
         let lpNameW: LPWSTR = HeapAlloc(
             GetProcessHeap(),
             0,
-            (wLen as usize) * core::mem::size_of::<u16>(),
+            ((wLen as usize) * core::mem::size_of::<u16>()) as SIZE_T,
         ) as LPWSTR;
 
         ret = LookupPrivilegeNameW(lpSystemNameW.Buffer, lpLuid, lpNameW, &mut wLen);
@@ -1747,7 +1748,7 @@ pub unsafe extern "system" fn LookupAccountNameA(
         lpReferencedDomainNameW = HeapAlloc(
             GetProcessHeap(),
             0,
-            (*hReferencedDomainNameLength as usize) * core::mem::size_of::<u16>(),
+            ((*hReferencedDomainNameLength as usize) * core::mem::size_of::<u16>()) as SIZE_T,
         ) as LPWSTR;
     }
 
@@ -2577,7 +2578,7 @@ pub unsafe extern "system" fn ConvertStringSecurityDescriptorToSecurityDescripto
     let StringSecurityDescriptorW = HeapAlloc(
         GetProcessHeap(),
         0,
-        (len as usize) * core::mem::size_of::<WCHAR>(),
+        ((len as usize) * core::mem::size_of::<WCHAR>()) as SIZE_T,
     ) as LPWSTR;
 
     if !StringSecurityDescriptorW.is_null() {
@@ -2635,7 +2636,7 @@ pub unsafe extern "system" fn ConvertStringSecurityDescriptorToSecurityDescripto
             break 'lend;
         }
 
-        psd = LocalAlloc(GMEM_ZEROINIT, cBytes as usize) as *mut _SECURITY_DESCRIPTOR;
+        psd = LocalAlloc(GMEM_ZEROINIT, (cBytes) as SIZE_T) as *mut _SECURITY_DESCRIPTOR;
         *SecurityDescriptor = psd as PSECURITY_DESCRIPTOR;
         if psd.is_null() {
             break 'lend;
@@ -3041,7 +3042,7 @@ pub unsafe extern "system" fn ConvertSecurityDescriptorToStringSecurityDescripto
         }
     }
 
-    wstr = LocalAlloc(0, ((len + 1) as usize * core::mem::size_of::<WCHAR>()) as usize) as *mut WCHAR;
+    wstr = LocalAlloc(0, ((len + 1) as usize * core::mem::size_of::<WCHAR>()) as SIZE_T) as *mut WCHAR;
     wptr = wstr;
     if wstr.is_null() {
         return 0;
@@ -3207,7 +3208,7 @@ pub unsafe extern "system" fn ConvertSidToStringSidW(
 
     *StringSid = LocalAlloc(
         LMEM_FIXED,
-        (UnicodeString.Length as usize + core::mem::size_of::<WCHAR>()) as usize,
+        (UnicodeString.Length as usize + core::mem::size_of::<WCHAR>()) as SIZE_T,
     ) as LPWSTR;
     if (*StringSid).is_null() {
         if UnicodeString.Buffer != FixedBuffer.as_mut_ptr() {
@@ -3263,7 +3264,7 @@ pub unsafe extern "system" fn ConvertSidToStringSidA(
         return 0;
     }
 
-    *StringSid = LocalAlloc(LMEM_FIXED, Len as usize) as LPSTR;
+    *StringSid = LocalAlloc(LMEM_FIXED, (Len) as SIZE_T) as LPSTR;
     if (*StringSid).is_null() {
         LocalFree(StringSidW as LPVOID);
         SetLastError(ERROR_NOT_ENOUGH_MEMORY);

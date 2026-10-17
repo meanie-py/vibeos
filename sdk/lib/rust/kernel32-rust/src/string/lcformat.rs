@@ -1,4 +1,6 @@
 use winedebug_rust::{ERR, TRACE, WARN};
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::prelude::memcpy;
 use ntdll_sys::nt::*;
 use core::ffi::c_void;
 // NLS substrate: winnls.h types/constants + Wine unicode helpers not in ntdll-sys.
@@ -35,7 +37,6 @@ extern "system" {
     fn SystemTimeToFileTime(lpSystemTime: *const SYSTEMTIME, lpFileTime: LPFILETIME) -> BOOL;
 }
 extern "C" {
-    fn memcpy(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void;
     // Wine debug macros — variadic, no-op. Local decls shadow the fixed-arg
     // nls_subst #[no_mangle] bodies for the printf-style call sites here.
     fn FIXME(fmt: *const i8, ...);

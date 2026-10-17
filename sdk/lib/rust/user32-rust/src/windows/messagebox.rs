@@ -1,4 +1,9 @@
 use crate::internal::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::windows::dialog::CreateFontIndirectW;
+use crate::windows::message::GlobalAlloc;
+// The crate's own functions: the definition is the declaration.
+use crate::windows::font::DrawTextW;
 use crate::ntwrapper::*;
 use win32k_sys::win32k::*;
 use core::ffi::c_void;
@@ -49,10 +54,8 @@ extern "C" {
 // gdi32 / user32 / kernel32 public WINAPI (stdcall) exports — resolve via the
 // respective import libs (gdi32/kernel32) or within user32.dll (still-C TUs).
 extern "system" {
-    fn CreateFontIndirectW(lplf: *mut core::ffi::c_void) -> HFONT;
     fn DeleteObject(ho: *mut core::ffi::c_void) -> BOOL;
     fn DialogBoxIndirectParamW( hInstance: HINSTANCE, hDialogTemplate: *mut DLGTEMPLATE, hWndParent: HWND, lpDialogFunc: DLGPROC, dwInitParam: LPARAM, ) -> INT_PTR;
-    fn DrawTextW(hdc: HDC, lpchText: LPCWSTR, cchText: INT, lprc: *mut RECT, format: UINT) -> INT;
     fn GetDialogBaseUnits() -> core::ffi::c_long;
     fn GetLastError() -> DWORD;
     fn GetSystemMetrics(nIndex: INT) -> INT;
@@ -94,7 +97,6 @@ extern "system" {
 
     // kernel32 (winbase.h) public exports.
     fn GetProcessHeap() -> *mut core::ffi::c_void;
-    fn GlobalAlloc(uFlags: UINT, dwBytes: SIZE_T) -> HGLOBAL;
     fn GlobalLock(hMem: HGLOBAL) -> LPVOID;
     fn GlobalUnlock(hMem: HGLOBAL) -> BOOL;
     fn GlobalFree(hMem: HGLOBAL) -> HGLOBAL;
@@ -900,7 +902,7 @@ pub unsafe extern "system" fn SoftModalMessageBox(lpMsgBoxData: LPMSGBOXDATA) ->
             core::ptr::addr_of_mut!(nclm) as *mut core::ffi::c_void,
             0,
         );
-        hFont = CreateFontIndirectW(core::ptr::addr_of_mut!(nclm.lfMessageFont) as *mut core::ffi::c_void);
+        hFont = CreateFontIndirectW(core::ptr::addr_of!(nclm.lfMessageFont).cast());
         if hFont.is_null() {
             break 'quit;
         }

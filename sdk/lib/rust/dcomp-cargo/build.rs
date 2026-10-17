@@ -15,9 +15,9 @@ fn main() {
     };
 
     let link_order: &[&str] = match arch.as_str() {
-        "x86" => &["body", "engine:wine", "sdk/lib/libwine/libwine_dll_canunload.a", "import:msvcrt", "import:kernel32", "import:ntdll", "engine:oldnames"],
-        "x86_64" => &["body", "engine:wine", "sdk/lib/libwine/libwine_dll_canunload.a", "import:msvcrt", "import:kernel32", "import:ntdll", "engine:oldnames"],
-        "aarch64" => &["body", "engine:wine", "sdk/lib/libwine/libwine_dll_canunload.a", "import:msvcrt", "import:kernel32", "import:ntdll", "engine:oldnames"],
+        "x86" => &["body", "engine:wine", "engine:c:wine_dll_canunload", "import:msvcrt", "import:kernel32", "import:ntdll", "engine:oldnames"],
+        "x86_64" => &["body", "engine:wine", "engine:c:wine_dll_canunload", "import:msvcrt", "import:kernel32", "import:ntdll", "engine:oldnames"],
+        "aarch64" => &["body", "engine:wine", "engine:c:wine_dll_canunload", "import:msvcrt", "import:kernel32", "import:ntdll", "engine:oldnames"],
         _ => unreachable!(),
     };
 

@@ -200,3 +200,110 @@ pub(crate) unsafe fn mem_copy_backward(d: *mut u8, s: *const u8, n: usize) {
         );
     }
 }
+
+// ---------------------------------------------------------------------------------------------
+// NUL scans (`cstr_slice` / `wcstr_slice`, so strlen, wcslen and every string function that
+// measures its argument first). The count is in ELEMENTS. x86 uses `repne scas`; arm64 reads
+// aligned 8-byte words, which never cross a page, and tests each for a zero element with the
+// (w - 0x01..) & !w & 0x80.. trick, then finds which element byte by byte. A wide string at an
+// odd address never reaches 8-alignment and is scanned a halfword at a time throughout.
+// ---------------------------------------------------------------------------------------------
+
+#[cfg(target_arch = "aarch64")]
+pub(crate) unsafe fn str_len8(p: *const u8) -> usize {
+    let mut q = p;
+    core::arch::asm!(
+        "2:",
+        "tst {q}, #7",
+        "b.eq 3f",
+        "ldrb {t:w}, [{q}]",
+        "cbz {t:w}, 6f",
+        "add {q}, {q}, #1",
+        "b 2b",
+        "3:",
+        "ldr {t}, [{q}]",
+        "sub {u}, {t}, {ones}",
+        "bic {u}, {u}, {t}",
+        "tst {u}, {highs}",
+        "b.ne 4f",
+        "add {q}, {q}, #8",
+        "b 3b",
+        "4:",
+        "ldrb {t:w}, [{q}]",
+        "cbz {t:w}, 6f",
+        "add {q}, {q}, #1",
+        "b 4b",
+        "6:",
+        q = inout(reg) q,
+        t = out(reg) _,
+        u = out(reg) _,
+        ones = in(reg) 0x0101_0101_0101_0101u64,
+        highs = in(reg) 0x8080_8080_8080_8080u64,
+        options(nostack, readonly),
+    );
+    q as usize - p as usize
+}
+
+#[cfg(target_arch = "aarch64")]
+pub(crate) unsafe fn str_len16(p: *const u16) -> usize {
+    let mut q = p;
+    core::arch::asm!(
+        "2:",
+        "tst {q}, #7",
+        "b.eq 3f",
+        "ldrh {t:w}, [{q}]",
+        "cbz {t:w}, 6f",
+        "add {q}, {q}, #2",
+        "b 2b",
+        "3:",
+        "ldr {t}, [{q}]",
+        "sub {u}, {t}, {ones}",
+        "bic {u}, {u}, {t}",
+        "tst {u}, {highs}",
+        "b.ne 4f",
+        "add {q}, {q}, #8",
+        "b 3b",
+        "4:",
+        "ldrh {t:w}, [{q}]",
+        "cbz {t:w}, 6f",
+        "add {q}, {q}, #2",
+        "b 4b",
+        "6:",
+        q = inout(reg) q,
+        t = out(reg) _,
+        u = out(reg) _,
+        ones = in(reg) 0x0001_0001_0001_0001u64,
+        highs = in(reg) 0x8000_8000_8000_8000u64,
+        options(nostack, readonly),
+    );
+    (q as usize - p as usize) / 2
+}
+
+// rcx counts down from -1 over every element read, the NUL included: !rcx - 1 is the length.
+#[cfg(target_arch = "x86_64")]
+pub(crate) unsafe fn str_len8(p: *const u8) -> usize {
+    let c: usize;
+    core::arch::asm!("repne scasb", inout("rdi") p => _, inout("rcx") usize::MAX => c, in("al") 0u8, options(nostack, readonly));
+    !c - 1
+}
+
+#[cfg(target_arch = "x86_64")]
+pub(crate) unsafe fn str_len16(p: *const u16) -> usize {
+    let c: usize;
+    core::arch::asm!("repne scasw", inout("rdi") p => _, inout("rcx") usize::MAX => c, in("ax") 0u16, options(nostack, readonly));
+    !c - 1
+}
+
+#[cfg(target_arch = "x86")]
+pub(crate) unsafe fn str_len8(p: *const u8) -> usize {
+    let c: usize;
+    core::arch::asm!("repne scasb", inout("edi") p => _, inout("ecx") usize::MAX => c, in("al") 0u8, options(nostack, readonly));
+    !c - 1
+}
+
+#[cfg(target_arch = "x86")]
+pub(crate) unsafe fn str_len16(p: *const u16) -> usize {
+    let c: usize;
+    core::arch::asm!("repne scasw", inout("edi") p => _, inout("ecx") usize::MAX => c, in("ax") 0u16, options(nostack, readonly));
+    !c - 1
+}

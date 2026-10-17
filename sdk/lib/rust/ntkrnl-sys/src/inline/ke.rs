@@ -596,7 +596,7 @@ pub unsafe fn KxReleaseSpinLock(spin_lock: *mut ULONG_PTR) {
     core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
 }
 
-/// In-stack queued spinlocks as NT has them (an MCS lock), i386 only: `*SpinLock` holds
+/// In-stack queued spinlocks as NT has them (an MCS lock), on every arch: `*SpinLock` holds
 /// the TAIL of the waiter queue, and each `KSPIN_LOCK_QUEUE.Lock` carries LQ_WAIT (bit 0)
 /// while its owner waits and LQ_OWN (bit 1) while it holds the lock. The C's queued
 /// routines are `#if 0` ("broken": they exchange on `LockHandle->Next`, not the lock) and
@@ -611,12 +611,13 @@ pub unsafe fn KxReleaseSpinLock(spin_lock: *mut ULONG_PTR) {
 /// `KeAcquireQueuedSpinLock*` family stays plain because it only ever takes the PRCB's
 /// LockQueue[] entries. A plain acquire on a queued lock would see a pointer (bit 0
 /// clear) and "take" it beside the owner.
-#[cfg(target_arch = "x86")]
+///
+/// amd64 and arm64 moved onto it 2026-10-17. Their in-stack callers are the same shared
+/// code (ke-inlines, ntkrnl-sys inlines, ex, storport, classpnp), so the audit above holds;
+/// what differed was only where the exports live (ntoskrnl on amd64, hal.dll on arm64).
 pub const LQ_WAIT: usize = 1;
-#[cfg(target_arch = "x86")]
 pub const LQ_OWN: usize = 2;
 
-#[cfg(target_arch = "x86")]
 #[inline]
 pub unsafe fn KxAcquireInStackQueuedSpinLock(queue: *mut ddk::KSPIN_LOCK_QUEUE) {
     use core::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
@@ -639,7 +640,6 @@ pub unsafe fn KxAcquireInStackQueuedSpinLock(queue: *mut ddk::KSPIN_LOCK_QUEUE) 
     }
 }
 
-#[cfg(target_arch = "x86")]
 #[inline]
 pub unsafe fn KxReleaseInStackQueuedSpinLock(queue: *mut ddk::KSPIN_LOCK_QUEUE) {
     use core::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};

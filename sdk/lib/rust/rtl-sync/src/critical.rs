@@ -1,11 +1,9 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{EXCEPTION_RECORD, LARGE_INTEGER, LIST_ENTRY, LOGICAL, NtClose, NtCreateEvent, NtReleaseKeyedEvent, NtSetEvent, NtWaitForKeyedEvent, NtWaitForSingleObject, PRTL_CRITICAL_SECTION, PRTL_CRITICAL_SECTION_DEBUG, RTL_CRITICAL_SECTION, RTL_CRITICAL_SECTION_DEBUG, RtlAllocateHeap, RtlFreeHeap, RtlRaiseException, _EVENT_TYPE_SynchronizationEvent};
 // NtCurrentTeb comes from crate::shared (inline asm), NOT ddk (which has no defined symbol).
-use core::ffi::c_void;
 use ntkrnl_sys::mm::HANDLE;
 use ntkrnl_sys::inline::common::InterlockedCompareExchange;
 

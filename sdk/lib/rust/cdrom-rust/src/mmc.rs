@@ -1,5 +1,11 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use crate::types::*;
+// The crate's own functions: the definition is the declaration.
+use crate::common::DeviceFindFeaturePage;
+use crate::common::DeviceSendSrbSynchronously;
+use crate::ddk_shims::ScratchBuffer_ExecuteCdb;
+use crate::scratch::ScratchBuffer_ExecuteCdbEx;
+use crate::ddk_shims::WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE;
 use kmdf_sys::*;
 use ntkrnl_sys::ddk::{IRP, PIRP, IO_STACK_LOCATION, PIO_STACK_LOCATION, GUID, LPGUID, LPCGUID, DEVICE_OBJECT, PDEVICE_OBJECT, MDL, PMDL};
 use ntkrnl_sys::globals::*;
@@ -12,7 +18,6 @@ use core::ffi::c_void;
 
 extern "system" {
     fn DeviceGetExtension(Device: WDFDEVICE) -> *mut CDROM_DEVICE_EXTENSION;
-    fn DeviceSendSrbSynchronously( Device: WDFDEVICE, Srb: *mut SCSI_REQUEST_BLOCK, Buffer: *mut core::ffi::c_void, BufferSize: u32, ForcePIO: i32, Unknown: *mut core::ffi::c_void, ) -> NTSTATUS;
 }
 
 // WPP tracing constants. These are C *compile-time* constants (`storswtr.h`), NOT linkable
@@ -31,16 +36,13 @@ const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:26-30
 extern "system" {
     fn ScratchBuffer_BeginUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_EndUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
-    fn ScratchBuffer_ExecuteCdb( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, unknown: *mut core::ffi::c_void, transferSize: u32, flag: i32, cdb: *const CDB, cdbLength: u32, ) -> NTSTATUS;
-    fn ScratchBuffer_ExecuteCdbEx( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Param1: *mut core::ffi::c_void, TransferSize: u32, Flag: u8, /* BOOLEAN TRUE -> 1 */ Cdb: *const CDB, CdbLength: u32, Timeout: u32, ) -> i32; // NTSTATUS
-    fn WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE( attributes: *mut WDF_OBJECT_ATTRIBUTES, context_type_info: *const core::ffi::c_void, );
+// NTSTATUS
 }
 unsafe extern "C" {
     fn ConvertSectorsPerSecondTo100nsUnitsFor64kWrite(SectorsPerSecond: u32) -> i64;
     fn InterlockedCompareExchange( Destination: *mut i32, Exchange: i32, Comperand: i32, ) -> i32;
 }
 unsafe extern "C" {
-    fn DeviceFindFeaturePage( Buffer: *mut GET_CONFIGURATION_HEADER, Length: u32, Feature: FEATURE_NUMBER, ) -> *mut FEATURE_HEADER;
 }
 
 const TRACE_LEVEL_WARNING: u32 = 3; // storswtr.h:26-30
@@ -164,7 +166,7 @@ pub unsafe extern "C" fn DeviceAllocateMmcResources(Device: WDFDEVICE) -> NTSTAT
     // Init WDF object attributes for the request context
     WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(
         &raw mut attributes,
-        &raw const _WDF_CDROM_REQUEST_CONTEXT_TYPE_INFO as *const core::ffi::c_void,
+        (&raw const _WDF_CDROM_REQUEST_CONTEXT_TYPE_INFO as *const core::ffi::c_void).cast(),
     );
 
     status = WdfRequestCreateFromIrp(
@@ -935,8 +937,8 @@ pub unsafe extern "C" fn DeviceRetryTimeDetectionBasedOnModePage2A(
         core::ptr::null_mut(),
         transferSize,
         1,
-        &cdb,
-        10u32,
+        &raw mut cdb,
+        (10u32) as u8,
     );
     if NT_SUCCESS(status) {
         let header = (*DeviceExtension).ScratchContext.ScratchBuffer as *const MODE_PARAMETER_HEADER10;
@@ -1125,7 +1127,7 @@ pub unsafe extern "C" fn DeviceRetryTimeDetectionBasedOnGetPerformance(
             core::ptr::null_mut(),
             transferSize,
             1, // TRUE
-            &cdb as *const CDB,
+            (&cdb as *const CDB).cast_mut(),
             12,
             CDROM_GET_PERFORMANCE_TIMEOUT,
         )

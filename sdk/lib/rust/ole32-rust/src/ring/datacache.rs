@@ -367,7 +367,7 @@ unsafe fn DataCache_CreateEntry(
     let entry: *mut DataCacheEntry = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<DataCacheEntry>() as SIZE_T,
+        core::mem::size_of::<DataCacheEntry>() as usize,
     ) as *mut DataCacheEntry;
     if entry.is_null() {
         return E_OUTOFMEMORY;
@@ -455,7 +455,7 @@ unsafe fn read_clipformat(stream: *mut IStream, clipformat: *mut CLIPFORMAT) -> 
         }
         *clipformat = cf as CLIPFORMAT;
     } else {
-        let format_name = HeapAlloc(GetProcessHeap(), 0, length as SIZE_T) as *mut c_char;
+        let format_name = HeapAlloc(GetProcessHeap(), 0, length as usize) as *mut c_char;
         if format_name.is_null() {
             return E_OUTOFMEMORY;
         }
@@ -574,7 +574,7 @@ unsafe fn synthesize_emf(data: HMETAFILEPICT, med: *mut STGMEDIUM) -> HRESULT {
     }
 
     let size: UINT = GetMetaFileBitsEx((*pict).hMF, 0, core::ptr::null_mut());
-    let bits: LPVOID = HeapAlloc(GetProcessHeap(), 0, size as SIZE_T);
+    let bits: LPVOID = HeapAlloc(GetProcessHeap(), 0, size as usize);
     if !bits.is_null() {
         GetMetaFileBitsEx((*pict).hMF, size, bits);
         (*med).__bindgen_anon_1.hEnhMetaFile =
@@ -649,7 +649,7 @@ unsafe fn load_mf_pict(cache_entry: *mut DataCacheEntry, stm: *mut IStream) -> H
     }
     let mfpict: *mut METAFILEPICT = GlobalLock(hmfpict) as *mut METAFILEPICT;
 
-    let bits: LPVOID = HeapAlloc(GetProcessHeap(), 0, stat.cbSize.u.LowPart as SIZE_T);
+    let bits: LPVOID = HeapAlloc(GetProcessHeap(), 0, stat.cbSize.u.LowPart as usize);
     if bits.is_null() {
         GlobalFree(hmfpict);
         return E_OUTOFMEMORY;
@@ -873,7 +873,7 @@ unsafe fn load_emf(cache_entry: *mut DataCacheEntry, stm: *mut IStream) -> HRESU
 
         if SUCCEEDED(hr) {
             let data: *mut BYTE =
-                HeapAlloc(GetProcessHeap(), 0, stat.cbSize.u.LowPart as SIZE_T) as *mut BYTE;
+                HeapAlloc(GetProcessHeap(), 0, stat.cbSize.u.LowPart as usize) as *mut BYTE;
             if data.is_null() {
                 return E_OUTOFMEMORY;
             }
@@ -1087,7 +1087,7 @@ unsafe fn save_mfpict(entry: *mut DataCacheEntry, contents: BOOL, stream: *mut I
             header.dwObjectExtentX = (*mfpict).xExt as DWORD;
             header.dwObjectExtentY = (*mfpict).yExt as DWORD;
             header.dwSize = data_size as DWORD;
-            data = HeapAlloc(GetProcessHeap(), 0, header.dwSize as SIZE_T);
+            data = HeapAlloc(GetProcessHeap(), 0, header.dwSize as usize);
             if data.is_null() {
                 GlobalUnlock((*entry).stgmedium.__bindgen_anon_1.hMetaFilePict);
                 return E_OUTOFMEMORY;
@@ -1115,7 +1115,7 @@ unsafe fn save_mfpict(entry: *mut DataCacheEntry, contents: BOOL, stream: *mut I
             return DV_E_STGMEDIUM;
         }
         data_size = GetMetaFileBitsEx((*mfpict).hMF, 0, core::ptr::null_mut()) as c_int;
-        data = HeapAlloc(GetProcessHeap(), 0, data_size as SIZE_T);
+        data = HeapAlloc(GetProcessHeap(), 0, data_size as usize);
         if data.is_null() {
             GlobalUnlock((*entry).stgmedium.__bindgen_anon_1.hMetaFilePict);
             return E_OUTOFMEMORY;
@@ -1183,7 +1183,7 @@ unsafe fn save_emf(entry: *mut DataCacheEntry, contents: BOOL, stream: *mut IStr
             hdc,
         ) as c_int;
         header.dwSize = data_size as DWORD;
-        data = HeapAlloc(GetProcessHeap(), 0, header.dwSize as SIZE_T) as *mut BYTE;
+        data = HeapAlloc(GetProcessHeap(), 0, header.dwSize as usize) as *mut BYTE;
         if data.is_null() {
             ReleaseDC(core::ptr::null_mut(), hdc);
             return E_OUTOFMEMORY;
@@ -1226,7 +1226,7 @@ unsafe fn save_emf(entry: *mut DataCacheEntry, contents: BOOL, stream: *mut IStr
         data = HeapAlloc(
             GetProcessHeap(),
             0,
-            (DW + emh + data_size as usize) as SIZE_T,
+            (DW + emh + data_size as usize) as usize,
         ) as *mut BYTE;
         if data.is_null() {
             return E_OUTOFMEMORY;
@@ -3415,7 +3415,7 @@ unsafe fn DataCache_Construct(clsid: *const CLSID, pUnkOuter: *mut IUnknown) -> 
     let newObject: *mut DataCache = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<DataCache>() as SIZE_T,
+        core::mem::size_of::<DataCache>() as usize,
     ) as *mut DataCache;
 
     if newObject.is_null() {

@@ -1,5 +1,10 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
-use ntkrnl_sys::base::*;
+// One declaration per external symbol: ddk_shims.rs.
+use crate::ddk_shims::CdFreePool;
+// The crate's own functions: the definition is the declaration.
+use crate::dirsup::CdLookupNextDirent;
+use crate::ddk_shims::CdRaiseStatus;
+use crate::dirsup::CdUpdateDirentFromRawDirent;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{FSRTL_ADVANCED_FCB_HEADER};
@@ -11,7 +16,6 @@ use crate::glue::{CDFS_BUG_CHECK_ALLOCSUP, CD_ATTRIBUTE_MULTI, CDFS_NTC_FCB_DATA
 
 // _CdFreePool((PVOID*)(x)) — real symbol provided by the cdfs glue/strucsup layer.
 extern "C" {
-    fn CdFreePool(Pool: *mut *mut core::ffi::c_void);
 }
 
 // Callees for CdLookupAllocation, provided by sibling cdfs modules.
@@ -22,7 +26,6 @@ extern "C" {
     fn CdUnlockFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
 }
 extern "C" {
-    fn CdRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS) -> !;
 }
 extern "C" {
     fn CdAcquireFileShared(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
@@ -54,20 +57,8 @@ extern "C" {
     );
 }
 extern "C" {
-    fn CdUpdateDirentFromRawDirent(
-        IrpContext: *mut IRP_CONTEXT,
-        Fcb: *mut FCB,
-        DirContext: *mut DIRENT_ENUM_CONTEXT,
-        Dirent: *mut DIRENT,
-    );
 }
 extern "C" {
-    fn CdLookupNextDirent(
-        IrpContext: *mut IRP_CONTEXT,
-        Fcb: *mut FCB,
-        CurrentDirContext: *mut DIRENT_ENUM_CONTEXT,
-        NextDirContext: *mut DIRENT_ENUM_CONTEXT,
-    ) -> i32;
 }
 extern "C" {
     fn CdQueryFidDirentOffset(FileId: FILE_ID) -> u32;

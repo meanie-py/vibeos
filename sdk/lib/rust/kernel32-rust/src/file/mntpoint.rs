@@ -1,4 +1,7 @@
 use ntdll_sys::nt::*;
+// The crate's own functions: the definition is the declaration.
+use crate::file::create::CreateFileW;
+use crate::file::deviceio::DeviceIoControl;
 use crate::prelude::*;
 use core::ffi::c_void;
 
@@ -40,8 +43,6 @@ pub const MOUNTMGR_DOS_DEVICE_NAME: LPCWSTR = MOUNTMGR_DOS_DEVICE_NAME_BUF.as_pt
 
 extern "system" {
     fn GetDriveTypeW(lpRootPathName: LPCWSTR) -> DWORD;
-    fn CreateFileW( lpFileName: LPCWSTR, dwDesiredAccess: DWORD, dwShareMode: DWORD, lpSecurityAttributes: *mut core::ffi::c_void, dwCreationDisposition: DWORD, dwFlagsAndAttributes: DWORD, hTemplateFile: HANDLE, ) -> HANDLE;
-    fn DeviceIoControl( hDevice: HANDLE, dwIoControlCode: DWORD, lpInBuffer: *mut core::ffi::c_void, nInBufferSize: DWORD, lpOutBuffer: *mut core::ffi::c_void, nOutBufferSize: DWORD, lpBytesReturned: LPDWORD, lpOverlapped: *mut core::ffi::c_void, ) -> BOOL;
     fn GetLastError() -> DWORD;
     fn MOUNTMGR_IS_NT_VOLUME_NAME(VolumeName: PUNICODE_STRING) -> BOOLEAN;
     fn MOUNTMGR_IS_DOS_VOLUME_NAME_WB(VolumeName: PUNICODE_STRING) -> BOOLEAN;

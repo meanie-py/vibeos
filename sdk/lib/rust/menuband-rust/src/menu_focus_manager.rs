@@ -1,4 +1,6 @@
 use crate::prelude::*;
+// One declaration per external symbol: the variant matching the C prototype.
+use crate::menu_band::IUnknown_QueryService;
 use crate::menu_band::CMenuBand;
 use crate::menu_band::CMenuToolbarBase;
 use crate::menu_focus_manager_support::s_GetMsgHook;
@@ -20,7 +22,7 @@ pub struct StackEntry {
 // Deterministic COM scaffold for CMenuFocusManager; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    #[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
+    #[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: SIZE_T) -> *mut core::ffi::c_void;
     #[link_name = "HeapFree"] fn cpp_com_HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn MenuBandRustModuleLock();
     fn MenuBandRustModuleUnlock();
@@ -30,7 +32,7 @@ impl CppComSize for usize { fn cpp_com_size(self) -> usize { self } }
 impl CppComSize for u32 { fn cpp_com_size(self) -> usize { self as usize } }
 #[inline]
 unsafe fn HeapAlloc<N: CppComSize>(heap: HANDLE, flags: DWORD, bytes: N) -> *mut core::ffi::c_void {
-    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size())
+    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size() as SIZE_T)
 }
 #[inline]
 unsafe fn HeapFree<T>(heap: HANDLE, flags: DWORD, memory: *mut T) -> BOOL {
@@ -187,7 +189,6 @@ extern "C" {
 }
 
 extern "system" {
-    fn IUnknown_QueryService(object: *mut IUnknown, service: REFGUID, riid: REFIID, out: *mut *mut core::ffi::c_void) -> HRESULT;
 }
 
 extern "C" {
@@ -473,7 +474,7 @@ pub unsafe fn CMenuFocusManager_IsTrackedWindowOrParent_body(this: *mut CMenuFoc
                 if (((hr) < 0)) {
                     continue;
                 }
-                hr = IUnknown_QueryService(site, core::ptr::addr_of!(SID_SMenuBandParent), core::ptr::addr_of!(IID_IOleWindow), core::ptr::addr_of_mut!(pw).cast());
+                hr = IUnknown_QueryService((site).cast(), core::ptr::addr_of!(SID_SMenuBandParent), core::ptr::addr_of!(IID_IOleWindow), core::ptr::addr_of_mut!(pw).cast());
                 if (((hr) < 0)) {
                     continue;
                 }
