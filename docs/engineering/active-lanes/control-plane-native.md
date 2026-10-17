@@ -33,18 +33,19 @@ Haiku spend on this lane's current $10 allowance: about $6.13.
 
 ## Owed (small)
 
-- **The call seal counts calls in dead `#ifdef` arms.** rundll32 had to keep the dead
-  non-UNICODE `strncpy` arm as `if false { .. }` to satisfy it. The seal should only count
-  the arm the compile takes.
-- **`_countof!` returns `u32` where callers compare with `usize`.** It recurred across Wave I
-  (kbswitch, others) and was cast by hand each time; settle the macro's type once.
-- **A merge driver for `gen_driver_types.sh`** (shared with CRT's owed list). Wave I
-  conflicted on it three times in one night against lanes landing just ahead; each time the
-  fix was the union of `case` arms, rebuilt from master's copy plus ours. A git
-  `merge=union`-style driver that understands arms would remove the whole class.
-  `sdk/lib/rust/Cargo.toml` members and `tools/cohab-census.txt` conflict the same way (the
-  census is regenerated with `python3 tools/cohab_census.py --write`; `Cargo.lock` is
-  master's plus `cargo metadata --offline`).
+Re-checked by the CRT lane on 2026-10-17, and verified against the tree:
+
+- **The call seal treats calls in the LIVE `#ifdef` arm as optional**, not (as first
+  written here) dead-arm calls as required: `dead_regions.preprocessor_conditional_spans`
+  makes every arm of a body's `#if` one dead span, so a model that drops a compiled call
+  passes the seal. Fix: decide arms with `dead_regions.cond_truth` plus the TU's own `-D`
+  set (UNICODE is per module) plumbed into `seal_calls`. Making live-arm calls required
+  will fail the replay audit of any banked body that dropped one, so it wants a bank-wide
+  re-audit before it lands. Translation tooling: the CRT lane's to schedule.
+- ~~`_countof!` returns `u32`~~: deliberate (win32macros-rust, lib.rs `_countof`), not owed.
+- ~~A merge driver for `gen_driver_types.sh`~~: done, `tools/merge_drivers.py` (case arms and
+  the census, via `.gitattributes`), 2026-10-16. `sdk/lib/rust/Cargo.toml` members are not
+  covered yet; the integrator resolves those.
 
 ## Open threads (2026-10-16)
 

@@ -884,7 +884,12 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
             )
         extra.append(shims)
     if cell.rc:
-        rc_name = Path(cell.rc).name
+        # The path cmake's own source list spells, not the bare name: tdi's is
+        # misc/tdi.rc, and `add_library(tdi_res OBJECT tdi.rc)` names a file that does
+        # not exist ("No SOURCES given to target: tdi_res").
+        name = Path(cell.rc).name
+        spelled = re.findall(rf"(?<![\w/.${{}}-])([\w./-]*{re.escape(name)})(?![\w.])", text)
+        rc_name = spelled[0] if spelled else name
         block.append(
             "# The resources are the one thing cmake still compiles, in this OBJECT library"
         )
