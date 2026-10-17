@@ -500,8 +500,14 @@ runs it.
   did), so exporting them as they stand would turn a load failure into a start failure. The Po pair want a success that never calls back
   (or calls back once with the current value, as Windows does: grade it there first).
   The NDIS 6 NetBufferList/miniport surface is the big one after that.
-- **The gated rows left** (`gated build-amd64`, 2026-10-15: 36 absent, 10 excluded): ntdll's
-  hash helpers (`MD5*`, `A_SHA*`) and memory/IO resource codecs (20), ntoskrnl's PoFx
+- **The gated rows left** (`gated build-amd64`, 2026-10-15: 36 absent, 10 excluded). ntdll's
+  20 are done (2026-10-17): MD4/MD5/A_SHA, the memory/IO resource codecs,
+  `Nt/ZwGetCurrentProcessorNumberEx`, `RtlInterlockedPushListSListEx`,
+  `RtlIsNameInExpression` (written fresh: a port of upstream name.c disagreed with Windows
+  on 2,881 of 308,320 cases), plus real `RtlIsValidLocaleName`/`RtlConvertLCIDToString`.
+  `tools/ntdll-gated-oracle/run.sh` diffs the shipping files against the real ntdll on the
+  Windows host, x64 and x86. Still owed there: `prs` resolves to 0x8C (Windows 0x29), and
+  i386 Windows never bumps the SList sequence counter where ours does. Left: ntoskrnl's PoFx
   runtime power (10; ntoskrnl_vista, which the kernel does not link, has NOT_IMPLEMENTED
   bodies), the gdi32 D3DKMT scheduling/adapter calls (7), kernel32's console `*Ex` calls
   (6), shell32's SHCreateItemInKnownFolder and SHEvaluateSystemCommandTemplate (2) and
