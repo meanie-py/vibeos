@@ -2164,5 +2164,9 @@ body) reached from csrss. The sweep after it was clean and identical to the firs
    winspool utils.rs's `_SEH2_TRY` over a handle deref (a hardware-fault guard, not RPC),
    and the cosmetic dead `if <never> { RpcExceptionCode!() }` branches the tool's neighbours
    left in jobs/monitors/spoolfile/forms.
-2. HidPDescription's preparsed-data layout, only if something needs Windows' bytes.
-3. The WS03-column rows that move at the version flip (above).
+2. C RPC clients that are still C (setupapi's cfgmgr.c among them; the sweep only covered
+   files with a Rust twin) build under DUMMY_PSEH on every arch (sdk/cmake/gcc.cmake), so
+   their RpcTryExcept is the same no-op. A fix belongs in pseh2.h's RpcTryExcept, or in an
+   inventory of the C callers; it needs a decision, not a drive-by.
+3. HidPDescription's preparsed-data layout, only if something needs Windows' bytes.
+4. The WS03-column rows that move at the version flip (above).
